@@ -88,8 +88,58 @@ export function totalDoBloco(colunas, registros, coluna = COLUNA_TOTAL) {
 
 const fmtBRL = (n) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+/**
+ * ⚠ O RÓTULO DA ANOTAÇÃO É O QUE O PDF IMPRIME — E ISSO DEIXOU DE SER SEMPRE O MESMO.
+ *
+ * Até a leitura POSICIONAL entrar, `anotacoes` só podia vir de uma linha `Notificação de
+ * lançamento:` — o parser de texto não reconhece outra —, e por isso a tela cravava esse rótulo.
+ * A leitura posicional lê QUALQUER par `Rótulo: valor` do relatório, e o primeiro que ela trouxe
+ * foi `Situação:` (`ATIVA A SER COBRADA`, `AJUIZADA`, `NEGOCIADA NO SISPAR`…), dos blocos de
+ * dívida ativa (SIDA). Mantido o rótulo fixo, a tela diria "Notificação de lançamento: ATIVA A
+ * SER COBRADA" — um rótulo FALSO sobre dado fiscal, exatamente o que não se faz.
+ *
+ * `anotacoesPorRegistro` traz o rótulo que o PDF imprimiu, amarrado ao registro. Aqui ele é usado
+ * SÓ para nomear — a promoção de `Situação` a COLUNA da tabela é decisão de produto e não foi
+ * tomada (ela é impressa numa linha própria, fora do grid do cabeçalho).
+ *
+ * ⚠ Só agrupa quando os rótulos cobrem EXATAMENTE as anotações (mesmo multiconjunto de valores).
+ * Qualquer sobra e a função devolve `null`, e a tela volta ao rótulo de hoje — nunca se inventa
+ * rótulo nem se esconde anotação.
+ *
+ * @returns {{rotulo: string, valores: string[]}[] | null}
+ */
+export function anotacoesComRotulo(anotacoes = [], porRegistro = []) {
+  if (!Array.isArray(porRegistro) || !porRegistro.length) return null;
+  const pares = [];
+  for (const r of porRegistro) {
+    if (!r || typeof r !== "object" || Array.isArray(r)) return null;
+    for (const [rotulo, valor] of Object.entries(r)) pares.push([rotulo, valor]);
+  }
+  if (pares.length !== anotacoes.length) return null;
+
+  const restante = new Map();
+  for (const v of anotacoes) restante.set(v, (restante.get(v) || 0) + 1);
+  for (const [, valor] of pares) {
+    const n = restante.get(valor);
+    if (!n) return null;
+    restante.set(valor, n - 1);
+  }
+
+  const grupos = [];
+  for (const [rotulo, valor] of pares) {
+    const g = grupos.find((x) => x.rotulo === rotulo);
+    if (g) g.valores.push(valor);
+    else grupos.push({ rotulo, valores: [valor] });
+  }
+  return grupos;
+}
+
 function Bloco({ bloco }) {
-  const { titulo, descricao = [], colunas = [], registros = [], anotacoes = [], naoInterpretado = [] } = bloco;
+  const {
+    titulo, descricao = [], colunas = [], registros = [], anotacoes = [], naoInterpretado = [],
+    anotacoesPorRegistro = [], aviso = null,
+  } = bloco;
+  const gruposDeAnotacao = anotacoesComRotulo(anotacoes, anotacoesPorRegistro);
 
   // "Quanto esta empresa deve?" é a pergunta que a tela existe para responder, e com IRPJ + CSLL +
   // PIS + COFINS ela exigia somar quatro valores de cabeça. A regra de quando NÃO somar está em
@@ -226,9 +276,17 @@ function Bloco({ bloco }) {
       )}
 
       {anotacoes.length > 0 && (
-        <div style={{ marginTop: 6, color: COR.suave, fontSize: "0.75rem" }}>
-          Notificação de lançamento: {anotacoes.join(" · ")}
-        </div>
+        gruposDeAnotacao
+          ? gruposDeAnotacao.map((g) => (
+            <div key={g.rotulo} style={{ marginTop: 6, color: COR.suave, fontSize: "0.75rem" }}>
+              {g.rotulo}: {g.valores.join(" · ")}
+            </div>
+          ))
+          : (
+            <div style={{ marginTop: 6, color: COR.suave, fontSize: "0.75rem" }}>
+              Notificação de lançamento: {anotacoes.join(" · ")}
+            </div>
+          )
       )}
 
       {naoInterpretado.length > 0 && (
@@ -236,6 +294,14 @@ function Bloco({ bloco }) {
           <div style={{ color: COR.erro, fontSize: "0.8rem", fontWeight: 700, marginBottom: 4 }}>
             Não foi possível alinhar estas linhas em colunas — confira no PDF oficial:
           </div>
+          {/* ⚠ O MODO DE FALHAR NOMEIA O MOTIVO. A leitura posicional recusa o bloco quando uma das
+              provas não fecha (palavra fora da faixa da coluna, dinheiro em coluna de texto, colunas
+              que se sobrepõem…) e devolve o motivo em `aviso`. Sem ele na tela, a recusa vira um
+              aviso genérico e ninguém sabe se o relatório mudou de forma ou se o parser quebrou.
+              Ausente (parser de texto), a caixa fica exatamente como estava. */}
+          {aviso && (
+            <div style={{ color: COR.alerta, fontSize: "0.76rem", marginBottom: 6 }}>{aviso}</div>
+          )}
           <div style={{ color: COR.suave, fontSize: "0.78rem", fontFamily: "monospace", lineHeight: 1.6 }}>
             {naoInterpretado.join(" · ")}
           </div>

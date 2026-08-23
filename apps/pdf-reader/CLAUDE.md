@@ -58,15 +58,39 @@ requirements.txt
 - `app/services/` orquestra: recebe o PDF, chama pdfplumber, identifica tipo, delega ao extrator correto
 - Um service central de roteamento (`parser_service.py` ou similar) decide qual extrator usar
 
-## ⚠ SITFIS — leitura POSICIONAL (prova da Fase 0, 21/08/2026)
+## ⚠ SITFIS — leitura POSICIONAL (provada em 21/08/2026, LIGADA em 23/08/2026)
 
-`app/extractors/sitfis_posicional.py` + `prova_sitfis_posicional.py` (na raiz deste app).
+`app/extractors/sitfis_posicional.py` + `prova_sitfis_posicional.py` (na raiz deste app) +
+**`app/routers/sitfis.py`**, a porta HTTP.
 
-⚠⚠ **NADA DISTO ESTÁ LIGADO.** Nenhum router importa o módulo, `app/extractors/__init__.py` não
-o exporta, a rota do SITFIS não mudou e o parser de texto
-(`apps/api/src/application/fiscal/serpro/parseSitfisRelatorio.js`) **continua intacto e continua
-sendo o que a produção mostra**. Ele é a segunda opinião — o confronto entre as duas leituras é
-uma das provas de fidelidade, e apagá-lo apagaria a prova.
+### ✅ LIGADA (23/08/2026) — e o parser de texto continua VIVO
+
+⚠⚠ **ESTE BLOCO DIZIA "NADA DISTO ESTÁ LIGADO" ATÉ 23/08/2026.** Está ligado. O que **não** mudou:
+o parser de texto (`apps/api/src/application/fiscal/serpro/parseSitfisRelatorio.js`) **continua
+intacto e continua rodando em produção** — ele é a SEGUNDA OPINIÃO, e o confronto entre as duas
+leituras é uma das três provas de fidelidade. Apagá-lo apagaria a prova.
+
+| onde | o quê |
+|---|---|
+| `app/routers/sitfis.py` | **`POST /sitfis/posicional`** — mesmo corpo do `/extract` (`content_base64`), mesma validação (`decode_base64_pdf`), resposta com **`relatorio`** em vez de `fields` |
+| `app/main.py` | registra o router |
+| `apps/api/src/modules/pdfReader/pdfReader.service.js` | `postSitfisPosicional`, ao lado de `postExtract` — **mesmo transporte**, não um cliente HTTP novo |
+| `apps/api/src/application/fiscal/serpro/lerRelatorioSitfis.js` | o desenho **posicional vence / texto cai**, e o confronto órgão a órgão |
+| `apps/api/scripts/reprocessar-sitfis-posicional.mjs` | relê o acervo guardado (**ensaio por padrão**) |
+
+**O desenho, em uma frase:** *a posicional vence quando fecha; quando não fecha, cai para o texto.*
+O confronto é **por ÓRGÃO** e usa o MESMO critério da prova (`len(antes) != len(depois)` derruba o
+órgão): órgão em que as duas leituras não concordam no número de blocos fica com os blocos do
+TEXTO, com o motivo nomeado. Nunca se mistura bloco de uma leitura com bloco de outra no mesmo
+órgão, e a posicional nunca faz um bloco desaparecer da tela.
+
+⚠ **O endpoint devolve 422, não 500,** quando a leitura estoura ou quando o PDF não tem seção de
+diagnóstico nenhuma (`SITFIS_NO_DIAGNOSTICO`): relatório sem diagnóstico com `success: true` faria
+a tela do contador mostrar "nada consta" para uma empresa que pode dever — o erro caro.
+
+⚠ **O CABEÇALHO DO RELATÓRIO CONTINUA VINDO DO TEXTO** (data de emissão, CNPJ/nome). A leitura
+posicional ignora de propósito tudo que está antes do primeiro marco de órgão — dados cadastrais,
+quadro societário, certidão. Ela responde pelas TABELAS do diagnóstico, não pela capa.
 
 ### O que a prova mediu (24 relatórios REAIS, 38 blocos)
 
@@ -153,6 +177,22 @@ em `aviso`. Experimento executado (pondo `Receita` entre as colunas de dinheiro)
 tabulados do relatório caem para linhas cruas, nomeando `'8109-02 - PIS' não é valor monetário na
 coluna 'Receita'`. Nenhuma tabela torta sai.
 
+### ⚠ A PROVA FOI REPETIDA NO CAMINHO LIGADO (23/08/2026)
+
+Não é a mesma medição de 21/08 relida: é a **cadeia inteira** — banco → PDF guardado → HTTP para
+este serviço → leitura posicional → confronto com o parser de texto —, rodada por
+`apps/api/scripts/reprocessar-sitfis-posicional.mjs` em **ensaio**, contra os 24 relatórios reais:
+
+```
+  relatórios no banco ............ 24     sem PDF guardado ............... 0
+  leitura posicional falhou ...... 0      IDÊNTICOS ...................... 31
+  DIVERGENTES .................... 0      blocos que PASSAM a virar tabela  3
+```
+
+Os 3 são `Pendência - Inscrição (SIDA)` (1 registro numa empresa, 7 em outra) e
+`Inscrição com Exigibilidade Suspensa (SIDA)` (7) — **15 inscrições em dívida ativa** com
+`Inscrição · Receita · Inscrito em · Ajuizado em · Processo · Tipo de Devedor`.
+
 ### ⚠ O QUE A PROVA **NÃO** CONSEGUIU (resultado negativo, medido)
 
 Dos 7 blocos que hoje saem crus/só-descrição, **3 viraram tabela e 4 continuam iguais**:
@@ -167,6 +207,14 @@ Dos 7 blocos que hoje saem crus/só-descrição, **3 viraram tabela e 4 continua
   modalidades **sem as contas a que elas pertencem** — por isso a leitura por pares exige, no
   máximo, **uma linha solta por registro** (a forma do SIEFPAR: uma modalidade por parcelamento), e
   este bloco não passa. Fica como está.
+  - ⚠⚠ **REEXAMINADO AO LIGAR (23/08/2026): CONTINUA SEM FECHAR, E ISSO É RESPOSTA.** É o bloco que
+    o dono citou (*"não conseguimos organizar este trecho em tabela"*, `Conta016148291 / TRANSACAO
+    POR ADESAO - EDITAL PGDAU N 11/2025… Modalidade: SIMPLES NACIONAL…`). **Não foi forçado.** As
+    duas saídas óbvias são as duas proibidas: inventar o cabeçalho (`Conta`, `Edital`) é fabricar
+    rótulo em documento fiscal; ler só `Modalidade:` por pares produz uma tabela de modalidades
+    **sem as contas**, que afirma menos do que se sabe e parece afirmar mais. Na tela ele continua
+    aparecendo INTEIRO, na ordem impressa, com o aviso âmbar de não-interpretado.
+    **Tabular este bloco depende de o dono dizer quais são as colunas** — não é trabalho de parser.
 
 ### ⚠ O que o dono passa a ver, e o que ainda é decisão dele
 
@@ -174,6 +222,14 @@ As **15 inscrições em dívida ativa** (14 numa empresa, 1 em outra) saem com `
 Inscrito em · Ajuizado em · Processo · Tipo de Devedor`. A **situação** de cada uma
 (`ATIVA A SER COBRADA`, `AJUIZADA`, `NEGOCIADA NO SISPAR`…) vem no campo novo
 **`anotacoesPorRegistro`**, amarrada ao registro, com o rótulo que o PDF imprime.
+
+⚠⚠ **E ISSO OBRIGOU UMA MUDANÇA NA TELA, ao ligar (23/08/2026):** até aqui `anotacoes` só podia vir
+de uma linha `Notificação de lançamento:` (é a única que o parser de texto reconhece), e a tela
+cravava esse rótulo. A leitura posicional lê **qualquer** par `Rótulo: valor`, e o primeiro que ela
+trouxe foi `Situação:`. Mantido o rótulo fixo, a aba diria *"Notificação de lançamento: ATIVA A SER
+COBRADA"* — **rótulo falso sobre dado fiscal**. Hoje o rótulo sai de `anotacoesPorRegistro`, que é o
+que o PDF imprime, e só quando ele cobre exatamente as anotações; qualquer sobra volta ao rótulo de
+antes. Nada é inventado e nada é escondido (`SitfisRelatorioTabela.jsx`, `anotacoesComRotulo`).
 
 ⚠ **Promover `Situação` a COLUNA da tabela é decisão de produto, não foi feita.** Ela é impressa
 numa linha própria, indentada, fora do grid do cabeçalho; transformá-la em coluna funde duas linhas

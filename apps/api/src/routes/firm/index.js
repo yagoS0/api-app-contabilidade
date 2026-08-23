@@ -143,7 +143,17 @@ import { getStoredProcurationStatus, SerproProcurationService } from "../../appl
 import { runPaymentConfirmationOnce } from "../../application/fiscal/serpro/SerproPaymentConfirmationService.js";
 import { runSerproPaymentConfirmationWorkerOnce } from "../../workers/serproPaymentConfirmationWorker.js";
 import { obterRelatorio as obterSitfisRelatorio } from "../../application/fiscal/serpro/SerproSitfisService.js";
-import { parseSitfisRelatorio } from "../../application/fiscal/serpro/parseSitfisRelatorio.js";
+// ⚠ AS DUAS LEITURAS DO RELATÓRIO SITFIS ENTRAM POR AQUI.
+// `parseSitfisRelatorio.js` continua VIVO e continua rodando em produção — ele deixou de ser
+// importado direto nesta rota porque quem o chama agora é `montarRelatorioSitfis`, que o confronta
+// com a leitura POSICIONAL do PDF. Ele é a SEGUNDA OPINIÃO, e o confronto é uma das três provas de
+// fidelidade da posicional. Posicional vence quando fecha; cai para o texto quando não fecha.
+import {
+  lerLeituraPosicionalGravada,
+  lerSitfisPosicional,
+  montarRawPayloadComLeitura,
+  montarRelatorioSitfis,
+} from "../../application/fiscal/serpro/lerRelatorioSitfis.js";
 // Heurística da situação fiscal: mora num módulo próprio porque o script de reclassificação usa
 // exatamente a mesma regra (duplicar geraria situações divergentes).
 import { deriveSituacaoFiscal } from "../../application/fiscal/serpro/sitfisSituacao.js";
@@ -4363,9 +4373,15 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         select: {
           situacao: true, protocolo: true, relatorioPdfFileId: true, texto: true,
           checkedAt: true, ultimoRelatorioEm: true,
+          // ⚠ Entrou SÓ pela leitura posicional guardada (`rawPayload.leituraPosicional`). Ele NÃO
+          // sai na resposta — é desmontado logo abaixo. Deixá-lo no spread mandaria o PDF em
+          // base64 (~36 KB por relatório, medido nos 24 de produção) para o navegador a cada
+          // abertura da aba, sem ninguém pedir.
+          rawPayload: true,
         },
       });
       if (!status) return res.json({ ok: true, status: null });
+      const { rawPayload, ...statusPublico } = status;
       // C11: a aba usa isto pra saber se o botão "Consultar" já está liberado (trava de 4h).
       // Ancorado no ÚLTIMO RELATÓRIO, não na última tentativa — tentativa que voltou
       // "processando" não pode travar o contador.
@@ -4375,12 +4391,25 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // Relatório interpretado, para a aba montar a TABELA. O PDF continua servido à parte e vira
       // visualização opcional. Se o texto não estiver salvo (relatório antigo), `relatorio` vem
       // null e a tela cai no PDF — nunca numa tabela vazia sem explicação.
-      const relatorio = status.texto ? parseSitfisRelatorio(status.texto) : null;
+      //
+      // ⚠ AS DUAS LEITURAS SE ENCONTRAM AQUI: `parseSitfisRelatorio` (o texto achatado) roda
+      // SEMPRE e é a segunda opinião; a leitura POSICIONAL do PDF, guardada no `rawPayload` pela
+      // consulta (ou pelo reprocessamento do acervo), vence ÓRGÃO A ÓRGÃO quando concorda com ela
+      // no número de blocos. Sem leitura posicional gravada, a resposta é exatamente a de antes.
+      // Regra e motivo: `application/fiscal/serpro/lerRelatorioSitfis.js`.
+      const { relatorio, leitura, motivo } = montarRelatorioSitfis({
+        texto: status.texto,
+        posicional: lerLeituraPosicionalGravada(rawPayload),
+      });
       return res.json({
         ok: true,
         status: {
-          ...status,
+          ...statusPublico,
           relatorio,
+          // Diagnóstico: qual das duas leituras montou a tabela, e por que a outra não foi usada.
+          // Não é rótulo de tela — a aba mostra o relatório, não a procedência do parser.
+          leitura,
+          leituraMotivo: motivo,
           proximaConsultaEm,
           podeConsultar: !proximaConsultaEm || new Date(proximaConsultaEm).getTime() <= Date.now(),
         },
@@ -4546,6 +4575,18 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         // Guarda o texto extraído (trunca para não inflar a linha) — alimenta a página Pendências.
         const textoRelatorio = result.relatorioTexto || (pdfText ? pdfText.slice(0, 20000) : null);
 
+        // ⚠ A SEGUNDA LEITURA, pela GEOMETRIA do PDF (serviço `pdf-reader`, o MESMO caminho das
+        // guias). Ela NÃO substitui o parser de texto acima — o texto continua sendo gravado e
+        // continua sendo a segunda opinião com que ela é confrontada na hora de exibir.
+        // ⚠ NUNCA LANÇA: falha do pdf-reader devolve `null` e a aba mostra o que mostrava antes.
+        // ⚠ ZERO chamada ao SERPRO — é o PDF que acabou de chegar, relido localmente.
+        const { relatorio: relatorioPosicional } = await lerSitfisPosicional({
+          pdfBuffer: result.relatorioPdfBuffer,
+          filename: `sitfis-${portal.id}.pdf`,
+          requestId: req.get("x-request-id") || undefined,
+          logger: log,
+        });
+
         let relatorioPdfFileId = null;
         if (result.relatorioPdfBuffer?.length) {
           try {
@@ -4562,6 +4603,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         // relatório/situação já gravados e só atualizamos o protocolo (se obtido) + checkedAt — assim o
         // protocolo do dia fica salvo para reuso até expirar, e não apagamos o relatório anterior.
         const temRelatorioNovo = Boolean(relatorioPdfFileId || textoRelatorio);
+        // ⚠ A leitura posicional é guardada DENTRO do `rawPayload` (que já é `JSONB`), porque não
+        // se faz DDL em produção. O envelope do SERPRO fica intacto: a chave é acrescentada ao
+        // lado dele, nunca no lugar. Sem leitura posicional, o valor é o de antes, letra por letra.
+        const rawPayloadParaGravar = (result.rawPayload || relatorioPosicional)
+          ? montarRawPayloadComLeitura(result.rawPayload, relatorioPosicional)
+          : undefined;
         const updateData = {
           tipo: 2,
           // protocolo: só sobrescreve quando temos um novo; senão mantém o salvo (|| undefined = não altera).
@@ -4580,7 +4627,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           updateData.situacao = situacao;
           updateData.relatorioPdfFileId = relatorioPdfFileId;
           updateData.texto = textoRelatorio;
-          updateData.rawPayload = result.rawPayload || undefined;
+          updateData.rawPayload = rawPayloadParaGravar;
         }
         // (sem relatório novo → não toca em situacao/pdf/texto: mantém o último conhecido)
         // Só uma consulta que TROUXE relatório inicia a janela de 4h.
@@ -4595,7 +4642,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             protocolo: result.protocolo || null,
             relatorioPdfFileId,
             texto: textoRelatorio,
-            rawPayload: result.rawPayload || undefined,
+            rawPayload: rawPayloadParaGravar,
             checkedAt: new Date(),
             ultimoRelatorioEm: temRelatorioNovo ? new Date() : null,
           },

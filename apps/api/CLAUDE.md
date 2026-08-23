@@ -2316,13 +2316,105 @@ reconhecido — é isso que garante que nenhum bloco que já virava tabela possa
   colunas de dinheiro do bloco. **Não há linha de total**: somar o valor de parcelamentos distintos
   produziria um número que o relatório não afirma.
 
-### ⚠ 21/08/2026 — A LEITURA POSICIONAL DO PDF FOI PROVADA (Fase 0). NADA FOI LIGADO
+### ✅ 23/08/2026 — A LEITURA POSICIONAL FOI LIGADA. O parser de texto continua VIVO
 
-⚠⚠ **O parser de texto acima continua INTACTO e continua sendo o que a produção mostra.** A rota do
-SITFIS não mudou. O que existe é uma segunda leitura, **desligada**, em
-`apps/pdf-reader/app/extractors/sitfis_posicional.py`, que lê o PDF pela **posição das palavras**
-em vez da fila de linhas achatada — e o confronto entre as duas é uma das provas de fidelidade, o
-que faz do parser de texto peça necessária, não legado.
+⚠⚠ **ESTE BLOCO DIZIA "NADA FOI LIGADO" ATÉ 23/08/2026** (a prova é de 21/08; a ligação é de 23/08).
+O que **não** mudou, e é o eixo do desenho: **`parseSitfisRelatorio.js` continua INTACTO e continua
+RODANDO EM PRODUÇÃO**. Ele deixou de ser importado direto por `routes/firm/index.js` porque quem o
+chama agora é `montarRelatorioSitfis` — que o confronta com a leitura posicional a cada abertura da
+aba. Ele é a **SEGUNDA OPINIÃO**, e o confronto é uma das três provas de fidelidade. Apagá-lo
+apagaria a prova; ele é peça necessária, não legado.
+
+#### O desenho: **posicional vence quando fecha, texto quando não fecha**
+
+Regra em **`application/fiscal/serpro/lerRelatorioSitfis.js`** (`montarRelatorioSitfis` é PURA e é o
+que os 16 testes exercem). O confronto é **por ÓRGÃO**, com o MESMO critério da prova
+(`len(antes) != len(depois)` derruba o órgão):
+
+| situação | o que a aba mostra |
+|---|---|
+| os dois órgãos concordam no nº de blocos | blocos da POSICIONAL (`leitura: "posicional"`) |
+| um órgão discorda | aquele órgão fica com o TEXTO, o outro com a posicional (`"mista"`), motivo nomeado |
+| pdf-reader fora do ar / forma inesperada / sem leitura gravada | TUDO do texto (`"texto"`) — exatamente o que a produção mostrava antes |
+| relatório antigo, **sem `texto` salvo** | a posicional entra inteira: melhor tabela lida pela geometria que `relatorio: null` |
+
+⚠ **O ENVELOPE (data de emissão, CNPJ/nome do contribuinte) CONTINUA VINDO DO TEXTO.** A leitura
+posicional ignora de propósito tudo que vem antes do primeiro marco de órgão — dados cadastrais,
+quadro societário, certidão. Só os `blocos` são substituídos.
+
+#### Onde a leitura fica guardada — e por que NÃO há coluna nova
+
+Em **`CompanyFiscalStatus.rawPayload.leituraPosicional`**, que já é `JSONB`. **Nenhuma DDL**: coluna
+nova exigiria migration em produção, e produção é só leitura. O envelope do SERPRO fica intacto ao
+lado — a chave é acrescentada, nunca substitui (`montarRawPayloadComLeitura`).
+
+⚠ **Guarda-se a leitura POSICIONAL CRUA, nunca o relatório já fundido.** A fusão é determinística e
+é refeita a cada leitura — é isso que mantém o parser de texto rodando em produção como segunda
+opinião. Gravar o resultado fundido congelaria o confronto e aposentaria a prova.
+
+⚠ **`rawPayload` entrou no `select` do `GET .../serpro/sitfis` e é DESMONTADO antes da resposta**
+(`const { rawPayload, ...statusPublico } = status`). Deixá-lo no spread mandaria o PDF em base64
+(~36 KB por relatório, medido nos 24 de produção) ao navegador a cada abertura da aba.
+
+#### Quem chama o pdf-reader, e por onde
+
+`POST /sitfis/posicional` (`apps/pdf-reader/app/routers/sitfis.py`), pelo **MESMO caminho HTTP das
+guias**: `postSitfisPosicional` mora ao lado de `postExtract` em `modules/pdfReader/pdfReader.service.js`,
+com o mesmo axios, o mesmo `X-Request-Id` e o mesmo `PDF_READER_TIMEOUT_MS`. ⚠ **Não escreva um
+segundo cliente HTTP** — ele divergiria na primeira correção de timeout e o SITFIS passaria a falhar
+por um motivo que ninguém consertou nas guias.
+
+⚠ **`lerSitfisPosicional` NUNCA LANÇA.** Serviço fora do ar, timeout, 4xx/5xx, corpo torto: devolve
+`null` e a aba mostra o que mostrava antes. Uma aba de situação fiscal não pode quebrar porque o
+parser de PDF está reiniciando.
+
+⚠ **ZERO CHAMADA AO SERPRO EM TODO ESTE CAMINHO.** A consulta é paga e o limite AV02 é por
+CONTRATANTE. O PDF já está guardado; reler é local.
+
+#### Reprocessar o acervo — **`scripts/reprocessar-sitfis-posicional.mjs`**
+
+Relê os PDFs já guardados e grava só a chave `leituraPosicional`. **ENSAIO POR PADRÃO** (`--aplicar`
+para gravar), e o **critério de aceite do dono é verificado a cada execução**: um só dos blocos que
+hoje saem como tabela divergindo e o script **aborta a escrita inteira**, imprime a divergência e
+sai com código 1 — inclusive com `--aplicar`. Ele não toca `texto`, `situacao`,
+`relatorioPdfFileId`, `protocolo`, `checkedAt` nem `ultimoRelatorioEm`.
+
+⚠ **Medido em ensaio contra produção, 23/08/2026, pela cadeia ligada inteira** (banco → PDF →
+HTTP → posicional → confronto): 24 relatórios, 0 sem PDF, 0 falhas de leitura, **31 IDÊNTICOS, 0
+DIVERGENTES**, **3 blocos passam a virar tabela** (as 15 inscrições em dívida ativa), 4 continuam
+como estão. **Enquanto o script não for aplicado, os 24 relatórios do acervo continuam saindo pelo
+parser de texto** — a leitura posicional só existe para quem for consultado a partir de agora.
+
+#### ⚠ O PORTAL DO CLIENTE NÃO FOI LIGADO, e é decisão a tomar
+
+`GET /client/companies/:id/situacao-fiscal` continua **só com o parser de texto**. Não é
+esquecimento: `routes/client/__tests__/situacaoFiscalDoCliente.test.js` **trava o `select` daquela
+rota nos quatro campos** (`situacao`, `texto`, `checkedAt`, `ultimoRelatorioEm`) e proíbe
+`relatorioPdfFileId` ali — cada omissão tem motivo escrito. Ligar a posicional no lado do cliente
+exige alterar essa trava, que é decisão de produto, não detalhe de implementação. Efeito hoje: o
+cliente vê os blocos SIDA como linhas cruas; o contador vê a tabela.
+
+#### O que mudou NA TELA (`apps/web/.../SitfisRelatorioTabela.jsx`)
+
+- ⚠⚠ **O RÓTULO DA ANOTAÇÃO DEIXOU DE SER FIXO.** `anotacoes` só podia vir de
+  `Notificação de lançamento:` (a única que o parser de texto reconhece) e a tela cravava esse
+  rótulo. A posicional lê **qualquer** par `Rótulo: valor`, e o primeiro que trouxe foi `Situação:`
+  (`ATIVA A SER COBRADA`, `AJUIZADA`, `NEGOCIADA NO SISPAR`). Mantido o rótulo fixo, a aba diria
+  *"Notificação de lançamento: ATIVA A SER COBRADA"* — **rótulo falso sobre dado fiscal**. Hoje o
+  rótulo sai de `anotacoesPorRegistro` (o que o PDF imprime) e **só quando ele cobre exatamente as
+  anotações**; qualquer sobra volta ao rótulo de antes. Não se inventa e não se esconde.
+- ⚠ **O `aviso` do bloco recusado aparece.** A posicional recusa o bloco nomeando o motivo
+  (palavra fora da faixa da coluna, dinheiro em coluna de texto, colunas que se sobrepõem…). Sem o
+  motivo na tela, a recusa vira aviso genérico e ninguém sabe se o relatório mudou de forma ou se o
+  parser quebrou. Bloco sem `aviso` (parser de texto) fica exatamente como estava.
+- ⚠ **`Situação` NÃO virou coluna da tabela** — é decisão de produto, ainda do dono.
+- Regressão: `sitfis/components/__tests__/leituraPosicionalNaTela.test.jsx` (13). ⚠ O
+  `colunasNuncaSomem.test.jsx` (a regressão do `f8768d10`) **não foi tocado e continua verde**.
+
+### ⚠ 21/08/2026 — a prova da Fase 0 (a medição que autorizou tudo isto)
+
+Uma segunda leitura em `apps/pdf-reader/app/extractors/sitfis_posicional.py`, que lê o PDF pela
+**posição das palavras** em vez da fila de linhas achatada.
 
 **Medido sobre os 24 relatórios REAIS guardados** (o PDF está em
 `CompanyFiscalStatus.rawPayload.dados.pdf`, base64, **24 de 24** — reprocessar custa **zero chamada
@@ -2340,9 +2432,14 @@ some no outro — não há regra no texto que diga qual é qual. No PDF ela é u
 2.028 de 2.043 folgas), não um limiar por "gap grande" — que erraria na folga de 7,00 pt entre
 `Cons.` e `Situação`.
 
-**Ler antes de mexer: `apps/pdf-reader/CLAUDE.md`**, seção "SITFIS — leitura POSICIONAL". Repetir a
-prova: `apps/api/scripts/exportar-sitfis-prova.mjs` (só leitura, tira os PDFs do banco para uma
-pasta **fora do repo**) + `apps/pdf-reader/prova_sitfis_posicional.py`.
+**Ler antes de mexer: `apps/pdf-reader/CLAUDE.md`**, seção "SITFIS — leitura POSICIONAL". Duas
+formas de repetir a prova, e as duas custam **zero chamada ao SERPRO**:
+
+- **fora do caminho ligado** (só o extrator): `apps/api/scripts/exportar-sitfis-prova.mjs` (só
+  leitura, tira os PDFs do banco para uma pasta **fora do repo** — ⚠ eles trazem CNPJ, sócios e
+  débitos reais; apague depois) + `apps/pdf-reader/prova_sitfis_posicional.py`;
+- **pelo caminho ligado** (banco → HTTP → posicional → confronto):
+  `apps/api/scripts/reprocessar-sitfis-posicional.mjs`, **em ensaio**, que imprime o mesmo placar.
 
 **O relatório salvo nunca é apagado por uma consulta que falha.** A gravação só sobrescreve
 `situacao`/`relatorioPdfFileId`/`texto` quando vem relatório NOVO.
