@@ -34,6 +34,13 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   const [notas, setNotas] = useState([]);
   const [notasTotal, setNotasTotal] = useState(0);
   const [notasSummary, setNotasSummary] = useState(null);
+  // ⚠ SEGUNDO resumo, e ele responde OUTRA pergunta — por isso não dá para reusar o de cima.
+  // `notasSummary` é da JANELA ativa (`type` fixo, `papel` livre, porque as caixas Emitidas/
+  // Recebidas são o seletor de papel). Este é o inverso: `papel` fixo em DEST e `type` LIVRE,
+  // para responder "quantas notas esta empresa RECEBEU nesta competência?" — que é a pergunta do
+  // dono e que atravessa as duas janelas. Somar as duas janelas na tela não serviria: cada uma
+  // carrega só uma PÁGINA (100), e o resumo ignora paginação de propósito.
+  const [notasRecebidas, setNotasRecebidas] = useState(null);
   // Q19: filtro de competência das notas começa no mês ANTERIOR ao atual (default).
   // Q20: + filtro por atividade (cfop / servico = código LC116 ou nome).
   // papel começa em EMIT: as notas EMITIDAS são o faturamento (o que a apuração usa), então é
@@ -83,13 +90,20 @@ export function useNotasFiscais({ api, companyId, feedback }) {
       // valores. Se o summary respeitasse o papel, clicar em "Emitidas" zerava a caixa de
       // "Recebidas" e não dava mais pra voltar por ela.
       const summaryArgs = { ano, type: f.type, competencia: f.competencia, search: f.search, cfop: f.cfop, servico: f.servico };
-      const [out, summary] = await Promise.all([
+      // ⚠ MESMOS filtros de texto/atividade da tabela, e NENHUM `type`: o bloco "Notas recebidas"
+      // conta as DUAS espécies. Se ele ignorasse `search`/`cfop`/`servico`, o número da tela
+      // deixaria de fechar com as linhas no instante em que alguém digitasse na busca — e total
+      // que não fecha com a lista é pior que total nenhum (regra escrita em `resumoDaEmissao`).
+      const recebidasArgs = { ano, papel: "DEST", competencia: f.competencia, search: f.search, cfop: f.cfop, servico: f.servico };
+      const [out, summary, recebidas] = await Promise.all([
         api.listNotas(companyId, f),
         api.getNotasSummary ? api.getNotasSummary(companyId, summaryArgs) : Promise.resolve(null),
+        api.getNotasSummary ? api.getNotasSummary(companyId, recebidasArgs) : Promise.resolve(null),
       ]);
       setNotas(out?.notas || []);
       setNotasTotal(out?.total || 0);
       setNotasSummary(summary);
+      setNotasRecebidas(recebidas);
     } catch (err) {
       setError(err?.message || "Falha ao carregar notas.");
     } finally {
@@ -309,7 +323,7 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     // Q12.B+: NFS-e via ADN
     adnState, adnSyncing, adnLastResult, syncAdn, clearAdnError,
     // Q12.C.1: listagem de notas
-    notas, notasTotal, notasSummary,
+    notas, notasTotal, notasSummary, notasRecebidas,
     notasFilters, setNotasFilters,
     loadingNotas, loadNotas, marcarNotaStatus,
     // Íntegra da nota (clique na linha)

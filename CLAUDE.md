@@ -103,8 +103,30 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   Reenviar/Revogar/Parcelamento solto/Recalcular INSS. Liberar por-guia: `POST /firm/guides/:id/liberar-cliente`
   (o empacotamento DAS+INSS fica só no envio em lote da página principal).
 - [x] **Notas Fiscais — aba enxuta (Q58)** — 2 janelas: **NFS-e** (ADN + import XML) e **NF-e**
-  (SEFAZ), a de NF-e **só com inscrição estadual** (`selectedCompany.legacyCompany.inscricaoEstadual`).
-  Sem stats/legendas/rodapé; captura compacta.
+  (SEFAZ). Sem stats/legendas/rodapé; captura compacta.
+  - ⚠⚠ **ESTE ITEM DIZIA "a de NF-e SÓ COM INSCRIÇÃO ESTADUAL" ATÉ 23/08/2026 — e era um DEFEITO,
+    não um recurso.** Medido em produção: as **3 — e únicas — empresas com NF-e na base**
+    (SINTROPIA 34, LENTE 11, ALBATROZ 2) **não têm IE**, porque as notas delas são **compras**, e
+    **receber** NF-e não exige inscrição estadual (quem precisa de IE é quem EMITE). A única
+    empresa com IE (VAGALO) tem **zero** NF-e. A janela aparecia exatamente para quem não tinha
+    nota e sumia exatamente para quem tinha: **as 47 notas de compra capturadas eram invisíveis na
+    interface.** É o MESMO raciocínio já escrito no `apps/api/CLAUDE.md` para o worker do DFe
+    (*"NÃO filtre o worker por `inscricaoEstadual`"*) — a regra existia, a tela é que não a seguia.
+  - ⚠⚠ **E havia um SEGUNDO defeito, que sozinho manteria a janela inútil:** o filtro de papel
+    nasce em `EMIT` e trocar de janela mexia só no `type`. Como **as 47 NF-e são `papel: "DEST"`**,
+    a janela de NF-e — mesmo visível — listava **zero linhas**. Consertar só o primeiro teria
+    trocado uma janela invisível por uma janela vazia, que é pior: vazio parece resposta.
+  - **As duas espécies continuam SEPARADAS, por decisão do dono (23/08/2026):** *"vou corrigir algo
+    que disse: as notas de compra devem ser separadas das notas recebidas de serviço"* — corrigindo,
+    no mesmo dia, o pedido anterior de juntá-las numa aba só. ⚠ O fundamento reforça a decisão:
+    **NF-e tem item/NCM/CFOP/quantidade e NFS-e tem código de serviço e ISS**; a coluna comum é
+    pouca (data, emitente, valor, situação), e lista única mostraria o menor denominador das duas.
+  - **O "total de notas recebidas" que ele pediu** não exigia lista única e virou o bloco
+    `RecebidasResumo`: conta as duas espécies **separadas**, mostra a soma e **diz que a soma é de
+    espécies diferentes** — número sem esse rótulo soma nota de mercadoria com nota de serviço, que
+    vão para contas diferentes. Cada caixa é botão e abre a janela daquela espécie já em
+    "Recebidas", que é como o número se confere contra as linhas.
+  - Detalhes, medições e as armadilhas: **`apps/web/src/features/notas/CLAUDE.md`**.
 - [~] **Robustez NFS-e/ADN (Q59)** — captura deve virar *fluxo de eventos por NSU*, não *snapshot por data*.
   Roadmap em **`docs/robustez-nfse-adn.md`**. **Fase 1** (ledger append-only `documentos`/`eventos` +
   `nsu_watermark`/`nsu_gaps` + projeção recalculável) codada e **verificada offline** — ainda NÃO ligada

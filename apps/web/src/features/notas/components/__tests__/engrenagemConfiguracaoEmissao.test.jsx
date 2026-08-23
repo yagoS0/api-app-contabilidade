@@ -112,12 +112,16 @@ describe("a engrenagem está na aba, e leva à tela certa", () => {
   });
 });
 
-// ⚠ A engrenagem configura a emissão de NFS-e. Na janela de NF-e (nota de VENDA, capturada da
-// SEFAZ) não há emissão para configurar — ela ali seria um controle que não pertence à tela.
+// ⚠ A engrenagem configura a emissão de NFS-e. Na janela de NF-e (capturada da SEFAZ) não há
+// emissão para configurar — ela ali seria um controle que não pertence à tela.
 describe("ela pertence à janela de NFS-e", () => {
-  it("não aparece na janela de notas de venda (NF-e)", () => {
-    abrirAba({ hasInscricaoEstadual: true });
-    fireEvent.click(screen.getByRole("button", { name: /Notas de venda/ }));
+  it("não aparece na janela de notas de compra (NF-e)", () => {
+    // ⚠ `hasInscricaoEstadual` SAIU da aba em 23/08/2026 — a janela de NF-e aparece sempre. A prop
+    // condicionava a janela à IE e escondia as notas de COMPRA das 3 de 3 empresas que as têm
+    // (nenhuma tem IE). O rótulo mudou junto: "venda" → "compra", porque 47 de 47 NF-e da base
+    // são `papel: "DEST"`. Ver o cabeçalho de `renderNotasFiscaisTab.jsx`.
+    abrirAba();
+    fireEvent.click(screen.getByRole("button", { name: /Notas de compra/ }));
     expect(screen.queryByTestId("engrenagem-emissao-nfse")).not.toBeInTheDocument();
   });
 });

@@ -7025,8 +7025,14 @@ export function createMockApi() {
       // ⚠ Sai do MESMO conjunto que a tabela pagina. Antes eram números fixos (14 notas) — com a
       // tabela mostrando 247, as caixas do resumo e o rodapé se contradiziam dentro da mesma tela,
       // e offline não dava pra distinguir "o resumo está errado" de "o mock é grosseiro".
-      // O resumo NÃO respeita `papel` (as caixas Emitidas/Recebidas SÃO o seletor de papel).
-      const universo = mockFiltrarNotas({ ...filtros, papel: null, incluirCanceladas: "1" });
+      // ⚠ `papel` SÓ é ignorado quando não vem — e isso deixou de ser "o resumo nunca respeita
+      // papel" em 23/08/2026. As caixas Emitidas/Recebidas SÃO o seletor de papel, então a chamada
+      // que as alimenta continua omitindo o campo; mas a rota real (`GET /notas/summary`) sempre
+      // aceitou `papel`, e o bloco "Notas recebidas" a chama COM `papel: "DEST"`. Cravar `null`
+      // aqui fazia o mock devolver EMIT+DEST para uma pergunta que só pediu DEST — offline, o
+      // bloco mostraria número maior que a lista, que é exatamente o defeito que ele existe para
+      // não ter. (Quarta vez que um ramo inalcançável/infiel no mock morde este projeto.)
+      const universo = mockFiltrarNotas({ ...filtros, papel: filtros.papel || null, incluirCanceladas: "1" });
       let totalNotas = 0, totalEmitido = 0, totalRecebido = 0, countNfe = 0, countNfse = 0, countCanceladas = 0;
       for (const n of universo) {
         if (n.statusEfetivo === "cancelada") { countCanceladas++; continue; }
@@ -7038,7 +7044,7 @@ export function createMockApi() {
       return {
         ok: true,
         ano: filtros.ano || new Date().getUTCFullYear(),
-        filtersApplied: { type: filtros.type || null, competencia: filtros.competencia || null },
+        filtersApplied: { papel: filtros.papel || null, type: filtros.type || null, competencia: filtros.competencia || null },
         totals: { totalNotas, totalEmitido, totalRecebido, countNfe, countNfse, countCanceladas },
         byMonth: [],
       };

@@ -716,7 +716,11 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             <Suspense fallback={<TabLoadingFallback />}>
               <NotasFiscaisTab
                 notasPanel={notasPanel}
-                hasInscricaoEstadual={Boolean(String(selectedCompany?.legacyCompany?.inscricaoEstadual || "").trim())}
+                /* ⚠ `hasInscricaoEstadual` SAIU daqui em 23/08/2026, e não foi limpeza: enquanto
+                   existiu, ele escondia a janela de NF-e de TODA empresa sem inscrição estadual —
+                   ou seja, das 3 de 3 que têm nota de COMPRA na base (SINTROPIA 34, LENTE 11,
+                   ALBATROZ 2). Receber NF-e não exige IE; emitir é que exige. Não reintroduza:
+                   o argumento inteiro está no cabeçalho de `renderNotasFiscaisTab.jsx`. */
                 competencia={circularPanel?.competencia}
                 /* O assistente de emissão MOSTRA o regime que a nota vai declarar e o confronta
                    com o do cadastro. Mesmo `companyRegime` do resto da página (mora em
