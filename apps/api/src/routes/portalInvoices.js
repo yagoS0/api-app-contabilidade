@@ -1,4 +1,6 @@
 import { Router } from "express";
+import os from "node:os";
+import { unlink } from "node:fs/promises";
 import multer from "multer";
 import archiver from "archiver";
 import { prisma } from "../infrastructure/db/prisma.js";
@@ -8,6 +10,11 @@ import { parseXmlMetadata } from "../application/nfse/AdnXmlMetadata.js";
 // ⚠ O import de XML usa A MESMA ingestão da captura automática. Ver o cabeçalho de `ingestaoNfse.js`:
 // a segunda implementação que morava aqui criava linha duplicada para nota que a captura já tinha.
 import { upsertNfseFromItem } from "../application/notas/ingestaoNfse.js";
+// ⚠ O IMPORT DE NF-e É OUTRO DOCUMENTO E OUTRA INGESTÃO — `application/notas/ingestaoNfe.js`, a
+// MESMA função que a captura DFe chama. Ver o cabeçalho de `ImportNfeLoteService.js` para o porquê
+// de o lote do Fisco Fácil ser o único caminho possível (NT 2014.002 §3: a NF-e do próprio
+// emitente NÃO é distribuída por API).
+import { importarLoteNfe, textoDoResultado } from "../application/notas/importXml/ImportNfeLoteService.js";
 import { ensurePortalClientAccess } from "./middlewares/portalAccess.js";
 // ⚠ A NOTA QUE NÓS EMITIMOS E QUE O ADN AINDA NÃO TROUXE. Ver o cabeçalho daquele arquivo para a
 // chave de deduplicação e para o porquê de a união ser na LEITURA e não uma gravação em
@@ -24,6 +31,20 @@ import {
 
 function normalizeDoc(value) {
   return String(value || "").replace(/\D+/g, "") || null;
+}
+
+// ⚠ OS DOIS TETOS DO LOTE DE NF-e. O Fisco Fácil entrega "um ou mais arquivos ZIP, dependendo do
+// volume" — daí `files` ser plural de verdade. 512 MB por arquivo cobre seis meses de varejo
+// zipado; o que NÃO pode acontecer é o teto morar em `memoryStorage`, porque aí ele vira RAM.
+const MAX_ARQUIVOS_LOTE = 20;
+const MAX_BYTES_ARQUIVO_LOTE = 512 * 1024 * 1024;
+
+/**
+ * Apaga os temporários do `diskStorage`. Best-effort de propósito: falhar em remover um arquivo
+ * temporário não pode transformar um import bem-sucedido em erro 500 para o dono.
+ */
+async function limparTemporarios(files) {
+  await Promise.all((files || []).map((f) => (f?.path ? unlink(f.path).catch(() => {}) : null)));
 }
 
 function formatCompetencia(value) {
@@ -307,6 +328,21 @@ function intercalar(doAdn, nossas, sortKey, ordem) {
 export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmitidasNaoConfirmadas = false }) {
   const router = Router({ mergeParams: true });
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
+
+  // ⚠ O LOTE DE NF-e TEM UPLOAD PRÓPRIO — memória e 15 MB NÃO servem para ele.
+  //
+  // O `upload` acima é do import de NFS-e: `memoryStorage`, 15 MB, 50 arquivos SOLTOS. O Fisco
+  // Fácil entrega *"um ou mais arquivos ZIP, dependendo do volume"*, com os XMLs e os eventos
+  // misturados dentro — seis meses de varejo passa daquele teto com folga, e um ZIP em
+  // `memoryStorage` carrega o lote inteiro para a RAM antes de a rota sequer começar.
+  //
+  // `diskStorage` é o que permite a leitura por stream: o ZIP fica em arquivo temporário e
+  // `zipLeitura.percorrerZip` infla UMA entrada por vez. ⚠ Os temporários são apagados no
+  // `finally` da rota — sem isso, todo import de meio ano deixaria o lote em disco para sempre.
+  const uploadLote = multer({
+    storage: multer.diskStorage({ destination: os.tmpdir() }),
+    limits: { fileSize: MAX_BYTES_ARQUIVO_LOTE, files: MAX_ARQUIVOS_LOTE },
+  });
 
   // GET /clients/:clientId/invoices
   router.get("/", async (req, res) => {
@@ -1005,6 +1041,65 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
     }
 
     return res.json({ created, updated, duplicates, rejeitadas, errors });
+  });
+
+  // POST /clients/:clientId/invoices/import/nfe  (upload do lote do Fisco Fácil)
+  //
+  // ⚠⚠ ESTA É A PORTA PELA QUAL A NOTA DE VENDA ENTRA — e ela NÃO tem alternativa por API.
+  // NT 2014.002 §3: o NFeDistribuiçãoDFe dá acesso aos documentos *"que não tenham sido gerados
+  // por ele"*; a tabela normativa marca "Emitente: Não" para NF-e e para Resumo, e o §3.7 diz
+  // *"Para o emitente a NF-e não será disponibilizada nesta consulta."* Medido na base: 47 NF-e,
+  // 100% recebidas, ZERO emitidas. O dono baixa o lote no Fisco Fácil (SEFAZ-RJ, "Extrator de
+  // Documentos Fiscais Eletrônicos") e sobe aqui.
+  //
+  // ⚠ NADA AQUI CHAMA A SEFAZ. Consulta indevida bloqueia o CNPJ por 1 hora (cStat 656).
+  //
+  // ⚠ POR ESTABELECIMENTO. A extração do Fisco Fácil NÃO aceita raiz de CNPJ — empresa com filial
+  // gera um lote por estabelecimento, e cada estabelecimento é um `PortalClient` próprio (`cnpj` é
+  // `@unique`; não há coluna de filial no schema). O `:clientId` da rota é que casa o lote com a
+  // inscrição certa; lote da filial subido na matriz sai `recusadas` com motivo
+  // `outro_estabelecimento` — não `nota_nao_pertence`, que mandaria procurar defeito onde não há.
+  router.post("/import/nfe", uploadLote.array("files", MAX_ARQUIVOS_LOTE), async (req, res) => {
+    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
+    const { clientId } = req.params || {};
+    const access = await ensurePortalClientAccess(req, res, clientId);
+    if (!access.ok) return;
+    const files = req.files || [];
+    if (!Array.isArray(files) || files.length === 0) {
+      return res.status(400).json({ error: "files_required" });
+    }
+
+    const portalClient = await prisma.portalClient.findUnique({
+      where: { id: String(clientId) },
+      select: { cnpj: true },
+    });
+    const companyCnpj = normalizeDoc(portalClient?.cnpj);
+    // ⚠ SEM CNPJ NÃO SE IMPORTA. Ele é o único jeito de MEDIR o papel (EMIT × DEST); importar sem
+    // ele encheria a base de nota de venda rotulada como compra — o defeito que este import existe
+    // para acabar. Recusar o lote inteiro é a resposta certa.
+    if (!companyCnpj) {
+      await limparTemporarios(files);
+      return res.status(422).json({ error: "empresa_sem_cnpj" });
+    }
+
+    try {
+      const resultado = await importarLoteNfe({
+        portalClientId: String(clientId),
+        cnpjEmpresa: companyCnpj,
+        arquivos: files.map((f) => ({ nome: f.originalname, caminho: f.path })),
+        log,
+      });
+      // ⚠ A FRASE VAI JUNTO, e ela sai do serviço (`textoDoResultado`), não da tela. "importadas 0"
+      // tem dois significados — lote legitimamente vazio ("Processada sem resultado", mais a
+      // carência de ~10 dias do portal) × lote cheio de documento que não é nota desta empresa — e
+      // só o servidor sabe qual dos dois foi. **Ausência nunca é resposta.**
+      return res.json({ ...resultado, mensagem: textoDoResultado(resultado) });
+    } catch (err) {
+      log.error({ err, clientId }, "Falha ao importar lote de NF-e");
+      return res.status(500).json({ error: "internal_error" });
+    } finally {
+      await limparTemporarios(files);
+    }
   });
 
   return router;

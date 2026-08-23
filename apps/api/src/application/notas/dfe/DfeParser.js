@@ -146,6 +146,12 @@ export function parseDocZip({ schema, xml, error }, { companyCnpj }) {
       type: "nfe_summary",
       chaveAcesso: chave,
       papel,
+      emitCnpj: emitDoc.replace(/\D+/g, "") || null,
+      destCnpj: null, // resNFe não traz destinatário — ver o comentário do `papel` acima
+      // ⚠ O MODELO SAI DA CHAVE (posições 20-22): 55 = NF-e, 65 = NFC-e (consumidor).
+      // Quem decide o que fazer com o 65 é o CHAMADOR — aqui só se diz qual é. O import de lote do
+      // Fisco Fácil precisa disso para CONTAR a NFC-e como ignorada em vez de gravá-la calada.
+      modelo: chave.slice(20, 22) || null,
       parsed: {
         chaveAcesso: chave,
         type: "NFE",
@@ -195,6 +201,12 @@ export function parseDocZip({ schema, xml, error }, { companyCnpj }) {
     const destDoc = String(dest.CNPJ || dest.CPF || "");
     const emitCnpjOnly = emitDoc.replace(/\D+/g, "");
     const destCnpjOnly = destDoc.replace(/\D+/g, "");
+    // ⚠⚠ O ÚLTIMO RAMO É UM DEFAULT, NÃO UMA MEDIÇÃO — "nem emitente nem destinatário" e "eu sou o
+    // destinatário" saem daqui com a MESMA resposta. No canal DFe isso é tolerável (a SEFAZ só
+    // distribui documento de interesse do consulente), mas em qualquer canal onde o arquivo venha
+    // de uma PESSOA — o import do lote do Fisco Fácil — cair neste default rotula NOTA DE VENDA
+    // como compra e anula o import inteiro. Por isso `importXml/loteNfe.js` NÃO usa este campo:
+    // ele decide o papel por `emitCnpj`/`destCnpj` (expostos abaixo) e RECUSA o que não bate.
     const papel = cleanCompanyCnpj && emitCnpjOnly === cleanCompanyCnpj ? "EMIT"
                 : cleanCompanyCnpj && destCnpjOnly === cleanCompanyCnpj ? "DEST"
                 : "DEST";
@@ -218,6 +230,11 @@ export function parseDocZip({ schema, xml, error }, { companyCnpj }) {
       type: "nfe_full",
       chaveAcesso: chave,
       papel,
+      // ⚠ `ide/mod`: 55 = NF-e, 65 = NFC-e. Ver a nota no ramo do resNFe — informa, não decide.
+      modelo: String(ide.mod || "") || (chave ? chave.slice(20, 22) : null) || null,
+      // Os dois CNPJs CRUS, para quem precisa decidir titularidade e papel SEM o default abaixo.
+      emitCnpj: emitCnpjOnly || null,
+      destCnpj: destCnpjOnly || null,
       parsed: {
         chaveAcesso: chave,
         type: "NFE",

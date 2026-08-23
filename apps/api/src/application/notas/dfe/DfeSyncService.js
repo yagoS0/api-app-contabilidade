@@ -18,8 +18,7 @@ import { DFE_NOTAS_WORKER_INTERVAL_MIN } from "../../../config.js";
 import { resolveCertForCompany, SERVICOS } from "../CertResolver.js";
 import { fetchDistNSU, DfeClientError } from "./DfeClient.js";
 import { parseDistDFeResponse, parseDocZip } from "./DfeParser.js";
-import { ESTADOS } from "../CompetenciaStateMachine.js";
-import { substituirItensPreservandoClassificacao } from "../notaItens.js";
+import { upsertNfeFromParsed } from "../ingestaoNfe.js";
 
 const MAX_ITERATIONS = 10;
 const BACKOFF_MINUTES_ON_ERROR = 15;
@@ -208,91 +207,12 @@ async function setBackoff({ clientId, errorMsg, minutes }) {
   }).catch(() => null);
 }
 
-/**
- * Decide se a competência da nota está FECHADA. Se sim, não atualiza base —
- * cria PendenciaPosFechamento e marca a nota com competenciaPosFechamento=true.
- */
-async function isCompetenciaFechada(tx, { portalClientId, competenciaDate }) {
-  if (!competenciaDate) return false;
-  const d = new Date(competenciaDate);
-  const comp = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-  const row = await tx.companyMonthlyCircular.findFirst({
-    where: { portalClientId, competencia: comp },
-    select: { estado: true },
-  });
-  if (!row) return false;
-  return [ESTADOS.FECHADO, ESTADOS.CALCULADO, ESTADOS.REVISADO, ESTADOS.TRANSMITIDO, ESTADOS.CONFIRMADO].includes(row.estado);
-}
-
-async function upsertNotaFromParsed(tx, { portalClientId, parsed, items }) {
-  if (!parsed.chaveAcesso) return { skipped: true, reason: "no_chave" };
-
-  // Confere competência fechada
-  const fechada = await isCompetenciaFechada(tx, {
-    portalClientId, competenciaDate: parsed.competencia,
-  });
-
-  // Preserva o cancelamento: o cancelamento de NF-e chega num EVENTO separado (applyEvent grava
-  // statusEfetivo="cancelada"). O resumo/nota da NF-e traz statusEfetivo hardcoded "autorizada";
-  // sem isso, uma re-captura da nota reverteria o cancelamento.
-  const wKey = { clientId_chaveAcesso: { clientId: portalClientId, chaveAcesso: parsed.chaveAcesso } };
-  const existente = await tx.portalInvoice.findUnique({ where: wKey, select: { statusEfetivo: true } }).catch(() => null);
-  const statusEfetivo = existente?.statusEfetivo === "cancelada" ? "cancelada" : (parsed.statusEfetivo || null);
-
-  const dataToWrite = {
-    type: parsed.type,
-    numero: parsed.numero || null,
-    serie: parsed.serie || null,
-    chaveAcesso: parsed.chaveAcesso,
-    competencia: parsed.competencia,
-    issueDate: parsed.issueDate,
-    status: parsed.status,
-    total: parsed.total,
-    emitenteNome: parsed.emitenteNome || null,
-    emitenteDoc: parsed.emitenteDoc || null,
-    tomadorNome: parsed.tomadorNome || null,
-    tomadorDoc: parsed.tomadorDoc || null,
-    xmlRaw: parsed.xmlRaw || null,
-    papel: parsed.papel || null,
-    statusEfetivo,
-    competenciaPosFechamento: fechada,
-  };
-
-  if (fechada) {
-    // Não atualiza base — cria a nota mas só registra a pendência.
-    const created = await tx.portalInvoice.upsert({
-      where: wKey,
-      create: { clientId: portalClientId, ...dataToWrite },
-      update: { competenciaPosFechamento: true, statusEfetivo },
-    });
-    const comp = `${new Date(parsed.competencia).getUTCFullYear()}-${String(new Date(parsed.competencia).getUTCMonth() + 1).padStart(2, "0")}`;
-    await tx.pendenciaPosFechamento.create({
-      data: {
-        portalClientId, competencia: comp,
-        notaId: created.id, motivo: "nota_retroativa",
-        observacoes: `Nota ${parsed.chaveAcesso} chegou para ${comp} (competência já fechada).`,
-      },
-    }).catch(() => null); // pode duplicar se rodar 2x; ignorar é OK
-    return { created: created.id, status: "pendencia_criada" };
-  }
-
-  const nota = await tx.portalInvoice.upsert({
-    where: wKey,
-    create: { clientId: portalClientId, ...dataToWrite },
-    update: dataToWrite,
-  });
-
-  // Substitui itens (full overwrite): mais simples + idempotente. Volume é pequeno.
-  //
-  // ⚠ O "full overwrite" ERA LITERAL — `deleteMany` + `createMany` apagava `tipoReceita`,
-  // `anexoResolvido`, `classificadoEm` e `sujeitoFatorR` de todo item, em silêncio. A recaptura
-  // corrige a nota; ela não pode desfazer a classificação. O casamento item-antigo × item-novo e o
-  // motivo do critério estão em `../notaItens.js`.
-  if (items && items.length > 0) {
-    await substituirItensPreservandoClassificacao(tx, { notaId: nota.id, itens: items });
-  }
-  return { created: nota.id, status: "upserted" };
-}
+// ⚠ A PERSISTÊNCIA DA NF-e MORA EM `../ingestaoNfe.js` — NÃO A REESCREVA AQUI.
+//
+// `isCompetenciaFechada` e `upsertNotaFromParsed` moravam neste arquivo. Foram EXTRAÍDAS (mesmo
+// corpo, mesmos status de retorno) quando o import de arquivo do Fisco Fácil passou a gravar NF-e:
+// duas implementações da mesma gravação foi exatamente o defeito que somou faturamento em dobro na
+// NFS-e (`apps/api/CLAUDE.md`, "UMA ingestão só"). Aqui ficou só o que é da CAPTURA.
 
 /**
  * Aplica evento (cancelamento etc) atualizando statusEfetivo da nota correspondente.
@@ -453,7 +373,7 @@ export async function syncDfeForCompany({ portalClientId, env = "prod" }) {
           totalDocs++;
 
           if (parsed.type === "nfe_summary" || parsed.type === "nfe_full") {
-            const r = await upsertNotaFromParsed(tx, {
+            const r = await upsertNfeFromParsed(tx, {
               portalClientId, parsed: parsed.parsed, items: parsed.items,
             });
             if (r.status === "pendencia_criada") byType.pendencias++;
