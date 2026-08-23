@@ -60,9 +60,18 @@ function Fluxo({ dados, aoAbrirDia }) {
   const hoje = diaDeHoje();
 
   return (
-    /* ⚠ A ROLAGEM É DESTA TABELA, e o motivo é a página: 31 linhas empurrariam o conteúdo REAL
-       abaixo dela (os três cards do mês e "Próximos vencimentos") para ~1.200px fora da dobra. */
-    <div className="table-wrap table-wrap--alto">
+    /* ⚠ A TABELA MOSTRA O MÊS INTEIRO — sem rolagem própria, por pedido do dono (23/08/2026):
+       *"espaço abaixo o suficiente para que não precise rolar os dias"*.
+
+       ⚠ Ela TEVE rolagem interna (`.table-wrap--alto`, com `thead`/`tfoot` grudados) enquanto este
+       bloco era o PRIMEIRO da página — ali os 31 dias empurravam os três cards e "Próximos
+       vencimentos" para ~1.200px fora da dobra. O bloco desceu para o fim (ver `PainelPage`), o
+       motivo caiu, e a rolagem saiu junto. ⚠ Se um dia ele voltar a subir, o problema volta com
+       ele: a rolagem era conserto de ORDEM, não de tabela.
+
+       ⚠ O `overflow-x` do `.table-wrap` FICA: em 375px a tabela (mínimo de 480px) tem de rolar
+       DENTRO dela, senão a página inteira rola para o lado. */
+    <div className="table-wrap">
       <table className="table table--fluxo">
         <thead>
           <tr>

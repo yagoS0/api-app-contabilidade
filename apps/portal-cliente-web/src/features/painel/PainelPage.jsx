@@ -119,10 +119,6 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
         </div>
       </div>
 
-      {/* ⚠ O BLOCO DE DEMONSTRAÇÃO VEM PRIMEIRO — é a tela que o dono pediu como padrão — e é o
-          único desta página que não fala da empresa. Tudo abaixo dele é real. */}
-      <BlocoDeDemonstracao companyId={companyId} competencia={competencia} />
-
       <AlertaErro
         erro={erro}
         padrao="Não foi possível carregar o resumo do mês."
@@ -237,6 +233,19 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
           </div>
         )}
       </div>
+
+      {/* ⚠⚠ O BLOCO DE DEMONSTRAÇÃO VEM POR ÚLTIMO — e ele veio PRIMEIRO até 23/08/2026. Pedido do
+          dono: *"coloque próximos vencimentos acima da tabela do fluxo"*.
+
+          ⚠ A troca é o que SOLTOU A ROLAGEM da tabela. Enquanto o bloco era o primeiro, os 31 dias
+          empurravam o conteúdo REAL (os três cards e os vencimentos) para cerca de 1.200px abaixo
+          da dobra, e a tabela precisava de rolagem própria para não fazer isso. Com tudo o que é
+          real acima dela, a tabela pôde mostrar o mês inteiro — que foi a segunda metade do pedido:
+          *"espaço abaixo o suficiente para que não precise rolar os dias"*.
+
+          ⚠ E a fronteira continua nítida: tudo ACIMA deste bloco é dado da empresa. Ele é o único
+          que não fala dela, e carrega o selo dizendo isso. */}
+      <BlocoDeDemonstracao companyId={companyId} competencia={competencia} />
     </>
   );
 }

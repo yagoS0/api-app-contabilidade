@@ -235,9 +235,21 @@ duas formas para a mesma tela divergem na primeira correção.
 - ⚠ **Sem a faixa de cor do saldo do print.** Só o negativo em vermelho: verde aqui significa
   CONCLUÍDO e âmbar permanente é proibido, e uma banda por faixa seria uma afirmação nossa sobre a
   saúde financeira da empresa, com limites que ninguém definiu.
-- ⚠ A tabela tem **rolagem própria** (`.table-wrap--alto`, `thead`/`tfoot` grudados): 31 linhas
-  empurrariam os três cards REAIS e "Próximos vencimentos" para ~1.200px fora da dobra. Conferido no
-  navegador — os dois grudam.
+- ⚠⚠ **A ORDEM DA PÁGINA MUDOU, E ELA É QUEM RESOLVE A ROLAGEM** (dono, 23/08/2026: *"coloque
+  próximos vencimentos acima da tabela do fluxo, e coloque espaço abaixo o suficiente para que não
+  precise rolar os dias"*). Hoje: `Início` → os três cards → **Próximos vencimentos** → o bloco de
+  demonstração, **por último**.
+  - ⚠ Enquanto o bloco era o PRIMEIRO, os 31 dias empurravam o conteúdo real para ~1.200px fora da
+    dobra, e a tabela precisou de rolagem interna (`.table-wrap--alto`, com `thead`/`tfoot`
+    grudados) para não fazer isso. Descido o bloco, o motivo caiu e a regra **saiu do CSS** em vez
+    de virar código morto que parece fazer alguma coisa.
+  - ⚠ **Se o bloco voltar a subir, o problema volta com ele** — a rolagem era conserto de ORDEM,
+    não de tabela. E `position: sticky` dentro de um `.table-wrap` que não rola verticalmente é
+    **inerte**: não gruda, não avisa, e ninguém percebe.
+  - ⚠ O `overflow-x` do `.table-wrap` **fica**: em 375px a tabela (mínimo de 480px) rola DENTRO
+    dela, senão a página inteira rola para o lado.
+  - ⚠ A fronteira continua nítida: tudo **acima** do bloco é dado da empresa; ele é o único que não
+    fala dela, e é o que carrega o selo.
 - ⚠ O `tfoot` da coluna de saldo **não é a soma da coluna** (somar saldo acumulado não significa
   nada): é o saldo no fim do mês, e o `title` diz isso.
 - ⚠ `diasDoMes` é o **primeiro gerador de dias do app** — e é por aritmética de string, nunca

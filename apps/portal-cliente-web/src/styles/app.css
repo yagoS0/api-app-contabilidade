@@ -283,13 +283,12 @@ label > input, label > select { margin-top: 4px; color: var(--text); }
 .table--fluxo { min-width: 480px; }
 
 /* --- O fluxo de caixa DIÁRIO (23/08/2026) ---------------------------------
-   ⚠ A ROLAGEM VERTICAL É DESTA TABELA, e o motivo é a PÁGINA: 31 linhas empurrariam os três cards
-   REAIS do mês e "Próximos vencimentos" para cerca de 1.200px abaixo da dobra. O cabeçalho e o
-   rodapé grudam, senão rolar 31 linhas perde de vista tanto o nome da coluna quanto o total. */
-.table-wrap--alto { max-height: min(60vh, 620px); overflow-y: auto; }
-.table-wrap--alto thead th { position: sticky; top: 0; z-index: 1; }
-.table-wrap--alto tfoot th,
-.table-wrap--alto tfoot td { position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--border); }
+   ⚠ NÃO HÁ ROLAGEM VERTICAL AQUI, e a ausência é decisão: o dono pediu *"espaço abaixo o suficiente
+   para que não precise rolar os dias"*. Houve um `.table-wrap--alto` (max-height + `thead`/`tfoot`
+   grudados) enquanto este bloco era o PRIMEIRO da página; ele desceu para o fim, o motivo caiu e a
+   regra saiu junto em vez de virar CSS morto que parece fazer alguma coisa.
+   ⚠ Não devolva o `sticky` sem devolver o contêiner de rolagem: `position: sticky` dentro de um
+   `.table-wrap` que não rola verticalmente é inerte — não gruda, não avisa, e ninguém percebe. */
 
 /* Dia sem movimento sai esmaecido — é o que o print do dono faz, e é o que deixa o olho pular
    direto para as linhas que têm alguma coisa. ⚠ O NÚMERO DO DIA não esmaece: ele é a âncora de
