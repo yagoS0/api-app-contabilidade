@@ -379,9 +379,19 @@ Ela **nunca vira zero e nunca some**. Hoje ela carrega R$ 321.822,26 de **receit
    **Proposta:** colapsar o nível **só** quando ele tem **exatamente um filho** e o nome é **idêntico**,
    e **dizer que colapsou** (o código completo do nível colapsado continua visível no detalhe). Nunca
    colapsar por semelhança de nome, nunca por profundidade.
-2. ⚠ **`41104 DESPESAS FINANCEIRAS` vive dentro de `411 DESPESAS ADMINISTRATIVAS`.** Um DRE gerencial
-   normalmente separa "resultado financeiro" das despesas administrativas — mas fazer isso é
-   **reordenar** a árvore, não lê-la. **Pergunta para o dono** (§4).
+2. ✅ **`41104 DESPESAS FINANCEIRAS` vive dentro de `411 DESPESAS ADMINISTRATIVAS` — e SAI de lá no
+   DRE. Decisão do dono, 21/08/2026: "sim".** Junto com `312 RECEITAS FINANCEIRAS`, as duas formam um
+   bloco **RESULTADO FINANCEIRO** próprio, fora do operacional.
+   ⚠⚠ **Isto é a ÚNICA reordenação autorizada da árvore, e ela é do DRE — NÃO do plano de contas.**
+   O plano fica exatamente como está: nenhuma conta muda de pai, nenhum `codigoCompleto` é reescrito,
+   nenhuma migration. O que existe é um **remanejamento de exibição**, declarado no modelo do DRE.
+   ⚠ **A consequência tem de aparecer:** puxar `41104` para fora faz o subtotal de
+   `411 DESPESAS ADMINISTRATIVAS` no DRE **ficar menor que a soma das filhas dele no plano**. Quem
+   conferir o DRE contra o razão vai bater nessa diferença — então o bloco administrativo **diz, na
+   tela, que as financeiras foram remanejadas**, e o detalhe leva ao mesmo lugar. Diferença silenciosa
+   entre o DRE e o razão é pior que a árvore torta que ela conserta.
+   ⚠ **Nenhuma outra conta é remanejada por analogia.** Esta saiu por decisão nomeada; qualquer outra
+   exige outra decisão.
 3. ⚠ **`41 DESPESAS OPERACIONAIS` tem um filho só, `411 DESPESAS ADMINISTRATIVAS`, com nome
    diferente.** Não cai na regra do item 1 (nomes diferentes) e continua como um nível que não separa
    nada. Fica, e aparece — mudar isso é mexer no plano de contas, que é de outra sessão e do dono.
@@ -476,12 +486,35 @@ total carrega quantos reais dele são previstos.
 
 ---
 
+## 3.9 As duas decisões de 21/08/2026 que destravaram o desenho
+
+O dono respondeu **"sim e sim"** às duas perguntas que travavam DRE e fluxo de caixa:
+
+| pergunta | resposta | onde virou código |
+|---|---|---|
+| APLICACOES DE LIQUIDEZ IMEDIATA entram no fluxo de caixa? | **sim** | `accounting/lib/disponibilidades.js` → `CLASSES_DO_FLUXO_DE_CAIXA`, `entraNoFluxoDeCaixa`, `contasDoFluxoDeCaixa` |
+| Despesas financeiras viram bloco próprio no DRE? | **sim** | modelo do DRE (§3, item 2) — remanejamento de EXIBIÇÃO |
+
+⚠⚠ **A primeira virou constante, não comentário**, e a razão é que ela é uma decisão de contador que
+o código passou a afirmar. `CLASSES_DO_FLUXO_DE_CAIXA` lista as três classes explicitamente.
+**Não a reescreva como `!== NAO_DISPONIVEL`**: assim `DISPONIVEL_NAO_CLASSIFICADO` e `INDETERMINADO`
+entrariam junto — e as duas significam *"não sabemos o que é esta conta"*. Somar o desconhecido ao
+caixa é o defeito que o módulo existe para impedir. Travado em
+`lib/__tests__/fluxoDeCaixaClasses.test.js`, com dois casos que ficam vermelhos se alguém
+"simplificar" assim.
+
+⚠ E `entraNoFluxoDeCaixa` respondendo `false` quer dizer **"não somo"**, nunca **"não é caixa"**.
+`contasDoFluxoDeCaixa` devolve `naoDecididas` no MESMO retorno de propósito: uma função que
+devolvesse só a lista boa deixaria o consumidor livre para nunca perguntar pelo resto.
+
+---
+
 ## 4. O que ficou para o dono (perguntas, com o contexto)
 
-1. **Despesas financeiras dentro de administrativas.** No plano, `41104 DESPESAS FINANCEIRAS` é filha
-   de `411 DESPESAS ADMINISTRATIVAS`. Num DRE gerencial, juros e tarifas normalmente aparecem em
-   "resultado financeiro", separados do operacional. **Puxo `41104` (e `312 RECEITAS FINANCEIRAS`)
-   para um bloco financeiro próprio no DRE, ou deixo a árvore exatamente como o plano a desenha?**
+1. ✅ **RESPONDIDA em 21/08/2026 — "sim".** Despesas financeiras saem de dentro de administrativas e,
+   com `312 RECEITAS FINANCEIRAS`, formam um bloco **RESULTADO FINANCEIRO** no DRE.
+   ⚠ Reordenação **de exibição**: o plano de contas não é tocado. Ver §3, item 2, para a consequência
+   que precisa aparecer na tela (o subtotal administrativo do DRE deixa de bater com o do razão).
    Medido: SINTROPIA R$ 2.878,63 e ERISANGELA R$ 2.906,62 em `41104` no período.
 2. **CDA MARKETING: extrato com `receitaBruta` = 0,00, DAS > 0 e declaração transmitida, contra R$ 12
    mil a R$ 35 mil de notas autorizadas, em 5 competências.** A hipótese é que a receita dela seja

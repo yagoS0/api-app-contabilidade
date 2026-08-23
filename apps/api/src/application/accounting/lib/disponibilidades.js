@@ -165,6 +165,60 @@ export function separarDisponibilidades(contas) {
 }
 
 /**
+ * AS CLASSES QUE ENTRAM NO FLUXO DE CAIXA — decisão do dono (contador), 21/08/2026.
+ *
+ * ⚠⚠ ESTA CONSTANTE É A DECISÃO, E É POR ISSO QUE ELA EXISTE. O módulo acima SEPARA (`CAIXA`,
+ * `BANCOS`, `APLICACOES`); ele não decide o que é dinheiro para efeito de demonstrativo — isso é
+ * chamada de contador, não de programador, e ficou explicitamente em aberto até hoje.
+ *
+ * A pergunta feita foi: *"APLICACOES DE LIQUIDEZ IMEDIATA entram no fluxo de caixa?"*. Resposta do
+ * dono: **sim**. É coerente com a norma (aplicação de liquidez imediata é EQUIVALENTE DE CAIXA),
+ * mas o que autoriza o código a afirmar isso é a decisão dele, não a nossa leitura da norma.
+ *
+ * ⚠ NÃO TRANSFORME ISTO EM `!== NAO_DISPONIVEL`. Escrito assim, `DISPONIVEL_NAO_CLASSIFICADO` e
+ * `INDETERMINADO` entrariam JUNTO — e as duas significam *"não sabemos o que é esta conta"*. Somar
+ * o desconhecido ao caixa é exatamente o defeito que este módulo existe para impedir: elas seguem
+ * NOMEADAS, para o contador decidir, e nunca viram saldo em silêncio.
+ */
+export const CLASSES_DO_FLUXO_DE_CAIXA = Object.freeze([
+  CLASSE.CAIXA,
+  CLASSE.BANCOS,
+  CLASSE.APLICACOES,
+]);
+
+/**
+ * Esta conta entra no fluxo de caixa?
+ *
+ * ⚠ Responde `false` também para o que NÃO SE SABE. Isso é deliberado e é o oposto de um veredito:
+ * quem monta o demonstrativo tem de ler `separarDisponibilidades` e mostrar `indeterminadas` e
+ * `disponiveisNaoClassificadas` na tela. Um `false` daqui quer dizer *"não somo"*, nunca
+ * *"não é caixa"* — e a diferença é o que separa um total honesto de um total plausível.
+ */
+export function entraNoFluxoDeCaixa(conta) {
+  return CLASSES_DO_FLUXO_DE_CAIXA.includes(classificarDisponibilidade(conta));
+}
+
+/**
+ * As contas do fluxo de caixa, mais o que ficou de fora SEM ter sido decidido.
+ *
+ * ⚠ Devolve `naoDecididas` no MESMO retorno, de propósito: uma função que devolvesse só a lista boa
+ * deixaria o consumidor livre para nunca perguntar pelo resto. Aqui ele recebe as duas e tem de
+ * escolher o que faz com a segunda.
+ */
+export function contasDoFluxoDeCaixa(contas) {
+  const separado = separarDisponibilidades(contas);
+  return {
+    contas: [...separado.caixa, ...separado.bancos, ...separado.aplicacoes],
+    naoDecididas: [...separado.disponiveisNaoClassificadas, ...separado.indeterminadas],
+    porClasse: {
+      caixa: separado.caixa,
+      bancos: separado.bancos,
+      aplicacoes: separado.aplicacoes,
+    },
+  };
+}
+
+/**
  * TRIPWIRE. Confere se as contas âncora ainda têm o nome que foi medido em 21/08/2026.
  *
  * ⚠ Não classifica e não corrige nada: devolve a divergência para quem chama decidir. Existe porque
