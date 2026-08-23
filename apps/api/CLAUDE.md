@@ -1700,6 +1700,88 @@ esconderia nota legítima (o erro oposto, igualmente caro).
 não é nem prestadora nem tomadora, marcando as **EMIT** (essas afetariam faturamento e apuração).
 Só leitura — não apaga nada, porque nota fiscal não volta e a decisão é do contador.
 
+## ⚠⚠ NF-e DE VENDA ENTRA POR UPLOAD — não há, e não haverá, integração (23/08/2026)
+
+> Pedido do dono: *"quero consultar as notas que ela [VAGALO] emitiu, mas não consigo"*.
+
+**A resposta é normativa, e está PROVADA — não é limitação nossa.**
+
+**NT 2014.002, §3** (PDF oficial, lido; a URL entra em loop de redirecionamento sem cookie jar —
+use `curl -c/-b`):
+
+> *"Este serviço permite que um ator da NF-e tenha acesso aos documentos fiscais eletrônicos (DF-e)
+> e informações resumidas **que não tenham sido gerados por ele** e que sejam de seu interesse."*
+
+E a **tabela normativa** da mesma página, coluna "Emitente":
+
+| documento | Emitente | Destinatário |
+|---|---|---|
+| **NF-e** | **Não** | Sim |
+| **Resumo de NF-e** | **Não** | Sim |
+
+⚠ **E a consulta por chave também não salva** (§3.7): *"Para o emitente a NF-e **não** será
+disponibilizada nesta consulta."*
+
+⚠ **Manual NF-e da SEFAZ-RJ, item 1.15** — fecha o assunto: *"A SEFAZ **não presta esse tipo de
+suporte** (envio de XML ou chave de acesso ou **disponibilização de relatório de emissões por
+período**), tendo em vista a obrigação do contribuinte emitente de (…) **manter o arquivo XML**"*
+(base legal: cláusula décima do Ajuste SINIEF 07/05).
+
+**Medido:** 47 NF-e na base, **100% `papel: "DEST"`, ZERO `EMIT`**. Isso não é defeito de captura —
+é o desenho do serviço.
+
+### As alternativas, todas medidas e todas descartadas
+
+| candidato | veredito |
+|---|---|
+| `NFeDistribuicaoDFe` (distNSU/consNSU/consChNFe) | não serve ao emitente — provado acima |
+| `NfeDownloadNF` | desativado em 2017, substituído pela DistribuicaoDFe |
+| `NfeConsultaProtocolo` | devolve situação + protocolo, **não o XML** |
+| `arquivoXMLNFe` (BT 2018/001) | devolve XML por chave, mas é *"de uso **exclusivo das SEFAZ e do Ambiente Nacional**"* |
+| **SERPRO Consulta NF-e** | ⚠ só `GET /{chave}`. Enumerados **todos** os paths do swagger: nada por CNPJ, período ou NSU. **Não descobre**, e descoberta é o problema. E **não é o Integra Contador** que já usamos — contrato à parte (o catálogo do Integra tem **zero** ocorrências de NF-e) |
+| automatizar o **Fisco Fácil** | ver abaixo |
+
+### ⚠⚠ Por que NÃO automatizar o Fisco Fácil — e o argumento decisivo é de arquitetura
+
+O manual oficial do Fisco Fácil documenta a extração **tela por tela, botão por botão**, com 12
+perguntas dedicadas: **zero menções a API ou web service**. Some-se a isso que a SEFAZ-RJ
+**bloqueia por reputação de IP** os serviços com sigilo fiscal (página oficial dedicada) — robô em
+datacenter cairia nisso e **derrubaria o acesso legítimo junto**; e que o Portal DFe usa recaptcha.
+
+⚠⚠ **Mas o que encerra não é isso: o Fisco Fácil entrega um ZIP de XMLs.** Automatizar o portal
+automatizaria **o clique de baixar** — alguém ainda teria de ingerir o ZIP. **O import é a
+fundação, não a alternativa.** Se um dia houver API, ela devolverá XML, e o import já a recebe.
+
+### A porta: `POST /clients/:clientId/invoices/import/nfe`
+
+Regra em `application/notas/importXml/` (`zipLeitura` · `loteNfe` · `ImportNfeLoteService`), com
+`application/notas/ingestaoNfe.js` como ingestão única.
+
+- ⚠⚠ **O `papel` NÃO TEM DEFAULT, e é a razão de existir da entrega.** Em `DfeParser.js` o fallback
+  dos **dois** ramos era `"DEST"` — se o import o reaproveitasse, **a nota de venda entraria
+  rotulada como compra e o problema continuaria idêntico**. O papel sai da comparação
+  `emit/CNPJ` × CNPJ da empresa, e **não havendo prova, não se inventa**.
+- ⚠ **Sem CNPJ da empresa o lote inteiro RECUSA (422).** O CNPJ é o único jeito de MEDIR o papel.
+- ⚠ **ZIP, não arquivo solto**, com `diskStorage` e leitura por stream (uma entrada por vez).
+  `memoryStorage` carregaria o lote inteiro na RAM antes de a rota começar. O import de **NFS-e**
+  (50 × 15 MB, memória) **não serve** de molde para o upload — só para a ingestão.
+- ⚠ **Evento e outro modelo NÃO derrubam o lote** — saem contados e nomeados. NFC-e (**modelo 65**)
+  é venda também e vem junto no varejo: sai contada, com o modelo no motivo, para o dono decidir.
+- ⚠ **`resnfe` ESTÁ em `RAIZES_NFE`, e a ausência dele era defeito**: o resumo caía em
+  `OUTRO_DOCUMENTO` ("não é nota fiscal") e o ramo `RESUMO_SEM_TITULARIDADE` — que existe para
+  **não presumir `DEST`** num resumo de emitente que não é a empresa — ficava **inalcançável**.
+- ⚠ **Lote da filial subido na matriz** sai `outro_estabelecimento`, **não** `nota_nao_pertence` —
+  o segundo mandaria procurar defeito onde não há. A extração **não aceita raiz de CNPJ**.
+- **O relatório é requisito:** *"importadas X · duplicadas Y · ignoradas Z"* + emitidas/recebidas.
+  ⚠ O lote pode vir **legitimamente vazio** (o portal tem o estado *"Processada sem resultado"*) e
+  sempre tem defasagem mínima de 10 dias. Sem os números, "não veio nada" e "deu erro" ficam iguais.
+
+**Cotas do portal, para quem for usar:** carência **10 dias** · **6 meses** por solicitação ·
+**5 anos** retroativo · **7 dias** para baixar · **3** solicitações sem download · não aceita raiz
+de CNPJ. (⚠ Os **90 dias** da NT valem para a distribuição automática, não para o Fisco Fácil.)
+
+⚠ **Nada neste caminho chama a SEFAZ.**
+
 ## ⚠ NFS-e: UMA ingestão só — o import de XML criava a nota de novo
 
 O import manual (`routes/portalInvoices.js`) tinha uma **segunda implementação** da persistência, e
