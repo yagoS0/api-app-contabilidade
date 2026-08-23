@@ -51,8 +51,17 @@ a { color: var(--primary); }
 /* ⚠ `.brand` NÃO É MAIS TEXTO — desde 23/08/2026 ela segura a logo (`LogoAltan`). O `flex-shrink: 0`
    é o que importa aqui: a regra `.topbar > * { min-width: 0 }` logo abaixo existe porque o nome
    longo da empresa já fez a PÁGINA INTEIRA rolar para o lado em 375px, e sem o `flex-shrink: 0` a
-   mesma regra passaria a espremer a marca em vez do nome. */
-.topbar .brand { display: flex; align-items: center; flex-shrink: 0; }
+   mesma regra passaria a espremer a marca em vez do nome.
+   ⚠ E ela virou um `<a>` para o início (dono, 23/08/2026), então precisa do reset de link: sem
+   `color: inherit` o sol herdaria o azul de `--primary` do `a` global, e sem `text-decoration: none`
+   sairia com um sublinhado embaixo do desenho. O alvo tem folga própria porque a marca sozinha é
+   pequena — 26px de altura não é área de clique. */
+.topbar .brand {
+  display: flex; align-items: center; flex-shrink: 0;
+  color: inherit; text-decoration: none;
+  padding: 4px 8px; margin-left: -8px; border-radius: var(--radius);
+}
+.topbar .brand:hover { background: var(--neutral-surface); }
 .topbar .empresa { min-width: 0; }
 .topbar .empresa-nome { font-weight: 600; font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar .empresa-cnpj { color: var(--muted); font-size: .8rem; }

@@ -13,7 +13,7 @@
 // antigo podia ter sobrado num `title`, num `aria-label` ou numa terceira tela que eu não abri.
 
 import { StrictMode } from "react";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { api } from "../../api";
 import { LoginPage } from "../../features/auth/LoginPage";
 import { AppShell } from "../../features/shell/AppShell";
@@ -48,6 +48,19 @@ afterEach(() => {
   window.location.hash = "";
   jest.restoreAllMocks();
 });
+
+async function abrirCasca() {
+  render(<StrictMode><AppShell user={{ defaultClientId: "pc-001" }} /></StrictMode>);
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+}
+
+/** ⚠ O flush precisa passar por uma TAREFA: o `useRota` escuta `hashchange`, que o jsdom entrega
+ *  numa tarefa — com microtarefas só, a rota trocaria DEPOIS da asserção. */
+async function irPara(aba) {
+  fireEvent.click(screen.getByRole("link", { name: aba }));
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+}
 
 describe("o componente", () => {
   it("⚠ é um gráfico COM NOME — sem isto o portal fica mudo para leitor de tela", () => {
@@ -103,12 +116,82 @@ describe("⚠⚠ o texto da marca SAIU da tela, e a logo ficou no lugar", () => 
   });
 
   it("na BARRA DO TOPO, depois de logado", async () => {
-    render(<StrictMode><AppShell user={{ defaultClientId: "pc-001" }} /></StrictMode>);
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    await abrirCasca();
 
     expect(screen.getByRole("img", { name: NOME_DA_MARCA })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/Portal do Cliente/i);
     // E a marca continua sendo o primeiro item da barra, antes da empresa.
     expect(document.querySelector(".topbar .brand svg")).toBeTruthy();
+  });
+});
+
+describe("⚠⚠ na barra do topo a marca é SÓ O SOL — e ela volta ao início", () => {
+  // Pedido do dono, 23/08/2026: *"tire a 'Altan contabilidade' e deixe apenas o Sol no canto
+  // superior, e ao clicar volta ao início"*.
+
+  test("⚠ o letreiro não é RENDERIZADO — não basta escondê-lo", async () => {
+    // Um `<text>` invisível continuaria no `textContent` e no cálculo do nome acessível: a marca
+    // "sem letras" ainda seria lida como tendo letras.
+    await abrirCasca();
+    const marca = document.querySelector(".topbar .brand svg");
+    expect(marca.querySelectorAll("text")).toHaveLength(0);
+    expect(document.querySelector(".topbar").textContent).not.toMatch(/CONTABILIDADE/);
+  });
+
+  test("⚠ mas o desenho é o MESMO — sol e horizonte continuam lá", async () => {
+    // A variante recorta a janela; ela não redesenha nem duplica a arte.
+    await abrirCasca();
+    const marca = document.querySelector(".topbar .brand svg");
+    expect(marca.querySelector("path")).toBeTruthy();
+    expect(marca.querySelector("line")).toBeTruthy();
+  });
+
+  test("é um `<a href=\"#/home\">`, e o clique normal é SPA", async () => {
+    await abrirCasca();
+    const marca = screen.getByRole("link", { name: /ir para o in[ií]cio/i });
+    expect(marca.getAttribute("href")).toBe("#/home");
+    // `fireEvent.click` devolve `false` quando algum handler chamou `preventDefault`.
+    expect(fireEvent.click(marca)).toBe(false);
+  });
+
+  test("⚠⚠ clicando nela de OUTRA aba, a tela volta para o Início", async () => {
+    await abrirCasca();
+    await irPara("Guias");
+    expect(document.querySelector("#competencia-home")).toBeNull();
+
+    fireEvent.click(screen.getByRole("link", { name: /ir para o in[ií]cio/i }));
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    // O seletor do Painel só existe na tela de Início.
+    expect(document.querySelector("#competencia-home")).toBeTruthy();
+  });
+
+  test("⚠ Ctrl/Cmd+clique NÃO é interceptado — é o navegador que assume", async () => {
+    // Mesma regra das abas: um `onClick` que sempre cancelasse mataria abrir em nova guia.
+    await abrirCasca();
+    const marca = screen.getByRole("link", { name: /ir para o in[ií]cio/i });
+    expect(fireEvent.click(marca, { ctrlKey: true })).toBe(true);
+    expect(fireEvent.click(marca, { metaKey: true })).toBe(true);
+  });
+
+  test("⚠ o nome acessível diz a MARCA e o DESTINO — e não repete o rótulo da aba", async () => {
+    // Sem isto o nome viria do `<title>` do SVG e seria só "Altan Contabilidade": quem usa leitor
+    // de tela ouviria uma marca sem saber que ali há um caminho de volta. E dois links chamados
+    // "Início" fariam a navegação por lista de links virar adivinhação.
+    await abrirCasca();
+    const links = screen.getAllByRole("link").map((a) => a.getAttribute("aria-label") || a.textContent);
+    expect(links.filter((n) => n === "Início")).toHaveLength(1);
+    expect(links).toContain("Altan Contabilidade — ir para o início");
+  });
+
+  test("⚠⚠ e o letreiro continua INTEIRO no login — é lá que a marca se apresenta", async () => {
+    // A guarda existe porque "tirar o letreiro" é fácil de aplicar demais: some da topbar E do
+    // login, e aí o portal deixa de dizer de quem ele é.
+    render(<StrictMode><LoginPage /></StrictMode>);
+    await act(async () => {});
+    const marca = document.querySelector(".login-marca svg");
+    expect([...marca.querySelectorAll("text")].map((t) => t.textContent))
+      .toEqual(["ALTAN", "CONTABILIDADE"]);
   });
 });

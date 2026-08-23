@@ -32,8 +32,21 @@
 //      em SVG sobra DEPOIS da última letra: a tinta vai até `x = 359,8`.
 // Daí `x: 30` e `largura: 340` (borda direita em 370): ~8 unidades de folga de cada lado, medidas
 // nas duas fontes que este letreiro pode ter. ⚠ Trocar a fonte da marca obriga a medir de novo.
-const CAIXA = { x: 30, y: 56, largura: 340, altura: 74 };
-const PROPORCAO = CAIXA.largura / CAIXA.altura; // ~4,59:1
+//
+// ⚠⚠ A SEGUNDA CAIXA É A MARCA SOZINHA — o sol e o horizonte, sem letreiro. Pedido do dono em
+// 23/08/2026 para a barra do topo do portal do cliente: *"tire a 'Altan contabilidade' e deixe
+// apenas o Sol no canto superior"*. AS COORDENADAS SÃO AS MESMAS (a arte não foi redesenhada nem
+// duplicada); o que muda é o quanto do desenho a janela mostra. A tinta aqui vai de `x 38,75` (a
+// ponta arredondada do horizonte) a `161,25`, e de `y 64` (o topo da cúpula) a `103,25` — daí
+// `30 56 140 55`, com as mesmas ~8 unidades de folga em volta.
+//
+// ⚠ E o letreiro NÃO É ESCONDIDO por CSS: ele deixa de ser RENDERIZADO. Um `<text>` invisível
+// continuaria no `textContent` e no cálculo do nome acessível — a marca "sem letras" ainda seria
+// lida como tendo letras.
+const CAIXAS = {
+  completa: { x: 30, y: 56, largura: 340, altura: 74 },  // ~4,59:1
+  marca: { x: 30, y: 56, largura: 140, altura: 55 },     // ~2,55:1
+};
 
 // ⚠ O PAR DE FUNDO CLARO, CRAVADO — é o que a impressão precisa e é a única situação em que a cor
 // NÃO pode sair do tema. O papel é branco em qualquer portal, e a tinta do portal escuro
@@ -49,19 +62,33 @@ const TINTA_DE_PAPEL = {
 };
 
 /**
- * @param {number}  altura  altura em px; a largura sai da proporção (~4,59:1)
- * @param {"papel"} [tom]   força o par de fundo claro + impressão de cor exata
- * @param {string}  [titulo] o nome acessível — é ele que os testes procuram
+ * @param {number}   altura    altura em px; a largura sai da proporção da variante
+ * @param {"completa"|"marca"} [variante]  com letreiro (padrão) ou só o sol e o horizonte
+ * @param {"papel"}  [tom]     força o par de fundo claro + impressão de cor exata
+ * @param {string}   [titulo]  o nome acessível — é ele que os testes procuram
  */
-export function LogoAltan({ altura = 32, tom, className, titulo = "Altan Contabilidade" }) {
+export function LogoAltan({
+  altura = 32,
+  variante = "completa",
+  tom,
+  className,
+  titulo = "Altan Contabilidade",
+}) {
+  // ⚠ Variante desconhecida cai na COMPLETA, nunca num SVG vazio: um erro de digitação na prop
+  // renderizaria uma caixa em branco no lugar da marca, e ausência é o que ninguém repara.
+  const caixa = Object.prototype.hasOwnProperty.call(CAIXAS, variante)
+    ? CAIXAS[variante]
+    : CAIXAS.completa;
+  const comLetreiro = caixa === CAIXAS.completa;
+
   return (
     <svg
       className={className}
       role="img"
       focusable="false"
       height={altura}
-      width={Math.round(altura * PROPORCAO)}
-      viewBox={`${CAIXA.x} ${CAIXA.y} ${CAIXA.largura} ${CAIXA.altura}`}
+      width={Math.round((altura * caixa.largura) / caixa.altura)}
+      viewBox={`${caixa.x} ${caixa.y} ${caixa.largura} ${caixa.altura}`}
       xmlns="http://www.w3.org/2000/svg"
       style={tom === "papel" ? TINTA_DE_PAPEL : undefined}
     >
@@ -79,28 +106,32 @@ export function LogoAltan({ altura = 32, tom, className, titulo = "Altan Contabi
         strokeWidth="2.5"
         strokeLinecap="round"
       />
-      <text
-        x="196"
-        y="92"
-        fontFamily="var(--font-marca)"
-        fontWeight="500"
-        fontSize="38"
-        letterSpacing="9"
-        fill="var(--logo-tinta)"
-      >
-        ALTAN
-      </text>
-      <text
-        x="198"
-        y="122"
-        fontFamily="var(--font-marca)"
-        fontWeight="400"
-        fontSize="12.5"
-        letterSpacing="5.2"
-        fill="var(--logo-subtitulo)"
-      >
-        CONTABILIDADE
-      </text>
+      {comLetreiro ? (
+        <>
+          <text
+            x="196"
+            y="92"
+            fontFamily="var(--font-marca)"
+            fontWeight="500"
+            fontSize="38"
+            letterSpacing="9"
+            fill="var(--logo-tinta)"
+          >
+            ALTAN
+          </text>
+          <text
+            x="198"
+            y="122"
+            fontFamily="var(--font-marca)"
+            fontWeight="400"
+            fontSize="12.5"
+            letterSpacing="5.2"
+            fill="var(--logo-subtitulo)"
+          >
+            CONTABILIDADE
+          </text>
+        </>
+      ) : null}
     </svg>
   );
 }

@@ -173,11 +173,35 @@ export function AppShell({ user }) {
   return (
     <div className="app">
       <header className="topbar">
-        {/* ⚠ Era `<span className="brand">Portal do Cliente</span>`. O texto saiu por pedido do
-            dono (23/08/2026); a classe FICOU, porque é ela que segura o `flex-shrink: 0`. */}
-        <span className="brand">
-          <LogoAltan altura={26} />
-        </span>
+        {/* ⚠ A MARCA AQUI É SÓ O SOL, E ELA VOLTA AO INÍCIO — pedido do dono, 23/08/2026:
+            *"tire a 'Altan contabilidade' e deixe apenas o Sol no canto superior, e ao clicar volta
+            ao início"*. O letreiro continua inteiro na tela de LOGIN, que é onde a marca se
+            apresenta; aqui dentro ela já foi apresentada e o que resta é a âncora.
+
+            ⚠⚠ É `<a href="#/home">`, com o MESMO tratamento de clique das abas — não um `<button>`
+            e não um `<div onClick>`. Daí saem de graça Ctrl/Cmd+clique em nova guia, clique do
+            meio, "abrir em nova aba", a URL no hover e "copiar endereço do link". O clique normal
+            continua SPA (`preventDefault` + `irPara`), senão o `emissaoAberta` se perde — ele é
+            estado da casca e o hash não o carrega.
+
+            ⚠ O `aria-label` diz as DUAS coisas (que marca é, e para onde vai). Sem ele, o nome
+            acessível viria do `<title>` do SVG e seria só "Altan Contabilidade": quem usa leitor de
+            tela ouviria uma marca e não saberia que ali há um caminho de volta. E ele NÃO repete o
+            rótulo "Início" da aba ao lado — dois links com o mesmo nome, um deles imagem, é o que
+            faz a navegação por lista de links virar adivinhação. */}
+        <a
+          className="brand"
+          href="#/home"
+          title="Início"
+          onClick={(event) => {
+            if (oNavegadorAssumeOClique(event)) return;
+            event.preventDefault();
+            irPara("home");
+          }}
+          aria-label="Altan Contabilidade — ir para o início"
+        >
+          <LogoAltan variante="marca" altura={26} />
+        </a>
 
         <div className="empresa">
           {empresaAtiva ? (

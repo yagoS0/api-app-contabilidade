@@ -1125,6 +1125,18 @@ o `<span class="brand">` da topbar e o `<title>` da aba (hoje `Altan Contabilida
   nativa do app. O `CLAUDE.md` manda discutir dependência nova: **foi discutido, e o dono escolheu
   carregar a Inter**. Host externo foi recusado porque este app faz zero requisição externa e o modo
   demonstração é offline. ⚠ `--font` **não mudou**: só a logo usa Inter.
+- ⚠⚠ **NA TOPBAR A MARCA É SÓ O SOL, E ELA VOLTA AO INÍCIO** (dono, 23/08/2026: *"tire a 'Altan
+  contabilidade' e deixe apenas o Sol no canto superior, e ao clicar volta ao início"*).
+  `<LogoAltan variante="marca">` recorta a janela do MESMO desenho — a arte não foi redesenhada nem
+  duplicada. ⚠ O letreiro **não é escondido por CSS: ele deixa de ser renderizado**; um `<text>`
+  invisível continuaria no `textContent` e no nome acessível, e a marca "sem letras" ainda seria
+  lida como tendo letras. ⚠ O letreiro **continua inteiro no LOGIN**, que é onde a marca se
+  apresenta — há teste guardando as duas pontas.
+  - ⚠ É `<a href="#/home">` com o MESMO tratamento de clique das abas (`oNavegadorAssumeOClique`):
+    Ctrl/Cmd+clique abre em nova guia, o clique normal continua SPA. Um `<button>` perderia as
+    cinco coisas que o `href` dá de graça.
+  - ⚠ O `aria-label` diz a marca **e** o destino, e **não repete "Início"**: dois links com o mesmo
+    nome, um deles imagem, fazem a navegação por lista de links virar adivinhação.
 - ⚠⚠ **O `<h1>`/`<span class="brand">` FICARAM, com a logo dentro.** Tirar o `<h1>` deixaria a página
   sem cabeçalho de nível 1, e quem passa a dar o nome acessível é o `<title>` do SVG — por isso o
   teste afirma `getByRole("img", { name: "Altan Contabilidade" })`, nunca a existência de um `<svg>`.
@@ -1159,8 +1171,8 @@ de outra.
 
 ## TESTES
 
-`npm test -w @contabilidade/portal-cliente-web` → **887 testes, 48 suítes, todas verdes** (medido em
-23/08/2026, depois do fluxo diário; eram 814/45 depois da marca, eram 807/44 depois da situação fiscal, 683/38 em 20/08, e 557/32 antes
+`npm test -w @contabilidade/portal-cliente-web` → **894 testes, 48 suítes, todas verdes** (medido em
+23/08/2026, depois de a marca da topbar virar só o sol; eram 814/45 depois da marca, eram 807/44 depois da situação fiscal, 683/38 em 20/08, e 557/32 antes
 do lote por planilha). Não existiam até 18/08 (`d5a91490` subiu os primeiros 101).
 **0 suíte falhando é o estado esperado.**
 
