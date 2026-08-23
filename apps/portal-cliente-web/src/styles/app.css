@@ -202,10 +202,25 @@ main.page { padding: 20px; min-width: 0; display: flex; flex-direction: column; 
 .btn-perigo:disabled { opacity: .55; }
 
 /* Os quatro campos pelos quais se reconhece uma nota, repetidos na confirmação. */
-.dados-da-nota { display: grid; gap: 6px; margin: 12px 0; padding: 12px; background: var(--bg); border-radius: var(--radius); }
+/* ⚠⚠ AS COLUNAS SÃO DECLARADAS AQUI, E O `1fr` SOZINHO NÃO É REDUNDANTE — ele é o conserto.
+   Defeito relatado pelo dono em 23/08/2026, com o modal de cancelamento na tela: "Número" e "Valor"
+   saíam com UMA LETRA POR LINHA ("1/5/8", "R/$/1/,/0/0").
+
+   A causa: a regra genérica `dl { display: grid; grid-template-columns: 1fr auto }` (bem abaixo
+   neste arquivo, escrita para a prévia da emissão) CAPTURAVA este `<dl>`. `.dados-da-nota` vencia
+   em especificidade nas propriedades que declarava — mas nunca declarou `grid-template-columns`, e
+   sem competição o valor genérico se aplicava. Os quatro pares viravam uma grade de DUAS colunas:
+   a segunda (`auto`) era comida pela razão social do tomador e a primeira (`1fr`) colapsava, com o
+   `overflow-wrap: anywhere` do `dl dd` quebrando o resto letra a letra.
+
+   ⚠ Por isso a gravidade dependia do DADO: com tomador de nome curto o mesmo bug parecia só um
+   alinhamento estranho — foi assim que ele sobreviveu desde `5bd8e464`.
+   ⚠ E o `text-align: left` também é conserto: `dl dd { text-align: right }` vinha pelo mesmo
+   caminho. Travado em `notas/__tests__/dadosDaNotaTemColunas.test.js`. */
+.dados-da-nota { display: grid; grid-template-columns: 1fr; gap: 6px; margin: 12px 0; padding: 12px; background: var(--bg); border-radius: var(--radius); }
 .dados-da-nota > div { display: flex; gap: 8px; align-items: baseline; }
 .dados-da-nota dt { min-width: 84px; color: var(--muted); font-size: .82rem; }
-.dados-da-nota dd { margin: 0; font-weight: 600; }
+.dados-da-nota dd { margin: 0; font-weight: 600; text-align: left; }
 .btn-block { width: 100%; }
 .btn[disabled] { opacity: .55; cursor: not-allowed; }
 .btn-link { border: 0; background: none; color: var(--primary); padding: 4px 6px; cursor: pointer; font: inherit; text-decoration: underline; }
@@ -257,6 +272,34 @@ label > input, label > select { margin-top: 4px; color: var(--text); }
    de propósito (número espremido se lê errado); o DRE tem duas e prefere quebrar o rótulo de linha
    a empurrar a página para fora da tela. */
 .table--fluxo { min-width: 480px; }
+
+/* --- O fluxo de caixa DIÁRIO (23/08/2026) ---------------------------------
+   ⚠ A ROLAGEM VERTICAL É DESTA TABELA, e o motivo é a PÁGINA: 31 linhas empurrariam os três cards
+   REAIS do mês e "Próximos vencimentos" para cerca de 1.200px abaixo da dobra. O cabeçalho e o
+   rodapé grudam, senão rolar 31 linhas perde de vista tanto o nome da coluna quanto o total. */
+.table-wrap--alto { max-height: min(60vh, 620px); overflow-y: auto; }
+.table-wrap--alto thead th { position: sticky; top: 0; z-index: 1; }
+.table-wrap--alto tfoot th,
+.table-wrap--alto tfoot td { position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--border); }
+
+/* Dia sem movimento sai esmaecido — é o que o print do dono faz, e é o que deixa o olho pular
+   direto para as linhas que têm alguma coisa. ⚠ O NÚMERO DO DIA não esmaece: ele é a âncora de
+   leitura da linha, e some junto com os zeros se receber a mesma cor. */
+.table--fluxo tr[data-vazio="sim"] td { color: var(--muted); }
+/* O dia de hoje — só aparece quando a competência é o mês corrente. */
+.table--fluxo tr[data-hoje="sim"] > th { background: var(--primary-surface); }
+
+/* ⚠ A LINHA INTEIRA É CLICÁVEL (a primeira deste app) — ver o comentário no `BlocoDeDemonstracao`.
+   O cursor é o que promete isso; o `<button>` do dia é quem entrega no teclado. */
+.table--fluxo tbody tr { cursor: pointer; }
+.table--fluxo tbody tr:focus-within { background: var(--primary-surface); }
+.dia-botao {
+  font: inherit; font-weight: 600; color: inherit; cursor: pointer;
+  background: none; border: 0; border-radius: var(--radius);
+  /* 44px de alvo: é o mínimo de toque, e a célula do dia é estreita. */
+  min-width: 40px; min-height: 30px; padding: 2px 6px; margin: -2px -6px;
+}
+.dia-botao:hover { background: var(--neutral-surface); }
 .table--dre { min-width: 0; }
 
 /* --- Nota emitida por nós, ainda não confirmada pelo ADN ------------------- */
@@ -429,6 +472,42 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 .modal-backdrop { position: fixed; inset: 0; background: rgba(28,33,40,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
 .modal { background: var(--surface); border-radius: var(--radius); padding: 20px; width: min(520px, 100%); max-height: 90vh; overflow-y: auto; box-shadow: 0 18px 48px rgba(28,33,40,.25); }
 .modal footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: var(--gap); }
+
+/* --- O painel de um dia ---------------------------------------------------
+   ⚠ NÃO É UM COMPONENTE NOVO DE SOBREPOSIÇÃO: é o `.modal-backdrop` que já existe, com o
+   alinhamento trocado. Ele já é `position: fixed` e já tem `z-index: 50`.
+
+   ⚠⚠ E ELE PRECISA VIR DEPOIS DO BLOCO DO `.modal`, NÃO ANTES. Medido no navegador: com este
+   bloco lá em cima, `.modal { padding: 16px }` e `.modal { max-height: 90vh }` venciam por ordem
+   (mesma especificidade), e a gaveta saía com 343px de largura em vez de 375 e sem encostar no
+   rodapé. Não resolva isso com `!important` — resolva mantendo a ordem. */
+.modal-backdrop--lateral { align-items: stretch; justify-content: flex-end; padding: 0; }
+.painel-dia {
+  width: min(420px, 100%); max-height: 100vh; height: 100%;
+  border-radius: 0; display: flex; flex-direction: column; gap: var(--gap);
+}
+.painel-dia-topo { display: flex; align-items: center; gap: 8px; }
+.painel-dia-navegacao { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.painel-dia-navegacao h2 { margin: 0; font-size: 1rem; min-width: 11ch; text-align: center; }
+.btn-icone { padding: 4px 10px; line-height: 1.2; }
+.painel-dia-resumo { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; }
+.painel-dia-resumo > div { background: var(--bg); border-radius: var(--radius); padding: 8px 10px; }
+.painel-dia-resumo dt { color: var(--muted); font-size: .78rem; }
+/* ⚠ `text-align: left` pelo MESMO motivo do `.dados-da-nota`: a regra genérica `dl dd` alinha à
+   direita, e aqui o rótulo está EM CIMA do valor — alinhar um à esquerda e o outro à direita
+   descola os dois. Ver o bloco do `.dados-da-nota` para a armadilha inteira. */
+.painel-dia-resumo dd { margin: 2px 0 0; font-weight: 600; font-variant-numeric: tabular-nums; text-align: left; }
+.painel-dia-resumo [data-negativo="sim"] { color: var(--danger); }
+
+.lancamentos-do-dia { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.lancamentos-do-dia li {
+  display: flex; align-items: baseline; gap: var(--gap);
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.lancamentos-do-dia li:last-child { border-bottom: 0; }
+.lancamento-descricao { flex: 1; min-width: 0; }
+.lancamento-valor { font-weight: 600; white-space: nowrap; }
+.lancamentos-do-dia [data-negativo="sim"] { color: var(--danger); }
 .lista-empresas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .lista-empresas button {
   width: 100%; text-align: left; font: inherit; cursor: pointer;
@@ -473,6 +552,9 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 }
 
 @media (max-width: 560px) {
+  /* ⚠ Gaveta estreita em celular não é gaveta: o painel do dia ocupa a tela inteira. */
+  .painel-dia { width: 100%; }
+
   main.page { padding: 12px; }
   .topbar { padding: 10px 12px; }
   .page-actions { margin-left: 0; width: 100%; }

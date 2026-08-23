@@ -50,7 +50,8 @@ src/
   features/
     auth/               - Login, EsqueciSenha, RedefinirSenha
     shell/AppShell.jsx  - casca: empresa ativa, abas, e o estado que atravessa telas
-    painel/             - a tela PADRÃO: fluxo de caixa ⇄ DRE (mockados) + o resumo do mês
+    painel/             - a tela PADRÃO: fluxo de caixa DIÁRIO ⇄ DRE (mockados) + o resumo do mês
+                          `PainelDoDia.jsx` - os lançamentos de UM dia; ⚠ só leitura, sem `+`
                           ⚠ era `home/HomePage.jsx` até 21/08/2026 — foi ABSORVIDA, não trocada
     notas/              - lista + DANFSe + cancelamento + "usar como modelo"
     emitir/             - ⚠ a ÚNICA tela deste portal que pratica ato fiscal
@@ -206,6 +207,44 @@ e cairiam **por motivo certo** se o painel os perdesse.
   risco não é a tela, é ela SAIR da tela.
 - ⚠ **Fluxo ⇄ DRE são VISÕES, não rotas** — `<button>`, estado local. Inventar `#/dre` daria um hash
   que o `useRota` recusa e devolve ao padrão: o "filtro fantasma" dentro da própria tela.
+
+### ⚠⚠ O FLUXO É DIÁRIO, E O DIA ABRE (23/08/2026)
+
+> Dono, com dois prints de um app de finanças na frente: *"mostrando os dias do mês, com ação para
+> abrir o dia e ver quais foram as despesas daquele dia específico"*.
+
+Era uma tabela de **seis MESES**; virou **um mês, dia a dia** (`dia · entradas · saídas · saldo`),
+com `PainelDoDia.jsx` abrindo os lançamentos de um dia. ⚠ A forma mensal **não ficou ao lado** —
+duas formas para a mesma tela divergem na primeira correção.
+
+- ⚠⚠ **A PRIMEIRA LINHA CLICÁVEL DESTE APP**, e a decisão escrita contra ela continua valendo onde
+  foi escrita: ela é sobre a lista de NOTAS (*"o destino seria a tela que pratica ato fiscal, e
+  clique acidental ali é caro"*). Aqui o destino é um painel de LEITURA. ⚠ A `<tr>` e o `<button>`
+  do dia chamam o MESMO handler e **não há `stopPropagation`**: abrir o dia 18 duas vezes é abrir o
+  dia 18. ⚠ E `role="button"` na `<tr>` seria errado — tiraria a linha da semântica de tabela.
+- ⚠⚠ **O SELO SE REPETE DENTRO DO PAINEL.** O diálogo COBRE o bloco, e com ele o selo de lá — quem
+  lê um valor tem de ter passado por um aviso. É a mesma regra que pôs o selo no bloco e não na
+  página.
+- ⚠⚠ **NÃO HÁ `+` NEM `⋮`** — os dois estão no print do dono. Este portal **não escreve
+  contabilidade**: quem lança é o escritório, não há rota, e botão impossível é pior que ausência.
+  Travado por teste que conta os botões do painel (só Fechar, Dia anterior, Próximo dia).
+- ⚠ **O `‹ ›` não sai do mês** e DESABILITA nas bordas em vez de sumir: passar dali trocaria a
+  competência da casca em silêncio, ou mostraria um dia que não está na tabela atrás.
+- ⚠ **Os 12 meses lado a lado do print não foram replicados** — seria um segundo controle de
+  período, contra a competência única.
+- ⚠ **Sem a faixa de cor do saldo do print.** Só o negativo em vermelho: verde aqui significa
+  CONCLUÍDO e âmbar permanente é proibido, e uma banda por faixa seria uma afirmação nossa sobre a
+  saúde financeira da empresa, com limites que ninguém definiu.
+- ⚠ A tabela tem **rolagem própria** (`.table-wrap--alto`, `thead`/`tfoot` grudados): 31 linhas
+  empurrariam os três cards REAIS e "Próximos vencimentos" para ~1.200px fora da dobra. Conferido no
+  navegador — os dois grudam.
+- ⚠ O `tfoot` da coluna de saldo **não é a soma da coluna** (somar saldo acumulado não significa
+  nada): é o saldo no fim do mês, e o `title` diz isso.
+- ⚠ `diasDoMes` é o **primeiro gerador de dias do app** — e é por aritmética de string, nunca
+  `toISOString()`: às 22h de Brasília ele devolveria o dia seguinte.
+- ⚠ **`PainelDoDia` é o TERCEIRO diálogo com o mesmo miolo copiado** (`SeletorEmpresa`,
+  `ConfirmarCancelamento`). Extrair um `Dialogo` comum é a hora certa — mas migrar o
+  `ConfirmarCancelamento` mexe no fluxo de CANCELAMENTO de nota fiscal. **Próximo passo nomeado.**
 - ⚠ **A competência vem por prop, da casca.** Tela nova com mês nunca ganha
   `useState(competenciaPadrao)` — e o painel **não acrescenta um segundo controle "Competência"**:
   `getByLabelText("Competência")` explodiria com dois casamentos e derrubaria a suíte de ligação.
@@ -232,6 +271,32 @@ navegador).
   fora da lista de `data-status` renderiza **sem cor nenhuma, em silêncio** — o defeito que
   `lote/lib/__tests__/emissaoDoLote.test.js` já nomeia para as notas e que a guia não tinha.
   Uma lista copiada à mão teria o mesmo problema que ela quer resolver.
+
+## ⚠⚠ A ARMADILHA DO `<dl>` — especificidade não resolve o que não é DECLARADO
+
+Defeito relatado pelo dono em 23/08/2026, com o modal de cancelamento na tela: "Número" e "Valor"
+saíam com **uma letra por linha** (`1/5/8`, `R/$/1/,/0/0`).
+
+Não havia regra errada — havia **duas regras certas se atropelando**. `app.css` tem, desde a tela de
+emissão (`5bd8e464`), um `dl` genérico para a prévia da nota:
+
+```css
+dl    { display: grid; grid-template-columns: 1fr auto; … }
+dl dd { text-align: right; overflow-wrap: anywhere; … }
+```
+
+e o `.dados-da-nota` do modal declarava `display: grid` e `gap` — mas **nunca**
+`grid-template-columns`. **Especificidade só decide o que os dois lados declaram**: sem competição, o
+valor genérico se aplicou. Os quatro pares viraram grade de DUAS colunas, a segunda (`auto`) foi
+comida pela razão social do tomador, a primeira (`1fr`) colapsou, e o `overflow-wrap: anywhere`
+quebrou o resto letra a letra.
+
+⚠⚠ **O GATILHO ERA O DADO, e é por isso que ele sobreviveu meses**: com tomador de nome curto, o
+mesmo defeito parecia só um alinhamento estranho.
+
+⚠ **`<dl>` novo declara `grid-template-columns` E `text-align` no `dd`.** Travado por varredura da
+FONTE em `notas/__tests__/dadosDaNotaTemColunas.test.js`, que percorre todo `<dl className>` do app
+— não só o que quebrou. Experimento: tirando o conserto, 2 vermelhos.
 
 ## ⚠ O `style={{}}` — a erosão foi cortada enquanto era barata
 
@@ -1094,8 +1159,8 @@ de outra.
 
 ## TESTES
 
-`npm test -w @contabilidade/portal-cliente-web` → **814 testes, 45 suítes, todas verdes** (medido em
-23/08/2026, depois da marca; eram 807/44 depois da situação fiscal, 683/38 em 20/08, e 557/32 antes
+`npm test -w @contabilidade/portal-cliente-web` → **887 testes, 48 suítes, todas verdes** (medido em
+23/08/2026, depois do fluxo diário; eram 814/45 depois da marca, eram 807/44 depois da situação fiscal, 683/38 em 20/08, e 557/32 antes
 do lote por planilha). Não existiam até 18/08 (`d5a91490` subiu os primeiros 101).
 **0 suíte falhando é o estado esperado.**
 
