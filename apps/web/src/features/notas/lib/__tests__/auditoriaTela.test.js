@@ -6,10 +6,14 @@
 import {
   leituraDaPergunta,
   leituraDoCabecalho,
+  leituraDoForaDaConferencia,
   frasesDoAchado,
+  fraseDaViradaDeMes,
   ordenarPerguntas,
   FRASE_NAO_CONFERIVEL,
   FRASE_ESPECIE,
+  FRASE_FORA_DA_CONFERENCIA,
+  FRASE_MOTIVO_PENDENCIA,
   TOKEN,
 } from "../auditoriaTela";
 
@@ -66,7 +70,12 @@ describe("⚠ achado é PERGUNTA, não veredito — e nunca é vermelho", () => 
 
   test("nenhuma frase do vocabulário de tela é conclusiva", () => {
     const proibidas = /\berrad|\binválid|\birregular|\bincorret|\bilegal/i;
-    for (const frase of [...Object.values(FRASE_NAO_CONFERIVEL), ...Object.values(FRASE_ESPECIE)]) {
+    for (const frase of [
+      ...Object.values(FRASE_NAO_CONFERIVEL),
+      ...Object.values(FRASE_ESPECIE),
+      ...Object.values(FRASE_FORA_DA_CONFERENCIA),
+      ...Object.values(FRASE_MOTIVO_PENDENCIA),
+    ]) {
       expect(frase).not.toMatch(proibidas);
     }
   });
@@ -87,12 +96,7 @@ describe("as frases de cada achado", () => {
     expect(f.texto).toContain("310104");
   });
 
-  test("⚠ emissão fora da competência traz o DESVIO — é ele que separa virada de mês de 5 meses", () => {
-    const um = frasesDoAchado(
-      { dados: { mesDaCompetencia: "2026-07", mesDaEmissao: "2026-08", mesesDeDesvio: -1 } },
-      { id: "EMISSAO_FORA_DA_COMPETENCIA", achado: "contada em competência diferente" },
-    );
-    expect(um.texto).toContain("1 mês de diferença");
+  test("⚠ emissão fora da competência traz o DESVIO — é ele que diz o tamanho do problema", () => {
     const cinco = frasesDoAchado(
       { dados: { mesDaCompetencia: "2026-03", mesDaEmissao: "2026-08", mesesDeDesvio: -5 } },
       { id: "EMISSAO_FORA_DA_COMPETENCIA", achado: "contada em competência diferente" },
@@ -100,37 +104,64 @@ describe("as frases de cada achado", () => {
     expect(cinco.texto).toContain("5 meses de diferença");
   });
 
-  test("faixa de números pulados sai como UMA linha, com os vizinhos", () => {
-    const f = frasesDoAchado(
-      { dados: { especie: "NUMERO_PULADO", serie: "00001", de: 11, ate: 13, quantidade: 3, antes: 10, depois: 14 } },
-      { id: "NUMERACAO_DA_DPS" },
-    );
-    expect(f.titulo).toBe("Série 00001 · nº 11 a 13");
-    expect(f.texto).toContain("entre a 10 e a 14");
+  // ⚠⚠ O CADEADO DO CORTE DE 21/08/2026 no lado da tela. As frases da numeração da DPS não voltam
+  // sem norma: a E0014 (ANEXO_I, aba `RN DPS_NFS-e`, linha 148) define unicidade por QUATRO
+  // componentes, e não existe regra de numeração CONTÍNUA da DPS nas 653 regras do ANEXO_I.
+  test("⚠ o vocabulário de tela NÃO tem mais espécie de numeração da DPS", () => {
+    expect(FRASE_ESPECIE.NUMERO_PULADO).toBeUndefined();
+    expect(FRASE_ESPECIE.NUMERO_REPETIDO).toBeUndefined();
   });
 
-  test("um número só não vira faixa", () => {
-    const f = frasesDoAchado(
-      { dados: { especie: "NUMERO_PULADO", serie: "00900", de: 2, ate: 2, quantidade: 1, antes: 1, depois: 3 } },
-      { id: "NUMERACAO_DA_DPS" },
-    );
-    expect(f.titulo).toBe("Série 00900 · nº 2");
+  test("⚠ nem espécie de leitura — 'nota não lida' saiu da tela do contador (é manutenção)", () => {
+    expect(FRASE_ESPECIE.LEITURA_FALHOU).toBeUndefined();
+    expect(FRASE_ESPECIE.NUNCA_EXTRAIDA).toBeUndefined();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠ a virada de mês vira CONTAGEM — e a contagem tem de aparecer", () => {
+  // Medido: 1.727 das 1.738 divergências eram de um mês. Elas deixaram de ser linha; se também
+  // deixassem de ser NÚMERO, a pergunta passaria a esconder o que conferiu.
+  test("com viradaDeMes > 0 a frase existe e explica por que elas não estão listadas", () => {
+    const f = fraseDaViradaDeMes({ viradaDeMes: 1727 });
+    expect(f).toContain("1727 nota(s)");
+    expect(f).toContain("virada normal de mês");
+    expect(f).toContain("dois meses");
   });
 
-  test("⚠ NUNCA_EXTRAIDA diz que o extrator não passou — não que o XML não tem o campo", () => {
-    const f = frasesDoAchado(
-      { numero: "14625", dados: { especie: "NUNCA_EXTRAIDA", motivo: null } },
-      { id: "NOTA_NAO_LIDA", achado: "os campos fiscais desta nota não foram extraídos do XML" },
-    );
-    expect(f.texto).toContain("nunca foram extraídos");
+  test("sem virada de mês não se escreve '0 notas'", () => {
+    expect(fraseDaViradaDeMes({ viradaDeMes: 0 })).toBeNull();
+    expect(fraseDaViradaDeMes({})).toBeNull();
+    expect(fraseDaViradaDeMes(null)).toBeNull();
   });
 
-  test("leitura falhada traduz o motivo técnico", () => {
-    const f = frasesDoAchado(
-      { numero: "9", dados: { especie: "LEITURA_FALHOU", motivo: "NAO_E_NFSE" } },
-      { id: "NOTA_NAO_LIDA", achado: "os campos fiscais desta nota não foram extraídos do XML" },
-    );
-    expect(f.texto).toContain("não é o da NFS-e");
+  test("a frase não é veredito", () => {
+    expect(fraseDaViradaDeMes({ viradaDeMes: 3 })).not.toMatch(/errad|inválid|irregular/i);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠ as notas fora de QUALQUER conferência mensal", () => {
+  // Até 21/08/2026 elas não apareciam em lugar nenhum: a consulta filtrava por competência e `NULL`
+  // não satisfaz intervalo. A aba prometia "nada some em silêncio" enquanto sumia com elas.
+  test("com órfãs, a linha existe, é ÂMBAR e diz o motivo", () => {
+    const l = leituraDoForaDaConferencia({ motivo: "SEM_COMPETENCIA_GRAVADA", total: 4 });
+    expect(l.token).toBe(TOKEN.ATENCAO);
+    expect(l.token).not.toBe("--state-danger"); // vermelho trava fechamento; isto não trava nada
+    expect(l.resumo).toContain("4 nota(s)");
+    expect(l.resumo).toContain("não têm competência gravada");
+    // ⚠ A consequência (não entram em apuração) é o que faz o contador agir.
+    expect(l.resumo).toContain("apuração");
+  });
+
+  test("sem órfã nenhuma, não se escreve nada", () => {
+    expect(leituraDoForaDaConferencia({ total: 0 })).toBeNull();
+    expect(leituraDoForaDaConferencia(null)).toBeNull();
+  });
+
+  test("motivo desconhecido não vira 'está tudo certo' — sai o código cru", () => {
+    const l = leituraDoForaDaConferencia({ motivo: "MOTIVO_NOVO", total: 2 });
+    expect(l.resumo).toContain("MOTIVO_NOVO");
   });
 });
 

@@ -1,7 +1,8 @@
 // A LIGAÇÃO DA AUDITORIA COM O BANCO — e nada além disso.
 //
 // A REGRA mora em `auditoriaNotas.js`, que é puro. Este arquivo faz três coisas e para:
-//   1. carrega as notas da competência (e a janela da numeração da DPS);
+//   1. carrega as notas da competência — **e as que não têm competência nenhuma**, que é o conserto
+//      de 21/08/2026 e está explicado em detalhe dentro de `auditarCompetencia`;
 //   2. carrega o CADASTRO da empresa (`Company.codigosServicoNacional`), que é a autoridade da
 //      primeira pergunta;
 //   3. entrega as duas coisas à regra.
@@ -32,17 +33,14 @@ import { prisma } from "../../../infrastructure/db/prisma.js";
 import { auditarNotasDaCompetencia, SELECT_PARA_AUDITORIA } from "./auditoriaNotas.js";
 
 /**
- * ⚠ QUANTOS MESES A NUMERAÇÃO OLHA PARA TRÁS — e por que ela não é mensal.
+ * ⚠ QUANTAS NOTAS SEM COMPETÊNCIA A TELA LISTA — o TOTAL nunca é este número.
  *
- * A série da DPS é um contador CONTÍNUO: a nota nº 100 de julho e a nº 101 de agosto são vizinhas
- * na série e estranhas na competência. Perguntar por salto dentro de um mês só produziria um
- * "buraco" em toda virada de mês — ruído que treina o contador a ignorar a pergunta.
- *
- * Doze meses porque é a janela que o resto do módulo fiscal já usa (RBT12, folha 12m) e porque ela
- * cobre um exercício inteiro. A janela examinada volta DECLARADA no resultado, e a regra só aponta
- * salto ENTRE dois números observados — a borda nunca vira achado.
+ * A lista é amostra e vem limitada porque não há teto natural para quantas notas de uma empresa
+ * podem estar sem `competencia` gravada, e esta é uma tela de leitura que abre a cada clique. O
+ * **total** vem de um `count` separado e é ele que a tela mostra: uma lista truncada que dissesse
+ * "são estas" mentiria exatamente sobre o número que este bloco existe para revelar.
  */
-export const MESES_DA_JANELA_DA_SERIE = 12;
+export const LIMITE_NOTAS_SEM_COMPETENCIA = 50;
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
@@ -51,28 +49,18 @@ function rangeDaCompetencia(competencia) {
   return { gte: new Date(Date.UTC(ano, mes - 1, 1)), lt: new Date(Date.UTC(ano, mes, 1)) };
 }
 
-/** A janela da numeração: os `MESES_DA_JANELA_DA_SERIE` meses que TERMINAM na competência. */
-function rangeDaJanela(competencia) {
-  const [ano, mes] = String(competencia).split("-").map(Number);
-  const gte = new Date(Date.UTC(ano, mes - MESES_DA_JANELA_DA_SERIE, 1));
-  const lt = new Date(Date.UTC(ano, mes, 1));
-  const rotulo = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-  return { gte, lt, de: rotulo(gte), ate: competencia };
-}
-
 /**
  * Roda a auditoria pré-apuração de UMA empresa numa competência. **Só leitura.**
  *
  * @param {Object} args
  * @param {string} args.portalClientId `PortalClient.id` — já autorizado pela rota.
  * @param {string} args.competencia    `"AAAA-MM"`.
- * @returns {Promise<Object>} o resultado de `auditarNotasDaCompetencia` + `empresa` e `janelaDaSerie`.
+ * @returns {Promise<Object>} o resultado de `auditarNotasDaCompetencia` (perguntas + `manutencao` +
+ *                            `foraDaConferencia`) mais o bloco `empresa`.
  */
 export async function auditarCompetencia({ portalClientId, competencia }) {
   if (!portalClientId) throw new Error("portalClientId obrigatório");
   if (!COMPETENCIA_RE.test(String(competencia || ""))) throw new Error("competencia inválida");
-
-  const janela = rangeDaJanela(competencia);
 
   // ⚠ O CADASTRO NÃO MORA NO `PortalClient`. A lista de serviços é do model legado `Company`,
   // alcançado por `PortalClient.companyId` (que é opcional — empresa sem `Company` existe, e nesse
@@ -92,23 +80,50 @@ export async function auditarCompetencia({ portalClientId, competencia }) {
       })
     : null;
 
-  // ⚠ UMA QUERY SÓ, a da janela — a competência é um recorte dela em memória. Duas queries com
-  // `where` parecidos é onde elas divergem, e aqui a divergência seria a numeração conferindo uma
-  // população e o resto da auditoria outra.
-  const notasDaJanela = await prisma.portalInvoice.findMany({
-    where: { clientId: portalClientId, type: "NFSE", papel: "EMIT", competencia: { gte: janela.gte, lt: janela.lt } },
+  const { gte, lt } = rangeDaCompetencia(competencia);
+  const daEmpresa = { clientId: portalClientId, type: "NFSE", papel: "EMIT" };
+
+  // ⚠ ANTES DE 21/08/2026 ESTA QUERY CARREGAVA 12 MESES, para alimentar a pergunta de numeração da
+  // DPS. Aquela pergunta foi removida (ver `auditoriaNotas.js`), e com ela caiu a janela: a
+  // auditoria voltou a ler exatamente o mês que ela audita — 1/12 do volume, mesma resposta.
+  const notasDoMes = await prisma.portalInvoice.findMany({
+    where: { ...daEmpresa, competencia: { gte, lt } },
     select: SELECT_PARA_AUDITORIA,
-    orderBy: [{ competencia: "asc" }, { issueDate: "asc" }],
+    orderBy: [{ issueDate: "asc" }],
   });
 
-  const { gte, lt } = rangeDaCompetencia(competencia);
-  const notasDoMes = notasDaJanela.filter((n) => n.competencia && n.competencia >= gte && n.competencia < lt);
+  // ⚠⚠ AS DUAS QUERIES ABAIXO EXISTEM POR UM DEFEITO MEDIDO, e apagá-las reabre o defeito.
+  //
+  // O `where` acima filtra por `competencia: { gte, lt }`. Em SQL, `NULL` **não satisfaz** um BETWEEN
+  // — então nota com `competencia` nula nunca chegava à regra. Ela não entrava em pergunta nenhuma e
+  // **não aparecia nem na lista de "notas fora desta conferência"**, porque a regra nunca soube que
+  // ela existia. A aba promete "nada some em silêncio"; era exatamente ali que ela quebrava a
+  // promessa, e era isso que ajudava a fabricar os "buracos" da antiga pergunta de numeração.
+  //
+  // ⚠ ELA NÃO ENTRA NA CONFERÊNCIA DO MÊS, e isso é a decisão: sem competência gravada a nota não
+  // pertence a mês nenhum, e atribuí-la a este pela data de emissão seria o sistema INVENTANDO a
+  // competência dela — que decide em qual apuração a receita entra. Ela APARECE, separada, com o
+  // motivo. Ver o bloco `foraDaConferencia` em `auditoriaNotas.js`.
+  //
+  // ⚠ SÃO DUAS QUERIES DE PROPÓSITO: o `count` dá o número REAL (é ele que a tela mostra) e o
+  // `findMany` dá uma amostra limitada. `notas.length` como total mentiria assim que a lista
+  // truncasse — justamente na empresa em que o problema é grande.
+  const semCompetenciaWhere = { ...daEmpresa, competencia: null };
+  const [totalSemCompetencia, notasSemCompetencia] = await Promise.all([
+    prisma.portalInvoice.count({ where: semCompetenciaWhere }),
+    prisma.portalInvoice.findMany({
+      where: semCompetenciaWhere,
+      select: SELECT_PARA_AUDITORIA,
+      orderBy: [{ issueDate: "desc" }],
+      take: LIMITE_NOTAS_SEM_COMPETENCIA,
+    }),
+  ]);
 
   const resultado = auditarNotasDaCompetencia({
     competencia,
     notas: notasDoMes,
-    notasDaSerie: notasDaJanela,
-    janelaDaSerie: { de: janela.de, ate: janela.ate, meses: MESES_DA_JANELA_DA_SERIE },
+    notasSemCompetencia,
+    totalSemCompetencia,
     codigosServicoNacional: legacy?.codigosServicoNacional || [],
   });
 
@@ -124,6 +139,5 @@ export async function auditarCompetencia({ portalClientId, competencia }) {
       codigoServicoNacionalDaDps: legacy?.codigoServicoNacional || null,
       temCadastroDeServicos: Boolean(legacy?.codigosServicoNacional?.length),
     },
-    janelaDaSerie: { de: janela.de, ate: janela.ate, meses: MESES_DA_JANELA_DA_SERIE },
   };
 }

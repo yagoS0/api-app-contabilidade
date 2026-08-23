@@ -112,17 +112,38 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   fechamento** no "28 vs 27" (`ConferenciaAdnService`; `POST .../fechamento/:comp/conferencia`;
   `scripts/conferir-adn.mjs` roda em prod). Fase 0 (forense) superada pela detecção automática.
 - [x] **Auditoria pré-apuração das notas** — sub-aba **Auditoria** (grupo Fiscal, **antes** de
-  Apuração), consumindo os campos fiscais extraídos do XML. **Cinco perguntas com nome próprio**,
+  Apuração), consumindo os campos fiscais extraídos do XML. **TRÊS perguntas com nome próprio**,
   regra PURA em `apps/api/src/application/notas/auditoria/auditoriaNotas.js`, rota literal
   `GET /firm/companies/:id/notas/auditoria`, tela em `apps/web/src/features/notas/`.
+  - ⚠⚠ **ESTE ITEM DIZIA "CINCO PERGUNTAS" ATÉ 21/08/2026.** A aba mostrava **~1.799 "pontos a
+    conferir"**, dos quais **~18** eram perguntas de verdade — e uma lista em que 99% é ruído treina
+    o contador a não ler a lista, afogando a única que entregava (o ISS zerado). **O dono aprovou o
+    corte.** O que a aba responde hoje: *atividade fora do cadastro* · *emissão DOIS ou mais meses
+    distante da competência* · *ISS zerado onde a atividade tributa*, mais **pendências
+    pós-fechamento** ("entrou nota depois que eu fechei o mês?") e as **notas sem competência**.
+  - ⚠⚠ **A pergunta da NUMERAÇÃO DA DPS foi REMOVIDA — era falso positivo, provado na fonte.** A
+    regra **E0014** (`ANEXO_I`, aba `RN DPS_NFS-e`, **linha 148**) define a unicidade da DPS por
+    **QUATRO** componentes (Série + Número + Município Emissor + CNPJ/CPF) e a aba comparava **dois**;
+    e nas **653 regras do `ANEXO_I` não existe nenhuma de numeração CONTÍNUA da DPS** — o único campo
+    com regra de sequência é o `nNFSe`, gerado pela Receita. Medido: 0 repetidos e **54 "buracos"**,
+    em boa parte **fabricados por nós** (a consulta perdia a nota sem competência; a captura do ADN
+    pulou documentos). **Não reintroduzir sem norma** — o argumento está no código e travado por teste.
+  - ⚠ **A pergunta 5 (nota que não pôde ser lida) saiu da TELA**, não do sistema: é manutenção do
+    nosso extrator, não pergunta de contador. Continua calculada, em `auditoria.manutencao`.
   - ⚠ **CADA ACHADO É UMA PERGUNTA, NUNCA UM VEREDITO** — a tela diz "esta nota usa um código que
     não está no cadastro da empresa", não "nota errada". Quem julga é o contador, e a frase está
     **na tela**, não num comentário.
   - ⚠ **ZERO ACHADOS ≠ "NÃO DÁ PARA CONFERIR"**, com desenhos diferentes. Empresa sem código de
     serviço cadastrado responde *"cadastre os códigos"* — **não** "todas as notas erradas". Medido:
     33 de 33 empresas nesse estado hoje.
-  - ⚠ **A AUDITORIA NÃO ESCREVE NADA** e não faz chamada externa — provado por teste.
-  - Detalhes, as cinco perguntas e os números de produção: `apps/api/CLAUDE.md`, seção "AUDITORIA
+  - ⚠ **NADA SOME EM SILÊNCIO, e isso deixou de ser só promessa.** As 1.727 divergências de UM mês
+    (a virada normal) viraram **uma contagem visível**, não silêncio; e a nota com `competencia`
+    NULA — que a consulta perdia antes de a regra existir, sem aparecer nem em "notas fora desta
+    conferência" — passou a ter bloco próprio, com o motivo. Ela **não** é atribuída a um mês:
+    inventar a competência dela seria inventar em qual apuração a receita entra.
+  - ⚠ **A AUDITORIA NÃO ESCREVE NADA** e não faz chamada externa — provado por teste. Vale para o
+    bloco novo de pendências: ela **lista**, e não oferece "Reabrir competência" nem "Ignorar".
+  - Detalhes, o corte com a fonte e os números de produção: `apps/api/CLAUDE.md`, seção "AUDITORIA
     PRÉ-APURAÇÃO". Medição: `apps/api/scripts/diag-auditoria-notas.mjs` (só leitura).
 - [x] **Apuração dentro da empresa (Q60)** — aba Fiscal "Cadastro" → **"Apuração"**: faturamento +
   prévia (reusa `FechamentoModal`) + **extrato do Simples** (`syncPgdasCircular`) + fechar/transmitir/retificar

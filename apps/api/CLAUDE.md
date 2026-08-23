@@ -1711,7 +1711,7 @@ campo mora.
   ingestão atrás de caminho de XML reescrito à mão. Experimento executado: tirando o spread de
   `ingestaoNfse.js`, **11 vermelhos**; tirando o do `InvoiceSyncEngine`, **1**.
 
-### AUDITORIA PRÉ-APURAÇÃO — cinco PERGUNTAS, e nenhuma delas é um veredito
+### AUDITORIA PRÉ-APURAÇÃO — TRÊS PERGUNTAS, e nenhuma delas é um veredito
 
 > Pedido do dono (17/08/2026): *"nos ajuda em uma auditoria pré-apuração para entender se a nota está
 > correta ou não, baseado na atividade e baseado na data de emissão"*.
@@ -1722,10 +1722,72 @@ campo mora.
 `/notas/:notaId`, mesmo cuidado de `/notas/summary`), tela em `apps/web/src/features/notas/` —
 sub-aba **Auditoria** do grupo Fiscal, **antes de Apuração**, porque é *pré*-apuração.
 
+#### ⚠⚠ O CORTE DE 21/08/2026 — de CINCO perguntas para TRÊS, aprovado pelo dono
+
+⚠⚠ **ESTA SEÇÃO DESCREVIA CINCO PERGUNTAS ATÉ 21/08/2026.** A aba mostrava **~1.799 "pontos a
+conferir"**, dos quais **~18** eram perguntas de verdade — e uma lista em que 99% é ruído treina o
+contador a não ler a lista, afogando a única pergunta que entregava (o ISS zerado). O dono aprovou o
+corte. O que mudou, e por quê:
+
+| pergunta antiga | achados | veredito | hoje |
+|---|---|---|---|
+| 1 · atividade fora do cadastro | 0, com 33/33 empresas `NAO_CONFERIVEL` | não responde nada enquanto o cadastro estiver vazio, **mas a resposta honesta é a que ela dá** | **FICA** |
+| 2 · emissão fora da competência | 1.738, sendo **1.727 de UM mês** | ruído; a pergunta útil são as **11** de 2+ meses | **ENXUGADA** (ver abaixo) |
+| 3 · ISS zerado onde a atividade tributa | 7 | a única que entrega | **FICA** |
+| 4 · numeração da DPS | 0 repetidos, **54 buracos** | ⚠ **falso positivo, provado na fonte** | **REMOVIDA** |
+| 5 · nota que não pôde ser lida | 5 | defeito NOSSO, não pergunta de contador | **saiu da tela** (vira `manutencao`) |
+
+##### ⚠⚠ Por que a numeração da DPS era falso positivo — a FONTE, para ninguém reintroduzi-la
+
+Três motivos independentes, e o primeiro sozinho já basta:
+
+1. **A norma não diz o que a pergunta afirmava.** A regra **E0014** do Padrão Nacional
+   (`ANEXO_I`, aba **`RN DPS_NFS-e`, linha 148**) define a unicidade da DPS por **QUATRO**
+   componentes — **Série + Número + Município Emissor + CNPJ/CPF do emitente**. A pergunta comparava
+   **DOIS** (série + número), dentro de uma empresa: ela nunca esteve implementando a E0014.
+2. **Não existe regra de numeração CONTÍNUA da DPS.** Varridas as **653 regras do `ANEXO_I`**:
+   nenhuma exige sequência sem lacunas. O único campo com regra de sequência é o **`nNFSe`**, e ele
+   é gerado pela Receita, não pelo contribuinte. Apontar "buraco" era o sistema inventando obrigação
+   fiscal (princípio 1 do `CLAUDE.md` da raiz).
+3. **Os buracos eram NOSSOS.** Duas causas medidas, as duas do nosso lado: (a) a consulta filtrava
+   por `competencia: { gte, lt }` e **nota sem competência sumia antes de a regra existir** — o salto
+   que ela deixava na série era fabricado por nós; (b) a captura do ADN comprovadamente pulou
+   documentos. O que a pergunta media era a nossa **cobertura de captura**, dita como acusação à
+   empresa.
+
+O ramo **REPETIDO** saiu junto: dava 0 achados, e a frase descrevia algo que o sistema nacional
+**impede na origem** (a E0014 rejeita a segunda DPS com a mesma chave de quatro componentes). Manter
+na tela uma pergunta que só pode responder "não" é gastar atenção com uma certeza.
+
+⚠ **Se algum dia voltar, tem de voltar como MEDIÇÃO DA NOSSA CAPTURA** (painel de operação), com as
+quatro componentes da E0014 — nunca como pergunta na tela do contador. O argumento inteiro está
+repetido em comentário dentro de `auditoriaNotas.js`, e travado por teste nos dois lados
+(`PERGUNTAS.NUMERACAO_DA_DPS` e `FRASE_ESPECIE.NUMERO_PULADO` têm de continuar `undefined`).
+
+⚠ **COMO LER O `anexo_i-….xlsx` se precisar reconferir:** **NÃO leia por `xl/sharedStrings.xml`** —
+é um pool deduplicado, sem linha, e parear por vizinhança desloca uma linha inteira. Leia pela
+`<row>` do worksheet, cruzando colunas da MESMA linha.
+
+##### O que a aba passa a responder
+
+| # | pergunta | população | medido em produção |
+|---|---|---|---|
+| 1 | atividade fora do cadastro (`cTribNac` × `codigosServicoNacional`) | EMIT autorizada | **0 achados; 33/33 empresas `NAO_CONFERIVEL`** |
+| 2 | emissão **DOIS ou mais meses** distante da competência | EMIT autorizada | **11 linhas** (as 1.727 de um mês viram a contagem `viradaDeMes`) |
+| 3 | ISS zerado onde a atividade tributa | EMIT autorizada | **7 notas** (BC > 0, valor 0) |
+| + | **pendências pós-fechamento** (`PendenciaPosFechamento`, por EMPRESA) | — | *"entrou nota depois que eu fechei o mês?"* |
+| + | **notas fora de qualquer conferência mensal** (`competencia` NULA) | EMIT | ver `foraDaConferencia` |
+
+O payload tem **três compartimentos que não se misturam**: `perguntas` (o que o contador responde),
+`manutencao` (o que NÓS temos de consertar — a leitura do XML) e `foraDaConferencia` (o que a
+conferência mensal não alcança, com o motivo). **Só `perguntas` conta em `totalAchados`.**
+
 ⚠ **A AUDITORIA NÃO ESCREVE NADA** — não marca nota, não classifica, não cria pendência, não altera
 apuração, e não chama ADN/SEFAZ/SERPRO. Provado em `auditoria/__tests__/auditoriaNaoEscreve.test.js`
 (molde de `dadosPlanejamento.test.js`: os métodos de escrita **lançam** e um teste final varre
 `Object.values(prisma)`), mais uma varredura textual do serviço atrás de `.update(`/`$transaction`.
+⚠ Isso vale inclusive para o bloco novo de pendências: a tela **lista** e não oferece "Reabrir" nem
+"Ignorar" (as ações existem em `PendenciasList` e ficam para a tela que as tiver).
 
 ⚠ **ZERO ACHADOS E "NÃO DÁ PARA CONFERIR" SÃO RESPOSTAS DIFERENTES**, e é o eixo do módulo. Cada
 pergunta devolve `situacao: CONFERIDA | NAO_CONFERIVEL`; a segunda vem com `motivo` de vocabulário
@@ -1736,48 +1798,60 @@ resposta certa é `EMPRESA_SEM_CODIGOS_CADASTRADOS`: *"cadastre os códigos"*. A
 vira acusação **nem aprovação** — e a segunda é a mais perigosa, porque passa despercebida.
 A mesma disciplina desce à NOTA: sem o campo que a pergunta lê, ela sai em `naoAvaliadas`, nomeada.
 
-| # | pergunta | população | medido em produção (17/08/2026) |
-|---|---|---|---|
-| 1 | atividade fora do cadastro (`cTribNac` × `codigosServicoNacional`) | EMIT autorizada | **0 achados; 33/33 empresas `NAO_CONFERIVEL`** |
-| 2 | emissão fora da competência (mês de `issueDate` × mês de `competencia`) | EMIT autorizada | **1.738 notas** — 1.727 com desvio de **um** mês (emitidas nos dias 1–4), 11 com ≥2 (até −5) |
-| 3 | ISS zerado onde a atividade tributa | EMIT autorizada | **7 notas** (BC > 0, valor 0). Zero com alíquota > 0 e valor zerado |
-| 4 | número da DPS pulado ou repetido, por série | ⚠ EMIT de **todos** os status | **0 repetidos · 54 buracos** em 10 pares empresa+série |
-| 5 | nota que não pôde ser lida | ⚠ EMIT de **todos** os status | **62** DEST `NAO_E_NFSE` + **5 EMIT `NUNCA_EXTRAIDA`** |
+##### ⚠⚠ A CONSULTA QUE FABRICAVA BURACO — consertada em 21/08/2026
 
-- ⚠ **A NOTA CANCELADA CONTA NA NUMERAÇÃO.** Não existe inutilização na NFS-e (varrido nos 16
-  eventos do Anexo II — ver a seção do emissor); ela **consumiu** o número. Tirá-la faria a auditoria
-  inventar um buraco a cada cancelamento. Nas perguntas 1–3 ela fica de fora, porque não entra em
-  apuração nenhuma.
-- ⚠ **NUMERAÇÃO NÃO É FATO MENSAL.** A nº 100 de julho e a nº 101 de agosto são vizinhas na SÉRIE e
-  estranhas na competência: dentro de um mês, toda virada viraria "salto". A pergunta 4 é respondida
-  sobre uma **janela de 12 meses terminando na competência**, que volta DECLARADA no resultado — e
-  **salto exige número dos dois lados**: a borda da janela nunca é achado.
-- ⚠ **A PERGUNTA 5 TEM DUAS ESPÉCIES, e a segunda é o quarto estado do schema.** `LEITURA_FALHOU` é
-  `camposFiscaisMotivo` preenchido; **`NUNCA_EXTRAIDA` é `camposFiscaisExtraidosEm` NULO** — *"o
-  extrator nunca passou por esta linha"*, que é exatamente o que aquela coluna existe para desfazer.
-  As 5 notas EMIT nesse estado (XML de ~9,8 KB guardado, criadas em 17/08 às 15:38, antes de a
-  captura passar a extrair) **sumiriam da tela** se a pergunta lesse só o motivo — e sumiriam
-  também das outras quatro, por falta de campo.
-- ⚠ **ISS: nota sem base, sem alíquota E sem valor NÃO é achado** (`SEM_ISSQN_NO_XML`). É o desenho
-  de nota imune, isenta ou com ISS retido pelo tomador; acusar seria derivar erro fiscal de ausência
-  de dado. Medido: 202 das 209 notas sem alíquota também não têm base nem valor.
-- ⚠ **O DESVIO EM MESES VIAJA JUNTO** na pergunta 2. Competência um mês antes da emissão é o serviço
-  de julho faturado em 1º de agosto — legítimo e maciço (1.727 casos). É o desvio que separa isso de
-  uma nota contada cinco meses atrás.
-- ⚠ **O TEXTO DE CADA PERGUNTA É DADO**, em `PERGUNTAS` (backend), e desce pronto para a tela.
-  Escrito no componente, a próxima tela a consumir a rota escreveria o seu — e um dos dois diria
-  "nota errada". Há teste recusando `errad|inválid|irregular|incorret|ilegal` nos textos.
-- ⚠ **NUNCA `--state-danger` na tela.** Vermelho, neste projeto, é o que **bloqueia o fechamento**;
-  achado de auditoria não bloqueia nada. Regra de tela em `notas/lib/auditoriaTela.js` (21 testes).
+`AuditoriaNotasService` filtrava por `competencia: { gte, lt }`, e em SQL **`NULL` não satisfaz um
+intervalo**: nota sem competência **nunca chegava à regra**. Ela não entrava em pergunta nenhuma
+**e não aparecia nem em "notas fora desta conferência"** — a regra sequer sabia que ela existia,
+enquanto a aba prometia, na cara, *"nada some em silêncio"*.
+
+**A decisão foi APARECER SEPARADA, não entrar na conferência**, e o motivo é fiscal: a competência é
+o eixo da aba, e atribuir a nota a um mês pela data de emissão seria o sistema **inventando a
+competência dela** — o dado que decide em qual apuração a receita entra. Então:
+
+- o bloco `foraDaConferencia` traz `motivo: SEM_COMPETENCIA_GRAVADA`, o **total contado no banco**,
+  uma amostra (`LIMITE_NOTAS_SEM_COMPETENCIA = 50`) e `truncada`;
+- ⚠ **o total vem de um `count` separado, nunca de `notas.length`** — lista truncada como total
+  mentiria exatamente na empresa em que o problema é grande;
+- ⚠ **`total == null` cai no tamanho da lista, nunca em zero**: `Number(null)` é `0`, e um zero aqui
+  afirmaria "conferi, não há nenhuma". Mesma família de `folhaAusenteNaoEZero.test.js`;
+- a frase de tela diz a consequência (*"não entram em apuração"*), não um veredito.
+
+⚠ **A JANELA DE 12 MESES SUMIU JUNTO COM A NUMERAÇÃO.** `MESES_DA_JANELA_DA_SERIE` existia só para
+aquela pergunta; hoje a auditoria lê **exatamente o mês que audita** — 1/12 do volume, mesma resposta.
+
+##### As invariantes que o corte NÃO podia levar junto (todas travadas em teste)
+
+- ⚠ **CADA ACHADO É UMA PERGUNTA, NUNCA UM VEREDITO.** O texto mora em `PERGUNTAS` (backend) e desce
+  pronto para a tela; escrito no componente, a próxima tela a consumir a rota escreveria o seu e um
+  dos dois diria "nota errada". Teste recusando `errad|inválid|irregular|incorret|ilegal`.
+- ⚠ **NUNCA `--state-danger` na tela.** Vermelho, neste projeto, **bloqueia o fechamento**; achado de
+  auditoria não bloqueia nada. ⚠ `PendenciasList` era **vermelha** (`#FF4757`) enquanto o comentário
+  dentro dela dizia "o âmbar da caixa fica" — passou para `--state-warn` ao entrar nesta aba.
+- ⚠ **A NOTA QUE FICOU DE FORA APARECE, COM O MOTIVO** — por pergunta (`naoAvaliadas`) e agora também
+  no nível da empresa (`foraDaConferencia`).
+- ⚠ **A CONTAGEM DA VIRADA DE MÊS É OBRIGATÓRIA.** As 1.727 notas de um mês deixaram de ser linha; se
+  também deixassem de ser NÚMERO, a pergunta passaria a esconder o que de fato conferiu. Sobe como
+  `viradaDeMes` (**sempre**, mesmo zerado — campo que só existe quando ≠ 0 obriga o consumidor a
+  adivinhar o que a ausência quer dizer) + `mesesDeDesvioMinimo`.
+- ⚠ **Desvio que não deu para calcular (`null`) NÃO cai na contagem** — vira linha. O que não sabemos
+  medir nunca vira "caso normal".
+- ⚠ **A NOTA CANCELADA continua fora das perguntas de apuração** (não entra em apuração nenhuma) e
+  **dentro** da leitura de manutenção e de `foraDaConferencia` (é documento que existe).
+- ⚠ **ISS: nota sem base, sem alíquota E sem valor NÃO é achado** (`SEM_ISSQN_NO_XML`) — é o desenho
+  de nota imune/isenta/retida. Medido: 202 das 209 notas sem alíquota também não têm base nem valor.
+- ⚠ **`NUNCA_EXTRAIDA` continua sendo calculada** (`camposFiscaisExtraidosEm` NULO = "o extrator
+  nunca passou por esta linha", que é o que aquela coluna existe para desfazer) — só mudou de lugar,
+  para `manutencao`. **Nada se esconde do contador por isso:** a nota ilegível continua saindo em
+  `naoAvaliadas` das perguntas que dependem do campo que faltou, nomeada. É isso que autoriza o corte.
 - `"autorizada"` é o MESMO valor de `FechamentoService.whereFaturamentoEmit()` (a definição única de
   faturamento). Ela não é importável pela regra pura (aquele módulo carrega o prisma no topo), então
   a amarração é **textual**, num teste que lê o arquivo — muda lá, cai aqui.
 - Medição em produção: **`scripts/diag-auditoria-notas.mjs`** (só leitura, zero chamada externa, sem
-  `--aplicar`). Ele chama a MESMA regra pura da rota — o número do relatório e o da tela não podem
-  divergir por construção.
-- Regressão: `auditoria/__tests__/auditoriaNotas.test.js` (38) + `auditoriaNaoEscreve.test.js` (11)
+  `--aplicar`). Ele itera `r.perguntas` e chama a MESMA regra pura da rota.
+- Regressão: `auditoria/__tests__/auditoriaNotas.test.js` (42) + `auditoriaNaoEscreve.test.js` (14)
   + `routes/firm/__tests__/auditoriaNotasRota.test.js` (6) + web
-  `notas/lib/__tests__/auditoriaTela.test.js` (21) e `components/__tests__/auditoriaTab.test.jsx` (11).
+  `notas/lib/__tests__/auditoriaTela.test.js` (25) e `components/__tests__/auditoriaTab.test.jsx` (16).
 
 ## ⚠ A RECAPTURA NÃO PODE APAGAR A CLASSIFICAÇÃO
 
@@ -2167,6 +2241,34 @@ reconhecido — é isso que garante que nenhum bloco que já virava tabela possa
 - `Valor em Atraso`/`Valor Suspenso` entraram em `COLUNAS_VALOR` na tela e no diagnóstico — são as
   colunas de dinheiro do bloco. **Não há linha de total**: somar o valor de parcelamentos distintos
   produziria um número que o relatório não afirma.
+
+### ⚠ 21/08/2026 — A LEITURA POSICIONAL DO PDF FOI PROVADA (Fase 0). NADA FOI LIGADO
+
+⚠⚠ **O parser de texto acima continua INTACTO e continua sendo o que a produção mostra.** A rota do
+SITFIS não mudou. O que existe é uma segunda leitura, **desligada**, em
+`apps/pdf-reader/app/extractors/sitfis_posicional.py`, que lê o PDF pela **posição das palavras**
+em vez da fila de linhas achatada — e o confronto entre as duas é uma das provas de fidelidade, o
+que faz do parser de texto peça necessária, não legado.
+
+**Medido sobre os 24 relatórios REAIS guardados** (o PDF está em
+`CompanyFiscalStatus.rawPayload.dados.pdf`, base64, **24 de 24** — reprocessar custa **zero chamada
+ao SERPRO**): 38 blocos, **31 tabelas certas saíram IDÊNTICAS** (critério de aceite do dono, fixado
+antes de rodar), **0 com coluna trocada**, e os **3 blocos SIDA** que hoje saem como linhas cruas
+viraram tabela, expondo **15 inscrições em dívida ativa** (14 numa empresa) com número, receita,
+data, processo, tipo de devedor e situação. Os outros 4 blocos que não fecham continuam como estão
+— e **o do PARCSN/PARCMEI não é defeito**: é laudo em texto corrido, tabular exigiria inventar
+cabeçalho.
+
+⚠ **A razão de ser POR POSIÇÃO e não por contagem de linha está MEDIDA, não argumentada:** nos dois
+blocos SIDA do mesmo PDF a célula vazia de `Ajuizado em` aparece como linha em branco num bloco e
+some no outro — não há regra no texto que diga qual é qual. No PDF ela é um x sem palavra.
+⚠ E a régua que separa colunas é a **largura de um espaço da Courier** (0,6 × corpo, medido em
+2.028 de 2.043 folgas), não um limiar por "gap grande" — que erraria na folga de 7,00 pt entre
+`Cons.` e `Situação`.
+
+**Ler antes de mexer: `apps/pdf-reader/CLAUDE.md`**, seção "SITFIS — leitura POSICIONAL". Repetir a
+prova: `apps/api/scripts/exportar-sitfis-prova.mjs` (só leitura, tira os PDFs do banco para uma
+pasta **fora do repo**) + `apps/pdf-reader/prova_sitfis_posicional.py`.
 
 **O relatório salvo nunca é apagado por uma consulta que falha.** A gravação só sobrescreve
 `situacao`/`relatorioPdfFileId`/`texto` quando vem relatório NOVO.

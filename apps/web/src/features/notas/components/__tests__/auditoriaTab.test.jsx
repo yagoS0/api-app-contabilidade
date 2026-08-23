@@ -7,6 +7,12 @@
 //   2. a nota que a pergunta não conseguiu avaliar continua NA TELA, com o motivo;
 //   3. a frase "isto é pergunta, não veredito" está visível, não num comentário de código;
 //   4. a aba não oferece nenhuma ação que escreva.
+//
+// ⚠ E, DESDE O CORTE DE 21/08/2026:
+//   5. o desvio de UM mês vira contagem visível, nunca silêncio;
+//   6. a nota sem competência aparece — ela sumia antes de a regra existir;
+//   7. a pendência pós-fechamento é renderizada (o componente existia sem nenhum consumidor);
+//   8. nenhum bloco de numeração da DPS volta à tela.
 
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
@@ -21,7 +27,7 @@ const AUDITORIA = {
   competencia: "2026-07",
   totalNotas: 13,
   totalNotasApuradas: 12,
-  totalAchados: 2,
+  totalAchados: 1,
   perguntas: [
     perguntaBase({
       id: "ATIVIDADE_FORA_DO_CADASTRO", titulo: "Atividade fora do cadastro",
@@ -29,13 +35,14 @@ const AUDITORIA = {
       situacao: "NAO_CONFERIVEL", motivo: "EMPRESA_SEM_CODIGOS_CADASTRADOS", avaliadas: 0,
     }),
     perguntaBase({
-      id: "EMISSAO_FORA_DA_COMPETENCIA", titulo: "Emissão fora da competência",
-      pergunta: "Alguma nota está sendo contada num mês diferente do mês em que foi emitida?",
-      achado: "esta nota está contada numa competência diferente do mês da data de emissão",
+      id: "EMISSAO_FORA_DA_COMPETENCIA", titulo: "Emissão em mês distante da competência",
+      pergunta: "Alguma nota está sendo contada num mês DOIS ou mais meses distante do da emissão?",
+      achado: "esta nota está contada numa competência distante do mês da data de emissão",
+      viradaDeMes: 1727, mesesDeDesvioMinimo: 2,
       achados: [{
         pergunta: "EMISSAO_FORA_DA_COMPETENCIA", notaId: "n1", numero: "13000",
-        chaveAcesso: "CH1", emissao: "2026-08-02", competencia: "2026-07", valor: 1250,
-        dados: { mesDaCompetencia: "2026-07", mesDaEmissao: "2026-08", mesesDeDesvio: -1 },
+        chaveAcesso: "CH1", emissao: "2026-09-02", competencia: "2026-07", valor: 1250,
+        dados: { mesDaCompetencia: "2026-07", mesDaEmissao: "2026-09", mesesDeDesvio: -2 },
       }],
     }),
     perguntaBase({
@@ -43,27 +50,35 @@ const AUDITORIA = {
       pergunta: "Alguma nota tem base ou alíquota de ISSQN e mesmo assim saiu com imposto zero?",
       naoAvaliadas: [{ notaId: "n2", numero: "13001", motivo: "SEM_ISSQN_NO_XML" }],
     }),
-    perguntaBase({
-      id: "NUMERACAO_DA_DPS", titulo: "Numeração da DPS",
-      pergunta: "Dentro de uma mesma série, algum número de DPS foi repetido ou pulado?",
-      janela: { de: "2025-08", ate: "2026-07", meses: 12 },
-      series: [{ serie: "00001", de: 40, ate: 55, notas: 12, numerosDistintos: 12, pulados: 4, repetidos: 0 }],
-      achados: [{
-        pergunta: "NUMERACAO_DA_DPS", notaId: null, numero: null, chaveAcesso: null,
-        emissao: null, competencia: null, valor: null,
-        dados: { especie: "NUMERO_PULADO", serie: "00001", de: 44, ate: 47, quantidade: 4, antes: 43, depois: 48 },
-      }],
-    }),
-    perguntaBase({
-      id: "NOTA_NAO_LIDA", titulo: "Nota que não pôde ser lida",
-      pergunta: "De alguma nota deste mês não conseguimos extrair os campos fiscais do XML?",
-    }),
   ],
+  manutencao: {
+    notasNaoLidas: 1,
+    leitura: {
+      id: "NOTA_NAO_LIDA", titulo: "Nota que não pôde ser lida", manutencao: true,
+      situacao: "CONFERIDA", motivo: null, avaliadas: 13, naoAvaliadas: [],
+      achados: [{ pergunta: "NOTA_NAO_LIDA", notaId: "n9", numero: "13009", dados: { especie: "NUNCA_EXTRAIDA", motivo: null } }],
+    },
+  },
+  foraDaConferencia: {
+    motivo: "SEM_COMPETENCIA_GRAVADA", total: 2, listadas: 2, truncada: false,
+    notas: [
+      { notaId: "n7", numero: "13007", emissao: "2026-07-19" },
+      { notaId: "n8", numero: "13008", emissao: "2026-07-22" },
+    ],
+  },
   empresa: { temCadastroDeServicos: false, codigosServicoNacional: [] },
-  janelaDaSerie: { de: "2025-08", ate: "2026-07", meses: 12 },
 };
 
-const apiCom = (auditoria) => ({ getAuditoriaNotas: jest.fn(async () => ({ ok: true, auditoria })) });
+const PENDENCIAS = [{
+  id: "p1", competencia: "2026-05", notaId: "n6", motivo: "nota_retroativa",
+  observacoes: "NFS-e CH6 chegou para 2026-05 (competência já fechada).",
+  resolvida: false, createdAt: "2026-08-14T11:20:00.000Z",
+}];
+
+const apiCom = (auditoria, pendencias = PENDENCIAS) => ({
+  getAuditoriaNotas: jest.fn(async () => ({ ok: true, auditoria })),
+  listPendenciasPosFechamento: jest.fn(async () => pendencias),
+});
 
 describe("a aba Auditoria", () => {
   it("pede a auditoria da empresa e da competência que recebeu", async () => {
@@ -93,14 +108,54 @@ describe("a aba Auditoria", () => {
 
   it("o achado sai com a frase da regra e o desvio em meses", async () => {
     render(<AuditoriaTab companyId="emp-1" competencia="2026-07" api={apiCom(AUDITORIA)} />);
-    expect(await screen.findByText("Competência 2026-07 · emitida em 2026-08")).toBeInTheDocument();
-    expect(screen.getByText(/1 mês de diferença/)).toBeInTheDocument();
+    expect(await screen.findByText("Competência 2026-07 · emitida em 2026-09")).toBeInTheDocument();
+    expect(screen.getByText(/2 meses de diferença/)).toBeInTheDocument();
   });
 
-  it("⚠ a JANELA da numeração aparece — 'nenhum salto' num mês só seria promessa maior que a conferência", async () => {
+  // ⚠⚠ ESTE É O TESTE QUE IMPEDE O CORTE DE VIRAR OMISSÃO. As 1.727 notas de um mês deixaram de ser
+  // linha; se também deixassem de ser NÚMERO, a pergunta passaria a esconder o que conferiu — e a
+  // frase "nada some em silêncio" viraria mentira.
+  it("⚠ a virada de mês aparece como CONTAGEM, com a explicação", async () => {
     render(<AuditoriaTab companyId="emp-1" competencia="2026-07" api={apiCom(AUDITORIA)} />);
-    expect(await screen.findByText(/de 2025-08 a 2026-07/)).toBeInTheDocument();
-    expect(screen.getByText(/série 00001: nº 40 a 55/)).toBeInTheDocument();
+    expect(await screen.findByText(/1727 nota\(s\) com um mês de diferença não estão listadas/)).toBeInTheDocument();
+    expect(screen.getByText(/virada normal de mês/)).toBeInTheDocument();
+  });
+
+  it("⚠ a nota SEM COMPETÊNCIA aparece — ela sumia antes de a regra existir", async () => {
+    render(<AuditoriaTab companyId="emp-1" competencia="2026-07" api={apiCom(AUDITORIA)} />);
+    expect(await screen.findByText(/Notas fora de qualquer conferência mensal/)).toBeInTheDocument();
+    expect(screen.getByText(/2 nota\(s\) desta empresa não têm competência gravada/)).toBeInTheDocument();
+    expect(screen.getByText(/Nota 13007 — emitida em 2026-07-19/)).toBeInTheDocument();
+  });
+
+  // ⚠ A peça existia e NENHUMA tela a chamava (model + rota + método de API prontos). Era a resposta
+  // para "entrou nota depois que eu fechei o mês?", invisível.
+  it("⚠ a pendência pós-fechamento é renderizada, com o motivo em português", async () => {
+    const api = apiCom(AUDITORIA);
+    render(<AuditoriaTab companyId="emp-1" competencia="2026-07" api={api} />);
+    await waitFor(() => expect(api.listPendenciasPosFechamento).toHaveBeenCalledWith("emp-1", { onlyOpen: true }));
+    expect(await screen.findByText(/Pendências pós-fechamento \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText("2026-05")).toBeInTheDocument();
+    expect(screen.getByText(/chegou uma nota para uma competência que já estava fechada/)).toBeInTheDocument();
+  });
+
+  // ⚠ A pendência é da EMPRESA, não do mês na tela: filtrar pela competência aberta esconderia
+  // exatamente a nota que chegou atrasada.
+  it("a pendência não é filtrada pela competência da tela", async () => {
+    render(<AuditoriaTab companyId="emp-1" competencia="2026-07" api={apiCom(AUDITORIA)} />);
+    expect(await screen.findByText("2026-05")).toBeInTheDocument();
+  });
+
+  it("⚠ falha ao ler as pendências NÃO vira 'nenhuma pendência' — a tela avisa", async () => {
+    const api = {
+      getAuditoriaNotas: jest.fn(async () => ({ ok: true, auditoria: AUDITORIA })),
+      listPendenciasPosFechamento: jest.fn(async () => { throw new Error("fora do ar"); }),
+    };
+    render(<AuditoriaTab companyId="emp-1" competencia="2026-07" api={api} />);
+    expect(await screen.findByText(/Não foi possível conferir se entrou nota depois de a competência ser fechada/))
+      .toBeInTheDocument();
+    // …e a auditoria em si continua na tela: são perguntas independentes.
+    expect(screen.getByText(/Cada ponto é uma pergunta, não um veredito/)).toBeInTheDocument();
   });
 
   it("⚠ a nota fora da conferência NÃO some — aparece com o motivo", async () => {
@@ -110,24 +165,37 @@ describe("a aba Auditoria", () => {
     expect(await screen.findByText(/Nota 13001 — o XML não traz ISSQN/)).toBeInTheDocument();
   });
 
+  // ⚠ O CADEADO DO CORTE, do lado da tela: nem numeração da DPS (sem norma) nem "nota não lida"
+  // (manutenção do sistema) voltam a ser bloco, mesmo com o dado subindo em `manutencao`.
+  it("⚠ nenhum bloco de numeração da DPS nem de nota não lida", async () => {
+    render(<AuditoriaTab companyId="emp-1" competencia="2026-07" api={apiCom(AUDITORIA)} />);
+    await screen.findByText(/Auditoria pré-apuração/);
+    expect(screen.queryByText(/Numeração da DPS/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Numeração conferida/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Nota que não pôde ser lida/i)).not.toBeInTheDocument();
+  });
+
   it("⚠ nenhuma ação de escrita é oferecida — a aba é leitura", async () => {
     render(<AuditoriaTab companyId="emp-1" competencia="2026-07" api={apiCom(AUDITORIA)} />);
     await screen.findByText(/Auditoria pré-apuração/);
     const rotulos = screen.getAllByRole("button").map((b) => b.textContent || "");
     for (const r of rotulos) {
-      expect(r).not.toMatch(/salvar|marcar|corrigir|ignorar|aplicar|confirmar|transmitir|excluir/i);
+      expect(r).not.toMatch(/salvar|marcar|corrigir|ignorar|aplicar|confirmar|transmitir|excluir|reabrir/i);
     }
     expect(screen.getByText(/Esta tela apenas lê/)).toBeInTheDocument();
   });
 
   it("⚠ falha NÃO vira 'nada a apontar' — o erro aparece", async () => {
-    const api = { getAuditoriaNotas: jest.fn(async () => { throw new Error("servidor fora do ar"); }) };
+    const api = {
+      getAuditoriaNotas: jest.fn(async () => { throw new Error("servidor fora do ar"); }),
+      listPendenciasPosFechamento: jest.fn(async () => []),
+    };
     render(<AuditoriaTab companyId="emp-1" competencia="2026-07" api={api} />);
     expect(await screen.findByText(/servidor fora do ar/)).toBeInTheDocument();
     expect(screen.queryByText(/Nada a apontar/)).not.toBeInTheDocument();
   });
 
-  it("sem competência não chama nada — e não afirma nada sobre o mês", async () => {
+  it("sem competência não chama a auditoria — e não afirma nada sobre o mês", async () => {
     const api = apiCom(AUDITORIA);
     render(<AuditoriaTab companyId="emp-1" competencia="" api={api} />);
     expect(api.getAuditoriaNotas).not.toHaveBeenCalled();
@@ -136,7 +204,7 @@ describe("a aba Auditoria", () => {
 
   it("com achado, o cabeçalho conta os pontos E lembra o que não deu para conferir", async () => {
     render(<AuditoriaTab companyId="emp-1" competencia="2026-07" api={apiCom(AUDITORIA)} />);
-    expect(await screen.findByText("2 pontos a conferir")).toBeInTheDocument();
+    expect(await screen.findByText("1 ponto a conferir")).toBeInTheDocument();
     expect(screen.getByText(/1 sem como conferir/)).toBeInTheDocument();
   });
 });

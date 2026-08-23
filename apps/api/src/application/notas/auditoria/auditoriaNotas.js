@@ -1,15 +1,40 @@
-// A AUDITORIA PRÉ-APURAÇÃO — cinco PERGUNTAS sobre as notas do mês, nenhuma sentença.
+// A AUDITORIA PRÉ-APURAÇÃO — TRÊS PERGUNTAS sobre as notas do mês, nenhuma sentença.
 //
 // ─── O PEDIDO DO DONO (17/08/2026) ──────────────────────────────────────────────────────────────
 //
 // > *"nos ajuda em uma auditoria pré-apuração para entender se a nota está correta ou não, baseado
 // >  na atividade e baseado na data de emissão"*
 //
+// ─── ⚠ O CORTE (21/08/2026) — DE CINCO PERGUNTAS PARA TRÊS, POR DECISÃO DO DONO ─────────────────
+//
+// A aba nasceu com cinco perguntas e chegou a mostrar **~1.799 "pontos a conferir"**, dos quais
+// **~18** eram perguntas de verdade. Uma lista em que 99% é ruído treina o contador a não ler a
+// lista — e a pergunta que valia (o ISS zerado) sumia no meio. O dono aprovou o corte. O que saiu,
+// e por quê:
+//
+//   • **NUMERACAO_DA_DPS — REMOVIDA (falso positivo, provado na fonte).** Ver o bloco
+//     "⚠ POR QUE NÃO EXISTE MAIS UMA PERGUNTA DE NUMERAÇÃO DA DPS", logo abaixo de `PERGUNTAS`.
+//     Ela media 0 repetidos e 54 "buracos", e os buracos eram nossos, não do contribuinte.
+//   • **NOTA_NAO_LIDA — SAIU DA TELA DO CONTADOR** (continua sendo calculada e sobe no payload,
+//     em `manutencao`). São 5 notas e o defeito é do NOSSO extrator, não da escrituração da
+//     empresa. Nada se perde na conferência por isso: a nota ilegível continua aparecendo em
+//     `naoAvaliadas` das perguntas 1 e 3, com o motivo — que é onde ela é acionável.
+//   • **EMISSAO_FORA_DA_COMPETENCIA — ENXUGADA.** Medido: 1.738 divergências, das quais **1.727 de
+//     exatamente um mês** (a virada normal: serviço prestado em julho, faturado em 1º de agosto).
+//     Essas 1.727 viraram uma CONTAGEM (`viradaDeMes`) numa linha; só as **11** com dois meses ou
+//     mais viram linha de achado. ⚠ A contagem é obrigatória — sem ela a pergunta passaria a
+//     esconder 1.727 notas que ela de fato olhou, e "nada some em silêncio" deixaria de ser verdade.
+//
+// ⚠ O QUE O CORTE **NÃO** PODE LEVAR JUNTO (as quatro decisões que já estavam certas): distinguir
+// "conferi e não achei" de "não tive como conferir"; cada achado ser PERGUNTA e nunca veredito;
+// nunca pintar de vermelho (vermelho trava fechamento); e mostrar a nota que ficou de fora, com o
+// motivo. Os quatro seguem travados em teste.
+//
 // ─── ⚠ CADA ACHADO É UMA PERGUNTA, NUNCA UM VEREDITO ────────────────────────────────────────────
 //
 // O sistema **não sabe** se a nota está errada. Ele sabe que algo **não bate** com o cadastro, ou
-// que a numeração da DPS tem um salto, ou que o mês da emissão não é o mês em que a nota está
-// sendo contada. Quem julga é o contador — e é por isso que o texto de cada pergunta mora AQUI,
+// que o ISS saiu zerado onde havia base/alíquota, ou que o mês da emissão está longe do mês em que
+// a nota está sendo contada. Quem julga é o contador — e é por isso que o texto de cada pergunta mora AQUI,
 // em `PERGUNTAS`, e sobe pronto para a tela: se a frase vivesse no componente, a próxima tela a
 // consumir esta regra escreveria a sua, e uma delas diria "nota errada".
 //
@@ -45,13 +70,15 @@
 //
 // ─── ⚠ E NÃO SE INVENTA REGRA FISCAL ───────────────────────────────────────────────────────────
 //
-// São cinco perguntas porque foram cinco as nomeadas pelo dono. Uma sexta é proposta em relatório,
-// nunca implementada aqui — regra fiscal é decisão dele (princípio 1 do `CLAUDE.md` da raiz).
+// As perguntas são as que o dono nomeou — e SAEM quando ele manda sair. Uma pergunta nova é
+// proposta em relatório, nunca implementada aqui: regra fiscal é decisão dele (princípio 1 do
+// `CLAUDE.md` da raiz). O mesmo vale para RETIRAR: a numeração da DPS só saiu depois de a ausência
+// da norma ser conferida na fonte oficial (ANEXO_I do Padrão Nacional) e o dono aprovar.
 
 import { dataCivilISO } from "../../../utils/dataCivil.js";
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
-// A POPULAÇÃO — e por que ela NÃO é a mesma nas cinco perguntas
+// A POPULAÇÃO — e por que ela NÃO é a mesma em todas as perguntas
 // ────────────────────────────────────────────────────────────────────────────────────────────────
 //
 // ⚠ `"autorizada"` é o valor que `FechamentoService.whereFaturamentoEmit()` (a definição do projeto
@@ -71,10 +98,12 @@ export const POPULACAO = Object.freeze({
    */
   APURADA: "APURADA",
   /**
-   * ⚠ TODA NFS-e EMITIDA, INCLUSIVE A CANCELADA. Vale para a numeração da DPS e para "a nota não
-   * pôde ser lida", e o motivo é o mesmo dos dois lados: **não existe inutilização na NFS-e**
-   * (varrido nos 16 eventos do Anexo II — ver `apps/api/CLAUDE.md`). A nota cancelada CONSUMIU o
-   * número; tirá-la da conta transformaria cada cancelamento num "buraco" inventado pela auditoria.
+   * ⚠ TODA NFS-e EMITIDA, INCLUSIVE A CANCELADA. É a população da leitura de manutenção ("a nota
+   * não pôde ser lida") e a de `foraDaConferencia`: uma nota cancelada continua sendo um documento
+   * que existe, e escondê-la faria o mês parecer mais coberto do que é. (Era também a população da
+   * antiga pergunta de numeração, porque **não existe inutilização na NFS-e** — varrido nos 16
+   * eventos do Anexo II, ver `apps/api/CLAUDE.md`. Aquela pergunta não existe mais; a razão de a
+   * cancelada entrar aqui, sim.)
    */
   EMITIDA: "EMITIDA",
 });
@@ -90,12 +119,15 @@ function filtrarPopulacao(notas, populacao) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
-// AS CINCO PERGUNTAS — o texto é DADO, não string solta no componente
+// AS PERGUNTAS — o texto é DADO, não string solta no componente
 // ────────────────────────────────────────────────────────────────────────────────────────────────
 //
 // `pergunta` é a frase que a tela mostra no cabeçalho do bloco; `achado` é a frase de UMA linha.
 // As duas são interrogativas ou descritivas — nunca conclusivas. `escopo` documenta em que janela a
-// pergunta é respondida, porque nem todas são mensais (ver `NUMERACAO_DA_DPS`).
+// pergunta é respondida. Hoje as três da tela são mensais.
+//
+// ⚠ `NOTA_NAO_LIDA` continua definida aqui, mas **não é uma pergunta da tela do contador** desde
+// 21/08/2026 — ela sobe em `manutencao`. Ver a nota na própria definição.
 
 export const PERGUNTAS = Object.freeze({
   ATIVIDADE_FORA_DO_CADASTRO: Object.freeze({
@@ -113,16 +145,20 @@ export const PERGUNTAS = Object.freeze({
 
   EMISSAO_FORA_DA_COMPETENCIA: Object.freeze({
     id: "EMISSAO_FORA_DA_COMPETENCIA",
-    titulo: "Emissão fora da competência",
-    pergunta: "Alguma nota está sendo contada num mês diferente do mês em que foi emitida?",
-    achado: "esta nota está contada numa competência diferente do mês da data de emissão",
+    titulo: "Emissão em mês distante da competência",
+    pergunta: "Alguma nota está sendo contada num mês DOIS ou mais meses distante do da emissão?",
+    achado: "esta nota está contada numa competência distante do mês da data de emissão",
     populacao: POPULACAO.APURADA,
     escopo: "COMPETENCIA",
     // ⚠ NÃO É UM ERRO POR SI. A competência da NFS-e vem do próprio documento (`dCompet`) e pode
     // legitimamente ser o mês anterior ao da emissão — é o caso do serviço prestado em julho e
     // faturado no dia 1º de agosto. Medido em produção: 1.727 das 1.738 divergências são de
-    // exatamente um mês, e a emissão cai nos primeiros dias. Por isso o achado traz
-    // `mesesDeDesvio` — o contador precisa distinguir "virada de mês" de "cinco meses atrás".
+    // exatamente um mês, e a emissão cai nos primeiros dias.
+    //
+    // ⚠ POR ISSO A PERGUNTA MUDOU DE RECORTE EM 21/08/2026: um mês de desvio deixou de virar linha e
+    // passou a virar a contagem `viradaDeMes`; só dois meses ou mais viram achado (ver
+    // `MESES_DE_DESVIO_QUE_VIRAM_ACHADO`). O `titulo` e a `pergunta` acima foram reescritos junto —
+    // deixar a frase antiga sobre o recorte novo faria a tela prometer uma varredura que ela não faz.
     fonte: "PortalInvoice.competencia × PortalInvoice.issueDate (data CIVIL, nunca fuso local)",
   }),
 
@@ -140,22 +176,47 @@ export const PERGUNTAS = Object.freeze({
     fonte: "PortalInvoice.issqnBaseCalculo / issqnAliquota / issqnValor",
   }),
 
-  NUMERACAO_DA_DPS: Object.freeze({
-    id: "NUMERACAO_DA_DPS",
-    titulo: "Numeração da DPS",
-    pergunta: "Dentro de uma mesma série, algum número de DPS foi repetido ou pulado?",
-    achado: "a numeração desta série tem um número repetido ou um intervalo sem nota",
-    populacao: POPULACAO.EMITIDA,
-    // ⚠ NUMERAÇÃO NÃO É FATO MENSAL, e tratá-la como tal fabricaria buracos: a nota nº 100 de
-    // julho e a nº 101 de agosto vizinham numa série e não numa competência. Por isso esta pergunta
-    // é respondida sobre uma JANELA declarada (que o chamador escolhe) e o resultado devolve
-    // `janela` + a faixa observada de cada série — a tela diz **entre quais números** conferiu.
-    escopo: "JANELA_DA_SERIE",
-    // ⚠ E NÃO SE REPORTA BURACO NA BORDA: um salto exige número dos DOIS lados. O menor e o maior
-    // número observados são o limite do que sabemos, não prova de que nada existe além.
-    fonte: "PortalInvoice.dpsSerie + PortalInvoice.dpsNumero",
-  }),
+  // ⚠⚠ AQUI HAVIA `NUMERACAO_DA_DPS` ("algum número de DPS foi repetido ou pulado?"). ELA FOI
+  // REMOVIDA EM 21/08/2026, com aprovação do dono, porque era um FALSO POSITIVO — e este comentário
+  // existe para que ninguém a reintroduza daqui a seis meses achando que fez uma melhoria.
+  //
+  // ── 1. A NORMA NÃO DIZ O QUE A PERGUNTA AFIRMAVA (fonte oficial, conferida) ────────────────────
+  //
+  // A regra **E0014** do Padrão Nacional (`ANEXO_I`, aba `RN DPS_NFS-e`, linha 148) define a
+  // unicidade da DPS por **QUATRO** componentes: **Série + Número + Município Emissor + CNPJ/CPF do
+  // emitente**. A pergunta comparava **DOIS** (série + número), dentro de uma empresa e ignorando o
+  // município — ou seja, ela nunca esteve implementando E0014.
+  //
+  // ── 2. NÃO EXISTE REGRA DE NUMERAÇÃO CONTÍNUA DA DPS ──────────────────────────────────────────
+  //
+  // Varridas as **653 regras** do `ANEXO_I`: nenhuma exige que a numeração da DPS seja contínua ou
+  // sem lacunas. O único campo com regra de sequência é o **`nNFSe`** — e ele é gerado pela
+  // Receita, não pelo contribuinte. Um "buraco" na DPS, portanto, não viola norma nenhuma: apontá-lo
+  // era o sistema inventando obrigação fiscal, que é exatamente o princípio 1 do `CLAUDE.md` da raiz.
+  //
+  // ── 3. OS "BURACOS" ERAM NOSSOS, NÃO DO CONTRIBUINTE ──────────────────────────────────────────
+  //
+  // Medido: 0 repetidos e 54 saltos. Duas causas comprovadas, as duas do nosso lado:
+  //   a) a consulta filtrava por `competencia: { gte, lt }` — e **nota sem competência sumia antes
+  //      de a regra existir**, sem sequer aparecer em "notas fora desta conferência". O salto que
+  //      ela deixava na série era fabricado por nós (isso está consertado; ver `foraDaConferencia`);
+  //   b) a captura do ADN comprovadamente pulou documentos. O que a pergunta media era a nossa
+  //      COBERTURA de captura — informação útil para nós, e acusação injusta contra a empresa.
+  //
+  // ── 4. E O RAMO "REPETIDO" SAIU JUNTO ─────────────────────────────────────────────────────────
+  //
+  // Ele dava 0 achados, e a frase descrevia algo que o sistema nacional impede na origem (E0014
+  // rejeita a segunda DPS com a mesma chave de quatro componentes). Manter na tela uma pergunta que
+  // só pode responder "não" é gastar a atenção do contador com uma certeza.
+  //
+  // Se algum dia isto voltar, tem de voltar como MEDIÇÃO DA NOSSA CAPTURA (painel de operação), com
+  // as quatro componentes de E0014, e nunca como pergunta na tela do contador.
 
+  // ⚠ NÃO É MAIS UMA PERGUNTA DA TELA (21/08/2026). Continua calculada e sobe em `manutencao`,
+  // porque o sinal é real e é NOSSO: `camposFiscaisExtraidosEm` nulo quer dizer que o extrator
+  // nunca passou pela linha. Só que isso é defeito de sistema, não pergunta de contador — e não
+  // esconde nada da conferência, porque a nota ilegível continua saindo em `naoAvaliadas` das
+  // perguntas que dependem do campo que faltou, nomeada e com motivo.
   NOTA_NAO_LIDA: Object.freeze({
     id: "NOTA_NAO_LIDA",
     titulo: "Nota que não pôde ser lida",
@@ -163,8 +224,8 @@ export const PERGUNTAS = Object.freeze({
     achado: "os campos fiscais desta nota não foram extraídos do XML",
     populacao: POPULACAO.EMITIDA,
     escopo: "COMPETENCIA",
-    // ⚠ ELA APARECE, COM O MOTIVO — não some. Uma nota ilegível é justamente a que as outras quatro
-    // perguntas não conseguem avaliar; escondê-la faria o mês parecer conferido.
+    /** ⚠ Marca que esta definição NÃO vai para `perguntas` — quem lê o payload não precisa adivinhar. */
+    manutencao: true,
     fonte: "PortalInvoice.camposFiscaisMotivo + camposFiscaisExtraidosEm",
   }),
 });
@@ -198,10 +259,8 @@ export const MOTIVO_NOTA_NAO_AVALIADA = Object.freeze({
   SEM_COMPETENCIA: "SEM_COMPETENCIA",
   /** Nem base, nem alíquota, nem valor de ISSQN: o desenho de nota imune/isenta/retida na fonte. */
   SEM_ISSQN_NO_XML: "SEM_ISSQN_NO_XML",
-  SEM_NUMERO_DE_DPS: "SEM_NUMERO_DE_DPS",
-  SEM_SERIE_DE_DPS: "SEM_SERIE_DE_DPS",
-  /** `dpsNumero` presente e não numérico — não entra na conta de salto, e não vira zero. */
-  NUMERO_DE_DPS_NAO_NUMERICO: "NUMERO_DE_DPS_NAO_NUMERICO",
+  // ⚠ `SEM_NUMERO_DE_DPS`, `SEM_SERIE_DE_DPS` e `NUMERO_DE_DPS_NAO_NUMERICO` saíram com a pergunta
+  // de numeração (21/08/2026). Não voltam sem a pergunta voltar — e a pergunta não volta sem norma.
 });
 
 /** As espécies de achado dentro de uma mesma pergunta. */
@@ -210,10 +269,8 @@ export const ESPECIE = Object.freeze({
   ALIQUOTA_SEM_VALOR: "ALIQUOTA_SEM_VALOR",
   /** ISSQN: há base de cálculo maior que zero e o valor do imposto é nulo ou zero. */
   BASE_SEM_VALOR: "BASE_SEM_VALOR",
-  /** DPS: o mesmo (série, número) em mais de uma nota. */
-  NUMERO_REPETIDO: "NUMERO_REPETIDO",
-  /** DPS: faixa de números sem nota nenhuma, ENTRE duas notas que existem. */
-  NUMERO_PULADO: "NUMERO_PULADO",
+  // ⚠ `NUMERO_REPETIDO` e `NUMERO_PULADO` saíram com a pergunta de numeração (21/08/2026) — ver o
+  // bloco de justificativa em `PERGUNTAS`. Não há regra de numeração contínua da DPS no ANEXO_I.
   /** A extração rodou e falhou, com motivo nomeado por `camposFiscaisNfse.MOTIVO`. */
   LEITURA_FALHOU: "LEITURA_FALHOU",
   /**
@@ -349,6 +406,18 @@ function perguntaAtividade(notas, codigosCadastrados) {
 // 2 — DATA DE EMISSÃO FORA DA COMPETÊNCIA
 // ────────────────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * ⚠ A PARTIR DE QUANTOS MESES DE DESVIO A NOTA VIRA LINHA NA TELA.
+ *
+ * Desvio de **um** mês é a virada normal do calendário: serviço prestado em julho, DPS emitida em
+ * 1º de agosto, `dCompet` = julho. Medido em produção (21/08/2026): **1.727 das 1.738** divergências
+ * eram exatamente isso. Listá-las uma a uma afogava as **11** que mereciam olhar.
+ *
+ * ⚠ MAS ELAS NÃO SOMEM — viram `viradaDeMes`, uma CONTAGEM que a tela mostra numa linha. A regra da
+ * casa é que a auditoria nunca esconde o que olhou; ela pode RESUMIR, e é o que este número faz.
+ */
+export const MESES_DE_DESVIO_QUE_VIRAM_ACHADO = 2;
+
 function perguntaEmissao(notas) {
   const def = PERGUNTAS.EMISSAO_FORA_DA_COMPETENCIA;
   if (!notas.length) return respostaNaoConferivel(def, MOTIVO_NAO_CONFERIVEL.SEM_NOTAS);
@@ -356,6 +425,7 @@ function perguntaEmissao(notas) {
   const achados = [];
   const naoAvaliadas = [];
   let avaliadas = 0;
+  let viradaDeMes = 0;
 
   for (const nota of notas) {
     const mesEmissao = mesCivil(nota.issueDate);
@@ -370,21 +440,35 @@ function perguntaEmissao(notas) {
     }
     avaliadas += 1;
     if (mesEmissao === mesCompetencia) continue;
+    // Negativo = a competência está ATRÁS da emissão (serviço de julho faturado em agosto).
+    const mesesDeDesvio = mesesEntre(mesCompetencia, mesEmissao);
+
+    // ⚠ DESVIO DE UM MÊS É CONTADO, NÃO LISTADO. E `null` (desvio que não deu para calcular) NÃO cai
+    // aqui de propósito: o que não sabemos medir nunca vira "caso normal" — vira linha, para o
+    // contador olhar. Silenciar o desconhecido junto com o conhecido é como uma aba de auditoria
+    // vira decoração.
+    if (mesesDeDesvio !== null && Math.abs(mesesDeDesvio) < MESES_DE_DESVIO_QUE_VIRAM_ACHADO) {
+      viradaDeMes += 1;
+      continue;
+    }
+
     achados.push({
       pergunta: def.id,
       ...identificacao(nota),
-      dados: {
-        mesDaCompetencia: mesCompetencia,
-        mesDaEmissao: mesEmissao,
-        // Negativo = a competência está ATRÁS da emissão (serviço de julho faturado em agosto).
-        mesesDeDesvio: mesesEntre(mesCompetencia, mesEmissao),
-      },
+      dados: { mesDaCompetencia: mesCompetencia, mesDaEmissao: mesEmissao, mesesDeDesvio },
     });
   }
   if (!avaliadas) {
     return respostaNaoConferivel(def, MOTIVO_NAO_CONFERIVEL.NENHUMA_NOTA_AVALIAVEL, { naoAvaliadas });
   }
-  return respostaConferida(def, { achados, avaliadas, naoAvaliadas });
+  // `viradaDeMes` sobe SEMPRE (mesmo zerado): a tela precisa poder dizer "nenhuma", e um campo que
+  // só existe quando é diferente de zero obriga o consumidor a adivinhar o que a ausência quer dizer.
+  return respostaConferida(def, {
+    achados,
+    avaliadas,
+    naoAvaliadas,
+    extra: { viradaDeMes, mesesDeDesvioMinimo: MESES_DE_DESVIO_QUE_VIRAM_ACHADO },
+  });
 }
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -436,117 +520,7 @@ function perguntaIss(notas) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
-// 4 — NÚMERO DA DPS PULADO OU REPETIDO
-// ────────────────────────────────────────────────────────────────────────────────────────────────
-
-function perguntaNumeracao(notas, janela) {
-  const def = PERGUNTAS.NUMERACAO_DA_DPS;
-  const extra = { janela: janela ?? null, series: [] };
-  if (!notas.length) return respostaNaoConferivel(def, MOTIVO_NAO_CONFERIVEL.SEM_NOTAS, { extra });
-
-  const naoAvaliadas = [];
-  const porSerie = new Map(); // serie → Map(numero → [notas])
-  let avaliadas = 0;
-
-  for (const nota of notas) {
-    const serie = String(nota.dpsSerie ?? "").trim();
-    const bruto = String(nota.dpsNumero ?? "").trim();
-    if (!serie) {
-      naoAvaliadas.push({ ...identificacao(nota), motivo: MOTIVO_NOTA_NAO_AVALIADA.SEM_SERIE_DE_DPS });
-      continue;
-    }
-    if (!bruto) {
-      naoAvaliadas.push({ ...identificacao(nota), motivo: MOTIVO_NOTA_NAO_AVALIADA.SEM_NUMERO_DE_DPS });
-      continue;
-    }
-    if (!/^\d+$/.test(bruto)) {
-      // Presente e ilegível não vira zero, e não some: sem ele a faixa da série ficaria menor do
-      // que é, e um buraco poderia ser inventado logo ao lado.
-      naoAvaliadas.push({ ...identificacao(nota), motivo: MOTIVO_NOTA_NAO_AVALIADA.NUMERO_DE_DPS_NAO_NUMERICO });
-      continue;
-    }
-    avaliadas += 1;
-    const numero = Number(bruto);
-    if (!porSerie.has(serie)) porSerie.set(serie, new Map());
-    const mapa = porSerie.get(serie);
-    if (!mapa.has(numero)) mapa.set(numero, []);
-    mapa.get(numero).push(nota);
-  }
-
-  if (!avaliadas) {
-    return respostaNaoConferivel(def, MOTIVO_NAO_CONFERIVEL.NENHUMA_NOTA_AVALIAVEL, { naoAvaliadas, extra });
-  }
-
-  const achados = [];
-  const series = [];
-
-  for (const serie of [...porSerie.keys()].sort()) {
-    const mapa = porSerie.get(serie);
-    const numeros = [...mapa.keys()].sort((a, b) => a - b);
-    const de = numeros[0];
-    const ate = numeros[numeros.length - 1];
-
-    for (const numero of numeros) {
-      const lista = mapa.get(numero);
-      if (lista.length < 2) continue;
-      // ⚠ O achado do repetido NÃO tem uma nota só — ele tem o conjunto. Apontar a "segunda"
-      // escolheria uma das duas como a errada, e essa escolha é do contador.
-      achados.push({
-        pergunta: def.id,
-        notaId: null,
-        numero: null,
-        chaveAcesso: null,
-        emissao: null,
-        competencia: null,
-        valor: null,
-        dados: {
-          especie: ESPECIE.NUMERO_REPETIDO,
-          serie,
-          numeroDps: numero,
-          notas: lista.map((n) => identificacao(n)),
-        },
-      });
-    }
-
-    // Os buracos, agrupados em FAIXAS consecutivas: uma linha "faltam 6580..6602" em vez de 23.
-    // ⚠ Só ENTRE dois números observados — a borda da janela não é buraco, é o limite do que
-    // sabemos. Sem essa regra, toda série reportaria um "salto" do 1 até o primeiro número visto.
-    const faltando = [];
-    for (let i = 0; i < numeros.length - 1; i += 1) {
-      const atual = numeros[i];
-      const proximo = numeros[i + 1];
-      if (proximo - atual <= 1) continue;
-      faltando.push({ de: atual + 1, ate: proximo - 1, quantidade: proximo - atual - 1, antes: atual, depois: proximo });
-    }
-    for (const faixa of faltando) {
-      achados.push({
-        pergunta: def.id,
-        notaId: null,
-        numero: null,
-        chaveAcesso: null,
-        emissao: null,
-        competencia: null,
-        valor: null,
-        dados: { especie: ESPECIE.NUMERO_PULADO, serie, ...faixa },
-      });
-    }
-
-    series.push({
-      serie,
-      de,
-      ate,
-      notas: numeros.reduce((s, n) => s + mapa.get(n).length, 0),
-      numerosDistintos: numeros.length,
-      pulados: faltando.reduce((s, f) => s + f.quantidade, 0),
-      repetidos: numeros.filter((n) => mapa.get(n).length > 1).length,
-    });
-  }
-
-  return respostaConferida(def, { achados, avaliadas, naoAvaliadas, extra: { ...extra, series } });
-}
-
-// ────────────────────────────────────────────────────────────────────────────────────────────────
-// 5 — NOTA QUE NÃO PÔDE SER LIDA
+// MANUTENÇÃO — NOTA QUE NÃO PÔDE SER LIDA (⚠ NÃO é pergunta da tela do contador)
 // ────────────────────────────────────────────────────────────────────────────────────────────────
 
 function perguntaLeitura(notas) {
@@ -572,9 +546,61 @@ function perguntaLeitura(notas) {
       });
     }
   }
-  // ⚠ Toda nota da população é avaliável aqui — é a única pergunta que não depende de campo
-  // extraído, e é justamente por isso que ela é a rede das outras quatro.
+  // ⚠ Toda nota da população é avaliável aqui — é a única leitura que não depende de campo
+  // extraído, e é justamente por isso que ela é a rede das perguntas que dependem.
   return respostaConferida(def, { achados, avaliadas: notas.length, naoAvaliadas: [] });
+}
+
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠ AS NOTAS QUE A CONFERÊNCIA MENSAL NÃO ALCANÇA — e por que elas aparecem
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+//
+// A aba promete, na cara: **"nada some em silêncio"**. Até 21/08/2026 ela quebrava essa promessa no
+// lugar mais caro possível: o serviço filtrava por `competencia: { gte, lt }`, e **nota com
+// `competencia` NULA nunca chegava à regra** — não entrava em pergunta nenhuma, e não aparecia nem
+// na lista de "notas fora desta conferência", porque a regra sequer sabia que ela existia.
+//
+// ── A DECISÃO (e por que não é "colocar na conferência") ────────────────────────────────────────
+//
+// A competência é o EIXO desta aba: cada pergunta responde sobre "as notas de AAAA-MM". Uma nota sem
+// competência gravada não pertence a mês nenhum, e atribuí-la a um mês pela data de emissão seria o
+// sistema INVENTANDO a competência dela — a mesma classe de erro que o princípio 1 do `CLAUDE.md`
+// da raiz proíbe, e com consequência fiscal (a competência decide em qual apuração a receita entra).
+//
+// Então ela **aparece, separada e nomeada**: `foraDaConferencia`. A frase não é "está errada" — é
+// *"esta nota não tem competência gravada, então não entra nesta nem em nenhuma outra conferência
+// mensal"*. E o número é o de VERDADE (contado no banco), mesmo quando a lista vem truncada.
+//
+// ⚠ ISSO NÃO É DETALHE COSMÉTICO. Era essa mesma nota invisível que ajudava a fabricar os "buracos"
+// da antiga pergunta de numeração: ela sumia da série sem deixar rastro, e a auditoria acusava a
+// empresa por uma falha da nossa consulta.
+
+/** O vocabulário de por que uma nota fica FORA de toda a conferência mensal. Lista fechada. */
+export const MOTIVO_FORA_DA_CONFERENCIA = Object.freeze({
+  /** `PortalInvoice.competencia` nula — a nota não pertence a competência nenhuma. */
+  SEM_COMPETENCIA_GRAVADA: "SEM_COMPETENCIA_GRAVADA",
+});
+
+/**
+ * Monta o bloco `foraDaConferencia` a partir das notas JÁ CARREGADAS pelo serviço.
+ *
+ * @param {Array}  notasSemCompetencia amostra (o serviço limita) de NFS-e EMIT com `competencia` nula
+ * @param {number} total               o total REAL, contado no banco — nunca `notas.length`
+ */
+function montarForaDaConferencia(notasSemCompetencia, total) {
+  const notas = filtrarPopulacao(notasSemCompetencia, POPULACAO.EMITIDA);
+  // ⚠ `total == null` PRIMEIRO, e nunca `Number.isFinite(Number(total))`: `Number(null)` é **0**, e
+  // um zero aqui afirmaria "conferi, não há nenhuma nota fora" quando o chamador não contou nada.
+  // É o mesmo defeito de `numeroOuNulo` logo acima, e o mesmo de `folhaAusenteNaoEZero.test.js`.
+  const contagem = total == null || !Number.isFinite(Number(total)) ? notas.length : Number(total);
+  return {
+    motivo: MOTIVO_FORA_DA_CONFERENCIA.SEM_COMPETENCIA_GRAVADA,
+    total: contagem,
+    // ⚠ A tela precisa saber que a lista é AMOSTRA para não dizer "são estas" quando são mais.
+    listadas: notas.length,
+    truncada: contagem > notas.length,
+    notas: notas.map((n) => identificacao(n)),
+  };
 }
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -582,40 +608,47 @@ function perguntaLeitura(notas) {
 // ────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Responde as cinco perguntas da auditoria pré-apuração sobre notas JÁ CARREGADAS.
+ * Responde as TRÊS perguntas da auditoria pré-apuração sobre notas JÁ CARREGADAS.
  *
- * PURA: sem prisma, sem rede, sem escrita. Duas listas porque são duas janelas — ver
- * `PERGUNTAS.NUMERACAO_DA_DPS.escopo`.
+ * PURA: sem prisma, sem rede, sem escrita.
+ *
+ * ⚠ O retorno tem TRÊS compartimentos, e eles não se misturam:
+ *   • `perguntas`   — o que o CONTADOR responde. É o que a tela desenha em bloco.
+ *   • `manutencao`  — o que NÓS temos de consertar (nota cujo XML não foi lido). Não é bloco.
+ *   • `foraDaConferencia` — o que a conferência mensal não alcança, com o motivo. Não é achado.
  *
  * @param {Object} args
  * @param {string} args.competencia          `"AAAA-MM"` — o mês que está sendo auditado.
  * @param {Array}  args.notas                notas da COMPETÊNCIA (papel/type/status crus; o filtro
  *                                           de população é desta regra, não do chamador).
- * @param {Array}  [args.notasDaSerie]       notas da JANELA usada para a numeração da DPS. Ausente
- *                                           ⇒ usa `notas`, e a janela declarada é a competência.
- * @param {{de?:string, ate?:string}} [args.janelaDaSerie] a janela que o chamador de fato carregou.
+ * @param {Array}  [args.notasSemCompetencia] amostra de NFS-e EMIT da empresa com `competencia` nula.
+ * @param {number} [args.totalSemCompetencia] o total REAL delas, contado no banco.
  * @param {string[]} [args.codigosServicoNacional] o cadastro da empresa — a AUTORIDADE da pergunta 1.
  * @returns {{competencia:string, totalNotas:number, totalAchados:number,
- *            perguntasConferidas:number, perguntasNaoConferiveis:number, perguntas:Array}}
+ *            perguntasConferidas:number, perguntasNaoConferiveis:number, perguntas:Array,
+ *            manutencao:Object, foraDaConferencia:Object}}
  */
 export function auditarNotasDaCompetencia({
   competencia,
   notas,
-  notasDaSerie,
-  janelaDaSerie = null,
+  notasSemCompetencia = [],
+  totalSemCompetencia = null,
   codigosServicoNacional = [],
 } = {}) {
   const apuradas = filtrarPopulacao(notas, POPULACAO.APURADA);
   const emitidas = filtrarPopulacao(notas, POPULACAO.EMITIDA);
-  const daSerie = filtrarPopulacao(notasDaSerie ?? notas, POPULACAO.EMITIDA);
 
   const perguntas = [
     perguntaAtividade(apuradas, codigosServicoNacional),
     perguntaEmissao(apuradas),
     perguntaIss(apuradas),
-    perguntaNumeracao(daSerie, janelaDaSerie ?? { de: competencia ?? null, ate: competencia ?? null }),
-    perguntaLeitura(emitidas),
   ];
+
+  // ⚠ FORA de `perguntas`, de propósito (21/08/2026). Continua sendo calculada e continua subindo
+  // no payload — o sinal é real e é NOSSO —, mas não é pergunta de contador e não conta em
+  // `totalAchados`: somá-la ali faria o cabeçalho anunciar "pontos a conferir" sobre um defeito de
+  // extração, que o contador não tem como resolver.
+  const leitura = perguntaLeitura(emitidas);
 
   return {
     competencia: competencia ?? null,
@@ -626,6 +659,11 @@ export function auditarNotasDaCompetencia({
     perguntasConferidas: perguntas.filter((p) => p.situacao === SITUACAO.CONFERIDA).length,
     perguntasNaoConferiveis: perguntas.filter((p) => p.situacao === SITUACAO.NAO_CONFERIVEL).length,
     perguntas,
+    manutencao: {
+      notasNaoLidas: leitura.achados.length,
+      leitura,
+    },
+    foraDaConferencia: montarForaDaConferencia(notasSemCompetencia, totalSemCompetencia),
   };
 }
 
@@ -640,7 +678,9 @@ export const SELECT_PARA_AUDITORIA = Object.freeze({
   issueDate: true, competencia: true, total: true,
   cTribNac: true, xTribNac: true,
   issqnBaseCalculo: true, issqnAliquota: true, issqnValor: true,
-  dpsSerie: true, dpsNumero: true,
+  // ⚠ `dpsSerie`/`dpsNumero` SAÍRAM em 21/08/2026, com a pergunta de numeração. Nenhuma regra daqui
+  // os lê mais; devolvê-los "por via das dúvidas" faria a próxima sessão achar que há conferência
+  // de numeração acontecendo em algum lugar.
   camposFiscaisExtraidosEm: true, camposFiscaisMotivo: true,
 });
 

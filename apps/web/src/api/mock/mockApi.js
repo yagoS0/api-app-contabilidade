@@ -6215,7 +6215,24 @@ export function createMockApi() {
     },
     async fecharCompetencia() { await delay(60); return { ok: true, competencia: { estado: "fechado" } }; },
     async reabrirCompetencia() { await delay(60); return { ok: true, competencia: { estado: "em_conferencia" } }; },
-    async listPendenciasPosFechamento() { await delay(60); return []; },
+    // ⚠ NÃO PODE VOLTAR VAZIO. Este método existiu meses sem nenhum consumidor, e a lista
+    // (`notas/components/PendenciasList.jsx`) — que responde *"entrou nota depois que eu fechei o
+    // mês?"* — só passou a ser renderizada na aba Auditoria em 21/08/2026. Um mock vazio esconderia
+    // offline exatamente o bloco novo: `PendenciasList` devolve `null` sem pendência aberta.
+    async listPendenciasPosFechamento() {
+      await delay(60);
+      return [{
+        id: "mock-pend-1",
+        competencia: "2026-05",
+        notaId: "mock-nfse-6",
+        motivo: "nota_retroativa",
+        observacoes: "NFS-e 33045572255387580000103000000013006 chegou para 2026-05 (competência já fechada).",
+        resolvida: false,
+        resolvidaAt: null,
+        resolvidaByUserId: null,
+        createdAt: "2026-08-14T11:20:00.000Z",
+      }];
+    },
     async resolverPendencia() { await delay(60); return { ok: true }; },
     async syncDfe() { await delay(80); return { ok: true, result: { totalDocs: 0, byType: {}, newCursor: "0" } }; },
     async getDfeState() { await delay(60); return null; },
@@ -7054,13 +7071,18 @@ export function createMockApi() {
           avaliadas: 0, achados: [], naoAvaliadas: [], cadastrados: [],
         },
         {
-          id: "EMISSAO_FORA_DA_COMPETENCIA", titulo: "Emissão fora da competência",
-          pergunta: "Alguma nota está sendo contada num mês diferente do mês em que foi emitida?",
-          achado: "esta nota está contada numa competência diferente do mês da data de emissão",
+          id: "EMISSAO_FORA_DA_COMPETENCIA", titulo: "Emissão em mês distante da competência",
+          pergunta: "Alguma nota está sendo contada num mês DOIS ou mais meses distante do da emissão?",
+          achado: "esta nota está contada numa competência distante do mês da data de emissão",
           situacao: "CONFERIDA", motivo: null, avaliadas: 12, naoAvaliadas: [],
+          // ⚠ O MOCK TEM DE EXERCER OS DOIS LADOS DO CORTE DE 21/08/2026: o achado (2+ meses, que
+          // vira linha) E a contagem da virada de mês (1 mês, que vira UMA linha de resumo). Um
+          // payload só com achados nunca renderizaria a linha que impede a pergunta de esconder
+          // 1.727 notas em produção.
+          viradaDeMes: 9, mesesDeDesvioMinimo: 2,
           achados: [{
             pergunta: "EMISSAO_FORA_DA_COMPETENCIA", ...notaRef("mock-nfse-1", "13000"),
-            dados: { mesDaCompetencia: competencia, mesDaEmissao: "2026-08", mesesDeDesvio: -1 },
+            dados: { mesDaCompetencia: competencia, mesDaEmissao: "2026-09", mesesDeDesvio: -3 },
           }],
         },
         {
@@ -7071,25 +7093,10 @@ export function createMockApi() {
           // ⚠ Nota sem ISSQN no XML NÃO é achado — sai nomeada, e a tela precisa desenhar isso.
           naoAvaliadas: [{ ...notaRef("mock-nfse-2", "13001"), motivo: "SEM_ISSQN_NO_XML" }],
         },
-        {
-          id: "NUMERACAO_DA_DPS", titulo: "Numeração da DPS",
-          pergunta: "Dentro de uma mesma série, algum número de DPS foi repetido ou pulado?",
-          achado: "a numeração desta série tem um número repetido ou um intervalo sem nota",
-          situacao: "CONFERIDA", motivo: null, avaliadas: 12, naoAvaliadas: [],
-          janela: { de: "2025-09", ate: competencia, meses: 12 },
-          series: [{ serie: "00001", de: 40, ate: 55, notas: 12, numerosDistintos: 12, pulados: 4, repetidos: 0 }],
-          achados: [{
-            pergunta: "NUMERACAO_DA_DPS", notaId: null, numero: null, chaveAcesso: null,
-            emissao: null, competencia: null, valor: null,
-            dados: { especie: "NUMERO_PULADO", serie: "00001", de: 44, ate: 47, quantidade: 4, antes: 43, depois: 48 },
-          }],
-        },
-        {
-          id: "NOTA_NAO_LIDA", titulo: "Nota que não pôde ser lida",
-          pergunta: "De alguma nota deste mês não conseguimos extrair os campos fiscais do XML?",
-          achado: "os campos fiscais desta nota não foram extraídos do XML",
-          situacao: "CONFERIDA", motivo: null, avaliadas: 13, naoAvaliadas: [], achados: [],
-        },
+        // ⚠ `NUMERACAO_DA_DPS` e `NOTA_NAO_LIDA` SAÍRAM DAQUI EM 21/08/2026, com o corte aprovado
+        // pelo dono. A primeira era falso positivo (não existe regra de numeração contínua da DPS no
+        // ANEXO_I — ver `application/notas/auditoria/auditoriaNotas.js`); a segunda é manutenção do
+        // sistema e migrou para `auditoria.manutencao`, que a tela não desenha como bloco.
       ];
       return {
         ok: true,
@@ -7100,11 +7107,33 @@ export function createMockApi() {
           perguntasConferidas: perguntas.filter((p) => p.situacao === "CONFERIDA").length,
           perguntasNaoConferiveis: perguntas.filter((p) => p.situacao === "NAO_CONFERIVEL").length,
           perguntas,
+          // ⚠ NÃO É PERGUNTA e NÃO conta em `totalAchados` — sobe para quem opera o sistema.
+          manutencao: {
+            notasNaoLidas: 1,
+            leitura: {
+              id: "NOTA_NAO_LIDA", titulo: "Nota que não pôde ser lida", manutencao: true,
+              situacao: "CONFERIDA", motivo: null, avaliadas: 13, naoAvaliadas: [],
+              achados: [{
+                pergunta: "NOTA_NAO_LIDA", ...notaRef("mock-nfse-9", "13009"),
+                dados: { especie: "NUNCA_EXTRAIDA", motivo: null, temXml: true },
+              }],
+            },
+          },
+          // ⚠ O MOCK PRECISA TER UMA ÓRFÃ. Este bloco existe porque a nota sem competência sumia
+          // antes de a regra existir, e um mock sem nenhuma deixaria o conserto sem exercício
+          // offline — que é como este projeto já foi mordido três vezes na mesma semana.
+          foraDaConferencia: {
+            motivo: "SEM_COMPETENCIA_GRAVADA",
+            total: 2, listadas: 2, truncada: false,
+            notas: [
+              { notaId: "mock-nfse-7", numero: "13007", chaveAcesso: null, emissao: `${competencia}-19`, competencia: null, valor: 890 },
+              { notaId: "mock-nfse-8", numero: "13008", chaveAcesso: null, emissao: `${competencia}-22`, competencia: null, valor: 1500 },
+            ],
+          },
           empresa: {
             portalClientId: _companyId, razao: "EMPRESA EXEMPLO MOCK LTDA", cnpj: "00000000000191",
             codigosServicoNacional: [], codigoServicoNacionalDaDps: null, temCadastroDeServicos: false,
           },
-          janelaDaSerie: { de: "2025-09", ate: competencia, meses: 12 },
         },
       };
     },

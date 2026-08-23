@@ -1,4 +1,19 @@
-// A ABA AUDITORIA — cinco perguntas sobre as notas do mês, respondidas antes de apurar.
+// A ABA AUDITORIA — três perguntas sobre as notas do mês, respondidas antes de apurar.
+//
+// ⚠ O CORTE DE 21/08/2026 (aprovado pelo dono). Ela mostrava **~1.799 "pontos a conferir"**, dos
+// quais ~18 eram perguntas de verdade — e uma lista em que 99% é ruído treina o contador a não ler
+// a lista. O que mudou NA TELA (a justificativa de cada corte está na regra, em
+// `application/notas/auditoria/auditoriaNotas.js`):
+//
+//   • saiu o bloco **Numeração da DPS** (falso positivo: não há regra de numeração contínua da DPS
+//     no ANEXO_I, e os "buracos" mediam a nossa captura);
+//   • saiu o bloco **Nota que não pôde ser lida** (manutenção do sistema, não pergunta de contador);
+//   • **Emissão fora da competência** passou a listar só desvio de 2+ meses; o desvio de um mês —
+//     1.727 dos 1.738 casos, a virada normal — virou UMA LINHA de contagem;
+//   • entrou o bloco **Pendências pós-fechamento** (`PendenciasList`, que existia sem consumidor
+//     nenhum), respondendo *"entrou nota depois que eu fechei o mês?"*;
+//   • entrou a linha das **notas fora de qualquer conferência mensal** (sem competência gravada),
+//     que antes sumiam antes de a regra existir.
 //
 // ⚠ ONDE ELA VIVE, E POR QUÊ: dentro da EMPRESA, no grupo Fiscal, entre "Notas Fiscais" e
 // "Apuração". O dono chamou o pedido de *auditoria PRÉ-apuração* — é o passo imediatamente anterior
@@ -19,10 +34,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { createApiClient } from "../../../api/client";
 import { PANEL } from "./notasStyles";
+import { PendenciasList } from "./PendenciasList";
 import {
   leituraDaPergunta,
   leituraDoCabecalho,
+  leituraDoForaDaConferencia,
   frasesDoAchado,
+  fraseDaViradaDeMes,
   ordenarPerguntas,
   FRASE_NOTA_NAO_AVALIADA,
 } from "../lib/auditoriaTela";
@@ -59,6 +77,7 @@ function BlocoDaPergunta({ pergunta }) {
   const leitura = leituraDaPergunta(pergunta);
   const achados = pergunta.achados || [];
   const naoAvaliadas = pergunta.naoAvaliadas || [];
+  const virada = fraseDaViradaDeMes(pergunta);
   const [abertoAchados, setAbertoAchados] = useState(achados.length > 0 && achados.length <= 12);
   const [abertoIgnoradas, setAbertoIgnoradas] = useState(false);
 
@@ -76,14 +95,12 @@ function BlocoDaPergunta({ pergunta }) {
 
       <div style={{ color: PANEL.text, fontSize: "0.85rem", marginTop: 10 }}>{leitura.resumo}</div>
 
-      {pergunta.janela ? (
+      {virada ? (
         <div style={{ color: PANEL.muted, fontSize: "0.78rem", marginTop: 4 }}>
-          {/* ⚠ A JANELA APARECE. Numeração não é fato mensal, e sem dizer entre quais meses se
-              olhou o "nenhum salto" seria uma promessa maior do que a conferência feita. */}
-          Numeração conferida na série inteira, de {pergunta.janela.de} a {pergunta.janela.ate}.
-          {(pergunta.series || []).map((s) => (
-            <span key={s.serie}> · série {s.serie}: nº {s.de} a {s.ate} ({s.notas} notas)</span>
-          ))}
+          {/* ⚠ ESTA LINHA NÃO É DECORAÇÃO. Ela é o que mantém verdadeira a promessa "nada some em
+              silêncio" depois que 1.727 notas deixaram de virar linha. Tirá-la faz a pergunta
+              esconder notas que ela de fato conferiu. */}
+          {virada}
         </div>
       ) : null}
 
@@ -155,6 +172,7 @@ function BlocoDaPergunta({ pergunta }) {
 
 export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
   const [auditoria, setAuditoria] = useState(null);
+  const [pendencias, setPendencias] = useState([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState("");
 
@@ -175,9 +193,35 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
     }
   }, [api, companyId, competencia]);
 
+  // ⚠ CHAMADA SEPARADA, DE PROPÓSITO — e ela NÃO depende da competência.
+  //
+  // A pendência pós-fechamento é da EMPRESA, não do mês: a rota
+  // (`GET /firm/companies/:id/pendencias-pos-fechamento`) não recebe competência, e a pergunta que
+  // ela responde — *"entrou nota depois que eu fechei o mês?"* — vale para qualquer mês fechado,
+  // inclusive um anterior ao que está na tela. Filtrar pela competência aberta esconderia
+  // exatamente a nota que chegou atrasada, que é o caso todo.
+  //
+  // ⚠ E A FALHA DELA NÃO DERRUBA A AUDITORIA. São duas perguntas independentes; um erro aqui
+  // apagaria as três respostas que já vieram. Mas também **não vira lista vazia com cara de
+  // "nenhuma pendência"** — ela some, e o rodapé diz que não foi possível conferir.
+  const [pendenciasFalharam, setPendenciasFalharam] = useState(false);
+  const carregarPendencias = useCallback(async () => {
+    if (!companyId) return;
+    try {
+      const lista = await api.listPendenciasPosFechamento(companyId, { onlyOpen: true });
+      setPendencias(Array.isArray(lista) ? lista : []);
+      setPendenciasFalharam(false);
+    } catch {
+      setPendencias([]);
+      setPendenciasFalharam(true);
+    }
+  }, [api, companyId]);
+
   useEffect(() => { carregar(); }, [carregar]);
+  useEffect(() => { carregarPendencias(); }, [carregarPendencias]);
 
   const cabecalho = leituraDoCabecalho(auditoria);
+  const fora = leituraDoForaDaConferencia(auditoria?.foraDaConferencia);
 
   return (
     /* ⚠ A LARGURA SAIU DAQUI (era `maxWidth: 1100` + padding próprio, mais um número entre os
@@ -202,7 +246,7 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
         </div>
         <button
           type="button"
-          onClick={carregar}
+          onClick={() => { carregar(); carregarPendencias(); }}
           disabled={carregando}
           style={{
             background: "transparent", color: PANEL.accent, cursor: carregando ? "default" : "pointer",
@@ -225,6 +269,45 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
         </div>
       ) : null}
 
+      {/* ⚠ A PENDÊNCIA PÓS-FECHAMENTO VEM ANTES DAS PERGUNTAS, e não é ordem estética: ela é a
+          única coisa nesta aba que fala de um mês JÁ FECHADO — ou seja, de uma decisão que o
+          contador já tomou e que talvez precise desfazer. Depois das perguntas do mês aberto, ela
+          seria lida como mais um detalhe do mês em curso.
+          ⚠ SEM `onReabrir`/`onResolver`: a aba não escreve. Quem reabre a competência é a aba
+          Lançamentos, onde a ação já existe e já tem confirmação. */}
+      <PendenciasList pendencias={pendencias} />
+
+      {fora ? (
+        <div style={{ ...card, borderLeft: `3px solid var(${fora.token})` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ color: PANEL.text, fontWeight: 600, fontSize: "0.95rem" }}>
+              Notas fora de qualquer conferência mensal
+            </div>
+            <Selo token={fora.token} icone={fora.icone}>{auditoria?.foraDaConferencia?.total}</Selo>
+          </div>
+          {/* ⚠ ESTE BLOCO É O CONSERTO DE UMA PROMESSA QUEBRADA (21/08/2026). A consulta filtrava
+              por competência, e `NULL` não satisfaz intervalo: a nota sem competência não entrava em
+              pergunta nenhuma E não aparecia em "notas fora desta conferência" — ela simplesmente
+              não existia para a tela, enquanto a aba dizia "nada some em silêncio".
+              ⚠ Ela NÃO é atribuída a este mês: fazer isso seria o sistema inventar a competência
+              dela, que é o dado que decide em qual apuração a receita entra. */}
+          <div style={{ color: PANEL.text, fontSize: "0.85rem", marginTop: 8 }}>{fora.resumo}</div>
+          {auditoria?.foraDaConferencia?.truncada ? (
+            <div style={{ color: PANEL.muted, fontSize: "0.78rem", marginTop: 4 }}>
+              Mostrando {auditoria.foraDaConferencia.listadas} das {auditoria.foraDaConferencia.total} mais recentes.
+            </div>
+          ) : null}
+          <ul style={{ listStyle: "none", margin: "8px 0 0", padding: 0, display: "grid", gap: 4 }}>
+            {(auditoria?.foraDaConferencia?.notas || []).map((n, i) => (
+              <li key={n.notaId || i} style={{ color: PANEL.muted, fontSize: "0.78rem" }}>
+                {n.numero ? `Nota ${n.numero}` : "Nota sem número"}
+                {n.emissao ? ` — emitida em ${n.emissao}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {auditoria
         ? ordenarPerguntas(auditoria.perguntas).map((p) => <BlocoDaPergunta key={p.id} pergunta={p} />)
         : null}
@@ -233,6 +316,11 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
         <div style={{ color: PANEL.muted, fontSize: "0.75rem" }}>
           {auditoria.totalNotas} nota(s) emitida(s) na competência ({auditoria.totalNotasApuradas} entram na apuração).
           Esta tela apenas lê — nada é marcado, classificado ou alterado por ela.
+          {/* ⚠ FALHA DA SEGUNDA CHAMADA APARECE. Lista vazia por erro é indistinguível de "nenhuma
+              pendência" — e "nenhuma pendência" é uma afirmação sobre mês fechado. */}
+          {pendenciasFalharam
+            ? " ⚠ Não foi possível conferir se entrou nota depois de a competência ser fechada."
+            : ""}
         </div>
       ) : null}
     </div>

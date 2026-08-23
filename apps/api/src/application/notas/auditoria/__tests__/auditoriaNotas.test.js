@@ -13,6 +13,7 @@ import {
   SITUACAO,
   MOTIVO_NAO_CONFERIVEL,
   MOTIVO_NOTA_NAO_AVALIADA,
+  MOTIVO_FORA_DA_CONFERENCIA,
   ESPECIE,
   POPULACAO,
   SELECT_PARA_AUDITORIA,
@@ -36,8 +37,6 @@ function nota(over = {}) {
     issqnBaseCalculo: "1000.00",
     issqnAliquota: "5.0000",
     issqnValor: "50.00",
-    dpsSerie: "00001",
-    dpsNumero: "10",
     camposFiscaisExtraidosEm: new Date("2026-08-17T12:00:00.000Z"),
     camposFiscaisMotivo: null,
     ...over,
@@ -48,17 +47,36 @@ const rodar = (args) => auditarNotasDaCompetencia({ competencia: "2026-07", ...a
 const pergunta = (r, id) => r.perguntas.find((p) => p.id === id);
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
-describe("as cinco perguntas — nem uma a mais, nem uma a menos", () => {
-  test("a auditoria responde exatamente as cinco perguntas nomeadas pelo dono", () => {
+describe("as três perguntas — nem uma a mais, nem uma a menos", () => {
+  test("a auditoria responde exatamente as TRÊS perguntas que sobreviveram ao corte de 21/08/2026", () => {
     const r = rodar({ notas: [nota()], codigosServicoNacional: ["310104"] });
     expect(r.perguntas.map((p) => p.id)).toEqual([
       "ATIVIDADE_FORA_DO_CADASTRO",
       "EMISSAO_FORA_DA_COMPETENCIA",
       "ISS_ZERADO_ONDE_TRIBUTA",
-      "NUMERACAO_DA_DPS",
-      "NOTA_NAO_LIDA",
     ]);
-    expect(Object.keys(PERGUNTAS)).toHaveLength(5);
+  });
+
+  // ⚠⚠ ESTE TESTE É O CADEADO DO CORTE, e ele existe porque a tentação de "melhorar" a auditoria
+  // devolvendo a pergunta de numeração é grande e o argumento contra ela está numa planilha oficial
+  // que ninguém tem aberta. NÃO reintroduza `NUMERACAO_DA_DPS` sem a norma: a regra E0014
+  // (ANEXO_I, aba `RN DPS_NFS-e`, linha 148) define a unicidade da DPS por QUATRO componentes
+  // (Série + Número + Município Emissor + CNPJ/CPF), e nas 653 regras do ANEXO_I não existe
+  // nenhuma que exija numeração CONTÍNUA da DPS — o único campo com regra de sequência é o `nNFSe`,
+  // gerado pela Receita. Medido: 0 repetidos, 54 "buracos", e os buracos eram da NOSSA captura.
+  test("⚠ NÃO existe pergunta de numeração da DPS — não há norma atrás dela", () => {
+    const r = rodar({ notas: [nota()], codigosServicoNacional: ["310104"] });
+    expect(r.perguntas.some((p) => p.id === "NUMERACAO_DA_DPS")).toBe(false);
+    expect(PERGUNTAS.NUMERACAO_DA_DPS).toBeUndefined();
+    expect(ESPECIE.NUMERO_PULADO).toBeUndefined();
+    expect(ESPECIE.NUMERO_REPETIDO).toBeUndefined();
+  });
+
+  test("⚠ NOTA_NAO_LIDA continua definida, e declara que NÃO é pergunta de tela", () => {
+    expect(PERGUNTAS.NOTA_NAO_LIDA.manutencao).toBe(true);
+    for (const id of ["ATIVIDADE_FORA_DO_CADASTRO", "EMISSAO_FORA_DA_COMPETENCIA", "ISS_ZERADO_ONDE_TRIBUTA"]) {
+      expect(PERGUNTAS[id].manutencao).toBeUndefined();
+    }
   });
 
   test("⚠ NENHUM TEXTO DE ACHADO É VEREDITO — nada de 'errada', 'inválida', 'irregular'", () => {
@@ -87,9 +105,9 @@ describe("⚠ ZERO ACHADOS ≠ NÃO DÁ PARA CONFERIR", () => {
     // O erro oposto e mais tentador: sem lista, "nenhum código é permitido" ⇒ 3 notas acusadas.
     const r = rodar({
       notas: [
-        nota({ id: "a", dpsNumero: "10" }),
-        nota({ id: "b", dpsNumero: "11" }),
-        nota({ id: "c", dpsNumero: "12" }),
+        nota({ id: "a" }),
+        nota({ id: "b" }),
+        nota({ id: "c" }),
       ],
       codigosServicoNacional: [],
     });
@@ -160,13 +178,49 @@ describe("1 — atividade fora do cadastro", () => {
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
 describe("2 — data de emissão fora da competência (DATA CIVIL)", () => {
-  test("emitida em agosto e contada em julho: achado com o desvio em meses", () => {
+  // ⚠⚠ O RECORTE MUDOU EM 21/08/2026. Medido: 1.738 divergências, **1.727 de exatamente um mês** —
+  // a virada normal (serviço de julho faturado em 1º de agosto). Listá-las afogava as 11 que valiam.
+  // Um mês virou CONTAGEM; dois ou mais viram linha.
+  test("⚠ desvio de UM mês NÃO é linha — vira a contagem `viradaDeMes`", () => {
     const r = rodar({
       notas: [nota({ issueDate: new Date("2026-08-02T13:00:00.000Z"), competencia: new Date("2026-07-31T00:00:00.000Z") })],
       codigosServicoNacional: ["310104"],
     });
-    const [a] = pergunta(r, "EMISSAO_FORA_DA_COMPETENCIA").achados;
-    expect(a.dados).toMatchObject({ mesDaCompetencia: "2026-07", mesDaEmissao: "2026-08", mesesDeDesvio: -1 });
+    const p = pergunta(r, "EMISSAO_FORA_DA_COMPETENCIA");
+    expect(p.achados).toHaveLength(0);
+    // ⚠ MAS ELA NÃO SOME: a contagem é o que mantém verdadeira a promessa "nada some em silêncio".
+    expect(p.viradaDeMes).toBe(1);
+    expect(p.avaliadas).toBe(1);
+  });
+
+  test("desvio de DOIS meses ou mais vira achado, com o desvio junto", () => {
+    const r = rodar({
+      notas: [nota({ issueDate: new Date("2026-09-02T13:00:00.000Z"), competencia: new Date("2026-07-31T00:00:00.000Z") })],
+      codigosServicoNacional: ["310104"],
+    });
+    const p = pergunta(r, "EMISSAO_FORA_DA_COMPETENCIA");
+    expect(p.achados).toHaveLength(1);
+    expect(p.achados[0].dados).toMatchObject({ mesDaCompetencia: "2026-07", mesDaEmissao: "2026-09", mesesDeDesvio: -2 });
+    expect(p.viradaDeMes).toBe(0);
+  });
+
+  test("o piso vale nos DOIS sentidos — emissão adiantada também só conta a partir de 2 meses", () => {
+    const r = rodar({
+      notas: [
+        nota({ id: "um", issueDate: new Date("2026-06-28T00:00:00.000Z") }),   // −1: contagem
+        nota({ id: "tres", issueDate: new Date("2026-04-28T00:00:00.000Z") }), // −3: achado
+      ],
+      codigosServicoNacional: ["310104"],
+    });
+    const p = pergunta(r, "EMISSAO_FORA_DA_COMPETENCIA");
+    expect(p.achados.map((a) => a.notaId)).toEqual(["tres"]);
+    expect(p.viradaDeMes).toBe(1);
+  });
+
+  test("⚠ `viradaDeMes` sobe mesmo zerado — ausência de campo obrigaria a tela a adivinhar", () => {
+    const p = pergunta(rodar({ notas: [nota()], codigosServicoNacional: ["310104"] }), "EMISSAO_FORA_DA_COMPETENCIA");
+    expect(p.viradaDeMes).toBe(0);
+    expect(p.mesesDeDesvioMinimo).toBe(2);
   });
 
   test("⚠ MEIA-NOITE UTC NO DIA 1º NÃO MUDA DE MÊS — o defeito de fuso que já saiu para fora", () => {
@@ -232,108 +286,108 @@ describe("3 — ISS zerado onde a atividade tributa", () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
-describe("4 — numeração da DPS", () => {
-  const serie = (numeros, over = {}) =>
-    numeros.map((n, i) => nota({ id: `n${i}`, dpsNumero: String(n), ...over }));
-
-  test("sequência sem falha: nenhum achado, e a faixa conferida volta declarada", () => {
-    const r = rodar({ notas: serie([10, 11, 12]), codigosServicoNacional: ["310104"] });
-    const p = pergunta(r, "NUMERACAO_DA_DPS");
-    expect(p.achados).toHaveLength(0);
-    expect(p.series).toEqual([expect.objectContaining({ serie: "00001", de: 10, ate: 12, pulados: 0, repetidos: 0 })]);
-  });
-
-  test("número repetido: UM achado com AS DUAS notas — nenhuma é eleita 'a errada'", () => {
+describe("4 — as notas que a conferência mensal NÃO alcança", () => {
+  // ⚠⚠ ESTE BLOCO SUBSTITUIU O DA NUMERAÇÃO DA DPS (21/08/2026), e a troca não é coincidência: era
+  // a nota invisível conferida aqui que ajudava a FABRICAR os "buracos" que aquela pergunta acusava.
+  // O filtro `competencia: { gte, lt }` do serviço nunca alcança NULL, então a nota sem competência
+  // sumia da série sem deixar rastro — e sem aparecer sequer em "notas fora desta conferência".
+  test("a nota sem competência aparece, com o motivo, e NÃO entra na conferência do mês", () => {
     const r = rodar({
-      notas: [nota({ id: "a", dpsNumero: "10" }), nota({ id: "b", dpsNumero: "10" })],
+      notas: [nota()],
+      notasSemCompetencia: [nota({ id: "orfa", numero: "777", competencia: null })],
+      totalSemCompetencia: 1,
       codigosServicoNacional: ["310104"],
     });
-    const [a] = pergunta(r, "NUMERACAO_DA_DPS").achados;
-    expect(a.dados.especie).toBe(ESPECIE.NUMERO_REPETIDO);
-    expect(a.dados.notas.map((n) => n.notaId).sort()).toEqual(["a", "b"]);
-    expect(a.notaId).toBeNull();
+    expect(r.foraDaConferencia.motivo).toBe(MOTIVO_FORA_DA_CONFERENCIA.SEM_COMPETENCIA_GRAVADA);
+    expect(r.foraDaConferencia.notas).toEqual([expect.objectContaining({ notaId: "orfa", numero: "777" })]);
+    // ⚠ Ela não é ACHADO: não há nada de errado provado, e ela não é do mês.
+    expect(r.totalAchados).toBe(0);
+    expect(r.totalNotas).toBe(1);
   });
 
-  test("buraco vira UMA faixa, não N linhas", () => {
-    const r = rodar({ notas: serie([10, 14]), codigosServicoNacional: ["310104"] });
-    const [a] = pergunta(r, "NUMERACAO_DA_DPS").achados;
-    expect(a.dados).toMatchObject({ especie: ESPECIE.NUMERO_PULADO, de: 11, ate: 13, quantidade: 3, antes: 10, depois: 14 });
-  });
-
-  test("⚠ A BORDA NÃO É BURACO — nada é apontado antes do primeiro nem depois do último", () => {
-    // Sem esta regra, toda série reportaria "faltam 1..9" só porque a janela começa no 10.
-    const r = rodar({ notas: serie([10, 11]), codigosServicoNacional: ["310104"] });
-    expect(pergunta(r, "NUMERACAO_DA_DPS").achados).toHaveLength(0);
-  });
-
-  test("séries diferentes não se misturam", () => {
+  test("⚠ o total é o do BANCO, não o da lista — amostra truncada não pode virar o número", () => {
     const r = rodar({
-      notas: [nota({ id: "a", dpsSerie: "00001", dpsNumero: "10" }), nota({ id: "b", dpsSerie: "70000", dpsNumero: "1" })],
+      notas: [nota()],
+      notasSemCompetencia: [nota({ id: "o1", competencia: null })],
+      totalSemCompetencia: 137,
       codigosServicoNacional: ["310104"],
     });
-    const p = pergunta(r, "NUMERACAO_DA_DPS");
-    expect(p.achados).toHaveLength(0);
-    expect(p.series.map((s) => s.serie)).toEqual(["00001", "70000"]);
+    expect(r.foraDaConferencia).toMatchObject({ total: 137, listadas: 1, truncada: true });
   });
 
-  test("⚠ NOTA CANCELADA CONTA NA NUMERAÇÃO — ela consumiu o número, e não há inutilização na NFS-e", () => {
-    // Tirá-la faria a auditoria inventar um buraco a cada cancelamento.
-    const notas = [
-      nota({ id: "a", dpsNumero: "10" }),
-      nota({ id: "b", dpsNumero: "11", statusEfetivo: "cancelada" }),
-      nota({ id: "c", dpsNumero: "12" }),
-    ];
-    expect(pergunta(rodar({ notas, codigosServicoNacional: ["310104"] }), "NUMERACAO_DA_DPS").achados).toHaveLength(0);
-    // …e a mesma nota cancelada NÃO entra nas perguntas da apuração:
-    expect(pergunta(rodar({ notas, codigosServicoNacional: ["310104"] }), "ISS_ZERADO_ONDE_TRIBUTA").avaliadas).toBe(2);
-  });
-
-  test("⚠ a janela da numeração é a que o chamador declarou, e ela volta no resultado", () => {
-    const r = auditarNotasDaCompetencia({
-      competencia: "2026-07",
-      notas: [nota({ dpsNumero: "50" })],
-      notasDaSerie: [nota({ id: "x", dpsNumero: "48" }), nota({ dpsNumero: "50" })],
-      janelaDaSerie: { de: "2025-08", ate: "2026-07", meses: 12 },
+  test("total ausente cai no tamanho da lista — nunca em zero", () => {
+    const r = rodar({
+      notas: [nota()],
+      notasSemCompetencia: [nota({ id: "o1", competencia: null }), nota({ id: "o2", competencia: null })],
       codigosServicoNacional: ["310104"],
     });
-    const p = pergunta(r, "NUMERACAO_DA_DPS");
-    expect(p.janela).toEqual({ de: "2025-08", ate: "2026-07", meses: 12 });
-    // O buraco 49 só existe porque a janela trouxe a 48 — dentro do mês ele seria invisível.
-    expect(p.achados[0].dados).toMatchObject({ de: 49, ate: 49 });
+    expect(r.foraDaConferencia).toMatchObject({ total: 2, listadas: 2, truncada: false });
   });
 
-  test("número não numérico não vira zero e não some", () => {
-    const r = rodar({ notas: [nota({ dpsNumero: "A12" })], codigosServicoNacional: ["310104"] });
-    const p = pergunta(r, "NUMERACAO_DA_DPS");
-    expect(p.naoAvaliadas[0].motivo).toBe(MOTIVO_NOTA_NAO_AVALIADA.NUMERO_DE_DPS_NAO_NUMERICO);
-    expect(p.achados).toHaveLength(0);
+  test("sem órfã, o bloco existe zerado — a tela precisa poder dizer 'nenhuma'", () => {
+    const r = rodar({ notas: [nota()], codigosServicoNacional: ["310104"] });
+    expect(r.foraDaConferencia).toMatchObject({ total: 0, listadas: 0, truncada: false, notas: [] });
+  });
+
+  test("⚠ NF-e e nota recebida não entram nem aqui — a população é a mesma do resto", () => {
+    const r = rodar({
+      notas: [nota()],
+      notasSemCompetencia: [
+        nota({ id: "nfe", type: "NFE", competencia: null }),
+        nota({ id: "dest", papel: "DEST", competencia: null }),
+      ],
+      totalSemCompetencia: 2,
+      codigosServicoNacional: ["310104"],
+    });
+    expect(r.foraDaConferencia.notas).toEqual([]);
   });
 });
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
-describe("5 — nota que não pôde ser lida", () => {
-  test("motivo preenchido: aparece COM o motivo", () => {
+describe("MANUTENÇÃO — nota que não pôde ser lida (⚠ fora da tela do contador)", () => {
+  // ⚠ Ela SAIU das perguntas em 21/08/2026 (é defeito do NOSSO extrator, não pergunta de contador)
+  // e continua sendo calculada, porque o sinal é real. Nada se esconde da conferência por isso: a
+  // nota ilegível segue saindo em `naoAvaliadas` das perguntas que dependem do campo que faltou.
+  const leitura = (r) => r.manutencao.leitura;
+
+  test("motivo preenchido: aparece COM o motivo, dentro de `manutencao`", () => {
     const r = rodar({ notas: [nota({ camposFiscaisMotivo: "NAO_E_NFSE" })], codigosServicoNacional: ["310104"] });
-    const [a] = pergunta(r, "NOTA_NAO_LIDA").achados;
+    const [a] = leitura(r).achados;
     expect(a.dados).toMatchObject({ especie: ESPECIE.LEITURA_FALHOU, motivo: "NAO_E_NFSE" });
+    expect(r.manutencao.notasNaoLidas).toBe(1);
+  });
+
+  test("⚠ ela NÃO conta em totalAchados — não é ponto a conferir do contador", () => {
+    const r = rodar({ notas: [nota({ camposFiscaisMotivo: "NAO_E_NFSE" })], codigosServicoNacional: ["310104"] });
+    expect(r.totalAchados).toBe(0);
+    expect(r.perguntas.some((p) => p.id === "NOTA_NAO_LIDA")).toBe(false);
   });
 
   test("⚠ O QUARTO ESTADO: carimbo NULO é 'o extrator nunca passou', e não pode sumir", () => {
-    // Medido em produção: 5 notas EMIT nesse estado, com XML guardado. Lendo só
-    // `camposFiscaisMotivo` elas sumiriam desta pergunta E das outras quatro, por falta de campo.
+    // Medido em produção: 5 notas EMIT nesse estado, com XML guardado.
     const r = rodar({
       notas: [nota({ camposFiscaisExtraidosEm: null, camposFiscaisMotivo: null, cTribNac: null })],
       codigosServicoNacional: ["310104"],
     });
-    const [a] = pergunta(r, "NOTA_NAO_LIDA").achados;
+    const [a] = leitura(r).achados;
     expect(a.dados.especie).toBe(ESPECIE.NUNCA_EXTRAIDA);
     expect(a.dados.motivo).toBeNull();
   });
 
-  test("nota lida com sucesso: nenhum achado, e a pergunta fica CONFERIDA", () => {
-    const p = pergunta(rodar({ notas: [nota()], codigosServicoNacional: ["310104"] }), "NOTA_NAO_LIDA");
-    expect(p.situacao).toBe(SITUACAO.CONFERIDA);
-    expect(p.achados).toHaveLength(0);
+  test("⚠ e a MESMA nota continua visível na conferência, em naoAvaliadas, com o motivo", () => {
+    // É isto que autoriza tirá-la da tela: nada fica escondido do contador por causa do corte.
+    const r = rodar({
+      notas: [nota({ camposFiscaisExtraidosEm: null, camposFiscaisMotivo: null, cTribNac: null })],
+      codigosServicoNacional: ["310104"],
+    });
+    const p = pergunta(r, "ATIVIDADE_FORA_DO_CADASTRO");
+    expect(p.naoAvaliadas).toEqual([expect.objectContaining({ motivo: MOTIVO_NOTA_NAO_AVALIADA.SEM_CODIGO_DE_SERVICO })]);
+  });
+
+  test("nota lida com sucesso: nenhum achado, e a leitura fica CONFERIDA", () => {
+    const r = rodar({ notas: [nota()], codigosServicoNacional: ["310104"] });
+    expect(leitura(r).situacao).toBe(SITUACAO.CONFERIDA);
+    expect(leitura(r).achados).toHaveLength(0);
   });
 
   test("⚠ a nota ilegível é contada MESMO cancelada — a rede não pode ter furo", () => {
@@ -341,17 +395,18 @@ describe("5 — nota que não pôde ser lida", () => {
       notas: [nota({ statusEfetivo: "cancelada", camposFiscaisMotivo: "XML_ILEGIVEL" })],
       codigosServicoNacional: ["310104"],
     });
-    expect(pergunta(r, "NOTA_NAO_LIDA").achados).toHaveLength(1);
+    expect(leitura(r).achados).toHaveLength(1);
   });
 });
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
 describe("a POPULAÇÃO", () => {
   test("⚠ NF-e não passa pela auditoria — outro leiaute, nenhum destes campos existe lá", () => {
-    const r = rodar({ notas: [nota({ type: "NFE", cTribNac: null, dpsNumero: null })], codigosServicoNacional: ["310104"] });
+    const r = rodar({ notas: [nota({ type: "NFE", cTribNac: null })], codigosServicoNacional: ["310104"] });
     expect(r.totalNotas).toBe(0);
     // e nem entra como "nota não lida", que é o erro tentador: nela tudo é nulo POR NATUREZA.
-    expect(pergunta(r, "NOTA_NAO_LIDA").situacao).toBe(SITUACAO.NAO_CONFERIVEL);
+    expect(r.manutencao.leitura.situacao).toBe(SITUACAO.NAO_CONFERIVEL);
+    expect(r.manutencao.notasNaoLidas).toBe(0);
   });
 
   test("nota RECEBIDA (DEST) não é auditada — a auditoria é sobre o que a empresa emitiu", () => {
@@ -381,13 +436,17 @@ describe("o contrato com quem chama", () => {
   test("SELECT_PARA_AUDITORIA cobre todo campo que a regra lê — e NÃO traz o xmlRaw", () => {
     for (const campo of [
       "type", "papel", "statusEfetivo", "issueDate", "competencia", "cTribNac",
-      "issqnBaseCalculo", "issqnAliquota", "issqnValor", "dpsSerie", "dpsNumero",
+      "issqnBaseCalculo", "issqnAliquota", "issqnValor",
       "camposFiscaisExtraidosEm", "camposFiscaisMotivo",
     ]) {
       expect(SELECT_PARA_AUDITORIA[campo]).toBe(true);
     }
     // 15 mil notas × ~10 KB de XML é o que este `select` existe para não carregar.
     expect(SELECT_PARA_AUDITORIA.xmlRaw).toBeUndefined();
+    // ⚠ E os campos da DPS saíram junto com a pergunta de numeração (21/08/2026): carregá-los sem
+    // ninguém os ler faria a próxima sessão supor que a conferência de numeração ainda acontece.
+    expect(SELECT_PARA_AUDITORIA.dpsSerie).toBeUndefined();
+    expect(SELECT_PARA_AUDITORIA.dpsNumero).toBeUndefined();
   });
 
   test("a regra é PURA: a mesma entrada devolve o mesmo resultado, e a entrada não é mutada", () => {

@@ -1,6 +1,6 @@
 // AUDITORIA PRÉ-APURAÇÃO — SOMENTE LEITURA, nenhum write, nenhuma chamada externa.
 //
-// Quantas notas caem em cada uma das cinco perguntas, HOJE, na base real. Existe para que o número
+// Quantas notas caem em cada uma das perguntas, HOJE, na base real. Existe para que o número
 // do relatório e o número da tela venham do MESMO lugar: este script chama
 // `application/notas/auditoria/auditoriaNotas.js`, a mesma regra pura que a rota
 // `GET /firm/companies/:id/notas/auditoria` chama. Uma segunda conta escrita aqui divergiria da
@@ -72,7 +72,10 @@ try {
   console.log("═══ AUDITORIA PRÉ-APURAÇÃO — MEDIÇÃO (só leitura) ═══");
   console.log(`empresas: ${empresas.length} · competências: ${competencias[0]}..${compFim} (${meses})`);
 
-  const idsDasPerguntas = Object.values(PERGUNTAS).map((p) => p.id);
+  // ⚠ `manutencao: true` (hoje só `NOTA_NAO_LIDA`) NÃO é pergunta da tela desde 21/08/2026 — ela é
+  // medida à parte, abaixo. Deixá-la aqui imprimiria uma linha zerada de uma pergunta que ninguém faz.
+  const PERGUNTAS_DA_TELA = Object.values(PERGUNTAS).filter((p) => !p.manutencao);
+  const idsDasPerguntas = PERGUNTAS_DA_TELA.map((p) => p.id);
   const totalAchados = Object.fromEntries(idsDasPerguntas.map((id) => [id, 0]));
   const totalNaoConferivel = Object.fromEntries(idsDasPerguntas.map((id) => [id, 0]));
   const totalConferida = Object.fromEntries(idsDasPerguntas.map((id) => [id, 0]));
@@ -81,6 +84,12 @@ try {
   const especies = new Map();          // especie → quantos achados
   let paresAvaliados = 0;
   let paresComNota = 0;
+  // ⚠ OS TRÊS NÚMEROS QUE O CORTE DE 21/08/2026 CRIOU, e que precisam ser medíveis fora da tela:
+  // quantas notas a pergunta 2 RESUMIU (virada de mês), quantas notas nós não conseguimos ler
+  // (defeito nosso) e quantas ficaram fora de toda conferência mensal (sem competência gravada).
+  let totalViradaDeMes = 0;
+  let totalNaoLidas = 0;
+  const semCompetenciaPorEmpresa = new Map(); // id → { razao, total }
 
   for (const empresa of empresas) {
     for (const competencia of competencias) {
@@ -97,10 +106,18 @@ try {
         }
         totalConferida[p.id] += 1;
         totalAchados[p.id] += p.achados.length;
+        totalViradaDeMes += Number(p.viradaDeMes || 0);
         for (const a of p.achados) {
           const especie = a.dados?.especie || p.id;
           especies.set(especie, (especies.get(especie) || 0) + 1);
         }
+      }
+
+      totalNaoLidas += Number(r.manutencao?.notasNaoLidas || 0);
+      // ⚠ Este número é POR EMPRESA, não por competência (a nota sem competência não é de mês
+      // nenhum): somá-lo a cada par empresa×competência o multiplicaria pelo número de meses.
+      if (r.foraDaConferencia?.total > 0) {
+        semCompetenciaPorEmpresa.set(empresa.id, { razao: empresa.razao, total: r.foraDaConferencia.total });
       }
 
       if (r.totalAchados > 0) {
@@ -113,7 +130,9 @@ try {
         console.log(`\n── ${empresa.razao} · ${competencia} (${r.totalNotas} notas) ──`);
         for (const p of r.perguntas) {
           for (const a of p.achados) {
-            const quem = a.notaId ? `nota ${a.numero || a.notaId}` : `série ${a.dados?.serie}`;
+            // Todo achado tem nota hoje: o único que não tinha era o da numeração da DPS (faixa de
+            // números), e aquela pergunta não existe mais.
+            const quem = `nota ${a.numero || a.notaId || "?"}`;
             console.log(`   ${pad(p.titulo, 34)} ${pad(quem, 22)} ${JSON.stringify(a.dados)}`);
           }
         }
@@ -125,10 +144,23 @@ try {
 
   console.log("\n═══ POR PERGUNTA ═══");
   console.log(`${pad("pergunta", 34)} ${pad("achados", 8)} ${pad("conferida", 10)} ${pad("não conferível", 15)}`);
-  for (const p of Object.values(PERGUNTAS)) {
+  for (const p of PERGUNTAS_DA_TELA) {
     console.log(
       `${pad(p.titulo, 34)} ${num(totalAchados[p.id], 8)} ${num(totalConferida[p.id], 10)} ${num(totalNaoConferivel[p.id], 15)}`,
     );
+  }
+
+  // ⚠ ESTES TRÊS NÃO SÃO ACHADOS, e por isso saem em bloco próprio: dois deles são defeito NOSSO
+  // (nota que não conseguimos ler, nota que entrou sem competência) e o terceiro é o que a pergunta
+  // 2 resumiu em vez de listar. Misturá-los com "pontos a conferir" reconstrói o ruído que o corte
+  // de 21/08/2026 removeu.
+  console.log("\n═══ ⚠ O QUE NÃO É ACHADO, MAS PRECISA SER MEDIDO ═══");
+  console.log(`   ${num(totalViradaDeMes, 5)} × nota com UM mês de desvio (virada normal de mês — resumida, não listada)`);
+  console.log(`   ${num(totalNaoLidas, 5)} × nota cujo XML não conseguimos ler (manutenção NOSSA, fora da tela do contador)`);
+  const totalSemCompetencia = [...semCompetenciaPorEmpresa.values()].reduce((s, v) => s + v.total, 0);
+  console.log(`   ${num(totalSemCompetencia, 5)} × nota SEM COMPETÊNCIA gravada — fora de toda conferência mensal E de toda apuração`);
+  for (const [, v] of [...semCompetenciaPorEmpresa.entries()].sort((a, b) => b[1].total - a[1].total)) {
+    console.log(`         ${num(v.total, 5)} · ${v.razao}`);
   }
 
   console.log("\n═══ ⚠ POR QUE NÃO DEU PARA CONFERIR (isto NÃO é 'tudo certo') ═══");
