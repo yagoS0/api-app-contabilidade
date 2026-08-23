@@ -1493,6 +1493,189 @@ Medido junto: a memória que preencheria cada um. As de `RECEITA_SERVICO` já ap
 GL, PRISMA, KLAUS NIGRO, ERISANGELA e (por fallback GLOBAL) TALBOT e duas órfãs; as de `DAS_SIMPLES`
 apontam `D=557 (-) DAS- SIMPLES NACIONAL / C=265`, ambas analíticas.
 
+## CAIXA e BANCOS pela ESTRUTURA, não pelo nome (`lib/disponibilidades.js`) — 21/08/2026
+
+**A decisão do dono:** parar de descobrir a conta de caixa casando o NOME contra uma lista de textos
+e passar a usar um padrão. O texto literal foi *"ao invés de usar uma lista de textos, vamos usar o
+padrão oficial do plano de contas da receita federal e bater ele com o plano de contas que temos"*.
+O motivo é o destino: `resolveCaixaAccount` pré-preenche um modal e para isso serve, mas o
+**demonstrativo de fluxo de caixa** não pode nascer de palpite textual.
+
+### ⚠ DERRUBADA: o plano referencial da RFB NÃO resolve isto. Três motivos medidos.
+
+O que a RFB publica é o **Plano de Contas Referencial** das *Tabelas Dinâmicas* da ECD/ECF (tabelas
+`L100A`, patrimoniais, e `L300A`, de resultado; há versões por perfil — PJ em geral, instituições
+financeiras, seguradoras, imunes/isentas). Fonte:
+[Tabelas Dinâmicas e Planos de Contas Referenciais — Leiaute 12](https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/ecf/manuais-e-documentos-tecnicos/tabelas-dinamicas-e-planos-de-contas-referenciais-leiaute-12-atualizacao-28-05-2026)
+(publicado 29/04/2026, modificado 25/07/2026). Não serve porque:
+
+1. **Não é uma chave calculável, é um de-para manual.** No registro **I051 da ECD** o contador amarra
+   cada conta analítica própria à conta referencial, **uma a uma** (a ECF recupera isso no C051). O
+   referencial é o *destino* do trabalho, não uma chave que dê para derivar.
+2. **Não dá para afirmar que é obrigatório para os nossos clientes — nem que não é.** Ver a seção
+   "obrigatoriedade da ECD" abaixo: **11 das 34 empresas são Lucro Presumido**, e para elas a
+   dispensa é *condicional a fatos que não temos no banco*. ⚠ **A premissa "o plano é o mesmo para
+   todas porque todas seguem a RFB" vale só para quem entrega ECD — e quem entrega ECD é uma
+   pergunta em aberto, não um "ninguém".**
+3. **Não temos o de-para, e construí-lo recairia no mesmo palpite.** `ChartOfAccount` não tem campo
+   de conta referencial e não há importação disso no projeto (busca por `referencial`/`I051` no
+   código: zero ocorrências). Montar o de-para sozinho só sairia casando o NOME das nossas contas
+   com o NOME das contas do referencial — o palpite textual de que estamos saindo, com uma etapa a
+   mais e uma tabela externa para manter.
+
+### ⚠ A intuição do dono está certa por outro caminho — e ele é melhor
+
+O plano **é** praticamente o mesmo para todas as empresas, só que a causa não é a RFB: **nós
+servimos um plano global**. Medido em produção (somente leitura, 21/08/2026):
+
+| medida | valor |
+|---|---|
+| contas em `ChartOfAccount` | **1199** |
+| globais (`portalClientId = null`) | **593** — atendem **33 dos 34** clientes |
+| de empresa | **606**, de **uma única** empresa (quase cópia do global) |
+| sem `codigoCompleto` | **13** (1,1%) ⇒ cobertura de **98,9%** |
+
+E o `codigoCompleto` já é uma hierarquia estável de **largura fixa por nível — 1 · 2 · 3 · 5 · 9
+caracteres** (`1` → `11` → `111` → `11101` → `111010001`; nenhum código não-numérico). É esse o
+padrão que sustenta a identificação: de graça, já no banco, sem tabela externa para acompanhar.
+
+Âncoras medidas no plano real: `111` DISPONIVEL · `11101` CAIXA GERAL · `11102` BANCOS - CONTAS COM
+MOVIMENTOS · `11103` APLICACOES DE LIQUIDEZ IMEDIATA.
+
+### ⚠ A contraprova — é ela que mostra o tamanho do erro que a lista de textos podia cometer
+
+**55 contas** citam "caixa" ou "banco" no nome; só **38** estão sob `111`. As outras **17 são passivo
+e realizável**: `112030001` DUPLICATAS DESCONTADAS BANCO ITAU, `211060001` EMPRESTIMOS BANCO ITAU
+CONTRATO XXXXXX, `221010001` EMPRESTIMO BANCO ITAU. Um fluxo de caixa alimentado por nome somaria
+**empréstimo bancário como disponibilidade**. O prefixo não erra isso.
+
+### ⚠ E `resolveCaixaAccount` não devolve vazio — devolve a MESMA conta para todo mundo
+
+A premissa de que ela "devolve vazio e segue" **não se confirmou**: replicada sobre a base, ela
+resolve para **os 34 clientes, zero vazios — e sempre `111010001` / reduzido `5` / CAIXA - MATRIZ**.
+Ela "funciona" 100% porque `"caixa matriz"` é o primeiro hint e a conta existe no plano global. O
+defeito é outro e é pior: **uma conta fixa, escolhida por nome, para toda empresa** — inclusive as
+que só movimentam banco. Para um modal de pré-preenchimento isso é tolerável; para um demonstrativo,
+não. Por isso `resolveCaixaAccount` **ficou intacta** (chamadores: `routes/firm/accountingEntries.js`
+no template do modal de baixa do INSS e `InssPagamentoService.js` nos dois caminhos de baixa).
+
+### ⚠ `11%` NÃO É DISPONIBILIDADE — a aproximação da Fase 0 não pode ser promovida
+
+`apps/api/scripts/diag-dre-fluxo-fase0.mjs` (Fase 0 do DRE/fluxo, outra sessão, somente leitura)
+mede caixa/banco por duas vias declaradas como **aproximação**: `codigoCompleto LIKE '11%'` e o nome
+da conta. Ela mesma diz *"a identificação DEFINITIVA de conta de caixa é de outra sessão"* — é esta
+seção. Ao promover aquilo para o demonstrativo, ⚠ **não carregue o `11%` junto**:
+
+| prefixo | o que é | contas |
+|---|---|---|
+| `11` | ATIVO CIRCULANTE | **234** |
+| `111` | DISPONIVEL ← **este** | **52** |
+| `112` | REALIZAVEL A CURTO PRAZO (clientes, impostos a recuperar, estoques) | **180** |
+
+`11%` é **4,5× largo demais** e arrasta 180 contas de realizável — clientes e estoque entrariam como
+dinheiro. A raiz certa é `111`, e quem a aplica é `separarDisponibilidades`.
+
+### O que foi construído
+
+`lib/disponibilidades.js` — módulo **puro** (sem prisma), no mesmo formato de `derivacaoAnalitica.js`:
+`classificarDisponibilidade`, `separarDisponibilidades`, `conferirAncoras`. Classifica **só** por
+prefixo de `codigoCompleto`. 15 testes em `lib/__tests__/disponibilidades.test.js`.
+
+⚠ **SEMPRE pelo `codigoCompleto`, NUNCA pelo reduzido.** Medido: **518 contas** têm o primeiro dígito
+do reduzido diferente do primeiro dígito do completo (o caso didático continua sendo reduzido `"5"` =
+CAIXA - MATRIZ contra completo `"5"` = (-) IRPJ/CSLL). Agrupar pelo reduzido troca disponibilidade
+por dedução de resultado **sem erro nenhum na tela**.
+
+⚠ **O modo de falhar é parte da regra.** Conta sem `codigoCompleto` sai como `INDETERMINADO` — com o
+nome, para o contador decidir — e **nunca** vira "não é caixa" em silêncio (são as 13 contas de sócio
+/ intercompany do plano da empresa). Conta sob `111` fora dos três ramos conhecidos sai como
+`DISPONIVEL_NAO_CLASSIFICADO`. Quem consumir tem de mostrar as duas listas. *Ausência declarada vence
+afirmação falsa.*
+
+⚠ **O nome é TRIPWIRE, nunca classificador.** `conferirAncoras` confere se `11101`/`11102`/`11103`
+ainda têm o nome medido. Não classifica e não corrige: existe para **gritar** se o plano global for
+reimportado com outra numeração, em vez de o sistema seguir classificando pelo prefixo antigo,
+calado. Rodado em produção: `OK` nos dois escopos.
+
+Aplicado ao plano real, o módulo separa **6 CAIXA · 11 BANCOS · 8 APLICACOES**, 1
+`DISPONIVEL_NAO_CLASSIFICADO` (a própria sintética `111`) e 13 `INDETERMINADO` no escopo empresa.
+
+⚠ **APLICACOES é ramo próprio de propósito.** "Aplicações de liquidez imediata" é equivalente de
+caixa em norma contábil, mas se entra ou não no demonstrativo é **decisão do contador** — o módulo
+separa e não decide.
+
+### ⚠ REGIME DA CARTEIRA — a armadilha que me pegou, medida em 21/08/2026
+
+**`CadastroFiscal` cobre uma FRAÇÃO da carteira. Medir regime por ele SUBESTIMA.** Eu contei 4
+registros, todos `SIMPLES_NACIONAL`, e concluí "zero clientes de Lucro Presumido". **Errado.**
+
+| fonte | conteúdo | cobertura |
+|---|---|---|
+| `CadastroFiscal.regime` | `SIMPLES_NACIONAL` 4 | **4/34 (11,8%)** |
+| `Company.regimeTributario` (via `PortalClient.companyId`) | `SIMPLES` 23 · `LUCRO_PRESUMIDO` 11 | **34/34** |
+
+Regime efetivo (CadastroFiscal onde existe, Company como fallback): **23 Simples · 11 Lucro
+Presumido**. **Zero divergências** entre as duas fontes onde as duas existem — elas concordam; o
+problema é só de cobertura.
+
+⚠ **As duas fontes usam GRAFIAS DIFERENTES** — `CadastroFiscal` grava `SIMPLES_NACIONAL`, `Company`
+grava `SIMPLES`. Comparar sem normalizar recusa empresa boa. Isto **já estava documentado** em
+`application/nfse/dpsCodigos.js` (medição de 14/08/2026, então 22 Simples · 11 LP) e eu não olhei.
+`CadastroFiscal` é autoridade **onde existe**, mas para *censo da carteira* a fonte é `Company`.
+Script: `apps/api/scripts/diag-regime-para-referencial.mjs`.
+
+### ⚠ A ECD é obrigatória para essas 11? **NÃO DÁ PARA AFIRMAR — e o motivo é dado que não temos.**
+
+Não conclua por analogia ("é Lucro Presumido, logo entrega ECD"). **Não é assim.** A regra, do texto
+da **IN RFB nº 2003/2021, art. 3º**:
+
+- **caput** — deve apresentar ECD quem é obrigado a manter escrituração contábil pela legislação
+  comercial;
+- **§ 1º, V** — ficam **dispensadas** as PJ tributadas pelo **lucro presumido** *que cumprirem o
+  disposto no parágrafo único do art. 45 da Lei nº 8.981/1995* (isto é, que mantenham **Livro
+  Caixa** com toda a movimentação financeira, inclusive bancária);
+- **§ 3º** — essa dispensa do inciso V **não se aplica** a quem distribuir lucros ou dividendos
+  **sem incidência de IRRF** em montante **superior** à base de cálculo do IR apurado, diminuída dos
+  tributos devidos.
+
+Ou seja: a obrigatoriedade do Lucro Presumido depende de **duas situações da empresa**, não do
+regime — (a) manter Livro Caixa em vez de escrituração contábil completa, e (b) quanto distribuiu de
+lucro sem IRRF contra a base diminuída dos tributos.
+
+⚠ **Nenhum dos dois está no banco.** Não existe campo de lucros distribuídos nem de IRRF sobre
+distribuição em lugar nenhum do schema (os `IRRF` que existem são de folha e DARF, outra coisa).
+**Isto é pergunta para o dono, não conclusão do sistema.**
+
+⚠ Sinal concreto de que a pergunta é real: a **única** empresa com plano de contas próprio é a
+**SINTROPIA TECNOLOGIA LTDA — Lucro Presumido** — e as **13 contas sem `codigoCompleto` são todas
+dela**, entre elas `DISTRIBUICAO DO SOCIO …`, `CAPITAL SOCIAL DO SOCIO …` e
+`(-) ANTECIPACAO DE LUCROS E DIVIDENDOS`. São exatamente as contas do território do § 3º. E são
+exatamente as que `separarDisponibilidades` devolve como `INDETERMINADO` em vez de engolir.
+
+### Vale a pena acompanhar atualizações do referencial? **Ainda não — mas por outro motivo.**
+
+O referencial muda com o leiaute, ~**uma vez por ano com revisões dentro do ano**: Leiaute 10
+(15/01/2024) → 11 (09/11/2025) → 12 (28/05/2026, revisto em 25/07/2026); a reforma do consumo
+(IBS/CBS) tende a acelerar.
+
+O motivo de não acompanhar **não é mais "zero clientes"** — esse motivo caiu com as 11 empresas de
+Lucro Presumido. O motivo que sobrevive é que **são dois assuntos diferentes que foram confundidos
+num só**:
+
+1. **Identificar CAIXA e BANCOS** para o fluxo de caixa → resolvido pelo `codigoCompleto`, que é
+   nosso, não muda com leiaute da RFB, e **não melhoraria em nada** com o referencial importado
+   (item 1 lá em cima: o de-para é manual, não é chave calculável).
+2. **Entregar ECD/I051** para quem for obrigado → é uma **feature inteira** (importar as tabelas,
+   telas de amarração conta a conta, geração do arquivo), não um ajuste na classificação de caixa.
+
+Importar e acompanhar o referencial hoje é custo recorrente **da feature 2**, sem entregar a feature
+2 e sem ajudar a feature 1. Por isso: **não acompanhar** — e, se a ECD virar escopo, aí o
+acompanhamento entra **junto com** ela, nunca antes.
+
+⚠ **O gatilho não é a data nem "entrar um cliente LP" — esse já aconteceu 11 vezes.** O gatilho é o
+dono responder se alguma das 11 distribui lucro acima do limite do § 3º (ou não mantém Livro Caixa).
+Se sim, ECD entra no roadmap e o referencial vem junto.
+
 ## Regras
 
 - **Idempotência** em geração (upsert por competência/eventType; guardas antes de criar).
