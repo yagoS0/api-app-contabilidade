@@ -100,6 +100,17 @@ function itemDoResultado(alvo, r, cursorAntes) {
     if (r?.reason === "backoff_active") {
       return { status: "aguardando", motivo: `em espera após erro — libera às ${formatarData(r.backoffUntil)}` };
     }
+    // A guarda de 1 h que hoje mora DENTRO de `syncDfeForCompany` (regra da SEFAZ, NT 2014.002).
+    // A checagem daqui em cima usa `dfeLastSyncAt` ("recebi") e a de lá usa `dfeLastAttemptAt`
+    // ("olhei"), então esta recusa ainda chega quando a empresa foi CONSULTADA há pouco sem trazer
+    // documento. Não é erro — é espera, e a linha tem de dizer isso.
+    if (r?.reason === "DFE_INTERVALO_NAO_CUMPRIDO") {
+      return {
+        status: "aguardando",
+        motivo: `consultada há ${r.minutosDesdeUltima} min — a SEFAZ só permite 1×/hora `
+          + `(libera às ${formatarData(r.proximaConsultaEm)})`,
+      };
+    }
     return {
       status: "erro",
       motivo: `${r?.reason || "falha"}${r?.message ? `: ${String(r.message).slice(0, 180)}` : ""}`,

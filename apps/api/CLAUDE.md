@@ -1575,8 +1575,13 @@ reabriria o laço sozinho em um dia (as afetadas estavam em 5,7 dias). O que ele
 semanas sem consulta) o gate por tentativa já garante.
 
 ⚠ **A SEFAZ não tem esse defeito** e é por isso que só o ADN derreteu: `DfeSyncService` grava
-`dfeLastSyncAt` em **toda** execução, com ou sem documento — lá `sinceLast` já é idade da tentativa.
-Por isso o gate do DFe ficou como estava.
+`dfeLastSyncAt` em **toda** execução **bem-sucedida**, com ou sem documento — lá `sinceLast` já é
+idade da tentativa. Por isso o gate **do worker** do DFe ficou como estava.
+
+⚠ **Mas isso só vale para execução que TERMINA OK.** Quando a captura falha (656, erro de cert, 5xx)
+`dfeLastSyncAt` não se move e o relógio volta a mentir. É por isso que a guarda de 1 h que hoje mora
+dentro de `syncDfeForCompany` lê **`dfeLastAttemptAt`** — ver *"SEFAZ/DFe: a janela de 1 hora mora
+DENTRO de `syncDfeForCompany`"*, logo abaixo.
 
 **2) O eco.** `adnLastError` só era zerado por `persistCursor`, que também só roda com documento.
 Empresa quieta termina em `NENHUM_DOCUMENTO_LOCALIZADO` e retorna `ok:true` **sem tocar no campo** —
@@ -1597,6 +1602,75 @@ quem decide a espera na prática é o backoff de 15 min do serviço. Não escrev
 
 Regressões: `workers/__tests__/dfeNotasWorkerIntervaloAdn.test.js` (o gate e o heartbeat) e
 `notas/__tests__/adnErroEco.test.js` (o eco, nas duas direções).
+
+## ⚠⚠ SEFAZ/DFe: a janela de 1 hora mora DENTRO de `syncDfeForCompany` (23/08/2026)
+
+Sintoma: o dono clicou em **capturar NF-e** numa empresa e levou `[CONSUMO_INDEVIDO] cStat=656` —
+no **primeiro clique do dia**. A mensagem dizia *"outra aplicação consultando o mesmo CNPJ"*. **A
+outra aplicação éramos nós.**
+
+**Três regras para a mesma pergunta, e a terceira não existia.**
+
+| caminho | onde | respeitava a janela? |
+|---|---|---|
+| worker | `workers/dfeNotasWorker.js` (`MIN_INTERVAL_BETWEEN_SYNCS_MS`) | sim |
+| lote | `notas/captura/NotasCapturaService.js` (`INTERVALO_NFE_MIN`) | sim |
+| **botão da empresa** | `routes/firm/notas.js`, `POST /dfe/sync` → `syncDfeForCompany` direto | **não** |
+
+⚠ **Um clique bastava.** A espera de 1 h da NT 2014.002 é **condicional**: vale *"caso não existam
+mais documentos a serem pesquisados"*, ou seja é disparada pelo **cStat 137** — e o laço de
+`syncDfeForCompany` **itera até receber 137**. Toda execução bem-sucedida do worker **fecha a janela
+sozinha**; o botão manual nunca teve como ganhar dele. Pior: o 656 grava **backoff de 60 min**, que
+derruba **também o worker** — clicar tirava a empresa do ar por uma hora.
+
+Hoje a regra mora **num lugar só**, dentro de `syncDfeForCompany`, e **quem chama herda** — mesma
+disciplina de `fechamentoBlockers`, `guideContract` e `codigoServicoDaNota`. Worker e lote **mantêm
+as guardas deles**: dupla checagem é inofensiva; removê-las faria a proteção depender de uma camada
+só.
+
+- Recusa **nossa e nomeada, antes de qualquer I/O**: `DFE_INTERVALO_NAO_CUMPRIDO`, com
+  `ultimaConsultaEm`/`proximaConsultaEm`. **Nada sai para a SEFAZ.** Ela **não grava backoff nem
+  tentativa** — gravar backoff aqui derrubaria o worker, que é o estrago que a guarda evita.
+- ⚠ **A janela se lê por "OLHEI", nunca por "RECEBI".** O relógio é **`dfeLastAttemptAt`**, gravado
+  em toda tentativa. `dfeLastSyncAt` só se move quando **chega** documento (e só em execução que
+  termina OK) — usá-lo como relógio foi o defeito que custou **29 dias** no ADN e está escrito no
+  comentário de `PortalSyncState` no `schema.prisma`.
+- ⚠ **Empresa sem `PortalSyncState` passa.** Sem linha não há `dfeLastAttemptAt`, e quem nunca foi
+  consultado não pode ficar preso.
+- ⚠ **Não existe escape (`?forcar=1`).** A janela é regra **externa**: furá-la produz exatamente o
+  bloqueio que a guarda evita. Diferente do teto do SERPRO (`podeForcarSerpro`), que é orçamento
+  **nosso** e por isso admite forçar.
+- ⚠ **O número vem de `DFE_NOTAS_WORKER_INTERVAL_MIN`** — a mesma constante do worker
+  (`DFE_INTERVALO_MIN`), nunca um `60` escrito à mão. Duas janelas para a mesma regra dão no bloqueio
+  que ambas evitam.
+
+**A mensagem do 656 diz o FATO, não o palpite** (`explicar656`). Última tentativa **nossa** recente ⇒
+*"este sistema consultou este CNPJ há X min; a SEFAZ exige 60 min"*. Só quando a nossa última
+tentativa for **mais velha que a janela** é que a outra aplicação vira hipótese — e aí é dita **como**
+hipótese. A frase antiga afirmava a hipótese e mandou o dono procurar culpado externo.
+
+**A tela parou de prometer o botão.** `GET /dfe/state` devolve `ultimaConsultaEm`,
+`proximaConsultaEm` e `podeConsultarAgora` (calculados por `avaliarJanelaDfe`, a **mesma** conta da
+guarda). O botão fica **visível e desabilitado**, com o motivo no `title` — botão que some esconde
+que a ação existe. ⚠ **O texto não é o da Situação Fiscal**: lá a janela é **nossa** (4 h, chamada
+paga) e quem a consome é o contador; aqui é da **SEFAZ** e quem a consome é o **nosso worker**. Sem
+dizer isso, o contador acha que a culpa é dele.
+
+⚠⚠ **NÃO filtre o worker por `inscricaoEstadual`** — parece economia (20 empresas com A1, só 3 com
+IE) e **quebraria a captura de notas de COMPRA**. Medido: as três únicas empresas com NF-e na base
+(SINTROPIA 34, LENTE 11, ALBATROZ 2) **não têm IE**, porque as notas delas são **compras** — receber
+NF-e de fornecedor não exige inscrição estadual. Quem tem IE é quem **emite**.
+
+⚠ **PENDENTE, e é o mesmo raciocínio:** o **lote** (`NotasCapturaService.motivoParaPular`) **já tem**
+esse filtro — pula NF-e de empresa sem IE com o motivo *"sem inscrição estadual (não emite NF-e)"*,
+ou seja, pula justamente as três empresas que têm NF-e de compra. **Não foi mexido nesta correção**
+(estava fora do pedido); fica registrado para o dono decidir.
+
+Regressões: `notas/dfe/__tests__/dfeJanelaConsulta.test.js` (a recusa medida por **não-chamada** de
+`fetchDistNSU`, empresa nunca consultada, `dfeLastSyncAt` velho × `dfeLastAttemptAt` recente, o ciclo
+do worker continuando a passar, e os três textos do 656) e
+`web/features/notas/components/__tests__/botaoBuscarNfeJanelaSefaz.test.jsx` (botão visível,
+desabilitado, motivo no `title`).
 
 ## ⚠ ADN: quem consulta é o CERTIFICADO — nunca use o do escritório
 

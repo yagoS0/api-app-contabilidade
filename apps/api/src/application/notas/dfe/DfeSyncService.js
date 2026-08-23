@@ -14,6 +14,7 @@
 // Re-roda 2x mesmo input = 0 duplicatas.
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
+import { DFE_NOTAS_WORKER_INTERVAL_MIN } from "../../../config.js";
 import { resolveCertForCompany, SERVICOS } from "../CertResolver.js";
 import { fetchDistNSU, DfeClientError } from "./DfeClient.js";
 import { parseDistDFeResponse, parseDocZip } from "./DfeParser.js";
@@ -22,6 +23,105 @@ import { substituirItensPreservandoClassificacao } from "../notaItens.js";
 
 const MAX_ITERATIONS = 10;
 const BACKOFF_MINUTES_ON_ERROR = 15;
+
+// ─── A JANELA DE 1 HORA DA SEFAZ (NT 2014.002 v1.10) ────────────────────────────────────────────
+//
+// ⚠ ELA MORA AQUI, DENTRO DE `syncDfeForCompany`, E NÃO NA ROTA. Havia TRÊS respostas para a mesma
+// pergunta — worker (`workers/dfeNotasWorker.js`), lote (`captura/NotasCapturaService.js`) e o botão
+// por empresa (`routes/firm/notas.js`, `POST /dfe/sync`) — e a terceira simplesmente não existia: a
+// rota chamava esta função direto. UM clique bastava para levar `cStat=656` (Consumo Indevido) e
+// BLOQUEAR o CNPJ por uma hora, mesmo sendo o primeiro clique do dia, porque:
+//
+//   • a espera de 1 h da NT é CONDICIONAL — vale *"caso não existam mais documentos a serem
+//     pesquisados"*, ou seja, é disparada pelo cStat 137; e
+//   • este laço itera JUSTAMENTE até receber 137. Toda execução bem-sucedida do worker fecha a
+//     janela sozinha. O botão manual nunca teve como ganhar dele.
+//
+// E o 656 grava backoff de 60 min (mais abaixo), que derruba TAMBÉM o worker: clicar tirava a
+// empresa do ar por uma hora.
+//
+// Quem chama herda — mesma disciplina de `fechamentoBlockers`, `guideContract` e
+// `codigoServicoDaNota`. Worker e lote mantêm as guardas deles: dupla checagem é inofensiva,
+// removê-las faria a proteção depender de uma camada só.
+//
+// ⚠ NÃO EXISTE ESCAPE (`?forcar=1`). A janela é regra EXTERNA: furá-la produz exatamente o bloqueio
+// que a guarda evita. Diferente do teto do SERPRO (`podeForcarSerpro`), que é orçamento NOSSO.
+//
+// ⚠ O NÚMERO VEM DE `DFE_NOTAS_WORKER_INTERVAL_MIN` — a MESMA constante do worker, nunca um `60`
+// escrito à mão. Duas janelas para a mesma regra dão no bloqueio que ambas tentam evitar.
+export const DFE_INTERVALO_MIN = DFE_NOTAS_WORKER_INTERVAL_MIN || 60;
+
+/**
+ * A janela lida por "OLHEI", nunca por "RECEBI".
+ *
+ * ⚠ `dfeLastSyncAt` só se move quando CHEGA documento — usá-lo como relógio foi o defeito que custou
+ * 29 dias no ADN e está escrito no comentário de `PortalSyncState` (`schema.prisma`). Quem responde
+ * "quando foi a última vez que consultamos este CNPJ" é `dfeLastAttemptAt`, gravado em TODA
+ * tentativa, com ou sem documento.
+ *
+ * ⚠ Empresa SEM `PortalSyncState` (nunca consultada) PASSA: sem linha não há `dfeLastAttemptAt`.
+ *
+ * @param {{dfeLastAttemptAt?: Date|string|null}|null} state
+ * @returns {{podeConsultarAgora: boolean, ultimaConsultaEm: Date|null, proximaConsultaEm: Date|null,
+ *            minutosDesdeUltima: number|null, minutosRestantes: number, intervaloMin: number}}
+ */
+export function avaliarJanelaDfe(state, agora = new Date()) {
+  const intervaloMin = DFE_INTERVALO_MIN;
+  const ultima = state?.dfeLastAttemptAt ? new Date(state.dfeLastAttemptAt) : null;
+  if (!ultima || Number.isNaN(ultima.getTime())) {
+    return {
+      podeConsultarAgora: true,
+      ultimaConsultaEm: null,
+      proximaConsultaEm: null,
+      minutosDesdeUltima: null,
+      minutosRestantes: 0,
+      intervaloMin,
+    };
+  }
+  const proxima = new Date(ultima.getTime() + intervaloMin * 60 * 1000);
+  const minutosDesdeUltima = Math.floor((agora.getTime() - ultima.getTime()) / 60000);
+  const podeConsultarAgora = proxima.getTime() <= agora.getTime();
+  return {
+    podeConsultarAgora,
+    ultimaConsultaEm: ultima,
+    proximaConsultaEm: proxima,
+    minutosDesdeUltima,
+    minutosRestantes: podeConsultarAgora ? 0 : Math.max(1, Math.ceil((proxima.getTime() - agora.getTime()) / 60000)),
+    intervaloMin,
+  };
+}
+
+function horaCurta(d) {
+  try {
+    return new Date(d).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+  } catch { return ""; }
+}
+
+/**
+ * O 656 diz o FATO, não o palpite.
+ *
+ * A mensagem antiga afirmava *"outra aplicação consultando o mesmo CNPJ"* — hipótese apontando para
+ * fora, que mandou o dono caçar culpado externo quando a outra aplicação era o nosso próprio worker.
+ * A regra agora: se a NOSSA última tentativa é recente, o fato é nosso e é dito como fato. Só quando
+ * ela for mais velha que a janela é que a outra aplicação vira hipótese — e aí é dita COMO hipótese.
+ *
+ * @param {Date|string|null|undefined} ultimaTentativaNossa
+ */
+export function explicar656(ultimaTentativaNossa) {
+  const j = avaliarJanelaDfe({ dfeLastAttemptAt: ultimaTentativaNossa });
+  if (!j.ultimaConsultaEm) {
+    return ` (não há registro de consulta nossa a este CNPJ; pode ser outra aplicação usando o mesmo `
+      + `CNPJ na distribuição DFe — a SEFAZ libera em 1 hora)`;
+  }
+  if (!j.podeConsultarAgora) {
+    return ` (este sistema consultou este CNPJ há ${j.minutosDesdeUltima} min; a SEFAZ exige `
+      + `${j.intervaloMin} min entre consultas do mesmo CNPJ — a próxima sai às `
+      + `${horaCurta(j.proximaConsultaEm)})`;
+  }
+  return ` (a nossa última consulta a este CNPJ foi há ${j.minutosDesdeUltima} min, já fora da janela `
+    + `de ${j.intervaloMin} min; então PODE ser outra aplicação consultando o mesmo CNPJ — a SEFAZ `
+    + `libera em 1 hora)`;
+}
 
 export class DfeSyncError extends Error {
   constructor(code, message, extra = {}) {
@@ -251,6 +351,29 @@ export async function syncDfeForCompany({ portalClientId, env = "prod" }) {
     };
   }
 
+  // ⚠ A JANELA DE 1 HORA — recusa NOSSA e NOMEADA, ANTES DE QUALQUER I/O. Nada sai para a SEFAZ.
+  // Ver o bloco `DFE_INTERVALO_MIN` no topo do arquivo para o porquê de a regra morar aqui.
+  //
+  // Não grava backoff nem `dfeLastAttemptAt`: não houve tentativa, e escrever backoff aqui
+  // derrubaria o worker junto — que é exatamente o estrago que esta guarda existe para impedir.
+  const janela = avaliarJanelaDfe(state);
+  if (!janela.podeConsultarAgora) {
+    return {
+      ok: false,
+      reason: "DFE_INTERVALO_NAO_CUMPRIDO",
+      message:
+        `Este sistema já consultou a SEFAZ para este CNPJ há ${janela.minutosDesdeUltima} min. `
+        + `A SEFAZ permite 1 consulta por CNPJ a cada ${janela.intervaloMin} min (NT 2014.002) — insistir `
+        + "devolveria Consumo Indevido (cStat 656) e bloquearia a empresa por 1 hora. "
+        + `A captura automática roda de hora em hora; a próxima consulta sai às ${horaCurta(janela.proximaConsultaEm)}.`,
+      ultimaConsultaEm: janela.ultimaConsultaEm,
+      proximaConsultaEm: janela.proximaConsultaEm,
+      minutosDesdeUltima: janela.minutosDesdeUltima,
+      minutosRestantes: janela.minutosRestantes,
+      intervaloMin: janela.intervaloMin,
+    };
+  }
+
   // Cert
   let cert;
   try {
@@ -302,7 +425,12 @@ export async function syncDfeForCompany({ portalClientId, env = "prod" }) {
           hint = ` (o A1 cadastrado pertence a outro CNPJ — precisa ser o cert da própria empresa ${portal.cnpj})`;
         } else if (ret.cStat === "656") {
           code = "CONSUMO_INDEVIDO";
-          hint = " (outra aplicação consultando o mesmo CNPJ — aguarde 1h)";
+          // ⚠ AQUI SE DIZIA *"outra aplicação consultando o mesmo CNPJ — aguarde 1h"*: uma HIPÓTESE
+          // escrita como fato, e apontando para FORA. Mandou o dono procurar culpado externo quando
+          // a outra aplicação éramos NÓS (o worker, de hora em hora). Agora o texto sai do relógio:
+          // `state` é a leitura ANTERIOR ao `dfeLastAttemptAt` desta execução, então é mesmo a
+          // penúltima tentativa — a nossa última antes desta.
+          hint = explicar656(state?.dfeLastAttemptAt);
         } else if (ret.cStat === "137") {
           // 137 nunca chega aqui (já tratado como sucesso)
         } else if (ret.cStat === "108" || ret.cStat === "109") {

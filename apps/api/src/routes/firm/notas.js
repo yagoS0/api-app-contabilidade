@@ -25,7 +25,7 @@ import {
 } from "../../application/notas/CompetenciaStateMachine.js";
 import { checkCertAvailability, SERVICOS } from "../../application/notas/CertResolver.js";
 import { montarIndiceDeCiclo, derivarCiclo } from "../../application/notas/cicloNota.js";
-import { syncDfeForCompany } from "../../application/notas/dfe/DfeSyncService.js";
+import { syncDfeForCompany, avaliarJanelaDfe } from "../../application/notas/dfe/DfeSyncService.js";
 import { syncAdnNotasForCompany } from "../../application/notas/adn/AdnNotasService.js";
 import { classifyItemsForCompany } from "../../application/notas/apuracao/ClassificadorAnexos.js";
 import { calcularApuracaoParaCompetencia } from "../../application/notas/apuracao/CalculoFiscal.js";
@@ -358,16 +358,25 @@ export function createNotasRouter({ log }) {
   router.get("/dfe/state", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const state = await prisma.portalSyncState.findUnique({ where: { clientId: portalClientId } });
+    // A MESMA conta da guarda (`avaliarJanelaDfe`), nunca uma cópia: a tela precisa dizer o que a
+    // rota de captura vai fazer. Dois relógios para a mesma janela reabririam o defeito de outro
+    // jeito — o botão prometendo o que o serviço recusa.
+    const janela = avaliarJanelaDfe(state);
     return res.json({
       ok: true,
-      state: state
-        ? {
-            dfeNsuCursor: state.dfeNsuCursor?.toString() || "0",
-            dfeLastSyncAt: state.dfeLastSyncAt,
-            dfeLastError: state.dfeLastError,
-            dfeBackoffUntil: state.dfeBackoffUntil,
-          }
-        : { dfeNsuCursor: "0", dfeLastSyncAt: null, dfeLastError: null, dfeBackoffUntil: null },
+      state: {
+        dfeNsuCursor: state?.dfeNsuCursor?.toString() || "0",
+        dfeLastSyncAt: state?.dfeLastSyncAt ?? null,
+        dfeLastError: state?.dfeLastError ?? null,
+        dfeBackoffUntil: state?.dfeBackoffUntil ?? null,
+        // ⚠ "OLHEI", não "RECEBI": `ultimaConsultaEm` sai de `dfeLastAttemptAt`. `dfeLastSyncAt`
+        // continua exposto porque responde outra pergunta ("quando chegou documento pela última
+        // vez") — trocar um pelo outro é o defeito que custou 29 dias no ADN.
+        ultimaConsultaEm: janela.ultimaConsultaEm,
+        proximaConsultaEm: janela.proximaConsultaEm,
+        podeConsultarAgora: janela.podeConsultarAgora,
+        intervaloConsultaMin: janela.intervaloMin,
+      },
     });
   });
 
