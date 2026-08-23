@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../../api";
 import { definirSessao, reconhecerExpiracao } from "../../api/sessionStore";
 import { mensagemDeErro } from "../../lib/mensagens";
+import { LogoAltan } from "../../components/LogoAltan";
 
 /**
  * Entrada do portal do CLIENTE.
@@ -42,7 +43,13 @@ export function LoginPage({ expirou, aoEsquecerSenha }) {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={aoEnviar}>
-        <h1>Portal do Cliente</h1>
+        {/* ⚠ O `<h1>` FICA, e a logo mora DENTRO dele. O texto "Portal do Cliente" saiu da tela
+            (pedido do dono, 23/08/2026) — mas o cabeçalho de nível 1 é a hierarquia do documento,
+            não decoração, e quem passa a dar o nome acessível é o `<title>` do SVG. Trocar o `<h1>`
+            por uma `<div>` deixaria a página sem cabeçalho nenhum para leitor de tela. */}
+        <h1 className="login-marca">
+          <LogoAltan altura={40} />
+        </h1>
         <p className="sub">Acompanhe suas notas, guias e impostos.</p>
 
         {expirou && !erro ? (

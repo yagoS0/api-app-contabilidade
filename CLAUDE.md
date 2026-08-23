@@ -469,6 +469,67 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
 - [x] PDF reader Python integrado como serviço separado
 - [x] Deploy Railway com Dockerfile e variáveis de ambiente
 
+## ⚠⚠ A MARCA — ALTAN, e o que ela ainda NÃO é (23/08/2026)
+
+O kit da Altan (`altan-logo-*`, `altan-icone-*`) entrou nos dois portais: favicon, `<title>`, tela
+de login, barra do topo do cliente e o cabeçalho dos impressos do escritório. **Antes disto não
+havia marca nenhuma no produto**: o favicon do escritório era o logo do **Vite** e a aba dizia
+*"Portal Firm"*; o portal do cliente não declarava ícone nenhum (o navegador pedia `/favicon.ico` e
+o `try_files` do Caddy devolvia o **`index.html` com 200 e `text/html`**).
+
+- ⚠⚠ **A LOGO É SVG INLINE NO DOM, NUNCA `<img src="…svg">`.** O letreiro do kit é
+  `<text font-family="Inter, …">`, e um SVG usado como imagem é documento isolado: **não enxerga as
+  fontes da página**. Servido assim, "ALTAN" sairia em Segoe UI no Windows, Arial no macOS e Roboto
+  no Android. Componente: `LogoAltan` (um por portal — está na tabela "mudou lá, muda aqui").
+- ⚠ **A Inter é auto-hospedada** (`public/fonts/Inter-latin.woff2`, 48 KB, **variável**, eixo
+  `wght` 100–900 conferido com fontTools; licença OFL ao lado). Decisão de 23/08/2026, contra o
+  `<link>` do Google Fonts: os dois apps fazem **zero requisição externa** e o modo demonstração é
+  offline — com host de terceiro a logo cairia para Segoe UI justamente ali. ⚠ **Ela NÃO é a fonte
+  do app**: `--font`/`--font-sans` continuam sendo a pilha de sistema.
+- ⚠ **"claro"/"escuro" no nome dos arquivos é o FUNDO, não o tema do arquivo.** As cores da logo são
+  tokens (`--logo-sol`, `--logo-horizonte`, `--logo-tinta`, `--logo-subtitulo`), um par por portal.
+  Medido: a linha do horizonte da variante escura (`#AEB6D3`) sobre o branco do portal do cliente dá
+  **1,97:1** — some. E `tom="papel"` crava o par claro nos impressos, porque a tinta do portal
+  escuro (`#F8F8F2`) sairia invisível no papel.
+- ⚠ **O `viewBox` é recorte, não redesenho.** No arquivo oficial a marca ocupa 52% da largura e 34%
+  da altura (tinta medida no PNG @2x: `x 77..722, y 128..243` de 1240×340). O `favicon.svg` é o
+  ÚNICO arquivo autoral: mesma arte, mesma moldura, escalada 1,30× — no ícone oficial a marca ocupa
+  **22% da altura**, e a 16px isso se lê como um quadrado escuro. Os PNGs de 180/192/512 ficam
+  **intactos**: ali a margem generosa é o certo.
+- ⚠ **O login do escritório só diz o modo quando é `mock`.** Ele imprimia `Modo da API: real` para o
+  usuário final. A comparação é `=== "mock"`, nunca `!== "real"`: `real_with_mock_fallback` **fala
+  com o backend de verdade**, e chamá-lo de demonstração diria que números de produção são fictícios.
+
+### ⚠⚠ PENDÊNCIA NOMEADA: o nome "Belgen" continua no código
+
+O dono decidiu, em 23/08/2026, aplicar a marca **só nas telas** — e-mail fica para depois. Então
+isto **não é descuido, é uma decisão com data**, e está aqui para não virar descoberta de novo:
+
+| onde | o quê |
+|---|---|
+| `apps/api/src/application/auth/PasswordResetService.js:122` | assina *"Equipe Belgen Contabilidade"* |
+| `apps/api/src/application/guides/GuideCompanyEmailService.js:56` | idem |
+| `apps/api/src/workers/guideEmailWorker.js:101` | idem |
+| `apps/api/src/infrastructure/mail/EmailService.js:104,108` | `boundary = "===belgen-"` e `fromDomain` padrão `belgencontabilidade.com` |
+
+⚠ **Os três primeiros são texto que CHEGA AO CLIENTE.** O quarto é técnico e depende do Workspace
+real (`SMTP_FROM`/`GMAIL_DELEGATED_USER`) — **trocar o domínio sem o novo confirmado derruba o
+envio**. Não mexa em nenhum dos quatro sem decisão explícita do dono.
+
+### O que ficou de fora, com motivo
+
+- **O DANFSe**, e não é escolha: Res. CGNFS-e nº 3, art. 13 (citada em `danfse/danfseLeiaute.js:234`)
+  proíbe imprimir informação que não conste do arquivo da NFS-e. A logomarca dele é a **oficial da
+  NFS-e nacional**.
+- **O espelho da DEFIS** (`EspelhoDefis.jsx`): o botão "Imprimir o espelho" chama `window.print()`
+  **cru** — não liga `body.imprimindo` nem declara `data-print-area`, então ele não usa o mecanismo
+  compartilhado e um `[data-print-only]` ali ficaria invisível. ⚠ É lacuna ANTERIOR a esta entrega;
+  consertar o fluxo de impressão dele é trabalho à parte.
+- **O app mobile** (`portal-cliente-mobile`, outro repositório) segue com os 6 ícones default do
+  template Expo.
+- **A paleta dos portais** não mudou. O ouro `#D9A32B` colidiria com `--warning`, que nesta casa
+  significa *pendência*.
+
 ## Princípios de trabalho (INEGOCIÁVEIS)
 
 > Definidos pelo dono do projeto. Valem pra qualquer tarefa, em qualquer arquivo.

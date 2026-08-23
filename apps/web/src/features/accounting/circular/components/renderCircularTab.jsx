@@ -12,6 +12,7 @@ import { Button } from "../../../../components/ui/Button";
 import { aparenciaDaGuia, totaisEmAberto } from "../lib/estadoGuia";
 // ⚠ Vencimento é DATA CIVIL (meia-noite UTC) — o `fmtDate` local abaixo é para TIMESTAMP.
 import { fmtDataCivil } from "../../../../lib/format";
+import { LogoAltan } from "../../../../components/ui/LogoAltan";
 
 // Subtipos universais + flag de regimes que os exibem.
 // "all" = qualquer regime; array = só esses regimes.
@@ -1176,6 +1177,12 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
           {/* Cabeçalho que só existe no PAPEL: a folha sai sem o header do app, e uma tabela de
               12 meses sem empresa nem ano é indistinguível da de qualquer outra empresa. */}
           <div data-print-only style={{ display: "none" }}>
+        {/* ⚠ `tom="papel"` NÃO É DETALHE: este portal é escuro, e a tinta dele (`--logo-tinta`,
+            `#F8F8F2`) sairia INVISÍVEL no branco da folha. A variante crava o par de fundo claro e
+            liga `print-color-adjust: exact`, senão o navegador descarta a cor da cúpula.
+            ⚠ E ela precisa estar DENTRO do `[data-print-area]`: a regra do `@media print` é
+            `body.imprimindo > * { visibility: hidden }`, e só os descendentes da área voltam. */}
+        <LogoAltan tom="papel" altura={22} />
             <h2 style={{ margin: "0 0 2px" }}>Extrato anual de guias — {year}</h2>
             <p style={{ margin: "0 0 10px", fontSize: "0.85rem" }}>
               {companyName || ""}{companyName ? " · " : ""}Emitido em {new Date().toLocaleDateString("pt-BR")}

@@ -8,6 +8,41 @@
 
    Cor nova entra AQUI, nunca em hex literal dentro de componente.
    ============================================================================= */
+/* =============================================================================
+   A FONTE DA MARCA — Inter, auto-hospedada.
+
+   ⚠⚠ ELA EXISTE PARA UMA COISA SÓ: O LETREIRO DA LOGO. Os SVGs oficiais da Altan trazem
+   "ALTAN"/"CONTABILIDADE" como `<text font-family="Inter, 'Segoe UI', Arial, sans-serif">`, e a
+   Inter não está instalada por padrão em Windows, macOS, Android nem iOS. Sem ela o letreiro cai
+   em Segoe UI no Windows, Arial no Mac e Roboto no Android — três desenhos diferentes para a mesma
+   marca, e o que se vê na máquina de quem desenvolve é justamente o que dá certo.
+
+   ⚠⚠ `--font` / `--font-sans` NÃO MUDARAM. O corpo dos dois portais continua em fonte de sistema.
+   Trocar a tipografia do app inteiro é outra decisão, muito maior, que ninguém pediu.
+
+   ⚠ AUTO-HOSPEDADA, e não `<link>` para fonts.googleapis.com — decisão de 23/08/2026, reversível
+   numa linha, com três motivos: (a) os dois apps fazem ZERO requisição externa hoje, e o modo
+   demonstração é declaradamente offline: com host externo a logo cairia para Segoe UI exatamente
+   ali; (b) `CLAUDE.md` do portal do cliente proíbe dependência nova sem discutir, e host de
+   terceiro é dependência; (c) entregar o IP de quem abre uma ferramenta fiscal a um terceiro não é
+   de graça.
+
+   ⚠ É UM ARQUIVO SÓ PORQUE A INTER É VARIÁVEL — conferido com fontTools: eixo `wght` de 100 a 900
+   num único woff2 de 48 KB (subconjunto latino). Por isso `font-weight: 100 900`: declarar `400`
+   aqui faria o navegador ENGORDAR sinteticamente o peso 500 do letreiro em vez de usar o desenho
+   real do eixo.
+
+   ⚠ A licença (SIL OFL 1.1) está versionada ao lado do arquivo, em `public/fonts/OFL.txt`. É
+   exigência dela, não zelo.
+   ============================================================================= */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/Inter-latin.woff2") format("woff2");
+}
+
 :root {
   --bg: #f6f7f9;
   --surface: #fff;
@@ -22,6 +57,23 @@
   --radius: 8px;
   --gap: 12px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* A pilha do LETREIRO da logo — a MESMA que os SVGs oficiais declaram, para que a queda, se a
+     Inter não carregar, seja a queda que o arquivo original previa. */
+  --font-marca: Inter, "Segoe UI", Arial, sans-serif;
+
+  /* ⚠⚠ AS CORES DA LOGO SÃO TOKENS PORQUE O ARQUIVO CERTO DEPENDE DO FUNDO, NÃO DO ARQUIVO.
+     "claro"/"escuro" no nome dos SVGs da Altan é o FUNDO em que a logo se apoia. Este portal é
+     claro, então usa o par de fundo claro. Medido: a linha do horizonte da variante ESCURA
+     (`#AEB6D3`) sobre o branco desta superfície dá 1,97:1 — ela simplesmente some. */
+  --logo-sol: #D9A32B;
+  --logo-horizonte: #6272A4;
+  --logo-tinta: #1A1B26;
+  /* ⚠ "CONTABILIDADE" é `#6272A4` nos DOIS arquivos oficiais — claro e escuro. Não é engano
+     meu nem descuido deles: é a cor da submarca. Sobre o fundo escuro do escritório ela mede
+     3,63:1, abaixo do mínimo de texto da WCAG — e fica assim de propósito, porque logotipo é
+     explicitamente excluído do critério 1.4.3. Não "conserte" para --text-muted: isso mudaria
+     a marca. */
+  --logo-subtitulo: #6272A4;
 
   /* Superfícies dos estados. ⚠ Existem como token porque derivar fundo por
      concatenação de hex (`${cor}22`) quebra em silêncio assim que a cor vira

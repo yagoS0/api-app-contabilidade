@@ -66,6 +66,10 @@ src/
     municipios/   - SÓ a regra; o dado (5.571 linhas) vem de `@contabilidade/shared/municipios-ibge`
                     por `import()` dinâmico ⚠ a tabela era cópia nos dois portais até 20/08/2026
     servicosNacionais/ - Anexo B gerado (335 códigos, 63 KB), idem
+  components/
+    ui.jsx           - Chip, Vazio, Carregando, AlertaErro, CardNumero, BotaoCopiar
+    icones.jsx       - os SVGs da barra lateral (inline, `aria-hidden`)
+    LogoAltan.jsx    - ⚠ a marca, SVG INLINE — ver a seção da marca
   styles/tokens.css  styles/app.css
 ```
 
@@ -1042,6 +1046,36 @@ virou tabela e a linha que não fechou em colunas), em parcelamento (o bloco do 
 pares), regular, regular **sem relatório guardado**, e não consultada. E ele **exerce o piso de
 papel**: `pc-002` é FINANCEIRO e leva 403 `insufficient_role`, como o servidor faria.
 
+## ⚠⚠ A MARCA (23/08/2026) — a logo substituiu o texto
+
+Pedido do dono: usar o kit da Altan *"na nossa página, página de login, favicon do site"*, e **tirar
+o "Portal do Cliente" escrito**. Os três pontos de texto viraram `<LogoAltan />`: o `<h1>` do login,
+o `<span class="brand">` da topbar e o `<title>` da aba (hoje `Altan Contabilidade`).
+
+- ⚠⚠ **SVG INLINE NO DOM, NUNCA `<img src="…svg">`.** O letreiro do kit é `<text>` na fonte **Inter**,
+  e um SVG usado como imagem é documento isolado: **não enxerga as fontes da página**. Como imagem,
+  "ALTAN" sairia em Segoe UI no Windows, Arial no macOS e Roboto no Android — e o certo seria
+  justamente o que aparece na máquina de quem desenvolve.
+- ⚠ **A Inter entra AUTO-HOSPEDADA** (`public/fonts/`, 48 KB, variável), e é a primeira fonte não-
+  nativa do app. O `CLAUDE.md` manda discutir dependência nova: **foi discutido, e o dono escolheu
+  carregar a Inter**. Host externo foi recusado porque este app faz zero requisição externa e o modo
+  demonstração é offline. ⚠ `--font` **não mudou**: só a logo usa Inter.
+- ⚠⚠ **O `<h1>`/`<span class="brand">` FICARAM, com a logo dentro.** Tirar o `<h1>` deixaria a página
+  sem cabeçalho de nível 1, e quem passa a dar o nome acessível é o `<title>` do SVG — por isso o
+  teste afirma `getByRole("img", { name: "Altan Contabilidade" })`, nunca a existência de um `<svg>`.
+  Texto que some da tela sem nome acessível no lugar é o portal ficando mudo para leitor de tela.
+- ⚠ **`.brand` ganhou `flex-shrink: 0`.** A regra vizinha `.topbar > * { min-width: 0 }` existe
+  porque o nome longo da empresa já fez a página rolar para o lado em 375px; sem o `flex-shrink`,
+  ela passaria a espremer a MARCA em vez do nome. Conferido: 119×26 px, sem rolagem, em 375 e 1280.
+- ⚠ **As cores são tokens, e o par é do FUNDO.** `--logo-sol` / `--logo-horizonte` / `--logo-tinta` /
+  `--logo-subtitulo`. Aqui vale o par de fundo CLARO — a linha do horizonte da variante escura
+  (`#AEB6D3`) sobre o branco desta superfície mede **1,97:1** e some.
+- ⚠ **O `viewBox` (`30 56 340 74`) é recorte medido, não conta de cabeça** — no arquivo oficial a
+  marca ocupa 52% da largura, com 42% de margem morta à direita. A borda direita foi fixada com a
+  tinta REAL medida no navegador (`getBBox()`, descontando o `letter-spacing` que sobra depois da
+  última letra): 359,8, contra 370 da caixa. **Trocar a fonte da marca obriga a medir de novo** —
+  errar para menos corta a última letra de "CONTABILIDADE", porque a raiz de um SVG recorta.
+
 ## AUTENTICAÇÃO
 
 ⚠ **`accountGate.js` é regra de PRODUTO**: conta `FIRM` que entrasse aqui veria a tela do cliente —
@@ -1060,9 +1094,9 @@ de outra.
 
 ## TESTES
 
-`npm test -w @contabilidade/portal-cliente-web` → **683 testes, 38 suítes, todas verdes** (medido em
-20/08/2026, depois das guardas de imposto e do seletor de tomadores; eram 645/36 antes delas, e
-557/32 antes do lote por planilha). Não existiam até 18/08 (`d5a91490` subiu os primeiros 101).
+`npm test -w @contabilidade/portal-cliente-web` → **814 testes, 45 suítes, todas verdes** (medido em
+23/08/2026, depois da marca; eram 807/44 depois da situação fiscal, 683/38 em 20/08, e 557/32 antes
+do lote por planilha). Não existiam até 18/08 (`d5a91490` subiu os primeiros 101).
 **0 suíte falhando é o estado esperado.**
 
 ⚠ **`npm test` PASSA COM JSX QUEBRADO — só `npm run build` pega.** Rode os dois.
@@ -1104,6 +1138,7 @@ pacote comum; a duplicação é conhecida e a obrigação de sincronizar é sua:
 | ~~`lib/municipios/` (o dado)~~ | ⚠ **DEIXOU DE SER ESPELHO EM 20/08/2026**: a tabela do IBGE virou arquivo único em `@contabilidade/shared/municipios-ibge`. A REGRA (`municipioIbge.js`) continua uma por portal, de propósito — a do escritório carrega textos de cadastro que não são do cliente |
 | `lib/roles.js` | `apps/api/.../emissaoClienteAutorizacao.js` + `portal-cliente-mobile/src/roles.ts` |
 | `lib/cliqueDeLink.js` | `apps/web/src/components/ui/cliqueDeLink.js` (quem assume o clique numa aba-link) |
+| `components/LogoAltan.jsx` | `apps/web/src/components/ui/LogoAltan.jsx` — ⚠ o desenho é IDÊNTICO; o que diverge são os TOKENS de cor, um par por portal (ver `tokens.css`) |
 | `fiscal/RelatorioSitfis.jsx` + `fiscal/lib/situacaoFiscalNaTela.js` (`COLUNAS_VALOR`, `COLUNA_TOTAL`, `parseValorBR`, `totalDoBloco`) | `apps/web/src/features/fiscal/sitfis/components/SitfisRelatorioTabela.jsx` — ⚠ paleta e DUAS frases divergem de propósito (o cliente não tem o PDF; `situacao` nula não lê como "em dia") |
 
 ⚠ Duas leituras da mesma coluna divergem na primeira correção — e aí as duas telas afirmam coisas

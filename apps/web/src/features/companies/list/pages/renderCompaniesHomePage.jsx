@@ -15,6 +15,7 @@ import { APURACAO, ORDEM_APURACAO, contarApuracao, estadoApuracao } from "../lib
 import {
   ABA_PADRAO, abasVisiveis, contarPorAba, empresasDaAba, normalizarAba, rotuloAba,
 } from "../lib/abaRegime";
+import { LogoAltan } from "../../../../components/ui/LogoAltan";
 
 // Q17: dropdown — abre um seletor (não navega para um hub).
 //
@@ -1406,6 +1407,12 @@ export function CompaniesHomePage({
                   permite conferir a folha meses depois: qual competência, quando foi impressa,
                   quantas empresas e — o mais importante — se estava filtrada. */}
               <div data-print-only style={{ display: "none" }}>
+        {/* ⚠ `tom="papel"` NÃO É DETALHE: este portal é escuro, e a tinta dele (`--logo-tinta`,
+            `#F8F8F2`) sairia INVISÍVEL no branco da folha. A variante crava o par de fundo claro e
+            liga `print-color-adjust: exact`, senão o navegador descarta a cor da cúpula.
+            ⚠ E ela precisa estar DENTRO do `[data-print-area]`: a regra do `@media print` é
+            `body.imprimindo > * { visibility: hidden }`, e só os descendentes da área voltam. */}
+        <LogoAltan tom="papel" altura={22} />
                 <h2 style={{ margin: 0, fontSize: "1.05rem" }}>
                   Empresas · {rotuloCompetencia(dashboardCompetencia)}
                 </h2>

@@ -1,0 +1,25 @@
+<!-- O FAVICON DA ALTAN — a mesma arte do `altan-icone-*.png`, num enquadramento mais justo.
+
+     ⚠⚠ ESTE ARQUIVO NÃO É O ÍCONE OFICIAL, E A DIFERENÇA É MEDIDA, NÃO ESTÉTICA.
+     No ícone oficial (256×256) a marca ocupa `x 42,5..213` e `y 96..153` — 67% da largura e apenas
+     **22% da altura** do ladrilho. A 16px na aba do navegador isso se lê como um quadrado escuro
+     com uma mancha dourada: medido, não suposto. Aqui a marca é escalada **1,30× em torno do
+     próprio centro (127,75 / 124,5)**, o que a leva a 87% da largura e 29% da altura.
+
+     ⚠ NENHUMA FORMA FOI REDESENHADA. É a mesma cúpula, a mesma linha, o mesmo ladrilho com o mesmo
+     `rx="48"` e as mesmas cores do arquivo oficial — só a escala mudou. Redesenhar a marca para
+     caber melhor num quadrado é decisão do dono, não minha.
+
+     ⚠ OS PNGs GRANDES CONTINUAM INTACTOS (`apple-touch-icon` 180, `icon-192`, `icon-512`): ali a
+     margem generosa é o certo, porque o sistema operacional já recorta e arredonda por conta.
+
+     ⚠ NÃO PONHA `<text>` AQUI. Um SVG usado como favicon é documento isolado — ele não enxerga as
+     fontes da página, e o letreiro cairia em Segoe UI / Arial / Roboto conforme a máquina. Por isso
+     o favicon é o ÍCONE, que não tem texto nenhum; o letreiro vive no `LogoAltan`, inline no DOM.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img">
+  <title>Altan Contabilidade</title>
+  <rect x="0" y="0" width="256" height="256" rx="48" fill="#1A1B26"/>
+  <path d="M57.9 157.7 A70.2 70.2 0 0 1 198.3 157.7 Z" fill="#E8B33A"/>
+  <line x1="21.5" y1="157.7" x2="234.6" y2="157.7" stroke="#AEB6D3" stroke-width="9.1" stroke-linecap="round"/>
+</svg>

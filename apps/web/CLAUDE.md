@@ -141,6 +141,7 @@ conteúdo saltar.
 | `.tabela--densa` / `.tabela__num` | `App.css` | o que faltava para a tela parar de mandar `th`/`td` inline |
 | `.form-actions--fixa` | `App.css` | barra de ação que gruda no rodapé do formulário |
 | `Aviso` | `components/ui/Aviso.jsx` | ganhou `icone` e `acao`; a trava (tom inválido → `neutro`) não mudou |
+| `LogoAltan` | `components/ui/LogoAltan.jsx` | a marca, SVG **inline**. `altura` manda; `tom="papel"` para impressão |
 
 - ⚠ **DUAS LARGURAS, E SÓ DUAS:** `leitura` (`--content-max`) e `trabalho` (`--content-wide`), mais
   `cheia` para quem já é uma tela inteira por dentro (Lançamentos, Circular). Largura desconhecida
@@ -187,6 +188,34 @@ olho a ignorar a cor que significa "falta enviar".
 `body.imprimindo` + `data-print-area` (mais `data-print-only` e `data-print-tabela`). Todo
 `!important` ali é proposital — é a única alavanca da cascata contra os ~2.200 `style={{}}` inline.
 Tela nova que precise imprimir **reusa**, não copia.
+
+## ⚠⚠ A MARCA (23/08/2026)
+
+Até esta data o favicon deste portal era **`/vite.svg`** — o logo do Vite, do scaffold — e a aba
+dizia **"Portal Firm"**, em inglês. Hoje: favicon próprio, `<title>` "Altan Contabilidade —
+Escritório", a logo no login e no cabeçalho dos impressos.
+
+- ⚠⚠ **SVG INLINE, NUNCA `<img src>`** (`components/ui/LogoAltan.jsx`): o letreiro é `<text>` na
+  fonte Inter, e um SVG usado como imagem não enxerga as fontes da página. A Inter é
+  **auto-hospedada** em `public/fonts/` (variável, 48 KB). ⚠ `--font-sans` **não mudou** — só a logo
+  usa Inter.
+- ⚠⚠ **NOS IMPRESSOS A LOGO VAI COM `tom="papel"`, e isto não é detalhe.** Este portal é escuro: a
+  tinta dele (`--logo-tinta` = `#F8F8F2`) sairia **invisível no branco da folha**. A variante crava o
+  par de fundo claro e liga `print-color-adjust: exact`, senão o navegador descarta a cor da cúpula.
+- ⚠⚠ **E ela precisa estar DENTRO do `[data-print-area]`.** A regra é
+  `body.imprimindo > * { visibility: hidden }`, e só os descendentes da área voltam a ser visíveis —
+  uma logo fora dela simplesmente não sai no papel. Ela entrou no `[data-print-only]` que cada área
+  já tinha: Circular, Relatórios, Planejamento, Relatório de Faturamento e a listagem da carteira.
+- ⚠ **O `EspelhoDefis` ficou de fora**, e o motivo é anterior a esta entrega: o botão "Imprimir o
+  espelho" chama `window.print()` **cru** — não liga `body.imprimindo` nem declara `data-print-area`,
+  então nem o mecanismo compartilhado ele usa, e um `[data-print-only]` ali seria invisível.
+- ⚠⚠ **O LOGIN SÓ DIZ O MODO QUANDO É `mock`.** Ele imprimia `Modo da API: real` na tela de entrada
+  do contador. A comparação é `=== "mock"`, **nunca `!== "real"`**: são TRÊS modos, e
+  `real_with_mock_fallback` **fala com o backend de verdade** — chamá-lo de demonstração diria que
+  números de produção são fictícios. Experimento executado: com `!== "real"`,
+  `__tests__/logoEModoNaEntrada.test.jsx` fica 1 vermelho.
+- ⚠ **`vite.svg` e `src/assets/react.svg` foram apagados** — o primeiro deixou de ser referenciado,
+  o segundo nunca teve um importador.
 
 ## Blocos com CLAUDE.md próprio (Q17)
 

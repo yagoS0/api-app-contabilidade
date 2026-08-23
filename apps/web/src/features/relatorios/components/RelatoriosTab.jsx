@@ -17,6 +17,7 @@ import { lerFalhaDeCarga } from "../../../lib/falhaDeCarga";
 import {
   intervalosDisponiveis, periodoAnterior, variacao, somaPorTipo, somaTotal,
 } from "../lib/periodoRelatorio";
+import { LogoAltan } from "../../../components/ui/LogoAltan";
 
 const relatoriosApi = createApiClient();
 
@@ -152,6 +153,12 @@ export function RelatoriosTab({ companyId, competenciaReferencia, razaoSocial })
         <div data-print-area style={{ display: "grid", gap: 14 }}>
           {/* O papel circula sozinho: empresa, período e data têm de sair impressos. */}
           <div data-print-only style={{ display: "none" }}>
+        {/* ⚠ `tom="papel"` NÃO É DETALHE: este portal é escuro, e a tinta dele (`--logo-tinta`,
+            `#F8F8F2`) sairia INVISÍVEL no branco da folha. A variante crava o par de fundo claro e
+            liga `print-color-adjust: exact`, senão o navegador descarta a cor da cúpula.
+            ⚠ E ela precisa estar DENTRO do `[data-print-area]`: a regra do `@media print` é
+            `body.imprimindo > * { visibility: hidden }`, e só os descendentes da área voltam. */}
+        <LogoAltan tom="papel" altura={22} />
             <h2 style={{ margin: "0 0 2px" }}>Demonstrativo de movimento — {escolhido.rotulo}</h2>
             <p style={{ margin: "0 0 10px", fontSize: "0.85rem" }}>
               {razaoSocial || ""} · período {escolhido.de} a {escolhido.ate} · emitido em {new Date().toLocaleDateString("pt-BR")}

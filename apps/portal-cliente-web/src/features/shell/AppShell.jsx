@@ -14,6 +14,7 @@ import { EmitirNotaPage } from "../emitir/EmitirNotaPage";
 import { LotePlanilhaPage } from "../lote/LotePlanilhaPage";
 import { esquecerTodasAsDescricoes } from "../emitir/lib/descricoesRecentes";
 import { GuiasPage } from "../guias/GuiasPage";
+import { LogoAltan } from "../../components/LogoAltan";
 import { SituacaoFiscalPage } from "../fiscal/SituacaoFiscalPage";
 
 // ⚠⚠ A ABA "EMITIR" FOI REMOVIDA EM 19/08/2026 — pedido do dono: emitir virou um BOTÃO dentro de
@@ -172,7 +173,11 @@ export function AppShell({ user }) {
   return (
     <div className="app">
       <header className="topbar">
-        <span className="brand">Portal do Cliente</span>
+        {/* ⚠ Era `<span className="brand">Portal do Cliente</span>`. O texto saiu por pedido do
+            dono (23/08/2026); a classe FICOU, porque é ela que segura o `flex-shrink: 0`. */}
+        <span className="brand">
+          <LogoAltan altura={26} />
+        </span>
 
         <div className="empresa">
           {empresaAtiva ? (

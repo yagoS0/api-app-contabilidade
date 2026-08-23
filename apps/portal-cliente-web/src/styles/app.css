@@ -48,7 +48,11 @@ a { color: var(--primary); }
   padding: 10px 20px;
   display: flex; align-items: center; gap: var(--gap); flex-wrap: wrap;
 }
-.topbar .brand { font-weight: 700; font-size: 1.05rem; letter-spacing: -.01em; white-space: nowrap; }
+/* ⚠ `.brand` NÃO É MAIS TEXTO — desde 23/08/2026 ela segura a logo (`LogoAltan`). O `flex-shrink: 0`
+   é o que importa aqui: a regra `.topbar > * { min-width: 0 }` logo abaixo existe porque o nome
+   longo da empresa já fez a PÁGINA INTEIRA rolar para o lado em 375px, e sem o `flex-shrink: 0` a
+   mesma regra passaria a espremer a marca em vez do nome. */
+.topbar .brand { display: flex; align-items: center; flex-shrink: 0; }
 .topbar .empresa { min-width: 0; }
 .topbar .empresa-nome { font-weight: 600; font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar .empresa-cnpj { color: var(--muted); font-size: .8rem; }
@@ -416,6 +420,9 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .login-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; width: min(400px, 100%); }
 .login-card h1 { margin-bottom: 4px; }
+/* O `<h1>` do login virou moldura da logo: sem tamanho de fonte próprio, sem peso, só o
+   espaçamento até o subtítulo. */
+.login-card h1.login-marca { display: flex; margin: 0 0 10px; line-height: 0; }
 .login-card .sub { color: var(--muted); font-size: .9rem; margin: 0 0 var(--gap); }
 
 /* --- Modal (troca de empresa) --------------------------------------------- */

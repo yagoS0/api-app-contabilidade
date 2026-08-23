@@ -28,6 +28,7 @@ import {
   recusaEcoaOTopo,
   TOM,
 } from "../lib/relatorioFaturamento";
+import { LogoAltan } from "../../../components/ui/LogoAltan";
 
 function fmtDataHora(v) {
   if (!v) return "—";
@@ -353,6 +354,12 @@ export function RelatorioFaturamentoPanel({
           e empurraria o relatório para a folha seguinte. */}
       {imprimivel && (
       <div data-print-only style={{ display: "none" }}>
+        {/* ⚠ `tom="papel"` NÃO É DETALHE: este portal é escuro, e a tinta dele (`--logo-tinta`,
+            `#F8F8F2`) sairia INVISÍVEL no branco da folha. A variante crava o par de fundo claro e
+            liga `print-color-adjust: exact`, senão o navegador descarta a cor da cúpula.
+            ⚠ E ela precisa estar DENTRO do `[data-print-area]`: a regra do `@media print` é
+            `body.imprimindo > * { visibility: hidden }`, e só os descendentes da área voltam. */}
+        <LogoAltan tom="papel" altura={22} />
         <h2 style={{ margin: "0 0 2px" }}>{dados.titulo}</h2>
         <p style={{ margin: "0 0 4px", fontSize: "0.85rem" }}>
           {dados.subtitulo} · {emp.razaoSocial} · CNPJ {emp.cnpj}

@@ -32,6 +32,7 @@ import { prefillDaEmpresa, procedenciaDosCampos } from "../lib/prefillDaEmpresa"
 import { CardRegime } from "../components/CardRegime";
 import { GaugeFatorR } from "../components/GaugeFatorR";
 import { BackButton } from "../../../components/ui/BackButton";
+import { LogoAltan } from "../../../components/ui/LogoAltan";
 
 const C = { page: "#1A1B26", surface: "#24253A", borda: "#44475A", texto: "#F8F8F2", muted: "#A7B0C0", accent: "#BD93F9", alerta: "#FFB347" };
 const campo = { background: "#1A1B26", border: `1px solid ${C.borda}`, borderRadius: 6, color: C.texto, padding: "7px 9px", fontSize: "0.86rem", width: "100%", boxSizing: "border-box" };
@@ -487,6 +488,12 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
             {/* ⚠ CABEÇALHO SÓ-NO-PAPEL. O PDF vai para o cliente do contador sem esta tela por
                 perto: sem isto, ele circula como um número sem data, sem escopo e sem ressalva. */}
             <div data-print-only style={{ display: "none" }}>
+        {/* ⚠ `tom="papel"` NÃO É DETALHE: este portal é escuro, e a tinta dele (`--logo-tinta`,
+            `#F8F8F2`) sairia INVISÍVEL no branco da folha. A variante crava o par de fundo claro e
+            liga `print-color-adjust: exact`, senão o navegador descarta a cor da cúpula.
+            ⚠ E ela precisa estar DENTRO do `[data-print-area]`: a regra do `@media print` é
+            `body.imprimindo > * { visibility: hidden }`, e só os descendentes da área voltam. */}
+        <LogoAltan tom="papel" altura={22} />
               <h2 style={{ margin: "0 0 2px" }}>Simulação de regime tributário</h2>
               <p style={{ margin: "0 0 4px", fontSize: "0.85rem" }}>
                 {prefill.empresa?.razao || "Simulação livre"}

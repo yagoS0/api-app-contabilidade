@@ -2,9 +2,29 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Portal Firm</title>
+    <meta name="color-scheme" content="dark" />
+    <title>Altan Contabilidade — Escritório</title>
+    <meta name="description" content="Carteira de empresas, apuração, guias e obrigações." />
+
+    <!-- ⚠ ATÉ 23/08/2026 O FAVICON DAQUI ERA `/vite.svg` — o logo do Vite, herdado do scaffold do
+         template, na aba que o contador deixa aberta o dia inteiro. E o `<title>` era "Portal
+         Firm", em inglês.
+
+         ⚠ O SVG vem PRIMEIRO de propósito — quem o suporta usa o recorte justo (ver `favicon.svg`);
+         quem não suporta (Safari antigo) cai no PNG de 32, que é o arquivo oficial intacto. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#1A1B26" />
+
+    <!-- ⚠ A FONTE DO LETREIRO É PRÉ-CARREGADA, e não é otimização gratuita: o letreiro da logo é a
+         primeira coisa que aparece na tela de login, e sem isto ele pisca em Segoe UI antes de
+         trocar para Inter (`font-display: swap`). ⚠ `crossorigin` é OBRIGATÓRIO mesmo sendo mesma
+         origem — fonte é sempre buscada em modo CORS, e sem ele o navegador baixa o arquivo DUAS
+         vezes e o preload não serve para nada. -->
+    <link rel="preload" href="/fonts/Inter-latin.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <div id="root"></div>
