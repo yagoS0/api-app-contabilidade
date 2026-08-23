@@ -208,12 +208,35 @@ function extractAmountByKeys(payload, patterns) {
   return parseMoneyValue(raw);
 }
 
-function parsePossibleDate(value) {
+export function parsePossibleDate(value) {
   const raw = String(value || "").trim();
   if (!raw) return null;
   if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return new Date(raw);
   const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (br) return new Date(`${br[3]}-${br[2]}-${br[1]}T00:00:00.000Z`);
+  // ⚠⚠ `AAAAMMDD` COMPACTO — É ASSIM QUE O SERPRO MANDA O VENCIMENTO DO DAS.
+  //
+  // `dados[].detalhamentoDas.dataVencimento` vem como "20260622", e `new Date("20260622")` é
+  // **Invalid Date** — o `Number.isNaN` abaixo devolvia `null` e o vencimento sumia SEM ERRO.
+  // Medido em 21/08/2026: `Guide.vencimento` nulo em **51 de 67** guias de SIMPLES processadas,
+  // com a data presente em **51 de 51** dos payloads guardados.
+  //
+  // ⚠ A consequência já estava ativa e era silenciosa: `CalendarioFiscalService` FILTRA por
+  // `vencimento`, então essas 51 guias de DAS **não apareciam no calendário fiscal** — sem
+  // mensagem, sem contador, sem nada. Guia que não aparece é guia que não é paga.
+  //
+  // A faixa é conferida em vez de aceita: `new Date("20261301")` (mês 13) só falharia mais tarde,
+  // e mês/dia impossíveis significam que o campo NÃO é uma data — devolver `null` ali é a
+  // resposta certa, e é a mesma que o caminho antigo dava.
+  const compacto = raw.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (compacto) {
+    const [, ano, mes, dia] = compacto;
+    const m = Number(mes);
+    const d = Number(dia);
+    if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+    const data = new Date(`${ano}-${mes}-${dia}T00:00:00.000Z`);
+    return Number.isNaN(data.getTime()) ? null : data;
+  }
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
