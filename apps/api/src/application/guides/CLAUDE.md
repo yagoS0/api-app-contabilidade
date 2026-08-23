@@ -76,6 +76,48 @@ Travado em `serpro/__tests__/darfDctfwebNaoEhSempreInss.test.js`, com os casos r
 ⚠ **Recusar não é declarar ausência**: não grava marcador VAZIO e **não escreve a circular**
 (`inssTotal`/`inssStatus`/`acrescimos.INSS`) — era ela que passava a afirmar INSS de PIS/COFINS.
 
+#### O resíduo: as 6 guias que o defeito já tinha escrito, e a decisão do dono (21/08/2026)
+
+A guarda impede guia nova. As **6** que já estavam no banco (reconfirmadas pelo PDF em 22/08/2026 —
+`scripts/diag-inss-fantasma-alvo.mjs`) são resíduo, em 2 empresas, ambas LUCRO_PRESUMIDO:
+
+| competência | empresa | valor | situação |
+|---|---|---|---|
+| 2026-07 | SINCROSAT | 1.435,49 | a guia `OUTRA` correta já existe ao lado |
+| 2026-05 | EDUCACAO E DIREITO | 645,15 | o contador já subiu o DARF **à mão** (`tipo:"PIS"`) |
+| 2026-01 a 2026-04 | EDUCACAO E DIREITO | 54,52 / 36,34 / 740,89 / 134,61 | a guia errada é o **ÚNICO** registro do DARF |
+
+**A decisão, perguntada e respondida diretamente:** *"Excluir só as duplicadas, rodar a captura nas
+outras 4."* E, sobre os marcadores VAZIO de PIS: *"Deixar como está."*
+
+⚠⚠ **A ORDEM NÃO É DETALHE DE EXECUÇÃO — É A DECISÃO.** Nas quatro de 2026-01 a 2026-04 a guia
+errada é o único registro daquele DARF: apagar antes é **perder o documento**, não corrigir o
+rótulo. Por isso **captura do Lucro Presumido primeiro** (`POST
+/firm/companies/:id/serpro/lp/capture`, que grava a guia `tipo:"OUTRA"` com a composição de
+verdade), **conferir**, e **só então** excluir. `scripts/excluir-guias-inss-fantasma.mjs` torna isso
+estrutural, não uma lembrança: o alvo é lista fechada de ids, cada órfã declara o `sourceFileId` da
+substituta (`serpro:dctfweb:lp:<cnpj>:<comp>`) e a guia é **pulada enquanto essa linha não existir**
+— nem com `--executar`. Ensaio é o padrão; apagar exige a flag; e cada registro é despejado inteiro
+(todas as colunas + PDF em base64) num JSON **antes** do DELETE.
+
+⚠ **Os marcadores VAZIO de PIS (EDUCACAO 2026-01 e 2026-02) FICAM.** Não é esquecimento nem dívida:
+é decisão explícita do dono. Marcar VAZIO foi declaração do contador, e ela não fica falsa porque a
+guia errada ao lado sumiu — quem declarou ausência de PIS naquele mês continua respondendo por isso.
+Script nenhum toca em `status:"VAZIO"`.
+
+⚠⚠ **2026-05 NÃO ENTRA NA CAPTURA — só na exclusão.** Apurado em 22/08/2026: a terceira linha
+daquele mês (`tipo:"PIS"`, 645,15) não veio de integração nenhuma — o contador **baixou o DARF do
+e-CAC e subiu à mão** em 11/06/2026 13:24, 29 minutos antes de a captura de INSS gravar o fantasma.
+Mesma composição (COFINS 530,26 + PIS 114,89), **outro número de documento**: duas emissões do mesmo
+débito. Ela **já foi enviada ao cliente** e **já gerou a provisão** da competência
+(`PROVISAO/PIS_COFINS/DARF_PIS`). Rodar a captura do LP ali criaria uma **segunda** provisão por
+cima — a competência ficaria com o tributo em dobro. Órfã de verdade são **quatro**, não cinco.
+
+⚠ **A circular NÃO é arrastada pela exclusão** e continua afirmando o que o defeito escreveu:
+`inssTotal`/`inssStatus="EMITTED"` nas 6 competências, e `acrescimos.INSS` na SINCROSAT. Não há FK
+de `CompanyMonthlyCircular` para `Guide` — apagar a guia não limpa nada disso. **Isto não foi objeto
+da decisão do dono**; fica registrado como pendência conhecida, não como algo resolvido.
+
 ## ⚠ Parcela de parcelamento é `tipo:"SIMPLES"` — o que a separa do DAS é `parcelamentoId`
 
 `CaptureSerproParcelaService` grava a parcela como `tipo:"SIMPLES"`, exatamente como o DAS do mês;
