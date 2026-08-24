@@ -1459,27 +1459,80 @@ exibir, quando o item do cód. de tributação nacional informado for 99"* — a
 é "o item" dentro de um `cTribNac` de 6 dígitos (`nn.nn.nn`), e escolher um dos três pares seria
 inventar leitura de código.
 
-### ⚠ O QUE ESTÁ BLOQUEADO E POR QUÊ (nada disto é esquecimento)
+### ⚠⚠ O QUE ESTAVA BLOQUEADO — QUATRO DOS SEIS CAÍRAM EM 24/08/2026
 
-1. **As descrições dos códigos não existem no repo.** Em doze campos a NT manda "utilizar a
-   descrição das opções previstas no leiaute", e **o leiaute (XSD/Anexo I) não está versionado** —
-   a mesma ausência de `dpsCodigos.js`. A NT dá só *exemplos*, sem dizer a qual número cada um
-   corresponde. `danfseDescricoes.js` nasce vazio, imprime-se o **código cru** (conteúdo do XML,
-   art. 13 respeitado) e a pendência sai em `conformidade.descricoesPendentes`.
-2. **O DANFSe é v2.0 (multitributário) e o nosso XML é 1.01.** Um bloco inteiro (Tributação
+⚠⚠ **ESTA LISTA TINHA SEIS ITENS E QUATRO DELES JÁ ERAM FALSOS QUANDO FORAM LIDOS.** Em todos os
+quatro o impedimento tinha deixado de existir dias antes, e **só o comentário continuou lá** — o
+gerador seguiu imprimindo código cru e código de município porque ninguém voltou aqui. Ficam
+registrados **como caíram**, porque o padrão é o achado: *bloqueio anotado envelhece calado*.
+
+| # | era | hoje |
+|---|---|---|
+| 1 | "as descrições dos códigos não existem no repo — nenhum `.xsd` na árvore" | ✅ **os 20 XSD estão em `docs/leiaute-nfse/documentacao-tecnica/esquemas-xsd/`**, com a descrição na `<xs:documentation>`. `danfseDescricoes.js` preenchido, texto COPIADO do leiaute |
+| 3 | "`prest/xNome` e `prest/end` **costumam** vir vazios; não caímos para `emit`" | ✅ caem para `infNFSe/emit`, **provado pelo CNPJ** — e o "costumam" era falso: ver o quadro abaixo |
+| 4 | "a tabela do IBGE não está no projeto" | ✅ está, desde 20/08/2026, em `@contabilidade/shared/municipios-ibge`. Município sai `Nome / UF` |
+| 6 | "logomarca oficial não versionada" | ✅ versionada em **`apps/api/assets/danfse/`** (⚠ não em `docs/`: `.dockerignore` ignora `docs/`) |
+
+#### ⚠⚠ O ENDEREÇO DO PRESTADOR NÃO "COSTUMA" VIR VAZIO — MANDÁ-LO É PROIBIDO
+
+Medido em 400 notas reais: `prest/xNome` e `prest/end` vieram em **0 de 400**; `emit/xNome`,
+`emit/enderNac/*` e `emit/fone` em **400 de 400**; `emit/email` e `prest/email` em **397 de 400**.
+Não é acaso, e o ANEXO_I diz por quê:
+
+> **E0121** — *"Se o emitente da DPS for o prestador de serviço (`tpEmit = 1`), então o nome ou
+> razão social **não deve ser informado**."* → Rej. 422
+>
+> **E0128** — *"O endereço do prestador do serviço **não deve ser informado** na DPS quando o
+> próprio prestador for o emitente da DPS."* → Rej. 422
+
+⚠ Esses campos existem para quando quem emite é o **tomador** ou o **intermediário** (E0122/E0129 os
+tornam obrigatórios nesse caso). **Acrescentá-los ao `buildDpsXml` faria a nota ser REJEITADA** — e
+o pedido "o endereço do prestador tem de estar na nota" já está atendido: ele está em
+`infNFSe/emit`, escrito pelo próprio sistema nacional a partir do cadastro do CNPJ.
+
+⚠ A queda para `emit` é condicionada ao **CNPJ igual nos dois blocos**. Documento diferente ⇒ nada
+é completado (é nota emitida pelo tomador/intermediário, e `emit` é outra pessoa jurídica).
+Medição: `scripts/diag-danfse-prestador.mjs` · `diag-danfse-campos-disponiveis.mjs` ·
+`diag-danfse-prestador-preenchido.mjs` (300/300 notas reais com nome e endereço preenchidos).
+
+#### O QUE CONTINUA BLOQUEADO
+
+1. **O DANFSe é v2.0 (multitributário) e o nosso XML é 1.01.** Um bloco inteiro (Tributação
    IBS/CBS), mais `finNFSe`, o bloco DESTINATÁRIO e três totais saem dos grupos `IBSCBS`, que **não
    existem no leiaute 1.01**. Pela nota 12 saem com traço; a lista está em
    `CAMPOS_SEM_FONTE_NO_LEIAUTE_1_01` e no relatório (`camposSemFonte`).
-3. **`prest/xNome` e `prest/end` costumam vir vazios.** A NT aponta NOME e ENDEREÇO do prestador
-   para `DPS/infDPS/prest/`, mas numa NFS-e devolvida esses dados vivem em `infNFSe/emit`. **Não
-   caímos para `emit` por conta própria** — seria criar regra de leiaute. Sai traço, com aviso.
-4. **Município do prestador/tomador é CÓDIGO IBGE e a NT manda imprimir o nome.** A tabela do IBGE
-   não está no projeto (mesma falta do `Company.codigoMunicipioIbge`). Imprime-se o código;
-   `conformidade.municipiosNaoResolvidos` nomeia quais.
-5. **Fontes Arial e Microsoft Sans Serif (§2.4) não estão embutidas.** Sem os `.ttf` o render cai
-   em Helvetica **e reporta** — substituir por "parecida" em silêncio é o defeito.
-6. **Logomarca oficial não versionada** (a NT dá a URL). Sai placeholder + aviso; desenhar algo
-   parecido seria marca fabricada num documento fiscal.
+2. **Fontes Arial e Microsoft Sans Serif (§2.4) não estão embutidas.** Sem os `.ttf` o render cai
+   em Helvetica **e reporta** — substituir por "parecida" em silêncio é o defeito. ⚠ O gancho já
+   existe (`registrarFontes`, parâmetro `fontes`), e **nenhum chamador o usa**: 100% dos DANFSe de
+   produção saem em Helvetica, com aviso.
+3. ⚠ **O CORPO DA FONTE TEM TETO GEOMÉTRICO, NÃO NORMATIVO.** §2.1 diz que os números do §2.4 são
+   **mínimos** e que os tamanhos do §2.4.5 **não são obrigatórios** — mas o conteúdo é desenhado a
+   **8 pt fixos do topo da célula** e a altura mais comum é **0,63 cm = 17,9 pt**. A 8 pt ocupa
+   17,2 pt (cabe); a 9,5 pt ocupa 18,9 pt e **vaza para a linha de baixo**. ⚠⚠ E o vazamento **não
+   aparece em teste**: `pdf-parse` extrai a string igual e o `ellipsis` não dispara, porque o
+   estouro é VERTICAL. Passar de 8 pt exige **crescer as células**, o que desloca todo o `sup`
+   abaixo — rework de geometria, e a **disposição dos campos continua obrigatória** (§2.2.4, Anexo I).
+
+#### ⚠⚠ O QUE A NT **NÃO** PERMITE — medido contra o PDF versionado, para não ser repedido
+
+Um mockup de layout novo (24/08/2026) pediu seis coisas que a norma recusa:
+
+| pedido | veredito | citação |
+|---|---|---|
+| logo do **prestador** no cabeçalho | **PROIBIDO** | §2.4.3 nomeia **a logomarca da NFS-e**, com URL; §2.1 proíbe imprimir o que não consta do XML |
+| preencher o prestador do **nosso cadastro** | **PROIBIDO** | §2.1 + nota 12 (campo sem informação ⇒ **traço**, não substituto) |
+| colapsar grupo sem dados numa frase ("Sem retenções…") | **PROIBIDO** | §2.3 abre lista **fechada**: *"Poderão ser feitas **as seguintes** supressões"* |
+| traço em **cinza** | **PROIBIDO** | §2.4: *"em **preto sólido (K100)**"* |
+| continuar em **segunda página** | **PROIBIDO** | §2.2: *"deve ser impresso, **obrigatoriamente, em uma única página**"* |
+| tarja **"SEM VALOR FISCAL"** em homologação | **texto errado** | §2: a expressão é **"NFS-e SEM VALIDADE JURÍDICA"**, 9 pt Arial negrito, vermelho M100/Y100 — já implementada |
+
+⚠ E o que a NT **manda** e agora fazemos: traduzir os doze códigos e imprimir o município por
+extenso (`Município / UF`, **com barra** — o DANFSe oficial usa hífen e nós seguimos a NT).
+
+⚠ **A frase do art. 13 é atribuição NOSSA.** `danfseLeiaute.js` credita *"não poderão ser impressas
+informações que não constem do arquivo da NFS-e"* à **Res. CGNFS-e nº 3/2023, art. 13** — e o PDF da
+NT **não cita esse artigo em lugar nenhum** (varrido: "Resolu", "art.", "artigo", "nº 3" = zero
+ocorrências). A NT enuncia a regra por conta própria, no §2.1. Não muda o efeito; muda a procedência.
 
 ### ⚠ Nota 12: campo vazio leva TRAÇO — ele não some
 
