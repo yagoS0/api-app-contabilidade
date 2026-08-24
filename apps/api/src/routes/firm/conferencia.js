@@ -10,6 +10,7 @@
 //   POST /conferencia/:declaradoId/recusar
 //   POST /conferencia/:declaradoId/reabrir
 //   POST /conferencia/:declaradoId/desfazer
+//   POST /conferencia/varrer-notas?desde=AAAA-MM-DD   as notas recebidas viram fila
 //
 // ⚠⚠ NENHUMA REGRA MORA AQUI. Quem decide se um ato pode acontecer é
 // `application/declarados/lib/estadosDeclarado.js`; quem monta o lançamento é
@@ -27,6 +28,7 @@ import {
   listarFila,
   varrerInvariantes,
 } from "../../application/declarados/DeclaradoService.js";
+import { varrerNotasDaEmpresa } from "../../application/declarados/VarreduraDeNotasService.js";
 import { ESTADO, ORIGEM_PAGAMENTO, TRANSICAO } from "../../application/declarados/lib/estadosDeclarado.js";
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
@@ -204,6 +206,46 @@ export function createConferenciaRouter({ log } = {}) {
   escrita("recusar", { transicao: TRANSICAO.RECUSAR, dados: (b) => ({ motivoRecusa: b.motivo ?? b.motivoRecusa }) });
   escrita("reabrir", { transicao: TRANSICAO.REABRIR, dados: () => ({}) });
   escrita("desfazer", { transicao: TRANSICAO.DESFAZER, dados: () => ({}) });
+
+  // ── A VARREDURA DAS NOTAS ──────────────────────────────────────────────────────────────────
+  //
+  // ⚠⚠ A DATA-PISO É OBRIGATÓRIA, e a exigência é o ponto. São 1.897 NFS-e recebidas na base: sem
+  // piso, a primeira varredura produz a base inteira de uma vez — e isso não é fila, é muro.
+  // Deixá-la opcional com um default faria o sistema escolher, em silêncio, o tamanho do trabalho
+  // que o contador vai encontrar na tela.
+  //
+  // ⚠ `POST` porque ESCREVE (cria declarados), mas ela NÃO cria lançamento nenhum: tudo nasce em
+  // `AGUARDANDO_PAGAMENTO`.
+  router.post("/conferencia/varrer-notas", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const desde = req.query.desde ?? req.body?.desde;
+      if (!desde) {
+        return res.status(400).json({
+          ok: false,
+          error: "data_piso_obrigatoria",
+          message:
+            "Informe a partir de que data as notas devem entrar na fila (`desde=AAAA-MM-DD`). Sem esse corte, toda a base de notas recebidas entraria de uma vez.",
+        });
+      }
+      const dataPiso = dataCivilDe(desde);
+      if (!dataPiso) {
+        return res.status(400).json({ ok: false, error: "data_piso_invalida", message: "Use AAAA-MM-DD." });
+      }
+
+      const r = await varrerNotasDaEmpresa({
+        portalClientId: String(req.params.companyId),
+        dataPiso,
+        criadoPor: req.auth?.user?.id || null,
+        agora: new Date(),
+      });
+      // ⚠ O relatório INTEIRO volta — inclusive `fora` e `recusados`. Uma varredura que só dissesse
+      // "criei 12" faria as outras sumirem sem ninguém saber por quê, e "não veio nada" ficaria
+      // indistinguível de "deu erro".
+      return res.json({ ok: true, desde, ...r });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
 
   return router;
 }

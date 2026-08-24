@@ -65,8 +65,10 @@ que já existe. Não nasce registro novo. (O matching é da Fase B2; o modelo j�
 |---|---|
 | `lib/estadosDeclarado.js` | a máquina de estados. **PURA** — nenhum prisma, nenhum relógio. 70 testes |
 | `lib/formaDoLancamento.js` | o `AccountingEntry` que o declarado vira. **PURO**. 32 testes |
-| `DeclaradoService.js` | a ligação com o banco. **O único caminho de escrita.** 30 testes |
-| `../../routes/firm/conferencia.js` | HTTP e nada mais. 29 testes |
+| `lib/notaViraDeclarado.js` | a nota recebida virando despesa. **PURO**. 36 testes |
+| `DeclaradoService.js` | a ligação com o banco. **O único caminho de escrita.** 41 testes |
+| `VarreduraDeNotasService.js` | a varredura das notas. 16 testes |
+| `../../routes/firm/conferencia.js` | HTTP e nada mais. 36 testes |
 
 ⚠ **A regra não é reimplementada em lugar nenhum.** O serviço consulta `podeTransitar` e
 `montarLancamento`; a rota não consulta nem uma nem outra — há teste varrendo a fonte da rota atrás
@@ -124,11 +126,42 @@ constraint. Ela responde quatro perguntas:
 
 Rota: `GET /firm/companies/:id/conferencia/varredura`.
 
-## O que a Fase A **não** faz
+## ✅ FASE B1 — a nota recebida vira fila
+
+`POST /firm/companies/:id/conferencia/varrer-notas?desde=AAAA-MM-DD`
+
+⚠⚠ **A DATA-PISO É OBRIGATÓRIA** (400 sem ela). São 1.897 NFS-e recebidas: sem corte, a primeira
+varredura produz a base inteira de uma vez — e isso não é fila, é muro. Um default faria o
+**sistema** escolher o tamanho do trabalho que o contador encontraria na tela.
+
+**Medido em ensaio contra produção** (`scripts/diag-notas-viram-despesa.mjs`, só leitura, piso
+01/07/2026): **229** notas virariam declarado · R$ 765.011,26 · **114 fornecedores** ·
+**0 sem competência** · **0 sem CNPJ** · 32 sem `xDescServ` (as NF-e, que são resumo).
+Fora: 1.595 pelo piso, **62 sem valor**, **60 canceladas** — todas nomeadas no relatório.
+
+- ⚠⚠ **`new Date(null)` é `1970-01-01`, uma data VÁLIDA.** Sem a guarda explícita, nota sem emissão
+  viraria despesa datada de 1970 — ordenando a fila inteira e abrindo uma janela de meio século no
+  casamento com o pagamento. Mesma família de `Number.isFinite(Number(null))`. Achado por teste.
+- ⚠⚠ **`PortalInvoice.competencia` é `DateTime`; a do declarado é `String "AAAA-MM"`.** Um
+  `String(nota.competencia)` gravaria `"Wed Jul 01 2026…"` — passa no Prisma (a coluna é texto) e
+  só aparece como lançamento que nenhum filtro de competência encontra.
+- ⚠⚠ **`montarIndiceDeCiclo` devolve um ARRAY de `{...nota, ciclo}`, apesar do nome.** Tratá-lo como
+  `Map` (`.get(id)`) devolve `undefined` **sem erro** e o código cai num fallback que perde o
+  contexto de substituição. Aconteceu aqui e no diagnóstico; achado por teste.
+- ⚠ **A situação vem do ciclo, e o que ele acrescenta é real:** `statusEfetivo` só guarda
+  `autorizada|cancelada` — **substituição não cabe nela**.
+- ⚠ **O corte por data acontece TAMBÉM na query**, não só na regra: carregar 1.897 notas para
+  descartar 1.595 é o que ele evita. A regra mantém o corte porque ela é a autoridade e é quem
+  **nomeia** o motivo.
+- ⚠ **Sequencial, sem parâmetro de concorrência** — parâmetro é como alguém põe 20 nele depois.
+- ⚠ **Uma nota recusada não derruba o lote**: vira linha nomeada em `recusados`.
+- ⚠⚠ **Idempotente por PULAR.** Nota já enfileirada volta em `jaExistiam` sem nada ser tocado — um
+  `upsert` devolveria um `RECUSADO` à fila a cada varredura, e a captura de notas roda sozinha.
+
+## O que ainda **não** existe
 
 | | |
 |---|---|
-| varrer as notas recebidas | Fase B1 — ⚠ com **data-piso obrigatória**: 1.897 itens de uma vez não é fila, é muro |
 | OFX, matching, fusão | Fase B2 |
 | aprendizado e regras | Fase C. `RegraContabilizacao` já existe no schema, **sem escritor ainda** |
 | tela | ainda não há nenhuma |

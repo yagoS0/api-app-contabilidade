@@ -15,6 +15,14 @@ jest.mock("../../../middlewares/requireFirmCompanyAccess.js", () => ({
   }),
 }));
 
+jest.mock("../../../application/declarados/VarreduraDeNotasService.js", () => ({
+  varrerNotasDaEmpresa: jest.fn(async () => ({
+    varridas: 82, criados: 8, jaExistiam: 0,
+    fora: [{ motivo: "cancelada", frase: "A nota está cancelada.", n: 31, exemplos: ["pi-9"] }],
+    recusados: [],
+  })),
+}));
+
 jest.mock("../../../application/declarados/DeclaradoService.js", () => {
   const real = jest.requireActual("../../../application/declarados/DeclaradoService.js");
   return {
@@ -35,6 +43,7 @@ import {
   listarFila,
   varrerInvariantes,
 } from "../../../application/declarados/DeclaradoService.js";
+import { varrerNotasDaEmpresa } from "../../../application/declarados/VarreduraDeNotasService.js";
 import { ESTADO, RECUSA, TRANSICAO } from "../../../application/declarados/lib/estadosDeclarado.js";
 import { createConferenciaRouter } from "../conferencia.js";
 
@@ -252,8 +261,71 @@ describe("⚠⚠ a rota NÃO reimplementa regra", () => {
     expect(fonte).not.toMatch(/podeTransitar/);
     expect(fonte).not.toMatch(/montarLancamento/);
     expect(fonte).not.toMatch(/accountingEntry\./);
-    // ⚠ E nenhum `new Date()` fora do carimbo de auditoria: um segundo relógio aqui viraria data
-    // de pagamento em algum caminho.
-    expect((fonte.match(/new Date\(\s*\)/g) || []).length).toBe(1);
+    // ⚠⚠ TODO `new Date()` desta rota tem de ser o carimbo de AUDITORIA (`agora:`). Um relógio
+    // lido em qualquer outro lugar aqui viraria data de PAGAMENTO em algum caminho — e o
+    // lançamento credita o caixa, então isso afirmaria uma saída de dinheiro que não houve.
+    //
+    // ⚠ A asserção é sobre o USO, não sobre a CONTAGEM: contar quebra a cada rota nova e ensina a
+    // subir o número em vez de olhar o que foi acrescentado.
+    const relogios = fonte.split(/\r?\n/).filter((l) => /new Date\(\s*\)/.test(l));
+    expect(relogios.length).toBeGreaterThan(0);
+    for (const l of relogios) expect(l).toMatch(/agora:\s*new Date\(\s*\)/);
+  });
+});
+
+describe("⚠⚠ POST /conferencia/varrer-notas — a data-piso é OBRIGATÓRIA", () => {
+  const VARRER = (qs = "") => request(makeApp()).post(`/firm/companies/emp-1/conferencia/varrer-notas${qs}`);
+
+  it("⚠⚠ sem `desde`, RECUSA — e a mensagem diz por quê", async () => {
+    // São 1.897 NFS-e recebidas na base. Sem piso, a primeira varredura produz a base inteira de
+    // uma vez, e isso não é fila, é muro. Um default faria o SISTEMA escolher o tamanho do
+    // trabalho que o contador vai encontrar na tela.
+    const r = await VARRER();
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("data_piso_obrigatoria");
+    expect(r.body.message).toMatch(/toda a base/i);
+    expect(varrerNotasDaEmpresa).not.toHaveBeenCalled();
+  });
+
+  it("⚠ data mal formada recusa com código PRÓPRIO — conserto diferente do de ausência", async () => {
+    const r = await VARRER("?desde=07/2026");
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("data_piso_invalida");
+    expect(varrerNotasDaEmpresa).not.toHaveBeenCalled();
+  });
+
+  it("com a data, varre — e o piso chega como meia-noite UTC", async () => {
+    const r = await VARRER("?desde=2026-07-01");
+    expect(r.status).toBe(200);
+    const args = varrerNotasDaEmpresa.mock.calls[0][0];
+    expect(args.portalClientId).toBe("emp-1");
+    expect(args.dataPiso.toISOString()).toBe("2026-07-01T00:00:00.000Z");
+    expect(args.criadoPor).toBe("u-1");
+  });
+
+  it("⚠⚠ o relatório INTEIRO volta — o que ficou de fora não some", async () => {
+    const r = await VARRER("?desde=2026-07-01");
+    expect(r.body).toMatchObject({ varridas: 82, criados: 8, jaExistiam: 0 });
+    expect(r.body.fora[0]).toMatchObject({ motivo: "cancelada", n: 31 });
+    expect(r.body.desde).toBe("2026-07-01");
+  });
+
+  it("aceita a data no corpo também", async () => {
+    await VARRER().send({ desde: "2026-07-01" });
+    expect(varrerNotasDaEmpresa.mock.calls[0][0].dataPiso.toISOString()).toBe("2026-07-01T00:00:00.000Z");
+  });
+
+  it("⚠ escrever exige ACCOUNTANT — a varredura cria linhas na fila", async () => {
+    await VARRER("?desde=2026-07-01");
+    const chamadaDaVarredura = requireFirmCompanyAccess.mock.calls.filter(([o]) => o?.minRole === "ACCOUNTANT");
+    expect(chamadaDaVarredura.length).toBeGreaterThan(0);
+  });
+
+  it("⚠ falha vira 500 nomeado, e a mensagem interna não vaza", async () => {
+    varrerNotasDaEmpresa.mockRejectedValueOnce(new Error("banco fora"));
+    const r = await VARRER("?desde=2026-07-01");
+    expect(r.status).toBe(500);
+    expect(r.body.error).toBe("conferencia_falhou");
+    expect(JSON.stringify(r.body)).not.toMatch(/banco fora/);
   });
 });
