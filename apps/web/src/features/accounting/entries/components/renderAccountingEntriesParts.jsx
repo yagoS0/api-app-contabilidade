@@ -3,6 +3,7 @@ import { Button } from "../../../../components/ui/Button";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { valorUtilizavel } from "../lib/valorFormula";
 import { avisoContaSintetica, motivoContaSintetica, contasSugeriveis } from "../lib/contaSintetica";
+import { selosDaConta } from "../lib/tipoDaConta";
 import {
   ACCOUNTING_PANEL,
   COL_COUNT,
@@ -70,6 +71,40 @@ function useCoordenadasAncoradas(open, anchorRef, chaveDeRemedicao, folga = 3) {
  * A escolha por teclado é o par ↑↓ + Enter/Tab, tratado no input; o mouse continua no `onMouseDown`
  * (que precisa do `preventDefault` para o blur não fechar a lista antes do clique).
  */
+/**
+ * O selo do TIPO da conta (Ativo · Passivo · Receita · Despesa · Patrimônio) e o código completo.
+ *
+ * ## Por que existe (pedido do dono, 24/08/2026)
+ *
+ * > *"incluir no sugestor o tipo de conta que estamos selecionando, se é despesa, passivo ou ativo,
+ * > ou receita"*
+ *
+ * É o conserto **na origem** do defeito que ele relatou: `1.2.1.06.0003 CSLL` (ATIVO, sob INCENTIVOS
+ * FISCAIS) foi parar no crédito de uma provisão de CSLL, onde deveria estar `2.1.1.05.0007 CSLL A
+ * RECOLHER`. As duas se chamam "CSLL" no plano e os reduzidos (`137` × `256`) não dizem nada.
+ *
+ * ⚠⚠ **CHIP NEUTRO PARA TODOS OS TIPOS, DE PROPÓSITO.** Nesta casa verde = concluído, âmbar =
+ * pendência e vermelho = bloqueia o fechamento. O tipo da conta não é nenhuma das três; pintá-lo com
+ * a paleta de estado faria "Ativo" parecer problema e "Receita" parecer conclusão. Quem carrega o
+ * significado é a palavra.
+ *
+ * ⚠ Conta sem tipo NÃO ganha selo "desconhecido" — ver `rotuloDoTipo` em `lib/tipoDaConta.js`.
+ */
+function SelosDaConta({ conta }) {
+  const { tipo, completo } = selosDaConta(conta);
+  if (!tipo && !completo) return null;
+  return (
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+      {completo && (
+        <span style={{ fontSize: "0.6875rem", color: ACCOUNTING_PANEL.muted, fontVariantNumeric: "tabular-nums" }}>{completo}</span>
+      )}
+      {tipo && (
+        <span style={{ fontSize: "0.625rem", padding: "2px 6px", borderRadius: 999, fontWeight: 700, letterSpacing: ".02em", background: ACCOUNTING_PANEL.surface, color: ACCOUNTING_PANEL.muted, border: `1px solid ${ACCOUNTING_PANEL.border}` }}>{tipo}</span>
+      )}
+    </span>
+  );
+}
+
 function AccountSuggestionRow({ account, onClick, rowRef, selected, onHover }) {
   const isDevedora = account.natureza === "DEVEDORA";
   const tc = TIPO_COLOR[account.tipo] || TIPO_COLOR.DESPESA;
@@ -276,7 +311,10 @@ function AccountSearchInput({ value, onChange, accounts, placeholder }) {
               onMouseEnter={() => setSelIdx(i)}
             >
               <div style={{ fontWeight: 700 }}>{a.codigo} · {a.nome}</div>
-              <div style={{ fontSize: "0.65rem", color: ACCOUNTING_PANEL.muted }}>{a.tipo || "—"}</div>
+              {/* ⚠ Aqui o tipo JÁ APARECIA, mas cru (`ATIVO`) e sem o código completo. Passou ao
+                  mesmo selo dos outros dois pontos: três grafias para a mesma informação fazem o
+                  contador aprender três vocabulários. */}
+              <SelosDaConta conta={a} />
             </button>
           ))}
         </div>
@@ -334,8 +372,14 @@ export function LineEditor({ lines, onChange, accounts }) {
               accounts={accounts}
               placeholder="Cód. ou nome"
             />
-            <div style={{ fontSize: "0.75rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: resolved ? ACCOUNTING_PANEL.text : "#FF4757", paddingLeft: 2 }}>
-              {resolved ? resolved.nome : (l.conta ? `⚠ código ${l.conta} não encontrado` : "— vazio —")}
+            {/* ⚠ O TIPO APARECE NA LINHA QUE ESTÁ SENDO EDITADA, e é o momento que importa: é aqui
+                que o contador vê "Ativo" ao lado da conta que ele acabou de pôr no crédito de uma
+                provisão. O nome sozinho não distingue `137 CSLL` (ativo) de `256 CSLL A RECOLHER`. */}
+            <div style={{ fontSize: "0.75rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: resolved ? ACCOUNTING_PANEL.text : "#FF4757", paddingLeft: 2, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {resolved ? resolved.nome : (l.conta ? `⚠ código ${l.conta} não encontrado` : "— vazio —")}
+              </span>
+              {resolved && <SelosDaConta conta={resolved} />}
             </div>
             <input type="number" step="0.01" min="0" placeholder="0,00" value={l.valor || ""} onChange={(e) => updateLine(idx, "valor", e.target.value)} style={{ ...PANEL_FIELD_STYLE, height: 34, padding: "0 8px", textAlign: "right" }} />
             {/* Idem `AccountingFunctionModals`: `style` só de MEDIDA, cor vinda do `.btn-danger`. */}
@@ -692,8 +736,16 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
               <SectionLabel>Plano de contas — ↑↓ Enter/Tab para escolher</SectionLabel>
               {matchedAccounts.map((a, i) => (
                 <button key={a.codigo} type="button" tabIndex={-1} ref={(el) => (itemRefs.current[i] = el)} onMouseDown={(e) => { e.preventDefault(); aplicar({ _type: "account", ...a }); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, background: selIdx === i ? ACCOUNTING_PANEL.surface : ACCOUNTING_PANEL.field, outline: selIdx === i ? "2px solid #8BE9FD" : "none", outlineOffset: "-2px", border: "none", cursor: "pointer", color: ACCOUNTING_PANEL.text }} onMouseEnter={() => setSelIdx(i)}>
-                  <span style={{ fontWeight: 700, fontSize: "0.8rem" }}>{a.codigo}</span>
-                  <span style={{ marginLeft: 6, fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted }}>{a.nome}</span>
+                  {/* ⚠ O TIPO E O CÓDIGO COMPLETO FICAM À VISTA — pedido do dono, e é o conserto na
+                      ORIGEM: com "Ativo" ao lado da conta 137, ninguém a escolhe para o crédito de
+                      uma provisão. */}
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "space-between" }}>
+                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span style={{ fontWeight: 700, fontSize: "0.8rem" }}>{a.codigo}</span>
+                      <span style={{ marginLeft: 6, fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted }}>{a.nome}</span>
+                    </span>
+                    <SelosDaConta conta={a} />
+                  </span>
                 </button>
               ))}
             </>
