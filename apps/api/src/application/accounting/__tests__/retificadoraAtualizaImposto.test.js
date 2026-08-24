@@ -63,7 +63,11 @@ beforeEach(() => {
       update: jest.fn(async () => circular),
     },
     accountingEntryRule: { findFirst: jest.fn(async () => null) },
-    accountingHistorico: { findFirst: jest.fn(async () => null) },
+    // ⚠ `findMany` alem do `findFirst`: `lookupAccountsFromHistorico` passou a buscar os
+    // CANDIDATOS de memoria (e escolher o primeiro cujo par nao viole a natureza contabil) em vez
+    // de pegar o primeiro cegamente. Lista vazia significa aqui o mesmo que `findFirst -> null`
+    // significava: esta empresa nao tem memoria, e o lancamento nasce com conta em branco.
+    accountingHistorico: { findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []) },
     accountingEntry: {
       findFirst: jest.fn(async ({ where }) => entriesPorEvento[where.eventType] || null),
       update: jest.fn(async ({ where, data }) => ({ id: where.id, ...data })),

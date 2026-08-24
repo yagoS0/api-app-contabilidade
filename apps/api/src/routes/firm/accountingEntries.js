@@ -16,6 +16,8 @@ import {
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
 import { CONTA_JUROS, CONTA_MULTA, CONTAS_ACRESCIMO } from "../../application/accounting/contasAcrescimo.js";
 import { tipoLinhaDaBaixa } from "../../application/accounting/tipoLinhaBaixa.js";
+import { verificarLancamento } from "../../application/accounting/regras/MotorRegras.js";
+import { SITUACAO } from "../../application/accounting/regras/contratos.js";
 import { marcarSemFaturamento } from "../../application/accounting/semFaturamento.js";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import { dataCivilBR } from "../../utils/dataCivil.js";
@@ -59,12 +61,76 @@ import {
 // e "DAS 06/2026" são o MESMO histórico. Além da linha da empresa, mantém uma linha GLOBAL
 // (companyPortalClientId null) que serve de fallback pra empresas novas; nela as contas só são
 // preenchidas quando estão vazias (a linha da empresa é que manda no caso específico).
-async function memorizeAccountHistorico({ userId, portalClientId, text, contaDebito, contaCredito, eventType }) {
+/**
+ * O PAR D/C VIOLA a natureza contábil? Se violar, ELE NÃO É MEMORIZADO.
+ *
+ * ⚠⚠ ESTA É A METADE QUE IMPEDE O ERRO DE SE REPETIR SOZINHO. O defeito relatado pelo dono
+ * (provisão de CSLL com `D 595 / C 137`, sendo `137` uma conta de ATIVO sob INCENTIVOS FISCAIS)
+ * não foi digitado todo mês: ele foi **aprendido uma vez** e passou a ser oferecido pela memória a
+ * cada nova provisão. Recusar a memorização é o que quebra o ciclo.
+ *
+ * ⚠ **O LANÇAMENTO É GRAVADO NORMALMENTE** — decisão do dono: *"avisa forte, não bloqueia"*. Quem
+ * decide contabilidade é o contador. São dois atos diferentes e só um é recusado aqui.
+ *
+ * ⚠ **Resolve só AS DUAS CONTAS, nunca o plano inteiro.** Este caminho roda a cada gravação de
+ * lançamento; `carregarPlano` traz ~1.200 linhas e seria desperdício. A precedência é a mesma —
+ * **a conta da EMPRESA vence a GLOBAL**.
+ *
+ * ⚠ Só julga `PROVISAO` e `BAIXA`, e só com as DUAS pernas resolvidas. Qualquer outra coisa passa:
+ * o motor não tem critério, e recusar por falta de critério apagaria memória legítima.
+ */
+async function parViolaNatureza({ portalClientId, tipo, eventType, contaDebito, contaCredito }) {
+  const t = String(tipo || "").toUpperCase();
+  if (t !== "PROVISAO" && t !== "BAIXA") return false;
+  const codigos = [contaDebito, contaCredito].map((c) => String(c || "").trim()).filter(Boolean);
+  if (codigos.length < 2) return false;
+  try {
+    const contas = await prisma.chartOfAccount.findMany({
+      where: {
+        codigo: { in: codigos },
+        OR: [{ portalClientId: String(portalClientId) }, { portalClientId: null }],
+      },
+      select: { portalClientId: true, codigo: true, nome: true, codigoCompleto: true },
+    });
+    const mapa = new Map();
+    // ⚠ GLOBAIS primeiro, EMPRESA sobrescreve — a ordem do `findMany` não é garantida, então a
+    // precedência não pode depender dela. Mesma disciplina de `carregarPlano`.
+    for (const c of contas) if (c.portalClientId === null) mapa.set(String(c.codigo), c);
+    for (const c of contas) if (c.portalClientId !== null) mapa.set(String(c.codigo), c);
+
+    const r = verificarLancamento({
+      lancamento: {
+        tipo: t,
+        eventType: eventType || null,
+        lines: [
+          { conta: String(contaDebito).trim(), tipo: "D", valor: 1 },
+          { conta: String(contaCredito).trim(), tipo: "C", valor: 1 },
+        ],
+      },
+      resolverConta: (cod) => mapa.get(String(cod)) || null,
+      empresaId: String(portalClientId),
+    });
+    if (r.situacao !== SITUACAO.VIOLA) return false;
+    log.warn(
+      { portalClientId, eventType, contaDebito, contaCredito, achados: r.achados.map((a) => a.regraId) },
+      "memoria de conta NAO gravada: o par viola a natureza contabil"
+    );
+    return true;
+  } catch {
+    // ⚠ FALHA ABERTO. Se a conferência não puder ser feita (plano indisponível, coluna nova), a
+    // memória é gravada como sempre foi. Uma guarda que apaga memória por falha PRÓPRIA seria pior
+    // que a ausência dela.
+    return false;
+  }
+}
+
+async function memorizeAccountHistorico({ userId, portalClientId, text, contaDebito, contaCredito, eventType, tipo = null }) {
   if (!userId || !portalClientId || !text) return;
   // (sem guard de contas: histórico só-texto também vale — alimenta o autocomplete; o POST /entries
   // sempre salvou assim.)
   const textNorm = normalizarHistorico(text);
   if (!textNorm) return;
+  if (await parViolaNatureza({ portalClientId, tipo, eventType, contaDebito, contaCredito })) return;
   try {
     const existing = await prisma.accountingHistorico.findFirst({
       where: { createdByUserId: String(userId), companyPortalClientId: String(portalClientId), text: textNorm },
@@ -2685,6 +2751,8 @@ export function createAccountingEntriesRouter({ log }) {
           contaDebito: debitLine ? String(debitLine.conta || "").trim() || null : null,
           contaCredito: creditLine ? String(creditLine.conta || "").trim() || null : null,
           eventType: bodyEventType,
+          // ⚠ O `tipo` viaja para a memória poder conferir a natureza do par antes de aprendê-lo.
+          tipo: entry?.tipo || null,
         });
       }
 
@@ -2900,6 +2968,7 @@ export function createAccountingEntriesRouter({ log }) {
           contaDebito: contaD,
           contaCredito: contaC,
           eventType: bodyEventType,
+          tipo: updated?.tipo || null,
         });
       }
 
@@ -3369,6 +3438,8 @@ export function createAccountingEntriesRouter({ log }) {
         contaDebito: dLine ? String(dLine.conta || "").trim() || null : null,
         contaCredito: cLine ? String(cLine.conta || "").trim() || null : null,
         eventType: deriveBaixaEventType(openEntry),
+        // ⚠ Esta rota grava BAIXA — o motor confere `D obrigacao / C disponivel`.
+        tipo: "BAIXA",
       });
       return res.status(201).json({
         ok: true,

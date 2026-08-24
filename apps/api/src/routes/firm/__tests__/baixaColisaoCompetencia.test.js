@@ -62,6 +62,9 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
       companyMonthlyCircular: { findUnique: jest.fn(async () => null) },
       accountingHistorico: {
         findFirst: jest.fn(async () => null),
+        // ⚠ `lookupAccountsFromHistorico` busca CANDIDATOS e escolhe o primeiro par valido; lista
+        // vazia = esta empresa nao tem memoria, o mesmo que `findFirst -> null` ja dizia.
+        findMany: jest.fn(async () => []),
         create: jest.fn(async () => ({ id: "h1" })),
         update: jest.fn(async () => ({ id: "h1" })),
       },

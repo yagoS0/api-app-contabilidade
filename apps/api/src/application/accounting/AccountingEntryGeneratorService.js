@@ -1,6 +1,8 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { normalizeCompetencia } from "../guides/guideContract.js";
 import { tipoLinhaDaBaixa } from "./tipoLinhaBaixa.js";
+import { verificarLancamento } from "./regras/MotorRegras.js";
+import { SITUACAO } from "./regras/contratos.js";
 
 // INSS_DCTFWEB removido: INSS deve ser lançado manualmente em conjunto com folha/pró-labore.
 //
@@ -281,17 +283,86 @@ export async function resolveRule(tx, { portalClientId, eventType }) {
  * (companyPortalClientId + eventType). Usado pela primeira vez quando o contador edita
  * um entry automático e preenche as contas — auto-save grava aqui; sync seguinte reusa.
  */
+/**
+ * Quantos candidatos de memória o lookup examina por escopo.
+ *
+ * ⚠ Pequeno de propósito: o `orderBy` já põe os melhores na frente, e varrer a memória inteira
+ * atrás de um par válido acabaria elegendo uma linha antiga e pouco usada só por ela ser válida.
+ */
+const CANDIDATOS_DE_MEMORIA = 8;
+
+/**
+ * Escolhe, entre os candidatos, o primeiro cujo par D/C **não viole a natureza contábil**.
+ *
+ * ⚠⚠ É ISTO QUE CONSERTA O DEFEITO RELATADO PELO DONO SEM APAGAR DADO NENHUM. Medido em produção
+ * (24/08/2026), `DARF_CSLL` tinha TRÊS memórias vivas — `595→256` (certa) e `595→137` (errada, de
+ * 05/08, com `137` sendo conta de ATIVO sob INCENTIVOS FISCAIS). Como **`usageCount` é 0 em quase
+ * toda a base**, o desempate caía em `updatedAt desc`: vencia **a última escrita**, não a correta.
+ * A linha errada continua no banco e simplesmente **deixa de ser escolhida**.
+ *
+ * ⚠ **NÃO HAVENDO CANDIDATO VÁLIDO, DEVOLVE O PRIMEIRO** — falha para o comportamento ANTIGO,
+ * nunca para vazio. Conta em branco pararia a geração da provisão inteira, e é exatamente o que
+ * aconteceria hoje com IRPJ e CSLL: as memórias deles apontam para o ramo 5, que o balancete do
+ * sistema de destino traz zerado, então **nenhuma é válida** até alguém lançar em `4.1.1.03`.
+ *
+ * ⚠ **A conferência é best-effort**: qualquer falha ao resolver o plano devolve o primeiro
+ * candidato. Guarda que zera a memória por falha PRÓPRIA seria pior que a ausência dela.
+ */
+async function escolherMemoriaValida(tx, candidatos, { portalClientId, eventType }) {
+  if (!candidatos.length) return null;
+  if (candidatos.length === 1) return candidatos[0];
+  try {
+    const codigos = [...new Set(candidatos.flatMap((c) => [c.contaDebito, c.contaCredito])
+      .map((x) => String(x || "").trim()).filter(Boolean))];
+    if (!codigos.length) return candidatos[0];
+    const contas = await tx.chartOfAccount.findMany({
+      where: { codigo: { in: codigos }, OR: [{ portalClientId: String(portalClientId) }, { portalClientId: null }] },
+      select: { portalClientId: true, codigo: true, nome: true, codigoCompleto: true },
+    });
+    const mapa = new Map();
+    // ⚠ GLOBAIS primeiro, EMPRESA sobrescreve — a ordem do `findMany` não é garantida.
+    for (const c of contas) if (c.portalClientId === null) mapa.set(String(c.codigo), c);
+    for (const c of contas) if (c.portalClientId !== null) mapa.set(String(c.codigo), c);
+    const resolverConta = (cod) => mapa.get(String(cod)) || null;
+
+    // ⚠ O `tipo` sai do PREFIXO do evento: `BAIXA_*` é baixa, o resto é provisão. É a mesma
+    // convenção que `deriveBaixaEventType` grava (`BAIXA_<evento>`); não há segunda tabela.
+    const tipo = String(eventType || "").toUpperCase().startsWith("BAIXA") ? "BAIXA" : "PROVISAO";
+    for (const cand of candidatos) {
+      const r = verificarLancamento({
+        lancamento: {
+          tipo,
+          eventType,
+          lines: [
+            { conta: String(cand.contaDebito || "").trim(), tipo: "D", valor: 1 },
+            { conta: String(cand.contaCredito || "").trim(), tipo: "C", valor: 1 },
+          ],
+        },
+        resolverConta,
+        empresaId: String(portalClientId),
+      });
+      if (r.situacao !== SITUACAO.VIOLA) return cand;
+    }
+  } catch {
+    // best-effort — ver o cabeçalho
+  }
+  return candidatos[0];
+}
+
 export async function lookupAccountsFromHistorico(tx, { portalClientId, eventType }) {
   if (!portalClientId || !eventType) return {};
-  const h = await tx.accountingHistorico.findFirst({
-    where: {
-      companyPortalClientId: String(portalClientId),
-      eventType,
-      OR: [{ contaDebito: { not: null } }, { contaCredito: { not: null } }],
-    },
-    orderBy: [{ usageCount: "desc" }, { updatedAt: "desc" }],
-    select: { contaDebito: true, contaCredito: true },
+  const where = (escopo) => ({
+    companyPortalClientId: escopo,
+    eventType,
+    OR: [{ contaDebito: { not: null } }, { contaCredito: { not: null } }],
   });
+  const orderBy = [{ usageCount: "desc" }, { updatedAt: "desc" }];
+  const select = { contaDebito: true, contaCredito: true };
+
+  const daEmpresa = await tx.accountingHistorico.findMany({
+    where: where(String(portalClientId)), orderBy, select, take: CANDIDATOS_DE_MEMORIA,
+  });
+  const h = await escolherMemoriaValida(tx, daEmpresa, { portalClientId, eventType });
   if (h) {
     return {
       debitAccountCode: h.contaDebito || null,
@@ -300,15 +371,12 @@ export async function lookupAccountsFromHistorico(tx, { portalClientId, eventTyp
   }
   // Q50: fallback GLOBAL (companyPortalClientId null) — empresa nova ainda não tem memória própria,
   // mas herda o padrão do escritório já no primeiro extrato (não vem mais com contas vazias).
-  const g = await tx.accountingHistorico.findFirst({
-    where: {
-      companyPortalClientId: null,
-      eventType,
-      OR: [{ contaDebito: { not: null } }, { contaCredito: { not: null } }],
-    },
-    orderBy: [{ usageCount: "desc" }, { updatedAt: "desc" }],
-    select: { contaDebito: true, contaCredito: true },
+  // ⚠ Ele recebe o MESMO tratamento: é por aqui que o `DARF_OUTROS 240→5` (um PAGAMENTO memorizado
+  // como provisão, `usageCount` 12) hoje ganha de qualquer linha correta.
+  const globais = await tx.accountingHistorico.findMany({
+    where: where(null), orderBy, select, take: CANDIDATOS_DE_MEMORIA,
   });
+  const g = await escolherMemoriaValida(tx, globais, { portalClientId, eventType });
   if (!g) return {};
   return {
     debitAccountCode: g.contaDebito || null,
