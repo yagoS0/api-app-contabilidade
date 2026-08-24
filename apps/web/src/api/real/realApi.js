@@ -509,6 +509,13 @@ export function createRealApi() {
       });
     },
     // Q17: fechamento CONTÁBIL do mês
+    // A PRE-VERIFICACAO dos lancamentos: "as provisoes estao nas contas certas?"
+    // ⚠ SO LEITURA. A regra vive no backend (`application/accounting/regras/`), e o que volta e
+    // agrupado por REGRA -- e o agrupamento que serve a correcao em lote antes de importar.
+    async getVerificacaoLancamentos(companyId, competencia) {
+      const qs = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
+      return request(`/firm/companies/${companyId}/lancamentos/verificacao${qs}`);
+    },
     async getFechamentoContabil(companyId, competencia) {
       return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}`);
     },

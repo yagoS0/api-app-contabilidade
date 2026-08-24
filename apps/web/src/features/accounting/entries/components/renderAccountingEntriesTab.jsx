@@ -9,6 +9,7 @@ import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO
 import { PayrollEntryModal, CsvExportModal } from "./renderAccountingEntriesParts";
 import { FunctionListModal, FunctionEditModal, FunctionApplyModal } from "../../functions/components/AccountingFunctionModals";
 import { ParcelamentoCreateModal } from "../../parcelamento/components/ParcelamentoModals";
+import { gruposDaVerificacao, naoAvaliados, resumoDaVerificacao } from "../lib/verificacaoNaTela";
 
 const fechamentoApi = createApiClient();
 
@@ -132,6 +133,59 @@ function FaltaParaFechar({ problemas, filtroAtivo }) {
  * ⚠ APARECE TAMBÉM COM O MÊS FECHADO, de propósito: mês fechado com valor divergente é justamente
  * o caso em que o número já saiu para fora, e escondê-lo aí seria esconder o pior deles.
  */
+/**
+ * A PRÉ-VERIFICAÇÃO DOS LANÇAMENTOS — *"as provisões estão nas contas certas?"*
+ *
+ * > Dono, 24/08/2026: *"quando eu vá importar ao meu sistema contábil eu não importe nas contas
+ * > erradas, ou seja é uma pré-verificação de lançamentos."*
+ *
+ * ⚠⚠ **AGRUPADO POR REGRA, e é isso que ele serve.** O contador não quer 200 linhas: quer
+ * *"3 provisões de IRPJ/CSLL debitando o ramo 5"* e corrigir as três de uma vez, antes de importar.
+ *
+ * ⚠⚠ **ÂMBAR, NUNCA VERMELHO.** Vermelho, nesta casa, **bloqueia o fechamento** — e esta
+ * verificação não bloqueia nada (decisão do dono: *"avisa forte, não bloqueia"*). Vermelho aqui
+ * esvaziaria o vermelho do `DivergenciaDeFonte`, logo ao lado, que é sobre um número que já saiu
+ * para fora.
+ *
+ * ⚠ **APARECE COM O MÊS FECHADO**, sem o gate de `fechado` — mês fechado com conta errada é
+ * justamente aquele cujos lançamentos estão a caminho do outro sistema.
+ *
+ * ⚠ **Sem achado, NADA é desenhado** — e não um painel dizendo "tudo certo". A verificação não
+ * julga o que não sabe julgar (36 de 200 em produção, quase todos com perna sem conta), e afirmar
+ * "tudo certo" por cima disso seria mentira por omissão. O que ela não alcançou sai DITO, embaixo.
+ */
+export function VerificacaoDeLancamentos({ verificacao }) {
+  const grupos = gruposDaVerificacao(verificacao?.porRegra);
+  const resumo = resumoDaVerificacao(verificacao?.resumo);
+  if (!grupos.length || !resumo) return null;
+  const foraDoAlcance = naoAvaliados(verificacao?.resumo);
+  return (
+    <div
+      style={{
+        display: "grid", gap: 3, padding: "5px 6px", borderRadius: 8,
+        border: "1px solid #FFB347", background: ACCOUNTING_PANEL.field,
+        fontSize: "0.72rem", color: "#FFB347", fontWeight: 600,
+      }}
+    >
+      <span>⚠ Conferir antes de importar · {resumo}</span>
+      {grupos.map((g) => (
+        <span
+          key={g.regraId}
+          style={{ color: g.tom === "neutro" ? ACCOUNTING_PANEL.muted : "#aeb6d3", fontWeight: 400 }}
+          title={g.exemplos.join(" · ")}
+        >
+          {g.n}× {g.titulo}
+        </span>
+      ))}
+      {foraDoAlcance != null && (
+        <span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 400, fontSize: "0.68rem" }}>
+          {foraDoAlcance} lançamento(s) não puderam ser conferidos (conta em branco ou fora do plano).
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function DivergenciaDeFonte({ divergencias }) {
   const lista = divergencias || [];
   if (!lista.length) return null;
@@ -177,6 +231,8 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
   const [conferenciaAdn, setConferenciaAdn] = useState(null);
   // O DETECTOR: lançamentos gerados da circular cujo valor deixou de acompanhá-la.
   const [divergenciasFonte, setDivergenciasFonte] = useState([]);
+  // A PRÉ-VERIFICAÇÃO: os pares D/C que não batem com a natureza contábil da conta.
+  const [verificacao, setVerificacao] = useState(null);
 
   const problemas = useMemo(() => {
     const out = [];
@@ -231,6 +287,23 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
       .catch(() => {});
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, competencia]);
+
+  // ⚠ CHAMADA PRÓPRIA, e não um campo do fechamento: ela varre TODOS os lançamentos da competência
+  // e o fechamento é outra pergunta. ⚠ E ela FALHA ABERTO — a aba não pode quebrar porque a
+  // verificação falhou; ela é revisor, não portão.
+  useEffect(() => {
+    let alive = true;
+    if (!companyId || !competencia) return undefined;
+    // ⚠ Reusa o `fechamentoApi` do módulo — um segundo `createApiClient()` no efeito criaria outro
+    // cliente a cada render, e o arquivo já tem o dele.
+    // ⚠ A guarda de existência cobre o backend/mock anterior a esta rota: ausência é "não perguntei",
+    // e o painel simplesmente não desenha.
+    if (typeof fechamentoApi.getVerificacaoLancamentos !== "function") return undefined;
+    fechamentoApi.getVerificacaoLancamentos(companyId, competencia)
+      .then((r) => { if (alive) setVerificacao(r || null); })
+      .catch(() => { if (alive) setVerificacao(null); });
+    return () => { alive = false; };
   }, [companyId, competencia]);
 
   async function toggle() {
@@ -347,6 +420,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
 
       {/* ⚠ NO TOPO E SEM O GATE `!fechado`: é evidência sobre um NÚMERO, não sobre o que falta
           fazer. Mês fechado com valor divergente é o caso em que o número já foi reportado. */}
+      <VerificacaoDeLancamentos verificacao={verificacao} />
       <DivergenciaDeFonte divergencias={divergenciasFonte} />
 
       {/* Separado do "Confiro que lancei" de propósito: aquilo confirma que algo FOI lançado,

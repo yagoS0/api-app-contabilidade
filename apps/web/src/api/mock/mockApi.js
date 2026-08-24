@@ -3504,6 +3504,51 @@ export function createMockApi() {
       const existia = mockVazios.delete(chaveVazio(portalClientId, tipo));
       return { ok: true, removed: existia ? 1 : 0 };
     },
+    // A PRE-VERIFICACAO dos lancamentos.
+    //
+    // ⚠⚠ O MOCK PRECISA ACUSAR, senao o painel e INALCANCAVEL offline -- e este projeto ja foi
+    // mordido QUATRO vezes por ramo que so existia contra o servidor real. Os achados abaixo sao
+    // os REAIS medidos em producao em 24/08/2026, com os pares que o dono ditou e o balancete do
+    // sistema de destino provou.
+    //
+    // ⚠ A REGRA NAO E COPIADA. Isto e uma RESPOSTA fixa, nao uma reimplementacao do motor:
+    // reimplementa-la aqui daria duas regras que divergem, que e o defeito que o motor existe para
+    // pegar. Quando o front mudar de pergunta, esta resposta fica velha -- e e assim que se descobre.
+    async getVerificacaoLancamentos(companyId, competencia) {
+      await delay();
+      return {
+        ok: true,
+        competencia: competencia || null,
+        resumo: { total: 12, ok: 4, viola: 6, conferir: 1, indeterminado: 1, suprimidos: 0 },
+        porRegra: [
+          {
+            regraId: "F3.01", severidade: "ALERTA", n: 3,
+            exemplos: [
+              "IRPJ/CSLL incide sobre o lucro, não sobre a receita: debitando 5.1.1.01.0002 (-) CSLL — esperado despesa tributária (4.1.1.03.*).",
+              "IRPJ/CSLL incide sobre o lucro, não sobre a receita: debitando 5.1.1.01.0001 (-) IRPJ — esperado despesa tributária (4.1.1.03.*).",
+            ],
+            lancamentos: ["ae-1", "ae-2", "ae-3"],
+          },
+          {
+            regraId: "F3.02", severidade: "ALERTA", n: 2,
+            exemplos: ["Provisão creditando 1.2.1.06.0003 CSLL — esperado a obrigação a recolher (2.1.1.05.*)."],
+            lancamentos: ["ae-1", "ae-2"],
+          },
+          {
+            regraId: "F9.02", severidade: "ALERTA", n: 1,
+            exemplos: ["Está marcado como provisão, mas tem a forma de um pagamento (debita 2.1.1.05.0016 DAS - SIMPLES NACIONAL A RECOLHER e credita 1.1.1.01.0001 CAIXA - MATRIZ)."],
+            lancamentos: ["ae-4"],
+          },
+          {
+            // ⚠ SUGESTAO, nao ALERTA -- mover divida entre passivos e ato legitimo.
+            regraId: "F9.03", severidade: "SUGESTAO", n: 1,
+            exemplos: ["Move dívida entre passivos (2.1.1.05.0027 PARCELAMENTO SIMPLES A RECOLHER → 2.1.1.05.0016 DAS - SIMPLES NACIONAL A RECOLHER). Costuma ser inclusão em parcelamento — confira se é isso."],
+            lancamentos: ["ae-5"],
+          },
+        ],
+        porLancamento: [],
+      };
+    },
     async getFechamentoContabil(companyId, competencia) {
       await delay();
       // O estado das buscas vem do MESMO estado que os mocks de busca escrevem — é isso que

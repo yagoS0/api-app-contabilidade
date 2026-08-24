@@ -16,7 +16,8 @@ import {
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
 import { CONTA_JUROS, CONTA_MULTA, CONTAS_ACRESCIMO } from "../../application/accounting/contasAcrescimo.js";
 import { tipoLinhaDaBaixa } from "../../application/accounting/tipoLinhaBaixa.js";
-import { verificarLancamento } from "../../application/accounting/regras/MotorRegras.js";
+import { verificarLancamento, verificarLote } from "../../application/accounting/regras/MotorRegras.js";
+import { carregarPlano } from "../../application/accounting/AliquotaPorLancamentosService.js";
 import { SITUACAO } from "../../application/accounting/regras/contratos.js";
 import { marcarSemFaturamento } from "../../application/accounting/semFaturamento.js";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
@@ -2193,6 +2194,70 @@ export function createAccountingEntriesRouter({ log }) {
     } catch (err) {
       log.error({ err, portalClientId, de, ate }, "falha ao montar o relatório de resumo");
       return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  /**
+   * A PRÉ-VERIFICAÇÃO DOS LANÇAMENTOS — "as provisões estão nas contas certas?"
+   *
+   * > Dono, 24/08/2026: *"quando eu vá importar ao meu sistema contábil eu não importe nas contas
+   * > erradas, ou seja é uma pré-verificação de lançamentos."*
+   *
+   * ⚠ **SÓ LEITURA.** Não escreve, não corrige, não chama serviço externo. A regra vive em
+   * `application/accounting/regras/` e é a MESMA do diagnóstico
+   * (`scripts/diag-verificacao-lancamentos.mjs`) — duas leituras da mesma pergunta divergiriam na
+   * primeira correção, que é literalmente o defeito que este motor existe para pegar.
+   *
+   * ⚠⚠ **`porRegra` É O PRODUTO, não `porLancamento`.** O contador não quer 200 linhas: quer
+   * *"6 provisões de IRPJ/CSLL debitando o ramo 5"* e corrigir as seis de uma vez. `porLancamento`
+   * existe para a tela conseguir marcar a linha; quem se lê é o agrupamento.
+   *
+   * ⚠ A conta é resolvida pelo plano A CADA LEITURA (`carregarPlano`, empresa vence global) e a
+   * classificação nunca é gravada — instrução do dono: o `codigoCompleto` é imutável, o reduzido
+   * não. Renumerar o reduzido se conserta sozinho.
+   *
+   * ⚠ **Sem `competencia` ela varre a empresa inteira**, que é o modo do relatório de
+   * pré-importação. Com competência, é o que a aba Lançamentos consome.
+   */
+  router.get("/lancamentos/verificacao", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.query?.competencia || "").trim();
+    if (competencia && !/^\d{4}-\d{2}$/.test(competencia)) {
+      return res.status(400).json({ error: "competencia_invalida" });
+    }
+    try {
+      // ⚠ Só PROVISAO e BAIXA: são os dois tipos que o motor sabe julgar. Trazer o resto encheria
+      // a resposta de INDETERMINADO, que a tela não desenha de qualquer forma.
+      const where = { portalClientId, tipo: { in: ["PROVISAO", "BAIXA"] } };
+      if (competencia) where.competencia = competencia;
+      const entries = await prisma.accountingEntry.findMany({
+        where,
+        select: {
+          id: true, tipo: true, eventType: true, subtipo: true, competencia: true,
+          parcelamentoId: true, historico: true,
+          lines: { select: { conta: true, tipo: true, valor: true } },
+        },
+        orderBy: [{ competencia: "desc" }, { data: "asc" }],
+      });
+      if (!entries.length) {
+        return res.json({
+          ok: true, competencia: competencia || null,
+          resumo: { total: 0, ok: 0, viola: 0, conferir: 0, indeterminado: 0, suprimidos: 0 },
+          porRegra: [], porLancamento: [],
+        });
+      }
+      const plano = await carregarPlano(portalClientId, prisma);
+      const r = verificarLote({
+        lancamentos: entries,
+        resolverConta: (cod) => plano.get(String(cod)) || null,
+        empresaId: portalClientId,
+      });
+      return res.json({ ok: true, competencia: competencia || null, ...r });
+    } catch (err) {
+      // ⚠ FALHA ABERTO NA TELA: a aba Lançamentos não pode quebrar porque a verificação falhou.
+      // Ela é revisor, não portão — mesma postura de `lerSitfisPosicional`.
+      log.warn({ err: err?.message, portalClientId, competencia }, "verificacao de lancamentos falhou");
+      return res.status(500).json({ error: "verificacao_falhou" });
     }
   });
 
