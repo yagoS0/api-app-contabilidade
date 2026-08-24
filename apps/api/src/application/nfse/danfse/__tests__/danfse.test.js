@@ -311,12 +311,46 @@ describe("campo ausente no XML NÃO vira rótulo vazio: leva traço (nota 12 do 
     );
   });
 
-  it("nada é inventado para preencher: o XML não tem xNome em prest e o campo NÃO cai para emit", () => {
+  // ⚠⚠ ESTE TESTE FOI INVERTIDO EM 24/08/2026, NÃO APAGADO — mesma disciplina do teste do SIEFPAR.
+  // Ele dizia *"o campo NÃO cai para emit"* e travava uma decisão que valia ENQUANTO NÃO HAVIA
+  // EVIDÊNCIA. Medido nos XMLs REAIS que o sistema nacional devolveu
+  // (`scripts/diag-danfse-prestador.mjs`): o bloco `prest` traz SÓ `CNPJ` e `regTrib` —
+  // `prest/xNome` e `prest/end` NUNCA vêm. E a NT §2.4.5 EXIGE nome e endereço do prestador no
+  // DANFSe. A trava mudou de lado: hoje ela prende o complemento **e o limite dele**.
+  it("o prestador CAI para infNFSe/emit quando o CNPJ prova que é a mesma pessoa", () => {
     const { valores, avisos } = lerNfse(xmlBase);
+    expect(valores.prestNome).toBe("EMPRESA EXEMPLO LTDA");
+    // ⚠ O complemento é DECLARADO — quem confere o DANFSe contra o XML precisa saber que aquele
+    // dado não veio do caminho que a NT indica.
+    expect(avisos.join(" ")).toMatch(/infNFSe\/emit/);
+    expect(avisos.join(" ")).toMatch(/mesmo CNPJ/i);
+  });
+
+  it("⚠⚠ CNPJ DIFERENTE não completa nada — o traço volta, com o motivo", () => {
+    // Nota emitida pelo TOMADOR ou pelo INTERMEDIÁRIO: `emit` é OUTRA pessoa jurídica. Cair para
+    // ele imprimiria o endereço de terceiro debaixo do rótulo "PRESTADOR", num documento fiscal.
+    // É a proteção que o teste antigo dava, preservada exatamente onde ela importa.
+    const xmlOutroEmitente = xmlBase.replace(
+      /(<emit>[\s\S]*?<CNPJ>)(\d+)(<\/CNPJ>)/,
+      (_m, abre, digitos, fecha) => `${abre}${digitos.slice(0, -2)}99${fecha}`
+    );
+    expect(xmlOutroEmitente).not.toBe(xmlBase); // o replace precisa ter acontecido
+
+    const { valores, avisos } = lerNfse(xmlOutroEmitente);
     expect(valores.prestNome).toBeNull();
-    // ⚠ A divergência é REPORTADA, não consertada por conta própria: usar `emit/xNome` seria
-    // criar regra de leiaute que a NT não escreveu.
-    expect(avisos.join(" ")).toMatch(/emit\/xNome/);
+    expect(avisos.join(" ")).toMatch(/CNPJ diverg/i);
+    expect(avisos.join(" ")).toMatch(/tomador|intermedi/i);
+  });
+
+  it("o que a DPS TRAZ vence o que veio de emit — completar não é sobrescrever", () => {
+    // Havendo `prest/xNome`, ele é o que sai: é o que NÓS declaramos na DPS, e o eco do sistema
+    // nacional não pode apagar uma correção de cadastro.
+    const xmlComNomeNaDps = xmlBase.replace(
+      /(<prest>\s*<CNPJ>\d+<\/CNPJ>)/,
+      "$1<xNome>NOME DECLARADO NA DPS</xNome>"
+    );
+    expect(xmlComNomeNaDps).not.toBe(xmlBase);
+    expect(lerNfse(xmlComNomeNaDps).valores.prestNome).toBe("NOME DECLARADO NA DPS");
   });
 });
 

@@ -24,12 +24,18 @@
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { derivarCiclo } from "../../notas/cicloNota.js";
+import { lerEnvelopeXml, raizDoXml } from "../lerEnvelopeXml.js";
 import { gerarDanfse } from "./gerarDanfse.js";
 
 /** Códigos que este serviço lança. Os de `gerarDanfse` (DANFSE_SEM_QRCODE, …) sobem sem tradução. */
 export const DANFSE_ERRO = Object.freeze({
   NOTA_NAO_ENCONTRADA: "DANFSE_NOTA_NAO_ENCONTRADA",
   XML_INDISPONIVEL: "DANFSE_XML_INDISPONIVEL",
+  // ⚠ A nota que NÓS emitimos e o sistema nacional RECUSOU guarda, na mesma coluna, a DPS que
+  // enviamos — não a NFS-e. Medido em produção: as 3 `rejected` têm raiz `DPS`, as 3 `issued` têm
+  // raiz `NFSe`. Um código próprio porque o conserto é outro: não é "recapture", é "esta nota não
+  // existe no sistema nacional".
+  XML_E_O_PEDIDO: "DANFSE_XML_E_O_PEDIDO",
 });
 
 function erro(code, message) {
@@ -76,9 +82,54 @@ export async function gerarDanfseDaNota({
       status: true, statusEfetivo: true, xmlRaw: true,
     },
   });
+
+  // ═══ A NOTA QUE ACABAMOS DE EMITIR AINDA NÃO É UMA `PortalInvoice` ═══════════════════════════
+  //
+  // > Dono, 24/08/2026: *"ao emitir a nota pelo portal do cliente preciso que a DANFE esteja
+  // > imediatamente disponível"*.
+  //
+  // A emissão grava **`ServiceInvoice`**; `PortalInvoice` é a projeção do ADN e só existe depois da
+  // captura. Entre um e outro o `notaId` que a lista mostra é um `ServiceInvoice.id`, e esta rota
+  // respondia 404 — por isso a tela desabilitava o botão (`confirmadaPeloAdn === false`).
+  //
+  // ⚠⚠ **A SAÍDA NÃO É GRAVAR `PortalInvoice` NA EMISSÃO** — está proibido, com motivo longo, em
+  // `apps/api/CLAUDE.md` ("uma quarta escrita criaria linha que a captura não sabe que existe", e o
+  // encontro das duas já produziu **faturamento somado duas vezes**). A saída é LER também do outro
+  // lado, que é a mesma disciplina da união na leitura de `notasEmitidasNaoConfirmadas.js`.
+  //
+  // ⚠ **O XML DA NFS-e AUTORIZADA JÁ ESTÁ GUARDADO.** `NfseService.js:1775` grava
+  // `response.nfseXmlGZipB64 || rawXml` em `ServiceInvoice.xml`. Medido em produção
+  // (`scripts/diag-danfse-na-emissao.mjs`): das notas `issued`/`cancelled`, **5 de 5** têm o
+  // envelope `GZIP_B64` com raiz `NFSe` e `infNFSe` presente. As `rejected` guardam a **DPS** — e é
+  // exatamente por isso que existe `XML_E_O_PEDIDO`, abaixo.
+  // ⚠⚠ O ESCOPO AQUI É OUTRO ID, E ELE PRECISA SER RESOLVIDO — é a SEXTA vez que esta confusão
+  // aparece no projeto, e as cinco anteriores falharam em SILÊNCIO (`findMany` vazio, 200 na rota).
+  // `ServiceInvoice.companyId` é o da `Company` LEGADA; o que chega no path é o `PortalClient.id`.
+  // ⚠ E **não há relação Prisma** entre os dois: `PortalClient.companyId` é `String? @unique`, uma
+  // coluna solta — `where: { company: { portalClient: … } }` não existe e nem compila. A volta é
+  // esta, explícita.
+  let nossa = null;
   if (!nota) {
+    const portal = await client.portalClient.findUnique({
+      where: { id: clientId },
+      select: { companyId: true },
+    });
+    // ⚠ Sem `companyId` NÃO se busca. Cair para `where: { id }` sozinho serviria a nota de outra
+    // empresa a quem soubesse o id — o furo de multi-tenancy que o `where` desta função existe
+    // para fechar.
+    if (portal?.companyId) {
+      nossa = await client.serviceInvoice.findFirst({
+        where: { id, companyId: portal.companyId },
+        select: { id: true, numeroNfse: true, chaveAcesso: true, status: true, xml: true },
+      });
+    }
+  }
+
+  if (!nota && !nossa) {
     throw erro(DANFSE_ERRO.NOTA_NAO_ENCONTRADA, "Nota não encontrada nesta empresa.");
   }
+
+  if (nossa) return await danfseDaNossaEmissao({ nota: nossa, incluirCanhoto });
 
   if (!nota.xmlRaw) {
     throw erro(
@@ -122,4 +173,70 @@ export async function gerarDanfseDaNota({
   });
 
   return { pdf, conformidade, marcaDagua, nomeArquivo: nomeDoArquivoDanfse(nota) };
+}
+
+/**
+ * O DANFSe de uma nota que NÓS acabamos de emitir e que o ADN ainda não devolveu.
+ *
+ * ⚠ NÃO É UM SEGUNDO GERADOR. Ela desembrulha o XML e chama o MESMO `gerarDanfse`, com as MESMAS
+ * recusas. O que muda é só de onde vem o XML e como se decide a marca d'água — e as duas coisas
+ * são mais simples aqui porque a nota tem horas de vida.
+ */
+async function danfseDaNossaEmissao({ nota, incluirCanhoto }) {
+  const { forma, xml } = lerEnvelopeXml(nota.xml);
+
+  if (!xml) {
+    throw erro(
+      DANFSE_ERRO.XML_INDISPONIVEL,
+      "Esta nota foi emitida por aqui, mas o XML que o sistema nacional devolveu não pôde ser lido " +
+      `(envelope ${forma}). O DANFSe é gerado a partir dele — nada aqui é inventado.`,
+    );
+  }
+
+  // ⚠⚠ A RECUSA QUE SEPARA "A NOTA EXISTE" DE "O PEDIDO EXISTE". `NfseService.js:1775` grava
+  // `response.nfseXmlGZipB64 || rawXml`: quando o sistema nacional RECUSA, o que sobra na coluna é
+  // a **DPS que nós assinamos** — o pedido, não o documento. Ela não tem `nNFSe`, não tem chave e
+  // não tem `infNFSe`, então não existe DANFSe dela. Medido em produção: as 3 `rejected` têm raiz
+  // `DPS`; as 5 `issued`/`cancelled` têm raiz `NFSe`.
+  //
+  // ⚠ O código é PRÓPRIO porque o conserto é outro: não é "recapture", é "esta nota não existe no
+  // sistema nacional — corrija e emita de novo". Cair no `DANFSE_XML_NAO_E_NFSE` genérico mandaria
+  // o cliente procurar defeito na captura.
+  if (raizDoXml(xml) !== "NFSe") {
+    throw erro(
+      DANFSE_ERRO.XML_E_O_PEDIDO,
+      "Esta nota não chegou a ser autorizada pelo sistema nacional — o que está guardado é o " +
+      "pedido de emissão (DPS), não a NFS-e. Não há DANFSe de um pedido recusado.",
+    );
+  }
+
+  // ⚠ A MARCA D'ÁGUA VEM DO `status`, e a lista é FECHADA. Aqui não há `PortalInvoiceEvent` nem
+  // nota substituta para consultar — a linha é NOSSA e tem horas de vida. `cancelled` é o único
+  // estado que carimba; qualquer outro (inclusive um novo) sai SEM marca, que é o desenho: carimbar
+  // por engano afirma um ato fiscal que não houve.
+  //
+  // ⚠ SUBSTITUÍDA não é alcançável por aqui, e isso é correto: quem responde "esta foi
+  // substituída" é a OUTRA nota apontando para esta, e ela vem pelo ADN — quando vier, a nota
+  // deixa de ser "não confirmada" e o caminho passa a ser o de cima, com `derivarCiclo`.
+  const marcaDagua = String(nota.status || "").toLowerCase() === "cancelled" ? "CANCELADA" : null;
+
+  const { pdf, conformidade } = await gerarDanfse({
+    xml,
+    marcaDagua,
+    incluirCanhoto: Boolean(incluirCanhoto),
+  });
+
+  return {
+    pdf,
+    conformidade,
+    marcaDagua,
+    // ⚠ O contrato do nome de arquivo é o mesmo (`chave → número → id`), mas os CAMPOS têm outro
+    // nome nesta tabela: `numeroNfse`, não `numero`. Passar a linha crua daria `danfse-<uuid>.pdf`
+    // numa nota que TEM chave.
+    nomeArquivo: nomeDoArquivoDanfse({
+      chaveAcesso: nota.chaveAcesso,
+      numero: nota.numeroNfse,
+      id: nota.id,
+    }),
+  };
 }

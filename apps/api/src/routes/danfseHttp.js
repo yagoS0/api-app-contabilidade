@@ -21,6 +21,12 @@ const RECUSAS = Object.freeze({
   DANFSE_SEM_QRCODE: { status: 503, error: "danfse_sem_qrcode" },
   DANFSE_XML_NAO_E_NFSE: { status: 422, error: "xml_nao_e_nfse" },
   DANFSE_XML_VAZIO: { status: 422, error: "xml_nao_e_nfse" },
+  // ⚠⚠ CÓDIGO PRÓPRIO, E NÃO O `xml_nao_e_nfse` ACIMA — o conserto é OUTRO. Este é a nota que NÓS
+  // emitimos e o sistema nacional RECUSOU: o que está guardado é a DPS (o pedido), porque
+  // `NfseService.js:1775` grava `nfseXmlGZipB64 || rawXml`. O genérico mandaria o cliente procurar
+  // defeito na captura ou no nosso extrator; a verdade é que **não existe nota** para documentar.
+  // 422 pela mesma razão dos vizinhos: é fato sobre a NOTA, não falha do servidor.
+  DANFSE_XML_E_O_PEDIDO: { status: 422, error: "nota_nao_autorizada" },
 });
 
 /**

@@ -175,11 +175,31 @@ function contexto(infNFSe) {
   const n = (caminho) => descer(infNFSe, caminho);
   const DPS = "DPS/infDPS";
 
-  /** Grupo de pessoa (`prest`, `toma`, `interm`, `IBSCBS/dest`) → os 7/8 campos do bloco. */
-  const pessoa = (base) => {
-    const raiz = n(base);
-    const end = raiz ? descer(raiz, "end") : null;
-    const endNac = end ? descer(end, "endNac") : null;
+  /**
+   * Grupo de pessoa (`prest`, `toma`, `interm`, `IBSCBS/dest`, `infNFSe/emit`) → os 7/8 campos.
+   *
+   * ⚠ O ENDEREÇO NÃO TEM A MESMA FORMA NOS DOIS GRUPOS, e isso foi MEDIDO no XML real que o
+   * sistema nacional devolve (`scripts/diag-danfse-prestador.mjs`):
+   *
+   *   toma → `toma/end/{xLgr,nro,xBairro}` + `toma/end/endNac/{cMun,CEP}`
+   *   emit → `emit/enderNac/{xLgr,nro,xBairro,cMun,UF,CEP}`   ← tudo no MESMO nó, e a tag é `enderNac`
+   *
+   * Por isso os dois parâmetros, em vez de uma segunda cópia da função: duas leituras do mesmo
+   * bloco divergiriam na primeira correção, e é literalmente o defeito que o cabeçalho deste
+   * arquivo descreve (`xNome` em quatro grupos, `cMun` em cinco).
+   *
+   * @param {string} base
+   * @param {{endPai?: string|null, tagNacional?: string|null}} [forma]
+   *   `endPai` `null` = o endereço mora na própria raiz · `tagNacional` `null` = o nó nacional É o
+   *   nó de endereço (não há um filho separado).
+   */
+  const pessoa = (base, { endPai = "end", tagNacional = "endNac" } = {}) => {
+    // ⚠ Aceita CAMINHO (resolvido da raiz) ou um NÓ já resolvido. O `emit` só é alcançável pelo
+    // nó — `infNFSe` tem atributo `Id` e é resolvido antes; pedi-lo por caminho da raiz devolve
+    // nada, em silêncio. Foi exatamente isso que o teste da amostra versionada pegou.
+    const raiz = typeof base === "string" ? n(base) : base || null;
+    const end = raiz ? (endPai ? descer(raiz, endPai) : raiz) : null;
+    const endNac = end ? (tagNacional ? descer(end, tagNacional) : end) : null;
     const endExt = end ? descer(end, "endExt") : null;
     const endereco = endNac || endExt;
 
@@ -269,23 +289,76 @@ export function lerNfse(xml) {
     );
   }
 
-  const prest = pessoa(`${DPS}/prest`);
+  const prestDaDps = pessoa(`${DPS}/prest`);
   const toma = pessoa(`${DPS}/toma`);
   const dest = pessoa(`${DPS}/IBSCBS/dest`);
   const interm = pessoa(`${DPS}/interm`);
 
-  // ⚠ ACHADO A CONFERIR COM O DONO — ver o relatório em `gerarDanfse.js`.
-  // A NT aponta NOME e ENDEREÇO do prestador para `DPS/infDPS/prest/`, mas numa NFS-e devolvida
-  // pelo sistema nacional esses dados vivem em `infNFSe/emit` (a DPS enviada não repete o cadastro
-  // do emitente). Na amostra versionada, `prest` tem só CNPJ, fone e regTrib. **Não caímos para
-  // `emit` por conta própria**: isso seria criar regra de leiaute. O campo sai com traço e a
-  // divergência é reportada.
-  const emitNome = textoDe(descer(infNFSe, "emit/xNome"));
-  if (!prest.xNome && emitNome) {
+  // ═══ O PRESTADOR CAI PARA `infNFSe/emit` — E SÓ QUANDO O CNPJ PROVA QUE É A MESMA PESSOA ═══
+  //
+  // ⚠⚠ ESTE BLOCO DIZIA O CONTRÁRIO ATÉ 24/08/2026 ("não caímos para `emit` por conta própria:
+  // isso seria criar regra de leiaute"), e a recusa estava CERTA enquanto não havia evidência.
+  // Hoje há duas coisas que não havia:
+  //
+  // 1. **A MEDIÇÃO.** `scripts/diag-danfse-prestador.mjs` leu os XMLs REAIS que o sistema nacional
+  //    devolveu para as notas emitidas por este portal. O bloco `prest` traz **apenas**
+  //    `prest/CNPJ` e `prest/regTrib/*` — **não existe `prest/xNome` e não existe `prest/end`**,
+  //    em nenhuma delas. Nome, telefone e endereço estão em `infNFSe/emit` (`emit/xNome`,
+  //    `emit/fone`, `emit/enderNac/*`). Não é "costumam vir vazios": eles NUNCA vêm.
+  // 2. **O PEDIDO DO DONO** (24/08/2026): *"por que ela não vem com o endereço do prestador?"*.
+  //
+  // ⚠ E imprimir traço ali não era neutro: a NT §2.4.5 EXIGE nome e endereço do prestador no
+  // DANFSe. Um documento que circula para o tomador sem o endereço de quem prestou o serviço está
+  // incompleto pela própria norma que a nota 12 (campo vazio ⇒ traço) serve para respeitar.
+  //
+  // ⚠⚠ A PROVA É O CNPJ, NÃO O `tpEmit` — e a diferença é o que torna isto seguro. O `tpEmit`
+  // distingue quem emitiu (prestador × tomador × intermediário), mas **o projeto não tem a tabela
+  // de descrições dele** (`danfseDescricoes.js:37`: `tpEmit: Object.freeze({})`, pendência
+  // declarada), então decidir por ele seria inventar o de-para que aquele arquivo existe para
+  // dizer que falta. O CNPJ está nos DOIS lados do XML e é uma IGUALDADE MEDIDA: `emit` e `prest`
+  // sendo o mesmo documento, são a mesma pessoa jurídica, e completar um com o outro não é
+  // inferência de leiaute — é ler o mesmo cadastro por outro caminho.
+  //
+  // ⚠ DOCUMENTOS DIFERENTES ⇒ NADA É COMPLETADO. Numa nota emitida pelo TOMADOR ou pelo
+  // INTERMEDIÁRIO, `emit` é outra pessoa: cair para ele imprimiria o endereço do tomador debaixo
+  // do rótulo "PRESTADOR", num documento fiscal. O traço volta, com o aviso — que é o
+  // comportamento anterior, preservado exatamente onde ele protegia.
+  const emit = pessoa(descer(infNFSe, "emit"), { endPai: "enderNac", tagNacional: null });
+  const mesmoDocumento = Boolean(prestDaDps.doc && emit.doc && prestDaDps.doc === emit.doc);
+
+  // ⚠ CAMPO A CAMPO, e só o que está VAZIO. O que a DPS trouxer vence — ela é o que NÓS
+  // declaramos, e sobrescrevê-la com o eco do sistema nacional apagaria uma correção de cadastro.
+  const prest = mesmoDocumento
+    ? {
+        ...prestDaDps,
+        xNome: prestDaDps.xNome || emit.xNome,
+        fone: prestDaDps.fone || emit.fone,
+        email: prestDaDps.email || emit.email,
+        endereco: prestDaDps.endereco || emit.endereco,
+        municipio: prestDaDps.municipio || emit.municipio,
+        municipioEhCodigoIbge: prestDaDps.endereco
+          ? prestDaDps.municipioEhCodigoIbge
+          : emit.municipioEhCodigoIbge,
+        ibgeCep: prestDaDps.ibgeCep || emit.ibgeCep,
+        presente: prestDaDps.presente || emit.presente,
+      }
+    : prestDaDps;
+
+  // ⚠ O COMPLEMENTO É DECLARADO, sempre — quem confere o DANFSe contra o XML precisa saber que
+  // aquele endereço não veio do caminho que a NT indica. Silêncio aqui faria a divergência de
+  // leiaute sumir junto com o defeito que ela causava.
+  if (mesmoDocumento && (!prestDaDps.xNome || !prestDaDps.endereco) && (emit.xNome || emit.endereco)) {
     avisos.push(
-      "NOME do prestador ausente em `DPS/infDPS/prest/xNome` (o caminho que a NT §2.4.5 indica), " +
-      "mas presente em `infNFSe/emit/xNome`. Impresso com traço, conforme a nota 12 — usar `emit` " +
-      "seria inventar caminho de leiaute. Decisão do dono."
+      "NOME/ENDEREÇO do prestador ausentes em `DPS/infDPS/prest/` (o caminho da NT §2.4.5) e lidos " +
+      "de `infNFSe/emit/` — o mesmo CNPJ nos dois blocos prova que é a mesma pessoa jurídica. " +
+      "Medido: o sistema nacional não ecoa `prest/xNome` nem `prest/end` na NFS-e devolvida."
+    );
+  } else if (!prestDaDps.xNome && emit.xNome && !mesmoDocumento) {
+    avisos.push(
+      "NOME do prestador ausente em `DPS/infDPS/prest/xNome` e presente em `infNFSe/emit/xNome`, " +
+      "mas os CNPJ divergem — o emitente NÃO é o prestador (nota emitida pelo tomador ou pelo " +
+      "intermediário). Impresso com traço, conforme a nota 12: usar `emit` aqui poria o endereço " +
+      "de outra pessoa debaixo do rótulo PRESTADOR."
     );
   }
 
