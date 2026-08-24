@@ -41,7 +41,6 @@ import { DfeCapturePanel } from "./DfeCapturePanel";
 import { AdnCapturePanel } from "./AdnCapturePanel";
 import { NotasList } from "./NotasList";
 import { NotasResumo } from "./NotasResumo";
-import { RecebidasResumo } from "./RecebidasResumo";
 import { EmitirNfseWizard } from "./EmitirNfseWizard";
 import { NotaDetailModal } from "./NotaDetailModal";
 import { createApiClient } from "../../../api/client";
@@ -188,18 +187,6 @@ export function NotasFiscaisTab({
         onChange={trocarJanela}
       />
 
-      {/* AS DUAS ESPÉCIES CONTADAS, ACIMA DAS DUAS JANELAS — é a resposta a "qual o total de notas
-          recebidas?" sem juntar numa lista só o que não é a mesma coisa. Fica FORA do toggle de
-          propósito: a pergunta atravessa as duas janelas. */}
-      <RecebidasResumo
-        resumo={notasRecebidas}
-        competencia={notasFilters.competencia}
-        loading={loadingNotas}
-        janelaAtiva={janelaAtiva}
-        papel={notasFilters.papel}
-        onVerRecebidas={(tipo) => irParaJanela(tipo, "DEST")}
-      />
-
       {/* ⚠ EMITIR é o PRIMÁRIO da janela de NFS-e; buscar e importar viram secundários.
           A aba nasceu só para CAPTURAR nota que já existe, e emitir — que é o que a empresa faz
           para faturar — não tinha porta nenhuma na tela, embora o backend (`POST /nfse/issue`)
@@ -266,8 +253,13 @@ export function NotasFiscaisTab({
         )}
       </div>
 
+      {/* ⚠ FAIXA ÚNICA desde 23/08/2026 — ela absorveu o bloco "Notas recebidas" que ficava acima
+          do toggle. Ver o cabeçalho de `NotasResumo` para o porquê de `resumoRecebidas` e `summary`
+          serem DUAS chamadas diferentes que não podem ser trocadas uma pela outra. */}
       <NotasResumo
         summary={notasSummary}
+        resumoRecebidas={notasRecebidas}
+        onVerRecebidas={(tipo) => irParaJanela(tipo, "DEST")}
         janela={janelaAtiva}
         competencia={notasFilters.competencia}
         loading={loadingNotas}

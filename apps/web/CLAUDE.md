@@ -217,6 +217,46 @@ Escritório", a logo no login e no cabeçalho dos impressos.
 - ⚠ **`vite.svg` e `src/assets/react.svg` foram apagados** — o primeiro deixou de ser referenciado,
   o segundo nunca teve um importador.
 
+## ⚠⚠ A ABA NOTAS FISCAIS ENXUGOU (23/08/2026)
+
+Três pedidos do dono, com a tela na frente, no mesmo dia.
+
+**1. A faixa "Notas recebidas" foi ABSORVIDA pela faixa de resumo** (*"isso aqui tá horrível (…)
+tem que ser absorvido para junto das outras caixas; pode aparecer recebidas, ao lado recebidas NF-e
+e recebidas NFS-e"*). Eram duas faixas empilhadas, com duas caixas dizendo o MESMO número com nomes
+diferentes. `RecebidasResumo.jsx` foi **apagado**, não deixado sem chamador.
+
+- ⚠⚠ **A ARMADILHA DA FUSÃO, e ela é invisível hoje:** as duas faixas NÃO falavam da mesma
+  população. São duas chamadas a `/notas/summary` — `summary` leva o `type` da janela (**uma**
+  espécie) e `recebidas` leva `papel: "DEST"` **sem** `type` (**as duas**). Elas coincidem só
+  enquanto a empresa não tem NF-e recebida. As três caixas de recebidas saem TODAS da segunda.
+- ⚠ **"Recebidas" não é clicável**: o valor é das duas espécies e a tabela mostra uma; um clique
+  filtraria metade do que a caixa afirma. A ação antiga não se perdeu — "Recebidas NFS-e" na janela
+  de NFS-e faz exatamente o mesmo que o filtro por papel fazia.
+- ⚠ A contagem somada foi para o SUBTÍTULO de "Recebidas" (`21 nota(s) · NFS-e + NF-e`) em vez de
+  uma sexta caixa: ela foi pedida pelo dono antes e continua na tela, com o rótulo que impede o
+  número de ser lido como uma coisa só.
+
+**2. O seletor "Produção / Homologação" SAIU DA TELA**, nos DOIS painéis de captura
+(`AdnCapturePanel` e `DfeCapturePanel`) — deixar num só faria duas janelas irmãs discordarem.
+
+- ⚠ O `env` **continua no contrato** (`onSync({ env: AMBIENTE })`, cravado em `"prod"`). Tirar o
+  parâmetro junto obrigaria a mexer no backend por causa de uma mudança de LAYOUT.
+- ⚠⚠ **O que se perdeu é real:** não há mais como disparar captura em HOMOLOGAÇÃO pela interface.
+  É coerente com a tela — ela é a rotina diária sobre dados de produção, e nota de homologação
+  entrando aqui contamina a base que a apuração lê. Se for preciso, o lugar é a engrenagem.
+
+**3. O aviso "Última busca há 2h…" ficou mais discreto** — desceu para uma linha abaixo do botão,
+em `--text-faint` e 0,72rem.
+
+- ⚠⚠ **Ele NÃO virou `title`**, e isso é deliberado: `title` não aparece no teclado nem no toque. A
+  frase carrega o que a ausência de notas não carrega — *"sem nota na tela, o contador precisa saber
+  se ninguém olhou, se olharam e não veio nada, ou se deu erro"*. Discreto é ficar mais quieto, não
+  sumir. ⚠ O texto de ERRO continua na barra, em vermelho: esse não é para ficar quieto.
+
+⚠ **O `CLAUDE.md` de `features/notas/` que a raiz cita NÃO EXISTE** — a referência é anterior a esta
+entrega e continua pendurada.
+
 ## Blocos com CLAUDE.md próprio (Q17)
 
 Ler antes de mexer; atualizar ao terminar: `src/features/companies/`,

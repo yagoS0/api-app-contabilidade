@@ -121,11 +121,25 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     no mesmo dia, o pedido anterior de juntá-las numa aba só. ⚠ O fundamento reforça a decisão:
     **NF-e tem item/NCM/CFOP/quantidade e NFS-e tem código de serviço e ISS**; a coluna comum é
     pouca (data, emitente, valor, situação), e lista única mostraria o menor denominador das duas.
-  - **O "total de notas recebidas" que ele pediu** não exigia lista única e virou o bloco
-    `RecebidasResumo`: conta as duas espécies **separadas**, mostra a soma e **diz que a soma é de
-    espécies diferentes** — número sem esse rótulo soma nota de mercadoria com nota de serviço, que
-    vão para contas diferentes. Cada caixa é botão e abre a janela daquela espécie já em
-    "Recebidas", que é como o número se confere contra as linhas.
+  - **O "total de notas recebidas" que ele pediu** não exigia lista única: conta as duas espécies
+    **separadas**, mostra a soma e **diz que a soma é de espécies diferentes** — número sem esse
+    rótulo soma nota de mercadoria com nota de serviço, que vão para contas diferentes. Cada caixa
+    de espécie é botão e abre a janela dela já em "Recebidas", que é como o número se confere
+    contra as linhas.
+    - ⚠⚠ **ISSO VIVIA NUM BLOCO PRÓPRIO (`RecebidasResumo`) E FOI ABSORVIDO PELO `NotasResumo` em
+      23/08/2026** — o componente foi APAGADO, não deixado sem chamador. Dono, com a tela na frente:
+      *"isso aqui tá horrível, esse notas recebidas em cima tem que ser absorvido para junto das
+      outras caixas; pode aparecer recebidas, ao lado recebidas NF-e e recebidas NFS-e"*. Eram DUAS
+      faixas empilhadas, e duas caixas diziam o MESMO número com nomes diferentes ("Valor recebido"
+      em cima, "Recebidas" embaixo).
+    - ⚠⚠ **E AS DUAS FAIXAS NÃO FALAVAM DA MESMA POPULAÇÃO** — é a armadilha da fusão, e ela é
+      invisível hoje. São duas chamadas a `/notas/summary`: `summary` leva o `type` da janela
+      (**uma** espécie) e `recebidas` leva `papel: "DEST"` **sem** `type` (**as duas**). As três
+      caixas de recebidas saem TODAS da segunda. Alimentar "Recebidas" com a primeira mostraria
+      metade — e ninguém veria enquanto a empresa não tivesse NF-e recebida.
+    - ⚠ **"Recebidas" não é clicável**, e a ausência é o que a mantém honesta: o valor é das duas
+      espécies e a tabela mostra uma. Quem quer a lista clica na espécie. A ação antiga (filtrar a
+      janela por `papel: DEST`) não se perdeu — "Recebidas NFS-e" na janela de NFS-e faz o mesmo.
   - Detalhes, medições e as armadilhas: **`apps/web/src/features/notas/CLAUDE.md`**.
 - [~] **Robustez NFS-e/ADN (Q59)** — captura deve virar *fluxo de eventos por NSU*, não *snapshot por data*.
   Roadmap em **`docs/robustez-nfse-adn.md`**. **Fase 1** (ledger append-only `documentos`/`eventos` +

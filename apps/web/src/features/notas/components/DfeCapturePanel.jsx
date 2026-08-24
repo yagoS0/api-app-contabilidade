@@ -15,7 +15,6 @@
 // ela é da SEFAZ e quem a consome é o NOSSO worker. Sem dizer isso, o contador acha que a culpa é
 // dele — ou que o sistema está quebrado.
 
-import { useState } from "react";
 import { PANEL } from "./notasStyles";
 import { Button } from "../../../components/ui/Button";
 
@@ -26,8 +25,20 @@ function horaCurta(value) {
   return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+// ⚠⚠ O SELETOR "Produção / Homologação" SAIU DA TELA (dono, 23/08/2026: *"tire também essa escolha
+// em produção e homologação da tela"*), e a captura é SEMPRE em PRODUÇÃO.
+//
+// ⚠ O `env` NÃO sumiu do contrato — ele continua viajando no `onSync({ env })`, cravado. Tirar o
+// parâmetro junto obrigaria a mexer no backend por causa de uma mudança de LAYOUT, e é o tipo de
+// arrasto que transforma "esconder um select" em incidente de integração.
+//
+// ⚠ E o que se perdeu é real, então fica escrito: não há mais como disparar uma captura em
+// HOMOLOGAÇÃO pela interface. Isso é coerente com a tela — ela é a rotina diária de um contador
+// sobre dados de produção, e nota de homologação entrando aqui contamina a base que a apuração lê.
+// Se um dia for preciso, o lugar é a engrenagem de configuração, não a barra de ações.
+const AMBIENTE = "prod";
+
 export function DfeCapturePanel({ dfeState, dfeSyncing, onSync, onClearError }) {
-  const [env, setEnv] = useState("prod");
   const inBackoff = dfeState?.dfeBackoffUntil && new Date(dfeState.dfeBackoffUntil) > new Date();
   const hasError = Boolean(dfeState?.dfeLastError);
 
@@ -51,14 +62,9 @@ export function DfeCapturePanel({ dfeState, dfeSyncing, onSync, onClearError }) 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <Button onClick={() => onSync({ env })} disabled={dfeSyncing || inBackoff || dentroDaJanela} title={tituloBotao}>
+        <Button onClick={() => onSync({ env: AMBIENTE })} disabled={dfeSyncing || inBackoff || dentroDaJanela} title={tituloBotao}>
           {dfeSyncing ? "Capturando…" : "🔄 Buscar NF-e"}
         </Button>
-        <select value={env} onChange={(e) => setEnv(e.target.value)} disabled={dfeSyncing}
-          style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 8px", fontSize: "0.8rem" }}>
-          <option value="prod">Produção</option>
-          <option value="hom">Homologação</option>
-        </select>
         {(hasError || inBackoff) && onClearError && (
           <button onClick={onClearError} disabled={dfeSyncing} title="Limpa backoff e último erro"
             style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.muted, cursor: "pointer", fontSize: "0.75rem" }}>

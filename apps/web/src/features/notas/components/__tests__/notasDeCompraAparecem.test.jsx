@@ -104,38 +104,59 @@ describe("as notas de compra (NF-e) aparecem para quem as tem", () => {
   });
 });
 
-describe("o total de notas recebidas — duas espécies, contadas separadas e somadas com rótulo", () => {
-  it("mostra cada espécie com o próprio número", () => {
-    montar();
-    const bloco = screen.getByRole("region", { name: /Notas recebidas pela empresa/i });
+describe("as recebidas foram ABSORVIDAS pela faixa única — duas espécies, separadas e somadas", () => {
+  // ⚠ Eram DUAS faixas empilhadas até 23/08/2026, e o bloco "Notas recebidas" tinha região própria
+  // (`Notas recebidas pela empresa`). O dono mandou absorvê-lo: *"esse notas recebidas em cima tem
+  // que ser absorvido para junto das outras caixas"*. As provas continuam as MESMAS — o que mudou
+  // foi onde elas moram.
+  const faixa = () => screen.getByRole("region", { name: /Resumo de notas .* e notas recebidas/i });
 
-    expect(within(bloco).getByText(/Serviço \(NFS-e\)/i)).toBeInTheDocument();
-    expect(within(bloco).getByText("248")).toBeInTheDocument();
-    expect(within(bloco).getByText(/Compra \(NF-e\)/i)).toBeInTheDocument();
-    expect(within(bloco).getByText("34")).toBeInTheDocument();
+  it("⚠ existe UMA faixa só — a de cima não sobrou em lugar nenhum", () => {
+    montar();
+    expect(screen.queryByRole("region", { name: /Notas recebidas pela empresa/i })).toBeNull();
+    expect(faixa()).toBeInTheDocument();
   });
 
-  it("a SOMA aparece e DIZ que soma espécies diferentes", () => {
+  it("mostra cada espécie com o próprio número, uma ao lado da outra", () => {
     montar();
-    const bloco = screen.getByRole("region", { name: /Notas recebidas pela empresa/i });
+    expect(within(faixa()).getByText(/Recebidas NFS-e/i)).toBeInTheDocument();
+    expect(within(faixa()).getByText("248")).toBeInTheDocument();
+    expect(within(faixa()).getByText(/Recebidas NF-e/i)).toBeInTheDocument();
+    expect(within(faixa()).getByText("34")).toBeInTheDocument();
+  });
 
-    // 248 + 34
-    expect(within(bloco).getByText("282")).toBeInTheDocument();
-    // ⚠ O rótulo é a metade que importa: "282" sozinho soma nota de mercadoria com nota de
-    // serviço, que vão para contas diferentes e não respondem à mesma pergunta fiscal.
-    expect(within(bloco).getByText(/espécies somadas/i)).toBeInTheDocument();
+  it("a SOMA continua na tela e DIZ que soma espécies diferentes", () => {
+    // ⚠ Ela saiu de uma caixa própria e foi para o subtítulo de "Recebidas" — mas NÃO sumiu: foi
+    // pedida pelo dono antes. E o rótulo é a metade que importa: "282" sozinho soma nota de
+    // mercadoria com nota de serviço, que vão para contas diferentes.
+    montar();
+    expect(within(faixa()).getByText(/282 nota\(s\) · NFS-e \+ NF-e/i)).toBeInTheDocument();
+  });
+
+  it("⚠⚠ o VALOR de 'Recebidas' vem do resumo das DUAS espécies, nunca do resumo da janela", () => {
+    // É a armadilha da absorção. `notasSummary.totalRecebido` é 1500 (só a janela ativa);
+    // `notasRecebidas.totalRecebido` é 2500 (as duas espécies). Ler o primeiro mostraria metade
+    // do que a caixa afirma, e ninguém perceberia enquanto a empresa não tivesse NF-e recebida.
+    montar();
+    expect(within(faixa()).getByText(/2\.500,00/)).toBeInTheDocument();
+    expect(within(faixa()).queryByText(/1\.500,00/)).toBeNull();
+  });
+
+  it("⚠ e ele NÃO é clicável — a tabela mostra UMA espécie, o número afirma DUAS", () => {
+    montar();
+    const caixas = within(faixa()).getAllByRole("button").map((b) => b.textContent);
+    expect(caixas.some((t) => /^Recebidas/.test(t) && !/NFS-e|NF-e/.test(t))).toBe(false);
   });
 
   it("clicar numa espécie abre a janela dela JÁ em Recebidas — é assim que o número se confere", () => {
     const { setNotasFilters } = montar();
-    const bloco = screen.getByRole("region", { name: /Notas recebidas pela empresa/i });
 
-    fireEvent.click(within(bloco).getByRole("button", { name: /Compra \(NF-e\)/i }));
+    fireEvent.click(within(faixa()).getByRole("button", { name: /Recebidas NF-e/i }));
     expect(setNotasFilters).toHaveBeenCalledWith(
       expect.objectContaining({ type: "NFE", papel: "DEST", offset: 0 }),
     );
 
-    fireEvent.click(within(bloco).getByRole("button", { name: /Serviço \(NFS-e\)/i }));
+    fireEvent.click(within(faixa()).getByRole("button", { name: /Recebidas NFS-e/i }));
     // ⚠ Aqui o papel é FORÇADO a DEST mesmo indo para a NFS-e: o número clicado é de recebidas,
     // e abrir a lista em "Emitidas" faria a tela contradizer a caixa que o contador acabou de
     // clicar. É o caso que o `papelForcado` existe para cobrir.
