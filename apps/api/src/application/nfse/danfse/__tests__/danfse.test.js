@@ -16,6 +16,7 @@ import QRCode from "qrcode";
 import { gerarDanfse } from "../gerarDanfse.js";
 import { lerNfse } from "../danfseDados.js";
 import { truncarComReticencias, urlDeConsulta, cm } from "../danfseLeiaute.js";
+import { DESCRICOES } from "../danfseDescricoes.js";
 
 // ⚠ TEMPO-LIMITE PRÓPRIO — NÃO É FOLGA PARA TESTE LENTO ESCONDER REGRESSÃO.
 // Cada caso aqui GERA um PDF e o LÊ DE VOLTA com pdf-parse; isso custa tempo de CPU de verdade, e o
@@ -458,15 +459,62 @@ describe("supressões permitidas (§2.3) — o bloco vira UMA frase e o resto so
   });
 });
 
-describe("descrições de código — pendentes, e a pendência é declarada", () => {
-  // ⚠ A NT manda "utilizar a descrição das opções previstas no leiaute", e o leiaute NÃO está
-  // versionado neste repositório. Imprimir o código cru é conteúdo do XML (art. 13 respeitado);
-  // inventar a descrição seria fabricar tabela de código fiscal.
-  it("campos codificados saem com o código cru e entram no relatório", async () => {
-    const { conformidade } = await gerarDanfse({ xml: xmlBase });
+describe("descrições de código — RESOLVIDAS pelo XSD oficial, e o desconhecido continua declarado", () => {
+  // ⚠⚠ ESTE BLOCO FOI INVERTIDO EM 24/08/2026, NÃO APAGADO. Ele dizia "pendentes, e a pendência é
+  // declarada", e a pendência era real ENQUANTO o leiaute não estava no repositório. Está: são 20
+  // XSD em `docs/leiaute-nfse/documentacao-tecnica/esquemas-xsd/Schemas/`, com a descrição de cada
+  // código dentro da `<xs:documentation>`. A NT §2.4.5 manda "utilizar a descrição das opções
+  // previstas no leiaute" — deixar de traduzir passou a ser a não conformidade.
+  //
+  // A trava mudou de lado: hoje ela prende as descrições OFICIAIS **e** o comportamento quando o
+  // código não estiver na enumeração, que é a proteção que o teste antigo dava.
+  it("os campos codificados saem TRADUZIDOS, com o texto do leiaute", async () => {
+    const { pdf, conformidade } = await gerarDanfse({ xml: xmlBase });
+    const texto = await textoDoPdf(pdf);
+    // ⚠⚠ A amostra versionada é `cStat = 101` — a nota SUBSTITUÍDA. E é ela que prova por que a
+    // entrada `101` (lida do XSD **1.00**, removida da enumeração no 1.01) precisou existir: sem
+    // ela, a nota que mais precisa de explicação sairia com o código "101" cru na cara do tomador.
+    // `tpEmit=1`, `opSimpNac=1`, `tribISSQN=1`.
+    expect(texto).toContain("Prestador");
+    expect(texto).toContain("Substituição Gerada");
+    // ⚠⚠ NUNCA "Autorizada" — o dono pediu essa palavra para o `cStat` e o XSD contradiz
+    // (`TStat` diz "Gerada"). Regra 4: fonte oficial vence. "Autorizada" é vocabulário de NF-e e é
+    // o valor de `PortalInvoice.statusEfetivo`, que é palavra NOSSA — imprimi-la como descrição do
+    // fisco misturaria os dois vocabulários num documento que circula.
+    expect(texto).not.toContain("Autorizada");
+    expect(texto).toContain("Não Optante");
+    expect(texto).toContain("Operação tributável");
+    // Resolvidos ⇒ não há pendência a declarar sobre eles.
     const campos = conformidade.descricoesPendentes.map((d) => d.campo);
-    expect(campos).toEqual(expect.arrayContaining(["tpEmit", "cStat", "opSimpNac", "tribISSQN"]));
-    expect(conformidade.descricoesPendentes[0].motivo).toMatch(/não está versionado/);
+    expect(campos).not.toEqual(expect.arrayContaining(["tpEmit", "cStat", "opSimpNac", "tribISSQN"]));
+  });
+
+  it("⚠ código FORA da enumeração continua saindo CRU e declarado — não se inventa tradução", async () => {
+    // O `cStat` 999 não existe em nenhuma versão do leiaute. A resposta certa é imprimir o que
+    // está no XML (art. 13) e NOMEAR que a tradução falta — nunca aproximar para o vizinho.
+    const xml = xmlBase.replace(/<cStat>\d+<\/cStat>/, "<cStat>999</cStat>");
+    expect(xml).not.toBe(xmlBase);
+    const { pdf, conformidade } = await gerarDanfse({ xml });
+    expect(await textoDoPdf(pdf)).toContain("999");
+    expect(conformidade.descricoesPendentes.map((d) => d.campo)).toContain("cStat");
+  });
+
+  it("⚠ o 101 vem do XSD 1.00 — é a nota SUBSTITUÍDA, e o 1.01 removeu o código da enumeração", () => {
+    // Sem esta entrada, a nota que mais precisa de explicação sairia com código cru.
+    expect(DESCRICOES.cStat[101]).toBe("NFS-e de Substituição Gerada");
+  });
+
+  it("⚠ o texto é COPIADO do leiaute, com o erro de digitação do arquivo oficial", () => {
+    // `TSTipoRetISSQN` escreve "Intermediario" sem acento. Não se corrige o fisco: a NT manda
+    // usar "a descrição das opções previstas no leiaute", e o leiaute é este.
+    expect(DESCRICOES.tpRetISSQN[3]).toBe("Retido pelo Intermediario");
+  });
+
+  it("⚠ zero é valor DECLARADO em três enumerações, não ausência", () => {
+    // Confundir com a nota 12 (campo sem informação ⇒ traço) apagaria uma afirmação do emitente.
+    expect(DESCRICOES.tpRetPisCofins[0]).toBe("PIS/COFINS/CSLL Não Retidos");
+    expect(DESCRICOES.regEspTrib[0]).toBe("Nenhum");
+    expect(DESCRICOES.tpImunidade[0]).toBe("Imunidade (tipo não informado na nota de origem)");
   });
 });
 
