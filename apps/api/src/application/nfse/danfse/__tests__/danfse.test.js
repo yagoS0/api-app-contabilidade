@@ -17,6 +17,7 @@ import { gerarDanfse } from "../gerarDanfse.js";
 import { lerNfse } from "../danfseDados.js";
 import { truncarComReticencias, urlDeConsulta, cm } from "../danfseLeiaute.js";
 import { DESCRICOES } from "../danfseDescricoes.js";
+import { rotuloMunicipioIbge } from "../../lote/municipiosIbge.js";
 
 // ⚠ TEMPO-LIMITE PRÓPRIO — NÃO É FOLGA PARA TESTE LENTO ESCONDER REGRESSÃO.
 // Cada caso aqui GERA um PDF e o LÊ DE VOLTA com pdf-parse; isso custa tempo de CPU de verdade, e o
@@ -151,8 +152,15 @@ describe("QR Code no PDF — posição, tamanho e ORDEM DE PINTURA (§2.2 e §2.
     const { pdf } = await gerarDanfse({ xml: xmlBase });
     const cs = contentStream(pdf);
     // pdfkit posiciona a imagem com `<larg> 0 0 -<alt> <x> <y> cm` seguido de `/I<n> Do`.
-    const m = cs.match(/([\d.]+) 0 0 -([\d.]+) ([\d.]+) ([\d.]+) cm\n\/I\d+ Do/);
-    expect(m).not.toBeNull();
+    //
+    // ⚠⚠ A ÚLTIMA, NÃO A PRIMEIRA. Até 24/08/2026 havia UMA imagem no PDF e `match` bastava; com a
+    // logomarca oficial da NFS-e versionada (§2.4.3) são DUAS, e a primeira passou a ser a logo —
+    // o teste media 3,49 cm no lugar de 1,52 e falhava sem que nada do QR tivesse mudado.
+    // Pegar a ÚLTIMA não é contorno: **ser a última é a garantia do QR**, e é o que o teste
+    // seguinte trava. Imagem nova desenhada DEPOIS dele quebraria os dois — que é o desejado.
+    const todas = [...cs.matchAll(/([\d.]+) 0 0 -([\d.]+) ([\d.]+) ([\d.]+) cm\n\/I\d+ Do/g)];
+    expect(todas.length).toBeGreaterThan(0);
+    const m = todas[todas.length - 1];
     const [larg, alt, x, yBase] = m.slice(1).map(Number);
     expect(larg / PT_CM).toBeCloseTo(1.52, 2);
     expect(alt / PT_CM).toBeCloseTo(1.52, 2);
@@ -163,7 +171,11 @@ describe("QR Code no PDF — posição, tamanho e ORDEM DE PINTURA (§2.2 e §2.
   it("o QR é o ÚLTIMO a ser pintado — nada do leiaute passa por cima dele", async () => {
     const { pdf } = await gerarDanfse({ xml: xmlBase });
     const cs = contentStream(pdf);
-    const posImagem = cs.search(/[\d.]+ 0 0 -[\d.]+ [\d.]+ [\d.]+ cm\n\/I\d+ Do/);
+    // ⚠ A ÚLTIMA imagem — ver o teste acima. A logo da NFS-e é pintada no cabeçalho, no começo; o
+    // QR é o último desenho do documento inteiro, e é isso que se afirma aqui.
+    const posicoes = [...cs.matchAll(/[\d.]+ 0 0 -[\d.]+ [\d.]+ [\d.]+ cm\n\/I\d+ Do/g)].map((x) => x.index);
+    expect(posicoes.length).toBeGreaterThan(0);
+    const posImagem = posicoes[posicoes.length - 1];
     // ⚠ `lastIndexOf`, não `indexOf`: o que se quer travar é que NENHUM desenho do leiaute venha
     // depois do QR, e não só o primeiro deles. Os blocos de 20,40 cm de largura (cabeçalho, dados
     // da NFS-e, informações complementares) são os que já passaram por cima dele uma vez.
@@ -456,6 +468,54 @@ describe("supressões permitidas (§2.3) — o bloco vira UMA frase e o resto so
   it("o tomador da amostra está identificado — o bloco dele NÃO é condensado", async () => {
     const { conformidade } = await gerarDanfse({ xml: xmlBase });
     expect(conformidade.blocosCondensados.map((b) => b.bloco)).not.toContain("tomador");
+  });
+});
+
+describe("município por extenso (§2.4.5) — obrigação da NT, não melhoria", () => {
+  // ⚠⚠ A NT escreve: *"Leiaute prevê a informação do código do município com 7 dígitos da Tabela do
+  // IBGE. **Utilizar a descrição destes códigos.** Concatenar o nome do município com a respectiva
+  // UF. Ex.: Município / UF"*. O DANFSe imprimia o código cru nos quatro campos de pessoa, e o
+  // comentário que justificava isso ("a tabela do IBGE não está no projeto") tinha ficado FALSO em
+  // 20/08/2026.
+  it("o município da pessoa sai NOME / UF, e some de municipiosNaoResolvidos", async () => {
+    const { pdf, conformidade } = await gerarDanfse({ xml: xmlBase });
+    expect(await textoDoPdf(pdf)).toContain("Rio de Janeiro / RJ");
+    expect(conformidade.municipiosNaoResolvidos).toEqual([]);
+  });
+
+  it("⚠ o código CRU continua no campo IBGE/CEP — ali a NT pede o número, não o nome", async () => {
+    // §2.4.5: "nnnnnnn / nn.nnn-nnn". São dois campos diferentes lendo o MESMO `cMun`, e trocar um
+    // pelo outro é o tipo de conserto que parece arrumação e quebra a conformidade.
+    const { valores } = lerNfse(xmlBase, { municipios: [["3304557", "Rio de Janeiro", "RJ"]] });
+    expect(valores.prestMunicipio).toBe("Rio de Janeiro / RJ");
+    expect(valores.prestIbgeCep).toMatch(/^3304557 \//);
+  });
+
+  it("⚠⚠ SEM a lista, volta ao código cru E é reportado — nunca derruba o PDF", async () => {
+    // Direção do erro OPOSTA à do lote: lá lista ausente impede a emissão (a nota ainda vai
+    // nascer); aqui o documento JÁ EXISTE e não pode deixar de ser impresso por uma tabela de
+    // apoio. `lerNfse` sem `municipios` é exatamente o comportamento anterior a 24/08/2026.
+    const { valores, meta } = lerNfse(xmlBase);
+    expect(valores.prestMunicipio).toBe("3304557");
+    expect(meta.municipiosNaoResolvidos).toEqual(
+      expect.arrayContaining(["prestMunicipio", "tomaMunicipio"])
+    );
+  });
+
+  it("⚠ código FORA da lista não vira nome aproximado — sai cru e reportado", () => {
+    const { valores, meta } = lerNfse(xmlBase, { municipios: [["9999999", "Cidade Fantasia", "ZZ"]] });
+    expect(valores.prestMunicipio).toBe("3304557");
+    expect(meta.municipiosNaoResolvidos).toContain("prestMunicipio");
+  });
+
+  it("⚠ SETE dígitos exatos, sem padStart — código curto não vira município plausível", () => {
+    // Completar com zero fabricaria um município a partir de um dígito perdido — a classe do
+    // `cLocEmi=\"0000000\"` que este projeto já pagou.
+    expect(rotuloMunicipioIbge([["0330455", "Qualquer", "XX"]], "330455")).toBeNull();
+    expect(rotuloMunicipioIbge([["3304557", "Rio de Janeiro", "RJ"]], "3304557")).toBe("Rio de Janeiro / RJ");
+    // Nome sem UF não vira meia resposta: "São Paulo" sozinho é ambíguo entre município e estado.
+    expect(rotuloMunicipioIbge([["3550308", "São Paulo", ""]], "3550308")).toBeNull();
+    expect(rotuloMunicipioIbge(null, "3304557")).toBeNull();
   });
 });
 

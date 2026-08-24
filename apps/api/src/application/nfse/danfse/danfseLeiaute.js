@@ -63,10 +63,31 @@ export const TIPOGRAFIA = Object.freeze({
   fonteConteudo: "Microsoft Sans Serif", // §2.4
   cor: "#000000",                        // K100
 
-  tituloBlocoPt: 7,                      // §2.4.1 — negrito, CAIXA ALTA
-  tituloCampoPt: 6,                      // §2.4.2 — negrito, Primeira Letra De Cada Palavra
+  // ⚠⚠ OS NÚMEROS DA NT SÃO PISOS, NÃO ALVOS — e isso está escrito, §2.1:
+  // *"o DANFSe deverá ser impresso conforme o modelo permitido (…) utilizando-se os **tamanhos
+  // mínimos de fonte** descritos no item 2.4 e seguintes"*. §2.4.2/§2.4.3 dizem "deverá ter tamanho
+  // de seis (6) / sete (7) pontos"; quem os qualifica como mínimos é o §2.1.
+  //
+  // Subidos em 24/08/2026 a pedido do dono (o layout de 6/7pt é ilegível impresso). ⚠ **O TETO É
+  // GEOMÉTRICO, NÃO NORMATIVO**, e foi MEDIDO: `escreverConteudo` desenha o conteúdo a **8 pt fixos
+  // do topo da célula**, e a altura mais comum do §2.4.5 é **0,63–0,64 cm = 17,9–18,1 pt**.
+  //
+  //   conteúdo 8,0 pt → 8 + 8,0×1,15 = **17,2 pt** — cabe, com folga
+  //   conteúdo 8,5 pt → 17,8 pt — no fio
+  //   conteúdo 9,5 pt → **18,9 pt** — VAZA a borda inferior, invadindo a linha de baixo
+  //
+  // ⚠ E o vazamento NÃO aparece em teste de texto: `pdf-parse` extrai a string igual, e o
+  // `ellipsis` não dispara (o estouro é vertical). Medido em 1 página e 0 reticências até 9,5 pt —
+  // ou seja, **o teste que a equipe tem não pegaria a sobreposição**. Por isso o limite está aqui,
+  // escrito, e não descoberto no papel.
+  //
+  // ⚠ Para passar de 8 pt é preciso CRESCER AS CÉLULAS (a NT permite: os tamanhos do §2.4.5 são
+  // "sugestão"), o que desloca o `sup` de tudo que vem abaixo. É rework de geometria, não troca de
+  // constante — e a disposição dos campos continua obrigatória pelo §2.2.4 (Anexo I).
+  tituloBlocoPt: 7,                      // §2.4.1 — negrito, CAIXA ALTA (piso da NT)
+  tituloCampoPt: 6.5,                    // §2.4.2 — piso 6; +0,5 pt cabe no orçamento acima
   tituloCampoIdentificacaoPt: 7,         // §2.4.2 — exceção: labels do bloco 2.1.2, CAIXA ALTA
-  conteudoPt: 7,                         // §2.4.3 e §2.4.4
+  conteudoPt: 8,                         // §2.4.3 e §2.4.4 — piso 7; 8 é o teto desta geometria
 
   cabecalhoTituloPt: 9,                  // §2.4.3 — "DANFSe v2.0" e "Documento Auxiliar da NFS-e"
   cabecalhoMunicipioPt: 8,               // §2.4.3

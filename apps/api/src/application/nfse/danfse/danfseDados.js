@@ -23,6 +23,7 @@ import {
   truncarComReticencias,
 } from "./danfseLeiaute.js";
 import { descreverCodigo } from "./danfseDescricoes.js";
+import { rotuloMunicipioIbge } from "../lote/municipiosIbge.js";
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Navegação por caminho (namespace-agnóstica: compara sempre `localName`)
@@ -170,7 +171,7 @@ function juntar(partes, separador = " / ", quantidade = null) {
  * Monta o contexto de leitura. Todos os caminhos são relativos a `infNFSe`, que é onde a NT
  * ancora tudo (`NFSe/infNFSe/...`).
  */
-function contexto(infNFSe) {
+function contexto(infNFSe, municipios) {
   const t = (caminho) => textoDe(descer(infNFSe, caminho));
   const n = (caminho) => descer(infNFSe, caminho);
   const DPS = "DPS/infDPS";
@@ -220,11 +221,25 @@ function contexto(infNFSe) {
       IM: textoDe(descer(raiz, "IM")),
       fone: textoDe(descer(raiz, "fone")),
       xNome: textoDe(descer(raiz, "xNome")),
-      // ⚠ `cMun` é CÓDIGO IBGE e a NT manda imprimir a DESCRIÇÃO dele. A tabela do IBGE não está
-      // no projeto (registrado no CLAUDE.md da raiz: "o de-para nome→IBGE exige a tabela do IBGE,
-      // que não temos"). Imprimimos o código; o gerador reporta em `municipiosNaoResolvidos`.
-      municipio: xCidade || cMun,
-      municipioEhCodigoIbge: Boolean(!xCidade && cMun),
+      // ⚠⚠ O MUNICÍPIO SAI POR EXTENSO, e isso é OBRIGAÇÃO da NT, não melhoria: §2.4.5 escreve
+      // *"Leiaute prevê a informação do código do município com 7 dígitos da Tabela do IBGE. Utilizar a
+      // descrição destes códigos. Concatenar o nome do município com a respectiva UF."*
+      //
+      // ⚠⚠ ESTE COMENTÁRIO DIZIA "a tabela do IBGE não está no projeto" e FICOU FALSO em 20/08/2026,
+      // quando ela virou arquivo único em `@contabilidade/shared/municipios-ibge`. O DANFSe seguiu
+      // imprimindo código cru por isso — um comentário que erra sobre o próprio estado é pior que
+      // comentário nenhum.
+      //
+      // ⚠ A LISTA É INJETADA, nunca importada aqui: este módulo é PURO e síncrono, e a lista carrega
+      // por `import()` dinâmico (197 KB). É o mesmo desenho de `classificarLinhaLote.js`, que
+      // também recebe `municipios` por parâmetro.
+      //
+      // ⚠ SEM LISTA, O CÓDIGO CRU CONTINUA — e continua REPORTADO em `municipiosNaoResolvidos`. A
+      // direção do erro aqui é o OPOSTO da do lote: lá lista ausente rebaixa a linha e impede a
+      // emissão (falha fechado, certo lá); aqui ela **nunca** pode derrubar o PDF de um documento
+      // fiscal que já existe.
+      municipio: xCidade || rotuloMunicipioIbge(municipios, cMun) || cMun,
+      municipioEhCodigoIbge: Boolean(!xCidade && cMun && !rotuloMunicipioIbge(municipios, cMun)),
       // §2.4.5: "nnnnnnn / nn.nnn-nnn". O código do IBGE sai CRU, com os 7 dígitos — o DANFSe
       // oficial imprime "nn.nnnnn" aqui, e a NT não escreve esse ponto (ver conformidade).
       ibgeCep: juntar([cMun, cep ? formatarCep(cep) : cEndPost], " / ", 2),
@@ -254,7 +269,13 @@ export function extrairChaveAcesso(infNFSe) {
  * @param {string} xml XML da NFS-e (o documento que VOLTA, não a DPS).
  * @returns {{valores, meta, avisos}}
  */
-export function lerNfse(xml) {
+/**
+ * @param {string} xml
+ * @param {{municipios?: Array|null}} [opcoes]  a lista oficial do IBGE, INJETADA — ver `pessoa()`.
+ *   Ausente ou `null` ⇒ o município sai como código cru e entra em `meta.municipiosNaoResolvidos`,
+ *   que é exatamente o comportamento anterior a 24/08/2026.
+ */
+export function lerNfse(xml, { municipios = null } = {}) {
   if (!xml || !String(xml).trim()) {
     const erro = new Error("XML da NFS-e vazio.");
     erro.code = "DANFSE_XML_VAZIO";
@@ -277,7 +298,7 @@ export function lerNfse(xml) {
     throw erro;
   }
 
-  const { t, n, DPS, pessoa } = contexto(infNFSe);
+  const { t, n, DPS, pessoa } = contexto(infNFSe, municipios);
   const avisos = [];
 
   const chave = extrairChaveAcesso(infNFSe);

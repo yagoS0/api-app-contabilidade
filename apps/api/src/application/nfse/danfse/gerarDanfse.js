@@ -30,6 +30,51 @@ import {
   linhasDoBloco,
 } from "./danfseLeiaute.js";
 import { lerNfse, valorParaImpressao } from "./danfseDados.js";
+import { municipiosIbgeOuNulo } from "../lote/municipiosIbge.js";
+import path from "node:path";
+
+/**
+ * A logomarca oficial da NFS-e, versionada. §2.4.3 da NT 008.
+ *
+ * ⚠⚠ A PRIMEIRA VERSÃO USAVA `import.meta.url` E DERRUBOU DUAS SUÍTES. O Jest deste projeto roda em
+ * **CommonJS**, e `import.meta` quebra em tempo de PARSE — o arquivo inteiro morre antes do primeiro
+ * teste, e quem paga não é quem escreve, é quem IMPORTA (aqui: `loteDanfse.test.js`, que só queria
+ * o zip). É a armadilha que o `apps/portal-cliente-web/CLAUDE.md` já registra; lá ela foi resolvida
+ * com um transform de babel, e o `apps/api` não tem esse transform.
+ *
+ * ⚠ E `process.cwd()` TAMBÉM NÃO SERVE: o start em produção é
+ * `npm run start:prod -w @contabilidade/api`, e o npm executa com o CWD do **workspace** — é a mesma
+ * armadilha que fez o volume do Railway ser montado no lugar errado ("Armazenamento de PDFs" no
+ * `apps/api/CLAUDE.md`, onde `./storage/guides` resolveu para `/app/apps/api/storage/guides`).
+ *
+ * Então a busca é ASCENDENTE a partir do CWD, o mesmo padrão do `acharFixture()` do teste: funciona
+ * rodando da raiz, do workspace, ou de dentro do container.
+ */
+// ⚠⚠ MORA EM `apps/api/assets/`, NÃO EM `docs/leiaute-nfse/` — e a diferença é o Docker.
+// `.dockerignore` tem `docs/` (linha 27), então a logo simplesmente NÃO CHEGARIA à produção: o
+// gerador cairia no placeholder com aviso, em silêncio, e só em produção. É a mesma classe do
+// defeito que `lote/__tests__/listaIbgeChegaNaImagem.test.js` existe para travar — em dev a árvore
+// do repo está toda lá, no container não.
+//
+// ⚠ E o critério que decide onde cada fonte oficial mora: `docs/leiaute-nfse/` guarda o que é lido
+// por TESTE e por SCRIPT (o PDF da NT, os XSD, a amostra de XML). Este PNG é lido em RUNTIME, a
+// cada DANFSe — ativo de execução mora com o executável. `apps/api` é copiado inteiro no Dockerfile.
+const LOGO_RELATIVO = "apps/api/assets/danfse/logo-nfse-horizontal.png";
+
+function acharLogoOficial() {
+  let dir = process.cwd();
+  for (let i = 0; i < 6; i += 1) {
+    const tentativa = path.join(dir, LOGO_RELATIVO);
+    if (fs.existsSync(tentativa)) return tentativa;
+    const pai = path.dirname(dir);
+    if (pai === dir) break;
+    dir = pai;
+  }
+  return null;
+}
+
+// ⚠ Resolvida UMA vez por processo, e `null` é resposta válida — o ramo do aviso existe para ela.
+let logoOficialResolvida;
 
 const A4 = Object.freeze({ larguraCm: 21.0, alturaCm: 29.7 });
 
@@ -141,17 +186,32 @@ function desenharCabecalho(doc, dados, fontes, opcoes, conformidade) {
 
   const logo = bloco.campos.find((c) => c.id === "logomarca");
   const logoCaixa = celula(doc, { ...logo, sombreado: true });
-  if (opcoes.logoPng && fs.existsSync(opcoes.logoPng)) {
-    doc.image(opcoes.logoPng, logoCaixa.x + 2, logoCaixa.y + 2, {
+  // ⚠⚠ A LOGOMARCA OFICIAL PASSOU A SER VERSIONADA (24/08/2026) e entra POR PADRÃO. O bloco abaixo
+  // dizia "ela não está versionada no repo" e imprimia `[LOGOMARCA NFS-e]` num quadro — o que era
+  // certo enquanto faltava o arquivo. **O que faltava era o download, não a decisão.**
+  // Ver `docs/leiaute-nfse/logo/README.md` (com SHA-256 e a URL da §2.4.3).
+  //
+  // ⚠ `opcoes.logoPng` CONTINUA VENCENDO quando passado — é por onde o teste injeta e por onde um
+  // município com logo própria entraria, se um dia a NT permitir. Hoje ela não permite.
+  //
+  // ⚠⚠ E CONTINUA SENDO A LOGO DA **NFS-e**, NUNCA A DO PRESTADOR. A §2.4.3 nomeia UM arquivo, com
+  // URL; e a regra-mãe do §2.1 ("não poderão ser impressas informações que não constem do arquivo
+  // da NFS-e") fecha a porta, porque a logo do prestador não consta do XML.
+  if (logoOficialResolvida === undefined) logoOficialResolvida = acharLogoOficial();
+  const caminhoDoLogo = opcoes.logoPng || logoOficialResolvida;
+  if (caminhoDoLogo && fs.existsSync(caminhoDoLogo)) {
+    doc.image(caminhoDoLogo, logoCaixa.x + 2, logoCaixa.y + 2, {
+      // ⚠ `fit`, nunca largura+altura fixas: a arte oficial é 1920×389 e a célula do §2.4.5 é
+      // 0,85 × 4,00 cm. Esticar para preencher deformaria a marca.
       fit: [logoCaixa.w - 4, logoCaixa.h - 4],
       align: "center", valign: "center",
     });
   } else {
-    // ⚠ NÃO DESENHAMOS UM LOGO IMITANDO O OFICIAL. A NT dá a URL do arquivo (§2.4.3) e ele não
-    // está versionado no repo; um desenho "parecido" seria marca fabricada num documento fiscal.
+    // ⚠ NÃO DESENHAMOS UM LOGO IMITANDO O OFICIAL — um desenho "parecido" seria marca fabricada
+    // num documento fiscal. Este ramo hoje só é alcançado se o arquivo versionado sumir da imagem.
     conformidade.avisos.push(
-      "Logomarca oficial da NFS-e ausente. A NT §2.4.3 aponta o arquivo em " +
-      "gov.br/nfse/.../logos-da-nfs-e/. Baixar e versionar em docs/leiaute-nfse/ e passar em `logoPng`."
+      "Logomarca oficial da NFS-e não encontrada em disco. Ela é versionada em " +
+      "docs/leiaute-nfse/logo/ — confira se a pasta entrou na imagem do Docker."
     );
     escreverConteudo(doc, "[LOGOMARCA NFS-e]", logoCaixa, fontes.conteudo, { tamanho: 6, topo: logoCaixa.h / 2 - 3, align: "center" });
   }
@@ -383,7 +443,21 @@ export async function gerarDanfse(params = {}) {
     fontes: arquivosDeFonte = null,
   } = params;
 
-  const dados = lerNfse(xml);
+  // ⚠⚠ A LISTA DO IBGE É CARREGADA AQUI E INJETADA, e a NT torna isto OBRIGATÓRIO: §2.4.5 manda
+  // *"utilizar a descrição destes códigos. Concatenar o nome do município com a respectiva UF"*.
+  // Até 24/08/2026 o DANFSe imprimia o código cru dos quatro campos de município de pessoa — e o
+  // comentário que justificava isso ("a tabela do IBGE não está no projeto") tinha ficado falso em
+  // 20/08/2026, quando ela virou arquivo único em `@contabilidade/shared`.
+  //
+  // ⚠ `municipiosIbgeOuNulo` **NUNCA LANÇA**: falha de carga devolve `null` e o município volta a
+  // sair como código cru, reportado em `conformidade.municipiosNaoResolvidos` — exatamente o
+  // comportamento anterior. Um documento fiscal que JÁ EXISTE não pode deixar de ser impresso
+  // porque uma tabela de apoio não carregou. É a direção OPOSTA à do lote, onde lista ausente
+  // impede a emissão — e lá está certo, porque lá a nota ainda vai NASCER.
+  //
+  // ⚠ O custo (~197 KB de parse) é pago UMA vez por processo: a promessa é memorizada no módulo.
+  const municipios = await municipiosIbgeOuNulo({ log: null });
+  const dados = lerNfse(xml, { municipios });
 
   // ─── QR Code (§2.2 e §2.4.3) — obrigatório, e a falta dele CONTINUA sendo recusa ──────────────
   //
