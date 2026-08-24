@@ -19,6 +19,10 @@ import {
   listGuidesByCompany,
   toGuideResponse,
 } from "../../application/guides/GuideService.js";
+import {
+  aliquotaPorLancamentos,
+  serieAliquotaPorLancamentos,
+} from "../../application/accounting/AliquotaPorLancamentosService.js";
 import { buildCompanyDashboard } from "../../application/dashboard/buildCompanyDashboard.js";
 // ── A EMISSÃO DE NFS-e PELO CLIENTE — tudo REUSADO, nada reimplementado ──────────────────────
 // Ver o bloco `POST /companies/:companyId/nfse`, no fim deste arquivo, para o porquê de a fachada
@@ -709,7 +713,17 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       const gte = new Date(Date.UTC(y, m - 1, 1));
       const lt = new Date(Date.UTC(y, m, 1));
 
-      const [notas, ultimoExtrato, guiasPagas] = await Promise.all([
+      // ⚠⚠ A QUARTA FONTE — "deLancamentos" — É A DO LUCRO PRESUMIDO (dono, 24/08/2026):
+      // *"VAMOS CALCULAR A ALIQUOTA EFETIVA DO PRESUMIDO BASEADO NO LANÇAMENTOS CONTABIL DE
+      // PROVISAO E RECEITA."* Ela NÃO substitui `impostosPagos` nem `impostoUltimoExtrato` —
+      // as três respondem perguntas diferentes e o `CLAUDE.md` do portal do cliente proíbe
+      // "consertar" a `efetiva`, que está certa onde é usada. Quem escolhe é o consumidor,
+      // pelo REGIME. Regra em `application/accounting/lib/impostosSobreReceita.js`.
+      //
+      // ⚠ NUNCA DERRUBA A ROTA. Se o cálculo por lançamento falhar (plano ausente, coluna nova
+      // não migrada), o bloco volta nulo com o motivo e as outras três fontes continuam
+      // respondendo — era assim antes deste acréscimo.
+      const [notas, ultimoExtrato, guiasPagas, deLancamentos] = await Promise.all([
         // Faturamento da competência: notas EMIT autorizadas (mesma fonte do dashboard).
         prisma.portalInvoice.aggregate({
           where: { clientId: cid, papel: "EMIT", statusEfetivo: "autorizada", competencia: { gte, lt } },
@@ -726,6 +740,10 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           by: ["tipo"],
           where: { portalClientId: cid, competencia, paymentStatus: "PAID" },
           _sum: { valor: true },
+        }),
+        aliquotaPorLancamentos({ portalClientId: cid, competencia }).catch((err) => {
+          log.error({ err: err.message, companyId: cid, competencia }, "aliquota por lancamentos falhou");
+          return null;
         }),
       ]);
 
@@ -744,6 +762,26 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           ? { competencia: ultimoExtrato.competencia, das: Number(ultimoExtrato.dasTotal || 0) }
           : { competencia: null, das: 0 },
         impostosPagos: { total: totalPagos, porTipo },
+        // ⚠ A ALÍQUOTA PELOS LANÇAMENTOS. `aliquota: null` NÃO é zero — `situacao` diz qual
+        // insumo faltou (`SEM_RECEITA_LANCADA` × `SEM_IMPOSTO_LANCADO` × `SEM_LANCAMENTO`), e
+        // `naoClassificadas` conta as linhas cuja conta não pôde ser resolvida. Uma alíquota
+        // calculada por cima de metade das provisões seria menor que a real, e a tela precisa
+        // poder dizer isso.
+        deLancamentos: deLancamentos
+          ? {
+              aliquota: deLancamentos.aliquota,
+              situacao: deLancamentos.situacao,
+              base: deLancamentos.base,
+              receitaBruta: deLancamentos.receitaBruta,
+              devolucoesEDescontos: deLancamentos.devolucoesEDescontos,
+              impostos: deLancamentos.impostos,
+              impostoSobreReceita: deLancamentos.impostoSobreReceita,
+              impostoSobreResultado: deLancamentos.impostoSobreResultado,
+              impostosPorConta: deLancamentos.impostosPorConta,
+              receitaBrutaPorConta: deLancamentos.receitaBrutaPorConta,
+              naoClassificadas: deLancamentos.naoClassificadas.length,
+            }
+          : null,
       });
     } catch (err) {
       log.error({ err: err.message, companyId }, "client aliquota falhou");
@@ -759,7 +797,13 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       const list = buildCompetenciaRange(req.query?.from, req.query?.to);
       if (!list.length) return res.json({ data: [] });
 
-      const [circulares, guiasPagas] = await Promise.all([
+      // ⚠⚠ A SÉRIE É A ROTA QUE O PAINEL LÊ (`api.getAliquotas`), não a `/aliquota` singular. O
+      // bloco por LANÇAMENTO tem de entrar nas DUAS: uma só deixaria o card do painel com a conta
+      // velha e a tela de detalhe com a nova, sobre a mesma empresa e o mesmo mês.
+      //
+      // ⚠ `serieAliquotaPorLancamentos` carrega o plano de contas UMA vez para as N competências —
+      // por mês seria a mesma consulta repetida doze vezes.
+      const [circulares, guiasPagas, serieLanc] = await Promise.all([
         prisma.companyMonthlyCircular.findMany({
           where: { portalClientId: cid, competencia: { in: list } },
           select: { competencia: true, dasTotal: true },
@@ -769,7 +813,14 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           where: { portalClientId: cid, competencia: { in: list }, paymentStatus: "PAID" },
           _sum: { valor: true },
         }),
+        // ⚠ NUNCA DERRUBA A SÉRIE: falhando, o bloco volta nulo por competência e as três contas
+        // antigas continuam respondendo — o comportamento de antes deste acréscimo.
+        serieAliquotaPorLancamentos({ portalClientId: cid, competencias: list }).catch((err) => {
+          log.error({ err: err.message, companyId: cid }, "serie de aliquota por lancamentos falhou");
+          return [];
+        }),
       ]);
+      const lancByComp = new Map((serieLanc || []).map((r) => [r.competencia, r]));
       const dasByComp = new Map(circulares.map((c) => [c.competencia, Number(c.dasTotal || 0)]));
       const pagosByComp = new Map(
         guiasPagas.map((g) => [g.competencia, Number(g._sum?.valor || 0)])
@@ -800,6 +851,24 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           dasExtrato,
           efetiva: pct(impostosPagos, faturamento),
           deReceita: pct(dasExtrato, faturamento),
+          // ⚠ `deLancamentos.aliquota: null` NÃO é zero — `situacao` diz qual insumo faltou. Note
+          // que as três contas acima usam `pct`, que devolve **0** quando o denominador é zero: é
+          // exatamente o zero fabricado que a tela já contorna com `semFaturamento`/
+          // `semImpostoPago`. A conta nova não repete o defeito; ela recusa na origem.
+          deLancamentos: lancByComp.get(comp)
+            ? {
+                aliquota: lancByComp.get(comp).aliquota,
+                situacao: lancByComp.get(comp).situacao,
+                base: lancByComp.get(comp).base,
+                receitaBruta: lancByComp.get(comp).receitaBruta,
+                devolucoesEDescontos: lancByComp.get(comp).devolucoesEDescontos,
+                impostos: lancByComp.get(comp).impostos,
+                impostoSobreReceita: lancByComp.get(comp).impostoSobreReceita,
+                impostoSobreResultado: lancByComp.get(comp).impostoSobreResultado,
+                impostosPorConta: lancByComp.get(comp).impostosPorConta,
+                naoClassificadas: lancByComp.get(comp).naoClassificadas.length,
+              }
+            : null,
         });
       }
       // Mais recente primeiro (bom para lista no app).

@@ -1,6 +1,7 @@
 import { api } from "../../api";
 import { AlertaErro, CardNumero, Carregando, Vazio } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
+import { FONTE, MOTIVO, aliquotaDoPainel } from "./lib/aliquotaDoPainel";
 import { chipDaGuia } from "../guias/GuiasPage";
 import { BlocoDeDemonstracao } from "./BlocoDeDemonstracao";
 import {
@@ -37,6 +38,34 @@ const OPCOES_COMPETENCIA = competenciasRecentes(12);
  * o mesmo defeito que a casca já consertou (três seletores para uma pergunta) — e há teste que
  * quebra por ambiguidade se aparecer um segundo rótulo "Competência".
  */
+/**
+ * A frase embaixo do número da alíquota.
+ *
+ * ⚠ CADA AUSÊNCIA TEM A SUA FRASE, e isso é o ponto: "não há faturamento", "nenhuma guia paga",
+ * "a receita não foi lançada" e "o imposto não foi provisionado" pedem AÇÕES diferentes. Um traço
+ * mudo para as quatro apagaria a diferença entre um problema do cliente e um trabalho do contador.
+ *
+ * ⚠ E QUANDO HÁ LINHA NÃO CLASSIFICADA A FRASE DIZ, mesmo com o número calculado: a alíquota saiu
+ * por cima de provisões cuja conta contábil está em branco, então ela é um PISO, não o total.
+ */
+function textoDaAliquota(l) {
+  if (l.motivo === MOTIVO.SEM_DADOS) return "Sem dados para esta competência";
+  if (l.motivo === MOTIVO.SEM_FATURAMENTO) return "Não há faturamento nesta competência — sem base para calcular";
+  if (l.motivo === MOTIVO.SEM_IMPOSTO_PAGO) return "Nenhuma guia paga nesta competência ainda";
+  if (l.motivo === MOTIVO.SEM_RECEITA_LANCADA) return "A receita desta competência ainda não foi lançada na contabilidade";
+  if (l.motivo === MOTIVO.SEM_IMPOSTO_LANCADO) return "Os impostos desta competência ainda não foram provisionados";
+  if (l.motivo === MOTIVO.SEM_LANCAMENTO) return "Não há lançamentos contábeis nesta competência";
+  if (l.motivo === MOTIVO.BLOCO_AUSENTE) return "Não foi possível calcular pela contabilidade";
+
+  if (l.fonte === FONTE.LANCAMENTOS) {
+    const base = `Impostos ${somaOuTraco(l.impostos)} sobre receita de ${somaOuTraco(l.base)}`;
+    return l.naoClassificadas > 0
+      ? `${base} · ${inteiro(l.naoClassificadas)} lançamento(s) sem conta contábil ficaram de fora`
+      : base;
+  }
+  return `Impostos pagos ${somaOuTraco(l.impostos)} sobre ${somaOuTraco(l.faturamento)}`;
+}
+
 export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar }) {
   // ⚠⚠ A COMPETÊNCIA VEM DA CASCA — ver o comentário longo em `AppShell.jsx`. Era um
   // `useState(competenciaPadrao)` daqui, gêmeo do de `NotasPage`, e as duas abas discordavam.
@@ -86,11 +115,11 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
   //  - sem guia paga, o numerador é a soma de zero linhas e devolve 0.
   // Em ambos os casos a tela leria "sua alíquota é 0%", que é uma afirmação
   // fiscal que ninguém fez. O certo é traço + o motivo.
-  const faturamentoDoMes = aliquota ? Number(aliquota.faturamento) : null;
-  const impostosDoMes = aliquota ? Number(aliquota.impostosPagos) : null;
-  const semFaturamento = aliquota ? !(faturamentoDoMes > 0) : false;
-  const semImpostoPago = aliquota ? !(impostosDoMes > 0) : false;
-  const efetivaCalculavel = Boolean(aliquota) && !semFaturamento && !semImpostoPago;
+  // ⚠⚠ QUAL DAS CONTAS ESTE CARD MOSTRA DEPENDE DO REGIME (dono, 24/08/2026): o Presumido passa a
+  // sair dos LANÇAMENTOS (provisão de imposto ÷ receita), o Simples continua saindo dos pagamentos.
+  // A regra, com o porquê e os números medidos, está em `lib/aliquotaDoPainel.js` — e as guardas
+  // contra o zero fabricado que moravam aqui inline foram para lá, com teste.
+  const leituraAliquota = aliquotaDoPainel({ empresa, linha: aliquota });
 
   const carregando = notasQuery.carregando || aliquotaQuery.carregando;
   const erro = notasQuery.erro || aliquotaQuery.erro;
@@ -145,16 +174,8 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
 
           <CardNumero
             rotulo={`Alíquota efetiva · ${fmtCompetencia(competencia)}`}
-            valor={efetivaCalculavel ? pct(aliquota.efetiva) : TRACO}
-            apoio={
-              !aliquota
-                ? "Sem dados para esta competência"
-                : semFaturamento
-                  ? "Não há faturamento nesta competência — sem base para calcular"
-                  : semImpostoPago
-                    ? "Nenhuma guia paga nesta competência ainda"
-                    : `Impostos pagos ${somaOuTraco(aliquota.impostosPagos)} sobre ${somaOuTraco(aliquota.faturamento)}`
-            }
+            valor={leituraAliquota.valor != null ? pct(leituraAliquota.valor) : TRACO}
+            apoio={textoDaAliquota(leituraAliquota)}
           />
 
           <CardNumero

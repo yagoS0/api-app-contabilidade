@@ -22,6 +22,47 @@ import { competenciaPadrao } from "../../lib/format";
 import { isAdminOrAbove } from "../../lib/roles";
 import { fluxoDeCaixaDeDemonstracao, dreDeDemonstracao } from "../../features/painel/lib/dadosDeDemonstracao";
 
+function mockDeLancamentos(id, faturamento) {
+  if (id === "pc-002") {
+    const base = Number(faturamento.toFixed(2)) || 120000;
+    const impostoSobreReceita = Number((base * 0.0365).toFixed(2));
+    const impostoSobreResultado = Number((base * 0.0384).toFixed(2));
+    const impostos = Number((impostoSobreReceita + impostoSobreResultado).toFixed(2));
+    return {
+      situacao: "CALCULADA",
+      aliquota: Number(((impostos / base) * 100).toFixed(4)),
+      base,
+      receitaBruta: base,
+      devolucoesEDescontos: 0,
+      impostos,
+      impostoSobreReceita,
+      impostoSobreResultado,
+      impostosPorConta: [
+        { codigo: "420", nome: "(-) COFINS", total: Number((base * 0.03).toFixed(2)) },
+        { codigo: "594", nome: "(-) IRPJ", total: Number((base * 0.024).toFixed(2)) },
+        { codigo: "595", nome: "(-) CSLL", total: Number((base * 0.0144).toFixed(2)) },
+        { codigo: "419", nome: "(-) PIS", total: Number((base * 0.0065).toFixed(2)) },
+      ],
+      naoClassificadas: 1,
+    };
+  }
+  if (id === "pc-003") {
+    return {
+      situacao: "SEM_RECEITA_LANCADA",
+      aliquota: null,
+      base: 0,
+      receitaBruta: 0,
+      devolucoesEDescontos: 0,
+      impostos: 1593,
+      impostoSobreReceita: 1593,
+      impostoSobreResultado: 0,
+      impostosPorConta: [{ codigo: "419", nome: "(-) PIS", total: 1593 }],
+      naoClassificadas: 0,
+    };
+  }
+  return null;
+}
+
 const LATENCIA_MS = 140; // o suficiente para os estados de carregamento existirem de verdade
 
 // ⚠ ESPELHO DE `LOTE_MAXIMO` (`apps/api/src/application/nfse/danfse/loteDanfseDoPortal.js`).
@@ -1579,6 +1620,18 @@ export function createMockApi() {
           dasExtrato: Number(dasExtrato.toFixed(2)),
           efetiva: pct(impostosPagos, faturamento),
           deReceita: pct(dasExtrato, faturamento),
+          // ⚠⚠ O BLOCO DO PRESUMIDO PRECISA SER ALCANÇÁVEL OFFLINE. Este projeto já foi mordido
+          // QUATRO vezes por ramo que só existia contra o servidor real: a pc-001 é Simples, e sem
+          // este bloco o caminho `deLancamentos` — que é o do Lucro Presumido — nunca renderizaria
+          // no mock, e o `aliquotaDoPainel` seria testado só no papel.
+          //
+          // ⚠ AS TRÊS SITUAÇÕES SÃO EXERCIDAS, e são elas que a tela precisa saber desenhar:
+          //   pc-002 → CALCULADA, com uma linha sem conta contábil (o caso REAL: 11 de 37
+          //            provisões do Presumido nascem com a conta vazia);
+          //   pc-003 → SEM_RECEITA_LANCADA (provisão existe, receita não foi lançada — medido em
+          //            KODA BEAR, SINCROSAT e EDUCACAO E DIREITO);
+          //   demais → null, que é "o servidor não mandou o bloco", DIFERENTE de "sem lançamento".
+          deLancamentos: mockDeLancamentos(id, faturamento),
         };
       });
       data.reverse(); // mais recente primeiro, igual à rota
