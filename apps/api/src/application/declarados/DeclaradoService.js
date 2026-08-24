@@ -18,7 +18,7 @@ import { carregarPlano } from "../accounting/AliquotaPorLancamentosService.js";
 // lugar só. Uma segunda definição faria a gravação e a leitura da mesma chave divergirem, que é
 // literalmente o defeito que o cabeçalho daquele arquivo documenta.
 import { normalizeMatchText } from "../accounting/excelImport.js";
-import { isMonthClosed } from "../accounting/fechamentoContabil.js";
+import { competenciasFechadas, isMonthClosed } from "../accounting/fechamentoContabil.js";
 import {
   ESTADO,
   ESTADOS_SEM_LANCAMENTO,
@@ -263,6 +263,19 @@ export async function aplicarTransicao({
 }
 
 /**
+ * ⚠⚠ O RECORTE QUE ALCANÇA A COMPETÊNCIA NULA.
+ *
+ * `where.competencia = "2026-07"` não casa com `NULL` em SQL — então a nota que chegou sem
+ * competência ficaria **inalcançável pela tela**, invisível para sempre. É literalmente o defeito
+ * que a auditoria de notas já pagou e consertou (*"a consulta que fabricava buraco"*): lá a nota
+ * sem competência não chegava nem à regra, e nem aparecia em "fora desta conferência".
+ *
+ * ⚠ A saída NÃO é atribuí-la a um mês — isso seria decidir em qual apuração a despesa entra. É dar
+ * a ela um recorte PRÓPRIO e nomeado.
+ */
+export const COMPETENCIA_AUSENTE = "sem-competencia";
+
+/**
  * A FILA. ⚠ Pagina desde o dia 1: a varredura de notas pode produzir centenas de linhas de uma vez
  * (1.897 NFS-e recebidas na base), e lista sem página é a tela que trava justamente na empresa que
  * mais precisa dela.
@@ -275,14 +288,17 @@ export async function listarFila({
   porPagina = 50,
   client = prisma,
 }) {
-  const where = { portalClientId: String(portalClientId) };
+  const escopo = { portalClientId: String(portalClientId) };
+  if (competencia === COMPETENCIA_AUSENTE) escopo.competencia = null;
+  else if (competencia) escopo.competencia = String(competencia);
+
+  const where = { ...escopo };
   if (Array.isArray(estados) && estados.length) where.estado = { in: estados.map(String) };
-  if (competencia) where.competencia = String(competencia);
 
   const take = Math.min(Math.max(Number(porPagina) || 50, 1), 200);
   const skip = (Math.max(Number(pagina) || 1, 1) - 1) * take;
 
-  const [itens, total] = await Promise.all([
+  const [itens, total, contagem] = await Promise.all([
     client.lancamentoDeclarado.findMany({
       where,
       // ⚠ Da mais antiga para a mais nova: a fila é trabalho a fazer, e o que espera há mais tempo
@@ -290,12 +306,47 @@ export async function listarFila({
       orderBy: [{ dataDocumento: "asc" }, { criadoEm: "asc" }],
       skip,
       take,
-      include: { anexos: { select: { id: true, url: true, nomeArquivo: true, mimeType: true } } },
+      include: {
+        anexos: { select: { id: true, url: true, nomeArquivo: true, mimeType: true } },
+        // ⚠ O NÚMERO DA NOTA. O contador confere a fila contra o documento **pelo número**; sem ele
+        // ele teria de cruzar CNPJ + data + valor para achar o papel. ⚠ `notaRecebida` pode ser
+        // nula mesmo em `origem: NOTA_RECEBIDA` — a FK é `SetNull`, e nota apagada não apaga a
+        // despesa.
+        notaRecebida: { select: { numero: true, serie: true, chaveAcesso: true, type: true } },
+      },
     }),
     client.lancamentoDeclarado.count({ where }),
+    // ⚠⚠ O RESUMO IGNORA O FILTRO DE ESTADO, de propósito — contá-lo com o filtro aplicado daria
+    // sempre o tamanho da própria página filtrada, e a pergunta que ele responde é a oposta:
+    // "quanto trabalho existe, e de que tipo?". Ele RESPEITA a competência, que é o recorte.
+    client.lancamentoDeclarado.groupBy({ by: ["estado"], where: escopo, _count: { _all: true } }),
   ]);
 
-  return { itens, total, pagina: Math.max(Number(pagina) || 1, 1), porPagina: take };
+  // ⚠ Contagem sai de `groupBy`, NUNCA de `itens.length`: lista truncada como total mentiria
+  // exatamente na empresa em que o problema é grande. Mesma disciplina da auditoria de notas.
+  const porEstado = {};
+  for (const e of Object.values(ESTADO)) porEstado[e] = 0;
+  for (const g of contagem || []) porEstado[g.estado] = g._count?._all ?? 0;
+
+  // Pré-voo do mês fechado: UMA query para a página inteira, em vez de uma por linha.
+  const fechadas = await competenciasFechadas(
+    portalClientId,
+    itens.map((d) => d.competencia),
+    client,
+  );
+
+  return {
+    itens: itens.map((d) => ({
+      ...d,
+      // ⚠ NÃO é coluna: é a resposta de "este botão vai funcionar?", derivada na leitura. Quem
+      // RECUSA continua sendo `aplicarTransicao`, que enxerga o estado do momento do clique.
+      mesFechado: Boolean(d.competencia && fechadas.has(d.competencia)),
+    })),
+    total,
+    porEstado,
+    pagina: Math.max(Number(pagina) || 1, 1),
+    porPagina: take,
+  };
 }
 
 /**

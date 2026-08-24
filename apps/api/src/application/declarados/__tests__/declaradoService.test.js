@@ -11,7 +11,13 @@
 // Um teste que afirmasse atomicidade sobre um dublê estaria mentindo.
 
 jest.mock("../../../infrastructure/db/prisma.js", () => ({ prisma: {} }));
-jest.mock("../../accounting/fechamentoContabil.js", () => ({ isMonthClosed: jest.fn(async () => false) }));
+// ⚠ Só `isMonthClosed` é dublada — ela consulta o prisma do MÓDULO e não aceita client injetado.
+// `competenciasFechadas` fica REAL de propósito: ela recebe o client, então o dublê já a exercita
+// de ponta a ponta, e um stub aqui esconderia a query que o pré-voo da fila faz.
+jest.mock("../../accounting/fechamentoContabil.js", () => ({
+  ...jest.requireActual("../../accounting/fechamentoContabil.js"),
+  isMonthClosed: jest.fn(async () => false),
+}));
 
 import { isMonthClosed } from "../../accounting/fechamentoContabil.js";
 import { ESTADO, ORIGEM_PAGAMENTO, RECUSA, TRANSICAO } from "../lib/estadosDeclarado.js";
@@ -62,6 +68,7 @@ function fazerClient(declarado, opcoes = {}) {
     deleteMany: [],
     transacao: 0,
     findFirst: [],
+    competenciasConsultadas: [],
   };
   const entriesVivos = new Map(opcoes.entriesVivos || []);
 
@@ -98,8 +105,15 @@ function fazerClient(declarado, opcoes = {}) {
           return where.id === declarado.id && where.portalClientId === declarado.portalClientId ? declarado : null;
         }),
         update: updateEm(chamadas.updateForaDaTransacao),
-        findMany: jest.fn(async () => []),
-        count: jest.fn(async () => 0),
+        findMany: jest.fn(async () => opcoes.fila || []),
+        count: jest.fn(async () => (opcoes.fila || []).length),
+        groupBy: jest.fn(async () => opcoes.porEstado || []),
+      },
+      companyMonthlyCircular: {
+        findMany: jest.fn(async ({ where }) => {
+          chamadas.competenciasConsultadas.push(where);
+          return (opcoes.fechadas || []).map((c) => ({ competencia: c, fechadoContabilEm: new Date("2026-08-01") }));
+        }),
       },
       accountingEntry: {
         // ⚠ Fora da transação, escrever é PROIBIDO neste serviço: se alguém trocar `tx` por
@@ -548,5 +562,153 @@ describe("criarDeclarado", () => {
     const { client, criados } = fakeCriacao();
     await criarDeclarado({ ...base(), client });
     expect(criados[0]).not.toHaveProperty("criadoEm");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// AS QUATRO LACUNAS QUE UMA REVISÃO DA TELA APONTOU
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//
+// ⚠ Cada uma custa "uma linha de backend agora, muito mais depois que a tela existir".
+
+describe("⚠⚠ o RESUMO POR ESTADO", () => {
+  const { COMPETENCIA_AUSENTE } = require("../DeclaradoService.js");
+
+  it("conta cada estado, e estado sem linha vem ZERO — não ausente", async () => {
+    // ⚠ Campo que só existe quando é diferente de zero obriga o consumidor a adivinhar o que a
+    // ausência quer dizer. Mesma disciplina do `viradaDeMes` da auditoria de notas.
+    const { client } = fazerClient(declaradoBase(), {
+      porEstado: [
+        { estado: ESTADO.AGUARDANDO_PAGAMENTO, _count: { _all: 229 } },
+        { estado: ESTADO.A_CONFERIR, _count: { _all: 12 } },
+      ],
+    });
+    const r = await listarFila({ portalClientId: "emp-1", client });
+    expect(r.porEstado).toEqual({
+      AGUARDANDO_PAGAMENTO: 229,
+      A_CONFERIR: 12,
+      CONTABILIZADO: 0,
+      RECUSADO: 0,
+      FUNDIDO: 0,
+    });
+  });
+
+  it("⚠⚠ o resumo IGNORA o filtro de estado — senão ele só contaria a própria página filtrada", async () => {
+    const { client } = fazerClient(declaradoBase());
+    await listarFila({ portalClientId: "emp-1", estados: [ESTADO.A_CONFERIR], client });
+    const whereDoGroupBy = client.lancamentoDeclarado.groupBy.mock.calls[0][0].where;
+    expect(whereDoGroupBy).not.toHaveProperty("estado");
+    // ...mas a lista em si continua filtrada.
+    expect(client.lancamentoDeclarado.findMany.mock.calls[0][0].where.estado).toEqual({
+      in: [ESTADO.A_CONFERIR],
+    });
+  });
+
+  it("⚠ o resumo RESPEITA a competência — ela é o recorte, não o filtro", async () => {
+    const { client } = fazerClient(declaradoBase());
+    await listarFila({ portalClientId: "emp-1", competencia: "2026-07", estados: [ESTADO.A_CONFERIR], client });
+    expect(client.lancamentoDeclarado.groupBy.mock.calls[0][0].where).toEqual({
+      portalClientId: "emp-1",
+      competencia: "2026-07",
+    });
+  });
+
+  it("⚠ a contagem NÃO sai do tamanho da página", async () => {
+    // Lista truncada como total mentiria exatamente na empresa em que o problema é grande.
+    const { client } = fazerClient(declaradoBase(), {
+      fila: [declaradoBase()],
+      porEstado: [{ estado: ESTADO.A_CONFERIR, _count: { _all: 900 } }],
+    });
+    const r = await listarFila({ portalClientId: "emp-1", client });
+    expect(r.porEstado.A_CONFERIR).toBe(900);
+    expect(r.itens).toHaveLength(1);
+  });
+});
+
+describe("⚠⚠ COMPETÊNCIA NULA — o recorte que a torna alcançável", () => {
+  const { COMPETENCIA_AUSENTE } = require("../DeclaradoService.js");
+
+  it("o recorte `sem-competencia` busca `competencia: null`", async () => {
+    // ⚠ `where.competencia = "2026-07"` não casa com NULL em SQL: sem este recorte a nota que
+    // chegou sem competência ficaria invisível PARA SEMPRE. É o defeito que a auditoria de notas
+    // já pagou ("a consulta que fabricava buraco").
+    const { client } = fazerClient(declaradoBase());
+    await listarFila({ portalClientId: "emp-1", competencia: COMPETENCIA_AUSENTE, client });
+    expect(client.lancamentoDeclarado.findMany.mock.calls[0][0].where.competencia).toBeNull();
+  });
+
+  it("⚠ e o RESUMO acompanha o mesmo recorte", async () => {
+    const { client } = fazerClient(declaradoBase());
+    await listarFila({ portalClientId: "emp-1", competencia: COMPETENCIA_AUSENTE, client });
+    expect(client.lancamentoDeclarado.groupBy.mock.calls[0][0].where.competencia).toBeNull();
+  });
+
+  it("competência normal continua sendo texto", async () => {
+    const { client } = fazerClient(declaradoBase());
+    await listarFila({ portalClientId: "emp-1", competencia: "2026-07", client });
+    expect(client.lancamentoDeclarado.findMany.mock.calls[0][0].where.competencia).toBe("2026-07");
+  });
+
+  it("sem competência nenhuma, o recorte não entra no where", async () => {
+    const { client } = fazerClient(declaradoBase());
+    await listarFila({ portalClientId: "emp-1", client });
+    expect(client.lancamentoDeclarado.findMany.mock.calls[0][0].where).not.toHaveProperty("competencia");
+  });
+});
+
+describe("⚠⚠ O PRÉ-VOO DO MÊS FECHADO", () => {
+  it("marca a linha cuja competência está fechada", async () => {
+    const { client } = fazerClient(declaradoBase(), {
+      fila: [declaradoBase({ id: "a", competencia: "2026-06" }), declaradoBase({ id: "b", competencia: "2026-07" })],
+      fechadas: ["2026-06"],
+    });
+    const r = await listarFila({ portalClientId: "emp-1", client });
+    expect(r.itens.map((d) => [d.id, d.mesFechado])).toEqual([["a", true], ["b", false]]);
+  });
+
+  it("⚠ UMA query para a página inteira, não uma por linha", async () => {
+    // Uma tela de 50 linhas faria 50 chamadas a `isMonthClosed`.
+    const { client, chamadas } = fazerClient(declaradoBase(), {
+      fila: Array.from({ length: 10 }, (_, i) => declaradoBase({ id: `d${i}`, competencia: "2026-07" })),
+    });
+    await listarFila({ portalClientId: "emp-1", client });
+    expect(chamadas.competenciasConsultadas).toHaveLength(1);
+    expect(chamadas.competenciasConsultadas[0].competencia.in).toEqual(["2026-07"]);
+  });
+
+  it("⚠ linha SEM competência nunca é 'mês fechado' — não há mês a fechar", async () => {
+    const { client } = fazerClient(declaradoBase(), {
+      fila: [declaradoBase({ id: "sem", competencia: null })],
+      fechadas: [],
+    });
+    const r = await listarFila({ portalClientId: "emp-1", client });
+    expect(r.itens[0].mesFechado).toBe(false);
+  });
+
+  it("⚠⚠ é ANTECIPAÇÃO, não a guarda — quem recusa continua sendo `aplicarTransicao`", async () => {
+    // O pré-voo lê o estado do momento da LISTAGEM; o mês pode fechar entre a tela e o clique.
+    isMonthClosed.mockResolvedValue(true);
+    const { client, chamadas } = fazerClient(declaradoBase());
+    await expect(aplicar(client, TRANSICAO.CONFIRMAR)).rejects.toMatchObject({
+      codigo: RECUSA_DO_SERVICO.MES_FECHADO,
+    });
+    expect(chamadas.create).toHaveLength(0);
+  });
+});
+
+describe("⚠ o NÚMERO DA NOTA chega à fila", () => {
+  it("o `include` traz número, série e chave", async () => {
+    const { client } = fazerClient(declaradoBase());
+    await listarFila({ portalClientId: "emp-1", client });
+    const inc = client.lancamentoDeclarado.findMany.mock.calls[0][0].include;
+    expect(inc.notaRecebida.select).toMatchObject({ numero: true, serie: true, chaveAcesso: true, type: true });
+  });
+
+  it("⚠ e os anexos continuam vindo — ainda que hoje sejam sempre vazios", async () => {
+    // ⚠⚠ `AnexoDeclarado` NÃO TEM ESCRITOR: nenhuma rota, nenhum serviço. A tela NÃO pode oferecer
+    // "anexar comprovante" — desenhar o botão prometeria um caminho que não existe.
+    const { client } = fazerClient(declaradoBase());
+    await listarFila({ portalClientId: "emp-1", client });
+    expect(client.lancamentoDeclarado.findMany.mock.calls[0][0].include.anexos).toBeDefined();
   });
 });

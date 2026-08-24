@@ -2,7 +2,7 @@
 //
 // Montado em `/firm/companies/:companyId/*` (mergeParams).
 //
-//   GET  /conferencia                            a fila
+//   GET  /conferencia?competencia=AAAA-MM|sem-competencia   a fila (+ resumo por estado)
 //   GET  /conferencia/varredura                  as invariantes (SÓ LEITURA)
 //   POST /conferencia/:declaradoId/informar-pagamento
 //   POST /conferencia/:declaradoId/confirmar
@@ -22,6 +22,7 @@ import { Router } from "express";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
 import { dataCivilDe, dataCivilISO } from "../../utils/dataCivil.js";
 import {
+  COMPETENCIA_AUSENTE,
   DeclaradoRecusado,
   RECUSA_DO_SERVICO,
   aplicarTransicao,
@@ -82,9 +83,29 @@ function serializar(d) {
     regraId: d.regraId,
     motivoRecusa: d.motivoRecusa,
 
+    // ⚠ O PRÉ-VOO. A tela desabilita o botão COM O MOTIVO em vez de oferecer um clique que o
+    // servidor vai recusar com 409 — o precedente do menu SERPRO: *"a resposta do POST chegaria
+    // tarde demais"*. ⚠ Ele NÃO é a guarda: quem recusa continua sendo `aplicarTransicao`, que
+    // enxerga o estado do momento do clique.
+    mesFechado: Boolean(d.mesFechado),
+
+    // ⚠ O contador confere a fila contra o documento PELO NÚMERO. `null` quando a nota foi apagada
+    // (a FK é `SetNull`) — a tela desabilita o link com o motivo, nunca o esconde.
+    nota: d.notaRecebida
+      ? {
+          numero: d.notaRecebida.numero,
+          serie: d.notaRecebida.serie,
+          chaveAcesso: d.notaRecebida.chaveAcesso,
+          tipo: d.notaRecebida.type,
+        }
+      : null,
+
     decididoPor: d.decididoPor,
     decididoEm: d.decididoEm,
     criadoEm: d.criadoEm,
+    // ⚠⚠ HOJE ISTO É SEMPRE `[]`: `AnexoDeclarado` não tem escritor — nenhuma rota, nenhum serviço.
+    // A tela NÃO pode oferecer "anexar comprovante"; desenhar o botão prometeria um caminho que não
+    // existe. O campo viaja para o contrato não mudar quando ele existir.
     anexos: d.anexos || [],
   };
 }
@@ -140,8 +161,15 @@ export function createConferenciaRouter({ log } = {}) {
   router.get("/conferencia", requireFirmCompanyAccess(), async (req, res) => {
     try {
       const competencia = req.query.competencia ? String(req.query.competencia) : null;
-      if (competencia && !COMPETENCIA_RE.test(competencia)) {
-        return res.status(400).json({ ok: false, error: "competencia_invalida", message: "Use AAAA-MM." });
+      // ⚠⚠ `sem-competencia` é um RECORTE, não uma competência. Sem ele a nota que chegou sem
+      // competência fica invisível para sempre — `where.competencia = "2026-07"` não casa com NULL
+      // em SQL. É o defeito que a auditoria de notas já pagou e consertou.
+      if (competencia && competencia !== COMPETENCIA_AUSENTE && !COMPETENCIA_RE.test(competencia)) {
+        return res.status(400).json({
+          ok: false,
+          error: "competencia_invalida",
+          message: `Use AAAA-MM, ou "${COMPETENCIA_AUSENTE}" para as que chegaram sem competência.`,
+        });
       }
       // ⚠ Sem filtro de estado, a fila mostra só o que espera alguém — mostrar CONTABILIZADO e
       // RECUSADO por padrão encheria a tela do que já foi resolvido. Os dois continuam alcançáveis

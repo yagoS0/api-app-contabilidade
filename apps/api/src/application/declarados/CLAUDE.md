@@ -126,6 +126,31 @@ constraint. Ela responde quatro perguntas:
 
 Rota: `GET /firm/companies/:id/conferencia/varredura`.
 
+## ⚠⚠ O QUE A FILA DEVOLVE — e as quatro coisas que uma revisão da tela apontou como faltando
+
+Um exame do lado do front (24/08/2026) achou quatro lacunas *"baratas agora, caras depois que a
+tela existir"*. As quatro estão fechadas:
+
+| | por quê |
+|---|---|
+| **`porEstado`** | é ele que diz **quanto trabalho existe e de que tipo**. ⚠ Sai de `groupBy`, **nunca** de `itens.length` — lista truncada como total mentiria exatamente na empresa em que o problema é grande. ⚠ E ele **ignora o filtro de estado** (senão contaria a própria página filtrada) mas **respeita a competência**, que é o recorte. Estado sem linha vem **zero**, não ausente |
+| **`mesFechado`** por linha | pré-voo: a tela desabilita **com o motivo** em vez de oferecer um clique que o servidor recusa com 409. Precedente do menu SERPRO — *"a resposta do POST chegaria tarde demais"*. ⚠ **UMA query para a página inteira** (`competenciasFechadas`), não uma por linha. ⚠ E **não é a guarda**: quem recusa continua sendo `aplicarTransicao` |
+| **`nota`** (número, série, chave, tipo) | o contador confere a fila contra o documento **pelo número**; sem ele teria de cruzar CNPJ + data + valor. ⚠ `null` quando a nota foi apagada (a FK é `SetNull`) — a tela desabilita o link **com o motivo**, nunca o esconde |
+| **`competencia=sem-competencia`** | ⚠⚠ `where.competencia = "2026-07"` **não casa com `NULL`** em SQL: sem este recorte a nota que chegou sem competência ficaria **invisível para sempre**. É literalmente o defeito que a auditoria de notas já pagou (*"a consulta que fabricava buraco"*). ⚠ A saída **não** é atribuí-la a um mês |
+
+⚠⚠ **`anexos` É SEMPRE `[]` — e a tela NÃO pode oferecer "anexar comprovante".** `AnexoDeclarado`
+existe no schema e **não tem escritor**: nenhuma rota, nenhum serviço, nenhuma chamada. Desenhar o
+botão prometeria um caminho que não existe. O campo viaja para o contrato não mudar no dia em que
+ele existir.
+
+### ⚠ `competenciasFechadas` mora colada a `isMonthClosed`, e há teste exigindo que concordem
+
+São duas leituras da MESMA coluna (`CompanyMonthlyCircular.fechadoContabilEm`). Separá-las em
+arquivos diferentes é como as quatro cópias do filtro de envio de guia divergiram nesta base — no
+mesmo arquivo, quem mudar o critério de "fechada" vê as duas na mesma tela.
+⚠ `isMonthClosed` **não** foi reescrita para delegar: ela tem dezenas de chamadores em caminhos
+críticos (baixa, DELETE, guia, parcela), e trocar a query deles não é assunto da fila.
+
 ## ✅ FASE B1 — a nota recebida vira fila
 
 `POST /firm/companies/:id/conferencia/varrer-notas?desde=AAAA-MM-DD`

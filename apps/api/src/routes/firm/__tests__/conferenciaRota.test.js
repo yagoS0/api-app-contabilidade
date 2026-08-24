@@ -329,3 +329,56 @@ describe("⚠⚠ POST /conferencia/varrer-notas — a data-piso é OBRIGATÓRIA"
     expect(JSON.stringify(r.body)).not.toMatch(/banco fora/);
   });
 });
+
+describe("⚠⚠ o que a REVISÃO DA TELA apontou como faltando", () => {
+  const { COMPETENCIA_AUSENTE } = require("../../../application/declarados/DeclaradoService.js");
+
+  const comFila = (item) =>
+    listarFila.mockResolvedValueOnce({
+      total: 1,
+      porEstado: { AGUARDANDO_PAGAMENTO: 229, A_CONFERIR: 12, CONTABILIZADO: 3, RECUSADO: 1, FUNDIDO: 0 },
+      pagina: 1,
+      porPagina: 50,
+      itens: [{ id: "d-1", estado: ESTADO.A_CONFERIR, valor: 1500, descricaoOriginal: "KODA BEAR", ...item }],
+    });
+
+  it("⚠ o RESUMO POR ESTADO chega à tela — é ele que diz quanto trabalho existe", async () => {
+    comFila({});
+    const r = await GET();
+    expect(r.body.porEstado).toMatchObject({ AGUARDANDO_PAGAMENTO: 229, A_CONFERIR: 12, FUNDIDO: 0 });
+  });
+
+  it("⚠⚠ `mesFechado` viaja — o botão desabilita ANTES do clique, não depois do 409", async () => {
+    comFila({ mesFechado: true });
+    expect((await GET()).body.itens[0].mesFechado).toBe(true);
+  });
+
+  it("⚠ e é sempre booleano, nunca `undefined`", async () => {
+    comFila({});
+    expect((await GET()).body.itens[0].mesFechado).toBe(false);
+  });
+
+  it("⚠ o NÚMERO DA NOTA chega — é por ele que o contador acha o documento", async () => {
+    comFila({ notaRecebida: { numero: "1234", serie: "00001", chaveAcesso: "ch", type: "NFSE" } });
+    expect((await GET()).body.itens[0].nota).toEqual({
+      numero: "1234", serie: "00001", chaveAcesso: "ch", tipo: "NFSE",
+    });
+  });
+
+  it("⚠ nota apagada (FK SetNull) vira `nota: null`, e a tela desabilita o link com o motivo", async () => {
+    comFila({ notaRecebida: null });
+    expect((await GET()).body.itens[0].nota).toBeNull();
+  });
+
+  it("⚠⚠ o recorte `sem-competencia` é ACEITO — sem ele a nota sem competência some para sempre", async () => {
+    const r = await GET(`?competencia=${COMPETENCIA_AUSENTE}`);
+    expect(r.status).toBe(200);
+    expect(listarFila.mock.calls[0][0].competencia).toBe(COMPETENCIA_AUSENTE);
+  });
+
+  it("⚠ e a recusa de competência torta NOMEIA o recorte, para ele ser descobrível", async () => {
+    const r = await GET("?competencia=07-2026");
+    expect(r.status).toBe(400);
+    expect(r.body.message).toContain(COMPETENCIA_AUSENTE);
+  });
+});
