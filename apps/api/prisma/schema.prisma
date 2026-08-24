@@ -904,6 +904,8 @@ model PortalClient {
   /// nova aqui — a FK mora em `senhas_portal_trocas.portalClientId`, e ela é NULA nos caminhos do
   /// cliente (perfil e recuperação), que não passam por empresa nenhuma.
   senhasPortalTrocas      PortalPasswordChange[]
+  declarados              LancamentoDeclarado[]
+  regrasContabilizacao    RegraContabilizacao[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -1643,6 +1645,7 @@ model PortalInvoice {
   events     PortalInvoiceEvent[]
   itens      NotaItem[]
   pendencias PendenciaPosFechamento[]
+  declarados LancamentoDeclarado[]
 
   @@unique([clientId, chaveAcesso])
   @@unique([clientId, idDps])
@@ -3845,4 +3848,161 @@ model CompanyCredentialAcesso {
   @@index([portalClientId, createdAt])
   @@index([credentialId, createdAt])
   @@map("company_credential_acessos")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// CONFERÊNCIA DE LANÇAMENTOS — a nota vira despesa, o extrato vira o pagamento dela
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+/// UM FATO DE DESPESA QUE AINDA NÃO É LANÇAMENTO CONTÁBIL.
+///
+/// ⚠⚠ UM REGISTRO POR DESPESA. A nota e o pagamento são duas FACES desta linha, nunca duas linhas.
+/// A nota diz QUE despesa é e DE QUEM; o pagamento diz QUANDO o dinheiro saiu. É isso que torna a
+/// contagem dupla impossível por construção, em vez de ser regra que alguém pode furar.
+///
+/// ⚠⚠ POR QUE `dataPagamento` PODE SER NULA, E POR QUE ISSO É O CORAÇÃO DO MODELO.
+/// Medido em produção (`scripts/diag-forma-despesa.mjs`, 24/08/2026): 155 de 155 lançamentos
+/// `tipo:"DESPESA"` desta casa são 1D/1C creditando CAIXA — ou seja, o lançamento de despesa aqui
+/// AFIRMA A SAÍDA DO DINHEIRO. A nota recebida não sabe quando o dinheiro saiu; lançá-la na data de
+/// emissão mentiria sobre o caixa em toda despesa a prazo, e em silêncio. Enquanto a data não for
+/// conhecida o registro fica em `AGUARDANDO_PAGAMENTO`, que é a resposta honesta.
+///
+/// ⚠ `AGUARDANDO_PAGAMENTO` NÃO É PRISÃO (dono, 24/08/2026): o contador lança quando decidir, mesmo
+/// sem comprovante — informando a data, que fica gravada como DECLARAÇÃO, não como prova.
+///
+/// A regra de transição mora em `application/declarados/lib/estadosDeclarado.js` (pura, 70 testes).
+model LancamentoDeclarado {
+  id             String @id @default(uuid())
+  portalClientId String
+
+  /// NOTA_RECEBIDA | CLIENTE_MANUAL | OFX_CLIENTE
+  origem String
+  /// AGUARDANDO_PAGAMENTO | A_CONFERIR | CONTABILIZADO | RECUSADO | FUNDIDO
+  estado String
+  /// ENTRADA | SAIDA
+  tipo   String
+
+  valor       Decimal @db.Decimal(18, 2)
+  /// "AAAA-MM". ⚠ NULA quando a nota veio sem competência — atribuí-la a um mês seria decidir em
+  /// qual apuração a despesa entra, e isso não se inventa.
+  competencia String?
+
+  // ── O DOCUMENTO ────────────────────────────────────────────────────────────────────────────
+  notaRecebidaId String?
+  dataDocumento  DateTime?
+  /// ⚠ Só a nota o preenche (`PortalInvoice.emitenteDoc`). NUNCA inferido de descrição ou de valor.
+  cnpjFornecedor String?
+  /// O texto CRU da origem, intocado. ⚠ Para a nota é o `emitenteNome` — é o formato que os 130
+  /// lançamentos vindos do Excel já usam no histórico; trocá-lo mudaria o que o razão mostra.
+  descricaoOriginal    String
+  /// Índice do matching. ⚠ NUNCA substitui o original.
+  descricaoNormalizada String
+  /// `xDescServ` da NFS-e. Detalhe para a tela — ⚠ NÃO vira histórico do lançamento.
+  detalheServico       String?
+
+  // ── O PAGAMENTO ────────────────────────────────────────────────────────────────────────────
+  /// ⚠⚠ NULO = "ainda não sabemos". É o que separa AGUARDANDO_PAGAMENTO de A_CONFERIR.
+  dataPagamento    DateTime?
+  /// OFX (prova) | DECLARADO_PELO_CONTADOR (declaração) | CLIENTE (declaração).
+  /// ⚠ Prova e declaração não podem virar a mesma coisa: quando o débito do extrato chegar sobre
+  /// uma despesa já lançada, o contador precisa saber qual das duas está olhando.
+  origemPagamento  String?
+  ofxImportId      String?
+  fitId            String?
+  contaBancariaRef String?
+
+  /// Impressão digital da origem — `NOTA:<portalInvoiceId>` etc. ⚠ A idempotência mora no BANCO
+  /// (o `@@unique` abaixo), não só no código: recaptura da mesma nota não pode gerar segunda linha.
+  hashDedupe String
+
+  guiaId         String?
+  parDeclaradoId String?
+  /// ⚠ SEM FK, de propósito — mesmo desenho de `AccountingEntry.estornoDeEntryId`. Com `SetNull` um
+  /// lançamento apagado por fora deixaria a linha em CONTABILIZADO apontando para nada, e o
+  /// apagamento da evidência seria silencioso. Sem FK o id fica, e a varredura o denuncia.
+  accountingEntryId String?
+  regraId           String?
+  /// ⚠⚠ SEMPRE `codigoCompleto`. O reduzido é mutável; o completo é a âncora desta casa.
+  contaSugerida     String?
+  contaAplicada     String?
+  valorAjustado     Decimal? @db.Decimal(18, 2)
+  motivoRecusa      String?
+
+  criadoPor    String
+  decididoPor  String?
+  decididoEm   DateTime?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  portalClient PortalClient     @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  notaRecebida PortalInvoice?   @relation(fields: [notaRecebidaId], references: [id], onDelete: SetNull)
+  anexos       AnexoDeclarado[]
+
+  @@unique([portalClientId, hashDedupe])
+  @@index([portalClientId, estado])
+  @@index([portalClientId, competencia])
+  @@index([portalClientId, cnpjFornecedor])
+  @@index([notaRecebidaId])
+  @@map("lancamentos_declarados")
+}
+
+/// Comprovante anexado a um declarado.
+model AnexoDeclarado {
+  id           String   @id @default(uuid())
+  lancamentoId String
+  url          String
+  mimeType     String?
+  nomeArquivo  String?
+  criadoPor    String
+  criadoEm     DateTime @default(now())
+
+  lancamento LancamentoDeclarado @relation(fields: [lancamentoId], references: [id], onDelete: Cascade)
+
+  @@index([lancamentoId])
+  @@map("anexos_declarados")
+}
+
+/// O QUE O CONTADOR JÁ ENSINOU — "despesa deste fornecedor vai nesta conta".
+///
+/// ⚠ Regra precisa de PELO MENOS UMA âncora (CNPJ ou descrição): sem nenhuma ela casaria com tudo.
+/// O CHECK vive no SQL da migration — o Prisma não modela CHECK.
+///
+/// ⚠ CNPJ vence descrição quando as duas casam: ele IDENTIFICA, ela se PARECE.
+model RegraContabilizacao {
+  id             String @id @default(uuid())
+  portalClientId String
+
+  /// Âncora FORTE. ⚠ Só o caminho da nota a escreve — `AccountingEntry` não tem fornecedor, então o
+  /// backfill do histórico não pode preenchê-la sem inventar.
+  cnpjFornecedor  String?
+  /// Âncora FRACA — é o que o histórico existente oferece.
+  padraoDescricao String?
+
+  valorMin     Decimal @db.Decimal(18, 2)
+  valorMax     Decimal @db.Decimal(18, 2)
+  /// ⚠⚠ SEMPRE `codigoCompleto`, nunca o reduzido.
+  contaDestino String
+  tipo         String
+
+  /// MANUAL | APRENDIDA
+  origemRegra String
+  ativa       Boolean @default(true)
+  /// ⚠ Regra APRENDIDA se suspende sozinha quando a unanimidade que a gerou se quebra.
+  /// Regra MANUAL nunca — foi decisão explícita de quem a escreveu.
+  suspensaEm      DateTime?
+  motivoSuspensao String?
+
+  criadaPor String
+  /// Os declarados que geraram a regra APRENDIDA. ⚠ Navegável na tela: aprendizado invisível é o
+  /// que impede o contador de desligar a regra no dia em que algo entrar errado.
+  confirmacoesBase Json?
+  criadaEm         DateTime  @default(now())
+  revogadaEm       DateTime?
+  aplicacoes       Int       @default(0)
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, ativa])
+  @@index([portalClientId, cnpjFornecedor])
+  @@map("regras_contabilizacao")
 }
