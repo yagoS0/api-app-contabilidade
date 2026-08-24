@@ -1061,6 +1061,47 @@ um problema sem entregar a ação, com dois valores em conflito numa tela cujo a
 pago". ⚠ Nos três casos o "Baixar PDF" continua sendo a saída — ausência de linha nunca vira ausência
 de caminho para pagar.
 
+## ⚠⚠ A DARF DO LUCRO PRESUMIDO SE CHAMAVA "OUTRA" NA TELA DO CLIENTE (24/08/2026)
+
+> Dono: *"as guias do lucro presumido do PIS e COFINS não estão aparecendo no portal do cliente"*.
+
+**Eram DOIS defeitos empilhados, e só um é nosso.**
+
+**1 · O rótulo — defeito, consertado.** A coluna "Tipo" imprimia `texto(guia.tipo)` cru, e **a DARF
+consolidada do LP é gravada como `tipo: "OUTRA"`** — um documento só, com até quatro tributos
+dentro (PIS, COFINS, IRPJ, CSLL, e às vezes IRRF). O cliente do Presumido lia literalmente
+**"OUTRA"**, sem nenhuma menção a PIS ou COFINS.
+
+⚠ **O DADO SEMPRE CHEGOU.** `toGuideResponse` já mandava `extracted.composicao`; medido em
+produção, **9 de 9** DARFs de LP têm a composição gravada. Não faltava captura, coluna nem rota —
+faltava a LEITURA. Mesma classe do `codigosServicoNacional`: o campo viaja e ninguém o lê.
+
+Regra em **`features/guias/lib/rotuloGuia.js`**, **espelho** de `rotuloTipoGuia`
+(`apps/web/src/features/guides/lib/rotuloGuia.js`), **amarrado por teste**: o teste importa a
+função do outro portal e exige o mesmo veredito em 12 casos. Sem o amarre, "espelho" é intenção e
+não fato — e a divergência apareceria como o contador vendo "PIS · COFINS" e o cliente vendo
+"OUTRA" sobre a MESMA guia, que é o estado que este conserto desfaz. Entra na tabela
+"mudou lá, muda aqui".
+
+- ⚠ **SEM composição o rótulo continua "OUTRA", e é a resposta certa.** "OUTRA" é o que está
+  GRAVADO; inventar "PIS · COFINS" numa guia cuja composição não foi lida afirmaria ao cliente
+  quais impostos ele está pagando sem ninguém ter medido.
+- ⚠ **O ramo do PARCELAMENTO não é espelho, de propósito** — lá o rótulo é montado no front, aqui
+  o backend manda `parcelamentoLabel` pronto, e era assim antes. O que fica travado é a
+  **precedência**: parcelamento decide ANTES do tipo, senão a parcela (gravada como
+  `tipo: "SIMPLES"`, idêntica ao DAS) apareceria como o DAS.
+- O `title` da célula passou a levar o detalhamento por tributo **com valor** — sai da mesma
+  `composicao`, nenhum número novo é calculado. É o documento que o cliente vai pagar.
+
+**2 · A INVISIBILIDADE — não é defeito, é a regra.** Medido em produção: **8 das 9** DARFs de LP
+estão com **`liberadaCliente: false`**. A rota já responde com `apenasLiberadas: true` (o cliente
+só vê o que o contador liberou) e o download refaz a checagem. Enquanto o contador não clicar em
+"Liberar ao cliente", elas não aparecem — com ou sem este conserto. **Não afrouxe esse gate.**
+
+Medição (só leitura, zero chamada externa): `apps/api/scripts/diag-guias-lp-portal-cliente.mjs`.
+
+---
+
 ## ⚠⚠ A SITUAÇÃO FISCAL (`src/features/fiscal/`) — 21/08/2026
 
 > Dono: *"um símbolo de situação fiscal, onde mostraremos a tabela da situação fiscal ao cliente"*.

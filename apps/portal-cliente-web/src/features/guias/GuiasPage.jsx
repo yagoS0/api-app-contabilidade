@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api";
 import { AlertaErro, BotaoCopiar, Carregando, Chip, Vazio } from "../../components/ui";
 import { linhaDigitavelDaGuia } from "./lib/linhaDigitavelTela";
+import { detalheDaGuia, rotuloDaGuia } from "./lib/rotuloGuia";
 import { useCarregamento } from "../../lib/hooks";
 import { mensagemDeErro } from "../../lib/mensagens";
 import {
@@ -35,12 +36,6 @@ export const CHIP_POR_PAGAMENTO = {
 export function chipDaGuia(paymentStatus) {
   const chave = String(paymentStatus || "").toUpperCase();
   return CHIP_POR_PAGAMENTO[chave] || { status: null, rotulo: texto(paymentStatus) };
-}
-
-function rotuloDaGuia(guia) {
-  // `parcelamentoLabel` existe para que uma parcela não apareça como "DAS" solto.
-  if (guia.parcelamentoLabel) return guia.parcelamentoLabel;
-  return texto(guia.tipo);
 }
 
 /**
@@ -241,7 +236,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                   return (
                     <tr key={guia.guideId}>
                       <td>
-                        <span className="truncar" title={rotuloDaGuia(guia)}>
+                        <span className="truncar" title={detalheDaGuia(guia) || rotuloDaGuia(guia)}>
                           {rotuloDaGuia(guia)}
                         </span>
                         {guia.numeroParcela != null ? (
