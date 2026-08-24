@@ -805,3 +805,33 @@ const PONTOS_POR_POLEGADA = 72;
 export function cm(valor) {
   return (Number(valor) / CM_POR_POLEGADA) * PONTOS_POR_POLEGADA;
 }
+
+/**
+ * O título do bloco é uma CÉLULA DE TÍTULO ou a CAIXA DELIMITADORA do bloco?
+ *
+ * ⚠⚠ A NT USA A MESMA FORMA DE LINHA PARA AS DUAS COISAS, e só as coordenadas as separam. No §2.4.5
+ * o bloco aparece como uma linha com `alt/larg/esq/sup` igual às dos campos, **recuada à esquerda**
+ * (medido na p. 18: o título em `x0=64,3` e o campo em `x0=73,5`). Em quase todos os blocos essa
+ * linha descreve a primeira célula da faixa e os campos seguem à direita (`esq: 5,41`); em alguns
+ * ela descreve **onde o bloco começa** — e aí o `esq`/`sup` dela é o do PRIMEIRO CAMPO.
+ *
+ * ⚠⚠ ESCREVER O TÍTULO NO SEGUNDO CASO IMPRIME POR CIMA DO PRIMEIRO RÓTULO. Foi o defeito relatado
+ * pelo dono num DANFSe real: *"TRIBUTAÇÃO MUNICIPAL (ISSQN) Tipo de Tributação do ISSQN está bugado
+ * no pdf ficando um em cima do outro"*. Os dois textos saíam no MESMO `y` (409,0 pt), na MESMA
+ * célula — o título a 7 pt e o rótulo a 6,5 pt, sobrepostos.
+ *
+ * ⚠ **A transcrição estava FIEL** — a NT dá ao bloco e ao campo exatamente `0,63 · 5,09 · 0,30 ·
+ * 14,43`. O que faltava era a LEITURA da tabela, e ela já estava escrita neste projeto para
+ * CABEÇALHO, DADOS DA NFS-e e CANHOTO (`tituloImpresso: false`). O `issqn` satisfaz o mesmo
+ * critério e nunca foi classificado.
+ *
+ * ⚠ Por isso a regra é DERIVADA das coordenadas, e não uma quarta bandeira à mão: bloco novo cuja
+ * caixa coincida com a do primeiro campo já nasce sem a sobreposição, sem ninguém lembrar disso.
+ * A bandeira `tituloImpresso: false` continua valendo para o CABEÇALHO, cujo primeiro campo tem
+ * coordenada própria (`0,49 / 0,44`) e portanto não é pego por coincidência.
+ */
+export function tituloEhCaixaDelimitadora(bloco) {
+  const primeiro = bloco?.campos?.[0];
+  if (!primeiro) return false;
+  return bloco.esq === primeiro.esq && bloco.sup === primeiro.sup;
+}

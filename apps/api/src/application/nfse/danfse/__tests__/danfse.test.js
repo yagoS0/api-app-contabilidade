@@ -15,7 +15,13 @@ import pdfParse from "pdf-parse";
 import QRCode from "qrcode";
 import { gerarDanfse } from "../gerarDanfse.js";
 import { lerNfse } from "../danfseDados.js";
-import { truncarComReticencias, urlDeConsulta, cm } from "../danfseLeiaute.js";
+import {
+  truncarComReticencias,
+  urlDeConsulta,
+  cm,
+  BLOCOS,
+  tituloEhCaixaDelimitadora,
+} from "../danfseLeiaute.js";
 import { DESCRICOES } from "../danfseDescricoes.js";
 import { rotuloMunicipioIbge } from "../../lote/municipiosIbge.js";
 
@@ -775,5 +781,147 @@ describe("conformidade carrega a procedência da regra", () => {
     expect(conformidade.fonte.sha256).toBe(
       "1265f403aedcdc5f08b3049dcc18a15c2bc155f51afccf3d12690fef2f4fb0ff"
     );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// OS TRÊS DEFEITOS RELATADOS PELO DONO NUM DANFSe REAL (24/08/2026)
+//
+// > *"a descrição da nota deve aparecer completa, e esse texto: TRIBUTAÇÃO MUNICIPAL (ISSQN) Tipo
+// > de Tributação do ISSQN está bugado no pdf ficando um em cima do outro"* · *"Rio de Janeiro / -
+// > isso também tá errado, nesse caso deveria ser Rio de Janeiro/RJ"*
+//
+// Os três têm origem diferente e por isso ficam em blocos separados. Nenhum é "ajuste de layout":
+// o primeiro APAGAVA texto do documento, o segundo tornava dois campos ilegíveis, e o terceiro
+// fazia o traço de um campo AUSENTE (o país) ser lido como a UF faltando.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+const MUNICIPIOS_DE_TESTE = [["3304557", "Rio de Janeiro", "RJ"]];
+
+/** Troca a descrição do serviço na amostra versionada, preservando todo o resto do XML. */
+function comDescricao(texto) {
+  const trocado = xmlBase.replace(/<xDescServ>[\s\S]*?<\/xDescServ>/, `<xDescServ>${texto}</xDescServ>`);
+  if (trocado === xmlBase) throw new Error("A amostra deixou de ter <xDescServ> — conferir a fixture.");
+  return trocado;
+}
+
+const semEspacos = (valor) => String(valor).replace(/\s+/g, " ").trim();
+
+describe("descrição do serviço — a célula CRESCE em vez de cortar o texto", () => {
+  // ⚠ Uma descrição de 350 caracteres não é caso extremo: é uma descrição de serviço comum. A
+  // célula do §2.4.5 tem 0,63 cm = 17,9 pt e o conteúdo é desenhado a 8 pt do topo — sobram 8,9 pt,
+  // menos que UMA linha de 8 pt (~9,2 pt). Antes deste conserto o campo perdia o texto a partir da
+  // primeira linha, com o `ellipsis` silencioso.
+  const DESCRICAO_REAL =
+    "Servico de telemetria e monitoramento remoto de ativos, incluindo instalacao de equipamentos, " +
+    "configuracao de gateways, manutencao preventiva e corretiva, suporte tecnico especializado, " +
+    "emissao de relatorios gerenciais periodicos e treinamento da equipe operacional do contratante.";
+
+  it("imprime a descrição INTEIRA, e não a primeira linha com reticências", async () => {
+    const { pdf } = await gerarDanfse({ xml: comDescricao(DESCRICAO_REAL) });
+    expect(semEspacos(await textoDoPdf(pdf))).toContain(semEspacos(DESCRICAO_REAL));
+  });
+
+  it("declara o crescimento no relatório — quem lê o PDF precisa saber que a célula não é a do §2.4.5", async () => {
+    const { conformidade } = await gerarDanfse({ xml: comDescricao(DESCRICAO_REAL) });
+    const crescido = conformidade.camposCrescidos.find((c) => c.campo === "xDescServ");
+    expect(crescido).toBeDefined();
+    expect(crescido.paraCm).toBeGreaterThan(crescido.deCm);
+    expect(crescido.truncado).toBe(false);
+  });
+
+  // ⚠⚠ ESTA É A TRAVA MAIS IMPORTANTE DO BLOCO. §2.2: *"deve ser impresso, obrigatoriamente, em uma
+  // única página"*. Crescer a descrição só é lícito porque a altura sai da FOLGA do bloco elástico
+  // (Informações Complementares), que encolhe na mesma medida. Sem o teto, a descrição empurraria o
+  // canhoto para fora da folha — e o teste de página única que já existe não cobre o caso longo.
+  it.each([false, true])(
+    "continua em UMA página com a descrição além do limite do §2.4.5 (canhoto=%s)",
+    async (incluirCanhoto) => {
+      const gigante = "abcdefghij ".repeat(400); // 4.400 chars, muito além do `max: 1300`
+      const { pdf, conformidade } = await gerarDanfse({ xml: comDescricao(gigante), incluirCanhoto });
+      const { numpages, text } = await pdfParse(pdf);
+      expect(numpages).toBe(1);
+      // O que o §2.1 (`truncaEm`) deixou passar tem de aparecer INTEIRO: o corte é da regra de
+      // caracteres, nunca da geometria da célula.
+      expect(semEspacos(text)).toContain(semEspacos(gigante.slice(0, 1297)));
+      expect(conformidade.camposCrescidos.find((c) => c.campo === "xDescServ").truncado).toBe(false);
+    }
+  );
+
+  it("descrição curta quase não cresce — o crescimento é o necessário, não um bloco fixo", async () => {
+    const { conformidade } = await gerarDanfse({ xml: comDescricao("Servicos de consultoria.") });
+    const crescido = conformidade.camposCrescidos.find((c) => c.campo === "xDescServ");
+    expect(crescido.paraCm).toBeLessThan(1);
+  });
+});
+
+describe("título do bloco × rótulo do primeiro campo — a sobreposição do ISSQN", () => {
+  // ⚠⚠ A NT dá ao bloco TRIBUTAÇÃO MUNICIPAL (ISSQN) e ao campo TIPO DE TRIBUTAÇÃO DO ISSQN
+  // exatamente as mesmas coordenadas (0,63 · 5,09 · 0,30 · 14,43 — p. 18 do PDF versionado). A
+  // transcrição está FIEL; o que faltava era a LEITURA: naquela linha o §2.4.5 descreve a CAIXA
+  // DELIMITADORA do bloco, não uma célula de título. O critério já existia neste projeto para
+  // CABEÇALHO, DADOS DA NFS-e e CANHOTO.
+  // ⚠⚠ A ASSERÇÃO É A AUSÊNCIA DO TEXTO, E NÃO UM `not.toMatch` DE VIZINHANÇA. Experimento
+  // executado: com a regra desligada, um `not.toMatch(/MUNICIPAL \(ISSQN\)\s*Tipo de Tributa/)`
+  // continuava VERDE — o `pdf-parse` achata a página em linhas e não delata dois textos pintados no
+  // MESMO `y`. Teste que não pode falhar é pior que teste nenhum: ele afirmaria que a sobreposição
+  // foi consertada em qualquer estado do código.
+  it("o título não é escrito — a célula pertence ao primeiro campo", async () => {
+    const texto = await textoDoPdf((await gerarDanfse({ xml: xmlBase })).pdf);
+    // ⚠ Comparado contra o `titulo` DO LEIAUTE, nunca contra um literal reescrito aqui: um título
+    // reescrito à mão passa a valer por si e o teste deixa de falar do bloco de verdade.
+    expect(texto).not.toContain(BLOCOS.find((b) => b.id === "issqn").titulo);
+  });
+
+  it("o rótulo do campo continua impresso — o que some é o título, nunca o rótulo", async () => {
+    const texto = await textoDoPdf((await gerarDanfse({ xml: xmlBase })).pdf);
+    expect(texto).toMatch(/Tipo de Tributação do ISSQN/);
+  });
+
+  it("declara no relatório qual título deixou de ser impresso, e por qual nota", async () => {
+    const { conformidade } = await gerarDanfse({ xml: xmlBase });
+    expect(conformidade.titulosNaoImpressos).toEqual([
+      { bloco: "issqn", titulo: "TRIBUTAÇÃO MUNICIPAL (ISSQN)", notaDaNt: 4 },
+    ]);
+  });
+
+  // ⚠ A regra é DERIVADA das coordenadas, e não uma bandeira à mão — é isso que impede um bloco
+  // novo de reintroduzir a sobreposição sem ninguém lembrar da armadilha.
+  it("a regra é geométrica: nenhum bloco escreve título onde o primeiro campo já escreve rótulo", () => {
+    const colidem = BLOCOS.filter(
+      (b) =>
+        b.tituloImpresso !== false &&
+        !tituloEhCaixaDelimitadora(b) &&
+        b.campos &&
+        b.campos[0] &&
+        b.esq === b.campos[0].esq &&
+        b.sup === b.campos[0].sup
+    ).map((b) => b.id);
+    expect(colidem).toEqual([]);
+  });
+});
+
+describe("MUNICÍPIO / SIGLA UF / PAÍS — a UF vem do código do IBGE, nunca do `xLoc*`", () => {
+  // ⚠ O rótulo do §2.4.5 promete três componentes e a `obs` é explícita: *"Concatenar município, UF
+  // e País"*. Montávamos `xLocIncid + cPaisResult`, e `xLocIncid` traz SÓ O NOME — o resultado saía
+  // "Rio de Janeiro / -", com o traço do PAÍS ausente parecendo a UF faltando.
+  it("resolve a UF pelo `cLocIncid` / `cLocPrestacao`", () => {
+    const { valores } = lerNfse(xmlBase, { municipios: MUNICIPIOS_DE_TESTE });
+    expect(valores.locIncid).toMatch(/^Rio de Janeiro \/ RJ \//);
+    expect(valores.locPrest).toMatch(/^Rio de Janeiro \/ RJ \//);
+  });
+
+  // ⚠ O traço final é o PAÍS, e a nota 12 manda marcá-lo. Ele não é a UF faltando.
+  it("o país ausente continua saindo como traço — nota 12", () => {
+    const { valores } = lerNfse(xmlBase, { municipios: MUNICIPIOS_DE_TESTE });
+    expect(valores.locIncid.split(" / ")).toHaveLength(3);
+    expect(valores.locIncid.split(" / ")[2]).toBe("-");
+  });
+
+  // ⚠ Sem a lista, ou com código fora dela, cai no nome cru: o nome sozinho é melhor que nada e
+  // nunca é uma UF inventada. Mesma disciplina do `rotuloMunicipioIbge` (7 dígitos, sem padding).
+  it("sem a lista do IBGE cai no nome cru, nunca numa UF inventada", () => {
+    const { valores } = lerNfse(xmlBase, { municipios: null });
+    expect(valores.locIncid).toBe("Rio de Janeiro / -");
   });
 });

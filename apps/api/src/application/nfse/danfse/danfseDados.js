@@ -469,14 +469,32 @@ export function lerNfse(xml, { municipios = null } = {}) {
     ),
     // §2.4.5: "n.nnnn.nn.nn".
     cNBS: aplicarMascaraDeDigitos(t(`${DPS}/serv/cServ/cNBS`), "n.nnnn.nn.nn"),
-    locPrest: juntar([t("xLocPrestacao"), t(`${DPS}/serv/locPrest/cPaisPrestacao`)], " / ", 2),
+    // ⚠⚠ A SIGLA UF NUNCA ENTRAVA, e o rótulo do campo a promete: "Local da Prestação / **Sigla
+    // UF** / País". A `obs` do §2.4.5 é explícita — *"Concatenar município, UF e País"*. Montávamos
+    // `xLocPrestacao + cPais`, e `xLocPrestacao` traz **só o nome do município**: o resultado saía
+    // "Rio de Janeiro / -", com o traço do PAÍS ausente sendo lido como se fosse a UF faltando.
+    //
+    // ⚠ A UF sai do código IBGE (`cLocPrestacao`), pela tabela — o mesmo caminho do município das
+    // pessoas. Sem lista, ou código fora dela, cai no `xLocPrestacao` cru: o nome sozinho é melhor
+    // que nada e nunca é uma UF inventada.
+    locPrest: juntar(
+      [rotuloMunicipioIbge(municipios, t(`${DPS}/serv/locPrest/cLocPrestacao`)) || t("xLocPrestacao"),
+       t(`${DPS}/serv/locPrest/cPaisPrestacao`)],
+      " / ", 2,
+    ),
     // SE xTribMun <> "" ENTAO Descrição Municipal SENAO Descrição Nacional (§2.4.5).
     xTrib: t("xTribMun") || t("xTribNac"),
     xDescServ: t(`${DPS}/serv/cServ/xDescServ`),
 
     // ── ISSQN ──
     tribISSQN: t(`${DPS}/valores/trib/tribMun/tribISSQN`),
-    locIncid: juntar([t("xLocIncid"), t(`${DPS}/valores/trib/tribMun/cPaisResult`)], " / ", 2),
+    // ⚠ Mesma correção do `locPrest`: o rótulo promete "Município / **Sigla UF** / País de
+    // Incidência do ISSQN" e a UF vem do `cLocIncid` pela tabela do IBGE, não do `xLocIncid`.
+    locIncid: juntar(
+      [rotuloMunicipioIbge(municipios, t("cLocIncid")) || t("xLocIncid"),
+       t(`${DPS}/valores/trib/tribMun/cPaisResult`)],
+      " / ", 2,
+    ),
     regEspTrib: t(`${DPS}/prest/regTrib/regEspTrib`),
     tpImunidade: t(`${DPS}/valores/trib/tribMun/tpImunidade`),
     tpSusp: t(`${DPS}/valores/trib/tribMun/exigSusp/tpSusp`),

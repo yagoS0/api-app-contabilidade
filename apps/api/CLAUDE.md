@@ -1513,6 +1513,77 @@ Medição: `scripts/diag-danfse-prestador.mjs` · `diag-danfse-campos-disponivei
    estouro é VERTICAL. Passar de 8 pt exige **crescer as células**, o que desloca todo o `sup`
    abaixo — rework de geometria, e a **disposição dos campos continua obrigatória** (§2.2.4, Anexo I).
 
+#### ⚠⚠ OS TRÊS DEFEITOS DE 24/08/2026 — dois eram de LEITURA da NT, um era regressão minha
+
+Relatados pelo dono sobre um DANFSe real: *"a descrição da nota deve aparecer completa, e esse
+texto: TRIBUTAÇÃO MUNICIPAL (ISSQN) Tipo de Tributação do ISSQN está bugado no pdf ficando um em
+cima do outro"* · *"Rio de Janeiro / - isso também tá errado, nesse caso deveria ser Rio de
+Janeiro/RJ"*.
+
+**1 · A descrição do serviço saía CORTADA — a célula não cabia nem UMA linha.**
+`elastico: true` só ligava `multilinha`; a célula continuava com `alt: 0,63 cm = 17,9 pt`. O
+conteúdo é desenhado a 8 pt do topo e `escreverConteudo` passa `height: h − (topo − y) − 1` =
+**8,9 pt** com `ellipsis: true` — e uma linha de 8 pt ocupa **~9,2 pt**.
+
+⚠ **O corte de UMA LINHA para NENHUMA é regressão do corpo da fonte** (`conteudoPt: 7 → 8`, commit
+`2ee4749c`): a 7 pt a linha ocupava ~8,05 pt e ainda cabia. O corte do texto **longo**, esse, é
+anterior e valia para qualquer corpo — sempre houve uma linha só.
+
+Hoje `xDescServ` **cresce**, e os campos abaixo dele são deslocados — é o mecanismo que o §2.3 já
+descreve para o bloco condensado, na direção contrária. ⚠ A altura sai da **folga do bloco elástico**
+(Informações Complementares), que já encolhe sozinho porque o `alt` dele é calculado contra o
+`canhoto.sup`, que é constante. Por isso o crescimento é **limitado** a essa folga: §2.2 exige *"uma
+única página"*, e §2.1 autoriza o corte com reticências *"quando o campo não suportar a totalidade"*.
+Primeiro se usa o espaço; só o excedente é truncado, e o relatório o **declara** (`camposCrescidos`,
+com `truncado`).
+
+⚠ **O canhoto NÃO acompanha o crescimento** — ele é o limite contra o qual a folga foi medida, e
+empurrá-lo o jogaria para fora do A4 (sobram 0,93 cm abaixo dele). Por isso o crescimento usa um
+acumulador **próprio**, separado do `deslocamento` das supressões.
+
+Medido: descrição de 4.400 chars ⇒ célula de 0,63 → **3,25 cm**, **uma página**, com os 1.297
+caracteres que o `truncaEm` deixa passar impressos inteiros e as reticências no fim.
+
+**2 · O título do bloco ISSQN saía POR CIMA do rótulo do primeiro campo.**
+⚠ **A transcrição estava FIEL** — a NT dá ao bloco `TRIBUTAÇÃO MUNICIPAL (ISSQN)` e ao campo
+`TIPO DE TRIBUTAÇÃO DO ISSQN` exatamente as mesmas coordenadas: `0,63 · 5,09 · 0,30 · 14,43`
+(p. 18 do PDF versionado; conferido também pela posição das palavras — o título em `x0 = 64,3` e o
+campo em `x0 = 73,5`, ou seja o campo é **recuado sob** o bloco). Os dois textos saíam no mesmo `y`
+(409,0 pt), na mesma célula, a 7 pt e a 6,5 pt.
+
+⚠⚠ **A NT USA A MESMA FORMA DE LINHA PARA DUAS COISAS**, e só as coordenadas as separam: na maioria
+dos blocos aquela linha é a **primeira célula da faixa** (e os campos seguem em `esq: 5,41`); em
+alguns ela é a **caixa delimitadora** do bloco, e aí o `esq`/`sup` dela é o do PRIMEIRO CAMPO. O
+critério já estava escrito neste projeto para CABEÇALHO, DADOS DA NFS-e e CANHOTO
+(`tituloImpresso: false`) — **o `issqn` satisfazia o mesmo critério e nunca foi classificado**.
+
+Hoje a regra é **derivada**, em `tituloEhCaixaDelimitadora` (`danfseLeiaute.js`), e não uma quarta
+bandeira à mão: bloco novo cuja caixa coincida com a do primeiro campo já nasce sem a sobreposição.
+⚠ A bandeira continua valendo para o CABEÇALHO, cujo primeiro campo tem coordenada própria
+(`0,49 / 0,44`) e portanto não é pego por coincidência. Medido: **só o `issqn` colidia**.
+⚠ Junto caiu o segundo estrago da mesma linha: `sombreado: temTitulo` pintava de cinza 5% a célula
+do `tribISSQN`, contra o §2.2.3.
+⚠ **O relatório sai do que a PÁGINA fez** (`!temTitulo`), nunca de uma segunda avaliação da mesma
+condição — escrito à parte, ele dizia "título suprimido" com o título sendo impresso, e o teste de
+conformidade passava sobre um PDF errado.
+
+**3 · `Município / Sigla UF / País` imprimia `Rio de Janeiro / -` — a UF nunca entrava.**
+O rótulo do §2.4.5 promete **três** componentes e a `obs` é explícita: *"Concatenar município, UF e
+País"*. Montávamos `xLocIncid + cPaisResult` com `partes: 2`, e `xLocIncid` traz **só o nome do
+município** — o traço do **país** ausente (nota 12) era lido como a UF faltando. Hoje a UF sai do
+**código IBGE** (`cLocIncid` / `cLocPrestacao`) pela tabela, o mesmo caminho do município das
+pessoas: `Rio de Janeiro / RJ / -`.
+⚠ Sem a lista, ou com código fora dela, cai no `xLoc*` cru — o nome sozinho é melhor que nada e
+nunca é uma UF inventada.
+
+Regressão: os três blocos novos em `danfse/__tests__/danfse.test.js` (126 no arquivo). Experimentos
+executados: desligando a regra geométrica, **2 vermelhos**; desligando o crescimento da descrição,
+**5**.
+
+⚠ **O teto de fonte do item 3 abaixo NÃO caiu com isto.** O que cresce é o campo **elástico**; a
+célula de `0,63 cm` dos demais campos continua sendo o limite, e passar de 8 pt continua exigindo
+rework de geometria com a disposição obrigatória do §2.2.4.
+
 #### ⚠⚠ O QUE A NT **NÃO** PERMITE — medido contra o PDF versionado, para não ser repedido
 
 Um mockup de layout novo (24/08/2026) pediu seis coisas que a norma recusa:

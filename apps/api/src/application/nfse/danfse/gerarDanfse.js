@@ -28,6 +28,7 @@ import {
   cm,
   urlDeConsulta,
   linhasDoBloco,
+  tituloEhCaixaDelimitadora,
 } from "./danfseLeiaute.js";
 import { lerNfse, valorParaImpressao } from "./danfseDados.js";
 import { municipiosIbgeOuNulo } from "../lote/municipiosIbge.js";
@@ -514,6 +515,8 @@ export async function gerarDanfse(params = {}) {
     // Linhas retiradas pela nota 5 do §2.4.5 — supressão permitida, e por isso ela sai NOMEADA:
     // "não imprimiu" e "não havia" precisam continuar distinguíveis.
     linhasSuprimidas: [],
+    titulosNaoImpressos: [],
+    camposCrescidos: [],
     paginas: null,
   };
 
@@ -549,6 +552,39 @@ export async function gerarDanfse(params = {}) {
   // seguintes" são deslocados; a altura liberada vai para Descrição do Serviço e/ou Informações
   // Complementares. O acumulador abaixo é exatamente isso.
   let deslocamento = 0;
+
+  // ⚠⚠ A DESCRIÇÃO DO SERVIÇO SAÍA CORTADA, e a célula dela não cabia NEM UMA LINHA. `xDescServ`
+  // tem `alt: 0,63 cm = 17,9 pt`; o conteúdo é desenhado a 8 pt do topo e `escreverConteudo` passa
+  // `height: h - (topo - y) - 1` = **8,9 pt** com `ellipsis: true` — e uma linha de 8 pt ocupa
+  // ~9,2 pt. Ou seja: `elastico: true` só ligava `multilinha`, a **célula continuava com uma linha
+  // de altura**, e a segunda linha em diante nunca teve para onde ir. Foi o defeito relatado pelo
+  // dono: *"a descrição da nota deve aparecer completa"*.
+  //
+  // ⚠ **O corte de UMA LINHA para NENHUMA é regressão do corpo da fonte** (`conteudoPt: 7 → 8`, no
+  // commit que reformatou o DANFSe): a 7 pt a linha ocupa ~8,05 pt e ainda cabia nos 8,9. O corte
+  // do texto LONGO, esse, é anterior e vale para qualquer corpo.
+  //
+  // O conserto é o que o §2.3 já descreve para o bloco condensado, na direção contrária: a célula
+  // CRESCE e "os campos seguintes são deslocados". A altura sai da FOLGA do bloco elástico
+  // (Informações Complementares), que já encolhe sozinho — o `alt` dele é calculado contra o
+  // `canhoto.sup`, que é constante. ⚠ Por isso o crescimento é **limitado** a essa folga: §2.2 exige
+  // *"uma única página"*, e §2.1 autoriza o corte com reticências quando o campo não suportar a
+  // totalidade. Primeiro se usa o espaço disponível; só o que exceder é truncado.
+  const campoElastico = BLOCOS.find((b) => b.id === "infoComplementares")?.campos?.find(
+    (c) => c.id === "infoComplementares"
+  );
+  const canhotoDoLimite = BLOCOS.find((b) => b.id === "canhoto");
+  const limiteDoElastico = incluirCanhoto
+    ? canhotoDoLimite.sup
+    : canhotoDoLimite.sup + canhotoDoLimite.alt;
+  const folgaDoElastico = campoElastico
+    ? Math.max(0, limiteDoElastico - campoElastico.sup - 0.05 - campoElastico.alt)
+    : 0;
+
+  // ⚠ Acumulador PRÓPRIO, separado do `deslocamento` das supressões, e o motivo é o CANHOTO: ele
+  // fica no rodapé e **não** acompanha o crescimento (ver o `supDoBloco` abaixo). Somar os dois num
+  // acumulador só empurraria o canhoto para fora da folha de A4 — sobram 0,93 cm abaixo dele.
+  let crescimento = 0;
 
   const condensavel = {
     tomador: !dados.meta.tomadorIdentificado ? TEXTOS.tomadorNaoIdentificado : null,
@@ -586,9 +622,24 @@ export async function gerarDanfse(params = {}) {
     // O DANFSe oficial confirma: não há um "DADOS DA NFS-e" nem um "CANHOTO" impressos nele.
     // A caixa é desenhada nos dois casos (§2.2.3 pede a linha divisória de 0,5 pt); o que muda é o
     // sombreamento e o texto, que só existem onde a linha do §2.4.5 É uma célula de título.
-    const temTitulo = bloco.tituloImpresso !== false;
+    //
+    // ⚠⚠ E A COINCIDÊNCIA DE COORDENADAS PASSOU A SER LIDA, em vez de anotada bloco a bloco — ver
+    // `tituloEhCaixaDelimitadora`. O `issqn` satisfazia exatamente este critério (bloco e
+    // `tribISSQN` os dois em `esq 0,30 / sup 14,43`) e nunca tinha sido classificado: o título e o
+    // rótulo saíam no MESMO `y`, um por cima do outro.
+    const ehCaixaDelimitadora = tituloEhCaixaDelimitadora(bloco);
+    const temTitulo = bloco.tituloImpresso !== false && !ehCaixaDelimitadora;
+    // ⚠ O relatório sai do que a PÁGINA fez (`!temTitulo`), nunca de uma segunda avaliação da
+    // mesma condição — experimento executado: escrito à parte, ele continuava dizendo "título
+    // suprimido" com o título sendo impresso, e o teste de conformidade passava sobre um PDF errado.
+    if (!temTitulo && bloco.tituloImpresso !== false) {
+      conformidade.titulosNaoImpressos.push({ bloco: bloco.id, titulo: bloco.titulo, notaDaNt: bloco.nota });
+    }
+    // ⚠ O canhoto fica no RODAPÉ e não acompanha o crescimento da descrição — ele é o limite contra
+    // o qual a folga foi calculada; empurrá-lo o jogaria para fora da página.
+    const crescimentoDoBloco = bloco.id === "canhoto" ? 0 : crescimento;
     const tituloCaixa = celula(doc, {
-      esq: bloco.esq, sup: bloco.sup + deslocamento, larg: bloco.larg, alt: bloco.alt,
+      esq: bloco.esq, sup: bloco.sup + deslocamento + crescimentoDoBloco, larg: bloco.larg, alt: bloco.alt,
       sombreado: temTitulo,
     });
     if (temTitulo) {
@@ -624,14 +675,45 @@ export async function gerarDanfse(params = {}) {
       for (const campo of linha.campos) {
         if (campo.id === "quadroQrCode" || campo.id === "quadroComplementoQrCode") continue;
 
-        const sup = campo.sup + deslocamento + deslocamentoNoBloco;
+        // ⚠ Lido A CADA CAMPO, não uma vez por bloco: `xDescServ` cresce no meio do bloco
+        // SERVIÇO, e os campos abaixo dele — no mesmo bloco — precisam do valor já atualizado.
+        const crescimentoAqui = bloco.id === "canhoto" ? 0 : crescimento;
+        const sup = campo.sup + deslocamento + deslocamentoNoBloco + crescimentoAqui;
         let alt = campo.alt;
+        const valorImpresso = campo.semFonteNoXml ? null : valorParaImpressao(campo, dados.valores);
+
         // O bloco elástico (§2.3 e §2.5.3): Informações Complementares absorve tudo que sobra até o
         // canhoto — ou até onde o canhoto terminaria, quando ele é suprimido (§2.3.3).
         if (campo.id === "infoComplementares") {
-          const canhoto = BLOCOS.find((b) => b.id === "canhoto");
-          const limite = incluirCanhoto ? canhoto.sup : canhoto.sup + canhoto.alt;
-          alt = Math.max(campo.alt, limite - sup - 0.05);
+          alt = Math.max(campo.alt, limiteDoElastico - sup - 0.05);
+        } else if (campo.elastico === true && valorImpresso && !valorImpresso.ausente) {
+          // ⚠⚠ O OUTRO CAMPO ELÁSTICO — a Descrição do Serviço — **CRESCE**, em vez de só quebrar
+          // linha dentro de uma célula de uma linha só. É o conserto do texto cortado; o porquê
+          // está no comentário de `folgaDoElastico`, acima.
+          const topoDoTexto = campo.semLabel ? 2 : bloco.labelsEmCaixaAlta7pt ? 9 : 8;
+          doc.font(fontes.conteudo).fontSize(TIPOGRAFIA.conteudoPt);
+          const alturaDoTexto = doc.heightOfString(String(valorImpresso.texto), {
+            width: cm(campo.larg) - 4,
+            lineBreak: true,
+          });
+          // As mesmas três folgas de `escreverConteudo`: o topo do texto, a altura dele, e 1 pt até
+          // a linha de baixo. Medir com outra conta faria a célula e o texto discordarem.
+          const necessaria = (topoDoTexto + alturaDoTexto + 1) / cm(1);
+          // ⚠ O TETO É A FOLGA QUE AINDA EXISTE, e não a folga original: com dois campos elásticos
+          // crescendo, o segundo só pode usar o que o primeiro não usou.
+          const teto = campo.alt + Math.max(0, folgaDoElastico - crescimento);
+          alt = Math.min(Math.max(campo.alt, necessaria), teto);
+          if (alt > campo.alt || necessaria > teto) {
+            conformidade.camposCrescidos.push({
+              campo: campo.id,
+              deCm: Number(campo.alt.toFixed(2)),
+              paraCm: Number(alt.toFixed(2)),
+              // ⚠ `truncado` é o que a NT §2.1 autoriza — e dizê-lo é o que impede alguém concluir,
+              // do PDF, que a descrição da nota terminava ali.
+              truncado: necessaria > teto,
+            });
+            crescimento += alt - campo.alt;
+          }
         }
 
         const caixa = celula(doc, {
@@ -650,7 +732,7 @@ export async function gerarDanfse(params = {}) {
 
         if (campo.semFonteNoXml) continue; // canhoto: campos de preenchimento manual
 
-        const { texto, ausente, descricaoPendente, motivo } = valorParaImpressao(campo, dados.valores);
+        const { texto, ausente, descricaoPendente, motivo } = valorImpresso;
         if (ausente) conformidade.camposAusentes.push(campo.id);
         if (descricaoPendente) conformidade.descricoesPendentes.push({ campo: campo.id, tag: campo.tag, motivo });
         if (CAMPOS_SEM_FONTE_NO_LEIAUTE_1_01.includes(campo.id) && ausente) {
