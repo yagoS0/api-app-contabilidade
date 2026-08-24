@@ -26,6 +26,7 @@ import { safeLogError } from "../../lib/safeLogError.js";
 import { createPortalInvoicesRouter } from "../portalInvoices.js";
 import { createPortalSyncRouter } from "../portalSync.js";
 import { createAccountingEntriesRouter } from "./accountingEntries.js";
+import { createConferenciaRouter } from "./conferencia.js";
 import { createNotasRouter } from "./notas.js";
 import { createApuracaoV2Router } from "./apuracaoV2.js";
 import { createPlanejamentoRouter } from "./planejamento.js";
@@ -5028,6 +5029,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   const accountingEntriesRouter = createAccountingEntriesRouter({ log });
   router.use("/companies/:companyId", accountingEntriesRouter);
+
+  // A fila de conferencia de lancamentos (a nota vira despesa, o extrato vira o pagamento dela).
+  // ⚠ Montado DEPOIS do de lancamentos, e isso nao e acaso: os dois usam `/companies/:companyId`,
+  // e nenhuma rota deste colide com as de la (`/conferencia*` nao existe naquele arquivo).
+  const conferenciaRouter = createConferenciaRouter({ log });
+  router.use("/companies/:companyId", conferenciaRouter);
 
   // Q12.A.3: módulo Notas Fiscais (procurações, competências, pendências)
   const notasRouter = createNotasRouter({ log });

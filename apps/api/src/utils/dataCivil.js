@@ -44,3 +44,23 @@ export function dataCivilBR(d) {
   const [ano, mes, dia] = iso.split("-");
   return `${dia}/${mes}/${ano}`;
 }
+
+/**
+ * O INVERSO de `dataCivilISO`: `"2026-05-12"` → `2026-05-12T00:00:00.000Z`.
+ *
+ * ⚠ ESTRITO DE PROPÓSITO. Só aceita `AAAA-MM-DD`; qualquer outra coisa devolve `null`. `new Date`
+ * aceita muito mais do que deveria — `new Date("12/05/2026")` lê 12 de MAIO no formato americano,
+ * e `new Date("2026-5-12")` usa o fuso LOCAL em vez de UTC, que é exatamente o deslize de um dia
+ * documentado no cabeçalho deste arquivo, agora na direção da ESCRITA.
+ *
+ * ⚠ E confere se a data EXISTE: `"2026-02-31"` volta `null`, não 3 de março. O `Date` normaliza em
+ * silêncio, e uma data normalizada por baixo do contador é dado fiscal inventado.
+ */
+export function dataCivilDe(iso) {
+  const s = String(iso ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const dt = new Date(`${s}T00:00:00.000Z`);
+  if (Number.isNaN(dt.getTime())) return null;
+  // ⚠ A ida e volta é o que pega o dia que não existe.
+  return dt.toISOString().slice(0, 10) === s ? dt : null;
+}

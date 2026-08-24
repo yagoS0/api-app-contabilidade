@@ -83,7 +83,9 @@ router.get('/', requireAuth, requireRole(['FIRM_ADMIN']), async (req, res) => {
   (página do SERPRO), não fixo.
 
 > **Blocos com `CLAUDE.md` próprio** (ler antes de mexer; atualizar ao terminar):
-> `src/workers/`, `src/application/accounting/`, `src/application/guides/`.
+> `src/workers/`, `src/application/accounting/`, `src/application/guides/`,
+> **`src/application/declarados/`** (conferência de lançamentos — a nota vira despesa, o extrato
+> vira o pagamento dela; ⚠⚠ a invariante do caixa mora lá).
 > **Fechamento contábil do mês (Q17)** ≠ `estado` da apuração: campos
 > `CompanyMonthlyCircular.fechadoContabilEm/Por`; endpoints `.../fechamento-contabil/...`;
 > gate por lançamento (em branco / D≠C). Guia `status="VAZIO"` = ausência confirmada (amarelo).

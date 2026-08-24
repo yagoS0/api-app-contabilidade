@@ -57,3 +57,58 @@ describe("dataCivil — o dia do fato, não o instante", () => {
     expect(dataCivilISO(null)).toBe("");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// A DIREÇÃO DA ESCRITA — `dataCivilDe`
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//
+// ⚠ O defeito documentado acima é de LEITURA (o dia saía errado). Este bloco protege a direção
+// oposta: a data que o contador DIGITA virando a data que o lançamento GUARDA. Aqui o erro de um
+// dia não sai num CSV — ele grava a despesa no mês errado.
+
+describe("dataCivilDe", () => {
+  const { dataCivilDe, dataCivilISO } = require("../dataCivil");
+
+  it("lê o dia como meia-noite UTC, do mesmo jeito que o resto da base grava", () => {
+    expect(dataCivilDe("2026-05-12").toISOString()).toBe("2026-05-12T00:00:00.000Z");
+  });
+
+  it("⚠ é a volta exata de `dataCivilISO`", () => {
+    for (const iso of ["2026-01-01", "2026-12-31", "2024-02-29"]) {
+      expect(dataCivilISO(dataCivilDe(iso))).toBe(iso);
+    }
+  });
+
+  it("⚠⚠ recusa o formato americano — `new Date` o aceitaria e trocaria dia por mês", () => {
+    expect(dataCivilDe("12/05/2026")).toBeNull();
+    expect(dataCivilDe("05/12/2026")).toBeNull();
+  });
+
+  it("⚠⚠ recusa mês/dia sem zero à esquerda — `new Date('2026-5-12')` usa o fuso LOCAL", () => {
+    expect(dataCivilDe("2026-5-12")).toBeNull();
+    expect(dataCivilDe("2026-05-2")).toBeNull();
+  });
+
+  it("⚠⚠ recusa dia que NÃO EXISTE — o `Date` normalizaria em silêncio", () => {
+    // `new Date("2026-02-31T00:00:00Z")` vira 3 de março. Data fiscal inventada por baixo de quem
+    // digitou é exatamente o que este projeto não faz.
+    expect(dataCivilDe("2026-02-31")).toBeNull();
+    expect(dataCivilDe("2026-13-01")).toBeNull();
+    expect(dataCivilDe("2026-04-31")).toBeNull();
+  });
+
+  it("⚠ ano bissexto de verdade passa; falso não", () => {
+    expect(dataCivilDe("2024-02-29")).not.toBeNull();
+    expect(dataCivilDe("2026-02-29")).toBeNull();
+  });
+
+  it("timestamp completo NÃO passa — este campo é um DIA, não um instante", () => {
+    expect(dataCivilDe("2026-05-12T13:45:00.000Z")).toBeNull();
+  });
+
+  it("entrada torta devolve null", () => {
+    for (const v of [null, undefined, "", "   ", "ontem", 20260512, {}]) {
+      expect(dataCivilDe(v)).toBeNull();
+    }
+  });
+});
