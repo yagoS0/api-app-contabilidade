@@ -458,6 +458,17 @@ export function CompanyGuidesTable({
   // Estado vazio: leva à aba Apuração quando a competência ainda não foi apurada. Sem a prop o
   // texto continua aparecendo — o que se perde é só o atalho.
   onIrParaApuracao,
+  // ⚠⚠ `onRefresh` ERA LIDO SEM SER DECLARADO — `ReferenceError` esperando um clique.
+  //
+  // Achado por varredura de `no-undef` em 25/08/2026 (a mesma que pegou o `secao` da Apuração, que
+  // caiu em produção). Referenciar identificador não declarado dentro de um `if` **lança** — não é
+  // `undefined`, é erro. Então "Marcar vazio", desfazer o vazio e anexar guia ao parcelamento
+  // derrubavam a aba Guias no `ErrorBoundary`, nas linhas 477 e 754.
+  //
+  // ⚠ Vivo desde `e1ec3a8e` (09/08/2026). Nenhum chamador passa a prop hoje, então declará-la com
+  // `null` mantém o comportamento pretendido (não recarrega nada) e tira o erro. Quem quiser a
+  // recarga só precisa passá-la — que é o que o código já esperava poder fazer.
+  onRefresh = null,
 }) {
   // R4 — "+ Subir Guia → PARCELAMENTO": anexar uma guia a um contrato que JÁ EXISTE.
   //

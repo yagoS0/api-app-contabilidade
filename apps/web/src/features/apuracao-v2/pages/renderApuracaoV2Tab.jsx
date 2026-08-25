@@ -173,15 +173,26 @@ export function ApuracaoV2Tab({
     }
   }
 
+  // ⚠⚠ ESTES DOIS EFEITOS AINDA LIAM `secao`, QUE DEIXOU DE EXISTIR — e o resultado foi
+  // `ReferenceError: secao is not defined` **em produção**, com a aba Apuração inteira caindo no
+  // ErrorBoundary. (Relatado pelo dono em 25/08/2026, logo depois do deploy.)
+  //
+  // ⚠ O terceiro nível de abas foi removido: não há mais "seção", a aba SEMPRE mostra a apuração.
+  // Então a condição não tem mais o que decidir — some, e o efeito passa a rodar sempre.
+  //
+  // ⚠⚠ POR QUE NADA PEGOU ISSO: `ReferenceError` é erro de RUNTIME. O `npm run build` compila sem
+  // reclamar (o bundler não resolve identificadores livres) e o `npm test` não monta esta aba. É
+  // exatamente a lacuna que o `apps/web/CLAUDE.md` já nomeia para o JSX — só que aqui nem o build
+  // salva. Quem pegaria é o ESLint com `no-undef`, ou um teste que monte o componente.
   useEffect(() => {
-    if (secao === "apuracao") carregarApuracao();
-  }, [secao, carregarApuracao]);
+    carregarApuracao();
+  }, [carregarApuracao]);
 
   // O relatório também alimenta a leitura de "0 pendências" (o botão de classificação e o modal) — por isso ele é
-  // carregado nas duas, e não só onde é desenhado.
+  // carregado sempre, e não só onde é desenhado.
   useEffect(() => {
-    if (secao === "apuracao" || secao === "sugestao") carregarRelatorio();
-  }, [secao, carregarRelatorio]);
+    carregarRelatorio();
+  }, [carregarRelatorio]);
 
   async function abrirRetificar() {
     // eslint-disable-next-line no-alert
