@@ -1,10 +1,12 @@
 // ONBOARDING — a especificação do formulário como DADO.
 //
 // ⚠ POR QUE ISTO É UM ARQUIVO DE DADOS, E NÃO JSX
-// Molde do `defisSpec.js`: quando a ordem, o rótulo e a condição de "aparece / é obrigatório" vivem
-// espalhados em JSX, cada tela que percorre o formulário reimplementa a regra — e a ficha do
-// escritório passa a mostrar coisa diferente do que o wizard perguntou. Aqui a spec é percorrida
-// pelo wizard E pela ficha de leitura, então elas não têm como divergir.
+// Quando a ordem, o rótulo e a condição de "aparece / é obrigatório" vivem espalhados em JSX, cada
+// tela que percorre o formulário reimplementa a regra — e a ficha do escritório passa a mostrar
+// coisa diferente do que o wizard perguntou. Aqui a spec é percorrida pelo wizard E pela ficha de
+// leitura, então elas não têm como divergir.
+// (O molde original foi o `defisSpec.js`, removido em 12/08/2026 com a extinção da DEFIS. O
+// argumento acima nunca dependeu dele.)
 //
 // ⚠ POR QUE UM ARRAY PLANO, E NÃO TRÊS ÁRVORES POR ORIGEM
 // Nome, e-mail e telefone do responsável são as MESMAS três perguntas nas três origens. Em três

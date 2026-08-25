@@ -147,11 +147,18 @@ Empresa ~26% (nome 500/14px; 2ª linha 12px muted: **Regime · CNPJ** — Regime
 
 # BLOCO 4 — Obrigações anuais (o que é UX)
 
+> ⚠ **A DEFIS foi EXTINTA** por resolução do CGSN publicada em **12/08/2026** (número a confirmar —
+> outra frente está buscando a norma), e **todo o fluxo dela foi removido do sistema** naquele dia,
+> por decisão do dono: tela, rotas, regra de obrigatoriedade e o model `DefisEspelho`. **Sem modo
+> histórico** para ano-calendário anterior. As linhas abaixo que a citavam ficam registradas como
+> HISTÓRIA do plano — o **desenho genérico da obrigação anual continua valendo** (ECD e ECF seguem
+> anuais); só o exemplo morreu. Não reimplementar o espelho.
+
 - **Ciclo visual da obrigação anual:** `Aguardando janela` (cinza) → `Janela aberta` (âmbar, com dias restantes visíveis) → `Urgente` (vermelho, ≤30 dias do prazo) → `Transmitida` (verde + recibo anexado).
-- Durante a janela, o chip anual (ex.: DEFIS) aparece na listagem principal ao lado das guias mensais — em março, "quais empresas ainda não entregaram?" precisa ter resposta de relance, igual ao fechamento.
+- Durante a janela, o chip anual (o exemplo original era a DEFIS, hoje extinta; vale para ECD/ECF) aparece na listagem principal ao lado das guias mensais — em março, "quais empresas ainda não entregaram?" precisa ter resposta de relance, igual ao fechamento.
 - No calendário, o dia do prazo herda a pior cor entre as empresas.
-- **Espelho DEFIS (wizard):** passos NA MESMA ORDEM das telas do portal oficial (o ganho é a transcrição rápida), campos pré-preenchidos com origem visível, ajuda contextual nos manuais, e tela final de conferência lado a lado (campo do portal → valor do app) + PDF de conferência. Conclusão: "Marcar como transmitida" + upload do recibo.
-- Cada obrigação é porta de entrada do trabalho: click abre a ação correspondente (gerar guia, abrir o espelho, anexar arquivo), nunca é só um lembrete.
+- ~~**Espelho DEFIS (wizard):** passos NA MESMA ORDEM das telas do portal oficial (o ganho é a transcrição rápida), campos pré-preenchidos com origem visível, ajuda contextual nos manuais, e tela final de conferência lado a lado (campo do portal → valor do app) + PDF de conferência. Conclusão: "Marcar como transmitida" + upload do recibo.~~ — **construído e depois REMOVIDO em 12/08/2026 com a extinção da DEFIS.**
+- Cada obrigação é porta de entrada do trabalho: click abre a ação correspondente (gerar guia, anexar arquivo), nunca é só um lembrete.
 
 ---
 

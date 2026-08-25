@@ -113,8 +113,8 @@ function corDoItem(item, hoje = hojeISO()) {
   if (item.tipo === "marco") return COR[String(item.importancia || "MEDIA").toLowerCase()] || COR.marco;
   if (item.resolvido) return COR.resolvida;
 
-  // ⚠ OBRIGAÇÃO tem CICLO, não binário. Antes era "venceu ou não venceu": uma DEFIS a 40 dias e
-  // uma a 2 dias ficavam idênticas na tela. Agora o corte sai de `antecedenciaLembreteDias` — a
+  // ⚠ OBRIGAÇÃO tem CICLO, não binário. Antes era "venceu ou não venceu": uma anual (ECD) a 40
+  // dias e uma a 2 dias ficavam idênticas na tela. Agora o corte sai de `antecedenciaLembreteDias` — a
   // janela que o próprio escritório declarou naquela obrigação — em vez de um número fixo que numa
   // mensal acenderia o mês inteiro. Ver `features/obrigacoes/lib/cicloObrigacao.js`.
   if (ehObrigacao(item) && item.data) {
@@ -207,7 +207,7 @@ function Chip({ item, onAbrir, arrastavel }) {
             item.antecedenciaLembreteDias,
           ).rotulo} — ${item.total} empresa(s): ${item.pendentes} a entregar, ${item.vencidas} vencida(s), ${item.concluidas} concluída(s). Clique para ver e concluir por empresa.`
           /* ⚠ O tooltip da obrigação carrega a CONTAGEM DE DIAS. "a entregar" é a mesma frase para
-             uma DEFIS a 40 dias e uma a 2 — e é exatamente a diferença que decide o que fazer
+             uma anual (ECD) a 40 dias e uma a 2 — e é exatamente a diferença que decide o que fazer
              hoje. `aparenciaDaOcorrencia` devolve "A entregar · 12 dias" / "Vencida · 3 dias". */
           : `${rotuloDoItem(item)}${item.valor != null ? ` · ${fmtMoney(item.valor)}` : ""}${
             item.tipo === "obrigacao"

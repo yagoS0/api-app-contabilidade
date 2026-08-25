@@ -2,7 +2,10 @@
 
 Passo zero da Entrega 8: o leiaute **não se transcreve nem se deduz** — ele entra no repositório
 como artefato oficial e o gerador é implementado registro a registro contra ele. Sem estes arquivos
-commitados, implementação de gerador está bloqueada (mesma regra do espelho da DEFIS).
+commitados, implementação de gerador está bloqueada — é a regra 1 do projeto (não inventar nada)
+aplicada a leiaute. O precedente citado aqui era o espelho da DEFIS, cuja spec só foi escrita
+contra o manual oficial da RFB; a DEFIS foi extinta em 12/08/2026 e o fluxo removido, mas a regra
+que ela ilustrava continua valendo igual.
 
 ## ⚠⚠ LEIA ISTO ANTES DE INVESTIR NO GERADOR: a obrigação tem prazo de validade
 

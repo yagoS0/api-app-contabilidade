@@ -19,7 +19,7 @@ function Linha({ rotulo, valor }) {
     <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "baseline", flexWrap: "wrap" }}>
       <span style={{ minWidth: 130, fontSize: 12, color: "var(--text-muted)" }}>{rotulo}</span>
       <strong style={{ fontSize: 13, color: "var(--text)" }}>{valor}</strong>
-      {/* A marca discreta da fonte — mesmo padrão do `<Campo origem={…}>` do EspelhoDefis. */}
+      {/* A marca discreta da fonte: o dado veio de fora, e quem lê precisa saber de onde. */}
       <span style={{ fontSize: 11, color: "var(--text-faint)" }}>← Receita Federal</span>
     </div>
   );
