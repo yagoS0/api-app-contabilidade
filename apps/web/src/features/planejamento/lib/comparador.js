@@ -85,6 +85,9 @@ export function compararRegimes({
   margemLucro = null, creditosPisCofins = null,
   mesesDeAtividade = null, receitasMensais = null,
   anoBase = 2026,
+  // ⚠ A confirmação do art. 15, § 4º (IRPJ de 16% até R$ 120 mil) é do CONTADOR, e viaja como os
+  // demais parâmetros do cenário. `null` = não perguntado, e aí a conta é a de sempre (32%).
+  servicosAte120kConfirmado = null,
 }) {
   const inicio = mesesDeAtividade == null
     ? null
@@ -126,7 +129,7 @@ export function compararRegimes({
     // Presumido com ISS, e a diferença chegava a inverter o vencedor.
     ? custoAnualSimples({ anexoChave: anexoResolvido, rbt12: rbt, receitaAnual, folhaAnual, aliquotaIss, mesesDeAtividade, receitasMensais })
     : null);
-  const presumido = custoAnualPresumido({ receitaAnual, atividade: atividadePresumido, folhaAnual, aliquotaIss, anoBase });
+  const presumido = custoAnualPresumido({ receitaAnual, atividade: atividadePresumido, folhaAnual, aliquotaIss, anoBase, servicosAte120kConfirmado });
   const real = custoAnualReal({ receitaAnual, margemLucro, creditosPisCofins, folhaAnual, aliquotaIss });
 
   const candidatos = [simples, presumido, real].filter(Boolean);

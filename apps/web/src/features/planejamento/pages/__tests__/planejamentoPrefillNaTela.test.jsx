@@ -182,3 +182,41 @@ describe("⚠⚠ O FATOR R VEM DO PERFIL DE ATIVIDADES, NÃO DO BOOLEANO DO CADA
     expect(screen.getAllByText(/não há como saber se a atividade é sujeita ao Fator R/i).length).toBeGreaterThan(0);
   });
 });
+
+describe("⚠⚠ A PERGUNTA DOS R$ 120.000 (art. 15, § 4º) APARECE E NÃO SE RESPONDE SOZINHA", () => {
+  const PEQUENA = { receitaAnual: ok(100_000), rbt12: ok(100_000) };
+
+  it("com receita dentro do limite, a pergunta aparece com as exceções nomeadas", async () => {
+    montar(PEQUENA);
+    // ⚠ receita e RBT12 têm o mesmo valor aqui, logo DOIS inputs o exibem.
+    await waitFor(() => expect(screen.getAllByDisplayValue("100.000").length).toBeGreaterThan(0));
+    expect(screen.getByText(/a presunção de IRPJ pode ser de 16%/i)).toBeInTheDocument();
+    // ⚠ Caso concreto na carteira: terapia ocupacional é profissão regulamentada e NÃO tem direito.
+    expect(screen.getByText(/profissão legalmente regulamentada/i)).toBeInTheDocument();
+    expect(screen.getByText(/serviços hospitalares/i)).toBeInTheDocument();
+  });
+
+  it("⚠⚠ NADA vem pré-selecionado — valor escolhido pelo sistema fica indistinguível de conferido", async () => {
+    montar(PEQUENA);
+    // ⚠ receita e RBT12 têm o mesmo valor aqui, logo DOIS inputs o exibem.
+    await waitFor(() => expect(screen.getAllByDisplayValue("100.000").length).toBeGreaterThan(0));
+    expect(screen.getByLabelText(/Enquadra — usar 16%/i)).not.toBeChecked();
+    expect(screen.getByLabelText(/Não enquadra — 32%/i)).not.toBeChecked();
+  });
+
+  it("⚠ e enquanto ninguém responde, a tela DIZ o que a omissão custa", async () => {
+    montar(PEQUENA);
+    // ⚠ receita e RBT12 têm o mesmo valor aqui, logo DOIS inputs o exibem.
+    await waitFor(() => expect(screen.getAllByDisplayValue("100.000").length).toBeGreaterThan(0));
+    // ⚠ A frase aparece em DOIS lugares, e isso é o desenho: ao lado da pergunta (onde se
+    // responde) e dentro de "o que este total não considera", no card do Presumido (onde o número
+    // é lido). Uma consulta singular estoura com "multiple found" e faz parecer defeito.
+    expect(screen.getAllByText(/pode estar superestimado/i).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("acima de R$ 120.000 a pergunta NÃO aparece — não há o que enquadrar", async () => {
+    montar();
+    await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
+    expect(screen.queryByText(/a presunção de IRPJ pode ser de 16%/i)).not.toBeInTheDocument();
+  });
+});

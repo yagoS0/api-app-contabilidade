@@ -74,6 +74,12 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   const [anexo, setAnexo] = useState("III");
   const [sujeitoFatorR, setSujeitoFatorR] = useState(false);
   const [atividade, setAtividade] = useState("servicos");
+  // ⚠⚠ TRÊS ESTADOS, e o `null` é o que preserva a conta de hoje. Lei 9.249/1995, art. 15, § 4º:
+  // serviços com receita até R$ 120.000 podem presumir IRPJ de 16% em vez de 32% — a CSLL continua
+  // em 32%. O portal NÃO liga isto sozinho: o § 4º exclui serviços hospitalares, de transporte e de
+  // profissão legalmente regulamentada, e exige empresa EXCLUSIVAMENTE prestadora de serviços em
+  // geral — três fatos que o cadastro não tem. Quem confirma é o contador.
+  const [servicos16, setServicos16] = useState(null);
   const [iss, setIss] = useState("");
   const [margem, setMargem] = useState("");
   const [creditos, setCreditos] = useState("");
@@ -193,10 +199,15 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     creditosPisCofins: num(creditos),
     mesesDeAtividade: mesesInicioAtividade,
     receitasMensais,
-  }), [receita, rbt12, folha, anexo, sujeitoFatorR, atividade, iss, margem, creditos, mesesInicioAtividade, receitasMensais]);
+    servicosAte120kConfirmado: servicos16,
+  }), [receita, rbt12, folha, anexo, sujeitoFatorR, atividade, iss, margem, creditos, mesesInicioAtividade, receitasMensais, servicos16]);
 
   const temReceita = entradas.receitaAnual > 0;
   const resultado = useMemo(() => (temReceita ? compararRegimes(entradas) : null), [entradas, temReceita]);
+  // ⚠ DERIVADA DO RESULTADO, nunca recalculada aqui. Uma segunda conta na tela divergiria do motor
+  // na primeira correção — e é o motor que decide o número que vai ao PDF.
+  const ofertaDo16 = resultado?.regimes?.find((r) => r.regime === "Lucro Presumido")?.servicosAte120k || null;
+
   const equilibrio = useMemo(
     () => (temReceita ? pontoDeEquilibrio({ ...entradas, passo: 50_000 }) : null),
     [entradas, temReceita],
@@ -372,6 +383,46 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
               </select>
               {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.atividadePresumido} />}
             </label>
+            {/* ⚠⚠ A PERGUNTA DOS R$ 120.000 (Lei 9.249/1995, art. 15, § 4º) — ela APARECE, e não se
+                responde sozinha. `PRESUNCAO_IRPJ.servicosAte120k = 0.16` existia como constante e
+                nunca entrava em conta nenhuma; medido em produção, 10 das 18 empresas com dado
+                apurado têm receita abaixo do limite, ou seja o simulador presumia o DOBRO do IRPJ
+                na maioria da carteira.
+                ⚠ Nada é pré-selecionado: valor escolhido pelo sistema fica indistinguível de valor
+                conferido por uma pessoa, e o que se afirma aqui é enquadramento fiscal.
+                ⚠⚠ E ELE É IRMÃO DO <label> ACIMA, NUNCA FILHO: rótulo dentro de rótulo associa o
+                rádio ao controle errado. */}
+            {ofertaDo16?.cabe ? (
+              <div style={{
+                gridColumn: "1 / -1", padding: "8px 10px", border: `1px solid ${C.borda}`,
+                borderRadius: 6, background: "#1A1B26", display: "grid", gap: 6,
+              }}>
+                <div style={{ fontSize: "0.74rem", color: C.texto, lineHeight: 1.45 }}>{ofertaDo16.pergunta}</div>
+                <ul style={{ margin: 0, paddingLeft: 16, fontSize: "0.7rem", color: C.muted, lineHeight: 1.45 }}>
+                  {ofertaDo16.excecoes.map((e) => <li key={e}>{e}</li>)}
+                </ul>
+                <div style={{ display: "flex", gap: 14, fontSize: "0.76rem", color: C.texto }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
+                    <input type="radio" name="servicos16" checked={servicos16 === true} onChange={() => setServicos16(true)} />
+                    Enquadra — usar 16%
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
+                    <input type="radio" name="servicos16" checked={servicos16 === false} onChange={() => setServicos16(false)} />
+                    Não enquadra — 32%
+                  </label>
+                </div>
+                {/* ⚠ ENQUANTO NINGUÉM RESPONDE, A TELA DIZ O QUE A OMISSÃO CUSTA. Ausência de
+                    resposta não é resposta, e aqui ela deixa o Presumido mais caro do que pode ser. */}
+                {servicos16 == null ? (
+                  <div style={{ fontSize: "0.7rem", color: C.alerta, lineHeight: 1.4 }}>
+                    ⚠ Sem resposta, o comparativo usa 32% — o total do Lucro Presumido pode estar superestimado.
+                  </div>
+                ) : null}
+                {ofertaDo16.aviso ? (
+                  <div style={{ fontSize: "0.7rem", color: C.alerta, lineHeight: 1.4 }}>⚠ {ofertaDo16.aviso}</div>
+                ) : null}
+              </div>
+            ) : null}
             <label style={rotulo}>Anexo do Simples
               <select value={anexo} onChange={(e) => setAnexo(e.target.value)} disabled={sujeitoFatorR} style={{ ...campo, opacity: sujeitoFatorR ? 0.5 : 1 }}>
                 {Object.entries(ANEXOS).map(([k, a]) => <option key={k} value={k}>{a.nome}</option>)}

@@ -78,6 +78,13 @@ export function custoAnualPresumido({
   receitaAnual, atividade = "servicos", folhaAnual = 0,
   aliquotaIss = null, // §9 — parâmetro; null = não considerado, e a tela DIZ isso
   anoBase = 2026,
+  // ⚠⚠ TRÊS ESTADOS, e o `null` é o que preserva o comportamento de hoje.
+  //   null  = não perguntado  ⇒ 32%, como sempre foi. A tela OFERECE.
+  //   true  = o contador confirmou o enquadramento do art. 15, § 4º ⇒ IRPJ 16% (CSLL segue 32%)
+  //   false = o contador disse que NÃO se enquadra ⇒ 32%
+  // Ligar sozinho seria o portal afirmando que a empresa não é hospitalar, não é de transporte e
+  // não é de profissão regulamentada — três fatos que ele não tem.
+  servicosAte120kConfirmado = null,
 }) {
   const receita = Number(receitaAnual) || 0;
   const at = ATIVIDADES_PRESUMIDO[atividade];
@@ -87,7 +94,14 @@ export function custoAnualPresumido({
   // limite cheio — daí o `anoBase` explícito, em vez de assumir para sempre o caso de 2026.
   const limiteCsll = anoBase === 2026 ? MAJORACAO_LC224.limiteCsll2026 : MAJORACAO_LC224.limiteIrpj;
 
-  const bIrpj = baseComMajoracao({ receitaAnual: receita, presuncao: at.irpj, limite: MAJORACAO_LC224.limiteIrpj });
+  // ⚠ A redução só vale DENTRO do limite. Acima dele o § 5º manda o contrário: 32% retroativo ao
+  // ano inteiro, com recolhimento da diferença — então uma confirmação antiga não pode "colar" numa
+  // receita que cresceu.
+  const oferta = ofertaServicos16({ receitaAnual: receita, atividade });
+  const usa16 = servicosAte120kConfirmado === true && Boolean(oferta?.cabe);
+  const presuncaoIrpj = usa16 ? PRESUNCAO_IRPJ.servicosAte120k : at.irpj;
+
+  const bIrpj = baseComMajoracao({ receitaAnual: receita, presuncao: presuncaoIrpj, limite: MAJORACAO_LC224.limiteIrpj });
   const bCsll = baseComMajoracao({ receitaAnual: receita, presuncao: at.csll, limite: limiteCsll });
 
   const irpj = bIrpj.base * IRPJ.aliquota;
@@ -110,6 +124,8 @@ export function custoAnualPresumido({
   return {
     regime: "Lucro Presumido",
     atividade: at.rotulo,
+    // A oferta viaja para a tela poder PERGUNTAR, e o que foi usado viaja para o PDF poder DIZER.
+    servicosAte120k: oferta ? { ...oferta, aplicado: usa16, confirmado: servicosAte120kConfirmado } : null,
     elegivel: receita <= LIMITE_LUCRO_PRESUMIDO,
     porTributo: { irpj, adicionalIrpj: adicional, csll, pis, cofins, ...(folhaInformada ? { cpp } : {}), ...(aliquotaIss == null ? {} : { iss }) },
     total,
@@ -117,6 +133,12 @@ export function custoAnualPresumido({
     // ⚠ A tela PRECISA dizer o que ficou de fora, senão o número parece completo e não é.
     naoConsiderado: [
       aliquotaIss == null ? "ISS (informe a alíquota do município no cadastro)" : null,
+      // ⚠⚠ OFERTA NÃO RESPONDIDA APARECE, senão o total fica MAIOR do que precisa e ninguém sabe
+      // por quê. Ausência de resposta não é resposta — mesma disciplina da folha.
+      oferta?.cabe && servicosAte120kConfirmado == null
+        ? `presunção de IRPJ de 16% (art. 15, § 4º): a receita cabe no limite de ${brl(LIMITE_SERVICOS_16_PCT)}, `
+          + "mas o enquadramento não foi confirmado — este total usa 32% e pode estar SUPERESTIMADO"
+        : null,
       folhaInformada
         ? null
         : "CPP (INSS patronal de 20% sobre a folha): a folha de 12 meses não foi informada — não estimada aqui, então este total está subestimado",
@@ -124,7 +146,15 @@ export function custoAnualPresumido({
       "RAT/FAP e contribuições a terceiros sobre a folha",
     ].filter(Boolean),
     premissas: [
-      `Presunção de IRPJ ${(at.irpj * 100).toFixed(1).replace(".", ",")}% e de CSLL ${(at.csll * 100).toFixed(1).replace(".", ",")}% (FONTES_FISCAIS §2.2 e §2.3)`,
+      `Presunção de IRPJ ${(presuncaoIrpj * 100).toFixed(1).replace(".", ",")}% e de CSLL ${(at.csll * 100).toFixed(1).replace(".", ",")}% (FONTES_FISCAIS §2.2 e §2.3)`,
+      // ⚠ O QUE FOI CONFIRMADO SAI IMPRESSO. O PDF circula sozinho, e dois PDFs da mesma empresa
+      // com IRPJ diferente precisam se distinguir NO PAPEL — é a mesma regra da procedência dos
+      // campos. Sem esta linha, o 16% pareceria erro de cálculo.
+      usa16
+        ? `IRPJ presumido a 16% POR CONFIRMAÇÃO DO CONTADOR: receita até ${brl(LIMITE_SERVICOS_16_PCT)} `
+          + "(Lei 9.249/1995, art. 15, § 4º). A CSLL continua em 32%. ⚠ Passando do limite no ano, a "
+          + "presunção vira 32% RETROATIVA e a diferença é recolhida (§ 5º)."
+        : null,
       bIrpj.houveMajoracao
         ? `LC 224/2025: presunção majorada em 10% sobre ${brl(bIrpj.excedente)} de receita acima de ${brl(MAJORACAO_LC224.limiteIrpj)} (IRPJ)`
         : null,
@@ -144,8 +174,62 @@ export function custoAnualPresumido({
 }
 
 /**
- * A trava dos 16% (§2.2): serviços com receita anual até R$ 120.000 presumem 16%; passando disso, a
- * empresa vai para 32% RETROATIVAMENTE e recolhe a diferença.
+ * ⚠⚠ A REGRA DOS R$ 120.000 — IRPJ de 16%, CSLL de 32%. Lei 9.249/1995, art. 15, § 4º.
+ *
+ * Trazida pelo dono em 25/08/2026: *"o presumido é generalizado, como por exemplo, receita de
+ * prestação de serviços até 120 mil, IRPJ de 16% e CSLL 32, é baseado nisso que veremos qual
+ * atividade se encaixa, dividindo as atividades pelas categorias."*
+ *
+ * ⚠ ELA REDUZ SÓ O IRPJ. A CSLL continua em 32% — o art. 20 remete ao inciso III do § 1º do
+ * art. 15, e o § 4º não o alcança. É a mesma assimetria que o transporte de passageiros já expõe
+ * neste arquivo, e errar aqui é errar metade da conta.
+ *
+ * ⚠⚠ `PRESUNCAO_IRPJ.servicosAte120k = 0.16` EXISTIA COMO CONSTANTE E NUNCA ENTRAVA EM CONTA
+ * NENHUMA — o único consumidor era um aviso de proximidade do limite, e
+ * `ATIVIDADES_PRESUMIDO.servicos` usava 32% sempre. Medido em produção em 25/08/2026: **10 das 18
+ * empresas com dado apurado têm receita abaixo de R$ 120 mil**, ou seja o simulador presumia o
+ * DOBRO do IRPJ na maioria da carteira.
+ *
+ * ⚠⚠ E ELA NÃO SE LIGA SOZINHA, porque o § 4º EXCLUI três casos que o sistema não tem como
+ * saber: serviços **hospitalares**, de **transporte**, e de **profissões legalmente
+ * regulamentadas** — e exige que a pessoa jurídica seja EXCLUSIVAMENTE prestadora de serviços em
+ * geral. Na carteira há caso concreto: uma empresa de terapia ocupacional (profissão
+ * regulamentada) **não** teria direito, e o CNAE dela não diz isso. Por isso esta função OFERECE,
+ * e quem decide é o contador.
+ *
+ * ⚠ E o § 5º torna a decisão cara nos dois sentidos: estourando os R$ 120.000 no ano, a presunção
+ * vira 32% RETROATIVAMENTE e a empresa recolhe a diferença.
+ *
+ * @returns {null | {cabe, presuncaoIrpj, pergunta, excecoes, aviso}} `null` quando a pergunta não
+ *   se aplica (outra categoria de atividade).
+ */
+export function ofertaServicos16({ receitaAnual, atividade = "servicos" }) {
+  if (atividade !== "servicos") return null;
+  const r = Number(receitaAnual) || 0;
+  const cabe = r > 0 && r <= LIMITE_SERVICOS_16_PCT;
+
+  return {
+    cabe,
+    presuncaoIrpj: PRESUNCAO_IRPJ.servicosAte120k,
+    pergunta: cabe
+      ? `Receita de ${brl(r)} está dentro do limite de ${brl(LIMITE_SERVICOS_16_PCT)}: a presunção de `
+        + "IRPJ pode ser de 16% em vez de 32% (Lei 9.249/1995, art. 15, § 4º). A CSLL continua em "
+        + "32%. Confirme que a empresa se enquadra — o portal não aplica isto sozinho."
+      : null,
+    // ⚠ NOMEADAS NA TELA. Sem elas o contador confirmaria sem saber o que está afirmando.
+    excecoes: [
+      "não vale para serviços hospitalares",
+      "não vale para serviços de transporte",
+      "não vale para sociedades de profissão legalmente regulamentada",
+      "a empresa tem de ser EXCLUSIVAMENTE prestadora de serviços em geral",
+    ],
+    aviso: avisoTravaServicos16(r),
+  };
+}
+
+/**
+ * A trava dos 16% (§2.2): serviços com receita anual até R$ 120.000 presumem 16%; passando disso,
+ * a empresa vai para 32% RETROATIVAMENTE e recolhe a diferença.
  *
  * Devolve o aviso quando a receita simulada está perto do limite — é armadilha clássica de quem
  * projeta crescimento e não conta com a virada retroativa.
