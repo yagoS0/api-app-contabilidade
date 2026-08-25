@@ -645,7 +645,13 @@ export async function montarRelatorioFaturamento({ portalClientId, competencia }
     // entre crases — endereço interno e nome de campo, num aviso que ele lê para saber o que
     // CLICAR. Quem consome esta frase não tem como usar nenhum dos dois. O que ela diz continua
     // igual: onde clicar, e o que fica impedido enquanto não se clicar.
-    comoResolver: "Aba Apuração → sub-aba Sugestão → botão \"Classificar competência\". "
+    // ⚠⚠ ESTA FRASE APONTAVA PARA UMA SUB-ABA QUE DEIXOU DE EXISTIR em 24/08/2026 (a seção
+    // Sugestão virou modal, aberto pelo botão de classificação da própria aba Apuração). E a
+    // frase do SERVIDOR **vence** o texto local da tela — é o mesmo defeito que o
+    // `ONDE_CONFIGURA_EMISSAO` já registra: o caminho muda na tela e a `correcao` do backend
+    // continua mandando o contador para um lugar onde o botão não está mais.
+    // ⚠ O espelho no mock (`apps/web/src/api/mock/mockApi.js`) tem de mudar JUNTO.
+    comoResolver: "Aba Apuração → botão de classificação (no alto, ao lado de Calcular) → \"Classificar competência\". "
       + "Enquanto a receita não estiver classificada, o relatório não consegue dizer de que tipo "
       + "de operação ela é — e o motor de apuração não calcula o DAS.",
   };

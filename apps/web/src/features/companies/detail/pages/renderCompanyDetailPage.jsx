@@ -65,6 +65,11 @@ const AuditoriaTab = lazy(() =>
   import("../../../notas/components/renderAuditoriaTab").then((m) => ({ default: m.AuditoriaTab }))
 );
 // Q14.2: Apuração v2 — cadastro fiscal + produtos/serviços + pendências
+// Perfil fiscal (regime + atividades permitidas). ⚠ Saiu de DENTRO da aba Apuração em 24/08/2026 —
+// era a seção "Perfil fiscal", terceiro nível de navegação sem URL. Mesmo hook, mesmo painel.
+const PerfilFiscalTab = lazy(() =>
+  import("../../../apuracao-v2/pages/renderPerfilFiscalTab").then((m) => ({ default: m.PerfilFiscalTab }))
+);
 const ApuracaoV2Tab = lazy(() =>
   import("../../../apuracao-v2/pages/renderApuracaoV2Tab").then((m) => ({ default: m.ApuracaoV2Tab }))
 );
@@ -260,14 +265,25 @@ function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
   );
 }
 
-function ApuracaoV2TabWrapper({ companyId, feedback, razao, competencia, onCompetenciaChange }) {
+function ApuracaoV2TabWrapper({ companyId, feedback, razao, competencia, onCompetenciaChange, onAbrirPerfilFiscal }) {
   const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
   return (
     <ApuracaoV2Tab
       panel={panel} api={apuracaoV2Api} companyId={companyId} feedback={feedback} razao={razao}
       competencia={competencia} onCompetenciaChange={onCompetenciaChange}
+      onAbrirPerfilFiscal={onAbrirPerfilFiscal}
     />
   );
+}
+
+// ⚠ Wrapper PRÓPRIO para o Perfil fiscal, e não um `panel` emprestado do de cima: `useApuracaoV2` é
+// instanciado DENTRO do `ApuracaoV2TabWrapper`, que só existe no ramo `cadastroFiscal`. As duas
+// abas são rotas distintas e nunca renderizam ao mesmo tempo, então cada uma instancia o seu — o
+// que NÃO se duplica é o cliente HTTP (`apuracaoV2Api`, de módulo) nem a leitura das atividades,
+// que continua sendo a do mesmo hook.
+function PerfilFiscalTabWrapper({ companyId, feedback }) {
+  const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
+  return <PerfilFiscalTab panel={panel} />;
 }
 
 // Q41: wrapper que instancia o hook da Situação Fiscal (SITFIS) — companyId = portalClient id.
@@ -812,7 +828,34 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 companyId={companyId} feedback={feedback} razao={selectedCompany?.razao}
                 competencia={circularPanel?.competencia}
                 onCompetenciaChange={circularPanel?.onCompetenciaChange}
+                onAbrirPerfilFiscal={() => switchTab("perfilFiscal")}
               />
+            </Suspense>
+          </ErrorBoundary>
+        </div>
+      </div>
+    );
+  }
+
+  // Perfil fiscal (grupo Empresa) — regime + atividades permitidas por CNAE.
+  // ⚠ A TERCEIRA PEÇA da aba nova: sem este bloco a URL `/perfil-fiscal` cai em Anotações **sem
+  // erro nenhum** (as outras duas são a entrada em `GROUPS` e o par em `rotasDaEmpresa.js`).
+  // ⚠ SEM `competencia` no header, de propósito: atividade permitida é cadastro da empresa, não do
+  // mês — um seletor aqui sugeriria que a lista muda por competência.
+  if (companyDetailTab === "perfilFiscal") {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="perfilFiscal"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+        <div style={{ flex: 1, padding: 24 }}>
+          <ErrorBoundary>
+            <Suspense fallback={<TabLoadingFallback />}>
+              <PerfilFiscalTabWrapper companyId={companyId} feedback={feedback} />
             </Suspense>
           </ErrorBoundary>
         </div>

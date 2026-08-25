@@ -33,8 +33,15 @@ export const SEGMENT_TO_TAB = {
   // formulário de edição). ⚠ O PAR EM `TAB_TO_SEGMENT` É OBRIGATÓRIO: sem ele o clique na aba não
   // navega e a URL cai em Anotações, sem erro nenhum.
   "emissao-nfse": "emissaoNfse",
-  // Sugestão e Pendências viraram sub-abas INTERNAS do Cadastro (estado local, não URL).
-  // Links antigos caem no Cadastro Fiscal.
+  // O PERFIL FISCAL da empresa (atividades permitidas por CNAE, anexo, ISS) — aba própria do grupo
+  // EMPRESA desde 24/08/2026. Era a seção "Perfil fiscal" DENTRO da Apuração, um terceiro nível de
+  // navegação sem URL, e o dono pediu para reduzir abas: ela é CADASTRO, não apuração.
+  // ⚠ O PAR EM `TAB_TO_SEGMENT` É OBRIGATÓRIO — sem ele o clique na aba não navega e a URL cai em
+  // Anotações, sem erro nenhum.
+  "perfil-fiscal": "perfilFiscal",
+  // Sugestão e Pendências eram sub-abas INTERNAS do Cadastro (estado local, não URL); desde
+  // 24/08/2026 a Sugestão é um MODAL, aberto pelo botão de pendências da própria Apuração.
+  // Links antigos continuam caindo no Cadastro Fiscal, que é onde o botão está.
   sugestao: "cadastroFiscal",
   pendencias: "cadastroFiscal",
   "apuracao-v2": "cadastroFiscal",
@@ -62,6 +69,9 @@ export const TAB_TO_SEGMENT = {
   auditoria: "auditoria",
   sitfis: "sitfis",
   cadastroFiscal: "cadastro-fiscal",
+  // ⚠ O par da entrada acima. Faltando esta linha, a aba Perfil fiscal vira `<button>` mudo e o
+  // clique cai em Anotações — é o defeito que o `CLAUDE.md` deste módulo já registra.
+  perfilFiscal: "perfil-fiscal",
   emissaoNfse: "emissao-nfse",
   planoContas: "plano-contas",
   cadastro: "cadastro",

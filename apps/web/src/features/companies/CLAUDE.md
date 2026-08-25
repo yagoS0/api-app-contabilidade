@@ -779,6 +779,101 @@ mock/real `fetchDanfseBlob`.
   Ela precisou ser **acrescentada**: a outra nota sem chave do mock tem `papel: null` e por isso não
   aparece em nenhuma das duas caixas — a recusa ficava inalcançável offline.
 
+## ⚠⚠ A ABA APURAÇÃO PERDEU O TERCEIRO NÍVEL DE ABAS E GANHOU A TABELA DO ANEXO (24/08/2026)
+
+> Dono, olhando a tela como contador: *"a aba de apuração de uma empresa do simples nacional está
+> confusa, sem tabela do anexo e muitas abas, veja como podemos melhorar isso"*.
+
+Duas queixas, uma história só. **O painel da tabela do anexo não tinha sumido por acaso — ele foi
+removido pelo próprio dono**, no commit `cc1670e4` (*"removidos Motor local, Produtos/Servicos e o
+botão 'Reclassificar'"*), numa limpeza para **reduzir abas**. `apuracao-v2/components/MotorPanel.jsx`
+continua no repositório, completo, com **zero importadores**.
+
+Ou seja: ele tirou a **ABA**, não a **INFORMAÇÃO** — e por isso a tabela voltou como **conteúdo da
+página**, não como uma quarta seção, e o `MotorPanel` **não foi remontado**.
+
+**O que havia, medido:** quatro níveis de navegação (grupo Fiscal → sub-aba Apuração → seção interna
+sem URL → modal), **cinco cliques** até ver o DAS calculado, e **nenhuma** faixa, alíquota nominal,
+parcela a deduzir, alíquota efetiva ou Fator R em % em lugar nenhum da aba — só o rótulo `I…V` e o
+número final do DAS.
+
+### A tabela — `components/TabelaAnexoReferencia.jsx` + `lib/anexoDaEmpresa.js`
+
+Seis faixas do anexo da empresa (RBT12 de/até · nominal · parcela a deduzir), **linha da empresa
+marcada**, alíquota efetiva e repartição por tributo da faixa dela, com a **vigência impressa**.
+
+⚠ **É REFERÊNCIA, NÃO APURAÇÃO, e a tela diz isso.** Ela não afirma qual DAS a empresa deve — quem
+calcula é a Receita. Mesma disciplina de procedência do `kpiDasApurado` ("DAS oficial (SERPRO)" ×
+"DAS calculado pelo portal") e das três colunas de DAS do `ApuracaoSnapshot`.
+
+⚠ **REUSA `planejamento/lib/tabelasFiscais.js` e `simplesNacional.js`, sem copiar.** Aquela é a única
+tabela do projeto com **citação de lei por valor**; a cópia do backend
+(`AliquotaSimplesNacionalSeeds.js`) **não tem partilha por tributo nenhuma** — é a prova viva de que
+a segunda cópia nasce incompleta. Import direto entre features do mesmo app: `App.jsx` já importa
+`PlanejamentoPage` estaticamente, então o custo de bundle é **zero**.
+
+**As três armadilhas fiscais, todas medidas, todas travadas por teste:**
+
+1. ⚠⚠ **`anexoImplicito` MENTE na atividade de Fator R.** As quatro atividades de Fator R do catálogo
+   (`AtividadePgdasdSeeds.js:24-26,43`, `idAtividade` 10/11/12/29) gravam **`"III"`**, e o anexo real
+   é **III ou V**. A tela antiga se salvava imprimindo `III ★FR` — o `★FR` avisa; **uma tabela não
+   tem como avisar**, ela desenharia o Anexo III (a alíquota MENOR) como decidido para toda empresa
+   com folha abaixo de 28%. Regra: `sujeitoFatorR === true` ⇒ **descarta** o `anexoImplicito` e quem
+   decide é a folha; **sem folha, mostra III E V e não escolhe** (precedente "nunca o primeiro da
+   lista", do `codigoServicoDaNota`). Experimento: desligando isso, **6 vermelhos**.
+2. ⚠⚠ **RBT12 ausente CASA com a 1ª faixa.** `simplesNacional.js:16-17` faz `Number(rbt12) || 0` e a
+   faixa 1 começa em `de: 0` — `null`, `""` e `0` **encontram faixa**. A guarda é de três partes
+   (`!= null` · `Number.isFinite` · `> 0`), aplicada ANTES de chamar. Desconhecido ⇒ tabela inteira,
+   **nenhuma linha marcada**. ⚠ RBT12 acima de R$ 4,8 mi é resposta **diferente** de "não sabemos".
+3. ⚠⚠ **`snapshot.fatorR === 0` é ambíguo** (`decidirFatorR` recebe `Number(null) === 0` e responde
+   "V"). Por isso a tela **não lê o `fatorR` do snapshot**: recalcula com `fatorR`/`anexoPorFatorR`,
+   que já devolvem `null` para folha ausente (a regra do `folhaAusenteNaoEZero`).
+
+⚠ A tabela avisa também o que o número não diz: **Anexo IV recolhe a CPP FORA do DAS** e a **6ª faixa
+perde ICMS ou ISS** — e qual deles é **derivado da própria tabela** (`tributosForaDoDasNaSextaFaixa`),
+nunca uma lista escrita à mão.
+
+### O terceiro nível de abas morreu
+
+- **"Perfil fiscal" virou aba do grupo Empresa** (`apuracao-v2/pages/renderPerfilFiscalTab.jsx`,
+  chave `perfilFiscal`, segmento `perfil-fiscal`). É cadastro — atividades permitidas por CNAE,
+  anexo, ISS —, não o trabalho do mês. ⚠ Continua `soApuraSimples` e **fora de
+  `TABS_COM_COMPETENCIA`**: atividade permitida é cadastro da empresa, não do mês.
+  - ⚠ Ela tem **wrapper próprio**: `useApuracaoV2` é instanciado dentro do `ApuracaoV2TabWrapper`,
+    que só existe no ramo `cadastroFiscal`. São rotas distintas e nunca renderizam juntas.
+  - ⚠ **Um defeito veio junto e foi consertado:** o bloco de regime imprimia **"Simples Nacional"
+    para empresa SEM REGIME cadastrado** (`|| "SIMPLES_NACIONAL"`), em verde, que nesta casa quer
+    dizer concluído. É o mesmo default que o projeto já recusa em `PerfilFiscalService` e em
+    `apuracaoV2.mapRegime`.
+- **"Sugestão" virou MODAL** (`components/SugestaoModal.jsx`), aberto pelo botão de classificação que
+  já existia na barra de ações. Modal, e não painel embutido, porque a página é impressa
+  (`data-print-area`, um por página) e a classificação não fala do relatório de faturamento.
+- ⚠⚠ **O BOTÃO DE CLASSIFICAÇÃO PASSOU A RENDERIZAR SEMPRE**, e isso é o que salva a leitura de três
+  estados. Era `pendencias.length > 0 &&`, e funcionava porque a seção estava ali ao lado; virando a
+  ÚNICA porta, aquela condição deixaria a resposta *"nenhuma pendência aberta — e isso ainda NÃO quer
+  dizer classificada"* (`estadoDaClassificacao`; `tipoReceita` é nulo em 16.153/16.153 itens em
+  produção) sem lugar na tela. Lista vazia se leria como trabalho concluído. Rótulo e tom saem da
+  MESMA leitura que o modal usa.
+- ⚠⚠ **O BACKEND ESCREVIA O CAMINHO DA SEÇÃO MORTA.** `RelatorioFaturamentoService.js` mandava
+  `"Aba Apuração → sub-aba Sugestão → botão Classificar competência"`, e **a frase do servidor vence
+  o texto local** — é o mesmo defeito que o `ONDE_CONFIGURA_EMISSAO` já registra. Trocada nos três
+  lugares (serviço, mock e tela), com **varredura de fonte** provando que nenhum deles cita mais a
+  sub-aba.
+- ⚠ `MotorPanel.jsx` **não foi tocado** — apagar componente é decisão à parte (precedente
+  `DefisNaoDevida.jsx`). `SecaoTabs` foi removido, com comentário-lápide no lugar.
+- ⚠ O botão "Abrir Perfil fiscal" do aviso de cadastro incompleto virou **`<a href>` de verdade**
+  (`companyTabPath` + `oNavegadorAssumeOClique`), no padrão da engrenagem da aba Notas Fiscais.
+  **Não** é `<Button as="a">`: `Button` renderiza `<button>` sempre, e um `href` ali viraria atributo
+  inválido — link que não navega.
+
+**O que NÃO mudou:** os cinco cliques até *calcular* o DAS. Esta entrega tirou um nível de abas
+dentro da Apuração; reduzir o resto passa por mexer no grupo Fiscal inteiro, que é decisão maior.
+
+Testes: `apuracao-v2/lib/__tests__/anexoDaEmpresa.test.js` (23) +
+`apuracao-v2/components/__tests__/tabelaAnexoNaTela.test.jsx` (15, com as varreduras de fonte).
+⚠ `abasComoLink.test.jsx` **já cobria a aba nova** — ele varre todas as abas do grupo aberto;
+experimento removendo o par de rota: 1 vermelho.
+
 ## ⚠ Regime da empresa mora em `legacyCompany`
 
 `selectedCompany.regimeTributario` **não existe** — `buildFirmCompanyPayload` só devolve o regime

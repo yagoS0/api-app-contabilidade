@@ -106,6 +106,17 @@ const GROUPS = [
     // Anotações SAIU daqui — virou grupo próprio, primeiro de todos.
     tabs: [
       { key: "cadastro", label: "Cadastro" },
+      // ⚠ VEIO DE DENTRO DA APURAÇÃO em 24/08/2026, a pedido do dono ("muitas abas"). Lá ela era a
+      // seção "Perfil fiscal", um TERCEIRO nível de navegação sem URL. É cadastro — atividades
+      // permitidas por CNAE, anexo e ISS —, não o trabalho do mês, e por isso mora ao lado da ficha.
+      //
+      // ⚠ Continua `soApuraSimples`, exatamente como era: o painel resolve ANEXO DO SIMPLES por
+      // CNAE, e oferecê-lo ao Lucro Presumido mostraria uma tela que não decide nada para ele — o
+      // mesmo argumento que já tirou o espelho da DEFIS do Presumido.
+      //
+      // ⚠ Fora de `TABS_COM_COMPETENCIA` de propósito: atividade permitida é cadastro da empresa,
+      // não do mês. Um seletor de competência aqui sugeriria que a lista muda por competência.
+      { key: "perfilFiscal", label: "Perfil fiscal", soApuraSimples: true },
       { key: "documentos", label: "Documentos" },
       // Cofre de senhas + "outras informações". Fica em Empresa, ao lado de Documentos, porque é
       // dado CADASTRAL (onde o escritório entra em nome do cliente), não trabalho do mês — e é

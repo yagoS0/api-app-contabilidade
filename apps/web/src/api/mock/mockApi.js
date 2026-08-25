@@ -2145,7 +2145,13 @@ function mockRelatorioFaturamentoDados(companyId, competencia) {
       : 0,
     // ⚠ Espelho do texto do backend (`RelatorioFaturamentoService`). Nome de coluna e caminho de
     // rota saíram dos dois no mesmo commit: quem lê esta frase é o contador, na tela.
-    comoResolver: "Aba Apuração → sub-aba Sugestão → botão \"Classificar competência\". "
+    // ⚠⚠ ESTA FRASE APONTAVA PARA UMA SUB-ABA QUE DEIXOU DE EXISTIR em 24/08/2026 (a seção
+    // Sugestão virou modal, aberto pelo botão de classificação da própria aba Apuração). E a
+    // frase do SERVIDOR **vence** o texto local da tela — é o mesmo defeito que o
+    // `ONDE_CONFIGURA_EMISSAO` já registra: o caminho muda na tela e a `correcao` do backend
+    // continua mandando o contador para um lugar onde o botão não está mais.
+    // ⚠ O espelho no mock (`apps/web/src/api/mock/mockApi.js`) tem de mudar JUNTO.
+    comoResolver: "Aba Apuração → botão de classificação (no alto, ao lado de Calcular) → \"Classificar competência\". "
       + "Enquanto a receita não estiver classificada, o relatório não consegue dizer de que tipo "
       + "de operação ela é — e o motor de apuração não calcula o DAS.",
   };

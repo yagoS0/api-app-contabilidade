@@ -1,8 +1,18 @@
-// Grupo "Fiscal" da empresa → aba "Apuração" (renomeada de "Cadastro"). É onde a empresa é
-// FECHADA para apuração, transmitida e retificada — tudo por dentro da própria empresa. Seções:
-//   Apuração → faturamento + prévia (modal de fechamento reusado) + extrato do Simples + ações
-//   Cadastro → só o essencial: regime (Simples) + atividades permitidas
-//   Sugestão → sugestão de anexo por nota + pendências (por competência) — igual antes
+// Grupo "Fiscal" da empresa → aba "Apuração". É onde a empresa é FECHADA para apuração,
+// transmitida e retificada — tudo por dentro da própria empresa.
+//
+// ⚠⚠ ESTA ABA TINHA TRÊS SEÇÕES INTERNAS (Apuração · Perfil fiscal · Sugestão) ATÉ 24/08/2026 — um
+// TERCEIRO nível de navegação, sem URL, depois de grupo → sub-aba. O dono, olhando a tela como
+// contador: *"está confusa, sem tabela do anexo e muitas abas"*. As seções morreram:
+//
+//   · **Perfil fiscal** virou aba própria do grupo **Empresa** (`renderPerfilFiscalTab.jsx`) — é
+//     CADASTRO (atividades permitidas por CNAE), não o trabalho do mês;
+//   · **Sugestão** virou MODAL, aberto pelo botão de pendências que já existia nesta barra;
+//   · **Apuração** ficou sendo a página inteira, e ganhou a TABELA DO ANEXO que faltava.
+//
+// ⚠ E isto continua a limpeza que o próprio dono começou: foi ele quem removeu a sub-aba "Motor
+// local" no commit `cc1670e4` ("removidos Motor local, Produtos/Servicos…"). Ele tirou a ABA, não a
+// INFORMAÇÃO — por isso a tabela volta como CONTEÚDO desta página, e não como uma quarta seção.
 //
 // O fluxo de calcular/fechar/transmitir/retificar reaproveita o FechamentoModal (o MESMO da tela de
 // lote), aberto por um botão — então a lógica validada não muda. A tela de lote (renderApuracaoPage)
@@ -11,14 +21,15 @@ import { useCallback, useEffect, useState } from "react";
 import { rotuloEstadoApuracao, RBT12_NOME } from "../../../lib/vocabulario";
 import { PANEL, fmtDate, fmtMoney } from "../../notas/components/notasStyles";
 import { ResolverPendenciaModal } from "../components/ResolverPendenciaModal";
-import { AbaFiscalPanel } from "../components/AbaFiscalPanel";
 import { SugestaoAnexoTabela } from "../components/SugestaoAnexoPanel";
+import { SugestaoModal } from "../components/SugestaoModal";
+import { TabelaAnexoReferencia } from "../components/TabelaAnexoReferencia";
 import { FechamentoModal } from "../../apuracao/components/FechamentoModal";
 import { entregaPgdasDoFechamento, CORES_TOM } from "../../apuracao/lib/entregaPgdas";
 import { RelatorioFaturamentoPanel } from "../components/RelatorioFaturamentoPanel";
 import { estadoDaClassificacao, kpiDasApurado, CORES_TOM_RELATORIO } from "../lib/relatorioFaturamento";
-import { leituraDaPendencia } from "../lib/pendenciaTela";
-import { Tabs } from "../../../components/ui/Tabs";
+import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
+import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
 import { Aviso } from "../../../components/ui/Aviso";
 import { Button } from "../../../components/ui/Button";
 
@@ -48,19 +59,10 @@ function EstadoBadge({ estado }) {
   return <span style={{ color: cor, fontWeight: 700 }}>{rotuloEstadoApuracao(estado)}</span>;
 }
 
-function SecaoTabs({ secao, setSecao, pendCount }) {
-  const itens = [
-    { key: "apuracao", label: "Apuração" },
-    // "Perfil fiscal", não "Cadastro": a palavra Cadastro já era o grupo de abas da empresa E a
-    // tela de ficha. Três coisas com o mesmo nome, duas delas visíveis ao mesmo tempo.
-    { key: "cadastro", label: "Perfil fiscal" },
-    { key: "sugestao", label: "Sugestão", badge: pendCount },
-  ];
-  /* ⚠ `center`, como os dois níveis de aba ACIMA desta, no mesmo cabeçalho. Ela era a única
-     alinhada à esquerda: três barras de aba empilhadas na mesma tela, a terceira desalinhada das
-     outras duas, e nenhuma razão registrada para a diferença. */
-  return <Tabs items={itens} active={secao} onChange={setSecao} ariaLabel="Seções da apuração" />;
-}
+// ⚠ `SecaoTabs` MORREU AQUI em 24/08/2026 — ver o cabeçalho. Ela desenhava a TERCEIRA barra de abas
+// empilhada na mesma tela, e o comentário que ela carregava já denunciava o problema: *"três barras
+// de aba empilhadas na mesma tela"*. Não é para voltar; se um conteúdo novo precisar de lugar, ele
+// é seção da página (com título) ou aba de verdade, com URL.
 
 function Kpi({ label, value, cor, title }) {
   return (
@@ -71,8 +73,17 @@ function Kpi({ label, value, cor, title }) {
   );
 }
 
-export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competencia: competenciaGlobal, onCompetenciaChange }) {
-  const [secao, setSecao] = useState("apuracao");
+export function ApuracaoV2Tab({
+  panel, api, companyId, feedback, razao,
+  competencia: competenciaGlobal, onCompetenciaChange,
+  // ⚠ Quem navega é a PÁGINA (ela tem o `switchTab`); esta aba só sabe para onde. Sem o retorno
+  // de chamada o `<a href>` continua funcionando — só recarrega a página inteira em vez de navegar
+  // por dentro do app.
+  onAbrirPerfilFiscal = null,
+}) {
+  // ⚠ Era `const [secao, setSecao] = useState("apuracao")` — o estado do terceiro nível de abas.
+  // Sobrou só a pergunta que ele de fato respondia: a classificação está aberta ou não.
+  const [sugestaoAberta, setSugestaoAberta] = useState(false);
   const [resolvendo, setResolvendo] = useState(null);
   // ⚠ A COMPETÊNCIA É DA EMPRESA, não desta aba — vem do seletor do header.
   // Era `useState(competenciaAnterior())`: sair de Lançamentos em maio e entrar aqui mostrava
@@ -166,7 +177,7 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
     if (secao === "apuracao") carregarApuracao();
   }, [secao, carregarApuracao]);
 
-  // O relatório também alimenta a leitura de "0 pendências" da sub-aba Sugestão — por isso ele é
+  // O relatório também alimenta a leitura de "0 pendências" (o botão de classificação e o modal) — por isso ele é
   // carregado nas duas, e não só onde é desenhado.
   useEffect(() => {
     if (secao === "apuracao" || secao === "sugestao") carregarRelatorio();
@@ -260,11 +271,8 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
     /* Era `maxWidth: 1100`. A aba tem as tabelas da memória de cálculo e a grade de PAs — em
        1100px elas rolavam na horizontal com meia tela vazia ao lado. Largura de trabalho (~90%). */
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "var(--content-wide)", marginLeft: "auto", marginRight: "auto" }}>
-      <SecaoTabs secao={secao} setSecao={setSecao} pendCount={pendencias.length} />
-
-      {/* ── APURAÇÃO ──────────────────────────────────────────────────── */}
-      {secao === "apuracao" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, color: PANEL.text }}>
+      {/* ── APURAÇÃO — a página inteira, sem o terceiro nível de abas ──── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, color: PANEL.text }}>
           <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
             {/* ⚠ Sem `input type="month"` aqui: quem troca a competência é o seletor do header, um
                 só para a empresa inteira. O RÓTULO fica — ele diz sobre que mês esta barra fala,
@@ -282,17 +290,29 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
                 empresa com pendência crônica sem saída pela tela — o botão é a única porta para o
                 modal, que é onde se resolve. Então o que faltava não era a trava: era o contador
                 saber, ANTES de clicar, que há pendência aberta e quantas. */}
-            {pendencias.length > 0 && (
-              <button type="button" onClick={() => setSecao("sugestao")}
-                title="Ver as pendências na sub-aba Sugestão"
-                style={{
-                  background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)",
-                  color: "var(--state-warn)", borderRadius: "var(--radius-sm)", cursor: "pointer",
-                  padding: "6px 10px", fontSize: "0.78rem", fontWeight: 600, marginBottom: 2,
-                }}>
-                ⚠ {pendencias.length} pendência{pendencias.length > 1 ? "s" : ""} de classificação
-              </button>
-            )}
+            {/* ⚠⚠ ELE RENDERIZA SEMPRE, E ISSO É O QUE SALVA A LEITURA DE TRÊS ESTADOS.
+                Ele era condicionado à existência de pendência, e funcionava porque a seção Sugestão estava ali ao
+                lado para mostrar o resto. Com a seção virando modal, este botão passou a ser a
+                ÚNICA porta: mantido o `> 0`, a resposta *"nenhuma pendência aberta — e isso ainda
+                NÃO quer dizer classificada"* (`estadoDaClassificacao`, o caso de 16.153/16.153
+                itens sem `tipoReceita` em produção) ficaria sem nenhum lugar na tela. Lista vazia
+                se leria como trabalho concluído, que é exatamente o que aquela regra existe para
+                impedir.
+                ⚠ Rótulo e tom saem da MESMA leitura que o modal usa — não há segundo texto. */}
+            {(() => {
+              const { cor, fundo } = CORES_TOM_RELATORIO[classificacao.tom];
+              return (
+                <button type="button" onClick={() => setSugestaoAberta(true)}
+                  title={classificacao.detalhe}
+                  style={{
+                    background: fundo, border: `1px solid ${cor}`, color: cor,
+                    borderRadius: "var(--radius-sm)", cursor: "pointer",
+                    padding: "6px 10px", fontSize: "0.78rem", fontWeight: 600, marginBottom: 2,
+                  }}>
+                  {classificacao.tom === "ok" ? "✓ " : "⚠ "}{classificacao.rotulo}
+                </button>
+              );
+            })()}
             <Button onClick={() => setFechando({ retificar: false })} disabled={fechLoading}>
               {estado === "aberta" || !estado ? "Calcular / Fechar" : "Revisar / Fechar"}
             </Button>
@@ -362,12 +382,42 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
               trocar a chave quebraria em silêncio. */}
           {fechDados?.cadastroCompleto === false && (
             <Aviso compacto tom="atencao" titulo="Cadastro fiscal incompleto">
-              A empresa está sem CNAE. Ajuste na sub-aba <strong>Perfil fiscal</strong> antes de fechar.
+              A empresa está sem CNAE. Ajuste em <strong>Empresa → Perfil fiscal</strong> antes de fechar.
               <div style={{ marginTop: "var(--space-2)" }}>
-                <Button size="sm" variant="secondary" onClick={() => setSecao("cadastro")}>Abrir Perfil fiscal</Button>
+                {/* ⚠ Era `onClick={() => setSecao("cadastro")}` — trocava a seção interna, que não
+                    existe mais. Virou LINK DE VERDADE, no mesmo padrão da engrenagem da aba Notas
+                    Fiscais: `href` de `companyTabPath` (a MESMA fonte da navegação das abas) +
+                    `oNavegadorAssumeOClique`, então Ctrl+clique abre em nova guia e o clique
+                    simples navega por dentro do app.
+                    ⚠ É `<a>` com as classes do botão único, e NÃO `<Button as="a">`: `Button`
+                    renderiza `<button>` sempre, e um `href` ali viraria atributo inválido — link
+                    que não navega. O precedente é `renderNotasFiscaisTab.jsx:214`. */}
+                <a
+                  className="btn btn-secondary btn-sm"
+                  href={companyTabPath(companyId, "perfilFiscal")}
+                  style={{ textDecoration: "none" }}
+                  onClick={(event) => {
+                    if (oNavegadorAssumeOClique(event)) return;
+                    event.preventDefault();
+                    onAbrirPerfilFiscal?.();
+                  }}
+                >
+                  Abrir Perfil fiscal
+                </a>
               </div>
             </Aviso>
           )}
+
+          {/* ⚠⚠ A TABELA DO ANEXO — o pedido do dono ("sem tabela do anexo"). Ela fica AQUI, logo
+              abaixo dos KPIs e antes do relatório, porque a pergunta que ela responde ("em que
+              faixa esta empresa está?") se lê junto do RBT12 e do DAS, que estão nos KPIs acima.
+              ⚠ `folha12m` vem do snapshot e pode ser NULA — é `null` que faz a regra dizer "depende
+              do Fator R" em vez de escolher o Anexo III sozinha. Não trocar por `|| 0`. */}
+          <TabelaAnexoReferencia
+            atividades={fechDados?.atividades}
+            rbt12={fechDados?.rbt12}
+            folha12m={snap?.folha12m}
+          />
 
           {/* ⚠ O RELATÓRIO DE FATURAMENTO — pedido do dono: exibido ao calcular, SALVO, e visível
               aqui. Ao abrir a aba mostra a foto salva (GET); gerar é um clique. Nem o GET nem o
@@ -410,110 +460,32 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
               </div>
             )}
           </div>
-        </div>
-      )}
+      </div>
 
-      {/* ── CADASTRO (enxuto: só regime + atividades permitidas) ───────── */}
-      {secao === "cadastro" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{ padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, fontSize: "0.85rem" }}>
-            Regime tributário: <strong style={{ color: "var(--state-ok)" }}>
-              {String(panel.cadastro?.regime || "SIMPLES_NACIONAL") === "SIMPLES_NACIONAL" ? "Simples Nacional" : (panel.cadastro?.regime || "—")}
-            </strong>
-          </div>
-          <AbaFiscalPanel panel={panel} />
-        </div>
-      )}
+      {/* ⚠ A seção CADASTRO saiu daqui e virou a aba **Perfil fiscal**, do grupo Empresa
+          (`renderPerfilFiscalTab.jsx`). Junto com ela foi consertado o default que imprimia
+          "Simples Nacional" para empresa SEM REGIME cadastrado — ausência de dado virando
+          afirmação, em verde, que nesta casa quer dizer concluído. */}
 
-      {/* ── SUGESTÃO + PENDÊNCIAS (por competência) ────────────────────── */}
-      {secao === "sugestao" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, color: PANEL.text }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
-            {/* ⚠ Sem `input type="month"` aqui: quem troca a competência é o seletor do header, um
-                só para a empresa inteira. O RÓTULO fica — ele diz sobre que mês esta barra fala,
-                e sumir com ele deixaria os botões "Calcular / Fechar" sem período à vista. */}
-            <span style={{ display: "grid", gap: 3, fontSize: "0.75rem", color: PANEL.muted }}>
-              Competência
-              <strong style={{ fontSize: "0.95rem", color: PANEL.text, paddingBottom: 4 }}>{competencia}</strong>
-            </span>
-            {/* Era ciano (#8BE9FD), a cor de categoria do Simples — ver `tokens.css`. */}
-            <Button variant="secondary" onClick={sugerir} disabled={sugLoading}>
-              {sugLoading ? "Carregando…" : "Sugerir"}
-            </Button>
-            <Button onClick={classificar} disabled={classificando}>
-              {classificando ? "Classificando…" : "Classificar competência"}
-            </Button>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ fontSize: "0.9rem", fontWeight: 700 }}>Pendências</div>
-            {/* ⚠ "✓ Nenhuma pendência aberta" EM VERDE CONCLUÍA O QUE NÃO FOI FEITO.
-                Pendência só nasce quando o classificador roda e não acha regra — e `tipoReceita` é
-                nulo em 16.153/16.153 itens em produção. Ou seja: hoje a lista vazia quer dizer
-                "ninguém classificou", e o ✓ verde (que neste app significa CONCLUÍDO) afirmava o
-                contrário. Quem desempata é o relatório de faturamento da competência, que mede
-                exatamente quanta receita está sem tipo; sem ele, a resposta honesta é a terceira —
-                não sabemos —, e ela não é verde. A regra vive em `lib/relatorioFaturamento.js`. */}
-            {pendencias.length === 0 ? (() => {
-              const { cor, fundo } = CORES_TOM_RELATORIO[classificacao.tom];
-              return (
-                <div style={{ padding: 14, color: cor, background: fundo, border: `1px solid ${cor}`, borderRadius: 8, fontSize: "0.85rem", display: "flex", flexDirection: "column", gap: 4 }}>
-                  <strong>{classificacao.tom === "ok" ? "✓ " : "⚠ "}{classificacao.rotulo}</strong>
-                  <span style={{ color: PANEL.muted }}>{classificacao.detalhe}</span>
-                </div>
-              );
-            })() : (
-              pendencias.map((p) => {
-                // ⚠ A tela imprimia `[{p.tipo}]` — `[ITEM_SEM_REGRA]` cru, entre colchetes, como
-                // cabeçalho de cada pendência. Ver `../lib/pendenciaTela.js` (o enum cru não se
-                // perdeu: vive no `title`).
-                const leitura = leituraDaPendencia(p.tipo);
-                // ⚠ Âmbar é "pendência com ação"; o outro ramo era `#FF4757`, que nem token é
-                // (`--state-danger` é `#FF5757`). Vermelho aqui diria que a pendência bloqueia o
-                // fechamento — e o que ela bloqueia é o cálculo do motor, não o mês.
-                const cor = leitura.conhecida ? "var(--state-warn)" : "var(--state-neutral)";
-                return (
-                <div key={p.id}
-                  style={{
-                    padding: 12, background: PANEL.field, border: `1px solid ${cor}`,
-                    borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
-                  }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div title={leitura.titulo}
-                      style={{ fontSize: "0.72rem", color: cor, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.03em" }}>
-                      {leitura.rotulo}
-                    </div>
-                    <div style={{ fontSize: "0.9rem" }}>{p.resumo}</div>
-                    {leitura.explicacao && (
-                      <div style={{ fontSize: "0.75rem", color: PANEL.muted, marginTop: 4 }}>{leitura.explicacao}</div>
-                    )}
-                    {p.competencia && (
-                      <div style={{ fontSize: "0.7rem", color: PANEL.muted, marginTop: 4 }}>
-                        {p.competencia} · {fmtDate(p.createdAt)}
-                      </div>
-                    )}
-                  </div>
-                  {p.tipo === "ITEM_SEM_REGRA" && (
-                    <Button size="sm" onClick={() => setResolvendo(p)} style={{ flex: "none" }}>
-                      Classificar
-                    </Button>
-                  )}
-                </div>
-                );
-              })
-            )}
-          </div>
-
-          {sugErro && (
-            <div style={{ padding: 10, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: "var(--radius-sm)", color: "var(--state-danger)", fontSize: "0.85rem" }}>{sugErro}</div>
-          )}
-          {sugData && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ fontSize: "0.9rem", fontWeight: 700 }}>Sugestão de anexo por nota</div>
-              <SugestaoAnexoTabela data={sugData} />
-            </div>
-          )}
-        </div>
+      {/* ⚠ A seção SUGESTÃO saiu daqui e virou MODAL (`components/SugestaoModal.jsx`), aberto
+          pelo botão de pendências da barra acima — que já era a porta natural dela. Modal, e não
+          painel embutido, porque esta página é impressa (`data-print-area`) e só pode haver UM por
+          página: a classificação não fala do relatório de faturamento. */}
+      {sugestaoAberta && (
+        <SugestaoModal
+          competencia={competencia}
+          pendencias={pendencias}
+          classificacao={classificacao}
+          sugerir={sugerir}
+          sugLoading={sugLoading}
+          classificar={classificar}
+          classificando={classificando}
+          sugErro={sugErro}
+          sugData={sugData}
+          SugestaoAnexoTabela={SugestaoAnexoTabela}
+          onClassificarPendencia={(p) => { setResolvendo(p); setSugestaoAberta(false); }}
+          onClose={() => setSugestaoAberta(false)}
+        />
       )}
 
       {/* Modal de fechamento reusado (calcular/fechar/transmitir/retificar). */}
