@@ -26,6 +26,7 @@ Estrutura típica do PDF (texto extraído pelo pdfplumber):
 from typing import Any
 
 from app.extractors.composicao import extract_composicao
+from app.extractors.darf_numerado import extract_composicao_numerada
 
 # Mapeamento de código de receita → tipo do Guide.
 # Lista focada nos tributos federais mais comuns para PJ presumido/real.
@@ -99,6 +100,19 @@ def refine_darf(fields: dict[str, Any], text: str, text_upper: str) -> dict[str,
     campo e ajusta `document_type` antes de devolver pro cliente JS.
     """
     composicao = extract_composicao(text)
+
+    # ⚠ SEGUNDO LAYOUT, E SÓ QUANDO O PRIMEIRO NÃO EXISTE (medido em 20/08/2026). O DARF de
+    # PARCELAMENTO não-Simples vem no formulário NUMERADO, que não tem a tabela de composição — ele
+    # declara principal/multa/juros/total nos campos 07/08/09/10 e o código de receita no 04. Sem
+    # isto ele saía com `composicao = []`, a parcela ficava sem `TributoParcela` e a baixa dependia
+    # da declaração manual do contador.
+    #
+    # A ordem importa e é esta: a TABELA vence. Onde ela existe, é a fonte mais rica (N tributos,
+    # denominação, período por linha) e o formulário numerado nem está impresso. O fallback só
+    # responde ao documento que não tem tabela nenhuma, e ele mesmo devolve LISTA VAZIA quando a
+    # aritmética do documento não fecha — ver `darf_numerado`.
+    if not composicao:
+        composicao = extract_composicao_numerada(text)
 
     tipo_final = _decide_tipo(composicao)
 
