@@ -835,6 +835,23 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
               />
             </Suspense>
           </ErrorBoundary>
+
+          {/* ⚠⚠ SEM ISTO A ABA INTEIRA É MUDA — relatado pelo dono em 25/08/2026: *"ao clicar em
+              classificar competência nada acontece"*. E não acontecia MESMO: a classificação
+              rodava, `useApuracaoV2` chamava `notifySuccess("Classificou 0/0…")`, e **ninguém
+              desenhava a mensagem**. Medido na tela: depois do clique, o texto do documento não
+              mudou em um caractere.
+
+              ⚠ O `feedback` estava sendo passado certo o caminho todo (página → wrapper → hook) —
+              o que faltava era o CONSUMIDOR. As abas que usam `CompanyTabLayout` ganham este
+              componente de graça (ele o renderiza por dentro); as que montam o layout à mão, como
+              esta, precisam declará-lo.
+
+              ⚠ É primo do defeito que o `apps/web/CLAUDE.md` já registra (*"o sintoma era 'o botão
+              Calcular não faz nada'"*), mas não o mesmo: lá o objeto `feedback` era mutilado na
+              passagem; aqui ele chega inteiro e não tem quem o mostre. Mesma consequência, outra
+              causa — e por isso o conserto de lá não protegeu esta aba. */}
+          <Feedback message={feedback.message} error={feedback.error} />
         </div>
       </div>
     );
