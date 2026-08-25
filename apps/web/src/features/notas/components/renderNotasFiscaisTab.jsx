@@ -11,9 +11,14 @@
 // O fundamento técnico reforça a decisão: **as duas espécies não são a mesma coisa.** NF-e tem
 // item, NCM, CFOP e quantidade; NFS-e tem código de serviço e ISS. A coluna comum é pouca (data,
 // emitente, valor, situação), então lista única sempre mostraria o menor denominador das duas.
-// ⚠ O que ele quer saber — *"o total de notas recebidas"* — é respondido pelo `RecebidasResumo`,
+// ⚠ O que ele quer saber — *"o total de notas recebidas"* — é respondido pelo **`NotasResumo`**,
 // que conta as duas espécies e diz que a soma é soma de espécies diferentes. Não precisa de lista
 // única, e por isso ela não existe.
+//
+// ⚠ ESTA FRASE DIZIA `RecebidasResumo` ATÉ 24/08/2026, e o componente **não existe mais**: ele foi
+// APAGADO em 23/08 quando o dono mandou absorver a faixa de recebidas para junto das outras caixas
+// (*"isso aqui tá horrível, esse notas recebidas em cima tem que ser absorvido"*). Um comentário
+// que manda procurar um arquivo apagado custa uma busca inteira a quem vier atrás.
 //
 // ⚠⚠ DOIS DEFEITOS MEDIDOS EM PRODUÇÃO (23/08/2026) FORAM CONSERTADOS AQUI, e os dois faziam a
 // MESMA coisa: esconder do contador as notas de COMPRA que nós já tínhamos capturado.

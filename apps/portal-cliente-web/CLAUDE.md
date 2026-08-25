@@ -64,6 +64,7 @@ src/
                           ⚠ SÓ LEITURA, e o piso é CLIENT_ADMIN — ver a seção própria
   lib/
     format.js  hooks.js  roles.js  mensagens.js  baixarBlob.js
+                    ⚠ `hooks.js` → `useDialogoModal`: Esc, foco que entra, foco PRESO e foco que volta
     municipios/   - SÓ a regra; o dado (5.571 linhas) vem de `@contabilidade/shared/municipios-ibge`
                     por `import()` dinâmico ⚠ a tabela era cópia nos dois portais até 20/08/2026
     servicosNacionais/ - Anexo B gerado (335 códigos, 63 KB), idem
@@ -257,6 +258,10 @@ duas formas para a mesma tela divergem na primeira correção.
 - ⚠ **`PainelDoDia` é o TERCEIRO diálogo com o mesmo miolo copiado** (`SeletorEmpresa`,
   `ConfirmarCancelamento`). Extrair um `Dialogo` comum é a hora certa — mas migrar o
   `ConfirmarCancelamento` mexe no fluxo de CANCELAMENTO de nota fiscal. **Próximo passo nomeado.**
+  - ⚠⚠ **O MIOLO DOS TRÊS VIROU `useDialogoModal` (`lib/hooks.js`) EM 24/08/2026 — e isso NÃO é o
+    `Dialogo` comum acima.** A distinção é o ponto: um hook troca o `useEffect` de cada um e **não
+    toca uma linha de JSX**, então o markup do cancelamento fica intacto. O passo nomeado continua
+    nomeado.
 - ⚠ **A competência vem por prop, da casca.** Tela nova com mês nunca ganha
   `useState(competenciaPadrao)` — e o painel **não acrescenta um segundo controle "Competência"**:
   `getByLabelText("Competência")` explodiria com dois casamentos e derrubaria a suíte de ligação.
@@ -283,6 +288,39 @@ navegador).
   fora da lista de `data-status` renderiza **sem cor nenhuma, em silêncio** — o defeito que
   `lote/lib/__tests__/emissaoDoLote.test.js` já nomeia para as notas e que a guia não tinha.
   Uma lista copiada à mão teria o mesmo problema que ela quer resolver.
+
+## ⚠⚠ `aria-modal="true"` ERA UMA PROMESSA NÃO CUMPRIDA — `lib/hooks.js`, `useDialogoModal`
+
+Os três diálogos (`SeletorEmpresa`, `ConfirmarCancelamento`, `PainelDoDia`) declaravam
+`role="dialog"` + `aria-modal="true"` desde que nasceram, mandavam o foco para a caixa e fechavam no
+Esc. **Nenhum prendia o foco:** com Tab ele saía do diálogo e ia passear pela página atrás, que
+continua inteira no DOM.
+
+⚠ O atributo **afirma ao leitor de tela que o resto da página está inerte**. No cancelamento isso não
+é conforto: dava para acionar o "Cancelar" de OUTRA nota da lista com o diálogo de cancelamento de
+nota fiscal aberto por cima.
+
+- ⚠⚠ **A LISTA DE FOCÁVEIS É RECALCULADA A CADA Tab, nunca na montagem.** O conteúdo destes diálogos
+  MUDA com o uso: os `‹ ›` do `PainelDoDia` desabilitam nas bordas do mês, e o botão de enviar do
+  cancelamento habilita conforme a justificativa cresce. Congelada, a lista mandaria o foco para um
+  botão desabilitado — que não o aceita — e o Tab pareceria morto.
+- ⚠⚠ **`atual === caixa` PRECISA CAIR NO RAMO DE CAPTURA**, e é o buraco fácil de deixar: `contains`
+  inclui o próprio nó, então tratar só `!contains` deixaria o foco NA CAIXA de fora — e o
+  **Shift+Tab** sairia do diálogo para trás. O Tab para a frente pareceria certo (o navegador já iria
+  para o primeiro de dentro), então o furo só apareceria no sentido que quase ninguém testa.
+- ⚠ **No MEIO da lista o handler não interfere** — prender o foco não é conduzi-lo; quem tabula é o
+  navegador.
+- ⚠ **`escFecha: false`** é o estado do cancelamento com o pedido em voo: o Esc não fecha, porque o
+  desfecho pode estar em trânsito. **Isso não afrouxa a prisão do foco.**
+- ⚠ **O foco VOLTA para quem abriu** — e só se ainda estiver dentro do diálogo. Se a página já o
+  moveu (a `NotasPage` recarrega a lista ao cancelar), roubá-lo de volta seria pior que não devolver.
+- ⚠ O teste é de LIGAÇÃO (`lib/__tests__/dialogoModalPrendeOFoco.ligacao.test.jsx`) e tinha de ser: a
+  regra sozinha não provaria nada, porque o que estava errado era **ninguém a ter**.
+  ⚠ **O jsdom não move o foco no Tab** — ele não implementa ordem de tabulação. As asserções são
+  sobre o que o NOSSO handler faz (`preventDefault` + para onde ele manda o foco); medir "o Tab
+  andou" ali seria medir uma emulação que não existe, a mesma armadilha de `cliqueDeLink.js`.
+  Experimento executado: desligando a prisão, **5 vermelhos de 10**. Conferido também no navegador,
+  com o diálogo real e os 8 focáveis de verdade.
 
 ## ⚠⚠ A ARMADILHA DO `<dl>` — especificidade não resolve o que não é DECLARADO
 
@@ -1020,6 +1058,20 @@ acrescentando `chaveAcesso` "só para a tela mostrar".
 ⚠ Nota sem total abre o campo **vazio**, nunca `0,00`, e o aviso muda de código junto
 (`valor_copiado` × `valor_em_branco`) — um aviso fixo mentiria num dos dois ramos.
 
+⚠⚠ **A DECISÃO DE 19/08 DEIXOU RASTRO FALSO EM TRÊS LUGARES, LIMPOS EM 24/08/2026** — o cabeçalho do
+módulo, o comentário de `podeReaproveitar` e **uma frase da TELA** (*"Não guardamos o tomador desta
+nota — e o valor não é copiado"*) continuaram descrevendo o comportamento de 18/08. A tela
+contradizia a si mesma sobre o mesmo campo, porque três funções abaixo o aviso `valor_copiado` diz
+que o valor FOI copiado.
+- ⚠ **E a guarda ficou de pé sobre o fato morto:** `podeReaproveitar` barrava nota sem tomador
+  **mesmo com total**, enquanto o escritório a aceita (`!temTomador && !temValor`). A MESMA nota
+  abria lá e era recusada aqui. Alinhado. ⚠ O critério não afrouxou: **nada a copiar continua
+  barrando**, e total ZERO não conta como valor.
+- ⚠ O teste que travava o comportamento antigo levava a premissa morta escrita no próprio
+  comentário, e ficava verde porque media a guarda — **as duas concordavam entre si sobre um fato já
+  falso**. Isto não é o mesmo que reabrir decisão do dono (ver a legenda da alíquota em
+  `EmitirNotaPage`): ali havia decisão; aqui havia um raciocínio técnico cuja base deixou de existir.
+
 ⚠ **Nota cancelada e nota substituída PODEM ser modelo** (a nota errada é o melhor modelo para a
 certa): copiar não é reemitir, a original não é tocada e nenhum evento é gerado. O que não se pode é
 a tela calar — a permissão vem sempre com o aviso de que isto não corrige nem substitui a origem.
@@ -1224,9 +1276,9 @@ de outra.
 
 ## TESTES
 
-`npm test -w @contabilidade/portal-cliente-web` → **894 testes, 48 suítes, todas verdes** (medido em
-23/08/2026, depois de a marca da topbar virar só o sol; eram 814/45 depois da marca, eram 807/44 depois da situação fiscal, 683/38 em 20/08, e 557/32 antes
-do lote por planilha). Não existiam até 18/08 (`d5a91490` subiu os primeiros 101).
+`npm test -w @contabilidade/portal-cliente-web` → **947 testes, 51 suítes, todas verdes** (medido em
+24/08/2026, depois da rodada da auditoria; eram 894/48 em 23/08 com a marca da topbar, 814/45 depois
+da marca, 807/44 depois da situação fiscal, 683/38 em 20/08, e 557/32 antes do lote por planilha). Não existiam até 18/08 (`d5a91490` subiu os primeiros 101).
 **0 suíte falhando é o estado esperado.**
 
 ⚠ **`npm test` PASSA COM JSX QUEBRADO — só `npm run build` pega.** Rode os dois.
@@ -1255,19 +1307,23 @@ pacote comum; a duplicação é conhecida e a obrigação de sincronizar é sua:
 | aqui | original |
 |---|---|
 | `emitir/lib/valorDaNota.js` | `apps/web/src/features/notas/lib/valorDaNota.js` |
-| `emitir/lib/consultaTomador.js` | `apps/web/src/features/notas/lib/consultaTomador.js` |
+| `emitir/lib/consultaTomador.js` | `apps/web/src/features/notas/lib/consultaTomador.js` — ⚠ os 10 exports e a lógica são os MESMOS; diverge **uma frase**, e ela é de produto: lá o endereço do tomador é OPCIONAL (*"ou deixe vazio"*), aqui o formulário marca os cinco campos como `required`, então a frase diz *"a nota exige o endereço completo"*. Copiar a de lá ofereceria uma saída que este formulário não aceita |
 | `emitir/lib/reaproveitarNota.js` | `apps/web/src/features/notas/lib/reaproveitarNota.js` |
 | `emitir/lib/descricaoSugerida.js` | `apps/web/src/features/notas/lib/descricaoSugerida.js` |
-| `emitir/lib/cargaTributaria.js` | `apps/web/src/lib/nfse/cadastroEmissaoNfse.js` |
+| `emitir/lib/cargaTributaria.js` | `apps/web/src/lib/nfse/cadastroEmissaoNfse.js` — ⚠⚠ **espelho PARCIAL, e só de `lerPercentualCarga`**: o de lá exporta 11 funções (código de serviço, série de RPS, benefício municipal, `faltasParaEmitir`) que são do CADASTRO, tela do contador. Sincronizar o arquivo inteiro traria para o cliente regras que ele não pode exercer |
 | `emitir/lib/codigoServicoDaNota.js` | `apps/api/src/application/nfse/codigoServicoDaNota.js` (**autoridade**) |
 | `notas/lib/cancelamentoNota.js` (`MOTIVOS_CANCELAMENTO`) | `apps/api/src/application/nfse/motivosDeEvento.js` (**valida**) |
 | `notas/lib/danfseDaNota.js` | `apps/web/src/features/notas/lib/danfseDaNota.js` (⚠ contratos DIFERENTES) |
-| `lote/lib/colunasDoLote.js` (`COLUNAS_DO_LOTE` **e** `CAMPOS_DA_REVISAO`) | `apps/api/src/application/nfse/lote/colunasLote.js` (**autoridade**) — ⚠ são DUAS listas desde 20/08/2026: quatro colunas de planilha, onze campos de revisão |
+| `lote/lib/colunasDoLote.js` (`COLUNAS_DO_LOTE` **e** `CAMPOS_DA_REVISAO`) | `apps/api/src/application/nfse/lote/colunasLote.js` (**autoridade**) — ⚠ são DUAS listas desde 20/08/2026: quatro colunas de planilha, **doze** campos de revisão (`documento` · `descricao` · `valor` · `competencia` · `nome` · `email` · `cMun` · `cep` · `xLgr` · `nro` · `xBairro` · `xCpl`) — ⚠ dizia **onze** até 24/08/2026, contado a mão; hoje é o `length` medido da lista do backend |
 | `lote/lib/estadoDaLinhaDoLote.js` (`ESTADO`) | `apps/api/src/application/nfse/lote/classificarLinhaLote.js` (**autoridade**) |
 | `lib/servicosNacionais/` | tabela gerada; `servicosNacionais.data.js` sai de `apps/api/scripts/gerar-lista-servico-nacional.mjs`, que **escreve nos dois portais** — **não editar à mão** |
 | ~~`lib/municipios/` (o dado)~~ | ⚠ **DEIXOU DE SER ESPELHO EM 20/08/2026**: a tabela do IBGE virou arquivo único em `@contabilidade/shared/municipios-ibge`. A REGRA (`municipioIbge.js`) continua uma por portal, de propósito — a do escritório carrega textos de cadastro que não são do cliente |
 | `lib/roles.js` | `apps/api/.../emissaoClienteAutorizacao.js` + `portal-cliente-mobile/src/roles.ts` |
 | `lib/cliqueDeLink.js` | `apps/web/src/components/ui/cliqueDeLink.js` (quem assume o clique numa aba-link) |
+| `guias/lib/rotuloGuia.js` | `apps/web/src/features/guides/lib/rotuloGuia.js` (`rotuloTipoGuia`) — ⚠ **amarrado por teste**: o daqui importa a função de lá e exige o mesmo veredito em 12 casos. ⚠ O ramo do PARCELAMENTO **não** é espelho (lá o rótulo é montado no front; aqui o backend manda `parcelamentoLabel` pronto); o que fica travado é a PRECEDÊNCIA |
+| `guias/lib/linhaDigitavelTela.js` | `apps/web/src/features/guides/lib/linhaDigitavelTela.js` — ⚠ **as três ausências (`NAO_TENTADA`/`NAO_ENCONTRADA`/`DIVERGENTE`) são as mesmas; o TEXTO diverge de propósito**: o cliente **não vê os dois valores** da divergência, que são material de trabalho do contador |
+| `api/real/brasilApi.js` | `apps/web/src/features/onboarding/lib/brasilApi.js` — ⚠ mesmo endpoint e mesmo `soDigitosCnpj`; **os mapeadores NÃO são espelho** (`mapearParaOnboarding`/`mapearParaFormularioEmpresa` são de cadastro de empresa, não de tomador de nota). ⚠⚠ E aqui ele **nunca lança `ApiError`** — lançar entraria no wrapper do fallback e a queda da BrasilAPI viraria **dados de empresa do mock** numa tela que emite nota fiscal |
+| `components/ui.jsx` (`BotaoCopiar`) | `apps/web/src/components/ui/BotaoCopiar.jsx` — ⚠ mesma promessa (*"o retorno não mente"*: `navigator.clipboard` não existe em contexto inseguro, e o botão diz "não deu" em vez de piscar "copiado"). ⚠ Diverge o DESENHO: lá é um ícone de 20×18; aqui é um `.btn` com palavra. ⚠ O `stopPropagation` faltava aqui até 24/08/2026 |
 | `components/LogoAltan.jsx` | `apps/web/src/components/ui/LogoAltan.jsx` — ⚠ o desenho é IDÊNTICO; o que diverge são os TOKENS de cor, um par por portal (ver `tokens.css`) |
 | `fiscal/RelatorioSitfis.jsx` + `fiscal/lib/situacaoFiscalNaTela.js` (`COLUNAS_VALOR`, `COLUNA_TOTAL`, `parseValorBR`, `totalDoBloco`) | `apps/web/src/features/fiscal/sitfis/components/SitfisRelatorioTabela.jsx` — ⚠ paleta e DUAS frases divergem de propósito (o cliente não tem o PDF; `situacao` nula não lê como "em dia") |
 

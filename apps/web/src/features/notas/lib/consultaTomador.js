@@ -1,3 +1,19 @@
+// ⚠⚠ ESPELHO — ESTE ARQUIVO TEM UMA CÓPIA DELIBERADA NO PORTAL DO CLIENTE.
+//
+//   `apps/portal-cliente-web/src/features/emitir/lib/consultaTomador.js`
+//
+// Os 10 exports são os mesmos. ⚠ Diverge UMA frase, e é de produto: lá o formulário marca os cinco
+// campos de endereço como `required`, aqui o endereço é opcional — copiar a frase de lá para cá
+// (ou daqui para lá) oferece uma saída que o outro formulário não aceita.
+//
+// ⚠ Os dois frontends NÃO compartilham código; a obrigação de sincronizar é de quem edita, e a
+// tabela "mudou lá, muda aqui" vive em `apps/portal-cliente-web/CLAUDE.md`. ⚠ Duas leituras da
+// mesma regra divergem na primeira correção — e a divergência aparece como as duas telas afirmando
+// coisas diferentes sobre a MESMA empresa, que é o defeito mais caro de achar.
+//
+// ⚠ Este aviso foi acrescentado em 24/08/2026: até então **12 dos 13 originais eram mudos** sobre
+// ter cópia, e a tabela do `CLAUDE.md` só é consultada por quem já sabe que ela existe.
+
 // CONSULTA DO TOMADOR NA RECEITA — a REGRA, sem tela e sem rede.
 //
 // Quem faz a chamada é `features/onboarding/lib/brasilApi.js` (`consultarCnpj`), reusada e NÃO

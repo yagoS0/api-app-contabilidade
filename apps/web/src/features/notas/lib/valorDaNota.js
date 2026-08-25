@@ -1,3 +1,19 @@
+// ⚠⚠ ESPELHO — ESTE ARQUIVO TEM UMA CÓPIA DELIBERADA NO PORTAL DO CLIENTE.
+//
+//   `apps/portal-cliente-web/src/features/emitir/lib/valorDaNota.js`
+//
+// Cópia integral. ⚠ O erro que este módulo fecha é de ORDEM DE GRANDEZA (`1.500,00` → `NaN`,
+// `1.500` → `1.5`): uma correção que fique só aqui deixa o outro portal emitindo por 1/1000 do
+// valor.
+//
+// ⚠ Os dois frontends NÃO compartilham código; a obrigação de sincronizar é de quem edita, e a
+// tabela "mudou lá, muda aqui" vive em `apps/portal-cliente-web/CLAUDE.md`. ⚠ Duas leituras da
+// mesma regra divergem na primeira correção — e a divergência aparece como as duas telas afirmando
+// coisas diferentes sobre a MESMA empresa, que é o defeito mais caro de achar.
+//
+// ⚠ Este aviso foi acrescentado em 24/08/2026: até então **12 dos 13 originais eram mudos** sobre
+// ter cópia, e a tabela do `CLAUDE.md` só é consultada por quem já sabe que ela existe.
+
 // O VALOR DOS SERVIÇOS COMO MOEDA BRASILEIRA — uma leitura só, e nenhuma grafia ambígua.
 //
 // > Pedido do dono, 18/08/2026: *"Ajuste o campo de valor de preenchimento da nota, para valor,

@@ -140,7 +140,11 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     - ⚠ **"Recebidas" não é clicável**, e a ausência é o que a mantém honesta: o valor é das duas
       espécies e a tabela mostra uma. Quem quer a lista clica na espécie. A ação antiga (filtrar a
       janela por `papel: DEST`) não se perdeu — "Recebidas NFS-e" na janela de NFS-e faz o mesmo.
-  - Detalhes, medições e as armadilhas: **`apps/web/src/features/notas/CLAUDE.md`**.
+  - ⚠ Detalhes, medições e as armadilhas: **`apps/web/CLAUDE.md`**, seção "A ABA NOTAS FISCAIS ENXUGOU", mais o
+    cabeçalho de `apps/web/src/features/notas/components/renderNotasFiscaisTab.jsx`.
+    ⚠ Esta linha apontava para `apps/web/src/features/notas/CLAUDE.md` até 24/08/2026 — **arquivo
+    que nunca existiu**. Os `CLAUDE.md` de feature deste app são quatro: `accounting`, `companies`,
+    `guides` e `onboarding`.
 - [~] **Robustez NFS-e/ADN (Q59)** — captura deve virar *fluxo de eventos por NSU*, não *snapshot por data*.
   Roadmap em **`docs/robustez-nfse-adn.md`**. **Fase 1** (ledger append-only `documentos`/`eventos` +
   `nsu_watermark`/`nsu_gaps` + projeção recalculável) codada e **verificada offline** — ainda NÃO ligada

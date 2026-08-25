@@ -1,3 +1,19 @@
+// ⚠⚠ ESPELHO — ESTE ARQUIVO TEM UMA CÓPIA DELIBERADA NO PORTAL DO CLIENTE.
+//
+//   `apps/portal-cliente-web/src/lib/cliqueDeLink.js`
+//
+// Mesma decisão (quem assume o clique numa aba-link). ⚠ Diverge um detalhe, deliberado e escrito
+// lá: a cópia usa `typeof evento.button === "number"`, porque este `event.button !== 0` devolve
+// `true` para evento sintético sem `button` e mataria a navegação SPA.
+//
+// ⚠ Os dois frontends NÃO compartilham código; a obrigação de sincronizar é de quem edita, e a
+// tabela "mudou lá, muda aqui" vive em `apps/portal-cliente-web/CLAUDE.md`. ⚠ Duas leituras da
+// mesma regra divergem na primeira correção — e a divergência aparece como as duas telas afirmando
+// coisas diferentes sobre a MESMA empresa, que é o defeito mais caro de achar.
+//
+// ⚠ Este aviso foi acrescentado em 24/08/2026: até então **12 dos 13 originais eram mudos** sobre
+// ter cópia, e a tabela do `CLAUDE.md` só é consultada por quem já sabe que ela existe.
+
 /**
  * QUANDO O CLIQUE NUM LINK É DO NAVEGADOR, E NÃO DO APP.
  *

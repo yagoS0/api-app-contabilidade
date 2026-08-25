@@ -1,3 +1,19 @@
+// ⚠⚠ ESPELHO — ESTE ARQUIVO TEM UMA CÓPIA DELIBERADA NO PORTAL DO CLIENTE.
+//
+//   `apps/portal-cliente-web/src/features/guias/lib/rotuloGuia.js`
+//
+// ⚠ AMARRADO POR TESTE: o teste de lá importa `rotuloTipoGuia` DESTE arquivo e exige o mesmo
+// veredito em 12 casos. ⚠ Sem composição o rótulo continua "OUTRA" — inventar "PIS · COFINS"
+// afirmaria ao cliente quais impostos ele paga sem ninguém ter medido.
+//
+// ⚠ Os dois frontends NÃO compartilham código; a obrigação de sincronizar é de quem edita, e a
+// tabela "mudou lá, muda aqui" vive em `apps/portal-cliente-web/CLAUDE.md`. ⚠ Duas leituras da
+// mesma regra divergem na primeira correção — e a divergência aparece como as duas telas afirmando
+// coisas diferentes sobre a MESMA empresa, que é o defeito mais caro de achar.
+//
+// ⚠ Este aviso foi acrescentado em 24/08/2026: até então **12 dos 13 originais eram mudos** sobre
+// ter cópia, e a tabela do `CLAUDE.md` só é consultada por quem já sabe que ela existe.
+
 // COMO UMA GUIA SE CHAMA NA TELA — uma leitura só, para todas as listagens.
 //
 // ⚠ Existe porque o nome da guia NÃO sai do `tipo`. Duas coisas diferentes se apresentam com o

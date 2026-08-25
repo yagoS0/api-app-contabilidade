@@ -1,3 +1,19 @@
+// ⚠⚠ ESPELHO — ESTE ARQUIVO TEM UMA CÓPIA DELIBERADA NO PORTAL DO CLIENTE.
+//
+//   `apps/portal-cliente-web/src/components/ui.jsx` — o componente `BotaoCopiar`
+//
+// Mesma promessa — *"o retorno não mente"*: `navigator.clipboard` não existe em contexto inseguro,
+// e o botão diz "não deu" em vez de piscar "copiado". ⚠ O DESENHO diverge (aqui um ícone de 20×18;
+// lá um `.btn` com palavra). ⚠ O `stopPropagation` desta linha faltava lá até 24/08/2026.
+//
+// ⚠ Os dois frontends NÃO compartilham código; a obrigação de sincronizar é de quem edita, e a
+// tabela "mudou lá, muda aqui" vive em `apps/portal-cliente-web/CLAUDE.md`. ⚠ Duas leituras da
+// mesma regra divergem na primeira correção — e a divergência aparece como as duas telas afirmando
+// coisas diferentes sobre a MESMA empresa, que é o defeito mais caro de achar.
+//
+// ⚠ Este aviso foi acrescentado em 24/08/2026: até então **12 dos 13 originais eram mudos** sobre
+// ter cópia, e a tabela do `CLAUDE.md` só é consultada por quem já sabe que ela existe.
+
 // COPIAR — o gesto que o contador repete o dia inteiro.
 //
 // ⚠⚠ O RETORNO NÃO MENTE, e é a razão de este componente existir num lugar só.

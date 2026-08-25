@@ -257,6 +257,40 @@ em `--text-faint` e 0,72rem.
 ⚠ **O `CLAUDE.md` de `features/notas/` que a raiz cita NÃO EXISTE** — a referência é anterior a esta
 entrega e continua pendurada.
 
+## ⚠⚠ TREZE ARQUIVOS DESTE APP TÊM CÓPIA NO PORTAL DO CLIENTE
+
+`apps/web` e `apps/portal-cliente-web` são dois frontends **sem código compartilhado**, e a
+duplicação é deliberada. O que não era deliberado é o silêncio: **até 24/08/2026, 12 dos 13
+originais não diziam ter cópia** — quem editasse `valorDaNota.js` aqui não tinha um sinal sequer de
+que existe outro portal lendo a mesma regra. Hoje cada um abre com um bloco `⚠⚠ ESPELHO`, dizendo o
+caminho da cópia **e o que diverge nela**.
+
+⚠ **A TABELA CANÔNICA CONTINUA SENDO UMA SÓ**, e mora em `apps/portal-cliente-web/CLAUDE.md`
+("mudou lá, muda aqui"). Duas tabelas divergiriam pelo mesmo motivo que os módulos divergem.
+
+Os originais que carregam o aviso:
+
+| aqui | a cópia |
+|---|---|
+| `src/features/notas/lib/valorDaNota.js` | `features/emitir/lib/valorDaNota.js` |
+| `src/features/notas/lib/consultaTomador.js` | `features/emitir/lib/consultaTomador.js` |
+| `src/features/notas/lib/reaproveitarNota.js` | `features/emitir/lib/reaproveitarNota.js` |
+| `src/features/notas/lib/descricaoSugerida.js` | `features/emitir/lib/descricaoSugerida.js` |
+| `src/features/notas/lib/danfseDaNota.js` | `features/notas/lib/danfseDaNota.js` (⚠ contratos DIFERENTES) |
+| `src/lib/nfse/cadastroEmissaoNfse.js` | `features/emitir/lib/cargaTributaria.js` (⚠ parcial: só `lerPercentualCarga`) |
+| `src/features/guides/lib/rotuloGuia.js` | `features/guias/lib/rotuloGuia.js` (⚠ amarrado por teste) |
+| `src/features/guides/lib/linhaDigitavelTela.js` | `features/guias/lib/linhaDigitavelTela.js` |
+| `src/features/fiscal/sitfis/components/SitfisRelatorioTabela.jsx` | `features/fiscal/RelatorioSitfis.jsx` |
+| `src/features/onboarding/lib/brasilApi.js` | `api/real/brasilApi.js` |
+| `src/components/ui/cliqueDeLink.js` | `lib/cliqueDeLink.js` |
+| `src/components/ui/LogoAltan.jsx` | `components/LogoAltan.jsx` |
+| `src/components/ui/BotaoCopiar.jsx` | `components/ui.jsx` (`BotaoCopiar`) |
+
+⚠⚠ **O CUSTO DE ESQUECER JÁ FOI MEDIDO.** O `reaproveitarNota.js` ficou **cinco dias** divergindo em
+silêncio: a decisão do dono de 19/08/2026 (copiar o valor da nota de origem) foi aplicada aqui e a
+cópia ficou com a guarda de 18/08, recusando nota que este aceita — a MESMA nota abrindo o
+formulário de um lado e sendo recusada do outro. Ninguém reporta esse defeito; só desconfia.
+
 ## Blocos com CLAUDE.md próprio (Q17)
 
 Ler antes de mexer; atualizar ao terminar: `src/features/companies/`,

@@ -1,3 +1,19 @@
+// ⚠⚠ ESPELHO — ESTE ARQUIVO TEM UMA CÓPIA DELIBERADA NO PORTAL DO CLIENTE.
+//
+//   `apps/portal-cliente-web/src/features/emitir/lib/cargaTributaria.js`
+//
+// ⚠⚠ ESPELHO PARCIAL — só `lerPercentualCarga`. As outras 10 funções deste arquivo são do CADASTRO
+// (código de serviço, série de RPS, benefício municipal, `faltasParaEmitir`), tela do contador, e
+// NÃO devem viajar para lá.
+//
+// ⚠ Os dois frontends NÃO compartilham código; a obrigação de sincronizar é de quem edita, e a
+// tabela "mudou lá, muda aqui" vive em `apps/portal-cliente-web/CLAUDE.md`. ⚠ Duas leituras da
+// mesma regra divergem na primeira correção — e a divergência aparece como as duas telas afirmando
+// coisas diferentes sobre a MESMA empresa, que é o defeito mais caro de achar.
+//
+// ⚠ Este aviso foi acrescentado em 24/08/2026: até então **12 dos 13 originais eram mudos** sobre
+// ter cópia, e a tabela do `CLAUDE.md` só é consultada por quem já sabe que ela existe.
+
 // A CONFIGURAÇÃO QUE A EMISSÃO DE NFS-e EXIGE — a regra de tela, num lugar só.
 //
 // ⚠ POR QUE ESTE MÓDULO EXISTE. `buildMissingFields` (`api/application/nfse/NfseService.js`) recusa
