@@ -369,14 +369,66 @@ cai em Anotações **sem erro nenhum** — conferido navegando direto para `/con
 nota apagada, débito sem documento, e a nota sem competência. Este projeto foi mordido **quatro
 vezes** por ramo que só existia em produção.
 
+### ✅ O PAINEL DE CASAMENTOS e a VARREDURA — na tela (25/08/2026)
+
+`features/conferencia/components/PainelDeCasamentos.jsx` · `ModalDaVarredura.jsx`.
+
+**O painel fica ACIMA da fila**, e some sozinho quando não há débito esperando — um bloco permanente
+dizendo "nada a casar" seria ruído na maioria das empresas, que nunca importaram extrato.
+
+⚠⚠ **AMBIGUIDADE NÃO GANHA BOTÃO, e isso é o coração da tela.** Verificado no navegador: **3 débitos,
+1 botão de casar**. Com dois candidatos os DOIS aparecem e **nenhum** tem porta — um "casar" ao lado
+de cada um pareceria inofensivo e converteria a recusa do sistema em decisão do dedo de quem está com
+pressa. A saída é o contador identificar a nota certa e informar o pagamento NELA, na fila abaixo.
+
+⚠⚠ **A confirmação diz que CASAR NÃO CONTABILIZA.** Sem essa frase o contador acha que o lançamento
+saiu e não confere a fila depois. Ela repete os dois lados — débito e nota —, porque *"tem certeza?"*
+não é confirmação.
+
+⚠ **A PISTA aparece na linha** (*"o nome do fornecedor aparece na descrição do banco"*). *"Por que o
+sistema acha que é esta?"* é a pergunta que o contador faz, e respondê-la é o que torna a sugestão
+conferível em vez de mágica.
+
+⚠ **`ambiguo` é ÂMBAR, não vermelho** — é o sistema funcionando, não quebrando. **`nenhum_candidato`
+é NEUTRO**: débito sem nota é comum e legítimo, e âmbar ali encheria a tela de pendência falsa.
+
+⚠⚠ **A VARREDURA NASCE COM O CAMPO DE DATA VAZIO** — verificado na tela: campo em `""` e botão
+desabilitado com *"Escolha a data a partir da qual as notas devem entrar."* Sugerir "o primeiro dia
+do mês" pareceria prestativo e seria a TELA decidindo o volume de trabalho, que é a decisão do
+contador. O servidor recusa sem `desde` (400 `data_piso_obrigatoria`); o diálogo existe para ele não
+descobrir a regra pelo erro.
+
+⚠ **O relatório sai INTEIRO** — medido na tela: *"12 entraram · 18 olhadas · 4 já estavam na fila · 1
+fora do período"*, mais as recusadas **com o motivo em português**. ⚠ E `0 novas · N já existiam` tem
+frase própria: é a **idempotência funcionando**, não falha — sem dizê-lo, o contador roda três vezes
+achando que não funcionou. ⚠ *"Nada varrido"* é resposta diferente de *"nada criado"*, e propõe o
+conserto certo (uma data anterior).
+
+⚠ **Motivo de recusa desconhecido aparece CRU**, nunca sumindo nem virando "erro desconhecido": o
+contador vê o código e pode perguntar.
+
+### ⚠⚠ O MOCK JÁ DIVERGIU DO SERVIDOR — e agora há rede
+
+**Defeito real (25/08/2026):** o mock devolvia `casamentos` e a rota devolve **`linhas`**. Isso falha
+da pior maneira possível — a tela funciona **offline** e quebra **em produção**, ou seja, o erro só
+aparece depois do deploy. A regra do `apps/web/CLAUDE.md` já dizia *"manter contratos idênticos entre
+mock e real"*; faltava alguém verificar.
+
+**`features/conferencia/lib/__tests__/contratoDaConferencia.test.js` (14)** confere cada chave DUAS
+vezes: que o mock a produz, e que ela aparece na **fonte** da rota (ou do serviço que ela espalha).
+Renomear no backend derruba a segunda; esquecer no mock derruba a primeira.
+*Experimento executado: devolvendo `casamentos` ao mock, **5 vermelhos**.*
+
+⚠ A amarração é **textual** — o backend não é importável do front (cruzar apps quebra o boot). Mesma
+disciplina do teste que amarra `"autorizada"` à `whereFaturamentoEmit`.
+
 ## O que ainda **não** existe
 
 | | |
 |---|---|
 | aprendizado e regras | Fase C. `RegraContabilizacao` já existe no schema, **sem escritor ainda** |
-| **a tela do CASAMENTO** | as rotas e o mock existem; o painel de sugestões ainda não foi desenhado |
-| **a varredura pela tela** | `POST /conferencia/varrer-notas` só é alcançável por API. ⚠ Ela precisa da **data-piso**, e quem a escolhe é o contador |
 | tela do cliente (import de OFX) | a rota existe; o portal do cliente ainda não a chama |
+| ⚠⚠ **as duas migrações aplicadas** | `20260824120000` e `20260824160000`. **Sem elas nada disto roda fora do mock** — é decisão do dono |
 
 ## Migration
 

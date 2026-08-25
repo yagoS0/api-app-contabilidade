@@ -16,6 +16,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createApiClient } from "../../../api/client";
 import { Button } from "../../../components/ui/Button";
 import { Modal } from "../../../components/ui/Modal";
+import { ModalDaVarredura } from "./ModalDaVarredura";
+import { PainelDeCasamentos } from "./PainelDeCasamentos";
 import {
   ACAO,
   COMPETENCIA_AUSENTE,
@@ -287,6 +289,11 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
   const [acaoAberta, setAcaoAberta] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState(null);
+  const [varrendo, setVarrendo] = useState(false);
+  // ⚠ Casar muda a FILA (a nota ganha data e passa a A_CONFERIR) e muda o PAINEL (o débito some).
+  // Este contador força o remonte do painel para os dois ficarem coerentes — sem ele, o contador vê
+  // o débito sumir de um lado e a nota continuar "sem pagamento identificado" do outro.
+  const [versao, setVersao] = useState(0);
 
   const competenciaDaConsulta = recorte === "sem-competencia" ? COMPETENCIA_AUSENTE : competencia;
 
@@ -361,6 +368,17 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
             </Selo>
           ))}
           <span style={{ flex: 1 }} />
+          {/* ⚠ A varredura é ESCRITA (cria declarados), então respeita o mesmo piso de papel dos
+              botões da linha. Ela NÃO cria lançamento — tudo nasce esperando pagamento. */}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setVarrendo(true)}
+            disabled={!podeEscrever}
+            title={podeEscrever ? "Trazer notas recebidas para a fila." : "Seu perfil não pode alterar lançamentos desta empresa."}
+          >
+            Trazer notas
+          </Button>
           <Button size="sm" variant="secondary" onClick={carregar} disabled={carregando}>
             {carregando ? "Carregando…" : "Atualizar"}
           </Button>
@@ -388,6 +406,19 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
           </Button>
         </div>
       </div>
+
+      {/* ⚠ ACIMA DA FILA de propósito: um débito de extrato sem nota vinculada é o que pode virar
+          despesa contada duas vezes, e é o que o contador precisa ver primeiro. O painel some
+          sozinho quando não há nada a casar. */}
+      <PainelDeCasamentos
+        key={versao}
+        companyId={companyId}
+        podeEscrever={podeEscrever}
+        aoCasar={() => {
+          setVersao((v) => v + 1);
+          carregar();
+        }}
+      />
 
       {erro ? (
         <div style={{ ...card, borderColor: "var(--state-danger)", color: "var(--state-danger)" }}>{erro}</div>
@@ -455,6 +486,19 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
           </div>
         </div>
       ))}
+
+      {varrendo ? (
+        <ModalDaVarredura
+          companyId={companyId}
+          aoFechar={() => setVarrendo(false)}
+          aoConcluir={() => {
+            // ⚠ A fila muda: as notas novas entram. Recarregar aqui evita o "varri e não apareceu
+            // nada", que se lê como falha.
+            carregar();
+            setVersao((v) => v + 1);
+          }}
+        />
+      ) : null}
 
       {acaoAberta ? (
         <ModalDaAcao

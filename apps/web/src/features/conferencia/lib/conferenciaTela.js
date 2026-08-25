@@ -367,3 +367,135 @@ export function cnpjFormatado(cnpj) {
   if (d.length !== 14) return cnpj || null;
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// O CASAMENTO DÉBITO × NOTA
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** ⚠ Por que um débito ficou sem sugestão. Vocabulário FECHADO, espelho do backend. */
+export const SEM_CASAMENTO = Object.freeze({
+  NENHUM_CANDIDATO: "nenhum_candidato",
+  AMBIGUO: "ambiguo",
+});
+
+/**
+ * Como cada resposta do casamento se desenha.
+ *
+ * ⚠⚠ `AMBIGUO` NÃO É ERRO, e a cor precisa dizer isso. Dois candidatos é o sistema **funcionando**:
+ * ele viu duas notas parecidas e se RECUSOU a escolher, que é a regra. Vermelho ali diria que algo
+ * quebrou; âmbar diz o certo — *há uma decisão sua esperando*.
+ *
+ * ⚠ `NENHUM_CANDIDATO` é NEUTRO: um débito sem nota correspondente é comum e legítimo (despesa sem
+ * nota, ou a nota ainda não chegou). Pintá-lo de âmbar encheria a tela de pendência falsa.
+ */
+const LEITURA_DO_CASAMENTO = Object.freeze({
+  sugerido: {
+    rotulo: "Sugestão",
+    token: "--state-warn",
+    // ⚠ "Sugestão", nunca "Casado" — o sistema NUNCA automatiza aqui, e o rótulo tem de lembrar.
+    frase: "Uma nota se parece com este débito. Confira antes de casar — o sistema não decide isso sozinho.",
+  },
+  [SEM_CASAMENTO.AMBIGUO]: {
+    rotulo: "Mais de uma nota",
+    token: "--state-warn",
+    frase: "Duas ou mais notas se parecem com este débito. O sistema não escolhe entre elas.",
+  },
+  [SEM_CASAMENTO.NENHUM_CANDIDATO]: {
+    rotulo: "Sem nota correspondente",
+    token: "--state-neutral",
+    frase: "Nenhuma nota em aberto se parece com este débito. Pode ser despesa sem nota, ou a nota ainda não chegou.",
+  },
+});
+
+export function leituraDoCasamento(linha) {
+  if (linha?.sugestao) return LEITURA_DO_CASAMENTO.sugerido;
+  return (
+    LEITURA_DO_CASAMENTO[linha?.motivo] || {
+      rotulo: "Situação desconhecida",
+      token: "--state-neutral",
+      frase: "Esta tela não reconhece esta resposta. Confira a versão do sistema.",
+    }
+  );
+}
+
+/**
+ * ⚠⚠ QUANDO O BOTÃO "CASAR" PODE APARECER.
+ *
+ * SÓ com sugestão única. Com dois candidatos **não existe botão nenhum** — nem "casar com o
+ * primeiro", nem "escolher". A tela mostra os dois e o contador resolve na fila, informando o
+ * pagamento na nota certa.
+ *
+ * ⚠ Oferecer um "casar" ao lado de cada candidato pareceria inofensivo e **desfaria a regra**: a
+ * ambiguidade existe para o sistema não decidir, e um clique fácil converte a decisão dele numa
+ * decisão do dedo de quem está com pressa.
+ */
+export function podeCasar(linha) {
+  return Boolean(linha?.sugestao?.nota?.id && linha?.debito?.id);
+}
+
+/** ⚠ A ordem: o que tem decisão esperando primeiro; o que não tem nota, por último. */
+export function ordenarCasamentos(linhas) {
+  const peso = (l) => (l?.sugestao ? 0 : l?.motivo === SEM_CASAMENTO.AMBIGUO ? 1 : 2);
+  return [...(linhas || [])].sort((a, b) => peso(a) - peso(b));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// A VARREDURA DAS NOTAS
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ⚠⚠ A DATA-PISO NÃO TEM DEFAULT, E ISSO É A REGRA — não uma lacuna a preencher.
+ *
+ * São 1.897 NFS-e recebidas na base. Sem corte, a primeira varredura produz a base inteira de uma
+ * vez, e isso não é fila, é muro. Um default aqui faria a TELA escolher, em silêncio, o tamanho do
+ * trabalho que o contador vai encontrar — que é decisão dele.
+ *
+ * O servidor recusa sem `desde` (400 `data_piso_obrigatoria`); esta função existe para a tela não
+ * precisar descobrir isso pelo erro.
+ */
+export function dataPisoEhValida(desde) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(desde || ""));
+}
+
+/**
+ * O relatório da varredura, pronto para a tela.
+ *
+ * ⚠⚠ O RELATÓRIO SAI INTEIRO. Um "criei 12" sozinho esconderia o que NÃO entrou — e deixaria
+ * "não veio nada" indistinguível de "deu erro". As três categorias são respostas diferentes:
+ * criadas (entrou), já existiam (idempotência funcionando), fora/recusadas (não entrou, e por quê).
+ */
+export function leituraDaVarredura(r) {
+  if (!r) return null;
+  const criados = Number(r.criados) || 0;
+  const jaExistiam = Number(r.jaExistiam) || 0;
+  const fora = Array.isArray(r.fora) ? r.fora.length : 0;
+  const recusados = Array.isArray(r.recusados) ? r.recusados : [];
+  return {
+    varridas: Number(r.varridas) || 0,
+    criados,
+    jaExistiam,
+    fora,
+    recusados,
+    // ⚠ Rodar de novo e ver "0 novas · 12 já existiam" é a IDEMPOTÊNCIA funcionando, não falha. A
+    // tela precisa dizer isso, senão o contador roda três vezes achando que não funcionou.
+    tudoJaExistia: criados === 0 && jaExistiam > 0,
+    // ⚠ Nada varrido é diferente de nada criado: no primeiro, o piso não alcançou nota nenhuma.
+    nadaVarrido: (Number(r.varridas) || 0) === 0,
+  };
+}
+
+/** ⚠ Motivos de recusa da varredura, em português. Desconhecido volta CRU, nunca traduzido a esmo. */
+const FRASE_DA_RECUSA = Object.freeze({
+  sem_valor: "A nota não tem valor.",
+  sem_data: "A nota não tem data de emissão.",
+  sem_emitente: "A nota não identifica o emitente.",
+  cancelada: "A nota foi cancelada.",
+  substituida: "A nota foi substituída por outra.",
+  anterior_ao_piso: "A nota é anterior à data escolhida.",
+});
+
+export function fraseDaRecusa(motivo) {
+  // ⚠ Motivo novo no backend aparece CRU na tela em vez de sumir ou virar "erro desconhecido":
+  // o contador vê o código e pode perguntar, e nada se esconde.
+  return FRASE_DA_RECUSA[motivo] || motivo || "Sem motivo informado.";
+}

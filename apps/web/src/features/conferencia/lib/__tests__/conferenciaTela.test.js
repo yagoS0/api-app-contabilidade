@@ -382,3 +382,107 @@ describe("⚠ o tom vira `variant` do Button — num mapa nomeado, não numa tra
     expect(new Set(variants)).toEqual(new Set(["primary", "secondary", "danger"]));
   });
 });
+
+describe("⚠⚠ O CASAMENTO — o sistema NUNCA escolhe entre notas", () => {
+  const {
+    SEM_CASAMENTO, leituraDoCasamento, podeCasar, ordenarCasamentos,
+  } = require("../conferenciaTela.js");
+
+  const comSugestao = { debito: { id: "o-1" }, sugestao: { nota: { id: "n-1" } }, candidatos: [{}], motivo: null };
+  const ambiguo = { debito: { id: "o-2" }, sugestao: null, candidatos: [{}, {}], motivo: SEM_CASAMENTO.AMBIGUO };
+  const semNota = { debito: { id: "o-3" }, sugestao: null, candidatos: [], motivo: SEM_CASAMENTO.NENHUM_CANDIDATO };
+
+  it("⚠⚠ O BOTÃO DE CASAR SÓ EXISTE COM SUGESTÃO ÚNICA", () => {
+    expect(podeCasar(comSugestao)).toBe(true);
+    expect(podeCasar(ambiguo)).toBe(false);
+    expect(podeCasar(semNota)).toBe(false);
+  });
+
+  it("⚠⚠ com dois candidatos NÃO há como casar — nem com o primeiro", () => {
+    // Um "casar" ao lado de cada candidato pareceria inofensivo e desfaria a regra: a ambiguidade
+    // existe para o sistema não decidir, e um clique fácil converte isso na decisão do dedo de quem
+    // está com pressa.
+    expect(podeCasar({ ...ambiguo, candidatos: [{ nota: { id: "n-7" } }, { nota: { id: "n-8" } }] })).toBe(false);
+  });
+
+  it("⚠ sugestão sem id de nota não habilita o botão", () => {
+    expect(podeCasar({ debito: { id: "o-1" }, sugestao: { nota: {} } })).toBe(false);
+    expect(podeCasar({ sugestao: { nota: { id: "n-1" } } })).toBe(false);
+  });
+
+  it("⚠⚠ AMBÍGUO é ÂMBAR, não vermelho — é o sistema funcionando, não quebrando", () => {
+    expect(leituraDoCasamento(ambiguo).token).toBe("--state-warn");
+  });
+
+  it("⚠ SEM NOTA é NEUTRO — débito sem nota é comum e legítimo", () => {
+    // Âmbar ali encheria a tela de pendência falsa.
+    expect(leituraDoCasamento(semNota).token).toBe("--state-neutral");
+  });
+
+  it("⚠ o rótulo da sugestão diz SUGESTÃO, nunca 'casado'", () => {
+    const r = leituraDoCasamento(comSugestao);
+    expect(r.rotulo).toMatch(/sugest/i);
+    expect(r.frase).toMatch(/não decide isso sozinho/i);
+  });
+
+  it("⚠⚠ NENHUMA resposta do casamento usa `--state-danger`", () => {
+    const tokens = [comSugestao, ambiguo, semNota, {}].map((l) => leituraDoCasamento(l).token);
+    expect(tokens).not.toContain("--state-danger");
+  });
+
+  it("⚠ ordem: decisão esperando primeiro, sem-nota por último", () => {
+    const ordenado = ordenarCasamentos([semNota, ambiguo, comSugestao]);
+    expect(ordenado.map((l) => l.debito.id)).toEqual(["o-1", "o-2", "o-3"]);
+  });
+
+  it("⚠ ordenar não muta a lista recebida", () => {
+    const lista = [semNota, comSugestao];
+    ordenarCasamentos(lista);
+    expect(lista[0]).toBe(semNota);
+  });
+});
+
+describe("⚠⚠ A VARREDURA — a data-piso não tem default", () => {
+  const { dataPisoEhValida, leituraDaVarredura, fraseDaRecusa } = require("../conferenciaTela.js");
+
+  it("aceita AAAA-MM-DD e recusa o resto", () => {
+    expect(dataPisoEhValida("2026-07-01")).toBe(true);
+    expect(dataPisoEhValida("01/07/2026")).toBe(false);
+    expect(dataPisoEhValida("2026-07")).toBe(false);
+    expect(dataPisoEhValida("")).toBe(false);
+    expect(dataPisoEhValida(null)).toBe(false);
+  });
+
+  it("⚠⚠ o relatório sai INTEIRO — criadas, já existiam e as que não entraram", () => {
+    const r = leituraDaVarredura({
+      varridas: 18, criados: 12, jaExistiam: 4,
+      fora: [{ notaId: "a" }],
+      recusados: [{ notaId: "b", motivo: "sem_valor" }],
+    });
+    expect(r).toMatchObject({ varridas: 18, criados: 12, jaExistiam: 4, fora: 1 });
+    expect(r.recusados).toHaveLength(1);
+  });
+
+  it("⚠⚠ 'nada criado, tudo já existia' é a IDEMPOTÊNCIA funcionando — e tem nome", () => {
+    // Sem isto o contador roda três vezes achando que não funcionou.
+    const r = leituraDaVarredura({ varridas: 12, criados: 0, jaExistiam: 12, fora: [], recusados: [] });
+    expect(r.tudoJaExistia).toBe(true);
+    expect(r.nadaVarrido).toBe(false);
+  });
+
+  it("⚠ 'nada varrido' é diferente de 'nada criado'", () => {
+    const r = leituraDaVarredura({ varridas: 0, criados: 0, jaExistiam: 0, fora: [], recusados: [] });
+    expect(r.nadaVarrido).toBe(true);
+    expect(r.tudoJaExistia).toBe(false);
+  });
+
+  it("sem relatório, devolve null — não um objeto zerado que afirmaria varredura vazia", () => {
+    expect(leituraDaVarredura(null)).toBeNull();
+  });
+
+  it("⚠ motivo conhecido vira português; DESCONHECIDO volta CRU, nunca sumindo", () => {
+    expect(fraseDaRecusa("sem_valor")).toMatch(/não tem valor/i);
+    expect(fraseDaRecusa("motivo_novo_do_backend")).toBe("motivo_novo_do_backend");
+    expect(fraseDaRecusa(null)).toMatch(/sem motivo/i);
+  });
+});

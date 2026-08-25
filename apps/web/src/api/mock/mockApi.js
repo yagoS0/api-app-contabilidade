@@ -7236,23 +7236,40 @@ export function createMockApi() {
       await delay(90);
       return {
         ok: true,
-        casamentos: [
+        // ⚠⚠ A CHAVE É `linhas`, e isto já esteve errado aqui: o mock dizia `casamentos`, e a tela
+        // teria funcionado offline e quebrado em produção — o pior defeito possível, porque só
+        // aparece depois do deploy. Conferido contra `routes/firm/conferencia.js`.
+        linhas: [
           {
             debito: { id: "ofx-1", valor: "890.00", dataPagamento: "2026-07-18", descricaoOriginal: "PAGTO KODA BEAR" },
             sugestao: {
               nota: { id: "dec-2", valor: "890.00", descricaoOriginal: "KODA BEAR", dataDocumento: "2026-07-05" },
-              pista: "NOME_NO_MEMO", palavra: "KODA",
+              // ⚠ O serializador NÃO devolve `palavra` — só `pista` e `frase`. Um campo a mais no
+              // mock vira tela que lê `undefined` em produção.
+              pista: "NOME_NO_MEMO",
               frase: "O nome do fornecedor aparece na descrição do banco.",
             },
-            candidatos: [{ nota: { id: "dec-2" } }],
+            candidatos: [
+              {
+                nota: { id: "dec-2", valor: "890.00", descricaoOriginal: "KODA BEAR", dataDocumento: "2026-07-05", cnpjFornecedor: "98765432000155" },
+                pista: "NOME_NO_MEMO",
+                frase: "O nome do fornecedor aparece na descrição do banco.",
+              },
+            ],
             motivo: null, frase: "",
           },
           {
             debito: { id: "ofx-2", valor: "500.00", dataPagamento: "2026-07-20", descricaoOriginal: "PAGTO MENSALIDADE" },
             sugestao: null,
             candidatos: [
-              { nota: { id: "dec-7", descricaoOriginal: "MENSALIDADE ALFA", valor: "500.00" } },
-              { nota: { id: "dec-8", descricaoOriginal: "MENSALIDADE BETA", valor: "500.00" } },
+              {
+                nota: { id: "dec-7", descricaoOriginal: "MENSALIDADE ALFA", valor: "500.00", dataDocumento: "2026-07-01", cnpjFornecedor: "11111111000111" },
+                pista: "NOME_NO_MEMO", frase: "O nome do fornecedor aparece na descrição do banco.",
+              },
+              {
+                nota: { id: "dec-8", descricaoOriginal: "MENSALIDADE BETA", valor: "500.00", dataDocumento: "2026-07-02", cnpjFornecedor: "22222222000122" },
+                pista: "NOME_NO_MEMO", frase: "O nome do fornecedor aparece na descrição do banco.",
+              },
             ],
             motivo: "ambiguo",
             frase: "Mais de uma nota se parece com este débito. O sistema não escolhe entre elas — confira qual é a certa.",
@@ -7276,8 +7293,11 @@ export function createMockApi() {
       // ⚠ O relatório volta INTEIRO: o que entrou, o que já existia e o que foi RECUSADO com o
       // motivo. Um "criei 12" sozinho deixaria "não veio nada" indistinguível de "deu erro".
       return {
+        // ⚠ O relatório real traz `varridas`, `criados`, `jaExistiam`, `fora` e `recusados` —
+        // conferido em `VarreduraDeNotasService`. `fora` são as que o PISO cortou.
         ok: true, desde,
-        criados: 12, jaExistiam: 4,
+        varridas: 18, criados: 12, jaExistiam: 4,
+        fora: [{ notaId: "nota-80", motivo: "anterior_ao_piso" }],
         recusados: [
           { notaId: "nota-90", motivo: "sem_valor", frase: "A nota não tem valor — não vira despesa." },
           { notaId: "nota-91", motivo: "cancelada", frase: "A nota foi cancelada." },
