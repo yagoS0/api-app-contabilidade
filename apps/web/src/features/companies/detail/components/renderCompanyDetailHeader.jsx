@@ -30,7 +30,11 @@ import { companyTabPath } from "../lib/rotasDaEmpresa";
 // daquela tela e serve à página principal do calendário do mesmo jeito.
 // ⚠ `auditoria` entra aqui porque a auditoria É por competência — ela responde "as notas DESTE mês
 // batem?". Sem o seletor, a aba mostraria sempre o mês default e não haveria como conferir outro.
-const TABS_COM_COMPETENCIA = new Set(["lancamentos", "circular", "cadastroFiscal", "guides", "notasFiscais", "auditoria"]);
+// ⚠ `conferencia` entra aqui porque a FILA é por competência: ela responde "as despesas DESTE mês
+// já foram conferidas?". Sem o seletor, a aba mostraria sempre o mês default e não haveria como
+// conferir outro. ⚠ O recorte "sem competência" é um botão DENTRO da aba, não um valor do seletor —
+// ele não é um mês, e pô-lo aqui faria o seletor global mudar de significado.
+const TABS_COM_COMPETENCIA = new Set(["lancamentos", "conferencia", "circular", "cadastroFiscal", "guides", "notasFiscais", "auditoria"]);
 
 // Navegação da empresa em 2 níveis: grupos grandes (Anotações, Contabilidade, Fiscal, Empresa)
 // e, abaixo, as sub-abas do grupo ativo. A aba ativa continua vindo do segmento da URL (activeTab);
@@ -52,6 +56,10 @@ const GROUPS = [
     // A rota /plano-contas segue válida — só não tem botão próprio aqui.
     tabs: [
       { key: "lancamentos", label: "Lançamentos" },
+      // ⚠ CONFERÊNCIA fica em CONTABILIDADE, e logo depois de Lançamentos — não em Fiscal. O que
+      // sai dela é `AccountingEntry` (débito na despesa, crédito no caixa), e o contador chega
+      // nela vindo de Lançamentos. Em Fiscal ela pareceria conferência de nota, que é a Auditoria.
+      { key: "conferencia", label: "Conferência" },
       { key: "circular", label: "Circular" },
       { key: "parcelamento", label: "Parcelamento" },
       // Obrigações fica em Contabilidade e NÃO em Fiscal de propósito: obrigação é o serviço que o

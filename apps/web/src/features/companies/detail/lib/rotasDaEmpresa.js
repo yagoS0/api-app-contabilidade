@@ -19,6 +19,10 @@
 export const SEGMENT_TO_TAB = {
   guides: "guides",
   lancamentos: "lancamentos",
+  // A fila de conferência (a nota vira despesa, o extrato vira o pagamento). ⚠ O PAR EM
+  // `TAB_TO_SEGMENT` É OBRIGATÓRIO — sem ele o clique na aba não navega e a URL cai em Anotações,
+  // sem erro nenhum.
+  conferencia: "conferencia",
   circular: "circular",
   parcelamento: "parcelamento",
   obrigacoes: "obrigacoes",
@@ -61,6 +65,8 @@ export const SEGMENT_TO_TAB = {
 export const TAB_TO_SEGMENT = {
   guides: "guides",
   lancamentos: "lancamentos",
+  // ⚠ O par da entrada acima. Faltando esta linha, a aba Conferência vira `<button>` mudo.
+  conferencia: "conferencia",
   circular: "circular",
   parcelamento: "parcelamento",
   obrigacoes: "obrigacoes",

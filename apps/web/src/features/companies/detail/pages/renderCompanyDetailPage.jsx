@@ -61,6 +61,9 @@ const NotasFiscaisTab = lazy(() =>
   import("../../../notas/components/renderNotasFiscaisTab").then((m) => ({ default: m.NotasFiscaisTab }))
 );
 // Auditoria pré-apuração das notas — SÓ LEITURA (autônoma: faz a própria chamada, como o SITFIS).
+const ConferenciaTab = lazy(() =>
+  import("../../../conferencia/components/renderConferenciaTab").then((m) => ({ default: m.ConferenciaTab }))
+);
 const AuditoriaTab = lazy(() =>
   import("../../../notas/components/renderAuditoriaTab").then((m) => ({ default: m.AuditoriaTab }))
 );
@@ -868,6 +871,34 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   // ⚠ Ela recebe a competência GLOBAL (`circularPanel.competencia`), a mesma que Lançamentos,
   // Circular, Guias e Notas Fiscais leem. Uma competência própria aqui faria a auditoria conferir um
   // mês e a apuração fechar outro — que é exatamente o defeito que a competência global corrigiu.
+  if (companyDetailTab === "conferencia") {
+    return (
+      <CompanyTabLayout
+        company={selectedCompany}
+        activeTab="conferencia"
+        onBack={onBack}
+        onTabChange={switchTab}
+        canEditCompany={canEditCompany}
+        competencia={circularPanel?.competencia}
+        onCompetenciaChange={circularPanel?.onCompetenciaChange}
+        /* ⚠ `trabalho`: a fila é uma tabela de oito colunas por fornecedor. Em `leitura` as colunas
+           de data e valor se espremem, e o defeito de tabela apertada é invisível — largura demais
+           é visível e barato (regra dos primitivos, `apps/web/CLAUDE.md`). */
+        largura="trabalho"
+        suspense
+      >
+        <ConferenciaTab
+          companyId={companyId}
+          competencia={circularPanel?.competencia}
+          /* ⚠ `canEditCompany` é o que esta página já usa para "pode escrever nesta empresa". A
+             GUARDA continua sendo o `minRole: "ACCOUNTANT"` da rota — isto só evita oferecer um
+             botão que o servidor vai recusar com 403. */
+          podeEscrever={canEditCompany}
+        />
+      </CompanyTabLayout>
+    );
+  }
+
   if (companyDetailTab === "auditoria") {
     return (
       <CompanyTabLayout

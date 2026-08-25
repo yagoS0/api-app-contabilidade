@@ -7113,6 +7113,184 @@ export function createMockApi() {
     // A REGRA não é reimplementada aqui — ela é do backend (`application/notas/auditoria/`) e não é
     // importável (o Dockerfile não copia `packages/`, e cruzar apps quebra o boot). Isto é uma
     // AMOSTRA do contrato, e o par real é `realApi.getAuditoriaNotas`.
+    // ── CONFERÊNCIA DE LANÇAMENTOS ──────────────────────────────────────────────────────────
+    //
+    // ⚠⚠ O MOCK NÃO PODE SER "TUDO IGUAL". Este projeto foi mordido QUATRO vezes por ramo que só
+    // existia em produção. A fila abaixo exercita, de propósito, todos os desenhos que a tela tem:
+    //
+    //   • `AGUARDANDO_PAGAMENTO` (o caso MAIS COMUM — 229 das notas do piso de julho)
+    //   • `A_CONFERIR` com data vinda do EXTRATO (prova) e com data DECLARADA (não prova)
+    //   • `CONTABILIZADO` (o único verde) e uma linha com `mesFechado`
+    //   • ⚠ nota SEM COMPETÊNCIA — o recorte que some da tela se ninguém o pedir
+    //   • ⚠ nota APAGADA (`nota: null`), para o link desabilitar COM o motivo
+    //   • ⚠ débito de extrato sem documento (`OFX_CLIENTE`)
+    //
+    // A REGRA não é reimplementada aqui — é do backend (`application/declarados/`). Isto é uma
+    // AMOSTRA do contrato, e o par real é `realApi.getConferenciaFila`.
+    async getConferenciaFila(_companyId, { competencia, estado } = {}) {
+      await delay(80);
+      const comp = competencia && competencia !== "sem-competencia" ? competencia : "2026-07";
+      const base = [
+        {
+          id: "dec-1", origem: "NOTA_RECEBIDA", estado: "AGUARDANDO_PAGAMENTO", tipo: "SAIDA",
+          valor: "1500.00", valorAjustado: null, competencia: comp,
+          descricaoOriginal: "GOOGLE CLOUD BRASIL COMPUTACAO LTDA", cnpjFornecedor: "12345678000190",
+          dataDocumento: comp + "-02", detalheServico: "Servicos de computacao em nuvem",
+          // ⚠ Sem data e sem procedência: é a resposta honesta, não uma pendência nossa.
+          dataPagamento: null, origemPagamento: null,
+          contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          motivoRecusa: null, mesFechado: false, notaRecebidaId: "nota-1",
+          nota: { numero: "1042", serie: "1", chaveAcesso: "3".repeat(50), tipo: "NFSE" },
+        },
+        {
+          id: "dec-2", origem: "NOTA_RECEBIDA", estado: "A_CONFERIR", tipo: "SAIDA",
+          valor: "890.00", valorAjustado: null, competencia: comp,
+          descricaoOriginal: "KODA BEAR", cnpjFornecedor: "98765432000155",
+          dataDocumento: comp + "-05", detalheServico: "Consultoria",
+          // ⚠ O EXTRATO datou: isto é PROVA.
+          dataPagamento: comp + "-18", origemPagamento: "OFX",
+          contaSugerida: "411020008", contaAplicada: null, accountingEntryId: null, regraId: null,
+          motivoRecusa: null, mesFechado: false, notaRecebidaId: "nota-2",
+          nota: { numero: "77", serie: "1", chaveAcesso: "4".repeat(50), tipo: "NFSE" },
+        },
+        {
+          id: "dec-3", origem: "NOTA_RECEBIDA", estado: "A_CONFERIR", tipo: "SAIDA",
+          valor: "320.50", valorAjustado: null, competencia: comp,
+          descricaoOriginal: "PAPELARIA CENTRAL LTDA", cnpjFornecedor: "11222333000181",
+          dataDocumento: comp + "-09", detalheServico: null,
+          // ⚠⚠ O ATALHO DO DONO: o contador informou a data SEM comprovante. A tela precisa dizer
+          // que isto é DECLARAÇÃO — sem esta linha no mock, o desenho mais delicado da tela fica
+          // inalcançável offline.
+          dataPagamento: comp + "-09", origemPagamento: "DECLARADO_PELO_CONTADOR",
+          contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          motivoRecusa: null, mesFechado: false, notaRecebidaId: "nota-3",
+          // ⚠ A nota foi apagada da base (a FK é SetNull): o link desabilita COM o motivo.
+          nota: null,
+        },
+        {
+          id: "dec-4", origem: "OFX_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",
+          valor: "175.00", valorAjustado: null, competencia: comp,
+          descricaoOriginal: "TARIFA PACOTE DE SERVICOS", cnpjFornecedor: null,
+          dataDocumento: null, detalheServico: null,
+          dataPagamento: comp + "-01", origemPagamento: "OFX",
+          contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
+        },
+        {
+          id: "dec-5", origem: "NOTA_RECEBIDA", estado: "CONTABILIZADO", tipo: "SAIDA",
+          valor: "2400.00", valorAjustado: null, competencia: comp,
+          descricaoOriginal: "SINTROPIA SERVICOS LTDA", cnpjFornecedor: "44555666000177",
+          dataDocumento: comp + "-03", detalheServico: "Assessoria",
+          dataPagamento: comp + "-20", origemPagamento: "OFX",
+          contaSugerida: "411020008", contaAplicada: "411020008", accountingEntryId: "ae-1",
+          regraId: null, motivoRecusa: null,
+          // ⚠ Mês fechado: desfazer tem de aparecer DESABILITADO com o motivo, não sumir.
+          mesFechado: true, notaRecebidaId: "nota-5",
+          nota: { numero: "310", serie: "1", chaveAcesso: "5".repeat(50), tipo: "NFSE" },
+        },
+        {
+          id: "dec-6", origem: "NOTA_RECEBIDA", estado: "AGUARDANDO_PAGAMENTO", tipo: "SAIDA",
+          valor: "640.00", valorAjustado: null,
+          // ⚠⚠ SEM COMPETÊNCIA. Ela não é deduzida da data — seria decidir em qual apuração a
+          // despesa entra. Só aparece no recorte `sem-competencia`.
+          competencia: null,
+          descricaoOriginal: "TRANSPORTADORA VIA SUL", cnpjFornecedor: "77888999000122",
+          dataDocumento: comp + "-11", detalheServico: null,
+          dataPagamento: null, origemPagamento: null,
+          contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          motivoRecusa: null, mesFechado: false, notaRecebidaId: "nota-6",
+          nota: { numero: "9", serie: "1", chaveAcesso: "6".repeat(50), tipo: "NFE" },
+        },
+      ];
+
+      // ⚠ O recorte das sem competência é EXCLUDENTE: pedindo `sem-competencia`, só elas.
+      const doRecorte = competencia === "sem-competencia"
+        ? base.filter((d) => !d.competencia)
+        : base.filter((d) => d.competencia);
+
+      const estados = estado ? String(estado).split(",") : ["AGUARDANDO_PAGAMENTO", "A_CONFERIR"];
+      const itens = doRecorte.filter((d) => estados.includes(d.estado));
+
+      return {
+        ok: true,
+        itens,
+        // ⚠⚠ O TOTAL VEM DO SERVIDOR, NUNCA DE `itens.length` — e aqui ele IGNORA o filtro de
+        // estado de propósito (senão contaria a própria página filtrada) mas respeita o recorte.
+        porEstado: doRecorte.reduce((acc, d) => ({ ...acc, [d.estado]: (acc[d.estado] || 0) + 1 }), {}),
+        total: itens.length,
+        pagina: 1,
+        porPagina: 50,
+      };
+    },
+    async postConferenciaAcao(_companyId, declaradoId, acao, corpo = {}) {
+      await delay(120);
+      // ⚠ O mock NÃO decide nada: ele ecoa. A regra é do servidor, e reimplementá-la aqui faria a
+      // tela offline aceitar o que a de produção recusa.
+      return { ok: true, declarado: { id: declaradoId, acao, ...corpo } };
+    },
+    // ⚠⚠ AS TRÊS RESPOSTAS DO CASAMENTO, todas exercitadas: sugestão única, AMBÍGUO (dois
+    // candidatos, e o sistema NÃO escolhe) e nenhum candidato. Um mock só com sugestões faria a
+    // tela nascer sem o desenho da ambiguidade — que é o que impede a despesa ir para o fornecedor
+    // errado em silêncio.
+    async getConferenciaCasamentos(_companyId) {
+      await delay(90);
+      return {
+        ok: true,
+        casamentos: [
+          {
+            debito: { id: "ofx-1", valor: "890.00", dataPagamento: "2026-07-18", descricaoOriginal: "PAGTO KODA BEAR" },
+            sugestao: {
+              nota: { id: "dec-2", valor: "890.00", descricaoOriginal: "KODA BEAR", dataDocumento: "2026-07-05" },
+              pista: "NOME_NO_MEMO", palavra: "KODA",
+              frase: "O nome do fornecedor aparece na descrição do banco.",
+            },
+            candidatos: [{ nota: { id: "dec-2" } }],
+            motivo: null, frase: "",
+          },
+          {
+            debito: { id: "ofx-2", valor: "500.00", dataPagamento: "2026-07-20", descricaoOriginal: "PAGTO MENSALIDADE" },
+            sugestao: null,
+            candidatos: [
+              { nota: { id: "dec-7", descricaoOriginal: "MENSALIDADE ALFA", valor: "500.00" } },
+              { nota: { id: "dec-8", descricaoOriginal: "MENSALIDADE BETA", valor: "500.00" } },
+            ],
+            motivo: "ambiguo",
+            frase: "Mais de uma nota se parece com este débito. O sistema não escolhe entre elas — confira qual é a certa.",
+          },
+          {
+            debito: { id: "ofx-3", valor: "175.00", dataPagamento: "2026-07-01", descricaoOriginal: "TARIFA PACOTE DE SERVICOS" },
+            sugestao: null, candidatos: [], motivo: "nenhum_candidato",
+            frase: "Nenhuma nota recebida em aberto se parece com este débito. Ele pode ser uma despesa sem nota, ou a nota ainda não chegou.",
+          },
+        ],
+        totalDebitos: 3,
+        totalNotas: 4,
+      };
+    },
+    async postConferenciaFundir(_companyId, { declaradoOfxId, declaradoNotaId }) {
+      await delay(140);
+      return { ok: true, nota: { id: declaradoNotaId, estado: "A_CONFERIR" }, debito: { id: declaradoOfxId, estado: "FUNDIDO" } };
+    },
+    async postVarrerNotas(_companyId, desde) {
+      await delay(200);
+      // ⚠ O relatório volta INTEIRO: o que entrou, o que já existia e o que foi RECUSADO com o
+      // motivo. Um "criei 12" sozinho deixaria "não veio nada" indistinguível de "deu erro".
+      return {
+        ok: true, desde,
+        criados: 12, jaExistiam: 4,
+        recusados: [
+          { notaId: "nota-90", motivo: "sem_valor", frase: "A nota não tem valor — não vira despesa." },
+          { notaId: "nota-91", motivo: "cancelada", frase: "A nota foi cancelada." },
+        ],
+      };
+    },
+    async getConferenciaVarredura(_companyId) {
+      await delay(60);
+      // ⚠ Base saudável no mock: as quatro invariantes vazias. Quem quiser ver o desenho de achado
+      // troca aqui — mas o estado normal é este, e fingir problema permanente treinaria o olho a
+      // ignorar o aviso.
+      return { ok: true, lancamentoForaDeContabilizado: [], contabilizadoSemLancamento: [], ponteiroPendurado: [], semDataDePagamento: [] };
+    },
     async getAuditoriaNotas(_companyId, competencia) {
       await delay(80);
       const notaRef = (id, numero) => ({

@@ -284,13 +284,99 @@ contador, num segundo ato.
 - ⚠ **A rota de fundir NÃO tem guarda de mês fechado**, e é deliberado: nada chega ao razão. Quem
   recusa mês fechado continua sendo `CONFIRMAR`.
 
+## ⚠⚠ A FASE C0 (BACKFILL) FOI CANCELADA — a memória por descrição JÁ EXISTE
+
+**Decisão do dono, 24/08/2026**, depois da medição. ⚠ **Não a reconstrua.**
+
+O plano previa aprender "descrição → conta" numa tabela nova (`RegraContabilizacao`), alimentada por
+um backfill sobre os 155 DESPESA. Ao escrever esse backfill apareceu **`AccountingHistorico`** —
+que já responde exatamente essa pergunta, já está povoada, e é alimentada pelo contador **toda vez
+que ele lança** (`upsertHistoricoFromImport`).
+
+**Medido em produção** (`scripts/diag-memoria-historico.mjs`, só leitura):
+
+| | |
+|---|---|
+| `AccountingHistorico` | **227** registros · 209 com `contaDebito` · **17 empresas** · ⚠ **1 usuário** |
+| o backfill produziria | **91** chaves empresa × descrição · **91 unânimes, 0 divididas** |
+| ⚠ o plano dizia **77** | eram **91**. E com **piso 2+ são só 34** |
+| ⚠⚠ **a memória já conhece** | **67 das 91 (73,6%)** — concorda em 66, **discorda em 1** |
+| o backfill acrescentaria | **24** |
+
+⚠⚠ **O prêmio nunca foram "milhares", nem 77: são 24** — e construir a segunda memória criaria duas
+fontes discordando sobre a mesma descrição da mesma empresa. Já há **um conflito medido**
+(`FAST SHOP S A`: o lançado diz `170`, a memória diz `169`). É o defeito que esta base já pagou com
+o parser de OFX, com a ingestão de NFS-e e com as quatro cópias do filtro de envio de guia.
+
+**O desenho que ficou:**
+
+| âncora | fonte | por quê |
+|---|---|---|
+| **descrição** (fraca) | ⚠ **LER `AccountingHistorico`** | já existe, já povoada, e se mantém sozinha |
+| **CNPJ do fornecedor** (forte) | `RegraContabilizacao` | ⚠ a memória **não tem CNPJ**, e só o caminho da nota o preenche |
+
+⚠ **As 24 que faltam não precisam de backfill**: elas entram sozinhas na próxima vez que o contador
+lançar aquela descrição.
+
+⚠ **LIMITAÇÃO NOMEADA, não resolvida:** a chave de `AccountingHistorico` inclui **`createdByUserId`**.
+Hoje há **1 usuário**, então funciona; com dois contadores, a memória de um não serve ao outro.
+Levar ao dono quando o segundo aparecer — **não "consertar" ampliando a chave por conta própria**,
+que mudaria o comportamento da tela de lançamento, que é outro dono.
+
+## ✅ A TELA DO CONTADOR — aba **Conferência**, grupo Contabilidade (24/08/2026)
+
+`apps/web/src/features/conferencia/` · rota `/companies/:id/conferencia`.
+
+⚠ **Ela fica em CONTABILIDADE, logo depois de Lançamentos — não em Fiscal.** O que sai dela é
+`AccountingEntry`, e o contador chega nela vindo de Lançamentos. Em Fiscal pareceria conferência de
+nota, que é a Auditoria.
+
+⚠ **A REGRA NÃO FOI REESCRITA NO FRONT.** Quem decide se uma transição pode acontecer continua sendo
+`aplicarTransicao`, no servidor. O que mora na tela é a LEITURA (`lib/conferenciaTela.js`, **57
+testes**): rótulo, cor, ordem, e qual botão sequer aparece.
+
+**O que a tela faz, e por quê:**
+
+| | |
+|---|---|
+| ⚠⚠ **a procedência da data à vista** | `Extrato bancário` (prova) × **`Declarado`** (não prova, em âmbar). Sem isso, a data que o banco confirmou e a que o contador digitou ficam **idênticas** — e a decisão de lançar sem comprovante vira afirmação falsa sobre quando a empresa pagou |
+| **agrupada por fornecedor** | é o que torna 229 linhas conferíveis. Ordem por **volume**, não alfabética |
+| ⚠⚠ **os selos de contagem são FILTRO** | achado ao verificar no navegador: o painel dizia *"Contabilizado: 1"* e **não havia caminho nenhum** para ver esse item. Número na tela sem porta para ele faz o contador concluir que o sistema perdeu a despesa |
+| ⚠⚠ **botão "Sem competência"** | `where.competencia = "2026-07"` **não casa com NULL** em SQL. Sem esta porta a nota que chegou sem competência fica invisível para sempre — o defeito que a auditoria de notas já pagou |
+| **o modal pergunta ANTES** | confirmar sem data pede a data; recusar exige motivo. A tela não descobre a regra pelo erro do servidor |
+| ⚠ **a confirmação REPETE os dados** | fornecedor, CNPJ, valor e competência. *"Tem certeza?"* não é confirmação — aprende-se a clicar sem ler |
+
+⚠⚠ **A DATA NASCE COM A EMISSÃO DA NOTA, NUNCA COM "HOJE"** — verificado no navegador em
+25/08/2026: o campo abriu em `2026-07-02` (a emissão) e não em `2026-08-25`. "Hoje" é a data do
+CLIQUE, e afirmaria que a empresa pagou no instante em que alguém abriu a tela.
+
+⚠ **Botão bloqueado fica VISÍVEL e desabilitado, COM o motivo no `title`** — mês fechado, competência
+ausente, papel insuficiente. Botão que some esconde que a ação existe; botão mudo não diz qual é o
+conserto. Verificado na tela: *"A competência está fechada. Reabra o mês para mexer no lançamento."*
+
+⚠⚠ **A TELA NÃO OFERECE "ANEXAR COMPROVANTE"** — `AnexoDeclarado` existe no schema e **não tem
+escritor**. Desenhar o botão prometeria um caminho que não existe. Há teste varrendo a tela.
+
+⚠ **Nenhum estado usa `--state-danger`**, e `AGUARDANDO_PAGAMENTO` é **neutro, não âmbar**: nota sem
+pagamento identificado não é pendência nossa, é a resposta certa. Âmbar permanente treina o olho a
+ignorar a cor que significa "falta fazer".
+
+⚠ **As TRÊS PEÇAS da aba nova** (`features/companies/CLAUDE.md`) foram todas feitas: entrada em
+`GROUPS`, o par em `SEGMENT_TO_TAB`/`TAB_TO_SEGMENT` e o bloco `if` na página. Faltando o par, a URL
+cai em Anotações **sem erro nenhum** — conferido navegando direto para `/conferencia`.
+
+⚠ **O mock exercita TODOS os desenhos** (`api/mock/mockApi.js`): as duas procedências, mês fechado,
+nota apagada, débito sem documento, e a nota sem competência. Este projeto foi mordido **quatro
+vezes** por ramo que só existia em produção.
+
 ## O que ainda **não** existe
 
 | | |
 |---|---|
-| **backfill do histórico** | Fase C0. ⚠ O prêmio medido são **77 pares** unânimes, não "milhares" |
 | aprendizado e regras | Fase C. `RegraContabilizacao` já existe no schema, **sem escritor ainda** |
-| **tela** | ainda não há nenhuma — nem a do contador, nem a do cliente |
+| **a tela do CASAMENTO** | as rotas e o mock existem; o painel de sugestões ainda não foi desenhado |
+| **a varredura pela tela** | `POST /conferencia/varrer-notas` só é alcançável por API. ⚠ Ela precisa da **data-piso**, e quem a escolhe é o contador |
+| tela do cliente (import de OFX) | a rota existe; o portal do cliente ainda não a chama |
 
 ## Migration
 

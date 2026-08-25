@@ -1,0 +1,369 @@
+// A LEITURA DE TELA DA FILA DE CONFERÊNCIA — pura, testável, sem React.
+//
+// ⚠ O QUE MORA AQUI E O QUE NÃO MORA. A REGRA é do backend
+// (`application/declarados/lib/estadosDeclarado.js`): quem decide se uma transição pode acontecer é
+// o servidor, sempre. Aqui vive só o que é de TELA — rótulo em português, token de cor, ordem, e a
+// decisão de qual botão sequer aparece. Reimplementar `podeTransitar` no front faria a tela oferecer
+// o que o servidor recusa (ou esconder o que ele aceita), e a divergência apareceria como "cliquei e
+// não aconteceu nada".
+//
+// ⚠⚠ A LEI DE COR DESTE PROJETO, aplicada aqui letra por letra (`apps/web/CLAUDE.md`):
+// `--state-ok` é CONCLUÍDO · `--state-warn` é PENDÊNCIA (ação rápida) · `--state-danger` BLOQUEIA o
+// fechamento · `--state-neutral` é o padrão. Usar um fora do significado recria o problema que o
+// redesign resolveu: quando quase tudo é vermelho, nada se destaca.
+
+/** ⚠ Espelho do vocabulário do backend. Valor novo lá que não chegue aqui cai em `desconhecido`. */
+export const ESTADO = Object.freeze({
+  AGUARDANDO_PAGAMENTO: "AGUARDANDO_PAGAMENTO",
+  A_CONFERIR: "A_CONFERIR",
+  CONTABILIZADO: "CONTABILIZADO",
+  RECUSADO: "RECUSADO",
+  FUNDIDO: "FUNDIDO",
+});
+
+export const ORIGEM_PAGAMENTO = Object.freeze({
+  OFX: "OFX",
+  DECLARADO_PELO_CONTADOR: "DECLARADO_PELO_CONTADOR",
+  CLIENTE: "CLIENTE",
+});
+
+/** ⚠ O recorte das que chegaram sem competência. É o MESMO literal que a rota aceita. */
+export const COMPETENCIA_AUSENTE = "sem-competencia";
+
+/**
+ * Como cada estado se lê na tela.
+ *
+ * ⚠⚠ `AGUARDANDO_PAGAMENTO` É NEUTRO, NUNCA ÂMBAR — e isto é o achado mais fácil de desfazer sem
+ * querer. Nota sem pagamento identificado **não é pendência nossa: é a resposta certa**. Âmbar ali
+ * diria que o sistema falhou em alguma coisa, e um âmbar permanente treina o olho a ignorar a cor
+ * que significa "falta fazer" (o mesmo defeito do menu do SERPRO, registrado no `CLAUDE.md` do web).
+ *
+ * ⚠ `RECUSADO` também é NEUTRO, não vermelho: vermelho, nesta casa, **bloqueia o fechamento** — e
+ * uma despesa recusada não bloqueia nada. É a mesma disciplina que tirou o `--state-danger` da aba
+ * de Auditoria.
+ */
+const LEITURA_DO_ESTADO = Object.freeze({
+  [ESTADO.AGUARDANDO_PAGAMENTO]: {
+    rotulo: "Sem pagamento identificado",
+    token: "--state-neutral",
+    // ⚠ A frase diz o que é, não o que falta. "Pendente" faria parecer erro nosso.
+    frase: "A nota chegou; o pagamento ainda não foi identificado. Ela não vira lançamento enquanto a data não for conhecida.",
+    ordem: 1,
+  },
+  [ESTADO.A_CONFERIR]: {
+    rotulo: "A conferir",
+    token: "--state-warn",
+    frase: "Tem data de pagamento e espera a conferência do contador.",
+    ordem: 0,
+  },
+  [ESTADO.CONTABILIZADO]: {
+    rotulo: "Contabilizado",
+    token: "--state-ok",
+    frase: "Virou lançamento contábil.",
+    ordem: 2,
+  },
+  [ESTADO.RECUSADO]: {
+    rotulo: "Recusado",
+    token: "--state-neutral",
+    frase: "O contador recusou esta despesa. Pode ser reaberta.",
+    ordem: 3,
+  },
+  [ESTADO.FUNDIDO]: {
+    rotulo: "Absorvido",
+    token: "--state-neutral",
+    frase: "Este débito do extrato virou o pagamento de uma nota, e por isso não aparece como despesa própria.",
+    ordem: 4,
+  },
+});
+
+const ESTADO_DESCONHECIDO = Object.freeze({
+  rotulo: "Estado desconhecido",
+  token: "--state-neutral",
+  // ⚠ Estado novo no backend chega aqui como incógnita. Dizer "desconhecido" é honesto; escolher um
+  // rótulo bonito faria a tela afirmar algo sobre um estado que ela não conhece.
+  frase: "Este estado não é conhecido por esta tela. Confira a versão do sistema.",
+  ordem: 9,
+});
+
+export function leituraDoEstado(estado) {
+  return LEITURA_DO_ESTADO[estado] || ESTADO_DESCONHECIDO;
+}
+
+/**
+ * ⚠⚠ A PROCEDÊNCIA DA DATA DE PAGAMENTO — o campo mais importante desta tela.
+ *
+ * Decisão do dono (24/08/2026): o contador pode lançar a despesa **sem comprovante**, informando a
+ * data ele mesmo. O que separa isso de um pagamento provado pelo extrato é UMA COLUNA, e se a tela
+ * não a mostrar o contador olha para duas linhas idênticas sem saber qual delas o banco confirmou.
+ *
+ * Mesma disciplina da baixa manual de parcela, que já grava `origemBaixa: "MANUAL"` e escreve
+ * "(declarado)" no histórico — *"o contador precisa saber qual das duas está fazendo"*.
+ */
+const LEITURA_DA_ORIGEM = Object.freeze({
+  [ORIGEM_PAGAMENTO.OFX]: {
+    rotulo: "Extrato bancário",
+    ehProva: true,
+    frase: "A data veio do extrato importado — é prova do pagamento.",
+  },
+  [ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR]: {
+    rotulo: "Declarado",
+    ehProva: false,
+    // ⚠ "declaração, não prova" é literal de propósito. É o que o contador precisa ler.
+    frase: "A data foi informada pelo contador, sem comprovante. É declaração, não prova.",
+  },
+  [ORIGEM_PAGAMENTO.CLIENTE]: {
+    rotulo: "Informado pelo cliente",
+    ehProva: false,
+    frase: "A data veio do cliente, sem comprovante. É declaração, não prova.",
+  },
+});
+
+/**
+ * ⚠⚠ AUSÊNCIA NUNCA VIRA PROVA. `origemPagamento` nulo devolve `ehProva: false` com o motivo — nunca
+ * um objeto vazio, e nunca o rótulo do OFX por default. É a mesma família do
+ * `Number.isFinite(Number(null))` que já custou um "0%" na tela do cliente.
+ */
+export function leituraDaOrigemDoPagamento(origem) {
+  if (!origem) {
+    return {
+      rotulo: "Sem data",
+      ehProva: false,
+      frase: "Nenhuma data de pagamento foi informada até agora.",
+    };
+  }
+  return (
+    LEITURA_DA_ORIGEM[origem] || {
+      rotulo: "Procedência desconhecida",
+      ehProva: false,
+      frase: "Esta tela não reconhece a procedência desta data. Confira a versão do sistema.",
+    }
+  );
+}
+
+/**
+ * Quais ações a tela OFERECE para uma linha.
+ *
+ * ⚠⚠ ISTO NÃO É A GUARDA, e a distinção importa. Quem recusa continua sendo `aplicarTransicao`, no
+ * servidor, que enxerga o estado do instante do clique. Esta função existe para a tela não oferecer
+ * um botão que vai voltar recusado — o precedente do menu SERPRO: *"a resposta do POST chegaria
+ * tarde demais"*.
+ *
+ * ⚠ Mapa de INCLUSÃO, como o `ORIGENS_VALIDAS` do backend: estado novo nasce **sem ação nenhuma**,
+ * não com todas.
+ */
+const ACOES_POR_ESTADO = Object.freeze({
+  [ESTADO.AGUARDANDO_PAGAMENTO]: ["informar-pagamento", "confirmar", "recusar"],
+  [ESTADO.A_CONFERIR]: ["confirmar", "ajustar", "recusar"],
+  [ESTADO.CONTABILIZADO]: ["desfazer"],
+  [ESTADO.RECUSADO]: ["reabrir"],
+  [ESTADO.FUNDIDO]: [],
+});
+
+/** ⚠ Vocabulário FECHADO das ações, com o rótulo e o peso visual de cada uma. */
+export const ACAO = Object.freeze({
+  "informar-pagamento": {
+    rotulo: "Informar pagamento",
+    // ⚠ `accent`, nunca verde: verde é CONCLUÍDO nesta casa, e um botão verde de "faça isto" ensina
+    // o contrário exatamente onde o verde precisa significar "está fechado".
+    tom: "accent",
+    // ⚠⚠ A data é OBRIGATÓRIA no mesmo ato — é a invariante do caixa. A tela pergunta antes de
+    // enviar; ela não manda um POST que vai voltar `sem_data_de_pagamento`.
+    pedeData: true,
+  },
+  confirmar: {
+    rotulo: "Confirmar",
+    tom: "accent",
+    // ⚠ Confirmar a partir de AGUARDANDO_PAGAMENTO exige a data junto (o atalho do dono). A partir
+    // de A_CONFERIR a data já existe. Quem decide é `acaoPedeData`, abaixo.
+    criaLancamento: true,
+  },
+  ajustar: { rotulo: "Ajustar valor", tom: "neutro", criaLancamento: true, pedeValor: true },
+  recusar: { rotulo: "Recusar", tom: "neutro", pedeMotivo: true },
+  reabrir: { rotulo: "Reabrir", tom: "neutro" },
+  desfazer: { rotulo: "Desfazer lançamento", tom: "perigo", desfazLancamento: true },
+});
+
+/**
+ * ⚠ O tom da ação → a `variant` do `Button`, num mapa NOMEADO e testado.
+ *
+ * ⚠⚠ `success` NÃO EXISTE no `Button` deste app, de propósito: verde significa CONCLUÍDO, e um
+ * botão verde de "faça isto" ensina o contrário. Tom desconhecido cai em `secondary` — o mais
+ * discreto —, nunca em `primary`: promover um botão que ninguém classificou é o erro caro.
+ */
+const VARIANT_DO_TOM = Object.freeze({ accent: "primary", neutro: "secondary", perigo: "danger" });
+
+export function variantDoTom(tom) {
+  return VARIANT_DO_TOM[tom] || "secondary";
+}
+
+export function acoesDaLinha(item) {
+  const base = ACOES_POR_ESTADO[item?.estado] || [];
+  return base.filter((a) => ACAO[a]);
+}
+
+/**
+ * ⚠⚠ CONFIRMAR SEM DATA PRECISA PEDIR A DATA — senão o POST volta `sem_data_de_pagamento` e o
+ * contador lê como "o sistema está quebrado".
+ *
+ * O atalho do dono (confirmar direto de `AGUARDANDO_PAGAMENTO`) só é legal **com a data no mesmo
+ * ato**. A tela pergunta; ela não descobre a regra pelo erro.
+ */
+export function acaoPedeData(acao, item) {
+  if (ACAO[acao]?.pedeData) return true;
+  if (acao === "confirmar" || acao === "ajustar") return !item?.dataPagamento;
+  return false;
+}
+
+/**
+ * ⚠ A data nasce pré-preenchida com a EMISSÃO DA NOTA — a única data que o documento oferece —, à
+ * vista e trocável.
+ *
+ * ⚠⚠ NUNCA COM "HOJE". Hoje é a data do CLIQUE, e a invariante 3 do plano a proíbe: ela afirmaria
+ * que a empresa pagou no instante em que alguém abriu a tela. Sem data no documento, o campo nasce
+ * VAZIO e o contador digita — vazio é honesto, um palpite não é.
+ */
+export function dataSugeridaParaPagamento(item) {
+  return item?.dataPagamento || item?.dataDocumento || "";
+}
+
+/**
+ * Por que uma ação está desabilitada — ou `null` se ela pode acontecer.
+ *
+ * ⚠ O motivo é devolvido junto, sempre. Botão desabilitado e mudo é o defeito que a aba de Guias já
+ * pagou: o contador não sabe se é falta de permissão, mês fechado ou defeito.
+ */
+export function motivoDeBloqueio(acao, item, { podeEscrever = true } = {}) {
+  if (!podeEscrever) return "Seu perfil não pode alterar lançamentos desta empresa.";
+
+  const cfg = ACAO[acao];
+  if (!cfg) return "Ação desconhecida.";
+
+  // ⚠⚠ MÊS FECHADO BLOQUEIA NOS DOIS SENTIDOS, e é o servidor que recusa (409). Contabilizar
+  // escreveria num mês fechado sem rastro de reabertura; desfazer apagaria lançamento que o
+  // fechamento já conferiu.
+  if (item?.mesFechado && (cfg.criaLancamento || cfg.desfazLancamento)) {
+    return "A competência está fechada. Reabra o mês para mexer no lançamento.";
+  }
+
+  // ⚠ Competência nula não vira lançamento, e NÃO é deduzida da data — seria o sistema decidindo em
+  // qual apuração a despesa entra. A recusa aparece ANTES do clique, com o conserto nomeado.
+  if (cfg.criaLancamento && !item?.competencia) {
+    return "Esta nota chegou sem competência. Defina a competência antes de contabilizar.";
+  }
+
+  return null;
+}
+
+/**
+ * ⚠⚠ A LINHA DA NOTA ABRE O DOCUMENTO — e quando não pode, ela DIZ POR QUÊ.
+ *
+ * A FK é `SetNull`: a nota pode ter sido apagada. Esconder o link faria parecer que aquele declarado
+ * nunca teve documento; desabilitá-lo com o motivo é a resposta honesta.
+ */
+export function leituraDoDocumento(item) {
+  if (item?.origem === "OFX_CLIENTE") {
+    return { temDocumento: false, motivo: "Veio do extrato bancário — não há nota vinculada." };
+  }
+  if (!item?.nota) {
+    return { temDocumento: false, motivo: "A nota de origem não está mais na base." };
+  }
+  const { numero, serie, tipo } = item.nota;
+  return {
+    temDocumento: true,
+    // ⚠ Traço para o componente ausente, nunca uma string colada que esconda a falta.
+    rotulo: `${tipo || "Nota"} ${numero || "—"}${serie ? `/${serie}` : ""}`,
+    chaveAcesso: item.nota.chaveAcesso || null,
+  };
+}
+
+/**
+ * O agrupamento da fila por FORNECEDOR.
+ *
+ * ⚠⚠ É ISTO QUE TORNA A FILA CONFERÍVEL. São 1.897 notas recebidas na base; 229 entram só com o
+ * piso de julho. Uma lista plana de 229 linhas não é fila, é muro — e o contador confere por
+ * fornecedor, não por ordem de chegada.
+ *
+ * ⚠ A chave é o CNPJ quando existe, e o NOME quando não existe. Nunca o contrário: dois fornecedores
+ * podem ter nomes parecidos, mas o CNPJ identifica. Sem CNPJ (o caso do débito de extrato), o nome é
+ * tudo que há — e agrupar por ele é melhor que jogar todos num balde "sem fornecedor".
+ */
+export function agruparPorFornecedor(itens) {
+  const grupos = new Map();
+  for (const item of itens || []) {
+    const chave = item?.cnpjFornecedor || `nome:${item?.descricaoOriginal || ""}`;
+    if (!grupos.has(chave)) {
+      grupos.set(chave, {
+        chave,
+        cnpj: item?.cnpjFornecedor || null,
+        nome: item?.descricaoOriginal || "Sem descrição",
+        itens: [],
+        total: 0,
+      });
+    }
+    const g = grupos.get(chave);
+    g.itens.push(item);
+    // ⚠ O valor AJUSTADO vence o original quando existe — é ele que vira lançamento.
+    const v = Number(item?.valorAjustado ?? item?.valor);
+    if (Number.isFinite(v)) g.total += v;
+  }
+  // ⚠ Ordem por VOLUME, não alfabética: o fornecedor que concentra dinheiro é o que o contador
+  // precisa conferir primeiro. Empate desempata pelo nome, para a ordem ser estável entre recargas.
+  return [...grupos.values()].sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome));
+}
+
+/**
+ * O painel de contagem, a partir do `porEstado` do servidor.
+ *
+ * ⚠⚠ O TOTAL VEM DO `groupBy` DO SERVIDOR, NUNCA DE `itens.length`. Lista paginada como total
+ * mentiria exatamente na empresa em que o problema é grande — o defeito que a auditoria de notas já
+ * pagou com as notas sem competência.
+ *
+ * ⚠ Estado com zero aparece com zero. Sumir faria "não há nenhum" e "não perguntei" ficarem iguais.
+ */
+export function contagemParaTela(porEstado) {
+  const bruto = porEstado || {};
+  return Object.values(ESTADO)
+    .map((estado) => ({
+      estado,
+      ...leituraDoEstado(estado),
+      // ⚠ `Number(undefined)` é `NaN`, que renderiza como "NaN" na tela. O `|| 0` aqui é seguro
+      // porque a ausência de um estado no groupBy significa literalmente zero linhas dele.
+      quantidade: Number(bruto[estado]) || 0,
+    }))
+    .sort((a, b) => a.ordem - b.ordem);
+}
+
+/**
+ * ⚠ Formatação de dinheiro numa função só — a tela nunca monta `R$` à mão.
+ *
+ * ⚠⚠ `Number(null)` É `0`, E `Number.isFinite(0)` É `true`. Sem a guarda de ausência, valor ausente
+ * imprimiria **R$ 0,00** — que AFIRMA que a despesa é de zero reais, em vez de dizer que não se
+ * sabe. É a mesma família do `folhaAusenteNaoEZero` e do "0%" que já foi parar na tela do cliente.
+ * Zero INFORMADO continua imprimindo R$ 0,00: a distinção é ausência × afirmação.
+ */
+export function dinheiro(valor) {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+/**
+ * ⚠ A data vem do servidor como `AAAA-MM-DD` (dia civil, sem fuso).
+ *
+ * ⚠⚠ NÃO USE `new Date("2026-07-15")` AQUI. O construtor lê a string como **UTC** e `toLocaleDateString`
+ * a devolve no fuso local — no Brasil (UTC−3) isso imprime **14/07**, um dia antes. É o defeito que
+ * o lote de NFS-e já registrou ("a data sai com os mesmos acessadores, nunca em ISO").
+ */
+export function dataCivil(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+  if (!m) return "—";
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+/** ⚠ CNPJ formatado; o que não tiver 14 dígitos volta como veio, nunca truncado nem completado. */
+export function cnpjFormatado(cnpj) {
+  const d = String(cnpj || "").replace(/\D+/g, "");
+  if (d.length !== 14) return cnpj || null;
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+}

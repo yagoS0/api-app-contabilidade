@@ -1752,6 +1752,59 @@ export function createRealApi() {
     },
     // A AUDITORIA PRÉ-APURAÇÃO da competência — SÓ LEITURA (não marca nota, não altera apuração,
     // não fala com ADN/SEFAZ/SERPRO). A rota é LITERAL e registrada antes de `/notas/:notaId`.
+    // ── CONFERÊNCIA DE LANÇAMENTOS ──────────────────────────────────────────────────────────
+    //
+    // A nota recebida vira despesa, o débito do extrato vira o pagamento dela, e o contador
+    // confirma. Regra e invariantes: `apps/api/src/application/declarados/CLAUDE.md`.
+    //
+    // ⚠ Só o TRANSPORTE mora aqui. Nenhuma decisão sobre estado, data ou conta: quem decide é o
+    // servidor, e a tela lê `conferencia/lib/conferenciaTela.js` para saber o que OFERECER.
+    async getConferenciaFila(companyId, { competencia, estado, pagina, porPagina } = {}) {
+      const q = new URLSearchParams();
+      // ⚠⚠ `competencia` pode ser o literal `sem-competencia` — o RECORTE das notas que chegaram
+      // sem competência. Ele não é um mês, e sem ele essas notas ficam invisíveis para sempre
+      // (`where.competencia = "2026-07"` não casa com NULL em SQL).
+      if (competencia) q.set("competencia", String(competencia));
+      // ⚠ Sem `estado`, o servidor devolve o padrão (o que espera alguém). Não mandamos uma lista
+      // default daqui: duas definições de "a fila" divergiriam na primeira mudança.
+      if (estado) q.set("estado", String(estado));
+      if (pagina) q.set("pagina", String(pagina));
+      if (porPagina) q.set("porPagina", String(porPagina));
+      const qs = q.toString();
+      return request(`/firm/companies/${companyId}/conferencia${qs ? `?${qs}` : ""}`);
+    },
+    // ⚠ `acao` é o segmento da rota (`confirmar`, `ajustar`, `recusar`, `reabrir`, `desfazer`,
+    // `informar-pagamento`) — a MESMA chave do vocabulário `ACAO` da tela.
+    async postConferenciaAcao(companyId, declaradoId, acao, corpo = {}) {
+      return request(`/firm/companies/${companyId}/conferencia/${declaradoId}/${acao}`, {
+        method: "POST",
+        body: JSON.stringify(corpo || {}),
+      });
+    },
+    // As sugestões de casamento débito × nota. ⚠ DERIVADAS NA LEITURA — não há coluna de sugestão.
+    async getConferenciaCasamentos(companyId) {
+      return request(`/firm/companies/${companyId}/conferencia/casamentos`);
+    },
+    // ⚠⚠ FUNDIR NÃO CONTABILIZA: o débito preenche o bloco de pagamento da nota e some absorvido.
+    // Nenhum lançamento nasce daqui — quem leva ao razão é `confirmar`, num segundo ato.
+    async postConferenciaFundir(companyId, { declaradoOfxId, declaradoNotaId }) {
+      return request(`/firm/companies/${companyId}/conferencia/casamentos/fundir`, {
+        method: "POST",
+        body: JSON.stringify({ declaradoOfxId, declaradoNotaId }),
+      });
+    },
+    // ⚠⚠ `desde` É OBRIGATÓRIA (o servidor recusa com 400 sem ela). São 1.897 notas recebidas: sem
+    // corte, a primeira varredura produz a base inteira — e isso não é fila, é muro. Um default
+    // aqui faria a TELA escolher o tamanho do trabalho, que é decisão do contador.
+    async postVarrerNotas(companyId, desde) {
+      const q = new URLSearchParams({ desde: String(desde || "") });
+      return request(`/firm/companies/${companyId}/conferencia/varrer-notas?${q.toString()}`, {
+        method: "POST",
+      });
+    },
+    async getConferenciaVarredura(companyId) {
+      return request(`/firm/companies/${companyId}/conferencia/varredura`);
+    },
     async getAuditoriaNotas(companyId, competencia) {
       const q = new URLSearchParams({ competencia: String(competencia || "") });
       return request(`/firm/companies/${companyId}/notas/auditoria?${q.toString()}`);
