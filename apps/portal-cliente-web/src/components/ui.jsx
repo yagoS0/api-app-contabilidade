@@ -19,7 +19,13 @@ import { mensagemDeErro } from "../lib/mensagens";
 export function BotaoCopiar({ valor, rotulo }) {
   const [estado, setEstado] = useState("parado"); // parado | copiado | falhou
 
-  async function copiar() {
+  // ⚠ O `stopPropagation` do original faltava aqui, e ele **não é decoração**: desde 23/08/2026
+  // este app tem linha de tabela clicável (o fluxo de caixa do Painel). Hoje o botão só vive na
+  // tabela de Guias, que não é clicável — mas o dia em que ele entrar numa que seja, "copiar a
+  // linha digitável" passaria a abrir a linha junto, e o defeito apareceria na tela de outra
+  // pessoa, não na de quem moveu o botão.
+  async function copiar(e) {
+    e?.stopPropagation?.();
     const texto = String(valor || "");
     if (!texto) return;
     try {

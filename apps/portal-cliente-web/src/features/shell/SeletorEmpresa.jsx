@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useDialogoModal } from "../../lib/hooks";
 import { fmtCnpj, texto } from "../../lib/format";
 import { roleLabel } from "../../lib/roles";
 
@@ -14,17 +14,9 @@ import { roleLabel } from "../../lib/roles";
  * diferentes.
  */
 export function SeletorEmpresa({ empresas, ativaId, aoEscolher, aoFechar }) {
-  const caixaRef = useRef(null);
-
-  useEffect(() => {
-    // Esc fecha; foco entra no diálogo (senão o teclado continua na página atrás).
-    const aoTeclar = (e) => {
-      if (e.key === "Escape") aoFechar();
-    };
-    window.addEventListener("keydown", aoTeclar);
-    caixaRef.current?.focus();
-    return () => window.removeEventListener("keydown", aoTeclar);
-  }, [aoFechar]);
+  // ⚠ Esc, foco que entra, foco PRESO no diálogo (o Tab não sai) e foco que volta ao fechar — a
+  // metade que `aria-modal="true"` promete e que os três diálogos deste app não cumpriam.
+  const { caixaRef } = useDialogoModal({ aoFechar });
 
   return (
     <div

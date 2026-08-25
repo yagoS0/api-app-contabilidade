@@ -18,7 +18,7 @@
 // miolo — extrair um `Dialogo` comum é a hora certa, mas migrar o `ConfirmarCancelamento` mexe no
 // fluxo de CANCELAMENTO de nota fiscal. Fica nomeado como próximo passo, não embutido aqui.
 
-import { useEffect, useRef } from "react";
+import { useDialogoModal } from "../../lib/hooks";
 import { brl } from "../../lib/format";
 
 const MESES = [
@@ -39,17 +39,12 @@ export function porExtenso(dia) {
 }
 
 export function PainelDoDia({ dias, indice, aoFechar, aoIr }) {
-  const caixaRef = useRef(null);
+  // ⚠ Esc, foco que entra, foco PRESO no diálogo (o Tab não sai) e foco que volta ao fechar — a
+  // metade que `aria-modal="true"` promete e que os três diálogos deste app não cumpriam.
+  // ⚠ E aqui ele importa mais do que parece: os ‹ › DESABILITAM nas bordas do mês, então a lista
+  // de focáveis muda enquanto o diálogo está aberto — por isso o hook a recalcula a cada Tab.
+  const { caixaRef } = useDialogoModal({ aoFechar });
   const d = dias?.[indice];
-
-  useEffect(() => {
-    const aoTeclar = (e) => {
-      if (e.key === "Escape") aoFechar();
-    };
-    window.addEventListener("keydown", aoTeclar);
-    caixaRef.current?.focus();
-    return () => window.removeEventListener("keydown", aoTeclar);
-  }, [aoFechar]);
 
   if (!d) return null;
 

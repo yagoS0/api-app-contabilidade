@@ -6,13 +6,21 @@
 // ⚠ ORIGEM: `apps/web/src/features/notas/lib/reaproveitarNota.js` (portal do escritório, 30 testes).
 // MESMA REGRA, apps separados e sem código compartilhado — o mesmo arranjo de `consultaTomador.js`,
 // `valorDaNota.js` e `municipioIbge.js` aqui do lado. **Mudou lá, muda aqui.** As invariantes de lá
-// valem aqui sem exceção; o que muda são DUAS coisas, e as duas estão escritas embaixo:
+// valem aqui sem exceção. ⚠ O que muda é UMA coisa — a descrição (item 2). O item 1 registra a
+// divergência que EXISTIU e **caiu em 19/08/2026**, porque ela deixou rastro em três lugares:
 //
-//   1. ⚠⚠ **O VALOR VEM VAZIO** — foi exatamente o que o dono pediu. Lá o valor é copiado; aqui,
-//      não. E **vazio é vazio, nunca `0,00`**: zero é uma AFIRMAÇÃO sobre quanto vale a nota, e o
-//      campo mascarado (`valorDaNota.js`) nunca fabrica "0,00" num campo em branco. A tela DIZ que
-//      o valor não veio — senão o campo em branco vira esquecimento, e alguém emite achando que
-//      copiou.
+//   1. ⚠⚠ **O VALOR — E ESTE ITEM DIZIA O CONTRÁRIO ATÉ 24/08/2026.** Ele afirmava *"O VALOR VEM
+//      VAZIO (…) Lá o valor é copiado; aqui, não"*, e essa era a decisão de **18/08/2026**. Em
+//      **19/08** o dono a desfez (a história inteira das duas decisões está em `camposDaNota`), o
+//      código mudou no mesmo dia — e o cabeçalho, o comentário de `podeReaproveitar` e **uma
+//      frase da TELA** ficaram para trás.
+//
+//      ⚠ Hoje **o valor É copiado, igual ao escritório**. O que sobrou da regra antiga é o que
+//      continua valendo: **vazio é vazio, nunca `0,00`** — zero é uma AFIRMAÇÃO sobre quanto vale a
+//      nota, e `formatarValorParaCampo` devolve `""` para o que não é número positivo.
+//
+//      ⚠⚠ **E A DIVERGÊNCIA CAIU JUNTO**: com o valor viajando, só UMA coisa separa este módulo do
+//      original, e é a de baixo.
 //   2. ⚠⚠ **A DESCRIÇÃO PASSOU A CHEGAR — 19/08/2026, pedido do dono.** Este item dizia o
 //      CONTRÁRIO, e a frase antiga fica registrada porque ela estava certa quando foi escrita:
 //      *"a descrição NÃO chega a este portal"* — `serializeInvoice` não a trazia, a rota de
@@ -97,10 +105,17 @@ export const MOTIVO_NAO_REAPROVEITAVEL = {
  * ⚠ **SEM O CNPJ DA EMPRESA NÃO SE AFIRMA NADA.** Ausência de dado não vira acusação: sem
  * `cnpjDaEmpresa` a comparação simplesmente não acontece, e vale o filtro do servidor.
  *
- * ⚠ **AQUI "TER VALOR" NÃO SALVA A NOTA, e lá salvava.** No escritório uma nota sem tomador mas com
- * total ainda serve de modelo, porque o valor É copiado. Aqui o valor não viaja — então uma nota
- * sem tomador não tem literalmente nada a oferecer, e abrir o formulário "pré-preenchido" com nada
- * dentro seria a promessa vazia que a regra de lá existe para impedir.
+ * ⚠⚠ **"TER VALOR" SALVA A NOTA — e este bloco dizia o contrário até 24/08/2026.** Ele afirmava
+ * *"aqui o valor não viaja — então uma nota sem tomador não tem literalmente nada a oferecer"*, e a
+ * premissa morreu em **19/08/2026**, quando o dono mandou copiar o valor. A guarda ficou de pé
+ * sobre um fato que deixou de existir: nota sem tomador **com total** era barrada aqui e aceita no
+ * escritório, sobre a MESMA nota — que é exatamente o que a tabela "mudou lá, muda aqui" existe
+ * para impedir.
+ *
+ * ⚠ Hoje o critério é o de lá, e ele continua sendo o mesmo em essência: **nada a copiar ⇒ não
+ * abre**. Com o valor viajando, "nada a copiar" virou `!temTomador && !temValor` — abrir o
+ * formulário "pré-preenchido" com nada dentro seria a promessa vazia que a regra existe para
+ * impedir; abri-lo com o valor dentro não é.
  */
 export function podeReaproveitar(nota, { cnpjDaEmpresa = "" } = {}) {
   if (!nota) {
@@ -135,14 +150,22 @@ export function podeReaproveitar(nota, { cnpjDaEmpresa = "" } = {}) {
   }
 
   const temTomador = Boolean(String(nota.tomador?.nome || "").trim() || docTomador);
-  if (!temTomador) {
+  // ⚠ A MESMA pergunta do escritório, pela MESMA função que preenche o campo: se
+  // `formatarValorParaCampo` devolve `""`, não há valor copiável — e aí a nota sem tomador
+  // realmente não tem nada a oferecer.
+  const temValor = Boolean(formatarValorParaCampo(nota.total));
+  if (!temTomador && !temValor) {
     return {
       pode: false,
       motivo: MOTIVO_NAO_REAPROVEITAVEL.SEM_DADOS,
-      resumo: "sem tomador",
+      resumo: "sem dados",
+      // ⚠⚠ ESTA FRASE DIZIA *"e o valor não é copiado"* ATÉ 24/08/2026, e ela era FALSA na TELA
+      // desde 19/08 — o mesmo arquivo copia o total em `camposDaNota` e o aviso `valor_copiado`
+      // diz, três funções abaixo, *"O valor foi copiado da nota de origem"*. A frase que descreve
+      // um comportamento é parte do comportamento.
       texto:
-        "Não guardamos o tomador desta nota — e o valor não é copiado. Não há o que preencher: "
-        + "abrir a emissão “pré-preenchida” com nada dentro prometeria um atalho que não existe.",
+        "Não guardamos o tomador nem o valor desta nota — não há o que preencher: abrir a emissão "
+        + "“pré-preenchida” com nada dentro prometeria um atalho que não existe.",
     };
   }
 

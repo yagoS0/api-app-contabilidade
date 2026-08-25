@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { useDialogoModal } from "../../lib/hooks";
 import { brl, fmtDateBr, fmtDoc, texto, TRACO } from "../../lib/format";
 import {
   JUSTIFICATIVA,
@@ -28,16 +29,13 @@ export function ConfirmarCancelamento({ nota, aoFechar, aoConfirmar }) {
   const [justificativa, setJustificativa] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [recusa, setRecusa] = useState(null);
-  const caixaRef = useRef(null);
-
-  useEffect(() => {
-    const aoTeclar = (e) => {
-      if (e.key === "Escape" && !enviando) aoFechar();
-    };
-    window.addEventListener("keydown", aoTeclar);
-    caixaRef.current?.focus();
-    return () => window.removeEventListener("keydown", aoTeclar);
-  }, [aoFechar, enviando]);
+  // ⚠ Esc, foco que entra, foco PRESO no diálogo (o Tab não sai) e foco que volta ao fechar — a
+  // metade que `aria-modal="true"` promete e que os três diálogos deste app não cumpriam.
+  // ⚠⚠ AQUI O TRANCO É FISCAL, não de conforto: com o foco escapando, quem navega por teclado podia
+  // acionar um botão da LISTA — "Cancelar" de OUTRA nota — com este diálogo aberto por cima.
+  // ⚠ `escFecha: !enviando` preserva o comportamento que já existia: com o pedido em voo, o Esc não
+  // fecha. O desfecho pode estar em trânsito, e fechar a caixa esconderia a resposta.
+  const { caixaRef } = useDialogoModal({ aoFechar, escFecha: !enviando });
 
   const conferencia = conferirFormulario({ cMotivo, justificativa });
   const restam = JUSTIFICATIVA.MIN - String(justificativa).trim().length;

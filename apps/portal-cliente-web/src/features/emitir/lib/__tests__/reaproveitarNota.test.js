@@ -300,14 +300,50 @@ describe("quem pode servir de modelo", () => {
     expect(podeReaproveitar(notaEmitida()).pode).toBe(true);
   });
 
-  // ⚠ Diferença deliberada do portal do escritório: lá "ter valor" salvava a nota sem tomador.
-  // Aqui o valor não viaja, então uma nota sem tomador não tem NADA a oferecer.
-  it("nota sem tomador não pode — e ter total não a salva, porque o total não é copiado", () => {
+  // ⚠⚠ ESTE CASO MEDIA O CONTRÁRIO ATÉ 24/08/2026, e o comentário dele dizia por quê:
+  // *"Diferença deliberada do portal do escritório: lá 'ter valor' salvava a nota sem tomador.
+  // Aqui o valor não viaja, então uma nota sem tomador não tem NADA a oferecer."*
+  //
+  // ⚠ **A premissa morreu em 19/08/2026**, quando o dono mandou copiar o valor (a história das duas
+  // decisões está em `reaproveitarNota.js`). O teste continuou verde porque ele media a GUARDA, e a
+  // guarda também não tinha sido atualizada — as duas concordavam entre si sobre um fato que já era
+  // falso. ⚠ Isto não é a mesma coisa que reabrir uma decisão do dono: aqui não havia decisão, havia
+  // um raciocínio técnico cuja base deixou de existir.
+  it("nota sem tomador MAS com total pode — o valor é copiado, então há o que oferecer", () => {
     const r = podeReaproveitar(notaEmitida({ tomador: { nome: null, cnpjCpf: null }, total: 5000 }), {
+      cnpjDaEmpresa: CNPJ_DA_EMPRESA,
+    });
+    expect(r.pode).toBe(true);
+    // e o valor chega mesmo ao campo — senão "há o que oferecer" seria só uma afirmação do teste.
+    expect(camposDaNota(notaEmitida({ tomador: { nome: null, cnpjCpf: null }, total: 5000 })).valorServicos)
+      .toBe("5.000,00");
+  });
+
+  // ⚠ O critério não afrouxou, ele acompanhou o comportamento: NADA a copiar continua barrando.
+  it("sem tomador E sem total, não pode — aí o formulário abriria vazio de verdade", () => {
+    const r = podeReaproveitar(notaEmitida({ tomador: { nome: null, cnpjCpf: null }, total: null }), {
       cnpjDaEmpresa: CNPJ_DA_EMPRESA,
     });
     expect(r.pode).toBe(false);
     expect(r.motivo).toBe(MOTIVO_NAO_REAPROVEITAVEL.SEM_DADOS);
+  });
+
+  // ⚠ Zero não é valor: `formatarValorParaCampo` devolve "" para o que não é número positivo, e uma
+  // nota de total zero sem tomador continua não tendo o que copiar.
+  it("total ZERO não conta como valor", () => {
+    expect(podeReaproveitar(notaEmitida({ tomador: { nome: null, cnpjCpf: null }, total: 0 }), {
+      cnpjDaEmpresa: CNPJ_DA_EMPRESA,
+    }).pode).toBe(false);
+  });
+
+  // ⚠⚠ E A FRASE DA TELA NÃO PODE VOLTAR A DIZER QUE O VALOR NÃO É COPIADO. Ela dizia isso, no
+  // `texto` desta mesma recusa, enquanto três funções abaixo o aviso `valor_copiado` afirmava o
+  // oposto — a tela contradizendo a si mesma sobre o mesmo campo.
+  it("⚠ o texto da recusa NÃO afirma que o valor não é copiado", () => {
+    const r = podeReaproveitar(notaEmitida({ tomador: { nome: null, cnpjCpf: null }, total: null }), {
+      cnpjDaEmpresa: CNPJ_DA_EMPRESA,
+    });
+    expect(r.texto).not.toMatch(/valor n[ãa]o [ée] copiado/i);
   });
 
   it("só o nome do tomador já basta — o resto se digita", () => {
