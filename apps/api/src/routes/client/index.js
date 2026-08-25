@@ -2,6 +2,8 @@ import { Router } from "express";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import multer from "multer";
+import { DeclaradoRecusado } from "../../application/declarados/DeclaradoService.js";
+import { importarOfxDoCliente } from "../../application/declarados/ImportOfxService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
 import { requireAccountType } from "../../middlewares/requireAccountType.js";
@@ -650,10 +652,55 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
   router.use("/companies/:clientId/invoices/sync", syncRouter);
   router.use("/companies/:clientId/invoices", invoicesRouter);
 
-  // Fase 7 (stubs iniciais)
-  router.post("/companies/:companyId/ofx/import", requireClientCompanyAccess(), async (_req, res) => {
-    return res.status(501).json({ error: "not_implemented_yet" });
-  });
+  // ── IMPORT DE EXTRATO OFX ───────────────────────────────────────────────────────────────────
+  //
+  // ⚠⚠ SUBIR O MESMO EXTRATO DUAS VEZES NÃO DUPLICA NADA, e a proteção é transação a transação —
+  // não "arquivo repetido". A **sobreposição de períodos é o caso NORMAL**: o cliente baixa
+  // 01–31/jan e depois 15/jan–15/fev. Quem decide é o `@@unique(portalClientId, hashDedupe)`, com
+  // as chaves de `application/declarados/lib/dedupeOfx.js`.
+  //
+  // ⚠ FACHADA — nenhuma regra mora aqui. Ler o arquivo é `lib/ofx.js`, a identidade é
+  // `dedupeOfx.js`, a gravação é `ImportOfxService`. Uma segunda leitura do extrato divergiria na
+  // primeira correção de separador decimal, onde o erro é de 1000×.
+  //
+  // ⚠ `requireClientCompanyAccess()` SEM `minRole`: subir o próprio extrato é ato financeiro do
+  // cliente, e o piso das rotas financeiras dele é "membro ativo" (guias, alíquota, fluxo). Ele
+  // NÃO cria lançamento contábil — tudo nasce na fila, e quem contabiliza é o contador.
+  router.post(
+    "/companies/:companyId/ofx/import",
+    requireClientCompanyAccess(),
+    upload.single("file"),
+    async (req, res) => {
+      try {
+        if (!req.file?.buffer?.length) {
+          return res.status(400).json({ ok: false, error: "file_required", message: "Envie o arquivo do extrato." });
+        }
+        const r = await importarOfxDoCliente({
+          portalClientId: String(req.params.companyId),
+          buffer: req.file.buffer,
+          nomeArquivo: req.file.originalname || null,
+          criadoPor: req.auth?.user?.id || null,
+          // ⚠ Carimbo de AUDITORIA. A data de cada transação vem do ARQUIVO — o relógio daqui nunca
+          // vira data de pagamento.
+          agora: new Date(),
+        });
+        // ⚠ O relatório INTEIRO volta: descartadas, fora do escopo, recusadas e as anomalias da
+        // identidade. Um "criei 23" sozinho esconderia o que não entrou, e "não veio nada" ficaria
+        // indistinguível de "deu erro".
+        return res.json({ ok: true, ...r });
+      } catch (e) {
+        if (e instanceof DeclaradoRecusado) {
+          return res.status(400).json({ ok: false, error: e.codigo, message: e.frase });
+        }
+        log?.error?.({ err: e }, "ofx_import_falhou");
+        return res
+          .status(500)
+          .json({ ok: false, error: "ofx_import_falhou", message: "Não foi possível importar o extrato." });
+      }
+    },
+  );
+
+  // Fase 7 (stub inicial)
   router.get("/companies/:companyId/transactions", requireClientCompanyAccess(), async (_req, res) => {
     return res.status(501).json({ error: "not_implemented_yet" });
   });

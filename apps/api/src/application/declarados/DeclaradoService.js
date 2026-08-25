@@ -114,6 +114,11 @@ export async function criarDeclarado({
   notaRecebidaId = null,
   dataPagamento = null,
   origemPagamento = null,
+  // ⚠ Só o caminho do OFX os preenche. `contaBancariaRef` faz parte da IDENTIDADE da transação:
+  // sem ela, duas contas da mesma empresa com o mesmo valor no mesmo dia são indistinguíveis.
+  ofxImportId = null,
+  fitId = null,
+  contaBancariaRef = null,
   contaSugerida = null,
   hashDedupe,
   criadoPor,
@@ -158,6 +163,9 @@ export async function criarDeclarado({
     notaRecebidaId: notaRecebidaId ? String(notaRecebidaId) : null,
     dataPagamento: temPagamento ? dataPagamento : null,
     origemPagamento: temPagamento ? origemPagamento : null,
+    ofxImportId: ofxImportId ? String(ofxImportId) : null,
+    fitId: fitId ? String(fitId) : null,
+    contaBancariaRef: contaBancariaRef ? String(contaBancariaRef) : null,
     contaSugerida: contaSugerida ? String(contaSugerida) : null,
     hashDedupe: chave,
     criadoPor: String(criadoPor || ""),

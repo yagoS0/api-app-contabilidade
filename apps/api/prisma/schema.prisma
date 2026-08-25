@@ -906,6 +906,7 @@ model PortalClient {
   senhasPortalTrocas      PortalPasswordChange[]
   declarados              LancamentoDeclarado[]
   regrasContabilizacao    RegraContabilizacao[]
+  ofxImports              OfxImport[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -4005,4 +4006,51 @@ model RegraContabilizacao {
   @@index([portalClientId, ativa])
   @@index([portalClientId, cnpjFornecedor])
   @@map("regras_contabilizacao")
+}
+
+/// UMA IMPORTAÇÃO DE EXTRATO OFX FEITA PELO CLIENTE.
+///
+/// ⚠⚠ Ela existe para o sistema conseguir dizer *"este arquivo você já subiu em 12/08"* — e para
+/// `LancamentoDeclarado.ofxImportId` ter escritor. Coluna que ninguém escreve é a guarda morta que
+/// este projeto já pagou (`hasAccountingDivergence`: um escritor, zero leitores, meses no ar).
+///
+/// ⚠ O QUE ELA **NÃO** É: a proteção contra duplicata. Essa vive no
+/// `@@unique(portalClientId, hashDedupe)` de `LancamentoDeclarado`, transação a transação — porque
+/// **a sobreposição de períodos é o caso NORMAL**: o cliente baixa 01–31/jan e depois 15/jan–15/fev,
+/// que é o comportamento esperado de quem usa internet banking. Recusar arquivo repetido barraria o
+/// fluxo certo e deixaria passar o errado.
+model OfxImport {
+  id             String @id @default(uuid())
+  portalClientId String
+
+  /// SHA-256 do arquivo. ⚠ INFORMATIVO, nunca bloqueio — ver o aviso acima. Sem `@@unique`: o mesmo
+  /// arquivo pode voltar legitimamente depois de linhas terem sido recusadas.
+  hashArquivo String
+  nomeArquivo String?
+  /// `ACCTID` do `<BANKACCTFROM>`. ⚠ NULO quando o arquivo não o traz — e aí o dedupe fica mais
+  /// frouxo (por empresa, sem separar contas). A tela precisa dizer isso.
+  contaBancaria String?
+  bancoId       String?
+
+  /// O relatório, congelado no momento do import. ⚠ Nada some: o que foi descartado e o que ficou
+  /// fora do escopo são CONTADOS, senão "não veio nada" e "deu erro" ficam iguais.
+  transacoesLidas Int
+  criados         Int
+  jaImportadas    Int
+  /// Transação que o parser derrubou (sem data, valor zero) — com o motivo, em `detalhe`.
+  descartadas     Int
+  /// ⚠ Créditos. Esta fila é de DESPESA: a forma do lançamento de entrada não foi medida, e criar
+  /// item de fila que não pode ser resolvido é beco sem saída. Contados e nomeados.
+  foraDoEscopo    Int
+  /// Anomalias da identidade (sem conta bancária, sem `FITID`, `FITID` repetido) + os descartes.
+  detalhe         Json?
+
+  criadoPor String
+  criadoEm  DateTime @default(now())
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, criadoEm])
+  @@index([portalClientId, hashArquivo])
+  @@map("ofx_imports")
 }
