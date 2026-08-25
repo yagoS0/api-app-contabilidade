@@ -320,7 +320,36 @@ export function custoAnualSimples({
   const rbtExibido = inicio ? inicio.rbt12 : rbt12;
 
   const rep = repartirPorTributo(anexo, rbtParaAliquota);
-  if (!rep) return { indisponivel: true, motivo: "Sem RBT12 não há alíquota efetiva — informe a receita dos 12 meses anteriores ou os meses de atividade, se a empresa estiver começando." };
+  if (!rep) {
+    // ⚠⚠ DUAS CAUSAS, DUAS FRASES. Até 25/08/2026 esta linha devolvia "Sem RBT12" para os DOIS
+    // casos, e o segundo é o oposto do primeiro: `faixaDoRbt12` também devolve `null` quando o
+    // RBT12 passa do TETO do Simples (a 6ª faixa termina em R$ 4.800.000). Ou seja, a empresa
+    // grande demais para o Simples recebia "informe a receita dos 12 meses anteriores" — mandando
+    // preencher um campo que estava preenchido.
+    //
+    // ⚠ Foi por aqui que o defeito do parser (`campoNumerico.js`) se disfarçou: com o RBT12 lido
+    // ×100, SETE empresas em produção viam "Sem RBT12" com o número na tela. A frase escondia a
+    // causa; separá-la é o que faz o sintoma apontar para o lugar certo da próxima vez.
+    // ⚠ `regime` ENTRA NOS DOIS RETORNOS, e isso é conserto de contrato. As outras duas saídas
+    // desta função (a exclusão retroativa e o caminho normal) o trazem; só esta não trazia, então
+    // `regimes.find((x) => x.regime === "Simples Nacional")` devolvia `undefined` justamente na
+    // recusa. `pontoDeEquilibrio` já tratava `!s` como indisponível, então nada quebrava — mas quem
+    // procurasse o Simples pelo nome não o achava, e foi o que este teste bateu de cara.
+    const v = Number(rbtParaAliquota) || 0;
+    if (v > LIMITES_SIMPLES.epp) {
+      return {
+        regime: "Simples Nacional",
+        indisponivel: true,
+        motivo: `RBT12 de ${brl(v)} está acima do teto do Simples Nacional (${brl(LIMITES_SIMPLES.epp)}) `
+          + "— com esta receita a empresa não pode ser optante, e não há alíquota a calcular.",
+      };
+    }
+    return {
+      regime: "Simples Nacional",
+      indisponivel: true,
+      motivo: "Sem RBT12 não há alíquota efetiva — informe a receita dos 12 meses anteriores ou os meses de atividade, se a empresa estiver começando.",
+    };
+  }
 
   const das = rep.aliquotaEfetiva * receita;
 

@@ -709,3 +709,36 @@ describe("ponto de equilíbrio", () => {
     expect(pontoDeEquilibrio({ de: 100_000, ate: 120_000, passo: 10_000, anexoSimples: "I" })).toBeNull();
   });
 });
+
+// ⚠⚠ DUAS CAUSAS PARA "NÃO DÁ PARA CALCULAR O SIMPLES" — E ELAS SÃO OPOSTAS.
+//
+// Até 25/08/2026 `compararRegimes` devolvia a MESMA frase ("Sem RBT12 não há alíquota efetiva —
+// informe a receita dos 12 meses anteriores") para os dois casos, porque `faixaDoRbt12` devolve
+// `null` tanto para RBT12 ausente quanto para RBT12 ACIMA do teto de R$ 4,8 mi.
+//
+// ⚠ A empresa grande demais para o Simples recebia "informe a receita dos 12 meses anteriores" —
+// mandando preencher um campo que estava preenchido. E foi por essa frase que o defeito do parser
+// se disfarçou: com o RBT12 lido ×100, SETE empresas em produção viam "Sem RBT12" com o número na
+// tela. Frase que esconde a causa faz o sintoma apontar para o lugar errado.
+describe("⚠⚠ o Simples distingue RBT12 AUSENTE de RBT12 ACIMA DO TETO", () => {
+  const base = { receitaAnual: 500_000, folhaAnual: 100_000, anexoSimples: "III", sujeitoAoFatorR: false };
+  const simples = (over) => compararRegimes({ ...base, ...over }).regimes.find((r) => r.regime === "Simples Nacional");
+
+  it("sem RBT12, a frase manda INFORMAR", () => {
+    const r = simples({ rbt12: 0 });
+    expect(r.indisponivel).toBe(true);
+    expect(r.motivo).toMatch(/Sem RBT12/);
+    expect(r.motivo).toMatch(/informe a receita/i);
+  });
+
+  it("⚠ acima do teto, a frase diz o TETO — e não manda informar nada", () => {
+    const r = simples({ receitaAnual: 6_000_000, rbt12: 6_000_000 });
+    expect(r.indisponivel).toBe(true);
+    expect(r.motivo).toMatch(/acima do teto do Simples Nacional/i);
+    expect(r.motivo).not.toMatch(/informe a receita/i);
+  });
+
+  it("no teto exato ainda calcula — o limite é inclusivo", () => {
+    expect(simples({ receitaAnual: 4_800_000, rbt12: 4_800_000 }).indisponivel).toBeFalsy();
+  });
+});
