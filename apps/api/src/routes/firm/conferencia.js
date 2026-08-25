@@ -33,6 +33,7 @@ import {
   sugestoesDePagamento,
   varrerInvariantes,
 } from "../../application/declarados/DeclaradoService.js";
+import { alternarRegra, listarRegras } from "../../application/declarados/RegraService.js";
 import { varrerNotasDaEmpresa } from "../../application/declarados/VarreduraDeNotasService.js";
 import { ESTADO, ORIGEM_PAGAMENTO, TRANSICAO } from "../../application/declarados/lib/estadosDeclarado.js";
 
@@ -285,6 +286,42 @@ export function createConferenciaRouter({ log } = {}) {
         agora: new Date(),
       });
       return res.json({ ok: true, declarado: serializar(nota) });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
+  // ── AS REGRAS (Fase C) ─────────────────────────────────────────────────────────────────────
+  //
+  // ⚠⚠ NENHUMA DELAS CONTABILIZA. A regra SUGERE a conta; quem leva ao razão continua sendo o
+  // contador, confirmando na fila. A automação por regra (lançar sem clique) NÃO existe — é
+  // decisão do dono, e está nomeada no `CLAUDE.md` do módulo.
+  router.get("/conferencia/regras", requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      const regras = await listarRegras({ portalClientId: String(req.params.companyId) });
+      return res.json({ ok: true, regras });
+    } catch (e) {
+      // ⚠ Sem a migration aplicada a tabela não existe (P2021). A tela mostra "nenhuma regra", que
+      // é a verdade, em vez de quebrar.
+      if (e?.code === "P2021") return res.json({ ok: true, regras: [], indisponivel: true });
+      return responderRecusa(res, e, log);
+    }
+  });
+
+  // ⚠ Desligar/religar é ESCRITA e mexe no que o sistema sugere — mesmo piso das outras escritas.
+  router.patch("/conferencia/regras/:regraId", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const { ativa } = req.body || {};
+      if (typeof ativa !== "boolean") {
+        return res.status(400).json({ ok: false, error: "ativa_obrigatoria", message: "Informe `ativa` (true ou false)." });
+      }
+      const regra = await alternarRegra({
+        portalClientId: String(req.params.companyId),
+        regraId: String(req.params.regraId),
+        ativa,
+      });
+      if (!regra) return res.status(404).json({ ok: false, error: "regra_nao_encontrada", message: "Regra não encontrada." });
+      return res.json({ ok: true, regra: { id: regra.id, ativa: regra.ativa } });
     } catch (e) {
       return responderRecusa(res, e, log);
     }

@@ -11,6 +11,7 @@
 // nenhum. Por isso tudo passa por `$transaction`, e há teste com falha injetada no meio.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { reavaliarAprendizado, sugerirContaParaLote } from "./RegraService.js";
 import { carregarPlano } from "../accounting/AliquotaPorLancamentosService.js";
 // ⚠ REUSADO, não reescrito. `normalizeMatchText` já é "normalizar texto para casar" nesta casa
 // (import de Excel). A normalização que o matching da Fase B2 vai precisar é MAIOR — tirar datas,
@@ -246,7 +247,7 @@ export async function aplicarTransicao({
   // 4. ⚠⚠ O caminho transacional.
   const plano = vaiContabilizar ? await carregarPlano(portalClientId, client) : null;
 
-  return client.$transaction(async (tx) => {
+  const atualizado = await client.$transaction(async (tx) => {
     if (vaiContabilizar) {
       // ⚠ A FORMA é montada sobre o declarado JÁ com a transição aplicada — senão a conta escolhida
       // no próprio ato (e o valor ajustado) não chegariam ao lançamento.
@@ -272,7 +273,37 @@ export async function aplicarTransicao({
     }
     return tx.lancamentoDeclarado.update({ where: { id: declarado.id }, data: camposComuns });
   });
+
+  // ⚠⚠ O APRENDIZADO ACONTECE DEPOIS DA TRANSAÇÃO, E FORA DELA — de propósito.
+  //
+  // Ele é CONSEQUÊNCIA do que o contador decidiu, não parte da decisão. Dentro da `$transaction`,
+  // uma falha ao criar a regra desfaria o LANÇAMENTO que ele acabou de confirmar — trocaria uma
+  // conveniência por um estrago. Por isso `reavaliarAprendizado` também não lança: ela devolve o
+  // que fez, e o que ela não conseguir fazer é assunto dela.
+  //
+  // ⚠ Roda em CONFIRMAR, AJUSTAR e DESFAZER: as três mudam o histórico do fornecedor. Confirmar e
+  // ajustar podem CRIAR a regra; desfazer pode SUSPENDÊ-LA (a base que a sustentava sumiu).
+  if (APRENDE_COM.has(transicao) && atualizado?.cnpjFornecedor) {
+    await reavaliarAprendizado({
+      portalClientId: String(portalClientId),
+      cnpjFornecedor: atualizado.cnpjFornecedor,
+      usuarioId,
+      agora,
+      client,
+    });
+  }
+
+  return atualizado;
 }
+
+/**
+ * ⚠ As transições que mexem no histórico do fornecedor — e portanto no aprendizado.
+ *
+ * ⚠⚠ `RECUSAR` NÃO ESTÁ AQUI, e a ausência é decisão: recusar uma despesa não diz nada sobre em
+ * QUE CONTA o fornecedor deve ser lançado. `confirmacoesQueContam` já ignora tudo que não é
+ * `CONTABILIZADO`, então incluí-la só custaria uma varredura para chegar à mesma resposta.
+ */
+const APRENDE_COM = new Set([TRANSICAO.CONFIRMAR, TRANSICAO.AJUSTAR, TRANSICAO.DESFAZER]);
 
 /**
  * ⚠⚠ O RECORTE QUE ALCANÇA A COMPETÊNCIA NULA.
@@ -347,12 +378,34 @@ export async function listarFila({
     client,
   );
 
+  // ⚠⚠ A SUGESTÃO DE CONTA É DERIVADA NA LEITURA, NUNCA COLUNA. `contaSugerida` existe no model e é
+  // gravada quando o declarado NASCE — mas uma regra criada depois disso não a atualizaria, e o
+  // contador veria a fila velha sem saber por quê. Precedente de `divergenciaDeFonte.js`.
+  //
+  // ⚠ UMA busca de regras/memória/plano para a página inteira (`sugerirContaParaLote`), não uma por
+  // linha: 229 linhas fariam 687 consultas.
+  //
+  // ⚠⚠ E ELA NÃO CONTABILIZA NADA — é texto na tela. Quem leva ao razão continua sendo
+  // `aplicarTransicao`, com o contador clicando.
+  const sugestoes = new Map();
+  try {
+    const lista = await sugerirContaParaLote({ portalClientId, declarados: itens, client });
+    for (const s of lista) sugestoes.set(s.id, s);
+  } catch {
+    // ⚠ A FILA NUNCA CAI POR CAUSA DA SUGESTÃO. Sem a migration das regras a tabela não existe
+    // (P2021), e a fila é o trabalho — a sugestão é conveniência. Ausência aparece como "sem
+    // sugestão", que é a resposta honesta.
+  }
+
   return {
     itens: itens.map((d) => ({
       ...d,
       // ⚠ NÃO é coluna: é a resposta de "este botão vai funcionar?", derivada na leitura. Quem
       // RECUSA continua sendo `aplicarTransicao`, que enxerga o estado do momento do clique.
       mesFechado: Boolean(d.competencia && fechadas.has(d.competencia)),
+      // ⚠ A PROCEDÊNCIA viaja junto: "uma regra do fornecedor" e "você já lançou assim antes" pedem
+      // conferências diferentes, e a tela precisa poder dizer qual é.
+      sugestao: sugestoes.get(d.id) || null,
     })),
     total,
     porEstado,

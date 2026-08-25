@@ -422,11 +422,130 @@ Renomear no backend derruba a segunda; esquecer no mock derruba a primeira.
 ⚠ A amarração é **textual** — o backend não é importável do front (cruzar apps quebra o boot). Mesma
 disciplina do teste que amarra `"autorizada"` à `whereFaturamentoEmit`.
 
+## ✅ FASE C — a sugestão de conta e o aprendizado (25/08/2026)
+
+`lib/motorDeSugestao.js` (33 testes) · `lib/aprendizado.js` (24) · `RegraService.js` (24) ·
+`__tests__/aprendizadoNaTransicao.test.js` (10).
+
+⚠⚠ **NADA DISTO CONTABILIZA.** A regra **sugere** a conta; quem leva ao razão continua sendo o
+contador, confirmando na fila. O "nível 1" do plano (regra ativa lança **sem clique**) **NÃO foi
+construído** — ver "o que falta", no fim desta seção.
+
+### ⚠⚠ AS DUAS ÂNCORAS NÃO ENTREGAM O MESMO — medido antes de escrever
+
+`scripts/diag-fase-c.mjs` (só leitura), produção, 25/08/2026:
+
+| âncora | alcance MEDIDO | por quê |
+|---|---|---|
+| **CNPJ do fornecedor** | **140 de 211** pares empresa×fornecedor têm 2+ notas (66,4%) | a nota TRAZ o CNPJ |
+| **descrição** | ⚠ **15 de 1.887** notas (0,8%) | a memória foi construída sobre memos de EXTRATO e planilha, **não** sobre nomes de prestadores |
+
+⚠ **A âncora por descrição não é inútil — ela está no lugar errado das NOTAS.** Ela é o caminho
+natural dos débitos de **OFX**, cujo memo bancário é exatamente o tipo de texto que
+`AccountingHistorico` guarda. Por isso as duas existem, e por isso **o CNPJ vence** quando as duas
+casam: o CNPJ **identifica**, a descrição apenas **se parece**.
+
+### ⚠⚠ A MEMÓRIA GUARDA O REDUZIDO — a tradução acontece no motor
+
+**Medido: 209 de 209** registros de `AccountingHistorico.contaDebito` casam com um **reduzido** do
+plano; **zero** com um `codigoCompleto`. Como `RegraContabilizacao.contaDestino` exige o completo, o
+motor **traduz pelo plano DAQUELA empresa** antes de sugerir.
+
+- ⚠ O reduzido é **mutável**; o completo é a âncora desta casa. Devolver o reduzido cru faria a
+  sugestão apontar para outra conta no dia em que alguém renumerasse o plano.
+- ⚠ A tradução usa a precedência de sempre: **global é padrão, a da empresa sobrescreve**.
+- ⚠⚠ **OS 40 REGISTROS GLOBAIS DA MEMÓRIA FICAM DE FORA** (`companyPortalClientId: null`). Um
+  reduzido só significa algo dentro de UM plano. (Medido: hoje nenhum reduzido é ambíguo entre
+  empresas — **0 de 606** —, mas isso é um fato de hoje, não uma garantia estrutural.)
+- ⚠ Conta que não existe no plano da empresa vira recusa **nomeada** (`CONTA_FORA_DO_PLANO`), não
+  silêncio: o contador precisa saber que **havia** memória.
+
+### ⚠⚠ O QUE O MOTOR SE RECUSA A FAZER
+
+| situação | resposta |
+|---|---|
+| duas regras vivas discordando | **`DIVIDIDO`** — nenhuma vale. Escolher "a mais recente" poria a despesa numa conta que ninguém escolheu, **em série** |
+| histórico dividido | **`DIVIDIDO`** — a mesma descrição em duas contas quer dizer que o contador mudou de ideia |
+| âncora casou, valor fora da faixa | **`FORA_DA_FAIXA`**, com o `regraId`. ⚠ Isso é **SINAL, não silêncio**: é o caso que a faixa existe para pegar (fornecedor conhecido, valor 10× fora) |
+| regra suspensa ou inativa | ignorada. **Freio que ainda dirige não é freio** |
+
+### ⚠⚠ O APRENDIZADO — e as duas coisas que o impedem de se enganar sozinho
+
+**Unanimidade E piso 2.** Duas confirmações em contas diferentes não são um hábito, são uma dúvida —
+e dúvida não vira automação. A faixa nasce **±15%** sobre o menor e o maior confirmados, e é
+**obrigatória**: sem valor legível, **nada nasce**.
+
+⚠⚠ **CONFIRMAÇÃO NASCIDA DE REGRA NÃO REALIMENTA O APRENDIZADO** (`regraId` preenchido é ignorado).
+Sem isso a regra **se auto-confirma**: ela lança, a própria linha vira "confirmação", e uma conta
+errada se prova certa sozinha, em série.
+
+⚠⚠ **REGRA MANUAL NUNCA SE SUSPENDE SOZINHA.** Ela foi decisão explícita de uma pessoa; desligá-la
+por observação seria o sistema revogando essa decisão. A **APRENDIDA** se suspende na hora em que
+uma confirmação aparece em outra conta (`divergencia`) ou a base some (`base_desfeita`) — motivos
+**distintos**, porque o conserto de cada um é outro.
+
+⚠ **Desligar à mão grava `ativa: false`, nunca `suspensaEm`.** As duas colunas respondem coisas
+diferentes: `suspensaEm` é *"o sistema se freou"*; `ativa` é *"o contador decidiu"*. ⚠ E **religar à
+mão LIMPA a suspensão** — sem isso a regra ficaria ativa com `suspensaEm` preenchido, o motor
+continuaria a ignorá-la, e o botão pareceria não fazer nada.
+
+### ⚠⚠ O APRENDIZADO RODA DEPOIS DA TRANSAÇÃO, E FORA DELA
+
+Ele é **consequência** do que o contador decidiu, não parte da decisão. Dentro da `$transaction`,
+uma falha ao criar a regra **desfaria o lançamento** que ele acabou de confirmar. Por isso
+`reavaliarAprendizado` **não lança** — devolve o que fez. Sem a migration, a tabela não existe
+(P2021) e a confirmação continua valendo.
+
+⚠ Dispara em **CONFIRMAR, AJUSTAR e DESFAZER**. ⚠ **`RECUSAR` não** — recusar não diz nada sobre em
+que conta o fornecedor deve ser lançado. ⚠ **`INFORMAR_PAGAMENTO` não** — ele muda a data, não a
+conta.
+
+⚠⚠ **ACHADO AO ESCREVER O TESTE:** `aplicarTransicao` tem um **caminho simples** que faz
+`client.lancamentoDeclarado.update` direto e **retorna antes da transação**, para as transições que
+não tocam o razão. Então `RECUSAR`/`INFORMAR_PAGAMENTO` são excluídos por **duas** razões
+independentes — a lista `APRENDE_COM` e o retorno antecipado. A segunda é a que morde hoje; a
+primeira protege se o caminho simples mudar.
+
+### A sugestão chega na fila
+
+`listarFila` devolve `sugestao` por linha — **derivada na leitura, nunca coluna**. `contaSugerida`
+existe no model e é gravada quando o declarado NASCE, mas uma regra criada depois **não a
+atualizaria**, e o contador veria a fila velha sem saber por quê (precedente de
+`divergenciaDeFonte.js`).
+
+⚠ **UMA busca de regras/memória/plano para a página inteira** — 229 linhas fariam 687 consultas.
+⚠ **A fila nunca cai por causa da sugestão**: sem a migration, ela sai `null` e a tela diz "sem
+sugestão", que é a resposta honesta.
+
+**Rotas:** `GET /conferencia/regras` (⚠ P2021 devolve `{regras: [], indisponivel: true}`, não 500) ·
+`PATCH /conferencia/regras/:regraId` (`minRole: ACCOUNTANT`).
+
+### ⚠⚠ O QUE A FASE C **NÃO** FAZ — e é decisão, não lacuna
+
+**A regra não lança sozinha.** O plano previa o "nível 1" contabilizando direto, sem clique. A
+estrutura para isso já existe (faixa obrigatória, `regraId` no declarado, procedência gravada,
+desfazer transacional) — falta a **decisão do dono** de ligar, e o extrato mensal "lançados por
+regra" para ele desfazer em lote.
+
+⚠ Um lançamento contábil nascido sozinho, numa conta errada, erra **em série e em silêncio**. Isso
+não se liga sem quem responde pela contabilidade dizer que sim.
+
+**Experimentos executados** (o que cai ao desligar cada guarda):
+
+| desligando | vermelhos |
+|---|---|
+| a regra REALIMENTANDO o próprio aprendizado | **2** |
+| maioria em vez de unanimidade | **2** |
+| `MANUAL` passando a se suspender sozinha | **1** |
+| o histórico devolvendo o **reduzido cru** | **4** |
+| fora da faixa passando a sugerir mesmo assim | **3** |
+
 ## O que ainda **não** existe
 
 | | |
 |---|---|
-| aprendizado e regras | Fase C. `RegraContabilizacao` já existe no schema, **sem escritor ainda** |
+| **a regra lançando sozinha** | decisão do dono — ver acima |
+| **a tela de regras** | as rotas existem; o painel ainda não foi desenhado |
 | tela do cliente (import de OFX) | a rota existe; o portal do cliente ainda não a chama |
 | ⚠⚠ **as duas migrações aplicadas** | `20260824120000` e `20260824160000`. **Sem elas nada disto roda fora do mock** — é decisão do dono |
 
