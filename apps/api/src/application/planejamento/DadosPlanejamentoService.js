@@ -24,6 +24,8 @@ import { whereFaturamentoEmit } from "../notas/apuracao/v2/FechamentoService.js"
 import {
   apurado, ausente, valorMonetario, primeiraFonteQueResponde, competenciaBr,
 } from "./lib/campoComOrigem.js";
+import { resolverPerfilFiscal } from "../notas/apuracao/v2/PerfilFiscalService.js";
+import { sujeitoAoFatorR, RESPOSTA as RESPOSTA_FATOR_R } from "./lib/sujeitoAoFatorR.js";
 
 const REGIMES = new Set(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI"]);
 const ANEXOS_VALIDOS = new Set(["I", "II", "III", "IV", "V"]);
@@ -83,7 +85,7 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
   const janela = competenciasDe12Meses(referencia);
   const janelaRotulo = `${competenciaBr(janela[0])} a ${competenciaBr(janela[janela.length - 1])}`;
 
-  const [cadastro, company, snapshot, circular, cacheRbt, folhaLancada] = await Promise.all([
+  const [cadastro, company, snapshot, circular, cacheRbt, folhaLancada, perfilFiscal] = await Promise.all([
     prisma.cadastroFiscal.findUnique({ where: { portalClientId: portal.id } }).catch(() => null),
     portal.companyId
       ? prisma.company.findUnique({
@@ -110,6 +112,9 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
       select: { competencia: true, rbt12: true, origem: true },
     }).catch(() => null),
     derivarFolha12m({ portalClientId: portal.id, competencia: referencia }).catch(() => null),
+    // ⚠ SÓ LEITURA, e com `.catch` porque a tela do planejamento não pode cair por causa do
+    // perfil: sem ele a resposta do Fator R vira INDEFINIDO, que é a resposta honesta.
+    resolverPerfilFiscal({ portalClientId: portal.id }).catch(() => null),
   ]);
 
   // ── RECEITA ANUAL — as notas EMIT autorizadas dos 12 meses fechados ────────────────────────────
@@ -190,15 +195,36 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
   // ── SUJEITO AO FATOR R ────────────────────────────────────────────────────────────────────────
   // Booleano do cadastro fiscal ("contador confirma se tem serviços Fator R"). Sem CadastroFiscal
   // não há confirmação — e `false` por omissão faria a tela afirmar que a empresa NÃO é do Fator R.
-  const sujeitoFatorR = cadastro
-    ? apurado(Boolean(cadastro.usaFatorR), "cadastro fiscal da empresa (campo \"usa Fator R\")")
-    : ausente("Sem cadastro fiscal não há como saber se a atividade é sujeita ao Fator R.");
+  // ⚠⚠ DERIVADO DO PERFIL DE ATIVIDADES, NÃO LIDO CRU DO BOOLEANO. Este bloco lia
+  // `cadastro.usaFatorR` direto, e essa coluna tem `@default(false)`: ela não distingue "o contador
+  // conferiu e disse que não" de "ninguém nunca abriu essa tela".
+  //
+  // ⚠ O defeito que isso produzia, relatado pelo dono em 25/08/2026: o Perfil fiscal da LENTE
+  // mostrava os dois CNAEs como "III ou V (Fator R) — sim" e ESTA tela exibia o checkbox
+  // desmarcado, com o anexo travado em III. Com o RBT12 dela (~R$ 718 mil), a diferença entre o
+  // Anexo III (~11,04%) e o V (~17,6%) é de cerca de 6,6 pontos de alíquota efetiva.
+  //
+  // ⚠ A regra é a MESMA de `PerfilFiscalService` — importada, não reescrita. Duas leituras da mesma
+  // pergunta foi o defeito; não pode ser o conserto.
+  const respostaFatorR = sujeitoAoFatorR({
+    atividades: perfilFiscal?.candidatos || [],
+    usaFatorRCadastro: cadastro?.usaFatorR,
+    temCadastro: Boolean(cadastro),
+  });
+  // ⚠⚠ `INDEFINIDO` VIRA AUSENTE, NUNCA `false`. Um `false` faz a tela AFIRMAR que a empresa não é
+  // de Fator R — e é assim que ela cai no Anexo V, o mais caro, sem ninguém ter decidido. Mesma
+  // disciplina de "folha ausente não é zero".
+  const sujeitoFatorR = respostaFatorR.resposta === RESPOSTA_FATOR_R.INDEFINIDO
+    ? ausente(respostaFatorR.motivo)
+    : apurado(respostaFatorR.resposta === RESPOSTA_FATOR_R.SIM, respostaFatorR.motivo);
 
   // ── ANEXO DO SIMPLES ──────────────────────────────────────────────────────────────────────────
   // ⚠ Quando a atividade é sujeita ao Fator R o anexo NÃO é cadastro: é consequência da folha, e
   // quem o resolve é o motor da tela. Por isso o campo sai ausente nesse caso, com o motivo.
   const anexoCadastro = anexoNormalizado(company?.simplesAnexo) || anexoNormalizado(company?.anexoSimples);
-  const anexo = cadastro?.usaFatorR
+  // ⚠ Lê a RESPOSTA derivada, não o booleano cru — senão o anexo continuaria saindo do cadastro
+  // numa empresa cujo perfil diz que ele sai da folha.
+  const anexo = respostaFatorR.resposta === RESPOSTA_FATOR_R.SIM
     ? ausente("Atividade sujeita ao Fator R: o anexo sai da folha (III a partir de 28%, V abaixo), não do cadastro.")
     : primeiraFonteQueResponde([
       anexoCadastro ? apurado(anexoCadastro, "cadastro da empresa (anexo do Simples)") : null,
@@ -241,6 +267,14 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
       sujeitoFatorR,
       aliquotaIss,
       atividadePresumido,
+    },
+    // ⚠ A DIVERGÊNCIA ENTRE PERFIL E CADASTRO VIAJA, e a tela a mostra. Corrigir em silêncio
+    // deixaria o cadastro errado para sempre — quem conserta o cadastro é o contador.
+    fatorR: {
+      resposta: respostaFatorR.resposta,
+      origem: respostaFatorR.origem,
+      cnaes: respostaFatorR.cnaesDeFatorR,
+      divergencia: respostaFatorR.divergencia,
     },
   };
 }

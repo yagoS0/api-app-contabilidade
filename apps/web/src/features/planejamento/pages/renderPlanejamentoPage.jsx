@@ -398,6 +398,16 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
             <input type="checkbox" checked={sujeitoFatorR} onChange={(e) => setSujeitoFatorR(e.target.checked)} />
             Atividade sujeita ao Fator R (o anexo passa a sair da folha, não da escolha)
           </label>
+          {/* ⚠⚠ A DIVERGÊNCIA ENTRE O PERFIL DE ATIVIDADES E O CADASTRO APARECE, E NÃO É CORRIGIDA
+              EM SILÊNCIO. Ela é o defeito que o dono relatou em 25/08/2026: o Perfil fiscal
+              mostrava os dois CNAEs como "III ou V (Fator R) — sim" e esta tela exibia o checkbox
+              desmarcado. Hoje a resposta é DERIVADA do perfil; o que sobra é o cadastro estar
+              desatualizado, e quem o conserta é o contador. */}
+          {prefill.fatorR?.divergencia ? (
+            <div style={{ fontSize: "0.72rem", color: C.alerta, lineHeight: 1.4, marginTop: 2 }}>
+              ⚠ {prefill.fatorR.divergencia.frase}
+            </div>
+          ) : null}
           {prefill.temEmpresa && <div style={{ marginTop: -4 }}><OrigemDoCampo campo={prefill.campos.sujeitoFatorR} /></div>}
 
           {/* O Lucro Real só entra com estes dois — e o card diz isso enquanto faltarem. */}

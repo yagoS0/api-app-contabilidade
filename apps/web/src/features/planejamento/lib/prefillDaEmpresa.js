@@ -64,7 +64,7 @@ function normalizarCampos(dados) {
 export function prefillDaEmpresa(dados) {
   const campos = normalizarCampos(dados);
   if (!campos) {
-    return { empresa: null, referencia: null, valores: {}, campos: {}, temEmpresa: false };
+    return { empresa: null, referencia: null, valores: {}, campos: {}, fatorR: null, temEmpresa: false };
   }
 
   const valores = {};
@@ -86,6 +86,12 @@ export function prefillDaEmpresa(dados) {
     referencia: dados.referencia || null,
     valores,
     campos: normalizados,
+    // ⚠ A DIVERGÊNCIA ENTRE O PERFIL DE ATIVIDADES E O CADASTRO viaja inteira. Ela não é campo:
+    // é o aviso de que as duas fontes discordam sobre a MESMA empresa — o defeito que o dono
+    // relatou (o Perfil dizia "III ou V (Fator R)" e esta tela mostrava o checkbox desmarcado).
+    // ⚠ A tela AVISA; ela não conserta o cadastro. Corrigir em silêncio deixaria o cadastro errado
+    // para sempre, e quem responde pelo cadastro é o contador.
+    fatorR: dados.fatorR || null,
     temEmpresa: true,
   };
 }

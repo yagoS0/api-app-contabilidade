@@ -9,6 +9,7 @@
 // conjunto de 1–10 CNAEs da empresa, eliminando ambiguidade em runtime.
 
 import { prisma } from "../../../../infrastructure/db/prisma.js";
+import { sujeitoAoFatorR, RESPOSTA as RESPOSTA_FATOR_R } from "../../../planejamento/lib/sujeitoAoFatorR.js";
 
 // TipoReceita → Anexo. SERVICO_FATOR_R decide III↔V mensalmente pelo Fator R;
 // RECEITA_NAO_CLASSIFICADA nunca chuta (vai pra revisão).
@@ -111,12 +112,10 @@ export async function resolverPerfilFiscal({ portalClientId }) {
       .map((c) => [onlyDigits(c.cnae).slice(0, 7), c])
   );
 
-  let temFatorR = usaFatorR;
   const candidatos = unicos.map((cnae, idx) => {
     const ref = refByCnae.get(cnae) || null;
     const tipoReceita = ref?.tipoReceitaSugerido || null;
     const { anexo, anexoLabel, sujeitoFatorR, revisao } = anexoDeTipoReceita(tipoReceita);
-    if (sujeitoFatorR) temFatorR = true;
     const cfg = configByCnae.get(cnae) || {};
     // Default: atividade ativa; sem match no catálogo CNAE → impeditivo/revisão sinalizado.
     return {
@@ -142,7 +141,28 @@ export async function resolverPerfilFiscal({ portalClientId }) {
     };
   });
 
-  return { regime, usaFatorR, temCadastro, temFatorR, candidatos };
+  // ⚠⚠ A DERIVAÇÃO DO FATOR R MORA EM `planejamento/lib/sujeitoAoFatorR.js`, e é CHAMADA — não
+  // repetida. O Planejamento faz a mesma pergunta sobre a mesma empresa, e duas implementações
+  // divergiriam na primeira correção: era exatamente esse o defeito relatado pelo dono (o Perfil
+  // dizia "III ou V (Fator R) — sim" e o Planejamento mostrava o checkbox desmarcado).
+  //
+  // ⚠ E ELA CONSERTA UM DEFEITO DAQUI: o `temFatorR` anterior era um `if (sujeitoFatorR) … = true`
+  // dentro do laço, ANTES de `cfg.ativo` ser lido — uma atividade que o contador DESATIVOU
+  // continuava forçando o Fator R da empresa inteira.
+  const fatorR = sujeitoAoFatorR({ atividades: candidatos, usaFatorRCadastro: usaFatorR, temCadastro });
+
+  return {
+    regime,
+    usaFatorR,
+    temCadastro,
+    // ⚠ `temFatorR` MANTIDO no contrato (a tela já o consome), agora derivado da regra. Só `sim`
+    // vira `true` — `indefinido` NÃO é `true` nem é `false` afirmado, e quem quiser a distinção lê
+    // `fatorR.resposta`.
+    temFatorR: fatorR.resposta === RESPOSTA_FATOR_R.SIM,
+    // A resposta inteira, com origem, motivo e a divergência entre perfil e cadastro.
+    fatorR,
+    candidatos,
+  };
 }
 
 /**

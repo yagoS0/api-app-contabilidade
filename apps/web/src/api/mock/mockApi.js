@@ -7569,7 +7569,10 @@ export function createMockApi() {
           folhaAnual: ok(560_412.55, "folha de 12 meses informada no fechamento de 05/2026"),
           regimeAtual: ok("SIMPLES_NACIONAL", "cadastro fiscal da empresa"),
           anexo: nao("Atividade sujeita ao Fator R: o anexo sai da folha (III a partir de 28%, V abaixo), não do cadastro."),
-          sujeitoFatorR: ok(true, "cadastro fiscal da empresa (campo \"usa Fator R\")"),
+          // ⚠⚠ DERIVADO DO PERFIL, e com a DIVERGÊNCIA — é o caso da LENTE: os CNAEs são de Fator R
+          // e o cadastro está com a caixa desmarcada. Sem ele no mock, o aviso de divergência só
+          // existiria em produção, que é a classe de defeito que já mordeu este projeto cinco vezes.
+          sujeitoFatorR: ok(true, "As atividades 7319003, 6319400 são sujeitas ao Fator R: o anexo sai da folha (III a partir de 28%, V abaixo), não da escolha."),
           aliquotaIss: ok(0.035, "perfil de atividades — CNAE 6202300 (3,5%)"),
           atividadePresumido: semAtividadePresumido,
         },
@@ -7644,6 +7647,21 @@ export function createMockApi() {
         empresa: { id: empresa.companyId, razao: empresa.razao, cnpj: empresa.cnpj },
         referencia: { competencia: ref, janela: [], janelaRotulo },
         campos: cenarios[idx % cenarios.length],
+        // ⚠⚠ A DIVERGÊNCIA ENTRE PERFIL E CADASTRO — só no cenário 0, que é o da LENTE: o perfil
+        // afirma Fator R e o cadastro está com a caixa desmarcada. O aviso na tela depende deste
+        // bloco; sem ele, ele só apareceria em produção.
+        fatorR: (idx % cenarios.length) === 0
+          ? {
+            resposta: "sim",
+            origem: "perfil_de_atividades",
+            cnaes: ["7319003", "6319400"],
+            divergencia: {
+              codigo: "CADASTRO_NAO_MARCA_FATOR_R",
+              frase: "O cadastro fiscal está com \"usa Fator R\" desmarcado, mas o perfil tem "
+                + "atividade sujeita ao Fator R. Vale o perfil — confirme o cadastro.",
+            },
+          }
+          : null,
       };
     },
     // Mock com atividade SUJEITA A FATOR R e folha derivada dos lançamentos — é a única forma de

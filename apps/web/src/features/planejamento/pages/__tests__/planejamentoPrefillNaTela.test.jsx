@@ -28,7 +28,7 @@ const LENTE = {
 const ok = (valor, origem = "medido em produção") => ({ valor, apurado: true, origem, motivoAusencia: null });
 const nao = (motivoAusencia) => ({ valor: null, apurado: false, origem: null, motivoAusencia });
 
-function payload(over = {}) {
+function payload(over = {}, raiz = {}) {
   return {
     empresa: { id: "e1", razao: "LENTE - MEDICAL MARKETING LTDA", cnpj: "24352609000198" },
     referencia: { competencia: "2026-08", janela: [], janelaRotulo: "08/2025 a 07/2026" },
@@ -43,11 +43,12 @@ function payload(over = {}) {
       atividadePresumido: nao("Escolha na tela."),
       ...over,
     },
+    ...raiz,
   };
 }
 
-function montar(over) {
-  const api = { getDadosPlanejamento: jest.fn(async () => payload(over)) };
+function montar(over, raiz) {
+  const api = { getDadosPlanejamento: jest.fn(async () => payload(over, raiz)) };
   render(
     <PlanejamentoPage
       api={api}
@@ -126,5 +127,58 @@ describe("⚠ O QUE NÃO PODE TER MUDADO JUNTO", () => {
     montar({ receitaAnual: ok(1_850_000), rbt12: ok(1_790_000) });
     await waitFor(() => expect(screen.getByDisplayValue("1.850.000")).toBeInTheDocument());
     expect(screen.queryByText(/não é elegível a este regime/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("⚠⚠ O FATOR R VEM DO PERFIL DE ATIVIDADES, NÃO DO BOOLEANO DO CADASTRO", () => {
+  // Defeito relatado pelo dono: o Perfil fiscal da LENTE mostrava os DOIS CNAEs como "III ou V
+  // (Fator R) — sim" e ESTA tela exibia o checkbox DESMARCADO, com o anexo travado em III.
+  // A causa era `CadastroFiscal.usaFatorR` ser lido cru — uma coluna com `@default(false)`, que
+  // não distingue "o contador disse que não" de "ninguém nunca abriu essa tela".
+  const DIVERGENTE = {
+    fatorR: {
+      resposta: "sim",
+      origem: "perfil_de_atividades",
+      cnaes: ["7319003", "6319400"],
+      divergencia: {
+        codigo: "CADASTRO_NAO_MARCA_FATOR_R",
+        frase: "O cadastro fiscal está com \"usa Fator R\" desmarcado, mas o perfil tem atividade "
+          + "sujeita ao Fator R. Vale o perfil — confirme o cadastro.",
+      },
+    },
+  };
+
+  it("o checkbox nasce MARCADO quando o perfil diz que a atividade é de Fator R", async () => {
+    montar({ sujeitoFatorR: ok(true, "As atividades 7319003, 6319400 são sujeitas ao Fator R.") }, DIVERGENTE);
+    await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
+    const caixa = screen.getByLabelText(/Atividade sujeita ao Fator R/i);
+    expect(caixa).toBeChecked();
+  });
+
+  it("⚠⚠ e a DIVERGÊNCIA com o cadastro aparece — não é corrigida em silêncio", async () => {
+    // Corrigir calado deixaria o cadastro errado para sempre. Quem responde por ele é o contador.
+    montar({ sujeitoFatorR: ok(true, "…") }, DIVERGENTE);
+    await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
+    expect(screen.getByText(/desmarcado, mas o perfil tem atividade sujeita ao Fator R/i)).toBeInTheDocument();
+    expect(screen.getByText(/confirme o cadastro/i)).toBeInTheDocument();
+  });
+
+  it("sem divergência, nada é dito — âmbar permanente treina o olho a ignorar", async () => {
+    montar({ sujeitoFatorR: ok(true, "…") }, { fatorR: { resposta: "sim", divergencia: null } });
+    await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
+    expect(screen.queryByText(/confirme o cadastro/i)).not.toBeInTheDocument();
+  });
+
+  it("⚠ payload SEM `fatorR` (contrato antigo) não quebra nem inventa aviso", async () => {
+    montar();
+    await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
+    expect(screen.queryByText(/confirme o cadastro/i)).not.toBeInTheDocument();
+  });
+
+  it("⚠⚠ INDEFINIDO deixa o campo AUSENTE, com o motivo — nunca afirma \"não é Fator R\"", async () => {
+    // Um `false` aqui derruba a empresa no Anexo V (a alíquota MAIOR) sem ninguém ter decidido.
+    montar({ sujeitoFatorR: nao("Sem cadastro fiscal não há como saber se a atividade é sujeita ao Fator R.") });
+    await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
+    expect(screen.getAllByText(/não há como saber se a atividade é sujeita ao Fator R/i).length).toBeGreaterThan(0);
   });
 });
