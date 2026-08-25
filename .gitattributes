@@ -1,0 +1,20 @@
+# ⚠⚠ ARTEFATO FISCAL OFICIAL É BYTE, NÃO TEXTO.
+#
+# Os arquivos de `docs/` são fontes normativas versionadas COM HASH — o leiaute da NFS-e, a lista de
+# serviço nacional, o Guia Prático da EFD, a LC 116. O hash é o que prova que o código gerado veio
+# DAQUELE documento; se o git normalizar a quebra de linha na entrada ou na saída, os bytes mudam,
+# o SHA-256 escrito no README e no cabeçalho do arquivo gerado **deixa de conferir**, e a prova vira
+# ruído. Hash que não confere é pior que hash nenhum: ele parece garantia.
+#
+# ⚠ ISTO APARECEU EM 25/08/2026, ao versionar o texto compilado da LC 116: o git avisou
+# "CRLF will be replaced by LF" no `lcp116.htm`, que é ISO-8859-1 com CRLF e LF misturados. A
+# conversão silenciosa teria invalidado o `1de1de10…3801e2` do gerador.
+#
+# `-text` = não trate como texto, não converta nada, em nenhuma direção.
+docs/** -text
+
+# Os binários já versionados, pelo mesmo motivo (aqui era inofensivo, mas a regra é a mesma).
+*.xlsx binary
+*.pdf  binary
+*.woff2 binary
+*.png  binary
