@@ -7456,7 +7456,34 @@ export function createMockApi() {
     async getRelatorioFaturamento(companyId, competencia) {
       await delay(60);
       const salvo = mockRelatoriosFaturamento.get(`${companyId}|${competencia}`) || null;
-      return { ok: true, relatorio: salvo };
+      if (!salvo) return { ok: true, relatorio: null };
+      // ⚠⚠ O `diagnostico` É O QUE TORNA CAMINHÁVEL, OFFLINE, O DEFEITO REAL DE 25/08/2026: a foto
+      // da LENTE era das 12:26:57 e o `CadastroFiscal` foi criado às 12:55:24 — a tela seguia
+      // dizendo "não tem Cadastro Fiscal" com a linha existindo. Sem este bloco no mock, o aviso
+      // "este relatório é uma foto e o que ele diz já mudou" só existiria em produção — que é
+      // exatamente o tipo de ramo que já mordeu este projeto quatro vezes.
+      //
+      // ⚠ Ele é DERIVADO da foto, como no backend (`conferirBloqueiosDaFoto`), e as três respostas
+      // aparecem: `false` (caiu), `true` (continua valendo) e `null` (não conferido).
+      const blockers = salvo.dados?.preApurado?.blockers || [];
+      const CONFERIVEIS = new Set(["CADASTRO_FALTANDO", "REGIME_INVALIDO", "PENDENCIAS_ABERTAS"]);
+      const diagnostico = blockers.length
+        ? (() => {
+          const bloqueios = blockers.map((b) => ({
+            tipo: b.tipo,
+            mensagem: b.mensagem || null,
+            // No mock, o cadastro "foi preenchido" — é o cenário que se quer ver na tela.
+            aindaVale: CONFERIVEIS.has(b.tipo) ? false : null,
+          }));
+          return {
+            conferidoEm: new Date().toISOString(),
+            geradoEm: salvo.geradoEm,
+            bloqueios,
+            algumDeixouDeValer: bloqueios.some((b) => b.aindaVale === false),
+          };
+        })()
+        : null;
+      return { ok: true, relatorio: { ...salvo, diagnostico } };
     },
     async gerarRelatorioFaturamento(companyId, competencia) {
       await delay(140);

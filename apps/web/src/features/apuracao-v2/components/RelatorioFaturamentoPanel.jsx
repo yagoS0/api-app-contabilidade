@@ -23,6 +23,7 @@ import {
   avisosDoRelatorio,
   procedenciaDoDas,
   recusaDoPreApurado,
+  diagnosticoDaFoto,
   rotuloSegregacao,
   rotuloQualificacoes,
   recusaEcoaOTopo,
@@ -160,7 +161,7 @@ function BlocoGrupo({ grupo }) {
 }
 
 /** O pré-apurado: o nosso número, o oficial, e a diferença — nunca um número sem dono. */
-function BlocoPreApurado({ preApurado, avisos = [] }) {
+function BlocoPreApurado({ preApurado, avisos = [], diagnostico = null }) {
   const proc = procedenciaDoDas(preApurado);
   const recusa = recusaDoPreApurado(preApurado);
   // ⚠ Ver `recusaEcoaOTopo` na lib: quando a caixa do topo já disse o mesmo, com o mesmo número e
@@ -178,6 +179,15 @@ function BlocoPreApurado({ preApurado, avisos = [] }) {
           procedimento, não a causa. Some o que era repetição pura: a COR. Uma tela com quatro
           âmbares para um fato é onde âmbar deixa de significar alguma coisa; uma tela com um
           âmbar e um bloco neutro continua dizendo tudo, e o olho sabe para onde ir. */}
+      {/* ⚠⚠ ANTES DA RECUSA, E DE PROPÓSITO. Se o bloqueio impresso nesta foto já não vale, quem
+          lê precisa saber ANTES de ler o motivo — senão ele sai desta tela para consertar uma
+          coisa que já está consertada. Foi o que aconteceu com a LENTE em 25/08/2026. */}
+      {diagnostico ? (
+        <Aviso tom="neutro" titulo={diagnostico.titulo}>
+          {diagnostico.detalhe}
+        </Aviso>
+      ) : null}
+
       {recusa.bloqueado ? (
         <Aviso tom={ecoa ? "neutro" : TOM_DO_AVISO[recusa.tom]} titulo={recusa.titulo}>
           {recusa.detalhe}
@@ -425,7 +435,7 @@ export function RelatorioFaturamentoPanel({
         </div>
       )}
 
-      <BlocoPreApurado preApurado={dados.preApurado} avisos={avisos} />
+      <BlocoPreApurado preApurado={dados.preApurado} avisos={avisos} diagnostico={diagnosticoDaFoto(relatorio)} />
 
       {/* Um bloco por tipo de operação, cada um com o seu total. */}
       {(dados.gruposPorTipoOperacao || []).length === 0 ? (

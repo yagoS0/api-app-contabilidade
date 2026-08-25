@@ -158,6 +158,51 @@ export function procedenciaDoDas(preApurado) {
 }
 
 /**
+ * ⚠⚠ O BLOQUEIO QUE A FOTO CONGELOU AINDA VALE? — a leitura de tela do `diagnostico` da rota.
+ *
+ * O relatório é uma FOTO, com data, e para os NÚMEROS isso é o certo: ele se imprime e circula.
+ * O que não podia viajar congelado junto é o BLOQUEIO do motor — número é fato do mês,
+ * bloqueio é DIAGNÓSTICO DE ESTADO, e diagnóstico velho afirma hoje o que era verdade ontem.
+ *
+ * ⚠ O caso que produziu isto (25/08/2026): foto da LENTE às 12:26:57, `CadastroFiscal` criado às
+ * 12:55:24. A tela seguia dizendo "A empresa não tem Cadastro Fiscal preenchido (regime + CNAE)"
+ * com a linha existindo — e o dono, com razão, leu como duas telas discordando sobre a mesma
+ * empresa.
+ *
+ * ⚠ TRÊS ESTADOS, e o terceiro é o que impede a mentira oposta: `aindaVale === null` quer dizer
+ * "não conferimos este" (a receita não classificada, que exige varrer as notas do mês). Ele NUNCA
+ * entra na frase — dizer que um bloqueio caiu porque não olhamos para ele seria trocar um
+ * diagnóstico velho por um inventado.
+ *
+ * @returns {null | { titulo, detalhe, caidos: string[] }} `null` quando não há o que dizer.
+ */
+export function diagnosticoDaFoto(relatorio) {
+  const d = relatorio?.diagnostico;
+  if (!d || !Array.isArray(d.bloqueios) || !d.algumDeixouDeValer) return null;
+
+  const caidos = d.bloqueios.filter((b) => b?.aindaVale === false).map((b) => b?.tipo).filter(Boolean);
+  if (!caidos.length) return null;
+
+  const quantos = caidos.length === 1 ? "O motivo" : "Os motivos";
+  return {
+    caidos,
+    titulo: "Este relatório é uma foto — e o que ele diz sobre o bloqueio já mudou",
+    detalhe:
+      `${quantos} que o portal registrou aqui não vale${caidos.length === 1 ? "" : "m"} mais: `
+      + `${caidos.map((c) => MOTIVO_JA_RESOLVIDO[c] || c).join(" · ")}. `
+      + "Os números do faturamento continuam sendo os da data da foto; para ver o bloqueio de "
+      + "agora, clique em Regerar.",
+  };
+}
+
+/** As frases de "isto foi resolvido", no vocabulário do contador — nunca o nome do código. */
+const MOTIVO_JA_RESOLVIDO = Object.freeze({
+  CADASTRO_FALTANDO: "o Cadastro Fiscal foi preenchido depois que esta foto foi gerada",
+  REGIME_INVALIDO: "o regime da empresa mudou depois desta foto",
+  PENDENCIAS_ABERTAS: "as pendências de classificação foram resolvidas depois desta foto",
+});
+
+/**
  * A RECUSA DO MOTOR NÃO É ERRO — é o estado de 100% das empresas hoje (`tipoReceita` nulo em
  * 16.153/16.153 itens). O que a tela precisa mostrar é o motivo NOMEADO e o TAMANHO do buraco.
  *

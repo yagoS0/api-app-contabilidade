@@ -61,7 +61,7 @@ import {
   faturamentoEmitDaCompetencia,
   notasEmitDaCompetencia,
 } from "./FechamentoService.js";
-import { calcularApuracaoLocal } from "./MotorApuracaoService.js";
+import { calcularApuracaoLocal, avaliarPreChecagens } from "./MotorApuracaoService.js";
 import { ehCalculoNosso } from "./procedenciaDas.js";
 
 export class RelatorioFaturamentoError extends Error {
@@ -972,11 +972,68 @@ export async function gerarRelatorioFaturamento({ portalClientId, competencia, u
 }
 
 /** Lê o relatório salvo. `null` quando nunca foi gerado — ausência não é erro. */
+/**
+ * ⚠⚠ OS BLOQUEIOS QUE A FOTO CONGELOU AINDA VALEM? — três respostas, nunca duas.
+ *
+ * O relatório é uma FOTO, com data, e isso é decisão de desenho (ver as rotas: "LER não gera").
+ * Para os NÚMEROS do faturamento é o certo — é um documento, ele se imprime e circula. Mas dentro
+ * da mesma foto viaja o BLOQUEIO do motor, que não é número: é DIAGNÓSTICO DE ESTADO. Um
+ * diagnóstico congelado afirma hoje o que era verdade no instante da foto.
+ *
+ * ⚠ NÃO É HIPÓTESE. Medido em produção: a LENTE tinha a foto de 25/08/2026 12:26:57 e o
+ * `CadastroFiscal` criado às 12:55:24 — 28 minutos depois. A aba seguia dizendo "A empresa não tem
+ * Cadastro Fiscal preenchido (regime + CNAE)" com a linha existindo, enquanto o Perfil fiscal da
+ * MESMA empresa mostrava regime e duas atividades. O dono leu como duas telas discordando.
+ *
+ * ⚠⚠ `aindaVale: null` É UMA RESPOSTA, e é a que impede a mentira oposta. `RECEITA_NAO_CLASSIFICADA`
+ * depende da varredura das notas do mês e NÃO é reconferida numa leitura (poria uma varredura no
+ * caminho de abrir a aba). Devolver `false` para ela — "já não vale" — por não termos olhado seria
+ * trocar um diagnóstico velho por um diagnóstico inventado. Ausência de conferência não é
+ * conferência com resultado negativo.
+ *
+ * ⚠ ELE NÃO REESCREVE A FOTO. `dados` fica intacto; o veredito viaja ao lado, em `diagnostico`.
+ * Regravar aqui faria a LEITURA mudar o documento salvo — exatamente o que `persistir: false`
+ * existe para impedir no motor.
+ */
+export async function conferirBloqueiosDaFoto({ portalClientId, relatorio, agora = new Date() }) {
+  const daFoto = relatorio?.dados?.preApurado?.blockers;
+  if (!Array.isArray(daFoto) || daFoto.length === 0) return null;
+
+  const vivos = await avaliarPreChecagens({ portalClientId })
+    .then((r) => r?.blockers || [])
+    .catch(() => null);
+  // Sem conseguir avaliar, NADA é afirmado — a foto continua sendo a única resposta.
+  if (!vivos) return null;
+  const tiposVivos = new Set(vivos.map((b) => b.tipo));
+  // Os que esta conferência sabe responder. Fora desta lista, `null`.
+  const CONFERIVEIS = new Set(["CADASTRO_FALTANDO", "REGIME_INVALIDO", "PENDENCIAS_ABERTAS"]);
+
+  const bloqueios = daFoto.map((b) => ({
+    tipo: b.tipo,
+    mensagem: b.mensagem || null,
+    aindaVale: CONFERIVEIS.has(b.tipo) ? tiposVivos.has(b.tipo) : null,
+  }));
+
+  return {
+    conferidoEm: agora.toISOString(),
+    geradoEm: relatorio.geradoEm ? new Date(relatorio.geradoEm).toISOString() : null,
+    bloqueios,
+    // ⚠ Só `=== false` conta. `null` (não conferido) nunca vira "deixou de valer".
+    algumDeixouDeValer: bloqueios.some((b) => b.aindaVale === false),
+  };
+}
+
 export async function lerRelatorioFaturamento({ portalClientId, competencia }) {
   if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
     throw new RelatorioFaturamentoError("INVALID_COMPETENCIA", `Formato YYYY-MM esperado, recebido: ${competencia}`);
   }
-  return prisma.relatorioFaturamento.findUnique({
+  const relatorio = await prisma.relatorioFaturamento.findUnique({
     where: { portalClientId_competencia: { portalClientId: String(portalClientId), competencia } },
   });
+  if (!relatorio) return null;
+
+  // ⚠ A conferência NÃO pode derrubar a leitura: falhando, o relatório sai como sempre saiu.
+  const diagnostico = await conferirBloqueiosDaFoto({ portalClientId: String(portalClientId), relatorio })
+    .catch(() => null);
+  return { ...relatorio, diagnostico };
 }

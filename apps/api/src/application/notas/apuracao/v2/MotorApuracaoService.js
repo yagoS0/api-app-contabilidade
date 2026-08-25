@@ -62,32 +62,34 @@ function dataReferenciaCompetencia(competencia) {
 }
 
 /**
- * Calcula apuração local pra (empresa, competência).
+ * AS PRÉ-CHECAGENS DO MOTOR — a pergunta "esta empresa está em condição de ser apurada?".
  *
- * @param {Object} opts
- * @param {boolean} [opts.persistir=true] — grava `ApuracaoSnapshot` (estado "calculada") e
- *   `LogDecisaoFatorR`. **O default mantém o comportamento de quem já chamava.**
+ * ⚠⚠ EXTRAÍDA (25/08/2026) PORQUE ELA TEM UM SEGUNDO LEITOR, e não porque ficou bonita. O
+ * relatório de faturamento é uma FOTO salva (`relatorios_faturamento`, com `geradoEm` e o botão
+ * "Regerar"), e dentro da foto viaja o BLOQUEIO do motor — que não é número de faturamento, é
+ * DIAGNÓSTICO DE ESTADO. Congelar um diagnóstico faz a tela afirmar hoje o que era verdade ontem.
  *
- * ⚠ POR QUE EXISTE O MODO SEM PERSISTIR. Esta função sempre gravou o snapshot com
- * `estado: "calculada"` — o que é certo para o botão Apurar, e é veneno para uma LEITURA.
- * O relatório de faturamento mostra o DAS pré-apurado ao lado dos números do mês; se ele
- * chamasse a função como ela estava, **abrir um relatório mudaria o estado da apuração da
- * empresa em silêncio** (e a decisão de Fator R do mês junto). Estado fiscal muda por ato do
- * contador, não por alguém ter aberto uma tela.
+ * ⚠ O CASO REAL, medido em produção: a LENTE tinha o relatório gerado às 12:26:57 de 25/08/2026 e
+ * o `CadastroFiscal` criado às 12:55:24 — 28 minutos DEPOIS. A aba Apuração seguia dizendo
+ * "A empresa não tem Cadastro Fiscal preenchido (regime + CNAE)" com a linha existindo no banco, e
+ * o Perfil fiscal da mesma empresa mostrando regime e duas atividades. O dono leu isso — com razão
+ * — como duas telas discordando sobre a mesma empresa. Não era: era uma foto velha.
  *
- * Com `persistir: false` nada é escrito: `snapshot` volta `null` e `dadosSnapshot` traz o que
- * TERIA sido gravado, para quem quiser exibir. Todo o resto do cálculo é idêntico — é o mesmo
- * caminho, não uma segunda conta.
+ * ⚠ SÓ AS DUAS CHECAGENS BARATAS ESTÃO AQUI (cadastro e fila de pendências): duas queries por
+ * chave. `RECEITA_NAO_CLASSIFICADA` NÃO entra — ela depende da segregação de receita do mês, que é
+ * a varredura das notas, e reconferi-la a cada LEITURA de relatório poria uma varredura no caminho
+ * de abrir a aba. Quem quiser aquela resposta atualizada regera a foto.
  *
- * @returns {Promise<{ok, snapshot, persistido, divergencias, blockers?}>}
+ * ⚠ DEVOLVE O `cadastro` JUNTO, e não é conveniência: `calcularApuracaoLocal` precisa dele mais
+ * adiante (`sublimiteICMSISS`). Sem isso, ou o motor faz a MESMA query duas vezes, ou — foi o que
+ * aconteceu ao extrair — a variável fica órfã e o motor estoura em runtime, no meio do cálculo do
+ * DAS. ⚠⚠ O achado veio do teste, e é a terceira vez neste projeto que um identificador órfão
+ * passa pelo build: `npm run build` NÃO pega isso, só `no-undef` ou um teste que execute a linha.
+ *
+ * @returns {Promise<{blockers: Array<{tipo: string, mensagem: string}>, cadastro: object|null}>}
+ *   `blockers` vazio = nada bloqueia.
  */
-export async function calcularApuracaoLocal({ portalClientId, competencia, folha12mOverride, userId, persistir = true }) {
-  if (!portalClientId) throw new MotorApuracaoError("MISSING_PORTAL", "portalClientId obrigatório");
-  if (!/^\d{4}-\d{2}$/.test(competencia)) {
-    throw new MotorApuracaoError("INVALID_COMPETENCIA", `Formato YYYY-MM esperado, recebido: ${competencia}`);
-  }
-
-  // ─── PRÉ-CHECAGENS (pré-validação) ────────────────────────────────────────
+export async function avaliarPreChecagens({ portalClientId }) {
   const blockers = [];
 
   // 1. Cadastro fiscal completo?
@@ -114,6 +116,41 @@ export async function calcularApuracaoLocal({ portalClientId, competencia, folha
       mensagem: `${pendenciasAbertas} pendência(s) aberta(s). Resolva antes de apurar.`,
     });
   }
+
+  return { blockers, cadastro };
+}
+
+/**
+ * Calcula apuração local pra (empresa, competência).
+ *
+ * @param {Object} opts
+ * @param {boolean} [opts.persistir=true] — grava `ApuracaoSnapshot` (estado "calculada") e
+ *   `LogDecisaoFatorR`. **O default mantém o comportamento de quem já chamava.**
+ *
+ * ⚠ POR QUE EXISTE O MODO SEM PERSISTIR. Esta função sempre gravou o snapshot com
+ * `estado: "calculada"` — o que é certo para o botão Apurar, e é veneno para uma LEITURA.
+ * O relatório de faturamento mostra o DAS pré-apurado ao lado dos números do mês; se ele
+ * chamasse a função como ela estava, **abrir um relatório mudaria o estado da apuração da
+ * empresa em silêncio** (e a decisão de Fator R do mês junto). Estado fiscal muda por ato do
+ * contador, não por alguém ter aberto uma tela.
+ *
+ * Com `persistir: false` nada é escrito: `snapshot` volta `null` e `dadosSnapshot` traz o que
+ * TERIA sido gravado, para quem quiser exibir. Todo o resto do cálculo é idêntico — é o mesmo
+ * caminho, não uma segunda conta.
+ *
+ * @returns {Promise<{ok, snapshot, persistido, divergencias, blockers?}>}
+ */
+export async function calcularApuracaoLocal({ portalClientId, competencia, folha12mOverride, userId, persistir = true }) {
+  if (!portalClientId) throw new MotorApuracaoError("MISSING_PORTAL", "portalClientId obrigatório");
+  if (!/^\d{4}-\d{2}$/.test(competencia)) {
+    throw new MotorApuracaoError("INVALID_COMPETENCIA", `Formato YYYY-MM esperado, recebido: ${competencia}`);
+  }
+
+  // ─── PRÉ-CHECAGENS (pré-validação) ────────────────────────────────────────
+  // ⚠ A REGRA MORA EM `avaliarPreChecagens`, LOGO ABAIXO, e é chamada — não repetida. O relatório
+  // de faturamento precisa fazer a MESMA pergunta ("estes bloqueios ainda valem?") sobre uma foto
+  // salva, e duas implementações divergiriam na primeira correção. Ver o cabeçalho de lá.
+  const { blockers, cadastro } = await avaliarPreChecagens({ portalClientId });
 
   // Se tem blockers, salva estado "bloqueada_pendencias" e retorna
   if (blockers.length > 0) {
