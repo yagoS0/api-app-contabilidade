@@ -970,6 +970,35 @@ nacional devolve dentro da NFS-e. Provas complementares: `chaveAcesso` e `numero
 ⚠ **Ausência nunca vira igualdade** — cada prova só é aplicada quando os DOIS lados têm o valor.
 ⚠ Só `papel: "EMIT"` do outro lado: a numeração de uma nota recebida é do prestador dela.
 
+### ⚠⚠ O CHIP LÊ O `ciclo`, NÃO SÓ O `status` — `lib/chipDaNota.js` (24/08/2026)
+
+Uma nota SUBSTITUÍDA aparecia como **"Cancelada"** aqui e **"Substituída"** na tela do contador.
+
+`PortalInvoice.status` distingue as duas **quando o ADN mandou o evento**
+(`InvoiceSyncEngine.mapInvoiceStatusFromAdn` traduz `E105102` em `SUBSTITUIDA`). Quando não mandou —
+**556 NFS-e canceladas com ZERO eventos guardados**, medido em produção — quem sabe é `derivarCiclo`,
+por uma evidência que o `status` não tem: *"existe, na base, outra nota que declara substituir esta"*
+(22 notas em produção). O escritório já lia isso; o contrato do cliente não trazia.
+
+⚠ O `ciclo` passou a viajar em `serializeInvoice`, com **`situacao` e `ehSubstituta` e mais nada** —
+os `avisos`, o evento e as chaves do outro lado do vínculo nomeiam OUTRO documento, para o qual este
+portal não tem tela.
+
+⚠⚠ **A PRECEDÊNCIA É ESTREITA: o `ciclo` vence ao dizer `substituida`, e em mais nada.**
+- **`autorizada` não apaga REJEITADA** — `derivarCiclo` chama de `autorizada` tudo que não está
+  cancelado, **inclusive a nota que a Receita recusou**. "Emitida" ali faria quem emitiu concluir que
+  tem nota fiscal onde não tem.
+- `autorizada` não apaga PENDENTE.
+- `cancelada` do ciclo não rebaixa um `status` SUBSTITUIDA: ali o `status` é o mais específico.
+- ⚠ **AUSENTE NÃO É NADA**: sem `ciclo`, o comportamento é exatamente o de antes.
+
+⚠⚠ **PENDÊNCIA MEDIDA, NÃO RESOLVIDA:** a rota esconde por padrão tudo com
+`statusEfetivo: "cancelada"` e este portal **nunca manda `incluirCanceladas=1`**. `statusEfetivo` tem
+dois escritores com critérios diferentes, então existe combinação em que a nota substituída aparece
+(e o chip agora acerta) e combinação em que ela **não aparece de jeito nenhum** — o que também
+tornaria o aviso `origem_substituida` do reaproveitamento inalcançável. Distinguir exige o banco.
+**É pergunta ao dono: o cliente deve ver a nota substituída?** O filtro não foi afrouxado.
+
 ### ⚠⚠ Estado sem texto na tela — `lib/estadoDaLinhaDaNota.js`
 
 Instrução literal do dono: ***"não coloque explicação disso na tela"***. Há teste varrendo o texto da
@@ -1276,8 +1305,8 @@ de outra.
 
 ## TESTES
 
-`npm test -w @contabilidade/portal-cliente-web` → **947 testes, 51 suítes, todas verdes** (medido em
-24/08/2026, depois da rodada da auditoria; eram 894/48 em 23/08 com a marca da topbar, 814/45 depois
+`npm test -w @contabilidade/portal-cliente-web` → **968 testes, 52 suítes, todas verdes** (medido em
+24/08/2026, depois do `ciclo` no contrato; eram 947/51 no meio da rodada da auditoria, eram 894/48 em 23/08 com a marca da topbar, 814/45 depois
 da marca, 807/44 depois da situação fiscal, 683/38 em 20/08, e 557/32 antes do lote por planilha). Não existiam até 18/08 (`d5a91490` subiu os primeiros 101).
 **0 suíte falhando é o estado esperado.**
 

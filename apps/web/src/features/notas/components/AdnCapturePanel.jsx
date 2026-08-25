@@ -48,7 +48,12 @@ export function AdnCapturePanel({ adnState, adnSyncing, onSync, onClearError }) 
           {adnSyncing ? "Capturando…" : "🔄 Buscar NFS-e"}
         </Button>
         {(hasError || inBackoff) && onClearError && (
+          // ⚠ O `title` diz mais que o rótulo ("e backoff"), e `title` NÃO é tooltip de verdade:
+          // ele não aparece no foco de teclado nem no toque. Quem lê por leitor de tela ouvia só
+          // "Limpar erro" e não sabia que o botão também destrava a próxima tentativa. O
+          // `aria-label` carrega a informação inteira; o `title` fica para o mouse.
           <button onClick={onClearError} disabled={adnSyncing} title="Limpa backoff e último erro"
+            aria-label="Limpar o erro e o backoff da captura do ADN"
             style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.muted, cursor: "pointer", fontSize: "0.75rem" }}>
             Limpar erro
           </button>
