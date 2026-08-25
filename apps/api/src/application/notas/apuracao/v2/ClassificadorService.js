@@ -244,31 +244,73 @@ function classifyItem(item, ctx) {
   return { tipoReceita: "RECEITA_NAO_CLASSIFICADA", source: "NONE" };
 }
 
+/** O mês civil, em UTC. ⚠ Mesma forma de `MotorApuracaoService.rangeMes` — o mês é o mesmo mês. */
+function rangeMes(competencia) {
+  const [y, m] = String(competencia).split("-").map(Number);
+  return { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) };
+}
+
 /**
- * Classifica TODOS os itens não-classificados (ou força reprocessamento) de uma empresa.
- * Cria pendências quando não consegue resolver.
+ * Classifica os itens de nota de uma empresa. Cria pendências quando não consegue resolver.
+ *
+ * ⚠⚠ O BOTÃO DIZ "CLASSIFICAR COMPETÊNCIA" E ATÉ 25/08/2026 ELE CLASSIFICAVA A EMPRESA INTEIRA.
+ * A query não filtrava por competência em lugar nenhum — o parâmetro só virava metadado da
+ * pendência, e o próprio JSDoc dizia isso ("apenas pra metadata"). O rótulo prometia um escopo que
+ * o servidor não aplicava.
+ *
+ * ⚠ E não era inofensivo: com `force: true` o mesmo clique RECLASSIFICARIA todo o histórico da
+ * empresa, meses fechados e transmitidos inclusive. Achado ao mapear a aba a pedido do dono.
+ *
+ * Hoje: **competência informada ⇒ só aquele mês**. Sem competência, a empresa inteira — que é o que
+ * a rota de lote e o worker querem, e continua intacto. O escopo aplicado volta no resultado, para
+ * a tela dizer o que aconteceu em vez de o contador deduzir.
+ *
+ * ⚠⚠ NOTA SEM COMPETÊNCIA NÃO SOME EM SILÊNCIO. Em SQL, `competencia BETWEEN a AND b` **não casa
+ * com NULL** — filtrar por mês tornaria invisível para sempre a nota que chegou sem competência, e
+ * é literalmente o defeito que a auditoria de notas já pagou nesta base ("a consulta que fabricava
+ * buraco"). Elas são CONTADAS e devolvidas em `foraDoEscopo`, nomeadas. ⚠ A saída não é atribuí-las
+ * a um mês: inventar a competência decide em qual apuração a receita entra.
  *
  * @param {Object} opts
  * @param {string} opts.portalClientId
  * @param {boolean} [opts.force=false] — reclassifica até os já classificados
- * @param {string} [opts.competencia] — YYYY-MM (apenas pra metadata da pendência)
- * @returns {Promise<{processed, classified, pendentes, byTipo, byFonte}>}
+ * @param {string} [opts.competencia] — YYYY-MM. **Presente ⇒ restringe o escopo.**
+ * @returns {Promise<{processed, classified, pendentes, byTipo, byFonte, escopo, foraDoEscopo}>}
  */
 export async function classificarItensV2({ portalClientId, force = false, competencia } = {}) {
   if (!portalClientId) throw new Error("portalClientId obrigatório");
 
   const ctx = await loadContextoEmpresa(portalClientId);
 
+  // ⚠ Competência malformada NÃO vira "a empresa inteira" em silêncio: seria o pior dos dois
+  // mundos, com a tela dizendo "competência" e o servidor varrendo tudo. Ou é um mês válido, ou o
+  // escopo é declaradamente a empresa.
+  const mes = /^\d{4}-\d{2}$/.test(String(competencia || "")) ? String(competencia) : null;
+  const escopo = mes ? { tipo: "COMPETENCIA", competencia: mes } : { tipo: "EMPRESA", competencia: null };
+
+  const ondeItem = {
+    nota: { clientId: portalClientId, ...(mes ? { competencia: rangeMes(mes) } : {}) },
+    ...(force ? {} : { tipoReceita: null }),
+  };
+
   const items = await prisma.notaItem.findMany({
-    where: {
-      nota: { clientId: portalClientId },
-      ...(force ? {} : { tipoReceita: null }),
-    },
+    where: ondeItem,
     select: {
       id: true, codigoServico: true, ncm: true, cfop: true, valor: true,
       notaId: true, nota: { select: { competencia: true } },
     },
   });
+
+  // ⚠ O QUE FICOU DE FORA POR NÃO TER COMPETÊNCIA — contado no banco, nunca deduzido da lista.
+  // Só faz sentido perguntar quando há recorte por mês.
+  const semCompetencia = mes
+    ? await prisma.notaItem.count({
+      where: {
+        nota: { clientId: portalClientId, competencia: null },
+        ...(force ? {} : { tipoReceita: null }),
+      },
+    }).catch(() => null)
+    : null;
 
   const byTipo = {};
   const byFonte = {};
@@ -361,5 +403,13 @@ export async function classificarItensV2({ portalClientId, force = false, compet
     byTipo,
     byFonte,
     byConfianca,
+    // ⚠ O ESCOPO APLICADO VOLTA. Sem ele, "classifiquei 33 itens" não distingue "o mês" de "a
+    // empresa inteira" — e era essa indistinção que fazia o rótulo do botão mentir.
+    escopo,
+    // ⚠ `null` quando não há recorte por mês (nada ficou de fora) OU quando a contagem falhou.
+    // Zero é uma afirmação ("conferi, não há nenhuma"); ausência não é.
+    foraDoEscopo: escopo.tipo === "COMPETENCIA" && semCompetencia != null
+      ? { semCompetencia, motivo: "SEM_COMPETENCIA_GRAVADA" }
+      : null,
   };
 }

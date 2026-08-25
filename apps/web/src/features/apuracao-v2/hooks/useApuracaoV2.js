@@ -1,6 +1,7 @@
 // Q14.2.e — hook de state pra Apuração V2 dentro de uma empresa
 // (cadastro fiscal + produtos/serviços + pendências).
 import { useCallback, useEffect, useState } from "react";
+import { fraseDaClassificacao } from "../lib/fraseDaClassificacao";
 
 export function useApuracaoV2({ api, companyId, feedback }) {
   const [cadastro, setCadastro] = useState(null);
@@ -127,9 +128,15 @@ export function useApuracaoV2({ api, companyId, feedback }) {
       const out = await api.classificarV2(companyId, opts);
       if (!out?.ok) throw new Error(out?.message || "Falha");
       const r = out.result || {};
-      feedback?.notifySuccess?.(
-        `Classificou ${r.classified}/${r.processed}. Pendências: ${r.pendentes}.`
-      );
+      // ⚠ A frase mora em `lib/fraseDaClassificacao.js`, com teste. Ela diz o ESCOPO (o mês ou a
+      // empresa inteira) e distingue "nada a classificar" de "0 de 0" — o texto anterior era
+      // `Classificou 0/0. Pendências: 0.`, que se lê como falha tanto quanto como trabalho feito.
+      const frase = fraseDaClassificacao(r);
+      feedback?.notifySuccess?.(frase.texto);
+      // ⚠⚠ O QUE FICOU DE FORA NÃO PODE SER ENGOLIDO PELA MENSAGEM DE SUCESSO. Nota sem competência
+      // gravada não entra em recorte por mês nenhum (em SQL, intervalo não casa com NULL) e ficaria
+      // invisível para sempre — é o defeito que a auditoria de notas já pagou nesta base.
+      if (frase.alerta) feedback?.notifyInfo?.(frase.alerta);
       await loadAll();
       return r;
     } catch (err) {

@@ -2221,15 +2221,24 @@ function mockRelatorioFaturamentoDados(companyId, competencia) {
       origem: "MOTOR_LOCAL",
       ok: false,
       das: null, // ⚠ `null`, nunca 0 — zero afirmaria "o DAS deste mês é zero"
-      estado: semReceita ? null : "bloqueada_pendencias",
-      motivo: semReceita ? null : {
+      estado: (idx === 3 || !semReceita) ? "bloqueada_pendencias" : null,
+      // ⚠ No serviço real o `motivo` sai do PRIMEIRO blocker (`blockers[0]`). Espelhar isso é o
+      // que faz esta empresa mostrar na tela exatamente a frase que o dono viu na LENTE.
+      motivo: idx === 3 ? {
+        code: "CADASTRO_FALTANDO",
+        mensagem: "A empresa não tem Cadastro Fiscal preenchido (regime + CNAE).",
+        detalhe: "Cadastro fiscal não preenchido.",
+      } : (semReceita ? null : {
         code: "RECEITA_NAO_CLASSIFICADA",
         mensagem: "A receita da competência não está classificada — as notas ainda não foram "
           + "classificadas por tipo de operação, e sem isso não há anexo, não há alíquota e não "
           + "há DAS.",
         detalhe: null,
-      },
-      blockers: semReceita ? [] : [{ tipo: "RECEITA_NAO_CLASSIFICADA", mensagem: "Receita não classificada" }],
+      }),
+      blockers: [
+        ...(idx === 3 ? [{ tipo: "CADASTRO_FALTANDO", mensagem: "Cadastro fiscal não preenchido." }] : []),
+        ...(semReceita ? [] : [{ tipo: "RECEITA_NAO_CLASSIFICADA", mensagem: "Receita não classificada" }]),
+      ],
       semClassificacao: {
         valorContabil: naoClassificado.valorContabil, itens: naoClassificado.itens,
         fracaoDoTotal: naoClassificado.fracaoDoTotal, totalDaCompetencia: totalMes.valorContabil,
@@ -7417,7 +7426,22 @@ export function createMockApi() {
     async deleteProdutoServico() { await delay(40); return { ok: true }; },
     async listPendencias() { await delay(40); return { ok: true, items: [], counts: [] }; },
     async resolverPendencia() { await delay(60); return { ok: true, result: { regraCriada: null, produtoCriado: null, reclassificacao: null } }; },
-    async classificarV2() { await delay(120); return { ok: true, result: { processed: 0, classified: 0, pendentes: 0, byTipo: {}, byFonte: {} } }; },
+    // ⚠ O `escopo` e o `foraDoEscopo` VIAJAM no mock porque a frase da tela depende deles — e
+    // porque o defeito que os criou ("Classificar competência" classificando a EMPRESA INTEIRA) só
+    // era visível pelo que a resposta NÃO dizia. Mock sem eles deixaria a frase nova sem caminho.
+    async classificarV2(companyId, opts = {}) {
+      await delay(120);
+      const comp = /^\d{4}-\d{2}$/.test(String(opts?.competencia || "")) ? String(opts.competencia) : null;
+      return {
+        ok: true,
+        result: {
+          processed: 33, classified: 31, pendentes: 2, byTipo: {}, byFonte: {},
+          escopo: comp ? { tipo: "COMPETENCIA", competencia: comp } : { tipo: "EMPRESA", competencia: null },
+          // ⚠ O caso que se quer ver na tela: itens que ficaram de fora por nota sem competência.
+          foraDoEscopo: comp ? { semCompetencia: 4, motivo: "SEM_COMPETENCIA_GRAVADA" } : null,
+        },
+      };
+    },
     async apurarV2() { await delay(150); return { ok: true, result: { ok: true, snapshot: null, dasCalculadoLocal: 0, rbt12: 0, receitaPorAnexo: {}, aliquotaEfetivaPorAnexo: {} } }; },
     async getApuracaoSnapshot(companyId, competencia) {
       await delay(40);
