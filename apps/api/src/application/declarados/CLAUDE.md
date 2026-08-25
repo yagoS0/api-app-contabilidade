@@ -66,9 +66,14 @@ que já existe. Não nasce registro novo. (O matching é da Fase B2; o modelo j�
 | `lib/estadosDeclarado.js` | a máquina de estados. **PURA** — nenhum prisma, nenhum relógio. 70 testes |
 | `lib/formaDoLancamento.js` | o `AccountingEntry` que o declarado vira. **PURO**. 32 testes |
 | `lib/notaViraDeclarado.js` | a nota recebida virando despesa. **PURO**. 36 testes |
-| `DeclaradoService.js` | a ligação com o banco. **O único caminho de escrita.** 41 testes |
+| `lib/dedupeOfx.js` | a **identidade** de uma transação do extrato. **PURO**. 25 testes |
+| `lib/casamentoPagamento.js` | o débito do extrato pagou esta nota? **PURO**. 28 testes |
+| `DeclaradoService.js` | a ligação com o banco. **O único caminho de escrita.** 66 testes |
 | `VarreduraDeNotasService.js` | a varredura das notas. 16 testes |
-| `../../routes/firm/conferencia.js` | HTTP e nada mais. 36 testes |
+| `ImportOfxService.js` | o extrato do cliente virando fila. 22 testes |
+| `../accounting/lib/ofx.js` | ler o arquivo OFX. ⚠ **extraído**, não reescrito — ver B2 |
+| `../../routes/firm/conferencia.js` | HTTP do contador, e nada mais. 50 testes |
+| `../../routes/client/index.js` | HTTP do cliente (o import). 17 testes de montagem |
 
 ⚠ **A regra não é reimplementada em lugar nenhum.** O serviço consulta `podeTransitar` e
 `montarLancamento`; a rota não consulta nem uma nem outra — há teste varrendo a fonte da rota atrás
@@ -183,13 +188,109 @@ Fora: 1.595 pelo piso, **62 sem valor**, **60 canceladas** — todas nomeadas no
 - ⚠⚠ **Idempotente por PULAR.** Nota já enfileirada volta em `jaExistiam` sem nada ser tocado — um
   `upsert` devolveria um `RECUSADO` à fila a cada varredura, e a captura de notas roda sozinha.
 
+## ✅ FASE B2 — o extrato vira o PAGAMENTO da nota
+
+`POST /client/companies/:id/ofx/import` (o cliente sobe) · `GET /firm/companies/:id/conferencia/casamentos`
+e `POST .../conferencia/casamentos/fundir` (o contador confere).
+
+### ⚠⚠ O parser de OFX foi EXTRAÍDO, não reescrito
+
+Ele vivia dentro de `routes/firm/accountingEntries.js:270-414`, **sem export**. As 145 linhas foram
+para `application/accounting/lib/ofx.js` **sem uma mudança**, e o import do escritório continua
+chamando o mesmo código.
+
+⚠ **O teste de caracterização foi escrito ANTES da extração e não foi editado depois**
+(`routes/firm/__tests__/ofxImportCaracterizacao.test.js`, 21). É ele que prova que o refator foi
+puro — inclusive as peculiaridades que ninguém escolheu e que agora são contrato: o memo chama-se
+**`historico`**, o `valor` é **absoluto** com o `sinal` à parte, e a data vem do `DTPOSTED`.
+
+⚠ **`parseOfx` ganhou `lerOfx` ao lado e passou a DELEGAR.** `lerOfx` acrescenta o que faltava — a
+**conta bancária** (`BANKACCTFROM/ACCTID`) e os **descartes nomeados**. Sem a conta, duas contas da
+mesma empresa com o mesmo valor no mesmo dia seriam a mesma transação.
+
+### ⚠⚠ A IDENTIDADE DE UMA TRANSAÇÃO — `lib/dedupeOfx.js`
+
+**Medido antes de desenhar:** não havia proteção nenhuma. `fitId` **nem existe** em
+`AccountingEntry`, não há hash, e o lote é `OFX-${Date.now()}` — subir o mesmo arquivo 2× duplicava
+tudo. (Em produção há **0** lançamentos de origem OFX, então não há dado a recuperar.)
+
+⚠⚠ **A SOBREPOSIÇÃO DE PERÍODOS É O CASO NORMAL, não o abuso.** O cliente baixa 01–31/jan e depois
+15/jan–15/fev. Proteger por "arquivo repetido" resolveria o caso fácil e falharia no comum: a
+proteção é **transação a transação**, pelo `@@unique(portalClientId, hashDedupe)` — no BANCO, não
+no código.
+
+Duas chaves, nesta ordem:
+
+| chave | quando | o que entra |
+|---|---|---|
+| `FITID` | o arquivo traz o campo | conta bancária + `FITID` |
+| `IMPRESSAO` | sem `FITID` | conta + data + valor + memo normalizado + ⚠ **ordinal posicional no arquivo** |
+
+⚠⚠ **O ORDINAL É O QUE PRESERVA DUAS TARIFAS IGUAIS NO MESMO DIA.** Sem ele, duas linhas idênticas
+(mesma data, mesmo valor, mesmo memo — o caso real de tarifa bancária) colapsariam numa só e **uma
+despesa real sumiria em silêncio**. Ele é a posição **dentro do arquivo**, e é estável porque o
+banco exporta na mesma ordem.
+
+⚠ **`normalizarParaDedupe` é CONGELADA** — maiúsculas e colapsar espaço, **nada mais**. Ela **não é**
+`normalizeMatchText` (`excelImport.js`), e a diferença é o ponto: aquela remove datas e números de
+documento, que aqui são justamente o que distingue duas linhas. Afrouxá-la faz despesa sumir; há
+teste sobre isso.
+
+### ⚠ O import do cliente — `ImportOfxService`
+
+- ⚠⚠ **SÓ DÉBITO ENTRA.** Crédito não é despesa; ele volta contado em `foraDoEscopo`, nunca
+  descartado em silêncio. (Nota recebida como ENTRADA está fora deste escopo, por decisão do dono.)
+- **O débito nasce `A_CONFERIR` com `origemPagamento: OFX`** — ele tem data, e a data é PROVA.
+- ⚠ **A competência é DERIVADA da data da transação**, e o precedente é o import do escritório, que
+  já faz assim. Não é invenção: o extrato **tem** a data; é a nota que não tem a do pagamento.
+- ⚠ **O relatório volta INTEIRO** — criadas, já importadas, fora do escopo, descartadas e as
+  anomalias. Um "criei 23" sozinho deixaria "não veio nada" indistinguível de "deu erro".
+
+### ⚠⚠ O CASAMENTO — `lib/casamentoPagamento.js`
+
+Quatro princípios, cada um travado em teste:
+
+1. ⚠⚠ **NUNCA AUTOMATIZA.** Não é conservadorismo, é medição: as NF-e recebidas **não têm
+   duplicata** (`<cobr><dup>` não é lido, não há coluna, e as 49 são resumos sem XML), então **não
+   existe vencimento** para ancorar a janela. Evidência boa para sugerir, fraca para decidir.
+2. ⚠⚠ **AMBIGUIDADE NÃO SE RESOLVE ESCOLHENDO.** Dois candidatos ⇒ **nenhum** é eleito e os dois
+   aparecem. Mesma disciplina do `AMBIGUO` do vínculo de telefone e do "nunca o primeiro da lista"
+   do código de serviço.
+3. ⚠⚠ **A PISTA DO FORNECEDOR É OBRIGATÓRIA.** Valor + data não bastam — duas mensalidades do mesmo
+   valor no mesmo mês são comuns, e casar por elas põe a despesa no fornecedor errado.
+   *Experimento: tirando a exigência da pista, **6 vermelhos**.*
+4. ⚠⚠ **UMA NOTA NÃO PODE SER SUGERIDA A DOIS DÉBITOS.** Ela foi paga uma vez; oferecê-la duas vezes
+   convidaria a fundir as duas, e o segundo débito voltaria a parecer despesa sem nota depois do
+   fato. Nota disputada vira **ambígua para os dois**.
+
+⚠ **Os números são HEURÍSTICA, não norma** — nenhuma regra fiscal os define; eles saem do que um
+extrato brasileiro parece. `TOLERANCIA_VALOR = 0,05` (⚠ **centavos, nunca percentual**: 2% casaria
+uma nota de R$ 10.000 com um débito de R$ 9.800, que é outra coisa) · janela de **−5 a +90 dias** da
+emissão · `MINIMO_DE_LETRAS = 4` · `PALAVRAS_SEM_IDENTIDADE` (sem ela, "SERVICOS" no memo casaria
+com toda nota de toda empresa de serviço).
+
+### ⚠⚠ FUNDIR NÃO É CONTABILIZAR
+
+A nota recebe a data (`INFORMAR_PAGAMENTO`, com `fitId`/`ofxImportId`/`contaBancariaRef` viajando
+junto como prova) e o débito vira **`FUNDIDO`** apontando para ela. As duas escritas numa
+`$transaction`. **Nenhum `AccountingEntry` é criado** — quem leva ao razão continua sendo o
+contador, num segundo ato.
+
+- ⚠⚠ **A REGRA É RECONFERIDA NO SERVIDOR.** A sugestão que a tela mostra pode ter envelhecido: o
+  valor foi ajustado, a nota recusada, outro débito fundido nela. Quem decide no instante do clique
+  é o servidor (`CASAMENTO_NAO_CONFERE`).
+- ⚠ **As sugestões são DERIVADAS NA LEITURA, nunca coluna** — precedente de `divergenciaDeFonte.js`.
+  Coluna de sugestão envelheceria calada.
+- ⚠ **A rota de fundir NÃO tem guarda de mês fechado**, e é deliberado: nada chega ao razão. Quem
+  recusa mês fechado continua sendo `CONFIRMAR`.
+
 ## O que ainda **não** existe
 
 | | |
 |---|---|
-| OFX, matching, fusão | Fase B2 |
+| **backfill do histórico** | Fase C0. ⚠ O prêmio medido são **77 pares** unânimes, não "milhares" |
 | aprendizado e regras | Fase C. `RegraContabilizacao` já existe no schema, **sem escritor ainda** |
-| tela | ainda não há nenhuma |
+| **tela** | ainda não há nenhuma — nem a do contador, nem a do cliente |
 
 ## Migration
 
@@ -199,10 +300,15 @@ nada (o que não funciona é a fila). O SQL foi conferido coluna a coluna contra
 `prisma migrate diff --from-empty`: zero divergência. Os únicos extras são os dois `CHECK`
 (`chk_regra_tem_ancora`, `chk_regra_faixa_coerente`), que o Prisma não modela.
 
+`20260824160000_add_ofx_import` — **ADITIVA e INERTE**, ⚠ **NÃO APLICADA**. Cria **uma** tabela,
+`ofx_imports` (o registro de cada arquivo subido), com dois índices e a FK para `PortalClient`.
+⚠ **Nenhuma coluna nova no declarado**: `fitId`, `ofxImportId`, `contaBancariaRef`, `hashDedupe` e
+`parDeclaradoId` já vieram na migration de B1 — o modelo foi desenhado com o pagamento em mente.
+
 ## Testes
 
 ```bash
-npx jest --config apps/api/jest.config.js --testPathPatterns "declarado|formaDoLancamento|estadosDeclarado|conferenciaRota"
+npx jest --config apps/api/jest.config.js --testPathPatterns "declarado|formaDoLancamento|estadosDeclarado|conferenciaRota|dedupeOfx|casamentoPagamento|importOfx|ofxImport"
 ```
 
 **Experimentos executados** (o que cai quando a guarda é desligada):
@@ -212,6 +318,8 @@ npx jest --config apps/api/jest.config.js --testPathPatterns "declarado|formaDoL
 | a invariante do caixa | **5** |
 | a data do pagamento → data do documento, e o reduzido `"5"` cravado | **2** |
 | o `update` para FORA da `$transaction` | **2** |
+| a exigência da **pista do fornecedor** no casamento | **6** |
+| a ambiguidade passando a **escolher o primeiro** candidato | **1** |
 
 ⚠ **Limite declarado:** com dublê, `$transaction` **não faz rollback de verdade** — isso é do
 Postgres e não é exercido aqui. Os testes provam que as duas escritas acontecem dentro do mesmo

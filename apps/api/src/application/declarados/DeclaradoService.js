@@ -28,6 +28,7 @@ import {
   podeTransitar,
 } from "./lib/estadosDeclarado.js";
 import { montarLancamento } from "./lib/formaDoLancamento.js";
+import { casarLote, debitoPagaNota } from "./lib/casamentoPagamento.js";
 
 /** Recusas do SERVIÇO — as que dependem do banco, e por isso não cabem na regra pura. */
 export const RECUSA_DO_SERVICO = Object.freeze({
@@ -39,6 +40,7 @@ export const RECUSA_DO_SERVICO = Object.freeze({
   SEM_IDENTIDADE: "sem_identidade",
   ORIGEM_INVALIDA: "origem_invalida",
   PAGAMENTO_SEM_PROCEDENCIA: "pagamento_sem_procedencia",
+  CASAMENTO_NAO_CONFERE: "casamento_nao_confere",
 });
 
 export const FRASE_DO_SERVICO = Object.freeze({
@@ -55,6 +57,8 @@ export const FRASE_DO_SERVICO = Object.freeze({
   [RECUSA_DO_SERVICO.ORIGEM_INVALIDA]: "Origem desconhecida para um lançamento declarado.",
   [RECUSA_DO_SERVICO.PAGAMENTO_SEM_PROCEDENCIA]:
     "Foi informada uma data de pagamento sem dizer se ela é prova (extrato) ou declaração.",
+  [RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE]:
+    "Este débito não confere mais com esta nota. Algo mudou desde que a sugestão apareceu na tela — recarregue e confira.",
 });
 
 /** ⚠ Erro tipado: quem chama traduz o `codigo` em HTTP, e a `frase` já vem pronta para a tela. */
@@ -414,4 +418,95 @@ export async function varrerInvariantes({ portalClientId, client = prisma } = {}
     // ⚠⚠ A invariante mais cara: um destes é um lançamento afirmando saída de caixa sem data.
     semDataDePagamento,
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// O CASAMENTO DÉBITO × NOTA
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * As sugestões de casamento, DERIVADAS NA LEITURA.
+ *
+ * ⚠⚠ NÃO É COLUNA, e a decisão tem precedente direto em `divergenciaDeFonte.js`: coluna só é
+ * reescrita quando alguém a reescreve, e uma nota RECUSADA depois continuaria sendo sugerida para
+ * sempre. Derivado, o palpite envelhece sozinho.
+ *
+ * ⚠ SÓ LEITURA. Ela não funde nada — quem funde é `fundirPagamentoNaNota`, com o contador tendo
+ * confirmado.
+ */
+export async function sugestoesDePagamento({ portalClientId, client = prisma }) {
+  const escopo = { portalClientId: String(portalClientId) };
+
+  const [debitos, notas] = await Promise.all([
+    // ⚠ Débito que ainda não foi resolvido nem fundido. `CONTABILIZADO` fica de fora: sugerir
+    // fusão sobre despesa já lançada convidaria à contagem dupla pela porta dos fundos.
+    client.lancamentoDeclarado.findMany({
+      where: { ...escopo, origem: "OFX_CLIENTE", estado: ESTADO.A_CONFERIR, parDeclaradoId: null },
+      orderBy: { dataPagamento: "asc" },
+    }),
+    client.lancamentoDeclarado.findMany({
+      where: { ...escopo, origem: "NOTA_RECEBIDA", estado: ESTADO.AGUARDANDO_PAGAMENTO },
+      orderBy: { dataDocumento: "asc" },
+    }),
+  ]);
+
+  return { linhas: casarLote(debitos, notas), totalDebitos: debitos.length, totalNotas: notas.length };
+}
+
+/**
+ * ⚠⚠ O DÉBITO PREENCHE O PAGAMENTO DA NOTA — e some absorvido. Não nasce lançamento nenhum aqui.
+ *
+ * A nota sobrevive porque é ela que carrega o fornecedor, a descrição e a conta sugerida; o débito
+ * carrega a data e a prova, e vira `FUNDIDO` apontando para ela. **Um registro por despesa**, que é
+ * o que torna a contagem dupla impossível.
+ */
+export async function fundirPagamentoNaNota({
+  portalClientId,
+  declaradoOfxId,
+  declaradoNotaId,
+  usuarioId,
+  agora,
+  client = prisma,
+}) {
+  const debito = await acharDeclarado(client, portalClientId, declaradoOfxId);
+  const nota = await acharDeclarado(client, portalClientId, declaradoNotaId);
+
+  // ⚠⚠ A REGRA É RECONFERIDA AQUI, e não só na tela. A sugestão que o contador viu pode ter
+  // envelhecido — a nota pode ter sido recusada, o valor ajustado, outro débito fundido nela. Quem
+  // decide no instante do clique é o servidor.
+  if (!debitoPagaNota(debito, nota).casa) recusar(RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE);
+
+  // ⚠ A nota recebe a PROVA do débito, não uma declaração: `origemPagamento` viaja junto.
+  const naNota = podeTransitar(nota, TRANSICAO.INFORMAR_PAGAMENTO, {
+    dataPagamento: debito.dataPagamento,
+    origemPagamento: debito.origemPagamento,
+  });
+  if (!naNota.ok) recusar(naNota.motivo, naNota.frase);
+
+  const noDebito = podeTransitar(debito, TRANSICAO.FUNDIR, { parDeclaradoId: nota.id });
+  if (!noDebito.ok) recusar(noDebito.motivo, noDebito.frase);
+
+  const auditoria = { decididoPor: String(usuarioId || ""), decididoEm: agora };
+
+  // ⚠⚠ AS DUAS ESCRITAS SÃO UM ATO. Meio caminho deixaria o débito absorvido com a nota ainda
+  // esperando pagamento — a despesa some da fila e ninguém a acha.
+  return client.$transaction(async (tx) => {
+    const notaAtualizada = await tx.lancamentoDeclarado.update({
+      where: { id: nota.id },
+      data: {
+        ...naNota.campos,
+        estado: naNota.estado,
+        // ⚠ A procedência do extrato vai junto: é ela que faz a nota deixar de ser palpite.
+        ofxImportId: debito.ofxImportId,
+        fitId: debito.fitId,
+        contaBancariaRef: debito.contaBancariaRef,
+        ...auditoria,
+      },
+    });
+    await tx.lancamentoDeclarado.update({
+      where: { id: debito.id },
+      data: { ...noDebito.campos, estado: noDebito.estado, ...auditoria },
+    });
+    return notaAtualizada;
+  });
 }

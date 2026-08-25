@@ -28,6 +28,8 @@ jest.mock("../../../application/declarados/DeclaradoService.js", () => {
   return {
     ...real,
     aplicarTransicao: jest.fn(async () => ({ id: "d-1", estado: "CONTABILIZADO", valor: 1500 })),
+    sugestoesDePagamento: jest.fn(async () => ({ linhas: [], totalDebitos: 0, totalNotas: 0 })),
+    fundirPagamentoNaNota: jest.fn(async () => ({ id: "n-1", estado: "A_CONFERIR" })),
     listarFila: jest.fn(async () => ({ itens: [], total: 0, pagina: 1, porPagina: 50 })),
     varrerInvariantes: jest.fn(async () => ({ ok: true })),
   };
@@ -241,12 +243,22 @@ describe("⚠ o piso de papel", () => {
     expect(pisos).toContain("ACCOUNTANT");
   });
 
-  it("⚠ LER a fila não exige — conferir o que está pendente é leitura", async () => {
+  it("⚠⚠ SÓ EXISTEM DOIS PISOS: nenhum (leitura) e ACCOUNTANT (escrita)", async () => {
+    // ⚠ A asserção é sobre o USO, não sobre a CONTAGEM: contar rotas quebra a cada rota nova e
+    // ensina a subir o número em vez de olhar o que foi acrescentado. O que importa é que ninguém
+    // introduza um terceiro piso (`STAFF`, `ADMIN`) sem que este teste caia.
     jest.clearAllMocks();
     makeApp();
-    // A fábrica registra os gates na montagem: as duas leituras entram sem `minRole`.
-    const semPiso = requireFirmCompanyAccess.mock.calls.filter(([o]) => !o?.minRole);
-    expect(semPiso.length).toBe(2);
+    const pisos = new Set(requireFirmCompanyAccess.mock.calls.map(([o]) => o?.minRole ?? null));
+    expect([...pisos].sort()).toEqual([null, "ACCOUNTANT"].sort());
+  });
+
+  it("⚠ e as DUAS espécies existem — leitura sem piso, escrita com ACCOUNTANT", async () => {
+    jest.clearAllMocks();
+    makeApp();
+    const calls = requireFirmCompanyAccess.mock.calls;
+    expect(calls.some(([o]) => !o?.minRole)).toBe(true);
+    expect(calls.some(([o]) => o?.minRole === "ACCOUNTANT")).toBe(true);
   });
 });
 
@@ -380,5 +392,80 @@ describe("⚠⚠ o que a REVISÃO DA TELA apontou como faltando", () => {
     const r = await GET("?competencia=07-2026");
     expect(r.status).toBe(400);
     expect(r.body.message).toContain(COMPETENCIA_AUSENTE);
+  });
+});
+
+describe("⚠⚠ O CASAMENTO DÉBITO × NOTA — as rotas", () => {
+  const { sugestoesDePagamento, fundirPagamentoNaNota } = require("../../../application/declarados/DeclaradoService.js");
+
+  const CASAMENTOS = () => request(makeApp()).get("/firm/companies/emp-1/conferencia/casamentos");
+  const FUNDIR = (body) => request(makeApp()).post("/firm/companies/emp-1/conferencia/casamentos/fundir").send(body);
+
+  const debitoSerializavel = { id: "ofx-1", estado: ESTADO.A_CONFERIR, valor: 1500, descricaoOriginal: "PAGTO GOOGLE" };
+  const notaSerializavel = { id: "n-1", estado: ESTADO.AGUARDANDO_PAGAMENTO, valor: 1500, descricaoOriginal: "GOOGLE CLOUD" };
+
+  it("⚠ rota LITERAL — `/casamentos` não é lido como um `declaradoId`", async () => {
+    sugestoesDePagamento.mockResolvedValueOnce({ linhas: [], totalDebitos: 0, totalNotas: 0 });
+    const r = await CASAMENTOS();
+    expect(r.status).toBe(200);
+    expect(sugestoesDePagamento).toHaveBeenCalledWith({ portalClientId: "emp-1" });
+  });
+
+  it("um candidato vira SUGESTÃO, com a pista", async () => {
+    sugestoesDePagamento.mockResolvedValueOnce({
+      totalDebitos: 1,
+      totalNotas: 1,
+      linhas: [{
+        debito: debitoSerializavel,
+        sugestao: { nota: notaSerializavel, pista: "NOME_NO_MEMO", frase: "O nome do fornecedor aparece na descrição do banco." },
+        candidatos: [{ nota: notaSerializavel, pista: "NOME_NO_MEMO", frase: "x" }],
+        motivo: null,
+        frase: "",
+      }],
+    });
+    const r = await CASAMENTOS();
+    expect(r.body.linhas[0].sugestao.nota.id).toBe("n-1");
+    expect(r.body.linhas[0].sugestao.pista).toBe("NOME_NO_MEMO");
+  });
+
+  it("⚠⚠ AMBÍGUO: `sugestao` NULA e os candidatos visíveis, com o motivo", async () => {
+    sugestoesDePagamento.mockResolvedValueOnce({
+      totalDebitos: 1,
+      totalNotas: 2,
+      linhas: [{
+        debito: debitoSerializavel,
+        sugestao: null,
+        candidatos: [{ nota: notaSerializavel, pista: "NOME_NO_MEMO", frase: "x" }, { nota: { ...notaSerializavel, id: "n-2" }, pista: "NOME_NO_MEMO", frase: "x" }],
+        motivo: "ambiguo",
+        frase: "Mais de uma nota se parece com este débito. O sistema não escolhe entre elas — confira qual é a certa.",
+      }],
+    });
+    const r = await CASAMENTOS();
+    expect(r.body.linhas[0].sugestao).toBeNull();
+    expect(r.body.linhas[0].candidatos).toHaveLength(2);
+    expect(r.body.linhas[0].frase).toMatch(/não escolhe/i);
+  });
+
+  it("fundir manda os DOIS ids, escopados pelo PATH", async () => {
+    fundirPagamentoNaNota.mockResolvedValueOnce(notaSerializavel);
+    await FUNDIR({ declaradoOfxId: "ofx-1", declaradoNotaId: "n-1", portalClientId: "emp-INVASORA" });
+    const args = fundirPagamentoNaNota.mock.calls[0][0];
+    expect(args).toMatchObject({ portalClientId: "emp-1", declaradoOfxId: "ofx-1", declaradoNotaId: "n-1", usuarioId: "u-1" });
+  });
+
+  it("⚠ par incompleto recusa ANTES de tocar no serviço", async () => {
+    const r = await FUNDIR({ declaradoOfxId: "ofx-1" });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("par_incompleto");
+    expect(fundirPagamentoNaNota).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ a recusa de casamento envelhecido chega à tela COM o conserto", async () => {
+    fundirPagamentoNaNota.mockRejectedValueOnce(
+      new DeclaradoRecusado("casamento_nao_confere", "Este débito não confere mais com esta nota. Algo mudou — recarregue e confira."),
+    );
+    const r = await FUNDIR({ declaradoOfxId: "ofx-1", declaradoNotaId: "n-1" });
+    expect(r.status).toBe(400);
+    expect(r.body.message).toMatch(/recarregue/i);
   });
 });

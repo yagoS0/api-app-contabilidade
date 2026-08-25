@@ -712,3 +712,192 @@ describe("⚠ o NÚMERO DA NOTA chega à fila", () => {
     expect(client.lancamentoDeclarado.findMany.mock.calls[0][0].include.anexos).toBeDefined();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// O CASAMENTO DÉBITO × NOTA
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+describe("⚠⚠ FUNDIR — o débito DATA a nota, e some absorvido", () => {
+  const { fundirPagamentoNaNota, sugestoesDePagamento } = require("../DeclaradoService.js");
+
+  const debito = {
+    id: "ofx-1",
+    portalClientId: "emp-1",
+    origem: "OFX_CLIENTE",
+    estado: ESTADO.A_CONFERIR,
+    valor: 1500,
+    dataPagamento: PAGO_EM,
+    origemPagamento: ORIGEM_PAGAMENTO.OFX,
+    descricaoOriginal: "PAGTO GOOGLE CLOUD",
+    ofxImportId: "imp-1",
+    fitId: "F1",
+    contaBancariaRef: "12345-6",
+  };
+  const notaAguardando = {
+    id: "n-1",
+    portalClientId: "emp-1",
+    origem: "NOTA_RECEBIDA",
+    estado: ESTADO.AGUARDANDO_PAGAMENTO,
+    valor: 1500,
+    dataDocumento: new Date("2026-07-15T00:00:00.000Z"),
+    descricaoOriginal: "GOOGLE CLOUD BRASIL COMPUTACAO LTDA",
+    cnpjFornecedor: "12345678000190",
+    dataPagamento: null,
+    origemPagamento: null,
+  };
+
+  function clientDaFusao(par = { debito, nota: notaAguardando }) {
+    const updates = [];
+    let transacoes = 0;
+    const tx = {
+      lancamentoDeclarado: {
+        update: jest.fn(async ({ where, data }) => {
+          updates.push({ id: where.id, data });
+          return { id: where.id, ...data };
+        }),
+      },
+    };
+    return {
+      updates,
+      contarTransacoes: () => transacoes,
+      client: {
+        lancamentoDeclarado: {
+          // ⚠⚠ O DUBLÊ HONRA O `portalClientId` DO `where`. Casando só pelo id, ele deixaria passar
+          // um vazamento real entre empresas — e o teste de escopo abaixo passaria sem provar nada.
+          findFirst: jest.fn(async ({ where }) => {
+            const achado = [par.debito, par.nota].find((d) => d.id === where.id) || null;
+            return achado && achado.portalClientId === where.portalClientId ? achado : null;
+          }),
+          update: jest.fn(async () => {
+            throw new Error("update FORA da transacao");
+          }),
+        },
+        // ⚠ Sem `accountingEntry`: a fusão NÃO pode tocar no razão. Se algum dia tocar, estoura.
+        $transaction: jest.fn(async (cb) => {
+          transacoes += 1;
+          return cb(tx);
+        }),
+      },
+    };
+  }
+
+  const fundir = (client, extra = {}) =>
+    fundirPagamentoNaNota({
+      portalClientId: "emp-1",
+      declaradoOfxId: "ofx-1",
+      declaradoNotaId: "n-1",
+      usuarioId: "u-1",
+      agora: AGORA,
+      client,
+      ...extra,
+    });
+
+  it("⚠⚠ a NOTA recebe a data do pagamento e vai a A_CONFERIR", async () => {
+    const { client, updates } = clientDaFusao();
+    await fundir(client);
+    const naNota = updates.find((u) => u.id === "n-1");
+    expect(naNota.data).toMatchObject({
+      estado: ESTADO.A_CONFERIR,
+      dataPagamento: PAGO_EM,
+      // ⚠ A PROVA viaja junto: a nota deixa de ser palpite porque o EXTRATO a datou.
+      origemPagamento: ORIGEM_PAGAMENTO.OFX,
+      fitId: "F1",
+      contaBancariaRef: "12345-6",
+      ofxImportId: "imp-1",
+    });
+  });
+
+  it("⚠⚠ o DÉBITO vira FUNDIDO apontando para a nota", async () => {
+    const { client, updates } = clientDaFusao();
+    await fundir(client);
+    const noDebito = updates.find((u) => u.id === "ofx-1");
+    expect(noDebito.data).toMatchObject({ estado: ESTADO.FUNDIDO, parDeclaradoId: "n-1" });
+  });
+
+  it("⚠⚠ NENHUM LANÇAMENTO É CRIADO — fundir não é contabilizar", async () => {
+    // O débito preenche o pagamento; quem leva ao razão continua sendo o contador, num segundo ato.
+    const { client } = clientDaFusao();
+    await fundir(client);
+    expect(client.accountingEntry).toBeUndefined();
+  });
+
+  it("⚠⚠ AS DUAS ESCRITAS SÃO UM ATO", async () => {
+    // Meio caminho deixaria o débito absorvido com a nota ainda esperando pagamento — a despesa
+    // some da fila e ninguém a acha.
+    const { client, updates, contarTransacoes } = clientDaFusao();
+    await fundir(client);
+    expect(contarTransacoes()).toBe(1);
+    expect(updates).toHaveLength(2);
+    expect(client.lancamentoDeclarado.update).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ A REGRA É RECONFERIDA NO SERVIDOR — sugestão envelhecida é recusada", async () => {
+    // A tela pode ter visto a sugestão minutos antes: o valor pode ter sido ajustado, a nota
+    // recusada, outro débito fundido nela. Quem decide no instante do clique é o servidor.
+    const { client, updates } = clientDaFusao({ debito, nota: { ...notaAguardando, valor: 999 } });
+    await expect(fundir(client)).rejects.toMatchObject({ codigo: RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE });
+    expect(updates).toHaveLength(0);
+  });
+
+  it("⚠ nota que NÃO está aguardando pagamento é recusada pela máquina de estados", async () => {
+    const { client, updates } = clientDaFusao({
+      debito,
+      nota: { ...notaAguardando, estado: ESTADO.CONTABILIZADO },
+    });
+    await expect(fundir(client)).rejects.toBeInstanceOf(DeclaradoRecusado);
+    expect(updates).toHaveLength(0);
+  });
+
+  it("⚠ declarado de OUTRA empresa não é encontrado", async () => {
+    const { client } = clientDaFusao({ debito: { ...debito, portalClientId: "emp-2" }, nota: notaAguardando });
+    await expect(fundir(client)).rejects.toMatchObject({ codigo: RECUSA_DO_SERVICO.NAO_ENCONTRADO });
+  });
+
+  it("quem decidiu e quando ficam gravados nos DOIS lados", async () => {
+    const { client, updates } = clientDaFusao();
+    await fundir(client);
+    for (const u of updates) expect(u.data).toMatchObject({ decididoPor: "u-1", decididoEm: AGORA });
+  });
+});
+
+describe("⚠ as SUGESTÕES — derivadas na leitura, nunca coluna", () => {
+  const { sugestoesDePagamento } = require("../DeclaradoService.js");
+
+  it("busca débitos A_CONFERIR sem par, e notas AGUARDANDO_PAGAMENTO", async () => {
+    const chamadas = [];
+    const client = {
+      lancamentoDeclarado: {
+        findMany: jest.fn(async (args) => {
+          chamadas.push(args.where);
+          return [];
+        }),
+      },
+    };
+    await sugestoesDePagamento({ portalClientId: "emp-1", client });
+    expect(chamadas[0]).toEqual({
+      portalClientId: "emp-1",
+      origem: "OFX_CLIENTE",
+      estado: ESTADO.A_CONFERIR,
+      parDeclaradoId: null,
+    });
+    expect(chamadas[1]).toEqual({
+      portalClientId: "emp-1",
+      origem: "NOTA_RECEBIDA",
+      estado: ESTADO.AGUARDANDO_PAGAMENTO,
+    });
+  });
+
+  it("⚠⚠ débito já CONTABILIZADO fica de fora — sugerir fusão ali convidaria à contagem dupla", async () => {
+    const client = { lancamentoDeclarado: { findMany: jest.fn(async () => []) } };
+    await sugestoesDePagamento({ portalClientId: "emp-1", client });
+    expect(client.lancamentoDeclarado.findMany.mock.calls[0][0].where.estado).toBe(ESTADO.A_CONFERIR);
+  });
+
+  it("⚠ é SÓ LEITURA — nenhum método de escrita existe no client", async () => {
+    const client = { lancamentoDeclarado: { findMany: jest.fn(async () => []) } };
+    const r = await sugestoesDePagamento({ portalClientId: "emp-1", client });
+    expect(r).toMatchObject({ totalDebitos: 0, totalNotas: 0 });
+    expect(client.lancamentoDeclarado.update).toBeUndefined();
+    expect(client.$transaction).toBeUndefined();
+  });
+});

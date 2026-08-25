@@ -11,6 +11,8 @@
 //   POST /conferencia/:declaradoId/reabrir
 //   POST /conferencia/:declaradoId/desfazer
 //   POST /conferencia/varrer-notas?desde=AAAA-MM-DD   as notas recebidas viram fila
+//   GET  /conferencia/casamentos                 debito do extrato x nota (SO SUGERE)
+//   POST /conferencia/casamentos/fundir          o debito data a nota, e some absorvido
 //
 // ⚠⚠ NENHUMA REGRA MORA AQUI. Quem decide se um ato pode acontecer é
 // `application/declarados/lib/estadosDeclarado.js`; quem monta o lançamento é
@@ -26,7 +28,9 @@ import {
   DeclaradoRecusado,
   RECUSA_DO_SERVICO,
   aplicarTransicao,
+  fundirPagamentoNaNota,
   listarFila,
+  sugestoesDePagamento,
   varrerInvariantes,
 } from "../../application/declarados/DeclaradoService.js";
 import { varrerNotasDaEmpresa } from "../../application/declarados/VarreduraDeNotasService.js";
@@ -234,6 +238,57 @@ export function createConferenciaRouter({ log } = {}) {
   escrita("recusar", { transicao: TRANSICAO.RECUSAR, dados: (b) => ({ motivoRecusa: b.motivo ?? b.motivoRecusa }) });
   escrita("reabrir", { transicao: TRANSICAO.REABRIR, dados: () => ({}) });
   escrita("desfazer", { transicao: TRANSICAO.DESFAZER, dados: () => ({}) });
+
+  // ── O CASAMENTO DÉBITO × NOTA ──────────────────────────────────────────────────────────────
+  //
+  // ⚠ Rota LITERAL, antes da de curinga.
+  router.get("/conferencia/casamentos", requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      const r = await sugestoesDePagamento({ portalClientId: String(req.params.companyId) });
+      return res.json({
+        ok: true,
+        totalDebitos: r.totalDebitos,
+        totalNotas: r.totalNotas,
+        // ⚠⚠ `sugestao` só vem quando há UM candidato. Com dois, ela é NULA e os dois voltam em
+        // `candidatos`, com o motivo — o sistema não escolhe entre notas.
+        linhas: r.linhas.map((l) => ({
+          debito: serializar(l.debito),
+          sugestao: l.sugestao ? { nota: serializar(l.sugestao.nota), pista: l.sugestao.pista, frase: l.sugestao.frase } : null,
+          candidatos: l.candidatos.map((c) => ({ nota: serializar(c.nota), pista: c.pista, frase: c.frase })),
+          motivo: l.motivo,
+          frase: l.frase,
+        })),
+      });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
+  // ⚠⚠ FUNDIR NÃO CRIA LANÇAMENTO. O débito preenche o pagamento da nota e some absorvido; quem
+  // contabiliza continua sendo o contador, num segundo ato. Por isso o piso é o de ESCRITA, mas a
+  // guarda de mês fechado não se aplica aqui — nada chega ao razão.
+  router.post("/conferencia/casamentos/fundir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const { declaradoOfxId, declaradoNotaId } = req.body || {};
+      if (!declaradoOfxId || !declaradoNotaId) {
+        return res.status(400).json({
+          ok: false,
+          error: "par_incompleto",
+          message: "Informe qual débito e qual nota devem ser casados.",
+        });
+      }
+      const nota = await fundirPagamentoNaNota({
+        portalClientId: String(req.params.companyId),
+        declaradoOfxId: String(declaradoOfxId),
+        declaradoNotaId: String(declaradoNotaId),
+        usuarioId: req.auth?.user?.id || null,
+        agora: new Date(),
+      });
+      return res.json({ ok: true, declarado: serializar(nota) });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
 
   // ── A VARREDURA DAS NOTAS ──────────────────────────────────────────────────────────────────
   //
