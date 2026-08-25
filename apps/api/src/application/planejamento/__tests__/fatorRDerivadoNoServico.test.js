@@ -133,3 +133,68 @@ describe("⚠ o perfil não pode derrubar a tela", () => {
     }
   });
 });
+
+describe("⚠⚠ A SUGESTÃO DA CATEGORIA DE PRESUNÇÃO VIAJA — SEM AFIRMAR NADA", () => {
+  // Decisão do dono (25/08/2026): "sugerir por CNAE, você confirma". A diferença entre DERIVAR e
+  // SUGERIR é o módulo inteiro — e é ela que estes testes prendem.
+  it("⚠⚠ o CAMPO continua AUSENTE, mesmo havendo sugestão", async () => {
+    // `apurado: true` quer dizer "veio da empresa", e a tela imprime "da empresa · …" ao lado. Uma
+    // sugestão carimbada assim se leria como confirmada.
+    mockPerfil.mockResolvedValue({
+      candidatos: [{ cnae: "4751201", tipoReceita: "REVENDA_MERCADORIA", ativo: true }],
+      usaFatorR: false, temCadastro: true,
+    });
+    const r = await montar();
+    expect(r.campos.atividadePresumido.apurado).toBe(false);
+    expect(r.campos.atividadePresumido.valor).toBeNull();
+  });
+
+  it("e a sugestão vem no bloco PRÓPRIO, com as exceções e `confirmadoPeloContador: false`", async () => {
+    mockPerfil.mockResolvedValue({
+      candidatos: [{ cnae: "4751201", tipoReceita: "REVENDA_MERCADORIA", ativo: true }],
+      usaFatorR: false, temCadastro: true,
+    });
+    const r = await montar();
+    expect(r.presumido.sugestao).toBe("comercio");
+    expect(r.presumido.rotulo).toBe("Comércio / Indústria");
+    expect(r.presumido.confianca).toBe("alta");
+    expect(r.presumido.confirmadoPeloContador).toBe(false);
+    expect(r.presumido.excecoes.join(" ")).toMatch(/COMBUSTÍVEL/i);
+  });
+
+  it("⚠ serviço sai com confiança MÉDIA e as exceções da lei nomeadas", async () => {
+    mockPerfil.mockResolvedValue({
+      candidatos: [{ cnae: "6201501", tipoReceita: "SERVICO_FATOR_R", ativo: true }],
+      usaFatorR: false, temCadastro: true,
+    });
+    const r = await montar();
+    expect(r.presumido.sugestao).toBe("servicos");
+    expect(r.presumido.confianca).toBe("media");
+    expect(r.presumido.excecoes.join(" ")).toMatch(/hospitalares/i);
+  });
+
+  it("⚠⚠ CNAE fora do catálogo NÃO cai em \"serviços\" — sai sem sugestão", async () => {
+    // 18 dos 64 CNAEs da carteira estão fora do catálogo. Cair no default afirmaria 32% para quem
+    // pode ser 8%.
+    mockPerfil.mockResolvedValue({
+      candidatos: [{ cnae: "6462000", tipoReceita: null, ativo: true }],
+      usaFatorR: false, temCadastro: true,
+    });
+    const r = await montar();
+    expect(r.presumido.sugestao).toBeNull();
+    expect(r.campos.atividadePresumido.motivoAusencia).toMatch(/não está no catálogo/i);
+  });
+
+  it("⚠ atividades que discordam ⇒ nenhuma sugestão, com o motivo na tela", async () => {
+    mockPerfil.mockResolvedValue({
+      candidatos: [
+        { cnae: "4751201", tipoReceita: "REVENDA_MERCADORIA", ativo: true },
+        { cnae: "6201501", tipoReceita: "SERVICO_FATOR_R", ativo: true },
+      ],
+      usaFatorR: false, temCadastro: true,
+    });
+    const r = await montar();
+    expect(r.presumido.sugestao).toBeNull();
+    expect(r.campos.atividadePresumido.motivoAusencia).toMatch(/categorias DIFERENTES/i);
+  });
+});

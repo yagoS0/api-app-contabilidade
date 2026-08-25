@@ -64,7 +64,7 @@ function normalizarCampos(dados) {
 export function prefillDaEmpresa(dados) {
   const campos = normalizarCampos(dados);
   if (!campos) {
-    return { empresa: null, referencia: null, valores: {}, campos: {}, fatorR: null, temEmpresa: false };
+    return { empresa: null, referencia: null, valores: {}, campos: {}, fatorR: null, presumido: null, temEmpresa: false };
   }
 
   const valores = {};
@@ -92,6 +92,12 @@ export function prefillDaEmpresa(dados) {
     // ⚠ A tela AVISA; ela não conserta o cadastro. Corrigir em silêncio deixaria o cadastro errado
     // para sempre, e quem responde pelo cadastro é o contador.
     fatorR: dados.fatorR || null,
+    // ⚠⚠ A SUGESTÃO DA CATEGORIA DE PRESUNÇÃO — e ela NÃO é um campo. O campo
+    // `atividadePresumido` continua AUSENTE de propósito: `apurado: true` quer dizer "veio da
+    // empresa", e a linha de origem imprime "da empresa · …" ao lado. Uma sugestão carimbada assim
+    // se leria como confirmada — que é a confusão que a decisão do dono ("sugerir, você confirma")
+    // existe para evitar. Ela viaja separada, com `confirmadoPeloContador: false`.
+    presumido: dados.presumido || null,
     temEmpresa: true,
   };
 }

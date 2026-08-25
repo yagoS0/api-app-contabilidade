@@ -13,7 +13,7 @@
 // Medido em produção antes do conserto: 12 de 18 empresas com dado apurado, 3 com o Presumido morto
 // e 7 com o Simples. Este arquivo prende os três sintomas pelo caminho REAL da tela.
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { PlanejamentoPage } from "../renderPlanejamentoPage";
 
@@ -218,5 +218,53 @@ describe("⚠⚠ A PERGUNTA DOS R$ 120.000 (art. 15, § 4º) APARECE E NÃO SE R
     montar();
     await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
     expect(screen.queryByText(/a presunção de IRPJ pode ser de 16%/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("⚠⚠ A CATEGORIA DO PRESUMIDO CHEGA SUGERIDA, E A TELA DIZ QUE É SUGESTÃO", () => {
+  // Decisão do dono (25/08/2026): "sugerir por CNAE, você confirma". A diferença entre SUGERIR e
+  // DERIVAR é o desenho inteiro — e errar entre 8% e 32% de IRPJ inverte a comparação de regimes.
+  const SUGERE_SERVICO = {
+    presumido: {
+      sugestao: "servicos", rotulo: "Serviços em geral", confianca: "media",
+      motivo: "O CNAE 6201501 é de SERVIÇO no catálogo do Simples.",
+      excecoes: ["serviços hospitalares e de auxílio diagnóstico não são \"serviços em geral\": a presunção de IRPJ cai para 8%"],
+      confirmadoPeloContador: false,
+    },
+  };
+
+  it("pré-seleciona a sugestão E a marca como sugestão", async () => {
+    montar({}, SUGERE_SERVICO);
+    await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
+    expect(screen.getByText(/foi/i).textContent).toMatch(/sugerido/i);
+    expect(screen.getByText(/confirme no seletor acima/i)).toBeInTheDocument();
+  });
+
+  it("⚠⚠ e as EXCEÇÕES aparecem — sem elas o contador confirma sem saber o quê", async () => {
+    montar({}, SUGERE_SERVICO);
+    await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
+    expect(screen.getByText(/hospitalares/i)).toBeInTheDocument();
+  });
+
+  it("⚠ tocar no seletor É a confirmação — o aviso some", async () => {
+    montar({}, SUGERE_SERVICO);
+    await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
+    const select = screen.getByLabelText(/Atividade no Lucro Presumido/i);
+    fireEvent.change(select, { target: { value: "comercio" } });
+    expect(screen.queryByText(/confirme no seletor acima/i)).not.toBeInTheDocument();
+  });
+
+  it("⚠⚠ SEM sugestão a tela não inventa aviso nenhum — e o campo segue AUSENTE", async () => {
+    // 18 dos 64 CNAEs da carteira estão fora do catálogo. Cair no default de "serviços" ali
+    // afirmaria 32% para quem pode ser 8%.
+    montar({}, { presumido: { sugestao: null, rotulo: null, confianca: null, motivo: "fora do catálogo", excecoes: [] } });
+    await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
+    expect(screen.queryByText(/confirme no seletor acima/i)).not.toBeInTheDocument();
+  });
+
+  it("⚠ payload SEM `presumido` (contrato antigo) não quebra", async () => {
+    montar();
+    await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
+    expect(screen.queryByText(/confirme no seletor acima/i)).not.toBeInTheDocument();
   });
 });

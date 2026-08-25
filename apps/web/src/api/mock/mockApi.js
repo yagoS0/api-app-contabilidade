@@ -7650,6 +7650,44 @@ export function createMockApi() {
         // ⚠⚠ A DIVERGÊNCIA ENTRE PERFIL E CADASTRO — só no cenário 0, que é o da LENTE: o perfil
         // afirma Fator R e o cadastro está com a caixa desmarcada. O aviso na tela depende deste
         // bloco; sem ele, ele só apareceria em produção.
+        // ⚠ A SUGESTÃO DA CATEGORIA DE PRESUNÇÃO, com os TRÊS desfechos caminháveis offline:
+        //   cenário 0 → serviço, confiança MÉDIA (o caso comum, e o que carrega as exceções)
+        //   cenário 1 → comércio, confiança ALTA
+        //   demais    → SEM sugestão (CNAE fora do catálogo) — que NÃO pode virar "serviços"
+        // Este projeto foi mordido cinco vezes por ramo que só existia em produção.
+        presumido: (() => {
+          const i = idx % cenarios.length;
+          if (i === 0) {
+            return {
+              sugestao: "servicos", rotulo: "Serviços em geral", confianca: "media",
+              motivo: "O CNAE 6202300 (Desenvolvimento e licenciamento de programas customizáveis) é de "
+                + "SERVIÇO no catálogo do Simples. Isso SUGERE \"serviços em geral\" (32%), mas o catálogo "
+                + "mapeia anexo do Simples — outra lei — e não distingue as exceções da presunção. Confirme.",
+              excecoes: [
+                "serviços hospitalares e de auxílio diagnóstico não são \"serviços em geral\": a presunção de IRPJ cai para 8%",
+                "transporte de CARGAS é 8% de IRPJ; de PASSAGEIROS, 16% — nenhum dos dois é 32%",
+                "obra de construção por empreitada COM fornecimento de material sai dos 32%",
+                "a empresa precisa ser prestadora de serviços em geral de fato, não só pelo CNAE",
+              ],
+              confirmadoPeloContador: false,
+            };
+          }
+          if (i === 1) {
+            return {
+              sugestao: "comercio", rotulo: "Comércio / Indústria", confianca: "alta",
+              motivo: "O CNAE 4751201 (Comércio varejista de computadores) é de mercadoria/indústria no "
+                + "catálogo, o que corresponde à regra geral de 8% de IRPJ e 12% de CSLL. Confirme.",
+              excecoes: ["revenda de COMBUSTÍVEL derivado de petróleo, álcool carburante e gás natural presume 1,6%, não 8%"],
+              confirmadoPeloContador: false,
+            };
+          }
+          return {
+            sugestao: null, rotulo: null, confianca: null,
+            motivo: "O CNAE 6462000 não está no catálogo do portal, então não há de onde sugerir a "
+              + "categoria de presunção. Escolha na tela.",
+            excecoes: [], confirmadoPeloContador: false,
+          };
+        })(),
         fatorR: (idx % cenarios.length) === 0
           ? {
             resposta: "sim",

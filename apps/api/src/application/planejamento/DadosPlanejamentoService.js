@@ -26,6 +26,7 @@ import {
 } from "./lib/campoComOrigem.js";
 import { resolverPerfilFiscal } from "../notas/apuracao/v2/PerfilFiscalService.js";
 import { sujeitoAoFatorR, RESPOSTA as RESPOSTA_FATOR_R } from "./lib/sujeitoAoFatorR.js";
+import { sugerirCategoriaDaEmpresa } from "./lib/categoriaPresumido.js";
 
 const REGIMES = new Set(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI"]);
 const ANEXOS_VALIDOS = new Set(["I", "II", "III", "IV", "V"]);
@@ -244,15 +245,31 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
     : ausente("Alíquota de ISS não informada no perfil de atividades da empresa.");
 
   // ── ATIVIDADE NO LUCRO PRESUMIDO ──────────────────────────────────────────────────────────────
-  // ⚠ AUSENTE DE PROPÓSITO, E ISTO NÃO É PENDÊNCIA ESQUECIDA. As cinco atividades do simulador
-  // (comércio/indústria, serviços, transporte de cargas, transporte de passageiros, combustíveis)
-  // são as da presunção de IRPJ/CSLL (Lei 9.249/1995, arts. 15 e 20). O projeto NÃO tem de-para
-  // CNAE→presunção: o único catálogo de CNAE que existe (`CnaeAnexo.tipoReceitaSugerido`) mapeia
-  // para ANEXO DO SIMPLES, que é outra tabela e outra lei. Adivinhar aqui trocaria 8% por 32% de
-  // presunção de IRPJ — a maior diferença isolada do comparativo. Quem escolhe é o contador.
+  // ⚠⚠ O QUE ESTAVA ESCRITO AQUI CONTINUA VERDADEIRO, E VALE RELER:
+  //
+  //   "AUSENTE DE PROPÓSITO, E ISTO NÃO É PENDÊNCIA ESQUECIDA. (…) O projeto NÃO tem de-para
+  //    CNAE→presunção: o único catálogo de CNAE que existe (`CnaeAnexo.tipoReceitaSugerido`) mapeia
+  //    para ANEXO DO SIMPLES, que é outra tabela e outra lei. Adivinhar aqui trocaria 8% por 32% de
+  //    presunção de IRPJ — a maior diferença isolada do comparativo. Quem escolhe é o contador."
+  //
+  // O que mudou, por decisão do dono em 25/08/2026 ("sugerir por CNAE, você confirma"), é o
+  // DESENHO — e a diferença entre as duas coisas é o módulo inteiro:
+  //
+  //   DERIVAR  = o sistema decide e CALCULA com o que decidiu.        ← continua proibido
+  //   SUGERIR  = o sistema propõe, NOMEIA o que derrubaria a proposta,
+  //              e nada entra na conta sem uma pessoa confirmar.      ← é o que passa a existir
+  //
+  // ⚠⚠ POR ISSO O CAMPO CONTINUA `ausente`. `apurado: true` quer dizer "veio da empresa", e a tela
+  // imprime "da empresa · …" ao lado — uma SUGESTÃO carimbada assim se leria como confirmada, que é
+  // exatamente a confusão que este bloco existe para impedir. A sugestão viaja SEPARADA, embaixo.
+  const sugestaoPresumido = sugerirCategoriaDaEmpresa(perfilFiscal?.candidatos || []);
   const atividadePresumido = ausente(
-    "A atividade do Lucro Presumido não é derivada do CNAE: o projeto não tem de-para CNAE→presunção "
-    + "de IRPJ/CSLL, e errar entre 8% e 32% inverteria a comparação. Escolha na tela.",
+    sugestaoPresumido.categoria
+      ? `${sugestaoPresumido.motivo} A presunção NÃO é derivada do CNAE — o catálogo do portal mapeia `
+        + "anexo do Simples, que é outra lei, e errar entre 8% e 32% inverteria a comparação."
+      : "A atividade do Lucro Presumido não é derivada do CNAE: o projeto não tem de-para "
+        + "CNAE→presunção de IRPJ/CSLL, e errar entre 8% e 32% inverteria a comparação. "
+        + `${sugestaoPresumido.motivo}`,
   );
 
   return {
@@ -270,6 +287,17 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
     },
     // ⚠ A DIVERGÊNCIA ENTRE PERFIL E CADASTRO VIAJA, e a tela a mostra. Corrigir em silêncio
     // deixaria o cadastro errado para sempre — quem conserta o cadastro é o contador.
+    // ⚠ A SUGESTÃO DA CATEGORIA DE PRESUNÇÃO VIAJA SEPARADA DO CAMPO, e é assim que a tela
+    // consegue pré-selecionar SEM afirmar. Ela carrega `confirmadoPeloContador: false` e as
+    // exceções da lei que derrubariam a proposta — sem elas o contador confirmaria sem saber o quê.
+    presumido: {
+      sugestao: sugestaoPresumido.categoria,
+      rotulo: sugestaoPresumido.rotulo,
+      confianca: sugestaoPresumido.confianca,
+      motivo: sugestaoPresumido.motivo,
+      excecoes: sugestaoPresumido.excecoes,
+      confirmadoPeloContador: false,
+    },
     fatorR: {
       resposta: respostaFatorR.resposta,
       origem: respostaFatorR.origem,

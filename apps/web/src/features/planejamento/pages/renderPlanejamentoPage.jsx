@@ -80,6 +80,9 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   // profissão legalmente regulamentada, e exige empresa EXCLUSIVAMENTE prestadora de serviços em
   // geral — três fatos que o cadastro não tem. Quem confirma é o contador.
   const [servicos16, setServicos16] = useState(null);
+  // ⚠ A categoria do Presumido pode chegar SUGERIDA pelo CNAE. Enquanto o contador não encostar no
+  // seletor, ela continua sendo SUGESTÃO — e a tela diz isso. Tocar no seletor É a confirmação.
+  const [categoriaConfirmada, setCategoriaConfirmada] = useState(false);
   const [iss, setIss] = useState("");
   const [margem, setMargem] = useState("");
   const [creditos, setCreditos] = useState("");
@@ -146,6 +149,14 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     setIss(v.aliquotaIss == null ? "" : paraCampo(Math.round(v.aliquotaIss * 1e6) / 1e4));
     if (v.sujeitoFatorR != null) setSujeitoFatorR(Boolean(v.sujeitoFatorR));
     if (v.anexo != null) setAnexo(v.anexo);
+    // ⚠⚠ PRÉ-SELECIONA A SUGESTÃO, E A MARCA COMO NÃO CONFIRMADA. Sem a sugestão, o seletor caía
+    // no default "Serviços em geral" para TODA empresa — inclusive as de comércio, que presumem 8%
+    // e não 32%. Pré-selecionar pelo CNAE é estritamente melhor que isso; o que não pode é a tela
+    // deixar de dizer que aquilo é proposta, não cadastro.
+    if (prefill.presumido?.sugestao) {
+      setAtividade(prefill.presumido.sugestao);
+      setCategoriaConfirmada(false);
+    }
     // `atividadePresumido` NÃO é pré-preenchida: o projeto não tem de-para CNAE→presunção de
     // IRPJ/CSLL, e chutar entre 8% e 32% inverteria a comparação. Fica com a escolha da tela, e a
     // linha de origem diz que não veio da empresa.
@@ -378,11 +389,36 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
               {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.folhaAnual} />}
             </label>
             <label style={rotulo}>Atividade no Lucro Presumido
-              <select value={atividade} onChange={(e) => setAtividade(e.target.value)} style={campo}>
+              <select
+                value={atividade}
+                onChange={(e) => { setAtividade(e.target.value); setCategoriaConfirmada(true); }}
+                style={campo}
+              >
                 {Object.entries(ATIVIDADES_PRESUMIDO).map(([k, a]) => <option key={k} value={k}>{a.rotulo}</option>)}
               </select>
               {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.atividadePresumido} />}
             </label>
+            {/* ⚠⚠ "SUGERIDO, CONFIRME" — a forma que o dono pediu, e a diferença entre SUGERIR e
+                DERIVAR. O catálogo de CNAE do portal mapeia ANEXO DO SIMPLES; a presunção é a Lei
+                9.249, outra lei. Errar entre 8% e 32% de IRPJ inverte a comparação de regimes.
+                ⚠ As EXCEÇÕES aparecem: sem elas o contador confirmaria sem saber o quê. */}
+            {prefill.presumido?.sugestao && !categoriaConfirmada ? (
+              <div style={{
+                gridColumn: "1 / -1", padding: "8px 10px", border: `1px solid ${C.alerta}44`,
+                borderRadius: 6, background: "#1A1B26", display: "grid", gap: 6,
+              }}>
+                <div style={{ fontSize: "0.74rem", color: C.alerta, lineHeight: 1.45 }}>
+                  ⚠ <strong>{prefill.presumido.rotulo}</strong> foi <strong>sugerido</strong> pelo CNAE
+                  {prefill.presumido.confianca === "media" ? " (confiança média)" : ""} — confirme no seletor acima.
+                </div>
+                <div style={{ fontSize: "0.7rem", color: C.muted, lineHeight: 1.45 }}>{prefill.presumido.motivo}</div>
+                {prefill.presumido.excecoes?.length ? (
+                  <ul style={{ margin: 0, paddingLeft: 16, fontSize: "0.68rem", color: C.muted, lineHeight: 1.45 }}>
+                    {prefill.presumido.excecoes.map((e) => <li key={e}>{e}</li>)}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
             {/* ⚠⚠ A PERGUNTA DOS R$ 120.000 (Lei 9.249/1995, art. 15, § 4º) — ela APARECE, e não se
                 responde sozinha. `PRESUNCAO_IRPJ.servicosAte120k = 0.16` existia como constante e
                 nunca entrava em conta nenhuma; medido em produção, 10 das 18 empresas com dado
