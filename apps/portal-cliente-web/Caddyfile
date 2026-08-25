@@ -6,6 +6,43 @@
 :8080 {
 	root * /usr/share/caddy
 	encode gzip
-	try_files {path} /index.html
-	file_server
+
+	# ⚠⚠ `handle` E NÃO `header` SOLTO — a diferença foi MEDIDA, e é o que separa este conserto de
+	# um estrago maior que o defeito original.
+	#
+	# Com `header` + `try_files` no mesmo escopo, um asset INEXISTENTE (`/assets/chunk-velho.js`)
+	# caía no `try_files`, recebia o `index.html` com **HTTP 200**, `Content-Type: text/html` — e o
+	# `Cache-Control: immutable` de UM ANO. O navegador guardaria HTML como se fosse JavaScript, por
+	# doze meses, exatamente para o usuário que pediu um chunk antigo. Foi assim que este incidente
+	# começou.
+	#
+	# `handle` é EXCLUSIVO: entrando aqui, não cai no bloco de baixo. Asset que não existe devolve
+	# **404 de verdade**, que é a resposta honesta.
+	@assets path /assets/*
+	handle @assets {
+		# ⚠ Cache eterno é seguro AQUI porque o Vite põe o hash do CONTEÚDO no nome
+		# (`index-e72ae327.js`): conteúdo diferente ⇒ nome diferente ⇒ o navegador busca de novo por
+		# construção. `immutable` diz para nem revalidar.
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Todo o resto: o `index.html` do SPA.
+	handle {
+		# ⚠⚠ REVALIDA SEMPRE. O `index.html` é a única porta de entrada e é quem aponta para os
+		# chunks — se ele envelhece, tudo envelhece junto.
+		#
+		# ⚠ `no-cache` não quer dizer "não guarde": quer dizer "guarde, mas pergunte antes de usar".
+		# Com o `ETag` que o Caddy já emite, a resposta comum é um **304 sem corpo**. Paga-se uma ida
+		# ao servidor por visita; compra-se o deploy chegar ao usuário no mesmo dia.
+		#
+		# ⚠ Este bloco cobre as ROTAS PROFUNDAS (`/redefinir-senha?token=…`, o link do e-mail), que é o caso normal
+		# de um SPA — link salvo, F5, Ctrl+clique numa aba. Medido: elas saem com `no-cache`.
+		header Cache-Control "no-cache"
+
+		# ⚠ `try_files {path} /index.html` é o roteamento do SPA: sem ele, abrir uma rota profunda
+		# devolveria 404, porque não existe arquivo com esse nome no disco.
+		try_files {path} /index.html
+		file_server
+	}
 }
