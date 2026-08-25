@@ -25,10 +25,15 @@ const REGRAS = [
  * A tela não tem a informação para ser mais específica, e não deve inventá-la. O que ela PODE
  * fazer, e faz, é oferecer o conserto: pedir um link novo.
  */
-export function RedefinirSenhaPage({ token, aoConcluir }) {
+export function RedefinirSenhaPage({ token, aoConcluir, aoPedirNovoLink }) {
   const [senha, setSenha] = useState("");
   const [confirmacao, setConfirmacao] = useState("");
   const [erro, setErro] = useState(null);
+  // ⚠⚠ O ERRO LOCAL NÃO OFERECE A MESMA SAÍDA QUE A RECUSA DO SERVIDOR. "As duas senhas não são
+  // iguais" se conserta ali mesmo, digitando de novo — e o bloco de erro oferecia, junto,
+  // "Pedir um novo link", ou seja: jogar fora um link de redefinição VÁLIDO por causa de um erro
+  // de digitação. As duas famílias precisam de desfechos diferentes.
+  const [erroEhLocal, setErroEhLocal] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [pronto, setPronto] = useState(false);
 
@@ -36,11 +41,13 @@ export function RedefinirSenhaPage({ token, aoConcluir }) {
     evento.preventDefault();
     if (enviando) return;
     setErro(null);
+    setErroEhLocal(false);
 
     // Conferido no cliente porque é o único erro que a tela SABE sozinha — e mandá-lo ao servidor
     // só para receber a mesma resposta seria uma ida de rede para nada.
     if (senha !== confirmacao) {
       setErro("As duas senhas não são iguais.");
+      setErroEhLocal(true);
       return;
     }
 
@@ -50,6 +57,7 @@ export function RedefinirSenhaPage({ token, aoConcluir }) {
       setPronto(true);
     } catch (err) {
       setErro(mensagemDeErro(err, "Não foi possível redefinir a senha. Tente de novo."));
+      setErroEhLocal(false);
     } finally {
       setEnviando(false);
     }
@@ -65,7 +73,11 @@ export function RedefinirSenhaPage({ token, aoConcluir }) {
             <p>Abra o link exatamente como ele veio no e-mail, ou peça um novo.</p>
           </div>
           <p className="stack-gap">
-            <button type="button" className="btn-link" onClick={aoConcluir}>
+            {/* ⚠ `aoPedirNovoLink`, não `aoConcluir`. Os dois botões rotulados "Pedir um novo
+                link" chamavam o handler que volta ao LOGIN — o rótulo prometia o formulário de
+                recuperação e entregava o de senha, e quem clicava tinha de reencontrar "Esqueci
+                minha senha" sozinho. Um prop com três significados, dois deles mentindo. */}
+            <button type="button" className="btn-link" onClick={aoPedirNovoLink}>
               Pedir um novo link
             </button>
           </p>
@@ -114,11 +126,16 @@ export function RedefinirSenhaPage({ token, aoConcluir }) {
               <strong>Não foi possível redefinir.</strong>
             </p>
             <p>{erro}</p>
-            <p>
-              <button type="button" className="btn-link" onClick={aoConcluir}>
-                Pedir um novo link
-              </button>
-            </p>
+            {/* ⚠ Só quando a recusa veio do SERVIDOR. No erro local o link continua válido e o
+                conserto é digitar de novo — oferecer "pedir um novo" ali manda a pessoa
+                abandonar o que ela já tem na mão. */}
+            {!erroEhLocal ? (
+              <p>
+                <button type="button" className="btn-link" onClick={aoPedirNovoLink}>
+                  Pedir um novo link
+                </button>
+              </p>
+            ) : null}
           </div>
         ) : null}
 

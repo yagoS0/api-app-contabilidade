@@ -47,9 +47,17 @@ export function SituacaoFiscalPage({ empresa }) {
   const apurada = dados?.ultimoRelatorioEm || dados?.checkedAt || null;
 
   return (
-    <section className="page">
+    /* ⚠ FRAGMENTO, como as outras telas — e o `<section className="page">` que estava aqui era
+       DUAS coisas erradas de uma vez. Primeira: o seletor no `app.css` é `main.page` (ELEMENTO +
+       classe), então a classe sozinha não estilizava nada. Segunda, e a que se via: o `<section>`
+       virava filho ÚNICO do `main.page`, e os blocos de dentro perdiam o `gap` que separa tudo nas
+       outras páginas — o título encostava no card de estado. */
+    <>
       <div className="page-header">
-        <h2>Situação fiscal</h2>
+        {/* ⚠ `<h1>`, como as outras oito telas do app. Esta era a única em `<h2>`: quem navega por
+            cabeçalho no leitor de tela não achava o título da página, e a hierarquia pulava de nada
+            para H2 com os H3 dos órgãos abaixo. */}
+        <h1>Situação fiscal</h1>
       </div>
 
       {!podeVer ? (
@@ -99,6 +107,6 @@ export function SituacaoFiscalPage({ empresa }) {
           )}
         </>
       ) : null}
-    </section>
+    </>
   );
 }

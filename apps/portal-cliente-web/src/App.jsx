@@ -45,6 +45,17 @@ export default function App() {
     return (
       <RedefinirSenhaPage
         token={redefinicao.token}
+        /* ⚠ SAÍDA PRÓPRIA: leva ao formulário de recuperação, não ao login. Antes os dois botões
+           "Pedir um novo link" chamavam o `aoConcluir` — que é a saída de QUEM JÁ TROCOU a senha. */
+        aoPedirNovoLink={() => {
+          try {
+            window.history.replaceState({}, "", "/");
+          } catch {
+            // Sem History API o app segue — só a URL fica feia.
+          }
+          setRedefinicao(null);
+          setPedindoLink(true);
+        }}
         aoConcluir={() => {
           // A troca de senha revogou as sessões no servidor; a local não vale mais nada.
           limparSessao();

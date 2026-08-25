@@ -792,6 +792,10 @@ function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar, aoRetentar }) 
         </div>
       ) : null}
 
+      {/* ⚠⚠ QUATRO CONTADORES, NÃO TRÊS. Faltava `indeterminadas`, e ela sumia da aritmética
+          exatamente no estado que este arquivo chama de o pior do sistema: um lote de 3 linhas
+          mostrava `1 + 0 + 1 = 2` sob um "de 3 linhas". Linha que não aparece em contador nenhum
+          é linha que ninguém procura — e esta é a que tem número de nota reservado. */}
       <div className="grid-3" style={{ marginTop: "10px" }} data-resumo-emissao>
         <div className="card" style={{ padding: "12px" }}>
           <div className="rotulo">Emitidas</div>
@@ -808,6 +812,19 @@ function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar, aoRetentar }) 
           <div className="numero" data-emissao-conta="nao-tentadas">{resumo.naoTentadas}</div>
           <div className="apoio">ninguém encostou nelas</div>
         </div>
+        {/* ⚠ ÂMBAR, NUNCA VERMELHO — é a mesma regra que o rótulo "Desfecho desconhecido" já
+            segue na tabela: vermelho e "falhou" convidam a tentar de novo, e é assim que se
+            duplica nota. E o card só aparece quando há alguma: uma caixa de zero permanente
+            treinaria o olho a ignorá-la justo no dia em que ela contar 1. */}
+        {resumo.indeterminadas > 0 ? (
+          <div className="card" style={{ padding: "12px", borderColor: "var(--warning-surface-border)" }}>
+            <div className="rotulo">Desfecho desconhecido</div>
+            <div className="numero" style={{ color: "var(--warning)" }} data-emissao-conta="indeterminadas">
+              {resumo.indeterminadas}
+            </div>
+            <div className="apoio">o número já foi reservado — não reenvie</div>
+          </div>
+        ) : null}
       </div>
 
       {/* ⚠⚠ O CONVITE PARA RETENTAR — âmbar, porque é PENDÊNCIA (verde, nesta casa, é concluído e

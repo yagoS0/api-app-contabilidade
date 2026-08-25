@@ -150,7 +150,7 @@ describe("⚠ estado que a tela não conhece não vira PRONTA", () => {
   test("é marcado como desconhecido e sai com desenho de bloqueio", () => {
     const v = vereditoDaLinha(linha({ estado: "aguardando_carimbo" }), { municipios: MUNICIPIOS });
     expect(v.conhecido).toBe(false);
-    expect(apresentacaoDoEstado("aguardando_carimbo").chip).toBe("rejeitada");
+    expect(apresentacaoDoEstado("aguardando_carimbo").chip).toBe("linha-pendente");
     expect(apresentacaoDoEstado("aguardando_carimbo").rotulo).toBe("aguardando_carimbo");
   });
 

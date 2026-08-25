@@ -199,7 +199,23 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
         <div className="card-header">
           <h2>Próximos vencimentos</h2>
           <div className="page-actions">
-            <button type="button" className="btn-link" onClick={() => aoNavegar("guias")}>
+            {/* ⚠⚠ ELE LIMPA A COMPETÊNCIA ANTES DE NAVEGAR, e sem isso o número desta tela e a
+                lista que ele abre falavam de POPULAÇÕES DIFERENTES. `api.getFluxo` não recebe
+                competência e a rota do backend não filtra por mês: o card soma TODAS as guias
+                liberadas em aberto. A `GuiasPage`, porém, abre no mês da casca — e o comentário
+                dela registra que *"a competência corrente frequentemente não tem guia nenhuma"*,
+                então "A vencer R$ 12.500" → "Nenhuma guia em 08/2026" era o caso COMUM.
+                ⚠ "Todas" (string vazia) é conceito que a `GuiasPage` já sabe honrar, e é o único
+                recorte que fecha com o número do card. Regra da casa: total que não fecha com a
+                lista que ele abre é pior que total nenhum. */}
+            <button
+              type="button"
+              className="btn-link"
+              onClick={() => {
+                aoTrocarCompetencia?.("");
+                aoNavegar("guias");
+              }}
+            >
               Ver todas as guias
             </button>
           </div>

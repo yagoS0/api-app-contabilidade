@@ -72,11 +72,27 @@ export const CODIGO = Object.freeze({
   MUNICIPIO_INEXISTENTE: "municipio_inexistente",
 });
 
+// ⚠⚠ VOCABULÁRIO PRÓPRIO — LINHA DE PLANILHA NÃO É NOTA (23/08/2026).
+//
+// Estes quatro `chip` eram `emitida` / `rascunho` / `processando` / `rejeitada`: o vocabulário da
+// NOTA, emprestado. A cor saía certa por acidente e o significado, não — e `data-status` é
+// **auditável no DOM** e é o vocabulário que o app mobile espelha. Na tela de conferência, ANTES
+// de qualquer emissão, a linha que só está pronta saía marcada como `emitida`, a mesma marca que a
+// linha REALMENTE emitida recebe no relatório logo abaixo; e a linha à qual falta um dado saía
+// como `rejeitada`, que na NFS-e significa *recusada pela Receita*.
+//
+// ⚠ É palavra por palavra o defeito que a GUIA já pagou e consertou (ver "GUIA NÃO É NOTA" no
+// `CLAUDE.md` e o bloco do `app.css`): `PAID → "emitida"`, `OVERDUE → "rejeitada"`. As guias
+// ganharam nome próprio em 20/08; o lote ficou para trás.
+//
+// ⚠ ZERO MUDANÇA VISUAL: os quatro valores novos usam as MESMAS superfícies no `app.css`.
+// ⚠ E o RELATÓRIO da emissão continua com o vocabulário da nota, de propósito — lá os desfechos
+// são de nota mesmo (`emissaoDoLote.js`). O que não podia era a tela de CONFERÊNCIA usá-lo.
 const APRESENTACAO = Object.freeze({
-  [ESTADO.PRONTA]: { rotulo: "Pronta", chip: "emitida", ordem: 4 },
-  [ESTADO.CONFERIR]: { rotulo: "Conferir", chip: "rascunho", ordem: 3 },
-  [ESTADO.CONSULTAR]: { rotulo: "Consultando", chip: "processando", ordem: 2 },
-  [ESTADO.PENDENTE]: { rotulo: "Pendente", chip: "rejeitada", ordem: 1 },
+  [ESTADO.PRONTA]: { rotulo: "Pronta", chip: "linha-pronta", ordem: 4 },
+  [ESTADO.CONFERIR]: { rotulo: "Conferir", chip: "linha-conferir", ordem: 3 },
+  [ESTADO.CONSULTAR]: { rotulo: "Consultando", chip: "linha-consultar", ordem: 2 },
+  [ESTADO.PENDENTE]: { rotulo: "Pendente", chip: "linha-pendente", ordem: 1 },
 });
 
 export function ehEstadoConhecido(estado) {
@@ -91,7 +107,9 @@ export function apresentacaoDoEstado(estado) {
   return (
     APRESENTACAO[String(estado || "")] || {
       rotulo: String(estado || "sem estado"),
-      chip: "rejeitada",
+      // ⚠ O desconhecido usa o MESMO desenho de bloqueio da pendente — e pelo vocabulário do
+      // LOTE, não pelo da nota: estado que a tela não conhece nunca vira pronta, e sai marcado.
+      chip: "linha-pendente",
       ordem: 0,
     }
   );

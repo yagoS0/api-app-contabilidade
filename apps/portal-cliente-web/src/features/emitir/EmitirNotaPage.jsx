@@ -1745,6 +1745,20 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                     o motivo continua na tela ("Não preenchemos: …"). Aquilo não é legenda — é a
                     explicação de um campo VAZIO, e campo vazio sem motivo vira suspeita de defeito.
                     A mesma razão pela qual "Procurando…" também ficou. */}
+                {/* ⚠⚠ A AUDITORIA DE 23/08/2026 PROPÔS TRAZER DE VOLTA O AVISO DO RAMO
+                    `exata === false` (a alíquota é de OUTRA competência), e ela tem razão no
+                    mérito: o critério do dono manda ficar o texto que muda uma decisão e avisa de
+                    consequência fiscal, e `title` não aparece no teclado nem no toque.
+
+                    ⚠⚠ NÃO FOI FEITO, E É DE PROPÓSITO. A decisão de tirar a frase é do dono, de
+                    19/08/2026, tomada com a tela na frente — e o teste
+                    `emitirNotaPage.ligacao.test.jsx:163` a trava MEDINDO A AUSÊNCIA, com o
+                    argumento contrário escrito no próprio caso ("ele é bom e pode voltar"). Foi
+                    tentado nesta data e revertido: o vermelho é a decisão falando, não um
+                    obstáculo. Reabrir isto é conversa com o dono, não conserto.
+
+                    ⚠ Esta é a QUARTA vez que um corte de legenda é reproposto e recusado por um
+                    teste nesta base. O comentário existe para a quinta não custar o mesmo. */}
                 {serieAliquota.carregando ? (
                   <span className="hint">Procurando a alíquota efetiva desta empresa…</span>
                 ) : escolhaAliquota?.valor === null ? (

@@ -48,11 +48,34 @@
   --surface: #fff;
   --border: #e3e6ea;
   --text: #1c2128;
-  --muted: #6b7280;
+  /* ⚠ 4,32:1 no chip e 4,51:1 sobre `--bg` — o mínimo raspando. Agora 5,10:1 e 5,33:1.
+     ⚠ E é o mesmo hex que o portal do ESCRITÓRIO proíbe por escrito como tinta de texto (lá ele
+     mede 3,10:1 no fundo escuro). Aqui o fundo é claro, então ele passava por pouco — mas passar
+     por pouco num rótulo de estado é o que esta mudança tira da mesa. */
+  --muted: #5f6773;
   --primary: #1f5eff;
   --primary-hover: #1a4fd8;
-  --danger: #d92d20;
-  --success: #12873f;
+  /* ⚠⚠ AS TRÊS TINTAS FORAM ESCURECIDAS EM 23/08/2026, E SÓ AS TINTAS — as superfícies
+     (`--danger-surface`, `--success-surface`, `--neutral-surface`) estão intactas, então o desenho
+     não muda: muda o quanto dá para ler.
+
+     Medido com os tokens deste arquivo, tratando o chip (`.78rem`/600) como texto NORMAL — que é o
+     que a WCAG faz, porque "texto grande" começa em 18,66px/700:
+
+       chip                    antes            depois
+       emitida · paga          4,12:1  REPROVA  5,41:1
+       rejeitada · vencida     4,22:1  REPROVA  5,75:1
+       cancelada · sem status  4,32:1  REPROVA  5,10:1
+
+     ⚠ E não era só o chip: os mesmos tokens são TEXTO em fundo claro, e ali `--success` media
+     **4,29:1 sobre `--bg`** — reprovado também fora do chip. Depois: 5,64:1.
+
+     ⚠ A paleta veio verbatim do protótipo por decisão do dono, com a tela na frente. Escurecer a
+     tinta foi decisão dele também ("ajuste tudo", 23/08) — não é refactor. Os chips afetados são
+     justamente os que decidem se o cliente vai pagar algo: Paga, Emitida, Vencida, Rejeitada,
+     Cancelada. */
+  --danger: #b42318;
+  --success: #0e7234;
   --warning: #b45309;
   --radius: 8px;
   --gap: 12px;

@@ -255,7 +255,21 @@ label > input, label > select { margin-top: 4px; color: var(--text); }
 .chip[data-status="rejeitada"]   { background: var(--danger-surface); color: var(--danger); }
 .chip[data-status="cancelada"]   { background: var(--neutral-surface); color: var(--muted); }
 .chip[data-status="rascunho"]    { background: var(--warning-surface); color: var(--warning); }
-.chip[data-status="substituida"] { background: var(--neutral-surface); color: var(--muted); }
+/* ⚠⚠ CANCELADA E SUBSTITUÍDA DEIXAM DE TER O MESMO DESENHO (23/08/2026). Eram idênticas — e o
+   `estadoDaLinhaDaNota.js` deste mesmo app declara que *"dois fatos diferentes com o mesmo desenho
+   é exatamente o defeito que este projeto persegue"*. No portal do escritório elas já são
+   distintas (vermelho × âmbar), com o motivo escrito em `cicloNotaTela.js`: uma nota cancelada
+   deixou de valer e ponto; uma substituída foi TROCADA por outra, que existe. Âmbar aqui, como lá. */
+.chip[data-status="substituida"] { background: var(--warning-surface); color: var(--warning); }
+
+/* ⚠⚠ O LOTE TEM VOCABULÁRIO PRÓPRIO — LINHA DE PLANILHA NÃO É NOTA. Estes quatro usavam
+   `emitida`/`rascunho`/`processando`/`rejeitada`, emprestados da NOTA: na tela de conferência,
+   antes de qualquer emissão, a linha pronta saía no DOM como `emitida`. É o mesmo defeito que a
+   GUIA consertou em 20/08. ⚠ As superfícies são as MESMAS — zero mudança visual, nome certo. */
+.chip[data-status="linha-pronta"]    { background: var(--success-surface); color: var(--success); }
+.chip[data-status="linha-conferir"]  { background: var(--warning-surface); color: var(--warning); }
+.chip[data-status="linha-consultar"] { background: var(--primary-surface); color: var(--primary); }
+.chip[data-status="linha-pendente"]  { background: var(--danger-surface); color: var(--danger); }
 
 /* ⚠⚠ GUIA NÃO É NOTA, e o `data-status` é auditável no DOM — é o vocabulário que o app mobile
    espelha ("web e mobile precisam pintar a mesma coisa da mesma cor"). Até aqui a guia pedia

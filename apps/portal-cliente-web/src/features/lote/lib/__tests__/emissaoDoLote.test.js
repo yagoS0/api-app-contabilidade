@@ -2,6 +2,8 @@
 //
 // ⚠ NADA AQUI EMITE — são funções puras sobre o relatório que o servidor devolve.
 
+import fs from "node:fs";
+import path from "node:path";
 import {
   DESFECHO,
   DESFECHOS_RETENTAVEIS,
@@ -37,7 +39,16 @@ const linha = (numeroLinha, desfecho, extra = {}) => ({
 describe("textoDoDesfecho", () => {
   // ⚠ O `status` do chip tem de estar na lista de `data-status` do CSS — valor fora dela renderiza
   // SEM COR NENHUMA, em silêncio. Foi o defeito da primeira escrita deste módulo.
-  const VALIDOS = ["emitida", "processando", "rejeitada", "cancelada", "rascunho", "substituida"];
+  //
+  // ⚠⚠ E A LISTA É LIDA DO CSS, não copiada à mão (23/08/2026). Copiada, ela tem exatamente o
+  // problema que existe para resolver: alguém renomeia a regra no `app.css` e a cópia continua
+  // verde. É como `guias/__tests__/chipDaGuiaTemCor.test.js` já faz.
+  const VALIDOS = [
+    ...new Set(
+      [...fs.readFileSync(path.join(__dirname, "../../../../styles/app.css"), "utf8")
+        .matchAll(/\.chip\[data-status="([^"]+)"\]/g)].map((m) => m[1]),
+    ),
+  ];
 
   it.each(Object.values(DESFECHO))("%s usa um `status` que o CSS conhece", (d) => {
     expect(VALIDOS).toContain(textoDoDesfecho(d).chip);

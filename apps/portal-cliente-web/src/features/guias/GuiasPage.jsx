@@ -273,7 +273,12 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                         <button
                           type="button"
                           className="btn"
-                          disabled={baixandoId === guia.guideId}
+                          /* ⚠ `Boolean(baixandoId)`, não `=== guia.guideId`: o `baixar()` já
+                             recusa reentrada (`if (baixandoId) return`), então com o `disabled`
+                             só da própria linha os outros 24 botões ficavam com APARÊNCIA normal
+                             e o clique não fazia nada — sem spinner, sem erro, sem fila. Filtro
+                             fantasma no botão que é a saída de pagamento da guia. */
+                          disabled={Boolean(baixandoId)}
                           onClick={() => baixar(guia)}
                         >
                           {baixandoId === guia.guideId ? "Baixando…" : "Baixar PDF"}

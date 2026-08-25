@@ -175,7 +175,7 @@ function BotaoDanfse({ nota, companyId }) {
  * tela precisa EXPLICAR: cada DANFSe é gerado na hora, e sem o teto o download morreria no meio
  * sem dizer quantas notas vieram. A regra do texto mora em `lib/loteDanfse.js`.
  */
-function BotaoLoteDanfse({ companyId, cnpj, competencia, habilitado }) {
+function BotaoLoteDanfse({ companyId, cnpj, competencia, habilitado, carregando }) {
   const [estado, setEstado] = useState({ fase: "ocioso", recusa: null });
   const baixando = estado.fase === "baixando";
 
@@ -196,10 +196,15 @@ function BotaoLoteDanfse({ companyId, cnpj, competencia, habilitado }) {
         type="button"
         className="btn"
         disabled={!habilitado || baixando}
+        /* ⚠⚠ TRÊS TEXTOS, NÃO DOIS. Enquanto a resposta não chegou, `notas` é `[]` — e dizer
+           "Não há nota neste filtro" ali é AFIRMAR uma ausência que ninguém apurou. É a mesma
+           distinção que a `linhaDigitavelTela` faz entre "ninguém olhou" e "olhamos e não há". */
         title={
-          habilitado
-            ? "Gera os DANFSe das notas deste filtro e baixa tudo num arquivo .zip"
-            : "Não há nota neste filtro para baixar."
+          carregando
+            ? "Ainda carregando as notas deste filtro…"
+            : habilitado
+              ? "Gera os DANFSe das notas deste filtro e baixa tudo num arquivo .zip"
+              : "Não há nota neste filtro para baixar."
         }
         onClick={habilitado && !baixando ? baixar : undefined}
       >
@@ -325,7 +330,11 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
             companyId={companyId}
             cnpj={empresa.cnpj}
             competencia={competencia}
-            habilitado={notas.length > 0}
+            /* ⚠ `!query.carregando` junto: durante a PRIMEIRA carga `notas` é `[]`, e sem esta
+               metade o botão nascia desabilitado dizendo "Não há nota neste filtro para baixar" —
+               afirmando uma ausência que ninguém tinha apurado ainda. AUSENTE NÃO É false. */
+            carregando={query.carregando}
+            habilitado={!query.carregando && notas.length > 0}
           />
         </div>
       </div>
