@@ -291,6 +291,43 @@ silêncio: a decisão do dono de 19/08/2026 (copiar o valor da nota de origem) f
 cópia ficou com a guarda de 18/08, recusando nota que este aceita — a MESMA nota abrindo o
 formulário de um lado e sendo recusada do outro. Ninguém reporta esse defeito; só desconfia.
 
+## ⚠ OS CINCO ÓRFÃOS (medidos em 24/08/2026)
+
+Cinco componentes deste app **não são importados por arquivo nenhum** — varredura do nome exportado
+em todo o `src`, testes inclusive, zero consumidores. Cada um carrega o aviso no próprio cabeçalho.
+
+| arquivo | último commit que o tocou | o que se sabe |
+|---|---|---|
+| `features/firm/settings/pages/renderFirmSettingsHubPage.jsx` | 02/07/2026 | as configurações que ele reunia têm porta própria no dashboard hoje — ele foi CONTORNADO |
+| `features/guides/settings/pages/renderGuideSettingsPage.jsx` | 19/05/2026 | o mais antigo; 27 linhas |
+| `features/notas/components/CompetenciaDetailPanel.jsx` | 09/08/2026 | ficou de fora quando a aba Notas Fiscais enxugou (23/08) |
+| `features/notas/components/ProcuracoesPanel.jsx` | **25/08/2026** | idem |
+| `features/notas/components/ReabrirCompetenciaModal.jsx` | **25/08/2026** | idem — ⚠ ver a ressalva abaixo |
+
+⚠⚠ **O CUSTO DO ÓRFÃO ESTÁ NA COLUNA DO MEIO.** Os dois de 25/08 foram tocados pela varredura de cor
+daquele dia: consertei o contraste de componentes que ninguém renderiza. Órfão consome revisão,
+varredura e leitura para sempre, sem nunca chegar a uma tela.
+
+⚠⚠ **NENHUM FOI APAGADO, E ISSO É DELIBERADO.** A decisão já está escrita neste projeto a propósito
+do `DefisNaoDevida.jsx`: *"não foi apagado — apagar componente é decisão à parte"*. E há precedente
+concreto no mesmo diretório: o `PendenciasList` passou meses sem consumidor e foi **reconectado**
+quando a aba Auditoria nasceu (`renderAuditoriaTab.jsx:13`). "Ninguém importa" não é "ninguém quer".
+
+⚠ **A ressalva do `ReabrirCompetenciaModal`:** reabrir competência é ato com consequência fiscal, e a
+Auditoria de notas registra por escrito que ela **lista** e *"não oferece 'Reabrir competência' nem
+'Ignorar'"*. Se este modal era a porta daquilo, o sumiço pode ter sido a DECISÃO, não o descuido —
+reconectá-lo por conta própria seria reabrir uma decisão.
+
+### Os cinco handlers mortos são o mesmo evento
+
+`useNotasFiscais` devolve `createProcuracao`, `revogarProcuracao`, `fecharCompetencia`,
+`reabrirCompetencia` e `resolverPendencia` — **nenhum com chamador**. Não morreram um a um: os
+painéis que os acionavam saíram da tela juntos, quando a aba enxugou.
+
+⚠ **A cadeia abaixo deles está VIVA**: `reabrirCompetencia` chega a
+`CompetenciaStateMachine.reabrirCompetencia` no backend, que exige `reason` e tem teste próprio. A
+porta some da tela; o ato continua existindo. Por isso ficam anotados, não apagados.
+
 ## Blocos com CLAUDE.md próprio (Q17)
 
 Ler antes de mexer; atualizar ao terminar: `src/features/companies/`,

@@ -315,6 +315,23 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     competencias, procuracoes, pendencias,
     loading, saving, error,
     reload: loadAll,
+    // ⚠⚠ ESTES CINCO NÃO TÊM CONSUMIDOR — medido em 24/08/2026, varrendo cada nome em todo o
+    // `src`: **zero chamadas** fora deste arquivo. (O `panel.resolverPendencia` que aparece em
+    // `renderApuracaoV2Tab.jsx:522` é de OUTRO hook, o `useApuracaoV2`; não é este.)
+    //
+    // ⚠ E eles não morreram um a um: morreram TODOS NO MESMO EVENTO. A aba Notas Fiscais foi
+    // enxugada em 23/08/2026 para duas janelas (NFS-e e NF-e), sem stats nem legendas, e os painéis
+    // que os acionavam saíram da tela juntos — `ProcuracoesPanel` (`onCreate`/`onRevogar`),
+    // `CompetenciaDetailPanel` (`onFechar`/`onReabrir`) e `ReabrirCompetenciaModal` (`onConfirm`).
+    // Os três estão órfãos, marcados no próprio cabeçalho, e listados em `apps/web/CLAUDE.md`.
+    //
+    // ⚠⚠ **A CADEIA DE BAIXO ESTÁ VIVA E É REAL** — não são funções de mentira. `reabrirCompetencia`
+    // chega até `CompetenciaStateMachine.reabrirCompetencia` no backend, que EXIGE `reason` e tem
+    // teste próprio. Ou seja: a porta some da tela e o ato continua existindo. É exatamente por isso
+    // que eles ficam **e ficam anotados**, em vez de serem apagados por parecerem inúteis.
+    //
+    // ⚠ E há precedente contra apagar, neste mesmo diretório: o `PendenciasList` passou meses "sem
+    // consumidor" e foi RECONECTADO quando a aba Auditoria nasceu (ver `renderAuditoriaTab.jsx:13`).
     createProcuracao, revogarProcuracao,
     fecharCompetencia, reabrirCompetencia,
     resolverPendencia,
