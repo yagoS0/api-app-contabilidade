@@ -20,12 +20,16 @@
 import request from "supertest";
 import express from "express";
 
-const cenario = { doAdn: [], nossas: [], portalClient: null };
+const cenario = { doAdn: [], nossas: [], portalClient: null, eventos: [], relacionadas: [] };
 
 jest.mock("../../infrastructure/db/prisma.js", () => {
   const prisma = {
     portalClient: { findUnique: jest.fn() },
     portalInvoice: { findMany: jest.fn(), count: jest.fn(), aggregate: jest.fn() },
+    // ⚠ Entrou em 24/08/2026, com o `ciclo`: a listagem passou a ler os eventos da página para
+    // distinguir CANCELADA de SUBSTITUÍDA. Sem esta chave no dublê, a rota inteira dava 500 — e o
+    // teste apontava para a paginação, que não tinha nada com isso.
+    portalInvoiceEvent: { findMany: jest.fn() },
     portalSyncState: { findUnique: jest.fn() },
     companyClientUser: { findUnique: jest.fn() },
     companyFirmAccess: { findUnique: jest.fn() },
@@ -97,6 +101,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   cenario.doAdn = [];
   cenario.nossas = [];
+  cenario.eventos = [];
+  cenario.relacionadas = [];
   cenario.portalClient = { cnpj: CNPJ, razao: "EMPRESA EXEMPLO LTDA", companyId: LEGACY };
 
   prisma.portalClient.findUnique.mockImplementation(async () => cenario.portalClient);
@@ -104,7 +110,13 @@ beforeEach(() => {
   prisma.companyFirmAccess.findUnique.mockResolvedValue(null);
   prisma.portalSyncState.findUnique.mockResolvedValue(null);
   // ⚠ O falso Prisma HONRA `skip`/`take` e a ordem — sem isso o teste de paginação não mede nada.
+  //
+  // ⚠⚠ E ELE ATENDE A DUAS CHAMADAS DIFERENTES na mesma tabela: a da PÁGINA (com `orderBy`) e a das
+  // RELACIONADAS do ciclo (sem `orderBy`, com `OR` de chaves). Distinguir pela presença do `orderBy`
+  // é feio, e é o preço de um dublê: um `findMany` que devolvesse a página para as duas faria a nota
+  // aparecer como substituta de si mesma.
   prisma.portalInvoice.findMany.mockImplementation(async ({ orderBy, skip = 0, take = 25 }) => {
+    if (!orderBy) return cenario.relacionadas;
     const chave = Object.keys(orderBy)[0];
     const ordem = orderBy[chave];
     const lista = [...cenario.doAdn].sort((a, b) => {
@@ -113,6 +125,7 @@ beforeEach(() => {
     });
     return lista.slice(skip, skip + take);
   });
+  prisma.portalInvoiceEvent.findMany.mockImplementation(async () => cenario.eventos);
   prisma.portalInvoice.count.mockImplementation(async () => cenario.doAdn.length);
   prisma.portalInvoice.aggregate.mockImplementation(async () => ({
     _sum: { total: cenario.doAdn.reduce((a, x) => a + x.total, 0) },
@@ -331,5 +344,88 @@ describe("⚠ A FLAG É OPT-IN — `/firm` e o legado não mudam de comportament
       legacyCompanyId: LEGACY,
       portalClientId: CLIENT,
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ O CICLO — CANCELADA E SUBSTITUÍDA NÃO SÃO A MESMA COISA, E O CLIENTE LIA AS DUAS COMO UMA
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// O `status` distingue as duas **quando o ADN mandou o evento**
+// (`InvoiceSyncEngine.mapInvoiceStatusFromAdn` traduz `E105102` em `"SUBSTITUIDA"`). Quando não
+// mandou — 556 NFS-e canceladas com ZERO eventos guardados, medido em produção — quem sabe é
+// `derivarCiclo`, por uma evidência que o `status` não tem: *"existe, na base, outra nota que
+// declara substituir esta"*.
+//
+// O escritório já lia isso; o contrato do cliente não o trazia. Duas telas, dois fatos, um
+// documento fiscal.
+//
+// ⚠ A REGRA NÃO FOI REIMPLEMENTADA AQUI: a rota importa `montarIndiceDeCiclo`, o MESMO módulo que
+// `routes/firm/notas.js` usa. O que estes casos medem é a LIGAÇÃO — se as duas consultas saem, se
+// o campo chega ao JSON, e se ele não vaza mais do que deve.
+
+describe("⚠⚠ o `ciclo` viaja no contrato do cliente", () => {
+  it("nota sem evento e sem vínculo: `autorizada`", async () => {
+    cenario.doAdn = [pi(1)];
+    const r = await listar();
+    expect(r.status).toBe(200);
+    expect(r.body.data[0].ciclo).toEqual({ situacao: "autorizada", ehSubstituta: false });
+  });
+
+  it("⚠⚠ marcada CANCELADA, mas OUTRA nota declara substituí-la ⇒ `substituida`", async () => {
+    // A terceira evidência do `derivarCiclo`, e a única que salva os casos em que o evento se
+    // perdeu. Sem o `ciclo` no contrato, esta nota chegava à tela do cliente como "Cancelada".
+    cenario.doAdn = [{ ...pi(1), status: "CANCELADA", chaveAcesso: "CHAVE-1" }];
+    cenario.relacionadas = [{ id: "pi-2", numero: "1002", chaveAcesso: "CHAVE-2", chaveSubstituida: "CHAVE-1" }];
+    const r = await listar();
+    expect(r.body.data[0].ciclo.situacao).toBe("substituida");
+    // ⚠ E o `status` NÃO é reescrito: quem decide a palavra na tela é o chip, não a rota.
+    expect(r.body.data[0].status).toBe("CANCELADA");
+  });
+
+  it("cancelada de verdade (sem vínculo nenhum) continua `cancelada`", async () => {
+    // ⚠ O contraponto importa: sem ele, "toda cancelada vira substituída" passaria no caso acima.
+    cenario.doAdn = [{ ...pi(1), status: "CANCELADA", chaveAcesso: "CHAVE-1" }];
+    const r = await listar();
+    expect(r.body.data[0].ciclo.situacao).toBe("cancelada");
+  });
+
+  it("o evento de substituição, quando existe, também responde", async () => {
+    cenario.doAdn = [{ ...pi(1), status: "CANCELADA", chaveAcesso: "CHAVE-1" }];
+    cenario.eventos = [{ invoiceId: "pi-1", type: "canc_por_substituicao", date: new Date("2026-08-10"), chaveSubstituta: "CHAVE-9" }];
+    const r = await listar();
+    expect(r.body.data[0].ciclo.situacao).toBe("substituida");
+  });
+
+  it("`ehSubstituta` é um PAPEL, não uma situação — a nota pode ser as duas coisas", async () => {
+    cenario.doAdn = [{ ...pi(1), chaveAcesso: "CHAVE-1", chaveSubstituida: "CHAVE-0" }];
+    const r = await listar();
+    expect(r.body.data[0].ciclo).toEqual({ situacao: "autorizada", ehSubstituta: true });
+  });
+
+  it("⚠⚠ e SÓ isso viaja — o resto do ciclo é do contrato do ESCRITÓRIO", async () => {
+    // Os `avisos`, o evento e as chaves nomeiam OUTRO documento, para o qual este portal não tem
+    // tela; e o texto do aviso ("não guardamos o evento") é mecânica nossa — o que o critério de
+    // legendas deste portal manda cortar. Ampliar isto é decisão de produto, não conserto.
+    cenario.doAdn = [{ ...pi(1), status: "CANCELADA", chaveAcesso: "CHAVE-1" }];
+    const r = await listar();
+    expect(Object.keys(r.body.data[0].ciclo).sort()).toEqual(["ehSubstituta", "situacao"]);
+  });
+
+  it("⚠ a NOSSA linha (ainda não confirmada) sai com `ciclo: null` — ela nasceu agora", async () => {
+    // Ela é `ServiceInvoice`: não tem evento nem chave de substituição, e não passa por
+    // `montarIndiceDeCiclo`. `null` é a resposta certa; inventar `autorizada` afirmaria um ciclo
+    // que ninguém derivou.
+    cenario.nossas = [si(9)];
+    const r = await listar();
+    const nossa = r.body.data.find((x) => x.invoiceId === "si-9");
+    expect(nossa.ciclo == null).toBe(true);
+  });
+
+  it("⚠ lista vazia não dispara consulta nenhuma de ciclo", async () => {
+    // Duas consultas por página é o orçamento; duas consultas por página VAZIA é desperdício puro.
+    cenario.doAdn = [];
+    await listar();
+    expect(prisma.portalInvoiceEvent.findMany).not.toHaveBeenCalled();
   });
 });

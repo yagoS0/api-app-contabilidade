@@ -20,6 +20,10 @@ import { ensurePortalClientAccess } from "./middlewares/portalAccess.js";
 // chave de deduplicação e para o porquê de a união ser na LEITURA e não uma gravação em
 // `PortalInvoice`. Ligado SÓ na montagem do `/client` — ver `INCLUIR_EMITIDAS` abaixo.
 import { lerEmitidasNaoConfirmadas } from "../application/notas/notasEmitidasNaoConfirmadas.js";
+// ⚠ A MESMA regra que o escritório usa (`routes/firm/notas.js`), não uma segunda leitura: duas
+// leituras da mesma coluna divergem na primeira correção, e aí os dois portais afirmam coisas
+// diferentes sobre a MESMA nota fiscal.
+import { montarIndiceDeCiclo } from "../application/notas/cicloNota.js";
 // ⚠ O LOTE DE DANFSe — ver `GET /danfse/bulk`, abaixo. O serviço gera os PDFs chamando, nota a
 // nota, o MESMO `gerarDanfseDaNota` da porta individual; nada de PDF é escrito aqui.
 import {
@@ -111,6 +115,34 @@ function serializeInvoice(inv) {
     // eventos, DANFSe) NÃO a encontram, e é por isso que `hasXml`/`hasPdf` saem `false`.
     // Ver `application/notas/notasEmitidasNaoConfirmadas.js`.
     confirmadaPeloAdn: true,
+    // ⚠⚠ O CICLO — CANCELADA E SUBSTITUÍDA NÃO SÃO A MESMA COISA, E O CLIENTE LIA AS DUAS COMO UMA.
+    //
+    // O `status` acima responde bem quando o ADN mandou o evento: `mapInvoiceStatusFromAdn` traduz
+    // `E105102` / `cancelled_substitution` em `"SUBSTITUIDA"`. **O problema é quando ele não
+    // mandou** — e esse é o caso comum, não a borda: medido em produção, **556 NFS-e canceladas com
+    // ZERO eventos guardados** (`application/notas/cicloNota.js`).
+    //
+    // `derivarCiclo` tem uma TERCEIRA evidência que o `status` não tem: *"existe, na base, outra
+    // nota que declara substituir esta"* (`chaveSubstituida` apontando para a chave desta) — 22
+    // notas em produção. Por ela, o ESCRITÓRIO já dizia "substituída" enquanto o cliente lia
+    // **"Cancelada"** sobre a MESMA nota. Duas telas, dois fatos, um documento fiscal — e o cliente
+    // ficava com o pior dos dois: "cancelada" sugere que não há nota valendo, quando há (a
+    // substituta).
+    //
+    // ⚠ **É LEITURA DERIVADA.** Não muda `status`, não muda filtro, não muda total, não muda o que
+    // a apuração lê (`statusEfetivo` continua com dois valores). E vem em DUAS consultas por
+    // página, nunca N — o mesmo arranjo de `routes/firm/notas.js`.
+    //
+    // ⚠ **O QUE VIAJA É O MÍNIMO.** `situacao` e `ehSubstituta`, e nada mais. Os `avisos`, o evento
+    // e as chaves das notas do outro lado do vínculo ficam no contrato do ESCRITÓRIO: elas nomeiam
+    // OUTRO documento, o cliente não tem tela para ele, e o texto do aviso (*"não guardamos o
+    // evento"*) é mecânica nossa — que é exatamente o que o critério de legendas do portal do
+    // cliente manda cortar. Ampliar isto é decisão de produto, não conserto.
+    //
+    // ⚠ `null` quando não foi derivado (as nossas emissões ainda não confirmadas não passam por
+    // aqui). ⚠ E ausência NÃO É `false`: quem lê no cliente já encadeia
+    // `ciclo?.situacao ?? statusEfetivo ?? status`.
+    ciclo: inv.ciclo ? { situacao: inv.ciclo.situacao, ehSubstituta: inv.ciclo.ehSubstituta } : null,
   };
 }
 
@@ -451,7 +483,45 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
         prisma.portalSyncState.findUnique({ where: { clientId: String(clientId) } }),
       ]);
 
-      const janela = intercalar(items.map(serializeInvoice), nossas, sortKey, sortOrder);
+      // ── O CICLO DE VIDA VIAJA JUNTO — DUAS consultas para a janela, nunca N ────────────────
+      //
+      // ⚠ A regra é a MESMA do escritório (`montarIndiceDeCiclo`), importada, não recopiada. Ver o
+      // campo `ciclo` em `serializeInvoice` para o porquê de ele existir: sem ele, a nota
+      // SUBSTITUÍDA cujo evento o ADN não mandou lê "Cancelada" nesta tela e "Substituída" na do
+      // contador — o mesmo documento, dois fatos.
+      //
+      // ⚠ Só as linhas do BANCO entram: as nossas emissões ainda não confirmadas são
+      // `ServiceInvoice`, não têm evento nem chave de substituição, e `serializeEmitidaNaoConfirmada`
+      // não passa por aqui — elas saem com `ciclo: null`, que é a resposta certa (nasceram agora).
+      const idsDaJanela = items.map((n2) => n2.id);
+      const chavesDaJanela = items.map((n2) => n2.chaveAcesso).filter(Boolean);
+      const chavesSubstituidas = items.map((n2) => n2.chaveSubstituida).filter(Boolean);
+
+      const [eventos, relacionadas] = await Promise.all([
+        idsDaJanela.length
+          ? prisma.portalInvoiceEvent.findMany({
+            where: { clientId: String(clientId), invoiceId: { in: idsDaJanela } },
+            select: { invoiceId: true, type: true, date: true, chaveSubstituta: true, createdAt: true },
+          })
+          : [],
+        // As duas pontas do vínculo de uma vez: a nota que ESTA substitui, e a que substituiu ESTA.
+        (chavesDaJanela.length || chavesSubstituidas.length)
+          ? prisma.portalInvoice.findMany({
+            where: {
+              clientId: String(clientId),
+              OR: [
+                ...(chavesSubstituidas.length ? [{ chaveAcesso: { in: chavesSubstituidas } }] : []),
+                ...(chavesDaJanela.length ? [{ chaveSubstituida: { in: chavesDaJanela } }] : []),
+              ],
+            },
+            select: { id: true, numero: true, chaveAcesso: true, chaveSubstituida: true },
+          })
+          : [],
+      ]);
+
+      const comCiclo = montarIndiceDeCiclo({ notas: items, eventos, relacionadas });
+
+      const janela = intercalar(comCiclo.map(serializeInvoice), nossas, sortKey, sortOrder);
       const data = janela.slice(skip - inicioP, skip - inicioP + take);
 
       // ⚠ OS TOTAIS CONTAM AS NOSSAS. A nota emitida existe e vale o que vale; deixá-la fora do

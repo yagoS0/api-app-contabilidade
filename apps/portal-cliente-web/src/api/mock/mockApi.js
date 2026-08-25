@@ -572,6 +572,17 @@ function criarEstado() {
           // A nota gerada VEIO do ADN — é a projeção, o caso normal. Ver os dois casos
           // plantados logo abaixo para o estado oposto.
           confirmadaPeloAdn: true,
+          // ⚠⚠ O CICLO — passou a viajar no contrato do cliente em 24/08/2026
+          // (`serializeInvoice`, `apps/api/src/routes/portalInvoices.js`). Aqui ele CONCORDA com o
+          // `status`, que é o caso em que o ADN mandou o evento; o caso em que ele DISCORDA — o
+          // defeito inteiro — está plantado abaixo, em `inv-substituida-sem-evento`.
+          // ⚠ `derivarCiclo` chama de `autorizada` tudo que não está cancelado, e a réplica aqui
+          // segue a mesma regra, senão o mock ensinaria uma precedência que o servidor não tem.
+          ciclo: {
+            situacao: status === "CANCELADA" ? "cancelada"
+              : status === "SUBSTITUIDA" ? "substituida" : "autorizada",
+            ehSubstituta: false,
+          },
           // ⚠ campo interno do mock, NÃO sai no contrato: reproduz o filtro do
           // backend, que esconde canceladas por padrão (statusEfetivo).
           _statusEfetivo: status === "CANCELADA" ? "cancelada" : "autorizada",

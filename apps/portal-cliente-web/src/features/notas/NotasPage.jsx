@@ -8,6 +8,7 @@ import { lerRecusaDanfse, nomeDoArquivoDanfse, podeGerarDanfse } from "./lib/dan
 import { lerRecusaLote, nomeDoArquivoLoteDanfse } from "./lib/loteDanfse";
 import { podeCancelar } from "./lib/cancelamentoNota";
 import { estadoDaLinhaDaNota } from "./lib/estadoDaLinhaDaNota";
+import { chipDaNota } from "./lib/chipDaNota";
 import { ESCOPO } from "./lib/impedimento";
 import { ConfirmarCancelamento } from "./ConfirmarCancelamento";
 import {
@@ -26,22 +27,10 @@ import {
 const OPCOES_COMPETENCIA = competenciasRecentes(12);
 const LIMITE = 25;
 
-// PortalInvoice.status: EMITIDA | CANCELADA | SUBSTITUIDA | REJEITADA | PENDENTE
-// (apps/api/prisma/schema.prisma). O `data-status` do chip é o vocabulário do
-// protótipo, então o de-para é explícito em vez de um toLowerCase() torcendo
-// para bater.
-const CHIP_POR_STATUS = {
-  EMITIDA: { status: "emitida", rotulo: "Emitida" },
-  CANCELADA: { status: "cancelada", rotulo: "Cancelada" },
-  SUBSTITUIDA: { status: "substituida", rotulo: "Substituída" },
-  REJEITADA: { status: "rejeitada", rotulo: "Rejeitada" },
-  PENDENTE: { status: "processando", rotulo: "Pendente" },
-};
-
-function chipDaNota(status) {
-  const chave = String(status || "").toUpperCase();
-  return CHIP_POR_STATUS[chave] || { status: null, rotulo: texto(status) };
-}
+// ⚠ O de-para do chip MUDOU-SE PARA `lib/chipDaNota.js` em 24/08/2026, e não por arrumação: ele
+// deixou de ser um mapa e virou uma REGRA — a precedência entre `ciclo.situacao` e `status`, que
+// existe porque a nota SUBSTITUÍDA lia "Cancelada" aqui e "Substituída" na tela do contador. Regra
+// de tela vive em `features/<x>/lib/`, com teste próprio; a tela faz a ligação.
 
 /**
  * Notas EMITIDAS pela empresa (direcao=emitidas, como no app mobile).
@@ -393,7 +382,8 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
               </thead>
               <tbody>
                 {notas.map((nota) => {
-                  const chip = chipDaNota(nota.status);
+                  // ⚠ A NOTA INTEIRA, não `nota.status`: o chip agora lê o `ciclo` também.
+                  const chip = chipDaNota(nota);
                   const permissao = podeReaproveitar(nota, { cnpjDaEmpresa: empresa.cnpj });
                   // ⚠ O ESTADO DA LINHA MORA NUM LUGAR SÓ — `lib/estadoDaLinhaDaNota.js`. Ele
                   // distingue "emitida, aguardando o ADN" de "cancelamento enviado", que são dois
