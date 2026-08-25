@@ -32,7 +32,7 @@ export function ReabrirCompetenciaModal({ competencia, saving, onConfirm, onClos
             placeholder="Ex: nota retroativa de prestador X chegou em DD/MM/YYYY"
             style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "8px 12px", resize: "vertical" }} />
         </label>
-        {err && <div style={{ color: "#FF4757", fontSize: "0.8rem", marginBottom: 12 }}>{err}</div>}
+        {err && <div style={{ color: "var(--danger)", fontSize: "0.8rem", marginBottom: 12 }}>{err}</div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancelar

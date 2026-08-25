@@ -12,21 +12,26 @@ import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 import { BatchProgressModal } from "../components/BatchProgressModal";
 
 const ESTADO_BADGE = {
-  aberta:        { c: PANEL.muted, l: "aberta" },
-  configurando:  { c: "#8BE9FD",   l: "configurando" },
-  calculada:     { c: "#BD93F9",   l: "calculada" },
-  fechada:       { c: "#FFB347",   l: "fechada" },
-  transmitida:   { c: "#69FF47",   l: "transmitida" },
-  confirmada:    { c: "#69FF47",   l: "confirmada" },
-  erro:          { c: "#FF4757",   l: "erro" },
-  erro_calculo:  { c: "#FF4757",   l: "erro cálculo" },
-  erro_transmissao: { c: "#FF4757", l: "erro transm." },
+  aberta:        { c: PANEL.muted,             s: "transparent",                 l: "aberta" },
+  configurando:  { c: "var(--accent-cyan)",    s: "rgba(139, 233, 253, 0.13)",   l: "configurando" },
+  calculada:     { c: "var(--accent-purple)",  s: "var(--accent-purple-surface)", l: "calculada" },
+  fechada:       { c: "var(--state-warn)",     s: "var(--state-warn-surface)",   l: "fechada" },
+  transmitida:   { c: "var(--state-ok)",       s: "var(--state-ok-surface)",     l: "transmitida" },
+  confirmada:    { c: "var(--state-ok)",       s: "var(--state-ok-surface)",     l: "confirmada" },
+  erro:          { c: "var(--state-danger)",   s: "var(--state-danger-surface)", l: "erro" },
+  erro_calculo:  { c: "var(--state-danger)",   s: "var(--state-danger-surface)", l: "erro cálculo" },
+  erro_transmissao: { c: "var(--state-danger)", s: "var(--state-danger-surface)", l: "erro transm." },
 };
 
 function EstadoBadge({ estado }) {
   const e = ESTADO_BADGE[estado] || ESTADO_BADGE.aberta;
   return (
-    <span style={{ padding: "2px 9px", borderRadius: 11, background: `${e.c}22`, color: e.c, border: `1px solid ${e.c}`, fontSize: "0.72rem", fontWeight: 600 }}>
+    /* ⚠⚠ O FUNDO VEM DO PAR `-surface`, NUNCA DE `${e.c}22`. A concatenação de hex é o truque que
+       este projeto já nomeou em cinco arquivos: ela **quebra em silêncio** no instante em que a cor
+       vira `var(--…)`, porque `var(--state-ok)22` não é cor nenhuma — o fundo some e ninguém vê.
+       Era literalmente o que travava este badge no hex literal. ⚠ `aberta` é `transparent` de
+       propósito: `PANEL.muted` não tem par de superfície, e inventar um seria escolher uma cor. */
+    <span style={{ padding: "2px 9px", borderRadius: 11, background: e.s, color: e.c, border: `1px solid ${e.c}`, fontSize: "0.72rem", fontWeight: 600 }}>
       {e.l}
     </span>
   );
@@ -83,11 +88,11 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
         {/* Resumo — Q19: só nº de empresas e empresas fechadas */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, marginBottom: 14 }}>
           <Box label="Empresas" value={items.length} accent={PANEL.text} />
-          <Box label="Empresas fechadas" value={fechadasCount} accent="#69FF47" />
+          <Box label="Empresas fechadas" value={fechadasCount} accent="var(--state-ok)" />
         </div>
 
         {error && (
-          <div style={{ padding: 12, marginBottom: 12, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 6, color: "#FF4757" }}>{error}</div>
+          <div style={{ padding: 12, marginBottom: 12, background: "var(--danger-surface)", border: "1px solid var(--danger)", borderRadius: 6, color: "var(--danger)" }}>{error}</div>
         )}
 
         {/* Q44: feedback das ações (apurar em lote / fechar) — antes os notify* eram no-op invisível */}
@@ -139,7 +144,7 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                     </td>
                     <td style={td}><EstadoBadge estado={it.estado} /></td>
                     <td style={{ ...td, textAlign: "right" }}>{it.totalNotas}</td>
-                    <td style={{ ...td, textAlign: "right", fontFamily: "monospace", color: "#69FF47" }}>{fmtMoney(it.receitaEmitida)}</td>
+                    <td style={{ ...td, textAlign: "right", fontFamily: "monospace", color: "var(--success)" }}>{fmtMoney(it.receitaEmitida)}</td>
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{it.rbt12 != null ? fmtMoney(it.rbt12) : "—"}</td>
                     <td style={{ ...td, textAlign: "right" }}>{it.fatorR != null ? `${(Number(it.fatorR) * 100).toFixed(2)}%` : "—"}</td>
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace", color: "#8BE9FD" }}>

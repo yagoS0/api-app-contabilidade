@@ -88,12 +88,12 @@ export function SeletorMunicipioIbge({
         Município emissor da nota (código IBGE)
       </label>
 
-      <div style={{ fontSize: 11, color: "#8A8FA3", lineHeight: 1.6 }}>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6 }}>
         {MOTIVO_CODIGO_MUNICIPIO} {PORQUE_ESCOLHA_E_NAO_DEDUCAO}
       </div>
 
       {textoCadastro && (
-        <div style={{ fontSize: 11, color: "#8A8FA3" }}>
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
           No cadastro desta empresa o endereço diz: <strong style={{ color: "#F8F8F2" }}>{textoCadastro}</strong>
           {" "}— confira contra o que você escolher. É texto, não código; por isso não serve para escolher sozinho.
         </div>
@@ -115,7 +115,7 @@ export function SeletorMunicipioIbge({
           <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>
             {selecionado ? rotuloMunicipio(selecionado) : (lista ? "município fora da lista" : "carregando…")}
           </strong>
-          <code style={{ fontSize: "0.8rem", color: "#8A8FA3" }}>{leitura.valor}</code>
+          <code style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{leitura.valor}</code>
           <button
             type="button"
             onClick={() => { setAberto(true); setTermo(""); }}
@@ -160,7 +160,7 @@ export function SeletorMunicipioIbge({
           />
           {lista && termo.trim() !== "" && (
             resultado.total === 0 ? (
-              <div style={{ fontSize: 12, color: "#8A8FA3" }}>
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                 Nenhum município com “{termo}”. Tente só o nome, ou nome + UF.
               </div>
             ) : (
@@ -186,13 +186,13 @@ export function SeletorMunicipioIbge({
                         }}
                       >
                         {/* Nome E UF, sempre — nunca só o nome. */}
-                        <span>{m[1]} <span style={{ color: "#8A8FA3" }}>/ {m[2]}</span></span>
-                        <code style={{ color: "#8A8FA3", fontSize: "0.78rem" }}>{m[0]}</code>
+                        <span>{m[1]} <span style={{ color: "var(--text-muted)" }}>/ {m[2]}</span></span>
+                        <code style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>{m[0]}</code>
                       </button>
                     </li>
                   ))}
                 </ul>
-                <div style={{ fontSize: 11, color: "#8A8FA3" }}>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                   {resultado.total > resultado.itens.length
                     /* ⚠ Recorte que não se anuncia faz o contador escolher dentro de uma lista
                        parcial achando que é a lista inteira — e o município dele pode estar fora. */

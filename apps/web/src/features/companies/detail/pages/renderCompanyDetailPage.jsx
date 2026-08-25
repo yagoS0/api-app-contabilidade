@@ -938,25 +938,27 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
 
   // Q41: Aba Situação Fiscal (SITFIS) — autônoma (hook próprio via wrapper)
   if (companyDetailTab === "sitfis") {
+    // ⚠⚠ ESTE RAMO REMONTAVA O `CompanyTabLayout` À MÃO — a mesma `<div minHeight:100vh>`, o mesmo
+    // `CompanySectionHeader`, o mesmo par `ErrorBoundary`+`Suspense` — e, por não ter o primitivo,
+    // não tinha `largura`. A aba então cravava a própria (`maxWidth: 1400` dentro de
+    // `renderSitfisTab`), e era literalmente o sintoma que o dono relatou em 20/08/2026: *"trocar
+    // de sub-aba fazia o conteúdo saltar"* (`1100` na ficha, `900` no cofre, **`1400` no SITFIS**).
+    // ⚠ `trabalho` (`--content-wide`, 90%) e não `leitura` (1200px): o relatório do SITFIS é uma
+    // tabela larga, e a regra escrita do primitivo é que espremer é o defeito invisível.
     return (
-      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
-        <CompanySectionHeader
-          company={selectedCompany}
-          activeTab="sitfis"
-          onBack={onBack}
-          onTabChange={switchTab}
-          canEditCompany={canEditCompany}
-          competencia={circularPanel?.competencia}
-          onCompetenciaChange={circularPanel?.onCompetenciaChange}
-        />
-        <div style={{ flex: 1 }}>
-          <ErrorBoundary>
-            <Suspense fallback={<TabLoadingFallback />}>
-              <SitfisTabWrapper companyId={companyId} />
-            </Suspense>
-          </ErrorBoundary>
-        </div>
-      </div>
+      <CompanyTabLayout
+        company={selectedCompany}
+        activeTab="sitfis"
+        onBack={onBack}
+        onTabChange={switchTab}
+        canEditCompany={canEditCompany}
+        competencia={circularPanel?.competencia}
+        onCompetenciaChange={circularPanel?.onCompetenciaChange}
+        largura="trabalho"
+        suspense
+      >
+        <SitfisTabWrapper companyId={companyId} />
+      </CompanyTabLayout>
     );
   }
 

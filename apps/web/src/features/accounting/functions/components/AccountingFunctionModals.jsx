@@ -348,7 +348,7 @@ export function FunctionEditModal({ initial, accounts, saving, onSave, onClose }
                 {e.lines.map((ln, lidx) => (
                   <div key={lidx} style={{ display: "grid", gridTemplateColumns: "40px 1fr 24px", gap: 4, marginBottom: 4, alignItems: "center" }}>
                     <select value={ln.tipo} onChange={(ev) => updateLine(idx, lidx, { tipo: ev.target.value })}
-                      style={{ ...FIELD, fontWeight: 700, color: ln.tipo === "D" ? "#8BE9FD" : "#69FF47", padding: "6px 4px", textAlign: "center" }}>
+                      style={{ ...FIELD, fontWeight: 700, color: ln.tipo === "D" ? "#8BE9FD" : "var(--success)", padding: "6px 4px", textAlign: "center" }}>
                       <option value="D">D</option><option value="C">C</option>
                     </select>
                     <AccountSearch value={ln.conta} onChange={(v) => updateLine(idx, lidx, { conta: v })} accounts={accounts} />
@@ -370,7 +370,7 @@ export function FunctionEditModal({ initial, accounts, saving, onSave, onClose }
           </div>
 
           {err && (
-            <div style={{ color: "#FF4757", fontSize: "0.8rem", padding: "8px 10px", background: "rgba(255,71,87,0.12)", border: "1px solid #FF4757", borderRadius: 6 }}>
+            <div style={{ color: "var(--danger)", fontSize: "0.8rem", padding: "8px 10px", background: "rgba(255,71,87,0.12)", border: "1px solid var(--danger)", borderRadius: 6 }}>
               {err}
             </div>
           )}
@@ -463,7 +463,7 @@ export function FunctionApplyModal({ func, defaultCompetencia, saving, onApply, 
         ))}
 
         {err && (
-          <div style={{ color: "#FF4757", fontSize: "0.8rem", padding: "8px 10px", marginTop: 8, background: "rgba(255,71,87,0.12)", border: "1px solid #FF4757", borderRadius: 6 }}>
+          <div style={{ color: "var(--danger)", fontSize: "0.8rem", padding: "8px 10px", marginTop: 8, background: "rgba(255,71,87,0.12)", border: "1px solid var(--danger)", borderRadius: 6 }}>
             {err}
           </div>
         )}

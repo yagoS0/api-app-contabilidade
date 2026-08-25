@@ -15,7 +15,7 @@ const ANEXO_COLORS = {
   II:  "#FF8E72",
   III: "#8BE9FD",
   IV:  "#BD93F9",
-  V:   "#FF4757",
+  V:   "var(--danger)",
 };
 
 export function MotorPanel({ panel }) {
@@ -66,8 +66,8 @@ export function MotorPanel({ panel }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {blockers.map((b, i) => (
             <div key={i} style={{
-              padding: 14, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757",
-              borderRadius: 8, color: "#FF4757",
+              padding: 14, background: "rgba(255,71,87,0.10)", border: "1px solid var(--danger)",
+              borderRadius: 8, color: "var(--danger)",
             }}>
               <strong>[{b.tipo}]</strong> {b.mensagem}
             </div>
@@ -90,7 +90,7 @@ export function MotorPanel({ panel }) {
                 <div style={{ fontSize: "1rem", color: "#BD93F9", fontWeight: 600 }}>
                   {(resultado.fatorR.fatorR * 100).toFixed(2)}% {resultado.fatorR.fatorR >= resultado.fatorR.threshold ? "≥" : "<"} {(resultado.fatorR.threshold * 100).toFixed(0)}%
                   {" → Receita Fator R aplicada no Anexo "}
-                  <strong style={{ color: resultado.fatorR.anexoDecidido === "III" ? "#8BE9FD" : "#FF4757" }}>
+                  <strong style={{ color: resultado.fatorR.anexoDecidido === "III" ? "#8BE9FD" : "var(--danger)" }}>
                     {resultado.fatorR.anexoDecidido}
                   </strong>
                 </div>
@@ -103,7 +103,7 @@ export function MotorPanel({ panel }) {
 
           {/* Resumo */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12 }}>
-            <MoneyCard label="DAS Calculado (LOCAL)" value={fmtMoney(resultado.dasCalculadoLocal)} accent="#69FF47" />
+            <MoneyCard label="DAS Calculado (LOCAL)" value={fmtMoney(resultado.dasCalculadoLocal)} accent="var(--success)" />
             <MoneyCard label="RBT12" value={fmtMoney(resultado.rbt12)} accent={PANEL.text} />
             <MoneyCard label="Receita do mês" value={fmtMoney(resultado.receitaPorTipo ? Object.values(resultado.receitaPorTipo).reduce((s, v) => s + v, 0) : 0)} accent="#8BE9FD" />
           </div>
@@ -135,7 +135,7 @@ export function MotorPanel({ panel }) {
                       <td style={{ padding: 6, textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(info.parcelaDeduzir)}</td>
                       <td style={{ padding: 6, textAlign: "right", fontFamily: "monospace", color: "#FFB347" }}>{(info.efetiva * 100).toFixed(4)}%</td>
                       <td style={{ padding: 6, textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(info.receita)}</td>
-                      <td style={{ padding: 6, textAlign: "right", fontFamily: "monospace", color: "#69FF47", fontWeight: 600 }}>{fmtMoney(info.dasParcial)}</td>
+                      <td style={{ padding: 6, textAlign: "right", fontFamily: "monospace", color: "var(--success)", fontWeight: 600 }}>{fmtMoney(info.dasParcial)}</td>
                     </tr>
                   ))}
                 </tbody>

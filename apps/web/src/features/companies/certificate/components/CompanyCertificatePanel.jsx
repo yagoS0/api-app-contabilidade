@@ -77,7 +77,7 @@ export function CompanyCertificatePanel({ api, companyId, feedback }) {
         <div style={{ display: "flex", gap: 8 }}>
           {hasCert && (
             <button onClick={() => setConfirmDelete(true)} disabled={saving}
-              style={{ padding: "6px 12px", borderRadius: 6, border: `1px solid #FF4757`, background: "transparent", color: "#FF4757", cursor: "pointer", fontSize: "0.8rem" }}>
+              style={{ padding: "6px 12px", borderRadius: 6, border: `1px solid var(--danger)`, background: "transparent", color: "var(--danger)", cursor: "pointer", fontSize: "0.8rem" }}>
               Remover
             </button>
           )}
@@ -101,9 +101,9 @@ export function CompanyCertificatePanel({ api, companyId, feedback }) {
       {!loading && hasCert && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, fontSize: "0.85rem" }}>
           <Field label="Status" value={
-            expired ? <span style={{ color: "#FF4757", fontWeight: 600 }}>⚠ EXPIRADO</span> :
+            expired ? <span style={{ color: "var(--danger)", fontWeight: 600 }}>⚠ EXPIRADO</span> :
             expSoon ? <span style={{ color: "#FFB347", fontWeight: 600 }}>⚠ Expira em {days} dias</span> :
-            <span style={{ color: "#69FF47", fontWeight: 600 }}>✓ Ativo</span>
+            <span style={{ color: "var(--success)", fontWeight: 600 }}>✓ Ativo</span>
           } />
           <Field label="Enviado em" value={fmtDate(cert.uploadedAt)} />
           <Field label="Validade" value={fmtDate(cert.expiresAt)} />
@@ -114,7 +114,7 @@ export function CompanyCertificatePanel({ api, companyId, feedback }) {
       )}
 
       {confirmDelete && (
-        <div style={{ marginTop: 12, padding: 12, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 6 }}>
+        <div style={{ marginTop: 12, padding: 12, background: "rgba(255,71,87,0.10)", border: "1px solid var(--danger)", borderRadius: 6 }}>
           <p style={{ margin: 0, color: PANEL.text, fontSize: "0.85rem" }}>
             Tem certeza? Captura de NFS-e via ADN deixará de funcionar até cadastrar novo cert.
           </p>
@@ -124,7 +124,7 @@ export function CompanyCertificatePanel({ api, companyId, feedback }) {
             </Button>
             {/* Este É o passo de confirmação (a caixa em volta pergunta "tem certeza?"), então a
                 conversão para `.btn-danger` é pura: o vermelho continua no mesmo lugar, saindo do
-                token em vez de um `#FF4757` sólido inventado aqui. */}
+                token em vez de um `var(--danger)` sólido inventado aqui. */}
             <Button size="sm" variant="danger" onClick={handleDelete} disabled={saving}>
               Remover certificado
             </Button>

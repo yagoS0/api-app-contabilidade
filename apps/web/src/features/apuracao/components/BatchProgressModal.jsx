@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 
-const STATUS_COR = { ok: "#69FF47", erro: "#FF4757", pendente: PANEL.muted, processando: "#8BE9FD" };
+const STATUS_COR = { ok: "var(--success)", erro: "var(--danger)", pendente: PANEL.muted, processando: "#8BE9FD" };
 
 export function BatchProgressModal({ api, jobId, onClose, onDone }) {
   const [job, setJob] = useState(null);
@@ -66,11 +66,11 @@ export function BatchProgressModal({ api, jobId, onClose, onDone }) {
             <span>{job?.status === "completed" ? "✓ concluído" : "processando…"}</span>
           </div>
           <div style={{ height: 10, background: PANEL.field, borderRadius: 6, overflow: "hidden" }}>
-            <div style={{ width: `${pct}%`, height: "100%", background: "#69FF47", transition: "width 0.3s" }} />
+            <div style={{ width: `${pct}%`, height: "100%", background: "var(--success)", transition: "width 0.3s" }} />
           </div>
           <div style={{ display: "flex", gap: 12, fontSize: "0.75rem", marginTop: 6 }}>
-            <span style={{ color: "#69FF47" }}>✓ {job?.okCount || 0} ok</span>
-            <span style={{ color: "#FF4757" }}>✕ {job?.errorCount || 0} erro</span>
+            <span style={{ color: "var(--success)" }}>✓ {job?.okCount || 0} ok</span>
+            <span style={{ color: "var(--danger)" }}>✕ {job?.errorCount || 0} erro</span>
             <span style={{ color: PANEL.muted }}>⏳ {job?.pendenteCount || 0} pendente</span>
           </div>
         </div>
@@ -81,7 +81,7 @@ export function BatchProgressModal({ api, jobId, onClose, onDone }) {
             <div key={it.portalClientId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: 8, background: PANEL.field, borderRadius: 6, fontSize: "0.82rem" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.razao}</div>
-                {it.erroMensagem && <div style={{ fontSize: "0.7rem", color: "#FF4757" }}>{it.erroMensagem}</div>}
+                {it.erroMensagem && <div style={{ fontSize: "0.7rem", color: "var(--danger)" }}>{it.erroMensagem}</div>}
                 {it.numeroDeclaracao && <div style={{ fontSize: "0.7rem", color: PANEL.muted }}>decl. {it.numeroDeclaracao}</div>}
               </div>
               <div style={{ textAlign: "right" }}>

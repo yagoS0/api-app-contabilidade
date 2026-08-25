@@ -212,7 +212,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
         {step === "review" && (
           <div>
             <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: "0.85rem", flexWrap: "wrap" }}>
-              <span><strong style={{ color: "#69FF47" }}>{matchedRows}</strong> casadas</span>
+              <span><strong style={{ color: "var(--success)" }}>{matchedRows}</strong> casadas</span>
               <span><strong style={{ color: "#FFB347" }}>{pendingRows}</strong> pendentes</span>
               <span><strong style={{ color: PANEL.accent }}>{completeRows}</strong> prontas para importar</span>
               {skipRows > 0 && <span><strong style={{ color: PANEL.muted }}>{skipRows}</strong> ignoradas</span>}
@@ -293,13 +293,13 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
                             onChange={(e) => updateRow(idx, { contaCredito: e.target.value })}
                             placeholder="—"
                             disabled={t.skip}
-                            style={{ ...inputStyle, fontWeight: 700, color: t.contaCredito ? "#69FF47" : PANEL.muted, textAlign: "center" }}
+                            style={{ ...inputStyle, fontWeight: 700, color: t.contaCredito ? "var(--success)" : PANEL.muted, textAlign: "center" }}
                           />
                         </td>
                         <td style={{ padding: "5px 8px", fontSize: "0.78rem" }}>
                           {t.skip ? <span style={{ color: PANEL.muted }}>—</span>
                             : matched ? (
-                              <span style={{ color: "#69FF47" }}>
+                              <span style={{ color: "var(--success)" }}>
                                 ✓ {t.match.matchType === "exact" ? "Casou" : "Parcial"}
                               </span>
                             ) : ready ? (
@@ -343,7 +343,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
                   value={bulkC}
                   onChange={(e) => setBulkC(e.target.value)}
                   placeholder="Crédito"
-                  style={{ ...inputStyle, width: 110, fontWeight: 700, color: bulkC ? "#69FF47" : PANEL.muted, textAlign: "center" }}
+                  style={{ ...inputStyle, width: 110, fontWeight: 700, color: bulkC ? "var(--success)" : PANEL.muted, textAlign: "center" }}
                 />
                 <Button variant="secondary" size="sm" onClick={applyBulkFill} disabled={!bulkD && !bulkC}>
                   Aplicar

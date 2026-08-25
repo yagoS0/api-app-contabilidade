@@ -8,7 +8,7 @@
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 
 const CONF = {
-  alta: { cor: "#69FF47", label: "alta" },
+  alta: { cor: "var(--success)", label: "alta" },
   media: { cor: "#FFB347", label: "média" },
   revisao: { cor: "#FF6E6E", label: "revisão" },
 };

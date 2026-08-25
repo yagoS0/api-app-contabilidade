@@ -30,8 +30,8 @@ const PANEL = {
   text: "#F8F8F2",
   muted: "#6272A4",
   accent: "#BD93F9",
-  success: "#69FF47",
-  danger: "#FF4757",
+  success: "var(--success)",
+  danger: "var(--danger)",
   warning: "#FFB347",
 };
 
@@ -399,7 +399,7 @@ export function ChartOfAccountsPage({
               {NATUREZA_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </label>
-          {/* ⚠ Era verde (#69FF47). Adicionar conta é ação, e verde é "concluído" — aqui, aliás,
+          {/* ⚠ Era verde (var(--success)). Adicionar conta é ação, e verde é "concluído" — aqui, aliás,
               ao lado do selo verde "Confirmada" da tabela logo abaixo, que precisa ser lido como
               estado. Ação primária usa o accent. */}
           <Button type="submit" disabled={saving || !form.codigo || !form.nome} style={{ alignSelf: "end" }}>

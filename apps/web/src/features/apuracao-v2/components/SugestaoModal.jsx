@@ -72,7 +72,7 @@ export function SugestaoModal({
               // cabeçalho de cada pendência. Ver `../lib/pendenciaTela.js` (o enum cru não se
               // perdeu: vive no `title`).
               const leitura = leituraDaPendencia(p.tipo);
-              // ⚠ Âmbar é "pendência com ação"; o outro ramo era `#FF4757`, que nem token é
+              // ⚠ Âmbar é "pendência com ação"; o outro ramo era `var(--danger)`, que nem token é
               // (`--state-danger` é `#FF5757`). Vermelho aqui diria que a pendência bloqueia o
               // fechamento — e o que ela bloqueia é o cálculo do motor, não o mês.
               const cor = leitura.conhecida ? "var(--state-warn)" : "var(--state-neutral)";

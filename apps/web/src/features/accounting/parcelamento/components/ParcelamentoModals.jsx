@@ -726,7 +726,7 @@ export function ParcelamentoCreateModal({
           )}
 
           {err && (
-            <div style={{ color: "#FF4757", fontSize: "0.8rem", padding: "8px 10px", background: "rgba(255,71,87,0.12)", border: "1px solid #FF4757", borderRadius: 6 }}>
+            <div style={{ color: "var(--danger)", fontSize: "0.8rem", padding: "8px 10px", background: "rgba(255,71,87,0.12)", border: "1px solid var(--danger)", borderRadius: 6 }}>
               {err}
             </div>
           )}

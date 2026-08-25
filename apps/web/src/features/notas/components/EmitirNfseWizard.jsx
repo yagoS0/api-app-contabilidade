@@ -1354,7 +1354,7 @@ export function EmitirNfseWizard({
               ) : null}
             </Button>
           ) : (
-            /* ⚠ Era verde #69FF47. Emitir nota é o oposto de "concluído" — é o ato fiscal
+            /* ⚠ Era verde var(--success). Emitir nota é o oposto de "concluído" — é o ato fiscal
                acontecendo. Ação primária usa o accent. */
             <Button
               type="button"

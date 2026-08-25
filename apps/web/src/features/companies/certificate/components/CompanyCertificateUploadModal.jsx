@@ -46,7 +46,7 @@ export function CompanyCertificateUploadModal({ saving, onUpload, onClose }) {
             onChange={(e) => setFile(e.target.files?.[0] || null)}
             style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "8px 12px" }} />
           {file && (
-            <span style={{ fontSize: "0.75rem", color: "#69FF47" }}>
+            <span style={{ fontSize: "0.75rem", color: "var(--success)" }}>
               ✓ {file.name} ({(file.size / 1024).toFixed(1)} KB)
             </span>
           )}
@@ -60,7 +60,7 @@ export function CompanyCertificateUploadModal({ saving, onUpload, onClose }) {
         </label>
 
         {err && (
-          <div style={{ color: "#FF4757", fontSize: "0.8rem", marginBottom: 12, padding: 8, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 4 }}>
+          <div style={{ color: "var(--danger)", fontSize: "0.8rem", marginBottom: 12, padding: 8, background: "rgba(255,71,87,0.10)", border: "1px solid var(--danger)", borderRadius: 4 }}>
             {err}
           </div>
         )}

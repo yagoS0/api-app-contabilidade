@@ -157,7 +157,7 @@ function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, salvand
         </h3>
 
         {erro && (
-          <div style={{ padding: "8px 10px", borderRadius: 6, background: "rgba(255,71,87,0.12)", border: "1px solid #FF4757", color: "#FF4757", marginBottom: 12, fontSize: "0.8rem" }}>
+          <div style={{ padding: "8px 10px", borderRadius: 6, background: "rgba(255,71,87,0.12)", border: "1px solid var(--danger)", color: "var(--danger)", marginBottom: 12, fontSize: "0.8rem" }}>
             {erro}
           </div>
         )}
@@ -447,7 +447,7 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
       </div>
 
       {erro && (
-        <div style={{ padding: "8px 12px", borderRadius: 6, background: "rgba(255,71,87,0.12)", border: "1px solid #FF4757", color: "#FF4757", marginBottom: 12, fontSize: "0.82rem" }}>
+        <div style={{ padding: "8px 12px", borderRadius: 6, background: "rgba(255,71,87,0.12)", border: "1px solid var(--danger)", color: "var(--danger)", marginBottom: 12, fontSize: "0.82rem" }}>
           {erro}
         </div>
       )}

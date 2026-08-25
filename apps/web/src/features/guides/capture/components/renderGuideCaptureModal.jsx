@@ -8,7 +8,7 @@ const PANEL = {
   text: "#F8F8F2",
   muted: "#6272A4",
   accent: "#BD93F9",
-  danger: "#FF4757",
+  danger: "var(--danger)",
 };
 
 const GUIDE_TYPES = ["SIMPLES", "INSS", "FGTS", "DARF", "ISS", "PIS", "COFINS", "OUTRA"];

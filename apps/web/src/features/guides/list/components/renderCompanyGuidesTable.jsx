@@ -1200,7 +1200,7 @@ export function CompanyGuidesTable({
                       {guide.liberadaCliente && (
                         <span
                           title={`Liberada ao cliente${guide.liberadaEm ? ` em ${fmtDate(guide.liberadaEm)}` : ""}`}
-                          style={{ marginLeft: 6, color: "#69FF47", fontWeight: 700 }}
+                          style={{ marginLeft: 6, color: "var(--success)", fontWeight: 700 }}
                         >
                           📤
                         </span>

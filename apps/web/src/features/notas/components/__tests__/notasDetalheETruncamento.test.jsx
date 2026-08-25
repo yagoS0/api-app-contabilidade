@@ -189,7 +189,7 @@ describe("truncamento nunca é silencioso", () => {
     );
     expect(screen.queryByRole("button", { name: "Cancelar" })).not.toBeInTheDocument();
     const botao = screen.getByRole("button", { name: "Marcar como cancelada" });
-    expect(botao.getAttribute("style")).not.toMatch(/#FF4757|--state-danger/);
+    expect(botao.getAttribute("style")).not.toMatch(/var(--danger)|--state-danger/);
     expect(botao).toHaveAttribute("title", expect.stringMatching(/não envia cancelamento à prefeitura/i));
   });
 

@@ -7,7 +7,7 @@ import { Button } from "../../../components/ui/Button";
 import { lerCicloDaNota } from "../lib/cicloNotaTela";
 
 const PAPEL_BADGE = {
-  EMIT: { bg: "rgba(105,255,71,0.15)", color: "#69FF47", label: "Emitida" },
+  EMIT: { bg: "rgba(105,255,71,0.15)", color: "var(--success)", label: "Emitida" },
   DEST: { bg: "rgba(139,233,253,0.15)", color: "#8BE9FD", label: "Recebida" },
 };
 

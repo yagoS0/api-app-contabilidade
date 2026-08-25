@@ -20,9 +20,9 @@ const PAPEL_OPTIONS = [
 ];
 const STATUS_META = {
   processando: { label: "Processando…", color: "#8BE9FD" },
-  concluido: { label: "Concluído", color: "#69FF47" },
-  erro: { label: "Erro", color: "#FF4757" },
-  expirado: { label: "Expirado", color: "#6b7280" },
+  concluido: { label: "Concluído", color: "var(--success)" },
+  erro: { label: "Erro", color: "var(--danger)" },
+  expirado: { label: "Expirado", color: "var(--text-muted)" },
 };
 
 function currentCompetencia() {
@@ -213,7 +213,7 @@ export function NotasDownloadContent({ api, companies }) {
               <Button type="button" variant="primary" disabled={creating || running || !someSelected} onClick={iniciarDownload}>
                 {creating ? "Criando…" : "⬇ Baixar notas"}
               </Button>
-              <span style={{ fontSize: "0.78rem", color: "#6b7280", paddingBottom: 8 }}>
+              <span style={{ fontSize: "0.78rem", color: "var(--text-faint)", paddingBottom: 8 }}>
                 {[...selectedIds].length} empresa(s) selecionada(s)
               </span>
             </div>
@@ -222,8 +222,8 @@ export function NotasDownloadContent({ api, companies }) {
               <div style={{
                 margin: "0 0 12px", padding: "8px 12px", borderRadius: 6, fontSize: "0.85rem",
                 background: notice.type === "error" ? "rgba(255,71,87,0.12)" : "rgba(105,255,71,0.10)",
-                border: `1px solid ${notice.type === "error" ? "#FF4757" : "#69FF47"}`,
-                color: notice.type === "error" ? "#FF4757" : "#69FF47",
+                border: `1px solid ${notice.type === "error" ? "var(--danger)" : "var(--success)"}`,
+                color: notice.type === "error" ? "var(--danger)" : "var(--success)",
               }}>
                 {notice.text}
               </div>
@@ -250,7 +250,7 @@ export function NotasDownloadContent({ api, companies }) {
                   </div>
                 )}
                 {job.status === "erro" && (
-                  <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#FF4757" }}>{job.erroMensagem || "Falha no processamento."}</div>
+                  <div style={{ marginTop: 6, fontSize: "0.8rem", color: "var(--danger)" }}>{job.erroMensagem || "Falha no processamento."}</div>
                 )}
               </div>
             )}
@@ -277,7 +277,7 @@ export function NotasDownloadContent({ api, companies }) {
                 </thead>
                 <tbody>
                   {companyList.length === 0 && (
-                    <tr><td colSpan={4} style={{ padding: 16, textAlign: "center", color: "#6b7280" }}>Nenhuma empresa.</td></tr>
+                    <tr><td colSpan={4} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Nenhuma empresa.</td></tr>
                   )}
                   {companyList.map((company) => {
                     const checked = selectedIds.has(company.companyId);
@@ -320,12 +320,12 @@ export function NotasDownloadContent({ api, companies }) {
                 <tbody>
                   {/* ⚠ "não carregou" × "não há" × "sem acesso" — três respostas, três linhas. */}
                   {carregandoRecentes && recentes.length === 0 && !falhaRecentes && (
-                    <tr><td colSpan={7} style={{ padding: 16, textAlign: "center", color: "#6b7280" }}>Carregando…</td></tr>
+                    <tr><td colSpan={7} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Carregando…</td></tr>
                   )}
                   {!carregandoRecentes && falhaRecentes && (
                     <tr>
                       <td colSpan={7} style={{ padding: 16, textAlign: "center" }}>
-                        <div style={{ color: falhaRecentes.semAcesso ? "#F8F8F2" : "#FF4757", fontWeight: 700 }}>
+                        <div style={{ color: falhaRecentes.semAcesso ? "#F8F8F2" : "var(--danger)", fontWeight: 700 }}>
                           {falhaRecentes.titulo}
                         </div>
                         <div style={{ color: "#A7B0C0", fontSize: "0.82rem", marginTop: 4 }}>{falhaRecentes.motivo}</div>
@@ -340,7 +340,7 @@ export function NotasDownloadContent({ api, companies }) {
                     </tr>
                   )}
                   {!carregandoRecentes && !falhaRecentes && recentes.length === 0 && (
-                    <tr><td colSpan={7} style={{ padding: 16, textAlign: "center", color: "#6b7280" }}>Nenhum download ainda.</td></tr>
+                    <tr><td colSpan={7} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Nenhum download ainda.</td></tr>
                   )}
                   {recentes.map((j) => {
                     const meta = STATUS_META[j.status] || { label: j.status, color: "#A7B0C0" };

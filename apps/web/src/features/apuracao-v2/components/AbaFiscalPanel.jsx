@@ -12,7 +12,7 @@ import { Button } from "../../../components/ui/Button";
 
 const ANEXO_COR = {
   "Anexo I": "#8BE9FD", "Anexo II": "#8BE9FD",
-  "Anexo III": "#69FF47", "Anexo IV": "#FFB86C", "Anexo V": "#FF6E6E",
+  "Anexo III": "var(--success)", "Anexo IV": "#FFB86C", "Anexo V": "#FF6E6E",
 };
 
 export function AbaFiscalPanel({ panel }) {

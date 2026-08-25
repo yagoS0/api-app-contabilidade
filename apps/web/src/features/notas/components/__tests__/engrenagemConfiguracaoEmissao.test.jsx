@@ -107,7 +107,7 @@ describe("a engrenagem está na aba, e leva à tela certa", () => {
   it("não usa cor de estado (nem verde, nem âmbar)", () => {
     abrirAba();
     const style = screen.getByTestId("engrenagem-emissao-nfse").getAttribute("style") || "";
-    expect(style).not.toMatch(/state-ok|state-warn|state-danger|#69FF47|#FFB347/i);
+    expect(style).not.toMatch(/state-ok|state-warn|state-danger|var(--success)|#FFB347/i);
     expect(style).toContain("var(--text-faint)");
   });
 });

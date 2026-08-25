@@ -6,10 +6,10 @@
 import { useState } from "react";
 
 const PANEL = {
-  border: "#44475A", text: "#F8F8F2", muted: "#8A8FA3", field: "#1F2029",
+  border: "#44475A", text: "#F8F8F2", muted: "var(--text-muted)", field: "#1F2029",
 };
 
-const CORES_IMPORTANCIA = { ALTA: "#FF4757", MEDIA: "#FFB347", BAIXA: "#8BE9FD" };
+const CORES_IMPORTANCIA = { ALTA: "var(--danger)", MEDIA: "#FFB347", BAIXA: "#8BE9FD" };
 const ROTULO_IMPORTANCIA = { ALTA: "Alta", MEDIA: "Média", BAIXA: "Baixa" };
 
 const btn = (cor = PANEL.border) => ({
@@ -52,7 +52,7 @@ function Cartao({ nota, destaque, onFixar, onDesfixar, onExcluir, onMudarImporta
           {destaque
             ? <button type="button" style={btn()} onClick={onDesfixar}>Desafixar</button>
             : <button type="button" style={btn("#FFB347")} onClick={onFixar}>Fixar</button>}
-          <button type="button" style={btn("#FF4757")} onClick={onExcluir}>Excluir</button>
+          <button type="button" style={btn("var(--danger)")} onClick={onExcluir}>Excluir</button>
         </div>
       </div>
       <p style={{ margin: 0, fontSize: "0.86rem", whiteSpace: "pre-wrap" }}>{nota.texto}</p>

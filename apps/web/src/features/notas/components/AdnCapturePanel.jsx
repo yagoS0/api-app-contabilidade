@@ -54,7 +54,7 @@ export function AdnCapturePanel({ adnState, adnSyncing, onSync, onClearError }) 
           </button>
         )}
         {hasError && (
-          <span style={{ color: "#FF4757", fontSize: "0.78rem", maxWidth: 520 }} title={adnState.adnLastError}>
+          <span style={{ color: "var(--danger)", fontSize: "0.78rem", maxWidth: 520 }} title={adnState.adnLastError}>
             {/* ⚠ O texto do erro é TRUNCADO na tela e vai inteiro no `title`. Ele vem do servidor e já
                 chegou a ser HTML cru do gov.br (`<html><body><h1>429 Too Many Requests…`) despejado
                 aqui dentro. A origem foi corrigida no `AdnNacionalClient`, mas o erro fica GRAVADO no

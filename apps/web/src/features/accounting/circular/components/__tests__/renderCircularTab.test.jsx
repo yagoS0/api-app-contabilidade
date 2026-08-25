@@ -17,9 +17,21 @@ jest.mock("../../../baixa/components/renderBaixaModal", () => ({
   BaixaModal: () => null,
 }));
 
-const VERMELHO = "rgb(255, 71, 87)";   // #FF4757 — vencida
-const AMBAR = "rgb(255, 179, 71)";     // #FFB347 — a vencer / em aberto sem data
-const VERDE = "rgb(105, 255, 71)";     // #69FF47 — paga
+// ⚠⚠ AS ASSERÇÕES SÃO O TOKEN, NÃO O HEX — e elas eram o hex até 24/08/2026, com o comentário ao
+// lado já dizendo qual token era a intenção (`// var(--danger)`). O código tinha o literal
+// `#FF4757` cravado, então o teste travou o literal e a intenção ficou só no comentário.
+//
+// ⚠ Isso não era neutro: `#FF4757` **não é** `--danger` (`#FF5757`), é um vizinho de um dígito, e
+// mede **4,27:1 sobre `--bg-subtle`** — reprovado no mínimo de 4,5:1 da WCAG AA, justamente na
+// linha em hover. O token mede 4,58:1. Trocar o literal pelo token conserta o contraste; travar o
+// literal no teste era o que mantinha o defeito no lugar.
+//
+// ⚠ `jsdom` NÃO resolve `var(--…)`: ele devolve a string como está, e é ela que se compara. É o
+// mesmo motivo pelo qual `--state-warn` continua sendo comparado por `rgb()` abaixo — aquele valor
+// não foi trocado, então o literal ainda é o que está no DOM.
+const VERMELHO = "var(--danger)";      // vencida
+const AMBAR = "rgb(255, 179, 71)";     // #FFB347 — a vencer / em aberto sem data (ainda literal)
+const VERDE = "var(--success)";        // paga
 
 // Meio-dia LOCAL de N dias a partir de hoje. O horário importa: a data crua "2026-03-20" seria
 // parseada como UTC e viraria o dia 19 em qualquer fuso a oeste — o teste passaria a depender da

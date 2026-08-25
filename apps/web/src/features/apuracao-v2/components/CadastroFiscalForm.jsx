@@ -85,7 +85,7 @@ export function CadastroFiscalForm({ cadastro, cnaePrincipalRef, saving, onSave 
         CNAE principal (do cadastro)
         <div style={{ ...readOnlyStyle, fontFamily: "monospace" }}>{form.cnaePrincipal || "—"}</div>
         {cnaePrincipalRef && (
-          <span style={{ fontSize: "0.7rem", color: cnaePrincipalRef.ambiguo ? "#FFB347" : "#69FF47" }}>
+          <span style={{ fontSize: "0.7rem", color: cnaePrincipalRef.ambiguo ? "#FFB347" : "var(--success)" }}>
             {cnaePrincipalRef.ambiguo ? "⚠ Ambíguo: " : "✓ "}{cnaePrincipalRef.descricao}
             {!cnaePrincipalRef.ambiguo && ` → sugestão: ${cnaePrincipalRef.tipoReceitaSugerido}`}
           </span>
@@ -109,13 +109,13 @@ export function CadastroFiscalForm({ cadastro, cnaePrincipalRef, saving, onSave 
       </div>
 
       {/* Override CNAE — perigoso, com aviso visível */}
-      <div style={{ padding: 12, background: form.forcarTipoReceitaPorCnae ? "rgba(255,71,87,0.10)" : PANEL.field, border: `1px solid ${form.forcarTipoReceitaPorCnae ? "#FF4757" : PANEL.border}`, borderRadius: 6, display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ padding: 12, background: form.forcarTipoReceitaPorCnae ? "rgba(255,71,87,0.10)" : PANEL.field, border: `1px solid ${form.forcarTipoReceitaPorCnae ? "var(--danger)" : PANEL.border}`, borderRadius: 6, display: "flex", flexDirection: "column", gap: 6 }}>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85rem", cursor: "pointer" }}>
           <input type="checkbox" checked={form.forcarTipoReceitaPorCnae} onChange={(e) => setField("forcarTipoReceitaPorCnae", e.target.checked)} />
           <strong>Forçar tipo de receita pelo CNAE principal</strong>
         </label>
         {form.forcarTipoReceitaPorCnae && (
-          <div style={{ fontSize: "0.75rem", color: "#FF4757" }}>
+          <div style={{ fontSize: "0.75rem", color: "var(--danger)" }}>
             ⚠ Classifica TODAS as notas pelo CNAE, ignorando o código da nota. Só pra empresa mono-atividade.
           </div>
         )}

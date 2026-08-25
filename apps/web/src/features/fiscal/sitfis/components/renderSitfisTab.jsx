@@ -13,9 +13,9 @@ import { SitfisRelatorioTabela } from "./SitfisRelatorioTabela";
 // Resumo do relatório: campos rotulados + as tabelas de pendência.
 
 const SITUACAO_META = {
-  COM_PENDENCIA: { label: "Com pendência", color: "#FF4757", bg: "rgba(255,71,87,0.12)" },
+  COM_PENDENCIA: { label: "Com pendência", color: "var(--danger)", bg: "rgba(255,71,87,0.12)" },
   EM_PARCELAMENTO: { label: "Em parcelamento", color: "#8BE9FD", bg: "rgba(139,233,253,0.12)" },
-  REGULAR: { label: "Regular", color: "#69FF47", bg: "rgba(105,255,71,0.10)" },
+  REGULAR: { label: "Regular", color: "var(--success)", bg: "rgba(105,255,71,0.10)" },
   PROCESSANDO: { label: "Processando", color: "#FFB347", bg: "rgba(255,179,71,0.12)" },
 };
 
@@ -54,7 +54,11 @@ export function SitfisTab({ sitfisPanel }) {
     : "Consulta o SERPRO e salva o relatório";
 
   return (
-    <div style={{ padding: 24, maxWidth: 1400, margin: "0 auto" }}>
+    // ⚠ SEM LARGURA PRÓPRIA. Ela vinha daqui (`maxWidth: 1400`) e brigava com as outras abas da
+    // empresa; agora quem a decide é o `largura` do `CompanyTabLayout`, que é onde ela é comparável
+    // com a das irmãs. ⚠ O padding também sai: o primitivo já o aplica, e somar os dois dava 24px
+    // dentro de `var(--space-5)`.
+    <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, color: "#F8F8F2" }}>Situação Fiscal</h2>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
@@ -70,7 +74,7 @@ export function SitfisTab({ sitfisPanel }) {
       </div>
 
       {error && (
-        <div style={{ marginTop: 16, padding: "10px 12px", borderRadius: 6, background: "rgba(255,71,87,0.12)", border: "1px solid #FF4757", color: "#FF4757", fontSize: "0.9rem" }}>
+        <div style={{ marginTop: 16, padding: "10px 12px", borderRadius: 6, background: "rgba(255,71,87,0.12)", border: "1px solid var(--danger)", color: "var(--danger)", fontSize: "0.9rem" }}>
           {error}
         </div>
       )}

@@ -70,13 +70,13 @@ export function aparenciaDaGuia(entry, hoje = new Date()) {
     case ESTADO_GUIA.PLACEHOLDER:
       return { estado, cor: "#6272A4", fundo: "transparent", rotulo: "Prevista", titulo: "Provisão prevista — ainda não há guia." };
     case ESTADO_GUIA.PAGA:
-      return { estado, cor: "#69FF47", fundo: "rgba(105,255,71,0.06)", rotulo: "Paga", titulo: "Paga." };
+      return { estado, cor: "var(--success)", fundo: "rgba(105,255,71,0.06)", rotulo: "Paga", titulo: "Paga." };
     case ESTADO_GUIA.PARCIAL:
       return { estado, cor: "#6EA8FF", fundo: "rgba(110,168,255,0.08)", rotulo: "Parcial", titulo: "Baixa parcial — ainda há saldo." };
     case ESTADO_GUIA.VENCIDA: {
       const dias = diasDeAtraso(entry, hoje);
       return {
-        estado, cor: "#FF4757", fundo: "rgba(255,71,87,0.06)",
+        estado, cor: "var(--danger)", fundo: "rgba(255,71,87,0.06)",
         rotulo: `Vencida · ${dias} dia${dias > 1 ? "s" : ""}`,
         titulo: `Vencida há ${dias} dia${dias > 1 ? "s" : ""} — juros e multa correndo.`,
       };

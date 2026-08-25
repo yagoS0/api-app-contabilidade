@@ -48,7 +48,7 @@ const CAIXA = {
   boxSizing: "border-box",
 };
 
-const AJUDA = { fontSize: 11, color: "#8A8FA3", lineHeight: 1.5 };
+const AJUDA = { fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 };
 
 function Campo({ id, titulo, valor, onChange, leitura, ajuda, placeholder, extra }) {
   return (

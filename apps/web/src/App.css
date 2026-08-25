@@ -598,7 +598,7 @@
   background: #2b2d45;
 }
 
-/* `--success` (verde #69ff47) saiu: "Envio de e-mails em lote" é ação, e verde é concluído.
+/* `--success` (verde var(--success)) saiu: "Envio de e-mails em lote" é ação, e verde é concluído.
    Ficou `--accent`, que é o que o resto da fileira de atalhos já usava.
 
    ⚠ A CLASSE ESTÁ DOBRADA (`.a.a--accent`) PORQUE ELA NÃO ESTAVA PEGANDO. Todo botão aqui é
@@ -1365,7 +1365,7 @@
 }
 
 .guides-grid__tone--success {
-  color: #69ff47;
+  color: var(--success);
   font-weight: 600;
 }
 

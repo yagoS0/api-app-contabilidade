@@ -7,9 +7,9 @@ const SERVICO_LABELS = { NFSE: "NFS-e", DFE: "DFe / SEFAZ", ESOCIAL: "eSocial", 
 function StatusBadge({ proc }) {
   if (proc.status === "REVOGADA") return <span style={{ color: PANEL.muted }}>↻ REVOGADA</span>;
   if (proc.validade && new Date(proc.validade) < new Date()) {
-    return <span style={{ color: "#FF4757" }}>⚠ EXPIRADA em {fmtDate(proc.validade)}</span>;
+    return <span style={{ color: "var(--danger)" }}>⚠ EXPIRADA em {fmtDate(proc.validade)}</span>;
   }
-  return <span style={{ color: "#69FF47" }}>✓ ATIVA {proc.validade ? `(até ${fmtDate(proc.validade)})` : ""}</span>;
+  return <span style={{ color: "var(--success)" }}>✓ ATIVA {proc.validade ? `(até ${fmtDate(proc.validade)})` : ""}</span>;
 }
 
 export function ProcuracoesPanel({ procuracoes, saving, onCreate, onRevogar }) {
@@ -49,13 +49,13 @@ export function ProcuracoesPanel({ procuracoes, saving, onCreate, onRevogar }) {
               <tr key={p.id} style={{ borderTop: `1px solid ${PANEL.border}`, color: PANEL.text }}>
                 <td style={{ padding: 6 }}>{SERVICO_LABELS[p.servico] || p.servico}</td>
                 <td style={{ padding: 6 }}><StatusBadge proc={p} /></td>
-                <td style={{ padding: 6, color: p.certCheck?.ok ? "#69FF47" : "#FF4757" }}>
+                <td style={{ padding: 6, color: p.certCheck?.ok ? "var(--success)" : "var(--danger)" }}>
                   {p.certCheck?.ok ? `✓ ${p.certCheck.source}` : `✗ ${p.certCheck?.code || "—"}`}
                 </td>
                 <td style={{ padding: 6, color: PANEL.muted }}>{p.observacoes || "—"}</td>
                 <td style={{ padding: 6, textAlign: "right" }}>
                   <button onClick={() => onRevogar(p.id)} disabled={saving}
-                    style={{ padding: "4px 8px", borderRadius: 4, border: `1px solid ${PANEL.border}`, background: "transparent", color: "#FF4757", cursor: "pointer", fontSize: "0.75rem" }}>
+                    style={{ padding: "4px 8px", borderRadius: 4, border: `1px solid ${PANEL.border}`, background: "transparent", color: "var(--danger)", cursor: "pointer", fontSize: "0.75rem" }}>
                     Revogar
                   </button>
                 </td>

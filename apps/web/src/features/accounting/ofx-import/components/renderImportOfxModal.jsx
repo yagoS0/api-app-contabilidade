@@ -11,9 +11,9 @@ const PANEL = {
   text: "#F8F8F2",
   muted: "#6272A4",
   accent: "#BD93F9",
-  success: "#69FF47",
+  success: "var(--success)",
   warning: "#FFB347",
-  danger: "#FF4757",
+  danger: "var(--danger)",
 };
 
 const overlay = {

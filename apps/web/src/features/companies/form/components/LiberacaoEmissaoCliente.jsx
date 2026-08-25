@@ -23,7 +23,7 @@ import {
   linhaDeAutoria,
 } from "../../../../lib/nfse/liberacaoEmissaoCliente";
 
-const AJUDA = { fontSize: 11, color: "#8A8FA3", lineHeight: 1.5 };
+const AJUDA = { fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 };
 
 const BOTAO_BASE = {
   border: "1px solid",

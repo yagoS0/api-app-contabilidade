@@ -14,7 +14,7 @@ import { FRASE_MOTIVO_PENDENCIA } from "../lib/auditoriaTela";
 //
 // ── ⚠ ÂMBAR, NÃO VERMELHO ───────────────────────────────────────────────────────────────────────
 //
-// Este componente pintava a caixa de **vermelho** (`#FF4757`), enquanto o comentário dentro dele já
+// Este componente pintava a caixa de **vermelho** (`var(--danger)`), enquanto o comentário dentro dele já
 // dizia "o âmbar da caixa fica". Vermelho, no vocabulário deste projeto (`apps/web/CLAUDE.md`), é o
 // que **bloqueia o fechamento**; pendência é o que **pede ação**, e isso é âmbar. Além disso a
 // mesma tela que a hospeda tem a regra explícita de nunca usar `--state-danger`.

@@ -160,7 +160,7 @@ export const TIPO_GROUP_LABELS = {
 
 // Cor da barra lateral de cada bloco
 export const TIPO_GROUP_ACCENT = {
-  RECEITA: "#69FF47",
+  RECEITA: "var(--success)",
   PROVISAO: "#FFB347",
   DESPESA: "#FF5757",
   FOLHA: "#BD93F9",

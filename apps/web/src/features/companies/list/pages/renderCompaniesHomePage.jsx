@@ -828,10 +828,21 @@ export function CompaniesHomePage({
                 {/* A COMPETÊNCIA SOBE PARA O TÍTULO. Ela é o contexto de tudo o que a tela mostra —
                     contadores, guias, notas, fechamento — e estava perdida no meio dos filtros,
                     onde parecia mais um recorte opcional. Aqui fica claro que o mês é o assunto. */}
-                <h1 className="dashboard-home__title" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  Empresas
-                  <span style={{ color: "var(--text-faint)", fontWeight: 400 }}>·</span>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                {/* ⚠⚠ O `<h1>` TERMINA NA PALAVRA "Empresas" — os três controles são IRMÃOS dele,
+                    não filhos. Até 24/08/2026 os `‹ ›` e o "↻" viviam DENTRO do `<h1>`, e o efeito
+                    não era visual: o nome acessível do cabeçalho passava a ser *"Empresas · Mês
+                    anterior Agosto de 2026 Próximo mês Recarregar a lista de Agosto de 2026"*. Quem
+                    navega por cabeçalhos ouve o título da tela; ali ouvia a barra de ferramentas.
+                    ⚠ **O DESENHO NÃO MUDOU** — a linha flex subiu um nível, com o mesmo `gap` e o
+                    mesmo `align-items`, e a decisão de 20/08 (*"a competência sobe para o título
+                    porque ela é o contexto de tudo o que a tela mostra"*) continua de pé: ela
+                    continua na mesma linha, ao lado do título. O que mudou é de quem ela é filha. */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <h1 className="dashboard-home__title" style={{ margin: 0 }}>Empresas</h1>
+                  <span aria-hidden="true" style={{ color: "var(--text-faint)", fontWeight: 400 }}>·</span>
+                  {/* ⚠ `role="group"` com nome: sem ele os três controles ficam soltos na leitura
+                      linear, e o mês que eles comandam vira um texto qualquer ao lado. */}
+                  <span role="group" aria-label="Competência da carteira" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <button
                       type="button"
                       onClick={() => onChangeCompetencia(shiftCompetencia(dashboardCompetencia, -1))}
@@ -862,7 +873,7 @@ export function CompaniesHomePage({
                       <span aria-hidden="true">{loadingCompanies ? "…" : "↻"}</span>
                     </Button>
                   </span>
-                </h1>
+                </div>
               </div>
             </div>
 

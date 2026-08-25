@@ -179,10 +179,10 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
 
   function renderResultCell(companyId) {
     const r = results[companyId];
-    if (!r || r.status === "idle") return <span style={{ color: "#6b7280" }}>—</span>;
+    if (!r || r.status === "idle") return <span style={{ color: "var(--text-faint)" }}>—</span>;
     if (r.status === "running") return <span style={{ color: "#8BE9FD" }}>⏳ rodando…</span>;
-    if (r.status === "ok") return <span style={{ color: "#69FF47", fontSize: "0.78rem" }} title={r.message || ""}>✓ {r.message || "ok"}</span>;
-    return <span style={{ color: "#FF4757", fontSize: "0.78rem" }} title={r.message || ""}>⚠ {r.message || "erro"}</span>;
+    if (r.status === "ok") return <span style={{ color: "var(--success)", fontSize: "0.78rem" }} title={r.message || ""}>✓ {r.message || "ok"}</span>;
+    return <span style={{ color: "var(--danger)", fontSize: "0.78rem" }} title={r.message || ""}>⚠ {r.message || "erro"}</span>;
   }
 
   // ⚠ Isto NÃO é aba — é a pílula de SELEÇÃO das funções, e cada uma embrulha um checkbox. Aba
@@ -278,7 +278,7 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
                 <input type="month" value={dateTo} onChange={(event) => setDateTo(event.target.value)} disabled={running || !usaIntervalo} />
               </label>
               {!usaIntervalo && someOpSelected && (
-                <span style={{ fontSize: "0.75rem", color: "#6b7280", paddingBottom: 4 }}>As funções escolhidas ignoram o intervalo.</span>
+                <span style={{ fontSize: "0.75rem", color: "var(--text-faint)", paddingBottom: 4 }}>As funções escolhidas ignoram o intervalo.</span>
               )}
             </div>
 
@@ -287,7 +287,7 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
               <Button type="button" variant="primary" disabled={!canRun || !someOpSelected || !someSelected} onClick={runSelected}>
                 {running ? `Rodando… (${progress.done}/${progress.total})` : "▶ Rodar"}
               </Button>
-              <span style={{ fontSize: "0.78rem", color: "#6b7280" }}>
+              <span style={{ fontSize: "0.78rem", color: "var(--text-faint)" }}>
                 {selectedOps.size} função(ões) · {[...selectedIds].length} empresa(s) selecionada(s)
               </span>
             </div>
@@ -296,8 +296,8 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
               <div style={{
                 margin: "0 0 12px", padding: "8px 12px", borderRadius: 6, fontSize: "0.85rem",
                 background: localNotice.type === "error" ? "rgba(255,71,87,0.12)" : "rgba(105,255,71,0.10)",
-                border: `1px solid ${localNotice.type === "error" ? "#FF4757" : "#69FF47"}`,
-                color: localNotice.type === "error" ? "#FF4757" : "#69FF47",
+                border: `1px solid ${localNotice.type === "error" ? "var(--danger)" : "var(--success)"}`,
+                color: localNotice.type === "error" ? "var(--danger)" : "var(--success)",
               }}>
                 {localNotice.text}
               </div>
@@ -326,7 +326,7 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
                 </thead>
                 <tbody>
                   {companyList.length === 0 && (
-                    <tr><td colSpan={6} style={{ padding: 16, textAlign: "center", color: "#6b7280" }}>Nenhuma empresa.</td></tr>
+                    <tr><td colSpan={6} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Nenhuma empresa.</td></tr>
                   )}
                   {companyList.map((company) => {
                     const checked = selectedIds.has(company.companyId);

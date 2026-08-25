@@ -66,7 +66,7 @@ export function CompetenciasTable({ ano, setAno, competencias, saving, onFechar,
                 <td style={{ padding: 6 }}><StateBadge estado={comp.estado} /></td>
                 <td style={{ padding: 6, textAlign: "right" }}>{comp.notasCount || 0}</td>
                 <td style={{ padding: 6, textAlign: "right" }}>{fmtMoney(comp.rb12)}</td>
-                <td style={{ padding: 6, textAlign: "right", color: comp.pendenciasAbertas > 0 ? "#FF4757" : PANEL.muted }}>
+                <td style={{ padding: 6, textAlign: "right", color: comp.pendenciasAbertas > 0 ? "var(--danger)" : PANEL.muted }}>
                   {comp.pendenciasAbertas > 0 ? `⚠ ${comp.pendenciasAbertas}` : "—"}
                 </td>
                 <td style={{ padding: 6 }}>

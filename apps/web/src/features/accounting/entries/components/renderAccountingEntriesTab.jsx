@@ -108,7 +108,7 @@ function FaltaParaFechar({ problemas, filtroAtivo }) {
         </ul>
       )}
       {filtroAtivo && (
-        <span style={{ color: "#8A8FA3" }}>
+        <span style={{ color: "var(--text-muted)" }}>
           conferido só sobre os lançamentos filtrados — limpe os filtros para ver o mês inteiro
         </span>
       )}
@@ -372,7 +372,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
 
   const pendentes = CHECKLIST_ITENS.filter((i) => checklist[i.chave] !== true);
   const bloqueadoPorChecklist = !fechado && pendentes.length > 0;
-  const color = fechado ? "#2DD4BF" : (problemas.length > 0 || bloqueadoPorChecklist) ? "#FF5757" : "#69FF47";
+  const color = fechado ? "#2DD4BF" : (problemas.length > 0 || bloqueadoPorChecklist) ? "#FF5757" : "var(--success)";
 
   // ⚠ O MOTIVO DO BLOQUEIO É TEXTO NO BOTÃO, não `title`.
   // `title` só existe depois de parar o mouse em cima — quem clica direto recebia um `window.alert`
@@ -414,7 +414,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
       {/* Só "FECHAMENTO": a competência já está escrita no seletor do header E no título grande
           sobre a tabela, a poucos centímetros. Uma terceira vez não informa — só ocupa a largura
           que a tabela precisa. */}
-      <span style={{ fontSize: "0.68rem", color: "#8A8FA3", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+      <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>
         Fechamento
       </span>
 
@@ -462,7 +462,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
             <span>Mês sem faturamento</span>
             {/* Não conseguimos conferir ≠ conferimos e deu zero. O aviso é o que separa os dois. */}
             {semConferencia && (
-              <span style={{ color: "#8A8FA3", fontWeight: 400, fontSize: "0.72rem" }} title="Município fora do ADN, certificado ausente/vencido ou competência ainda não conferida.">
+              <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: "0.72rem" }} title="Município fora do ADN, certificado ausente/vencido ou competência ainda não conferida.">
                 sem conferência do ADN
               </span>
             )}
@@ -480,7 +480,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
         <div style={{ display: "grid", gap: 2 }}>
           {/* Sem caixa própria: o card externo já delimita o assunto, e uma borda dentro da outra
               lia como um segundo painel independente. */}
-          <span style={{ fontSize: "0.7rem", color: "#8A8FA3", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 2 }}>
+          <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 2 }}>
             Confiro que lancei
           </span>
           {CHECKLIST_ITENS.map((item) => {
@@ -493,7 +493,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
                 style={{
                   display: "flex", alignItems: "center", gap: 5, padding: "2px 0",
                   fontSize: "0.72rem", fontWeight: 600,
-                  color: marcado ? "#69FF47" : "#aeb6d3",
+                  color: marcado ? "var(--success)" : "#aeb6d3",
                   cursor: gravando ? "default" : "pointer", userSelect: "none",
                 }}
               >
@@ -507,7 +507,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
                   style={{ width: 13, height: 13, flex: "0 0 auto", cursor: gravando ? "default" : "pointer" }}
                 />
                 <span style={{ flex: 1, minWidth: 0 }}>{item.label}</span>
-                {gravando && <span style={{ fontSize: "0.66rem", color: "#8A8FA3", fontWeight: 400 }}>…</span>}
+                {gravando && <span style={{ fontSize: "0.66rem", color: "var(--text-muted)", fontWeight: 400 }}>…</span>}
               </label>
             );
           })}
@@ -1103,7 +1103,7 @@ export function AccountingEntriesTab({
           da TABELA (ver abaixo): ele fala do mês inteiro, e aqui em cima empurrava a tabela ~300px
           para baixo, à custa de três ou quatro lançamentos a menos visíveis de primeira. */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4, marginBottom: 8, flexWrap: "wrap" }}>
-        {/* ⚠ ERA VERDE (#69FF47). Verde quer dizer CONCLUÍDO no vocabulário de cores do app — um
+        {/* ⚠ ERA VERDE (var(--success)). Verde quer dizer CONCLUÍDO no vocabulário de cores do app — um
             botão verde de "faça isto" ensina o contrário exatamente na tela onde o verde do
             rodapé ("✓ ok", D=C) precisa ser lido como "está fechado". Ação primária é o accent.
             O estilo à mão (altura 34, raio 8) também saiu: é o `Button` do app. */}
@@ -1279,7 +1279,7 @@ export function AccountingEntriesTab({
                     D R$ {fmtValor(dTot) || "0,00"}
                     <span style={{ margin: "0 6px", color: ACCOUNTING_PANEL.border }}>·</span>
                     C R$ {fmtValor(cTot) || "0,00"}
-                    <span style={{ marginLeft: 8, color: balanced ? "#69FF47" : "#FFB347", fontWeight: 600 }}>
+                    <span style={{ marginLeft: 8, color: balanced ? "var(--success)" : "#FFB347", fontWeight: 600 }}>
                       {balanced ? "✓ ok" : `⚠ dif. R$ ${fmtValor(diff) || "0,00"}`}
                     </span>
                   </td>

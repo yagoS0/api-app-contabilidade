@@ -324,15 +324,15 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
           )}
 
           {!isAcrOnly && isDuplicate && (
-            <div style={{ color: "#FF4757", fontSize: "0.8125rem", fontWeight: 600 }}>
+            <div style={{ color: "var(--danger)", fontSize: "0.8125rem", fontWeight: 600 }}>
               Débito e crédito não podem usar a mesma conta.
             </div>
           )}
           {saveError && (
             <div style={{
-              color: "#FF4757", fontSize: "0.8125rem", fontWeight: 600,
+              color: "var(--danger)", fontSize: "0.8125rem", fontWeight: 600,
               padding: "8px 10px", borderRadius: 6,
-              background: "rgba(255, 71, 87, 0.12)", border: "1px solid #FF4757",
+              background: "rgba(255, 71, 87, 0.12)", border: "1px solid var(--danger)",
             }}>
               {saveError}
             </div>
@@ -346,7 +346,7 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
             >
               Cancelar
             </button>
-            {/* ⚠ Era verde #69FF47 — na tela cujo rodapé usa verde para "D = C ✓ ok". O botão
+            {/* ⚠ Era verde var(--success) — na tela cujo rodapé usa verde para "D = C ✓ ok". O botão
                 de salvar competia com o sinal de fechado a dois palmos de distância. */}
             <Button onClick={handleSave} disabled={saving || (!isAcrOnly && isDuplicate)}>
               {saving ? "Salvando..." : "Salvar"}
@@ -365,7 +365,7 @@ function LinhaResumo({ rotulo, valor, cor, forte }) {
   if (valor == null || valor === "") return null;
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "2px 4px", fontSize: "0.72rem" }}>
-      <span style={{ color: "#8A8FA3" }}>{rotulo}</span>
+      <span style={{ color: "var(--text-muted)" }}>{rotulo}</span>
       <span style={{ color: cor || "#F8F8F2", fontWeight: forte ? 800 : 600, whiteSpace: "nowrap" }}>{valor}</span>
     </div>
   );
@@ -424,12 +424,12 @@ function ResumoDaGuia({ entry, acrescimo, aparencia }) {
         <LinhaResumo
           rotulo="Enviada ao cliente"
           valor={`✓ ${dataEnvio ? fmtDate(dataEnvio) : "sim"}${canal ? ` · ${canal}` : ""}`}
-          cor="#69FF47"
+          cor="var(--success)"
         />
       ) : (
         // Princípio 7: ausência nunca é resposta. Sem esta linha, "ainda não enviada" e "não sei"
         // se pareceriam — os dois seriam a falta de uma linha.
-        guia && <LinhaResumo rotulo="Enviada ao cliente" valor="ainda não" cor="#8A8FA3" />
+        guia && <LinhaResumo rotulo="Enviada ao cliente" valor="ainda não" cor="var(--text-muted)" />
       )}
     </div>
   );
@@ -569,7 +569,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
           em quatro cores diferentes. */}
       {!placeholder && !isOpenLike && (
         <div
-          style={{ fontSize: "0.8rem", lineHeight: 1.1, color: "#69FF47", fontWeight: 800 }}
+          style={{ fontSize: "0.8rem", lineHeight: 1.1, color: "var(--success)", fontWeight: 800 }}
           title={`Pagamento confirmado${entry.sourceGuide?.paymentConfirmedAt ? ` em ${fmtDate(entry.sourceGuide.paymentConfirmedAt)}` : ""}${entry.sourceGuide?.paymentStatusSource === "SERPRO" ? " (via SERPRO)" : ""}${entry.sourceGuide?.comprovantePdfFileId ? " — comprovante de arrecadação disponível" : ""}.`}
         >
           ✓
@@ -676,7 +676,7 @@ function CelulaSemColuna({ itens = [], onEdit }) {
           onMouseLeave={() => setOpen(false)}
           style={{ position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", zIndex: 50, background: "#24253A", border: "1px solid #44475A", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.45)", padding: 8, minWidth: 280, textAlign: "left" }}
         >
-          <div style={{ fontSize: "0.7rem", color: "#8A8FA3", lineHeight: 1.35, marginBottom: 6 }}>
+          <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", lineHeight: 1.35, marginBottom: 6 }}>
             Estas provisões entram no <strong style={{ color: "#F8F8F2" }}>Total em aberto</strong> do mês e não têm
             coluna própria: ou estão sem subtipo, ou o subtipo não é exibido no regime desta empresa.
             Abra o lançamento para responder qual é o subtipo.
@@ -687,7 +687,7 @@ function CelulaSemColuna({ itens = [], onEdit }) {
                 <span style={{ color: "#F8F8F2", fontWeight: 600 }}>{e.historico || "(sem histórico)"}</span>
                 <span style={{ color: "#FFB347", fontWeight: 700, whiteSpace: "nowrap" }}>R$ {fmtValor(valorDaProvisao(e)) || "0,00"}</span>
               </div>
-              <div style={{ fontSize: "0.68rem", color: "#8A8FA3" }}>
+              <div style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>
                 {e.subtipo
                   ? `Subtipo ${e.subtipo} — fora do regime desta empresa`
                   : "Sem subtipo"}
@@ -1197,7 +1197,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                   <th key={col.key} style={headCellStyle}>{col.label}</th>
                 ))}
                 <th style={{ ...headCellStyle, color: "#8BE9FD" }}>Faturamento</th>
-                <th style={{ ...headCellStyle, color: "#FF4757" }}>Total em aberto</th>
+                <th style={{ ...headCellStyle, color: "var(--danger)" }}>Total em aberto</th>
                 {/* Coluna própria para os PDFs do PGDAS-D — antes eram dois links miúdos dentro da
                     célula do mês. Só existe quando ALGUM mês do ano tem documento: coluna vazia o
                     ano inteiro é largura tirada das que têm número. */}
@@ -1252,7 +1252,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                       {aberto?.total ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "center" }}>
                           {aberto.vencido > 0 && (
-                            <span style={{ color: "#FF4757", fontWeight: 700, whiteSpace: "nowrap" }} title="Guias que já passaram do vencimento.">
+                            <span style={{ color: "var(--danger)", fontWeight: 700, whiteSpace: "nowrap" }} title="Guias que já passaram do vencimento.">
                               R$ {fmtValor(aberto.vencido)} <span style={{ fontSize: "0.62rem", fontWeight: 600 }}>vencido</span>
                             </span>
                           )}
@@ -1288,7 +1288,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                       <td style={{ ...monthStickyStyle, background: "#282A36", color: "#aeb6d3", fontWeight: 700, borderTop: "2px solid #44475A", borderBottom: "2px solid #44475A" }}>{qi + 1}º Trimestre</td>
                       {visibleRows.map((col) => { const v = sumQuarter(col.key, qi); return <td key={col.key} style={{ ...triStyle, color: "#aeb6d3" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })}
                       {(() => { const v = sumQuarter("__FAT__", qi); return <td style={{ ...triStyle, color: "#8BE9FD" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
-                      {(() => { const v = sumQuarter("__ABERTO__", qi); return <td style={{ ...triStyle, color: "#FF4757" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
+                      {(() => { const v = sumQuarter("__ABERTO__", qi); return <td style={{ ...triStyle, color: "var(--danger)" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
                       {/* Não há "extrato do trimestre" — a declaração é mensal. Célula vazia para a
                           linha não ficar com uma coluna a menos e desalinhar a grade inteira. */}
                       {temExtratoNoAno && <td style={triStyle} />}
@@ -1302,7 +1302,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                 <td style={{ ...monthStickyStyle, background: "#1f2030", fontWeight: 800 }}>Anual</td>
                 {visibleRows.map((col) => { const v = sumYear(col.key); return <td key={col.key} style={{ ...subCellStyle, fontWeight: 800 }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })}
                 {(() => { const v = sumYear("__FAT__"); return <td style={{ ...subCellStyle, fontWeight: 800, color: "#8BE9FD" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
-                {(() => { const v = sumYear("__ABERTO__"); return <td style={{ ...subCellStyle, fontWeight: 800, color: "#FF4757" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
+                {(() => { const v = sumYear("__ABERTO__"); return <td style={{ ...subCellStyle, fontWeight: 800, color: "var(--danger)" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
                 {temExtratoNoAno && <td style={subCellStyle} />}
               </tr>
             </tbody>

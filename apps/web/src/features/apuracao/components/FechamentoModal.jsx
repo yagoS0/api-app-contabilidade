@@ -679,7 +679,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
             </div>
 
             {/* Confirmação de transmissão individual.
-                ⚠ A cor era `#FF4757`, que NÃO é `--state-danger` (`#FF5757`) — dois vermelhos
+                ⚠ A cor era `var(--danger)`, que NÃO é `--state-danger` (`#FF5757`) — dois vermelhos
                 quase iguais convivendo no mesmo app é como se perde a régua de "isto bloqueia". */}
             {showTransmit && (
               <div style={{ padding: 12, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: "var(--radius-sm)", display: "flex", flexDirection: "column", gap: 8 }}>

@@ -22,13 +22,18 @@ import {
   resolveHistoricoText,
 } from "../lib/accountingEntriesShared";
 
-const TIPO_COLOR = {
-  DESPESA: { fg: "#F8F8F2", bg: "#44475A", border: "#44475A" },
-  ATIVO: { fg: "#1A1B26", bg: "#8BE9FD", border: "#8BE9FD" },
-  RECEITA: { fg: "#1A1B26", bg: "#69FF47", border: "#69FF47" },
-  PASSIVO: { fg: "#1A1B26", bg: "#FFB347", border: "#FFB347" },
-  PATRIMONIO: { fg: "#1A1B26", bg: "#BD93F9", border: "#BD93F9" },
-};
+// ⚠⚠ AQUI HAVIA UM `TIPO_COLOR` — UM CHIP CHEIO, UM POR TIPO DE CONTA — E ELE FOI REMOVIDO EM
+// 24/08/2026. Ele pintava **RECEITA de `var(--success)`** e **PASSIVO de `#FFB347`**, que são literalmente
+// `--state-ok` e `--state-warn`: nesta casa, *"concluído"* e *"pendência"*. Uma conta de passivo
+// aparecia como trabalho a fazer, e uma de receita como algo já resolvido — sobre um fato que não é
+// nem uma coisa nem outra. O `tipoDaConta.js` escreve a regra com todas as letras: *"o selo NÃO usa
+// verde, âmbar nem vermelho (…) todos os tipos usam o MESMO chip neutro, e quem carrega o
+// significado é a palavra"*.
+//
+// ⚠ E o defeito era **meia migração**: o commit `d3682cb4` levou TRÊS pontos deste arquivo ao
+// `SelosDaConta` e deixou o quarto (`AccountSuggestionRow`) para trás — o próprio comentário de lá
+// diz *"três grafias para a mesma informação fazem o contador aprender três vocabulários"*. Eram
+// quatro. Agora são quatro usando o mesmo selo.
 
 /**
  * ⚠ O DROPDOWN É `position: fixed` — e coordenada fixa não acompanha o scroll.
@@ -107,7 +112,6 @@ function SelosDaConta({ conta }) {
 
 function AccountSuggestionRow({ account, onClick, rowRef, selected, onHover }) {
   const isDevedora = account.natureza === "DEVEDORA";
-  const tc = TIPO_COLOR[account.tipo] || TIPO_COLOR.DESPESA;
   return (
     <button
       ref={rowRef}
@@ -122,21 +126,23 @@ function AccountSuggestionRow({ account, onClick, rowRef, selected, onHover }) {
         padding: "8px 10px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`,
         background: selected ? ACCOUNTING_PANEL.surface : ACCOUNTING_PANEL.field,
         border: "none", color: ACCOUNTING_PANEL.text,
-        outline: selected ? "2px solid #69FF47" : "none",
+        outline: selected ? "2px solid var(--success)" : "none",
         outlineOffset: "-2px", cursor: "pointer",
       }}
     >
       <div>
         <div style={{ fontSize: "0.9375rem", fontWeight: 600, marginBottom: 3 }}>{account.nome}</div>
         <div style={{ fontSize: "0.8125rem", color: ACCOUNTING_PANEL.muted }}>
-          <span style={{ fontWeight: 700, color: isDevedora ? "#8BE9FD" : "#69FF47" }}>
+          <span style={{ fontWeight: 700, color: isDevedora ? "#8BE9FD" : "var(--success)" }}>
             {isDevedora ? `D ${account.codigo}` : `C ${account.codigo}`}
           </span>
         </div>
       </div>
-      <span style={{ fontSize: "0.6875rem", padding: "3px 8px", borderRadius: 999, fontWeight: 700, flexShrink: 0, background: tc.bg, color: tc.fg, border: `1px solid ${tc.border}` }}>
-        {account.tipo}
-      </span>
+      {/* ⚠ O MESMO selo dos outros três pontos. Ele traz o `codigoCompleto` pontuado junto do tipo,
+          e isso é o conserto na origem do caso que criou o selo: `1.2.1.06.0003 CSLL` (ATIVO) foi
+          atrelada onde devia estar `2.1.1.05.0007 CSLL A RECOLHER`, e o reduzido (`137` × `256`)
+          não distinguia as duas. Esta linha mostrava só o reduzido. */}
+      <SelosDaConta conta={account} />
     </button>
   );
 }
@@ -164,7 +170,7 @@ function HistoricoSuggestionRow({ item, onClick, rowRef, selected, onHover }) {
         <div style={{ fontSize: "0.9375rem", fontWeight: 600, marginBottom: 3 }}>{item.text}</div>
         <div style={{ display: "flex", gap: 12, fontSize: "0.8125rem", color: ACCOUNTING_PANEL.muted }}>
           {item.contaDebito && <span><span style={{ fontWeight: 700, color: "#8BE9FD" }}>D {item.contaDebito}</span></span>}
-          {item.contaCredito && <span><span style={{ fontWeight: 700, color: "#69FF47" }}>C {item.contaCredito}</span></span>}
+          {item.contaCredito && <span><span style={{ fontWeight: 700, color: "var(--success)" }}>C {item.contaCredito}</span></span>}
         </div>
       </div>
       <span style={{ fontSize: "0.6875rem", padding: "3px 8px", borderRadius: 999, fontWeight: 700, flexShrink: 0, background: item.scope === "GLOBAL" ? "#44475A" : "#BD93F9", color: item.scope === "GLOBAL" ? "#F8F8F2" : "#1A1B26", border: "none" }}>
@@ -181,7 +187,7 @@ function SectionLabel({ children }) {
 function StatusChip({ status }) {
   const map = {
     RASCUNHO: { bg: "#FFB347", color: "#1A1B26", border: "#FFB347" },
-    CONFIRMADO: { bg: "#69FF47", color: "#1A1B26", border: "#69FF47" },
+    CONFIRMADO: { bg: "var(--success)", color: "#1A1B26", border: "var(--success)" },
     EXPORTADO: { bg: "#BD93F9", color: "#1A1B26", border: "#BD93F9" },
   };
   const style = map[status] || map.RASCUNHO;
@@ -305,7 +311,7 @@ function AccountSearchInput({ value, onChange, accounts, placeholder }) {
                 padding: "6px 10px", border: "none",
                 borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`,
                 background: selIdx === i ? ACCOUNTING_PANEL.surface : ACCOUNTING_PANEL.field,
-                outline: selIdx === i ? "2px solid #69FF47" : "none", outlineOffset: "-2px",
+                outline: selIdx === i ? "2px solid var(--success)" : "none", outlineOffset: "-2px",
                 color: ACCOUNTING_PANEL.text, cursor: "pointer", fontSize: "0.78rem",
               }}
               onMouseEnter={() => setSelIdx(i)}
@@ -365,7 +371,7 @@ export function LineEditor({ lines, onChange, accounts }) {
         const resolved = accounts.find((a) => a.codigo === String(l.conta || "").trim());
         return (
           <div key={idx} style={lineStyle}>
-            <select value={l.tipo} onChange={(e) => updateLine(idx, "tipo", e.target.value)} style={{ ...PANEL_FIELD_STYLE, width: "100%", height: 34, padding: "0 6px", fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "#69FF47", background: ACCOUNTING_PANEL.surface }}><option value="D">D</option><option value="C">C</option></select>
+            <select value={l.tipo} onChange={(e) => updateLine(idx, "tipo", e.target.value)} style={{ ...PANEL_FIELD_STYLE, width: "100%", height: 34, padding: "0 6px", fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "var(--success)", background: ACCOUNTING_PANEL.surface }}><option value="D">D</option><option value="C">C</option></select>
             <AccountSearchInput
               value={l.conta || ""}
               onChange={(v) => updateLine(idx, "conta", v)}
@@ -375,7 +381,7 @@ export function LineEditor({ lines, onChange, accounts }) {
             {/* ⚠ O TIPO APARECE NA LINHA QUE ESTÁ SENDO EDITADA, e é o momento que importa: é aqui
                 que o contador vê "Ativo" ao lado da conta que ele acabou de pôr no crédito de uma
                 provisão. O nome sozinho não distingue `137 CSLL` (ativo) de `256 CSLL A RECOLHER`. */}
-            <div style={{ fontSize: "0.75rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: resolved ? ACCOUNTING_PANEL.text : "#FF4757", paddingLeft: 2, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+            <div style={{ fontSize: "0.75rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: resolved ? ACCOUNTING_PANEL.text : "var(--danger)", paddingLeft: 2, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {resolved ? resolved.nome : (l.conta ? `⚠ código ${l.conta} não encontrado` : "— vazio —")}
               </span>
@@ -393,8 +399,8 @@ export function LineEditor({ lines, onChange, accounts }) {
         <button type="button" onClick={() => addLine("C")} style={{ ...PANEL_FIELD_STYLE, width: "auto", height: 32, padding: "0 12px", cursor: "pointer" }}>+ C</button>
         <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center", fontSize: "0.8rem" }}>
           <span>Débitos: <strong style={{ color: "#8BE9FD" }}>R$ {fmtValor(totalD)}</strong></span>
-          <span>Créditos: <strong style={{ color: "#69FF47" }}>R$ {fmtValor(totalC)}</strong></span>
-          {balanced ? <span style={{ color: "#69FF47", fontWeight: 700 }}>Balanceado</span> : <span style={{ color: "#FF4757", fontWeight: 700 }}>Diferença: R$ {fmtValor(diff)}</span>}
+          <span>Créditos: <strong style={{ color: "var(--success)" }}>R$ {fmtValor(totalC)}</strong></span>
+          {balanced ? <span style={{ color: "var(--success)", fontWeight: 700 }}>Balanceado</span> : <span style={{ color: "var(--danger)", fontWeight: 700 }}>Diferença: R$ {fmtValor(diff)}</span>}
         </div>
       </div>
     </div>
@@ -481,7 +487,7 @@ export function CompositeEntryEditorRow({ entry, accounts, saving, onSave, onClo
   const cCount = lines.filter((l) => l.tipo === "C").length;
 
   return (
-    <tr style={{ background: "#202334", outline: "2px solid #69FF47", outlineOffset: "-2px" }}
+    <tr style={{ background: "#202334", outline: "2px solid var(--success)", outlineOffset: "-2px" }}
       onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onClose?.(); } }}>
       <td colSpan={COL_COUNT} style={{ ...TDv, padding: "10px 14px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
@@ -520,19 +526,19 @@ export function CompositeEntryEditorRow({ entry, accounts, saving, onSave, onClo
           <LineEditor lines={lines} onChange={setLines} accounts={accounts} />
         </div>
         {contasForaDoPlano.length > 0 ? (
-          <div style={{ marginTop: 6, fontSize: "0.78rem", color: "#FF4757", fontWeight: 600 }}>
+          <div style={{ marginTop: 6, fontSize: "0.78rem", color: "var(--danger)", fontWeight: 600 }}>
             {contasForaDoPlano.join(", ")} — fora do plano de contas desta empresa
             <span style={{ fontWeight: 400, color: ACCOUNTING_PANEL.muted }}> — cadastre em Configurações → Plano de contas.</span>
           </div>
         ) : null}
         {avisoSintetica ? (
-          <div style={{ marginTop: 6, fontSize: "0.78rem", color: motivoSintetica ? "#FF4757" : "#FFB347", fontWeight: 600 }}>{avisoSintetica}</div>
+          <div style={{ marginTop: 6, fontSize: "0.78rem", color: motivoSintetica ? "var(--danger)" : "#FFB347", fontWeight: 600 }}>{avisoSintetica}</div>
         ) : null}
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
           {/* Botão desabilitado sem explicação é proibido neste projeto: o motivo fica à vista, não
               só no `title`. */}
           {motivoNaoSalva && !saving ? (
-            <span style={{ fontSize: "0.78rem", color: "#FF4757", fontWeight: 600 }}>{motivoNaoSalva}</span>
+            <span style={{ fontSize: "0.78rem", color: "var(--danger)", fontWeight: 600 }}>{motivoNaoSalva}</span>
           ) : null}
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <Button size="sm" variant="secondary" onClick={() => onClose?.()}>Cancelar</Button>
@@ -756,7 +762,7 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
               <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>{h.text}</div>
               <div style={{ fontSize: "0.65rem", color: ACCOUNTING_PANEL.muted, display: "flex", gap: 6, alignItems: "center" }}>
                 {h.contaDebito && <span style={{ color: "#8BE9FD", fontWeight: 700 }}>D:{h.contaDebito}</span>}
-                {h.contaCredito && <span style={{ color: "#69FF47", fontWeight: 700 }}>C:{h.contaCredito}</span>}
+                {h.contaCredito && <span style={{ color: "var(--success)", fontWeight: 700 }}>C:{h.contaCredito}</span>}
                 <span style={{ fontSize: "0.6rem", padding: "1px 5px", borderRadius: 999, background: h.scope === "GLOBAL" ? "#44475A" : "#BD93F9", color: h.scope === "GLOBAL" ? "#F8F8F2" : "#1A1B26" }}>{h.scope === "GLOBAL" ? "Global" : "Empresa"}</span>
               </div>
             </button>
@@ -961,27 +967,27 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
             <label style={PANEL_LABEL_STYLE}><span>Crédito</span><AccountCodeInput id="new-conta-c" value={contaC} onChange={setContaC} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); valRef.current?.focus(); } }} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode} onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }} placeholder="C" inputRef={cRef} competencia={activeComp} onSearchHistoricos={onSearchHistoricos} /></label>
             <label style={PANEL_LABEL_STYLE}><span>Valor</span><input ref={valRef} className="accounting-entry-value-input" type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }} placeholder="R$ 0,00" style={{ ...PANEL_FIELD_STYLE, textAlign: "right", fontSize: "1.0625rem", fontWeight: 500, minWidth: 140 }} /></label>
           </div>
-          {/* ⚠ Era verde #69FF47, na MESMA tela cujo rodapé usa verde para "D = C ✓ ok" — a linha
+          {/* ⚠ Era verde var(--success), na MESMA tela cujo rodapé usa verde para "D = C ✓ ok" — a linha
               de rascunho logo abaixo já tinha sido corrigida; este painel ficou para trás. */}
           <Button type="button" onClick={handleSave} disabled={!canSave} title={!dateVal ? "Informe o dia" : !historico ? "Informe o histórico" : !balanced ? "Valor ou contas incompletos" : duplicateAcrossSides ? "Débito e crédito não podem usar a mesma conta" : motivoSintetica || "Enter"} style={{ minHeight: 41, fontSize: entryFontSize, alignSelf: "end" }}>{saving ? "..." : "Salvar"}</Button>
         </div>
         <div style={{ display: "grid", gap: 4, minWidth: 150, width: 150, paddingTop: 16 }}>
-          <div style={totalCard}><span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#69FF47" }}>Débito</span><span style={{ fontSize: "0.9375rem", fontWeight: 700, color: ACCOUNTING_PANEL.text }}>R$ {fmtValor(listedTotalD)}</span></div>
-          <div style={totalCard}><span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#FF4757" }}>Crédito</span><span style={{ fontSize: "0.9375rem", fontWeight: 700, color: ACCOUNTING_PANEL.text }}>R$ {fmtValor(listedTotalC)}</span></div>
+          <div style={totalCard}><span style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--success)" }}>Débito</span><span style={{ fontSize: "0.9375rem", fontWeight: 700, color: ACCOUNTING_PANEL.text }}>R$ {fmtValor(listedTotalD)}</span></div>
+          <div style={totalCard}><span style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--danger)" }}>Crédito</span><span style={{ fontSize: "0.9375rem", fontWeight: 700, color: ACCOUNTING_PANEL.text }}>R$ {fmtValor(listedTotalC)}</span></div>
         </div>
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: "0.875rem", color: listedBalanceDelta >= 0 ? "#69FF47" : "#FF4757", fontWeight: 600 }}>Diferença: R$ {fmtValor(listedBalanceDelta)}</span>
+        <span style={{ fontSize: "0.875rem", color: listedBalanceDelta >= 0 ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>Diferença: R$ {fmtValor(listedBalanceDelta)}</span>
         {monthLabel ? <span style={{ fontSize: "0.8125rem", color: ACCOUNTING_PANEL.muted }}>{monthLabel}</span> : null}
       </div>
       {duplicateAcrossSides ? (
-        <div style={{ marginTop: 8, fontSize: "0.8125rem", color: "#FF4757", fontWeight: 600 }}>
+        <div style={{ marginTop: 8, fontSize: "0.8125rem", color: "var(--danger)", fontWeight: 600 }}>
           Débito e crédito não podem usar a mesma conta.
         </div>
       ) : null}
       {/* O bloqueio se explica ANTES do clique — e diz o que fazer, não só o que está errado. */}
       {contasForaDoPlano.length > 0 ? (
-        <div style={{ marginTop: 8, fontSize: "0.8125rem", color: "#FF4757", fontWeight: 600 }}>
+        <div style={{ marginTop: 8, fontSize: "0.8125rem", color: "var(--danger)", fontWeight: 600 }}>
           {contasForaDoPlano.length === 1 ? "A conta " : "As contas "}
           {contasForaDoPlano.join(", ")}
           {contasForaDoPlano.length === 1 ? " não existe" : " não existem"} no plano desta empresa
@@ -993,9 +999,9 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
           segue salvável. Vermelho ao lado de um Salvar habilitado esvaziaria o vermelho da linha
           acima, que bloqueia de verdade. */}
       {avisoSintetica ? (
-        <div style={{ marginTop: 8, fontSize: "0.8125rem", color: motivoSintetica ? "#FF4757" : "#FFB347", fontWeight: 600 }}>{avisoSintetica}</div>
+        <div style={{ marginTop: 8, fontSize: "0.8125rem", color: motivoSintetica ? "var(--danger)" : "#FFB347", fontWeight: 600 }}>{avisoSintetica}</div>
       ) : null}
-      {hasConta && <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, fontSize: "0.8125rem", color: ACCOUNTING_PANEL.muted }}><span>Tipo detectado:</span><span style={{ fontWeight: 700, color: "#1A1B26", background: detected.tipo === "PROVISAO" ? "#FFB347" : detected.tipo === "RECEITA" ? "#69FF47" : "#BD93F9", border: "none", borderRadius: 999, padding: "4px 10px" }}>{tipoDetectadoLabel}</span></div>}
+      {hasConta && <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, fontSize: "0.8125rem", color: ACCOUNTING_PANEL.muted }}><span>Tipo detectado:</span><span style={{ fontWeight: 700, color: "#1A1B26", background: detected.tipo === "PROVISAO" ? "#FFB347" : detected.tipo === "RECEITA" ? "var(--success)" : "#BD93F9", border: "none", borderRadius: 999, padding: "4px 10px" }}>{tipoDetectadoLabel}</span></div>}
       {complexMode && <div style={{ marginTop: 8 }}><LineEditor lines={complexLines} onChange={setComplexLines} accounts={accounts} /></div>}
     </div>
   );
@@ -1169,7 +1175,7 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
 
   const cell = { ...TDv, padding: "6px 8px" };
   return (
-    <tr style={{ background: "#202334", outline: "2px solid #69FF47", outlineOffset: "-2px" }} onKeyDown={onKeyDown}>
+    <tr style={{ background: "#202334", outline: "2px solid var(--success)", outlineOffset: "-2px" }} onKeyDown={onKeyDown}>
       <td style={{ ...cell, textAlign: "center" }} />
       {/* ⚠ A CADEIA DO ENTER SEGUE A MESMA ORDEM DO TAB — Dia → D → C → Histórico → Valor.
           Ela ia Dia → Histórico e MORRIA ali (o Histórico não repassava tecla nenhuma), enquanto a
@@ -1216,9 +1222,9 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
           onFillFromHistory={(hist, hl) => { if (hist) setHistorico(hist); if (hl?.length) { const d = hl.find((l) => l.tipo === "D"); const c = hl.find((l) => l.tipo === "C"); if (d?.conta) setContaD(d.conta); if (c?.conta) setContaC(c.conta); if (d?.valor) setValor(fmtValor(d.valor)); } }}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); valRef.current?.focus(); } }}
           onSearchHistoricos={onSearchHistoricos} accounts={accounts} inputRef={histRef} competencia={activeComp} />
-        {duplicateAcrossSides ? <div style={{ fontSize: "0.72rem", color: "#FF4757", marginTop: 2 }}>Débito e crédito não podem ser a mesma conta.</div> : null}
+        {duplicateAcrossSides ? <div style={{ fontSize: "0.72rem", color: "var(--danger)", marginTop: 2 }}>Débito e crédito não podem ser a mesma conta.</div> : null}
         {contasForaDoPlano.length > 0 ? (
-          <div style={{ fontSize: "0.72rem", color: "#FF4757", marginTop: 2 }}>
+          <div style={{ fontSize: "0.72rem", color: "var(--danger)", marginTop: 2 }}>
             {contasForaDoPlano.join(", ")} — fora do plano de contas desta empresa.
           </div>
         ) : null}
@@ -1227,7 +1233,7 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
             lançamento e ele segue salvável. Vermelho ao lado de um Salvar habilitado ensinaria a
             ignorar o vermelho da linha acima, que bloqueia de verdade. */}
         {avisoSintetica ? (
-          <div style={{ fontSize: "0.72rem", color: motivoSintetica ? "#FF4757" : "#FFB347", marginTop: 2 }}>{avisoSintetica}</div>
+          <div style={{ fontSize: "0.72rem", color: motivoSintetica ? "var(--danger)" : "#FFB347", marginTop: 2 }}>{avisoSintetica}</div>
         ) : null}
         {/* O Enter no Valor tentou salvar e não deu: o motivo aparece aqui, na célula larga, junto
             dos outros bloqueios. Omitido quando o bloqueio já tem mensagem própria logo acima —
@@ -1265,7 +1271,7 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
             de um relance. Fica DENTRO do <td>, abaixo do input — mesmo padrão dos avisos de conta
             duplicada e conta fora do plano: a célula cresce em altura e as colunas não se mexem. */}
         {!leitura.vazio && (
-          <div style={{ fontSize: "0.72rem", marginTop: 2, textAlign: "right", color: leitura.ok ? ACCOUNTING_PANEL.muted : "#FF4757" }}>
+          <div style={{ fontSize: "0.72rem", marginTop: 2, textAlign: "right", color: leitura.ok ? ACCOUNTING_PANEL.muted : "var(--danger)" }}>
             {leitura.ok ? `= ${fmtValor(leitura.valor)}` : leitura.mensagem}
           </div>
         )}
@@ -1424,12 +1430,12 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
                 Não usamos `opacity: 0`: o ícone continua legível em repouso, só sem cor. Ação que
                 só existe depois do hover é ação que quem não passa o mouse nunca descobre — e some
                 para leitor de tela e para teclado. Por isso `onFocus` também acende a linha. */}
-            {!exported && <><button type="button" onClick={startEdit} disabled={saving} title="Editar lançamento" aria-label="Editar lançamento" style={{ ...PANEL_ICON_BUTTON_STYLE, background: linhaAtiva ? ACCOUNTING_PANEL.accent : "transparent", color: linhaAtiva ? "#1A1B26" : ACCOUNTING_PANEL.muted, border: `1px solid ${linhaAtiva ? "transparent" : ACCOUNTING_PANEL.border}` }}>✎</button><button type="button" onClick={() => onDelete(entry.id)} disabled={saving} title="Excluir lançamento" aria-label="Excluir lançamento" style={{ ...PANEL_ICON_BUTTON_STYLE, background: linhaAtiva ? "#FF4757" : "transparent", color: linhaAtiva ? "#F8F8F2" : ACCOUNTING_PANEL.muted, border: `1px solid ${linhaAtiva ? "transparent" : ACCOUNTING_PANEL.border}` }}>⌫</button></>}
+            {!exported && <><button type="button" onClick={startEdit} disabled={saving} title="Editar lançamento" aria-label="Editar lançamento" style={{ ...PANEL_ICON_BUTTON_STYLE, background: linhaAtiva ? ACCOUNTING_PANEL.accent : "transparent", color: linhaAtiva ? "#1A1B26" : ACCOUNTING_PANEL.muted, border: `1px solid ${linhaAtiva ? "transparent" : ACCOUNTING_PANEL.border}` }}>✎</button><button type="button" onClick={() => onDelete(entry.id)} disabled={saving} title="Excluir lançamento" aria-label="Excluir lançamento" style={{ ...PANEL_ICON_BUTTON_STYLE, background: linhaAtiva ? "var(--danger)" : "transparent", color: linhaAtiva ? "#F8F8F2" : ACCOUNTING_PANEL.muted, border: `1px solid ${linhaAtiva ? "transparent" : ACCOUNTING_PANEL.border}` }}>⌫</button></>}
             {exported && <span style={{ fontSize: "0.7rem", color: ACCOUNTING_PANEL.text }}>exportado</span>}
           </div>
         </td>
       </tr>
-      {expanded && !isSimple && <tr style={{ background: ACCOUNTING_PANEL.surface }}><td colSpan={7} style={{ padding: "6px 16px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}><thead><tr><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>D/C</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Conta</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Nome</th><th style={{ textAlign: "right", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Valor</th></tr></thead><tbody>{lines.map((l, i) => { const acc = accounts.find((a) => a.codigo === l.conta); return <tr key={i}><td style={{ padding: "2px 6px", fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "#69FF47" }}>{l.tipo}</td><td style={{ padding: "2px 6px", fontWeight: 700 }}>{l.conta}</td><td style={{ padding: "2px 6px", color: ACCOUNTING_PANEL.muted }}>{acc?.nome || "—"}</td><td style={{ padding: "2px 6px", textAlign: "right" }}>{fmtValor(l.valor)}</td></tr>; })}</tbody></table></td></tr>}
+      {expanded && !isSimple && <tr style={{ background: ACCOUNTING_PANEL.surface }}><td colSpan={7} style={{ padding: "6px 16px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}><thead><tr><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>D/C</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Conta</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Nome</th><th style={{ textAlign: "right", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Valor</th></tr></thead><tbody>{lines.map((l, i) => { const acc = accounts.find((a) => a.codigo === l.conta); return <tr key={i}><td style={{ padding: "2px 6px", fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "var(--success)" }}>{l.tipo}</td><td style={{ padding: "2px 6px", fontWeight: 700 }}>{l.conta}</td><td style={{ padding: "2px 6px", color: ACCOUNTING_PANEL.muted }}>{acc?.nome || "—"}</td><td style={{ padding: "2px 6px", textAlign: "right" }}>{fmtValor(l.valor)}</td></tr>; })}</tbody></table></td></tr>}
       {showBaixa && <BaixaModal entry={entry} accounts={accounts} saving={savingBaixa} onSave={async (input) => { await onCreateBaixa(entry.id, input); setShowBaixa(false); }} onClose={() => setShowBaixa(false)} onLoadBaixaTemplate={onLoadBaixaTemplate} />}
     </>
   );
@@ -1792,7 +1798,7 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
                           value={r.credito}
                           onChange={(e) => updateRow(idx, "credito", e.target.value)}
                           placeholder="—"
-                          style={{ ...inputStyle, fontWeight: 700, color: r.credito ? "#69FF47" : "#6272A4", textAlign: "center" }}
+                          style={{ ...inputStyle, fontWeight: 700, color: r.credito ? "var(--success)" : "#6272A4", textAlign: "center" }}
                         />
                         {cAccount && <div style={{ fontSize: "0.65rem", color: "#6272A4", marginTop: 2, textAlign: "center" }}>{cAccount.nome}</div>}
                       </td>
@@ -1894,7 +1900,7 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
               </tbody>
               <tfoot>
                 <tr style={{ background: "#1A1B26" }}>
-                  <td colSpan={6} style={{ padding: "8px 12px", fontSize: "0.78rem", color: provisaoBalanced ? "#69FF47" : "#FFB347" }}>
+                  <td colSpan={6} style={{ padding: "8px 12px", fontSize: "0.78rem", color: provisaoBalanced ? "var(--success)" : "#FFB347" }}>
                     Provisão — D R$ {totalD.toFixed(2)} / C R$ {totalC.toFixed(2)}{" "}
                     {provisaoBalanced ? "✓" : "(desbalanceado)"}
                     {baixaRowsFilled.length > 0 && (
@@ -1975,7 +1981,7 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
             <div
               style={{
                 width: 34, height: 34, borderRadius: "50%",
-                border: "3px solid #44475A", borderTopColor: "#69FF47",
+                border: "3px solid #44475A", borderTopColor: "var(--success)",
                 animation: "girar 0.8s linear infinite",
               }}
             />
@@ -1983,7 +1989,7 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
               {gravandoTotal === 1 ? "Gravando o lançamento…" : `Gravando ${gravandoTotal} lançamentos…`}
             </strong>
             {gravandoTotal > 1 && (
-              <span style={{ fontSize: "0.8rem", color: "#8A8FA3" }}>
+              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
                 Um por competência. Não feche esta janela.
               </span>
             )}
@@ -2011,8 +2017,8 @@ function ItemConferencia({ item, cor, rotulo, onIr }) {
     <>
       <span style={{ color: cor, fontWeight: 800, fontSize: "0.66rem", letterSpacing: "0.04em" }}>{rotulo}</span>
       <span style={{ color: "#F8F8F2" }}>{item.motivo}</span>
-      {item.ocorrencias > 1 && <span style={{ color: "#8A8FA3" }}>· {item.ocorrencias}×</span>}
-      {item.historico && <span style={{ color: "#8A8FA3", overflow: "hidden", textOverflow: "ellipsis" }}>· {item.historico}</span>}
+      {item.ocorrencias > 1 && <span style={{ color: "var(--text-muted)" }}>· {item.ocorrencias}×</span>}
+      {item.historico && <span style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis" }}>· {item.historico}</span>}
     </>
   );
   const estilo = {
@@ -2160,7 +2166,7 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPrefli
               </Button>
               {/* Opção desabilitada NUNCA fica sem explicação. */}
               {!mesUnico && (
-                <span style={{ fontSize: "0.75rem", color: "#8A8FA3" }}>
+                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
                   a conferência é de um mês por vez — deixe início e fim iguais
                 </span>
               )}
@@ -2173,7 +2179,7 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPrefli
                   {preflight.totais.linhas} linha{preflight.totais.linhas !== 1 ? "s" : ""} · D R$ {fmtValor(preflight.totais.totalD)} · C R$ {fmtValor(preflight.totais.totalC)}
                   {preflight.totais.diferenca > 0.01
                     ? <span style={{ color: "#FF5757", fontWeight: 700 }}> · diferença R$ {fmtValor(preflight.totais.diferenca)}</span>
-                    : <span style={{ color: "#69FF47", fontWeight: 700 }}> · ✓ ok</span>}
+                    : <span style={{ color: "var(--success)", fontWeight: 700 }}> · ✓ ok</span>}
                 </div>
 
                 {preflight.erros.map((e, i) => (
@@ -2185,7 +2191,7 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPrefli
 
                 {/* Princípio 7: ausência nunca é resposta — o lote limpo DIZ que está limpo. */}
                 {!temErros && !temAlertas && (
-                  <span style={{ fontSize: "0.78rem", color: "#69FF47" }}>✓ Nenhum problema encontrado neste lote.</span>
+                  <span style={{ fontSize: "0.78rem", color: "var(--success)" }}>✓ Nenhum problema encontrado neste lote.</span>
                 )}
 
                 {/* ⚠ SAÍDA PARA A MARCA DE EXPORTADO.

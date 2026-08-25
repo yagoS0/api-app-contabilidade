@@ -196,7 +196,7 @@ export function RotinasPage({
                         <tr key={r.key} style={{ borderTop: "1px solid #2b2d45", opacity: ligada ? 1 : 0.55 }}>
                           <td style={{ padding: "6px", color: "#F8F8F2" }}>
                             <strong>{r.label}</strong>
-                            <div style={{ fontSize: "0.72rem", color: "#6b7280" }}>{ROTINA_HINT[r.key]}</div>
+                            <div style={{ fontSize: "0.72rem", color: "var(--text-faint)" }}>{ROTINA_HINT[r.key]}</div>
                           </td>
                           <td style={td}>
                             <input
@@ -251,8 +251,8 @@ export function RotinasPage({
               <div style={{
                 margin: "0 0 12px", padding: "8px 12px", borderRadius: 6, fontSize: "0.85rem",
                 background: notice.type === "error" ? "rgba(255,71,87,0.12)" : "rgba(105,255,71,0.10)",
-                border: `1px solid ${notice.type === "error" ? "#FF4757" : "#69FF47"}`,
-                color: notice.type === "error" ? "#FF4757" : "#69FF47",
+                border: `1px solid ${notice.type === "error" ? "var(--danger)" : "var(--success)"}`,
+                color: notice.type === "error" ? "var(--danger)" : "var(--success)",
               }}>
                 {notice.text}
               </div>
@@ -279,17 +279,24 @@ export function RotinasPage({
                         <div>{r.label}</div>
                         {someSelected && (
                           <div style={{ display: "flex", gap: 3, justifyContent: "center", marginTop: 3 }}>
+                            {/* ⚠⚠ OS DOIS SÃO NEUTROS, e o ✕ era `--state-danger` até 24/08/2026.
+                                Marcar e desmarcar uma rotina em lote são o MESMO gesto em dois
+                                sentidos — nenhum dos dois é sucesso, e nenhum bloqueia nada. Nesta
+                                casa `--state-danger` significa *"bloqueia o fechamento"* e
+                                `--state-ok` significa *"concluído"*; gastá-los num par de
+                                alternância é como se treina o olho a ignorar o vermelho que importa.
+                                ⚠ Quem carrega o significado é o `title`, que já dizia qual é qual. */}
                             <button
                               type="button"
                               onClick={() => aplicarEmLote(r.key, true)}
                               title={`Marcar ${r.label} nas selecionadas`}
-                              style={{ background: "none", border: "1px solid var(--state-ok)", color: "var(--state-ok)", borderRadius: 4, fontSize: "0.65rem", cursor: "pointer", padding: "0 4px" }}
+                              style={{ background: "none", border: "1px solid var(--border)", color: "var(--text-muted)", borderRadius: 4, fontSize: "0.65rem", cursor: "pointer", padding: "0 4px" }}
                             >✓</button>
                             <button
                               type="button"
                               onClick={() => aplicarEmLote(r.key, false)}
                               title={`Desmarcar ${r.label} nas selecionadas`}
-                              style={{ background: "none", border: "1px solid var(--state-danger)", color: "var(--state-danger)", borderRadius: 4, fontSize: "0.65rem", cursor: "pointer", padding: "0 4px" }}
+                              style={{ background: "none", border: "1px solid var(--border)", color: "var(--text-muted)", borderRadius: 4, fontSize: "0.65rem", cursor: "pointer", padding: "0 4px" }}
                             >✕</button>
                           </div>
                         )}
@@ -299,10 +306,10 @@ export function RotinasPage({
                 </thead>
                 <tbody>
                   {loading && (
-                    <tr><td colSpan={3 + rotinas.length} style={{ padding: 16, textAlign: "center", color: "#6b7280" }}>Carregando…</td></tr>
+                    <tr><td colSpan={3 + rotinas.length} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Carregando…</td></tr>
                   )}
                   {!loading && empresas.length === 0 && (
-                    <tr><td colSpan={3 + rotinas.length} style={{ padding: 16, textAlign: "center", color: "#6b7280" }}>Nenhuma empresa.</td></tr>
+                    <tr><td colSpan={3 + rotinas.length} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Nenhuma empresa.</td></tr>
                   )}
                   {empresas.map((e) => {
                     const checked = selectedIds.has(e.companyId);
@@ -315,7 +322,7 @@ export function RotinasPage({
                         <td style={{ padding: "6px", color: "#F8F8F2" }}>
                           {e.razao}
                           {suspensa && <span style={{ marginLeft: 6, fontSize: "0.7rem", color: "#FFB347" }}>suspensa</span>}
-                          <div style={{ fontSize: "0.72rem", color: "#6b7280" }}>{e.cnpj}</div>
+                          <div style={{ fontSize: "0.72rem", color: "var(--text-faint)" }}>{e.cnpj}</div>
                         </td>
                         <td style={{ padding: "6px", color: "#A7B0C0", fontSize: "0.8rem" }}>
                           {e.regime === "LUCRO_PRESUMIDO" ? "Presumido" : e.regime === "SIMPLES" ? "Simples" : "—"}

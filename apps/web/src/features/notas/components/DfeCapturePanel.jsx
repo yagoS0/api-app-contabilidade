@@ -72,7 +72,7 @@ export function DfeCapturePanel({ dfeState, dfeSyncing, onSync, onClearError }) 
           </button>
         )}
         {hasError && (
-          <span style={{ color: "#FF4757", fontSize: "0.78rem" }} title={dfeState.dfeLastError}>
+          <span style={{ color: "var(--danger)", fontSize: "0.78rem" }} title={dfeState.dfeLastError}>
             {dfeState.dfeLastError}
           </span>
         )}

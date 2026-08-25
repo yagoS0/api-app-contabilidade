@@ -11,7 +11,7 @@ const TIPOS_RECEITA = [
   { value: "SERVICO_FATOR_R",      label: "Serviço — Fator R (III↔V mensal) ★" },
 ];
 
-const CONF_COLOR = { alta: "#69FF47", media: "#FFB347", baixa: "#8BE9FD" };
+const CONF_COLOR = { alta: "var(--success)", media: "#FFB347", baixa: "#8BE9FD" };
 const CONF_LABEL = { alta: "alta", media: "média", baixa: "baixa" };
 
 export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving }) {

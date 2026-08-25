@@ -182,19 +182,29 @@ function LineEditor({ lines, onChange, accounts }) {
           <tr>
             <td colSpan={3} style={{ padding: "4px 6px", fontSize: "0.75rem" }}>
               <div style={{ display: "flex", gap: 6 }}>
+                {/* ⚠⚠ OS DOIS ERAM COLORIDOS, E OS DOIS TOKENS QUERIAM DIZER OUTRA COISA.
+                    *"+ Crédito"* saía em `--state-ok`, que nesta casa significa **concluído** — e a
+                    regra escrita é que verde **nunca** é ação. *"+ Débito"* saía em
+                    `--accent-cyan`, que aqui é o acento do **Simples Nacional** (`tokens.css:121`),
+                    nada a ver com débito. Dois botões de AÇÃO vestidos com o vocabulário de estado e
+                    de regime, um ao lado do outro.
+                    ⚠ A distinção D × C não se perdeu: ela está na PALAVRA, que é onde ela sempre
+                    esteve para quem lê. ⚠ Se o dono quiser um par de cores próprio para débito e
+                    crédito, isso é token novo em `tokens.css` — não é emprestar dois que já têm
+                    dono. */}
                 <button onClick={() => addLine("D")}
-                  style={{ fontSize: "0.7rem", background: "rgba(139,233,253,0.12)", color: "var(--accent-cyan)", border: "1px solid var(--accent-cyan)", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
+                  style={{ fontSize: "0.7rem", background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
                   + Débito
                 </button>
                 <button onClick={() => addLine("C")}
-                  style={{ fontSize: "0.7rem", background: "rgba(105,255,71,0.10)", color: "var(--state-ok)", border: "1px solid var(--state-ok)", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
+                  style={{ fontSize: "0.7rem", background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
                   + Crédito
                 </button>
               </div>
             </td>
             <td colSpan={2} style={{ padding: "4px 6px", textAlign: "right", fontSize: "0.75rem" }}>
               {balanced ? (
-                <span style={{ color: "#69FF47", fontWeight: 700 }}>Balanceado</span>
+                <span style={{ color: "var(--success)", fontWeight: 700 }}>Balanceado</span>
               ) : (
                 <span style={{ color: "#FF5757", fontWeight: 700 }}>Dif. R$ {fmtMoney(diff)}</span>
               )}

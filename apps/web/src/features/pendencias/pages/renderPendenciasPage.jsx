@@ -6,9 +6,9 @@ import { Feedback } from "../../../components/ui/Feedback";
 import { Button } from "../../../components/ui/Button";
 
 const SITUACAO_META = {
-  COM_PENDENCIA: { label: "Com pendência", color: "#FF4757", bg: "rgba(255,71,87,0.12)" },
+  COM_PENDENCIA: { label: "Com pendência", color: "var(--danger)", bg: "rgba(255,71,87,0.12)" },
   EM_PARCELAMENTO: { label: "Em parcelamento", color: "#8BE9FD", bg: "rgba(139,233,253,0.12)" },
-  REGULAR: { label: "Regular", color: "#69FF47", bg: "rgba(105,255,71,0.10)" },
+  REGULAR: { label: "Regular", color: "var(--success)", bg: "rgba(105,255,71,0.10)" },
   PROCESSANDO: { label: "Processando", color: "#FFB347", bg: "rgba(255,179,71,0.12)" },
 };
 
@@ -75,9 +75,9 @@ export function PendenciasContent({ pendenciasPanel }) {
               <div style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Empresas</div>
               <div style={{ color: "#F8F8F2", fontSize: "1.4rem", fontWeight: 700 }}>{(items || []).length}</div>
             </div>
-            <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757" }}>
+            <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(255,71,87,0.10)", border: "1px solid var(--danger)" }}>
               <div style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Com pendência</div>
-              <div style={{ color: "#FF4757", fontSize: "1.4rem", fontWeight: 700 }}>{comPendencia}</div>
+              <div style={{ color: "var(--danger)", fontSize: "1.4rem", fontWeight: 700 }}>{comPendencia}</div>
             </div>
             {emParcelamento > 0 && (
               <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(139,233,253,0.08)", border: "1px solid #8BE9FD" }}>
@@ -112,7 +112,7 @@ export function PendenciasContent({ pendenciasPanel }) {
           </div>
 
           {error && (
-            <div style={{ margin: "0 0 12px", padding: "8px 12px", borderRadius: 6, fontSize: "0.85rem", background: "rgba(255,71,87,0.12)", border: "1px solid #FF4757", color: "#FF4757" }}>
+            <div style={{ margin: "0 0 12px", padding: "8px 12px", borderRadius: 6, fontSize: "0.85rem", background: "rgba(255,71,87,0.12)", border: "1px solid var(--danger)", color: "var(--danger)" }}>
               {error}
             </div>
           )}
@@ -143,7 +143,7 @@ export function PendenciasContent({ pendenciasPanel }) {
                   <tr><td colSpan={6} style={{ padding: 16, textAlign: "center", color: "#A7B0C0" }}>Carregando…</td></tr>
                 )}
                 {!loading && rows.length === 0 && (
-                  <tr><td colSpan={6} style={{ padding: 16, textAlign: "center", color: "#6b7280" }}>Nenhuma empresa.</td></tr>
+                  <tr><td colSpan={6} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Nenhuma empresa.</td></tr>
                 )}
                 {!loading && rows.map((r) => {
                   const checked = selectedIds.has(r.companyId);
@@ -176,7 +176,7 @@ export function PendenciasContent({ pendenciasPanel }) {
             </table>
           </div>
 
-          <p style={{ marginTop: 12, color: "#6b7280", fontSize: "0.78rem" }}>
+          <p style={{ marginTop: 12, color: "var(--text-faint)", fontSize: "0.78rem" }}>
             A marcação de pendência é derivada do relatório SITFIS por palavra-chave (aproximada) — confirme
             sempre no relatório completo. A consulta ao SERPRO só funciona com a integração SITFIS habilitada.
           </p>

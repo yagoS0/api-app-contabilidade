@@ -164,7 +164,7 @@ export function NotasFiscaisTab({
       {error && (
         <div style={{ padding: 12, marginBottom: 16, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: "var(--radius-sm)", color: "var(--state-danger)" }}>
           {error}
-          {/* ⚠ Este NÃO é um botão destrutivo — ele só recarrega. O `#FF4757` era a cor da CAIXA DE
+          {/* ⚠ Este NÃO é um botão destrutivo — ele só recarrega. O `var(--danger)` era a cor da CAIXA DE
               ERRO em volta, emprestada pelo botão: exatamente o defeito que esta padronização
               corrige, só que com vermelho em vez de âmbar. `danger` aqui mentiria sobre a ação (e,
               sobre um fundo que já é `--state-danger` a 10%, o `.btn-danger` de superfície ficaria

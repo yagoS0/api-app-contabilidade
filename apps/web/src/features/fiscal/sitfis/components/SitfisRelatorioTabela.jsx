@@ -46,7 +46,7 @@
 // Se um dia alguma coluna se revelar vazia em 100% dos casos, isso é decisão do dono — não é
 // motivo para a tela voltar a decidir sozinha o que mostrar.
 
-const COR = { texto: "#F8F8F2", suave: "#A7B0C0", borda: "#44475A", ok: "#69FF47", alerta: "#FFB347", erro: "#FF5555" };
+const COR = { texto: "#F8F8F2", suave: "#A7B0C0", borda: "#44475A", ok: "var(--success)", alerta: "#FFB347", erro: "#FF5555" };
 
 // Colunas de dinheiro alinham à direita e vão em fonte monoespaçada — comparar valores em coluna
 // desalinhada é onde o olho erra.

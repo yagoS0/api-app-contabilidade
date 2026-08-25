@@ -41,7 +41,7 @@ const CAIXA = {
   boxSizing: "border-box",
 };
 
-const AJUDA = { fontSize: 11, color: "#8A8FA3", lineHeight: 1.6 };
+const AJUDA = { fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6 };
 
 export function SeletorServicosNacionais({
   codigos,
@@ -240,7 +240,7 @@ export function SeletorServicosNacionais({
 
       {dados && termo.trim() !== "" && (
         resultado.total === 0 ? (
-          <div style={{ fontSize: 12, color: "#8A8FA3" }}>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
             Nenhum serviço com “{termo}”. Tente uma palavra só, ou o número do código.
           </div>
         ) : (
@@ -265,12 +265,12 @@ export function SeletorServicosNacionais({
                       style={{
                         display: "flex", gap: 10, width: "100%", alignItems: "flex-start",
                         background: "none", border: "none", borderBottom: "1px solid #2b2d45",
-                        color: jaEscolhido ? "#8A8FA3" : "#F8F8F2", padding: "7px 10px",
+                        color: jaEscolhido ? "var(--text-muted)" : "#F8F8F2", padding: "7px 10px",
                         cursor: jaEscolhido ? "default" : "pointer",
                         fontSize: "0.85rem", textAlign: "left",
                       }}
                     >
-                      <code style={{ color: jaEscolhido ? "#8A8FA3" : "var(--accent-cyan)", flex: "0 0 auto" }}>
+                      <code style={{ color: jaEscolhido ? "var(--text-muted)" : "var(--accent-cyan)", flex: "0 0 auto" }}>
                         {formatarCodigoServicoNacional(s[0])}
                       </code>
                       <span style={{ flex: 1, minWidth: 0 }}>
@@ -283,7 +283,7 @@ export function SeletorServicosNacionais({
                 );
               })}
             </ul>
-            <div style={{ fontSize: 11, color: "#8A8FA3" }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
               {resultado.total > resultado.itens.length
                 /* ⚠ Recorte que não se anuncia faz o contador escolher dentro de uma lista parcial
                    achando que é a lista inteira — e o serviço dele pode estar fora. */

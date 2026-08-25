@@ -44,18 +44,18 @@ export function DeleteCompanyModal({ company, saving, onConfirm, onClose }) {
       display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
     }}>
       <div style={{
-        background: PANEL.surface, border: "1px solid #FF4757", borderRadius: 10,
+        background: PANEL.surface, border: "1px solid var(--danger)", borderRadius: 10,
         padding: 24, width: "100%", maxWidth: 520,
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <h3 style={{ margin: 0, color: "#FF4757", fontSize: "1rem" }}>
+          <h3 style={{ margin: 0, color: "var(--danger)", fontSize: "1rem" }}>
             ⚠ Excluir empresa
           </h3>
           <button onClick={onClose} style={{ background: "none", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.4rem" }}>×</button>
         </div>
 
         <div style={{
-          padding: 12, background: "rgba(255, 71, 87, 0.10)", border: "1px solid #FF4757",
+          padding: 12, background: "rgba(255, 71, 87, 0.10)", border: "1px solid var(--danger)",
           borderRadius: 6, marginBottom: 16, color: PANEL.text, fontSize: "0.85rem",
         }}>
           <strong>Esta ação é irreversível.</strong> Serão apagados:
@@ -82,20 +82,20 @@ export function DeleteCompanyModal({ company, saving, onConfirm, onClose }) {
             placeholder="00.000.000/0000-00"
             autoFocus
             style={{
-              background: PANEL.field, border: `1px solid ${isMatch ? "#69FF47" : PANEL.border}`,
+              background: PANEL.field, border: `1px solid ${isMatch ? "var(--success)" : PANEL.border}`,
               borderRadius: 6, color: PANEL.text, padding: "8px 12px",
               fontSize: "0.95rem", fontFamily: "monospace",
             }}
           />
           {isMatch && (
-            <span style={{ color: "#69FF47", fontSize: "0.75rem" }}>✓ CNPJ confere</span>
+            <span style={{ color: "var(--success)", fontSize: "0.75rem" }}>✓ CNPJ confere</span>
           )}
         </label>
 
         {err && (
           <div style={{
-            color: "#FF4757", fontSize: "0.8rem", padding: "8px 10px",
-            background: "rgba(255, 71, 87, 0.12)", border: "1px solid #FF4757",
+            color: "var(--danger)", fontSize: "0.8rem", padding: "8px 10px",
+            background: "rgba(255, 71, 87, 0.12)", border: "1px solid var(--danger)",
             borderRadius: 6, marginBottom: 12,
           }}>
             {err}

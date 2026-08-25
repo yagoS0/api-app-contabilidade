@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 const COR_FECHADO = "#2DD4BF";
-const COR_APURADA = "#69FF47";
+const COR_APURADA = "var(--success)";
 const COR_VAZIO = "#3b3d51";
 
 function Celula({ mes, razao, onOpen }) {
@@ -90,7 +90,7 @@ export function AnnualGrid({ api, onOpenCompany }) {
       </div>
 
       {erro && (
-        <div style={{ margin: "0 0 12px", padding: "8px 12px", borderRadius: 6, fontSize: "0.85rem", background: "rgba(255,71,87,0.12)", border: "1px solid #FF4757", color: "#FF4757" }}>
+        <div style={{ margin: "0 0 12px", padding: "8px 12px", borderRadius: 6, fontSize: "0.85rem", background: "rgba(255,71,87,0.12)", border: "1px solid var(--danger)", color: "var(--danger)" }}>
           {erro}
         </div>
       )}
@@ -112,7 +112,7 @@ export function AnnualGrid({ api, onOpenCompany }) {
               <tr><td colSpan={13} style={{ padding: 16, textAlign: "center", color: "#A7B0C0" }}>Carregando…</td></tr>
             )}
             {!loading && linhas.length === 0 && !erro && (
-              <tr><td colSpan={13} style={{ padding: 16, textAlign: "center", color: "#6b7280" }}>Nenhuma empresa.</td></tr>
+              <tr><td colSpan={13} style={{ padding: 16, textAlign: "center", color: "var(--text-faint)" }}>Nenhuma empresa.</td></tr>
             )}
             {!loading && linhas.map((l) => (
               <tr key={l.companyId} style={{ borderTop: "1px solid #2b2d45" }}>

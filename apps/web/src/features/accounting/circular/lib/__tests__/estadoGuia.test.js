@@ -92,7 +92,7 @@ describe("estadoDaGuia — o vencimento é o que decide", () => {
 describe("aparenciaDaGuia — a cor nunca viaja sozinha", () => {
   it("vencida é vermelha E diz há quantos dias", () => {
     const r = aparenciaDaGuia(aberta(venc(8, 3)), HOJE);
-    expect(r.cor).toBe("#FF4757");
+    expect(r.cor).toBe("var(--danger)");
     expect(r.rotulo).toBe("Vencida · 2 dias");
   });
 

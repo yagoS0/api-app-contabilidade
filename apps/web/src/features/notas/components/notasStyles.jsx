@@ -81,7 +81,7 @@ export function StalenessBadge({ lastSyncAt, label = "Última sync" }) {
     bg = "rgba(255,179,71,0.15)"; color = "#FFB347";
     text = `⚠ há ${s.days} dias`;
   } else if (s.level === "danger") {
-    bg = "rgba(255,71,87,0.15)"; color = "#FF4757";
+    bg = "rgba(255,71,87,0.15)"; color = "var(--danger)";
     text = `🔴 há ${s.days} dias (risco perder NSU)`;
   } else {
     text = "nunca";

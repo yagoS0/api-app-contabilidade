@@ -7,8 +7,8 @@ const PANEL = {
   text: "#F8F8F2",
   muted: "#6272A4",
   accent: "#BD93F9",
-  success: "#69FF47",
-  danger: "#FF4757",
+  success: "var(--success)",
+  danger: "var(--danger)",
   warning: "#FFB347",
 };
 
@@ -270,7 +270,7 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
                             style={{ ...INPUT, width: 70, textAlign: "center" }}
                           />
                         ) : (
-                          <span style={{ fontWeight: 700, color: "#69FF47" }}>{h.contaCredito || "—"}</span>
+                          <span style={{ fontWeight: 700, color: "var(--success)" }}>{h.contaCredito || "—"}</span>
                         )}
                       </td>
 

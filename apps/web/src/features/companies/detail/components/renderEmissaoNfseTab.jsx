@@ -135,7 +135,7 @@ export function EmissaoNfseTab({
                 {/* ⚠ A tela diz o que este botão salva — e o que ele NÃO salva. Um botão de salvar
                     numa aba de cadastro é lido como "salva a empresa", e é justamente o que ele
                     não faz. */}
-                <span style={{ fontSize: 11, color: "#8A8FA3", lineHeight: 1.5 }}>
+                <span style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
                   {alterado
                     ? "Há alterações não salvas. O botão salva apenas os campos desta aba — o resto do cadastro tem o salvar dele, na aba Cadastro."
                     : "Nada para salvar: os campos estão como foram gravados. (Este botão salva apenas os campos desta aba.)"}
