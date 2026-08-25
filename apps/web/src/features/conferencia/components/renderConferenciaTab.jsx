@@ -12,7 +12,7 @@
 // ⚠⚠ E ELA NÃO OFERECE "ANEXAR COMPROVANTE". `AnexoDeclarado` existe no schema e **não tem
 // escritor** — nenhuma rota, nenhum serviço. Desenhar o botão prometeria um caminho que não existe.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApiClient } from "../../../api/client";
 import { Button } from "../../../components/ui/Button";
 import { Modal } from "../../../components/ui/Modal";
@@ -21,10 +21,12 @@ import { PainelDeCasamentos } from "./PainelDeCasamentos";
 import {
   ACAO,
   COMPETENCIA_AUSENTE,
+  ORIGEM_PAGAMENTO,
   acaoPedeData,
   acoesDaLinha,
   agruparPorFornecedor,
   cnpjFormatado,
+  contaQueSeraUsada,
   contagemParaTela,
   dataCivil,
   dataSugeridaParaPagamento,
@@ -113,8 +115,44 @@ function DataComProcedencia({ item }) {
   );
 }
 
+/**
+ * ⚠⚠ O CORPO QUE VAI AO SERVIDOR — e ele já esteve ERRADO de um jeito que quebrava tudo.
+ *
+ * Achado por auditoria em 25/08/2026: a tela mandava `dataPagamento` SEMPRE (o modal a
+ * pré-preenche) e **nunca** `origemPagamento`. Do outro lado, `lerPagamentoDoCorpo` decide por
+ * `hasOwnProperty("dataPagamento")`: com a chave presente, ele lê `body.origemPagamento ?? null` e
+ * **ignora a procedência que a linha já tinha**. `conferirPagamento` então recusa `null` com
+ * `origem_de_pagamento_invalida`.
+ *
+ * ⚠⚠ Efeito: **CONFIRMAR falhava em produção para toda linha** — inclusive as que já tinham data
+ * provada pelo extrato. E funcionava offline, porque o mock só ecoa o corpo. Só apareceria depois
+ * do deploy.
+ *
+ * As duas regras que consertam isso:
+ *
+ * 1. ⚠ **A data só viaja quando a tela de fato a PEDIU** (`acaoPedeData`). Se a linha já tem data,
+ *    não se manda nada — o servidor usa a que existe, com a procedência que ela já tem. Mandar a
+ *    mesma data de volta apagaria o `OFX` e a transformaria em declaração.
+ * 2. ⚠⚠ **Quando a data viaja, a procedência viaja junto — e é `DECLARADO_PELO_CONTADOR`.** É a
+ *    verdade do ato: a tela só pergunta a data quando ninguém a provou, e o que a pessoa digita é
+ *    declaração, não prova. Deixar o servidor adivinhar é o que produziu o defeito.
+ */
+export function montarCorpo({ acao, item, data, motivo, valor, cfg }) {
+  const corpo = {};
+  if (acaoPedeData(acao, item) && data) {
+    corpo.dataPagamento = data;
+    corpo.origemPagamento = ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR;
+  }
+  if (cfg?.pedeMotivo && motivo) corpo.motivoRecusa = motivo;
+  if (cfg?.pedeValor && valor) corpo.valorAjustado = valor;
+  // ⚠ A conta que o servidor vai usar. Sem ela e sem `contaSugerida` gravada, `podeTransitar`
+  // recusa com `sem_conta` — por isso o botão já nasce bloqueado (ver `motivoDeBloqueio`).
+  if (cfg?.criaLancamento && item?.sugestao?.conta) corpo.contaAplicada = item.sugestao.conta;
+  return corpo;
+}
+
 /** ⚠ O modal pergunta o que a ação precisa ANTES de enviar — a tela não descobre a regra pelo erro. */
-function ModalDaAcao({ acao, item, ocupado, onFechar, onConfirmar }) {
+function ModalDaAcao({ acao, item, ocupado, aviso, onFechar, onConfirmar }) {
   const cfg = ACAO[acao];
   const [data, setData] = useState(() => dataSugeridaParaPagamento(item));
   const [motivo, setMotivo] = useState("");
@@ -142,11 +180,7 @@ function ModalDaAcao({ acao, item, ocupado, onFechar, onConfirmar }) {
             disabled={!podeEnviar || ocupado}
             // ⚠ Botão desabilitado NUNCA é mudo — o motivo vai no `title`.
             title={faltaData ? "Informe a data do pagamento." : faltaMotivo ? "Escreva o motivo da recusa." : undefined}
-            onClick={() => onConfirmar({
-              dataPagamento: data || undefined,
-              motivoRecusa: motivo || undefined,
-              valorAjustado: cfg?.pedeValor ? valor : undefined,
-            })}
+            onClick={() => onConfirmar(montarCorpo({ acao, item, data, motivo, valor, cfg }))}
           >
             {ocupado ? "Enviando…" : cfg?.rotulo}
           </Button>
@@ -154,6 +188,25 @@ function ModalDaAcao({ acao, item, ocupado, onFechar, onConfirmar }) {
       }
     >
       <div style={{ display: "grid", gap: 14 }}>
+        {/* ⚠⚠ A RECUSA DO SERVIDOR APARECE AQUI DENTRO — achado por auditoria em 25/08/2026.
+            Ela era desenhada no corpo da aba, ou seja **atrás do overlay do modal** (`.modal-fundo`
+            é `position: fixed` com `z-index: 1000` e um scrim escuro), e o modal continua aberto
+            quando a ação falha. O contador via o botão piscar "Enviando…", voltar, e nada mudar —
+            exatamente o sintoma "o botão não faz nada" que o `CLAUDE.md` do web já nomeia. */}
+        {aviso ? (
+          <div
+            role="alert"
+            style={{
+              ...card,
+              borderColor: "var(--state-danger)",
+              color: "var(--state-danger)",
+              fontSize: "0.88rem",
+            }}
+          >
+            {aviso}
+          </div>
+        ) : null}
+
         {/* ⚠ A confirmação REPETE OS DADOS. "Tem certeza?" não é confirmação: aprende-se a clicar
             sem ler, e o clique na linha errada recebe a mesma pergunta que o clique na certa. */}
         <div style={{ ...card, display: "grid", gap: 4, fontSize: "0.88rem" }}>
@@ -208,6 +261,40 @@ function ModalDaAcao({ acao, item, ocupado, onFechar, onConfirmar }) {
   );
 }
 
+/**
+ * ⚠⚠ QUAL CONTA SERÁ USADA, E DE ONDE ELA VEIO.
+ *
+ * A procedência importa tanto quanto o número: *"uma regra deste fornecedor"* e *"você já lançou
+ * assim antes"* pedem conferências diferentes. E `FORA_DA_FAIXA` é **sinal, não silêncio** — é o
+ * caso que a faixa existe para pegar (fornecedor conhecido, valor 10× fora do normal).
+ */
+function ContaSugerida({ item }) {
+  const conta = contaQueSeraUsada(item);
+  const s = item?.sugestao;
+
+  if (!conta) {
+    return (
+      <span
+        style={{ color: "var(--state-warn)", fontSize: "0.8rem" }}
+        title={s?.frase || "Nenhuma regra e nenhum histórico conhecem esta despesa."}
+      >
+        {/* ⚠ `FORA_DA_FAIXA` não é "não sei": é "sei, e o valor está estranho". Merece texto próprio. */}
+        {s?.motivo === "fora_da_faixa" ? "valor fora do normal" : "sem conta"}
+      </span>
+    );
+  }
+  return (
+    <span style={{ display: "inline-flex", flexDirection: "column", gap: 2 }} title={s?.frase || undefined}>
+      <span>{conta}</span>
+      {s?.procedencia ? (
+        <span style={{ fontSize: "0.72rem", color: "var(--text-faint)" }}>
+          {s.procedencia === "REGRA_CNPJ" ? "regra do fornecedor" : s.procedencia === "REGRA_DESCRICAO" ? "regra da descrição" : "seu histórico"}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function LinhaDoDeclarado({ item, podeEscrever, onAgir }) {
   const estado = leituraDoEstado(item.estado);
   const doc = leituraDoDocumento(item);
@@ -235,6 +322,12 @@ function LinhaDoDeclarado({ item, podeEscrever, onAgir }) {
       </td>
       <td>{dataCivil(item.dataDocumento)}</td>
       <td><DataComProcedencia item={item} /></td>
+      <td>
+        {/* ⚠⚠ A SUGESTÃO DE CONTA (Fase C) — ela era calculada a cada leitura e NUNCA chegava à
+            tela: o serializador da rota a descartava, e a tela não a lia. Duas camadas de trabalho
+            invisível, achadas por auditoria em 25/08/2026. */}
+        <ContaSugerida item={item} />
+      </td>
       <td className="tabela__num">
         {dinheiro(item.valorAjustado ?? item.valor)}
         {item.valorAjustado ? (
@@ -297,8 +390,21 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
 
   const competenciaDaConsulta = recorte === "sem-competencia" ? COMPETENCIA_AUSENTE : competencia;
 
+  // ⚠⚠ "A ÚLTIMA CONSULTA VENCE" — achado por auditoria em 25/08/2026.
+  //
+  // Sem isto, duas cargas voltando fora de ordem faziam a tela mostrar o resultado da consulta
+  // ANTIGA. Três sintomas, todos silenciosos: o contador clica ‹ ‹ para voltar dois meses e vê as
+  // despesas de junho sob o cabeçalho de maio; o "Carregando…" desliga enquanto a nova ainda voa; e
+  // — o pior — uma FALHA antiga chegando depois de um sucesso novo fazia `setErro` **e**
+  // `setFila(null)`, apagando dados corretos e mostrando erro sobre uma consulta que deu certo.
+  //
+  // ⚠ Um contador, não `AbortController`: o `request` do `realApi` não aceita `signal`, então não
+  // há o que abortar. O que se pode garantir é que resposta velha não escreve estado.
+  const consultaAtual = useRef(0);
+
   const carregar = useCallback(async () => {
     if (!companyId) return;
+    const minha = ++consultaAtual.current;
     setCarregando(true);
     setErro(null);
     try {
@@ -308,13 +414,17 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
         // definições de "a fila" divergiriam na primeira mudança.
         ...(estadoFiltrado ? { estado: estadoFiltrado } : {}),
       });
+      if (minha !== consultaAtual.current) return;
       setFila(r);
     } catch (e) {
+      if (minha !== consultaAtual.current) return;
       // ⚠ O erro APARECE. "Não veio nada" e "deu erro" não podem ficar iguais.
       setErro(e?.message || "Não foi possível carregar a fila de conferência.");
       setFila(null);
     } finally {
-      setCarregando(false);
+      // ⚠ Só a consulta corrente desliga o "Carregando…" — senão a tela afirma estar pronta
+      // enquanto a resposta que vai valer ainda está no ar.
+      if (minha === consultaAtual.current) setCarregando(false);
     }
   }, [companyId, competenciaDaConsulta, estadoFiltrado]);
 
@@ -423,8 +533,11 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
       {erro ? (
         <div style={{ ...card, borderColor: "var(--state-danger)", color: "var(--state-danger)" }}>{erro}</div>
       ) : null}
-      {aviso ? (
-        <div style={{ ...card, borderColor: "var(--state-warn)", color: "var(--state-warn)" }}>{aviso}</div>
+      {/* ⚠ Só quando não há modal — com ele aberto, o aviso vai DENTRO dele (ver `ModalDaAcao`). */}
+      {aviso && !acaoAberta ? (
+        <div role="alert" style={{ ...card, borderColor: "var(--state-warn)", color: "var(--state-warn)" }}>
+          {aviso}
+        </div>
       ) : null}
 
       {!carregando && grupos.length === 0 ? (
@@ -450,6 +563,17 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
         </div>
       ) : null}
 
+      {/* ⚠⚠ A LISTA É TRUNCADA E A TELA DIZ ISSO — achado por auditoria em 25/08/2026.
+          O servidor devolve no máximo 50 linhas por página e a tela nunca lia `total`. Com 137 em
+          `A_CONFERIR`, o selo dizia 137, a lista mostrava 50, e o contador concluía exatamente o que
+          o desenho dos selos existe para impedir: que o sistema perdeu despesa. */}
+      {fila && fila.total > (fila.itens?.length ?? 0) ? (
+        <div style={{ ...card, borderColor: "var(--state-warn)", color: "var(--text-muted)" }}>
+          Mostrando <strong>{fila.itens.length}</strong> de <strong>{fila.total}</strong> lançamentos.
+          Use os filtros de estado e a competência para reduzir a fila — ainda não há navegação por página.
+        </div>
+      ) : null}
+
       {grupos.map((g) => (
         <div key={g.chave} style={{ ...card, display: "grid", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
@@ -471,6 +595,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
                   <th>Documento</th>
                   <th>Emissão</th>
                   <th>Pagamento</th>
+                  <th>Conta</th>
                   <th className="tabela__num">Valor</th>
                   <th>Competência</th>
                   <th>Estado</th>
@@ -505,7 +630,13 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
           acao={acaoAberta.acao}
           item={acaoAberta.item}
           ocupado={enviando}
-          onFechar={() => setAcaoAberta(null)}
+          aviso={aviso}
+          onFechar={() => {
+            setAcaoAberta(null);
+            // ⚠ Fechar limpa o aviso: senão a recusa do modal reaparece no corpo da aba, sem o
+            // contexto do que foi tentado.
+            setAviso(null);
+          }}
           onConfirmar={agir}
         />
       ) : null}

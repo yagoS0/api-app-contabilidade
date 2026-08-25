@@ -45,6 +45,9 @@ export const FRASE_DA_PISTA = Object.freeze({
  */
 export const TOLERANCIA_VALOR = 0.05;
 
+/** ⚠ A mesma tolerância, em CENTAVOS INTEIROS — é assim que ela é comparada. Ver `debitoPagaNota`. */
+export const TOLERANCIA_EM_CENTAVOS = 5;
+
 /**
  * ⚠⚠ A JANELA — larga de propósito, e é a fraqueza declarada deste casamento.
  *
@@ -75,6 +78,9 @@ const PALAVRAS_SEM_IDENTIDADE = new Set([
   "DO", "DA", "DE", "DOS", "DAS", "E", "EM",
   "BRASIL", "NACIONAL", "SOCIEDADE", "ASSOCIADOS", "CONSULTORIA",
 ]);
+
+/** ⚠ CPF tem 11, CNPJ tem 14. Abaixo disso não é documento — ver a guarda em `debitoPagaNota`. */
+const MINIMO_DE_DIGITOS_DO_DOCUMENTO = 11;
 
 /** ⚠ Mínimo de 4 letras: com 3, siglas como "TEC" casariam com meia lista de fornecedores. */
 const MINIMO_DE_LETRAS = 4;
@@ -115,10 +121,23 @@ const somarDias = (d, n) => new Date(d.getTime() + n * 24 * 60 * 60 * 1000);
 export function debitoPagaNota(debito, nota) {
   const naoCasa = { casa: false, pista: null, palavra: null };
 
-  const vDebito = Number(debito?.valor);
-  const vNota = Number(nota?.valor);
-  if (!Number.isFinite(vDebito) || !Number.isFinite(vNota)) return naoCasa;
-  if (Math.abs(vDebito - vNota) > TOLERANCIA_VALOR) return naoCasa;
+  // ⚠⚠ A COMPARAÇÃO É EM CENTAVOS INTEIROS — achado por auditoria em 25/08/2026, e MEDIDO.
+  //
+  // `Math.abs(1500 - 1500.05)` é `0.049999999999954525` (passa) e `Math.abs(1500.10 - 1500.15)` é
+  // `0.0500000000001819` (NÃO passa). A mesma diferença de cinco centavos casava ou não conforme
+  // os centavos do valor — e o teste "cinco centavos passam" só era verde por sorte da fixture.
+  //
+  // ⚠ `valor` é `Decimal(18,2)` no banco: dinheiro é inteiro de centavos, e comparar em double é o
+  // erro clássico. `Math.round` antes da subtração elimina a classe inteira.
+  const centavos = (v) => {
+    if (v === null || v === undefined || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.round(n * 100) : null;
+  };
+  const cDebito = centavos(debito?.valor);
+  const cNota = centavos(nota?.valor);
+  if (cDebito === null || cNota === null) return naoCasa;
+  if (Math.abs(cDebito - cNota) > TOLERANCIA_EM_CENTAVOS) return naoCasa;
 
   const pago = debito?.dataPagamento;
   const emitida = nota?.dataDocumento;
@@ -132,8 +151,16 @@ export function debitoPagaNota(debito, nota) {
   const memo = normalizar(debito?.descricaoOriginal);
   if (!memo) return naoCasa;
 
+  // ⚠⚠ O CNPJ PRECISA TER DÍGITOS SUFICIENTES PARA IDENTIFICAR — achado por auditoria, e medido:
+  // com `cnpjFornecedor` truncado para `"90"`, o memo "TARIFA MENSAL PACOTE 90" casava com a pista
+  // **mais forte** do sistema, a que curto-circuita a checagem de nome e aparece na tela como
+  // *"O CNPJ do fornecedor aparece na descrição do banco"*. Casamento por acaso, vendido como
+  // identidade.
+  //
+  // ⚠ 11 é o CPF; o CNPJ tem 14. Aceitar os dois porque `emitenteDoc` de nota de pessoa física
+  // traz CPF — abaixo disso não é documento, é fragmento.
   const cnpj = soDigitos(nota?.cnpjFornecedor);
-  if (cnpj && soDigitos(debito?.descricaoOriginal).includes(cnpj)) {
+  if (cnpj.length >= MINIMO_DE_DIGITOS_DO_DOCUMENTO && soDigitos(debito?.descricaoOriginal).includes(cnpj)) {
     return { casa: true, pista: PISTA.CNPJ_NO_MEMO, palavra: null };
   }
 

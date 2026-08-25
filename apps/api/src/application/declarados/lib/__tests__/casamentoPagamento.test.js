@@ -238,3 +238,54 @@ describe("⚠ o módulo é PURO, e NÃO decide nada sozinho", () => {
     expect(fonte).not.toMatch(/CONTABILIZADO|FUNDIDO|estado\s*[:=]/);
   });
 });
+
+describe("⚠⚠ OS BUGS DO CASAMENTO ACHADOS POR AUDITORIA (25/08/2026)", () => {
+  const { TOLERANCIA_EM_CENTAVOS } = require("../casamentoPagamento.js");
+
+  it("⚠⚠ CINCO CENTAVOS PASSAM — em QUALQUER valor, não só nos que o float favorece", () => {
+    // Medido: `Math.abs(1500 - 1500.05)` = 0,04999… (passava) e `|1500.10 - 1500.15|` = 0,05000…
+    // (não passava). A mesma diferença, resultado oposto, conforme os centavos.
+    for (const [a, b] of [[1500, 1500.05], [1500.1, 1500.15], [333.33, 333.38], [0.01, 0.06]]) {
+      const r = debitoPagaNota(
+        { valor: a, dataPagamento: dia("2026-07-18"), descricaoOriginal: "PAGTO KODA BEAR" },
+        { valor: b, dataDocumento: dia("2026-07-15"), descricaoOriginal: "KODA BEAR LTDA" },
+      );
+      expect(r.casa).toBe(true);
+    }
+  });
+
+  it("⚠ seis centavos NÃO passam, também em qualquer valor", () => {
+    for (const [a, b] of [[1500, 1500.06], [1500.1, 1500.16], [333.33, 333.39]]) {
+      const r = debitoPagaNota(
+        { valor: a, dataPagamento: dia("2026-07-18"), descricaoOriginal: "PAGTO KODA BEAR" },
+        { valor: b, dataDocumento: dia("2026-07-15"), descricaoOriginal: "KODA BEAR LTDA" },
+      );
+      expect(r.casa).toBe(false);
+    }
+  });
+
+  it("a tolerância em centavos é a mesma dos reais declarados", () => {
+    expect(TOLERANCIA_EM_CENTAVOS).toBe(Math.round(TOLERANCIA_VALOR * 100));
+  });
+
+  it("⚠⚠ DOCUMENTO CURTO NÃO VIRA PISTA DE CNPJ — 'casa por acaso' não é identidade", () => {
+    // Medido: `cnpjFornecedor: "90"` casava com o memo "TARIFA MENSAL PACOTE 90".
+    for (const doc of ["90", "0", "1234567890"]) {
+      const r = debitoPagaNota(
+        { valor: 175, dataPagamento: dia("2026-07-18"), descricaoOriginal: "TARIFA MENSAL PACOTE 90" },
+        { valor: 175, dataDocumento: dia("2026-07-15"), descricaoOriginal: "ACME", cnpjFornecedor: doc },
+      );
+      expect(r.pista).not.toBe(PISTA.CNPJ_NO_MEMO);
+    }
+  });
+
+  it("⚠ CPF (11) e CNPJ (14) continuam identificando", () => {
+    for (const doc of ["12345678901", "12345678000190"]) {
+      const r = debitoPagaNota(
+        { valor: 175, dataPagamento: dia("2026-07-18"), descricaoOriginal: `PAGTO ${doc} MENSAL` },
+        { valor: 175, dataDocumento: dia("2026-07-15"), descricaoOriginal: "ACME", cnpjFornecedor: doc },
+      );
+      expect(r).toMatchObject({ casa: true, pista: PISTA.CNPJ_NO_MEMO });
+    }
+  });
+});

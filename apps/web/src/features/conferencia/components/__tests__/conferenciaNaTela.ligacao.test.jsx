@@ -37,6 +37,8 @@ const item = (extra = {}) => ({
   dataPagamento: "2026-07-15",
   origemPagamento: "OFX",
   mesFechado: false,
+  contaSugerida: "411030012",
+  sugestao: null,
   nota: { numero: "1042", serie: "1", chaveAcesso: "3".repeat(50), tipo: "NFSE" },
   ...extra,
 });
@@ -308,5 +310,126 @@ describe("⚠⚠ O SELO DE CONTAGEM É PORTA, não só número", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Recusado: 0/ }));
     expect(await screen.findByText(/Nenhuma despesa neste estado/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Ver a fila inteira/i })).toBeInTheDocument();
+  });
+});
+
+describe("⚠⚠ A RECUSA DO SERVIDOR APARECE DENTRO DO MODAL (auditoria 25/08/2026)", () => {
+  it("⚠⚠ o texto do erro fica DENTRO do diálogo, não atrás do overlay", async () => {
+    // Era desenhado no corpo da aba — sob o scrim do `.modal-fundo` (z-index 1000). O contador via
+    // o botão piscar "Enviando…", voltar, e nada mudar.
+    responder([item()]);
+    mockPostAcao.mockRejectedValue(new Error("A competência está fechada."));
+    montar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
+    const dialogo = await screen.findByRole("dialog");
+    fireEvent.click(within(dialogo).getByRole("button", { name: /^Confirmar$/i }));
+
+    const alerta = await within(await screen.findByRole("dialog")).findByRole("alert");
+    expect(alerta).toHaveTextContent(/A competência está fechada\./);
+  });
+
+  it("⚠ e o corpo da aba NÃO mostra o mesmo texto ao mesmo tempo", async () => {
+    responder([item()]);
+    mockPostAcao.mockRejectedValue(new Error("recusa_do_servidor"));
+    montar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
+    const dialogo = await screen.findByRole("dialog");
+    fireEvent.click(within(dialogo).getByRole("button", { name: /^Confirmar$/i }));
+    await screen.findByRole("alert");
+    // ⚠ Uma ocorrência só — duplicar confundiria sobre qual é a atual.
+    expect(screen.getAllByText(/recusa_do_servidor/)).toHaveLength(1);
+  });
+});
+
+describe("⚠⚠ A ÚLTIMA CONSULTA VENCE (auditoria 25/08/2026)", () => {
+  it("⚠⚠ resposta ANTIGA chegando depois NÃO sobrescreve a nova", async () => {
+    // Sintoma real: clicar ‹ ‹ no seletor de competência e ver o mês errado sob o cabeçalho certo.
+    let resolverPrimeira;
+    mockGetFila
+      .mockImplementationOnce(() => new Promise((r) => { resolverPrimeira = r; }))
+      .mockResolvedValue({ ok: true, itens: [item({ descricaoOriginal: "DA CONSULTA NOVA" })], porEstado: {} });
+
+    montar();
+    // dispara a segunda consulta (troca de recorte) antes de a primeira voltar
+    fireEvent.click(await screen.findByRole("button", { name: /Sem competência/i }));
+    await screen.findAllByText("DA CONSULTA NOVA");
+
+    // ⚠ a PRIMEIRA volta agora, atrasada
+    resolverPrimeira({ ok: true, itens: [item({ descricaoOriginal: "DA CONSULTA VELHA" })], porEstado: {} });
+    await waitFor(() => expect(screen.queryByText("DA CONSULTA VELHA")).toBeNull());
+    expect(screen.getAllByText("DA CONSULTA NOVA").length).toBeGreaterThan(0);
+  });
+
+  it("⚠⚠ FALHA antiga não apaga os dados de um sucesso novo", async () => {
+    // Era o pior dos três: `setErro` + `setFila(null)` sobre uma consulta que tinha dado certo.
+    let rejeitarPrimeira;
+    mockGetFila
+      .mockImplementationOnce(() => new Promise((_, rej) => { rejeitarPrimeira = rej; }))
+      .mockResolvedValue({ ok: true, itens: [item({ descricaoOriginal: "DADOS BONS" })], porEstado: {} });
+
+    montar();
+    fireEvent.click(await screen.findByRole("button", { name: /Sem competência/i }));
+    await screen.findAllByText("DADOS BONS");
+
+    rejeitarPrimeira(new Error("timeout da consulta velha"));
+    await waitFor(() => expect(screen.queryByText(/timeout da consulta velha/)).toBeNull());
+    expect(screen.getAllByText("DADOS BONS").length).toBeGreaterThan(0);
+  });
+});
+
+describe("⚠⚠ O CORPO QUE VAI AO SERVIDOR (a lacuna que deixou o bug crítico passar)", () => {
+  // ⚠ Nenhum teste desta aba inspecionava o 4º argumento — o CORPO. Foi por isso que o defeito de
+  // `origemPagamento` (que quebrava confirmar em produção e funcionava offline) passou.
+  const corpoEnviado = () => mockPostAcao.mock.calls[0][3];
+
+  it("⚠⚠ quando a tela PEDE a data, ela manda a PROCEDÊNCIA junto", async () => {
+    // Sem `origemPagamento`, o servidor lê `null`, que não está em `ORIGEM_PAGAMENTO`, e recusa com
+    // `origem_de_pagamento_invalida`.
+    responder([item({ estado: "AGUARDANDO_PAGAMENTO", dataPagamento: null, origemPagamento: null })]);
+    montar();
+    fireEvent.click(await screen.findByRole("button", { name: /Informar pagamento/i }));
+    const dialogo = await screen.findByRole("dialog");
+    fireEvent.click(within(dialogo).getByRole("button", { name: /Informar pagamento/i }));
+
+    await waitFor(() => expect(mockPostAcao).toHaveBeenCalled());
+    expect(corpoEnviado()).toMatchObject({
+      dataPagamento: "2026-07-02",
+      origemPagamento: "DECLARADO_PELO_CONTADOR",
+    });
+  });
+
+  it("⚠⚠ com data JÁ PROVADA pelo extrato, a data NÃO viaja — a prova não é rebaixada", async () => {
+    // Mandar a mesma data de volta faria o servidor tratá-la como "trouxe o bloco", zerar a
+    // procedência e gravar DECLARADO_PELO_CONTADOR por cima de um OFX.
+    responder([item()]);
+    montar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
+    const dialogo = await screen.findByRole("dialog");
+    fireEvent.click(within(dialogo).getByRole("button", { name: /^Confirmar$/i }));
+
+    await waitFor(() => expect(mockPostAcao).toHaveBeenCalled());
+    expect(corpoEnviado()).not.toHaveProperty("dataPagamento");
+    expect(corpoEnviado()).not.toHaveProperty("origemPagamento");
+  });
+
+  it("⚠ a CONTA vai junto quando a ação cria lançamento", async () => {
+    responder([item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } })]);
+    montar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
+    const dialogo = await screen.findByRole("dialog");
+    fireEvent.click(within(dialogo).getByRole("button", { name: /^Confirmar$/i }));
+    await waitFor(() => expect(mockPostAcao).toHaveBeenCalled());
+    expect(corpoEnviado()).toMatchObject({ contaAplicada: "411030012" });
+  });
+
+  it("⚠ recusar manda o motivo e NADA de pagamento", async () => {
+    responder([item()]);
+    montar();
+    fireEvent.click(await screen.findByRole("button", { name: /Recusar/i }));
+    const dialogo = await screen.findByRole("dialog");
+    fireEvent.change(within(dialogo).getByLabelText(/Motivo da recusa/i), { target: { value: "duplicada" } });
+    fireEvent.click(within(dialogo).getByRole("button", { name: /^Recusar$/i }));
+    await waitFor(() => expect(mockPostAcao).toHaveBeenCalled());
+    expect(corpoEnviado()).toEqual({ motivoRecusa: "duplicada" });
   });
 });

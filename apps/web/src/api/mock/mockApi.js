@@ -7139,6 +7139,8 @@ export function createMockApi() {
           // ⚠ Sem data e sem procedência: é a resposta honesta, não uma pendência nossa.
           dataPagamento: null, origemPagamento: null,
           contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          // ⚠ Sem regra e sem histórico: a tela precisa mostrar "sem conta" e BLOQUEAR confirmar.
+          sugestao: { conta: null, procedencia: null, motivo: "nada_conhecido", frase: "Nenhuma regra e nenhum histórico conhecem esta despesa. Escolha a conta — e o sistema aprende.", regraId: null },
           motivoRecusa: null, mesFechado: false, notaRecebidaId: "nota-1",
           nota: { numero: "1042", serie: "1", chaveAcesso: "3".repeat(50), tipo: "NFSE" },
         },
@@ -7150,6 +7152,9 @@ export function createMockApi() {
           // ⚠ O EXTRATO datou: isto é PROVA.
           dataPagamento: comp + "-18", origemPagamento: "OFX",
           contaSugerida: "411020008", contaAplicada: null, accountingEntryId: null, regraId: null,
+          // ⚠ A sugestão DERIVADA (Fase C), com a procedência. É o campo que o serializador
+          // descartava até 25/08/2026 — o mock não o tinha porque ele nunca chegava.
+          sugestao: { conta: "411020008", procedencia: "REGRA_CNPJ", motivo: null, frase: "Uma regra deste fornecedor (pelo CNPJ) aponta esta conta.", regraId: "r-1" },
           motivoRecusa: null, mesFechado: false, notaRecebidaId: "nota-2",
           nota: { numero: "77", serie: "1", chaveAcesso: "4".repeat(50), tipo: "NFSE" },
         },
@@ -7163,6 +7168,8 @@ export function createMockApi() {
           // inalcançável offline.
           dataPagamento: comp + "-09", origemPagamento: "DECLARADO_PELO_CONTADOR",
           contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          // ⚠ O caso FORA_DA_FAIXA — sinal, não silêncio.
+          sugestao: { conta: null, procedencia: null, motivo: "fora_da_faixa", frase: "Há uma regra para esta despesa, mas o valor está fora da faixa dela. Confira antes de aplicar.", regraId: "r-9" },
           motivoRecusa: null, mesFechado: false, notaRecebidaId: "nota-3",
           // ⚠ A nota foi apagada da base (a FK é SetNull): o link desabilita COM o motivo.
           nota: null,

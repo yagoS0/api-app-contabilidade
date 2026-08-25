@@ -105,6 +105,15 @@ function serializar(d) {
         }
       : null,
 
+    // ⚠⚠ A SUGESTÃO DE CONTA (Fase C). Ela é DERIVADA por `listarFila` a cada leitura, e este
+    // serializador a descartava — a Fase C inteira era calculada e jogada fora antes de sair da
+    // API. Achado por auditoria em 25/08/2026.
+    //
+    // ⚠ `serializar` monta uma lista FECHADA de chaves (de propósito: `...d` mandaria colunas
+    // internas ao navegador). O preço é este: campo novo que não for acrescentado AQUI não existe
+    // para a tela, e não há erro nenhum — ele só some.
+    sugestao: d.sugestao ?? null,
+
     decididoPor: d.decididoPor,
     decididoEm: d.decididoEm,
     criadoEm: d.criadoEm,

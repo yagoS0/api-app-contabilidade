@@ -36,6 +36,9 @@ const linha = (extra = {}) => ({
   dataPagamento: "2026-07-15",
   origemPagamento: ORIGEM_PAGAMENTO.OFX,
   mesFechado: false,
+  // ⚠ A linha normal TEM conta conhecida — sem ela o pré-voo bloqueia, e é o que se quer.
+  contaSugerida: "411030012",
+  sugestao: null,
   nota: { numero: "123", serie: "1", chaveAcesso: "x".repeat(50), tipo: "NFSE" },
   ...extra,
 });
@@ -484,5 +487,38 @@ describe("⚠⚠ A VARREDURA — a data-piso não tem default", () => {
     expect(fraseDaRecusa("sem_valor")).toMatch(/não tem valor/i);
     expect(fraseDaRecusa("motivo_novo_do_backend")).toBe("motivo_novo_do_backend");
     expect(fraseDaRecusa(null)).toMatch(/sem motivo/i);
+  });
+});
+
+describe("⚠⚠ SEM CONTA NÃO SE CONTABILIZA — o pré-voo que faltava", () => {
+  const { contaQueSeraUsada } = require("../conferenciaTela.js");
+
+  it("⚠⚠ linha sem conta nenhuma BLOQUEIA confirmar, com o conserto nomeado", () => {
+    // Achado por auditoria: a tela oferecia "Confirmar" em toda linha; o servidor recusava com
+    // `sem_conta` e a tela descobria a regra pelo erro.
+    const item = linha({ contaSugerida: null, sugestao: null });
+    expect(motivoDeBloqueio("confirmar", item)).toMatch(/conta/i);
+    expect(motivoDeBloqueio("ajustar", item)).toMatch(/conta/i);
+  });
+
+  it("⚠ mas NÃO bloqueia recusar nem reabrir — eles não viram lançamento", () => {
+    const item = linha({ contaSugerida: null, sugestao: null });
+    expect(motivoDeBloqueio("recusar", item)).toBeNull();
+    expect(motivoDeBloqueio("reabrir", { ...item, estado: ESTADO.RECUSADO })).toBeNull();
+  });
+
+  it("⚠⚠ a SUGESTÃO derivada vence a coluna `contaSugerida`", () => {
+    // A coluna foi gravada quando o declarado nasceu; uma regra criada depois não a atualizou.
+    expect(contaQueSeraUsada({ contaSugerida: "111", sugestao: { conta: "999" } })).toBe("999");
+  });
+
+  it("a coluna vale quando não há sugestão derivada", () => {
+    expect(contaQueSeraUsada({ contaSugerida: "111", sugestao: null })).toBe("111");
+  });
+
+  it("⚠ sem nenhuma das duas, devolve null — é o que o pré-voo usa", () => {
+    expect(contaQueSeraUsada({ contaSugerida: null, sugestao: null })).toBeNull();
+    expect(contaQueSeraUsada({})).toBeNull();
+    expect(contaQueSeraUsada(null)).toBeNull();
   });
 });

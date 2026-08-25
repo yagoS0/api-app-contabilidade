@@ -251,6 +251,39 @@ export function motivoDeBloqueio(acao, item, { podeEscrever = true } = {}) {
     return "Esta nota chegou sem competência. Defina a competência antes de contabilizar.";
   }
 
+  // ⚠⚠ SEM CONTA NÃO SE CONTABILIZA — e o servidor recusa com `sem_conta`.
+  //
+  // Achado por auditoria em 25/08/2026: a tela oferecia "Confirmar" em toda linha, inclusive nas que
+  // não têm conta nenhuma (débito de extrato, nota de fornecedor novo). O clique ia ao servidor e
+  // voltava recusado — a tela descobrindo a regra pelo erro, que é justamente o que este pré-voo
+  // existe para impedir.
+  //
+  // A conta vem da SUGESTÃO (regra ou histórico, derivada a cada leitura) ou da coluna
+  // `contaSugerida`, gravada quando o declarado nasceu.
+  //
+  // ⚠ LIMITAÇÃO DECLARADA: não há seletor de conta nesta tela. Enquanto não houver, a linha sem
+  // conta conhecida **não é contabilizável por aqui** — e o certo é DIZER isso, não oferecer um
+  // botão que falha. O caminho hoje é lançar por Lançamentos, ou criar a regra do fornecedor.
+  if (cfg.criaLancamento && !contaQueSeraUsada(item)) {
+    return "Nenhuma conta conhecida para esta despesa. Escolha a conta em Lançamentos, ou confirme uma vez este fornecedor para o sistema aprender.";
+  }
+
+  return null;
+}
+
+/**
+ * ⚠ Qual conta o servidor usaria se esta linha fosse confirmada agora.
+ *
+ * A ordem espelha `podeTransitar`: o que o ato traz vence, e a **sugestão derivada** (regra ou
+ * histórico, recalculada a cada leitura) vence a coluna `contaSugerida`, que foi gravada quando o
+ * declarado nasceu e pode estar velha — uma regra criada depois não a atualizou.
+ *
+ * ⚠ Devolve `null` quando não há nenhuma: é o que o pré-voo usa para bloquear o botão COM motivo.
+ */
+export function contaQueSeraUsada(item) {
+  const daSugestao = item?.sugestao?.conta;
+  if (daSugestao) return String(daSugestao);
+  if (item?.contaSugerida) return String(item.contaSugerida);
   return null;
 }
 

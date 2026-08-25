@@ -29,12 +29,22 @@ import { DeclaradoRecusado, RECUSA_DO_SERVICO, criarDeclarado } from "./Declarad
 import { ORIGEM_PAGAMENTO } from "./lib/estadosDeclarado.js";
 import { anomaliasDoExtrato, identidadesDoExtrato } from "./lib/dedupeOfx.js";
 
+/** ⚠ Heurística, não norma — ver a guarda em `importarOfxDoCliente`. */
+export const MAXIMO_DE_TRANSACOES = 10000;
+
+/** ⚠ Quantos exemplos de descarte voltam no relatório. A CONTAGEM é sempre a real. */
+export const LIMITE_DE_EXEMPLOS = 50;
+
 export const RECUSA_DO_IMPORT = Object.freeze({
   ARQUIVO_VAZIO: "arquivo_vazio",
   NENHUMA_TRANSACAO: "nenhuma_transacao",
+  /** ⚠⚠ O extrato traz mais transações do que um extrato de verdade traria. */
+  EXTRATO_GRANDE_DEMAIS: "extrato_grande_demais",
 });
 
 export const FRASE_DO_IMPORT = Object.freeze({
+  [RECUSA_DO_IMPORT.EXTRATO_GRANDE_DEMAIS]:
+    `Este extrato tem mais de ${MAXIMO_DE_TRANSACOES.toLocaleString("pt-BR")} transações. Divida o período e envie em partes.`,
   [RECUSA_DO_IMPORT.ARQUIVO_VAZIO]: "O arquivo enviado está vazio.",
   [RECUSA_DO_IMPORT.NENHUMA_TRANSACAO]:
     "Não foi possível ler nenhuma transação neste arquivo. Confira se ele é o extrato em formato OFX que o banco disponibiliza.",
@@ -75,7 +85,29 @@ export async function importarOfxDoCliente({
 }) {
   if (!buffer?.length) recusar(RECUSA_DO_IMPORT.ARQUIVO_VAZIO);
 
-  const { conta, transacoes, descartadas } = lerOfx(buffer);
+  const { conta, transacoes, descartadas: todasDescartadas } = lerOfx(buffer);
+
+  // ⚠⚠ O TETO DE TRANSAÇÕES — achado por auditoria em 25/08/2026, e MEDIDO: um arquivo de 10 MB
+  // (o limite do multer) cabe **154.201 débitos**. A gravação é sequencial de propósito (é o
+  // `@@unique` do banco que resolve corrida), então isso seriam ~150 mil INSERTs segurando uma
+  // conexão do pool, num processo sem timeout de requisição.
+  //
+  // ⚠ Quem pode fazer isso é o piso MAIS BAIXO do sistema — qualquer membro ativo do lado do
+  // cliente. E o estrago não fica na empresa dele: derruba a API para a carteira inteira.
+  //
+  // ⚠ O número é heurística, não norma: um extrato mensal de empresa tem dezenas a centenas de
+  // linhas. 10 mil é folgado o bastante para um ano inteiro de conta movimentada e apertado o
+  // bastante para não travar o processo. Recusa NOMEADA — o cliente sabe o que fazer (dividir o
+  // período), em vez de ver a API cair.
+  if (transacoes.length > MAXIMO_DE_TRANSACOES) {
+    recusar(RECUSA_DO_IMPORT.EXTRATO_GRANDE_DEMAIS);
+  }
+
+  // ⚠⚠ E `descartadas` NÃO VOLTA INTEIRA. Medido: 145.634 blocos inválidos viram **22,9 MB de
+  // JSON** — gravados numa coluna Jsonb E serializados na resposta. O relatório existe para o
+  // cliente saber O QUE não entrou; para isso bastam a CONTAGEM e uma amostra. Mesma disciplina do
+  // `LIMITE_NOTAS_SEM_COMPETENCIA` da auditoria de notas.
+  const descartadas = todasDescartadas.slice(0, LIMITE_DE_EXEMPLOS);
   // ⚠ "Nenhuma transação" recusa; "todas descartadas" NÃO — no segundo caso há o que relatar, e
   // engolir isso num erro genérico esconderia justamente o motivo de cada descarte.
   if (!transacoes.length && !descartadas.length) recusar(RECUSA_DO_IMPORT.NENHUMA_TRANSACAO);
@@ -108,7 +140,7 @@ export async function importarOfxDoCliente({
       transacoesLidas: transacoes.length,
       criados: 0,
       jaImportadas: 0,
-      descartadas: descartadas.length,
+      descartadas: todasDescartadas.length,
       foraDoEscopo,
       detalhe: { anomalias, descartadas },
       criadoPor: String(criadoPor || ""),

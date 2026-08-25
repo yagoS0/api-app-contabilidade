@@ -24,6 +24,7 @@ import {
   ESTADO,
   ESTADOS_SEM_LANCAMENTO,
   FRASE_DA_RECUSA,
+  ORIGEM,
   ORIGEM_PAGAMENTO,
   TRANSICAO,
   podeTransitar,
@@ -284,13 +285,28 @@ export async function aplicarTransicao({
   // ⚠ Roda em CONFIRMAR, AJUSTAR e DESFAZER: as três mudam o histórico do fornecedor. Confirmar e
   // ajustar podem CRIAR a regra; desfazer pode SUSPENDÊ-LA (a base que a sustentava sumiu).
   if (APRENDE_COM.has(transicao) && atualizado?.cnpjFornecedor) {
-    await reavaliarAprendizado({
-      portalClientId: String(portalClientId),
-      cnpjFornecedor: atualizado.cnpjFornecedor,
-      usuarioId,
-      agora,
-      client,
-    });
+    // ⚠⚠ O `try/catch` FICA AQUI, no ponto de chamada — e não só dentro de `reavaliarAprendizado`.
+    //
+    // Achado por auditoria em 25/08/2026: a garantia "o aprendizado não derruba a transição" morava
+    // inteira no `catch` de OUTRO módulo, por convenção. Bastava alguém estreitar aquele catch para
+    // que uma falha aqui subisse — e, como a `$transaction` JÁ COMMITOU, a rota responderia
+    // **500 "não foi possível concluir"** sobre um lançamento que EXISTE. O contador clicaria de
+    // novo e ouviria "esta ação não se aplica ao estado atual". Nada seria desfeito, mas o sistema
+    // MENTIRIA sobre o desfecho — que é o modo de falha que este módulo inteiro existe para evitar.
+    //
+    // ⚠ Duas camadas de propósito: esta é a que garante, a de dentro é a que nomeia o motivo.
+    try {
+      await reavaliarAprendizado({
+        portalClientId: String(portalClientId),
+        cnpjFornecedor: atualizado.cnpjFornecedor,
+        usuarioId,
+        agora,
+        client,
+      });
+    } catch {
+      // ⚠ O aprendizado é conveniência; a transição é o trabalho. Silêncio aqui é deliberado — e a
+      // camada de dentro é quem registra o motivo em `{acao, motivo, erro}`.
+    }
   }
 
   return atualizado;
@@ -524,6 +540,19 @@ export async function fundirPagamentoNaNota({
   const debito = await acharDeclarado(client, portalClientId, declaradoOfxId);
   const nota = await acharDeclarado(client, portalClientId, declaradoNotaId);
 
+  // ⚠⚠ OS DOIS LADOS TÊM DE SER DO TIPO CERTO — achado por auditoria em 25/08/2026, e PROVADO.
+  //
+  // Sem isto, uma NOTA podia ser fundida dentro de OUTRA NOTA: `FUNDIR` sai de `A_CONFERIR`, e uma
+  // nota cujo pagamento o contador informou à mão está exatamente aí. O resultado medido foi **uma
+  // despesa real DESAPARECENDO** (a de fevereiro virou `FUNDIDO` dentro da de janeiro) — o inverso
+  // da contagem dupla, e igualmente caro.
+  //
+  // ⚠ E o comentário abaixo ("a nota recebe a PROVA do débito") só é verdade porque o lado que
+  // some é obrigatoriamente do extrato: era ele quem trazia `origemPagamento: OFX`. Com uma nota
+  // do lado esquerdo, a "prova" copiada era um `DECLARADO_PELO_CONTADOR`.
+  if (debito?.origem !== ORIGEM.OFX_CLIENTE) recusar(RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE);
+  if (nota?.origem === ORIGEM.OFX_CLIENTE) recusar(RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE);
+
   // ⚠⚠ A REGRA É RECONFERIDA AQUI, e não só na tela. A sugestão que o contador viu pode ter
   // envelhecido — a nota pode ter sido recusada, o valor ajustado, outro débito fundido nela. Quem
   // decide no instante do clique é o servidor.
@@ -544,8 +573,42 @@ export async function fundirPagamentoNaNota({
   // ⚠⚠ AS DUAS ESCRITAS SÃO UM ATO. Meio caminho deixaria o débito absorvido com a nota ainda
   // esperando pagamento — a despesa some da fila e ninguém a acha.
   return client.$transaction(async (tx) => {
-    const notaAtualizada = await tx.lancamentoDeclarado.update({
-      where: { id: nota.id },
+    // ⚠⚠ A ESCRITA CARREGA O ESTADO NO `where` — e isto é o que impede a CONTAGEM DUPLA.
+    //
+    // Achado por auditoria em 25/08/2026, e PROVADO com dois requests concorrentes: a leitura e a
+    // reconferência acontecem FORA da transação, então dois cliques fundiam o MESMO débito em DUAS
+    // notas. As duas ficavam `A_CONFERIR` com a mesma data e o mesmo `fitId`, e as duas podiam
+    // virar lançamento — **a mesma saída de caixa creditada duas vezes**, em silêncio.
+    //
+    // ⚠ `updateMany` com o estado no `where` + leitura do `count` é a MESMA disciplina da reserva
+    // atômica da emissão em lote, que o `apps/api/CLAUDE.md` descreve como *"isto — e não o lock —
+    // é o que impede a nota duplicada"*. Sequencialmente a máquina de estados já protegia; só a
+    // corrida passava.
+    // ⚠⚠ O DÉBITO É ESCRITO PRIMEIRO, E A ORDEM É A PROTEÇÃO — não é arbitrária.
+    //
+    // O lado do débito tem a pré-condição MAIS RESTRITIVA (`estado` + `parDeclaradoId: null`), e é
+    // ele que a corrida disputa: dois cliques querem o MESMO débito. Barrando aqui, o segundo
+    // request para **antes de encostar na nota**.
+    //
+    // ⚠ Invertido (nota primeiro), a proteção passaria a depender do ROLLBACK: a nota já teria
+    // sido escrita quando o débito falhasse. Com Postgres o rollback existe e desfaz — mas fazer a
+    // correção depender dele é fazer a garantia depender de uma camada que este arquivo não
+    // controla. Medido: com a ordem invertida e sem rollback, DUAS notas ficam pagas pelo mesmo
+    // débito; com esta ordem, uma só.
+    const noDebitoEscrito = await tx.lancamentoDeclarado.updateMany({
+      where: {
+        id: debito.id,
+        portalClientId: String(portalClientId),
+        estado: debito.estado,
+        // ⚠ Um débito já fundido não se funde de novo, nem que o estado tenha voltado por outro caminho.
+        parDeclaradoId: null,
+      },
+      data: { ...noDebito.campos, estado: noDebito.estado, ...auditoria },
+    });
+    if (noDebitoEscrito.count !== 1) recusar(RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE);
+
+    const naNotaEscrita = await tx.lancamentoDeclarado.updateMany({
+      where: { id: nota.id, portalClientId: String(portalClientId), estado: nota.estado },
       data: {
         ...naNota.campos,
         estado: naNota.estado,
@@ -556,10 +619,12 @@ export async function fundirPagamentoNaNota({
         ...auditoria,
       },
     });
-    await tx.lancamentoDeclarado.update({
-      where: { id: debito.id },
-      data: { ...noDebito.campos, estado: noDebito.estado, ...auditoria },
+    // ⚠ Aqui a recusa DEPENDE do rollback para desfazer o débito — e é o caso raro (a nota mudou
+    // entre a leitura e agora). O caso comum, a disputa pelo débito, já foi barrado acima.
+    if (naNotaEscrita.count !== 1) recusar(RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE);
+
+    return tx.lancamentoDeclarado.findFirst({
+      where: { id: nota.id, portalClientId: String(portalClientId) },
     });
-    return notaAtualizada;
   });
 }

@@ -732,6 +732,8 @@ describe("⚠⚠ FUNDIR — o débito DATA a nota, e some absorvido", () => {
     ofxImportId: "imp-1",
     fitId: "F1",
     contaBancariaRef: "12345-6",
+    // ⚠ Débito ainda não fundido — é a pré-condição que a escrita atômica confere.
+    parDeclaradoId: null,
   };
   const notaAguardando = {
     id: "n-1",
@@ -749,12 +751,31 @@ describe("⚠⚠ FUNDIR — o débito DATA a nota, e some absorvido", () => {
   function clientDaFusao(par = { debito, nota: notaAguardando }) {
     const updates = [];
     let transacoes = 0;
+    // ⚠⚠ O DUBLÊ HONRA O `where` INTEIRO do `updateMany` — não só o id.
+    //
+    // A escrita passou a carregar o ESTADO (e `parDeclaradoId: null` no débito) como pré-condição,
+    // porque a leitura acontece FORA da transação: sem isso, dois cliques concorrentes fundiam o
+    // mesmo débito em DUAS notas. Um dublê que ignorasse o `where` deixaria essa proteção sem
+    // prova nenhuma.
+    const registros = new Map([
+      [par.debito.id, { ...par.debito }],
+      [par.nota.id, { ...par.nota }],
+    ]);
     const tx = {
       lancamentoDeclarado: {
-        update: jest.fn(async ({ where, data }) => {
+        updateMany: jest.fn(async ({ where, data }) => {
+          const atual = registros.get(where.id);
+          const casa =
+            atual &&
+            atual.portalClientId === where.portalClientId &&
+            (where.estado === undefined || atual.estado === where.estado) &&
+            (where.parDeclaradoId === undefined || (atual.parDeclaradoId ?? null) === where.parDeclaradoId);
+          if (!casa) return { count: 0 };
+          registros.set(where.id, { ...atual, ...data });
           updates.push({ id: where.id, data });
-          return { id: where.id, ...data };
+          return { count: 1 };
         }),
+        findFirst: jest.fn(async ({ where }) => registros.get(where.id) ?? null),
       },
     };
     return {
@@ -899,5 +920,133 @@ describe("⚠ as SUGESTÕES — derivadas na leitura, nunca coluna", () => {
     expect(r).toMatchObject({ totalDebitos: 0, totalNotas: 0 });
     expect(client.lancamentoDeclarado.update).toBeUndefined();
     expect(client.$transaction).toBeUndefined();
+  });
+});
+
+describe("⚠⚠ OS DOIS BUGS DA FUSÃO ACHADOS POR AUDITORIA (25/08/2026)", () => {
+  const { fundirPagamentoNaNota } = require("../DeclaradoService.js");
+
+  const debitoOfx = (extra = {}) => ({
+    id: "ofx-1", portalClientId: "emp-1", origem: "OFX_CLIENTE", estado: ESTADO.A_CONFERIR,
+    valor: 1500, dataPagamento: PAGO_EM, origemPagamento: ORIGEM_PAGAMENTO.OFX,
+    descricaoOriginal: "PAGTO GOOGLE CLOUD", ofxImportId: "imp-1", fitId: "F1",
+    contaBancariaRef: "12345-6", parDeclaradoId: null, ...extra,
+  });
+  const notaRecebida = (extra = {}) => ({
+    id: "n-1", portalClientId: "emp-1", origem: "NOTA_RECEBIDA", estado: ESTADO.AGUARDANDO_PAGAMENTO,
+    valor: 1500, dataDocumento: new Date("2026-07-15T00:00:00.000Z"),
+    descricaoOriginal: "GOOGLE CLOUD BRASIL COMPUTACAO LTDA", cnpjFornecedor: "12345678000190",
+    dataPagamento: null, origemPagamento: null, parDeclaradoId: null, ...extra,
+  });
+
+  /** Um dublê que HONRA o `where` do `updateMany` — sem isso a proteção não teria prova. */
+  function clientReal(registros) {
+    const mapa = new Map(registros.map((r) => [r.id, { ...r }]));
+    const tx = {
+      lancamentoDeclarado: {
+        updateMany: jest.fn(async ({ where, data }) => {
+          const atual = mapa.get(where.id);
+          const casa =
+            atual &&
+            atual.portalClientId === where.portalClientId &&
+            (where.estado === undefined || atual.estado === where.estado) &&
+            (where.parDeclaradoId === undefined || (atual.parDeclaradoId ?? null) === where.parDeclaradoId);
+          if (!casa) return { count: 0 };
+          mapa.set(where.id, { ...atual, ...data });
+          return { count: 1 };
+        }),
+        findFirst: jest.fn(async ({ where }) => mapa.get(where.id) ?? null),
+      },
+    };
+    return {
+      mapa,
+      client: {
+        lancamentoDeclarado: {
+          findFirst: jest.fn(async ({ where }) => {
+            const r = mapa.get(where.id);
+            return r && r.portalClientId === where.portalClientId ? r : null;
+          }),
+        },
+        $transaction: jest.fn(async (cb) => cb(tx)),
+      },
+    };
+  }
+
+  const fundir = (client, ofx, nota) =>
+    fundirPagamentoNaNota({
+      portalClientId: "emp-1", declaradoOfxId: ofx, declaradoNotaId: nota,
+      usuarioId: "u-1", agora: AGORA, client,
+    });
+
+  it("sequencialmente, a segunda fusão do mesmo débito já era recusada pela máquina de estados", async () => {
+    const { client, mapa } = clientReal([debitoOfx(), notaRecebida({ id: "n-1" }), notaRecebida({ id: "n-2" })]);
+    await fundir(client, "ofx-1", "n-1");
+    // ⚠ Aqui o débito já está FUNDIDO, e `podeTransitar` o pega antes de qualquer escrita.
+    await expect(fundir(client, "ofx-1", "n-2")).rejects.toMatchObject({
+      codigo: RECUSA.TRANSICAO_INVALIDA_NESTE_ESTADO,
+    });
+    expect([...mapa.values()].filter((r) => r.fitId === "F1" && r.origem === "NOTA_RECEBIDA")).toHaveLength(1);
+  });
+
+  it("⚠⚠ NA CORRIDA — dois requests que LERAM ANTES — o segundo não paga a segunda nota", async () => {
+    // ⚠⚠ ESTE É O BUG QUE A AUDITORIA PROVOU, e a recusa sequencial acima NÃO o cobria: a leitura
+    // e a reconferência acontecem FORA da transação. Dois cliques simultâneos liam ambos o débito
+    // em `A_CONFERIR`, passavam pela máquina de estados, e ambos escreviam — deixando DUAS notas
+    // com o mesmo `fitId` e a mesma data, as duas podendo virar lançamento. O caixa creditado
+    // DUAS VEZES pela mesma saída, em silêncio.
+    //
+    // O dublê congela a LEITURA no estado original (é o que os dois requests concorrentes veem) e
+    // deixa a ESCRITA enxergar o estado real — que é exatamente a assimetria do Postgres.
+    const { client, mapa } = clientReal([debitoOfx(), notaRecebida({ id: "n-1" }), notaRecebida({ id: "n-2" })]);
+    const leituraCongelada = new Map([...mapa.entries()].map(([k, v]) => [k, { ...v }]));
+    client.lancamentoDeclarado.findFirst = jest.fn(async ({ where }) => {
+      const r = leituraCongelada.get(where.id);
+      return r && r.portalClientId === where.portalClientId ? r : null;
+    });
+
+    await fundir(client, "ofx-1", "n-1");
+    // ⚠ O segundo request "não sabe" que o primeiro já aconteceu — e mesmo assim é barrado, pelo
+    // `count` do `updateMany`.
+    await expect(fundir(client, "ofx-1", "n-2")).rejects.toMatchObject({
+      codigo: RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE,
+    });
+
+    const pagasPeloMesmoDebito = [...mapa.values()].filter((r) => r.fitId === "F1" && r.origem === "NOTA_RECEBIDA");
+    expect(pagasPeloMesmoDebito).toHaveLength(1);
+    expect(mapa.get("n-2").dataPagamento).toBeNull();
+  });
+
+  it("⚠⚠ UMA NOTA NÃO É FUNDIDA DENTRO DE OUTRA NOTA — a despesa sumiria", async () => {
+    // Provado em auditoria: `FUNDIR` sai de `A_CONFERIR`, e uma nota datada à mão está aí. O
+    // resultado era a despesa de fevereiro DESAPARECENDO dentro da de janeiro.
+    const jan = notaRecebida({
+      id: "nf-jan", estado: ESTADO.A_CONFERIR, dataPagamento: PAGO_EM,
+      origemPagamento: ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR,
+    });
+    const fev = notaRecebida({
+      id: "nf-fev", estado: ESTADO.A_CONFERIR, dataPagamento: PAGO_EM,
+      origemPagamento: ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR,
+    });
+    const { client, mapa } = clientReal([jan, fev]);
+
+    await expect(fundir(client, "nf-fev", "nf-jan")).rejects.toMatchObject({
+      codigo: RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE,
+    });
+    // ⚠ NADA sumiu: a despesa de fevereiro continua viva.
+    expect(mapa.get("nf-fev").estado).toBe(ESTADO.A_CONFERIR);
+  });
+
+  it("⚠ e o lado direito não pode ser um débito de extrato", async () => {
+    const { client } = clientReal([debitoOfx({ id: "ofx-1" }), debitoOfx({ id: "ofx-2" })]);
+    await expect(fundir(client, "ofx-1", "ofx-2")).rejects.toMatchObject({
+      codigo: RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE,
+    });
+  });
+
+  it("o caminho normal continua funcionando", async () => {
+    const { client, mapa } = clientReal([debitoOfx(), notaRecebida()]);
+    await fundir(client, "ofx-1", "n-1");
+    expect(mapa.get("n-1")).toMatchObject({ estado: ESTADO.A_CONFERIR, fitId: "F1", origemPagamento: ORIGEM_PAGAMENTO.OFX });
+    expect(mapa.get("ofx-1")).toMatchObject({ estado: ESTADO.FUNDIDO, parDeclaradoId: "n-1" });
   });
 });

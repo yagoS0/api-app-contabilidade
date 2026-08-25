@@ -156,11 +156,17 @@ describe("⚠⚠ O APRENDIZADO RODA DEPOIS QUE A TRANSAÇÃO FECHOU", () => {
     // confirmar continua valendo.
     const { client } = fazerClient(declaradoBase());
     mockReavaliar.mockRejectedValue(new Error("tabela nao existe"));
-    // ⚠ Ela é declarada como "nunca lança" (tem try/catch dentro). Este teste prende o CONTRATO:
-    // se alguém remover aquele catch, este vermelho aparece antes de a produção quebrar.
-    await expect(aplicar(client, TRANSICAO.CONFIRMAR)).rejects.toThrow();
-    // ⚠ E o lançamento JÁ FOI CRIADO — a transação fechou antes.
+
+    // ⚠⚠ ESTE TESTE AFIRMAVA O CONTRÁRIO DO PRÓPRIO NOME (`rejects.toThrow()`), achado por
+    // auditoria em 25/08/2026. Ele "passava" travando o defeito: com a `$transaction` já commitada,
+    // a exceção subiria e a rota responderia 500 sobre um lançamento que EXISTE.
+    const r = await aplicar(client, TRANSICAO.CONFIRMAR);
+
+    // ⚠ A transição CONCLUI, e devolve o declarado atualizado.
+    expect(r).toMatchObject({ estado: ESTADO.CONTABILIZADO });
+    // ⚠ E o lançamento foi criado — a transação fechou antes de o aprendizado ser tentado.
     expect(client.$transaction).toHaveBeenCalled();
+    expect(mockReavaliar).toHaveBeenCalled();
   });
 });
 

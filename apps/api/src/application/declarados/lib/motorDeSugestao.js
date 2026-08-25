@@ -125,12 +125,31 @@ function regraCasa(regra, { cnpj, descricaoNormalizada }) {
   return null;
 }
 
+/**
+ * ⚠⚠ AUSÊNCIA NÃO É ZERO — e a guarda anterior era CÓDIGO MORTO.
+ *
+ * Achado por auditoria em 25/08/2026: `Number.isFinite(Number(null))` é **`true`**, porque
+ * `Number(null)` é `0`. A guarda de finitude, escrita justamente para pegar faixa ausente, não
+ * pegava nada — `valorMin: null` virava **R$ 0,00** e a metade inferior da faixa sumia em silêncio.
+ *
+ * ⚠ E a faixa é o que impede uma regra de aplicar a conta de uma mensalidade de R$ 300 a uma compra
+ * de R$ 30.000 do mesmo fornecedor. Sem piso, ela deixa de fazer isso sem nada na tela dizer.
+ *
+ * Mesma família do `folhaAusenteNaoEZero` e do "0%" que já foi parar na tela do cliente.
+ */
+const numeroDeVerdade = (v) => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
 const dentroDaFaixa = (valor, regra) => {
-  const v = Number(valor);
-  if (!Number.isFinite(v)) return false;
-  const min = Number(regra?.valorMin);
-  const max = Number(regra?.valorMax);
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return false;
+  const v = numeroDeVerdade(valor);
+  const min = numeroDeVerdade(regra?.valorMin);
+  const max = numeroDeVerdade(regra?.valorMax);
+  // ⚠ Faltando qualquer um dos três, a regra NÃO se aplica. Faixa incompleta é faixa ausente, e
+  // faixa ausente casa com tudo — que é o oposto do que ela existe para fazer.
+  if (v === null || min === null || max === null) return false;
   return v >= min && v <= max;
 };
 
@@ -173,13 +192,22 @@ export function sugerirConta(declarado, { regras = [], historico = [], plano = [
   ]) {
     if (!lista.length) continue;
 
-    // ⚠⚠ DUAS REGRAS VIVAS PARA A MESMA ÂNCORA APONTANDO CONTAS DIFERENTES ⇒ NENHUMA VALE.
-    // Escolher "a mais recente" ou "a primeira" poria a despesa numa conta que o contador não
-    // escolheu, em série — é o mesmo raciocínio do `AMBIGUO` do casamento e do código de serviço.
-    const contas = new Set(lista.map((r) => String(r.contaDestino)));
+    // ⚠⚠ A FAIXA FILTRA **ANTES** DE A AMBIGUIDADE SER JULGADA — e a ordem inversa anulava a faixa.
+    //
+    // Achado por auditoria em 25/08/2026: o conjunto de contas saía da lista INTEIRA, então duas
+    // regras do mesmo fornecedor com faixas DISJUNTAS (`[100,500] → conta A` e `[20000,40000] →
+    // conta B`) eram lidas como conflito, e um débito de R$ 300 não recebia sugestão nenhuma.
+    //
+    // ⚠ Isso é literalmente o cenário que justifica a faixa existir — mensalidade × compra grande
+    // do mesmo fornecedor. Ela deveria SEPARAR as duas; julgando antes, o motor calava.
+    const naFaixa = lista.filter((r) => dentroDaFaixa(valor, r));
+
+    // ⚠⚠ DUAS REGRAS APLICÁVEIS APONTANDO CONTAS DIFERENTES ⇒ NENHUMA VALE. Escolher "a mais
+    // recente" ou "a primeira" poria a despesa numa conta que o contador não escolheu, em série —
+    // é o mesmo raciocínio do `AMBIGUO` do casamento e do código de serviço.
+    const contas = new Set(naFaixa.map((r) => String(r.contaDestino)));
     if (contas.size > 1) return naoSugere(SEM_SUGESTAO.DIVIDIDO, { procedenciaTentada: procedencia });
 
-    const naFaixa = lista.filter((r) => dentroDaFaixa(valor, r));
     if (!naFaixa.length) {
       // ⚠ "Casou a âncora e o valor fugiu da faixa" NÃO é silêncio: é sinal. A faixa existe para
       // pegar o fornecedor conhecido com um valor 10× fora do normal, e sumir com o aviso
@@ -191,8 +219,21 @@ export function sugerirConta(declarado, { regras = [], historico = [], plano = [
     }
 
     const regra = naFaixa[0];
+    // ⚠⚠ A CONTA DA REGRA TAMBÉM É CONFERIDA CONTRA O PLANO — achado por auditoria em 25/08/2026.
+    //
+    // O caminho do HISTÓRICO já recusava conta fora do plano; o da REGRA não conferia nada. Uma
+    // conta apagada do plano depois de a regra nascer virava sugestão que a tela mostra e o
+    // `montarLancamento` recusa no clique — a tela oferecendo o que o servidor nega.
+    //
+    // ⚠ `contaDestino` já é `codigoCompleto` (contrato do model), então aqui se confere existência,
+    // não se traduz. `String(null)` seria a string `"null"` — por isso a checagem vem antes.
+    const contaDaRegra = regra?.contaDestino ? String(regra.contaDestino) : null;
+    if (!contaDaRegra || !(plano || []).some((c) => String(c.codigoCompleto) === contaDaRegra)) {
+      return naoSugere(SEM_SUGESTAO.CONTA_FORA_DO_PLANO, { procedenciaTentada: procedencia, regraId: regra?.id ?? null });
+    }
+
     return {
-      conta: String(regra.contaDestino),
+      conta: contaDaRegra,
       procedencia,
       motivo: null,
       frase: FRASE_DA_PROCEDENCIA[procedencia],

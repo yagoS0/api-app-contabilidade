@@ -145,9 +145,30 @@ describe("⚠⚠ A FAIXA DE VALOR — casou a âncora e fugiu da faixa é SINAL,
     expect(r.motivo).toBe(SEM_SUGESTAO.FORA_DA_FAIXA);
   });
 
-  it("⚠ faixa ilegível não vira 'passa' — ela recusa", () => {
-    const r = sugerirConta(declarado(), {
-      regras: [regra({ cnpjFornecedor: "12345678000190", valorMin: null, valorMax: null })],
+  it("⚠⚠ faixa ilegível não vira 'passa' — inclusive com valor ZERO", () => {
+    // ⚠ ESTE TESTE PASSAVA POR SORTE DA FIXTURE, achado por auditoria em 25/08/2026: com
+    // `valorMin: null` a guarda `Number.isFinite(Number(null))` era TRUE (`Number(null)` é 0), e o
+    // teste só passava porque 1500 ∉ [0,0]. Com valor 0, o motor SUGERIA.
+    for (const valor of [1500, 0]) {
+      const r = sugerirConta(declarado({ valor }), {
+        regras: [regra({ cnpjFornecedor: "12345678000190", valorMin: null, valorMax: null })],
+        plano: PLANO,
+      });
+      expect(r.conta).toBeNull();
+    }
+  });
+
+  it("⚠⚠ PISO ausente não vira R$ 0,00 — a metade inferior da faixa não some", () => {
+    const r = sugerirConta(declarado({ valor: 1 }), {
+      regras: [regra({ cnpjFornecedor: "12345678000190", valorMin: null, valorMax: 5000 })],
+      plano: PLANO,
+    });
+    expect(r.conta).toBeNull();
+  });
+
+  it("⚠ string vazia no valor também não vira zero", () => {
+    const r = sugerirConta(declarado({ valor: "", valorAjustado: null }), {
+      regras: [regra({ cnpjFornecedor: "12345678000190", valorMin: 0, valorMax: 5000 })],
       plano: PLANO,
     });
     expect(r.conta).toBeNull();
@@ -316,5 +337,52 @@ describe("⚠⚠ ESTE MÓDULO NÃO CONTABILIZA NADA", () => {
     const path = require("node:path");
     const fonte = fs.readFileSync(path.join(__dirname, "..", "motorDeSugestao.js"), "utf8");
     expect(fonte).not.toMatch(/from "@prisma|infrastructure\/db|new Date\(\)/);
+  });
+});
+
+describe("⚠⚠ OS BUGS DO MOTOR ACHADOS POR AUDITORIA (25/08/2026)", () => {
+  it("⚠⚠ FAIXAS DISJUNTAS SEPARAM, não viram conflito", () => {
+    // O cenário que JUSTIFICA a faixa existir: mensalidade × compra grande do mesmo fornecedor.
+    // A ambiguidade era julgada sobre a lista INTEIRA, antes do filtro — e o motor calava.
+    const contexto = {
+      regras: [
+        regra({ id: "mensal", cnpjFornecedor: "12345678000190", valorMin: 100, valorMax: 500, contaDestino: "411030012" }),
+        regra({ id: "compra", cnpjFornecedor: "12345678000190", valorMin: 20000, valorMax: 40000, contaDestino: "411010004" }),
+      ],
+      plano: PLANO,
+    };
+    expect(sugerirConta(declarado({ valor: 300 }), contexto)).toMatchObject({ conta: "411030012", regraId: "mensal" });
+    expect(sugerirConta(declarado({ valor: 30000 }), contexto)).toMatchObject({ conta: "411010004", regraId: "compra" });
+  });
+
+  it("⚠ faixas SOBREPOSTAS com contas diferentes continuam sendo conflito", () => {
+    const r = sugerirConta(declarado({ valor: 300 }), {
+      regras: [
+        regra({ id: "a", cnpjFornecedor: "12345678000190", valorMin: 100, valorMax: 500, contaDestino: "411030012" }),
+        regra({ id: "b", cnpjFornecedor: "12345678000190", valorMin: 200, valorMax: 900, contaDestino: "411010004" }),
+      ],
+      plano: PLANO,
+    });
+    expect(r.motivo).toBe(SEM_SUGESTAO.DIVIDIDO);
+  });
+
+  it("⚠⚠ conta da REGRA que não existe no plano NÃO é sugerida", () => {
+    // O caminho do histórico já recusava; o da regra não conferia nada. Uma conta apagada do plano
+    // depois de a regra nascer virava sugestão que a tela mostra e o servidor recusa no clique.
+    const r = sugerirConta(declarado(), {
+      regras: [regra({ cnpjFornecedor: "12345678000190", contaDestino: "999999999" })],
+      plano: PLANO,
+    });
+    expect(r.conta).toBeNull();
+    expect(r.motivo).toBe(SEM_SUGESTAO.CONTA_FORA_DO_PLANO);
+  });
+
+  it("⚠⚠ `contaDestino` nulo NUNCA vira a string \"null\"", () => {
+    const r = sugerirConta(declarado(), {
+      regras: [regra({ cnpjFornecedor: "12345678000190", contaDestino: null })],
+      plano: PLANO,
+    });
+    expect(r.conta).toBeNull();
+    expect(r.conta).not.toBe("null");
   });
 });
