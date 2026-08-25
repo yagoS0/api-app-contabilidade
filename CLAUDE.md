@@ -493,6 +493,65 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   - **Fora de escopo, com motivo escrito:** substituição de NFS-e (**escopo fechado pelo dono**) e
     envio da nota por e-mail ao tomador. ⚠ A EMISSÃO em lote saiu desta lista em 20/08/2026 — ela
     foi construída.
+- [~] **Módulo fiscal — os defeitos das três telas + as tabelas (25/08/2026)** — o dono avaliou
+  Planejamento tributário, Fiscal→Apuração e Empresa→Perfil fiscal **como contador** e listou oito
+  defeitos. **Todos medidos contra produção antes e depois**; dois tinham causa diferente da
+  suposta, e é a mesma para os dois.
+  - ⚠⚠ **UM PARSER DE NÚMERO EXPLICAVA TRÊS SINTOMAS AO MESMO TEMPO.** O prefill escrevia o número
+    JS cru no input (`String(888286.09)`) e o parser da tela remove todo ponto como separador de
+    milhar — o que é CERTO para digitação pt-BR. **Todo valor com centavos era multiplicado por
+    100.** Receita > 78 mi ⇒ "não é elegível ao Lucro Presumido"; RBT12 > 4,8 mi ⇒ "Sem RBT12"; e o
+    "ponto de equilíbrio" continuava cravando um número entre as duas recusas porque
+    `pontoDeEquilibrio` varre com um RBT12 interno. **Medido: 12 de 18 empresas com dado apurado.**
+    ⚠ O ISS também (3,5% virava 35%). O conserto NÃO foi afrouxar o parser — em pt-BR "1.234" é
+    ambíguo e quem digita quer mil duzentos e trinta e quatro; quem errava era quem ESCREVIA.
+    As duas metades passaram a morar juntas em `planejamento/lib/campoNumerico.js`, com o contrato
+    sendo a IDA E VOLTA.
+  - ⚠⚠ **A FOTO DO RELATÓRIO SE PASSAVA POR DIAGNÓSTICO DE AGORA.** "A empresa não tem Cadastro
+    Fiscal preenchido" com o Perfil fiscal cheio: as duas telas leem a MESMA tabela com a MESMA
+    chave, então "são tabelas diferentes" não explicava. Medido: o relatório da LENTE é de
+    **12:26:57** e o `CadastroFiscal` foi criado às **12:55:24** — 28 minutos depois. O relatório é
+    uma FOTO (`relatorios_faturamento`), e dentro dela viajava congelado o BLOQUEIO do motor, que
+    não é número: é **diagnóstico de estado**. Hoje `lerRelatorioFaturamento` reconfere e a tela
+    avisa ANTES do motivo. ⚠ **Três estados**: `aindaVale: null` é "não conferimos este" e nunca
+    vira "já resolvido".
+  - ⚠⚠ **"CLASSIFICAR COMPETÊNCIA" CLASSIFICAVA A EMPRESA INTEIRA** — a query não filtrava por
+    competência, e com `force: true` reclassificaria todo o histórico, meses transmitidos inclusive.
+    ⚠ Nota **sem competência** é contada e devolvida nomeada (em SQL, intervalo não casa com NULL —
+    o defeito que a auditoria de notas já pagou).
+  - ⚠⚠ **O FATOR R AGORA É DERIVADO DO PERFIL DE ATIVIDADES**, com override e divergência à vista
+    (`planejamento/lib/sujeitoAoFatorR.js`, três respostas). O campo lia `CadastroFiscal.usaFatorR`
+    cru — coluna com `@default(false)`, que **não distingue "o contador disse que não" de "ninguém
+    nunca abriu essa tela"**. Com o RBT12 da LENTE: Anexo III ≈ 11,04% contra V ≈ 17,6%.
+    ⚠ Consertou junto um defeito do `PerfilFiscalService`: o `temFatorR` era um `if` dentro do laço,
+    ANTES de `cfg.ativo` ser lido — atividade DESATIVADA forçava o Fator R da empresa.
+  - ⚠⚠ **A REGRA DOS R$ 120.000 EXISTIA COMO CONSTANTE E NUNCA ENTRAVA EM CONTA NENHUMA.**
+    `PRESUNCAO_IRPJ.servicosAte120k = 0.16` só alimentava um aviso. **Medido: 10 das 18 empresas com
+    dado têm receita abaixo do limite** — o simulador presumia o DOBRO do IRPJ na maioria da
+    carteira. ⚠ A redução é **só do IRPJ**; a CSLL segue 32%. ⚠ E **não se liga sozinha**: o § 4º
+    exclui hospitalares, transporte e profissão regulamentada (há caso concreto na carteira).
+  - **As tabelas** (`docs/lc116/`, e a NBS da planilha já versionada) — ver `apps/api/CLAUDE.md`,
+    seção "DUAS TABELAS FISCAIS NOVAS". ⚠ A **NBS nasce inerte por decisão do dono**.
+  - ⚠⚠ **A CATEGORIA DE PRESUNÇÃO PASSOU A SER SUGERIDA PELO CNAE — e isso reverte, de forma
+    controlada, uma decisão escrita.** O texto antigo ("a atividade do Presumido NÃO é derivada do
+    CNAE") continua valendo: o que mudou é **derivar** (o sistema decide e calcula) virar **sugerir**
+    (o sistema propõe, nomeia o que derrubaria a proposta, e nada entra na conta sem confirmação).
+    ⚠ O campo continua `ausente`; a sugestão viaja separada. ⚠ CNAE fora do catálogo **não** cai em
+    "serviços" — 18 dos 64 CNAEs da carteira estão fora. ⚠ Atividades que discordam ⇒ **nenhuma**
+    sugestão, nem por maioria.
+  - **Fica NOMEADO, não consertado:** **28 das 34 empresas não têm linha em `cadastros_fiscais`** (o
+    Perfil fiscal sintetiza da `Company`, e o `prefill: true` que o backend devolve **não é lido no
+    front**) · `perfilAtividades.codigoServicoMunicipal`, `retencaoFonte` e `domicilioFiscal` são
+    **write-only** · o catálogo de CNAE cobre ~10% da CNAE 2.3 · a conciliação DAS × SERPRO existe e
+    é **inalcançável** enquanto o motor recusar por receita não classificada.
+  - ⚠ **`serproParcelamentoContract` já estava vermelho no HEAD** (`parc.numeroDas` undefined) —
+    conferido, não é destas entregas.
+  - ⚠⚠ **TRÊS LIÇÕES DE MÉTODO, e elas valem mais que os consertos:** (1) um experimento voltou
+    **zero vermelhos** — a regra pura tinha 17 testes e a **ligação** tinha nenhum; (2) o mock usava
+    só valores **redondos** e tem faturamento **zero** em 6 de 6 empresas, então dois ramos inteiros
+    nunca eram alcançáveis offline; (3) **terceira vez** que um identificador órfão passa pelo
+    `npm run build` — só teste ou `no-undef` pega.
+
 - [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
   envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 

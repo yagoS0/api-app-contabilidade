@@ -1165,7 +1165,20 @@ defeito do município — configuração que existe no model sem porta.
   dígitos)" e `buildDpsXml` faz `.slice(-3)` — isso descreve o **XML**, não o código que a
   prefeitura publica. Exigir 3 no cadastro recusaria código legítimo mais longo, então não se exige;
   a tela **anuncia** quais 3 dígitos vão para a DPS, para que o corte não seja descoberto na
-  rejeição. **Pendente de confirmação do dono.**
+  rejeição.
+  - ✅ **RESPONDIDO EM PARTE (25/08/2026).** Perguntado como obter a tabela de códigos de serviço do
+    Rio, o dono respondeu: **"geralmente é 001"**. Ou seja: **não há tabela a construir** — o código
+    é praticamente uniforme na carteira, e o formato de 3 dígitos se confirma.
+  - ⚠⚠ **MAS "GERALMENTE" NÃO É "SEMPRE", E ISSO NÃO VIROU DEFAULT.** Medido em produção no mesmo
+    dia (`scripts/diag-codigo-servico-municipal.mjs`, só leitura): **31 de 34 empresas com o campo
+    VAZIO**, e as **3 preenchidas são todas `001`** — zero contraexemplos. A base **corrobora** a
+    frase, com **três pontos de dado**. Isso sustenta uma **sugestão marcada**; preencher 33
+    empresas a partir daí seria o portal **afirmando** a classificação de ISS delas, e o erro sai
+    como nota emitida no município, contra o cliente.
+  - ⚠ **E o lugar da sugestão NÃO é a coluna do Perfil Fiscal**: `perfilAtividades.codigoServicoMunicipal`
+    é **write-only** (medido: nenhum leitor). Quem a emissão lê é `Company.codigoServicoMunicipal`.
+    Sugerir na coluna morta alimentaria um campo que ninguém consulta — o defeito que a própria
+    avaliação do dono apontou. Fica **nomeado**, não feito.
 - ⚠ **A faixa da série vive em DOIS lugares** (`nfseNumeracao.js` e o normalizador do cadastro):
   aquele módulo carrega o Prisma no topo e este é um validador puro. A duplicação está **amarrada
   por teste** — `companyCamposNfse.test.js` compara os limites com `SERIE_MIN`/`SERIE_MAX`
@@ -1304,6 +1317,59 @@ intenção, não fato, e a divergência apareceria como *"a tela ofereceu e o se
 - Testes: `contratoDeEmpresasDoCliente.test.js` (12 — varredura do `select`, com contraprova de que
   o padrão casa) + front `lib/codigoServicoDaNota.test.js` (30, com o amarre) e
   `codigoServicoNaTela.ligacao.test.jsx` (10, inclusive **o que chega ao payload**).
+
+### ⚠ DUAS TABELAS FISCAIS NOVAS (25/08/2026) — LC 116 e NBS, com fonte, hash e gate
+
+Pedido do dono ("baixar as tabelas nessa rodada"). As duas seguem o padrão de
+`docs/lista-servico-nacional/`: o documento oficial entra no repositório com URL, data, tamanho e
+SHA-256, e o código é **gerado** por um script que **aborta** na divergência.
+
+| tabela | fonte | medido | consumidor |
+|---|---|---|---|
+| **LC 116/2003** | `docs/lc116/lcp116.htm` (Planalto, texto compilado) | 40 itens · 205 subitens · 5 vetados | `application/fiscal/lc116/` — descrição do serviço a partir do código |
+| **NBS 2.0** | a MESMA planilha do Anexo B, aba `LISTA.NBS_v2.0` | 1.210 códigos | ⚠ **nenhum, por decisão** |
+
+⚠⚠ **A NBS NASCE INERTE, E ISSO É DECISÃO DO DONO, NÃO ESQUECIMENTO.** O `cNBS` é campo **opcional**
+da DPS e este projeto não o preenche; a recomendação foi esperar haver leitor (dado que ninguém lê é
+o defeito que o Perfil Fiscal já tem), e ele decidiu gerar para estar pronta. **Ligar o `cNBS` na
+emissão MUDA O XML de nota fiscal em produção** — é ato do dono, não consequência de a tabela
+existir. Há teste **varrendo todo o `application/nfse/`** para provar que nenhum arquivo do caminho
+de emissão a importa; se alguém a ligar, o teste cai e a decisão fica à vista.
+
+⚠⚠ **AS ARMADILHAS DAS DUAS FONTES — todas custaram uma execução abortada:**
+
+| onde | armadilha |
+|---|---|
+| LC 116 | o separador entre número e nome **não é hífen**: é `&#150;` (travessão do CP1252). Tratando só entidades **nomeadas**, o extrator achou **1 item de 40** |
+| LC 116 | o texto compilado traz **as DUAS redações interleavadas** (original e LC 157/2016), com o **mesmo número**. Lido cru, a versão guardada é a **REVOGADA** |
+| LC 116 | `"lista de serviços anexa"` aparece **quatro vezes** no corpo da lei — ancorar nela começa a extração no meio do art. 2º |
+| LC 116 | a codificação é **latin-1**; lida como utf-8, todo acento vira U+FFFD |
+| NBS | a coluna do código é **MISTA**: 1.108 vêm como texto e **102 como NÚMERO** (`1.0101` vira `10101`) |
+| NBS | **112 códigos vêm com espaço no fim** — sem `trim`, `"1.0101.11.00 "` e `"1.0101.11.00"` são códigos diferentes |
+
+⚠⚠ **A CONTAGEM NÃO É PROVA, e isso foi medido.** Uma entrada perdida e outra duplicada dão o mesmo
+total. O gate da LC 116 exige que os subitens de cada item formem uma **sequência contígua** `.01` a
+`.N`; o da NBS exige que **todo** código numérico remontado tenha **filho** na lista em texto (102 de
+102). Foi a prova de contiguidade que corrigiu o total da LC 116: uma primeira sondagem dizia 204 e
+estava **colando uma entrada no texto da anterior**, em silêncio.
+
+⚠ **E o gate da LC 116 tinha um buraco, achado por experimento:** trocando o desempate para "a última
+escrita vence", o total continuava 205 e ele **passava** — escrevendo a descrição **revogada**.
+Contagem igual, conteúdo trocado. Hoje há prova de **conteúdo**, e o experimento aborta nomeando o
+subitem. ⚠ O primeiro experimento que rodei **não media nada** (no documento a alterada já vem
+depois da original); só a ordem invertida exercita a guarda.
+
+⚠⚠ **`.gitattributes` NASCEU JUNTO E É PARTE DA ENTREGA.** O git ia converter CRLF→LF no `.htm`,
+mudando os bytes e invalidando o hash do README e do arquivo gerado. **Hash que não confere é pior
+que hash nenhum — ele parece garantia.** `docs/** -text`.
+
+⚠⚠ **O QUE A LC 116 NÃO RESPONDE:** ela **não diz o anexo do Simples**, não diz a presunção do
+Presumido e **não classifica receita**. É a lista dos serviços sujeitos ao **ISS** — outra lei, outro
+tributo. O de-para "item da LC 116 → tipo de receita" é julgamento fiscal que não está em norma
+nenhuma. Há teste que **cai** se alguém acrescentar `anexo`/`tipoReceita` aos subitens.
+
+⚠ **Três listas, três granularidades:** item da LC 116 (4 dígitos) ≠ `cTribNac` (6) ≠ NBS. Há teste
+recusando cada uma como sendo a outra.
 
 ### ⚠ A SÉRIE DA DPS É AUTOMÁTICA — decisão do dono, 16/08/2026
 
