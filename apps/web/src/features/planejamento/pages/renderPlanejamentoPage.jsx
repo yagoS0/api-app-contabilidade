@@ -29,6 +29,10 @@ import { custoAnualSimples } from "../lib/simplesNacional";
 import { ATIVIDADES_PRESUMIDO, avisoTravaServicos16 } from "../lib/lucroPresumido";
 import { ANEXOS, ISS_FAIXA_LEGAL } from "../lib/tabelasFiscais";
 import { prefillDaEmpresa, procedenciaDosCampos } from "../lib/prefillDaEmpresa";
+// ⚠⚠ AS DUAS METADES DO CAMPO NUMÉRICO VÊM DO MESMO ARQUIVO, E ISSO É O CONSERTO.
+// `deCampo` morava solta aqui e `paraCampo` não existia — quem escrevia no input era
+// `String(n)`, que produz "888286.09" e é lido como 88.828.609. Ver `lib/campoNumerico.js`.
+import { paraCampo, deCampo as num } from "../lib/campoNumerico";
 import { CardRegime } from "../components/CardRegime";
 import { GaugeFatorR } from "../components/GaugeFatorR";
 import { BackButton } from "../../../components/ui/BackButton";
@@ -39,11 +43,6 @@ const campo = { background: "#1A1B26", border: `1px solid ${C.borda}`, borderRad
 const rotulo = { display: "grid", gap: 4, fontSize: "0.76rem", color: C.muted };
 const brl = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-const num = (v) => {
-  if (v === "" || v == null) return null;
-  const n = Number(String(v).replace(/\./g, "").replace(",", "."));
-  return Number.isFinite(n) ? n : null;
-};
 
 const ROTULO_REGIME = {
   SIMPLES_NACIONAL: "Simples Nacional", LUCRO_PRESUMIDO: "Lucro Presumido",
@@ -128,10 +127,17 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   useEffect(() => {
     if (!prefill.temEmpresa) return;
     const v = prefill.valores;
-    setReceita(v.receitaAnual == null ? "" : String(v.receitaAnual));
-    setRbt12(v.rbt12 == null ? "" : String(v.rbt12));
-    setFolha(v.folhaAnual == null ? "" : String(v.folhaAnual));
-    setIss(v.aliquotaIss == null ? "" : String(Math.round(v.aliquotaIss * 1e6) / 1e4));
+    // ⚠⚠ `paraCampo`, NUNCA `String(n)`. Era daqui que saía o defeito medido em 25/08/2026: o
+    // número JS cru ("888286.09") entra no input e `num` lê o ponto como separador de MILHAR,
+    // devolvendo 88.828.609 ao motor. Medido em produção antes do conserto: 12 de 18 empresas com
+    // o valor inflado ×100, 3 com o card do Presumido morto ("inelegível") e 7 com o do Simples
+    // ("Sem RBT12"). Valor sem centavos passava ileso — e o mock só tinha valores redondos.
+    setReceita(paraCampo(v.receitaAnual));
+    setRbt12(paraCampo(v.rbt12));
+    setFolha(paraCampo(v.folhaAnual));
+    // ⚠ O ISS viaja em FRAÇÃO no payload e é PERCENTUAL no campo. A conversão é esta; o que não
+    // pode voltar é o `String()` em volta dela (3,5% viraria 35%).
+    setIss(v.aliquotaIss == null ? "" : paraCampo(Math.round(v.aliquotaIss * 1e6) / 1e4));
     if (v.sujeitoFatorR != null) setSujeitoFatorR(Boolean(v.sujeitoFatorR));
     if (v.anexo != null) setAnexo(v.anexo);
     // `atividadePresumido` NÃO é pré-preenchida: o projeto não tem de-para CNAE→presunção de
@@ -160,7 +166,8 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     if (!detalhando) return;
     setSerieMensal((atual) => {
       const media = (num(receita) || 0) / 12;
-      const padrao = media ? String(Math.round(media * 100) / 100) : "";
+      // ⚠ MESMO defeito, terceiro lugar: `String(1234.56)` vira 123.456 na volta.
+      const padrao = media ? paraCampo(Math.round(media * 100) / 100) : "";
       return Array.from({ length: mesesInicioAtividade }, (_, i) => atual[i] ?? padrao);
     });
   }, [detalhando, mesesInicioAtividade, receita]);

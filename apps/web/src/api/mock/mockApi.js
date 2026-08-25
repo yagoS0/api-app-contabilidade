@@ -7504,23 +7504,29 @@ export function createMockApi() {
         + "de IRPJ/CSLL, e errar entre 8% e 32% inverteria a comparação. Escolha na tela.",
       );
 
+      // ⚠⚠ OS VALORES TÊM CENTAVOS DE PROPÓSITO, E ISSO É REGRESSÃO, NÃO CAPRICHO.
+      // Até 25/08/2026 todos os cenários daqui usavam inteiros redondos (1_850_000, 560_000), e foi
+      // exatamente isso que manteve invisível, offline, o defeito que quebrava 12 das 18 empresas
+      // com dado em produção: o prefill escrevia `String(n)` no input e o parser lia o ponto decimal
+      // como separador de milhar — mas só quando HAVIA ponto, ou seja, só com centavos. O mock
+      // rodava verde sobre o único formato que não podia falhar. Ver `lib/campoNumerico.js`.
       const cenarios = [
         // 0 — tudo apurado, Fator R com folha vinda do fechamento.
         {
-          receitaAnual: ok(1_850_000, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (214 notas)`),
-          rbt12: ok(1_790_000, "apuração de 05/2026 (transmitida)"),
-          folhaAnual: ok(560_000, "folha de 12 meses informada no fechamento de 05/2026"),
+          receitaAnual: ok(1_850_000.37, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (214 notas)`),
+          rbt12: ok(1_790_000.42, "apuração de 05/2026 (transmitida)"),
+          folhaAnual: ok(560_412.55, "folha de 12 meses informada no fechamento de 05/2026"),
           regimeAtual: ok("SIMPLES_NACIONAL", "cadastro fiscal da empresa"),
           anexo: nao("Atividade sujeita ao Fator R: o anexo sai da folha (III a partir de 28%, V abaixo), não do cadastro."),
           sujeitoFatorR: ok(true, "cadastro fiscal da empresa (campo \"usa Fator R\")"),
-          aliquotaIss: ok(0.05, "perfil de atividades — CNAE 6202300 (5%)"),
+          aliquotaIss: ok(0.035, "perfil de atividades — CNAE 6202300 (3,5%)"),
           atividadePresumido: semAtividadePresumido,
         },
         // 1 — Lucro Presumido, folha digitada na circular, sem ISS no perfil.
         {
-          receitaAnual: ok(4_100_000, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (98 notas)`),
-          rbt12: ok(4_050_000, "circular de 06/2026 (soma móvel de 12 meses)"),
-          folhaAnual: ok(1_240_000, "folha de 12 meses digitada na circular de 06/2026 (MANUAL)"),
+          receitaAnual: ok(4_100_318.90, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (98 notas)`),
+          rbt12: ok(4_050_777.13, "circular de 06/2026 (soma móvel de 12 meses)"),
+          folhaAnual: ok(1_240_066.08, "folha de 12 meses digitada na circular de 06/2026 (MANUAL)"),
           regimeAtual: ok("LUCRO_PRESUMIDO", "cadastro da empresa (regime tributário: \"LUCRO_PRESUMIDO\")"),
           anexo: nao("Anexo do Simples não cadastrado — escolha na tela."),
           sujeitoFatorR: ok(false, "cadastro fiscal da empresa (campo \"usa Fator R\")"),
@@ -7529,9 +7535,9 @@ export function createMockApi() {
         },
         // 2 — a folha vem dos LANÇAMENTOS, e parcial: 9 dos 12 meses. A origem diz isso.
         {
-          receitaAnual: ok(820_000, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (63 notas)`),
-          rbt12: ok(810_000, "extrato de RBT12 de 06/2026 · origem PARCIAL_LOCAL"),
-          folhaAnual: ok(198_400, `soma dos lançamentos de folha/pró-labore de ${janelaRotulo} (9 de 12 meses com lançamento)`),
+          receitaAnual: ok(820_145.61, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (63 notas)`),
+          rbt12: ok(810_209.74, "extrato de RBT12 de 06/2026 · origem PARCIAL_LOCAL"),
+          folhaAnual: ok(198_437.29, `soma dos lançamentos de folha/pró-labore de ${janelaRotulo} (9 de 12 meses com lançamento)`),
           regimeAtual: ok("SIMPLES_NACIONAL", "cadastro fiscal da empresa"),
           anexo: ok("III", "cadastro da empresa (anexo do Simples)"),
           sujeitoFatorR: ok(false, "cadastro fiscal da empresa (campo \"usa Fator R\")"),
@@ -7540,8 +7546,8 @@ export function createMockApi() {
         },
         // 3 — ⚠⚠ FOLHA AUSENTE COM ATIVIDADE DE FATOR R. O caso caro, e o único que prova a regra.
         {
-          receitaAnual: ok(1_200_000, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (140 notas)`),
-          rbt12: ok(1_150_000, "apuração de 06/2026 (fechada)"),
+          receitaAnual: ok(1_200_555.06, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (140 notas)`),
+          rbt12: ok(1_150_931.88, "apuração de 06/2026 (fechada)"),
           folhaAnual: nao(
             "Não foi possível apurar a folha dos 12 meses. Sem ela o Fator R não se calcula — e um zero "
             + "aqui jogaria a empresa no Anexo V sem que ninguém tivesse informado a folha.",
@@ -7554,8 +7560,8 @@ export function createMockApi() {
         },
         // 4 — regime NÃO cadastrado: a tela tem de dizer que não sabe, não supor Simples.
         {
-          receitaAnual: ok(390_000, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (22 notas)`),
-          rbt12: ok(380_000, "extrato de RBT12 de 06/2026 · origem PARCIAL_LOCAL"),
+          receitaAnual: ok(390_284.17, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (22 notas)`),
+          rbt12: ok(380_612.45, "extrato de RBT12 de 06/2026 · origem PARCIAL_LOCAL"),
           folhaAnual: nao(
             "Não foi possível apurar a folha dos 12 meses. Sem ela o Fator R não se calcula — e um zero "
             + "aqui jogaria a empresa no Anexo V sem que ninguém tivesse informado a folha.",
