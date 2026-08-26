@@ -253,8 +253,13 @@ volume — os maiores são `17.12` "Administração em geral" (57 itens), `4.23`
 (47) e `7.13` "Dedetização, desinfecção… higienização" (1, ⚠ que é candidato a *limpeza/conservação*,
 Anexo IV pelo art. 18 § 5º-C). **Decisão do contador, 12 vezes, uma vez só.**
 
-⚠ **O que NÃO foi medido:** a frase irmã sobre **`flagExportacao` false em 16.153/16.153** é outra
-afirmação, sobre exportação, e **continua valendo até alguém medi-la**. Não confundir as duas.
+⚠ **A frase IRMÃ foi medida no mesmo dia, e ela CONTINUA VERDADEIRA** — só o número envelheceu:
+**`flagExportacao` é `false` em 17.791 de 17.791** (era 16.153/16.153). São afirmações diferentes e
+não devem ser colapsadas: uma é sobre classificação, a outra sobre exportação. A causa da segunda é
+estrutural e não mudou — o único escritor de `flagExportacao` é `notas/dfe/DfeParser.js` (CFOP 7xxx,
+ou seja **NF-e**), e serviço prestado ao exterior é **NFS-e** por definição. Confirmado por
+`scripts/diag-exportacao-servico.mjs`: das 22 declarações transmitidas, as **2** com receita externa
+são da CDA MARKETING e vieram da **memória da apuração** (`mercado: EXTERNO`), nunca da coluna.
 
 ⚠⚠ **E DOIS DEFEITOS DE ESCALA CONTINUAM ABERTOS**, hoje com custo ZERO (a fila está vazia) e custo
 linear em 1.000 clientes: a pendência é deduplicada por **(empresa, código)** e não por código, e
