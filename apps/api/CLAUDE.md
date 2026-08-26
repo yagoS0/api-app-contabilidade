@@ -267,6 +267,52 @@ linear em 1.000 clientes: a pendência é deduplicada por **(empresa, código)**
 decidido uma vez por cliente — O(n) onde o problema é O(1), porque o código não muda de significado
 conforme o cliente. **Resolver uma pendência precisa poder promover a regra para GLOBAL.**
 
+### ✅ 26/08/2026 — O CLASSIFICADOR RODOU. `tipoReceita` NULO caiu de 16.476 para **ZERO**
+
+⚠⚠ **A SEÇÃO ACIMA MEDE O ESTADO DE ANTES. Este bloco mede o de DEPOIS**, e foi a execução que
+provou a conclusão dela: o de-para nunca foi o bloqueio.
+
+`scripts/rodar-classificacao.mjs --aplicar --tudo`, contra produção:
+
+| | antes | depois |
+|---|---|---|
+| `NotaItem` total | 17.791 | **17.796** (⚠ +5 chegaram durante a execução — a captura do ADN roda) |
+| `tipoReceita` **NULO** | 16.476 | **0** |
+| `RECEITA_NAO_CLASSIFICADA` | 0 | **4** |
+| classificados | 1.315 | **17.792** |
+| `FilaPendencia(ITEM_SEM_REGRA)` abertas | 0 | **1** |
+
+**Bateu com a previsão do diagnóstico, item por item:** 54 dos 55 códigos tinham regra, e o único
+sem era o **`990101`** com 4 itens. É exatamente ele que virou a única pendência.
+
+Distribuição: `SERVICO_FATOR_R` 16.143 · `SERVICO_ANEXO_III` 278 · `SERVICO_ANEXO_IV` 51.
+
+⚠ **NADA foi CHUTADO e nada foi transmitido.** A execução é cálculo local sobre regras que já
+estavam no banco — zero chamada a ADN, SEFAZ ou SERPRO. `force` **não é oferecido pelo script**: o
+default (`false`) filtra `tipoReceita: null`, então os 1.315 itens já classificados e as
+competências **já transmitidas** ficaram intocados.
+
+⚠ **O script é o primeiro desta família que ESCREVE**, e por isso: ensaio por padrão, **lista de
+desfazer gravada ANTES da primeira escrita** (os ids que estavam nulos), e **canário obrigatório** —
+`--aplicar` sozinho roda UMA empresa e para. ⚠ O canário é a **MENOR exposição**, nunca a primeira
+da lista: ela vem ordenada por volume, e `slice(0, 1)` pegaria a SINTROPIA, que sozinha é **94,5%**
+dos itens. Canário que escreve quase tudo é a carteira com outro nome.
+
+⚠ **A lista de desfazer tem ids de PRODUÇÃO e está no `.gitignore`** — artefato operacional, não
+código. O script avisa para movê-la para fora da árvore.
+
+**O que isto destrava:** a conciliação DAS × SERPRO (Fase 5) exigia `preApurado.ok`, e o motor
+recusava por receita não classificada em 100% das empresas. Essa recusa deixou de existir.
+⚠ **Mas o motor não roda sozinho** — `MotorApuracaoService.calcularApuracaoLocal` continua sendo
+disparado por competência, pelo fluxo do [Calcular]. Classificar removeu o impedimento; não
+calculou nada.
+
+⚠⚠ **E A FILA VAZIA CONTINUA NÃO SENDO PROVA DE SAÚDE.** O fallback de capítulo responde **tudo**,
+então os **12 códigos / 141 itens** que dependem dele foram classificados **sem cair na fila** —
+inclusive nos capítulos que misturam anexos (7: engenharia × obra · 17: consultoria × advocacia ·
+4: saúde). Eles estão agora gravados com um `tipoReceita`, e **conferi-los é decisão do contador**.
+`scripts/diag-classificacao-55.mjs` lista os 12 com descrição e volume.
+
 ### ⚠⚠ AS DUAS ROTAS PUBLICAM A MESMA FORMA DO FATOR R — `cnaes`, nunca `cnaesDeFatorR`
 
 A regra pura `sujeitoAoFatorR` (`application/planejamento/lib/`) devolve **`cnaesDeFatorR`**.

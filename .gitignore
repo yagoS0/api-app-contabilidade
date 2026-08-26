@@ -70,3 +70,9 @@ apps/*/coverage/
 # Credenciais Google
 apps/api/enviodeguias-*.json
 apps/api/*-service-account.json
+
+# ⚠ LISTA DE DESFAZER da classificação (`scripts/rodar-classificacao.mjs`).
+# Ela guarda MILHARES de ids de NotaItem de PRODUÇÃO para permitir reverter a execução.
+# É artefato operacional, não código: entra no histórico do git para sempre e não serve a
+# ninguém que clone o repo. O script a escreve no CWD; guarde-a FORA da árvore.
+desfazer-classificacao-*.json
