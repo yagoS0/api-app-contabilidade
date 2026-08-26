@@ -374,7 +374,7 @@ export function createApuracaoV2Router({ log } = {}) {
     async (req, res) => {
       const pendenciaId = String(req.params.pendenciaId);
       const portalClientId = String(req.params.companyId);
-      const { tipoReceita, criarRegra = true, nomeProduto, acao } = req.body || {};
+      const { tipoReceita, criarRegra = true, nomeProduto, acao, escopo } = req.body || {};
       try {
         // Confirma que a pendência pertence à empresa
         const pend = await prisma.filaPendencia.findFirst({
@@ -385,8 +385,29 @@ export function createApuracaoV2Router({ log } = {}) {
         let result;
         if (pend.tipo === "ITEM_SEM_REGRA") {
           if (!tipoReceita) return bad(res, 400, "tipo_receita_required", "Escolha um tipoReceita");
+
+          // ⚠⚠ RESOLVER COMO **GLOBAL** SAI DO ESCOPO DESTA EMPRESA, e por isso tem porta própria.
+          //
+          // O gate desta rota (`requireFirmCompanyAccess`) responde *"esta pessoa tem acesso a ESTA
+          // empresa?"*. Uma regra GLOBAL vale para a carteira inteira: ela fecha pendências e muda
+          // a classificação de empresas que quem clicou pode nem enxergar. Deixar isso atrás de
+          // `ACCOUNTANT` faria o alcance da decisão exceder o alcance da permissão que a autorizou.
+          //
+          // ⚠ **LIMITE DECLARADO, e ele é do SCHEMA:** `RegraClassificacao` não tem coluna de
+          // escritório — uma regra GLOBAL é global de verdade. O papel é o único controle que
+          // existe aqui; separá-la por escritório exigiria migration, que é decisão do dono.
+          if (escopo === "GLOBAL" && String(req.access?.role || "") !== "FIRM_ADMIN") {
+            return bad(
+              res, 403, "escopo_global_exige_admin",
+              "Resolver para toda a carteira exige perfil FIRM_ADMIN: a regra passa a valer para "
+              + "todas as empresas, inclusive as que você não acessa.",
+            );
+          }
+
           result = await resolverPendenciaItemSemRegra({
             pendenciaId, tipoReceita, criarRegra, nomeProduto,
+            // ⚠ `undefined` cai no default EMPRESA do serviço — o corpo antigo continua funcionando.
+            ...(escopo ? { escopo } : {}),
             userId: req.auth?.user?.id,
           });
         } else if (pend.tipo === "DIVERGENCIA_CADASTRO") {

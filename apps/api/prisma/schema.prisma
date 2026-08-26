@@ -2939,7 +2939,10 @@ model FilaPendencia {
   resolvida      Boolean   @default(false)
   resolvidaPor   String?
   resolvidaEm    DateTime?
-  acaoResolucao  String? // CRIOU_REGRA | CRIOU_PRODUTO | IGNOROU | REENQUADROU
+  // ⚠ RESOLVIDA_POR_REGRA_GLOBAL (26/08/2026) não é sinônimo de CRIOU_REGRA: ela marca a pendência
+  // que foi fechada por uma decisão GLOBAL tomada em OUTRA empresa, sem ninguém a ter revisado.
+  // Colapsá-la na ação normal faria pendência fechada por tabela parecer conferida por uma pessoa.
+  acaoResolucao  String? // CRIOU_REGRA | CRIOU_PRODUTO | IGNOROU | REENQUADROU | RESOLVIDA_POR_REGRA_GLOBAL
   createdAt      DateTime  @default(now())
 
   portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
