@@ -116,10 +116,24 @@ export function useApuracaoV2({ api, companyId, feedback }) {
       if (!out?.ok) throw new Error(out?.message || "Falha");
       const r = out.result || {};
       const reclass = r.reclassificacao;
+      // ⚠ Com escopo GLOBAL a reclassificação vira LISTA (uma por empresa afetada) — somar é o que
+      // faz a frase continuar verdadeira nos dois casos.
+      const classificados = Array.isArray(reclass)
+        ? reclass.reduce((soma, x) => soma + Number(x?.resultado?.classified || 0), 0)
+        : Number(reclass?.classified || 0);
+      // ⚠⚠ O GANHO DO ESCOPO GLOBAL PRECISA SER DITO. Ele é o motivo de a escolha existir: sem a
+      // frase, o contador acabou de poupar N decisões futuras e a tela diz exatamente o mesmo que
+      // diria se ele tivesse resolvido só para esta empresa.
+      const fechadas = Number(r?.irmas?.fechadas || 0);
+      const ganho = r?.escopo === "GLOBAL" && fechadas > 0
+        ? ` A regra vale para toda a carteira e fechou a pendência de ${fechadas} outra${fechadas > 1 ? "s" : ""} empresa${fechadas > 1 ? "s" : ""}.`
+        : r?.escopo === "GLOBAL"
+          ? " A regra vale para toda a carteira."
+          : "";
       feedback?.notifySuccess?.(
         reclass
-          ? `Pendência resolvida. ${reclass.classified || 0} itens reclassificados em batch.`
-          : `Pendência resolvida.`
+          ? `Pendência resolvida. ${classificados} itens reclassificados em batch.${ganho}`
+          : `Pendência resolvida.${ganho}`
       );
       await loadAll();
     } catch (err) {

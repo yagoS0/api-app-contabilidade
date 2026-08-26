@@ -1,6 +1,11 @@
 // Q14.2.e — Modal pra resolver uma pendência (ITEM_SEM_REGRA por enquanto).
 import { useState } from "react";
 import { PANEL } from "../../notas/components/notasStyles";
+import { Aviso } from "../../../components/ui/Aviso";
+import {
+  ESCOPO_DA_RESOLUCAO, podeResolverGlobalmente, consequenciaDoEscopo, avisoDeAlcance,
+  escopoParaPayload,
+} from "../lib/escopoDaResolucao";
 
 const TIPOS_RECEITA = [
   { value: "REVENDA_MERCADORIA",  label: "Revenda de mercadoria (Anexo I)" },
@@ -14,7 +19,7 @@ const TIPOS_RECEITA = [
 const CONF_COLOR = { alta: "var(--success)", media: "#FFB347", baixa: "#8BE9FD" };
 const CONF_LABEL = { alta: "alta", media: "média", baixa: "baixa" };
 
-export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving }) {
+export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving, myRole }) {
   const detalhes = pendencia.detalhes || {};
   const codigo = detalhes.codigo || "?";
   const tipoCodigo = detalhes.tipoCodigo || "?";
@@ -26,6 +31,16 @@ export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving 
   const [tipoReceita, setTipoReceita] = useState(rec?.tipoReceitaSugerido || "");
   const [criarRegra, setCriarRegra] = useState(true);
   const [nomeProduto, setNomeProduto] = useState("");
+  // ⚠ EMPRESA marcado, GLOBAL exige clique deliberado — marcar o alcance maior por padrão o faria
+  // acontecer por inércia. É o mesmo default do servidor.
+  const [escopo, setEscopo] = useState(ESCOPO_DA_RESOLUCAO.EMPRESA);
+
+  const global = podeResolverGlobalmente({ myRole });
+  // ⚠ Campo DERIVADO pelo backend (`esperandoAMesmaDecisao`), no item — não dentro de `detalhes`,
+  // que é o payload gravado. Ausente ⇒ a tela não afirma nada sobre quantas empresas esperam.
+  const esperando = pendencia.esperandoAMesmaDecisao;
+  const textos = consequenciaDoEscopo({ esperando });
+  const alcance = avisoDeAlcance(escopo, { esperando });
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -34,6 +49,9 @@ export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving 
       tipoReceita,
       criarRegra,
       nomeProduto: nomeProduto.trim() || undefined,
+      // ⚠ EMPRESA não manda o campo: o servidor tem esse default, e omitir mantém intacta a
+      // requisição que já existia.
+      ...escopoParaPayload(escopo),
     });
   }
 
@@ -85,8 +103,75 @@ export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving 
 
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85rem", cursor: "pointer" }}>
           <input type="checkbox" checked={criarRegra} onChange={(e) => setCriarRegra(e.target.checked)} />
-          Salvar como regra desta empresa (próximas notas com mesmo código classificam sozinhas)
+          Salvar como regra (próximas notas com mesmo código classificam sozinhas)
         </label>
+
+        {/* ⚠⚠ O ALCANCE DA REGRA — só faz sentido se ela for salva. Sem `criarRegra` não há regra,
+            e oferecer "para quem ela vale" seria perguntar sobre algo que não vai existir. */}
+        {criarRegra && (
+          <fieldset
+            style={{
+              border: `1px solid var(--border)`, borderRadius: 8, padding: "10px 12px",
+              display: "flex", flexDirection: "column", gap: 8, margin: 0,
+            }}
+          >
+            <legend style={{ fontSize: "0.72rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", padding: "0 4px" }}>
+              Para quem esta regra vale
+            </legend>
+
+            {[ESCOPO_DA_RESOLUCAO.EMPRESA, ESCOPO_DA_RESOLUCAO.GLOBAL].map((valor) => {
+              const t = textos[valor];
+              const ehGlobal = valor === ESCOPO_DA_RESOLUCAO.GLOBAL;
+              const bloqueado = ehGlobal && !global.pode;
+              return (
+                <label
+                  key={valor}
+                  style={{
+                    display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.82rem",
+                    cursor: bloqueado ? "not-allowed" : "pointer",
+                    // ⚠ Bloqueado fica VISÍVEL e apagado, nunca ausente: opção que some esconde que
+                    // a ação existe, e aí ninguém sabe a quem pedir.
+                    opacity: bloqueado ? 0.55 : 1,
+                  }}
+                  title={bloqueado ? global.motivo : undefined}
+                >
+                  <input
+                    type="radio" name="escopo-da-regra" value={valor}
+                    checked={escopo === valor} disabled={bloqueado}
+                    onChange={() => setEscopo(valor)}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span>
+                    <strong>{t.rotulo}</strong>
+                    <span style={{ display: "block", color: "var(--text-muted)", fontSize: "0.76rem", marginTop: 2 }}>
+                      {t.consequencia}
+                    </span>
+                    {/* ⚠ O GANHO é frase separada e só existe quando o número veio. Ausente ⇒ nada
+                        é dito: a tela não afirma sobre o banco a partir de um campo que não chegou. */}
+                    {ehGlobal && t.ganho && (
+                      <span style={{ display: "block", color: "var(--text-faint)", fontSize: "0.76rem", marginTop: 2 }}>
+                        {t.ganho}
+                      </span>
+                    )}
+                    {bloqueado && (
+                      <span style={{ display: "block", color: "var(--text-faint)", fontSize: "0.72rem", marginTop: 2 }}>
+                        {global.motivo}
+                      </span>
+                    )}
+                  </span>
+                </label>
+              );
+            })}
+
+            {/* ⚠⚠ O aviso só aparece com GLOBAL escolhido — âmbar permanente treina o olho a
+                ignorar justamente a cor que significa "pare e leia". */}
+            {alcance && (
+              <Aviso tom="atencao" titulo="Esta decisão sai desta empresa" compacto>
+                {alcance.texto}
+              </Aviso>
+            )}
+          </fieldset>
+        )}
 
         <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
           Nome do produto/serviço (opcional, cria entrada nomeada no catálogo):

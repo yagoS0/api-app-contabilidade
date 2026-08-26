@@ -268,11 +268,15 @@ function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
   );
 }
 
-function ApuracaoV2TabWrapper({ companyId, feedback, razao, competencia, onCompetenciaChange, onAbrirPerfilFiscal }) {
+function ApuracaoV2TabWrapper({ companyId, feedback, razao, myRole, competencia, onCompetenciaChange, onAbrirPerfilFiscal }) {
   const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
   return (
     <ApuracaoV2Tab
       panel={panel} api={apuracaoV2Api} companyId={companyId} feedback={feedback} razao={razao}
+      // ⚠ O papel decide se a tela OFERECE resolver a pendência para toda a carteira. Ela não é a
+      // permissão — o servidor reconfere a cada resolução —, mas sem ele a tela ofereceria um botão
+      // que volta 403.
+      myRole={myRole}
       competencia={competencia} onCompetenciaChange={onCompetenciaChange}
       onAbrirPerfilFiscal={onAbrirPerfilFiscal}
     />
@@ -829,6 +833,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             <Suspense fallback={<TabLoadingFallback />}>
               <ApuracaoV2TabWrapper
                 companyId={companyId} feedback={feedback} razao={selectedCompany?.razao}
+                myRole={selectedCompany?.myRole}
                 competencia={circularPanel?.competencia}
                 onCompetenciaChange={circularPanel?.onCompetenciaChange}
                 onAbrirPerfilFiscal={() => switchTab("perfilFiscal")}

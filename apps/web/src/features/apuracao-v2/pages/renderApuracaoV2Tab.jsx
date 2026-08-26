@@ -74,7 +74,7 @@ function Kpi({ label, value, cor, title }) {
 }
 
 export function ApuracaoV2Tab({
-  panel, api, companyId, feedback, razao,
+  panel, api, companyId, feedback, razao, myRole,
   competencia: competenciaGlobal, onCompetenciaChange,
   // ⚠ Quem navega é a PÁGINA (ela tem o `switchTab`); esta aba só sabe para onde. Sem o retorno
   // de chamada o `<a href>` continua funcionando — só recarrega a página inteira em vez de navegar
@@ -516,6 +516,7 @@ export function ApuracaoV2Tab({
       {resolvendo && (
         <ResolverPendenciaModal
           pendencia={resolvendo}
+          myRole={myRole}
           saving={panel.saving}
           onClose={() => setResolvendo(null)}
           onResolver={async (payload) => {

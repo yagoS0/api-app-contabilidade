@@ -154,6 +154,14 @@ function makeCompanies(count = 6) {
       : new Date(Date.now() + 200 * 24 * 3600 * 1000).toISOString();
     // Empresa zerada (sem movimento): a coluna de guias precisa dizer isso em vez de listar chips.
     const empresaZerada = i === 5;
+    // ⚠⚠ O PAPEL VARIA, e a lista semeada NÃO O TINHA — só `buildCompanyPayload` (a CRIAÇÃO) o
+    // definia. Efeito medido no navegador em 26/08/2026: as seis empresas do mock chegavam sem
+    // `myRole`, e o escopo GLOBAL da resolução de pendência aparecia **sempre bloqueado**. O ramo de
+    // administrador era inalcançável offline — a QUINTA vez nesta rodada que o mock esconde um ramo.
+    //
+    // ⚠ Os dois papéis precisam existir: só FIRM_ADMIN esconderia a recusa (e a frase que nomeia a
+    // quem pedir); só ACCOUNTANT esconderia a opção que a entrega inteira existe para dar.
+    const myRole = i === 1 || i === 4 ? "ACCOUNTANT" : "FIRM_ADMIN";
     // ⚠ O MUNICÍPIO EMISSOR EM DUAS SITUAÇÕES, porque são duas telas diferentes.
     // Em produção (medido) 32 das 33 empresas são do Rio e uma é de Mangaratiba/RJ, e NENHUMA tem
     // o código IBGE preenchido — a coluna nasceu vazia de propósito. O mock precisa dos dois casos:
@@ -164,6 +172,7 @@ function makeCompanies(count = 6) {
     const ehMangaratiba = i === 2;
     return {
       companyId,
+      myRole,
       razao: faker.company.name(),
       cnpj: faker.helpers.replaceSymbols("##.###.###/####-##"),
       municipio: ehMangaratiba ? "Mangaratiba" : "Rio de Janeiro",
@@ -7530,8 +7539,54 @@ export function createMockApi() {
     async createProdutoServico() { await delay(60); return { ok: true, produto: null }; },
     async updateProdutoServico() { await delay(60); return { ok: true, produto: null }; },
     async deleteProdutoServico() { await delay(40); return { ok: true }; },
-    async listPendencias() { await delay(40); return { ok: true, items: [], counts: [] }; },
-    async resolverPendencia() { await delay(60); return { ok: true, result: { regraCriada: null, produtoCriado: null, reclassificacao: null } }; },
+    // ⚠⚠ ELA DEVOLVIA `items: []` — e com a lista vazia o `ResolverPendenciaModal` NUNCA ABRE
+    // offline. A tela inteira de resolução de pendência era inalcançável no mock, e com ela os
+    // quatro ramos de `escopoDaResolucao`. É a QUARTA vez nesta rodada que o mock esconde um ramo
+    // (antes: valores redondos escondendo o parser ×100, faturamento zero em 6 de 6, RBT12 cravado
+    // em 480.000).
+    //
+    // ⚠ Os quatro casos são escolhidos PELO RAMO que exercitam, não por realismo — e o campo
+    // `esperandoAMesmaDecisao` é o derivado que o backend calcula na listagem:
+    //   3    → plural, "3 outras empresas estão paradas"
+    //   1    → singular, a concordância que um `n > 1` errado quebraria
+    //   0    → ⚠ AFIRMAÇÃO ("conferi, nenhuma outra"), e GLOBAL ainda vale para o futuro
+    //   —    → ⚠⚠ AUSENTE: a tela não pode dizer nem uma coisa nem outra. `Number(null)` é 0, e
+    //          colapsar os dois faria a tela afirmar sobre o banco a partir de campo que não veio.
+    async listPendencias() {
+      await delay(40);
+      const base = (id, codigo, resumo, extra) => ({
+        id, tipo: "ITEM_SEM_REGRA", resolvida: false, competencia: "2026-07",
+        resumo, detalhes: { codigo, tipoCodigo: "LC116", ocorrencias: 4 }, ...extra,
+      });
+      return {
+        ok: true,
+        items: [
+          base("pend-mock-1", "171201", "Administração em geral — sem regra", { esperandoAMesmaDecisao: 3 }),
+          base("pend-mock-2", "042301", "Medicina veterinária — sem regra", { esperandoAMesmaDecisao: 1 }),
+          base("pend-mock-3", "071301", "Dedetização/higienização — sem regra", { esperandoAMesmaDecisao: 0 }),
+          // ⚠ SEM o campo, de propósito — é o contrato antigo, e ele tem de continuar renderizando.
+          base("pend-mock-4", "990101", "Código fora da lista da LC 116 — sem regra", {}),
+        ],
+        counts: [{ tipo: "ITEM_SEM_REGRA", _count: 4 }],
+      };
+    },
+    // ⚠ O `escopo` e as `irmas` VOLTAM no mock porque a mensagem de sucesso depende deles: sem
+    // eles, resolver como GLOBAL offline seria indistinguível de resolver para uma empresa só — e o
+    // ganho que o escopo existe para dar não apareceria em lugar nenhum.
+    async resolverPendencia(_companyId, _pendenciaId, payload = {}) {
+      await delay(60);
+      const global = payload?.escopo === "GLOBAL";
+      return {
+        ok: true,
+        result: {
+          escopo: global ? "GLOBAL" : "EMPRESA",
+          regraCriada: { id: "regra-mock", tipoReceita: payload?.tipoReceita || null, escopo: global ? "GLOBAL" : "EMPRESA" },
+          produtoCriado: null,
+          reclassificacao: { classified: 4 },
+          irmas: global ? { fechadas: 3, empresas: ["emp-b", "emp-c", "emp-d"] } : { fechadas: 0, empresas: [] },
+        },
+      };
+    },
     // ⚠ O `escopo` e o `foraDoEscopo` VIAJAM no mock porque a frase da tela depende deles — e
     // porque o defeito que os criou ("Classificar competência" classificando a EMPRESA INTEIRA) só
     // era visível pelo que a resposta NÃO dizia. Mock sem eles deixaria a frase nova sem caminho.

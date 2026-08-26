@@ -361,7 +361,44 @@ export function createApuracaoV2Router({ log } = {}) {
           where: { portalClientId, resolvida: false },
           _count: true,
         });
-        return res.json({ ok: true, items, counts });
+
+        // ⚠⚠ QUANTAS OUTRAS EMPRESAS ESPERAM ESTA MESMA DECISÃO.
+        //
+        // Sem este número a escolha de escopo é às cegas: o contador não tem como saber que
+        // resolver como GLOBAL apagaria N pendências idênticas de outros clientes — e a economia de
+        // hora que o escopo global existe para dar só acontece se ele souber que ela está lá.
+        //
+        // ⚠ Vai como campo DERIVADO no item, **nunca dentro de `detalhes`**: aquele Json é o payload
+        // GRAVADO da pendência, e enfiar um número calculado agora lá dentro o faria parecer dado
+        // guardado — e envelhecer como se fosse.
+        //
+        // ⚠ `detalhes` é Json e `groupBy` não agrupa por path de Json no Prisma; daí o SQL cru. Ele
+        // conta EMPRESAS DISTINTAS, não pendências: duas pendências da mesma empresa são uma
+        // decisão só. E exclui a própria empresa — ela já está na tela.
+        const codigos = [...new Set(
+          items.filter((i) => i.tipo === "ITEM_SEM_REGRA").map((i) => i.detalhes?.codigo).filter(Boolean),
+        )];
+        let esperando = new Map();
+        if (codigos.length) {
+          const linhas = await prisma.$queryRaw`
+            SELECT "detalhes"->>'codigo' AS codigo,
+                   COUNT(DISTINCT "portalClientId")::int AS empresas
+            FROM "fila_pendencias"
+            WHERE "tipo" = 'ITEM_SEM_REGRA'
+              AND "resolvida" = false
+              AND "portalClientId" <> ${portalClientId}
+              AND "detalhes"->>'codigo' = ANY(${codigos})
+            GROUP BY 1
+          `;
+          esperando = new Map(linhas.map((l) => [l.codigo, Number(l.empresas) || 0]));
+        }
+        const comEspera = items.map((i) => (
+          i.tipo === "ITEM_SEM_REGRA" && i.detalhes?.codigo
+            ? { ...i, esperandoAMesmaDecisao: esperando.get(i.detalhes.codigo) || 0 }
+            : i
+        ));
+
+        return res.json({ ok: true, items: comEspera, counts });
       } catch (err) {
         return bad(res, 500, "list_failed", err?.message || "Erro");
       }
