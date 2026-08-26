@@ -35,6 +35,8 @@ import { prefillDaEmpresa, procedenciaDosCampos } from "../lib/prefillDaEmpresa"
 import { paraCampo, deCampo as num } from "../lib/campoNumerico";
 import { CardRegime } from "../components/CardRegime";
 import { GaugeFatorR } from "../components/GaugeFatorR";
+import { TabelaComparativa } from "../components/TabelaComparativa";
+import { montarComparativo } from "../lib/comparativoDeRegimes";
 import { BackButton } from "../../../components/ui/BackButton";
 import { LogoAltan } from "../../../components/ui/LogoAltan";
 
@@ -217,6 +219,13 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   const resultado = useMemo(() => (temReceita ? compararRegimes(entradas) : null), [entradas, temReceita]);
   // ⚠ DERIVADA DO RESULTADO, nunca recalculada aqui. Uma segunda conta na tela divergiria do motor
   // na primeira correção — e é o motor que decide o número que vai ao PDF.
+  // ⚠ DERIVADO do resultado do motor, nunca recalculado aqui — a tabela REARRANJA o que já foi
+  // calculado. Uma segunda conta na camada de apresentação divergiria do motor na primeira correção.
+  const comparativo = useMemo(
+    () => (resultado ? montarComparativo(resultado, entradas) : null),
+    [resultado, entradas],
+  );
+
   const ofertaDo16 = resultado?.regimes?.find((r) => r.regime === "Lucro Presumido")?.servicosAte120k || null;
 
   const equilibrio = useMemo(
@@ -665,6 +674,12 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
                 que a segunda opção.
               </div>
             )}
+
+            {/* ⚠⚠ A TABELA VEM ANTES DO GAUGE E DO PONTO DE EQUILÍBRIO, e a ordem é o argumento:
+                ela é a resposta à pergunta "por que este total?". Os cards dão o número; ela dá a
+                composição, e é a composição que sustenta (ou derruba) a conclusão — inclusive a de
+                que "o Presumido compensa acima de X", que não vale para quem tem folha. */}
+            {comparativo && <TabelaComparativa comparativo={comparativo} />}
 
             {resultado.fatorR && <GaugeFatorR fatorR={resultado.fatorR} economiaSeMudar={economiaAnexo} />}
 
