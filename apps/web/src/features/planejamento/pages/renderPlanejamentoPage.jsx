@@ -36,6 +36,8 @@ import { paraCampo, deCampo as num } from "../lib/campoNumerico";
 import { CardRegime } from "../components/CardRegime";
 import { GaugeFatorR } from "../components/GaugeFatorR";
 import { TabelaComparativa } from "../components/TabelaComparativa";
+import { PainelProLabore } from "../components/PainelProLabore";
+import { simularProLaboreParaFatorR } from "../lib/proLabore";
 import { montarComparativo } from "../lib/comparativoDeRegimes";
 import { BackButton } from "../../../components/ui/BackButton";
 import { LogoAltan } from "../../../components/ui/LogoAltan";
@@ -247,6 +249,20 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     if (!v || !iii || v.indisponivel || iii.indisponivel) return null;
     return v.total - iii.total;
   }, [entradas, temReceita, sujeitoFatorR]);
+
+  // ⚠ A conta que o dono nomeou como a mais valiosa do produto. Ela só faz sentido quando a
+  // atividade é de Fator R — fora disso o anexo não sai da folha, e a pergunta não existe.
+  // ⚠⚠ `economiaAnexo` é a OUTRA METADE: sem ela o painel mostraria só o custo, e a decisão
+  // pareceria sempre ruim. Ela vale `null` quando não deu para calcular, e o painel DIZ isso.
+  const proLabore = useMemo(() => {
+    if (!temReceita || !sujeitoFatorR) return null;
+    return simularProLaboreParaFatorR({
+      rbt12: entradas.rbt12,
+      folha12mAtual: entradas.folhaAnual,
+      economiaNoDas: economiaAnexo,
+      anexoDestino: resultado?.anexoResolvido === "V" ? "III" : (resultado?.anexoResolvido || "III"),
+    });
+  }, [temReceita, sujeitoFatorR, entradas, economiaAnexo, resultado]);
 
   const avisoTrava = temReceita && atividade === "servicos" ? avisoTravaServicos16(entradas.receitaAnual) : null;
 
@@ -682,6 +698,9 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
             {comparativo && <TabelaComparativa comparativo={comparativo} />}
 
             {resultado.fatorR && <GaugeFatorR fatorR={resultado.fatorR} economiaSeMudar={economiaAnexo} />}
+
+            {/* ⚠ Logo DEPOIS do gauge: ele mostra ONDE o Fator R está, este responde O QUE FAZER. */}
+            <PainelProLabore simulacao={proLabore} />
 
             {equilibrio && (
               <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, fontSize: "0.88rem" }}>
