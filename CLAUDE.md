@@ -539,6 +539,21 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     ⚠ O campo continua `ausente`; a sugestão viaja separada. ⚠ CNAE fora do catálogo **não** cai em
     "serviços" — 18 dos 64 CNAEs da carteira estão fora. ⚠ Atividades que discordam ⇒ **nenhuma**
     sugestão, nem por maioria.
+  - **A TELA DO PLANEJAMENTO GANHOU DUAS PEÇAS** (`comparativoDeRegimes.js` + `TabelaComparativa`,
+    `proLabore.js` + `PainelProLabore`):
+    - **comparativo de quatro colunas** (Simples III · Simples V · Presumido · Real) com composição
+      por tributo. ⚠⚠ **A linha da CPP é a que responde à pergunta do dono** — no Simples ela está
+      DENTRO do DAS, no Presumido é 20% da folha POR FORA, e é isso que faz "o Presumido compensa
+      acima de X" não valer para quem tem folha. ⚠ **Célula vazia é proibida**: branco se lê como
+      zero, e toda ausência sai nomeada ("dentro do DAS" · "não se aplica" · "não estimado").
+    - **simulação de pró-labore** — quanto falta para o Fator R chegar a 28%, quanto custa ao sócio
+      (INSS + IRRF **incrementais**) e quanto economiza no DAS. ⚠⚠ A premissa que decide o
+      resultado vai IMPRESSA (a CPP dentro do DAS, art. 13, VI) e o **Anexo IV é RECUSADO**, porque
+      lá ela fica fora e a conta muda de sinal.
+    - **IRPF e teto do INSS** entraram como tabela versionada (`docs/irpf/`), com vigência à tela.
+      ⚠ A recusa antiga continua valendo para **RAT/FAP e terceiros** — esses variam por EMPRESA.
+      ⚠ O PDF da portaria do INSS é **digitalizado** (8 caracteres extraíveis) e **não** foi
+      versionado: hash ao lado de arquivo ilegível dá aparência de prova.
   - **Fica NOMEADO, não consertado:** **28 das 34 empresas não têm linha em `cadastros_fiscais`** (o
     Perfil fiscal sintetiza da `Company`, e o `prefill: true` que o backend devolve **não é lido no
     front**) · `perfilAtividades.codigoServicoMunicipal`, `retencaoFonte` e `domicilioFiscal` são
