@@ -210,6 +210,58 @@ Regressão: `apuracao/v2/__tests__/procedenciaDas.test.js` (11) — inclusive a 
 **ambíguo continua funcionando** para o snapshot antigo, dos dois lados (backend e
 `apps/web/.../lib/relatorioFaturamento.js`).
 
+### ⚠⚠ MEDIDO EM 26/08/2026: O DE-PARA DA CLASSIFICAÇÃO **NÃO** É O BLOQUEIO
+
+⚠⚠ **A FRASE "`tipoReceita` nulo em 16.153/16.153 itens" ESTÁ SUPERADA, e ela sobrevive em ~14
+comentários pelo repositório** (`relatorioFaturamento.js`, `SugestaoModal.jsx`, `notaItens.js`,
+`docs/segregacao-receitas-simples.md`, `docs/dre-fluxo-caixa.md`, o mock, e este arquivo em três
+pontos). Ela sustentava a conclusão de que faltava um de-para "item da LC 116 → tipo de receita" e
+que a Fase 6.1 dependia de construí-lo. **As duas coisas são falsas.**
+
+Medido contra a produção (`scripts/diag-classificacao-cobertura.mjs` · `-amostra` · `-55`, os três
+só leitura, zero chamada externa):
+
+| | |
+|---|---|
+| `RegraClassificacao` escopo GLOBAL | **127** — o seed ESTÁ aplicado (87 itens LC 116 + os 40 capítulos) |
+| `NotaItem` total | 17.791 |
+| ⤷ `tipoReceita` **NULO** | 16.476 — *o classificador nunca encostou* |
+| ⤷ **`RECEITA_NAO_CLASSIFICADA`** | **0** — *ele rodou e não achou regra* |
+| ⤷ classificados | **1.315** |
+| `FilaPendencia(ITEM_SEM_REGRA)` abertas | **0** |
+
+⚠ **A distinção entre as duas linhas do meio é o diagnóstico inteiro**, e é ela que a frase antiga
+apagava: NULO diz *"ninguém olhou"*; `RECEITA_NAO_CLASSIFICADA` diz *"faltou regra"*. São **zero** da
+segunda. Onde o classificador rodou, ele acertou **1.315 de 1.315**.
+
+**E o alvo é muito menor do que parecia.** Os 16.476 itens não tocados usam **55 códigos de serviço
+distintos** — é isso que um de-para cobre, não 16 mil itens:
+
+- **54 de 55 já têm regra** · 16.472 de 16.476 itens (**99,98%**);
+- **42 códigos / 16.331 itens (99,1%)** resolvem por **regra precisa** (código exato ou item da LC 116);
+- **12 códigos / 141 itens (0,86%)** resolvem **só pelo fallback de capítulo**;
+- **1 código / 4 itens** sem regra: **`990101`** → capítulo **99**, que **não existe na LC 116** (ela
+  tem 40 itens). É o guarda-chuva de "não classificado", e a resposta certa para ele é **pendência**,
+  não uma regra.
+
+⚠⚠ **O RISCO NÃO É LACUNA — É RESPOSTA ERRADA EM SILÊNCIO.** O fallback de capítulo responde
+**tudo**, então **nada cai na fila mesmo quando a resposta está errada para o subitem** — e é por
+isso que a fila estar vazia não é prova de saúde. Capítulo que mistura anexos responde o subitem
+pelo vizinho: **cap. 7** (engenharia × obra → Anexo IV), **cap. 17** (consultoria × **advocacia** →
+Anexo IV), **cap. 4** (saúde). Os 12 códigos afetados saem listados pelo script, com descrição e
+volume — os maiores são `17.12` "Administração em geral" (57 itens), `4.23` "Medicina veterinária"
+(47) e `7.13` "Dedetização, desinfecção… higienização" (1, ⚠ que é candidato a *limpeza/conservação*,
+Anexo IV pelo art. 18 § 5º-C). **Decisão do contador, 12 vezes, uma vez só.**
+
+⚠ **O que NÃO foi medido:** a frase irmã sobre **`flagExportacao` false em 16.153/16.153** é outra
+afirmação, sobre exportação, e **continua valendo até alguém medi-la**. Não confundir as duas.
+
+⚠⚠ **E DOIS DEFEITOS DE ESCALA CONTINUAM ABERTOS**, hoje com custo ZERO (a fila está vazia) e custo
+linear em 1.000 clientes: a pendência é deduplicada por **(empresa, código)** e não por código, e
+`AprendizadoService` grava a regra resolvida em escopo **EMPRESA**. O mesmo código de serviço seria
+decidido uma vez por cliente — O(n) onde o problema é O(1), porque o código não muda de significado
+conforme o cliente. **Resolver uma pendência precisa poder promover a regra para GLOBAL.**
+
 ### ⚠⚠ AS DUAS ROTAS PUBLICAM A MESMA FORMA DO FATOR R — `cnaes`, nunca `cnaesDeFatorR`
 
 A regra pura `sujeitoAoFatorR` (`application/planejamento/lib/`) devolve **`cnaesDeFatorR`**.
