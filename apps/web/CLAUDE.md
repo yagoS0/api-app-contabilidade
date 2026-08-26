@@ -328,6 +328,48 @@ painéis que os acionavam saíram da tela juntos, quando a aba enxugou.
 `CompetenciaStateMachine.reabrirCompetencia` no backend, que exige `reason` e tem teste próprio. A
 porta some da tela; o ato continua existindo. Por isso ficam anotados, não apagados.
 
+## ⚠ A TABELA DO ANEXO (apuracao-v2) — o que ela responde, e o que NÃO se recria
+
+`features/apuracao-v2/components/TabelaAnexoReferencia.jsx` + a regra pura
+`lib/anexoDaEmpresa.js`. Ela já entrega **anexo efetivo · faixa atual · RBT12 · alíquota efetiva ·
+repartição por tributo · CPP fora do DAS no Anexo IV · ICMS/ISS fora do DAS na 6ª faixa · "quanto
+falta para a próxima faixa"**.
+
+⚠⚠ **UM PLANO DE 25/08/2026 PEDIU UMA TELA NOVA COM SETE DESSES SETE ITENS.** Ele foi escrito sem
+ver este componente. Antes de construir painel fiscal novo, **abra este arquivo** — e lembre que
+"Situação Fiscal", neste projeto, é a aba do **SITFIS** (débitos na Receita), outra coisa: uma tela
+nova com esse nome colide com ela.
+
+### ⚠⚠ "Faltam R$ X para a próxima faixa" — a FRASE é o produto, não o número
+
+`distanciaAteAProximaFaixa`. "Faltam R$ 240.000" lido como *"posso faturar R$ 240.000 antes de subir
+de faixa"* é **falso nos dois sentidos**: o RBT12 é soma **móvel** de 12 meses e anda `mês que entra
+− mês que sai`. Pode virar faturando menos; pode não virar faturando mais. Daí o desenho:
+
+- o texto nomeia o **RBT12**, nunca "faturamento", e a ressalva vai **no corpo** — `title` não
+  aparece no teclado nem no toque;
+- ⚠ **não há projeção, prazo nem "meses até virar"**, e há teste proibindo esses campos: dizer
+  QUANDO exigiria a série dos 12 meses da janela, e projetar por média seria o portal chutando o mês
+  da virada de alíquota;
+- ⚠⚠ **cruzar para a 6ª faixa não é só alíquota maior** — é o sublimite (LC 123/2006, art. 13-A), e
+  o ICMS/ISS **sai do DAS**. O aviso acende **só** nessa virada, e o tributo é DERIVADO da tabela
+  (Anexo I → ICMS, Anexo III → ISS), nunca de lista escrita à mão;
+- ⚠⚠ **na 6ª faixa não existe "próxima faixa"**: o que existe acima é a **saída do Simples**.
+  Estado próprio, `falta` nulo, e a distância até o teto com nome próprio.
+
+⚠ **Não devolva `Math.max(0, …)` na distância.** Já esteve lá e o experimento deu **zero
+vermelhos**: `v <= f.ate` é condição do `find` de `faixaDoRbt12`, então a faixa devolvida sempre
+contém o valor. Era cinto que não aperta; a invariante é que virou teste.
+
+### ⚠⚠ O RBT12 DO MOCK VARIA POR EMPRESA — não "arredonde" um de volta
+
+Era **480.000 fixo** nas seis empresas, ou seja sempre a 3ª faixa: os dois ramos mais caros eram
+**inalcançáveis offline**. Hoje `RBT12_DO_MOCK` (`mockApi.js`) tem um valor por faixa exercitada
+(480.000 · 3.000.000 · 4.000.000), escolhido **pela faixa**, não por realismo.
+
+⚠ Terceira vez nesta mesma rodada que o mock escondeu um ramo: antes foram os **valores redondos**
+(que escondiam o parser ×100) e o **faturamento zero em 6 de 6 empresas**.
+
 ## Blocos com CLAUDE.md próprio (Q17)
 
 Ler antes de mexer; atualizar ao terminar: `src/features/companies/`,

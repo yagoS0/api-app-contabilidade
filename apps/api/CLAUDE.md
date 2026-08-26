@@ -210,6 +210,31 @@ Regressão: `apuracao/v2/__tests__/procedenciaDas.test.js` (11) — inclusive a 
 **ambíguo continua funcionando** para o snapshot antigo, dos dois lados (backend e
 `apps/web/.../lib/relatorioFaturamento.js`).
 
+### ⚠⚠ AS DUAS ROTAS PUBLICAM A MESMA FORMA DO FATOR R — `cnaes`, nunca `cnaesDeFatorR`
+
+A regra pura `sujeitoAoFatorR` (`application/planejamento/lib/`) devolve **`cnaesDeFatorR`**.
+`DadosPlanejamentoService` renomeia para **`cnaes`** ao publicar em `GET /planejamento`; o
+`PerfilFiscalService` **repassava a resposta CRUA**, e as duas rotas passaram a falar formas
+diferentes da MESMA coisa.
+
+⚠⚠ **O sintoma seria MUDO.** A tela lê `fatorR.cnaes`; sem ele o banner cai na frase genérica
+("há atividade sujeita ao Fator R") **em vez de nomear os CNAEs** — que é exatamente o problema que
+a mudança existe para resolver, numa empresa com seis CNAEs. Nenhum erro, nenhum log.
+
+⚠ **E o navegador NÃO pegou**: o mock já devolvia `cnaes`, a forma certa. Quem pegou foi o teste
+(`apuracao/v2/__tests__/perfilFiscal.test.js`) — a divergência mock × real que este projeto já
+pagou várias vezes. A amarração é **textual**: um teste lê `DadosPlanejamentoService.js` e exige que
+os dois publiquem a mesma chave, porque os dois serviços não se importam.
+
+**Hoje `PerfilFiscalService` monta o objeto campo a campo** (`resposta`, `origem`, `motivo`,
+`cnaes`, `divergencia`) em vez de espalhar a regra. Espalhar de novo reabre o defeito.
+
+⚠ `PerfilFiscalService` **não tinha um único teste** até 26/08/2026, e é ele que responde "quais
+atividades esta empresa exerce, e qual anexo cada uma implica". Os 20 testes de lá cobrem também o
+defeito do `if` dentro do laço (CNAE que o contador DESATIVOU continuava forçando o Fator R da
+empresa inteira) e o `temCadastro`/`prefill` que a tela usa para distinguir cadastro SALVO de perfil
+DERIVADO — medido: **28 das 34 empresas não têm linha em `cadastros_fiscais`**.
+
 ## Situação Fiscal (SITFIS) + Confirmação de pagamento (Q40/Q41/Q43)
 
 **SITFIS — situação fiscal do contribuinte** (`application/fiscal/serpro/SerproSitfisService.js`).
