@@ -5,6 +5,11 @@ import { fraseDaClassificacao } from "../lib/fraseDaClassificacao";
 
 export function useApuracaoV2({ api, companyId, feedback }) {
   const [cadastro, setCadastro] = useState(null);
+  // ⚠⚠ `prefill: true` quer dizer que o cadastro NÃO existe no banco — ele foi montado a partir
+  // da `Company`, com o regime possivelmente vindo de um default. O backend devolve isso desde
+  // sempre e NINGUÉM no front lia; era o que fazia a tela mostrar um regime não conferido como
+  // se fosse cadastro.
+  const [cadastroPrefill, setCadastroPrefill] = useState(false);
   const [cnaePrincipalRef, setCnaePrincipalRef] = useState(null);
   const [perfil, setPerfil] = useState(null); // Aba Fiscal / Bloco A
   const [produtos, setProdutos] = useState([]);
@@ -24,6 +29,7 @@ export function useApuracaoV2({ api, companyId, feedback }) {
         api.listPendencias(companyId, { resolvida: false }).catch(() => ({ items: [], counts: [] })),
       ]);
       setCadastro(cad?.cadastro || null);
+      setCadastroPrefill(cad?.prefill === true);
       setCnaePrincipalRef(cad?.cnaePrincipalRef || null);
       setPerfil(perf?.ok ? perf : null);
       setProdutos(prods?.items || []);
@@ -165,7 +171,7 @@ export function useApuracaoV2({ api, companyId, feedback }) {
   }
 
   return {
-    cadastro, cnaePrincipalRef,
+    cadastro, cadastroPrefill, cnaePrincipalRef,
     perfil, savePerfil,
     getSugestao,
     produtos,

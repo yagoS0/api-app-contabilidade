@@ -7416,9 +7416,90 @@ export function createMockApi() {
     async conferirApuracao() { await delay(150); return { ok: true, result: { estado: "confirmada", conferiu: true, divergencias: 0, totalDeclaracoesNoSerpro: 1 } }; },
     async classificarNotas() { await delay(80); return { ok: true, result: { processed: 0, classified: 0, defaultUsed: 0, byAnexo: {} } }; },
     // Q14.2 — apuração v2
-    async getCadastroFiscal() { await delay(40); return { ok: true, cadastro: null, cnaePrincipalRef: null }; },
+    // ⚠⚠ ERA `cadastro: null` FIXO, e isso escondia o caso de PRODUÇÃO. Lá, quando não há linha em
+    // `cadastros_fiscais`, o backend NÃO devolve null: ele MONTA um cadastro a partir da `Company`
+    // — com o regime vindo de `mapRegime`, que termina em `return "SIMPLES_NACIONAL"` — e marca
+    // `prefill: true`. É por isso que o dono viu "Regime tributário: Simples Nacional" numa empresa
+    // que a aba Apuração dizia não ter cadastro. Com `null` no mock, esse caminho não existia.
+    async getCadastroFiscal(companyId) {
+      await delay(40);
+      const idx = Math.max(0, mockCompanies.findIndex((c) => c.companyId === companyId));
+      const temCadastro = idx === 0;
+      return {
+        ok: true,
+        cadastro: {
+          portalClientId: companyId,
+          regime: "SIMPLES_NACIONAL",
+          cnaePrincipal: "7319003",
+          cnaesSecundarios: ["6319400", "6462000"],
+          dataOpcaoSN: null,
+          sublimiteICMSISS: false,
+          usaFatorR: temCadastro,
+          forcarTipoReceitaPorCnae: false,
+          observacoes: null,
+        },
+        cnaePrincipalRef: null,
+        // ⚠ O CAMPO QUE NINGUÉM LIA. `true` = o cadastro acima NÃO existe no banco.
+        prefill: !temCadastro,
+      };
+    },
     async saveCadastroFiscal() { await delay(60); return { ok: true, cadastro: null }; },
-    async getPerfilFiscal() { await delay(40); return { ok: true, regime: null, usaFatorR: false, temCadastro: false, temFatorR: false, candidatos: [] }; },
+    // ⚠⚠ ERA `candidatos: []` FIXO — ou seja, a tela do Perfil Fiscal caía em "Nenhum CNAE
+    // encontrado" e a aba INTEIRA era inalcançável offline. Sexta vez que este projeto encontra um
+    // ramo que só existia em produção.
+    //
+    // ⚠ E os DOIS estados de `temCadastro` são caminháveis de propósito: é a distinção que o dono
+    // não tinha como ver (28 das 34 empresas em produção não têm linha em `cadastros_fiscais`, e a
+    // tela desenhava o perfil DERIVADO com a mesma cara de um salvo).
+    async getPerfilFiscal(companyId) {
+      await delay(40);
+      const idx = Math.max(0, mockCompanies.findIndex((c) => c.companyId === companyId));
+      // A 1ª empresa tem cadastro SALVO; as demais mostram o perfil DERIVADO da ficha.
+      const temCadastro = idx === 0;
+      const candidatos = [
+        {
+          cnae: "7319003", descricao: "Marketing direto", tipoReceita: "SERVICO_FATOR_R",
+          anexo: null, anexoLabel: "III ou V (Fator R)", sujeitoFatorR: true,
+          ambiguo: false, impeditivo: false, revisao: false, isPrincipal: true,
+          ativo: true, padrao: temCadastro, aliquotaIss: temCadastro ? 3.5 : null,
+          codigoServicoMunicipal: null, retencaoFonte: null, domicilioFiscal: null, obs: null,
+        },
+        {
+          cnae: "6319400", descricao: "Portais, provedores conteúdo e outros serviços de informação na internet",
+          tipoReceita: "SERVICO_FATOR_R", anexo: null, anexoLabel: "III ou V (Fator R)",
+          sujeitoFatorR: true, ambiguo: false, impeditivo: false, revisao: false, isPrincipal: false,
+          ativo: true, padrao: false, aliquotaIss: null,
+          codigoServicoMunicipal: null, retencaoFonte: null, domicilioFiscal: null, obs: null,
+        },
+        // ⚠ Um CNAE FORA do catálogo — 18 dos 64 da carteira estão nesse estado, e é ele que faz a
+        // derivação do Fator R e a sugestão de presunção responderem "indefinido".
+        {
+          cnae: "6462000", descricao: "CNAE não catalogado — revisar", tipoReceita: null,
+          anexo: null, anexoLabel: "—", sujeitoFatorR: false, ambiguo: false, impeditivo: true,
+          revisao: true, isPrincipal: false, ativo: true, padrao: false, aliquotaIss: null,
+          codigoServicoMunicipal: null, retencaoFonte: null, domicilioFiscal: null, obs: null,
+        },
+      ];
+      return {
+        ok: true,
+        regime: "SIMPLES_NACIONAL",
+        usaFatorR: temCadastro,
+        temCadastro,
+        temFatorR: true,
+        // ⚠ A resposta da regra nova, com a DIVERGÊNCIA quando o cadastro não marca o Fator R.
+        fatorR: {
+          resposta: "sim",
+          origem: "perfil_de_atividades",
+          cnaes: ["7319003", "6319400"],
+          divergencia: temCadastro ? null : {
+            codigo: "CADASTRO_NAO_MARCA_FATOR_R",
+            frase: "O cadastro fiscal está com \"usa Fator R\" desmarcado, mas o perfil tem "
+              + "atividade sujeita ao Fator R. Vale o perfil — confirme o cadastro.",
+          },
+        },
+        candidatos,
+      };
+    },
     async savePerfilFiscal() { await delay(60); return { ok: true, candidatos: [] }; },
     async listProdutosServicos() { await delay(40); return { ok: true, items: [] }; },
     async createProdutoServico() { await delay(60); return { ok: true, produto: null }; },

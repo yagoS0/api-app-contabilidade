@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { PANEL } from "../../notas/components/notasStyles";
 import { Button } from "../../../components/ui/Button";
+import { origemDoPerfil, avisoDoFatorR, COLUNAS_SEM_LEITOR, COLUNAS_COM_LEITOR } from "../lib/perfilFiscalTela";
 
 const ANEXO_COR = {
   "Anexo I": "#8BE9FD", "Anexo II": "#8BE9FD",
@@ -48,6 +49,10 @@ export function AbaFiscalPanel({ panel }) {
     await panel.savePerfil(config);
   }
 
+  // ⚠ REGRA DE TELA em `lib/perfilFiscalTela.js` (18 testes) — aqui é só a ligação.
+  const origem = origemDoPerfil(perfil);
+  const fatorR = avisoDoFatorR(perfil);
+
   const inputStyle = { background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 5, color: PANEL.text, padding: "4px 6px", fontSize: "0.78rem", width: "100%" };
 
   if (!rows.length) {
@@ -70,9 +75,30 @@ export function AbaFiscalPanel({ panel }) {
         </Button>
       </div>
 
-      {perfil?.temFatorR && (
-        <div style={{ padding: 10, background: "rgba(139,233,253,0.10)", border: "1px solid #8BE9FD", borderRadius: 8, fontSize: "0.8rem", color: "#8BE9FD" }}>
-          ℹ Há atividade sujeita a <strong>Fator R</strong> (III↔V) — atenção à zona 27%–29%.
+      {/* ⚠⚠ O PERFIL PODE NÃO ESTAR SALVO, E A TELA PRECISA DIZER. Medido: 28 das 34 empresas não
+          têm linha em `cadastros_fiscais` — para elas o backend MONTA o perfil a partir dos CNAEs da
+          ficha da empresa e devolve `temCadastro: false`, e ninguém no front lia esse campo. O
+          contador via um perfil "preenchido" que não existe no banco. É a contradição que ele
+          relatou entre esta tela e a aba Apuração. */}
+      {origem.aviso && (
+        <div style={{ padding: 10, background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", borderRadius: 8, fontSize: "0.8rem", color: "#FFB347", lineHeight: 1.5 }}>
+          <strong>⚠ {origem.aviso.titulo}</strong>
+          <div style={{ marginTop: 4, color: PANEL.text }}>{origem.aviso.texto}</div>
+          <div style={{ marginTop: 4, color: PANEL.muted, fontSize: "0.74rem" }}>{origem.aviso.consequencia}</div>
+        </div>
+      )}
+
+      {/* ⚠⚠ ANTES ISTO DIZIA "atenção à zona 27%–29%" — um número que NENHUM código calcula
+          (varredura: zero ocorrências de 0.27/0.29 no repositório). Número inventado em tela fiscal
+          é pior que texto nenhum: parece resultado de conta. Hoje a frase diz o que o perfil
+          realmente sabe (QUAIS atividades são de Fator R) e manda onde o valor é calculado. */}
+      {fatorR && (
+        <div style={{ padding: 10, background: "rgba(139,233,253,0.10)", border: "1px solid #8BE9FD", borderRadius: 8, fontSize: "0.8rem", color: "#8BE9FD", lineHeight: 1.5 }}>
+          ℹ {fatorR.texto}
+          <div style={{ marginTop: 4, color: PANEL.muted, fontSize: "0.74rem" }}>{fatorR.ondeVerOValor}</div>
+          {fatorR.divergencia && (
+            <div style={{ marginTop: 4, color: "#FFB347", fontSize: "0.74rem" }}>⚠ {fatorR.divergencia}</div>
+          )}
         </div>
       )}
 
@@ -86,9 +112,29 @@ export function AbaFiscalPanel({ panel }) {
               <th style={{ padding: 8 }}>Anexo</th>
               <th style={{ padding: 8 }}>Fator R</th>
               <th style={{ padding: 8, textAlign: "center" }}>Padrão</th>
-              <th style={{ padding: 8 }}>Alíq. ISS %</th>
-              <th style={{ padding: 8 }}>Cód. serv. munic.</th>
-              <th style={{ padding: 8, textAlign: "center" }}>Ret. fonte</th>
+              {/* ⚠⚠ COLUNA QUE ACEITA DIGITAÇÃO E NINGUÉM LÊ É PIOR QUE COLUNA AUSENTE — o
+                  contador preenche e nada acontece. Medido: dos oito campos de `perfilAtividades`,
+                  só `aliquotaIss` tem leitor. As demais ficam (pode haver valor já digitado, e
+                  apagar coluna leva o dado junto) mas passam a DIZER que não alimentam nada.
+                  ⚠ A marca é VISÍVEL, não só `title`: `title` não aparece no teclado nem no toque. */}
+              <th style={{ padding: 8 }}>
+                Alíq. ISS %
+                <div style={{ fontWeight: 400, fontSize: "0.66rem", color: PANEL.muted }} title={COLUNAS_COM_LEITOR.aliquotaIss}>
+                  usada no Planejamento
+                </div>
+              </th>
+              <th style={{ padding: 8 }}>
+                Cód. serv. munic.
+                <div style={{ fontWeight: 400, fontSize: "0.66rem", color: "#FFB347" }} title={COLUNAS_SEM_LEITOR.codigoServicoMunicipal}>
+                  ⚠ ainda sem uso
+                </div>
+              </th>
+              <th style={{ padding: 8, textAlign: "center" }}>
+                Ret. fonte
+                <div style={{ fontWeight: 400, fontSize: "0.66rem", color: "#FFB347" }} title={COLUNAS_SEM_LEITOR.retencaoFonte}>
+                  ⚠ ainda sem uso
+                </div>
+              </th>
             </tr>
           </thead>
           <tbody>

@@ -11,6 +11,7 @@
 
 import { PANEL } from "../../notas/components/notasStyles";
 import { AbaFiscalPanel } from "../components/AbaFiscalPanel";
+import { estadoDoRegime, ESTADO_DO_REGIME } from "../lib/perfilFiscalTela";
 
 /**
  * O regime, dito com honestidade.
@@ -24,27 +25,27 @@ import { AbaFiscalPanel } from "../components/AbaFiscalPanel";
  *
  * ⚠ E verde, nesta casa, quer dizer CONCLUÍDO. Regime desconhecido não é conclusão nenhuma.
  */
-function RegimeDaEmpresa({ regime }) {
-  const bruto = String(regime || "").trim();
+function RegimeDaEmpresa({ regime, prefill }) {
+  // ⚠ REGRA em `lib/perfilFiscalTela.js` (com teste) — aqui é só a ligação.
+  const r = estadoDoRegime({ regime, prefill });
 
-  if (!bruto) {
-    return (
-      <div style={{ padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, fontSize: "0.85rem", color: PANEL.text }}>
-        Regime tributário: <strong style={{ color: PANEL.muted }}>não cadastrado</strong>
-        <div style={{ color: PANEL.muted, fontSize: "0.78rem", marginTop: 2 }}>
-          Sem o regime não dá para afirmar o enquadramento desta empresa — informe no cadastro.
-        </div>
-      </div>
-    );
-  }
+  // ⚠⚠ VERDE SÓ PARA O QUE FOI CADASTRADO. Nesta casa verde quer dizer CONCLUÍDO, e um regime que
+  // veio do DEFAULT do sistema (`mapRegime` termina em `return "SIMPLES_NACIONAL"`) não é
+  // conclusão nenhuma. Era exatamente assim que a tela afirmava, em verde, um regime que ninguém
+  // tinha conferido — e o backend já mandava `prefill: true` para distinguir, sem ninguém ler.
+  const cor = r.estado === ESTADO_DO_REGIME.CADASTRADO && r.rotulo === "Simples Nacional"
+    ? "var(--state-ok)"
+    : (r.estado === ESTADO_DO_REGIME.DERIVADO ? "#FFB347" : PANEL.muted);
 
-  const ehSimples = bruto.toUpperCase() === "SIMPLES_NACIONAL";
   return (
     <div style={{ padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, fontSize: "0.85rem", color: PANEL.text }}>
-      Regime tributário:{" "}
-      <strong style={{ color: ehSimples ? "var(--state-ok)" : PANEL.text }}>
-        {ehSimples ? "Simples Nacional" : bruto}
-      </strong>
+      Regime tributário: <strong style={{ color: cor }}>{r.rotulo}</strong>
+      {r.estado === ESTADO_DO_REGIME.DERIVADO ? (
+        <span style={{ color: "#FFB347", fontSize: "0.74rem", marginLeft: 6 }}>⚠ não conferido</span>
+      ) : null}
+      {r.nota ? (
+        <div style={{ color: PANEL.muted, fontSize: "0.78rem", marginTop: 2 }}>{r.nota}</div>
+      ) : null}
     </div>
   );
 }
@@ -57,7 +58,7 @@ export function PerfilFiscalTab({ panel }) {
         width: "var(--content-wide)", marginLeft: "auto", marginRight: "auto",
       }}
     >
-      <RegimeDaEmpresa regime={panel?.cadastro?.regime} />
+      <RegimeDaEmpresa regime={panel?.cadastro?.regime} prefill={panel?.cadastroPrefill} />
       <AbaFiscalPanel panel={panel} />
     </div>
   );

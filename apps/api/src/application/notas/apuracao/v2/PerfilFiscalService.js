@@ -159,8 +159,23 @@ export async function resolverPerfilFiscal({ portalClientId }) {
     // vira `true` — `indefinido` NÃO é `true` nem é `false` afirmado, e quem quiser a distinção lê
     // `fatorR.resposta`.
     temFatorR: fatorR.resposta === RESPOSTA_FATOR_R.SIM,
-    // A resposta inteira, com origem, motivo e a divergência entre perfil e cadastro.
-    fatorR,
+    // A resposta, com origem, motivo e a divergência entre perfil e cadastro.
+    //
+    // ⚠⚠ A CHAVE É `cnaes`, NÃO `cnaesDeFatorR`, E ISSO NÃO É COSMÉTICA. `GET /planejamento` já
+    // publica essa resposta como `cnaes` (`DadosPlanejamentoService`), e a tela lê `fatorR.cnaes`.
+    // Repassar a regra CRUA aqui deixaria as duas rotas falando formas diferentes da MESMA coisa —
+    // e o sintoma seria mudo: a tela cairia na frase genérica ("há atividade sujeita ao Fator R")
+    // em vez de nomear os CNAEs, sem erro nenhum.
+    //
+    // ⚠ Achado por teste. No navegador passou porque o MOCK devolvia `cnaes` — a divergência
+    // mock × real que este projeto já pagou várias vezes.
+    fatorR: {
+      resposta: fatorR.resposta,
+      origem: fatorR.origem,
+      motivo: fatorR.motivo,
+      cnaes: fatorR.cnaesDeFatorR,
+      divergencia: fatorR.divergencia,
+    },
     candidatos,
   };
 }
