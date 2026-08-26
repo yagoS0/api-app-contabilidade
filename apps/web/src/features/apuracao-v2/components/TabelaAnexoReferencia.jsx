@@ -23,6 +23,8 @@ import {
   tabelaDoAnexo,
   SITUACAO_ANEXO,
   SITUACAO_FAIXA,
+  distanciaAteAProximaFaixa,
+  SITUACAO_PROXIMA_FAIXA,
 } from "../lib/anexoDaEmpresa";
 
 const pct = (v, casas = 2) => (v == null ? "—" : `${(v * 100).toFixed(casas).replace(".", ",")}%`);
@@ -42,6 +44,54 @@ const NOME_DO_TRIBUTO = {
 function Legenda({ children, tom }) {
   return (
     <div style={{ fontSize: "0.78rem", color: tom || PANEL.muted, lineHeight: 1.5 }}>{children}</div>
+  );
+}
+
+/**
+ * QUANTO FALTA PARA A PRÓXIMA FAIXA.
+ *
+ * ⚠⚠ A FRASE É O PRODUTO, NÃO O NÚMERO. "Faltam R$ 220.000" lido como "posso faturar R$ 220.000
+ * antes de subir de faixa" é falso: o RBT12 é soma MÓVEL de 12 meses e anda
+ * `mês que entra − mês que sai`. Por isso o texto nomeia o RBT12 em vez de dizer "faturamento", e
+ * a ressalva vem junto — não num `title`, que não aparece no teclado nem no toque.
+ */
+function ProximaFaixa({ chave, rbt12 }) {
+  const d = distanciaAteAProximaFaixa(chave, rbt12);
+  if (!d) return null;
+
+  // Sem RBT12 e acima do teto a tabela acima JÁ diz o que há para dizer; repetir aqui seria um
+  // segundo aviso sobre o mesmo fato, e aviso repetido é o defeito que a avaliação do dono apontou.
+  if (d.situacao === SITUACAO_PROXIMA_FAIXA.RBT12_DESCONHECIDO
+    || d.situacao === SITUACAO_PROXIMA_FAIXA.RBT12_ACIMA_DO_LIMITE) return null;
+
+  if (d.situacao === SITUACAO_PROXIMA_FAIXA.NA_ULTIMA_FAIXA) {
+    return (
+      <div style={{ marginTop: 10, fontSize: "0.82rem", color: PANEL.text }}>
+        Está na <strong>6ª faixa</strong>, a última.{" "}
+        {/* ⚠ NÃO é "próxima faixa": acima daqui não há alíquota maior, há SAÍDA do regime. */}
+        Faltam <strong style={{ fontFamily: "monospace" }}>{fmtMoney(d.faltaParaODesenquadramento)}</strong>{" "}
+        de RBT12 para o teto do Simples — passando dele, a empresa não pode permanecer optante.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 10, fontSize: "0.82rem", color: PANEL.text }}>
+      Faltam <strong style={{ fontFamily: "monospace" }}>{fmtMoney(d.falta)}</strong> de <strong>RBT12</strong>{" "}
+      para a <strong>{d.proximaFaixa}ª faixa</strong>, onde a alíquota nominal passa de{" "}
+      {pct(d.aliquotaNominalAtual)} para {pct(d.aliquotaNominalProxima)}.
+      {d.cruzaOSublimite ? (
+        <Legenda>
+          ⚠ Essa virada não é só a alíquota: acima do sublimite (LC 123/2006, art. 13-A){" "}
+          {d.tributosQueSaemDoDas.map((x) => NOME_DO_TRIBUTO[x] || x.toUpperCase()).join(" e ")}{" "}
+          sai do DAS e passa a ser recolhido por fora.
+        </Legenda>
+      ) : null}
+      <Legenda>
+        O RBT12 é a soma móvel dos últimos 12 meses: ele anda o que entra menos o que sai da janela.
+        Este valor <strong>não</strong> é quanto ainda dá para faturar antes de mudar de faixa.
+      </Legenda>
+    </div>
   );
 }
 
@@ -111,6 +161,8 @@ function TabelaDeUmAnexo({ chave, rbt12 }) {
           </tbody>
         </table>
       </div>
+
+      <ProximaFaixa chave={chave} rbt12={rbt12} />
 
       {/* A repartição sai SÓ da faixa da empresa. Oito colunas × seis faixas seria ruído, e o
           contador quer a partilha do caso dele. */}

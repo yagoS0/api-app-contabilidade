@@ -67,9 +67,15 @@ describe("⚠ RBT12 desconhecido: tabela inteira, nenhuma linha marcada", () => 
 
 describe("o que a tabela avisa além dos números", () => {
   it("⚠ Anexo IV: a CPP fica FORA do DAS", () => {
+    // ⚠ ESTE TESTE ERA `getByText(/não/)`, e passou a ser AMBÍGUO em 26/08/2026, quando a ressalva
+    // do RBT12 acrescentou um segundo `<strong>não</strong>` ao mesmo painel. Casador frouxo não
+    // afirma o que o nome do teste promete: `/não/` casaria com qualquer negação da tela, e o
+    // `.closest("div")` era verdadeiro para qualquer elemento com um ancestral `div` — ou seja,
+    // sempre. Trocado pela frase INTEIRA, que é o que o Anexo IV tem de dizer.
     render(<TabelaAnexoReferencia atividades={[{ anexoImplicito: "IV" }]} rbt12={500_000} folha12m={null} />);
-    expect(screen.getByText(/não/).closest("div")).toBeTruthy();
-    expect(screen.getByText(/CPP/)).toBeInTheDocument();
+    const texto = document.body.textContent.replace(/\s+/g, " ");
+    expect(texto).toMatch(/a CPP não é recolhida no DAS/i);
+    expect(texto).toMatch(/INSS patronal é pago por fora/i);
   });
 
   it("sem atividade nenhuma, não desenha tabela de anexo", () => {

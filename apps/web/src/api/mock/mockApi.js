@@ -2031,6 +2031,31 @@ function mockTotal(linhas) {
  * A FOTO. Espelha a forma de `montarRelatorioFaturamento` — mesmo formato, mesmos nomes, mesmos
  * três estados que a tela precisa distinguir.
  */
+/**
+ * ⚠⚠ O RBT12 DO MOCK VARIA POR EMPRESA, E ISSO NÃO É ENFEITE.
+ *
+ * Ele era **480.000 fixo** para as seis empresas — sempre a 3ª faixa. Consequência medida em
+ * 26/08/2026: os dois ramos mais caros da tabela do anexo eram **inalcançáveis offline**, e um
+ * ramo que ninguém alcança é um ramo que ninguém confere:
+ *
+ *  · a virada para a **6ª faixa**, onde o ICMS/ISS SAI do DAS (LC 123/2006, art. 13-A) — a
+ *    consequência mais cara de subir de faixa, e a que a tela precisa anunciar;
+ *  · a **própria 6ª faixa**, onde não existe "próxima faixa": o que existe acima é a SAÍDA do
+ *    Simples, e a frase é outra.
+ *
+ * É a mesma armadilha que este projeto já pagou duas vezes nesta rodada (o mock com valores
+ * redondos escondendo o parser ×100; o mock com faturamento zero em 6 de 6 empresas).
+ *
+ * ⚠ Os valores são escolhidos PELA FAIXA que exercitam, não por realismo — e ficam nomeados, para
+ * ninguém "arredondar" um deles de volta para dentro da mesma faixa.
+ */
+const RBT12_DO_MOCK = Object.freeze([
+  480_000,    // 3ª faixa — a virada comum: faltam 240.000 para a 4ª
+  3_000_000,  // 5ª faixa — a PRÓXIMA é a 6ª: acende o aviso do sublimite
+  4_000_000,  // 6ª faixa — não há próxima faixa; faltam 800.000 para sair do Simples
+]);
+const rbt12DoMock = (idxEmpresa) => RBT12_DO_MOCK[idxEmpresa < 0 ? 0 : idxEmpresa % RBT12_DO_MOCK.length];
+
 function mockRelatorioFaturamentoDados(companyId, competencia) {
   const empresa = mockCompanies.find((c) => c.companyId === companyId) || null;
   const idx = mockCompanies.findIndex((c) => c.companyId === companyId);
@@ -7834,6 +7859,7 @@ export function createMockApi() {
       // competência esconderia um caminho atrás de "abra outro mês".
       const idxEmpresa = mockCompanies.findIndex((c) => c.companyId === companyId);
       const formaMock = idxEmpresa < 0 ? 0 : idxEmpresa % 3;
+      const rbt12Mock = rbt12DoMock(idxEmpresa);
       const atividadeFatorR = { idAtividade: 11, descricao: "Serviços sujeitos ao Fator R", anexoImplicito: "III", sujeitoFatorR: true, tipoReceita: "SERVICO_FATOR_R" };
       const atividadesMock = formaMock === 2
         ? [
@@ -7882,7 +7908,7 @@ export function createMockApi() {
           atividades: atividadesMock,
           origemAtividades: "memoria(2026-07-31)",
           prefillValor: prefillValorMock,
-          rbt12: 480000, disparidades: [], estado: "aberta", regimeApuracao: "COMPETENCIA",
+          rbt12: rbt12Mock, disparidades: [], estado: "aberta", regimeApuracao: "COMPETENCIA",
           // Digitado: 5.000 em todos os meses. Derivado: 5.000, MENOS num mês (4.200) — divergência
           // de 800, que é a que a tela precisa apontar, inclusive na célula do mês.
           folhaMensal12: pas.map((pa) => ({ pa, valor: 5000 })),

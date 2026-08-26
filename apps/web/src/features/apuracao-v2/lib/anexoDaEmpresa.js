@@ -187,3 +187,103 @@ export function tabelaDoAnexo(chaveDoAnexo, rbt12) {
     reparticao: repartirPorTributo(anexo, rbt12),
   };
 }
+
+/** O que a tela pode dizer sobre a próxima faixa. Lista FECHADA. */
+export const SITUACAO_PROXIMA_FAIXA = Object.freeze({
+  /** Há uma faixa acima, e sabemos a distância até ela. */
+  HA_PROXIMA: "HA_PROXIMA",
+  /** ⚠ 6ª faixa: não existe faixa acima. O que existe acima é a SAÍDA do Simples. */
+  NA_ULTIMA_FAIXA: "NA_ULTIMA_FAIXA",
+  /** Sem RBT12 não há distância a medir. */
+  RBT12_DESCONHECIDO: "RBT12_DESCONHECIDO",
+  /** Já passou do teto — a pergunta "quanto falta" não se aplica mais. */
+  RBT12_ACIMA_DO_LIMITE: "RBT12_ACIMA_DO_LIMITE",
+});
+
+/**
+ * QUANTO FALTA PARA A PRÓXIMA FAIXA — a pergunta que o contador faz toda competência e que nenhum
+ * código deste projeto respondia (varrido em 26/08/2026: zero ocorrências).
+ *
+ * ⚠⚠ A DISTÂNCIA É DO RBT12, NUNCA DO FATURAMENTO DO MÊS, e confundir os dois é o erro que esta
+ * função existe para evitar. O RBT12 é uma soma MÓVEL de 12 meses: quando entra o mês novo, sai o
+ * mês que completou um ano. Ele anda `receita do mês novo − receita do mês que saiu` — que pode ser
+ * ZERO, ou NEGATIVO, mesmo faturando bem. Ler "faltam R$ 80.000" como "posso faturar R$ 80.000
+ * antes de mudar de faixa" é falso nos dois sentidos: pode mudar de faixa faturando menos que isso
+ * (se o mês que sai for pequeno), e pode não mudar faturando mais.
+ *
+ * Por isso o retorno **não** traz nenhuma projeção nem prazo estimado: para dizer QUANDO a empresa
+ * cruza seria preciso a série dos 12 meses da janela, e projetar a partir de uma média seria o
+ * portal chutando o mês da virada de alíquota. O campo `sobreRbt12: true` existe para a tela ser
+ * obrigada a dizer de que número está falando.
+ *
+ * @param {string} chaveDoAnexo
+ * @param {number|string|null} rbt12
+ * @returns {{situacao: string, falta: number|null, ...}|null} `null` só para anexo inexistente.
+ */
+export function distanciaAteAProximaFaixa(chaveDoAnexo, rbt12) {
+  const anexo = ANEXOS[String(chaveDoAnexo || "").trim().toUpperCase()];
+  if (!anexo) return null;
+
+  const base = { sobreRbt12: true, falta: null, faixaAtual: null, proximaFaixa: null };
+
+  // ⚠ Mesma guarda de `tabelaDoAnexo`, e pelo mesmo motivo: `Number(null) || 0` casa com a 1ª
+  // faixa, e a tela diria "faltam R$ 180.000" para uma empresa cujo RBT12 ninguém informou.
+  if (!rbt12Conhecido(rbt12)) return { ...base, situacao: SITUACAO_PROXIMA_FAIXA.RBT12_DESCONHECIDO };
+
+  const valor = Number(rbt12);
+  if (valor > LIMITES_SIMPLES.epp) {
+    // Acima do teto não há "próxima faixa": a empresa está fora do Simples. Responder uma distância
+    // aqui sugeriria que ainda há uma faixa a subir, quando o que houve foi exclusão.
+    return { ...base, situacao: SITUACAO_PROXIMA_FAIXA.RBT12_ACIMA_DO_LIMITE };
+  }
+
+  const atual = faixaDoRbt12(anexo, rbt12);
+  if (!atual) return { ...base, situacao: SITUACAO_PROXIMA_FAIXA.RBT12_DESCONHECIDO };
+
+  const proxima = anexo.faixas.find((f) => f.faixa === atual.faixa + 1);
+  if (!proxima) {
+    // ⚠⚠ 6ª FAIXA: o que vem depois NÃO é uma alíquota maior — é a EXCLUSÃO do Simples. Devolver
+    // aqui a distância até R$ 4,8 mi com o mesmo rótulo de "próxima faixa" faria o contador ler
+    // "vai pagar um pouco mais" onde o certo é "vai ter de sair do regime".
+    return {
+      ...base,
+      situacao: SITUACAO_PROXIMA_FAIXA.NA_ULTIMA_FAIXA,
+      faixaAtual: atual.faixa,
+      /**
+       * A distância até o TETO do Simples. Nomeada à parte, porque significa outra coisa.
+       * ⚠ Sem `Math.max(0, …)`: o ramo `valor > LIMITES_SIMPLES.epp` já retornou acima, então aqui
+       * a subtração não pode ser negativa. Um clamp aqui seria um cinto que não aperta — e este
+       * projeto já pagou por guarda inalcançável cujo comentário anunciava que guardava.
+       */
+      faltaParaODesenquadramento: LIMITES_SIMPLES.epp - valor,
+    };
+  }
+
+  const foraDoDas = tributosForaDoDasNaSextaFaixa(anexo);
+  return {
+    ...base,
+    situacao: SITUACAO_PROXIMA_FAIXA.HA_PROXIMA,
+    faixaAtual: atual.faixa,
+    proximaFaixa: proxima.faixa,
+    /**
+     * ⚠ Do RBT12 até o fim da faixa atual — nunca "quanto ainda posso faturar".
+     *
+     * ⚠⚠ SEM CLAMP, E ISSO FOI MEDIDO: `v <= f.ate` é condição do `find` de `faixaDoRbt12`, então
+     * a faixa devolvida SEMPRE contém o valor e `atual.ate - valor` nunca é negativo. Um
+     * `Math.max(0, …)` aqui passava em experimento com ZERO vermelhos — código morto se
+     * defendendo de um caso que não existe, com um teste vacuoso ao lado provando nada.
+     * A invariante virou teste (`distanciaProximaFaixa.test.js`), que é onde ela morde.
+     */
+    falta: atual.ate - valor,
+    aliquotaNominalAtual: atual.aliquota,
+    aliquotaNominalProxima: proxima.aliquota,
+    /**
+     * ⚠⚠ CRUZAR PARA A 6ª FAIXA NÃO É SÓ ALÍQUOTA MAIOR: é o SUBLIMITE (LC 123/2006, art. 13-A),
+     * e o ICMS/ISS SAI do DAS — a empresa passa a recolher esse tributo por fora, para o estado ou
+     * o município. Uma tela que anuncie só a alíquota nova esconde a obrigação nova.
+     * Derivado da própria tabela, nunca de uma lista escrita à mão.
+     */
+    cruzaOSublimite: proxima.faixa === 6 && foraDoDas.length > 0,
+    tributosQueSaemDoDas: proxima.faixa === 6 ? foraDoDas : [],
+  };
+}
