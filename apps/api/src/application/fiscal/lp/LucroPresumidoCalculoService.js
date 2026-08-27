@@ -5,21 +5,20 @@
 // Este serviço é a RECONCILIAÇÃO — um CHECK/ALERTA: calcula o esperado (receita × presunção)
 // e compara com o débito da declaração. Diverge → alerta (nunca bloqueia a provisão automática).
 //
-// Presunção padrão Lei 9.249/95 (confirmada com o contador):
-//   Serviços em geral: IRPJ 32% / CSLL 32%
-//   Comércio/indústria (mercadorias): IRPJ 8% / CSLL 12%
-// Casos especiais (transporte, hospitalar, combustível) NÃO cobertos nesta v1 — sinalizar.
-// PIS/COFINS cumulativo: 0,65% / 3% sobre a receita bruta.
-// IRPJ 15% + adicional 10% sobre o que exceder R$ 60.000 no TRIMESTRE. CSLL 9%.
-// PIS/COFINS são MENSAIS; IRPJ/CSLL só fecham no último mês do trimestre (mar/jun/set/dez).
+// ⚠⚠ A REGRA SAIU DAQUI EM 27/08/2026 e mora em `lib/apuracaoPresumido.js`, PURA e com teste
+// próprio. Este arquivo carrega o Prisma no topo, e era por isso que a apuração do Presumido nunca
+// teve um único teste em 44 dias de vida. O que sobrou aqui é o que só o banco sabe: **qual é a
+// receita** e **qual é a DARF**. As presunções, as alíquotas, a regra dos R$ 120.000, a alíquota
+// efetiva e os casos não cobertos (transporte, hospitalar, combustível) moram todos lá.
+//
+// ⚠ SÓ LEITURA, ZERO CHAMADA EXTERNA. Não fala com SERPRO, ADN nem SEFAZ: lê o que já está no
+// banco. Quem gasta chamada paga é a captura ("Buscar tributos do Presumido"), não este cálculo.
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
-
-const PRESUNCAO = {
-  SERVICOS: { irpj: 0.32, csll: 0.32 },
-  MERCADORIAS: { irpj: 0.08, csll: 0.12 },
-};
-const ALIQ = { irpj: 0.15, irpjAdicional: 0.10, adicionalLimiteTrimestral: 60000, csll: 0.09, pis: 0.0065, cofins: 0.03 };
+import {
+  PRESUNCAO, ALIQ, SERVICOS_16, TRIBUTOS_NAO_CALCULADOS,
+  apurarPresumido, isFimDeTrimestre, mesesDoTrimestre,
+} from "./lib/apuracaoPresumido.js";
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -44,53 +43,67 @@ async function receitaDoMes(portalClientId, competencia) {
   return { servicos: r2(servicos), mercadorias: r2(mercadorias), total: r2(servicos + mercadorias) };
 }
 
-// Meses do trimestre a que a competência pertence (só usado no fechamento trimestral).
-function mesesDoTrimestre(competencia) {
-  const [y, m] = competencia.split("-").map(Number);
-  const q = Math.floor((m - 1) / 3); // 0..3
-  const first = q * 3 + 1;
-  return [0, 1, 2].map((i) => `${y}-${String(first + i).padStart(2, "0")}`);
-}
-function isFimDeTrimestre(competencia) {
-  const m = Number(competencia.split("-")[1]);
-  return [3, 6, 9, 12].includes(m);
+/**
+ * A composição da DARF consolidada do LP daquela competência — a lista `{codigo, tributo, total}`
+ * que `LucroPresumidoProvisaoService` grava em `Guide.extracted`.
+ *
+ * ⚠⚠ O RECORTE É O `sourceFileId`, NÃO `tipo: "OUTRA"`. A DARF do LP e a guia de INSS/DCTFWeb são
+ * **as duas** `tipo: "OUTRA"` com `source: "SERPRO"` — filtrar por tipo traria a guia errada, e a
+ * composição dela alimentaria o aviso de quota com um débito que não é de IRPJ/CSLL do Presumido.
+ * O prefixo `serpro:dctfweb:lp:` é escrito num lugar só, na provisão.
+ *
+ * ⚠ Ausência devolve `[]`, e isso é honesto: "não há DARF capturada" não é "não há débito". Quem
+ * lê isto é o aviso de quota, que só ACRESCENTA informação — ele nunca afirma ausência de débito.
+ */
+async function darfDoPresumido(portalClientId, competencia) {
+  const guia = await prisma.guide.findFirst({
+    where: {
+      portalClientId,
+      competencia,
+      sourceFileId: { startsWith: "serpro:dctfweb:lp:", endsWith: `:${competencia}` },
+    },
+    select: { id: true, extracted: true, valor: true, vencimento: true, paymentStatus: true },
+  });
+  const extracted = guia?.extracted && typeof guia.extracted === "object" ? guia.extracted : {};
+  return {
+    // ⚠ `valor` é `Decimal` no Prisma: serializado cru ele vira objeto no JSON da rota.
+    guia: guia
+      ? {
+        id: guia.id,
+        valor: guia.valor == null ? null : r2(guia.valor),
+        vencimento: guia.vencimento,
+        paymentStatus: guia.paymentStatus,
+      }
+      : null,
+    composicao: Array.isArray(extracted.composicao) ? extracted.composicao : [],
+  };
 }
 
 /**
  * Calcula os tributos esperados do LP para a competência (a partir das notas).
- * @returns {{ competencia, receita, pis, cofins, irpj, csll, trimestre?, observacoes:[] }}
+ *
+ * @param {Object} p
+ * @param {string} p.portalClientId
+ * @param {string} p.competencia         "YYYY-MM"
+ * @param {boolean|null} [p.servicos16]  a confirmação do art. 15, § 4º. ⚠ `null` = não perguntado,
+ *   e o resultado é o de sempre (32%). Ver `presuncaoIrpjDeServicos`.
  */
-export async function calcularLp({ portalClientId, competencia }) {
+export async function calcularLp({ portalClientId, competencia, servicos16 = null }) {
   if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) throw new Error("competência YYYY-MM obrigatória");
-  const observacoes = [];
 
   const receita = await receitaDoMes(portalClientId, competencia);
-  // PIS/COFINS — mensais, sobre a receita bruta total.
-  const pis = r2(receita.total * ALIQ.pis);
-  const cofins = r2(receita.total * ALIQ.cofins);
 
-  let irpj = null, csll = null, trimestre = null;
-  if (isFimDeTrimestre(competencia)) {
-    // Fechamento trimestral: soma a receita dos 3 meses do trimestre.
-    const meses = mesesDoTrimestre(competencia);
-    const receitasTri = await Promise.all(meses.map((c) => receitaDoMes(portalClientId, c)));
-    const servTri = r2(receitasTri.reduce((s, r) => s + r.servicos, 0));
-    const mercTri = r2(receitasTri.reduce((s, r) => s + r.mercadorias, 0));
-    const baseIrpj = r2(servTri * PRESUNCAO.SERVICOS.irpj + mercTri * PRESUNCAO.MERCADORIAS.irpj);
-    const baseCsll = r2(servTri * PRESUNCAO.SERVICOS.csll + mercTri * PRESUNCAO.MERCADORIAS.csll);
-    const irpjNormal = r2(baseIrpj * ALIQ.irpj);
-    const adicional = r2(Math.max(0, baseIrpj - ALIQ.adicionalLimiteTrimestral) * ALIQ.irpjAdicional);
-    irpj = { base: baseIrpj, normal: irpjNormal, adicional, total: r2(irpjNormal + adicional) };
-    csll = { base: baseCsll, total: r2(baseCsll * ALIQ.csll) };
-    trimestre = { meses, receitaServicos: servTri, receitaMercadorias: mercTri };
-    if (mercTri > 0) observacoes.push("Há receita de mercadorias — presunção 8%/12% aplicada; confira casos especiais (transporte/hospitalar/combustível não cobertos).");
-  }
+  // ⚠ As receitas do trimestre só são buscadas no mês que FECHA — nos outros a regra não as usa, e
+  // ir ao banco por elas seriam três consultas para um resultado descartado.
+  const receitasDoTrimestre = isFimDeTrimestre(competencia)
+    ? await Promise.all(mesesDoTrimestre(competencia).map((c) => receitaDoMes(portalClientId, c)))
+    : [];
+
+  const { guia, composicao } = await darfDoPresumido(portalClientId, competencia);
 
   return {
-    competencia, receita,
-    presuncao: PRESUNCAO,
-    pis, cofins, irpj, csll, trimestre,
-    observacoes,
+    ...apurarPresumido({ competencia, receita, receitasDoTrimestre, servicos16, composicaoDaGuia: composicao }),
+    guia,
   };
 }
 
@@ -107,8 +120,8 @@ function conferir(calculado, dctfweb) {
  * Reconcilia o calculado × o débito da DCTFWeb (por tributo).
  * @param {Object} opts.debitosDctfweb  { PIS, COFINS, IRPJ, CSLL } (principal) — ex.: da declaração parseada
  */
-export async function reconciliarLp({ portalClientId, competencia, debitosDctfweb = {} }) {
-  const calc = await calcularLp({ portalClientId, competencia });
+export async function reconciliarLp({ portalClientId, competencia, debitosDctfweb = {}, servicos16 = null }) {
+  const calc = await calcularLp({ portalClientId, competencia, servicos16 });
   const rec = {
     PIS: conferir(calc.pis, debitosDctfweb.PIS),
     COFINS: conferir(calc.cofins, debitosDctfweb.COFINS),
@@ -129,4 +142,4 @@ export async function reconciliarLp({ portalClientId, competencia, debitosDctfwe
   };
 }
 
-export { PRESUNCAO, ALIQ };
+export { PRESUNCAO, ALIQ, SERVICOS_16, TRIBUTOS_NAO_CALCULADOS, isFimDeTrimestre, mesesDoTrimestre };
