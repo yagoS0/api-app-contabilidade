@@ -72,29 +72,67 @@ export const LEITURA = Object.freeze({
   CONTINUA: "continua",
   /** ⚠⚠ Já marcada e sumiu por 2 ciclos. SUGERE a saída — nunca desmarca sozinha. */
   SUGERE_SAIDA: "sugere_saida",
+  /**
+   * ⚠⚠ JÁ MARCADA E SEM UMA ÚNICA OBSERVAÇÃO — e este é o caso que o plano nomeia:
+   * *"declarado R$ 1.000/mês; não localizado nos últimos 3 meses"*.
+   *
+   * Ele existe porque `CONTINUA` é uma **afirmação** ("está acontecendo") e aqui não há nada que a
+   * sustente. Achado por agente de verificação em 27/08/2026: sem esta resposta, a série marcada
+   * cujas notas foram todas canceladas dizia `CONTINUA` **para sempre** — e nunca podia sugerir
+   * saída, porque `ciclosDesdeAUltima` é `null` sem última observação, e `null >= 2` é falso. A
+   * linha ficava viva no fluxo de caixa sem uma única prova atrás dela, em silêncio.
+   *
+   * ⚠ Ela NÃO desmarca, pela mesma razão de todas as outras: quem decide é o contador. O que ela
+   * faz é a tela poder CONFRONTAR a declaração em vez de confiar nela para sempre.
+   */
+  SEM_OBSERVACAO: "sem_observacao",
 });
 
 /**
  * ⚠⚠ `Number(null)` É `0`, E `0` É FINITO. Esta guarda existe por causa disso.
  *
- * `Number.isFinite(Number(v))` sozinho aprova `null`, `undefined` (não — `NaN`), `""` e `[]` — e
- * neste módulo isso viraria um CICLO COM VALOR ZERO, que puxa a mediana para baixo e a faixa para
- * fora. É a mesma armadilha que já custou um "0%" na tela do cliente (`folhaAusenteNaoEZero`) e a
- * alíquota efetiva declarada como zero numa nota fiscal.
+ * `Number.isFinite(Number(v))` sozinho aprova `null`, `""`, `[]`, `false` e `" "` — e neste módulo
+ * cada um deles vira um CICLO COM VALOR ZERO, que puxa a mediana para baixo e a faixa para fora. É
+ * a mesma armadilha que já custou um "0%" na tela do cliente (`folhaAusenteNaoEZero`) e a alíquota
+ * efetiva declarada como zero numa nota fiscal.
  *
- * ⚠ Achado por teste ao escrever este arquivo: `{ competencia: "2026-06", valor: null }` criava um
- * ciclo de valor 0.
+ * ⚠⚠ A GUARDA É POR **TIPO**, e a primeira versão dela era por VALOR (`v == null || v === ""`).
+ * Essa lista de exceções é infinita e a primeira versão já saía incompleta: agente de verificação
+ * mediu, em 27/08/2026, que `[]`, `false` e `" "` **passavam e fabricavam um ciclo de valor 0** —
+ * e que o comentário logo acima afirmava cobrir `[]` sem cobrir. Enumerar o que se recusa é sempre
+ * perder um; nomear o que se ACEITA é fechado por construção.
+ *
+ * ⚠ O que se aceita: `number` finito e `string` com conteúdo numérico. `Decimal` do Prisma entra
+ * pelo `toString`, que é como ele já viaja em todo o resto do projeto.
  */
 const numero = (v) => {
-  if (v == null || v === "") return null;
-  const n = Number(v);
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  // ⚠ O `Decimal` do Prisma é objeto; ele — e só ele — entra pelo `toString`.
+  const texto = typeof v === "string" ? v : (isDecimalDoPrisma(v) ? v.toString() : null);
+  if (texto == null || texto.trim() === "") return null;
+  const n = Number(texto);
   return Number.isFinite(n) ? n : null;
 };
+
+/**
+ * ⚠ `Decimal` do Prisma, sem importar o Prisma (este módulo é PURO e assim continua).
+ *
+ * A prova é estrutural: objeto com `toString` PRÓPRIO (não o herdado de `Object.prototype`, que
+ * devolveria `"[object Object]"`). Array não passa — `[5].toString()` é `"5"`, e aceitá-lo faria
+ * um `.map` que devolve lista de um elemento entrar como se fosse um valor.
+ */
+function isDecimalDoPrisma(v) {
+  if (v == null || typeof v !== "object" || Array.isArray(v)) return false;
+  return typeof v.toString === "function" && v.toString !== Object.prototype.toString;
+}
 
 /** "AAAA-MM" → número de meses desde o ano 0. ⚠ Aritmética de string, nunca `Date`: às 22h de
  * Brasília um `toISOString` devolveria o mês seguinte. */
 export function mesesDaCompetencia(competencia) {
-  const m = /^(\d{4})-(\d{2})$/.exec(String(competencia ?? "").trim());
+  // ⚠ SÓ STRING. `String(["2026-05"])` é `"2026-05"`, e um `.map` que devolvesse lista de um
+  // elemento entraria como competência boa — medido em 27/08/2026.
+  if (typeof competencia !== "string") return null;
+  const m = /^(\d{4})-(\d{2})$/.exec(competencia.trim());
   if (!m) return null;
   const ano = Number(m[1]);
   const mes = Number(m[2]);
@@ -145,7 +183,13 @@ export function coeficienteDeVariacao(valores) {
  * @returns {Array<{ciclo: number, valor: number, competencias: string[]}>} ordenado por ciclo
  */
 export function porCiclo(observacoes, periodicidade = PERIODICIDADE.MENSAL) {
-  const passo = MESES_DO_CICLO[periodicidade] || 1;
+  // ⚠ Mesma recusa de `lerSerie` — e ela precisa estar aqui também porque esta função é EXPORTADA
+  // e o serviço a alcança direto. Uma periodicidade desconhecida caindo em MENSAL agruparia a série
+  // pelo passo errado sem nada dizer.
+  const passo = MESES_DO_CICLO[periodicidade];
+  if (!passo) {
+    throw new Error(`recorrencia: periodicidade desconhecida "${periodicidade}" — use ${Object.values(PERIODICIDADE).join(", ")}.`);
+  }
   const mapa = new Map();
   for (const o of observacoes || []) {
     const meses = mesesDaCompetencia(o?.competencia);
@@ -170,7 +214,10 @@ export function porCiclo(observacoes, periodicidade = PERIODICIDADE.MENSAL) {
  * como se fosse todo mês poria dinheiro no fluxo que não sai.
  */
 export function ciclosConsecutivosNoFim(ciclos) {
-  const lista = (ciclos || []).map((c) => c.ciclo).sort((a, b) => a - b);
+  // ⚠ DEDUPLICA antes de contar. `porCiclo` já entrega um ciclo por número (agrupa por `Map`), mas
+  // esta função é EXPORTADA e o próximo consumidor pode montar a lista de outra forma. Sem o
+  // `Set`, `[5, 6, 6]` devolvia **1** — o par repetido no fim quebrava a corrida na diferença 0.
+  const lista = [...new Set((ciclos || []).map((c) => c.ciclo))].sort((a, b) => a - b);
   if (!lista.length) return 0;
   let n = 1;
   for (let i = lista.length - 1; i > 0; i -= 1) {
@@ -191,7 +238,17 @@ export function ciclosConsecutivosNoFim(ciclos) {
  * @returns {{leitura: string, valorProjetado: number|null, base: object}}
  */
 export function lerSerie({ observacoes, periodicidade = PERIODICIDADE.MENSAL, cicloAtual, jaMarcada = false } = {}) {
-  const passo = MESES_DO_CICLO[periodicidade] || 1;
+  // ⚠⚠ PERIODICIDADE FORA DA LISTA FECHADA **RECUSA**, e não cai em MENSAL.
+  //
+  // Era `MESES_DO_CICLO[periodicidade] || 1`. Medido por agente de verificação em 27/08/2026: com
+  // `"SEMESTRAL"` a conta rodava com passo 1 (MENSAL), devolvia `sugere_entrada`, e `base` ecoava
+  // `periodicidade: "SEMESTRAL"` — ou seja, a EVIDÊNCIA gravada em `baseDaObservacao` afirmaria uma
+  // periodicidade que não foi a usada. Evidência que mente é pior que evidência ausente, porque é
+  // ela que responde "por que esta linha está no fluxo?" daqui a seis meses.
+  const passo = MESES_DO_CICLO[periodicidade];
+  if (!passo) {
+    throw new Error(`recorrencia: periodicidade desconhecida "${periodicidade}" — use ${Object.values(PERIODICIDADE).join(", ")}.`);
+  }
   const ciclos = porCiclo(observacoes, periodicidade);
   const valores = ciclos.map((c) => c.valor);
   const mesesAgora = mesesDaCompetencia(cicloAtual);
@@ -219,6 +276,12 @@ export function lerSerie({ observacoes, periodicidade = PERIODICIDADE.MENSAL, ci
   // ── A SAÍDA vem antes da entrada: uma série JÁ MARCADA que sumiu não deve ser reavaliada como
   //    candidata — ela tem uma decisão do contador em cima, e o que se pergunta é se ela continua.
   if (jaMarcada) {
+    // ⚠⚠ ZERO OBSERVAÇÕES NÃO É "CONTINUA". Sem nenhuma, `ultimo` é `null`, `ciclosDesdeAUltima` é
+    // `null`, e a comparação da saída abaixo NUNCA morde — a série responderia "continua" para
+    // sempre. Ausência virando afirmação, com a linha viva no fluxo.
+    if (!ciclos.length) {
+      return { leitura: LEITURA.SEM_OBSERVACAO, valorProjetado: null, base };
+    }
     if (base.ciclosDesdeAUltima != null && base.ciclosDesdeAUltima >= CICLOS_PARA_SAIR) {
       // ⚠⚠ SUGERE a saída. NÃO desmarca — pela mesma razão que a entrada não se marca sozinha.
       return { leitura: LEITURA.SUGERE_SAIDA, valorProjetado: base.mediana, base };

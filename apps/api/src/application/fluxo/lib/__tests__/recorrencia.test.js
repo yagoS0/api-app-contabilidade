@@ -170,6 +170,34 @@ describe("⚠⚠ a saída SUGERE, nunca desmarca", () => {
     expect(r.leitura).toBe(LEITURA.POUCAS_OBSERVACOES);
     expect(r.valorProjetado).toBeNull();
   });
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // ⚠⚠ MARCADA E SEM UMA ÚNICA OBSERVAÇÃO — achado por agente de verificação em 27/08/2026.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  it("⚠⚠ marcada com ZERO observações NÃO diz 'continua' — isso seria afirmar sem prova", () => {
+    const r = lerSerie({ observacoes: [], cicloAtual: "2026-08", jaMarcada: true });
+    expect(r.leitura).toBe(LEITURA.SEM_OBSERVACAO);
+    expect(r.valorProjetado).toBeNull();
+  });
+
+  it("⚠⚠ e é a resposta certa porque a SAÍDA nunca morderia: `ciclosDesdeAUltima` é null", () => {
+    // Sem última observação não há de onde contar ciclos perdidos, e `null >= 2` é FALSO. Enquanto
+    // este ramo não existia, a série marcada cujas notas foram todas canceladas ficava viva no
+    // fluxo de caixa dizendo "continua", para sempre.
+    const r = lerSerie({ observacoes: [], cicloAtual: "2026-08", jaMarcada: true });
+    expect(r.base.ciclosDesdeAUltima).toBeNull();
+    expect(r.base.n).toBe(0);
+    expect(null >= CICLOS_PARA_SAIR).toBe(false);
+  });
+
+  it("⚠ observação que não vira ciclo (valor ilegível) cai no mesmo ramo — não em 'continua'", () => {
+    const r = lerSerie({
+      observacoes: [{ competencia: "2026-07", valor: "abc" }],
+      cicloAtual: "2026-08",
+      jaMarcada: true,
+    });
+    expect(r.leitura).toBe(LEITURA.SEM_OBSERVACAO);
+  });
 });
 
 describe("⚠⚠ duas notas no MESMO ciclo somam, não contam duas", () => {
@@ -198,10 +226,69 @@ describe("⚠ o que NÃO vira observação", () => {
     expect(porCiclo(obs)).toHaveLength(1);
   });
 
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
+  // ⚠⚠ A GUARDA DE VALOR É POR **TIPO**, e a versão por VALOR saía incompleta.
+  //
+  // Medido por agente de verificação em 27/08/2026 contra a primeira versão (`v == null || v ===
+  // ""`): `[]`, `false` e `" "` PASSAVAM e fabricavam um ciclo de valor `0` — e o comentário do
+  // arquivo afirmava cobrir `[]`. Cada caso abaixo é um desses.
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
+  it.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["string vazia", ""],
+    ["texto", "abc"],
+    ["objeto", {}],
+    ["NaN", NaN],
+    ["Infinity", Infinity],
+    ["⚠⚠ array vazio — `Number([])` é 0, e 0 é finito", []],
+    ["⚠⚠ false — `Number(false)` é 0", false],
+    ["⚠⚠ só espaço — `Number(\" \")` é 0", " "],
+    ["⚠ true — viraria um ciclo de valor 1", true],
+    ["⚠ array de um número — `Number([5])` é 5", [5]],
+  ])("⚠⚠ %s NÃO vira ciclo", (_nome, valor) => {
+    expect(porCiclo([{ competencia: "2026-01", valor }])).toHaveLength(0);
+  });
+
+  it("⚠ mas número e string numérica entram — inclusive negativo e zero DECLARADO", () => {
+    expect(porCiclo([{ competencia: "2026-01", valor: 130 }])[0].valor).toBe(130);
+    expect(porCiclo([{ competencia: "2026-01", valor: "130.50" }])[0].valor).toBe(130.5);
+    // ⚠ zero que alguém escreveu É uma afirmação, e entra. O que a guarda recusa é o zero FABRICADO
+    // por coerção de um valor que não é número — a distinção do `folhaAusenteNaoEZero`.
+    expect(porCiclo([{ competencia: "2026-01", valor: 0 }])[0].valor).toBe(0);
+    expect(porCiclo([{ competencia: "2026-01", valor: -40 }])[0].valor).toBe(-40);
+  });
+
+  it("⚠ o `Decimal` do Prisma entra pelo `toString` — sem este módulo importar o Prisma", () => {
+    // dublê com a mesma forma: objeto com `toString` próprio devolvendo a casa decimal.
+    const decimal = { toString: () => "1250.75" };
+    expect(porCiclo([{ competencia: "2026-01", valor: decimal }])[0].valor).toBe(1250.75);
+  });
+
   it("⚠ mês fora de 1..12 não é competência", () => {
     expect(mesesDaCompetencia("2026-13")).toBeNull();
     expect(mesesDaCompetencia("2026-00")).toBeNull();
     expect(mesesDaCompetencia("2026-7")).toBeNull();
+  });
+
+  it("⚠⚠ competência SÓ como string — `String([\"2026-05\"])` é `\"2026-05\"`", () => {
+    expect(mesesDaCompetencia(["2026-05"])).toBeNull();
+    expect(mesesDaCompetencia(null)).toBeNull();
+    expect(mesesDaCompetencia(202605)).toBeNull();
+  });
+
+  it("⚠ ciclo repetido no FIM não subconta os consecutivos", () => {
+    // `porCiclo` deduplica por Map, mas a função é exportada e o próximo consumidor pode não.
+    expect(ciclosConsecutivosNoFim([{ ciclo: 5 }, { ciclo: 6 }, { ciclo: 6 }])).toBe(2);
+    expect(ciclosConsecutivosNoFim([{ ciclo: 5 }, { ciclo: 5 }, { ciclo: 6 }])).toBe(2);
+  });
+
+  it("⚠⚠ periodicidade fora da lista fechada RECUSA — nunca cai em MENSAL em silêncio", () => {
+    // Era `MESES_DO_CICLO[p] || 1`: "SEMESTRAL" rodava com passo 1 e a evidência ecoava
+    // `periodicidade: "SEMESTRAL"` — a base afirmando uma periodicidade que não foi a usada.
+    expect(() => porCiclo([{ competencia: "2026-01", valor: 1 }], "SEMESTRAL")).toThrow(/SEMESTRAL/);
+    expect(() => lerSerie({ observacoes: [], cicloAtual: "2026-01", periodicidade: "SEMESTRAL" }))
+      .toThrow(/SEMESTRAL/);
   });
 
   it("⚠ a aritmética é de STRING — `Date` às 22h de Brasília daria o mês seguinte", () => {
@@ -240,14 +327,31 @@ describe("⚠⚠ o detector é PURO — nada do que ele devolve é gravado", () 
     // que não o usa, e a primeira versão do teste casou com a própria explicação. Varredura que
     // acusa o comentário que a justifica não prova nada.
     const codigo = FONTE.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(codigo).not.toMatch(/from\s+["'].*prisma/i);
-    expect(codigo).not.toMatch(/\.create\(|\.update\(|\.upsert\(|\$transaction/);
+
+    // ⚠⚠ A PROVA MAIS FORTE É A MAIS BARATA: **este arquivo não importa NADA.**
+    //
+    // A lista de proibições abaixo era a única prova, e agente de verificação mediu, em 27/08/2026,
+    // que ela é contornável de sete jeitos — inclusive por `import { prisma } from "…/db/X.js"`,
+    // cujo caminho não contém a palavra "prisma". Enumerar o proibido sempre perde um; exigir zero
+    // importações é fechado por construção, e é o estado real do arquivo hoje.
+    expect(codigo).not.toMatch(/^\s*import\s/m);
+    expect(codigo).not.toMatch(/\brequire\s*\(/);
+    expect(codigo).not.toMatch(/\bimport\s*\(/);
+    // ⚠ contraprova: a varredura reconhece uma importação quando ela existe de verdade.
+    expect('import { prisma } from "../db/ClientRepository.js";').toMatch(/^\s*import\s/m);
+
+    // ⚠ A lista de proibições fica como REFORÇO — ela pega o que se escreveria sem importar nada
+    // (um `globalThis.prisma`, um relógio). ⚠ `Many` entra: `\.update\(` NÃO casa `.updateMany(`.
+    expect(codigo).not.toMatch(/\.(create|update|upsert|delete)(Many)?\(|\$transaction|\$executeRaw|\$queryRaw/);
     // ⚠ o "agora" é INJETADO (`cicloAtual`): um relógio aqui faria o mesmo dado dar respostas
-    // diferentes em dias diferentes, e `baseDaMarcacao` deixaria de ser reproduzível.
-    expect(codigo).not.toMatch(/new Date\(\s*\)/);
-    expect(codigo).not.toMatch(/Date\.now\(/);
+    // diferentes em dias diferentes, e `baseDaObservacao` deixaria de ser reproduzível.
+    // ⚠ `Date()` SEM `new` também é relógio, e passava.
+    expect(codigo).not.toMatch(/\bnew\s+Date\s*\(\s*\)/);
+    expect(codigo).not.toMatch(/\bDate\.now\s*\(/);
+    expect(codigo).not.toMatch(/\bperformance\.now\s*\(|\bprocess\.hrtime\b|\bTemporal\.Now\b/);
     // ⚠ contraprova: a varredura reconhece o padrão quando ele existe de verdade
-    expect("const agora = new Date();").toMatch(/new Date\(\s*\)/);
+    expect("const agora = new Date();").toMatch(/\bnew\s+Date\s*\(\s*\)/);
+    expect("await prisma.x.updateMany({});").toMatch(/\.(create|update|upsert|delete)(Many)?\(/);
   });
 
   it("⚠ o vocabulário de periodicidade é o do projeto, não um segundo", () => {
@@ -255,10 +359,24 @@ describe("⚠⚠ o detector é PURO — nada do que ele devolve é gravado", () 
       path.join(__dirname, "..", "..", "..", "obrigacoes", "gerarOcorrencias.js"),
       "utf8",
     );
-    // amarração textual: `PERIODICIDADES` de lá tem de conter os três daqui
-    for (const p of Object.values(PERIODICIDADE)) {
-      expect(gerar).toContain(`"${p}"`);
-    }
+    // ⚠⚠ A AMARRAÇÃO É CONTRA O **ARRAY**, NUNCA CONTRA O TEXTO DO ARQUIVO.
+    //
+    // Ela era `expect(gerar).toContain('"MENSAL"')`. Agente de verificação executou o experimento em
+    // 27/08/2026: trocando `PERIODICIDADES` por `[]`, os três **continuavam passando** — porque as
+    // três palavras aparecem no JSDoc da linha 20 (`@param {"MENSAL"|"TRIMESTRAL"|"ANUAL"}`) e no
+    // corpo (`p !== "MENSAL"`). É exatamente o defeito consertado dez linhas acima, reintroduzido
+    // na direção oposta: ali o comentário ACUSAVA, aqui ele SUSTENTAVA uma amarração vazia.
+    const linha = /export const PERIODICIDADES\s*=\s*\[([^\]]*)\]/.exec(gerar);
+    expect(linha).not.toBeNull();
+    const deLa = linha[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+
+    // ⚠⚠ NOS DOIS SENTIDOS. Só um sentido não pega o caso real: alguém acrescenta `SEMESTRAL` ao
+    // vocabulário das OBRIGAÇÕES e este módulo continua sem ele, em silêncio — que é o lado por onde
+    // a divergência de fato começaria, porque aquele arquivo é o dono do vocabulário.
+    expect([...deLa].sort()).toEqual([...Object.values(PERIODICIDADE)].sort());
+
+    // ⚠ E cada um precisa ter um passo em meses — sem isso, `lerSerie` recusa em runtime.
+    for (const p of deLa) expect(MESES_DO_CICLO[p]).toBeGreaterThan(0);
   });
 
   it("⚠ o piso e a saída são os do plano", () => {
