@@ -594,3 +594,42 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
   dl dt { margin-top: 6px; }
   dl dd { text-align: left; }
 }
+
+/* ─── O FLUXO DE CAIXA DO PAINEL (27/08/2026) ────────────────────────────────────────────────────
+   ⚠⚠ A LEI DE COR: `--success` NÃO APARECE AQUI, em nenhuma procedência. Verde, nesta casa, quer
+   dizer *pago/concluído* — o pior desfecho possível para uma linha que ainda não aconteceu. Nem o
+   FATO é verde: uma guia gerada e em aberto não está paga.
+   ⚠ E a cor nunca é a única marca: o rótulo ("Já existe" / "Previsto") vai no TEXTO do chip. */
+.fluxo { display: grid; gap: var(--gap); }
+.fluxo-mes { display: grid; gap: 8px; }
+.fluxo-mes > h3 { margin: 0; font-size: 1rem; }
+.fluxo-distantes { display: grid; gap: 8px; border-top: 1px solid var(--border); padding-top: var(--gap); }
+.fluxo-distantes > .card-header > h3 { margin: 0; font-size: 1rem; }
+
+/* ⚠⚠ TRÊS COMPARTIMENTOS, e NÃO existe um quarto somando os dois primeiros. A ausência do número
+   único é o contrato (`docs/dre-fluxo-caixa.md`) — quem acrescentar "Saldo do mês" aqui recria
+   exatamente o que a API se recusa a entregar. */
+.fluxo-totais { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline; }
+.fluxo-totais-titulo { font-weight: 600; font-size: .85rem; }
+.fluxo-total { display: flex; flex-direction: column; gap: 1px; }
+.fluxo-total-rotulo { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.fluxo-total-valores { font-size: .82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fluxo-total[data-procedencia="FATO"] .fluxo-total-rotulo { color: var(--muted); }
+.fluxo-total[data-procedencia="PREVISAO"] .fluxo-total-rotulo,
+.fluxo-total[data-procedencia="DESCONHECIDO"] .fluxo-total-rotulo { color: var(--warning); }
+
+/* ⚠ O chip da procedência reusa `.chip`; só o mapa de cor é próprio. Valor fora deste mapa
+   renderiza SEM COR — o mesmo modo de falhar que `chipDaGuia` já nomeia, e que o teste da lei de
+   cor pega antes de chegar à tela. */
+.chip[data-procedencia="FATO"]         { background: var(--neutral-surface); color: var(--muted); }
+.chip[data-procedencia="PREVISAO"]     { background: var(--warning-surface); color: var(--warning); }
+.chip[data-procedencia="DESCONHECIDO"] { background: var(--warning-surface); color: var(--warning); }
+
+.table--fluxo-mes { min-width: 560px; }
+.table--fluxo-mes td > .chip { margin-left: 6px; vertical-align: middle; }
+/* ⚠ Estas quatro frases ficam no TEXTO, nunca num `title`: ele não aparece no teclado nem no toque,
+   e este portal é lido no celular. */
+.fluxo-origem, .fluxo-evidencia, .fluxo-motivo, .fluxo-confronto { display: block; font-size: .74rem; }
+.fluxo-origem, .fluxo-evidencia, .fluxo-motivo { color: var(--muted); }
+.fluxo-confronto { color: var(--warning); }
+.fluxo-vazio { margin: 0; font-size: .82rem; color: var(--muted); }

@@ -78,6 +78,25 @@ describe("⚠⚠ não existe `total`, nem saldo acumulado", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O CAMPO QUE APAGA O SELO DE DEMONSTRAÇÃO NO PORTAL DO CLIENTE.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ `demonstracao: false` é AFIRMADO pelo servidor", () => {
+  it("o payload diz, com todas as letras, que estes números são reais", async () => {
+    const r = await montar(clientDe({ guias: [guia()] }));
+    // ⚠⚠ O bloco do Painel do cliente lê `demonstracao !== false`: AUSENTE NÃO É `false`. Sem esta
+    // linha, o número verdadeiro continuaria saindo debaixo do selo "Dados de demonstração" —
+    // a tela chamando de fictício o dinheiro real da empresa.
+    expect(r.demonstracao).toBe(false);
+  });
+
+  it("⚠ e ele existe MESMO no fluxo vazio — é sobre a PROCEDÊNCIA, não sobre haver linha", async () => {
+    const r = await montar(clientDe({}));
+    expect(r.demonstracao).toBe(false);
+    expect(r.meses.every((m) => m.linhas.length === 0)).toBe(true);
+  });
+});
+
 describe("⚠⚠ o serviço é SÓ LEITURA", () => {
   it("nenhum método de escrita existe no client, e nada é chamado", async () => {
     const client = clientDe({ guias: [guia()], notas: [nota()], series: [serie()] });

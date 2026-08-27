@@ -12,7 +12,8 @@ import { exigirContaDeCliente } from "../accountGate";
 import { lerSessao, definirTokens, limparSessao } from "../sessionStore";
 import { consultarCnpjNaBrasilApi } from "./brasilApi";
 import { competenciaPadrao } from "../../lib/format";
-import { fluxoDeCaixaDeDemonstracao, dreDeDemonstracao } from "../../features/painel/lib/dadosDeDemonstracao";
+// ⚠ Só o DRE ainda é demonstração — o fluxo de caixa passou a vir do servidor em 27/08/2026.
+import { dreDeDemonstracao } from "../../features/painel/lib/dadosDeDemonstracao";
 
 const BASE = String(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 
@@ -324,25 +325,45 @@ export function createRealApi() {
     },
 
     /**
-     * ⚠⚠ ESTAS DUAS NÃO CHAMAM O SERVIDOR, E ISSO É DELIBERADO — não é código esquecido.
+     * ⚠⚠ O FLUXO DE CAIXA — DEIXOU DE SER DEMONSTRAÇÃO EM 27/08/2026.
      *
-     * Não existe rota de fluxo de caixa nem de DRE. ⚠ Não confundir com `getFluxo` acima: aquela é
-     * a lista de guias liberadas EM ABERTO (só saídas, sem entradas, sem saldo) — o próprio backend
-     * a descreve como "fluxo de caixa futuro a partir das obrigações fiscais". Não é a mesma coisa,
-     * e somar as duas seria a tela discordando de si mesma.
-     *
-     * Elas existem AQUI, e não só no mock, por um motivo mecânico: `createApiClient` monta o
-     * wrapper iterando `Object.keys(real)` — função ausente daqui **some do objeto** no modo
-     * `real_with_mock_fallback`, e a tela quebra com `is not a function`.
-     *
-     * ⚠ O `demonstracao: true` que elas devolvem é o que acende o selo na tela. Quando a rota
+     * ⚠⚠ ESTE BLOCO DIZIA "ESTAS DUAS NÃO CHAMAM O SERVIDOR". Ele previa o dia: *"quando a rota
      * existir, troque o corpo por `pedir(...)` e o backend passa a responder `demonstracao: false`
-     * — o selo some sozinho, sem ninguém precisar lembrar.
+     * — o selo some sozinho"*. É exatamente o que aconteceu, e o selo some **porque o servidor
+     * afirma**, não porque este arquivo decidiu.
+     *
+     * ⚠⚠ AS DUAS PORTAS SERVEM O MESMO PAYLOAD: o corpo é compartilhado com o do contador
+     * (`routes/fluxoDeCaixaHttp.js`). Duas montagens divergiriam na primeira correção, e aí as duas
+     * telas afirmariam coisas diferentes sobre o mesmo dinheiro — com o cliente do lado que ninguém
+     * do escritório testa.
+     *
+     * ⚠ NÃO CONFUNDIR COM `getFluxo` ACIMA: aquela é a lista de guias liberadas EM ABERTO, e ela
+     * **fica como está** — virou um CONTRIBUINTE deste fluxo, não uma segunda definição dele.
+     * Somar as duas seria a tela discordando de si mesma.
+     *
+     * ⚠ A FORMA MUDOU JUNTO: era um mês DIA A DIA, com saldo acumulado; hoje são 12 MESES, com
+     * `fato` e `previsao` separados e **sem `total`**. Não existe saldo inicial neste sistema, logo
+     * não existe saldo a acumular — e um número único a doze meses é o que alguém imprime e leva ao
+     * banco (`docs/dre-fluxo-caixa.md`).
+     *
+     * ⚠ `cicloAtual` é o mês de PARTIDA, e ele viaja explícito. Ciclo malformado é RECUSADO pelo
+     * servidor (400 `ciclo_invalido`) em vez de cair no mês corrente em silêncio.
      */
     async getFluxoCaixa(companyId, { competencia } = {}) {
-      return fluxoDeCaixaDeDemonstracao(companyId, competencia || competenciaPadrao());
+      const ciclo = competencia || competenciaPadrao();
+      return pedir(
+        `/client/companies/${encodeURIComponent(companyId)}/fluxo-de-caixa${qs({ cicloAtual: ciclo })}`
+      );
     },
 
+    /**
+     * ⚠⚠ O DRE CONTINUA SENDO DEMONSTRAÇÃO, e o motivo não é esquecimento: **não existe rota de
+     * DRE**. Ele devolve `demonstracao: true`, que é o que mantém o selo aceso na visão dele.
+     *
+     * ⚠ Ela existe AQUI, e não só no mock, por um motivo mecânico: `createApiClient` monta o
+     * wrapper iterando `Object.keys(real)` — função ausente daqui **some do objeto** no modo
+     * `real_with_mock_fallback`, e a tela quebra com `is not a function`.
+     */
     async getDre(companyId, { competencia } = {}) {
       return dreDeDemonstracao(companyId, competencia || competenciaPadrao());
     },

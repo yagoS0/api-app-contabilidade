@@ -328,6 +328,40 @@ painéis que os acionavam saíram da tela juntos, quando a aba enxugou.
 `CompetenciaStateMachine.reabrirCompetencia` no backend, que exige `reason` e tem teste próprio. A
 porta some da tela; o ato continua existindo. Por isso ficam anotados, não apagados.
 
+## ⚠⚠ A ABA FLUXO DE CAIXA (`features/fluxo/`) — 27/08/2026
+
+Grupo **Contabilidade**, logo depois da Conferência. `lib/leituraDoFluxo.js` (regra pura, 40 testes)
++ `pages/renderFluxoDeCaixaTab.jsx` (só ligação). O payload vem de
+`GET /firm/companies/:id/fluxo-de-caixa`, e é **o MESMO que o portal do cliente lê** — o corpo é
+compartilhado no servidor (`routes/fluxoDeCaixaHttp.js`).
+
+- ⚠⚠ **VERDE NÃO APARECE AQUI, em nenhuma procedência.** Verde, nesta casa, quer dizer
+  *pago/concluído* — o pior desfecho possível para uma linha que ainda não aconteceu. ⚠ **Nem o
+  FATO é verde**: uma guia gerada e em aberto NÃO está paga. `TOKEN_PROIBIDO = "--state-ok"`, com
+  teste varrendo `Object.values(PROCEDENCIA)`. Experimento: pondo `--state-ok` na PREVISAO, **2
+  vermelhos**.
+- ⚠⚠ **A palavra "previsto" vai no TEXTO**, não só na cor — impressão em preto e branco e daltonismo
+  tiram a cor.
+- ⚠⚠ **NÃO EXISTE `total`**, nem por mês nem no bloco recolhido: `totaisParaTela` e `totalDoBloco`
+  devolvem `fato`/`previsao`/`desconhecido` separados, e há teste exigindo que a chave `total` não
+  exista. Um número único de doze meses é o que alguém imprime e leva ao banco. ⚠ Sem saldo inicial
+  não há saldo acumulado — a ausência é coerente, não uma falta.
+- ⚠⚠ **`dinheiro(null)` é `"—"`, nunca `"R$ 0,00"`** — mas **zero DECLARADO continua sendo um
+  valor**. É a família do `Number(null) === 0` que já custou um "0%" na tela do cliente.
+- ⚠⚠ **O dia ausente não vira dia inventado**: a projeção diz *"no mês"* e o MOTIVO vem do servidor,
+  com a frase pronta. A tela não escreve a sua — as duas divergiriam na primeira correção.
+- ⚠ **A TELA ABRE COM 3 MESES** (`MESES_ABERTOS_POR_PADRAO`), os outros nove recolhidos com o total
+  do bloco à vista. O contrato entrega os 12; a leitura começa onde a evidência está.
+- ⚠ **A evidência de cada linha vai no TEXTO** — a faixa (*"entre R$ 120,00 e R$ 140,00"*), o `n` e
+  o confronto declarado × observado. `title` não aparece no teclado nem no toque.
+- ⚠⚠ **CADA RESSALVA TEM TÍTULO PRÓPRIO, e o título sai da REGRA.** Escrito no componente ele era o
+  MESMO nas três caixas (*"Sobre este fluxo"*) — três avisos âmbar empilhados e indistinguíveis, que
+  é exatamente o defeito que o `titulo` obrigatório do `Aviso` existe para impedir. **Achado no
+  navegador, não no teste**; hoje há teste exigindo seis títulos distintos e nenhum vazio.
+- ⚠ **O mock exercita todos os ramos, e a EMPRESA ZERADA tem um fluxo próprio** — `semImposto` e
+  `recorrenciaIndisponivel` são mutuamente exclusivos, no fluxo cheio, com o imposto projetado e com
+  as séries. Mock de uma forma só os deixaria inalcançáveis offline.
+
 ## ⚠ A TABELA DO ANEXO (apuracao-v2) — o que ela responde, e o que NÃO se recria
 
 `features/apuracao-v2/components/TabelaAnexoReferencia.jsx` + a regra pura

@@ -442,10 +442,16 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   **807 testes / 44 suítes**.
   - ⚠ **A navegação é BARRA LATERAL DE ÍCONES** desde 21/08/2026 (SVG inline, `aria-hidden`, com o
     rótulo em `.sr-only` — o ícone nunca é a única marca do destino).
-  - ⚠⚠ **A tela padrão é o PAINEL: fluxo de caixa ⇄ DRE, MOCKADOS.** Não há backend para nenhum dos
-    dois e **não há origem para ENTRADAS** (`GET /client/.../fluxo` é a lista de guias liberadas em
-    aberto — só saídas; OFX e transações são stubs 501). O selo de demonstração é dirigido pelo
-    DADO (`demonstracao !== false`), **nunca por `api.mode`**, que some no modo real.
+  - ⚠⚠ **A tela padrão é o PAINEL: fluxo de caixa ⇄ DRE.** ⚠⚠ **ESTA LINHA DIZIA "MOCKADOS" ATÉ
+    27/08/2026, e metade ficou falsa: o FLUXO DE CAIXA virou real** (Fase E) — `GET /client/.../fluxo-de-caixa`,
+    o MESMO payload que o contador lê, com 12 meses e `fato`/`previsao` separados. Ele responde
+    `demonstracao: false` e **o selo some junto**. ⚠ O **DRE continua ficção**, com o selo, porque
+    não existe rota de DRE. ⚠ *"Não há origem para ENTRADAS"* também caiu: a entrada é a **nota
+    emitida + prazo de recebimento**, e ela é PREVISÃO documental, nunca FATO — a nota prova que foi
+    faturado, não que foi recebido. ⚠ `GET /client/.../fluxo` (guias liberadas em aberto) **fica
+    como está**: virou um CONTRIBUINTE do fluxo, não uma segunda definição dele; OFX e transações
+    seguem stubs 501. O selo continua dirigido pelo DADO (`demonstracao !== false`), **nunca por
+    `api.mode`**, que some no modo real.
   - ⚠⚠ **A Situação fiscal é SÓ LEITURA e o piso é `CLIENT_ADMIN`** — o relatório traz o quadro
     societário, e a consulta paga (limite AV02 **por contratante**) fica só com o contador.
   ⚠ **Ler `apps/portal-cliente-web/CLAUDE.md` antes de mexer** — quase toda decisão veio de defeito

@@ -405,6 +405,19 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, client = 
   const { meses, foraDoHorizonte } = montarMeses({ linhas: semDuplicata, cicloAtual: ciclo });
 
   return {
+    /**
+     * ⚠⚠ ESTE CAMPO É O QUE APAGA O SELO DE DEMONSTRAÇÃO NO PORTAL DO CLIENTE, e ele precisa ser
+     * uma AFIRMAÇÃO do servidor.
+     *
+     * O bloco do Painel lê `demonstracao !== false` (`features/painel/BlocoDeDemonstracao.jsx`):
+     * ausente NÃO é `false`. A escolha é deliberada — com `=== true`, uma resposta que simplesmente
+     * não trouxesse o campo (coluna fora de um `select`, backend novo que esqueceu) apresentaria
+     * ficção como fato, em silêncio. Com `!== false`, o modo de falhar é "selo a mais".
+     *
+     * ⚠ Logo: quem diz que estes números são reais é ESTA LINHA, no servidor. O front não pode
+     * fabricá-la — fabricada, ela seria a tela afirmando sobre si mesma.
+     */
+    demonstracao: false,
     cicloAtual: ciclo,
     horizonte: HORIZONTE_MESES,
     meses,

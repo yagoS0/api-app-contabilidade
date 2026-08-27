@@ -175,7 +175,60 @@ continuam sendo `<a href="#/…">` (a seção acima vale inteira); o que mudou �
   `min-content` dos links e a **página inteira passa a rolar para o lado em 375px**, com o
   `.table-wrap` deixando de conter a tabela. É o comentário gêmeo do que a `.topbar` já carrega.
 
-## ⚠⚠ O PAINEL — FLUXO DE CAIXA ⇄ DRE, MOCKADOS (21/08/2026)
+## ⚠⚠ O PAINEL — O FLUXO DE CAIXA VIROU REAL EM 27/08/2026; O DRE CONTINUA FICÇÃO
+
+⚠⚠ **AS DUAS SEÇÕES ABAIXO DESCREVEM O ESTADO ANTERIOR, E FICAM AQUI COM A DATA.** Elas dizem
+*"MOCKADOS"* e *"o fluxo é DIÁRIO"*, e as duas coisas deixaram de ser verdade — este projeto já
+pagou caro por bloqueio anotado que envelheceu calado.
+
+**O que mudou, e o que NÃO mudou:**
+
+| | antes | agora |
+|---|---|---|
+| fluxo de caixa | ficção diária, gerada no navegador | **`GET /client/companies/:id/fluxo-de-caixa`**, o MESMO payload que o contador lê |
+| forma | 1 mês, dia a dia, com **saldo acumulado** | **12 meses**, `fato` e `previsao` separados, **sem `total` e sem saldo** |
+| selo | sempre aceso | **some** — o servidor responde `demonstracao: false` |
+| DRE | ficção | **continua ficção**, com o selo, porque **não existe rota de DRE** |
+
+- ⚠⚠ **O SELO SOME PORQUE O SERVIDOR AFIRMA, e é exatamente o que o `realApi` previa por escrito:**
+  *"quando a rota existir, troque o corpo por `pedir(...)` e o backend passa a responder
+  `demonstracao: false` — o selo some sozinho"*. A regra `demonstracao !== false` **não mudou** (ver
+  a seção abaixo, que continua valendo inteira): AUSENTE NÃO É `false`, e o campo é uma linha do
+  `FluxoDeCaixaService`, com teste próprio na api. ⚠ A moldura tracejada (`.demonstracao`) saiu
+  junto do selo: mantê-la diria "isto é maquete" por desenho depois de o aviso sumir.
+- ⚠⚠ **A FORMA DIÁRIA NÃO PODIA SOBREVIVER, e não é gosto:** as projeções **não têm dia** (o prazo
+  de recebimento é contado em meses, a recorrência diz o ciclo) e **não existe saldo acumulado**
+  (sem saldo inicial não há o que acumular). A coluna "Saldo" afirmava as duas coisas.
+- ⚠ **`PainelDoDia.jsx` e `lib/dadosDeDemonstracao.diasDoMes` ficaram SEM CONSUMIDOR.** Não foram
+  apagados — apagar componente é decisão à parte, com precedente escrito neste projeto
+  (`DefisNaoDevida.jsx`). `lib/__tests__/fluxoDiario.test.js` continua verde sobre a função pura.
+  ⚠ `__tests__/diaDoFluxo.ligacao.test.jsx` **foi removido** e substituído por
+  `__tests__/fluxoNoPainel.ligacao.test.jsx`, que carrega as invariantes que sobreviveram — entre
+  elas a de que **este portal não escreve contabilidade** (nenhum `+`, nenhum `⋮`).
+- ⚠⚠ **A LEI DE COR MORA EM `features/painel/lib/leituraDoFluxo.js`**, com teste próprio, e é
+  ESPELHO da do contador (a paleta é outra: o verde proibido aqui é `--success`, lá é `--state-ok`).
+  **PREVISÃO nunca é verde**, nem o FATO — uma guia gerada e em aberto não está paga —, e a palavra
+  *"Previsto"* vai no **TEXTO** do chip, não só na cor. Experimento executado: pondo a classe `ok`
+  na previsão, a suíte da regra fica **2 vermelhos**.
+- ⚠⚠ **NÃO EXISTE `total`, nem no mês nem no bloco recolhido.** A tela abre com **3 meses** e
+  recolhe os outros nove, com o total do bloco à vista — e ele também é POR PROCEDÊNCIA.
+- ⚠ **A ressalva tem TÍTULO PRÓPRIO, e nenhum se repete** (`ressalvasDoFluxo`). Isto é conserto de
+  um defeito achado no navegador no portal do contador no mesmo dia: três caixas de aviso empilhadas
+  dizendo *"Sobre este fluxo"*, indistinguíveis — o defeito que o `titulo` obrigatório existe para
+  impedir.
+- ⚠⚠ **DOIS NÚMEROS SOBRE GUIA VENCIDA CONVIVEM NA MESMA PÁGINA, e o dono precisa saber:** o card
+  "A vencer" sai de `getFluxo` (a lista de guias liberadas em aberto) e compara com **HOJE**; a
+  ressalva "N guias já venceram" sai do fluxo e compara com o **MÊS**. Em produção as duas varrem a
+  MESMA população, então elas concordam — **exceto** para a guia que vence mais adiante no mês
+  corrente e cujo dia já passou. Não é defeito de nenhum dos dois: são perguntas diferentes.
+  ⚠ **Offline eles divergem sempre**, porque o mock do fluxo não é derivado da fixture de guias — o
+  motivo (ramos que se perderiam) está escrito em `api/mock/fluxoDeCaixaDoMock.js`.
+- ⚠ **`GET /client/.../fluxo` FICA COMO ESTÁ** — ela virou um CONTRIBUINTE deste fluxo, não uma
+  segunda definição dele. Somar as duas seria a tela discordando de si mesma.
+
+---
+
+## ⚠⚠ O PAINEL — FLUXO DE CAIXA ⇄ DRE, MOCKADOS (21/08/2026) — ⚠ SUPERADO EM 27/08 PARA O FLUXO
 
 > Dono: *"por padrão o portal vai exibir um fluxo de caixa, mockado por enquanto pois não temos back
 > end, junto disso teremos de alterar para um DRE, também mockada por enquanto"*.
@@ -209,7 +262,13 @@ e cairiam **por motivo certo** se o painel os perdesse.
 - ⚠ **Fluxo ⇄ DRE são VISÕES, não rotas** — `<button>`, estado local. Inventar `#/dre` daria um hash
   que o `useRota` recusa e devolve ao padrão: o "filtro fantasma" dentro da própria tela.
 
-### ⚠⚠ O FLUXO É DIÁRIO, E O DIA ABRE (23/08/2026)
+### ⚠⚠ O FLUXO É DIÁRIO, E O DIA ABRE (23/08/2026) — ⚠⚠ SUPERADO EM 27/08/2026
+
+⚠⚠ **NADA DESTA SUBSEÇÃO DESCREVE A TELA DE HOJE.** O fluxo passou a ser MENSAL e REAL (ver o topo
+da seção do Painel). Ela fica porque três decisões daqui continuam valendo em outros lugares do app:
+a **primeira linha clicável** e o argumento sobre `role="button"` em `<tr>`; a regra de que o selo se
+repete dentro de um diálogo que COBRE o bloco; e a de que **este portal não escreve contabilidade**
+(nenhum `+`, nenhum `⋮`) — essa última migrou para `fluxoNoPainel.ligacao.test.jsx`.
 
 > Dono, com dois prints de um app de finanças na frente: *"mostrando os dias do mês, com ação para
 > abrir o dia e ver quais foram as despesas daquele dia específico"*.
@@ -1305,8 +1364,10 @@ de outra.
 
 ## TESTES
 
-`npm test -w @contabilidade/portal-cliente-web` → **968 testes, 52 suítes, todas verdes** (medido em
-24/08/2026, depois do `ciclo` no contrato; eram 947/51 no meio da rodada da auditoria, eram 894/48 em 23/08 com a marca da topbar, 814/45 depois
+`npm test -w @contabilidade/portal-cliente-web` → **1.132 testes, 58 suítes, todas verdes** (medido
+em 27/08/2026, depois do fluxo de caixa real; ⚠ nesta rodada uma suíte foi **removida** —
+`diaDoFluxo.ligacao.test.jsx`, do painel do dia, que deixou de existir — e duas nasceram no lugar;
+eram 968/52 em 24/08 depois do `ciclo` no contrato, eram 947/51 no meio da rodada da auditoria, eram 894/48 em 23/08 com a marca da topbar, 814/45 depois
 da marca, 807/44 depois da situação fiscal, 683/38 em 20/08, e 557/32 antes do lote por planilha). Não existiam até 18/08 (`d5a91490` subiu os primeiros 101).
 **0 suíte falhando é o estado esperado.**
 
@@ -1347,6 +1408,7 @@ pacote comum; a duplicação é conhecida e a obrigação de sincronizar é sua:
 | `lote/lib/estadoDaLinhaDoLote.js` (`ESTADO`) | `apps/api/src/application/nfse/lote/classificarLinhaLote.js` (**autoridade**) |
 | `lib/servicosNacionais/` | tabela gerada; `servicosNacionais.data.js` sai de `apps/api/scripts/gerar-lista-servico-nacional.mjs`, que **escreve nos dois portais** — **não editar à mão** |
 | ~~`lib/municipios/` (o dado)~~ | ⚠ **DEIXOU DE SER ESPELHO EM 20/08/2026**: a tabela do IBGE virou arquivo único em `@contabilidade/shared/municipios-ibge`. A REGRA (`municipioIbge.js`) continua uma por portal, de propósito — a do escritório carrega textos de cadastro que não são do cliente |
+| `painel/lib/leituraDoFluxo.js` | `apps/web/src/features/fluxo/lib/leituraDoFluxo.js` — ⚠ as duas telas leem o MESMO payload; a REGRA é uma por app porque as PALETAS divergem (o verde proibido aqui é `--success`, lá é `--state-ok`). ⚠ Divergem também o dinheiro (aqui sai por `lib/format.brl`, que já tem a regra de "ausência é traço" deste app) e o TEXTO, que é o de quem RECEBE — nada de "procedência", "competência" ou "mediana" na tela do cliente |
 | `lib/roles.js` | `apps/api/.../emissaoClienteAutorizacao.js` + `portal-cliente-mobile/src/roles.ts` |
 | `lib/cliqueDeLink.js` | `apps/web/src/components/ui/cliqueDeLink.js` (quem assume o clique numa aba-link) |
 | `guias/lib/rotuloGuia.js` | `apps/web/src/features/guides/lib/rotuloGuia.js` (`rotuloTipoGuia`) — ⚠ **amarrado por teste**: o daqui importa a função de lá e exige o mesmo veredito em 12 casos. ⚠ O ramo do PARCELAMENTO **não** é espelho (lá o rótulo é montado no front; aqui o backend manda `parcelamentoLabel` pronto); o que fica travado é a PRECEDÊNCIA |

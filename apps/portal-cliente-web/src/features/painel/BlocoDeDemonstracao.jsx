@@ -1,4 +1,11 @@
-// O BLOCO DE DEMONSTRAÇÃO — fluxo de caixa ⇄ DRE.
+// O BLOCO DO PAINEL — fluxo de caixa ⇄ DRE.
+//
+// ⚠⚠ O NOME DO ARQUIVO FICOU MEIO FALSO EM 27/08/2026, E ISSO ESTÁ AQUI DE PROPÓSITO: **o fluxo de
+// caixa deixou de ser demonstração**. Ele vem do servidor (`GET /client/.../fluxo-de-caixa`, o MESMO
+// payload que o contador lê) e responde `demonstracao: false`, então a visão de fluxo **não tem
+// selo**. O DRE continua ficção — não existe rota de DRE —, e é ele que mantém o selo aceso.
+// ⚠ Renomear o arquivo é decisão à parte: a chave de navegação, os testes e o `data-demonstracao`
+// vivem em volta dele, e meia renomeação é o "filtro fantasma" que este app já pagou duas vezes.
 //
 // ⚠⚠ O SELO É DIRIGIDO PELO DADO, NÃO PELO AMBIENTE, e a leitura é `demonstracao !== false`.
 //
@@ -13,13 +20,32 @@
 // ⚠ FLUXO ⇄ DRE SÃO VISÕES, NÃO ROTAS — `<button>`, jamais `<a href>`. Não há URL para uma visão, e
 // inventar `#/dre` daria um hash que o `useRota` recusa e devolve para o padrão: o "filtro
 // fantasma" dentro da própria tela.
+//
+// ⚠⚠ A REGRA DE LEITURA DO FLUXO NÃO MORA AQUI — ela está em `lib/leituraDoFluxo.js`, com teste
+// próprio, e é ESPELHO da do portal do contador. Aqui só há LIGAÇÃO.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "../../api";
 import { AlertaErro, Carregando } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
 import { brl } from "../../lib/format";
-import { PainelDoDia } from "./PainelDoDia";
+import {
+  DIRECAO,
+  FRASE_DA_PREVISAO,
+  FRASE_SEM_TOTAL,
+  PROCEDENCIA,
+  confrontoDaLinha,
+  evidenciaDaLinha,
+  leituraDaProcedencia,
+  mesTemAlgo,
+  quandoDaLinha,
+  ressalvasDoFluxo,
+  rotuloDaFonte,
+  rotuloDoMes,
+  separarMeses,
+  totaisParaTela,
+  totalDoBloco,
+} from "./lib/leituraDoFluxo";
 
 const VISOES = [
   { chave: "fluxo", rotulo: "Fluxo de caixa" },
@@ -41,105 +67,168 @@ function Selo() {
 }
 
 /**
- * `"2026-08-18"` → `18`. Por fatia de string, nunca `new Date`: aqui o dado é data CIVIL.
- */
-const numeroDoDia = (dia) => Number(String(dia).slice(8, 10));
-
-/**
- * O dia de HOJE em `"YYYY-MM-DD"`, no relógio de quem lê.
+ * ⚠⚠ OS TRÊS COMPARTIMENTOS, SEPARADOS — e NÃO existe uma quarta caixa somando os dois primeiros.
  *
- * ⚠ Sem `toISOString()`: ele converte para UTC, e às 22h de Brasília (UTC-3) devolveria a data de
- * AMANHÃ — a mesma armadilha que `features/emitir/EmitirNotaPage.jsx` já registra.
+ * A ausência do número único é o contrato inteiro. Quem acrescentar "Saldo do mês" aqui recria
+ * exatamente o número que a API se recusa a entregar.
  */
-function diaDeHoje() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function TotaisDoMes({ totais, titulo }) {
+  const t = totaisParaTela(totais);
+  const bloco = (procedencia, valores) => {
+    const r = leituraDaProcedencia(procedencia);
+    return (
+      <div className="fluxo-total" data-procedencia={procedencia}>
+        <span className="fluxo-total-rotulo">{r.rotulo}</span>
+        <span className="fluxo-total-valores">
+          entra <strong>{brl(valores.entrada)}</strong> · sai <strong>{brl(valores.saida)}</strong>
+        </span>
+      </div>
+    );
+  };
+  return (
+    <div className="fluxo-totais">
+      {titulo ? <span className="fluxo-totais-titulo">{titulo}</span> : null}
+      {bloco(PROCEDENCIA.FATO, t.fato)}
+      {bloco(PROCEDENCIA.PREVISAO, t.previsao)}
+      {t.desconhecido.quantas > 0 ? (
+        <div className="fluxo-total" data-procedencia={PROCEDENCIA.DESCONHECIDO}>
+          <span className="fluxo-total-rotulo">
+            {leituraDaProcedencia(PROCEDENCIA.DESCONHECIDO).rotulo}
+          </span>
+          {/* ⚠⚠ CONTAGEM, nunca valor: o que não tem mês não vira zero e não vira previsão. */}
+          <span className="fluxo-total-valores">
+            {t.desconhecido.quantas} linha(s) sem valor somável
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
-function Fluxo({ dados, aoAbrirDia }) {
-  const hoje = diaDeHoje();
+function LinhaDoMes({ linha }) {
+  const quando = quandoDaLinha(linha);
+  const evidencia = evidenciaDaLinha(linha);
+  const confronto = confrontoDaLinha(linha);
+  const entra = linha?.direcao === DIRECAO.ENTRADA;
+  const r = leituraDaProcedencia(linha?.procedencia);
+  return (
+    <tr>
+      <td>
+        {quando.texto}
+        {/* ⚠⚠ O dia ausente diz POR QUÊ — e a frase vem do SERVIDOR, não desta tela. */}
+        {quando.motivo ? <span className="fluxo-motivo">{quando.motivo}</span> : null}
+      </td>
+      <td>
+        <strong>{linha?.rotulo || "—"}</strong>
+        {/* ⚠⚠ A PALAVRA "previsto" VAI NO TEXTO, não só na cor. */}
+        <span className="chip" data-procedencia={linha?.procedencia}>{r.rotulo}</span>
+        <span className="fluxo-origem">{rotuloDaFonte(linha?.fonte)}</span>
+        {/* ⚠⚠ A EVIDÊNCIA vai no TEXTO, nunca num `title` — ele não aparece no toque. */}
+        {evidencia ? <span className="fluxo-evidencia">{evidencia}</span> : null}
+        {confronto ? <span className="fluxo-confronto">{confronto}</span> : null}
+      </td>
+      <td className="num">{entra ? brl(linha?.valor) : ""}</td>
+      <td className="num">{entra ? "" : brl(linha?.valor)}</td>
+    </tr>
+  );
+}
+
+function MesDoFluxo({ mes }) {
+  return (
+    <section className="fluxo-mes">
+      <h3>{rotuloDoMes(mes?.competencia)}</h3>
+      <TotaisDoMes totais={mes?.totais} />
+      {mesTemAlgo(mes) ? (
+        /* ⚠ O `overflow-x` do `.table-wrap` é o que impede a PÁGINA de rolar para o lado em 375px. */
+        <div className="table-wrap">
+          <table className="table table--fluxo-mes">
+            <thead>
+              <tr>
+                <th scope="col">Quando</th>
+                <th scope="col">O quê</th>
+                <th scope="col" className="num">Entra</th>
+                <th scope="col" className="num">Sai</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mes.linhas.map((l, i) => (
+                <LinhaDoMes key={`${l?.fonte || "?"}-${l?.referencia?.id || i}`} linha={l} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        // ⚠ Mês vazio DIZ que está vazio. Sumir faria "não há movimento" e "não carregou" ficarem
+        // iguais — e o primeiro é uma afirmação sobre o dinheiro da empresa.
+        <p className="fluxo-vazio">Nada previsto nem lançado para este mês.</p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * ⚠⚠ O FLUXO — 12 MESES, e ele NÃO é mais diário.
+ *
+ * ⚠ A forma diária (dia · entradas · saídas · SALDO, com o painel do dia) morreu junto com a
+ * demonstração, e não por gosto: **as projeções não têm dia** (o prazo de recebimento é contado em
+ * meses, a recorrência diz o ciclo), e **não existe saldo acumulado** — sem saldo inicial não há o
+ * que acumular. Uma tabela com coluna de saldo afirmaria as duas coisas.
+ * ⚠ `PainelDoDia.jsx` e `lib/dadosDeDemonstracao.diasDoMes` ficaram SEM CONSUMIDOR por causa disso.
+ * Não foram apagados — apagar componente é decisão à parte, e há precedente escrito neste projeto.
+ */
+function Fluxo({ dados }) {
+  // ⚠⚠ OS MESES DISTANTES NASCEM RECOLHIDOS. Aqui isso pesa mais que no portal do contador: esta
+  // tela é lida no celular, e doze meses abertos empurrariam tudo o mais para fora da dobra.
+  const [distantesAbertos, setDistantesAbertos] = useState(false);
+  const { proximos, distantes } = separarMeses(dados?.meses);
+  const ressalvas = ressalvasDoFluxo(dados);
 
   return (
-    /* ⚠ A TABELA MOSTRA O MÊS INTEIRO — sem rolagem própria, por pedido do dono (23/08/2026):
-       *"espaço abaixo o suficiente para que não precise rolar os dias"*.
+    <div className="fluxo">
+      {/* ⚠⚠ AS DUAS FRASES SÃO OBRIGATÓRIAS: uma diz que a previsão não aconteceu, a outra diz por
+          que não existe um número único. Sem elas, "previsto" se lê como compromisso e a ausência
+          do total se lê como falta. */}
+      <p className="meta meta--bloco">{FRASE_DA_PREVISAO}</p>
+      <p className="meta meta--bloco">{FRASE_SEM_TOTAL}</p>
 
-       ⚠ Ela TEVE rolagem interna (`.table-wrap--alto`, com `thead`/`tfoot` grudados) enquanto este
-       bloco era o PRIMEIRO da página — ali os 31 dias empurravam os três cards e "Próximos
-       vencimentos" para ~1.200px fora da dobra. O bloco desceu para o fim (ver `PainelPage`), o
-       motivo caiu, e a rolagem saiu junto. ⚠ Se um dia ele voltar a subir, o problema volta com
-       ele: a rolagem era conserto de ORDEM, não de tabela.
+      {/* ⚠⚠ AS RESSALVAS VÊM ANTES DOS MESES: a guia vencida é a linha mais urgente do fluxo e não
+          mora em mês nenhum — embaixo das tabelas ela ficaria abaixo da dobra. */}
+      {ressalvas.map((r, i) => (
+        <p
+          key={`${r.titulo || ""}-${i}`}
+          className={r.tom === "aviso" ? "alerta alerta-aviso" : "alerta alerta-info"}
+          role="status"
+        >
+          <strong>{r.titulo}</strong> {r.texto}
+        </p>
+      ))}
 
-       ⚠ O `overflow-x` do `.table-wrap` FICA: em 375px a tabela (mínimo de 480px) tem de rolar
-       DENTRO dela, senão a página inteira rola para o lado. */
-    <div className="table-wrap">
-      <table className="table table--fluxo">
-        <thead>
-          <tr>
-            <th scope="col">Dia</th>
-            <th scope="col" className="num">Entradas</th>
-            <th scope="col" className="num">Saídas</th>
-            <th scope="col" className="num">Saldo</th>
-          </tr>
-        </thead>
-        <tbody>
-          {dados.dias.map((d) => {
-            const vazio = d.entradas === 0 && d.saidas === 0;
-            const numero = numeroDoDia(d.dia);
-            return (
-              /* ⚠⚠ LINHA CLICÁVEL — a PRIMEIRA deste app, e a decisão escrita contra ela é sobre
-                 OUTRA tela. O `CLAUDE.md` diz da lista de NOTAS: *"ela teria um destino só — a tela
-                 que pratica ato fiscal — e clique acidental ali é caro"*. Aqui o destino é um painel
-                 de LEITURA: o argumento não transfere, e isto fica escrito para o próximo não achar
-                 que a regra foi ignorada.
+      {proximos.map((m) => <MesDoFluxo key={m.competencia} mes={m} />)}
 
-                 ⚠ A linha e o botão chamam o MESMO `aoAbrirDia`, e NÃO há `stopPropagation`: o
-                 handler é idempotente de propósito — abrir o dia 18 duas vezes é abrir o dia 18.
-                 ⚠ E `role="button"` na `<tr>` seria o caminho errado: tiraria a linha da semântica
-                 de tabela para quem usa leitor de tela. Quem carrega o papel de controle é o
-                 `<button>` da célula do dia. */
-              <tr
-                key={d.dia}
-                onClick={() => aoAbrirDia(d.dia)}
-                data-vazio={vazio ? "sim" : undefined}
-                data-hoje={d.dia === hoje ? "sim" : undefined}
-              >
-                <th scope="row">
-                  <button
-                    type="button"
-                    className="dia-botao"
-                    onClick={() => aoAbrirDia(d.dia)}
-                    aria-label={`Abrir o dia ${numero}`}
-                  >
-                    {numero}
-                  </button>
-                </th>
-                <td className="num">{brl(d.entradas)}</td>
-                <td className="num">{brl(d.saidas)}</td>
-                <td className="num" data-negativo={d.saldo < 0 ? "sim" : undefined}>
-                  {brl(d.saldo)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-        <tfoot>
-          <tr>
-            <th scope="row">No mês</th>
-            <td className="num">{brl(dados.totais.entradas)}</td>
-            <td className="num">{brl(dados.totais.saidas)}</td>
-            {/* ⚠ ESTA CÉLULA NÃO É A SOMA DA COLUNA — somar saldo acumulado não significa nada. É o
-                saldo no ÚLTIMO dia do mês, e o `title` diz isso para quem alinhar a coluna com o
-                olho e esperar um total. */}
-            <td
-              className="num"
-              title="Saldo no fim do mês"
-              data-negativo={dados.totais.saldoFinal < 0 ? "sim" : undefined}
+      {distantes.length > 0 ? (
+        <section className="fluxo-distantes">
+          <div className="card-header">
+            <h3>Mais {distantes.length} mês(es)</h3>
+            <button
+              type="button"
+              className="btn"
+              aria-expanded={distantesAbertos}
+              onClick={() => setDistantesAbertos((v) => !v)}
             >
-              <strong>{brl(dados.totais.saldoFinal)}</strong>
-            </td>
-          </tr>
-        </tfoot>
-      </table>
+              {distantesAbertos ? "Recolher" : "Mostrar mês a mês"}
+            </button>
+          </div>
+          {/* ⚠⚠ O TOTAL DO BLOCO É POR PROCEDÊNCIA, nunca somado. Sem ele os meses recolhidos
+              sumiriam de vista; com uma soma única, virariam o número de doze meses que o contrato
+              recusa. */}
+          <TotaisDoMes totais={totalDoBloco(distantes)} titulo="No bloco recolhido" />
+          <p className="meta meta--bloco">
+            Quanto mais distante o mês, menos evidência há por trás da previsão — cada linha mostra
+            quantas vezes aquilo já apareceu.
+          </p>
+          {distantesAbertos ? distantes.map((m) => <MesDoFluxo key={m.competencia} mes={m} />) : null}
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -173,10 +262,6 @@ function Dre({ dados }) {
 
 export function BlocoDeDemonstracao({ companyId, competencia }) {
   const [visao, setVisao] = useState("fluxo");
-  // ⚠ O ÍNDICE, e não a string do dia: o painel anda com ‹ › e precisa saber onde estão as bordas
-  // do mês. Guardar a string obrigaria a procurá-la no array a cada passo, e "não achei" viraria
-  // um painel vazio em vez de um botão desabilitado.
-  const [diaAberto, setDiaAberto] = useState(null);
 
   const fluxoQuery = useCarregamento(
     () => api.getFluxoCaixa(companyId, { competencia }),
@@ -191,27 +276,17 @@ export function BlocoDeDemonstracao({ companyId, competencia }) {
 
   const atual = visao === "fluxo" ? fluxoQuery : dreQuery;
   const dados = atual.dados;
-  const diasDoFluxo = fluxoQuery.dados?.dias || [];
-
-  // ⚠ Trocar de empresa, de mês ou de visão FECHA o painel. Sem isto ele continuaria aberto
-  // mostrando o dia 18 de agosto enquanto a tabela atrás já é setembro — e é a mesma classe de
-  // defeito que a competência única existe para impedir: duas telas afirmando coisas diferentes.
-  useEffect(() => {
-    setDiaAberto(null);
-  }, [companyId, competencia, visao]);
-
-  function abrirDia(dia) {
-    const i = diasDoFluxo.findIndex((d) => d.dia === dia);
-    if (i >= 0) setDiaAberto(i);
-  }
+  const demonstracao = ehDemonstracao(dados);
 
   return (
     <section
-      className="card demonstracao"
+      /* ⚠ A moldura tracejada de `.demonstracao` é do que É demonstração. Com o fluxo real ela sai,
+         senão a tela continuaria dizendo "isto é maquete" por desenho depois de o selo sumir. */
+      className={demonstracao ? "card demonstracao" : "card"}
       aria-label="Fluxo de caixa e DRE"
       /* ⚠ Auditável no DOM, como `data-status` e `data-estado-nota`: quem inspecionar a página
          consegue provar qual bloco é demonstração sem depender de ler o texto do selo. */
-      data-demonstracao={ehDemonstracao(dados) ? "sim" : "nao"}
+      data-demonstracao={demonstracao ? "sim" : "nao"}
     >
       <div className="card-header">
         <h2>{visao === "fluxo" ? "Fluxo de caixa" : "DRE"}</h2>
@@ -231,7 +306,7 @@ export function BlocoDeDemonstracao({ companyId, competencia }) {
         </div>
       </div>
 
-      {ehDemonstracao(dados) ? <Selo /> : null}
+      {demonstracao ? <Selo /> : null}
 
       {atual.carregando ? <Carregando /> : null}
 
@@ -242,19 +317,7 @@ export function BlocoDeDemonstracao({ companyId, competencia }) {
       />
 
       {!atual.carregando && !atual.erro && dados ? (
-        visao === "fluxo" ? <Fluxo dados={dados} aoAbrirDia={abrirDia} /> : <Dre dados={dados} />
-      ) : null}
-
-      {/* ⚠ Montado condicionalmente no fim, irmão do conteúdo — o mesmo arranjo dos outros dois
-          diálogos do app (`SeletorEmpresa`, `ConfirmarCancelamento`). Não há `createPortal` aqui e
-          não é a hora de introduzir um. */}
-      {diaAberto !== null ? (
-        <PainelDoDia
-          dias={diasDoFluxo}
-          indice={diaAberto}
-          aoFechar={() => setDiaAberto(null)}
-          aoIr={setDiaAberto}
-        />
+        visao === "fluxo" ? <Fluxo dados={dados} /> : <Dre dados={dados} />
       ) : null}
     </section>
   );

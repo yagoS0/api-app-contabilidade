@@ -16,13 +16,16 @@
 import { act, render, screen } from "@testing-library/react";
 import { api } from "../../../api";
 import { BlocoDeDemonstracao } from "../BlocoDeDemonstracao";
-import { fluxoDeCaixaDeDemonstracao } from "../lib/dadosDeDemonstracao";
+// ⚠ O payload do FLUXO passou a ser o do CONTRATO REAL (27/08/2026) — o gerador de demonstração
+// ficou só com o DRE. Montar estes casos sobre a forma antiga faria a suíte provar a regra do selo
+// em cima de uma resposta que o servidor não devolve mais.
+import { fluxoDeCaixaDoMock } from "../../../api/mock/fluxoDeCaixaDoMock";
 
 const COMPETENCIA = "2026-08";
 const FRASE = /Dados de demonstração/i;
 
 function fluxo(extra) {
-  return { ...fluxoDeCaixaDeDemonstracao("pc-001", COMPETENCIA), ...extra };
+  return { ...fluxoDeCaixaDoMock("pc-001", COMPETENCIA), ...extra };
 }
 
 async function abrir() {
@@ -117,7 +120,9 @@ describe("o selo de demonstração", () => {
     jest.spyOn(api, "getFluxoCaixa").mockResolvedValue(fluxo());
     await abrir();
 
-    expect(document.querySelector(".demonstracao a")).toBeNull();
+    // ⚠ O seletor de visão vive no cabeçalho do bloco; a classe `.demonstracao` da moldura só
+    // existe quando a visão ATIVA é ficção, então a busca é pelo bloco, não pela classe.
+    expect(document.querySelector("[aria-label=\"Fluxo de caixa e DRE\"] a")).toBeNull();
     expect(window.location.hash).toBe("");
   });
 });

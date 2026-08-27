@@ -20,7 +20,10 @@ import { exigirContaDeCliente } from "../accountGate";
 import { lerSessao, limparSessao } from "../sessionStore";
 import { competenciaPadrao } from "../../lib/format";
 import { isAdminOrAbove } from "../../lib/roles";
-import { fluxoDeCaixaDeDemonstracao, dreDeDemonstracao } from "../../features/painel/lib/dadosDeDemonstracao";
+// ⚠ Só o DRE ainda é ficção. O fluxo de caixa virou REAL em 27/08/2026, e o mock dele reproduz o
+// CONTRATO do servidor — por isso mora em `api/mock/`, não em `dadosDeDemonstracao`.
+import { dreDeDemonstracao } from "../../features/painel/lib/dadosDeDemonstracao";
+import { fluxoDeCaixaDoMock } from "./fluxoDeCaixaDoMock";
 
 function mockDeLancamentos(id, faturamento) {
   if (id === "pc-002") {
@@ -1684,10 +1687,29 @@ export function createMockApi() {
      * são função (`api/index.js`): função que exista só no mock **nunca é alcançada** no modo
      * `real_with_mock_fallback` — ela some do objeto e vira `api.getFluxoCaixa is not a function`.
      */
+    /**
+     * ⚠⚠ O FLUXO DE CAIXA DEIXOU DE SER DEMONSTRAÇÃO EM 27/08/2026 — e o mock tem de dizer isso.
+     *
+     * ⚠⚠ ELE DEVOLVE `demonstracao: false`, como o servidor. Não é contradição com o modo offline:
+     * o mock existe para reproduzir o CONTRATO, e é o contrato que apaga o selo. Devolver `true`
+     * aqui deixaria a visão de fluxo com selo offline e sem selo em produção — e aí ninguém
+     * conseguiria conferir na tela o desenho que vai ao cliente. ⚠ O DRE, logo abaixo, continua
+     * `true`: aquele **é** ficção, porque não existe rota de DRE.
+     *
+     * ⚠⚠ E TODOS OS RAMOS PRECISAM SER ALCANÇÁVEIS AQUI. Este projeto foi mordido oito vezes por
+     * ramo que só existia em produção. `semImposto` e `recorrenciaIndisponivel` são mutuamente
+     * exclusivos, no fluxo cheio, com o imposto previsto e com as séries — então a `pc-006` tem um
+     * fluxo PRÓPRIO, magro, que é a única forma de vê-los offline.
+     *
+     * ⚠ Elas existem aqui E no `realApi` porque `createApiClient` só envolve a chave quando as DUAS
+     * são função (`api/index.js`): função que exista só no mock **nunca é alcançada** no modo
+     * `real_with_mock_fallback` — ela some do objeto e vira `api.getFluxoCaixa is not a function`.
+     */
     async getFluxoCaixa(companyId, { competencia } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
-      return fluxoDeCaixaDeDemonstracao(id, competencia || competenciaPadrao());
+      const ciclo = competencia || competenciaPadrao();
+      return fluxoDeCaixaDoMock(id, ciclo);
     },
 
     async getDre(companyId, { competencia } = {}) {
