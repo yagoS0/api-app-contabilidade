@@ -38,6 +38,13 @@ import {
   motivoDeBloqueio,
   variantDoTom,
 } from "../lib/conferenciaTela";
+import {
+  FRASE_DO_MOTIVO_DA_CONTA,
+  completoDoReduzido,
+  contasOferecidas,
+  motivoDoSeletorVazio,
+  reduzidoDoCompleto,
+} from "../lib/contaDaConferencia";
 
 // Mesmo padrão da aba de Auditoria e do SITFIS: a aba faz a própria chamada, porque não há `api` no
 // escopo do detalhe da empresa para estas rotas.
@@ -138,7 +145,7 @@ function DataComProcedencia({ item }) {
  *    verdade do ato: a tela só pergunta a data quando ninguém a provou, e o que a pessoa digita é
  *    declaração, não prova. Deixar o servidor adivinhar é o que produziu o defeito.
  */
-export function montarCorpo({ acao, item, data, motivo, valor, cfg }) {
+export function montarCorpo({ acao, item, data, motivo, valor, cfg, contaCompleta = null }) {
   const corpo = {};
   if (acaoPedeData(acao, item) && data) {
     corpo.dataPagamento = data;
@@ -146,24 +153,43 @@ export function montarCorpo({ acao, item, data, motivo, valor, cfg }) {
   }
   if (cfg?.pedeMotivo && motivo) corpo.motivoRecusa = motivo;
   if (cfg?.pedeValor && valor) corpo.valorAjustado = valor;
-  // ⚠ A conta que o servidor vai usar. Sem ela e sem `contaSugerida` gravada, `podeTransitar`
-  // recusa com `sem_conta` — por isso o botão já nasce bloqueado (ver `motivoDeBloqueio`).
-  if (cfg?.criaLancamento && item?.sugestao?.conta) corpo.contaAplicada = item.sugestao.conta;
+  // ⚠⚠ A CONTA QUE O CONTADOR ESCOLHEU — em `codigoCompleto`, já traduzida pelo modal.
+  //
+  // Ela vence a sugestão porque é o ato dele; sem escolha, cai na sugestão derivada, que é o
+  // comportamento de antes do seletor. ⚠ NUNCA string vazia: `""` cairia em `sem_conta` no servidor
+  // e a tela descobriria a regra pelo erro — por isso `completoDoReduzido` devolve `null` + motivo.
+  if (cfg?.criaLancamento) {
+    const conta = contaCompleta || item?.sugestao?.conta || null;
+    if (conta) corpo.contaAplicada = conta;
+  }
   return corpo;
 }
 
 /** ⚠ O modal pergunta o que a ação precisa ANTES de enviar — a tela não descobre a regra pelo erro. */
-function ModalDaAcao({ acao, item, ocupado, aviso, onFechar, onConfirmar }) {
+function ModalDaAcao({ acao, item, contas, ocupado, aviso, onFechar, onConfirmar }) {
   const cfg = ACAO[acao];
   const [data, setData] = useState(() => dataSugeridaParaPagamento(item));
   const [motivo, setMotivo] = useState("");
   const [valor, setValor] = useState(() => String(item?.valorAjustado ?? item?.valor ?? ""));
+  // ⚠⚠ O CAMPO NASCE COM A SUGESTÃO, TRADUZIDA PARA O REDUZIDO — que é o número que o contador
+  // reconhece. Mostrar `411020008` seria pôr a âncora interna na frente de quem nunca a viu.
+  // ⚠ Sugestão ausente ⇒ campo VAZIO, nunca "a primeira conta do plano": eleger seria o sistema
+  // decidindo em que conta a despesa entra, que é a decisão do contador.
+  const [conta, setConta] = useState(() => reduzidoDoCompleto(item?.sugestao?.conta || item?.contaSugerida, contas).valor || "");
+
+  const pedeConta = Boolean(cfg?.criaLancamento);
+  const oferecidas = useMemo(() => contasOferecidas(contas), [contas]);
+  const seletorVazio = useMemo(() => motivoDoSeletorVazio(contas), [contas]);
+  // ⚠ A tradução é a MESMA que vai ao POST — a tela não pode validar por um caminho e enviar por
+  // outro. `traducao.motivo` é o que o campo mostra em vermelho.
+  const traducao = useMemo(() => completoDoReduzido(conta, contas), [conta, contas]);
 
   const pedeData = acaoPedeData(acao, item);
   // ⚠ A recusa exige motivo não-vazio (o servidor devolve `sem_motivo`). Ausência nunca é resposta.
   const faltaMotivo = cfg?.pedeMotivo && !motivo.trim();
   const faltaData = pedeData && !data;
-  const podeEnviar = !faltaData && !faltaMotivo;
+  const faltaConta = pedeConta && !traducao.valor;
+  const podeEnviar = !faltaData && !faltaMotivo && !faltaConta;
 
   return (
     <Modal
@@ -180,8 +206,15 @@ function ModalDaAcao({ acao, item, ocupado, aviso, onFechar, onConfirmar }) {
             variant={variantDoTom(cfg?.tom)}
             disabled={!podeEnviar || ocupado}
             // ⚠ Botão desabilitado NUNCA é mudo — o motivo vai no `title`.
-            title={faltaData ? "Informe a data do pagamento." : faltaMotivo ? "Escreva o motivo da recusa." : undefined}
-            onClick={() => onConfirmar(montarCorpo({ acao, item, data, motivo, valor, cfg }))}
+            title={
+              faltaData ? "Informe a data do pagamento."
+                : faltaMotivo ? "Escreva o motivo da recusa."
+                  // ⚠ O motivo da tradução vence o genérico: "não existe no plano" e "é sintética"
+                  // pedem consertos diferentes, e o campo já os nomeia.
+                  : faltaConta ? (traducao.motivo ? FRASE_DO_MOTIVO_DA_CONTA[traducao.motivo] : "Escolha a conta contábil da despesa.")
+                    : undefined
+            }
+            onClick={() => onConfirmar(montarCorpo({ acao, item, data, motivo, valor, cfg, contaCompleta: traducao.valor }))}
           >
             {ocupado ? "Enviando…" : cfg?.rotulo}
           </Button>
@@ -218,6 +251,61 @@ function ModalDaAcao({ acao, item, ocupado, aviso, onFechar, onConfirmar }) {
             {item?.competencia ? ` · competência ${item.competencia}` : " · sem competência"}
           </div>
         </div>
+
+        {/* ⚠⚠ O SELETOR DE CONTA — o pedido do dono: *"o contador deve poder selecionar a conta das
+            notas, e deve ser salvo dessa forma"*. Ele digita e lê o REDUZIDO; o POST leva o
+            `codigoCompleto`, traduzido aqui no submit. */}
+        {pedeConta ? (
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={{ fontWeight: 600 }}>Conta contábil da despesa</span>
+            <input
+              list="contas-da-conferencia"
+              value={conta}
+              onChange={(e) => setConta(e.target.value)}
+              placeholder="código reduzido — ex.: 401"
+              autoFocus={!pedeData}
+              // ⚠ Campo com valor RECUSADO fica vermelho na hora, não só no clique.
+              style={traducao.motivo ? { borderColor: "var(--state-danger)" } : undefined}
+            />
+            {/* ⚠⚠ A lista OFERECE só o que o servidor aceitaria: fora as sintéticas (ele recusa com
+                `CONTA_SINTETICA`) e fora as sem `codigoCompleto` (viram `CONTA_FORA_DO_PLANO`).
+                Oferecer qualquer uma das duas é a tela propondo o que o clique nega. */}
+            <datalist id="contas-da-conferencia">
+              {oferecidas.map((c) => (
+                <option key={c.codigo} value={c.codigo}>{c.nome}</option>
+              ))}
+            </datalist>
+
+            {/* ⚠ O motivo da recusa da tradução, NOMEADO — nunca "conta inválida". */}
+            {traducao.motivo ? (
+              <span style={{ fontSize: "0.78rem", color: "var(--state-danger)" }}>
+                {FRASE_DO_MOTIVO_DA_CONTA[traducao.motivo]}
+              </span>
+            ) : traducao.conta ? (
+              // ⚠ Conta aceita: a tela diz QUAL é, pelo nome. Código sozinho não se confere.
+              <span style={{ fontSize: "0.78rem", color: "var(--text-faint)" }}>
+                {traducao.conta.nome}
+              </span>
+            ) : null}
+
+            {/* ⚠⚠ A PROCEDÊNCIA DA SUGESTÃO, à vista — *"por que este campo veio preenchido?"* é a
+                pergunta que o contador faz, e responder é o que torna a sugestão conferível em vez
+                de mágica. Mesmo desenho da procedência da data, logo abaixo. */}
+            {item?.sugestao?.frase ? (
+              <span style={{ fontSize: "0.78rem", color: "var(--text-faint)" }}>
+                {item.sugestao.frase}
+              </span>
+            ) : null}
+
+            {/* ⚠⚠ SELETOR VAZIO NÃO PODE SER MUDO — sem isto, o contador conclui que o sistema
+                perdeu o plano de contas. Três motivos, três consertos. */}
+            {seletorVazio ? (
+              <span role="alert" style={{ fontSize: "0.78rem", color: "var(--state-warn)" }}>
+                {seletorVazio}
+              </span>
+            ) : null}
+          </label>
+        ) : null}
 
         {pedeData ? (
           <label style={{ display: "grid", gap: 6 }}>
@@ -300,7 +388,7 @@ function ContaSugerida({ item }) {
   );
 }
 
-function LinhaDoDeclarado({ item, podeEscrever, onAgir }) {
+function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir }) {
   const estado = leituraDoEstado(item.estado);
   const doc = leituraDoDocumento(item);
   const acoes = acoesDaLinha(item);
@@ -352,7 +440,7 @@ function LinhaDoDeclarado({ item, podeEscrever, onAgir }) {
       <td>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
           {acoes.map((acao) => {
-            const bloqueio = motivoDeBloqueio(acao, item, { podeEscrever });
+            const bloqueio = motivoDeBloqueio(acao, item, { podeEscrever, podeEscolherConta });
             return (
               <Button
                 key={acao}
@@ -392,8 +480,18 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
   // Este contador força o remonte do painel para os dois ficarem coerentes — sem ele, o contador vê
   // o débito sumir de um lado e a nota continuar "sem pagamento identificado" do outro.
   const [versao, setVersao] = useState(0);
+  // ⚠⚠ O PLANO DE CONTAS — nenhuma rota nova: `GET /firm/companies/:id/chart-of-accounts` já existe
+  // e já devolve a linha inteira, com `codigoCompleto` e `analitica`.
+  //
+  // ⚠ Ele é carregado UMA vez por empresa, fora do laço da fila: 229 linhas fariam 229 consultas.
+  // ⚠ Falha aqui NÃO derruba a fila — ela continua legível, só sem seletor. O que não pode é a
+  // aba inteira cair porque o plano não veio.
+  const [contas, setContas] = useState([]);
 
   const competenciaDaConsulta = recorte === "sem-competencia" ? COMPETENCIA_AUSENTE : competencia;
+  // ⚠ A pergunta que o pré-voo faz não é "existe seletor?", é "há conta para escolher?". Plano sem
+  // conta oferecível (todas sintéticas, ou todas sem `codigoCompleto`) mantém o bloqueio COM motivo.
+  const podeEscolherConta = useMemo(() => contasOferecidas(contas).length > 0, [contas]);
 
   // ⚠⚠ "A ÚLTIMA CONSULTA VENCE" — achado por auditoria em 25/08/2026.
   //
@@ -436,6 +534,31 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  // ⚠ O plano muda por EMPRESA, não por competência nem por filtro — por isso ele tem efeito
+  // próprio, e não entra no `carregar`. Recarregá-lo a cada troca de mês seria uma consulta a mais
+  // por clique, sobre um dado que não mudou.
+  useEffect(() => {
+    if (!companyId) return undefined;
+    let vivo = true;
+    // ⚠⚠ `try` E `.catch`, e os dois são necessários — achado por teste em 26/08/2026.
+    //
+    // O `.catch` pega a REJEIÇÃO (rede fora, 500). O `try` pega o lançamento SÍNCRONO — que foi o
+    // que aconteceu: um cliente de API sem `getChartOfAccounts` estoura `TypeError` na CHAMADA,
+    // antes de existir promessa, e derruba a aba inteira no `useEffect`. Só o `.catch` deixaria a
+    // promessa de "isto não derruba a fila" valendo pela metade.
+    try {
+      Promise.resolve(conferenciaApi.getChartOfAccounts(companyId))
+        .then((r) => { if (vivo) setContas(Array.isArray(r) ? r : []); })
+        // ⚠ Silencioso DE PROPÓSITO, e é a única exceção da aba: sem o plano o seletor fica vazio e
+        // `motivoDoSeletorVazio` já diz o que houve. Derrubar a fila inteira porque o plano não veio
+        // seria trocar uma tela degradada por nenhuma tela.
+        .catch(() => { if (vivo) setContas([]); });
+    } catch {
+      setContas([]);
+    }
+    return () => { vivo = false; };
+  }, [companyId]);
 
   const grupos = useMemo(() => agruparPorFornecedor(fila?.itens), [fila]);
   const contagem = useMemo(() => contagemParaTela(fila?.porEstado), [fila]);
@@ -609,7 +732,13 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
               </thead>
               <tbody>
                 {g.itens.map((item) => (
-                  <LinhaDoDeclarado key={item.id} item={item} podeEscrever={podeEscrever} onAgir={abrir} />
+                  <LinhaDoDeclarado
+                    key={item.id}
+                    item={item}
+                    podeEscrever={podeEscrever}
+                    podeEscolherConta={podeEscolherConta}
+                    onAgir={abrir}
+                  />
                 ))}
               </tbody>
             </table>
@@ -634,6 +763,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
         <ModalDaAcao
           acao={acaoAberta.acao}
           item={acaoAberta.item}
+          contas={contas}
           ocupado={enviando}
           aviso={aviso}
           onFechar={() => {

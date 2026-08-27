@@ -1268,6 +1268,14 @@ const _seedAccounts = [
   { codigo: "401", nome: "Aluguel", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA", codigoCompleto: "411020001" },
   { codigo: "402", nome: "Energia Elétrica", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA", codigoCompleto: "411020002" },
   { codigo: "464", nome: "Serviços Prestados Pessoa Jurídica", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA", codigoCompleto: null },
+  // ⚠⚠ ESTA CONTA EXISTE PORQUE A FILA DA CONFERÊNCIA SUGERE `411020008` — e sem ela o seletor de
+  // conta nascia com o campo VAZIO em toda linha, offline. Achado NO NAVEGADOR em 26/08/2026: o
+  // `datalist` montava certo, a sugestão chegava, e a tradução `codigoCompleto → reduzido` não
+  // achava a conta, porque ela não estava no plano do próprio mock.
+  // ⚠ Ela NÃO substitui o `464`: aquele continua com `codigoCompleto` NULO de propósito, que é o
+  // terceiro estado (`analitica: null`) — a conta que ainda não foi reimportada.
+  // ⚠ E ela é filha de `41102`, então `400` continua sendo derivada como SINTÉTICA.
+  { codigo: "403", nome: "Serviços Prestados por PJ", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA", codigoCompleto: "411020008" },
   { codigo: "700", nome: "Receitas de Serviços", tipo: "RECEITA", natureza: "CREDORA", status: "CONFIRMADA", codigoCompleto: "311020001" },
 ];
 

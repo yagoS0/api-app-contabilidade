@@ -232,7 +232,7 @@ export function dataSugeridaParaPagamento(item) {
  * ⚠ O motivo é devolvido junto, sempre. Botão desabilitado e mudo é o defeito que a aba de Guias já
  * pagou: o contador não sabe se é falta de permissão, mês fechado ou defeito.
  */
-export function motivoDeBloqueio(acao, item, { podeEscrever = true } = {}) {
+export function motivoDeBloqueio(acao, item, { podeEscrever = true, podeEscolherConta = false } = {}) {
   if (!podeEscrever) return "Seu perfil não pode alterar lançamentos desta empresa.";
 
   const cfg = ACAO[acao];
@@ -261,10 +261,17 @@ export function motivoDeBloqueio(acao, item, { podeEscrever = true } = {}) {
   // A conta vem da SUGESTÃO (regra ou histórico, derivada a cada leitura) ou da coluna
   // `contaSugerida`, gravada quando o declarado nasceu.
   //
-  // ⚠ LIMITAÇÃO DECLARADA: não há seletor de conta nesta tela. Enquanto não houver, a linha sem
-  // conta conhecida **não é contabilizável por aqui** — e o certo é DIZER isso, não oferecer um
-  // botão que falha. O caminho hoje é lançar por Lançamentos, ou criar a regra do fornecedor.
+  // ⚠⚠ A LIMITAÇÃO CAIU EM 26/08/2026: o SELETOR DE CONTA existe.
+  //
+  // Enquanto não havia, "sem conta conhecida" era bloqueio — e o certo era DIZER isso, não oferecer
+  // um botão que falha. Com o seletor, quem pergunta é o MODAL, e bloquear aqui esconderia
+  // justamente o caminho que o dono pediu (*"o contador deve poder selecionar a conta das notas"*).
+  //
+  // ⚠ `podeEscolherConta` é a pergunta certa, e não "existe seletor?": um plano SEM conta oferecível
+  // (todas sintéticas, ou todas sem `codigoCompleto` — medido: 1186 de 1186 num banco real) deixa o
+  // seletor vazio, e aí o bloqueio com motivo continua sendo a resposta honesta.
   if (cfg.criaLancamento && !contaQueSeraUsada(item)) {
+    if (podeEscolherConta) return null;
     // ⚠⚠ "NÃO SEI QUAL CONTA" E "SEI, E ELA NÃO SERVE" PEDEM CONSERTOS OPOSTOS — e a frase genérica
     // dava o conselho ERRADO para o segundo caso. Com a conta conhecida sendo SINTÉTICA, mandar
     // "confirme uma vez para o sistema aprender" reensinaria a MESMA regra torta, e ela sugeriria a

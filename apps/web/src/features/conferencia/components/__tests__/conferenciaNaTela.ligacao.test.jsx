@@ -8,6 +8,21 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 const mockGetFila = jest.fn();
+// ⚠⚠ O PLANO DO MOCK tem os TRÊS estados que o seletor precisa distinguir: `400` SINTÉTICA (tem
+// filhas), `401`/`402` analíticas, e `464` com `codigoCompleto` NULO. Um plano só de folhas faria
+// as duas recusas do seletor nascerem inalcançáveis.
+const PLANO_DO_TESTE = [
+  { codigo: "5", codigoCompleto: "111010001", nome: "Caixa", analitica: true },
+  { codigo: "400", codigoCompleto: "41102", nome: "Despesas Gerais", analitica: false },
+  { codigo: "401", codigoCompleto: "411020001", nome: "Aluguel", analitica: true },
+  { codigo: "402", codigoCompleto: "411020002", nome: "Energia Elétrica", analitica: true },
+  { codigo: "464", codigoCompleto: null, nome: "Serviços PJ", analitica: null },
+  // ⚠ É a conta que as sugestões dos testes deste arquivo usam. Sem ela no plano, o campo
+  // nasceria vazio e o botão bloqueado — que é o comportamento CERTO para sugestão fora do plano,
+  // e tem teste próprio mais abaixo.
+  { codigo: "557", codigoCompleto: "411030012", nome: "Despesas com Software", analitica: true },
+];
+const mockGetPlano = jest.fn(async () => PLANO_DO_TESTE);
 const mockPostAcao = jest.fn();
 
 // ⚠ O `jest.mock` é HOISTED para o topo, e o componente chama `createApiClient()` no CORPO do
@@ -18,6 +33,9 @@ jest.mock("../../../../api/client", () => ({
   createApiClient: () => ({
     getConferenciaFila: (...a) => mockGetFila(...a),
     postConferenciaAcao: (...a) => mockPostAcao(...a),
+    // ⚠ O PLANO DE CONTAS — o seletor de conta o consome. Delega como os outros dois, pelo
+    // mesmo motivo do TDZ explicado acima.
+    getChartOfAccounts: (...a) => mockGetPlano(...a),
   }),
 }));
 
@@ -431,5 +449,132 @@ describe("⚠⚠ O CORPO QUE VAI AO SERVIDOR (a lacuna que deixou o bug crítico
     fireEvent.click(within(dialogo).getByRole("button", { name: /^Recusar$/i }));
     await waitFor(() => expect(mockPostAcao).toHaveBeenCalled());
     expect(corpoEnviado()).toEqual({ motivoRecusa: "duplicada" });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O SELETOR DE CONTA — o pedido do dono, 25/08/2026:
+// *"o contador deve poder selecionar a conta das notas, e deve ser salvo dessa forma"*.
+//
+// ⚠ O teste da regra pura (`lib/__tests__/contaDaConferencia.test.js`) prova a TRADUÇÃO. Este prova
+// a LIGAÇÃO — que é onde este projeto mais paga: uma regra certa com o componente nunca passando as
+// props continuaria verde lá e quebrada aqui.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ O SELETOR DE CONTA na Conferência", () => {
+  const abrirConfirmar = async (itemDado) => {
+    responder([itemDado]);
+    montar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
+    return screen.findByRole("dialog");
+  };
+  const campoDaConta = (dialogo) => within(dialogo).getByLabelText(/Conta contábil da despesa/i);
+  const botaoConfirmar = (dialogo) => within(dialogo).getByRole("button", { name: /^Confirmar$/i });
+  const corpoEnviado = () => mockPostAcao.mock.calls[0][3];
+
+  it("⚠⚠ o campo nasce com a sugestão traduzida para o REDUZIDO, não com o codigoCompleto", async () => {
+    const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
+    // `557`, o número que o contador reconhece — nunca `411030012`, que é âncora interna.
+    expect(campoDaConta(d)).toHaveValue("557");
+  });
+
+  it("⚠⚠ trocar a conta manda a ESCOLHIDA, não a sugerida — é o ato do contador que vence", async () => {
+    const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
+    fireEvent.change(campoDaConta(d), { target: { value: "401" } });
+    fireEvent.click(botaoConfirmar(d));
+    await waitFor(() => expect(mockPostAcao).toHaveBeenCalled());
+    // ⚠ o POST leva o `codigoCompleto` do 401, não o "401" digitado nem a sugestão antiga
+    expect(corpoEnviado()).toMatchObject({ contaAplicada: "411020001" });
+  });
+
+  it("⚠⚠ conta SINTÉTICA digitada bloqueia COM o motivo — a tela antecipa o que o servidor nega", async () => {
+    const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
+    fireEvent.change(campoDaConta(d), { target: { value: "400" } });
+    expect(botaoConfirmar(d)).toBeDisabled();
+    expect(within(d).getByText(/sintética \(de agregação\)/i)).toBeInTheDocument();
+    fireEvent.click(botaoConfirmar(d));
+    expect(mockPostAcao).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ conta SEM codigoCompleto tem recusa PRÓPRIA — o conserto é do plano, não da linha", async () => {
+    const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
+    fireEvent.change(campoDaConta(d), { target: { value: "464" } });
+    expect(botaoConfirmar(d)).toBeDisabled();
+    expect(within(d).getByText(/reimportação do plano/i)).toBeInTheDocument();
+  });
+
+  it("conta que não existe recusa nomeando, e NÃO envia", async () => {
+    const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
+    fireEvent.change(campoDaConta(d), { target: { value: "99999" } });
+    expect(within(d).getByText(/não existe no plano/i)).toBeInTheDocument();
+    fireEvent.click(botaoConfirmar(d));
+    expect(mockPostAcao).not.toHaveBeenCalled();
+  });
+
+  it("⚠ campo APAGADO bloqueia — e NUNCA manda contaAplicada vazia", async () => {
+    const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
+    fireEvent.change(campoDaConta(d), { target: { value: "" } });
+    expect(botaoConfirmar(d)).toBeDisabled();
+    fireEvent.click(botaoConfirmar(d));
+    expect(mockPostAcao).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ sugestão FORA do plano desta empresa deixa o campo vazio — o servidor recusaria", async () => {
+    const d = await abrirConfirmar(item({ sugestao: { conta: "999999999", procedencia: "REGRA_CNPJ" } }));
+    expect(campoDaConta(d)).toHaveValue("");
+    expect(botaoConfirmar(d)).toBeDisabled();
+  });
+
+  it("⚠⚠ a lista NÃO oferece sintética nem conta sem codigoCompleto", async () => {
+    const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
+    const opcoes = Array.from(d.querySelectorAll("datalist option")).map((o) => o.value);
+    expect(opcoes).toContain("401");
+    expect(opcoes).toContain("557");
+    // `400` é sintética; `464` não tem codigoCompleto
+    expect(opcoes).not.toContain("400");
+    expect(opcoes).not.toContain("464");
+  });
+
+  it("⚠ a conta aceita é dita pelo NOME — código sozinho não se confere", async () => {
+    const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
+    fireEvent.change(campoDaConta(d), { target: { value: "401" } });
+    // ⚠ "Aluguel" também é o rótulo do <option> no datalist — o que se confere aqui é o texto de
+    // AJUDA abaixo do campo, que é o que a pessoa lê sem abrir a lista.
+    const ajudas = within(d).getAllByText("Aluguel").filter((n) => n.tagName !== "OPTION");
+    expect(ajudas.length).toBeGreaterThan(0);
+  });
+
+  // ⚠⚠ O BLOQUEIO DA LINHA CAIU — e é o ponto da entrega. Antes, linha sem conta conhecida tinha o
+  // botão Confirmar DESABILITADO ("não é contabilizável por aqui"). Com o seletor, ela abre o modal
+  // e o contador escolhe.
+  it("⚠⚠ linha SEM conta conhecida agora ABRE o modal — o seletor é o caminho", async () => {
+    // ⚠ `contaSugerida` também some: ela é a SEGUNDA fonte de `contaQueSeraUsada`, e o campo do
+    // modal cai nela quando a sugestão derivada não resolve. Com as duas presentes, este teste
+    // provaria o contrário do que o nome dele diz.
+    responder([item({ contaSugerida: null, sugestao: { conta: null, motivo: "nada_conhecido", frase: "" } })]);
+    montar();
+    const botao = await screen.findByRole("button", { name: /^Confirmar$/i });
+    expect(botao).not.toBeDisabled();
+    fireEvent.click(botao);
+    const d = await screen.findByRole("dialog");
+    expect(campoDaConta(d)).toHaveValue("");
+    // ⚠ e ele só envia depois de escolher
+    expect(botaoConfirmar(d)).toBeDisabled();
+    fireEvent.change(campoDaConta(d), { target: { value: "402" } });
+    fireEvent.click(botaoConfirmar(d));
+    await waitFor(() => expect(mockPostAcao).toHaveBeenCalled());
+    expect(corpoEnviado()).toMatchObject({ contaAplicada: "411020002" });
+  });
+
+  // ⚠⚠ MAS O BLOQUEIO VOLTA QUANDO NÃO HÁ O QUE ESCOLHER. Medido em 26/08/2026 num banco real:
+  // 1186 de 1186 contas SEM `codigoCompleto` — o seletor nasceria vazio, e oferecer um botão que
+  // abre um modal sem opção nenhuma seria pior que dizer o motivo.
+  it("⚠⚠ plano SEM conta oferecível volta a bloquear a linha, com o motivo", async () => {
+    mockGetPlano.mockResolvedValueOnce([
+      { codigo: "1", codigoCompleto: null, nome: "SEM COMPLETO", analitica: null },
+    ]);
+    responder([item({ contaSugerida: null, sugestao: { conta: null, motivo: "nada_conhecido", frase: "" } })]);
+    montar();
+    const botao = await screen.findByRole("button", { name: /^Confirmar$/i });
+    await waitFor(() => expect(botao).toBeDisabled());
   });
 });
