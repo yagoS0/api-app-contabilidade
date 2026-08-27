@@ -55,15 +55,29 @@ afterEach(() => {
 // ⚠⚠ A LEI DE COR, NA TELA.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ a previsão nunca se parece com um fato", () => {
+  // ⚠⚠ EM 27/08/2026 A GRADE PASSOU A DIZER `fato` × `previsão` PELA COR (decisão do dono: *"verde é
+  // o que sabemos, amarelo é previsto, no caso da saída é vermelho e laranja"*), e com isso a palavra
+  // quase sumiu dela — ela ficaria só no detalhe do mês aberto, e só para as linhas daquele mês.
+  // ⚠ A lei não afrouxou: entrou uma legenda de UMA LINHA que decodifica as quatro tintas. É ela que
+  // este caso mede agora, além das palavras do detalhe.
   test("⚠⚠ a palavra 'Previsto' está no TEXTO — não só na cor", async () => {
     await abrir(cheio());
-    // Cor não sobrevive à impressão em preto e branco nem ao daltonismo; o texto sobrevive.
+    // A legenda da grade: sem ela, quem imprime em preto e branco não distingue nada. Ela nomeia o
+    // DESENHO (sólido × contorno), porque a cor passou a marcar a categoria.
+    expect(screen.getByText("preenchido")).toBeInTheDocument();
+    expect(screen.getByText("contorno")).toBeInTheDocument();
+    // E o detalhe do mês continua dizendo a procedência por extenso, linha a linha.
+    await abrirMes("set/26");
     expect(screen.getAllByText("Previsto").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Já existe").length).toBeGreaterThan(0);
   });
 
+  // ⚠ O chip do DETALHE não mudou de lei: a reversão de 27/08 vale para a CÉLULA da grade, onde a
+  // pergunta é *"para que lado o dinheiro vai?"*, não para o chip, onde a pergunta é *"isto já
+  // aconteceu?"*. Por isso este caso continua exigindo que a previsão não use a classe do concluído.
   test("⚠⚠ nenhuma linha prevista é pintada com a classe do CONCLUÍDO", async () => {
     await abrir(cheio());
+    await abrirMes("set/26");
     // ⚠ Verde, nesta casa, quer dizer *pago/concluído*. A varredura é sobre o DOM inteiro do bloco.
     expect(document.querySelector('[data-procedencia="PREVISAO"].ok')).toBeNull();
     expect(document.querySelectorAll('[data-procedencia="PREVISAO"]').length).toBeGreaterThan(0);
@@ -122,16 +136,33 @@ describe("⚠⚠ nada aqui lança, edita ou apaga", () => {
 // ⚠⚠ O QUE FALTA APARECE, NOMEADO.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ nada some em silêncio", () => {
-  test("⚠⚠ a guia VENCIDA aparece, com o valor — ela não mora em mês nenhum", async () => {
+  // ⚠⚠ ESTES DOIS CASOS MEDIAM A PRESENÇA E AGORA MEDEM A AUSÊNCIA — decisão do dono em 27/08/2026,
+  // em duas etapas (*"tire esses avisos da página"* → *"pode excluir isso também"*), e contra a minha
+  // ressalva, que fica registrada aqui e no componente: o critério escrito deste app manda ficar o
+  // texto que avisa de consequência fiscal, e *"2 guias venceram, somando R$ 18.638,39"* é isso.
+  //
+  // ⚠ O que impede este caso de ser a prova de um dado perdido: **o fato continua chegando ao cliente
+  // por dois caminhos que já existiam** — o card "A vencer" do Painel (mesma tela, acima) e a aba
+  // Guias. E a REGRA não foi tocada: `ressalvasDoFluxo` continua produzindo as duas, e o portal do
+  // contador continua mostrando-as.
+  test("⚠⚠ a guia VENCIDA não aparece neste portal — decisão do dono", async () => {
     await abrir(cheio());
-    expect(screen.getByText(/Guias já vencidas/)).toBeInTheDocument();
-    expect(screen.getByText(/18\.638,39/)).toBeInTheDocument();
+    expect(screen.queryByText(/Guias já vencidas/)).toBeNull();
+    expect(screen.queryByText(/18\.638,39/)).toBeNull();
   });
 
-  test("⚠⚠ a guia sem vencimento é nomeada, com o conserto", async () => {
+  test("⚠⚠ a guia sem vencimento também não", async () => {
     await abrir(cheio());
-    expect(screen.getByText(/Sem mês — SIMPLES/)).toBeInTheDocument();
-    expect(screen.getByText(/Recapture a guia/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sem mês — SIMPLES/)).toBeNull();
+    expect(screen.queryByText(/Recapture a guia/)).toBeNull();
+  });
+
+  // ⚠⚠ E O CORTE É NOMINAL, NÃO POR TOM — a primeira versão filtrava `tom !== "aviso"` e levava junto
+  // *"Repetições não lidas"*, que o dono não pediu para tirar. Foi ESTE arquivo que pegou (o caso da
+  // empresa sem apuração, logo abaixo, ficou vermelho na hora). Um aviso NOVO tem de aparecer.
+  test("⚠⚠ um aviso que ele NÃO pediu para tirar continua na tela", async () => {
+    await abrir(magro());
+    expect(screen.getByText(/Repetições não lidas/)).toBeInTheDocument();
   });
 
   test("⚠⚠ 'ninguém configurou o prazo' aparece — o padrão não passa por decisão", async () => {
@@ -194,47 +225,68 @@ describe("⚠⚠ por que esta linha está aqui", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// ⚠⚠ A PLANILHA — UMA GRADE, OS 12 MESES NAS COLUNAS (27/08/2026).
+// ⚠⚠ A PLANILHA — MESES NAS LINHAS, CATEGORIAS NAS COLUNAS (27/08/2026).
 //
-// Pedido do dono, com a tela na frente: *"um monte de meses aparecendo, excesso de tabela, o fluxo
-// deve se parecer mais com uma planilha excel"*.
+// Ela nasceu transposta (12 meses em COLUNAS) e foi virada no mesmo dia, por pedido do dono:
+// *"colocando entrada, saída, recorrência, diário, todos no MESMO PESO, e em linha não em coluna; a
+// diferença deles será a cor de suas COLUNAS"*.
 //
-// ⚠ O QUE ELE VIA, MEDIDO NO NAVEGADOR (1280px, mock, 08/2026): **1.723px de 2.325px — 74% da página
-// inicial — para 7 linhas de conteúdo**, em 11 blocos empilhados e 3 tabelas. Em 375px a página
-// tinha 4,4 telas de rolagem e linhas de até 183px.
+// ⚠ O ganho é medível: com 12 colunas a grade exigia 1.132px de largura mínima e ROLAVA no celular;
+// com cinco ela cabe. E o custo do caminho anterior está registrado no CSS — `width: 100%` com cinco
+// colunas dava 226px por coluna, que foi o que o dono chamou de *"colunas muito largas"*.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠⚠ a planilha: uma grade, doze colunas", () => {
-  test("⚠⚠ é UMA tabela para os 12 meses, não uma por mês", async () => {
+describe("⚠⚠ a planilha: meses nas linhas, quatro categorias nas colunas", () => {
+  test("⚠⚠ é UMA tabela — as categorias sao as colunas, os meses as linhas", async () => {
     await abrir(cheio());
-    // ⚠ O escopo é a PRIMEIRA tabela de propósito: a segunda é o DETALHE do mês aberto (Quando · O
-    // quê · Entra · Sai) — e é justamente por existirem só duas que a queixa do dono se desfaz.
-    // Antes eram três tabelas de mês; hoje é a grade + o detalhe de UM mês.
+    // ⚠ A segunda tabela é o DETALHE do mês aberto; é por existirem só duas que a queixa se desfaz.
     expect(screen.getAllByRole("table")).toHaveLength(2);
     const grade = screen.getAllByRole("table")[0];
-    const colunas = within(grade).getAllByRole("columnheader");
-    expect(colunas).toHaveLength(12);
-    expect(colunas[0].textContent.trim()).toBe("ago/26");
-    expect(colunas[11].textContent.trim()).toBe("jul/27");
+    expect(within(grade).getAllByRole("columnheader").map((t) => t.textContent.trim()))
+      .toEqual(["Entrada", "Saída", "Recorrência", "Diário"]);
+    // Doze meses, um por linha.
+    expect(within(grade).getAllByRole("rowheader")).toHaveLength(12);
   });
 
-  test("⚠⚠ as QUATRO linhas separam entra/sai × já existe/previsto — e não há uma quinta somando", async () => {
+  test("⚠⚠ as quatro colunas têm o MESMO PESO — nenhuma é filha de outra", async () => {
+    // Elas já foram desenhadas como decomposição da saída, com recuo. O dono desfez: *"todos no
+    // mesmo peso"*. `Diário` continua SENDO derivada (`(Saída − Recorrência) ÷ dias`), e isso agora
+    // é dito no `title` da coluna, não no desenho.
     await abrir(cheio());
-    const linhas = screen.getAllByRole("rowheader").map((th) => th.textContent.trim());
-    expect(linhas).toEqual([
-      "EntraJá existe", "EntraPrevisto", "SaiJá existe", "SaiPrevisto",
-    ]);
-    // ⚠⚠ A AUSÊNCIA É O CONTRATO: nenhuma linha "No mês", "Saldo" ou "Total" — ela recriaria o
-    // número único que a API se recusa a entregar, somando `fato` com `previsão`.
-    expect(document.body.textContent).not.toMatch(/No m[êe]s|Total do m[êe]s/i);
+    expect(document.querySelectorAll('[data-filha="sim"]')).toHaveLength(0);
+  });
+
+  test("⚠⚠ a cor é da COLUNA, e está no DOM — não vive só no CSS", async () => {
+    // Auditável como `data-status` e `data-procedencia` já são: dá para provar qual célula afirma o
+    // quê sem depender de enxergar a cor.
+    await abrir(cheio());
+    const grade = screen.getAllByRole("table")[0];
+    const colunas = new Set([...grade.querySelectorAll("[data-coluna]")].map((e) => e.dataset.coluna));
+    expect([...colunas].sort()).toEqual(["diario", "entrada", "recorrencia", "saida"]);
+  });
+
+  test("⚠⚠ sólido × contorno separa o que JÁ EXISTE do que é PREVISTO", async () => {
+    // ⚠ Com a cor ocupada pela categoria, é o preenchimento que carrega a certeza — e ele é a metade
+    // que sobrevive à impressão em preto e branco e ao daltonismo.
+    await abrir(cheio());
+    const grade = screen.getAllByRole("table")[0];
+    const marcas = new Set([...grade.querySelectorAll(".planilha-valor")]
+      .map((e) => e.dataset.procedenciaCelula));
+    expect(marcas.has("fato")).toBe(true);
+    expect(marcas.has("previsao")).toBe(true);
   });
 
   test("⚠⚠ ZERO sai como TRAÇO, nunca `R$ 0,00`", async () => {
-    // A parede de zeros é a doença que esta forma existe para desfazer — e "nada neste
-    // compartimento" não é a mesma afirmação que "zero reais".
     await abrir(cheio());
     const grade = screen.getAllByRole("table")[0];
     expect(within(grade).queryByText("R$ 0,00")).toBeNull();
     expect(within(grade).getAllByText("—").length).toBeGreaterThan(0);
+  });
+
+  test("⚠⚠ e NÃO há linha nem coluna de TOTAL — a ausência é o contrato", async () => {
+    await abrir(cheio());
+    const grade = screen.getAllByRole("table")[0];
+    // `fato` e `previsão` nunca viram um número só; um "No mês" recriaria exatamente esse número.
+    expect(grade.textContent).not.toMatch(/No m[êe]s|Total|Saldo/i);
   });
 
   test("⚠ a tela abre com UM mês aberto — o primeiro que tem algo", async () => {
@@ -252,7 +304,6 @@ describe("⚠⚠ a planilha: uma grade, doze colunas", () => {
 
     await abrirMes("out/26");
     expect(screen.queryByRole("heading", { name: "outubro de 2026" })).toBeNull();
-    // ⚠ Sem detalhe nenhum, sobra só a grade — que é a resposta certa, não uma tela quebrada.
     expect(screen.getAllByRole("table")).toHaveLength(1);
   });
 });

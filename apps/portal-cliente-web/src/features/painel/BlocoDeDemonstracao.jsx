@@ -47,6 +47,9 @@ import {
   totaisParaTela,
   totalDoBloco,
 } from "./lib/leituraDoFluxo";
+// ⚠ A agregação da PLANILHA mora fora do espelho: `leituraDoFluxo.js` é cópia da do contador, e esta
+// grade só existe no portal do cliente. Ver o cabeçalho de `planilhaDoFluxo.js`.
+import { linhasDaPlanilha } from "./lib/planilhaDoFluxo";
 
 const VISOES = [
   { chave: "fluxo", rotulo: "Fluxo de caixa" },
@@ -175,76 +178,95 @@ function MesDoFluxo({ mes }) {
 }
 
 /**
- * ⚠⚠ A PLANILHA — UMA GRADE, MESES NAS COLUNAS.
- *
- * Pedido do dono em 27/08/2026, com a tela na frente: *"um monte de meses aparecendo, excesso de
- * tabela, o fluxo deve se parecer mais com uma planilha excel"*.
- *
- * ⚠ O QUE ELE VIA, MEDIDO NO NAVEGADOR (1280px, mock, 08/2026): o bloco do fluxo ocupava
- * **1.723px de 2.325px — 74% da página inicial** e montava **11 blocos empilhados e 3 tabelas para
- * 7 linhas de conteúdo**. Em 375px a página inteira tinha **4,4 telas de rolagem**, com linhas de
- * até **183px cada**. Uma linha de tabela normal tem ~40px.
- *
- * ⚠⚠ A CAUSA NÃO ERA A GRANULARIDADE, era renderizar UM COMPARTIMENTO POR PERÍODO. A forma anterior
- * a esta era diária e tinha a mesma doença: 31 linhas, 24 delas vazias. Trocar de dia para mês mudou
- * o eixo e manteve o vazio — 8 dos 12 meses não têm nada.
- *
- * ⚠ E a linha não era uma linha: era um parágrafo. Cada `<tr>` empilhava 4 a 6 blocos de texto numa
- * célula (rótulo, chip, origem, evidência, confronto), e a coluna "Quando" carregava frases
- * inteiras — *"A recorrência diz de quanto em quanto tempo, não em que dia do mês."* aparecia
- * **três vezes** na mesma tela.
- *
- * A grade inverte isso: uma linha é uma linha, o olho varre a coluna, e a evidência desce para o
- * detalhe do mês — ela **não some**, deixa de estar toda aberta ao mesmo tempo.
- *
- * ⚠⚠ **NÃO EXISTE LINHA DE TOTAL, E A AUSÊNCIA É O CONTRATO.** `TotaisDoMes` já registra que não há
- * uma quarta caixa somando `fato` e `previsão`; um rodapé "No mês" recriaria exatamente o número
- * único que a API se recusa a entregar. As quatro linhas **são** os totais, separados por
- * procedência — é por isso que são quatro, e não duas.
- */
-const LINHAS_DA_PLANILHA = [
-  { chave: "entra-fato", direcao: "Entra", procedencia: PROCEDENCIA.FATO, ler: (t) => t.fato.entrada },
-  { chave: "entra-previsao", direcao: "Entra", procedencia: PROCEDENCIA.PREVISAO, ler: (t) => t.previsao.entrada },
-  { chave: "sai-fato", direcao: "Sai", procedencia: PROCEDENCIA.FATO, ler: (t) => t.fato.saida },
-  { chave: "sai-previsao", direcao: "Sai", procedencia: PROCEDENCIA.PREVISAO, ler: (t) => t.previsao.saida },
-];
-
-/**
  * O dinheiro DA GRADE — o mesmo número de `brl`, sem o `R$` repetido em cada célula.
  *
  * ⚠ A GRAMÁTICA DO NÚMERO NÃO É REESCRITA AQUI: milhar, decimal, sinal e o traço da ausência
- * continuam saindo de `brl` (que é espelho do `format.ts` do app mobile). O que se tira é o SÍMBOLO,
- * que numa planilha se diz uma vez no rótulo e não doze vezes por linha — é a convenção de qualquer
- * planilha, e é o que faz `12.500,00` caber numa coluna de 80px sem quebrar em duas linhas.
- *
- * ⚠ O traço passa intocado: `brl(null)` já devolve `—`, e `replace` num traço não acha o que trocar.
+ * continuam saindo de `brl` (espelho do `format.ts` do app mobile). O que se tira é o SÍMBOLO, que
+ * numa planilha se diz uma vez no canto e não em cada célula.
  */
 const naGrade = (v) => brl(v).replace("R$ ", "");
 
-function PlanilhaDoFluxo({ meses, competenciaAberta, aoAbrirMes }) {
-  const colunas = meses.map((m) => ({ mes: m, t: totaisParaTela(m?.totais) }));
-  // ⚠ A linha das indetermináveis só existe quando há alguma. Uma linha de traços permanente seria o
-  // vazio voltando pela porta dos fundos.
-  const temDesconhecido = colunas.some((c) => c.t.desconhecido.quantas > 0);
+/**
+ * ⚠⚠ AS QUATRO COLUNAS — e a grade foi TRANSPOSTA em 27/08/2026 para chegar aqui.
+ *
+ * > Dono: *"colocando entrada, saída, recorrência, diário, todos no MESMO PESO, e em linha não em
+ * > coluna; a diferença deles será a cor de suas COLUNAS: entrada verde, saída vermelha, recorrência
+ * > ciano e diário azul"*.
+ *
+ * O que mudou, e por quê:
+ *
+ *   · **os meses viraram LINHAS** e as quatro categorias viraram COLUNAS. A forma anterior tinha 12
+ *     colunas de mês e exigia 1.132px de largura mínima — ela ROLAVA no celular. Com cinco colunas
+ *     ela cabe em 375px sem rolar, e a leitura vira a de qualquer planilha de caixa: o mês desce, a
+ *     categoria atravessa.
+ *   · **"todos no mesmo peso"** desfez o recuo que fazia `Recorrência` e `Diário` parecerem
+ *     decomposição da saída. Elas continuam SENDO derivadas dela (`Diário = (Saída − Recorrência) ÷
+ *     dias`), e isso agora é dito no `title` da coluna, não no desenho.
+ *   · **a cor mudou de eixo**: ela marcava `fato` × `previsão`; agora marca a CATEGORIA. Quem separa
+ *     o que já existe do que é previsão passou a ser o PREENCHIMENTO — sólido × contorno —, que é a
+ *     única marca que sobrevive à impressão em preto e branco.
+ */
+const COLUNAS_DA_PLANILHA = [
+  {
+    chave: "entrada",
+    rotulo: "Entrada",
+    ajuda: "O que entra no mês.",
+    partes: (t) => [
+      { valor: t.entrada.fato, procedencia: "fato" },
+      { valor: t.entrada.previsao, procedencia: "previsao" },
+    ],
+  },
+  {
+    chave: "saida",
+    rotulo: "Saída",
+    ajuda: "O que sai no mês — guias de imposto e despesas.",
+    partes: (t) => [
+      { valor: t.saida.fato, procedencia: "fato" },
+      { valor: t.saida.previsao, procedencia: "previsao" },
+    ],
+  },
+  {
+    chave: "recorrencia",
+    rotulo: "Recorrência",
+    ajuda: "A parte da saída que se repete todo mês.",
+    partes: (t) => [{ valor: t.recorrente, procedencia: "derivado" }],
+  },
+  {
+    chave: "diario",
+    rotulo: "Diário",
+    ajuda: "O que sobra da saída depois do que se repete, dividido pelos dias do mês.",
+    partes: (t) => [{ valor: t.diario, procedencia: "derivado" }],
+  },
+];
 
+function PlanilhaDoFluxo({ meses, competenciaAberta, aoAbrirMes }) {
   return (
-    /* ⚠ O `overflow-x` do `.table-wrap` é o que faz a planilha rolar DENTRO dela em 375px — sem ele a
-       página inteira passa a rolar para o lado, defeito que este app já pagou duas vezes. */
+    /* ⚠ O `.table-wrap` FICA mesmo cabendo em 375px: ele é o que impede a PÁGINA de rolar para o lado
+       se um dia entrar uma sexta coluna. Custo zero quando não há o que rolar. */
     <div className="table-wrap">
       <table className="table table--planilha-fluxo">
         <thead>
           <tr>
-            {/* ⚠ O canto não descreve linha nem coluna — por isso não tem `scope`. Ele carrega a
-                UNIDADE, que numa planilha se diz uma vez e não em cada célula: as colunas mostram
-                `12.500,00`, não `R$ 12.500,00`. Sem esta palavra o número ficaria sem moeda. */}
+            {/* ⚠ O canto carrega a UNIDADE — numa planilha a moeda se diz uma vez, não em cada
+                célula. Sem esta palavra os números ficariam sem moeda. */}
             <td className="planilha-canto">R$</td>
-            {colunas.map(({ mes }) => {
-              const aberta = mes?.competencia === competenciaAberta;
-              return (
-                <th key={mes?.competencia} scope="col" className="num">
-                  {/* ⚠⚠ O CABEÇALHO É UM `<button>`, não um `<a>`: abrir o detalhe de um mês não é
-                      navegação — não há URL para ele, e inventar uma daria um hash que o `useRota`
-                      recusa e devolve ao padrão. É a mesma regra que separa Fluxo ⇄ DRE de rotas. */}
+            {COLUNAS_DA_PLANILHA.map((c) => (
+              <th key={c.chave} scope="col" className="num" data-coluna={c.chave} title={c.ajuda}>
+                {c.rotulo}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {meses.map((mes) => {
+            const t = linhasDaPlanilha(mes);
+            const aberta = mes?.competencia === competenciaAberta;
+            return (
+              <tr key={mes?.competencia}>
+                <th scope="row">
+                  {/* ⚠⚠ O MÊS É UM `<button>`, não um `<a>`: abrir o detalhe não é navegação — não há
+                      URL para ele, e inventar uma daria um hash que o `useRota` recusa. É a mesma
+                      regra que separa Fluxo ⇄ DRE de rotas. */}
                   <button
                     type="button"
                     className="planilha-mes"
@@ -255,97 +277,127 @@ function PlanilhaDoFluxo({ meses, competenciaAberta, aoAbrirMes }) {
                     {mesCurto(mes?.competencia)}
                   </button>
                 </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {LINHAS_DA_PLANILHA.map((linha) => (
-            <tr key={linha.chave}>
-              <th scope="row">
-                {linha.direcao}
-                {/* ⚠⚠ "previsto" VAI NO TEXTO, nunca só na cor — a regra que `LinhaDoMes` já segue.
-                    Numa grade ela pesa mais: aqui o número está longe do rótulo. */}
-                <span className="chip" data-procedencia={linha.procedencia}>
-                  {leituraDaProcedencia(linha.procedencia).rotulo}
-                </span>
-              </th>
-              {colunas.map(({ mes, t }) => {
-                const valor = linha.ler(t);
-                return (
-                  <td key={mes?.competencia} className="num" data-vazio={valor ? undefined : "sim"}>
-                    {/* ⚠ ZERO SAI COMO TRAÇO. `R$ 0,00` em toda célula vazia é exatamente a parede de
-                        zeros que esta forma existe para desfazer — e "nada neste compartimento" não é
-                        a mesma afirmação que "zero reais". */}
-                    {valor ? naGrade(valor) : "—"}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-          {temDesconhecido ? (
-            <tr>
-              <th scope="row">
-                <span className="chip" data-procedencia={PROCEDENCIA.DESCONHECIDO}>
-                  {leituraDaProcedencia(PROCEDENCIA.DESCONHECIDO).rotulo}
-                </span>
-              </th>
-              {colunas.map(({ mes, t }) => (
-                /* ⚠⚠ CONTAGEM, nunca valor — a mesma regra do `TotaisDoMes`. O que não tem valor
-                   somável não vira zero e não entra em soma nenhuma. */
-                <td
-                  key={mes?.competencia}
-                  className="num"
-                  data-vazio={t.desconhecido.quantas ? undefined : "sim"}
-                >
-                  {t.desconhecido.quantas ? `${t.desconhecido.quantas} linha(s)` : "—"}
-                </td>
-              ))}
-            </tr>
-          ) : null}
+                {COLUNAS_DA_PLANILHA.map((c) => {
+                  const partes = c.partes(t).filter((p) => p.valor);
+                  return (
+                    <td
+                      key={c.chave}
+                      className="num"
+                      data-coluna={c.chave}
+                      data-vazio={partes.length ? undefined : "sim"}
+                    >
+                      {/* ⚠ ZERO SAI COMO TRAÇO. `R$ 0,00` em toda célula vazia é a parede de zeros
+                          que esta forma existe para desfazer — e "nada aqui" não é "zero reais". */}
+                      {partes.length === 0 ? "—" : partes.map((pt) => (
+                        <span key={pt.procedencia} className="planilha-valor" data-procedencia-celula={pt.procedencia}>
+                          {naGrade(pt.valor)}
+                        </span>
+                      ))}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
 
+/**
+ * ⚠⚠ AS DUAS RESSALVAS QUE NÃO APARECEM NESTE PORTAL — e só estas duas.
+ *
+ * Decisão do dono, 27/08/2026, em duas etapas: *"tire esses avisos da página"* e, depois, *"pode
+ * excluir isso também"*. São a guia já vencida e a guia sem mês.
+ *
+ * ⚠⚠ EU ARGUMENTEI CONTRA E ELE DECIDIU — fica escrito porque o critério deste app manda o
+ * contrário: *"fica o texto que muda uma decisão de quem lê ou avisa de consequência fiscal"*, e
+ * *"2 guias venceram, somando R$ 18.638,39"* é as duas coisas.
+ *
+ * ⚠ O QUE SEGURA A DECISÃO: **o fato continua chegando por dois caminhos que já existiam** — o card
+ * "A vencer" do Painel, na mesma tela, logo acima; e a aba Guias. O `CLAUDE.md` já registrava que os
+ * dois números conviviam e podiam divergir; tirar este resolve aquela ambiguidade em vez de criá-la.
+ *
+ * ⚠⚠ A REGRA NÃO FOI TOCADA. `ressalvasDoFluxo` é ESPELHO da do contador — lá o aviso FICA, porque
+ * quem trabalha a guia é ele. Apagar de lá quebraria o espelho e esconderia a guia vencida de quem
+ * tem de agir sobre ela.
+ *
+ * ⚠ O `startsWith` é porque a segunda tem sufixo dinâmico (`Sem mês — SIMPLES`, com o rótulo da guia).
+ */
+const RESSALVAS_FORA_DESTE_PORTAL = ["Guias já vencidas", "Sem mês"];
+
 function Fluxo({ dados }) {
   const meses = Array.isArray(dados?.meses) ? dados.meses : [];
   // ⚠ Abre no primeiro mês QUE TEM ALGO, não no primeiro da lista: com nada aberto a grade ensina os
-  // números e esconde a evidência; abrindo um mês vazio, ensina a frase de vazio. `null` quando não
-  // há nenhum — e aí a planilha fica sozinha, que é a resposta certa.
+  // números e esconde a evidência; abrindo um mês vazio, ensina a frase de vazio.
   const [aberta, setAberta] = useState(() => meses.find(mesTemAlgo)?.competencia ?? null);
   const mesAberto = meses.find((m) => m?.competencia === aberta) || null;
+  // ⚠⚠ AS RESSALVAS DE TOM `aviso` NÃO APARECEM NESTE PORTAL — decisão do dono, 27/08/2026, em duas
+  // etapas: *"tire esses avisos da página"* e, depois, *"pode excluir isso também"*. São duas: a guia
+  // já vencida e a guia sem mês.
+  //
+  // ⚠⚠ EU ARGUMENTEI CONTRA, E ELE DECIDIU — fica escrito porque o critério deste app manda o
+  // contrário: *"fica o texto que muda uma decisão de quem lê ou avisa de consequência fiscal"*, e
+  // "2 guias venceram, somando R$ 18.638,39" é as duas coisas.
+  //
+  // ⚠ O QUE SEGURA A DECISÃO, e por isso ela não deixa o cliente às cegas: **o fato continua chegando
+  // por dois caminhos que já existiam** — o card "A vencer" do Painel (logo acima, na mesma tela) e a
+  // aba Guias. O `CLAUDE.md` já registrava que os dois números conviviam e podiam divergir; tirar
+  // este resolve aquela ambiguidade em vez de criá-la.
+  //
+  // ⚠⚠ A REGRA NÃO FOI TOCADA. `ressalvasDoFluxo` é ESPELHO da do contador — lá o aviso FICA, porque
+  // quem trabalha a guia é ele. Apagar de lá para atender a um pedido daqui quebraria o espelho e
+  // esconderia a guia vencida de quem tem de agir sobre ela.
+  //
+  // ⚠⚠ O CORTE É NOMINAL, E A PRIMEIRA VERSÃO ERRAVA NISSO. Ela filtrava por TOM (`tom !== "aviso"`)
+  // e levava junto uma terceira ressalva que o dono não pediu para tirar — *"Repetições não lidas"*,
+  // que avisa que a recorrência da empresa não pôde ser lida. **Quem pegou foi o teste**, não a
+  // revisão: `nada some em silêncio › a AUSÊNCIA do imposto é dita` ficou vermelho na hora.
+  // ⚠ Por isso a lista é FECHADA e por título: um aviso NOVO que o servidor passe a mandar **aparece**
+  // — que é o comportamento certo. O silêncio é só para os dois que ele nomeou.
   const ressalvas = ressalvasDoFluxo(dados);
+  const contexto = ressalvas.filter((r) => !RESSALVAS_FORA_DESTE_PORTAL.some((p) => String(r?.titulo || "").startsWith(p)));
 
   return (
     <div className="fluxo">
-      {/* ⚠⚠ AS RESSALVAS DE TOM `aviso` CONTINUAM ANTES DA GRADE, e a razão escrita segue valendo: a
-          guia vencida é a linha mais urgente do fluxo e não mora em mês nenhum.
-          ⚠ As de tom `info` DESCERAM para depois da grade em 27/08/2026 — elas são contexto, não
-          ação, e medidas as quatro caixas ocupavam **247px antes do primeiro número da tela**. */}
-      {ressalvas.filter((r) => r.tom === "aviso").map((r, i) => (
-        <p key={`aviso-${r.titulo || ""}-${i}`} className="alerta alerta-aviso" role="status">
-          <strong>{r.titulo}</strong> {r.texto}
-        </p>
-      ))}
-
       <PlanilhaDoFluxo meses={meses} competenciaAberta={aberta} aoAbrirMes={setAberta} />
+
+      {/* ⚠⚠ A COR NÃO PODE SER A ÚNICA MARCA, e desde que ela passou a marcar a CATEGORIA (a coluna)
+          quem separa o que já existe do que é previsão é o PREENCHIMENTO — sólido × contorno. Essa é
+          a metade que sobrevive à impressão em preto e branco e ao daltonismo; a cor, não.
+          ⚠ Esta linha tem 18px e FICA, mesmo com o pedido de enxugar: sem ela a grade afirma por
+          desenho uma distinção que ninguém consegue nomear. */}
+      <p className="meta meta--bloco fluxo-legenda-cor">
+        <span data-procedencia-celula="fato">preenchido</span> já existe ·{" "}
+        <span data-procedencia-celula="previsao">contorno</span> previsto
+      </p>
 
       {mesAberto ? <MesDoFluxo mes={mesAberto} /> : null}
 
-      {/* ⚠⚠ AS DUAS FRASES SÃO OBRIGATÓRIAS: uma diz que a previsão não aconteceu, a outra diz por que
-          não existe um número único. Sem elas, "previsto" se lê como compromisso e a ausência do total
-          se lê como falta. ⚠ Elas desceram junto com as ressalvas de contexto: numa grade em que
-          "previsto" está escrito em toda linha, a frase deixou de precisar vir antes. */}
-      <p className="meta meta--bloco">{FRASE_DA_PREVISAO}</p>
-      <p className="meta meta--bloco">{FRASE_SEM_TOTAL}</p>
-
-      {ressalvas.filter((r) => r.tom !== "aviso").map((r, i) => (
-        <p key={`info-${r.titulo || ""}-${i}`} className="alerta alerta-info" role="status">
-          <strong>{r.titulo}</strong> {r.texto}
-        </p>
-      ))}
+      {/* ⚠⚠ TODAS AS LEGENDAS FORAM RECOLHIDAS — e as duas últimas por pedido explícito do dono
+          (27/08/2026): *"enxugue essas legendas"* e, sobre as caixas da guia vencida e da guia sem
+          mês, *"tire esses avisos da página"*.
+          ⚠⚠ EU ARGUMENTEI CONTRA E ELE DECIDIU — fica registrado porque o critério escrito deste app
+          manda o contrário: *"fica o texto que muda uma decisão de quem lê ou avisa de consequência
+          fiscal"*, e "2 guias venceram, somando R$ 18.638,39" é as duas coisas.
+          ⚠ O QUE SEGURA A DECISÃO: **nada foi apagado e o cliente não fica sem o fato.** A regra
+          (`ressalvasDoFluxo`) continua produzindo as ressalvas, elas continuam nesta página — só
+          recolhidas —, e a guia vencida continua chegando por DOIS outros caminhos que já existiam:
+          o card "A vencer" do Painel e a aba Guias. O `CLAUDE.md` já registrava que os dois números
+          conviviam e podiam divergir; recolher este resolve aquela ambiguidade em vez de criá-la.
+          ⚠ Este `<details>` não precisa do efeito de impressão que o `apps/web/CLAUDE.md` exige: o
+          fluxo deste portal não é impresso — não há `data-print-area` nesta tela. */}
+      <details className="fluxo-notas">
+        <summary>Como este fluxo é calculado</summary>
+        <p className="meta meta--bloco">{FRASE_DA_PREVISAO}</p>
+        <p className="meta meta--bloco">{FRASE_SEM_TOTAL}</p>
+        {contexto.map((r, i) => (
+          <p key={`${r.titulo || ""}-${i}`} className="meta meta--bloco">
+            <strong>{r.titulo}</strong> {r.texto}
+          </p>
+        ))}
+      </details>
     </div>
   );
 }

@@ -106,6 +106,23 @@
   --success-surface: #e7f6ec;
   --danger-surface: #fdecea;
   --danger-surface-border: #f3c4c0;
+  /* ⚠⚠ A COR DA PLANILHA DO FLUXO — quatro tintas, decisão do dono em 27/08/2026: *"verde é o que
+     sabemos, amarelo é previsto, no caso da saída é vermelho e laranja"*. As três primeiras reusam
+     tokens que já existiam (`--success`, `--danger`, `--warning`); só o amarelo é novo, porque
+     `--warning` já é o LARANJA da saída prevista e usar o mesmo nas duas apagaria a distinção.
+     ⚠ Ele é um amarelo ESCURO, e não dava para ser outra coisa: amarelo vivo não passa no mínimo de
+     4,5:1 sobre o branco desta superfície. Medido: **5,94:1**. */
+  /* ⚠⚠ AS QUATRO CORES DE COLUNA DA PLANILHA DO FLUXO — decisão do dono, 27/08/2026: *"a cor da
+     coluna de entrada verde, a de saída vermelha, recorrência ciano e diário azul"*. Verde e vermelho
+     reusam `--success`/`--danger`; o ciano e o azul entram aqui.
+     ⚠ Os dois são ESCUROS porque a tinta precisa passar sobre a própria superfície clara. Medido:
+     ciano **5,45:1** e azul **5,95:1** sobre os fundos abaixo — acima do mínimo de 4,5:1 da WCAG.
+     ⚠ O azul NÃO é o `--primary` (#1f5eff): ele mede 4,58:1 sobre `--primary-surface`, passa raspando,
+     e é a cor de AÇÃO deste app — usá-la numa coluna de leitura faria a coluna parecer clicável. */
+  --coluna-recorrencia: #0b6b75;
+  --coluna-recorrencia-surface: #e3f3f5;
+  --coluna-diario: #1a4fd8;
+  --coluna-diario-surface: #eef2ff;
   --warning-surface: #fff7e6;
   --warning-surface-border: #f2dfb8;
   --neutral-surface: #f1f2f4;

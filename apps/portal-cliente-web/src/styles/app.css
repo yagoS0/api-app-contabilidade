@@ -629,32 +629,102 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
    Pedido do dono, com a tela na frente: *"um monte de meses aparecendo, excesso de tabela, o fluxo
    deve se parecer mais com uma planilha excel"*. Medido no navegador antes: o bloco ocupava
    **1.723px de 2.325px — 74% da página inicial — para 7 linhas de conteúdo**, em 3 tabelas. */
-/* ⚠⚠ `table-layout: fixed` É O QUE FAZ ISTO SER UMA PLANILHA — e sem ele não era.
-   Conferido no navegador com a grade já no ar: as doze colunas de mês saíram com **larguras todas
-   diferentes** (149 · 109 · 118 · 109 · 72 · 71 · 67 · 68 · 97 · 69 · 72 · 68 · 64 px), porque o
-   `auto` dimensiona cada coluna pelo conteúdo dela. O mês com `R$ 12.500,00` ficava largo, o mês
-   vazio ficava estreito, e a grade perdia o RITMO — que é justamente o que faz o olho comparar um
-   mês com o outro. Alinhadas elas já estavam; iguais, não.
-   ⚠ Com `fixed`, a primeira coluna leva a largura declarada e as doze dividem o resto em partes
-   iguais — sem precisar declarar doze larguras. */
+/* ─── A PLANILHA DO FLUXO ────────────────────────────────────────────────────────────────────────
+   ⚠⚠ A LARGURA É DECLARADA, e a alternativa foi medida e recusada DUAS vezes:
+     · `table-layout: auto` dava colunas de larguras diferentes (149 · 109 · 118 · 72 · … px) — cada
+       uma do tamanho do conteúdo dela. Grade sem ritmo: o olho não compara.
+     · `width: 100%` com 5 colunas dava **226px por coluna** num card de 1.135px. Coluna larga demais
+       separa o número do seu rótulo e a leitura passa a exigir régua.
+   A conta: 84px para o mês + 4 × 108px = **516px**. É a largura em que `12.500,00` respira e as
+   colunas ficam vizinhas. ⚠ A tabela NÃO estica: `width: auto`. Sobra branco à direita num card
+   largo, e sobrar é melhor que espalhar. */
 .table--planilha-fluxo {
   table-layout: fixed;
-  /* ⚠⚠ 1.132px = 172 (a coluna dos rótulos) + 12 × 80. E os 80 não são estética: medido em 375px com
-     `min-width: 860px`, a coluna de mês ficava com **57px** e `12.500,00` ocupava **73px** — o número
-     ESTOURAVA a célula e invadia a vizinha. Número que vaza para a coluna do lado é pior que número
-     que exige rolagem: ele se lê como sendo do outro mês.
-     ⚠ Em 1280px o `.table-wrap` tem 1.135px, então a grade cabe inteira e não rola; abaixo disso ela
-     rola DENTRO do wrap — e é aí que a primeira coluna grudada ganha o sustento dela. */
-  min-width: 1132px;
+  width: auto;
+  min-width: 0;
   font-variant-numeric: tabular-nums;
 }
-/* ⚠ A largura da primeira coluna é declarada nos DOIS (o canto do cabeçalho e o `th` da linha):
-   com `table-layout: fixed` quem manda é a PRIMEIRA linha da tabela, e o canto é ela. */
+.table--planilha-fluxo th,
+.table--planilha-fluxo td { padding: 6px 10px; }
 .table--planilha-fluxo .planilha-canto,
-.table--planilha-fluxo th[scope="row"] { width: 172px; }
-/* ⚠ Célula estreita não pode quebrar o número em duas linhas: `12.500,00` partido lê-se como dois
-   valores. Ele encolhe a fonte antes de quebrar, e se ainda não couber a grade rola no `.table-wrap`. */
+.table--planilha-fluxo th[scope="row"] { width: 84px; }
+.table--planilha-fluxo thead th[data-coluna],
+.table--planilha-fluxo tbody td[data-coluna] { width: 108px; }
+
+/* ⚠ A primeira coluna GRUDA — em 375px a grade rola dentro do `.table-wrap`, e rolar perdendo o mês
+   de vista transforma um número em enigma. ⚠ `z-index` só onde há `position`: sem ele o `<th>` do
+   corpo passa POR BAIXO da célula tingida da vizinha durante a rolagem. */
+.table--planilha-fluxo .planilha-canto,
+.table--planilha-fluxo th[scope="row"] {
+  position: sticky; left: 0; z-index: 1;
+  background: var(--surface);
+  text-align: left;
+}
+/* ⚠ O canto carrega a unidade e não é rótulo de nada: fica quieto. */
+.planilha-canto { color: var(--muted); font-size: .72rem; font-weight: 600; }
+
+/* ⚠ O cabeçalho de categoria é o único texto colorido em corpo pequeno da grade, e ele pode ser:
+   é uma palavra, não um número — e é ela que ensina o que a cor da coluna quer dizer. */
+.table--planilha-fluxo thead th[data-coluna] {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; font-weight: 700;
+}
+
+/* ⚠ O mês é um botão de verdade e parece um: 44px de alvo de toque, que é o mínimo. */
+.planilha-mes {
+  font: inherit; font-weight: 600; color: inherit; cursor: pointer;
+  background: none; border: 0; border-radius: var(--radius);
+  min-width: 44px; min-height: 28px; padding: 2px 6px; margin: -2px -6px;
+}
+.planilha-mes:hover { background: var(--neutral-surface); }
+.planilha-mes[aria-pressed="true"] { background: var(--primary-surface); color: var(--primary); }
+
+/* ⚠ Célula vazia é traço apagado, nunca `R$ 0,00`: "nada aqui" não é "zero reais". */
+.table--planilha-fluxo td[data-vazio="sim"] { color: var(--muted); opacity: .55; }
+/* ⚠ Número não quebra em duas linhas: `12.500,00` partido lê-se como dois valores. */
 .table--planilha-fluxo td.num { white-space: nowrap; }
+
+/* ⚠⚠ A COR MARCA A COLUNA, e o PREENCHIMENTO marca a certeza (dono, 27/08/2026).
+   Duas decisões dele, nesta ordem: primeiro *"difícil entender as cores, precisa ser colorido a caixa
+   e não o número"* — número em corpo pequeno alinhado à direita se lê como número, e a cor vira
+   detalhe de tipografia; depois *"a diferença deles será a cor de suas colunas: entrada verde, saída
+   vermelha, recorrência ciano e diário azul"*.
+   ⚠⚠ Com a cor ocupada pela CATEGORIA, quem separa `fato` de `previsão` passou a ser sólido ×
+   contorno — e essa é a metade que sobrevive à impressão em preto e branco e ao daltonismo. A lei
+   escrita deste fluxo (*"a palavra vai no TEXTO, não só na cor"*) continua honrada: a legenda de uma
+   linha nomeia as duas, e o detalhe do mês diz a procedência por extenso. */
+.table--planilha-fluxo th[data-coluna],
+.table--planilha-fluxo td[data-coluna] { background: var(--coluna-fundo); color: var(--coluna-tinta); }
+.table--planilha-fluxo [data-coluna="entrada"]     { --coluna-tinta: var(--success); --coluna-fundo: var(--success-surface); }
+.table--planilha-fluxo [data-coluna="saida"]       { --coluna-tinta: var(--danger); --coluna-fundo: var(--danger-surface); }
+.table--planilha-fluxo [data-coluna="recorrencia"] { --coluna-tinta: var(--coluna-recorrencia); --coluna-fundo: var(--coluna-recorrencia-surface); }
+.table--planilha-fluxo [data-coluna="diario"]      { --coluna-tinta: var(--coluna-diario); --coluna-fundo: var(--coluna-diario-surface); }
+
+/* ⚠ Uma célula pode ter DOIS valores (o que já existe e o previsto do mesmo mês) — por isso a marca
+   é do VALOR, não da célula: a célula-caixa só saberia desenhar um dos dois. */
+.planilha-valor { display: block; font-weight: 600; }
+.planilha-valor + .planilha-valor { margin-top: 3px; }
+/* ⚠⚠ CONTORNO = PREVISTO. Ele é tracejado, e não só mais claro: opacidade some na impressão e no
+   daltonismo; um traço interrompido sobrevive aos dois. */
+.planilha-valor[data-procedencia-celula="previsao"] {
+  font-weight: 400;
+  border: 1px dashed currentColor;
+  border-radius: var(--radius);
+  padding: 0 5px;
+  margin-left: auto;
+  width: fit-content;
+}
+/* ⚠ As duas derivadas não têm procedência: elas são conta nossa sobre as outras duas. */
+.planilha-valor[data-procedencia-celula="derivado"] { font-weight: 400; }
+
+/* ⚠ A legenda mostra o DESENHO, não a cor — é o preenchimento que ela decodifica. */
+.fluxo-legenda-cor > span { font-weight: 600; }
+.fluxo-legenda-cor > span[data-procedencia-celula="previsao"] {
+  font-weight: 400; border: 1px dashed currentColor; border-radius: var(--radius); padding: 0 5px;
+}
+
+.fluxo-notas > summary { cursor: pointer; font-size: .8rem; color: var(--muted); }
+.fluxo-notas[open] > summary { margin-bottom: 6px; }
+.fluxo-notas > p { margin: 0 0 6px; }
 /* ⚠ A PRIMEIRA COLUNA GRUDA: numa planilha larga, rolar para o lado e perder o nome da linha
    transforma um número em enigma. ⚠ `z-index` só onde há `position` — sem ele o `<th>` do corpo
    passa POR BAIXO do próximo `<td>` durante a rolagem. */
