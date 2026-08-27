@@ -5,6 +5,7 @@ import { CompanySectionHeader } from "../components/renderCompanyDetailHeader";
 import { CompanyTabLayout, CompanyTabLoading } from "../components/CompanyTabLayout";
 // A URL das abas da empresa — a MESMA fonte que a navegação por clique usa. Ver `rotasDaEmpresa`.
 import { companyTabPath } from "../lib/rotasDaEmpresa";
+import { telaDeApuracao, APURACAO } from "../../../apuracao-lp/lib/regimeDaAba";
 import { CompanyFichaTab } from "../components/renderCompanyFichaTab";
 import { PageHeader } from "../../../../components/layout/PageHeader";
 import { Feedback } from "../../../../components/ui/Feedback";
@@ -76,6 +77,11 @@ const AuditoriaTab = lazy(() =>
 // era a seção "Perfil fiscal", terceiro nível de navegação sem URL. Mesmo hook, mesmo painel.
 const PerfilFiscalTab = lazy(() =>
   import("../../../apuracao-v2/pages/renderPerfilFiscalTab").then((m) => ({ default: m.PerfilFiscalTab }))
+);
+// A apuração do LUCRO PRESUMIDO — autônoma (faz a própria chamada), como a Conferência e o SITFIS.
+// ⚠ Ela e a `ApuracaoV2Tab` nunca renderizam juntas: `telaDeApuracao` escolhe uma das duas.
+const ApuracaoLpTab = lazy(() =>
+  import("../../../apuracao-lp/components/ApuracaoLpTab").then((m) => ({ default: m.ApuracaoLpTab }))
 );
 const ApuracaoV2Tab = lazy(() =>
   import("../../../apuracao-v2/pages/renderApuracaoV2Tab").then((m) => ({ default: m.ApuracaoV2Tab }))
@@ -815,6 +821,38 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           </ErrorBoundary>
         </div>
       </div>
+    );
+  }
+
+  // ⚠⚠ A ABA "APURAÇÃO" DESPACHA POR REGIME desde 27/08/2026 — o Presumido tem a tela dele.
+  //
+  // ⚠ ESTE RAMO JÁ ERA ALCANÇÁVEL PELO LUCRO PRESUMIDO ANTES DA MUDANÇA: aqui nunca houve guarda de
+  // regime, então a URL `/companies/:id/cadastro-fiscal` renderizava o PGDAS-D para uma empresa do
+  // Presumido — só não havia botão que levasse até ela. Ao ligar o botão, esse ramo passa a ser
+  // percorrido de verdade, e sem o despacho a empresa do Presumido abriria a tela do Simples.
+  //
+  // ⚠ `telaDeApuracao` só tem dois desfechos, e é isso que garante que uma das duas SEMPRE renderiza
+  // — regime desconhecido cai no Simples, que é o comportamento de sempre.
+  if (companyDetailTab === "cadastroFiscal" && telaDeApuracao(selectedCompany) === APURACAO.PRESUMIDO) {
+    return (
+      <CompanyTabLayout
+        company={selectedCompany}
+        activeTab="cadastroFiscal"
+        onBack={onBack}
+        onTabChange={switchTab}
+        canEditCompany={canEditCompany}
+        competencia={circularPanel?.competencia}
+        onCompetenciaChange={circularPanel?.onCompetenciaChange}
+        largura="trabalho"
+        feedback={feedback}
+        suspense
+      >
+        <ApuracaoLpTab
+          companyId={companyId}
+          competencia={circularPanel?.competencia}
+          razao={selectedCompany?.razao}
+        />
+      </CompanyTabLayout>
     );
   }
 

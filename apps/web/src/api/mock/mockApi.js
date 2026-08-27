@@ -8099,6 +8099,207 @@ export function createMockApi() {
         },
       };
     },
+    // ── Apuração do LUCRO PRESUMIDO ───────────────────────────────────────────────────────────
+    //
+    // ⚠⚠ O MOCK VARIA POR COMPETÊNCIA, E ISSO É O PONTO. Só UMA das seis empresas do mock é do
+    // Presumido (a de índice 1), então todos os ramos desta tela têm de ser alcançáveis navegando o
+    // MÊS — senão a maioria deles só existiria em produção. Este projeto foi mordido SETE vezes na
+    // mesma rodada por ramo que o mock escondia: o RBT12 cravado, o faturamento zero em 6 de 6, a
+    // lista de pendências sempre vazia, o `myRole` ausente.
+    //
+    // O mapa dos meses, e o que cada um exercita:
+    //   01 ......... receita ZERO → alíquota efetiva `null` (o traço, nunca "0,00%")
+    //   06/09/12 ... fecha trimestre → IRPJ + adicional + CSLL, carga COMPLETA
+    //   03 ......... fecha trimestre COM receita de mercadorias → a base com DUAS presunções
+    //   05 ......... não fecha, e há DARF de IRPJ/CSLL → o aviso de quota
+    //   06 ......... tem declaração capturada, com COFINS DIVERGENTE → a conferência com alerta
+    //   demais ..... não fecha e sem declaração → "não há com o que comparar"
+    //
+    // ⚠ Os números aqui reproduzem a FORMA do payload, não a autoridade: quem calcula de verdade é
+    // `application/fiscal/lp/lib/apuracaoPresumido.js`, e é ele que tem os testes.
+    async getApuracaoLp(companyId, competencia, { servicos16 = null } = {}) {
+      await delay(80);
+      const ano = String(competencia).slice(0, 4);
+      const mes = Number(String(competencia).split("-")[1]) || 1;
+      const fecha = [3, 6, 9, 12].includes(mes);
+      const r2 = (n) => Math.round(n * 100) / 100;
+
+      const servicosMes = mes === 1 ? 0 : 40000;
+      // ⚠⚠ MARÇO, NÃO SETEMBRO. O `CompetenciaSwitcher` tem TETO no mês corrente ("não há o que
+      // apurar num mês que não terminou"), e o mock nasce em 2026 — setembro cairia depois do teto e
+      // o ramo das DUAS presunções ficaria inalcançável offline. Ramo escondido pelo mock é o
+      // defeito que este projeto já pagou sete vezes; aqui ele quase entrou pelo calendário.
+      const mercadoriasMes = mes === 3 ? 15000 : 0;
+      const receitaMes = r2(servicosMes + mercadoriasMes);
+      const pis = r2(receitaMes * 0.0065);
+      const cofins = r2(receitaMes * 0.03);
+
+      // ⚠ A presunção de 16% só entra quando o contador CONFIRMA — e ela é derrubada quando a
+      // receita de serviços do trimestre sozinha já passa dos R$ 120.000. Com 40.000/mês o trimestre
+      // dá exatamente 120.000, que CABE: é o que deixa os dois ramos alcançáveis (basta ir a 09,
+      // onde há mercadoria, ou mudar o mês, para ver o outro).
+      const servTri = r2(servicosMes * 3);
+      const mercTri = r2(mercadoriasMes * 3);
+      const receitaTri = r2(servTri + mercTri);
+      const presuncaoServicos = servicos16 === true && servTri <= 120000 ? 0.16 : 0.32;
+      const estado16 = servicos16 === true
+        ? (servTri > 120000 ? "impossivel_pela_receita" : "confirmado")
+        : (servicos16 === false ? "recusado" : "nao_perguntado");
+
+      let irpj = null;
+      let csll = null;
+      let trimestre = null;
+      let cargaEfetiva = null;
+
+      if (fecha) {
+        const baseIrpj = r2(servTri * presuncaoServicos + mercTri * 0.08);
+        const baseCsll = r2(servTri * 0.32 + mercTri * 0.12);
+        const normal = r2(baseIrpj * 0.15);
+        const adicional = r2(Math.max(0, baseIrpj - 60000) * 0.1);
+        irpj = { base: baseIrpj, presuncaoAplicadaServicos: presuncaoServicos, normal, adicional, total: r2(normal + adicional) };
+        csll = { base: baseCsll, presuncaoAplicadaServicos: 0.32, total: r2(baseCsll * 0.09) };
+        const pisTri = r2(receitaTri * 0.0065);
+        const cofinsTri = r2(receitaTri * 0.03);
+        trimestre = {
+          meses: [0, 1, 2].map((i) => ano + "-" + String(mes - 2 + i).padStart(2, "0")),
+          receitaServicos: servTri,
+          receitaMercadorias: mercTri,
+          receita: receitaTri,
+          pis: pisTri,
+          cofins: cofinsTri,
+          total: r2(pisTri + cofinsTri + irpj.total + csll.total),
+        };
+        cargaEfetiva = {
+          valor: receitaTri > 0 ? trimestre.total / receitaTri : null,
+          total: trimestre.total,
+          receita: receitaTri,
+          base: "TRIMESTRE",
+          completa: true,
+          motivo: receitaTri > 0 ? null : "Sem receita na competência: não há alíquota efetiva a calcular (zero afirmaria carga zero).",
+        };
+      } else {
+        cargaEfetiva = {
+          valor: receitaMes > 0 ? r2(pis + cofins) / receitaMes : null,
+          total: r2(pis + cofins),
+          receita: receitaMes,
+          base: "MES",
+          completa: false,
+          motivo: receitaMes > 0
+            ? "Só PIS e COFINS entram: IRPJ e CSLL fecham no último mês do trimestre. A carga completa do Presumido só se lê no fechamento trimestral."
+            : "Sem receita na competência: não há alíquota efetiva a calcular (zero afirmaria carga zero).",
+        };
+      }
+
+      // ⚠⚠ A DARF SÓ EXISTE EM DOIS MESES, e é isso que torna alcançável offline o estado "sem
+      // declaração capturada para comparar" — que NÃO pode se parecer com "confere". Mock com
+      // declaração em todo mês esconderia justamente a distinção que a conferência existe para dar.
+      const composicao = mes === 5
+        ? [
+          { codigo: "2172", tributo: "IRPJ", total: 6000 },
+          { codigo: "2372", tributo: "CSLL", total: 2880 },
+        ]
+        : mes === 6
+          ? [
+            { codigo: "8109", tributo: "PIS", total: pis },
+            // ⚠ COFINS fora da tolerância de 2% DE PROPÓSITO: sem isto o ramo "divergente" nunca
+            // apareceria offline, e ele é a razão de a conferência existir.
+            { codigo: "2172", tributo: "COFINS", total: r2(cofins * 1.2) },
+            { codigo: "2362", tributo: "IRPJ", total: irpj ? irpj.total : 0 },
+            { codigo: "2372", tributo: "CSLL", total: csll ? csll.total : 0 },
+          ]
+          : [];
+
+      const debitosDaGuia = {};
+      for (const c of composicao) debitosDaGuia[c.tributo] = r2((debitosDaGuia[c.tributo] || 0) + c.total);
+
+      // ⚠ Mesma tolerância do backend (2%), e `null` continua sendo `sem_dctfweb` — nunca `ok`.
+      const conferir = (calculado, declarado) => {
+        if (declarado == null) return { calculado: r2(calculado), dctfweb: null, status: "sem_dctfweb" };
+        const dif = r2(Math.abs(r2(calculado) - r2(declarado)));
+        const tol = Math.max(0.02, declarado * 0.02);
+        return { calculado: r2(calculado), dctfweb: r2(declarado), diferenca: dif, status: dif <= tol ? "ok" : "divergente" };
+      };
+      const reconciliacao = { PIS: conferir(pis, debitosDaGuia.PIS), COFINS: conferir(cofins, debitosDaGuia.COFINS) };
+      if (irpj) reconciliacao.IRPJ = conferir(irpj.total, debitosDaGuia.IRPJ);
+      if (csll) reconciliacao.CSLL = conferir(csll.total, debitosDaGuia.CSLL);
+
+      const trimestrais = composicao.filter((c) => c.tributo === "IRPJ" || c.tributo === "CSLL");
+      const totalQuota = r2(trimestrais.reduce((s, c) => s + c.total, 0));
+      const quotaDeTrimestreAnterior = !fecha && trimestrais.length
+        ? {
+          tributos: trimestrais.map((c) => ({ tributo: c.tributo, valor: c.total })),
+          total: totalQuota,
+          leitura: "Este mês não fecha trimestre, então o cálculo não apura IRPJ nem CSLL — mas há DARF de "
+            + "IRPJ e CSLL nesta competência (" + totalQuota.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+            + "). A apuração trimestral pode ser recolhida em até três quotas mensais (Lei 9.430/1996), "
+            + "então confira a que trimestre esta DARF pertence.",
+        }
+        : null;
+
+      const observacoes = [];
+      if (mercTri > 0) {
+        observacoes.push("Há receita de mercadorias — presunção 8%/12% aplicada; confira casos especiais (transporte/hospitalar/combustível não cobertos).");
+      }
+      if (estado16 === "impossivel_pela_receita") {
+        observacoes.push("A receita de serviços SÓ DESTE TRIMESTRE já passa do limite anual de R$ 120.000,00.");
+      }
+
+      const motivo16 = estado16 === "confirmado"
+        ? "IRPJ presumido a 16% POR CONFIRMAÇÃO DO CONTADOR (Lei 9.249/1995, art. 15, § 4º). ⚠ A CSLL continua em 32%. Passando de R$ 120.000,00 no ano, a presunção vira 32% RETROATIVA e a diferença é recolhida (§ 5º)."
+        : estado16 === "recusado"
+          ? "O contador informou que a empresa NÃO se enquadra no art. 15, § 4º. Presunção de IRPJ de 32%."
+          : estado16 === "impossivel_pela_receita"
+            ? "A receita de serviços SÓ DESTE TRIMESTRE já passa do limite anual de R$ 120.000,00, então o art. 15, § 4º não pode valer no ano. A presunção volta a 32% mesmo com a confirmação."
+            : "A redução do art. 15, § 4º (IRPJ de 16%) não foi confirmada para esta empresa. Presunção de 32%, que é o padrão dos serviços em geral.";
+
+      return {
+        ok: true,
+        regime: "LUCRO_PRESUMIDO",
+        apuracao: "PRESUMIDO",
+        avisoDeRegime: null,
+        competencia,
+        receita: { servicos: servicosMes, mercadorias: mercadoriasMes, total: receitaMes },
+        pis,
+        cofins,
+        irpj,
+        csll,
+        trimestre,
+        fechaTrimestre: fecha,
+        servicos16: fecha
+          ? {
+            presuncao: presuncaoServicos,
+            estado: estado16,
+            motivo: motivo16,
+            excecoes: [
+              "não vale para serviços hospitalares",
+              "não vale para serviços de transporte",
+              "não vale para sociedades de profissão legalmente regulamentada",
+              "a empresa tem de ser EXCLUSIVAMENTE prestadora de serviços em geral",
+            ],
+          }
+          : null,
+        cargaEfetiva,
+        quotaDeTrimestreAnterior,
+        naoCalculado: [
+          { chave: "iss", rotulo: "ISS", motivo: "A alíquota varia por município e por código de serviço, e não é calculada aqui. O ISS devido sai da nota e da legislação municipal." },
+          { chave: "cpp", rotulo: "CPP (INSS patronal)", motivo: "No Lucro Presumido a contribuição patronal é recolhida POR FORA, sobre a folha — ela não entra nesta apuração e não está no DARF consolidado." },
+          { chave: "majoracaoLc224", rotulo: "Majoração da LC 224/2025", motivo: "A majoração de 10% da presunção sobre a receita acima do limite não é aplicada aqui, por decisão do escritório. Quem a aplica é o simulador de planejamento." },
+          { chave: "icmsIpi", rotulo: "ICMS / IPI", motivo: "Tributos sobre mercadoria, apurados fora deste módulo." },
+        ],
+        observacoes,
+        guia: composicao.length
+          ? { id: "mock-darf-" + competencia, valor: r2(composicao.reduce((s, c) => s + c.total, 0)), vencimento: null, paymentStatus: "OPEN" }
+          : null,
+        debitosDaGuia,
+        reconciliacao,
+        receitaImplicita: {
+          porPis: debitosDaGuia.PIS != null ? r2(debitosDaGuia.PIS / 0.0065) : null,
+          porCofins: debitosDaGuia.COFINS != null ? r2(debitosDaGuia.COFINS / 0.03) : null,
+          dasNotas: receitaMes,
+        },
+        alerta: Object.values(reconciliacao).some((x) => x.status === "divergente"),
+      };
+    },
     // ── Relatório "Faturamento no Período — Consolidado" ──────────────────────────────────────
     //
     // ⚠ LER NÃO GERA, e o mock precisa disso para o estado "nunca gerado" ser caminhável: abrir a

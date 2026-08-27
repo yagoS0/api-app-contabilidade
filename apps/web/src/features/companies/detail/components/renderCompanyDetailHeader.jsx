@@ -5,6 +5,7 @@ import { Tabs } from "../../../../components/ui/Tabs";
 // chama `companyTabPath` também). Montar "/companies/" + id + "/" + segmento aqui funcionaria hoje
 // e divergiria na primeira correção — o link levaria a um lugar e o clique a outro.
 import { companyTabPath } from "../lib/rotasDaEmpresa";
+import { mostraApuracaoDoSimples } from "../../../apuracao-lp/lib/regimeDaAba";
 
 // ⚠ ABAS QUE VIVEM NUMA COMPETÊNCIA — e são as ÚNICAS que mostram o seletor.
 //
@@ -93,8 +94,13 @@ const GROUPS = [
       // (código de serviço, data, ISS, numeração da DPS), não sobre o regime — esconder a aba do
       // Lucro Presumido tiraria a conferência de quem também emite NFS-e.
       { key: "auditoria", label: "Auditoria" },
-      // Só apuramos Simples hoje — no Lucro Presumido esta aba é escondida (ver soApuraSimples).
-      { key: "cadastroFiscal", label: "Apuração", soApuraSimples: true },
+      // ⚠⚠ ELA DEIXOU DE SER `soApuraSimples` EM 27/08/2026, e não é afrouxamento: a aba agora
+      // DESPACHA por regime (`telaDeApuracao`, em `features/apuracao-lp/lib/regimeDaAba.js`).
+      // Empresa do Simples continua vendo o PGDAS-D; a do Presumido/Real vê a apuração dela; e
+      // empresa SEM regime continua no ramo do Simples, exatamente como antes.
+      // ⚠ Esconder errava barato (some uma aba); despachar erra caro (mostra a apuração de outro
+      // regime). Por isso a leitura virou regra com teste próprio, e não um `if` aqui.
+      { key: "cadastroFiscal", label: "Apuração" },
       { key: "guides", label: "Guias" },
       { key: "sitfis", label: "Situação Fiscal" },
       // ⚠⚠ `emissaoNfse` NÃO ENTRA AQUI — e a ausência é decisão, não esquecimento (dono,
@@ -152,17 +158,17 @@ const GROUPS = [
 // lugar e a tela mostrando outro.
 const TAB_TO_GROUP = { edit: "cadastro", planoContas: "contabilidade", emissaoNfse: "fiscal" };
 
-// Q63: a aba "Apuração" só existe pro Simples — ainda não apuramos Lucro Presumido/Real no app.
-// O regime vem do cadastro legado (mesma fonte da tag do card) ou do próprio company.
-function isSimplesCompany(company) {
-  const regime = company?.regimeTributario
-    || company?.tipoTributario
-    || company?.legacyCompany?.regimeTributario
-    || company?.legacyCompany?.tipoTributario;
-  // Sem regime cadastrado não escondemos nada (não sabemos o suficiente pra tirar a aba).
-  if (!regime) return true;
-  return String(regime).trim().toUpperCase() === "SIMPLES";
-}
+// ⚠⚠ `isSimplesCompany` SAIU DAQUI EM 27/08/2026 e virou `mostraApuracaoDoSimples`, em
+// `features/apuracao-lp/lib/regimeDaAba.js` — regra pura, com teste próprio e AMARRADA ao backend.
+//
+// O que ela fazia de errado, e que não importava enquanto só escondia uma aba: comparava
+// `=== "SIMPLES"` EXATO. A `Company` grava `SIMPLES` e o `CadastroFiscal` grava `SIMPLES_NACIONAL`
+// — a MESMA empresa tinha dois regimes conforme a fonte lida. Agora que o regime escolhe QUAL TELA
+// renderiza, isso passaria a mostrar a apuração do regime errado.
+//
+// ⚠ O que NÃO mudou, de propósito: empresa sem regime continua no ramo do Simples (era
+// `if (!regime) return true`). E `soApuraSimples` continua existindo — hoje só o "Perfil fiscal" o
+// usa, e lá o motivo é outro (aquele painel resolve ANEXO DO SIMPLES).
 
 // O seletor de competência da empresa. Um só controle, no header, para as abas que têm mês.
 function CompetenciaSwitcher({ competencia, onChange }) {
@@ -206,7 +212,7 @@ export function CompanySectionHeader({
   company, activeTab, onBack, onTabChange, canEditCompany = false,
   competencia, onCompetenciaChange,
 }) {
-  const simples = isSimplesCompany(company);
+  const simples = mostraApuracaoDoSimples(company);
   // O id da empresa é o mesmo que está na URL (`selectedCompany` é achado por `companyId`), então
   // o `href` de cada aba é literalmente a URL para onde o clique navega.
   const companyId = company?.companyId;

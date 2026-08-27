@@ -2039,6 +2039,21 @@ export function createRealApi() {
     async getSugestaoAnexo(companyId, competencia) {
       return request(`/firm/companies/${companyId}/apuracao-sugestao/${competencia}`);
     },
+    // ─── Apuração do LUCRO PRESUMIDO ──────────────────────────────────────────────────────────
+    //
+    // ⚠ SÓ LEITURA, ZERO CHAMADA AO SERPRO: a rota lê as notas já capturadas e a DARF já capturada.
+    // Quem gasta chamada PAGA é o botão "Buscar tributos do Presumido", na aba Lançamentos.
+    // ⚠ E ela NÃO grava snapshot — `ApuracaoSnapshot.rbt12` é NOT NULL, e inventar um RBT12 para o
+    // Presumido seria fabricar dado fiscal.
+    //
+    // ⚠⚠ `servicos16` tem TRÊS estados e o parâmetro só viaja quando FOI RESPONDIDO. `null` é "não
+    // avaliado" e é o default do servidor (presunção de 32%, o comportamento de sempre); mandar
+    // `servicos16=false` por omissão faria a tela afirmar, em nome do contador, que a empresa não se
+    // enquadra no art. 15, § 4º.
+    async getApuracaoLp(companyId, competencia, { servicos16 = null } = {}) {
+      const qs = servicos16 === true || servicos16 === false ? `?servicos16=${servicos16}` : "";
+      return request(`/firm/companies/${companyId}/apuracao-lp/${competencia}${qs}`);
+    },
     // ─── Planejamento tributário — os dados da empresa para a simulação de regime ──────────────
     //
     // ⚠ SÓ LEITURA, e o backend não escreve nada (nem cache de RBT12): abrir um planejamento não
