@@ -17,7 +17,9 @@ import { createApiClient } from "../../../api/client";
 import { Button } from "../../../components/ui/Button";
 import { Modal } from "../../../components/ui/Modal";
 import { ModalDaVarredura } from "./ModalDaVarredura";
+import { ModalDeContabilizacao } from "./ModalDeContabilizacao";
 import { PainelDeCasamentos } from "./PainelDeCasamentos";
+import { debitosQueCasamComNota } from "../lib/contabilizacaoEmLote";
 import {
   ACAO,
   COMPETENCIA_AUSENTE,
@@ -565,6 +567,9 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState(null);
   const [varrendo, setVarrendo] = useState(false);
+  // ⚠⚠ O LOTE (Fase C). `null` = fechado; `{ idsQueCasam }` = aberto.
+  const [lote, setLote] = useState(null);
+  const [abrindoLote, setAbrindoLote] = useState(false);
   // ⚠ Casar muda a FILA (a nota ganha data e passa a A_CONFERIR) e muda o PAINEL (o débito some).
   // Este contador força o remonte do painel para os dois ficarem coerentes — sem ele, o contador vê
   // o débito sumir de um lado e a nota continuar "sem pagamento identificado" do outro.
@@ -704,6 +709,36 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
     setAcaoAberta({ acao, item });
   }, []);
 
+  /**
+   * ⚠⚠ ABRIR O LOTE EXIGE SABER QUAIS DÉBITOS JÁ CASAM COM UMA NOTA — e sem essa resposta ele NÃO
+   * abre.
+   *
+   * Contabilizar à parte um débito de extrato que é o pagamento de uma nota da fila **duplica a
+   * despesa**: a nota vira um lançamento e o débito vira outro, para o mesmo dinheiro que saiu uma
+   * vez. É o erro mais caro desta aba, e é silencioso.
+   *
+   * ⚠ Por isso a falha aqui **fecha a porta** em vez de abrir sem o filtro. Em toda a outra
+   * consulta desta tela a falha é tolerada (a fila continua legível sem o plano de contas); nesta
+   * não dá: abrir sem a lista é abrir com a lista VAZIA, e a lista vazia autoriza justamente o que
+   * ela existe para impedir.
+   */
+  const abrirLote = useCallback(async () => {
+    setAviso(null);
+    setAbrindoLote(true);
+    try {
+      const r = await conferenciaApi.getConferenciaCasamentos(companyId);
+      setLote({ idsQueCasam: debitosQueCasamComNota(r) });
+    } catch (e) {
+      setAviso(
+        "Não foi possível conferir quais débitos do extrato já casam com uma nota, e sem isso o lote "
+        + "poderia lançar a mesma despesa duas vezes. Tente de novo em instantes. "
+        + `(${e?.message || "falha na consulta"})`,
+      );
+    } finally {
+      setAbrindoLote(false);
+    }
+  }, [companyId]);
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div style={{ ...card, display: "grid", gap: 12 }}>
@@ -733,6 +768,24 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
             title={podeEscrever ? "Trazer notas recebidas para a fila." : "Seu perfil não pode alterar lançamentos desta empresa."}
           >
             Trazer notas
+          </Button>
+          {/* ⚠⚠ A PORTA DO LOTE — *"ai clicamos em importar e abre o modal para trabalharmos nele"*.
+              O botão fica VISÍVEL e desabilitado com o motivo: botão que some esconde que a ação
+              existe. ⚠ Ele NÃO checa `podeEscolherConta` para aparecer — quem separa o que entra é
+              a regra do lote, e ela nomeia cada linha que ficou de fora. Esconder o botão faria o
+              contador não saber por quê. */}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={abrirLote}
+            disabled={!podeEscrever || abrindoLote || !(fila?.itens?.length)}
+            title={
+              !podeEscrever ? "Seu perfil não pode alterar lançamentos desta empresa."
+                : !(fila?.itens?.length) ? "Não há linhas na fila para contabilizar."
+                  : "Contabilizar várias linhas de uma vez."
+            }
+          >
+            {abrindoLote ? "Abrindo…" : "Contabilizar em lote"}
           </Button>
           <Button size="sm" variant="secondary" onClick={carregar} disabled={carregando}>
             {carregando ? "Carregando…" : "Atualizar"}
@@ -870,6 +923,26 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
           aoConcluir={() => {
             // ⚠ A fila muda: as notas novas entram. Recarregar aqui evita o "varri e não apareceu
             // nada", que se lê como falha.
+            carregar();
+            setVersao((v) => v + 1);
+          }}
+        />
+      ) : null}
+
+      {lote ? (
+        <ModalDeContabilizacao
+          itens={fila?.itens || []}
+          contas={contas}
+          idsQueCasam={lote.idsQueCasam}
+          podeEscrever={podeEscrever}
+          podeEscolherConta={podeEscolherConta}
+          aoFechar={() => setLote(null)}
+          // ⚠ O modal não conhece a api: ele recebe a função de enviar UMA linha. É o que faz o
+          // dublê ser o caminho natural no teste, não o cuidadoso — mesma disciplina de
+          // `emissaoLote.js`, que também não importa quem emite.
+          aoEnviarLinha={(id, corpo) => conferenciaApi.postConferenciaAcao(companyId, id, "confirmar", corpo)}
+          aoConcluir={() => {
+            // ⚠ A fila muda (as linhas viram CONTABILIZADO) e o painel também (débitos absorvidos).
             carregar();
             setVersao((v) => v + 1);
           }}

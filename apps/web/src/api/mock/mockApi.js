@@ -7269,11 +7269,40 @@ export function createMockApi() {
           motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
         },
         {
+          // ⚠ É o MESMO débito que `getConferenciaCasamentos` devolve com `nenhum_candidato` — ver
+          // o bloco de ids logo abaixo. Despesa sem nota: o lugar dela é o lote.
           id: "dec-4", origem: "OFX_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",
           valor: "175.00", valorAjustado: null, competencia: comp,
           descricaoOriginal: "TARIFA PACOTE DE SERVICOS", cnpjFornecedor: null,
           dataDocumento: null, detalheServico: null,
           dataPagamento: comp + "-01", origemPagamento: "OFX",
+          contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
+        },
+        {
+          // ⚠⚠ ESTE DÉBITO CASA COM UMA NOTA DA FILA (`dec-2`), e é por isso que ele existe aqui.
+          //
+          // Sem ele, o ramo `CASA_COM_NOTA` do lote — o que impede a DESPESA EM DOBRO — seria
+          // INALCANÇÁVEL OFFLINE: os débitos dos casamentos usavam ids (`ofx-1`…) que não existiam
+          // na fila, então a interseção era VAZIA e nenhuma linha era jamais excluída. Em produção
+          // o `debito` é um `LancamentoDeclarado` serializado, ou seja o MESMO id da fila.
+          // ⚠ Este projeto foi mordido cinco vezes por ramo que só existia em produção.
+          id: "dec-9", origem: "OFX_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",
+          valor: "890.00", valorAjustado: null, competencia: comp,
+          descricaoOriginal: "PAGTO KODA BEAR", cnpjFornecedor: null,
+          dataDocumento: null, detalheServico: null,
+          dataPagamento: comp + "-18", origemPagamento: "OFX",
+          contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
+        },
+        {
+          // ⚠ O AMBÍGUO: duas notas se parecem com ele e o sistema não escolhe. Ele também fica de
+          // fora do lote — ambiguidade não autoriza contabilizar à parte.
+          id: "dec-10", origem: "OFX_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",
+          valor: "500.00", valorAjustado: null, competencia: comp,
+          descricaoOriginal: "PAGTO MENSALIDADE", cnpjFornecedor: null,
+          dataDocumento: null, detalheServico: null,
+          dataPagamento: comp + "-20", origemPagamento: "OFX",
           contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
           motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
         },
@@ -7342,7 +7371,7 @@ export function createMockApi() {
         // aparece depois do deploy. Conferido contra `routes/firm/conferencia.js`.
         linhas: [
           {
-            debito: { id: "ofx-1", valor: "890.00", dataPagamento: "2026-07-18", descricaoOriginal: "PAGTO KODA BEAR" },
+            debito: { id: "dec-9", valor: "890.00", dataPagamento: "2026-07-18", descricaoOriginal: "PAGTO KODA BEAR" },
             sugestao: {
               nota: { id: "dec-2", valor: "890.00", descricaoOriginal: "KODA BEAR", dataDocumento: "2026-07-05" },
               // ⚠ O serializador NÃO devolve `palavra` — só `pista` e `frase`. Um campo a mais no
@@ -7360,7 +7389,7 @@ export function createMockApi() {
             motivo: null, frase: "",
           },
           {
-            debito: { id: "ofx-2", valor: "500.00", dataPagamento: "2026-07-20", descricaoOriginal: "PAGTO MENSALIDADE" },
+            debito: { id: "dec-10", valor: "500.00", dataPagamento: "2026-07-20", descricaoOriginal: "PAGTO MENSALIDADE" },
             sugestao: null,
             candidatos: [
               {
@@ -7376,7 +7405,7 @@ export function createMockApi() {
             frase: "Mais de uma nota se parece com este débito. O sistema não escolhe entre elas — confira qual é a certa.",
           },
           {
-            debito: { id: "ofx-3", valor: "175.00", dataPagamento: "2026-07-01", descricaoOriginal: "TARIFA PACOTE DE SERVICOS" },
+            debito: { id: "dec-4", valor: "175.00", dataPagamento: "2026-07-01", descricaoOriginal: "TARIFA PACOTE DE SERVICOS" },
             sugestao: null, candidatos: [], motivo: "nenhum_candidato",
             frase: "Nenhuma nota recebida em aberto se parece com este débito. Ele pode ser uma despesa sem nota, ou a nota ainda não chegou.",
           },

@@ -57,6 +57,43 @@ const CONTRATOS = [
   },
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O ID DO DÉBITO DO CASAMENTO É UM ID DA FILA — e o mock já divergiu nisso também.
+//
+// Em produção `serializar(l.debito)` serializa um `LancamentoDeclarado`, ou seja o **mesmo** id que
+// a fila devolve. O mock usava um espaço de ids próprio (`ofx-1`, `ofx-2`, `ofx-3`), e a interseção
+// entre os dois conjuntos era **VAZIA**. Consequência medida em 27/08/2026: o ramo que impede a
+// DESPESA EM DOBRO no lote (`CASA_COM_NOTA`) era inalcançável offline — a tela nunca excluía nada,
+// e só em produção o comportamento apareceria. É a mesma família do `casamentos` × `linhas`.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ O DÉBITO DO CASAMENTO É UMA LINHA DA FILA", () => {
+  it("os ids dos débitos existem na fila — senão o filtro do lote nunca morde", async () => {
+    const fila = await mock.getConferenciaFila("emp-1", { competencia: "2026-07" });
+    const cas = await mock.getConferenciaCasamentos("emp-1");
+    const idsDaFila = new Set(fila.itens.map((i) => i.id));
+    const idsDosDebitos = cas.linhas.map((l) => l.debito.id);
+
+    expect(idsDosDebitos.length).toBeGreaterThan(0);
+    for (const id of idsDosDebitos) expect(idsDaFila.has(id)).toBe(true);
+  });
+
+  it("⚠ e pelo menos um deles TEM candidato — é o que exercita o ramo da despesa em dobro", async () => {
+    const cas = await mock.getConferenciaCasamentos("emp-1");
+    const comCandidato = cas.linhas.filter((l) => l.sugestao || (l.candidatos || []).length);
+    expect(comCandidato.length).toBeGreaterThan(0);
+  });
+
+  it("⚠ e pelo menos um NÃO tem — é a despesa sem nota, cujo lugar É o lote", async () => {
+    const cas = await mock.getConferenciaCasamentos("emp-1");
+    const semCandidato = cas.linhas.filter((l) => !l.sugestao && !(l.candidatos || []).length);
+    expect(semCandidato.length).toBeGreaterThan(0);
+  });
+
+  it("⚠⚠ a rota serializa o DÉBITO como declarado — é o que garante o espaço de ids comum", () => {
+    expect(FONTE_DA_ROTA).toMatch(/debito:\s*serializar\(l\.debito\)/);
+  });
+});
+
 describe("⚠⚠ AS CHAVES DO MOCK EXISTEM NA RESPOSTA DO SERVIDOR", () => {
   for (const c of CONTRATOS) {
     it(`${c.o_que}: o mock devolve exatamente as chaves que a rota promete`, async () => {
