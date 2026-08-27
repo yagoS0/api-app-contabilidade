@@ -13,6 +13,8 @@ import { estadoVazioDasGuias } from "../lib/estadoVazioGuias";
 import { BotaoCopiar } from "../../../../components/ui/BotaoCopiar";
 import { linhaDigitavelDaGuia } from "../../lib/linhaDigitavelTela";
 import { MOTIVOS_GUIA_VAZIA, TEM_LISTA_DE_MOTIVOS, motivoParaGravar, motivoSuficiente } from "../lib/motivoGuiaVazia";
+import { fraseDoLote, relatorioDoLote, DESFECHO } from "../lib/loteDoTrimestre";
+import { competenciaAtual } from "../../../../lib/competencia";
 
 // Q17: guias ESPERADAS do mês (por regime/prolabore) com botão "Vazio" (ausência confirmada).
 // Mapeia a chave do compliance → tipo de Guide pra marcar Vazio.
@@ -55,6 +57,10 @@ function MarcarVazioDropdown({ companyId, competencia, refreshKey, onChanged }) 
         setMonthClosed(Boolean(fech?.fechado));
       } catch { if (!cancel) setCompliance(null); }
     })();
+    // ⚠ O relatório do lote é sobre a competência em que ele foi disparado — trocar de mês o deixa
+    // falando de outro contexto. Achado no navegador: ele seguia visível em 2026-04 depois de ter
+    // sido disparado a partir de 2026-06.
+    setRelatorio(null);
     return () => { cancel = true; };
   }, [companyId, competencia, refreshKey]);
 
@@ -77,9 +83,16 @@ function MarcarVazioDropdown({ companyId, competencia, refreshKey, onChanged }) 
   const [confirmacao, setConfirmacao] = useState(null); // { tipo, faturamento, message }
   const [motivoChave, setMotivoChave] = useState("");
   const [motivoTexto, setMotivoTexto] = useState("");
+  // ⚠⚠ O LOTE DO TRIMESTRE nasce DESMARCADO. IRPJ/CSLL são trimestrais e os dois meses que não
+  // fecham o trimestre não têm guia deles — mas marcar três meses de uma vez é uma afirmação fiscal
+  // maior que marcar um, e alcance maior não pode acontecer por inércia. Mesmo desenho do escopo
+  // GLOBAL da resolução de pendência.
+  const [incluirTrimestre, setIncluirTrimestre] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const lote = fraseDoLote(competencia, competenciaAtual());
 
   function fecharConfirmacao() {
-    setConfirmacao(null); setMotivoChave(""); setMotivoTexto("");
+    setConfirmacao(null); setMotivoChave(""); setMotivoTexto(""); setIncluirTrimestre(false);
   }
 
   async function marcar(tipo, { confirmado = false } = {}) {
@@ -90,8 +103,31 @@ function MarcarVazioDropdown({ companyId, competencia, refreshKey, onChanged }) 
       // corpo. Tratar só uma deixaria a confirmação inalcançável em metade dos ambientes.
       const r = await expectedGuidesApi.markGuideVazio(companyId, tipo, competencia, motivo, { confirmado });
       if (r?.ok === false) throw Object.assign(new Error(r.message || "Falha ao marcar vazio."), r);
+
+      // ⚠⚠ O LOTE É A MESMA CHAMADA, REPETIDA — nunca um atalho pela guarda. Cada mês passa pelo
+      // mesmo `confirmado` e pelo mesmo motivo obrigatório, e cada um vira uma LINHA PRÓPRIA em
+      // `Guide`, com `vazioEm`/`vazioPor`/`vazioMotivo` próprios: o lote poupa digitação, não
+      // registro. E é SEQUENCIAL de propósito — o relatório precisa da ordem, e concorrência aqui
+      // só serviria para dificultar a leitura do que falhou.
+      const doLote = [];
+      if (confirmado && incluirTrimestre && lote.podeOferecer) {
+        for (const mes of lote.meses) {
+          try {
+            const rr = await expectedGuidesApi.markGuideVazio(companyId, tipo, mes, motivo, { confirmado: true });
+            if (rr?.ok === false) throw Object.assign(new Error(rr.message || "Falha ao marcar vazio."), rr);
+            doLote.push({ competencia: mes, desfecho: DESFECHO.MARCADA });
+          } catch (e) {
+            // ⚠ Um mês que falha NÃO derruba os outros — e o motivo dele aparece NOMEADO. Mês
+            // contábil fechado devolve 409 `MES_FECHADO`, e silêncio ali faria "marquei o trimestre"
+            // se ler como sucesso total.
+            doLote.push({ competencia: mes, desfecho: DESFECHO.FALHOU, motivo: e?.message || null });
+          }
+        }
+      }
+
       setOpen(false);
       fecharConfirmacao();
+      setRelatorio(doLote.length ? relatorioDoLote(doLote) : null);
       if (onChanged) await onChanged();
     } catch (err) {
       if (err?.precisaConfirmar || err?.error === "GUIA_VAZIA_COM_FATURAMENTO") {
@@ -106,6 +142,20 @@ function MarcarVazioDropdown({ companyId, competencia, refreshKey, onChanged }) 
 
   return (
     <div ref={ref} style={{ position: "relative" }}>
+      {/* ⚠ O desfecho do lote fica NA TELA depois que o modal fecha — sem ele, um mês que falhou
+          (mês contábil fechado, por exemplo) some junto com o diálogo. */}
+      {relatorio ? (
+        <Aviso
+          compacto
+          tom={relatorio.tom}
+          titulo={relatorio.titulo}
+          role="status"
+          style={{ marginBottom: 6 }}
+          acao={<Button variant="secondary" size="sm" onClick={() => setRelatorio(null)}>Fechar</Button>}
+        >
+          {relatorio.texto}
+        </Aviso>
+      ) : null}
       <Button
         variant="secondary" size="sm" type="button"
         disabled={busy || monthClosed}
@@ -187,8 +237,31 @@ function MarcarVazioDropdown({ companyId, competencia, refreshKey, onChanged }) 
                 placeholder="Ex.: por que não há guia a pagar nesta competência"
                 style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "6px 8px", fontSize: "0.85rem", resize: "vertical" }} />
             </label>
+            {/* ⚠⚠ O LOTE DO TRIMESTRE — e a frase NOMEIA OS MESES. "Marcar o trimestre inteiro"
+                seria mentira em duas direções: o mês do fechamento não entra (é nele que IRPJ e
+                CSLL são apurados) e mês que ainda não terminou também não. */}
+            {lote.podeOferecer ? (
+              <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                <input
+                  type="checkbox"
+                  checked={incluirTrimestre}
+                  onChange={(e) => setIncluirTrimestre(e.target.checked)}
+                  style={{ marginTop: 3 }}
+                />
+                <span>
+                  {lote.texto}
+                  {lote.ressalva ? (
+                    <span style={{ display: "block", color: "var(--text-faint)", fontSize: "0.72rem" }}>
+                      {lote.ressalva}
+                    </span>
+                  ) : null}
+                </span>
+              </label>
+            ) : null}
+
             <div style={{ fontSize: "0.72rem", color: "var(--text-faint)" }}>
               Fica gravado com o seu usuário e a data, e aparece na guia.
+              {lote.podeOferecer ? " Cada mês fica com o seu próprio registro." : ""}
             </div>
 
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
