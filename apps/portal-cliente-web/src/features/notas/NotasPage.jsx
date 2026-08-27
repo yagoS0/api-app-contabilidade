@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api";
 import { AlertaErro, CardNumero, Carregando, Chip, Vazio } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
@@ -144,34 +144,35 @@ function BotaoDanfse({ nota, companyId }) {
 }
 
 /**
- * O botão do DANFSe EM LOTE — o zip da competência que está na tela.
+ * ⚠⚠ A BARRA DA SELEÇÃO — ela substituiu o botão "Baixar DANFSe em lote (.zip)" em 27/08/2026.
  *
- * > Pedido do dono (19/08/2026): *"a possibilidade de baixar notas em lote (…) quero o download no
- * > portal do cliente, e fazer o download dos DANFSe e não do XML."*
+ * > Dono: *"tire o botão de baixar em lote, deixe o usuário selecionar as notas que ele quer e abra
+ * > a opção baixar"*.
  *
- * ⚠ ELE MORA JUNTO DO FILTRO DE COMPETÊNCIA, e não numa coluna da tabela, porque **é o filtro que
- * ele baixa**. Nenhuma lista de notas sai daqui: o que vai ao servidor é a competência, e é lá que
- * o recorte é resolvido — com o mesmo `where` da listagem. Botão no cabeçalho, longe do seletor,
- * faria parecer que ele baixa "tudo".
+ * ⚠ O QUE O BOTÃO ANTIGO FAZIA, E POR QUE ELE INCOMODAVA: ele baixava **o filtro inteiro**, não uma
+ * escolha. Quem queria três notas de vinte tinha de estreitar a competência até sobrarem três — e no
+ * portal do cliente o único filtro é a competência, então na prática não dava.
  *
- * ⚠⚠ O ZIP TRAZ UM `RELATORIO.txt`, E A TELA DIZ ISSO ANTES DE A PESSOA ABRIR O ARQUIVO. Nem toda
- * nota gera DANFSe (NF-e, nota sem o XML guardado, nota sem QR Code, nota que o sistema nacional
- * ainda não devolveu), e a ausência **não pode ser descoberta contando arquivos**. O relatório é
- * onde ela está escrita, nota por nota, com o motivo — apontar para ele é o que transforma o
- * arquivo em resposta.
+ * ⚠⚠ **ELA SÓ EXISTE COM ALGO MARCADO.** Barra permanente com "0 selecionadas" é ruído fixo; é a
+ * mesma disciplina da barra de seleção do portal do escritório.
  *
- * ⚠ A RECUSA `lote_muito_grande` CHEGA COM OS NÚMEROS. Ela é a única resposta desta ação que a
- * tela precisa EXPLICAR: cada DANFSe é gerado na hora, e sem o teto o download morreria no meio
- * sem dizer quantas notas vieram. A regra do texto mora em `lib/loteDanfse.js`.
+ * ⚠ E ela DIZ O NÚMERO — *"Baixar 3 DANFSe"*, nunca "Baixar selecionadas". O número é o que a pessoa
+ * confere contra o que ela marcou, e é o que aparece dentro do zip.
  */
-function BotaoLoteDanfse({ companyId, cnpj, competencia, habilitado, carregando }) {
+function BarraDeSelecao({ companyId, cnpj, competencia, selecionadas, aoLimpar }) {
   const [estado, setEstado] = useState({ fase: "ocioso", recusa: null });
   const baixando = estado.fase === "baixando";
+  const quantas = selecionadas.length;
 
   async function baixar() {
     setEstado({ fase: "baixando", recusa: null });
     try {
-      const blob = await api.baixarDanfseEmLote(companyId, { competencia: competencia || undefined });
+      // ⚠ Os ids viajam JUNTO da competência: o servidor os põe no `AND` do mesmo `where` da
+      // listagem, então o escopo por empresa e o recorte de direção continuam valendo sobre eles.
+      const blob = await api.baixarDanfseEmLote(companyId, {
+        competencia: competencia || undefined,
+        ids: selecionadas,
+      });
       baixarBlob(blob, nomeDoArquivoLoteDanfse({ cnpj, competencia }));
       setEstado({ fase: "pronto", recusa: null });
     } catch (err) {
@@ -180,35 +181,24 @@ function BotaoLoteDanfse({ companyId, cnpj, competencia, habilitado, carregando 
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: ".25rem" }}>
-      <button
-        type="button"
-        className="btn"
-        disabled={!habilitado || baixando}
-        /* ⚠⚠ TRÊS TEXTOS, NÃO DOIS. Enquanto a resposta não chegou, `notas` é `[]` — e dizer
-           "Não há nota neste filtro" ali é AFIRMAR uma ausência que ninguém apurou. É a mesma
-           distinção que a `linhaDigitavelTela` faz entre "ninguém olhou" e "olhamos e não há". */
-        title={
-          carregando
-            ? "Ainda carregando as notas deste filtro…"
-            : habilitado
-              ? "Gera os DANFSe das notas deste filtro e baixa tudo num arquivo .zip"
-              : "Não há nota neste filtro para baixar."
-        }
-        onClick={habilitado && !baixando ? baixar : undefined}
-      >
-        {baixando ? "Gerando os PDFs…" : "Baixar DANFSe em lote (.zip)"}
+    <div className="barra-selecao" role="region" aria-label="Ações sobre as notas selecionadas">
+      <span className="barra-selecao-conta">
+        <strong>{quantas}</strong> nota{quantas === 1 ? "" : "s"} selecionada{quantas === 1 ? "" : "s"}
+      </span>
+      <button type="button" className="btn btn-primary" disabled={baixando} onClick={baixar}>
+        {baixando ? "Gerando os PDFs…" : `Baixar ${quantas} DANFSe`}
+      </button>
+      <button type="button" className="btn" onClick={aoLimpar} disabled={baixando}>
+        Limpar seleção
       </button>
       {estado.fase === "pronto" ? (
-        <span className="meta" style={{ maxWidth: 340 }}>
-          Arquivo baixado. Dentro dele, <strong>RELATORIO.txt</strong> lista as notas que não
-          geraram DANFSe e o motivo de cada uma.
+        <span className="meta">
+          Arquivo baixado. Dentro dele, <strong>RELATORIO.txt</strong> lista o que não gerou DANFSe e
+          o motivo.
         </span>
       ) : null}
       {estado.recusa ? (
-        <span
-          className="meta-erro" style={{ maxWidth: 340 }}
-        >
+        <span className="meta-erro">
           ⚠ {estado.recusa.titulo} {estado.recusa.texto}
           {estado.recusa.porQue ? ` ${estado.recusa.porQue}` : ""}
         </span>
@@ -239,6 +229,12 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
   // sabe do cancelamento é esta tela — e quem mandou cancelar precisa ver que funcionou.
   const [cancelamentosEnviados, setCancelamentosEnviados] = useState(() => new Set());
 
+  // ⚠⚠ A SELEÇÃO É PODADA AO QUE ESTÁ NA TELA — trocar de competência ou de página não pode deixar
+  // marcada uma nota que a pessoa não vê mais. É a mesma regra que o portal do escritório aplica à
+  // carteira, e pelo mesmo motivo: seleção invisível vira ato sobre o que ninguém conferiu.
+  const [selecionadas, setSelecionadas] = useState(() => new Set());
+
+
   // Trocar de empresa ou de competência recomeça na página 1: manter a página 4
   // de uma lista que agora tem 2 páginas mostra uma tela vazia que parece um bug.
   useEffect(() => {
@@ -259,6 +255,33 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
 
   const resposta = query.dados;
   const notas = resposta?.data || [];
+
+  /**
+   * ⚠⚠ SÓ SE MARCA O QUE GERA DANFSe — a caixa nasce DESABILITADA no resto, com o motivo no `title`
+   * que a linha já mostra. É o oposto de deixar marcar e depois entregar um zip sem aquela nota: a
+   * pessoa conferiria o número da barra contra o conteúdo do arquivo e não bateria.
+   * ⚠ `podeGerarDanfse` é a MESMA função que o botão da linha usa — duas leituras divergiriam.
+   */
+  const selecionaveis = useMemo(
+    () => (notas || []).filter((n) => podeGerarDanfse(n).pode).map((n) => n.invoiceId),
+    [notas],
+  );
+
+  // ⚠⚠ A PODA. Sem ela, marcar três notas de agosto e trocar para setembro deixaria as três marcadas
+  // e invisíveis — e o "Baixar 3" agiria sobre o que ninguém está vendo.
+  useEffect(() => {
+    setSelecionadas((atual) => {
+      const podados = [...atual].filter((id) => selecionaveis.includes(id));
+      return podados.length === atual.size ? atual : new Set(podados);
+    });
+  }, [selecionaveis]);
+
+  const alternar = (id) => setSelecionadas((atual) => {
+    const proximo = new Set(atual);
+    if (proximo.has(id)) proximo.delete(id); else proximo.add(id);
+    return proximo;
+  });
+  const todasMarcadas = selecionaveis.length > 0 && selecionaveis.every((id) => selecionadas.has(id));
   const total = resposta?.total ?? 0;
   const limite = resposta?.limit ?? LIMITE;
   const totalPaginas = Math.max(1, Math.ceil(total / limite));
@@ -314,17 +337,6 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
               ))}
             </select>
           </label>
-          {/* ⚠ O botão do lote fica AQUI, colado no filtro, porque é o filtro que ele baixa. */}
-          <BotaoLoteDanfse
-            companyId={companyId}
-            cnpj={empresa.cnpj}
-            competencia={competencia}
-            /* ⚠ `!query.carregando` junto: durante a PRIMEIRA carga `notas` é `[]`, e sem esta
-               metade o botão nascia desabilitado dizendo "Não há nota neste filtro para baixar" —
-               afirmando uma ausência que ninguém tinha apurado ainda. AUSENTE NÃO É false. */
-            carregando={query.carregando}
-            habilitado={!query.carregando && notas.length > 0}
-          />
         </div>
       </div>
 
@@ -363,6 +375,17 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
       ) : (
         <>
           <div className="table-wrap">
+            {/* ⚠⚠ A BARRA SÓ EXISTE COM ALGO MARCADO, e fica ACIMA da tabela — quem marcou está
+                olhando as linhas, e a ação tem de aparecer onde o olho está. */}
+            {selecionadas.size > 0 ? (
+              <BarraDeSelecao
+                companyId={companyId}
+                cnpj={empresa.cnpj}
+                competencia={competencia}
+                selecionadas={[...selecionadas]}
+                aoLimpar={() => setSelecionadas(new Set())}
+              />
+            ) : null}
             <table className="table">
               <thead>
                 <tr>
@@ -374,6 +397,17 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                   <th scope="col">Situação</th>
                   <th scope="col" className="num">
                     Valor
+                  </th>
+                  {/* ⚠ A caixa de "todas" fica na COLUNA da seleção, e o rótulo acessível diz o
+                      número — "Selecionar" sozinho não conta quantas. */}
+                  <th scope="col" className="col-selecao">
+                    <input
+                      type="checkbox"
+                      aria-label={`Selecionar as ${selecionaveis.length} notas com DANFSe desta página`}
+                      checked={todasMarcadas}
+                      disabled={selecionaveis.length === 0}
+                      onChange={() => setSelecionadas(todasMarcadas ? new Set() : new Set(selecionaveis))}
+                    />
                   </th>
                   <th scope="col">DANFSe</th>
                   <th scope="col">Cancelar</th>
@@ -398,6 +432,18 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                   });
                   return (
                     <tr key={nota.invoiceId} data-estado-nota={estadoLinha.estado}>
+                      <td className="col-selecao">
+                        {/* ⚠ Desabilitada quando a nota não gera DANFSe: marcar o que não vem no zip
+                            faria o número da barra discordar do conteúdo do arquivo. O motivo já está
+                            no `title` do botão da linha — não se repete aqui. */}
+                        <input
+                          type="checkbox"
+                          aria-label={`Selecionar a nota ${texto(nota.numero)}`}
+                          checked={selecionadas.has(nota.invoiceId)}
+                          disabled={!podeGerarDanfse(nota).pode}
+                          onChange={() => alternar(nota.invoiceId)}
+                        />
+                      </td>
                       <td>{texto(nota.numero)}</td>
                       <td>{texto(nota.type)}</td>
                       <td>{fmtDateBr(nota.issueDate)}</td>

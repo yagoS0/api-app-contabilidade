@@ -249,12 +249,15 @@ export function createRealApi() {
     //
     // ⚠ NÃO passa por `pedir()` de propósito, mesma razão do DANFSe individual: aquele faz
     // `res.json()` sempre, e um zip não é JSON.
-    async baixarDanfseEmLote(companyId, { competencia } = {}) {
+    async baixarDanfseEmLote(companyId, { competencia, ids } = {}) {
       const { accessToken } = lerSessao();
       const res = await fetchCru(
         `/client/companies/${encodeURIComponent(companyId)}/invoices/danfse/bulk${qs({
           direcao: "emitidas",
           competencia,
+          // ⚠ Os ids ENTRAM JUNTO da competência, nunca no lugar dela: o servidor os põe no `AND` do
+          // mesmo `where` da listagem, então o escopo por empresa continua valendo sobre eles.
+          ids: Array.isArray(ids) && ids.length ? ids.join(",") : undefined,
         })}`,
         { method: "GET" },
         accessToken

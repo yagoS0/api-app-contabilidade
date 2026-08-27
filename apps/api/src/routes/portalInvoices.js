@@ -743,7 +743,25 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
   //
   // ⚠ ESCOPO POR EMPRESA É LEI, e ele é resolvido DUAS vezes: aqui, por `ensurePortalClientAccess`
   // + `where.clientId`, e de novo dentro de `gerarDanfseDaNota`, que busca cada nota por
-  // `{ id, clientId }`. **Nenhuma lista de ids vem do cliente** — o que chega são filtros.
+  // `{ id, clientId }`.
+  //
+  // ⚠⚠ **A FRASE ACIMA DIZIA "NENHUMA LISTA DE IDS VEM DO CLIENTE" ATÉ 27/08/2026, E ELA MUDOU** —
+  // pedido do dono, com a tela na frente: *"tire o botão de baixar em lote, deixe o usuário
+  // selecionar as notas que ele quer e abra a opção baixar"*.
+  //
+  // ⚠ O ARGUMENTO ANTIGO NÃO ERA BOBO, e é por isso que ele fica escrito: o zip tinha de conter
+  // **exatamente as notas que a tela mostra**, e o filtro era a única fonte disso — um lote com
+  // critério próprio discordaria da tela no primeiro ajuste, e a pessoa veria 50 linhas e receberia
+  // 43 PDFs sem nada dizendo por quê.
+  //
+  // ⚠⚠ **A SELEÇÃO EXPLÍCITA DESFAZ AQUELE RISCO EM VEZ DE O IGNORAR.** Quando a pessoa marca as
+  // linhas, a escolha DELA é a verdade — não há mais um segundo critério para discordar do primeiro.
+  // O que continuaria sendo defeito é o zip vir com nota que ela NÃO marcou, e disso cuida o `AND`
+  // abaixo: os ids entram **junto** do `where` da listagem, nunca no lugar dele.
+  //
+  // ⚠⚠ E O ESCOPO NÃO AFROUXOU: id de outra empresa simplesmente não casa (`where.clientId` continua
+  // no `AND`), e `gerarDanfseDaNota` reconfere `{ id, clientId }` nota a nota. Uma lista de ids não
+  // é uma porta nova — é um filtro a mais sobre a porta que já existia.
   //
   // ⚠ SÍNCRONO, EM STREAMING, COM TETO. O porquê (e as medições que o decidiram) está no cabeçalho
   // de `application/nfse/danfse/loteDanfseDoPortal.js`. O teto é conferido com `count()` ANTES de
@@ -751,7 +769,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
   router.get("/danfse/bulk", async (req, res) => {
     if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
     const { clientId } = req.params || {};
-    const { direcao, from, to, competencia, status, search } = req.query || {};
+    const { direcao, from, to, competencia, status, search, ids } = req.query || {};
 
     try {
       const access = await ensurePortalClientAccess(req, res, clientId);
@@ -782,6 +800,27 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
         search,
         incluirCanceladas: String(req.query.incluirCanceladas || "") === "1",
       });
+
+      // ⚠⚠ OS IDS SÃO UM FILTRO A MAIS, NUNCA UM ATALHO. Eles entram no `AND` do `where` que a
+      // listagem monta — então o escopo por empresa, a direção e o esconde-canceladas continuam
+      // valendo sobre eles. Trocar o `where` pelos ids seria a porta nova que a nota acima recusa.
+      // ⚠ Lista vazia depois de limpar (`ids=` ou só vírgulas) **não vira "baixe tudo"**: ela vira
+      // `[]`, o `count` dá zero e a resposta é `lote_vazio`. Cair no filtro inteiro entregaria um zip
+      // que ninguém pediu.
+      const idsEscolhidos = typeof ids === "string"
+        ? [...new Set(ids.split(",").map((i) => i.trim()).filter(Boolean))]
+        : null;
+      if (idsEscolhidos) {
+        // ⚠ Teto aplicado ANTES da consulta: uma querystring com 10 mil ids não pode virar um `IN`
+        // de 10 mil elementos no banco só para o `count` responder que é demais.
+        if (idsEscolhidos.length > LOTE_MAXIMO) {
+          return res.status(400).json({
+            error: "lote_muito_grande",
+            message: `Você escolheu ${idsEscolhidos.length} notas, e o limite por lote é ${LOTE_MAXIMO}.`,
+          });
+        }
+        where.AND = [...(where.AND || []), { id: { in: idsEscolhidos } }];
+      }
 
       const encontradas = await prisma.portalInvoice.count({ where });
       if (!encontradas) {

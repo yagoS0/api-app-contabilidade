@@ -791,3 +791,18 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 .fluxo-origem, .fluxo-evidencia, .fluxo-motivo { color: var(--muted); }
 .fluxo-confronto { color: var(--warning); }
 .fluxo-vazio { margin: 0; font-size: .82rem; color: var(--muted); }
+
+/* ─── A SELEÇÃO NA LISTA DE NOTAS (27/08/2026) ───────────────────────────────────────────────────
+   Dono: *"tire o botão de baixar em lote, deixe o usuário selecionar as notas que ele quer e abra a
+   opção baixar"*. ⚠ A barra só existe COM seleção — permanente com "0 selecionadas" é ruído fixo. */
+.barra-selecao {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  padding: 8px 12px; margin-bottom: var(--gap);
+  border: 1px solid var(--primary-surface-border);
+  background: var(--primary-surface);
+  border-radius: var(--radius);
+}
+.barra-selecao-conta { font-size: .85rem; }
+/* ⚠ A coluna da caixa é estreita e não some em 375px: sem ela a tabela rola e a seleção fica
+   inalcançável justamente onde a tela é menor. */
+.col-selecao { width: 36px; text-align: center; }

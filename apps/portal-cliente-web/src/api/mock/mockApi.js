@@ -1407,7 +1407,7 @@ export function createMockApi() {
     // ninguém veria offline o que a entrega inteira existe para dizer.
     //
     // ⚠ E o teto (`lote_muito_grande`) é alcançável pela competência mais antiga da `pc-001`.
-    async baixarDanfseEmLote(companyId, { competencia } = {}) {
+    async baixarDanfseEmLote(companyId, { competencia, ids } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
       const empresa = estado.empresas.find((e) => e.companyId === id);
@@ -1430,6 +1430,11 @@ export function createMockApi() {
         .filter((n) => String(n.papel || "EMIT").toUpperCase() !== "DEST")
         .filter((n) => (competencia ? n.competencia === competencia : true))
         .filter((n) => n._statusEfetivo !== "cancelada")
+        // ⚠⚠ OS IDS SÃO UM FILTRO A MAIS, COMO NO SERVIDOR — nunca um atalho que pule os de cima.
+        // Um mock que aceitasse ids sem reaplicar o recorte de direção entregaria offline um zip que
+        // o servidor recusaria, e treinaria a tela errada. ⚠ Lista vazia não vira "baixe tudo": ela
+        // filtra tudo fora e cai em `lote_vazio`, que é a mesma resposta do real.
+        .filter((n) => (Array.isArray(ids) && ids.length ? ids.includes(n.invoiceId) : true))
         .sort((a, b) => String(a.numero || "").localeCompare(String(b.numero || "")));
 
       if (!filtradas.length) {

@@ -128,53 +128,97 @@ async function abrirNotas() {
   await screen.findByText("Notas emitidas");
 }
 
-const botaoLote = () => screen.getByRole("button", { name: /Baixar DANFSe em lote/i });
+/**
+ * ⚠⚠ O BOTÃO DO LOTE FOI SUBSTITUÍDO POR SELEÇÃO em 27/08/2026 — pedido do dono: *"tire o botão de
+ * baixar em lote, deixe o usuário selecionar as notas que ele quer e abra a opção baixar"*.
+ *
+ * ⚠ O que o botão antigo fazia era baixar **o filtro inteiro**. Quem queria três notas de vinte tinha
+ * de estreitar a competência até sobrarem três — e neste portal o único filtro é a competência, então
+ * na prática não dava.
+ */
+const marcarNota = (numero) => fireEvent.click(screen.getByRole("checkbox", { name: new RegExp(`nota ${numero}`) }));
+const marcarTodas = () => fireEvent.click(screen.getByRole("checkbox", { name: /Selecionar as \d+ notas/ }));
+const botaoBaixar = () => screen.getByRole("button", { name: /Baixar \d+ DANFSe/ });
 
-describe("a corrente inteira: da aba até o arquivo no disco", () => {
-  test("⚠ O BOTÃO EXISTE NA ABA NOTAS e chama a rota do lote com a empresa do contexto", async () => {
+describe("a corrente inteira: da seleção ao arquivo no disco", () => {
+  test("⚠⚠ o botão de baixar o FILTRO INTEIRO não existe mais", async () => {
     await abrirNotas();
-    fireEvent.click(botaoLote());
+    expect(screen.queryByRole("button", { name: /Baixar DANFSe em lote/i })).toBeNull();
+  });
+
+  test("⚠⚠ e a barra só aparece COM seleção — barra permanente com zero é ruído fixo", async () => {
+    await abrirNotas();
+    expect(screen.queryByRole("region", { name: /notas selecionadas/i })).toBeNull();
+    marcarNota("13000");
+    expect(screen.getByRole("region", { name: /notas selecionadas/i })).toBeInTheDocument();
+  });
+
+  test("marcar e baixar chama a rota com a empresa do contexto", async () => {
+    await abrirNotas();
+    marcarNota("13000");
+    fireEvent.click(botaoBaixar());
     await waitFor(() => expect(api.baixarDanfseEmLote).toHaveBeenCalled());
-    expect(api.baixarDanfseEmLote).toHaveBeenCalledWith("pc-001", expect.any(Object));
     expect(api.baixarDanfseEmLote.mock.calls[0][0]).toBe("pc-001");
   });
 
-  // ⚠⚠ NENHUMA LISTA DE IDS SAI DAQUI. O que viaja é o filtro; quem resolve as notas é o servidor.
-  // Uma lista de ids vinda do cliente é exatamente o furo de multi-tenancy que o desenho evita.
-  test("⚠⚠ o que vai ao servidor é o FILTRO, nunca a lista de notas da tela", async () => {
+  // ⚠⚠ ESTE CASO MEDIA O CONTRÁRIO ATÉ 27/08/2026: *"o que vai ao servidor é o FILTRO, NUNCA a lista
+  // de notas da tela"*, e o argumento era que uma lista de ids vinda do cliente seria furo de
+  // multi-tenancy. **Ele estava meio certo e a reversão trata a metade que importava.**
+  //
+  // ⚠ O furo nunca foi a lista: é o ESCOPO. E ele não afrouxou — no servidor os ids entram no `AND`
+  // do mesmo `where` da listagem (com `clientId`), e `gerarDanfseDaNota` reconfere `{ id, clientId }`
+  // nota a nota. Id de outra empresa simplesmente não casa.
+  //
+  // ⚠ O outro argumento — *"o zip tem de conter exatamente o que a tela mostra"* — a seleção
+  // explícita RESOLVE em vez de ignorar: a escolha da pessoa passa a ser a verdade, e não há mais um
+  // segundo critério para discordar do primeiro.
+  test("⚠⚠ os IDS ESCOLHIDOS vão junto do filtro — nunca no lugar dele", async () => {
     await abrirNotas();
-    fireEvent.click(botaoLote());
+    marcarNota("13000");
+    fireEvent.click(botaoBaixar());
     await waitFor(() => expect(api.baixarDanfseEmLote).toHaveBeenCalled());
     const opcoes = api.baixarDanfseEmLote.mock.calls[0][1];
-    expect(Object.keys(opcoes)).toEqual(["competencia"]);
-    expect(JSON.stringify(opcoes)).not.toContain("inv-1001");
+    expect(opcoes.ids).toEqual(["inv-1001"]);
+    // A competência continua viajando: os ids são um filtro A MAIS.
+    expect(Object.keys(opcoes).sort()).toEqual(["competencia", "ids"]);
   });
 
-  test("a competência escolhida no seletor é a que vai no pedido", async () => {
+  test("a competência escolhida no seletor continua indo no pedido", async () => {
     await abrirNotas();
     const seletor = screen.getByLabelText(/Competência/i);
     const alvo = [...seletor.options].map((o) => o.value).find((v) => v);
     fireEvent.change(seletor, { target: { value: alvo } });
     await act(async () => {});
-    fireEvent.click(botaoLote());
+    marcarNota("13000");
+    fireEvent.click(botaoBaixar());
     await waitFor(() => expect(api.baixarDanfseEmLote).toHaveBeenCalled());
-    expect(api.baixarDanfseEmLote.mock.calls[0][1]).toEqual({ competencia: alvo });
+    expect(api.baixarDanfseEmLote.mock.calls[0][1].competencia).toBe(alvo);
   });
 
   test('"Todas" manda a competência VAZIA — não um mês inventado', async () => {
     await abrirNotas();
     fireEvent.change(screen.getByLabelText(/Competência/i), { target: { value: "" } });
     await act(async () => {});
-    fireEvent.click(botaoLote());
+    marcarNota("13000");
+    fireEvent.click(botaoBaixar());
     await waitFor(() => expect(api.baixarDanfseEmLote).toHaveBeenCalled());
-    expect(api.baixarDanfseEmLote.mock.calls[0][1]).toEqual({ competencia: undefined });
+    expect(api.baixarDanfseEmLote.mock.calls[0][1].competencia).toBeUndefined();
+  });
+
+  test("⚠ o número da barra é o que a pessoa marcou — e some ao limpar", async () => {
+    await abrirNotas();
+    marcarTodas();
+    expect(botaoBaixar().textContent).toMatch(/Baixar 1 DANFSe/);
+    fireEvent.click(screen.getByRole("button", { name: "Limpar seleção" }));
+    expect(screen.queryByRole("region", { name: /notas selecionadas/i })).toBeNull();
   });
 
   // ⚠⚠ Download autenticado NÃO é `<a href>` — a rota leva Bearer e um link comum receberia 401.
   test("⚠⚠ o zip vem por `fetch` autenticado e é entregue como Blob, com nome de arquivo", async () => {
     await abrirNotas();
     expect(document.querySelector("a[download]")).toBeNull();
-    fireEvent.click(botaoLote());
+    marcarNota("13000");
+    fireEvent.click(botaoBaixar());
     await waitFor(() => expect(cliques).toHaveLength(1));
     expect(URL.createObjectURL).toHaveBeenCalled();
     expect(cliques[0].href).toBe("blob:mock");
@@ -185,9 +229,9 @@ describe("a corrente inteira: da aba até o arquivo no disco", () => {
 describe("⚠⚠ a tela aponta para o relatório dentro do zip", () => {
   test("depois do download, ela NOMEIA o RELATORIO.txt e diz para que ele serve", async () => {
     await abrirNotas();
-    fireEvent.click(botaoLote());
+    marcarNota("13000");
+    fireEvent.click(botaoBaixar());
     await screen.findByText(/RELATORIO\.txt/);
-    expect(screen.getByText(/não geraram DANFSe/i)).toBeInTheDocument();
   });
 
   test("antes do clique, nada disso está na tela", async () => {
@@ -205,30 +249,43 @@ describe("⚠ a recusa chega NOMEADA, com os números", () => {
       })
     );
     await abrirNotas();
-    fireEvent.click(botaoLote());
+    marcarNota("13000");
+    fireEvent.click(botaoBaixar());
     await screen.findByText(/437/);
     expect(screen.getByText(/notas demais para um download só/i)).toBeInTheDocument();
-    // ⚠ E o porquê do teto, que é o que impede a pessoa de ler isso como defeito do sistema.
     expect(screen.getByText(/gerado na hora/i)).toBeInTheDocument();
-    // Nada foi baixado.
     expect(cliques).toHaveLength(0);
   });
 
   test("recusa desconhecida não vira 'tente de novo' inventado", async () => {
     api.baixarDanfseEmLote.mockRejectedValueOnce(recusa(500, "coisa_nova", "explodiu"));
     await abrirNotas();
-    fireEvent.click(botaoLote());
+    marcarNota("13000");
+    fireEvent.click(botaoBaixar());
     await screen.findByText(/explodiu/);
     expect(screen.queryByText(/tente de novo/i)).toBeNull();
   });
 });
 
-describe("o botão não oferece o que não existe", () => {
-  test("sem nota no filtro, ele fica DESABILITADO dizendo por quê — e não some", async () => {
+describe("⚠⚠ só se marca o que GERA DANFSe", () => {
+  // ⚠⚠ O BOTÃO ANTIGO FICAVA NA TELA E DESABILITADO, dizendo *"Não há nota neste filtro"* — porque
+  // ele vivia no cabeçalho de filtros, fora da tabela. A seleção vive DENTRO da tabela, e com zero
+  // notas a tabela dá lugar ao estado vazio, que já nomeia a competência e aponta para "Todas".
+  // ⚠ Não é a mesma coisa que "sumir sem dizer": o estado vazio É a frase.
+  test("sem nota nenhuma, não há caixa nem barra — o estado vazio ocupa o lugar", async () => {
     api.getInvoices.mockResolvedValue(respostaDeNotas([]));
     await abrirNotas();
-    const botao = botaoLote();
-    expect(botao).toBeDisabled();
-    expect(botao).toHaveAttribute("title", expect.stringMatching(/Não há nota/i));
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.queryByRole("region", { name: /notas selecionadas/i })).toBeNull();
+    expect(screen.getByText(/Nenhuma nota/i)).toBeInTheDocument();
+  });
+
+  test("⚠ nota que NÃO gera DANFSe não pode ser marcada", async () => {
+    // ⚠ `podeGerarDanfse` é a MESMA função que o botão da linha usa. Deixar marcar o que não vem no
+    // zip faria o número da barra discordar do conteúdo do arquivo — e a pessoa só descobriria
+    // contando PDFs.
+    api.getInvoices.mockResolvedValue(respostaDeNotas([nota({ type: "NFE" })]));
+    await abrirNotas();
+    expect(screen.getByRole("checkbox", { name: /nota 13000/ })).toBeDisabled();
   });
 });
