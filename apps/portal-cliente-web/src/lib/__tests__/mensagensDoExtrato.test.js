@@ -54,6 +54,26 @@ describe("⚠⚠ os códigos do extrato existem no backend", () => {
     expect(mensagemDeErro({ code: "ofx_sem_transacoes", status: 400 }, PADRAO)).toBe(PADRAO);
   });
 
+  // ⚠⚠ A VARREDURA INVERSA — a que faltava, e a que teria pegado `file_required` sem frase.
+  //
+  // A de cima pergunta *"esta frase está pendurada num código real?"*. Esta pergunta *"todo código
+  // que a rota devolve tem frase?"*. São perguntas diferentes, e o defeito de 26/08/2026 estava na
+  // segunda: `file_required` era emitido pela rota e não existia no dicionário, então o cliente lia
+  // o `padrao` — sem saber o que houve nem o que fazer.
+  it("⚠⚠ TODO código que a rota do OFX devolve tem frase no dicionário", () => {
+    const bloco = FONTE_DA_ROTA.slice(
+      FONTE_DA_ROTA.indexOf("receberArquivoDoExtrato"),
+      FONTE_DA_ROTA.indexOf("ofx_import_falhou") + 200,
+    );
+    expect(bloco.length).toBeGreaterThan(200);
+    const codigos = [...new Set([...bloco.matchAll(/error:\s*"([a-z_]+)"/g)].map((m) => m[1]))];
+    // ⚠ se a varredura não achar nada, ela não está provando coisa nenhuma
+    expect(codigos.length).toBeGreaterThanOrEqual(3);
+    for (const codigo of codigos) {
+      expect(mensagemDeErro({ code: codigo, status: 400 }, PADRAO)).not.toBe(PADRAO);
+    }
+  });
+
   it("⚠⚠ a frase do arquivo grande diz o CONSERTO, não só o problema", () => {
     const frase = mensagemDeErro({ code: "arquivo_grande_demais", status: 413 }, PADRAO);
     expect(frase).toMatch(/períodos menores/i);

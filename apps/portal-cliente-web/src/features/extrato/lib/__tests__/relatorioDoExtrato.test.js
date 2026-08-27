@@ -2,11 +2,14 @@
 
 import {
   TOM,
+  avisosDoExtrato,
   contagemDeDescartadas,
+  fraseDaAmostraDeDescartes,
   fraseQuandoNadaEntrou,
   frasePorArquivoRepetido,
   leituraDaConta,
   linhasDoRelatorio,
+  motivoLegivel,
 } from "../relatorioDoExtrato.js";
 
 const relatorio = (extra = {}) => ({
@@ -95,9 +98,20 @@ describe("⚠⚠ '0 novas' NUNCA fica sozinho — os motivos de zero são difere
     expect(f).toMatch(/esperado/i);
   });
 
-  it("arquivo só de créditos tem frase PRÓPRIA", () => {
-    const f = fraseQuandoNadaEntrou(relatorio({ criados: 0, jaImportadas: 0, transacoesLidas: 0, foraDoEscopo: 12 }));
+  // ⚠⚠ A FIXTURE ANTERIOR ERA IMPOSSÍVEL: `transacoesLidas: 0` com `foraDoEscopo: 12`. Medido na
+  // fonte, `transacoesLidas` INCLUI os créditos, então `foraDoEscopo > 0 ⇒ transacoesLidas > 0`.
+  // O teste passava, a regra estava errada, e o ramo era inalcançável em produção — o mock e o
+  // teste sustentavam um ao outro sobre uma forma que o servidor não produz.
+  it("arquivo só de créditos tem frase PRÓPRIA — TODAS as lidas são crédito", () => {
+    const f = fraseQuandoNadaEntrou(relatorio({ criados: 0, jaImportadas: 0, transacoesLidas: 12, foraDoEscopo: 12 }));
     expect(f).toMatch(/só tem entradas/i);
+  });
+
+  it("⚠ com débitos NO MEIO, a frase NÃO é a dos créditos — nem tudo era entrada", () => {
+    // 12 lidas, 5 créditos ⇒ havia 7 saídas, e nenhuma virou despesa por outro motivo
+    const f = fraseQuandoNadaEntrou(relatorio({ criados: 0, jaImportadas: 0, transacoesLidas: 12, foraDoEscopo: 5 }));
+    expect(f).not.toMatch(/só tem entradas/i);
+    expect(f).toMatch(/Nenhuma saída/i);
   });
 
   it("tudo descartado manda ver os motivos", () => {
@@ -155,5 +169,136 @@ describe("⚠ o vazio", () => {
     expect(linhasDoRelatorio(null)).toEqual([]);
     expect(fraseQuandoNadaEntrou(null)).toBeNull();
     expect(frasePorArquivoRepetido(null)).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ OS AVISOS DE QUALIDADE DO DEDUPE — que somiam da tela até 26/08/2026.
+//
+// O servidor devolve TRÊS (`declarados/lib/dedupeOfx.js`), com frase pronta. A tela cobria UM, e
+// por conta própria. `sem_fitid` é a mais cara: ela é a EXCEÇÃO à promessa de que reenviar é
+// seguro, e estava muda.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ os avisos do dedupe", () => {
+  const comAnomalias = (lista) => relatorio({ anomalias: lista });
+
+  it("os três chegam, com a frase DO SERVIDOR", () => {
+    const avisos = avisosDoExtrato(comAnomalias([
+      { codigo: "sem_conta_bancaria", n: 23, frase: "A conta não veio no arquivo." },
+      { codigo: "sem_fitid", n: 4, frase: "Duas iguais no mesmo dia continuam entrando as duas." },
+      { codigo: "fitid_repetido", n: 2, frase: "O banco repetiu o identificador." },
+    ]));
+    expect(avisos.map((a) => a.codigo)).toEqual(["sem_conta_bancaria", "sem_fitid", "fitid_repetido"]);
+    expect(avisos[1].frase).toMatch(/mesmo dia/i);
+  });
+
+  it("⚠ a tela NÃO reescreve a frase — ela mostra a que veio", () => {
+    const avisos = avisosDoExtrato(comAnomalias([{ codigo: "sem_fitid", n: 4, frase: "TEXTO DO SERVIDOR" }]));
+    expect(avisos[0].frase).toBe("TEXTO DO SERVIDOR");
+  });
+
+  it("⚠⚠ aviso SEM frase é descartado — código cru não chega ao olho do cliente", () => {
+    expect(avisosDoExtrato(comAnomalias([{ codigo: "sem_fitid", n: 4 }]))).toEqual([]);
+  });
+
+  it("sem anomalias, silêncio", () => {
+    expect(avisosDoExtrato(relatorio())).toEqual([]);
+    expect(avisosDoExtrato(null)).toEqual([]);
+  });
+});
+
+describe("⚠⚠ o MOTIVO na língua do cliente", () => {
+  it("usa a frase do servidor quando ela vem", () => {
+    expect(motivoLegivel({ motivo: "sem_data", frase: "A transação não traz data de lançamento." }))
+      .toBe("A transação não traz data de lançamento.");
+  });
+
+  it("⚠ sem a frase, o CÓDIGO é a reserva — melhor que um traço, mas não é o padrão", () => {
+    expect(motivoLegivel({ motivo: "sem_data" })).toBe("sem_data");
+  });
+
+  it("⚠ sem nada, traço — nunca 'undefined' na tela", () => {
+    expect(motivoLegivel({})).toBe("—");
+    expect(motivoLegivel(null)).toBe("—");
+  });
+});
+
+describe("⚠ a frase da amostra saiu do JSX", () => {
+  it("só existe quando há truncamento", () => {
+    expect(fraseDaAmostraDeDescartes(relatorio())).toBeNull();
+    const r = relatorio({
+      descartadas: Array.from({ length: 50 }, () => ({ motivo: "sem_data" })),
+      descartadasTotal: 145634,
+      descartadasTruncadas: true,
+    });
+    expect(fraseDaAmostraDeDescartes(r)).toBe("Mostrando as 50 primeiras de 145634.");
+  });
+
+  it("⚠ marcada como truncada mas com total igual à amostra NÃO gera frase — ela seria falsa", () => {
+    const r = relatorio({
+      descartadas: [{ motivo: "x" }],
+      descartadasTotal: 1,
+      descartadasTruncadas: true,
+    });
+    expect(fraseDaAmostraDeDescartes(r)).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O QUE O AGENTE ADVERSARIAL REFUTOU EM 26/08/2026.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ as recusadas derrubam as frases de TOTALIDADE", () => {
+  it("⚠⚠ com recusadas, NÃO diz 'todas já tinham sido importadas' — dez foram RECUSADAS", () => {
+    const f = fraseQuandoNadaEntrou(relatorio({
+      criados: 0, jaImportadas: 5, recusadas: Array.from({ length: 10 }, () => ({ motivo: "x" })),
+    }));
+    expect(f).not.toMatch(/todas as saídas/i);
+    expect(f).not.toMatch(/é o esperado/i);
+    expect(f).toMatch(/10 saídas foram recusadas/i);
+  });
+
+  it("⚠⚠ com recusadas, NÃO diz 'nenhuma saída foi encontrada' — quarenta foram", () => {
+    const f = fraseQuandoNadaEntrou(relatorio({
+      criados: 0, jaImportadas: 0, foraDoEscopo: 0,
+      recusadas: Array.from({ length: 40 }, () => ({ motivo: "x" })),
+    }));
+    expect(f).not.toMatch(/Nenhuma saída foi encontrada/i);
+    expect(f).toMatch(/40 saídas foram recusadas/i);
+  });
+
+  it("⚠ uma só recusada fala no singular", () => {
+    const f = fraseQuandoNadaEntrou(relatorio({ criados: 0, jaImportadas: 0, recusadas: [{ motivo: "x" }] }));
+    expect(f).toMatch(/uma saída foi recusada/i);
+  });
+
+  it("⚠ e a frase diz ONDE ver o motivo", () => {
+    const f = fraseQuandoNadaEntrou(relatorio({ criados: 0, jaImportadas: 0, recusadas: [{ motivo: "x" }] }));
+    expect(f).toMatch(/motivos estão listados abaixo/i);
+  });
+
+  it("⚠ sem recusadas, as frases antigas continuam valendo", () => {
+    expect(fraseQuandoNadaEntrou(relatorio({ criados: 0, jaImportadas: 23 }))).toMatch(/esperado/i);
+  });
+});
+
+describe("⚠⚠ o total NUNCA é menor que a amostra que a tela desenha", () => {
+  const comAmostra = (total) => relatorio({
+    descartadas: Array.from({ length: 50 }, () => ({ motivo: "sem_data" })),
+    descartadasTotal: total,
+  });
+
+  it.each([-1, -145634, 0])("⚠⚠ total %p não apaga os 50 descartes nomeados", (total) => {
+    const r = contagemDeDescartadas(comAmostra(total));
+    expect(r.total).toBe(50);
+    // a linha CONTINUA existindo — era ela que sumia junto com a tabela
+    expect(linhasDoRelatorio(comAmostra(total)).find((x) => x.chave === "descartadas")).toBeDefined();
+  });
+
+  it("⚠ `[]` vira 0 no `Number` e caía no mesmo buraco", () => {
+    expect(contagemDeDescartadas(comAmostra([])).total).toBe(50);
+  });
+
+  it("⚠ total MAIOR que a amostra continua vencendo — é o caso normal", () => {
+    expect(contagemDeDescartadas(comAmostra(145634)).total).toBe(145634);
   });
 });

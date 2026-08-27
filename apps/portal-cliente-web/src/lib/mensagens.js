@@ -117,6 +117,13 @@ const MENSAGENS = {
   // (`apps/api/src/application/declarados/ImportOfxService.js`), não deduzidos — uma primeira versão
   // deste bloco inventou três nomes com prefixo `ofx_` que não existem em lugar nenhum, e frases
   // penduradas em código errado nunca aparecem.
+  // ⚠⚠ É ESTE que a rota devolve quando o campo vem vazio ou o arquivo tem 0 byte — a guarda de
+  // `!req.file?.buffer?.length` dispara ANTES do serviço. Ele não tinha frase, e o cliente lia o
+  // `padrao` ("Não foi possível enviar o extrato"), sem saber o que houve.
+  file_required: "Escolha o arquivo do extrato antes de enviar. Se você já escolheu, o arquivo está vazio — baixe-o de novo no site do banco.",
+  // ⚠ `arquivo_vazio` é do SERVIÇO (`RECUSA_DO_IMPORT`), e por esta rota ele não é alcançável: a
+  // guarda acima intercepta a mesma condição primeiro. Fica porque o serviço pode ganhar outro
+  // chamador — mas quem responde hoje é `file_required`.
   arquivo_vazio: "O arquivo enviado está vazio. Baixe o extrato de novo no site do banco.",
   nenhuma_transacao:
     "Não conseguimos ler nenhuma transação neste arquivo. Confira se ele é o extrato em formato OFX "

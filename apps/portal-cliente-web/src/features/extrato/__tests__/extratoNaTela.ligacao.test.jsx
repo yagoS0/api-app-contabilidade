@@ -215,3 +215,55 @@ describe("⚠ a conta bancária", () => {
     expect(await screen.findByText(/mesmo valor no mesmo dia/i)).toBeInTheDocument();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ OS AVISOS DO DEDUPE E AS RECUSADAS — que somiam da tela, achados por agente adversarial.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ nada some em silêncio", () => {
+  const enviarCom = async (extra) => {
+    montar({ importarExtratoOfx: jest.fn(async () => relatorio(extra)) });
+    escolherArquivo();
+    fireEvent.click(screen.getByRole("button", { name: /Enviar extrato/i }));
+    return screen.findByText(/O que entrou/i);
+  };
+
+  it("⚠⚠ `fitid_repetido` APARECE — ele significa possível duplicata na fila do contador", async () => {
+    await enviarCom({
+      anomalias: [{ codigo: "fitid_repetido", n: 5, frase: "O banco repetiu o mesmo identificador." }],
+    });
+    expect(screen.getByText(/O banco repetiu o mesmo identificador/i)).toBeInTheDocument();
+  });
+
+  it("⚠⚠ `sem_fitid` APARECE — é a EXCEÇÃO à promessa de que reenviar é seguro", async () => {
+    await enviarCom({
+      anomalias: [{ codigo: "sem_fitid", n: 17, frase: "Duas iguais no mesmo dia continuam entrando as duas." }],
+    });
+    expect(screen.getByText(/Duas iguais no mesmo dia/i)).toBeInTheDocument();
+  });
+
+  it("⚠ o `n` do servidor sai junto — 'estas transações' sem número não deixa decidir nada", async () => {
+    await enviarCom({
+      anomalias: [{ codigo: "sem_fitid", n: 17, frase: "Sem identificador do banco." }],
+    });
+    expect(screen.getByText(/17 transações/i)).toBeInTheDocument();
+  });
+
+  it("⚠⚠ as RECUSADAS saem com o MOTIVO, não só um número em âmbar", async () => {
+    await enviarCom({
+      criados: 0,
+      recusadas: [{ motivo: "sem_conta", frase: "A conta de destino não existe.", historico: "PAGTO ALUGUEL" }],
+    });
+    expect(screen.getByText(/A conta de destino não existe/i)).toBeInTheDocument();
+    expect(screen.getByText("PAGTO ALUGUEL")).toBeInTheDocument();
+  });
+
+  it("⚠⚠ o MOTIVO do descarte é a FRASE, não o código cru", async () => {
+    await enviarCom({
+      descartadas: [{ motivo: "sem_data", frase: "A transação não traz data de lançamento (DTPOSTED).", trnAmt: "-10.00" }],
+      descartadasTotal: 1,
+    });
+    expect(screen.getByText(/não traz data de lançamento/i)).toBeInTheDocument();
+    // ⚠ o código cru NÃO chega ao olho do cliente
+    expect(screen.queryByText("sem_data")).toBeNull();
+  });
+});

@@ -9,15 +9,18 @@
 //
 // ⚠ Regra de tela mora em `lib/relatorioDoExtrato.js`, com teste próprio. Aqui é só a LIGAÇÃO.
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertaErro, Vazio } from "../../components/ui";
 import {
   TOM,
+  avisosDoExtrato,
   contagemDeDescartadas,
+  fraseDaAmostraDeDescartes,
   fraseQuandoNadaEntrou,
   frasePorArquivoRepetido,
   leituraDaConta,
   linhasDoRelatorio,
+  motivoLegivel,
 } from "./lib/relatorioDoExtrato";
 
 const CLASSE_POR_TOM = {
@@ -42,6 +45,18 @@ export function ExtratoOfxPage({ empresa, api, aoVoltar }) {
   const [erro, setErro] = useState(null);
   const [relatorio, setRelatorio] = useState(null);
   const campoRef = useRef(null);
+
+  // ⚠⚠ A GUARDA GÊMEA DA `LotePlanilhaPage` — *"guarda de um lado só não é guarda"* (`AppShell`).
+  // A casca fecha o modo ao trocar de empresa, mas `empresaAtiva` é um `useMemo`: ela pode mudar sem
+  // passar por `escolherEmpresa` (a lista recarrega e a empresa salva deixa de valer). Um relatório
+  // da empresa ANTERIOR, sob o nome da nova, faria o cliente concluir que estas despesas entraram
+  // na fila dela.
+  useEffect(() => {
+    setArquivo(null);
+    setRelatorio(null);
+    setErro(null);
+    if (campoRef.current) campoRef.current.value = "";
+  }, [companyId]);
 
   const enviar = useCallback(async () => {
     if (!arquivo || enviando) return;
@@ -157,15 +172,49 @@ export function ExtratoOfxPage({ empresa, api, aoVoltar }) {
 
           {conta.aviso ? <p className="meta meta--bloco">{conta.aviso}</p> : null}
 
+          {/* ⚠⚠ OS AVISOS DE QUALIDADE DO DEDUPE, que somiam. O servidor manda três, com frase
+              pronta, e a tela só cobria um. `sem_fitid` diz que "duas iguais no mesmo dia continuam
+              entrando as duas" — ou seja, a promessa de que reenviar é seguro TEM exceção, e ela
+              estava muda. A fonte é explícita: esconder isso faz um dedupe frouxo parecer firme. */}
+          {avisosDoExtrato(relatorio).map((a) => (
+            <p key={a.codigo || a.frase} className="meta meta--bloco" data-aviso={a.codigo || undefined}>
+              {a.frase}
+              {/* ⚠ O `n` do servidor entra: "estas transações não trazem o identificador" sem dizer
+                  se são 2 ou 2.000 não deixa o cliente decidir se vale baixar o arquivo de novo. */}
+              {a.n != null ? <> <strong>({a.n} {a.n === 1 ? "transação" : "transações"})</strong></> : null}
+            </p>
+          ))}
+
+          {/* ⚠ AS RECUSADAS, com o motivo — o servidor já o manda. Um chip âmbar com um número e
+              mais nada não diz o que houve nem o que fazer. */}
+          {Array.isArray(relatorio.recusadas) && relatorio.recusadas.length ? (
+            <div className="stack-gap">
+              <h3>Recusadas ao entrar na fila</h3>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Motivo</th><th>Descrição no banco</th></tr>
+                  </thead>
+                  <tbody>
+                    {relatorio.recusadas.map((r, i) => (
+                      <tr key={`${r.fitId || "sem-id"}-${i}`}>
+                        <td>{motivoLegivel(r)}</td>
+                        <td>{r.historico || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
           {/* ⚠ O que não deu para ler sai NOMEADO, com o motivo — silêncio aqui viraria "entrou
               tudo". A lista é a AMOSTRA; o número acima é o total. */}
           {descartes?.total > 0 && Array.isArray(relatorio.descartadas) && relatorio.descartadas.length ? (
             <div className="stack-gap">
               <h3>Linhas que não deu para ler</h3>
-              {relatorio.descartadasTruncadas ? (
-                <p className="meta">
-                  Mostrando as {relatorio.descartadas.length} primeiras de {descartes.total}.
-                </p>
+              {fraseDaAmostraDeDescartes(relatorio) ? (
+                <p className="meta">{fraseDaAmostraDeDescartes(relatorio)}</p>
               ) : null}
               <div className="table-wrap">
                 <table>
@@ -175,7 +224,7 @@ export function ExtratoOfxPage({ empresa, api, aoVoltar }) {
                   <tbody>
                     {relatorio.descartadas.map((d, i) => (
                       <tr key={`${d.fitId || "sem-id"}-${i}`}>
-                        <td>{d.motivo || "—"}</td>
+                        <td>{motivoLegivel(d)}</td>
                         <td>{d.dtPosted || "—"}</td>
                         <td className="num">{d.trnAmt || "—"}</td>
                       </tr>

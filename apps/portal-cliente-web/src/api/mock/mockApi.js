@@ -1838,9 +1838,20 @@ export function createMockApi() {
       exigirAcessoEmpresa(companyId);
       const nome = String(arquivo?.name || "").toLowerCase();
 
-      // ⚠⚠ O 413 LEVA `code`, e é ISSO que impede o fallback de servir uma importação fictícia.
-      // `deveCairParaMock` cai para o mock em 5xx SEM `code`; com o código nomeado, ele recusa.
-      if (nome.includes("#grande")) {
+      // ⚠⚠ O MOCK RESPEITA O LIMITE DE TAMANHO DE VERDADE — e este conserto é de 26/08/2026,
+      // achado por agente ADVERSARIAL que refutou a afirmação "11 MB nunca vira tela de sucesso".
+      //
+      // O ramifica-por-nome cobria só quem soubesse escrever `#grande` no arquivo. O cliente com um
+      // extrato ANUAL de 11 MB não sabe — e no modo `mock` (que é o DEFAULT) ele lia
+      // **"20 despesas novas na fila do seu contador"**, fechava o navegador, e nenhuma despesa
+      // tinha entrado. Idem no `real_with_mock_fallback` com a API fora do ar: `ApiError(0)` cai
+      // para o mock, e o mock respondia sucesso.
+      //
+      // ⚠ O comentário da rota dizia que o fallback estava desarmado "POR CONSTRUÇÃO". A construção
+      // cobre o servidor RESPONDENDO; ela não cobre o servidor calado. Quem fecha esse lado é aqui.
+      // ⚠ O número é o MESMO do multer (`limits.fileSize`) — dois limites divergiriam.
+      const LIMITE_DE_BYTES = 10 * 1024 * 1024;
+      if (Number(arquivo?.size) > LIMITE_DE_BYTES || nome.includes("#grande")) {
         throw new ApiError(
           413,
           "arquivo_grande_demais",
@@ -1848,16 +1859,38 @@ export function createMockApi() {
         );
       }
 
-      const conta = nome.includes("#semconta")
+      const semConta = nome.includes("#semconta");
+      const conta = semConta
         ? { acctId: null, bankId: "001" }
         : { acctId: "12345-6", bankId: "001" };
+      // ⚠⚠ AS ANOMALIAS PRECISAM SER ALCANÇÁVEIS OFFLINE. O servidor devolve TRÊS
+      // (`declarados/lib/dedupeOfx.js`), com frase pronta, e nenhum ramo do mock as produzia — então
+      // o bloco que as mostra nasceria invisível no modo demonstração.
+      // ⚠ `sem_fitid` é a mais importante: ela diz que "duas iguais no mesmo dia continuam entrando
+      // as duas", ou seja, a EXCEÇÃO à promessa de que reenviar é seguro.
+      // ⚠ As frases são cópia LITERAL de `FRASE_DA_ANOMALIA` — um segundo texto aqui faria a tela
+      // offline dizer uma coisa e a de produção outra.
+      const anomalias = semConta
+        ? [
+            {
+              codigo: "sem_conta_bancaria",
+              n: 23,
+              frase: "O arquivo não diz de que conta bancária é o extrato. A conferência de repetidos passa a valer para a empresa inteira, sem separar contas.",
+            },
+            {
+              codigo: "sem_fitid",
+              n: 4,
+              frase: "Estas transações não trazem o identificador do banco. A conferência de repetidos usa data, valor e descrição — e duas iguais no mesmo dia continuam entrando as duas.",
+            },
+          ]
+        : [];
 
       if (nome.includes("#jaimportado")) {
         return {
           importId: "ofx-mock-2", conta, transacoesLidas: 23,
           criados: 0, jaImportadas: 23, foraDoEscopo: 7,
           descartadas: [], descartadasTotal: 0, descartadasTruncadas: false,
-          recusadas: [], anomalias: [],
+          recusadas: [], anomalias,
           // ⚠ o mesmo ARQUIVO já subiu antes — é a frase que só o hash permite
           arquivoJaImportado: { em: "2026-07-10T15:00:00.000Z", criadosNaquela: 23, jaImportadasNaquela: 0 },
         };
@@ -1865,10 +1898,14 @@ export function createMockApi() {
 
       if (nome.includes("#socreditos")) {
         return {
-          importId: "ofx-mock-3", conta, transacoesLidas: 0,
+          // ⚠⚠ `transacoesLidas` INCLUI os créditos — medido na fonte (`lib/ofx.js` marca
+          // `sinal: CREDITO` e as põe em `transacoes`). A primeira versão deste ramo devolvia
+          // `transacoesLidas: 0` com `foraDoEscopo: 12`, uma forma que o servidor NÃO CONSEGUE
+          // produzir — e por isso o ramo da tela que ela servia era inalcançável em produção.
+          importId: "ofx-mock-3", conta, transacoesLidas: 12,
           criados: 0, jaImportadas: 0, foraDoEscopo: 12,
           descartadas: [], descartadasTotal: 0, descartadasTruncadas: false,
-          recusadas: [], anomalias: [], arquivoJaImportado: null,
+          recusadas: [], anomalias, arquivoJaImportado: null,
         };
       }
 
@@ -1878,22 +1915,32 @@ export function createMockApi() {
         return {
           importId: "ofx-mock-4", conta, transacoesLidas: 2,
           criados: 2, jaImportadas: 0, foraDoEscopo: 0,
+          // ⚠⚠ `frase` E `historico` vão JUNTO, como no real (`FRASE_DO_DESCARTE`, `lib/ofx.js`).
+          // Omiti-los foi o que treinou a tela a mostrar o CÓDIGO (`sem_data`) ao cliente, numa
+          // coluna chamada "Motivo" — código cru chegando ao olho de quem lê é o que `mensagens.js`
+          // existe para impedir.
           descartadas: Array.from({ length: 50 }, (_, i) => ({
-            motivo: "sem_data", fitId: `X${i}`, dtPosted: null, trnAmt: "-10.00",
+            motivo: "sem_data",
+            frase: "A transação não traz data de lançamento (DTPOSTED).",
+            fitId: `X${i}`, historico: `PAGTO FORNECEDOR ${i}`, dtPosted: null, trnAmt: "-10.00",
           })),
           descartadasTotal: 145634,
           descartadasTruncadas: true,
-          recusadas: [], anomalias: [], arquivoJaImportado: null,
+          recusadas: [], anomalias, arquivoJaImportado: null,
         };
       }
 
       return {
         importId: "ofx-mock-1", conta, transacoesLidas: 23,
         criados: 20, jaImportadas: 3, foraDoEscopo: 7,
-        descartadas: [{ motivo: "sem_data", fitId: "B7", dtPosted: null, trnAmt: "-1500.00" }],
+        descartadas: [{
+          motivo: "sem_data",
+          frase: "A transação não traz data de lançamento (DTPOSTED).",
+          fitId: "B7", historico: "TARIFA PACOTE SERVICOS", dtPosted: null, trnAmt: "-1500.00",
+        }],
         descartadasTotal: 1,
         descartadasTruncadas: false,
-        recusadas: [], anomalias: [], arquivoJaImportado: null,
+        recusadas: [], anomalias, arquivoJaImportado: null,
       };
     },
 
