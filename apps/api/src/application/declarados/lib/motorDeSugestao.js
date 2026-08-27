@@ -36,6 +36,12 @@ export const FRASE_DA_PROCEDENCIA = Object.freeze({
   [PROCEDENCIA.HISTORICO]: "Você já lançou esta descrição nesta conta antes.",
 });
 
+// ⚠⚠ MESMA AUTORIDADE DE `formaDoLancamento.js` E DE `POST/PUT /entries`. O predicado de conta
+// sintética é IMPORTADO, nunca reescrito — três leituras de "esta conta recebe lançamento?"
+// divergiriam na primeira correção, e a divergência apareceria como "o sistema sugeriu e depois
+// recusou". `gateContaSintetica.js` é puro (sem prisma, sem I/O).
+import { ehContaSintetica } from "../../accounting/lib/gateContaSintetica.js";
+
 /** ⚠ Por que NÃO houve sugestão. A tela precisa distinguir "não sei" de "sei e não digo". */
 export const SEM_SUGESTAO = Object.freeze({
   NADA_CONHECIDO: "nada_conhecido",
@@ -45,6 +51,18 @@ export const SEM_SUGESTAO = Object.freeze({
   FORA_DA_FAIXA: "fora_da_faixa",
   /** ⚠ A conta que a memória guarda não existe no plano DESTA empresa. */
   CONTA_FORA_DO_PLANO: "conta_fora_do_plano",
+  /**
+   * ⚠⚠ A conta conhecida é SINTÉTICA (de agregação), e `montarLancamento` a RECUSA.
+   *
+   * Sugeri-la faria a tela oferecer exatamente o que o servidor nega — é o mesmo defeito que
+   * `CONTA_FORA_DO_PLANO` foi criado para fechar, e ele passou a ser alcançável no instante em que
+   * a trava de sintética entrou em `formaDoLancamento.js`.
+   *
+   * ⚠ É SINAL, não silêncio: existe regra/memória para esta despesa, e o que está errado é a conta
+   * gravada nela. `NADA_CONHECIDO` mandaria o contador escolher do zero e deixaria a regra torta no
+   * lugar, sugerindo o mesmo no mês seguinte.
+   */
+  CONTA_SINTETICA: "conta_sintetica",
 });
 
 export const FRASE_DO_SEM_SUGESTAO = Object.freeze({
@@ -56,6 +74,9 @@ export const FRASE_DO_SEM_SUGESTAO = Object.freeze({
     "Há uma regra para esta despesa, mas o valor está fora da faixa dela. Confira antes de aplicar.",
   [SEM_SUGESTAO.CONTA_FORA_DO_PLANO]:
     "A conta usada antes não existe no plano de contas desta empresa.",
+  [SEM_SUGESTAO.CONTA_SINTETICA]:
+    "A conta conhecida para esta despesa é sintética (de agregação) e não recebe lançamento. "
+    + "Escolha uma conta analítica abaixo dela — e corrija a regra, senão ela sugere o mesmo no mês que vem.",
 });
 
 const soDigitos = (v) => String(v ?? "").replace(/\D+/g, "");
@@ -228,8 +249,15 @@ export function sugerirConta(declarado, { regras = [], historico = [], plano = [
     // ⚠ `contaDestino` já é `codigoCompleto` (contrato do model), então aqui se confere existência,
     // não se traduz. `String(null)` seria a string `"null"` — por isso a checagem vem antes.
     const contaDaRegra = regra?.contaDestino ? String(regra.contaDestino) : null;
-    if (!contaDaRegra || !(plano || []).some((c) => String(c.codigoCompleto) === contaDaRegra)) {
+    const contaNoPlano = contaDaRegra
+      ? (plano || []).find((c) => String(c.codigoCompleto) === contaDaRegra)
+      : null;
+    if (!contaNoPlano) {
       return naoSugere(SEM_SUGESTAO.CONTA_FORA_DO_PLANO, { procedenciaTentada: procedencia, regraId: regra?.id ?? null });
+    }
+    // ⚠⚠ FORA DO PLANO VEM ANTES: sem saber qual é a conta, não há o que afirmar sobre ela.
+    if (ehContaSintetica(contaNoPlano)) {
+      return naoSugere(SEM_SUGESTAO.CONTA_SINTETICA, { procedenciaTentada: procedencia, regraId: regra?.id ?? null });
     }
 
     return {
@@ -257,6 +285,11 @@ export function sugerirConta(declarado, { regras = [], historico = [], plano = [
       // ⚠ A conta pode não existir no plano DESTA empresa (a memória tem registros globais). Isso é
       // uma resposta nomeada, não um silêncio: o contador precisa saber que havia memória.
       if (!completo) return naoSugere(SEM_SUGESTAO.CONTA_FORA_DO_PLANO);
+      // ⚠⚠ A memória também guarda conta de agregação, e `montarLancamento` recusa. Sugerir aqui
+      // faria a tela oferecer o que o servidor nega — a mesma razão do ramo da regra, acima.
+      if (ehContaSintetica((plano || []).find((c) => String(c.codigoCompleto) === completo))) {
+        return naoSugere(SEM_SUGESTAO.CONTA_SINTETICA);
+      }
 
       return {
         conta: completo,

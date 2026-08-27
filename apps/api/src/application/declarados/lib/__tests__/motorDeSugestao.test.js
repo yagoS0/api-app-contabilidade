@@ -386,3 +386,101 @@ describe("⚠⚠ OS BUGS DO MOTOR ACHADOS POR AUDITORIA (25/08/2026)", () => {
     expect(r.conta).not.toBe("null");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O MOTOR NÃO PODE SUGERIR CONTA SINTÉTICA.
+//
+// Isto passou a ser obrigatório no instante em que `formaDoLancamento.js` ganhou a trava: sem o
+// filtro, a tela ofereceria a conta e o servidor a recusaria no clique — o mesmo defeito que
+// `CONTA_FORA_DO_PLANO` existe para fechar, e que uma auditoria já achou uma vez neste arquivo.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ conta sintética não é sugerida", () => {
+  // ⚠ `analitica: false` é o ÚNICO valor que afirma sintética. O resto do PLANO não declara a
+  // coluna — é o estado real de produção, e ele tem de continuar passando.
+  const PLANO_COM_SINTETICA = [
+    ...PLANO,
+    { codigo: "410", codigoCompleto: "411030000", nome: "DESPESAS OPERACIONAIS", analitica: false },
+    { codigo: "411", codigoCompleto: "411030099", nome: "ANALITICA DE VERDADE", analitica: true },
+    { codigo: "412", codigoCompleto: "411030088", nome: "NAO REIMPORTADA", analitica: null },
+  ];
+
+  it("REGRA apontando para sintética não sugere — e diz que a conta é o problema", () => {
+    const r = sugerirConta(declarado(), {
+      regras: [regra({ cnpjFornecedor: "12345678000190", contaDestino: "411030000" })],
+      plano: PLANO_COM_SINTETICA,
+    });
+    expect(r.conta).toBeNull();
+    expect(r.motivo).toBe(SEM_SUGESTAO.CONTA_SINTETICA);
+    // ⚠ é SINAL, não silêncio: o `regraId` viaja para o contador poder consertar a regra.
+    expect(r.regraId).toBe("r-1");
+    expect(r.frase).toMatch(/analític/i);
+  });
+
+  it("HISTÓRICO apontando para sintética não sugere", () => {
+    const r = sugerirConta(declarado({ cnpjFornecedor: null }), {
+      regras: [],
+      plano: PLANO_COM_SINTETICA,
+      historico: [{ text: "GOOGLE CLOUD BRASIL", contaDebito: "410" }],
+      portalClientId: "emp-1",
+    });
+    expect(r.conta).toBeNull();
+    expect(r.motivo).toBe(SEM_SUGESTAO.CONTA_SINTETICA);
+  });
+
+  // ⚠⚠ A ORDEM: fora-do-plano vem ANTES. Chamar de "sintética" uma conta que nem está no plano
+  // mandaria o contador procurar filha analítica de uma conta que não existe.
+  it("FORA DO PLANO vence sintética", () => {
+    const r = sugerirConta(declarado(), {
+      regras: [regra({ cnpjFornecedor: "12345678000190", contaDestino: "999999999" })],
+      plano: PLANO_COM_SINTETICA,
+    });
+    expect(r.motivo).toBe(SEM_SUGESTAO.CONTA_FORA_DO_PLANO);
+  });
+
+  // ⚠⚠ A PROVA DO TRI-ESTADO — com `!analitica` no lugar de `=== false`, as duas caem, e em
+  // produção o motor pararia de sugerir para TODO plano ainda não reimportado.
+  it("analitica NULA continua sendo sugerida", () => {
+    const r = sugerirConta(declarado(), {
+      regras: [regra({ cnpjFornecedor: "12345678000190", contaDestino: "411030088" })],
+      plano: PLANO_COM_SINTETICA,
+    });
+    expect(r.conta).toBe("411030088");
+  });
+
+  it("analitica AUSENTE continua sendo sugerida — é o plano de hoje", () => {
+    const r = sugerirConta(declarado(), {
+      regras: [regra({ cnpjFornecedor: "12345678000190" })],
+      plano: PLANO_COM_SINTETICA,
+    });
+    expect(r.conta).toBe("411030012");
+  });
+
+  it("analitica TRUE é sugerida", () => {
+    const r = sugerirConta(declarado(), {
+      regras: [regra({ cnpjFornecedor: "12345678000190", contaDestino: "411030099" })],
+      plano: PLANO_COM_SINTETICA,
+    });
+    expect(r.conta).toBe("411030099");
+  });
+
+  // ⚠⚠ TRÊS LEITURAS DE "ESTA CONTA RECEBE LANÇAMENTO?" DIVERGIRIAM. O predicado é importado.
+  it("REUSA o gate, não escreve um segundo predicado", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "motorDeSugestao.js"), "utf8");
+    expect(fonte).toMatch(/from\s+["']\.\.\/\.\.\/accounting\/lib\/gateContaSintetica\.js["']/);
+    const semComentario = fonte.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(semComentario).not.toMatch(/analitica\s*===/);
+    expect(semComentario).not.toMatch(/!\s*analitica/);
+  });
+
+  // ⚠ O motor continua sem contabilizar nada — a trava não mudou o que ele É.
+  it("⚠ a recusa é SUGESTÃO NENHUMA, nunca uma conta alternativa escolhida pelo sistema", () => {
+    const r = sugerirConta(declarado(), {
+      regras: [regra({ cnpjFornecedor: "12345678000190", contaDestino: "411030000" })],
+      plano: PLANO_COM_SINTETICA,
+    });
+    // ⚠⚠ "nunca o primeiro da lista": ter uma analítica no plano NÃO autoriza elegê-la.
+    expect(r.conta).toBeNull();
+  });
+});

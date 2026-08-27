@@ -21,6 +21,15 @@
 // ⚠ ESTE MÓDULO É PURO. Ele não consulta banco e não cria nada: devolve o objeto que o serviço
 // passa ao `create`, dentro da transação que também muda o estado do declarado.
 
+// ⚠⚠ A TRAVA DE CONTA SINTÉTICA É IMPORTADA, NUNCA REESCRITA. `ehContaSintetica` e `mensagemRecusa`
+// vivem em `accounting/lib/gateContaSintetica.js`, que é PURO (sem prisma, sem I/O) e é a mesma
+// autoridade que `POST/PUT /entries` usa. Um segundo predicado aqui divergiria na primeira
+// correção, e a divergência apareceria como "a Conferência aceitou o que os Lançamentos recusam".
+// ⚠ O motivo da trava é EXTERNO e está escrito lá: o registro **I250** da ECD exige `IND_CTA = "A"`
+// (analítica). Lançar em conta de agregação não falha aqui — falha na ENTREGA, meses depois, longe
+// do lançamento que a causou.
+import { ehContaSintetica, mensagemRecusa } from "../../accounting/lib/gateContaSintetica.js";
+
 /**
  * ⚠ VALOR NOVO de `origem`, e é deliberado. `MANUAL` e `EXCEL` já respondem "quem digitou isto?".
  * Um lançamento nascido da fila de conferência tem procedência própria — e é ela que permite
@@ -46,8 +55,10 @@ export const RECUSA_DA_FORMA = Object.freeze({
   SEM_CONTA: "sem_conta",
   CONTA_FORA_DO_PLANO: "conta_fora_do_plano",
   CONTA_AMBIGUA: "conta_ambigua",
+  CONTA_SINTETICA: "conta_sintetica",
   CAIXA_FORA_DO_PLANO: "caixa_fora_do_plano",
   CAIXA_AMBIGUO: "caixa_ambiguo",
+  CAIXA_SINTETICO: "caixa_sintetico",
   VALOR_INVALIDO: "valor_invalido",
   SEM_HISTORICO: "sem_historico",
 });
@@ -62,10 +73,17 @@ export const FRASE_DA_RECUSA_DA_FORMA = Object.freeze({
     "A conta escolhida não existe no plano desta empresa. Cadastre-a antes de lançar.",
   [RECUSA_DA_FORMA.CONTA_AMBIGUA]:
     "Duas contas do plano desta empresa têm o mesmo código completo. O sistema não escolhe entre elas.",
+  // ⚠ Esta é FALLBACK. Na recusa de verdade quem escreve é `gateContaSintetica.mensagemRecusa`,
+  // que NOMEIA a conta e oferece as filhas analíticas — recusa muda é o defeito, não a recusa.
+  [RECUSA_DA_FORMA.CONTA_SINTETICA]:
+    "A conta escolhida é SINTÉTICA (de agregação) e não recebe lançamento. Escolha uma conta analítica abaixo dela.",
   [RECUSA_DA_FORMA.CAIXA_FORA_DO_PLANO]:
     "Esta empresa não tem a conta de caixa (1.1.1.01.0001) no plano. É ela que recebe o crédito de toda despesa.",
   [RECUSA_DA_FORMA.CAIXA_AMBIGUO]:
     "Duas contas do plano desta empresa apontam para a conta de caixa (1.1.1.01.0001).",
+  [RECUSA_DA_FORMA.CAIXA_SINTETICO]:
+    "A conta de caixa (1.1.1.01.0001) desta empresa está marcada como SINTÉTICA (de agregação) e não "
+    + "recebe lançamento. Corrija o plano de contas: é ela que recebe o crédito de toda despesa.",
   [RECUSA_DA_FORMA.VALOR_INVALIDO]: "O valor do lançamento precisa ser um número maior que zero.",
   [RECUSA_DA_FORMA.SEM_HISTORICO]: "O lançamento precisa de histórico.",
 });
@@ -90,16 +108,28 @@ export function indicePorCodigoCompleto(plano) {
     const reduzido = String(conta?.codigo || "").trim();
     if (!reduzido) continue;
     const jaTem = indice.get(completo);
-    if (jaTem && jaTem.reduzido !== reduzido) indice.set(completo, { reduzido: jaTem.reduzido, ambiguo: true });
-    else if (!jaTem) indice.set(completo, { reduzido, ambiguo: false });
+    // ⚠ `conta` viaja junto porque a trava de sintética precisa de `analitica` (para decidir) e de
+    // `nome` (para a recusa NOMEAR a conta). Acrescentar campo é aditivo: quem lê `reduzido`/
+    // `ambiguo` não muda. ⚠⚠ No ramo AMBÍGUO a `conta` fica a da PRIMEIRA, como o `reduzido` já
+    // ficava — e não importa qual, porque ambíguo já recusa antes de a sintética ser consultada.
+    if (jaTem && jaTem.reduzido !== reduzido) {
+      indice.set(completo, { reduzido: jaTem.reduzido, conta: jaTem.conta, ambiguo: true });
+    } else if (!jaTem) {
+      indice.set(completo, { reduzido, conta, ambiguo: false });
+    }
   }
   return indice;
 }
 
-const recusa = (motivo) => ({
+/**
+ * ⚠ `fraseCustom` existe para UMA recusa: a de conta sintética, cuja frase NOMEIA a conta e oferece
+ * a saída (as filhas analíticas). O mapa estático não consegue fazer isso — ele não conhece a
+ * conta. As demais recusas continuam saindo do mapa, e o mapa continua sendo o fallback desta.
+ */
+const recusa = (motivo, fraseCustom = null) => ({
   ok: false,
   motivo,
-  frase: FRASE_DA_RECUSA_DA_FORMA[motivo] || "",
+  frase: fraseCustom || FRASE_DA_RECUSA_DA_FORMA[motivo] || "",
   entry: null,
 });
 
@@ -141,10 +171,29 @@ export function montarLancamento(declarado, plano) {
   const despesa = indice.get(completo);
   if (!despesa) return recusa(RECUSA_DA_FORMA.CONTA_FORA_DO_PLANO);
   if (despesa.ambiguo) return recusa(RECUSA_DA_FORMA.CONTA_AMBIGUA);
+  // ⚠⚠ A TRAVA VEM DEPOIS de fora-do-plano e de ambígua, e a ordem é a resposta certa: sem saber
+  // QUAL é a conta, não há o que afirmar sobre ela. Recusar "sintética" uma conta que nem existe no
+  // plano mandaria o contador procurar filha analítica de uma conta inexistente.
+  // ⚠ `analitica` é TRI-ESTADO: `ehContaSintetica` compara `=== false`. `null` (conta sem
+  // `codigoCompleto`, ainda não reimportada) NÃO é sintética — recusar no desconhecido travaria
+  // todo plano que não passou pelo import, e ausência nunca é resposta.
+  if (ehContaSintetica(despesa.conta)) {
+    return recusa(
+      RECUSA_DA_FORMA.CONTA_SINTETICA,
+      // ⚠ A recusa nomeia o REDUZIDO, que é o que o contador digitou e lê — não o `codigoCompleto`,
+      // que é âncora interna e ele nunca vê.
+      mensagemRecusa([{ codigo: despesa.reduzido, nome: despesa.conta?.nome || "" }]),
+    );
+  }
 
   const caixa = indice.get(CAIXA_CODIGO_COMPLETO);
   if (!caixa) return recusa(RECUSA_DA_FORMA.CAIXA_FORA_DO_PLANO);
   if (caixa.ambiguo) return recusa(RECUSA_DA_FORMA.CAIXA_AMBIGUO);
+  // ⚠ O caixa é CRAVADO (`111010001`), então esta recusa é sobre o PLANO estar torto, não sobre uma
+  // escolha do contador — por isso ela tem motivo próprio, e a frase manda corrigir o plano em vez
+  // de mandar escolher outra conta. Sem ela, a perna de crédito entraria em conta de agregação pelo
+  // mesmo buraco que a de débito, e `POST /entries` recusaria as duas.
+  if (ehContaSintetica(caixa.conta)) return recusa(RECUSA_DA_FORMA.CAIXA_SINTETICO);
 
   return {
     ok: true,
