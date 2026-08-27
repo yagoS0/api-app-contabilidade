@@ -293,7 +293,15 @@ export function motivoDeBloqueio(acao, item, { podeEscrever = true } = {}) {
  * ⚠ Lista de INCLUSÃO: motivo novo do servidor cai no texto genérico até alguém decidir o dele —
  * conselho errado é pior que conselho genérico.
  */
-export const MOTIVO_COM_CONTA_CONHECIDA = new Set(["conta_sintetica", "conta_ambigua"]);
+export const MOTIVO_COM_CONTA_CONHECIDA = new Set([
+  "conta_sintetica",
+  "conta_ambigua",
+  // ⚠ `fora_da_faixa` entrou depois, achado NA TELA em 26/08/2026: a linha mostrava
+  // "valor fora do normal" na coluna e o botão dizia "Nenhuma conta conhecida" — a mesma linha
+  // afirmando as duas coisas. Existe regra; o que fugiu foi o VALOR, e o conserto é conferir o
+  // valor, não ensinar o fornecedor de novo.
+  "fora_da_faixa",
+]);
 
 /**
  * ⚠ FALLBACK, só. A frase que vale é a do SERVIDOR (`sugestao.frase`), que nomeia a conta. Esta
@@ -306,6 +314,8 @@ export const FRASE_LOCAL_DO_MOTIVO = Object.freeze({
     + "Escolha uma conta analítica abaixo dela — e corrija a regra, senão ela sugere o mesmo no mês que vem.",
   conta_ambigua:
     "Duas contas do plano desta empresa têm o mesmo código completo. O sistema não escolhe entre elas.",
+  fora_da_faixa:
+    "Há uma regra para esta despesa, mas o valor está fora da faixa dela. Confira antes de aplicar.",
 });
 
 /** ⚠ O rótulo curto da coluna. `null` = não há texto próprio, cai em "sem conta". */

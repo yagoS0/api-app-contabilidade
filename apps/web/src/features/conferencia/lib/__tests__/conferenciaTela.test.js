@@ -603,3 +603,22 @@ describe("⚠⚠ conta conhecida que não serve", () => {
     }
   });
 });
+
+// ⚠ Achado NA TELA, verificando o mock em 26/08/2026: a linha mostrava "valor fora do normal" na
+// coluna e o botão dizia "Nenhuma conta conhecida" — a MESMA linha afirmando as duas coisas.
+describe("⚠ fora da faixa também tem conta conhecida", () => {
+  it("o bloqueio fala do VALOR, não manda ensinar o fornecedor de novo", () => {
+    const m = motivoDeBloqueio(
+      "confirmar",
+      {
+        id: "d-9", estado: "A_CONFERIR", competencia: "2026-07", dataPagamento: "2026-07-10",
+        origemPagamento: "OFX", mesFechado: false, contaSugerida: null,
+        sugestao: { conta: null, motivo: "fora_da_faixa", frase: "" },
+      },
+      { podeEscrever: true },
+    );
+    expect(m).toMatch(/fora da faixa/i);
+    expect(m).not.toMatch(/Nenhuma conta conhecida/i);
+    expect(m).not.toMatch(/para o sistema aprender/i);
+  });
+});
