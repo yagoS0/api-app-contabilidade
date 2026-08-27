@@ -722,6 +722,41 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
   font-weight: 400; border: 1px dashed currentColor; border-radius: var(--radius); padding: 0 5px;
 }
 
+/* ⚠⚠ A ROLAGEM VERTICAL SÓ EXISTE NA VISÃO DE DIAS — dez linhas e o resto rola, com o cabeçalho
+   grudado. Pedido do dono: *"aparecendo 10 dias, e rolagem para rolar entre os dias"*.
+   ⚠ Na visão de MESES ela não entra: são doze linhas e elas cabem. Uma altura fixa ali criaria uma
+   segunda barra de rolagem para nada.
+   ⚠⚠ `position: sticky` no `thead` só funciona porque ESTE contêiner rola de verdade — sticky dentro
+   de um wrap que não rola é INERTE: não gruda, não avisa, e ninguém percebe. É a mesma armadilha que
+   o `.table-wrap--alto` desta base já registrou. */
+.table-wrap--planilha-alta { max-height: 340px; overflow-y: auto; }
+.table-wrap--planilha-alta thead th,
+.table-wrap--planilha-alta thead td { position: sticky; top: 0; z-index: 2; }
+
+/* ⚠ O caminho de volta fica no CANTO da própria tabela: quem entrou clicando no mês procura a saída
+   onde entrou, não num link acima do bloco. */
+.planilha-voltar {
+  font: inherit; font-size: .72rem; font-weight: 600; cursor: pointer;
+  color: var(--primary); background: none; border: 0; padding: 2px 4px; margin: -2px -4px;
+  border-radius: var(--radius);
+}
+.planilha-voltar:hover { background: var(--primary-surface); }
+
+/* ⚠ "no mês" é a linha que carrega o que NÃO tem dia — e é a maioria do dinheiro, porque projeção não
+   tem dia. Ela vem primeiro e é marcada, para não se confundir com um dia qualquer. */
+.planilha-sem-dia > th[scope="row"] { font-style: italic; color: var(--muted); }
+.planilha-sem-dia > td { border-bottom: 2px solid var(--border); }
+
+/* ⚠ A evidência virou LISTA (era a segunda tabela que abria embaixo, e é ela que o dono pediu para
+   tirar). O conteúdo é o mesmo. */
+.fluxo-evidencias { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.fluxo-evid { display: flex; gap: 12px; align-items: baseline; }
+.fluxo-evid-valor { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-weight: 600; min-width: 96px; text-align: right; }
+.fluxo-evid-valor[data-direcao="entrada"] { color: var(--success); }
+.fluxo-evid-valor[data-direcao="saida"] { color: var(--danger); }
+.fluxo-evid-corpo { display: block; }
+.fluxo-evid-corpo > .chip { margin-left: 6px; }
+
 .fluxo-notas > summary { cursor: pointer; font-size: .8rem; color: var(--muted); }
 .fluxo-notas[open] > summary { margin-bottom: 6px; }
 .fluxo-notas > p { margin: 0 0 6px; }

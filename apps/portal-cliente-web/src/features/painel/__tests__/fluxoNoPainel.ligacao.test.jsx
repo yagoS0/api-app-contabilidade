@@ -44,6 +44,11 @@ async function abrirMes(rotuloCurto) {
   await act(async () => { screen.getByRole("button", { name: rotuloCurto }).click(); });
 }
 
+/** ⚠ O caminho de volta mora no CANTO da própria tabela — quem entrou clicando no mês procura ali. */
+async function voltarAosMeses() {
+  await act(async () => { screen.getByRole("button", { name: /12 meses/ }).click(); });
+}
+
 const cheio = () => fluxoDeCaixaDoMock("pc-001", COMPETENCIA);
 const magro = () => fluxoDeCaixaDoMock("pc-006", COMPETENCIA);
 
@@ -209,7 +214,9 @@ describe("⚠⚠ por que esta linha está aqui", () => {
   test("⚠⚠ o dia ausente vira 'ao longo do mês' COM O MOTIVO — nunca um dia inventado", async () => {
     await abrir(cheio());
     await abrirMes("set/26");
-    expect(screen.getAllByText("ao longo do mês").length).toBeGreaterThan(0);
+    // ⚠ O "quando" e o MOTIVO agora saem na mesma frase do item da lista — antes eram duas células
+    // de uma tabela. O que se trava é o mesmo: o dia ausente NÃO vira dia inventado, e diz por quê.
+    expect(screen.getAllByText(/ao longo do mês/).length).toBeGreaterThan(0);
     expect(screen.getByText(/O prazo de recebimento é contado em meses/)).toBeInTheDocument();
   });
 
@@ -218,9 +225,11 @@ describe("⚠⚠ por que esta linha está aqui", () => {
     // e o que se trava continua sendo que a GUIA tem dia de verdade (o `vencimento`), ao contrário
     // da projeção, que não tem.
     await abrir(cheio());
-    expect(screen.getAllByText("dia 20")).toHaveLength(1);
     await abrirMes("set/26");
-    expect(screen.getAllByText("dia 20")).toHaveLength(1);
+    // ⚠ Duas leituras do mesmo fato: a LINHA da planilha (o dia 20 do mês aberto) e a EVIDÊNCIA da
+    // guia, que diz o dia por extenso. Nas duas o dia é o `vencimento` de verdade.
+    expect(screen.getByRole("rowheader", { name: "dia 20" })).toBeInTheDocument();
+    expect(screen.getAllByText(/dia 20/).length).toBeGreaterThan(1);
   });
 });
 
@@ -236,15 +245,52 @@ describe("⚠⚠ por que esta linha está aqui", () => {
 // colunas dava 226px por coluna, que foi o que o dono chamou de *"colunas muito largas"*.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ a planilha: meses nas linhas, quatro categorias nas colunas", () => {
-  test("⚠⚠ é UMA tabela — as categorias sao as colunas, os meses as linhas", async () => {
+  test("⚠⚠ é UMA tabela SÓ — nada abre embaixo", async () => {
+    // ⚠⚠ Chegou a haver DUAS (a grade + o detalhe do mês). O dono pediu o contrário: *"não quero que
+    // ao clicar no mês abra uma tabela embaixo, quero que a própria tabela mude"*.
     await abrir(cheio());
-    // ⚠ A segunda tabela é o DETALHE do mês aberto; é por existirem só duas que a queixa se desfaz.
-    expect(screen.getAllByRole("table")).toHaveLength(2);
-    const grade = screen.getAllByRole("table")[0];
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    const grade = screen.getByRole("table");
     expect(within(grade).getAllByRole("columnheader").map((t) => t.textContent.trim()))
       .toEqual(["Entrada", "Saída", "Recorrência", "Diário"]);
-    // Doze meses, um por linha.
     expect(within(grade).getAllByRole("rowheader")).toHaveLength(12);
+  });
+
+  test("⚠⚠ clicar num mês TROCA a própria tabela para os dias — e as colunas não mudam", async () => {
+    await abrir(cheio());
+    await abrirMes("set/26");
+    // Continua sendo UMA tabela, com as MESMAS quatro colunas: trocá-las faria a pessoa reaprender a
+    // tabela a cada clique.
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    const grade = screen.getByRole("table");
+    expect(within(grade).getAllByRole("columnheader").map((t) => t.textContent.trim()))
+      .toEqual(["Entrada", "Saída", "Recorrência", "Diário"]);
+    // 30 dias de setembro + a linha "no mês".
+    const linhas = within(grade).getAllByRole("rowheader").map((t) => t.textContent.trim());
+    expect(linhas[0]).toBe("no mês");
+    expect(linhas).toHaveLength(31);
+    expect(linhas[1]).toBe("dia 01");
+    expect(linhas[30]).toBe("dia 30");
+  });
+
+  test("⚠⚠ a linha 'no mês' vem PRIMEIRO — é onde mora o que não tem dia", async () => {
+    // Medido no payload: 6 das 8 linhas chegam sem dia, porque o prazo de recebimento é contado em
+    // meses e a recorrência diz o ciclo. Espalhá-las pelos dias inventaria precisão; escondê-las
+    // faria o mês parecer menor do que é.
+    await abrir(cheio());
+    await abrirMes("set/26");
+    const grade = screen.getByRole("table");
+    const primeira = within(grade).getAllByRole("rowheader")[0].closest("tr");
+    expect(primeira.textContent).toMatch(/12\.500,00/);
+  });
+
+  test("⚠ e o botão de voltar devolve os 12 meses", async () => {
+    await abrir(cheio());
+    await abrirMes("set/26");
+    await voltarAosMeses();
+    const grade = screen.getByRole("table");
+    expect(within(grade).getAllByRole("rowheader")).toHaveLength(12);
+    expect(screen.queryByRole("button", { name: /12 meses/ })).toBeNull();
   });
 
   test("⚠⚠ as quatro colunas têm o MESMO PESO — nenhuma é filha de outra", async () => {
@@ -289,22 +335,10 @@ describe("⚠⚠ a planilha: meses nas linhas, quatro categorias nas colunas", (
     expect(grade.textContent).not.toMatch(/No m[êe]s|Total|Saldo/i);
   });
 
-  test("⚠ a tela abre com UM mês aberto — o primeiro que tem algo", async () => {
+  test("⚠ a tela NASCE nos 12 meses — mergulho não é estado inicial", async () => {
     await abrir(cheio());
-    expect(screen.getByRole("heading", { name: "agosto de 2026" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "setembro de 2026" })).toBeNull();
-    expect(screen.getByRole("button", { name: "ago/26" })).toHaveAttribute("aria-pressed", "true");
-  });
-
-  test("⚠ clicar num mês abre o dele; clicar de novo fecha", async () => {
-    await abrir(cheio());
-    await abrirMes("out/26");
-    expect(screen.getByRole("heading", { name: "outubro de 2026" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "agosto de 2026" })).toBeNull();
-
-    await abrirMes("out/26");
-    expect(screen.queryByRole("heading", { name: "outubro de 2026" })).toBeNull();
-    expect(screen.getAllByRole("table")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /12 meses/ })).toBeNull();
   });
 });
 
@@ -331,8 +365,8 @@ describe("⚠⚠ o selo de demonstração some com o fluxo real", () => {
 
   test("⚠ e os números continuam na tela nos dois casos", async () => {
     await abrir(cheio());
-    // ⚠ `[0]` era a tabela do mês; hoje `[0]` é a GRADE e `[1]` é o detalhe do mês aberto.
-    const detalhe = screen.getAllByRole("table")[1];
-    expect(within(detalhe).getByText("SIMPLES")).toBeInTheDocument();
+    // ⚠ O rótulo da linha vive na EVIDÊNCIA, que virou lista quando a segunda tabela caiu.
+    await abrirMes("ago/26");
+    expect(screen.getByText("SIMPLES")).toBeInTheDocument();
   });
 });

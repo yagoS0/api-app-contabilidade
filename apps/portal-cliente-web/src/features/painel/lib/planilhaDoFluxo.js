@@ -95,6 +95,58 @@ export function linhasDaPlanilha(mes) {
 }
 
 /**
+ * ⚠⚠ O MÊS ABERTO, DIA A DIA — e a razão de isto ser possível é a coluna `Diário`.
+ *
+ * > Dono, 27/08/2026: *"não quero que ao clicar no mês abra uma tabela embaixo, quero que a própria
+ * > tabela mude para visualizar o mês, aparecendo 10 dias, e rolagem para rolar entre os dias"*.
+ *
+ * ⚠⚠ **A FORMA DIÁRIA JÁ TINHA SIDO ABANDONADA UMA VEZ, EM 27/08/2026, E O MOTIVO CONTINUA VERDADEIRO:**
+ * as projeções NÃO TÊM DIA. Medido no payload: das 8 linhas dos 12 meses, **só 2 têm `dia`** (as
+ * guias, pelo vencimento); as outras 6 vêm com `diaDesconhecido`, porque *o prazo de recebimento é
+ * contado em meses e a recorrência diz o ciclo*. Espalhá-las pelos dias seria inventar precisão que
+ * ninguém informou — a regra 1 deste projeto.
+ *
+ * ⚠⚠ **O QUE MUDOU É QUE AGORA EXISTE UMA COLUNA QUE VALE PARA TODO DIA.** `Diário` é, por definição
+ * do dono, a média diária do que sai e não se repete — então **nenhuma linha de dia fica vazia**, que
+ * era exatamente a doença das duas formas anteriores (31 linhas com 24 vazias; 12 meses com 8 vazios).
+ * A grade diária só se sustenta por causa dela.
+ *
+ * ⚠ O que não tem dia **não é distribuído nem escondido**: vai para uma linha própria, `semDia`, que
+ * a tela chama de "no mês". É a mesma resposta que o detalhe já dava em texto (*"ao longo do mês"*),
+ * agora com lugar na grade.
+ */
+export function diasDaPlanilha(mes) {
+  const totais = linhasDaPlanilha(mes);
+  const dias = diasDoMes(mes?.competencia);
+  const vazio = () => ({ entrada: { fato: 0, previsao: 0 }, saida: { fato: 0, previsao: 0 }, recorrente: 0 });
+
+  const semDia = vazio();
+  const porDia = new Map(dias.map((d, i) => [i + 1, { dia: i + 1, ...vazio() }]));
+
+  for (const l of Array.isArray(mes?.linhas) ? mes.linhas : []) {
+    const v = numero(l?.valor);
+    const chave = l?.procedencia === PROCEDENCIA.FATO ? "fato"
+      : l?.procedencia === PROCEDENCIA.PREVISAO ? "previsao" : null;
+    if (!chave) continue;
+
+    // ⚠ `dia` só vale quando o servidor o mandou. `diaDesconhecido` é a AFIRMAÇÃO de que não há dia —
+    // ela não é a mesma coisa que "o campo veio vazio", e as duas caem aqui do mesmo jeito: sem dia.
+    const alvo = (l?.dia && porDia.get(l.dia)) || semDia;
+    if (l?.direcao === DIRECAO.ENTRADA) alvo.entrada[chave] += v;
+    else if (l?.direcao === DIRECAO.SAIDA) alvo.saida[chave] += v;
+    if (ehSaidaRecorrente(l)) alvo.recorrente += v;
+  }
+
+  return {
+    semDia,
+    dias: [...porDia.values()],
+    // ⚠ O MESMO número em todos os dias, e é o que ele significa: uma MÉDIA. Recalculá-lo por dia
+    // exigiria saber o gasto de cada dia — que é justamente o que não existe.
+    diario: totais.diario,
+  };
+}
+
+/**
  * ⚠ O que a CÉLULA mostra, por linha da planilha — já com a cor.
  *
  * ⚠⚠ A COR AQUI RESPONDE OUTRA PERGUNTA QUE A DO CHIP, e por isso não usa o mesmo vocabulário.
