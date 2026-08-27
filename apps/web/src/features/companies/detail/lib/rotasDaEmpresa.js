@@ -23,6 +23,10 @@ export const SEGMENT_TO_TAB = {
   // `TAB_TO_SEGMENT` É OBRIGATÓRIO — sem ele o clique na aba não navega e a URL cai em Anotações,
   // sem erro nenhum.
   conferencia: "conferencia",
+  // O FLUXO DE CAIXA da empresa (12 meses, fato e previsão separados). ⚠ O PAR EM
+  // `TAB_TO_SEGMENT` É OBRIGATÓRIO — sem ele o clique na aba não navega e a URL cai em
+  // Anotações, sem erro nenhum.
+  "fluxo-de-caixa": "fluxoDeCaixa",
   circular: "circular",
   parcelamento: "parcelamento",
   obrigacoes: "obrigacoes",
@@ -67,6 +71,8 @@ export const TAB_TO_SEGMENT = {
   lancamentos: "lancamentos",
   // ⚠ O par da entrada acima. Faltando esta linha, a aba Conferência vira `<button>` mudo.
   conferencia: "conferencia",
+  // ⚠ O par da entrada acima. Faltando esta linha, a aba Fluxo de caixa vira `<button>` mudo.
+  fluxoDeCaixa: "fluxo-de-caixa",
   circular: "circular",
   parcelamento: "parcelamento",
   obrigacoes: "obrigacoes",

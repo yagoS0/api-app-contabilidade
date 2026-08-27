@@ -7388,6 +7388,193 @@ export function createMockApi() {
     // tela nascer sem o desenho da ambiguidade — que é o que impede a despesa ir para o fornecedor
     // errado em silêncio.
     /**
+     * ⚠⚠ O FLUXO DE CAIXA — e TODOS os ramos da tela precisam ser alcançáveis offline.
+     *
+     * Este projeto foi mordido oito vezes por ramo que só existia em produção (o último: o mock do
+     * casamento com ids que não cruzavam com os da fila, deixando o motivo CASA_COM_NOTA
+     * inalcançável). Os ramos daqui: FATO com dia próprio · PREVISÃO por mês (`dia: null` com o
+     * motivo) · a faixa mín/máx · o CONFRONTO declarado × observado · o imposto projetado com a
+     * frase da alíquota · a guia VENCIDA · o que não tem mês · o prazo NÃO configurado · o mês
+     * vazio · o bloco recolhido com total próprio.
+     *
+     * ⚠⚠ E A EMPRESA ZERADA TEM UM FLUXO PRÓPRIO, de propósito: é a única forma de alcançar
+     * `semImposto` e `recorrenciaIndisponivel`, que no fluxo cheio são mutuamente exclusivos com o
+     * imposto projetado e com as séries. Mock de uma forma só esconderia os dois.
+     *
+     * ⚠⚠ ESTE MOCK NÃO DECIDE NADA E NÃO SOMA FATO COM PREVISÃO — ele monta o payload que o servidor
+     * monta. Não existe `total`, e acrescentar um aqui faria a tela offline mostrar exatamente o
+     * número que a de produção se recusa a entregar.
+     */
+    async getFluxoDeCaixa(companyId, cicloAtual) {
+      await delay(140);
+      const ciclo = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(cicloAtual || "")) ? String(cicloAtual) : "2026-08";
+      const somarMeses = (comp, n) => {
+        const [a, m] = comp.split("-").map(Number);
+        const t = a * 12 + (m - 1) + n;
+        return String(Math.floor(t / 12)) + "-" + String((t % 12) + 1).padStart(2, "0");
+      };
+      const mes = (n) => somarMeses(ciclo, n);
+      const FRASE_SERIE_SEM_DIA = "A recorrência diz de quanto em quanto tempo, não em que dia do mês.";
+
+      // ⚠ A empresa ZERADA é a de índice 5 do mock — a mesma que já não tem guia nenhuma.
+      const zerada = Boolean(mockCompanies[5] && companyId === mockCompanies[5].companyId);
+
+      const linhasDoFluxo = zerada ? [] : [
+        // ⚠ FATO com dia próprio: a guia tem vencimento de verdade.
+        {
+          fonte: "GUIA", direcao: "SAIDA", procedencia: "FATO", competencia: mes(0), dia: 20,
+          diaDesconhecido: null, valor: 1847.55, rotulo: "SIMPLES",
+          base: { frase: "SIMPLES gerada, competência " + somarMeses(ciclo, -1) },
+          referencia: { tipo: "guia", id: "g-1" },
+        },
+        {
+          fonte: "GUIA", direcao: "SAIDA", procedencia: "FATO", competencia: mes(1), dia: 20,
+          diaDesconhecido: null, valor: 1912, rotulo: "INSS",
+          base: { frase: "INSS gerada, competência " + mes(0) },
+          referencia: { tipo: "guia", id: "g-2" },
+        },
+        // ⚠⚠ PREVISÃO por MÊS: a nota prova o FATURAMENTO, nunca o RECEBIMENTO — e o dia não existe.
+        {
+          fonte: "NOTA_EMITIDA", direcao: "ENTRADA", procedencia: "PREVISAO", competencia: mes(1),
+          dia: null,
+          diaDesconhecido: {
+            motivo: "projecao_por_mes",
+            frase: "O prazo de recebimento é contado em meses, então esta linha cai no mês — não num dia.",
+          },
+          valor: 12500, rotulo: "Recebimento — CLINICA LAIF LTDA",
+          base: {
+            frase: "nota nº 1.234, competência " + mes(0) + " · prazo de 1 mês"
+              + " (padrão — ninguém configurou o prazo desta empresa)",
+            documental: true, prazoConfigurado: false,
+          },
+          referencia: { tipo: "nota", id: "n-1" },
+        },
+        // ⚠⚠ A FAIXA mín/máx: "a Claude sempre aparece com valor de 120 a 140 reais" (dono).
+        {
+          fonte: "SERIE_DESPESA", direcao: "SAIDA", procedencia: "PREVISAO", competencia: mes(1),
+          dia: null,
+          diaDesconhecido: { motivo: "serie_sem_dia", frase: FRASE_SERIE_SEM_DIA },
+          valor: 130, rotulo: "ANTHROPIC PBC",
+          base: {
+            frase: "recorrência marcada · MENSAL", n: 3, min: 120, max: 140, cv: 0.0769,
+            origem: "DETECTADA", valorDeclarado: null, valorObservado: 130,
+          },
+          referencia: { tipo: "serie", id: "s-1" },
+        },
+        // ⚠⚠ O CONFRONTO: declarado R$ 1.000, observado R$ 1.180 — "o observado vence" (dono).
+        {
+          fonte: "SERIE_DESPESA", direcao: "SAIDA", procedencia: "PREVISAO", competencia: mes(1),
+          dia: null,
+          diaDesconhecido: { motivo: "serie_sem_dia", frase: FRASE_SERIE_SEM_DIA },
+          valor: 1180, rotulo: "Jantar com clientes",
+          base: {
+            frase: "recorrência marcada · MENSAL", n: 3, min: 900, max: 1400, cv: 0.21,
+            origem: "DECLARADA", valorDeclarado: 1000, valorObservado: 1180,
+          },
+          referencia: { tipo: "serie", id: "s-4" },
+        },
+        // ⚠ RECEITA recorrente com valor CONSTANTE — a tela não inventa "entre X e Y".
+        {
+          fonte: "SERIE_RECEITA", direcao: "ENTRADA", procedencia: "PREVISAO", competencia: mes(2),
+          dia: null,
+          diaDesconhecido: { motivo: "serie_sem_dia", frase: FRASE_SERIE_SEM_DIA },
+          valor: 8000, rotulo: "CLINICA LAIF LTDA",
+          base: {
+            frase: "recorrência marcada · MENSAL", n: 5, min: 8000, max: 8000, cv: 0,
+            origem: "DETECTADA", valorDeclarado: null, valorObservado: 8000,
+          },
+          referencia: { tipo: "serie", id: "s-2" },
+        },
+        // ⚠⚠ "Imposto PREVISTO", nunca "imposto calculado" — e a frase da alíquota é OBRIGATÓRIA.
+        {
+          fonte: "IMPOSTO_PROJETADO", direcao: "SAIDA", procedencia: "PREVISAO", competencia: mes(2),
+          dia: null,
+          diaDesconhecido: {
+            motivo: "imposto_segue_a_receita",
+            frase: "O imposto projetado acompanha o mês da receita que o gerou.",
+          },
+          valor: 883.2, rotulo: "Imposto previsto sobre a receita prevista",
+          base: {
+            frase: "com base na alíquota de " + somarMeses(ciclo, -2) + " (declaração transmitida)",
+            aliquota: 0.1104, competenciaDaAliquota: somarMeses(ciclo, -2),
+            procedenciaDaAliquota: "TRANSMITIDA", receitaPrevista: 8000,
+          },
+          referencia: null,
+        },
+        // ⚠ Uma linha no BLOCO RECOLHIDO. Sem ela o total do bloco sairia zerado, e o desenho dos
+        // nove meses distantes nasceria sem poder ser visto.
+        {
+          fonte: "SERIE_DESPESA", direcao: "SAIDA", procedencia: "PREVISAO", competencia: mes(7),
+          dia: null,
+          diaDesconhecido: { motivo: "serie_sem_dia", frase: FRASE_SERIE_SEM_DIA },
+          valor: 890, rotulo: "COPIADORA SAO JORGE LTDA",
+          base: {
+            frase: "recorrência marcada · MENSAL", n: 6, min: 850, max: 920, cv: 0.03,
+            origem: "DETECTADA", valorDeclarado: null, valorObservado: 890,
+          },
+          referencia: { tipo: "serie", id: "s-5" },
+        },
+      ];
+
+      // ⚠ Os 12 meses nascem TODOS, inclusive os vazios: mês sem linha é resposta, não ausência.
+      const meses = Array.from({ length: 12 }).map((_, k) => {
+        const competencia = mes(k);
+        const doMes = linhasDoFluxo.filter((l) => l.competencia === competencia);
+        const soma = (proc, dir) => doMes
+          .filter((l) => l.procedencia === proc && l.direcao === dir)
+          .reduce((s, l) => s + (Number(l.valor) || 0), 0);
+        return {
+          competencia,
+          linhas: doMes,
+          // ⚠⚠ SEM A CHAVE `total`, aqui também. Ela não existe no contrato, e o mock não a inventa.
+          totais: {
+            fato: { entrada: soma("FATO", "ENTRADA"), saida: soma("FATO", "SAIDA") },
+            previsao: { entrada: soma("PREVISAO", "ENTRADA"), saida: soma("PREVISAO", "SAIDA") },
+            desconhecido: { quantas: 0 },
+          },
+        };
+      });
+
+      return {
+        ok: true,
+        cicloAtual: ciclo,
+        horizonte: 12,
+        meses,
+        // ⚠⚠ NADA SOME EM SILÊNCIO: o que não coube em mês nenhum sai NOMEADO, com o conserto.
+        semMes: zerada ? [] : [
+          {
+            motivo: "guia_sem_vencimento",
+            frase: "Esta guia está em aberto e não tem data de vencimento gravada, então não dá para"
+              + " dizer em que mês o dinheiro sai. Recapture a guia para trazer o vencimento.",
+            rotulo: "SIMPLES", valor: 1233.9, referencia: { tipo: "guia", id: "g-9" },
+          },
+        ],
+        // ⚠⚠ A GUIA VENCIDA é a linha mais urgente do fluxo, e ela não mora em mês nenhum.
+        vencidas: zerada
+          ? { quantas: 0, valor: 0, linhas: [] }
+          : { quantas: 2, valor: 18638.39, linhas: [] },
+        foraDoHorizonte: zerada ? 0 : 1,
+        // ⚠⚠ "ninguém configurou" ≠ "configurado como 1" — e a tela precisa alcançar os dois.
+        prazoRecebimento: zerada ? { meses: 2, configurado: true } : { meses: 1, configurado: false },
+        // ⚠⚠ A ausência do imposto projetado é NOMEADA — nunca uma linha que simplesmente não aparece.
+        semImposto: zerada
+          ? {
+            motivo: "sem_apuracao",
+            frase: "Não há apuração com receita e DAS para medir a alíquota efetiva, então o imposto"
+              + " sobre a receita prevista não é projetado. Um número aqui sairia de uma alíquota que"
+              + " ninguém mediu.",
+          }
+          : null,
+        aliquotaUsada: zerada ? null : {
+          valor: 0.1104, competencia: somarMeses(ciclo, -2), procedencia: "TRANSMITIDA",
+          frase: "com base na alíquota de " + somarMeses(ciclo, -2) + " (declaração transmitida)",
+        },
+        // ⚠⚠ "a tabela não existe neste banco" ≠ "esta empresa não tem recorrência nenhuma".
+        recorrenciaIndisponivel: zerada,
+        notas: { canceladas: zerada ? 0 : 1 },
+      };
+    },
+    /**
      * ⚠⚠ AS RECORRÊNCIAS — e os CINCO ramos que a tela precisa distinguir estão TODOS aqui.
      *
      * Este projeto foi mordido sete vezes por ramo que só existia em produção. As leituras
