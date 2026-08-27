@@ -195,12 +195,33 @@ export function PainelDeCasamentos({ companyId, podeEscrever = true, aoCasar }) 
                   {/* ⚠ A PISTA aparece. "Por que o sistema acha que é esta?" é a pergunta que o
                       contador faz, e responder com o motivo é o que torna a sugestão conferível. */}
                   <span style={{ fontSize: "0.76rem", color: "var(--text-faint)" }}>{linha.sugestao.frase}</span>
+                  {/* ⚠⚠ O QUE DÁ PARA FAZER COM ESTA NOTA — e ela nem sempre se funde.
+                      Desde o alargamento do conjunto de candidatas (dono, 27/08/2026), a sugestão
+                      pode ser uma nota JÁ CONTABILIZADA: ela aparece para o débito ser RECONHECIDO
+                      (senão ele vira despesa em dobro no lote), e o botão não existe. Sem esta
+                      frase, o botão sumiria mudo. E na nota com data DECLARADA ela avisa que casar
+                      SUBSTITUI a declaração pela prova — que é uma consequência, não um detalhe. */}
+                  {linha.sugestao.fraseDaCandidata ? (
+                    <div style={{
+                      fontSize: "0.76rem",
+                      marginTop: 4,
+                      color: linha.sugestao.podeFundir === false ? "var(--state-warn)" : "var(--text-muted)",
+                    }}>
+                      {linha.sugestao.fraseDaCandidata}
+                    </div>
+                  ) : null}
                 </div>
                 <Button
                   size="sm"
                   variant="primary"
                   disabled={!habilitado || !podeEscrever}
-                  title={!podeEscrever ? "Seu perfil não pode alterar lançamentos desta empresa." : undefined}
+                  // ⚠ Botão desabilitado NUNCA é mudo — e os dois motivos pedem consertos
+                  // diferentes: trocar de papel × desfazer o lançamento.
+                  title={
+                    !podeEscrever ? "Seu perfil não pode alterar lançamentos desta empresa."
+                      : !habilitado ? linha.sugestao.fraseDaCandidata || "Esta nota não pode ser casada."
+                        : undefined
+                  }
                   onClick={() => setConfirmando(linha)}
                 >
                   Casar

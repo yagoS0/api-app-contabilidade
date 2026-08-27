@@ -263,8 +263,27 @@ export function createConferenciaRouter({ log } = {}) {
         // `candidatos`, com o motivo — o sistema não escolhe entre notas.
         linhas: r.linhas.map((l) => ({
           debito: serializar(l.debito),
-          sugestao: l.sugestao ? { nota: serializar(l.sugestao.nota), pista: l.sugestao.pista, frase: l.sugestao.frase } : null,
-          candidatos: l.candidatos.map((c) => ({ nota: serializar(c.nota), pista: c.pista, frase: c.frase })),
+          // ⚠⚠ `podeFundir` e `fraseDaCandidata` VIAJAM — sem eles a tela ofereceria "Casar" numa
+          // nota já contabilizada, e o clique voltaria recusado. Campo fora do serializador some
+          // sem erro nenhum, e este projeto já foi mordido três vezes por isso.
+          sugestao: l.sugestao
+            ? {
+              nota: serializar(l.sugestao.nota),
+              pista: l.sugestao.pista,
+              frase: l.sugestao.frase,
+              leitura: l.sugestao.leitura,
+              podeFundir: l.sugestao.podeFundir,
+              fraseDaCandidata: l.sugestao.fraseDaCandidata,
+            }
+            : null,
+          candidatos: l.candidatos.map((c) => ({
+            nota: serializar(c.nota),
+            pista: c.pista,
+            frase: c.frase,
+            leitura: c.leitura,
+            podeFundir: c.podeFundir,
+            fraseDaCandidata: c.fraseDaCandidata,
+          })),
           motivo: l.motivo,
           frase: l.frase,
         })),

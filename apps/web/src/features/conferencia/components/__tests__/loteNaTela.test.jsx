@@ -35,7 +35,7 @@ function montar(props = {}) {
     <ModalDeContabilizacao
       itens={props.itens || [linha()]}
       contas={props.contas || PLANO}
-      idsQueCasam={props.idsQueCasam || new Set()}
+      idsQueCasam={props.idsQueCasam || new Map()}
       podeEscrever={props.podeEscrever ?? true}
       podeEscolherConta={props.podeEscolherConta ?? true}
       estadoDoPlano={props.estadoDoPlano}
@@ -60,7 +60,7 @@ describe("⚠⚠ o débito que casa com nota não vira linha editável", () => {
   it("ele sai da tabela E aparece com o motivo — nada some em silêncio", () => {
     montar({
       itens: [linha(), linha({ id: "ofx-1", descricaoOriginal: "PAGTO KODA BEAR" })],
-      idsQueCasam: new Set(["ofx-1"]),
+      idsQueCasam: new Map([["ofx-1", "casa_com_nota"]]),
     });
 
     // uma linha editável, não duas
@@ -73,13 +73,13 @@ describe("⚠⚠ o débito que casa com nota não vira linha editável", () => {
   it("⚠ o título conta só as que entram", () => {
     montar({
       itens: [linha(), linha({ id: "ofx-1" }), linha({ id: "ofx-2" })],
-      idsQueCasam: new Set(["ofx-1", "ofx-2"]),
+      idsQueCasam: new Map([["ofx-1", "casa_com_nota"], ["ofx-2", "casa_com_nota"]]),
     });
     expect(screen.getByText(/Contabilizar em lote — 1 lançamento/i)).toBeInTheDocument();
   });
 
   it("⚠⚠ com TODAS casando, o lote fica vazio e diz por quê — não abre uma tabela em branco", () => {
-    montar({ itens: [linha({ id: "ofx-1" })], idsQueCasam: new Set(["ofx-1"]) });
+    montar({ itens: [linha({ id: "ofx-1" })], idsQueCasam: new Map([["ofx-1", "casa_com_nota"]]) });
     expect(camposDeConta()).toHaveLength(0);
     expect(screen.getByText(/Nenhuma linha desta fila pode ser contabilizada em lote/i)).toBeInTheDocument();
   });

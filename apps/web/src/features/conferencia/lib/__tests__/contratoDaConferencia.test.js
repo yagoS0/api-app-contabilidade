@@ -137,7 +137,60 @@ describe("⚠⚠ O CASO QUE ESTE ARQUIVO FOI ESCRITO PARA PEGAR", () => {
       expect.objectContaining({ nota: expect.any(Object), pista: expect.any(String), frase: expect.any(String) }),
     );
     expect(comSugestao.sugestao).not.toHaveProperty("palavra");
-    expect(FONTE_DA_ROTA).toMatch(/pista: l\.sugestao\.pista, frase: l\.sugestao\.frase/);
+    // ⚠ A prova é de CONTEÚDO, não de formatação: a asserção era o texto exato de uma linha e
+    // quebrou quando a rota ganhou campos novos e foi reindentada. O que importa é que a rota
+    // publique `pista` e `frase` — e que `palavra` continue fora.
+    expect(FONTE_DA_ROTA).toMatch(/pista:\s*l\.sugestao\.pista/);
+    expect(FONTE_DA_ROTA).toMatch(/frase:\s*l\.sugestao\.frase/);
+    expect(FONTE_DA_ROTA).not.toMatch(/palavra:\s*l?\.?sugestao/);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  // ⚠⚠ O QUE DÁ PARA FAZER COM A CANDIDATA — o alargamento do casamento (dono, 27/08/2026).
+  //
+  // Nem toda sugestão se funde: uma nota JÁ CONTABILIZADA aparece para o débito ser RECONHECIDO
+  // (senão ele vira despesa em dobro no lote) e NÃO tem botão. Se `podeFundir` não viajar, a tela
+  // oferece "Casar" e o clique volta recusado — e é um campo fora do serializador que some sem erro
+  // nenhum, o defeito que este projeto já pagou três vezes.
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  it("⚠⚠ `podeFundir` e `fraseDaCandidata` VIAJAM na sugestão", async () => {
+    const { linhas } = await mock.getConferenciaCasamentos("emp-1");
+    const comSugestao = linhas.filter((l) => l.sugestao);
+    expect(comSugestao.length).toBeGreaterThan(0);
+    for (const l of comSugestao) {
+      expect(typeof l.sugestao.podeFundir).toBe("boolean");
+      expect(typeof l.sugestao.fraseDaCandidata).toBe("string");
+    }
+    expect(FONTE_DA_ROTA).toMatch(/podeFundir:\s*l\.sugestao\.podeFundir/);
+    expect(FONTE_DA_ROTA).toMatch(/fraseDaCandidata:\s*l\.sugestao\.fraseDaCandidata/);
+  });
+
+  it("⚠⚠ o mock exercita os DOIS desfechos — senão o ramo novo nasce inalcançável offline", async () => {
+    const { linhas } = await mock.getConferenciaCasamentos("emp-1");
+    const fundiveis = linhas.filter((l) => l.sugestao?.podeFundir === true);
+    const naoFundiveis = linhas.filter((l) => l.sugestao?.podeFundir === false);
+    expect(fundiveis.length).toBeGreaterThan(0);
+    expect(naoFundiveis.length).toBeGreaterThan(0);
+    // ⚠ E a não-fundível diz POR QUÊ — botão que some mudo é o defeito que a frase existe para evitar.
+    expect(naoFundiveis[0].sugestao.fraseDaCandidata).toMatch(/duas vezes/i);
+  });
+
+  it("⚠⚠ e o caso da DECISÃO DO DONO está exercido: a nota com data declarada à mão", async () => {
+    // *"a prova vence"* (27/08/2026). É o ramo que o alargamento criou — e o que estava furado.
+    const { linhas } = await mock.getConferenciaCasamentos("emp-1");
+    const declarada = linhas.find((l) => l.sugestao?.leitura === "pagamento_declarado");
+    expect(declarada).toBeDefined();
+    expect(declarada.sugestao.podeFundir).toBe(true);
+    expect(declarada.sugestao.fraseDaCandidata).toMatch(/substitui a declaração/i);
+  });
+
+  it("⚠⚠ TODO débito dos casamentos continua existindo na fila — a trava do espaço de ids", async () => {
+    // Repetida aqui de propósito para as linhas NOVAS: um débito acrescentado ao mock sem a linha
+    // correspondente na fila reabriria o buraco que o teste do topo fechou.
+    const fila = await mock.getConferenciaFila("emp-1", { competencia: "2026-07" });
+    const cas = await mock.getConferenciaCasamentos("emp-1");
+    const idsDaFila = new Set(fila.itens.map((i) => i.id));
+    for (const l of cas.linhas) expect(idsDaFila.has(l.debito.id)).toBe(true);
   });
 
   it("⚠⚠ AMBIGUIDADE: com dois candidatos, `sugestao` é NULA e os dois voltam", async () => {

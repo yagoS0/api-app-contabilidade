@@ -813,6 +813,60 @@ describe("⚠⚠ FUNDIR — o débito DATA a nota, e some absorvido", () => {
       ...extra,
     });
 
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  // ⚠⚠ A PROVA SUBSTITUI A DECLARAÇÃO — decisão do dono, 27/08/2026: *"a prova vence"*.
+  //
+  // A nota cujo pagamento o contador informou À MÃO está em `A_CONFERIR` com
+  // `DECLARADO_PELO_CONTADOR`. Antes deste alargamento ela saía do conjunto de candidatas, o débito
+  // do extrato que a pagou voltava "sem nota correspondente", e os dois viravam lançamento —
+  // **despesa em dobro**, pela porta que este casamento existe para fechar.
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  describe("⚠⚠ a nota com data DECLARADA à mão", () => {
+    const notaDeclarada = {
+      ...notaAguardando,
+      estado: ESTADO.A_CONFERIR,
+      dataPagamento: new Date("2026-07-16T00:00:00.000Z"),
+      origemPagamento: ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR,
+    };
+
+    it("⚠⚠ a data do EXTRATO entra por cima, e a procedência vira PROVA", async () => {
+      const { client, updates } = clientDaFusao({ debito, nota: notaDeclarada });
+      await fundir(client);
+      const naNota = updates.find((u) => u.id === "n-1");
+      expect(naNota.data).toMatchObject({
+        estado: ESTADO.A_CONFERIR,
+        // ⚠ A data do débito, NÃO a que o contador tinha declarado.
+        dataPagamento: PAGO_EM,
+        origemPagamento: ORIGEM_PAGAMENTO.OFX,
+        fitId: "F1",
+      });
+      expect(naNota.data.dataPagamento).not.toEqual(notaDeclarada.dataPagamento);
+    });
+
+    it("⚠ o débito é absorvido igual — nada muda do lado dele", async () => {
+      const { client, updates } = clientDaFusao({ debito, nota: notaDeclarada });
+      await fundir(client);
+      expect(updates.find((u) => u.id === "ofx-1").data).toMatchObject({
+        estado: ESTADO.FUNDIDO,
+        parDeclaradoId: "n-1",
+      });
+    });
+
+    it("⚠⚠ e NENHUM lançamento nasce — fundir continua não contabilizando", async () => {
+      const { client } = clientDaFusao({ debito, nota: notaDeclarada });
+      await fundir(client);
+      expect(client.accountingEntry).toBeUndefined();
+    });
+
+    it("⚠⚠ a nota que JÁ TEM PROVA recusa — trocar uma evidência por outra é erro, não upgrade", async () => {
+      // Ela já foi fundida com algum débito. Sobrescrever apagaria a evidência conferida e deixaria
+      // o primeiro débito sem par, sem ninguém entender por quê.
+      const jaProvada = { ...notaDeclarada, origemPagamento: ORIGEM_PAGAMENTO.OFX };
+      const { client } = clientDaFusao({ debito, nota: jaProvada });
+      await expect(fundir(client)).rejects.toMatchObject({ codigo: "pagamento_ja_provado" });
+    });
+  });
+
   it("⚠⚠ a NOTA recebe a data do pagamento e vai a A_CONFERIR", async () => {
     const { client, updates } = clientDaFusao();
     await fundir(client);
@@ -884,7 +938,7 @@ describe("⚠⚠ FUNDIR — o débito DATA a nota, e some absorvido", () => {
 describe("⚠ as SUGESTÕES — derivadas na leitura, nunca coluna", () => {
   const { sugestoesDePagamento } = require("../DeclaradoService.js");
 
-  it("busca débitos A_CONFERIR sem par, e notas AGUARDANDO_PAGAMENTO", async () => {
+  it("busca débitos A_CONFERIR sem par, e as notas que o débito pode estar pagando", async () => {
     const chamadas = [];
     const client = {
       lancamentoDeclarado: {
@@ -901,10 +955,17 @@ describe("⚠ as SUGESTÕES — derivadas na leitura, nunca coluna", () => {
       estado: ESTADO.A_CONFERIR,
       parDeclaradoId: null,
     });
+    // ⚠⚠ O CONJUNTO FOI ALARGADO — decisão do dono, 27/08/2026: *"a prova vence, alargue o
+    // casamento"*. Só `AGUARDANDO_PAGAMENTO` era um BURACO: a nota cujo pagamento o contador
+    // informou À MÃO vira `A_CONFERIR`, saía da lista, e o débito do extrato que a pagou voltava
+    // "sem nota correspondente" — entrando no lote de contabilização como despesa sem nota. Os dois
+    // viravam lançamento: **despesa em dobro**, pela porta que este casamento existe para fechar.
     expect(chamadas[1]).toEqual({
       portalClientId: "emp-1",
-      origem: "NOTA_RECEBIDA",
-      estado: ESTADO.AGUARDANDO_PAGAMENTO,
+      // ⚠ Por EXCLUSÃO do extrato, não por inclusão de `NOTA_RECEBIDA`: o lançamento manual do
+      // cliente também é uma despesa que um débito pode estar pagando.
+      origem: { not: "OFX_CLIENTE" },
+      estado: { in: [ESTADO.AGUARDANDO_PAGAMENTO, ESTADO.A_CONFERIR, ESTADO.CONTABILIZADO] },
     });
   });
 

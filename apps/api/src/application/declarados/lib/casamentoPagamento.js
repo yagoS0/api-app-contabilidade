@@ -23,6 +23,12 @@
 // ser ajustados com dado real — e o fato de só SUGERIREM é o que torna o ajuste barato.
 //
 // ⚠ ESTE MÓDULO É PURO: sem prisma, sem relógio, sem I/O.
+//
+// ⚠⚠ E ELE NÃO CONHECE ESTADO — a varredura de fonte que proíbe os nomes de estado aqui está CERTA,
+// e foi ela que me barrou em 27/08/2026. Ao alargar o conjunto de candidatas eu quis pôr aqui a
+// leitura *"esta candidata pode ser fundida?"* — mas isso é pergunta de ESTADO, e a resposta mora em
+// `estadosDeclarado.js`, que é o dono desse vocabulário (ver `lerCandidata`). Um módulo que responde
+// *"este débito paga esta nota?"* não pode passar a decidir o que se FAZ com o resultado.
 
 /** Por que este débito se parece com esta nota. ⚠ Vocabulário FECHADO — vai para a tela. */
 export const PISTA = Object.freeze({
@@ -201,6 +207,8 @@ export function casarDebitoComNotas(debito, notas) {
   const candidatos = [];
   for (const nota of notas || []) {
     const r = debitoPagaNota(debito, nota);
+    // ⚠ O que se FAZ com esta candidata (fundir? só reconhecer?) é acrescentado pelo SERVIÇO, com
+    // `lerCandidata` — é pergunta de estado, e este módulo não conhece estado.
     if (r.casa) candidatos.push({ nota, pista: r.pista, palavra: r.palavra, frase: FRASE_DA_PISTA[r.pista] });
   }
 

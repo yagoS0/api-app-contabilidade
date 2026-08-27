@@ -7296,6 +7296,31 @@ export function createMockApi() {
           motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
         },
         {
+          // ⚠⚠ O DÉBITO QUE PAGA UMA NOTA **JÁ CONTABILIZADA** (`dec-5`). Ele não se funde e não
+          // pode ser contabilizado à parte — seria a mesma despesa duas vezes. É o caso que o
+          // alargamento do casamento (dono, 27/08/2026) passou a reconhecer.
+          id: "dec-11", origem: "OFX_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",
+          valor: "2400.00", valorAjustado: null, competencia: comp,
+          descricaoOriginal: "PAGTO SINTROPIA SERVICOS", cnpjFornecedor: null,
+          dataDocumento: null, detalheServico: null,
+          dataPagamento: comp + "-20", origemPagamento: "OFX",
+          contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
+        },
+        {
+          // ⚠⚠ O DÉBITO QUE PAGA UMA NOTA CUJA DATA FOI **DECLARADA À MÃO** (`dec-3`) — é o caso
+          // central da decisão do dono de 27/08/2026 (*"a prova vence"*), e o que estava FURADO:
+          // antes do alargamento, `dec-3` saía do conjunto de candidatas e este débito voltava "sem
+          // nota correspondente", entrando no lote como despesa sem nota. Os dois viravam lançamento.
+          id: "dec-12", origem: "OFX_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",
+          valor: "320.50", valorAjustado: null, competencia: comp,
+          descricaoOriginal: "PAGTO PAPELARIA CENTRAL", cnpjFornecedor: null,
+          dataDocumento: null, detalheServico: null,
+          dataPagamento: comp + "-14", origemPagamento: "OFX",
+          contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
+        },
+        {
           // ⚠ O AMBÍGUO: duas notas se parecem com ele e o sistema não escolhe. Ele também fica de
           // fora do lote — ambiguidade não autoriza contabilizar à parte.
           id: "dec-10", origem: "OFX_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",
@@ -7378,12 +7403,38 @@ export function createMockApi() {
               // mock vira tela que lê `undefined` em produção.
               pista: "NOME_NO_MEMO",
               frase: "O nome do fornecedor aparece na descrição do banco.",
+              // ⚠ A nota espera pagamento: é o caso de sempre, e ela se funde.
+              leitura: "sem_pagamento",
+              podeFundir: true,
+              fraseDaCandidata: "Esta nota ainda não tem data de pagamento.",
             },
             candidatos: [
               {
                 nota: { id: "dec-2", valor: "890.00", descricaoOriginal: "KODA BEAR", dataDocumento: "2026-07-05", cnpjFornecedor: "98765432000155" },
                 pista: "NOME_NO_MEMO",
                 frase: "O nome do fornecedor aparece na descrição do banco.",
+              },
+            ],
+            motivo: null, frase: "",
+          },
+          {
+            // ⚠⚠ A NOTA COM DATA **DECLARADA À MÃO** — o caso da decisão do dono. Ela SE FUNDE, e
+            // casar SUBSTITUI a declaração pela data do extrato. Sem esta linha o ramo que a decisão
+            // criou nasceria inalcançável offline.
+            debito: { id: "dec-12", valor: "320.50", dataPagamento: "2026-07-14", descricaoOriginal: "PAGTO PAPELARIA CENTRAL" },
+            sugestao: {
+              nota: { id: "dec-3", valor: "320.50", descricaoOriginal: "PAPELARIA CENTRAL LTDA", dataDocumento: "2026-07-09" },
+              pista: "NOME_NO_MEMO",
+              frase: "O nome do fornecedor aparece na descrição do banco.",
+              leitura: "pagamento_declarado",
+              podeFundir: true,
+              fraseDaCandidata: "Você informou esta data à mão. Casar substitui a declaração pela data do extrato, que é prova.",
+            },
+            candidatos: [
+              {
+                nota: { id: "dec-3", valor: "320.50", descricaoOriginal: "PAPELARIA CENTRAL LTDA", dataDocumento: "2026-07-09" },
+                pista: "NOME_NO_MEMO", frase: "O nome do fornecedor aparece na descrição do banco.",
+                leitura: "pagamento_declarado", podeFundir: true,
               },
             ],
             motivo: null, frase: "",
@@ -7408,6 +7459,31 @@ export function createMockApi() {
             debito: { id: "dec-4", valor: "175.00", dataPagamento: "2026-07-01", descricaoOriginal: "TARIFA PACOTE DE SERVICOS" },
             sugestao: null, candidatos: [], motivo: "nenhum_candidato",
             frase: "Nenhuma nota recebida em aberto se parece com este débito. Ele pode ser uma despesa sem nota, ou a nota ainda não chegou.",
+          },
+          {
+            // ⚠⚠ A NOTA JÁ CONTABILIZADA — o caso que o alargamento do casamento trouxe (dono,
+            // 27/08/2026). Ela vira sugestão para o débito ser RECONHECIDO, e o botão "Casar" NÃO
+            // aparece: não há o que fundir, a data dela já é a data do lançamento.
+            // ⚠ Sem esta linha o ramo nasceria inalcançável offline — a sétima vez neste projeto.
+            debito: { id: "dec-11", valor: "2400.00", dataPagamento: "2026-07-20", descricaoOriginal: "PAGTO SINTROPIA SERVICOS" },
+            sugestao: {
+              nota: { id: "dec-5", valor: "2400.00", descricaoOriginal: "SINTROPIA SERVICOS LTDA", dataDocumento: "2026-07-03" },
+              pista: "NOME_NO_MEMO",
+              frase: "O nome do fornecedor aparece na descrição do banco.",
+              leitura: "ja_contabilizada",
+              podeFundir: false,
+              fraseDaCandidata: "Esta nota já virou lançamento, e por isso não há o que casar — mas este débito é o "
+                + "pagamento dela. Não o contabilize à parte: seria a mesma despesa duas vezes. Para corrigir a data, "
+                + "desfaça o lançamento e refaça.",
+            },
+            candidatos: [
+              {
+                nota: { id: "dec-5", valor: "2400.00", descricaoOriginal: "SINTROPIA SERVICOS LTDA", dataDocumento: "2026-07-03" },
+                pista: "NOME_NO_MEMO", frase: "O nome do fornecedor aparece na descrição do banco.",
+                leitura: "ja_contabilizada", podeFundir: false,
+              },
+            ],
+            motivo: null, frase: "",
           },
         ],
         totalDebitos: 3,

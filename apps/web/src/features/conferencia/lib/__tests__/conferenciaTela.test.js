@@ -415,6 +415,25 @@ describe("⚠⚠ O CASAMENTO — o sistema NUNCA escolhe entre notas", () => {
     expect(podeCasar({ sugestao: { nota: { id: "n-1" } } })).toBe(false);
   });
 
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
+  // ⚠⚠ NEM TODA SUGESTÃO SE FUNDE — o alargamento do casamento (dono, 27/08/2026: *"a prova
+  // vence"*). Uma nota JÁ CONTABILIZADA vira sugestão para o débito ser RECONHECIDO — senão ele
+  // entra no lote como despesa sem nota e o mesmo dinheiro é lançado duas vezes —, mas não há o
+  // que fundir: a data dela já é a data do `AccountingEntry`.
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
+  it("⚠⚠ a nota já contabilizada aparece e NÃO ganha botão", () => {
+    expect(podeCasar({ ...comSugestao, sugestao: { nota: { id: "n-1" }, podeFundir: false } })).toBe(false);
+  });
+
+  it("⚠ a fundível continua ganhando", () => {
+    expect(podeCasar({ ...comSugestao, sugestao: { nota: { id: "n-1" }, podeFundir: true } })).toBe(true);
+  });
+
+  it("⚠ `podeFundir` AUSENTE é lido como true — contrato antigo, e quem recusa é o servidor", () => {
+    // Recusar por omissão tiraria o botão de toda linha no dia em que o campo não viesse.
+    expect(podeCasar(comSugestao)).toBe(true);
+  });
+
   it("⚠⚠ AMBÍGUO é ÂMBAR, não vermelho — é o sistema funcionando, não quebrando", () => {
     expect(leituraDoCasamento(ambiguo).token).toBe("--state-warn");
   });

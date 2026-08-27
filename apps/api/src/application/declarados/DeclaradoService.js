@@ -23,6 +23,9 @@ import { competenciasFechadas, isMonthClosed } from "../accounting/fechamentoCon
 import {
   ESTADO,
   ESTADOS_SEM_LANCAMENTO,
+  ehProvaDePagamento,
+  FRASE_DA_CANDIDATA,
+  lerCandidata,
   FRASE_DA_RECUSA,
   ORIGEM,
   ORIGEM_PAGAMENTO,
@@ -513,13 +516,57 @@ export async function sugestoesDePagamento({ portalClientId, client = prisma }) 
       where: { ...escopo, origem: "OFX_CLIENTE", estado: ESTADO.A_CONFERIR, parDeclaradoId: null },
       orderBy: { dataPagamento: "asc" },
     }),
+    // ⚠⚠ O CONJUNTO DE CANDIDATAS FOI ALARGADO — decisão do dono, 27/08/2026: *"a prova vence,
+    // alargue o casamento"*. Antes ele era só `AGUARDANDO_PAGAMENTO`, e isso era um BURACO:
+    //
+    // O contador informa o pagamento de uma nota À MÃO → ela vira `A_CONFERIR` e SAI da lista de
+    // candidatas. O débito do extrato que a pagou volta `nenhum_candidato`, entra no lote de
+    // contabilização como se fosse despesa sem nota, e os DOIS viram lançamento — **despesa em
+    // dobro**, exatamente pela porta que este casamento existe para fechar. Achado por dois agentes
+    // de verificação, independentemente, em 27/08/2026.
+    //
+    // ⚠ `CONTABILIZADO` entra também, e por um motivo DIFERENTE: lá não há o que fundir (a data já
+    // virou a data do `AccountingEntry`), mas o débito precisa ser RECONHECIDO para não virar um
+    // segundo lançamento. Ele volta com `podeFundir: false` e o motivo — ver `casarLote`.
+    //
+    // ⚠ `RECUSADO` e `FUNDIDO` continuam fora: a primeira não vira despesa nenhuma, e a segunda já
+    // é o outro lado de um casamento.
     client.lancamentoDeclarado.findMany({
-      where: { ...escopo, origem: "NOTA_RECEBIDA", estado: ESTADO.AGUARDANDO_PAGAMENTO },
+      where: {
+        ...escopo,
+        origem: { not: ORIGEM.OFX_CLIENTE },
+        estado: { in: [ESTADO.AGUARDANDO_PAGAMENTO, ESTADO.A_CONFERIR, ESTADO.CONTABILIZADO] },
+      },
       orderBy: { dataDocumento: "asc" },
     }),
   ]);
 
-  return { linhas: casarLote(debitos, notas), totalDebitos: debitos.length, totalNotas: notas.length };
+  // ⚠⚠ A NOTA QUE **JÁ TEM PROVA** SAI DO CONJUNTO, e esta é a guarda que impede o alargamento de
+  // virar um defeito novo: uma nota `A_CONFERIR` com `origemPagamento: OFX` já foi fundida com
+  // algum débito. Oferecê-la a um SEGUNDO débito trocaria uma evidência por outra em silêncio, e
+  // deixaria o primeiro débito sem par, sem ninguém entender por quê.
+  //
+  // ⚠ A pergunta é `ehProvaDePagamento`, a MESMA da máquina de estados — não uma comparação com
+  // `"OFX"` escrita aqui. Duas leituras de "isto é prova?" divergiriam na primeira origem nova.
+  const candidatas = notas.filter(
+    (n) => n.estado !== ESTADO.A_CONFERIR || !ehProvaDePagamento(n.origemPagamento),
+  );
+
+  // ⚠ A LEITURA DA CANDIDATA é acrescentada AQUI, e não dentro de `casarLote`: aquele módulo não
+  // conhece estado, de propósito (há varredura provando). Ele responde "este débito paga esta
+  // nota?"; o que se FAZ com o resultado é pergunta de estado, e mora em `estadosDeclarado.js`.
+  const comLeitura = (c) => {
+    if (!c) return c;
+    const r = lerCandidata(c.nota);
+    return { ...c, leitura: r.leitura, podeFundir: r.podeFundir, fraseDaCandidata: FRASE_DA_CANDIDATA[r.leitura] };
+  };
+  const linhas = casarLote(debitos, candidatas).map((l) => ({
+    ...l,
+    sugestao: comLeitura(l.sugestao),
+    candidatos: (l.candidatos || []).map(comLeitura),
+  }));
+
+  return { linhas, totalDebitos: debitos.length, totalNotas: candidatas.length };
 }
 
 /**
@@ -559,7 +606,20 @@ export async function fundirPagamentoNaNota({
   if (!debitoPagaNota(debito, nota).casa) recusar(RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE);
 
   // ⚠ A nota recebe a PROVA do débito, não uma declaração: `origemPagamento` viaja junto.
-  const naNota = podeTransitar(nota, TRANSICAO.INFORMAR_PAGAMENTO, {
+  //
+  // ⚠⚠ DUAS TRANSIÇÕES, ESCOLHIDAS PELO ESTADO DA NOTA — e a segunda existe por decisão do dono
+  // (27/08/2026): *"a prova vence, alargue o casamento"*.
+  //
+  //   `AGUARDANDO_PAGAMENTO` → `INFORMAR_PAGAMENTO`: a nota não tinha data. É o caso de sempre.
+  //   `A_CONFERIR`           → `PROVAR_PAGAMENTO`:   o contador tinha DECLARADO a data à mão, e o
+  //                            débito do extrato chegou depois. A prova substitui a afirmação.
+  //
+  // ⚠ Quem decide se pode continua sendo a máquina de estados: `PROVAR_PAGAMENTO` recusa se o que
+  // entra não for prova, e recusa se a nota já tiver prova. Aqui só se escolhe qual pergunta fazer.
+  const transicaoDaNota = nota?.estado === ESTADO.A_CONFERIR
+    ? TRANSICAO.PROVAR_PAGAMENTO
+    : TRANSICAO.INFORMAR_PAGAMENTO;
+  const naNota = podeTransitar(nota, transicaoDaNota, {
     dataPagamento: debito.dataPagamento,
     origemPagamento: debito.origemPagamento,
   });

@@ -8,6 +8,10 @@ import {
   ESTADO,
   ESTADOS_SEM_LANCAMENTO,
   ESTADOS_VIVOS,
+  FRASE_DA_CANDIDATA,
+  LEITURA_DA_CANDIDATA,
+  ehProvaDePagamento,
+  lerCandidata,
   FRASE_DA_RECUSA,
   ORIGEM,
   ORIGEM_PAGAMENTO,
@@ -244,6 +248,102 @@ describe("FUNDIR", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A PROVA SUBSTITUI A DECLARAÇÃO — decisão do dono, 27/08/2026: *"a prova vence"*.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ PROVAR_PAGAMENTO — o extrato por cima do que foi declarado à mão", () => {
+  const declarada = {
+    estado: ESTADO.A_CONFERIR,
+    dataPagamento: new Date("2026-07-10T00:00:00Z"),
+    origemPagamento: ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR,
+  };
+  const doExtrato = {
+    dataPagamento: new Date("2026-07-18T00:00:00Z"),
+    origemPagamento: ORIGEM_PAGAMENTO.OFX,
+  };
+
+  it("a data declarada é trocada pela do extrato, e a procedência vai junto", () => {
+    const r = podeTransitar(declarada, TRANSICAO.PROVAR_PAGAMENTO, doExtrato);
+    expect(r.ok).toBe(true);
+    expect(r.campos.dataPagamento).toEqual(doExtrato.dataPagamento);
+    expect(r.campos.origemPagamento).toBe(ORIGEM_PAGAMENTO.OFX);
+  });
+
+  it("⚠ a linha NÃO muda de lugar na fila — o que muda é a procedência da data", () => {
+    expect(podeTransitar(declarada, TRANSICAO.PROVAR_PAGAMENTO, doExtrato).estado).toBe(ESTADO.A_CONFERIR);
+  });
+
+  it("⚠⚠ o que ENTRA tem de ser PROVA — declaração por cima de declaração não é este ato", () => {
+    const r = podeTransitar(declarada, TRANSICAO.PROVAR_PAGAMENTO, {
+      dataPagamento: new Date("2026-07-18T00:00:00Z"),
+      origemPagamento: ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toBe(RECUSA.PAGAMENTO_NAO_E_PROVA);
+  });
+
+  it("⚠ o do CLIENTE também é declaração, e também não serve", () => {
+    const r = podeTransitar(declarada, TRANSICAO.PROVAR_PAGAMENTO, {
+      dataPagamento: new Date("2026-07-18T00:00:00Z"),
+      origemPagamento: ORIGEM_PAGAMENTO.CLIENTE,
+    });
+    expect(r.motivo).toBe(RECUSA.PAGAMENTO_NAO_E_PROVA);
+  });
+
+  it("⚠⚠ o que ESTÁ não pode já ser PROVA — duas provas para o mesmo dinheiro é um erro, não um upgrade", () => {
+    // Uma nota com `OFX` já foi fundida com algum débito. Trocar por outra prova apagaria a
+    // evidência que o contador já conferiu, e deixaria o primeiro débito sem par.
+    const jaProvada = { ...declarada, origemPagamento: ORIGEM_PAGAMENTO.OFX };
+    const r = podeTransitar(jaProvada, TRANSICAO.PROVAR_PAGAMENTO, doExtrato);
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toBe(RECUSA.PAGAMENTO_JA_PROVADO);
+  });
+
+  it("⚠ e as duas recusas dizem consertos DIFERENTES", () => {
+    expect(FRASE_DA_RECUSA[RECUSA.PAGAMENTO_JA_PROVADO]).toMatch(/desfaça o casamento anterior/i);
+    expect(FRASE_DA_RECUSA[RECUSA.PAGAMENTO_NAO_E_PROVA]).toMatch(/informar pagamento/i);
+  });
+
+  it("⚠⚠ SÓ O EXTRATO PROVA — e origem nova nasce sendo DECLARAÇÃO", () => {
+    expect(ehProvaDePagamento(ORIGEM_PAGAMENTO.OFX)).toBe(true);
+    expect(ehProvaDePagamento(ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR)).toBe(false);
+    expect(ehProvaDePagamento(ORIGEM_PAGAMENTO.CLIENTE)).toBe(false);
+    // ⚠ Lista de INCLUSÃO: tratar o desconhecido como prova deixaria uma afirmação passar por
+    // evidência, que é o oposto da decisão que este ato implementa.
+    expect(ehProvaDePagamento("OPEN_FINANCE")).toBe(false);
+    expect(ehProvaDePagamento(null)).toBe(false);
+  });
+
+  it("⚠ a invariante do caixa continua valendo: sem data, recusa", () => {
+    const r = podeTransitar(declarada, TRANSICAO.PROVAR_PAGAMENTO, {
+      dataPagamento: null,
+      origemPagamento: ORIGEM_PAGAMENTO.OFX,
+    });
+    expect(r.motivo).toBe(RECUSA.SEM_DATA_DE_PAGAMENTO);
+  });
+});
+
+describe("⚠⚠ lerCandidata — o que dá para fazer com a nota que o débito parece pagar", () => {
+  it("sem data de pagamento: funde, é o caso de sempre", () => {
+    const r = lerCandidata({ estado: ESTADO.AGUARDANDO_PAGAMENTO });
+    expect(r).toEqual({ leitura: LEITURA_DA_CANDIDATA.SEM_PAGAMENTO, podeFundir: true });
+  });
+
+  it("⚠⚠ data DECLARADA: funde, e é o caso novo — a prova entra por cima", () => {
+    const r = lerCandidata({ estado: ESTADO.A_CONFERIR, origemPagamento: ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR });
+    expect(r).toEqual({ leitura: LEITURA_DA_CANDIDATA.PAGAMENTO_DECLARADO, podeFundir: true });
+    expect(FRASE_DA_CANDIDATA[r.leitura]).toMatch(/substitui a declaração/i);
+  });
+
+  it("⚠⚠ JÁ CONTABILIZADA: NÃO funde — mas aparece, para o débito não virar despesa em dobro", () => {
+    const r = lerCandidata({ estado: ESTADO.CONTABILIZADO });
+    expect(r.podeFundir).toBe(false);
+    expect(r.leitura).toBe(LEITURA_DA_CANDIDATA.JA_CONTABILIZADA);
+    expect(FRASE_DA_CANDIDATA[r.leitura]).toMatch(/mesma despesa duas vezes/i);
+    expect(FRASE_DA_CANDIDATA[r.leitura]).toMatch(/desfaça o lançamento/i);
+  });
+});
+
 describe("⚠⚠ A MATRIZ INTEIRA — toda transição inválida é recusada", () => {
   // ⚠ Este bloco é o que impede um estado novo de nascer PERMITIDO: o mapa é de inclusão, e aqui
   // se prova que tudo que não está nele recusa.
@@ -257,6 +357,12 @@ describe("⚠⚠ A MATRIZ INTEIRA — toda transição inválida é recusada", (
     `${ESTADO.A_CONFERIR}|${TRANSICAO.AJUSTAR}`,
     `${ESTADO.A_CONFERIR}|${TRANSICAO.RECUSAR}`,
     `${ESTADO.A_CONFERIR}|${TRANSICAO.FUNDIR}`,
+    // ⚠⚠ A PROVA SUBSTITUI A DECLARAÇÃO — decisão do dono, 27/08/2026.
+    //
+    // ⚠ Ela é a ÚNICA origem de `PROVAR_PAGAMENTO`, e isso é o desenho: de `AGUARDANDO_PAGAMENTO`
+    // quem resolve é `INFORMAR_PAGAMENTO`, e `CONTABILIZADO` fica fora porque lá a data já virou a
+    // data do `AccountingEntry` — trocá-la aqui deixaria lançamento e declarado discordando.
+    `${ESTADO.A_CONFERIR}|${TRANSICAO.PROVAR_PAGAMENTO}`,
     `${ESTADO.CONTABILIZADO}|${TRANSICAO.DESFAZER}`,
     `${ESTADO.RECUSADO}|${TRANSICAO.REABRIR}`,
   ]);

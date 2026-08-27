@@ -524,7 +524,15 @@ export function leituraDoCasamento(linha) {
  * decisão do dedo de quem está com pressa.
  */
 export function podeCasar(linha) {
-  return Boolean(linha?.sugestao?.nota?.id && linha?.debito?.id);
+  if (!linha?.sugestao?.nota?.id || !linha?.debito?.id) return false;
+  // ⚠⚠ E NEM TODA SUGESTÃO SE FUNDE — desde que o conjunto de candidatas foi alargado (decisão do
+  // dono, 27/08/2026: *"a prova vence"*), uma nota JÁ CONTABILIZADA pode virar sugestão. Ela aparece
+  // para o débito ser RECONHECIDO (senão ele vira despesa em dobro no lote), mas não há o que
+  // fundir: a data dela já é a data do `AccountingEntry`.
+  //
+  // ⚠ `podeFundir` ausente é lido como TRUE — é o contrato antigo, e recusar por omissão tiraria o
+  // botão de toda linha no dia em que o campo não viesse. Quem recusa de verdade é o servidor.
+  return linha.sugestao.podeFundir !== false;
 }
 
 /** ⚠ A ordem: o que tem decisão esperando primeiro; o que não tem nota, por último. */

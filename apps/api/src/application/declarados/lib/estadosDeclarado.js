@@ -68,9 +68,85 @@ export const ORIGEM_PAGAMENTO = Object.freeze({
   CLIENTE: "CLIENTE",
 });
 
+/**
+ * ⚠⚠ ESTA DATA É **PROVA** OU **DECLARAÇÃO**? — e a lista é de INCLUSÃO.
+ *
+ * Só o extrato prova. Origem nova nasce sendo DECLARAÇÃO, que é o lado seguro: tratar uma origem
+ * desconhecida como prova deixaria uma afirmação passar por evidência, e é exatamente sobre essa
+ * distinção que a decisão do dono de 27/08/2026 se apoia — *"a prova vence"*.
+ */
+const ORIGENS_QUE_PROVAM = Object.freeze([ORIGEM_PAGAMENTO.OFX]);
+
+export function ehProvaDePagamento(origem) {
+  return ORIGENS_QUE_PROVAM.includes(origem);
+}
+
+/**
+ * ⚠⚠ O QUE DÁ PARA FAZER COM ESTA NOTA CANDIDATA — e nem toda é fusível.
+ *
+ * O conjunto de candidatas do casamento débito × nota foi alargado em 27/08/2026 (decisão do dono:
+ * *"a prova vence, alargue o casamento"*), e com isso passaram a existir TRÊS situações que não se
+ * tratam igual. Pôr o mesmo botão nas três seria oferecer o que o servidor recusa.
+ *
+ * ⚠ Isto mora AQUI, e não em `casamentoPagamento.js`, porque é pergunta de ESTADO — e aquele módulo
+ * tem varredura de fonte proibindo conhecer estado, de propósito: ele responde *"este débito paga
+ * esta nota?"*, não *"o que se faz com o resultado"*.
+ */
+export const LEITURA_DA_CANDIDATA = Object.freeze({
+  /** A nota não tem data de pagamento. O débito a preenche — é o caso de sempre. */
+  SEM_PAGAMENTO: "sem_pagamento",
+  /**
+   * ⚠⚠ O contador DECLAROU a data à mão e o extrato chegou depois. Fundir **substitui a afirmação
+   * pela evidência** — e é este caso que o alargamento existe para alcançar.
+   */
+  PAGAMENTO_DECLARADO: "pagamento_declarado",
+  /**
+   * ⚠⚠ A NOTA JÁ VIROU LANÇAMENTO. Não há o que fundir: a data já é a data do `AccountingEntry`.
+   *
+   * Ela aparece assim mesmo — e essa é a razão de estar no conjunto — porque **o débito precisa ser
+   * RECONHECIDO**. Sem isso ele volta "sem nota correspondente", entra no lote de contabilização
+   * como despesa sem nota, e o mesmo dinheiro é lançado duas vezes.
+   */
+  JA_CONTABILIZADA: "ja_contabilizada",
+});
+
+export const FRASE_DA_CANDIDATA = Object.freeze({
+  [LEITURA_DA_CANDIDATA.SEM_PAGAMENTO]: "Esta nota ainda não tem data de pagamento.",
+  [LEITURA_DA_CANDIDATA.PAGAMENTO_DECLARADO]:
+    "Você informou esta data à mão. Casar substitui a declaração pela data do extrato, que é prova.",
+  [LEITURA_DA_CANDIDATA.JA_CONTABILIZADA]:
+    "Esta nota já virou lançamento, e por isso não há o que casar — mas este débito é o pagamento dela. "
+    + "Não o contabilize à parte: seria a mesma despesa duas vezes. Para corrigir a data, desfaça o "
+    + "lançamento e refaça.",
+});
+
+/** ⚠ Só a nota sem data e a nota com data DECLARADA podem ser fundidas. */
+export function lerCandidata(nota) {
+  if (nota?.estado === ESTADO.CONTABILIZADO) {
+    return { leitura: LEITURA_DA_CANDIDATA.JA_CONTABILIZADA, podeFundir: false };
+  }
+  if (nota?.estado === ESTADO.A_CONFERIR && !ehProvaDePagamento(nota?.origemPagamento)) {
+    return { leitura: LEITURA_DA_CANDIDATA.PAGAMENTO_DECLARADO, podeFundir: true };
+  }
+  return { leitura: LEITURA_DA_CANDIDATA.SEM_PAGAMENTO, podeFundir: true };
+}
+
 /** Os atos. Lista FECHADA. */
 export const TRANSICAO = Object.freeze({
   INFORMAR_PAGAMENTO: "INFORMAR_PAGAMENTO",
+  /**
+   * ⚠⚠ A PROVA SUBSTITUI A DECLARAÇÃO — decisão do dono, 27/08/2026: *"a prova vence"*.
+   *
+   * O contador informou a data à mão (`AGUARDANDO_PAGAMENTO` → `A_CONFERIR` com
+   * `DECLARADO_PELO_CONTADOR`); depois o débito daquele pagamento chega no extrato. Este ato troca
+   * a afirmação pela evidência, **sem mudar de estado** e sem criar nada.
+   *
+   * ⚠ Ele existe SEPARADO de `INFORMAR_PAGAMENTO` de propósito. Bastaria acrescentar `A_CONFERIR`
+   * às origens daquele — e isso abriria o caminho INVERSO: o botão "Informar pagamento" da tela
+   * passaria a poder sobrescrever uma data PROVADA pelo extrato com uma digitada à mão. Um ato para
+   * cada sentido, e só um deles é reversível de graça.
+   */
+  PROVAR_PAGAMENTO: "PROVAR_PAGAMENTO",
   CONFIRMAR: "CONFIRMAR",
   AJUSTAR: "AJUSTAR",
   RECUSAR: "RECUSAR",
@@ -95,6 +171,10 @@ export const RECUSA = Object.freeze({
   SEM_MOTIVO: "sem_motivo",
   SEM_PAR: "sem_par",
   VALOR_AJUSTADO_INVALIDO: "valor_ajustado_invalido",
+  /** ⚠⚠ Já há PROVA nesta linha — outra prova por cima trocaria uma evidência por outra, calada. */
+  PAGAMENTO_JA_PROVADO: "pagamento_ja_provado",
+  /** ⚠⚠ Só PROVA substitui declaração. Declaração sobre declaração é `INFORMAR_PAGAMENTO`. */
+  PAGAMENTO_NAO_E_PROVA: "pagamento_nao_e_prova",
 });
 
 /** A frase de cada recusa, para a tela não escrever a sua. */
@@ -110,6 +190,12 @@ export const FRASE_DA_RECUSA = Object.freeze({
   [RECUSA.SEM_MOTIVO]: "Diga por que este lançamento está sendo recusado.",
   [RECUSA.SEM_PAR]: "A fusão precisa apontar qual é o outro lançamento.",
   [RECUSA.VALOR_AJUSTADO_INVALIDO]: "O valor ajustado precisa ser um número maior que zero.",
+  [RECUSA.PAGAMENTO_JA_PROVADO]:
+    "A data desta despesa já veio do extrato — ela já é prova. Se o débito certo for outro, desfaça o "
+    + "casamento anterior antes.",
+  [RECUSA.PAGAMENTO_NAO_E_PROVA]:
+    "Só uma data vinda do extrato substitui uma data declarada. Para trocar uma declaração por outra, "
+    + "use informar pagamento.",
 });
 
 /**
@@ -118,6 +204,11 @@ export const FRASE_DA_RECUSA = Object.freeze({
  */
 const ORIGENS_VALIDAS = Object.freeze({
   [TRANSICAO.INFORMAR_PAGAMENTO]: [ESTADO.AGUARDANDO_PAGAMENTO],
+  // ⚠⚠ SÓ `A_CONFERIR`. De `AGUARDANDO_PAGAMENTO` quem já resolve é `INFORMAR_PAGAMENTO`; e
+  // `CONTABILIZADO` fica de FORA de propósito — lá a data já virou a data do `AccountingEntry`, e
+  // trocá-la aqui deixaria o lançamento e o declarado dizendo coisas diferentes sobre o mesmo
+  // dinheiro. Corrigir isso é desfazer e relançar, que é ato do contador.
+  [TRANSICAO.PROVAR_PAGAMENTO]: [ESTADO.A_CONFERIR],
   // ⚠ CONFIRMAR aceita `AGUARDANDO_PAGAMENTO` de propósito: é o "lançar agora, mesmo sem
   // comprovante" que o dono pediu. Ele não afrouxa a invariante — quem confirma de lá tem de
   // mandar a data no mesmo ato, e a recusa é a mesma.
@@ -183,6 +274,24 @@ export function podeTransitar(declarado, transicao, dados = {}) {
       const pag = pagamentoResultante(declarado, dados);
       const erro = conferirPagamento(pag);
       if (erro) return recusa(erro);
+      return aceita(ESTADO.A_CONFERIR, { dataPagamento: pag.data, origemPagamento: pag.origem });
+    }
+
+    case TRANSICAO.PROVAR_PAGAMENTO: {
+      // ⚠⚠ AS DUAS GUARDAS SÃO O ATO INTEIRO — sem elas isto vira "sobrescrever a data", que é
+      // outra coisa e é perigosa nos dois sentidos.
+      //
+      // 1. O que ENTRA tem de ser prova. Declaração por cima de declaração não é este ato.
+      // 2. O que ESTÁ não pode já ser prova: duas provas para o mesmo dinheiro querem dizer que um
+      //    dos dois casamentos está errado, e trocar uma pela outra em silêncio apagaria a
+      //    evidência que o contador já conferiu.
+      if (!ehProvaDePagamento(dados?.origemPagamento)) return recusa(RECUSA.PAGAMENTO_NAO_E_PROVA);
+      if (ehProvaDePagamento(declarado?.origemPagamento)) return recusa(RECUSA.PAGAMENTO_JA_PROVADO);
+
+      const pag = pagamentoResultante(declarado, dados);
+      const erro = conferirPagamento(pag);
+      if (erro) return recusa(erro);
+      // ⚠ Fica em `A_CONFERIR`: o que muda é a PROCEDÊNCIA da data, não o lugar da linha na fila.
       return aceita(ESTADO.A_CONFERIR, { dataPagamento: pag.data, origemPagamento: pag.origem });
     }
 

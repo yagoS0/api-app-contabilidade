@@ -41,7 +41,7 @@ describe("⚠⚠ o débito que casa com nota NÃO entra no lote", () => {
     const ids = debitosQueCasamComNota(casamentos([
       { debito: { id: "ofx-1" }, sugestao: { nota: { id: "dec-2" } }, candidatos: [] },
     ]));
-    expect(ids.has("ofx-1")).toBe(true);
+    expect(ids.get("ofx-1")).toBe(FORA_DO_LOTE.CASA_COM_NOTA);
   });
 
   it("⚠⚠ débito AMBÍGUO também fica — ambiguidade não autoriza lançar à parte", () => {
@@ -49,7 +49,7 @@ describe("⚠⚠ o débito que casa com nota NÃO entra no lote", () => {
     const ids = debitosQueCasamComNota(casamentos([
       { debito: { id: "ofx-2" }, sugestao: null, candidatos: [{ nota: { id: "a" } }, { nota: { id: "b" } }] },
     ]));
-    expect(ids.has("ofx-2")).toBe(true);
+    expect(ids.get("ofx-2")).toBe(FORA_DO_LOTE.CASA_COM_NOTA);
   });
 
   it("⚠ débito SEM candidato nenhum ENTRA — é despesa sem nota, e o lugar dele é aqui", () => {
@@ -73,10 +73,50 @@ describe("⚠⚠ o débito que casa com nota NÃO entra no lote", () => {
     expect(FRASE_DO_FORA_DO_LOTE[FORA_DO_LOTE.CASA_COM_NOTA]).toMatch(/duas vezes/i);
     expect(FRASE_DO_FORA_DO_LOTE[FORA_DO_LOTE.CASA_COM_NOTA]).toMatch(/painel/i);
   });
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  // ⚠⚠ O MOTIVO VIAJA COM O DADO — porque os dois casos pedem CONSELHOS diferentes.
+  //
+  // Com o casamento alargado (dono, 27/08/2026), uma nota JÁ CONTABILIZADA pode ser candidata. Com
+  // um motivo só, o lote mandava *"case-o com a nota no painel acima"* enquanto o painel dizia, na
+  // MESMA tela, que não havia o que casar.
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  it("⚠⚠ candidata que NÃO se funde ⇒ motivo próprio, com o conselho certo", () => {
+    const ids = debitosQueCasamComNota(casamentos([
+      {
+        debito: { id: "ofx-9" },
+        sugestao: { nota: { id: "dec-5" }, podeFundir: false },
+        candidatos: [{ nota: { id: "dec-5" }, podeFundir: false }],
+      },
+    ]));
+    expect(ids.get("ofx-9")).toBe(FORA_DO_LOTE.PAGA_NOTA_JA_LANCADA);
+    expect(FRASE_DO_FORA_DO_LOTE[FORA_DO_LOTE.PAGA_NOTA_JA_LANCADA]).toMatch(/JÁ contabilizou/i);
+    expect(FRASE_DO_FORA_DO_LOTE[FORA_DO_LOTE.PAGA_NOTA_JA_LANCADA]).toMatch(/desfaça e refaça/i);
+    // ⚠ E ele NÃO manda casar no painel — que é o conselho que o painel desmente.
+    expect(FRASE_DO_FORA_DO_LOTE[FORA_DO_LOTE.PAGA_NOTA_JA_LANCADA]).not.toMatch(/painel/i);
+  });
+
+  it("⚠ bastando UMA candidata fusível, o caminho do painel existe e o motivo é o de sempre", () => {
+    const ids = debitosQueCasamComNota(casamentos([
+      {
+        debito: { id: "ofx-9" },
+        sugestao: null,
+        candidatos: [{ nota: { id: "a" }, podeFundir: false }, { nota: { id: "b" }, podeFundir: true }],
+      },
+    ]));
+    expect(ids.get("ofx-9")).toBe(FORA_DO_LOTE.CASA_COM_NOTA);
+  });
+
+  it("⚠ `podeFundir` AUSENTE conta como fusível — contrato antigo, e é o caso comum", () => {
+    const ids = debitosQueCasamComNota(casamentos([
+      { debito: { id: "ofx-9" }, sugestao: { nota: { id: "a" } }, candidatos: [] },
+    ]));
+    expect(ids.get("ofx-9")).toBe(FORA_DO_LOTE.CASA_COM_NOTA);
+  });
 });
 
 describe("⚠ separar o que entra do que fica de fora", () => {
-  const opcoes = { idsQueCasam: new Set(["ofx-1"]), podeEscrever: true, podeEscolherConta: true };
+  const opcoes = { idsQueCasam: new Map([["ofx-1", FORA_DO_LOTE.CASA_COM_NOTA]]), podeEscrever: true, podeEscolherConta: true };
 
   it("a linha normal entra", () => {
     const r = separarParaOLote([linha()], opcoes);
@@ -180,7 +220,7 @@ describe("⚠ separar o que entra do que fica de fora", () => {
   it("⚠⚠ `idsQueCasam` ausente RECUSA, em vez de liberar tudo", () => {
     expect(() => separarParaOLote([linha()], { podeEscrever: true, podeEscolherConta: true }))
       .toThrow(/idsQueCasam/);
-    expect(() => separarParaOLote([linha()], { idsQueCasam: [], podeEscrever: true })).toThrow(/idsQueCasam/);
+    expect(() => separarParaOLote([linha()], { idsQueCasam: new Set(["x"]), podeEscrever: true })).toThrow(/idsQueCasam/);
   });
 });
 

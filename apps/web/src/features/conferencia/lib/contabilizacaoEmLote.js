@@ -30,6 +30,15 @@ export const FORA_DO_LOTE = Object.freeze({
    * ⚠ E `fundir` NÃO contabiliza: depois de fundido, a NOTA aparece aqui, uma vez só.
    */
   CASA_COM_NOTA: "casa_com_nota",
+  /**
+   * ⚠⚠ O DÉBITO PAGA UMA NOTA QUE **JÁ VIROU LANÇAMENTO** — e o conselho aqui é OUTRO.
+   *
+   * Ele existe porque `CASA_COM_NOTA` manda *"case-o com a nota no painel acima"*, e para este caso
+   * isso é a instrução ERRADA: o painel diz, na mesma tela, que não há o que casar (a data da nota
+   * já é a data do `AccountingEntry`). Duas partes da mesma tela mandando o contador fazer coisas
+   * diferentes é pior que uma frase genérica.
+   */
+  PAGA_NOTA_JA_LANCADA: "paga_nota_ja_lancada",
   /** A linha está bloqueada por mês fechado, competência ausente ou papel — o pré-voo já sabe. */
   BLOQUEADA: "bloqueada",
   /**
@@ -61,6 +70,9 @@ export const FRASE_DO_FORA_DO_LOTE = Object.freeze({
   [FORA_DO_LOTE.CASA_COM_NOTA]:
     "Este débito do extrato parece ser o pagamento de uma nota que já está na fila. Contabilizá-lo "
     + "aqui lançaria a mesma despesa duas vezes — case-o com a nota no painel acima.",
+  [FORA_DO_LOTE.PAGA_NOTA_JA_LANCADA]:
+    "Este débito é o pagamento de uma nota que você JÁ contabilizou. Lançá-lo aqui poria a mesma "
+    + "despesa duas vezes — e não há o que casar: para corrigir a data do lançamento, desfaça e refaça.",
   [FORA_DO_LOTE.BLOQUEADA]: "Esta linha está bloqueada — o motivo aparece na fila.",
   [FORA_DO_LOTE.ESTADO_NAO_CONFIRMA]: "Esta linha não está esperando confirmação.",
   [FORA_DO_LOTE.PRECISA_DE_DATA]:
@@ -81,15 +93,28 @@ const texto = (v) => String(v ?? "").trim();
  * qual, e lançar o débito sozinho resolveria a dúvida da pior forma possível.
  */
 export function debitosQueCasamComNota(casamentos) {
-  const ids = new Set();
+  const porDebito = new Map();
   for (const linha of casamentos?.linhas || []) {
     const id = texto(linha?.debito?.id);
     if (!id) continue;
+    const candidatos = Array.isArray(linha?.candidatos) ? linha.candidatos : [];
     const temSugestao = Boolean(linha?.sugestao?.nota?.id);
-    const temCandidatos = Array.isArray(linha?.candidatos) && linha.candidatos.length > 0;
-    if (temSugestao || temCandidatos) ids.add(id);
+    if (!temSugestao && candidatos.length === 0) continue;
+
+    // ⚠⚠ O MOTIVO VIAJA COM O DADO — e é isso que impede a tela de dar CONSELHOS CONTRADITÓRIOS.
+    //
+    // Desde que o casamento foi alargado (dono, 27/08/2026), uma nota JÁ CONTABILIZADA pode ser
+    // candidata: o débito precisa ser reconhecido para não virar despesa em dobro, mas ali não há o
+    // que casar. Com um motivo só, o lote mandava *"case-o com a nota no painel acima"* enquanto o
+    // painel dizia, na mesma tela, que não havia o que casar.
+    //
+    // ⚠ Só quando **nenhuma** candidata se funde: bastando uma fusível, o caminho do painel existe.
+    // ⚠ `podeFundir` ausente conta como FUSÍVEL — contrato antigo, e é o caso comum.
+    const todas = temSugestao ? [linha.sugestao, ...candidatos] : candidatos;
+    const alguemFunde = todas.some((c) => c?.podeFundir !== false);
+    porDebito.set(id, alguemFunde ? FORA_DO_LOTE.CASA_COM_NOTA : FORA_DO_LOTE.PAGA_NOTA_JA_LANCADA);
   }
-  return ids;
+  return porDebito;
 }
 
 /**
@@ -100,18 +125,21 @@ export function debitosQueCasamComNota(casamentos) {
  *
  * @param {Array<object>} itens as linhas da fila
  * @param {object} opcoes
- * @param {Set<string>} opcoes.idsQueCasam de `debitosQueCasamComNota`
+ * @param {Map<string, string>} opcoes.idsQueCasam de `debitosQueCasamComNota` — id → motivo
  * @param {boolean} opcoes.podeEscrever
  * @param {boolean} opcoes.podeEscolherConta
  */
 export function separarParaOLote(itens, { idsQueCasam, podeEscrever = true, podeEscolherConta = false } = {}) {
-  // ⚠⚠ SEM A LISTA DE QUEM CASA, NÃO HÁ LOTE — e o default NÃO pode ser um `Set` vazio.
+  // ⚠⚠ SEM A LISTA DE QUEM CASA, NÃO HÁ LOTE — e o default NÃO pode ser um mapa vazio.
   //
   // Um vazio aqui é indistinguível de "conferi e nenhum casa", e autoriza exatamente o que esta
   // função existe para impedir. Guarda de segurança com default permissivo é a direção errada:
   // quem não sabe responder tem de recusar, não liberar.
-  if (!(idsQueCasam instanceof Set)) {
-    throw new Error("separarParaOLote: `idsQueCasam` é obrigatório — sem ele o lote não sabe quais débitos já casam com uma nota.");
+  //
+  // ⚠ É um `Map` (id → motivo), e não um `Set`: o motivo viaja com o dado porque os dois casos
+  // pedem CONSELHOS diferentes — casar no painel × desfazer o lançamento.
+  if (!(idsQueCasam instanceof Map)) {
+    throw new Error("separarParaOLote: `idsQueCasam` é obrigatório e precisa ser um Map (id → motivo) — sem ele o lote não sabe quais débitos já casam com uma nota.");
   }
   const dentro = [];
   const fora = [];
@@ -133,8 +161,9 @@ export function separarParaOLote(itens, { idsQueCasam, podeEscrever = true, pode
       fora.push({ item, motivo: FORA_DO_LOTE.ESTADO_NAO_CONFIRMA });
       continue;
     }
-    if (idsQueCasam.has(texto(item?.id))) {
-      fora.push({ item, motivo: FORA_DO_LOTE.CASA_COM_NOTA });
+    const motivoDoCasamento = idsQueCasam.get(texto(item?.id));
+    if (motivoDoCasamento) {
+      fora.push({ item, motivo: motivoDoCasamento });
       continue;
     }
     // ⚠ Reusa `motivoDeBloqueio` — a MESMA leitura da fila. Uma segunda regra aqui faria o modal
