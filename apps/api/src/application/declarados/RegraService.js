@@ -22,7 +22,9 @@ const soDigitos = (v) => String(v ?? "").replace(/\D+/g, "");
 async function planoDaEmpresa(portalClientId, client) {
   const contas = await client.chartOfAccount.findMany({
     where: { OR: [{ portalClientId: null }, { portalClientId }] },
-    select: { portalClientId: true, codigo: true, codigoCompleto: true, nome: true },
+    // ⚠ `analitica` é lida pelo motor de sugestão para NÃO sugerir conta sintética — senão a tela
+    // oferece o que o servidor recusa. ⚠⚠ TRI-ESTADO: comparar com `=== false`, nunca `!analitica`.
+    select: { portalClientId: true, codigo: true, codigoCompleto: true, nome: true, analitica: true },
   });
   // ⚠ A da empresa vence a global quando o `codigo` colide — a global é o padrão, não a autoridade.
   const porCodigo = new Map();

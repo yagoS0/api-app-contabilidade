@@ -28,7 +28,12 @@ const COMPETENCIA = /^\d{4}-\d{2}$/;
 export async function carregarPlano(portalClientId, client = prisma) {
   const contas = await client.chartOfAccount.findMany({
     where: { OR: [{ portalClientId: String(portalClientId) }, { portalClientId: null }] },
-    select: { portalClientId: true, codigo: true, nome: true, codigoCompleto: true },
+    // ⚠ `analitica` entra aqui porque a TRAVA DE CONTA SINTÉTICA da Conferência a lê deste
+    // mesmo `Map` (`declarados/lib/formaDoLancamento.js`). Sem a coluna no `select`, `ehSintetica`
+    // recebe `undefined`, responde `false` para TODA conta, e a guarda existe sem guardar nada —
+    // a mesma classe de defeito do `legacyCompanySelect`, que já mordeu três vezes neste projeto.
+    // ⚠⚠ E ela é TRI-ESTADO: `null` = conta sem `codigoCompleto`, que NÃO é sintética.
+    select: { portalClientId: true, codigo: true, nome: true, codigoCompleto: true, analitica: true },
   });
   const mapa = new Map();
   // ⚠ As GLOBAIS entram primeiro e as da EMPRESA sobrescrevem — a ordem do `findMany` não é
