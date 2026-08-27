@@ -364,3 +364,45 @@ describe("conta sintética", () => {
     expect(semComentario).not.toMatch(/!\s*analitica/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A SENTINELA DO `select` — a TRAVA está a UMA LINHA de ficar cega, e nada segurava.
+//
+// Provado por sonda de um agente adversarial em 26/08/2026: passando um plano SEM a chave
+// `analitica`, `montarLancamento` devolve `ok: true` para conta SINTÉTICA, **sem erro nenhum**. O
+// predicado recebe `undefined` e responde `false` para toda conta. A única coisa que impede isso é
+// uma linha do `select` de `AliquotaPorLancamentosService.carregarPlano` — que estava protegida
+// só por comentário.
+//
+// É a classe do `legacyCompanySelect`, que este projeto já pagou TRÊS vezes. Os outros testes deste
+// arquivo protegem COMO se compara; este protege DE ONDE VEM O DADO.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ o `select` que alimenta a trava", () => {
+  it("`carregarPlano` traz `analitica`", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(
+      path.join(__dirname, "..", "..", "..", "accounting", "AliquotaPorLancamentosService.js"),
+      "utf8",
+    );
+    const selects = fonte.match(/select:\s*\{[^}]*codigoCompleto[^}]*\}/g) || [];
+    expect(selects.length).toBeGreaterThan(0);
+    for (const s of selects) expect(s).toMatch(/analitica:\s*true/);
+  });
+
+  it("⚠ contraprova: o padrão da varredura reconhece a ausência", () => {
+    const semColuna = "select: { portalClientId: true, codigo: true, nome: true, codigoCompleto: true },";
+    expect(semColuna).not.toMatch(/analitica:\s*true/);
+  });
+
+  // ⚠⚠ E o comportamento com o plano cego fica CRAVADO, para ninguém achar que a trava sozinha
+  // basta: sem a coluna, ela passa. Este teste documenta a dependência, não a aprova.
+  it("⚠ plano SEM a coluna deixa a sintética passar — é por isso que a sentinela acima existe", () => {
+    const cega = new Map([
+      ["5", { codigo: "5", codigoCompleto: "111010001", nome: "CAIXA - MATRIZ" }],
+      ["410", { codigo: "410", codigoCompleto: "411020000", nome: "DESPESAS OPERACIONAIS" }],
+    ]);
+    const r = montarLancamento(declarado({ contaAplicada: "411020000" }), cega);
+    expect(r.ok).toBe(true);
+  });
+});

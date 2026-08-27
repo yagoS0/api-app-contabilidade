@@ -20,6 +20,8 @@ import {
   leituraDaOrigemDoPagamento,
   leituraDoDocumento,
   leituraDoEstado,
+  FRASE_LOCAL_DO_MOTIVO,
+  ROTULO_CURTO_DO_MOTIVO,
   motivoDeBloqueio,
 } from "../conferenciaTela.js";
 
@@ -520,5 +522,84 @@ describe("⚠⚠ SEM CONTA NÃO SE CONTABILIZA — o pré-voo que faltava", () =
     expect(contaQueSeraUsada({ contaSugerida: null, sugestao: null })).toBeNull();
     expect(contaQueSeraUsada({})).toBeNull();
     expect(contaQueSeraUsada(null)).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ "NÃO SEI QUAL CONTA" E "SEI, E ELA NÃO SERVE" PEDEM CONSERTOS OPOSTOS.
+//
+// Achado por agentes de verificação em 26/08/2026, depois que o servidor passou a recusar conta
+// SINTÉTICA e o motor parou de sugeri-la: a tela chamava os dois casos de "sem conta" e mandava
+// "confirme uma vez este fornecedor para o sistema aprender" — que para eles REENSINARIA a mesma
+// regra torta. A frase certa existia e só chegava no `title`, que não aparece no teclado nem no
+// toque.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ conta conhecida que não serve", () => {
+  const linha = (sugestao) => ({
+    id: "d-1",
+    estado: "A_CONFERIR",
+    competencia: "2026-07",
+    dataPagamento: "2026-07-10",
+    origemPagamento: "OFX",
+    mesFechado: false,
+    contaSugerida: null,
+    sugestao,
+  });
+
+  const bloqueio = (sugestao) =>
+    motivoDeBloqueio("confirmar", linha(sugestao), { podeEscrever: true });
+
+  it("SINTÉTICA: o bloqueio manda corrigir a REGRA, nunca 'confirme para o sistema aprender'", () => {
+    const m = bloqueio({ conta: null, motivo: "conta_sintetica", frase: "" });
+    expect(m).toBeTruthy();
+    expect(m).toMatch(/sintética|agregação/i);
+    // ⚠⚠ o conselho errado NÃO pode aparecer aqui
+    expect(m).not.toMatch(/para o sistema aprender/i);
+  });
+
+  it("AMBÍGUA: idem — confirmar não conserta duas contas com o mesmo código completo", () => {
+    const m = bloqueio({ conta: null, motivo: "conta_ambigua", frase: "" });
+    expect(m).toMatch(/mesmo código completo/i);
+    expect(m).not.toMatch(/para o sistema aprender/i);
+  });
+
+  it("⚠ a frase do SERVIDOR vence a local — ela nomeia a conta", () => {
+    const doServidor = "A conta 410 DESPESAS OPERACIONAIS é sintética (de agregação)…";
+    expect(bloqueio({ conta: null, motivo: "conta_sintetica", frase: doServidor })).toBe(doServidor);
+  });
+
+  it("⚠ motivo DESCONHECIDO cai no texto genérico — conselho errado é pior que genérico", () => {
+    const m = bloqueio({ conta: null, motivo: "motivo_que_ainda_nao_existe", frase: "" });
+    expect(m).toMatch(/para o sistema aprender/i);
+  });
+
+  it("⚠ sem sugestão nenhuma continua no texto genérico", () => {
+    expect(bloqueio(null)).toMatch(/Nenhuma conta conhecida/i);
+  });
+
+  it("os três motivos têm rótulo curto PRÓPRIO, e o desconhecido não", () => {
+    expect(ROTULO_CURTO_DO_MOTIVO.fora_da_faixa).toBe("valor fora do normal");
+    expect(ROTULO_CURTO_DO_MOTIVO.conta_sintetica).toBe("conta é de agregação");
+    expect(ROTULO_CURTO_DO_MOTIVO.conta_ambigua).toBe("conta ambígua");
+    expect(ROTULO_CURTO_DO_MOTIVO.nada_conhecido).toBeUndefined();
+  });
+
+  // ⚠⚠ O TEXTO LOCAL É CÓPIA LITERAL DO BACKEND. Duas redações fariam a tela dizer uma coisa e a
+  // recusa do clique outra, sobre a MESMA linha. A amarração é textual porque o backend não é
+  // importável do front — mesma disciplina do teste que amarra `"autorizada"`.
+  it("⚠ o fallback local repete a frase do backend, palavra por palavra", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const backend = fs.readFileSync(
+      path.join(__dirname, "..", "..", "..", "..", "..", "..", "api", "src", "application",
+        "declarados", "lib", "motorDeSugestao.js"),
+      "utf8",
+    );
+    for (const frase of Object.values(FRASE_LOCAL_DO_MOTIVO)) {
+      // a frase do backend é quebrada em concatenação; comparo o primeiro pedaço, que é o que
+      // identifica o texto
+      const inicio = frase.slice(0, 60);
+      expect(backend).toContain(inicio);
+    }
   });
 });

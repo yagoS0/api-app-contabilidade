@@ -484,3 +484,90 @@ describe("⚠⚠ conta sintética não é sugerida", () => {
     expect(r.conta).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ AMBIGUIDADE NÃO ESCOLHE — nem aqui, nem em `montarLancamento`.
+//
+// Achado por agente ADVERSARIAL em 26/08/2026: o filtro de sintética foi escrito e este ramo
+// vizinho ficou aberto. Com dois `codigoCompleto` iguais, o `.find` elegia UM — sobre um array
+// cuja ordem vem do `findMany`, sem `orderBy`, ou seja NÃO DETERMINÍSTICA. A tela sugeriria e o
+// servidor recusaria `CONTA_AMBIGUA`: exatamente o defeito que este arquivo diz ter fechado.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ conta ambígua não é sugerida", () => {
+  const GEMEAS = [
+    ...PLANO,
+    { codigo: "701", codigoCompleto: "411099999", nome: "UMA", analitica: true },
+    { codigo: "702", codigoCompleto: "411099999", nome: "OUTRA", analitica: true },
+  ];
+
+  it("REGRA apontando para código completo duplicado não sugere", () => {
+    const r = sugerirConta(declarado(), {
+      regras: [regra({ cnpjFornecedor: "12345678000190", contaDestino: "411099999" })],
+      plano: GEMEAS,
+    });
+    expect(r.conta).toBeNull();
+    expect(r.motivo).toBe(SEM_SUGESTAO.CONTA_AMBIGUA);
+  });
+
+  it("HISTÓRICO caindo em código completo duplicado não sugere", () => {
+    const r = sugerirConta(declarado({ cnpjFornecedor: null }), {
+      regras: [],
+      plano: GEMEAS,
+      historico: [{ text: "GOOGLE CLOUD BRASIL", contaDebito: "701" }],
+      portalClientId: "emp-1",
+    });
+    expect(r.conta).toBeNull();
+    expect(r.motivo).toBe(SEM_SUGESTAO.CONTA_AMBIGUA);
+  });
+
+  // ⚠ A ORDEM: fora-do-plano → ambígua → sintética. Com duas contas disputando o mesmo completo,
+  // não se sabe QUAL é a conta, logo não há o que afirmar sobre ela — nem "é sintética".
+  it("AMBÍGUA vence SINTÉTICA", () => {
+    const plano = [
+      ...PLANO,
+      { codigo: "703", codigoCompleto: "411088888", nome: "SINTETICA", analitica: false },
+      { codigo: "704", codigoCompleto: "411088888", nome: "ANALITICA", analitica: true },
+    ];
+    const r = sugerirConta(declarado(), {
+      regras: [regra({ cnpjFornecedor: "12345678000190", contaDestino: "411088888" })],
+      plano,
+    });
+    expect(r.motivo).toBe(SEM_SUGESTAO.CONTA_AMBIGUA);
+  });
+
+  it("⚠ o resultado NÃO depende da ordem do array — o plano vem de um findMany sem orderBy", () => {
+    const pedido = (contas) =>
+      sugerirConta(declarado(), {
+        regras: [regra({ cnpjFornecedor: "12345678000190", contaDestino: "411099999" })],
+        plano: contas,
+      }).motivo;
+    expect(pedido(GEMEAS)).toBe(pedido([...GEMEAS].reverse()));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A SENTINELA DO `select` — o filtro está a UMA LINHA de ficar cego, e nada segurava.
+//
+// Provado por sonda de um agente adversarial: com o plano SEM a chave `analitica`, o predicado
+// recebe `undefined`, responde `false` para toda conta, e a conta sintética passa **calada**. Os
+// testes de varredura acima protegem COMO se compara; este protege DE ONDE VEM O DADO.
+//
+// É a classe do `legacyCompanySelect`, que este projeto já pagou TRÊS vezes: coluna fora de um
+// `select` explícito volta `undefined` SEM ERRO, e a guarda continua existindo sem guardar nada.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ o `select` que alimenta o filtro", () => {
+  it("`RegraService.planoDaEmpresa` traz `analitica`", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "..", "RegraService.js"), "utf8");
+    // o `select` do plano, e a coluna dentro dele
+    const selects = fonte.match(/select:\s*\{[^}]*codigoCompleto[^}]*\}/g) || [];
+    expect(selects.length).toBeGreaterThan(0);
+    for (const s of selects) expect(s).toMatch(/analitica:\s*true/);
+  });
+
+  it("⚠ contraprova: o padrão da varredura reconhece a ausência", () => {
+    const semColuna = "select: { portalClientId: true, codigo: true, codigoCompleto: true, nome: true },";
+    expect(semColuna).not.toMatch(/analitica:\s*true/);
+  });
+});

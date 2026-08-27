@@ -22,12 +22,16 @@ const soDigitos = (v) => String(v ?? "").replace(/\D+/g, "");
 async function planoDaEmpresa(portalClientId, client) {
   const contas = await client.chartOfAccount.findMany({
     where: { OR: [{ portalClientId: null }, { portalClientId }] },
-    // ⚠⚠ `analitica` entra como PRÉ-REQUISITO, e HOJE O MOTOR NÃO A LÊ — medido: zero ocorrências
-    // de `analitica` em `lib/motorDeSugestao.js`, que confere a conta só por existência de
-    // `codigoCompleto`. Ou seja: uma conta SINTÉTICA ainda pode ser sugerida hoje, e o servidor a
-    // recusaria em POST /entries. Esta linha existe para o filtro da Fase A não nascer cego — sem a
-    // coluna no `select` o predicado recebe `undefined` e responde `false` para TODA conta.
-    // ⚠ Não leia este comentário como "o motor já filtra": ele não filtra.
+    // ⚠⚠ `analitica` É LIDA — e tirá-la daqui faz o motor voltar a SUGERIR o que o servidor RECUSA.
+    //
+    // `lib/motorDeSugestao.js` não sugere conta SINTÉTICA (de agregação), nos dois caminhos (regra e
+    // histórico), consultando `ehContaSintetica` (`accounting/lib/gateContaSintetica.js`). Isso
+    // existe porque `formaDoLancamento.montarLancamento` a RECUSA: sem o filtro, a tela ofereceria a
+    // conta e o clique seria negado.
+    //
+    // ⚠ Sem a coluna no `select`, o predicado recebe `undefined` e responde `false` para TODA
+    // conta — o filtro fica ligado e cego. Quem amarra é
+    // `declarados/lib/__tests__/motorDeSugestao.test.js`, não um teste deste arquivo.
     // ⚠⚠ TRI-ESTADO: comparar com `=== false`, nunca `!analitica`.
     select: { portalClientId: true, codigo: true, codigoCompleto: true, nome: true, analitica: true },
   });

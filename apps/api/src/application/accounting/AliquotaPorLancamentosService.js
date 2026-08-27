@@ -28,16 +28,20 @@ const COMPETENCIA = /^\d{4}-\d{2}$/;
 export async function carregarPlano(portalClientId, client = prisma) {
   const contas = await client.chartOfAccount.findMany({
     where: { OR: [{ portalClientId: String(portalClientId) }, { portalClientId: null }] },
-    // ⚠⚠ `analitica` entra aqui como PRÉ-REQUISITO, e HOJE NINGUÉM NESTE CAMINHO A LÊ — medido:
-    // zero ocorrências de `analitica` em `declarados/lib/formaDoLancamento.js`, que é quem vai
-    // recusar conta sintética na Conferência. O gate de verdade só existe em POST/PUT /entries
-    // (`routes/firm/accountingEntries.js`, via `lib/gateContaSintetica.js`). Esta linha existe para
-    // que, quando a trava for escrita, ela NÃO nasça cega: sem a coluna no `select`, o predicado
-    // receberia `undefined`, responderia `false` para TODA conta, e a guarda existiria sem guardar
-    // nada — a classe de defeito do `legacyCompanySelect`, que já mordeu três vezes neste projeto.
-    // ⚠ Não leia este comentário como "a trava está ligada": ela não está.
-    // ⚠⚠ E ela é TRI-ESTADO: `null` = conta sem `codigoCompleto`, que NÃO é sintética. Comparar
-    // com `=== false`, nunca `!analitica` — com a negação, todo plano não reimportado sai sintético.
+    // ⚠⚠ `analitica` É LIDA — e tirá-la daqui DESLIGA UMA TRAVA, em silêncio.
+    //
+    // `declarados/lib/formaDoLancamento.js` recusa lançamento em conta SINTÉTICA (de agregação)
+    // consultando `ehContaSintetica` (`accounting/lib/gateContaSintetica.js`) sobre as contas DESTE
+    // `Map`. O motivo é externo: o registro I250 da ECD exige `IND_CTA = "A"`, e o PGE recusa o
+    // arquivo na entrega — meses depois do lançamento que causou.
+    //
+    // ⚠ Sem a coluna no `select`, o predicado recebe `undefined`, responde `false` para TODA conta,
+    // e a guarda continua existindo sem guardar nada — a classe de defeito do `legacyCompanySelect`,
+    // que já mordeu três vezes neste projeto. Nenhum teste ficaria vermelho por isso aqui: quem
+    // amarra é `declarados/lib/__tests__/formaDoLancamento.test.js`.
+    // ⚠⚠ TRI-ESTADO: `null` = conta sem `codigoCompleto`, que NÃO é sintética. A comparação é
+    // `=== false`, nunca `!analitica` — com a negação, todo plano não reimportado sai sintético e
+    // NADA pode ser contabilizado.
     select: { portalClientId: true, codigo: true, nome: true, codigoCompleto: true, analitica: true },
   });
   const mapa = new Map();

@@ -265,11 +265,55 @@ export function motivoDeBloqueio(acao, item, { podeEscrever = true } = {}) {
   // conta conhecida **não é contabilizável por aqui** — e o certo é DIZER isso, não oferecer um
   // botão que falha. O caminho hoje é lançar por Lançamentos, ou criar a regra do fornecedor.
   if (cfg.criaLancamento && !contaQueSeraUsada(item)) {
+    // ⚠⚠ "NÃO SEI QUAL CONTA" E "SEI, E ELA NÃO SERVE" PEDEM CONSERTOS OPOSTOS — e a frase genérica
+    // dava o conselho ERRADO para o segundo caso. Com a conta conhecida sendo SINTÉTICA, mandar
+    // "confirme uma vez para o sistema aprender" reensinaria a MESMA regra torta, e ela sugeriria a
+    // mesma conta de agregação no mês seguinte. O conserto é corrigir a regra, não alimentá-la.
+    // ⚠ A frase do SERVIDOR vence quando ela existe (`sugestao.frase`) — ela nomeia a conta e diz o
+    // que fazer. Mesmo princípio do `ONDE_CONFIGURA_EMISSAO` e da `correcao` da emissão de NFS-e.
+    // ⚠ Nos dois casos a frase do SERVIDOR vence quando existe (`sugestao.frase`) — ela nomeia a
+    // conta e diz o que fazer. Nenhum dos dois se conserta "confirmando para o sistema aprender":
+    // um pede corrigir a REGRA, o outro pede corrigir o PLANO.
+    if (MOTIVO_COM_CONTA_CONHECIDA.has(item?.sugestao?.motivo)) {
+      return item?.sugestao?.frase || FRASE_LOCAL_DO_MOTIVO[item.sugestao.motivo];
+    }
     return "Nenhuma conta conhecida para esta despesa. Escolha a conta em Lançamentos, ou confirme uma vez este fornecedor para o sistema aprender.";
   }
 
   return null;
 }
+
+/**
+ * ⚠⚠ "NÃO SEI QUAL CONTA" E "SEI, E ELA NÃO SERVE" PEDEM CONSERTOS OPOSTOS.
+ *
+ * Estes dois motivos dizem que existe conta conhecida e que ela é que está errada. A frase genérica
+ * ("confirme uma vez este fornecedor para o sistema aprender") dá, para eles, o conselho ERRADO:
+ * confirmar reensinaria a mesma regra torta, e ela sugeriria a mesma conta no mês seguinte.
+ *
+ * ⚠ Lista de INCLUSÃO: motivo novo do servidor cai no texto genérico até alguém decidir o dele —
+ * conselho errado é pior que conselho genérico.
+ */
+export const MOTIVO_COM_CONTA_CONHECIDA = new Set(["conta_sintetica", "conta_ambigua"]);
+
+/**
+ * ⚠ FALLBACK, só. A frase que vale é a do SERVIDOR (`sugestao.frase`), que nomeia a conta. Esta
+ * existe para o caso de ela não vir — e é cópia literal de `FRASE_DO_SEM_SUGESTAO` (backend), nunca
+ * um segundo texto: duas redações fariam a tela dizer uma coisa e a recusa do clique outra.
+ */
+export const FRASE_LOCAL_DO_MOTIVO = Object.freeze({
+  conta_sintetica:
+    "A conta conhecida para esta despesa é sintética (de agregação) e não recebe lançamento. "
+    + "Escolha uma conta analítica abaixo dela — e corrija a regra, senão ela sugere o mesmo no mês que vem.",
+  conta_ambigua:
+    "Duas contas do plano desta empresa têm o mesmo código completo. O sistema não escolhe entre elas.",
+});
+
+/** ⚠ O rótulo curto da coluna. `null` = não há texto próprio, cai em "sem conta". */
+export const ROTULO_CURTO_DO_MOTIVO = Object.freeze({
+  fora_da_faixa: "valor fora do normal",
+  conta_sintetica: "conta é de agregação",
+  conta_ambigua: "conta ambígua",
+});
 
 /**
  * ⚠ Qual conta o servidor usaria se esta linha fosse confirmada agora.

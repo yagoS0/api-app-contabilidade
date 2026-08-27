@@ -7218,6 +7218,31 @@ export function createMockApi() {
           nota: null,
         },
         {
+          // ⚠⚠ A CONTA CONHECIDA É SINTÉTICA — e este ramo NASCERIA INALCANÇÁVEL OFFLINE sem esta
+          // linha. Ele existe desde que `formaDoLancamento` passou a recusar conta de agregação e o
+          // motor parou de sugeri-la; a tela precisa mostrar "conta é de agregação" (não "sem
+          // conta") e bloquear com o conselho CERTO — corrigir a regra, nunca "confirme uma vez
+          // para o sistema aprender", que reensinaria a mesma conta errada.
+          // ⚠ Este projeto foi mordido QUATRO vezes por ramo que só existia em produção.
+          id: "dec-3b", origem: "NOTA_RECEBIDA", estado: "A_CONFERIR", tipo: "SAIDA",
+          valor: "890.00", valorAjustado: null, competencia: comp,
+          descricaoOriginal: "COPIADORA SAO JORGE LTDA", cnpjFornecedor: "44555666000177",
+          dataDocumento: comp + "-11", detalheServico: null,
+          dataPagamento: comp + "-11", origemPagamento: "OFX",
+          contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          sugestao: {
+            conta: null,
+            procedencia: null,
+            motivo: "conta_sintetica",
+            // ⚠ A frase é a MESMA do servidor (`FRASE_DO_SEM_SUGESTAO`), palavra por palavra — mock
+            // que escreve texto próprio faz a tela offline dizer uma coisa e a de produção outra.
+            frase: "A conta conhecida para esta despesa é sintética (de agregação) e não recebe lançamento. "
+              + "Escolha uma conta analítica abaixo dela — e corrija a regra, senão ela sugere o mesmo no mês que vem.",
+            regraId: "r-12",
+          },
+          motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
+        },
+        {
           id: "dec-4", origem: "OFX_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",
           valor: "175.00", valorAjustado: null, competencia: comp,
           descricaoOriginal: "TARIFA PACOTE DE SERVICOS", cnpjFornecedor: null,

@@ -63,6 +63,17 @@ export const SEM_SUGESTAO = Object.freeze({
    * lugar, sugerindo o mesmo no mês seguinte.
    */
   CONTA_SINTETICA: "conta_sintetica",
+  /**
+   * ⚠⚠ Duas contas do plano têm o MESMO `codigoCompleto`, e `montarLancamento` recusa
+   * (`CONTA_AMBIGUA`). Sugerir uma delas seria o sistema escolhendo — e escolhendo com um `.find`
+   * sobre um array cuja ordem vem do `findMany`, ou seja **não determinística**: a mesma tela
+   * poderia sugerir contas diferentes em duas recargas.
+   *
+   * ⚠ Achado por agente adversarial em 26/08/2026: o filtro de sintética foi escrito e este ramo
+   * vizinho ficou aberto — a tela oferecendo o que o servidor nega, que é exatamente o defeito que
+   * `CONTA_FORA_DO_PLANO` e `CONTA_SINTETICA` existem para fechar.
+   */
+  CONTA_AMBIGUA: "conta_ambigua",
 });
 
 export const FRASE_DO_SEM_SUGESTAO = Object.freeze({
@@ -77,6 +88,8 @@ export const FRASE_DO_SEM_SUGESTAO = Object.freeze({
   [SEM_SUGESTAO.CONTA_SINTETICA]:
     "A conta conhecida para esta despesa é sintética (de agregação) e não recebe lançamento. "
     + "Escolha uma conta analítica abaixo dela — e corrija a regra, senão ela sugere o mesmo no mês que vem.",
+  [SEM_SUGESTAO.CONTA_AMBIGUA]:
+    "Duas contas do plano desta empresa têm o mesmo código completo. O sistema não escolhe entre elas.",
 });
 
 const soDigitos = (v) => String(v ?? "").replace(/\D+/g, "");
@@ -135,6 +148,20 @@ function completoDoReduzido(reduzido, plano) {
   // `formaDoLancamento.js`, que recusa conta ambígua em vez de eleger uma.
   if (achados.length !== 1) return null;
   return String(achados[0].codigoCompleto);
+}
+
+/**
+ * TODAS as contas do plano com aquele `codigoCompleto` — não a primeira.
+ *
+ * ⚠⚠ O `.find` que morava nos dois ramos escolhia sobre um array cuja ordem vem do `findMany`, sem
+ * `orderBy`: **não determinística**. Devolver a lista é o que permite RECUSAR a colisão em vez de
+ * eleger uma — a mesma disciplina de `formaDoLancamento.indicePorCodigoCompleto`, que marca
+ * `ambiguo` em vez de escolher, e do "nunca o primeiro da lista" do código de serviço.
+ */
+function contasComCompleto(completo, plano) {
+  const alvo = String(completo ?? "").trim();
+  if (!alvo) return [];
+  return (plano || []).filter((c) => String(c?.codigoCompleto ?? "").trim() === alvo);
 }
 
 /** ⚠ A regra casa pelo CNPJ **ou** pela descrição — nunca por semelhança, nunca por valor sozinho. */
@@ -249,16 +276,14 @@ export function sugerirConta(declarado, { regras = [], historico = [], plano = [
     // ⚠ `contaDestino` já é `codigoCompleto` (contrato do model), então aqui se confere existência,
     // não se traduz. `String(null)` seria a string `"null"` — por isso a checagem vem antes.
     const contaDaRegra = regra?.contaDestino ? String(regra.contaDestino) : null;
-    const contaNoPlano = contaDaRegra
-      ? (plano || []).find((c) => String(c.codigoCompleto) === contaDaRegra)
-      : null;
-    if (!contaNoPlano) {
-      return naoSugere(SEM_SUGESTAO.CONTA_FORA_DO_PLANO, { procedenciaTentada: procedencia, regraId: regra?.id ?? null });
-    }
-    // ⚠⚠ FORA DO PLANO VEM ANTES: sem saber qual é a conta, não há o que afirmar sobre ela.
-    if (ehContaSintetica(contaNoPlano)) {
-      return naoSugere(SEM_SUGESTAO.CONTA_SINTETICA, { procedenciaTentada: procedencia, regraId: regra?.id ?? null });
-    }
+    const doPlano = contasComCompleto(contaDaRegra, plano);
+    const trilha = { procedenciaTentada: procedencia, regraId: regra?.id ?? null };
+    if (!doPlano.length) return naoSugere(SEM_SUGESTAO.CONTA_FORA_DO_PLANO, trilha);
+    // ⚠⚠ AMBÍGUA VEM ANTES DE SINTÉTICA, e pelo mesmo motivo que FORA DO PLANO vem antes das duas:
+    // com duas contas disputando o mesmo `codigoCompleto`, não se sabe QUAL é a conta — logo não há
+    // o que afirmar sobre ela, nem "é sintética" nem "serve".
+    if (doPlano.length > 1) return naoSugere(SEM_SUGESTAO.CONTA_AMBIGUA, trilha);
+    if (ehContaSintetica(doPlano[0])) return naoSugere(SEM_SUGESTAO.CONTA_SINTETICA, trilha);
 
     return {
       conta: contaDaRegra,
@@ -287,9 +312,12 @@ export function sugerirConta(declarado, { regras = [], historico = [], plano = [
       if (!completo) return naoSugere(SEM_SUGESTAO.CONTA_FORA_DO_PLANO);
       // ⚠⚠ A memória também guarda conta de agregação, e `montarLancamento` recusa. Sugerir aqui
       // faria a tela oferecer o que o servidor nega — a mesma razão do ramo da regra, acima.
-      if (ehContaSintetica((plano || []).find((c) => String(c.codigoCompleto) === completo))) {
-        return naoSugere(SEM_SUGESTAO.CONTA_SINTETICA);
-      }
+      // ⚠ `completoDoReduzido` identificou a conta pelo REDUZIDO; aqui se volta ao plano pelo
+      // COMPLETO, e são perguntas diferentes. Com o completo duplicado, um `.find` julgaria uma
+      // conta possivelmente OUTRA — por isso a colisão recusa em vez de escolher.
+      const doPlano = contasComCompleto(completo, plano);
+      if (doPlano.length > 1) return naoSugere(SEM_SUGESTAO.CONTA_AMBIGUA);
+      if (ehContaSintetica(doPlano[0])) return naoSugere(SEM_SUGESTAO.CONTA_SINTETICA);
 
       return {
         conta: completo,

@@ -34,6 +34,7 @@ import {
   leituraDaOrigemDoPagamento,
   leituraDoDocumento,
   leituraDoEstado,
+  ROTULO_CURTO_DO_MOTIVO,
   motivoDeBloqueio,
   variantDoTom,
 } from "../lib/conferenciaTela";
@@ -278,8 +279,12 @@ function ContaSugerida({ item }) {
         style={{ color: "var(--state-warn)", fontSize: "0.8rem" }}
         title={s?.frase || "Nenhuma regra e nenhum histórico conhecem esta despesa."}
       >
-        {/* ⚠ `FORA_DA_FAIXA` não é "não sei": é "sei, e o valor está estranho". Merece texto próprio. */}
-        {s?.motivo === "fora_da_faixa" ? "valor fora do normal" : "sem conta"}
+        {/* ⚠⚠ NEM TODO `conta: null` É "NÃO SEI". `fora_da_faixa`, `conta_sintetica` e
+            `conta_ambigua` são "SEI, e o que está gravado não serve" — e o conserto de cada um é
+            outro. Chamar os três de "sem conta" manda o contador procurar do zero e deixa a regra
+            torta no lugar. ⚠ O rótulo mora em `lib/`, com o texto longo e o motivo do bloqueio:
+            três leituras do mesmo motivo divergiriam na primeira correção. */}
+        {ROTULO_CURTO_DO_MOTIVO[s?.motivo] || "sem conta"}
       </span>
     );
   }
