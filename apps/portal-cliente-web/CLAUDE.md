@@ -210,8 +210,59 @@ pagou caro por bloqueio anotado que envelheceu calado.
   **PREVISÃO nunca é verde**, nem o FATO — uma guia gerada e em aberto não está paga —, e a palavra
   *"Previsto"* vai no **TEXTO** do chip, não só na cor. Experimento executado: pondo a classe `ok`
   na previsão, a suíte da regra fica **2 vermelhos**.
-- ⚠⚠ **NÃO EXISTE `total`, nem no mês nem no bloco recolhido.** A tela abre com **3 meses** e
-  recolhe os outros nove, com o total do bloco à vista — e ele também é POR PROCEDÊNCIA.
+- ⚠⚠ **NÃO EXISTE `total`, nem no mês nem no bloco recolhido.**
+
+### ⚠⚠ E A FORMA VIROU UMA PLANILHA — MESES NAS COLUNAS (27/08/2026)
+
+> Dono, com a tela na frente: *"o fluxo de caixa está completamente esquisito"* — e, precisando:
+> *"um monte de meses aparecendo, excesso de tabela, o fluxo deve se parecer mais com uma planilha
+> excel"*.
+
+⚠ **MEDIDO NO NAVEGADOR, no mock, antes de mexer** (1280px, `pc-001`, 08/2026):
+
+| | 1280px | 375px |
+|---|---|---|
+| altura da página inteira | 2.325px | 3.605px (**4,4 telas**) |
+| **só o bloco do fluxo** | **1.723px** | 2.570px |
+| **fatia da página** | **74%** | **71%** |
+| linhas de conteúdo em tudo isso | **7** | 7 |
+
+Eram **11 blocos empilhados e 3 tabelas** — uma `<section>` por mês, cada uma com `<h3>`, bloco de
+totais e tabela própria — mais 4 caixas de ressalva ocupando **247px antes do primeiro número**.
+
+⚠⚠ **E A LINHA NÃO ERA UMA LINHA: ERA UM PARÁGRAFO.** Cada `<tr>` empilhava **4 a 6 blocos de texto**
+numa célula (rótulo, chip, origem, evidência, confronto) — 76 a 110px de altura, contra ~40px de uma
+linha normal, e até **183px em 375px**. A coluna "Quando" carregava frases inteiras, e elas se
+repetiam: *"A recorrência diz de quanto em quanto tempo, não em que dia do mês."* aparecia **três
+vezes** na mesma tela.
+
+⚠⚠ **A CAUSA NÃO ERA A GRANULARIDADE.** A forma ANTERIOR a esta era diária e tinha a mesma doença:
+31 linhas, 24 vazias. Trocar de dia para mês mudou o eixo e manteve o vazio — 8 dos 12 meses não têm
+nada. O que produz o vazio é **renderizar um compartimento por período**, exista movimento nele ou
+não.
+
+**Hoje é UMA grade**: 12 meses nas colunas, quatro linhas (`Entra`/`Sai` × `Já existe`/`Previsto`),
+e o detalhe de UM mês abre no clique do cabeçalho.
+
+- ⚠⚠ **NÃO HÁ LINHA DE TOTAL, e a ausência é o contrato.** Um rodapé "No mês" somaria `fato` com
+  `previsão` — exatamente o número único que a API se recusa a entregar. **As quatro linhas SÃO os
+  totais**, separados por procedência; é por isso que são quatro e não duas.
+- ⚠ **Zero sai como TRAÇO, nunca `R$ 0,00`.** A parede de zeros é a doença que a forma desfez, e
+  "nada neste compartimento" não é a mesma afirmação que "zero reais".
+- ⚠ **A evidência não foi apagada — ficou a um clique.** Ela é a diferença entre "previsto" e
+  "chutado"; o que mudou é ela não estar toda aberta ao mesmo tempo. Os testes CLICAM em vez de
+  baixar a asserção.
+- ⚠ **A primeira coluna gruda** (`position: sticky`): rolar uma planilha larga e perder o nome da
+  linha transforma um número em enigma.
+- ⚠ **As ressalvas de tom `aviso` continuam ANTES da grade** — a guia vencida é a linha mais urgente
+  do fluxo e não mora em mês nenhum. **As de tom `info` desceram**: são contexto, não ação.
+- ⚠ `MESES_ABERTOS_POR_PADRAO`, `separarMeses` e `totalDoBloco` podem ficar sem consumidor. Se
+  ficarem, **anotar, não apagar** — é a regra desta casa.
+- ⚠⚠ **ISTO DIVERGE DO PORTAL DO CONTADOR DE PROPÓSITO.** `apps/web/src/features/fluxo/` continua
+  com os 12 meses empilhados e 3 abertos. A REGRA (`leituraDoFluxo.js`) continua espelho e **não foi
+  tocada**; o que diverge é a FORMA, e ela diverge porque o pedido foi sobre a tela do cliente — que
+  é lida no celular e tem os cards reais da empresa acima dela. **Mudou lá, muda aqui** vale para a
+  regra, não para o desenho.
 - ⚠ **A ressalva tem TÍTULO PRÓPRIO, e nenhum se repete** (`ressalvasDoFluxo`). Isto é conserto de
   um defeito achado no navegador no portal do contador no mesmo dia: três caixas de aviso empilhadas
   dizendo *"Sobre este fluxo"*, indistinguíveis — o defeito que o `titulo` obrigatório existe para

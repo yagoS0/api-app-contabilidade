@@ -625,6 +625,34 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 .chip[data-procedencia="PREVISAO"]     { background: var(--warning-surface); color: var(--warning); }
 .chip[data-procedencia="DESCONHECIDO"] { background: var(--warning-surface); color: var(--warning); }
 
+/* ⚠⚠ A PLANILHA — UMA GRADE, DOZE MESES NAS COLUNAS (27/08/2026).
+   Pedido do dono, com a tela na frente: *"um monte de meses aparecendo, excesso de tabela, o fluxo
+   deve se parecer mais com uma planilha excel"*. Medido no navegador antes: o bloco ocupava
+   **1.723px de 2.325px — 74% da página inicial — para 7 linhas de conteúdo**, em 3 tabelas. */
+.table--planilha-fluxo { min-width: 720px; font-variant-numeric: tabular-nums; }
+/* ⚠ A PRIMEIRA COLUNA GRUDA: numa planilha larga, rolar para o lado e perder o nome da linha
+   transforma um número em enigma. ⚠ `z-index` só onde há `position` — sem ele o `<th>` do corpo
+   passa POR BAIXO do próximo `<td>` durante a rolagem. */
+.table--planilha-fluxo th[scope="row"],
+.table--planilha-fluxo .planilha-canto {
+  position: sticky; left: 0; z-index: 1;
+  background: var(--surface);
+  text-align: left; white-space: nowrap;
+}
+.table--planilha-fluxo th[scope="row"] > .chip { margin-left: 6px; vertical-align: middle; }
+/* ⚠ O cabeçalho de mês é um botão de verdade, e parece um: alvo de toque de 44px (o mínimo), e a
+   cor do texto vem do botão — não do `<th>` — para o `aria-pressed` poder marcá-lo. */
+.planilha-mes {
+  font: inherit; font-weight: 600; color: inherit; cursor: pointer;
+  background: none; border: 0; border-radius: var(--radius);
+  min-width: 44px; min-height: 30px; padding: 2px 8px; margin: -2px -8px;
+}
+.planilha-mes:hover { background: var(--neutral-surface); }
+.planilha-mes[aria-pressed="true"] { background: var(--primary-surface); color: var(--primary); }
+/* ⚠ A CÉLULA VAZIA É UM TRAÇO APAGADO, nunca `R$ 0,00`. "Nada neste compartimento" e "zero reais"
+   são afirmações diferentes, e a parede de zeros é a doença que esta forma desfez. */
+.table--planilha-fluxo td[data-vazio="sim"] { color: var(--muted); }
+
 .table--fluxo-mes { min-width: 560px; }
 .table--fluxo-mes td > .chip { margin-left: 6px; vertical-align: middle; }
 /* ⚠ Estas quatro frases ficam no TEXTO, nunca num `title`: ele não aparece no teclado nem no toque,

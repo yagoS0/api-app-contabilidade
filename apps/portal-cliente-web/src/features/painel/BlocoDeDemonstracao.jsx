@@ -37,6 +37,7 @@ import {
   confrontoDaLinha,
   evidenciaDaLinha,
   leituraDaProcedencia,
+  mesCurto,
   mesTemAlgo,
   quandoDaLinha,
   ressalvasDoFluxo,
@@ -133,11 +134,18 @@ function LinhaDoMes({ linha }) {
   );
 }
 
+/**
+ * O DETALHE DE UM MÊS — as linhas, com a evidência de cada uma.
+ *
+ * ⚠⚠ ELE NÃO REPETE OS TOTAIS. A coluna daquele mês na planilha já os mostra, e duas leituras do
+ * mesmo número lado a lado é como elas divergem. Até 27/08/2026 este bloco vinha DOZE vezes na tela,
+ * cada um com `<h3>` + totais + tabela própria; medido no navegador, isso dava **1.723px — 74% da
+ * página inicial — para 7 linhas de conteúdo**.
+ */
 function MesDoFluxo({ mes }) {
   return (
     <section className="fluxo-mes">
       <h3>{rotuloDoMes(mes?.competencia)}</h3>
-      <TotaisDoMes totais={mes?.totais} />
       {mesTemAlgo(mes) ? (
         /* ⚠ O `overflow-x` do `.table-wrap` é o que impede a PÁGINA de rolar para o lado em 375px. */
         <div className="table-wrap">
@@ -167,68 +175,163 @@ function MesDoFluxo({ mes }) {
 }
 
 /**
- * ⚠⚠ O FLUXO — 12 MESES, e ele NÃO é mais diário.
+ * ⚠⚠ A PLANILHA — UMA GRADE, MESES NAS COLUNAS.
  *
- * ⚠ A forma diária (dia · entradas · saídas · SALDO, com o painel do dia) morreu junto com a
- * demonstração, e não por gosto: **as projeções não têm dia** (o prazo de recebimento é contado em
- * meses, a recorrência diz o ciclo), e **não existe saldo acumulado** — sem saldo inicial não há o
- * que acumular. Uma tabela com coluna de saldo afirmaria as duas coisas.
- * ⚠ `PainelDoDia.jsx` e `lib/dadosDeDemonstracao.diasDoMes` ficaram SEM CONSUMIDOR por causa disso.
- * Não foram apagados — apagar componente é decisão à parte, e há precedente escrito neste projeto.
+ * Pedido do dono em 27/08/2026, com a tela na frente: *"um monte de meses aparecendo, excesso de
+ * tabela, o fluxo deve se parecer mais com uma planilha excel"*.
+ *
+ * ⚠ O QUE ELE VIA, MEDIDO NO NAVEGADOR (1280px, mock, 08/2026): o bloco do fluxo ocupava
+ * **1.723px de 2.325px — 74% da página inicial** e montava **11 blocos empilhados e 3 tabelas para
+ * 7 linhas de conteúdo**. Em 375px a página inteira tinha **4,4 telas de rolagem**, com linhas de
+ * até **183px cada**. Uma linha de tabela normal tem ~40px.
+ *
+ * ⚠⚠ A CAUSA NÃO ERA A GRANULARIDADE, era renderizar UM COMPARTIMENTO POR PERÍODO. A forma anterior
+ * a esta era diária e tinha a mesma doença: 31 linhas, 24 delas vazias. Trocar de dia para mês mudou
+ * o eixo e manteve o vazio — 8 dos 12 meses não têm nada.
+ *
+ * ⚠ E a linha não era uma linha: era um parágrafo. Cada `<tr>` empilhava 4 a 6 blocos de texto numa
+ * célula (rótulo, chip, origem, evidência, confronto), e a coluna "Quando" carregava frases
+ * inteiras — *"A recorrência diz de quanto em quanto tempo, não em que dia do mês."* aparecia
+ * **três vezes** na mesma tela.
+ *
+ * A grade inverte isso: uma linha é uma linha, o olho varre a coluna, e a evidência desce para o
+ * detalhe do mês — ela **não some**, deixa de estar toda aberta ao mesmo tempo.
+ *
+ * ⚠⚠ **NÃO EXISTE LINHA DE TOTAL, E A AUSÊNCIA É O CONTRATO.** `TotaisDoMes` já registra que não há
+ * uma quarta caixa somando `fato` e `previsão`; um rodapé "No mês" recriaria exatamente o número
+ * único que a API se recusa a entregar. As quatro linhas **são** os totais, separados por
+ * procedência — é por isso que são quatro, e não duas.
  */
+const LINHAS_DA_PLANILHA = [
+  { chave: "entra-fato", direcao: "Entra", procedencia: PROCEDENCIA.FATO, ler: (t) => t.fato.entrada },
+  { chave: "entra-previsao", direcao: "Entra", procedencia: PROCEDENCIA.PREVISAO, ler: (t) => t.previsao.entrada },
+  { chave: "sai-fato", direcao: "Sai", procedencia: PROCEDENCIA.FATO, ler: (t) => t.fato.saida },
+  { chave: "sai-previsao", direcao: "Sai", procedencia: PROCEDENCIA.PREVISAO, ler: (t) => t.previsao.saida },
+];
+
+function PlanilhaDoFluxo({ meses, competenciaAberta, aoAbrirMes }) {
+  const colunas = meses.map((m) => ({ mes: m, t: totaisParaTela(m?.totais) }));
+  // ⚠ A linha das indetermináveis só existe quando há alguma. Uma linha de traços permanente seria o
+  // vazio voltando pela porta dos fundos.
+  const temDesconhecido = colunas.some((c) => c.t.desconhecido.quantas > 0);
+
+  return (
+    /* ⚠ O `overflow-x` do `.table-wrap` é o que faz a planilha rolar DENTRO dela em 375px — sem ele a
+       página inteira passa a rolar para o lado, defeito que este app já pagou duas vezes. */
+    <div className="table-wrap">
+      <table className="table table--planilha-fluxo">
+        <thead>
+          <tr>
+            {/* ⚠ O canto fica vazio e sem `scope`: ele não descreve linha nem coluna. */}
+            <td className="planilha-canto" />
+            {colunas.map(({ mes }) => {
+              const aberta = mes?.competencia === competenciaAberta;
+              return (
+                <th key={mes?.competencia} scope="col" className="num">
+                  {/* ⚠⚠ O CABEÇALHO É UM `<button>`, não um `<a>`: abrir o detalhe de um mês não é
+                      navegação — não há URL para ele, e inventar uma daria um hash que o `useRota`
+                      recusa e devolve ao padrão. É a mesma regra que separa Fluxo ⇄ DRE de rotas. */}
+                  <button
+                    type="button"
+                    className="planilha-mes"
+                    aria-pressed={aberta}
+                    onClick={() => aoAbrirMes(aberta ? null : mes?.competencia)}
+                    title={rotuloDoMes(mes?.competencia)}
+                  >
+                    {mesCurto(mes?.competencia)}
+                  </button>
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {LINHAS_DA_PLANILHA.map((linha) => (
+            <tr key={linha.chave}>
+              <th scope="row">
+                {linha.direcao}
+                {/* ⚠⚠ "previsto" VAI NO TEXTO, nunca só na cor — a regra que `LinhaDoMes` já segue.
+                    Numa grade ela pesa mais: aqui o número está longe do rótulo. */}
+                <span className="chip" data-procedencia={linha.procedencia}>
+                  {leituraDaProcedencia(linha.procedencia).rotulo}
+                </span>
+              </th>
+              {colunas.map(({ mes, t }) => {
+                const valor = linha.ler(t);
+                return (
+                  <td key={mes?.competencia} className="num" data-vazio={valor ? undefined : "sim"}>
+                    {/* ⚠ ZERO SAI COMO TRAÇO. `R$ 0,00` em toda célula vazia é exatamente a parede de
+                        zeros que esta forma existe para desfazer — e "nada neste compartimento" não é
+                        a mesma afirmação que "zero reais". */}
+                    {valor ? brl(valor) : "—"}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+          {temDesconhecido ? (
+            <tr>
+              <th scope="row">
+                <span className="chip" data-procedencia={PROCEDENCIA.DESCONHECIDO}>
+                  {leituraDaProcedencia(PROCEDENCIA.DESCONHECIDO).rotulo}
+                </span>
+              </th>
+              {colunas.map(({ mes, t }) => (
+                /* ⚠⚠ CONTAGEM, nunca valor — a mesma regra do `TotaisDoMes`. O que não tem valor
+                   somável não vira zero e não entra em soma nenhuma. */
+                <td
+                  key={mes?.competencia}
+                  className="num"
+                  data-vazio={t.desconhecido.quantas ? undefined : "sim"}
+                >
+                  {t.desconhecido.quantas ? `${t.desconhecido.quantas} linha(s)` : "—"}
+                </td>
+              ))}
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Fluxo({ dados }) {
-  // ⚠⚠ OS MESES DISTANTES NASCEM RECOLHIDOS. Aqui isso pesa mais que no portal do contador: esta
-  // tela é lida no celular, e doze meses abertos empurrariam tudo o mais para fora da dobra.
-  const [distantesAbertos, setDistantesAbertos] = useState(false);
-  const { proximos, distantes } = separarMeses(dados?.meses);
+  const meses = Array.isArray(dados?.meses) ? dados.meses : [];
+  // ⚠ Abre no primeiro mês QUE TEM ALGO, não no primeiro da lista: com nada aberto a grade ensina os
+  // números e esconde a evidência; abrindo um mês vazio, ensina a frase de vazio. `null` quando não
+  // há nenhum — e aí a planilha fica sozinha, que é a resposta certa.
+  const [aberta, setAberta] = useState(() => meses.find(mesTemAlgo)?.competencia ?? null);
+  const mesAberto = meses.find((m) => m?.competencia === aberta) || null;
   const ressalvas = ressalvasDoFluxo(dados);
 
   return (
     <div className="fluxo">
-      {/* ⚠⚠ AS DUAS FRASES SÃO OBRIGATÓRIAS: uma diz que a previsão não aconteceu, a outra diz por
-          que não existe um número único. Sem elas, "previsto" se lê como compromisso e a ausência
-          do total se lê como falta. */}
-      <p className="meta meta--bloco">{FRASE_DA_PREVISAO}</p>
-      <p className="meta meta--bloco">{FRASE_SEM_TOTAL}</p>
-
-      {/* ⚠⚠ AS RESSALVAS VÊM ANTES DOS MESES: a guia vencida é a linha mais urgente do fluxo e não
-          mora em mês nenhum — embaixo das tabelas ela ficaria abaixo da dobra. */}
-      {ressalvas.map((r, i) => (
-        <p
-          key={`${r.titulo || ""}-${i}`}
-          className={r.tom === "aviso" ? "alerta alerta-aviso" : "alerta alerta-info"}
-          role="status"
-        >
+      {/* ⚠⚠ AS RESSALVAS DE TOM `aviso` CONTINUAM ANTES DA GRADE, e a razão escrita segue valendo: a
+          guia vencida é a linha mais urgente do fluxo e não mora em mês nenhum.
+          ⚠ As de tom `info` DESCERAM para depois da grade em 27/08/2026 — elas são contexto, não
+          ação, e medidas as quatro caixas ocupavam **247px antes do primeiro número da tela**. */}
+      {ressalvas.filter((r) => r.tom === "aviso").map((r, i) => (
+        <p key={`aviso-${r.titulo || ""}-${i}`} className="alerta alerta-aviso" role="status">
           <strong>{r.titulo}</strong> {r.texto}
         </p>
       ))}
 
-      {proximos.map((m) => <MesDoFluxo key={m.competencia} mes={m} />)}
+      <PlanilhaDoFluxo meses={meses} competenciaAberta={aberta} aoAbrirMes={setAberta} />
 
-      {distantes.length > 0 ? (
-        <section className="fluxo-distantes">
-          <div className="card-header">
-            <h3>Mais {distantes.length} mês(es)</h3>
-            <button
-              type="button"
-              className="btn"
-              aria-expanded={distantesAbertos}
-              onClick={() => setDistantesAbertos((v) => !v)}
-            >
-              {distantesAbertos ? "Recolher" : "Mostrar mês a mês"}
-            </button>
-          </div>
-          {/* ⚠⚠ O TOTAL DO BLOCO É POR PROCEDÊNCIA, nunca somado. Sem ele os meses recolhidos
-              sumiriam de vista; com uma soma única, virariam o número de doze meses que o contrato
-              recusa. */}
-          <TotaisDoMes totais={totalDoBloco(distantes)} titulo="No bloco recolhido" />
-          <p className="meta meta--bloco">
-            Quanto mais distante o mês, menos evidência há por trás da previsão — cada linha mostra
-            quantas vezes aquilo já apareceu.
-          </p>
-          {distantesAbertos ? distantes.map((m) => <MesDoFluxo key={m.competencia} mes={m} />) : null}
-        </section>
-      ) : null}
+      {mesAberto ? <MesDoFluxo mes={mesAberto} /> : null}
+
+      {/* ⚠⚠ AS DUAS FRASES SÃO OBRIGATÓRIAS: uma diz que a previsão não aconteceu, a outra diz por que
+          não existe um número único. Sem elas, "previsto" se lê como compromisso e a ausência do total
+          se lê como falta. ⚠ Elas desceram junto com as ressalvas de contexto: numa grade em que
+          "previsto" está escrito em toda linha, a frase deixou de precisar vir antes. */}
+      <p className="meta meta--bloco">{FRASE_DA_PREVISAO}</p>
+      <p className="meta meta--bloco">{FRASE_SEM_TOTAL}</p>
+
+      {ressalvas.filter((r) => r.tom !== "aviso").map((r, i) => (
+        <p key={`info-${r.titulo || ""}-${i}`} className="alerta alerta-info" role="status">
+          <strong>{r.titulo}</strong> {r.texto}
+        </p>
+      ))}
     </div>
   );
 }

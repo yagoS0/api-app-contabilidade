@@ -29,6 +29,21 @@ async function abrir(payload) {
   await act(async () => {});
 }
 
+/**
+ * Abre o detalhe de um mês pela planilha — `"set/26"`.
+ *
+ * ⚠⚠ ELE EXISTE PORQUE A EVIDÊNCIA DEIXOU DE ESTAR TODA ABERTA AO MESMO TEMPO, e isso é uma perda
+ * deliberada, medida: as 12 seções empilhadas ocupavam **1.723px de 2.325px — 74% da página inicial
+ * do cliente — para 7 linhas de conteúdo**, e o dono pediu, com a tela na frente, *"o fluxo deve se
+ * parecer mais com uma planilha excel"*.
+ *
+ * ⚠ A evidência **não foi apagada**: ela é a diferença entre "previsto" e "chutado". Ela ficou a um
+ * clique — e é por isso que os casos abaixo clicam em vez de baixarem a asserção.
+ */
+async function abrirMes(rotuloCurto) {
+  await act(async () => { screen.getByRole("button", { name: rotuloCurto }).click(); });
+}
+
 const cheio = () => fluxoDeCaixaDoMock("pc-001", COMPETENCIA);
 const magro = () => fluxoDeCaixaDoMock("pc-006", COMPETENCIA);
 
@@ -81,10 +96,18 @@ describe("⚠⚠ não existe total, nem saldo", () => {
 // ⚠⚠ ESTE PORTAL NÃO ESCREVE CONTABILIDADE — invariante herdada do teste antigo.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ nada aqui lança, edita ou apaga", () => {
-  test("os únicos botões são as duas visões e o de recolher os meses distantes", async () => {
+  // ⚠⚠ A LISTA MUDOU EM 27/08/2026 PORQUE A FORMA MUDOU — a INVARIANTE não. Ela era
+  // `["Fluxo de caixa", "DRE", "Mostrar mês a mês"]`, de quando o fluxo eram 12 seções empilhadas.
+  // Hoje é a planilha, e os botões a mais são os CABEÇALHOS DE MÊS, que só abrem o detalhe.
+  // ⚠ O que este caso trava continua sendo o mesmo: **nenhum botão daqui escreve contabilidade**.
+  test("os únicos botões são as duas visões e os cabeçalhos de mês — nada mais", async () => {
     await abrir(cheio());
     const nomes = screen.getAllByRole("button").map((b) => b.textContent.trim());
-    expect(nomes).toEqual(["Fluxo de caixa", "DRE", "Mostrar mês a mês"]);
+    expect(nomes.slice(0, 2)).toEqual(["Fluxo de caixa", "DRE"]);
+    // Os 12 restantes são meses, e nada além disso: `ago/26`, `set/26`, …
+    const meses = nomes.slice(2);
+    expect(meses).toHaveLength(12);
+    for (const m of meses) expect(m).toMatch(/^[a-z]{3}\/\d{2}$/);
   });
 
   test("⚠ nenhum `+` nem `⋮` — quem lança é o escritório, e botão impossível é pior que ausência", async () => {
@@ -122,9 +145,16 @@ describe("⚠⚠ nada some em silêncio", () => {
     expect(screen.getByText(/Repetições não lidas/)).toBeInTheDocument();
   });
 
+  // ⚠ Media 3 (os três meses que abriam juntos). Com a planilha abre UM detalhe por vez, então a
+  // frase aparece uma vez — e o que ela trava é o mesmo: **mês sem movimento DIZ que está sem**,
+  // senão "não há movimento" e "não carregou" ficam com o mesmo desenho.
   test("⚠ mês vazio DIZ que está vazio — senão 'não há movimento' e 'não carregou' ficam iguais", async () => {
     await abrir(magro());
-    expect(screen.getAllByText(/Nada previsto nem lançado para este mês/).length).toBe(3);
+    // ⚠ A `pc-006` não tem nenhum mês com linha, então o detalhe abre `null` e ninguém afirma nada.
+    expect(screen.queryByText(/Nada previsto nem lançado para este mês/)).toBeNull();
+    // Pedindo um mês explicitamente, a frase aparece — e é só ela.
+    await abrirMes("ago/26");
+    expect(screen.getAllByText(/Nada previsto nem lançado para este mês/)).toHaveLength(1);
   });
 });
 
@@ -134,51 +164,96 @@ describe("⚠⚠ nada some em silêncio", () => {
 describe("⚠⚠ por que esta linha está aqui", () => {
   test("⚠⚠ a faixa e o 'visto N vezes' saem no TEXTO, não num `title`", async () => {
     await abrir(cheio());
+    await abrirMes("set/26");
     // ⚠ `title` não aparece no teclado nem no toque, e este portal é lido no celular.
     expect(screen.getByText(/visto 3 vezes · entre R\$ 120,00 e R\$ 140,00/)).toBeInTheDocument();
   });
 
   test("⚠⚠ o CONFRONTO da recorrência declarada aparece, e fala com quem declarou", async () => {
     await abrir(cheio());
+    await abrirMes("set/26");
     expect(screen.getByText(/Você informou R\$ 1\.000,00/)).toBeInTheDocument();
   });
 
   test("⚠⚠ o dia ausente vira 'ao longo do mês' COM O MOTIVO — nunca um dia inventado", async () => {
     await abrir(cheio());
+    await abrirMes("set/26");
     expect(screen.getAllByText("ao longo do mês").length).toBeGreaterThan(0);
     expect(screen.getByText(/O prazo de recebimento é contado em meses/)).toBeInTheDocument();
   });
 
   test("⚠ a guia, essa, tem dia próprio", async () => {
+    // ⚠ Media 2 (a do mês corrente e a do seguinte, abertos juntos). Com um detalhe por vez, é 1 —
+    // e o que se trava continua sendo que a GUIA tem dia de verdade (o `vencimento`), ao contrário
+    // da projeção, que não tem.
     await abrir(cheio());
-    // ⚠ Duas: a do mês corrente e a do seguinte. Nas duas o dia é o `vencimento` de verdade.
-    expect(screen.getAllByText("dia 20")).toHaveLength(2);
+    expect(screen.getAllByText("dia 20")).toHaveLength(1);
+    await abrirMes("set/26");
+    expect(screen.getAllByText("dia 20")).toHaveLength(1);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// ⚠ OS 12 MESES, COM 3 ABERTOS.
+// ⚠⚠ A PLANILHA — UMA GRADE, OS 12 MESES NAS COLUNAS (27/08/2026).
+//
+// Pedido do dono, com a tela na frente: *"um monte de meses aparecendo, excesso de tabela, o fluxo
+// deve se parecer mais com uma planilha excel"*.
+//
+// ⚠ O QUE ELE VIA, MEDIDO NO NAVEGADOR (1280px, mock, 08/2026): **1.723px de 2.325px — 74% da página
+// inicial — para 7 linhas de conteúdo**, em 11 blocos empilhados e 3 tabelas. Em 375px a página
+// tinha 4,4 telas de rolagem e linhas de até 183px.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠⚠ a tela abre com 3 meses", () => {
-  test("três meses abertos e nove recolhidos, com o total do bloco à vista", async () => {
+describe("⚠⚠ a planilha: uma grade, doze colunas", () => {
+  test("⚠⚠ é UMA tabela para os 12 meses, não uma por mês", async () => {
     await abrir(cheio());
-    expect(screen.getByRole("heading", { name: "agosto de 2026" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "setembro de 2026" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "outubro de 2026" })).toBeInTheDocument();
-    // ⚠ O quarto mês NÃO está aberto.
-    expect(screen.queryByRole("heading", { name: "novembro de 2026" })).toBeNull();
-    expect(screen.getByRole("heading", { name: "Mais 9 mês(es)" })).toBeInTheDocument();
-    // ⚠⚠ O total do bloco recolhido fica à vista: sem ele os nove meses sumiriam.
-    expect(screen.getByText("No bloco recolhido")).toBeInTheDocument();
+    // ⚠ O escopo é a PRIMEIRA tabela de propósito: a segunda é o DETALHE do mês aberto (Quando · O
+    // quê · Entra · Sai) — e é justamente por existirem só duas que a queixa do dono se desfaz.
+    // Antes eram três tabelas de mês; hoje é a grade + o detalhe de UM mês.
+    expect(screen.getAllByRole("table")).toHaveLength(2);
+    const grade = screen.getAllByRole("table")[0];
+    const colunas = within(grade).getAllByRole("columnheader");
+    expect(colunas).toHaveLength(12);
+    expect(colunas[0].textContent.trim()).toBe("ago/26");
+    expect(colunas[11].textContent.trim()).toBe("jul/27");
   });
 
-  test("⚠ e o bloco abre quando a pessoa pede", async () => {
+  test("⚠⚠ as QUATRO linhas separam entra/sai × já existe/previsto — e não há uma quinta somando", async () => {
     await abrir(cheio());
-    const botao = screen.getByRole("button", { name: "Mostrar mês a mês" });
-    expect(botao).toHaveAttribute("aria-expanded", "false");
-    await act(async () => { botao.click(); });
-    expect(screen.getByRole("heading", { name: "novembro de 2026" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Recolher" })).toHaveAttribute("aria-expanded", "true");
+    const linhas = screen.getAllByRole("rowheader").map((th) => th.textContent.trim());
+    expect(linhas).toEqual([
+      "EntraJá existe", "EntraPrevisto", "SaiJá existe", "SaiPrevisto",
+    ]);
+    // ⚠⚠ A AUSÊNCIA É O CONTRATO: nenhuma linha "No mês", "Saldo" ou "Total" — ela recriaria o
+    // número único que a API se recusa a entregar, somando `fato` com `previsão`.
+    expect(document.body.textContent).not.toMatch(/No m[êe]s|Total do m[êe]s/i);
+  });
+
+  test("⚠⚠ ZERO sai como TRAÇO, nunca `R$ 0,00`", async () => {
+    // A parede de zeros é a doença que esta forma existe para desfazer — e "nada neste
+    // compartimento" não é a mesma afirmação que "zero reais".
+    await abrir(cheio());
+    const grade = screen.getAllByRole("table")[0];
+    expect(within(grade).queryByText("R$ 0,00")).toBeNull();
+    expect(within(grade).getAllByText("—").length).toBeGreaterThan(0);
+  });
+
+  test("⚠ a tela abre com UM mês aberto — o primeiro que tem algo", async () => {
+    await abrir(cheio());
+    expect(screen.getByRole("heading", { name: "agosto de 2026" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "setembro de 2026" })).toBeNull();
+    expect(screen.getByRole("button", { name: "ago/26" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("⚠ clicar num mês abre o dele; clicar de novo fecha", async () => {
+    await abrir(cheio());
+    await abrirMes("out/26");
+    expect(screen.getByRole("heading", { name: "outubro de 2026" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "agosto de 2026" })).toBeNull();
+
+    await abrirMes("out/26");
+    expect(screen.queryByRole("heading", { name: "outubro de 2026" })).toBeNull();
+    // ⚠ Sem detalhe nenhum, sobra só a grade — que é a resposta certa, não uma tela quebrada.
+    expect(screen.getAllByRole("table")).toHaveLength(1);
   });
 });
 
@@ -205,7 +280,8 @@ describe("⚠⚠ o selo de demonstração some com o fluxo real", () => {
 
   test("⚠ e os números continuam na tela nos dois casos", async () => {
     await abrir(cheio());
-    const tabela = screen.getAllByRole("table")[0];
-    expect(within(tabela).getByText("SIMPLES")).toBeInTheDocument();
+    // ⚠ `[0]` era a tabela do mês; hoje `[0]` é a GRADE e `[1]` é o detalhe do mês aberto.
+    const detalhe = screen.getAllByRole("table")[1];
+    expect(within(detalhe).getByText("SIMPLES")).toBeInTheDocument();
   });
 });
