@@ -66,7 +66,7 @@ function textoDaAliquota(l) {
   return `Impostos pagos ${somaOuTraco(l.impostos)} sobre ${somaOuTraco(l.faturamento)}`;
 }
 
-export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar, aoEnviarExtrato }) {
+export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar, aoEnviarExtrato, aoDeclararRecorrencia }) {
   // ⚠⚠ A COMPETÊNCIA VEM DA CASCA — ver o comentário longo em `AppShell.jsx`. Era um
   // `useState(competenciaPadrao)` daqui, gêmeo do de `NotasPage`, e as duas abas discordavam.
   // O default não mudou: `competenciaPadrao` é o mês CORRENTE (dono, 18/08/2026).
@@ -154,6 +154,16 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
           {aoEnviarExtrato ? (
             <button type="button" className="btn" onClick={aoEnviarExtrato}>
               Enviar extrato
+            </button>
+          ) : null}
+          {/* ⚠ MESMO ARRANJO: é um MODO desta rota, então `<button>` e não `<a href>` — não há hash
+              para ele, e inventar um daria um destino que o `useRota` recusa. ⚠ Sem o handler ele
+              NÃO RENDERIZA: botão em que se clica e nada acontece é pior que a ausência dele.
+              ⚠⚠ O rótulo fala de CAIXA, não de contabilidade — e nada do que o cliente declara
+              entra no fluxo até o contador confirmar (a tela diz isso lá dentro, antes do botão). */}
+          {aoDeclararRecorrencia ? (
+            <button type="button" className="btn" onClick={aoDeclararRecorrencia}>
+              Declarar o que se repete
             </button>
           ) : null}
         </div>

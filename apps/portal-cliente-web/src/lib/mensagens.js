@@ -128,6 +128,26 @@ const MENSAGENS = {
   nenhuma_transacao:
     "Não conseguimos ler nenhuma transação neste arquivo. Confira se ele é o extrato em formato OFX "
     + "que o seu banco disponibiliza.",
+
+  // --- Declarar o que se repete (recorrência) ---
+  //
+  // ⚠⚠ SEM ESTAS ENTRADAS O CONSERTO NÃO CHEGA. `mensagemDeErro` resolve por CÓDIGO e **não lê
+  // `err.message`**, por decisão escrita — então uma recusa nomeada pelo backend cairia no `padrao`
+  // ("não foi possível enviar"), que não diz o que fazer. É a mesma lição do `arquivo_grande_demais`.
+  // Os códigos foram LIDOS de `RECUSA_DA_SERIE` (`application/fluxo/SerieRecorrenteService.js`).
+  //
+  // ⚠ A frase é a do CLIENTE, não a do servidor: ele não sabe o que é uma migration, e o conserto
+  // dele é falar com o contador — não mexer no banco.
+  recorrencia_indisponivel:
+    "Ainda não é possível registrar recorrências nesta conta. Avise o seu contador — é ele que "
+    + "libera isso.",
+  // ⚠ As quatro abaixo a tela já impede antes de enviar (`faltasDaDeclaracao`). Elas existem porque
+  // a guarda da tela não é a guarda: quem recusa de verdade é o servidor, e uma recusa dele sem
+  // frase vira "não foi possível" — o texto que não diz nada.
+  valor_invalido: "O valor precisa ser um número maior que zero.",
+  sem_rotulo: "Diga o que se repete — é por esse nome que ele aparece para o seu contador.",
+  periodicidade_invalida: "Escolha de quanto em quanto tempo isso acontece.",
+  lado_invalido: "Diga se é dinheiro que sai ou que entra.",
   extrato_grande_demais: "Este extrato tem transações demais para um envio só. Divida o período e envie em partes.",
   ofx_import_falhou: "Não foi possível importar o extrato. Tente de novo em instantes.",
 };

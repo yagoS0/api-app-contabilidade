@@ -487,6 +487,27 @@ export function createRealApi() {
       });
     },
 
+    // --- ⚠⚠ DECLARAR O QUE SE REPETE ----------------------------------------------------------
+    //
+    // Contrato lido em `apps/api/src/routes/client/index.js` (não deduzido):
+    //   POST /client/companies/:companyId/recorrencia/declarar
+    //     corpo: { lado, rotulo, periodicidade, valor }
+    //     -> 200 { ok, serie, jaDecidida } · 400 nomeado · 503 `recorrencia_indisponivel`
+    //
+    // ⚠⚠ A SÉRIE NASCE **PENDENTE**, e o servidor é quem decide isso — a tela não manda `estado`.
+    // Nada entra no fluxo de caixa até o contador confirmar.
+    //
+    // ⚠⚠ E NENHUMA CONTA VIAJA: o cliente não tem plano de contas, e esta declaração é sobre CAIXA.
+    //
+    // ⚠ `jaDecidida` volta no corpo: uma série que o contador JÁ decidiu não é sobrescrita, e o
+    // cliente precisa saber que a declaração dele não mudou nada — em vez de achar que mudou.
+    async declararRecorrencia(companyId, corpo) {
+      return pedir(`/client/companies/${encodeURIComponent(companyId)}/recorrencia/declarar`, {
+        method: "POST",
+        body: JSON.stringify(corpo || {}),
+      });
+    },
+
     // --- ⚠⚠ A EMISSÃO EM LOTE — AQUI SAI NOTA FISCAL DE VERDADE, EM SÉRIE ---------------------
     //
     // ⚠⚠ Cada linha da planilha vira um ato IRREVERSÍVEL no sistema nacional de produção. Nota

@@ -1833,6 +1833,43 @@ export function createMockApi() {
     //   #muitoruim   -> 145.634 descartadas, com a amostra truncada em 50
     //   #semconta    -> arquivo sem BANKACCTFROM/ACCTID: o dedupe fica mais frouxo
     //   (qualquer outro) -> o caminho feliz
+    /**
+     * ⚠⚠ DECLARAR O QUE SE REPETE — e os DOIS desfechos são alcançáveis offline.
+     *
+     * `jaDecidida` quer dizer que o contador já resolveu esta série e a declaração **não a tocou**.
+     * Um mock que só respondesse "anotado" faria o segundo desfecho — o que diz ao cliente que nada
+     * mudou — nascer inalcançável, e ele é justamente o que impede a tela de mentir.
+     *
+     * ⚠ O ramo se alcança pelo RÓTULO (qualquer coisa contendo "conselho"), como o `#grande` do
+     * extrato: é o único jeito de exercitá-lo sem estado no mock.
+     *
+     * ⚠ O mock NÃO decide nada: ele ecoa. A regra de quem pode sobrescrever é do servidor.
+     */
+    async declararRecorrencia(companyId, corpo) {
+      await dormir();
+      exigirAcessoEmpresa(companyId);
+      const rotulo = String(corpo?.rotulo || "");
+      const jaDecidida = /conselho/i.test(rotulo);
+      return {
+        ok: true,
+        jaDecidida,
+        serie: {
+          id: jaDecidida ? "s-existente" : "s-nova",
+          lado: corpo?.lado || "DESPESA",
+          // ⚠ A chave volta CANONIZADA — é o servidor que canoniza, e o mock precisa devolver a
+          // mesma forma, senão a tela offline vê uma chave que produção não produziria.
+          chave: rotulo.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9]+/g, " ").trim(),
+          rotulo,
+          periodicidade: corpo?.periodicidade || "MENSAL",
+          origem: "DECLARADA",
+          // ⚠⚠ PENDENTE, sempre: quem declara não põe nada no fluxo. No ramo `jaDecidida` o estado
+          // é o que o CONTADOR já tinha gravado, e a declaração não o mudou.
+          estado: jaDecidida ? "ATIVA" : "PENDENTE",
+          valorDeclarado: corpo?.valor != null ? String(corpo.valor) : null,
+          declaradoEm: new Date().toISOString(),
+        },
+      };
+    },
     async importarExtratoOfx(companyId, arquivo) {
       await dormir();
       exigirAcessoEmpresa(companyId);
