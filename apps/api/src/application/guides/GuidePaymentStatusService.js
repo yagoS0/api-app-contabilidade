@@ -24,6 +24,7 @@ export {
   leituraDosAcrescimos,
   ACRESCIMOS,
   PREFIXO_DARF_LP,
+  traduzirRecusaParaCliente,
 } from "./lib/recalculoDaGuia.js";
 
 async function updateGuidePaymentStatus(guideId, data) {

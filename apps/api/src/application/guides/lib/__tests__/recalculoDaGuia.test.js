@@ -189,6 +189,23 @@ describe("⚠⚠ OS ACRÉSCIMOS VIERAM? — três respostas, e a terceira impede
     }
   });
 
+  it("⚠⚠ O TEXTO MUDA COM O PÚBLICO — achado NO NAVEGADOR, não pelo teste", () => {
+    // A frase saía "confira no documento antes de ENVIAR AO CLIENTE" — e apareceu na tela DO
+    // cliente. Instrução dirigida a outra pessoa faz quem lê achar que o aviso não é para ele, e
+    // este aviso é o que impede alguém de pagar uma guia a menor.
+    const zerado = { itens: [{ principal: 100, multa: 0, juros: 0 }] };
+    expect(leituraDosAcrescimos(zerado).texto).toMatch(/antes de enviar ao cliente/);
+    expect(leituraDosAcrescimos(zerado, { ehCliente: true }).texto).toMatch(/antes de pagar/);
+    expect(leituraDosAcrescimos(zerado, { ehCliente: true }).texto).not.toMatch(/enviar ao cliente/);
+    // ⚠ Vale também para o estado "não deu para ler".
+    expect(leituraDosAcrescimos(null, { ehCliente: true }).texto).toMatch(/antes de pagar/);
+    expect(leituraDosAcrescimos(null).texto).toMatch(/antes de enviar ao cliente/);
+  });
+
+  it("⚠ o default é o ESCRITÓRIO — os chamadores antigos são todos dele", () => {
+    expect(leituraDosAcrescimos(null).texto).toBe(leituraDosAcrescimos(null, { ehCliente: false }).texto);
+  });
+
   it("⚠ valor torto num item não vira acréscimo — ele conta como zero", () => {
     const r = leituraDosAcrescimos({ itens: [{ multa: "abc", juros: null }] });
     expect(r.estado).toBe(ACRESCIMOS.AUSENTES);

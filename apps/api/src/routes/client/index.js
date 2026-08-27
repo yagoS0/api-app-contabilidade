@@ -30,7 +30,24 @@ import {
   getGuidePdfBuffer,
   listGuidesByCompany,
   toGuideResponse,
+  PUBLICO,
 } from "../../application/guides/GuideService.js";
+// ⚠ As regras do recálculo moram em `guides/lib/recalculoDaGuia.js` e são reexportadas pelo
+// `GuidePaymentStatusService` — a MESMA porta que a rota do escritório usa. Duas importações
+// diferentes da mesma regra é como as duas telas começam a discordar.
+import {
+  canGuideRecalculate,
+  isGuideOverdue,
+  especieDoRecalculo,
+  ESPECIE_RECALCULO,
+  leituraDosAcrescimos,
+  traduzirRecusaParaCliente,
+  markGuideOpenBySerpro,
+} from "../../application/guides/GuidePaymentStatusService.js";
+import { comContextoSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
+import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
+import { reemitirDarfLp } from "../../application/fiscal/lp/LucroPresumidoProvisaoService.js";
+import { SERPRO_PGDASD_SERVICE_COBRANCA } from "../../application/fiscal/serpro/SerproPgdasdService.js";
 import {
   aliquotaPorLancamentos,
   serieAliquotaPorLancamentos,
@@ -826,7 +843,14 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       apenasLiberadas: true,
     });
     return res.json({
-      data: result.items.map(toGuideResponse),
+      // ⚠⚠ O PÚBLICO É EXPLÍCITO, e `.map(toGuideResponse)` cru não serve: o `map` passa o ÍNDICE
+      // como 2º argumento, e o 2º argumento é `{ publico }` — funcionaria por acidente (0 não é
+      // "ESCRITORIO") e quebraria no dia em que o default mudasse.
+      //
+      // ⚠⚠ O QUE ESTÁ EM JOGO: `toGuideResponse` serve OS DOIS PORTAIS, e o aviso de recálculo do
+      // escritório diz "chamada PAGA ao SERPRO, contra o teto mensal do escritório" — orçamento
+      // interno, que não é assunto do cliente.
+      data: result.items.map((g) => toGuideResponse(g, { publico: PUBLICO.CLIENTE })),
       page: result.page,
       limit: result.limit,
       total: result.total,
@@ -852,6 +876,114 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         mimeType: "application/pdf",
         expiresIn: null,
       });
+    }
+  );
+
+  /**
+   * ⚠⚠ RECALCULAR UMA GUIA VENCIDA, PELO CLIENTE (decisão do dono, 27/08/2026: *"só guia vencida,
+   * com aviso"*).
+   *
+   * ⚠⚠ CADA CLIQUE AQUI É UMA CHAMADA PAGA ao SERPRO, contra o teto mensal do ESCRITÓRIO INTEIRO —
+   * um cliente insistindo consome o orçamento de toda a carteira. Daí as três travas, e nenhuma
+   * delas é a tela:
+   *
+   *   1. **só guia LIBERADA** (`liberadaCliente: true`). ⚠ Este gate NÃO se afrouxa: o cliente só
+   *      alcança guia que o contador liberou, e 8 das 9 DARF do LP estão com `false`;
+   *   2. **só guia VENCIDA.** Guia em aberto não tem por que ser regerada pelo cliente — o valor
+   *      seria o mesmo, e o gasto, não;
+   *   3. **só o que a regra deixa recalcular** (`canGuideRecalculate`): guia paga, parcela de
+   *      parcelamento e guia que não é do SERPRO ficam de fora, no servidor.
+   *
+   * ⚠ `requireClientCompanyAccess()` SEM `minRole`, de propósito: é o piso das rotas financeiras do
+   * cliente, o mesmo do download da guia que ele já baixa.
+   *
+   * ⚠⚠ E A RECUSA CHEGA TRADUZIDA. As mensagens da guarda de orçamento trazem o consumo do
+   * escritório, o teto e a conta que o deriva — repassá-las publicaria orçamento interno na tela de
+   * um cliente. `traduzirRecusaParaCliente` é lista FECHADA e falha fechado.
+   */
+  router.post(
+    "/companies/:companyId/guides/:guideId/recalculate",
+    requireClientCompanyAccess(),
+    async (req, res) => {
+      const { companyId, guideId } = req.params || {};
+      const guide = await prisma.guide.findFirst({
+        where: { id: String(guideId), portalClientId: String(companyId), liberadaCliente: true },
+      });
+      // ⚠ 404 (não 403) para guia não liberada: a existência de uma guia que o contador ainda não
+      // liberou não é informação do cliente. Mesmo desenho do download.
+      if (!guide) return res.status(404).json({ error: "not_found" });
+
+      if (guide.status !== "PROCESSED") {
+        return res.status(400).json({ error: "guia_nao_processada", message: "Esta guia ainda está sendo processada." });
+      }
+      if (!canGuideRecalculate(guide)) {
+        return res.status(400).json({
+          error: "recalculo_indisponivel",
+          message: "Esta guia não pode ser gerada de novo por aqui. Fale com o seu contador.",
+        });
+      }
+      // ⚠⚠ A TRAVA DO DONO: só vencida.
+      if (!isGuideOverdue(guide, new Date())) {
+        return res.status(400).json({
+          error: "guia_nao_vencida",
+          message: "Esta guia ainda não venceu — use a que você já tem. Depois do vencimento, dá para "
+            + "pedir uma guia atualizada aqui.",
+        });
+      }
+
+      const especie = especieDoRecalculo(guide);
+      try {
+        // ⚠ A ORIGEM É PRÓPRIA (`cliente:recalcular`) e não se confunde com a do contador: sem isso,
+        // o `serpro_chamadas` não distinguiria quem gastou.
+        // ⚠ `forcar` NÃO é oferecido aqui, nem por engano: furar o teto do escritório é decisão de
+        // um ADMIN do escritório, e o cliente não é um.
+        const contexto = { origem: "cliente:recalcular", userId: req.auth?.user?.id, forcar: false };
+
+        if (especie === ESPECIE_RECALCULO.DARF_PRESUMIDO) {
+          const darf = await comContextoSerpro(contexto, () => reemitirDarfLp({
+            portalClientId: String(companyId),
+            competencia: guide.competencia,
+            guideId: guide.id,
+          }));
+          await markGuideOpenBySerpro({ guideId: guide.id });
+          const atualizada = await prisma.guide.findUnique({ where: { id: guide.id } });
+          return res.json({
+            ok: true,
+            guide: toGuideResponse(atualizada, { publico: PUBLICO.CLIENTE }),
+            // ⚠ A leitura dos acréscimos vai TAMBÉM para o cliente: se a guia nova veio sem juros e
+            // multa, quem vai pagar precisa saber antes de pagar.
+            // ⚠ `ehCliente`: a frase muda de "antes de enviar ao cliente" para "antes de pagar".
+            acrescimos: leituraDosAcrescimos(darf.composicao, { ehCliente: true }),
+          });
+        }
+
+        const result = await comContextoSerpro(contexto, () => capturePgdasGuideForCompany({
+          portalClientId: String(companyId),
+          competencia: guide.competencia,
+          existingGuideId: guide.id,
+          serviceId: SERPRO_PGDASD_SERVICE_COBRANCA,
+        }));
+        await markGuideOpenBySerpro({ guideId: result.guide.guideId });
+        const atualizada = await prisma.guide.findUnique({ where: { id: result.guide.guideId } });
+        return res.json({
+          ok: true,
+          guide: toGuideResponse(atualizada, { publico: PUBLICO.CLIENTE }),
+        });
+      } catch (err) {
+        const recusa = traduzirRecusaParaCliente(err);
+        // ⚠ Duas famílias, dois status, porque são consertos diferentes para quem está na tela:
+        // as travas de ritmo/orçamento são NOSSAS (429, "espere ou fale com o contador"); o resto é
+        // falha do serviço externo (502).
+        const travaDeOrcamento = [
+          "SERPRO_CHAMADA_REPETIDA", "SERPRO_TETO_DIARIO", "SERPRO_TETO_MENSAL_ESCRITORIO",
+        ].includes(recusa.codigo);
+        return res.status(travaDeOrcamento ? 429 : 502).json({
+          ok: false,
+          error: recusa.codigo,
+          message: recusa.mensagem,
+          podeTentarDeNovo: recusa.podeTentarDeNovo,
+        });
+      }
     }
   );
 

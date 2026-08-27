@@ -181,7 +181,18 @@ export const ACRESCIMOS = Object.freeze({
   NAO_LEGIVEIS: "nao_legiveis",
 });
 
-export function leituraDosAcrescimos(composicao) {
+/**
+ * ⚠⚠ O TEXTO MUDA COM O PÚBLICO, e isto foi ACHADO NO NAVEGADOR (27/08/2026), não pelo teste.
+ *
+ * A frase saía *"confira no documento antes de ENVIAR AO CLIENTE"* — e ela apareceu na tela DO
+ * cliente, que não vai enviar nada a cliente nenhum. Uma instrução dirigida a outra pessoa não é só
+ * estranha: ela faz quem lê achar que o aviso não é para ele, e este aviso é justamente o que
+ * impede alguém de pagar uma guia a menor.
+ *
+ * ⚠ `ehCliente` defaulta para `false` de propósito: os chamadores antigos são todos do escritório.
+ */
+export function leituraDosAcrescimos(composicao, { ehCliente = false } = {}) {
+  const confira = ehCliente ? "Confira no documento antes de pagar." : "Confira no documento antes de enviar ao cliente.";
   const itens = Array.isArray(composicao?.itens) ? composicao.itens : [];
   if (!itens.length) {
     return {
@@ -190,7 +201,7 @@ export function leituraDosAcrescimos(composicao) {
       juros: null,
       texto: "Não foi possível ler a composição do documento para conferir juros e multa. "
         + "Isto NÃO quer dizer que a guia veio sem acréscimos — quer dizer que não deu para "
-        + "conferir aqui. Confira no PDF.",
+        + `conferir aqui. ${confira}`,
       tom: "atencao",
     };
   }
@@ -213,16 +224,62 @@ export function leituraDosAcrescimos(composicao) {
     estado: ACRESCIMOS.AUSENTES,
     multa: 0,
     juros: 0,
-    // ⚠⚠ ESTA É A FALHA VISÍVEL. Se o serviço não souber gerar a guia vencida, o contador recebe uma
-    // guia sem acréscimos e a apresentaríamos como "recalculada" — pagaria a menor e ficaria devendo
-    // a diferença sem saber. A tela diz o que se viu, e manda conferir.
+    // ⚠⚠ ESTA É A FALHA VISÍVEL. Se o serviço não souber gerar a guia vencida, quem clicou recebe
+    // uma guia sem acréscimos e a apresentaríamos como "recalculada" — pagaria a menor e ficaria
+    // devendo a diferença sem saber. A tela diz o que se viu, e manda conferir.
     texto: "A guia nova veio SEM juros e multa. Numa guia vencida isso pode significar que este "
-      + "serviço da Receita não gera a versão com acréscimos — confira no documento antes de "
-      + "enviar ao cliente.",
+      + `serviço da Receita não gera a versão com acréscimos. ${confira}`,
     tom: "atencao",
   };
 }
 
 function arredondar(n) {
   return Math.round(Number(n) * 100) / 100;
+}
+
+/**
+ * ⚠⚠ A RECUSA QUE CHEGA AO CLIENTE — e ela é uma LISTA FECHADA, nunca o eco do erro.
+ *
+ * As três recusas da guarda de orçamento (`SerproCallGuard`) carregam, na própria mensagem, o
+ * consumo do escritório, o teto e a conta que o deriva:
+ *
+ *   "O escritório já consumiu 412 consultas pagas ao SERPRO neste mês (teto 500, = 34 empresas × …)"
+ *
+ * Repassar `err.message` ao portal do cliente publicaria o orçamento interno do escritório na tela
+ * de um cliente — e o mesmo vale para os erros do próprio serviço, que carregam idServiço, CNPJ do
+ * procurador e nomes de configuração.
+ *
+ * ⚠ POR ISSO A TRADUÇÃO FALHA FECHADO: código que não estiver na lista cai na frase genérica. Um
+ * código NOVO do SERPRO nasce traduzido como "não deu, fale com o contador" em vez de vazar.
+ *
+ * ⚠ E ela devolve `podeTentarDeNovo`, porque as duas coisas são diferentes para quem está na tela:
+ * repetição em pouco tempo passa sozinha; teto estourado só o escritório resolve.
+ */
+const RECUSA_PARA_CLIENTE = Object.freeze({
+  SERPRO_CHAMADA_REPETIDA: {
+    mensagem: "Esta guia foi pedida à Receita há pouco. Aguarde alguns minutos e tente de novo.",
+    podeTentarDeNovo: true,
+  },
+  SERPRO_TETO_DIARIO: {
+    mensagem: "Não foi possível recalcular agora. Fale com o seu contador.",
+    podeTentarDeNovo: false,
+  },
+  SERPRO_TETO_MENSAL_ESCRITORIO: {
+    mensagem: "Não foi possível recalcular agora. Fale com o seu contador.",
+    podeTentarDeNovo: false,
+  },
+});
+
+const RECUSA_GENERICA = Object.freeze({
+  mensagem: "Não foi possível gerar a guia atualizada agora. Tente mais tarde ou fale com o seu contador.",
+  podeTentarDeNovo: true,
+});
+
+export function traduzirRecusaParaCliente(err) {
+  const conhecida = RECUSA_PARA_CLIENTE[String(err?.code || "")];
+  return {
+    // ⚠ O CÓDIGO viaja (a tela pode querer distinguir os casos); a MENSAGEM ORIGINAL, nunca.
+    codigo: String(err?.code || "RECALCULO_FALHOU"),
+    ...(conhecida || RECUSA_GENERICA),
+  };
 }

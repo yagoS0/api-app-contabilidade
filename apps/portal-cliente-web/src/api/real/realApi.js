@@ -312,6 +312,22 @@ export function createRealApi() {
       );
     },
 
+    /**
+     * POST /client/companies/:id/guides/:guideId/recalculate
+     *
+     * ⚠⚠ ESTA É A PRIMEIRA CHAMADA DO PORTAL DO CLIENTE QUE GASTA DINHEIRO DO ESCRITÓRIO: uma
+     * consulta PAGA ao SERPRO, contra o teto mensal da carteira inteira. O servidor exige guia
+     * LIBERADA, VENCIDA e recalculável — as três travas ficam lá, não aqui.
+     *
+     * ⚠ A recusa volta TRADUZIDA (sem teto, custo ou nome do fornecedor) e com `podeTentarDeNovo`.
+     */
+    async recalcularGuia(companyId, guideId) {
+      return pedir(
+        `/client/companies/${encodeURIComponent(companyId)}/guides/${encodeURIComponent(guideId)}/recalculate`,
+        { method: "POST" }
+      );
+    },
+
     // --- Alíquota / Fluxo (usados no resumo da Home) ------------------------
     async getAliquotas(companyId, { from, to } = {}) {
       const data = await pedir(

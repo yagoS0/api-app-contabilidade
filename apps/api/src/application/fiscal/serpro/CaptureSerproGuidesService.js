@@ -3,6 +3,7 @@ import {
   createOrUpdateGuideFromProcessing,
   hashPdf,
   toGuideResponse,
+  PUBLICO,
 } from "../../guides/GuideService.js";
 import { generateEntriesFromCircular, FONTE_VALOR_GUIA } from "../../accounting/AccountingEntryGeneratorService.js";
 import { parseArrecadacaoComposicao } from "./parseArrecadacao.js";
@@ -627,7 +628,8 @@ export async function capturePgdasGuideForCompany({
       razao: portalClient.razao,
       cnpj: portalClient.cnpj,
     },
-    guide: toGuideResponse(guide),
+    // ⚠ Resposta do ESCRITÓRIO — o aviso de recálculo dele nomeia o custo da chamada.
+    guide: toGuideResponse(guide, { publico: PUBLICO.ESCRITORIO }),
     circular,
     accounting,
     integration: {

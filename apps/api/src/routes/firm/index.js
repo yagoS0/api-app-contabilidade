@@ -95,6 +95,7 @@ import {
   listGuidesByCompany,
   toPendingGuideReportItem,
   toGuideResponse,
+  PUBLICO,
 } from "../../application/guides/GuideService.js";
 import { normalizeCompetencia, normalizeGuideType, colunaMatrizDaGuia, envioDeEmailFalhou } from "../../application/guides/guideContract.js";
 // ⚠ As mensagens de "não foi enviado" moram no domínio, não aqui: era escrevendo-as no lugar de uso
@@ -2383,7 +2384,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         limit,
       });
       return res.json({
-        data: result.items.map(toGuideResponse),
+        // ⚠⚠ NUNCA `.map(toGuideResponse)` CRU: o `map` passa o ÍNDICE como 2º argumento, e o 2º
+        // argumento agora é `{ publico }` — a guia 0 seria serializada com `publico: 0`.
+        data: result.items.map((g) => toGuideResponse(g, { publico: PUBLICO.ESCRITORIO })),
         page: result.page,
         limit: result.limit,
         total: result.total,
@@ -2423,7 +2426,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         // via página `Envio de e-mails em lote` (endpoint POST /firm/guides/batch-send).
         return res.json({
           ok: true,
-          guide: toGuideResponse(result.guide),
+          guide: toGuideResponse(result.guide, { publico: PUBLICO.ESCRITORIO }),
           emailStatus: "PENDING",
           emailMessage: "Guia processada e aguardando envio manual em lote.",
         });
@@ -3471,7 +3474,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
 
       // Auto-send REMOVIDO. Guia fica em PENDING aguardando envio em lote.
-      return res.json({ ok: true, guide: toGuideResponse(updated), emailDispatch: null });
+      return res.json({ ok: true, guide: toGuideResponse(updated, { publico: PUBLICO.ESCRITORIO }), emailDispatch: null });
     },
   );
 
@@ -3581,7 +3584,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         log.warn({ err: provErr?.message || provErr, guideId: updated.id }, "Falha ao gerar provisão pós-manual-assign");
       }
 
-      return res.json({ ok: true, guide: toGuideResponse(updated) });
+      return res.json({ ok: true, guide: toGuideResponse(updated, { publico: PUBLICO.ESCRITORIO }) });
     }
   );
 
@@ -3751,7 +3754,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const circularAtualizada = Boolean(baixa?.ok) || Number(baixa?.provisoesMarcadas || 0) > 0;
       return res.json({
         ok: true,
-        guide: toGuideResponse(updated),
+        guide: toGuideResponse(updated, { publico: PUBLICO.ESCRITORIO }),
         parcelaBaixa, inssBaixa, normalBaixa,
         // Dados do comprovante do SERPRO (quando localizado). `aplicado` diz se eles COMANDARAM
         // a baixa — se false, a guia foi marcada como paga mas o lançamento precisa de conferência.

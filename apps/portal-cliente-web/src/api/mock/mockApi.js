@@ -824,7 +824,30 @@ function criarEstado() {
           serproLastCheckResult: null,
           serproService: null,
           canConfirmPayment: false,
-          canRecalculate: false,
+          // ⚠⚠ O PEDIDO DE GUIA ATUALIZADA — e ele SÓ existe na guia VENCIDA e não paga (decisão do
+          // dono). Sem estes três campos o botão nasceria inalcançável offline, e ele é o primeiro
+          // do portal do cliente que GASTA dinheiro do escritório: é o que mais precisa ser visto
+          // antes de ir ao ar.
+          //
+          // ⚠ `tipo === "SIMPLES"` porque só o DAS é recalculável aqui — a guia de INSS não é, e um
+          // mock que oferecesse as duas esconderia a distinção.
+          canRecalculate: vencida && tipo === "SIMPLES",
+          vencida,
+          vencimentoEstimado: false,
+          // ⚠ O TEXTO É O DO CLIENTE: sem teto, sem custo por chamada, sem o nome do fornecedor —
+          // isso é orçamento interno do escritório. É a mesma frase que `PUBLICO.CLIENTE` produz.
+          avisoDeRecalculo: vencida && tipo === "SIMPLES"
+            ? {
+              vencida: true,
+              especie: "DAS_SIMPLES",
+              titulo: "Esta guia está vencida",
+              texto: `Ela venceu em ${venc.toISOString().slice(0, 10).split("-").reverse().join("/")}. `
+                + "Recalcular NÃO atualiza esta guia: a Receita gera uma guia NOVA, com juros e multa, "
+                + "e o valor a pagar será maior. O pedido é feito ao sistema da Receita e pode "
+                + "demorar alguns segundos.",
+              tom: "atencao",
+            }
+            : null,
           parcelamentoId: null,
           numeroParcela: null,
           quantidadeParcelas: null,
@@ -1607,6 +1630,49 @@ export function createMockApi() {
         mimeType: "application/pdf",
         expiresIn: null,
       };
+    },
+
+    /**
+     * ⚠⚠ O PEDIDO DE GUIA ATUALIZADA, no mock — e ele reproduz as RECUSAS, não só o sucesso.
+     *
+     * Um mock que só conhece o caminho feliz esconde exatamente o que esta tela precisa mostrar: o
+     * teto do escritório estourado (o cliente não pode resolver sozinho) e a guia nova que voltou
+     * SEM juros e multa (o cliente pagaria a menor). A escolha é pelo ÚLTIMO DÍGITO do id da guia,
+     * para os três desfechos serem alcançáveis sem backend e sem esperar sorte.
+     */
+    async recalcularGuia(companyId, guideId) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const guia = estado.guias.find((g) => g._clientId === id && g.guideId === String(guideId));
+      if (!guia || !guia.liberadaCliente) throw new ApiError(404, "not_found");
+      if (!guia.vencida) {
+        // ⚠ A assinatura é `(status, code, message, corpo)` — o corpo INTEIRO viaja no 4º, e é dele
+        // que a tela lê `podeTentarDeNovo`.
+        throw new ApiError(400, "guia_nao_vencida", "Esta guia ainda não venceu — use a que você já tem.", {
+          message: "Esta guia ainda não venceu — use a que você já tem.",
+          podeTentarDeNovo: false,
+        });
+      }
+      const ultimo = Number(String(guideId).slice(-1)) || 0;
+      if (ultimo % 5 === 0) {
+        // ⚠ A recusa do teto: traduzida, sem número nenhum, e SEM oferecer "tentar de novo".
+        throw new ApiError(
+          429,
+          "SERPRO_TETO_MENSAL_ESCRITORIO",
+          "Não foi possível recalcular agora. Fale com o seu contador.",
+          { message: "Não foi possível recalcular agora. Fale com o seu contador.", podeTentarDeNovo: false },
+        );
+      }
+      const acrescimo = ultimo % 3 === 0
+        // ⚠⚠ "ANTES DE PAGAR", nunca "antes de enviar ao cliente": esta é a tela DO cliente. A frase
+        // do contador aqui faz quem lê achar que o aviso não é para ele — e é justamente o aviso que
+        // impede alguém de pagar uma guia a menor. O backend produz as duas versões
+        // (`leituraDosAcrescimos({ ehCliente })`); o mock reproduz a do cliente.
+        ? { estado: "ausentes", multa: 0, juros: 0, texto: "A guia nova veio SEM juros e multa. Numa guia vencida isso pode significar que este serviço da Receita não gera a versão com acréscimos. Confira no documento antes de pagar.", tom: "atencao" }
+        : { estado: "presentes", multa: 12.94, juros: 1.78, texto: "A guia nova veio com juros e multa.", tom: "neutro" };
+      guia.valor = Number((Number(guia.valor) * 1.0726).toFixed(2));
+      guia.paymentStatus = "OPEN";
+      return { ok: true, guide: { ...guia }, acrescimos: acrescimo };
     },
 
     // --- Alíquota -----------------------------------------------------------

@@ -713,7 +713,8 @@ export async function syncSerproInssForCompany({ portalClientId, competencia, co
 
   return {
     company: { id: portalClient.id, razao: portalClient.razao, cnpj: portalClient.cnpj },
-    guide: toGuideResponse(guide),
+    // ⚠ Resposta do ESCRITÓRIO — o aviso de recálculo dele nomeia o custo da chamada.
+    guide: toGuideResponse(guide, { publico: PUBLICO.ESCRITORIO }),
     circular,
     accounting: { ok: true, generatedEntries: [] },
     inss: {

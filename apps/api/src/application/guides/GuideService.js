@@ -13,6 +13,12 @@ import {
   canGuideConfirmPayment, canGuideRecalculate, isGuideOverdue, vencimentoDaGuia, avisoDeRecalculo,
   especieDoRecalculo,
 } from "./GuidePaymentStatusService.js";
+
+/** Para quem esta guia está sendo serializada. ⚠ Lista FECHADA, e o default é o mais estreito. */
+export const PUBLICO = Object.freeze({
+  CLIENTE: "CLIENTE",
+  ESCRITORIO: "ESCRITORIO",
+});
 import { NAO_TENTADA, lerLinhaDigitavelDoPdf, situacaoDaLinhaDigitavel } from "./lerLinhaDigitavelDoPdf.js";
 
 function normalizeCnpj(value) {
@@ -244,7 +250,18 @@ export async function listPendingGuidesReport({
   return { items, total, page: pageNum, limit: take };
 }
 
-export function toGuideResponse(item) {
+/**
+ * ⚠⚠ ESTE SERIALIZER SERVE OS DOIS PORTAIS. `routes/client/index.js` o usa para a listagem do
+ * CLIENTE e `routes/firm/index.js` para a do ESCRITÓRIO — e isso não é óbvio olhando qualquer um
+ * dos dois arquivos.
+ *
+ * ⚠⚠ POR ISSO `publico` DEFAULTA PARA `"CLIENTE"`, o público MAIS ESTREITO. O aviso de recálculo
+ * diz, para o escritório, *"cada recálculo é uma chamada PAGA ao SERPRO, contra o teto mensal do
+ * escritório"* — orçamento interno que não é assunto do cliente. Com o default no lado largo, um
+ * chamador novo que esquecesse o parâmetro VAZARIA; com o default no estreito, ele perde a frase do
+ * custo, que é visível e barato de consertar. Falha para o lado seguro.
+ */
+export function toGuideResponse(item, { publico = PUBLICO.CLIENTE } = {}) {
   const now = new Date();
   return {
     guideId: item.id,
@@ -278,7 +295,7 @@ export function toGuideResponse(item) {
     vencimentoEstimado: vencimentoDaGuia(item, now).derivado,
     // ⚠ O texto do aviso vem PRONTO daqui, e os dois portais leem o mesmo. Escrito em cada tela,
     // eles divergiriam na primeira correção — e este é o aviso que precede um gasto e um valor maior.
-    avisoDeRecalculo: avisoDeRecalculo({ guide: item, now }),
+    avisoDeRecalculo: avisoDeRecalculo({ guide: item, now, ehCliente: publico !== PUBLICO.ESCRITORIO }),
     // Q24: vínculo de parcelamento (pra UI rotular a guia como parcelamento, não "DAS").
     parcelamentoId: item.parcelamentoId || null,
     numeroParcela: item.numeroParcela != null ? Number(item.numeroParcela) : null,

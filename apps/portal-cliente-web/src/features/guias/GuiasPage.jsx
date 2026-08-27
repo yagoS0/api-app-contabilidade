@@ -3,6 +3,9 @@ import { api } from "../../api";
 import { AlertaErro, BotaoCopiar, Carregando, Chip, Vazio } from "../../components/ui";
 import { linhaDigitavelDaGuia } from "./lib/linhaDigitavelTela";
 import { detalheDaGuia, rotuloDaGuia } from "./lib/rotuloGuia";
+import {
+  avisoAntesDePedir, avisoDosAcrescimos, leituraDaRecusa, podePedirGuiaAtualizada,
+} from "./lib/recalculoDaGuia";
 import { useCarregamento } from "../../lib/hooks";
 import { mensagemDeErro } from "../../lib/mensagens";
 import {
@@ -143,10 +146,39 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
 
   const resposta = query.dados;
   const guias = resposta?.data || [];
+  const [pedido, setPedido] = useState(null);        // { guia, aviso }
+  const [pedindo, setPedindo] = useState(false);
+  const [recusa, setRecusa] = useState(null);
+  const [avisoAcrescimo, setAvisoAcrescimo] = useState(null);
   const total = resposta?.total ?? 0;
   const limite = resposta?.limit ?? LIMITE;
   const totalPaginas = Math.max(1, Math.ceil(total / limite));
   const paginaAtual = resposta?.page ?? pagina;
+
+  // ⚠⚠ PEDIR A GUIA ATUALIZADA É O PRIMEIRO BOTÃO DESTE PORTAL QUE GASTA DINHEIRO DO ESCRITÓRIO:
+  // uma consulta PAGA ao SERPRO, contra o teto mensal da carteira inteira. Por isso ele só aparece
+  // na guia VENCIDA (decisão do dono), a confirmação REPETE o que vai acontecer, e a recusa do teto
+  // chega sem número nenhum — quem resolve isso é o contador.
+  async function pedirGuiaAtualizada() {
+    const guia = pedido?.guia;
+    if (!guia || pedindo) return;
+    setPedindo(true);
+    setRecusa(null);
+    try {
+      const r = await api.recalcularGuia(companyId, guia.guideId);
+      setPedido(null);
+      // ⚠ O aviso dos acréscimos FICA na tela depois do fecho do diálogo: se a guia nova veio sem
+      // juros e multa, quem vai pagar precisa ler isso antes de pagar — não pode sumir com o modal.
+      setAvisoAcrescimo(avisoDosAcrescimos(r?.acrescimos));
+      await query.recarregar();
+    } catch (err) {
+      // ⚠ O corpo INTEIRO carrega `podeTentarDeNovo`; `err.message` sozinho perderia a diferença
+      // entre "espere um pouco" e "só o contador resolve".
+      setRecusa(leituraDaRecusa(err?.corpo || { message: mensagemDeErro(err, "Não foi possível pedir a guia atualizada.") }));
+    } finally {
+      setPedindo(false);
+    }
+  }
 
   async function baixar(guia) {
     if (baixandoId) return;
@@ -196,6 +228,49 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
       {erroDownload ? (
         <div className="alerta alerta-erro" role="alert">
           <p>{erroDownload}</p>
+        </div>
+      ) : null}
+
+      {/* ⚠⚠ FICA NA TELA DEPOIS DO DIÁLOGO FECHAR. Se a guia nova voltou SEM juros e multa — e não
+          está confirmado que o serviço da Receita gere a versão com acréscimos —, quem vai pagar
+          precisa ler isso ANTES de pagar. Some junto com o modal seria pior que não avisar. */}
+      {avisoAcrescimo ? (
+        <div className="alerta alerta-atencao" role="status">
+          <p><strong>{avisoAcrescimo.titulo}</strong></p>
+          <p>{avisoAcrescimo.texto}</p>
+          <button type="button" className="btn" onClick={() => setAvisoAcrescimo(null)}>Entendi</button>
+        </div>
+      ) : null}
+
+      {/* ⚠ A recusa do teto chega SEM número: consumo e teto do escritório não são assunto do
+          cliente. E "tentar de novo" só aparece quando adianta — repetir contra teto estourado
+          gasta a paciência dele e não resolve nada. */}
+      {recusa ? (
+        <div className="alerta alerta-erro" role="alert">
+          <p>{recusa.texto}</p>
+          {recusa.podeTentarDeNovo ? (
+            <button type="button" className="btn" disabled={pedindo} onClick={pedirGuiaAtualizada}>
+              Tentar de novo
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* ⚠⚠ A CONFIRMAÇÃO REPETE O QUE VAI ACONTECER, e não pergunta "tem certeza?". O texto vem
+          PRONTO do servidor — o portal do contador lê o MESMO campo, na versão dele. */}
+      {pedido?.aviso ? (
+        <div className="alerta alerta-atencao" role="alertdialog" aria-label={pedido.aviso.titulo}>
+          <p><strong>{pedido.aviso.titulo}</strong></p>
+          <p>{pedido.aviso.texto}</p>
+          <p className="meta">
+            Guia {rotuloDaGuia(pedido.guia)} · {fmtCompetencia(pedido.guia.competencia)}
+          </p>
+          <button type="button" className="btn" disabled={pedindo} onClick={pedirGuiaAtualizada}>
+            {pedindo ? "Pedindo…" : pedido.aviso.rotuloConfirmar}
+          </button>
+          <button type="button" className="btn" disabled={pedindo} onClick={() => setPedido(null)}>
+            Cancelar
+          </button>
         </div>
       ) : null}
 
@@ -283,6 +358,21 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                         >
                           {baixandoId === guia.guideId ? "Baixando…" : "Baixar PDF"}
                         </button>
+                        {/* ⚠⚠ SÓ NA GUIA VENCIDA (decisão do dono). Guia em aberto não tem por que
+                            ser regerada pelo cliente: o valor seria o mesmo, e o gasto, não.
+                            ⚠ Quem decide é `podePedirGuiaAtualizada`, que lê o veredito PRONTO do
+                            servidor — a tela não deriva "vencida" por conta própria. */}
+                        {podePedirGuiaAtualizada(guia) ? (
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{ marginTop: 6 }}
+                            disabled={pedindo}
+                            onClick={() => { setRecusa(null); setPedido({ guia, aviso: avisoAntesDePedir(guia) }); }}
+                          >
+                            Pedir guia atualizada
+                          </button>
+                        ) : null}
                       </td>
                     </tr>
                   );
