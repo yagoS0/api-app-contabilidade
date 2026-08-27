@@ -7126,7 +7126,17 @@ export function createMockApi() {
         }
         const circular = getCircularRecord(c.companyId, comp);
         const fechado = Boolean(circular?.fechadoContabilEm);
-        const pendentes = CHECKLIST.slice(0, idx % 3); // 0, 1 ou 2 itens em aberto
+        // ⚠⚠ `(idx + 1) % 3`, NÃO `idx % 3` — e a diferença de um decide se um ramo inteiro é
+        // alcançável offline. As empresas APURADAS do mock são as de índice 2 e 4
+        // (`apuracao.apurada: i === 2 || i === 4`), que são as que caem no chip "Falta fechar". Com
+        // `idx % 3` as duas ficavam com check-list pendente ⇒ `podeFechar: false` ⇒ **o botão
+        // "🔒 Fechar as N" nunca aparecia no modo offline**, mesmo depois de a condição morta ser
+        // consertada em 27/08/2026. Foi assim que se descobriu: o conserto foi verificado no
+        // navegador e o botão continuou ausente.
+        // ⚠ Com `+ 1`, a de índice 2 fica com ZERO pendências (fecha) e a de índice 4 com duas (não
+        // fecha) — o que também deixa alcançável o caso que importa: **o número do botão (1) é MENOR
+        // que o do chip (2)**, porque "falta fechar" é apuração e `podeFechar` é contábil.
+        const pendentes = CHECKLIST.slice(0, (idx + 1) % 3); // 0, 1 ou 2 itens em aberto
         return {
           companyId: c.companyId,
           razao: c.razao,

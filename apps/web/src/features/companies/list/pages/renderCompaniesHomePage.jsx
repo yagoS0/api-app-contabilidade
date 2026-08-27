@@ -506,8 +506,11 @@ export function CompaniesHomePage({
    * demais seguem. Por isso o relatório final conta recusas em vez de abortar no primeiro erro.
    */
   async function fecharAsProntas() {
-    if (fechandoLote || !contagemTravas?.prontas) return;
-    const alvos = [...travas.values()].filter((l) => l.podeFechar);
+    // ⚠⚠ O ALVO É `prontasVisiveis`, não a carteira inteira. Ler `travas.values()` aqui fecharia
+    // empresas fora do recorte que o contador está olhando — e a confirmação abaixo lista só as 12
+    // primeiras, então ele nem veria os nomes das demais.
+    if (fechandoLote || !prontasVisiveis.length) return;
+    const alvos = prontasVisiveis;
     // eslint-disable-next-line no-alert
     const ok = window.confirm(
       `Fechar o mês ${dashboardCompetencia} de ${alvos.length} empresa(s)?\n\n`
@@ -815,6 +818,22 @@ export function CompaniesHomePage({
     [empresasVisiveis, selecionados],
   );
 
+  /**
+   * ⚠⚠ AS QUE DÁ PARA FECHAR **E** ESTÃO NA TELA — as duas condições, e a segunda é a que faltava.
+   *
+   * `contagemTravas.prontas` conta `podeFechar` na CARTEIRA INTEIRA. Usá-la para um botão que age
+   * fecharia empresas que o contador não está olhando — exatamente o risco que o comentário do botão
+   * nomeia (*"fácil de clicar sem ter olhado quem vai ser fechado"*). A regra de qual população vale
+   * já está escrita neste arquivo: **`empresasVisiveis`, não `filteredCompanies` — o que está na TELA
+   * é a aba ativa**.
+   */
+  const prontasVisiveis = useMemo(() => {
+    if (!travas) return [];
+    return (empresasVisiveis || [])
+      .map((c) => travas.get(c.companyId))
+      .filter((l) => l?.podeFechar);
+  }, [empresasVisiveis, travas]);
+
   return (
     <div className="dashboard-home-page">
       <AppShell className="dashboard-home-shell">
@@ -971,6 +990,15 @@ export function CompaniesHomePage({
                 // dizia ao contador que aquilo não era assunto dele. Ferramenta de diagnóstico
                 // escondida atrás de um aviso de "não mexa" é o mesmo que não existir.
                 { label: "Pendências de e-mail", onClick: onOpenPendingReport },
+                // ⚠⚠ ESTA TELA EXISTIA E NÃO TINHA NENHUM LINK — de sempre até 27/08/2026.
+                // `onOpenGuideUpload` era desestruturada nas props (`:297`) e **nunca referenciada**
+                // no arquivo; `/guides/upload` só se alcançava digitando a URL.
+                // ⚠ E ela é a ÚNICA tela que mostra o PDF de guia que o parser NÃO conseguiu casar
+                // com empresa nenhuma. Sem porta, essas guias eram invisíveis: ninguém as vê no
+                // dashboard (não pertencem a empresa nenhuma) e ninguém as vê aqui.
+                // ⚠ Fica junto de "Pendências de e-mail" porque as duas respondem à mesma pergunta —
+                // *o que ficou pelo caminho?* — e nenhuma das duas é rotina diária.
+                { label: "Guias não identificadas", onClick: onOpenGuideUpload },
               ]}
             />
             <Button
@@ -1133,9 +1161,20 @@ export function CompaniesHomePage({
                   </button>
                 );
               })}
-              {/* Só aparece dentro do recorte "Prontas": um botão de fechar em lote solto na barra
-                  seria fácil de clicar sem ter olhado quem vai ser fechado. */}
-              {travaFiltro === "prontas" && contagemTravas.prontas > 0 && (
+              {/* ⚠⚠ ESTE BOTÃO NUNCA APARECEU NA TELA — de 25/07/2026 até 27/08/2026.
+                  A condição era `travaFiltro === "prontas"`, e **`"prontas"` não é chave de chip
+                  nenhum**: as que existem são `all`, `problema`, `fechar`, `apurar`, `fechada` e
+                  `enviar` (`estadoApuracao.js` + o ramo `enviar` logo acima). A palavra só vivia em
+                  `contagemTravas.prontas` e no guard de `fecharAsProntas` — nunca em `setTravaFiltro`.
+                  ⚠ Conferido no navegador antes de mexer: clicando o chip "☑ Falta fechar · 2", o
+                  botão não aparecia. O fechamento contábil em lote existia, é sequencial, revalida no
+                  servidor e relata as recusas — **e não tinha porta**.
+                  ⚠ O `features/companies/CLAUDE.md` descrevia o botão como se ele estivesse na tela.
+
+                  A intenção original fica: ele **só aparece dentro de um recorte**, para ninguém
+                  fechar em lote sem ter olhado quem vai ser fechado. O recorte é "Falta fechar", que
+                  é literalmente *"apurada — falta concluir o fechamento do mês"*. */}
+              {travaFiltro === "fechar" && prontasVisiveis.length > 0 && (
                 <button
                   type="button"
                   onClick={fecharAsProntas}
@@ -1146,7 +1185,10 @@ export function CompaniesHomePage({
                     cursor: fechandoLote ? "wait" : "pointer",
                   }}
                 >
-                  {fechandoLote ? "Fechando…" : `🔒 Fechar as ${contagemTravas.prontas}`}
+                  {/* ⚠ O número é o das VISÍVEIS que dá para fechar — ele pode ser MENOR que o do
+                      chip, e isso é certo: "falta fechar" inclui quem ainda tem lançamento com
+                      problema, e essa o servidor recusaria. */}
+                  {fechandoLote ? "Fechando…" : `🔒 Fechar as ${prontasVisiveis.length}`}
                 </button>
               )}
             </div>

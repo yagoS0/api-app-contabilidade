@@ -925,6 +925,17 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
               <PerfilFiscalTabWrapper companyId={companyId} feedback={feedback} />
             </Suspense>
           </ErrorBoundary>
+          {/* ⚠⚠ ESTA LINHA FALTAVA ATÉ 27/08/2026, e a aba era MUDA: "Salvar perfil" gravava, o hook
+              chamava `notifySuccess`/`notifyError`, e **ninguém desenhava a mensagem**.
+              ⚠⚠ É O MESMO DEFEITO QUE A ABA APURAÇÃO PAGOU EM 25/08/2026 — o dono relatou como *"ao
+              clicar em classificar competência nada acontece"* — repetido na aba que nasceu no mesmo
+              dia, oito linhas acima neste arquivo. Nem o conserto de lá nem o comentário longo que
+              ficou ao lado dele protegeram esta.
+              ⚠ A causa é estrutural: abas que usam `CompanyTabLayout` ganham o `Feedback` de graça
+              (ele o renderiza por dentro); as que montam a moldura à mão precisam declará-lo, e
+              **nada obriga**. Migrar esta aba para o primitivo resolveria a classe inteira — é
+              trabalho à parte, e fica nomeado. */}
+          <Feedback message={feedback.message} error={feedback.error} />
         </div>
       </div>
     );
