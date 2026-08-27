@@ -27,6 +27,7 @@ import { createPortalInvoicesRouter } from "../portalInvoices.js";
 import { createPortalSyncRouter } from "../portalSync.js";
 import { createAccountingEntriesRouter } from "./accountingEntries.js";
 import { createConferenciaRouter } from "./conferencia.js";
+import { createRecorrenciaRouter } from "./recorrencia.js";
 import { createNotasRouter } from "./notas.js";
 import { createApuracaoV2Router } from "./apuracaoV2.js";
 import { createPlanejamentoRouter } from "./planejamento.js";
@@ -5035,6 +5036,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // e nenhuma rota deste colide com as de la (`/conferencia*` nao existe naquele arquivo).
   const conferenciaRouter = createConferenciaRouter({ log });
   router.use("/companies/:companyId", conferenciaRouter);
+
+  // As recorrencias (a serie que volta, e com que valor). ⚠ Nenhuma rota daqui colide com as de
+  // cima: `/recorrencia*` nao existe em nenhum outro router montado neste prefixo.
+  const recorrenciaRouter = createRecorrenciaRouter({ log });
+  router.use("/companies/:companyId", recorrenciaRouter);
 
   // Q12.A.3: módulo Notas Fiscais (procurações, competências, pendências)
   const notasRouter = createNotasRouter({ log });

@@ -4,6 +4,14 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { DeclaradoRecusado } from "../../application/declarados/DeclaradoService.js";
 import { importarOfxDoCliente } from "../../application/declarados/ImportOfxService.js";
+// ⚠ A recorrencia DECLARADA pelo cliente. A regra e a escrita moram no servico; esta rota traduz
+// HTTP e nada mais.
+import {
+  RECUSA_DA_SERIE,
+  SerieRecusada,
+  declararSerie,
+  paraTela,
+} from "../../application/fluxo/SerieRecorrenteService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
 import { requireAccountType } from "../../middlewares/requireAccountType.js";
@@ -732,6 +740,56 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       }
     },
   );
+
+  /**
+   * ⚠⚠ O CLIENTE DECLARA A RECORRÊNCIA — e ela nasce PENDENTE.
+   *
+   * > Dono, 25/08/2026: *"o contador deve poder indicar o que é recorrência também, ou o próprio
+   * > cliente — 'essa é a taxa anual que pago de Conselho'."*
+   *
+   * É o caminho principal para o que o detector NÃO enxerga: a despesa que só aparece no extrato, e
+   * qualquer padrão que não seja mensal. **Ela não entra no fluxo sozinha** — quem confirma é o
+   * contador, na fila dele, do mesmo jeito que a nota e o extrato já seguem.
+   *
+   * ⚠⚠ NENHUMA CONTA APARECE NESTA TELA, e a rota não aceita nenhuma: o cliente não tem plano de
+   * contas, e esta declaração é sobre CAIXA. A conta é sugerida depois, para o contador.
+   *
+   * ⚠ A EXTRAÇÃO DE TEXTO LIVRE NÃO EXISTE. O plano previa a LLM lendo *"1.000 que eu pago de jantar
+   * todo mês"* e extraindo `{valor, periodicidade, descrição}` — e **não há nenhuma integração de
+   * LLM neste repositório**. Esta porta recebe os campos já estruturados; quem os estrutura hoje é a
+   * pessoa preenchendo a tela. Aceitar um texto e fingir que foi lido seria pior que não aceitar.
+   *
+   * ⚠ Sem `minRole`: declarar não é ato fiscal nem financeiro — é o cliente contando o que ele sabe,
+   * e nada acontece até o contador confirmar. Mesmo piso das outras rotas financeiras do cliente.
+   */
+  router.post("/companies/:companyId/recorrencia/declarar", requireClientCompanyAccess(), async (req, res) => {
+    try {
+      const corpo = req.body || {};
+      const r = await declararSerie({
+        portalClientId: String(req.params.companyId),
+        lado: String(corpo.lado || "").trim(),
+        // ⚠ A chave de uma declaração é a DESCRIÇÃO CANONIZADA do que a pessoa nomeou — ela não tem
+        // documento de contraparte. Quem canoniza é o serviço; aqui só se passa o que veio.
+        chave: corpo.chave ?? corpo.rotulo,
+        rotulo: corpo.rotulo,
+        periodicidade: String(corpo.periodicidade || "").trim(),
+        valorDeclarado: corpo.valor ?? corpo.valorDeclarado,
+        usuarioId: req.auth?.user?.id || null,
+        agora: new Date(),
+      });
+      // ⚠⚠ `jaDecidida` VIAJA. Uma série que o contador já decidiu NÃO é sobrescrita pela declaração
+      // — e o cliente precisa saber que a dele não mudou nada, em vez de achar que mudou.
+      return res.json({ ok: true, serie: paraTela(r.serie), jaDecidida: r.jaDecidida });
+    } catch (e) {
+      if (e instanceof SerieRecusada) {
+        // ⚠ 503 para a tabela ausente: é o mundo que não está pronto, não o pedido que está errado.
+        const status = e.codigo === RECUSA_DA_SERIE.INDISPONIVEL ? 503 : 400;
+        return res.status(status).json({ ok: false, error: e.codigo, message: e.frase });
+      }
+      log?.error?.({ err: e }, "recorrencia_declarar_falhou");
+      return res.status(500).json({ ok: false, error: "recorrencia_declarar_falhou" });
+    }
+  });
 
   // Fase 7 (stub inicial)
   router.get("/companies/:companyId/transactions", requireClientCompanyAccess(), async (_req, res) => {
