@@ -48,6 +48,38 @@ export async function markGuidePaidManual({ guideId, userId }) {
   });
 }
 
+/**
+ * ⚠⚠ O CLIENTE CONFIRMA QUE PAGOU (decisão do dono, 27/08/2026).
+ *
+ * *"O cliente confirmar deve ser como a confirmação da consulta de pagamento"* — ou seja: marca a
+ * guia e **para aí**. Quem faz a baixa contábil continua sendo o contador, pela Circular. A guarda
+ * que garante isso é `pagamentoAlcancaOContabil`, em `GuideToProvisionService`.
+ *
+ * ⚠⚠ A AFIRMAÇÃO DO CLIENTE VAI EM COLUNAS PRÓPRIAS (`clienteConfirmouEm` /
+ * `clienteConfirmouPorUserId`), e não nas de confirmação manual. Quando o SERPRO depois localizar o
+ * comprovante, `markGuidePaidBySerpro` **zera** `paymentConfirmedAt`/`paymentConfirmedByUserId` —
+ * corretamente, porque lá elas descrevem uma confirmação MANUAL que deixou de valer. Guardar a
+ * afirmação do cliente ali a apagaria, e com ela o registro de quem disse o quê.
+ *
+ * ⚠ SEM COMPROVANTE (decisão do dono): o cliente confirma sem anexar. `comprovantePdfFileId` NÃO é
+ * tocado — a prova continua vindo do SERPRO quando a consulta de pagamento rodar.
+ */
+export async function markGuidePaidByCliente({ guideId, userId }) {
+  const agora = new Date();
+  return updateGuidePaymentStatus(guideId, {
+    paymentStatus: "PAID",
+    paymentStatusSource: "CLIENTE",
+    clienteConfirmouEm: agora,
+    clienteConfirmouPorUserId: userId ? String(userId) : null,
+    // ⚠ `paymentConfirmedAt` recebe a data TAMBÉM: ela é o campo que a tela do contador já lê para
+    // dizer "confirmado em …", e deixá-lo nulo faria a linha aparecer paga sem data. O que a
+    // distingue não é a ausência da data — é a PROCEDÊNCIA.
+    paymentConfirmedAt: agora,
+    paymentConfirmedByUserId: userId ? String(userId) : null,
+    serproLastCheckResult: "CLIENTE_CONFIRMOU",
+  });
+}
+
 export async function markGuidePaidBySerpro({ guideId }) {
   const now = new Date();
   return updateGuidePaymentStatus(guideId, {

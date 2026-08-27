@@ -5,6 +5,7 @@
 
 import {
   podePedirGuiaAtualizada, avisoAntesDePedir, leituraDaRecusa, avisoDosAcrescimos,
+  podeConfirmarPagamento, avisoAntesDeConfirmar,
 } from "../recalculoDaGuia";
 
 const VENCIDA = {
@@ -126,5 +127,38 @@ describe("⚠⚠ A GUIA NOVA PODE TER VINDO SEM JUROS E MULTA — e o cliente pr
   it("sem o bloco, nada é dito", () => {
     expect(avisoDosAcrescimos(null)).toBeNull();
     expect(avisoDosAcrescimos(undefined)).toBeNull();
+  });
+});
+
+describe("⚠⚠ CONFIRMAR QUE PAGOU — e o que a confirmação NÃO faz", () => {
+  it("guia em aberto oferece; guia paga não", () => {
+    expect(podeConfirmarPagamento({ canConfirmPayment: true })).toBe(true);
+    expect(podeConfirmarPagamento({ canConfirmPayment: false })).toBe(false);
+  });
+
+  it("⚠ campo ausente NÃO oferece — ausência não é permissão", () => {
+    for (const g of [{}, null, undefined, { canConfirmPayment: 1 }, { canConfirmPayment: "true" }]) {
+      expect(podeConfirmarPagamento(g)).toBe(false);
+    }
+  });
+
+  it("⚠⚠ a confirmação diz que a BAIXA CONTÁBIL continua com o contador", () => {
+    // Um "confirmar pagamento?" seco faria o cliente achar que o assunto está encerrado dos dois
+    // lados — e não está.
+    const a = avisoAntesDeConfirmar({ canConfirmPayment: true });
+    expect(a.texto).toMatch(/baixa na contabilidade continua sendo feita por ele/i);
+    expect(a.texto).toMatch(/sua confirmação não a lança/i);
+  });
+
+  it("⚠ e diz que NÃO precisa anexar comprovante (decisão do dono)", () => {
+    expect(avisoAntesDeConfirmar({ canConfirmPayment: true }).texto).toMatch(/Não é preciso anexar comprovante/i);
+  });
+
+  it("⚠ o rótulo do botão é a AFIRMAÇÃO dele, não um 'OK'", () => {
+    expect(avisoAntesDeConfirmar({ canConfirmPayment: true }).rotuloConfirmar).toBe("Já paguei esta guia");
+  });
+
+  it("sem oferta não há aviso", () => {
+    expect(avisoAntesDeConfirmar({ canConfirmPayment: false })).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import { leituraDoPagamento, tituloDoPagamento } from "../lib/procedenciaDoPagamento";
 import { useEffect, useState, useMemo } from "react";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { EstornoBaixaModal } from "./EstornoBaixaModal";
@@ -553,28 +554,67 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
       {!placeholder && (temAcrescimo || entry.recalculatedAt) && isOpenLike && !pagamentoLocalizado && (
         <div style={{ fontSize: "0.7rem", lineHeight: 1.1, color: "#FFB347" }} title="Tem juros/multa — abra a célula para ver o valor atualizado.">⚠</div>
       )}
-      {pagamentoLocalizado && (
-        <div
-          style={{ fontSize: "0.7rem", lineHeight: 1.1 }}
-          title={entry.comprovante?.dataArrecadacao
-            ? `Pagamento localizado no SERPRO em ${entry.comprovante.dataArrecadacao} — falta lançar a baixa.`
-            : "Pagamento localizado no SERPRO — falta lançar a baixa."}
-        >
-          ⏳
-        </div>
-      )}
+      {/* ⚠⚠ É AQUI QUE A CONFIRMAÇÃO DO CLIENTE CAI, e é aqui que faltava QUEM.
+          O estado "pagamento localizado, falta lançar a baixa" já existia — o que ele não dizia era
+          de ONDE veio a afirmação. Até 27/08/2026 só havia duas origens internas (o SERPRO achou o
+          comprovante, ou o contador marcou), e o `title` cravava "no SERPRO" para as duas. Com o
+          cliente confirmando pelo portal, cravar "no SERPRO" passaria a AFIRMAR prova onde há
+          afirmação de quem paga.
+          ⚠ A marca sai em TEXTO ("⏳ cliente"), não só no `title`: `title` não aparece no teclado
+          nem no toque. */}
+      {pagamentoLocalizado && (() => {
+        const pg = leituraDoPagamento(entry.sourceGuide);
+        return (
+          <div
+            style={{ fontSize: "0.68rem", lineHeight: 1.1, whiteSpace: "nowrap", color: "var(--state-warn)" }}
+            title={[
+              pg ? `⏳ ${pg.rotulo} — falta lançar a baixa.` : "Pagamento localizado — falta lançar a baixa.",
+              pg?.detalhe,
+              entry.comprovante?.dataArrecadacao ? `Arrecadação em ${entry.comprovante.dataArrecadacao}.` : null,
+            ].filter(Boolean).join(" ")}
+          >
+            {pg?.procedencia ? `⏳ ${pg.marca.replace("✓ ", "")}` : "⏳"}
+          </div>
+        );
+      })()}
       {/* ✓ simples, não ✅. O emoji desenha um check DENTRO DE UM QUADRADO verde e lê como caixa
           marcada — sugerindo uma interação que não existe (ele é só indicador). Além disso emoji
           não respeita a paleta: chegava sempre no mesmo verde, ao lado de um número que pode estar
           em quatro cores diferentes. */}
-      {!placeholder && !isOpenLike && (
-        <div
-          style={{ fontSize: "0.8rem", lineHeight: 1.1, color: "var(--success)", fontWeight: 800 }}
-          title={`Pagamento confirmado${entry.sourceGuide?.paymentConfirmedAt ? ` em ${fmtDate(entry.sourceGuide.paymentConfirmedAt)}` : ""}${entry.sourceGuide?.paymentStatusSource === "SERPRO" ? " (via SERPRO)" : ""}${entry.sourceGuide?.comprovantePdfFileId ? " — comprovante de arrecadação disponível" : ""}.`}
-        >
-          ✓
-        </div>
-      )}
+      {/* ⚠⚠ A PROCEDÊNCIA VIROU TEXTO VISÍVEL EM 27/08/2026.
+          O ✓ era IDÊNTICO para "o SERPRO achou o comprovante" e "o contador marcou à mão", com a
+          diferença num `title` — que não aparece no teclado nem no toque. Com a TERCEIRA origem (o
+          cliente confirma pelo portal), isso deixou de ser detalhe estético: a confirmação dele
+          **não lança baixa contábil**, e um ✓ indistinguível faria o contador ler "pago,
+          contabilizado" sobre uma linha em que nada foi lançado — e fechar o mês em cima disso.
+          ⚠ A cor é REFORÇO, nunca a marca: quem não alcança o contábil sai em âmbar, mas o texto
+          já diz de quem é a afirmação. */}
+      {/* ⚠⚠ O ✓ CONTINUA SENDO DIRIGIDO PELO LANÇAMENTO (`!isOpenLike` = a BAIXA foi lançada), e
+          NÃO pelo `paymentStatus` da guia. Eu troquei os dois numa primeira versão e o teste pegou:
+          são fatos diferentes — uma provisão pode ter baixa lançada sem que a GUIA conste paga (o
+          contador lançou à mão), e uma guia pode constar paga sem baixa nenhuma (é o ⏳ acima).
+          Trocar a fonte tiraria o ✓ de toda linha quitada cuja guia não tivesse `paymentStatus`.
+          ⚠ O que MUDOU é o complemento: quando a guia diz de onde veio a confirmação, isso sai em
+          TEXTO ao lado do ✓ — antes as três origens imprimiam o mesmo símbolo. */}
+      {!placeholder && !isOpenLike && (() => {
+        const pg = leituraDoPagamento(entry.sourceGuide);
+        return (
+          <div
+            style={{
+              fontSize: pg?.procedencia ? "0.68rem" : "0.8rem",
+              lineHeight: 1.1,
+              color: "var(--success)",
+              fontWeight: 800,
+              whiteSpace: "nowrap",
+            }}
+            title={tituloDoPagamento(entry.sourceGuide, {
+              dataFormatada: entry.sourceGuide?.paymentConfirmedAt ? fmtDate(entry.sourceGuide.paymentConfirmedAt) : null,
+            }) || "Baixa lançada."}
+          >
+            {pg?.procedencia ? pg.marca : "✓"}
+          </div>
+        );
+      })()}
       {open && hasActions && (
         <div
           onMouseLeave={() => setOpen(false)}

@@ -9,6 +9,7 @@
 
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { lookupAccountsFromHistorico } from "./AccountingEntryGeneratorService.js";
+import { pagamentoAlcancaOContabil } from "../guides/lib/procedenciaDoPagamento.js";
 
 // Mapeia o tipo do Guide (campo guide.tipo) para o eventType padrão quando não há composição.
 const TIPO_GUIDE_TO_EVENT = Object.freeze({
@@ -191,7 +192,17 @@ export async function generateProvisionsFromGuide({ guideId, tx = null }) {
     return new Date(Date.UTC(yyyy, mm, 0, 23, 59, 59, 999));
   })();
 
-  const isPaid = String(guide.paymentStatus || "").toUpperCase() === "PAID";
+  // ⚠⚠ NÃO É MAIS `paymentStatus === "PAID"` — E A DIFERENÇA É O RAZÃO.
+  //
+  // Esta linha decide se a PROVISÃO CONTÁBIL nasce (ou vira) `statusPagamento: "PAGO"`. Desde
+  // 27/08/2026 o CLIENTE pode confirmar pagamento pelo portal, e a decisão do dono é que essa
+  // confirmação *"seja como a confirmação da consulta de pagamento"*: marca a guia e para aí. Sem
+  // esta guarda, o cliente passaria a marcar lançamento contábil como pago — sem baixa lançada, sem
+  // contrapartida, e sem ninguém do escritório ter decidido isso.
+  //
+  // ⚠ SERPRO e MANUAL seguem exatamente como antes. Procedência AUSENTE também: há guias pagas
+  // anteriores à coluna, e tratá-las como "cliente" mudaria contabilidade já fechada.
+  const isPaid = pagamentoAlcancaOContabil(guide);
   const origem = String(guide.source || "").toUpperCase() === "SERPRO" ? "SERPRO" : "UPLOAD";
   const loteImportacao = `GUIDE-${String(guide.id).slice(0, 8)}`;
 

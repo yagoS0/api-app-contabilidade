@@ -4,7 +4,8 @@ import { AlertaErro, BotaoCopiar, Carregando, Chip, Vazio } from "../../componen
 import { linhaDigitavelDaGuia } from "./lib/linhaDigitavelTela";
 import { detalheDaGuia, rotuloDaGuia } from "./lib/rotuloGuia";
 import {
-  avisoAntesDePedir, avisoDosAcrescimos, leituraDaRecusa, podePedirGuiaAtualizada,
+  avisoAntesDeConfirmar, avisoAntesDePedir, avisoDosAcrescimos, leituraDaRecusa,
+  podeConfirmarPagamento, podePedirGuiaAtualizada,
 } from "./lib/recalculoDaGuia";
 import { useCarregamento } from "../../lib/hooks";
 import { mensagemDeErro } from "../../lib/mensagens";
@@ -150,6 +151,9 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
   const [pedindo, setPedindo] = useState(false);
   const [recusa, setRecusa] = useState(null);
   const [avisoAcrescimo, setAvisoAcrescimo] = useState(null);
+  const [confirmacao, setConfirmacao] = useState(null);   // { guia, aviso }
+  const [confirmando, setConfirmando] = useState(false);
+  const [avisoConfirmacao, setAvisoConfirmacao] = useState(null);
   const total = resposta?.total ?? 0;
   const limite = resposta?.limit ?? LIMITE;
   const totalPaginas = Math.max(1, Math.ceil(total / limite));
@@ -177,6 +181,27 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
       setRecusa(leituraDaRecusa(err?.corpo || { message: mensagemDeErro(err, "Não foi possível pedir a guia atualizada.") }));
     } finally {
       setPedindo(false);
+    }
+  }
+
+  // ⚠⚠ CONFIRMAR QUE PAGOU — e isto NÃO lança a baixa contábil. É a mesma forma da confirmação por
+  // consulta de pagamento: marca a guia e para aí. A guarda que garante isso está no SERVIDOR
+  // (`pagamentoAlcancaOContabil`), não aqui — regra que só mora na tela não protege o razão.
+  // ⚠ ZERO CUSTO: é escrita local, sem chamada externa. Nada a ver com o "Pedir guia atualizada".
+  async function confirmarPagamento() {
+    const guia = confirmacao?.guia;
+    if (!guia || confirmando) return;
+    setConfirmando(true);
+    setRecusa(null);
+    try {
+      const r = await api.confirmarPagamentoDaGuia(companyId, guia.guideId);
+      setConfirmacao(null);
+      setAvisoConfirmacao(r?.aviso || null);
+      await query.recarregar();
+    } catch (err) {
+      setRecusa(leituraDaRecusa(err?.corpo || { message: mensagemDeErro(err, "Não foi possível registrar o pagamento.") }));
+    } finally {
+      setConfirmando(false);
     }
   }
 
@@ -239,6 +264,34 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
           <p><strong>{avisoAcrescimo.titulo}</strong></p>
           <p>{avisoAcrescimo.texto}</p>
           <button type="button" className="btn" onClick={() => setAvisoAcrescimo(null)}>Entendi</button>
+        </div>
+      ) : null}
+
+      {/* ⚠ O que a confirmação FEZ e o que ela NÃO fez — dito depois, não só antes. Sem isso o
+          cliente conclui que o assunto está encerrado dos dois lados, e liga perguntando por quê a
+          contabilidade ainda não mostra o pagamento. */}
+      {avisoConfirmacao ? (
+        <div className="alerta alerta-sucesso" role="status">
+          <p>{avisoConfirmacao}</p>
+          <button type="button" className="btn" onClick={() => setAvisoConfirmacao(null)}>Entendi</button>
+        </div>
+      ) : null}
+
+      {/* ⚠⚠ A CONFIRMAÇÃO REPETE O QUE ELA FAZ **E O QUE NÃO FAZ**. Um "confirmar pagamento?" seco
+          faria o cliente achar que a baixa contábil também aconteceu. */}
+      {confirmacao?.aviso ? (
+        <div className="alerta alerta-atencao" role="alertdialog" aria-label={confirmacao.aviso.titulo}>
+          <p><strong>{confirmacao.aviso.titulo}</strong></p>
+          <p>{confirmacao.aviso.texto}</p>
+          <p className="meta">
+            Guia {rotuloDaGuia(confirmacao.guia)} · {fmtCompetencia(confirmacao.guia.competencia)}
+          </p>
+          <button type="button" className="btn" disabled={confirmando} onClick={confirmarPagamento}>
+            {confirmando ? "Registrando…" : confirmacao.aviso.rotuloConfirmar}
+          </button>
+          <button type="button" className="btn" disabled={confirmando} onClick={() => setConfirmacao(null)}>
+            Cancelar
+          </button>
         </div>
       ) : null}
 
@@ -362,6 +415,19 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                             ser regerada pelo cliente: o valor seria o mesmo, e o gasto, não.
                             ⚠ Quem decide é `podePedirGuiaAtualizada`, que lê o veredito PRONTO do
                             servidor — a tela não deriva "vencida" por conta própria. */}
+                        {/* ⚠ Confirmar o pagamento é ZERO custo e vale para QUALQUER guia em
+                            aberto — vencida ou não. É o "Pedir guia atualizada" que é restrito. */}
+                        {podeConfirmarPagamento(guia) ? (
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{ marginTop: 6 }}
+                            disabled={confirmando}
+                            onClick={() => { setRecusa(null); setConfirmacao({ guia, aviso: avisoAntesDeConfirmar(guia) }); }}
+                          >
+                            Já paguei
+                          </button>
+                        ) : null}
                         {podePedirGuiaAtualizada(guia) ? (
                           <button
                             type="button"

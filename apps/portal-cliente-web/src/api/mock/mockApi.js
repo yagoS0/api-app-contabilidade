@@ -823,7 +823,9 @@ function criarEstado() {
           serproLastCheckedAt: null,
           serproLastCheckResult: null,
           serproService: null,
-          canConfirmPayment: false,
+          // ⚠ Guia não paga PODE ser confirmada pelo cliente. Cravado em `false`, o botão nasceria
+          // inalcançável offline — e ele é o ponto inteiro da Fase D.
+          canConfirmPayment: !pago,
           // ⚠⚠ O PEDIDO DE GUIA ATUALIZADA — e ele SÓ existe na guia VENCIDA e não paga (decisão do
           // dono). Sem estes três campos o botão nasceria inalcançável offline, e ele é o primeiro
           // do portal do cliente que GASTA dinheiro do escritório: é o que mais precisa ser visto
@@ -1673,6 +1675,38 @@ export function createMockApi() {
       guia.valor = Number((Number(guia.valor) * 1.0726).toFixed(2));
       guia.paymentStatus = "OPEN";
       return { ok: true, guide: { ...guia }, acrescimos: acrescimo };
+    },
+
+    /**
+     * ⚠⚠ O CLIENTE CONFIRMA QUE PAGOU — e o mock grava `paymentStatusSource: "CLIENTE"`, que é o
+     * valor que faz a Circular do CONTADOR mostrar "⏳ cliente" e o razão NÃO ser marcado.
+     * Gravar "MANUAL" aqui esconderia justamente a distinção que a entrega existe para criar.
+     */
+    async confirmarPagamentoDaGuia(companyId, guideId) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const guia = estado.guias.find((g) => g._clientId === id && g.guideId === String(guideId));
+      if (!guia || !guia.liberadaCliente) throw new ApiError(404, "not_found");
+      if (guia.paymentStatus === "PAID") {
+        throw new ApiError(409, "guia_ja_confirmada", "Esta guia já consta como paga.", {
+          message: "Esta guia já consta como paga.",
+        });
+      }
+      const agora = new Date().toISOString();
+      guia.paymentStatus = "PAID";
+      guia.paymentStatusSource = "CLIENTE";
+      guia.paymentConfirmedAt = agora;
+      guia.clienteConfirmouEm = agora;
+      guia.canConfirmPayment = false;
+      guia.vencida = false;
+      guia.canRecalculate = false;
+      guia.avisoDeRecalculo = null;
+      return {
+        ok: true,
+        guide: { ...guia },
+        aviso: "Registramos que você pagou. Seu contador vai conferir o comprovante na Receita e "
+          + "lançar a baixa na contabilidade.",
+      };
     },
 
     // --- Alíquota -----------------------------------------------------------

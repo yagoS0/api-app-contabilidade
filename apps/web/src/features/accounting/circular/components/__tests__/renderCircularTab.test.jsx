@@ -189,6 +189,31 @@ describe("a cor da célula É o estado — e nunca viaja sozinha", () => {
     expect(screen.getByText("Paga")).toBeInTheDocument();
   });
 
+  it("⚠⚠ O ✓ VEM DO LANÇAMENTO, NÃO DO `paymentStatus` DA GUIA — os dois são fatos diferentes", () => {
+    // Eu troquei as duas fontes numa primeira versão e este bloco pegou: uma provisão pode ter BAIXA
+    // LANÇADA sem que a GUIA conste paga (o contador lançou à mão). Lendo a guia, o ✓ sumiria de
+    // toda linha quitada nessa situação.
+    renderTab([provisao({
+      valor: 300,
+      statusPagamento: "PAGO",
+      baixas: [{ id: "b1" }],
+      sourceGuide: guia({ vencimento: emDias(-40) }), // ⚠ sem `paymentStatus`
+    })]);
+    expect(screen.getByText("✓")).toBeInTheDocument();
+  });
+
+  it("⚠⚠ e quando a guia DIZ de onde veio a confirmação, isso sai em TEXTO ao lado do ✓", () => {
+    // Antes as três origens imprimiam o MESMO símbolo, com a diferença num `title` — que não
+    // aparece no teclado nem no toque.
+    renderTab([provisao({
+      valor: 300,
+      statusPagamento: "PAGO",
+      baixas: [{ id: "b1" }],
+      sourceGuide: guia({ vencimento: emDias(-40), paymentStatus: "PAID", paymentStatusSource: "CLIENTE" }),
+    })]);
+    expect(screen.getByText("✓ cliente")).toBeInTheDocument();
+  });
+
   it("provisão prevista não é dívida: sem ✓ e sem alarme", () => {
     renderTab([provisao({ valor: 700, placeholder: true, sourceGuide: null })]);
 

@@ -1298,6 +1298,16 @@ model Guide {
   paymentStatusSource      String? // SERPRO|MANUAL
   paymentConfirmedAt       DateTime?
   paymentConfirmedByUserId String?
+  /// ⚠⚠ QUANDO O CLIENTE DISSE QUE PAGOU — e por que estas duas colunas existem em vez de reusar
+  /// `paymentConfirmedAt`/`paymentConfirmedByUserId`.
+  ///
+  /// A confirmação do cliente NÃO desaparece quando o SERPRO depois acha o comprovante: a
+  /// procedência é PROMOVIDA a `SERPRO` (prova vence afirmação), e `markGuidePaidBySerpro` zera as
+  /// duas colunas de cima — de propósito, porque lá elas descrevem uma confirmação MANUAL que
+  /// deixou de valer. Guardar a afirmação do cliente nelas apagaria quem disse o quê, que é
+  /// exatamente o registro que uma fiscalização vai querer.
+  clienteConfirmouEm       DateTime?
+  clienteConfirmouPorUserId String?
   serproLastCheckedAt      DateTime?
   serproLastCheckResult    String?
   serproLastSeenAt         DateTime?

@@ -80,3 +80,36 @@ export function avisoDosAcrescimos(acrescimos) {
     tom: "atencao",
   };
 }
+
+/**
+ * ⚠⚠ CONFIRMAR QUE PAGOU — e o que essa confirmação NÃO faz.
+ *
+ * Decisão do dono (27/08/2026): *"o cliente confirmar deve ser como a confirmação da consulta de
+ * pagamento"* — marca a guia e **para aí**. Quem lança a baixa contábil continua sendo o contador.
+ *
+ * ⚠ SEM COMPROVANTE (decisão do dono): ele confirma sem anexar nada. A prova continua vindo da
+ * Receita quando a consulta de pagamento rodar.
+ *
+ * ⚠ `canConfirmPayment` vem do servidor; ausência do campo NÃO oferece o botão.
+ */
+export function podeConfirmarPagamento(guia) {
+  return guia?.canConfirmPayment === true;
+}
+
+/**
+ * ⚠⚠ A CONFIRMAÇÃO REPETE O QUE ELA FAZ **E O QUE NÃO FAZ**.
+ *
+ * Um "confirmar pagamento?" seco faria o cliente achar que o assunto está encerrado dos dois lados
+ * — e ele não está: o contador ainda vai conferir o comprovante e lançar a baixa. Dizer só metade
+ * é o que produz o telefonema de "mas eu já confirmei lá".
+ */
+export function avisoAntesDeConfirmar(guia) {
+  if (!podeConfirmarPagamento(guia)) return null;
+  return {
+    titulo: "Confirmar que você pagou esta guia",
+    texto: "Isto registra, para o seu contador, que você já pagou. Não é preciso anexar comprovante: "
+      + "ele confere o pagamento direto na Receita. ⚠ A baixa na contabilidade continua sendo feita "
+      + "por ele — sua confirmação não a lança.",
+    rotuloConfirmar: "Já paguei esta guia",
+  };
+}

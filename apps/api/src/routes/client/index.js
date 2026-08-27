@@ -43,6 +43,8 @@ import {
   leituraDosAcrescimos,
   traduzirRecusaParaCliente,
   markGuideOpenBySerpro,
+  markGuidePaidByCliente,
+  canGuideConfirmPayment,
 } from "../../application/guides/GuidePaymentStatusService.js";
 import { comContextoSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
@@ -984,6 +986,57 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           podeTentarDeNovo: recusa.podeTentarDeNovo,
         });
       }
+    }
+  );
+
+  /**
+   * ⚠⚠ O CLIENTE CONFIRMA QUE PAGOU (decisão do dono, 27/08/2026).
+   *
+   * *"O cliente confirmar deve ser como a confirmação da consulta de pagamento"*: marca a guia e
+   * **para aí**. Quem faz a baixa contábil continua sendo o contador, pela Circular.
+   *
+   * ⚠⚠ A GUARDA QUE ISSO EXIGE NÃO ESTÁ AQUI — está em `GuideToProvisionService`, via
+   * `pagamentoAlcancaOContabil`: uma confirmação de procedência `CLIENTE` NÃO grava
+   * `statusPagamento: "PAGO"` na provisão contábil. Sem ela, esta rota deixaria o cliente marcar
+   * lançamento contábil como pago, sem baixa lançada.
+   *
+   * ⚠ SEM COMPROVANTE (decisão do dono): ele confirma sem anexar. A prova continua vindo do SERPRO
+   * quando a consulta de pagamento rodar — e aí a procedência é PROMOVIDA, sem apagar a afirmação
+   * dele (colunas próprias, `clienteConfirmouEm`/`clienteConfirmouPorUserId`).
+   *
+   * ⚠ ZERO CHAMADA EXTERNA e ZERO CUSTO: isto é uma escrita local. Nada a ver com o Recalcular.
+   */
+  router.post(
+    "/companies/:companyId/guides/:guideId/confirmar-pagamento",
+    requireClientCompanyAccess(),
+    async (req, res) => {
+      const { companyId, guideId } = req.params || {};
+      const guide = await prisma.guide.findFirst({
+        // ⚠ Só guia LIBERADA, como o download e o recálculo. O gate não se afrouxa.
+        where: { id: String(guideId), portalClientId: String(companyId), liberadaCliente: true },
+      });
+      if (!guide) return res.status(404).json({ error: "not_found" });
+
+      if (!canGuideConfirmPayment(guide)) {
+        // ⚠ Já paga não é ERRO — é o estado desejado. A resposta diz isso em vez de recusar seco:
+        // um cliente que clica duas vezes não fez nada errado.
+        return res.status(409).json({
+          ok: false,
+          error: "guia_ja_confirmada",
+          message: "Esta guia já consta como paga.",
+          guide: toGuideResponse(guide, { publico: PUBLICO.CLIENTE }),
+        });
+      }
+
+      const atualizada = await markGuidePaidByCliente({ guideId: guide.id, userId: req.auth?.user?.id });
+      return res.json({
+        ok: true,
+        guide: toGuideResponse(atualizada, { publico: PUBLICO.CLIENTE }),
+        // ⚠ A tela precisa dizer o que a confirmação FAZ e o que ela NÃO faz — senão o cliente
+        // acha que o assunto está encerrado dos dois lados.
+        aviso: "Registramos que você pagou. Seu contador vai conferir o comprovante na Receita e "
+          + "lançar a baixa na contabilidade.",
+      });
     }
   );
 

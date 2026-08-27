@@ -328,6 +328,22 @@ export function createRealApi() {
       );
     },
 
+    /**
+     * POST /client/companies/:id/guides/:guideId/confirmar-pagamento
+     *
+     * ⚠⚠ ISTO NÃO LANÇA A BAIXA CONTÁBIL. É a mesma forma da confirmação por consulta de pagamento:
+     * marca a guia e para aí. Quem lança a baixa continua sendo o contador — e a guarda que garante
+     * isso está no servidor (`pagamentoAlcancaOContabil`), não aqui.
+     *
+     * ⚠ ZERO CUSTO: é escrita local, sem chamada externa. Nada a ver com o "Pedir guia atualizada".
+     */
+    async confirmarPagamentoDaGuia(companyId, guideId) {
+      return pedir(
+        `/client/companies/${encodeURIComponent(companyId)}/guides/${encodeURIComponent(guideId)}/confirmar-pagamento`,
+        { method: "POST" }
+      );
+    },
+
     // --- Alíquota / Fluxo (usados no resumo da Home) ------------------------
     async getAliquotas(companyId, { from, to } = {}) {
       const data = await pedir(
