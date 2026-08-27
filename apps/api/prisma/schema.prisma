@@ -900,6 +900,7 @@ model PortalClient {
   /// Relatórios de faturamento gerados por competência. NENHUMA coluna nova em `portal_clients`:
   /// a FK mora em `relatorios_faturamento.portalClientId`.
   relatoriosFaturamento   RelatorioFaturamento[]
+  seriesRecorrentes       SerieRecorrente[]
   /// Trocas de senha do usuário do portal feitas PELO ESCRITÓRIO nesta empresa. NENHUMA coluna
   /// nova aqui — a FK mora em `senhas_portal_trocas.portalClientId`, e ela é NULA nos caminhos do
   /// cliente (perfil e recuperação), que não passam por empresa nenhuma.
@@ -4056,4 +4057,67 @@ model OfxImport {
   @@index([portalClientId, criadoEm])
   @@index([portalClientId, hashArquivo])
   @@map("ofx_imports")
+}
+
+/// A SÉRIE RECORRENTE — "esta despesa (ou receita) volta, e com que valor".
+///
+/// ⚠⚠ QUEM MARCA É O CONTADOR. O detector (`application/fluxo/lib/recorrencia.js`) é PURO e não
+/// grava nada; esta tabela guarda a DECISÃO dele, não a observação. Uma série detectada e não
+/// confirmada não existe aqui — e por isso não entra no fluxo de caixa.
+///
+/// ⚠ A chave é a CONTRAPARTE, não a conta: é como o dono formulou os dois exemplos ("a Claude", "o
+/// mesmo cliente"). Um desenho anterior chaveava por conta e lia o razão — que saiu de escopo.
+model SerieRecorrente {
+  id             String @id @default(uuid())
+  portalClientId String
+
+  /// RECEITA | DESPESA — a mesma tabela serve os dois lados, com a mesma forma.
+  lado String
+
+  /// ⚠ A contraparte: `tomadorDoc` na receita, `emitenteDoc` na despesa. NULO quando não há
+  /// documento (o débito de extrato) — aí quem identifica é `chave`.
+  contraparteDoc String?
+
+  /// ⚠⚠ A CHAVE CANÔNICA: o documento quando existe, senão a descrição CANONIZADA. É ela que entra
+  /// no `@@unique` — sem canonizar, o memo de agosto e o de setembro viram séries diferentes e a
+  /// memória nunca forma.
+  chave  String
+  rotulo String
+
+  /// ⚠ MENSAL | TRIMESTRAL | ANUAL — o MESMO vocabulário de `Obrigacao.periodicidade`.
+  /// A "taxa anual do Conselho" existe por causa deste campo: contando MESES, ela sairia do fluxo
+  /// na segunda ausência.
+  periodicidade String
+
+  /// DETECTADA | DECLARADA — ⚠⚠ nunca se parecem na tela. A detectada mostra a evidência; a
+  /// declarada mostra QUEM afirmou e QUANDO. Uma afirmação não pode ter o peso de doze observações.
+  origem String
+
+  /// PENDENTE | ATIVA | RECUSADA | SUSPENSA
+  estado String
+
+  /// O que a pessoa afirmou (só em DECLARADA).
+  valorDeclarado Decimal? @db.Decimal(18, 2)
+
+  /// ⚠⚠ A EVIDÊNCIA DE QUEM DETECTOU: n, janela, mediana, min, max, cv, ciclosObservados.
+  /// Sem ela, "por que esta linha está no fluxo?" não tem resposta em seis meses.
+  baseDaObservacao Json?
+
+  declaradoPor  String?
+  declaradoEm   DateTime?
+  confirmadoPor String?
+  confirmadoEm  DateTime?
+
+  /// ⚠ Quando o detector SUGERIU a saída e ninguém respondeu. O sistema NÃO desmarca sozinho —
+  /// pela mesma razão que a entrada não se marca sozinha.
+  saidaSugeridaEm DateTime?
+
+  criadaEm     DateTime @default(now())
+  atualizadaEm DateTime @updatedAt
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@unique([portalClientId, lado, chave])
+  @@index([portalClientId, estado])
+  @@map("series_recorrentes")
 }
