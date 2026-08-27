@@ -1785,6 +1785,40 @@ export function createRealApi() {
     async getConferenciaCasamentos(companyId) {
       return request(`/firm/companies/${companyId}/conferencia/casamentos`);
     },
+    // ─── AS RECORRÊNCIAS ──────────────────────────────────────────────────────────────────────
+    //
+    // ⚠⚠ O `GET` NÃO ESCREVE NADA: a observação é DERIVADA na leitura, nunca coluna. E `indisponivel`
+    // vem no corpo — sem ele, "esta empresa não tem recorrência" e "a tabela não existe neste banco"
+    // ficariam idênticos na tela, e o primeiro é uma AFIRMAÇÃO sobre a empresa.
+    //
+    // ⚠ `cicloAtual` é o "agora" INJETADO. Ele viaja explícito porque a leitura inteira (quantos
+    // ciclos desde a última observação, se sugere saída) se apoia nele.
+    async getRecorrencias(companyId, cicloAtual) {
+      const q = new URLSearchParams();
+      if (cicloAtual) q.set("cicloAtual", String(cicloAtual));
+      const qs = q.toString();
+      return request(`/firm/companies/${companyId}/recorrencia${qs ? `?${qs}` : ""}`);
+    },
+    /**
+     * ⚠⚠ A MARCAÇÃO — é ela, e só ela, que põe a linha no fluxo de caixa.
+     *
+     * ⚠ `baseDaObservacao` viaja: é a EVIDÊNCIA que o contador VIU no instante da decisão. O servidor
+     * não a recalcula, de propósito — recalculada, ela seria uma leitura diferente da que ele olhou,
+     * e é a dele que responde "por que esta linha está no fluxo?" daqui a seis meses.
+     */
+    async postMarcarRecorrencia(companyId, corpo) {
+      return request(`/firm/companies/${companyId}/recorrencia/marcar`, {
+        method: "POST",
+        body: JSON.stringify(corpo || {}),
+      });
+    },
+    // ⚠ Registra que o DETECTOR sugeriu a saída. Ele não desmarca — quem decide é o contador.
+    async postSaidaSugerida(companyId, serieId) {
+      return request(`/firm/companies/${companyId}/recorrencia/${serieId}/saida-sugerida`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+    },
     // ⚠⚠ FUNDIR NÃO CONTABILIZA: o débito preenche o bloco de pagamento da nota e some absorvido.
     // Nenhum lançamento nasce daqui — quem leva ao razão é `confirmar`, num segundo ato.
     async postConferenciaFundir(companyId, { declaradoOfxId, declaradoNotaId }) {

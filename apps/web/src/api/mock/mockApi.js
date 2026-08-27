@@ -7387,6 +7387,128 @@ export function createMockApi() {
     // candidatos, e o sistema NÃO escolhe) e nenhum candidato. Um mock só com sugestões faria a
     // tela nascer sem o desenho da ambiguidade — que é o que impede a despesa ir para o fornecedor
     // errado em silêncio.
+    /**
+     * ⚠⚠ AS RECORRÊNCIAS — e os CINCO ramos que a tela precisa distinguir estão TODOS aqui.
+     *
+     * Este projeto foi mordido sete vezes por ramo que só existia em produção. As leituras
+     * (`sugere_entrada`, `sugere_saida`, `sem_observacao`, `continua`, `poucas_observacoes`), as duas
+     * origens (DETECTADA × DECLARADA) e o CONFRONTO da declaração precisam ser alcançáveis offline —
+     * senão o desenho mais delicado desta tela nasce sem poder ser visto.
+     */
+    async getRecorrencias(_companyId, cicloAtual) {
+      await delay(120);
+      return {
+        ok: true,
+        cicloAtual: cicloAtual || "2026-08",
+        // ⚠ A migration `20260826120000` NÃO foi aplicada no banco local. O mock diz `false` porque
+        // é o estado que a tela precisa exercitar; o ramo `true` tem teste próprio.
+        indisponivel: false,
+        series: [
+          {
+            // ⚠ O caso do dono: *"a Claude sempre aparece com valor de 120 a 140 reais"*.
+            id: null, lado: "DESPESA", chave: "98765432000155", contraparteDoc: "98765432000155",
+            rotulo: "ANTHROPIC PBC", periodicidade: "MENSAL", estado: null, origem: null,
+            valorDeclarado: null, leitura: "sugere_entrada", valorProjetado: 130,
+            base: { n: 3, consecutivos: 3, mediana: 130, min: 120, max: 140, cv: 0.0769, janela: { deCiclo: 24317, ateCiclo: 24319, competencias: ["2026-05", "2026-06", "2026-07"] }, ciclosDesdeAUltima: 1 },
+            frase: "baseado em 3 observações, entre 120 e 140",
+            entraNoFluxo: false, confirmadoPor: null, confirmadoEm: null,
+            declaradoPor: null, declaradoEm: null, saidaSugeridaEm: null,
+          },
+          {
+            // ⚠ RECEITA: *"se eu tenho emitido nota para o mesmo cliente há 3 meses…"*
+            id: null, lado: "RECEITA", chave: "11222333000181", contraparteDoc: "11222333000181",
+            rotulo: "CLINICA LAIF LTDA", periodicidade: "MENSAL", estado: null, origem: null,
+            valorDeclarado: null, leitura: "sugere_entrada", valorProjetado: 8000,
+            base: { n: 5, consecutivos: 5, mediana: 8000, min: 8000, max: 8000, cv: 0, janela: { deCiclo: 24315, ateCiclo: 24319, competencias: [] }, ciclosDesdeAUltima: 1 },
+            frase: "baseado em 5 observações",
+            entraNoFluxo: false, confirmadoPor: null, confirmadoEm: null,
+            declaradoPor: null, declaradoEm: null, saidaSugeridaEm: null,
+          },
+          {
+            // ⚠⚠ A TAXA ANUAL DO CONSELHO, DECLARADA — e ela está SEM OBSERVAÇÃO NENHUMA, que é o
+            // caso que o confronto existe para pegar: *"declarado R$ 1.200; não localizado"*.
+            id: "s-3", lado: "DESPESA", chave: "ANUIDADE DO CONSELHO", contraparteDoc: null,
+            rotulo: "Anuidade do Conselho", periodicidade: "ANUAL", estado: "PENDENTE",
+            origem: "DECLARADA", valorDeclarado: "1200.00", leitura: "poucas_observacoes",
+            valorProjetado: null, base: { n: 0, consecutivos: 0, mediana: null, min: null, max: null, cv: null, janela: null, ciclosDesdeAUltima: null },
+            frase: null, entraNoFluxo: false, confirmadoPor: null, confirmadoEm: null,
+            declaradoPor: "cli-1", declaradoEm: "2026-08-10T12:00:00.000Z", saidaSugeridaEm: null,
+          },
+          {
+            // ⚠⚠ DECLARADA E DIVERGINDO do observado — *"o observado vence"* (decisão do dono).
+            id: "s-4", lado: "DESPESA", chave: "JANTAR COM CLIENTES", contraparteDoc: null,
+            rotulo: "Jantar com clientes", periodicidade: "MENSAL", estado: "PENDENTE",
+            origem: "DECLARADA", valorDeclarado: "1000.00", leitura: "sugere_entrada",
+            valorProjetado: 1180,
+            base: { n: 3, consecutivos: 3, mediana: 1180, min: 900, max: 1400, cv: 0.21, janela: { deCiclo: 24317, ateCiclo: 24319, competencias: [] }, ciclosDesdeAUltima: 1 },
+            frase: "baseado em 3 observações, entre 900 e 1400",
+            entraNoFluxo: false, confirmadoPor: null, confirmadoEm: null,
+            declaradoPor: "cli-1", declaradoEm: "2026-08-12T12:00:00.000Z", saidaSugeridaEm: null,
+          },
+          {
+            // ⚠ MARCADA e funcionando: ela NÃO pede resposta nenhuma.
+            id: "s-5", lado: "DESPESA", chave: "44555666000177", contraparteDoc: "44555666000177",
+            rotulo: "COPIADORA SAO JORGE LTDA", periodicidade: "MENSAL", estado: "ATIVA",
+            origem: "DETECTADA", valorDeclarado: null, leitura: "continua", valorProjetado: 890,
+            base: { n: 6, consecutivos: 6, mediana: 890, min: 850, max: 920, cv: 0.03, janela: { deCiclo: 24314, ateCiclo: 24319, competencias: [] }, ciclosDesdeAUltima: 1 },
+            frase: "baseado em 6 observações, entre 850 e 920",
+            entraNoFluxo: true, confirmadoPor: "u-1", confirmadoEm: "2026-07-02T12:00:00.000Z",
+            declaradoPor: null, declaradoEm: null, saidaSugeridaEm: null,
+          },
+          {
+            // ⚠⚠ MARCADA E SUMIU por 2 ciclos. O detector SUGERE a saída — e não desmarca.
+            id: "s-6", lado: "DESPESA", chave: "77888999000122", contraparteDoc: "77888999000122",
+            rotulo: "TRANSPORTADORA VIA SUL", periodicidade: "MENSAL", estado: "ATIVA",
+            origem: "DETECTADA", valorDeclarado: null, leitura: "sugere_saida", valorProjetado: 640,
+            base: { n: 4, consecutivos: 4, mediana: 640, min: 600, max: 700, cv: 0.06, janela: { deCiclo: 24313, ateCiclo: 24317, competencias: [] }, ciclosDesdeAUltima: 2 },
+            frase: "baseado em 4 observações, entre 600 e 700",
+            entraNoFluxo: true, confirmadoPor: "u-1", confirmadoEm: "2026-05-02T12:00:00.000Z",
+            declaradoPor: null, declaradoEm: null, saidaSugeridaEm: null,
+          },
+          {
+            // ⚠⚠ MARCADA E SEM UMA ÚNICA OBSERVAÇÃO — ela está no fluxo projetando dinheiro sem nada
+            // por trás. Sumir da tela a deixaria inalcançável.
+            id: "s-7", lado: "RECEITA", chave: "22333444000199", contraparteDoc: "22333444000199",
+            rotulo: "CLIENTE QUE SAIU", periodicidade: "MENSAL", estado: "ATIVA",
+            origem: "DETECTADA", valorDeclarado: null, leitura: "sem_observacao", valorProjetado: null,
+            base: { n: 0, consecutivos: 0, mediana: null, min: null, max: null, cv: null, janela: null, ciclosDesdeAUltima: null },
+            frase: null, entraNoFluxo: true, confirmadoPor: "u-1", confirmadoEm: "2026-03-02T12:00:00.000Z",
+            declaradoPor: null, declaradoEm: null, saidaSugeridaEm: null,
+          },
+          {
+            // ⚠ SEM PADRÃO: ela existe, não pede nada, e não vira ruído na lista.
+            id: null, lado: "DESPESA", chave: "11111111000111", contraparteDoc: "11111111000111",
+            rotulo: "FORNECEDOR EVENTUAL", periodicidade: "MENSAL", estado: null, origem: null,
+            valorDeclarado: null, leitura: "poucas_observacoes", valorProjetado: null,
+            base: { n: 2, consecutivos: 1, mediana: 300, min: 200, max: 400, cv: 0.4, janela: null, ciclosDesdeAUltima: 1 },
+            frase: "baseado em 2 observações, entre 200 e 400",
+            entraNoFluxo: false, confirmadoPor: null, confirmadoEm: null,
+            declaradoPor: null, declaradoEm: null, saidaSugeridaEm: null,
+          },
+        ],
+        // ⚠⚠ O QUE O DETECTOR NÃO ALCANÇA sai CONTADO — a despesa que só existe no extrato não forma
+        // série porque a chave dela carregaria a data do memo do banco.
+        foraDoAlcance: [
+          {
+            motivo: "chave_de_descricao_carrega_data",
+            frase: "Despesas que só aparecem no extrato (tarifa, assinatura, aluguel de pessoa física) ainda não "
+              + "formam série: a chave que as identificaria carrega a data do memo do banco, então cada mês "
+              + "vira uma série diferente. Enquanto isso, declare a recorrência delas à mão.",
+            quantos: 9,
+          },
+        ],
+      };
+    },
+    async postMarcarRecorrencia(_companyId, corpo) {
+      await delay(140);
+      // ⚠ O mock NÃO decide nada: ele ecoa. A regra é do servidor, e reimplementá-la aqui faria a
+      // tela offline aceitar o que a de produção recusa.
+      return { ok: true, serie: { id: "s-novo", ...corpo } };
+    },
+    async postSaidaSugerida(_companyId, _serieId) {
+      await delay(90);
+      return { ok: true, marcadas: 1 };
+    },
     async getConferenciaCasamentos(_companyId) {
       await delay(90);
       return {

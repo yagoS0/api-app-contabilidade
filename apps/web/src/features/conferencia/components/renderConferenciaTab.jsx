@@ -19,6 +19,11 @@ import { Modal } from "../../../components/ui/Modal";
 import { ModalDaVarredura } from "./ModalDaVarredura";
 import { ModalDeContabilizacao } from "./ModalDeContabilizacao";
 import { PainelDeCasamentos } from "./PainelDeCasamentos";
+// ⚠⚠ A RECORRÊNCIA NÃO É ABA — decisão do dono (*"muitas abas"*, 24/08/2026). O plano manda a
+// marcação morar na LINHA DO FLUXO e as declarações pendentes do cliente entrarem na fila da
+// Conferência; enquanto o fluxo (Fase E) não existe, o painel vive aqui, que é a mesma fila de
+// "coisas para o contador confirmar". ⚠ A feature é PRÓPRIA para o fluxo importá-la depois.
+import { PainelDeRecorrencias } from "../../recorrencia/components/PainelDeRecorrencias";
 import { debitosQueCasamComNota } from "../lib/contabilizacaoEmLote";
 import {
   ACAO,
@@ -835,6 +840,11 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
           carregar();
         }}
       />
+
+      {/* ⚠ ABAIXO do painel de casamentos e ACIMA da fila: casar um débito é o que evita a despesa
+          em dobro AGORA; a recorrência olha para a frente. Ela some sozinha quando não há decisão
+          esperando — mesmo desenho do painel de casamentos. */}
+      <PainelDeRecorrencias companyId={companyId} podeEscrever={podeEscrever} />
 
       {erro ? (
         <div style={{ ...card, borderColor: "var(--state-danger)", color: "var(--state-danger)" }}>{erro}</div>
