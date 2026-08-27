@@ -30,6 +30,8 @@ import { resolverPerfilFiscal, normalizarPerfilConfig } from "../../application/
 import { sugerirAnexosDaCompetencia } from "../../application/notas/apuracao/v2/SugestaoAnexoService.js";
 import { conferirCompetencia } from "../../application/notas/apuracao/v2/ConferenciaAdnService.js";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
+import { reconciliarLp } from "../../application/fiscal/lp/LucroPresumidoCalculoService.js";
+import { podeApurarPresumido } from "../../application/fiscal/lp/lib/regimeDoPresumido.js";
 
 const REGIMES_VALIDOS = new Set(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI"]);
 
@@ -236,6 +238,74 @@ export function createApuracaoV2Router({ log } = {}) {
       } catch (err) {
         log?.warn({ err: err?.message, portalClientId, competencia }, "Falha na sugestão de anexo");
         return bad(res, 500, "sugestao_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  // ─── APURAÇÃO DO LUCRO PRESUMIDO ─────────────────────────────────────────
+  //
+  // ⚠ SÓ LEITURA, ZERO CHAMADA AO SERPRO. O [Calcular] do Presumido é LOCAL: ele lê as notas já
+  // capturadas e a DARF já capturada. Quem gasta chamada paga continua sendo o botão "Buscar
+  // tributos do Presumido", que não foi tocado.
+  //
+  // ⚠ E NÃO GRAVA SNAPSHOT. `ApuracaoSnapshot.rbt12` é NOT NULL, e inventar um RBT12 para o
+  // Presumido seria fabricar dado fiscal — o erro que a seção "TRÊS NÚMEROS DE DAS" existe para
+  // impedir. O cálculo é inteiramente derivável do que já está persistido.
+  router.get(
+    "/apuracao-lp/:competencia",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia || "");
+      if (!/^\d{4}-\d{2}$/.test(competencia)) {
+        return bad(res, 400, "invalid_competencia", "competência YYYY-MM obrigatória");
+      }
+
+      // ⚠⚠ A CONFIRMAÇÃO DOS R$ 120.000 VEM NA QUERY, E NÃO PERSISTE — decisão NOMEADA, não
+      // esquecimento. Não existe coluna para ela em lugar nenhum, e criar uma é migration, que é
+      // decisão do dono. Enquanto não existir, o contador reconfirma a cada abertura da tela; o
+      // custo está dito aqui para não virar descoberta.
+      //
+      // ⚠ Três estados, e a string vazia NÃO pode virar `false`: `?servicos16=` significa "não
+      // veio", não "o contador disse que não". É a família do `Number(null) === 0`.
+      const cru = req.query.servicos16;
+      const servicos16 = cru === "true" ? true : cru === "false" ? false : null;
+
+      try {
+        // ⚠ OS DOIS IDS, DE NOVO. `PortalClient` **não tem relação `company`** — só o escalar
+        // `companyId` (`@unique`). Um `select: { company: { … } }` estouraria em runtime; a volta é
+        // por consulta separada, como manda o resto do projeto.
+        // ⚠ Empresa sem `Company` legada cai em regime nulo ⇒ DESCONHECIDO ⇒ passa com aviso.
+        const pc = await prisma.portalClient.findUnique({
+          where: { id: portalClientId },
+          select: { companyId: true },
+        });
+        const company = pc?.companyId
+          ? await prisma.company.findUnique({
+            where: { id: pc.companyId },
+            select: { regimeTributario: true },
+          })
+          : null;
+        const regime = company?.regimeTributario ?? null;
+
+        // ⚠ Empresa do Simples é RECUSADA com nome próprio; regime DESCONHECIDO passa, com aviso.
+        // Bloquear por falta de dado é o erro caro nesta direção — mesmo critério da guarda da EFD.
+        const porta = podeApurarPresumido(regime);
+        if (!porta.pode) {
+          return bad(res, 409, "regime_nao_apura_presumido", porta.motivo, { apuracao: porta.apuracao });
+        }
+
+        const apuracao = await reconciliarLp({ portalClientId, competencia, servicos16 });
+        return res.json({
+          ok: true,
+          regime,
+          apuracao: porta.apuracao,
+          avisoDeRegime: porta.aviso,
+          ...apuracao,
+        });
+      } catch (err) {
+        log?.warn({ err: err?.message, portalClientId, competencia }, "Falha na apuração do Lucro Presumido");
+        return bad(res, 500, "apuracao_lp_failed", err?.message || "Erro");
       }
     }
   );

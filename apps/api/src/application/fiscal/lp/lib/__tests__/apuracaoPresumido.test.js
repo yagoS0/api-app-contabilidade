@@ -9,7 +9,7 @@ import path from "node:path";
 import {
   PRESUNCAO, ALIQ, SERVICOS_16, EXCECOES_SERVICOS_16, TRIBUTOS_NAO_CALCULADOS,
   PRESUNCAO_IRPJ_SERVICOS_16, LIMITE_SERVICOS_16_PCT_ANUAL,
-  presuncaoIrpjDeServicos, cargaEfetiva, quotaDeTrimestreAnterior,
+  presuncaoIrpjDeServicos, cargaEfetiva, quotaDeTrimestreAnterior, debitosPorTributo,
   mesesDoTrimestre, isFimDeTrimestre, apurarPresumido,
 } from "../apuracaoPresumido.js";
 
@@ -309,6 +309,38 @@ describe("⚠⚠ O QUE NÃO É CALCULADO SAI NOMEADO — célula vazia é proibi
   it("⚠ e a lista viaja SEMPRE, inclusive no mês que não fecha trimestre", () => {
     expect(apurarPresumido({ competencia: "2026-05", receita: { servicos: 0, mercadorias: 0 } }).naoCalculado)
       .toHaveLength(4);
+  });
+});
+
+describe("⚠⚠ O DÉBITO DECLARADO, POR TRIBUTO — o que a reconciliação compara", () => {
+  it("soma por tributo, e o MESMO tributo em dois códigos de receita soma junto", () => {
+    // A composição da DARF pode trazer o mesmo tributo em códigos diferentes; sobrescrever
+    // perderia metade do débito e a reconciliação acusaria divergência que não existe.
+    expect(debitosPorTributo([
+      { codigo: "2172", tributo: "IRPJ", total: 4000 },
+      { codigo: "0220", tributo: "IRPJ", total: 2000 },
+      { codigo: "2372", tributo: "CSLL", total: 2880 },
+    ])).toEqual({ IRPJ: 6000, CSLL: 2880 });
+  });
+
+  it("⚠⚠ tributo AUSENTE fica FORA do objeto — nunca zero", () => {
+    // `conferir` distingue `null` ("a declaração não traz este tributo", `sem_dctfweb`) de `0`
+    // ("a declaração diz que é zero"). Colapsá-los faria a tela acusar divergência contra um
+    // número que ninguém declarou.
+    const d = debitosPorTributo([{ tributo: "PIS", total: 650 }]);
+    expect(d).toEqual({ PIS: 650 });
+    expect(d).not.toHaveProperty("IRPJ");
+    expect(d.IRPJ).toBeUndefined();
+  });
+
+  it("⚠ zero DECLARADO continua sendo um valor — ele entra", () => {
+    expect(debitosPorTributo([{ tributo: "IRPJ", total: 0 }])).toEqual({ IRPJ: 0 });
+  });
+
+  it("item sem tributo é ignorado, e entrada torta não derruba", () => {
+    expect(debitosPorTributo([{ codigo: "1234", total: 99 }, null, { tributo: "", total: 5 }])).toEqual({});
+    expect(debitosPorTributo(null)).toEqual({});
+    expect(debitosPorTributo()).toEqual({});
   });
 });
 

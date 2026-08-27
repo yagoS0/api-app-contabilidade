@@ -17,7 +17,7 @@
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import {
   PRESUNCAO, ALIQ, SERVICOS_16, TRIBUTOS_NAO_CALCULADOS,
-  apurarPresumido, isFimDeTrimestre, mesesDoTrimestre,
+  apurarPresumido, isFimDeTrimestre, mesesDoTrimestre, debitosPorTributo,
 } from "./lib/apuracaoPresumido.js";
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -104,6 +104,8 @@ export async function calcularLp({ portalClientId, competencia, servicos16 = nul
   return {
     ...apurarPresumido({ competencia, receita, receitasDoTrimestre, servicos16, composicaoDaGuia: composicao }),
     guia,
+    // ⚠ O que a DECLARAÇÃO diz, por tributo — é contra isto que `reconciliarLp` confere.
+    debitosDaGuia: debitosPorTributo(composicao),
   };
 }
 
@@ -120,18 +122,27 @@ function conferir(calculado, dctfweb) {
  * Reconcilia o calculado × o débito da DCTFWeb (por tributo).
  * @param {Object} opts.debitosDctfweb  { PIS, COFINS, IRPJ, CSLL } (principal) — ex.: da declaração parseada
  */
-export async function reconciliarLp({ portalClientId, competencia, debitosDctfweb = {}, servicos16 = null }) {
+export async function reconciliarLp({ portalClientId, competencia, debitosDctfweb = null, servicos16 = null }) {
   const calc = await calcularLp({ portalClientId, competencia, servicos16 });
+
+  // ⚠⚠ SEM `debitosDctfweb`, A DECLARAÇÃO JÁ CAPTURADA É A FONTE. Até 27/08/2026 o default era
+  // `{}` e o único chamador era a própria captura, que os passa recém-parseados — ou seja, a
+  // reconciliação era **inalcançável** por qualquer outro caminho: uma tela que a pedisse receberia
+  // `sem_dctfweb` nos quatro tributos. A composição da guia É o débito declarado, por tributo.
+  //
+  // ⚠ Quem PASSA os débitos continua vencendo: na captura eles são mais frescos que a guia.
+  const debitos = debitosDctfweb && Object.keys(debitosDctfweb).length ? debitosDctfweb : calc.debitosDaGuia;
+
   const rec = {
-    PIS: conferir(calc.pis, debitosDctfweb.PIS),
-    COFINS: conferir(calc.cofins, debitosDctfweb.COFINS),
+    PIS: conferir(calc.pis, debitos.PIS),
+    COFINS: conferir(calc.cofins, debitos.COFINS),
   };
-  if (calc.irpj) rec.IRPJ = conferir(calc.irpj.total, debitosDctfweb.IRPJ);
-  if (calc.csll) rec.CSLL = conferir(calc.csll.total, debitosDctfweb.CSLL);
+  if (calc.irpj) rec.IRPJ = conferir(calc.irpj.total, debitos.IRPJ);
+  if (calc.csll) rec.CSLL = conferir(calc.csll.total, debitos.CSLL);
 
   // Reconciliação reversa (alerta): receita implícita pelo PIS/COFINS × receita das notas.
-  const receitaPorPis = debitosDctfweb.PIS != null ? r2(debitosDctfweb.PIS / ALIQ.pis) : null;
-  const receitaPorCofins = debitosDctfweb.COFINS != null ? r2(debitosDctfweb.COFINS / ALIQ.cofins) : null;
+  const receitaPorPis = debitos.PIS != null ? r2(debitos.PIS / ALIQ.pis) : null;
+  const receitaPorCofins = debitos.COFINS != null ? r2(debitos.COFINS / ALIQ.cofins) : null;
 
   const algumaDivergencia = Object.values(rec).some((r) => r.status === "divergente");
   return {
@@ -142,4 +153,4 @@ export async function reconciliarLp({ portalClientId, competencia, debitosDctfwe
   };
 }
 
-export { PRESUNCAO, ALIQ, SERVICOS_16, TRIBUTOS_NAO_CALCULADOS, isFimDeTrimestre, mesesDoTrimestre };
+export { PRESUNCAO, ALIQ, SERVICOS_16, TRIBUTOS_NAO_CALCULADOS, isFimDeTrimestre, mesesDoTrimestre, debitosPorTributo };

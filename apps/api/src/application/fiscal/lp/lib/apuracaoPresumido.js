@@ -236,6 +236,27 @@ export function quotaDeTrimestreAnterior({ competencia, composicao = [] } = {}) 
 }
 
 /**
+ * A composição da DARF somada POR TRIBUTO — `{PIS, COFINS, IRPJ, CSLL}`.
+ *
+ * É o que a reconciliação compara contra o nosso motor. ⚠ Tributo ausente da composição fica
+ * AUSENTE do objeto, nunca zero: `conferir` distingue `null` ("a declaração não traz este tributo",
+ * status `sem_dctfweb`) de `0` ("a declaração diz que é zero"), e colapsá-los faria a tela acusar
+ * divergência contra um número que ninguém declarou.
+ *
+ * ⚠ A composição pode trazer o MESMO tributo em mais de um código de receita — por isso soma, e
+ * não sobrescreve.
+ */
+export function debitosPorTributo(composicao = []) {
+  const out = {};
+  for (const item of Array.isArray(composicao) ? composicao : []) {
+    const tributo = String(item?.tributo || "").toUpperCase();
+    if (!tributo) continue;
+    out[tributo] = r2((out[tributo] || 0) + numero(item?.total));
+  }
+  return out;
+}
+
+/**
  * A APURAÇÃO DA COMPETÊNCIA, inteira e pura.
  *
  * @param {Object} p
