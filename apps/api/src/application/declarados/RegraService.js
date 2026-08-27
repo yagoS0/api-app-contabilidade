@@ -22,8 +22,13 @@ const soDigitos = (v) => String(v ?? "").replace(/\D+/g, "");
 async function planoDaEmpresa(portalClientId, client) {
   const contas = await client.chartOfAccount.findMany({
     where: { OR: [{ portalClientId: null }, { portalClientId }] },
-    // ⚠ `analitica` é lida pelo motor de sugestão para NÃO sugerir conta sintética — senão a tela
-    // oferece o que o servidor recusa. ⚠⚠ TRI-ESTADO: comparar com `=== false`, nunca `!analitica`.
+    // ⚠⚠ `analitica` entra como PRÉ-REQUISITO, e HOJE O MOTOR NÃO A LÊ — medido: zero ocorrências
+    // de `analitica` em `lib/motorDeSugestao.js`, que confere a conta só por existência de
+    // `codigoCompleto`. Ou seja: uma conta SINTÉTICA ainda pode ser sugerida hoje, e o servidor a
+    // recusaria em POST /entries. Esta linha existe para o filtro da Fase A não nascer cego — sem a
+    // coluna no `select` o predicado recebe `undefined` e responde `false` para TODA conta.
+    // ⚠ Não leia este comentário como "o motor já filtra": ele não filtra.
+    // ⚠⚠ TRI-ESTADO: comparar com `=== false`, nunca `!analitica`.
     select: { portalClientId: true, codigo: true, codigoCompleto: true, nome: true, analitica: true },
   });
   // ⚠ A da empresa vence a global quando o `codigo` colide — a global é o padrão, não a autoridade.

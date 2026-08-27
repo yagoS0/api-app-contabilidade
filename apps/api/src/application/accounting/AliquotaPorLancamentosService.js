@@ -28,11 +28,16 @@ const COMPETENCIA = /^\d{4}-\d{2}$/;
 export async function carregarPlano(portalClientId, client = prisma) {
   const contas = await client.chartOfAccount.findMany({
     where: { OR: [{ portalClientId: String(portalClientId) }, { portalClientId: null }] },
-    // ⚠ `analitica` entra aqui porque a TRAVA DE CONTA SINTÉTICA da Conferência a lê deste
-    // mesmo `Map` (`declarados/lib/formaDoLancamento.js`). Sem a coluna no `select`, `ehSintetica`
-    // recebe `undefined`, responde `false` para TODA conta, e a guarda existe sem guardar nada —
-    // a mesma classe de defeito do `legacyCompanySelect`, que já mordeu três vezes neste projeto.
-    // ⚠⚠ E ela é TRI-ESTADO: `null` = conta sem `codigoCompleto`, que NÃO é sintética.
+    // ⚠⚠ `analitica` entra aqui como PRÉ-REQUISITO, e HOJE NINGUÉM NESTE CAMINHO A LÊ — medido:
+    // zero ocorrências de `analitica` em `declarados/lib/formaDoLancamento.js`, que é quem vai
+    // recusar conta sintética na Conferência. O gate de verdade só existe em POST/PUT /entries
+    // (`routes/firm/accountingEntries.js`, via `lib/gateContaSintetica.js`). Esta linha existe para
+    // que, quando a trava for escrita, ela NÃO nasça cega: sem a coluna no `select`, o predicado
+    // receberia `undefined`, responderia `false` para TODA conta, e a guarda existiria sem guardar
+    // nada — a classe de defeito do `legacyCompanySelect`, que já mordeu três vezes neste projeto.
+    // ⚠ Não leia este comentário como "a trava está ligada": ela não está.
+    // ⚠⚠ E ela é TRI-ESTADO: `null` = conta sem `codigoCompleto`, que NÃO é sintética. Comparar
+    // com `=== false`, nunca `!analitica` — com a negação, todo plano não reimportado sai sintético.
     select: { portalClientId: true, codigo: true, nome: true, codigoCompleto: true, analitica: true },
   });
   const mapa = new Map();
