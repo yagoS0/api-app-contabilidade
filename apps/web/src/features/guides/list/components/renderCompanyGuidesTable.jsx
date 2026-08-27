@@ -588,6 +588,7 @@ export function CompanyGuidesTable({
   const [deleting, setDeleting] = useState(false);
   // Guia já enviada aguardando confirmação de reenvio (modal do "Liberar ao cliente").
   const [resendConfirm, setResendConfirm] = useState(null);
+  const [recalcConfirm, setRecalcConfirm] = useState(null); // { guideId, aviso }
 
   // Upload flow (modal split): tipo escolhido no dropdown + arquivo + estado de salvamento
   const [uploadTipo, setUploadTipo] = useState(null);  // "DAS"|"INSS"|... — null = modal fechado
@@ -678,9 +679,16 @@ export function CompanyGuidesTable({
   //   INSS  → sync SERPRO DCTFweb da competência   ·  DAS/SIMPLES → recálculo PGDAS-D da guia.
   //
   // ⚠ A PARCELA de parcelamento é decidida ANTES do tipo — ela é `tipo:"SIMPLES"`, idêntica ao DAS
-  // do mês, e caía inteira na regra do DAS acima. **O backend não recusa**: `canGuideRecalculate`
-  // (`GuidePaymentStatusService.js`) só olha `source`/`tipo`/pago, e a parcela é SERPRO + SIMPLES +
-  // OPEN (`CaptureSerproParcelaService`). O que acontecia ao clicar:
+  // do mês, e caía inteira na regra do DAS acima.
+  //
+  // ⚠⚠ ESTE BLOCO DIZIA "**O backend não recusa**" ATÉ 27/08/2026, E ISSO DEIXOU DE SER VERDADE:
+  // `especieDoRecalculo` (`application/guides/lib/recalculoDaGuia.js`) devolve `null` para guia com
+  // `parcelamentoId`, então a rota recusa. A guarda subiu para o servidor porque o PORTAL DO CLIENTE
+  // passou a alcançar a mesma rota — e regra que só mora nesta tela não protege porta nenhuma, nem
+  // um `curl`. A guarda daqui FICA: dupla checagem é inofensiva, e removê-la faria a proteção
+  // depender de uma camada só.
+  //
+  // O que acontecia ao clicar, quando só esta tela protegia:
   //   1. `POST /guides/:id/recalculate` passa na guarda e emite o **DAS DO MÊS** (PGDAS-D, chamada
   //      PAGA) passando o id da PARCELA como `existingGuideId`;
   //   2. `createOrUpdateGuideFromProcessing` faz UPDATE nessa linha — valor, vencimento, PDF,
@@ -694,16 +702,20 @@ export function CompanyGuidesTable({
   const ehParcela = ehGuiaDeParcelamento(selectedGuide);
   const isInss = !ehParcela && selTipo === "INSS";
   const isDas = !ehParcela && selTipo === "SIMPLES";
+  // ⚠⚠ A DARF DO PRESUMIDO (decisão do dono, 27/08/2026). A ESPÉCIE VEM DO BACKEND, nunca de um
+  // `tipo === "OUTRA"` escrito aqui: a guia de INSS/DCTFWeb é `tipo: "OUTRA"` com `source: "SERPRO"`
+  // também, e lê-la por tipo mandaria uma para o caminho da outra.
+  const ehDarfLp = !ehParcela && selectedGuide?.especieRecalculo === "DARF_PRESUMIDO";
   // A parcela mantém o botão VISÍVEL e desabilitado, com o motivo no `title` — mesmo tratamento que
   // o INSS já pago recebe logo abaixo. Sumir seria pior: a parcela senta na mesma tabela que o DAS,
   // e sem explicação a saída natural é selecionar a linha de cima e recalcular aquela.
-  const canShowRecalcular = isInss || isDas || ehParcela;
+  const canShowRecalcular = isInss || isDas || ehParcela || ehDarfLp;
   const inssPaid = String(selectedGuide?.paymentStatus || "").toUpperCase() === "PAID";
   let recalcDisabled;
   if (ehParcela) recalcDisabled = true;
-  else if (isDas) recalcDisabled = !selectedGuide?.canRecalculate || !!recalculatingGuideId;
+  else if (isDas || ehDarfLp) recalcDisabled = !selectedGuide?.canRecalculate || !!recalculatingGuideId;
   else recalcDisabled = inssPaid || !!recalcInssBusy;
-  const recalcBusy = !ehParcela && (isDas ? (recalculatingGuideId === selectedGuideId) : !!recalcInssBusy);
+  const recalcBusy = !ehParcela && ((isDas || ehDarfLp) ? (recalculatingGuideId === selectedGuideId) : !!recalcInssBusy);
   // O "porquê" viaja com o botão: desabilitado sem motivo à vista vira chamado de suporte.
   let recalcTitle;
   if (ehParcela) {
@@ -711,16 +723,35 @@ export function CompanyGuidesTable({
       + "(PGDAS-D), que é outro documento. A parcela é emitida pelo parcelamento, na captura do SERPRO.";
   } else if (isInss) {
     recalcTitle = "Busca/recalcula no SERPRO a guia de INSS desta competência. Guia já paga é bloqueada.";
+  } else if (ehDarfLp) {
+    recalcTitle = "Pede à Receita a DARF do Lucro Presumido desta competência outra vez (GERARGUIA31).";
   } else {
     recalcTitle = "Recalcula a guia do DAS no PGDAS-D.";
   }
   // "Liberar ao cliente" substitui o Reenviar: se a guia já foi enviada, confirma reenvio no modal.
   const alreadySent = String(selectedGuide?.emailStatus || "").toUpperCase() === "SENT";
 
+  // ⚠⚠ RECALCULAR GUIA VENCIDA GERA OUTRA GUIA, COM JUROS E MULTA — e até 27/08/2026 a tela não
+  // sabia o que era "vencida" (medido: zero ocorrências de `isGuideOverdue` no front, e `OVERDUE` só
+  // num mapa de rótulo). O contador clicava e descobria o valor novo depois.
+  //
+  // ⚠ O TEXTO VEM PRONTO DO BACKEND (`avisoDeRecalculo`), e o portal do cliente lê o MESMO. Escrito
+  // aqui, os dois divergiriam na primeira correção — e este aviso precede um gasto e um valor maior.
   function handleRecalcularDispatch() {
     if (!selectedGuide) return;
-    if (isInss) onRecalcularInss?.(selectedGuide.competencia);
-    else if (isDas) onRecalculateGuide?.(selectedGuideId);
+    if (isInss) { onRecalcularInss?.(selectedGuide.competencia); return; }
+    if (!isDas && !ehDarfLp) return;
+    const aviso = selectedGuide?.avisoDeRecalculo;
+    // ⚠ Sem aviso (contrato antigo, ou guia que a regra não reconhece) o comportamento é o de
+    // ANTES: recalcula direto. Bloquear por ausência de um campo novo tiraria uma ação que funciona.
+    if (!aviso) { onRecalculateGuide?.(selectedGuideId); return; }
+    setRecalcConfirm({ guideId: selectedGuideId, aviso });
+  }
+
+  function confirmarRecalculo() {
+    const alvo = recalcConfirm?.guideId;
+    setRecalcConfirm(null);
+    if (alvo) onRecalculateGuide?.(alvo);
   }
 
   function handleLiberarClick() {
@@ -917,6 +948,33 @@ export function CompanyGuidesTable({
           onClose={() => setCompletingGuide(null)}
           saving={completingSaving}
         />
+      )}
+
+      {/* ⚠⚠ CONFIRMAÇÃO ANTES DE RECALCULAR — e ela REPETE A EVIDÊNCIA, não pergunta "tem certeza?".
+          Uma pergunta genérica se aprende a clicar sem ler, e o clique na linha errada recebe a
+          mesma pergunta que o clique na certa. Aqui a caixa diz o que vai acontecer com ESTA guia:
+          se ela venceu, quando venceu (e se a data é ESTIMADA), que a Receita gera uma guia NOVA
+          com juros e multa, e que o pedido custa uma chamada paga. */}
+      {recalcConfirm && (
+        <div style={S.overlay} onClick={(e) => e.target === e.currentTarget && setRecalcConfirm(null)}>
+          <div style={S.modal}>
+            <h3 style={S.title}>{recalcConfirm.aviso.titulo}</h3>
+            <Aviso
+              tom={recalcConfirm.aviso.tom === "atencao" ? "atencao" : "neutro"}
+              titulo={recalcConfirm.aviso.vencida ? "O que vai acontecer" : "Sobre este pedido"}
+              compacto
+              style={{ margin: "0 0 16px" }}
+            >
+              {recalcConfirm.aviso.texto}
+            </Aviso>
+            <div style={S.btnRow}>
+              <Button variant="primary" size="sm" disabled={!!recalculatingGuideId} onClick={confirmarRecalculo}>
+                {recalculatingGuideId ? "Recalculando..." : "Recalcular mesmo assim"}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setRecalcConfirm(null)}>Cancelar</Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Confirmação de reenvio: "Liberar ao cliente" numa guia que já foi enviada. */}

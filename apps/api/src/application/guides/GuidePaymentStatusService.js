@@ -1,45 +1,30 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { SELECT_PARCELAMENTO_DA_GUIA } from "./guideContract.js";
 
-function normalizeValue(value) {
-  return String(value || "").trim().toUpperCase();
-}
-
-export function getGuideDueDate(guide, now = new Date()) {
-  if (guide?.vencimento) return new Date(guide.vencimento);
-  const competencia = String(guide?.competencia || "").trim();
-  const match = competencia.match(/^(\d{4})-(\d{2})$/);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const monthIndex = Number(match[2]) - 1;
-  if (!Number.isInteger(year) || !Number.isInteger(monthIndex)) return null;
-  return new Date(Date.UTC(year, monthIndex + 1, 20, now.getUTCHours(), now.getUTCMinutes(), now.getUTCSeconds(), now.getUTCMilliseconds()));
-}
-
-export function isGuidePaid(guide) {
-  return normalizeValue(guide?.paymentStatus) === "PAID";
-}
-
-export function isGuideOverdue(guide, now = new Date()) {
-  if (normalizeValue(guide?.paymentStatus) === "OVERDUE") return true;
-  const dueDate = getGuideDueDate(guide, now);
-  if (!dueDate) return false;
-  return dueDate.getTime() < now.getTime();
-}
-
-export function canGuideConfirmPayment(guide) {
-  return !isGuidePaid(guide);
-}
-
-// Q29: recálculo liberado para QUALQUER guia SIMPLES do SERPRO ainda não paga —
-// vencida OU em aberto. O serviço SERPRO certo (COBRANCA17 vs GERARDAS12) é
-// escolhido na rota conforme o vencimento. (Antes exigia isGuideOverdue.)
-export function canGuideRecalculate(guide) {
-  if (normalizeValue(guide?.source) !== "SERPRO") return false;
-  if (normalizeValue(guide?.tipo) !== "SIMPLES") return false;
-  if (isGuidePaid(guide)) return false;
-  return true;
-}
+// ⚠⚠ AS REGRAS PURAS SAÍRAM DAQUI EM 27/08/2026 e moram em `lib/recalculoDaGuia.js`.
+//
+// Elas sempre foram puras — `isGuideOverdue` decide se o SERPRO recebe `GERARDASCOBRANCA17` (DAS de
+// cobrança, COM juros e multa) ou `GERARDAS12` —, mas viviam neste arquivo, que carrega o Prisma no
+// topo. Resultado: nenhuma delas tinha um único teste, numa decisão que muda o valor a pagar.
+//
+// ⚠ A REEXPORTAÇÃO NÃO É COSMÉTICA: os cinco importadores (`GuideService`, `routes/firm/index.js`,
+// `accountingEntries`, `SerproPaymentConfirmationService`, `SerproPgdasDeclaracaoService`) seguem
+// importando daqui, sem uma linha de mudança. Trocar os imports em cinco arquivos junto com a
+// extração misturaria refatoração e mudança de comportamento na mesma leitura.
+export {
+  getGuideDueDate,
+  vencimentoDaGuia,
+  isGuidePaid,
+  isGuideOverdue,
+  canGuideConfirmPayment,
+  canGuideRecalculate,
+  especieDoRecalculo,
+  ESPECIE_RECALCULO,
+  avisoDeRecalculo,
+  leituraDosAcrescimos,
+  ACRESCIMOS,
+  PREFIXO_DARF_LP,
+} from "./lib/recalculoDaGuia.js";
 
 async function updateGuidePaymentStatus(guideId, data) {
   return prisma.guide.update({

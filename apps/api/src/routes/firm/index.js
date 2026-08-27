@@ -138,7 +138,7 @@ import {
 import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
 import { syncSerproInssForCompany, probeConsultarDeclaracaoCompleta, probeEmitirDarfDctfweb } from "../../application/fiscal/serpro/SerproDctfwebService.js";
 import { SERPRO_DCTFWEB_LP_PROBE_ENABLED, INTEGRACAO_SERPRO_DCTFWEB_LP } from "../../config.js";
-import { capturarLpDaCompetencia } from "../../application/fiscal/lp/LucroPresumidoProvisaoService.js";
+import { capturarLpDaCompetencia, reemitirDarfLp } from "../../application/fiscal/lp/LucroPresumidoProvisaoService.js";
 import { capturarParcelaGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproParcelaService.js";
 import { getStoredProcurationStatus, SerproProcurationService } from "../../application/fiscal/serpro/SerproProcurationService.js";
 // Q40: confirmação de pagamento (PAGTOWEB) + SITFIS.
@@ -168,6 +168,9 @@ import {
 import {
   canGuideRecalculate,
   isGuideOverdue,
+  especieDoRecalculo,
+  ESPECIE_RECALCULO,
+  leituraDosAcrescimos,
   isGuidePaid,
   markGuideOpenBySerpro,
   markGuidePaidManual,
@@ -3785,18 +3788,54 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         return res.status(400).json({ error: "guide_recalculation_not_available" });
       }
 
-      // Q29: vencida → DAS de cobrança (juros/multa); em aberto → DAS normal.
-      const serviceId = isGuideOverdue(scoped.guide, new Date())
-        ? SERPRO_PGDASD_SERVICE_COBRANCA
-        : SERPRO_PGDASD_SERVICE_NORMAL;
+      const especie = especieDoRecalculo(scoped.guide);
+      const vencida = isGuideOverdue(scoped.guide, new Date());
 
       try {
-        const result = await capturePgdasGuideForCompany({
+        // ⚠⚠ ESTA ROTA NÃO ESTAVA ENVOLVIDA POR `comContextoSerpro` — medido em 27/08/2026. O gasto
+        // mais visível do contador era o ÚNICO que não se identificava em `serpro_chamadas`:
+        // `origem` gravava `null`, sem `userId`, e o ADMIN não conseguia `?forcar=1` aqui. Com o
+        // CLIENTE também podendo disparar isto, deixou de ser detalhe de diagnóstico.
+        const contexto = {
+          origem: "guias:recalcular",
+          userId: req.auth?.user?.id,
+          forcar: podeForcarSerpro(req),
+        };
+
+        // ⚠⚠ A DARF DO PRESUMIDO ENTROU (decisão do dono, 27/08/2026) e tem OUTRO caminho: uma
+        // chamada só (`GERARGUIA31`), sem reconsultar a declaração — recalcular pede a GUIA de
+        // novo, e a apuração declarada não mudou.
+        if (especie === ESPECIE_RECALCULO.DARF_PRESUMIDO) {
+          const darf = await comContextoSerpro(contexto, () => reemitirDarfLp({
+            portalClientId: scoped.guide.portalClientId,
+            competencia: scoped.guide.competencia,
+            guideId: scoped.guide.id,
+          }));
+          await markGuideOpenBySerpro({ guideId: scoped.guide.id });
+          const emailResult = await runGuideEmailWorkerSelected({ guideIds: [scoped.guide.id] });
+          return res.json({
+            ok: true,
+            especie,
+            vencida,
+            result: { guide: { guideId: scoped.guide.id }, darf: { valor: darf.valor, vencimento: darf.vencimento, numeroDocumento: darf.numeroDocumento } },
+            // ⚠⚠ A FALHA VISÍVEL. Não está confirmado que o `GERARGUIA31` gere a DARF COM juros e
+            // multa quando ela está vencida — o PGDAS-D tem serviço próprio para isso; a DCTFWeb,
+            // até onde este repositório sabe, tem um só. Então a tela recebe o que se VIU na
+            // composição do documento, com três respostas — e "não deu para ler" nunca vira "veio
+            // sem acréscimos".
+            acrescimos: leituraDosAcrescimos(darf.composicao),
+            emailDispatch: emailResult,
+          });
+        }
+
+        // Q29: vencida → DAS de cobrança (juros/multa); em aberto → DAS normal.
+        const serviceId = vencida ? SERPRO_PGDASD_SERVICE_COBRANCA : SERPRO_PGDASD_SERVICE_NORMAL;
+        const result = await comContextoSerpro(contexto, () => capturePgdasGuideForCompany({
           portalClientId: scoped.guide.portalClientId,
           competencia: scoped.guide.competencia,
           existingGuideId: scoped.guide.id,
           serviceId,
-        });
+        }));
         await markGuideOpenBySerpro({ guideId: result.guide.guideId });
 
         const emailResult = await runGuideEmailWorkerSelected({
@@ -3805,6 +3844,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
         return res.json({
           ok: true,
+          especie,
+          vencida,
           result,
           emailDispatch: emailResult,
         });

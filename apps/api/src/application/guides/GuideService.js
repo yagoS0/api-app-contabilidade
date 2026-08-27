@@ -9,7 +9,10 @@ import {
   whereGuiaPendenteDeEnvio,
 } from "./guideContract.js";
 import { isMonthClosed } from "../accounting/fechamentoContabil.js";
-import { canGuideConfirmPayment, canGuideRecalculate } from "./GuidePaymentStatusService.js";
+import {
+  canGuideConfirmPayment, canGuideRecalculate, isGuideOverdue, vencimentoDaGuia, avisoDeRecalculo,
+  especieDoRecalculo,
+} from "./GuidePaymentStatusService.js";
 import { NAO_TENTADA, lerLinhaDigitavelDoPdf, situacaoDaLinhaDigitavel } from "./lerLinhaDigitavelDoPdf.js";
 
 function normalizeCnpj(value) {
@@ -262,6 +265,20 @@ export function toGuideResponse(item) {
     serproService: item.serproService || null,
     canConfirmPayment: canGuideConfirmPayment(item),
     canRecalculate: canGuideRecalculate(item, now),
+    // ⚠ A ESPÉCIE desce pronta: `tipo: "OUTRA"` + SERPRO é a DARF do LP **e** a guia de INSS, e
+    // uma leitura por tipo na tela mandaria uma para o caminho da outra.
+    especieRecalculo: especieDoRecalculo(item),
+    // ⚠⚠ A TELA NÃO SABIA O QUE ERA "VENCIDA" — medido: zero ocorrências de `isGuideOverdue` no
+    // front, e `OVERDUE` só num mapa de rótulo. O contador clicava em Recalcular sem saber que ia
+    // receber uma guia NOVA, com juros e multa. O veredito é do BACKEND (é ele que escolhe entre
+    // `GERARDASCOBRANCA17` e `GERARDAS12`) e desce pronto — a tela não o recalcula.
+    vencida: isGuideOverdue(item, now),
+    // ⚠⚠ E A DATA PODE SER DERIVADA: sem `Guide.vencimento`, a regra assume o dia 20 do mês
+    // seguinte. Sem esta marca a tela diria "venceu em 20/07" sobre uma data que ninguém registrou.
+    vencimentoEstimado: vencimentoDaGuia(item, now).derivado,
+    // ⚠ O texto do aviso vem PRONTO daqui, e os dois portais leem o mesmo. Escrito em cada tela,
+    // eles divergiriam na primeira correção — e este é o aviso que precede um gasto e um valor maior.
+    avisoDeRecalculo: avisoDeRecalculo({ guide: item, now }),
     // Q24: vínculo de parcelamento (pra UI rotular a guia como parcelamento, não "DAS").
     parcelamentoId: item.parcelamentoId || null,
     numeroParcela: item.numeroParcela != null ? Number(item.numeroParcela) : null,

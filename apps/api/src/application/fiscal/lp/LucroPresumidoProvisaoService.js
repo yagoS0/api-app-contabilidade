@@ -128,6 +128,74 @@ export async function provisionarLpDaDeclaracao({
  * parseia os débitos (principal por código) e gera a provisão por tributo + o split na circular.
  * @param {Object} opts { portalClientId, competencia }
  */
+/**
+ * Aplica na guia o que o DARF (`GERARGUIA31`) devolveu: valor, vencimento, PDF, nº do documento e
+ * o acréscimo REAL por tributo (juros/multa — a declaração traz só o principal).
+ *
+ * ⚠ EXTRAÍDA de `capturarLpDaCompetencia` em 27/08/2026 para o RECÁLCULO reusá-la. Duas cópias
+ * divergiriam, e a divergência sairia como guia com PDF novo e valor velho — ou o contrário.
+ *
+ * ⚠ `valorOriginal` NÃO é tocado, aqui nem lá: ele guarda o principal da PRIMEIRA captura, e é o
+ * que permite comparar depois quanto de acréscimo entrou.
+ */
+async function aplicarDarfNaGuia({ portalClientId, competencia, guideId, darf }) {
+  const g = await prisma.guide.findUnique({ where: { id: guideId }, select: { extracted: true } }).catch(() => null);
+  const extractedAtual = g?.extracted && typeof g.extracted === "object" ? g.extracted : {};
+  await prisma.guide.update({
+    where: { id: guideId },
+    data: {
+      ...(darf.valor != null ? { valor: darf.valor } : {}),
+      ...(darf.vencimento ? { vencimento: new Date(darf.vencimento) } : {}),
+      // Anexa o PDF do DARF consolidado (GERARGUIA31) → guia baixável e enviável por e-mail.
+      ...(darf.pdfBuffer ? { pdfBytes: darf.pdfBuffer } : {}),
+      extracted: { ...extractedAtual, numeroDocumento: darf.numeroDocumento },
+    },
+  }).catch(() => {});
+  const valores = {};
+  for (const it of darf.composicao?.itens || []) {
+    const t = CODIGO_TRIBUTO[String(it.codigo).replace(/\D+/g, "").slice(0, 4)];
+    if (t) valores[t] = { principal: it.principal, juros: it.juros, multa: it.multa };
+  }
+  if (Object.keys(valores).length) {
+    await gravarAcrescimoCircular({ client: prisma, portalClientId, competencia, valores }).catch(() => {});
+  }
+}
+
+/**
+ * ⚠⚠ REEMITIR A DARF DO PRESUMIDO — o "Recalcular" da guia do LP.
+ *
+ * UMA chamada paga (`GERARGUIA31`), não duas: a declaração (`CONSDECCOMPLETA33`) NÃO é consultada
+ * de novo. Recalcular pede a GUIA outra vez; a apuração declarada não mudou.
+ *
+ * ⚠⚠ AQUI A FALHA NÃO É BEST-EFFORT. Na captura, o DARF é opcional — a provisão já aconteceu e o
+ * fluxo segue. Aqui, emitir o DARF É a ação: engolir o erro devolveria "recalculado" sobre uma guia
+ * que ninguém tocou, e o contador mandaria ao cliente a guia velha achando que é a nova.
+ *
+ * ⚠⚠ E NÃO ESTÁ CONFIRMADO que o `GERARGUIA31` devolva a DARF com juros e multa quando ela está
+ * vencida — o PGDAS-D tem serviço próprio para isso (`GERARDASCOBRANCA17`); a DCTFWeb, até onde
+ * este repositório sabe, tem um só. Por isso a `composicao` volta CRUA para quem chamou, e quem lê
+ * o que ela diz é `leituraDosAcrescimos` — que tem três respostas, e nunca chama ilegível de
+ * "sem acréscimos".
+ */
+export async function reemitirDarfLp({ portalClientId, competencia, guideId }) {
+  const pc = await prisma.portalClient.findUnique({ where: { id: portalClientId }, select: { cnpj: true } });
+  if (!pc?.cnpj) {
+    const e = new Error("portal_company_not_found");
+    e.code = "PORTAL_COMPANY_NOT_FOUND";
+    throw e;
+  }
+  const darf = await emitirDarfDctfweb({ contribuinteCnpj: pc.cnpj, competencia });
+  await aplicarDarfNaGuia({ portalClientId, competencia, guideId, darf });
+  return {
+    guideId,
+    valor: darf.valor,
+    vencimento: darf.vencimento,
+    numeroDocumento: darf.numeroDocumento,
+    // ⚠ CRUA, de propósito — a leitura dos acréscimos é regra, e mora em `lib/recalculoDaGuia.js`.
+    composicao: darf.composicao,
+  };
+}
+
 export async function capturarLpDaCompetencia({ portalClientId, competencia }) {
   const pc = await prisma.portalClient.findUnique({ where: { id: portalClientId }, select: { cnpj: true, companyId: true } });
   if (!pc) {
@@ -163,27 +231,7 @@ export async function capturarLpDaCompetencia({ portalClientId, competencia }) {
     darf = await emitirDarfDctfweb({ contribuinteCnpj: pc.cnpj, competencia });
   } catch { /* ignore */ }
   if (darf && provisao?.guideId) {
-    const g = await prisma.guide.findUnique({ where: { id: provisao.guideId }, select: { extracted: true } }).catch(() => null);
-    const extractedAtual = g?.extracted && typeof g.extracted === "object" ? g.extracted : {};
-    await prisma.guide.update({
-      where: { id: provisao.guideId },
-      data: {
-        ...(darf.valor != null ? { valor: darf.valor } : {}),
-        ...(darf.vencimento ? { vencimento: new Date(darf.vencimento) } : {}),
-        // Anexa o PDF do DARF consolidado (GERARGUIA31) → guia baixável e enviável por e-mail.
-        ...(darf.pdfBuffer ? { pdfBytes: darf.pdfBuffer } : {}),
-        extracted: { ...extractedAtual, numeroDocumento: darf.numeroDocumento },
-      },
-    }).catch(() => {});
-    // Acréscimo REAL por tributo (juros/multa do DARF) → sobrepõe o principal-only da declaração.
-    const valores = {};
-    for (const it of darf.composicao?.itens || []) {
-      const t = CODIGO_TRIBUTO[String(it.codigo).replace(/\D+/g, "").slice(0, 4)];
-      if (t) valores[t] = { principal: it.principal, juros: it.juros, multa: it.multa };
-    }
-    if (Object.keys(valores).length) {
-      await gravarAcrescimoCircular({ client: prisma, portalClientId, competencia, valores }).catch(() => {});
-    }
+    await aplicarDarfNaGuia({ portalClientId, competencia, guideId: provisao.guideId, darf });
   }
 
   // Reconciliação (alerta, não bloqueia): calculado (notas × presunção) × débito da DCTFWeb.

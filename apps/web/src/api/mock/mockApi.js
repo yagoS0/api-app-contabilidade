@@ -407,6 +407,67 @@ function linhaDigitavelDoMock(seq) {
   }
 }
 
+// ⚠⚠ OS TRÊS CAMPOS QUE O RECÁLCULO PRECISA, no mock — e sem eles o aviso nasceria inalcançável
+// offline, que é a OITAVA vez que este projeto perderia um ramo por isso.
+//
+// A regra de verdade é `application/guides/lib/recalculoDaGuia.js` (25 testes). Isto aqui reproduz a
+// FORMA do payload, não a autoridade — mas reproduz os DOIS desfechos que importam:
+//
+//   · guia VENCIDA .......... o aviso âmbar, dizendo que a Receita gera OUTRA guia com juros e multa;
+//   · guia EM ABERTO ........ o aviso neutro, sem promessa de acréscimo;
+//   · vencimento DERIVADO ... a data sai marcada como ESTIMADA (guia sem `vencimento` gravado);
+//   · DARF do PRESUMIDO ..... a espécie nova, que a tela do contador passa a oferecer.
+function recalculoDoMock(guia) {
+  const tipo = String(guia?.tipo || "").toUpperCase();
+  const pago = String(guia?.paymentStatus || "").toUpperCase() === "PAID";
+  const ehDarfLp = String(guia?.sourceFileId || "").startsWith("serpro:dctfweb:lp:");
+  const especie = guia?.parcelamentoId ? null
+    : tipo === "SIMPLES" ? "DAS_SIMPLES"
+      : ehDarfLp ? "DARF_PRESUMIDO"
+        : null;
+
+  const estimado = !guia?.vencimento;
+  const venceEm = guia?.vencimento
+    ? new Date(guia.vencimento)
+    : (() => {
+      const m = String(guia?.competencia || "").match(/^(\d{4})-(\d{2})$/);
+      return m ? new Date(Date.UTC(Number(m[1]), Number(m[2]), 20)) : null;
+    })();
+  const vencida = String(guia?.paymentStatus || "").toUpperCase() === "OVERDUE"
+    || (venceEm ? venceEm.getTime() < Date.now() : false);
+
+  if (!especie || pago) {
+    return { especieRecalculo: especie, canRecalculate: false, vencida, vencimentoEstimado: estimado, avisoDeRecalculo: null };
+  }
+
+  const dataTexto = venceEm ? venceEm.toISOString().slice(0, 10).split("-").reverse().join("/") : null;
+  const custo = "⚠ Cada recálculo é uma chamada PAGA ao SERPRO, contra o teto mensal do escritório.";
+  const aviso = vencida
+    ? {
+      vencida: true,
+      especie,
+      titulo: "Esta guia está vencida",
+      texto: (dataTexto
+        ? estimado
+          ? `O vencimento não está gravado nesta guia; pela competência, ele seria por volta de ${dataTexto} — data ESTIMADA, confira no documento. `
+          : `Ela venceu em ${dataTexto}. `
+        : "")
+        + "Recalcular NÃO atualiza esta guia: a Receita gera uma guia NOVA, com juros e multa, e o "
+        + "valor a pagar será maior. " + custo,
+      tom: "atencao",
+    }
+    : {
+      vencida: false,
+      especie,
+      titulo: "Gerar a guia de novo",
+      texto: `Esta guia ainda não venceu${dataTexto ? ` (vence em ${dataTexto}${estimado ? ", data estimada" : ""})` : ""}. `
+        + "O recálculo pede uma guia nova à Receita com os mesmos valores. " + custo,
+      tom: "neutro",
+    };
+
+  return { especieRecalculo: especie, canRecalculate: true, vencida, vencimentoEstimado: estimado, avisoDeRecalculo: aviso };
+}
+
 function makeGuidesByCompany(companies) {
   const guidesByCompany = new Map();
   let seqLinha = 0;
@@ -416,7 +477,7 @@ function makeGuidesByCompany(companies) {
       const emailStatus = status === "ERROR" ? "ERROR" : faker.helpers.arrayElement(["PENDING", "SENT"]);
       const vencimento = faker.date.soon({ days: 20 }).toISOString();
       const paymentStatus = faker.helpers.arrayElement(["OPEN", "OPEN", "PAID", "OVERDUE"]);
-      return {
+      const base = {
         id: faker.string.uuid(),
         portalClientId: company.companyId,
         tipo: faker.helpers.arrayElement(["DAS", "FGTS", "INSS", "IRPJ", "SIMPLES"]),
@@ -434,13 +495,50 @@ function makeGuidesByCompany(companies) {
         serproLastCheckResult: paymentStatus === "PAID" ? "NOT_FOUND" : "FOUND",
         serproService: "GERARDAS12",
         canConfirmPayment: paymentStatus !== "PAID",
-        canRecalculate: paymentStatus !== "PAID", // Q29: vencida ou em aberto (não só vencida)
         // ⚠ Depois de `valor`, de propósito: no caso DISPONIVEL este bloco o sobrescreve para o
         // valor que a linha realmente codifica.
         ...linhaDigitavelDoMock(seqLinha++),
       };
+      // ⚠ DEPOIS do objeto: `recalculoDoMock` lê `tipo`, `paymentStatus`, `vencimento` e
+      // `competencia` da própria guia — calculá-lo antes olharia campos que ainda não existem.
+      return { ...base, ...recalculoDoMock(base) };
     });
     if (company.temParcelamento) guides.unshift(...makeParcelaGuides(company));
+    // ⚠⚠ A DARF CONSOLIDADA DO LUCRO PRESUMIDO — sem ela o ramo `DARF_PRESUMIDO` do Recalcular
+    // seria INALCANÇÁVEL offline, e ele é justamente o que a entrega de 27/08/2026 acrescentou.
+    // ⚠ O que a identifica é o `sourceFileId`, NUNCA `tipo: "OUTRA"`: a guia de INSS/DCTFWeb é
+    // "OUTRA" com `source: "SERPRO"` também. É a mesma leitura do backend.
+    // ⚠ E ela nasce VENCIDA (competência de dois meses atrás, sem `vencimento` gravado), porque o
+    // aviso que importa — "a Receita gera OUTRA guia, com juros e multa" — só aparece nesse caso.
+    if (/PRESUMIDO|REAL/i.test(String(company.legacyCompany?.regimeTributario || ""))) {
+      const compLp = competenciaAnteriorMock();
+      const darfLp = {
+        id: `mock-darf-lp-${company.companyId}`,
+        portalClientId: company.companyId,
+        tipo: "OUTRA",
+        competencia: compLp,
+        valor: "4820.55",
+        valorOriginal: "4820.55",
+        vencimento: null,
+        status: "PROCESSED",
+        emailStatus: "PENDING",
+        paymentStatus: "OPEN",
+        paymentStatusSource: "SERPRO",
+        source: "SERPRO",
+        sourceFileId: `serpro:dctfweb:lp:${String(company.cnpj || "").replace(/\D+/g, "")}:${compLp}`,
+        serproService: "GERARGUIA31",
+        canConfirmPayment: true,
+        extracted: {
+          composicao: [
+            { codigo: "8109", tributo: "PIS", denominacao: "PIS", total: 260 },
+            { codigo: "2172", tributo: "COFINS", denominacao: "COFINS", total: 1200 },
+            { codigo: "2089", tributo: "IRPJ", denominacao: "IRPJ", total: 2280 },
+            { codigo: "2372", tributo: "CSLL", denominacao: "CSLL", total: 1080.55 },
+          ],
+        },
+      };
+      guides.unshift({ ...darfLp, ...recalculoDoMock(darfLp) });
+    }
     guidesByCompany.set(company.companyId, guides);
   }
   return guidesByCompany;

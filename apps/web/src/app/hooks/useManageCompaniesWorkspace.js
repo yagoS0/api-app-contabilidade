@@ -752,6 +752,21 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       const payload = await api.recalculateGuide(guideId);
       const skipped = Boolean(payload?.emailDispatch?.skipped);
       const enviadas = Number(payload?.emailDispatch?.sent || 0);
+
+      // ⚠⚠ A GUIA VENCIDA PODE TER VOLTADO SEM JUROS E MULTA, e isso vem ANTES do estado do e-mail.
+      //
+      // Não está confirmado que o `GERARGUIA31` (a DARF do Presumido) gere a versão com acréscimos
+      // — o PGDAS-D tem serviço próprio para isso; a DCTFWeb, até onde o projeto sabe, tem um só.
+      // O backend devolve o que se VIU na composição do documento, com três respostas, e as duas
+      // que não são "vieram" precisam chegar ao contador: mandar ao cliente uma guia a menor faz
+      // ele pagar errado e continuar devendo a diferença, sem ninguém perceber.
+      //
+      // ⚠ "Não deu para ler a composição" também entra — ausência de leitura não é prova de
+      // ausência de juros, e o silêncio aqui seria lido como confirmação.
+      const acrescimos = payload?.acrescimos;
+      const alertaAcrescimo = payload?.vencida && acrescimos && acrescimos.estado !== "presentes"
+        ? `${acrescimos.texto} `
+        : "";
       // ⚠ `loadGuides` limpa o feedback — a mensagem tem que vir DEPOIS dele, senão some.
       await loadGuides();
       // ⚠ Dizia "enviada para a fila de e-mail" / "o envio automático está ocupado". Não há fila e
@@ -759,14 +774,19 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       // tela pode afirmar é se ele saiu, e o que fazer quando não saiu.
       if (skipped) {
         feedback.setError(
-          "Guia recalculada, mas o e-mail NÃO foi enviado: há outro envio em andamento (ou um envio "
+          alertaAcrescimo
+          + "Guia recalculada, mas o e-mail NÃO foi enviado: há outro envio em andamento (ou um envio "
           + "anterior que travou). Nada tenta de novo sozinho — use 'Liberar ao cliente' em até 5 minutos.",
         );
       } else if (enviadas > 0) {
-        feedback.setMessage("Guia recalculada e enviada ao cliente.");
+        // ⚠ Com ressalva de acréscimo, o desfecho NÃO é verde: a guia saiu, e é justamente por isso
+        // que o contador precisa conferi-la antes que o cliente pague.
+        if (alertaAcrescimo) feedback.setError(`${alertaAcrescimo}A guia recalculada já foi enviada ao cliente.`);
+        else feedback.setMessage("Guia recalculada e enviada ao cliente.");
       } else {
         feedback.setError(
-          "Guia recalculada, mas o e-mail NÃO foi enviado. Nada tenta de novo sozinho — "
+          alertaAcrescimo
+          + "Guia recalculada, mas o e-mail NÃO foi enviado. Nada tenta de novo sozinho — "
           + "use 'Liberar ao cliente' para tentar agora.",
         );
       }
