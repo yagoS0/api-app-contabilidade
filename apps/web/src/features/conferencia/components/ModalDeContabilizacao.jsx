@@ -29,9 +29,12 @@ import {
   separarParaOLote,
 } from "../lib/contabilizacaoEmLote";
 import {
+  ESTADO_DO_PLANO,
   FRASE_DO_MOTIVO_DA_CONTA,
   completoDoReduzido,
   contasOferecidas,
+  motivoDoSeletorVazio,
+  problemaDoCaixa,
 } from "../lib/contaDaConferencia";
 import { cnpjFormatado, dataCivil, dinheiro, leituraDaOrigemDoPagamento } from "../lib/conferenciaTela";
 
@@ -46,7 +49,7 @@ const card = {
 
 /** ⚠ Um `<input>` por linha, com a MESMA tradução do envio — a tela não valida por um caminho e
  * envia por outro. */
-function CelulaDaConta({ id, valor, contas, onChange, desabilitado }) {
+function CelulaDaConta({ id, valor, contas, onChange, desabilitado, deQuem }) {
   const traducao = useMemo(() => completoDoReduzido(valor, contas), [valor, contas]);
   return (
     <div style={{ display: "grid", gap: 2, minWidth: 150 }}>
@@ -56,7 +59,10 @@ function CelulaDaConta({ id, valor, contas, onChange, desabilitado }) {
         disabled={desabilitado}
         onChange={(e) => onChange(id, e.target.value)}
         placeholder="reduzido — ex.: 401"
-        aria-label="Conta contábil da despesa"
+        // ⚠⚠ O NOME ACESSÍVEL NOMEIA A LINHA. Os vinte campos carregavam o MESMO rótulo — quem
+        // navega por leitor de tela ouvia vinte campos idênticos, sem saber de qual fornecedor.
+        // O dado que distingue já está na linha; só não era referenciado.
+        aria-label={deQuem ? `Conta contábil da despesa — ${deQuem}` : "Conta contábil da despesa"}
         style={{
           width: "100%",
           ...(valor && traducao.motivo ? { borderColor: "var(--state-danger)" } : null),
@@ -77,7 +83,41 @@ function CelulaDaConta({ id, valor, contas, onChange, desabilitado }) {
 }
 
 /** ⚠ O desfecho de UMA linha do envio. Vocabulário fechado — `null` é "ainda não tentada". */
-const DESFECHO = Object.freeze({ ENVIANDO: "enviando", OK: "ok", RECUSADA: "recusada" });
+const DESFECHO = Object.freeze({
+  ENVIANDO: "enviando",
+  OK: "ok",
+  RECUSADA: "recusada",
+  /**
+   * ⚠⚠ NÃO SE SABE SE ESTA LINHA VIROU LANÇAMENTO — e chamá-la de "recusada" seria mentir.
+   *
+   * O pedido saiu da máquina e a resposta não voltou. Ela pode ter sido contabilizada. É o mesmo
+   * desenho da camada `TRANSPORTE` da emissão em lote de NFS-e, e pela mesma razão: entre afirmar
+   * um desfecho e dizer que não se sabe, quem não pode ceder é a verdade.
+   */
+  INDETERMINADA: "indeterminada",
+});
+
+/**
+ * ⚠⚠ O TETO DE ESPERA POR LINHA — sem ele o modal podia TRANCAR PARA SEMPRE.
+ *
+ * Medido por agente adversarial em 27/08/2026: com um `aoEnviarLinha` que nunca assenta (conexão
+ * pendurada — e o `realApi` não passa `signal` nem timeout ao `fetch`), o laço ficava preso na
+ * primeira linha, `enviando` nunca voltava a `false`, e o `ocupado` do primitivo `Modal` desligava
+ * as TRÊS saídas de uma vez (✕, Esc e clique no fundo), com o `Cancelar` também desabilitado.
+ * **Só recarregando a página.**
+ *
+ * ⚠ 45 s é folgado de propósito: ele existe para o pendurado, não para a rede lenta.
+ */
+const TETO_POR_LINHA_MS = 45_000;
+
+/** ⚠ Uma corrida contra o relógio que NÃO cancela a chamada — ela só deixa de ser esperada. */
+function comTeto(promessa, ms) {
+  let bater;
+  const relogio = new Promise((_, rejeitar) => {
+    bater = setTimeout(() => rejeitar(Object.assign(new Error("tempo esgotado"), { estourouOTeto: true })), ms);
+  });
+  return Promise.race([promessa, relogio]).finally(() => clearTimeout(bater));
+}
 
 export function ModalDeContabilizacao({
   itens,
@@ -88,6 +128,8 @@ export function ModalDeContabilizacao({
   idsQueCasam,
   podeEscrever,
   podeEscolherConta,
+  estadoDoPlano = ESTADO_DO_PLANO.OK,
+  totalDaFila,
   aoFechar,
   aoEnviarLinha,
   aoConcluir,
@@ -105,6 +147,23 @@ export function ModalDeContabilizacao({
   const [desfechos, setDesfechos] = useState({});
 
   const oferecidas = useMemo(() => contasOferecidas(contas), [contas]);
+  /**
+   * ⚠⚠ O CAIXA É A CONTRAPARTIDA CRAVADA, E TORTO ELE DERRUBA **TODA** LINHA DA EMPRESA.
+   *
+   * `montarLancamento` credita sempre `111010001` e recusa com `CAIXA_FORA_DO_PLANO`,
+   * `CAIXA_AMBIGUO` ou `CAIXA_SINTETICO` — por mais certa que esteja a conta escolhida.
+   *
+   * ⚠ `ModalDaAcao` já antecipava isso na linha individual; o LOTE não, e agente de verificação
+   * mediu a consequência em 27/08/2026: com o plano sem `111010001`, o botão dizia "Contabilizar 1",
+   * habilitado e MUDO, e o lote disparava N POSTs para colher N recusas. Duas telas, a mesma regra,
+   * respostas opostas.
+   */
+  const caixaTorto = useMemo(
+    () => (estadoDoPlano === ESTADO_DO_PLANO.OK ? problemaDoCaixa(contas) : null),
+    [contas, estadoDoPlano],
+  );
+  /** ⚠ E o seletor vazio nunca é mudo: "não veio plano nenhum" tem três causas e três consertos. */
+  const seletorVazio = useMemo(() => motivoDoSeletorVazio(contas, estadoDoPlano), [contas, estadoDoPlano]);
   const plano = useMemo(() => planoDoEnvio(separado.dentro, contasPorLinha, contas), [separado.dentro, contasPorLinha, contas]);
   const faltam = pendentes(separado.dentro, contasPorLinha);
   /**
@@ -119,8 +178,10 @@ export function ModalDeContabilizacao({
    * que o laço percorre. Duas listas aqui fariam o botão prometer um número e enviar outro.
    */
   const aEnviar = useMemo(
-    () => plano.enviar.filter((l) => desfechos[l.item.id]?.estado !== DESFECHO.OK),
-    [plano.enviar, desfechos],
+    // ⚠ O caixa torto zera o plano inteiro: nenhuma linha desta empresa pode ser contabilizada
+    // enquanto ele não for consertado, e o botão precisa dizer isso em vez de tentar.
+    () => (caixaTorto ? [] : plano.enviar.filter((l) => desfechos[l.item.id]?.estado !== DESFECHO.OK)),
+    [plano.enviar, desfechos, caixaTorto],
   );
 
   const trocarConta = useCallback((id, valor) => {
@@ -128,8 +189,10 @@ export function ModalDeContabilizacao({
   }, []);
 
   const aplicarNasPendentes = useCallback(() => {
-    setContasPorLinha((atual) => aplicarEmMassa(atual, emMassa).contas);
-  }, [emMassa]);
+    // ⚠ As LINHAS, não as chaves do mapa — é o que faz `faltam` e "aplicar" falarem do mesmo
+    // conjunto. Ver o comentário de `aplicarEmMassa`.
+    setContasPorLinha((atual) => aplicarEmMassa(atual, emMassa, separado.dentro).contas);
+  }, [emMassa, separado.dentro]);
 
   /**
    * ⚠⚠ N CHAMADAS, UMA POR LINHA, SEQUENCIAIS — reusando `POST /conferencia/:id/confirmar`.
@@ -151,11 +214,20 @@ export function ModalDeContabilizacao({
       setDesfechos((d) => ({ ...d, [id]: { estado: DESFECHO.ENVIANDO } }));
       try {
         // ⚠⚠ O CORPO LEVA **SÓ** A CONTA. A data NÃO viaja: `lerPagamentoDoCorpo` decide por
-        // `hasOwnProperty`, e reenviar a data que a linha já tem APAGA o `OFX` e transforma prova em
-        // declaração. Por isso o lote só admite linha que já tem data (ver `PRECISA_DE_DATA`).
-        await aoEnviarLinha(id, { contaAplicada: linha.contaCompleta });
+        // `hasOwnProperty` e, com a chave presente, lê `body.origemPagamento ?? null` — mandar a data
+        // sozinha volta `origem_de_pagamento_invalida`, e mandá-la COM a origem apaga o `OFX` e
+        // transforma prova em declaração, em silêncio. Por isso o lote só admite linha que já tem
+        // data (ver `PRECISA_DE_DATA`) e nunca reenvia a que ela tem.
+        await comTeto(Promise.resolve(aoEnviarLinha(id, { contaAplicada: linha.contaCompleta })), TETO_POR_LINHA_MS);
         setDesfechos((d) => ({ ...d, [id]: { estado: DESFECHO.OK } }));
       } catch (e) {
+        if (e?.estourouOTeto) {
+          // ⚠⚠ DESFECHO DESCONHECIDO **PARA O LOTE**, e é o precedente da emissão em lote de NFS-e:
+          // continuar depois de uma resposta que não voltou é seguir sem saber onde se está. As
+          // linhas seguintes ficam `nao_tentada`, que é a verdade — ninguém encostou nelas.
+          setDesfechos((d) => ({ ...d, [id]: { estado: DESFECHO.INDETERMINADA } }));
+          break;
+        }
         // ⚠ A recusa do SERVIDOR chega com o texto dela, na linha dela. Ele é quem sabe o que fazer.
         setDesfechos((d) => ({ ...d, [id]: { estado: DESFECHO.RECUSADA, frase: e?.message || "O servidor recusou esta linha." } }));
       }
@@ -166,9 +238,13 @@ export function ModalDeContabilizacao({
     aoConcluir?.();
   }, [aEnviar, aoEnviarLinha, aoConcluir]);
 
-  const concluidas = Object.values(desfechos).filter((d) => d.estado === DESFECHO.OK).length;
-  const recusadas = Object.values(desfechos).filter((d) => d.estado === DESFECHO.RECUSADA).length;
-  const jaEnviou = concluidas + recusadas > 0;
+  // ⚠ Os contadores olham as linhas QUE ESTÃO NA TABELA, não o mapa inteiro de desfechos — senão o
+  // rodapé conta linhas que já saíram da fila. Achado por agente adversarial em 27/08/2026.
+  const contar = (estado) => separado.dentro.filter((i) => desfechos[i.id]?.estado === estado).length;
+  const concluidas = contar(DESFECHO.OK);
+  const recusadas = contar(DESFECHO.RECUSADA);
+  const indeterminadas = contar(DESFECHO.INDETERMINADA);
+  const jaEnviou = concluidas + recusadas + indeterminadas > 0;
 
   const visiveis = soPendentes
     ? separado.dentro.filter((i) => !String(contasPorLinha[i.id] ?? "").trim())
@@ -185,6 +261,7 @@ export function ModalDeContabilizacao({
           <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
             {jaEnviou
               ? `${concluidas} contabilizada(s)${recusadas ? ` · ${recusadas} recusada(s)` : ""}`
+                + `${indeterminadas ? ` · ${indeterminadas} sem resposta` : ""}`
               : `${plano.enviar.length} pronta(s) · ${faltam} sem conta`}
           </span>
           <span style={{ flex: 1 }} />
@@ -198,8 +275,10 @@ export function ModalDeContabilizacao({
             // "escolha uma conta" × "acabou, feche".
             title={
               aEnviar.length > 0 ? undefined
-                : plano.enviar.length > 0 ? "Todas as linhas com conta já foram contabilizadas."
-                  : "Nenhuma linha tem conta escolhida ainda."
+                // ⚠ O caixa vence os outros dois: ele é o impedimento que nenhuma escolha resolve.
+                : caixaTorto ? caixaTorto
+                  : plano.enviar.length > 0 ? "Todas as linhas com conta já foram contabilizadas."
+                    : "Nenhuma linha tem conta escolhida ainda."
             }
             onClick={enviar}
           >
@@ -214,7 +293,39 @@ export function ModalDeContabilizacao({
         <div style={{ ...card, fontSize: "0.85rem", color: "var(--text-muted)" }}>
           Cada linha vira um lançamento: <strong>débito na conta que você escolher</strong>, crédito no
           caixa. A contrapartida não é escolhida aqui — ela é sempre o caixa.
+          {/* ⚠⚠ O LIMITE DA EXCLUSÃO, DITO EM VEZ DE SUPOSTO. O casamento débito × nota só olha notas
+              que ainda esperam pagamento (`AGUARDANDO_PAGAMENTO`, medido em `DeclaradoService`).
+              Uma nota cujo pagamento você já informou à mão saiu dessa lista — então o débito do
+              extrato que a paga NÃO é reconhecido aqui, e contabilizar os dois dobra a despesa.
+              Enquanto a regra de casamento não alcançar esse caso, a tela avisa. */}
+          <div style={{ marginTop: 6, color: "var(--state-warn)" }}>
+            ⚠ Se você já informou o pagamento de alguma nota <strong>à mão</strong>, o débito do extrato
+            que a pagou não é reconhecido como par dela — confira antes de contabilizar os dois.
+          </div>
         </div>
+
+        {/* ⚠⚠ O CAIXA TORTO E O PLANO AUSENTE APARECEM ANTES DA TABELA, não só no `title` do botão:
+            `title` não aparece no teclado nem no toque (regra do `apps/web/CLAUDE.md`, duas vezes). */}
+        {caixaTorto ? (
+          <div role="alert" style={{ ...card, borderColor: "var(--state-danger)", color: "var(--state-danger)", fontSize: "0.85rem" }}>
+            {caixaTorto}
+          </div>
+        ) : null}
+        {seletorVazio ? (
+          <div role="alert" style={{ ...card, borderColor: "var(--state-warn)", color: "var(--state-warn)", fontSize: "0.85rem" }}>
+            {seletorVazio}
+          </div>
+        ) : null}
+
+        {/* ⚠⚠ A FILA É PAGINADA E O MODAL SÓ VÊ A PÁGINA — e ele precisa dizer isso.
+            Mesma classe do bloco `ForaDoLote`: número menor sem explicação faz o contador concluir
+            que o sistema perdeu despesa. `Number.isFinite` porque `total` ausente não é zero. */}
+        {Number.isFinite(Number(totalDaFila)) && Number(totalDaFila) > (itens?.length ?? 0) ? (
+          <div style={{ ...card, borderColor: "var(--state-warn)", fontSize: "0.85rem", color: "var(--text-muted)" }}>
+            Este lote vê <strong>{itens.length}</strong> das <strong>{Number(totalDaFila)}</strong> linhas
+            da fila — a fila é paginada. Reduza por competência ou por estado para alcançar as demais.
+          </div>
+        ) : null}
 
         {/* ⚠⚠ O QUE FICOU DE FORA APARECE, COM O MOTIVO. Uma fila de 40 virando um modal de 31 sem
             explicação faz o contador procurar as 9 que "sumiram". */}
@@ -250,7 +361,7 @@ export function ModalDeContabilizacao({
               </Button>
               <span style={{ flex: 1 }} />
               <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: "0.82rem" }}>
-                <input type="checkbox" checked={soPendentes} onChange={(e) => setSoPendentes(e.target.checked)} />
+                <input type="checkbox" checked={soPendentes} disabled={enviando} onChange={(e) => setSoPendentes(e.target.checked)} />
                 Mostrar só as sem conta
               </label>
             </div>
@@ -267,11 +378,11 @@ export function ModalDeContabilizacao({
               <table className="tabela--densa">
                 <thead>
                   <tr>
-                    <th>Descrição</th>
-                    <th>Pagamento</th>
+                    <th scope="col">Descrição</th>
+                    <th scope="col">Pagamento</th>
                     <th className="tabela__num">Valor</th>
-                    <th>Conta (débito)</th>
-                    <th>Situação</th>
+                    <th scope="col">Conta (débito)</th>
+                    <th scope="col">Situação</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -372,13 +483,19 @@ function LinhaDoLote({ item, valor, contas, desfecho, desabilitado, onChange }) 
       </td>
       <td className="tabela__num">{dinheiro(item.valorAjustado ?? item.valor)}</td>
       <td>
-        <CelulaDaConta id={item.id} valor={valor} contas={contas} onChange={onChange} desabilitado={desabilitado} />
+        <CelulaDaConta id={item.id} valor={valor} contas={contas} onChange={onChange} desabilitado={desabilitado} deQuem={item.descricaoOriginal} />
       </td>
       <td>
         {desfecho?.estado === DESFECHO.OK ? (
           <span style={{ color: "var(--state-ok)", fontSize: "0.8rem" }}>contabilizada</span>
         ) : desfecho?.estado === DESFECHO.ENVIANDO ? (
           <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>enviando…</span>
+        ) : desfecho?.estado === DESFECHO.INDETERMINADA ? (
+          // ⚠⚠ ÂMBAR, NUNCA VERMELHO — e nunca "recusada". O pedido saiu e a resposta não voltou:
+          // esta linha PODE ter virado lançamento. A frase manda conferir, não repetir.
+          <span role="alert" style={{ color: "var(--state-warn)", fontSize: "0.75rem" }}>
+            sem resposta — pode ter sido contabilizada. Feche e atualize a fila para ver.
+          </span>
         ) : desfecho?.estado === DESFECHO.RECUSADA ? (
           // ⚠ O motivo do SERVIDOR, na linha dele — não numa barra genérica no topo.
           <span role="alert" style={{ color: "var(--state-danger)", fontSize: "0.75rem" }}>{desfecho.frase}</span>

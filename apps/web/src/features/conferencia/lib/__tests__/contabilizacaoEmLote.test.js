@@ -136,6 +136,52 @@ describe("⚠ separar o que entra do que fica de fora", () => {
     const r = separarParaOLote([linha({ dataPagamento: null, mesFechado: true })], opcoes);
     expect(r.fora[0].motivo).toBe(FORA_DO_LOTE.BLOQUEADA);
   });
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  // ⚠⚠ O ESTADO — o motivo que existia BATIZADO E NUNCA ERA EMITIDO.
+  //
+  // Achado por dois agentes independentes em 27/08/2026, e alcançável pela própria aba: os selos de
+  // estado filtram a fila, então "Contabilizado: 12" + "Contabilizar em lote" punha 12 linhas já
+  // contabilizadas dentro do modal, com o botão dizendo "Contabilizar 12". Os 12 POSTs voltavam
+  // `TRANSICAO_INVALIDA_NESTE_ESTADO`.
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  it.each([
+    ["CONTABILIZADO", "CONTABILIZADO"],
+    ["RECUSADO", "RECUSADO"],
+    ["FUNDIDO", "FUNDIDO"],
+    ["um estado que esta tela não conhece", "INVENTADO"],
+    ["estado ausente", undefined],
+  ])("⚠⚠ %s NÃO entra no lote", (_nome, estado) => {
+    const r = separarParaOLote([linha({ estado })], opcoes);
+    expect(r.dentro).toHaveLength(0);
+    expect(r.fora[0].motivo).toBe(FORA_DO_LOTE.ESTADO_NAO_CONFIRMA);
+  });
+
+  it("⚠ os dois estados que confirmam continuam entrando", () => {
+    expect(separarParaOLote([linha({ estado: "A_CONFERIR" })], opcoes).dentro).toHaveLength(1);
+    // ⚠ AGUARDANDO_PAGAMENTO oferece `confirmar`, mas cai no motivo da DATA — que é mais específico.
+    const r = separarParaOLote([linha({ estado: "AGUARDANDO_PAGAMENTO", dataPagamento: null })], opcoes);
+    expect(r.fora[0].motivo).toBe(FORA_DO_LOTE.PRECISA_DE_DATA);
+  });
+
+  it("⚠⚠ 'não confirma' VENCE 'casa com nota' — para uma linha já lançada, mandar casar é o conselho errado", () => {
+    const r = separarParaOLote([linha({ id: "ofx-1", estado: "CONTABILIZADO" })], opcoes);
+    expect(r.fora[0].motivo).toBe(FORA_DO_LOTE.ESTADO_NAO_CONFIRMA);
+  });
+
+  it("⚠ a leitura do estado é a MESMA da fila (`acoesDaLinha`), não uma segunda", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "contabilizacaoEmLote.js"), "utf8");
+    expect(fonte).toMatch(/acoesDaLinha\(item\)\.includes\("confirmar"\)/);
+  });
+
+  // ⚠⚠ SEM A LISTA DE QUEM CASA, NÃO HÁ LOTE — guarda de segurança não tem default permissivo.
+  it("⚠⚠ `idsQueCasam` ausente RECUSA, em vez de liberar tudo", () => {
+    expect(() => separarParaOLote([linha()], { podeEscrever: true, podeEscolherConta: true }))
+      .toThrow(/idsQueCasam/);
+    expect(() => separarParaOLote([linha()], { idsQueCasam: [], podeEscrever: true })).toThrow(/idsQueCasam/);
+  });
 });
 
 describe("⚠ o campo nasce com a sugestão, no REDUZIDO", () => {
@@ -182,6 +228,39 @@ describe("⚠⚠ aplicação em massa", () => {
 
   it("conta as pendentes", () => {
     expect(pendentes([linha(), linha({ id: "d-2" }), linha({ id: "d-3" })], estado)).toBe(2);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  // ⚠⚠ ELA PERCORRE OS ITENS, NÃO AS CHAVES DO MAPA — achado por agente adversarial em 27/08/2026.
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  it("⚠⚠ linha SEM chave no mapa é alcançada — antes o botão prometia e não fazia nada", () => {
+    const itens = [linha({ id: "d-1" }), linha({ id: "d-2" }), linha({ id: "nova" })];
+    // o mapa nasceu antes de `nova` existir
+    const r = aplicarEmMassa({ "d-1": "", "d-2": "401" }, "402", itens);
+    expect(r.contas.nova).toBe("402");
+    expect(r.contas["d-1"]).toBe("402");
+    expect(r.contas["d-2"]).toBe("401");
+    expect(r.tocadas).toBe(2);
+  });
+
+  it("⚠⚠ e `pendentes` concorda com ela — as duas perguntam sobre os MESMOS itens", () => {
+    const itens = [linha({ id: "d-1" }), linha({ id: "nova" })];
+    const mapa = { "d-1": "" };
+    const antes = pendentes(itens, mapa);
+    const r = aplicarEmMassa(mapa, "402", itens);
+    expect(antes).toBe(2);
+    expect(r.tocadas).toBe(antes);
+    expect(pendentes(itens, r.contas)).toBe(0);
+  });
+
+  it("⚠ chave órfã no mapa (linha que saiu) não é tocada nem inventada", () => {
+    const r = aplicarEmMassa({ fantasma: "" }, "402", [linha({ id: "d-1" })]);
+    expect(r.contas.fantasma).toBe("");
+    expect(r.contas["d-1"]).toBe("402");
+  });
+
+  it("⚠ sem a lista de itens ela cai nas chaves do mapa — compatível, e é o único caminho", () => {
+    expect(aplicarEmMassa({ "d-1": "" }, "402").contas["d-1"]).toBe("402");
   });
 });
 
@@ -232,9 +311,36 @@ describe("⚠ a regra é reusada, não reescrita", () => {
     const fonte = fs.readFileSync(path.join(__dirname, "..", "contabilizacaoEmLote.js"), "utf8");
     expect(fonte).toMatch(/from\s+["']\.\/conferenciaTela["']/);
     expect(fonte).toMatch(/from\s+["']\.\/contaDaConferencia["']/);
-    const codigo = fonte.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(fonte).toMatch(/from\s+["']\.\/conferenciaTela["']/);
+    // ⚠⚠ BLOCO ANTES DE LINHA, e a ordem inversa era um FALSO NEGATIVO — achado por agente
+    // adversarial em 27/08/2026. Tirando `//` primeiro, um `//` DENTRO de um bloco `/* */` (uma URL
+    // de fonte oficial, que é a convenção desta casa) apaga o `*/`, e o regex não-guloso do bloco
+    // passa a engolir o CÓDIGO REAL até o `*/` seguinte. Medido: a leitura proibida desaparecia da
+    // varredura e o teste ficava verde sobre um arquivo que a continha.
+    const codigo = fonte.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     // nenhuma segunda leitura de "esta linha pode ser confirmada?"
     expect(codigo).not.toMatch(/mesFechado/);
     expect(codigo).not.toMatch(/analitica/);
+    // ⚠ CONTRAPROVA DA ORDEM, e ela precisa de DOIS blocos para exercitar o defeito: com `//`
+    // tirado primeiro, o `*/` do primeiro bloco desaparece, e o regex não-guloso do bloco passa a
+    // casar dali até o `*/` do bloco SEGUINTE — engolindo o código do meio.
+    const armadilha = [
+      "/* veja https://x.com/y */",
+      "const usa = item.mesFechado;",
+      "/* outro bloco */",
+    ].join("\n");
+    const blocoPrimeiro = armadilha.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const linhaPrimeiro = armadilha.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(blocoPrimeiro).toMatch(/mesFechado/);      // a ordem certa PRESERVA o código
+    expect(linhaPrimeiro).not.toMatch(/mesFechado/);  // a ordem antiga o ENGOLIA — falso negativo
+  });
+
+  it("⚠⚠ ela é varredura de NOME, não prova de comportamento — e isto está escrito", () => {
+    // Concatenação (`"mes" + "Fechado"`) passa por ela, e não há como impedir isso com regex. O que
+    // ela trava é o renomeio acidental; quem prova o comportamento são os testes acima.
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "contabilizacaoEmLote.js"), "utf8");
+    expect(fonte).toMatch(/varredura de NOME|não prova de comportamento/i);
   });
 });

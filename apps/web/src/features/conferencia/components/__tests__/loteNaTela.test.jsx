@@ -5,7 +5,7 @@
 // aplicação em massa não sobrescreve o que a pessoa digitou, que o envio é UMA chamada por linha e
 // que o SUCESSO PARCIAL aparece linha a linha.
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ModalDeContabilizacao } from "../ModalDeContabilizacao";
 
 const PLANO = [
@@ -34,10 +34,12 @@ function montar(props = {}) {
   const utils = render(
     <ModalDeContabilizacao
       itens={props.itens || [linha()]}
-      contas={PLANO}
+      contas={props.contas || PLANO}
       idsQueCasam={props.idsQueCasam || new Set()}
       podeEscrever={props.podeEscrever ?? true}
       podeEscolherConta={props.podeEscolherConta ?? true}
+      estadoDoPlano={props.estadoDoPlano}
+      totalDaFila={props.totalDaFila}
       aoFechar={jest.fn()}
       aoEnviarLinha={aoEnviarLinha}
       aoConcluir={aoConcluir}
@@ -46,8 +48,13 @@ function montar(props = {}) {
   return { ...utils, aoEnviarLinha, aoConcluir };
 }
 
-/** As células de conta de cada linha, na ordem da tabela. */
-const camposDeConta = () => screen.queryAllByLabelText("Conta contábil da despesa");
+/**
+ * As células de conta de cada linha, na ordem da tabela.
+ *
+ * ⚠ O rótulo NOMEIA A LINHA (`… — FORNECEDOR UM`) — vinte campos com o mesmo nome acessível
+ * deixavam quem usa leitor de tela sem saber de qual fornecedor era cada um.
+ */
+const camposDeConta = () => screen.queryAllByLabelText(/^Conta contábil da despesa/);
 
 describe("⚠⚠ o débito que casa com nota não vira linha editável", () => {
   it("ele sai da tabela E aparece com o motivo — nada some em silêncio", () => {
@@ -263,6 +270,108 @@ describe("⚠ os impedimentos da fila valem aqui", () => {
     montar({ podeEscrever: false });
     expect(camposDeConta()).toHaveLength(0);
     expect(screen.getByText(/Seu perfil não pode alterar/i)).toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O DESFECHO QUE NÃO VOLTOU — e o fecho total que ele causava.
+//
+// Medido por agente adversarial em 27/08/2026: com um `aoEnviarLinha` que nunca assenta, o laço
+// ficava preso, `enviando` nunca voltava, e o `ocupado` do `Modal` desligava as TRÊS saídas (✕, Esc,
+// fundo) com o `Cancelar` também desabilitado. Só recarregando a página.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ a linha que não responde", () => {
+  beforeEach(() => jest.useFakeTimers({ advanceTimers: true }));
+  afterEach(() => jest.useRealTimers());
+
+  it("⚠⚠ o modal DESTRAVA sozinho — e a linha vira 'sem resposta', nunca 'recusada'", async () => {
+    // uma promessa que nunca assenta: é a conexão pendurada
+    const aoEnviarLinha = jest.fn(() => new Promise(() => {}));
+    montar({ itens: [linha({ sugestao: { conta: "411020001" } })], aoEnviarLinha });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Contabilizar 1$/ }));
+    await waitFor(() => expect(aoEnviarLinha).toHaveBeenCalled());
+
+    await act(async () => { jest.advanceTimersByTime(46_000); });
+
+    // ⚠⚠ "sem resposta" e NÃO "recusada": o pedido saiu, e esta linha PODE ter virado lançamento.
+    await waitFor(() => expect(screen.getAllByText(/sem resposta/i).length).toBeGreaterThan(0));
+    expect(screen.queryByText(/recusou esta linha/i)).not.toBeInTheDocument();
+    // ⚠⚠ E AS SAÍDAS VOLTAM — é o ponto deste teste. Enquanto `enviando` fica preso, `ocupado`
+    // desliga o ✕, o Esc e o clique no fundo de uma vez, e o único caminho é recarregar a página.
+    // ⚠ São dois "Fechar": o ✕ do primitivo e o do rodapé. Os DOIS têm de voltar — é justamente o
+    // conjunto que `ocupado` desliga.
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Contabilizando…/ })).not.toBeInTheDocument());
+    for (const b of screen.getAllByRole("button", { name: /^Fechar$/ })) expect(b).toBeEnabled();
+  });
+
+  it("⚠⚠ o lote PARA na indeterminada — as seguintes ficam sem tentativa, que é a verdade", async () => {
+    const aoEnviarLinha = jest.fn(() => new Promise(() => {}));
+    montar({
+      itens: [
+        linha({ id: "d-1", sugestao: { conta: "411020001" } }),
+        linha({ id: "d-2", sugestao: { conta: "411020002" }, descricaoOriginal: "SEGUNDA" }),
+      ],
+      aoEnviarLinha,
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Contabilizar 2$/ }));
+    await waitFor(() => expect(aoEnviarLinha).toHaveBeenCalledTimes(1));
+
+    await act(async () => { jest.advanceTimersByTime(46_000); });
+
+    await waitFor(() => expect(screen.getAllByText(/sem resposta/i).length).toBeGreaterThan(0));
+    // ⚠ a segunda nunca foi tentada — continuar depois de um desfecho desconhecido é seguir sem
+    // saber onde se está (o precedente da emissão em lote de NFS-e).
+    expect(aoEnviarLinha).toHaveBeenCalledTimes(1);
+    const segunda = screen.getByText("SEGUNDA").closest("tr");
+    expect(within(segunda).getByText("—")).toBeInTheDocument();
+  });
+});
+
+describe("⚠⚠ o caixa torto derruba TODA linha da empresa — e o lote precisa dizer isso", () => {
+  // `111010001` é a contrapartida cravada de `montarLancamento`; sem ela no plano, o servidor
+  // recusa cada linha, por mais certa que esteja a conta escolhida.
+  const SEM_CAIXA = PLANO.filter((c) => c.codigoCompleto !== "111010001");
+
+  it("⚠⚠ o botão NÃO promete o envio, e o motivo sai VISÍVEL — não só no `title`", () => {
+    montar({ contas: SEM_CAIXA, itens: [linha({ sugestao: { conta: "411020001" } })] });
+    const botao = screen.getByRole("button", { name: /^Contabilizar 0$/ });
+    expect(botao).toBeDisabled();
+    expect(screen.getAllByRole("alert").some((e) => /caixa/i.test(e.textContent))).toBe(true);
+  });
+
+  it("⚠ com o caixa são, o mesmo lote envia normalmente", () => {
+    montar({ itens: [linha({ sugestao: { conta: "411020001" } })] });
+    expect(screen.getByRole("button", { name: /^Contabilizar 1$/ })).toBeEnabled();
+  });
+
+  it("⚠⚠ plano que FALHOU não vira 'esta empresa não tem plano de contas'", () => {
+    montar({ contas: [], estadoDoPlano: "falhou" });
+    expect(screen.getAllByRole("alert").some((e) => /não foi possível carregar/i.test(e.textContent))).toBe(true);
+  });
+});
+
+describe("⚠ a fila é paginada e o modal só vê a página", () => {
+  it("⚠⚠ ele DIZ isso — número menor sem explicação se lê como despesa perdida", () => {
+    montar({ itens: [linha()], totalDaFila: 137 });
+    expect(screen.getByText(/1.*das.*137.*linhas da fila|Este lote vê/i)).toBeInTheDocument();
+  });
+
+  it("⚠ sem truncamento, não há aviso nenhum", () => {
+    montar({ itens: [linha()], totalDaFila: 1 });
+    expect(screen.queryByText(/Este lote vê/i)).not.toBeInTheDocument();
+  });
+
+  it("⚠ `total` ausente NÃO vira zero nem inventa aviso", () => {
+    montar({ itens: [linha()] });
+    expect(screen.queryByText(/Este lote vê/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("⚠ o limite da exclusão é DITO, não suposto", () => {
+  it("⚠⚠ a tela avisa que a nota paga à mão não é reconhecida como par do débito", () => {
+    montar();
+    expect(screen.getByText(/já informou o pagamento de alguma nota/i)).toBeInTheDocument();
   });
 });
 

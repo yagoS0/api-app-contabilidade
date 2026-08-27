@@ -9,9 +9,13 @@
  *
  * ⚠ Este módulo é PURO. Ele decide o que entra e o que a massa toca; quem envia é a tela, e quem
  * decide se a transição pode acontecer continua sendo `aplicarTransicao`, no servidor.
+ *
+ * ⚠ A varredura de fonte do teste (que proíbe `mesFechado`/`analitica` aqui) é **varredura de
+ * NOME, não prova de comportamento**: uma concatenação a contorna, e nenhum regex impede isso. Ela
+ * trava o renomeio acidental; quem prova o comportamento são os casos do teste.
  */
 
-import { acaoPedeData, contaQueSeraUsada, motivoDeBloqueio } from "./conferenciaTela";
+import { acaoPedeData, acoesDaLinha, contaQueSeraUsada, motivoDeBloqueio } from "./conferenciaTela";
 import { completoDoReduzido, reduzidoDoCompleto } from "./contaDaConferencia";
 
 /** ⚠ Vocabulário FECHADO: por que uma linha da fila NÃO entra no modal. */
@@ -28,7 +32,16 @@ export const FORA_DO_LOTE = Object.freeze({
   CASA_COM_NOTA: "casa_com_nota",
   /** A linha está bloqueada por mês fechado, competência ausente ou papel — o pré-voo já sabe. */
   BLOQUEADA: "bloqueada",
-  /** A ação de confirmar não se aplica a este estado (já contabilizado, recusado, fundido). */
+  /**
+   * ⚠⚠ A AÇÃO DE CONFIRMAR NÃO SE APLICA A ESTE ESTADO (já contabilizado, recusado, fundido).
+   *
+   * ⚠ Este motivo existia BATIZADO E NUNCA ERA EMITIDO — achado por agente de verificação em
+   * 27/08/2026, e é alcançável pela própria aba: os selos de estado filtram a fila, então clicar em
+   * "Contabilizado: 12" e depois em "Contabilizar em lote" punha **12 linhas já contabilizadas**
+   * dentro do modal, editáveis, com o botão dizendo "Contabilizar 12". Os 12 POSTs voltavam
+   * recusados com `TRANSICAO_INVALIDA_NESTE_ESTADO` — a tela oferecendo o que o clique nega, que é
+   * o defeito que este módulo inteiro existe para impedir.
+   */
   ESTADO_NAO_CONFIRMA: "estado_nao_confirma",
   /**
    * ⚠⚠ NINGUÉM PROVOU QUANDO ESTA DESPESA FOI PAGA.
@@ -91,13 +104,35 @@ export function debitosQueCasamComNota(casamentos) {
  * @param {boolean} opcoes.podeEscrever
  * @param {boolean} opcoes.podeEscolherConta
  */
-export function separarParaOLote(itens, { idsQueCasam = new Set(), podeEscrever = true, podeEscolherConta = false } = {}) {
+export function separarParaOLote(itens, { idsQueCasam, podeEscrever = true, podeEscolherConta = false } = {}) {
+  // ⚠⚠ SEM A LISTA DE QUEM CASA, NÃO HÁ LOTE — e o default NÃO pode ser um `Set` vazio.
+  //
+  // Um vazio aqui é indistinguível de "conferi e nenhum casa", e autoriza exatamente o que esta
+  // função existe para impedir. Guarda de segurança com default permissivo é a direção errada:
+  // quem não sabe responder tem de recusar, não liberar.
+  if (!(idsQueCasam instanceof Set)) {
+    throw new Error("separarParaOLote: `idsQueCasam` é obrigatório — sem ele o lote não sabe quais débitos já casam com uma nota.");
+  }
   const dentro = [];
   const fora = [];
   for (const item of Array.isArray(itens) ? itens : []) {
     // ⚠ A ORDEM importa: o motivo mais específico primeiro. Um débito que casa com nota E está em
     // mês fechado é, antes de tudo, um débito que casa com nota — é isso que o contador precisa
     // saber para não procurar o conserto no lugar errado.
+    // ⚠⚠ O ESTADO VEM PRIMEIRO — e a autoridade é `acoesDaLinha`, a MESMA que a fila usa para saber
+    // quais botões oferecer. Perguntar de outro jeito aqui faria o modal e a linha discordarem
+    // sobre a mesma despesa.
+    //
+    // ⚠ Ele vence até "casa com nota", e a razão é o CONSELHO: para uma linha já contabilizada,
+    // dizer *"case-o com a nota no painel acima"* manda o contador fazer a coisa errada. "Esta
+    // linha não está esperando confirmação" é o fato anterior a todos os outros.
+    //
+    // ⚠ `motivoDeBloqueio` NÃO olha o estado (medido): ele responde *"esta ação pode acontecer
+    // AGORA?"*, não *"esta ação existe para esta linha?"*. São duas perguntas, e faltava a primeira.
+    if (!acoesDaLinha(item).includes("confirmar")) {
+      fora.push({ item, motivo: FORA_DO_LOTE.ESTADO_NAO_CONFIRMA });
+      continue;
+    }
     if (idsQueCasam.has(texto(item?.id))) {
       fora.push({ item, motivo: FORA_DO_LOTE.CASA_COM_NOTA });
       continue;
@@ -147,11 +182,22 @@ export function contasIniciais(itens, contas) {
  * ⚠ "Pendente" é campo VAZIO. Uma linha com a sugestão pré-preenchida NÃO é pendente — ela já tem
  * uma conta, e o contador a viu.
  */
-export function aplicarEmMassa(contasPorLinha, reduzido) {
+export function aplicarEmMassa(contasPorLinha, reduzido, itens) {
   const alvo = texto(reduzido);
   const saida = { ...(contasPorLinha || {}) };
+  // ⚠⚠ ELA PERCORRE OS **ITENS**, NÃO AS CHAVES DO MAPA — e percorrer as chaves era um defeito.
+  //
+  // `contasPorLinha` nasce de `contasIniciais` e só tem chave para as linhas que existiam naquele
+  // instante. Agente adversarial mediu, em 27/08/2026: com uma linha nova na tabela, o botão dizia
+  // "Aplicar nas 2 em branco", ficava HABILITADO e **não fazia nada** — porque a linha nova não
+  // tinha chave. É o mesmo defeito do "Contabilizar 4" que não contabilizava, no botão ao lado.
+  //
+  // ⚠ Percorrer os itens torna as duas contagens a MESMA pergunta: `pendentes` também os percorre.
+  const ids = Array.isArray(itens)
+    ? itens.map((i) => texto(i?.id)).filter(Boolean)
+    : Object.keys(saida);
   let tocadas = 0;
-  for (const id of Object.keys(saida)) {
+  for (const id of ids) {
     if (texto(saida[id])) continue;
     saida[id] = alvo;
     tocadas += 1;

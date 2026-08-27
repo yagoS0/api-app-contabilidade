@@ -727,6 +727,14 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
     setAbrindoLote(true);
     try {
       const r = await conferenciaApi.getConferenciaCasamentos(companyId);
+      // ⚠⚠ A PORTA FECHA PARA **FORMA**, NÃO SÓ PARA FALHA — achado por agente adversarial em
+      // 27/08/2026. O `catch` abaixo só pega REJEIÇÃO; uma resposta 200 sem a chave `linhas`
+      // (renome no backend, envelope novo) produzia `Set` vazio em silêncio, e lista vazia autoriza
+      // exatamente o que esta consulta existe para impedir. É a mesma família do `casamentos` ×
+      // `linhas` que já mordeu o mock — só que do lado que ninguém testa.
+      if (!Array.isArray(r?.linhas)) {
+        throw new Error("a resposta não veio na forma esperada (sem a lista `linhas`)");
+      }
       setLote({ idsQueCasam: debitosQueCasamComNota(r) });
     } catch (e) {
       setAviso(
@@ -936,12 +944,33 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
           idsQueCasam={lote.idsQueCasam}
           podeEscrever={podeEscrever}
           podeEscolherConta={podeEscolherConta}
-          aoFechar={() => setLote(null)}
+          // ⚠ Sem ele o modal não distingue "esta empresa não tem plano" de "a consulta falhou", e
+          // não antecipa o caixa torto — que derruba TODA linha da empresa.
+          estadoDoPlano={estadoDoPlano}
+          // ⚠ A fila é paginada (50 por página) e o modal só vê a página. Sem isto ele diria
+          // "Contabilizar em lote — 50 lançamento(s)" com 137 na fila, sem explicação.
+          totalDaFila={fila?.total}
           // ⚠ O modal não conhece a api: ele recebe a função de enviar UMA linha. É o que faz o
           // dublê ser o caminho natural no teste, não o cuidadoso — mesma disciplina de
           // `emissaoLote.js`, que também não importa quem emite.
           aoEnviarLinha={(id, corpo) => conferenciaApi.postConferenciaAcao(companyId, id, "confirmar", corpo)}
-          aoConcluir={() => {
+          // ⚠⚠ A FILA **NÃO** RECARREGA DEBAIXO DO MODAL ABERTO — e recarregar era um defeito com
+          // três caras, achado por agente adversarial em 27/08/2026:
+          //
+          //   1. `idsQueCasam` é um INSTANTÂNEO, tirado ao abrir. Com a fila trocando por baixo,
+          //      uma linha nova podia entrar sem nunca ter sido conferida contra os casamentos —
+          //      exatamente a despesa em dobro que o filtro existe para impedir;
+          //   2. `contasPorLinha` nasce das linhas do mount; linha nova entrava SEM CHAVE, e o
+          //      botão "Aplicar nas 2 em branco" ficava habilitado e inerte;
+          //   3. o rodapé contava desfechos de linhas que não estavam mais na tabela.
+          //
+          // ⚠ Recarregar ao FECHAR resolve os três na raiz: enquanto o modal está aberto, o
+          // conjunto é estável, e é sobre ele que todas as contagens falam.
+          aoConcluir={() => setLote((l) => (l ? { ...l, mexeuNaFila: true } : l))}
+          aoFechar={() => {
+            const mexeu = lote.mexeuNaFila;
+            setLote(null);
+            if (!mexeu) return;
             // ⚠ A fila muda (as linhas viram CONTABILIZADO) e o painel também (débitos absorvidos).
             carregar();
             setVersao((v) => v + 1);
