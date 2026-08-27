@@ -27,6 +27,8 @@ import {
   registrarSaidaSugerida,
 } from "../../application/fluxo/SerieRecorrenteService.js";
 import { PERIODICIDADE } from "../../application/fluxo/lib/recorrencia.js";
+// ⚠⚠ O CORPO E COMPARTILHADO com a rota do CLIENTE — um calculo so, dois consumidores.
+import { responderFluxoDeCaixa } from "../fluxoDeCaixaHttp.js";
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
@@ -135,6 +137,10 @@ export function createRecorrenciaRouter({ log } = {}) {
       return responderRecusa(res, e, log);
     }
   });
+
+  // ⚠⚠ O FLUXO DE CAIXA. Leitura pura: nenhum papel exigido alem do acesso a empresa, como a
+  // leitura das recorrencias — quem le a fila da empresa le o fluxo dela.
+  router.get("/fluxo-de-caixa", requireFirmCompanyAccess(), (req, res) => responderFluxoDeCaixa(req, res, { log }));
 
   return router;
 }

@@ -814,6 +814,18 @@ model PortalClient {
   /// Empresa zerada / sem movimento: não gera impostos; só enviamos obrigações zeradas.
   /// No card, oculta as guias/obrigações e sinaliza que é zerada.
   empresaZerada          Boolean   @default(false)
+
+  /// ⚠⚠ QUANTOS MESES DEPOIS DA COMPETÊNCIA A NOTA EMITIDA É RECEBIDA — decisão do dono, 25/08/2026:
+  /// *"notas emitidas em junho vão entrar de receita em julho (…) no caso pode ser alterado pelo
+  /// contador."*
+  ///
+  /// ⚠⚠ `null` = **NINGUÉM CONFIGUROU**, e isso NÃO é o mesmo que "configurado como 1": aplica-se o
+  /// padrão de 1 mês **e a tela diz que é o padrão**. Colapsar os dois faria o padrão passar por uma
+  /// decisão que ninguém tomou.
+  ///
+  /// ⚠ `0` é uma configuração LEGÍTIMA ("recebo à vista") — por isso a coluna é anulável em vez de
+  /// ter default 1: com default, "à vista" e "não configurei" seriam indistinguíveis.
+  prazoRecebimentoMeses  Int?
   /// Por onde a guia sai por padrão. Default EMAIL de propósito: ninguém é migrado de canal à
   /// revelia — o WhatsApp entra empresa a empresa, conforme o cliente autoriza (ver optIn em
   /// ContatoWhatsapp). "PERGUNTAR" faz o confirm de envio pedir o canal toda vez.

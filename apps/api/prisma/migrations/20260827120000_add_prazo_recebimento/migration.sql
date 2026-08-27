@@ -1,0 +1,41 @@
+-- O PRAZO DE RECEBIMENTO DA NOTA EMITIDA — quantos meses depois da competência o dinheiro entra.
+--
+-- ⚠⚠ NÃO APLICADA EM PRODUÇÃO. Aplicar é ato do dono (`prisma:migrate:deploy` + `:status`).
+--
+-- ⚠ ADITIVA E INERTE: UMA coluna nova, ANULÁVEL, sem default e sem backfill. Nenhuma coluna
+--   existente é tocada, nenhum dado é alterado, nenhum índice é mexido. Subir o código antes de
+--   aplicar não quebra nada — a regra pura já responde com o padrão quando a coluna não vem.
+--
+-- ═════════════════════════════════════════════════════════════════════════════════════════════
+-- POR QUE ELA É ANULÁVEL, E NÃO `DEFAULT 1`
+-- ═════════════════════════════════════════════════════════════════════════════════════════════
+--
+-- > Dono, 25/08/2026: *"o contador informa o prazo padrão de recebimento; como vamos trabalhar com
+-- > o ciclo de competência na receita, notas emitidas em junho vão entrar de receita em julho, e
+-- > assim por diante. Sei que muitos não fazem isso, mas seria o correto em um fluxo saudável — no
+-- > caso pode ser alterado pelo contador."*
+--
+-- ⚠⚠ `NULL` QUER DIZER "NINGUÉM CONFIGUROU", e isso NÃO é o mesmo que "configurado como 1".
+--
+--   Com `DEFAULT 1`, as duas situações ficariam indistinguíveis no banco — e a tela passaria a
+--   afirmar que o contador escolheu 1 mês quando ele nunca abriu essa configuração. O fluxo de
+--   caixa inteiro se lê a partir desse número; um padrão que se disfarça de decisão é a mesma
+--   família do `|| "SIMPLES_NACIONAL"` que este projeto já recusou no regime da empresa.
+--
+--   Hoje: `NULL` ⇒ aplica-se o padrão de 1 mês, **e a linha do fluxo diz que é o padrão**
+--   (`prazoDeRecebimento` devolve `{ meses, configurado: false }`).
+--
+-- ⚠⚠ E `0` É UMA CONFIGURAÇÃO LEGÍTIMA — *"recebo à vista"*. É por isso que a guarda da regra pura
+--   é `== null` e não `!valor`: `Number(null)` é `0` e `0` é finito, então uma guarda por
+--   falsidade colapsaria "à vista" no padrão, em silêncio. Há teste sobre exatamente isso.
+--
+-- ⚠ SEM CHECK de intervalo, de propósito. A regra pura já recusa negativo e não-finito (caindo no
+--   padrão, nomeado), e um CHECK aqui exigiria migration a cada mudança de faixa. Precedente
+--   escrito nesta casa: a coluna `codigosServicoNacional`, onde um CHECK foi recusado pelo mesmo
+--   motivo — migration que falha é P3009 e servidor que não sobe.
+--
+-- ⚠ SEM BACKFILL, e a ausência é a decisão: nenhum dado no banco prova que algum contador quis um
+--   prazo específico. Escrever 1 em 34 empresas seria inventar 34 decisões. Mesmo desenho da
+--   `20260818120000_add_emissao_cliente_liberada`.
+
+ALTER TABLE "PortalClient" ADD COLUMN "prazoRecebimentoMeses" INTEGER;

@@ -12,6 +12,8 @@ import {
   declararSerie,
   paraTela,
 } from "../../application/fluxo/SerieRecorrenteService.js";
+// ⚠⚠ O CORPO E COMPARTILHADO com a rota do CONTADOR — um calculo so, dois consumidores.
+import { responderFluxoDeCaixa } from "../fluxoDeCaixaHttp.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
 import { requireAccountType } from "../../middlewares/requireAccountType.js";
@@ -790,6 +792,22 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       return res.status(500).json({ ok: false, error: "recorrencia_declarar_falhou" });
     }
   });
+
+  /**
+   * ⚠⚠ O FLUXO DE CAIXA DO CLIENTE — o MESMO payload que o contador vê.
+   *
+   * O corpo é COMPARTILHADO (`responderFluxoDeCaixa`): duas montagens divergiriam na primeira
+   * correção, e aí as duas telas afirmariam coisas diferentes sobre o mesmo dinheiro — com o cliente
+   * do lado que ninguém do escritório testa. O que muda entre as portas é só o middleware de acesso.
+   *
+   * ⚠ `GET /companies/:companyId/fluxo` (logo acima) **FICA COMO ESTÁ**: `PainelPage` a consome
+   * hoje, e ela virou um CONTRIBUINTE deste fluxo — não uma segunda definição dele.
+   *
+   * ⚠ Sem `minRole`: ler o fluxo é LEITURA, e o piso das rotas financeiras deste arquivo (notas,
+   * guias, alíquota, fluxo) é "membro ativo".
+   */
+  router.get("/companies/:companyId/fluxo-de-caixa", requireClientCompanyAccess(), (req, res) =>
+    responderFluxoDeCaixa(req, res, { log }));
 
   // Fase 7 (stub inicial)
   router.get("/companies/:companyId/transactions", requireClientCompanyAccess(), async (_req, res) => {
