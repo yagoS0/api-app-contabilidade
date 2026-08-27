@@ -201,7 +201,17 @@ export async function importarOfxDoCliente({
     transacoesLidas: transacoes.length,
     criados,
     jaImportadas,
+    // ⚠⚠ `descartadas` É ARRAY TRUNCADO EM 50; SEUS IRMÃOS SÃO NÚMEROS. A contagem REAL ia para a
+    // coluna (`data.descartadas = todasDescartadas.length`) e **não voltava** — quem escrevesse
+    // `descartadas.length` na tela diria "50" num arquivo com 145 mil blocos inválidos.
+    //
+    // ⚠ Conserto ADITIVO: `descartadas` continua sendo a AMOSTRA, com o mesmo nome e o mesmo
+    // conteúdo. Renomeá-la quebraria quem já a lê. O que entra é a verdade que faltava.
     descartadas,
+    descartadasTotal: todasDescartadas.length,
+    // ⚠ E a tela precisa saber que a amostra é amostra: sem isto ela não tem como distinguir
+    // "descartou 50" de "descartou 50 dos 145.634".
+    descartadasTruncadas: todasDescartadas.length > descartadas.length,
     foraDoEscopo,
     recusadas,
     anomalias,

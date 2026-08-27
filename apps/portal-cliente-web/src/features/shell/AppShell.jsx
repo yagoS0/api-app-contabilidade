@@ -12,6 +12,7 @@ import { PainelPage } from "../painel/PainelPage";
 import { NotasPage } from "../notas/NotasPage";
 import { EmitirNotaPage } from "../emitir/EmitirNotaPage";
 import { LotePlanilhaPage } from "../lote/LotePlanilhaPage";
+import { ExtratoOfxPage } from "../extrato/ExtratoOfxPage";
 import { esquecerTodasAsDescricoes } from "../emitir/lib/descricoesRecentes";
 import { GuiasPage } from "../guias/GuiasPage";
 import { LogoAltan } from "../../components/LogoAltan";
@@ -72,6 +73,12 @@ export function AppShell({ user }) {
   // roteamento é por hash com três destinos fixos, e a casca é quem monta a tela ativa. ⚠ Ele NÃO
   // emite nada — prepara e confere a planilha. A emissão em lote é fase seguinte.
   const [loteAberto, setLoteAberto] = useState(false);
+  // ⚠ O EXTRATO É O SEGUNDO MODO DA ROTA `home`, pelo mesmo motivo do lote e da emissão: o
+  // roteamento é por hash com QUATRO destinos fixos, e a casca é quem monta a tela ativa.
+  // ⚠⚠ Uma rota nova custaria as três listas em sincronia (`ROTAS` em `lib/hooks.js`, `ABAS` aqui e
+  // `ICONE_POR_ROTA` em `components/icones.jsx`) MAIS um ícone — e uma quinta aba é permanente,
+  // numa barra que o dono já pediu para manter enxuta. Enviar extrato é um ato ocasional.
+  const [extratoAberto, setExtratoAberto] = useState(false);
 
   const empresasQuery = useCarregamento(() => api.getCompanies(), []);
   const empresas = empresasQuery.dados || [];
@@ -96,6 +103,9 @@ export function AppShell({ user }) {
     // ⚠ E FECHA O LOTE: a planilha conferida é de OUTRA empresa. A própria tela também descarta o
     // estado dela ao ver o `companyId` mudar — guarda de um lado só não é guarda.
     setLoteAberto(false);
+    // ⚠ E FECHA O EXTRATO: o relatório na tela é de OUTRA empresa, e lê-lo sob o nome desta
+    // faria o cliente concluir que estas despesas entraram na fila dela.
+    setExtratoAberto(false);
     // ⚠⚠ TROCAR DE EMPRESA DESCARTA O MODELO. Ele foi tirado da nota de OUTRA empresa; aplicá-lo
     // aqui emitiria no CNPJ errado. É a mesma razão pela qual a `EmitirNotaPage` zera o formulário
     // inteiro na troca — e ela ainda confere o `companyId` do modelo antes de aplicar, porque uma
@@ -113,6 +123,7 @@ export function AppShell({ user }) {
   function irPara(destino) {
     setEmissaoAberta(false);
     setLoteAberto(false);
+    setExtratoAberto(false);
     navegar(destino);
   }
 
@@ -343,12 +354,24 @@ export function AppShell({ user }) {
              aparece na própria página. */
           <SituacaoFiscalPage empresa={empresaAtiva} />
         ) : (
-          <PainelPage
-            empresa={empresaAtiva}
-            competencia={competencia}
-            aoTrocarCompetencia={setCompetencia}
-            aoNavegar={irPara}
-          />
+          // ⚠ UMA ROTA, DOIS MODOS — o mesmo arranjo de `notas`.
+          extratoAberto ? (
+            <ExtratoOfxPage
+              empresa={empresaAtiva}
+              api={api}
+              // ⚠ `aoVoltar`, não `aoNavegar`: fechar um MODO não é navegar, e um nome que dissesse
+              // "navegar" mentiria — mesma correção que a emissão já levou.
+              aoVoltar={() => setExtratoAberto(false)}
+            />
+          ) : (
+            <PainelPage
+              empresa={empresaAtiva}
+              competencia={competencia}
+              aoTrocarCompetencia={setCompetencia}
+              aoNavegar={irPara}
+              aoEnviarExtrato={() => setExtratoAberto(true)}
+            />
+          )
         )}
       </main>
 

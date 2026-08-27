@@ -464,6 +464,29 @@ export function createRealApi() {
       });
     },
 
+    // --- O EXTRATO BANCÁRIO (OFX) ------------------------------------------------------------
+    //
+    // Contrato lido em `apps/api/src/routes/client/index.js` (não deduzido):
+    //   POST /client/companies/:companyId/ofx/import  -> multipart, campo `file`
+    //
+    // ⚠⚠ NÃO EXISTE PREVIEW: este POST **JÁ GRAVA**. Não há "conferir antes de enviar" a prometer —
+    // quem torna o reenvio seguro é o dedupe por TRANSAÇÃO (`lib/dedupeOfx.js`), no banco, não uma
+    // etapa de conferência. A tela não pode sugerir o contrário.
+    //
+    // ⚠ O que entra é DÉBITO. O crédito volta contado em `foraDoEscopo` — nunca descartado em
+    // silêncio. E nada disto vira lançamento contábil: tudo nasce na fila do contador.
+    async importarExtratoOfx(companyId, arquivo) {
+      const form = new FormData();
+      // ⚠⚠ O CAMPO É `file`, NÃO `arquivo`. O lote (logo acima) usa `arquivo`, e copiar aquela
+      // linha verbatim devolve **`400 file_required`** — é o erro mais provável de quem mexer aqui.
+      // O nome sai do `upload.single("file")` da rota, não de convenção nossa.
+      form.append("file", arquivo);
+      return pedir(`/client/companies/${encodeURIComponent(companyId)}/ofx/import`, {
+        method: "POST",
+        body: form,
+      });
+    },
+
     // --- ⚠⚠ A EMISSÃO EM LOTE — AQUI SAI NOTA FISCAL DE VERDADE, EM SÉRIE ---------------------
     //
     // ⚠⚠ Cada linha da planilha vira um ato IRREVERSÍVEL no sistema nacional de produção. Nota

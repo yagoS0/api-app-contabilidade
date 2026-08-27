@@ -66,7 +66,7 @@ function textoDaAliquota(l) {
   return `Impostos pagos ${somaOuTraco(l.impostos)} sobre ${somaOuTraco(l.faturamento)}`;
 }
 
-export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar }) {
+export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar, aoEnviarExtrato }) {
   // ⚠⚠ A COMPETÊNCIA VEM DA CASCA — ver o comentário longo em `AppShell.jsx`. Era um
   // `useState(competenciaPadrao)` daqui, gêmeo do de `NotasPage`, e as duas abas discordavam.
   // O default não mudou: `competenciaPadrao` é o mês CORRENTE (dono, 18/08/2026).
@@ -145,6 +145,17 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
               </option>
             ))}
           </select>
+          {/* ⚠ O EXTRATO é um MODO desta rota, então o botão é <button> — não um <a href>: não há
+              hash para ele, e inventar um daria um destino que o `useRota` recusa e devolve ao
+              padrão (o "filtro fantasma" dentro da própria tela). Mesmo arranjo de "Emitir nota".
+              ⚠ Sem o handler ele NÃO RENDERIZA: um botão em que a pessoa clica e nada acontece é
+              pior que a ausência dele — a mesma regra que deixa o seletor de competência
+              DESABILITADO quando a prop falta. */}
+          {aoEnviarExtrato ? (
+            <button type="button" className="btn" onClick={aoEnviarExtrato}>
+              Enviar extrato
+            </button>
+          ) : null}
         </div>
       </div>
 

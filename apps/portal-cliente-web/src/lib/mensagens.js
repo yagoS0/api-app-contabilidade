@@ -105,6 +105,24 @@ const MENSAGENS = {
   internal_error: "Algo deu errado do nosso lado. Tente de novo em instantes.",
   not_implemented_yet: "Esta funcionalidade ainda não está disponível.",
   network_error: "Não conseguimos falar com o servidor. Verifique sua conexão.",
+
+  // ⚠⚠ O EXTRATO BANCÁRIO. Estes dois códigos são de 26/08/2026, e sem eles a recusa cairia no
+  // `padrao` — o servidor manda o conserto ("baixe em períodos menores") e `mensagemDeErro` NÃO lê
+  // `err.message`, de propósito (ela nunca devolve texto cru do servidor). Sem a entrada aqui, o
+  // conserto que o backend escreveu não chega ao olho de quem precisa dele.
+  arquivo_grande_demais:
+    "O extrato passa de 10 MB. Baixe o arquivo do banco em períodos menores e envie um de cada vez.",
+  arquivo_invalido: "Não conseguimos ler este arquivo. Confira se ele é o .OFX que o banco gerou.",
+  // ⚠ As recusas do PRÓPRIO serviço de import. Os códigos foram LIDOS de `RECUSA_DO_IMPORT`
+  // (`apps/api/src/application/declarados/ImportOfxService.js`), não deduzidos — uma primeira versão
+  // deste bloco inventou três nomes com prefixo `ofx_` que não existem em lugar nenhum, e frases
+  // penduradas em código errado nunca aparecem.
+  arquivo_vazio: "O arquivo enviado está vazio. Baixe o extrato de novo no site do banco.",
+  nenhuma_transacao:
+    "Não conseguimos ler nenhuma transação neste arquivo. Confira se ele é o extrato em formato OFX "
+    + "que o seu banco disponibiliza.",
+  extrato_grande_demais: "Este extrato tem transações demais para um envio só. Divida o período e envie em partes.",
+  ofx_import_falhou: "Não foi possível importar o extrato. Tente de novo em instantes.",
 };
 
 /** Frase legível para um erro. Nunca devolve código cru nem "HTTP 500". */

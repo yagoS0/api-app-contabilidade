@@ -666,10 +666,43 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
   // ⚠ `requireClientCompanyAccess()` SEM `minRole`: subir o próprio extrato é ato financeiro do
   // cliente, e o piso das rotas financeiras dele é "membro ativo" (guias, alíquota, fluxo). Ele
   // NÃO cria lançamento contábil — tudo nasce na fila, e quem contabiliza é o contador.
+  // ⚠⚠ O MULTER É ENVOLVIDO **LOCALMENTE**, E ISSO É O CONSERTO DE UM DEFEITO SILENCIOSO.
+  //
+  // Sem isto, um arquivo acima de 10 MB faz o multer chamar `next(err)`, e **não há error handler
+  // global neste app** (medido: zero `(err, req, res, next)` em `server.js` e nos middlewares) — o
+  // handler padrão do Express responde **HTML 500, sem código nenhum**.
+  //
+  // ⚠⚠ E é aí que fica caro: `deveCairParaMock` do portal do cliente (`api/index.js`) cai para o
+  // MOCK em 5xx **sem `code`**. No modo `real_with_mock_fallback`, um extrato de 11 MB mostraria ao
+  // cliente uma **importação fictícia bem-sucedida** — com um relatório inventado de transações que
+  // nunca entraram. Com o `error` no corpo, o fallback fica desarmado POR CONSTRUÇÃO.
+  //
+  // ⚠ NÃO é um error handler global, e a diferença é deliberada: um handler global mudaria a forma
+  // de falha de TODA a API. Fica nomeado para outra sessão.
+  const receberArquivoDoExtrato = (req, res, next) =>
+    upload.single("file")(req, res, (err) => {
+      if (!err) return next();
+      // ⚠ 413 e não 400: o arquivo é válido, o TAMANHO é que não cabe — e o conserto é do cliente
+      // (dividir o período), não do formato.
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({
+          ok: false,
+          error: "arquivo_grande_demais",
+          message: "O extrato passa de 10 MB. Baixe o arquivo em períodos menores e envie um de cada vez.",
+        });
+      }
+      // ⚠ Qualquer outra falha do multer também sai NOMEADA — 500 mudo é o que reabre o fallback.
+      return res.status(400).json({
+        ok: false,
+        error: "arquivo_invalido",
+        message: "Não foi possível ler o arquivo enviado.",
+      });
+    });
+
   router.post(
     "/companies/:companyId/ofx/import",
     requireClientCompanyAccess(),
-    upload.single("file"),
+    receberArquivoDoExtrato,
     async (req, res) => {
       try {
         if (!req.file?.buffer?.length) {

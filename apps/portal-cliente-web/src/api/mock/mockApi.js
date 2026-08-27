@@ -1823,6 +1823,80 @@ export function createMockApi() {
       return planilhaModeloMock();
     },
 
+    // ⚠⚠ O EXTRATO BANCÁRIO (OFX). Os RAMOS precisam ser alcançáveis offline — este projeto foi
+    // mordido CINCO vezes por ramo que só existia em produção, e aqui há cinco desfechos que a tela
+    // desenha de formas diferentes. O gatilho vai no NOME do arquivo, mesmo arranjo do lote.
+    //
+    //   #grande      -> 413 arquivo_grande_demais (o que DESARMA o fallback para o mock)
+    //   #jaimportado -> tudo já estava lá: "0 novas" que NÃO é falha
+    //   #socreditos  -> só entradas: nenhuma saída para virar despesa
+    //   #muitoruim   -> 145.634 descartadas, com a amostra truncada em 50
+    //   #semconta    -> arquivo sem BANKACCTFROM/ACCTID: o dedupe fica mais frouxo
+    //   (qualquer outro) -> o caminho feliz
+    async importarExtratoOfx(companyId, arquivo) {
+      await dormir();
+      exigirAcessoEmpresa(companyId);
+      const nome = String(arquivo?.name || "").toLowerCase();
+
+      // ⚠⚠ O 413 LEVA `code`, e é ISSO que impede o fallback de servir uma importação fictícia.
+      // `deveCairParaMock` cai para o mock em 5xx SEM `code`; com o código nomeado, ele recusa.
+      if (nome.includes("#grande")) {
+        throw new ApiError(
+          413,
+          "arquivo_grande_demais",
+          "O extrato passa de 10 MB. Baixe o arquivo em períodos menores e envie um de cada vez.",
+        );
+      }
+
+      const conta = nome.includes("#semconta")
+        ? { acctId: null, bankId: "001" }
+        : { acctId: "12345-6", bankId: "001" };
+
+      if (nome.includes("#jaimportado")) {
+        return {
+          importId: "ofx-mock-2", conta, transacoesLidas: 23,
+          criados: 0, jaImportadas: 23, foraDoEscopo: 7,
+          descartadas: [], descartadasTotal: 0, descartadasTruncadas: false,
+          recusadas: [], anomalias: [],
+          // ⚠ o mesmo ARQUIVO já subiu antes — é a frase que só o hash permite
+          arquivoJaImportado: { em: "2026-07-10T15:00:00.000Z", criadosNaquela: 23, jaImportadasNaquela: 0 },
+        };
+      }
+
+      if (nome.includes("#socreditos")) {
+        return {
+          importId: "ofx-mock-3", conta, transacoesLidas: 0,
+          criados: 0, jaImportadas: 0, foraDoEscopo: 12,
+          descartadas: [], descartadasTotal: 0, descartadasTruncadas: false,
+          recusadas: [], anomalias: [], arquivoJaImportado: null,
+        };
+      }
+
+      if (nome.includes("#muitoruim")) {
+        // ⚠⚠ O CASO QUE MOTIVOU O `descartadasTotal`: a amostra para em 50 e o total é 145.634.
+        // Sem o campo, a tela escreveria "50" — e este ramo existe para provar que ela não escreve.
+        return {
+          importId: "ofx-mock-4", conta, transacoesLidas: 2,
+          criados: 2, jaImportadas: 0, foraDoEscopo: 0,
+          descartadas: Array.from({ length: 50 }, (_, i) => ({
+            motivo: "sem_data", fitId: `X${i}`, dtPosted: null, trnAmt: "-10.00",
+          })),
+          descartadasTotal: 145634,
+          descartadasTruncadas: true,
+          recusadas: [], anomalias: [], arquivoJaImportado: null,
+        };
+      }
+
+      return {
+        importId: "ofx-mock-1", conta, transacoesLidas: 23,
+        criados: 20, jaImportadas: 3, foraDoEscopo: 7,
+        descartadas: [{ motivo: "sem_data", fitId: "B7", dtPosted: null, trnAmt: "-1500.00" }],
+        descartadasTotal: 1,
+        descartadasTruncadas: false,
+        recusadas: [], anomalias: [], arquivoJaImportado: null,
+      };
+    },
+
     async lerPlanilhaDoLote(companyId, arquivo, { consultas = null, ajustes = null } = {}) {
       await dormir();
       exigirAcessoEmpresa(companyId);

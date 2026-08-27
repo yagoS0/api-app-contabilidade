@@ -11,7 +11,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({ prisma: {} }));
 
 import { ESTADO, ORIGEM_PAGAMENTO } from "../lib/estadosDeclarado.js";
 import { ANOMALIA } from "../lib/dedupeOfx.js";
-import { RECUSA_DO_IMPORT, importarOfxDoCliente } from "../ImportOfxService.js";
+import { LIMITE_DE_EXEMPLOS, RECUSA_DO_IMPORT, importarOfxDoCliente } from "../ImportOfxService.js";
 
 const AGORA = new Date("2026-08-24T10:00:00.000Z");
 
@@ -305,5 +305,51 @@ describe("⚠ o serviço não lê o relógio", () => {
     const path = require("node:path");
     const fonte = fs.readFileSync(path.join(__dirname, "..", "ImportOfxService.js"), "utf8");
     expect(fonte).not.toMatch(/Promise\.all/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A CONTAGEM REAL DOS DESCARTES IA PARA A COLUNA E NÃO VOLTAVA.
+//
+// `descartadas` é ARRAY truncado em `LIMITE_DE_EXEMPLOS`; seus irmãos (`criados`, `jaImportadas`,
+// `foraDoEscopo`) são NÚMEROS. Quem escrevesse `descartadas.length` na tela diria "50" num arquivo
+// com 145 mil blocos inválidos — o número medido que motivou o truncamento.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ descartadasTotal — a verdade que a amostra escondia", () => {
+  const muitasInvalidas = (n) =>
+    OFX(Array.from({ length: n }, (_, i) => TRN({ fit: `X${i}`, data: null })).join("\n"));
+
+  it("abaixo do limite: total = amostra, e NÃO diz truncada", async () => {
+    const { client } = bancoEmMemoria();
+    const r = await importar(client, muitasInvalidas(3));
+    expect(r.descartadas).toHaveLength(3);
+    expect(r.descartadasTotal).toBe(3);
+    expect(r.descartadasTruncadas).toBe(false);
+  });
+
+  it("⚠⚠ acima do limite: a amostra para em 50 e o TOTAL diz a verdade", async () => {
+    const { client } = bancoEmMemoria();
+    const r = await importar(client, muitasInvalidas(LIMITE_DE_EXEMPLOS + 7));
+    expect(r.descartadas).toHaveLength(LIMITE_DE_EXEMPLOS);
+    expect(r.descartadasTotal).toBe(LIMITE_DE_EXEMPLOS + 7);
+    // ⚠ é ESTE campo que impede a tela de dizer "50" com cara de número final
+    expect(r.descartadasTruncadas).toBe(true);
+    expect(r.descartadasTotal).not.toBe(r.descartadas.length);
+  });
+
+  it("⚠ o conserto é ADITIVO — `descartadas` continua sendo a AMOSTRA, com motivo e dado cru", async () => {
+    const { client } = bancoEmMemoria();
+    const r = await importar(client, OFX([TRN({ fit: "A" }), TRN({ fit: "B", data: null })].join("\n")));
+    expect(Array.isArray(r.descartadas)).toBe(true);
+    expect(r.descartadas[0]).toMatchObject({ motivo: "sem_data", fitId: "B" });
+    expect(r.descartadasTotal).toBe(1);
+  });
+
+  it("⚠ sem descarte nenhum, os três campos são coerentes", async () => {
+    const { client } = bancoEmMemoria();
+    const r = await importar(client, OFX(TRN()));
+    expect(r.descartadas).toEqual([]);
+    expect(r.descartadasTotal).toBe(0);
+    expect(r.descartadasTruncadas).toBe(false);
   });
 });

@@ -157,3 +157,51 @@ describe("⚠ FACHADA — nenhuma regra do extrato mora na rota", () => {
     expect(bloco).not.toMatch(/prisma\.|\$transaction|accountingEntry|lancamentoDeclarado/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O ESTOURO DE 10 MB DEVOLVIA HTML 500 SEM CÓDIGO — e isso ARMAVA o fallback do portal.
+//
+// Medido em 26/08/2026: não existe error handler global neste app (zero `(err, req, res, next)` em
+// `server.js` e nos middlewares). O multer chamava `next(err)` e o handler padrão do Express
+// respondia HTML 500.
+//
+// ⚠⚠ E `deveCairParaMock` (`apps/portal-cliente-web/src/api/index.js`) cai para o MOCK em 5xx **sem
+// `code`**. No modo `real_with_mock_fallback`, um extrato de 11 MB mostraria ao cliente uma
+// IMPORTAÇÃO FICTÍCIA BEM-SUCEDIDA, com um relatório inventado. Com o `error` no corpo, o fallback
+// fica desarmado POR CONSTRUÇÃO — é o campo, não o status, que o desarma.
+//
+// ⚠ Varredura de fonte pelo mesmo motivo do resto deste arquivo: o defeito não é de comportamento
+// da rota, é da COMPOSIÇÃO do middleware. Um teste de status HTTP passaria com o corpo mudo.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ o arquivo grande demais recusa NOMEANDO", () => {
+  it("⚠⚠ o multer NÃO é montado cru na rota — ele é envolvido", () => {
+    // `upload.single("file")` direto na lista de middlewares é o defeito: sem `next(err)` tratado,
+    // o Express responde HTML.
+    expect(FONTE).not.toMatch(/"\/companies\/:companyId\/ofx\/import",\s*\n\s*requireClientCompanyAccess\(\),\s*\n\s*upload\.single/);
+    expect(FONTE).toMatch(/receberArquivoDoExtrato/);
+  });
+
+  it("⚠⚠ o 413 leva `error` NO CORPO — é ele que desarma o fallback, não o status", () => {
+    expect(FONTE).toMatch(/status\(413\)/);
+    expect(FONTE).toMatch(/error:\s*"arquivo_grande_demais"/);
+  });
+
+  it("⚠ e a mensagem diz o CONSERTO — dividir o período —, não só o problema", () => {
+    expect(FONTE).toMatch(/períodos menores/i);
+  });
+
+  it("⚠ o limite continua sendo o do multer, não um número escrito à mão na rota", () => {
+    expect(FONTE).toMatch(/LIMIT_FILE_SIZE/);
+    // o teto vive num lugar só, na configuração do multer
+    expect(FONTE).toMatch(/fileSize:\s*10\s*\*\s*1024\s*\*\s*1024/);
+  });
+
+  it("⚠ qualquer OUTRA falha do multer também sai nomeada — 500 mudo reabriria o fallback", () => {
+    expect(FONTE).toMatch(/error:\s*"arquivo_invalido"/);
+  });
+
+  it("⚠⚠ NÃO foi criado error handler GLOBAL — isso mudaria a forma de falha de toda a API", () => {
+    expect(FONTE).not.toMatch(/router\.use\(\s*\(err\s*,/);
+    expect(FONTE).not.toMatch(/app\.use\(\s*\(err\s*,/);
+  });
+});
