@@ -209,6 +209,18 @@ const LINHAS_DA_PLANILHA = [
   { chave: "sai-previsao", direcao: "Sai", procedencia: PROCEDENCIA.PREVISAO, ler: (t) => t.previsao.saida },
 ];
 
+/**
+ * O dinheiro DA GRADE — o mesmo número de `brl`, sem o `R$` repetido em cada célula.
+ *
+ * ⚠ A GRAMÁTICA DO NÚMERO NÃO É REESCRITA AQUI: milhar, decimal, sinal e o traço da ausência
+ * continuam saindo de `brl` (que é espelho do `format.ts` do app mobile). O que se tira é o SÍMBOLO,
+ * que numa planilha se diz uma vez no rótulo e não doze vezes por linha — é a convenção de qualquer
+ * planilha, e é o que faz `12.500,00` caber numa coluna de 80px sem quebrar em duas linhas.
+ *
+ * ⚠ O traço passa intocado: `brl(null)` já devolve `—`, e `replace` num traço não acha o que trocar.
+ */
+const naGrade = (v) => brl(v).replace("R$ ", "");
+
 function PlanilhaDoFluxo({ meses, competenciaAberta, aoAbrirMes }) {
   const colunas = meses.map((m) => ({ mes: m, t: totaisParaTela(m?.totais) }));
   // ⚠ A linha das indetermináveis só existe quando há alguma. Uma linha de traços permanente seria o
@@ -222,8 +234,10 @@ function PlanilhaDoFluxo({ meses, competenciaAberta, aoAbrirMes }) {
       <table className="table table--planilha-fluxo">
         <thead>
           <tr>
-            {/* ⚠ O canto fica vazio e sem `scope`: ele não descreve linha nem coluna. */}
-            <td className="planilha-canto" />
+            {/* ⚠ O canto não descreve linha nem coluna — por isso não tem `scope`. Ele carrega a
+                UNIDADE, que numa planilha se diz uma vez e não em cada célula: as colunas mostram
+                `12.500,00`, não `R$ 12.500,00`. Sem esta palavra o número ficaria sem moeda. */}
+            <td className="planilha-canto">R$</td>
             {colunas.map(({ mes }) => {
               const aberta = mes?.competencia === competenciaAberta;
               return (
@@ -263,7 +277,7 @@ function PlanilhaDoFluxo({ meses, competenciaAberta, aoAbrirMes }) {
                     {/* ⚠ ZERO SAI COMO TRAÇO. `R$ 0,00` em toda célula vazia é exatamente a parede de
                         zeros que esta forma existe para desfazer — e "nada neste compartimento" não é
                         a mesma afirmação que "zero reais". */}
-                    {valor ? brl(valor) : "—"}
+                    {valor ? naGrade(valor) : "—"}
                   </td>
                 );
               })}

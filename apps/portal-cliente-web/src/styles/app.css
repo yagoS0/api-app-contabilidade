@@ -629,7 +629,32 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
    Pedido do dono, com a tela na frente: *"um monte de meses aparecendo, excesso de tabela, o fluxo
    deve se parecer mais com uma planilha excel"*. Medido no navegador antes: o bloco ocupava
    **1.723px de 2.325px — 74% da página inicial — para 7 linhas de conteúdo**, em 3 tabelas. */
-.table--planilha-fluxo { min-width: 720px; font-variant-numeric: tabular-nums; }
+/* ⚠⚠ `table-layout: fixed` É O QUE FAZ ISTO SER UMA PLANILHA — e sem ele não era.
+   Conferido no navegador com a grade já no ar: as doze colunas de mês saíram com **larguras todas
+   diferentes** (149 · 109 · 118 · 109 · 72 · 71 · 67 · 68 · 97 · 69 · 72 · 68 · 64 px), porque o
+   `auto` dimensiona cada coluna pelo conteúdo dela. O mês com `R$ 12.500,00` ficava largo, o mês
+   vazio ficava estreito, e a grade perdia o RITMO — que é justamente o que faz o olho comparar um
+   mês com o outro. Alinhadas elas já estavam; iguais, não.
+   ⚠ Com `fixed`, a primeira coluna leva a largura declarada e as doze dividem o resto em partes
+   iguais — sem precisar declarar doze larguras. */
+.table--planilha-fluxo {
+  table-layout: fixed;
+  /* ⚠⚠ 1.132px = 172 (a coluna dos rótulos) + 12 × 80. E os 80 não são estética: medido em 375px com
+     `min-width: 860px`, a coluna de mês ficava com **57px** e `12.500,00` ocupava **73px** — o número
+     ESTOURAVA a célula e invadia a vizinha. Número que vaza para a coluna do lado é pior que número
+     que exige rolagem: ele se lê como sendo do outro mês.
+     ⚠ Em 1280px o `.table-wrap` tem 1.135px, então a grade cabe inteira e não rola; abaixo disso ela
+     rola DENTRO do wrap — e é aí que a primeira coluna grudada ganha o sustento dela. */
+  min-width: 1132px;
+  font-variant-numeric: tabular-nums;
+}
+/* ⚠ A largura da primeira coluna é declarada nos DOIS (o canto do cabeçalho e o `th` da linha):
+   com `table-layout: fixed` quem manda é a PRIMEIRA linha da tabela, e o canto é ela. */
+.table--planilha-fluxo .planilha-canto,
+.table--planilha-fluxo th[scope="row"] { width: 172px; }
+/* ⚠ Célula estreita não pode quebrar o número em duas linhas: `12.500,00` partido lê-se como dois
+   valores. Ele encolhe a fonte antes de quebrar, e se ainda não couber a grade rola no `.table-wrap`. */
+.table--planilha-fluxo td.num { white-space: nowrap; }
 /* ⚠ A PRIMEIRA COLUNA GRUDA: numa planilha larga, rolar para o lado e perder o nome da linha
    transforma um número em enigma. ⚠ `z-index` só onde há `position` — sem ele o `<th>` do corpo
    passa POR BAIXO do próximo `<td>` durante a rolagem. */
