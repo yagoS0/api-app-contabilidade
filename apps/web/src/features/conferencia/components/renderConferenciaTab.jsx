@@ -39,10 +39,12 @@ import {
   variantDoTom,
 } from "../lib/conferenciaTela";
 import {
+  ESTADO_DO_PLANO,
   FRASE_DO_MOTIVO_DA_CONTA,
   completoDoReduzido,
   contasOferecidas,
   motivoDoSeletorVazio,
+  problemaDoCaixa,
   reduzidoDoCompleto,
 } from "../lib/contaDaConferencia";
 
@@ -166,7 +168,7 @@ export function montarCorpo({ acao, item, data, motivo, valor, cfg, contaComplet
 }
 
 /** ⚠ O modal pergunta o que a ação precisa ANTES de enviar — a tela não descobre a regra pelo erro. */
-function ModalDaAcao({ acao, item, contas, ocupado, aviso, onFechar, onConfirmar }) {
+function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFechar, onConfirmar }) {
   const cfg = ACAO[acao];
   const [data, setData] = useState(() => dataSugeridaParaPagamento(item));
   const [motivo, setMotivo] = useState("");
@@ -175,11 +177,32 @@ function ModalDaAcao({ acao, item, contas, ocupado, aviso, onFechar, onConfirmar
   // reconhece. Mostrar `411020008` seria pôr a âncora interna na frente de quem nunca a viu.
   // ⚠ Sugestão ausente ⇒ campo VAZIO, nunca "a primeira conta do plano": eleger seria o sistema
   // decidindo em que conta a despesa entra, que é a decisão do contador.
-  const [conta, setConta] = useState(() => reduzidoDoCompleto(item?.sugestao?.conta || item?.contaSugerida, contas).valor || "");
+  const [conta, setConta] = useState("");
+  // ⚠ Quem responde "por que o campo não veio preenchido?" — `FORA_DO_PLANO` e `COMPLETO_AMBIGUO`
+  // eram TEXTO MORTO: o motivo de `reduzidoDoCompleto` era descartado com `.valor || ""` e o campo
+  // ficava vazio e mudo. Achado por agente de verificação em 26/08/2026.
+  const daSugestao = useMemo(
+    () => reduzidoDoCompleto(item?.sugestao?.conta || item?.contaSugerida, contas),
+    [item, contas],
+  );
+
+  // ⚠⚠ O PLANO PODE CHEGAR DEPOIS DO MODAL ABRIR, e o `useState` inicializador roda UMA vez: o campo
+  // nascia vazio e ficava vazio para sempre, com a sugestão evaporada em silêncio. Este efeito
+  // preenche quando a tradução passa a existir — e só enquanto o contador não digitou nada, senão
+  // ele sobrescreveria a escolha dele.
+  const tocado = useRef(false);
+  useEffect(() => {
+    if (tocado.current) return;
+    if (daSugestao.valor) setConta(daSugestao.valor);
+  }, [daSugestao.valor]);
 
   const pedeConta = Boolean(cfg?.criaLancamento);
   const oferecidas = useMemo(() => contasOferecidas(contas), [contas]);
-  const seletorVazio = useMemo(() => motivoDoSeletorVazio(contas), [contas]);
+  const seletorVazio = useMemo(() => motivoDoSeletorVazio(contas, estadoDoPlano), [contas, estadoDoPlano]);
+  const caixaTorto = useMemo(
+    () => (estadoDoPlano === ESTADO_DO_PLANO.OK ? problemaDoCaixa(contas) : null),
+    [contas, estadoDoPlano],
+  );
   // ⚠ A tradução é a MESMA que vai ao POST — a tela não pode validar por um caminho e enviar por
   // outro. `traducao.motivo` é o que o campo mostra em vermelho.
   const traducao = useMemo(() => completoDoReduzido(conta, contas), [conta, contas]);
@@ -189,7 +212,14 @@ function ModalDaAcao({ acao, item, contas, ocupado, aviso, onFechar, onConfirmar
   const faltaMotivo = cfg?.pedeMotivo && !motivo.trim();
   const faltaData = pedeData && !data;
   const faltaConta = pedeConta && !traducao.valor;
-  const podeEnviar = !faltaData && !faltaMotivo && !faltaConta;
+  // ⚠⚠ `pedeValor` NÃO tinha guarda — achado por agente adversarial. Campo apagado, `"0"` ou `"-5"`
+  // deixavam o botão HABILITADO, e `podeTransitar` recusava com `valor_ajustado_invalido`: a tela
+  // descobrindo a regra pelo erro. O critério é o do servidor — número finito maior que zero.
+  const valorNumero = Number(String(valor).replace(",", "."));
+  const faltaValor = Boolean(cfg?.pedeValor) && !(Number.isFinite(valorNumero) && valorNumero > 0);
+  // ⚠ O caixa é a contrapartida CRAVADA: torto, ele derruba a linha por mais certa que esteja a
+  // conta escolhida.
+  const podeEnviar = !faltaData && !faltaMotivo && !faltaConta && !faltaValor && !caixaTorto;
 
   return (
     <Modal
@@ -211,8 +241,10 @@ function ModalDaAcao({ acao, item, contas, ocupado, aviso, onFechar, onConfirmar
                 : faltaMotivo ? "Escreva o motivo da recusa."
                   // ⚠ O motivo da tradução vence o genérico: "não existe no plano" e "é sintética"
                   // pedem consertos diferentes, e o campo já os nomeia.
-                  : faltaConta ? (traducao.motivo ? FRASE_DO_MOTIVO_DA_CONTA[traducao.motivo] : "Escolha a conta contábil da despesa.")
-                    : undefined
+                  : caixaTorto ? caixaTorto
+                    : faltaValor ? "Informe um valor maior que zero."
+                      : faltaConta ? (traducao.motivo ? FRASE_DO_MOTIVO_DA_CONTA[traducao.motivo] : "Escolha a conta contábil da despesa.")
+                        : undefined
             }
             onClick={() => onConfirmar(montarCorpo({ acao, item, data, motivo, valor, cfg, contaCompleta: traducao.valor }))}
           >
@@ -261,7 +293,7 @@ function ModalDaAcao({ acao, item, contas, ocupado, aviso, onFechar, onConfirmar
             <input
               list="contas-da-conferencia"
               value={conta}
-              onChange={(e) => setConta(e.target.value)}
+              onChange={(e) => { tocado.current = true; setConta(e.target.value); }}
               placeholder="código reduzido — ex.: 401"
               autoFocus={!pedeData}
               // ⚠ Campo com valor RECUSADO fica vermelho na hora, não só no clique.
@@ -275,6 +307,15 @@ function ModalDaAcao({ acao, item, contas, ocupado, aviso, onFechar, onConfirmar
                 <option key={c.codigo} value={c.codigo}>{c.nome}</option>
               ))}
             </datalist>
+
+            {/* ⚠⚠ POR QUE O CAMPO VEIO VAZIO — a sugestão existe e não traduziu. Sem isto,
+                `FORA_DO_PLANO` e `COMPLETO_AMBIGUO` eram texto morto: o campo ficava vazio e mudo, e
+                o contador não tinha como saber que HAVIA uma conta conhecida. */}
+            {!conta && daSugestao.motivo ? (
+              <span style={{ fontSize: "0.78rem", color: "var(--state-warn)" }}>
+                {FRASE_DO_MOTIVO_DA_CONTA[daSugestao.motivo]}
+              </span>
+            ) : null}
 
             {/* ⚠ O motivo da recusa da tradução, NOMEADO — nunca "conta inválida". */}
             {traducao.motivo ? (
@@ -299,6 +340,14 @@ function ModalDaAcao({ acao, item, contas, ocupado, aviso, onFechar, onConfirmar
 
             {/* ⚠⚠ SELETOR VAZIO NÃO PODE SER MUDO — sem isto, o contador conclui que o sistema
                 perdeu o plano de contas. Três motivos, três consertos. */}
+            {/* ⚠⚠ O CAIXA É A CONTRAPARTIDA CRAVADA (`111010001`). Torto, ele derruba a linha por
+                mais certa que esteja a conta escolhida — e a tela nunca dizia isso. */}
+            {caixaTorto ? (
+              <span role="alert" style={{ fontSize: "0.78rem", color: "var(--state-danger)" }}>
+                {caixaTorto}
+              </span>
+            ) : null}
+
             {seletorVazio ? (
               <span role="alert" style={{ fontSize: "0.78rem", color: "var(--state-warn)" }}>
                 {seletorVazio}
@@ -388,6 +437,22 @@ function ContaSugerida({ item }) {
   );
 }
 
+/**
+ * ⚠ As frases DISTINTAS de bloqueio das ações desta linha.
+ *
+ * Distintas porque três botões bloqueados pelo mesmo mês fechado dariam a mesma frase três vezes.
+ * A leitura é a MESMA de `motivoDeBloqueio` — uma segunda regra aqui faria o texto visível e o
+ * `title` discordarem sobre a mesma linha.
+ */
+function motivosDeBloqueioVisiveis(acoes, item, opcoes) {
+  const vistas = [];
+  for (const acao of acoes) {
+    const frase = motivoDeBloqueio(acao, item, opcoes);
+    if (frase && !vistas.includes(frase)) vistas.push(frase);
+  }
+  return vistas;
+}
+
 function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir }) {
   const estado = leituraDoEstado(item.estado);
   const doc = leituraDoDocumento(item);
@@ -449,6 +514,7 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir }) {
                 disabled={Boolean(bloqueio)}
                 // ⚠⚠ O botão fica VISÍVEL e desabilitado, com o motivo — botão que some esconde que
                 // a ação existe, e botão mudo não diz se é permissão, mês fechado ou defeito.
+                // ⚠ O `title` é REFORÇO, nunca a única via: o texto sai visível logo abaixo.
                 title={bloqueio || undefined}
                 onClick={() => onAgir(acao, item)}
               >
@@ -457,6 +523,29 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir }) {
             );
           })}
         </div>
+        {/* ⚠⚠ O MOTIVO SAI VISÍVEL, e isto é conserto de defeito real — achado por agente
+            adversarial em 26/08/2026. Ele vivia SÓ no `title`, e o `CLAUDE.md` deste app rejeita
+            essa forma DUAS vezes, com a mesma frase: *"`title` não aparece no teclado nem no
+            toque"*. Dois dos quatro motivos (mês fechado, papel insuficiente) não tinham eco
+            nenhum na tela — numa competência fechada o contador via uma coluna inteira de botões
+            cinzas e ZERO explicação.
+            ⚠ Uma linha só, e só na linha BLOQUEADA: em regime normal ela não existe, então não
+            vira ruído. E é `--text-faint`, não `--state-danger`: bloqueio aqui não é erro. */}
+        {motivosDeBloqueioVisiveis(acoes, item, { podeEscrever, podeEscolherConta }).map((frase) => (
+          <div
+            key={frase}
+            style={{
+              fontSize: "0.72rem",
+              color: "var(--text-faint)",
+              textAlign: "right",
+              marginTop: 4,
+              maxWidth: 320,
+              marginLeft: "auto",
+            }}
+          >
+            {frase}
+          </div>
+        ))}
       </td>
     </tr>
   );
@@ -487,11 +576,25 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
   // ⚠ Falha aqui NÃO derruba a fila — ela continua legível, só sem seletor. O que não pode é a
   // aba inteira cair porque o plano não veio.
   const [contas, setContas] = useState([]);
+  // ⚠⚠ TRÊS ESTADOS, NÃO DOIS. Lista vazia é indistinguível de "ainda perguntando" e de "a consulta
+  // falhou" — e a tela dizia, para os três, *"esta empresa ainda não tem plano de contas"*, que é
+  // uma AFIRMAÇÃO sobre o cadastro. Achado por agente adversarial em 26/08/2026.
+  const [estadoDoPlano, setEstadoDoPlano] = useState(ESTADO_DO_PLANO.CARREGANDO);
 
   const competenciaDaConsulta = recorte === "sem-competencia" ? COMPETENCIA_AUSENTE : competencia;
-  // ⚠ A pergunta que o pré-voo faz não é "existe seletor?", é "há conta para escolher?". Plano sem
-  // conta oferecível (todas sintéticas, ou todas sem `codigoCompleto`) mantém o bloqueio COM motivo.
-  const podeEscolherConta = useMemo(() => contasOferecidas(contas).length > 0, [contas]);
+  // ⚠ A pergunta que o pré-voo faz não é "existe seletor?", é "dá para contabilizar?". São duas
+  // condições, e cada uma derruba tudo sozinha:
+  //   · haver conta OFERECÍVEL (plano vazio, só sintéticas ou sem `codigoCompleto`);
+  //   · o CAIXA estar são — `montarLancamento` credita sempre `111010001`, e sem ele TODA linha da
+  //     empresa é recusada, por mais certa que esteja a conta que o contador escolheu.
+  const problemaNoCaixa = useMemo(
+    () => (estadoDoPlano === ESTADO_DO_PLANO.OK ? problemaDoCaixa(contas) : null),
+    [contas, estadoDoPlano],
+  );
+  const podeEscolherConta = useMemo(
+    () => estadoDoPlano === ESTADO_DO_PLANO.OK && !problemaNoCaixa && contasOferecidas(contas).length > 0,
+    [contas, estadoDoPlano, problemaNoCaixa],
+  );
 
   // ⚠⚠ "A ÚLTIMA CONSULTA VENCE" — achado por auditoria em 25/08/2026.
   //
@@ -541,6 +644,11 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
   useEffect(() => {
     if (!companyId) return undefined;
     let vivo = true;
+    // ⚠⚠ LIMPAR ANTES DE PERGUNTAR. Sem isto, na janela entre trocar de empresa e a resposta chegar,
+    // o seletor oferece o plano da empresa ANTERIOR — e o contador escolheria uma conta que não é
+    // desta empresa. Achado por agente de verificação em 26/08/2026.
+    setContas([]);
+    setEstadoDoPlano(ESTADO_DO_PLANO.CARREGANDO);
     // ⚠⚠ `try` E `.catch`, e os dois são necessários — achado por teste em 26/08/2026.
     //
     // O `.catch` pega a REJEIÇÃO (rede fora, 500). O `try` pega o lançamento SÍNCRONO — que foi o
@@ -549,13 +657,22 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
     // promessa de "isto não derruba a fila" valendo pela metade.
     try {
       Promise.resolve(conferenciaApi.getChartOfAccounts(companyId))
-        .then((r) => { if (vivo) setContas(Array.isArray(r) ? r : []); })
-        // ⚠ Silencioso DE PROPÓSITO, e é a única exceção da aba: sem o plano o seletor fica vazio e
-        // `motivoDoSeletorVazio` já diz o que houve. Derrubar a fila inteira porque o plano não veio
-        // seria trocar uma tela degradada por nenhuma tela.
-        .catch(() => { if (vivo) setContas([]); });
+        .then((r) => {
+          if (!vivo) return;
+          setContas(Array.isArray(r) ? r : []);
+          setEstadoDoPlano(ESTADO_DO_PLANO.OK);
+        })
+        // ⚠ A falha não derruba a aba — a fila continua legível. Mas ela é MARCADA, não engolida:
+        // `FALHOU` é o que impede a tela de afirmar "esta empresa não tem plano de contas" sobre uma
+        // consulta que ninguém conseguiu fazer.
+        .catch(() => {
+          if (!vivo) return;
+          setContas([]);
+          setEstadoDoPlano(ESTADO_DO_PLANO.FALHOU);
+        });
     } catch {
       setContas([]);
+      setEstadoDoPlano(ESTADO_DO_PLANO.FALHOU);
     }
     return () => { vivo = false; };
   }, [companyId]);
@@ -764,6 +881,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
           acao={acaoAberta.acao}
           item={acaoAberta.item}
           contas={contas}
+          estadoDoPlano={estadoDoPlano}
           ocupado={enviando}
           aviso={aviso}
           onFechar={() => {

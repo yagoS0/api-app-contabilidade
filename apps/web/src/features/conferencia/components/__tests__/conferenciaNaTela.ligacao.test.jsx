@@ -5,7 +5,7 @@
 // bloqueado fica VISÍVEL com o motivo, que o recorte "sem competência" pede outra coisa ao
 // servidor, e que a tela não oferece um caminho que o backend não tem.
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 const mockGetFila = jest.fn();
 // ⚠⚠ O PLANO DO MOCK tem os TRÊS estados que o seletor precisa distinguir: `400` SINTÉTICA (tem
@@ -576,5 +576,130 @@ describe("⚠⚠ O SELETOR DE CONTA na Conferência", () => {
     montar();
     const botao = await screen.findByRole("button", { name: /^Confirmar$/i });
     await waitFor(() => expect(botao).toBeDisabled());
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ OS CONSERTOS DA VERIFICAÇÃO ADVERSARIAL (26/08/2026).
+//
+// Nenhum destes ramos tinha teste, e três deles são a diferença entre a tela DIZER o que houve e a
+// tela AFIRMAR algo falso.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ quando o plano de contas NÃO vem", () => {
+  const abrir = async () => {
+    responder([item()]);
+    montar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
+    return screen.findByRole("dialog");
+  };
+
+  it("⚠⚠ a consulta que FALHOU não vira 'esta empresa não tem plano de contas'", async () => {
+    mockGetPlano.mockRejectedValueOnce(new Error("rede fora"));
+    const d = await abrir();
+    await waitFor(() => {
+      expect(within(d).getByText(/[Nn]ão foi possível carregar o plano/)).toBeInTheDocument();
+    });
+    // ⚠ a AFIRMAÇÃO sobre o cadastro não pode aparecer
+    expect(within(d).queryByText(/ainda não tem plano de contas/i)).toBeNull();
+  });
+
+  it("⚠⚠ um TypeError SÍNCRONO não derruba a aba — a fila continua legível", async () => {
+    // ⚠ Foi o caso real: um cliente de API sem o método estoura na CHAMADA, antes de existir
+    // promessa, e o `.catch` sozinho não pega.
+    mockGetPlano.mockImplementationOnce(() => { throw new TypeError("não é função"); });
+    responder([item()]);
+    montar();
+    // o nome sai no cabecalho do grupo E na linha — dois elementos, e o que importa e a aba ter renderizado
+    expect((await screen.findAllByText("GOOGLE CLOUD BRASIL")).length).toBeGreaterThan(0);
+  });
+
+  it("⚠ e a fila continua legível também na REJEIÇÃO", async () => {
+    mockGetPlano.mockRejectedValueOnce(new Error("500"));
+    responder([item()]);
+    montar();
+    // o nome sai no cabecalho do grupo E na linha — dois elementos, e o que importa e a aba ter renderizado
+    expect((await screen.findAllByText("GOOGLE CLOUD BRASIL")).length).toBeGreaterThan(0);
+  });
+
+  it("⚠⚠ o plano que chega DEPOIS do modal abrir ainda preenche o campo", async () => {
+    // ⚠ O `useState` inicializador roda UMA vez: sem o efeito de re-sync, a sugestão evaporava em
+    // silêncio e o contador tinha de digitar o código.
+    let liberar;
+    mockGetPlano.mockImplementationOnce(() => new Promise((r) => { liberar = r; }));
+    responder([item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } })]);
+    montar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
+    const d = await screen.findByRole("dialog");
+    const campo = within(d).getByLabelText(/Conta contábil da despesa/i);
+    expect(campo).toHaveValue("");
+    await act(async () => { liberar(PLANO_DO_TESTE); });
+    await waitFor(() => expect(campo).toHaveValue("557"));
+  });
+});
+
+describe("⚠⚠ o CAIXA torto derruba a linha — e a tela nunca dizia", () => {
+  it("sem `111010001` no plano, o envio é bloqueado COM o motivo", async () => {
+    mockGetPlano.mockResolvedValueOnce(PLANO_DO_TESTE.filter((c) => c.codigo !== "5"));
+    responder([item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } })]);
+    montar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
+    const d = await screen.findByRole("dialog");
+    await waitFor(() => {
+      expect(within(d).getByText(/não tem a conta de caixa/i)).toBeInTheDocument();
+    });
+    expect(within(d).getByRole("button", { name: /^Confirmar$/i })).toBeDisabled();
+  });
+});
+
+describe("⚠⚠ o MOTIVO do bloqueio sai VISÍVEL, não só no title", () => {
+  // ⚠ O `CLAUDE.md` deste app rejeita a forma title-only DUAS vezes, com a mesma frase:
+  // *"`title` não aparece no teclado nem no toque"*. E dois dos quatro motivos (mês fechado, papel
+  // insuficiente) não tinham eco NENHUM na tela.
+  it("⚠⚠ mês fechado aparece em TEXTO na linha", async () => {
+    responder([item({ mesFechado: true })]);
+    montar();
+    expect(await screen.findByText(/A competência está fechada/i)).toBeInTheDocument();
+  });
+
+  it("⚠⚠ papel insuficiente aparece em TEXTO", async () => {
+    responder([item()]);
+    montar({ podeEscrever: false });
+    expect(await screen.findByText(/Seu perfil não pode alterar/i)).toBeInTheDocument();
+  });
+
+  it("⚠ a frase NÃO se repete quando dois botões têm o mesmo motivo", async () => {
+    responder([item({ mesFechado: true })]);
+    montar();
+    const achadas = await screen.findAllByText(/A competência está fechada/i);
+    expect(achadas).toHaveLength(1);
+  });
+
+  it("⚠ em regime normal não há linha de motivo — ela não vira ruído", async () => {
+    responder([item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } })]);
+    montar();
+    await screen.findAllByText("GOOGLE CLOUD BRASIL");
+    expect(screen.queryByText(/A competência está fechada/i)).toBeNull();
+    expect(screen.queryByText(/Seu perfil não pode/i)).toBeNull();
+  });
+});
+
+describe("⚠ ajustar valor exige valor — o servidor recusava e a tela liberava", () => {
+  const abrirAjustar = async () => {
+    responder([item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } })]);
+    montar();
+    fireEvent.click(await screen.findByRole("button", { name: /Ajustar valor/i }));
+    return screen.findByRole("dialog");
+  };
+
+  it("⚠⚠ campo apagado, zero e negativo bloqueiam — todos davam botão HABILITADO", async () => {
+    const d = await abrirAjustar();
+    const campo = within(d).getByLabelText(/Valor a lançar/i);
+    const botao = within(d).getByRole("button", { name: /Ajustar valor/i });
+    for (const v of ["", "0", "-5"]) {
+      fireEvent.change(campo, { target: { value: v } });
+      expect(botao).toBeDisabled();
+    }
+    fireEvent.change(campo, { target: { value: "900" } });
+    expect(botao).not.toBeDisabled();
   });
 });

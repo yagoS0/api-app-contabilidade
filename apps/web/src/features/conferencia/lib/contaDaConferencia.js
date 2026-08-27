@@ -27,6 +27,14 @@
  * `{ valor, motivo }`: ou o valor, ou o motivo, nunca o silêncio.
  */
 
+// ⚠⚠ O PREDICADO DE CONTA SINTÉTICA É IMPORTADO, NUNCA REESCRITO.
+//
+// `ehSintetica` já existe em `accounting/entries/lib/contaSintetica.js`, e o backend faz questão de
+// importá-lo em vez de reescrever (`declarados/lib/formaDoLancamento.js` importa de
+// `accounting/lib/gateContaSintetica.js`). Uma segunda cópia aqui divergiria na primeira correção,
+// e a divergência apareceria como "a tela ofereceu e o servidor recusou".
+import { ehSintetica } from "../../accounting/entries/lib/contaSintetica.js";
+
 /** ⚠ Vocabulário FECHADO. Cada motivo aponta um conserto DIFERENTE. */
 export const MOTIVO_DA_CONTA = Object.freeze({
   /** O reduzido digitado não existe no plano desta empresa. Conserto: cadastrar, ou digitar outro. */
@@ -66,11 +74,6 @@ export const FRASE_DO_MOTIVO_DA_CONTA = Object.freeze({
 
 const texto = (v) => String(v ?? "").trim();
 
-/** Só `false` afirma sintética. ⚠ `null`/`undefined` = não se sabe, e não se afirma. */
-function ehSintetica(conta) {
-  return conta?.analitica === false;
-}
-
 /**
  * O que o contador DIGITOU (reduzido) → o que o servidor EXIGE (`codigoCompleto`).
  *
@@ -96,9 +99,40 @@ export function completoDoReduzido(reduzido, contas) {
   const conta = achadas[0];
   const completo = texto(conta.codigoCompleto);
   if (!completo) return { valor: null, motivo: MOTIVO_DA_CONTA.SEM_CODIGO_COMPLETO, conta };
+
+  // ⚠⚠ O COMPLETO TAMBÉM PODE SER AMBÍGUO, E ESTE RAMO FALTAVA — achado por agente adversarial em
+  // 26/08/2026, e era assimetria minha: `COMPLETO_AMBIGUO` existia e só estava ligado no sentido da
+  // SUGESTÃO (`reduzidoDoCompleto`), nunca no do SUBMIT.
+  //
+  // O reduzido identifica UMA conta; o `codigoCompleto` dela pode ser compartilhado por outra. É
+  // exatamente isso que `indicePorCodigoCompleto` marca como `ambiguo`, e `montarLancamento` recusa
+  // com `CONTA_AMBIGUA` — ou seja, o campo ficava verde, o botão habilitado, e o POST voltava
+  // recusado. A tela oferecendo o que o clique nega, que é o defeito que este arquivo existe para
+  // impedir.
+  //
+  // ⚠ Alcançável sem esforço: `codigoCompleto` NÃO tem índice único nenhum, e `POST`/`PATCH
+  // /chart-of-accounts` aceitam qualquer valor. O caso mais provável é ENTRE ESCOPOS — uma global e
+  // uma conta própria da empresa com o mesmo completo e reduzidos diferentes: as duas dedups casam
+  // por `codigo`, nunca por `codigoCompleto`, então nada as compara.
+  if (compartilhamCompleto(completo, contas)) {
+    return { valor: null, motivo: MOTIVO_DA_CONTA.COMPLETO_AMBIGUO, conta };
+  }
+
   if (ehSintetica(conta)) return { valor: null, motivo: MOTIVO_DA_CONTA.SINTETICA, conta };
 
   return { valor: completo, motivo: null, conta };
+}
+
+/** ⚠ Duas ou mais contas do plano com o MESMO `codigoCompleto` — a ambiguidade que o servidor recusa. */
+function compartilhamCompleto(completo, contas) {
+  const alvo = texto(completo);
+  if (!alvo) return false;
+  let vistas = 0;
+  for (const c of Array.isArray(contas) ? contas : []) {
+    if (texto(c?.codigoCompleto) === alvo) vistas += 1;
+    if (vistas > 1) return true;
+  }
+  return false;
 }
 
 /**
@@ -135,19 +169,85 @@ export function reduzidoDoCompleto(completo, contas) {
  * desconhecida, e recusá-la esvaziaria o dropdown de todo plano ainda não reimportado.
  */
 export function contasOferecidas(contas) {
-  return (Array.isArray(contas) ? contas : []).filter(
-    (c) => !ehSintetica(c) && texto(c?.codigoCompleto),
+  const lista = Array.isArray(contas) ? contas : [];
+  return lista.filter(
+    (c) =>
+      !ehSintetica(c)
+      && texto(c?.codigoCompleto)
+      // ⚠ Conta sem REDUZIDO não é oferecível: o `<option value="">` viraria uma linha em branco no
+      // dropdown, e `indicePorCodigoCompleto` a pula (ela não tem como ser traduzida de volta).
+      && texto(c?.codigo)
+      // ⚠⚠ E conta cujo `codigoCompleto` é COMPARTILHADO sai da oferta — o servidor a recusaria com
+      // `CONTA_AMBIGUA`. Oferecer as duas e recusar as duas no clique é o pior dos dois mundos.
+      && !compartilhamCompleto(c?.codigoCompleto, lista),
   );
 }
 
 /**
- * ⚠ Por que o seletor pode estar VAZIO — e a tela precisa dizer qual dos três é.
+ * ⚠⚠ O CAIXA É CRAVADO, E A TELA NUNCA O CONFERIA — achado por agente adversarial em 26/08/2026.
  *
- * Um seletor vazio sem explicação faz o contador concluir que o sistema perdeu o plano de contas.
- * Medido em 26/08/2026 num banco local: **1186 de 1186 contas sem `codigoCompleto`** — ou seja, o
- * terceiro caso não é hipotético.
+ * `montarLancamento` credita SEMPRE `111010001` e recusa quando ele não está no plano, está
+ * duplicado, ou é sintético (`CAIXA_FORA_DO_PLANO` · `CAIXA_AMBIGUO` · `CAIXA_SINTETICO`). São três
+ * recusas que derrubam **TODA** confirmação daquela empresa — e o seletor ficava cheio e alegre,
+ * porque a conta que o contador escolhe está certa; quem está torto é a contrapartida.
+ *
+ * ⚠ O gatilho é silencioso: basta a empresa ter conta PRÓPRIA `codigo: "5"` com `codigoCompleto`
+ * nulo (plano não reimportado). Ela vence a global na dedup, o caixa some do índice, e toda linha
+ * volta `caixa_fora_do_plano`.
+ *
+ * ⚠ `111010001` é CÓPIA DECLARADA de `CAIXA_CODIGO_COMPLETO`
+ * (`api: application/declarados/lib/formaDoLancamento.js`) — o backend não é importável do front.
+ * Mudou lá, muda aqui: senão a tela libera o que o servidor nega.
  */
-export function motivoDoSeletorVazio(contas) {
+export const CAIXA_CODIGO_COMPLETO = "111010001";
+
+export function problemaDoCaixa(contas) {
+  const lista = Array.isArray(contas) ? contas : [];
+  const achadas = lista.filter((c) => texto(c?.codigoCompleto) === CAIXA_CODIGO_COMPLETO);
+  if (!achadas.length) {
+    return "Esta empresa não tem a conta de caixa (1.1.1.01.0001) no plano, e é ela que recebe o "
+      + "crédito de toda despesa. Nenhum lançamento pode ser feito por aqui até isso ser corrigido.";
+  }
+  if (achadas.length > 1) {
+    return "Duas contas do plano desta empresa apontam para a conta de caixa (1.1.1.01.0001). O "
+      + "sistema não escolhe entre elas.";
+  }
+  if (ehSintetica(achadas[0])) {
+    return "A conta de caixa (1.1.1.01.0001) desta empresa está marcada como sintética (de "
+      + "agregação) e não recebe lançamento. Corrija o plano de contas.";
+  }
+  return null;
+}
+
+/** ⚠ Estados do carregamento do plano. Vocabulário FECHADO. */
+export const ESTADO_DO_PLANO = Object.freeze({
+  CARREGANDO: "carregando",
+  OK: "ok",
+  FALHOU: "falhou",
+});
+
+/**
+ * ⚠⚠ POR QUE O SELETOR NÃO SERVE — e "não sei" NÃO pode se parecer com "não tem".
+ *
+ * A versão anterior recebia só a lista, e lista vazia virava **"Esta empresa ainda não tem plano de
+ * contas"** — uma AFIRMAÇÃO sobre o cadastro, dita quando a verdade era *"a consulta falhou"* ou
+ * *"ainda estou perguntando"*. É a distinção ausência × afirmação que o resto do projeto respeita
+ * (o tri-estado de `analitica`, `folhaAusenteNaoEZero`, o `dinheiro()` que não inventa zero),
+ * invertida. Achado por agente adversarial em 26/08/2026.
+ *
+ * ⚠ Medido em 26/08/2026 num banco local: **1186 de 1186 contas sem `codigoCompleto`** — o ramo do
+ * plano sem âncora não é hipotético.
+ *
+ * @returns {string|null} a frase, ou `null` quando o seletor serve
+ */
+export function motivoDoSeletorVazio(contas, estado = ESTADO_DO_PLANO.OK) {
+  if (estado === ESTADO_DO_PLANO.CARREGANDO) return "Carregando o plano de contas…";
+  if (estado === ESTADO_DO_PLANO.FALHOU) {
+    // ⚠ Diz o que houve e o que fazer — e NÃO afirma nada sobre o cadastro da empresa.
+    return "Não foi possível carregar o plano de contas desta empresa. Recarregue a página; se "
+      + "persistir, o problema é da conexão com o servidor, não do cadastro.";
+  }
+
   const lista = Array.isArray(contas) ? contas : [];
   if (!lista.length) return "Esta empresa ainda não tem plano de contas.";
   if (contasOferecidas(lista).length) return null;
@@ -155,6 +255,6 @@ export function motivoDoSeletorVazio(contas) {
     return "Nenhuma conta do plano desta empresa tem código completo. Reimporte o plano de contas — "
       + "sem ele nenhuma conta pode receber lançamento por aqui.";
   }
-  return "Todas as contas do plano desta empresa são sintéticas (de agregação). Cadastre as contas "
-    + "analíticas abaixo delas.";
+  return "Nenhuma conta do plano desta empresa pode receber lançamento: as que existem são "
+    + "sintéticas (de agregação) ou têm código completo repetido.";
 }

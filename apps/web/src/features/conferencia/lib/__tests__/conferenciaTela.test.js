@@ -622,3 +622,35 @@ describe("⚠ fora da faixa também tem conta conhecida", () => {
     expect(m).not.toMatch(/para o sistema aprender/i);
   });
 });
+
+// ⚠ `podeEscolherConta` entrou em 26/08/2026 e a regra pura ficou SEM teste próprio — só a ligação
+// a exercia. Regra da casa: regra de tela mora em `lib/` COM teste próprio.
+describe("⚠⚠ podeEscolherConta — o seletor derruba o bloqueio, mas só quando há o que escolher", () => {
+  const semConta = {
+    id: "d-1", estado: "A_CONFERIR", competencia: "2026-07", dataPagamento: "2026-07-10",
+    origemPagamento: "OFX", mesFechado: false, contaSugerida: null, sugestao: null,
+  };
+
+  it("COM seletor, linha sem conta deixa de ser bloqueada — o modal pergunta", () => {
+    expect(motivoDeBloqueio("confirmar", semConta, { podeEscolherConta: true })).toBeNull();
+  });
+
+  it("⚠⚠ SEM seletor, o bloqueio com motivo volta — plano sem conta oferecível é caso real", () => {
+    expect(motivoDeBloqueio("confirmar", semConta, { podeEscolherConta: false }))
+      .toMatch(/Nenhuma conta conhecida/i);
+  });
+
+  it("⚠ o padrão é FALSO — chamador que esquecer o parâmetro bloqueia, nunca libera", () => {
+    expect(motivoDeBloqueio("confirmar", semConta, {})).toMatch(/Nenhuma conta conhecida/i);
+    expect(motivoDeBloqueio("confirmar", semConta)).toMatch(/Nenhuma conta conhecida/i);
+  });
+
+  it("⚠⚠ ele NÃO derruba os outros bloqueios — mês fechado e competência ausente ficam", () => {
+    expect(motivoDeBloqueio("confirmar", { ...semConta, mesFechado: true }, { podeEscolherConta: true }))
+      .toMatch(/fechada/i);
+    expect(motivoDeBloqueio("confirmar", { ...semConta, competencia: null }, { podeEscolherConta: true }))
+      .toMatch(/competência/i);
+    expect(motivoDeBloqueio("confirmar", semConta, { podeEscrever: false, podeEscolherConta: true }))
+      .toMatch(/perfil/i);
+  });
+});

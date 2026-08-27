@@ -4740,7 +4740,25 @@ export function createMockApi() {
     // ── Plano de Contas (mock) ─────────────────────────────────────────────
     async getChartOfAccounts(companyId) {
       await delay();
-      return mockChartOfAccounts.get(companyId) || [];
+      // ⚠⚠ A ROTA REAL DEVOLVE A UNIÃO GLOBAL + EMPRESA, DEDUPADA POR `codigo`, COM A EMPRESA
+      // VENCENDO — e o mock devolvia SÓ o plano da empresa. Achado por agente de verificação em
+      // 26/08/2026.
+      //
+      // ⚠ Não é detalhe: `ChartOfAccount.portalClientId` é ANULÁVEL, e `null` = conta GLOBAL
+      // compartilhada por todas as empresas. É lá que mora a maior parte do plano. Um mock que
+      // ignora o escopo global faz a tela offline ver um plano MENOR que o de produção — e é
+      // justamente no cruzamento global × empresa que aparece o `codigoCompleto` duplicado que o
+      // seletor precisa recusar.
+      //
+      // ⚠ A precedência é a mesma dos dois lados (`routes/firm/accountingEntries.js` e
+      // `AliquotaPorLancamentosService.carregarPlano`): a global é o padrão, a da empresa
+      // sobrescreve no `codigo` repetido. Uma segunda regra de desempate aqui faria a tela e o
+      // servidor discordarem sobre qual conta o contador está usando.
+      const daEmpresa = mockChartOfAccounts.get(companyId) || [];
+      const porCodigo = new Map();
+      for (const c of mockGlobalChartOfAccounts) porCodigo.set(String(c.codigo), c);
+      for (const c of daEmpresa) porCodigo.set(String(c.codigo), c);
+      return [...porCodigo.values()];
     },
     async createChartOfAccount(companyId, input) {
       await delay();
