@@ -5,7 +5,14 @@ import { useCarregamento } from "../../lib/hooks";
 import { baixarBlob } from "../../lib/baixarBlob";
 import { modeloDeEmissaoDaNota, podeReaproveitar } from "../emitir/lib/reaproveitarNota";
 import { lerRecusaDanfse, nomeDoArquivoDanfse, podeGerarDanfse } from "./lib/danfseDaNota";
-import { lerRecusaLote, nomeDoArquivoLoteDanfse } from "./lib/loteDanfse";
+import { LOTE_MAXIMO, lerRecusaLote, nomeDoArquivoLoteDanfse } from "./lib/loteDanfse";
+import {
+  ESCOPO_DO_LOTE,
+  avisoDoEscopo,
+  ofertaDeTodaACompetencia,
+  pedidoDoLote,
+  rotuloDoBotao,
+} from "./lib/selecaoDeNotas";
 import { podeCancelar } from "./lib/cancelamentoNota";
 import { estadoDaLinhaDaNota } from "./lib/estadoDaLinhaDaNota";
 import { chipDaNota } from "./lib/chipDaNota";
@@ -159,20 +166,21 @@ function BotaoDanfse({ nota, companyId }) {
  * ⚠ E ela DIZ O NÚMERO — *"Baixar 3 DANFSe"*, nunca "Baixar selecionadas". O número é o que a pessoa
  * confere contra o que ela marcou, e é o que aparece dentro do zip.
  */
-function BarraDeSelecao({ companyId, cnpj, competencia, selecionadas, aoLimpar }) {
+function BarraDeSelecao({ companyId, cnpj, competencia, selecionadas, escopo, totalDaCompetencia, aoLimpar }) {
   const [estado, setEstado] = useState({ fase: "ocioso", recusa: null });
   const baixando = estado.fase === "baixando";
   const quantas = selecionadas.length;
+  // ⚠⚠ NA COMPETÊNCIA O NÚMERO É DE NOTAS, NÃO DE DANFSe — e a frase que diz isso é obrigatória.
+  // Ver o cabeçalho de `lib/selecaoDeNotas.js`: ali entram notas que não geram PDF nenhum.
+  const aviso = avisoDoEscopo(escopo);
 
   async function baixar() {
     setEstado({ fase: "baixando", recusa: null });
     try {
-      // ⚠ Os ids viajam JUNTO da competência: o servidor os põe no `AND` do mesmo `where` da
-      // listagem, então o escopo por empresa e o recorte de direção continuam valendo sobre eles.
-      const blob = await api.baixarDanfseEmLote(companyId, {
-        competencia: competencia || undefined,
-        ids: selecionadas,
-      });
+      // ⚠ Quem monta o pedido é a REGRA, não este componente: na competência a ausência dos ids é o
+      // que faz o servidor cair no filtro inteiro, e escrever isso aqui seria a segunda leitura da
+      // mesma decisão.
+      const blob = await api.baixarDanfseEmLote(companyId, pedidoDoLote({ escopo, ids: selecionadas, competencia }));
       baixarBlob(blob, nomeDoArquivoLoteDanfse({ cnpj, competencia }));
       setEstado({ fase: "pronto", recusa: null });
     } catch (err) {
@@ -183,14 +191,23 @@ function BarraDeSelecao({ companyId, cnpj, competencia, selecionadas, aoLimpar }
   return (
     <div className="barra-selecao" role="region" aria-label="Ações sobre as notas selecionadas">
       <span className="barra-selecao-conta">
-        <strong>{quantas}</strong> nota{quantas === 1 ? "" : "s"} selecionada{quantas === 1 ? "" : "s"}
+        {escopo === ESCOPO_DO_LOTE.COMPETENCIA ? (
+          <>
+            <strong>{totalDaCompetencia}</strong> nota{totalDaCompetencia === 1 ? "" : "s"} desta competência
+          </>
+        ) : (
+          <>
+            <strong>{quantas}</strong> nota{quantas === 1 ? "" : "s"} selecionada{quantas === 1 ? "" : "s"}
+          </>
+        )}
       </span>
       <button type="button" className="btn btn-primary" disabled={baixando} onClick={baixar}>
-        {baixando ? "Gerando os PDFs…" : `Baixar ${quantas} DANFSe`}
+        {baixando ? "Gerando os PDFs…" : rotuloDoBotao({ escopo, quantas, total: totalDaCompetencia })}
       </button>
       <button type="button" className="btn" onClick={aoLimpar} disabled={baixando}>
         Limpar seleção
       </button>
+      {aviso ? <span className="meta">{aviso}</span> : null}
       {estado.fase === "pronto" ? (
         <span className="meta">
           Arquivo baixado. Dentro dele, <strong>RELATORIO.txt</strong> lista o que não gerou DANFSe e
@@ -233,12 +250,26 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
   // marcada uma nota que a pessoa não vê mais. É a mesma regra que o portal do escritório aplica à
   // carteira, e pelo mesmo motivo: seleção invisível vira ato sobre o que ninguém conferiu.
   const [selecionadas, setSelecionadas] = useState(() => new Set());
+  // ⚠⚠ O SEGUNDO ESCOPO — "todas as notas desta competência". Ele existe porque a seleção por
+  // PÁGINA, sozinha, desfaz uma capacidade: o botão antigo baixava até 200 notas, e a página mostra
+  // 25. O pedido do dono era sobre ESCOLHER, não sobre baixar menos.
+  // ⚠ Ele NÃO é um terceiro estado da seleção: quando ligado, os ids marcados deixam de importar e
+  // quem decide é o servidor, pelo mesmo `where` da listagem.
+  const [todaACompetencia, setTodaACompetencia] = useState(false);
 
 
   // Trocar de empresa ou de competência recomeça na página 1: manter a página 4
   // de uma lista que agora tem 2 páginas mostra uma tela vazia que parece um bug.
   useEffect(() => {
     setPagina(1);
+  }, [companyId, competencia]);
+
+  // ⚠⚠ TROCAR DE EMPRESA OU DE COMPETÊNCIA DESLIGA O ESCOPO LARGO. Ele afirma "todas as notas DESTE
+  // mês"; mantido através da troca, o próximo clique baixaria o mês que ninguém escolheu — e sem uma
+  // lista de ids não há poda que salve, porque não existe id nenhum para podar. É a mesma disciplina
+  // da poda da seleção, aplicada ao único estado que a poda não alcança.
+  useEffect(() => {
+    setTodaACompetencia(false);
   }, [companyId, competencia]);
 
   // ⚠ TROCAR DE EMPRESA ESQUECE OS CANCELAMENTOS ENVIADOS. Os ids são de outra carteira; mantê-los
@@ -283,6 +314,9 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
   });
   const todasMarcadas = selecionaveis.length > 0 && selecionaveis.every((id) => selecionadas.has(id));
   const total = resposta?.total ?? 0;
+  // ⚠ O `total` é o do FILTRO (o `count` do servidor), nunca `notas.length` — é essa diferença que a
+  // oferta existe para alcançar.
+  const oferta = ofertaDeTodaACompetencia({ total, notasNaPagina: notas.length, teto: LOTE_MAXIMO });
   const limite = resposta?.limit ?? LIMITE;
   const totalPaginas = Math.max(1, Math.ceil(total / limite));
   const paginaAtual = resposta?.page ?? pagina;
@@ -377,14 +411,43 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
           <div className="table-wrap">
             {/* ⚠⚠ A BARRA SÓ EXISTE COM ALGO MARCADO, e fica ACIMA da tabela — quem marcou está
                 olhando as linhas, e a ação tem de aparecer onde o olho está. */}
-            {selecionadas.size > 0 ? (
+            {selecionadas.size > 0 || todaACompetencia ? (
               <BarraDeSelecao
                 companyId={companyId}
                 cnpj={empresa.cnpj}
                 competencia={competencia}
                 selecionadas={[...selecionadas]}
-                aoLimpar={() => setSelecionadas(new Set())}
+                escopo={todaACompetencia ? ESCOPO_DO_LOTE.COMPETENCIA : ESCOPO_DO_LOTE.PAGINA}
+                totalDaCompetencia={total}
+                aoLimpar={() => {
+                  setSelecionadas(new Set());
+                  setTodaACompetencia(false);
+                }}
               />
+            ) : null}
+            {/* ⚠⚠ A OFERTA DO ESCOPO LARGO — ela só aparece quando há MAIS notas do que a página
+                mostra. Com tudo numa página, o cabeçalho já faz o mesmo, e uma segunda porta para o
+                mesmo ato ensina a não ler a barra.
+                ⚠ Acima do teto ela aparece DESABILITADA com o motivo: botão que some esconde que a
+                ação existe, e o servidor recusaria de qualquer jeito. */}
+            {oferta && !todaACompetencia ? (
+              <p className="meta oferta-competencia">
+                <button
+                  type="button"
+                  className="btn btn-link"
+                  disabled={oferta.acimaDoTeto}
+                  title={oferta.motivo || undefined}
+                  onClick={() => {
+                    setTodaACompetencia(true);
+                    // ⚠ A marcação da página some junto: manter as caixas marcadas ao lado de "todas
+                    // as 120" faria a tela mostrar dois números para o mesmo lote.
+                    setSelecionadas(new Set());
+                  }}
+                >
+                  {oferta.rotulo}
+                </button>
+                {oferta.motivo ? <span className="meta"> {oferta.motivo}</span> : null}
+              </p>
             ) : null}
             <table className="table">
               <thead>

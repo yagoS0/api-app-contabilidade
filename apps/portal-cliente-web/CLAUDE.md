@@ -1155,6 +1155,77 @@ chega e desabilitar o botão em toda nota.
 `PortalInvoice` — ofereceria o botão para receber 404.
 ⚠ Recusa desconhecida **não ganha "tente de novo" fabricado**; a mensagem do servidor vence.
 
+### ⚠⚠ O LOTE DE DANFSe TEM DOIS ESCOPOS — `lib/selecaoDeNotas.js` (28/08/2026)
+
+Em 27/08/2026 o botão "Baixar DANFSe em lote" saiu e a seleção por linha entrou, a pedido do dono:
+*"tire o botão de baixar em lote, deixe o usuário selecionar as notas que ele quer e abra a opção
+baixar"*.
+
+⚠⚠ **MAS O BOTÃO ANTIGO BAIXAVA ATÉ 200 NOTAS, E A PÁGINA MOSTRA 25.** A seleção por página,
+sozinha, atende a letra do pedido e desfaz uma capacidade: quem tem 120 notas no mês passou a
+conseguir baixar 25. **O pedido era sobre ESCOLHER, não sobre baixar menos.** Por isso os dois
+escopos convivem — o cabeçalho marca a PÁGINA, e havendo mais notas no mês aparece a segunda
+oferta, nomeada.
+
+| | o que a tela sabe | o rótulo |
+|---|---|---|
+| **PÁGINA** | exatamente quais linhas geram DANFSe (`podeGerarDanfse` decide, e o que não gera nem pode ser marcado) | *"Baixar 3 DANFSe"* — promessa que se cumpre |
+| **COMPETÊNCIA** | só o total do filtro; quem escolhe é o servidor, pelo MESMO `where` da listagem | *"Baixar os DANFSe destas 70 notas"* |
+
+⚠⚠ **NA COMPETÊNCIA O NÚMERO É DE NOTAS, NUNCA DE DANFSe** — ali entram notas que não geram PDF
+(NF-e, nota ainda não confirmada pelo ADN, nota sem o XML guardado). Elas saem NOMEADAS no
+`RELATORIO.txt`, mas prometer *"Baixar 70 DANFSe"* e entregar 63 é o defeito que a barra inteira
+existe para não cometer. A frase que diz isso é **obrigatória** neste escopo — e **proibida** no
+outro, onde não há nada a ressalvar (legenda que descreve uma ausência foi cortada pelo dono).
+Medido no navegador em 12/2025: página com 25 linhas e **22** marcáveis, contra **70** no total.
+
+⚠⚠ **É A AUSÊNCIA DOS IDS QUE ABRE O FILTRO INTEIRO**, e não um parâmetro novo: `pedidoDoLote`
+manda `{competencia}` sem `ids` no escopo largo, e a rota (que já os põe no `AND` do `where`) cai no
+comportamento antigo. Mandar os 70 ids exigiria buscar todas as páginas só para remontar o que o
+`where` já sabe, e a lista poderia envelhecer entre a busca e o clique.
+
+- ⚠ **A oferta só aparece com MAIS notas do que a página mostra.** Com tudo numa página, o cabeçalho
+  já faz o mesmo, e uma segunda porta para o mesmo ato ensina a não ler a barra.
+- ⚠ **Acima do teto ela aparece DESABILITADA, com o motivo E a saída** — verificado no navegador em
+  11/2025 (215 notas): *"São 215 notas, e o lote gera no máximo 200 por vez. Escolha uma competência
+  mais estreita, ou marque as notas página a página."* Botão que some esconde que a ação existe; o
+  servidor recusaria com `lote_muito_grande` de qualquer jeito, e descobrir isso depois de clicar é
+  pior do que ler antes.
+- ⚠⚠ **TROCAR DE EMPRESA OU DE COMPETÊNCIA DESLIGA O ESCOPO LARGO.** Ele afirma "todas as notas
+  DESTE mês", e a poda da seleção **não o alcança** — não há id nenhum para podar. Sem o reset, o
+  clique seguinte baixaria o mês que ninguém escolheu.
+- ⚠ **Ligar o escopo largo limpa as marcações**, e "Limpar seleção" desliga os dois: dois números na
+  tela para o mesmo lote é o que faz a pessoa conferir o zip contra o rótulo errado.
+- ⚠ **`ESCOPO_DO_LOTE`, e não `ESCOPO`** — este último já existe na feature (`lib/impedimento.js`,
+  NOTA × AÇÃO) e a `NotasPage` importa os dois. O nome colidiu no build; duas constantes homônimas
+  em arquivos diferentes compilariam e confundiriam, que é pior.
+- ⚠ **Escopo desconhecido cai na PÁGINA**, o estreito: baixar de menos se conserta com um clique;
+  baixar o histórico inteiro gera um zip que ninguém pediu.
+- ⚠⚠ **`Number.isFinite(Number(null))` é `true`** — a primeira versão da guarda de contagem usava
+  isso e deixava passar `notasNaPagina: null`, comparando 70 contra "zero na página". Foi o TESTE
+  que pegou. Hoje as duas contagens têm de ser `typeof === "number"`.
+
+⚠ **`LOTE_MAXIMO` mudou de lugar**: era cópia dentro do `mockApi`, e passou para
+`features/notas/lib/loteDanfse.js` — a TELA passou a precisar dele (para desabilitar a oferta com o
+motivo), e duas cópias dentro do MESMO app é como o mock e a tela começam a discordar. O mock agora
+o importa. ⚠ Ele continua sendo **espelho** de `apps/api/.../loteDanfseDoPortal.js`: mudou lá, muda
+aqui.
+
+⚠ **A doc de `realApi.baixarDanfseEmLote` dizia "NENHUMA LISTA DE IDS VAI DAQUI"** com o código três
+linhas abaixo já mandando `ids` desde 27/08/2026. Corrigida — e o argumento antigo ficou escrito,
+porque é ele que explica por que a competência continua viajando nos dois escopos.
+
+⚠⚠ **O MOCK GANHOU O RAMO QUE FALTAVA.** Ele já tinha uma competência ACIMA do teto (205 notas, para
+a recusa `lote_muito_grande` ser alcançável offline) e **nenhuma no meio** — então o desenho da
+oferta HABILITADA só existiria em produção. Entraram 60 notas numa segunda competência, uma em cada
+dez **sem XML**, que é o que mantém `total ≠ DANFSe` visível offline. Quinta vez que o mock esconde
+um ramo nesta base.
+
+Testes: `lib/__tests__/selecaoDeNotas.test.js` (16) + os oito casos novos em
+`__tests__/loteDanfseNaTela.ligacao.test.jsx`. **Experimentos executados:** tirando a oferta da
+tela, **6 vermelhos**; a competência voltando a mandar os ids, **2**; o rótulo largo prometendo
+DANFSe, **4**.
+
 ### Cancelamento — `lib/cancelamentoNota.js`
 
 Decisão do dono (19/08): *"esqueça substituir então, deixe apenas o cancelar."*
@@ -1455,6 +1526,7 @@ pacote comum; a duplicação é conhecida e a obrigação de sincronizar é sua:
 | `emitir/lib/codigoServicoDaNota.js` | `apps/api/src/application/nfse/codigoServicoDaNota.js` (**autoridade**) |
 | `notas/lib/cancelamentoNota.js` (`MOTIVOS_CANCELAMENTO`) | `apps/api/src/application/nfse/motivosDeEvento.js` (**valida**) |
 | `notas/lib/danfseDaNota.js` | `apps/web/src/features/notas/lib/danfseDaNota.js` (⚠ contratos DIFERENTES) |
+| `notas/lib/loteDanfse.js` (`LOTE_MAXIMO`) | `apps/api/src/application/nfse/danfse/loteDanfseDoPortal.js` (**autoridade**) — ⚠ era cópia dentro do `mockApi` até 28/08/2026; mudou para cá porque a TELA passou a precisar do teto, e o mock agora o importa |
 | `lote/lib/colunasDoLote.js` (`COLUNAS_DO_LOTE` **e** `CAMPOS_DA_REVISAO`) | `apps/api/src/application/nfse/lote/colunasLote.js` (**autoridade**) — ⚠ são DUAS listas desde 20/08/2026: quatro colunas de planilha, **doze** campos de revisão (`documento` · `descricao` · `valor` · `competencia` · `nome` · `email` · `cMun` · `cep` · `xLgr` · `nro` · `xBairro` · `xCpl`) — ⚠ dizia **onze** até 24/08/2026, contado a mão; hoje é o `length` medido da lista do backend |
 | `lote/lib/estadoDaLinhaDoLote.js` (`ESTADO`) | `apps/api/src/application/nfse/lote/classificarLinhaLote.js` (**autoridade**) |
 | `lib/servicosNacionais/` | tabela gerada; `servicosNacionais.data.js` sai de `apps/api/scripts/gerar-lista-servico-nacional.mjs`, que **escreve nos dois portais** — **não editar à mão** |

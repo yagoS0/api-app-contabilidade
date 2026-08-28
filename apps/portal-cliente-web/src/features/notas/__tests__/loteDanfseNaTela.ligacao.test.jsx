@@ -289,3 +289,90 @@ describe("⚠⚠ só se marca o que GERA DANFSe", () => {
     expect(screen.getByRole("checkbox", { name: /nota 13000/ })).toBeDisabled();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A CAPACIDADE QUE QUASE SE PERDEU — o botão antigo baixava até 200 notas; a seleção que o
+// substituiu é por PÁGINA, e a página mostra 25. Quem tem 120 notas no mês passaria a baixar 25.
+//
+// ⚠ A REGRA tem suíte própria (`lib/__tests__/selecaoDeNotas.test.js`). O que se prende AQUI é a
+// corrente: a oferta aparece quando há mais páginas, o clique liga o escopo largo, e o pedido que
+// chega à API vai **SEM `ids`** — é a ausência deles que faz o servidor cair no filtro inteiro.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Uma página cheia (25) dentro de um mês com `total` notas. */
+function paginaCheia(total) {
+  const lista = Array.from({ length: 25 }, (_, i) => nota({ invoiceId: `inv-${2000 + i}`, numero: String(14000 + i) }));
+  return { ...respostaDeNotas(lista), total };
+}
+
+describe("⚠⚠ BAIXAR TODA A COMPETÊNCIA — a segunda saída, quando há mais de uma página", () => {
+  it("com mais notas do que a página mostra, a oferta aparece com o número", async () => {
+    api.getInvoices.mockResolvedValue(paginaCheia(120));
+    await abrirNotas();
+    expect(await screen.findByRole("button", { name: "Selecionar todas as 120 notas desta competência" }))
+      .toBeEnabled();
+  });
+
+  it("⚠ tudo numa página só: a oferta NÃO aparece — o cabeçalho já faz o mesmo", async () => {
+    await abrirNotas();
+    expect(screen.queryByRole("button", { name: /Selecionar todas as \d+ notas desta competência/ }))
+      .toBeNull();
+  });
+
+  it("⚠⚠ o clique manda o pedido SEM `ids` — é a ausência deles que abre o filtro inteiro", async () => {
+    api.getInvoices.mockResolvedValue(paginaCheia(120));
+    await abrirNotas();
+    fireEvent.click(await screen.findByRole("button", { name: /Selecionar todas as 120/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Baixar os DANFSe destas 120 notas" }));
+    await waitFor(() => expect(api.baixarDanfseEmLote).toHaveBeenCalled());
+
+    const [, pedido] = api.baixarDanfseEmLote.mock.calls[0];
+    expect(pedido).not.toHaveProperty("ids");
+    expect(pedido.competencia).toBeTruthy();
+  });
+
+  it("⚠⚠ o rótulo NÃO promete um número de DANFSe — ali o número é de NOTAS", async () => {
+    // Nem toda nota gera DANFSe (NF-e, não confirmada, sem XML). Prometer "Baixar 120 DANFSe" e
+    // entregar 113 é o defeito que a barra existe para não cometer.
+    api.getInvoices.mockResolvedValue(paginaCheia(120));
+    await abrirNotas();
+    fireEvent.click(await screen.findByRole("button", { name: /Selecionar todas as 120/ }));
+    expect(screen.queryByRole("button", { name: /Baixar 120 DANFSe/ })).toBeNull();
+    expect(await screen.findByText(/número é de NOTAS/i)).toBeInTheDocument();
+  });
+
+  it("⚠⚠ acima do teto a oferta aparece DESABILITADA, com o motivo — não some", async () => {
+    api.getInvoices.mockResolvedValue(paginaCheia(320));
+    await abrirNotas();
+    expect(await screen.findByRole("button", { name: /Selecionar todas as 320/ })).toBeDisabled();
+    expect(screen.getByText(/máximo 200 por vez/)).toBeInTheDocument();
+  });
+
+  it("⚠ marcar a página continua prometendo o número exato de DANFSe", async () => {
+    api.getInvoices.mockResolvedValue(paginaCheia(120));
+    await abrirNotas();
+    marcarNota("14000");
+    expect(await screen.findByRole("button", { name: "Baixar 1 DANFSe" })).toBeInTheDocument();
+    // ⚠ E aqui o aviso do escopo largo NÃO aparece: legenda que descreve uma ausência foi cortada.
+    expect(screen.queryByText(/número é de NOTAS/i)).toBeNull();
+  });
+
+  it("⚠ ligar o escopo largo LIMPA as marcações — dois números para o mesmo lote confundem", async () => {
+    api.getInvoices.mockResolvedValue(paginaCheia(120));
+    await abrirNotas();
+    marcarNota("14000");
+    fireEvent.click(await screen.findByRole("button", { name: /Selecionar todas as 120/ }));
+    expect(screen.queryByRole("button", { name: /Baixar 1 DANFSe/ })).toBeNull();
+    expect(await screen.findByRole("button", { name: "Baixar os DANFSe destas 120 notas" })).toBeInTheDocument();
+  });
+
+  it("⚠⚠ 'Limpar seleção' desliga o escopo largo junto", async () => {
+    api.getInvoices.mockResolvedValue(paginaCheia(120));
+    await abrirNotas();
+    fireEvent.click(await screen.findByRole("button", { name: /Selecionar todas as 120/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Limpar seleção" }));
+    // A barra some, e a oferta volta a aparecer.
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Baixar os DANFSe/ })).toBeNull());
+    expect(screen.getByRole("button", { name: /Selecionar todas as 120/ })).toBeInTheDocument();
+  });
+});

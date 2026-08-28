@@ -235,9 +235,16 @@ export function createRealApi() {
     // > Pedido do dono (19/08/2026): *"a possibilidade de baixar notas em lote (…) quero o download
     // > no portal do cliente, e fazer o download dos DANFSe e não do XML."*
     //
-    // ⚠ NENHUMA LISTA DE IDS VAI DAQUI. O que viaja é o FILTRO (a competência que está na tela), e
-    // quem resolve quais notas entram é o servidor, com o mesmo `where` da listagem — é isso que
-    // impede o zip de conter nota de outra empresa e que o mantém igual ao que a tabela mostra.
+    // ⚠⚠ **A FRASE AQUI DIZIA "NENHUMA LISTA DE IDS VAI DAQUI" E FICOU FALSA EM 27/08/2026**, com o
+    // código três linhas abaixo já mandando `ids`. Fica registrada porque o ARGUMENTO dela continua
+    // valendo e explica o desenho de hoje: o zip tem de conter exatamente o que a tela mostra, e o
+    // filtro era a única fonte disso.
+    //
+    // ⚠ HOJE SÃO DOIS ESCOPOS, e quem os decide é `features/notas/lib/selecaoDeNotas.js`:
+    // com `ids`, a escolha da PESSOA é a verdade (e o servidor os põe no `AND` do mesmo `where`,
+    // então o escopo por empresa continua valendo); **sem `ids`**, o servidor cai no filtro inteiro
+    // — que é o comportamento antigo, preservado de propósito para o mês com mais notas do que uma
+    // página. A ausência dos ids não é descuido: é o escopo largo.
     //
     // ⚠ `direcao: "emitidas"` é o MESMO recorte de `getInvoices`, e tem de continuar sendo: o lote
     // que baixasse "todas" traria nota recebida que a tela nunca listou.

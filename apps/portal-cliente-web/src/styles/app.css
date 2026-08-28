@@ -803,6 +803,11 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
   border-radius: var(--radius);
 }
 .barra-selecao-conta { font-size: .85rem; }
+/* ⚠ A oferta do escopo largo fica logo ABAIXO da barra e ACIMA da tabela — quem acabou de marcar
+   linhas está olhando para ali, e é onde a segunda saída precisa aparecer. Ela é um parágrafo de
+   `meta`, não um segundo botão primário: a ação principal continua sendo a que a pessoa escolheu. */
+.oferta-competencia { margin: 0 0 var(--gap); display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.oferta-competencia .btn-link:disabled { opacity: .55; cursor: not-allowed; text-decoration: none; }
 /* ⚠ A coluna da caixa é estreita e não some em 375px: sem ela a tabela rola e a seleção fica
    inalcançável justamente onde a tela é menor. */
 .col-selecao { width: 36px; text-align: center; }

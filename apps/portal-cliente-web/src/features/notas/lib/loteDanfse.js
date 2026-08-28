@@ -11,6 +11,19 @@
 // ⚠ ELE É IRMÃO DE `danfseDaNota.js`, e a divisão é a mesma: a decisão mora aqui, o componente só
 // desenha. As recusas espelhadas vêm de `routes/portalInvoices.js` (`GET /danfse/bulk`).
 
+/**
+ * ⚠⚠ ESPELHO DE `LOTE_MAXIMO` (`apps/api/src/application/nfse/danfse/loteDanfseDoPortal.js`).
+ *
+ * Está em cópia porque não há código compartilhado entre a API e este app — ver a tabela
+ * "mudou lá, muda aqui" no `CLAUDE.md` deste portal. **Mudou lá, muda aqui**: um teto diferente do
+ * servidor treinaria a tela a recusar onde a produção aceita, ou pior, o contrário.
+ *
+ * ⚠ Ele MORA AQUI e não no mock, e a razão é que a TELA passou a precisar dele: a oferta de baixar
+ * toda a competência (`lib/selecaoDeNotas.js`) só pode ser desabilitada com o motivo se souber o
+ * teto. Duas cópias no mesmo app é como o mock e a tela começam a discordar.
+ */
+export const LOTE_MAXIMO = 200;
+
 /** Os códigos que a rota do lote responde. Espelho — não invente um que o servidor não manda. */
 export const RECUSA_LOTE = {
   MUITO_GRANDE: "lote_muito_grande",

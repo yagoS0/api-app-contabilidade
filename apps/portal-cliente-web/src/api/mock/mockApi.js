@@ -24,6 +24,7 @@ import { isAdminOrAbove } from "../../lib/roles";
 // CONTRATO do servidor — por isso mora em `api/mock/`, não em `dadosDeDemonstracao`.
 import { dreDeDemonstracao } from "../../features/painel/lib/dadosDeDemonstracao";
 import { fluxoDeCaixaDoMock } from "./fluxoDeCaixaDoMock";
+import { LOTE_MAXIMO } from "../../features/notas/lib/loteDanfse";
 
 function mockDeLancamentos(id, faturamento) {
   if (id === "pc-002") {
@@ -68,11 +69,11 @@ function mockDeLancamentos(id, faturamento) {
 
 const LATENCIA_MS = 140; // o suficiente para os estados de carregamento existirem de verdade
 
-// ⚠ ESPELHO DE `LOTE_MAXIMO` (`apps/api/src/application/nfse/danfse/loteDanfseDoPortal.js`).
-// Está aqui em cópia porque não há código compartilhado entre a API e este app (ver a tabela
-// "mudou lá, muda aqui" no CLAUDE.md deste portal). ⚠ **Mudou lá, muda aqui**: um mock com teto
-// diferente do servidor treinaria a tela a recusar onde a produção aceita, ou pior, o contrário.
-const LOTE_MAXIMO_MOCK = 200;
+// ⚠⚠ O TETO DEIXOU DE SER COPIADO AQUI (28/08/2026) e é IMPORTADO de `features/notas/lib/loteDanfse`.
+// A tela passou a precisar do mesmo número (para desabilitar a oferta de baixar toda a competência
+// com o motivo), e duas cópias dentro do MESMO app é como o mock e a tela começam a discordar — o
+// defeito que a tabela "mudou lá, muda aqui" registra para a fronteira API × portal.
+const LOTE_MAXIMO_MOCK = LOTE_MAXIMO;
 
 function dormir(ms = LATENCIA_MS) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -713,6 +714,42 @@ function criarEstado() {
         hasXml: true,
         hasPdf: false,
         descricao: "SERVICO RECORRENTE",
+        confirmadaPeloAdn: true,
+        _statusEfetivo: "autorizada",
+      });
+    }
+
+    // (4) ⚠⚠ E UMA COMPETÊNCIA COM VOLUME **ABAIXO** DO TETO — senão o ramo em que a oferta de
+    // baixar toda a competência FUNCIONA seria inalcançável offline, e só o ramo em que ela é
+    // RECUSADA teria mock. São dois desenhos diferentes (botão habilitado × desabilitado com o
+    // motivo), e este projeto já foi mordido quatro vezes por ramo que só existia em produção.
+    //
+    // ⚠ 60 notas: mais de uma página de 25 (é isso que faz a oferta aparecer) e bem abaixo dos
+    // ${LOTE_MAXIMO_MOCK} (é isso que a mantém habilitada). O número não precisa ser realista —
+    // precisa alcançar o ramo.
+    const compMedia = competencias[1];
+    for (let i = 0; i < 60; i += 1) {
+      seqNota += 1;
+      const dia = (i % 28) + 1;
+      notas.push({
+        clientId: empresaPrincipal.companyId,
+        invoiceId: `inv-meio-${seqNota}`,
+        type: "NFSE",
+        numero: String(seqNota),
+        competencia: compMedia,
+        issueDate: diaDoMes(compMedia, dia).toISOString(),
+        status: "EMITIDA",
+        total: 900 + i,
+        emitente: { nome: empresaPrincipal.razao, cnpj: empresaPrincipal.cnpj },
+        tomador: { nome: `TOMADOR MENSAL ${i + 1} LTDA`, cnpjCpf: "11222333000181" },
+        updatedAt: diaDoMes(compMedia, dia).toISOString(),
+        // ⚠ UMA EM CADA DEZ SEM O XML: ela é contada no total (e portanto no rótulo "60 notas") e
+        // NÃO gera DANFSe. É exatamente o caso que obriga o rótulo do escopo largo a falar em
+        // NOTAS, e sem ele o mock faria os dois números coincidirem sempre.
+        hasXml: i % 10 !== 0,
+        hasPdf: false,
+        descricao: "MENSALIDADE",
+        papel: "EMIT",
         confirmadaPeloAdn: true,
         _statusEfetivo: "autorizada",
       });
