@@ -3230,8 +3230,22 @@ aceitou sem conferir**: a coluna existe para dar para auditar depois. O GET devo
 desabilita o alternador na divergência (mesmo tratamento do faturamento > 0: nos dois há evidência
 contra a afirmação).
 
-**Efeito:** `getRequirements` (`guideCompliance.js`) deixa de exigir o DAS (decisão do dono: a tag
-**some**, não fica amarela como o `VAZIO`). Pré-query simétrica à do `parcDasAtivoSet` — uma query
+**Efeito:** o nó `das` passa a resolver como **ausência confirmada**, e não como pendência.
+
+⚠⚠ **ESTA LINHA DIZIA "a tag SOME, não fica amarela como o `VAZIO`" — E O CÓDIGO FAZ O CONTRÁRIO
+HOJE.** Medido em 28/08/2026: `resolveNode` (`guideCompliance.js`) devolve
+`state: "vazio", origem: "sem_faturamento"` — ou seja, **exatamente o mesmo estado do marcador
+`VAZIO`**, distinguido só pela `origem`. O desenho antigo (zerar `required` e curto-circuitar) foi
+abandonado de propósito, e o motivo está escrito no cabeçalho daquele arquivo: com ele, um marcador
+`VAZIO` de SIMPLES na mesma competência ficava **órfão** — ignorado pelo compliance, invisível na
+matriz, e visível na tabela de guias. Dois estados coexistiam no banco e um vencia o outro em
+silêncio.
+
+⚠ **E ganhou um terceiro desfecho que a frase antiga não previa:** afirmado "sem movimento" e
+entrando nota emitida depois, o nó vira **`state: "conflito"`**, com `ok: false` e o faturamento
+junto. A afirmação envelheceu e volta a exigir ação — o oposto de deixá-la calada.
+
+Pré-query simétrica à do `parcDasAtivoSet` — uma query
 para a carteira, não uma por empresa. O lembrete de transmitir a declaração zerada **não se perde**:
 segue na pendência de apuração do calendário, que não foi tocada.
 

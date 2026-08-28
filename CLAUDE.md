@@ -324,9 +324,15 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
       sem receita, inatividade) **não são aplicadas** — viajam nomeadas junto da obrigação.
       Dezembro traz aviso próprio: consolida no registro **0120** os meses dispensados do ano.
     - ⚠ **Ainda não gera o arquivo.** O leiaute oficial (Guia Prático v1.35) está versionado em
-      `docs/leiaute-efd-contribuicoes/` com hash — mas faltam as **tabelas 4.3.x** (ficam atrás de
-      postback ASP.NET, e são dados por vigência, não constantes) e o gate de aceite nº 1,
-      **validar no PVA**, que não é executável neste ambiente. Ler o README de lá antes de retomar.
+      `docs/leiaute-efd-contribuicoes/` com hash.
+      ⚠⚠ **ESTA LINHA DIZIA "faltam as tabelas 4.3.x" E ERA FALSA.** Medido em 28/08/2026:
+      `docs/leiaute-efd-contribuicoes/tabelas/tabelas-2026-08-07.json` traz **74 tabelas e 21.955
+      linhas**, baixadas em 07/08/2026 da consulta oficial do SPED — o postback ASP.NET foi vencido.
+      ⚠ **Duas** pedidas voltaram recusadas NA ORIGEM (*"A versão da tabela 211 não possui
+      estrutura"*), e elas estão nomeadas no próprio manifesto, em `recusadas`.
+      **O que falta é CONSUMIDOR, não tabela** — nenhum código as lê. O gate de aceite nº 1,
+      **validar no PVA**, continua não sendo executável neste ambiente. Ler o README de lá antes de
+      retomar.
     - **Não transmite**, e o motivo é outro: validação/assinatura/transmissão são do PVA, sem API —
       esse limite não muda nem com o gerador pronto.
   - **Não construído, e por quê:** NFS-e recorrentes (sem model/scheduler); motivo de rejeição da

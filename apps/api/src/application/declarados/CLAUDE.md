@@ -653,8 +653,10 @@ Renomear coluna que já tem escritor é migration destrutiva. O nome fica; o **f
 ### Migration
 
 `20260828120000_add_mapeamento_extrato` — **ADITIVA e INERTE**, ⚠ **NÃO APLICADA**. Uma tabela nova
-(`mapeamentos_extrato`) + duas colunas aditivas em `ofx_imports` (que também ainda não foi
-aplicada — a ordem das duas resolve isso). Subir o código antes não quebra nada: o import recusa
+(`mapeamentos_extrato`) + duas colunas aditivas em `ofx_imports`.
+⚠ **`ofx_imports` JÁ EXISTE em produção** (medido em 28/08/2026), então o `ALTER TABLE` roda contra uma
+tabela real — e por isso ele é aditivo com `DEFAULT 'OFX'`: toda linha existente passa a declarar o
+que de fato é, sem backfill. (Medido também: ela está **vazia**, então o default toca zero linhas hoje.) Subir o código antes não quebra nada: o import recusa
 **nomeando** (`mapeamento_indisponivel`), e a listagem devolve `indisponivel: true`, nunca 500.
 
 ⚠ **Sem CHECK sobre `sinal` nem sobre as chaves de `colunas`**, pela mesma razão de
@@ -687,17 +689,18 @@ virar lançamento.
 | **a tela de regras** | as rotas existem; o painel ainda não foi desenhado |
 | tela do cliente (import de OFX **e de Excel**) | as rotas existem; o portal do cliente ainda não as chama |
 | a tela do MAPEAMENTO do extrato | as rotas existem; o painel do contador ainda não foi desenhado |
-| ⚠⚠ **as TRÊS migrações aplicadas** | `20260824120000`, `20260824160000` e `20260828120000`. **Sem elas nada disto roda fora do mock** — é decisão do dono |
+| ⚠⚠ **a migração do MAPEAMENTO aplicada** | `20260828120000`. **Sem ela o extrato em Excel não roda fora do mock** — é decisão do dono. ⚠⚠ **`20260824120000` e `20260824160000` JÁ ESTÃO APLICADAS** — esta linha dizia o contrário, e a medição abaixo desfez |
 
 ## Migration
 
-`20260824120000_add_conferencia_lancamentos` — **ADITIVA e INERTE**, ⚠ **NÃO APLICADA**.
+`20260824120000_add_conferencia_lancamentos` — **ADITIVA e INERTE**, ✅ **APLICADA EM PRODUÇÃO** (medido em 28/08/2026, `prisma migrate status`: 133 migrations, e ela não está entre as pendentes).
+⚠⚠ **Este parágrafo dizia "NÃO APLICADA" até hoje**, e a frase envelheceu calada — o padrão que este repositório já registrou várias vezes. Ela fica corrigida, e não apagada, porque o resto do bloco (o porquê dos dois CHECK, a conferência contra `migrate diff`) continua valendo.
 Três tabelas novas; nenhuma coluna existente é tocada. Subir o código antes de aplicar não quebra
 nada (o que não funciona é a fila). O SQL foi conferido coluna a coluna contra
 `prisma migrate diff --from-empty`: zero divergência. Os únicos extras são os dois `CHECK`
 (`chk_regra_tem_ancora`, `chk_regra_faixa_coerente`), que o Prisma não modela.
 
-`20260824160000_add_ofx_import` — **ADITIVA e INERTE**, ⚠ **NÃO APLICADA**. Cria **uma** tabela,
+`20260824160000_add_ofx_import` — **ADITIVA e INERTE**, ✅ **APLICADA EM PRODUÇÃO** (mesma medição). Cria **uma** tabela,
 `ofx_imports` (o registro de cada arquivo subido), com dois índices e a FK para `PortalClient`.
 ⚠ **Nenhuma coluna nova no declarado**: `fitId`, `ofxImportId`, `contaBancariaRef`, `hashDedupe` e
 `parDeclaradoId` já vieram na migration de B1 — o modelo foi desenhado com o pagamento em mente.

@@ -589,7 +589,7 @@ boot. Quem mudar a regra muda nos dois.
 
 - Componentes recebem dados/handlers por **props** (hooks/pages chamam a API). Exceções
   pontuais usam `createApiClient()` direto (ex.: `FechamentoContabilPanel`,
-  `ExpectedGuidesPanel`) — mantêm-se auto-contidas.
+  `ExpectedGuidesPanel`, ⚠ que **não existe mais** — ver `features/guides/CLAUDE.md`) — mantêm-se auto-contidas.
 - Paleta dark via `ACCOUNTING_PANEL` (`entries/lib/accountingEntriesShared`). Cores de estado:
   verde `#69FF47`, amarelo `#FFB347`, vermelho `#FF5757`, ciano `#8BE9FD` (fechada/faturamento).
 - Toda chamada nova precisa de par mock/real em `src/api/`.

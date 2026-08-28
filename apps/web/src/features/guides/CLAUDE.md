@@ -5,11 +5,17 @@ envio em lote e o painel de guias esperadas.
 
 ## Subpastas
 
-- `list/` — tabela de guias da empresa (`renderCompanyGuidesTable.jsx`). No topo, o
-  **ExpectedGuidesPanel (Q17)**: lista as guias **esperadas** do mês (por regime/prolabore,
-  via `GET /firm/companies/:id/guides/expected`), cada uma com 3 estados —
-  **presente** (verde, mostra dados), **vazio** (amarelo, botão "desfazer") e **faltando**
-  (vermelho, botão **"Vazio"**). Botão Vazio chama `markGuideVazio`/`undoGuideVazio`.
+- `list/` — tabela de guias da empresa (`renderCompanyGuidesTable.jsx`), com o
+  **`MarcarVazioDropdown`** na barra de ações: as guias **esperadas** do mês (por regime/prolabore,
+  via `GET /firm/companies/:id/guides/expected`) viram as opções do menu, e marcar chama
+  `markGuideVazio`/`undoGuideVazio`.
+  - ⚠⚠ **ESTE ITEM DESCREVIA UM `ExpectedGuidesPanel` QUE NÃO EXISTE MAIS.** Medido em 28/08/2026:
+    não há arquivo com esse nome em `apps/web/src` — sobraram duas menções em documentação e uma em
+    comentário. Ele era um painel PRÓPRIO, no topo da tabela, com as esperadas em três cores
+    (presente verde · vazio âmbar · faltando vermelho).
+  - ⚠ **A CAPACIDADE NÃO SE PERDEU, mudou de forma:** a rota continua existindo e sendo chamada, e
+    quem responde "o que falta neste mês" na TELA passou a ser o chip de guia do dashboard e a
+    matriz do envio em lote. O que o menu herdou foi o ATO (marcar vazio), não o painel.
 - `capture/` — modal de captura SERPRO. `batch-email/` — envio em lote (**5 estados** por célula:
   ausente ✗ / ⊘ vazio / 📄 guia / **✖ falhou** / ✓ enviado).
   ⚠ **`✖ falhou` é o estado que faltava.** A célula pintava PENDING, ERROR e `null` tudo como
@@ -186,8 +192,9 @@ Ligação coberta em `list/components/__tests__/renderCompanyGuidesTable.test.js
 
 ## Padrões
 
-- A lista de guias e ações chegam por props (hooks/pages). O `ExpectedGuidesPanel` é
-  auto-contido e usa `createApiClient()` direto (mini-página).
+- A lista de guias e ações chegam por props (hooks/pages). ⚠ O `MarcarVazioDropdown` é
+  auto-contido e usa `expectedGuidesApi` direto — herdou isso do `ExpectedGuidesPanel`, que **não
+  existe mais** (ver a seção de subpastas).
 - `tipo="SIMPLES"` é a guia do DAS; a UI rotula como "DAS". `status="VAZIO"` = ausência
   confirmada (amarelo) — não é guia com PDF.
 - **Lucro Presumido = 1 DARF consolidada `tipo="OUTRA"`** (não pode ser split). `tipoGuiaLabel`

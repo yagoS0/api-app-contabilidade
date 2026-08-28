@@ -106,9 +106,12 @@ ALTER TABLE "mapeamentos_extrato"
 -- destrutiva. Então o nome fica e o FORMATO vira dado, à vista.
 --
 -- ⚠ ADITIVA: `DEFAULT 'OFX'` — toda linha existente descreve o que de fato é. Nenhum backfill.
---   (Medido em produção: `ofx_imports` **não existe ainda** — a migration que a cria também não foi
---   aplicada. O default existe para o intervalo entre escrever e aplicar, e para o caso de a ordem
---   das duas mudar.)
+--
+-- ⚠⚠ ESTE COMENTÁRIO DIZIA QUE `ofx_imports` "não existe ainda" — E ERA FALSO.
+--   Medido em 28/08/2026 (`prisma migrate status` + `count`, os dois só leitura): a migration
+--   `20260824160000_add_ofx_import` **ESTÁ APLICADA** em produção, e a tabela tem **0 linhas**.
+--   Ou seja: este `ALTER TABLE` roda contra uma tabela REAL, e é exatamente por isso que ele é
+--   aditivo com `DEFAULT`. O default toca zero linhas hoje; ele existe para o dia em que não tocar.
 
 ALTER TABLE "ofx_imports" ADD COLUMN "formato" TEXT NOT NULL DEFAULT 'OFX';
 -- ⚠ Com QUAL mapeamento o arquivo foi lido. NULO no OFX, que é auto-descritivo.

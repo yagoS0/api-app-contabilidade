@@ -291,7 +291,11 @@ e cairiam **por motivo certo** se o painel os perdesse.
 
 - ⚠⚠ **NÃO HÁ BACKEND PARA NENHUM DOS DOIS, E NÃO HÁ ORIGEM PARA ENTRADAS.**
   `GET /client/.../fluxo` **existe e NÃO é fluxo de caixa** — é a lista de guias liberadas em aberto,
-  só saídas. `POST .../ofx/import` e `GET .../transactions` são stubs **501**, e nota emitida não é
+  só saídas. ⚠⚠ **`POST .../ofx/import` DEIXOU DE SER STUB** — ele está implementado e no ar desde
+  24/08/2026 (`ImportOfxService`), e o extrato em **Excel** ganhou porta própria em 28/08/2026
+  (`POST .../extrato-excel/import`). O que os dois alimentam é a FILA DE CONFERÊNCIA do contador,
+  não o fluxo de caixa — por isso a frase acima continua valendo sobre o PAINEL. `GET .../transactions`
+  continua stub **501**. E nota emitida não é
   dinheiro recebido. Os números vivem em `features/painel/lib/dadosDeDemonstracao.js`.
 - ⚠⚠ **O SELO É DIRIGIDO PELO DADO, E A LEITURA É `demonstracao !== false`.** Nunca `=== true`:
   resposta que não traga o campo apresentaria **ficção como fato, em silêncio** — é a mesma armadilha
