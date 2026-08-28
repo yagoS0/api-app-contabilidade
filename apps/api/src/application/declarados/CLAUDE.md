@@ -71,6 +71,10 @@ que já existe. Não nasce registro novo. (O matching é da Fase B2; o modelo j�
 | `DeclaradoService.js` | a ligação com o banco. **O único caminho de escrita.** 66 testes |
 | `VarreduraDeNotasService.js` | a varredura das notas. 16 testes |
 | `ImportOfxService.js` | o extrato do cliente virando fila. 22 testes |
+| `lib/mapeamentoDoExtrato.js` | qual coluna é o quê num extrato em Excel. **PURO**. 38 testes |
+| `lib/lerPlanilhaExtrato.js` | do arquivo .xlsx às linhas cruas. **PURO** |
+| `ImportExcelExtratoService.js` | o extrato em Excel virando fila. 23 testes |
+| `MapeamentoExtratoService.js` | o mapeamento no banco. **A única porta que liga `confirmado`.** 15 testes |
 | `../accounting/lib/ofx.js` | ler o arquivo OFX. ⚠ **extraído**, não reescrito — ver B2 |
 | `../../routes/firm/conferencia.js` | HTTP do contador, e nada mais. 50 testes |
 | `../../routes/client/index.js` | HTTP do cliente (o import). 17 testes de montagem |
@@ -540,14 +544,150 @@ não se liga sem quem responde pela contabilidade dizer que sim.
 | o histórico devolvendo o **reduzido cru** | **4** |
 | fora da faixa passando a sugerir mesmo assim | **3** |
 
+## ✅ FASE E — o extrato em EXCEL (28/08/2026)
+
+> Decisão do dono (27/08/2026): *"extrato pode e deve ser enviado em OFX ou EXCEL, no caso do excel
+> o contador precisa normalizar para ser consumido"* — e, sobre COMO: *"o contador mapeia as
+> colunas, e o mapeamento fica salvo por empresa"*.
+
+`POST /client/companies/:id/extrato-excel/import` (o cliente sobe) ·
+`GET`/`PUT /firm/companies/:id/conferencia/mapeamentos-extrato[/:assinatura]` (o contador confirma).
+
+### ⚠⚠ NADA ENTRA SEM UM MAPEAMENTO CONFIRMADO
+
+É a trava da fase. O sistema **propõe** (a partir de `excelImport.HEADER_ALIASES`, os mesmos
+apelidos que o import do escritório já usa) e uma **pessoa confirma**, uma vez por formato. Sem a
+linha confirmada, o envio devolve a proposta e **cria zero declarados**.
+
+⚠ Por isso o retorno tem DOIS desfechos de sucesso, e eles não se parecem: `precisaDeMapeamento`
+(nada entrou, e o que falta é um clique do contador) × o relatório. Um "0 novas" para os dois casos
+seria indistinguível de "este período já estava todo importado".
+
+⚠ **Um mapeamento que JÁ EXISTE não é sobrescrito pela proposta** — ele pode ter sido confirmado e
+depois invalidado por mudança de formato, e apagar a decisão de uma pessoa por causa de um arquivo
+é o que essa guarda impede.
+
+⚠ **A confirmação valida o que VAI FICAR GRAVADO**, não o corpo: campo ausente herda do registro
+antigo, e validar só o corpo deixaria confirmar um mapeamento cujo campo herdado está incompleto.
+⚠ Salvar sem confirmar é permitido (o contador ajusta em duas sessões) e **nunca liga** o
+`confirmado`: mexer no mapeamento não é reafirmá-lo.
+
+### ⚠⚠ A CHAVE NÃO É "O BANCO" — é a ASSINATURA DO CABEÇALHO
+
+O mapeamento é "por empresa + banco", e a pergunta que o formato não responde é **qual banco é
+este?** Planilha de extrato não tem `<BANKID>` como o OFX; tem um nome de arquivo que a pessoa
+renomeia e um cabeçalho. `assinaturaDoCabecalho` = as células normalizadas e **ORDENADAS**.
+
+⚠ Ordenadas de propósito: o banco reordena colunas entre versões, e chave sensível à ordem faria o
+contador remapear a MESMA planilha. Os ÍNDICES continuam sendo lidos do arquivo de cada envio.
+⚠⚠ **Ela não é o nome do banco** — é impressão digital. O rótulo legível é o contador que escreve,
+em `rotulo`; deduzir "Itaú" de um cabeçalho seria inventar.
+
+### ⚠⚠ TRÊS COISAS QUE NÃO SÃO REESCRITAS AQUI
+
+- **A gramática do dinheiro** é `lerValorDaPlanilha` (`nfse/lote/celulasLote.js`), via
+  `lerValorDoExtrato`. O que este acrescenta é o SINAL — aquela função **recusa valor não positivo**,
+  o que é certo numa nota fiscal e errado num extrato. Não existe um segundo parser de moeda aqui.
+  ⚠ Só o `-` À FRENTE é negativo: parêntese contábil e o `-` no FIM não foram medidos em extrato de
+  banco neste projeto, e aceitá-los por analogia seria inventar leitura de dinheiro. Caem em
+  ilegível, **contados e nomeados**.
+- **A identidade da transação** é `lib/dedupeOfx.js`, a MESMA do OFX, **sem prefixo próprio**.
+- **A gravação** é `criarDeclarado`.
+
+⚠⚠ **`lerSinalDaLinha` NÃO usa `Number(valorBruto)`, e a diferença é a maioria das planilhas.**
+`Number("1.234,56")` é **NaN**: todo extrato cuja coluna de valor chegou como TEXTO responderia "não
+sei" em TODA linha, e o arquivo inteiro sumiria da fila em silêncio. É a família do
+`Number(null) === 0`, com o sinal trocado. *Experimento: voltando ao `Number()`, **8 vermelhos**.*
+
+### ⚠⚠ O DEDUPE ATRAVESSA OS DOIS FORMATOS — quando a conta é conhecida
+
+O cliente que mandar o mesmo período em OFX e em Excel não pode ver a despesa duas vezes. Por isso a
+impressão digital é a mesma (`OFXFP:conta:dia:valor:sinal:memo#ordinal`), sem namespace próprio.
+
+⚠ Ela só casa quando os DOIS lados sabem a conta bancária — o OFX a traz em `<BANKACCTFROM>`, e a
+planilha **não tem onde trazê-la**. Por isso a conta é campo do **ENVIO**, não do mapeamento (uma
+empresa pode ter duas contas no mesmo banco, com o mesmo formato). Sem ela, o relatório devolve
+`dedupeAtravessaFormatos: false` e a anomalia `SEM_CONTA_BANCARIA` — dito, em vez de descoberto como
+despesa repetida.
+
+⚠ **O ordinal continua sendo o que preserva duas tarifas iguais no mesmo dia** — planilha de banco
+nunca traz `FITID`, então este caminho cai SEMPRE na impressão digital.
+
+### ⚠ ORIGEM PRÓPRIA, e a PROCEDÊNCIA DO PAGAMENTO também
+
+| | valor | por quê |
+|---|---|---|
+| `ORIGEM` | **`EXTRATO_EXCEL_CLIENTE`** | origem responde *de onde veio*; colapsá-la em `OFX_CLIENTE` faria o contador ler "OFX" numa linha que saiu de uma planilha cujas colunas ELE mapeou |
+| `ORIGEM_PAGAMENTO` | **`EXTRATO_EXCEL`**, e ela **PROVA** | o que a data afirma é *"o dinheiro saiu neste dia"*, e quem afirma isso é o banco nos dois formatos. O mapeamento não muda se o dinheiro saiu; muda QUAL coluna é a data — e um mapeamento errado é conferido pelo contador na fila, antes de qualquer coisa chegar ao razão |
+
+⚠⚠ **SEPARADA do `OFX` de propósito:** o OFX é arquivo estruturado que ninguém edita; a planilha
+passa por um mapeamento que uma pessoa definiu e por um programa em que qualquer célula se altera.
+As duas provam, e **não com a mesma força** — colapsá-las apagaria a diferença na tela em que ela
+importa. ⚠ Sem isso, o débito de Excel não poderia ser FUNDIDO numa nota (`INFORMAR_PAGAMENTO`
+recusa `PAGAMENTO_NAO_E_PROVA`), e o casamento inteiro ficaria morto para este formato.
+⚠ **É a decisão desta entrega que mais merece a palavra do dono** — está nomeada, não escondida.
+
+⚠ **`criarDeclarado` deixou de ter a lista de origens escrita à mão** (`["NOTA_RECEBIDA",
+"CLIENTE_MANUAL", "OFX_CLIENTE"]`) e lê `Object.values(ORIGEM)`. Três literais ao lado de um
+vocabulário congelado é como origem nova passa a ser aceita pela regra e recusada pelo serviço.
+
+### ⚠⚠ NADA SOME — e "não deu para ler" é compartimento PRÓPRIO
+
+`foraDoEscopo` (créditos: fato sobre o extrato) × `naoLegiveisTotal` (defeito do mapeamento ou do
+arquivo). Somados num número só, um mapeamento errado passaria por "um extrato só de créditos".
+
+⚠ **A AMOSTRA e a CONTAGEM são campos diferentes** — o defeito que o OFX pagou: a contagem real ia
+para a coluna e não voltava, e quem escrevesse `naoLegiveis.length` na tela diria "50".
+⚠ **E a amostra é só das ilegíveis**, nunca das entradas — achado por teste: elas iam juntas, e
+`naoLegiveisTotal` já as excluía, então amostra e contagem falavam de populações diferentes.
+*Experimento: misturando-as de novo, **1 vermelho**.*
+
+### O registro do envio — `ofx_imports` guarda OS DOIS FORMATOS
+
+⚠⚠ **Sim, o nome da tabela passa a mentir um pouco, e a alternativa é pior.**
+`lancamentos_declarados.ofxImportId` é o ÚNICO ponteiro para "qual envio criou esta linha"; uma
+tabela nova exigiria uma segunda coluna de ponteiro e faria `varrerInvariantes` conhecer as duas.
+Renomear coluna que já tem escritor é migration destrutiva. O nome fica; o **formato vira dado**
+(`formato: OFX | EXCEL`), com `mapeamentoExtratoId` ao lado.
+
+### Migration
+
+`20260828120000_add_mapeamento_extrato` — **ADITIVA e INERTE**, ⚠ **NÃO APLICADA**. Uma tabela nova
+(`mapeamentos_extrato`) + duas colunas aditivas em `ofx_imports` (que também ainda não foi
+aplicada — a ordem das duas resolve isso). Subir o código antes não quebra nada: o import recusa
+**nomeando** (`mapeamento_indisponivel`), e a listagem devolve `indisponivel: true`, nunca 500.
+
+⚠ **Sem CHECK sobre `sinal` nem sobre as chaves de `colunas`**, pela mesma razão de
+`codigosServicoNacional`: o Postgres não valida JSONB sem função, e migration que falha é P3009 com
+o servidor fora do ar. A forma é guardada por `validarMapeamento`, que roda ANTES de qualquer linha
+virar lançamento.
+
+**Experimentos executados:**
+
+| desligando | vermelhos |
+|---|---|
+| a exigência de `confirmado` | **2** |
+| o sinal voltando a `Number(valorBruto)` | **8** |
+| a amostra misturando as ENTRADAS | **1** |
+
+### ⚠ O que a Fase E **não** entregou
+
+- **as telas** — nem o envio no portal do cliente, nem o painel de mapeamento do contador. As rotas
+  existem e ninguém as chama ainda;
+- **a conta bancária no mock** — o portal do cliente não tem o campo, então `dedupeAtravessaFormatos`
+  nasce `false` em todo envio até a tela existir;
+- ⚠ **crédito continua fora do escopo**, como no OFX: esta fila é de DESPESA, e a forma do lançamento
+  de ENTRADA não foi medida. Contado e nomeado, nunca sumido.
+
 ## O que ainda **não** existe
 
 | | |
 |---|---|
 | **a regra lançando sozinha** | decisão do dono — ver acima |
 | **a tela de regras** | as rotas existem; o painel ainda não foi desenhado |
-| tela do cliente (import de OFX) | a rota existe; o portal do cliente ainda não a chama |
-| ⚠⚠ **as duas migrações aplicadas** | `20260824120000` e `20260824160000`. **Sem elas nada disto roda fora do mock** — é decisão do dono |
+| tela do cliente (import de OFX **e de Excel**) | as rotas existem; o portal do cliente ainda não as chama |
+| a tela do MAPEAMENTO do extrato | as rotas existem; o painel do contador ainda não foi desenhado |
+| ⚠⚠ **as TRÊS migrações aplicadas** | `20260824120000`, `20260824160000` e `20260828120000`. **Sem elas nada disto roda fora do mock** — é decisão do dono |
 
 ## Migration
 

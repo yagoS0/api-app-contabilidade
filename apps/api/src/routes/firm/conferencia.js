@@ -35,6 +35,7 @@ import {
 } from "../../application/declarados/DeclaradoService.js";
 import { alternarRegra, listarRegras } from "../../application/declarados/RegraService.js";
 import { varrerNotasDaEmpresa } from "../../application/declarados/VarreduraDeNotasService.js";
+import { listarMapeamentos, salvarMapeamento } from "../../application/declarados/MapeamentoExtratoService.js";
 import { ESTADO, ORIGEM_PAGAMENTO, TRANSICAO } from "../../application/declarados/lib/estadosDeclarado.js";
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
@@ -354,6 +355,64 @@ export function createConferenciaRouter({ log } = {}) {
       return responderRecusa(res, e, log);
     }
   });
+
+  // ── O MAPEAMENTO DO EXTRATO EM EXCEL ───────────────────────────────────────────────────────
+  //
+  // ⚠⚠ ESTA É A ÚNICA PORTA QUE LIGA `confirmado`, e é o que torna a trava um FATO e não uma
+  // convenção. O import grava PROPOSTA e para aí; sem o clique de uma pessoa, planilha nenhuma vira
+  // lançamento. Decisão do dono (27/08/2026): *"o contador mapeia as colunas, e o mapeamento fica
+  // salvo por empresa"*.
+  //
+  // ⚠ A REGRA NÃO MORA AQUI. Quem valida é `validarMapeamento` (puro, com teste próprio); quem
+  // grava é `MapeamentoExtratoService`. A rota traduz HTTP, e nada mais.
+
+  router.get("/conferencia/mapeamentos-extrato", requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      const r = await listarMapeamentos(String(req.params.companyId));
+      return res.json({ ok: true, ...r });
+    } catch (e) {
+      // ⚠ Sem a migration aplicada a tabela não existe (P2021). A tela diz o que houve — "não há
+      // mapeamento" e "a tabela não existe" são respostas DIFERENTES, e por isso `indisponivel`.
+      if (e?.code === "P2021") return res.json({ ok: true, mapeamentos: [], indisponivel: true });
+      return responderRecusa(res, e, log);
+    }
+  });
+
+  // ⚠ `minRole: ACCOUNTANT` — confirmar um mapeamento decide como TODO extrato futuro daquele banco
+  // será lido. É a mesma exigência das outras escritas desta aba.
+  router.put(
+    "/conferencia/mapeamentos-extrato/:assinatura",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      try {
+        const corpo = req.body || {};
+        const mapeamento = await salvarMapeamento({
+          portalClientId: String(req.params.companyId),
+          // ⚠ A assinatura vem do PATH, nunca do corpo — corpo sobrescrevendo path é o furo de
+          // multi-tenancy que a F1 do WhatsApp mediu.
+          assinatura: decodeURIComponent(String(req.params.assinatura)),
+          colunas: corpo.colunas,
+          sinal: corpo.sinal,
+          rotulo: corpo.rotulo,
+          cabecalhoVisto: corpo.cabecalhoVisto ?? null,
+          // ⚠ `=== true`: salvar sem confirmar é permitido (o contador ajusta em duas sessões) e
+          // NUNCA liga o `confirmado`. Coerção de tipo aqui abriria a trava por um `"false"`.
+          confirmar: corpo.confirmar === true,
+          confirmadoPor: req.auth?.user?.id || null,
+          agora: new Date(),
+        });
+        return res.json({ ok: true, mapeamento });
+      } catch (e) {
+        // ⚠ A recusa de confirmação volta com os ERROS NOMEADOS, cada um com a frase pronta: sem
+        // eles o contador descobriria qual coluna falta só no próximo envio, com o extrato inteiro
+        // recusado.
+        if (e?.codigo && e?.erros) {
+          return res.status(400).json({ ok: false, error: e.codigo, message: e.frase, erros: e.erros });
+        }
+        return responderRecusa(res, e, log);
+      }
+    },
+  );
 
   // ── A VARREDURA DAS NOTAS ──────────────────────────────────────────────────────────────────
   //

@@ -23,28 +23,28 @@ model Client {
 }
 
 model Company {
-  id                       String            @id @default(uuid())
-  clientId                 String
-  razaoSocial              String
-  cnpj                     String            @unique
-  nomeFantasia             String?
-  regimeTributario         String?
-  simplesAnexo             String?
-  simplesDataOpcao         DateTime?
-  cnaePrincipal            String?
-  cnaesSecundarios         String[]          @default([])
-  enderecoJson             Json?
-  atividades               String[]
-  porte                    String?
-  tipoTributario           String?
-  anexoSimples             String?
-  endereco                 String?
-  email                    String?
-  telefone                 String?
-  capitalSocial            Decimal?          @db.Decimal(18, 2)
-  dataAbertura             DateTime?
-  quantidadeSocios         Int?
-  inscricaoMunicipal       String?
+  id                            String            @id @default(uuid())
+  clientId                      String
+  razaoSocial                   String
+  cnpj                          String            @unique
+  nomeFantasia                  String?
+  regimeTributario              String?
+  simplesAnexo                  String?
+  simplesDataOpcao              DateTime?
+  cnaePrincipal                 String?
+  cnaesSecundarios              String[]          @default([])
+  enderecoJson                  Json?
+  atividades                    String[]
+  porte                         String?
+  tipoTributario                String?
+  anexoSimples                  String?
+  endereco                      String?
+  email                         String?
+  telefone                      String?
+  capitalSocial                 Decimal?          @db.Decimal(18, 2)
+  dataAbertura                  DateTime?
+  quantidadeSocios              Int?
+  inscricaoMunicipal            String?
   /// O código de tributação nacional (`cTribNac`) que a DPS LEVA — um só, porque a DPS tem um só.
   ///
   /// ⚠ NÃO É MAIS O CADASTRO. O cadastro dos serviços que a empresa pode prestar é
@@ -56,7 +56,7 @@ model Company {
   /// EXATAMENTE um código, esta coluna é ele — não há o que escolher. Com mais de um, ela tem de
   /// ser um dos cadastrados, senão o cadastro é RECUSADO com nome próprio. Nunca se elege um
   /// "primeiro da lista" por conta própria: o serviço declarado é dado fiscal.
-  codigoServicoNacional    String?
+  codigoServicoNacional         String?
   /// ⚠ OS CÓDIGOS DE SERVIÇO QUE A EMPRESA PODE USAR — decisão do dono, 16/08/2026:
   /// *"ao cadastrar podemos ter mais de um código, a empresa pode usar mais de uma atividade e na
   /// hora da emissão ela deve escolher"*.
@@ -69,10 +69,10 @@ model Company {
   /// singular acima era a única forma de guardar isto, e nenhuma migração de conteúdo é necessária
   /// (ver a migration `20260816120000_add_codigos_servico_nacional`, que faz o backfill a partir
   /// dele mesmo quando há valor).
-  codigosServicoNacional   String[]          @default([])
-  codigoServicoMunicipal   String?
-  rpsSerie                 String?
-  rpsNumero                String?
+  codigosServicoNacional        String[]          @default([])
+  codigoServicoMunicipal        String?
+  rpsSerie                      String?
+  rpsNumero                     String?
   /// Código IBGE (7 dígitos) do município EMISSOR da DPS — o `cLocEmi` da NFS-e Nacional.
   ///
   /// ⚠ CRIADO VAZIO, E DE PROPÓSITO. `buildDpsId`/`buildDpsXml` liam `codigoMunicipioIbge` e
@@ -86,7 +86,7 @@ model Company {
   /// por semelhança de nome erraria em homônimo ("Bom Jesus" existe em 8 estados) e o erro só
   /// apareceria como nota emitida no município errado. Enquanto o campo estiver nulo a emissão é
   /// **RECUSADA com motivo** — nunca completada por palpite.
-  codigoMunicipioIbge      String?
+  codigoMunicipioIbge           String?
   /// ── CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012) — só da empresa NÃO OPTANTE ────────────
   ///
   /// Pedido do dono (18/08/2026): *"as alíquotas efetivas do presumido não precisam ser calculadas
@@ -114,9 +114,9 @@ model Company {
   /// ⚠ Migration `20260818210000_add_carga_tributaria_nao_simples` — APLICAR ANTES de este código
   /// subir: a `Company` é lida sem `select` em várias rotas e por `legacyCompanySelect` com
   /// `select` explícito. Sem a coluna no banco, P2022 derruba a carteira inteira.
-  pTotTribFed              Decimal?          @db.Decimal(5, 2)
-  pTotTribEst              Decimal?          @db.Decimal(5, 2)
-  pTotTribMun              Decimal?          @db.Decimal(5, 2)
+  pTotTribFed                   Decimal?          @db.Decimal(5, 2)
+  pTotTribEst                   Decimal?          @db.Decimal(5, 2)
+  pTotTribMun                   Decimal?          @db.Decimal(5, 2)
   /// ── BENEFÍCIO MUNICIPAL DO ISSQN (grupo `BM` da DPS) — pedido do dono, 20/08/2026 ─────────
   ///
   /// > *"do lado do contador ainda, o seletor de benefício, caso o cliente tenha algum benefício
@@ -141,7 +141,7 @@ model Company {
   /// Regra de formação (documentação do próprio tipo): 7 dígitos do município (IBGE) + 2 do tipo
   /// de parametrização (01 legislação · 02 regimes especiais · 03 retenções · 04 outros
   /// benefícios) + 5 sequenciais.
-  beneficioMunicipalNumero String?
+  beneficioMunicipalNumero      String?
   /// QUAL redução o benefício aplica — e por que isto é um campo e não uma dedução.
   ///
   /// No XSD, `vRedBCBM` e `pRedBCBM` estão num `xs:choice` (excludentes), e **os dois são
@@ -164,44 +164,44 @@ model Company {
   /// (depende da base daquela nota), não da empresa. Um valor fixo repetido em toda nota emitida
   /// seria uma afirmação que ninguém fez, e reduziria imposto. O tipo `VALOR` fica registrado; o
   /// valor entra por nota quando o envio ao XML existir.
-  beneficioMunicipalPRedBC Decimal?          @db.Decimal(5, 2)
-  optanteSimples           Boolean?          @default(false)
-  regimeEspecialTributacao String?
+  beneficioMunicipalPRedBC      Decimal?          @db.Decimal(5, 2)
+  optanteSimples                Boolean?          @default(false)
+  regimeEspecialTributacao      String?
   // ── Ficha de cadastro do escritório ──────────────────────────────────────────
   /// Quem abriu a empresa (contato/parceiro que trouxe o cliente). Ex.: "JEFFERSON".
-  abriuCom                 String?
+  abriuCom                      String?
   /// Registro na junta: número + tipo (ex.: 33.6.0068899-0 / "JUNTA COMERCIAL").
-  numeroRegistro           String?
-  tipoRegistro             String?
+  numeroRegistro                String?
+  tipoRegistro                  String?
   /// Inscrições com a data de cada uma (a coluna inscricaoMunicipal já existia acima).
-  inscricaoMunicipalData   DateTime?
-  inscricaoEstadual        String?
-  inscricaoEstadualData    DateTime?
+  inscricaoMunicipalData        DateTime?
+  inscricaoEstadual             String?
+  inscricaoEstadualData         DateTime?
   /// Natureza jurídica (ex.: "230-5" = EIRELI). Vem da BrasilAPI no cadastro por CNPJ.
-  naturezaJuridica         String?
+  naturezaJuridica              String?
   /// Nº do diário contábil.
-  diarioNumero             String?
+  diarioNumero                  String?
   /// Empresa com desoneração da folha ("C/DESONE" na ficha).
-  desoneracao              Boolean?          @default(false)
+  desoneracao                   Boolean?          @default(false)
   /// Última alteração contratual (ex.: "2" em 14/04/2026).
-  alteracaoNumero          String?
-  alteracaoData            DateTime?
+  alteracaoNumero               String?
+  alteracaoData                 DateTime?
   // Certificado A1 por empresa (PFX) para integrações (ADN/NFSe/etc.)
-  certStorageKey           String?
-  certPfxBytes             Bytes?
-  certPasswordEnc          String?
-  certExpiresAt            DateTime?
-  certUploadedAt           DateTime?
-  createdAt                DateTime          @default(now())
-  updatedAt                DateTime          @updatedAt
-  client                   Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  partners                 Partner[]
-  regimeHistorico          RegimeHistorico[]
-  invoices                 Invoice[]
-  serviceInvoices          ServiceInvoice[]
-  guides                   Guide[]
-  tomadoresEmitidos        TomadorEmitido[]
-  lotesEmissaoNfse         LoteEmissaoNfse[]
+  certStorageKey                String?
+  certPfxBytes                  Bytes?
+  certPasswordEnc               String?
+  certExpiresAt                 DateTime?
+  certUploadedAt                DateTime?
+  createdAt                     DateTime          @default(now())
+  updatedAt                     DateTime          @updatedAt
+  client                        Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  partners                      Partner[]
+  regimeHistorico               RegimeHistorico[]
+  invoices                      Invoice[]
+  serviceInvoices               ServiceInvoice[]
+  guides                        Guide[]
+  tomadoresEmitidos             TomadorEmitido[]
+  lotesEmissaoNfse              LoteEmissaoNfse[]
 
   @@index([regimeTributario])
   @@index([cnaePrincipal])
@@ -269,11 +269,11 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  companyClientUsers CompanyClientUser[]
-  companyFirmAccess  CompanyFirmAccess[]
-  clientSessions     ClientSession[]
+  companyClientUsers  CompanyClientUser[]
+  companyFirmAccess   CompanyFirmAccess[]
+  clientSessions      ClientSession[]
   /// Contraparte de `contatos_whatsapp.userId`. NENHUMA coluna nova em `"User"` — a FK mora lá.
-  contatosWhatsapp   ContatoWhatsapp[]
+  contatosWhatsapp    ContatoWhatsapp[]
   /// Contraparte de `password_reset_tokens.userId`. NENHUMA coluna nova em `"User"` — a FK mora lá.
   passwordResetTokens PasswordResetToken[]
   /// Contraparte de `senhas_portal_trocas.userId`. NENHUMA coluna nova em `"User"` — a FK mora lá.
@@ -684,7 +684,7 @@ model LoteEmissaoNfse {
   atualizadoEm DateTime @updatedAt
 
   linhas  LoteEmissaoNfseLinha[]
-  company Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   /// ⚠ A TRAVA DA IDEMPOTÊNCIA. A segunda tentativa com a mesma planilha bate aqui e o serviço
   /// devolve o lote EXISTENTE — não reprocessa, e não responde 409: o que a tela precisa ver é o
@@ -736,13 +736,13 @@ model LoteEmissaoNfseLinha {
   rpsNumero String?
 
   /// NOSSA | TRANSPORTE | RECEITA — o MESMO vocabulário de `desfechoEmissao.js`, nunca um segundo.
-  camada    String?
-  codigo    String?
-  mensagem  String?
-  correcao  String?
+  camada   String?
+  codigo   String?
+  mensagem String?
+  correcao String?
 
   tentadaEm DateTime?
-  criadoEm  DateTime @default(now())
+  criadoEm  DateTime  @default(now())
 
   lote LoteEmissaoNfse @relation(fields: [loteId], references: [id], onDelete: Cascade)
 
@@ -797,23 +797,23 @@ model AdnDocument {
 // ==========================
 
 model PortalClient {
-  id                     String    @id @default(uuid())
+  id                     String  @id @default(uuid())
   // Referência opcional para a Company legada (certificado, cadastros, etc.)
-  companyId              String?   @unique
+  companyId              String? @unique
   razao                  String
-  cnpj                   String    @unique
+  cnpj                   String  @unique
   /// E-mail só para envio de guias (pode repetir entre empresas). Não é login do portal.
   guideNotificationEmail String?
   /// Indica se há pró-labore (exige guia INSS na competência de referência para alertas).
-  hasProlabore           Boolean   @default(false)
+  hasProlabore           Boolean @default(false)
   /// Empresa tem FOLHA DE PAGAMENTO (empregado registrado). Não é o mesmo que `hasProlabore`:
   /// sócio retirando pró-labore sem nenhum empregado não gera eSocial/FGTS de folha. Por isso são
   /// dois campos e não um — juntá-los criaria obrigação trabalhista em empresa que não tem.
   /// Serve de filtro nas regras de obrigação do escritório ("aplicar a todas as empresas com folha").
-  temFolha               Boolean   @default(false)
+  temFolha               Boolean @default(false)
   /// Empresa zerada / sem movimento: não gera impostos; só enviamos obrigações zeradas.
   /// No card, oculta as guias/obrigações e sinaliza que é zerada.
-  empresaZerada          Boolean   @default(false)
+  empresaZerada          Boolean @default(false)
 
   /// ⚠⚠ QUANTOS MESES DEPOIS DA COMPETÊNCIA A NOTA EMITIDA É RECEBIDA — decisão do dono, 25/08/2026:
   /// *"notas emitidas em junho vão entrar de receita em julho (…) no caso pode ser alterado pelo
@@ -825,14 +825,14 @@ model PortalClient {
   ///
   /// ⚠ `0` é uma configuração LEGÍTIMA ("recebo à vista") — por isso a coluna é anulável em vez de
   /// ter default 1: com default, "à vista" e "não configurei" seriam indistinguíveis.
-  prazoRecebimentoMeses  Int?
+  prazoRecebimentoMeses     Int?
   /// Por onde a guia sai por padrão. Default EMAIL de propósito: ninguém é migrado de canal à
   /// revelia — o WhatsApp entra empresa a empresa, conforme o cliente autoriza (ver optIn em
   /// ContatoWhatsapp). "PERGUNTAR" faz o confirm de envio pedir o canal toda vez.
-  canalPadraoEnvio       String    @default("EMAIL") // EMAIL | WHATSAPP | PERGUNTAR
-  inscricaoMunicipal     String?
-  uf                     String?
-  municipio              String?
+  canalPadraoEnvio          String    @default("EMAIL") // EMAIL | WHATSAPP | PERGUNTAR
+  inscricaoMunicipal        String?
+  uf                        String?
+  municipio                 String?
   /// ⚠ PORTÃO DO ATO FISCAL — decisão do dono, 18/08/2026: *"o acesso a emissão deve ser liberado
   /// para o cliente pelo portal do contador"*. Enquanto isto for `false`, NENHUM usuário do lado do
   /// CLIENTE emite ou cancela NFS-e desta empresa, qualquer que seja o papel dele. O usuário do
@@ -841,7 +841,7 @@ model PortalClient {
   ///
   /// ⚠ NASCE FECHADA, sem exceção. Ato fiscal não se libera por omissão — e o default é o que
   /// protege as empresas que já existem no dia em que a migration for aplicada.
-  emissaoClienteLiberada Boolean   @default(false)
+  emissaoClienteLiberada    Boolean   @default(false)
   /// Quando e por QUEM a liberação foi ligada (userId, mesmo padrão de `fechadoContabilPor`).
   /// ⚠ Desligar volta os dois a NULO — a coluna responde "quem autorizou este cliente a emitir?",
   /// e guardar nela o instante do DESLIGAMENTO seria dar dois significados a uma coluna só (o erro
@@ -850,11 +850,11 @@ model PortalClient {
   emissaoClienteLiberadaPor String?
   // Q11.1: empresa pode ser SUSPENSA (workers SERPRO pulam, não captura nem processa).
   // Suspender é reversível; excluir é hard-delete via DELETE /companies/:id.
-  status                 String    @default("ATIVA") // ATIVA | SUSPENSA
-  suspendedAt            DateTime?
-  suspendedReason        String?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  status                    String    @default("ATIVA") // ATIVA | SUSPENSA
+  suspendedAt               DateTime?
+  suspendedReason           String?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
   integrationSettings     PortalIntegrationSettings?
   syncState               PortalSyncState?
@@ -920,6 +920,7 @@ model PortalClient {
   declarados              LancamentoDeclarado[]
   regrasContabilizacao    RegraContabilizacao[]
   ofxImports              OfxImport[]
+  mapeamentosExtrato      MapeamentoExtrato[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -1285,19 +1286,19 @@ model TemplateWhatsapp {
 }
 
 model Guide {
-  id                       String    @id @default(uuid())
-  portalClientId           String?
-  legacyCompanyId          String?
-  competencia              String? // YYYY-MM
-  tipo                     String // INSS|FGTS|PIS|COFINS|ISS|SIMPLES|OUTRA
-  valor                    Decimal?  @db.Decimal(18, 2)
-  valorOriginal            Decimal?  @db.Decimal(18, 2) // valor da PRIMEIRA captura (extrato); imutável em updates de recálculo
-  vencimento               DateTime?
-  cnpj                     String?
-  paymentStatus            String?   @default("OPEN") // OPEN|PAID|OVERDUE
-  paymentStatusSource      String? // SERPRO|MANUAL
-  paymentConfirmedAt       DateTime?
-  paymentConfirmedByUserId String?
+  id                        String    @id @default(uuid())
+  portalClientId            String?
+  legacyCompanyId           String?
+  competencia               String? // YYYY-MM
+  tipo                      String // INSS|FGTS|PIS|COFINS|ISS|SIMPLES|OUTRA
+  valor                     Decimal?  @db.Decimal(18, 2)
+  valorOriginal             Decimal?  @db.Decimal(18, 2) // valor da PRIMEIRA captura (extrato); imutável em updates de recálculo
+  vencimento                DateTime?
+  cnpj                      String?
+  paymentStatus             String?   @default("OPEN") // OPEN|PAID|OVERDUE
+  paymentStatusSource       String? // SERPRO|MANUAL
+  paymentConfirmedAt        DateTime?
+  paymentConfirmedByUserId  String?
   /// ⚠⚠ QUANDO O CLIENTE DISSE QUE PAGOU — e por que estas duas colunas existem em vez de reusar
   /// `paymentConfirmedAt`/`paymentConfirmedByUserId`.
   ///
@@ -1306,14 +1307,14 @@ model Guide {
   /// duas colunas de cima — de propósito, porque lá elas descrevem uma confirmação MANUAL que
   /// deixou de valer. Guardar a afirmação do cliente nelas apagaria quem disse o quê, que é
   /// exatamente o registro que uma fiscalização vai querer.
-  clienteConfirmouEm       DateTime?
+  clienteConfirmouEm        DateTime?
   clienteConfirmouPorUserId String?
-  serproLastCheckedAt      DateTime?
-  serproLastCheckResult    String?
-  serproLastSeenAt         DateTime?
-  serproService            String?
+  serproLastCheckedAt       DateTime?
+  serproLastCheckResult     String?
+  serproLastSeenAt          DateTime?
+  serproService             String?
   // Q40: comprovante oficial de arrecadação (PAGTOWEB/COMPARRECADACAO) quando o pagamento é confirmado.
-  comprovantePdfFileId     String?
+  comprovantePdfFileId      String?
 
   taxDocuments      TaxDocument[]
   accountingEntries AccountingEntry[] @relation("GuideToEntries")
@@ -1336,11 +1337,11 @@ model Guide {
   /// Linha digitável de arrecadação (48 dígitos, sem máscara), LIDA do documento oficial.
   /// Só entra número que passou nos cinco dígitos verificadores (FEBRABAN §07–§10) E cuja
   /// importância bate com o total da guia. Nulo = não foi possível ler — nunca um palpite.
-  linhaDigitavel       String?
-  linhaDigitavelLidaEm DateTime?
+  linhaDigitavel                  String?
+  linhaDigitavelLidaEm            DateTime?
   /// Motivo da RECUSA, quando não foi possível entregar uma linha pagável. Texto livre no banco
   /// (o catálogo cresce), lista FECHADA na tela. Nunca coexiste com `linhaDigitavel` (CHECK).
-  linhaDigitavelMotivo String?
+  linhaDigitavelMotivo            String?
   /// Valor, EM CENTAVOS, codificado na linha recusada. Preenchido EXCLUSIVAMENTE quando o motivo é
   /// `valor_divergente_do_documento` — ali os 5 DVs fecharam e o número é confiável. Em recusa de
   /// DV/tamanho/produto fica nulo: imprimir valor lido de sequência corrompida seria inventar.
@@ -1373,9 +1374,9 @@ model Guide {
   /// ⚠ Antes isto reusava `reviewedByUserId`/`reviewedAt`, que o registro MANUAL de guia também
   /// escreve: não dava para distinguir "marquei vazio" de "registrei uma guia à mão", e nem
   /// `toGuideResponse` os expunha. Campos próprios, no mesmo molde de `liberadaEm`/`liberadaPor`.
-  vazioEm         DateTime?
-  vazioPor        String? // userId do contador que afirmou a ausência
-  vazioMotivo     String? // opcional, texto livre do contador
+  vazioEm     DateTime?
+  vazioPor    String? // userId do contador que afirmou a ausência
+  vazioMotivo String? // opcional, texto livre do contador
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1501,25 +1502,25 @@ model PortalIntegrationSettings {
 }
 
 model PortalSyncState {
-  clientId        String    @id
-  lastCursor      BigInt    @default(0) // NSU/sequence (ADN/NFS-e)
-  lastSyncAt      DateTime?
-  state           String    @default("OK") // OK|RUNNING|ERROR
-  lastError       String?
-  lockUntil       DateTime?
-  backoffUntil    DateTime?
+  clientId         String    @id
+  lastCursor       BigInt    @default(0) // NSU/sequence (ADN/NFS-e)
+  lastSyncAt       DateTime?
+  state            String    @default("OK") // OK|RUNNING|ERROR
+  lastError        String?
+  lockUntil        DateTime?
+  backoffUntil     DateTime?
   // Q12.B: cursor separado para DFe/SEFAZ (NF-e) — ADN e DFe rodam independentes.
-  dfeNsuCursor    BigInt    @default(0)
-  dfeLastSyncAt   DateTime?
-  dfeLastError    String?
-  dfeBackoffUntil DateTime?
+  dfeNsuCursor     BigInt    @default(0)
+  dfeLastSyncAt    DateTime?
+  dfeLastError     String?
+  dfeBackoffUntil  DateTime?
   // Q12.B+: cursor separado para ADN/NFS-e do módulo Notas (não confundir com lastCursor,
   // que é usado pelo AdnSyncService legado e grava em AdnDocument). Esse aqui é exclusivo
   // do AdnNotasService que grava em PortalInvoice.
-  adnNsuCursor    BigInt    @default(0)
-  adnLastSyncAt   DateTime?
-  adnLastError    String?
-  adnBackoffUntil DateTime?
+  adnNsuCursor     BigInt    @default(0)
+  adnLastSyncAt    DateTime?
+  adnLastError     String?
+  adnBackoffUntil  DateTime?
   // ⚠ "OLHEI" É DIFERENTE DE "RECEBI", e confundir os dois custou 29 dias.
   //
   // `adnLastSyncAt`/`dfeLastSyncAt` só são gravados quando vem documento — são "última vez que
@@ -1531,8 +1532,8 @@ model PortalSyncState {
   // "ninguém olhou" e "olhamos e não veio nada", que é onde o defeito se escondia.
   adnLastAttemptAt DateTime?
   dfeLastAttemptAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   client PortalClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
@@ -1571,7 +1572,7 @@ model PortalInvoice {
   updatedAt  DateTime  @updatedAt
 
   // Q12.A: papel da empresa nesta nota (DFe traz emissor E destinatário na mesma fonte)
-  papel                    String? // EMIT | DEST
+  papel         String? // EMIT | DEST
   // statusEfetivo: derivado dos eventos (cancelamento/substituição). Análise só usa autorizada.
   //
   // ⚠ NA PRÁTICA SÓ DOIS VALORES SÃO ESCRITOS: `autorizada` e `cancelada`. `substituida` está
@@ -1586,7 +1587,7 @@ model PortalInvoice {
   // A distinção cancelada × substituída NÃO mora aqui. Mora em `PortalInvoiceEvent.type` (o fato,
   // com data e motivo) e em `chaveSubstituida` (o vínculo). Ver `application/notas/cicloNota.js`,
   // que junta os três e é o que a tela deve ler.
-  statusEfetivo            String? // autorizada | cancelada  (ver aviso acima)
+  statusEfetivo String? // autorizada | cancelada  (ver aviso acima)
 
   // ⚠ O VÍNCULO DA SUBSTITUIÇÃO — "esta nota substitui a de chave X".
   //
@@ -1647,9 +1648,9 @@ model PortalInvoice {
   // ⚠ ISSQN, e os três nomes são explícitos DE PROPÓSITO. A tag da base de cálculo é `vBC`, e `vBC`
   // existe em DOIS grupos do XML (`infNFSe/valores` = ISSQN; `IBSCBS/valores` = base após exclusões
   // do IBS/CBS). Chamar a coluna de `vBC` deixaria a ambiguidade dentro do nome dela.
-  issqnBaseCalculo         Decimal? @db.Decimal(18, 2) // infNFSe/valores/vBC
-  issqnAliquota            Decimal? @db.Decimal(7, 4) // infNFSe/valores/pAliqAplic
-  issqnValor               Decimal? @db.Decimal(18, 2) // infNFSe/valores/vISSQN
+  issqnBaseCalculo         Decimal?  @db.Decimal(18, 2) // infNFSe/valores/vBC
+  issqnAliquota            Decimal?  @db.Decimal(7, 4) // infNFSe/valores/pAliqAplic
+  issqnValor               Decimal?  @db.Decimal(18, 2) // infNFSe/valores/vISSQN
   // ⚠ COLUNAS NOVAS, E NÃO A COLUNA `serie` ACIMA. `serie` já existe e é escrita **só** por
   // `notas/dfe/DfeSyncService.js`, para NF-e; a série da DPS é outro contador, de outro documento.
   // Gravar as duas na mesma célula é a classe de defeito já paga em "TRÊS NÚMEROS DE DAS, TRÊS
@@ -1699,13 +1700,13 @@ model PortalInvoice {
 // O que se perdeu não volta: o XML do evento nunca foi gravado, então aqueles 556 cancelamentos
 // só se recuperam relendo o ADN por NSU. Daqui para frente, o evento fica.
 model PortalInvoiceEvent {
-  id       String @id @default(uuid())
-  clientId String
+  id         String    @id @default(uuid())
+  clientId   String
   // ⚠ FK OBRIGATÓRIA — evento cuja nota ainda não chegou NÃO CABE AQUI. Na prática o ADN entrega a
   // nota antes do evento dela (o NSU da emissão é menor que o do cancelamento), e não observamos
   // nenhum caso; mas quando acontecer, o evento é contado e perdido. Quem resolve isso é o ledger
   // da Fase 1 (`eventos`, sem FK, chaveado por `chaveAcesso`) — ligar aquilo é decisão do dono.
-  invoiceId String
+  invoiceId  String
   // cancelamento | canc_por_substituicao (ADN/NFS-e) · CANCELAMENTO | MANIFESTACAO (SEFAZ/NF-e).
   // O vocabulário do lado NFS-e é o mesmo de `Evento.tipoEvento` (ledger), de propósito.
   type       String
@@ -1718,8 +1719,8 @@ model PortalInvoiceEvent {
   // Código oficial do evento (101101 cancelamento · 105102 cancelamento por substituição).
   // ⚠ Vem do atributo `Id` (`EVT`+chave+tpEvento+nSeq), NÃO de um elemento `<tpEvento>` — ele não
   // existe em nenhum dos 62 eventos reais capturados.
-  tpEvento   String?
-  nSeqEvento Int?
+  tpEvento        String?
+  nSeqEvento      Int?
   // "esta nota foi substituída POR aquela" — o lado espelhado de `PortalInvoice.chaveSubstituida`.
   // Guardado como chave porque a substituta pode não estar no nosso banco.
   chaveSubstituta String?
@@ -1828,7 +1829,7 @@ model TaxDocumentExtraction {
 // ==========================
 
 model ChartOfAccount {
-  id             String @id @default(uuid())
+  id             String   @id @default(uuid())
   portalClientId String? // null = conta global (compartilhada por todas as empresas)
   codigo         String // código reduzido, ex: "5", "464"
   nome           String
@@ -2003,14 +2004,14 @@ model AccountingEntry {
 /// Os campos `*Original` são CÓPIA, não referência: o registro tem de continuar legível depois de a
 /// linha original desaparecer. Por isso `entryIdOriginal` é texto sem FK.
 model EstornoBaixa {
-  id                  String   @id @default(uuid())
-  portalClientId      String
+  id             String @id @default(uuid())
+  portalClientId String
 
   // O que foi desfeito (cópia imutável)
   entryIdOriginal     String
   competenciaOriginal String
   historicoOriginal   String
-  valorOriginal       Decimal  @db.Decimal(18, 2)
+  valorOriginal       Decimal @db.Decimal(18, 2)
   tipoLinha           String?
   codigoTributo       String?
   guideId             String?
@@ -2019,13 +2020,13 @@ model EstornoBaixa {
 
   /// DELECAO (mês aberto: o lançamento foi apagado) | CONTRA_LANCAMENTO (mês fechado: o lançamento
   /// FICA e nasce um espelho invertido `tipo:"ESTORNO"` na competência aberta).
-  modo                String
-  contraLancamentoId  String?
-  competenciaContra   String?
+  modo               String
+  contraLancamentoId String?
+  competenciaContra  String?
 
-  motivo              String
-  estornadoPorUserId  String?
-  estornadoEm         DateTime @default(now())
+  motivo             String
+  estornadoPorUserId String?
+  estornadoEm        DateTime @default(now())
 
   /// Rastro da transição administrativa (parcelaStateMachine.js): ... → ESTORNADA.
   parcelaEstadoAnterior String?
@@ -2083,13 +2084,13 @@ model AtoParcelamento {
   // ── O QUE FOI DESFEITO, EM NÚMEROS ────────────────────────────────────────────────────────
   /// Os mesmos números que a confirmação mostrou ao contador. Guardá-los é o que permite conferir
   /// depois se o que ele viu foi o que aconteceu.
-  prestacoesRemovidas      Int      @default(0)
-  prestacoesQuitadas       Int      @default(0)
-  guiasDesvinculadas       Int      @default(0)
-  lancamentosApagados      Int      @default(0)
-  lancamentosPreservados   Int      @default(0)
-  contraLancamentosCriados Int      @default(0)
-  valorTotalDesfeito       Decimal  @default(0) @db.Decimal(18, 2)
+  prestacoesRemovidas      Int     @default(0)
+  prestacoesQuitadas       Int     @default(0)
+  guiasDesvinculadas       Int     @default(0)
+  lancamentosApagados      Int     @default(0)
+  lancamentosPreservados   Int     @default(0)
+  contraLancamentosCriados Int     @default(0)
+  valorTotalDesfeito       Decimal @default(0) @db.Decimal(18, 2)
   /// Lista separada por vírgula — as competências que estavam FECHADAS e por isso ganharam espelho.
   competenciasFechadas     String?
 
@@ -2362,7 +2363,7 @@ model Parcelamento {
   grupo                  String? // sn_mei | outros
 
   // Templates (3 kinds em AccountingFunction): abertura, pagamento da parcela, rescisão
-  templateOpeningFunctionId   String?
+  templateOpeningFunctionId String?
 
   /// ⚠ MORTO — NÃO ESCREVER, NÃO LER. Aguardando DROP em migration própria.
   ///
@@ -2978,70 +2979,70 @@ model FilaPendencia {
 // Snapshot reproduzível da apuração. Substitui Apuracao após Fase 6.
 // Por enquanto convive — apuração nova grava aqui, antiga continua em Apuracao.
 model ApuracaoSnapshot {
-  id                      String    @id @default(uuid())
-  portalClientId          String
-  competencia             String // YYYY-MM
+  id                           String    @id @default(uuid())
+  portalClientId               String
+  competencia                  String // YYYY-MM
   // Insumos auditáveis
-  rbt12                   Decimal   @db.Decimal(18, 2)
-  folha12m                Decimal?  @db.Decimal(18, 2)
-  fatorR                  Decimal?  @db.Decimal(6, 4)
-  receitaPorTipo          Json // { REVENDA_MERCADORIA: x, SERVICO_FATOR_R: y, ... } — segregação do mês, dos DOIS caminhos
+  rbt12                        Decimal   @db.Decimal(18, 2)
+  folha12m                     Decimal?  @db.Decimal(18, 2)
+  fatorR                       Decimal?  @db.Decimal(6, 4)
+  receitaPorTipo               Json // { REVENDA_MERCADORIA: x, SERVICO_FATOR_R: y, ... } — segregação do mês, dos DOIS caminhos
   /// Derivado do NOSSO motor, com Fator R aplicado.
   ///
   /// ⚠ NULO = "o motor local não calculou esta competência" — NÃO é o mesmo que `{}`, que seria
   /// "calculou e não achou anexo nenhum". Quem apura pela simulação oficial do PGDAS-D não decide
   /// anexo (quem decide é a RFB, a partir das `atividadesEscolhidas`), então esse caminho deixa a
   /// coluna nula em vez de gravar `{}`. Antes ele gravava `{}` e APAGAVA o que o motor tinha posto.
-  receitaPorAnexo         Json?
+  receitaPorAnexo              Json?
   // ─── Motor próprio (cálculo LOCAL) ──────────────────────────────────────────────────────────
   /// ⚠ SÓ O MOTOR LOCAL ESCREVE AQUI (`MotorApuracaoService.calcularApuracaoLocal`).
   /// Até 2026-08 `FechamentoService.calcularFechamento` gravava aqui o valor da SIMULAÇÃO OFICIAL
   /// da RFB — a coluna ora guardava o nosso número, ora o da Receita, sem nada na linha que os
   /// distinguisse. Hoje a simulação vai em `dasSimuladoSerpro`. Ver `dasCalculadoLocalProcedencia`.
-  dasCalculadoLocal       Decimal?  @db.Decimal(18, 2)
+  dasCalculadoLocal            Decimal?  @db.Decimal(18, 2)
   /// De quem é o número de `dasCalculadoLocal`: `MOTOR_LOCAL` | `AMBIGUO`. Nulo quando a coluna é
   /// nula. `AMBIGUO` existe para os snapshots gravados ANTES da separação, cuja procedência não
   /// pôde ser provada por nenhum outro campo da linha — inventá-la é exatamente o que a separação
   /// veio impedir. Vocabulário em `apuracao/v2/procedenciaDas.js`.
   dasCalculadoLocalProcedencia String?
-  aliquotaEfetivaPorAnexo Json?
-  vigenciaAliquota        DateTime? // qual versão de AliquotaSimplesNacional usada
+  aliquotaEfetivaPorAnexo      Json?
+  vigenciaAliquota             DateTime? // qual versão de AliquotaSimplesNacional usada
   // ─── SERPRO: a SIMULAÇÃO e a TRANSMISSÃO são dois atos, e são duas colunas ───────────────────
   /// DAS devolvido pela simulação oficial do PGDAS-D (`indicadorTransmissao:false`) — o que o
   /// contador vê no [Calcular]. Nada foi declarado à RFB.
-  dasSimuladoSerpro       Decimal?  @db.Decimal(18, 2)
+  dasSimuladoSerpro            Decimal?  @db.Decimal(18, 2)
   /// DAS devolvido pela TRANSMISSÃO (`indicadorTransmissao:true`) — a declaração existe na Receita.
   /// ⚠ Nulo em PA `jaDeclarado` que não retransmitimos: ali não há valor NOSSO transmitido.
-  dasRetornadoSerpro      Decimal?  @db.Decimal(18, 2)
-  divergenciaValor        Decimal?  @db.Decimal(18, 2)
+  dasRetornadoSerpro           Decimal?  @db.Decimal(18, 2)
+  divergenciaValor             Decimal?  @db.Decimal(18, 2)
   // Reconciliação extrato (Fase 5)
-  rbt12Extrato            Decimal?  @db.Decimal(18, 2)
-  divergenciaRbt12        Decimal?  @db.Decimal(18, 2)
+  rbt12Extrato                 Decimal?  @db.Decimal(18, 2)
+  divergenciaRbt12             Decimal?  @db.Decimal(18, 2)
   // Q15 — fechamento (contador escolhe atividades; RFB calcula anexo/DAS)
-  atividadesEscolhidas    Json? // [{ idAtividade, valorInterno, valorExterno, flags }]
-  receitaInterna          Decimal?  @db.Decimal(18, 2)
-  receitaExterna          Decimal?  @db.Decimal(18, 2)
-  folhaMensal12           Json? // série de 12 meses { pa: valor } pro Fator-R
-  simulacaoSerpro         Json? // retorno oficial PGDAS-D (indicadorTransmissao:false) — verdade do preview
-  tributosPorTributo      Json? // { IRPJ, CSLL, COFINS, PIS, CPP, ICMS, ISS, IPI }
-  disparidades            Json? // avisos atividade↔CNAE (não bloqueia)
+  atividadesEscolhidas         Json? // [{ idAtividade, valorInterno, valorExterno, flags }]
+  receitaInterna               Decimal?  @db.Decimal(18, 2)
+  receitaExterna               Decimal?  @db.Decimal(18, 2)
+  folhaMensal12                Json? // série de 12 meses { pa: valor } pro Fator-R
+  simulacaoSerpro              Json? // retorno oficial PGDAS-D (indicadorTransmissao:false) — verdade do preview
+  tributosPorTributo           Json? // { IRPJ, CSLL, COFINS, PIS, CPP, ICMS, ISS, IPI }
+  disparidades                 Json? // avisos atividade↔CNAE (não bloqueia)
   // Camada 2 (Robustez): conferência de contagem por chave contra o ADN antes do fechamento.
-  conferenciaStatus       String? // ok | divergente | nao_conferivel
-  conferenciaResultado    Json? // { nossoTotal, adnTotal, faltantes[], extras[], via, env, alcancouFim }
-  conferidaEm             DateTime?
-  fechadaEm               DateTime?
-  fechadaPor              String?
+  conferenciaStatus            String? // ok | divergente | nao_conferivel
+  conferenciaResultado         Json? // { nossoTotal, adnTotal, faltantes[], extras[], via, env, alcancouFim }
+  conferidaEm                  DateTime?
+  fechadaEm                    DateTime?
+  fechadaPor                   String?
   // Identificadores SERPRO pós-transmissão
-  numeroDeclaracao        String?
-  reciboNumero            String?
-  transmitidoEm           DateTime?
+  numeroDeclaracao             String?
+  reciboNumero                 String?
+  transmitidoEm                DateTime?
   // Estado: aberta | configurando | calculada | fechada | transmitida | confirmada
   //         | bloqueada_pendencias | erro_calculo | erro_transmissao | erro
-  estado                  String    @default("pendente")
-  idempotencyKey          String    @unique
-  erroMensagem            String?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  estado                       String    @default("pendente")
+  idempotencyKey               String    @unique
+  erroMensagem                 String?
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
 
   portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
 
@@ -3160,12 +3161,12 @@ model ApuracaoBatchItem {
 // Q15 — cache do RBT12 (custo SERPRO por requisição: cache é requisito).
 // detalhePorMes guarda interno/externo separados (vira receitasBrutasAnteriores).
 model RbtExtratoCache {
-  id             String   @id @default(uuid())
-  portalClientId String
-  competencia    String // YYYY-MM (PA de referência do RBT12)
-  rbt12          Decimal  @db.Decimal(18, 2)
-  detalhePorMes  Json // [{ pa, valorInterno, valorExterno }] (12 meses anteriores)
-  origem         String // SIMULACAO | EXTRATO | PARCIAL_LOCAL
+  id                String    @id @default(uuid())
+  portalClientId    String
+  competencia       String // YYYY-MM (PA de referência do RBT12)
+  rbt12             Decimal   @db.Decimal(18, 2)
+  detalhePorMes     Json // [{ pa, valorInterno, valorExterno }] (12 meses anteriores)
+  origem            String // SIMULACAO | EXTRATO | PARCIAL_LOCAL
   // Os PAs que a RFB ACEITOU na última simulação — `{ receitas: ["2025-06", …], folhas: [...] }`.
   //
   // ⚠ Por que fica separado do `detalhePorMes` e não mexe em `origem`: a RFB **não devolve RBT12**
@@ -3176,9 +3177,9 @@ model RbtExtratoCache {
   //
   // Sem isto, cada [Calcular] redescobria a lista por tentativa e erro: 18 rejeições cobradas para
   // 1 sucesso, e o mesmo custo de novo no dia seguinte, na mesma empresa.
-  periodosAceitos Json?
+  periodosAceitos   Json?
   periodosAceitosEm DateTime?
-  capturadoEm    DateTime @default(now())
+  capturadoEm       DateTime  @default(now())
 
   @@unique([portalClientId, competencia])
   @@index([portalClientId])
@@ -3436,11 +3437,11 @@ model Obrigacao {
   /// "Transmitir a apuração de julho" vence em agosto: defasagem 1. Fechar o mês corrente: 0.
   /// Não é chutado — o contador declara no formulário, porque varia por obrigação. É o que
   /// permite o `verificador` olhar a competência CERTA ao concluir sozinho.
-  defasagemMeses Int  @default(1)
+  defasagemMeses Int     @default(1)
 
-  antecedenciaLembreteDias Int    @default(5)
+  antecedenciaLembreteDias Int     @default(5)
   /// ANTECIPAR | POSTERGAR | MANTER — o que fazer quando o vencimento cai em dia não útil.
-  ajusteDiaUtil            String @default("ANTECIPAR")
+  ajusteDiaUtil            String  @default("ANTECIPAR")
   cor                      String?
   ativa                    Boolean @default(true)
 
@@ -3450,7 +3451,7 @@ model Obrigacao {
   verificador String?
 
   /// Preenchido = obrigação gerenciada por uma regra do escritório.
-  regraId         String?
+  regraId          String?
   /// Empresa editou localmente uma obrigação que veio de regra: a regra não sobrescreve mais.
   sobrescritaLocal Boolean @default(false)
 
@@ -3472,16 +3473,16 @@ model Obrigacao {
 }
 
 model OcorrenciaObrigacao {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   obrigacaoId    String
-  dataVencimento DateTime @db.Date
+  dataVencimento DateTime  @db.Date
   /// "YYYY-MM" — a competência a que o SERVIÇO se refere, já com a defasagem aplicada. Guardada
   /// e não recalculada na leitura porque mudar a defasagem depois não pode reescrever o passado.
   competenciaRef String?
   /// Guarda só PENDENTE | CONCLUIDA. **VENCIDA é derivada na leitura** (pendente + data passada),
   /// nunca gravada: status calculado a partir do relógio envelhece no banco, e aí a tela mostra
   /// "pendente" no que já venceu até alguém rodar um job. Derivando, nunca está errado.
-  status         String   @default("PENDENTE")
+  status         String    @default("PENDENTE")
   concluidaEm    DateTime?
   concluidaPorId String?
   /// MANUAL | AUTOMATICA — de onde veio a conclusão. A tela não oferece "concluir" na automática:
@@ -3501,8 +3502,8 @@ model OcorrenciaObrigacao {
 }
 
 model RegraObrigacao {
-  id       String  @id @default(uuid())
-  nome     String
+  id        String  @id @default(uuid())
+  nome      String
   categoria String?
 
   periodicidade            String
@@ -3516,9 +3517,9 @@ model RegraObrigacao {
   ativa                    Boolean @default(true)
 
   /// TODAS | POR_FILTRO | SELECAO_MANUAL
-  escopo  String
+  escopo        String
   /// POR_FILTRO: { regimes: [...], temFolha: true|null }. SELECAO_MANUAL: { empresasIds: [...] }.
-  filtros Json?
+  filtros       Json?
   /// Empresa nova que se encaixe no filtro recebe a obrigação sozinha.
   aplicarANovas Boolean @default(true)
 
@@ -3556,9 +3557,9 @@ model RegraObrigacaoExcecao {
 /// Christi são ponto facultativo federal — não feriado —, ainda que banco não opere. Enquanto o
 /// dono não confirmar, ficam de fora.
 model Feriado {
-  id String @id @default(uuid())
+  id          String   @id @default(uuid())
   /// Data exata do ano (feriado móvel entra ano a ano, já calculado).
-  data DateTime @db.Date
+  data        DateTime @db.Date
   /// NACIONAL | MUNICIPAL
   abrangencia String
   /// Só para MUNICIPAL. Nome do município como está em `PortalClient.municipio`.
@@ -3593,10 +3594,10 @@ model DefisEspelho {
   dados Json
 
   /// Marca manual: o contador confirma que transmitiu no portal. Nunca escrita por automação.
-  transmitidaEm   DateTime?
+  transmitidaEm    DateTime?
   transmitidaPorId String?
   /// Recibo de entrega guardado pelo `GuideStorageService` (mesmo caminho dos PDFs de guia).
-  reciboFileId    String?
+  reciboFileId     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3673,9 +3674,9 @@ model Onboarding {
   id String @id @default(uuid())
 
   /// ABERTURA | TRANSFERENCIA | INATIVA — a única variável que muda a trilha do funil.
-  origem String
+  origem              String
   /// RASCUNHO | RECEBIDO | EM_TRILHA | CONVERTIDO | DESISTIU
-  status String @default("RASCUNHO")
+  status              String @default("RASCUNHO")
   /// ESCRITORIO | CLIENTE — quem digitou a ficha. É o que decide o TEXTO do selo de dado
   /// declarado: "declarado pelo cliente" só quando CLIENTE; no preenchimento interno o selo lê
   /// "declarado no atendimento", senão ele mentiria sobre um dado que o próprio contador digitou.
@@ -3685,7 +3686,7 @@ model Onboarding {
   /// ⚠ NULLABLE e NÃO-UNIQUE de propósito: abertura de empresa não tem CNPJ, e duas fichas podem
   /// citar o mesmo CNPJ (cliente que desistiu e voltou). O unique de verdade é o de
   /// `PortalClient.cnpj`, cobrado só na conversão.
-  cnpj String?
+  cnpj        String?
   /// Na abertura guarda o NOME PRETENDIDO, que ainda não é razão social de ninguém.
   razaoSocial String?
 
@@ -3712,12 +3713,12 @@ model Onboarding {
   /// ⚠ Id do PORTAL CLIENT, nunca da Company legada — os dois existem e são diferentes, e o
   /// certificado A1 mora na legada. Chamar isto de `companyId` é o erro que a armadilha nº 3 do
   /// plano descreve.
-  portalClientId String? @unique
+  portalClientId String?       @unique
   portalClient   PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
 
-  convertidoEm     DateTime?
-  convertidoPorId  String?
-  desistiuEm       DateTime?
+  convertidoEm      DateTime?
+  convertidoPorId   String?
+  desistiuEm        DateTime?
   motivoDesistencia String?
 
   createdAt DateTime @default(now())
@@ -3786,26 +3787,26 @@ model CompanyCredential {
   /// Rótulo livre do acesso: "gov.br", "Prefeitura SP", "Portal do banco", "e-CAC".
   /// Livre de propósito: cada município e cada banco tem um portal, e uma lista fechada
   /// envelheceria na primeira prefeitura nova.
-  rotulo String
+  rotulo       String
   /// Usuário/login do portal. NÃO é cifrado — sozinho ele não abre nada, e cifrá-lo esconderia da
   /// listagem justamente o dado que identifica de qual acesso se está falando.
-  login  String?
+  login        String?
   /// ⚠ CIFRADO por `encryptSecret`. NUNCA sai em listagem, log ou mensagem de erro.
   /// Null = credencial cadastrada sem senha (só login/observação) — é caso legítimo.
   senhaCifrada String?
   /// Anotação sobre o acesso (pergunta secreta, qual sócio é o titular, onde renovar).
   /// ⚠ NÃO é cifrada. A tela diz isso — quem escrever senha aqui está escrevendo em claro.
-  observacao String?
+  observacao   String?
 
-  criadoPorId    String?
-  atualizadoPorId String?
+  criadoPorId       String?
+  atualizadoPorId   String?
   /// Quando a SENHA foi trocada pela última vez (≠ updatedAt, que muda ao editar rótulo/observação).
   senhaAtualizadaEm DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  portalClient PortalClient                @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  portalClient PortalClient              @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
   acessos      CompanyCredentialAcesso[]
 
   @@index([portalClientId])
@@ -3915,10 +3916,10 @@ model LancamentoDeclarado {
   competencia String?
 
   // ── O DOCUMENTO ────────────────────────────────────────────────────────────────────────────
-  notaRecebidaId String?
-  dataDocumento  DateTime?
+  notaRecebidaId       String?
+  dataDocumento        DateTime?
   /// ⚠ Só a nota o preenche (`PortalInvoice.emitenteDoc`). NUNCA inferido de descrição ou de valor.
-  cnpjFornecedor String?
+  cnpjFornecedor       String?
   /// O texto CRU da origem, intocado. ⚠ Para a nota é o `emitenteNome` — é o formato que os 130
   /// lançamentos vindos do Excel já usam no histórico; trocá-lo mudaria o que o razão mostra.
   descricaoOriginal    String
@@ -3942,8 +3943,8 @@ model LancamentoDeclarado {
   /// (o `@@unique` abaixo), não só no código: recaptura da mesma nota não pode gerar segunda linha.
   hashDedupe String
 
-  guiaId         String?
-  parDeclaradoId String?
+  guiaId            String?
+  parDeclaradoId    String?
   /// ⚠ SEM FK, de propósito — mesmo desenho de `AccountingEntry.estornoDeEntryId`. Com `SetNull` um
   /// lançamento apagado por fora deixaria a linha em CONTABILIZADO apontando para nada, e o
   /// apagamento da evidência seria silencioso. Sem FK o id fica, e a varredura o denuncia.
@@ -3958,8 +3959,8 @@ model LancamentoDeclarado {
   criadoPor    String
   decididoPor  String?
   decididoEm   DateTime?
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
 
   portalClient PortalClient     @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
   notaRecebida PortalInvoice?   @relation(fields: [notaRecebidaId], references: [id], onDelete: SetNull)
@@ -4012,14 +4013,14 @@ model RegraContabilizacao {
   tipo         String
 
   /// MANUAL | APRENDIDA
-  origemRegra String
-  ativa       Boolean @default(true)
+  origemRegra     String
+  ativa           Boolean   @default(true)
   /// ⚠ Regra APRENDIDA se suspende sozinha quando a unanimidade que a gerou se quebra.
   /// Regra MANUAL nunca — foi decisão explícita de quem a escreveu.
   suspensaEm      DateTime?
   motivoSuspensao String?
 
-  criadaPor String
+  criadaPor        String
   /// Os declarados que geraram a regra APRENDIDA. ⚠ Navegável na tela: aprendizado invisível é o
   /// que impede o contador de desligar a regra no dia em que algo entrar errado.
   confirmacoesBase Json?
@@ -4053,10 +4054,22 @@ model OfxImport {
   /// arquivo pode voltar legitimamente depois de linhas terem sido recusadas.
   hashArquivo String
   nomeArquivo String?
+
+  /// OFX | EXCEL — o formato do arquivo que originou este registro.
+  ///
+  /// ⚠⚠ ESTA TABELA GUARDA OS DOIS, E O NOME DELA MENTE UM POUCO. `LancamentoDeclarado.ofxImportId`
+  /// é o ÚNICO ponteiro para "qual envio criou esta linha"; uma segunda tabela exigiria uma segunda
+  /// coluna de ponteiro e faria `varrerInvariantes` conhecer as duas. Renomear coluna que já tem
+  /// escritor é migration destrutiva — então o nome fica, e o formato passa a ser DADO.
+  formato String @default("OFX")
+
+  /// ⚠ Com QUAL mapeamento este arquivo foi lido. NULO no OFX (que é auto-descritivo). Sem ele,
+  /// trocar o mapeamento depois deixaria as linhas antigas sem como explicar de onde vieram.
+  mapeamentoExtratoId String?
   /// `ACCTID` do `<BANKACCTFROM>`. ⚠ NULO quando o arquivo não o traz — e aí o dedupe fica mais
   /// frouxo (por empresa, sem separar contas). A tela precisa dizer isso.
-  contaBancaria String?
-  bancoId       String?
+  contaBancaria       String?
+  bancoId             String?
 
   /// O relatório, congelado no momento do import. ⚠ Nada some: o que foi descartado e o que ficou
   /// fora do escopo são CONTADOS, senão "não veio nada" e "deu erro" ficam iguais.
@@ -4079,6 +4092,59 @@ model OfxImport {
   @@index([portalClientId, criadoEm])
   @@index([portalClientId, hashArquivo])
   @@map("ofx_imports")
+}
+
+/// O MAPEAMENTO DE UM EXTRATO EM EXCEL — "nesta planilha, qual coluna é o quê".
+///
+/// ⚠⚠ ELE EXISTE PORQUE UMA PESSOA CONFIRMOU. O sistema PROPÕE (`proporMapeamento`, a partir dos
+/// mesmos apelidos de cabeçalho que o import do escritório já usa) e o contador CONFIRMA uma vez;
+/// `confirmado` nasce `false` e **nenhum caminho de código o vira** — só a rota em que ele clica.
+/// Sem essa linha confirmada, planilha nenhuma vira lançamento.
+///
+/// ⚠⚠ A CHAVE NÃO É "O BANCO" — é a ASSINATURA DO CABEÇALHO (`assinaturaDoCabecalho`). Uma planilha
+/// de extrato não traz código de banco como o OFX traz (`<BANKID>`); traz um nome de arquivo que a
+/// pessoa renomeia e um cabeçalho. Dois extratos do mesmo banco têm o mesmo conjunto de colunas, e
+/// de bancos diferentes, não. É impressão digital, **não afirmação**: o nome legível é o contador
+/// que escreve, em `rotulo`, e viaja ao lado — deduzir "Itaú" de um cabeçalho seria inventar.
+///
+/// ⚠ O ganho é O(1) POR BANCO, não por envio: confirmado uma vez, os próximos arquivos daquele
+/// formato entram sozinhos. É por isso que o mapeamento é uma TABELA e não um passo da tela.
+model MapeamentoExtrato {
+  id             String @id @default(uuid())
+  portalClientId String
+
+  /// As colunas do cabeçalho, normalizadas e ORDENADAS, unidas por `|`. ⚠ Ordenadas de propósito:
+  /// o banco reordena colunas entre versões do arquivo, e uma chave sensível à ordem faria o
+  /// contador remapear a MESMA planilha. Os ÍNDICES continuam sendo lidos do arquivo de cada envio.
+  assinatura String
+  /// O nome legível, escrito pelo contador. ⚠ NULO é legítimo — o mapeamento vale sem apelido, e
+  /// exigir um faria alguém digitar qualquer coisa para passar da tela.
+  rotulo     String?
+
+  /// `{ data, valor, historico, sinal }` — o ÍNDICE de cada papel na linha. ⚠ Índice, não nome de
+  /// coluna: é por índice que a leitura acontece, e guardar o nome obrigaria a reencontrá-lo.
+  colunas Json
+  /// COLUNA_DE_SINAL | VALOR_NEGATIVO — como a linha diz que é saída. ⚠ `COLUNAS_SEPARADAS` existe
+  /// no vocabulário e **não é suportado**: `validarMapeamento` o recusa NOMEANDO.
+  sinal   String
+
+  /// A linha de cabeçalho que originou este mapeamento, como veio. ⚠ Sem ela, o contador não tem
+  /// como conferir DEPOIS o que foi que ele confirmou.
+  cabecalhoVisto Json?
+
+  /// ⚠⚠ NASCE `false`. É a trava inteira da fase.
+  confirmado    Boolean   @default(false)
+  confirmadoEm  DateTime?
+  confirmadoPor String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@unique([portalClientId, assinatura])
+  @@index([portalClientId, atualizadoEm])
+  @@map("mapeamentos_extrato")
 }
 
 /// A SÉRIE RECORRENTE — "esta despesa (ou receita) volta, e com que valor".

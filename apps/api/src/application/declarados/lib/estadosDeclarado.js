@@ -50,6 +50,12 @@ export const ORIGEM = Object.freeze({
   NOTA_RECEBIDA: "NOTA_RECEBIDA",
   CLIENTE_MANUAL: "CLIENTE_MANUAL",
   OFX_CLIENTE: "OFX_CLIENTE",
+  /**
+   * ⚠ O extrato que o cliente mandou em EXCEL. Origem PRÓPRIA, e não `OFX_CLIENTE`: origem responde
+   * *de onde isto veio*, e colapsar as duas faria o contador ler "OFX" numa linha que saiu de uma
+   * planilha cujas colunas ELE mapeou — que é justamente o que ele precisa poder conferir.
+   */
+  EXTRATO_EXCEL_CLIENTE: "EXTRATO_EXCEL_CLIENTE",
 });
 
 /**
@@ -66,6 +72,21 @@ export const ORIGEM_PAGAMENTO = Object.freeze({
   DECLARADO_PELO_CONTADOR: "DECLARADO_PELO_CONTADOR",
   /** O cliente lançou pelo portal, informando a data. Declaração. */
   CLIENTE: "CLIENTE",
+  /**
+   * ⚠⚠ O débito veio do extrato do banco, lido de uma PLANILHA. É prova — e é valor SEPARADO do
+   * `OFX` de propósito.
+   *
+   * **Por que PROVA:** o que a data afirma é *"o dinheiro saiu neste dia"*, e quem afirma isso é o
+   * banco, nos dois formatos. O mapeamento de colunas não muda se o dinheiro saiu; ele muda QUAL
+   * coluna é a data — e um mapeamento errado é conferido pelo contador na fila, antes de qualquer
+   * coisa chegar ao razão.
+   *
+   * **Por que SEPARADO:** o OFX é um arquivo estruturado que ninguém edita; a planilha passa por um
+   * mapeamento que uma pessoa definiu e por um programa em que qualquer célula se altera. As duas
+   * provam, e não provam com a mesma força — colapsá-las apagaria a diferença exatamente na tela em
+   * que ela importa.
+   */
+  EXTRATO_EXCEL: "EXTRATO_EXCEL",
 });
 
 /**
@@ -75,7 +96,7 @@ export const ORIGEM_PAGAMENTO = Object.freeze({
  * desconhecida como prova deixaria uma afirmação passar por evidência, e é exatamente sobre essa
  * distinção que a decisão do dono de 27/08/2026 se apoia — *"a prova vence"*.
  */
-const ORIGENS_QUE_PROVAM = Object.freeze([ORIGEM_PAGAMENTO.OFX]);
+const ORIGENS_QUE_PROVAM = Object.freeze([ORIGEM_PAGAMENTO.OFX, ORIGEM_PAGAMENTO.EXTRATO_EXCEL]);
 
 export function ehProvaDePagamento(origem) {
   return ORIGENS_QUE_PROVAM.includes(origem);

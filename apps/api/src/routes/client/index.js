@@ -3,6 +3,7 @@ import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { DeclaradoRecusado } from "../../application/declarados/DeclaradoService.js";
+import { importarExtratoExcelDoCliente } from "../../application/declarados/ImportExcelExtratoService.js";
 import { importarOfxDoCliente } from "../../application/declarados/ImportOfxService.js";
 // ⚠ A recorrencia DECLARADA pelo cliente. A regra e a escrita moram no servico; esta rota traduz
 // HTTP e nada mais.
@@ -758,6 +759,61 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         return res
           .status(500)
           .json({ ok: false, error: "ofx_import_falhou", message: "Não foi possível importar o extrato." });
+      }
+    },
+  );
+
+  /**
+   * ⚠⚠ O MESMO EXTRATO, EM EXCEL — decisão do dono (27/08/2026): *"extrato pode e deve ser enviado
+   * em OFX ou EXCEL, no caso do excel o contador precisa normalizar para ser consumido"*.
+   *
+   * ⚠ ROTA PRÓPRIA, e não um `if` dentro do import de OFX. Os dois caminhos têm **desfechos
+   * diferentes**: este pode voltar `precisaDeMapeamento: true` — nada entrou, e o que falta é um
+   * clique do CONTADOR. Espremer isso na resposta do OFX faria a tela do cliente ter de adivinhar
+   * qual das duas conversas está acontecendo.
+   *
+   * ⚠ É FACHADA: nenhuma regra mora aqui. A leitura é `lerPlanilhaExtrato`, o mapeamento é
+   * `mapeamentoDoExtrato`, a identidade é `dedupeOfx` e a gravação é `criarDeclarado` — os mesmos
+   * módulos do OFX onde eles são os mesmos.
+   *
+   * ⚠ `requireClientCompanyAccess()` SEM `minRole`, pelo mesmo motivo do OFX: subir o próprio
+   * extrato é ato financeiro do cliente, e ele NÃO cria lançamento contábil.
+   *
+   * ⚠⚠ A CONTA BANCÁRIA É CAMPO DO ENVIO, e é opcional. Ela é o que faz a conferência de repetidos
+   * alcançar o MESMO débito que já tenha entrado por um OFX — a planilha não tem onde trazê-la. Sem
+   * ela o relatório **diz** que o dedupe não atravessa os formatos, em vez de o cliente descobrir
+   * pela despesa repetida.
+   */
+  router.post(
+    "/companies/:companyId/extrato-excel/import",
+    requireClientCompanyAccess(),
+    receberArquivoDoExtrato,
+    async (req, res) => {
+      try {
+        if (!req.file?.buffer?.length) {
+          return res.status(400).json({ ok: false, error: "file_required", message: "Envie o arquivo do extrato." });
+        }
+        const r = await importarExtratoExcelDoCliente({
+          portalClientId: String(req.params.companyId),
+          buffer: req.file.buffer,
+          nomeArquivo: req.file.originalname || null,
+          // ⚠ Campos do FORMULÁRIO (multipart), não do JSON — o corpo é o arquivo.
+          contaBancaria: req.body?.contaBancaria || null,
+          aba: req.body?.aba || null,
+          criadoPor: req.auth?.user?.id || null,
+          // ⚠ Carimbo de AUDITORIA. A data de cada transação vem do ARQUIVO — o relógio daqui nunca
+          // vira data de pagamento.
+          agora: new Date(),
+        });
+        return res.json({ ok: true, ...r });
+      } catch (e) {
+        if (e instanceof DeclaradoRecusado) {
+          return res.status(400).json({ ok: false, error: e.codigo, message: e.frase });
+        }
+        log?.error?.({ err: e }, "extrato_excel_import_falhou");
+        return res
+          .status(500)
+          .json({ ok: false, error: "extrato_excel_import_falhou", message: "Não foi possível importar o extrato." });
       }
     },
   );

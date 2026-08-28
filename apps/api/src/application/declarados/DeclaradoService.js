@@ -144,7 +144,10 @@ export async function criarDeclarado({
   const chave = String(hashDedupe || "").trim();
   if (!chave) recusar(RECUSA_DO_SERVICO.SEM_IDENTIDADE);
 
-  if (!["NOTA_RECEBIDA", "CLIENTE_MANUAL", "OFX_CLIENTE"].includes(String(origem))) {
+  // ⚠⚠ A LISTA SAI DE `ORIGEM`, NUNCA ESCRITA À MÃO AQUI. Ela já esteve copiada — três literais ao
+  // lado de um vocabulário congelado —, e origem nova aceita pela regra e recusada pelo serviço é a
+  // divergência que esta casa já pagou quatro vezes com o filtro de envio de guia. Uma fonte só.
+  if (!Object.values(ORIGEM).includes(String(origem))) {
     recusar(RECUSA_DO_SERVICO.ORIGEM_INVALIDA);
   }
 
