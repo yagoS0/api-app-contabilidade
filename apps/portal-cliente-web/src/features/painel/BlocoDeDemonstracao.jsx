@@ -52,6 +52,7 @@ import {
 import { diasDoMes } from "./lib/dadosDeDemonstracao";
 import { PopUpDeGuias } from "./PopUpDeGuias";
 import { SuasSaidas } from "./SuasSaidas";
+import { GavetaDoDia } from "./GavetaDoDia";
 
 /**
  * ⚠⚠ A FOLGA que a tela pede ao servidor quando a seta chega na BORDA da janela carregada.
@@ -151,12 +152,49 @@ const pctFmt = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximu
  * ⚠ Célula ausente vira traço INVISÍVEL (v3 §3.2, "sem peso visual") **com texto oculto**: sem ele,
  * "não há lançamento" e "não carregou" ficam iguais para quem não vê a tela.
  */
-function Celula({ celula, coluna, unidade, entradaDoPeriodo }) {
+function Celula({ celula, coluna, unidade, entradaDoPeriodo, aoAbrir, rotuloDoPeriodo }) {
+  /**
+   * ⚠⚠ A CÉLULA É CLICÁVEL — decisão do dono, 30/08/2026: *"todos os blocos de saída devem e podem
+   * ser clicados, isso abre um menu lateral que mostra as saídas naquele dia, com suas descrições"*
+   * · *"o de impostos também"*.
+   *
+   * ⚠ **O `<button>` fica DENTRO do `<td>`**, nunca um `onClick` na célula ou um `role="button"` na
+   * linha: `role` na `<tr>` a tiraria da semântica de tabela, e a decisão já está escrita nesta casa
+   * a propósito do `PainelDoDia`. Assim a tabela continua tabela e o alvo continua focável pelo
+   * teclado.
+   * ⚠⚠ **RESULTADO NÃO ABRE.** Ele é uma CONTA (entrada − saídas), não um conjunto de lançamentos:
+   * uma gaveta ali teria de inventar o que listar. Quem responde "de onde veio" são as outras
+   * quatro colunas.
+   */
+  const abre = typeof aoAbrir === "function" && coluna !== "resultado";
+
   if (!celula) {
+    /**
+     * ⚠⚠ A CÉLULA VAZIA CONTINUA CLICÁVEL NA COLUNA DE SAÍDA, e é o pedido do dono: *"ele deve
+     * clicar no campo do dia, abre um menu lateral e aí ele digita a saída"*. Um dia sem nada é
+     * justamente onde ele quer acrescentar — e um alvo que só existe quando já há valor tornaria a
+     * ação inalcançável no caso mais comum.
+     * ⚠ Nas outras colunas o traço continua inerte: abrir uma gaveta vazia de impostos não oferece
+     * nada, e um clique que não faz nada se lê como defeito.
+     */
+    if (!abre || coluna !== "saida") {
+      return (
+        <td className="num" data-coluna={coluna}>
+          <span className="fluxo-v3-vazio" aria-hidden="true">–</span>
+          <span className="sr-only">sem lançamento</span>
+        </td>
+      );
+    }
     return (
       <td className="num" data-coluna={coluna}>
-        <span className="fluxo-v3-vazio" aria-hidden="true">–</span>
-        <span className="sr-only">sem lançamento</span>
+        <button
+          type="button"
+          className="fluxo-v4-celula"
+          onClick={() => aoAbrir(coluna)}
+          aria-label={`Acrescentar saída em ${rotuloDoPeriodo}`}
+        >
+          <span className="fluxo-v3-vazio" aria-hidden="true">–</span>
+        </button>
       </td>
     );
   }
@@ -176,25 +214,39 @@ function Celula({ celula, coluna, unidade, entradaDoPeriodo }) {
   }
 
   const previsto = celula.status === STATUS.PREVISTO;
+  const texto = ehPercentual ? `${pctFmt.format(pct)}%` : naGrade(celula.valor);
+  /* ⚠ O terceiro canal. "Previsto" é a palavra da Lei 5 — ela cobre compromisso E presunção, que
+     por fora são a mesma cor. ⚠ Sendo botão, ele vira o NOME ACESSÍVEL, e por isso diz também o
+     que o clique faz e de que período é: "R$ 1.437,15" sozinho não é um rótulo de ação. */
+  const rotulo = abre
+    ? `${texto}${previsto ? ", previsto" : ""} — ver em ${rotuloDoPeriodo}`
+    : (previsto ? `${texto}, previsto` : undefined);
+
+  const valor = (
+    <span
+      className="fluxo-v3-valor"
+      data-coluna={coluna}
+      data-status={celula.status}
+      data-negativo={coluna === "resultado" && celula.valor < 0 ? "sim" : undefined}
+      aria-label={abre ? undefined : rotulo}
+    >
+      {texto}
+    </span>
+  );
+
   return (
     <td className="num" data-coluna={coluna}>
-      <span
-        className="fluxo-v3-valor"
-        data-coluna={coluna}
-        data-status={celula.status}
-        data-negativo={coluna === "resultado" && celula.valor < 0 ? "sim" : undefined}
-        /* ⚠ O terceiro canal. "Previsto" é a palavra da Lei 5 — ela cobre compromisso E presunção,
-           que por fora são a mesma cor. */
-        aria-label={previsto ? `${ehPercentual ? pctFmt.format(pct) + "%" : naGrade(celula.valor)}, previsto` : undefined}
-      >
-        {ehPercentual ? `${pctFmt.format(pct)}%` : naGrade(celula.valor)}
-      </span>
+      {abre ? (
+        <button type="button" className="fluxo-v4-celula" onClick={() => aoAbrir(coluna)} aria-label={rotulo}>
+          {valor}
+        </button>
+      ) : valor}
     </td>
   );
 }
 
 /** As cinco células de uma linha — mês ou dia, o mesmo desenho. */
-function CelulasDoPeriodo({ linha, unidade, comFolha }) {
+function CelulasDoPeriodo({ linha, unidade, comFolha, aoAbrir, rotuloDoPeriodo }) {
   return COLUNAS
     .filter((c) => comFolha || c.chave !== "folha")
     .map((c) => (
@@ -204,6 +256,8 @@ function CelulasDoPeriodo({ linha, unidade, comFolha }) {
         coluna={c.chave}
         unidade={unidade}
         entradaDoPeriodo={linha.entrada}
+        aoAbrir={aoAbrir}
+        rotuloDoPeriodo={rotuloDoPeriodo}
       />
     ));
 }
@@ -230,7 +284,19 @@ function CelulasDoPeriodo({ linha, unidade, comFolha }) {
  * a ROLAGEM INTERNA do bloco — a mesma regra do `.table-wrap`, que existe para a página não rolar
  * para o lado.
  */
-function TabelaDeDias({ bloco, unidade, comFolha, cabecalho }) {
+/**
+ * ⚠ O rótulo do dia vira BOTÃO, e não a linha inteira: `role="button"` numa `<tr>` a tiraria da
+ * semântica de tabela — a decisão já está escrita nesta casa a propósito do `PainelDoDia`.
+ */
+function BotaoDoPeriodo({ aoAbrir, children }) {
+  return (
+    <button type="button" className="fluxo-v4-dia" onClick={aoAbrir}>
+      {children}
+    </button>
+  );
+}
+
+function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir }) {
   const colunas = COLUNAS.filter((c) => comFolha || c.chave !== "folha");
 
   // ⚠⚠ BLOCO SEM MÊS NÃO É BLOCO VAZIO. Andando até a borda da janela, o mês da direita pode não ter
@@ -266,14 +332,35 @@ function TabelaDeDias({ bloco, unidade, comFolha, cabecalho }) {
           <tbody>
             {dodia.semDia ? (
               <tr className="fluxo-v3-sem-dia">
-                <th scope="row">no mês</th>
-                <CelulasDoPeriodo linha={dodia.semDia} unidade={unidade} comFolha={comFolha} />
+                {/* ⚠⚠ O DIA TAMBÉM É CLICÁVEL — é o pedido literal do dono: *"ele deve clicar no
+                    campo do dia, abre um menu lateral e aí ele digita a saída"*. Clicando no DIA a
+                    gaveta abre sem balde: ela mostra tudo daquele dia e traz o formulário. */}
+                <th scope="row">
+                  <BotaoDoPeriodo aoAbrir={() => aoAbrir?.(null, null)}>no mês</BotaoDoPeriodo>
+                </th>
+                <CelulasDoPeriodo
+                  linha={dodia.semDia}
+                  unidade={unidade}
+                  comFolha={comFolha}
+                  aoAbrir={(coluna) => aoAbrir?.(null, coluna)}
+                  rotuloDoPeriodo="no mês"
+                />
               </tr>
             ) : null}
             {dodia.dias.map((d) => (
               <tr key={d.dia}>
-                <th scope="row">dia {String(d.dia).padStart(2, "0")}</th>
-                <CelulasDoPeriodo linha={d} unidade={unidade} comFolha={comFolha} />
+                <th scope="row">
+                  <BotaoDoPeriodo aoAbrir={() => aoAbrir?.(d.dia, null)}>
+                    dia {String(d.dia).padStart(2, "0")}
+                  </BotaoDoPeriodo>
+                </th>
+                <CelulasDoPeriodo
+                  linha={d}
+                  unidade={unidade}
+                  comFolha={comFolha}
+                  aoAbrir={(coluna) => aoAbrir?.(d.dia, coluna)}
+                  rotuloDoPeriodo={`dia ${String(d.dia).padStart(2, "0")}`}
+                />
               </tr>
             ))}
           </tbody>
@@ -470,6 +557,15 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
   const [mesEsquerda, setMesEsquerda] = useState(null);
   /** ⚠ Fechar o pop-up com Esc vale só para ESTA sessão — e não grava nada. */
   const [popUpDispensado, setPopUpDispensado] = useState(false);
+  /**
+   * ⚠⚠ A GAVETA — UMA SÓ, e o estado mora AQUI (30/08/2026).
+   *
+   * ⚠ Ela não pode viver dentro de `TabelaDeDias`: são DOIS blocos lado a lado, e um estado por
+   * bloco deixaria duas gavetas abertas ao mesmo tempo — cada uma cobrindo metade da outra.
+   * ⚠ `balde: null` é o clique no DIA (mostra tudo + o formulário); com balde, é o clique na
+   * célula daquela coluna.
+   */
+  const [gaveta, setGaveta] = useState(null);
 
   const fluxoQuery = useCarregamento(
     () => api.getFluxoCaixa(companyId, { competencia, janelaInicio }),
@@ -642,6 +738,9 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
                   bloco={bloco}
                   unidade={unidade}
                   comFolha={comFolha}
+                  /* ⚠ O bloco diz QUAL mês é o dele — a gaveta precisa das linhas daquele mês, e
+                     os dois blocos da tela são meses diferentes. */
+                  aoAbrir={(dia, balde) => setGaveta({ competencia: bloco.competencia, dia, balde })}
                   cabecalho={(
                     <h3
                       className="fluxo-v4-mes"
@@ -675,6 +774,27 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
       {!atual.carregando && !atual.erro && dados && visao === "fluxo" ? (
         <SuasSaidas companyId={companyId} meses={meses} aoMudar={atual.recarregar} />
       ) : null}
+
+      {/*
+        ⚠⚠ A GAVETA FICA FORA DOS BLOCOS — ela é uma sobreposição da TELA, não um pedaço da tabela.
+        Renderizada dentro de `TabelaDeDias`, ela nasceria dentro de um `.table-wrap` (que tem
+        `overflow-x`) e seria RECORTADA por ele: um painel ancorado à direita da viewport não pode
+        viver dentro de um contêiner que rola na horizontal.
+        ⚠ As linhas vêm do mês do bloco clicado, do payload que a tabela já tem — a gaveta não faz
+        consulta nenhuma.
+      */}
+      <GavetaDoDia
+        aberta={Boolean(gaveta)}
+        competencia={gaveta?.competencia}
+        dia={gaveta?.dia ?? null}
+        balde={gaveta?.balde ?? null}
+        linhasDoMes={(meses.find((m) => m.competencia === gaveta?.competencia)?.linhas) || []}
+        companyId={companyId}
+        aoFechar={() => setGaveta(null)}
+        /* ⚠ Criada a saída, quem recarrega é o BLOCO — com a MESMA consulta que desenha a tabela.
+           Acrescentar a linha na mão faria a gaveta e a tabela discordarem até a próxima leitura. */
+        aoMudar={() => { setGaveta(null); atual.recarregar(); }}
+      />
 
       {mostraPopUp ? (
         <PopUpDeGuias

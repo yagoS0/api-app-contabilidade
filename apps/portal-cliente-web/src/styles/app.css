@@ -1159,6 +1159,11 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
   position: fixed; inset: 0;
   z-index: var(--z-sobreposicao);
   background: var(--veu);
+  /* ⚠⚠ O `padding: 16px` do `.modal-backdrop` PRECISA IR A ZERO — medido no navegador: com ele, a
+     gaveta parava em `right: 1264,8` numa janela de 1280 e sobrava uma FRESTA de 15px do véu entre
+     ela e a borda. Uma gaveta que não encosta na borda se lê como caixa flutuante mal posicionada,
+     não como painel lateral. */
+  padding: 0;
   /* Ancorada à DIREITA: é o lado de onde ela entra, e alinhar a entrada com a posição final é o
      que faz o movimento se ler como "abriu", e não como "pulou". */
   display: flex; align-items: stretch; justify-content: flex-end;
@@ -1569,3 +1574,42 @@ tr[data-atrasada="sim"] .guias-atraso-quando { color: var(--danger); }
   background: linear-gradient(to top, var(--surface), transparent);
   pointer-events: none;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+   ⚠⚠ AS CÉLULAS E OS DIAS DO FLUXO VIRARAM BOTÃO (30/08/2026) — decisão do dono: *"ele deve
+   clicar no campo do dia, abre um menu lateral (…) todos os blocos de saída devem e podem ser
+   clicados"*.
+
+   ⚠⚠ E UM `<button>` SEM ESTILO É UMA CAIXA CINZA COM BORDA. Medido na tela: a tabela virou uma
+   grade de botõezinhos, e o dono viu isso como defeito antes de ver a funcionalidade. Estas regras
+   existem para o botão **parecer o texto que ele já era** — o que muda é o cursor, o foco e o
+   realce no `hover`, não o desenho da tabela.
+
+   ⚠ O alvo continua sendo um botão de verdade: focável pelo teclado, com `:focus-visible` próprio.
+   Tirar o `outline` "porque fica mais limpo" deixaria quem navega por teclado sem saber onde está.
+   ───────────────────────────────────────────────────────────────────────────────────────────── */
+.fluxo-v4-celula,
+.fluxo-v4-dia {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  /* ⚠ A célula é numérica e alinhada à direita; o `width: 100%` faz o ALVO ser a célula inteira, e
+     não só os dígitos — um alvo de 30px numa tabela densa é o que faz a pessoa errar o clique. */
+  width: 100%;
+  text-align: inherit;
+  border-radius: 4px;
+}
+
+.fluxo-v4-celula:hover,
+.fluxo-v4-dia:hover { background: var(--ciano-surface, rgb(14 116 144 / 8%)); }
+
+.fluxo-v4-celula:focus-visible,
+.fluxo-v4-dia:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* ⚠ O rótulo do dia é `<th>` e alinhado à esquerda; a célula herda o `text-align: right` do `.num`.
+   `text-align: inherit` acima resolve os dois sem uma regra por caso. */
+.fluxo-v4-dia { text-align: left; }

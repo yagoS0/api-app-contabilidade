@@ -240,9 +240,23 @@ describe("⚠⚠ a previsão nunca se parece com um fato", () => {
   });
 
   it("⚠⚠ e a palavra viaja no nome acessível — o terceiro canal", async () => {
+    /**
+     * ⚠⚠ O RÓTULO MUDOU DE ELEMENTO EM 30/08/2026, e a guarda continua a mesma.
+     *
+     * A célula virou CLICÁVEL (a gaveta do dia), e o valor passou a viver dentro de um `<button>`.
+     * O `aria-label` foi para o botão, de propósito: ele é quem tem papel de ação, e deixá-lo
+     * também no `<span>` faria o leitor de tela anunciar o número DUAS vezes.
+     *
+     * ⚠ O que este teste protege não é o elemento — é a PALAVRA chegar a quem não vê a tela. Por
+     * isso ele pergunta pelo nome acessível de quem carrega o valor, seja o botão ou o span.
+     */
     await abrir(cheio());
     const previsto = document.querySelector('.fluxo-v3-valor[data-status="forecast"]');
-    expect(previsto.getAttribute("aria-label")).toMatch(/previsto/i);
+    expect(previsto).not.toBeNull();
+    const quemRotula = previsto.closest("button") || previsto;
+    expect(quemRotula.getAttribute("aria-label")).toMatch(/previsto/i);
+    // ⚠ E o número não é anunciado duas vezes: com o botão rotulando, o span fica sem rótulo.
+    if (quemRotula !== previsto) expect(previsto.getAttribute("aria-label")).toBeNull();
   });
 
   it("⚠⚠ o PASSADO é todo confirmado — critério de aceite nº 12 da Constituição", async () => {
