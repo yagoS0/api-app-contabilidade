@@ -27,8 +27,6 @@ import {
   registrarSaidaSugerida,
 } from "../../application/fluxo/SerieRecorrenteService.js";
 import { PERIODICIDADE } from "../../application/fluxo/lib/recorrencia.js";
-// ⚠⚠ O CORPO E COMPARTILHADO com a rota do CLIENTE — um calculo so, dois consumidores.
-import { responderFluxoDeCaixa } from "../fluxoDeCaixaHttp.js";
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
@@ -138,9 +136,20 @@ export function createRecorrenciaRouter({ log } = {}) {
     }
   });
 
-  // ⚠⚠ O FLUXO DE CAIXA. Leitura pura: nenhum papel exigido alem do acesso a empresa, como a
-  // leitura das recorrencias — quem le a fila da empresa le o fluxo dela.
-  router.get("/fluxo-de-caixa", requireFirmCompanyAccess(), (req, res) => responderFluxoDeCaixa(req, res, { log }));
+  // ⚠⚠ AQUI FICAVA `GET /fluxo-de-caixa`, E ELA FOI REMOVIDA EM 29/08/2026 — decisão do dono:
+  // *"para o contador não vai existir fluxo de caixa"*. A aba morreu junto, no mesmo commit.
+  //
+  // ⚠ O fluxo continua existindo e continua sendo servido pelo MESMO corpo compartilhado
+  // (`routes/fluxoDeCaixaHttp.js` → `responderFluxoDeCaixa`), agora por uma porta só: a do CLIENTE,
+  // em `routes/client/index.js`. Não havia duas montagens antes e continua não havendo — o que caiu
+  // foi um consumidor, não a regra.
+  //
+  // ⚠⚠ **NÃO A REABRA "porque o serviço existe".** Rota sem chamador é porta aberta sem dono, e
+  // ressuscitá-la traria de volta a obrigação de manter os dois espelhos de `leituraDoFluxo.js` em
+  // sincronia — que é justamente o custo que a remoção elimina.
+  //
+  // ⚠ As rotas de RECORRÊNCIA acima **ficam**: o `PainelDeRecorrencias` vive dentro da aba
+  // Conferência do contador e continua sendo quem marca a série que entra no fluxo do cliente.
 
   return router;
 }

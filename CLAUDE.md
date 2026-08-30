@@ -473,7 +473,12 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
       acende a até 5 dias, então a guia que vence em 15 deixa de aparecer no Início.
   - ⚠⚠ **A tela padrão é o PAINEL: fluxo de caixa ⇄ DRE.** ⚠⚠ **ESTA LINHA DIZIA "MOCKADOS" ATÉ
     27/08/2026, e metade ficou falsa: o FLUXO DE CAIXA virou real** (Fase E) — `GET /client/.../fluxo-de-caixa`,
-    o MESMO payload que o contador lê, com 12 meses e `fato`/`previsao` separados. Ele responde
+    com 12 meses e `fato`/`previsao` separados. ⚠⚠ **E ela dizia "o MESMO payload que o contador lê",
+    o que ficou falso em 29/08/2026:** o dono removeu o fluxo de caixa do portal do contador
+    (*"para o contador não vai existir fluxo de caixa"*), a rota `/firm/.../fluxo-de-caixa` saiu e
+    `apps/web/src/features/fluxo/` foi apagada. O corpo compartilhado
+    (`routes/fluxoDeCaixaHttp.js`) continua sendo o único que monta o fluxo — **com um consumidor
+    só**. Ele responde
     `demonstracao: false` e **o selo some junto**. ⚠ O **DRE continua ficção**, com o selo, porque
     não existe rota de DRE. ⚠ *"Não há origem para ENTRADAS"* também caiu: a entrada é a **nota
     emitida + prazo de recebimento**, e ela é PREVISÃO documental, nunca FATO — a nota prova que foi

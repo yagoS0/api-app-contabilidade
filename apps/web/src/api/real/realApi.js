@@ -1812,26 +1812,6 @@ export function createRealApi() {
         body: JSON.stringify(corpo || {}),
       });
     },
-    // ─── O FLUXO DE CAIXA ─────────────────────────────────────────────────────────────────────
-    //
-    // ⚠⚠ AS DUAS PORTAS SERVEM O MESMO PAYLOAD. Esta é a do escritório; o portal do cliente lê
-    // `/client/companies/:id/fluxo-de-caixa`, e o CORPO das duas é o mesmo arquivo no servidor
-    // (`routes/fluxoDeCaixaHttp.js`). Duas montagens divergiriam na primeira correção, e aí as duas
-    // telas afirmariam coisas diferentes sobre o mesmo dinheiro — com o cliente do lado que ninguém
-    // do escritório testa.
-    //
-    // ⚠⚠ O PAYLOAD NÃO TEM `total`, e isso é o CONTRATO — não uma omissão a completar aqui.
-    // `totais` traz `fato`, `previsao` e `desconhecido` separados, e `desconhecido` é CONTAGEM.
-    //
-    // ⚠ `cicloAtual` é o "agora" INJETADO: os 12 meses e o corte do passado se apoiam nele. Ciclo
-    // malformado é RECUSADO pelo servidor (400 `ciclo_invalido`) em vez de cair no mês corrente em
-    // silêncio — responder certo a uma pergunta diferente da que foi feita é pior que o erro.
-    async getFluxoDeCaixa(companyId, cicloAtual) {
-      const q = new URLSearchParams();
-      if (cicloAtual) q.set("cicloAtual", String(cicloAtual));
-      const qs = q.toString();
-      return request(`/firm/companies/${companyId}/fluxo-de-caixa${qs ? `?${qs}` : ""}`);
-    },
     // ⚠ Registra que o DETECTOR sugeriu a saída. Ele não desmarca — quem decide é o contador.
     async postSaidaSugerida(companyId, serieId) {
       return request(`/firm/companies/${companyId}/recorrencia/${serieId}/saida-sugerida`, {

@@ -232,9 +232,17 @@ que foi pago; o que era fato sem pagamento virou `COMPROMISSO`.
 são conhecidos, e o que falta é o dinheiro sair. Colapsá-lo em `PREVISAO` apagaria a diferença entre
 *"o contador calculou isto"* e *"o sistema chutou pelo histórico"*.
 
-⚠⚠ **ESTE VOCABULÁRIO ATRAVESSA AS DUAS PORTAS.** `leituraDoFluxo.js` é espelho, e não atualizá-lo
-nos DOIS apps faria toda guia em aberto cair no fallback *"Esta tela não conhece esta procedência"*
-— nas duas telas, sem erro nenhum. Foi atualizado nos dois. **Mudou lá, muda aqui.**
+⚠⚠ **ESTE PARÁGRAFO DIZIA "ATRAVESSA AS DUAS PORTAS" E FICOU FALSO EM 29/08/2026.** Ele mandava
+manter `leituraDoFluxo.js` em sincronia nos DOIS apps, sob pena de toda guia em aberto cair no
+fallback *"Esta tela não conhece esta procedência"*. **Hoje há UMA porta só:** o dono removeu o fluxo
+de caixa do portal do contador (*"para o contador não vai existir fluxo de caixa"*), e
+`apps/web/src/features/fluxo/` **foi apagada inteira** — a lib espelho junto.
+
+⚠ **A regra em si não mudou**, e o cuidado que ela descrevia continua valendo DENTRO deste app:
+valor novo de `PROCEDENCIA` no servidor sem entrada em `LEITURA_DA_PROCEDENCIA` cai no fallback, sem
+erro nenhum. O que deixou de existir é a obrigação de sincronizar uma cópia.
+⚠⚠ **Não recrie o espelho "por simetria".** Espelho sem consumidor não é código morto barato — é
+trabalho de sincronização para sempre, numa cópia que ninguém abre.
 
 ⚠ Na tela, o status é derivado (`FATO → confirmed`, os outros dois → `forecast`) e a regra é a do
 **elo mais fraco**: célula que soma guia paga com guia em aberto **não é fato**. A autoridade é
@@ -369,7 +377,7 @@ pagou caro por bloqueio anotado que envelheceu calado.
 
 | | antes | agora |
 |---|---|---|
-| fluxo de caixa | ficção diária, gerada no navegador | **`GET /client/companies/:id/fluxo-de-caixa`**, o MESMO payload que o contador lê |
+| fluxo de caixa | ficção diária, gerada no navegador | **`GET /client/companies/:id/fluxo-de-caixa`** — ⚠ dizia *"o MESMO payload que o contador lê"*, e isso ficou FALSO em 29/08/2026: o contador **não tem mais fluxo de caixa**, e a porta `/firm/.../fluxo-de-caixa` foi removida. O corpo compartilhado (`routes/fluxoDeCaixaHttp.js`) continua sendo o único que monta o fluxo — com um consumidor só |
 | forma | 1 mês, dia a dia, com **saldo acumulado** | **12 meses**, `fato` e `previsao` separados, **sem `total` e sem saldo** |
 | selo | sempre aceso | **some** — o servidor responde `demonstracao: false` |
 | DRE | ficção | **continua ficção**, com o selo, porque **não existe rota de DRE** |
@@ -389,8 +397,9 @@ pagou caro por bloqueio anotado que envelheceu calado.
   ⚠ `__tests__/diaDoFluxo.ligacao.test.jsx` **foi removido** e substituído por
   `__tests__/fluxoNoPainel.ligacao.test.jsx`, que carrega as invariantes que sobreviveram — entre
   elas a de que **este portal não escreve contabilidade** (nenhum `+`, nenhum `⋮`).
-- ⚠⚠ **A LEI DE COR MORA EM `features/painel/lib/leituraDoFluxo.js`**, com teste próprio, e é
-  ESPELHO da do contador (a paleta é outra: o verde proibido aqui é `--success`, lá é `--state-ok`).
+- ⚠⚠ **A LEI DE COR MORA EM `features/painel/lib/leituraDoFluxo.js`**, com teste próprio. ⚠ Ela
+  **era ESPELHO** da do contador e deixou de ser em 29/08/2026, quando o fluxo saiu daquele portal —
+  hoje é a única, e o verde proibido é `--success` (a paleta é clara).
   **PREVISÃO nunca é verde**, nem o FATO — uma guia gerada e em aberto não está paga —, e a palavra
   *"Previsto"* vai no **TEXTO** do chip, não só na cor. Experimento executado: pondo a classe `ok`
   na previsão, a suíte da regra fica **2 vermelhos**.
@@ -442,11 +451,12 @@ e o detalhe de UM mês abre no clique do cabeçalho.
   do fluxo e não mora em mês nenhum. **As de tom `info` desceram**: são contexto, não ação.
 - ⚠ `MESES_ABERTOS_POR_PADRAO`, `separarMeses` e `totalDoBloco` podem ficar sem consumidor. Se
   ficarem, **anotar, não apagar** — é a regra desta casa.
-- ⚠⚠ **ISTO DIVERGE DO PORTAL DO CONTADOR DE PROPÓSITO.** `apps/web/src/features/fluxo/` continua
-  com os 12 meses empilhados e 3 abertos. A REGRA (`leituraDoFluxo.js`) continua espelho e **não foi
-  tocada**; o que diverge é a FORMA, e ela diverge porque o pedido foi sobre a tela do cliente — que
-  é lida no celular e tem os cards reais da empresa acima dela. **Mudou lá, muda aqui** vale para a
-  regra, não para o desenho.
+- ⚠⚠ **ESTE ITEM DIZIA "ISTO DIVERGE DO PORTAL DO CONTADOR" E FICOU SEM OBJETO EM 29/08/2026.**
+  Ele explicava por que a FORMA divergia enquanto a REGRA continuava espelho. **Não há mais com o
+  que divergir:** `apps/web/src/features/fluxo/` foi apagada e o contador não tem fluxo de caixa.
+  Fica registrado porque o argumento continua valendo para qualquer tela futura: o que se
+  sincroniza entre portais é a REGRA, nunca o desenho — este aqui é lido no celular e tem os cards
+  reais da empresa acima dele.
 - ⚠ **A ressalva tem TÍTULO PRÓPRIO, e nenhum se repete** (`ressalvasDoFluxo`). Isto é conserto de
   um defeito achado no navegador no portal do contador no mesmo dia: três caixas de aviso empilhadas
   dizendo *"Sobre este fluxo"*, indistinguíveis — o defeito que o `titulo` obrigatório existe para
@@ -1720,7 +1730,6 @@ pacote comum; a duplicação é conhecida e a obrigação de sincronizar é sua:
 | `lib/servicosNacionais/` | tabela gerada; `servicosNacionais.data.js` sai de `apps/api/scripts/gerar-lista-servico-nacional.mjs`, que **escreve nos dois portais** — **não editar à mão** |
 | ~~`lib/municipios/` (o dado)~~ | ⚠ **DEIXOU DE SER ESPELHO EM 20/08/2026**: a tabela do IBGE virou arquivo único em `@contabilidade/shared/municipios-ibge`. A REGRA (`municipioIbge.js`) continua uma por portal, de propósito — a do escritório carrega textos de cadastro que não são do cliente |
 | `painel/lib/tabelaDoFluxo.js` (`STATUS`, a derivação da célula) | `apps/api/src/application/fluxo/lib/fluxoDeCaixa.js` (`statusDoConjunto`, **autoridade**) — ⚠ **amarrado por teste**: o daqui importa a função de lá e exige o mesmo veredito em 7 combinações de procedência. Sem o amarre, a tela pintaria de preto o que o servidor chama de previsto |
-| `painel/lib/leituraDoFluxo.js` | `apps/web/src/features/fluxo/lib/leituraDoFluxo.js` — ⚠ as duas telas leem o MESMO payload; a REGRA é uma por app porque as PALETAS divergem (o verde proibido aqui é `--success`, lá é `--state-ok`). ⚠ Divergem também o dinheiro (aqui sai por `lib/format.brl`, que já tem a regra de "ausência é traço" deste app) e o TEXTO, que é o de quem RECEBE — nada de "procedência", "competência" ou "mediana" na tela do cliente |
 | `lib/roles.js` | `apps/api/.../emissaoClienteAutorizacao.js` + `portal-cliente-mobile/src/roles.ts` |
 | `lib/cliqueDeLink.js` | `apps/web/src/components/ui/cliqueDeLink.js` (quem assume o clique numa aba-link) |
 | `guias/lib/rotuloGuia.js` | `apps/web/src/features/guides/lib/rotuloGuia.js` (`rotuloTipoGuia`) — ⚠ **amarrado por teste**: o daqui importa a função de lá e exige o mesmo veredito em 12 casos. ⚠ O ramo do PARCELAMENTO **não** é espelho (lá o rótulo é montado no front; aqui o backend manda `parcelamentoLabel` pronto); o que fica travado é a PRECEDÊNCIA |

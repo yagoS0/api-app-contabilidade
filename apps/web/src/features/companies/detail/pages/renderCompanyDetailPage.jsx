@@ -65,10 +65,6 @@ const NotasFiscaisTab = lazy(() =>
 const ConferenciaTab = lazy(() =>
   import("../../../conferencia/components/renderConferenciaTab").then((m) => ({ default: m.ConferenciaTab }))
 );
-// O fluxo de caixa da empresa — autônoma (faz a própria chamada), como a Conferência e o SITFIS.
-const FluxoDeCaixaTab = lazy(() =>
-  import("../../../fluxo/pages/renderFluxoDeCaixaTab").then((m) => ({ default: m.FluxoDeCaixaTab }))
-);
 const AuditoriaTab = lazy(() =>
   import("../../../notas/components/renderAuditoriaTab").then((m) => ({ default: m.AuditoriaTab }))
 );
@@ -969,34 +965,6 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
              GUARDA continua sendo o `minRole: "ACCOUNTANT"` da rota — isto só evita oferecer um
              botão que o servidor vai recusar com 403. */
           podeEscrever={canEditCompany}
-        />
-      </CompanyTabLayout>
-    );
-  }
-
-  // O FLUXO DE CAIXA — 12 meses à frente, com fato e previsão SEPARADOS.
-  //
-  // ⚠ Ela recebe a competência GLOBAL, a mesma que Lançamentos, Conferência, Circular, Guias e
-  // Notas Fiscais leem, e a manda como `cicloAtual`. Uma competência própria aqui faria o fluxo
-  // partir de um mês e a fila conferir outro.
-  if (companyDetailTab === "fluxoDeCaixa") {
-    return (
-      <CompanyTabLayout
-        company={selectedCompany}
-        activeTab="fluxoDeCaixa"
-        onBack={onBack}
-        onTabChange={switchTab}
-        canEditCompany={canEditCompany}
-        competencia={circularPanel?.competencia}
-        onCompetenciaChange={circularPanel?.onCompetenciaChange}
-        /* ⚠ `trabalho`: cada mês é uma tabela de cinco colunas, e a evidência de cada linha vai
-           no TEXTO (nunca num `title`). Em `leitura` as colunas de valor se espremem. */
-        largura="trabalho"
-        suspense
-      >
-        <FluxoDeCaixaTab
-          companyId={companyId}
-          competencia={circularPanel?.competencia}
         />
       </CompanyTabLayout>
     );

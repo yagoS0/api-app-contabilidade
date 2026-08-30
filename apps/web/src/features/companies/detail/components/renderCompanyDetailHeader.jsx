@@ -31,14 +31,11 @@ import { mostraApuracaoDoSimples } from "../../../apuracao-lp/lib/regimeDaAba";
 // daquela tela e serve à página principal do calendário do mesmo jeito.
 // ⚠ `auditoria` entra aqui porque a auditoria É por competência — ela responde "as notas DESTE mês
 // batem?". Sem o seletor, a aba mostraria sempre o mês default e não haveria como conferir outro.
-// ⚠ `fluxoDeCaixa` entra aqui porque o mês da tela é o PONTO DE PARTIDA dos 12 meses — é o "agora"
-// que o servidor recebe como `cicloAtual`, e a leitura inteira (o que já venceu, o que ainda vem)
-// se apoia nele. Sem o seletor, o fluxo mostraria sempre o mês default.
 // ⚠ `conferencia` entra aqui porque a FILA é por competência: ela responde "as despesas DESTE mês
 // já foram conferidas?". Sem o seletor, a aba mostraria sempre o mês default e não haveria como
 // conferir outro. ⚠ O recorte "sem competência" é um botão DENTRO da aba, não um valor do seletor —
 // ele não é um mês, e pô-lo aqui faria o seletor global mudar de significado.
-const TABS_COM_COMPETENCIA = new Set(["lancamentos", "conferencia", "fluxoDeCaixa", "circular", "cadastroFiscal", "guides", "notasFiscais", "auditoria"]);
+const TABS_COM_COMPETENCIA = new Set(["lancamentos", "conferencia", "circular", "cadastroFiscal", "guides", "notasFiscais", "auditoria"]);
 
 // Navegação da empresa em 2 níveis: grupos grandes (Anotações, Contabilidade, Fiscal, Empresa)
 // e, abaixo, as sub-abas do grupo ativo. A aba ativa continua vindo do segmento da URL (activeTab);
@@ -64,10 +61,14 @@ const GROUPS = [
       // sai dela é `AccountingEntry` (débito na despesa, crédito no caixa), e o contador chega
       // nela vindo de Lançamentos. Em Fiscal ela pareceria conferência de nota, que é a Auditoria.
       { key: "conferencia", label: "Conferência" },
-      // ⚠ FLUXO DE CAIXA fica em CONTABILIDADE, logo depois da Conferência — não em Fiscal. Ele
-      // responde "o que entra e sai nos próximos 12 meses?", e as saídas dele são as guias e as
-      // despesas que a Conferência acabou de lançar. Em Fiscal, pareceria apuração.
-      { key: "fluxoDeCaixa", label: "Fluxo de caixa" },
+      // ⚠⚠ AQUI FICAVA "FLUXO DE CAIXA", E ELE FOI REMOVIDO EM 29/08/2026 — decisão do dono, com a
+      // tela na frente: *"para o contador não vai existir fluxo de caixa, pode eliminar isso da
+      // aba"*. Não é defeito: a aba tinha 40 testes verdes e foi conferida no navegador em 27/08.
+      // ⚠ O fluxo continua existindo, e só no PORTAL DO CLIENTE — é dele a pergunta "o que entra e
+      // sai". O contador chega ao mesmo dinheiro pela Conferência (o que virou lançamento) e pelas
+      // Guias (o que vence). Reintroduzir a aba aqui é reabrir uma decisão, não completar um
+      // trabalho. ⚠ O segmento `/fluxo-de-caixa` continua respondendo em `rotasDaEmpresa.js`,
+      // apontando para Lançamentos: link antigo não pode virar tela em branco.
       { key: "circular", label: "Circular" },
       { key: "parcelamento", label: "Parcelamento" },
       // Obrigações fica em Contabilidade e NÃO em Fiscal de propósito: obrigação é o serviço que o

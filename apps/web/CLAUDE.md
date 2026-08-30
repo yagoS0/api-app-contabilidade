@@ -328,39 +328,29 @@ painéis que os acionavam saíram da tela juntos, quando a aba enxugou.
 `CompetenciaStateMachine.reabrirCompetencia` no backend, que exige `reason` e tem teste próprio. A
 porta some da tela; o ato continua existindo. Por isso ficam anotados, não apagados.
 
-## ⚠⚠ A ABA FLUXO DE CAIXA (`features/fluxo/`) — 27/08/2026
+## ⚠⚠ A ABA FLUXO DE CAIXA FOI REMOVIDA (29/08/2026) — ela existiu por dois dias
 
-Grupo **Contabilidade**, logo depois da Conferência. `lib/leituraDoFluxo.js` (regra pura, 40 testes)
-+ `pages/renderFluxoDeCaixaTab.jsx` (só ligação). O payload vem de
-`GET /firm/companies/:id/fluxo-de-caixa`, e é **o MESMO que o portal do cliente lê** — o corpo é
-compartilhado no servidor (`routes/fluxoDeCaixaHttp.js`).
+Construída em 27/08 (`features/fluxo/`, regra pura com 40 testes, conferida no navegador) e
+**apagada inteira** em 29/08, por decisão do dono com a tela na frente: *"para o contador não vai
+existir fluxo de caixa, pode eliminar isso da aba"*. ⚠ **Não é defeito** — é decisão de produto, e
+está aqui para ninguém a reabrir achando que ficou pela metade.
 
-- ⚠⚠ **VERDE NÃO APARECE AQUI, em nenhuma procedência.** Verde, nesta casa, quer dizer
-  *pago/concluído* — o pior desfecho possível para uma linha que ainda não aconteceu. ⚠ **Nem o
-  FATO é verde**: uma guia gerada e em aberto NÃO está paga. `TOKEN_PROIBIDO = "--state-ok"`, com
-  teste varrendo `Object.values(PROCEDENCIA)`. Experimento: pondo `--state-ok` na PREVISAO, **2
-  vermelhos**.
-- ⚠⚠ **A palavra "previsto" vai no TEXTO**, não só na cor — impressão em preto e branco e daltonismo
-  tiram a cor.
-- ⚠⚠ **NÃO EXISTE `total`**, nem por mês nem no bloco recolhido: `totaisParaTela` e `totalDoBloco`
-  devolvem `fato`/`previsao`/`desconhecido` separados, e há teste exigindo que a chave `total` não
-  exista. Um número único de doze meses é o que alguém imprime e leva ao banco. ⚠ Sem saldo inicial
-  não há saldo acumulado — a ausência é coerente, não uma falta.
-- ⚠⚠ **`dinheiro(null)` é `"—"`, nunca `"R$ 0,00"`** — mas **zero DECLARADO continua sendo um
-  valor**. É a família do `Number(null) === 0` que já custou um "0%" na tela do cliente.
-- ⚠⚠ **O dia ausente não vira dia inventado**: a projeção diz *"no mês"* e o MOTIVO vem do servidor,
-  com a frase pronta. A tela não escreve a sua — as duas divergiriam na primeira correção.
-- ⚠ **A TELA ABRE COM 3 MESES** (`MESES_ABERTOS_POR_PADRAO`), os outros nove recolhidos com o total
-  do bloco à vista. O contrato entrega os 12; a leitura começa onde a evidência está.
-- ⚠ **A evidência de cada linha vai no TEXTO** — a faixa (*"entre R$ 120,00 e R$ 140,00"*), o `n` e
-  o confronto declarado × observado. `title` não aparece no teclado nem no toque.
-- ⚠⚠ **CADA RESSALVA TEM TÍTULO PRÓPRIO, e o título sai da REGRA.** Escrito no componente ele era o
-  MESMO nas três caixas (*"Sobre este fluxo"*) — três avisos âmbar empilhados e indistinguíveis, que
-  é exatamente o defeito que o `titulo` obrigatório do `Aviso` existe para impedir. **Achado no
-  navegador, não no teste**; hoje há teste exigindo seis títulos distintos e nenhum vazio.
-- ⚠ **O mock exercita todos os ramos, e a EMPRESA ZERADA tem um fluxo próprio** — `semImposto` e
-  `recorrenciaIndisponivel` são mutuamente exclusivos, no fluxo cheio, com o imposto projetado e com
-  as séries. Mock de uma forma só os deixaria inalcançáveis offline.
+**O que saiu:** as três peças da aba (`GROUPS`, o par de rota, o bloco `if`), a feature inteira,
+`getFluxoDeCaixa` do `realApi`/`mockApi`, e a rota `GET /firm/companies/:id/fluxo-de-caixa`.
+
+- ⚠⚠ **O SEGMENTO `/fluxo-de-caixa` CONTINUA RESPONDENDO**, apontando para Lançamentos em
+  `SEGMENT_TO_TAB`. Apagá-lo faria toda URL antiga cair em **Anotações sem erro nenhum** — o
+  defeito que `rotasDaEmpresa.js` já registra duas vezes. ⚠ E ele **não tem par** em
+  `TAB_TO_SEGMENT`: não há aba para onde voltar.
+- ⚠⚠ **A LIB ESPELHO FOI APAGADA JUNTO, e isso foi deliberado** — contra o costume da casa
+  (*"apagar componente é decisão à parte"*). O argumento é próprio: `leituraDoFluxo.js` era espelho
+  do do portal do cliente, e a tabela "mudou lá, muda aqui" obrigava a mantê-los em sincronia. Um
+  espelho sem consumidor não é código morto barato — é **trabalho recorrente**, para sempre, numa
+  cópia que ninguém abre.
+- **O fluxo continua existindo, e só no portal do CLIENTE.** O contador chega ao mesmo dinheiro
+  pela Conferência (o que virou lançamento) e pelas Guias (o que vence).
+- ⚠ A regra de leitura (lei de cor, ausência do total, dia não inventado) **não morreu**: ela vive
+  em `apps/portal-cliente-web/src/features/painel/lib/leituraDoFluxo.js`, com teste próprio.
 
 ## ⚠ A TABELA DO ANEXO (apuracao-v2) — o que ela responde, e o que NÃO se recria
 

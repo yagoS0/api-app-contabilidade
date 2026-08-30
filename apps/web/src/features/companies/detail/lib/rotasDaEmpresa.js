@@ -23,10 +23,13 @@ export const SEGMENT_TO_TAB = {
   // `TAB_TO_SEGMENT` É OBRIGATÓRIO — sem ele o clique na aba não navega e a URL cai em Anotações,
   // sem erro nenhum.
   conferencia: "conferencia",
-  // O FLUXO DE CAIXA da empresa (12 meses, fato e previsão separados). ⚠ O PAR EM
-  // `TAB_TO_SEGMENT` É OBRIGATÓRIO — sem ele o clique na aba não navega e a URL cai em
-  // Anotações, sem erro nenhum.
-  "fluxo-de-caixa": "fluxoDeCaixa",
+  // ⚠⚠ O FLUXO DE CAIXA DO CONTADOR FOI REMOVIDO EM 29/08/2026 (decisão do dono: *"para o contador
+  // não vai existir fluxo de caixa"*), e **o segmento continua respondendo, de propósito** — ele cai
+  // em Lançamentos, como `configuracoes` e `sugestao` já fazem.
+  // ⚠ Apagar a linha em vez de redirecionar faria toda URL antiga (link salvo, aba aberta, histórico
+  // do navegador) cair em **Anotações sem erro nenhum** — o defeito que o cabeçalho deste arquivo
+  // registra duas vezes. ⚠ E ela NÃO tem par em `TAB_TO_SEGMENT`: não há aba para onde voltar.
+  "fluxo-de-caixa": "lancamentos",
   circular: "circular",
   parcelamento: "parcelamento",
   obrigacoes: "obrigacoes",
@@ -71,8 +74,6 @@ export const TAB_TO_SEGMENT = {
   lancamentos: "lancamentos",
   // ⚠ O par da entrada acima. Faltando esta linha, a aba Conferência vira `<button>` mudo.
   conferencia: "conferencia",
-  // ⚠ O par da entrada acima. Faltando esta linha, a aba Fluxo de caixa vira `<button>` mudo.
-  fluxoDeCaixa: "fluxo-de-caixa",
   circular: "circular",
   parcelamento: "parcelamento",
   obrigacoes: "obrigacoes",

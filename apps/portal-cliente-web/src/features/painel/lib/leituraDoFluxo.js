@@ -1,17 +1,22 @@
 /**
- * ⚠⚠ ESPELHO de `apps/web/src/features/fluxo/lib/leituraDoFluxo.js` (portal do CONTADOR).
+ * A LEITURA DO FLUXO DE CAIXA — e ela é a ÚNICA desde 29/08/2026.
  *
- * As duas telas leem o MESMO payload (`GET .../fluxo-de-caixa`, corpo compartilhado em
- * `routes/fluxoDeCaixaHttp.js`). A REGRA de leitura é uma por app de propósito — o plano pede
- * *"lei de cor, uma lib por app com teste próprio"* —, porque as paletas são diferentes: lá o
- * verde proibido é `--state-ok`, aqui é `--success`.
+ * ⚠⚠ ESTE CABEÇALHO DIZIA "ESPELHO de `apps/web/src/features/fluxo/lib/leituraDoFluxo.js`" E FICOU
+ * FALSO. Aquele arquivo **não existe mais**: o dono removeu o fluxo de caixa do portal do contador
+ * (*"para o contador não vai existir fluxo de caixa, pode eliminar isso da aba"*), e a feature foi
+ * apagada inteira — a cópia junto. **Não a recrie "por simetria":** espelho sem consumidor não é
+ * código morto barato, é sincronização obrigatória para sempre numa cópia que ninguém abre.
  *
- * ⚠ O QUE DIVERGE NA CÓPIA, e é deliberado:
- *   1. o token proibido (`--success` × `--state-ok`) e os nomes das classes de estado;
+ * ⚠ O que era divergência deliberada da cópia e hoje é simplesmente COMO ESTE APP É:
+ *   1. o verde proibido é `--success` (a paleta é clara; a do contador era escura);
  *   2. o dinheiro sai por `lib/format.brl` — este app já tem a sua regra de "ausência é traço",
  *      e uma segunda formatação faria o mesmo valor sair diferente em duas telas do MESMO portal;
- *   3. o TEXTO é do cliente, não do contador: aqui não se escreve "procedência", "competência" nem
- *      "mediana". O que a frase precisa dizer é a mesma coisa; o vocabulário é o de quem lê.
+ *   3. o TEXTO é do cliente: aqui não se escreve "procedência", "competência" nem "mediana". O que
+ *      a frase precisa dizer é a mesma coisa; o vocabulário é o de quem lê.
+ *
+ * ⚠ O CUIDADO QUE O ESPELHO EXIGIA CONTINUA VALENDO AQUI DENTRO: valor novo de `PROCEDENCIA` no
+ * servidor sem entrada em `LEITURA_DA_PROCEDENCIA` cai no fallback *"esta tela não conhece esta
+ * origem"* — sem erro nenhum. Foi assim que `COMPROMISSO` quase passou batido.
  *
  * ⚠⚠ ESTA REGRA NÃO CALCULA NADA e NÃO SOMA FATO COM PREVISÃO. Não existe `total` no payload, e a
  * tela não inventa um — é a mesma proibição dos dois lados (`docs/dre-fluxo-caixa.md`).
