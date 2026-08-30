@@ -717,3 +717,88 @@ describe("⚠⚠ a varredura auto-ativa as séries estáveis", () => {
     expect(auto).not.toHaveBeenCalled();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A PORTA DA REGRA MANUAL (29/08/2026).
+//
+// > Dono: *"o contador deve poder colocar o código de débito e crédito nessa despesa."*
+//
+// ⚠⚠ A tabela já existia e SÓ NASCIA `APRENDIDA` — havia `GET` e o `PATCH` que liga/desliga, e
+// nenhum `POST`. O que se prende aqui é a camada HTTP: o piso de papel, o corpo que chega ao
+// serviço, e a recusa NOMEADA que não pode virar 500 mudo.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ POST /conferencia/regras", () => {
+  const regraService = require("../../../application/declarados/RegraService.js");
+
+  it("passa o corpo inteiro ao serviço, com o usuário e o relógio", async () => {
+    const criar = jest.spyOn(regraService, "criarRegraManual")
+      .mockResolvedValue({ id: "r-1", origemRegra: "MANUAL" });
+    const r = await request(makeApp())
+      .post("/firm/companies/emp-1/conferencia/regras")
+      .send({
+        cnpjFornecedor: "12345678000190",
+        valorMin: 1000,
+        valorMax: 1500,
+        contaDestino: "411030012",
+        contaCredito: "111010001",
+      });
+    expect(r.status).toBe(201);
+    expect(r.body.regra).toEqual({ id: "r-1", origemRegra: "MANUAL" });
+    const arg = criar.mock.calls[0][0];
+    expect(arg).toMatchObject({
+      portalClientId: "emp-1",
+      cnpjFornecedor: "12345678000190",
+      contaDestino: "411030012",
+      contaCredito: "111010001",
+      usuarioId: "u-1",
+    });
+    // ⚠ O relógio vem da ROTA — o serviço tem varredura de fonte contra `new Date()`.
+    expect(arg.agora).toBeInstanceOf(Date);
+  });
+
+  it("⚠⚠ a recusa do crédito vira 400 NOMEADO — não um 500 mudo", async () => {
+    // Sem o ramo de `RegraRecusada` no responder, o contador não saberia QUE conta trocar.
+    const { RegraRecusada, FRASE_DA_RECUSA_DA_REGRA } = regraService;
+    jest.spyOn(regraService, "criarRegraManual").mockRejectedValue(
+      new RegraRecusada("credito_nao_e_disponibilidade", FRASE_DA_RECUSA_DA_REGRA.credito_nao_e_disponibilidade),
+    );
+    const r = await request(makeApp())
+      .post("/firm/companies/emp-1/conferencia/regras")
+      .send({ cnpjFornecedor: "1", valorMin: 1, valorMax: 2, contaDestino: "x", contaCredito: "y" });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("credito_nao_e_disponibilidade");
+    expect(r.body.message).toMatch(/disponibilidade/i);
+  });
+
+  it("⚠ sem a tabela é 503 — a migration é ato do dono", async () => {
+    const { RegraRecusada, FRASE_DA_RECUSA_DA_REGRA } = regraService;
+    jest.spyOn(regraService, "criarRegraManual").mockRejectedValue(
+      new RegraRecusada("regras_indisponiveis", FRASE_DA_RECUSA_DA_REGRA.regras_indisponiveis),
+    );
+    const r = await request(makeApp())
+      .post("/firm/companies/emp-1/conferencia/regras")
+      .send({ cnpjFornecedor: "1", valorMin: 1, valorMax: 2, contaDestino: "x" });
+    expect(r.status).toBe(503);
+  });
+
+  it("⚠⚠ ela exige ACCOUNTANT — escrever regra decide como a despesa será classificada daqui em diante", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "conferencia.js"), "utf8");
+    const linha = fonte
+      .split(String.fromCharCode(10))
+      .find((l) => l.includes('router.post("/conferencia/regras"'));
+    expect(linha).toContain('minRole: "ACCOUNTANT"');
+  });
+
+  it("⚠⚠ criar a regra NÃO LANÇA NADA — varredura da rota", () => {
+    // Ela passa a existir para o motor consultar; o que lança tem outra trava, e nasce desligada.
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "conferencia.js"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/^[ \t]*\/\/.*$/gm, " ");
+    const i = fonte.indexOf('router.post("/conferencia/regras"');
+    expect(fonte.slice(i, i + 900)).not.toMatch(/accountingEntry|AccountingEntry/);
+  });
+});

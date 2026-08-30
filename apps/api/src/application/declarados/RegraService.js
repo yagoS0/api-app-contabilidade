@@ -10,6 +10,10 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { decidirAprendizado, MOTIVO_DA_SUSPENSAO } from "./lib/aprendizado.js";
 import { chaveDaDescricao, sugerirConta } from "./lib/motorDeSugestao.js";
+// ⚠⚠ REUSADA, não reescrita: quem responde "esta conta é caixa/banco?" decide pelo PREFIXO do
+// `codigoCompleto`, e o cabeçalho daquele módulo PROÍBE a versão `!== NAO_DISPONIVEL` (com ela,
+// `DISPONIVEL_NAO_CLASSIFICADO` e `INDETERMINADO` entrariam).
+import { entraNoFluxoDeCaixa } from "../accounting/lib/disponibilidades.js";
 
 const soDigitos = (v) => String(v ?? "").replace(/\D+/g, "");
 
@@ -224,3 +228,150 @@ export async function alternarRegra({ portalClientId, regraId, ativa, client = p
 }
 
 export { MOTIVO_DA_SUSPENSAO, chaveDaDescricao };
+
+/**
+ * ⚠⚠ A REGRA MANUAL — a porta que faltava (29/08/2026).
+ *
+ * > Dono: *"a Lente tem todo mês um pagamento a Alessandro Nigro, CNPJ, que vai se tornar uma
+ * > recorrência no fluxo deles. O contador deve poder colocar o código de débito e crédito nessa
+ * > despesa, e todo mês que essa nota aparecer ela já é lançada em despesa."*
+ *
+ * ⚠⚠ **`RegraContabilizacao` JÁ GUARDAVA TUDO — e só nascia `APRENDIDA`.** `reavaliarAprendizado` é
+ * o único escritor, e não havia `POST` nenhum: a regra que o contador quisesse escrever à mão não
+ * tinha porta. É essa lacuna que esta função fecha; nada do modelo mudou, exceto o crédito.
+ *
+ * ⚠⚠ **O CRÉDITO É RECUSADO SE NÃO FOR DISPONIBILIDADE** — resposta do dono: *"continua sendo
+ * disponibilidade (caixa/banco)"*. Quem responde isso é `entraNoFluxoDeCaixa`
+ * (`accounting/lib/disponibilidades.js`), que decide pelo **PREFIXO do `codigoCompleto`**, nunca
+ * pelo nome. ⚠ **NÃO reescreva como `!== NAO_DISPONIVEL`**: o cabeçalho daquele módulo já proíbe, e
+ * assim `DISPONIVEL_NAO_CLASSIFICADO` e `INDETERMINADO` entrariam.
+ *
+ * ⚠ Débito e crédito passam pelas travas que já existem: fora do plano · sintética. Uma conta
+ * SINTÉTICA no lançamento é recusada pelo PVA da ECD meses depois (registro I250, `IND_CTA = "A"`),
+ * e é por isso que a recusa acontece aqui e não lá.
+ *
+ * ⚠⚠ **ELA NÃO LANÇA NADA.** Criar a regra não gera `AccountingEntry`; ela só passa a existir para
+ * o motor consultar. O que lança tem outra trava (a flag), e ela nasce DESLIGADA.
+ */
+export const RECUSA_DA_REGRA = Object.freeze({
+  SEM_ANCORA: "regra_sem_ancora",
+  CONTA_FORA_DO_PLANO: "conta_fora_do_plano",
+  CONTA_SINTETICA: "conta_sintetica",
+  CREDITO_NAO_E_DISPONIBILIDADE: "credito_nao_e_disponibilidade",
+  FAIXA_INVALIDA: "faixa_invalida",
+  INDISPONIVEL: "regras_indisponiveis",
+});
+
+export const FRASE_DA_RECUSA_DA_REGRA = Object.freeze({
+  [RECUSA_DA_REGRA.SEM_ANCORA]:
+    "A regra precisa de um CNPJ de fornecedor ou de um padrão de descrição — sem âncora ela casaria com qualquer despesa.",
+  [RECUSA_DA_REGRA.CONTA_FORA_DO_PLANO]:
+    "Esta conta não existe no plano desta empresa.",
+  [RECUSA_DA_REGRA.CONTA_SINTETICA]:
+    "Esta conta é sintética (de agregação). O lançamento tem de ir numa conta analítica — a ECD recusa o arquivo com conta sintética, meses depois.",
+  [RECUSA_DA_REGRA.CREDITO_NAO_E_DISPONIBILIDADE]:
+    "O crédito precisa ser uma conta de disponibilidade (caixa, banco ou aplicação). O lançamento afirma de onde o dinheiro saiu.",
+  [RECUSA_DA_REGRA.FAIXA_INVALIDA]:
+    "A faixa de valor precisa ter mínimo e máximo maiores que zero, com o mínimo menor ou igual ao máximo.",
+  [RECUSA_DA_REGRA.INDISPONIVEL]:
+    "A tabela de regras ainda não existe neste banco. A migration não foi aplicada.",
+});
+
+export class RegraRecusada extends Error {
+  constructor(codigo, frase) {
+    super(codigo);
+    this.name = "RegraRecusada";
+    this.codigo = codigo;
+    this.frase = frase || FRASE_DA_RECUSA_DA_REGRA[codigo] || "";
+  }
+}
+
+const recusarRegra = (codigo) => { throw new RegraRecusada(codigo, FRASE_DA_RECUSA_DA_REGRA[codigo]); };
+
+// ⚠ `soDigitos` já existe no topo deste arquivo — reusada, não redeclarada.
+const txt = (v) => (typeof v === "string" ? v.trim() : "");
+
+export async function criarRegraManual({
+  portalClientId,
+  cnpjFornecedor = null,
+  padraoDescricao = null,
+  valorMin,
+  valorMax,
+  contaDestino,
+  contaCredito = null,
+  usuarioId,
+  /**
+   * ⚠⚠ SEM DEFAULT — é a regra deste arquivo, e há teste varrendo a fonte contra `new Date()`.
+   *
+   * O relógio vem de QUEM CHAMA. `criadaEm` é a data em que o contador escreveu a regra, e um
+   * `new Date()` aqui a tornaria impossível de fixar num teste — e, pior, faria a data do SERVIDOR
+   * substituir a de quem decidiu, calada, no dia em que os dois discordarem.
+   * ⚠ `undefined` cai no `@default(now())` da coluna, que é o comportamento de `reavaliarAprendizado`.
+   */
+  agora,
+  client = prisma,
+}) {
+  const cnpj = soDigitos(cnpjFornecedor);
+  const padrao = txt(padraoDescricao);
+  // ⚠⚠ SEM ÂNCORA a regra casaria com QUALQUER despesa da empresa — e ela lança sozinha.
+  if (!cnpj && !padrao) recusarRegra(RECUSA_DA_REGRA.SEM_ANCORA);
+
+  const min = Number(valorMin);
+  const max = Number(valorMax);
+  // ⚠ `> 0` por TIPO: `Number(null)` é 0 e 0 é finito. A faixa é o portão do lançamento automático,
+  // e uma faixa que começa em zero casa com toda nota.
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0 || min > max) {
+    recusarRegra(RECUSA_DA_REGRA.FAIXA_INVALIDA);
+  }
+
+  const plano = await planoDaEmpresa(portalClientId, client).catch((e) => {
+    if (e?.code === "P2021") recusarRegra(RECUSA_DA_REGRA.INDISPONIVEL);
+    throw e;
+  });
+  const porCompleto = new Map(
+    plano.filter((c) => txt(c.codigoCompleto)).map((c) => [txt(c.codigoCompleto), c]),
+  );
+
+  const conferirConta = (codigo, ehCredito) => {
+    const c = porCompleto.get(txt(codigo));
+    if (!c) recusarRegra(RECUSA_DA_REGRA.CONTA_FORA_DO_PLANO);
+    // ⚠ TRI-ESTADO: `analitica === false` é sintética; `null` (plano não reimportado) NÃO é.
+    if (c.analitica === false) recusarRegra(RECUSA_DA_REGRA.CONTA_SINTETICA);
+    // ⚠⚠ Só o CRÉDITO precisa ser disponibilidade — o débito é a despesa, e ela nunca é caixa.
+    if (ehCredito && !entraNoFluxoDeCaixa(c)) recusarRegra(RECUSA_DA_REGRA.CREDITO_NAO_E_DISPONIBILIDADE);
+    return c;
+  };
+
+  conferirConta(contaDestino, false);
+  const credito = txt(contaCredito);
+  // ⚠ `null` continua valendo: é "esta regra não escolheu crédito", e o caminho de hoje (o caixa
+  // cravado) segue. A ausência não é recusada — o que é recusado é a escolha ERRADA.
+  if (credito) conferirConta(credito, true);
+
+  try {
+    return await client.regraContabilizacao.create({
+      data: {
+        portalClientId: String(portalClientId),
+        cnpjFornecedor: cnpj || null,
+        padraoDescricao: padrao || null,
+        valorMin: min,
+        valorMax: max,
+        contaDestino: txt(contaDestino),
+        contaCredito: credito || null,
+        tipo: "SAIDA",
+        // ⚠⚠ MANUAL — e a distinção importa: a APRENDIDA se suspende sozinha quando a unanimidade
+        // que a gerou se quebra; a MANUAL nunca, porque foi decisão explícita de quem a escreveu.
+        origemRegra: "MANUAL",
+        ativa: true,
+        criadaPor: txt(usuarioId) || "manual",
+        // ⚠ `confirmacoesBase` fica NULO: não há aprendizado atrás dela. Preenchê-la com a nota que
+        // o contador estava olhando faria uma decisão dele parecer uma observação do sistema.
+        confirmacoesBase: null,
+        criadaEm: agora,
+      },
+    });
+  } catch (e) {
+    if (e?.code === "P2021") recusarRegra(RECUSA_DA_REGRA.INDISPONIVEL);
+    throw e;
+  }
+}

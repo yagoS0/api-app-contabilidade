@@ -4012,6 +4012,16 @@ model RegraContabilizacao {
   valorMax     Decimal @db.Decimal(18, 2)
   /// ⚠⚠ SEMPRE `codigoCompleto`, nunca o reduzido.
   contaDestino String
+  /// ⚠⚠ O CRÉDITO, quando o contador o escolhe (29/08/2026) — decisão do dono:
+  /// *"o contador deve poder colocar o código de débito e crédito nessa despesa"*.
+  ///
+  /// ⚠ `null` = o caixa cravado de hoje, que é o comportamento das 155 despesas medidas. **Sem
+  /// default e sem backfill**: nenhuma regra existente escolheu crédito nenhum, e preencher todas
+  /// com o caixa afirmaria uma escolha que ninguém fez.
+  /// ⚠⚠ Ele é RECUSADO se não for conta de DISPONIBILIDADE (resposta do dono: *"continua sendo
+  /// caixa/banco"*) — quem decide é `accounting/lib/disponibilidades.js`, pelo PREFIXO do
+  /// `codigoCompleto`, nunca pelo nome.
+  contaCredito String?
   tipo         String
 
   /// MANUAL | APRENDIDA

@@ -1,0 +1,17 @@
+-- ⚠⚠ O CRÉDITO DA REGRA DE CONTABILIZAÇÃO — decisão do dono, 29/08/2026.
+--
+-- > *"o contador deve poder colocar o código de débito e crédito nessa despesa, e todo mês que essa
+-- > nota aparecer ela já é lançada em despesa."*
+--
+-- ⚠⚠ **ADITIVA, NULLABLE, SEM DEFAULT E SEM BACKFILL.** `null` significa *"esta regra não escolheu
+-- crédito"*, e o caminho de hoje (o caixa cravado) continua valendo para ela. Preencher as regras
+-- existentes com o código do caixa afirmaria uma escolha que ninguém fez — e a diferença entre
+-- "escolheu o caixa" e "não escolheu nada" é exatamente o que a coluna existe para guardar.
+--
+-- ⚠ **SEM CHECK de disponibilidade no banco**, de propósito: a resposta ("é caixa/banco?") vem do
+-- PREFIXO do `codigoCompleto` de OUTRA tabela (`ChartOfAccount`), e um CHECK precisaria de subquery
+-- — que o Postgres proíbe. Quem recusa é `application/declarados/RegraService.js`, com teste. Um
+-- CHECK que falha vira P3009 e servidor que não sobe.
+--
+-- ⚠⚠ ESCRITA E **NÃO APLICADA** — como todas as desta casa. Aplicar em produção é ato do dono.
+ALTER TABLE "regras_contabilizacao" ADD COLUMN "contaCredito" TEXT;

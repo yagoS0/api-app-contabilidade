@@ -34,7 +34,13 @@ import {
   sugestoesDePagamento,
   varrerInvariantes,
 } from "../../application/declarados/DeclaradoService.js";
-import { alternarRegra, listarRegras } from "../../application/declarados/RegraService.js";
+import {
+  RegraRecusada,
+  RECUSA_DA_REGRA,
+  alternarRegra,
+  criarRegraManual,
+  listarRegras,
+} from "../../application/declarados/RegraService.js";
 import { varrerNotasDaEmpresa } from "../../application/declarados/VarreduraDeNotasService.js";
 import { listarMapeamentos, salvarMapeamento } from "../../application/declarados/MapeamentoExtratoService.js";
 import { ESTADO, ORIGEM_PAGAMENTO, TRANSICAO } from "../../application/declarados/lib/estadosDeclarado.js";
@@ -158,6 +164,15 @@ function responderRecusa(res, erro, log) {
    * ⚠ Os status são os mesmos critérios da outra rota: 503 quando a TABELA não existe (a migration
    * é ato do dono), 404 para o que não existe NESTA empresa, 400 para o que a pessoa pode corrigir.
    */
+  /**
+   * ⚠⚠ A RECUSA DA REGRA MANUAL — sem este ramo, `credito_nao_e_disponibilidade` viraria um 500
+   * "não foi possível concluir", e o contador não saberia QUE conta trocar.
+   * ⚠ 503 só quando a TABELA não existe; o resto é 400, porque a pessoa pode corrigir.
+   */
+  if (erro instanceof RegraRecusada) {
+    const status = erro.codigo === RECUSA_DA_REGRA.INDISPONIVEL ? 503 : 400;
+    return res.status(status).json({ ok: false, error: erro.codigo, message: erro.frase });
+  }
   if (erro instanceof SaidaRecusada) {
     const status = erro.codigo === RECUSA_DA_SAIDA.INDISPONIVEL ? 503
       : erro.codigo === RECUSA_DA_SAIDA.NAO_ENCONTRADA ? 404
@@ -495,6 +510,42 @@ export function createConferenciaRouter({ log } = {}) {
   // ⚠⚠ NENHUMA DELAS CONTABILIZA. A regra SUGERE a conta; quem leva ao razão continua sendo o
   // contador, confirmando na fila. A automação por regra (lançar sem clique) NÃO existe — é
   // decisão do dono, e está nomeada no `CLAUDE.md` do módulo.
+  /**
+   * ⚠⚠ A REGRA QUE O CONTADOR ESCREVE À MÃO — a porta que faltava (29/08/2026).
+   *
+   * > Dono: *"a Lente tem todo mês um pagamento a Alessandro Nigro, CNPJ, que vai se tornar uma
+   * > recorrência no fluxo deles. O contador deve poder colocar o código de débito e crédito nessa
+   * > despesa."*
+   *
+   * ⚠⚠ **A TABELA JÁ EXISTIA E SÓ NASCIA `APRENDIDA`** — `RegraService.reavaliarAprendizado` era o
+   * único escritor, e este arquivo tinha `GET` e o `PATCH` que liga/desliga, mas nenhum `POST`.
+   *
+   * ⚠ `minRole: "ACCOUNTANT"` — é o mesmo piso das transições do declarado. Escrever uma regra é
+   * decidir como uma despesa será classificada daqui em diante.
+   * ⚠⚠ **CRIAR A REGRA NÃO LANÇA NADA.** Ela passa a existir para o motor consultar; o que lança
+   * tem outra trava, e ela nasce DESLIGADA.
+   */
+  router.post("/conferencia/regras", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const regra = await criarRegraManual({
+        portalClientId: String(req.params.companyId),
+        cnpjFornecedor: req.body?.cnpjFornecedor,
+        padraoDescricao: req.body?.padraoDescricao,
+        valorMin: req.body?.valorMin,
+        valorMax: req.body?.valorMax,
+        contaDestino: req.body?.contaDestino,
+        contaCredito: req.body?.contaCredito,
+        usuarioId: req.auth?.user?.id || null,
+        // ⚠ O relógio vem DAQUI, nunca de dentro do serviço — a regra deste módulo, com varredura
+        // de fonte no teste dele.
+        agora: new Date(),
+      });
+      return res.status(201).json({ ok: true, regra: { id: regra.id, origemRegra: regra.origemRegra } });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
   router.get("/conferencia/regras", requireFirmCompanyAccess(), async (req, res) => {
     try {
       const regras = await listarRegras({ portalClientId: String(req.params.companyId) });
