@@ -26,9 +26,16 @@ import { fluxoDeCaixaDoMock } from "../../../api/mock/fluxoDeCaixaDoMock";
 
 const COMPETENCIA = "2026-08";
 
+/**
+ * ⚠⚠ O DIA DE HOJE É FIXADO (30/08/2026), e não é preciosismo: a janela de 10 dias se ancora nele.
+ * Lendo o relógio de verdade, esta suíte passaria em agosto e cairia em setembro — e o teste que
+ * afirma "o dia 1 aparece" depende de qual dia é hoje.
+ */
+const HOJE = 8;
+
 async function abrir(payload, props = {}) {
   jest.spyOn(api, "getFluxoCaixa").mockResolvedValue(payload);
-  render(<BlocoDeDemonstracao companyId="pc-001" competencia={COMPETENCIA} {...props} />);
+  render(<BlocoDeDemonstracao companyId="pc-001" competencia={COMPETENCIA} hoje={HOJE} {...props} />);
   await act(async () => {});
 }
 
@@ -104,15 +111,43 @@ describe("⚠⚠ a visão de dias é o estado INICIAL", () => {
     }
   });
 
-  it("⚠⚠ o MÊS INTEIRO é desenhado — a paginação de 10 dias saiu", async () => {
-    // O v3 mostrava 10 por vez e anexava +10 na rolagem. O dono descreveu "30 dias à esquerda e 30
-    // à direita": mostrar 10 e exigir rolagem para ver o dia 12 contraria o pedido. Quem cede é a
-    // rolagem interna do bloco, não a quantidade de dias.
+  it("⚠⚠ a JANELA é de 10 dias em torno de HOJE — 5 para trás e 4 para frente", async () => {
+    /**
+     * ⚠⚠ ISTO REVISA O v4 (29/08), que desenhava o mês inteiro. Dono, 30/08/2026: *"a tabela do
+     * fluxo deve mostrar apenas os 10 dias, para que sempre seja visto o dia em que estamos: 5 para
+     * trás e 4 para frente."* Numa tabela de 31 linhas o dia de hoje só aparecia rolando.
+     */
     await abrir(cheio());
-    const dias = [...blocoDe("2026-08").querySelectorAll("tbody tr th")]
-      .filter((h) => /^dia /.test(h.textContent));
-    expect(dias).toHaveLength(31);
-    expect(screen.queryByText(/Role para ver mais dias/)).toBeNull();
+    const linhas = [...blocoDe(COMPETENCIA).querySelectorAll("tbody tr")]
+      .filter((tr) => /^dia /.test(tr.querySelector("th").textContent));
+    expect(linhas).toHaveLength(10);
+    const dias = linhas.map((tr) => Number(tr.querySelector("th").textContent.replace(/\D/g, "")));
+    expect(dias).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  });
+
+  it("⚠⚠ o dia de HOJE é marcado no DOM — e a cor não é a única marca", async () => {
+    await abrir(cheio());
+    const hoje = blocoDe(COMPETENCIA).querySelector('tbody tr[data-hoje="sim"]');
+    expect(hoje).not.toBeNull();
+    expect(hoje.querySelector("th").textContent).toMatch(/dia 08/);
+    // ⚠ Uma linha por bloco, no máximo — e só no mês corrente.
+    expect(blocoDe(COMPETENCIA).querySelectorAll('tr[data-hoje="sim"]')).toHaveLength(1);
+  });
+
+  it("⚠⚠ o mês que NÃO é o corrente não tem 'hoje' marcado", async () => {
+    // Pintar de ciano uma data que não significa nada naquele mês faria a marca perder o sentido.
+    await abrir(cheio());
+    const seguinte = blocos()[1];
+    expect(seguinte.querySelectorAll('tr[data-hoje="sim"]')).toHaveLength(0);
+  });
+
+  it("⚠ nas BORDAS do mês a janela ANDA, não encolhe — continuam 10 dias", async () => {
+    // Encolher daria três linhas no começo do mês, que é quando mais falta contexto.
+    await abrir(cheio(), { hoje: 1 });
+    const linhas = [...blocoDe(COMPETENCIA).querySelectorAll("tbody tr")]
+      .filter((tr) => /^dia /.test(tr.querySelector("th").textContent));
+    expect(linhas).toHaveLength(10);
+    expect(linhas[0].querySelector("th").textContent).toMatch(/dia 01/);
   });
 
   it("⚠⚠ 'no mês' vem PRIMEIRO em cada bloco — é a maioria do dinheiro", async () => {
@@ -123,7 +158,11 @@ describe("⚠⚠ a visão de dias é o estado INICIAL", () => {
   });
 
   it("⚠⚠ a entrada da nota cai no DIA 1 — decisão do dono, e é o que o servidor manda", async () => {
-    await abrir(cheio());
+    // ⚠ `hoje: 1` para o dia 1 estar DENTRO da janela de 10 dias (30/08/2026). O que este teste
+    // afirma continua sendo sobre a ENTRADA, não sobre a janela — e com o `hoje` do helper (dia 8)
+    // ele passaria por acaso, porque o dia 1 ainda cabe. Fixá-lo aqui torna a afirmação
+    // independente da janela.
+    await abrir(cheio(), { hoje: 1 });
     const dia1 = linhaDe("^dia 01", blocoDe("2026-08"));
     expect(dia1).not.toBeNull();
     expect(celulas(dia1)[0]).not.toBe("–sem lançamento");

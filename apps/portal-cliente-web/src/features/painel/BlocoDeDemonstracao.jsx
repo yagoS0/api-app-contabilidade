@@ -44,7 +44,7 @@ import { mesCurto, rotuloDoMes, somarCompetencia } from "./lib/leituraDoFluxo";
 // ⚠ A agregação das SEIS COLUNAS mora à parte da leitura: aquele arquivo lê o VOCABULÁRIO do
 // servidor e este AGREGA para a tabela desta tela. Ver o cabeçalho de `tabelaDoFluxo.js`.
 import {
-  COLUNAS, COLUNAS_EM_PERCENTUAL, STATUS, emPercentual, gradeTransposta, linhasDosDias,
+  COLUNAS, COLUNAS_EM_PERCENTUAL, STATUS, emPercentual, gradeTransposta, linhasDosDias, janelaDeDias,
   navegacaoDoPar, parDeMeses,
 } from "./lib/tabelaDoFluxo";
 // ⚠ `diasDoMes` é aritmética de STRING, nunca `toISOString()`: às 22h de Brasília o ISO devolveria
@@ -304,7 +304,7 @@ function BotaoDoPeriodo({ aoAbrir, children }) {
   );
 }
 
-function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir }) {
+function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir, diaDeHoje = null }) {
   const colunas = COLUNAS.filter((c) => comFolha || c.chave !== "folha");
 
   // ⚠⚠ BLOCO SEM MÊS NÃO É BLOCO VAZIO. Andando até a borda da janela, o mês da direita pode não ter
@@ -323,6 +323,12 @@ function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir }) {
   }
 
   const dodia = linhasDosDias(bloco.mes, diasDoMes(bloco.competencia).length);
+  /**
+   * ⚠⚠ A JANELA DE 10 DIAS — 5 para trás e 4 para frente de HOJE (dono, 30/08/2026).
+   * ⚠ O corte é DEPOIS do cálculo: `linhasDosDias` já acumulou o Resultado sobre o mês inteiro, e
+   * cortar antes faria a primeira linha visível ignorar tudo que veio antes no mês.
+   */
+  const dias = janelaDeDias(dodia.dias, { diaDeHoje });
 
   return (
     <div className="fluxo-v4-bloco" data-mes={bloco.competencia}>
@@ -355,8 +361,10 @@ function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir }) {
                 />
               </tr>
             ) : null}
-            {dodia.dias.map((d) => (
-              <tr key={d.dia}>
+            {dias.map((d) => (
+              /* ⚠ `data-hoje` é auditável no DOM, como `data-status` — e é ele que o CSS pinta de
+                 ciano. Cor cravada no JSX não sobreviveria à troca de tema. */
+              <tr key={d.dia} data-hoje={d.dia === diaDeHoje ? "sim" : undefined}>
                 <th scope="row">
                   <BotaoDoPeriodo aoAbrir={() => aoAbrir?.(d.dia, null)}>
                     dia {String(d.dia).padStart(2, "0")}
@@ -542,7 +550,7 @@ function Dre({ dados }) {
   );
 }
 
-export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
+export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, hoje: hojeInjetado = null }) {
   const [visao, setVisao] = useState("fluxo");
   /** ⚠ `rs` × `pct` — v3 §3.6. Ele combina livremente com Fluxo/DRE e sobrevive à troca de modo. */
   const [unidade, setUnidade] = useState("rs");
@@ -574,6 +582,25 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
    * célula daquela coluna.
    */
   const [gaveta, setGaveta] = useState(null);
+
+  /**
+   * ⚠ O RELÓGIO É LIDO AQUI, na borda, e desce INJETADO — a regra pura (`janelaDeDias`) continua
+   * sem ler relógio nenhum, que é a disciplina deste projeto inteiro.
+   * ⚠ Acessadores UTC, como as competências são escritas: às 21h de Brasília o `getDate()` local e o
+   * UTC divergem, e a linha de ciano cairia no dia errado.
+   */
+  /**
+   * ⚠⚠ O DIA DE HOJE É INJETÁVEL, e a razão é teste — não gosto.
+   *
+   * A janela de 10 dias se ancora em hoje; lendo o relógio direto, o mesmo teste passaria em agosto
+   * e cairia em setembro. É a mesma disciplina que `montarFluxoDeCaixa` já aplica no servidor
+   * (*"o `hoje` é INJETADO"*), agora deste lado.
+   * ⚠ O padrão continua sendo o relógio de verdade, lido AQUI na borda — a regra pura
+   * (`janelaDeDias`) segue sem ler relógio nenhum.
+   * ⚠ Acessador UTC, como as competências são escritas: às 21h de Brasília o dia local e o UTC
+   * divergem, e a linha de ciano cairia no dia errado.
+   */
+  const diaDeHoje = Number.isInteger(hojeInjetado) ? hojeInjetado : new Date().getUTCDate();
 
   const fluxoQuery = useCarregamento(
     () => api.getFluxoCaixa(companyId, { competencia, janelaInicio }),
@@ -776,6 +803,11 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
                   /* ⚠ O bloco diz QUAL mês é o dele — a gaveta precisa das linhas daquele mês, e
                      os dois blocos da tela são meses diferentes. */
                   aoAbrir={(dia, balde) => setGaveta({ competencia: bloco.competencia, dia, balde })}
+                  /* ⚠⚠ SÓ O MÊS CORRENTE TEM "HOJE". Passar o dia para os outros pintaria de ciano
+                     uma data que não significa nada naquele mês — e o ciano, nesta tela, quer dizer
+                     "é aqui que você está". ⚠ Quem é o mês corrente é o SERVIDOR (`cicloAtual`),
+                     nunca uma conta feita aqui. */
+                  diaDeHoje={bloco.competencia === dados.cicloAtual ? diaDeHoje : null}
                   cabecalho={(
                     <h3
                       className="fluxo-v4-mes"
@@ -800,24 +832,20 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
       ) : null}
 
       {/*
-        ⚠⚠ A LISTA FICA ABAIXO DOS DOIS BLOCOS, e NÃO dentro de cada um. Uma saída recorrente
-        aparece em oito meses da janela: repetida por bloco, ela daria oito botões de remover para
-        UMA coisa só, e a pessoa não saberia qual clicar.
-        ⚠ Ela só existe na visão de FLUXO: no DRE não há o que acrescentar, e um formulário ali
-        sugeriria que o cliente pode mexer numa peça contábil.
-      */}
-      {!atual.carregando && !atual.erro && dados && visao === "fluxo" ? (
-        <SuasSaidas companyId={companyId} meses={meses} aoMudar={atual.recarregar} />
-      ) : null}
+        ⚠⚠ O PAINEL "SUAS SAÍDAS" SAIU DAQUI EM 30/08/2026 — dono: *"essa aba de saídas ao final da
+        tabela tem que sumir daí, isso não existe."*
 
-      {/*
-        ⚠⚠ A GAVETA FICA FORA DOS BLOCOS — ela é uma sobreposição da TELA, não um pedaço da tabela.
-        Renderizada dentro de `TabelaDeDias`, ela nasceria dentro de um `.table-wrap` (que tem
-        `overflow-x`) e seria RECORTADA por ele: um painel ancorado à direita da viewport não pode
-        viver dentro de um contêiner que rola na horizontal.
-        ⚠ As linhas vêm do mês do bloco clicado, do payload que a tabela já tem — a gaveta não faz
-        consulta nenhuma.
+        Ele existia para o cliente ACRESCENTAR e REMOVER as próprias saídas, e a primeira metade
+        mudou de lugar: hoje se acrescenta clicando na célula do dia, na GAVETA — que é onde ele já
+        está olhando quando pensa na saída.
+
+        ⚠⚠ **A PERDA FICA NOMEADA, e é real: com o painel some o botão de REMOVER** a saída
+        pendente. A gaveta lista o que ele escreveu, mas ainda não oferece apagar. Enquanto isso, a
+        recusa continua sendo do contador, na Conferência.
+        ⚠ `SuasSaidas.jsx` **não foi apagado** — apagar componente é decisão à parte nesta casa, e o
+        formulário dele é o molde do da gaveta.
       */}
+
       <GavetaDoDia
         aberta={Boolean(gaveta)}
         competencia={gaveta?.competencia}

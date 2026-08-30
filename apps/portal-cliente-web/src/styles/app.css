@@ -825,8 +825,24 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
    ───────────────────────────────────────────────────────────────────────────────────────────── */
 .table--fluxo-v3 {
   table-layout: fixed;
-  width: auto;
-  min-width: 0;
+  /* ⚠⚠ `width: 100%`, E NÃO `auto` (30/08/2026) — dono: *"há uma lateral em branco ao lado de
+     Resultado, preciso que retire isso"*.
+
+     Medido no navegador em 1900px: com `width: auto` e as seis colunas em `px` fixos, a tabela
+     ficava com **642px dentro de um bloco de 869** — 227px de branco morto exatamente à direita da
+     coluna Resultado. Quanto mais larga a tela, maior a faixa. (Em 1280 os dois quase coincidiam,
+     e foi por isso que a primeira medição não pegou.)
+
+     ⚠ As larguras viraram PROPORÇÃO (%) por causa do `table-layout: fixed`: em `px` elas seriam
+     respeitadas ao pé da letra e a sobra iria toda para a última coluna, deixando Resultado com o
+     dobro das outras. Em %, as seis crescem juntas e a grade continua alinhada entre os dois blocos
+     do par — que é o que faz os dois meses se lerem como uma tabela só.
+     ⚠ A soma é 100 (14 + 17×4 + 18): mudar uma coluna obriga a refazer a conta. */
+  width: 100%;
+  /* ⚠ O piso continua sendo a largura que o conteúdo exige — abaixo dele o `.table-wrap` rola na
+     horizontal, em vez de espremer os números até quebrarem. É a mesma regra que a `.topbar` e a
+     barra lateral já carregam para os 375px. */
+  min-width: 642px;
   font-variant-numeric: tabular-nums;
   border-collapse: collapse;
 }
@@ -850,9 +866,10 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 }
 .table--fluxo-v3 th:first-child,
 .table--fluxo-v3 td:first-child { text-align: left; font-weight: 500; }
-.table--fluxo-v3 .col-periodo { width: 88px; }
-.table--fluxo-v3 [data-coluna] { width: 108px; }
-.table--fluxo-v3 [data-coluna="resultado"] { width: 122px; }
+/* ⚠ Proporções, não pixels — ver o bloco de `.table--fluxo-v3` acima. A soma é 100. */
+.table--fluxo-v3 .col-periodo { width: 14%; }
+.table--fluxo-v3 [data-coluna] { width: 17%; }
+.table--fluxo-v3 [data-coluna="resultado"] { width: 18%; }
 
 /* ⚠ A linha do mês é clicável, mas NÃO recebe `role="button"` — isso a tiraria da semântica de
    tabela. Quem carrega o nome acessível e o teclado é o `<button>` dentro do `<th scope="row">`. */
@@ -1613,3 +1630,14 @@ tr[data-atrasada="sim"] .guias-atraso-quando { color: var(--danger); }
 /* ⚠ O rótulo do dia é `<th>` e alinhado à esquerda; a célula herda o `text-align: right` do `.num`.
    `text-align: inherit` acima resolve os dois sem uma regra por caso. */
 .fluxo-v4-dia { text-align: left; }
+
+/* ⚠⚠ O DIA DE HOJE, EM CIANO (30/08/2026) — dono: *"não mostra de ciano o dia em que estamos"*.
+   O ciano é a marca de "agora" desta tela inteira (o rótulo do mês corrente já o usa), e a janela
+   de 10 dias existe justamente para esta linha estar sempre à vista.
+   ⚠ A cor NÃO é a única marca: a linha também fica em negrito. Em preto e branco, ou para quem não
+   distingue a cor, o destaque continua existindo. */
+.table--fluxo-v3 tbody tr[data-hoje="sim"] > * {
+  background: var(--ciano-surface);
+  font-weight: 600;
+}
+.table--fluxo-v3 tbody tr[data-hoje="sim"] > :first-child { color: var(--ciano); }
