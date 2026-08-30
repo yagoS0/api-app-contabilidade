@@ -262,33 +262,6 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
     return out;
   }, [entries]);
 
-  /**
-   * ⚠⚠ A CONTAGEM DA CONFERÊNCIA — o selo do botão que substituiu a aba (29/08/2026).
-   *
-   * > Dono: *"como um botão com aviso quando há conferência a ser feita, como notas recebidas"*.
-   *
-   * ⚠⚠ **A CONSULTA É A ENXUTA (`/conferencia/pendencias`), nunca a fila.** A fila pagina,
-   * serializa e traz o casamento de cada linha; ela seria carregada a cada abertura da aba de
-   * Lançamentos só para desenhar um número.
-   *
-   * ⚠ **NÃO DEPENDE DA COMPETÊNCIA**, e isso é decisão: a fila de conferência é o que espera
-   * alguém, **em qualquer mês**. Contar só o mês na tela esconderia a nota de julho que ninguém
-   * conferiu enquanto o contador olha agosto — e o botão existe justamente para ela não sumir.
-   *
-   * ⚠ Falha ⇒ o selo NÃO aparece, e o botão continua lá. Um selo âmbar por erro de rede treina o
-   * olho a ignorar a cor que significa "falta fazer"; e esconder o botão esconderia que a tela
-   * existe.
-   */
-  const [pendencias, setPendencias] = useState(null);
-  useEffect(() => {
-    let alive = true;
-    if (!companyId || typeof fechamentoApi.getConferenciaPendencias !== "function") return undefined;
-    fechamentoApi.getConferenciaPendencias(companyId)
-      .then((r) => { if (alive) setPendencias(r || null); })
-      .catch(() => { if (alive) setPendencias(null); });
-    return () => { alive = false; };
-  }, [companyId]);
-
   useEffect(() => {
     let alive = true;
     if (!companyId || !competencia) return undefined;
@@ -821,6 +794,34 @@ export function AccountingEntriesTab({
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [adding, setAdding] = useState(false); // Q18: linha de novo lançamento inline
   const [monthClosed, setMonthClosed] = useState(false); // Q18: mês fechado bloqueia adicionar
+
+  /**
+   * ⚠⚠ A CONTAGEM DA CONFERÊNCIA — o selo do botão que substituiu a aba (29/08/2026).
+   *
+   * > Dono: *"como um botão com aviso quando há conferência a ser feita, como notas recebidas"*.
+   *
+   * ⚠⚠ **A CONSULTA É A ENXUTA (`/conferencia/pendencias`), nunca a fila.** A fila pagina,
+   * serializa e traz o casamento de cada linha; ela seria carregada a cada abertura da aba de
+   * Lançamentos só para desenhar um número.
+   *
+   * ⚠ **NÃO DEPENDE DA COMPETÊNCIA**, e isso é decisão: a fila de conferência é o que espera
+   * alguém, **em qualquer mês**. Contar só o mês na tela esconderia a nota de julho que ninguém
+   * conferiu enquanto o contador olha agosto — e o botão existe justamente para ela não sumir.
+   *
+   * ⚠ Falha ⇒ o selo NÃO aparece, e o botão continua lá. Um selo âmbar por erro de rede treina o
+   * olho a ignorar a cor que significa "falta fazer"; e esconder o botão esconderia que a tela
+   * existe.
+   */
+  const [pendencias, setPendencias] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    if (!companyId || typeof fechamentoApi.getConferenciaPendencias !== "function") return undefined;
+    fechamentoApi.getConferenciaPendencias(companyId)
+      .then((r) => { if (alive) setPendencias(r || null); })
+      .catch(() => { if (alive) setPendencias(null); });
+    return () => { alive = false; };
+  }, [companyId]);
+
 
   const visibleIds = useMemo(() => entries.map((e) => e.id).filter(Boolean), [entries]);
   const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
