@@ -4022,6 +4022,21 @@ model RegraContabilizacao {
   /// caixa/banco"*) — quem decide é `accounting/lib/disponibilidades.js`, pelo PREFIXO do
   /// `codigoCompleto`, nunca pelo nome.
   contaCredito String?
+  /// ⚠⚠ ESTA REGRA LANÇA SOZINHA? (29/08/2026) — a segunda das DUAS chaves.
+  ///
+  /// Decisão do dono: *"todo mês que essa nota aparecer ela já é lançada em despesa"*. ⚠ Ela nasce
+  /// **FALSE**, e é FORNECEDOR A FORNECEDOR — nunca a carteira inteira de uma vez. A outra chave é
+  /// a flag do ambiente (`INTEGRACAO_LANCAMENTO_POR_REGRA`), e as DUAS precisam estar ligadas.
+  lancaSozinha    Boolean @default(false)
+  /// ⚠⚠ O DIA DO MÊS em que o lançamento automático nasce — *"lança numa data fixa que eu
+  /// configuro"* (decisão do dono; eu recomendei contra).
+  ///
+  /// ⚠⚠ A CONSEQUÊNCIA, escrita para ninguém a redescobrir: `D despesa / C caixa` no dia N **afirma
+  /// que o dinheiro saiu do caixa no dia N**, e ninguém provou isso — a nota diz o que é e de quem,
+  /// nunca quando. Por isso a origem do pagamento é `PRESUMIDO_POR_REGRA` (declaração, nunca prova)
+  /// e o extrato CORRIGE a data quando o débito real chegar.
+  /// ⚠ `null` com `lancaSozinha: true` é recusado: a data não se arbitra.
+  diaDoLancamento Int?
   tipo         String
 
   /// MANUAL | APRENDIDA

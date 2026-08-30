@@ -505,6 +505,39 @@ if (INTEGRACAO_NFSE_LOTE) {
   );
 }
 
+// === O LANÇAMENTO CONTÁBIL POR REGRA — nasce DESLIGADO ===
+//
+// ⚠⚠ ISTO CRIA `AccountingEntry` SEM NINGUÉM CLICAR. Decisão do dono, 29/08/2026: *"o contador deve
+// poder colocar o código de débito e crédito nessa despesa, e todo mês que essa nota aparecer ela já
+// é lançada em despesa."*
+//
+// ⚠⚠ **O QUE O PRÓPRIO `motorDeSugestao.js` ESCREVEU SOBRE ISTO, ANTES DE EXISTIR:** *"o plano
+// previa um 'nível 1' em que a regra ativa lança direto, sem clique. Isso não está construído, e a
+// razão é o peso do ato: um lançamento contábil nascido sozinho, numa conta errada, erra EM SÉRIE e
+// em silêncio — e o dono é contador. (…) O que falta é a DECISÃO DO DONO de ligar, e o extrato
+// mensal 'lançados por regra' para ele poder desfazer em lote."*
+//
+// A decisão veio. O extrato foi construído junto, porque o próprio módulo o nomeia como
+// PRÉ-REQUISITO — não é escopo a mais.
+//
+// ⚠⚠ **SÃO DUAS CHAVES, E AS DUAS PRECISAM ESTAR LIGADAS:** esta flag **e**
+// `RegraContabilizacao.lancaSozinha` daquele fornecedor. Fornecedor a fornecedor, nunca a carteira
+// inteira — o primeiro mês roda com um só e o dono confere no extrato.
+//
+// ⚠ Quem RECUSA é o SERVIDOR, não a tela. Tela escondida é decisão de front; um `curl` passaria por
+// cima dela. Mesmo molde de `INTEGRACAO_NFSE_LOTE` e `INTEGRACAO_WHATSAPP`.
+//
+// ⚠ Ligar é ato do DONO. Não é decisão de agente, e não é consequência de "os testes passaram".
+export const INTEGRACAO_LANCAMENTO_POR_REGRA = process.env.INTEGRACAO_LANCAMENTO_POR_REGRA === "1";
+
+if (INTEGRACAO_LANCAMENTO_POR_REGRA) {
+  log.warn(
+    "INTEGRACAO_LANCAMENTO_POR_REGRA=1: o lançamento contábil AUTOMÁTICO está LIGADO. Toda nota que "
+      + "casar com uma regra `lancaSozinha` vira `AccountingEntry` sem ninguém clicar, com a data "
+      + "PRESUMIDA (origem `PRESUMIDO_POR_REGRA`). Confira o extrato de lançados por regra."
+  );
+}
+
 // As cinco credenciais do manual (MANUAL_CADASTRO_WHATSAPP_API.md, Etapa 4).
 // ⚠ TOKEN e APP_SECRET são SEGREDO: nenhum ponto do sistema pode escrevê-los em log, em mensagem
 // de erro ou em teste. O que se registra é a AUSÊNCIA (o nome da variável), nunca o valor.
