@@ -1,10 +1,13 @@
-# ⚠ Root Directory deste servico = RAIZ do repositorio (nao a pasta do app), igual aos outros dois.
-# ⚠ E o `dockerfilePath` e relativo a RAIZ -- com a pasta do app ele nao seria encontrado.
+# ⚠⚠ Root Directory deste servico = `apps/landing`, e NAO a raiz do repo -- o oposto dos outros
+# dois fronts. O motivo esta no cabecalho do Dockerfile: com a raiz, o Railway leria o
+# `railway.toml` DA RAIZ, construiria a API e morreria no healthcheck `/healthz`.
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "apps/landing/Dockerfile"
-# ⚠ So `apps/landing/**`: esta pagina nao depende de `packages/` nem do `package.json` da raiz,
-# entao um rebuild disparado por eles seria deploy sem mudanca nenhuma.
-watchPatterns = [
-  "apps/landing/**"
-]
+# ⚠ Relativo ao Root Directory (= esta pasta), nao ao repositorio.
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# ⚠ SEM healthcheckPath. O Caddy serve a pagina em `/` e nao tem rota de saude; apontar uma
+# inexistente reprovaria todo deploy. (A raiz define `/healthz` porque la e a API.)
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

@@ -85,10 +85,64 @@ Qualquer servidor estático serve a pasta. ⚠ Abrir o `index.html` com **duplo 
 também funciona, mas o `preload` da fonte e os caminhos relativos se comportam diferente do que o
 Caddy fará — para conferir de verdade, sirva por HTTP.
 
-## Deploy
+Provar a imagem antes de subir:
 
-**Nenhum serviço foi criado no Railway.** Os três arquivos de deploy estão prontos e seguem o molde
-do `apps/portal-cliente-web`; criar o serviço, apontar o domínio e ligar o build é ato do dono.
+```bash
+docker build -t altan-landing . && docker run --rm -p 8099:8080 altan-landing
+```
 
-⚠ Ao criar o serviço: **`Root Directory` = raiz do repositório**, não `apps/landing`. É a mesma
-configuração dos outros dois — o `dockerfilePath` do `railway.toml` é relativo à raiz.
+---
+
+## Deploy — está NO AR
+
+| | |
+|---|---|
+| serviço Railway | **`landing`** (projeto `perfect-upliftment`, env `production`) |
+| URL | **https://landing-production-05f3.up.railway.app** |
+| Root Directory | ⚠⚠ **`apps/landing`** — NÃO a raiz do repositório |
+| como se implanta | **`railway up --service landing`** (manual) |
+
+### ⚠⚠ ROOT DIRECTORY = `apps/landing`, E ISSO É O CONTRÁRIO DOS OUTROS DOIS SERVIÇOS
+
+Não é preferência, e não é copiável dos vizinhos. **A primeira tentativa de deploy construiu a
+API** — o log de build mostrou `npm ci --include=dev --workspace=@contabilidade/api` e
+`COPY apps/api ./apps/api`.
+
+Duas coisas, juntas, produzem isso:
+
+1. **`railway up` envia a RAIZ DO REPOSITÓRIO, não a pasta em que você está.** Rodar de dentro de
+   `apps/landing` não muda o contexto enviado.
+2. **Existe um `railway.toml` NA RAIZ**, e ele é da API: `dockerfilePath = "./Dockerfile"` e
+   `[deploy] healthcheckPath = "/healthz"`. Com Root Directory na raiz, o serviço da landing lê
+   esse arquivo — constrói a API e, mesmo que não construísse, reprovaria no healthcheck, porque
+   o Caddy não serve `/healthz`.
+
+Com `rootDirectory = "apps/landing"`, o Railway passa a ler o `railway.toml` **desta pasta** e o
+`Dockerfile` daqui, cujos `COPY` são relativos a ela.
+
+⚠ **O `railway add` NÃO tem flag de Root Directory.** Foi preciso a API GraphQL:
+
+```bash
+railway api 'mutation($serviceId: String!, $environmentId: String, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }' --var serviceId=<ID_DO_SERVICO> --var environmentId=<ID_DO_AMBIENTE> --variables '{"input":{"rootDirectory":"apps/landing"}}'
+```
+
+### ⚠ O deploy é MANUAL — `git push` não publica
+
+O serviço **não está conectado ao GitHub** (os outros quatro estão). Publicar uma alteração é
+`railway up --service landing`, com o commit já feito. Conectar ao repositório é decisão sua; se
+conectar, aponte para a branch certa — os commits desta pasta estão na **`dev`**.
+
+### ⚠⚠ O DOMÍNIO `altan.company` JÁ É DO PORTAL DO CONTADOR
+
+Medido nas variáveis dos serviços:
+
+| domínio | serviço | o que é |
+|---|---|---|
+| `altan.company` | `contador-front` | portal do **contador** |
+| `cliente.altan.company` | `gracious-acceptance` | portal do **cliente** |
+
+Ou seja: **o ápice está ocupado.** O arranjo comum é o inverso — ápice para o site de marketing,
+aplicação em subdomínio. Trocar isso significa mover o portal do contador para algo como
+`app.altan.company`, o que muda o endereço que você e a equipe usam todo dia. **Decisão sua**, e
+enquanto ela não vier a landing fica na URL do Railway. Preencher os cinco `XXX` deveria vir antes
+de qualquer domínio público.
