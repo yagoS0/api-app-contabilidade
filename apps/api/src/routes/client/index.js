@@ -1368,6 +1368,12 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         deLancamentos: deLancamentos
           ? {
               aliquota: deLancamentos.aliquota,
+              // ⚠⚠ O SEGUNDO NÚMERO (30/08/2026) — com o INSS patronal dentro. É ELE que o painel do
+              // cliente lê; `aliquota` (só receita/resultado) fica porque responde a pergunta da NOTA.
+              // Mandar um só obrigaria a tela a escolher sem saber que há escolha.
+              aliquotaComFolha: deLancamentos.aliquotaComFolha,
+              impostoSobreFolha: deLancamentos.impostoSobreFolha,
+              impostosComFolha: deLancamentos.impostosComFolha,
               situacao: deLancamentos.situacao,
               base: deLancamentos.base,
               receitaBruta: deLancamentos.receitaBruta,
@@ -1461,6 +1467,12 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           deLancamentos: lancByComp.get(comp)
             ? {
                 aliquota: lancByComp.get(comp).aliquota,
+                // ⚠ O MESMO acréscimo da rota singular, e ele PRECISA estar nas duas: uma só deixaria
+                // o card do painel (que lê a SÉRIE) com um número e a tela de detalhe com outro, sobre
+                // a mesma empresa e o mesmo mês.
+                aliquotaComFolha: lancByComp.get(comp).aliquotaComFolha,
+                impostoSobreFolha: lancByComp.get(comp).impostoSobreFolha,
+                impostosComFolha: lancByComp.get(comp).impostosComFolha,
                 situacao: lancByComp.get(comp).situacao,
                 base: lancByComp.get(comp).base,
                 receitaBruta: lancByComp.get(comp).receitaBruta,

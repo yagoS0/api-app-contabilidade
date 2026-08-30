@@ -1,7 +1,7 @@
 import { api } from "../../api";
 import { AlertaErro, CardNumero, Carregando } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
-import { FONTE, MOTIVO, aliquotaDoPainel } from "./lib/aliquotaDoPainel";
+import { MOTIVO, aliquotaDoPainel } from "./lib/aliquotaDoPainel";
 import { linhaDoMes } from "./lib/tabelaDoFluxo";
 import { somarCompetencia } from "./lib/leituraDoFluxo";
 import { BlocoDeDemonstracao } from "./BlocoDeDemonstracao";
@@ -58,23 +58,49 @@ const OPCOES_COMPETENCIA = competenciasRecentes(12);
  * responde *"quanto esta empresa paga de imposto?"* sobre o mês que o cliente selecionou. O que
  * mudou é ela dizer de qual mês fala, em vez de depender do rótulo do vizinho.
  */
+/**
+ * ⚠⚠ A FRASE QUANDO HÁ NÚMERO — e ela mudou DUAS VEZES no mesmo dia (30/08/2026).
+ *
+ * Ela dizia *"Alíquota da última apuração: X"*, e as duas metades ficaram falsas:
+ *
+ *  1. **NÃO É MAIS A ÚLTIMA APURAÇÃO.** O número vem do que foi LANÇADO na competência escolhida
+ *     (dono: *"use sempre o que foi lançado"*). Chamar de apuração um número tirado do razão
+ *     emprestaria a ele a autoridade de uma declaração transmitida à Receita.
+ *  2. **O INSS PATRONAL ENTROU** (dono: *"não calcula o INSS junto"*), e com ele o percentual passa
+ *     a ser MAIOR que o do extrato do Simples. ⚠⚠ Sem dizer isso, o dono compara 7,01% com os
+ *     6,24% do extrato e conclui que a tela erra — que é exatamente o relato que originou o
+ *     conserto. **A frase que descreve um comportamento é parte do comportamento.**
+ *
+ * ⚠ O mês nomeado é o da LINHA lida, não o da casca: são o mesmo hoje, e no dia em que não forem
+ * a frase tem de contar a verdade sobre o número que está na tela.
+ */
+function fraseDaAliquota(l, competencia) {
+  const mes = fmtCompetencia(l.competencia || competencia);
+  const inss = l.comFolha && l.impostoSobreFolha > 0 ? " · INSS incluído" : "";
+  return `Alíquota lançada em ${mes}: ${pct(l.valor)}${inss}`;
+}
+
 function textoDaAliquota(l, competencia) {
   const mes = fmtCompetencia(competencia);
   if (l.motivo === MOTIVO.SEM_DADOS) return `Sem dados para ${mes}`;
-  if (l.motivo === MOTIVO.SEM_FATURAMENTO) return `Não há faturamento em ${mes} — sem base para calcular`;
-  if (l.motivo === MOTIVO.SEM_IMPOSTO_PAGO) return `Nenhuma guia de ${mes} paga ainda`;
   if (l.motivo === MOTIVO.SEM_RECEITA_LANCADA) return `A receita de ${mes} ainda não foi lançada na contabilidade`;
   if (l.motivo === MOTIVO.SEM_IMPOSTO_LANCADO) return `Os impostos de ${mes} ainda não foram provisionados`;
   if (l.motivo === MOTIVO.SEM_LANCAMENTO) return `Não há lançamentos contábeis em ${mes}`;
   if (l.motivo === MOTIVO.BLOCO_AUSENTE) return "Não foi possível calcular pela contabilidade";
 
-  if (l.fonte === FONTE.LANCAMENTOS) {
-    const base = `Impostos ${somaOuTraco(l.impostos)} sobre receita de ${somaOuTraco(l.base)}`;
-    return l.naoClassificadas > 0
-      ? `${base} · ${inteiro(l.naoClassificadas)} lançamento(s) sem conta contábil ficaram de fora`
-      : base;
-  }
-  return `Impostos pagos ${somaOuTraco(l.impostos)} sobre ${somaOuTraco(l.faturamento)}`;
+  // ⚠⚠ A FRASE NÃO É MAIS ESCOLHIDA PELA FONTE (30/08/2026) — há uma fonte só, a contabilidade.
+  // O ramo antigo dizia *"Impostos pagos X sobre Y"*, e ele saiu com a conta por pagamento.
+  // ⚠ O número de lançamentos SEM CONTA continua obrigatório na frase: uma alíquota calculada por
+  // cima de metade das provisões seria menor que a real, e nada na tela diria isso.
+  // ⚠⚠ A FRASE SEGUE O NÚMERO, NUNCA O CONTRÁRIO. Quando o INSS patronal está dentro, a frase diz
+  // — senão o cliente compara 7,01% com os 6,24% do extrato do Simples e conclui que a tela erra.
+  const comInss = l.comFolha && l.impostoSobreFolha > 0
+    ? ` (INSS de ${somaOuTraco(l.impostoSobreFolha)} incluído)`
+    : "";
+  const base = `Impostos ${somaOuTraco(l.impostos)}${comInss} sobre receita de ${somaOuTraco(l.base)}`;
+  return l.naoClassificadas > 0
+    ? `${base} · ${inteiro(l.naoClassificadas)} lançamento(s) sem conta contábil ficaram de fora`
+    : base;
 }
 
 export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar, aoEnviarExtrato }) {
@@ -275,7 +301,7 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
                quem nunca apurou, é Fase 2. */
             apoio={
               leituraAliquota.valor != null
-                ? `Alíquota da última apuração: ${pct(leituraAliquota.valor)}`
+                ? fraseDaAliquota(leituraAliquota, competencia)
                 : textoDaAliquota(leituraAliquota, competencia)
             }
           />

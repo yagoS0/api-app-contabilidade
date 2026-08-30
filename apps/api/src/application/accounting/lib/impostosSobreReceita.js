@@ -46,10 +46,47 @@
  * INERTE. Está escrita assim porque é o que o plano estrutura, e para que a reversão seja de uma
  * linha caso o dono decida o contrário.
  *
- * ⚠ **O ramo `4` (DESPESAS) fica inteiro de fora, e o INSS sobre FOLHA junto** — é a mesma regra
- * que o dono deu para o Simples em 18/08/2026 (*"apenas a DAS, o INSS não entraria"*). ⚠ Não
- * confundir com `331030008 (-) INSS S/RECEITA LEI 12.546/2011`, que é a CPRB: essa incide sobre a
- * RECEITA e por isso está dentro. São dois tributos diferentes com a mesma sigla.
+ * ⚠ **O ramo `4` (DESPESAS) fica inteiro de fora.** ⚠ Não confundir `411010021 INSS` (o INSS sobre
+ * a FOLHA, despesa) com `331030008 (-) INSS S/RECEITA LEI 12.546/2011`, que é a CPRB: essa incide
+ * sobre a RECEITA e por isso está dentro. São dois tributos diferentes com a mesma sigla.
+ *
+ * ## ⚠⚠ O INSS SOBRE A FOLHA — `aliquotaComFolha`, UM SEGUNDO NÚMERO (30/08/2026)
+ *
+ * > Dono, com a tela na frente: *"a porcentagem do imposto líquido sumiu, **não calcula o INSS
+ * > junto**"*.
+ *
+ * ⚠⚠ **ESTA LINHA DIZIA QUE O INSS SOBRE FOLHA FICAVA DE FORA, citando o dono — e a citação estava
+ * no lugar errado.** O que ele decidiu em 18/08/2026 (*"apenas a DAS, o INSS não entraria"*) era
+ * sobre a **NOTA FISCAL** (`pTotTribSN`), e o `CLAUDE.md` do portal do cliente registra a distinção
+ * com todas as letras: *"o PAINEL responde quanto esta empresa paga de imposto? (tudo, INSS
+ * incluso — é gestão); a NOTA responde quanto desta nota é tributo do Simples? (só o DAS)"*.
+ * A regra da NOTA tinha sido aplicada ao PAINEL por engano.
+ *
+ * ⚠⚠ **POR ISSO SÃO DOIS NÚMEROS, E NÃO UM NÚMERO CORRIGIDO.** `aliquota` continua sendo só
+ * imposto sobre receita/resultado. `aliquotaComFolha` acrescenta o INSS patronal e é a de GESTÃO.
+ * Trocar o primeiro pelo segundo estragaria a tela de destino nos dois sentidos — é o mesmo
+ * argumento que este projeto já escreveu sobre `efetiva` × `deReceita`.
+ *
+ * ### ⚠ De onde ele sai, MEDIDO — nunca deduzido do nome
+ *
+ * Varredura de leitura da carteira inteira (34 empresas, 02–07/2026,
+ * `scripts/diag-inss-lancado.mjs`): **existe UMA conta com movimento de INSS**, `211040009 INSS A
+ * PAGAR`, em 9 empresas — D R$ 14.935,01 · C R$ 6.597,48. **Não há lançamento de INSS em conta de
+ * DESPESA**: na ERISANGELA ele nasce dentro da provisão de pró-labore
+ * (`D 411010001 PRO LABORE 1.621,00 / C 211040002 1.442,69 + C 211040009 178,31`).
+ *
+ * ⚠⚠ **E É POR ISSO QUE SE LÊ SÓ O CRÉDITO — a razão é aritmética, não gosto.** `211040009` é
+ * conta de PASSIVO: o crédito é a obrigação NASCENDO (a carga do mês) e o débito é ela sendo PAGA.
+ * Em 07/2026 a ERISANGELA provisionou e pagou na mesma competência, então o SALDO da conta é
+ * **zero** — somar o saldo apagaria justamente o INSS que o dono quer ver. E o débito costuma
+ * quitar saldo de meses anteriores (D 14.935 contra C 6.597 na janela medida): netá-lo daria INSS
+ * **negativo**.
+ *
+ * ⚠ **A lista é de CÓDIGOS COMPLETOS EXATOS, nunca prefixo.** ⚠⚠ `211050019 INSS S/RECEITA … A
+ * RECOLHER` **fica de fora**: é o passivo da CPRB, cuja despesa (`331030008`) já está no
+ * numerador — incluí-lo contaria o mesmo tributo duas vezes.
+ * ⚠ Este é o ÚNICO ponto do módulo que olha o LADO da linha em vez da natureza da conta. Está
+ * assim porque a informação que se quer — obrigação nascida — só existe no lado.
  *
  * ⚠ **NADA AQUI OLHA O `tipo` DO LANÇAMENTO.** Medido: as provisões de PIS/COFINS/ISS chegam com
  * `tipo: "PROVISAO"`, mas há linha em conta de receita dentro de lançamento `tipo: "DESPESA"`. O
@@ -69,6 +106,9 @@ export const GRUPO = Object.freeze({
   DEDUCAO_NAO_TRIBUTARIA: "DEDUCAO_NAO_TRIBUTARIA",
   IMPOSTO_SOBRE_RECEITA: "IMPOSTO_SOBRE_RECEITA",
   IMPOSTO_SOBRE_RESULTADO: "IMPOSTO_SOBRE_RESULTADO",
+  // ⚠⚠ O INSS PATRONAL (30/08/2026). Ele NÃO entra em `aliquota` — entra em
+  // `aliquotaComFolha`. Ver o bloco próprio no cabeçalho.
+  IMPOSTO_SOBRE_FOLHA: "IMPOSTO_SOBRE_FOLHA",
   FORA_DA_CONTA: "FORA_DA_CONTA",
   INDETERMINADO: "INDETERMINADO",
 });
@@ -93,6 +133,16 @@ const PREFIXOS = Object.freeze([
 ]);
 
 /**
+ * ⚠⚠ O INSS PATRONAL, POR CÓDIGO COMPLETO EXATO — ver o bloco no cabeçalho.
+ *
+ * ⚠ Igualdade, NUNCA `startsWith`: `21104` inclui `211040002 PRO LABORE A PAGAR`, e um prefixo
+ * aqui somaria **salário** ao imposto.
+ * ⚠ `211040010 INSS AUTONOMOS- RPA A PAGAR` entra por ser a mesma natureza. Medido: **sem
+ * movimento** hoje na carteira — ela está aqui para não virar buraco no dia em que tiver.
+ */
+export const CONTAS_DE_INSS_SOBRE_FOLHA = Object.freeze(["211040009", "211040010"]);
+
+/**
  * Em que grupo esta conta entra.
  *
  * ⚠ Conta SEM `codigoCompleto` responde `INDETERMINADO`, nunca `FORA_DA_CONTA`. "Não sei o que é"
@@ -102,6 +152,10 @@ const PREFIXOS = Object.freeze([
 export function classificarConta(conta) {
   const cc = String(conta?.codigoCompleto ?? "").trim();
   if (!cc) return GRUPO.INDETERMINADO;
+  // ⚠ ANTES DOS PREFIXOS, e por igualdade: `211040009` começa com `2`, que não está na lista de
+  // prefixos, então a ordem é indiferente hoje — mas um prefixo `2` acrescentado amanhã engoliria
+  // o INSS em silêncio se esta conferência viesse depois.
+  if (CONTAS_DE_INSS_SOBRE_FOLHA.includes(cc)) return GRUPO.IMPOSTO_SOBRE_FOLHA;
   for (const [prefixo, grupo] of PREFIXOS) if (cc.startsWith(prefixo)) return grupo;
   return GRUPO.FORA_DA_CONTA;
 }
@@ -129,6 +183,7 @@ export function somarComponentes(linhas) {
     [GRUPO.DEDUCAO_NAO_TRIBUTARIA]: zero(),
     [GRUPO.IMPOSTO_SOBRE_RECEITA]: zero(),
     [GRUPO.IMPOSTO_SOBRE_RESULTADO]: zero(),
+    [GRUPO.IMPOSTO_SOBRE_FOLHA]: zero(),
   };
   const naoClassificadas = [];
 
@@ -150,6 +205,22 @@ export function somarComponentes(linhas) {
     }
     if (grupo === GRUPO.FORA_DA_CONTA) continue;
 
+    // ⚠⚠ O INSS PATRONAL É O ÚNICO QUE LÊ O LADO, E SÓ O CRÉDITO. Ele mora numa conta de PASSIVO
+    // (`211040009 INSS A PAGAR`): o crédito é a obrigação nascendo — a carga do mês — e o débito é
+    // ela sendo paga, muitas vezes de competências anteriores. O motivo inteiro está no cabeçalho.
+    // ⚠ O débito não é "descartado por conveniência": ele é outro fato (pagamento), e este número
+    // pergunta quanto NASCEU no mês.
+    if (grupo === GRUPO.IMPOSTO_SOBRE_FOLHA) {
+      if (l?.tipo !== "C") continue;
+      const v = numero(l?.valor);
+      acc[grupo].total += v;
+      const cod = String(l.conta.codigo ?? "").trim() || String(l.conta.codigoCompleto);
+      const antes = acc[grupo].porConta.get(cod) || { codigo: cod, nome: l.conta.nome ?? null, total: 0 };
+      antes.total += v;
+      acc[grupo].porConta.set(cod, antes);
+      continue;
+    }
+
     const credora = grupo === GRUPO.RECEITA_BRUTA;
     const sinal = (l?.tipo === "C" ? 1 : -1) * (credora ? 1 : -1);
     const v = sinal * numero(l?.valor);
@@ -167,7 +238,14 @@ export function somarComponentes(linhas) {
     devolucoesEDescontos: acc[GRUPO.DEDUCAO_NAO_TRIBUTARIA].total,
     impostoSobreReceita: acc[GRUPO.IMPOSTO_SOBRE_RECEITA].total,
     impostoSobreResultado: acc[GRUPO.IMPOSTO_SOBRE_RESULTADO].total,
-    impostosPorConta: [...emLista(GRUPO.IMPOSTO_SOBRE_RECEITA), ...emLista(GRUPO.IMPOSTO_SOBRE_RESULTADO)],
+    impostoSobreFolha: acc[GRUPO.IMPOSTO_SOBRE_FOLHA].total,
+    // ⚠ O INSS entra na LISTA por conta — quem lê a composição tem de vê-lo —, mas NÃO em
+    // `impostos`. Os dois números de cima são a alíquota da NOTA; este é o da GESTÃO.
+    impostosPorConta: [
+      ...emLista(GRUPO.IMPOSTO_SOBRE_RECEITA),
+      ...emLista(GRUPO.IMPOSTO_SOBRE_RESULTADO),
+      ...emLista(GRUPO.IMPOSTO_SOBRE_FOLHA),
+    ],
     naoClassificadas,
   };
 }
@@ -186,7 +264,13 @@ export function aliquotaEfetivaDeLancamentos(linhas) {
   const c = somarComponentes(linhas);
   const base = c.receitaBruta - c.devolucoesEDescontos;
   const impostos = c.impostoSobreReceita + c.impostoSobreResultado;
+  const impostosComFolha = impostos + c.impostoSobreFolha;
 
+  // ⚠⚠ A SITUAÇÃO CONTINUA SENDO DECIDIDA PELOS IMPOSTOS **SEM** A FOLHA, e isso é deliberado.
+  // Uma competência com INSS provisionado e nenhum DAS não é uma competência "com imposto
+  // lançado": o tributo sobre a receita é que está faltando, e é isso que a tela precisa dizer.
+  // ⚠ Consequência aceita: nesse caso `aliquotaComFolha` também sai `null`. Um percentual só de
+  // INSS sobre a receita se leria como a carga tributária da empresa, e não é.
   let situacao = SITUACAO.CALCULADA;
   if (base <= 0 && impostos <= 0) situacao = SITUACAO.SEM_LANCAMENTO;
   else if (base <= 0) situacao = SITUACAO.SEM_RECEITA_LANCADA;
@@ -196,7 +280,11 @@ export function aliquotaEfetivaDeLancamentos(linhas) {
     ...c,
     base,
     impostos,
+    impostosComFolha,
     aliquota: situacao === SITUACAO.CALCULADA ? (impostos / base) * 100 : null,
+    // ⚠⚠ O NÚMERO DA GESTÃO — o do PAINEL do cliente. Ele nunca é zero por ausência: segue a
+    // MESMA `situacao`, e sem ela é `null`, como o irmão.
+    aliquotaComFolha: situacao === SITUACAO.CALCULADA ? (impostosComFolha / base) * 100 : null,
     situacao,
   };
 }

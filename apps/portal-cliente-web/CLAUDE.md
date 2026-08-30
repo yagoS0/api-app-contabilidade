@@ -985,6 +985,21 @@ fixou a distinção: o PAINEL responde *quanto esta empresa paga de imposto?* (t
 gestão); a NOTA responde *quanto desta nota é tributo do Simples?* (só o DAS — é documento fiscal).
 Trocar uma pela outra estraga a tela de destino nos dois sentidos.
 
+⚠⚠ **E `efetiva` FICOU SEM CONSUMIDOR EM 30/08/2026 — a DISTINÇÃO acima continua valendo inteira, o
+que mudou foi de onde o painel tira o "tudo".** Dono: *"use sempre o que foi lançada, ou seja, veio
+do extrato do simples nacional, ou veio do presumido, para cálculo a alíquota"*. Hoje o card lê
+`deLancamentos.aliquotaComFolha` — imposto sobre receita + IRPJ/CSLL + **INSS patronal**, tudo pelo
+razão. ⚠ A NOTA não mudou: ela segue em `deReceita`, só o DAS.
+
+⚠⚠ **O QUE DERRUBOU `efetiva` FOI MEDIÇÃO, e ela vale a pena estar escrita:** o campo é refém de
+*qual guia alguém marcou como paga*. Na ERISANGELA de 07/2026 a única guia `PAID` era o INSS de
+R$ 178,31, e o card anunciou **0,77%** de carga tributária — a mesma família do *"1,41%"* que o dono
+relatou como impossível. Pelo lançado dá **7,01%**.
+
+⚠ **E o novo número REPRODUZ o antigo onde o antigo estava completo**, o que é a prova de que a
+troca não inventou nada: medido na carteira em 07/2026, PRISMA **7,83% → 7,83%** e LENTE
+**13,59% → 13,59%**, idênticos. **6 empresas ganham número, nenhuma perde.**
+
 ⚠⚠ **Zero nunca é fabricado.** O backend calcula `d > 0 ? n/d*100 : 0` — sem receita ou sem extrato
 do PGDAS-D a resposta é `0`, indistinguível de uma alíquota de zero por cento, que numa nota fiscal
 é uma AFIRMAÇÃO. Por isso `linhaTemProva` (`:45`) exige os DOIS insumos crus **e** o percentual

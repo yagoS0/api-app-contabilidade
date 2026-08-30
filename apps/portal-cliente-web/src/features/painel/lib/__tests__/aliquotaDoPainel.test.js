@@ -1,8 +1,14 @@
-// QUAL ALÍQUOTA O PAINEL MOSTRA — a escolha pelo regime.
+// QUAL ALÍQUOTA O PAINEL MOSTRA — e desde 30/08/2026 não há escolha nenhuma: é o LANÇADO.
 //
-// ⚠ O que estes testes prendem é uma decisão do dono (24/08/2026): o Lucro Presumido passa a sair
-// dos LANÇAMENTOS e o Simples continua saindo dos PAGAMENTOS. Trocar um pelo outro não quebra a
-// tela — só muda o número da carga tributária que o cliente lê, em silêncio.
+// ⚠⚠ **ISTO REVISA A DECISÃO DE 24/08/2026**, que estes mesmos testes prendiam ("o Simples continua
+// saindo dos PAGAMENTOS"). Dono, 30/08/2026: *"use sempre o que foi lançada, ou seja, veio do
+// extrato do simples nacional, ou veio do presumido, para cálculo a alíquota."*
+//
+// ⚠⚠ **O QUE DERRUBOU A REGRA ANTIGA FOI MEDIÇÃO, e ela está no cabeçalho do módulo:** na
+// ERISANGELA (Simples), `efetiva` deu **0,77%** em 07/2026 — porque a única guia marcada como paga
+// naquele mês era o INSS de R$ 178,31 — contra **6,24%** pelo lançado, que é o número do extrato do
+// PGDAS-D. Trocar de volta não quebra a tela: só devolve, em silêncio, um percentual de carga
+// tributária refém de qual guia alguém marcou como paga.
 
 import { FONTE, MOTIVO, aliquotaDoPainel } from "../aliquotaDoPainel";
 
@@ -36,23 +42,43 @@ const blocoCalculado = (extra = {}) => ({
   ...extra,
 });
 
-describe("o SIMPLES continua saindo dos pagamentos", () => {
-  it("usa `efetiva` e ignora o bloco de lançamentos, mesmo quando ele existe", () => {
+describe("⚠⚠ o SIMPLES passou a sair dos LANÇAMENTOS — a reversão de 30/08/2026", () => {
+  it("usa `deLancamentos.aliquota` e IGNORA a `efetiva`", () => {
+    // ⚠ A linha traz `efetiva: 6` e o bloco traz 7,49. Se algum dia o 6 voltar a aparecer aqui, é
+    // porque alguém reintroduziu a conta pelos pagamentos.
     const r = aliquotaDoPainel({ empresa: SIMPLES, linha: linha({ deLancamentos: blocoCalculado() }) });
-    expect(r.fonte).toBe(FONTE.PAGAMENTOS);
-    expect(r.valor).toBe(6);
+    expect(r.fonte).toBe(FONTE.LANCAMENTOS);
+    expect(r.valor).toBe(7.49);
   });
 
-  it("⚠ sem faturamento não vira 0% — o backend fabrica o zero e a leitura o desfaz", () => {
-    const r = aliquotaDoPainel({ empresa: SIMPLES, linha: linha({ faturamento: 0, efetiva: 0 }) });
-    expect(r.valor).toBeNull();
-    expect(r.motivo).toBe(MOTIVO.SEM_FATURAMENTO);
+  it("⚠⚠ com guia paga ABSURDA o número NÃO se move — o caso real da ERISANGELA", () => {
+    // 07/2026: única guia paga = INSS 178,31 sobre receita de 23.040,26 ⇒ `efetiva` 0,77%.
+    // O lançado diz 6,24%, que é o DAS do extrato. É este caso que o dono chamou de impossível.
+    const r = aliquotaDoPainel({
+      empresa: SIMPLES,
+      linha: linha({
+        faturamento: 23040.26, impostosPagos: 178.31, efetiva: 0.77,
+        deLancamentos: blocoCalculado({ aliquota: 6.24, base: 23040.26, receitaBruta: 23040.26, impostos: 1437.15, impostoSobreReceita: 1437.15, impostoSobreResultado: 0 }),
+      }),
+    });
+    expect(r.valor).toBe(6.24);
   });
 
-  it("⚠ sem guia paga não vira 0% — e o motivo é OUTRO", () => {
-    const r = aliquotaDoPainel({ empresa: SIMPLES, linha: linha({ impostosPagos: 0, efetiva: 0 }) });
+  it("⚠ sem receita LANÇADA não vira 0% — e o motivo fala de contabilidade, não de guia", () => {
+    const r = aliquotaDoPainel({
+      empresa: SIMPLES,
+      linha: linha({ deLancamentos: blocoCalculado({ situacao: "SEM_RECEITA_LANCADA", aliquota: null }) }),
+    });
     expect(r.valor).toBeNull();
-    expect(r.motivo).toBe(MOTIVO.SEM_IMPOSTO_PAGO);
+    expect(r.motivo).toBe(MOTIVO.SEM_RECEITA_LANCADA);
+  });
+
+  it("⚠⚠ sem o BLOCO, o Simples NÃO cai de volta na `efetiva`", () => {
+    // Falha fechado: backend antigo (ou cálculo que falhou) não dá número nenhum. Cair na conta
+    // velha aqui seria a reversão acontecendo sozinha, sem ninguém decidir.
+    const r = aliquotaDoPainel({ empresa: SIMPLES, linha: linha({ deLancamentos: null }) });
+    expect(r.valor).toBeNull();
+    expect(r.motivo).toBe(MOTIVO.BLOCO_AUSENTE);
   });
 });
 
@@ -130,16 +156,28 @@ describe("o LUCRO PRESUMIDO passa a sair dos lançamentos", () => {
   });
 });
 
-describe("⚠ regime desconhecido preserva o comportamento de hoje", () => {
-  it("cai nos pagamentos, não na conta nova", () => {
+describe("⚠⚠ o REGIME não decide mais nada", () => {
+  it("regime desconhecido lê o mesmo bloco que o Simples e o Presumido", () => {
+    // ⚠ Antes ele caía nos pagamentos, para não afirmar nada sobre empresa sem regime. Hoje a conta
+    // não pergunta o regime: ela lê o razão da empresa, que existe independentemente dele.
     const r = aliquotaDoPainel({ empresa: SEM_REGIME, linha: linha({ deLancamentos: blocoCalculado() }) });
-    expect(r.fonte).toBe(FONTE.PAGAMENTOS);
-    expect(r.valor).toBe(6);
+    expect(r.fonte).toBe(FONTE.LANCAMENTOS);
+    expect(r.valor).toBe(7.49);
+    // ⚠ O regime CONTINUA VIAJANDO na leitura — ele só não escolhe mais a fonte.
     expect(r.regime).toBe("desconhecido");
   });
 
   it("empresa ausente também", () => {
-    expect(aliquotaDoPainel({ empresa: null, linha: linha() }).fonte).toBe(FONTE.PAGAMENTOS);
+    const r = aliquotaDoPainel({ empresa: null, linha: linha({ deLancamentos: blocoCalculado() }) });
+    expect(r.fonte).toBe(FONTE.LANCAMENTOS);
+    expect(r.valor).toBe(7.49);
+  });
+
+  it("⚠ `FONTE.PAGAMENTOS` não existe mais — o vocabulário fechou", () => {
+    // Uma constante fantasma faria `r.fonte === FONTE.PAGAMENTOS` comparar contra `undefined` e
+    // dar `false` para sempre, sem erro nenhum.
+    expect(FONTE.PAGAMENTOS).toBeUndefined();
+    expect(Object.values(FONTE)).toEqual(["lancamentos"]);
   });
 });
 
@@ -148,5 +186,60 @@ describe("sem linha nenhuma", () => {
     const r = aliquotaDoPainel({ empresa: PRESUMIDO, linha: null });
     expect(r.valor).toBeNull();
     expect(r.motivo).toBe(MOTIVO.SEM_DADOS);
+  });
+});
+
+// ⚠⚠ O INSS DENTRO DO CARD (30/08/2026) — dono: *"não calcula o INSS junto"*.
+describe("⚠⚠ o card lê a alíquota COM o INSS patronal", () => {
+  const comFolha = (extra = {}) => blocoCalculado({
+    aliquota: 6.24,
+    aliquotaComFolha: 7.01,
+    base: 23040.26,
+    receitaBruta: 23040.26,
+    impostos: 1437.15,
+    impostosComFolha: 1615.46,
+    impostoSobreReceita: 1437.15,
+    impostoSobreResultado: 0,
+    impostoSobreFolha: 178.31,
+    ...extra,
+  });
+
+  it("usa `aliquotaComFolha`, não `aliquota`", () => {
+    const r = aliquotaDoPainel({ empresa: SIMPLES, linha: linha({ deLancamentos: comFolha() }) });
+    expect(r.valor).toBe(7.01);
+    expect(r.comFolha).toBe(true);
+    // ⚠ E o total exibido na frase acompanha o número — 1.615,46, nunca 1.437,15.
+    expect(r.impostos).toBe(1615.46);
+    expect(r.impostoSobreFolha).toBe(178.31);
+  });
+
+  it("⚠⚠ backend SEM o campo cai no número antigo — mas DIZ que caiu", () => {
+    // Cair calado faria a tela afirmar que o INSS está dentro quando ele não está. Campo escondido
+    // que continua viajando é o defeito pior, e é a frase que este app já tem escrita.
+    const bloco = comFolha();
+    delete bloco.aliquotaComFolha;
+    const r = aliquotaDoPainel({ empresa: SIMPLES, linha: linha({ deLancamentos: bloco }) });
+    expect(r.valor).toBe(6.24);
+    expect(r.comFolha).toBe(false);
+    expect(r.impostos).toBe(1437.15);
+  });
+
+  it("⚠⚠ `aliquotaComFolha: null` NÃO vira 0% — `Number(null)` é 0 e é finito", () => {
+    const r = aliquotaDoPainel({
+      empresa: SIMPLES,
+      linha: linha({ deLancamentos: comFolha({ aliquotaComFolha: null }) }),
+    });
+    // ⚠ Sem o campo legível, vale o irmão — e a frase deixa de dizer que o INSS está dentro.
+    expect(r.valor).toBe(6.24);
+    expect(r.comFolha).toBe(false);
+  });
+
+  it("⚠ sem INSS lançado o card não mente: `comFolha` fica true e o valor do INSS é zero", () => {
+    const r = aliquotaDoPainel({
+      empresa: PRESUMIDO,
+      linha: linha({ deLancamentos: comFolha({ aliquotaComFolha: 6.24, impostosComFolha: 1437.15, impostoSobreFolha: 0 }) }),
+    });
+    expect(r.valor).toBe(6.24);
+    expect(r.impostoSobreFolha).toBe(0);
   });
 });

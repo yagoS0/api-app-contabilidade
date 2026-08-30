@@ -225,3 +225,84 @@ describe("aliquotaEfetivaDeLancamentos", () => {
     expect(r.aliquota).toBeCloseTo(8.0814, 3);
   });
 });
+
+// ⚠⚠ O INSS PATRONAL — `aliquotaComFolha` (30/08/2026)
+//
+// Dono, com a tela na frente: *"a porcentagem do imposto líquido sumiu, não calcula o INSS junto"*.
+//
+// ⚠ As contas e os valores destes casos são os REAIS da ERISANGELA em 07/2026, medidos em produção
+// (`scripts/diag-inss-lancado.mjs` + `scripts/diag-aliquota-lancada.mjs`). O par 6,24% × 7,01% é o
+// mesmo que o `CLAUDE.md` do portal do cliente já registrava para empresa com INSS em guia à parte.
+describe("⚠⚠ o INSS patronal entra em `aliquotaComFolha`, e NUNCA em `aliquota`", () => {
+  const RECEITA = conta("3110100013", "311", "RECEITA DE SERVIÇOS");
+  const MENOS_DAS = conta("331030016", "557", "(-) DAS- SIMPLES NACIONAL");
+  const INSS_A_PAGAR = conta("211040009", "240", "INSS A PAGAR");
+  const PRO_LABORE_A_PAGAR = conta("211040002", "233", "PRO LABORE A PAGAR");
+  const INSS_RECEITA_A_RECOLHER = conta("211050019", "268", "INSS S/RECEITA LEI 12.546/2011 A RECOLHER");
+
+  const mesDaErisangela = (extra = []) => [
+    { conta: RECEITA, tipo: "C", valor: 23040.26 },
+    { conta: MENOS_DAS, tipo: "D", valor: 1437.15 },
+    { conta: INSS_A_PAGAR, tipo: "C", valor: 178.31 },
+    ...extra,
+  ];
+
+  it("⚠⚠ os DOIS números convivem — 6,24% sem o INSS, 7,01% com ele", () => {
+    const r = aliquotaEfetivaDeLancamentos(mesDaErisangela());
+    expect(r.aliquota).toBeCloseTo(6.24, 2);
+    expect(r.aliquotaComFolha).toBeCloseTo(7.01, 2);
+    expect(r.impostos).toBeCloseTo(1437.15, 2);
+    expect(r.impostoSobreFolha).toBeCloseTo(178.31, 2);
+    expect(r.impostosComFolha).toBeCloseTo(1615.46, 2);
+  });
+
+  it("⚠⚠ o DÉBITO do INSS (o pagamento) NÃO abate a carga do mês", () => {
+    // O caso real de 07/2026: provisão e pagamento na MESMA competência, saldo da conta = zero.
+    // Somar o saldo apagaria exatamente o INSS que o card existe para mostrar.
+    const r = aliquotaEfetivaDeLancamentos(mesDaErisangela([{ conta: INSS_A_PAGAR, tipo: "D", valor: 178.31 }]));
+    expect(r.impostoSobreFolha).toBeCloseTo(178.31, 2);
+    expect(r.aliquotaComFolha).toBeCloseTo(7.01, 2);
+  });
+
+  it("⚠⚠ PRO LABORE A PAGAR não é imposto — a armadilha do prefixo `21104`", () => {
+    // `211040002` e `211040009` são irmãs. Um `startsWith("21104")` somaria o salário inteiro
+    // (1.442,69) ao imposto e o card anunciaria ~13% de carga tributária.
+    const r = aliquotaEfetivaDeLancamentos(mesDaErisangela([{ conta: PRO_LABORE_A_PAGAR, tipo: "C", valor: 1442.69 }]));
+    expect(r.impostoSobreFolha).toBeCloseTo(178.31, 2);
+    expect(classificarConta(PRO_LABORE_A_PAGAR)).toBe(GRUPO.FORA_DA_CONTA);
+  });
+
+  it("⚠⚠ o PASSIVO da CPRB fica de fora — a despesa dele já está no numerador", () => {
+    // `331030008 (-) INSS S/RECEITA` já entra por `33103`. Contar `211050019` junto seria o MESMO
+    // tributo duas vezes, e as duas contas têm "INSS" no nome.
+    const r = aliquotaEfetivaDeLancamentos(mesDaErisangela([{ conta: INSS_RECEITA_A_RECOLHER, tipo: "C", valor: 900 }]));
+    expect(r.impostoSobreFolha).toBeCloseTo(178.31, 2);
+    expect(classificarConta(INSS_RECEITA_A_RECOLHER)).toBe(GRUPO.FORA_DA_CONTA);
+  });
+
+  it("⚠ INSS aparece na composição por conta, para quem lê o detalhe", () => {
+    const r = aliquotaEfetivaDeLancamentos(mesDaErisangela());
+    expect(r.impostosPorConta.map((i) => i.codigo)).toEqual(["557", "240"]);
+  });
+
+  it("⚠⚠ INSS sozinho, sem DAS, NÃO vira alíquota — nem a com folha", () => {
+    // Um percentual só de INSS sobre a receita se leria como a carga tributária da empresa, e não
+    // é. A situação continua sendo decidida pelos impostos SEM a folha.
+    const r = aliquotaEfetivaDeLancamentos([
+      { conta: RECEITA, tipo: "C", valor: 23040.26 },
+      { conta: INSS_A_PAGAR, tipo: "C", valor: 178.31 },
+    ]);
+    expect(r.situacao).toBe(SITUACAO.SEM_IMPOSTO_LANCADO);
+    expect(r.aliquota).toBeNull();
+    expect(r.aliquotaComFolha).toBeNull();
+  });
+
+  it("⚠ sem INSS nenhum, os dois números são iguais — e nada é fabricado", () => {
+    const r = aliquotaEfetivaDeLancamentos([
+      { conta: RECEITA, tipo: "C", valor: 23040.26 },
+      { conta: MENOS_DAS, tipo: "D", valor: 1437.15 },
+    ]);
+    expect(r.impostoSobreFolha).toBe(0);
+    expect(r.aliquotaComFolha).toBeCloseTo(r.aliquota, 6);
+  });
+});

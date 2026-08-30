@@ -28,20 +28,71 @@ import { fluxoDeCaixaDoMock } from "./fluxoDeCaixaDoMock";
 import { LOTE_MAXIMO } from "../../features/notas/lib/loteDanfse";
 
 function mockDeLancamentos(id, faturamento) {
+  // ⚠⚠ A pc-001 É DO SIMPLES, E DESDE 30/08/2026 ELA TAMBÉM LÊ ESTE BLOCO — o dono mandou a
+  // alíquota vir SEMPRE do que foi lançado. Sem esta linha o caminho principal da tela ficaria
+  // **inalcançável offline** e o card do Simples cairia em *"não foi possível calcular pela
+  // contabilidade"* no modo demonstração: a QUINTA vez que o mock esconderia um ramo nesta base.
+  //
+  // ⚠ A FORMA COPIA A EMPRESA REAL, medida em produção (ERISANGELA, 04–07/2026): **uma** conta de
+  // imposto — `(-) DAS- SIMPLES NACIONAL` — e nada de IRPJ/CSLL, que no Simples estão dentro do
+  // DAS. Um mock com quatro tributos treinaria a tela para um desenho que o Simples nunca tem.
+  // ⚠ Os 6,24% são a alíquota REAL medida, não um número redondo: mock com valor cravado esconde
+  // ramo, e este projeto já pagou por isso.
+  if (id === "pc-001") {
+    const base = Number(faturamento.toFixed(2));
+    if (!(base > 0)) {
+      // ⚠ Competência sem nota é o caso `SEM_LANCAMENTO`, e ele PRECISA ser alcançável: é o que a
+      // tela desenha nos meses que o contador ainda não lançou.
+      return {
+        situacao: "SEM_LANCAMENTO", aliquota: null, base: 0, receitaBruta: 0, devolucoesEDescontos: 0,
+        impostos: 0, impostoSobreReceita: 0, impostoSobreResultado: 0, impostosPorConta: [], naoClassificadas: 0,
+      };
+    }
+    const impostoSobreReceita = Number((base * 0.0624).toFixed(2));
+    // ⚠⚠ O INSS PATRONAL PRECISA EXISTIR OFFLINE (30/08/2026): é ele que separa `aliquota` de
+    // `aliquotaComFolha`, e sem ele a tela mostraria os dois números IGUAIS no mock — e a frase
+    // *"(INSS de X incluído)"* nunca apareceria. R$ 178,31 é o valor REAL da ERISANGELA.
+    const impostoSobreFolha = 178.31;
+    const impostosComFolha = Number((impostoSobreReceita + impostoSobreFolha).toFixed(2));
+    return {
+      situacao: "CALCULADA",
+      aliquota: Number(((impostoSobreReceita / base) * 100).toFixed(4)),
+      aliquotaComFolha: Number(((impostosComFolha / base) * 100).toFixed(4)),
+      base,
+      receitaBruta: base,
+      devolucoesEDescontos: 0,
+      impostos: impostoSobreReceita,
+      impostosComFolha,
+      impostoSobreReceita,
+      impostoSobreResultado: 0,
+      impostoSobreFolha,
+      impostosPorConta: [
+        { codigo: "557", nome: "(-) DAS- SIMPLES NACIONAL", total: impostoSobreReceita },
+        { codigo: "240", nome: "INSS A PAGAR", total: impostoSobreFolha },
+      ],
+      naoClassificadas: 0,
+    };
+  }
   if (id === "pc-002") {
     const base = Number(faturamento.toFixed(2)) || 120000;
     const impostoSobreReceita = Number((base * 0.0365).toFixed(2));
     const impostoSobreResultado = Number((base * 0.0384).toFixed(2));
     const impostos = Number((impostoSobreReceita + impostoSobreResultado).toFixed(2));
+    // ⚠ O CONTRAPONTO: esta empresa NÃO tem INSS lançado, então `aliquotaComFolha === aliquota` e a
+    // frase do INSS NÃO aparece. Sem este caso, "com folha" e "sem folha" seriam indistinguíveis
+    // offline e a guarda `impostoSobreFolha > 0` nunca seria exercida.
     return {
       situacao: "CALCULADA",
       aliquota: Number(((impostos / base) * 100).toFixed(4)),
+      aliquotaComFolha: Number(((impostos / base) * 100).toFixed(4)),
       base,
       receitaBruta: base,
       devolucoesEDescontos: 0,
       impostos,
+      impostosComFolha: impostos,
       impostoSobreReceita,
       impostoSobreResultado,
+      impostoSobreFolha: 0,
       impostosPorConta: [
         { codigo: "420", nome: "(-) COFINS", total: Number((base * 0.03).toFixed(2)) },
         { codigo: "594", nome: "(-) IRPJ", total: Number((base * 0.024).toFixed(2)) },
@@ -1800,12 +1851,14 @@ export function createMockApi() {
           dasExtrato: Number(dasExtrato.toFixed(2)),
           efetiva: pct(impostosPagos, faturamento),
           deReceita: pct(dasExtrato, faturamento),
-          // ⚠⚠ O BLOCO DO PRESUMIDO PRECISA SER ALCANÇÁVEL OFFLINE. Este projeto já foi mordido
-          // QUATRO vezes por ramo que só existia contra o servidor real: a pc-001 é Simples, e sem
-          // este bloco o caminho `deLancamentos` — que é o do Lucro Presumido — nunca renderizaria
-          // no mock, e o `aliquotaDoPainel` seria testado só no papel.
+          // ⚠⚠ ESTE BLOCO É O CAMINHO ÚNICO DA TELA DESDE 30/08/2026 — dono: *"use sempre o que
+          // foi lançado"*. Ele dizia aqui *"o bloco do PRESUMIDO"*, e ficou falso no dia em que o
+          // Simples passou a lê-lo também. Este projeto já foi mordido QUATRO vezes por ramo que
+          // só existia contra o servidor real.
           //
           // ⚠ AS TRÊS SITUAÇÕES SÃO EXERCIDAS, e são elas que a tela precisa saber desenhar:
+          //   pc-001 → CALCULADA no SIMPLES, com UMA conta de imposto (o DAS), como a empresa
+          //            real — e SEM_LANCAMENTO nos meses sem nota;
           //   pc-002 → CALCULADA, com uma linha sem conta contábil (o caso REAL: 11 de 37
           //            provisões do Presumido nascem com a conta vazia);
           //   pc-003 → SEM_RECEITA_LANCADA (provisão existe, receita não foi lançada — medido em
