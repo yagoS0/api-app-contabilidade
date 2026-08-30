@@ -229,9 +229,24 @@ export async function aplicarTransicao({
 
   const vaiContabilizar = veredito.estado === ESTADO.CONTABILIZADO;
   const vaiDesfazer = transicao === TRANSICAO.DESFAZER;
+  /**
+   * ⚠⚠ A CORREÇÃO DA DATA PRESUMIDA — e ela **NÃO é** `vaiContabilizar` (29/08/2026).
+   *
+   * A linha JÁ ESTÁ `CONTABILIZADO`: o `AccountingEntry` existe, e o que muda é a DATA dele. Cair
+   * no ramo de contabilizar criaria um SEGUNDO lançamento para a mesma despesa — a contagem dupla
+   * pela porta dos fundos, que é exatamente o que este caminho existe para impedir.
+   *
+   * ⚠⚠ **O COMENTÁRIO DA MATRIZ AVISOU DISTO ANTES DE ELE EXISTIR:** *"`CONTABILIZADO` fica fora
+   * porque lá a data já virou a data do `AccountingEntry` — trocá-la aqui deixaria lançamento e
+   * declarado discordando."* O aviso continua inteiro, e é por isso que a atualização do
+   * `AccountingEntry` acontece na MESMA transação, logo abaixo. Sem ela, esta transição seria
+   * exatamente o defeito que aquele comentário descreve.
+   */
+  const vaiCorrigirData = transicao === TRANSICAO.CORRIGIR_DATA_PRESUMIDA;
+  const criaLancamento = vaiContabilizar && !vaiCorrigirData;
 
   // 2. As guardas que só o banco sabe.
-  if (vaiContabilizar || vaiDesfazer) {
+  if (criaLancamento || vaiDesfazer || vaiCorrigirData) {
     // ⚠ Mês fechado recusa nos DOIS sentidos. Lançar num mês fechado escreveria sem rastro de
     // reabertura; DESFAZER apagaria um lançamento que o fechamento já conferiu.
     if (await isMonthClosed(portalClientId, declarado.competencia)) {
@@ -247,15 +262,15 @@ export async function aplicarTransicao({
   };
 
   // 3. O caminho simples: nada a criar nem a apagar no razão.
-  if (!vaiContabilizar && !vaiDesfazer) {
+  if (!criaLancamento && !vaiDesfazer && !vaiCorrigirData) {
     return client.lancamentoDeclarado.update({ where: { id: declarado.id }, data: camposComuns });
   }
 
   // 4. ⚠⚠ O caminho transacional.
-  const plano = vaiContabilizar ? await carregarPlano(portalClientId, client) : null;
+  const plano = criaLancamento ? await carregarPlano(portalClientId, client) : null;
 
   const atualizado = await client.$transaction(async (tx) => {
-    if (vaiContabilizar) {
+    if (criaLancamento) {
       // ⚠ A FORMA é montada sobre o declarado JÁ com a transição aplicada — senão a conta escolhida
       // no próprio ato (e o valor ajustado) não chegariam ao lançamento.
       const forma = montarLancamento({ ...declarado, ...veredito.campos }, plano);
@@ -266,6 +281,29 @@ export async function aplicarTransicao({
         where: { id: declarado.id },
         data: { ...camposComuns, accountingEntryId: entry.id },
       });
+    }
+
+    /**
+     * ⚠⚠ A CORREÇÃO DA DATA — o `AccountingEntry` que JÁ EXISTE é atualizado, e nenhum é criado.
+     *
+     * É a guarda contra a contagem dupla pela porta dos fundos: a despesa já está no razão, e o que
+     * o débito do extrato traz é a data CERTA dela.
+     *
+     * ⚠ `updateMany` com o `portalClientId` no `where`, e não `update` pelo id: o lançamento pode
+     * ter sido apagado por fora (não há FK, de propósito) — `update` estouraria P2025 e a correção
+     * falharia inteira, deixando o declarado com a data nova e o razão com a velha. Com
+     * `updateMany`, o que houver é atualizado e o declarado se acerta de qualquer jeito.
+     */
+    if (vaiCorrigirData) {
+      if (declarado.accountingEntryId) {
+        await tx.accountingEntry.updateMany({
+          where: { id: declarado.accountingEntryId, portalClientId: String(portalClientId) },
+          // ⚠⚠ SÓ A DATA. Valor, contas e histórico do lançamento não mudam — o que o extrato prova
+          // é QUANDO o dinheiro saiu, nunca quanto nem de onde.
+          data: { data: veredito.campos.dataPagamento },
+        });
+      }
+      return tx.lancamentoDeclarado.update({ where: { id: declarado.id }, data: camposComuns });
     }
 
     // DESFAZER.

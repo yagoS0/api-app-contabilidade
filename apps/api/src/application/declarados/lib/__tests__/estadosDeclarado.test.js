@@ -363,6 +363,21 @@ describe("⚠⚠ A MATRIZ INTEIRA — toda transição inválida é recusada", (
     // quem resolve é `INFORMAR_PAGAMENTO`, e `CONTABILIZADO` fica fora porque lá a data já virou a
     // data do `AccountingEntry` — trocá-la aqui deixaria lançamento e declarado discordando.
     `${ESTADO.A_CONFERIR}|${TRANSICAO.PROVAR_PAGAMENTO}`,
+    /**
+     * ⚠⚠ A CORREÇÃO DA DATA PRESUMIDA (29/08/2026) — a SEGUNDA transição que sai de
+     * `CONTABILIZADO`, e a primeira que sai de lá SEM desfazer o lançamento.
+     *
+     * ⚠⚠ **O COMENTÁRIO ACIMA DIZIA QUE `CONTABILIZADO` FICAVA FORA** *"porque lá a data já virou a
+     * data do `AccountingEntry` — trocá-la aqui deixaria lançamento e declarado discordando"*. O
+     * argumento continua INTEIRO, e é ele que define o desenho: o serviço atualiza o
+     * `AccountingEntry` na MESMA transação. Sem essa atualização, esta linha aqui seria exatamente
+     * o defeito que aquele comentário descreve.
+     *
+     * ⚠ Ela só existe por causa da data PRESUMIDA por regra: sem a automação, nada em
+     * `CONTABILIZADO` tem data que o sistema inventou. As guardas do corpo garantem isso
+     * (`origemPagamento` tem de ser EXATAMENTE `PRESUMIDO_POR_REGRA`).
+     */
+    `${ESTADO.CONTABILIZADO}|${TRANSICAO.CORRIGIR_DATA_PRESUMIDA}`,
     `${ESTADO.CONTABILIZADO}|${TRANSICAO.DESFAZER}`,
     `${ESTADO.RECUSADO}|${TRANSICAO.REABRIR}`,
   ]);
@@ -471,5 +486,101 @@ describe("⚠⚠ PRESUMIDO_POR_REGRA", () => {
     // Origem nova nasce sendo declaração, que é o lado seguro.
     const provam = Object.values(ORIGEM_PAGAMENTO).filter(ehProvaDePagamento);
     expect(provam.sort()).toEqual([ORIGEM_PAGAMENTO.EXTRATO_EXCEL, ORIGEM_PAGAMENTO.OFX].sort());
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O EXTRATO CORRIGE A DATA QUE A REGRA PRESUMIU (29/08/2026).
+//
+// Este é o ato que torna REVERSÍVEL a decisão do dono de lançar numa data fixa. O lançamento nasceu
+// afirmando que o dinheiro saiu no dia N; ninguém viu isso acontecer; e quando o débito REAL chega,
+// ele diz o dia certo.
+//
+// ⚠⚠ O QUE MAIS IMPORTA AQUI É A NÃO-CRIAÇÃO: a despesa já está no razão, e um segundo
+// `AccountingEntry` seria a contagem dupla pela porta dos fundos.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ CORRIGIR_DATA_PRESUMIDA", () => {
+  const presumido = (extra = {}) => ({
+    estado: ESTADO.CONTABILIZADO,
+    dataPagamento: new Date("2026-08-15T00:00:00.000Z"),
+    origemPagamento: ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA,
+    contaAplicada: "411030012",
+    ...extra,
+  });
+
+  // ⚠ `Date`, nunca string: `ehData` exige `instanceof Date`. É a mesma forma dos outros casos.
+  const doExtrato = { dataPagamento: new Date("2026-08-22T00:00:00Z"), origemPagamento: ORIGEM_PAGAMENTO.OFX };
+
+  it("a prova do extrato substitui a presunção, e a linha FICA contabilizada", () => {
+    const r = podeTransitar(presumido(), TRANSICAO.CORRIGIR_DATA_PRESUMIDA, doExtrato);
+    expect(r.ok).toBe(true);
+    expect(r.estado).toBe(ESTADO.CONTABILIZADO);
+    expect(r.campos.origemPagamento).toBe(ORIGEM_PAGAMENTO.OFX);
+  });
+
+  it("⚠ o extrato em EXCEL também prova", () => {
+    const r = podeTransitar(presumido(), TRANSICAO.CORRIGIR_DATA_PRESUMIDA, {
+      dataPagamento: new Date("2026-08-22T00:00:00Z"), origemPagamento: ORIGEM_PAGAMENTO.EXTRATO_EXCEL,
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("⚠⚠ o que ENTRA tem de ser PROVA — declaração não corrige presunção", () => {
+    for (const origem of [ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR, ORIGEM_PAGAMENTO.CLIENTE, ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA]) {
+      const r = podeTransitar(presumido(), TRANSICAO.CORRIGIR_DATA_PRESUMIDA, {
+        dataPagamento: new Date("2026-08-22T00:00:00Z"), origemPagamento: origem,
+      });
+      expect(r.ok).toBe(false);
+      expect(r.motivo).toBe(RECUSA.PAGAMENTO_NAO_E_PROVA);
+    }
+  });
+
+  it("⚠⚠ o que ESTÁ tem de ser EXATAMENTE `PRESUMIDO_POR_REGRA` — não 'qualquer coisa que não seja prova'", () => {
+    // Uma data que o CONTADOR declarou é a afirmação de uma pessoa; trocá-la em silêncio por outra
+    // apagaria a decisão dele. Para aquele caso existe `PROVAR_PAGAMENTO`, que sai de `A_CONFERIR`.
+    const r = podeTransitar(
+      presumido({ origemPagamento: ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR }),
+      TRANSICAO.CORRIGIR_DATA_PRESUMIDA,
+      doExtrato,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toBe(RECUSA.DATA_NAO_E_PRESUMIDA);
+  });
+
+  it("⚠⚠ e uma data que JÁ é prova não é corrigida por aqui", () => {
+    const r = podeTransitar(
+      presumido({ origemPagamento: ORIGEM_PAGAMENTO.OFX }),
+      TRANSICAO.CORRIGIR_DATA_PRESUMIDA,
+      doExtrato,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toBe(RECUSA.DATA_NAO_E_PRESUMIDA);
+  });
+
+  it("⚠ a recusa DIZ o que houve e para onde ir", () => {
+    const r = podeTransitar(
+      presumido({ origemPagamento: ORIGEM_PAGAMENTO.CLIENTE }),
+      TRANSICAO.CORRIGIR_DATA_PRESUMIDA,
+      doExtrato,
+    );
+    expect(r.frase).toMatch(/foi informada por alguém/i);
+    expect(r.frase).toMatch(/só corrige o que o sistema presumiu/i);
+  });
+
+  it("⚠ data torta continua sendo recusada, como em toda transição de pagamento", () => {
+    const r = podeTransitar(presumido(), TRANSICAO.CORRIGIR_DATA_PRESUMIDA, {
+      dataPagamento: "banana", origemPagamento: ORIGEM_PAGAMENTO.OFX,
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  it("⚠⚠ ela NÃO sai de `A_CONFERIR` — lá quem responde é `PROVAR_PAGAMENTO`", () => {
+    const r = podeTransitar(
+      { estado: ESTADO.A_CONFERIR, origemPagamento: ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA },
+      TRANSICAO.CORRIGIR_DATA_PRESUMIDA,
+      doExtrato,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toBe(RECUSA.TRANSICAO_INVALIDA_NESTE_ESTADO);
   });
 });

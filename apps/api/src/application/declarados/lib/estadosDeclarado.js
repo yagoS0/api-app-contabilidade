@@ -190,6 +190,15 @@ export const TRANSICAO = Object.freeze({
    * cada sentido, e só um deles é reversível de graça.
    */
   PROVAR_PAGAMENTO: "PROVAR_PAGAMENTO",
+  /**
+   * ⚠⚠ O EXTRATO corrige a data que a REGRA presumiu — e só ela (29/08/2026).
+   *
+   * ⚠ Ela NÃO é `PROVAR_PAGAMENTO` com outro nome: aquela sai de `A_CONFERIR` e troca a afirmação
+   * de uma PESSOA por uma prova; esta sai de `CONTABILIZADO` e troca uma presunção do SISTEMA. Os
+   * dois estados e as duas procedências são diferentes, e colapsá-las deixaria o extrato
+   * sobrescrever a data que o contador declarou.
+   */
+  CORRIGIR_DATA_PRESUMIDA: "CORRIGIR_DATA_PRESUMIDA",
   CONFIRMAR: "CONFIRMAR",
   AJUSTAR: "AJUSTAR",
   RECUSAR: "RECUSAR",
@@ -218,6 +227,7 @@ export const RECUSA = Object.freeze({
   PAGAMENTO_JA_PROVADO: "pagamento_ja_provado",
   /** ⚠⚠ Só PROVA substitui declaração. Declaração sobre declaração é `INFORMAR_PAGAMENTO`. */
   PAGAMENTO_NAO_E_PROVA: "pagamento_nao_e_prova",
+  DATA_NAO_E_PRESUMIDA: "data_nao_e_presumida",
 });
 
 /** A frase de cada recusa, para a tela não escrever a sua. */
@@ -239,6 +249,9 @@ export const FRASE_DA_RECUSA = Object.freeze({
   [RECUSA.PAGAMENTO_NAO_E_PROVA]:
     "Só uma data vinda do extrato substitui uma data declarada. Para trocar uma declaração por outra, "
     + "use informar pagamento.",
+  [RECUSA.DATA_NAO_E_PRESUMIDA]:
+    "A data desta despesa não foi presumida por uma regra — ela foi informada por alguém. Este caminho "
+    + "só corrige o que o sistema presumiu.",
 });
 
 /**
@@ -252,6 +265,8 @@ const ORIGENS_VALIDAS = Object.freeze({
   // trocá-la aqui deixaria o lançamento e o declarado dizendo coisas diferentes sobre o mesmo
   // dinheiro. Corrigir isso é desfazer e relançar, que é ato do contador.
   [TRANSICAO.PROVAR_PAGAMENTO]: [ESTADO.A_CONFERIR],
+  // ⚠⚠ A ÚNICA transição que sai de `CONTABILIZADO` sem desfazer o lançamento. Ver o corpo dela.
+  [TRANSICAO.CORRIGIR_DATA_PRESUMIDA]: [ESTADO.CONTABILIZADO],
   // ⚠ CONFIRMAR aceita `AGUARDANDO_PAGAMENTO` de propósito: é o "lançar agora, mesmo sem
   // comprovante" que o dono pediu. Ele não afrouxa a invariante — quem confirma de lá tem de
   // mandar a data no mesmo ato, e a recusa é a mesma.
@@ -336,6 +351,42 @@ export function podeTransitar(declarado, transicao, dados = {}) {
       if (erro) return recusa(erro);
       // ⚠ Fica em `A_CONFERIR`: o que muda é a PROCEDÊNCIA da data, não o lugar da linha na fila.
       return aceita(ESTADO.A_CONFERIR, { dataPagamento: pag.data, origemPagamento: pag.origem });
+    }
+
+    /**
+     * ⚠⚠ O EXTRATO CORRIGE A DATA QUE A REGRA PRESUMIU (29/08/2026).
+     *
+     * Este é o ato que torna REVERSÍVEL a decisão do dono de lançar numa data fixa: o lançamento
+     * nasceu afirmando que o dinheiro saiu no dia N, ninguém viu isso acontecer, e quando o débito
+     * REAL chega ele diz o dia certo.
+     *
+     * ⚠⚠ **ELE NÃO CRIA UM SEGUNDO LANÇAMENTO — é a guarda contra a contagem dupla pela porta dos
+     * fundos.** A linha já está `CONTABILIZADO`; o que muda são a DATA e a PROCEDÊNCIA dela. O
+     * `AccountingEntry` que existe é atualizado pelo serviço, na mesma transação.
+     *
+     * ⚠⚠ **AS TRÊS GUARDAS, e nenhuma é dispensável:**
+     *
+     *   1. o que ENTRA tem de ser PROVA — só o extrato corrige uma presunção;
+     *   2. o que ESTÁ tem de ser **exatamente** `PRESUMIDO_POR_REGRA`. Não é "qualquer coisa que não
+     *      seja prova": uma data que o CONTADOR declarou é a afirmação de uma pessoa, e trocá-la em
+     *      silêncio por outra apagaria a decisão dele. Para aquele caso existe `PROVAR_PAGAMENTO`,
+     *      que sai de `A_CONFERIR`;
+     *   3. a data que entra tem de ser válida — a mesma conferência de sempre.
+     *
+     * ⚠ Ele fica em `CONTABILIZADO`: o que muda é a procedência da data, não o lugar da linha.
+     */
+    case TRANSICAO.CORRIGIR_DATA_PRESUMIDA: {
+      if (!ehProvaDePagamento(dados?.origemPagamento)) return recusa(RECUSA.PAGAMENTO_NAO_E_PROVA);
+      // ⚠⚠ IGUALDADE EXATA, nunca `!ehProvaDePagamento(...)`: com a negação, a data que o contador
+      // DECLAROU seria sobrescrita por este caminho — e ela não é uma presunção do sistema.
+      if (declarado?.origemPagamento !== ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA) {
+        return recusa(RECUSA.DATA_NAO_E_PRESUMIDA);
+      }
+
+      const pag = pagamentoResultante(declarado, dados);
+      const erro = conferirPagamento(pag);
+      if (erro) return recusa(erro);
+      return aceita(ESTADO.CONTABILIZADO, { dataPagamento: pag.data, origemPagamento: pag.origem });
     }
 
     case TRANSICAO.CONFIRMAR:

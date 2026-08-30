@@ -166,15 +166,18 @@ describe("⚠⚠ o ESTADO decide, e RECUSADO não ressuscita", () => {
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ dataPresumida", () => {
   it("o dia configurado, na competência da nota", () => {
-    expect(dataPresumida("2026-08", 15)).toBe("2026-08-15");
+    // ⚠⚠ Um `Date`, não uma string: `ehData` da máquina de estados exige `instanceof Date`, e a
+    // primeira versão devolvia texto — o lançamento seria recusado com `data_de_pagamento_invalida`
+    // e a automação nunca lançaria nada. Foi o teste da transição que pegou.
+    expect(dataPresumida("2026-08", 15)).toEqual(new Date(Date.UTC(2026, 7, 15)));
   });
 
   it("⚠⚠ dia 31 em fevereiro vira o ÚLTIMO dia do mês — nunca o 1º do mês seguinte", () => {
     // A competência do lançamento tem de continuar sendo a da nota, senão a despesa migraria de mês
     // sozinha — e o fechamento do mês passaria a discordar do razão.
-    expect(dataPresumida("2026-02", 31)).toBe("2026-02-28");
-    expect(dataPresumida("2024-02", 31)).toBe("2024-02-29");
-    expect(dataPresumida("2026-04", 31)).toBe("2026-04-30");
+    expect(dataPresumida("2026-02", 31)).toEqual(new Date(Date.UTC(2026, 1, 28)));
+    expect(dataPresumida("2024-02", 31)).toEqual(new Date(Date.UTC(2024, 1, 29)));
+    expect(dataPresumida("2026-04", 31)).toEqual(new Date(Date.UTC(2026, 3, 30)));
   });
 
   it("⚠ competência ou dia tortos devolvem `null` — a data não se inventa", () => {
@@ -225,7 +228,7 @@ describe("⚠⚠ o lançamento automático", () => {
     const { dados } = mockAplicar.mock.calls[0][0];
     expect(dados.contaAplicada).toBe("411030012");
     expect(dados.contaCredito).toBe("111010001");
-    expect(dados.dataPagamento).toBe("2026-08-15");
+    expect(dados.dataPagamento).toEqual(new Date(Date.UTC(2026, 7, 15)));
     expect(dados.regraId).toBe("r-1");
   });
 

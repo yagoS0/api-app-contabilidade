@@ -72,12 +72,18 @@ const numero = (v) => {
 const soDigitos = (v) => String(v ?? "").replace(/\D+/g, "");
 
 /**
- * ⚠⚠ A DATA PRESUMIDA — `AAAA-MM-DD` na competência da nota, no dia que o contador configurou.
+ * ⚠⚠ A DATA PRESUMIDA — o dia que o contador configurou, dentro da competência da nota.
  *
  * ⚠ **Dia maior que o mês tem** (31 em fevereiro) **vira o ÚLTIMO dia do mês**, nunca o primeiro do
  * mês seguinte: a competência do lançamento tem de continuar sendo a da nota, senão a despesa
  * migraria de mês sozinha.
- * ⚠ Aritmética de STRING, nunca `new Date` com fuso: às 22h de Brasília o ISO devolveria outro dia.
+ * ⚠⚠ ELA DEVOLVE UM `Date` **em UTC à meia-noite**, e não uma string — a máquina de estados exige
+ * `v instanceof Date` (`ehData`), e a primeira versão devolvia `"2026-08-15"`: o lançamento seria
+ * recusado com `data_de_pagamento_invalida`, ou seja, a automação nunca lançaria nada. **Foi o teste
+ * da transição que pegou.**
+ *
+ * ⚠ O `Date` é construído por `Date.UTC`, nunca por `new Date("2026-08-15")` com fuso: a data é
+ * CIVIL (um dia do calendário), e às 22h de Brasília o construtor devolveria outro dia.
  */
 export function dataPresumida(competencia, dia) {
   const m = /^(\d{4})-(\d{2})$/.exec(String(competencia || "").trim());
@@ -89,7 +95,7 @@ export function dataPresumida(competencia, dia) {
   // de fuso: nada aqui depende do relógio da máquina.
   const ultimo = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
   const escolhido = Math.min(d, ultimo);
-  return `${m[1]}-${m[2]}-${String(escolhido).padStart(2, "0")}`;
+  return new Date(Date.UTC(ano, mes - 1, escolhido));
 }
 
 /**
