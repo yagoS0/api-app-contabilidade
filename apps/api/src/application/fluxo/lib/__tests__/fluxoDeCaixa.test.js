@@ -117,7 +117,12 @@ describe("⚠⚠ o dia desconhecido vem com o motivo", () => {
 // ⚠⚠ A GUIA REAL SUBSTITUI A PROJEÇÃO DO MESMO MÊS.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ as duas nunca coexistem", () => {
-  const guia = linha({ fonte: FONTE.GUIA, competencia: "2026-08", valor: 1200 });
+  // ⚠⚠ O `base` PASSOU A DECIDIR (30/08/2026): só o DAS substitui a projeção, e parcela não é DAS.
+  // Sem `tipoDaGuia`/`ehParcelamento` a linha não substitui nada — e é essa a nova regra.
+  const guia = linha({
+    fonte: FONTE.GUIA, competencia: "2026-08", valor: 1200,
+    base: { tipoDaGuia: "SIMPLES", ehParcelamento: false },
+  });
   const projetado = linha({
     fonte: FONTE.IMPOSTO_PROJETADO, procedencia: PROCEDENCIA.PREVISAO,
     competencia: "2026-08", valor: 1100, dia: null,
@@ -143,6 +148,47 @@ describe("⚠⚠ as duas nunca coexistem", () => {
   it("⚠ e as outras previsões NÃO são tocadas — só o imposto projetado é substituído", () => {
     const serie = linha({ fonte: FONTE.SERIE_DESPESA, procedencia: PROCEDENCIA.PREVISAO, competencia: "2026-08" });
     expect(projecaoSubstituidaPelaGuia([guia, serie])).toHaveLength(2);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  // ⚠⚠ O CONSERTO DE 30/08/2026 — medido numa empresa real (ERISANGELA, agosto).
+  //
+  // Qualquer guia do mês zerava a projeção. Havia uma **Parcela 1 de parcelamento** (tipo `SIMPLES`,
+  // R$ 327,50) e um **INSS**; os dois apagaram o DAS projetado, e a coluna Impostos passou a mostrar
+  // R$ 651,33 de parcelas **sem o imposto do mês**. O contador via R$ 1.437,15 de DAS; o cliente via
+  // parcelamento. É o mesmo par que o `apps/api/CLAUDE.md` já separava no dashboard.
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  it("⚠⚠ a PARCELA de parcelamento NÃO apaga a projeção — ela é dívida passada, não o DAS do mês", () => {
+    const parcela = linha({
+      fonte: FONTE.GUIA, competencia: "2026-08", valor: 327.5,
+      // ⚠ O tipo é `SIMPLES`, IGUAL ao do DAS: é só `ehParcelamento` que as separa, e era isso que
+      // faltava. Um teste com tipo diferente passaria sem exercer nada.
+      base: { tipoDaGuia: "SIMPLES", ehParcelamento: true },
+    });
+    const r = projecaoSubstituidaPelaGuia([parcela, projetado]);
+    expect(r).toHaveLength(2);
+    expect(r.map((l) => l.fonte)).toContain(FONTE.IMPOSTO_PROJETADO);
+  });
+
+  it("⚠⚠ o INSS NÃO apaga a projeção — ele não é imposto sobre a receita", () => {
+    const inss = linha({
+      fonte: FONTE.GUIA, competencia: "2026-08", valor: 178.31,
+      base: { tipoDaGuia: "INSS", ehParcelamento: false },
+    });
+    expect(projecaoSubstituidaPelaGuia([inss, projetado])).toHaveLength(2);
+  });
+
+  it("⚠ e as DUAS convivem com o DAS: o DAS tira a projeção e elas ficam", () => {
+    const parcela = linha({ fonte: FONTE.GUIA, competencia: "2026-08", valor: 327.5, base: { tipoDaGuia: "SIMPLES", ehParcelamento: true } });
+    const inss = linha({ fonte: FONTE.GUIA, competencia: "2026-08", valor: 178.31, base: { tipoDaGuia: "INSS", ehParcelamento: false } });
+    const r = projecaoSubstituidaPelaGuia([guia, parcela, inss, projetado]);
+    expect(r).toHaveLength(3);
+    expect(r.some((l) => l.fonte === FONTE.IMPOSTO_PROJETADO)).toBe(false);
+  });
+
+  it("⚠ guia SEM `base` não substitui — ausência de marca nunca vira autorização", () => {
+    const semBase = linha({ fonte: FONTE.GUIA, competencia: "2026-08", valor: 1200 });
+    expect(projecaoSubstituidaPelaGuia([semBase, projetado])).toHaveLength(2);
   });
 });
 

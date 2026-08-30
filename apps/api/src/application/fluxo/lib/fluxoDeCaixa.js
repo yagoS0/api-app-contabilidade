@@ -175,6 +175,12 @@ export const SEM_MES = Object.freeze({
    * que mês. Pôr no mês do vencimento seria afirmar quando o dinheiro saiu.
    */
   GUIA_PAGA_SEM_DATA: "guia_paga_sem_data",
+  /**
+   * ⚠⚠ GUIA DE R$ 0,00 — ela é MARCADOR, não compromisso (30/08/2026). Medido na ERISANGELA:
+   * 4 guias `SIMPLES` de zero, competências 01 a 04. Não há dinheiro a sair, e uma linha de zero na
+   * tabela AFIRMARIA que há um imposto de zero reais naquele mês.
+   */
+  GUIA_SEM_VALOR: "guia_sem_valor",
 });
 
 export const FRASE_DO_SEM_MES = Object.freeze({
@@ -189,6 +195,9 @@ export const FRASE_DO_SEM_MES = Object.freeze({
   [SEM_MES.GUIA_PAGA_SEM_DATA]:
     "Esta guia consta como paga e não tem a data do pagamento gravada. Ela não entra em mês nenhum: "
     + "escolher um seria afirmar quando o dinheiro saiu.",
+  [SEM_MES.GUIA_SEM_VALOR]:
+    "Esta guia está gravada com valor zero. Ela registra que a competência foi tratada, e não há "
+    + "dinheiro a sair — por isso não entra em mês nenhum.",
 });
 
 /**
@@ -434,13 +443,45 @@ export function montarLinha({
  *
  * ⚠ Quem sai é a PROJEÇÃO, nunca a guia: a guia é o fato.
  */
+/**
+ * ⚠⚠ O TIPO DE GUIA QUE **É** O IMPOSTO SOBRE A RECEITA — e por isso substitui a projeção.
+ *
+ * A projeção é `receita × alíquota efetiva do Simples`, ou seja **o DAS**. Só o DAS a substitui.
+ */
+const TIPO_DA_GUIA_QUE_SUBSTITUI = "SIMPLES";
+
+/**
+ * ⚠⚠ **A PARCELA DE PARCELAMENTO NÃO APAGA A PROJEÇÃO — nem o INSS** (conserto de 30/08/2026).
+ *
+ * O que estava acontecendo, medido na ERISANGELA: qualquer guia do mês zerava a projeção. Em agosto
+ * havia uma **Parcela 1 de parcelamento** (tipo `SIMPLES`, R$ 327,50) e um **INSS**; os dois
+ * apagaram o DAS projetado, e a coluna Impostos passou a mostrar R$ 651,33 de parcelas **sem o
+ * imposto do mês**. O contador via R$ 1.437,15 de DAS; o cliente via parcelamento.
+ *
+ * ⚠⚠ **PARCELA É DÍVIDA PASSADA SENDO PAGA, e o `apps/api/CLAUDE.md` já escrevia isto para o
+ * dashboard:** *"a parcela é gravada como `tipo:'SIMPLES'`, igual ao DAS, e o que separa as duas é
+ * o `parcelamentoId`"* — `guideCompliance` a exclui da query principal e a resolve num nó próprio.
+ * O fluxo não fazia essa distinção; agora faz, **lendo a mesma marca**.
+ *
+ * ⚠ **O INSS TAMBÉM NÃO SUBSTITUI**: ele não é imposto sobre a receita, e a projeção que ele apagava
+ * não era dele. As duas linhas convivem porque são dois pagamentos diferentes.
+ *
+ * ⚠ A parcela e o INSS **continuam no fluxo** — eles são dinheiro que sai. O que eles deixaram de
+ * fazer é esconder o DAS.
+ */
 export function projecaoSubstituidaPelaGuia(linhas) {
-  const mesesComGuia = new Set(
+  const mesesComDas = new Set(
     linhas
-      .filter((l) => l.fonte === FONTE.GUIA && l.competencia)
+      .filter((l) => (
+        l.fonte === FONTE.GUIA
+        && l.competencia
+        // ⚠ Igualdade EXATA com o tipo, nunca "qualquer guia": ver o cabeçalho.
+        && texto(l.base?.tipoDaGuia) === TIPO_DA_GUIA_QUE_SUBSTITUI
+        && l.base?.ehParcelamento !== true
+      ))
       .map((l) => l.competencia),
   );
-  return linhas.filter((l) => !(l.fonte === FONTE.IMPOSTO_PROJETADO && mesesComGuia.has(l.competencia)));
+  return linhas.filter((l) => !(l.fonte === FONTE.IMPOSTO_PROJETADO && mesesComDas.has(l.competencia)));
 }
 
 /**

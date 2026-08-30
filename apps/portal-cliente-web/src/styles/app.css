@@ -917,7 +917,20 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 }
 .fluxo-v3-voltar:hover { background: var(--neutral-surface); }
 /* ⚠ 420px ≈ 10 linhas de 36px + cabeçalho — a medida do mockup. O resto entra rolando. */
-.table-wrap--dias { max-height: 420px; overflow-y: auto; }
+/* ⚠⚠ A ROLAGEM INTERNA SAIU EM 30/08/2026, e o que a derrubou foi o BRANCO que ela produzia.
+   Dono: *"o espaço em branco da tabela tem que sumir; no fluxo de caixa, depois de Resultado tem um
+   espaço em branco."*
+
+   Medido no navegador: com `max-height` + `overflow-y: auto`, os 31 dias sempre estouram a caixa, a
+   barra de rolagem fica SEMPRE presente e come 17px — a tabela ficava com 542px dentro de um bloco
+   de 559px, e a faixa morta caía exatamente à direita da coluna Resultado. Sem a rolagem: 557 de
+   559, e o branco some.
+
+   ⚠ E ela também contradizia o próprio v4: o dono pediu *"30 dias à esquerda e 30 à direita"*, e uma
+   caixa de 420px mostrava NOVE dias. O comentário de `TabelaDeDias` dizia que "quem cede é a rolagem
+   interna" — quem cedia era o mês inteiro.
+   ⚠ Quem rola agora é a PÁGINA, e o `thead` grudado continua declarado: sem contêiner de rolagem
+   próprio, ele gruda no viewport, que é o comportamento desejado. */
 .table-wrap--dias thead th { position: sticky; top: 0; z-index: 2; }
 .fluxo-v3-mais {
   display: block; text-align: center; padding: 8px; font-size: .75rem;

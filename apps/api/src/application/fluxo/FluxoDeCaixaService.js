@@ -115,13 +115,23 @@ export function cicloDeHoje(agora = new Date()) {
  * de aceite nº 12 da Constituição: *"nenhum mês anterior ao corrente exibe célula âmbar"* — o
  * passado passa a carregar só o que foi pago.
  *
- * ⚠ `liberadaCliente: true` continua sendo o recorte: o mesmo de `GET /client/.../fluxo`.
+ * ⚠⚠ **`liberadaCliente` DEIXOU DE SER O RECORTE EM 30/08/2026** — decisão do dono, medida numa
+ * empresa real (ERISANGELA): *"o fluxo não tem a ver com o que foi liberado; o fluxo é uma
+ * PREVISÃO, o que é liberado apenas CONFIRMA a previsão."*
+ *
+ * O que estava acontecendo: das 17 guias da empresa, **7 estavam liberadas**. O DAS da competência
+ * 07 (R$ 1.437,15) e o INSS de 08 (R$ 178,31) não estavam — e a coluna Impostos de agosto mostrava
+ * **R$ 651,33 de parcelas de parcelamento**, sem o imposto do mês. O número não batia com o portal
+ * do contador nem com os lançamentos, e a causa não era conta errada: era recorte.
+ *
+ * ⚠ Liberar continua significando alguma coisa, e é outra coisa: é o que o cliente pode BAIXAR e
+ * pagar (`GET /client/.../fluxo` e o download seguem com o gate). O fluxo diz *quanto vai sair*;
+ * a liberação diz *o documento está na sua mão*.
  */
 async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
   const guias = await client.guide.findMany({
     where: {
       portalClientId: String(portalClientId),
-      liberadaCliente: true,
       // ⚠⚠ `"PAID"` ENTROU. Sem ele não existe passado: a guia paga é o único imposto que é FATO.
       paymentStatus: { in: ["OPEN", "OVERDUE", "PAID"] },
     },
@@ -142,6 +152,30 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
   for (const g of guias) {
     const rotulo = rotuloDaGuia(g);
     const valor = numero(g.valor);
+
+    /**
+     * ⚠⚠ GUIA DE R$ 0,00 NÃO É COMPROMISSO — ela é MARCADOR (30/08/2026).
+     *
+     * Medido na ERISANGELA: 4 guias `SIMPLES` de R$ 0,00 (competências 01 a 04), sem vencimento.
+     * Elas existem como registro de que o mês foi tratado; **não há dinheiro a sair**. Antes elas
+     * nem chegavam aqui (o recorte de `liberadaCliente` as escondia); ao abrir o recorte, elas
+     * passariam a desenhar quatro linhas de zero na tela do cliente.
+     *
+     * ⚠ Zero é uma AFIRMAÇÃO ("conferi, é zero") e aqui ele não afirma nada: é ausência de valor.
+     * É a mesma distinção que `celula()` faz para não devolver `{ valor: 0 }` no lugar de `null`.
+     * ⚠ Ela não some calada: sai nomeada em `semMes`, que é a lista de conferência.
+     */
+    if (!(valor > 0)) {
+      semMes.push({
+        motivo: SEM_MES.GUIA_SEM_VALOR,
+        frase: FRASE_DO_SEM_MES[SEM_MES.GUIA_SEM_VALOR],
+        rotulo,
+        valor,
+        referencia: { tipo: "guia", id: g.id },
+      });
+      continue;
+    }
+
     const referencia = { tipo: "guia", id: g.id };
     const paga = g.paymentStatus === "PAID";
 
@@ -173,7 +207,11 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
       continue;
     }
 
-    if (!g.vencimento) {
+    // ⚠⚠ O VENCIMENTO PODE SER DERIVADO DA COMPETÊNCIA (dia 20 da lei) — ver `vencimentoDaGuia`.
+    // ⚠ Só quando NEM ISSO existe (guia sem vencimento E sem competência) ela sai nomeada: aí não
+    // há âncora nenhuma, e escolher um mês seria o sistema decidindo quando o dinheiro sai.
+    const { data: dataDeVencimento, presumido: vencimentoPresumido } = vencimentoDaGuia(g);
+    if (!dataDeVencimento) {
       // ⚠⚠ NÃO VIRA ZERO E NÃO VIRA PREVISÃO. Ela sai nomeada, com o conserto.
       semMes.push({
         motivo: SEM_MES.GUIA_SEM_VENCIMENTO,
@@ -187,7 +225,7 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
       continue;
     }
 
-    const vence = isoDaData(g.vencimento);
+    const vence = isoDaData(dataDeVencimento);
     const atrasada = vence != null && hoje != null && vence < hoje;
     linhas.push(montarLinha({
       fonte: FONTE.GUIA,
@@ -199,7 +237,7 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
       competencia: cicloAtual,
       // ⚠ O dia do vencimento continua sendo o dia da linha quando ele cai no mês corrente. Fora
       // dele o dia não vale: ele é de outro mês, e usá-lo aqui apontaria para uma data que passou.
-      dia: competenciaDaData(g.vencimento) === cicloAtual ? diaDaData(g.vencimento) : null,
+      dia: competenciaDaData(dataDeVencimento) === cicloAtual ? diaDaData(dataDeVencimento) : null,
       diaDesconhecido: DIA_DESCONHECIDO.COMPROMISSO_EM_ATRASO,
       valor,
       rotulo,
@@ -208,6 +246,13 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
           + (vence ? ` · vence em ${vence}` : ""),
         vencimento: vence,
         atrasada,
+        // ⚠⚠ A MARCA QUE SEPARA O DIA IMPRESSO NA GUIA DO DIA DERIVADO POR NÓS. Sem ela, os dois
+        // ficam indistinguíveis — e a tela afirmaria uma data que o documento não traz.
+        vencimentoPresumido,
+        // ⚠⚠ O TIPO E A MARCA DE PARCELAMENTO VIAJAM — e é delas que `projecaoSubstituidaPelaGuia`
+        // precisa para não deixar uma PARCELA apagar a projeção do DAS do mês. Ver aquela função.
+        tipoDaGuia: texto(g.tipo) || "OUTRA",
+        ehParcelamento: Boolean(g.parcelamentoId),
       },
       referencia,
     }));
@@ -218,6 +263,40 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
   }
 
   return { linhas, semMes, emAberto };
+}
+
+/**
+ * ⚠⚠ O DIA DO VENCIMENTO QUANDO A COLUNA ESTÁ VAZIA (30/08/2026).
+ *
+ * > Dono: *"impostos não estão com data definida; por definição devem ficar no dia do vencimento —
+ * > temos esses dados, use-os."* · *"a DAS de agosto (…) deveria ter pago dia 20 de agosto, seria a
+ * > DAS da competência 07."*
+ *
+ * Medido na ERISANGELA: **o DAS da competência 07 existe como guia, vale R$ 1.437,15, e tem
+ * `vencimento` NULO**. Sem esta derivação ele cai em `semMes` e some da tabela — que é
+ * exatamente o buraco de agosto.
+ *
+ * ⚠⚠ **ISTO NÃO É UM DIA INVENTADO, É O DIA DA LEI.** DAS do Simples: *"até o dia 20 do mês
+ * subsequente ao período de apuração"* (LC 123/2006, art. 21, III). O INSS do contribuinte
+ * individual segue o mesmo dia 20. E a base MEDIDA da empresa concorda: as 6 guias de INSS com
+ * vencimento gravado vencem no dia 20 do mês seguinte à competência (uma no dia 19, quando o 20
+ * caiu em fim de semana).
+ *
+ * ⚠ **A DERIVAÇÃO VIAJA MARCADA** (`base.vencimentoPresumido`), e é o que a distingue do vencimento
+ * que veio do documento: sem a marca, um dia derivado por nós ficaria indistinguível de um dia
+ * impresso na guia.
+ * ⚠ **Sem competência não há derivação** — ela é a âncora do cálculo, e sem ela a guia continua
+ * saindo nomeada em `semMes`. Ausência de dado não vira data.
+ */
+const DIA_DO_VENCIMENTO_LEGAL = 20;
+
+export function vencimentoDaGuia(g) {
+  if (g?.vencimento) return { data: g.vencimento, presumido: false };
+  const comp = texto(g?.competencia);
+  if (!/^\d{4}-\d{2}$/.test(comp)) return { data: null, presumido: false };
+  const [ano, mes] = comp.split("-").map(Number);
+  // ⚠ `Date.UTC` e aritmética de calendário — nada aqui depende do relógio nem do fuso da máquina.
+  return { data: new Date(Date.UTC(ano, mes, DIA_DO_VENCIMENTO_LEGAL)), presumido: true };
 }
 
 function rotuloDaGuia(g) {

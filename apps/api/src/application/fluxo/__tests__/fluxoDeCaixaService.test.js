@@ -266,9 +266,35 @@ describe("⚠⚠ Lei 1 — só o pagamento confirma; a guia gerada é COMPROMISS
     expect(doMes(r, CICLO).totais.compromisso.saida).toBe(1200);
   });
 
-  it("⚠⚠ SEM vencimento ela NÃO entra em mês nenhum, e sai NOMEADA com o conserto", async () => {
-    // Medido em produção: 51 guias de DAS estão assim.
-    const r = await montar(clientDe({ guias: [guia({ vencimento: null })] }));
+  /**
+   * ⚠⚠ ESTES DOIS TESTES DIZIAM O CONTRÁRIO ATÉ 30/08/2026, e a decisão que os virou é do dono:
+   * *"impostos não estão com data definida; por definição devem ficar no dia do vencimento — temos
+   * esses dados, use-os"* · *"a DAS de agosto deveria ter pago dia 20 de agosto, seria a DAS da
+   * competência 07"*.
+   *
+   * Medido na ERISANGELA: o DAS da competência 07 existe, vale R$ 1.437,15 e tem `vencimento` NULO.
+   * Pela regra antiga ele caía em `semMes` e **sumia da tabela** — era esse o buraco de agosto.
+   *
+   * ⚠ O que NÃO mudou: sem competência **também** não há derivação, e aí ela continua saindo
+   * nomeada. A âncora é a competência; ausência de dado nunca vira data.
+   */
+  it("⚠⚠ sem vencimento MAS com competência, ela cai no dia 20 — o dia da lei, marcado como presumido", async () => {
+    const r = await montar(clientDe({ guias: [guia({ vencimento: null, competencia: "2026-07" })] }));
+    const l = doMes(r, CICLO).linhas.find((x) => x.fonte === FONTE.GUIA);
+    expect(l).toBeTruthy();
+    expect(l.dia).toBe(20);
+    // ⚠⚠ A MARCA É O QUE SEPARA O DIA IMPRESSO NA GUIA DO DIA DERIVADO POR NÓS.
+    expect(l.base.vencimentoPresumido).toBe(true);
+    expect(r.semMes).toHaveLength(0);
+  });
+
+  it("⚠ o vencimento que VEIO da guia não é marcado como presumido", async () => {
+    const r = await montar(clientDe({ guias: [guia()] }));
+    expect(doMes(r, CICLO).linhas.find((x) => x.fonte === FONTE.GUIA).base.vencimentoPresumido).toBe(false);
+  });
+
+  it("⚠⚠ sem vencimento E sem competência ela continua fora de mês nenhum, NOMEADA", async () => {
+    const r = await montar(clientDe({ guias: [guia({ vencimento: null, competencia: null })] }));
     expect(r.meses.every((m) => m.linhas.length === 0)).toBe(true);
     expect(r.semMes).toHaveLength(1);
     expect(r.semMes[0].motivo).toBe(SEM_MES.GUIA_SEM_VENCIMENTO);
@@ -276,12 +302,23 @@ describe("⚠⚠ Lei 1 — só o pagamento confirma; a guia gerada é COMPROMISS
   });
 
   it("⚠⚠ e ela NÃO entra em `totais` — o desconhecido é contagem, nunca valor", async () => {
-    const r = await montar(clientDe({ guias: [guia({ vencimento: null })] }));
+    const r = await montar(clientDe({ guias: [guia({ vencimento: null, competencia: null })] }));
     for (const m of r.meses) {
       expect(m.totais.fato.saida).toBe(0);
       expect(m.totais.compromisso.saida).toBe(0);
       expect(m.totais.previsao.saida).toBe(0);
     }
+  });
+
+  /**
+   * ⚠⚠ GUIA DE R$ 0,00 É MARCADOR, NÃO COMPROMISSO (30/08/2026). Medido na ERISANGELA: 4 guias
+   * `SIMPLES` de zero. Elas só ficaram visíveis quando o recorte de `liberadaCliente` caiu, e uma
+   * linha de zero AFIRMARIA um imposto de zero reais naquele mês.
+   */
+  it("⚠⚠ guia de R$ 0,00 não vira linha — ela sai nomeada", async () => {
+    const r = await montar(clientDe({ guias: [guia({ valor: "0.00" })] }));
+    expect(r.meses.every((m) => m.linhas.length === 0)).toBe(true);
+    expect(r.semMes[0].motivo).toBe(SEM_MES.GUIA_SEM_VALOR);
   });
 
   it("⚠ a parcela de parcelamento tem rótulo próprio — não é o DAS do mês", async () => {
@@ -338,10 +375,29 @@ describe("⚠⚠ o que já venceu, e o que vence em 5 dias", () => {
     // ⚠ Por isso `vencidas` NÃO entra em `totais` — ele é lista de conferência, não parcela a somar.
   });
 
-  it("⚠ só o que está LIBERADO é consultado", async () => {
+  /**
+   * ⚠⚠ ESTE TESTE PRENDIA O RECORTE `liberadaCliente: true`, E ELE CAIU EM 30/08/2026.
+   *
+   * > Dono: *"o fluxo não tem a ver com o que foi liberado; o fluxo é uma PREVISÃO, o que é liberado
+   * > apenas CONFIRMA a previsão."*
+   *
+   * Medido na ERISANGELA: 7 das 17 guias estavam liberadas. O DAS da competência 07 (R$ 1.437,15) e
+   * o INSS de 08 (R$ 178,31) não estavam, e a coluna Impostos de agosto mostrava R$ 651,33 de
+   * **parcelas de parcelamento** — sem o imposto do mês.
+   *
+   * ⚠ Liberar continua governando o que o cliente BAIXA (`GET /client/.../fluxo` e o download). O
+   * que ele deixou de governar é o que o fluxo MOSTRA.
+   */
+  it("⚠⚠ o fluxo NÃO filtra por `liberadaCliente` — ele é previsão, e liberar só confirma", async () => {
     const client = clientDe({ guias: [] });
     await montar(client);
-    expect(client.guide.findMany.mock.calls[0][0].where).toMatchObject({ liberadaCliente: true });
+    const where = client.guide.findMany.mock.calls[0][0].where;
+    expect(where).not.toHaveProperty("liberadaCliente");
+  });
+
+  it("⚠ a guia NÃO liberada entra no fluxo, como qualquer outra", async () => {
+    const r = await montar(clientDe({ guias: [guia({ liberadaCliente: false })] }));
+    expect(doMes(r, CICLO).linhas.some((l) => l.fonte === FONTE.GUIA)).toBe(true);
   });
 });
 
