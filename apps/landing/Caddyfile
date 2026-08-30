@@ -1,0 +1,30 @@
+# Site ESTATICO de uma pagina so. NAO e um SPA — e a diferenca importa.
+#
+# ⚠⚠ NAO EXISTE `try_files {path} /index.html` AQUI, e a ausencia e deliberada.
+# No `apps/portal-cliente-web` aquela linha e obrigatoria (o roteamento do SPA depende dela).
+# Aqui ela seria estrago: `/pagina-que-nao-existe` responderia **200 com a landing**, e o Google
+# indexaria a mesma pagina sob N enderecos. Caminho que nao existe tem de devolver **404**.
+:8080 {
+	root * /usr/share/caddy
+	encode gzip
+
+	@assets path /assets/*
+	handle @assets {
+		# ⚠⚠ NAO USE `immutable` AQUI. No portal do cliente ele e seguro porque o Vite poe o hash do
+		# CONTEUDO no nome (`index-e72ae327.js`) — conteudo novo ⇒ nome novo. Nesta pasta os nomes
+		# sao FIXOS (`altan-icone-32.png`, `Inter-latin.woff2`): trocar o icone com `immutable` de um
+		# ano deixaria o visitante com o icone velho ate 2027, sem meio de corrigir.
+		#
+		# Uma hora de cache + revalidacao: rapido no dia a dia, e um deploy chega em ate 1h.
+		header Cache-Control "public, max-age=3600, must-revalidate"
+		file_server
+	}
+
+	handle {
+		# ⚠ `no-cache` NAO quer dizer "nao guarde": quer dizer "guarde, mas pergunte antes de usar".
+		# Com o ETag que o Caddy emite, a resposta comum e um 304 sem corpo. E a unica pagina do
+		# site — se ela envelhece, o site inteiro envelhece.
+		header Cache-Control "no-cache"
+		file_server
+	}
+}

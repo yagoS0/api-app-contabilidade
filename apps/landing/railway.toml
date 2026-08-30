@@ -1,0 +1,10 @@
+# ⚠ Root Directory deste servico = RAIZ do repositorio (nao a pasta do app), igual aos outros dois.
+# ⚠ E o `dockerfilePath` e relativo a RAIZ -- com a pasta do app ele nao seria encontrado.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/landing/Dockerfile"
+# ⚠ So `apps/landing/**`: esta pagina nao depende de `packages/` nem do `package.json` da raiz,
+# entao um rebuild disparado por eles seria deploy sem mudanca nenhuma.
+watchPatterns = [
+  "apps/landing/**"
+]

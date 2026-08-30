@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Altan Contabilidade — Contabilidade com app próprio para empresas de serviços</title>
+<meta name="description" content="Contabilidade tech-enabled para clínicas, engenharia, tecnologia e consultorias. Simples Nacional e Lucro Presumido. App exclusivo com guias, DRE, fluxo de caixa futuro e emissão de notas.">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/altan-icone-32.png">
+<link rel="apple-touch-icon" href="assets/altan-icone-180.png">
+<!-- A Inter e SERVIDA POR NOS (assets/fonts/) porque o letreiro da logo e <text> num SVG inline.
+     Fraunces e IBM Plex Mono seguem no Google Fonts. Motivo completo: README.md desta pasta. -->
+<link rel="preload" href="assets/fonts/Inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;1,9..144,300&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  @font-face{
+    font-family:"Inter";
+    font-style:normal;
+    font-weight:100 900;   /* arquivo VARIAVEL: cobre os 400/500/600/700 que a pagina usa */
+    font-display:swap;
+    src:url("assets/fonts/Inter-latin.woff2") format("woff2");
+  }
+  :root{
+    /* paleta oficial Altan */
+    --ink:#1A1B26; --panel:#20222F; --panel-2:#262939; --line:#33364A;
+    --paper:#F8F8F2; --muted:#AEB6D3; --slate:#6272A4;
+    --gold:#E8B33A; --gold-deep:#D9A32B;
+    --display:"Fraunces",Georgia,serif; --body:"Inter",system-ui,sans-serif; --mono:"IBM Plex Mono",monospace;
+    --w:1160px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--ink);color:var(--paper);font-family:var(--body);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:var(--w);margin:0 auto;padding:0 24px}
+  h1,h2,h3{font-family:var(--display);font-weight:300;letter-spacing:-.01em;line-height:1.08}
+  h1{font-size:clamp(2.6rem,6vw,4.6rem)}
+  h2{font-size:clamp(2rem,4vw,3rem)}
+  h3{font-size:1.5rem;font-weight:500}
+  .eyebrow{font-family:var(--body);font-size:.72rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);font-weight:500}
+  .muted{color:var(--muted)}
+  .btn{display:inline-flex;align-items:center;gap:10px;padding:14px 22px;border-radius:6px;font-weight:600;font-size:.95rem;border:1px solid var(--line);transition:transform .15s,background .15s,border-color .15s;cursor:pointer;font-family:inherit}
+  .btn:hover{transform:translateY(-1px)}
+  .btn-gold{background:var(--gold);color:var(--ink);border-color:var(--gold)}
+  .btn-gold:hover{background:#F2C255}
+  .btn-ghost{background:transparent;color:var(--paper)}
+  .btn-ghost:hover{border-color:var(--gold)}
+  :focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+
+  nav{position:sticky;top:0;z-index:10;background:rgba(26,27,38,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:72px}
+  .brand svg{height:46px;width:auto;display:block}
+  nav ul{display:flex;gap:28px;list-style:none;font-size:.9rem;color:var(--muted)}
+  nav ul a:hover{color:var(--paper)}
+  @media(max-width:760px){nav ul{display:none}}
+
+  .hero{padding:110px 0 90px;position:relative;overflow:hidden}
+  .hero::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 39px,rgba(174,182,211,.06) 39px 40px);mask-image:linear-gradient(180deg,rgba(0,0,0,.9),transparent 80%);pointer-events:none}
+  /* horizonte: linha + nascer do sol, do logo */
+  .hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,var(--slate) 30%,var(--slate) 70%,transparent)}
+  .hero .wrap{position:relative;display:grid;grid-template-columns:1.15fr .85fr;gap:60px;align-items:center}
+  @media(max-width:900px){.hero .wrap{grid-template-columns:1fr}}
+  .hero h1 em{font-style:italic;color:var(--gold)}
+  .hero p.lead{font-size:1.15rem;color:var(--muted);max-width:52ch;margin:28px 0 36px}
+  .hero-actions{display:flex;gap:14px;flex-wrap:wrap}
+
+  .phone{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:22px;max-width:360px;margin-left:auto;font-family:var(--mono);font-size:.8rem;box-shadow:0 30px 60px rgba(0,0,0,.45)}
+  @media(max-width:900px){.phone{margin:0 auto}}
+  .phone .top{display:flex;justify-content:space-between;align-items:center;color:var(--slate);font-size:.7rem;margin-bottom:18px;letter-spacing:.1em}
+  .phone .top svg{height:18px;width:auto}
+  .phone .big{font-family:var(--display);font-size:2.1rem;font-weight:500;color:var(--paper);line-height:1}
+  .phone .lbl{color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.1em}
+  .phone .row{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px dashed var(--line)}
+  .phone .row span:last-child{color:var(--paper);text-align:right}
+  .phone .ok{color:var(--gold)}
+  .bars{display:flex;gap:6px;align-items:flex-end;height:54px;margin:16px 0 6px}
+  .bars i{flex:1;background:var(--line);border-radius:2px 2px 0 0}
+  .bars i.b{background:var(--gold)}
+
+  section{padding:96px 0;border-top:1px solid var(--line)}
+  .sec-head{max-width:62ch;margin-bottom:56px}
+  .sec-head h2{margin:14px 0 18px}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+  @media(max-width:900px){.grid2,.grid4{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:32px}
+  .card h3{margin:10px 0 14px}
+  .card ul{list-style:none;margin-top:18px}
+  .card li{padding:9px 0;border-top:1px dashed var(--line);color:var(--muted);font-size:.95rem;display:flex;gap:12px}
+  .card li::before{content:"—";color:var(--gold);flex-shrink:0}
+
+  .feat{border-top:1px solid var(--gold);padding-top:18px}
+  .feat h3{font-size:1.15rem;margin:8px 0}
+  .feat p{color:var(--muted);font-size:.93rem}
+
+  .nichos{display:flex;flex-wrap:wrap;gap:10px;margin-top:30px}
+  .nichos span{border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:.88rem;color:var(--muted)}
+
+  .toggle{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:4px;margin-bottom:44px}
+  .toggle button{background:transparent;border:0;color:var(--muted);font:inherit;font-weight:600;font-size:.9rem;padding:10px 18px;border-radius:5px;cursor:pointer;transition:all .15s}
+  .toggle button.on{background:var(--gold);color:var(--ink)}
+  .plans{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;align-items:stretch}
+  @media(max-width:1100px){.plans{grid-template-columns:1fr 1fr}}
+  @media(max-width:640px){.plans{grid-template-columns:1fr}}
+  .plan{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:30px 26px;display:flex;flex-direction:column;position:relative}
+  .plan.hl{background:var(--panel-2);border-color:var(--gold)}
+  .plan.custom{background:transparent;border-style:dashed}
+  .plan .tag{position:absolute;top:-12px;left:26px;background:var(--gold);color:var(--ink);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;padding:4px 10px;border-radius:4px;font-weight:600}
+  .plan h3{margin:6px 0 4px;font-size:1.4rem}
+  .plan .who{color:var(--muted);font-size:.88rem;min-height:66px}
+  .price{margin:22px 0 6px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+  .price .cur{font-family:var(--mono);color:var(--muted);font-size:.85rem}
+  .price .val{font-family:var(--display);font-size:2.6rem;font-weight:500;line-height:1;font-variant-numeric:tabular-nums}
+  .price .per{color:var(--muted);font-size:.85rem}
+  .price-note{font-family:var(--mono);font-size:.72rem;color:var(--slate);min-height:38px;line-height:1.5}
+  .plan ul{list-style:none;margin:22px 0 26px;flex:1}
+  .plan li{padding:8px 0;border-top:1px dashed var(--line);font-size:.88rem;display:flex;gap:10px;line-height:1.45}
+  .plan li::before{content:"✓";color:var(--gold);font-family:var(--mono);flex-shrink:0}
+  .plan li.off{color:var(--slate)}
+  .plan li.off::before{content:"·";color:var(--line)}
+  .plan .btn{justify-content:center;padding:12px 16px;font-size:.9rem}
+  .fine{margin-top:28px;font-size:.85rem;color:var(--muted);max-width:78ch}
+  .fine b{color:var(--paper);font-weight:600}
+
+  .extras{margin-top:56px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:900px){.extras{grid-template-columns:1fr}}
+  .extra{border:1px solid var(--line);border-radius:8px;padding:18px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px;font-size:.9rem}
+  .extra span:last-child{font-family:var(--mono);color:var(--gold);white-space:nowrap}
+
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;counter-reset:s}
+  @media(max-width:900px){.steps{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.steps{grid-template-columns:1fr}}
+  .step{border-top:1px solid var(--gold);padding-top:18px}
+  .step::before{counter-increment:s;content:counter(s,decimal-leading-zero);font-family:var(--mono);color:var(--gold);font-size:.8rem}
+  .step h3{font-size:1.15rem;margin:10px 0 8px}
+  .step p{color:var(--muted);font-size:.93rem}
+
+  details{border-top:1px solid var(--line);padding:20px 0}
+  details:last-of-type{border-bottom:1px solid var(--line)}
+  summary{cursor:pointer;font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:16px}
+  summary::after{content:"+";font-family:var(--mono);color:var(--gold);font-size:1.2rem}
+  details[open] summary::after{content:"–"}
+  details p{color:var(--muted);margin-top:12px;max-width:70ch}
+
+  .cta{background:var(--panel);text-align:center;position:relative;overflow:hidden}
+  .cta .sun{width:120px;height:60px;border-radius:120px 120px 0 0;background:var(--gold);margin:0 auto 6px;opacity:.95}
+  .cta .horizon{width:220px;height:2px;background:var(--muted);margin:0 auto 34px;border-radius:2px}
+  .cta h2{margin:14px auto 20px;max-width:22ch}
+  .cta p{color:var(--muted);max-width:56ch;margin:0 auto 34px}
+  .cta .price-line{font-family:var(--mono);font-size:.85rem;color:var(--slate);margin-top:18px}
+
+  footer{padding:40px 0;border-top:1px solid var(--line);font-size:.85rem;color:var(--muted)}
+  footer .wrap{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px}
+  footer svg{height:64px;width:auto}
+
+  @media(prefers-reduced-motion:no-preference){
+    .reveal{opacity:0;transform:translateY(14px);transition:opacity .6s ease,transform .6s ease}
+    .reveal.in{opacity:1;transform:none}
+  }
+</style>
+<!-- Sem JS o IntersectionObserver nunca roda e todo `.reveal` ficaria em `opacity:0`:
+     a pagina abriria em BRANCO. Isto so desliga a animacao; o desenho nao muda. -->
+<noscript><style>.reveal{opacity:1!important;transform:none!important}</style></noscript>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a href="#" class="brand" aria-label="Altan Contabilidade">
+      <svg viewBox="0 0 620 170" xmlns="http://www.w3.org/2000/svg"><path d="M62 102 A38 38 0 0 1 138 102 Z" fill="#E8B33A"/><line x1="40" y1="102" x2="160" y2="102" stroke="#AEB6D3" stroke-width="2.5" stroke-linecap="round"/><text x="196" y="92" font-family="Inter,'Segoe UI',Arial,sans-serif" font-weight="500" font-size="38" letter-spacing="9" fill="#F8F8F2">ALTAN</text><text x="198" y="122" font-family="Inter,'Segoe UI',Arial,sans-serif" font-weight="400" font-size="12.5" letter-spacing="5.2" fill="#6272A4">CONTABILIDADE</text></svg>
+    </a>
+    <ul>
+      <li><a href="#app">O app</a></li>
+      <li><a href="#para-quem">Para quem</a></li>
+      <li><a href="#planos">Planos</a></li>
+      <li><a href="#faq">Dúvidas</a></li>
+    </ul>
+    <a href="#contato" class="btn btn-gold" style="padding:10px 18px">Pedir análise fiscal</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div>
+      <span class="eyebrow">Contabilidade para empresas de serviços</span>
+      <h1 style="margin-top:18px">Sua contabilidade,<br>com o caixa do mês que vem<br><em>já na tela do celular.</em></h1>
+      <p class="lead">A Altan cuida da rotina fiscal, folha e impostos de empresas de serviços no Simples Nacional e no Lucro Presumido — e entrega tudo num app próprio, onde você vê as guias, o DRE e o fluxo de caixa futuro sem precisar pedir.</p>
+      <div class="hero-actions">
+        <a href="#planos" class="btn btn-gold">Ver planos e valores</a>
+        <a href="#contato" class="btn btn-ghost">Pedir análise fiscal</a>
+      </div>
+    </div>
+    <div class="phone" aria-label="Prévia do app do cliente">
+      <div class="top"><svg viewBox="0 0 256 256"><path d="M74 150 A54 54 0 0 1 182 150 Z" fill="#E8B33A"/><line x1="46" y1="150" x2="210" y2="150" stroke="#AEB6D3" stroke-width="7" stroke-linecap="round"/></svg><span>AGOSTO / 2026</span></div>
+      <div class="lbl">Faturamento do mês</div>
+      <div class="big">R$ 84.300</div>
+      <div class="bars"><i style="height:40%"></i><i style="height:55%"></i><i style="height:48%"></i><i style="height:70%"></i><i style="height:62%"></i><i class="b" style="height:100%"></i></div>
+      <div class="row"><span class="lbl">Impostos de setembro (projetado)</span><span>R$ 5.058</span></div>
+      <div class="row"><span class="lbl">Apuração revisada</span><span class="ok">auditoria ok ✓</span></div>
+      <div class="row"><span class="lbl">Caixa em 30 dias</span><span>R$ 41.900</span></div>
+      <div class="row"><span class="lbl">Documentos pendentes</span><span>2</span></div>
+    </div>
+  </div>
+</header>
+
+<section id="app">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">O que vem em todos os planos</span>
+      <h2>Contabilidade que você não precisa cobrar. Ela aparece.</h2>
+      <p class="muted">O app da Altan é alimentado pelos dados que o escritório já tem: notas capturadas, guias geradas, extrato importado. Você complementa; a gente confere.</p>
+    </div>
+    <div class="grid4">
+      <div class="feat reveal"><h3>Guias e vencimentos</h3><p>DAS, DARFs, INSS, ISS, FGTS — tudo no app, com o valor projetado do mês seguinte antes de fechar.</p></div>
+      <div class="feat reveal"><h3>DRE e faturamento</h3><p>DRE simplificada e faturamento mensal em linguagem de dono de empresa, atualizados conforme as notas entram.</p></div>
+      <div class="feat reveal"><h3>Fluxo de caixa futuro</h3><p>Impostos, folha e despesas já comprometidas projetados nos próximos 30, 60 e 90 dias.</p></div>
+      <div class="feat reveal"><h3>Notas e documentos</h3><p>Emissor de NFS-e dentro do app, captura automática das notas recebidas e pedido de documentos no lugar do WhatsApp.</p></div>
+    </div>
+    <div class="grid4" style="margin-top:20px">
+      <div class="feat reveal"><h3>Extrato bancário (OFX)</h3><p>Você exporta o extrato do banco em OFX, o app lê e classifica. Nenhum lançamento entra na contabilidade sem um contador verificar.</p></div>
+      <div class="feat reveal"><h3>Auditoria mensal</h3><p>Todo fechamento passa por revisão de apuração, enquadramento e comparação de alíquotas antes da guia ser gerada.</p></div>
+      <div class="feat reveal"><h3>Folha e pró-labore</h3><p>Admissões, holerites, eSocial e pró-labore dos sócios, com a folha gerenciada pelo app.</p></div>
+      <div class="feat reveal"><h3>Contador com nome</h3><p>Um responsável fixo pela sua empresa, com resposta em horário comercial. Sem fila de tickets.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="para-quem">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">Para quem</span>
+      <h2>Feito para quem vende serviço, não produto.</h2>
+      <p class="muted">Cada regime tem suas próprias armadilhas — e as empresas de serviços costumam pagar caro por elas.</p>
+      <div class="nichos">
+        <span>Clínicas e profissionais de saúde</span><span>Engenharia e arquitetura</span><span>Tecnologia e software</span><span>Agências e consultorias</span><span>Escritórios e prestadores PJ</span>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="card reveal">
+        <span class="eyebrow">Simples Nacional</span>
+        <h3>Anexo certo, Fator R sob controle</h3>
+        <p class="muted">Muita empresa de serviços paga Anexo V (a partir de 15,5%) quando poderia estar no Anexo III (a partir de 6%). A regra é o Fator R: folha mais pró-labore de pelo menos 28% da receita. Monitoramos isso todo mês.</p>
+        <ul>
+          <li>Cálculo e acompanhamento mensal do Fator R</li>
+          <li>Pró-labore planejado para sustentar o enquadramento</li>
+          <li>Alerta antes de estourar faixas e sublimite de ISS</li>
+          <li>Apuração automática do DAS com revisão humana</li>
+        </ul>
+      </div>
+      <div class="card reveal">
+        <span class="eyebrow">Lucro Presumido</span>
+        <h3>Presunção correta, distribuição segura</h3>
+        <p class="muted">Serviços presumem 32% de lucro para IRPJ e CSLL, mas algumas atividades têm base menor. O ganho está no enquadramento correto das receitas e na distribuição de lucros com lastro contábil.</p>
+        <ul>
+          <li>IRPJ e CSLL trimestrais, PIS/COFINS e ISS mensais</li>
+          <li>Escrituração completa para distribuir lucros isentos</li>
+          <li>Gestão de retenções na fonte (INSS, IRRF, CSRF)</li>
+          <li>Comparativo anual: vale a pena migrar de regime?</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="planos">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">Planos</span>
+      <h2>Quatro níveis. Um critério: quanto você quer que a gente participe.</h2>
+      <p class="muted">Selecione o regime da sua empresa para ver os valores. Todos incluem o app.</p>
+    </div>
+
+    <div class="toggle" role="tablist" aria-label="Regime tributário">
+      <button class="on" role="tab" aria-selected="true" data-reg="simples">Simples Nacional</button>
+      <button role="tab" aria-selected="false" data-reg="presumido">Lucro Presumido</button>
+    </div>
+
+    <div class="plans">
+      <div class="plan reveal">
+        <span class="eyebrow">Essencial</span>
+        <h3>Em dia</h3>
+        <p class="who">Empresa enxuta que quer a contabilidade correta, no prazo, com tudo visível no app.</p>
+        <div class="price"><span class="cur">R$</span><span class="val" data-simples="420" data-presumido="890">420</span><span class="per">/mês</span></div>
+        <div class="price-note" data-simples="sem funcionários · até R$ 60 mil/mês" data-presumido="até 2 funcionários · até R$ 60 mil/mês">sem funcionários · até R$ 60 mil/mês</div>
+        <ul>
+          <li>Escrituração contábil e fiscal completa</li>
+          <li>Apuração de impostos e guias no app</li>
+          <li>Pró-labore dos sócios</li>
+          <li>Emissão de notas fiscais pelo app</li>
+          <li data-simples="Obrigações acessórias (DEFIS, DCTFWeb, ECD, eSocial)" data-presumido="Obrigações acessórias (DCTF, ECD, ECF, EFD-Contribuições, eSocial)">Obrigações acessórias (DEFIS, DCTFWeb, ECD, eSocial)</li>
+          <li>Balanço e demonstrações anuais</li>
+          <li>Certidões negativas</li>
+          <li>Suporte contábil no dia a dia</li>
+          <li class="off">Folha de funcionários</li>
+          <li class="off">Reunião mensal de resultados</li>
+        </ul>
+        <a href="#contato" class="btn btn-ghost">Começar no Essencial</a>
+      </div>
+
+      <div class="plan hl reveal">
+        <span class="tag">Mais escolhido</span>
+        <span class="eyebrow">Gestão</span>
+        <h3>Acompanhado</h3>
+        <p class="who">Empresa com equipe que quer olhar os números todo mês com alguém que entende do negócio.</p>
+        <div class="price"><span class="cur">R$</span><span class="val" data-simples="690" data-presumido="1.290">690</span><span class="per">/mês</span></div>
+        <div class="price-note" data-simples="até 5 funcionários · até R$ 60 mil/mês" data-presumido="até 5 funcionários · até R$ 100 mil/mês">até 5 funcionários · até R$ 60 mil/mês</div>
+        <ul>
+          <li>Tudo do Essencial</li>
+          <li>Folha de pagamento completa</li>
+          <li>Reunião mensal de resultados (45 min)</li>
+          <li>DRE e fluxo de caixa futuro comentados</li>
+          <li data-simples="Fator R e anexo revisados todo mês" data-presumido="Presunção e retenções na fonte revisadas todo mês">Fator R e anexo revisados todo mês</li>
+          <li>Pró-labore e distribuição de lucros planejados</li>
+          <li>Conciliação bancária via OFX</li>
+          <li>Resposta em até 4 horas úteis</li>
+          <li class="off">Planejamento tributário anual</li>
+        </ul>
+        <a href="#contato" class="btn btn-gold">Começar no Gestão</a>
+      </div>
+
+      <div class="plan reveal">
+        <span class="eyebrow">Estratégico</span>
+        <h3>Parceiro</h3>
+        <p class="who">Empresa em crescimento que precisa de um CFO de bolso, não só de um contador.</p>
+        <div class="price"><span class="cur">R$</span><span class="val" data-simples="1.190" data-presumido="1.890">1.190</span><span class="per">/mês</span></div>
+        <div class="price-note" data-simples="até 15 funcionários · até R$ 150 mil/mês" data-presumido="até 15 funcionários · até R$ 300 mil/mês">até 15 funcionários · até R$ 150 mil/mês</div>
+        <ul>
+          <li>Tudo do Gestão</li>
+          <li>Planejamento tributário anual com simulação de regimes</li>
+          <li>Simulação de impacto da Reforma Tributária (IBS/CBS)</li>
+          <li>Reuniões quinzenais e canal direto com o sócio</li>
+          <li>Orçamento anual e acompanhamento de metas</li>
+          <li>Apoio em precificação de hora técnica</li>
+          <li>Suporte em fiscalizações e regularizações</li>
+          <li>Relatórios para bancos e investidores</li>
+          <li>Prioridade de atendimento no mesmo dia</li>
+        </ul>
+        <a href="#contato" class="btn btn-ghost">Falar sobre o Estratégico</a>
+      </div>
+
+      <div class="plan custom reveal">
+        <span class="eyebrow">Sob consulta</span>
+        <h3>Sob medida</h3>
+        <p class="who">Para quem não cabe em faixa: Lucro Real, grupo com mais de um CNPJ, holding, filiais ou mais de 15 funcionários.</p>
+        <div class="price"><span class="val" style="font-size:1.8rem">Proposta</span></div>
+        <div class="price-note">valor definido após a análise fiscal</div>
+        <ul>
+          <li>Escopo e valor por escrito antes de assinar</li>
+          <li>Lucro Real e apuração não cumulativa</li>
+          <li>Consolidação de grupo e holding patrimonial</li>
+          <li>Múltiplos CNPJs e filiais</li>
+          <li>Folha acima de 15 funcionários</li>
+          <li>Reestruturação societária e migração de regime</li>
+          <li>Tudo do Estratégico como base</li>
+        </ul>
+        <a href="#contato" class="btn btn-ghost">Pedir proposta</a>
+      </div>
+    </div>
+
+    <p class="fine"><b>Como funciona a faixa:</b> os limites de funcionários e faturamento são referência para o plano. Empresa acima da faixa sobe de plano ou recebe proposta sob medida. Movimentação bancária muito intensa pode ter acréscimo de até 30%, combinado antes. Contrato de 12 meses, cobrado mensalmente.</p>
+
+    <div class="extras">
+      <div class="extra"><span>Análise fiscal inicial (abatida na 1ª mensalidade se fechar)</span><span>R$ XXX</span></div>
+      <div class="extra"><span>Ajuste de IRPF dos sócios (por ano-base)</span><span>R$ 400</span></div>
+      <div class="extra"><span>Abertura, alteração ou regularização</span><span>sob consulta</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="como-funciona">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">Como começa</span>
+      <h2>Trocar de contador não precisa ser um trauma.</h2>
+    </div>
+    <div class="steps">
+      <div class="step reveal"><h3>Análise fiscal</h3><p>Revisamos a situação fiscal da empresa: regime, enquadramento, pró-labore, pendências e imposto pago a mais. É um serviço cobrado — e o valor é abatido da primeira mensalidade se você fechar com a Altan.</p></div>
+      <div class="step reveal"><h3>Proposta</h3><p>Plano, valor e escopo por escrito, com assinatura digital. Você sabe exatamente o que está contratando.</p></div>
+      <div class="step reveal"><h3>Transição</h3><p>Cuidamos da comunicação com o contador anterior e da migração dos arquivos. Você só assina a carta de transferência.</p></div>
+      <div class="step reveal"><h3>App no ar</h3><p>Em até 15 dias o app está conectado às suas notas e aos seus extratos, e o contador responsável se apresenta.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">Dúvidas frequentes</span>
+      <h2>Antes de você perguntar.</h2>
+    </div>
+    <details><summary>Por que a análise fiscal é cobrada?</summary><p>Porque é trabalho técnico de verdade: um contador revisa apurações, enquadramento e pendências da sua empresa e entrega um relatório com o que está certo e o que pode ser corrigido. O relatório é seu, mesmo que não feche conosco. Se fechar, o valor é abatido da primeira mensalidade.</p></details>
+    <details><summary>Preciso pagar o app separado?</summary><p>Não. O app faz parte de todos os planos e é o principal canal entre você e a Altan. Não há custo por usuário nem por CNPJ.</p></details>
+    <details><summary>O app se conecta ao meu banco?</summary><p>Hoje a conciliação é feita a partir do extrato em OFX, que você exporta do internet banking e envia pelo app. Cada lançamento é classificado e conferido por um contador antes de entrar na contabilidade.</p></details>
+    <details><summary>Tem fidelidade?</summary><p>O contrato é de 12 meses, cobrado mensalmente. Em caso de rescisão antecipada, a multa é proporcional aos meses restantes, conforme previsto em contrato. Entregamos toda a documentação organizada para o próximo contador.</p></details>
+    <details><summary>Minha empresa está com pendências. Vocês pegam?</summary><p>Sim. As pendências aparecem na análise fiscal e apresentamos um orçamento separado para a regularização antes de começar.</p></details>
+    <details><summary>Vocês atendem empresas de outras cidades?</summary><p>Sim. O atendimento é digital, com reuniões por vídeo e assinatura eletrônica. Atendemos empresas em todo o Brasil.</p></details>
+    <details><summary>Posso mudar de plano depois?</summary><p>Pode, a qualquer momento. Conforme sua empresa cresce, ajustamos o plano — e avisamos quando fizer sentido migrar.</p></details>
+  </div>
+</section>
+
+<section id="contato" class="cta">
+  <div class="wrap">
+    <div class="sun"></div><div class="horizon"></div>
+    <span class="eyebrow">Análise fiscal</span>
+    <h2>Descubra se sua empresa está pagando imposto a mais.</h2>
+    <p>Um contador da Altan revisa regime, enquadramento, pró-labore e pendências da sua empresa e entrega um relatório com o que pode ser corrigido. O valor é abatido da primeira mensalidade se você fechar com a gente.</p>
+    <a href="https://wa.me/55XXXXXXXXXXX?text=Ol%C3%A1%2C%20quero%20contratar%20a%20an%C3%A1lise%20fiscal%20da%20Altan" class="btn btn-gold">Pedir análise pelo WhatsApp</a>
+    <div class="price-line">Investimento: R$ XXX · relatório em até 5 dias úteis</div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <svg viewBox="0 0 680 340" xmlns="http://www.w3.org/2000/svg" aria-label="Altan Contabilidade"><path d="M294 152 A46 46 0 0 1 386 152 Z" fill="#E8B33A"/><line x1="266" y1="152" x2="414" y2="152" stroke="#AEB6D3" stroke-width="2.5" stroke-linecap="round"/><text x="340" y="238" text-anchor="middle" font-family="Inter,'Segoe UI',Arial,sans-serif" font-weight="500" font-size="40" letter-spacing="10" fill="#F8F8F2">ALTAN</text><text x="340" y="272" text-anchor="middle" font-family="Inter,'Segoe UI',Arial,sans-serif" font-weight="400" font-size="13" letter-spacing="6" fill="#6272A4">CONTABILIDADE</text></svg>
+    <div style="text-align:right">
+      <div>© 2026 Altan Contabilidade · CRC-XX 000000/O</div>
+      <div>contato@altan.com.br · (XX) XXXXX-XXXX</div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll('.toggle button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('.toggle button').forEach(x=>{x.classList.remove('on');x.setAttribute('aria-selected','false')});
+      b.classList.add('on');b.setAttribute('aria-selected','true');
+      const reg=b.dataset.reg;
+      document.querySelectorAll('[data-'+reg+']').forEach(el=>el.textContent=el.dataset[reg]);
+    });
+  });
+  const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.12});
+  document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>
