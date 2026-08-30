@@ -7476,6 +7476,23 @@ export function createMockApi() {
           motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
         },
         {
+          // ⚠⚠ O DÉBITO QUE CORRIGE UMA DATA PRESUMIDA (30/08/2026) — o par de `dec-r1`, a nota que
+          // a REGRA lançou sozinha no dia 15. Ele é a única prova que existe de quando o dinheiro
+          // saiu, e casar com ele corrige a data do lançamento que já está no razão.
+          //
+          // ⚠⚠ ELE PRECISA ESTAR NA FILA, e não só nos casamentos: `contratoDaConferencia.test.js`
+          // exige que todo débito do casamento seja uma linha daqui — senão o filtro do lote de
+          // contabilização nunca morde nele, e ele entraria no lote como despesa sem nota, virando
+          // a MESMA despesa duas vezes. Foi esse teste que pegou a ausência.
+          id: "dec-13", origem: "OFX_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",
+          valor: "1180.00", valorAjustado: null, competencia: comp,
+          descricaoOriginal: "PAGTO ALESSANDRO NIGRO", cnpjFornecedor: null,
+          dataDocumento: null, detalheServico: null,
+          dataPagamento: comp + "-22", origemPagamento: "OFX",
+          contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
+        },
+        {
           // ⚠ O AMBÍGUO: duas notas se parecem com ele e o sistema não escolhe. Ele também fica de
           // fora do lote — ambiguidade não autoriza contabilizar à parte.
           id: "dec-10", origem: "OFX_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",
@@ -7770,7 +7787,7 @@ export function createMockApi() {
              * `ja_contabilizada` de cima (que NÃO tem botão) é justamente o que precisa ser visto
              * lado a lado. Oitava vez neste projeto.
              */
-            debito: { id: "dec-12", valor: "1180.00", dataPagamento: "2026-07-22", descricaoOriginal: "PAGTO ALESSANDRO NIGRO" },
+            debito: { id: "dec-13", valor: "1180.00", dataPagamento: "2026-07-22", descricaoOriginal: "PAGTO ALESSANDRO NIGRO" },
             sugestao: {
               nota: { id: "dec-r1", valor: "1180.00", descricaoOriginal: "ALESSANDRO NIGRO", dataDocumento: "2026-07-02" },
               pista: "NOME_NO_MEMO",

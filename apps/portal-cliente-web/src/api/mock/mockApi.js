@@ -23,6 +23,7 @@ import { isAdminOrAbove } from "../../lib/roles";
 // ⚠ Só o DRE ainda é ficção. O fluxo de caixa virou REAL em 27/08/2026, e o mock dele reproduz o
 // CONTRATO do servidor — por isso mora em `api/mock/`, não em `dadosDeDemonstracao`.
 import { dreDeDemonstracao } from "../../features/painel/lib/dadosDeDemonstracao";
+import { dreDoMock, dreVazioDoMock } from "./dreDoMock";
 import { fluxoDeCaixaDoMock } from "./fluxoDeCaixaDoMock";
 import { LOTE_MAXIMO } from "../../features/notas/lib/loteDanfse";
 
@@ -1999,10 +2000,31 @@ export function createMockApi() {
       return { ok: true };
     },
 
+    /**
+     * ⚠⚠ O DRE DEIXOU DE SER FICÇÃO EM 29/08/2026 (Fase 7), e o mock só passou a dizer isso em
+     * 30/08 — achado no navegador, ao validar a `main`.
+     *
+     * A rota real (`GET /client/companies/:id/dre`) monta o DRE pelo plano de contas e responde
+     * `demonstracao: false`, **sem selo**. O mock continuava servindo `dreDeDemonstracao`, com
+     * selo: a tela conferida offline não era a tela que o cliente vê. É a divergência mock × real
+     * que este projeto já pagou várias vezes — e nesta direção ela é pior, porque o navegador
+     * mostra o desenho ANTIGO e ninguém desconfia.
+     *
+     * ⚠ TRÊS EMPRESAS, TRÊS RAMOS, porque nenhum deles pode ser inalcançável offline:
+     *   • `pc-006` → **demonstração**, com o selo. É o único caminho que ainda o acende, e o selo
+     *     precisa continuar conferível: ele existe para número fictício nunca passar por real;
+     *   • `pc-007` → **vazio nomeado** (`semLancamento: true`). ⚠ Ele NÃO é `R$ 0,00` em toda
+     *     linha: zero afirma que a empresa não faturou nem gastou nada. Medido: 12 das 34 empresas
+     *     de produção estão nesse estado;
+     *   • as demais → o DRE **real**, com as contas no detalhe e a linha "fora do DRE" preenchida.
+     */
     async getDre(companyId, { competencia } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
-      return dreDeDemonstracao(id, competencia || competenciaPadrao());
+      const ciclo = competencia || competenciaPadrao();
+      if (id === "pc-006") return dreDeDemonstracao(id, ciclo);
+      if (id === "pc-007") return dreVazioDoMock(id, ciclo);
+      return dreDoMock(id, ciclo);
     },
 
     /**
