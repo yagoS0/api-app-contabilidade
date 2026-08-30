@@ -106,11 +106,19 @@ describe("⚠⚠ a leitura é SÓ LEITURA", () => {
       // não-guloso engole o código real até o `*/` seguinte. Lição de 27/08/2026.
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\/\/.*$/gm, "");
-    // ⚠ UM upsert, e era DOIS até 28/08/2026: o outro era o de `declararSerie`, a porta do
-    // cliente, apagada a pedido do dono. Sobrou o de `marcarSerie`, a porta do contador.
-    // ⚠ Esta contagem é a guarda que PEGOU a exclusão — ela é uma varredura de fonte, e o número
-    // cru é de propósito: escrita nova neste serviço tem de passar por aqui.
-    expect((fonte.match(/\.upsert\(/g) || []).length).toBe(1);
+    /**
+     * ⚠⚠ DOIS upserts — e este número já foi 2, virou 1 e voltou a 2, sempre pelo mesmo motivo.
+     *
+     *   · 27/08: dois (`marcarSerie`, do contador · `declararSerie`, do cliente);
+     *   · 28/08: **um** — `declararSerie` foi apagada com a tela "Declarar o que se repete", e
+     *     `ORIGEM_DA_SERIE.DECLARADA` ficou sem escritor;
+     *   · 29/08: **dois** de novo — o dono pediu a declaração de volta, agora dentro do fluxo de
+     *     caixa do cliente. A função foi RECUPERADA de `e9dd2be5`, não reescrita.
+     *
+     * ⚠ Esta contagem é a guarda que PEGOU as duas mudanças, nos dois sentidos. O número cru é de
+     * propósito: escrita nova neste serviço tem de passar por aqui e ser explicada.
+     */
+    expect((fonte.match(/\.upsert\(/g) || []).length).toBe(2);
     expect(fonte).not.toMatch(/\.delete(Many)?\(|\.createMany\(/);
     expect(fonte).not.toMatch(/\$executeRaw|\$queryRaw/);
   });

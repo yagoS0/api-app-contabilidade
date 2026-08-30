@@ -41,6 +41,30 @@ describe("as seis colunas", () => {
     const r = linhaDoMes(mes([linha({ direcao: DIRECAO.SAIDA, fonte: "COISA_NOVA", valor: 9 })]));
     expect(r.saida.valor).toBe(9);
   });
+
+  /**
+   * ⚠⚠ A FONTE NOVA DE 29/08/2026 — e este teste é a "classificação de propósito" que o caso acima
+   * pede.
+   *
+   * `SAIDA_DO_CLIENTE` **cai em Saída pelo `else`**, que é o balde certo. Sem esta afirmação, ela
+   * estaria certa por ACIDENTE — e no dia em que alguém trocasse a ordem das listas fechadas ela
+   * mudaria de coluna sem nada quebrar.
+   */
+  it("⚠⚠ `SAIDA_DO_CLIENTE` cai em SAÍDA — nunca em Impostos nem em Folha", () => {
+    const r = linhaDoMes(mes([
+      linha({ direcao: DIRECAO.SAIDA, fonte: FONTE.SAIDA_DO_CLIENTE, valor: 3000 }),
+      linha({ direcao: DIRECAO.SAIDA, fonte: FONTE.GUIA, valor: 10 }),
+    ]));
+    expect(r.saida.valor).toBe(3000);
+    expect(r.impostos.valor).toBe(10);
+    expect(r.folha).toBeNull();
+  });
+
+  it("⚠ e ela é uma FONTE de verdade no vocabulário, não uma string solta na tela", () => {
+    // ⚠ Se ela sumir do `FONTE`, o teste acima passaria com `undefined` caindo no `else` — e a
+    // tela renderizaria "Origem desconhecida" na linha que o próprio cliente escreveu.
+    expect(FONTE.SAIDA_DO_CLIENTE).toBe("SAIDA_DO_CLIENTE");
+  });
 });
 
 describe("⚠⚠ o status é o do ELO MAIS FRACO", () => {

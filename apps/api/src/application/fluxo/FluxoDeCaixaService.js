@@ -8,7 +8,7 @@
 //
 //   1 · Guia liberada em aberto COM vencimento .............. FATO
 //   2 · Guia liberada em aberto SEM vencimento .............. DESCONHECIDO  (⚠ 51 guias de DAS)
-//   3 · Nota emitida + prazo de recebimento ................. PREVISAO      (base DOCUMENTAL)
+//   3 · Nota emitida, no dia 1 do mês SEGUINTE .............. PREVISAO      (base DOCUMENTAL)
 //   4 · Série de RECEITA marcada (Fase D) ................... PREVISAO
 //   5 · Série de DESPESA marcada (Fase D) ................... PREVISAO
 //   6 · Imposto projetado sobre (4) ......................... PREVISAO      (⚠ nunca "calculado")
@@ -20,8 +20,14 @@
 // RECEBIDO, e `PortalInvoice` **não tem `recebidoEm`**. Verde ali diria "recebido", que é o pior
 // desfecho possível.
 //
-// ⚠ Mas é previsão DOCUMENTAL, não aprendida: a base é uma nota que existe, com número e data, mais
-// um prazo que o contador configurou. Por isso ela NÃO depende da Fase D.
+// ⚠ Mas é previsão DOCUMENTAL, não aprendida: a base é uma nota que existe, com número e data. Por
+// isso ela NÃO depende da Fase D.
+//
+// ⚠⚠ O PRAZO CONFIGURÁVEL POR EMPRESA SAIU EM 29/08/2026 (decisão do dono): a receita cai sempre no
+// DIA 1 do mês seguinte. `PortalClient.prazoRecebimentoMeses` deixou de ser lida — e com ela saiu do
+// `select` a coluna que, **não aplicada em produção, derrubava este serviço inteiro com P2022** (e
+// junto os cards e o pop-up do Painel do cliente). ⚠ Aplicar a migration continua sendo o certo;
+// isto só deixou de ser o caminho por onde a falta dela quebrava a tela.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { derivarCiclo, SITUACAO } from "../notas/cicloNota.js";
@@ -31,6 +37,7 @@ import {
   ESTADO_DA_SERIE,
   LADO,
 } from "./SerieRecorrenteService.js";
+import { ESTADO_DA_SAIDA } from "./SaidaAvulsaService.js";
 import { lerSerie, PERIODICIDADE } from "./lib/recorrencia.js";
 import {
   DIA_DESCONHECIDO,
@@ -39,6 +46,7 @@ import {
   FRASE_DO_SEM_IMPOSTO,
   FRASE_DO_SEM_MES,
   HORIZONTE_MESES,
+  MESES_ATE_A_RECEITA,
   DIAS_DE_ANTECEDENCIA,
   isoDaData,
   janelaDoFluxo,
@@ -55,7 +63,6 @@ import {
   montarLinha,
   montarMeses,
   numero,
-  prazoDeRecebimento,
   projecaoSubstituidaPelaGuia,
   somarMeses,
 } from "./lib/fluxoDeCaixa.js";
@@ -232,7 +239,7 @@ function rotuloDaGuia(g) {
  *
  * ⚠⚠ NOTA SEM COMPETÊNCIA vai para DESCONHECIDO, jamais para um mês escolhido pelo sistema.
  */
-async function linhasDasNotas({ portalClientId, prazo, cicloAtual, janelaInicio, client }) {
+async function linhasDasNotas({ portalClientId, cicloAtual, janelaInicio, client }) {
   const notas = await client.portalInvoice.findMany({
     where: {
       clientId: String(portalClientId),
@@ -272,7 +279,7 @@ async function linhasDasNotas({ portalClientId, prazo, cicloAtual, janelaInicio,
       continue;
     }
 
-    const competencia = somarMeses(competenciaDaNota, prazo.meses);
+    const competencia = somarMeses(competenciaDaNota, MESES_ATE_A_RECEITA);
     const emMeses = mesesDaCompetencia(competencia);
     // ⚠⚠ O CORTE MUDOU DE ÂNCORA em 28/08/2026: era o mês CORRENTE, agora é o INÍCIO DA JANELA.
     // Enquanto a tabela só olhava para a frente, cortar no mês corrente era o mesmo; com 4 meses de
@@ -300,20 +307,26 @@ async function linhasDasNotas({ portalClientId, prazo, cicloAtual, janelaInicio,
       direcao: DIRECAO.ENTRADA,
       procedencia: procedenciaDaNota,
       competencia,
-      // ⚠⚠ MÊS, NÃO DIA: o prazo é contado em meses. Inventar "dia 10" seria fabricar precisão que
-      // ninguém informou.
-      dia: null,
-      diaDesconhecido: DIA_DESCONHECIDO.PROJECAO_POR_MES,
+      /**
+       * ⚠⚠ DIA 1 — decisão do dono, 29/08/2026, e ela REVERTE uma regra travada por teste.
+       *
+       * > *"as notas emitidas do mês anterior se tornam a receita do mês seguinte (…) por isso
+       * > entram no dia 1."*
+       *
+       * Até aqui esta linha era `dia: null` + `PROJECAO_POR_MES`, sob a regra *"dia ausente nunca
+       * vira dia inventado"*. ⚠ **A regra continua valendo para todas as outras fontes sem dia**
+       * (recorrência, imposto previsto, folha): elas seguem em "no mês". O que mudou aqui é que o
+       * dia 1 deixou de ser invenção do sistema e passou a ser CONVENÇÃO do dono — ele escolheu o
+       * dia, e a tela mostra o que ele escolheu.
+       */
+      dia: 1,
+      diaDesconhecido: null,
       valor: numero(n.total),
       rotulo: quem ? `Recebimento — ${quem}` : "Recebimento de nota emitida",
       // ⚠⚠ A BASE NOMEIA A NOTA. É previsão DOCUMENTAL: uma nota que existe, com número e data.
       base: {
-        frase: `nota nº ${texto(n.numero) || "?"}, competência ${competenciaDaNota} · prazo de `
-          + `${prazo.meses} ${prazo.meses === 1 ? "mês" : "meses"}`
-          // ⚠⚠ "NINGUÉM CONFIGUROU" ≠ "CONFIGURADO COMO 1", e a frase diz qual dos dois é.
-          + (prazo.configurado ? "" : " (padrão — ninguém configurou o prazo desta empresa)"),
+        frase: `nota nº ${texto(n.numero) || "?"}, emitida em ${competenciaDaNota}`,
         documental: true,
-        prazoConfigurado: prazo.configurado,
         // ⚠ A suposição viaja com a linha. Sem isto, "confirmado" aqui seria indistinguível de um
         // recebimento provado — e não há nenhum.
         simplificacao: competenciaFechada ? "recebimento_integral_presumido" : null,
@@ -413,6 +426,78 @@ async function linhasDasSeries({ portalClientId, cicloAtual, mesesAProjetar = HO
 }
 
 /**
+ * ⚠⚠ AS SAÍDAS QUE O PRÓPRIO CLIENTE ACRESCENTOU — decisão do dono, 29/08/2026.
+ *
+ * > *"o cliente pode modificar as saídas, podendo colocar novas saídas, apenas para visualização
+ * > deles (…) e essas saídas que o cliente digitar aparece para o contador na aba de conferência."*
+ *
+ * ⚠⚠ **SÓ AS `CONFIRMADA` ENTRAM NO FLUXO.** É a mesma trava da série marcada: uma afirmação não
+ * vira linha de caixa sozinha — o contador confirma primeiro. A `PENDENTE` existe, aparece na fila
+ * dele, e **não** soma em lugar nenhum.
+ *
+ * ⚠ ESTA É A AVULSA, a que tem DATA. O que o cliente diz se REPETIR vira `SerieRecorrente` com
+ * `origem: DECLARADA` e sai por `linhasDasSeries` — lá a evidência da recorrência é renderizada.
+ *
+ * ⚠⚠ E ELA TEM DIA DE VERDADE. Diferente de toda outra previsão deste fluxo, aqui o dia foi
+ * ESCRITO por uma pessoa — não é o sistema fabricando precisão, é o cliente dizendo quando pretende
+ * pagar. Por isso `diaDesconhecido` fica nulo.
+ */
+async function linhasDasSaidasDoCliente({ portalClientId, cicloAtual, janelaInicio, client }) {
+  let saidas = [];
+  try {
+    /**
+     * ⚠⚠ A GUARDA COBRE DUAS AUSÊNCIAS DIFERENTES, e a segunda é a que morde primeiro.
+     *
+     *   · a TABELA não existe (P2021) — a migration é ato do dono, como em `series_recorrentes`;
+     *   · o DELEGATE não existe (`client.saidaAvulsaCliente` é `undefined`) — o `prisma generate`
+     *     não rodou depois do schema mudar. No Windows ele falha com EPERM quando o servidor de dev
+     *     está de pé, então este estado é REAL, não hipotético.
+     *
+     * ⚠ Sem a segunda, o `undefined.findMany` seria um TypeError e derrubaria **o fluxo inteiro** —
+     * cards e pop-up do Painel do cliente junto. É exatamente o estrago que a coluna do prazo fora
+     * do `select` causava, por outro caminho.
+     */
+    if (!client?.saidaAvulsaCliente?.findMany) return { linhas: [], indisponivel: true };
+    saidas = await client.saidaAvulsaCliente.findMany({
+      where: { portalClientId: String(portalClientId), estado: ESTADO_DA_SAIDA.CONFIRMADA },
+      select: { id: true, data: true, valor: true, descricao: true },
+      orderBy: { data: "asc" },
+    });
+  } catch (e) {
+    if (!tabelaAusente(e)) throw e;
+    return { linhas: [], indisponivel: true };
+  }
+
+  const base = mesesDaCompetencia(janelaInicio || cicloAtual);
+  const linhas = [];
+  for (const s of saidas) {
+    const competencia = competenciaDaData(s.data);
+    const emMeses = mesesDaCompetencia(competencia);
+    // ⚠ Fora da janela para trás é descartado aqui — `montarMeses` já conta o que cai fora para a
+    // frente. Uma saída planejada há um ano não é notícia.
+    if (base == null || emMeses == null || emMeses < base) continue;
+
+    linhas.push(montarLinha({
+      fonte: FONTE.SAIDA_DO_CLIENTE,
+      direcao: DIRECAO.SAIDA,
+      // ⚠⚠ SEMPRE PREVISÃO. O cliente planejou; ninguém pagou. Chamá-la de fato faria o dono da
+      // empresa somá-la ao que já aconteceu.
+      procedencia: PROCEDENCIA.PREVISAO,
+      competencia,
+      // ⚠ O dia é o que a PESSOA escreveu — não é precisão fabricada.
+      dia: diaDaData(s.data),
+      valor: numero(s.valor),
+      rotulo: texto(s.descricao) || "Saída planejada",
+      // ⚠ A base diz DE QUEM é a linha. Sem isso, ela se confundiria com o que o sistema previu, e
+      // o cliente não saberia qual das duas ele mesmo escreveu.
+      base: { frase: "você acrescentou esta saída", doCliente: true },
+      referencia: { tipo: "saidaAvulsa", id: s.id },
+    }));
+  }
+  return { linhas, indisponivel: false };
+}
+
+/**
  * ⚠⚠ O IMPOSTO PROJETADO — e ele NUNCA é "imposto calculado".
  *
  * `receita projetada × alíquota efetiva do último mês APURADO`. Três travas do plano, todas aqui:
@@ -478,7 +563,7 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
       // ⚠⚠ A COLUNA PRECISA ESTAR NO `select` EXPLÍCITO. Fora dele ela volta `undefined` **sem erro**,
       // a rota responde 200, e a tela "só não mostra" — este projeto já foi mordido TRÊS vezes por
       // isso (`legacyCompanySelect`, carga tributária, `codigoMunicipioIbge`).
-      select: { id: true, prazoRecebimentoMeses: true },
+      select: { id: true },
     }),
     // ⚠⚠ O LIMITE DA NAVEGAÇÃO PARA TRÁS (v3 §3.1) — a nota mais antiga da empresa.
     // ⚠ Não é "12 meses atrás": empresa aberta em março não tem janeiro, e oferecer janeiro faria
@@ -489,7 +574,6 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
       orderBy: { competencia: "asc" },
     }),
   ]);
-  const prazo = prazoDeRecebimento(empresa?.prazoRecebimentoMeses);
 
   const janela = janelaDoFluxo({
     cicloAtual: ciclo,
@@ -503,12 +587,13 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     (janela?.horizonte ?? HORIZONTE_MESES) - ((mesesDaCompetencia(ciclo) ?? 0) - (mesesDaCompetencia(inicio) ?? 0)),
   );
 
-  const [guias, notas, series, snapshot, folha] = await Promise.all([
+  const [guias, notas, series, snapshot, folha, saidasDoCliente] = await Promise.all([
     linhasDasGuias({ portalClientId, cicloAtual: ciclo, hoje: dia, client }),
-    linhasDasNotas({ portalClientId, prazo, cicloAtual: ciclo, janelaInicio: inicio, client }),
+    linhasDasNotas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
     linhasDasSeries({ portalClientId, cicloAtual: ciclo, mesesAProjetar: mesesFuturosDaJanela, client }),
     ultimaApuracao({ portalClientId, client }),
     linhasDaFolha({ portalClientId, cicloAtual: ciclo, client }),
+    linhasDasSaidasDoCliente({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
   ]);
 
   const aliquota = aliquotaEfetiva(snapshot);
@@ -533,7 +618,12 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
   const vencidas = guias.emAberto.filter((g) => g.atrasada);
   const aVencer = guias.emAberto.filter((g) => !g.atrasada && venceEmAte(g.vencimento, dia, DIAS_DE_ANTECEDENCIA));
 
-  const todas = [...guias.linhas, ...notas.linhas, ...series.linhas, ...imposto.linhas, ...folha.linhas];
+  const todas = [
+    ...guias.linhas, ...notas.linhas, ...series.linhas, ...imposto.linhas, ...folha.linhas,
+    // ⚠ O que o CLIENTE acrescentou entra por último, mas sem privilégio nenhum: mesma forma de
+    // linha, mesmo balde de saída, mesma procedência PREVISAO.
+    ...saidasDoCliente.linhas,
+  ];
   // ⚠⚠ A GUIA REAL SUBSTITUI A PROJEÇÃO DO MESMO MÊS — as duas nunca coexistem, senão o mesmo
   // imposto aparece duas vezes e o contador provisiona o dobro.
   const semDuplicata = projecaoSubstituidaPelaGuia(todas);
@@ -610,13 +700,15 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     // ⚠ O que caiu fora dos 12 meses é CONTADO — uma guia vencida ou uma projeção distante não pode
     // evaporar.
     foraDoHorizonte: foraDoHorizonte.length,
-    prazoRecebimento: prazo,
     // ⚠ A ausência do imposto projetado é NOMEADA — nunca uma linha que simplesmente não aparece.
     semImposto: imposto.semImposto,
     aliquotaUsada: aliquota ? { ...aliquota, frase: fraseDaAliquota(aliquota) } : null,
     // ⚠⚠ Sem a tabela de séries, a previsão por recorrência não existe — e isso é DITO, em vez de
     // "esta empresa não tem recorrência nenhuma".
     recorrenciaIndisponivel: series.indisponivel,
+    // ⚠⚠ Mesma disciplina, para a outra tabela: "não pudemos ler as suas saídas" ≠ "você não
+    // acrescentou nenhuma". Sem este campo, a migration não aplicada faria a tela afirmar a segunda.
+    saidasDoClienteIndisponiveis: saidasDoCliente.indisponivel,
     // ⚠⚠ NÃO EXISTE `total`, e nem `saldoAcumulado`: sem saldo inicial (fora do escopo por decisão
     // do dono) não há saldo a acumular, e a soma de 12 meses é o número que alguém imprime.
     notas: {

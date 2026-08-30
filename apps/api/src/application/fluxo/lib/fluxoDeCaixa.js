@@ -107,6 +107,28 @@ export const FONTE = Object.freeze({
    * coluna Folha somar despesa recorrente qualquer.
    */
   FOLHA: "FOLHA",
+  /**
+   * ⚠⚠ O QUE O PRÓPRIO CLIENTE ACRESCENTOU — decisão do dono, 29/08/2026: *"o cliente pode
+   * modificar as saídas, podendo colocar novas saídas, apenas para visualização deles."*
+   *
+   * ⚠ Ela **NÃO é contabilidade**: nada aqui vira `AccountingEntry`. É um plano de caixa que o
+   * cliente escreve para si e que o contador vê na Conferência — o mesmo caminho de confirmação
+   * que a série declarada segue.
+   *
+   * ⚠⚠ SEMPRE `PROCEDENCIA.PREVISAO`. Uma saída planejada para o mês que vem não saiu de lugar
+   * nenhum, e chamá-la de fato faria o dono da empresa somá-la ao que já aconteceu.
+   *
+   * ⚠ Na tabela do cliente ela cai no balde **`saida`** — nem impostos, nem folha. `baldeDaLinha`
+   * já faz isso pelo `else`, mas há teste afirmando: fonte nova caindo no balde certo por acidente
+   * é exatamente o que a lista fechada existe para impedir.
+   *
+   * ⚠⚠ **ELA É SÓ A SAÍDA AVULSA** — a que tem DATA (*"dia 10/09 pago 3.000 de reforma"*). A saída
+   * que o cliente diz se REPETIR vira uma `SerieRecorrente` com `origem: DECLARADA` e continua
+   * saindo como `SERIE_DESPESA`: lá quem a distingue do que o sistema detectou é `base.origem`, que
+   * a tela já lê. Uma fonte própria para ela faria a evidência da recorrência (n, faixa, confronto)
+   * parar de ser renderizada.
+   */
+  SAIDA_DO_CLIENTE: "SAIDA_DO_CLIENTE",
 });
 
 /** Por que o DIA não é conhecido. ⚠ `dia: null` nunca vira "dia 20" — ele vem com o motivo. */
@@ -170,13 +192,31 @@ export const FRASE_DO_SEM_MES = Object.freeze({
 });
 
 /**
- * ⚠⚠ O PRAZO DE RECEBIMENTO PADRÃO — decisão do dono, 25/08/2026.
+ * ⚠⚠ A RECEITA DA NOTA ENTRA UM MÊS DEPOIS, NO DIA 1 — decisão do dono, 29/08/2026.
  *
- * > *"como vamos trabalhar com o ciclo de competência na receita, notas emitidas em junho vão entrar
- * > de receita em julho (…) no caso pode ser alterado pelo contador."*
+ * > *"é apenas uma visualização do fluxo; as notas emitidas do mês anterior se tornam a receita do
+ * > mês seguinte, comprovada quando há a apuração, por isso entram no dia 1."*
  *
- * ⚠ `null` na empresa é **"ninguém configurou"**, e não "configurado como 1": a tela precisa
- * distinguir os dois, senão o padrão passa por decisão. Ver `prazoDeRecebimento`.
+ * ⚠⚠ **ISTO SUBSTITUIU O PRAZO CONFIGURÁVEL** de 25/08/2026 (*"no caso pode ser alterado pelo
+ * contador"*). O prazo por empresa deixou de ser lido: é sempre +1 mês, sempre dia 1. ⚠ O efeito
+ * prático foi zero — medido, **nenhuma empresa havia configurado o prazo**, e o padrão já era 1.
+ * O que mudou é que ele deixou de ser configurável em silêncio.
+ *
+ * ⚠ Ela **não é o prazo real de recebimento** e não afirma que o dinheiro entrou: a linha continua
+ * `PREVISAO` no mês corrente (Lei 1 — *"dinheiro só confirma com pagamento"*).
+ */
+export const MESES_ATE_A_RECEITA = 1;
+
+/**
+ * ⚠⚠ O PRAZO DE RECEBIMENTO PADRÃO — decisão do dono, 25/08/2026, **SUPERADA em 29/08/2026**.
+ *
+ * ⚠ `prazoDeRecebimento` e esta constante ficaram **SEM CHAMADOR** quando a receita passou a cair
+ * no dia 1 do mês seguinte (ver `MESES_ATE_A_RECEITA`). Não foram apagadas porque a coluna
+ * `PortalClient.prazoRecebimentoMeses` continua no banco — dropar coluna é migration destrutiva e
+ * decisão do dono.
+ *
+ * ⚠⚠ **NÃO AS RELIGUE SEM DECISÃO DELE.** Voltar a ler o prazo faria a nota de uma empresa
+ * configurada cair num mês diferente do que a tela mostra hoje, sem nada dizendo que mudou.
  */
 export const PRAZO_RECEBIMENTO_PADRAO_MESES = 1;
 
@@ -261,10 +301,15 @@ export function janelaDoFluxo({ cicloAtual, janelaInicio = null, companyStart = 
 }
 
 /**
- * ⚠⚠ QUANTOS MESES O CONTADOR CONFIGUROU — e se foi ele ou o padrão.
+ * ⚠⚠ SEM CHAMADOR DESDE 29/08/2026 — ver `PRAZO_RECEBIMENTO_PADRAO_MESES` acima.
  *
- * A distinção é o ponto: `configurado: false` faz a tela dizer *"usando o padrão de 1 mês"* em vez
- * de afirmar que alguém escolheu isso. Sem ela, o padrão vira uma decisão que ninguém tomou.
+ * QUANTOS MESES O CONTADOR CONFIGUROU — e se foi ele ou o padrão. A distinção era o ponto:
+ * `configurado: false` fazia a tela dizer *"usando o padrão de 1 mês"* em vez de afirmar que alguém
+ * escolheu isso.
+ *
+ * ⚠ Ela fica porque a coluna do banco fica, e porque a distinção `null` × `0` que ela guarda é uma
+ * lição própria: `Number(null)` é 0, 0 é finito, e **zero meses é configuração legítima** ("recebo
+ * à vista"). Quem religar o prazo um dia precisa dela inteira.
  */
 export function prazoDeRecebimento(prazoDaEmpresa) {
   const n = Number(prazoDaEmpresa);

@@ -913,6 +913,7 @@ model PortalClient {
   /// a FK mora em `relatorios_faturamento.portalClientId`.
   relatoriosFaturamento   RelatorioFaturamento[]
   seriesRecorrentes       SerieRecorrente[]
+  saidasAvulsasCliente    SaidaAvulsaCliente[]
   /// Trocas de senha do usuário do portal feitas PELO ESCRITÓRIO nesta empresa. NENHUMA coluna
   /// nova aqui — a FK mora em `senhas_portal_trocas.portalClientId`, e ela é NULA nos caminhos do
   /// cliente (perfil e recuperação), que não passam por empresa nenhuma.
@@ -4243,4 +4244,53 @@ model CienciaDeGuias {
 
   @@index([portalClientId, criadoEm])
   @@map("ciencias_de_guias")
+}
+
+/// ⚠⚠ A SAÍDA AVULSA QUE O CLIENTE PLANEJOU — decisão do dono, 29/08/2026.
+///
+/// > *"o cliente pode modificar as saídas, podendo colocar novas saídas, apenas para visualização
+/// > deles (…) e essas saídas que o cliente digitar aparece para o contador na aba de conferência."*
+///
+/// ⚠⚠ ELA **NÃO É** UM `LancamentoDeclarado`, e a distinção é a invariante nº 1 daquele módulo:
+/// `A_CONFERIR` **exige `dataPagamento`**, porque o lançamento que sai de lá é `D despesa / C caixa`
+/// — ele AFIRMA que o dinheiro saiu. Uma saída planejada para o mês que vem não saiu de lugar
+/// nenhum. Encaixá-la ali obrigaria a afrouxar a invariante que protege o caixa inteiro.
+///
+/// ⚠ E não é uma `SerieRecorrente`: aquela guarda CICLO, não data. O que se repete vira série
+/// declarada (`origem: DECLARADA`); o que acontece uma vez, com data, mora aqui.
+///
+/// ⚠⚠ NADA AQUI VIRA LANÇAMENTO CONTÁBIL. Confirmar põe a linha no FLUXO do cliente; levar ao razão
+/// continua sendo o caminho do declarado, com data de pagamento e prova.
+model SaidaAvulsaCliente {
+  id             String @id @default(uuid())
+  portalClientId String
+
+  /// ⚠⚠ A data PLANEJADA — o dia em que o cliente ACHA que vai pagar. **Não é `dataPagamento`**:
+  /// nada nesta tabela afirma que o dinheiro saiu. `@db.Date` porque é data CIVIL, sem hora: com
+  /// `DateTime` cheio, às 22h de Brasília ela viraria o dia seguinte na leitura em UTC.
+  data DateTime @db.Date
+
+  valor     Decimal @db.Decimal(18, 2)
+  descricao String
+
+  /// PENDENTE | CONFIRMADA | RECUSADA — ⚠ a MESMA forma da série declarada, de propósito: as duas
+  /// caem na mesma fila do contador e uma segunda gramática de estado faria a fila falar duas
+  /// línguas.
+  estado String @default("PENDENTE")
+
+  /// ⚠ Ausência nunca é resposta: recusar exige dizer por quê, como em `LancamentoDeclarado`.
+  motivoRecusa String?
+
+  criadaPor String
+  criadaEm  DateTime @default(now())
+
+  decididaPor String?
+  decididaEm  DateTime?
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, estado])
+  /// ⚠ A leitura do fluxo varre por empresa + janela de datas; sem este índice ela vira scan.
+  @@index([portalClientId, data])
+  @@map("saidas_avulsas_cliente")
 }

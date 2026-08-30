@@ -326,38 +326,69 @@ describe("⚠⚠ a nota emitida + prazo", () => {
     expect(linhasDe(r, FONTE.NOTA_EMITIDA)[0].competencia).toBe("2026-09");
   });
 
-  it("⚠⚠ MÊS, NÃO DIA — inventar 'dia 10' seria fabricar precisão que ninguém informou", async () => {
+  /**
+   * ⚠⚠ DIA 1 — E ESTE BLOCO SUBSTITUIU O QUE TRAVAVA A REGRA CONTRÁRIA (29/08/2026).
+   *
+   * Até 28/08 havia aqui `⚠⚠ MÊS, NÃO DIA — inventar 'dia 10' seria fabricar precisão que ninguém
+   * informou`, e mais quatro casos sobre o **prazo configurável por empresa**. O dono reverteu:
+   *
+   * > *"as notas emitidas do mês anterior se tornam a receita do mês seguinte (…) por isso entram
+   * > no dia 1."*
+   *
+   * ⚠ A REGRA GERAL NÃO CAIU: *"dia ausente nunca vira dia inventado"* continua valendo para
+   * recorrência, imposto previsto e folha — há testes dela logo abaixo. O que mudou é que o dia 1
+   * desta linha deixou de ser invenção do sistema e passou a ser CONVENÇÃO do dono.
+   */
+  it("⚠⚠ a receita cai no DIA 1, e o motivo do dia desconhecido SOME", async () => {
     const r = await montar(clientDe({ notas: [nota()] }));
     const l = linhasDe(r, FONTE.NOTA_EMITIDA)[0];
-    expect(l.dia).toBeNull();
-    expect(l.diaDesconhecido.frase).toMatch(/contado em meses/i);
+    expect(l.dia).toBe(1);
+    // ⚠ `diaDesconhecido` nulo é o ponto: com ele preenchido a tela escreveria "no mês" ao lado de
+    // um dia que existe — duas afirmações opostas na mesma linha.
+    expect(l.diaDesconhecido).toBeNull();
+  });
+
+  it("⚠⚠ e as OUTRAS fontes continuam sem dia — a regra geral não caiu junto", async () => {
+    const r = await montar(clientDe({ notas: [nota()], series: [serie()] }));
+    const daSerie = linhasDe(r, FONTE.SERIE_DESPESA)[0];
+    expect(daSerie.dia).toBeNull();
+    expect(daSerie.diaDesconhecido.frase).toMatch(/de quanto em quanto tempo/i);
   });
 
   it("⚠⚠ a base NOMEIA a nota — é previsão DOCUMENTAL, não aprendida", async () => {
     const r = await montar(clientDe({ notas: [nota()] }));
     const b = linhasDe(r, FONTE.NOTA_EMITIDA)[0].base;
     expect(b.frase).toMatch(/nota nº 1042/);
-    expect(b.frase).toMatch(/competência 2026-08/);
+    expect(b.frase).toMatch(/emitida em 2026-08/);
     expect(b.documental).toBe(true);
   });
 
-  it("⚠⚠ 'ninguém configurou' aparece na frase — o padrão não pode passar por decisão", async () => {
-    const r = await montar(clientDe({ notas: [nota()], prazo: null }));
-    expect(linhasDe(r, FONTE.NOTA_EMITIDA)[0].base.frase).toMatch(/padrão — ninguém configurou/i);
-    expect(r.prazoRecebimento).toEqual({ meses: 1, configurado: false });
-  });
-
-  it("⚠ configurado, a frase NÃO diz que é padrão", async () => {
+  /**
+   * ⚠⚠ O PRAZO POR EMPRESA DEIXOU DE SER LIDO — e estes dois testes existem para provar isso, não
+   * por acaso.
+   *
+   * ⚠ Medido antes da mudança: **nenhuma empresa havia configurado o prazo**, e o padrão já era 1.
+   * O efeito prático foi zero; o que mudou é que ele parou de ser configurável em silêncio.
+   *
+   * ⚠⚠ E há um ganho colateral que vale registrar: com a coluna fora do `select`, a ausência da
+   * migration `add_prazo_recebimento` em produção **deixou de derrubar o serviço inteiro com
+   * P2022** — o que levava junto os cards e o pop-up do Painel do cliente.
+   */
+  it("⚠⚠ empresa COM prazo configurado é ignorada — a receita cai no mês seguinte do mesmo jeito", async () => {
     const r = await montar(clientDe({ notas: [nota()], prazo: 2 }));
-    const l = linhasDe(r, FONTE.NOTA_EMITIDA)[0];
-    expect(l.competencia).toBe("2026-10");
-    expect(l.base.frase).not.toMatch(/padrão/i);
+    // Com o prazo valendo, isto seria "2026-10".
+    expect(linhasDe(r, FONTE.NOTA_EMITIDA)[0].competencia).toBe("2026-09");
+    expect(linhasDe(r, FONTE.NOTA_EMITIDA)[0].base.frase).not.toMatch(/prazo/i);
   });
 
-  it("⚠⚠ prazo ZERO é 'recebo à vista', e vale — não cai no padrão", async () => {
-    const r = await montar(clientDe({ notas: [nota()], prazo: 0 }));
-    expect(linhasDe(r, FONTE.NOTA_EMITIDA)[0].competencia).toBe("2026-08");
-    expect(r.prazoRecebimento.configurado).toBe(true);
+  it("⚠⚠ o payload não fala mais de prazo, e a coluna saiu do `select`", async () => {
+    const client = clientDe({ notas: [nota()], prazo: null });
+    const r = await montar(client);
+    expect(r).not.toHaveProperty("prazoRecebimento");
+    // ⚠ A varredura é sobre o ARGUMENTO passado ao Prisma: é o único jeito de provar que a coluna
+    // não é pedida. Um teste de comportamento passaria com ela no `select`.
+    const sel = client.portalClient.findUnique.mock.calls[0][0].select;
+    expect(sel).not.toHaveProperty("prazoRecebimentoMeses");
   });
 
   it.each([
@@ -663,9 +694,21 @@ describe("⚠ o horizonte e o ciclo", () => {
     expect(r.cicloAtual).toBe(cicloDeHoje());
   });
 
-  it("⚠⚠ a coluna do prazo está no `select` EXPLÍCITO — fora dele volta `undefined` sem erro", async () => {
+  /**
+   * ⚠⚠ ESTE TESTE EXIGIA O OPOSTO ATÉ 29/08/2026 — *"a coluna do prazo está no `select` EXPLÍCITO,
+   * fora dele volta `undefined` sem erro"*. Ele guardava a armadilha do `select` explícito, que
+   * este projeto já pagou três vezes.
+   *
+   * ⚠ A armadilha continua real; o que mudou é que **esta coluna deixou de ser lida**, porque o
+   * prazo por empresa saiu (a receita cai sempre no dia 1 do mês seguinte). Ela sai do `select` por
+   * decisão, e o teste inverteu de lado junto — senão ele guardaria uma leitura que não existe.
+   */
+  it("⚠⚠ a coluna do prazo NÃO é mais pedida — e isso é o que a tira do caminho do P2022", async () => {
     const client = clientDe({ prazo: 2 });
     await montar(client);
-    expect(client.portalClient.findUnique.mock.calls[0][0].select).toHaveProperty("prazoRecebimentoMeses", true);
+    const sel = client.portalClient.findUnique.mock.calls[0][0].select;
+    expect(sel).not.toHaveProperty("prazoRecebimentoMeses");
+    // ⚠ O `select` continua EXPLÍCITO — o que se recusa é a coluna, não a disciplina.
+    expect(sel).toHaveProperty("id", true);
   });
 });

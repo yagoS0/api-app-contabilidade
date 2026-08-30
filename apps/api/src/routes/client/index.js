@@ -5,16 +5,34 @@ import multer from "multer";
 import { DeclaradoRecusado } from "../../application/declarados/DeclaradoService.js";
 import { importarExtratoExcelDoCliente } from "../../application/declarados/ImportExcelExtratoService.js";
 import { importarOfxDoCliente } from "../../application/declarados/ImportOfxService.js";
-// ⚠ A recorrencia DECLARADA pelo cliente. A regra e a escrita moram no servico; esta rota traduz
-// HTTP e nada mais.
+// ⚠ A recorrência DECLARADA pelo cliente. A regra e a escrita moram no SERVIÇO; estas rotas
+// traduzem HTTP e nada mais.
+//
+// ⚠⚠ ESTE IMPORT FICOU ÓRFÃO ENTRE 28 E 29/08/2026 e ninguém percebeu: `paraTela`,
+// `RECUSA_DA_SERIE` e `SerieRecusada` continuaram importados depois de a rota
+// `.../recorrencia/declarar` ser removida com a tela "Declarar o que se repete". Import sem
+// consumidor não dá erro em lugar nenhum — é a mesma família do identificador órfão que só o
+// `no-undef` ou o build pegam. ⚠ `paraTela` saiu; os outros três voltaram a ter uso quando a
+// declaração voltou por dentro do fluxo de caixa.
 import {
+  LADO,
   RECUSA_DA_SERIE,
   SerieRecusada,
-  paraTela,
+  declararSerie,
 } from "../../application/fluxo/SerieRecorrenteService.js";
-// ⚠⚠ O CORPO E COMPARTILHADO com a rota do CONTADOR — um calculo so, dois consumidores.
+// ⚠⚠ ESTA LINHA DIZIA "o corpo é COMPARTILHADO com a rota do CONTADOR — um cálculo só, dois
+// consumidores", e ficou falsa em 29/08/2026: a porta do contador foi removida (*"para o contador
+// não vai existir fluxo de caixa"*). O corpo continua sendo o único que monta o fluxo — com UM
+// consumidor. ⚠ A varredura que impede uma segunda montagem continua valendo, e está em
+// `routes/__tests__/fluxoDeCaixaHttp.test.js`.
 import { responderFluxoDeCaixa } from "../fluxoDeCaixaHttp.js";
 import { ORIGEM_DA_CIENCIA, registrarCiencia } from "../../application/guides/cienciaDeGuias.js";
+import {
+  RECUSA_DA_SAIDA,
+  SaidaRecusada,
+  criarSaidaAvulsa,
+  removerSaidaAvulsa,
+} from "../../application/fluxo/SaidaAvulsaService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
 import { requireAccountType } from "../../middlewares/requireAccountType.js";
@@ -834,6 +852,116 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
    */
   router.get("/companies/:companyId/fluxo-de-caixa", requireClientCompanyAccess(), (req, res) =>
     responderFluxoDeCaixa(req, res, { log }));
+
+  /**
+   * ⚠⚠ A TRADUÇÃO PARA HTTP — e ela NÃO decide nada, só traduz.
+   *
+   * As duas portas (avulsa e recorrente) devolvem recusas de serviços DIFERENTES (`SaidaRecusada` e
+   * `SerieRecusada`), e a tela precisa das duas com a mesma forma: `{ ok:false, error, message }`.
+   *
+   * ⚠ A `message` vem do SERVIÇO, nunca escrita aqui. Duas frases para a mesma recusa divergiriam na
+   * primeira correção — e é a de baixo que o cliente lê.
+   *
+   * ⚠⚠ `INDISPONIVEL` é **503, não 400**: a migration não aplicada é um problema NOSSO, não da
+   * pessoa que clicou. Devolver 400 a mandaria conferir o que ela digitou.
+   */
+  const responderRecusaDaSaida = (res, err, logger, companyId) => {
+    const recusa = err instanceof SaidaRecusada || err instanceof SerieRecusada;
+    if (recusa) {
+      const indisponivel = err.codigo === RECUSA_DA_SAIDA.INDISPONIVEL
+        || err.codigo === RECUSA_DA_SERIE.INDISPONIVEL;
+      if (indisponivel) {
+        logger?.warn?.({ companyId }, "saidas_do_cliente_sem_tabela");
+        return res.status(503).json({ ok: false, error: err.codigo, message: err.frase });
+      }
+      // ⚠ 404 só para o que NÃO EXISTE nesta empresa; o resto é 400 (a pessoa pode corrigir).
+      const status = err.codigo === RECUSA_DA_SAIDA.NAO_ENCONTRADA ? 404 : 400;
+      return res.status(status).json({ ok: false, error: err.codigo, message: err.frase });
+    }
+    logger?.error?.({ err, companyId }, "saida_do_cliente_falhou");
+    return res.status(500).json({ ok: false, error: "saida_do_cliente_falhou" });
+  };
+
+  /**
+   * ⚠⚠ AS SAÍDAS QUE O CLIENTE ACRESCENTA AO PRÓPRIO FLUXO — decisão do dono, 29/08/2026.
+   *
+   * > *"o cliente pode modificar as saídas, podendo colocar novas saídas, apenas para visualização
+   * > deles (…) e essas saídas que o cliente digitar aparece para o contador na aba de conferência."*
+   *
+   * ⚠⚠ **UM VERBO SÓ PARA OS DOIS TIPOS**, e é deliberado: a tela apresenta UM botão ("+ Saída"),
+   * com uma escolha dentro ("acontece uma vez" × "todo mês"). Dois endpoints fariam a TELA escolher
+   * a porta — e um dia escolher errado, em silêncio. Quem despacha é o servidor, por `tipo`, que é
+   * vocabulário FECHADO: valor desconhecido RECUSA, nunca cai no primeiro da lista.
+   *
+   * | `tipo` | onde grava | por quê |
+   * |---|---|---|
+   * | `AVULSA` | `saidas_avulsas_cliente` | tem DATA — o dia em que ele pretende pagar |
+   * | `RECORRENTE` | `series_recorrentes` (`origem: DECLARADA`) | tem CICLO, não data |
+   *
+   * ⚠⚠ **NENHUM DOS DOIS VIRA `LancamentoDeclarado`.** A invariante nº 1 daquele módulo exige
+   * `dataPagamento` em `A_CONFERIR`, porque o lançamento que sai de lá afirma que o dinheiro saiu.
+   * Isto é PLANO, não fato.
+   *
+   * ⚠ **NÃO HÁ `PATCH`.** O dono respondeu *"só acrescentar"*: nada aqui altera linha que o SISTEMA
+   * previu, e não existe caminho para o cliente mexer numa guia. Há teste varrendo isso.
+   *
+   * ⚠ Sem `minRole`: planejar um gasto não é ato fiscal, e o piso das rotas financeiras deste
+   * arquivo (notas, guias, alíquota, fluxo) é "membro ativo".
+   */
+  router.post("/companies/:companyId/fluxo/saidas", requireClientCompanyAccess(), async (req, res) => {
+    const companyId = String(req.params.companyId);
+    const usuarioId = String(req.auth?.user?.id || "");
+    const tipo = String(req.body?.tipo || "").trim().toUpperCase();
+    try {
+      if (tipo === "AVULSA") {
+        const saida = await criarSaidaAvulsa({
+          portalClientId: companyId,
+          data: req.body?.data,
+          valor: req.body?.valor,
+          descricao: req.body?.descricao,
+          usuarioId,
+        });
+        return res.status(201).json({ ok: true, tipo, saida });
+      }
+      if (tipo === "RECORRENTE") {
+        const r = await declararSerie({
+          portalClientId: companyId,
+          // ⚠⚠ O LADO É CRAVADO EM `DESPESA`, e o corpo NÃO o escolhe. O pedido do dono é sobre
+          // SAÍDAS; aceitar `RECEITA` daqui deixaria o cliente pôr receita futura no próprio fluxo,
+          // que é outra decisão e nunca foi tomada.
+          lado: LADO.DESPESA,
+          chave: req.body?.descricao,
+          rotulo: req.body?.descricao,
+          periodicidade: String(req.body?.periodicidade || "").trim().toUpperCase(),
+          valorDeclarado: req.body?.valor,
+          usuarioId,
+        });
+        return res.status(201).json({ ok: true, tipo, serie: r.serie, jaDecidida: r.jaDecidida });
+      }
+      // ⚠ Vocabulário FECHADO: `tipo` fora da lista recusa nomeando, em vez de escolher um.
+      return res.status(400).json({ ok: false, error: "tipo_invalido" });
+    } catch (err) {
+      return responderRecusaDaSaida(res, err, log, companyId);
+    }
+  });
+
+  /**
+   * O cliente desfaz o que ele mesmo escreveu — **e só enquanto o contador não decidiu**.
+   *
+   * ⚠⚠ Depois da decisão, apagar seria desfazer o ato do contador pelo lado do cliente. A recusa é
+   * NOMEADA (`saida_ja_decidida`), para a tela dizer o que houve em vez de o botão só falhar.
+   * ⚠ O escopo por empresa vive no `where` do serviço, não aqui: conhecer um id não pode apagar a
+   * saída de outra empresa.
+   */
+  router.delete("/companies/:companyId/fluxo/saidas/:saidaId", requireClientCompanyAccess(), async (req, res) => {
+    const companyId = String(req.params.companyId);
+    try {
+      await removerSaidaAvulsa({ portalClientId: companyId, saidaId: String(req.params.saidaId) });
+      return res.json({ ok: true });
+    } catch (err) {
+      return responderRecusaDaSaida(res, err, log, companyId);
+    }
+  });
 
   /**
    * ⚠⚠ "ESTOU CIENTE" — a ciência sobre as guias em atraso do pop-up.

@@ -429,6 +429,97 @@ export async function marcarSerie({
 
 
 /**
+ * ⚠⚠ A RECORRÊNCIA DECLARADA — e ela VOLTOU EM 29/08/2026, por outra porta.
+ *
+ * Escrita em `e9dd2be5` (Fase D), **removida em 28/08** junto com a tela "Declarar o que se repete",
+ * e recuperada agora — não reescrita. Com a remoção, `ORIGEM_DA_SERIE.DECLARADA` ficou **sem
+ * escritor**, e o vocabulário sobreviveu sozinho no código.
+ *
+ * ⚠ O que mudou é DE ONDE ela é chamada: não há mais tela própria. Quem declara é o cliente, dentro
+ * do próprio fluxo de caixa (*"o cliente pode modificar as saídas, podendo colocar novas saídas"*),
+ * e a declaração aparece para o contador na Conferência.
+ *
+ * Ela nasce **`PENDENTE`**: uma afirmação não entra no fluxo sozinha, do mesmo jeito que uma
+ * observação não entra.
+ *
+ * ⚠⚠ E ELA NÃO SOBRESCREVE UMA SÉRIE JÁ CONFIRMADA. Quem já foi decidido pelo contador continua
+ * como está; a declaração volta marcada e a tela mostra a divergência. *"O observado vence"* é
+ * decisão do dono — e uma declaração que rebaixasse uma série ATIVA para PENDENTE apagaria a
+ * decisão dele.
+ *
+ * ⚠ A extração de TEXTO LIVRE (*"1.000 que eu pago de jantar todo mês"*) **não existe**: não há
+ * nenhuma integração de LLM neste repositório. Esta porta recebe os campos já estruturados, e quem
+ * os estrutura é a pessoa preenchendo a tela.
+ */
+export async function declararSerie({
+  portalClientId,
+  lado,
+  chave,
+  rotulo,
+  periodicidade,
+  valorDeclarado,
+  contraparteDoc = null,
+  usuarioId,
+  agora = new Date(),
+  client = prisma,
+}) {
+  conferirVocabulario({ lado, periodicidade });
+  const nome = texto(rotulo);
+  if (!nome) recusar(RECUSA_DA_SERIE.SEM_ROTULO);
+  /**
+   * ⚠⚠ A CHAVE DE UMA DECLARAÇÃO É A DESCRIÇÃO **CANONIZADA** — e é `chaveDaDescricao`, a que já
+   * existe, nunca uma terceira canonização.
+   *
+   * Sem canonizar, "Anuidade do Conselho" e "anuidade do conselho " viram duas séries, e a segunda
+   * declaração não encontraria a primeira.
+   *
+   * ⚠ É a MESMA função cuja limitação está declarada no cabeçalho deste arquivo (ela não remove
+   * datas) — e aqui isso não morde: quem digita um RÓTULO não escreve a data dentro dele. O que a
+   * limitação impede é a chave saída de um MEMO BANCÁRIO, que é outro caminho.
+   */
+  const k = chaveDaDescricao(texto(chave) || nome);
+  if (!k) recusar(RECUSA_DA_SERIE.SEM_CHAVE);
+
+  // ⚠⚠ O VALOR É O QUE A PESSOA AFIRMA, e sem ele a declaração não diz nada de útil ao fluxo.
+  // ⚠ `Number(null)` é 0 e 0 é finito — a guarda é `> 0`, nunca `Number.isFinite` sozinha.
+  const valor = Number(valorDeclarado);
+  if (!Number.isFinite(valor) || valor <= 0) recusar(RECUSA_DA_SERIE.VALOR_INVALIDO);
+
+  try {
+    const existente = await client.serieRecorrente.findUnique({
+      where: { portalClientId_lado_chave: { portalClientId: String(portalClientId), lado, chave: k } },
+    });
+    // ⚠ Já decidida pelo contador ⇒ a declaração NÃO a toca. Ela volta marcada, e a tela mostra a
+    // divergência em vez de apagar a decisão.
+    if (existente && existente.estado !== ESTADO_DA_SERIE.PENDENTE) {
+      return { serie: existente, jaDecidida: true };
+    }
+
+    const dados = {
+      rotulo: nome,
+      periodicidade,
+      valorDeclarado: valor,
+      origem: ORIGEM_DA_SERIE.DECLARADA,
+      estado: ESTADO_DA_SERIE.PENDENTE,
+      contraparteDoc: texto(contraparteDoc) || null,
+      declaradoPor: texto(usuarioId) || null,
+      declaradoEm: agora,
+    };
+
+    const serie = await client.serieRecorrente.upsert({
+      where: { portalClientId_lado_chave: { portalClientId: String(portalClientId), lado, chave: k } },
+      update: dados,
+      create: { portalClientId: String(portalClientId), lado, chave: k, ...dados },
+    });
+    return { serie, jaDecidida: false };
+  } catch (e) {
+    if (e instanceof SerieRecusada) throw e;
+    if (tabelaAusente(e)) recusar(RECUSA_DA_SERIE.INDISPONIVEL);
+    throw e;
+  }
+}
+
+/**
  * ⚠⚠ A SAÍDA SE **REGISTRA**, NUNCA SE APLICA.
  *
  * O detector diz que a série sumiu por 2 ciclos; isto grava que ele disse, e QUANDO. A série

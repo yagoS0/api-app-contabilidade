@@ -53,6 +53,17 @@ export const FONTE = Object.freeze({
   SERIE_DESPESA: "SERIE_DESPESA",
   IMPOSTO_PROJETADO: "IMPOSTO_PROJETADO",
   FOLHA: "FOLHA",
+  /**
+   * ⚠⚠ O QUE O PRÓPRIO CLIENTE ACRESCENTOU (29/08/2026) — a saída AVULSA, a que tem data.
+   *
+   * ⚠ O que ele diz se REPETIR vira `SERIE_DESPESA` com `base.origem: "DECLARADA"`, e é `origem` que
+   * a distingue do que o sistema detectou. Duas fontes para a mesma série fariam a evidência da
+   * recorrência (n, faixa, confronto) parar de aparecer.
+   *
+   * ⚠⚠ Ela cai no balde **`saida`** de `tabelaDoFluxo.js`, e há teste afirmando isso — fonte nova
+   * caindo no balde certo por acidente é o que a lista fechada existe para impedir.
+   */
+  SAIDA_DO_CLIENTE: "SAIDA_DO_CLIENTE",
 });
 
 /**
@@ -117,6 +128,9 @@ export const ROTULO_DA_FONTE = Object.freeze({
   [FONTE.SERIE_DESPESA]: "Despesa que se repete",
   [FONTE.FOLHA]: "Folha de pagamento",
   [FONTE.IMPOSTO_PROJETADO]: "Imposto previsto",
+  // ⚠ O rótulo diz DE QUEM é a linha, e é o que a distingue do que o sistema previu — sem ele o
+  // cliente não saberia qual das linhas ele mesmo escreveu.
+  [FONTE.SAIDA_DO_CLIENTE]: "Você acrescentou",
 });
 
 export function rotuloDaFonte(f) {
