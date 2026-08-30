@@ -359,30 +359,91 @@ function Horizonte({ meses, unidade, comFolha, cicloAtual, aoAbrirMes }) {
   );
 }
 
+/**
+ * O DRE GERENCIAL — e a partir de 29/08/2026 ele é REAL, montado pelo nosso plano de contas.
+ *
+ * > Dono: *"a nossa DRE para o cliente deve ser montada baseada no nosso plano de contas."*
+ *
+ * ⚠⚠ **O RÓTULO É "DRE GERENCIAL", E *"não é peça fiscal"* VAI NA TELA.** O projeto já recusa
+ * entregar balanço e balancete a partir de lançamentos (`features/relatorios`), e um demonstrativo
+ * com NOME DE PEÇA CONTÁBIL saindo de lançamento é exatamente o que aquela recusa existe para
+ * impedir. ⚠ Isto **não** é a legenda que o critério de corte deste app manda cortar: ela não
+ * descreve uma ausência visível, ela impede uma AFIRMAÇÃO — a de que este papel vale perante o
+ * fisco.
+ */
 function Dre({ dados }) {
+  /**
+   * ⚠⚠ **VAZIO É RESPOSTA, E ELE TEM NOME.** Medido: 12 das 34 empresas não têm lançamento nenhum.
+   * Um DRE de `R$ 0,00` em toda linha AFIRMA que a empresa não faturou nem gastou nada no mês —
+   * e o que houve é que o contador ainda não lançou. As duas coisas pedem ações opostas: uma é
+   * "seu mês foi zero", a outra é "fale com o seu contador".
+   */
+  if (dados?.semLancamento) {
+    return (
+      <div className="dre-vazio">
+        <strong>Ainda não há lançamentos nesta competência.</strong>
+        <span>
+          O seu contador ainda não lançou este mês. Isto não quer dizer que a empresa não teve
+          movimento — quer dizer que o DRE ainda não pode ser montado.
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <div className="table-wrap">
-      <table className="table table--dre">
-        <tbody>
-          {dados.linhas.map((l) => {
-            const forte = l.tipo === "subtotal" || l.tipo === "resultado";
-            // ⚠ VERMELHO SÓ NO RESULTADO, nunca na dedução. Imposto sobre a receita é negativo por
-            // DEFINIÇÃO — pintar toda linha de menos deixaria o DRE inteiro vermelho num mês de
-            // lucro, e nesta casa cor forte quer dizer "isto pede ação agora". O que pede ação é
-            // fechar o mês no prejuízo; o sinal do abatimento já está no próprio número.
-            const alerta = forte && l.valor < 0;
-            return (
-              <tr key={l.chave} data-linha-dre={l.tipo}>
-                <td>{forte ? <strong>{l.rotulo}</strong> : l.rotulo}</td>
-                <td className="num" data-negativo={alerta ? "sim" : undefined}>
-                  {forte ? <strong>{brl(l.valor)}</strong> : brl(l.valor)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="table-wrap">
+        <table className="table table--dre">
+          <tbody>
+            {dados.linhas.map((l) => {
+              const forte = l.tipo === "subtotal" || l.tipo === "resultado";
+              // ⚠ VERMELHO SÓ NO RESULTADO, nunca na dedução. Imposto sobre a receita é negativo por
+              // DEFINIÇÃO — pintar toda linha de menos deixaria o DRE inteiro vermelho num mês de
+              // lucro, e nesta casa cor forte quer dizer "isto pede ação agora". O que pede ação é
+              // fechar o mês no prejuízo; o sinal do abatimento já está no próprio número.
+              const alerta = forte && l.valor < 0;
+              return (
+                <tr key={l.chave} data-linha-dre={l.tipo}>
+                  <td>{forte ? <strong>{l.rotulo}</strong> : l.rotulo}</td>
+                  <td className="num" data-negativo={alerta ? "sim" : undefined}>
+                    {forte ? <strong>{brl(l.valor)}</strong> : brl(l.valor)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/*
+        ⚠⚠ A LINHA "NÃO CLASSIFICADO" É OBRIGATÓRIA, e ela nunca vira zero nem some.
+
+        Medido na base: a conta EM BRANCO carrega R$ 687.355,94 — dos quais R$ 321.822,26 de RECEITA
+        e R$ 20.274,56 de DAS. **Some com ela e a empresa some do DRE**: os números acima passariam a
+        descrever meia empresa, com cara de completos.
+
+        ⚠ As causas vêm SEPARADAS porque o conserto é diferente, e a frase de cada uma vem do
+        SERVIDOR. ⚠ Conta em branco NÃO é erro — a provisão de guia nasce assim.
+      */}
+      {(dados.naoClassificado || []).length ? (
+        <div className="dre-nao-classificado">
+          <strong>Fora do DRE, por enquanto</strong>
+          {dados.naoClassificado.map((n) => (
+            <p key={n.causa} data-causa={n.causa}>
+              <span className="dre-nc-valor">{brl(n.valor)}</span>
+              {" — "}
+              {n.frase}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {/* ⚠ O rótulo do que isto É. Ver o cabeçalho da função. */}
+      <p className="dre-rodape">
+        <strong>DRE gerencial</strong> — montado a partir dos lançamentos contábeis da sua empresa.
+        Não é peça fiscal.
+      </p>
+    </>
   );
 }
 

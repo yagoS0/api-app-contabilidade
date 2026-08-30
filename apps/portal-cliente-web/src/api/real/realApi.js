@@ -13,7 +13,6 @@ import { lerSessao, definirTokens, limparSessao } from "../sessionStore";
 import { consultarCnpjNaBrasilApi } from "./brasilApi";
 import { competenciaPadrao } from "../../lib/format";
 // ⚠ Só o DRE ainda é demonstração — o fluxo de caixa passou a vir do servidor em 27/08/2026.
-import { dreDeDemonstracao } from "../../features/painel/lib/dadosDeDemonstracao";
 
 const BASE = String(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 
@@ -464,15 +463,28 @@ export function createRealApi() {
       );
     },
     /**
-     * ⚠⚠ O DRE CONTINUA SENDO DEMONSTRAÇÃO, e o motivo não é esquecimento: **não existe rota de
-     * DRE**. Ele devolve `demonstracao: true`, que é o que mantém o selo aceso na visão dele.
+     * ⚠⚠ O DRE VIROU REAL EM 29/08/2026 — e este bloco dizia o contrário até agora.
      *
-     * ⚠ Ela existe AQUI, e não só no mock, por um motivo mecânico: `createApiClient` monta o
-     * wrapper iterando `Object.keys(real)` — função ausente daqui **some do objeto** no modo
+     * > Dono: *"a nossa DRE para o cliente deve ser montada baseada no nosso plano de contas."*
+     *
+     * O comentário antigo era: *"o DRE CONTINUA SENDO DEMONSTRAÇÃO (…) não existe rota de DRE. Ele
+     * devolve `demonstracao: true`, que é o que mantém o selo aceso"*. **A rota existe agora**
+     * (`GET /client/companies/:id/dre`), montada pelo plano de contas da empresa, e ela responde
+     * `demonstracao: false` — que é o que **apaga o selo sozinho**, exatamente como o fluxo de caixa
+     * fez em 27/08. A leitura da tela não mudou: `demonstracao !== false`, nunca `=== true`.
+     *
+     * ⚠ `dreDeDemonstracao` ficou SEM CHAMADOR no caminho real. Ela continua no mock, que é onde
+     * ficção tem lugar — e é ela que mantém o desenho do SELO alcançável offline.
+     *
+     * ⚠ Ela existe AQUI, e não só no mock, por um motivo mecânico: `createApiClient` monta o wrapper
+     * iterando `Object.keys(real)` — função ausente daqui **some do objeto** no modo
      * `real_with_mock_fallback`, e a tela quebra com `is not a function`.
      */
     async getDre(companyId, { competencia } = {}) {
-      return dreDeDemonstracao(companyId, competencia || competenciaPadrao());
+      return pedir(
+        `/client/companies/${encodeURIComponent(companyId)}/dre`
+        + qs({ competencia: competencia || competenciaPadrao() }),
+      );
     },
 
     /**

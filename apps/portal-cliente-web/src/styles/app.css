@@ -1074,3 +1074,32 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 /* O bloco "Quando" não é um <label> porque ele governa DOIS controles (a caixa e o campo que ela
    troca): um label envolvendo os dois daria nome acessível errado ao segundo. */
 .fluxo-v4-saidas-rotulo { display: block; font-size: .88rem; color: var(--muted); margin-bottom: 10px; }
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+   O DRE GERENCIAL — real desde 29/08/2026, montado pelo plano de contas.
+   ───────────────────────────────────────────────────────────────────────────────────────────── */
+
+/* Vazio NOMEADO: 12 das 34 empresas não têm lançamento, e "R$ 0,00" em toda linha afirmaria que a
+   empresa não faturou nem gastou nada no mês. */
+.dre-vazio {
+  display: grid; gap: 6px;
+  padding: 22px 18px;
+  background: var(--cabecalho-tabela);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+.dre-vazio > span { font-size: .82rem; color: var(--muted); }
+
+/* A linha que nunca some. Ela carrega R$ 687 mil na base real — some com ela e a empresa some do
+   DRE. NÃO é vermelha: conta em branco é estado legítimo, não erro. */
+.dre-nao-classificado {
+  display: grid; gap: 6px;
+  margin-top: 14px; padding: 14px;
+  background: var(--neutral-surface);
+  border-radius: var(--radius);
+}
+.dre-nao-classificado > p { margin: 0; font-size: .8rem; color: var(--muted); }
+.dre-nc-valor { font-weight: 600; color: var(--text-2); }
+
+/* "Não é peça fiscal" — ela impede uma AFIRMAÇÃO, não descreve uma ausência. */
+.dre-rodape { margin: 14px 0 0; font-size: .76rem; color: var(--muted); }

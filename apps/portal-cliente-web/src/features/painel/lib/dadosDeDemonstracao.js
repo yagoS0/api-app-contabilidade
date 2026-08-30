@@ -212,42 +212,125 @@ export function fluxoDeCaixaDeDemonstracao(companyId, competencia) {
 }
 
 /**
- * DRE — as linhas com nome próprio, na ordem em que se lê um resultado.
+ * ⚠⚠ O DRE DE DEMONSTRAÇÃO — reescrito em 29/08/2026 para o FORMATO REAL.
  *
- * ⚠⚠ "DRE" É NOME DE PEÇA CONTÁBIL, e este repositório já registrou o cuidado com isso: no portal
- * do ESCRITÓRIO, *"balanço e balancete não aparecem nem desabilitados"*, porque entregá-los a
- * partir de dado insuficiente *"seria um demonstrativo com NOME DE PEÇA CONTÁBIL"*. Lá o dado era
- * insuficiente; aqui ele é **inventado**. O selo na tela é o que separa uma maquete de uma
- * afirmação contábil — ele não é enfeite, é o que autoriza esta tela a existir.
+ * O DRE virou real nesta data (`GET /client/companies/:id/dre`, montado pelo plano de contas), e
+ * este arquivo passou a ser o par OFFLINE dele — não mais a única versão que existia.
  *
- * ⚠ E é por isso que a visão de DRE **não oferece exportar, imprimir nem baixar**: o risco não é a
- * tela, é ela SAIR da tela (print, PDF, e-mail ao banco) sem o selo junto.
+ * ⚠⚠ **A FORMA TEM DE SER A DO SERVIDOR**, e por isso ela mudou aqui: seis linhas viraram as quinze
+ * de `dreGerencial.js`, e entraram `semLancamento` e `naoClassificado`. Um mock com forma própria
+ * treina a tela errada — foi o defeito medido no fluxo de caixa no mesmo dia (o mock chamava
+ * `base.origem` o que o servidor chama de `base.doCliente`, e a lista saía vazia).
  *
- * ⚠ DE ONDE CADA LINHA VIRÁ, quando existir: receita e deduções saem de `CompanyMonthlyCircular`
- * (faturamento + extrato do PGDAS-D) e das guias pagas; custo, despesa e resultado exigem
- * `AccountingEntry` com plano de contas classificado — que hoje só existe do lado do escritório —
- * e só são verdade **depois do fechamento contábil do mês**. Antes disso o número muda depois de
- * mostrado.
+ * ⚠ **`demonstracao: true` FICA**: aqui os números são inventados, e é ele que acende o selo. É a
+ * única diferença de contrato em relação ao servidor, e ela é o ponto.
+ *
+ * ⚠⚠ **OS RAMOS QUE O MOCK PRECISA ALCANÇAR**, porque este projeto já foi mordido oito vezes por
+ * ramo que só existia em produção:
+ *   • a empresa **SEM LANÇAMENTO** (12 das 34 na base real) — o DRE dela é vazio NOMEADO, nunca zero;
+ *   • a linha **NÃO CLASSIFICADA**, com as causas separadas (a conta em branco carrega R$ 687 mil);
+ *   • uma linha de receita **NEGATIVA** (o estorno), que aparece com o sinal que tem.
  */
 export function dreDeDemonstracao(companyId, competencia) {
+  // ⚠ A MESMA empresa magra do fluxo: sem apuração, sem lançamento. Ela é o ramo do vazio nomeado.
+  if (companyId === "pc-006") {
+    return {
+      demonstracao: true,
+      competencia,
+      semLancamento: true,
+      linhas: LINHAS_DO_DRE_DEMO.map((l) => ({ ...l, valor: 0, contas: [] })),
+      naoClassificado: [],
+    };
+  }
+
   const s = semente(`${companyId}|dre|${competencia}`);
-  const receita = arredondar(30000 + (s % 30) * PASSO);
-  const deducoes = arredondar(receita * 0.09);
-  const liquida = receita - deducoes;
-  const custos = arredondar(liquida * 0.36);
-  const despesas = arredondar(liquida * 0.24);
-  const resultado = liquida - custos - despesas;
+  const receitaBruta = arredondar(30000 + (s % 30) * PASSO);
+  // ⚠ O ESTORNO: um débito em conta de RECEITA. Ele é o caso real da validação
+  // (`311020002 MANUTENCAO −3.213,00`), e zerá-lo esconderia o estorno.
+  const estorno = -arredondar(receitaBruta * 0.04);
+  const deducoes = -arredondar(receitaBruta * 0.09);
+  const custos = -arredondar(receitaBruta * 0.30);
+  const pessoal = -arredondar(receitaBruta * 0.14);
+  const gerais = -arredondar(receitaBruta * 0.07);
+  const tributarias = -arredondar(receitaBruta * 0.02);
+  const receitasFinanceiras = arredondar(receitaBruta * 0.01);
+  const despesasFinanceiras = -arredondar(receitaBruta * 0.015);
+
+  const valores = {
+    receitaBruta: receitaBruta + estorno,
+    deducoes,
+    custos,
+    pessoal,
+    gerais,
+    tributarias,
+    depreciacao: 0,
+    receitasFinanceiras,
+    despesasFinanceiras,
+    outrasReceitas: 0,
+    irpjCsll: 0,
+  };
+  const receitaLiquida = valores.receitaBruta + valores.deducoes;
+  const lucroBruto = receitaLiquida + valores.custos;
+  const resultadoOperacional = lucroBruto + valores.pessoal + valores.gerais + valores.tributarias;
+  const resultadoDoPeriodo = resultadoOperacional + receitasFinanceiras + despesasFinanceiras;
+
+  const subtotais = { receitaLiquida, lucroBruto, resultadoOperacional, resultadoDoPeriodo };
 
   return {
     demonstracao: true,
     competencia,
-    linhas: [
-      { chave: "receita", rotulo: "Receita bruta de serviços", valor: receita, tipo: "entrada" },
-      { chave: "deducoes", rotulo: "(−) Impostos sobre a receita", valor: -deducoes, tipo: "saida" },
-      { chave: "liquida", rotulo: "= Receita líquida", valor: liquida, tipo: "subtotal" },
-      { chave: "custos", rotulo: "(−) Custo dos serviços prestados", valor: -custos, tipo: "saida" },
-      { chave: "despesas", rotulo: "(−) Despesas operacionais", valor: -despesas, tipo: "saida" },
-      { chave: "resultado", rotulo: "= Resultado do período", valor: resultado, tipo: "resultado" },
+    semLancamento: false,
+    linhas: LINHAS_DO_DRE_DEMO.map((l) => ({
+      ...l,
+      valor: l.tipo === "linha" ? valores[l.chave] : subtotais[l.chave],
+      contas: l.chave === "receitaBruta"
+        ? [
+          { codigo: "31101", nome: "VENDAS DE SERVICOS", valor: receitaBruta },
+          // ⚠ A conta com valor NEGATIVO dentro de uma linha de receita.
+          { codigo: "311020002", nome: "MANUTENCAO", valor: estorno },
+        ]
+        : [],
+    })),
+    // ⚠⚠ A LINHA QUE NUNCA SOME. Duas causas de propósito: elas pedem consertos diferentes, e um
+    // mock com uma só faria a tela parecer certa com metade do desenho.
+    naoClassificado: [
+      {
+        causa: "conta_em_branco",
+        frase: "Estas linhas ainda não têm conta contábil. É um estado normal — a provisão de guia nasce assim —, e o seu contador ainda vai classificá-las.",
+        valor: arredondar(receitaBruta * 0.05),
+        contas: [{ codigo: "(sem conta)", nome: null, valor: arredondar(receitaBruta * 0.05), linhas: 3 }],
+      },
+      {
+        causa: "fora_do_plano",
+        frase: "Estas linhas usam uma conta que não existe no plano de contas desta empresa.",
+        valor: 120,
+        contas: [{ codigo: "9999", nome: null, valor: 120, linhas: 1 }],
+      },
     ],
   };
 }
+
+/**
+ * ⚠ As linhas, na MESMA ordem e com os MESMOS rótulos de `dreGerencial.js` (backend).
+ *
+ * ⚠⚠ Ela é cópia deliberada, e entra na tabela "mudou lá, muda aqui" do `CLAUDE.md`: a alternativa
+ * seria importar a constante do `apps/api` para dentro do bundle do cliente, o que arrastaria o
+ * serviço e o Prisma junto. O que impede a divergência é o teste, que compara as duas listas.
+ */
+const LINHAS_DO_DRE_DEMO = [
+  { chave: "receitaBruta", rotulo: "Receita bruta", tipo: "linha" },
+  { chave: "deducoes", rotulo: "(-) Deduções", tipo: "linha" },
+  { chave: "receitaLiquida", rotulo: "= Receita líquida", tipo: "subtotal" },
+  { chave: "custos", rotulo: "(-) Custos", tipo: "linha" },
+  { chave: "lucroBruto", rotulo: "= Lucro bruto", tipo: "subtotal" },
+  { chave: "pessoal", rotulo: "(-) Despesas com pessoal", tipo: "linha" },
+  { chave: "gerais", rotulo: "(-) Despesas gerais", tipo: "linha" },
+  { chave: "tributarias", rotulo: "(-) Despesas tributárias", tipo: "linha" },
+  { chave: "depreciacao", rotulo: "(-) Depreciação/amortização", tipo: "linha" },
+  { chave: "resultadoOperacional", rotulo: "= Resultado operacional", tipo: "subtotal" },
+  { chave: "receitasFinanceiras", rotulo: "(+) Receitas financeiras", tipo: "linha" },
+  { chave: "despesasFinanceiras", rotulo: "(-) Despesas financeiras", tipo: "linha" },
+  { chave: "outrasReceitas", rotulo: "(+) Outras receitas operacionais", tipo: "linha" },
+  { chave: "irpjCsll", rotulo: "(-) IRPJ/CSLL", tipo: "linha" },
+  { chave: "resultadoDoPeriodo", rotulo: "= Resultado do período", tipo: "resultado" },
+];

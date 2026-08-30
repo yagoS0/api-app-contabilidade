@@ -14,6 +14,7 @@ import { importarOfxDoCliente } from "../../application/declarados/ImportOfxServ
 // consumidor não dá erro em lugar nenhum — é a mesma família do identificador órfão que só o
 // `no-undef` ou o build pegam. ⚠ `paraTela` saiu; os outros três voltaram a ter uso quando a
 // declaração voltou por dentro do fluxo de caixa.
+import { DreRecusado, montarDre } from "../../application/dre/DreService.js";
 import {
   LADO,
   RECUSA_DA_SERIE,
@@ -978,6 +979,40 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       return res.status(400).json({ ok: false, error: "tipo_invalido" });
     } catch (err) {
       return responderRecusaDaSaida(res, err, log, companyId);
+    }
+  });
+
+  /**
+   * ⚠⚠ O DRE GERENCIAL DO CLIENTE — real, montado pelo NOSSO plano de contas (29/08/2026).
+   *
+   * > Dono: *"a nossa DRE para o cliente deve ser montada baseada no nosso plano de contas."*
+   *
+   * ⚠⚠ **ELE SUBSTITUI A FICÇÃO.** Até aqui o portal do cliente desenhava `dreDeDemonstracao` com o
+   * selo *"dados de demonstração"* — não havia rota. Agora há, e a resposta traz
+   * `demonstracao: false`, que é o que **apaga o selo sozinho**: a leitura de lá é
+   * `demonstracao !== false`, nunca `=== true`.
+   *
+   * ⚠ **SÓ LEITURA, e sem `minRole`** — é o piso das rotas financeiras deste arquivo (notas, guias,
+   * alíquota, fluxo). Ver o resultado do próprio mês não é ato fiscal.
+   *
+   * ⚠⚠ **NÃO SE CHAMA "BALANÇO" NEM "BALANCETE".** O projeto já recusa entregar peça contábil com
+   * nome de peça contábil a partir de lançamentos (`features/relatorios`); o rótulo é **"DRE
+   * gerencial"**, e *"não é peça fiscal"* vai na tela.
+   */
+  router.get("/companies/:companyId/dre", requireClientCompanyAccess(), async (req, res) => {
+    try {
+      const dre = await montarDre({
+        portalClientId: String(req.params.companyId),
+        competencia: req.query?.competencia,
+      });
+      return res.json({ ok: true, ...dre });
+    } catch (err) {
+      if (err instanceof DreRecusado) {
+        return res.status(400).json({ ok: false, error: err.codigo, message: err.frase });
+      }
+      log?.error?.({ err, companyId: req.params?.companyId }, "dre_falhou");
+      // ⚠ A tela não pode quebrar calada: erro NOMEADO, e o motivo no log.
+      return res.status(500).json({ ok: false, error: "dre_falhou", message: "Não foi possível montar o DRE." });
     }
   });
 
