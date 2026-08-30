@@ -157,6 +157,23 @@ export function rotuloDoMes(competencia) {
   return `${MESES[mes - 1]} de ${m[1]}`;
 }
 
+/**
+ * Soma meses a uma competência. `("2026-12", 1)` → `"2027-01"`.
+ *
+ * ⚠ Aritmética de STRING, nunca `new Date`: a competência é um rótulo civil, e o construtor de data
+ * a interpretaria em UTC — no fuso de São Paulo, `new Date("2026-08")` volta como julho.
+ *
+ * ⚠ Ela morava dentro de `BlocoDeDemonstracao.jsx` e subiu para cá em 29/08/2026, quando o Painel
+ * passou a precisar dela para ler o MÊS SEGUINTE nos três cards. Duas cópias da mesma aritmética
+ * divergiriam na primeira correção — e as duas decidem em que mês um número aparece.
+ */
+export function somarCompetencia(competencia, n) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(competencia || ""));
+  if (!m) return null;
+  const t = Number(m[1]) * 12 + (Number(m[2]) - 1) + n;
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`;
+}
+
 /** `"2026-08"` → `"ago/26"`, para caber na coluna estreita do celular. */
 export function mesCurto(competencia) {
   if (typeof competencia !== "string") return "—";
@@ -318,16 +335,22 @@ export function ressalvasDoFluxo(fluxo) {
     });
   }
 
-  // ⚠⚠ "ninguém configurou o prazo" ≠ "o prazo é 1 mês", e quem configura é o CONTADOR.
-  if (fluxo?.prazoRecebimento && fluxo.prazoRecebimento.configurado === false) {
-    r.push({
-      tom: "neutro",
-      titulo: "Prazo de recebimento: o padrão",
-      texto: `As entradas das notas emitidas estão sendo previstas para `
-        + `${fluxo.prazoRecebimento.meses} mês(es) depois da emissão — este é o PADRÃO do sistema, `
-        + "ninguém configurou o prazo da sua empresa. Se o seu prazo é outro, fale com o seu contador.",
-    });
-  }
+  /*
+   * ⚠⚠ LÁPIDE — A RESSALVA DO PRAZO DE RECEBIMENTO SAIU EM 29/08/2026.
+   *
+   * Ela dizia: *"as entradas das notas emitidas estão sendo previstas para N mês(es) depois da
+   * emissão — este é o PADRÃO do sistema, ninguém configurou o prazo da sua empresa"*, e nascia de
+   * `fluxo.prazoRecebimento.configurado === false`. O argumento dela continua válido em geral
+   * ("ninguém configurou" ≠ "o prazo é 1 mês", e quem configura é o CONTADOR) — o que sumiu foi o
+   * OBJETO: o dono decidiu que **a entrada cai no dia 1 do mês seguinte à emissão**, sempre, e
+   * `FluxoDeCaixaService` parou de ler `PortalClient.prazoRecebimentoMeses`. O campo
+   * `prazoRecebimento` não viaja mais no payload.
+   *
+   * ⚠ Mantê-la seria pior que removê-la: ela descreveria uma configuração que não existe mais e
+   * mandaria o cliente falar com o contador sobre um ajuste que ninguém pode fazer.
+   * ⚠ A COLUNA do banco continua lá (dropar coluna é migration destrutiva e decisão do dono), sem
+   * leitor. Se um dia o prazo voltar a ser configurável, esta ressalva volta com ele.
+   */
 
   // ⚠⚠ A ausência do imposto previsto é DITA — nunca uma linha que simplesmente não aparece.
   if (fluxo?.semImposto?.frase) {

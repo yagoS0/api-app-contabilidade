@@ -229,6 +229,52 @@ function rotuloDaGuia(g) {
 }
 
 /**
+ * ⚠⚠ QUAIS COMPETÊNCIAS TÊM APURAÇÃO **PROVADA** — decisão do dono, 29/08/2026.
+ *
+ * > *"eu estou afirmando, a apuração quer dizer que o dinheiro entrou, pode colocar."*
+ *
+ * Eu havia registrado a ressalva de que apuração prova o FATURAMENTO e não o RECEBIMENTO; ele
+ * reafirmou, e a decisão é dele. O que esta função faz é dar à promoção uma PROVA em vez de uma
+ * suposição — e é aí que ela melhora o que existia.
+ *
+ * **O que a promoção substituiu:** até aqui a entrada virava `FATO` só por a competência da nota ser
+ * ANTERIOR ao mês corrente, com `simplificacao: "recebimento_integral_presumido"` declarando que
+ * aquilo era suposição. Agora ela vira `FATO` quando existe declaração daquela competência.
+ *
+ * ⚠⚠ **A PROVA É A DA RECEITA, NUNCA A AFIRMAÇÃO DO CONTADOR.** O vocabulário já está fixado neste
+ * projeto (`FechamentoService`, `entregaPgdas.js`), e ele separa três coisas:
+ *
+ * | | vale? | por quê |
+ * |---|---|---|
+ * | `CompanyMonthlyCircular.pgdasNumeroDeclaracao` | **sim** | o número vem do índice da própria RFB (`CONSDECLARACAO13`) |
+ * | `ApuracaoSnapshot.estado === "transmitida"` | **sim** | a declaração existe na Receita, transmitida daqui |
+ * | `EntregaObrigacaoArquivo(PGDAS_D).transmitidaEm` | ⚠⚠ **NÃO** | é o contador dizendo que entregou. `FechamentoService` já escreve: *"promovida a comprovação, a afirmação faria o portal responder 'entregue' a partir de nada além de um clique"* |
+ *
+ * ⚠ Se a afirmação valesse, um clique passaria a confirmar dinheiro no caixa do cliente. É a mesma
+ * razão pela qual `marcarSemFaturamento` recusa afirmação contra nota emitida.
+ *
+ * ⚠ Uma query por empresa, não uma por mês: são dois `findMany` para a janela inteira.
+ */
+async function competenciasApuradas({ portalClientId, client }) {
+  const [circulares, snapshots] = await Promise.all([
+    client.companyMonthlyCircular.findMany({
+      where: { portalClientId: String(portalClientId), pgdasNumeroDeclaracao: { not: null } },
+      select: { competencia: true },
+    }).catch(() => []),
+    client.apuracaoSnapshot.findMany({
+      where: { portalClientId: String(portalClientId), estado: "transmitida" },
+      select: { competencia: true },
+    }).catch(() => []),
+  ]);
+  const set = new Set();
+  for (const c of [...circulares, ...snapshots]) {
+    const k = texto(c?.competencia);
+    if (k) set.add(k);
+  }
+  return set;
+}
+
+/**
  * ⚠⚠ A NOTA EMITIDA + O PRAZO — a ENTRADA do fluxo, e ela não depende da Fase D.
  *
  * > Dono, 25/08/2026: *"notas emitidas em junho vão entrar de receita em julho."*
@@ -240,6 +286,8 @@ function rotuloDaGuia(g) {
  * ⚠⚠ NOTA SEM COMPETÊNCIA vai para DESCONHECIDO, jamais para um mês escolhido pelo sistema.
  */
 async function linhasDasNotas({ portalClientId, cicloAtual, janelaInicio, client }) {
+  // ⚠ A prova da apuração é lida UMA vez, para a empresa inteira — não uma consulta por nota.
+  const apuradas = await competenciasApuradas({ portalClientId, client });
   const notas = await client.portalInvoice.findMany({
     where: {
       clientId: String(portalClientId),
@@ -287,19 +335,30 @@ async function linhasDasNotas({ portalClientId, cicloAtual, janelaInicio, client
     if (base == null || emMeses == null || emMeses < base) continue;
 
     /**
-     * ⚠⚠ FATO × PREVISÃO NA NOTA — errata §7.1 da `CONSTITUICAO-do-produto.md`.
+     * ⚠⚠ FATO × PREVISÃO NA NOTA — e o critério MUDOU EM 29/08/2026, por decisão do dono.
      *
-     * Nota de competência ANTERIOR ao mês corrente vira Entrada **confirmada** no mês seguinte;
-     * nota do mês corrente (que ainda está aberto, e pode crescer) fica **prevista**.
+     * > *"eu estou afirmando, a apuração quer dizer que o dinheiro entrou, pode colocar."*
      *
-     * ⚠⚠ **ISTO É UMA SIMPLIFICAÇÃO DECLARADA, NÃO UMA MEDIÇÃO** — o dono a registrou como decisão
-     * de produto: assume-se que 100% do faturado foi recebido. `PortalInvoice` **não tem
-     * `recebidoEm`**, então não existe prova de recebimento em lugar nenhum deste banco. Ela morre
-     * na Fase 4, quando houver registro de recebimento, e o `base.simplificacao` abaixo é o que
-     * torna a suposição auditável em vez de invisível.
+     * | | até 28/08 (errata §7.1) | agora |
+     * |---|---|---|
+     * | vira `FATO` quando | a competência da nota é ANTERIOR ao mês corrente | a competência da nota tem **apuração provada** |
+     * | o que sustentava | `simplificacao: "recebimento_integral_presumido"` — suposição declarada | a declaração existe na Receita |
+     *
+     * ⚠⚠ **ISTO É MAIS ESTRITO, E O EFEITO É VISÍVEL:** um mês passado **sem apuração** deixa de
+     * ter a entrada confirmada e passa a mostrá-la como PREVISTA. É a resposta honesta — sem
+     * apuração ninguém declarou aquela receita —, mas ela abre uma exceção ao critério de aceite
+     * nº 12 da Constituição (*"nenhum mês anterior ao corrente exibe célula âmbar"*), que nasceu da
+     * Lei 1 e falava das GUIAS. ⚠ Fica registrado aqui, não escondido.
+     *
+     * ⚠ Eu havia marcado a ressalva de que apuração prova o FATURAMENTO e não o RECEBIMENTO. O dono
+     * reafirmou; a decisão é dele, e o que ela ganha é uma PROVA no lugar de uma suposição.
+     *
+     * ⚠ `PortalInvoice` continua **sem `recebidoEm`** — não existe registro de recebimento neste
+     * banco. Por isso `base.simplificacao` continua viajando quando a promoção acontece: ela diz que
+     * o que foi provado é a APURAÇÃO, não o crédito em conta.
      */
-    const competenciaFechada = agora != null && mesesDaCompetencia(competenciaDaNota) < agora;
-    const procedenciaDaNota = competenciaFechada ? PROCEDENCIA.FATO : PROCEDENCIA.PREVISAO;
+    const temApuracao = apuradas.has(competenciaDaNota);
+    const procedenciaDaNota = temApuracao ? PROCEDENCIA.FATO : PROCEDENCIA.PREVISAO;
 
     const quem = texto(n.tomadorNome);
     linhas.push(montarLinha({
@@ -327,9 +386,12 @@ async function linhasDasNotas({ portalClientId, cicloAtual, janelaInicio, client
       base: {
         frase: `nota nº ${texto(n.numero) || "?"}, emitida em ${competenciaDaNota}`,
         documental: true,
-        // ⚠ A suposição viaja com a linha. Sem isto, "confirmado" aqui seria indistinguível de um
-        // recebimento provado — e não há nenhum.
-        simplificacao: competenciaFechada ? "recebimento_integral_presumido" : null,
+        // ⚠⚠ O QUE FOI PROVADO É A APURAÇÃO, NÃO O CRÉDITO EM CONTA. A marca continua viajando para
+        // que a promoção não se apresente como recebimento MEDIDO: `PortalInvoice` não tem
+        // `recebidoEm`, e não há registro de recebimento em lugar nenhum deste banco.
+        simplificacao: temApuracao ? "recebimento_presumido_pela_apuracao" : null,
+        // ⚠ A PROVA viaja NOMEADA: é ela que responde "por que esta entrada está confirmada?".
+        apuracaoProvada: temApuracao,
       },
       referencia: { tipo: "nota", id: n.id },
     }));

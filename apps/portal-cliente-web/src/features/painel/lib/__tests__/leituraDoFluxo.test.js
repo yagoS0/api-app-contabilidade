@@ -197,14 +197,37 @@ describe("⚠⚠ as ressalvas", () => {
     expect(r[0].texto).toMatch(/contador/i);
   });
 
-  it("⚠⚠ 'ninguém configurou o prazo' aparece — o padrão não passa por decisão", () => {
-    const r = ressalvasDoFluxo({ prazoRecebimento: { meses: 1, configurado: false } });
-    expect(r.some((x) => /PADRÃO do sistema/.test(x.texto))).toBe(true);
+  /*
+   * ⚠⚠ ESTES DOIS TESTES DIZIAM O CONTRÁRIO ATÉ 29/08/2026, e o que eles pediam era:
+   *
+   *   • *"'ninguém configurou o prazo' APARECE — o padrão não passa por decisão"* (a ressalva com a
+   *     frase "PADRÃO do sistema" para `configurado: false`);
+   *   • *"configurado NÃO gera ressalva"*.
+   *
+   * O argumento deles continua bom e não foi derrubado — o que sumiu foi o OBJETO. O dono decidiu
+   * que a entrada da nota cai no **dia 1 do mês seguinte à emissão**, sempre, e o prazo deixou de
+   * ser configurável: `FluxoDeCaixaService` não lê mais `PortalClient.prazoRecebimentoMeses` e o
+   * campo `prazoRecebimento` não viaja no payload. Uma ressalva mandando o cliente *"falar com o
+   * contador"* sobre um ajuste que ninguém pode mais fazer é pior que ressalva nenhuma.
+   *
+   * ⚠ Ficam invertidos, e não apagados: é o que impede alguém de "consertar" a ausência da ressalva
+   * reintroduzindo a leitura do campo.
+   */
+  it("⚠⚠ o prazo NÃO gera ressalva nenhuma — nem quando o payload antigo ainda o traz", () => {
+    expect(ressalvasDoFluxo({ prazoRecebimento: { meses: 1, configurado: false } })).toEqual([]);
+    expect(ressalvasDoFluxo({ prazoRecebimento: { meses: 2, configurado: true } })).toEqual([]);
   });
 
-  it("⚠ configurado NÃO gera ressalva", () => {
-    const r = ressalvasDoFluxo({ prazoRecebimento: { meses: 2, configurado: true } });
-    expect(r).toEqual([]);
+  it("⚠ e a palavra 'prazo' não sobrou em ressalva nenhuma", () => {
+    const r = ressalvasDoFluxo({
+      vencidas: { quantas: 1, valor: 10 },
+      semMes: [{ frase: "x", rotulo: "DAS" }],
+      prazoRecebimento: { meses: 1, configurado: false },
+      semImposto: { frase: "y" },
+      recorrenciaIndisponivel: true,
+      foraDoHorizonte: 2,
+    });
+    for (const x of r) expect(String(x.texto || "")).not.toMatch(/prazo de recebimento/i);
   });
 
   it("⚠⚠ o que não tem mês sai NOMEADO, com a frase do servidor", () => {
@@ -231,17 +254,18 @@ describe("⚠⚠ as ressalvas", () => {
   });
 
   it("⚠⚠ CADA RESSALVA TEM TÍTULO PRÓPRIO, e nenhum se repete", () => {
+    // ⚠ Eram SEIS até 29/08/2026; a do prazo de recebimento saiu (ver a lápide acima). O número é
+    // conferido de propósito: uma ressalva a menos aqui só passa depois de alguém explicar qual.
     const r = ressalvasDoFluxo({
       vencidas: { quantas: 2, valor: 100 },
       semMes: [{ frase: "x", rotulo: "DAS" }],
-      prazoRecebimento: { meses: 1, configurado: false },
       semImposto: { frase: "y" },
       recorrenciaIndisponivel: true,
       foraDoHorizonte: 3,
     });
-    expect(r).toHaveLength(6);
+    expect(r).toHaveLength(5);
     for (const x of r) expect(String(x.titulo || "").trim()).not.toBe("");
-    expect(new Set(r.map((x) => x.titulo)).size).toBe(6);
+    expect(new Set(r.map((x) => x.titulo)).size).toBe(5);
   });
 
   it("⚠⚠ fluxo sem ressalva nenhuma devolve LISTA VAZIA", () => {

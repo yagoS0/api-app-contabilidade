@@ -2,10 +2,16 @@
 //
 // `Mês | Entrada | Saída | Impostos | Folha | Resultado`
 //
-// ⚠⚠ ISTO NÃO MORA EM `leituraDoFluxo.js`, E A SEPARAÇÃO É O PONTO. Aquele arquivo é ESPELHO do
-// `apps/web/src/features/fluxo/lib/leituraDoFluxo.js` — mudou lá, muda aqui. Esta agregação é da
-// TABELA do cliente, que o portal do contador não tem; escrevê-la lá faria o espelho divergir na
-// primeira sincronização. Aqui só se LÊ o que aquele arquivo já expõe.
+// ⚠⚠ ISTO NÃO MORA EM `leituraDoFluxo.js`, E A SEPARAÇÃO CONTINUA SENDO O PONTO — mas o ARGUMENTO
+// mudou em 29/08/2026. Este parágrafo dizia que aquele arquivo era ESPELHO de
+// `apps/web/src/features/fluxo/lib/leituraDoFluxo.js` ("mudou lá, muda aqui"), e isso ficou FALSO: o
+// dono removeu o fluxo de caixa do portal do contador (*"para o contador não vai existir fluxo de
+// caixa"*) e aquela pasta foi apagada inteira. **Não há mais cópia a sincronizar.**
+//
+// ⚠ O que sustenta a separação hoje: `leituraDoFluxo.js` LÊ o vocabulário do servidor (procedência,
+// fonte, cor, evidência) e este arquivo AGREGA para a tabela desta tela. Misturá-los faria a
+// agregação de UMA tela virar parte do vocabulário que o servidor manda. Aqui só se lê o que aquele
+// arquivo já expõe.
 //
 // ⚠ Ela substituiu `planilhaDoFluxo.js` (a grade de Entrada/Saída/Recorrência/Diário de 27/08/2026).
 // Aquele arquivo ficou sem consumidor — está anotado, não apagado, que é a regra desta casa.

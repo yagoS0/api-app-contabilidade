@@ -84,19 +84,27 @@ function linhasDoPassado(ciclo) {
     const receita = valores[MESES_PASSADOS - k];
     linhas.push({
       fonte: "NOTA_EMITIDA", direcao: "ENTRADA", procedencia: "FATO", competencia: comp,
-      dia: null,
-      diaDesconhecido: {
-        motivo: "projecao_por_mes",
-        frase: "O prazo de recebimento é contado em meses, então esta linha cai no mês — não num dia.",
-      },
+      // ⚠⚠ **DIA 1, E NÃO "no mês" — decisão do dono, 29/08/2026**: *"todo dia 1 deve ter o valor de
+      // faturamento do mês anterior, ou seja, no dia primeiro temos as entradas"*. As três linhas de
+      // `NOTA_EMITIDA` deste mock diziam `dia: null` com o motivo `projecao_por_mes` e a frase
+      // *"prazo de 1 mês (padrão — ninguém configurou o prazo desta empresa)"* — **as duas coisas
+      // ficaram falsas** quando `FluxoDeCaixaService` parou de ler `PortalClient.prazoRecebimentoMeses`
+      // e passou a cravar o dia 1. Mock que descreve a regra revogada esconde o ramo novo offline.
+      // ⚠ A regra "dia ausente nunca vira dia inventado" **continua valendo para todas as outras
+      // fontes** (recorrência, imposto previsto, folha): elas seguem em "no mês", aqui e no servidor.
+      dia: 1,
+      diaDesconhecido: null,
       valor: receita, rotulo: "Recebimento — CLINICA LAIF LTDA",
       base: {
-        frase: `nota nº 1.2${k}0, competência ${somarMeses(comp, -1)} · prazo de 1 mês `
-          + "(padrão — ninguém configurou o prazo desta empresa)",
-        documental: true, prazoConfigurado: false,
+        frase: `nota nº 1.2${k}0, emitida em ${somarMeses(comp, -1)}`,
+        documental: true,
         // ⚠⚠ A SUPOSIÇÃO VIAJA MARCADA. Sem ela, "confirmado" seria indistinguível de um
         // recebimento provado — e `PortalInvoice` não tem `recebidoEm`.
-        simplificacao: "recebimento_integral_presumido",
+        // ⚠ O que promove esta linha a FATO é a APURAÇÃO da competência da nota (dono: *"a apuração
+        // quer dizer que o dinheiro entrou"*), e a prova é o índice da RFB — nunca a afirmação do
+        // contador. Por isso `apuracaoProvada` viaja junto, e o mês passado a tem.
+        simplificacao: "recebimento_presumido_pela_apuracao",
+        apuracaoProvada: true,
       },
       referencia: { tipo: "nota", id: `n-p${k}` },
     });
@@ -178,33 +186,31 @@ function linhasDoPresenteEDoFuturo(ciclo) {
      */
     {
       fonte: "NOTA_EMITIDA", direcao: "ENTRADA", procedencia: "FATO", competencia: mes(0),
-      dia: null,
-      diaDesconhecido: {
-        motivo: "projecao_por_mes",
-        frase: "O prazo de recebimento é contado em meses, então esta linha cai no mês — não num dia.",
-      },
+      dia: 1,
+      diaDesconhecido: null,
       valor: 21350, rotulo: "Recebimento — CLINICA LAIF LTDA",
       base: {
-        frase: `nota nº 1.288, competência ${mes(-1)} · prazo de 1 mês `
-          + "(padrão — ninguém configurou o prazo desta empresa)",
-        documental: true, prazoConfigurado: false,
-        simplificacao: "recebimento_integral_presumido",
+        frase: `nota nº 1.288, emitida em ${mes(-1)}`,
+        documental: true,
+        simplificacao: "recebimento_presumido_pela_apuracao",
+        apuracaoProvada: true,
       },
       referencia: { tipo: "nota", id: "n-0" },
     },
     // ⚠⚠ PREVISÃO por MÊS: a nota prova o FATURAMENTO, nunca o RECEBIMENTO — e o dia não existe.
     {
       fonte: "NOTA_EMITIDA", direcao: "ENTRADA", procedencia: "PREVISAO", competencia: mes(1),
-      dia: null,
-      diaDesconhecido: {
-        motivo: "projecao_por_mes",
-        frase: "O prazo de recebimento é contado em meses, então esta linha cai no mês — não num dia.",
-      },
+      dia: 1,
+      diaDesconhecido: null,
       valor: 12500, rotulo: "Recebimento — CLINICA LAIF LTDA",
       base: {
-        frase: `nota nº 1.234, competência ${mes(0)} · prazo de 1 mês `
-          + "(padrão — ninguém configurou o prazo desta empresa)",
-        documental: true, prazoConfigurado: false, simplificacao: null,
+        // ⚠⚠ ESTA É A LINHA QUE MANTÉM OS DOIS RAMOS ALCANÇÁVEIS OFFLINE: a nota é do mês CORRENTE,
+        // que ainda não foi apurado — então ela continua PREVISÃO, sem `simplificacao` e com
+        // `apuracaoProvada: false`. É o contraponto das duas de cima. Sem ele, o mock diria que
+        // toda entrada é fato, e o ramo em que a apuração AINDA NÃO promoveu a linha só existiria
+        // em produção — a quinta vez que este mock esconderia um ramo.
+        frase: `nota nº 1.234, emitida em ${mes(0)}`,
+        documental: true, simplificacao: null, apuracaoProvada: false,
       },
       referencia: { tipo: "nota", id: "n-1" },
     },
@@ -396,8 +402,15 @@ export function fluxoDeCaixaDoMock(companyId, competencia, opcoes = {}) {
       ackPending: itens.some((g) => !cientes.has(g.id)),
     },
     foraDoHorizonte: magro ? 0 : 1,
-    // ⚠⚠ "ninguém configurou" ≠ "configurado como 1" — a tela precisa alcançar os dois.
-    prazoRecebimento: magro ? { meses: 2, configurado: true } : { meses: 1, configurado: false },
+    /*
+     * ⚠⚠ `prazoRecebimento` SAIU DAQUI EM 29/08/2026, junto com a ressalva que ele alimentava.
+     *
+     * Ele era `magro ? {meses:2, configurado:true} : {meses:1, configurado:false}` — os dois ramos
+     * de propósito, porque *"ninguém configurou"* ≠ *"configurado como 1"*. O servidor parou de
+     * mandar o campo quando a entrada passou a cair no **dia 1 do mês seguinte**, sempre; mantê-lo
+     * aqui faria o modo offline acender uma ressalva que produção nunca mais acende — a divergência
+     * mock × real que este projeto já pagou várias vezes.
+     */
     /** ⚠ Sem folha lançada a COLUNA não existe — e é o servidor que decide, não a tela. */
     folha: magro
       ? { disponivel: false, contasConsideradas: [] }

@@ -34,7 +34,7 @@ const apuracao = (extra = {}) => ({
   dasRetornadoSerpro: "600.00", dasSimuladoSerpro: null, ...extra,
 });
 
-function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo = null, erroNaSerie = null, primeiraNota = undefined, folhas = [], contasDeFolha = [] } = {}) {
+function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo = null, erroNaSerie = null, primeiraNota = undefined, folhas = [], contasDeFolha = [], apuradas = [], transmitidas = [] } = {}) {
   return {
     portalClient: { findUnique: jest.fn(async () => ({ id: "emp-1", prazoRecebimentoMeses: prazo })) },
     guide: { findMany: jest.fn(async () => guias) },
@@ -50,7 +50,20 @@ function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo 
         return series;
       }),
     },
-    apuracaoSnapshot: { findFirst: jest.fn(async () => snapshot) },
+    apuracaoSnapshot: {
+      findFirst: jest.fn(async () => snapshot),
+      // ⚠ A PROVA da apuração transmitida DAQUI. Ver `competenciasApuradas` no serviço.
+      findMany: jest.fn(async () => transmitidas.map((competencia) => ({ competencia }))),
+    },
+    /**
+     * ⚠⚠ A PROVA DA APURAÇÃO, e ela é o que promove a entrada da nota a FATO desde 29/08/2026.
+     *
+     * `pgdasNumeroDeclaracao` vem do índice da PRÓPRIA RFB. ⚠ `apuradas` no dublê são as
+     * competências com essa prova — nunca as que o contador AFIRMOU ter entregue.
+     */
+    companyMonthlyCircular: {
+      findMany: jest.fn(async () => apuradas.map((competencia) => ({ competencia }))),
+    },
     // ⚠ As duas tabelas que a FOLHA lê. Elas existem no dublê mesmo quando o caso não fala de
     // folha, porque `derivarFolha12m` NÃO tem `catch`: método faltando derruba a suíte inteira, que
     // é exatamente o que se quer se alguém trocar a leitura por uma que engole erro.
@@ -313,12 +326,86 @@ describe("⚠⚠ o que já venceu, e o que vence em 5 dias", () => {
 });
 
 describe("⚠⚠ a nota emitida + prazo", () => {
-  it("⚠⚠ é PREVISÃO, NUNCA FATO — a nota prova o FATURADO, não o RECEBIDO", async () => {
+  it("⚠⚠ SEM apuração é PREVISÃO — a nota prova o FATURADO, não o RECEBIDO", async () => {
     // `PortalInvoice` não tem `recebidoEm`. Verde ali diria "recebido".
     const r = await montar(clientDe({ notas: [nota()] }));
     const l = linhasDe(r, FONTE.NOTA_EMITIDA)[0];
     expect(l.procedencia).toBe(PROCEDENCIA.PREVISAO);
     expect(l.direcao).toBe(DIRECAO.ENTRADA);
+  });
+
+  /**
+   * ⚠⚠ A PROMOÇÃO POR APURAÇÃO — decisão do dono, 29/08/2026: *"eu estou afirmando, a apuração quer
+   * dizer que o dinheiro entrou, pode colocar."*
+   *
+   * ⚠⚠ **O CRITÉRIO ANTIGO NUNCA TEVE UM TESTE**, e este bloco existe também por isso: até 28/08 a
+   * entrada virava `FATO` só por a competência ser anterior ao mês corrente, e a nota da fixture é
+   * do MÊS CORRENTE — então o ramo `FATO` nunca era exercido. Ele mudou sem nada ficar vermelho.
+   */
+  describe("⚠⚠ a apuração é o que promove a entrada a FATO", () => {
+    // ⚠ A nota é de JULHO e a entrada cai em AGOSTO. A prova que importa é a da competência da
+    // NOTA (julho) — é ela que foi declarada à Receita.
+    const notaDeJulho = () => nota({ competencia: new Date("2026-07-01T00:00:00.000Z") });
+
+    it("com `pgdasNumeroDeclaracao` da competência da NOTA ⇒ FATO", async () => {
+      const r = await montar(clientDe({ notas: [notaDeJulho()], apuradas: ["2026-07"] }));
+      const l = linhasDe(r, FONTE.NOTA_EMITIDA)[0];
+      expect(l.competencia).toBe("2026-08");
+      expect(l.procedencia).toBe(PROCEDENCIA.FATO);
+      expect(l.base.apuracaoProvada).toBe(true);
+    });
+
+    it("com snapshot `transmitida` daquela competência ⇒ FATO", async () => {
+      const r = await montar(clientDe({ notas: [notaDeJulho()], transmitidas: ["2026-07"] }));
+      expect(linhasDe(r, FONTE.NOTA_EMITIDA)[0].procedencia).toBe(PROCEDENCIA.FATO);
+    });
+
+    it("⚠⚠ competência PASSADA e SEM apuração ⇒ PREVISÃO — o critério antigo diria FATO", async () => {
+      // ⚠⚠ É a mudança visível: um mês passado sem apuração deixa de ter a entrada confirmada.
+      // Abre exceção ao critério de aceite nº 12 (*"nenhum mês anterior exibe célula âmbar"*), que
+      // nasceu da Lei 1 e falava das GUIAS. Está registrado no serviço, não escondido.
+      const r = await montar(clientDe({ notas: [notaDeJulho()] }));
+      const l = linhasDe(r, FONTE.NOTA_EMITIDA)[0];
+      expect(l.procedencia).toBe(PROCEDENCIA.PREVISAO);
+      expect(l.base.apuracaoProvada).toBe(false);
+    });
+
+    it("⚠ a apuração de OUTRA competência não promove — a prova é da competência da nota", async () => {
+      const r = await montar(clientDe({ notas: [notaDeJulho()], apuradas: ["2026-06", "2026-08"] }));
+      expect(linhasDe(r, FONTE.NOTA_EMITIDA)[0].procedencia).toBe(PROCEDENCIA.PREVISAO);
+    });
+
+    it("⚠⚠ a marca diz que o provado foi a APURAÇÃO, não o crédito em conta", async () => {
+      // ⚠ `PortalInvoice` não tem `recebidoEm`. A promoção não pode se apresentar como recebimento
+      // MEDIDO — a marca é o que mantém a suposição auditável em vez de invisível.
+      const r = await montar(clientDe({ notas: [notaDeJulho()], apuradas: ["2026-07"] }));
+      expect(linhasDe(r, FONTE.NOTA_EMITIDA)[0].base.simplificacao)
+        .toBe("recebimento_presumido_pela_apuracao");
+    });
+
+    it("⚠⚠ a AFIRMAÇÃO do contador NÃO é consultada — só a prova da Receita", async () => {
+      // ⚠⚠ `EntregaObrigacaoArquivo(PGDAS_D).transmitidaEm` é o contador dizendo que entregou.
+      // `FechamentoService` já escreve por quê ela não vale: *"promovida a comprovação, a afirmação
+      // faria o portal responder 'entregue' a partir de nada além de um clique"*. Aqui um clique
+      // passaria a confirmar dinheiro no caixa do cliente.
+      const client = clientDe({ notas: [notaDeJulho()] });
+      await montar(client);
+      expect(client.entregaObrigacaoArquivo).toBeUndefined();
+      const fs = require("node:fs");
+      const path = require("node:path");
+      const fonte = fs.readFileSync(path.join(__dirname, "..", "FluxoDeCaixaService.js"), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+      expect(fonte).not.toMatch(/entregaObrigacaoArquivo/);
+    });
+
+    it("⚠ é UMA consulta por empresa, não uma por nota", async () => {
+      const client = clientDe({
+        notas: [notaDeJulho(), nota({ id: "n-2", competencia: new Date("2026-06-01T00:00:00.000Z") })],
+        apuradas: ["2026-06", "2026-07"],
+      });
+      await montar(client);
+      expect(client.companyMonthlyCircular.findMany).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("nota de agosto entra em setembro — o padrão é competência + 1 mês", async () => {

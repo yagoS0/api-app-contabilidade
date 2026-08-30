@@ -29,7 +29,10 @@ import { api } from "../../api";
 import { AlertaErro, Carregando } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
 import { brl } from "../../lib/format";
-import { mesCurto, rotuloDoMes } from "./lib/leituraDoFluxo";
+// ⚠ `somarCompetencia` SAIU daqui em 29/08/2026 e foi para a lib: o Painel passou a precisar dela
+// para ler o MÊS SEGUINTE nos cards, e duas cópias da mesma aritmética divergiriam na primeira
+// correção — a mesma razão pela qual `linhaDoMes` é compartilhada entre o card e a tabela.
+import { mesCurto, rotuloDoMes, somarCompetencia } from "./lib/leituraDoFluxo";
 // ⚠ A agregação das SEIS COLUNAS mora fora do espelho: `leituraDoFluxo.js` é cópia da do contador, e
 // esta tabela só existe no portal do cliente. Ver o cabeçalho de `tabelaDoFluxo.js`.
 import {
@@ -48,14 +51,6 @@ const UNIDADES = [
   { chave: "rs", rotulo: "R$" },
   { chave: "pct", rotulo: "%" },
 ];
-
-/** Soma meses a uma competência. ⚠ Aritmética de string; dezembro + 1 vira janeiro do ano seguinte. */
-function somarCompetencia(competencia, n) {
-  const m = /^(\d{4})-(\d{2})$/.exec(String(competencia || ""));
-  if (!m) return null;
-  const t = Number(m[1]) * 12 + (Number(m[2]) - 1) + n;
-  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`;
-}
 
 const VISOES = [
   { chave: "fluxo", rotulo: "Fluxo de caixa" },
@@ -102,9 +97,15 @@ function Selo() {
  * fiscal"*. A evidência era o que separava "previsto" de "chutado".
  *
  * ⚠ **O QUE SEGURA A DECISÃO:** a REGRA não foi apagada. `evidenciaDaLinha`, `confrontoDaLinha` e
- * `ressalvasDoFluxo` continuam em `lib/leituraDoFluxo.js`, com teste próprio, e continuam sendo
- * renderizadas **no portal do contador** — que é quem trabalha com elas. E a pergunta *"de onde veio
- * esse número?"* passou a ter lugar próprio: a camada 4 da Constituição, o drill-in de dias.
+ * `ressalvasDoFluxo` continuam em `lib/leituraDoFluxo.js`, com teste próprio. E a pergunta *"de onde
+ * veio esse número?"* passou a ter lugar próprio: a camada 4 da Constituição, o drill-in de dias.
+ *
+ * ⚠⚠ **ESTA FRASE DIZIA QUE ELAS "continuam sendo renderizadas NO PORTAL DO CONTADOR" E FICOU FALSA
+ * EM 29/08/2026** — o dono removeu o fluxo de caixa daquele portal (*"para o contador não vai
+ * existir fluxo de caixa"*) e `apps/web/src/features/fluxo/` foi apagada inteira. **As três funções
+ * estão hoje SEM TELA NENHUMA, nos dois apps** — vivas só por teste. Isso não as torna código morto
+ * (elas são a leitura do vocabulário do servidor, e a Fase 4 volta a consumi-las na tela de dias),
+ * mas quem for decidir sobre elas precisa saber que a metade do argumento acima não existe mais.
  *
  * ⚠ Os componentes locais foram APAGADOS, não deixados sem chamador: componente órfão dentro do
  * arquivo é ruído. O que é de fora (a regra) ficou.

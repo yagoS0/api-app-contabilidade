@@ -3,6 +3,7 @@ import { AlertaErro, CardNumero, Carregando } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
 import { FONTE, MOTIVO, aliquotaDoPainel } from "./lib/aliquotaDoPainel";
 import { linhaDoMes } from "./lib/tabelaDoFluxo";
+import { somarCompetencia } from "./lib/leituraDoFluxo";
 import { BlocoDeDemonstracao } from "./BlocoDeDemonstracao";
 import {
   TRACO,
@@ -46,14 +47,25 @@ const OPCOES_COMPETENCIA = competenciasRecentes(12);
  *
  * ⚠ E QUANDO HÁ LINHA NÃO CLASSIFICADA A FRASE DIZ, mesmo com o número calculado: a alíquota saiu
  * por cima de provisões cuja conta contábil está em branco, então ela é um PISO, não o total.
+ *
+ * ⚠⚠ **A FRASE NOMEIA O MÊS, E DEIXOU DE DIZER "ESTA COMPETÊNCIA" EM 29/08/2026.** Ela morava
+ * debaixo de um rótulo que dizia o mesmo mês, então "esta" era inequívoco. Quando o card de Imposto
+ * passou a ser rotulado com o mês da ENTRADA (a competência + 1), a palavra ficou ambígua na tela:
+ * *"Imposto líquido · 09/2026"* com *"nenhuma guia paga nesta competência ainda"* — e a guia de que
+ * ela fala é a de **agosto**. Achado no navegador, no mock, depois de o conserto dos cards passar.
+ *
+ * ⚠ A alíquota **continua sendo a da competência ESCOLHIDA**, e é isso que ela deve ser: ela
+ * responde *"quanto esta empresa paga de imposto?"* sobre o mês que o cliente selecionou. O que
+ * mudou é ela dizer de qual mês fala, em vez de depender do rótulo do vizinho.
  */
-function textoDaAliquota(l) {
-  if (l.motivo === MOTIVO.SEM_DADOS) return "Sem dados para esta competência";
-  if (l.motivo === MOTIVO.SEM_FATURAMENTO) return "Não há faturamento nesta competência — sem base para calcular";
-  if (l.motivo === MOTIVO.SEM_IMPOSTO_PAGO) return "Nenhuma guia paga nesta competência ainda";
-  if (l.motivo === MOTIVO.SEM_RECEITA_LANCADA) return "A receita desta competência ainda não foi lançada na contabilidade";
-  if (l.motivo === MOTIVO.SEM_IMPOSTO_LANCADO) return "Os impostos desta competência ainda não foram provisionados";
-  if (l.motivo === MOTIVO.SEM_LANCAMENTO) return "Não há lançamentos contábeis nesta competência";
+function textoDaAliquota(l, competencia) {
+  const mes = fmtCompetencia(competencia);
+  if (l.motivo === MOTIVO.SEM_DADOS) return `Sem dados para ${mes}`;
+  if (l.motivo === MOTIVO.SEM_FATURAMENTO) return `Não há faturamento em ${mes} — sem base para calcular`;
+  if (l.motivo === MOTIVO.SEM_IMPOSTO_PAGO) return `Nenhuma guia de ${mes} paga ainda`;
+  if (l.motivo === MOTIVO.SEM_RECEITA_LANCADA) return `A receita de ${mes} ainda não foi lançada na contabilidade`;
+  if (l.motivo === MOTIVO.SEM_IMPOSTO_LANCADO) return `Os impostos de ${mes} ainda não foram provisionados`;
+  if (l.motivo === MOTIVO.SEM_LANCAMENTO) return `Não há lançamentos contábeis em ${mes}`;
   if (l.motivo === MOTIVO.BLOCO_AUSENTE) return "Não foi possível calcular pela contabilidade";
 
   if (l.fonte === FONTE.LANCAMENTOS) {
@@ -117,12 +129,31 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
   const resumo = notasQuery.dados?.summary || null;
   const aliquota = aliquotaQuery.dados?.[0] || null;
   /**
-   * ⚠ `linhaDoMes` é a MESMA função que a tabela usa — o card e a linha do mês corrente não podem
-   * dar números diferentes sobre o mesmo mês. Uma segunda soma aqui divergiria na primeira correção.
+   * ⚠⚠ OS CARDS LEEM O MÊS **SEGUINTE**, E ISSO É CONSERTO DE UM DEFEITO RELATADO (29/08/2026).
+   *
+   * > Dono, com a tela na frente: *"o painel principal de receita, imposto líquido e resultado tem
+   * > um bug: a receita está se tratando do mês seguinte e o resultado usando o mês corrente, o que
+   * > gera confusão. Ele deve sempre usar o mês seguinte para as duas formas."*
+   *
+   * **O que estava errado, e por que só apareceu agora:** a receita das notas emitidas em AGOSTO cai
+   * no fluxo em SETEMBRO (competência + 1, dia 1). O card "Receita · agosto" mostrava as notas de
+   * agosto, e os cards "Imposto" e "Resultado · agosto" liam a linha do mês CORRENTE — cuja Entrada
+   * é a receita de JULHO. Três cards lado a lado, com o mesmo rótulo de mês, falando de duas
+   * receitas diferentes.
+   *
+   * ⚠ Os dois números estavam CERTOS cada um por si; o que estava errado era apresentá-los como se
+   * fossem do mesmo mês. É a mesma família do "dois seletores para um valor" que a competência única
+   * já consertou nesta casa.
+   *
+   * ⚠⚠ **O CARD DE RECEITA NÃO MUDOU DE FONTE**, e não pode mudar: Lei 5 — *Receita é nota emitida
+   * no mês (competência), e nunca dinheiro recebido*. Ele continua sendo `resumo.totalAmount` da
+   * competência escolhida. O que mudou é que Imposto e Resultado passaram a falar do mês em que essa
+   * receita ENTRA, e **o rótulo deles diz qual mês é**.
    */
-  const mesCorrente = (caixaQuery.dados?.meses || [])
-    .find((m) => m.competencia === caixaQuery.dados?.cicloAtual) || null;
-  const doMes = mesCorrente ? linhaDoMes(mesCorrente) : null;
+  const competenciaDaEntrada = somarCompetencia(competencia, 1);
+  const mesDaEntrada = (caixaQuery.dados?.meses || [])
+    .find((m) => m.competencia === competenciaDaEntrada) || null;
+  const doMes = mesDaEntrada ? linhaDoMes(mesDaEntrada) : null;
 
   // ⚠⚠ ESTE CARD USA `efetiva` (impostos PAGOS ÷ faturamento, **INSS incluso**) DE PROPÓSITO, e a
   // nota fiscal usa a OUTRA conta da mesma rota (`deReceita`, só o DAS). Não são duas leituras do
@@ -228,7 +259,10 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
               coluna da tabela. A sub-linha continua nomeando a PROCEDÊNCIA da alíquota — é ela que
               impede o número de virar uma afirmação sobre carga tributária que ninguém mediu. */}
           <CardNumero
-            rotulo={`Imposto líquido · ${fmtCompetencia(competencia)}`}
+            /* ⚠⚠ O RÓTULO DIZ O MÊS DA ENTRADA, não o da competência escolhida. Sem isso os três
+               cards diriam "agosto" enquanto dois deles falam de setembro — que é exatamente a
+               confusão que este conserto desfaz. */
+            rotulo={`Imposto líquido · ${fmtCompetencia(competenciaDaEntrada)}`}
             valor={caixaQuery.carregando ? "…" : (doMes?.impostos ? somaOuTraco(doMes.impostos.valor) : TRACO)}
             /* ⚠⚠ SEM ESTA MARCA O CARD MENTE. Medido na tela: ele mostrava R$ 5.269,55 — a soma de
                duas guias EM ABERTO — com o peso de um valor liquidado, e a frase logo abaixo dizia
@@ -242,7 +276,7 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
             apoio={
               leituraAliquota.valor != null
                 ? `Alíquota da última apuração: ${pct(leituraAliquota.valor)}`
-                : textoDaAliquota(leituraAliquota)
+                : textoDaAliquota(leituraAliquota, competencia)
             }
           />
 
@@ -251,9 +285,12 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
               argumento derrubado é *"é o que alguém imprime e leva ao banco"*. O que a sustenta é o
               `status` — quando qualquer parcela é prevista, o número inteiro é previsto. */}
           <CardNumero
-            rotulo={`Resultado · ${fmtCompetencia(competencia)}`}
+            rotulo={`Resultado · ${fmtCompetencia(competenciaDaEntrada)}`}
             valor={caixaQuery.carregando ? "…" : (doMes?.resultado ? somaOuTraco(doMes.resultado.valor) : TRACO)}
-            apoio="Entrada − saídas, impostos e folha"
+            /* ⚠ O apoio NOMEIA a ligação entre os dois rótulos: sem ele, "Receita · agosto" ao lado
+               de "Resultado · setembro" parece erro de tela em vez de a mesma receita, um mês
+               adiante. É a frase que impede a correção de virar uma confusão nova. */
+            apoio={`Entrada − saídas, impostos e folha · a receita de ${fmtCompetencia(competencia)} entra aqui`}
             /* ⚠⚠ ISTO ERA `data-status=` E NÃO FAZIA NADA — `CardNumero` não aceitava a prop, e o
                React a descartava em silêncio num `<div>`... não: ela nem chegava ao DOM, porque o
                componente só espalha o que desestrutura. O card afirmava um resultado previsto com

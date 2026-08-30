@@ -6,6 +6,12 @@
 // > diga recorrente; ou seja, se em 3 meses seguidos as despesas foram por volta de 20.000, mais
 // > desses 20.000 são 3 mil de gastos recorrentes, vamos pegar 17 mil e dividir por 30"*.
 //
+// ⚠⚠ **ESTE ARQUIVO ESTÁ SEM CONSUMIDOR DESDE 28/08/2026** (a grade de quatro colunas caiu com o
+// v3) e **a frase abaixo ficou FALSA em 29/08/2026**: `leituraDoFluxo.js` já NÃO é espelho de
+// `apps/web/src/features/fluxo/lib/leituraDoFluxo.js`, porque aquela pasta foi APAGADA quando o
+// dono removeu o fluxo de caixa do portal do contador. Não existe mais cópia a sincronizar. Quem
+// ressuscitar este arquivo não deve seguir a instrução do parágrafo seguinte.
+//
 // ⚠⚠ **ISTO NÃO MORA EM `leituraDoFluxo.js`, E A SEPARAÇÃO É O PONTO.** Aquele arquivo é ESPELHO do
 // `apps/web/src/features/fluxo/lib/leituraDoFluxo.js` — mudar lá muda aqui. Esta agregação é da
 // PLANILHA do cliente, que o portal do contador não tem; escrevê-la lá faria o espelho divergir na
