@@ -175,13 +175,158 @@ continuam sendo `<a href="#/…">` (a seção acima vale inteira); o que mudou �
   `min-content` dos links e a **página inteira passa a rolar para o lado em 375px**, com o
   `.table-wrap` deixando de conter a tabela. É o comentário gêmeo do que a `.topbar` já carrega.
 
+## ⚠⚠ A TELA INÍCIO v4 — DIAS LADO A LADO, HORIZONTE E AS SAÍDAS DO CLIENTE (29/08/2026)
+
+> Dono, com a tela na frente: *"ao invés de mostrar o mês ele vai mostrar os dias mesmo, sendo assim
+> ele vai colocar dois meses de uma vez quando a tela permitir, ou seja 30 dias à esquerda sendo o
+> mês corrente e 30 dias à direita sendo o mês seguinte. Setas cabeçalho para andar para frente e
+> para trás entre os meses, botão para ver o horizonte e aí mudamos a tabela para mês, e mantemos
+> lateralizado, ou seja, coluna com entrada, saída, impostos, folha e resultado e logo abaixo o mês
+> a que se refere. Um mês ao lado do outro. Todo dia 1 deve ter o valor de faturamento do mês
+> anterior (…) o cliente pode modificar as saídas, podendo colocar novas saídas, **apenas para
+> visualização deles**."*
+
+⚠⚠ **ESTA É A QUARTA FORMA DO FLUXO EM SETE DIAS, E ELA INVERTE O v3.** A seção abaixo (v3, 28/08)
+descreve a tabela de 12 MESES com drill-in de dias; ela **não existe mais**. Fica com a data, porque
+este projeto já pagou caro por bloqueio anotado que envelheceu calado.
+
+| | v3 (28/08) | v4 (29/08) |
+|---|---|---|
+| estado inicial | tabela de 12 **meses** | **dois meses lado a lado, em DIAS** |
+| os dias | mergulho (*"os outros meses somem"*), 10 por vez | o padrão, **mês inteiro** desenhado |
+| as setas | movem a **janela** de 12, e **somem** no mergulho | movem **um mês**, e nunca somem |
+| a tabela de meses | o padrão | o **Horizonte**, atrás de um botão, **transposta** |
+| a entrada da nota | "no mês" (prazo de recebimento em meses) | **dia 1** do mês seguinte |
+| o cliente escreve | nada | **acrescenta saídas** ao próprio fluxo |
+
+### Onde cada coisa mora
+
+| arquivo | o quê |
+|---|---|
+| `painel/lib/tabelaDoFluxo.js` | as 6 colunas, o status da célula, os dias, o modo % — **e a forma v4**: `parDeMeses`, `navegacaoDoPar`, `gradeTransposta` |
+| `painel/lib/leituraDoFluxo.js` | o vocabulário do servidor + `saidasDoClienteNoFluxo` |
+| `painel/BlocoDeDemonstracao.jsx` | só LIGAÇÃO: os dois blocos, o Horizonte, as setas, o alternador |
+| `painel/SuasSaidas.jsx` | a lista do que o cliente acrescentou + o formulário "+ Saída" |
+| `api/mock/fluxoDeCaixaDoMock.js` | o contrato offline — ⚠ ele **grava** as saídas do cliente e as devolve no fluxo |
+
+### ⚠⚠ A ENTRADA DA NOTA CAI NO DIA 1, E A APURAÇÃO É QUEM A PROMOVE
+
+> *"todo dia 1 deve ter o valor de faturamento do mês anterior"* · *"as notas emitidas do mês
+> anterior se tornam a receita do mês seguinte, **comprovada quando há a apuração**, por isso entram
+> no dia 1"*
+
+⚠⚠ **A REGRA "dia ausente nunca vira dia inventado" CEDEU PARA ESTA FONTE, e só para ela.** Ela
+continua valendo para recorrência, imposto previsto e folha — as três seguem em "no mês", nos dois
+lados. O que mudou foi uma decisão de produto, não um afrouxamento da regra.
+
+⚠⚠ **O QUE PROMOVE A LINHA A `FATO` É PROVA, NUNCA AFIRMAÇÃO:**
+`CompanyMonthlyCircular.pgdasNumeroDeclaracao` (o índice da própria RFB) e
+`ApuracaoSnapshot.estado === "transmitida"`. ⚠ `EntregaObrigacaoArquivo(PGDAS_D).transmitidaEm` é a
+marca MANUAL do contador e **não é consultada** — há teste varrendo a fonte para provar.
+⚠ A suposição viaja marcada: `base.simplificacao = "recebimento_presumido_pela_apuracao"` e
+`base.apuracaoProvada`. Sem a marca, "confirmado" seria indistinguível de um recebimento provado, e
+`PortalInvoice` não tem `recebidoEm`.
+
+⚠⚠ **ISTO ABRE UMA EXCEÇÃO AO CRITÉRIO DE ACEITE Nº 12** (*"nenhum mês anterior ao corrente exibe
+célula âmbar"*): mês passado sem apuração transmitida passa a mostrar entrada PREVISTA. Está escrito
+no código e no teste, não escondido.
+
+⚠ **`PortalClient.prazoRecebimentoMeses` ficou SEM LEITOR.** A coluna e a migration ficam (dropar
+coluna é migration destrutiva e decisão do dono); `prazoDeRecebimento` está anotada como órfã, o
+campo `prazoRecebimento` saiu do payload, do mock e da ressalva, com lápide nos três.
+
+### ⚠⚠ OS TRÊS CARDS FALAM DO MESMO MÊS — conserto de defeito relatado
+
+> *"o painel principal de receita, imposto líquido e resultado tem um bug: a receita está se tratando
+> do mês seguinte e o resultado usando o mês corrente, o que gera confusão. Ele deve sempre usar o
+> mês seguinte para as duas formas."*
+
+A receita das notas de AGOSTO entra no fluxo em SETEMBRO. "Receita · agosto" mostrava as notas de
+agosto; "Imposto" e "Resultado · agosto" liam a linha do mês CORRENTE, cuja Entrada é a receita de
+JULHO. ⚠⚠ **Os dois números estavam CERTOS cada um por si** — o errado era apresentá-los como se
+fossem do mesmo mês.
+
+- Imposto e Resultado leem `competencia + 1`, e os **rótulos nomeiam esse mês**;
+- ⚠⚠ **a RECEITA não muda de fonte** (Lei 5: *receita é nota emitida no mês, nunca dinheiro
+  recebido*) — há teste prendendo isso pelo lado contrário;
+- ⚠ o apoio do Resultado diz a ligação (*"a receita de 08/2026 entra aqui"*): sem ela, dois rótulos
+  de meses diferentes lado a lado parecem erro de tela;
+- ⚠ **as frases do card de imposto passaram a NOMEAR o mês** — elas diziam *"nesta competência"*
+  debaixo de um rótulo que agora nomeia OUTRO mês. Achado no navegador, depois de os testes ficarem
+  verdes.
+
+### ⚠⚠ AS SAÍDAS QUE O CLIENTE ACRESCENTA
+
+> *"o cliente pode modificar as saídas, podendo colocar novas saídas, **apenas para visualização
+> deles**"* · avulsa ou recorrente? ***"as duas coisas"*** · pode mexer no previsto? ***"só
+> acrescentar"***
+
+| o que ele diz | onde mora | o que ela tem |
+|---|---|---|
+| *"dia 18/09 vou pagar 3.000 de reforma"* | `SaidaAvulsaCliente` (tabela NOVA) | **data** |
+| *"todo mês pago 1.200 de aluguel"* | `SerieRecorrente`, `origem: DECLARADA` | **ciclo**, nunca data |
+
+⚠⚠ **NENHUMA DAS DUAS É `LancamentoDeclarado`.** A invariante nº 1 daquele módulo exige
+`dataPagamento`, porque o lançamento que sai dele é `D despesa / C caixa` — ele AFIRMA que o dinheiro
+saiu. Uma saída planejada para o mês que vem não saiu de lugar nenhum.
+
+⚠⚠ **A PENDENTE APARECE PARA O CLIENTE, e isto conserta a primeira versão.** Ela lia só
+`CONFIRMADA` — o cliente digitava e não via nada até o contador conferir, o que contradiz *"apenas
+para visualização deles"* em uma palavra. ⚠ **RECUSADA não entra**, e é isso que dá sentido à
+recusa. ⚠ A conferência nunca foi o portão da VISUALIZAÇÃO: ela é como o contador fica sabendo.
+
+⚠⚠ **A SÉRIE DECLARADA TAMBÉM ENTRA, E A DETECTADA NÃO** — o critério é o PAR (estado, origem), em
+`serieEntraNoFluxo`. A decisão de 25/08 (*"o detector SUGERE e a linha só entra depois que o contador
+confirma"*) está **intacta**: o que entrou é o caso que não existia quando ela foi escrita.
+
+**Na tela (`SuasSaidas.jsx`):**
+
+- ⚠⚠ **UMA linha por SAÍDA, nunca por ocorrência** — a recorrente mensal aparece em 8 meses da
+  janela, e repetida daria 8 botões de remover para uma coisa só;
+- ⚠ a lista sai do **MESMO payload** que a tabela desenha, nunca de uma segunda consulta;
+- ⚠⚠ o valor usa `mascararValorDigitado`, a **mesma da emissão de nota** — `Number("1.500,00")` é
+  `NaN`, e a gramática do número não pode divergir dentro do mesmo app. **ZERO não passa**
+  (`required` do HTML deixaria);
+- ⚠ **remover só o que ele criou, e só enquanto PENDENTE.** A conferida perde o botão e ganha a
+  frase: o conserto não é esperar, é falar com o contador;
+- ⚠ o `tipo` viaja no `DELETE` porque as duas formas moram em **tabelas diferentes**.
+
+⚠⚠ **DOIS DEFEITOS FORAM ACHADOS NO NAVEGADOR, DEPOIS DE OS TESTES FICAREM VERDES**, e os dois são
+da mesma família — o mock e o servidor discordando:
+
+1. séries já confirmadas apareciam com "Remover" (o servidor não mandava o estado da SÉRIE, só o da
+   avulsa). Hoje `base.estadoDaSerie` viaja, e a leitura normaliza os dois vocabulários
+   (`CONFIRMADA` × `ATIVA`) na única pergunta que a tela faz: **está pendente?**;
+2. a saída criada entrava no fluxo e **não aparecia na lista** — o mock usava `base.origem:
+   "CLIENTE"` e `base.saidaId`, nomes que o servidor não usa. ⚠ Nenhum teste de unidade pegaria: a
+   regra estava certa e o mock estava certo consigo mesmo. Nasceu daí
+   `api/__tests__/saidasDoClienteNoMock.test.js`, que exerce a corrente inteira.
+
+### ⚠ O QUE SAIU COM O v4 (anotado, não apagado)
+
+- `DIAS_POR_VEZ` (a paginação de 10 dias), a migalha *"‹ Voltar aos meses"* e o *"Role para ver mais
+  dias"* — o CSS deles está com lápide em `app.css`;
+- a ressalva do **prazo de recebimento** e o campo `prazoRecebimento` do payload;
+- ⚠ `ressalvasDoFluxo`, `evidenciaDaLinha` e `confrontoDaLinha` seguem **sem tela nos dois apps** —
+  vivas só por teste. Elas não são código morto (são a leitura do vocabulário do servidor), mas o
+  argumento antigo (*"continuam renderizadas no portal do contador"*) **ficou falso** quando aquele
+  fluxo foi apagado.
+
+---
+
 ## ⚠⚠ A TELA INÍCIO v3 — FASE 1 (28/08/2026)
 
 > A **`CONSTITUICAO-do-produto.md`** abre dizendo: *"Este documento manda em todos os outros. Spec,
 > plano, código e tela obedecem ao que está aqui; quando um deles contradisser esta página, é ele
 > que muda."* **Leia-a antes de mexer em qualquer coisa desta seção.**
 
-⚠⚠ **AS DUAS SEÇÕES ABAIXO DESCREVEM TELAS QUE NÃO EXISTEM MAIS** — o fluxo diário com saldo
+⚠⚠ **ESTA SEÇÃO INTEIRA FOI SUPERADA PELO v4 (29/08) — ver acima.** A tabela de 12 meses com
+drill-in **não existe mais**. O que ela ainda responde, e por isso ela fica: a **Lei 1** e o que ela
+mudou no PAYLOAD (a guia paga que não existia, a guia em aberto virando compromisso), a distinção
+das três procedências, as duas simplificações declaradas e o "Estou ciente" — tudo isso atravessou
+a mudança de forma intacto.
+
+⚠⚠ **E AS DUAS SEÇÕES MAIS ABAIXO DESCREVEM TELAS AINDA MAIS ANTIGAS** — o fluxo diário com saldo
 (23/08) e a planilha de quatro colunas com `Recorrência`/`Diário` (27/08). Ficam com a data, porque
 este projeto já pagou caro por bloqueio anotado que envelheceu calado.
 
@@ -357,7 +502,7 @@ em pagamento.
 | arquivo | o quê |
 |---|---|
 | `features/painel/lib/tabelaDoFluxo.js` | as 6 colunas, o status da célula, os dias, o modo % — **regra pura, com teste** |
-| `features/painel/BlocoDeDemonstracao.jsx` | só LIGAÇÃO: tabela, toggles, setas, drill-in |
+| `features/painel/BlocoDeDemonstracao.jsx` | só LIGAÇÃO — ⚠ **o drill-in saiu no v4**: hoje são os dois blocos de dias e o Horizonte |
 | `features/painel/PopUpDeGuias.jsx` | o alertdialog, reusando `useDialogoModal` |
 | `api/mock/fluxoDeCaixaDoMock.js` | o contrato offline — ⚠ **obedece ao critério nº 12**, senão a tela offline mostraria âmbar no passado |
 | ⚠ `features/painel/lib/planilhaDoFluxo.js` | **sem consumidor** desde 28/08 (era a grade de 4 colunas). Anotado, não apagado |

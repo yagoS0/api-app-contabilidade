@@ -448,6 +448,14 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   **807 testes / 44 suítes**.
   - ⚠ **A navegação é BARRA LATERAL DE ÍCONES** desde 21/08/2026 (SVG inline, `aria-hidden`, com o
     rótulo em `.sr-only` — o ícone nunca é a única marca do destino).
+  - ⚠⚠ **A TELA INÍCIO FOI REFEITA DE NOVO EM 29/08/2026 (v4) — e a v3, de ONTEM, já é história.**
+    Hoje o padrão é **dois meses LADO A LADO, dia a dia**; as setas andam **um mês**; a tabela de
+    meses virou o **Horizonte**, transposta (categoria em linha, mês em coluna, nome do mês
+    embaixo); a entrada da nota cai no **dia 1** do mês seguinte, promovida a FATO pela **apuração**;
+    e o **cliente acrescenta saídas** ao próprio fluxo (avulsa com data ou recorrente com ciclo),
+    que aparecem para o contador na Conferência. ⚠ Os três cards do topo passaram a falar todos do
+    **mês seguinte**, com o rótulo dizendo qual é — conserto de defeito relatado. Ver
+    `apps/portal-cliente-web/CLAUDE.md`, seção "A TELA INÍCIO v4".
   - ⚠⚠ **A TELA INÍCIO FOI REFEITA EM 28/08/2026 (v3, Fase 1)**, e a partir dela manda a
     **`CONSTITUICAO-do-produto.md`** — *"este documento manda em todos os outros"*. Hoje são: pop-up
     de guias em atraso · 3 cards (Receita · Imposto líquido · Resultado) · tabela de 12 meses
@@ -481,8 +489,12 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     só**. Ele responde
     `demonstracao: false` e **o selo some junto**. ⚠ O **DRE continua ficção**, com o selo, porque
     não existe rota de DRE. ⚠ *"Não há origem para ENTRADAS"* também caiu: a entrada é a **nota
-    emitida + prazo de recebimento**, e ela é PREVISÃO documental, nunca FATO — a nota prova que foi
-    faturado, não que foi recebido. ⚠ `GET /client/.../fluxo` (guias liberadas em aberto) **fica
+    emitida**, e ela cai no **dia 1 do mês seguinte** (29/08/2026 — a metade "+ prazo de
+    recebimento" desta frase morreu quando o prazo deixou de ser lido). ⚠⚠ E ela **deixou de ser
+    sempre previsão**: com a **apuração transmitida** da competência da nota, ela vira FATO — decisão
+    do dono, *"a apuração quer dizer que o dinheiro entrou"* —, e a prova é o índice da RFB, nunca a
+    afirmação do contador. Sem apuração, PREVISÃO: a nota prova que foi faturado, não que foi
+    recebido. ⚠ `GET /client/.../fluxo` (guias liberadas em aberto) **fica
     como está**: virou um CONTRIBUINTE do fluxo, não uma segunda definição dele; OFX e transações
     seguem stubs 501. O selo continua dirigido pelo DADO (`demonstracao !== false`), **nunca por
     `api.mode`**, que some no modo real.
