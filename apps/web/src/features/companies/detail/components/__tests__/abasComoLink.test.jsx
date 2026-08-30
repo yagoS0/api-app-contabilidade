@@ -194,3 +194,34 @@ describe("nem toda aba pode virar link", () => {
     expect(screen.getByRole("button", { name: "Outra" })).toBeInTheDocument();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A CONFERÊNCIA SAIU DO CABEÇALHO E VIROU BOTÃO DENTRO DE LANÇAMENTOS (29/08/2026).
+//
+// > Dono: *"essas saídas que o cliente digitar aparecem para o contador na aba de conferência, aba
+// > essa que deve estar dentro dos lançamentos, como um botão com aviso quando há conferência a ser
+// > feita, como notas recebidas"*.
+//
+// ⚠⚠ A TELA NÃO FOI REMOVIDA — ela mudou de PORTA. É a distinção que este bloco existe para
+// travar: sem o par de rota, a URL `/conferencia` cairia em Anotações **sem erro nenhum**, e o
+// botão novo não teria destino.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ a Conferência mudou de porta, não foi removida", () => {
+  it("⚠ ela NÃO é mais um botão do cabeçalho", () => {
+    montarHeader("lancamentos");
+    expect(screen.queryByRole("link", { name: "Conferência" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Conferência" })).toBeNull();
+  });
+
+  it("⚠⚠ mas os DOIS mapas de rota FICAM — senão a URL cai em Anotações em silêncio", () => {
+    // É o precedente literal de `sugestao`/`pendencias`, já registrado em `rotasDaEmpresa.js`.
+    expect(SEGMENT_TO_TAB.conferencia).toBe("conferencia");
+    expect(companyTabPath("empresa-1", "conferencia")).toMatch(/\/conferencia$/);
+  });
+
+  it("⚠ e Lançamentos continua sendo aba, com href — é de lá que se chega", () => {
+    montarHeader("lancamentos");
+    const aba = screen.getByRole("link", { name: "Lançamentos" });
+    expect(aba).toHaveAttribute("href", companyTabPath("empresa-1", "lancamentos"));
+  });
+});

@@ -7304,6 +7304,53 @@ export function createMockApi() {
     //
     // A REGRA não é reimplementada aqui — é do backend (`application/declarados/`). Isto é uma
     // AMOSTRA do contrato, e o par real é `realApi.getConferenciaFila`.
+    /**
+     * ⚠⚠ A CONTAGEM DO BOTÃO — e o mock devolve as TRÊS filas, não um total redondo.
+     *
+     * ⚠ Os números são DIFERENTES entre si de propósito: com `2 · 2 · 2` um erro que somasse a
+     * mesma fila três vezes daria o total certo. E nenhum é zero, senão o desenho do selo âmbar não
+     * seria alcançável offline — a quinta vez que este mock esconderia um ramo.
+     * ⚠ `indisponiveis` volta VAZIO aqui: o ramo "não consegui contar" é exercido pelo teste da
+     * rota, com P2021, e um mock que o simulasse por padrão treinaria a tela a esperar falha.
+     */
+    /**
+     * ⚠⚠ A FILA DAS SAÍDAS DO CLIENTE, offline.
+     *
+     * ⚠ Duas linhas de propósito: uma AVULSA típica e outra com valor alto, para o desenho da lista
+     * com mais de um item ser alcançável sem backend. ⚠ E `indisponivel: false` — o ramo "a
+     * migration não foi aplicada" é exercido pelo teste da rota, e um mock que o simulasse por
+     * padrão treinaria a tela a esperar falha.
+     */
+    async getConferenciaSaidasDoCliente(_companyId) {
+      await delay(60);
+      return {
+        ok: true,
+        indisponivel: false,
+        saidas: [
+          { id: "sa-1", data: "2026-09-18", valor: "3500.00", descricao: "Reforma da sala", estado: "PENDENTE" },
+          { id: "sa-2", data: "2026-09-30", valor: "820.00", descricao: "Curso da equipe", estado: "PENDENTE" },
+        ],
+      };
+    },
+
+    async postConferenciaSaidaDecidir(_companyId, saidaId, { estado, motivoRecusa } = {}) {
+      await delay(60);
+      // ⚠ O mock exerce a recusa do SERVIDOR: recusar sem motivo não passa. Um mock permissivo
+      // deixaria a tela mandar o pedido incompleto e só descobrir em produção.
+      if (estado === "RECUSADA" && !String(motivoRecusa || "").trim()) {
+        const e = new Error("sem_motivo");
+        e.code = "sem_motivo";
+        e.status = 400;
+        throw e;
+      }
+      return { ok: true, saida: { id: saidaId, estado } };
+    },
+
+    async getConferenciaPendencias(_companyId) {
+      await delay(40);
+      return { ok: true, total: 6, declarados: 3, series: 1, saidas: 2, indisponiveis: [] };
+    },
+
     async getConferenciaFila(_companyId, { competencia, estado } = {}) {
       await delay(80);
       const comp = competencia && competencia !== "sem-competencia" ? competencia : "2026-07";

@@ -1759,6 +1759,45 @@ export function createRealApi() {
     //
     // ⚠ Só o TRANSPORTE mora aqui. Nenhuma decisão sobre estado, data ou conta: quem decide é o
     // servidor, e a tela lê `conferencia/lib/conferenciaTela.js` para saber o que OFERECER.
+    /**
+     * ⚠⚠ A CONTAGEM DAS PENDÊNCIAS — o número do BOTÃO que substituiu a aba (29/08/2026).
+     *
+     * ⚠ Ela existe SEPARADA de `getConferenciaFila` de propósito: a barra de Lançamentos pede este
+     * número a cada abertura da aba, e a fila é a consulta CARA (pagina, serializa e traz o
+     * casamento). Contar com `fila.total` obrigaria a trazer a fila para desenhar um selo.
+     *
+     * ⚠⚠ **O TOTAL SOMA TRÊS FILAS** — declarados pendentes + séries `PENDENTE` + saídas avulsas
+     * `PENDENTE`. Um número que conte só a primeira faria o contador **nunca ver o que o cliente
+     * digitou**, que é justamente o que o botão existe para resolver.
+     */
+    /**
+     * ⚠⚠ AS SAÍDAS QUE O CLIENTE ESCREVEU — a fila que entrou nesta tela em 29/08/2026.
+     *
+     * > Dono: *"essas saídas que o cliente digitar aparecem para o contador na aba de conferência"*.
+     *
+     * ⚠ Ela é uma consulta À PARTE da fila dos declarados, e não um filtro dela: são tabelas
+     * diferentes, com vocabulários de estado diferentes. Misturá-las numa lista só faria a coluna
+     * "estado" significar duas coisas.
+     */
+    async getConferenciaSaidasDoCliente(companyId) {
+      return request(`/firm/companies/${companyId}/conferencia/saidas-do-cliente`);
+    },
+
+    /**
+     * ⚠⚠ CONFIRMAR NÃO LANÇA NADA — o que se decide é se a PREVISÃO do cliente fica no fluxo dele.
+     * ⚠ `estado` é `CONFIRMADA` | `RECUSADA`, e **recusar exige motivo** (o servidor recusa sem
+     * ele): ausência nunca é resposta, e o cliente precisa saber por que a linha dele saiu.
+     */
+    async postConferenciaSaidaDecidir(companyId, saidaId, corpo = {}) {
+      return request(`/firm/companies/${companyId}/conferencia/saidas-do-cliente/${saidaId}/decidir`, {
+        method: "POST",
+        body: JSON.stringify(corpo || {}),
+      });
+    },
+
+    async getConferenciaPendencias(companyId) {
+      return request(`/firm/companies/${companyId}/conferencia/pendencias`);
+    },
     async getConferenciaFila(companyId, { competencia, estado, pagina, porPagina } = {}) {
       const q = new URLSearchParams();
       // ⚠⚠ `competencia` pode ser o literal `sem-competencia` — o RECORTE das notas que chegaram

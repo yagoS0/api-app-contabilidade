@@ -57,10 +57,20 @@ const GROUPS = [
     // A rota /plano-contas segue válida — só não tem botão próprio aqui.
     tabs: [
       { key: "lancamentos", label: "Lançamentos" },
-      // ⚠ CONFERÊNCIA fica em CONTABILIDADE, e logo depois de Lançamentos — não em Fiscal. O que
-      // sai dela é `AccountingEntry` (débito na despesa, crédito no caixa), e o contador chega
-      // nela vindo de Lançamentos. Em Fiscal ela pareceria conferência de nota, que é a Auditoria.
-      { key: "conferencia", label: "Conferência" },
+      /*
+       * ⚠⚠ AQUI FICAVA "CONFERÊNCIA", E ELA SAIU DO CABEÇALHO EM 29/08/2026 — decisão do dono:
+       * *"essas saídas que o cliente digitar aparecem para o contador na aba de conferência, aba
+       * essa que deve estar dentro dos lançamentos, como um botão com aviso quando há conferência a
+       * ser feita, como notas recebidas"*.
+       *
+       * ⚠⚠ **A TELA NÃO FOI REMOVIDA — ela mudou de PORTA.** O botão vive na barra de Lançamentos,
+       * com a contagem das TRÊS filas (`GET .../conferencia/pendencias`), e leva ao mesmo destino.
+       * ⚠ Os DOIS mapas de rota (`SEGMENT_TO_TAB`/`TAB_TO_SEGMENT`) **ficam**: sem eles a URL
+       * `/conferencia` cairia em Anotações **sem erro nenhum**, e o botão novo não teria destino.
+       * É o precedente literal de `sugestao`/`pendencias`.
+       * ⚠ E a tela monta com `activeTab="lancamentos"` + a migalha *"‹ Voltar aos lançamentos"* —
+       * aba que some sem caminho de volta é tela sem saída.
+       */
       // ⚠⚠ AQUI FICAVA "FLUXO DE CAIXA", E ELE FOI REMOVIDO EM 29/08/2026 — decisão do dono, com a
       // tela na frente: *"para o contador não vai existir fluxo de caixa, pode eliminar isso da
       // aba"*. Não é defeito: a aba tinha 40 testes verdes e foi conferida no navegador em 27/08.

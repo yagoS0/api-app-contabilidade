@@ -24,6 +24,7 @@ import { PainelDeCasamentos } from "./PainelDeCasamentos";
 // Conferência; enquanto o fluxo (Fase E) não existe, o painel vive aqui, que é a mesma fila de
 // "coisas para o contador confirmar". ⚠ A feature é PRÓPRIA para o fluxo importá-la depois.
 import { PainelDeRecorrencias } from "../../recorrencia/components/PainelDeRecorrencias";
+import { PainelDeSaidasDoCliente } from "./PainelDeSaidasDoCliente";
 import { debitosQueCasamComNota } from "../lib/contabilizacaoEmLote";
 import {
   ACAO,
@@ -558,7 +559,7 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir }) {
   );
 }
 
-export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) {
+export function ConferenciaTab({ companyId, competencia, podeEscrever = true, aoVoltar }) {
   const [fila, setFila] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -754,6 +755,34 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
+      {/*
+        ⚠⚠ A MIGALHA É OBRIGATÓRIA DESDE 29/08/2026, e ela não é enfeite.
+
+        A Conferência deixou de ser ABA do cabeçalho e virou um botão dentro de Lançamentos — então
+        o cabeçalho agora marca "Lançamentos" enquanto esta tela está na frente. **Sem um caminho de
+        volta explícito, esta é uma tela sem saída**: a aba de onde a pessoa veio não fica destacada
+        de um jeito que pareça clicável, e o botão do navegador leva para fora da empresa quando ela
+        chegou aqui por link direto.
+
+        ⚠ Ele chama o MESMO `switchTab` das abas (`aoVoltar`), nunca `history.back()`.
+        ⚠ Ausente o handler, a migalha NÃO renderiza — um "voltar" que não volta é pior que nenhum.
+      */}
+      {aoVoltar ? (
+        <button
+          type="button"
+          onClick={aoVoltar}
+          style={{
+            justifySelf: "start", display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "6px 10px", borderRadius: 8, cursor: "pointer",
+            font: "inherit", fontSize: "0.8rem",
+            // ⚠ Os MESMOS tokens do resto desta tela (`card` acima) — nunca um hex novo aqui.
+            color: "var(--text-2)", background: "transparent",
+            border: "1px solid var(--border)",
+          }}
+        >
+          ‹ Voltar aos lançamentos
+        </button>
+      ) : null}
       <div style={{ ...card, display: "grid", gap: 12 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           {contagem.map((c) => (
@@ -845,6 +874,16 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true }) 
           em dobro AGORA; a recorrência olha para a frente. Ela some sozinha quando não há decisão
           esperando — mesmo desenho do painel de casamentos. */}
       <PainelDeRecorrencias companyId={companyId} podeEscrever={podeEscrever} />
+
+      {/*
+        ⚠⚠ A TERCEIRA FILA DESTA TELA (29/08/2026) — o que o CLIENTE escreveu no fluxo dele.
+
+        Ela fica ao lado das recorrências, com a MESMA forma (confirmar · recusar com motivo): duas
+        filas na mesma tela com desenhos diferentes fariam a pessoa reaprender a decisão em cada uma.
+        ⚠ E ela é o que faz o pedido do dono fechar: *"essas saídas que o cliente digitar aparecem
+        para o contador na aba de conferência"*.
+      */}
+      <PainelDeSaidasDoCliente companyId={companyId} podeEscrever={podeEscrever} />
 
       {erro ? (
         <div style={{ ...card, borderColor: "var(--state-danger)", color: "var(--state-danger)" }}>{erro}</div>

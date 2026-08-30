@@ -21,6 +21,7 @@
 // a divergência sai como lançamento contábil errado.
 
 import { Router } from "express";
+import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
 import { dataCivilDe, dataCivilISO } from "../../utils/dataCivil.js";
 import {
@@ -37,6 +38,20 @@ import { alternarRegra, listarRegras } from "../../application/declarados/RegraS
 import { varrerNotasDaEmpresa } from "../../application/declarados/VarreduraDeNotasService.js";
 import { listarMapeamentos, salvarMapeamento } from "../../application/declarados/MapeamentoExtratoService.js";
 import { ESTADO, ORIGEM_PAGAMENTO, TRANSICAO } from "../../application/declarados/lib/estadosDeclarado.js";
+import { ESTADO_DA_SERIE } from "../../application/fluxo/SerieRecorrenteService.js";
+import {
+  SaidaRecusada,
+  RECUSA_DA_SAIDA,
+  decidirSaidaAvulsa,
+  listarSaidasPendentes,
+} from "../../application/fluxo/SaidaAvulsaService.js";
+
+/**
+ * ⚠ Tabela que ainda não existe (P2021) e MODELO que o Prisma não conhece (P2022/P2023 numa
+ * migration pela metade). As migrations desta casa são ato do DONO, então este estado é normal —
+ * e ele não pode derrubar a contagem que a barra de Lançamentos pede.
+ */
+const tabelaAusenteNaContagem = (e) => ["P2021", "P2022"].includes(e?.code);
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
@@ -130,6 +145,20 @@ function responderRecusa(res, erro, log) {
     const status = STATUS_DA_RECUSA[erro.codigo] || 400;
     return res.status(status).json({ ok: false, error: erro.codigo, message: erro.frase });
   }
+  /**
+   * ⚠⚠ A FILA DAS SAÍDAS DO CLIENTE ENTROU NESTA TELA EM 29/08/2026, e ela recusa com OUTRA classe
+   * de erro. Sem este ramo, `saida_ja_decidida` (uma recusa NOSSA, que a pessoa pode entender)
+   * viraria um 500 "não foi possível concluir" — o defeito de engolir o motivo.
+   *
+   * ⚠ Os status são os mesmos critérios da outra rota: 503 quando a TABELA não existe (a migration
+   * é ato do dono), 404 para o que não existe NESTA empresa, 400 para o que a pessoa pode corrigir.
+   */
+  if (erro instanceof SaidaRecusada) {
+    const status = erro.codigo === RECUSA_DA_SAIDA.INDISPONIVEL ? 503
+      : erro.codigo === RECUSA_DA_SAIDA.NAO_ENCONTRADA ? 404
+        : 400;
+    return res.status(status).json({ ok: false, error: erro.codigo, message: erro.frase });
+  }
   log?.error?.({ err: erro }, "conferencia_falhou");
   // ⚠ A aba não pode quebrar calada: erro nomeado, e o motivo no log.
   return res.status(500).json({ ok: false, error: "conferencia_falhou", message: "Não foi possível concluir." });
@@ -168,6 +197,142 @@ export function createConferenciaRouter({ log } = {}) {
     try {
       const r = await varrerInvariantes({ portalClientId: String(req.params.companyId) });
       return res.json({ ok: true, ...r });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
+  /**
+   * ⚠⚠ QUANTAS PENDÊNCIAS A CONFERÊNCIA TEM — e a resposta soma TRÊS filas (29/08/2026).
+   *
+   * Ela nasceu porque a Conferência deixou de ser aba e virou um BOTÃO na barra de Lançamentos
+   * (decisão do dono: *"essa aba deve estar dentro dos lançamentos, como um botão com aviso quando
+   * há conferência a ser feita, como notas recebidas"*). O botão precisa de um número, e a barra de
+   * Lançamentos **não pode carregar a fila inteira para desenhar um selo**.
+   *
+   * ⚠⚠ **AS TRÊS FILAS, e contar só a primeira é o defeito que esta rota existe para não cometer:**
+   *
+   *   1. **`LancamentoDeclarado`** aguardando pagamento ou a conferir — a fila clássica;
+   *   2. **séries `PENDENTE`** — o que o detector achou e o que o cliente declarou;
+   *   3. **saídas avulsas `PENDENTE`** — o que o cliente escreveu no fluxo dele.
+   *
+   * Um número que conte só a (1) faria o contador **nunca ver o que o cliente digitou** — que é
+   * justamente o que o pedido do dono existe para resolver.
+   *
+   * ⚠ **CADA FILA VOLTA SEPARADA, além do total.** O rótulo do botão usa o total; a tela de dentro
+   * usa as partes. Um número só faria "3 pendências" ser indistinguível de "3 notas para conferir",
+   * e as três pedem trabalhos diferentes.
+   *
+   * ⚠⚠ **NENHUMA DAS TRÊS DERRUBA AS OUTRAS.** Tabela ausente (a migration é ato do dono) devolve
+   * zero **e se declara** em `indisponiveis` — o selo some, mas a barra de Lançamentos não quebra.
+   * Sem isso, uma migration não aplicada tiraria do ar a aba mais usada do sistema.
+   */
+  router.get("/conferencia/pendencias", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const indisponiveis = [];
+
+    // ⚠ `count`, nunca `findMany().length`: a barra pede este número a cada abertura da aba, e
+    // trazer a fila inteira para medir o tamanho dela é o custo que esta rota existe para evitar.
+    const declarados = await prisma.lancamentoDeclarado
+      .count({
+        where: {
+          portalClientId,
+          estado: { in: [ESTADO.AGUARDANDO_PAGAMENTO, ESTADO.A_CONFERIR] },
+        },
+      })
+      .catch((e) => {
+        if (!tabelaAusenteNaContagem(e)) throw e;
+        indisponiveis.push("declarados");
+        return 0;
+      });
+
+    const series = await prisma.serieRecorrente
+      .count({ where: { portalClientId, estado: ESTADO_DA_SERIE.PENDENTE } })
+      .catch((e) => {
+        if (!tabelaAusenteNaContagem(e)) throw e;
+        indisponiveis.push("series");
+        return 0;
+      });
+
+    // ⚠ O DELEGATE pode não existir (o `prisma generate` que não rodou — EPERM no Windows com o
+    // servidor de dev de pé). É estado REAL, e `undefined.count` derrubaria a resposta inteira.
+    const saidas = !prisma.saidaAvulsaCliente?.count
+      ? (indisponiveis.push("saidas"), 0)
+      : await prisma.saidaAvulsaCliente
+        .count({ where: { portalClientId, estado: "PENDENTE" } })
+        .catch((e) => {
+          if (!tabelaAusenteNaContagem(e)) throw e;
+          indisponiveis.push("saidas");
+          return 0;
+        });
+
+    return res.json({
+      ok: true,
+      total: declarados + series + saidas,
+      declarados,
+      series,
+      saidas,
+      // ⚠ A lista de quem não pôde ser contado viaja: "0 pendências" e "não consegui contar" são
+      // respostas diferentes, e a segunda não pode se disfarçar da primeira.
+      indisponiveis,
+    });
+  });
+
+  /**
+   * ⚠⚠ AS SAÍDAS QUE O CLIENTE ESCREVEU — a fila do contador (29/08/2026).
+   *
+   * > Dono: *"essas saídas que o cliente digitar aparecem para o contador na aba de conferência"*.
+   *
+   * ⚠ **LER É LEITURA**: sem `minRole`, como a fila dos declarados. Quem decide tem piso próprio,
+   * na rota de escrita abaixo.
+   * ⚠ Tabela ou delegate ausentes devolvem LISTA VAZIA + `indisponivel`, nunca 503: esta leitura
+   * convive com as outras na mesma tela, e derrubá-la tiraria do ar também o que o declarado tem a
+   * dizer. É a assimetria deliberada de `listarSaidasPendentes`.
+   */
+  router.get("/conferencia/saidas-do-cliente", requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      const r = await listarSaidasPendentes({ portalClientId: String(req.params.companyId) });
+      return res.json({
+        ok: true,
+        indisponivel: r.indisponivel === true,
+        saidas: (r.saidas || []).map((s) => ({
+          id: s.id,
+          // ⚠ Data CIVIL na resposta (`YYYY-MM-DD`), nunca o ISO com hora: ela é o DIA que a pessoa
+          // escolheu, e o ISO deslocaria o dia no fuso de quem lê.
+          data: dataCivilISO(s.data),
+          valor: s.valor,
+          descricao: s.descricao,
+          estado: s.estado,
+          criadaEm: s.criadaEm,
+        })),
+      });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
+  /**
+   * ⚠⚠ O CONTADOR DECIDE — e **confirmar NÃO LANÇA NADA**.
+   *
+   * O que se confirma é uma PREVISÃO de caixa do cliente: ela já está no fluxo dele (pendente entra,
+   * ver `FluxoDeCaixaService`), e a decisão diz se ela FICA. Não há `AccountingEntry` neste caminho,
+   * e há teste no serviço varrendo a fonte para provar — o lançamento continua sendo o caminho do
+   * declarado, que exige `dataPagamento` porque afirma que o dinheiro saiu.
+   *
+   * ⚠ `minRole: "ACCOUNTANT"` — é o piso das decisões desta tela, o mesmo das transições do
+   * declarado. ⚠ **RECUSAR EXIGE MOTIVO** (o serviço recusa sem ele): ausência nunca é resposta, e o
+   * cliente precisa saber por que a linha dele saiu.
+   */
+  router.post("/conferencia/saidas-do-cliente/:saidaId/decidir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const saida = await decidirSaidaAvulsa({
+        portalClientId: String(req.params.companyId),
+        saidaId: String(req.params.saidaId),
+        estado: String(req.body?.estado || "").trim().toUpperCase(),
+        motivoRecusa: req.body?.motivoRecusa,
+        usuarioId: String(req.auth?.user?.id || ""),
+      });
+      return res.json({ ok: true, saida: { id: saida.id, estado: saida.estado } });
     } catch (e) {
       return responderRecusa(res, e, log);
     }

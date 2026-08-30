@@ -262,6 +262,33 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
     return out;
   }, [entries]);
 
+  /**
+   * ⚠⚠ A CONTAGEM DA CONFERÊNCIA — o selo do botão que substituiu a aba (29/08/2026).
+   *
+   * > Dono: *"como um botão com aviso quando há conferência a ser feita, como notas recebidas"*.
+   *
+   * ⚠⚠ **A CONSULTA É A ENXUTA (`/conferencia/pendencias`), nunca a fila.** A fila pagina,
+   * serializa e traz o casamento de cada linha; ela seria carregada a cada abertura da aba de
+   * Lançamentos só para desenhar um número.
+   *
+   * ⚠ **NÃO DEPENDE DA COMPETÊNCIA**, e isso é decisão: a fila de conferência é o que espera
+   * alguém, **em qualquer mês**. Contar só o mês na tela esconderia a nota de julho que ninguém
+   * conferiu enquanto o contador olha agosto — e o botão existe justamente para ela não sumir.
+   *
+   * ⚠ Falha ⇒ o selo NÃO aparece, e o botão continua lá. Um selo âmbar por erro de rede treina o
+   * olho a ignorar a cor que significa "falta fazer"; e esconder o botão esconderia que a tela
+   * existe.
+   */
+  const [pendencias, setPendencias] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    if (!companyId || typeof fechamentoApi.getConferenciaPendencias !== "function") return undefined;
+    fechamentoApi.getConferenciaPendencias(companyId)
+      .then((r) => { if (alive) setPendencias(r || null); })
+      .catch(() => { if (alive) setPendencias(null); });
+    return () => { alive = false; };
+  }, [companyId]);
+
   useEffect(() => {
     let alive = true;
     if (!companyId || !competencia) return undefined;
@@ -657,6 +684,68 @@ function ActionMenu({ label, items, accent }) {
   );
 }
 
+/**
+ * ⚠⚠ O BOTÃO DA CONFERÊNCIA — ela era ABA do cabeçalho até 29/08/2026.
+ *
+ * > Dono: *"essa aba deve estar dentro dos lançamentos, como um botão com aviso quando há
+ * > conferência a ser feita, como notas recebidas"*.
+ *
+ * ⚠⚠ **O NÚMERO SOMA AS TRÊS FILAS** (declarados pendentes + séries + saídas do cliente). Contar só
+ * a primeira faria o contador NUNCA VER o que o cliente digitou no fluxo dele — que é exatamente o
+ * que este botão existe para resolver.
+ *
+ * ⚠ **ÂMBAR SÓ QUANDO HÁ O QUE CONFERIR.** Âmbar permanente treina o olho a ignorar a cor que
+ * significa "falta fazer" — a mesma regra que o chip de guia já segue nesta casa.
+ * ⚠ Sem contagem (falha de rede, ou backend antigo) o botão FICA, sem selo: esconder o botão
+ * esconderia que a tela existe, e um selo por erro de rede seria um aviso falso.
+ *
+ * ⚠ Ele é EXPORTADO para poder ser medido sozinho — renderizar a aba inteira num teste exigiria
+ * três dezenas de props e provaria menos.
+ */
+export function BotaoDaConferencia({ pendencias, onOpenConferencia }) {
+  // ⚠ Sem handler ele NÃO renderiza: um botão em que a pessoa clica e nada acontece é pior que a
+  // ausência dele — a mesma regra do seletor de competência do portal do cliente.
+  if (!onOpenConferencia) return null;
+  // ⚠ `> 0` por TIPO, nunca truthy: `Number(null)` é 0 e 0 é finito. A contagem ausente (`null`)
+  // e a contagem zero têm de dar no mesmo desenho — sem selo —, mas por caminhos diferentes.
+  const total = typeof pendencias?.total === "number" ? pendencias.total : null;
+  const temFila = total !== null && total > 0;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpenConferencia}
+      title={
+        temFila
+          ? `${pendencias.declarados} lançamento(s) declarado(s), ${pendencias.series} recorrência(s) e ${pendencias.saidas} saída(s) do cliente esperando você`
+          : "A fila de conferência — o que o cliente e o extrato trouxeram"
+      }
+      data-pendencias={total ?? undefined}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 8,
+        padding: "8px 14px", borderRadius: 10, cursor: "pointer",
+        font: "inherit", fontSize: "0.82rem", fontWeight: 500,
+        color: ACCOUNTING_PANEL.text,
+        background: ACCOUNTING_PANEL.field,
+        border: `1px solid ${temFila ? "var(--state-warn, #F1FA8C)" : "rgba(189,147,249,0.28)"}`,
+      }}
+    >
+      Conferência
+      {temFila ? (
+        <span
+          style={{
+            minWidth: 20, padding: "1px 6px", borderRadius: 999,
+            fontSize: "0.72rem", fontWeight: 700, textAlign: "center",
+            color: "#282A36", background: "var(--state-warn, #F1FA8C)",
+          }}
+        >
+          {total}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
 export function AccountingEntriesTab({
   companyId,
   entries,
@@ -695,6 +784,9 @@ export function AccountingEntriesTab({
   onCreateFolha,   // Q52: folha/pró-labore em lançamentos individuais (1 chamada por competência)
   onBulkDeleteEntries,
   onOpenChartOfAccountsTab,
+  // ⚠ A Conferência era ABA do cabeçalho até 29/08/2026 — hoje é um botão daqui. Ausente, o botão
+  // não renderiza: botão que a pessoa clica e nada acontece é pior que a ausência dele.
+  onOpenConferencia,
   onPreviewExcel,
   onImportExcel,
   companyRegime,  // regime tributário — controla a visibilidade dos itens do menu SERPRO
@@ -907,6 +999,7 @@ export function AccountingEntriesTab({
       {/* Caixa superior no mesmo padrão das pílulas: fundo sólido + borda roxa + cantos macios. */}
       <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 16, border: "1px solid rgba(189,147,249,0.28)", background: ACCOUNTING_PANEL.surface }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <BotaoDaConferencia pendencias={pendencias} onOpenConferencia={onOpenConferencia} />
           <ActionMenu
             label="Configurações"
             items={[

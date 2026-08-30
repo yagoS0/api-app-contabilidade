@@ -48,6 +48,7 @@ import {
 import { varrerNotasDaEmpresa } from "../../../application/declarados/VarreduraDeNotasService.js";
 import { ESTADO, RECUSA, TRANSICAO } from "../../../application/declarados/lib/estadosDeclarado.js";
 import { createConferenciaRouter } from "../conferencia.js";
+import { prisma } from "../../../infrastructure/db/prisma.js";
 
 const log = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 
@@ -467,5 +468,203 @@ describe("⚠⚠ O CASAMENTO DÉBITO × NOTA — as rotas", () => {
     const r = await FUNDIR({ declaradoOfxId: "ofx-1", declaradoNotaId: "n-1" });
     expect(r.status).toBe(400);
     expect(r.body.message).toMatch(/recarregue/i);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A CONTAGEM DE PENDÊNCIAS — o número do BOTÃO que substituiu a aba (29/08/2026).
+//
+// > Dono: *"essa aba deve estar dentro dos lançamentos, como um botão com aviso quando há
+// > conferência a ser feita, como notas recebidas"*.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ GET /conferencia/pendencias soma AS TRÊS filas", () => {
+  const contarCom = ({ declarados = 0, series = 0, saidas = 0, semSaidas = false } = {}) => {
+    prisma.lancamentoDeclarado = { count: jest.fn(async () => declarados) };
+    prisma.serieRecorrente = { count: jest.fn(async () => series) };
+    prisma.saidaAvulsaCliente = semSaidas ? {} : { count: jest.fn(async () => saidas) };
+  };
+
+  it("o total é a soma, e cada fila volta separada", async () => {
+    contarCom({ declarados: 3, series: 2, saidas: 4 });
+    const r = await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, total: 9, declarados: 3, series: 2, saidas: 4 });
+  });
+
+  it("⚠⚠ contar só os DECLARADOS faria o contador nunca ver o que o cliente digitou", async () => {
+    // É o defeito que esta rota existe para não cometer: o pedido do dono é justamente sobre o que
+    // o CLIENTE escreve chegar até ele.
+    contarCom({ declarados: 0, series: 0, saidas: 5 });
+    const r = await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
+    expect(r.body.total).toBe(5);
+  });
+
+  it("⚠⚠ é `count`, nunca a fila inteira — a barra de Lançamentos pede isto a cada abertura", async () => {
+    contarCom({ declarados: 1 });
+    await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
+    expect(prisma.lancamentoDeclarado.count).toHaveBeenCalled();
+    // ⚠ `listarFila` é a consulta CARA (ela pagina, serializa e traz o casamento). Chamá-la aqui
+    // seria trazer a fila para medir o tamanho dela.
+    expect(listarFila).not.toHaveBeenCalled();
+  });
+
+  it("⚠ o escopo por empresa vive no `where` das TRÊS", async () => {
+    contarCom({ declarados: 1, series: 1, saidas: 1 });
+    await request(makeApp()).get("/firm/companies/emp-9/conferencia/pendencias");
+    for (const m of [prisma.lancamentoDeclarado, prisma.serieRecorrente, prisma.saidaAvulsaCliente]) {
+      expect(m.count.mock.calls[0][0].where.portalClientId).toBe("emp-9");
+    }
+  });
+
+  it("⚠⚠ TABELA AUSENTE devolve zero E SE DECLARA — a barra não pode quebrar por migration", async () => {
+    // As migrations desta casa são ato do dono, então este estado é normal. Sem a guarda, uma
+    // migration não aplicada tiraria do ar a aba mais usada do sistema.
+    contarCom({ declarados: 3, series: 2, saidas: 1 });
+    const p2021 = Object.assign(new Error("no table"), { code: "P2021" });
+    prisma.serieRecorrente.count = jest.fn(async () => { throw p2021; });
+    const r = await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
+    expect(r.status).toBe(200);
+    expect(r.body.total).toBe(4);
+    expect(r.body.series).toBe(0);
+    // ⚠ "0 pendências" e "não consegui contar" são respostas diferentes.
+    expect(r.body.indisponiveis).toContain("series");
+  });
+
+  it("⚠⚠ o DELEGATE ausente (o `prisma generate` que não rodou) também se declara", async () => {
+    contarCom({ declarados: 2, semSaidas: true });
+    const r = await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
+    expect(r.status).toBe(200);
+    expect(r.body.total).toBe(2);
+    expect(r.body.indisponiveis).toContain("saidas");
+  });
+
+  it("⚠ nada pendente devolve zero SEM indisponíveis — as duas coisas não se confundem", async () => {
+    contarCom({});
+    const r = await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
+    expect(r.body.total).toBe(0);
+    expect(r.body.indisponiveis).toEqual([]);
+  });
+
+  it("⚠⚠ a rota LITERAL não é engolida pela de curinga", async () => {
+    // `/conferencia/:declaradoId/<transicao>` mora no mesmo router. Registrada depois, esta rota
+    // responderia como se "pendencias" fosse um id.
+    contarCom({ declarados: 7 });
+    const r = await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
+    expect(r.body.declarados).toBe(7);
+  });
+
+  it("⚠ LER a contagem não exige ACCOUNTANT — é leitura", async () => {
+    contarCom({});
+    await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
+    const gates = requireFirmCompanyAccess.mock.calls.map(([o]) => o?.minRole);
+    // ⚠ A rota é montada junto das outras; o que se afirma é que existe pelo menos uma sem piso —
+    // e que a de ESCRITA continua exigindo ACCOUNTANT (travado nos casos acima).
+    expect(gates).toContain(undefined);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A FILA DAS SAÍDAS DO CLIENTE — dentro da mesma tela (29/08/2026).
+//
+// > Dono: *"essas saídas que o cliente digitar aparecem para o contador na aba de conferência"*.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ as saídas do cliente na Conferência", () => {
+  const saidaAvulsa = require("../../../application/fluxo/SaidaAvulsaService.js");
+
+  it("a fila devolve a DATA CIVIL, nunca o ISO com hora", async () => {
+    // O ISO deslocaria o dia no fuso de quem lê — e este é o dia que a PESSOA escolheu.
+    jest.spyOn(saidaAvulsa, "listarSaidasPendentes").mockResolvedValue({
+      indisponivel: false,
+      saidas: [{
+        id: "sa-1", data: new Date("2026-09-18T00:00:00.000Z"), valor: "3000.00",
+        descricao: "Reforma da sala", estado: "PENDENTE", criadaEm: new Date("2026-08-29T12:00:00.000Z"),
+      }],
+    });
+    const r = await request(makeApp()).get("/firm/companies/emp-1/conferencia/saidas-do-cliente");
+    expect(r.status).toBe(200);
+    expect(r.body.saidas[0].data).toBe("2026-09-18");
+    expect(r.body.saidas[0].descricao).toBe("Reforma da sala");
+  });
+
+  it("⚠⚠ tabela ausente devolve LISTA VAZIA + `indisponivel`, nunca 503", async () => {
+    // Esta leitura convive com as outras na MESMA tela: derrubá-la tiraria do ar também o que o
+    // declarado tem a dizer. É a assimetria deliberada de `listarSaidasPendentes`.
+    jest.spyOn(saidaAvulsa, "listarSaidasPendentes").mockResolvedValue({ saidas: [], indisponivel: true });
+    const r = await request(makeApp()).get("/firm/companies/emp-1/conferencia/saidas-do-cliente");
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, indisponivel: true, saidas: [] });
+  });
+
+  it("decidir chama o serviço com o usuário e o estado normalizados", async () => {
+    const decidir = jest.spyOn(saidaAvulsa, "decidirSaidaAvulsa")
+      .mockResolvedValue({ id: "sa-1", estado: "CONFIRMADA" });
+    const r = await request(makeApp())
+      .post("/firm/companies/emp-1/conferencia/saidas-do-cliente/sa-1/decidir")
+      .send({ estado: "confirmada" });
+    expect(r.status).toBe(200);
+    expect(decidir).toHaveBeenCalledWith(expect.objectContaining({
+      portalClientId: "emp-1", saidaId: "sa-1", estado: "CONFIRMADA", usuarioId: "u-1",
+    }));
+  });
+
+  it("⚠⚠ a recusa NOMEADA vira o status certo — não um 500 mudo", async () => {
+    // Sem o ramo de `SaidaRecusada` no responder, `saida_ja_decidida` viraria "não foi possível
+    // concluir": o defeito de engolir o motivo que a pessoa poderia entender.
+    // ⚠ A FRASE é o segundo argumento — a classe não a deriva do código sozinha (quem faz isso é
+    // o `recusar()` interno do serviço). Um teste que a omitisse mediria uma recusa sem mensagem,
+    // que é justamente o que a tela não pode receber.
+    const { SaidaRecusada, FRASE_DA_RECUSA_DA_SAIDA } = saidaAvulsa;
+    jest.spyOn(saidaAvulsa, "decidirSaidaAvulsa")
+      .mockRejectedValue(new SaidaRecusada("saida_ja_decidida", FRASE_DA_RECUSA_DA_SAIDA.saida_ja_decidida));
+    const r = await request(makeApp())
+      .post("/firm/companies/emp-1/conferencia/saidas-do-cliente/sa-1/decidir")
+      .send({ estado: "CONFIRMADA" });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("saida_ja_decidida");
+    expect(r.body.message).toBeTruthy();
+  });
+
+  it("⚠ e a que não existe NESTA empresa é 404", async () => {
+    const { SaidaRecusada, FRASE_DA_RECUSA_DA_SAIDA } = saidaAvulsa;
+    jest.spyOn(saidaAvulsa, "decidirSaidaAvulsa")
+      .mockRejectedValue(new SaidaRecusada("saida_nao_encontrada", FRASE_DA_RECUSA_DA_SAIDA.saida_nao_encontrada));
+    const r = await request(makeApp())
+      .post("/firm/companies/emp-1/conferencia/saidas-do-cliente/sa-9/decidir")
+      .send({ estado: "CONFIRMADA" });
+    expect(r.status).toBe(404);
+  });
+
+  it("⚠⚠ DECIDIR exige ACCOUNTANT; LER não — a varredura da FONTE", () => {
+    // ⚠ O gate é criado na MONTAGEM do router, não por requisição: contar chamadas do middleware
+    // mediria quantas rotas existem, não o piso de cada uma. O que separa as duas é a FONTE.
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "conferencia.js"), "utf8");
+    expect(fonte).toContain(
+      'router.get("/conferencia/saidas-do-cliente", requireFirmCompanyAccess(),',
+    );
+    expect(fonte).toContain(
+      'requireFirmCompanyAccess({ minRole: "ACCOUNTANT" })',
+    );
+    // ⚠ E a de DECIDIR é a que leva o piso: a linha inteira, não só a existência do trecho.
+    const linhaDecidir = fonte
+      .split(String.fromCharCode(10))
+      .find((l) => l.includes("saidas-do-cliente/:saidaId/decidir"));
+    expect(linhaDecidir).toContain('minRole: "ACCOUNTANT"');
+  });
+  it("⚠⚠ CONFIRMAR NÃO LANÇA NADA — a rota não toca em lançamento contábil", () => {
+    // O que se confirma é uma PREVISÃO de caixa do cliente. Lançar continua sendo o caminho do
+    // declarado, que exige `dataPagamento` porque afirma que o dinheiro saiu.
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "conferencia.js"), "utf8")
+      // ⚠ BLOCO antes de LINHA: um `//` dentro de um comentário de bloco apaga o `*/`.
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/^[ \t]*\/\/.*$/gm, " ");
+    const trecho = fonte.slice(
+      fonte.indexOf("saidas-do-cliente/:saidaId/decidir"),
+      fonte.indexOf("saidas-do-cliente/:saidaId/decidir") + 900,
+    );
+    expect(trecho).not.toMatch(/accountingEntry|AccountingEntry|lancamento/i);
   });
 });

@@ -401,6 +401,10 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onDeleteAccount={accountingPanel.onDeleteAccount}
             onImportAccountsFile={accountingPanel.onImportAccountsFile}
             onOpenChartOfAccountsTab={() => switchTab("planoContas")}
+            /* ⚠⚠ A CONFERÊNCIA VIROU BOTÃO DAQUI EM 29/08/2026 (ela era aba do cabeçalho). O destino
+               é o MESMO segmento de sempre — o que mudou foi a porta. Ver a lápide em
+               `renderCompanyDetailHeader.jsx`. */
+            onOpenConferencia={() => switchTab("conferencia")}
             onExportCsv={accountingPanel.onExportCsv}
             onCreateBaixa={accountingPanel.onCreateBaixa}
             savingBaixa={accountingPanel.savingBaixa}
@@ -942,11 +946,26 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   // ⚠ Ela recebe a competência GLOBAL (`circularPanel.competencia`), a mesma que Lançamentos,
   // Circular, Guias e Notas Fiscais leem. Uma competência própria aqui faria a auditoria conferir um
   // mês e a apuração fechar outro — que é exatamente o defeito que a competência global corrigiu.
+  /**
+   * ⚠⚠ A CONFERÊNCIA DEIXOU DE SER ABA EM 29/08/2026 — ela virou um BOTÃO dentro de Lançamentos.
+   *
+   * > Dono: *"essas saídas que o cliente digitar aparecem para o contador na aba de conferência,
+   * > aba essa que deve estar dentro dos lançamentos, como um botão com aviso quando há conferência
+   * > a ser feita, como notas recebidas"*.
+   *
+   * ⚠⚠ **A ROTA E ESTE BLOCO FICAM.** O que saiu foi o botão no cabeçalho (`GROUPS`); o segmento
+   * `/conferencia` continua respondendo, porque é para cá que o botão novo leva — e porque link
+   * antigo não pode virar tela em branco (o defeito que `rotasDaEmpresa.js` já registra).
+   *
+   * ⚠ **ELA MONTA COM `activeTab="lancamentos"`**, que é a aba de onde se chega: sem isso o
+   * cabeçalho ficaria sem nenhuma aba marcada, e a pessoa não saberia onde está. E a migalha
+   * *"‹ Voltar aos lançamentos"* é obrigatória — aba que some sem caminho de volta é tela sem saída.
+   */
   if (companyDetailTab === "conferencia") {
     return (
       <CompanyTabLayout
         company={selectedCompany}
-        activeTab="conferencia"
+        activeTab="lancamentos"
         onBack={onBack}
         onTabChange={switchTab}
         canEditCompany={canEditCompany}
@@ -965,6 +984,9 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
              GUARDA continua sendo o `minRole: "ACCOUNTANT"` da rota — isto só evita oferecer um
              botão que o servidor vai recusar com 403. */
           podeEscrever={canEditCompany}
+          /* ⚠ O caminho de volta. Ele é o MESMO `switchTab` das abas — não um `history.back()`, que
+             levaria para fora da empresa quando a pessoa chegou aqui por link direto. */
+          aoVoltar={() => switchTab("lancamentos")}
         />
       </CompanyTabLayout>
     );
