@@ -7758,6 +7758,38 @@ export function createMockApi() {
             ],
             motivo: null, frase: "",
           },
+          {
+            /**
+             * ⚠⚠ A NOTA DE DATA PRESUMIDA — o ramo que a Fase 6 abriu (29/08/2026).
+             *
+             * Ela TAMBÉM está contabilizada, e mesmo assim **é fusível**: a data dela é o dia fixo
+             * que a regra do fornecedor configurou, e ninguém provou que o dinheiro saiu ali. Casar
+             * CORRIGE a data do lançamento que já existe — não cria um segundo.
+             *
+             * ⚠⚠ SEM ESTA LINHA O RAMO NASCERIA INALCANÇÁVEL OFFLINE, e a diferença entre ele e o
+             * `ja_contabilizada` de cima (que NÃO tem botão) é justamente o que precisa ser visto
+             * lado a lado. Oitava vez neste projeto.
+             */
+            debito: { id: "dec-12", valor: "1180.00", dataPagamento: "2026-07-22", descricaoOriginal: "PAGTO ALESSANDRO NIGRO" },
+            sugestao: {
+              nota: { id: "dec-r1", valor: "1180.00", descricaoOriginal: "ALESSANDRO NIGRO", dataDocumento: "2026-07-02" },
+              pista: "NOME_NO_MEMO",
+              frase: "O nome do fornecedor aparece na descrição do banco.",
+              leitura: "data_presumida",
+              podeFundir: true,
+              fraseDaCandidata: "Esta nota foi lançada sozinha, na data fixa que a regra deste fornecedor configurou — "
+                + "ninguém provou que o dinheiro saiu naquele dia. Casar troca a data presumida pela do extrato, no "
+                + "lançamento que já existe. Nenhum lançamento novo é criado.",
+            },
+            candidatos: [
+              {
+                nota: { id: "dec-r1", valor: "1180.00", descricaoOriginal: "ALESSANDRO NIGRO", dataDocumento: "2026-07-02" },
+                pista: "NOME_NO_MEMO", frase: "O nome do fornecedor aparece na descrição do banco.",
+                leitura: "data_presumida", podeFundir: true,
+              },
+            ],
+            motivo: null, frase: "",
+          },
         ],
         totalDebitos: 3,
         totalNotas: 4,
@@ -7789,6 +7821,180 @@ export function createMockApi() {
       // troca aqui — mas o estado normal é este, e fingir problema permanente treinaria o olho a
       // ignorar o aviso.
       return { ok: true, lancamentoForaDeContabilizado: [], contabilizadoSemLancamento: [], ponteiroPendurado: [], semDataDePagamento: [] };
+    },
+
+    /**
+     * ⚠⚠ AS REGRAS DO FORNECEDOR, offline (29/08/2026).
+     *
+     * ⚠ TRÊS linhas, e as diferenças entre elas são o ponto — este projeto já foi mordido cinco
+     * vezes por ramo inalcançável no mock:
+     *   • a do Alessandro Nigro **lança sozinha**, com dia e com crédito escolhido;
+     *   • a segunda tem regra e **NÃO lança** (é o estado de toda regra que já existe hoje);
+     *   • a terceira está **desligada**, e é ancorada por DESCRIÇÃO — sem CNPJ ela nunca poderia
+     *     lançar sozinha, e é o desenho que a tela precisa saber desabilitar.
+     * ⚠ Os valores NÃO são redondos: o mock deste projeto já escondeu dois ramos inteiros por usar
+     * só múltiplos de 100.
+     */
+    async getConferenciaRegras(_companyId) {
+      await delay(60);
+      return {
+        ok: true,
+        indisponivel: false,
+        regras: [
+          {
+            id: "reg-1", origemRegra: "MANUAL", ativa: true, suspensaEm: null,
+            cnpjFornecedor: "12345678000190", padraoDescricao: null,
+            valorMin: "1050.00", valorMax: "1180.00",
+            contaDestino: "411030012", contaCredito: "111010001",
+            lancaSozinha: true, diaDoLancamento: 15, aplicacoes: 3,
+          },
+          {
+            id: "reg-2", origemRegra: "APRENDIDA", ativa: true, suspensaEm: null,
+            cnpjFornecedor: "98765432000110", padraoDescricao: null,
+            valorMin: "312.40", valorMax: "418.90",
+            contaDestino: "411020008", contaCredito: null,
+            lancaSozinha: false, diaDoLancamento: null, aplicacoes: 7,
+          },
+          {
+            // ⚠⚠ ATIVA, e ancorada em DESCRIÇÃO — o ramo "não PODE lançar sozinha".
+            // ⚠ Ela nasceu `ativa: false` e isso COLAPSAVA dois estados no navegador: uma regra
+            // desligada e uma que é impedida de lançar mostram o mesmo botão desabilitado, e só
+            // esta segunda precisa dizer POR QUÊ. Achado na tela — o teste já cobria, o mock não.
+            id: "reg-3", origemRegra: "APRENDIDA", ativa: true, suspensaEm: null,
+            cnpjFornecedor: null, padraoDescricao: "TARIFA PACOTE SERVICOS",
+            valorMin: "46.20", valorMax: "46.20",
+            contaDestino: "411050003", contaCredito: null,
+            lancaSozinha: false, diaDoLancamento: null, aplicacoes: 11,
+          },
+          {
+            // ⚠ A DESLIGADA, que o `reg-3` representava antes. Os dois estados precisam coexistir:
+            // é lado a lado que se vê que eles dizem coisas diferentes.
+            id: "reg-4", origemRegra: "APRENDIDA", ativa: false, suspensaEm: null,
+            cnpjFornecedor: "11222333000181", padraoDescricao: null,
+            valorMin: "89.90", valorMax: "134.70",
+            contaDestino: "411050007", contaCredito: null,
+            lancaSozinha: false, diaDoLancamento: null, aplicacoes: 4,
+          },
+        ],
+      };
+    },
+
+    async postConferenciaRegra(_companyId, corpo = {}) {
+      await delay(80);
+      // ⚠ O mock exerce as recusas do SERVIDOR. Um mock permissivo deixaria a tela mandar o pedido
+      // incompleto e só descobrir em produção — e aqui o que passa vira lançamento contábil.
+      const recusa = (codigo, message) => {
+        const e = new Error(codigo);
+        e.code = codigo;
+        e.status = 400;
+        e.body = { error: codigo, message };
+        throw e;
+      };
+      if (!String(corpo?.cnpjFornecedor || "").trim() && !String(corpo?.padraoDescricao || "").trim()) {
+        recusa("sem_ancora", "A regra precisa de uma âncora: o CNPJ do fornecedor ou um padrão de descrição.");
+      }
+      if (!String(corpo?.contaDestino || "").trim()) {
+        recusa("conta_fora_do_plano", "Escolha a conta de débito (a despesa).");
+      }
+      // ⚠⚠ O CRÉDITO SÓ PODE SER DISPONIBILIDADE (caixa/banco) — resposta do dono. No mock a prova
+      // é o prefixo `111`, que é o que `entraNoFluxoDeCaixa` decide pelo `codigoCompleto`.
+      const credito = String(corpo?.contaCredito || "").trim();
+      if (credito && !credito.startsWith("111")) {
+        recusa("credito_nao_e_disponibilidade", "O crédito tem de ser conta de caixa ou banco.");
+      }
+      return { ok: true, regra: { id: `reg-${Date.now()}`, origemRegra: "MANUAL" } };
+    },
+
+    async patchConferenciaRegra(_companyId, regraId, { ativa } = {}) {
+      await delay(50);
+      return { ok: true, regra: { id: regraId, ativa } };
+    },
+
+    async patchConferenciaRegraAutomatico(_companyId, regraId, { lancaSozinha, diaDoLancamento } = {}) {
+      await delay(60);
+      // ⚠ O mock exerce as DUAS recusas do servidor — elas são o que impede uma regra marcada
+      // "lança sozinha" que nunca lança.
+      if (lancaSozinha === true) {
+        const dia = Number(diaDoLancamento);
+        if (!Number.isInteger(dia) || dia < 1 || dia > 31) {
+          const e = new Error("regra_sem_dia_de_lancamento");
+          e.code = "regra_sem_dia_de_lancamento";
+          e.status = 400;
+          e.body = {
+            error: "regra_sem_dia_de_lancamento",
+            message: "Para lançar sozinha, a regra precisa dizer em que dia do mês (1 a 31). A data não se arbitra.",
+          };
+          throw e;
+        }
+        // ⚠ `reg-3` é a regra ancorada em DESCRIÇÃO. Ela nunca pode lançar sozinha, e o mock diz
+        // isso — sem esse ramo, o desenho do impedimento seria inalcançável offline.
+        if (regraId === "reg-3") {
+          const e = new Error("automatico_sem_cnpj");
+          e.code = "automatico_sem_cnpj";
+          e.status = 400;
+          e.body = {
+            error: "automatico_sem_cnpj",
+            message: "Só uma regra ancorada no CNPJ do fornecedor pode lançar sozinha.",
+          };
+          throw e;
+        }
+      }
+      return {
+        ok: true,
+        regra: {
+          id: regraId,
+          lancaSozinha: lancaSozinha === true,
+          diaDoLancamento: lancaSozinha === true ? Number(diaDoLancamento) : null,
+        },
+      };
+    },
+
+    /**
+     * ⚠⚠ O EXTRATO DO QUE ENTROU SEM CLIQUE, offline.
+     *
+     * ⚠ DUAS linhas e valores diferentes: uma lista de um item esconderia o desenho da seleção em
+     * lote, que é a razão de esta tela existir.
+     */
+    async getLancadosPorRegra(_companyId, competencia) {
+      await delay(70);
+      const comp = competencia || "2026-08";
+      const linhas = [
+        {
+          id: "dec-r1", descricaoOriginal: "ALESSANDRO NIGRO", cnpjFornecedor: "12345678000190",
+          valor: "1180.00", valorAjustado: null, competencia: comp,
+          dataPagamento: `${comp}-15`, contaAplicada: "411030012",
+          regraId: "reg-1", accountingEntryId: "ae-r1", decididoEm: `${comp}-15T03:00:00.000Z`,
+        },
+        {
+          id: "dec-r2", descricaoOriginal: "ALESSANDRO NIGRO", cnpjFornecedor: "12345678000190",
+          valor: "1050.00", valorAjustado: null, competencia: comp,
+          dataPagamento: `${comp}-15`, contaAplicada: "411030012",
+          regraId: "reg-1", accountingEntryId: "ae-r2", decididoEm: `${comp}-15T03:00:00.000Z`,
+        },
+      ];
+      return {
+        ok: true,
+        indisponivel: false,
+        competencia: comp,
+        total: linhas.length,
+        valor: 2230,
+        linhas,
+      };
+    },
+
+    /**
+     * ⚠⚠ O que FALHA volta NOMEADO e o lote NÃO PARA — e o mock exerce esse desfecho, que é o
+     * desenho que a tela mais precisa acertar: um lote que só dissesse "desfiz 1" faria a outra
+     * linha sumir sem ninguém saber por quê.
+     */
+    async postDesfazerLancadosPorRegra(_companyId, ids = []) {
+      await delay(90);
+      const lista = Array.isArray(ids) ? ids : [];
+      const recusados = lista.includes("dec-r2")
+        ? [{ id: "dec-r2", motivo: "mes_fechado", frase: "A competência está fechada. Reabra o mês para desfazer." }]
+        : [];
+      const desfeitos = lista.filter((i) => !recusados.some((r) => r.id === i));
+      return { ok: true, pedidos: lista.length, desfeitos: desfeitos.length, ids: desfeitos, recusados };
     },
     async getAuditoriaNotas(_companyId, competencia) {
       await delay(80);

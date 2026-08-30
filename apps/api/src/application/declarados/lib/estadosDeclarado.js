@@ -151,6 +151,17 @@ export const LEITURA_DA_CANDIDATA = Object.freeze({
    * como despesa sem nota, e o mesmo dinheiro é lançado duas vezes.
    */
   JA_CONTABILIZADA: "ja_contabilizada",
+  /**
+   * ⚠⚠ A NOTA VIROU LANÇAMENTO **SOZINHA**, numa data que o sistema PRESUMIU (29/08/2026).
+   *
+   * Ela também já está `CONTABILIZADO`, e mesmo assim **não é** `JA_CONTABILIZADA`: lá a data foi
+   * decidida por uma pessoa; aqui ela é o dia fixo que a regra do fornecedor configurou, e
+   * **ninguém viu o dinheiro sair naquele dia**. O débito do extrato é a primeira prova que existe.
+   *
+   * ⚠ Casar aqui **CORRIGE a data** — não cria um segundo lançamento. É o que torna reversível a
+   * decisão do dono de lançar em data fixa, e a frase abaixo diz isso na tela.
+   */
+  DATA_PRESUMIDA: "data_presumida",
 });
 
 export const FRASE_DA_CANDIDATA = Object.freeze({
@@ -161,10 +172,24 @@ export const FRASE_DA_CANDIDATA = Object.freeze({
     "Esta nota já virou lançamento, e por isso não há o que casar — mas este débito é o pagamento dela. "
     + "Não o contabilize à parte: seria a mesma despesa duas vezes. Para corrigir a data, desfaça o "
     + "lançamento e refaça.",
+  [LEITURA_DA_CANDIDATA.DATA_PRESUMIDA]:
+    "Esta nota foi lançada sozinha, na data fixa que a regra deste fornecedor configurou — ninguém "
+    + "provou que o dinheiro saiu naquele dia. Casar troca a data presumida pela do extrato, no "
+    + "lançamento que já existe. Nenhum lançamento novo é criado.",
 });
 
-/** ⚠ Só a nota sem data e a nota com data DECLARADA podem ser fundidas. */
+/**
+ * ⚠ Só a nota sem data, a nota com data DECLARADA e a nota com data PRESUMIDA podem ser fundidas.
+ *
+ * ⚠⚠ A ORDEM DOS DOIS PRIMEIROS `if` É A REGRA: a nota de data presumida também está
+ * `CONTABILIZADO`, então perguntar só pelo estado a jogaria em `JA_CONTABILIZADA` e o extrato
+ * nunca corrigiria nada. A distinção é a ORIGEM, por igualdade exata.
+ */
 export function lerCandidata(nota) {
+  if (nota?.estado === ESTADO.CONTABILIZADO
+    && nota?.origemPagamento === ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA) {
+    return { leitura: LEITURA_DA_CANDIDATA.DATA_PRESUMIDA, podeFundir: true };
+  }
   if (nota?.estado === ESTADO.CONTABILIZADO) {
     return { leitura: LEITURA_DA_CANDIDATA.JA_CONTABILIZADA, podeFundir: false };
   }

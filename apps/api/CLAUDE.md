@@ -3048,6 +3048,16 @@ PDF_READER_URL   (URL do serviço FastAPI)
 PORT             (default 3000)
 ```
 
+⚠⚠ **`INTEGRACAO_LANCAMENTO_POR_REGRA`** (30/08/2026) — o **lançamento contábil que nasce sem
+ninguém clicar**. Nasce OFF, e com ela desligada o SERVIDOR recusa (`podeLancarSozinho` devolve
+`automatico_desligado` e `AccountingEntry.create` não é chamado), não só a tela. ⚠⚠ **Ela é UMA das
+DUAS chaves**: a outra é `RegraContabilizacao.lancaSozinha`, fornecedor a fornecedor, e a nota ainda
+precisa cair na FAIXA de valor da regra. Ligada no `.env` LOCAL; **em produção é ato do dono**.
+⚠ O que a torna reversível, e existe junto: `ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA` (a data é
+presunção, não prova), o extrato mensal *"lançados por regra"* com desfazer em lote, e o débito do
+OFX que **corrige** a data presumida sem criar um segundo lançamento. Ver
+`src/application/declarados/CLAUDE.md`, seção "FASE 6".
+
 ⚠⚠ **`INTEGRACAO_NFSE_LOTE`** — a emissão de NFS-e **em lote**. Nasce OFF, e com ela desligada o
 SERVIDOR recusa (503 `emissao_lote_desligada`), não só a tela. Ligar é ato do dono, acompanhando o
 primeiro lote real: cada linha de planilha vira nota fiscal real e irreversível.

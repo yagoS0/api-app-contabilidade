@@ -802,3 +802,151 @@ describe("⚠⚠ POST /conferencia/regras", () => {
     expect(fonte.slice(i, i + 900)).not.toMatch(/accountingEntry|AccountingEntry/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O LANÇAMENTO POR REGRA — o CHAMADOR e o EXTRATO (29/08/2026).
+//
+// Até aqui `lancarPorRegra` existia e nenhum caminho de produção a invocava. O que estes testes
+// protegem é o LIGAMENTO: que ele rode na varredura, que não a derrube, e que a rota de desfazer
+// não seja engolida pela de curinga — `/conferencia/:declaradoId/desfazer` existe desde antes, e
+// um `POST .../lancados-por-regra/desfazer` cairia nela com `declaradoId: "lancados-por-regra"`,
+// sem erro nenhum.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ o lançamento por regra na varredura", () => {
+  const porRegra = require("../../../application/declarados/LancamentoPorRegraService.js");
+  const serieService = require("../../../application/fluxo/SerieRecorrenteService.js");
+
+  beforeEach(() => {
+    jest.spyOn(serieService, "listarSeries").mockResolvedValue({ series: [] });
+    jest.spyOn(serieService, "autoAtivarSeriesEstaveis").mockResolvedValue({ ativadas: 0, series: [] });
+  });
+
+  const varrer = () => request(makeApp())
+    .post("/firm/companies/emp-1/conferencia/varrer-notas?desde=2026-01-01");
+
+  it("ele roda na varredura e o relatório volta junto", async () => {
+    jest.spyOn(porRegra, "lancarPorRegraNaEmpresa")
+      .mockResolvedValue({ lancados: 3, ids: ["a", "b", "c"], recusados: [] });
+    const r = await varrer();
+
+    expect(r.status).toBe(200);
+    expect(r.body.lancadosPorRegra).toMatchObject({ lancados: 3 });
+    // ⚠ E o relatório da varredura continua inteiro: ele não substitui nada.
+    expect(r.body.criados).toBe(8);
+  });
+
+  it("⚠ a empresa do path é a que ele recebe — nunca o corpo", async () => {
+    const espia = jest.spyOn(porRegra, "lancarPorRegraNaEmpresa")
+      .mockResolvedValue({ lancados: 0, ids: [], recusados: [] });
+    await varrer();
+    expect(espia.mock.calls[0][0].portalClientId).toBe("emp-1");
+  });
+
+  it("⚠⚠ falhar NÃO derruba a varredura, e `null` é 'não sei' — nunca zero", async () => {
+    jest.spyOn(porRegra, "lancarPorRegraNaEmpresa").mockRejectedValue(new Error("coluna fora"));
+    const r = await varrer();
+
+    expect(r.status).toBe(200);
+    expect(r.body.criados).toBe(8);
+    expect(r.body.lancadosPorRegra).toBeNull();
+  });
+
+  it("⚠⚠ ele NÃO roda na LEITURA da fila — observar não grava, e aqui o que se grava é o razão", async () => {
+    const espia = jest.spyOn(porRegra, "lancarPorRegraNaEmpresa").mockResolvedValue({ lancados: 0 });
+    await request(makeApp()).get("/firm/companies/emp-1/conferencia");
+    await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
+    await request(makeApp()).get("/firm/companies/emp-1/conferencia/casamentos");
+    expect(espia).not.toHaveBeenCalled();
+  });
+});
+
+describe("⚠⚠ o EXTRATO de lançados por regra", () => {
+  const porRegra = require("../../../application/declarados/LancamentoPorRegraService.js");
+
+  it("devolve o extrato da competência pedida", async () => {
+    jest.spyOn(porRegra, "extratoDeLancadosPorRegra")
+      .mockResolvedValue({ competencia: "2026-08", total: 2, valor: 2400, linhas: [{ id: "d-1" }, { id: "d-2" }] });
+    const r = await request(makeApp())
+      .get("/firm/companies/emp-1/conferencia/lancados-por-regra?competencia=2026-08");
+
+    expect(r.status).toBe(200);
+    expect(r.body.total).toBe(2);
+    expect(porRegra.extratoDeLancadosPorRegra.mock.calls[0][0])
+      .toMatchObject({ portalClientId: "emp-1", competencia: "2026-08" });
+  });
+
+  it("⚠ competência ausente ou torta RECUSA — não existe 'a competência de hoje' aqui", async () => {
+    const espia = jest.spyOn(porRegra, "extratoDeLancadosPorRegra");
+    for (const qs of ["", "?competencia=", "?competencia=agosto", "?competencia=2026-8"]) {
+      const r = await request(makeApp()).get(`/firm/companies/emp-1/conferencia/lancados-por-regra${qs}`);
+      expect(r.status).toBe(400);
+      expect(r.body.error).toBe("competencia_invalida");
+    }
+    expect(espia).not.toHaveBeenCalled();
+  });
+
+  it("⚠ sem a migration aplicada responde VAZIO e DIZ que está indisponível", async () => {
+    // "Não há lançamento por regra" e "não consigo olhar" são respostas diferentes.
+    jest.spyOn(porRegra, "extratoDeLancadosPorRegra")
+      .mockRejectedValue(Object.assign(new Error("no column"), { code: "P2022" }));
+    const r = await request(makeApp())
+      .get("/firm/companies/emp-1/conferencia/lancados-por-regra?competencia=2026-08");
+
+    expect(r.status).toBe(200);
+    expect(r.body.linhas).toEqual([]);
+    expect(r.body.indisponivel).toBe(true);
+  });
+
+  it("⚠⚠ a rota de DESFAZER não é engolida pela de curinga", async () => {
+    // `/conferencia/:declaradoId/desfazer` existe desde antes. Registrada primeiro, ela casaria
+    // com `declaradoId: "lancados-por-regra"` — e o lote inteiro viraria uma transição solta.
+    const desfazer = jest.spyOn(porRegra, "desfazerLancadosPorRegra")
+      .mockResolvedValue({ pedidos: 2, desfeitos: 2, ids: ["d-1", "d-2"], recusados: [] });
+    const r = await request(makeApp())
+      .post("/firm/companies/emp-1/conferencia/lancados-por-regra/desfazer")
+      .send({ ids: ["d-1", "d-2"] });
+
+    expect(r.status).toBe(200);
+    expect(r.body.desfeitos).toBe(2);
+    expect(desfazer).toHaveBeenCalled();
+    expect(aplicarTransicao).not.toHaveBeenCalled();
+  });
+
+  it("⚠ lista vazia RECUSA — desfazer sem alvo não é um lote de zero", async () => {
+    const espia = jest.spyOn(porRegra, "desfazerLancadosPorRegra");
+    for (const body of [{}, { ids: [] }, { ids: "d-1" }]) {
+      const r = await request(makeApp())
+        .post("/firm/companies/emp-1/conferencia/lancados-por-regra/desfazer").send(body);
+      expect(r.status).toBe(400);
+      expect(r.body.error).toBe("ids_obrigatorios");
+    }
+    expect(espia).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ o que FALHA volta nomeado, e com 200 — o lote não para", async () => {
+    // Uma linha em mês fechado não pode esconder que as outras foram desfeitas.
+    jest.spyOn(porRegra, "desfazerLancadosPorRegra").mockResolvedValue({
+      pedidos: 3, desfeitos: 2, ids: ["d-1", "d-3"],
+      recusados: [{ id: "d-2", motivo: "mes_fechado", frase: "Mês fechado." }],
+    });
+    const r = await request(makeApp())
+      .post("/firm/companies/emp-1/conferencia/lancados-por-regra/desfazer")
+      .send({ ids: ["d-1", "d-2", "d-3"] });
+
+    expect(r.status).toBe(200);
+    expect(r.body.desfeitos).toBe(2);
+    expect(r.body.recusados[0]).toMatchObject({ id: "d-2", motivo: "mes_fechado" });
+  });
+
+  it("⚠ desfazer exige ACCOUNTANT; o extrato é leitura e não exige", async () => {
+    jest.spyOn(porRegra, "desfazerLancadosPorRegra").mockResolvedValue({ pedidos: 1, desfeitos: 1, ids: ["d-1"], recusados: [] });
+    jest.spyOn(porRegra, "extratoDeLancadosPorRegra").mockResolvedValue({ competencia: "2026-08", total: 0, valor: 0, linhas: [] });
+    requireFirmCompanyAccess.mockClear();
+
+    await request(makeApp()).post("/firm/companies/emp-1/conferencia/lancados-por-regra/desfazer").send({ ids: ["d-1"] });
+    await request(makeApp()).get("/firm/companies/emp-1/conferencia/lancados-por-regra?competencia=2026-08");
+
+    const gates = requireFirmCompanyAccess.mock.calls.map(([o]) => o?.minRole ?? null);
+    expect(gates).toContain("ACCOUNTANT");
+  });
+});

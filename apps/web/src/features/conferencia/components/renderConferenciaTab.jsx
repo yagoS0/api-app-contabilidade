@@ -25,6 +25,8 @@ import { PainelDeCasamentos } from "./PainelDeCasamentos";
 // "coisas para o contador confirmar". ⚠ A feature é PRÓPRIA para o fluxo importá-la depois.
 import { PainelDeRecorrencias } from "../../recorrencia/components/PainelDeRecorrencias";
 import { PainelDeSaidasDoCliente } from "./PainelDeSaidasDoCliente";
+import { PainelDeLancadosPorRegra } from "./PainelDeLancadosPorRegra";
+import { PainelDeRegras } from "./PainelDeRegras";
 import { debitosQueCasamComNota } from "../lib/contabilizacaoEmLote";
 import {
   ACAO,
@@ -884,6 +886,43 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
         para o contador na aba de conferência"*.
       */}
       <PainelDeSaidasDoCliente companyId={companyId} podeEscrever={podeEscrever} />
+
+      {/*
+        ⚠⚠ O EXTRATO DO QUE ENTROU SEM CLIQUE vem ANTES das regras, e a ordem é a decisão.
+
+        Ele é a CONSEQUÊNCIA da automação, e as regras são a causa. Quem abre esta tela precisa ver
+        primeiro o que já aconteceu na contabilidade dele — e só depois mexer no que vai acontecer.
+        Invertido, o contador ligaria mais uma regra sem ter olhado o que a anterior fez.
+        ⚠ Ele some sozinho quando não há nada lançado por regra, que é o estado normal.
+      */}
+      {/*
+        ⚠⚠ ELE NÃO LEVA `key={versao}`, e a ausência é a correção — achada no navegador (30/08/2026).
+
+        Com a `key` amarrada a `versao`, desfazer bumpava a versão, a `key` mudava, o React
+        DESMONTAVA o painel e o relatório *"1 de 2 desfeitos · dec-r2: a competência está fechada"*
+        morria no mesmo instante em que nascia. Ficava a metade que já funcionava (o desfazer) e
+        sumia a metade que este extrato existe para dar: **saber o que NÃO foi desfeito**.
+        ⚠ Ele se recarrega sozinho depois de desfazer; quem precisa da `key` é o painel de
+        casamentos, que não tem recarga própria.
+      */}
+      <PainelDeLancadosPorRegra
+        companyId={companyId}
+        competencia={competencia}
+        podeEscrever={podeEscrever}
+        aoDesfazer={() => {
+          setVersao((v) => v + 1);
+          carregar();
+        }}
+      />
+
+      {/*
+        ⚠⚠ AS REGRAS FICAM POR ÚLTIMO, e é a tela mais perigosa desta aba: marcar uma regra aqui faz
+        nascer lançamento contábil sem ninguém clicar. Ela vem depois da fila de propósito — o
+        contador chega nela tendo visto as despesas concretas, e não como primeiro ato.
+        ⚠ `contas` é o plano JÁ CARREGADO desta tela: uma segunda busca daria dois planos possíveis
+        para a mesma empresa, e o seletor da regra poderia oferecer conta que a fila recusa.
+      */}
+      <PainelDeRegras companyId={companyId} contas={contas} podeEscrever={podeEscrever} />
 
       {erro ? (
         <div style={{ ...card, borderColor: "var(--state-danger)", color: "var(--state-danger)" }}>{erro}</div>

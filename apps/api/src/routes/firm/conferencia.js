@@ -39,9 +39,15 @@ import {
   RECUSA_DA_REGRA,
   alternarRegra,
   criarRegraManual,
+  definirLancamentoAutomatico,
   listarRegras,
 } from "../../application/declarados/RegraService.js";
 import { varrerNotasDaEmpresa } from "../../application/declarados/VarreduraDeNotasService.js";
+import {
+  desfazerLancadosPorRegra,
+  extratoDeLancadosPorRegra,
+  lancarPorRegraNaEmpresa,
+} from "../../application/declarados/LancamentoPorRegraService.js";
 import { listarMapeamentos, salvarMapeamento } from "../../application/declarados/MapeamentoExtratoService.js";
 import { ESTADO, ORIGEM_PAGAMENTO, TRANSICAO } from "../../application/declarados/lib/estadosDeclarado.js";
 import {
@@ -170,7 +176,11 @@ function responderRecusa(res, erro, log) {
    * ⚠ 503 só quando a TABELA não existe; o resto é 400, porque a pessoa pode corrigir.
    */
   if (erro instanceof RegraRecusada) {
-    const status = erro.codigo === RECUSA_DA_REGRA.INDISPONIVEL ? 503 : 400;
+    // ⚠ Três status, três consertos: 503 = a migration não foi aplicada (não é culpa de quem
+    // clicou); 404 = a regra não é desta empresa; 400 = o pedido está errado e dá para corrigir.
+    const status = erro.codigo === RECUSA_DA_REGRA.INDISPONIVEL
+      ? 503
+      : erro.codigo === RECUSA_DA_REGRA.NAO_ENCONTRADA ? 404 : 400;
     return res.status(status).json({ ok: false, error: erro.codigo, message: erro.frase });
   }
   if (erro instanceof SaidaRecusada) {
@@ -416,6 +426,80 @@ export function createConferenciaRouter({ log } = {}) {
       }
     });
 
+  // ── O EXTRATO DE "LANÇADOS POR REGRA" ──────────────────────────────────────────────────────
+  //
+  // ⚠⚠ ESTE É O PRÉ-REQUISITO QUE O PRÓPRIO `motorDeSugestao.js` NOMEOU, e sem ele ligar a
+  // automação seria ligar algo que ninguém consegue auditar: *"o que falta é a DECISÃO DO DONO de
+  // ligar, e o extrato mensal 'lançados por regra' para ele poder desfazer em lote."*
+  //
+  // ⚠ O recorte é a COMPETÊNCIA, porque a pergunta é *"o que entrou sem eu clicar neste mês?"* — e
+  // o critério é a ORIGEM do pagamento, nunca o `regraId`: um lançamento que o contador confirmou
+  // À MÃO sobre uma nota com regra também tem `regraId`, e oferecer "desfazer" sobre o trabalho
+  // dele seria o oposto do que este extrato existe para fazer.
+
+  router.get("/conferencia/lancados-por-regra", requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      const competencia = String(req.query.competencia || "");
+      if (!COMPETENCIA_RE.test(competencia)) {
+        return res.status(400).json({
+          ok: false,
+          error: "competencia_invalida",
+          message: "Informe a competência no formato AAAA-MM.",
+        });
+      }
+      const r = await extratoDeLancadosPorRegra({
+        portalClientId: String(req.params.companyId),
+        competencia,
+      });
+      return res.json({ ok: true, ...r });
+    } catch (e) {
+      // ⚠ Sem as migrations aplicadas as colunas não existem. "Não há lançamento por regra" e "não
+      // consigo olhar" são respostas DIFERENTES, e por isso `indisponivel`.
+      if (["P2021", "P2022"].includes(e?.code)) {
+        return res.json({
+          ok: true, competencia: String(req.query.competencia || ""), total: 0, valor: 0, linhas: [], indisponivel: true,
+        });
+      }
+      return responderRecusa(res, e, log);
+    }
+  });
+
+  /**
+   * ⚠⚠ DESFAZER EM LOTE — e é ele que torna a decisão do dono REVERSÍVEL.
+   *
+   * ⚠ `minRole: "ACCOUNTANT"`: apagar lançamento do razão é o mesmo peso de criá-lo.
+   * ⚠⚠ **A REGRA NÃO MORA AQUI.** Quem desfaz é `desfazerLancadosPorRegra`, um a um, por dentro de
+   * `aplicarTransicao(DESFAZER)` — com as guardas de mês fechado e a exclusão do `AccountingEntry`
+   * na mesma transação. Um `deleteMany` nesta rota deixaria lançamento órfão no razão.
+   * ⚠ **O que falha volta NOMEADO e o lote NÃO PARA** — por isso a resposta é 200 com o relatório,
+   * e não um erro: uma linha em mês fechado não pode esconder que as outras vinte foram desfeitas.
+   */
+  router.post(
+    "/conferencia/lancados-por-regra/desfazer",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      try {
+        const ids = req.body?.ids;
+        if (!Array.isArray(ids) || !ids.length) {
+          return res.status(400).json({
+            ok: false,
+            error: "ids_obrigatorios",
+            message: "Informe `ids` com as linhas a desfazer.",
+          });
+        }
+        const r = await desfazerLancadosPorRegra({
+          portalClientId: String(req.params.companyId),
+          ids,
+          usuarioId: req.auth?.user?.id || null,
+          agora: new Date(),
+        });
+        return res.json({ ok: true, ...r });
+      } catch (e) {
+        return responderRecusa(res, e, log);
+      }
+    },
+  );
+
   escrita("informar-pagamento", {
     transicao: TRANSICAO.INFORMAR_PAGAMENTO,
     dados: (b) => lerPagamentoDoCorpo(b),
@@ -535,6 +619,11 @@ export function createConferenciaRouter({ log } = {}) {
         valorMax: req.body?.valorMax,
         contaDestino: req.body?.contaDestino,
         contaCredito: req.body?.contaCredito,
+        // ⚠⚠ `=== true` EXATO, e não `Boolean(...)`: a string `"false"` de um formulário é
+        // verdadeira em JS, e ligaria o lançamento automático por um campo mal tipado. O serviço
+        // repete a comparação — as duas são a mesma decisão, e nenhuma das duas confia na outra.
+        lancaSozinha: req.body?.lancaSozinha === true,
+        diaDoLancamento: req.body?.diaDoLancamento ?? null,
         usuarioId: req.auth?.user?.id || null,
         // ⚠ O relógio vem DAQUI, nunca de dentro do serviço — a regra deste módulo, com varredura
         // de fonte no teste dele.
@@ -557,6 +646,46 @@ export function createConferenciaRouter({ log } = {}) {
       return responderRecusa(res, e, log);
     }
   });
+
+  /**
+   * ⚠⚠ LIGAR O LANÇAMENTO AUTOMÁTICO DE UMA REGRA QUE JÁ EXISTE (29/08/2026).
+   *
+   * ⚠ Ela é uma rota SEPARADA do `PATCH` que liga/desliga a regra, e a separação é o ponto: são
+   * dois atos de peso muito diferente. `ativa` decide se o sistema SUGERE; `lancaSozinha` decide se
+   * ele LANÇA sem ninguém clicar. Um `PATCH` que aceitasse os dois campos faria a tela poder ligar
+   * o segundo achando que estava ligando o primeiro.
+   *
+   * ⚠⚠ **A REGRA NÃO MORA AQUI**: quem exige o CNPJ e o dia é `definirLancamentoAutomatico`, com a
+   * MESMA conferência que a criação usa.
+   */
+  router.patch(
+    "/conferencia/regras/:regraId/automatico",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      try {
+        const { lancaSozinha } = req.body || {};
+        if (typeof lancaSozinha !== "boolean") {
+          return res.status(400).json({
+            ok: false,
+            error: "lanca_sozinha_obrigatoria",
+            message: "Informe `lancaSozinha` (true ou false).",
+          });
+        }
+        const regra = await definirLancamentoAutomatico({
+          portalClientId: String(req.params.companyId),
+          regraId: String(req.params.regraId),
+          lancaSozinha,
+          diaDoLancamento: req.body?.diaDoLancamento ?? null,
+        });
+        return res.json({
+          ok: true,
+          regra: { id: regra.id, lancaSozinha: regra.lancaSozinha, diaDoLancamento: regra.diaDoLancamento },
+        });
+      } catch (e) {
+        return responderRecusa(res, e, log);
+      }
+    },
+  );
 
   // ⚠ Desligar/religar é ESCRITA e mexe no que o sistema sugere — mesmo piso das outras escritas.
   router.patch("/conferencia/regras/:regraId", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
@@ -700,13 +829,37 @@ export function createConferenciaRouter({ log } = {}) {
         log?.warn?.({ err: e, companyId: req.params?.companyId }, "auto_ativacao_de_series_falhou");
       }
 
+      /**
+       * ⚠⚠ O LANÇAMENTO AUTOMÁTICO ENTRA AQUI — e este é o CHAMADOR que faltava (29/08/2026).
+       *
+       * > Dono: *"todo mês que essa nota aparecer ela já é lançada em despesa."* A nota "aparece"
+       * na varredura; é aqui que ela pode virar despesa sem clique.
+       *
+       * ⚠⚠ **ELE CONTINUA COM AS TRÊS TRAVAS**, e nenhuma mora nesta rota: a FLAG do ambiente, a
+       * marca `lancaSozinha` daquele fornecedor e a FAIXA de valor da regra. Quem recusa é o
+       * SERVIDOR, dentro de `podeLancarSozinho` — um `curl` nesta rota bate na mesma decisão.
+       *
+       * ⚠⚠ **ELE NÃO PODE DERRUBAR A VARREDURA**, pelo mesmo motivo da auto-ativação: as notas já
+       * viraram fila neste ponto. Falhou ⇒ `lancadosPorRegra: null`, que é "não sei" — e "não
+       * lancei nada" não pode se disfarçar de zero.
+       */
+      let lancadosPorRegra = null;
+      try {
+        lancadosPorRegra = await lancarPorRegraNaEmpresa({
+          portalClientId: String(req.params.companyId),
+          agora: new Date(),
+        });
+      } catch (e) {
+        log?.warn?.({ err: e, companyId: req.params?.companyId }, "lancamento_por_regra_falhou");
+      }
+
       // ⚠ O relatório INTEIRO volta — inclusive `fora` e `recusados`. Uma varredura que só dissesse
       // "criei 12" faria as outras sumirem sem ninguém saber por quê, e "não veio nada" ficaria
       // indistinguível de "deu erro".
       // ⚠⚠ `autoAtivadas` viaja SEPARADO e pode ser `null`: "nenhuma série entrou sozinha" e "não
       // consegui olhar as séries" são respostas diferentes, e a segunda não pode se disfarçar de
       // zero.
-      return res.json({ ok: true, desde, ...r, autoAtivadas });
+      return res.json({ ok: true, desde, ...r, autoAtivadas, lancadosPorRegra });
     } catch (e) {
       return responderRecusa(res, e, log);
     }

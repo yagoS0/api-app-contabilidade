@@ -657,9 +657,28 @@ export async function fundirPagamentoNaNota({
   //
   // ⚠ Quem decide se pode continua sendo a máquina de estados: `PROVAR_PAGAMENTO` recusa se o que
   // entra não for prova, e recusa se a nota já tiver prova. Aqui só se escolhe qual pergunta fazer.
-  const transicaoDaNota = nota?.estado === ESTADO.A_CONFERIR
-    ? TRANSICAO.PROVAR_PAGAMENTO
-    : TRANSICAO.INFORMAR_PAGAMENTO;
+  //   `CONTABILIZADO` + `PRESUMIDO_POR_REGRA` → `CORRIGIR_DATA_PRESUMIDA`: a nota foi lançada
+  //                            SOZINHA, na data fixa da regra. O extrato traz a data real.
+  //
+  /**
+   * ⚠⚠ A TERCEIRA É A DE 29/08/2026, e ela é o que torna REVERSÍVEL a decisão do dono de lançar
+   * numa data que ninguém provou. Sem ela, o débito real chegava e não tinha o que fazer: a nota
+   * já estava contabilizada, a data presumida ficava para sempre, e contabilizar o débito à parte
+   * seria a mesma despesa duas vezes.
+   *
+   * ⚠⚠ **A ESCOLHA É POR IGUALDADE EXATA DA ORIGEM**, nunca por `!ehProvaDePagamento`: com a
+   * negação, uma nota que o contador contabilizou com data DECLARADA por ele cairia aqui, e a
+   * decisão dele seria sobrescrita em silêncio. Essa nota continua em `JA_CONTABILIZADA`, que não
+   * funde — e a máquina de estados recusaria de qualquer forma (`DATA_NAO_E_PRESUMIDA`).
+   */
+  const dataPresumidaPorRegra = nota?.estado === ESTADO.CONTABILIZADO
+    && nota?.origemPagamento === ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA;
+
+  const transicaoDaNota = dataPresumidaPorRegra
+    ? TRANSICAO.CORRIGIR_DATA_PRESUMIDA
+    : nota?.estado === ESTADO.A_CONFERIR
+      ? TRANSICAO.PROVAR_PAGAMENTO
+      : TRANSICAO.INFORMAR_PAGAMENTO;
   const naNota = podeTransitar(nota, transicaoDaNota, {
     dataPagamento: debito.dataPagamento,
     origemPagamento: debito.origemPagamento,
@@ -668,6 +687,21 @@ export async function fundirPagamentoNaNota({
 
   const noDebito = podeTransitar(debito, TRANSICAO.FUNDIR, { parDeclaradoId: nota.id });
   if (!noDebito.ok) recusar(noDebito.motivo, noDebito.frase);
+
+  /**
+   * ⚠⚠ MÊS FECHADO RECUSA — e a guarda nasceu junto com a correção da data (29/08/2026).
+   *
+   * Até aqui a fusão não encostava no razão, e por isso não precisava dela. A correção encosta:
+   * ela escreve a data do `AccountingEntry`. Mudar a data de um lançamento que o fechamento já
+   * conferiu é escrever num mês fechado sem rastro de reabertura — a mesma recusa que
+   * `aplicarTransicao` aplica ao ramo `CORRIGIR_DATA_PRESUMIDA`.
+   *
+   * ⚠ Ela vale **só** para este ramo: as outras duas transições continuam sem tocar no razão, e
+   * exigir mês aberto nelas pararia trabalho que sempre foi legítimo.
+   */
+  if (dataPresumidaPorRegra && (await isMonthClosed(portalClientId, nota.competencia))) {
+    recusar(RECUSA_DO_SERVICO.MES_FECHADO);
+  }
 
   const auditoria = { decididoPor: String(usuarioId || ""), decididoEm: agora };
 
@@ -723,6 +757,27 @@ export async function fundirPagamentoNaNota({
     // ⚠ Aqui a recusa DEPENDE do rollback para desfazer o débito — e é o caso raro (a nota mudou
     // entre a leitura e agora). O caso comum, a disputa pelo débito, já foi barrado acima.
     if (naNotaEscrita.count !== 1) recusar(RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE);
+
+    /**
+     * ⚠⚠ A DATA DO LANÇAMENTO QUE JÁ EXISTE — e **nenhum lançamento é criado aqui**.
+     *
+     * É a metade que o comentário da matriz de transições exigia: *"`CONTABILIZADO` fica fora
+     * porque lá a data já virou a data do `AccountingEntry` — trocá-la aqui deixaria lançamento e
+     * declarado discordando."* Sem esta escrita, na MESMA transação, a correção seria exatamente o
+     * defeito que aquele comentário descreve.
+     *
+     * ⚠ `updateMany` com o `portalClientId` no `where`, nunca `update` pelo id: o lançamento pode
+     * ter sido apagado por fora (não há FK, de propósito), e um P2025 aqui derrubaria a fusão
+     * inteira — o débito voltaria à fila e seria contabilizado à parte, que é a contagem dupla.
+     * ⚠⚠ **SÓ A DATA.** Valor, contas e histórico não mudam: o extrato prova QUANDO o dinheiro
+     * saiu, nunca quanto nem de onde.
+     */
+    if (dataPresumidaPorRegra && nota.accountingEntryId) {
+      await tx.accountingEntry.updateMany({
+        where: { id: nota.accountingEntryId, portalClientId: String(portalClientId) },
+        data: { data: naNota.campos.dataPagamento },
+      });
+    }
 
     return tx.lancamentoDeclarado.findFirst({
       where: { id: nota.id, portalClientId: String(portalClientId) },

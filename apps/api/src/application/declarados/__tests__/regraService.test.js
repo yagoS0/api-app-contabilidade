@@ -11,6 +11,7 @@ import {
   RECUSA_DA_REGRA,
   alternarRegra,
   criarRegraManual,
+  definirLancamentoAutomatico,
   listarRegras,
   reavaliarAprendizado,
   sugerirContaPara,
@@ -506,5 +507,157 @@ describe("⚠⚠ criarRegraManual", () => {
       const e = new Error("no table"); e.code = "P2021"; throw e;
     });
     await expect(chamar()).rejects.toMatchObject({ codigo: RECUSA_DA_REGRA.INDISPONIVEL });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A SEGUNDA CHAVE DO LANÇAMENTO AUTOMÁTICO — `lancaSozinha` (29/08/2026).
+//
+// ⚠⚠ ANTES DISTO AS DUAS COLUNAS NÃO TINHAM ESCRITOR: `lancaSozinha` e `diaDoLancamento` existiam
+// no schema e nenhum caminho as gravava, então ligar a automação fornecedor a fornecedor era
+// impossível pela aplicação. O que estes testes protegem é que ligar continue **exigindo** o que o
+// motor exige — uma regra marcada "lança sozinha" que nunca lança seria pior que não poder marcar.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ `lancaSozinha` na criação da regra", () => {
+  const PLANO = [
+    { portalClientId: null, codigo: "557", codigoCompleto: "411030012", nome: "SOFTWARE", analitica: true },
+    { portalClientId: null, codigo: "1", codigoCompleto: "111010001", nome: "CAIXA MATRIZ", analitica: true },
+  ];
+
+  const criar = (extra = {}) => {
+    const { client } = fazerClient({ plano: PLANO });
+    return {
+      client,
+      chamar: () => criarRegraManual({
+        portalClientId: "emp-1",
+        cnpjFornecedor: "12345678000190",
+        valorMin: 1000,
+        valorMax: 1500,
+        contaDestino: "411030012",
+        usuarioId: "u-1",
+        agora: AGORA,
+        client,
+        ...extra,
+      }),
+    };
+  };
+
+  it("⚠⚠ o PADRÃO é NÃO lançar — a regra nasce só sugerindo", async () => {
+    const { client, chamar } = criar();
+    await chamar();
+    const dados = client.regraContabilizacao.create.mock.calls[0][0].data;
+    expect(dados.lancaSozinha).toBe(false);
+    expect(dados.diaDoLancamento).toBeNull();
+  });
+
+  it("com CNPJ e dia, ela nasce lançando — é o pedido do dono", async () => {
+    const { client, chamar } = criar({ lancaSozinha: true, diaDoLancamento: 15 });
+    await chamar();
+    const dados = client.regraContabilizacao.create.mock.calls[0][0].data;
+    expect(dados.lancaSozinha).toBe(true);
+    expect(dados.diaDoLancamento).toBe(15);
+  });
+
+  it("⚠⚠ SEM DIA recusa — a data não se arbitra", async () => {
+    for (const dia of [null, undefined, 0, 32, "quinze", 1.5]) {
+      const { client, chamar } = criar({ lancaSozinha: true, diaDoLancamento: dia });
+      await expect(chamar()).rejects.toMatchObject({ codigo: RECUSA_DA_REGRA.SEM_DIA_DO_LANCAMENTO });
+      expect(client.regraContabilizacao.create).not.toHaveBeenCalled();
+    }
+  });
+
+  it("⚠⚠ SEM CNPJ recusa — a descrição SE PARECE, não identifica", async () => {
+    // O motor de sugestão usa descrição também, porque lá o contador confere. Aqui não há clique.
+    const { client, chamar } = criar({
+      cnpjFornecedor: null, padraoDescricao: "TARIFA PACOTE", lancaSozinha: true, diaDoLancamento: 15,
+    });
+    await expect(chamar()).rejects.toMatchObject({ codigo: RECUSA_DA_REGRA.AUTOMATICO_SEM_CNPJ });
+    expect(client.regraContabilizacao.create).not.toHaveBeenCalled();
+  });
+
+  it("⚠ a regra de descrição continua podendo existir — ela só não lança sozinha", async () => {
+    const { client, chamar } = criar({ cnpjFornecedor: null, padraoDescricao: "TARIFA PACOTE" });
+    await chamar();
+    expect(client.regraContabilizacao.create.mock.calls[0][0].data.lancaSozinha).toBe(false);
+  });
+
+  it("⚠⚠ a string de formulário NÃO liga a automação", async () => {
+    // Em JS toda string não vazia é verdadeira. `Boolean(...)` aqui ligaria o lançamento contábil
+    // automático por um campo mal tipado.
+    const { client, chamar } = criar({ lancaSozinha: "false", diaDoLancamento: 15 });
+    await chamar();
+    expect(client.regraContabilizacao.create.mock.calls[0][0].data.lancaSozinha).toBe(false);
+  });
+
+  it("⚠ com `lancaSozinha: false` o DIA não é guardado", async () => {
+    // Guardá-lo daria a impressão de que há uma data configurada esperando ser ligada.
+    const { client, chamar } = criar({ lancaSozinha: false, diaDoLancamento: 15 });
+    await chamar();
+    expect(client.regraContabilizacao.create.mock.calls[0][0].data.diaDoLancamento).toBeNull();
+  });
+});
+
+describe("⚠⚠ `definirLancamentoAutomatico` — ligar numa regra que JÁ existe", () => {
+  const regraGravada = (extra = {}) => ({
+    id: "r-1", portalClientId: "emp-1", cnpjFornecedor: "12345678000190",
+    padraoDescricao: null, lancaSozinha: false, diaDoLancamento: null, ...extra,
+  });
+
+  const cenario = (regra = regraGravada()) => fazerClient({ regraExistente: regra });
+
+  it("liga com o dia, e a regra passa a lançar", async () => {
+    const { client } = cenario();
+    const r = await definirLancamentoAutomatico({
+      portalClientId: "emp-1", regraId: "r-1", lancaSozinha: true, diaDoLancamento: 15, client,
+    });
+    expect(r.lancaSozinha).toBe(true);
+    expect(r.diaDoLancamento).toBe(15);
+  });
+
+  it("⚠⚠ a REGRA APRENDIDA é a que o dono vai ligar — e ela não é reescrita", async () => {
+    // Apagar e recriar jogaria fora as `aplicacoes`, que são a evidência de que ela acerta.
+    const { client } = cenario();
+    await definirLancamentoAutomatico({
+      portalClientId: "emp-1", regraId: "r-1", lancaSozinha: true, diaDoLancamento: 15, client,
+    });
+    expect(client.regraContabilizacao.create).not.toHaveBeenCalled();
+    expect(Object.keys(client.regraContabilizacao.update.mock.calls[0][0].data))
+      .toEqual(["lancaSozinha", "diaDoLancamento"]);
+  });
+
+  it("⚠⚠ o CNPJ vem da REGRA GRAVADA, nunca do pedido", async () => {
+    // Aceitá-lo de fora deixaria alguém ligar o automático numa regra de descrição mandando um
+    // CNPJ qualquer junto.
+    const { client } = cenario(regraGravada({ cnpjFornecedor: null, padraoDescricao: "TARIFA" }));
+    await expect(definirLancamentoAutomatico({
+      portalClientId: "emp-1", regraId: "r-1", lancaSozinha: true, diaDoLancamento: 15,
+      cnpjFornecedor: "12345678000190", client,
+    })).rejects.toMatchObject({ codigo: RECUSA_DA_REGRA.AUTOMATICO_SEM_CNPJ });
+    expect(client.regraContabilizacao.update).not.toHaveBeenCalled();
+  });
+
+  it("⚠ sem dia recusa aqui também — é a MESMA conferência da criação", async () => {
+    const { client } = cenario();
+    await expect(definirLancamentoAutomatico({
+      portalClientId: "emp-1", regraId: "r-1", lancaSozinha: true, client,
+    })).rejects.toMatchObject({ codigo: RECUSA_DA_REGRA.SEM_DIA_DO_LANCAMENTO });
+    expect(client.regraContabilizacao.update).not.toHaveBeenCalled();
+  });
+
+  it("⚠ DESLIGAR sempre passa, e limpa o dia junto", async () => {
+    // Não há o que conferir para PARAR de lançar; recusar aqui prenderia o contador na automação.
+    const { client } = cenario(regraGravada({ lancaSozinha: true, diaDoLancamento: 15 }));
+    const r = await definirLancamentoAutomatico({
+      portalClientId: "emp-1", regraId: "r-1", lancaSozinha: false, client,
+    });
+    expect(r.lancaSozinha).toBe(false);
+    expect(r.diaDoLancamento).toBeNull();
+  });
+
+  it("⚠ regra de OUTRA empresa não é encontrada — o escopo está no `where`", async () => {
+    const { client } = fazerClient({ regraExistente: null });
+    await expect(definirLancamentoAutomatico({
+      portalClientId: "emp-2", regraId: "r-1", lancaSozinha: false, client,
+    })).rejects.toMatchObject({ codigo: RECUSA_DA_REGRA.NAO_ENCONTRADA });
   });
 });

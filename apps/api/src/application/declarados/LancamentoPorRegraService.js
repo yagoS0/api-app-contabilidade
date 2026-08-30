@@ -197,6 +197,71 @@ export async function lancarPorRegra({
 }
 
 /**
+ * ⚠⚠ O LAÇO — quem chama `lancarPorRegra` na carteira de uma empresa (29/08/2026).
+ *
+ * ⚠ **O CHAMADOR É A VARREDURA DE NOTAS**, e o lugar foi escolhido pelo mesmo argumento da
+ * auto-ativação das séries: `listarFila` é leitura, e o eixo daquele caminho é *"observar não
+ * grava"*. A varredura é o passo em que o contador mandou **processar o que chegou** — escrita
+ * explícita, com piso de papel. Uma nota que chega hoje é lançada na varredura de hoje.
+ *
+ * ⚠⚠ **AS TRÊS TRAVAS CONTINUAM SENDO DE `podeLancarSozinho`**, e nada aqui as repete: este laço
+ * só escolhe QUEM perguntar. Reimplementar a decisão aqui daria duas regras que divergem na
+ * primeira correção, e a divergência sai como lançamento contábil errado.
+ *
+ * ⚠ **A FLAG DESLIGADA NÃO CONSULTA O BANCO.** Com ela OFF a resposta é a mesma para toda linha, e
+ * varrer a fila inteira para ouvir "desligado" 200 vezes seria custo puro.
+ *
+ * ⚠⚠ **UMA LINHA QUE FALHA NÃO PARA O LOTE, e volta NOMEADA** — mesma disciplina da varredura e do
+ * desfazer. Uma nota em mês fechado não pode impedir que as outras vinte sejam lançadas; e um lote
+ * que só dissesse "lancei 19" faria a vigésima sumir sem ninguém saber por quê.
+ */
+export async function lancarPorRegraNaEmpresa({
+  portalClientId, agora, client = prisma, ligado = INTEGRACAO_LANCAMENTO_POR_REGRA,
+}) {
+  if (!ligado) {
+    return { lancados: 0, ids: [], recusados: [], desligado: true };
+  }
+
+  const escopo = { portalClientId: String(portalClientId) };
+
+  const [regras, candidatos] = await Promise.all([
+    client.regraContabilizacao.findMany({ where: { ...escopo, ativa: true, lancaSozinha: true } }),
+    // ⚠ Os MESMOS dois estados que `podeLancarSozinho` aceita. `CONTABILIZADO` já está no razão e
+    // `RECUSADO` foi uma decisão do contador — ressuscitá-lo por regra desfaria essa decisão.
+    client.lancamentoDeclarado.findMany({
+      where: { ...escopo, estado: { in: [ESTADO.AGUARDANDO_PAGAMENTO, ESTADO.A_CONFERIR] } },
+      orderBy: { dataDocumento: "asc" },
+    }),
+  ]);
+
+  // ⚠ Sem regra marcada, nada a fazer — e a resposta continua sendo um relatório, nunca um silêncio.
+  if (!regras.length) return { lancados: 0, ids: [], recusados: [], semRegraLancadora: true };
+
+  const ids = [];
+  const recusados = [];
+
+  // ⚠ SEQUENCIAL, e sem parâmetro de concorrência: parâmetro é como alguém põe 20 nele depois, e
+  // cada volta deste laço cria um lançamento contábil.
+  for (const declarado of candidatos) {
+    try {
+      const r = await lancarPorRegra({ portalClientId, declarado, regras, agora, client, ligado });
+      if (r.lancou) ids.push(declarado.id);
+      // ⚠⚠ O QUE NÃO LANÇOU **NÃO É RECUSA**, e não entra na lista: a nota fora da faixa, a do
+      // fornecedor sem regra e a que a regra não marcou **ficam na fila**, que é o desfecho certo.
+      // Chamá-las de erro encheria o relatório de linhas normais e esconderia as de verdade.
+    } catch (e) {
+      recusados.push({
+        declaradoId: declarado.id,
+        codigo: e?.codigo || e?.code || "falhou",
+        motivo: e?.frase || String(e?.message || e),
+      });
+    }
+  }
+
+  return { lancados: ids.length, ids, recusados };
+}
+
+/**
  * ⚠⚠ O EXTRATO DE "LANÇADOS POR REGRA" — o pré-requisito que o próprio `motorDeSugestao.js` nomeou.
  *
  * Sem ele, ligar a automação é ligar algo que ninguém consegue auditar: o contador veria os

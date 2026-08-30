@@ -1111,3 +1111,177 @@ describe("⚠⚠ OS DOIS BUGS DA FUSÃO ACHADOS POR AUDITORIA (25/08/2026)", () 
     expect(mapa.get("ofx-1")).toMatchObject({ estado: ESTADO.FUNDIDO, parDeclaradoId: "n-1" });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O EXTRATO CORRIGE A DATA QUE A REGRA PRESUMIU (29/08/2026) — a fusão LIGADA.
+//
+// A nota nasceu contabilizada sozinha, na data fixa que a regra do fornecedor configurou; ninguém
+// viu o dinheiro sair naquele dia. Quando o débito REAL chega, ele diz o dia certo.
+//
+// ⚠⚠ O QUE MAIS IMPORTA AQUI É A NÃO-CRIAÇÃO: a despesa já está no razão, e um segundo
+// `AccountingEntry` seria a contagem dupla pela porta dos fundos. É por isso que o dublê deste
+// bloco TEM `accountingEntry` — e conta as chamadas de `create`.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ FUNDIR sobre nota de DATA PRESUMIDA — corrige, e não cria um segundo lançamento", () => {
+  const { fundirPagamentoNaNota } = require("../DeclaradoService.js");
+  const { LEITURA_DA_CANDIDATA, lerCandidata } = require("../lib/estadosDeclarado.js");
+
+  const DIA_REAL = new Date("2026-07-22T00:00:00.000Z");
+
+  const debito = {
+    id: "ofx-9",
+    portalClientId: "emp-1",
+    origem: "OFX_CLIENTE",
+    estado: ESTADO.A_CONFERIR,
+    valor: 1500,
+    dataPagamento: DIA_REAL,
+    origemPagamento: ORIGEM_PAGAMENTO.OFX,
+    descricaoOriginal: "PAGTO ALESSANDRO NIGRO",
+    ofxImportId: "imp-9",
+    fitId: "F9",
+    contaBancariaRef: "12345-6",
+    parDeclaradoId: null,
+  };
+
+  const notaPresumida = (extra = {}) => ({
+    id: "n-9",
+    portalClientId: "emp-1",
+    origem: "NOTA_RECEBIDA",
+    estado: ESTADO.CONTABILIZADO,
+    competencia: "2026-07",
+    valor: 1500,
+    dataDocumento: new Date("2026-07-02T00:00:00.000Z"),
+    descricaoOriginal: "ALESSANDRO NIGRO",
+    cnpjFornecedor: "12345678000190",
+    // ⚠ O dia 15 é a data FIXA da regra — presunção, nunca prova.
+    dataPagamento: new Date("2026-07-15T00:00:00.000Z"),
+    origemPagamento: ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA,
+    contaAplicada: "411020008",
+    accountingEntryId: "ae-9",
+    ...extra,
+  });
+
+  function montar(nota = notaPresumida()) {
+    const registros = new Map([[debito.id, { ...debito }], [nota.id, { ...nota }]]);
+    const entradas = [];
+    const criados = jest.fn();
+    const tx = {
+      lancamentoDeclarado: {
+        updateMany: jest.fn(async ({ where, data }) => {
+          const atual = registros.get(where.id);
+          const casa = atual
+            && atual.portalClientId === where.portalClientId
+            && (where.estado === undefined || atual.estado === where.estado)
+            && (where.parDeclaradoId === undefined || (atual.parDeclaradoId ?? null) === where.parDeclaradoId);
+          if (!casa) return { count: 0 };
+          registros.set(where.id, { ...atual, ...data });
+          return { count: 1 };
+        }),
+        findFirst: jest.fn(async ({ where }) => registros.get(where.id) ?? null),
+      },
+      accountingEntry: {
+        updateMany: jest.fn(async ({ where, data }) => {
+          entradas.push({ where, data });
+          return { count: 1 };
+        }),
+        create: criados,
+      },
+    };
+    return {
+      registros,
+      entradas,
+      criados,
+      client: {
+        lancamentoDeclarado: {
+          findFirst: jest.fn(async ({ where }) => {
+            const achado = [registros.get(debito.id), registros.get(nota.id)].find((d) => d.id === where.id) || null;
+            return achado && achado.portalClientId === where.portalClientId ? achado : null;
+          }),
+          update: jest.fn(async () => { throw new Error("update FORA da transacao"); }),
+        },
+        $transaction: jest.fn(async (cb) => cb(tx)),
+      },
+    };
+  }
+
+  const fundir = (client) => fundirPagamentoNaNota({
+    portalClientId: "emp-1",
+    declaradoOfxId: "ofx-9",
+    declaradoNotaId: "n-9",
+    usuarioId: "u-1",
+    agora: AGORA,
+    client,
+  });
+
+  beforeEach(() => { isMonthClosed.mockResolvedValue(false); });
+
+  it("⚠⚠ a nota de data presumida É FUSÍVEL — a leitura da candidata diz isso à tela", () => {
+    const r = lerCandidata(notaPresumida());
+    expect(r.leitura).toBe(LEITURA_DA_CANDIDATA.DATA_PRESUMIDA);
+    expect(r.podeFundir).toBe(true);
+  });
+
+  it("⚠⚠ a nota que uma PESSOA contabilizou continua NÃO sendo fusível", () => {
+    // A distinção é a ORIGEM, por igualdade exata. Com `!ehProvaDePagamento`, a data que o contador
+    // declarou seria sobrescrita em silêncio por este caminho.
+    const r = lerCandidata(notaPresumida({ origemPagamento: ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR }));
+    expect(r.leitura).toBe(LEITURA_DA_CANDIDATA.JA_CONTABILIZADA);
+    expect(r.podeFundir).toBe(false);
+  });
+
+  it("a data do declarado passa a ser a do extrato, e a procedência deixa de ser presunção", async () => {
+    const m = montar();
+    await fundir(m.client);
+
+    expect(m.registros.get("n-9")).toMatchObject({
+      estado: ESTADO.CONTABILIZADO,
+      dataPagamento: DIA_REAL,
+      origemPagamento: ORIGEM_PAGAMENTO.OFX,
+    });
+    expect(m.registros.get("ofx-9")).toMatchObject({ estado: ESTADO.FUNDIDO, parDeclaradoId: "n-9" });
+  });
+
+  it("⚠⚠ o `AccountingEntry` que EXISTE é atualizado, e NENHUM é criado", async () => {
+    const m = montar();
+    await fundir(m.client);
+
+    expect(m.criados).not.toHaveBeenCalled();
+    expect(m.entradas).toHaveLength(1);
+    expect(m.entradas[0].where).toMatchObject({ id: "ae-9", portalClientId: "emp-1" });
+  });
+
+  it("⚠⚠ SÓ A DATA muda no lançamento — valor, contas e histórico não são tocados", async () => {
+    // O extrato prova QUANDO o dinheiro saiu, nunca quanto nem de onde.
+    const m = montar();
+    await fundir(m.client);
+
+    expect(Object.keys(m.entradas[0].data)).toEqual(["data"]);
+    expect(m.entradas[0].data.data).toEqual(DIA_REAL);
+  });
+
+  it("⚠ a correção acontece DENTRO da mesma transação que muda o declarado", async () => {
+    const m = montar();
+    await fundir(m.client);
+    expect(m.client.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("⚠⚠ MÊS FECHADO recusa — mudar a data de lançamento já conferido é escrever sem rastro", async () => {
+    isMonthClosed.mockResolvedValue(true);
+    const m = montar();
+
+    await expect(fundir(m.client)).rejects.toMatchObject({ codigo: RECUSA_DO_SERVICO.MES_FECHADO });
+    // ⚠ E nada foi escrito: a recusa é antes da transação.
+    expect(m.client.$transaction).not.toHaveBeenCalled();
+    expect(m.entradas).toHaveLength(0);
+  });
+
+  it("⚠ lançamento apagado por fora não derruba a fusão — o declarado se acerta assim mesmo", async () => {
+    // Não há FK, de propósito. Um `update` pelo id estouraria P2025, o débito voltaria à fila e
+    // seria contabilizado à parte — que é a contagem dupla.
+    const m = montar(notaPresumida({ accountingEntryId: null }));
+    await fundir(m.client);
+
+    expect(m.entradas).toHaveLength(0);
+    expect(m.registros.get("n-9")).toMatchObject({ dataPagamento: DIA_REAL });
+  });
+});

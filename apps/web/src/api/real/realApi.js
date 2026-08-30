@@ -1878,6 +1878,73 @@ export function createRealApi() {
     async getConferenciaVarredura(companyId) {
       return request(`/firm/companies/${companyId}/conferencia/varredura`);
     },
+
+    // ── A REGRA DO FORNECEDOR, E O EXTRATO DO QUE ELA LANÇOU (29/08/2026) ─────────────────────
+    //
+    // > Dono: *"o contador deve poder colocar o código de débito e crédito nessa despesa, e todo
+    // > mês que essa nota aparecer ela já é lançada em despesa."*
+
+    async getConferenciaRegras(companyId) {
+      return request(`/firm/companies/${companyId}/conferencia/regras`);
+    },
+
+    /**
+     * ⚠⚠ CRIAR A REGRA NÃO LANÇA NADA — ela passa a existir para o motor consultar.
+     *
+     * ⚠ `lancaSozinha` e `diaDoLancamento` são as duas coisas que ligam a automação daquele
+     * fornecedor, e viajam **explícitas**: um default aqui ligaria a automação por omissão.
+     * ⚠ `contaCredito` é RECUSADO pelo servidor se não for conta de disponibilidade (caixa/banco).
+     */
+    async postConferenciaRegra(companyId, corpo = {}) {
+      return request(`/firm/companies/${companyId}/conferencia/regras`, {
+        method: "POST",
+        body: JSON.stringify(corpo || {}),
+      });
+    },
+
+    async patchConferenciaRegra(companyId, regraId, { ativa }) {
+      return request(`/firm/companies/${companyId}/conferencia/regras/${regraId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ativa }),
+      });
+    },
+
+    /**
+     * ⚠⚠ LIGAR O LANÇAMENTO AUTOMÁTICO DE UMA REGRA — porta SEPARADA da de ligar/desligar a regra.
+     *
+     * A separação é o ponto, e é a mesma do servidor: `ativa` decide se o sistema SUGERE;
+     * `lancaSozinha` decide se ele LANÇA sem ninguém clicar. Um método só faria a tela poder ligar
+     * o segundo achando que estava ligando o primeiro.
+     */
+    async patchConferenciaRegraAutomatico(companyId, regraId, { lancaSozinha, diaDoLancamento } = {}) {
+      return request(`/firm/companies/${companyId}/conferencia/regras/${regraId}/automatico`, {
+        method: "PATCH",
+        body: JSON.stringify({ lancaSozinha, diaDoLancamento: diaDoLancamento ?? null }),
+      });
+    },
+
+    /**
+     * ⚠⚠ O EXTRATO DO QUE ENTROU SEM CLIQUE — o pré-requisito que `motorDeSugestao.js` nomeou.
+     *
+     * ⚠ `competencia` é OBRIGATÓRIA (o servidor recusa com 400): a pergunta é *"o que entrou sem
+     * eu clicar NESTE mês?"*, e um default aqui faria a tela escolher o mês auditado.
+     */
+    async getLancadosPorRegra(companyId, competencia) {
+      const q = new URLSearchParams({ competencia: String(competencia || "") });
+      return request(`/firm/companies/${companyId}/conferencia/lancados-por-regra?${q.toString()}`);
+    },
+
+    /**
+     * ⚠⚠ DESFAZER EM LOTE — é ele que torna a decisão do dono reversível.
+     * ⚠ A resposta vem 200 mesmo com linhas recusadas: o lote não para, e o que falhou volta
+     * NOMEADO. Tratar isso como erro esconderia que as outras foram desfeitas.
+     */
+    async postDesfazerLancadosPorRegra(companyId, ids) {
+      return request(`/firm/companies/${companyId}/conferencia/lancados-por-regra/desfazer`, {
+        method: "POST",
+        body: JSON.stringify({ ids: Array.isArray(ids) ? ids : [] }),
+      });
+    },
     async getAuditoriaNotas(companyId, competencia) {
       const q = new URLSearchParams({ competencia: String(competencia || "") });
       return request(`/firm/companies/${companyId}/notas/auditoria?${q.toString()}`);

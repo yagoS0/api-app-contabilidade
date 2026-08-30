@@ -20,6 +20,7 @@ import {
   desfazerLancadosPorRegra,
   extratoDeLancadosPorRegra,
   lancarPorRegra,
+  lancarPorRegraNaEmpresa,
   podeLancarSozinho,
 } from "../LancamentoPorRegraService.js";
 import { ESTADO, ORIGEM_PAGAMENTO, TRANSICAO } from "../lib/estadosDeclarado.js";
@@ -335,5 +336,108 @@ describe("⚠⚠ a varredura da fonte", () => {
     expect(fonte).not.toMatch(/deleteMany|\$executeRaw|\$queryRaw/);
     // ⚠⚠ Ele NÃO cria `AccountingEntry` por conta própria: quem faz isso é `aplicarTransicao`.
     expect(fonte).not.toMatch(/accountingEntry\.(create|delete)/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O LAÇO — o CHAMADOR que faltava (29/08/2026).
+//
+// Até aqui `lancarPorRegra` existia e **nada a invocava**: a automação estava construída e
+// inalcançável. Estes testes protegem o que o ligamento não pode ter trazido junto — varrer a fila
+// com a flag desligada, deixar uma linha ruim parar o lote, ou chamar a decisão duas vezes.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ `lancarPorRegraNaEmpresa` — o laço da varredura", () => {
+  const clienteCom = ({ regras = [regra()], linhas = [declarado()] } = {}) => ({
+    regraContabilizacao: { findMany: jest.fn(async () => regras) },
+    lancamentoDeclarado: { findMany: jest.fn(async () => linhas) },
+  });
+
+  it("⚠⚠ com a FLAG DESLIGADA não consulta o banco — e não lança nada", async () => {
+    // ⚠ A não-consulta é o ponto: varrer a fila inteira para ouvir "desligado" 200 vezes seria
+    // custo puro, e mediria a intenção em vez do efeito.
+    const client = clienteCom();
+    const r = await lancarPorRegraNaEmpresa({ portalClientId: "emp-1", agora: AGORA, client, ligado: false });
+
+    expect(r.lancados).toBe(0);
+    expect(r.desligado).toBe(true);
+    expect(client.regraContabilizacao.findMany).not.toHaveBeenCalled();
+    expect(client.lancamentoDeclarado.findMany).not.toHaveBeenCalled();
+    expect(mockAplicar).not.toHaveBeenCalled();
+  });
+
+  it("lança a linha que passa nas três travas, e devolve o id", async () => {
+    const client = clienteCom();
+    const r = await lancarPorRegraNaEmpresa({ portalClientId: "emp-1", agora: AGORA, client, ligado: true });
+
+    expect(r.lancados).toBe(1);
+    expect(r.ids).toEqual(["d-1"]);
+    expect(mockAplicar).toHaveBeenCalledTimes(1);
+    expect(mockAplicar.mock.calls[0][0].transicao).toBe(TRANSICAO.CONFIRMAR);
+    expect(mockAplicar.mock.calls[0][0].dados.origemPagamento).toBe(ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA);
+  });
+
+  it("⚠ só pergunta pelas regras que LANÇAM — a consulta já nasce estreita", async () => {
+    const client = clienteCom();
+    await lancarPorRegraNaEmpresa({ portalClientId: "emp-1", agora: AGORA, client, ligado: true });
+
+    const where = client.regraContabilizacao.findMany.mock.calls[0][0].where;
+    expect(where.lancaSozinha).toBe(true);
+    expect(where.ativa).toBe(true);
+    expect(where.portalClientId).toBe("emp-1");
+  });
+
+  it("⚠⚠ os candidatos são só `AGUARDANDO_PAGAMENTO` e `A_CONFERIR`", async () => {
+    // `CONTABILIZADO` já está no razão; `RECUSADO` foi decisão do contador, e ressuscitá-lo por
+    // regra desfaria essa decisão.
+    const client = clienteCom();
+    await lancarPorRegraNaEmpresa({ portalClientId: "emp-1", agora: AGORA, client, ligado: true });
+
+    const where = client.lancamentoDeclarado.findMany.mock.calls[0][0].where;
+    expect(where.estado.in).toEqual([ESTADO.AGUARDANDO_PAGAMENTO, ESTADO.A_CONFERIR]);
+    expect(where.estado.in).not.toContain(ESTADO.CONTABILIZADO);
+    expect(where.estado.in).not.toContain(ESTADO.RECUSADO);
+  });
+
+  it("⚠ sem regra marcada, para antes de decidir linha nenhuma", async () => {
+    const client = clienteCom({ regras: [] });
+    const r = await lancarPorRegraNaEmpresa({ portalClientId: "emp-1", agora: AGORA, client, ligado: true });
+
+    expect(r.semRegraLancadora).toBe(true);
+    expect(mockAplicar).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ a linha FORA DA FAIXA fica na fila — e NÃO conta como recusa", async () => {
+    // Ela não é um erro: é o desfecho certo. Chamá-la de recusa encheria o relatório de linhas
+    // normais e esconderia as de verdade.
+    const client = clienteCom({ linhas: [declarado({ valor: "9000.00" })] });
+    const r = await lancarPorRegraNaEmpresa({ portalClientId: "emp-1", agora: AGORA, client, ligado: true });
+
+    expect(r.lancados).toBe(0);
+    expect(r.recusados).toEqual([]);
+    expect(mockAplicar).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ uma linha que FALHA não para o lote, e volta NOMEADA", async () => {
+    const linhas = [declarado({ id: "d-1" }), declarado({ id: "d-2" }), declarado({ id: "d-3" })];
+    mockAplicar
+      .mockResolvedValueOnce({ id: "d-1" })
+      .mockRejectedValueOnce(Object.assign(new Error("x"), { codigo: "mes_fechado", frase: "Mês fechado." }))
+      .mockResolvedValueOnce({ id: "d-3" });
+
+    const client = clienteCom({ linhas });
+    const r = await lancarPorRegraNaEmpresa({ portalClientId: "emp-1", agora: AGORA, client, ligado: true });
+
+    expect(r.lancados).toBe(2);
+    expect(r.ids).toEqual(["d-1", "d-3"]);
+    expect(r.recusados).toEqual([{ declaradoId: "d-2", codigo: "mes_fechado", motivo: "Mês fechado." }]);
+  });
+
+  it("⚠ SEQUENCIAL — nada de `Promise.all` sobre linhas que criam lançamento contábil", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "LancamentoPorRegraService.js"), "utf8");
+    const corpo = fonte.slice(fonte.indexOf("export async function lancarPorRegraNaEmpresa"));
+    expect(corpo).not.toMatch(/Promise\.all\(\s*candidatos/);
+    expect(corpo).toMatch(/for \(const declarado of candidatos\)/);
   });
 });

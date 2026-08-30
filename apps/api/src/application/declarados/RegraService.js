@@ -260,6 +260,15 @@ export const RECUSA_DA_REGRA = Object.freeze({
   CREDITO_NAO_E_DISPONIBILIDADE: "credito_nao_e_disponibilidade",
   FAIXA_INVALIDA: "faixa_invalida",
   INDISPONIVEL: "regras_indisponiveis",
+  /**
+   * ⚠⚠ AS DUAS RECUSAS DO LANÇAMENTO AUTOMÁTICO (29/08/2026), e as duas existem porque
+   * `podeLancarSozinho` exige as mesmas coisas. Aceitar aqui o que o motor recusa depois criaria a
+   * pior forma de defeito desta tela: uma regra marcada como "lança sozinha" que nunca lança, com o
+   * contador achando que a despesa dele está entrando.
+   */
+  SEM_DIA_DO_LANCAMENTO: "regra_sem_dia_de_lancamento",
+  AUTOMATICO_SEM_CNPJ: "automatico_sem_cnpj",
+  NAO_ENCONTRADA: "regra_nao_encontrada",
 });
 
 export const FRASE_DA_RECUSA_DA_REGRA = Object.freeze({
@@ -275,6 +284,12 @@ export const FRASE_DA_RECUSA_DA_REGRA = Object.freeze({
     "A faixa de valor precisa ter mínimo e máximo maiores que zero, com o mínimo menor ou igual ao máximo.",
   [RECUSA_DA_REGRA.INDISPONIVEL]:
     "A tabela de regras ainda não existe neste banco. A migration não foi aplicada.",
+  [RECUSA_DA_REGRA.SEM_DIA_DO_LANCAMENTO]:
+    "Para lançar sozinha, a regra precisa dizer em que dia do mês (1 a 31). A data não se arbitra.",
+  [RECUSA_DA_REGRA.AUTOMATICO_SEM_CNPJ]:
+    "Só uma regra ancorada no CNPJ do fornecedor pode lançar sozinha. A descrição se PARECE, não identifica — e aqui o lançamento acontece sem ninguém conferir.",
+  [RECUSA_DA_REGRA.NAO_ENCONTRADA]:
+    "Regra não encontrada nesta empresa.",
 });
 
 export class RegraRecusada extends Error {
@@ -291,6 +306,29 @@ const recusarRegra = (codigo) => { throw new RegraRecusada(codigo, FRASE_DA_RECU
 // ⚠ `soDigitos` já existe no topo deste arquivo — reusada, não redeclarada.
 const txt = (v) => (typeof v === "string" ? v.trim() : "");
 
+/**
+ * ⚠⚠ AS EXIGÊNCIAS DO LANÇAMENTO AUTOMÁTICO, num lugar só — porque são DUAS portas (29/08/2026).
+ *
+ * Criar a regra e ligar a automação numa regra que já existe são caminhos diferentes, e duas
+ * cópias desta conferência divergiriam na primeira correção. Aqui o custo da divergência é uma
+ * regra que lança sozinha sem dia (a data arbitrada) ou sem CNPJ (a âncora que só *se parece*).
+ *
+ * ⚠ Devolve o DIA quando o automático está ligado, e `null` quando não está — porque com
+ * `lancaSozinha: false` o dia deixa de ter significado, e guardá-lo daria a impressão de que
+ * existe uma data configurada esperando ser ligada.
+ */
+function automaticoOuNulo(lancaSozinha, diaDoLancamento, cnpj) {
+  if (lancaSozinha !== true) return null;
+  // ⚠⚠ SEM CNPJ NÃO LANÇA — a mesma âncora que `podeLancarSozinho` exige. O motor de SUGESTÃO usa
+  // descrição também, porque lá o contador confere; aqui não há clique nenhum.
+  if (!cnpj) recusarRegra(RECUSA_DA_REGRA.AUTOMATICO_SEM_CNPJ);
+  const dia = Number(diaDoLancamento);
+  // ⚠ Por TIPO: `Number(null)` é 0 e 0 é finito. Um dia 0 viraria "a data não se arbitra" tarde
+  // demais, dentro do motor, com a regra já marcada.
+  if (!Number.isInteger(dia) || dia < 1 || dia > 31) recusarRegra(RECUSA_DA_REGRA.SEM_DIA_DO_LANCAMENTO);
+  return dia;
+}
+
 export async function criarRegraManual({
   portalClientId,
   cnpjFornecedor = null,
@@ -299,6 +337,15 @@ export async function criarRegraManual({
   valorMax,
   contaDestino,
   contaCredito = null,
+  /**
+   * ⚠⚠ A SEGUNDA DAS DUAS CHAVES DO LANÇAMENTO AUTOMÁTICO — fornecedor a fornecedor (29/08/2026).
+   *
+   * ⚠ Ela nasce **`false`** aqui também, e não por acaso: `false` é o default da coluna, e um
+   * default `true` nesta assinatura ligaria a automação em toda regra escrita a partir de agora,
+   * em silêncio. A outra chave é a flag do ambiente, e as DUAS precisam estar ligadas.
+   */
+  lancaSozinha = false,
+  diaDoLancamento = null,
   usuarioId,
   /**
    * ⚠⚠ SEM DEFAULT — é a regra deste arquivo, e há teste varrendo a fonte contra `new Date()`.
@@ -323,6 +370,11 @@ export async function criarRegraManual({
   if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0 || min > max) {
     recusarRegra(RECUSA_DA_REGRA.FAIXA_INVALIDA);
   }
+
+  // ⚠⚠ AS DUAS EXIGÊNCIAS DO AUTOMÁTICO, conferidas ANTES de qualquer ida ao banco. Elas são as
+  // MESMAS de `podeLancarSozinho` — aceitar aqui o que o motor recusa depois produziria uma regra
+  // marcada como "lança sozinha" que nunca lança nada.
+  const dia = automaticoOuNulo(lancaSozinha, diaDoLancamento, cnpj);
 
   const plano = await planoDaEmpresa(portalClientId, client).catch((e) => {
     if (e?.code === "P2021") recusarRegra(RECUSA_DA_REGRA.INDISPONIVEL);
@@ -358,6 +410,10 @@ export async function criarRegraManual({
         valorMax: max,
         contaDestino: txt(contaDestino),
         contaCredito: credito || null,
+        // ⚠⚠ `lancaSozinha === true` é EXATO, nunca `Boolean(...)`: uma string `"false"` vinda de
+        // formulário é verdadeira em JS, e ligaria a automação por um campo mal tipado.
+        lancaSozinha: lancaSozinha === true,
+        diaDoLancamento: dia,
         tipo: "SAIDA",
         // ⚠⚠ MANUAL — e a distinção importa: a APRENDIDA se suspende sozinha quando a unanimidade
         // que a gerou se quebra; a MANUAL nunca, porque foi decisão explícita de quem a escreveu.
@@ -374,4 +430,47 @@ export async function criarRegraManual({
     if (e?.code === "P2021") recusarRegra(RECUSA_DA_REGRA.INDISPONIVEL);
     throw e;
   }
+}
+
+/**
+ * ⚠⚠ LIGAR (E DESLIGAR) O LANÇAMENTO AUTOMÁTICO DE **UMA** REGRA — a segunda chave (29/08/2026).
+ *
+ * > Dono: *"todo mês que essa nota aparecer ela já é lançada em despesa."*
+ *
+ * ⚠⚠ **ELA EXISTE PORQUE AS REGRAS QUE JÁ ESTÃO NO BANCO NASCERAM `APRENDIDA`**, e o `POST` da
+ * regra manual só alcança as novas. Sem esta porta, ligar a automação no fornecedor que o dono
+ * citou (a Lente/Alessandro Nigro) exigiria apagar a regra existente e reescrevê-la à mão — o que
+ * jogaria fora as `aplicacoes`, que são a evidência de que aquela regra acerta.
+ *
+ * ⚠⚠ **FORNECEDOR A FORNECEDOR, NUNCA A CARTEIRA INTEIRA.** Ela recebe UM `regraId` e não aceita
+ * lote, de propósito: o primeiro mês roda com um fornecedor e o dono confere no extrato. Um
+ * `updateMany` aqui é o que transformaria uma decisão em vinte.
+ *
+ * ⚠ As exigências são as MESMAS de `criarRegraManual` — as duas chamam `automaticoOuNulo`.
+ * ⚠ Desligar SEMPRE passa: nada a conferir para parar de lançar, e uma recusa aqui prenderia o
+ * contador numa automação que ele quer desligar. O dia é limpo junto.
+ */
+export async function definirLancamentoAutomatico({
+  portalClientId, regraId, lancaSozinha, diaDoLancamento = null, client = prisma,
+}) {
+  let regra;
+  try {
+    regra = await client.regraContabilizacao.findFirst({
+      where: { id: String(regraId), portalClientId: String(portalClientId) },
+    });
+  } catch (e) {
+    if (e?.code === "P2021") recusarRegra(RECUSA_DA_REGRA.INDISPONIVEL);
+    throw e;
+  }
+  if (!regra) recusarRegra(RECUSA_DA_REGRA.NAO_ENCONTRADA);
+
+  // ⚠⚠ O CNPJ VEM DA REGRA GRAVADA, nunca do corpo do pedido: a âncora é a que o motor vai
+  // consultar. Aceitá-lo de fora deixaria alguém ligar o automático numa regra de descrição
+  // mandando um CNPJ qualquer junto.
+  const dia = automaticoOuNulo(lancaSozinha, diaDoLancamento, soDigitos(regra.cnpjFornecedor));
+
+  return client.regraContabilizacao.update({
+    where: { id: regra.id },
+    data: { lancaSozinha: lancaSozinha === true, diaDoLancamento: dia },
+  });
 }

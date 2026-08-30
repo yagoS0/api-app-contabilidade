@@ -685,7 +685,7 @@ virar lançamento.
 - ⚠ **crédito continua fora do escopo**, como no OFX: esta fila é de DESPESA, e a forma do lançamento
   de ENTRADA não foi medida. Contado e nomeado, nunca sumido.
 
-## ⚠⚠ FASE 6 — A REGRA QUE LANÇA SOZINHA (29/08/2026). **NADA LANÇA HOJE.**
+## ⚠⚠ FASE 6 — A REGRA QUE LANÇA SOZINHA (29–30/08/2026). **LIGADA, e as travas continuam.**
 
 > Dono: *"a Lente tem todo mês um pagamento a Alessandro Nigro, CNPJ, que vai se tornar uma
 > recorrência no fluxo deles. O contador deve poder colocar o código de débito e crédito nessa
@@ -698,14 +698,21 @@ clique. Isso NÃO está construído, e a razão é o peso do ato: um lançamento
 numa conta errada, erra EM SÉRIE e em silêncio — e o dono é contador. (…) O que falta é a DECISÃO DO
 DONO de ligar, e o extrato mensal 'lançados por regra' para ele poder desfazer em lote."*
 
-⚠⚠ **O ESTADO EXATO, e ele importa mais que a lista de peças: NADA LANÇA HOJE.** São TRÊS coisas
-desligadas, não uma:
+⚠⚠ **ESTA SEÇÃO DIZIA "NADA LANÇA HOJE" ATÉ 30/08/2026, e as três linhas da tabela eram sobre o
+que estava DESLIGADO.** O dono mandou concluir e ligar (*"pode terminar o que falta da fase 6, e
+ligue tudo e faça as migrations"*). O que mudou, e o que **não** mudou:
 
-| | estado |
-|---|---|
-| `INTEGRACAO_LANCAMENTO_POR_REGRA` | **OFF** (nasce assim; ligar é ato do dono) |
-| `RegraContabilizacao.lancaSozinha` | **`false`** para toda regra existente (`DEFAULT false`) |
-| `lancarPorRegra` | ⚠⚠ **SEM CHAMADOR** — nenhum caminho de produção a invoca |
+| | antes | hoje |
+|---|---|---|
+| `INTEGRACAO_LANCAMENTO_POR_REGRA` | OFF | **ON no `.env` LOCAL**. ⚠ Em produção continua sendo ato do dono — variável do Railway, e o `config.js` não sabe o que está no ar |
+| `RegraContabilizacao.lancaSozinha` | `false`, e **sem escritor** | `false` por default, e agora **tem duas portas**: o `POST` da regra e o `PATCH .../automatico` |
+| `lancarPorRegra` | ⚠⚠ SEM CHAMADOR | **chamado por `lancarPorRegraNaEmpresa`, na varredura de notas** |
+| as duas migrations | escritas, não aplicadas | **aplicadas no banco LOCAL** (30/08/2026). Produção é ato do dono |
+
+⚠⚠ **O QUE NÃO MUDOU, e é o que segura tudo: continuam sendo DUAS CHAVES, e as duas precisam estar
+ligadas.** Uma nota só vira lançamento sem clique quando a flag do ambiente está ON **e** a regra
+daquele fornecedor está marcada `lancaSozinha` **e** a nota cai dentro da faixa. Fornecedor a
+fornecedor, nunca a carteira inteira.
 
 ### O que existe
 
@@ -714,7 +721,12 @@ desligadas, não uma:
 | `LancamentoPorRegraService.js` | `podeLancarSozinho` (PURA), `lancarPorRegra`, `extratoDeLancadosPorRegra`, `desfazerLancadosPorRegra`. 28 testes |
 | `RegraService.criarRegraManual` | a porta que faltava — a tabela só nascia `APRENDIDA` |
 | `lib/estadosDeclarado.js` | `ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA` e a transição `CORRIGIR_DATA_PRESUMIDA` |
-| migrations | `20260829180000` (`contaCredito`) e `20260829190000` (`lancaSozinha`, `diaDoLancamento`) — ⚠ **ESCRITAS E NÃO APLICADAS** |
+| migrations | `20260829180000` (`contaCredito`) e `20260829190000` (`lancaSozinha`, `diaDoLancamento`) — **aplicadas no LOCAL em 30/08/2026**; ⚠ produção é ato do dono |
+| `LancamentoPorRegraService.lancarPorRegraNaEmpresa` | o LAÇO, chamado pela varredura. ⚠ Com a flag OFF ele **não consulta o banco** |
+| `RegraService.definirLancamentoAutomatico` | liga/desliga o automático numa regra que JÁ existe — sem reescrevê-la (as `aplicacoes` são a evidência de que ela acerta) |
+| `web: features/conferencia/components/PainelDeRegras.jsx` | a tela da regra manual, com débito, crédito (só disponibilidade), faixa e dia |
+| `web: .../PainelDeLancadosPorRegra.jsx` | o extrato do que entrou sem clique, com desfazer em lote |
+| `web: features/conferencia/lib/regraDoFornecedor.js` | o ESPELHO da regra, para o botão desabilitar COM o motivo |
 
 ### ⚠⚠ AS TRÊS TRAVAS DO LANÇAMENTO, cada uma medida por NÃO-CHAMADA
 
@@ -795,20 +807,49 @@ coeficiente de variação (≈ 8,6%) ela passaria. Implementada a **FAIXA**, por
 dele descreve com número e por ser a mais estrita. ⚠ Consequência: **o Alessandro Nigro continua
 pedindo o clique dele**.
 
-### ⚠ O QUE FALTA — e não ligar antes disto
+### ✅ O QUE FALTAVA — entregue em 30/08/2026
 
-- **ligar `lancarPorRegra`** (o lugar natural é a varredura de notas, onde a auto-ativação da série
-  já roda) e **ligar `CORRIGIR_DATA_PRESUMIDA`** dentro de `fundirPagamentoNaNota`;
-- as **rotas** do extrato e do desfazer em lote, e a **tela** deles;
-- a **tela** da regra manual (criar com débito, crédito, faixa e dia);
-- ⚠⚠ **aplicar as duas migrations** — sem elas as colunas não existem, e o serviço recusa nomeando.
+⚠⚠ **A LISTA ABAIXO ERA A CONDIÇÃO PARA LIGAR**, escrita pelo próprio `motorDeSugestao.js` antes de
+a automação existir. Ela está cumprida, e fica aqui como registro do que sustenta a decisão:
+
+- ✅ **`lancarPorRegra` LIGADO na varredura de notas** (`lancarPorRegraNaEmpresa`), ao lado da
+  auto-ativação das séries. ⚠ Ele **não pode derrubar a varredura**: falhou ⇒ `lancadosPorRegra:
+  null`, que é *"não sei"* — nunca zero;
+- ✅ **`CORRIGIR_DATA_PRESUMIDA` LIGADA em `fundirPagamentoNaNota`**, com o `AccountingEntry`
+  atualizado na MESMA transação e **nenhum criado**. ⚠ Ela ganhou junto a guarda de **mês fechado**,
+  que a fusão não precisava antes — até aqui ela não encostava no razão;
+- ✅ `LEITURA_DA_CANDIDATA.DATA_PRESUMIDA` — a nota contabilizada por REGRA voltou a ser fusível, e a
+  contabilizada por uma PESSOA continua não sendo. ⚠ A distinção é a ORIGEM, por igualdade exata;
+- ✅ as **rotas** `GET .../conferencia/lancados-por-regra?competencia=` e
+  `POST .../lancados-por-regra/desfazer`. ⚠⚠ **As duas ficam ANTES do curinga
+  `/conferencia/:declaradoId/*`** — registradas depois, o `POST` do desfazer cairia em
+  `/conferencia/:declaradoId/desfazer` com `declaradoId: "lancados-por-regra"`, sem erro nenhum;
+- ✅ as **duas telas**, dentro da Conferência: o extrato ANTES das regras (a consequência antes da
+  causa) e as regras por último, que é a tela mais perigosa da aba;
+- ✅ as **migrations aplicadas no banco local**.
+
+### ⚠⚠ O QUE APARECEU AO LIGAR — e não estava na lista
+
+**`lancaSozinha` e `diaDoLancamento` NÃO TINHAM ESCRITOR.** As duas colunas existiam no schema e
+nenhum caminho as gravava: `criarRegraManual` não as aceitava e o `PATCH` só mexia em `ativa`.
+Ligar a automação fornecedor a fornecedor era **impossível pela aplicação**. Hoje há duas portas, e
+as duas passam por `automaticoOuNulo`, que exige o que o motor exige:
+
+- ⚠⚠ **SEM CNPJ não liga** (`AUTOMATICO_SEM_CNPJ`) — a âncora de descrição *se parece*, não
+  identifica, e aqui não há clique de ninguém;
+- ⚠⚠ **SEM DIA não liga** (`SEM_DIA_DO_LANCAMENTO`) — a data não se arbitra;
+- ⚠ **DESLIGAR sempre passa**, e limpa o dia junto: não há o que conferir para PARAR de lançar, e
+  recusar aqui prenderia o contador numa automação que ele quer desligar.
+
+Aceitar aqui o que o motor recusa depois produziria o pior desfecho desta tela: uma regra marcada
+*"lança sozinha"* que **nunca lança**, com o contador achando que a despesa dele está entrando.
 
 ## O que ainda **não** existe
 
 | | |
 |---|---|
-| ~~a regra lançando sozinha~~ | ⚠⚠ **CONSTRUÍDA em 29/08/2026** — e DESLIGADA em três lugares (flag OFF, `lancaSozinha: false`, sem chamador). Ver a seção da Fase 6 acima |
-| **a tela de regras** | as rotas existem; o painel ainda não foi desenhado |
+| ~~a regra lançando sozinha~~ | ⚠⚠ **CONSTRUÍDA em 29/08 e LIGADA em 30/08/2026.** As travas continuam: a flag do ambiente **e** `lancaSozinha` daquele fornecedor **e** a faixa. Ver a seção da Fase 6 acima |
+| ~~a tela de regras~~ | ⚠ **CONSTRUÍDA em 30/08/2026** — `PainelDeRegras.jsx`, dentro da Conferência |
 | tela do cliente (import de OFX **e de Excel**) | as rotas existem; o portal do cliente ainda não as chama |
 | a tela do MAPEAMENTO do extrato | as rotas existem; o painel do contador ainda não foi desenhado |
 | ⚠⚠ **a migração do MAPEAMENTO aplicada** | `20260828120000`. **Sem ela o extrato em Excel não roda fora do mock** — é decisão do dono. ⚠⚠ **`20260824120000` e `20260824160000` JÁ ESTÃO APLICADAS** — esta linha dizia o contrário, e a medição abaixo desfez |
