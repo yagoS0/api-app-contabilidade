@@ -156,4 +156,25 @@
   --warning-surface: #fff7e6;
   --warning-surface-border: #f2dfb8;
   --neutral-surface: #f1f2f4;
+
+  /* ═══════════════════════════════════════════════════════════════════════════════════════════
+     O VÉU E A ALTURA DAS SOBREPOSIÇÕES (30/08/2026) — nasceram com a GAVETA do fluxo de caixa.
+
+     ⚠⚠ EXISTEM PORQUE DUAS CAMADAS DO MESMO APP NÃO PODEM DISCORDAR. A gaveta do dia e o pop-up
+     de guias (`.sobreposicao`) escurecem a MESMA página; com o véu escrito duas vezes, a primeira
+     correção em uma delas faz o app ter dois "quanto escurece" — e ninguém percebe, porque as duas
+     nunca aparecem juntas na mesma captura de tela. O mesmo vale para o `z-index`: camada que sobe
+     sozinha cobre o modal de trocar empresa, e isso só aparece no navegador.
+
+     ⚠ O valor do véu é EXATAMENTE o que `.sobreposicao` já tinha (`rgb(17 24 39 / 45%)`) — este
+     token não mudou pixel nenhum, ele só deu um nome ao que já existia. Desfazer custa reencontrar
+     as duas cópias.
+
+     ⚠⚠ FICA NOMEADA UMA DIVERGÊNCIA ANTERIOR, e ela NÃO foi consertada aqui: `.modal-backdrop`
+     (troca de empresa e o `.painel-dia`) usa um véu PRÓPRIO, `rgba(28,33,40,.45)`. São dois cinzas
+     diferentes para o mesmo gesto. Unificá-los muda a aparência de uma tela que ninguém pediu para
+     mexer — é decisão do dono, não limpeza de passagem. O `z-index` dele, esse sim, passou a sair
+     daqui: o valor é o mesmo 50 de antes, então não há mudança de comportamento a revisar. */
+  --veu: rgb(17 24 39 / 45%);
+  --z-sobreposicao: 50;
 }

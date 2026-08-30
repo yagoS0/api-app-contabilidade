@@ -27,6 +27,11 @@
  * desfecho possível para uma linha que ainda não aconteceu. E a palavra *"previsto"* vai no TEXTO,
  * não só na cor (impressão, daltonismo).
  */
+// ⚠⚠ REUSADOS, nunca reescritos: a MEDIANA e o PISO DE 3 são a autoridade desta casa sobre "o que
+// se repete", e o dono já fixou os dois lá (*"contra a MEDIANA observada"*, e o piso do detector).
+// Uma segunda mediana aqui divergiria da primeira na correção seguinte.
+import { PISO_DE_OBSERVACOES, mediana } from "./recorrencia.js";
+
 export const PROCEDENCIA = Object.freeze({
   /**
    * ⚠⚠ **ACONTECEU E TEM PROVA DE PAGAMENTO.** Guia paga, baixa de despesa.
@@ -129,6 +134,27 @@ export const FONTE = Object.freeze({
    * parar de ser renderizada.
    */
   SAIDA_DO_CLIENTE: "SAIDA_DO_CLIENTE",
+  /**
+   * ⚠⚠ A RECEITA QUE O HISTÓRICO PROJETA PARA A FRENTE (30/08/2026) — decisão do dono:
+   *
+   * > *"o último mês é base para todos os meses à frente, e depois vão se ajustando. A receita
+   * > prevista é baseada em quantas vezes se repete: se em 3 meses seguidos aparece a mesma
+   * > receita, pode colocar ela para frente até o final da amostra, e ir ajustando se aparecer
+   * > faturamento diferente. **Sempre a mediana.**"*
+   *
+   * ⚠ Ela **não é** `NOTA_EMITIDA`: aquela é previsão DOCUMENTAL (existe uma nota, com número e
+   * data). Esta é previsão APRENDIDA — não há documento nenhum atrás dela, e chamá-la de nota faria
+   * o cliente procurar uma nota que não existe.
+   * ⚠ Ela também **não é** `SERIE_RECEITA`: aquela é uma série que o CONTADOR marcou, e a `base`
+   * dela carrega a evidência da série (n, faixa, confronto com o declarado). Esta sai do
+   * faturamento medido, sem ninguém ter marcado nada.
+   *
+   * ⚠⚠ Ela cai no balde **`entrada`** por `direcao`, e não pela fonte — `baldeDaLinha` pergunta a
+   * direção primeiro. Uma fonte nova de SAÍDA cairia no `else` e viraria "saída" em silêncio; esta
+   * não corre esse risco, mas o rótulo dela **precisa** existir no espelho da tela, senão ela
+   * aparece como *"Origem desconhecida"*.
+   */
+  RECEITA_PROJETADA: "RECEITA_PROJETADA",
 });
 
 /** Por que o DIA não é conhecido. ⚠ `dia: null` nunca vira "dia 20" — ele vem com o motivo. */
@@ -636,4 +662,119 @@ export const FRASE_DO_SEM_IMPOSTO = Object.freeze({
     + "prevista não é projetado. Um número aqui sairia de uma alíquota que ninguém mediu.",
   [SEM_IMPOSTO.SEM_RECEITA_PROJETADA]:
     "Não há receita prevista nos próximos meses, então não há imposto a projetar sobre ela.",
+});
+
+/**
+ * ⚠⚠ A RECEITA PROJETADA PELO HISTÓRICO — a regra, PURA (30/08/2026).
+ *
+ * > Dono: *"o último mês é base para todos os meses à frente, e depois vão se ajustando. A receita
+ * > prevista é baseada em quantas vezes se repete: se em 3 meses seguidos aparece a mesma receita,
+ * > pode colocar ela para frente até o final da amostra, e ir ajustando se aparecer faturamento
+ * > diferente. **Sempre a mediana.**"*
+ *
+ * ⚠⚠ **A MEDIANA, NUNCA A MÉDIA, E O PISO É 3 — E OS DOIS SÃO REUSADOS**, de
+ * `fluxo/lib/recorrencia.js` (`mediana`, `PISO_DE_OBSERVACOES`). Aquele módulo já é a autoridade
+ * sobre "o que se repete" nesta casa, e o dono já fixou os dois números lá (*"contra a MEDIANA
+ * observada"*, e o piso de 3 do detector). Uma segunda mediana escrita aqui divergiria da primeira
+ * na correção seguinte — e as duas falam do mesmo dinheiro.
+ *
+ * ⚠ **A MEDIANA RESISTE AO MÊS ATÍPICO; a média não.** Um mês de faturamento dobrado puxaria a
+ * média e a projeção inteira iria junto — que é exatamente o "ajustando" que o dono não quer.
+ *
+ * ⚠⚠ **OBSERVAÇÕES CONSECUTIVAS, e é isso que a palavra "seguidos" quer dizer.** Três meses
+ * espalhados no ano não são um padrão: são três eventos. O corte é no FIM da série (os últimos
+ * meses), porque é para a frente que se projeta — uma empresa que faturou por três meses e parou há
+ * seis não tem receita a projetar.
+ *
+ * ⚠ **Ela NÃO substitui mês que já tem receita real.** A projeção começa depois do último mês com
+ * nota, e é isso que faz o "ir ajustando" acontecer sozinho: chegando nota nova, aquele mês deixa
+ * de ser projetado na leitura seguinte.
+ *
+ * @param {object} p
+ * @param {Map<string, number>|Array<[string, number]>} p.faturamentoPorMes competência → valor
+ * @param {string} p.primeiroMesAProjetar competência "AAAA-MM"
+ * @param {number} p.quantosMeses quantos meses projetar
+ * @param {number} [p.piso] observações consecutivas mínimas
+ * @returns {{ linhas: Array, base: object|null, motivo: string|null }}
+ */
+export function receitaProjetadaPeloHistorico({
+  faturamentoPorMes,
+  primeiroMesAProjetar,
+  quantosMeses,
+  piso = PISO_DE_OBSERVACOES,
+}) {
+  const mapa = faturamentoPorMes instanceof Map ? faturamentoPorMes : new Map(faturamentoPorMes || []);
+  // ⚠ Só mês com faturamento > 0 é observação. Mês com zero não é "receita de zero": é mês sem nota,
+  // e contá-lo puxaria a mediana para baixo afirmando um faturamento que ninguém emitiu.
+  const meses = [...mapa.entries()]
+    .filter(([c, v]) => /^\d{4}-\d{2}$/.test(String(c)) && numero(v) > 0)
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1));
+
+  if (!meses.length) {
+    return { linhas: [], base: null, motivo: SEM_PROJECAO.SEM_FATURAMENTO };
+  }
+
+  // ⚠⚠ CONSECUTIVOS A PARTIR DO FIM — o padrão tem de estar VIVO. Um buraco no meio da série corta
+  // a contagem, e é o que separa "fatura todo mês" de "faturou três vezes no ano".
+  const consecutivos = [meses[meses.length - 1]];
+  for (let i = meses.length - 2; i >= 0; i -= 1) {
+    const [c] = meses[i];
+    const [seguinte] = consecutivos[0];
+    if (mesesDaCompetencia(c) !== mesesDaCompetencia(seguinte) - 1) break;
+    consecutivos.unshift(meses[i]);
+  }
+
+  if (consecutivos.length < piso) {
+    return { linhas: [], base: null, motivo: SEM_PROJECAO.POUCAS_OBSERVACOES };
+  }
+
+  const valores = consecutivos.map(([, v]) => numero(v));
+  const valor = mediana(valores);
+  if (!(valor > 0)) return { linhas: [], base: null, motivo: SEM_PROJECAO.SEM_FATURAMENTO };
+
+  const base = {
+    n: consecutivos.length,
+    mediana: valor,
+    primeiraObservacao: consecutivos[0][0],
+    ultimaObservacao: consecutivos[consecutivos.length - 1][0],
+    // ⚠ A frase viaja PRONTA: é ela que impede o número de ser lido como faturamento contratado.
+    frase: `Receita prevista pela mediana dos últimos ${consecutivos.length} meses faturados `
+      + `(${consecutivos[0][0]} a ${consecutivos[consecutivos.length - 1][0]}). `
+      + "Ela se ajusta sozinha quando chegar nota nova.",
+  };
+
+  const linhas = [];
+  for (let i = 0; i < Math.max(0, quantosMeses); i += 1) {
+    const competencia = somarMeses(primeiroMesAProjetar, i);
+    if (!competencia) break;
+    linhas.push(montarLinha({
+      fonte: FONTE.RECEITA_PROJETADA,
+      direcao: DIRECAO.ENTRADA,
+      // ⚠⚠ SEMPRE PREVISÃO. Não há nota, não há documento, não há promessa de ninguém.
+      procedencia: PROCEDENCIA.PREVISAO,
+      competencia,
+      // ⚠ O DIA 1 é a MESMA convenção da receita da nota emitida (decisão do dono, 29/08). Duas
+      // convenções para "quando a receita entra" fariam a coluna Entrada ter dois significados.
+      dia: 1,
+      valor,
+      rotulo: "Receita prevista pelo histórico",
+      base,
+      referencia: null,
+    }));
+  }
+  return { linhas, base, motivo: null };
+}
+
+/** ⚠ Por que não há receita projetada. A ausência é NOMEADA — nunca uma linha que some. */
+export const SEM_PROJECAO = Object.freeze({
+  SEM_FATURAMENTO: "sem_faturamento",
+  POUCAS_OBSERVACOES: "poucas_observacoes",
+});
+
+export const FRASE_DO_SEM_PROJECAO = Object.freeze({
+  [SEM_PROJECAO.SEM_FATURAMENTO]:
+    "Esta empresa não tem faturamento medido, então não há receita a projetar para os próximos meses.",
+  [SEM_PROJECAO.POUCAS_OBSERVACOES]:
+    "O faturamento ainda não se repetiu em meses seguidos o bastante para virar previsão. "
+    + "Três meses seguidos é o mínimo — abaixo disso seriam eventos, não um padrão.",
 });

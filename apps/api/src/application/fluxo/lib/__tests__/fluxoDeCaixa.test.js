@@ -427,10 +427,125 @@ describe("⚠⚠ o módulo é PURO", () => {
       // código real até o `*/` seguinte.
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\/\/.*$/gm, "");
-    expect(fonte).not.toMatch(/^\s*import\s/m);
+    /**
+     * ⚠⚠ A PROIBIÇÃO DEIXOU DE SER "NENHUM IMPORT" EM 30/08/2026, e a distinção é o ponto.
+     *
+     * O que este teste protege é a PUREZA — sem banco, sem rede, sem relógio —, não o isolamento.
+     * `receitaProjetadaPeloHistorico` reusa `mediana` e `PISO_DE_OBSERVACOES` de `./recorrencia.js`,
+     * outro módulo puro DESTA MESMA PASTA e a autoridade desta casa sobre *"o que se repete"* (o
+     * dono fixou os dois números lá: *"contra a MEDIANA observada"* e o piso de 3 do detector).
+     *
+     * ⚠ Proibir isso empurraria a próxima pessoa a COPIAR a mediana para cá — e duas medianas sobre
+     * o mesmo dinheiro divergem na primeira correção, que é exatamente o defeito que o reuso existe
+     * para impedir.
+     *
+     * ⚠ Continua proibido tudo que quebra a pureza: import para FORA desta pasta (prisma,
+     * infraestrutura, serviço), `require`, e o relógio.
+     */
+    for (const m of fonte.matchAll(/^\s*import\s[^;]*?from\s+["']([^"']+)["']/gm)) {
+      expect(m[1]).toMatch(/^\.\/[a-zA-Z0-9._-]+\.js$/);
+    }
+    // ⚠⚠ CONTRAPROVA: um caminho para FORA da pasta tem de ser recusado pelo mesmo regex.
+    expect("../../infrastructure/db/prisma.js").not.toMatch(/^\.\/[a-zA-Z0-9._-]+\.js$/);
     expect(fonte).not.toMatch(/\brequire\s*\(/);
     expect(fonte).not.toMatch(/\bnew\s+Date\s*\(\s*\)|\bDate\.now\s*\(/);
     // ⚠ contraprova
     expect("const agora = new Date();").toMatch(/\bnew\s+Date\s*\(\s*\)/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A RECEITA PROJETADA PELO HISTÓRICO (30/08/2026) — decisão do dono:
+//
+// > *"o último mês é base para todos os meses à frente, e depois vão se ajustando. A receita
+// > prevista é baseada em quantas vezes se repete: se em 3 meses seguidos aparece a mesma receita,
+// > pode colocar ela para frente até o final da amostra, e ir ajustando se aparecer faturamento
+// > diferente. **Sempre a mediana.**"*
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ a receita projetada pelo histórico", () => {
+  const { receitaProjetadaPeloHistorico, SEM_PROJECAO } = require("../fluxoDeCaixa.js");
+
+  // ⚠ Os números são os MEDIDOS na ERISANGELA, e não valores redondos: o mock deste projeto já
+  // escondeu ramos por usar múltiplos de 100.
+  const REAL = new Map([
+    ["2026-05", 23076.26], ["2026-06", 23112.26], ["2026-07", 23040.26], ["2026-08", 23076.26],
+  ]);
+
+  const projetar = (mapa, extra = {}) => receitaProjetadaPeloHistorico({
+    faturamentoPorMes: mapa, primeiroMesAProjetar: "2026-10", quantosMeses: 3, ...extra,
+  });
+
+  it("com 4 meses seguidos, projeta a MEDIANA para a frente", () => {
+    const r = projetar(REAL);
+    expect(r.linhas).toHaveLength(3);
+    // mediana de [23040.26, 23076.26, 23076.26, 23112.26] = (23076.26 + 23076.26) / 2
+    expect(r.linhas[0].valor).toBeCloseTo(23076.26, 2);
+    expect(r.linhas.map((l) => l.competencia)).toEqual(["2026-10", "2026-11", "2026-12"]);
+  });
+
+  it("⚠⚠ é MEDIANA, nunca média — um mês atípico não arrasta a projeção", () => {
+    // É a razão de a regra existir: com média, um mês dobrado puxaria todos os meses à frente.
+    const comPico = new Map([...REAL, ["2026-08", 90000]]);
+    const media = [...comPico.values()].reduce((a, b) => a + b, 0) / comPico.size;
+    const r = projetar(comPico);
+    expect(r.linhas[0].valor).toBeLessThan(media);
+    expect(r.linhas[0].valor).toBeCloseTo(23094.26, 2);
+  });
+
+  it("⚠⚠ com MENOS de 3 meses seguidos NÃO projeta, e diz por quê", () => {
+    const r = projetar(new Map([["2026-07", 1000], ["2026-08", 1100]]));
+    expect(r.linhas).toEqual([]);
+    expect(r.motivo).toBe(SEM_PROJECAO.POUCAS_OBSERVACOES);
+  });
+
+  it("⚠⚠ 3 meses ESPALHADOS não são padrão — o corte é por CONSECUTIVOS no fim", () => {
+    // Três eventos ao longo do ano não são "se repete". Sem isto, uma empresa que faturou em
+    // janeiro, abril e agosto teria receita projetada até o fim da janela.
+    const r = projetar(new Map([["2026-01", 1000], ["2026-04", 1000], ["2026-08", 1000]]));
+    expect(r.linhas).toEqual([]);
+    expect(r.motivo).toBe(SEM_PROJECAO.POUCAS_OBSERVACOES);
+  });
+
+  it("⚠ o padrão tem de estar VIVO — série que parou há meses não projeta", () => {
+    // 3 seguidos, mas terminando em fevereiro: quem parou de faturar não tem o que projetar.
+    const r = projetar(new Map([["2025-12", 1000], ["2026-01", 1000], ["2026-02", 1000], ["2026-08", 4000]]));
+    // ⚠ O último é 2026-08 sozinho ⇒ só 1 consecutivo no fim ⇒ recusa.
+    expect(r.linhas).toEqual([]);
+  });
+
+  it("⚠⚠ mês com ZERO não é observação — ele não é 'receita de zero'", () => {
+    // Contá-lo puxaria a mediana para baixo afirmando um faturamento que ninguém emitiu.
+    const r = projetar(new Map([["2026-06", 0], ["2026-07", 1000], ["2026-08", 1000]]));
+    expect(r.linhas).toEqual([]);
+    expect(r.motivo).toBe(SEM_PROJECAO.POUCAS_OBSERVACOES);
+  });
+
+  it("⚠ sem faturamento nenhum, a ausência é NOMEADA", () => {
+    const r = projetar(new Map());
+    expect(r.motivo).toBe(SEM_PROJECAO.SEM_FATURAMENTO);
+  });
+
+  it("⚠⚠ ela é PREVISÃO, entra no dia 1 e carrega a evidência", () => {
+    const l = projetar(REAL).linhas[0];
+    expect(l.procedencia).toBe(PROCEDENCIA.PREVISAO);
+    expect(l.direcao).toBe(DIRECAO.ENTRADA);
+    // ⚠ O dia 1 é a MESMA convenção da receita da nota emitida — duas convenções fariam a coluna
+    // Entrada ter dois significados.
+    expect(l.dia).toBe(1);
+    expect(l.base.n).toBe(4);
+    expect(l.base.frase).toMatch(/mediana dos últimos 4 meses/i);
+    // ⚠ A frase diz que ela se ajusta — é o que impede o número de ser lido como contratado.
+    expect(l.base.frase).toMatch(/ajusta/i);
+  });
+
+  it("⚠ `quantosMeses: 0` não projeta nada — sem janela à frente não há o que preencher", () => {
+    expect(projetar(REAL, { quantosMeses: 0 }).linhas).toEqual([]);
+  });
+
+  it("⚠⚠ ela cai no balde ENTRADA, e não no `else` que vira saída", () => {
+    // Fonte nova caindo no balde certo por acidente é o que a lista fechada existe para impedir.
+    const l = projetar(REAL).linhas[0];
+    expect(l.fonte).toBe(FONTE.RECEITA_PROJETADA);
+    expect(l.direcao).toBe(DIRECAO.ENTRADA);
   });
 });

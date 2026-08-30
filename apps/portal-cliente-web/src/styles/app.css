@@ -491,7 +491,11 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 .login-card .sub { color: var(--muted); font-size: .9rem; margin: 0 0 var(--gap); }
 
 /* --- Modal (troca de empresa) --------------------------------------------- */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(28,33,40,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+/* ⚠ O `z-index` saiu para `tokens.css` (mesmo valor, 50). O VÉU ficou como estava:
+   `rgba(28,33,40,.45)` não é o `--veu` da `.sobreposicao`, e essa divergência é ANTERIOR a esta
+   entrega — trocá-la muda a aparência do modal de trocar empresa e do `.painel-dia`, o que é decisão
+   do dono, não limpeza de passagem. Está nomeada em `tokens.css`, junto do token. */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(28,33,40,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: var(--z-sobreposicao); }
 .modal { background: var(--surface); border-radius: var(--radius); padding: 20px; width: min(520px, 100%); max-height: 90vh; overflow-y: auto; box-shadow: 0 18px 48px rgba(28,33,40,.25); }
 .modal footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: var(--gap); }
 
@@ -943,8 +947,11 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
    O POP-UP DE GUIAS — `role="alertdialog"`, e ele COBRE a página de propósito.
    ───────────────────────────────────────────────────────────────────────────────────────────── */
 .sobreposicao {
-  position: fixed; inset: 0; z-index: 50;
-  background: rgb(17 24 39 / 45%);
+  /* ⚠ O véu e a camada saem de `tokens.css` desde 30/08/2026 — os MESMOS valores de antes. A
+     `.gaveta-fundo` (o menu lateral do fluxo) lê os dois tokens: sem isso, as duas sobreposições
+     deste app escureceriam a página em graus diferentes, e qual delas cobre a outra viraria sorte. */
+  position: fixed; inset: 0; z-index: var(--z-sobreposicao);
+  background: var(--veu);
   display: flex; align-items: flex-start; justify-content: center;
   padding: 10vh 16px 16px;
   overflow-y: auto;
@@ -1116,3 +1123,449 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 
 /* "Não é peça fiscal" — ela impede uma AFIRMAÇÃO, não descreve uma ausência. */
 .dre-rodape { margin: 14px 0 0; font-size: .76rem; color: var(--muted); }
+
+/* ═════════════════════════════════════════════════════════════════════════════════════════════
+   A GAVETA DO FLUXO DE CAIXA (30/08/2026) — `features/painel/GavetaDoDia.jsx`.
+
+   O menu lateral que abre com os lançamentos de UM dia do fluxo. Ela é a segunda sobreposição
+   deste app, e é por isso que a primeira coisa desta seção é a CAMADA, não o desenho.
+
+   ⚠⚠ ELA NÃO É O `.painel-dia`, E OS DOIS PRECISAM CONTINUAR DISTINGUÍVEIS. O `.painel-dia`
+   (`.modal-backdrop--lateral`, 420px) é a gaveta ANTIGA, sem consumidor desde 27/08/2026 e
+   anotada como tal. Esta nasce do fluxo v4 e tem véu, camada e largura próprios. ⚠ Não "unifique"
+   as duas por semelhança: a antiga carrega o véu do `.modal-backdrop` (outro cinza) e uma
+   navegação de dias que esta não tem. Fundir custaria decidir qual das duas aparências fica — e
+   isso é do dono.
+
+   ⚠⚠ O VÉU E O `z-index` SÃO OS MESMOS DA `.sobreposicao`, POR TOKEN, NUNCA POR CÓPIA. As duas
+   camadas escurecem a MESMA página, e véu escrito duas vezes diverge na primeira correção. O custo
+   de desfazer isto (voltar a literal) é o app passar a ter dois "quanto escurece" sem que nenhuma
+   captura de tela mostre os dois juntos.
+   ═════════════════════════════════════════════════════════════════════════════════════════════ */
+/* ⚠⚠ SÃO DOIS SELETORES PORQUE HÁ DOIS CAMINHOS ATÉ A MESMA CAMADA, e ela precisa ser UMA.
+   `GavetaDoDia.jsx` monta hoje `.modal-backdrop.modal-backdrop--lateral` — a sobreposição que o
+   `.painel-dia` já usava — e não `.gaveta-fundo`. Se a regra só falasse de `.gaveta-fundo`, ela
+   seria CSS sem consumidor e a gaveta de verdade herdaria o véu do `.modal-backdrop`
+   (`rgba(28,33,40,.45)`), que NÃO é o `--veu` do pop-up de guias: as duas camadas do app
+   escureceriam a página em graus diferentes, e isso não aparece em captura nenhuma, porque as duas
+   nunca estão abertas ao mesmo tempo.
+   ⚠ O `:has(> .gaveta)` é o que mantém o `.painel-dia` FORA disto: ele é a gaveta antiga, com véu
+   próprio, e mudar a aparência dele não foi pedido a ninguém.
+   ⚠ `.gaveta-fundo` fica declarada porque é o nome do contrato — se o componente trocar para ela,
+   nada muda de aparência. Quem apagar uma das duas metades: confira no navegador qual das classes
+   o JSX está montando naquele dia. */
+.gaveta-fundo,
+.modal-backdrop--lateral:has(> .gaveta) {
+  position: fixed; inset: 0;
+  z-index: var(--z-sobreposicao);
+  background: var(--veu);
+  /* Ancorada à DIREITA: é o lado de onde ela entra, e alinhar a entrada com a posição final é o
+     que faz o movimento se ler como "abriu", e não como "pulou". */
+  display: flex; align-items: stretch; justify-content: flex-end;
+  animation: gaveta-fundo-entra 180ms ease-out;
+}
+
+.gaveta {
+  /* ⚠⚠ ELA CONVIVE COM `.modal` NO MESMO ELEMENTO (`className="modal gaveta"`), E ISSO OBRIGA A
+     DESFAZER QUATRO MEDIDAS DELE — as duas classes têm a MESMA especificidade, então quem vence é
+     a ORDEM, e esta seção precisa continuar DEPOIS do bloco do `.modal`. É a mesma armadilha que o
+     `.painel-dia` já registra por escrito logo acima; não resolva com `!important`, resolva
+     mantendo a ordem.
+       padding: 20px    → 0, porque topo/corpo/rodapé já têm o seu, e somados dariam 38px de recuo
+       border-radius    → 0, porque gaveta encostada na borda direita com canto arredondado mostra
+                          uma fatia do véu atrás e se lê como desalinhamento
+       max-height: 90vh → 100%, senão sobra uma faixa da página embaixo de uma gaveta "de altura
+                          cheia" — e é justamente ali que fica o rodapé com o formulário
+       overflow-y: auto → hidden, senão a rolagem acontece no painel INTEIRO e o topo com o botão
+                          de fechar sobe junto com as linhas */
+  padding: 0;
+  border-radius: 0;
+  max-height: 100%;
+  overflow: hidden;
+  /* ⚠ `min(380px, 100%)` e não `380px`: em 375px um painel de 380 estoura o véu e a PÁGINA INTEIRA
+     passa a rolar para o lado — a mesma armadilha que a `.topbar`, a barra lateral e o
+     `.fluxo-v4-bloco` já carregam escrita. A media query abaixo é o desenho; isto aqui é a rede. */
+  width: min(380px, 100%);
+  max-width: 100%;
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -18px 0 48px rgb(28 33 40 / 18%);
+  /* Três faixas: topo e rodapé fixos, corpo rolando. Sem a coluna flex o corpo não sabe onde
+     parar, e o formulário do rodapé sai empurrado para fora da tela pelas linhas. */
+  display: flex; flex-direction: column;
+  min-height: 0;
+  animation: gaveta-entra 180ms cubic-bezier(.2, .8, .2, 1);
+}
+
+/* ⚠⚠ ABAIXO DE 640px ELA É A TELA INTEIRA, E ISSO É PRODUTO, NÃO ESTÉTICA. Esta tela é lida no
+   celular; sobrando uma tira de 0 a 260px da página atrás, a gaveta fica estreita demais para uma
+   linha de lançamento (rótulo + valor) e o resto não é largo o bastante para servir de contexto —
+   paga-se o custo dos dois lados e não se compra nenhum.
+   ⚠ 640 DIVERGE DOS 560 do `.painel-dia`, e a divergência é deliberada: aquele painel tem 420px de
+   largura e cabe mais tempo; este tem 380 e a conta do que sobra é outra. Não iguale os dois
+   números "por consistência" sem medir no navegador — é justamente o que produz gaveta espremida. */
+@media (max-width: 640px) {
+  .gaveta { width: 100%; border-left: 0; }
+}
+
+/* ⚠⚠ A ENTRADA RESPEITA `prefers-reduced-motion`, E COM A PREFERÊNCIA LIGADA NÃO SOBRA TRANSIÇÃO
+   NENHUMA — não é uma animação mais curta, é `none`. Quem liga essa preferência costuma fazê-lo
+   por enjoo ou vertigem provocados justamente por painel que desliza; entregar 60ms em vez de 180
+   ainda entrega o gatilho. ⚠ E o `from` é `translateX(100%)`, não `opacity`: a gaveta precisa
+   nascer FORA da direita, senão o conteúdo pisca no lugar em que já vai ficar. */
+@keyframes gaveta-entra {
+  from { transform: translateX(100%); }
+}
+@keyframes gaveta-fundo-entra {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gaveta,
+  .gaveta-fundo,
+  .modal-backdrop--lateral:has(> .gaveta) { animation: none; }
+}
+
+.gaveta-topo {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.gaveta-topo > h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+/* ⚠ DOIS NOMES PARA A MESMA FAIXA, e é assunto pendente, não estilo: o contrato desta entrega diz
+   `.gaveta-corpo`, e `GavetaDoDia.jsx` monta `.gaveta-lista` (o `<ul>`) e `.empty`. As três rolam,
+   porque a que estiver na tela precisa rolar — uma gaveta cujo corpo não rola empurra o rodapé com
+   o formulário para fora da tela, e o cliente não tem como acrescentar a saída. Quando o componente
+   escolher um nome, apague o outro; enquanto os dois existirem, mantenha os dois aqui. */
+/* ⚠⚠ O `.gaveta >` NÃO É ENFEITE DE SELETOR — ELE É O QUE VENCE O RESET DA LISTA. O
+   `ul:has(> .gaveta-linha)` mais abaixo zera `padding` e pesa (0,1,1); `.gaveta-lista` sozinha pesa
+   (0,1,0) e PERDE. Medido no navegador: com a versão anterior, os lançamentos encostavam na borda
+   direita da gaveta e o valor ficava colado no vidro, enquanto o `.gaveta-topo` mantinha os 18px —
+   a gaveta parecia ter dois alinhamentos. Não troque por `.gaveta-lista` "para simplificar". */
+.gaveta > .gaveta-corpo,
+.gaveta > .gaveta-lista,
+.gaveta > .empty {
+  /* `min-height: 0` é o par obrigatório do `flex: 1` numa coluna: sem ele o item assume a altura do
+     conteúdo, o `overflow` nunca entra em ação e quem rola é a página inteira, por baixo do véu. */
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto;
+  padding: 6px 18px 14px;
+  /* A rolagem para dentro da gaveta, nunca para a página atrás dela. */
+  overscroll-behavior: contain;
+}
+
+/* Idem: `.gaveta-rodape` é o nome do contrato, `.gaveta-form` é o que o componente escreve. O
+   `flex-shrink: 0` é o que importa nos dois — o formulário não pode ser espremido pela lista. */
+.gaveta-rodape,
+.gaveta-form {
+  flex-shrink: 0;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--cabecalho-tabela);
+}
+.gaveta-form > h3 { margin: 0 0 6px; }
+.gaveta-form label { display: block; margin-bottom: 10px; font-size: .82rem; color: var(--muted); }
+.gaveta-form input,
+.gaveta-form select { width: 100%; }
+
+/* A frase que impede a lista de ser lida como contabilidade — a MESMA de `.fluxo-v4-saidas-nota`,
+   pelo mesmo motivo: ela não descreve uma ausência, ela impede uma AFIRMAÇÃO errada. */
+.gaveta-nota { margin: 0 0 12px; font-size: .76rem; color: var(--muted); }
+
+/* ⚠ Se o corpo montar as linhas dentro de uma lista, o marcador e o recuo de 40px do `ul` fariam a
+   coluna do valor sair do alinhamento. O `:has()` limita a regra às listas que de fato carregam
+   linhas de lançamento — nenhuma outra lista deste app é atingida. */
+ul:has(> .gaveta-linha),
+ol:has(> .gaveta-linha) { list-style: none; margin: 0; padding: 0; }
+
+/* ⚠⚠ A LINHA É UMA COLUNA, e não a fileira que o nome sugere. Ela carrega TRÊS coisas empilhadas —
+   a fileira `rótulo | valor` (`.gaveta-linha-topo`), a palavra da procedência (`.gaveta-marca`) e a
+   explicação (`.gaveta-frase`) —, e as três em fileira espremeriam o valor contra a frase.
+   ⚠ Quem faz "rótulo à esquerda, valor à direita" é o `.gaveta-linha-topo`. Não mova o
+   `space-between` para cá achando que é o mesmo: aqui ele empurraria a frase para o fim da linha. */
+.gaveta-linha {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  /* ⚠ `tabular-nums` vai na LINHA, e não só no `.gaveta-valor`: assim ele vale para qualquer número
+     que a linha venha a carregar, e valores empilhados ficam com a vírgula na mesma coluna. Numa
+     lista de dinheiro, dígito de largura variável faz o olho reler todas as linhas. */
+  font-variant-numeric: tabular-nums;
+}
+.gaveta-linha:last-child { border-bottom: 0; }
+
+.gaveta-linha-topo {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+/* O rótulo cede espaço; o valor, nunca. `min-width: 0` é o que permite ao rótulo encolher dentro do
+   flex — sem ele o item assume o `min-content` e é o VALOR que sai empurrado para fora. */
+.gaveta-rotulo { min-width: 0; }
+.gaveta-valor {
+  text-align: right;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* ⚠⚠ A PALAVRA DA PROCEDÊNCIA — e ela é o canal que sobrevive ao papel e ao daltonismo. A regra do
+   fluxo manda a palavra ("Previsto") ir no TEXTO, com a cor só reforçando; aqui a cor entra pelo
+   `data-classe`, que `leituraDaProcedencia` fecha em `neutro` | `aviso`.
+   ⚠⚠ `ok` NÃO TEM REGRA AQUI, E A AUSÊNCIA É O CONTRATO: verde, nesta casa, quer dizer *pago*, e
+   `CLASSES_DA_PROCEDENCIA` lista só as duas. Acrescentar um ramo verde aqui deixaria a folha de
+   estilo pronta para afirmar, em cor, um pagamento que ninguém provou. */
+.gaveta-marca {
+  align-self: flex-start;
+  font-size: .72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--neutral-surface); color: var(--muted);
+}
+.gaveta-marca[data-classe="aviso"] {
+  background: var(--warning-surface);
+  /* `--previsto` é o âmbar de "isto ainda não aconteceu" (5,02:1 sobre o branco). Ele é o MESMO da
+     célula prevista da tabela, porque fala do MESMO número. */
+  color: var(--previsto);
+}
+
+/* ⚠⚠ `--muted`, E NUNCA `#6b7280` NEM `#8A8FA3`: os dois REPROVAM no mínimo de 4,5:1 da WCAG AA, e
+   a medição está registrada no `CLAUDE.md` de `apps/web`, onde o `#6b7280` é proibido POR ESCRITO
+   como tinta de texto. O `--muted` (`#5f6773`) mede 5,72:1 sobre `--surface` e 5,33:1 sobre `--bg`
+   — a mesma medida que o comentário de `tokens.css` já carrega.
+   ⚠ O nome do token neste app é `--muted`; `--text-muted` é como ele se chama no portal do
+   ESCRITÓRIO. Não criei um apelido aqui de propósito: dois nomes para a mesma cor é a cópia que
+   diverge na primeira correção — o defeito que este projeto já pagou no espelho de
+   `leituraDoFluxo.js`. Desfazer isto (criar `--text-muted: var(--muted)`) custa uma sincronização
+   para sempre entre dois nomes que ninguém lembra que são o mesmo. */
+.gaveta-frase {
+  display: block;
+  font-size: .78rem;
+  color: var(--muted);
+}
+
+/* Vazio NOMEADO: "R$ 0,00" afirmaria que o dia teve movimento de zero reais, e o que se sabe é que
+   ele não teve movimento nenhum. São coisas diferentes, e a frase do componente já diz qual é.
+   ⚠ `.gaveta-vazia` é o nome do contrato; hoje o componente reusa `.empty`, que já é a moldura
+   tracejada deste app. A regra abaixo só tira o exagero da caixa dentro de uma gaveta de 380px —
+   os 24px de recuo do `.empty` foram medidos para o meio da página, não para uma faixa estreita. */
+.gaveta-vazia,
+.gaveta > .empty {
+  margin: 14px 18px;
+  padding: 18px 14px;
+  font-size: .82rem;
+  color: var(--muted);
+}
+
+/* ═════════════════════════════════════════════════════════════════════════════════════════════
+   AS GUIAS EM ATRASO, ACIMA DO FLUXO (30/08/2026) — `features/painel/GuiasVencidas.jsx`.
+
+   > Dono: *"ela deve aparecer com duas linhas e meia caso tenha mais de 3 guias, para que o cliente
+   > saiba que precisa rolar para ver mais."*
+
+   ⚠⚠ DUAS LINHAS E MEIA É LITERAL, E A ALTURA É DERIVADA — NÃO É UM `px` ESCOLHIDO. Número chutado
+   envelhece calado: mexer no `padding` de `.table th, .table td` passaria a cortar a terceira linha
+   em 20% ou em 80%, e a tela continuaria "funcionando". A conta abaixo está escrita em termos que
+   apontam para as regras de onde cada parcela sai.
+
+     .table th, .table td { padding: 9px 12px; border-bottom: 1px solid var(--border); }
+     .table               { font-size: .9rem; }    → 0,9 × 16px  = 14,4px
+     .table thead th      { font-size: .78rem; }   → 0,78 × 16px = 12,48px
+     body                 { line-height: 1.45; }   (herdado; ⚠ `rem` é do <html>, 16px — o
+                                                    `font-size: 15px` do `body` NÃO entra na conta)
+
+     linha do corpo     = 14,4  × 1,45 = 20,88px → PINADA em 21px
+                        + 9 + 9 (padding) + 1 (borda)                        = 40px
+     linha do cabeçalho = 12,48 × 1,45 = 18,10px → PINADA em 19px
+                        + 9 + 9 (padding) + 1 (borda)                        = 38px
+     ⚠ e a moldura do próprio `.table-wrap` (`border: 1px solid var(--border)`), que entra porque
+       `box-sizing: border-box` vale para tudo neste app:                    = 2px
+
+     max-height = 2 + 38 + 2,5 × 40 = 140px
+
+   ⚠ OS 2px DA MOLDURA FALTAVAM NA PRIMEIRA VERSÃO, e o efeito foi medido: com 138px a caixa mostrava
+   2,45 linhas em vez de 2,5 — o corte caía um pouco acima do meio da terceira. Não é diferença que
+   se veja de olho, e é exatamente por isso que ela precisa estar na conta e não na sorte.
+
+   ⚠ MEDIDO NO NAVEGADOR, com o CSS já construído, em 375px e em 700/746px: caixa de 140px, cabeçalho
+   de 37,4px e linha de 40,2px (a borda `collapse` rende 0,8px nesta densidade), o que dá **2,50
+   linhas à vista** nas duas larguras — a media query de 560px não mexe na altura porque o
+   `line-height` é PINADO em px e não depende do `font-size`.
+
+   ⚠ AS DUAS ALTURAS DE TEXTO SÃO PINADAS AQUI (`--gv-linha-*`), e é isso que torna a conta uma
+   conta. Com o `line-height: 1.45` herdado, o resultado é 20,88px — fracionário, que o
+   arredondamento do navegador desloca meio pixel por linha, e aí "meia linha" vira 0,46 ou 0,54 de
+   linha conforme a densidade da tela. Pinado, o corte é o mesmo em toda máquina.
+
+   ⚠⚠ E CADA LINHA PRECISA SER *UMA* LINHA, senão a conta é uma mentira: uma guia de rótulo longo
+   quebrando em duas faria "2,5 linhas" mostrar UMA guia e meia. Daí o `table-layout: fixed` +
+   `nowrap` + reticências abaixo — o RÓTULO é o que cede, nunca a data nem o valor.
+   ═════════════════════════════════════════════════════════════════════════════════════════════ */
+.guias-atraso {
+  margin-bottom: 18px;
+  /* ⚠ `relative` é o que ancora o degradê do corte (o `::after` no fim desta seção). Sem ele o
+     degradê sobe para o `<main>` e aparece no lugar errado da página. */
+  position: relative;
+}
+.guias-atraso-topo {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 8px;
+}
+/* ⚠ O botão não quebra em duas linhas: medido em 375px, "Ver todas as guias" virava um bloco de
+   duas linhas e empurrava a tabela para baixo. Quem quebra é o título, que tem `flex-wrap` para isso. */
+.guias-atraso-topo .btn { white-space: nowrap; }
+/* O `h3` global deste app é minúsculo e em versalete — bom para rótulo de bloco, ruim para um
+   título que carrega um valor em dinheiro ao lado. Mesmo tratamento do `.fluxo-v4-saidas-topo`. */
+.guias-atraso-topo > h3 {
+  margin: 0;
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  font-size: .9rem;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+}
+/* ⚠ A soma é vermelha porque é dívida vencida — o MESMO `--danger` do `.pop-guias-soma`, que fala
+   do MESMO dinheiro. Duas tintas para a mesma soma fariam as duas telas parecerem discordar. */
+.guias-atraso-soma {
+  color: var(--danger);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+/* A competência é contexto do rótulo, não um segundo dado: peso e tamanho menores dizem isso sem
+   precisar de parênteses. */
+/* ⚠ `em`, e não `rem`: a fonte desta tabela ENCOLHE em 560px (ver o bloco de largura das colunas), e
+   com `rem` a competência ficaria MAIOR que o rótulo ao lado dela no celular. */
+.guias-atraso-comp {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: .9em;
+}
+
+/* ⚠ `min-width: 0` derruba os 720px que `.table` impõe a toda tabela deste app — com três colunas
+   curtas, 720px só serviriam para inventar rolagem lateral. Precedente: `.table--sitfis`, `.table--dre`.
+   ⚠⚠ `table-layout: fixed` + `width: 100%` é o que IMPEDE a rolagem lateral de existir, e ela
+   custaria caro justo aqui: numa caixa de 138px, uma barra horizontal clássica come ~15px e o corte
+   deixa de ser 2,5 linhas — a conta acima viraria ficção sem nada na tela dizendo isso. */
+.table--guias-atraso {
+  min-width: 0;
+  width: 100%;
+  table-layout: fixed;
+}
+.table--guias-atraso th,
+.table--guias-atraso td {
+  line-height: var(--gv-linha-texto);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.table--guias-atraso thead th { line-height: var(--gv-linha-cabecalho); }
+
+/* ⚠⚠ AS DUAS COLUNAS DA DIREITA TÊM LARGURA PRÓPRIA, E ELA FOI MEDIDA, NÃO ESTIMADA. Quem cede é o
+   RÓTULO, sempre: truncar a data ou o valor esconderia justamente o que o cliente veio ver — "R$
+   12.345,6…" é pior do que não mostrar nada, porque parece um número.
+   ⚠ Medido no navegador, com a fonte do CORPO desta tabela (`.9rem` = 14,4px), somados os 12+12px de
+   recuo que `.table th, .table td` impõe:
+       "sem data de vencimento"  156,0 + 24 = 180,0px  → 11,5rem (184px)
+       "venceu em 30/08/2026"    146,1 + 24 = 170,1px  →  cabe
+       "R$ 123.456,78"            88,7 + 24 = 112,7px  →   7,25rem (116px)
+
+   ⚠⚠ `rem`, E NUNCA `em` — ISTO CUSTOU UMA MEDIÇÃO. Sob `table-layout: fixed` quem fixa a coluna é a
+   PRIMEIRA linha, que aqui é o `<thead>`, e `.table thead th` roda a `.78rem` (12,48px). Escrito em
+   `em`, um `12.6em` virava 157px em vez dos 181px pedidos — 24px a menos — e o CORPO, que roda a
+   14,4px, truncava a data em toda linha e o valor na maior delas. Em 1280px e em 375px, igual: não
+   era um defeito de tela estreita, era a unidade errada.
+   ⚠ E largura pedida a mais também não estoura a tabela sob `fixed`: o navegador encolhe as três
+   proporcionalmente. Ou seja, os dois erros possíveis aqui falham CALADOS, com a tabela inteira
+   parecendo certa. Meça no navegador antes de mexer nestes números. */
+.table--guias-atraso th:nth-child(2),
+.table--guias-atraso td:nth-child(2) { width: 11.5rem; }
+.table--guias-atraso th:nth-child(3),
+.table--guias-atraso td:nth-child(3) { width: 7.25rem; }
+
+/* ⚠⚠ NO CELULAR AS TRÊS COLUNAS NÃO CABEM A `.9rem` — 181 + 115 de largura fixa deixariam 45px para
+   o rótulo num viewport de 375px. Aqui a fonte encolhe e o recuo aperta, e as larguras acompanham.
+   ⚠⚠ E ISTO SÓ É POSSÍVEL PORQUE A ALTURA DA LINHA ESTÁ PINADA EM px: `--gv-linha-texto` não depende
+   do `font-size`, então a conta das 2,5 linhas atravessa a media query INTACTA — medido: 138px e
+   2,503 linhas à vista tanto em 1280 quanto em 375. Se alguém trocar o `line-height` pinado por um
+   múltiplo (`1.45`), esta media query passa a mudar a altura do corte em silêncio.
+   ⚠ 560px é a breakpoint que este arquivo já usa para o `main.page` apertar o recuo — não é um
+   número novo. */
+@media (max-width: 560px) {
+  .table--guias-atraso { font-size: .78rem; }
+  .table--guias-atraso th,
+  .table--guias-atraso td { padding-left: 8px; padding-right: 8px; }
+  /* Medido a .78rem (12,48px) com o recuo de 8+8: "sem data de vencimento" 135,2 + 16 = 151,2px (medido: 152px ainda
+     trunca por fração, 156,8 passa);
+     "R$ 123.456,78" 76,9 + 16 = 92,9px. Sobram ~95px para o rótulo em 375px. */
+  .table--guias-atraso th:nth-child(2),
+  .table--guias-atraso td:nth-child(2) { width: 9.8rem; }
+  .table--guias-atraso th:nth-child(3),
+  .table--guias-atraso td:nth-child(3) { width: 6rem; }
+}
+
+/* ⚠⚠ COR É REFORÇO, NUNCA A ÚNICA MARCA. Quem diz que a guia venceu é o TEXTO da célula ("venceu
+   em" × "vence em"), escrito por `quando()` no componente; a tinta só torna a leitura mais rápida.
+   Em preto e branco, para quem não distingue vermelho de âmbar e para quem usa leitor de tela, a
+   frase continua inteira. ⚠ É a mesma disciplina do `--previsto` na tabela do fluxo (cor + itálico
+   + `data-status` + `aria-label`) e a mesma do `.pop-guias-quando`, que fala das MESMAS guias. */
+.guias-atraso-quando {
+  color: var(--warning);
+  font-weight: 500;
+}
+tr[data-atrasada="sim"] .guias-atraso-quando { color: var(--danger); }
+
+/* Os termos da conta das 2,5 linhas. Ficam na LISTA (o `.table-wrap`), e não na `<table>`: variável
+   CSS herda para baixo e nunca para cima, e quem precisa do total é o contêiner que tem a rolagem. */
+.guias-atraso-lista {
+  --gv-linha-texto: 21px;
+  --gv-linha-cabecalho: 19px;
+  --gv-padding-y: 9px;
+  --gv-borda: 1px;
+  --gv-altura-linha: calc(var(--gv-linha-texto) + 2 * var(--gv-padding-y) + var(--gv-borda));
+  --gv-altura-cabecalho: calc(var(--gv-linha-cabecalho) + 2 * var(--gv-padding-y) + var(--gv-borda));
+  /* ⚠ A moldura do `.table-wrap`. Ela só entra na conta porque `box-sizing: border-box` é global
+     neste app — o `max-height` inclui a borda, e sem este termo o corte come 2px das linhas. */
+  --gv-borda-caixa: 2px;
+  /* ⚠⚠ A MEIA LINHA É O PRODUTO: ela diz "tem mais" sem gastar texto, e é o pedido literal do dono.
+     Não arredonde para 3 — com três linhas inteiras a caixa não mostra que existe uma quarta, e é
+     exatamente aí que o cliente para de rolar. */
+  --gv-linhas-a-vista: 2.5;
+}
+
+/* ⚠⚠ O CORTE É LIGADO PELO ATRIBUTO, e o atributo só existe acima de 3 guias (quem decide é o
+   componente). Com 3 ou menos a lista aparece INTEIRA: cortar a terceira pela metade ali inventaria
+   uma rolagem que não existe, e quem rolasse não acharia nada. */
+.guias-atraso-lista[data-cortada="sim"] {
+  max-height: calc(
+    var(--gv-borda-caixa) + var(--gv-altura-cabecalho) + var(--gv-linhas-a-vista) * var(--gv-altura-linha)
+  );
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* O cabeçalho gruda enquanto se rola: numa caixa de 138px ele sairia de vista já na primeira linha,
+   e "venceu em" sem a coluna "Quando" acima vira adivinhação. Precedente: `.table-wrap--dias`. */
+.guias-atraso-lista[data-cortada="sim"] thead th {
+  position: sticky; top: 0; z-index: 2;
+}
+
+/* ⚠⚠ O DEGRADÊ EXISTE PARA A LINHA CORTADA NÃO PARECER DEFEITO DE RENDERIZAÇÃO. Meia linha sozinha
+   se lê das duas formas — "tem mais abaixo" ou "a tela quebrou" —, e a segunda leitura, numa caixa
+   de guias vencidas, custa uma ligação ao escritório. O esmaecimento resolve a ambiguidade sem
+   texto, que é o que o pedido do dono exige.
+   ⚠ Ele mora no `::after` da SEÇÃO, e não no fundo da lista: fundo é pintado ATRÁS do texto das
+   células e não esmaeceria nada. Aqui ele passa por cima, e `pointer-events: none` garante que a
+   rolagem continue alcançável embaixo dele.
+   ⚠ O `:has()` é o que o prende ao estado cortado — sem ele o degradê apareceria também na lista de
+   3 guias, prometendo um resto que não existe. */
+.guias-atraso:has(.guias-atraso-lista[data-cortada="sim"])::after {
+  content: "";
+  position: absolute;
+  left: 1px; right: 1px; bottom: 1px;
+  height: 22px;
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: linear-gradient(to top, var(--surface), transparent);
+  pointer-events: none;
+}

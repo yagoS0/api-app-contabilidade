@@ -64,6 +64,14 @@ export const FONTE = Object.freeze({
    * caindo no balde certo por acidente é o que a lista fechada existe para impedir.
    */
   SAIDA_DO_CLIENTE: "SAIDA_DO_CLIENTE",
+  /**
+   * ⚠⚠ A RECEITA QUE O HISTÓRICO PROJETA (30/08/2026) — espelho de `FONTE` no servidor.
+   *
+   * ⚠ Sem esta entrada e sem o rótulo abaixo, a linha aparece como *"Origem desconhecida"* — sem
+   * erro nenhum, e ninguém percebe. É a mesma armadilha que o vocabulário fechado de `PROCEDENCIA`
+   * já registra: valor novo no servidor sem entrada aqui cai no fallback, calado.
+   */
+  RECEITA_PROJETADA: "RECEITA_PROJETADA",
 });
 
 /**
@@ -131,6 +139,9 @@ export const ROTULO_DA_FONTE = Object.freeze({
   // ⚠ O rótulo diz DE QUEM é a linha, e é o que a distingue do que o sistema previu — sem ele o
   // cliente não saberia qual das linhas ele mesmo escreveu.
   [FONTE.SAIDA_DO_CLIENTE]: "Você acrescentou",
+  // ⚠ O rótulo diz que é PREVISÃO e de onde ela sai. "Receita prevista" sozinho seria
+  // indistinguível do recebimento de uma nota que existe.
+  [FONTE.RECEITA_PROJETADA]: "Receita prevista pelo histórico",
 });
 
 export function rotuloDaFonte(f) {

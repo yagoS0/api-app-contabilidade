@@ -69,6 +69,9 @@ import {
   montarMeses,
   numero,
   projecaoSubstituidaPelaGuia,
+  receitaProjetadaPeloHistorico,
+  SEM_PROJECAO,
+  FRASE_DO_SEM_PROJECAO,
   somarMeses,
 } from "./lib/fluxoDeCaixa.js";
 
@@ -152,8 +155,19 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
   const linhas = [];
   const semMes = [];
   const emAberto = [];
+  /**
+   * ⚠⚠ O DIA DO ÚLTIMO IMPOSTO PAGO — é ele que vira a DATA da previsão (decisão do dono, 30/08).
+   *
+   * ⚠ Só guia de imposto do MÊS conta: a parcela de parcelamento tem calendário próprio (vence no
+   * último dia útil), e usá-la aqui poria o DAS previsto no dia 31.
+   * ⚠ `paymentConfirmedAt` é quando o dinheiro SAIU, não o vencimento.
+   */
+  let ultimoPagamento = null;
 
   for (const g of guias) {
+    if (g.paymentStatus === "PAID" && g.paymentConfirmedAt && !g.parcelamentoId) {
+      if (!ultimoPagamento || g.paymentConfirmedAt > ultimoPagamento) ultimoPagamento = g.paymentConfirmedAt;
+    }
     const rotulo = rotuloDaGuia(g);
     const valor = numero(g.valor);
 
@@ -266,7 +280,7 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
     emAberto.push({ id: g.id, rotulo, valor, vencimento: vence, atrasada, competencia: g.competencia });
   }
 
-  return { linhas, semMes, emAberto };
+  return { linhas, semMes, emAberto, diaDoUltimoPagamento: diaDaData(ultimoPagamento) };
 }
 
 /**
@@ -393,6 +407,11 @@ async function linhasDasNotas({ portalClientId, cicloAtual, janelaInicio, client
   const linhas = [];
   const semMes = [];
   let canceladas = 0;
+  // ⚠ O faturamento MEDIDO, por competência da nota. Ele é acumulado ainda que a linha caia fora da
+  // janela: a projeção olha o histórico inteiro, e cortar aqui esconderia meses que sustentam a
+  // mediana.
+  const medido = new Map();
+  let ultimaCompetenciaComNota = null;
 
   for (const n of notas) {
     // ⚠⚠ O CICLO DA NOTA, não `statusEfetivo` cru. Cancelada e substituída não viram receita.
@@ -409,6 +428,12 @@ async function linhasDasNotas({ portalClientId, cicloAtual, janelaInicio, client
         referencia: { tipo: "nota", id: n.id },
       });
       continue;
+    }
+
+    // ⚠ Acumula ANTES do corte da janela — ver o comentário de `medido`.
+    medido.set(competenciaDaNota, (medido.get(competenciaDaNota) || 0) + (numero(n.total) || 0));
+    if (!ultimaCompetenciaComNota || competenciaDaNota > ultimaCompetenciaComNota) {
+      ultimaCompetenciaComNota = competenciaDaNota;
     }
 
     const competencia = somarMeses(competenciaDaNota, MESES_ATE_A_RECEITA);
@@ -481,7 +506,18 @@ async function linhasDasNotas({ portalClientId, cicloAtual, janelaInicio, client
     }));
   }
 
-  return { linhas, semMes, canceladas };
+  /**
+   * ⚠⚠ O FATURAMENTO MEDIDO, POR COMPETÊNCIA DA NOTA — é a base da projeção (30/08/2026).
+   *
+   * ⚠ A chave é a competência da NOTA, não a do recebimento: o que se repete é o FATURAMENTO. A
+   * conversão para o mês em que o dinheiro entra é feita depois, uma vez, por quem projeta.
+   * ⚠ Ele sai da MESMA varredura que monta as linhas — uma segunda consulta de faturamento é como
+   * as duas leituras começam a discordar sobre a mesma empresa.
+   */
+  const faturamentoPorMes = new Map();
+  for (const [comp, v] of medido) faturamentoPorMes.set(comp, v);
+
+  return { linhas, semMes, canceladas, faturamentoPorMes, ultimaCompetenciaComNota };
 }
 
 /**
@@ -699,7 +735,7 @@ async function linhasDasSaidasDoCliente({ portalClientId, cicloAtual, janelaInic
  *      onde o número deixa de significar algo.
  *   ⚠⚠ NÃO REALIMENTA O RBT12 e NUNCA é uma guia. E a guia real SUBSTITUI esta linha no mesmo mês.
  */
-function linhasDoImposto({ linhasDeReceita, aliquota, cicloAtual }) {
+function linhasDoImposto({ linhasDeReceita, aliquota, cicloAtual, diaDoUltimoPagamento = null }) {
   if (!aliquota) {
     return { linhas: [], semImposto: { motivo: SEM_IMPOSTO.SEM_APURACAO, frase: FRASE_DO_SEM_IMPOSTO[SEM_IMPOSTO.SEM_APURACAO] } };
   }
@@ -721,8 +757,19 @@ function linhasDoImposto({ linhasDeReceita, aliquota, cicloAtual }) {
       direcao: DIRECAO.SAIDA,
       procedencia: PROCEDENCIA.PREVISAO,
       competencia,
-      dia: null,
-      diaDesconhecido: DIA_DESCONHECIDO.IMPOSTO_SEGUE_A_RECEITA,
+      /**
+       * ⚠⚠ O DIA VEM DO ÚLTIMO PAGAMENTO DAQUELE IMPOSTO (30/08/2026) — decisão do dono:
+       * *"eu disse expressamente que as datas deveriam ser iguais às do último pagamento"* ·
+       * *"se o último pagamento foi feito dia 16, eu provisiono para dia 16"*.
+       *
+       * ⚠ Até aqui esta linha era `dia: null` + `IMPOSTO_SEGUE_A_RECEITA`, e o dono viu o efeito na
+       * tela: *"valores de previsibilidade de impostos estão em data nenhuma"*.
+       * ⚠⚠ **NÃO É UM DIA INVENTADO: É O COMPORTAMENTO MEDIDO DA PRÓPRIA EMPRESA.** Sem nenhum
+       * pagamento no histórico não há o que observar, e aí a linha CONTINUA sem dia, com o motivo —
+       * ausência de dado nunca vira data.
+       */
+      dia: diaDoUltimoPagamento,
+      diaDesconhecido: diaDoUltimoPagamento ? null : DIA_DESCONHECIDO.IMPOSTO_SEGUE_A_RECEITA,
       valor: receita * aliquota.valor,
       // ⚠⚠ "Imposto PREVISTO", nunca "imposto calculado" nem "DAS".
       rotulo: "Imposto previsto sobre a receita prevista",
@@ -792,8 +839,57 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
   ]);
 
   const aliquota = aliquotaEfetiva(snapshot);
-  const receitaPrevista = [...notas.linhas, ...series.linhas].filter((l) => l.direcao === DIRECAO.ENTRADA);
-  const imposto = linhasDoImposto({ linhasDeReceita: receitaPrevista, aliquota, cicloAtual: ciclo });
+
+  /**
+   * ⚠⚠ A RECEITA PROJETADA PELO HISTÓRICO (30/08/2026) — decisão do dono:
+   *
+   * > *"o último mês é base para todos os meses à frente, e depois vão se ajustando (…) se em 3
+   * > meses seguidos aparece a mesma receita, pode colocar ela para frente até o final da amostra,
+   * > e ir ajustando se aparecer faturamento diferente. **Sempre a mediana.**"*
+   *
+   * ⚠⚠ **ELA COMEÇA DEPOIS DO ÚLTIMO MÊS QUE JÁ TEM RECEITA REAL**, e é isso que faz o *"ir
+   * ajustando"* acontecer sozinho: chegando nota nova, aquele mês deixa de ser projetado na leitura
+   * seguinte, sem ninguém apagar nada. A projeção nunca sobrescreve o que existe.
+   *
+   * ⚠ A conversão de competência da NOTA para o mês do RECEBIMENTO é feita aqui, uma vez
+   * (`MESES_ATE_A_RECEITA`) — a regra pura fala de meses de FATURAMENTO, e misturar as duas
+   * unidades dentro dela faria o "+1" ser aplicado duas vezes em alguma correção futura.
+   */
+  const ultimoMesComReceita = notas.ultimaCompetenciaComNota
+    ? somarMeses(notas.ultimaCompetenciaComNota, MESES_ATE_A_RECEITA)
+    : null;
+  const primeiroProjetado = ultimoMesComReceita ? somarMeses(ultimoMesComReceita, 1) : null;
+  const quantosProjetar = primeiroProjetado
+    ? Math.max(0, (mesesDaCompetencia(inicio) ?? 0) + (janela?.horizonte ?? HORIZONTE_MESES)
+      - (mesesDaCompetencia(primeiroProjetado) ?? 0))
+    : 0;
+  const receitaProjetada = primeiroProjetado
+    ? receitaProjetadaPeloHistorico({
+      faturamentoPorMes: notas.faturamentoPorMes,
+      primeiroMesAProjetar: primeiroProjetado,
+      quantosMeses: quantosProjetar,
+    })
+    : { linhas: [], base: null, motivo: SEM_PROJECAO.SEM_FATURAMENTO };
+
+  const receitaPrevista = [...notas.linhas, ...receitaProjetada.linhas, ...series.linhas]
+    .filter((l) => l.direcao === DIRECAO.ENTRADA);
+  /**
+   * ⚠⚠ O DIA EM QUE ESTA EMPRESA COSTUMA PAGAR O IMPOSTO — medido, não arbitrado.
+   *
+   * > Dono: *"as datas deveriam ser iguais às do último pagamento"* · *"se o último pagamento foi
+   * > feito dia 16, eu provisiono para dia 16."*
+   *
+   * ⚠ Ele sai da consulta que `linhasDasGuias` JÁ FEZ — uma segunda ida ao banco para perguntar
+   * sobre as mesmas guias é como duas leituras da mesma coisa começam a divergir, e custa uma query
+   * por abertura de tela.
+   */
+  const diaDoUltimoPagamento = guias.diaDoUltimoPagamento ?? null;
+  const imposto = linhasDoImposto({
+    linhasDeReceita: receitaPrevista,
+    aliquota,
+    cicloAtual: ciclo,
+    diaDoUltimoPagamento,
+  });
 
   /**
    * ⚠⚠ O QUE JÁ VENCEU, E AGORA A CONTA É POR **DIA** — não mais por mês.
@@ -818,6 +914,9 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     // ⚠ O que o CLIENTE acrescentou entra por último, mas sem privilégio nenhum: mesma forma de
     // linha, mesmo balde de saída, mesma procedência PREVISAO.
     ...saidasDoCliente.linhas,
+    // ⚠ A receita projetada entra no MESMO conjunto: mesma direção, mesmo balde, mesma procedência
+    // PREVISAO. Ela não é um bloco à parte da tabela.
+    ...receitaProjetada.linhas,
   ];
   // ⚠⚠ A GUIA REAL SUBSTITUI A PROJEÇÃO DO MESMO MÊS — as duas nunca coexistem, senão o mesmo
   // imposto aparece duas vezes e o contador provisiona o dobro.
