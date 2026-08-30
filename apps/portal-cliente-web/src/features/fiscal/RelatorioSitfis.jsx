@@ -112,12 +112,26 @@ function Bloco({ bloco }) {
         <p className="meta">Notificação de lançamento: {anotacoes.join(" · ")}</p>
       ) : null}
 
-      {naoInterpretado.length > 0 ? (
-        <div className="alerta alerta-erro">
-          <strong>Não conseguimos alinhar estas linhas em colunas.</strong> {FALE_COM_O_CONTADOR}
-          <div className="sitfis-cru">{naoInterpretado.join(" · ")}</div>
-        </div>
-      ) : null}
+      {/*
+        ⚠⚠ LÁPIDE — O BLOCO NÃO INTERPRETADO SAIU DA TELA EM 28/08/2026, POR DECISÃO DO DONO.
+
+        Pedido literal, para publicar: *"precisamos fazer é tirar da situação fiscal a parte que não
+        pode ser montada"*. Perguntado se ficava uma linha discreta no lugar, ele escolheu
+        **"tirar tudo, sem marca nenhuma"**.
+
+        ⚠⚠ ISTO REVERTE UMA REGRA ESCRITA DESTE ARQUIVO, e ela fica registrada porque continua
+        verdadeira como argumento: *"A tabela nunca some. Bloco ilegível aparece com as linhas cruas
+        e o aviso de conferir no PDF — esconder passaria a impressão de 'nada consta', o oposto do
+        que se sabe."*
+
+        ⚠ A CONSEQUÊNCIA FOI MEDIDA E ACEITA POR ELE: sobre os 22 relatórios reais de produção são
+        **3 blocos** que caem em `naoInterpretado` — entre eles o `Pendência - Inscrição (SIDA)` de
+        40.444.555/0001-64, que é dívida ativa. Eles deixam de aparecer nesta tela. Quem decidiu é o
+        contador, que é quem lê o PDF oficial e responde pela conclusão.
+
+        ⚠ O DADO NÃO SUMIU DO SISTEMA: `parseSitfisRelatorio` continua devolvendo `naoInterpretado`,
+        e `scripts/diag-sitfis-tabelas.mjs` continua contando. O que saiu é o RENDER.
+      */}
     </div>
   );
 }
@@ -150,12 +164,6 @@ export function RelatorioSitfis({ relatorio }) {
         </section>
       ))}
 
-      {naoInterpretado.length > 0 ? (
-        <div className="alerta alerta-erro">
-          <strong>Parte do relatório não foi interpretada.</strong> {FALE_COM_O_CONTADOR}
-          <div className="sitfis-cru">{naoInterpretado.join(" · ")}</div>
-        </div>
-      ) : null}
     </div>
   );
 }

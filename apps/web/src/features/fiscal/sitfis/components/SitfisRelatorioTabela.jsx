@@ -306,24 +306,26 @@ function Bloco({ bloco }) {
           )
       )}
 
-      {naoInterpretado.length > 0 && (
-        <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 6, background: "rgba(255,85,85,0.10)", border: `1px solid ${COR.erro}` }}>
-          <div style={{ color: COR.erro, fontSize: "0.8rem", fontWeight: 700, marginBottom: 4 }}>
-            Não foi possível alinhar estas linhas em colunas — confira no PDF oficial:
-          </div>
-          {/* ⚠ O MODO DE FALHAR NOMEIA O MOTIVO. A leitura posicional recusa o bloco quando uma das
-              provas não fecha (palavra fora da faixa da coluna, dinheiro em coluna de texto, colunas
-              que se sobrepõem…) e devolve o motivo em `aviso`. Sem ele na tela, a recusa vira um
-              aviso genérico e ninguém sabe se o relatório mudou de forma ou se o parser quebrou.
-              Ausente (parser de texto), a caixa fica exatamente como estava. */}
-          {aviso && (
-            <div style={{ color: COR.alerta, fontSize: "0.76rem", marginBottom: 6 }}>{aviso}</div>
-          )}
-          <div style={{ color: COR.suave, fontSize: "0.78rem", fontFamily: "monospace", lineHeight: 1.6 }}>
-            {naoInterpretado.join(" · ")}
-          </div>
-        </div>
-      )}
+      {/*
+        ⚠⚠ LÁPIDE — O BLOCO NÃO INTERPRETADO SAIU DA TELA EM 28/08/2026, POR DECISÃO DO DONO.
+
+        Pedido literal, para publicar: *"precisamos fazer é tirar da situação fiscal a parte que não
+        pode ser montada"*. Perguntado se ficava uma linha discreta no lugar, ele escolheu
+        **"tirar tudo, sem marca nenhuma"**.
+
+        ⚠⚠ ISTO REVERTE UMA REGRA ESCRITA DESTE ARQUIVO, e ela fica registrada porque continua
+        verdadeira como argumento: *"A tabela nunca some. Bloco ilegível aparece com as linhas cruas
+        e o aviso de conferir no PDF — esconder passaria a impressão de 'nada consta', o oposto do
+        que se sabe."*
+
+        ⚠ A CONSEQUÊNCIA FOI MEDIDA E ACEITA POR ELE: sobre os 22 relatórios reais de produção são
+        **3 blocos** que caem em `naoInterpretado` — entre eles o `Pendência - Inscrição (SIDA)` de
+        40.444.555/0001-64, que é dívida ativa. Eles deixam de aparecer nesta tela. Quem decidiu é o
+        contador, que é quem lê o PDF oficial e responde pela conclusão.
+
+        ⚠ O DADO NÃO SUMIU DO SISTEMA: `parseSitfisRelatorio` continua devolvendo `naoInterpretado`,
+        e `scripts/diag-sitfis-tabelas.mjs` continua contando. O que saiu é o RENDER.
+      */}
     </div>
   );
 }
@@ -353,11 +355,6 @@ export function SitfisRelatorioTabela({ relatorio }) {
         </div>
       ))}
 
-      {naoInterpretado.length > 0 && (
-        <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 6, background: "rgba(255,85,85,0.10)", border: `1px solid ${COR.erro}`, color: COR.erro, fontSize: "0.8rem" }}>
-          {naoInterpretado.join(" · ")} — confira no PDF oficial.
-        </div>
-      )}
     </div>
   );
 }

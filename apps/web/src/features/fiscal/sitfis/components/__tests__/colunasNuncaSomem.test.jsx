@@ -202,16 +202,24 @@ describe("SIEFPAR — o bloco do parcelamento chega como tabela e é desenhado c
     ]);
   });
 
-  // ⚠ O QUE NÃO ENTROU NA TABELA CONTINUA NA TELA. "Parcelamento Simplificado" não tem rótulo no
-  // relatório; inventar um ("Modalidade") seria fabricar cabeçalho de documento fiscal. Ela sai no
-  // aviso, que é onde a ausência de leitura já mora.
-  it("a linha sem rótulo não vira coluna — e também não some", () => {
-    render(<SitfisRelatorioTabela relatorio={relatorioCom([UM_PARCELAMENTO])} />);
+  // ⚠⚠ ESTE TESTE FOI INVERTIDO EM 28/08/2026 — decisão do dono, para publicar.
+  //
+  // Ele exigia que "Parcelamento Simplificado" (a linha que o relatório imprime SEM rótulo)
+  // continuasse na tela, dentro do aviso de não-interpretado. O dono pediu *"tirar da situação
+  // fiscal a parte que não pode ser montada"* e, perguntado se ficava uma marca, escolheu
+  // **"tirar tudo, sem marca nenhuma"**.
+  //
+  // ⚠ O QUE **NÃO** MUDOU, e é a metade que este arquivo existe para proteger: a linha sem rótulo
+  // continua **não virando coluna**. Inventar um cabeçalho ("Modalidade") para ela seria fabricar
+  // estrutura em documento fiscal — e isso segue proibido, com ou sem o aviso na tela.
+  it("a linha sem rótulo não vira coluna — e agora também não aparece", () => {
+    const { container } = render(<SitfisRelatorioTabela relatorio={relatorioCom([UM_PARCELAMENTO])} />);
 
     expect(screen.getAllByRole("columnheader").map((th) => th.textContent)).not.toContain("Modalidade");
-    expect(screen.getByText(/Não foi possível alinhar estas linhas/i)).toBeInTheDocument();
-    expect(screen.getByText(/Parcelamento Simplificado/)).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/Não foi possível alinhar estas linhas/i);
+    expect(container.textContent).not.toMatch(/Parcelamento Simplificado/);
   });
+
 
   // O valor do parcelamento é dinheiro e tem de ser lido como dinheiro — à direita, monoespaçado.
   it("as colunas de dinheiro do SIEFPAR são tratadas como dinheiro", () => {

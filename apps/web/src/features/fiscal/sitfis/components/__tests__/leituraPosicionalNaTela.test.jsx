@@ -140,25 +140,32 @@ describe("⚠⚠ O MODO DE FALHAR CONTINUA SENDO LINHAS CRUAS — agora NOMEANDO
     aviso: "bloco não conferido pela geometria: as colunas 'Processo' e 'Tipo de Devedor' se sobrepõem em x",
   };
 
-  it("as linhas cruas continuam TODAS na tela", () => {
-    render(<SitfisRelatorioTabela relatorio={relatorioCom([RECUSADO])} />);
-    expect(screen.getByText(/Não foi possível alinhar estas linhas/i)).toBeInTheDocument();
+  it("⚠⚠ nenhuma linha crua aparece — nem uma", () => {
+    const { container } = render(<SitfisRelatorioTabela relatorio={relatorioCom([RECUSADO])} />);
     for (const linha of RECUSADO.naoInterpretado) {
-      expect(screen.getByText(new RegExp(linha.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))).toBeInTheDocument();
+      expect(container.textContent).not.toContain(linha);
     }
   });
 
-  it("⚠ e o MOTIVO da recusa aparece — sem ele ninguém sabe se o relatório mudou ou se o parser quebrou", () => {
-    render(<SitfisRelatorioTabela relatorio={relatorioCom([RECUSADO])} />);
-    expect(screen.getByText(/se sobrepõem em x/)).toBeInTheDocument();
+  it("⚠ e nenhuma MARCA sobra no lugar — o dono escolheu 'sem marca nenhuma'", () => {
+    // Meia remoção seria pior que nenhuma: uma caixa vazia, ou um título sem conteúdo, é ruído que
+    // não diz nada e ainda ocupa a tela que a remoção existe para limpar.
+    const { container } = render(<SitfisRelatorioTabela relatorio={relatorioCom([RECUSADO])} />);
+    expect(container.textContent).not.toMatch(/Não foi possível alinhar estas linhas/i);
+    expect(container.textContent).not.toMatch(/confira no PDF oficial/i);
   });
 
-  it("bloco sem `aviso` (parser de texto) não ganha caixa vazia nenhuma", () => {
-    const semAviso = { ...RECUSADO, aviso: undefined };
-    const { container } = render(<SitfisRelatorioTabela relatorio={relatorioCom([semAviso])} />);
-    expect(screen.getByText(/Não foi possível alinhar estas linhas/i)).toBeInTheDocument();
-    expect(container.textContent).not.toMatch(/não conferido pela geometria/);
+  it("⚠ o MOTIVO da recusa também não aparece — ele era a legenda daquele bloco", () => {
+    const { container } = render(<SitfisRelatorioTabela relatorio={relatorioCom([RECUSADO])} />);
+    expect(container.textContent).not.toMatch(/se sobrepõem em x/);
   });
+
+  it("⚠⚠ e o resto do relatório continua inteiro — a remoção é DAQUELE bloco, não da tela", () => {
+    // O modo de falhar caro desta mudança seria levar junto os blocos que VIRARAM tabela.
+    const { container } = render(<SitfisRelatorioTabela relatorio={relatorioCom([RECUSADO])} />);
+    expect(container.textContent).toContain(RECUSADO.titulo);
+  });
+
 
   it("⚠ recusa NÃO vira tabela em hipótese nenhuma", () => {
     const { container } = render(<SitfisRelatorioTabela relatorio={relatorioCom([RECUSADO])} />);
