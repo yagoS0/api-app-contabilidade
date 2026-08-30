@@ -432,8 +432,12 @@ disciplina do teste que amarra `"autorizada"` à `whereFaturamentoEmit`.
 `__tests__/aprendizadoNaTransicao.test.js` (10).
 
 ⚠⚠ **NADA DISTO CONTABILIZA.** A regra **sugere** a conta; quem leva ao razão continua sendo o
-contador, confirmando na fila. O "nível 1" do plano (regra ativa lança **sem clique**) **NÃO foi
-construído** — ver "o que falta", no fim desta seção.
+contador, confirmando na fila.
+
+⚠⚠ **ESTE PARÁGRAFO DIZIA QUE O "NÍVEL 1" (regra ativa lança sem clique) NÃO FOI CONSTRUÍDO — e isso
+mudou em 29/08/2026.** O dono decidiu ligar, e ele existe em `LancamentoPorRegraService.js`.
+⚠ O que continua verdade, e é o que mais importa: **nada lança hoje** — a flag nasce OFF,
+`lancaSozinha` nasce `false`, e a função **não tem chamador**. Ver a seção da Fase 6.
 
 ### ⚠⚠ AS DUAS ÂNCORAS NÃO ENTREGAM O MESMO — medido antes de escrever
 
@@ -681,11 +685,129 @@ virar lançamento.
 - ⚠ **crédito continua fora do escopo**, como no OFX: esta fila é de DESPESA, e a forma do lançamento
   de ENTRADA não foi medida. Contado e nomeado, nunca sumido.
 
+## ⚠⚠ FASE 6 — A REGRA QUE LANÇA SOZINHA (29/08/2026). **NADA LANÇA HOJE.**
+
+> Dono: *"a Lente tem todo mês um pagamento a Alessandro Nigro, CNPJ, que vai se tornar uma
+> recorrência no fluxo deles. O contador deve poder colocar o código de débito e crédito nessa
+> despesa, e todo mês que essa nota aparecer ela já é lançada em despesa."*
+> Perguntado com que data: ***"lança numa data fixa que eu configuro"***.
+
+⚠⚠ **ISTO REVERTE A DECISÃO ESCRITA NO FIM DE `lib/motorDeSugestao.js`**, e a reversão é do dono. O
+que aquele arquivo dizia: *"o plano previa um 'nível 1' em que a regra ativa lança direto, sem
+clique. Isso NÃO está construído, e a razão é o peso do ato: um lançamento contábil nascido sozinho,
+numa conta errada, erra EM SÉRIE e em silêncio — e o dono é contador. (…) O que falta é a DECISÃO DO
+DONO de ligar, e o extrato mensal 'lançados por regra' para ele poder desfazer em lote."*
+
+⚠⚠ **O ESTADO EXATO, e ele importa mais que a lista de peças: NADA LANÇA HOJE.** São TRÊS coisas
+desligadas, não uma:
+
+| | estado |
+|---|---|
+| `INTEGRACAO_LANCAMENTO_POR_REGRA` | **OFF** (nasce assim; ligar é ato do dono) |
+| `RegraContabilizacao.lancaSozinha` | **`false`** para toda regra existente (`DEFAULT false`) |
+| `lancarPorRegra` | ⚠⚠ **SEM CHAMADOR** — nenhum caminho de produção a invoca |
+
+### O que existe
+
+| arquivo | o quê |
+|---|---|
+| `LancamentoPorRegraService.js` | `podeLancarSozinho` (PURA), `lancarPorRegra`, `extratoDeLancadosPorRegra`, `desfazerLancadosPorRegra`. 28 testes |
+| `RegraService.criarRegraManual` | a porta que faltava — a tabela só nascia `APRENDIDA` |
+| `lib/estadosDeclarado.js` | `ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA` e a transição `CORRIGIR_DATA_PRESUMIDA` |
+| migrations | `20260829180000` (`contaCredito`) e `20260829190000` (`lancaSozinha`, `diaDoLancamento`) — ⚠ **ESCRITAS E NÃO APLICADAS** |
+
+### ⚠⚠ AS TRÊS TRAVAS DO LANÇAMENTO, cada uma medida por NÃO-CHAMADA
+
+1. **a FLAG** — quem recusa é o SERVIDOR, não a tela: um `curl` passaria por cima de um botão
+   escondido. Mesmo molde de `INTEGRACAO_NFSE_LOTE`;
+2. **`regra.lancaSozinha`** daquele fornecedor — fornecedor a fornecedor, nunca a carteira inteira;
+3. **a FAIXA `valorMin`/`valorMax`** — nota fora dela **cai na fila**, com o motivo dizendo que
+   existe regra. Ela nunca lança e nunca some.
+
+⚠ E mais duas recusas: **sem CNPJ** (a âncora aqui é só ele — a de descrição *se parece*, não
+identifica, e o que está em jogo é um lançamento sem clique) e **sem `diaDoLancamento`** (a data não
+se arbitra).
+
+### ⚠⚠ O CRÉDITO É RECUSADO SE NÃO FOR DISPONIBILIDADE
+
+Resposta do dono: *"continua sendo disponibilidade (caixa/banco)"*. Quem decide é
+`entraNoFluxoDeCaixa` (`accounting/lib/disponibilidades.js`), REUSADA — pelo **prefixo do
+`codigoCompleto`**, nunca pelo nome. ⚠ **NÃO reescrever como `!== NAO_DISPONIVEL`**: com isso
+`DISPONIVEL_NAO_CLASSIFICADO` e `INDETERMINADO` entrariam.
+
+⚠ `contaCredito` **`null` continua valendo**: é *"esta regra não escolheu crédito"*, e o caixa
+cravado de hoje segue para ela. A ausência não é recusada; o que é recusado é a escolha ERRADA.
+
+### ⚠⚠ A DATA PRESUMIDA — a decisão que eu recomendei contra
+
+`D despesa / C caixa` no dia N **afirma que o dinheiro saiu do caixa no dia N**, e ninguém provou
+isso: a nota diz o que é e de quem, nunca quando. É a única regra desta casa que este pedido
+atravessa (*"a data vem da nota, do OFX ou do cliente — nunca do clique"*).
+
+**O que torna a decisão REVERSÍVEL, e cada item é código:**
+
+1. **`ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA`** — valor PRÓPRIO. ⚠ Reusar `DECLARADO_PELO_CONTADOR`
+   atribuiria ao contador um ato que ele não praticou naquele mês. `ehProvaDePagamento` devolve
+   `false`;
+2. ⚠⚠ **o EXTRATO CORRIGE a data** (`CORRIGIR_DATA_PRESUMIDA`) **sem criar um segundo lançamento** —
+   o `AccountingEntry` que existe é atualizado na MESMA transação, e SÓ a data;
+3. **o extrato de "lançados por regra" com desfazer em lote** — o pré-requisito que o próprio
+   `motorDeSugestao.js` nomeou.
+
+⚠ `usuarioId: "regra_automatica"` nomeia a automação: pôr o id de uma pessoa diria que ela praticou
+o ato.
+
+### ⚠⚠ `CORRIGIR_DATA_PRESUMIDA` NÃO É `PROVAR_PAGAMENTO` COM OUTRO NOME
+
+| | sai de | troca |
+|---|---|---|
+| `PROVAR_PAGAMENTO` | `A_CONFERIR` | a afirmação de uma **PESSOA** por uma prova |
+| `CORRIGIR_DATA_PRESUMIDA` | `CONTABILIZADO` | uma presunção do **SISTEMA** por uma prova |
+
+⚠⚠ A guarda é `origemPagamento === PRESUMIDO_POR_REGRA`, **igualdade exata** — nunca
+`!ehProvaDePagamento(...)`: com a negação, a data que o contador DECLAROU seria sobrescrita por este
+caminho, e ela não é uma presunção do sistema.
+
+⚠⚠ **O COMENTÁRIO DA MATRIZ JÁ AVISAVA DISTO:** *"`CONTABILIZADO` fica fora porque lá a data já
+virou a data do `AccountingEntry` — trocá-la aqui deixaria lançamento e declarado discordando."* O
+argumento continua inteiro, e é ele que obriga a atualização do `AccountingEntry` na mesma transação.
+
+### ⚠⚠ O EXTRATO — o critério é a ORIGEM, nunca o `regraId`
+
+Um lançamento que o contador confirmou **à mão** sobre uma nota com regra também tem `regraId`, e
+ele não nasceu sozinho. Confundir os dois faria o extrato oferecer "desfazer" sobre o trabalho dele.
+
+⚠ O desfazer é **UM A UM**, por dentro de `aplicarTransicao(DESFAZER)` — nada de `deleteMany` nem
+SQL cru, que deixariam lançamento órfão no razão. ⚠ **O que falha volta NOMEADO e o lote NÃO PARA**:
+uma linha em mês fechado não pode impedir o contador de desfazer as outras vinte.
+
+### ⚠⚠ A SÉRIE QUE ENTRA NO FLUXO SOZINHA — `mediana ± 10%`
+
+> *"se a variação for = ou menor que 10%, pode ser lançado no fluxo automaticamente"* · os 10%
+> governam ***"a entrada no FLUXO (a projeção)"***, medidos ***"contra a MEDIANA observada"***.
+
+⚠⚠ **Isto é OUTRA coisa que o lançamento automático** — governa a PROJEÇÃO que o cliente vê, e não
+cria `AccountingEntry` nenhum. Ver `fluxo/lib/recorrencia.js` (`podeAutoAtivar`).
+
+⚠⚠ **AS DUAS LEITURAS DE "VARIAÇÃO" DISCORDAM NO PRÓPRIO EXEMPLO DO DONO:** a série da Lente
+(1.000 · 1.050 · 1.180) tem mediana 1.050 e faixa 945–1.155 — **o 1.180 fica FORA**. Pelo
+coeficiente de variação (≈ 8,6%) ela passaria. Implementada a **FAIXA**, por ser o que a resposta
+dele descreve com número e por ser a mais estrita. ⚠ Consequência: **o Alessandro Nigro continua
+pedindo o clique dele**.
+
+### ⚠ O QUE FALTA — e não ligar antes disto
+
+- **ligar `lancarPorRegra`** (o lugar natural é a varredura de notas, onde a auto-ativação da série
+  já roda) e **ligar `CORRIGIR_DATA_PRESUMIDA`** dentro de `fundirPagamentoNaNota`;
+- as **rotas** do extrato e do desfazer em lote, e a **tela** deles;
+- a **tela** da regra manual (criar com débito, crédito, faixa e dia);
+- ⚠⚠ **aplicar as duas migrations** — sem elas as colunas não existem, e o serviço recusa nomeando.
+
 ## O que ainda **não** existe
 
 | | |
 |---|---|
-| **a regra lançando sozinha** | decisão do dono — ver acima |
+| ~~a regra lançando sozinha~~ | ⚠⚠ **CONSTRUÍDA em 29/08/2026** — e DESLIGADA em três lugares (flag OFF, `lancaSozinha: false`, sem chamador). Ver a seção da Fase 6 acima |
 | **a tela de regras** | as rotas existem; o painel ainda não foi desenhado |
 | tela do cliente (import de OFX **e de Excel**) | as rotas existem; o portal do cliente ainda não as chama |
 | a tela do MAPEAMENTO do extrato | as rotas existem; o painel do contador ainda não foi desenhado |
