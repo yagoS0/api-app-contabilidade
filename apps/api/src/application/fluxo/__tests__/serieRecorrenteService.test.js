@@ -6,10 +6,13 @@
 
 import {
   ESTADO_DA_SERIE,
-  ESTADOS_NO_FLUXO,
   FORA_DO_ALCANCE,
   LADO,
   ORIGEM_DA_SERIE,
+  WHERE_SERIE_NO_FLUXO,
+  FRASE_DA_RECUSA_DA_SERIE,
+  removerSerieDeclarada,
+  serieEntraNoFluxo,
   RECUSA_DA_SERIE,
   cicloDeHoje,
   listarSeries,
@@ -119,7 +122,18 @@ describe("⚠⚠ a leitura é SÓ LEITURA", () => {
      * propósito: escrita nova neste serviço tem de passar por aqui e ser explicada.
      */
     expect((fonte.match(/\.upsert\(/g) || []).length).toBe(2);
-    expect(fonte).not.toMatch(/\.delete(Many)?\(|\.createMany\(/);
+    /**
+     * ⚠⚠ ESTA LINHA PROIBIA `.delete(` POR INTEIRO ATÉ 29/08/2026, e ela PEGOU a mudança — que é
+     * exatamente o que ela existe para fazer. O que entrou foi `removerSerieDeclarada`: o cliente
+     * desfazendo a recorrência que ELE declarou, enquanto o contador não decidiu.
+     *
+     * ⚠ **A proibição não foi afrouxada, ficou mais estreita:** continua sendo UM `.delete(`, e o
+     * teste dedicado logo abaixo prova as três travas dele (só `DECLARADA`, só `PENDENTE`, escopo
+     * por empresa no `where`). ⚠ `deleteMany` segue PROIBIDO — apagar em lote é o que transforma um
+     * id errado num estrago de carteira inteira.
+     */
+    expect((fonte.match(/\.delete\(/g) || []).length).toBe(1);
+    expect(fonte).not.toMatch(/\.deleteMany\(|\.createMany\(/);
     expect(fonte).not.toMatch(/\$executeRaw|\$queryRaw/);
   });
 });
@@ -246,8 +260,56 @@ describe("⚠⚠ `entraNoFluxo` é a marcação, nunca a observação", () => {
     },
   );
 
-  it("⚠ e a lista de quem entra é de INCLUSÃO — estado novo nasce FORA do fluxo", () => {
-    expect(ESTADOS_NO_FLUXO).toEqual([ESTADO_DA_SERIE.ATIVA]);
+  /**
+   * ⚠⚠ ESTE TESTE DIZIA `expect(ESTADOS_NO_FLUXO).toEqual([ATIVA])` ATÉ 29/08/2026 — e a constante
+   * deixou de existir. Ele fica INVERTIDO, não apagado, porque o argumento dele continua valendo
+   * para o caso que ele protegia.
+   *
+   * **O que ele protegia, e continua protegendo:** a série que o DETECTOR achou não entra no fluxo
+   * sem a palavra do contador (dono, 25/08/2026: *"o detector SUGERE com 3 e a linha só entra
+   * depois que o contador confirma — a trava é a decisão dele, não o número"*).
+   *
+   * **O que mudou:** apareceu um caso que não existia quando ele foi escrito — a série que o
+   * PRÓPRIO CLIENTE declarou (29/08/2026: *"o cliente pode colocar novas saídas, apenas para
+   * visualização deles"*). Ela nasce PENDENTE e tem de aparecer no fluxo DELE.
+   *
+   * ⚠ O que separa os dois é a ORIGEM, nunca o estado.
+   */
+  it("⚠⚠ PENDENTE só entra quando a origem é DECLARADA — a DETECTADA continua esperando o contador", () => {
+    const decl = (extra) => ({ estado: ESTADO_DA_SERIE.PENDENTE, origem: ORIGEM_DA_SERIE.DECLARADA, ...extra });
+    expect(serieEntraNoFluxo(decl())).toBe(true);
+    expect(serieEntraNoFluxo({ estado: ESTADO_DA_SERIE.PENDENTE, origem: ORIGEM_DA_SERIE.DETECTADA })).toBe(false);
+    expect(serieEntraNoFluxo({ estado: ESTADO_DA_SERIE.ATIVA, origem: ORIGEM_DA_SERIE.DETECTADA })).toBe(true);
+  });
+
+  it("⚠⚠ RECUSADA e SUSPENSA ficam fora nas DUAS origens — a recusa tem de tirar a linha da tela", () => {
+    for (const origem of Object.values(ORIGEM_DA_SERIE)) {
+      expect(serieEntraNoFluxo({ estado: ESTADO_DA_SERIE.RECUSADA, origem })).toBe(false);
+      expect(serieEntraNoFluxo({ estado: ESTADO_DA_SERIE.SUSPENSA, origem })).toBe(false);
+    }
+  });
+
+  it("⚠ estado novo nasce FORA — a resposta é de INCLUSÃO, e a ausência de dado também", () => {
+    expect(serieEntraNoFluxo({ estado: "QUALQUER_COISA", origem: ORIGEM_DA_SERIE.DECLARADA })).toBe(false);
+    expect(serieEntraNoFluxo(null)).toBe(false);
+    expect(serieEntraNoFluxo({})).toBe(false);
+  });
+
+  /**
+   * ⚠⚠ O `where` DO PRISMA E A FUNÇÃO TÊM DE CONCORDAR, caso a caso.
+   *
+   * São duas escritas do MESMO critério (uma para o banco filtrar, outra para a tela decidir), e é
+   * assim que o fluxo passaria a trazer uma linha que `serieEntraNoFluxo` diz que não entra — uma
+   * linha fantasma na tela do cliente, sem erro nenhum.
+   */
+  it("⚠⚠ `WHERE_SERIE_NO_FLUXO` aceita exatamente o que `serieEntraNoFluxo` aceita", () => {
+    const casa = (s) => WHERE_SERIE_NO_FLUXO.OR.some((c) =>
+      Object.entries(c).every(([k, v]) => s[k] === v));
+    for (const estado of Object.values(ESTADO_DA_SERIE)) {
+      for (const origem of Object.values(ORIGEM_DA_SERIE)) {
+        expect(casa({ estado, origem })).toBe(serieEntraNoFluxo({ estado, origem }));
+      }
+    }
   });
 });
 
@@ -451,5 +513,79 @@ describe("⚠ o ciclo de hoje", () => {
   it("é a competência do mês corrente, e é INJETADO no detector", () => {
     expect(cicloDeHoje(new Date("2026-08-27T12:00:00.000Z"))).toBe("2026-08");
     expect(cicloDeHoje(new Date("2026-12-31T23:00:00.000Z"))).toBe("2026-12");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O CLIENTE DESFAZ A RECORRÊNCIA QUE ELE DECLAROU (29/08/2026).
+//
+// Lacuna achada ao desenhar a tela: a saída AVULSA já tinha remoção e a RECORRENTE não tinha nada.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ removerSerieDeclarada", () => {
+  const clienteCom = (serie) => {
+    const apagadas = [];
+    return {
+      apagadas,
+      client: {
+        serieRecorrente: {
+          findFirst: jest.fn(async () => serie),
+          delete: jest.fn(async ({ where }) => { apagadas.push(where.id); return {}; }),
+        },
+      },
+    };
+  };
+
+  it("apaga a série DECLARADA e ainda PENDENTE", async () => {
+    const { client, apagadas } = clienteCom({
+      id: "s-1", estado: ESTADO_DA_SERIE.PENDENTE, origem: ORIGEM_DA_SERIE.DECLARADA,
+    });
+    await expect(removerSerieDeclarada({ portalClientId: "emp-1", serieId: "s-1", client }))
+      .resolves.toEqual({ ok: true });
+    expect(apagadas).toEqual(["s-1"]);
+  });
+
+  it("⚠⚠ RECUSA a série DETECTADA — ela é do sistema, o cliente não a criou", async () => {
+    // Apagá-la pelo lado do cliente jogaria fora a observação que o detector levou meses juntando.
+    const { client, apagadas } = clienteCom({
+      id: "s-2", estado: ESTADO_DA_SERIE.PENDENTE, origem: ORIGEM_DA_SERIE.DETECTADA,
+    });
+    await expect(removerSerieDeclarada({ portalClientId: "emp-1", serieId: "s-2", client }))
+      .rejects.toMatchObject({ codigo: RECUSA_DA_SERIE.NAO_DECLARADA });
+    expect(apagadas).toEqual([]);
+  });
+
+  it("⚠⚠ RECUSA depois de o contador decidir — apagar seria desfazer o ato dele", async () => {
+    for (const estado of [ESTADO_DA_SERIE.ATIVA, ESTADO_DA_SERIE.RECUSADA, ESTADO_DA_SERIE.SUSPENSA]) {
+      const { client, apagadas } = clienteCom({ id: "s-3", estado, origem: ORIGEM_DA_SERIE.DECLARADA });
+      await expect(removerSerieDeclarada({ portalClientId: "emp-1", serieId: "s-3", client }))
+        .rejects.toMatchObject({ codigo: RECUSA_DA_SERIE.JA_DECIDIDA });
+      expect(apagadas).toEqual([]);
+    }
+  });
+
+  it("⚠⚠ as duas recusas são DIFERENTES — elas pedem coisas diferentes de quem lê", async () => {
+    // "não é sua" é engano; "já foi decidida" é falar com o contador. Um código só faria a tela
+    // dizer a mesma frase nos dois, e uma delas estaria errada.
+    expect(RECUSA_DA_SERIE.NAO_DECLARADA).not.toBe(RECUSA_DA_SERIE.JA_DECIDIDA);
+    expect(FRASE_DA_RECUSA_DA_SERIE[RECUSA_DA_SERIE.NAO_DECLARADA]).toMatch(/detectada pelo sistema/i);
+    expect(FRASE_DA_RECUSA_DA_SERIE[RECUSA_DA_SERIE.JA_DECIDIDA]).toMatch(/contador já decidiu/i);
+  });
+
+  it("⚠⚠ o ESCOPO POR EMPRESA vive no `where` — conhecer um id não apaga a série de outra", async () => {
+    const { client } = clienteCom(null);
+    await expect(removerSerieDeclarada({ portalClientId: "emp-1", serieId: "s-9", client }))
+      .rejects.toMatchObject({ codigo: RECUSA_DA_SERIE.NAO_ENCONTRADA });
+    expect(client.serieRecorrente.findFirst.mock.calls[0][0].where)
+      .toEqual({ id: "s-9", portalClientId: "emp-1" });
+  });
+
+  it("⚠ sem a tabela ela se declara, em vez de estourar", async () => {
+    const client = {
+      serieRecorrente: {
+        findFirst: jest.fn(async () => { const e = new Error("x"); e.code = "P2021"; throw e; }),
+      },
+    };
+    await expect(removerSerieDeclarada({ portalClientId: "emp-1", serieId: "s-1", client }))
+      .rejects.toMatchObject({ codigo: RECUSA_DA_SERIE.INDISPONIVEL });
   });
 });

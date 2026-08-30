@@ -234,7 +234,10 @@ function linhasDoPresenteEDoFuturo(ciclo) {
       valor: 1180, rotulo: "Jantar com clientes",
       base: {
         frase: "recorrência marcada · MENSAL", n: 3, min: 900, max: 1400, cv: 0.21,
-        origem: "DECLARADA", valorDeclarado: 1000, valorObservado: 1180,
+        // ⚠ Ela foi DECLARADA pelo cliente e o contador JÁ a marcou — por isso ela está no fluxo
+        // com `ATIVA`. Sem o estado, a tela oferecia "Remover" numa série já decidida.
+        origem: "DECLARADA", estadoDaSerie: "ATIVA", periodicidade: "MENSAL",
+        valorDeclarado: 1000, valorObservado: 1180,
       },
       referencia: { tipo: "serie", id: "s-4" },
     },
@@ -279,7 +282,8 @@ function linhasDoPresenteEDoFuturo(ciclo) {
       valor: 6400, rotulo: "SEGURO ANUAL DA FROTA",
       base: {
         frase: "recorrência marcada · ANUAL", n: 2, min: 6100, max: 6400, cv: 0.03,
-        origem: "DECLARADA", valorDeclarado: 6400, valorObservado: null,
+        origem: "DECLARADA", estadoDaSerie: "ATIVA", periodicidade: "ANUAL",
+        valorDeclarado: 6400, valorObservado: null,
       },
       referencia: { tipo: "serie", id: "s-6" },
     },
@@ -300,14 +304,88 @@ function linhasDoPresenteEDoFuturo(ciclo) {
 }
 
 /**
+ * ⚠⚠ AS LINHAS DAS SAÍDAS QUE O CLIENTE ACRESCENTOU — na MESMA forma que o servidor manda.
+ *
+ * ⚠ **A avulsa e a recorrente NÃO usam a mesma fonte, e a distinção é do servidor, não do mock:**
+ * só a AVULSA é `SAIDA_DO_CLIENTE`; a que ele disse que se repete vira `SERIE_DESPESA` com
+ * `base.origem: "DECLARADA"` — porque é a mesma série que o detector produz, e duas fontes para ela
+ * fariam a evidência da recorrência (n, faixa, confronto) parar de aparecer.
+ *
+ * ⚠⚠ **AS DUAS SÃO `PREVISAO`.** O cliente disse que PRETENDE pagar; ninguém pagou nada. Marcá-las
+ * como fato pintaria de preto uma intenção — e o que a coluna promete é *"o dinheiro saiu"*.
+ *
+ * ⚠ A recorrente aparece em TODOS os meses do horizonte a partir do corrente (é o que "todo mês"
+ * quer dizer), e **sem dia**: a periodicidade diz o ciclo, não a data. Inventar o dia 5 é o que
+ * `diaDesconhecido` existe para impedir.
+ */
+function linhasDasSaidasDoCliente(saidas, ciclo) {
+  const lista = Array.isArray(saidas) ? saidas : [];
+  const out = [];
+  for (const s of lista) {
+    if (s?.estado !== "PENDENTE") continue;
+    if (s.tipo === "AVULSA") {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s.data || ""));
+      if (!m) continue;
+      out.push({
+        fonte: "SAIDA_DO_CLIENTE", direcao: "SAIDA", procedencia: "PREVISAO",
+        competencia: `${m[1]}-${m[2]}`, dia: Number(m[3]), diaDesconhecido: null,
+        valor: Number(s.valor) || 0, rotulo: s.descricao,
+        base: {
+          frase: "você acrescentou esta saída — ela ainda não foi conferida pelo seu contador",
+          // ⚠⚠ `doCliente` E `referencia` SÃO O QUE O SERVIDOR MANDA, e a primeira versão deste mock
+          // mandava `origem: "CLIENTE"` + `base.saidaId` — nomes que o servidor não usa. Efeito
+          // medido NO NAVEGADOR: a saída entrava no fluxo (dia 18, −3.500,00) e **não aparecia na
+          // lista "Suas saídas"**, porque a leitura procura `base.doCliente`. Mock que inventa o
+          // nome do campo é a divergência mock × real que este projeto já pagou várias vezes.
+          doCliente: true, estadoDaSaida: "PENDENTE",
+        },
+        referencia: { tipo: "saidaAvulsa", id: s.id },
+      });
+      continue;
+    }
+    // ⚠ Mensal cobre 12/12; trimestral, de 3 em 3; anual, uma vez. O passo sai da periodicidade,
+    // nunca de uma média — "todo mês" e "todo ano" não são o mesmo compromisso.
+    const passo = s.periodicidade === "ANUAL" ? 12 : (s.periodicidade === "TRIMESTRAL" ? 3 : 1);
+    for (let k = 0; k < HORIZONTE; k += passo) {
+      out.push({
+        fonte: "SERIE_DESPESA", direcao: "SAIDA", procedencia: "PREVISAO",
+        competencia: somarMeses(ciclo, k), dia: null,
+        diaDesconhecido: {
+          motivo: "recorrencia_sem_dia",
+          frase: "A recorrência diz de quanto em quanto tempo, não em que dia do mês.",
+        },
+        valor: Number(s.valorDeclarado) || 0, rotulo: s.rotulo,
+        base: {
+          frase: "Você declarou que esta despesa se repete — ela ainda não foi conferida pelo seu contador.",
+          origem: "DECLARADA", valorDeclarado: Number(s.valorDeclarado) || 0,
+          // ⚠ `estadoDaSerie` (não `estadoDaSaida`): são dois vocabulários, um por tabela. O que
+          // eles têm em comum é o "PENDENTE", e é ele que a tela lê para oferecer o Remover.
+          estadoDaSerie: "PENDENTE", periodicidade: s.periodicidade || null,
+        },
+        // ⚠ A referência é o que a tela usa para saber O QUE remover — e ela é do servidor, não uma
+        // chave inventada dentro da `base`.
+        referencia: { tipo: "serie", id: s.id },
+      });
+    }
+  }
+  return out;
+}
+
+/**
  * @param {string} companyId
  * @param {string} competencia o mês CORRENTE — o "hoje"
- * @param {{janelaInicio?: string, cientes?: Iterable<string>}} opcoes
+ * @param {{janelaInicio?: string, cientes?: Iterable<string>, saidasDoCliente?: Array}} opcoes
  */
 export function fluxoDeCaixaDoMock(companyId, competencia, opcoes = {}) {
   const ciclo = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(competencia || "")) ? String(competencia) : "2026-08";
   const magro = companyId === EMPRESA_SEM_APURACAO;
-  const linhas = magro ? [] : [...linhasDoPassado(ciclo), ...linhasDoPresenteEDoFuturo(ciclo)];
+  const linhas = [
+    ...(magro ? [] : [...linhasDoPassado(ciclo), ...linhasDoPresenteEDoFuturo(ciclo)]),
+    // ⚠⚠ AS SAÍDAS DO CLIENTE ENTRAM MESMO NA EMPRESA MAGRA: o que o cliente escreveu é dele, e
+    // não depende de a empresa ter apuração. Deixá-las de fora dali esconderia offline justamente
+    // o caso em que a linha do cliente é a ÚNICA da tela.
+    ...linhasDasSaidasDoCliente(opcoes.saidasDoCliente, ciclo),
+  ];
 
   /**
    * ⚠⚠ A JANELA E O "HOJE" SÃO DUAS COISAS — e o mock precisa honrar as duas, senão as setas ‹ ›

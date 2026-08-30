@@ -6,6 +6,8 @@
 
 import {
   CLASSES_DA_PROCEDENCIA,
+  DIRECAO,
+  ESTADO_DA_SAIDA_DO_CLIENTE,
   FONTE,
   FRASE_DA_PREVISAO,
   FRASE_SEM_TOTAL,
@@ -20,8 +22,10 @@ import {
   quandoDaLinha,
   ressalvasDoFluxo,
   rotuloDaFonte,
+  saidasDoClienteNoFluxo,
   rotuloDoMes,
   separarMeses,
+  TIPO_DA_SAIDA,
   totaisParaTela,
   totalDoBloco,
 } from "../leituraDoFluxo";
@@ -328,5 +332,92 @@ describe("⚠ os rótulos", () => {
   it("mês vazio é reconhecido", () => {
     expect(mesTemAlgo(mes("2026-08"))).toBe(false);
     expect(mesTemAlgo({ linhas: [linha()] })).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O QUE O CLIENTE ACRESCENTOU — uma linha por SAÍDA, nunca por ocorrência (29/08/2026).
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ saidasDoClienteNoFluxo", () => {
+  const avulsa = (extra = {}) => ({
+    fonte: FONTE.SAIDA_DO_CLIENTE, direcao: DIRECAO.SAIDA, procedencia: PROCEDENCIA.PREVISAO,
+    competencia: "2026-09", dia: 10, valor: 3000, rotulo: "Reforma da sala",
+    base: { doCliente: true, estadoDaSaida: "PENDENTE" },
+    referencia: { tipo: "saidaAvulsa", id: "sa-1" }, ...extra,
+  });
+  const declarada = (competencia, extra = {}) => ({
+    fonte: FONTE.SERIE_DESPESA, direcao: DIRECAO.SAIDA, procedencia: PROCEDENCIA.PREVISAO,
+    competencia, dia: null, valor: 1200, rotulo: "Aluguel",
+    base: { origem: "DECLARADA" }, referencia: { tipo: "serie", id: "sr-1" }, ...extra,
+  });
+  const mesesCom = (...listas) => listas.map((linhas, i) => ({
+    competencia: `2026-0${8 + i}`, linhas,
+  }));
+
+  it("acha a avulsa e diz o tipo", () => {
+    const r = saidasDoClienteNoFluxo(mesesCom([avulsa()]));
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ id: "sa-1", tipo: TIPO_DA_SAIDA.AVULSA, rotulo: "Reforma da sala", dia: 10 });
+  });
+
+  it("⚠⚠ a recorrente é UMA linha, com a contagem — nunca oito", () => {
+    // Listá-la uma vez por mês daria oito botões de remover para UMA coisa só, e a pessoa não
+    // saberia qual clicar.
+    const r = saidasDoClienteNoFluxo(mesesCom(
+      [declarada("2026-08")], [declarada("2026-09")], [declarada("2026-10")],
+    ));
+    expect(r).toHaveLength(1);
+    expect(r[0].tipo).toBe(TIPO_DA_SAIDA.RECORRENTE);
+    expect(r[0].ocorrencias).toBe(3);
+    // ⚠ `valor` é o de UMA ocorrência (é o que a pessoa digitou); `total` é o do horizonte.
+    expect(r[0].valor).toBe(1200);
+    expect(r[0].total).toBe(3600);
+  });
+
+  it("⚠⚠ a série DETECTADA não é do cliente — ela não entra na lista", () => {
+    // Ela é do sistema. Mostrá-la aqui daria ao cliente um botão de remover sobre a observação que
+    // o detector levou meses juntando.
+    const r = saidasDoClienteNoFluxo(mesesCom([declarada("2026-08", { base: { origem: "DETECTADA" } })]));
+    expect(r).toEqual([]);
+  });
+
+  it("⚠ e nenhuma outra fonte entra — guia, folha e nota ficam de fora", () => {
+    const r = saidasDoClienteNoFluxo(mesesCom([
+      { fonte: FONTE.GUIA, valor: 100, referencia: { tipo: "guia", id: "g-1" } },
+      { fonte: FONTE.FOLHA, valor: 200, referencia: { tipo: "folha", id: "f-1" } },
+      { fonte: FONTE.NOTA_EMITIDA, valor: 300, referencia: { tipo: "nota", id: "n-1" } },
+    ]));
+    expect(r).toEqual([]);
+  });
+
+  it("⚠⚠ estado AUSENTE lê como PENDENTE — errar para o outro lado esconde o botão de quem podia desfazer", () => {
+    const r = saidasDoClienteNoFluxo(mesesCom([avulsa({ base: { doCliente: true } })]));
+    expect(r[0].estado).toBe(ESTADO_DA_SAIDA_DO_CLIENTE.PENDENTE);
+  });
+
+  it("⚠ CONFIRMADA chega como confirmada", () => {
+    const r = saidasDoClienteNoFluxo(mesesCom([avulsa({ base: { doCliente: true, estadoDaSaida: "CONFIRMADA" } })]));
+    expect(r[0].estado).toBe(ESTADO_DA_SAIDA_DO_CLIENTE.CONFIRMADA);
+  });
+
+  it("⚠ linha sem referência é descartada — sem id não há o que remover", () => {
+    expect(saidasDoClienteNoFluxo(mesesCom([avulsa({ referencia: null })]))).toEqual([]);
+  });
+
+  it("⚠ a ordem é estável: avulsas por data, recorrentes por nome", () => {
+    // Sem ordem estável a lista se reordena a cada recarga e o botão troca de lugar embaixo do dedo.
+    const r = saidasDoClienteNoFluxo(mesesCom([
+      declarada("2026-08", { rotulo: "Zelador", referencia: { tipo: "serie", id: "sr-z" } }),
+      declarada("2026-08", { rotulo: "Aluguel", referencia: { tipo: "serie", id: "sr-a" } }),
+      avulsa({ competencia: "2026-10", dia: 5, referencia: { tipo: "saidaAvulsa", id: "sa-2" } }),
+      avulsa(),
+    ]));
+    expect(r.map((s) => s.id)).toEqual(["sa-1", "sa-2", "sr-a", "sr-z"]);
+  });
+
+  it("payload vazio não quebra", () => {
+    expect(saidasDoClienteNoFluxo([])).toEqual([]);
+    expect(saidasDoClienteNoFluxo(null)).toEqual([]);
+    expect(saidasDoClienteNoFluxo([{ linhas: null }])).toEqual([]);
   });
 });

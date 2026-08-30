@@ -36,6 +36,7 @@ import { derivarFolha12m } from "../notas/apuracao/v2/FolhaDerivadaService.js";
 import {
   ESTADO_DA_SERIE,
   LADO,
+  WHERE_SERIE_NO_FLUXO,
 } from "./SerieRecorrenteService.js";
 import { ESTADO_DA_SAIDA } from "./SaidaAvulsaService.js";
 import { lerSerie, PERIODICIDADE } from "./lib/recorrencia.js";
@@ -411,7 +412,11 @@ async function linhasDasSeries({ portalClientId, cicloAtual, mesesAProjetar = HO
   let marcadas = [];
   try {
     marcadas = await client.serieRecorrente.findMany({
-      where: { portalClientId: String(portalClientId), estado: ESTADO_DA_SERIE.ATIVA },
+      // ⚠⚠ O CRITÉRIO NÃO É REESCRITO AQUI — ele vem de `WHERE_SERIE_NO_FLUXO`, ao lado da função
+      // `serieEntraNoFluxo` que a conferência usa. Duas escritas do mesmo critério fariam o fluxo
+      // trazer uma linha que a outra diz que não entra, e a divergência apareceria como linha
+      // fantasma na tela do cliente.
+      where: { portalClientId: String(portalClientId), ...WHERE_SERIE_NO_FLUXO },
     });
   } catch (e) {
     if (!tabelaAusente(e)) throw e;
@@ -476,6 +481,17 @@ async function linhasDasSeries({ portalClientId, cicloAtual, mesesAProjetar = HO
           max: numero(s.baseDaObservacao?.max),
           cv: numero(s.baseDaObservacao?.cv),
           origem: s.origem,
+          // ⚠⚠ O ESTADO DA SÉRIE VIAJA — achado NO NAVEGADOR em 29/08/2026, no mock: sem ele a tela
+          // do cliente mostrava botão "Remover" em recorrência que o contador JÁ tinha confirmado,
+          // e o servidor recusaria com `serie_ja_decidida`. Um botão que sempre falha é pior que a
+          // ausência dele. ⚠ É o par do `estadoDaSaida` da avulsa, e as duas usam "PENDENTE" com o
+          // mesmo significado: esperando a palavra do contador.
+          estadoDaSerie: s.estado || null,
+          // ⚠ A PERIODICIDADE viaja porque a tela do cliente precisa DIZER "todo mês" para a
+          // recorrência que ele mesmo declarou. Sem ela, a única coisa que a tela sabe é quantas
+          // vezes a linha aparece na janela — e "aparece 8× nos próximos meses" descreve a TABELA,
+          // não o compromisso. São coisas diferentes para quem se planeja.
+          periodicidade: s.periodicidade || null,
           // ⚠ Declarado E observado juntos: a tela mostra o confronto, e o observado é o que vale.
           valorDeclarado: declarado,
           valorObservado: observado,
@@ -520,9 +536,29 @@ async function linhasDasSaidasDoCliente({ portalClientId, cicloAtual, janelaInic
      * do `select` causava, por outro caminho.
      */
     if (!client?.saidaAvulsaCliente?.findMany) return { linhas: [], indisponivel: true };
+    /**
+     * ⚠⚠ **PENDENTE ENTRA NO FLUXO, e isto CORRIGE a primeira versão desta função (29/08/2026).**
+     *
+     * Ela lia só `CONFIRMADA` — ou seja, o cliente digitava uma saída e **não via nada** até o
+     * contador conferir. Isso contradiz o pedido em uma palavra: *"o cliente pode modificar as
+     * saídas, podendo colocar novas saídas, **apenas para visualização deles**"*. Uma linha que
+     * o autor dela não enxerga não é visualização nenhuma.
+     *
+     * ⚠ **A CONFERÊNCIA NÃO PERDEU A FUNÇÃO** — ela nunca foi o portão da visualização. Ela é como
+     * o CONTADOR fica sabendo o que o cliente escreveu, e (Fase 6) como isso vira lançamento. O que
+     * ela decide é o destino CONTÁBIL da linha, não a existência dela no fluxo do cliente.
+     *
+     * ⚠⚠ **RECUSADA NÃO ENTRA**, e é o que dá sentido à recusa: o contador dizer "isto não é
+     * despesa desta empresa" tem de tirar a linha da tela, senão a decisão dele não faz nada.
+     * ⚠ O estado viaja em `base.estadoDaSaida` — a tela precisa distinguir *"aguardando o seu
+     * contador"* de *"conferida"*, e as duas são previsão do mesmo jeito.
+     */
     saidas = await client.saidaAvulsaCliente.findMany({
-      where: { portalClientId: String(portalClientId), estado: ESTADO_DA_SAIDA.CONFIRMADA },
-      select: { id: true, data: true, valor: true, descricao: true },
+      where: {
+        portalClientId: String(portalClientId),
+        estado: { in: [ESTADO_DA_SAIDA.PENDENTE, ESTADO_DA_SAIDA.CONFIRMADA] },
+      },
+      select: { id: true, data: true, valor: true, descricao: true, estado: true },
       orderBy: { data: "asc" },
     });
   } catch (e) {
@@ -552,7 +588,17 @@ async function linhasDasSaidasDoCliente({ portalClientId, cicloAtual, janelaInic
       rotulo: texto(s.descricao) || "Saída planejada",
       // ⚠ A base diz DE QUEM é a linha. Sem isso, ela se confundiria com o que o sistema previu, e
       // o cliente não saberia qual das duas ele mesmo escreveu.
-      base: { frase: "você acrescentou esta saída", doCliente: true },
+      // ⚠⚠ E diz o ESTADO: pendente e conferida são a mesma previsão para a soma, mas não para quem
+      // lê — uma ainda pode ser recusada pelo contador, a outra não. A tela só pode dizer isso se o
+      // estado chegar até ela; e é ele que decide se o botão de remover aparece (o servidor recusa
+      // apagar depois da decisão, e um botão que sempre falha é pior que a ausência dele).
+      base: {
+        frase: texto(s.estado) === ESTADO_DA_SAIDA.PENDENTE
+          ? "você acrescentou esta saída — ela ainda não foi conferida pelo seu contador"
+          : "você acrescentou esta saída",
+        doCliente: true,
+        estadoDaSaida: texto(s.estado) || ESTADO_DA_SAIDA.PENDENTE,
+      },
       referencia: { tipo: "saidaAvulsa", id: s.id },
     }));
   }

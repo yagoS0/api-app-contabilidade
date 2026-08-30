@@ -19,6 +19,7 @@ import {
   RECUSA_DA_SERIE,
   SerieRecusada,
   declararSerie,
+  removerSerieDeclarada,
 } from "../../application/fluxo/SerieRecorrenteService.js";
 // ⚠⚠ ESTA LINHA DIZIA "o corpo é COMPARTILHADO com a rota do CONTADOR — um cálculo só, dois
 // consumidores", e ficou falsa em 29/08/2026: a porta do contador foi removida (*"para o contador
@@ -949,15 +950,32 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
    * O cliente desfaz o que ele mesmo escreveu — **e só enquanto o contador não decidiu**.
    *
    * ⚠⚠ Depois da decisão, apagar seria desfazer o ato do contador pelo lado do cliente. A recusa é
-   * NOMEADA (`saida_ja_decidida`), para a tela dizer o que houve em vez de o botão só falhar.
-   * ⚠ O escopo por empresa vive no `where` do serviço, não aqui: conhecer um id não pode apagar a
+   * NOMEADA (`saida_ja_decidida` / `serie_ja_decidida`), para a tela dizer o que houve em vez de o
+   * botão só falhar.
+   * ⚠ O escopo por empresa vive no `where` dos serviços, não aqui: conhecer um id não pode apagar a
    * saída de outra empresa.
+   *
+   * ⚠⚠ **O `tipo` DESPACHA, e ele é o MESMO vocabulário do POST.** A rota nasceu (29/08/2026)
+   * sabendo apagar só a AVULSA, e a recorrente declarada não tinha porta nenhuma — na tela isso
+   * apareceria como duas saídas lado a lado, uma removível e outra não, sem motivo visível.
+   * ⚠ Ausente = `AVULSA`, que é o comportamento com que ela nasceu; valor FORA da lista recusa, e
+   * não cai no primeiro. Um `tipo` desconhecido apagando a avulsa por default seria a rota
+   * escolhendo por conta própria em qual tabela mexer.
    */
   router.delete("/companies/:companyId/fluxo/saidas/:saidaId", requireClientCompanyAccess(), async (req, res) => {
     const companyId = String(req.params.companyId);
+    const saidaId = String(req.params.saidaId);
+    const tipo = String(req.query?.tipo || "AVULSA").trim().toUpperCase();
     try {
-      await removerSaidaAvulsa({ portalClientId: companyId, saidaId: String(req.params.saidaId) });
-      return res.json({ ok: true });
+      if (tipo === "AVULSA") {
+        await removerSaidaAvulsa({ portalClientId: companyId, saidaId });
+        return res.json({ ok: true, tipo });
+      }
+      if (tipo === "RECORRENTE") {
+        await removerSerieDeclarada({ portalClientId: companyId, serieId: saidaId });
+        return res.json({ ok: true, tipo });
+      }
+      return res.status(400).json({ ok: false, error: "tipo_invalido" });
     } catch (err) {
       return responderRecusaDaSaida(res, err, log, companyId);
     }

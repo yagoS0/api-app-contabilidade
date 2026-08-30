@@ -15,6 +15,7 @@ import request from "supertest";
 const mockCriar = jest.fn();
 const mockRemover = jest.fn();
 const mockDeclarar = jest.fn();
+const mockRemoverSerie = jest.fn();
 
 jest.mock("../../../application/fluxo/SaidaAvulsaService.js", () => {
   const real = jest.requireActual("../../../application/fluxo/SaidaAvulsaService.js");
@@ -27,7 +28,11 @@ jest.mock("../../../application/fluxo/SaidaAvulsaService.js", () => {
 
 jest.mock("../../../application/fluxo/SerieRecorrenteService.js", () => {
   const real = jest.requireActual("../../../application/fluxo/SerieRecorrenteService.js");
-  return { ...real, declararSerie: (...a) => mockDeclarar(...a) };
+  return {
+    ...real,
+    declararSerie: (...a) => mockDeclarar(...a),
+    removerSerieDeclarada: (...a) => mockRemoverSerie(...a),
+  };
 });
 
 let papelExigido = "NAO_CHAMADO";
@@ -87,9 +92,17 @@ function app() {
     } catch (err) { return responder(res, err); }
   });
   a.delete("/client/companies/:companyId/fluxo/saidas/:saidaId", requireClientCompanyAccess(), async (req, res) => {
+    const tipo = String(req.query?.tipo || "AVULSA").trim().toUpperCase();
     try {
-      await mockRemover({ portalClientId: String(req.params.companyId), saidaId: String(req.params.saidaId) });
-      return res.json({ ok: true });
+      if (tipo === "AVULSA") {
+        await mockRemover({ portalClientId: String(req.params.companyId), saidaId: String(req.params.saidaId) });
+        return res.json({ ok: true, tipo });
+      }
+      if (tipo === "RECORRENTE") {
+        await mockRemoverSerie({ portalClientId: String(req.params.companyId), serieId: String(req.params.saidaId) });
+        return res.json({ ok: true, tipo });
+      }
+      return res.status(400).json({ ok: false, error: "tipo_invalido" });
     } catch (err) { return responder(res, err); }
   });
   return a;
@@ -101,6 +114,7 @@ beforeEach(() => {
   mockCriar.mockResolvedValue({ id: "sa-1", estado: "PENDENTE" });
   mockRemover.mockResolvedValue({ ok: true });
   mockDeclarar.mockResolvedValue({ serie: { id: "s-1", estado: "PENDENTE" }, jaDecidida: false });
+  mockRemoverSerie.mockResolvedValue({ ok: true });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -251,5 +265,45 @@ describe("⚠⚠ a rota REAL: o que ela não abre", () => {
     // E a rota real também não pede papel nenhum nestas duas.
     const bloco = FONTE.slice(FONTE.indexOf('router.post("/companies/:companyId/fluxo/saidas"'));
     expect(bloco.slice(0, 200)).toContain("requireClientCompanyAccess()");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ REMOVER A RECORRENTE QUE O CLIENTE DECLAROU (29/08/2026).
+//
+// A rota nasceu sabendo apagar só a AVULSA, e a recorrente declarada não tinha porta nenhuma. Na
+// tela isso apareceria como duas saídas lado a lado, uma removível e outra não, sem motivo visível.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ DELETE despacha por `tipo`", () => {
+  it("sem `tipo` ele apaga a AVULSA — o comportamento com que a rota nasceu", async () => {
+    const r = await request(app()).delete("/client/companies/emp-1/fluxo/saidas/sa-1");
+    expect(r.status).toBe(200);
+    expect(mockRemover).toHaveBeenCalledTimes(1);
+    expect(mockRemoverSerie).not.toHaveBeenCalled();
+  });
+
+  it("`tipo=RECORRENTE` apaga a SÉRIE — e a avulsa não é tocada", async () => {
+    const r = await request(app()).delete("/client/companies/emp-1/fluxo/saidas/sr-1?tipo=RECORRENTE");
+    expect(r.status).toBe(200);
+    expect(mockRemoverSerie).toHaveBeenCalledWith({ portalClientId: "emp-1", serieId: "sr-1" });
+    expect(mockRemover).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ `tipo` FORA da lista RECUSA — nunca cai na avulsa por default", async () => {
+    // Um `tipo` desconhecido apagando a avulsa seria a rota escolhendo por conta própria em qual
+    // tabela mexer, e o erro só apareceria como uma saída que sumiu sem ninguém ter pedido.
+    const r = await request(app()).delete("/client/companies/emp-1/fluxo/saidas/x?tipo=QUALQUER");
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("tipo_invalido");
+    expect(mockRemover).not.toHaveBeenCalled();
+    expect(mockRemoverSerie).not.toHaveBeenCalled();
+  });
+
+  it("⚠ e a ROTA REAL despacha do mesmo jeito — varredura da fonte", () => {
+    // O dublê é cópia; sem esta varredura ele poderia estar certo com a rota errada.
+    // ⚠ `toContain`, não regex: o trecho tem `(`, `{` e `?`, e escapá-los à mão é onde a varredura
+    // vira uma expressão que casa com outra coisa — ou com nada, passando por engano.
+    expect(FONTE).toContain("removerSerieDeclarada({ portalClientId: companyId, serieId: saidaId })");
+    expect(FONTE).toContain('String(req.query?.tipo || "AVULSA")');
   });
 });

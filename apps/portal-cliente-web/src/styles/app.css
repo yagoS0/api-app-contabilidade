@@ -1031,3 +1031,46 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
   border-color: var(--text-2);
   color: var(--text);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+   SUAS SAÍDAS — o que o cliente acrescenta ao próprio fluxo (29/08/2026).
+
+   Ela fica ABAIXO dos dois blocos de dias, e não dentro de cada um: a saída recorrente aparece em
+   oito meses da janela, e repetida por bloco daria oito botões de remover para uma coisa só.
+   ───────────────────────────────────────────────────────────────────────────────────────────── */
+.fluxo-v4-saidas { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 14px; }
+.fluxo-v4-saidas-topo { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.fluxo-v4-saidas-topo > h3 { margin: 0; font-size: .9rem; }
+
+/* A frase que impede a lista de ser lida como contabilidade. Ela não descreve uma ausência —
+   impede uma AFIRMAÇÃO errada, que é o critério de corte de legenda deste app. */
+.fluxo-v4-saidas-nota { margin: 6px 0 0; font-size: .78rem; color: var(--muted); }
+
+.fluxo-v4-saidas-form {
+  display: grid; gap: 12px; align-items: end;
+  margin: 12px 0; padding: 14px;
+  background: var(--neutral-surface); border-radius: var(--radius);
+}
+@media (min-width: 720px) {
+  .fluxo-v4-saidas-form { grid-template-columns: 2fr 1fr 1.4fr auto; }
+}
+.fluxo-v4-saidas-quando { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fluxo-v4-saidas-check { display: inline-flex; align-items: center; gap: 6px; font-size: .82rem; }
+.fluxo-v4-saidas-check > input { width: auto; }
+
+.fluxo-v4-saidas-lista { list-style: none; margin: 12px 0 0; padding: 0; }
+.fluxo-v4-saidas-lista > li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.fluxo-v4-saidas-lista > li:last-child { border-bottom: 0; }
+.fluxo-v4-saidas-quando-texto { display: block; font-size: .78rem; color: var(--muted); }
+/* A conferida perde o botão e ganha a frase: o conserto não é esperar, é falar com o contador. */
+.fluxo-v4-saidas-conferida { font-size: .75rem; color: var(--muted); white-space: nowrap; }
+.fluxo-v4-saidas-vazio { margin: 12px 0 0; font-size: .8rem; color: var(--muted); }
+
+/* Um botão menor, para as ações que vivem DENTRO de um bloco de conteúdo. */
+.btn-sm { padding: 6px 12px; font-size: .78rem; }
+/* O bloco "Quando" não é um <label> porque ele governa DOIS controles (a caixa e o campo que ela
+   troca): um label envolvendo os dois daria nome acessível errado ao segundo. */
+.fluxo-v4-saidas-rotulo { display: block; font-size: .88rem; color: var(--muted); margin-bottom: 10px; }

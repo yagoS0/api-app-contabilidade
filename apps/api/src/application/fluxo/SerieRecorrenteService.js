@@ -61,8 +61,46 @@ export const ESTADO_DA_SERIE = Object.freeze({
   SUSPENSA: "SUSPENSA",
 });
 
-/** ⚠ Só a série ATIVA entra no fluxo de caixa. As outras três existem para NÃO entrar, cada uma por um motivo. */
-export const ESTADOS_NO_FLUXO = Object.freeze([ESTADO_DA_SERIE.ATIVA]);
+/**
+ * ⚠⚠ QUAIS SÉRIES ENTRAM NO FLUXO — e a resposta deixou de ser só o ESTADO em 29/08/2026.
+ *
+ * Ela era a constante `ESTADOS_NO_FLUXO = [ATIVA]`, e o argumento dela continua inteiro para o que
+ * o DETECTOR acha. Decisão do dono, 25/08/2026: *"o detector SUGERE com 3 e a linha só entra depois
+ * que o contador confirma — a trava é a decisão dele, não o número."* Nada disso mudou.
+ *
+ * ⚠⚠ **O QUE MUDOU FOI OUTRO CASO, QUE NÃO EXISTIA QUANDO A CONSTANTE FOI ESCRITA:** a série que o
+ * PRÓPRIO CLIENTE declarou. O pedido de 29/08 é *"o cliente pode colocar novas saídas, **apenas
+ * para visualização deles**"* — e uma linha que o autor dela não enxerga não é visualização
+ * nenhuma. Ela nasce `PENDENTE` (esperando o contador) e precisa aparecer no fluxo DELE.
+ *
+ * ⚠ **O que separa os dois casos é a ORIGEM, não o estado:** `DETECTADA` é o sistema achando que
+ * viu um padrão — e sobre isso quem fala é o contador; `DECLARADA` é uma pessoa afirmando que
+ * paga aquilo. Deixar a detectada entrar por tabela faria a projeção do sistema virar compromisso
+ * sem ninguém decidir, que é exatamente o que a regra de 25/08 impede.
+ *
+ * ⚠ `RECUSADA` e `SUSPENSA` continuam FORA nas duas origens: a recusa do contador tem de tirar a
+ * linha da tela, senão a decisão dele não faz nada.
+ */
+export function serieEntraNoFluxo(serie) {
+  const estado = texto(serie?.estado);
+  const origem = texto(serie?.origem);
+  if (estado === ESTADO_DA_SERIE.ATIVA) return true;
+  return estado === ESTADO_DA_SERIE.PENDENTE && origem === ORIGEM_DA_SERIE.DECLARADA;
+}
+
+/**
+ * ⚠⚠ O MESMO CRITÉRIO, na forma que o Prisma entende — para o `where` não divergir da função.
+ *
+ * Duas escritas do mesmo critério é como o fluxo passaria a trazer uma linha que `serieEntraNoFluxo`
+ * diz que não entra (ou o contrário), e a divergência apareceria como linha fantasma na tela do
+ * cliente. Há teste exigindo que os dois concordem, caso a caso.
+ */
+export const WHERE_SERIE_NO_FLUXO = Object.freeze({
+  OR: [
+    { estado: ESTADO_DA_SERIE.ATIVA },
+    { estado: ESTADO_DA_SERIE.PENDENTE, origem: ORIGEM_DA_SERIE.DECLARADA },
+  ],
+});
 
 /** Por que um conjunto de despesas não vira série. ⚠ Vocabulário FECHADO — vai para a tela. */
 export const FORA_DO_ALCANCE = Object.freeze({
@@ -96,6 +134,8 @@ export const RECUSA_DA_SERIE = Object.freeze({
   SEM_ROTULO: "sem_rotulo",
   VALOR_INVALIDO: "valor_invalido",
   NAO_ENCONTRADA: "serie_nao_encontrada",
+  NAO_DECLARADA: "serie_nao_declarada",
+  JA_DECIDIDA: "serie_ja_decidida",
   INDISPONIVEL: "recorrencia_indisponivel",
 });
 
@@ -107,6 +147,10 @@ export const FRASE_DA_RECUSA_DA_SERIE = Object.freeze({
   [RECUSA_DA_SERIE.SEM_ROTULO]: "Falta o nome pelo qual esta recorrência aparece na tela.",
   [RECUSA_DA_SERIE.VALOR_INVALIDO]: "O valor declarado precisa ser um número maior que zero.",
   [RECUSA_DA_SERIE.NAO_ENCONTRADA]: "Esta série não existe nesta empresa.",
+  [RECUSA_DA_SERIE.NAO_DECLARADA]:
+    "Esta recorrência foi detectada pelo sistema, não declarada por você — fale com o seu contador.",
+  [RECUSA_DA_SERIE.JA_DECIDIDA]:
+    "O seu contador já decidiu sobre esta recorrência, então ela não pode mais ser apagada aqui.",
   [RECUSA_DA_SERIE.INDISPONIVEL]:
     "A tabela de recorrências ainda não existe neste banco. A migration não foi aplicada.",
 });
@@ -350,7 +394,7 @@ function montarLinha({ s, marcada, leitura, periodicidade }) {
     frase: fraseDaBase(leitura.base),
     // ⚠⚠ ENTRA NO FLUXO? É uma pergunta só, e ela é respondida AQUI: a linha só entra se o contador
     // marcou. Deixar a tela derivar isso de `estado` faria cada consumidor ter a sua regra.
-    entraNoFluxo: ESTADOS_NO_FLUXO.includes(marcada?.estado),
+    entraNoFluxo: serieEntraNoFluxo(marcada),
   };
 }
 
@@ -571,3 +615,44 @@ export function paraTela(s) {
 
 /** ⚠ Exportado para a rota poder dizer o que o detector respondeu, sem reimplementar a leitura. */
 export { LEITURA };
+
+/**
+ * ⚠⚠ O CLIENTE DESFAZ A RECORRÊNCIA QUE **ELE** DECLAROU — e só ela (29/08/2026).
+ *
+ * Ela nasceu de uma lacuna achada ao desenhar a tela: a saída AVULSA já tinha
+ * `removerSaidaAvulsa`, e a RECORRENTE não tinha nada. Na tela isso apareceria como duas saídas
+ * lado a lado, uma com botão de remover e outra sem, sem motivo visível para quem lê.
+ *
+ * ⚠⚠ **TRÊS TRAVAS, e nenhuma é dispensável:**
+ *
+ *   1. o **escopo por empresa** vive no `where`, nunca só no id — conhecer um id não pode apagar a
+ *      série de outra empresa (o furo de multi-tenancy que a F1 do WhatsApp já mediu);
+ *   2. **só `origem: DECLARADA`** — a série DETECTADA é do sistema, e apagá-la pelo lado do cliente
+ *      jogaria fora a observação que o detector levou meses juntando. Ele não a criou;
+ *   3. **só `estado: PENDENTE`** — depois que o contador decidiu, apagar seria desfazer o ato dele
+ *      pelo lado do cliente. É a MESMA regra da avulsa, e a recusa é NOMEADA para a tela dizer o
+ *      que houve em vez de o botão só falhar.
+ *
+ * ⚠ Ela APAGA, não marca como recusada: a série declarada e nunca decidida não é histórico de nada
+ * — ninguém a confirmou, ninguém pagou por ela. Guardar uma linha `RECUSADA` aqui faria a fila do
+ * contador carregar o que o cliente desistiu de dizer.
+ */
+export async function removerSerieDeclarada({ portalClientId, serieId, client = prisma }) {
+  try {
+    const atual = await client.serieRecorrente.findFirst({
+      where: { id: String(serieId), portalClientId: String(portalClientId) },
+      select: { id: true, estado: true, origem: true },
+    });
+    if (!atual) recusar(RECUSA_DA_SERIE.NAO_ENCONTRADA);
+    // ⚠ As duas recusas são DIFERENTES de propósito: "não é sua" e "já foi decidida" pedem coisas
+    // diferentes de quem lê — a primeira é engano, a segunda é falar com o contador.
+    if (atual.origem !== ORIGEM_DA_SERIE.DECLARADA) recusar(RECUSA_DA_SERIE.NAO_DECLARADA);
+    if (atual.estado !== ESTADO_DA_SERIE.PENDENTE) recusar(RECUSA_DA_SERIE.JA_DECIDIDA);
+    await client.serieRecorrente.delete({ where: { id: atual.id } });
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof SerieRecusada) throw e;
+    if (tabelaAusente(e)) recusar(RECUSA_DA_SERIE.INDISPONIVEL);
+    throw e;
+  }
+}

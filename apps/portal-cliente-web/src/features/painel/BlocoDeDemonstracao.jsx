@@ -51,6 +51,7 @@ import {
 // o dia seguinte. Ela é a única coisa que sobrou de `dadosDeDemonstracao` no caminho do fluxo.
 import { diasDoMes } from "./lib/dadosDeDemonstracao";
 import { PopUpDeGuias } from "./PopUpDeGuias";
+import { SuasSaidas } from "./SuasSaidas";
 
 /**
  * ⚠⚠ A FOLGA que a tela pede ao servidor quando a seta chega na BORDA da janela carregada.
@@ -601,6 +602,17 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
             />
           )
         ) : <Dre dados={dados} />
+      ) : null}
+
+      {/*
+        ⚠⚠ A LISTA FICA ABAIXO DOS DOIS BLOCOS, e NÃO dentro de cada um. Uma saída recorrente
+        aparece em oito meses da janela: repetida por bloco, ela daria oito botões de remover para
+        UMA coisa só, e a pessoa não saberia qual clicar.
+        ⚠ Ela só existe na visão de FLUXO: no DRE não há o que acrescentar, e um formulário ali
+        sugeriria que o cliente pode mexer numa peça contábil.
+      */}
+      {!atual.carregando && !atual.erro && dados && visao === "fluxo" ? (
+        <SuasSaidas companyId={companyId} meses={meses} aoMudar={atual.recarregar} />
       ) : null}
 
       {mostraPopUp ? (

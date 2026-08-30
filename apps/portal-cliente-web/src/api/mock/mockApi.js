@@ -1048,6 +1048,20 @@ function criarEstado() {
      * offline, não defeito do produto — em produção quem guarda é `ciencias_de_guias`.
      */
     cienciasDeGuias: new Map(),
+    /**
+     * ⚠⚠ AS SAÍDAS QUE O CLIENTE ACRESCENTOU, por empresa — `Map<companyId, Array>`.
+     *
+     * Guarda as DUAS formas que a rota aceita, cada uma com o seu estado:
+     *  • a AVULSA, que tem DATA e vira uma linha própria no dia dela;
+     *  • a RECORRENTE, que tem CICLO e não tem data — ela cai em "no mês".
+     *
+     * ⚠⚠ **NENHUMA DAS DUAS É LANÇAMENTO CONTÁBIL**, e o mock não pode sugerir que seja: elas
+     * nascem `PENDENTE` e ficam esperando o contador. É o que o servidor faz, e um mock que as
+     * mostrasse como confirmadas treinaria a tela a pintar de preto o que ninguém decidiu.
+     * ⚠ Em memória, como as sessões e a ciência: recarregar devolve o fluxo sem elas. Artefato do
+     * modo offline — em produção quem guarda é `saidas_avulsas_cliente` e `series_recorrentes`.
+     */
+    saidasDoCliente: new Map(),
     tokensRedefinicao,
     numeracaoNfse,
     tentativasNfse,
@@ -1865,6 +1879,10 @@ export function createMockApi() {
       return fluxoDeCaixaDoMock(id, ciclo, {
         janelaInicio,
         cientes: estado.cienciasDeGuias.get(id) || [],
+        // ⚠⚠ SEM ISTO, criar uma saída não mudaria NADA na tela offline — e um mock que aceita a
+        // escrita e não a mostra treina a tela a parecer quebrada. É a quinta vez que este mock
+        // teria escondido um ramo.
+        saidasDoCliente: estado.saidasDoCliente.get(id) || [],
       });
     },
 
@@ -1888,6 +1906,97 @@ export function createMockApi() {
       const jaVistas = estado.cienciasDeGuias.get(id) || [];
       estado.cienciasDeGuias.set(id, [...new Set([...jaVistas, ...ids])]);
       return { ok: true, ciencia: { id: `c-${jaVistas.length + 1}`, guiaIds: ids, origem: "CLIENT" } };
+    },
+
+    /**
+     * ⚠⚠ A SAÍDA QUE O CLIENTE ACRESCENTA — as DUAS formas, num verbo só.
+     *
+     * Espelho do `realApi` e da rota `POST /client/companies/:id/fluxo/saidas`. O `tipo` é
+     * vocabulário FECHADO, e valor fora dele RECUSA nomeando — nunca escolhe um por conta própria.
+     *
+     * ⚠⚠ **AS RECUSAS SÃO AS DO SERVIDOR, com os MESMOS códigos.** Um mock mais permissivo que o
+     * servidor treina a tela a mandar o que vai ser rejeitado — foi o caso do `emitirNfse`, que
+     * julgava só o payload e recusava todo Lucro Presumido.
+     */
+    async criarSaidaDoFluxo(companyId, corpo = {}) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const tipo = String(corpo?.tipo || "").trim().toUpperCase();
+      const descricao = String(corpo?.descricao || "").trim();
+      const valor = Number(corpo?.valor);
+
+      if (tipo !== "AVULSA" && tipo !== "RECORRENTE") {
+        throw new ApiError(400, "tipo_invalido", { error: "tipo_invalido" });
+      }
+      if (!descricao) {
+        throw new ApiError(400, "descricao_obrigatoria", { error: "descricao_obrigatoria" });
+      }
+      // ⚠ `> 0` por TIPO, nunca por verdade: `Number(null)` é 0 e 0 é finito. É a mesma armadilha
+      // que a alíquota da nota já pagou.
+      if (!Number.isFinite(valor) || valor <= 0) {
+        throw new ApiError(400, "valor_invalido", { error: "valor_invalido" });
+      }
+
+      const lista = estado.saidasDoCliente.get(id) || [];
+      if (tipo === "AVULSA") {
+        // ⚠ Data CIVIL, no formato do campo (`YYYY-MM-DD`). Nada de `new Date`: às 22h de Brasília
+        // o ISO devolveria o dia seguinte, e esta data é o dia em que o cliente planeja pagar.
+        const data = String(corpo?.data || "").trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+          throw new ApiError(400, "data_invalida", { error: "data_invalida" });
+        }
+        const saida = {
+          id: `sa-${lista.length + 1}`,
+          data,
+          valor,
+          descricao,
+          estado: "PENDENTE",
+        };
+        estado.saidasDoCliente.set(id, [...lista, { tipo, ...saida }]);
+        return { ok: true, tipo, saida };
+      }
+
+      const periodicidade = String(corpo?.periodicidade || "").trim().toUpperCase();
+      if (!["MENSAL", "TRIMESTRAL", "ANUAL"].includes(periodicidade)) {
+        throw new ApiError(400, "periodicidade_invalida", { error: "periodicidade_invalida" });
+      }
+      const serie = {
+        id: `sr-${lista.length + 1}`,
+        rotulo: descricao,
+        periodicidade,
+        valorDeclarado: valor,
+        estado: "PENDENTE",
+        origem: "DECLARADA",
+      };
+      estado.saidasDoCliente.set(id, [...lista, { tipo, ...serie }]);
+      return { ok: true, tipo, serie, jaDecidida: false };
+    },
+
+    /**
+     * ⚠⚠ Remover só enquanto PENDENTE — depois da decisão do contador, o servidor recusa.
+     *
+     * ⚠ O mock exerce a recusa (`saida_ja_decidida`, 409) porque ela é o ramo que a tela precisa
+     * saber desenhar: apagar depois da decisão seria desfazer o ato do contador pelo lado do
+     * cliente. Sem o ramo no mock, ele só existiria em produção.
+     */
+    async removerSaidaDoFluxo(companyId, saidaId, { tipo } = {}) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const esperado = String(tipo || "AVULSA").trim().toUpperCase();
+      if (esperado !== "AVULSA" && esperado !== "RECORRENTE") {
+        throw new ApiError(400, "tipo_invalido", { error: "tipo_invalido" });
+      }
+      const lista = estado.saidasDoCliente.get(id) || [];
+      // ⚠ O mock exige que o `tipo` BATA com o da saída, como o servidor: lá são duas tabelas, e
+      // pedir a remoção na tabela errada devolve "não encontrada". Um mock que ignorasse o tipo
+      // deixaria a tela mandar o parâmetro errado e só descobrir em produção.
+      const alvo = lista.find((s) => s.id === String(saidaId) && s.tipo === esperado);
+      if (!alvo) throw new ApiError(404, "saida_nao_encontrada", { error: "saida_nao_encontrada" });
+      if (alvo.estado !== "PENDENTE") {
+        throw new ApiError(409, "saida_ja_decidida", { error: "saida_ja_decidida" });
+      }
+      estado.saidasDoCliente.set(id, lista.filter((s) => s.id !== alvo.id));
+      return { ok: true };
     },
 
     async getDre(companyId, { competencia } = {}) {

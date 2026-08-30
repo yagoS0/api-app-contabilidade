@@ -6,7 +6,9 @@
 
 import { montarFluxoDeCaixa, cicloDeHoje } from "../FluxoDeCaixaService.js";
 import { DIRECAO, FONTE, PROCEDENCIA, SEM_IMPOSTO, SEM_MES } from "../lib/fluxoDeCaixa.js";
-import { ESTADO_DA_SERIE, LADO } from "../SerieRecorrenteService.js";
+import {
+  ESTADO_DA_SERIE, LADO, WHERE_SERIE_NO_FLUXO, serieEntraNoFluxo,
+} from "../SerieRecorrenteService.js";
 
 const CICLO = "2026-08";
 
@@ -34,7 +36,7 @@ const apuracao = (extra = {}) => ({
   dasRetornadoSerpro: "600.00", dasSimuladoSerpro: null, ...extra,
 });
 
-function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo = null, erroNaSerie = null, primeiraNota = undefined, folhas = [], contasDeFolha = [], apuradas = [], transmitidas = [] } = {}) {
+function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo = null, erroNaSerie = null, primeiraNota = undefined, folhas = [], contasDeFolha = [], apuradas = [], transmitidas = [], saidasDoCliente = null } = {}) {
   return {
     portalClient: { findUnique: jest.fn(async () => ({ id: "emp-1", prazoRecebimentoMeses: prazo })) },
     guide: { findMany: jest.fn(async () => guias) },
@@ -69,6 +71,24 @@ function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo 
     // é exatamente o que se quer se alguém trocar a leitura por uma que engole erro.
     accountingEntry: { findMany: jest.fn(async () => folhas) },
     chartOfAccount: { findMany: jest.fn(async () => contasDeFolha) },
+    /**
+     * ⚠⚠ AS SAÍDAS QUE O CLIENTE ACRESCENTOU.
+     *
+     * `saidasDoCliente: null` deixa o DELEGATE de fora do dublê de propósito — é o estado REAL da
+     * máquina em que o `prisma generate` não rodou (EPERM no Windows com o servidor de dev de pé), e
+     * é o que a guarda `!client?.saidaAvulsaCliente?.findMany` existe para atravessar sem TypeError.
+     */
+    ...(saidasDoCliente === null ? {} : {
+      saidaAvulsaCliente: {
+        findMany: jest.fn(async ({ where } = {}) => {
+          // ⚠ O dublê APLICA o filtro de estado, em vez de devolver tudo: é justamente o filtro que
+          // está sob teste (pendente entra, recusada não), e um dublê que o ignorasse deixaria a
+          // asserção passar com o serviço lendo qualquer coisa.
+          const aceitos = where?.estado?.in || (where?.estado ? [where.estado] : null);
+          return (saidasDoCliente || []).filter((s) => !aceitos || aceitos.includes(s.estado));
+        }),
+      },
+    }),
   };
 }
 
@@ -537,10 +557,26 @@ describe("⚠⚠ a nota emitida + prazo", () => {
 // 4 e 5 · AS SÉRIES MARCADAS
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ só a série MARCADA entra no fluxo", () => {
-  it("a query pede só `ATIVA` — observar não põe nada no fluxo", async () => {
+  /**
+   * ⚠⚠ ESTE TESTE PEDIA `where.estado === ATIVA` ATÉ 29/08/2026, e o critério passou a ser o par
+   * (estado, origem) — ver `serieEntraNoFluxo` em `SerieRecorrenteService.js`.
+   *
+   * O que ele protegia continua protegido, e está afirmado abaixo: a série DETECTADA e ainda
+   * PENDENTE **não** entra. O que passou a entrar é a que o CLIENTE declarou, porque ela é a saída
+   * dele — *"apenas para visualização deles"*.
+   */
+  it("⚠⚠ a query NÃO reescreve o critério — ela usa o `WHERE` compartilhado", async () => {
     const client = clientDe({ series: [] });
     await montar(client);
-    expect(client.serieRecorrente.findMany.mock.calls[0][0].where.estado).toBe(ESTADO_DA_SERIE.ATIVA);
+    const where = client.serieRecorrente.findMany.mock.calls[0][0].where;
+    // ⚠ A asserção é sobre o OBJETO compartilhado, não sobre uma cópia com a mesma forma: é a
+    // reescrita que se quer impedir, e uma cópia idêntica hoje diverge na primeira correção.
+    expect(where.OR).toBe(WHERE_SERIE_NO_FLUXO.OR);
+    expect(where.estado).toBeUndefined();
+  });
+
+  it("⚠⚠ a série DETECTADA e pendente continua FORA — a decisão de 25/08 não foi tocada", () => {
+    expect(serieEntraNoFluxo({ estado: "PENDENTE", origem: "DETECTADA" })).toBe(false);
   });
 
   it("⚠ a série MENSAL enche a janela DA FRENTE — não os 12 meses da tabela", async () => {
@@ -797,5 +833,85 @@ describe("⚠ o horizonte e o ciclo", () => {
     expect(sel).not.toHaveProperty("prazoRecebimentoMeses");
     // ⚠ O `select` continua EXPLÍCITO — o que se recusa é a coluna, não a disciplina.
     expect(sel).toHaveProperty("id", true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ AS SAÍDAS QUE O CLIENTE ACRESCENTOU — e a PENDENTE aparece (29/08/2026).
+//
+// > Dono: *"o cliente pode modificar as saídas, podendo colocar novas saídas, **apenas para
+// > visualização deles**"*.
+//
+// ⚠⚠ **A PRIMEIRA VERSÃO DESTA LEITURA FILTRAVA SÓ `CONFIRMADA`, E ISSO CONTRADIZIA O PEDIDO EM UMA
+// PALAVRA:** o cliente digitava e não via nada até o contador conferir. Uma linha que o autor dela
+// não enxerga não é visualização nenhuma. A conferência nunca foi o portão da VISUALIZAÇÃO — ela é
+// como o contador fica sabendo, e como a linha vira lançamento (Fase 6).
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ a saída do cliente entra no fluxo", () => {
+  const saida = (extra = {}) => ({
+    id: "sa-1", data: new Date("2026-09-10T00:00:00.000Z"), valor: "3000.00",
+    descricao: "Reforma da sala", estado: "PENDENTE", ...extra,
+  });
+
+  it("⚠⚠ PENDENTE aparece — é o conserto do defeito acima", async () => {
+    const r = await montar(clientDe({ saidasDoCliente: [saida()] }));
+    const linhas = linhasDe(r, FONTE.SAIDA_DO_CLIENTE);
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0].rotulo).toBe("Reforma da sala");
+    expect(linhas[0].competencia).toBe("2026-09");
+  });
+
+  it("CONFIRMADA também", async () => {
+    const r = await montar(clientDe({ saidasDoCliente: [saida({ estado: "CONFIRMADA" })] }));
+    expect(linhasDe(r, FONTE.SAIDA_DO_CLIENTE)).toHaveLength(1);
+  });
+
+  it("⚠⚠ RECUSADA NÃO — é o que dá sentido à recusa do contador", async () => {
+    // Ele dizer "isto não é despesa desta empresa" tem de tirar a linha da tela; senão a decisão
+    // dele não faz nada, e o cliente continua planejando com um número que foi negado.
+    const r = await montar(clientDe({ saidasDoCliente: [saida({ estado: "RECUSADA" })] }));
+    expect(linhasDe(r, FONTE.SAIDA_DO_CLIENTE)).toHaveLength(0);
+  });
+
+  it("⚠⚠ ela é SEMPRE previsão — o cliente planejou, ninguém pagou", async () => {
+    const r = await montar(clientDe({ saidasDoCliente: [saida({ estado: "CONFIRMADA" })] }));
+    expect(linhasDe(r, FONTE.SAIDA_DO_CLIENTE)[0].procedencia).toBe(PROCEDENCIA.PREVISAO);
+  });
+
+  it("⚠ o DIA é o que a pessoa escreveu — não é precisão fabricada", async () => {
+    const r = await montar(clientDe({ saidasDoCliente: [saida()] }));
+    const l = linhasDe(r, FONTE.SAIDA_DO_CLIENTE)[0];
+    expect(l.dia).toBe(10);
+    expect(l.diaDesconhecido).toBeNull();
+  });
+
+  it("⚠⚠ o ESTADO viaja na base — a tela precisa distinguir 'aguardando' de 'conferida'", async () => {
+    const pendente = await montar(clientDe({ saidasDoCliente: [saida()] }));
+    expect(linhasDe(pendente, FONTE.SAIDA_DO_CLIENTE)[0].base.estadoDaSaida).toBe("PENDENTE");
+    expect(linhasDe(pendente, FONTE.SAIDA_DO_CLIENTE)[0].base.frase).toMatch(/não foi conferida/i);
+
+    const conferida = await montar(clientDe({ saidasDoCliente: [saida({ estado: "CONFIRMADA" })] }));
+    expect(linhasDe(conferida, FONTE.SAIDA_DO_CLIENTE)[0].base.estadoDaSaida).toBe("CONFIRMADA");
+    expect(linhasDe(conferida, FONTE.SAIDA_DO_CLIENTE)[0].base.frase).not.toMatch(/não foi conferida/i);
+  });
+
+  it("⚠ a base diz DE QUEM é a linha, e a referência aponta a saída", async () => {
+    const r = await montar(clientDe({ saidasDoCliente: [saida()] }));
+    const l = linhasDe(r, FONTE.SAIDA_DO_CLIENTE)[0];
+    expect(l.base.doCliente).toBe(true);
+    expect(l.referencia).toEqual({ tipo: "saidaAvulsa", id: "sa-1" });
+  });
+
+  it("⚠⚠ sem o DELEGATE (o `prisma generate` que não rodou) o fluxo NÃO cai — ele se declara", async () => {
+    // No Windows o `generate` falha com EPERM enquanto o servidor de dev segura a DLL do engine.
+    // Sem a guarda, `undefined.findMany` derrubaria o fluxo INTEIRO — cards e pop-up junto.
+    const r = await montar(clientDe({ guias: [guia()] }));
+    expect(r.saidasDoClienteIndisponiveis).toBe(true);
+    expect(r.meses.length).toBeGreaterThan(0);
+  });
+
+  it("⚠ com o delegate presente, a indisponibilidade some", async () => {
+    const r = await montar(clientDe({ saidasDoCliente: [] }));
+    expect(r.saidasDoClienteIndisponiveis).toBe(false);
   });
 });

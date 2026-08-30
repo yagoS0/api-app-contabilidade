@@ -393,3 +393,91 @@ export const FRASE_DA_PREVISAO =
 export const FRASE_SEM_TOTAL =
   "Não há um total dos 12 meses: este painel mostra MOVIMENTOS, não saldo — ele não sabe quanto "
   + "você tem em conta hoje, então não teria como somar um saldo futuro.";
+
+/** ⚠ As duas formas que o cliente pode acrescentar — o MESMO vocabulário que a rota despacha. */
+export const TIPO_DA_SAIDA = Object.freeze({ AVULSA: "AVULSA", RECORRENTE: "RECORRENTE" });
+
+/** ⚠ O estado que o SERVIDOR manda em `base.estadoDaSaida`. Vocabulário fechado, dele. */
+export const ESTADO_DA_SAIDA_DO_CLIENTE = Object.freeze({
+  PENDENTE: "PENDENTE",
+  CONFIRMADA: "CONFIRMADA",
+});
+
+/** ⚠ O único estado que os DOIS vocabulários compartilham — ver o comentário longo abaixo. */
+const ESTADO_PENDENTE = ESTADO_DA_SAIDA_DO_CLIENTE.PENDENTE;
+
+/**
+ * ⚠⚠ O QUE O CLIENTE ACRESCENTOU, lido do payload do fluxo — UMA linha por SAÍDA, nunca por
+ * ocorrência.
+ *
+ * A recorrente mensal aparece em 8 meses da janela: listá-la 8 vezes daria 8 botões de remover para
+ * UMA coisa só, e a pessoa não saberia qual clicar. Aqui ela é uma linha, com a contagem de vezes
+ * que aparece — que é o que responde *"quanto isso me custa no horizonte?"*.
+ *
+ * ⚠⚠ **NÃO EXISTE UMA SEGUNDA CONSULTA PARA ISTO.** A lista sai do MESMO payload que a tabela
+ * desenha, então ela não pode discordar dela. Uma rota de "minhas saídas" traria a pergunta *"por
+ * que a lista mostra uma linha que a tabela não tem?"*, que é o defeito que a competência única já
+ * consertou neste app.
+ *
+ * ⚠ **Como se sabe que a linha é do cliente:** a AVULSA vem marcada (`base.doCliente`); a
+ * RECORRENTE é `SERIE_DESPESA` com `base.origem: "DECLARADA"` — e hoje **só o cliente declara**
+ * (`marcarSerie`, a porta do contador, grava `DETECTADA`). ⚠ Se um dia o contador ganhar uma porta
+ * de declarar, esta leitura passa a mostrar a série dele como se fosse do cliente: quem construir
+ * aquela porta precisa marcar de quem é a declaração, e voltar aqui.
+ */
+export function saidasDoClienteNoFluxo(meses) {
+  const porId = new Map();
+  for (const mes of Array.isArray(meses) ? meses : []) {
+    for (const l of Array.isArray(mes?.linhas) ? mes.linhas : []) {
+      const ehAvulsa = l?.base?.doCliente === true;
+      const ehDeclarada = l?.fonte === FONTE.SERIE_DESPESA && l?.base?.origem === "DECLARADA";
+      if (!ehAvulsa && !ehDeclarada) continue;
+      const id = l?.referencia?.id;
+      if (!id) continue;
+
+      const chave = String(id);
+      const atual = porId.get(chave);
+      if (atual) {
+        atual.ocorrencias += 1;
+        atual.total += Number(l.valor) || 0;
+        continue;
+      }
+      porId.set(chave, {
+        id: chave,
+        tipo: ehAvulsa ? TIPO_DA_SAIDA.AVULSA : TIPO_DA_SAIDA.RECORRENTE,
+        rotulo: l.rotulo || "Saída planejada",
+        valor: Number(l.valor) || 0,
+        total: Number(l.valor) || 0,
+        ocorrencias: 1,
+        competencia: l.competencia || null,
+        dia: l.dia || null,
+        // ⚠ Só a RECORRENTE tem periodicidade, e ela vem do servidor. Sem ela a tela diria "aparece
+        // 8× nos próximos meses", que descreve a TABELA e não o compromisso — e são coisas
+        // diferentes para quem se planeja. Ausente, o texto cai na contagem, que é o honesto.
+        periodicidade: l?.base?.periodicidade || null,
+        // ⚠⚠ DOIS VOCABULÁRIOS, UMA PERGUNTA. A avulsa manda `estadoDaSaida`
+        // (PENDENTE|CONFIRMADA|RECUSADA) e a série manda `estadoDaSerie`
+        // (PENDENTE|ATIVA|RECUSADA|SUSPENSA) — são tabelas diferentes, com vidas diferentes, e
+        // colapsá-los num vocabulário só faria a tela do cliente inventar um estado que nenhum dos
+        // dois serviços conhece. O que eles têm em comum é o **PENDENTE**: esperando a palavra do
+        // contador. É só isso que esta tela precisa saber.
+        //
+        // ⚠⚠ AUSENTE LÊ COMO PENDENTE, e a escolha tem lado: errar para "pendente" mostra um botão
+        // de remover que o servidor pode recusar (com o motivo na tela); errar para "confirmada"
+        // ESCONDE o botão de quem ainda podia desfazer, e essa pessoa não tem outro caminho.
+        estado: l?.base?.estadoDaSaida || l?.base?.estadoDaSerie || ESTADO_PENDENTE,
+        pendente: (l?.base?.estadoDaSaida || l?.base?.estadoDaSerie || ESTADO_PENDENTE) === ESTADO_PENDENTE,
+      });
+    }
+  }
+  // ⚠ Ordem estável: a avulsa pela data, a recorrente pelo nome. Sem ela a lista se reordena a cada
+  // recarga e o botão de remover troca de lugar embaixo do dedo.
+  return [...porId.values()].sort((a, b) => {
+    if (a.tipo !== b.tipo) return a.tipo === TIPO_DA_SAIDA.AVULSA ? -1 : 1;
+    if (a.tipo === TIPO_DA_SAIDA.AVULSA) {
+      return `${a.competencia}-${String(a.dia).padStart(2, "0")}`
+        .localeCompare(`${b.competencia}-${String(b.dia).padStart(2, "0")}`);
+    }
+    return String(a.rotulo).localeCompare(String(b.rotulo), "pt-BR");
+  });
+}

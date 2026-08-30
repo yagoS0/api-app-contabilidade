@@ -415,6 +415,54 @@ export function createRealApi() {
       });
     },
 
+
+    /**
+     * ⚠⚠ A SAÍDA QUE O CLIENTE ACRESCENTA — e ela é PLANEJAMENTO, nunca lançamento contábil.
+     *
+     * > Dono, 29/08/2026: *"o cliente pode modificar as saídas, podendo colocar novas saídas, apenas
+     * > para visualização deles"*, e, perguntado se é avulsa ou recorrente: *"as duas coisas"*.
+     *
+     * ⚠⚠ **UM VERBO SÓ para o que a tela apresenta como um botão só.** A rota decide pela chave
+     * `tipo` (vocabulário FECHADO: `AVULSA` | `RECORRENTE`): a avulsa vira uma linha própria com
+     * DATA, a recorrente vira uma `SerieRecorrente` declarada, que guarda CICLO e não tem data.
+     * Dois endpoints fariam a TELA escolher a porta — e um dia escolher errado.
+     *
+     * ⚠⚠ **NADA DISTO É `LancamentoDeclarado`.** A invariante nº 1 daquele módulo exige
+     * `dataPagamento`, porque o lançamento que sai dele é `D despesa / C caixa` — ele AFIRMA que o
+     * dinheiro saiu. Uma saída planejada para o mês que vem não saiu de lugar nenhum.
+     *
+     * ⚠ O `lado` NÃO viaja: ele é cravado em DESPESA no servidor. O pedido é sobre SAÍDAS, e aceitar
+     * `RECEITA` daqui deixaria o cliente pôr receita futura no próprio fluxo — outra decisão, que
+     * ninguém tomou.
+     */
+    async criarSaidaDoFluxo(companyId, corpo = {}) {
+      return pedir(`/client/companies/${encodeURIComponent(companyId)}/fluxo/saidas`, {
+        method: "POST",
+        body: corpo,
+      });
+    },
+
+    /**
+     * ⚠⚠ O cliente desfaz o que ELE escreveu — e só enquanto o contador não decidiu.
+     *
+     * Depois da decisão o servidor recusa com `saida_ja_decidida` (409): apagar ali seria desfazer
+     * o ato do contador pelo lado do cliente. ⚠ A recusa é NOMEADA para a tela poder DIZER o que
+     * houve, em vez de o botão só falhar.
+     *
+     * ⚠ **NÃO EXISTE PATCH**, e a ausência é a resposta do dono: *"só acrescentar"*. Nada aqui
+     * altera linha que o sistema previu, e não há caminho para o cliente mexer numa guia.
+     */
+    async removerSaidaDoFluxo(companyId, saidaId, { tipo } = {}) {
+      // ⚠⚠ O `tipo` VIAJA porque as duas formas moram em TABELAS diferentes e o servidor despacha
+      // por ele. Sem o parâmetro ele apaga a AVULSA (o comportamento com que a rota nasceu) — e uma
+      // tela que não o mandasse tentaria apagar a avulsa com o id de uma série, recebendo
+      // "não encontrada" sobre uma linha que está na frente da pessoa.
+      return pedir(
+        `/client/companies/${encodeURIComponent(companyId)}/fluxo/saidas/${encodeURIComponent(saidaId)}`
+        + qs({ tipo: tipo || undefined }),
+        { method: "DELETE" },
+      );
+    },
     /**
      * ⚠⚠ O DRE CONTINUA SENDO DEMONSTRAÇÃO, e o motivo não é esquecimento: **não existe rota de
      * DRE**. Ele devolve `demonstracao: true`, que é o que mantém o selo aceso na visão dele.
