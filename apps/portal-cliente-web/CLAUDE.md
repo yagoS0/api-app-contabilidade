@@ -199,6 +199,47 @@ este projeto já pagou caro por bloqueio anotado que envelheceu calado.
 | a entrada da nota | "no mês" (prazo de recebimento em meses) | **dia 1** do mês seguinte |
 | o cliente escreve | nada | **acrescenta saídas** ao próprio fluxo |
 
+### ⚠⚠ OS DEZ DIAS SÃO ROLAGEM, E O "no mês" DESCEU PARA O RODAPÉ (30/08/2026)
+
+**Duas correções do dono no mesmo dia, e as duas revertem decisões da tabela acima.**
+
+> *"a tabela do fluxo deve mostrar apenas os 10 dias, para que sempre seja visto o dia em que
+> estamos: 5 para trás e 4 para frente"* — e, logo depois, corrigindo o desenho que eu tinha feito
+> para isso: *"os dias devem ser passados com **rolagem**, não com seta"*.
+>
+> *"esse **no mês** tem que sumir daí, e abaixo da tabela, no **footer** dela, deve haver um resumo
+> da coluna: total de entrada, saída, impostos…"*
+
+| | v4 (29/08) | hoje |
+|---|---|---|
+| quantos dias à vista | o mês inteiro, 31 linhas | **dez**, e o dia de hoje sempre entre eles |
+| quem mostra dez | — | a **altura** de `.table-wrap--dias` (414px), nunca um `slice` |
+| como se anda | — | **rolagem**; a caixa abre rolada em hoje−5 |
+| a linha "no mês" | **primeira** de cada bloco | **fora do corpo**, virou o **total** do `<tfoot>` |
+
+- ⚠⚠ **O MÊS INTEIRO CONTINUA NO DOM.** Cortar em JavaScript tiraria os outros dias de lá: quem
+  rolasse não acharia nada, e quem usa leitor de tela nunca saberia que eles existem. `janelaDeDias`
+  (o corte que existiu por algumas horas) **fica na lib, sem chamador e com teste** — é ela que
+  define "onde a janela começa", e é dela que sai a rolagem inicial.
+- ⚠⚠ **O DINHEIRO DO "no mês" NÃO SUMIU — ele mudou de lugar, duas vezes.** É ali que moram a folha
+  e o imposto previsto sem dia. Hoje eles entram (a) no **resultado acumulado**, que começa por eles,
+  e (b) no **total do rodapé**. Por isso o último dia e o rodapé fecham no mesmo número — conferido
+  no navegador (13.600,45 nos dois). Somem-nos e a tela passa a mostrar menos dinheiro do que existe.
+- ⚠ **O total é do MÊS INTEIRO, não dos dez à vista**: um número que mudasse com a rolagem seria um
+  número diferente a cada olhada. Ele sai de `linhaDoMes` — a **mesma** agregação da tabela, nunca
+  uma soma nova, que divergiria na primeira correção.
+- ⚠⚠ **O rodapé é `sticky` no pé da caixa**, e sem isso ele só apareceria depois de rolar até o dia
+  31. O `sticky` vai nas **células**, nunca no `<tfoot>` (elemento de agrupamento não aceita
+  posicionamento, e a falha é silenciosa), com fundo **opaco**. ⚠ Ele só funciona porque essa caixa
+  rola no vertical: **mexer no `max-height` desliga isto sem erro nenhum**.
+- ⚠ **`<th scope="row">` no rodapé**, não um `<td>` solto — senão a linha de total vira cinco números
+  órfãos para quem usa leitor de tela.
+- ⚠ **Isto NÃO devolve a faixa branca** que o dono mandou tirar depois do Resultado. Aquela vinha de
+  outra causa (a tabela era `width: auto` e ficava 227px mais estreita que o bloco); hoje ela é
+  `width: 100%` da caixa de conteúdo, e a barra de rolagem fica **ao lado** da tabela, não dentro.
+- ⚠ A conta da altura: linha do corpo ≈ 38px, cabeçalho ≈ 34px ⇒ `34 + 10 × 38 = 414`. **Mudar o
+  `padding` de `.table--fluxo-v3 td` obriga a refazer a conta.**
+
 ### Onde cada coisa mora
 
 | arquivo | o quê |

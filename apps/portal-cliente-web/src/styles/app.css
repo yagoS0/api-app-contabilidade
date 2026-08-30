@@ -1641,3 +1641,38 @@ tr[data-atrasada="sim"] .guias-atraso-quando { color: var(--danger); }
   font-weight: 600;
 }
 .table--fluxo-v3 tbody tr[data-hoje="sim"] > :first-child { color: var(--ciano); }
+
+/* ⚠⚠ OS 10 DIAS SÃO ROLAGEM, NÃO CORTE (30/08/2026) — dono: *"os dias devem ser passados com
+   rolagem, não com seta"*, e *"apenas os 10 dias, para que sempre seja visto o dia em que estamos"*.
+
+   A altura mostra dez linhas mais o cabeçalho; o MÊS INTEIRO está no DOM, e quem anda é a rolagem.
+
+   ⚠⚠ E ELA NÃO TRAZ DE VOLTA A FAIXA BRANCA que o dono mandou tirar. Aquela vinha de outra causa: a
+   tabela tinha `width: auto` e ficava 227px mais estreita que o bloco. Hoje ela é `width: 100%`, ou
+   seja, preenche a CAIXA DE CONTEÚDO — que já exclui a barra de rolagem. A barra fica ao lado da
+   tabela, e não dentro dela.
+
+   ⚠ A conta: linha do corpo = .9rem × 1,45 ≈ 21px + 8 + 8 + 1 de borda = 38px; cabeçalho a .72rem
+   ≈ 17px + 8 + 8 + 1 = 34px. 34 + 10 × 38 = 414px. Mudar o `padding` de `.table--fluxo-v3 td`
+   obriga a refazer esta conta. */
+.table-wrap--dias { max-height: 414px; overflow-y: auto; }
+
+/* ⚠⚠ O RESUMO DA COLUNA GRUDA NO PÉ DA CAIXA (30/08/2026) — dono: *"no footer dela deve haver um
+   resumo da coluna: total de entrada, saída, impostos…"*
+
+   ⚠⚠ **SEM `sticky` ELE SÓ APARECERIA NO DIA 31.** A caixa mostra dez linhas de trinta e um, e um
+   total que só existe no fim da rolagem é um total que ninguém lê — a tela abre no dia de hoje.
+   ⚠ Aqui o `sticky` FUNCIONA porque `.table-wrap--dias` rola no VERTICAL. O aviso gêmeo em `app.css`
+   (*"sticky dentro de um `.table-wrap` que não rola verticalmente é inerte"*) continua valendo para
+   os outros: mexer no `max-height` daqui desliga isto sem erro nenhum.
+   ⚠ O `sticky` vai nas CÉLULAS, nunca no `<tfoot>`: elemento de agrupamento de tabela não aceita
+   posicionamento — e a falha é silenciosa.
+   ⚠ Fundo OPACO é obrigatório: transparente, as linhas roladas passam por baixo dos números. */
+.table--fluxo-v3 tfoot th,
+.table--fluxo-v3 tfoot td {
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+  border-top: 2px solid var(--border);
+  font-weight: 600;
+}

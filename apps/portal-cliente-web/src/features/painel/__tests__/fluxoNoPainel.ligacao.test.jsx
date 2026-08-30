@@ -111,18 +111,21 @@ describe("⚠⚠ a visão de dias é o estado INICIAL", () => {
     }
   });
 
-  it("⚠⚠ a JANELA é de 10 dias em torno de HOJE — 5 para trás e 4 para frente", async () => {
+  it("⚠⚠ o MÊS INTEIRO está no DOM — os 10 dias são ROLAGEM, não corte", async () => {
     /**
-     * ⚠⚠ ISTO REVISA O v4 (29/08), que desenhava o mês inteiro. Dono, 30/08/2026: *"a tabela do
-     * fluxo deve mostrar apenas os 10 dias, para que sempre seja visto o dia em que estamos: 5 para
-     * trás e 4 para frente."* Numa tabela de 31 linhas o dia de hoje só aparecia rolando.
+     * ⚠⚠ ISTO REVISA O CORTE de 30/08/2026, do mesmo dia. Dono: *"os dias devem ser passados com
+     * rolagem, não com seta."* O pedido anterior — *"apenas os 10 dias, para que sempre seja visto o
+     * dia em que estamos"* — continua valendo; o que mudou é QUEM mostra dez: a **altura** da caixa,
+     * e não um `slice`.
+     * ⚠⚠ Cortar em JavaScript tira os outros dias do DOM: quem rola não acha nada, e quem usa leitor
+     * de tela nunca fica sabendo que eles existem. Por isso a asserção é o mês INTEIRO.
      */
     await abrir(cheio());
     const linhas = [...blocoDe(COMPETENCIA).querySelectorAll("tbody tr")]
       .filter((tr) => /^dia /.test(tr.querySelector("th").textContent));
-    expect(linhas).toHaveLength(10);
-    const dias = linhas.map((tr) => Number(tr.querySelector("th").textContent.replace(/\D/g, "")));
-    expect(dias).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(linhas).toHaveLength(31);
+    expect(linhas[0].querySelector("th").textContent).toMatch(/dia 01/);
+    expect(linhas[30].querySelector("th").textContent).toMatch(/dia 31/);
   });
 
   it("⚠⚠ o dia de HOJE é marcado no DOM — e a cor não é a única marca", async () => {
@@ -141,20 +144,35 @@ describe("⚠⚠ a visão de dias é o estado INICIAL", () => {
     expect(seguinte.querySelectorAll('tr[data-hoje="sim"]')).toHaveLength(0);
   });
 
-  it("⚠ nas BORDAS do mês a janela ANDA, não encolhe — continuam 10 dias", async () => {
-    // Encolher daria três linhas no começo do mês, que é quando mais falta contexto.
+  it("⚠ o dia 1 continua no DOM com HOJE no dia 1 — a rolagem não encolhe nada", async () => {
+    // A borda do mês era o caso que derrubava o corte (janela de 10 virando 5). Com rolagem não há
+    // borda: o mês inteiro está sempre lá, e quem se ajusta é o `scrollTop`.
     await abrir(cheio(), { hoje: 1 });
     const linhas = [...blocoDe(COMPETENCIA).querySelectorAll("tbody tr")]
       .filter((tr) => /^dia /.test(tr.querySelector("th").textContent));
-    expect(linhas).toHaveLength(10);
-    expect(linhas[0].querySelector("th").textContent).toMatch(/dia 01/);
+    expect(linhas).toHaveLength(31);
+    expect(blocoDe(COMPETENCIA).querySelector('tr[data-hoje="sim"] th').textContent).toMatch(/dia 01/);
   });
 
-  it("⚠⚠ 'no mês' vem PRIMEIRO em cada bloco — é a maioria do dinheiro", async () => {
-    // As projeções sem dia (recorrência, imposto previsto, folha) vivem ali. Espalhá-las pelos dias
-    // inventaria precisão que ninguém informou.
+  it("⚠⚠ 'no mês' SAIU do corpo e virou o TOTAL do rodapé", async () => {
+    /**
+     * ⚠⚠ ISTO REVISA a decisão do v4 (*"'no mês' vem primeiro em cada bloco"*). Dono, 30/08/2026:
+     * *"esse no mês tem que sumir daí, e abaixo da tabela, no footer dela, deve haver um resumo da
+     * coluna: total de entrada, saída, impostos…"*
+     * ⚠⚠ **O DINHEIRO NÃO PODE SUMIR COM A LINHA** — é ali que moram a folha e o imposto previsto sem
+     * dia. Por isso o teste afirma as DUAS pontas: fora do corpo, e presente no rodapé.
+     */
     await abrir(cheio());
-    expect(blocoDe("2026-08").querySelector("tbody tr th").textContent).toBe("no mês");
+    const bloco = blocoDe("2026-08");
+    expect(bloco.querySelector("tbody tr th").textContent).toMatch(/^dia /);
+    expect([...bloco.querySelectorAll("tbody tr th")].map((h) => h.textContent))
+      .not.toContain("no mês");
+    const total = bloco.querySelector("tfoot tr");
+    expect(total).not.toBeNull();
+    expect(total.querySelector('th[scope="row"]').textContent).toBe("no mês");
+    // ⚠ Uma célula por coluna à vista — o rodapé é o RESUMO DA COLUNA, não uma linha solta.
+    expect(total.querySelectorAll("td").length)
+      .toBe(bloco.querySelectorAll("thead th").length - 1);
   });
 
   it("⚠⚠ a entrada da nota cai no DIA 1 — decisão do dono, e é o que o servidor manda", async () => {

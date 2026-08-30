@@ -32,7 +32,7 @@
 // por simetria**: espelho sem consumidor não é código morto barato, é obrigação de sincronizar
 // para sempre numa cópia que ninguém abre.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../api";
 import { AlertaErro, Carregando } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
@@ -44,7 +44,8 @@ import { mesCurto, rotuloDoMes, somarCompetencia } from "./lib/leituraDoFluxo";
 // ⚠ A agregação das SEIS COLUNAS mora à parte da leitura: aquele arquivo lê o VOCABULÁRIO do
 // servidor e este AGREGA para a tabela desta tela. Ver o cabeçalho de `tabelaDoFluxo.js`.
 import {
-  COLUNAS, COLUNAS_EM_PERCENTUAL, STATUS, emPercentual, gradeTransposta, linhasDosDias, janelaDeDias,
+  COLUNAS, COLUNAS_EM_PERCENTUAL, STATUS, emPercentual, gradeTransposta, linhasDosDias, DIAS_ANTES,
+  linhaDoMes,
   navegacaoDoPar, parDeMeses,
 } from "./lib/tabelaDoFluxo";
 // ⚠ `diasDoMes` é aritmética de STRING, nunca `toISOString()`: às 22h de Brasília o ISO devolveria
@@ -305,6 +306,7 @@ function BotaoDoPeriodo({ aoAbrir, children }) {
 }
 
 function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir, diaDeHoje = null }) {
+  const caixaDeRolagem = useRef(null);
   const colunas = COLUNAS.filter((c) => comFolha || c.chave !== "folha");
 
   // ⚠⚠ BLOCO SEM MÊS NÃO É BLOCO VAZIO. Andando até a borda da janela, o mês da direita pode não ter
@@ -324,16 +326,44 @@ function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir, diaDeHoje 
 
   const dodia = linhasDosDias(bloco.mes, diasDoMes(bloco.competencia).length);
   /**
-   * ⚠⚠ A JANELA DE 10 DIAS — 5 para trás e 4 para frente de HOJE (dono, 30/08/2026).
-   * ⚠ O corte é DEPOIS do cálculo: `linhasDosDias` já acumulou o Resultado sobre o mês inteiro, e
-   * cortar antes faria a primeira linha visível ignorar tudo que veio antes no mês.
+   * ⚠⚠ OS 10 DIAS PASSARAM A SER ROLAGEM, NÃO CORTE (30/08/2026) — dono: *"os dias devem ser
+   * passados com rolagem, não com seta."*
+   *
+   * O MÊS INTEIRO é desenhado; quem mostra dez de cada vez é a ALTURA do `.table-wrap--dias`, e
+   * quem anda é a rolagem. ⚠ Cortar em JavaScript tiraria os outros dias do DOM: quem rolasse não
+   * acharia nada, e quem usa leitor de tela nunca saberia que eles existem — é a mesma decisão que
+   * a tabela de guias em atraso já carrega.
+   * ⚠ `janelaDeDias` (o corte) fica na lib, SEM CHAMADOR e com teste: ela é a regra de "onde a
+   * janela começa", e é dela que sai a rolagem inicial abaixo.
    */
-  const dias = janelaDeDias(dodia.dias, { diaDeHoje });
+  const dias = dodia.dias;
+  /* ⚠ O total do MÊS INTEIRO, pela MESMA agregação da tabela — nunca uma soma nova. */
+  const totalDoMes = linhaDoMes(bloco.mes);
+
+  /**
+   * ⚠⚠ A TELA ABRE MOSTRANDO HOJE, e é o motivo de a janela existir: *"para que sempre seja visto o
+   * dia em que estamos"*. Sem esta rolagem inicial, o mês abriria no dia 1 e o dia de hoje ficaria
+   * a vinte linhas de distância — que é exatamente o defeito que o pedido desfaz.
+   *
+   * ⚠ Ela usa `scrollTop` direto, e não `scrollIntoView`: este último rola TAMBÉM a página, e a
+   * tela saltaria para o meio do fluxo ao abrir.
+   * ⚠ `5` linhas acima é o mesmo "5 para trás" que ele pediu — a linha de hoje nasce com contexto
+   * atrás, não colada no topo.
+   * ⚠ Só o mês de HOJE rola: nos outros não há dia para onde ir, e rolar ali esconderia o dia 1 sem
+   * motivo.
+   */
+  useEffect(() => {
+    const caixa = caixaDeRolagem.current;
+    if (!caixa || !Number.isInteger(diaDeHoje)) return;
+    const linha = caixa.querySelector('tbody tr[data-hoje="sim"]');
+    if (!linha) return;
+    caixa.scrollTop = Math.max(0, linha.offsetTop - linha.offsetHeight * DIAS_ANTES);
+  }, [diaDeHoje, bloco.competencia]);
 
   return (
     <div className="fluxo-v4-bloco" data-mes={bloco.competencia}>
       {cabecalho}
-      <div className="table-wrap table-wrap--dias">
+      <div className="table-wrap table-wrap--dias" ref={caixaDeRolagem}>
         <table className="table table--fluxo-v3">
           <thead>
             <tr>
@@ -344,23 +374,16 @@ function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir, diaDeHoje 
             </tr>
           </thead>
           <tbody>
-            {dodia.semDia ? (
-              <tr className="fluxo-v3-sem-dia">
-                {/* ⚠⚠ O DIA TAMBÉM É CLICÁVEL — é o pedido literal do dono: *"ele deve clicar no
-                    campo do dia, abre um menu lateral e aí ele digita a saída"*. Clicando no DIA a
-                    gaveta abre sem balde: ela mostra tudo daquele dia e traz o formulário. */}
-                <th scope="row">
-                  <BotaoDoPeriodo aoAbrir={() => aoAbrir?.(null, null)}>no mês</BotaoDoPeriodo>
-                </th>
-                <CelulasDoPeriodo
-                  linha={dodia.semDia}
-                  unidade={unidade}
-                  comFolha={comFolha}
-                  aoAbrir={(coluna) => aoAbrir?.(null, coluna)}
-                  rotuloDoPeriodo="no mês"
-                />
-              </tr>
-            ) : null}
+            {/*
+              ⚠⚠ A LINHA "no mês" SAIU DO CORPO EM 30/08/2026 — dono: *"esse no mês tem que sumir
+              daí, e abaixo da tabela, no footer dela, deve haver um resumo da coluna: total de
+              entrada, saída, impostos…"*
+
+              ⚠⚠ **O DINHEIRO DELA NÃO SUMIU — ELE MUDOU DE LUGAR, DUAS VEZES.** É lá que moram a
+              folha e o imposto previsto sem dia, e some-los seria a tela mostrar menos dinheiro do
+              que existe. Hoje eles entram (a) no RESULTADO ACUMULADO, que começa por eles, e
+              (b) no TOTAL do rodapé. Por isso o último dia e o rodapé fecham no mesmo número.
+            */}
             {dias.map((d) => (
               /* ⚠ `data-hoje` é auditável no DOM, como `data-status` — e é ele que o CSS pinta de
                  ciano. Cor cravada no JSX não sobreviveria à troca de tema. */
@@ -380,6 +403,27 @@ function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir, diaDeHoje 
               </tr>
             ))}
           </tbody>
+          {/*
+            ⚠⚠ O RESUMO DA COLUNA, NO RODAPÉ — dono, 30/08/2026. Ele é o total do MÊS INTEIRO, não
+            o dos dez dias à vista: a tabela rola, e um total que mudasse com a rolagem seria um
+            número diferente a cada olhada.
+            ⚠ Ele sai de `linhaDoMes` sobre TODAS as linhas do mês — a mesma agregação que a tabela
+            já usa, e por isso ele fecha com o acumulado do último dia. Uma segunda soma escrita
+            aqui divergiria da primeira na correção seguinte.
+            ⚠⚠ `<th scope="row">` no rodapé, nunca um `<td>` solto: para quem usa leitor de tela, a
+            linha de total precisa ter nome — senão são cinco números órfãos.
+          */}
+          <tfoot>
+            <tr className="fluxo-v4-total">
+              <th scope="row">no mês</th>
+              <CelulasDoPeriodo
+                linha={totalDoMes}
+                unidade={unidade}
+                comFolha={comFolha}
+                rotuloDoPeriodo="no mês"
+              />
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
