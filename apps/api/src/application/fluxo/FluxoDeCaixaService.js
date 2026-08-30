@@ -33,6 +33,10 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { derivarCiclo, SITUACAO } from "../notas/cicloNota.js";
 import { whereFaturamentoEmit } from "../notas/apuracao/v2/FechamentoService.js";
 import { derivarFolha12m } from "../notas/apuracao/v2/FolhaDerivadaService.js";
+// ⚠⚠ REUSADA, nunca reescrita: quem responde *"esta conta é caixa/banco?"* decide pelo PREFIXO do
+// `codigoCompleto`. O cabeçalho daquele módulo PROÍBE a versão `!== NAO_DISPONIVEL` — com ela,
+// `DISPONIVEL_NAO_CLASSIFICADO` e `INDETERMINADO` entrariam como se fossem caixa.
+import { entraNoFluxoDeCaixa } from "../accounting/lib/disponibilidades.js";
 import {
   ESTADO_DA_SERIE,
   LADO,
@@ -779,7 +783,11 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     linhasDasNotas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
     linhasDasSeries({ portalClientId, cicloAtual: ciclo, mesesAProjetar: mesesFuturosDaJanela, client }),
     ultimaApuracao({ portalClientId, client }),
-    linhasDaFolha({ portalClientId, cicloAtual: ciclo, client }),
+    // ⚠⚠ A FOLHA PASSOU A SAIR DO PAGAMENTO (a saída de caixa), não da provisão bruta — ver o
+    // cabeçalho de `linhasDaFolhaPelaSaidaDeCaixa`. `linhasDaFolha` (a leitura por provisão) fica
+    // no arquivo, SEM CHAMADOR e com lápide: ela é a leitura que o Fator R usa, e apagá-la aqui
+    // convidaria alguém a "consertar" a conferência do Fator R junto.
+    linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
     linhasDasSaidasDoCliente({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
   ]);
 
@@ -925,6 +933,117 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
  * ⚠⚠ **MÊS FUTURO NÃO GANHA LINHA NESTA FASE.** Projetar folha é PRESUNÇÃO, e presunção é Fase 2.
  * Célula sem linha vira traço — que é a resposta honesta para "ainda não sabemos".
  */
+/**
+ * ⚠⚠ A FOLHA DO FLUXO PASSOU A SER O **PAGAMENTO**, NUNCA A PROVISÃO BRUTA (30/08/2026).
+ *
+ * > Dono: *"se caixa é cinco, as confirmações para o fluxo saem do código 5, que é caixa — entrada
+ * > entra no cinco e saída sai no cinco"* · *"você me coloca pró-labore com o INSS junto, valor de
+ * > 1.621,00, quando são coisas separadas: pró-lab é 1.442,69 e INSS 178,31"* · *"se eu provisiono
+ * > isso em julho, eu vou pagar em agosto — deve aparecer em agosto (…) se o último pagamento foi
+ * > feito dia 16, eu PROVISIONO em agosto para dia 16."*
+ *
+ * ⚠⚠ **AS PARTIDAS DOBRADAS REAIS DA ERISANGELA PROVAM OS TRÊS PONTOS** (lidas em produção):
+ *
+ * ```
+ * 30/07  VR REF PRO LAB FP 07/2026        D 426 (PRO LABORE)   1.621,00   ← provisão do BRUTO
+ * 30/07  VR REF INSS S/PRO LAB FP 07      C 240                  178,31   ← INSS retido (passivo)
+ * 30/07  VR PRO LAB LIQ FP 07/2026        C 233                1.442,69   ← líquido a pagar
+ * 05/08  PAGO PRO-LAB 07/2026             D 233 / C 5          1.442,69   ← O DINHEIRO SAI AQUI
+ * ```
+ *
+ * O que a coluna mostrava era o **D 426 de 1.621,00**, na competência da PROVISÃO. Três erros num
+ * número só:
+ *
+ *   1. ⚠⚠ **VALOR** — 1.621,00 é o bruto; do caixa saem **1.442,69**. Os 178,31 de INSS retido saem
+ *      depois, pela GUIA — e a guia já está na coluna Impostos. **O INSS estava contado DUAS VEZES.**
+ *   2. ⚠⚠ **MÊS** — a provisão é de julho, o pagamento é de **agosto**. Fluxo de caixa é quando o
+ *      dinheiro sai, não quando a despesa é reconhecida.
+ *   3. ⚠⚠ **DIA** — o lançamento de pagamento TEM data (05/08), e a coluna mostrava "no mês".
+ *
+ * ⚠ **`derivarFolha12m` NÃO FOI TOCADA, e não pode ser.** Ela existe para conferir o **Fator R**,
+ * onde o número certo é o BRUTO da folha (é isso que a LC 123 manda comparar com o RBT12). Mudá-la
+ * consertaria o fluxo e estragaria a apuração. São duas perguntas diferentes sobre o mesmo
+ * lançamento: *"quanto custou a folha?"* × *"quanto saiu do caixa?"*.
+ *
+ * ⚠⚠ **QUEM DIZ QUE UMA CONTA É CAIXA É O `codigoCompleto`, NUNCA O REDUZIDO NEM O NOME.**
+ * `AccountingEntryLine.conta` guarda o **reduzido**, e o reduzido `5` é CAIXA enquanto o COMPLETO
+ * `5` é IRPJ/CSLL — 41 contas do plano têm os dois apontando para grupos diferentes, e trocar
+ * inverte despesa com imposto sem erro nenhum. Por isso o reduzido é traduzido pelo plano e a
+ * pergunta é feita a `entraNoFluxoDeCaixa` (`accounting/lib/disponibilidades.js`), REUSADA.
+ */
+async function linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual, janelaInicio, client }) {
+  const [entries, plano] = await Promise.all([
+    client.accountingEntry.findMany({
+      where: { portalClientId: String(portalClientId), tipo: "FOLHA" },
+      select: {
+        competencia: true, historico: true, data: true,
+        lines: { select: { tipo: true, valor: true, conta: true } },
+      },
+      orderBy: { data: "asc" },
+    }),
+    client.chartOfAccount.findMany({
+      where: { OR: [{ portalClientId: String(portalClientId) }, { portalClientId: null }] },
+      select: { codigo: true, codigoCompleto: true, portalClientId: true },
+    }),
+  ]);
+
+  // ⚠ A da EMPRESA vence a global quando o reduzido colide — a global é o padrão, não a autoridade.
+  const completoDoReduzido = new Map();
+  for (const c of plano) {
+    const k = texto(c.codigo);
+    if (!k) continue;
+    const atual = completoDoReduzido.get(k);
+    if (!atual || (c.portalClientId && !atual.portalClientId)) completoDoReduzido.set(k, c);
+  }
+  const ehCaixa = (reduzido) => {
+    const c = completoDoReduzido.get(texto(reduzido));
+    return c ? entraNoFluxoDeCaixa(c) : false;
+  };
+
+  const base = mesesDaCompetencia(janelaInicio || cicloAtual);
+  const linhas = [];
+  const pagamentos = [];
+
+  for (const e of entries) {
+    // ⚠⚠ O PAGAMENTO É A LINHA QUE CREDITA CAIXA. Não é o histórico ("PAGO …") — texto livre não é
+    // dado, e um lançamento renomeado deixaria de ser visto. A partida dobrada é a autoridade.
+    const saida = (e.lines || [])
+      .filter((l) => String(l.tipo).toUpperCase() === "C" && ehCaixa(l.conta))
+      .reduce((s, l) => s + (numero(l.valor) || 0), 0);
+    if (!(saida > 0)) continue;
+
+    const competencia = competenciaDaData(e.data);
+    if (!competencia) continue;
+    pagamentos.push({ competencia, dia: diaDaData(e.data), valor: saida });
+
+    const emMeses = mesesDaCompetencia(competencia);
+    if (base == null || emMeses == null || emMeses < base) continue;
+
+    linhas.push(montarLinha({
+      fonte: FONTE.FOLHA,
+      direcao: DIRECAO.SAIDA,
+      // ⚠⚠ **FATO**, e agora com razão: o dinheiro saiu do caixa, e a partida dobrada é a prova.
+      // Antes a coluna dizia FATO por uma SIMPLIFICAÇÃO declarada (*"folha lançada conta como
+      // paga"*) — hoje não há suposição nenhuma neste ramo.
+      procedencia: PROCEDENCIA.FATO,
+      competencia,
+      // ⚠ O DIA vem do lançamento. Era exatamente isto que faltava: *"valores de previsibilidade
+      // estão em data nenhuma"*.
+      dia: diaDaData(e.data),
+      valor: saida,
+      rotulo: "Folha de pagamento",
+      base: {
+        frase: `${texto(e.historico) || "Pagamento de folha"} · saiu do caixa em ${isoDaData(e.data)}`,
+        competenciaDaProvisao: texto(e.competencia) || null,
+        // ⚠ A prova de que este número é caixa, e não provisão.
+        saidaDeCaixa: true,
+      },
+    }));
+  }
+
+  return { linhas, disponivel: linhas.length > 0, pagamentos };
+}
+
 async function linhasDaFolha({ portalClientId, cicloAtual, client }) {
   // ⚠ `competenciasDe12Meses` devolve os 12 meses ANTERIORES ao que se pede — então pedir o mês
   // seguinte é o que inclui o mês corrente na janela. Sem o +1 a folha do mês corrente sumia.

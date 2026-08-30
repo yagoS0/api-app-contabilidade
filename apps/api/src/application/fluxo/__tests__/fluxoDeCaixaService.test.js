@@ -762,69 +762,135 @@ describe("⚠⚠ o imposto projetado", () => {
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // ⚠⚠ A FOLHA — coluna própria (v3 §3.2), com a simplificação declarada do dono.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠⚠ a folha, e a suposição que ela carrega", () => {
-  const comFolha = (extra = {}) => clientDe({
-    folhas: [folha("2026-06"), folha("2026-08", "3200.00")],
-    contasDeFolha: CONTA_DE_FOLHA,
-    ...extra,
+describe("⚠⚠ a folha do fluxo é o PAGAMENTO, não a provisão", () => {
+  /**
+   * ⚠⚠ ESTE BLOCO DIZIA O CONTRÁRIO ATÉ 30/08/2026, e o que o virou foram as partidas dobradas
+   * REAIS de uma empresa (ERISANGELA), lidas em produção:
+   *
+   * ```
+   * 30/07  VR REF PRO LAB FP 07/2026   D 426 (PRO LABORE)  1.621,00   ← provisão do BRUTO
+   * 30/07  VR REF INSS S/PRO LAB       C 240                 178,31   ← INSS retido
+   * 30/07  VR PRO LAB LIQ              C 233               1.442,69   ← líquido a pagar
+   * 05/08  PAGO PRO-LAB 07/2026        D 233 / C 5         1.442,69   ← O DINHEIRO SAI AQUI
+   * ```
+   *
+   * A coluna mostrava o **D 426 de 1.621,00** na competência da PROVISÃO. Dono: *"você me coloca
+   * pró-labore com o INSS junto, valor de 1.621,00, quando são coisas separadas: pró-lab é 1.442,69
+   * e INSS 178,31"* · *"se eu provisiono isso em julho eu vou pagar em agosto, deve aparecer em
+   * agosto"* · *"as confirmações para o fluxo saem do código 5, que é caixa"*.
+   *
+   * ⚠⚠ E o erro mais caro era a CONTAGEM DUPLA: os 178,31 de INSS retido estavam dentro dos
+   * 1.621,00 **e** também na coluna Impostos, como guia.
+   *
+   * ⚠ `derivarFolha12m` (a leitura por PROVISÃO) não foi tocada: ela serve o **Fator R**, onde o
+   * número certo é o bruto. São duas perguntas sobre o mesmo lançamento.
+   */
+  const CAIXA = { codigo: "5", codigoCompleto: "111010001", portalClientId: null };
+  const DESPESA = { codigo: "426", codigoCompleto: "411010001", portalClientId: null };
+
+  /** A provisão: débito na despesa, crédito no passivo. ⚠ NÃO toca o caixa — logo não é fluxo. */
+  const provisao = (competencia, data, valor = "1621.00") => ({
+    competencia,
+    data: new Date(`${data}T00:00:00.000Z`),
+    historico: `VR REF PRO LAB FP ${competencia}`,
+    lines: [{ tipo: "D", valor, conta: "426" }, { tipo: "C", valor, conta: "233" }],
   });
 
-  it("⚠⚠ mês PASSADO é FATO — 'folha lançada conta como paga', decisão do dono", async () => {
-    const r = await montar(comFolha());
-    const l = doMes(r, "2026-06").linhas.find((x) => x.fonte === FONTE.FOLHA);
-    expect(l.procedencia).toBe(PROCEDENCIA.FATO);
+  /** O pagamento: baixa o passivo e CREDITA O CAIXA. É ele que é fluxo de caixa. */
+  const pagamento = (competencia, data, valor = "1442.69") => ({
+    competencia,
+    data: new Date(`${data}T00:00:00.000Z`),
+    historico: `PAGO PRO-LAB ${competencia}`,
+    lines: [{ tipo: "D", valor, conta: "233" }, { tipo: "C", valor, conta: "5" }],
+  });
+
+  const comFolha = (folhas) => clientDe({ folhas, contasDeFolha: [CAIXA, DESPESA] });
+
+  it("⚠⚠ a linha sai do PAGAMENTO, com o valor que saiu do caixa — nunca o bruto provisionado", async () => {
+    const r = await montar(comFolha([provisao("2026-07", "2026-07-30"), pagamento("2026-07", "2026-08-05")]));
+    const l = doMes(r, "2026-08").linhas.find((x) => x.fonte === FONTE.FOLHA);
+    expect(l).toBeTruthy();
+    // ⚠⚠ 1.442,69 e NÃO 1.621,00: a diferença é o INSS retido, que sai pela GUIA e já está em Impostos.
+    expect(l.valor).toBe(1442.69);
     expect(l.direcao).toBe(DIRECAO.SAIDA);
-    expect(l.valor).toBe(3000);
   });
 
-  it("⚠⚠ e a SUPOSIÇÃO viaja marcada — sem isso ela some dentro do 'confirmado'", async () => {
-    // O sistema sabe o que foi LANÇADO e não sabe se foi PAGO (`derivarFolha12m` exclui o
-    // pagamento de propósito). "Confirmado" aqui seria indistinguível de um pagamento provado, e
-    // não há nenhum. A marca é o que torna a suposição auditável em vez de invisível.
-    const r = await montar(comFolha());
-    const l = doMes(r, "2026-06").linhas.find((x) => x.fonte === FONTE.FOLHA);
-    expect(l.base.simplificacao).toBe("pagamento_integral_presumido");
+  it("⚠⚠ ela cai no mês do PAGAMENTO, não no da provisão", async () => {
+    // Provisão em julho, pagamento em agosto ⇒ a linha é de AGOSTO. Fluxo de caixa é quando o
+    // dinheiro sai, não quando a despesa é reconhecida.
+    const r = await montar(comFolha([provisao("2026-07", "2026-07-30"), pagamento("2026-07", "2026-08-05")]));
+    expect(doMes(r, "2026-07").linhas.some((x) => x.fonte === FONTE.FOLHA)).toBe(false);
+    expect(doMes(r, "2026-08").linhas.some((x) => x.fonte === FONTE.FOLHA)).toBe(true);
   });
 
-  it("⚠ o mês CORRENTE é COMPROMISSO — ele ainda está aberto e a folha pode mudar", async () => {
-    const r = await montar(comFolha());
-    const l = doMes(r, CICLO).linhas.find((x) => x.fonte === FONTE.FOLHA);
-    expect(l.procedencia).toBe(PROCEDENCIA.COMPROMISSO);
-    expect(l.base.simplificacao).toBeNull();
+  it("⚠⚠ ela TEM DIA — e era exatamente isto que faltava", async () => {
+    // Dono: *"valores de previsibilidade estão em data nenhuma"* · *"se o último pagamento foi feito
+    // dia 16, eu provisiono para dia 16"*. O lançamento de pagamento tem data; a coluna a ignorava.
+    const r = await montar(comFolha([pagamento("2026-07", "2026-08-05")]));
+    const l = doMes(r, "2026-08").linhas.find((x) => x.fonte === FONTE.FOLHA);
+    expect(l.dia).toBe(5);
+    expect(l.diaDesconhecido).toBeNull();
   });
 
-  it("⚠⚠ mês FUTURO não ganha linha — projetar folha é PRESUNÇÃO, e presunção é Fase 2", async () => {
-    const r = await montar(comFolha());
-    for (const m of r.meses.filter((x) => x.competencia > CICLO)) {
-      expect(m.linhas.some((l) => l.fonte === FONTE.FOLHA)).toBe(false);
-    }
+  it("⚠⚠ é FATO, e agora sem simplificação nenhuma — a partida dobrada é a prova", async () => {
+    // Antes a coluna dizia FATO por uma SUPOSIÇÃO declarada ("folha lançada conta como paga").
+    // Hoje o crédito em caixa É o pagamento; não há o que supor.
+    const r = await montar(comFolha([pagamento("2026-07", "2026-08-05")]));
+    const l = doMes(r, "2026-08").linhas.find((x) => x.fonte === FONTE.FOLHA);
+    expect(l.procedencia).toBe(PROCEDENCIA.FATO);
+    expect(l.base.simplificacao).toBeUndefined();
+    expect(l.base.saidaDeCaixa).toBe(true);
   });
 
-  it("⚠⚠ sem folha lançada, a COLUNA não existe — e isso é decisão do SERVIDOR, não da tela", async () => {
-    const r = await montar(clientDe({}));
-    expect(r.folha.disponivel).toBe(false);
+  it("⚠⚠ a PROVISÃO sozinha não vira linha — ela não tocou o caixa", async () => {
+    const r = await montar(comFolha([provisao("2026-07", "2026-07-30")]));
     expect(linhasDe(r, FONTE.FOLHA)).toEqual([]);
   });
 
-  it("⚠⚠ 'não tem folha' e 'não achei a conta' são respostas DIFERENTES", async () => {
-    // A própria `FolhaDerivadaService` nomeia a distinção: sem conta resolvida, uma empresa COM
-    // folha devolveria zero e ninguém saberia qual dos dois casos é.
-    const r = await montar(clientDe({ folhas: [folha("2026-06")], contasDeFolha: [] }));
-    expect(r.folha.contasConsideradas).toEqual([]);
-  });
-
-  it("⚠ folha ZERO não vira linha — mês sem folha não é 'folha de R$ 0,00'", async () => {
+  it("⚠⚠ quem diz que a conta é caixa é o `codigoCompleto`, NUNCA o reduzido", async () => {
+    // O reduzido `5` é CAIXA; o COMPLETO `5` é IRPJ/CSLL. 41 contas do plano têm os dois em grupos
+    // diferentes. Com um plano em que o reduzido 5 aponta para uma conta que NÃO é disponibilidade,
+    // o crédito deixa de ser fluxo.
+    const naoEhCaixa = { codigo: "5", codigoCompleto: "411050001", portalClientId: null };
     const r = await montar(clientDe({
-      folhas: [{ competencia: "2026-06", lines: [{ tipo: "D", valor: "0.00", conta: "41101" }] }],
-      contasDeFolha: CONTA_DE_FOLHA,
+      folhas: [pagamento("2026-07", "2026-08-05")],
+      contasDeFolha: [naoEhCaixa, DESPESA],
     }));
     expect(linhasDe(r, FONTE.FOLHA)).toEqual([]);
   });
 
-  it("⚠⚠ a leitura NÃO tem `catch` — defeito na folha não pode virar 'esta empresa não tem folha'", async () => {
-    const client = comFolha();
-    client.accountingEntry.findMany = jest.fn(async () => { throw new Error("banco fora do ar"); });
-    await expect(montar(client)).rejects.toThrow(/banco fora do ar/);
+  it("⚠ o BANCO também é caixa — não é só a conta 5", async () => {
+    const banco = { codigo: "7", codigoCompleto: "111020003", portalClientId: null };
+    const pagoPeloBanco = {
+      competencia: "2026-07",
+      data: new Date("2026-08-05T00:00:00.000Z"),
+      historico: "PAGO PRO-LAB 07/2026",
+      lines: [{ tipo: "D", valor: "1442.69", conta: "233" }, { tipo: "C", valor: "1442.69", conta: "7" }],
+    };
+    const r = await montar(clientDe({ folhas: [pagoPeloBanco], contasDeFolha: [banco, DESPESA] }));
+    expect(doMes(r, "2026-08").linhas.find((x) => x.fonte === FONTE.FOLHA).valor).toBe(1442.69);
+  });
+
+  it("⚠ o histórico NÃO decide — texto livre não é dado", async () => {
+    // Um lançamento renomeado deixaria de ser visto se a regra lesse "PAGO". A autoridade é a
+    // partida dobrada.
+    const semPalavraPago = { ...pagamento("2026-07", "2026-08-05"), historico: "TRANSFERENCIA SOCIO" };
+    const r = await montar(comFolha([semPalavraPago]));
+    expect(doMes(r, "2026-08").linhas.find((x) => x.fonte === FONTE.FOLHA).valor).toBe(1442.69);
+  });
+
+  it("⚠ dois pagamentos no mesmo mês viram duas linhas — a soma é da célula, não da regra", async () => {
+    const r = await montar(comFolha([
+      pagamento("2026-07", "2026-08-05"),
+      pagamento("2026-08", "2026-08-30"),
+    ]));
+    expect(doMes(r, "2026-08").linhas.filter((x) => x.fonte === FONTE.FOLHA)).toHaveLength(2);
+  });
+
+  it("⚠⚠ sem pagamento nenhum, a COLUNA não existe — decisão do SERVIDOR, não da tela", async () => {
+    const r = await montar(clientDe({}));
+    expect(r.folha.disponivel).toBe(false);
+    expect(linhasDe(r, FONTE.FOLHA)).toEqual([]);
   });
 });
 

@@ -1307,7 +1307,36 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         // Impostos PAGOS da competência, por tipo (inclui INSS).
         prisma.guide.groupBy({
           by: ["tipo"],
-          where: { portalClientId: cid, competencia, paymentStatus: "PAID" },
+          where: {
+            portalClientId: cid,
+            competencia,
+            paymentStatus: "PAID",
+        /**
+         * ⚠⚠ A PARCELA DE PARCELAMENTO NÃO É IMPOSTO DA COMPETÊNCIA (30/08/2026).
+         *
+         * Relato do dono: *"o painel informa que a última alíquota foi de 1,41%, isso é impossível,
+         * se tratando de 07/2026."* Medido em produção (ERISANGELA):
+         *
+         *   numerador de hoje ..... R$   323,83  ← **Parcela 8 de parcelamento**, paga em 13/07
+         *   faturamento de 07 ..... R$ 23.040,26
+         *   ⇒ efetiva ............. **1,41%**
+         *   a verdade (apuração transmitida): DAS R$ 1.437,15 / R$ 23.040,26 = **6,24%**
+         *
+         * A parcela paga DÍVIDA PASSADA; ela não é imposto sobre a receita deste mês. Dividi-la pelo
+         * faturamento produz um percentual que não significa nada — e o DAS real de 07 nem estava
+         * no numerador, porque continua em aberto.
+         *
+         * ⚠⚠ **É O MESMO RECORTE QUE `guideCompliance` JÁ APLICA NO DASHBOARD**
+         * (`parcelamentoId: null`), e que o `apps/api/CLAUDE.md` descreve: *"a parcela é gravada
+         * como `tipo:'SIMPLES'`, igual ao DAS, e o que separa as duas é o `parcelamentoId`"*.
+         *
+         * ⚠ Consequência ACEITA e correta: numa competência em que só a parcela foi paga, a conta
+         * fica sem numerador e o card diz **"nenhum imposto pago nesta competência"** em vez de um
+         * número inventado. `porPagamentos` já trata esse ramo (`SEM_IMPOSTO_PAGO`), e ausência
+         * nomeada é melhor que percentual falso — que foi exatamente o que o dono viu.
+         */
+        parcelamentoId: null,
+          },
           _sum: { valor: true },
         }),
         aliquotaPorLancamentos({ portalClientId: cid, competencia }).catch((err) => {
@@ -1379,7 +1408,12 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         }),
         prisma.guide.groupBy({
           by: ["competencia"],
-          where: { portalClientId: cid, competencia: { in: list }, paymentStatus: "PAID" },
+          // ⚠⚠ O MESMO RECORTE DA ROTA SINGULAR, e ele PRECISA estar nas duas: uma só deixaria o
+          // card do painel (que lê a SÉRIE) com a conta velha e a tela de detalhe com a nova, sobre
+          // a mesma empresa e o mesmo mês. Ver o porquê inteiro na rota singular, acima.
+          where: {
+            portalClientId: cid, competencia: { in: list }, paymentStatus: "PAID", parcelamentoId: null,
+          },
           _sum: { valor: true },
         }),
         // ⚠ NUNCA DERRUBA A SÉRIE: falhando, o bloco volta nulo por competência e as três contas
