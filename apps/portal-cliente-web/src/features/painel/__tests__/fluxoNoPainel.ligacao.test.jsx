@@ -36,6 +36,28 @@ const clicar = async (nome) => {
   await act(async () => { screen.getByRole("button", { name: nome }).click(); });
 };
 
+/**
+ * ⚠⚠ OS CABEÇALHOS **DO FLUXO**, e não os da página inteira (30/08/2026).
+ *
+ * A tabela de GUIAS EM ATRASO passou a ser desenhada ACIMA do fluxo, e ela também tem
+ * `columnheader` ("Guia", "Quando", "Valor"). `screen.getAllByRole("columnheader")[0]` passou a
+ * devolver "Guia" — e os testes caíram dizendo que a tela nasce em MESES, o que é falso: eles
+ * estavam lendo outra tabela.
+ *
+ * ⚠ O recorte é pelo BLOCO do fluxo, nunca por índice: contar posições faria o próximo bloco
+ * acrescentado acima quebrar tudo de novo, e pelo mesmo motivo invisível.
+ */
+/**
+ * ⚠ O ESCOPO DO HORIZONTE, pelo mesmo motivo: a tabela de guias em atraso também tem `tbody tr th`
+ * e `tfoot`. Sem o recorte, "Entrada, Saída, Impostos…" vinha precedido de "INSS · 2026-06".
+ */
+const horizonte = () => document.querySelector(".table--fluxo-v4-horizonte");
+
+const cabecalhosDoFluxo = () => {
+  const escopo = document.querySelector(".fluxo-v4-bloco, .table--fluxo-v4-horizonte");
+  return [...(escopo?.querySelectorAll("th[scope='col']") || [])].map((h) => h.textContent);
+};
+
 /** Os dois blocos da visão de dias, na ordem em que a tela os desenha. */
 const blocos = () => [...document.querySelectorAll(".fluxo-v4-bloco")];
 const blocoDe = (competencia) => document.querySelector(`.fluxo-v4-bloco[data-mes="${competencia}"]`);
@@ -57,7 +79,7 @@ afterEach(() => { jest.restoreAllMocks(); });
 describe("⚠⚠ a visão de dias é o estado INICIAL", () => {
   it("⚠⚠ nasce em DIAS, não em meses — isto inverte o v3", async () => {
     await abrir(cheio());
-    expect(screen.getAllByRole("columnheader")[0].textContent).toBe("Dia");
+    expect(cabecalhosDoFluxo()[0]).toBe("Dia");
   });
 
   it("são DOIS blocos: o mês corrente e o seguinte", async () => {
@@ -166,7 +188,7 @@ describe("⚠⚠ o Horizonte transpõe a grade", () => {
   it("categoria vira LINHA e mês vira COLUNA", async () => {
     await abrir(cheio());
     await irAoHorizonte();
-    const linhas = [...document.querySelectorAll("tbody tr th")].map((h) => h.textContent);
+    const linhas = [...horizonte().querySelectorAll("tbody tr th")].map((h) => h.textContent);
     expect(linhas).toEqual(["Entrada", "Saída", "Impostos", "Folha", "Resultado"]);
   });
 
@@ -187,10 +209,12 @@ describe("⚠⚠ o Horizonte transpõe a grade", () => {
     // cabeçalhos de coluna para o mesmo mês — que o leitor de tela lê duas vezes.
     await abrir(cheio());
     await irAoHorizonte();
-    expect(document.querySelectorAll("thead")).toHaveLength(0);
+    // ⚠ A proibição é sobre a tabela DO HORIZONTE: a de guias em atraso tem `thead` e ele é
+    // legítimo — ela não é transposta, e o nome da coluna dela só existe em cima.
+    expect(horizonte().querySelectorAll("thead")).toHaveLength(0);
     // ⚠ E a tabela continua íntegra: caption + th de linha + th de coluna no rodapé.
-    expect(document.querySelector("caption")).not.toBeNull();
-    expect(document.querySelectorAll("tbody tr th[scope=\"row\"]").length).toBe(5);
+    expect(horizonte().querySelector("caption")).not.toBeNull();
+    expect(horizonte().querySelectorAll("tbody tr th[scope=\"row\"]").length).toBe(5);
   });
 
   it("⚠ o mês corrente é marcado no rodapé", async () => {
@@ -206,7 +230,7 @@ describe("⚠⚠ o Horizonte transpõe a grade", () => {
     await irAoHorizonte();
     await clicar("out/26");
     expect(blocos().map((b) => b.getAttribute("data-mes"))).toEqual(["2026-10", "2026-11"]);
-    expect(screen.getAllByRole("columnheader")[0].textContent).toBe("Dia");
+    expect(cabecalhosDoFluxo()[0]).toBe("Dia");
   });
 
   it("⚠ é um ALTERNADOR, e ele diz o estado em vez de trocar de rótulo", async () => {
@@ -267,9 +291,9 @@ describe("⚠⚠ a previsão nunca se parece com um fato", () => {
     await abrir(cheio());
     await irAoHorizonte();
     for (const rotulo of ["abr", "mai", "jun", "jul"]) {
-      const i = [...document.querySelectorAll("tfoot th")].findIndex((th) => th.textContent.includes(rotulo));
+      const i = [...horizonte().querySelectorAll("tfoot th")].findIndex((th) => th.textContent.includes(rotulo));
       expect(i).toBeGreaterThan(0);
-      for (const tr of document.querySelectorAll("tbody tr")) {
+      for (const tr of horizonte().querySelectorAll("tbody tr")) {
         const td = tr.querySelectorAll("td")[i - 1];
         expect(td?.querySelector('[data-status="forecast"]')).toBeNull();
       }
@@ -308,7 +332,7 @@ describe("⚠⚠ o vazio se declara", () => {
 describe("⚠ a coluna Folha", () => {
   it("sem folha lançada, a coluna NÃO é renderizada", async () => {
     await abrir({ ...cheio(), folha: { disponivel: false, contasConsideradas: [] } });
-    expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).not.toContain("Folha");
+    expect(cabecalhosDoFluxo()).not.toContain("Folha");
   });
 
   it("⚠⚠ campo AUSENTE mostra a coluna — o modo de falhar é 'coluna a mais', não 'folha some'", async () => {
@@ -317,13 +341,13 @@ describe("⚠ a coluna Folha", () => {
     const semCampo = cheio();
     delete semCampo.folha;
     await abrir(semCampo);
-    expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toContain("Folha");
+    expect(cabecalhosDoFluxo()).toContain("Folha");
   });
 
   it("⚠ e a decisão vale nos DOIS modos — o horizonte perde a LINHA da folha", async () => {
     await abrir({ ...cheio(), folha: { disponivel: false, contasConsideradas: [] } });
     await irAoHorizonte();
-    expect([...document.querySelectorAll("tbody tr th")].map((h) => h.textContent))
+    expect([...horizonte().querySelectorAll("tbody tr th")].map((h) => h.textContent))
       .toEqual(["Entrada", "Saída", "Impostos", "Resultado"]);
   });
 });
@@ -434,7 +458,7 @@ describe("⚠⚠ nada aqui lança, edita ou apaga", () => {
     // Ela é Fase 3, e depende de conciliação no fechamento do contador. Um acumulado sem âncora
     // erra composto, mês após mês.
     await abrir(cheio());
-    expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).not.toContain("Saldo");
+    expect(cabecalhosDoFluxo()).not.toContain("Saldo");
     expect(document.body.textContent).not.toMatch(/Saldo/i);
   });
 

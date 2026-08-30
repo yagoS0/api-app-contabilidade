@@ -435,6 +435,18 @@ export function fluxoDeCaixaDoMock(companyId, competencia, opcoes = {}) {
       id: "g-3", rotulo: "FGTS", valor: 640.18, vencimento: `${somarMeses(ciclo, 1)}-01`,
       atrasada: false, competencia: somarMeses(ciclo, -1), estado: "due_soon",
     },
+    /**
+     * ⚠⚠ A QUARTA — ela existe para o CORTE DE 2,5 LINHAS ser alcançável offline (30/08/2026).
+     *
+     * Dono: *"ela deve aparecer com duas linhas e meia caso tenha mais de 3 guias"*. Com exatamente
+     * três, a tabela não corta e o desenho do corte — que é o que diz *"tem mais, role"* — só
+     * existiria em produção. É a sexta vez que este mock esconderia um ramo.
+     * ⚠ Ela também é a única `OUTRA` da lista: o rótulo de tipo desconhecido precisa ser visto.
+     */
+    {
+      id: "g-4", rotulo: "OUTRA", valor: 214.77, vencimento: `${somarMeses(ciclo, -2)}-25`,
+      atrasada: true, competencia: somarMeses(ciclo, -3), estado: "overdue",
+    },
   ];
 
   const cientes = new Set(opcoes.cientes || []);

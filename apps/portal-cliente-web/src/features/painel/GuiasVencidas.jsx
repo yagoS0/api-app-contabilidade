@@ -17,7 +17,7 @@
 // ⚠⚠ **ELA NÃO PAGA E NÃO DÁ CIÊNCIA.** Ciência é ato do pop-up (Lei 5: *ciência nunca significa
 // pagamento*), e esta tabela é leitura. O único caminho que ela oferece é ir para as Guias.
 
-import { fmtBRL, fmtDateBr } from "../../lib/format";
+import { brl, fmtDateBr } from "../../lib/format";
 
 /** ⚠ Acima disto a lista é CORTADA na metade da terceira linha. Ver o cabeçalho. */
 const GUIAS_ATE_ONDE_CABE = 3;
@@ -46,7 +46,7 @@ export function GuiasVencidas({ alerta, aoVerGuias }) {
       <div className="guias-atraso-topo">
         <h3>
           {itens.length === 1 ? "1 guia para pagar" : `${itens.length} guias para pagar`}
-          <span className="guias-atraso-soma">{fmtBRL(alerta?.valor)}</span>
+          <span className="guias-atraso-soma">{brl(alerta?.valor)}</span>
         </h3>
         <button type="button" className="btn btn-sm" onClick={() => aoVerGuias?.()}>
           Ver todas as guias
@@ -80,7 +80,7 @@ export function GuiasVencidas({ alerta, aoVerGuias }) {
                 </th>
                 {/* ⚠ A cor do atraso vai no TEXTO, não só na linha: em preto e branco a faixa some. */}
                 <td className="guias-atraso-quando">{quando(g)}</td>
-                <td className="num">{fmtBRL(g.valor)}</td>
+                <td className="num">{brl(g.valor)}</td>
               </tr>
             ))}
           </tbody>

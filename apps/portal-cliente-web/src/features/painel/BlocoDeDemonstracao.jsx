@@ -53,6 +53,7 @@ import { diasDoMes } from "./lib/dadosDeDemonstracao";
 import { PopUpDeGuias } from "./PopUpDeGuias";
 import { SuasSaidas } from "./SuasSaidas";
 import { GavetaDoDia } from "./GavetaDoDia";
+import { GuiasVencidas } from "./GuiasVencidas";
 
 /**
  * ⚠⚠ A FOLGA que a tela pede ao servidor quando a seta chega na BORDA da janela carregada.
@@ -73,7 +74,14 @@ const UNIDADES = [
 ];
 
 const VISOES = [
-  { chave: "fluxo", rotulo: "Fluxo de caixa" },
+  /**
+   * ⚠ O rótulo é **"Fluxo"**, não "Fluxo de caixa" — decisão do dono, 30/08/2026: *"escreva apenas
+   * Fluxo no seletor"*. O par com "DRE" já diz do que se trata, e o nome longo fazia o alternador
+   * ocupar metade da barra ao lado de uma palavra de três letras.
+   * ⚠ A CHAVE continua `"fluxo"`: ela é o vocabulário que o resto do arquivo lê (`visao === "fluxo"`
+   * aparece em sete lugares) e mudá-la quebraria tudo em silêncio.
+   */
+  { chave: "fluxo", rotulo: "Fluxo" },
   { chave: "dre", rotulo: "DRE" },
 ];
 
@@ -647,7 +655,15 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
       data-modo-do-fluxo={visao === "fluxo" ? modo : undefined}
     >
       <div className="card-header">
-        <h2>{visao === "fluxo" ? "Fluxo de caixa" : "DRE"}</h2>
+        {/*
+          ⚠⚠ O TÍTULO "Fluxo de caixa" SAIU DA ESQUERDA — decisão do dono, 30/08/2026: *"tire fluxo
+          de caixa da esquerda"*. Ele repetia, em texto grande, a palavra que o botão pressionado ao
+          lado já diz — e o alternador é quem manda, porque é ele que muda.
+          ⚠ **O `<h2>` NÃO SUMIU: ele virou `.sr-only`.** Apagá-lo deixaria a seção sem cabeçalho de
+          nível 2, e quem navega por lista de títulos perderia o bloco inteiro. ⚠ E ele mantém o nome
+          LONGO ("Fluxo de caixa"), porque fora da tela não existe o botão ao lado para dar contexto.
+        */}
+        <h2 className="sr-only">{visao === "fluxo" ? "Fluxo de caixa" : "DRE"}</h2>
         <div className="page-actions">
           {/* ⚠ Trocar de visão NÃO navega — são botões, jamais `<a href>`. Inventar `#/dre` daria um
               hash que o `useRota` recusa e devolve ao padrão: o "filtro fantasma" dentro da tela. */}
@@ -723,6 +739,25 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
         padrao="Não foi possível montar o painel."
         aoTentarNovamente={atual.recarregar}
       />
+
+      {/*
+        ⚠⚠ A TABELA DE GUIAS EM ATRASO, ACIMA DO FLUXO — decisão do dono, 30/08/2026: *"a parte que
+        eu falei da tabela com as guias vencidas em cima do fluxo não aparece; ela deve aparecer com
+        duas linhas e meia caso tenha mais de 3 guias, para que o cliente saiba que precisa rolar
+        para ver mais."*
+
+        ⚠⚠ ELA NÃO SUBSTITUI O POP-UP, e as duas respondem perguntas diferentes: o pop-up
+        INTERROMPE uma vez e se dispensa com "Estou ciente"; a tabela FICA, e é onde o cliente volta
+        para ver quanto e quando. Sem ela, dispensado o pop-up, a guia vencida some do Início — que
+        é a perda que o corte do card "Próximos vencimentos" (28/08) deixou nomeada.
+
+        ⚠ Só na visão de FLUXO: no DRE ela não tem o que fazer.
+        ⚠ Ela some sozinha quando não há guia em atraso, e nada é dito — frase que descreve uma
+        ausência já visível é ruído (critério do dono).
+      */}
+      {!atual.carregando && !atual.erro && dados && visao === "fluxo" ? (
+        <GuiasVencidas alerta={alerta} aoVerGuias={aoVerGuias} />
+      ) : null}
 
       {!atual.carregando && !atual.erro && dados ? (
         visao === "fluxo" ? (
