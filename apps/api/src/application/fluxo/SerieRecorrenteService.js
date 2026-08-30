@@ -40,6 +40,7 @@ import {
   PERIODICIDADE,
   fraseDaBase,
   lerSerie,
+  podeAutoAtivar,
 } from "./lib/recorrencia.js";
 
 /** ⚠ Os dois lados, com a MESMA forma. Vocabulário FECHADO. */
@@ -610,6 +611,19 @@ export function paraTela(s) {
     confirmadoPor: s.confirmadoPor ?? null,
     confirmadoEm: s.confirmadoEm ?? null,
     saidaSugeridaEm: s.saidaSugeridaEm ?? null,
+    /**
+     * ⚠⚠ A SÉRIE QUE ENTROU SOZINHA — e a tela TEM de distinguir (29/08/2026).
+     *
+     * Ela é ATIVA com `confirmadoPor` NULO: ninguém a confirmou, ela passou na faixa de
+     * `mediana ± 10%` e entrou. **Sem este campo não há como achar as automáticas no dia em que uma
+     * entrar errada** — e é ele que sustenta a reversão da decisão de 25/08.
+     *
+     * ⚠ Derivado, nunca uma coluna nova: um booleano gravado poderia discordar do `confirmadoPor`
+     * dele mesmo, e aí ninguém saberia qual dos dois é a verdade.
+     * ⚠ A DECLARADA pelo cliente também nasce sem `confirmadoPor`, mas ela é PENDENTE — por isso a
+     * pergunta é sobre o par (ATIVA, sem quem confirmou), nunca sobre um campo só.
+     */
+    autoAtivada: s.estado === ESTADO_DA_SERIE.ATIVA && !texto(s.confirmadoPor),
   };
 }
 
@@ -655,4 +669,73 @@ export async function removerSerieDeclarada({ portalClientId, serieId, client = 
     if (tabelaAusente(e)) recusar(RECUSA_DA_SERIE.INDISPONIVEL);
     throw e;
   }
+}
+
+/**
+ * ⚠⚠ A SÉRIE QUE ENTRA NO FLUXO SEM O CLIQUE DO CONTADOR (29/08/2026).
+ *
+ * > Dono: *"se a variação for = ou menor que 10%, pode ser lançado no fluxo automaticamente."*
+ *
+ * ⚠⚠ **ISTO REVERTE A DECISÃO DE 25/08/2026** (*"o detector SUGERE com 3 e a linha só entra depois
+ * que o contador confirma — a trava é a decisão dele, não o número"*). Agora existe um número que
+ * dispensa a decisão. A reversão é do dono, e o que a segura está listado abaixo.
+ *
+ * ⚠⚠ **POR QUE ELA PRECISA GRAVAR.** As séries DETECTADAS não são registros: `listarSeries` as
+ * calcula lendo as notas. O fluxo, porém, projeta a partir da TABELA — ele não detecta. Sem gravar,
+ * "auto-ativar" não teria efeito nenhum sobre o fluxo, que é justamente onde o dono pediu que ela
+ * entrasse.
+ *
+ * **O que segura a reversão, e cada item é uma linha de código, não uma intenção:**
+ *
+ *   1. ⚠⚠ **`confirmadoPor` fica NULO.** É o que distingue, para sempre, a série que o contador
+ *      confirmou da que entrou sozinha — sem isso não há como achar as automáticas no dia em que
+ *      uma entrar errada. `paraTela` publica `autoAtivada`, derivado disto;
+ *   2. ⚠⚠ **ela NÃO toca a série que já existe.** O `where` exige que não haja registro; uma série
+ *      RECUSADA ou SUSPENSA pelo contador jamais volta por aqui — isso desfaria a decisão dele;
+ *   3. ⚠ **ela continua DESMARCÁVEL**: entrar sozinha não é ficar, e `marcarSerie` a recusa/suspende
+ *      como qualquer outra;
+ *   4. ⚠⚠ **ela NÃO LANÇA NADA.** O que ela governa é a projeção do FLUXO. O lançamento contábil tem
+ *      outro portão (a regra do fornecedor) e outra trava (a flag do ambiente).
+ *
+ * ⚠ O critério é `podeAutoAtivar` — piso de 3 observações **e** todas dentro de `mediana ± 10%`. O
+ * exemplo do próprio dono (a Lente: 1.000 · 1.050 · 1.180) **não passa**, e isso está travado por
+ * teste com esses três números.
+ */
+export async function autoAtivarSeriesEstaveis({
+  portalClientId, series, usuarioId = null, agora = new Date(), client = prisma,
+}) {
+  const ativadas = [];
+  for (const s of Array.isArray(series) ? series : []) {
+    if (!podeAutoAtivar(s?.base)) continue;
+    const k = chaveDaDescricao(texto(s?.chave) || texto(s?.rotulo));
+    if (!k || !s?.lado) continue;
+    try {
+      // ⚠⚠ `create` DENTRO de um try que engole a colisão — nunca `upsert`. O upsert ATUALIZARIA a
+      // série existente, e é exatamente isso que não pode acontecer: a decisão do contador (recusar,
+      // suspender) tem de sobreviver a esta função.
+      const criada = await client.serieRecorrente.create({
+        data: {
+          portalClientId: String(portalClientId),
+          lado: s.lado,
+          chave: k,
+          rotulo: texto(s.rotulo) || k,
+          contraparteDoc: texto(s.contraparteDoc) || null,
+          periodicidade: s.base?.periodicidade || PERIODICIDADE.MENSAL,
+          origem: ORIGEM_DA_SERIE.DETECTADA,
+          estado: ESTADO_DA_SERIE.ATIVA,
+          // ⚠⚠ NULO — é o que distingue esta da que uma pessoa confirmou.
+          confirmadoPor: null,
+          confirmadoEm: agora,
+          baseDaObservacao: s.base,
+        },
+      });
+      ativadas.push(criada);
+    } catch (e) {
+      // ⚠ Já existe (P2002, a chave única) ⇒ não é erro: significa que alguém já decidiu sobre ela.
+      if (e?.code === "P2002") continue;
+      if (tabelaAusente(e)) recusar(RECUSA_DA_SERIE.INDISPONIVEL);
+      throw e;
+    }
+  }
+  return { ativadas: ativadas.length, series: ativadas };
 }

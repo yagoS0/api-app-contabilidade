@@ -38,7 +38,12 @@ import { alternarRegra, listarRegras } from "../../application/declarados/RegraS
 import { varrerNotasDaEmpresa } from "../../application/declarados/VarreduraDeNotasService.js";
 import { listarMapeamentos, salvarMapeamento } from "../../application/declarados/MapeamentoExtratoService.js";
 import { ESTADO, ORIGEM_PAGAMENTO, TRANSICAO } from "../../application/declarados/lib/estadosDeclarado.js";
-import { ESTADO_DA_SERIE } from "../../application/fluxo/SerieRecorrenteService.js";
+import {
+  ESTADO_DA_SERIE,
+  autoAtivarSeriesEstaveis,
+  cicloDeHoje,
+  listarSeries,
+} from "../../application/fluxo/SerieRecorrenteService.js";
 import {
   SaidaRecusada,
   RECUSA_DA_SAIDA,
@@ -610,10 +615,47 @@ export function createConferenciaRouter({ log } = {}) {
         criadoPor: req.auth?.user?.id || null,
         agora: new Date(),
       });
+
+      /**
+       * ⚠⚠ A AUTO-ATIVAÇÃO DAS SÉRIES ESTÁVEIS ENTRA AQUI — e o LUGAR foi escolhido, não sobrou.
+       *
+       * > Dono: *"se a variação for = ou menor que 10%, pode ser lançado no fluxo automaticamente."*
+       *
+       * ⚠⚠ **POR QUE NA VARREDURA, E NÃO NA LEITURA.** `listarSeries` é o detector, e o eixo escrito
+       * daquele módulo é *"observar NÃO GRAVA"* — uma escrita ali faria toda abertura de tela
+       * cadastrar série, e o contador não saberia o que disparou o quê. A varredura é o passo em que
+       * o contador já mandou o sistema **processar o que chegou**: é escrita explícita, com piso de
+       * papel (`ACCOUNTANT`) e resposta que diz o que aconteceu.
+       *
+       * ⚠ Do ponto de vista do dono continua sendo automático: ele não decide série a série — que é
+       * exatamente o que ele pediu para deixar de fazer.
+       *
+       * ⚠⚠ **ELA NÃO PODE DERRUBAR A VARREDURA.** As notas já viraram fila neste ponto; perder essa
+       * resposta por causa da recorrência faria o contador varrer de novo, e o relatório de "criei
+       * 12" some. Falhou ⇒ `autoAtivadas: null`, que é "não sei", e o resto responde.
+       */
+      let autoAtivadas = null;
+      try {
+        const detectadas = await listarSeries({
+          portalClientId: String(req.params.companyId),
+          cicloAtual: cicloDeHoje(),
+        });
+        const ativacao = await autoAtivarSeriesEstaveis({
+          portalClientId: String(req.params.companyId),
+          series: detectadas?.series || [],
+        });
+        autoAtivadas = ativacao.ativadas;
+      } catch (e) {
+        log?.warn?.({ err: e, companyId: req.params?.companyId }, "auto_ativacao_de_series_falhou");
+      }
+
       // ⚠ O relatório INTEIRO volta — inclusive `fora` e `recusados`. Uma varredura que só dissesse
       // "criei 12" faria as outras sumirem sem ninguém saber por quê, e "não veio nada" ficaria
       // indistinguível de "deu erro".
-      return res.json({ ok: true, desde, ...r });
+      // ⚠⚠ `autoAtivadas` viaja SEPARADO e pode ser `null`: "nenhuma série entrou sozinha" e "não
+      // consegui olhar as séries" são respostas diferentes, e a segunda não pode se disfarçar de
+      // zero.
+      return res.json({ ok: true, desde, ...r, autoAtivadas });
     } catch (e) {
       return responderRecusa(res, e, log);
     }

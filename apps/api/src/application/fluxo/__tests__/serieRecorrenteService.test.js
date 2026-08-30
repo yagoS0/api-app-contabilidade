@@ -10,6 +10,7 @@ import {
   LADO,
   ORIGEM_DA_SERIE,
   WHERE_SERIE_NO_FLUXO,
+  autoAtivarSeriesEstaveis,
   FRASE_DA_RECUSA_DA_SERIE,
   removerSerieDeclarada,
   serieEntraNoFluxo,
@@ -587,5 +588,118 @@ describe("⚠⚠ removerSerieDeclarada", () => {
     };
     await expect(removerSerieDeclarada({ portalClientId: "emp-1", serieId: "s-1", client }))
       .rejects.toMatchObject({ codigo: RECUSA_DA_SERIE.INDISPONIVEL });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A SÉRIE QUE ENTRA SOZINHA — a reversão de 25/08, decidida pelo dono em 29/08/2026.
+//
+// > *"se a variação for = ou menor que 10%, pode ser lançado no fluxo automaticamente."*
+//
+// ⚠⚠ O que estes casos travam é o que SEGURA a reversão: ela não toca decisão já tomada, ela fica
+// distinguível para sempre, e ela não lança nada.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ autoAtivarSeriesEstaveis", () => {
+  const clienteQueGrava = (erroDoCreate = null) => {
+    const criadas = [];
+    return {
+      criadas,
+      client: {
+        serieRecorrente: {
+          create: jest.fn(async ({ data }) => {
+            if (erroDoCreate) throw erroDoCreate;
+            criadas.push(data);
+            return { id: `s-${criadas.length}`, ...data };
+          }),
+        },
+      },
+    };
+  };
+
+  const serie = (valores, extra = {}) => ({
+    lado: LADO.DESPESA, chave: "98765432000155", rotulo: "ANTHROPIC",
+    base: { n: valores.length, valores, periodicidade: PERIODICIDADE.MENSAL },
+    ...extra,
+  });
+
+  it("série estável entra ATIVA", async () => {
+    const { client, criadas } = clienteQueGrava();
+    const r = await autoAtivarSeriesEstaveis({ portalClientId: "emp-1", series: [serie([1000, 1050, 1020])], client });
+    expect(r.ativadas).toBe(1);
+    expect(criadas[0].estado).toBe(ESTADO_DA_SERIE.ATIVA);
+    expect(criadas[0].origem).toBe(ORIGEM_DA_SERIE.DETECTADA);
+  });
+
+  it("⚠⚠ `confirmadoPor` fica NULO — é o que distingue a automática da confirmada", async () => {
+    // Sem isso não há como achar as automáticas no dia em que uma entrar errada.
+    const { client, criadas } = clienteQueGrava();
+    await autoAtivarSeriesEstaveis({ portalClientId: "emp-1", series: [serie([1000, 1050, 1020])], client });
+    expect(criadas[0].confirmadoPor).toBeNull();
+    expect(paraTela({ ...criadas[0], id: "s-1" }).autoAtivada).toBe(true);
+  });
+
+  it("⚠ e a confirmada por uma PESSOA não é auto-ativada", () => {
+    expect(paraTela({ id: "s-2", estado: ESTADO_DA_SERIE.ATIVA, confirmadoPor: "u-1" }).autoAtivada).toBe(false);
+  });
+
+  it("⚠ a DECLARADA pelo cliente também não — ela é PENDENTE, não ATIVA", () => {
+    // As duas nascem sem `confirmadoPor`; o que as separa é o estado. Por isso a pergunta é sobre o
+    // PAR, nunca sobre um campo só.
+    expect(paraTela({ id: "s-3", estado: ESTADO_DA_SERIE.PENDENTE, confirmadoPor: null }).autoAtivada).toBe(false);
+  });
+
+  it("⚠⚠ A SÉRIE DA LENTE NÃO ENTRA — 1.000 · 1.050 · 1.180 fica fora da faixa", async () => {
+    // É o exemplo do próprio dono, e o caso que separa a FAIXA do coeficiente de variação (que a
+    // deixaria passar). O Alessandro Nigro continua pedindo o clique dele.
+    const { client, criadas } = clienteQueGrava();
+    const r = await autoAtivarSeriesEstaveis({ portalClientId: "emp-1", series: [serie([1000, 1050, 1180])], client });
+    expect(r.ativadas).toBe(0);
+    expect(criadas).toEqual([]);
+    expect(client.serieRecorrente.create).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ menos de 3 observações NÃO entra — o piso de 25/08 continua", async () => {
+    const { client } = clienteQueGrava();
+    await autoAtivarSeriesEstaveis({ portalClientId: "emp-1", series: [serie([1000, 1010])], client });
+    expect(client.serieRecorrente.create).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ ela NÃO TOCA a série que já existe — é `create`, nunca `upsert`", async () => {
+    // O upsert ATUALIZARIA a série existente, e uma RECUSADA ou SUSPENSA pelo contador voltaria por
+    // aqui — desfazendo a decisão dele.
+    const p2002 = Object.assign(new Error("unique"), { code: "P2002" });
+    const { client } = clienteQueGrava(p2002);
+    const r = await autoAtivarSeriesEstaveis({ portalClientId: "emp-1", series: [serie([1000, 1050, 1020])], client });
+    expect(r.ativadas).toBe(0);
+    // ⚠ E a colisão NÃO é erro: ela significa que alguém já decidiu sobre esta série.
+    expect(client.serieRecorrente.create).toHaveBeenCalled();
+  });
+
+  it("⚠ a varredura confirma: `upsert` não aparece nesta função", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "SerieRecorrenteService.js"), "utf8");
+    const trecho = fonte.slice(fonte.indexOf("export async function autoAtivarSeriesEstaveis"));
+    expect(trecho).not.toMatch(/\.upsert\(/);
+    expect(trecho).toMatch(/\.create\(/);
+  });
+
+  it("⚠⚠ ela NÃO LANÇA NADA — governa a projeção do fluxo, não o razão", async () => {
+    const { client } = clienteQueGrava();
+    await autoAtivarSeriesEstaveis({ portalClientId: "emp-1", series: [serie([1000, 1050, 1020])], client });
+    expect(client.accountingEntry).toBeUndefined();
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "SerieRecorrenteService.js"), "utf8");
+    const trecho = fonte.slice(fonte.indexOf("export async function autoAtivarSeriesEstaveis"));
+    expect(trecho).not.toMatch(/accountingEntry|AccountingEntry/);
+  });
+
+  it("⚠ lista vazia ou torta não grava nada", async () => {
+    const { client } = clienteQueGrava();
+    for (const entrada of [[], null, [{}], [{ base: { n: 5 } }]]) {
+      await autoAtivarSeriesEstaveis({ portalClientId: "emp-1", series: entrada, client });
+    }
+    expect(client.serieRecorrente.create).not.toHaveBeenCalled();
   });
 });

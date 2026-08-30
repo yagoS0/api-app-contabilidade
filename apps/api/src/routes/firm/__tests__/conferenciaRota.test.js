@@ -668,3 +668,52 @@ describe("⚠⚠ as saídas do cliente na Conferência", () => {
     expect(trecho).not.toMatch(/accountingEntry|AccountingEntry|lancamento/i);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A AUTO-ATIVAÇÃO DAS SÉRIES, na varredura (29/08/2026).
+//
+// > Dono: *"se a variação for = ou menor que 10%, pode ser lançado no fluxo automaticamente."*
+//
+// ⚠⚠ O lugar foi escolhido: `listarSeries` é o detector, e o eixo daquele módulo é *"observar não
+// grava"*. A varredura é o passo em que o contador já mandou processar o que chegou.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ a varredura auto-ativa as séries estáveis", () => {
+  const serieService = require("../../../application/fluxo/SerieRecorrenteService.js");
+
+  it("ela roda depois da varredura e devolve quantas entraram", async () => {
+    jest.spyOn(serieService, "listarSeries").mockResolvedValue({ series: [{ id: "s-1" }] });
+    jest.spyOn(serieService, "autoAtivarSeriesEstaveis").mockResolvedValue({ ativadas: 2, series: [] });
+    const r = await request(makeApp())
+      .post("/firm/companies/emp-1/conferencia/varrer-notas?desde=2026-01-01");
+    expect(r.status).toBe(200);
+    expect(r.body.autoAtivadas).toBe(2);
+    // ⚠ E o relatório da varredura continua inteiro: ela não substitui nada.
+    expect(r.body.criados).toBe(8);
+  });
+
+  it("⚠⚠ falhar na recorrência NÃO derruba a varredura — as notas já viraram fila", async () => {
+    // Perder essa resposta faria o contador varrer de novo, e o relatório de "criei 12" some.
+    jest.spyOn(serieService, "listarSeries").mockRejectedValue(new Error("tabela fora"));
+    const r = await request(makeApp())
+      .post("/firm/companies/emp-1/conferencia/varrer-notas?desde=2026-01-01");
+    expect(r.status).toBe(200);
+    expect(r.body.criados).toBe(8);
+    // ⚠⚠ `null` é "não sei" — nunca zero, que diria "olhei e nenhuma entrou".
+    expect(r.body.autoAtivadas).toBeNull();
+  });
+
+  it("⚠ nenhuma estável ⇒ ZERO, que é diferente de `null`", async () => {
+    jest.spyOn(serieService, "listarSeries").mockResolvedValue({ series: [] });
+    jest.spyOn(serieService, "autoAtivarSeriesEstaveis").mockResolvedValue({ ativadas: 0, series: [] });
+    const r = await request(makeApp())
+      .post("/firm/companies/emp-1/conferencia/varrer-notas?desde=2026-01-01");
+    expect(r.body.autoAtivadas).toBe(0);
+  });
+
+  it("⚠⚠ ela NÃO roda na LEITURA da fila — observar não grava", async () => {
+    const auto = jest.spyOn(serieService, "autoAtivarSeriesEstaveis").mockResolvedValue({ ativadas: 0 });
+    await request(makeApp()).get("/firm/companies/emp-1/conferencia");
+    await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
+    expect(auto).not.toHaveBeenCalled();
+  });
+});

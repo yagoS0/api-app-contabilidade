@@ -87,6 +87,28 @@ export const ORIGEM_PAGAMENTO = Object.freeze({
    * que ela importa.
    */
   EXTRATO_EXCEL: "EXTRATO_EXCEL",
+
+  /**
+   * ⚠⚠ A DATA FOI **PRESUMIDA POR UMA REGRA** — ninguém a viu acontecer (29/08/2026).
+   *
+   * > Dono, escolhendo entre as opções: *"lança numa data fixa que eu configuro"*.
+   *
+   * ⚠⚠ **EU RECOMENDEI CONTRA E ELE DECIDIU; o que fica aqui é a CONSEQUÊNCIA, para ninguém a
+   * redescobrir.** O lançamento que sai da regra é `D despesa / C caixa` na data configurada — e
+   * isso **afirma que o dinheiro saiu do caixa naquele dia**, coisa que ninguém provou: a nota diz
+   * o que é e de quem, nunca QUANDO foi paga. É a única regra desta casa que este pedido atravessa
+   * (*"a data vem da nota, do OFX ou do cliente — nunca do clique"*).
+   *
+   * ⚠⚠ **REUSAR `DECLARADO_PELO_CONTADOR` SERIA ERRADO, e é por isso que este valor existe.** Aquele
+   * diz *"uma pessoa afirmou esta data"* — e atribuiria ao contador um ato que ele não praticou
+   * naquele mês. Este diz *"uma regra que ele escreveu presumiu esta data"*, que é outra coisa e tem
+   * outro conserto.
+   *
+   * ⚠ Ela é **DECLARAÇÃO, nunca prova**: `ehProvaDePagamento` continua devolvendo `false`, e o
+   * extrato CORRIGE a data quando o débito real chegar. As três coisas que tornam a decisão do dono
+   * reversível estão em `docs/` e no extrato de "lançados por regra", com desfazer em lote.
+   */
+  PRESUMIDO_POR_REGRA: "PRESUMIDO_POR_REGRA",
 });
 
 /**

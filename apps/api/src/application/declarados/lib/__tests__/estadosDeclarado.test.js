@@ -446,3 +446,30 @@ describe("⚠ o módulo é PURO", () => {
     expect(fonte).not.toMatch(/new Date\(\s*\)/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A DATA PRESUMIDA POR REGRA (29/08/2026) — decisão do dono, com a consequência escrita.
+//
+// > *"lança numa data fixa que eu configuro"*
+//
+// ⚠⚠ Eu recomendei contra e ele decidiu. O que estes casos travam é o que torna a decisão
+// REVERSÍVEL: ela é declaração (nunca prova), tem valor PRÓPRIO (não se disfarça de afirmação do
+// contador), e o extrato pode corrigi-la.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ PRESUMIDO_POR_REGRA", () => {
+  it("⚠⚠ NÃO é prova — `ehProvaDePagamento` continua `false`", () => {
+    // O lançamento afirma que o dinheiro saiu do caixa naquele dia, e ninguém viu isso acontecer.
+    expect(ehProvaDePagamento(ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA)).toBe(false);
+  });
+
+  it("⚠⚠ e é um valor PRÓPRIO — reusar `DECLARADO_PELO_CONTADOR` seria atribuir a ele um ato que não praticou", () => {
+    expect(ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA).not.toBe(ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR);
+    expect(ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA).toBe("PRESUMIDO_POR_REGRA");
+  });
+
+  it("⚠ só o EXTRATO prova, nos dois formatos — a lista é de INCLUSÃO", () => {
+    // Origem nova nasce sendo declaração, que é o lado seguro.
+    const provam = Object.values(ORIGEM_PAGAMENTO).filter(ehProvaDePagamento);
+    expect(provam.sort()).toEqual([ORIGEM_PAGAMENTO.EXTRATO_EXCEL, ORIGEM_PAGAMENTO.OFX].sort());
+  });
+});

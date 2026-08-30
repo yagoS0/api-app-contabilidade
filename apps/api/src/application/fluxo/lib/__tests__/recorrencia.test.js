@@ -18,6 +18,8 @@ import {
   mediana,
   mesesDaCompetencia,
   porCiclo,
+  dentroDaFaixaDaMediana,
+  podeAutoAtivar,
 } from "../recorrencia.js";
 
 /** A "Claude" do exemplo do dono: 120 a 140, todo mês. */
@@ -403,5 +405,96 @@ describe("⚠ o vazio", () => {
 
   it("⚠ chamada sem argumento nenhum não estoura", () => {
     expect(() => lerSerie()).not.toThrow();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A FAIXA DOS 10% — a série que entra no fluxo SEM o clique do contador (29/08/2026).
+//
+// > Dono: *"se a variação for = ou menor que 10%, pode ser lançado no fluxo automaticamente."*
+// > Os 10% governam ***"a entrada no FLUXO (a projeção)"***, medidos ***"contra a MEDIANA"***.
+//
+// ⚠⚠ ISTO REVERTE A DECISÃO DE 25/08/2026 (*"a trava é a decisão dele, não o número"*). O que estes
+// casos travam é o que sobrou dela: o piso de 3 continua, e o critério é o MAIS ESTRITO dos dois
+// possíveis — para algo que dispensa a confirmação de uma pessoa.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ dentroDaFaixaDaMediana", () => {
+  it("⚠⚠ A SÉRIE DA LENTE NÃO PASSA — é o caso que separa a faixa do `cv`", () => {
+    // 1.000 · 1.050 · 1.180: mediana 1.050, faixa 945–1.155. O 1.180 fica FORA.
+    // ⚠ Pelo coeficiente de variação (≈ 8,6%) ela passaria — e é por isso que a escolha entre os
+    // dois é uma DECISÃO, não uma escolha de fórmula. O Alessandro Nigro continua pedindo o clique.
+    expect(dentroDaFaixaDaMediana([1000, 1050, 1180])).toBe(false);
+    expect(coeficienteDeVariacao([1000, 1050, 1180])).toBeLessThan(0.10);
+  });
+
+  it("uma série estável passa", () => {
+    expect(dentroDaFaixaDaMediana([1000, 1050, 1020])).toBe(true);
+  });
+
+  it("⚠⚠ TODAS as observações precisam caber — não a média, não a maioria", () => {
+    // Uma única fora já significa que a série não é estável o bastante para entrar sem ninguém olhar.
+    expect(dentroDaFaixaDaMediana([1000, 1000, 1000, 1000, 2000])).toBe(false);
+  });
+
+  it("⚠ a borda EXATA passa — o dono disse *igual ou menor que 10%*", () => {
+    expect(dentroDaFaixaDaMediana([900, 1000, 1100])).toBe(true);
+    expect(dentroDaFaixaDaMediana([899.99, 1000, 1100])).toBe(false);
+  });
+
+  it("⚠⚠ sem observação NÃO passa — 'não sei' nunca vira 'pode entrar sozinha'", () => {
+    expect(dentroDaFaixaDaMediana([])).toBe(false);
+    expect(dentroDaFaixaDaMediana(null)).toBe(false);
+  });
+
+  it("⚠⚠ mediana ZERO não abre faixa — `0 ± 10%` é o próprio zero", () => {
+    // Mesmo cuidado do `d > 0` da alíquota: zero no denominador não produz proporção.
+    expect(dentroDaFaixaDaMediana([0, 0, 0])).toBe(false);
+  });
+
+  it("⚠ valor não numérico é descartado, não vira zero", () => {
+    expect(dentroDaFaixaDaMediana([1000, 1050, null, 1020])).toBe(true);
+  });
+});
+
+describe("⚠⚠ podeAutoAtivar exige as DUAS coisas", () => {
+  it("faixa boa mas POUCA observação não auto-ativa", () => {
+    // O piso de 3 é de 25/08 e continua: afrouxá-lo faria a projeção entrar sozinha em cima de
+    // menos evidência do que o desenho exigia com o contador olhando.
+    expect(podeAutoAtivar({ n: 2, valores: [1000, 1010] })).toBe(false);
+  });
+
+  it("observações bastantes mas faixa larga não auto-ativa", () => {
+    expect(podeAutoAtivar({ n: 3, valores: [1000, 1050, 1180] })).toBe(false);
+  });
+
+  it("as duas ⇒ auto-ativa", () => {
+    expect(podeAutoAtivar({ n: 3, valores: [1000, 1050, 1020] })).toBe(true);
+  });
+
+  it("⚠ base ausente ou torta não auto-ativa nada", () => {
+    expect(podeAutoAtivar(null)).toBe(false);
+    expect(podeAutoAtivar({})).toBe(false);
+    expect(podeAutoAtivar({ n: 5 })).toBe(false);
+  });
+
+  it("⚠⚠ e ela NÃO decide lançamento nenhum — só a ENTRADA NO FLUXO", () => {
+    // O lançamento contábil tem outro portão (a faixa `valorMin`/`valorMax` da regra do fornecedor)
+    // e outra trava (a flag do ambiente). Uma varredura da fonte prova que esta lib não os conhece.
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "recorrencia.js"), "utf8")
+      // ⚠ BLOCO antes de LINHA: um `//` dentro de um comentário de bloco apaga o `*/`. E a
+      // varredura é sobre o CÓDIGO — o comentário que EXPLICA a fronteira não pode derrubá-la.
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/^[ \t]*\/\/.*$/gm, " ");
+    expect(fonte).not.toMatch(/AccountingEntry|accountingEntry|lancaSozinha|INTEGRACAO_/);
+  });
+});
+
+describe("⚠ os VALORES viajam na base — `min`/`max`/`mediana` não bastam", () => {
+  it("duas séries com os mesmos resumos e faixas diferentes", () => {
+    // 900 · 1.050 · 1.200 e 1.045 · 1.050 · 1.055 têm mediana 1.050; só a segunda cabe em ±10%.
+    expect(dentroDaFaixaDaMediana([900, 1050, 1200])).toBe(false);
+    expect(dentroDaFaixaDaMediana([1045, 1050, 1055])).toBe(true);
   });
 });

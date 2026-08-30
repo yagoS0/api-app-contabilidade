@@ -265,6 +265,10 @@ export function lerSerie({ observacoes, periodicidade = PERIODICIDADE.MENSAL, ci
     min: valores.length ? Math.min(...valores) : null,
     max: valores.length ? Math.max(...valores) : null,
     cv: coeficienteDeVariacao(valores),
+    // ⚠⚠ OS VALORES VIAJAM porque a FAIXA precisa de TODOS eles — `min`/`max`/`mediana` não bastam:
+    // uma série 900 · 1.050 · 1.200 tem os mesmos três resumos de outra 1.045 · 1.050 · 1.055, e só
+    // uma delas cabe em ±10%. Ver `dentroDaFaixaDaMediana`.
+    valores,
     // ⚠ A JANELA é o que a tela precisa para dizer "baseado em 3 observações, de jan a mar".
     janela: ciclos.length
       ? { deCiclo: ciclos[0].ciclo, ateCiclo: ultimo, competencias: ciclos.flatMap((c) => c.competencias) }
@@ -320,4 +324,73 @@ export function fraseDaBase(base) {
     partes.push(`entre ${base.min} e ${base.max}`);
   }
   return partes.join(", ");
+}
+
+/**
+ * ⚠⚠ A FAIXA DOS 10% — a série que entra no fluxo SEM a confirmação do contador (29/08/2026).
+ *
+ * > Dono: *"se a variação for = ou menor que 10%, pode ser lançado no fluxo automaticamente."*
+ * > Perguntado o que os 10% governam: ***"a entrada no FLUXO (a projeção)"***, não o lançamento.
+ * > Perguntado contra o quê: ***"contra a MEDIANA observada"***.
+ *
+ * ⚠⚠ **ISTO REVERTE A DECISÃO DE 25/08/2026**, e a reversão fica escrita: *"3 é pouco, e o que
+ * segura é a MARCAÇÃO, não o piso (…) o detector SUGERE com 3 e a linha só entra depois que o
+ * contador confirma — a trava é a decisão dele, não o número"*. Agora existe um número que dispensa
+ * a decisão. ⚠ O que **não** mudou: o piso de 3 observações continua, e a série auto-ativada
+ * continua **desmarcável** — entrar sozinha não é ficar.
+ *
+ * ⚠⚠ **AS DUAS LEITURAS DE "VARIAÇÃO" DISCORDAM NO PRÓPRIO EXEMPLO DO DONO**, e por isso a escolha é
+ * uma decisão escrita, não uma escolha de fórmula:
+ *
+ * | a série da Lente | 1.000 · 1.050 · 1.180 | veredito |
+ * |---|---|---|
+ * | **faixa em torno da mediana** (o que a resposta dele descreve) | mediana 1.050 · ±10% = 945–1.155 | **1.180 fica FORA ⇒ não entra sozinha** |
+ * | coeficiente de variação (`cv`, que esta lib já calcula) | ≈ 8,6% | passaria |
+ *
+ * **Implementada a FAIXA**, por dois motivos: é o que a resposta dele descreve com número, e é a
+ * mais estrita — para algo que dispensa a confirmação de uma pessoa, o critério apertado é o certo.
+ * ⚠ Consequência a saber: **o Alessandro Nigro continua pedindo o clique do contador** enquanto
+ * variar assim. ⚠ O `cv` continua sendo CALCULADO e mostrado (ele é a evidência na tela); o que ele
+ * não faz é decidir.
+ *
+ * ⚠⚠ **TODAS as observações precisam caber na faixa** — não a média delas, não a maioria. Uma única
+ * fora já significa que a série não é estável o bastante para entrar sem ninguém olhar.
+ */
+export const TOLERANCIA_DA_FAIXA = 0.10;
+
+export function dentroDaFaixaDaMediana(valores, tolerancia = TOLERANCIA_DA_FAIXA) {
+  /**
+   * ⚠⚠ O FILTRO É POR TIPO, NUNCA POR `Number.isFinite(Number(v))` — e a primeira versão desta
+   * linha errou nisso. **`Number(null)` é `0` e `0` é finito**: `null` passava pelo filtro, virava
+   * zero, e derrubava a faixa de uma série perfeitamente estável. É a MESMA armadilha que o
+   * `fatorR` e a alíquota da nota já pagaram nesta casa, e foi o teste que a pegou de novo.
+   */
+  const lista = (Array.isArray(valores) ? valores : [])
+    .filter((v) => typeof v === "number" && Number.isFinite(v));
+  // ⚠ Sem observação não há faixa — e "não sei" nunca pode virar "pode entrar sozinha".
+  if (!lista.length) return false;
+  const centro = mediana(lista);
+  // ⚠ Mediana ZERO não abre faixa nenhuma (`0 ± 10%` é o próprio zero): a série de valor zero não
+  // se auto-ativa. É o mesmo cuidado do `d > 0` da alíquota — zero no denominador não é proporção.
+  if (!Number.isFinite(centro) || centro <= 0) return false;
+  const piso = centro * (1 - tolerancia);
+  const teto = centro * (1 + tolerancia);
+  return lista.every((v) => v >= piso && v <= teto);
+}
+
+/**
+ * ⚠⚠ ESTA SÉRIE PODE ENTRAR NO FLUXO SEM O CLIQUE DO CONTADOR?
+ *
+ * ⚠ Ela é de INCLUSÃO e exige as DUAS coisas: o piso de observações que já existia (3) **e** a
+ * faixa. Afrouxar qualquer uma faz uma projeção entrar sozinha em cima de menos evidência do que o
+ * desenho de 25/08 exigia com o contador olhando.
+ *
+ * ⚠⚠ **ELA NÃO DECIDE LANÇAMENTO NENHUM.** O que ela governa é a ENTRADA NO FLUXO — a projeção que
+ * o cliente vê. O lançamento contábil tem outro portão (a regra do fornecedor, com a faixa
+ * `valorMin`/`valorMax` que o contador digita) e outra trava (a flag do ambiente).
+ */
+export function podeAutoAtivar(base, tolerancia = TOLERANCIA_DA_FAIXA) {
+  const n = Number(base?.n);
+  if (!Number.isFinite(n) || n < PISO_DE_OBSERVACOES) return false;
+  return dentroDaFaixaDaMediana(base?.valores, tolerancia);
 }
