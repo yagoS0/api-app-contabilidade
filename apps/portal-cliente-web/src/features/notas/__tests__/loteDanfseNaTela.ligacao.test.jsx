@@ -376,3 +376,44 @@ describe("⚠⚠ BAIXAR TODA A COMPETÊNCIA — a segunda saída, quando há mai
     expect(screen.getByRole("button", { name: /Selecionar todas as 120/ })).toBeInTheDocument();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A COLUNA DA SELEÇÃO PRECISA ESTAR NA MESMA POSIÇÃO NO CABEÇALHO E NO CORPO.
+//
+// Defeito relatado pelo dono em 28/08/2026, com a tela na frente: *"na aba de notas existe uma
+// caixa de seleção ao lado de valor, não faz sentido"*.
+//
+// ⚠⚠ E era pior do que ele viu: o `<th>` da seleção tinha sido montado **depois de "Valor"** e o
+// `<td>` de cada linha **antes de "Número"** — cabeçalho e corpo em colunas DIFERENTES, com as
+// outras dez desalinhadas junto. A caixa de "marcar todas" pairava sobre a coluna de dinheiro.
+//
+// ⚠ Nada no HTML impede isso: o navegador desenha 11 células no `thead` e 11 no `tbody` sem
+// reclamar. Os oito casos de seleção que já existiam aqui **passavam todos** — eles perguntavam se
+// a caixa existe, nunca ONDE ela está. Por isso a guarda compara as duas listas.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ o cabeçalho e o corpo falam da mesma coluna", () => {
+  it("⚠⚠ a seleção é a PRIMEIRA coluna nos dois — e o defeito só aparecia olhando", async () => {
+    api.getInvoices.mockResolvedValue(respostaDeNotas([nota()]));
+    await abrirNotas();
+
+    const tabela = document.querySelector("main table");
+    const posicao = (celulas) => [...celulas].findIndex((c) => c.classList.contains("col-selecao"));
+
+    const noCabecalho = posicao(tabela.querySelectorAll("thead th"));
+    const noCorpo = posicao(tabela.querySelectorAll("tbody tr td"));
+
+    expect(noCabecalho).toBe(0);
+    expect(noCorpo).toBe(0);
+    // ⚠ A comparação é o que pega o caso geral: qualquer coluna nova inserida num só dos dois lados
+    // desloca tudo dali para a frente, e o navegador não avisa.
+    expect(noCabecalho).toBe(noCorpo);
+  });
+
+  it("⚠ e as duas linhas têm o MESMO número de células", async () => {
+    api.getInvoices.mockResolvedValue(respostaDeNotas([nota()]));
+    await abrirNotas();
+    const tabela = document.querySelector("main table");
+    expect(tabela.querySelectorAll("tbody tr td").length)
+      .toBe(tabela.querySelectorAll("thead th").length);
+  });
+});

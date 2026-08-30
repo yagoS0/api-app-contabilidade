@@ -391,11 +391,28 @@ export function createRealApi() {
      * ⚠ `cicloAtual` é o mês de PARTIDA, e ele viaja explícito. Ciclo malformado é RECUSADO pelo
      * servidor (400 `ciclo_invalido`) em vez de cair no mês corrente em silêncio.
      */
-    async getFluxoCaixa(companyId, { competencia } = {}) {
+    async getFluxoCaixa(companyId, { competencia, janelaInicio } = {}) {
       const ciclo = competencia || competenciaPadrao();
+      // ⚠⚠ DOIS PARÂMETROS, DUAS PERGUNTAS. `cicloAtual` é *"que mês é hoje?"* — ele decide o que é
+      // passado e qual linha a tela pinta de ciano. `janelaInicio` é *"onde a tabela começa?"*, que
+      // é só navegação. Enquanto eram um só, andar com a seta movia o "hoje" junto.
       return pedir(
-        `/client/companies/${encodeURIComponent(companyId)}/fluxo-de-caixa${qs({ cicloAtual: ciclo })}`
+        `/client/companies/${encodeURIComponent(companyId)}/fluxo-de-caixa`
+        + qs({ cicloAtual: ciclo, janelaInicio: janelaInicio || undefined })
       );
+    },
+
+    /**
+     * ⚠⚠ "ESTOU CIENTE" — o registro de que a pessoa viu o aviso de guias em atraso.
+     *
+     * ⚠ NÃO CONFUNDIR com `confirmarPagamentoDaGuia`: aquela afirma *"eu paguei"* e move
+     * `paymentStatus`; esta só silencia o pop-up até surgir guia nova. Lei 5 da Constituição.
+     */
+    async registrarCienciaDeGuias(companyId, { guiaIds } = {}) {
+      return pedir(`/client/companies/${encodeURIComponent(companyId)}/guias/ciencia`, {
+        method: "POST",
+        body: { guiaIds: guiaIds || [] },
+      });
     },
 
     /**
@@ -547,27 +564,6 @@ export function createRealApi() {
       return pedir(`/client/companies/${encodeURIComponent(companyId)}/ofx/import`, {
         method: "POST",
         body: form,
-      });
-    },
-
-    // --- ⚠⚠ DECLARAR O QUE SE REPETE ----------------------------------------------------------
-    //
-    // Contrato lido em `apps/api/src/routes/client/index.js` (não deduzido):
-    //   POST /client/companies/:companyId/recorrencia/declarar
-    //     corpo: { lado, rotulo, periodicidade, valor }
-    //     -> 200 { ok, serie, jaDecidida } · 400 nomeado · 503 `recorrencia_indisponivel`
-    //
-    // ⚠⚠ A SÉRIE NASCE **PENDENTE**, e o servidor é quem decide isso — a tela não manda `estado`.
-    // Nada entra no fluxo de caixa até o contador confirmar.
-    //
-    // ⚠⚠ E NENHUMA CONTA VIAJA: o cliente não tem plano de contas, e esta declaração é sobre CAIXA.
-    //
-    // ⚠ `jaDecidida` volta no corpo: uma série que o contador JÁ decidiu não é sobrescrita, e o
-    // cliente precisa saber que a declaração dele não mudou nada — em vez de achar que mudou.
-    async declararRecorrencia(companyId, corpo) {
-      return pedir(`/client/companies/${encodeURIComponent(companyId)}/recorrencia/declarar`, {
-        method: "POST",
-        body: JSON.stringify(corpo || {}),
       });
     },
 

@@ -109,11 +109,31 @@ export function AlertaErro({ erro, padrao, aoTentarNovamente }) {
 }
 
 /** Cartão de número do resumo. `apoio` é a linha que explica o número. */
-export function CardNumero({ rotulo, valor, apoio, destaque = false }) {
+/**
+ * ⚠⚠ `status` ENTROU EM 28/08/2026, E ELE CONSERTA UMA AFIRMAÇÃO FALSA.
+ *
+ * O card de imposto mostrava **R$ 5.269,55** com o mesmo peso de um valor liquidado — e o número
+ * era a soma de duas guias EM ABERTO. Medido na tela: ao lado dele, a frase de apoio dizia
+ * *"Nenhuma guia paga nesta competência ainda"*. O card se contradizia.
+ *
+ * ⚠ A `CONSTITUICAO-do-produto.md` §1 manda que a distinção **nunca seja só cor**: âmbar vem com
+ * itálico, `data-status` no DOM e nome acessível. São os MESMOS três canais das células da tabela —
+ * um card com regra própria divergiria da linha que mostra o mesmo número.
+ *
+ * ⚠ `status` ausente ⇒ o card fica exatamente como era. Nenhum dos outros precisou mudar.
+ */
+export function CardNumero({ rotulo, valor, apoio, destaque = false, status = null }) {
+  const previsto = status === "forecast";
   return (
     <div className="card">
       <div className="rotulo">{rotulo}</div>
-      <div className={destaque ? "numero destaque" : "numero"}>{valor}</div>
+      <div
+        className={destaque ? "numero destaque" : "numero"}
+        data-status={status || undefined}
+        aria-label={previsto ? `${valor}, previsto` : undefined}
+      >
+        {valor}
+      </div>
       {apoio ? <div className="apoio">{apoio}</div> : null}
     </div>
   );

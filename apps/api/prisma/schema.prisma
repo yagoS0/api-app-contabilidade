@@ -921,6 +921,7 @@ model PortalClient {
   regrasContabilizacao    RegraContabilizacao[]
   ofxImports              OfxImport[]
   mapeamentosExtrato      MapeamentoExtrato[]
+  cienciasDeGuias         CienciaDeGuias[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -4208,4 +4209,38 @@ model SerieRecorrente {
   @@unique([portalClientId, lado, chave])
   @@index([portalClientId, estado])
   @@map("series_recorrentes")
+}
+
+/// ⚠⚠ A CIÊNCIA DO CLIENTE SOBRE AS GUIAS EM ATRASO — o "Estou ciente" do pop-up.
+///
+/// ⚠⚠ **ISTO NÃO É `Guide.clienteConfirmouEm`, E NÃO PODE REUSÁ-LO.** Aquelas colunas guardam a
+/// afirmação *"eu paguei esta guia"*, sem comprovante, e alimentam `paymentStatus`. Esta guarda
+/// *"eu vi o aviso"*. Colapsar as duas apagaria quem disse o quê — que é exatamente o registro que
+/// uma fiscalização vai querer —, e um clique em "Estou ciente" passaria a marcar guia como PAGA.
+/// A `CONSTITUICAO-do-produto.md` fecha a palavra na Lei 5: *Ciência* nunca significa pagamento.
+model CienciaDeGuias {
+  id             String @id @default(uuid())
+  portalClientId String
+
+  /// ⚠⚠ O CONJUNTO EXATO de guias sobre o qual a pessoa deu ciência.
+  ///
+  /// É ele que faz o aviso **voltar quando surgir guia nova** (v3 §1) sem voltar todo dia: o pop-up
+  /// só reaparece se houver guia em atraso que não esteja em nenhum conjunto já reconhecido.
+  /// ⚠ Guardar só um carimbo de data ("avisado em 27/08") não serviria: uma guia que vence no dia
+  /// 28 ficaria silenciada por um clique dado antes de ela existir.
+  guiaIds String[]
+
+  /// ⚠ QUEM deu a ciência. O v3 aceita o cliente **ou** o contador, e a tela do cliente precisa
+  /// poder dizer *"seu contador já viu isto"* — sem o autor, as duas ciências são indistinguíveis.
+  userId String
+
+  /// FIRM | CLIENT — de que lado veio. ⚠ Vocabulário fechado.
+  origem String
+
+  criadoEm DateTime @default(now())
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, criadoEm])
+  @@map("ciencias_de_guias")
 }

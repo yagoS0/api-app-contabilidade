@@ -16,6 +16,16 @@ jest.mock("../../application/fluxo/FluxoDeCaixaService.js", () => {
   return { ...real, montarFluxoDeCaixa: (...a) => mockMontar(...a) };
 });
 
+/**
+ * ⚠ A ciência é lida pelo CORPO das duas rotas, e ela fala com o banco. Aqui ela é dublê: esta
+ * suíte mede que as **duas portas servem o mesmo payload**, não como a ciência é lida — e um
+ * `prisma` de verdade faria as duas caírem juntas, por um motivo que não é o assunto do arquivo.
+ */
+jest.mock("../../application/guides/cienciaDeGuias.js", () => {
+  const real = jest.requireActual("../../application/guides/cienciaDeGuias.js");
+  return { ...real, lerGuiasComCiencia: async () => new Set() };
+});
+
 let papelDoContador = "NAO_CHAMADO";
 let papelDoCliente = "NAO_CHAMADO";
 
@@ -42,6 +52,7 @@ const PAYLOAD = {
   cicloAtual: "2026-08",
   horizonte: 12,
   meses: [{ competencia: "2026-08", linhas: [], totais: { fato: { entrada: 0, saida: 0 }, previsao: { entrada: 0, saida: 0 }, desconhecido: { quantas: 0 } } }],
+  alertaDeGuias: { diasDeAntecedencia: 5, itens: [], valor: 0 },
   semMes: [],
   foraDoHorizonte: 0,
   prazoRecebimento: { meses: 1, configurado: false },

@@ -12,7 +12,6 @@ import {
   ORIGEM_DA_SERIE,
   RECUSA_DA_SERIE,
   cicloDeHoje,
-  declararSerie,
   listarSeries,
   marcarSerie,
   paraTela,
@@ -107,8 +106,11 @@ describe("⚠⚠ a leitura é SÓ LEITURA", () => {
       // não-guloso engole o código real até o `*/` seguinte. Lição de 27/08/2026.
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\/\/.*$/gm, "");
-    // as únicas escritas são o upsert da marcação/declaração e o updateMany da saída sugerida
-    expect((fonte.match(/\.upsert\(/g) || []).length).toBe(2);
+    // ⚠ UM upsert, e era DOIS até 28/08/2026: o outro era o de `declararSerie`, a porta do
+    // cliente, apagada a pedido do dono. Sobrou o de `marcarSerie`, a porta do contador.
+    // ⚠ Esta contagem é a guarda que PEGOU a exclusão — ela é uma varredura de fonte, e o número
+    // cru é de propósito: escrita nova neste serviço tem de passar por aqui.
+    expect((fonte.match(/\.upsert\(/g) || []).length).toBe(1);
     expect(fonte).not.toMatch(/\.delete(Many)?\(|\.createMany\(/);
     expect(fonte).not.toMatch(/\$executeRaw|\$queryRaw/);
   });
@@ -383,92 +385,23 @@ describe("marcarSerie", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// A DECLARAÇÃO — *"essa é a taxa anual que pago de Conselho"*
+// ⚠⚠ LÁPIDE — `declararSerie` FOI APAGADA EM 28/08/2026, a pedido do dono.
+//
+// Ela era a porta do CLIENTE (*"essa é a taxa anual que pago de Conselho"*), e os testes que viviam
+// aqui mediam: o vocabulário fechado, o valor obrigatório, a série que nasce PENDENTE, a que não
+// sobrescreve uma já confirmada pelo contador, e a varredura provando que **nenhuma conta contábil
+// entrava por aquela porta**.
+//
+// ⚠⚠ **CONSEQUÊNCIA QUE FICA NOMEADA:** com ela, `ORIGEM_DA_SERIE.DECLARADA` deixou de ter
+// ESCRITOR — nada, em lugar nenhum, cria uma série declarada. O vocabulário **continua** porque
+// linhas com essa origem podem existir no banco, e `leituraDoFluxo` lê `origem`/`valorDeclarado`
+// para mostrar o confronto. **Não apague `DECLARADA` achando que é código morto: ela é LEITURA de
+// dado que já existe.**
+//
+// ⚠ E o caso do dono — a taxa ANUAL do Conselho — ficou sem caminho: o detector lê `PortalInvoice`,
+// e uma anuidade paga por débito em conta não vira nota nenhuma. `marcarSerie` (a porta do
+// contador) continua de pé para o que o detector ENXERGA.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠⚠ declararSerie", () => {
-  const declarar = (client, extra = {}) =>
-    declararSerie({
-      portalClientId: "emp-1",
-      lado: LADO.DESPESA,
-      chave: null,
-      rotulo: "Anuidade do Conselho",
-      periodicidade: PERIODICIDADE.ANUAL,
-      valorDeclarado: 1200,
-      usuarioId: "cli-1",
-      agora: AGORA,
-      client,
-      ...extra,
-    });
-
-  it("⚠⚠ nasce PENDENTE — uma afirmação não entra no fluxo sozinha", async () => {
-    const { client, escritas } = clientDe();
-    await declarar(client);
-    expect(escritas[0].create.estado).toBe(ESTADO_DA_SERIE.PENDENTE);
-    expect(escritas[0].create.origem).toBe(ORIGEM_DA_SERIE.DECLARADA);
-  });
-
-  it("⚠ guarda QUEM afirmou e QUANDO — é o que a distingue de uma observação", async () => {
-    const { client, escritas } = clientDe();
-    await declarar(client);
-    expect(escritas[0].create).toMatchObject({ declaradoPor: "cli-1", declaradoEm: AGORA, valorDeclarado: 1200 });
-  });
-
-  it("⚠⚠ a chave é a descrição CANONIZADA — senão a segunda declaração não acha a primeira", async () => {
-    const { client, escritas } = clientDe();
-    await declarar(client, { rotulo: "  Anuidade do Conselho  " });
-    expect(escritas[0].create.chave).toBe("ANUIDADE DO CONSELHO");
-  });
-
-  it("⚠⚠ ela NÃO sobrescreve uma série que o contador já decidiu", async () => {
-    const jaAtiva = {
-      id: "s-9", lado: LADO.DESPESA, chave: "ANUIDADE DO CONSELHO",
-      estado: ESTADO_DA_SERIE.ATIVA, periodicidade: PERIODICIDADE.ANUAL, rotulo: "CONSELHO",
-    };
-    const { client, escritas } = clientDe({ marcadas: [jaAtiva] });
-    const r = await declarar(client);
-    expect(r.jaDecidida).toBe(true);
-    expect(escritas).toHaveLength(0);
-    expect(r.serie.estado).toBe(ESTADO_DA_SERIE.ATIVA);
-  });
-
-  it("⚠ mas atualiza a que ainda está PENDENTE — ninguém decidiu nada ali", async () => {
-    const pendente = {
-      id: "s-9", lado: LADO.DESPESA, chave: "ANUIDADE DO CONSELHO",
-      estado: ESTADO_DA_SERIE.PENDENTE, periodicidade: PERIODICIDADE.ANUAL, rotulo: "CONSELHO",
-    };
-    const { client, escritas } = clientDe({ marcadas: [pendente] });
-    const r = await declarar(client, { valorDeclarado: 1500 });
-    expect(r.jaDecidida).toBe(false);
-    expect(escritas[0].update.valorDeclarado).toBe(1500);
-  });
-
-  it.each([
-    ["zero", 0], ["negativo", -5], ["nulo", null], ["ausente", undefined],
-    ["texto", "abc"], ["string vazia", ""],
-  ])("⚠⚠ valor %s RECUSA — `Number(null)` é 0 e 0 é finito", async (_n, valorDeclarado) => {
-    const { client } = clientDe();
-    await expect(declarar(client, { valorDeclarado })).rejects.toMatchObject({ codigo: RECUSA_DA_SERIE.VALOR_INVALIDO });
-  });
-
-  it("⚠ sem rótulo RECUSA — é o nome pelo qual ela aparece na tela", async () => {
-    const { client } = clientDe();
-    await expect(declarar(client, { rotulo: "  " })).rejects.toMatchObject({ codigo: RECUSA_DA_SERIE.SEM_ROTULO });
-  });
-
-  it("⚠ periodicidade fora do vocabulário RECUSA — a taxa anual depende dela estar certa", async () => {
-    const { client } = clientDe();
-    await expect(declarar(client, { periodicidade: "SEMESTRAL" }))
-      .rejects.toMatchObject({ codigo: RECUSA_DA_SERIE.PERIODICIDADE_INVALIDA });
-  });
-
-  it("⚠⚠ NENHUMA CONTA entra por esta porta — o cliente não tem plano de contas", () => {
-    const fs = require("node:fs");
-    const path = require("node:path");
-    const fonte = fs.readFileSync(path.join(__dirname, "..", "SerieRecorrenteService.js"), "utf8");
-    const corpo = fonte.slice(fonte.indexOf("export async function declararSerie"));
-    expect(corpo).not.toMatch(/contaAplicada|contaSugerida|contaDestino/);
-  });
-});
 
 describe("⚠⚠ a saída se REGISTRA, nunca se aplica", () => {
   it("grava que o detector sugeriu, e o estado NÃO muda", async () => {

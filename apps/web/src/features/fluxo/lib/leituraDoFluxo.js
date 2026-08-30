@@ -13,9 +13,23 @@
 /** ⚠ De onde vem cada linha. Vocabulário FECHADO — espelha `PROCEDENCIA` do servidor. */
 export const PROCEDENCIA = Object.freeze({
   FATO: "FATO",
+  COMPROMISSO: "COMPROMISSO",
   PREVISAO: "PREVISAO",
   DESCONHECIDO: "DESCONHECIDO",
 });
+
+/**
+ * ⚠⚠ `COMPROMISSO` ENTROU EM 28/08/2026, E O SIGNIFICADO DE `FATO` MUDOU JUNTO.
+ *
+ * A **Lei 1** da `CONSTITUICAO-do-produto.md` diz: *"Dinheiro só confirma com pagamento.
+ * Contabilizado, emitido, gerado, vencido: nada disso é fato de caixa."* Até aqui `FATO` queria
+ * dizer *"existe, com data própria"*, e a guia GERADA e em aberto entrava nele — hoje ela é
+ * `COMPROMISSO`, e `FATO` é só o que foi pago.
+ *
+ * ⚠⚠ **ESTE ARQUIVO É ESPELHO, e não atualizá-lo era o defeito silencioso.** O valor novo cairia no
+ * fallback *"Esta tela não conhece esta procedência"* — em TODA guia em aberto, nas duas telas, sem
+ * erro nenhum. É a mesma classe do `select` explícito: a tela "só não mostra".
+ */
 
 export const DIRECAO = Object.freeze({ ENTRADA: "ENTRADA", SAIDA: "SAIDA" });
 
@@ -25,6 +39,7 @@ export const FONTE = Object.freeze({
   SERIE_RECEITA: "SERIE_RECEITA",
   SERIE_DESPESA: "SERIE_DESPESA",
   IMPOSTO_PROJETADO: "IMPOSTO_PROJETADO",
+  FOLHA: "FOLHA",
 });
 
 /**
@@ -44,6 +59,12 @@ const LEITURA_DA_PROCEDENCIA = Object.freeze({
     token: "--state-neutral",
     // ⚠ A frase diz o que a linha É, não o que falta.
     frase: "Este valor já existe, com data própria.",
+  },
+  [PROCEDENCIA.COMPROMISSO]: {
+    // ⚠ Valor e data CONHECIDOS, dinheiro não saiu. Não é previsão: ninguém estimou este número.
+    rotulo: "A pagar",
+    token: "--state-warn",
+    frase: "Este valor já foi gerado e ainda não foi pago.",
   },
   [PROCEDENCIA.PREVISAO]: {
     rotulo: "Previsto",
@@ -77,6 +98,7 @@ export const ROTULO_DA_FONTE = Object.freeze({
   [FONTE.NOTA_EMITIDA]: "Recebimento de nota",
   [FONTE.SERIE_RECEITA]: "Receita recorrente",
   [FONTE.SERIE_DESPESA]: "Despesa recorrente",
+  [FONTE.FOLHA]: "Folha de pagamento",
   [FONTE.IMPOSTO_PROJETADO]: "Imposto previsto",
 });
 

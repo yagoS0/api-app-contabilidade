@@ -76,17 +76,17 @@ export function competenciasDe12Meses(competencia) {
  *   disponivel: boolean,
  * }}
  */
-export async function derivarFolha12m({ portalClientId, competencia }) {
+export async function derivarFolha12m({ portalClientId, competencia, client = prisma }) {
   const competencias = competenciasDe12Meses(competencia);
   const vazio = { total: 0, competencias, mesesComLancamento: 0, porMes: [], disponivel: false };
   if (!portalClientId || !competencias.length) return vazio;
 
   const [entries, contasDespesa] = await Promise.all([
-    prisma.accountingEntry.findMany({
+    client.accountingEntry.findMany({
       where: { portalClientId, tipo: "FOLHA", competencia: { in: competencias } },
       select: { competencia: true, lines: { select: { tipo: true, valor: true, conta: true } } },
     }),
-    resolverContasDespesaFolha({ portalClientId }).catch(() => new Set()),
+    resolverContasDespesaFolha({ portalClientId, client }).catch(() => new Set()),
   ]);
 
   const porMesMap = new Map(competencias.map((c) => [c, { competencia: c, valor: 0, lancamentos: 0 }]));

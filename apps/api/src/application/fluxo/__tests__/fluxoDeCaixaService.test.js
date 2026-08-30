@@ -13,7 +13,7 @@ const CICLO = "2026-08";
 const guia = (extra = {}) => ({
   id: "g-1", tipo: "SIMPLES", competencia: "2026-07", valor: "1200.00",
   vencimento: new Date("2026-08-20T00:00:00.000Z"), paymentStatus: "OPEN",
-  numeroParcela: null, parcelamentoId: null, ...extra,
+  numeroParcela: null, parcelamentoId: null, paymentConfirmedAt: null, ...extra,
 });
 
 const nota = (extra = {}) => ({
@@ -34,11 +34,16 @@ const apuracao = (extra = {}) => ({
   dasRetornadoSerpro: "600.00", dasSimuladoSerpro: null, ...extra,
 });
 
-function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo = null, erroNaSerie = null } = {}) {
+function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo = null, erroNaSerie = null, primeiraNota = undefined, folhas = [], contasDeFolha = [] } = {}) {
   return {
     portalClient: { findUnique: jest.fn(async () => ({ id: "emp-1", prazoRecebimentoMeses: prazo })) },
     guide: { findMany: jest.fn(async () => guias) },
-    portalInvoice: { findMany: jest.fn(async () => notas) },
+    portalInvoice: {
+      findMany: jest.fn(async () => notas),
+      // ⚠ O limite da navegação para trás. `undefined` = "deixe o dublê responder pela fixture";
+      // `null` = "esta empresa não tem nota nenhuma", que é um caso de teste legítimo.
+      findFirst: jest.fn(async () => (primeiraNota !== undefined ? primeiraNota : (notas[0] || null))),
+    },
     serieRecorrente: {
       findMany: jest.fn(async () => {
         if (erroNaSerie) throw erroNaSerie;
@@ -46,11 +51,32 @@ function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo 
       }),
     },
     apuracaoSnapshot: { findFirst: jest.fn(async () => snapshot) },
+    // ⚠ As duas tabelas que a FOLHA lê. Elas existem no dublê mesmo quando o caso não fala de
+    // folha, porque `derivarFolha12m` NÃO tem `catch`: método faltando derruba a suíte inteira, que
+    // é exatamente o que se quer se alguém trocar a leitura por uma que engole erro.
+    accountingEntry: { findMany: jest.fn(async () => folhas) },
+    chartOfAccount: { findMany: jest.fn(async () => contasDeFolha) },
   };
 }
 
+/** Um lançamento de folha: a PROVISÃO (débito na conta de despesa). */
+const folha = (competencia, valor = "3000.00") => ({
+  competencia,
+  lines: [{ tipo: "D", valor, conta: "41101" }, { tipo: "C", valor, conta: "233" }],
+});
+
+const CONTA_DE_FOLHA = [{ codigo: "41101", nome: "SALARIOS E ORDENADOS", portalClientId: null }];
+
+/**
+ * ⚠⚠ O DIA TAMBÉM É INJETADO, e não só o ciclo (28/08/2026).
+ *
+ * Desde a Lei 1 o serviço compara vencimento com HOJE para separar *vencida* de *vence em 5 dias* —
+ * e um teste que dependesse do relógio da máquina passaria em agosto e cairia em setembro.
+ */
+const HOJE = "2026-08-27";
+
 const montar = (client, extra = {}) =>
-  montarFluxoDeCaixa({ portalClientId: "emp-1", cicloAtual: CICLO, client, ...extra });
+  montarFluxoDeCaixa({ portalClientId: "emp-1", cicloAtual: CICLO, hoje: HOJE, client, ...extra });
 
 const doMes = (r, competencia) => r.meses.find((m) => m.competencia === competencia);
 const linhasDe = (r, fonte) => r.meses.flatMap((m) => m.linhas).filter((l) => l.fonte === fonte);
@@ -74,7 +100,11 @@ describe("⚠⚠ não existe `total`, nem saldo acumulado", () => {
   it("⚠ cada mês totaliza por PROCEDÊNCIA, e só", async () => {
     const r = await montar(clientDe({ guias: [guia()] }));
     const m = doMes(r, "2026-08");
-    expect(Object.keys(m.totais).sort()).toEqual(["desconhecido", "fato", "previsao"]);
+    // ⚠ `compromisso` entrou em 28/08/2026 (Lei 1) e é ADITIVO: `fato` e `previsao` continuam com
+    // os mesmos nomes. A lista sai de `PROCEDENCIA`, nunca cravada — nível novo sem balde próprio
+    // cairia em silêncio dentro de outro.
+    expect(Object.keys(m.totais).sort())
+      .toEqual(Object.values(PROCEDENCIA).map((x) => x.toLowerCase()).sort());
   });
 });
 
@@ -120,18 +150,87 @@ describe("⚠⚠ o serviço é SÓ LEITURA", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// 1 e 2 · AS GUIAS — as duas metades têm PROCEDÊNCIAS diferentes.
+// 1 e 2 · AS GUIAS — reescrito em 28/08/2026 pela **Lei 1** da `CONSTITUICAO-do-produto.md`.
+//
+// ⚠⚠ ESTE BLOCO MEDIA O CONTRÁRIO, e o contrário está preservado no nome antigo dele:
+// *"a guia COM vencimento é FATO"*. A Lei 1 desfez isso — *"contabilizado, emitido, gerado,
+// vencido: nada disso é fato de caixa"*. Guia gerada e não paga virou COMPROMISSO, e mudou de mês.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠⚠ a guia COM vencimento é FATO; SEM vencimento é DESCONHECIDO", () => {
-  it("com vencimento, ela cai no mês do vencimento, com DIA", async () => {
-    const r = await montar(clientDe({ guias: [guia()] }));
-    const l = doMes(r, "2026-08").linhas[0];
+describe("⚠⚠ Lei 1 — só o pagamento confirma; a guia gerada é COMPROMISSO", () => {
+  const paga = (extra = {}) => guia({
+    paymentStatus: "PAID", paymentConfirmedAt: new Date("2026-06-18T00:00:00.000Z"), ...extra,
+  });
+
+  it("⚠⚠ a guia PAGA é FATO, e cai no mês do PAGAMENTO — não no do vencimento", async () => {
+    // ⚠ Vencimento em agosto, pagamento em junho: se ela caísse no vencimento, junho apareceria sem
+    // imposto nenhum e agosto contaria um dinheiro que já saiu.
+    const r = await montar(clientDe({ guias: [paga()] }));
+    const l = doMes(r, "2026-06").linhas[0];
     expect(l.procedencia).toBe(PROCEDENCIA.FATO);
+    expect(l.dia).toBe(18);
+    expect(doMes(r, "2026-08").linhas).toHaveLength(0);
+  });
+
+  it("⚠⚠ a guia PAGA existia e NÃO CHEGAVA — era ela que esvaziava o passado", async () => {
+    // A query filtrava `paymentStatus: { in: ["OPEN","OVERDUE"] }`, então a guia paga sumia do
+    // payload INTEIRO: nem em `meses`, nem em `semMes`, nem em `vencidas`. Sem este caso, a janela
+    // com 4 meses de passado nasceria sem uma única linha de imposto.
+    const client = clientDe({ guias: [] });
+    await montar(client);
+    expect(client.guide.findMany.mock.calls[0][0].where.paymentStatus.in).toContain("PAID");
+  });
+
+  it("⚠⚠ paga SEM data de pagamento não escolhe mês — sai NOMEADA", async () => {
+    const r = await montar(clientDe({ guias: [paga({ paymentConfirmedAt: null })] }));
+    expect(r.meses.every((m) => m.linhas.length === 0)).toBe(true);
+    expect(r.semMes[0].motivo).toBe(SEM_MES.GUIA_PAGA_SEM_DATA);
+    // ⚠ Ela ACONTECEU — então não pode virar compromisso; e não se sabe quando — então não pode
+    // virar mês. As duas coisas ao mesmo tempo só cabem aqui.
+    expect(r.semMes[0].frase).toMatch(/quando o dinheiro saiu/i);
+  });
+
+  it("⚠⚠ a guia EM ABERTO é COMPROMISSO, e vive no mês CORRENTE", async () => {
+    const r = await montar(clientDe({ guias: [guia()] }));
+    const l = doMes(r, CICLO).linhas[0];
+    expect(l.procedencia).toBe(PROCEDENCIA.COMPROMISSO);
     expect(l.direcao).toBe(DIRECAO.SAIDA);
+    // ⚠ O vencimento cai no mês corrente, então o dia dela é o dia do vencimento.
     expect(l.dia).toBe(20);
-    expect(l.valor).toBe(1200);
-    // ⚠ A guia é a ÚNICA linha deste fluxo que tem dia próprio.
-    expect(l.diaDesconhecido).toBeNull();
+  });
+
+  it("⚠⚠ a guia VENCIDA em mês passado sai do mês CORRENTE — e o dia dela não vale mais", async () => {
+    // ⚠⚠ ISTO INVERTE O CASO ANTIGO *"ela NÃO é empurrada para o mês corrente — vencida é uma
+    // condição, não um mês"*. O argumento de então: pôr a guia de julho dentro de agosto seria o
+    // sistema escolhendo o mês por ela. O que mudou: a Lei 1 diz que a guia em aberto **não é saída
+    // de mês nenhum** até ser paga — logo ela não fica em julho, e o dinheiro sai de agosto.
+    const r = await montar(clientDe({ guias: [guia({ vencimento: new Date("2026-07-20T00:00:00.000Z") })] }));
+    expect(doMes(r, "2026-07").linhas).toHaveLength(0);
+    const l = doMes(r, CICLO).linhas[0];
+    expect(l.procedencia).toBe(PROCEDENCIA.COMPROMISSO);
+    // ⚠ O dia sai NOMEADO, nunca cravado no 20 de um mês que já passou.
+    expect(l.dia).toBeNull();
+    expect(l.diaDesconhecido.motivo).toBe("compromisso_em_atraso");
+  });
+
+  it("⚠⚠ o passado só carrega o que foi PAGO — critério de aceite nº 12 da Constituição", async () => {
+    // *"Nenhum mês anterior ao corrente exibe célula âmbar no modo Fluxo, exceto guia vencida ainda
+    // aberta — que aparece no corrente, não no passado."* Não é regra de tela: é o que a Lei 1
+    // produz sozinha, e este caso é a prova.
+    const r = await montar(clientDe({
+      guias: [paga(), guia({ id: "g-2", vencimento: new Date("2026-05-20T00:00:00.000Z") })],
+    }));
+    for (const m of r.meses.filter((x) => x.competencia < CICLO)) {
+      expect(m.totais.compromisso.saida).toBe(0);
+      expect(m.totais.previsao.saida).toBe(0);
+    }
+    expect(doMes(r, "2026-06").totais.fato.saida).toBe(1200);
+    expect(doMes(r, CICLO).totais.compromisso.saida).toBe(1200);
+  });
+
+  it("⚠⚠ a guia em aberto NÃO entra em `fato` — era exatamente aí que ela entrava", async () => {
+    const r = await montar(clientDe({ guias: [guia()] }));
+    expect(doMes(r, CICLO).totais.fato.saida).toBe(0);
+    expect(doMes(r, CICLO).totais.compromisso.saida).toBe(1200);
   });
 
   it("⚠⚠ SEM vencimento ela NÃO entra em mês nenhum, e sai NOMEADA com o conserto", async () => {
@@ -147,65 +246,72 @@ describe("⚠⚠ a guia COM vencimento é FATO; SEM vencimento é DESCONHECIDO",
     const r = await montar(clientDe({ guias: [guia({ vencimento: null })] }));
     for (const m of r.meses) {
       expect(m.totais.fato.saida).toBe(0);
+      expect(m.totais.compromisso.saida).toBe(0);
       expect(m.totais.previsao.saida).toBe(0);
     }
   });
 
   it("⚠ a parcela de parcelamento tem rótulo próprio — não é o DAS do mês", async () => {
     const r = await montar(clientDe({ guias: [guia({ parcelamentoId: "p-1", numeroParcela: 3 })] }));
-    expect(doMes(r, "2026-08").linhas[0].rotulo).toMatch(/Parcela 3 de parcelamento/);
-  });
-
-  // ───────────────────────────────────────────────────────────────────────────────────────────────
-  // ⚠⚠ A GUIA VENCIDA — achada exercitando contra o banco REAL, em 27/08/2026.
-  //
-  // Ela tem vencimento no PASSADO, cai fora dos 12 meses à frente, e ia embora como um número em
-  // `foraDoHorizonte`. Mas é **dinheiro que ainda tem de sair** — a linha mais urgente que um fluxo
-  // de caixa pode ter, sumindo justamente de quem precisa vê-la.
-  // ───────────────────────────────────────────────────────────────────────────────────────────────
-  it("⚠⚠ a guia VENCIDA não some — ela ganha compartimento próprio, com valor", async () => {
-    const vencida = guia({ id: "g-9", vencimento: new Date("2026-07-20T00:00:00.000Z"), valor: "900.00" });
-    const r = await montar(clientDe({ guias: [guia(), vencida] }));
-    expect(r.vencidas.quantas).toBe(1);
-    expect(r.vencidas.valor).toBe(900);
-    expect(r.vencidas.linhas[0].referencia.id).toBe("g-9");
-  });
-
-  it("⚠⚠ e ela NÃO é empurrada para o mês corrente — vencida é uma condição, não um mês", async () => {
-    // Pôr uma guia vencida em julho dentro de agosto seria o sistema escolhendo o mês por ela — a
-    // mesma coisa que a guia SEM vencimento tem proibido.
-    const vencida = guia({ id: "g-9", vencimento: new Date("2026-07-20T00:00:00.000Z") });
-    const r = await montar(clientDe({ guias: [vencida] }));
-    expect(doMes(r, "2026-08").linhas).toHaveLength(0);
-    expect(doMes(r, "2026-08").totais.fato.saida).toBe(0);
-  });
-
-  it("⚠ sem guia vencida, o compartimento vem zerado — e zero é resposta, não ausência", async () => {
-    const r = await montar(clientDe({ guias: [guia()] }));
-    expect(r.vencidas).toEqual({ quantas: 0, valor: 0, linhas: [] });
-  });
-
-  it("⚠ a guia do mês corrente NÃO é vencida, por mais que o dia já tenha passado", async () => {
-    // O corte é por MÊS: dizer que a guia do dia 5 deste mês "venceu" exigiria saber que dia é hoje,
-    // e o dia de hoje não entra nesta regra — só a competência, que é injetada.
-    const r = await montar(clientDe({ guias: [guia({ vencimento: new Date("2026-08-05T00:00:00.000Z") })] }));
-    expect(r.vencidas.quantas).toBe(0);
-    expect(doMes(r, "2026-08").linhas).toHaveLength(1);
-  });
-
-  it("⚠ só o que está LIBERADO e EM ABERTO é consultado", async () => {
-    const client = clientDe({ guias: [] });
-    await montar(client);
-    expect(client.guide.findMany.mock.calls[0][0].where).toMatchObject({
-      liberadaCliente: true,
-      paymentStatus: { in: ["OPEN", "OVERDUE"] },
-    });
+    expect(doMes(r, CICLO).linhas[0].rotulo).toMatch(/Parcela 3 de parcelamento/);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// 3 · A NOTA EMITIDA — a ENTRADA, e ela é PREVISÃO.
+// ⚠⚠ VENCIDA PASSOU A SER CONTADA POR **DIA** — e isso fecha uma divergência conhecida.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ o que já venceu, e o que vence em 5 dias", () => {
+  it("⚠⚠ a guia do MÊS CORRENTE cujo dia já passou É vencida — o corte deixou de ser o mês", async () => {
+    // ⚠⚠ ISTO INVERTE o caso *"a guia do mês corrente NÃO é vencida, por mais que o dia já tenha
+    // passado"*. O argumento de então era honesto: *"o dia de hoje não entra nesta regra"* — o
+    // serviço só recebia a competência. Hoje ele recebe o DIA, injetado, porque o pop-up precisa
+    // separar *vencida* de *vence em 5 dias*, e nenhuma das duas cabe em granularidade de mês.
+    // ⚠ E era essa a divergência que o `CLAUDE.md` já registrava contra o card "A vencer", que
+    // sempre comparou com hoje. As duas telas passam a usar o mesmo dia.
+    const r = await montar(clientDe({ guias: [guia({ vencimento: new Date("2026-08-20T00:00:00.000Z") })] }));
+    expect(r.vencidas.quantas).toBe(1);
+  });
+
+  it("⚠ a que vence HOJE não está vencida — a borda é estrita", async () => {
+    const r = await montar(clientDe({ guias: [guia({ vencimento: new Date("2026-08-27T00:00:00.000Z") })] }));
+    expect(r.vencidas.quantas).toBe(0);
+  });
+
+  it("o alerta junta as vencidas e as que vencem em até 5 dias, com estados distintos", async () => {
+    const r = await montar(clientDe({
+      guias: [
+        guia({ id: "g-v", vencimento: new Date("2026-08-20T00:00:00.000Z"), valor: "900.00" }),
+        guia({ id: "g-p", vencimento: new Date("2026-09-01T00:00:00.000Z"), valor: "100.00" }),
+        // ⚠ 6 dias: fora do alerta. É a borda do número do dono, e ela é medida.
+        guia({ id: "g-f", vencimento: new Date("2026-09-02T00:00:00.000Z"), valor: "50.00" }),
+      ],
+    }));
+    expect(r.alertaDeGuias.itens.map((i) => [i.id, i.estado]))
+      .toEqual([["g-v", "overdue"], ["g-p", "due_soon"]]);
+    // ⚠ `valor`, nunca `total`: existe varredura no payload proibindo a chave `"total"`.
+    expect(r.alertaDeGuias.valor).toBe(1000);
+  });
+
+  it("⚠ sem guia nenhuma nessas condições, o alerta vem VAZIO — e vazio é resposta", async () => {
+    const r = await montar(clientDe({ guias: [guia({ vencimento: new Date("2026-12-20T00:00:00.000Z") })] }));
+    expect(r.alertaDeGuias.itens).toEqual([]);
+    expect(r.vencidas).toEqual({ quantas: 0, valor: 0, linhas: [] });
+  });
+
+  it("⚠⚠ vencidas e o mês corrente falam da MESMA guia — quem somar os dois conta em dobro", async () => {
+    const r = await montar(clientDe({ guias: [guia({ vencimento: new Date("2026-07-20T00:00:00.000Z") })] }));
+    expect(r.vencidas.valor).toBe(1200);
+    expect(doMes(r, CICLO).totais.compromisso.saida).toBe(1200);
+    // ⚠ Por isso `vencidas` NÃO entra em `totais` — ele é lista de conferência, não parcela a somar.
+  });
+
+  it("⚠ só o que está LIBERADO é consultado", async () => {
+    const client = clientDe({ guias: [] });
+    await montar(client);
+    expect(client.guide.findMany.mock.calls[0][0].where).toMatchObject({ liberadaCliente: true });
+  });
+});
+
 describe("⚠⚠ a nota emitida + prazo", () => {
   it("⚠⚠ é PREVISÃO, NUNCA FATO — a nota prova o FATURADO, não o RECEBIDO", async () => {
     // `PortalInvoice` não tem `recebidoEm`. Verde ali diria "recebido".
@@ -319,9 +425,14 @@ describe("⚠⚠ só a série MARCADA entra no fluxo", () => {
     expect(client.serieRecorrente.findMany.mock.calls[0][0].where.estado).toBe(ESTADO_DA_SERIE.ATIVA);
   });
 
-  it("a série MENSAL se repete pelos 12 meses", async () => {
+  it("⚠ a série MENSAL enche a janela DA FRENTE — não os 12 meses da tabela", async () => {
     const r = await montar(clientDe({ series: [serie()] }));
-    expect(linhasDe(r, FONTE.SERIE_DESPESA)).toHaveLength(12);
+    // ⚠⚠ OITO, não doze — e a diferença é a janela. Ela tem 12 linhas, mas 4 delas olham para
+    // TRÁS: uma recorrência não se projeta sobre meses que já aconteceram. Projetar 12 à frente
+    // jogaria as 4 últimas para fora da tabela, engordando `foraDoHorizonte` com linhas que ninguém
+    // pediu — e `foraDoHorizonte` existe para contar o que se PERDEU.
+    expect(linhasDe(r, FONTE.SERIE_DESPESA)).toHaveLength(8);
+    expect(linhasDe(r, FONTE.SERIE_DESPESA)[0].competencia).toBe(CICLO);
   });
 
   it("⚠ a ANUAL entra UMA vez — o ritmo é o dela, não o do calendário", async () => {
@@ -331,7 +442,8 @@ describe("⚠⚠ só a série MARCADA entra no fluxo", () => {
 
   it("⚠ a TRIMESTRAL entra a cada três meses", async () => {
     const r = await montar(clientDe({ series: [serie({ periodicidade: "TRIMESTRAL" })] }));
-    expect(linhasDe(r, FONTE.SERIE_DESPESA)).toHaveLength(4);
+    // ⚠ Três: ago, nov e fev. O ritmo é o da série; o teto é o fim da janela.
+    expect(linhasDe(r, FONTE.SERIE_DESPESA)).toHaveLength(3);
   });
 
   it("⚠⚠ o valor é a MEDIANA, e a FAIXA viaja junto", async () => {
@@ -437,12 +549,112 @@ describe("⚠⚠ o imposto projetado", () => {
   });
 });
 
-describe("⚠ o horizonte e o ciclo", () => {
-  it("12 meses, começando no ciclo pedido", async () => {
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A FOLHA — coluna própria (v3 §3.2), com a simplificação declarada do dono.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ a folha, e a suposição que ela carrega", () => {
+  const comFolha = (extra = {}) => clientDe({
+    folhas: [folha("2026-06"), folha("2026-08", "3200.00")],
+    contasDeFolha: CONTA_DE_FOLHA,
+    ...extra,
+  });
+
+  it("⚠⚠ mês PASSADO é FATO — 'folha lançada conta como paga', decisão do dono", async () => {
+    const r = await montar(comFolha());
+    const l = doMes(r, "2026-06").linhas.find((x) => x.fonte === FONTE.FOLHA);
+    expect(l.procedencia).toBe(PROCEDENCIA.FATO);
+    expect(l.direcao).toBe(DIRECAO.SAIDA);
+    expect(l.valor).toBe(3000);
+  });
+
+  it("⚠⚠ e a SUPOSIÇÃO viaja marcada — sem isso ela some dentro do 'confirmado'", async () => {
+    // O sistema sabe o que foi LANÇADO e não sabe se foi PAGO (`derivarFolha12m` exclui o
+    // pagamento de propósito). "Confirmado" aqui seria indistinguível de um pagamento provado, e
+    // não há nenhum. A marca é o que torna a suposição auditável em vez de invisível.
+    const r = await montar(comFolha());
+    const l = doMes(r, "2026-06").linhas.find((x) => x.fonte === FONTE.FOLHA);
+    expect(l.base.simplificacao).toBe("pagamento_integral_presumido");
+  });
+
+  it("⚠ o mês CORRENTE é COMPROMISSO — ele ainda está aberto e a folha pode mudar", async () => {
+    const r = await montar(comFolha());
+    const l = doMes(r, CICLO).linhas.find((x) => x.fonte === FONTE.FOLHA);
+    expect(l.procedencia).toBe(PROCEDENCIA.COMPROMISSO);
+    expect(l.base.simplificacao).toBeNull();
+  });
+
+  it("⚠⚠ mês FUTURO não ganha linha — projetar folha é PRESUNÇÃO, e presunção é Fase 2", async () => {
+    const r = await montar(comFolha());
+    for (const m of r.meses.filter((x) => x.competencia > CICLO)) {
+      expect(m.linhas.some((l) => l.fonte === FONTE.FOLHA)).toBe(false);
+    }
+  });
+
+  it("⚠⚠ sem folha lançada, a COLUNA não existe — e isso é decisão do SERVIDOR, não da tela", async () => {
     const r = await montar(clientDe({}));
-    expect(r.horizonte).toBe(12);
+    expect(r.folha.disponivel).toBe(false);
+    expect(linhasDe(r, FONTE.FOLHA)).toEqual([]);
+  });
+
+  it("⚠⚠ 'não tem folha' e 'não achei a conta' são respostas DIFERENTES", async () => {
+    // A própria `FolhaDerivadaService` nomeia a distinção: sem conta resolvida, uma empresa COM
+    // folha devolveria zero e ninguém saberia qual dos dois casos é.
+    const r = await montar(clientDe({ folhas: [folha("2026-06")], contasDeFolha: [] }));
+    expect(r.folha.contasConsideradas).toEqual([]);
+  });
+
+  it("⚠ folha ZERO não vira linha — mês sem folha não é 'folha de R$ 0,00'", async () => {
+    const r = await montar(clientDe({
+      folhas: [{ competencia: "2026-06", lines: [{ tipo: "D", valor: "0.00", conta: "41101" }] }],
+      contasDeFolha: CONTA_DE_FOLHA,
+    }));
+    expect(linhasDe(r, FONTE.FOLHA)).toEqual([]);
+  });
+
+  it("⚠⚠ a leitura NÃO tem `catch` — defeito na folha não pode virar 'esta empresa não tem folha'", async () => {
+    const client = comFolha();
+    client.accountingEntry.findMany = jest.fn(async () => { throw new Error("banco fora do ar"); });
+    await expect(montar(client)).rejects.toThrow(/banco fora do ar/);
+  });
+});
+
+describe("⚠ o horizonte e o ciclo", () => {
+  it("⚠⚠ 12 meses, e a janela começa 4 meses ATRÁS do ciclo — não no ciclo", async () => {
+    // ⚠⚠ ISTO INVERTE *"12 meses, começando no ciclo pedido"*. `SPEC-fluxo-de-caixa-v3.md` §3.1:
+    // *"Sempre 12 meses. Posição padrão: 4 meses passados + mês corrente + 7 futuros."*
+    // ⚠ O total NÃO mudou: o que mudou é onde a janela começa. E ela só é legível por causa da
+    // Lei 1 — sem a guia PAGA no payload, esses quatro meses viriam vazios.
+    const r = await montar(clientDe({ guias: [guia()] }));
     expect(r.meses).toHaveLength(12);
-    expect(r.meses[0].competencia).toBe(CICLO);
+    expect(r.meses[0].competencia).toBe("2026-04");
+    expect(r.meses[4].competencia).toBe(CICLO);
+    expect(r.meses[11].competencia).toBe("2027-03");
+  });
+
+  it("⚠⚠ o CICLO e a JANELA são duas coisas — eram uma só, e por isso o ciano se perdia", async () => {
+    // Pedir um mês passado movia os dois juntos: a tabela recuava **e** o mês pintado como "hoje"
+    // recuava com ela. Hoje `cicloAtual` responde *"que dia é hoje?"* e `janelaInicio` responde
+    // *"onde a tabela começa?"*.
+    const r = await montar(clientDe({ guias: [guia()] }), { janelaInicio: "2026-02" });
+    expect(r.meses[0].competencia).toBe("2026-02");
+    expect(r.cicloAtual).toBe(CICLO);
+  });
+
+  it("⚠⚠ a janela NÃO recua antes da primeira nota da empresa", async () => {
+    // Oferecer janeiro a uma empresa aberta em março afirmaria que ela faturou zero num mês em que
+    // ela não existia. O limite é dado, não invenção.
+    const r = await montar(
+      clientDe({ guias: [guia()], primeiraNota: { competencia: new Date("2026-03-01T00:00:00.000Z") } }),
+      { janelaInicio: "2025-01" },
+    );
+    expect(r.meses[0].competencia).toBe("2026-03");
+    expect(r.janela.podeVoltar).toBe(false);
+  });
+
+  it("⚠ para a FRENTE a janela trava na posição padrão — não existe futuro além de corrente+7", async () => {
+    const r = await montar(clientDe({ guias: [guia()] }), { janelaInicio: "2026-12" });
+    expect(r.meses[0].competencia).toBe("2026-04");
+    expect(r.janela.podeAvancar).toBe(false);
   });
 
   it("⚠ o ciclo é INJETADO — sem ele, o mês corrente, e ele volta explícito", async () => {

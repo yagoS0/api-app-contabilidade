@@ -114,8 +114,8 @@ function findAccountByHints(accounts, hints) {
  * @returns {Promise<Set<string>>} códigos de conta; vazio quando o plano de contas não casa com
  *   nenhuma dica (empresa recém-migrada) — quem chama decide o que fazer com isso.
  */
-export async function resolverContasDespesaFolha({ portalClientId }) {
-  const rawAccounts = await prisma.chartOfAccount.findMany({
+export async function resolverContasDespesaFolha({ portalClientId, client = prisma }) {
+  const rawAccounts = await client.chartOfAccount.findMany({
     where: { OR: [{ portalClientId: String(portalClientId) }, { portalClientId: null }] },
     select: { codigo: true, nome: true, portalClientId: true },
     orderBy: { codigo: "asc" },

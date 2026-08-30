@@ -452,17 +452,17 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
             <table className="table">
               <thead>
                 <tr>
-                  <th scope="col">Número</th>
-                  <th scope="col">Tipo</th>
-                  <th scope="col">Emissão</th>
-                  <th scope="col">Competência</th>
-                  <th scope="col">Tomador</th>
-                  <th scope="col">Situação</th>
-                  <th scope="col" className="num">
-                    Valor
-                  </th>
-                  {/* ⚠ A caixa de "todas" fica na COLUNA da seleção, e o rótulo acessível diz o
-                      número — "Selecionar" sozinho não conta quantas. */}
+                  {/*
+                    ⚠⚠ ELA É A PRIMEIRA COLUNA, E TEM DE SER — defeito relatado pelo dono em
+                    28/08/2026: *"na aba de notas existe uma caixa de seleção ao lado de valor, não
+                    faz sentido"*. Ele estava certo, e era pior do que parecia: o `<th>` tinha sido
+                    montado **depois de "Valor"** e o `<td>` de cada linha **antes de "Número"** —
+                    cabeçalho e corpo em colunas DIFERENTES, com todas as outras dez desalinhadas
+                    junto. A caixa de "marcar todas" pairava sobre a coluna de dinheiro.
+                    ⚠ Nada no HTML impede isso: o navegador desenha 11 células no `thead` e 11 no
+                    `tbody` sem reclamar, e o defeito só aparece OLHANDO. Por isso o teste abaixo
+                    passa a comparar as duas listas, e não a existência da caixa.
+                  */}
                   <th scope="col" className="col-selecao">
                     <input
                       type="checkbox"
@@ -471,6 +471,15 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                       disabled={selecionaveis.length === 0}
                       onChange={() => setSelecionadas(todasMarcadas ? new Set() : new Set(selecionaveis))}
                     />
+                  </th>
+                  <th scope="col">Número</th>
+                  <th scope="col">Tipo</th>
+                  <th scope="col">Emissão</th>
+                  <th scope="col">Competência</th>
+                  <th scope="col">Tomador</th>
+                  <th scope="col">Situação</th>
+                  <th scope="col" className="num">
+                    Valor
                   </th>
                   <th scope="col">DANFSe</th>
                   <th scope="col">Cancelar</th>

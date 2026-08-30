@@ -28,13 +28,66 @@
  * não só na cor (impressão, daltonismo).
  */
 export const PROCEDENCIA = Object.freeze({
-  /** Aconteceu, ou está documentado com data própria. A guia gerada, com vencimento. */
+  /**
+   * ⚠⚠ **ACONTECEU E TEM PROVA DE PAGAMENTO.** Guia paga, baixa de despesa.
+   *
+   * ⚠⚠ **O SIGNIFICADO DESTA CHAVE MUDOU EM 28/08/2026, E ISSO É O CORAÇÃO DA ENTREGA.** Até aqui
+   * `FATO` queria dizer *"existe, com data própria"* — e a guia GERADA e em aberto entrava nele. A
+   * **Lei 1** da `CONSTITUICAO-do-produto.md` desfaz isso: *"Contabilizado, emitido, gerado,
+   * vencido: nada disso é fato de caixa."* O que era `FATO` sem pagamento virou `COMPROMISSO`.
+   *
+   * ⚠ Quem depender do sentido antigo (guia em aberto contando como fato) passa a contar menos —
+   * e é o comportamento certo: a tela nunca deve mostrar menos dinheiro do que há no banco.
+   */
   FATO: "FATO",
-  /** Pode acontecer. ⚠ Nunca verde, e a prova viaja junto. */
+  /**
+   * ⚠⚠ NÃO ACONTECEU, MAS VALOR E DATA SÃO CONHECIDOS. Guia gerada e não paga; provisão de folha.
+   *
+   * ⚠ Ele NÃO é uma previsão enfraquecida: ninguém está estimando nada. É um compromisso assumido,
+   * com número exato — o que falta é o dinheiro sair. Colapsá-lo em `PREVISAO` apagaria a diferença
+   * entre *"o contador calculou isto"* e *"o sistema chutou pelo histórico"*.
+   */
+  COMPROMISSO: "COMPROMISSO",
+  /** O sistema calculou a partir do histórico. ⚠ Nunca verde, e a prova viaja junto. */
   PREVISAO: "PREVISAO",
   /** ⚠⚠ Falta um dado para saber o MÊS. Não vira zero, não vira previsão, não some. */
   DESCONHECIDO: "DESCONHECIDO",
 });
+
+/**
+ * ⚠⚠ AS DUAS CORES QUE O USUÁRIO VÊ — e os TRÊS níveis que o dado guarda.
+ *
+ * `CONSTITUICAO-do-produto.md` §1: *"Por dentro, os três níveis são sempre distintos. Por fora, o
+ * usuário vê duas cores: preto = fato, âmbar = compromisso ou presunção."*
+ *
+ * ⚠ A derivação mora AQUI, ao lado do vocabulário, e não na tela: duas telas leem este payload
+ * (cliente e escritório), e cada uma derivando por conta própria é como elas divergem.
+ * ⚠ `DESCONHECIDO` não recebe status: ele não tem valor, logo não pinta célula nenhuma.
+ */
+export const STATUS_DA_CELULA = Object.freeze({ CONFIRMADO: "confirmed", PREVISTO: "forecast" });
+
+export function statusDaProcedencia(procedencia) {
+  if (procedencia === PROCEDENCIA.FATO) return STATUS_DA_CELULA.CONFIRMADO;
+  if (procedencia === PROCEDENCIA.COMPROMISSO || procedencia === PROCEDENCIA.PREVISAO) {
+    return STATUS_DA_CELULA.PREVISTO;
+  }
+  return null;
+}
+
+/**
+ * ⚠⚠ O STATUS DE UMA CÉLULA (que soma VÁRIAS linhas) — e a regra é a do elo mais fraco.
+ *
+ * `SPEC-fluxo-de-caixa-v3.md` §3.3: *"Resultado herda `previsto` se qualquer parcela for prevista."*
+ * Vale para toda célula, não só o Resultado: uma célula que soma uma guia paga com uma guia em
+ * aberto **não é um fato**. Marcá-la de preto afirmaria que o dinheiro já saiu.
+ */
+export function statusDoConjunto(linhas) {
+  const comValor = (linhas || []).filter((l) => l && l.procedencia !== PROCEDENCIA.DESCONHECIDO);
+  if (comValor.length === 0) return null;
+  return comValor.every((l) => l.procedencia === PROCEDENCIA.FATO)
+    ? STATUS_DA_CELULA.CONFIRMADO
+    : STATUS_DA_CELULA.PREVISTO;
+}
 
 /** ⚠ Entrada ou saída de dinheiro. A mesma forma dos dois lados. */
 export const DIRECAO = Object.freeze({ ENTRADA: "ENTRADA", SAIDA: "SAIDA" });
@@ -46,6 +99,14 @@ export const FONTE = Object.freeze({
   SERIE_RECEITA: "SERIE_RECEITA",
   SERIE_DESPESA: "SERIE_DESPESA",
   IMPOSTO_PROJETADO: "IMPOSTO_PROJETADO",
+  /**
+   * ⚠⚠ A FOLHA — coluna própria no v3 (§3.2), e por isso fonte própria.
+   *
+   * ⚠ Ela **não** é uma `SERIE_DESPESA`: a série é detectada por repetição de nota; a folha vem de
+   * `AccountingEntry tipo:"FOLHA"`, que é lançamento contábil do escritório. Misturá-las faria a
+   * coluna Folha somar despesa recorrente qualquer.
+   */
+  FOLHA: "FOLHA",
 });
 
 /** Por que o DIA não é conhecido. ⚠ `dia: null` nunca vira "dia 20" — ele vem com o motivo. */
@@ -56,6 +117,14 @@ export const DIA_DESCONHECIDO = Object.freeze({
   SERIE_SEM_DIA: "serie_sem_dia",
   /** O imposto projetado herda o mês da receita que o gerou. */
   IMPOSTO_SEGUE_A_RECEITA: "imposto_segue_a_receita",
+  /**
+   * ⚠⚠ A GUIA EM ABERTO CUJO VENCIMENTO É DE OUTRO MÊS. Pela Lei 1 ela sai do mês corrente, e o dia
+   * do vencimento **não vale como dia dela** — ele é de um mês que já passou. Apontar para aquele
+   * dia diria que o dinheiro sai numa data que ficou para trás.
+   */
+  COMPROMISSO_EM_ATRASO: "compromisso_em_atraso",
+  /** ⚠ O lançamento de folha tem competência, não dia — a data do pagamento não está nele. */
+  FOLHA_SEM_DIA: "folha_sem_dia",
 });
 
 export const FRASE_DO_DIA_DESCONHECIDO = Object.freeze({
@@ -65,6 +134,10 @@ export const FRASE_DO_DIA_DESCONHECIDO = Object.freeze({
     "A recorrência diz de quanto em quanto tempo, não em que dia do mês.",
   [DIA_DESCONHECIDO.IMPOSTO_SEGUE_A_RECEITA]:
     "O imposto projetado acompanha o mês da receita que o gerou.",
+  [DIA_DESCONHECIDO.COMPROMISSO_EM_ATRASO]:
+    "Esta guia venceu em outro mês e continua em aberto — o dinheiro sai do mês corrente.",
+  [DIA_DESCONHECIDO.FOLHA_SEM_DIA]:
+    "A folha é lançada por competência, e a data do pagamento não está no lançamento.",
 });
 
 /** Por que uma linha não pôde ser posta em mês nenhum. ⚠ Vocabulário FECHADO. */
@@ -75,6 +148,11 @@ export const SEM_MES = Object.freeze({
   NOTA_SEM_COMPETENCIA: "nota_sem_competencia",
   /** A série está marcada e não tem valor projetado nem declarado. */
   SERIE_SEM_VALOR: "serie_sem_valor",
+  /**
+   * ⚠⚠ PAGA, MAS SEM DATA DE PAGAMENTO. Ela aconteceu — logo não é compromisso —, e não se sabe em
+   * que mês. Pôr no mês do vencimento seria afirmar quando o dinheiro saiu.
+   */
+  GUIA_PAGA_SEM_DATA: "guia_paga_sem_data",
 });
 
 export const FRASE_DO_SEM_MES = Object.freeze({
@@ -86,6 +164,9 @@ export const FRASE_DO_SEM_MES = Object.freeze({
     + "mês seria o sistema decidindo em qual apuração a receita entra.",
   [SEM_MES.SERIE_SEM_VALOR]:
     "Esta recorrência está marcada e não tem valor projetado nem declarado — não há o que somar.",
+  [SEM_MES.GUIA_PAGA_SEM_DATA]:
+    "Esta guia consta como paga e não tem a data do pagamento gravada. Ela não entra em mês nenhum: "
+    + "escolher um seria afirmar quando o dinheiro saiu.",
 });
 
 /**
@@ -101,6 +182,83 @@ export const PRAZO_RECEBIMENTO_PADRAO_MESES = 1;
 
 /** ⚠ O horizonte é 12 meses — decisão do dono, com a ressalva registrada no plano. */
 export const HORIZONTE_MESES = 12;
+
+/**
+ * ⚠⚠ QUANTOS DOS 12 MESES OLHAM PARA TRÁS — `SPEC-fluxo-de-caixa-v3.md` §3.1.
+ *
+ * *"Sempre 12 meses. Posição padrão: 4 meses passados + mês corrente + 7 futuros."* O total não
+ * muda; o que muda é onde a janela começa. ⚠ O passado só é legível por causa da Lei 1: sem a guia
+ * PAGA no payload, esses quatro meses viriam vazios.
+ */
+export const MESES_PASSADOS_NA_JANELA = 4;
+
+/**
+ * ⚠ QUANTOS DIAS ANTES O AVISO ACENDE — `SPEC-fluxo-de-caixa-v3.md` §1: *"vencimento em até 5 dias"*.
+ * Número do dono, não estimativa: por isso ele é constante nomeada e não um `5` solto no meio de um
+ * `if`, que é como um número de produto vira folclore.
+ */
+export const DIAS_DE_ANTECEDENCIA = 5;
+
+/**
+ * "A data `iso` cai entre hoje e hoje+`dias`?" — inclusive nas duas pontas.
+ *
+ * ⚠⚠ ARITMÉTICA DE DATA SEM `Date`, e é o mesmo motivo de sempre: `new Date("2026-08-31")` mais um
+ * fuso devolve outro dia. Aqui a conta é feita em DIAS JULIANOS a partir das partes da string, e a
+ * volta é comparação numérica — nenhum objeto de data no meio.
+ * ⚠ Data ausente responde `false`, nunca `true`: sem vencimento não há prazo a vencer, e um `true`
+ * por omissão acenderia o aviso para toda guia sem data.
+ */
+export function venceEmAte(iso, hoje, dias) {
+  const a = diasDoIso(hoje);
+  const b = diasDoIso(iso);
+  if (a == null || b == null || !Number.isFinite(dias)) return false;
+  return b >= a && b - a <= dias;
+}
+
+/** "AAAA-MM-DD" → número de dias. ⚠ Algoritmo civil, sem `Date`: só serve para SUBTRAIR duas datas. */
+function diasDoIso(iso) {
+  if (typeof iso !== "string") return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!m) return null;
+  let [, y, mes, d] = m.map(Number);
+  if (mes < 1 || mes > 12 || d < 1 || d > 31) return null;
+  y -= mes <= 2 ? 1 : 0;
+  const era = Math.floor(y / 400);
+  const anoDaEra = y - era * 400;
+  const diaDoAno = Math.floor((153 * (mes + (mes > 2 ? -3 : 9)) + 2) / 5) + d - 1;
+  const diaDaEra = anoDaEra * 365 + Math.floor(anoDaEra / 4) - Math.floor(anoDaEra / 100) + diaDoAno;
+  return era * 146097 + diaDaEra - 719468;
+}
+
+/**
+ * Onde a janela começa, e até onde as setas podem andar.
+ *
+ * ⚠ `companyStart` é o limite para TRÁS (v3 §3.1: *"até o primeiro mês com dados da empresa"*), e
+ * ele **encurta** a janela em vez de inventar meses anteriores ao começo da empresa — mostrar
+ * janeiro de uma empresa aberta em março afirmaria que ela faturou zero naquele mês.
+ * ⚠ Para a FRENTE a janela trava na posição padrão: não existe futuro além de corrente+7.
+ */
+export function janelaDoFluxo({ cicloAtual, janelaInicio = null, companyStart = null, horizonte = HORIZONTE_MESES, passados = MESES_PASSADOS_NA_JANELA }) {
+  const hoje = mesesDaCompetencia(cicloAtual);
+  if (hoje == null) return null;
+
+  const padrao = hoje - passados;
+  const minimo = mesesDaCompetencia(companyStart);
+  const pedido = mesesDaCompetencia(janelaInicio);
+
+  // ⚠ O teto é o padrão: andar para a frente além dele mostraria meses que o horizonte não cobre.
+  let inicio = pedido == null ? padrao : Math.min(pedido, padrao);
+  if (minimo != null) inicio = Math.max(inicio, minimo);
+
+  return {
+    inicio: competenciaDeMeses(inicio),
+    // ⚠ Os dois limites viajam para a tela DESABILITAR as setas em vez de as fazer não responder.
+    podeVoltar: minimo == null ? true : inicio > minimo,
+    podeAvancar: inicio < padrao,
+    padrao: competenciaDeMeses(padrao),
+    horizonte,
+  };
+}
 
 /**
  * ⚠⚠ QUANTOS MESES O CONTADOR CONFIGUROU — e se foi ele ou o padrão.
@@ -170,6 +328,20 @@ export function somarMeses(competencia, n) {
 export function competenciaDaData(d) {
   if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * `Date` → "AAAA-MM-DD". ⚠ Acessadores UTC e montagem por STRING, nunca `toISOString()`: às 22h de
+ * Brasília o ISO devolveria o dia seguinte. É a mesma disciplina de `competenciaDaData`.
+ *
+ * ⚠ Existe para comparar vencimento com HOJE — e a comparação é de string, que em "AAAA-MM-DD" é
+ * cronológica por construção.
+ */
+export function isoDaData(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
+  const mes = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dia = String(d.getUTCDate()).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${mes}-${dia}`;
 }
 
 /** `Date` → dia do mês (1–31). ⚠ Só para quem TEM data própria: a guia tem, a projeção não. */
@@ -243,6 +415,13 @@ export function totaisDoMes(linhas) {
       entrada: somar(PROCEDENCIA.FATO, DIRECAO.ENTRADA),
       saida: somar(PROCEDENCIA.FATO, DIRECAO.SAIDA),
     },
+    // ⚠⚠ CHAVE NOVA (28/08/2026), e ela é ADITIVA de propósito: `fato` e `previsao` continuam
+    // existindo com os mesmos nomes, então quem já lia o payload não quebra — só passa a ver
+    // números MENORES em `fato`, porque a guia em aberto saiu de lá. Ver a Lei 1.
+    compromisso: {
+      entrada: somar(PROCEDENCIA.COMPROMISSO, DIRECAO.ENTRADA),
+      saida: somar(PROCEDENCIA.COMPROMISSO, DIRECAO.SAIDA),
+    },
     previsao: {
       entrada: somar(PROCEDENCIA.PREVISAO, DIRECAO.ENTRADA),
       saida: somar(PROCEDENCIA.PREVISAO, DIRECAO.SAIDA),
@@ -262,8 +441,12 @@ export function totaisDoMes(linhas) {
  * buracos, e um buraco se lê como "não sei" quando na verdade é "nada previsto" — é a mesma
  * distinção que o relatório de faturamento já resolve incluindo o mês sem lançamento.
  */
-export function montarMeses({ linhas, cicloAtual, horizonte = HORIZONTE_MESES }) {
-  const base = mesesDaCompetencia(cicloAtual);
+export function montarMeses({ linhas, cicloAtual, janelaInicio = null, horizonte = HORIZONTE_MESES }) {
+  // ⚠⚠ A JANELA E O "HOJE" VIRARAM DUAS COISAS (28/08/2026). Eram uma só, e por isso pedir um mês
+  // passado movia os dois juntos — o mês pintado de ciano deixava de ser o mês corrente. Agora
+  // `cicloAtual` responde *"que dia é hoje?"* e `janelaInicio` responde *"onde a tabela começa?"*.
+  // ⚠ Ausente, `janelaInicio` cai no `cicloAtual`: o comportamento de antes, intacto.
+  const base = mesesDaCompetencia(janelaInicio || cicloAtual);
   if (base == null) return [];
 
   const porMes = new Map();
@@ -293,7 +476,10 @@ export function montarMeses({ linhas, cicloAtual, horizonte = HORIZONTE_MESES })
 
 /** ⚠ FATO primeiro, e dentro de cada procedência o maior valor primeiro: é o que move mais dinheiro. */
 export function ordenarLinhas(linhas) {
-  const peso = (l) => (l.procedencia === PROCEDENCIA.FATO ? 0 : l.procedencia === PROCEDENCIA.PREVISAO ? 1 : 2);
+  // ⚠ FATO → COMPROMISSO → PREVISAO → DESCONHECIDO: da maior certeza para a menor, que é a ordem
+  // em que um contador lê uma coluna de dinheiro.
+  const ORDEM = { [PROCEDENCIA.FATO]: 0, [PROCEDENCIA.COMPROMISSO]: 1, [PROCEDENCIA.PREVISAO]: 2 };
+  const peso = (l) => (ORDEM[l.procedencia] ?? 3);
   return [...(linhas || [])].sort((a, b) => {
     const d = peso(a) - peso(b);
     if (d !== 0) return d;

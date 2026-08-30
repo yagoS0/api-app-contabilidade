@@ -107,7 +107,9 @@ describe("⚠⚠ o dia desconhecido vem com o motivo", () => {
     const frases = Object.values(DIA_DESCONHECIDO).map(
       (m) => linha({ dia: null, diaDesconhecido: m }).diaDesconhecido.frase,
     );
-    expect(new Set(frases).size).toBe(3);
+    // ⚠ O número sai da LISTA, nunca cravado: um motivo novo sem frase própria (ou com a frase
+    // copiada de outro) tem de derrubar este teste, e um `3` à mão o deixaria passar.
+    expect(new Set(frases).size).toBe(Object.keys(DIA_DESCONHECIDO).length);
   });
 });
 

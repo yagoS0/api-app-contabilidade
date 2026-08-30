@@ -811,3 +811,137 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 /* ⚠ A coluna da caixa é estreita e não some em 375px: sem ela a tabela rola e a seleção fica
    inalcançável justamente onde a tela é menor. */
 .col-selecao { width: 36px; text-align: center; }
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+   A TABELA DO FLUXO — v3 (28/08/2026). Ela SUBSTITUIU a planilha de quatro colunas de 27/08.
+   Medidas tiradas do mockup do dono no navegador, não estimadas: colunas 87·118·107·107·107·121
+   (648px no total), linha de 36px, cabeçalho 11,5px/500, célula 13,5px, grade de 1px.
+   ⚠ O `.table-wrap` continua contendo a rolagem: 648px não cabe em 375px, e sem ele a PÁGINA
+   inteira rolaria para o lado.
+   ───────────────────────────────────────────────────────────────────────────────────────────── */
+.table--fluxo-v3 {
+  table-layout: fixed;
+  width: auto;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  border-collapse: collapse;
+}
+.table--fluxo-v3 th,
+.table--fluxo-v3 td {
+  padding: 8px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--grade-tabela);
+  border-right: 1px solid var(--grade-tabela);
+  white-space: nowrap;
+}
+.table--fluxo-v3 th:last-child,
+.table--fluxo-v3 td:last-child { border-right: 0; }
+.table--fluxo-v3 tbody tr:last-child td { border-bottom: 0; }
+.table--fluxo-v3 thead th {
+  background: var(--cabecalho-tabela);
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+.table--fluxo-v3 th:first-child,
+.table--fluxo-v3 td:first-child { text-align: left; font-weight: 500; }
+.table--fluxo-v3 .col-periodo { width: 88px; }
+.table--fluxo-v3 [data-coluna] { width: 108px; }
+.table--fluxo-v3 [data-coluna="resultado"] { width: 122px; }
+
+/* ⚠ A linha do mês é clicável, mas NÃO recebe `role="button"` — isso a tiraria da semântica de
+   tabela. Quem carrega o nome acessível e o teclado é o `<button>` dentro do `<th scope="row">`. */
+.fluxo-v3-periodo {
+  font: inherit; font-weight: 500; color: inherit; cursor: pointer;
+  background: none; border: 0; border-radius: var(--radius);
+  min-height: 28px; padding: 2px 6px; margin: -2px -6px;
+}
+.fluxo-v3-periodo:hover { background: var(--neutral-surface); }
+.table--fluxo-v3 tr[data-agora="sim"] > * { background: var(--ciano-surface); }
+.table--fluxo-v3 tr[data-agora="sim"] > :first-child {
+  border-left: 3px solid var(--ciano-borda);
+  padding-left: 7px;
+  color: var(--ciano);
+}
+
+/* ⚠⚠ PREVISTO = COR **E** ITÁLICO. A cor sozinha não sobrevive à impressão em preto e branco nem
+   ao daltonismo — e o que ela separa aqui é "o dinheiro saiu" de "o dinheiro vai sair". */
+.fluxo-v3-valor[data-status="forecast"] { color: var(--previsto); font-style: italic; }
+.fluxo-v3-valor[data-status="confirmed"] { color: var(--text); }
+.fluxo-v3-valor[data-coluna="resultado"] { font-weight: 600; }
+.fluxo-v3-valor[data-negativo="sim"] { color: var(--danger); }
+/* ⚠ Invisível de propósito (v3 §3.2). O nome acessível vem do `.sr-only` ao lado. */
+.fluxo-v3-vazio { color: var(--traco); }
+
+/* O segmented control dos dois toggles. */
+.seg { display: inline-flex; background: var(--neutral-surface); border-radius: var(--radius); padding: 2px; }
+.seg > button {
+  font: inherit; font-size: .78rem; font-weight: 500; cursor: pointer;
+  border: 0; background: transparent; color: var(--muted);
+  padding: 6px 12px; border-radius: var(--radius);
+}
+.seg > button[aria-pressed="true"] {
+  background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+/* ⚠ As setas DESABILITAM nos limites, nunca somem: botão que some esconde que a ação existe. */
+.fluxo-v3-navegacao { display: flex; gap: 4px; }
+.fluxo-v3-navegacao > button {
+  width: 30px; height: 30px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface);
+  border-radius: var(--radius); color: var(--muted);
+}
+.fluxo-v3-navegacao > button:disabled { opacity: .35; cursor: default; }
+
+/* A barra de contexto da visão de dias. */
+.fluxo-v3-migalha { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.fluxo-v3-migalha > strong { font-size: .9rem; }
+.fluxo-v3-voltar {
+  font: inherit; font-size: .78rem; cursor: pointer; color: var(--text-2);
+  border: 1px solid var(--border); background: var(--surface);
+  border-radius: var(--radius); padding: 5px 10px;
+}
+.fluxo-v3-voltar:hover { background: var(--neutral-surface); }
+/* ⚠ 420px ≈ 10 linhas de 36px + cabeçalho — a medida do mockup. O resto entra rolando. */
+.table-wrap--dias { max-height: 420px; overflow-y: auto; }
+.table-wrap--dias thead th { position: sticky; top: 0; z-index: 2; }
+.fluxo-v3-mais {
+  display: block; text-align: center; padding: 8px; font-size: .75rem;
+  color: var(--muted); background: var(--cabecalho-tabela); border-top: 1px solid var(--border);
+}
+.fluxo-v3-sem-dia > :first-child { font-style: italic; color: var(--muted); }
+.fluxo-v3-sem-dia > * { border-bottom: 2px solid var(--border); }
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+   O POP-UP DE GUIAS — `role="alertdialog"`, e ele COBRE a página de propósito.
+   ───────────────────────────────────────────────────────────────────────────────────────────── */
+.sobreposicao {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgb(17 24 39 / 45%);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 10vh 16px 16px;
+  overflow-y: auto;
+}
+.pop-guias { background: var(--surface); border-radius: 14px; max-width: 480px; width: 100%; padding: 22px 24px; }
+.pop-guias > h2 { margin: 0 0 4px; font-size: 1rem; }
+.pop-guias-linha {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 9px 0; border-bottom: 1px solid var(--border);
+}
+.pop-guias-linha:last-of-type { border-bottom: 0; }
+.pop-guias-quando { display: block; font-size: .75rem; font-weight: 500; }
+.pop-guias-quando[data-estado="overdue"] { color: var(--danger); }
+.pop-guias-quando[data-estado="due_soon"] { color: var(--previsto); }
+.pop-guias-valor { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pop-guias-soma {
+  display: flex; justify-content: space-between;
+  padding: 10px 0 2px; font-weight: 600;
+  border-top: 1px solid var(--border); margin-top: 4px;
+}
+.pop-guias-soma > span:last-child { color: var(--danger); }
+.pop-guias-acoes { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+
+/* ⚠ O card do resumo usa os MESMOS canais da célula da tabela (cor + itálico), porque mostra o
+   MESMO número. Uma regra própria aqui divergiria da linha do mês corrente logo abaixo. */
+.card > .numero[data-status="forecast"] { color: var(--previsto); font-style: italic; }

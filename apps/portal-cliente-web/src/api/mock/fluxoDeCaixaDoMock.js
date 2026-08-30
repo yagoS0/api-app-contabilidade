@@ -6,40 +6,51 @@
  * responde (`GET /client/companies/:id/fluxo-de-caixa`), para a tela poder ser exercida sem backend.
  * O que continua sendo ficção é o DRE, e ele ficou lá.
  *
- * ⚠⚠ `demonstracao: false`, como o servidor responde — é ele que apaga o selo. Devolver `true` aqui
- * faria a visão de fluxo aparecer com selo offline e sem selo em produção, e aí ninguém conseguiria
- * conferir na tela o desenho que chega ao cliente.
+ * ⚠⚠ **REESCRITO EM 28/08/2026 PELA LEI 1 DA `CONSTITUICAO-do-produto.md`**, e as três mudanças
+ * grandes vieram de lá:
  *
- * ⚠⚠ NÃO EXISTE `total`, nem `saldo`, nem `saldoAcumulado`. Sem saldo inicial não há o que acumular,
- * e um número único a doze meses de distância é o que alguém imprime e leva ao banco
- * (`docs/dre-fluxo-caixa.md`). Acrescentar um aqui faria a tela offline mostrar o número que a de
- * produção se recusa a entregar.
+ * | | antes | agora |
+ * |---|---|---|
+ * | janela | 12 meses **à frente** | **4 passados + corrente + 7 futuros** |
+ * | guia gerada em aberto | `FATO`, no mês do vencimento | `COMPROMISSO`, no **mês corrente** |
+ * | guia paga | **não existia no payload** | `FATO`, no mês do **pagamento** |
+ *
+ * ⚠⚠ **O PASSADO SÓ CARREGA O QUE FOI PAGO** — é o critério de aceite nº 12 da Constituição, e ele
+ * não é regra de tela: é o que a Lei 1 produz. Este mock **tem de obedecê-lo**, senão a tela offline
+ * mostraria âmbar no passado e ninguém conseguiria conferir o desenho que chega ao cliente.
+ *
+ * ⚠⚠ `demonstracao: false`, como o servidor responde — é ele que apaga o selo.
+ *
+ * ⚠⚠ NÃO EXISTE `total`, nem `saldo`, nem `saldoAcumulado`. Sem âncora de conciliação não há
+ * acumulado (Lei 3), e a coluna Saldo é Fase 3. ⚠ O `alertaDeGuias` chama a soma dele de `valor`,
+ * e **não** de `total`, pelo mesmo motivo: a palavra proibida não pode entrar por uma porta lateral.
  *
  * ⚠⚠ ELE NÃO É DERIVADO DAS GUIAS DE `estado.guias`, E ISSO É ESCOLHA — com o custo NOMEADO.
- *
- * Consequência visível offline: o card "A vencer" (que sai de `getFluxo`, a lista de guias
- * liberadas em aberto) e a ressalva "N guias já venceram" mostram números DIFERENTES na mesma
- * página. Em PRODUÇÃO eles concordam: as duas leituras varrem a MESMA população
- * (`liberadaCliente: true` + `paymentStatus in OPEN|OVERDUE`).
- *
+ * Consequência visível offline: o card "A vencer" (que sai de `getFluxo`) e o alerta de guias
+ * mostram números DIFERENTES na mesma página. Em PRODUÇÃO eles concordam — e desde 28/08/2026 eles
+ * concordam **mais**, porque as duas leituras passaram a comparar com o mesmo DIA.
  * ⚠ Derivar daqui custaria RAMOS, e ramo perdido é a falha mais cara deste projeto: a fixture de
- * guias não tem nenhuma **sem vencimento** (o `semMes` ficaria inalcançável) e todas as
- * competências dela estão no PASSADO (a linha de FATO com dia próprio, dentro dos meses abertos,
- * ficaria inalcançável também).
+ * guias não tem nenhuma sem vencimento, nenhuma PAGA, e todas as competências dela estão no passado.
  *
- * ⚠ FICA NOMEADO PARA O DONO: mesmo em produção os dois números podem divergir em UM caso legítimo
- * — a guia que vence mais adiante no mês CORRENTE e cujo dia já passou. O card a chama de "vencida"
- * (ele compara com HOJE); o fluxo a mantém no mês corrente (ele compara com o MÊS). Não é defeito
- * de nenhum dos dois: são perguntas diferentes.
- *
- * ⚠ TODOS OS RAMOS DA TELA SÃO ALCANÇÁVEIS: FATO com dia próprio · PREVISÃO por mês (`dia: null`
- * com o motivo) · a faixa mín/máx · o CONFRONTO do que o cliente declarou · o imposto previsto com
- * a frase da alíquota · a guia VENCIDA · o que não tem mês · o prazo NÃO configurado · o mês vazio ·
- * o bloco recolhido. Este projeto foi mordido oito vezes por ramo que só existia em produção.
+ * ⚠ TODOS OS RAMOS DA TELA SÃO ALCANÇÁVEIS: passado confirmado (preto) · mês corrente com
+ * compromisso · futuro previsto · **Resultado NEGATIVO** · mês sem nada (traço) · a coluna Folha ·
+ * a guia vencida e a que vence em 5 dias · o que não tem mês · o prazo NÃO configurado · a empresa
+ * sem apuração. Este projeto foi mordido oito vezes por ramo que só existia em produção.
  */
 
 /** ⚠ A empresa do fluxo MAGRO — é a única forma de alcançar `semImposto` e `recorrenciaIndisponivel`. */
 const EMPRESA_SEM_APURACAO = "pc-006";
+
+/** ⚠ `SPEC-fluxo-de-caixa-v3.md` §3.1 — a janela padrão. Espelha `MESES_PASSADOS_NA_JANELA`. */
+const MESES_PASSADOS = 4;
+const HORIZONTE = 12;
+
+/**
+ * ⚠ O limite da navegação para trás, offline. Ele existe para o ramo `podeVoltar: false` ser
+ * alcançável sem backend — sem ele a seta ‹ nunca desabilitaria na tela de demonstração, e o
+ * desenho do limite só apareceria em produção.
+ */
+const MESES_DE_HISTORICO = 8;
 
 const FRASE_SERIE_SEM_DIA = "A recorrência diz de quanto em quanto tempo, não em que dia do mês.";
 
@@ -49,21 +60,137 @@ function somarMeses(competencia, n) {
   return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`;
 }
 
-function linhasDoFluxo(ciclo) {
+const mesesDe = (c) => {
+  const [a, m] = String(c).split("-").map(Number);
+  return a * 12 + (m - 1);
+};
+
+/**
+ * ⚠⚠ O PASSADO — e ele é feito SÓ de fato, por construção.
+ *
+ * Entrada vem da nota de competência fechada (`FATO` pela simplificação declarada do §7.1: assume-se
+ * que 100% do faturado foi recebido, e a marca viaja em `base.simplificacao`); Impostos vêm da guia
+ * PAGA; Folha vem do lançamento.
+ *
+ * ⚠ **A coluna Saída fica VAZIA no passado, e isso é a verdade do dado — não um esquecimento.** A
+ * única fonte de saída que não é imposto nem folha é a série recorrente, e ela projeta do mês
+ * corrente para a FRENTE. Despesa avulsa passada não chega a este portal: quem lança é o escritório.
+ */
+function linhasDoPassado(ciclo) {
+  const linhas = [];
+  const valores = [18500, 19200, 20400, 19800];
+  for (let k = MESES_PASSADOS; k >= 1; k -= 1) {
+    const comp = somarMeses(ciclo, -k);
+    const receita = valores[MESES_PASSADOS - k];
+    linhas.push({
+      fonte: "NOTA_EMITIDA", direcao: "ENTRADA", procedencia: "FATO", competencia: comp,
+      dia: null,
+      diaDesconhecido: {
+        motivo: "projecao_por_mes",
+        frase: "O prazo de recebimento é contado em meses, então esta linha cai no mês — não num dia.",
+      },
+      valor: receita, rotulo: "Recebimento — CLINICA LAIF LTDA",
+      base: {
+        frase: `nota nº 1.2${k}0, competência ${somarMeses(comp, -1)} · prazo de 1 mês `
+          + "(padrão — ninguém configurou o prazo desta empresa)",
+        documental: true, prazoConfigurado: false,
+        // ⚠⚠ A SUPOSIÇÃO VIAJA MARCADA. Sem ela, "confirmado" seria indistinguível de um
+        // recebimento provado — e `PortalInvoice` não tem `recebidoEm`.
+        simplificacao: "recebimento_integral_presumido",
+      },
+      referencia: { tipo: "nota", id: `n-p${k}` },
+    });
+    // ⚠ A guia PAGA — o único imposto que é FATO. Ela cai no mês do PAGAMENTO.
+    linhas.push({
+      fonte: "GUIA", direcao: "SAIDA", procedencia: "FATO", competencia: comp, dia: 20,
+      diaDesconhecido: null, valor: Math.round(receita * 0.0865 * 100) / 100, rotulo: "SIMPLES",
+      base: { frase: "SIMPLES paga", pagaEm: comp },
+      referencia: { tipo: "guia", id: `g-p${k}` },
+    });
+    linhas.push(linhaDeFolha(comp, 2480, "FATO"));
+  }
+  return linhas;
+}
+
+/** ⚠ A folha: fonte PRÓPRIA, e coluna própria no v3 §3.2. Ela não é uma `SERIE_DESPESA`. */
+function linhaDeFolha(competencia, valor, procedencia) {
+  return {
+    fonte: "FOLHA", direcao: "SAIDA", procedencia, competencia, dia: null,
+    diaDesconhecido: {
+      motivo: "folha_sem_dia",
+      frase: "A folha é lançada por competência, e a data do pagamento não está no lançamento.",
+    },
+    valor, rotulo: "Folha de pagamento",
+    base: {
+      frase: `1 lançamento(s) de folha na competência ${competencia}`,
+      lancamentos: 1,
+      // ⚠ Só o passado carrega a suposição; o mês corrente ainda está aberto.
+      simplificacao: procedencia === "FATO" ? "pagamento_integral_presumido" : null,
+    },
+  };
+}
+
+function linhasDoPresenteEDoFuturo(ciclo) {
   const mes = (n) => somarMeses(ciclo, n);
   return [
-    // ⚠ FATO com dia próprio: a guia tem vencimento de verdade.
+    /**
+     * ⚠⚠ A GUIA EM ABERTO — `COMPROMISSO`, e no MÊS CORRENTE.
+     *
+     * O vencimento dela caiu no mês corrente, então ela mantém o DIA. É o caso em que o dia vale.
+     */
     {
-      fonte: "GUIA", direcao: "SAIDA", procedencia: "FATO", competencia: mes(0), dia: 20,
+      fonte: "GUIA", direcao: "SAIDA", procedencia: "COMPROMISSO", competencia: mes(0), dia: 20,
       diaDesconhecido: null, valor: 1847.55, rotulo: "SIMPLES",
-      base: { frase: `SIMPLES gerada, competência ${somarMeses(ciclo, -1)}` },
+      base: {
+        frase: `SIMPLES gerada, competência ${mes(-1)} · vence em ${mes(0)}-20`,
+        vencimento: `${mes(0)}-20`, atrasada: true,
+      },
       referencia: { tipo: "guia", id: "g-1" },
     },
+    /**
+     * ⚠⚠ A GUIA VENCIDA DE MÊS PASSADO — ela sai do mês CORRENTE, e o DIA dela não vale mais.
+     *
+     * É o ramo que a Lei 1 criou: apontar para o dia 20 de um mês que já passou diria que o dinheiro
+     * sai numa data que ficou para trás.
+     */
     {
-      fonte: "GUIA", direcao: "SAIDA", procedencia: "FATO", competencia: mes(1), dia: 20,
-      diaDesconhecido: null, valor: 1912, rotulo: "INSS",
-      base: { frase: `INSS gerada, competência ${mes(0)}` },
+      fonte: "GUIA", direcao: "SAIDA", procedencia: "COMPROMISSO", competencia: mes(0), dia: null,
+      diaDesconhecido: {
+        motivo: "compromisso_em_atraso",
+        frase: "Esta guia venceu em outro mês e continua em aberto — o dinheiro sai do mês corrente.",
+      },
+      valor: 3422, rotulo: "INSS",
+      base: {
+        frase: `INSS gerada, competência ${mes(-2)} · vence em ${mes(-1)}-20`,
+        vencimento: `${mes(-1)}-20`, atrasada: true,
+      },
       referencia: { tipo: "guia", id: "g-2" },
+    },
+    // ⚠ A folha do mês corrente é COMPROMISSO: o mês está aberto e ela ainda pode mudar.
+    linhaDeFolha(mes(0), 2480, "COMPROMISSO"),
+    /**
+     * ⚠⚠ A ENTRADA DO MÊS CORRENTE — e ela é CONFIRMADA (errata §7.1: nota de competência anterior
+     * ao mês corrente vira Entrada confirmada no mês seguinte).
+     *
+     * ⚠ É ela que faz o mês corrente ter **mistura** de preto e âmbar na mesma linha — o critério
+     * de aceite nº 4 do v3 exige que exista pelo menos um mês assim, e sem esta linha ele só
+     * apareceria em produção.
+     */
+    {
+      fonte: "NOTA_EMITIDA", direcao: "ENTRADA", procedencia: "FATO", competencia: mes(0),
+      dia: null,
+      diaDesconhecido: {
+        motivo: "projecao_por_mes",
+        frase: "O prazo de recebimento é contado em meses, então esta linha cai no mês — não num dia.",
+      },
+      valor: 21350, rotulo: "Recebimento — CLINICA LAIF LTDA",
+      base: {
+        frase: `nota nº 1.288, competência ${mes(-1)} · prazo de 1 mês `
+          + "(padrão — ninguém configurou o prazo desta empresa)",
+        documental: true, prazoConfigurado: false,
+        simplificacao: "recebimento_integral_presumido",
+      },
+      referencia: { tipo: "nota", id: "n-0" },
     },
     // ⚠⚠ PREVISÃO por MÊS: a nota prova o FATURAMENTO, nunca o RECEBIMENTO — e o dia não existe.
     {
@@ -77,7 +204,7 @@ function linhasDoFluxo(ciclo) {
       base: {
         frase: `nota nº 1.234, competência ${mes(0)} · prazo de 1 mês `
           + "(padrão — ninguém configurou o prazo desta empresa)",
-        documental: true, prazoConfigurado: false,
+        documental: true, prazoConfigurado: false, simplificacao: null,
       },
       referencia: { tipo: "nota", id: "n-1" },
     },
@@ -127,16 +254,33 @@ function linhasDoFluxo(ciclo) {
       },
       valor: 883.2, rotulo: "Imposto previsto sobre a receita prevista",
       base: {
-        frase: `com base na alíquota de ${somarMeses(ciclo, -2)} (declaração transmitida)`,
-        aliquota: 0.1104, competenciaDaAliquota: somarMeses(ciclo, -2),
+        frase: `com base na alíquota de ${mes(-2)} (declaração transmitida)`,
+        aliquota: 0.1104, competenciaDaAliquota: mes(-2),
         procedenciaDaAliquota: "TRANSMITIDA", receitaPrevista: 8000,
       },
       referencia: null,
     },
-    // ⚠ Uma linha no BLOCO RECOLHIDO. Sem ela o total do bloco sairia zerado, e o desenho dos nove
-    // meses distantes nasceria sem poder ser visto.
+    /**
+     * ⚠⚠ O MÊS DE RESULTADO NEGATIVO — despesa grande sem entrada nenhuma no mesmo mês.
+     *
+     * Sem ele a tela nunca mostraria o vermelho do Resultado negativo offline, e o desenho de um
+     * mês ruim só apareceria na frente de um cliente com um mês ruim.
+     */
     {
-      fonte: "SERIE_DESPESA", direcao: "SAIDA", procedencia: "PREVISAO", competencia: mes(7),
+      fonte: "SERIE_DESPESA", direcao: "SAIDA", procedencia: "PREVISAO", competencia: mes(3),
+      dia: null,
+      diaDesconhecido: { motivo: "serie_sem_dia", frase: FRASE_SERIE_SEM_DIA },
+      valor: 6400, rotulo: "SEGURO ANUAL DA FROTA",
+      base: {
+        frase: "recorrência marcada · ANUAL", n: 2, min: 6100, max: 6400, cv: 0.03,
+        origem: "DECLARADA", valorDeclarado: 6400, valorObservado: null,
+      },
+      referencia: { tipo: "serie", id: "s-6" },
+    },
+    // ⚠ Uma linha no fim da janela: sem ela os últimos meses nasceriam todos vazios e o desenho de
+    // "mês distante com algo" não existiria offline.
+    {
+      fonte: "SERIE_DESPESA", direcao: "SAIDA", procedencia: "PREVISAO", competencia: mes(6),
       dia: null,
       diaDesconhecido: { motivo: "serie_sem_dia", frase: FRASE_SERIE_SEM_DIA },
       valor: 890, rotulo: "COPIADORA SAO JORGE LTDA",
@@ -149,14 +293,31 @@ function linhasDoFluxo(ciclo) {
   ];
 }
 
-export function fluxoDeCaixaDoMock(companyId, competencia) {
+/**
+ * @param {string} companyId
+ * @param {string} competencia o mês CORRENTE — o "hoje"
+ * @param {{janelaInicio?: string, cientes?: Iterable<string>}} opcoes
+ */
+export function fluxoDeCaixaDoMock(companyId, competencia, opcoes = {}) {
   const ciclo = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(competencia || "")) ? String(competencia) : "2026-08";
   const magro = companyId === EMPRESA_SEM_APURACAO;
-  const linhas = magro ? [] : linhasDoFluxo(ciclo);
+  const linhas = magro ? [] : [...linhasDoPassado(ciclo), ...linhasDoPresenteEDoFuturo(ciclo)];
+
+  /**
+   * ⚠⚠ A JANELA E O "HOJE" SÃO DUAS COISAS — e o mock precisa honrar as duas, senão as setas ‹ ›
+   * não podem ser exercidas offline e o limite só apareceria em produção.
+   */
+  const padrao = mesesDe(ciclo) - MESES_PASSADOS;
+  const minimo = mesesDe(ciclo) - MESES_DE_HISTORICO;
+  const pedido = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(opcoes.janelaInicio || ""))
+    ? mesesDe(opcoes.janelaInicio)
+    : padrao;
+  const inicioEmMeses = Math.max(minimo, Math.min(pedido, padrao));
+  const inicio = somarMeses(ciclo, inicioEmMeses - mesesDe(ciclo));
 
   // ⚠ Os 12 meses nascem TODOS, inclusive os vazios: mês sem linha é resposta, não ausência.
-  const meses = Array.from({ length: 12 }).map((_, k) => {
-    const comp = somarMeses(ciclo, k);
+  const meses = Array.from({ length: HORIZONTE }).map((_, k) => {
+    const comp = somarMeses(inicio, k);
     const doMes = linhas.filter((l) => l.competencia === comp);
     const soma = (proc, dir) => doMes
       .filter((l) => l.procedencia === proc && l.direcao === dir)
@@ -164,21 +325,51 @@ export function fluxoDeCaixaDoMock(companyId, competencia) {
     return {
       competencia: comp,
       linhas: doMes,
-      // ⚠⚠ SEM A CHAVE `total`, aqui também.
+      // ⚠⚠ SEM A CHAVE `total`, aqui também. `compromisso` é a chave NOVA da Lei 1.
       totais: {
         fato: { entrada: soma("FATO", "ENTRADA"), saida: soma("FATO", "SAIDA") },
+        compromisso: { entrada: soma("COMPROMISSO", "ENTRADA"), saida: soma("COMPROMISSO", "SAIDA") },
         previsao: { entrada: soma("PREVISAO", "ENTRADA"), saida: soma("PREVISAO", "SAIDA") },
         desconhecido: { quantas: 0 },
       },
     };
   });
 
+  /** ⚠ As mesmas guias em aberto do payload, na forma que o pop-up consome. */
+  const emAberto = magro ? [] : [
+    {
+      id: "g-2", rotulo: "INSS", valor: 3422, vencimento: `${somarMeses(ciclo, -1)}-20`,
+      atrasada: true, competencia: somarMeses(ciclo, -2), estado: "overdue",
+    },
+    {
+      id: "g-1", rotulo: "SIMPLES", valor: 1847.55, vencimento: `${ciclo}-20`,
+      atrasada: true, competencia: somarMeses(ciclo, -1), estado: "overdue",
+    },
+    // ⚠ A que AINDA VAI VENCER — sem ela o estado `due_soon` (âmbar, não vermelho) só existiria em
+    // produção, e o pop-up ofereceria um único desenho.
+    {
+      id: "g-3", rotulo: "FGTS", valor: 640.18, vencimento: `${somarMeses(ciclo, 1)}-01`,
+      atrasada: false, competencia: somarMeses(ciclo, -1), estado: "due_soon",
+    },
+  ];
+
+  const cientes = new Set(opcoes.cientes || []);
+  const itens = emAberto;
+
   return {
     // ⚠⚠ É ESTE CAMPO que apaga o selo, e ele espelha o do servidor.
     demonstracao: false,
     cicloAtual: ciclo,
-    horizonte: 12,
+    horizonte: HORIZONTE,
     meses,
+    /** ⚠ Os limites viajam para a tela DESABILITAR a seta — botão que não responde parece defeito. */
+    janela: {
+      inicio,
+      podeVoltar: inicioEmMeses > minimo,
+      podeAvancar: inicioEmMeses < padrao,
+      padrao: somarMeses(ciclo, -MESES_PASSADOS),
+      horizonte: HORIZONTE,
+    },
     // ⚠⚠ NADA SOME EM SILÊNCIO: o que não coube em mês nenhum sai NOMEADO, com o conserto.
     semMes: magro ? [] : [
       {
@@ -188,13 +379,29 @@ export function fluxoDeCaixaDoMock(companyId, competencia) {
         rotulo: "SIMPLES", valor: 1233.9, referencia: { tipo: "guia", id: "g-9" },
       },
     ],
-    // ⚠⚠ A GUIA VENCIDA é a linha mais urgente do fluxo, e ela não mora em mês nenhum.
-    vencidas: magro
-      ? { quantas: 0, valor: 0, linhas: [] }
-      : { quantas: 2, valor: 18638.39, linhas: [] },
+    // ⚠⚠ A GUIA VENCIDA — lista de CONFERÊNCIA. Ela NÃO se soma ao mês corrente: é a mesma guia.
+    vencidas: {
+      quantas: itens.filter((g) => g.atrasada).length,
+      valor: itens.filter((g) => g.atrasada).reduce((s, g) => s + g.valor, 0),
+      linhas: itens.filter((g) => g.atrasada),
+    },
+    /**
+     * ⚠⚠ O QUE ALIMENTA O POP-UP. `ackPending` é calculado contra as ciências já dadas — offline
+     * elas vivem em memória, e é isso que faz o "Estou ciente" poder ser exercido sem backend.
+     */
+    alertaDeGuias: {
+      diasDeAntecedencia: 5,
+      itens,
+      valor: itens.reduce((s, g) => s + g.valor, 0),
+      ackPending: itens.some((g) => !cientes.has(g.id)),
+    },
     foraDoHorizonte: magro ? 0 : 1,
     // ⚠⚠ "ninguém configurou" ≠ "configurado como 1" — a tela precisa alcançar os dois.
     prazoRecebimento: magro ? { meses: 2, configurado: true } : { meses: 1, configurado: false },
+    /** ⚠ Sem folha lançada a COLUNA não existe — e é o servidor que decide, não a tela. */
+    folha: magro
+      ? { disponivel: false, contasConsideradas: [] }
+      : { disponivel: true, contasConsideradas: ["41101"] },
     // ⚠⚠ A ausência do imposto previsto é NOMEADA — nunca uma linha que simplesmente não aparece.
     semImposto: magro
       ? {

@@ -141,9 +141,12 @@ describe("a competência atravessa Início ⇄ Notas", () => {
       to: competenciaPadrao(),
     });
     // ⚠ E não esconde: o rótulo do card nomeia QUAL competência está sendo mostrada. A asserção
-    // olha o mês, não só o prefixo — `/^Faturamento ·/` passaria com o card dizendo março/2019.
+    // olha o mês, não só o prefixo — `/^Receita ·/` passaria com o card dizendo março/2019.
+    // ⚠ O RÓTULO ERA "Faturamento" ATÉ 28/08/2026. A Lei 5 da `CONSTITUICAO-do-produto.md` fechou o
+    // glossário: *Receita* é nota emitida no mês, e nunca dinheiro recebido — quem responde
+    // "dinheiro que entra no caixa" é a coluna **Entrada** da tabela, que é outra conta.
     const [ano, mes] = competenciaPadrao().split("-");
-    expect(screen.getByText(new RegExp(`^Faturamento ·.*${mes}/${ano}`))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`^Receita ·.*${mes}/${ano}`))).toBeInTheDocument();
   });
 
   test("⚠ GUIAS entra na mesma competência — era a TERCEIRA cópia do mesmo estado", async () => {

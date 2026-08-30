@@ -123,6 +123,36 @@
   --coluna-recorrencia-surface: #e3f3f5;
   --coluna-diario: #1a4fd8;
   --coluna-diario-surface: #eef2ff;
+
+  /* ⚠⚠ A TABELA DO FLUXO v3 (28/08/2026) — e a Constituição fecha o significado de cada uma:
+     *"Ciano é exclusivo de 'onde estamos no tempo'. Âmbar é exclusivo de 'previsão'. Vermelho é
+     exclusivo de 'vencido/negativo'. Não reutilizar."* (§5 da `CONSTITUICAO-do-produto.md`.)
+
+     ⚠⚠ SÃO DOIS CIANOS, E A SEPARAÇÃO É MEDIÇÃO, NÃO GOSTO. O spec pedia `#0891B2` também como
+     TINTA DE TEXTO — medido, ele dá **3,68:1** sobre o branco e **3,54:1** sobre o próprio
+     `--ciano-surface`, abaixo do mínimo de 4,5:1 da WCAG. O `#0E7490` mede **5,36:1** e **5,15:1**
+     nos mesmos fundos. A errata §7.4 da Constituição adotou exatamente esta separação: texto no
+     escuro, borda e marca de posição no claro — borda não é texto, e ali o `#0891B2` fica. */
+  --ciano: #0e7490;
+  --ciano-borda: #0891b2;
+  --ciano-surface: #ecfeff;
+
+  /* ⚠⚠ O PREVISTO. Medido: **5,02:1** sobre o branco e **4,83:1** sobre `--ciano-surface` — passa
+     nos dois, e o segundo importa porque o mês corrente é ciano e pode ter célula prevista.
+     ⚠⚠ ELE NUNCA APARECE SOZINHO: a Constituição §1 manda *"âmbar vem sempre com itálico,
+     `data-status` no DOM e `aria-label` na célula"*. Cor sozinha não sobrevive a impressão em preto
+     e branco nem a daltonismo — e aqui ela separa "o dinheiro saiu" de "o dinheiro vai sair". */
+  --previsto: #b45309;
+
+  /* ⚠⚠ O TRAÇO DA CÉLULA VAZIA — e ele é INVISÍVEL DE PROPÓSITO (**1,47:1**), porque o v3 §3.2 pede
+     *"`–` em cinza claro, sem peso visual"*.
+     ⚠ Por isso a célula vazia leva TEXTO OCULTO ("sem lançamento"): sem ele, "vazio" e "não
+     carregou" ficam iguais para quem usa leitor de tela, e o traço não é lido por ninguém. */
+  --traco: #d1d5db;
+
+  /* A grade da planilha: linhas finas e cabeçalho levemente afundado. Medidos no mockup do dono. */
+  --grade-tabela: #eef0f3;
+  --cabecalho-tabela: #f8f9fb;
   --warning-surface: #fff7e6;
   --warning-surface-border: #f2dfb8;
   --neutral-surface: #f1f2f4;

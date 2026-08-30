@@ -1,8 +1,8 @@
 import { api } from "../../api";
-import { AlertaErro, CardNumero, Carregando, Vazio } from "../../components/ui";
+import { AlertaErro, CardNumero, Carregando } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
 import { FONTE, MOTIVO, aliquotaDoPainel } from "./lib/aliquotaDoPainel";
-import { chipDaGuia } from "../guias/GuiasPage";
+import { linhaDoMes } from "./lib/tabelaDoFluxo";
 import { BlocoDeDemonstracao } from "./BlocoDeDemonstracao";
 import {
   TRACO,
@@ -10,7 +10,6 @@ import {
   competenciaPadrao,
   competenciasRecentes,
   fmtCompetencia,
-  fmtDateBr,
   inteiro,
   pct,
   somaOuTraco,
@@ -66,7 +65,7 @@ function textoDaAliquota(l) {
   return `Impostos pagos ${somaOuTraco(l.impostos)} sobre ${somaOuTraco(l.faturamento)}`;
 }
 
-export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar, aoEnviarExtrato, aoDeclararRecorrencia }) {
+export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar, aoEnviarExtrato }) {
   // ⚠⚠ A COMPETÊNCIA VEM DA CASCA — ver o comentário longo em `AppShell.jsx`. Era um
   // `useState(competenciaPadrao)` daqui, gêmeo do de `NotasPage`, e as duas abas discordavam.
   // O default não mudou: `competenciaPadrao` é o mês CORRENTE (dono, 18/08/2026).
@@ -90,13 +89,40 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
     () => api.getAliquotas(companyId, { from: competencia, to: competencia }),
     [companyId, competencia]
   );
-  const fluxoQuery = useCarregamento(() => api.getFluxo(companyId), [companyId]);
+  /*
+   * ⚠⚠ `api.getFluxo` SAIU DESTA TELA em 28/08/2026, junto com "Próximos vencimentos".
+   *
+   * Ela é a lista de guias liberadas em aberto, e era o que alimentava aquele card e o antigo "A
+   * vencer". Quem responde *"tem algo pegando fogo?"* hoje é o pop-up, que sai do FLUXO DE CAIXA —
+   * a mesma consulta que a tabela usa. Duas leituras da mesma pergunta é o que fazia o card e a
+   * ressalva mostrarem números diferentes na mesma página.
+   * ⚠ A rota e o par mock/real continuam existindo; o que sumiu foi o consumidor daqui.
+   */
+  /**
+   * ⚠⚠ O CARD DE RESULTADO LÊ O FLUXO DE CAIXA — e é uma SEGUNDA chamada do mesmo endpoint que o
+   * bloco lá embaixo faz. O custo é declarado, e a alternativa foi recusada:
+   *
+   * ⚠ Erguer a consulta para cá e passá-la por prop obrigaria a subir junto o estado da JANELA (as
+   * setas ‹ ›), que é navegação da tabela e não tem nada a ver com o resumo do mês. A página
+   * passaria a guardar o estado do bloco, e o bloco a não saber recarregar sozinho.
+   * ⚠ E as duas leituras **não podem discordar**: é o MESMO endpoint, com a MESMA competência. O
+   * mês corrente está sempre dentro da janela, ande ela para onde andar (o início é no máximo
+   * `corrente−4`, e a janela tem 12 meses).
+   */
+  const caixaQuery = useCarregamento(
+    () => api.getFluxoCaixa(companyId, { competencia }),
+    [companyId, competencia],
+  );
 
   const resumo = notasQuery.dados?.summary || null;
   const aliquota = aliquotaQuery.dados?.[0] || null;
-  const fluxo = fluxoQuery.dados || null;
-  const proximos = (fluxo?.data || []).slice(0, 5);
-  const vencidas = (fluxo?.data || []).filter((i) => i.vencida).length;
+  /**
+   * ⚠ `linhaDoMes` é a MESMA função que a tabela usa — o card e a linha do mês corrente não podem
+   * dar números diferentes sobre o mesmo mês. Uma segunda soma aqui divergiria na primeira correção.
+   */
+  const mesCorrente = (caixaQuery.dados?.meses || [])
+    .find((m) => m.competencia === caixaQuery.dados?.cicloAtual) || null;
+  const doMes = mesCorrente ? linhaDoMes(mesCorrente) : null;
 
   // ⚠⚠ ESTE CARD USA `efetiva` (impostos PAGOS ÷ faturamento, **INSS incluso**) DE PROPÓSITO, e a
   // nota fiscal usa a OUTRA conta da mesma rota (`deReceita`, só o DAS). Não são duas leituras do
@@ -120,6 +146,18 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
   // A regra, com o porquê e os números medidos, está em `lib/aliquotaDoPainel.js` — e as guardas
   // contra o zero fabricado que moravam aqui inline foram para lá, com teste.
   const leituraAliquota = aliquotaDoPainel({ empresa, linha: aliquota });
+
+  /**
+   * ⚠⚠ "VER TODAS AS GUIAS" LIMPA A COMPETÊNCIA, e sem isso ele leva a uma tela VAZIA.
+   *
+   * A aba Guias abre no mês corrente, e a guia costuma sair no mês seguinte — o defeito já
+   * registrado no commit `16e42653`. Agora o pop-up usa o MESMO caminho: dois botões com o mesmo
+   * rótulo indo para lugares diferentes é como a tela começa a mentir.
+   */
+  const verTodasAsGuias = () => {
+    aoTrocarCompetencia?.("");
+    aoNavegar("guias");
+  };
 
   const carregando = notasQuery.carregando || aliquotaQuery.carregando;
   const erro = notasQuery.erro || aliquotaQuery.erro;
@@ -156,16 +194,6 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
               Enviar extrato
             </button>
           ) : null}
-          {/* ⚠ MESMO ARRANJO: é um MODO desta rota, então `<button>` e não `<a href>` — não há hash
-              para ele, e inventar um daria um destino que o `useRota` recusa. ⚠ Sem o handler ele
-              NÃO RENDERIZA: botão em que se clica e nada acontece é pior que a ausência dele.
-              ⚠⚠ O rótulo fala de CAIXA, não de contabilidade — e nada do que o cliente declara
-              entra no fluxo até o contador confirmar (a tela diz isso lá dentro, antes do botão). */}
-          {aoDeclararRecorrencia ? (
-            <button type="button" className="btn" onClick={aoDeclararRecorrencia}>
-              Declarar o que se repete
-            </button>
-          ) : null}
         </div>
       </div>
 
@@ -182,8 +210,11 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
         <Carregando>Carregando o resumo de {fmtCompetencia(competencia)}…</Carregando>
       ) : (
         <div className="grid-3">
+          {/* ⚠⚠ "RECEITA", não "Faturamento" — Lei 5 da `CONSTITUICAO-do-produto.md`: *Receita* é
+              nota emitida no mês (competência), e **nunca** dinheiro recebido. Quem responde
+              "dinheiro que entra no caixa" é a coluna **Entrada** da tabela, que é outra conta. */}
           <CardNumero
-            rotulo={`Faturamento · ${fmtCompetencia(competencia)}`}
+            rotulo={`Receita · ${fmtCompetencia(competencia)}`}
             valor={resumo ? somaOuTraco(resumo.totalAmount) : TRACO}
             apoio={
               resumo
@@ -193,117 +224,68 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
             destaque
           />
 
+          {/* ⚠ O rótulo é "Imposto líquido" (v3 §2) e o VALOR é o imposto do mês, saído da mesma
+              coluna da tabela. A sub-linha continua nomeando a PROCEDÊNCIA da alíquota — é ela que
+              impede o número de virar uma afirmação sobre carga tributária que ninguém mediu. */}
           <CardNumero
-            rotulo={`Alíquota efetiva · ${fmtCompetencia(competencia)}`}
-            valor={leituraAliquota.valor != null ? pct(leituraAliquota.valor) : TRACO}
-            apoio={textoDaAliquota(leituraAliquota)}
+            rotulo={`Imposto líquido · ${fmtCompetencia(competencia)}`}
+            valor={caixaQuery.carregando ? "…" : (doMes?.impostos ? somaOuTraco(doMes.impostos.valor) : TRACO)}
+            /* ⚠⚠ SEM ESTA MARCA O CARD MENTE. Medido na tela: ele mostrava R$ 5.269,55 — a soma de
+               duas guias EM ABERTO — com o peso de um valor liquidado, e a frase logo abaixo dizia
+               "nenhuma guia paga nesta competência ainda". Com o âmbar, as duas passam a concordar:
+               *este é o imposto do mês, e ele ainda não foi pago*. */
+            status={doMes?.impostos?.status}
+            /* ⚠ Quando HÁ alíquota, o apoio é ela (v3 §2). Quando não há, `textoDaAliquota` nomeia
+               o que falta — e é ele que impede o número de virar uma afirmação sobre carga
+               tributária que ninguém mediu. ⚠ A alíquota da FAIXA do Simples, que o v3 pede para
+               quem nunca apurou, é Fase 2. */
+            apoio={
+              leituraAliquota.valor != null
+                ? `Alíquota da última apuração: ${pct(leituraAliquota.valor)}`
+                : textoDaAliquota(leituraAliquota)
+            }
           />
 
+          {/* ⚠⚠ O RESULTADO É DO PERÍODO, JAMAIS ACUMULADO (Lei 3 — sem âncora não há acumulado).
+              ⚠ Ele soma fato com previsão, e isso é a reversão nº 1 do §6 da Constituição: o
+              argumento derrubado é *"é o que alguém imprime e leva ao banco"*. O que a sustenta é o
+              `status` — quando qualquer parcela é prevista, o número inteiro é previsto. */}
           <CardNumero
-            rotulo="A vencer"
-            valor={fluxoQuery.carregando ? "…" : somaOuTraco(fluxo?.total)}
-            apoio={
-              fluxoQuery.carregando
-                ? "Carregando…"
-                : vencidas > 0
-                  ? `${inteiro(vencidas)} guia(s) já vencida(s)`
-                  : "Guias liberadas ainda em aberto"
-            }
+            rotulo={`Resultado · ${fmtCompetencia(competencia)}`}
+            valor={caixaQuery.carregando ? "…" : (doMes?.resultado ? somaOuTraco(doMes.resultado.valor) : TRACO)}
+            apoio="Entrada − saídas, impostos e folha"
+            /* ⚠⚠ ISTO ERA `data-status=` E NÃO FAZIA NADA — `CardNumero` não aceitava a prop, e o
+               React a descartava em silêncio num `<div>`... não: ela nem chegava ao DOM, porque o
+               componente só espalha o que desestrutura. O card afirmava um resultado previsto com
+               peso de fato. Hoje a prop existe e é a MESMA dos três canais das células. */
+            status={doMes?.resultado?.status}
           />
         </div>
       )}
 
-      <div className="card">
-        {/* ⚠ `.card-header`, não `.page-header`: um é o cabeçalho da PÁGINA, o outro o de uma
-            SEÇÃO dentro de um card. A mesma classe nos dois papéis vinha com um `style` corrigindo
-            a margem — o sinal de que eram duas coisas com um nome só. */}
-        <div className="card-header">
-          <h2>Próximos vencimentos</h2>
-          <div className="page-actions">
-            {/* ⚠⚠ ELE LIMPA A COMPETÊNCIA ANTES DE NAVEGAR, e sem isso o número desta tela e a
-                lista que ele abre falavam de POPULAÇÕES DIFERENTES. `api.getFluxo` não recebe
-                competência e a rota do backend não filtra por mês: o card soma TODAS as guias
-                liberadas em aberto. A `GuiasPage`, porém, abre no mês da casca — e o comentário
-                dela registra que *"a competência corrente frequentemente não tem guia nenhuma"*,
-                então "A vencer R$ 12.500" → "Nenhuma guia em 08/2026" era o caso COMUM.
-                ⚠ "Todas" (string vazia) é conceito que a `GuiasPage` já sabe honrar, e é o único
-                recorte que fecha com o número do card. Regra da casa: total que não fecha com a
-                lista que ele abre é pior que total nenhum. */}
-            <button
-              type="button"
-              className="btn-link"
-              onClick={() => {
-                aoTrocarCompetencia?.("");
-                aoNavegar("guias");
-              }}
-            >
-              Ver todas as guias
-            </button>
-          </div>
-        </div>
+      {/*
+        ⚠⚠ LÁPIDE — "PRÓXIMOS VENCIMENTOS" SAIU EM 28/08/2026, a pedido do dono: *"a aba de
+        próximos vencimentos tem que sair, agora só o aviso do pop-up"*.
 
-        {fluxoQuery.carregando ? (
-          <Carregando />
-        ) : fluxoQuery.erro ? (
-          <AlertaErro
-            erro={fluxoQuery.erro}
-            padrao="Não foi possível carregar os vencimentos."
-            aoTentarNovamente={fluxoQuery.recarregar}
-          />
-        ) : proximos.length === 0 ? (
-          <Vazio>Nenhuma guia em aberto no momento.</Vazio>
-        ) : (
-          <div className="table-wrap">
-            <table className="table" style={{ minWidth: "520px" }}>
-              <thead>
-                <tr>
-                  <th scope="col">Guia</th>
-                  <th scope="col">Competência</th>
-                  <th scope="col">Vencimento</th>
-                  <th scope="col" className="num">
-                    Valor
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {proximos.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.tipo}</td>
-                    <td>{fmtCompetencia(item.competencia)}</td>
-                    <td>
-                      {fmtDateBr(item.vencimento)}
-                      {/* ⚠ O `data-status` SAI DO MESMO MAPA da tela de Guias, não de uma string
-                          cravada aqui. Era `data-status="rejeitada"` — vocabulário de NOTA numa
-                          guia — e depois virou `"vencida"` à mão, que é um quarto valor solto: se
-                          o mapa mudar, esta linha não muda junto e o chip perde a cor em silêncio.
-                          É o defeito que o teste de `emissaoDoLote` já nomeia para as notas. */}
-                      {item.vencida ? (
-                        <span className="chip" data-status={chipDaGuia("OVERDUE").status} style={{ marginLeft: "6px" }}>
-                          vencida
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="num">{brl(item.valor)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        Era um card com as 5 próximas guias liberadas em aberto (tipo · competência · vencimento ·
+        valor), saído de `api.getFluxo`. Ele respondia a MESMA pergunta que o pop-up — a camada 1 da
+        `CONSTITUICAO-do-produto.md`, *"tem algo pegando fogo?"* — e duas respostas para a mesma
+        pergunta é como a tela começa a discordar de si mesma.
 
-      {/* ⚠⚠ O BLOCO DE DEMONSTRAÇÃO VEM POR ÚLTIMO — e ele veio PRIMEIRO até 23/08/2026. Pedido do
-          dono: *"coloque próximos vencimentos acima da tabela do fluxo"*.
+        ⚠⚠ **CONSEQUÊNCIA QUE FICA NOMEADA, porque é uma perda de verdade:** o pop-up só acende com
+        guia **vencida** ou a **até 5 dias** do vencimento. A guia que vence em 15 dias aparecia
+        aqui e **deixa de aparecer no Início** — o caminho para ela passa a ser a aba Guias.
 
-          ⚠ A troca é o que SOLTOU A ROLAGEM da tabela. Enquanto o bloco era o primeiro, os 31 dias
-          empurravam o conteúdo REAL (os três cards e os vencimentos) para cerca de 1.200px abaixo
-          da dobra, e a tabela precisava de rolagem própria para não fazer isso. Com tudo o que é
-          real acima dela, a tabela pôde mostrar o mês inteiro — que foi a segunda metade do pedido:
-          *"espaço abaixo o suficiente para que não precise rolar os dias"*.
+        ⚠ O que NÃO se perdeu: a guia vencida continua no pop-up **e** dentro da coluna Impostos do
+        mês corrente (ela é `COMPROMISSO` de lá, pela Lei 1). E `verTodasAsGuias` ficou — é o mesmo
+        caminho que o botão daqui usava, hoje consumido pelo pop-up, e ele continua limpando a
+        competência antes de navegar (senão a lista abre vazia).
 
-          ⚠ E a fronteira continua nítida: tudo ACIMA deste bloco é dado da empresa. Ele é o único
-          que não fala dela, e carrega o selo dizendo isso. */}
-      <BlocoDeDemonstracao companyId={companyId} competencia={competencia} />
+        ⚠ `api.getFluxo` continua existindo na rota e no par mock/real; o que sumiu foi o consumidor
+        desta tela.
+      */}
+
+      <BlocoDeDemonstracao companyId={companyId} competencia={competencia} aoVerGuias={verTodasAsGuias} />
     </>
   );
 }

@@ -20,8 +20,21 @@
 import { brl } from "../../../lib/format";
 
 /** ⚠ Vocabulário FECHADO — espelha `PROCEDENCIA` do servidor. */
+/**
+ * ⚠⚠ `COMPROMISSO` ENTROU EM 28/08/2026, E O SIGNIFICADO DE `FATO` MUDOU JUNTO.
+ *
+ * A **Lei 1** da `CONSTITUICAO-do-produto.md` diz: *"Dinheiro só confirma com pagamento.
+ * Contabilizado, emitido, gerado, vencido: nada disso é fato de caixa."* Até aqui `FATO` queria
+ * dizer *"existe, com data própria"*, e a guia GERADA e em aberto entrava nele — hoje ela é
+ * `COMPROMISSO`, e `FATO` é só o que foi pago.
+ *
+ * ⚠⚠ **ESTE ARQUIVO É ESPELHO, e não atualizá-lo era o defeito silencioso.** O valor novo cairia no
+ * fallback *"Esta tela não conhece esta procedência"* — em TODA guia em aberto, nas duas telas, sem
+ * erro nenhum. É a mesma classe do `select` explícito: a tela "só não mostra".
+ */
 export const PROCEDENCIA = Object.freeze({
   FATO: "FATO",
+  COMPROMISSO: "COMPROMISSO",
   PREVISAO: "PREVISAO",
   DESCONHECIDO: "DESCONHECIDO",
 });
@@ -34,6 +47,7 @@ export const FONTE = Object.freeze({
   SERIE_RECEITA: "SERIE_RECEITA",
   SERIE_DESPESA: "SERIE_DESPESA",
   IMPOSTO_PROJETADO: "IMPOSTO_PROJETADO",
+  FOLHA: "FOLHA",
 });
 
 /**
@@ -52,6 +66,13 @@ const LEITURA_DA_PROCEDENCIA = Object.freeze({
     rotulo: "Já existe",
     classe: "neutro",
     frase: "Este valor já existe, com data própria.",
+  },
+  [PROCEDENCIA.COMPROMISSO]: {
+    // ⚠ "A pagar", não "Previsto": o valor e a data são CONHECIDOS — o que falta é o dinheiro sair.
+    // Chamá-lo de previsão diria que alguém estimou o número, e ninguém estimou.
+    rotulo: "A pagar",
+    classe: "aviso",
+    frase: "Este valor já foi gerado e ainda não foi pago.",
   },
   [PROCEDENCIA.PREVISAO]: {
     rotulo: "Previsto",
@@ -89,6 +110,7 @@ export const ROTULO_DA_FONTE = Object.freeze({
   [FONTE.NOTA_EMITIDA]: "Recebimento de nota emitida",
   [FONTE.SERIE_RECEITA]: "Receita que se repete",
   [FONTE.SERIE_DESPESA]: "Despesa que se repete",
+  [FONTE.FOLHA]: "Folha de pagamento",
   [FONTE.IMPOSTO_PROJETADO]: "Imposto previsto",
 });
 

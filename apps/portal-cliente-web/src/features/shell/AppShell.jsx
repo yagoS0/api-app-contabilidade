@@ -15,7 +15,6 @@ import { LotePlanilhaPage } from "../lote/LotePlanilhaPage";
 import { ExtratoOfxPage } from "../extrato/ExtratoOfxPage";
 // ⚠ TERCEIRO MODO da rota `home` — nenhuma aba nova. O dono cortou um nivel de navegacao em
 // 24/08/2026, e a barra lateral tem quatro icones: um quinto e permanente.
-import { DeclararRecorrenciaPage } from "../recorrencia/DeclararRecorrenciaPage";
 import { esquecerTodasAsDescricoes } from "../emitir/lib/descricoesRecentes";
 import { GuiasPage } from "../guias/GuiasPage";
 import { LogoAltan } from "../../components/LogoAltan";
@@ -82,7 +81,6 @@ export function AppShell({ user }) {
   // `ICONE_POR_ROTA` em `components/icones.jsx`) MAIS um ícone — e uma quinta aba é permanente,
   // numa barra que o dono já pediu para manter enxuta. Enviar extrato é um ato ocasional.
   const [extratoAberto, setExtratoAberto] = useState(false);
-  const [recorrenciaAberta, setRecorrenciaAberta] = useState(false);
 
   const empresasQuery = useCarregamento(() => api.getCompanies(), []);
   const empresas = empresasQuery.dados || [];
@@ -113,7 +111,6 @@ export function AppShell({ user }) {
     // ⚠ E FECHA A DECLARAÇÃO: um formulário meio preenchido sob o nome de OUTRA empresa faria o
     // cliente declarar para a empresa errada. A própria tela também se limpa ao ver o `companyId`
     // mudar — guarda de um lado só não é guarda.
-    setRecorrenciaAberta(false);
     // ⚠⚠ TROCAR DE EMPRESA DESCARTA O MODELO. Ele foi tirado da nota de OUTRA empresa; aplicá-lo
     // aqui emitiria no CNPJ errado. É a mesma razão pela qual a `EmitirNotaPage` zera o formulário
     // inteiro na troca — e ela ainda confere o `companyId` do modelo antes de aplicar, porque uma
@@ -132,7 +129,6 @@ export function AppShell({ user }) {
     setEmissaoAberta(false);
     setLoteAberto(false);
     setExtratoAberto(false);
-    setRecorrenciaAberta(false);
     navegar(destino);
   }
 
@@ -376,12 +372,6 @@ export function AppShell({ user }) {
               // "navegar" mentiria — mesma correção que a emissão já levou.
               aoVoltar={() => setExtratoAberto(false)}
             />
-          ) : recorrenciaAberta ? (
-            <DeclararRecorrenciaPage
-              empresa={empresaAtiva}
-              api={api}
-              aoVoltar={() => setRecorrenciaAberta(false)}
-            />
           ) : (
             <PainelPage
               empresa={empresaAtiva}
@@ -389,7 +379,6 @@ export function AppShell({ user }) {
               aoTrocarCompetencia={setCompetencia}
               aoNavegar={irPara}
               aoEnviarExtrato={() => setExtratoAberto(true)}
-              aoDeclararRecorrencia={() => setRecorrenciaAberta(true)}
             />
           )
         )}

@@ -175,6 +175,190 @@ continuam sendo `<a href="#/…">` (a seção acima vale inteira); o que mudou �
   `min-content` dos links e a **página inteira passa a rolar para o lado em 375px**, com o
   `.table-wrap` deixando de conter a tabela. É o comentário gêmeo do que a `.topbar` já carrega.
 
+## ⚠⚠ A TELA INÍCIO v3 — FASE 1 (28/08/2026)
+
+> A **`CONSTITUICAO-do-produto.md`** abre dizendo: *"Este documento manda em todos os outros. Spec,
+> plano, código e tela obedecem ao que está aqui; quando um deles contradisser esta página, é ele
+> que muda."* **Leia-a antes de mexer em qualquer coisa desta seção.**
+
+⚠⚠ **AS DUAS SEÇÕES ABAIXO DESCREVEM TELAS QUE NÃO EXISTEM MAIS** — o fluxo diário com saldo
+(23/08) e a planilha de quatro colunas com `Recorrência`/`Diário` (27/08). Ficam com a data, porque
+este projeto já pagou caro por bloqueio anotado que envelheceu calado.
+
+**Esta é a TERCEIRA forma do fluxo em seis dias**, e a Constituição explica por que a segunda caiu:
+a coluna `Diário` era `saída ÷ dias do mês`, e o §4 a nomeia como *"o exemplo canônico do que este
+teste barra"* — ela não respondia de onde veio, quanto valia de certeza, nem o que fazer com ela.
+
+### O que a tela é hoje
+
+`Mês | Entrada | Saída | Impostos | Folha | Resultado`, **12 linhas: 4 meses passados + o corrente +
+7 futuros**, com setas ‹ › movendo a janela, toggles `Fluxo ⇄ DRE` e `R$ ⇄ %`, e o clique num mês
+trocando a MESMA tabela pelos dias daquele mês (10 por vez, +10 na rolagem).
+
+Acima dela, três cards — **Receita · Imposto líquido · Resultado** — e, quando há guia pegando fogo,
+um **pop-up** (`role="alertdialog"`) que só some com "Estou ciente".
+
+### ⚠⚠ A LEI 1 É O QUE MUDOU DE VERDADE — e ela mexeu no BACKEND, não na tela
+
+> *"Dinheiro só confirma com pagamento. Contabilizado, emitido, gerado, vencido: nada disso é fato
+> de caixa. Uma guia vencida e não paga não é saída de mês nenhum."*
+
+| | antes | agora |
+|---|---|---|
+| guia **paga** | **não existia no payload** (`paymentStatus` filtrava só `OPEN`/`OVERDUE`) | `FATO`, no mês do **pagamento** |
+| guia **em aberto** | `FATO`, no mês do **vencimento** | `COMPROMISSO`, no **mês corrente** |
+| "vencida" | por **MÊS** | por **DIA**, comparado com um `hoje` injetado |
+
+⚠⚠ **A GUIA PAGA SUMIA DO PAYLOAD INTEIRO** — nem em `meses`, nem em `semMes`, nem em `vencidas`.
+Era ela, sozinha, que deixaria os 4 meses de passado vazios: tudo que foi pago tinha desaparecido.
+**Sem esse conserto, a janela com passado não tinha como existir.**
+
+⚠⚠ **E DAÍ SAI, SOZINHO, O CRITÉRIO DE ACEITE Nº 12** (*"nenhum mês anterior ao corrente exibe
+célula âmbar"*): **o passado só carrega o que foi pago; todo compromisso em aberto migra para o mês
+corrente.** Não é regra de tela — é o que a Lei 1 produz. A tela só não a desfaz.
+
+⚠ A contagem por DIA fecha uma divergência que este arquivo já registrava: o card "A vencer" sempre
+comparou com HOJE e o fluxo comparava com o MÊS. As duas telas passam a usar o mesmo dia.
+
+### ⚠⚠ TRÊS NÍVEIS POR DENTRO, DUAS CORES POR FORA
+
+`PROCEDENCIA` ganhou `COMPROMISSO`, entre `FATO` e `PREVISAO` (Constituição §1).
+
+⚠⚠ **O SIGNIFICADO DE `FATO` MUDOU JUNTO, e é a parte que mais custa se for desfeita.** Ele queria
+dizer *"existe, com data própria"* — e a guia GERADA e em aberto entrava nele. Hoje `FATO` é só o
+que foi pago; o que era fato sem pagamento virou `COMPROMISSO`.
+
+⚠ **`COMPROMISSO` não é uma previsão enfraquecida.** Ninguém está estimando nada: o valor e a data
+são conhecidos, e o que falta é o dinheiro sair. Colapsá-lo em `PREVISAO` apagaria a diferença entre
+*"o contador calculou isto"* e *"o sistema chutou pelo histórico"*.
+
+⚠⚠ **ESTE VOCABULÁRIO ATRAVESSA AS DUAS PORTAS.** `leituraDoFluxo.js` é espelho, e não atualizá-lo
+nos DOIS apps faria toda guia em aberto cair no fallback *"Esta tela não conhece esta procedência"*
+— nas duas telas, sem erro nenhum. Foi atualizado nos dois. **Mudou lá, muda aqui.**
+
+⚠ Na tela, o status é derivado (`FATO → confirmed`, os outros dois → `forecast`) e a regra é a do
+**elo mais fraco**: célula que soma guia paga com guia em aberto **não é fato**. A autoridade é
+`statusDoConjunto` (backend); `features/painel/lib/tabelaDoFluxo.js` é espelho **amarrado por
+teste** — ele importa a função de lá e exige o mesmo veredito, caso a caso.
+
+### ⚠⚠ AS DUAS SIMPLIFICAÇÕES DECLARADAS — e elas viajam MARCADAS
+
+Decisões de produto, não medições. As duas morrem na Fase 4.
+
+1. **Nota de competência anterior ao mês corrente vira Entrada `confirmed`** (errata §7.1). Assume-se
+   que 100% do faturado foi recebido — **`PortalInvoice` não tem `recebidoEm`**, então não existe
+   prova de recebimento em lugar nenhum deste banco.
+2. **Folha lançada conta como paga** (decisão do dono, 28/08). `derivarFolha12m` soma a PROVISÃO e
+   **exclui o pagamento de propósito** — o sistema sabe o que foi lançado e não sabe se foi pago.
+
+⚠⚠ **AS DUAS CARREGAM `base.simplificacao`.** Sem essa marca, "confirmado" seria indistinguível de
+um pagamento provado, e não há nenhum. É o que torna a suposição auditável em vez de invisível.
+
+### ⚠⚠ DUAS COISAS FORAM EXCLUÍDAS EM 28/08/2026, a pedido do dono
+
+**1 · "Declarar o que se repete" — a feature INTEIRA.** Era a tela em que o cliente contava ao
+contador o que se repete (*"essa é a taxa anual que pago de Conselho"*). Saíram: a pasta
+`features/recorrencia/` (tela + regra + testes), `api.declararRecorrencia` nos dois lados, o botão
+do Painel, o modo da casca, a rota `POST /client/companies/:id/recorrencia/declarar` e a função
+`declararSerie`.
+
+⚠⚠ **CONSEQUÊNCIA QUE FICA NOMEADA, e ela é uma perda real:** `ORIGEM_DA_SERIE.DECLARADA` ficou
+**sem escritor** — nada, em lugar nenhum, cria uma série declarada. **O vocabulário CONTINUA**,
+porque linhas com essa origem podem existir no banco e `leituraDoFluxo` lê `origem`/`valorDeclarado`
+para mostrar o confronto. ⚠ **Não apague `DECLARADA` achando que é código morto: ela é LEITURA de
+dado que já existe.**
+⚠ E o caso que originou a feature — a taxa **ANUAL** do Conselho — ficou sem caminho nenhum: o
+detector lê `PortalInvoice`, e uma anuidade paga por débito em conta não vira nota. `marcarSerie`
+(a porta do contador) continua de pé, mas ela só marca o que o detector **enxerga**.
+
+**2 · O card "Próximos vencimentos" do Painel.** Dono: *"a aba de próximos vencimentos tem que sair,
+agora só o aviso do pop-up"*. Ele respondia a MESMA pergunta que o pop-up (a camada 1: *"tem algo
+pegando fogo?"*), e duas respostas para a mesma pergunta é como a tela discorda de si mesma.
+
+⚠ **Perda nomeada:** o pop-up só acende com guia **vencida** ou a **até 5 dias**. A guia que vence
+em 15 dias aparecia ali e **deixa de aparecer no Início** — o caminho passa a ser a aba Guias.
+⚠ Com ele, `api.getFluxo` perdeu o consumidor DESTA TELA (a rota e o par mock/real ficam).
+⚠⚠ **E com isso morreu a divergência dos dois números sobre guia vencida** que este arquivo
+registrava há dias: não há mais dois números na mesma página.
+
+### O que NÃO existe nesta fase, e a fase de destino
+
+| o quê | fase | por quê |
+|---|---|---|
+| coluna **Saldo** | 3 | **Lei 3**: sem âncora de conciliação não há acumulado. Erro por mês é tolerável; erro composto, não |
+| presunções (média de 3 meses, alíquota da faixa) | 2 | §5 da Constituição |
+| **DRE gerencial** | 4 | o desenho está fechado (`docs/dre-fluxo-caixa.md` §3.1, validado em 3 empresas) e **indisponível até o contador classificar** — R$ 687.355,94 medidos em conta EM BRANCO |
+| recorrência **automática** | 4 | §7.2 — corte consciente; até lá só as séries marcadas pelo contador |
+| registro de recebimento | 4 | mata a simplificação nº 1 acima |
+
+⚠ **O botão DRE continua abrindo a ficção com selo**, como antes — e isso é uma DIVERGÊNCIA
+DELIBERADA do meu plano, que dizia desabilitá-lo. A Constituição não manda removê-lo, ele já é
+rotulado pelo selo, e tirar uma visão que funciona não é trabalho da Fase 1. Fica nomeado.
+
+### As três reversões, com o argumento que derrubam
+
+Registradas no §6 da Constituição. **Nenhuma é detalhe de implementação.**
+
+1. ⚠⚠ **Existe um número que soma fato com previsão** (o `Resultado`). `fluxoDeCaixa.js:9-12`
+   proibia: *"um número único somando o que aconteceu com o que talvez aconteça é exatamente o que
+   alguém imprime e leva ao banco"*. **O que sustenta a reversão:** o `status` é por célula e o
+   Resultado **herda previsto** de qualquer parcela — ele nunca se apresenta como certo. E o saldo
+   acumulado **continua proibido**.
+2. ⚠ **Dado de pessoal desceu para o piso do fluxo.** A coluna Folha aparece para qualquer membro
+   ativo, e o `CLAUDE.md` da raiz manda `CLIENT_ADMIN`+ para pró-labore/sócios. Decisão do dono,
+   contra a minha ressalva de que o FINANCEIRO passa a ver a folha.
+3. ⚠⚠ **Saiu todo o texto explicativo** (§3 da Constituição: *"a hierarquia explica, não o texto"*).
+   Foram-se a lista de evidência, as ressalvas e o `<details>` "Como este fluxo é calculado".
+   **Eu argumentei contra e ele decidiu** — o critério escrito deste app manda o contrário, e a
+   evidência era o que separava "previsto" de "chutado". **O que segura a decisão:** a REGRA não foi
+   apagada (`evidenciaDaLinha`, `confrontoDaLinha`, `ressalvasDoFluxo` seguem em `leituraDoFluxo.js`,
+   com teste, e continuam renderizadas **no portal do contador**), e a pergunta *"de onde veio esse
+   número?"* ganhou lugar próprio: o drill-in de dias.
+   ⚠ **A distinção não virou só cor.** Previsto = **cor + itálico + `data-status` no DOM +
+   `aria-label` na célula**. Itálico sobrevive à impressão em preto e branco; o `aria-label` é o que
+   existe para quem usa leitor de tela.
+
+### ⚠ O CIANO DO SPEC NÃO PASSAVA COMO TINTA DE TEXTO
+
+Medido: `#0891B2` dá **3,68:1** sobre o branco e **3,54:1** sobre o próprio `--ciano-surface` —
+abaixo do mínimo de 4,5:1. `#0E7490` mede **5,36:1** e **5,15:1**. A errata §7.4 da Constituição
+adotou a separação: **texto no escuro, borda e marca de posição no claro** (borda não é texto).
+
+⚠ O traço da célula vazia (`--traco`, **1,47:1**) é invisível **de propósito** (v3 §3.2, *"sem peso
+visual"*) — e por isso ele leva `aria-hidden` mais um `.sr-only` dizendo *"sem lançamento"*. Sem
+isso, "vazio" e "não carregou" ficam iguais para quem não vê a tela.
+
+### ⚠⚠ "ESTOU CIENTE" NÃO PAGA NADA
+
+`CienciaDeGuias` (tabela NOVA, migration `20260828160000` — ⚠ **escrita e NÃO aplicada**, não há
+banco alcançável nesta máquina) guarda *"eu vi o aviso"*. **`Guide.clienteConfirmouEm` guarda outra
+coisa**: *"eu paguei esta guia"*, e move `paymentStatus`. A Lei 5 fecha a palavra: **Ciência nunca
+significa pagamento**. Um clique dado para dispensar um modal não pode tirar do contador a cobrança
+nem do cliente a dívida. ⚠ Há varredura de fonte no `PopUpDeGuias.jsx` provando que ele não encosta
+em pagamento.
+
+- ⚠ O que se guarda é o **CONJUNTO de ids**, nunca um carimbo de data: a guia que vence amanhã
+  ficaria silenciada por um clique dado antes de ela existir.
+- ⚠ **Sem a tabela (P2021), a queda é para AVISAR** — nunca para calar. Esconder guia vencida é o
+  modo de falhar caro.
+- ⚠ **`Esc` fecha sem gravar** (v3 §1): a confirmação é só pelo botão.
+- ⚠ **Falhou ⇒ o pop-up FICA**, com o motivo. Fechá-lo faria a pessoa achar que registrou.
+
+### Onde cada coisa mora
+
+| arquivo | o quê |
+|---|---|
+| `features/painel/lib/tabelaDoFluxo.js` | as 6 colunas, o status da célula, os dias, o modo % — **regra pura, com teste** |
+| `features/painel/BlocoDeDemonstracao.jsx` | só LIGAÇÃO: tabela, toggles, setas, drill-in |
+| `features/painel/PopUpDeGuias.jsx` | o alertdialog, reusando `useDialogoModal` |
+| `api/mock/fluxoDeCaixaDoMock.js` | o contrato offline — ⚠ **obedece ao critério nº 12**, senão a tela offline mostraria âmbar no passado |
+| ⚠ `features/painel/lib/planilhaDoFluxo.js` | **sem consumidor** desde 28/08 (era a grade de 4 colunas). Anotado, não apagado |
+
+⚠ **`ItemDaEvidencia`, `EvidenciaDoMes` e `RESSALVAS_FORA_DESTE_PORTAL` foram APAGADOS**, com lápide
+no arquivo: componente órfão DENTRO do arquivo é ruído; o que é de fora (a regra) ficou.
+
+---
+
 ## ⚠⚠ O PAINEL — O FLUXO DE CAIXA VIROU REAL EM 27/08/2026; O DRE CONTINUA FICÇÃO
 
 ⚠⚠ **AS DUAS SEÇÕES ABAIXO DESCREVEM O ESTADO ANTERIOR, E FICAM AQUI COM A DATA.** Elas dizem
@@ -352,8 +536,8 @@ duas formas para a mesma tela divergem na primeira correção.
   saúde financeira da empresa, com limites que ninguém definiu.
 - ⚠⚠ **A ORDEM DA PÁGINA MUDOU, E ELA É QUEM RESOLVE A ROLAGEM** (dono, 23/08/2026: *"coloque
   próximos vencimentos acima da tabela do fluxo, e coloque espaço abaixo o suficiente para que não
-  precise rolar os dias"*). Hoje: `Início` → os três cards → **Próximos vencimentos** → o bloco de
-  demonstração, **por último**.
+  precise rolar os dias"*). ⚠ **"Próximos vencimentos" SAIU em 28/08/2026** — hoje a ordem é
+  `Início` → os três cards → o bloco do fluxo, e o aviso de guia é o **pop-up**.
   - ⚠ Enquanto o bloco era o PRIMEIRO, os 31 dias empurravam o conteúdo real para ~1.200px fora da
     dobra, e a tabela precisou de rolagem interna (`.table-wrap--alto`, com `thead`/`tfoot`
     grudados) para não fazer isso. Descido o bloco, o motivo caiu e a regra **saiu do CSS** em vez
@@ -1535,6 +1719,7 @@ pacote comum; a duplicação é conhecida e a obrigação de sincronizar é sua:
 | `lote/lib/estadoDaLinhaDoLote.js` (`ESTADO`) | `apps/api/src/application/nfse/lote/classificarLinhaLote.js` (**autoridade**) |
 | `lib/servicosNacionais/` | tabela gerada; `servicosNacionais.data.js` sai de `apps/api/scripts/gerar-lista-servico-nacional.mjs`, que **escreve nos dois portais** — **não editar à mão** |
 | ~~`lib/municipios/` (o dado)~~ | ⚠ **DEIXOU DE SER ESPELHO EM 20/08/2026**: a tabela do IBGE virou arquivo único em `@contabilidade/shared/municipios-ibge`. A REGRA (`municipioIbge.js`) continua uma por portal, de propósito — a do escritório carrega textos de cadastro que não são do cliente |
+| `painel/lib/tabelaDoFluxo.js` (`STATUS`, a derivação da célula) | `apps/api/src/application/fluxo/lib/fluxoDeCaixa.js` (`statusDoConjunto`, **autoridade**) — ⚠ **amarrado por teste**: o daqui importa a função de lá e exige o mesmo veredito em 7 combinações de procedência. Sem o amarre, a tela pintaria de preto o que o servidor chama de previsto |
 | `painel/lib/leituraDoFluxo.js` | `apps/web/src/features/fluxo/lib/leituraDoFluxo.js` — ⚠ as duas telas leem o MESMO payload; a REGRA é uma por app porque as PALETAS divergem (o verde proibido aqui é `--success`, lá é `--state-ok`). ⚠ Divergem também o dinheiro (aqui sai por `lib/format.brl`, que já tem a regra de "ausência é traço" deste app) e o TEXTO, que é o de quem RECEBE — nada de "procedência", "competência" ou "mediana" na tela do cliente |
 | `lib/roles.js` | `apps/api/.../emissaoClienteAutorizacao.js` + `portal-cliente-mobile/src/roles.ts` |
 | `lib/cliqueDeLink.js` | `apps/web/src/components/ui/cliqueDeLink.js` (quem assume o clique numa aba-link) |

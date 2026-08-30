@@ -1039,6 +1039,15 @@ function criarEstado() {
     guias,
     circular,
     sessoes: new Map(),
+    /**
+     * ⚠ A ciência sobre guias em atraso, por empresa — `Map<companyId, string[]>`.
+     *
+     * ⚠⚠ Ela é POR EMPRESA, e não global: ciência numa empresa não pode silenciar o aviso de outra,
+     * e este é um portal multi-empresa. É o mesmo escopo que o `where` do servidor aplica.
+     * ⚠ Em memória, como as sessões: recarregar a página devolve o pop-up. É artefato do modo
+     * offline, não defeito do produto — em produção quem guarda é `ciencias_de_guias`.
+     */
+    cienciasDeGuias: new Map(),
     tokensRedefinicao,
     numeracaoNfse,
     tentativasNfse,
@@ -1847,11 +1856,38 @@ export function createMockApi() {
      * são função (`api/index.js`): função que exista só no mock **nunca é alcançada** no modo
      * `real_with_mock_fallback` — ela some do objeto e vira `api.getFluxoCaixa is not a function`.
      */
-    async getFluxoCaixa(companyId, { competencia } = {}) {
+    async getFluxoCaixa(companyId, { competencia, janelaInicio } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
       const ciclo = competencia || competenciaPadrao();
-      return fluxoDeCaixaDoMock(id, ciclo);
+      // ⚠⚠ `janelaInicio` é OUTRA pergunta que `competencia`: uma diz onde a tabela começa, a outra
+      // diz que mês é "hoje". Passar a mesma nos dois faria a seta ‹ mover o mês pintado de ciano.
+      return fluxoDeCaixaDoMock(id, ciclo, {
+        janelaInicio,
+        cientes: estado.cienciasDeGuias.get(id) || [],
+      });
+    },
+
+    /**
+     * ⚠⚠ "ESTOU CIENTE" — e ela NÃO marca guia como paga.
+     *
+     * A vizinha `confirmarPagamentoDaGuia` move `paymentStatus`; esta só registra que a pessoa viu
+     * o aviso. A `CONSTITUICAO-do-produto.md` fecha a palavra na Lei 5: **Ciência nunca significa
+     * pagamento**. Um mock que confundisse as duas treinaria a tela a chamar a rota errada.
+     *
+     * ⚠ Ela existe aqui E no `realApi` porque `createApiClient` só envolve a chave quando as DUAS
+     * são função — função só do mock nunca é alcançada no modo `real_with_mock_fallback`.
+     */
+    async registrarCienciaDeGuias(companyId, { guiaIds } = {}) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const ids = [...new Set((guiaIds || []).map((g) => String(g || "").trim()).filter(Boolean))];
+      // ⚠ Lista vazia RECUSA, como o servidor: gravar ciência sobre nada faria o histórico mentir
+      // sobre ter havido um aviso.
+      if (!ids.length) throw new ApiError(400, "CIENCIA_SEM_GUIAS", { error: "CIENCIA_SEM_GUIAS" });
+      const jaVistas = estado.cienciasDeGuias.get(id) || [];
+      estado.cienciasDeGuias.set(id, [...new Set([...jaVistas, ...ids])]);
+      return { ok: true, ciencia: { id: `c-${jaVistas.length + 1}`, guiaIds: ids, origem: "CLIENT" } };
     },
 
     async getDre(companyId, { competencia } = {}) {
@@ -1985,54 +2021,6 @@ export function createMockApi() {
       await dormir();
       exigirAcessoEmpresa(companyId);
       return planilhaModeloMock();
-    },
-
-    // ⚠⚠ O EXTRATO BANCÁRIO (OFX). Os RAMOS precisam ser alcançáveis offline — este projeto foi
-    // mordido CINCO vezes por ramo que só existia em produção, e aqui há cinco desfechos que a tela
-    // desenha de formas diferentes. O gatilho vai no NOME do arquivo, mesmo arranjo do lote.
-    //
-    //   #grande      -> 413 arquivo_grande_demais (o que DESARMA o fallback para o mock)
-    //   #jaimportado -> tudo já estava lá: "0 novas" que NÃO é falha
-    //   #socreditos  -> só entradas: nenhuma saída para virar despesa
-    //   #muitoruim   -> 145.634 descartadas, com a amostra truncada em 50
-    //   #semconta    -> arquivo sem BANKACCTFROM/ACCTID: o dedupe fica mais frouxo
-    //   (qualquer outro) -> o caminho feliz
-    /**
-     * ⚠⚠ DECLARAR O QUE SE REPETE — e os DOIS desfechos são alcançáveis offline.
-     *
-     * `jaDecidida` quer dizer que o contador já resolveu esta série e a declaração **não a tocou**.
-     * Um mock que só respondesse "anotado" faria o segundo desfecho — o que diz ao cliente que nada
-     * mudou — nascer inalcançável, e ele é justamente o que impede a tela de mentir.
-     *
-     * ⚠ O ramo se alcança pelo RÓTULO (qualquer coisa contendo "conselho"), como o `#grande` do
-     * extrato: é o único jeito de exercitá-lo sem estado no mock.
-     *
-     * ⚠ O mock NÃO decide nada: ele ecoa. A regra de quem pode sobrescrever é do servidor.
-     */
-    async declararRecorrencia(companyId, corpo) {
-      await dormir();
-      exigirAcessoEmpresa(companyId);
-      const rotulo = String(corpo?.rotulo || "");
-      const jaDecidida = /conselho/i.test(rotulo);
-      return {
-        ok: true,
-        jaDecidida,
-        serie: {
-          id: jaDecidida ? "s-existente" : "s-nova",
-          lado: corpo?.lado || "DESPESA",
-          // ⚠ A chave volta CANONIZADA — é o servidor que canoniza, e o mock precisa devolver a
-          // mesma forma, senão a tela offline vê uma chave que produção não produziria.
-          chave: rotulo.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9]+/g, " ").trim(),
-          rotulo,
-          periodicidade: corpo?.periodicidade || "MENSAL",
-          origem: "DECLARADA",
-          // ⚠⚠ PENDENTE, sempre: quem declara não põe nada no fluxo. No ramo `jaDecidida` o estado
-          // é o que o CONTADOR já tinha gravado, e a declaração não o mudou.
-          estado: jaDecidida ? "ATIVA" : "PENDENTE",
-          valorDeclarado: corpo?.valor != null ? String(corpo.valor) : null,
-          declaradoEm: new Date().toISOString(),
-        },
-      };
     },
     async importarExtratoOfx(companyId, arquivo) {
       await dormir();

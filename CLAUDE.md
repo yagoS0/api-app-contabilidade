@@ -448,6 +448,29 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   **807 testes / 44 suítes**.
   - ⚠ **A navegação é BARRA LATERAL DE ÍCONES** desde 21/08/2026 (SVG inline, `aria-hidden`, com o
     rótulo em `.sr-only` — o ícone nunca é a única marca do destino).
+  - ⚠⚠ **A TELA INÍCIO FOI REFEITA EM 28/08/2026 (v3, Fase 1)**, e a partir dela manda a
+    **`CONSTITUICAO-do-produto.md`** — *"este documento manda em todos os outros"*. Hoje são: pop-up
+    de guias em atraso · 3 cards (Receita · Imposto líquido · Resultado) · tabela de 12 meses
+    (**4 passados + corrente + 7 futuros**) com `Mês | Entrada | Saída | Impostos | Folha |
+    Resultado`, toggles `Fluxo⇄DRE` e `R$⇄%`, e drill-in de dias na MESMA tabela.
+    - ⚠⚠ **A LEI 1 MUDOU O PAYLOAD, não só a tela:** *"dinheiro só confirma com pagamento"*. A guia
+      **paga** entrou (ela **não existia** no payload, e era ela que deixaria o passado vazio) e a
+      guia **em aberto** virou `COMPROMISSO` no **mês corrente**, saia ela quando sair. Daí sai
+      sozinho o critério de aceite nº 12: **o passado só carrega o que foi pago**.
+    - ⚠⚠ `PROCEDENCIA` ganhou **`COMPROMISSO`** e o sentido de **`FATO` mudou** (era "existe com
+      data própria"; hoje é "foi pago"). ⚠ Os DOIS espelhos de `leituraDoFluxo.js` foram
+      atualizados — sem isso, toda guia em aberto cairia em *"esta tela não conhece esta
+      procedência"*, nas duas telas, sem erro nenhum.
+    - ⚠ Tabela nova **`CienciaDeGuias`** (o "Estou ciente"), migration `20260828160000` **escrita e
+      NÃO aplicada**. ⚠ Ela **não é** `Guide.clienteConfirmouEm`: Lei 5 — *Ciência nunca significa
+      pagamento*.
+    - ⚠ **Saldo** é Fase 3 (Lei 3: sem âncora não há acumulado) · **DRE gerencial** e **recorrência
+      automática** são Fase 4. Ver `apps/portal-cliente-web/CLAUDE.md`.
+    - ⚠⚠ **DUAS COISAS FORAM EXCLUÍDAS a pedido do dono, e as duas têm perda nomeada:**
+      **"Declarar o que se repete"** inteira (tela, rota `.../recorrencia/declarar` e `declararSerie`)
+      — com ela, `ORIGEM_DA_SERIE.DECLARADA` ficou **sem escritor**, e o vocabulário **fica** porque
+      é leitura de dado que já existe; e o card **"Próximos vencimentos"** do Painel — o pop-up só
+      acende a até 5 dias, então a guia que vence em 15 deixa de aparecer no Início.
   - ⚠⚠ **A tela padrão é o PAINEL: fluxo de caixa ⇄ DRE.** ⚠⚠ **ESTA LINHA DIZIA "MOCKADOS" ATÉ
     27/08/2026, e metade ficou falsa: o FLUXO DE CAIXA virou real** (Fase E) — `GET /client/.../fluxo-de-caixa`,
     o MESMO payload que o contador lê, com 12 meses e `fato`/`previsao` separados. Ele responde
