@@ -1,9 +1,13 @@
 // O BLOCO DO PAINEL — fluxo de caixa ⇄ DRE.
 //
 // ⚠⚠ O NOME DO ARQUIVO FICOU MEIO FALSO EM 27/08/2026, E ISSO ESTÁ AQUI DE PROPÓSITO: **o fluxo de
-// caixa deixou de ser demonstração**. Ele vem do servidor (`GET /client/.../fluxo-de-caixa`, o MESMO
-// payload que o contador lê) e responde `demonstracao: false`, então a visão de fluxo **não tem
-// selo**. O DRE continua ficção — não existe rota de DRE —, e é ele que mantém o selo aceso.
+// caixa deixou de ser demonstração**. Ele vem do servidor (`GET /client/.../fluxo-de-caixa`) e
+// responde `demonstracao: false`, então a visão de fluxo **não tem selo**. O DRE continua ficção —
+// não existe rota de DRE —, e é ele que mantém o selo aceso.
+// ⚠ Esta linha dizia *"o MESMO payload que o contador lê"* e ficou falsa em 29/08/2026: o dono
+// removeu o fluxo de caixa do portal do contador e a rota `/firm/.../fluxo-de-caixa` saiu. O corpo
+// compartilhado (`routes/fluxoDeCaixaHttp.js`) continua sendo o único que monta o fluxo — hoje com
+// **um consumidor só**.
 // ⚠ Renomear o arquivo é decisão à parte: a chave de navegação, os testes e o `data-demonstracao`
 // vivem em volta dele, e meia renomeação é o "filtro fantasma" que este app já pagou duas vezes.
 //
@@ -22,7 +26,11 @@
 // fantasma" dentro da própria tela.
 //
 // ⚠⚠ A REGRA DE LEITURA DO FLUXO NÃO MORA AQUI — ela está em `lib/leituraDoFluxo.js`, com teste
-// próprio, e é ESPELHO da do portal do contador. Aqui só há LIGAÇÃO.
+// próprio. Aqui só há LIGAÇÃO.
+// ⚠ Ela era ESPELHO da do portal do contador ("mudou lá, muda aqui"); a cópia de lá foi APAGADA em
+// 29/08/2026 com o fluxo daquele portal, e não há mais o que sincronizar. **Não recrie o espelho
+// por simetria**: espelho sem consumidor não é código morto barato, é obrigação de sincronizar
+// para sempre numa cópia que ninguém abre.
 
 import { useState } from "react";
 import { api } from "../../api";
@@ -33,18 +41,28 @@ import { brl } from "../../lib/format";
 // para ler o MÊS SEGUINTE nos cards, e duas cópias da mesma aritmética divergiriam na primeira
 // correção — a mesma razão pela qual `linhaDoMes` é compartilhada entre o card e a tabela.
 import { mesCurto, rotuloDoMes, somarCompetencia } from "./lib/leituraDoFluxo";
-// ⚠ A agregação das SEIS COLUNAS mora fora do espelho: `leituraDoFluxo.js` é cópia da do contador, e
-// esta tabela só existe no portal do cliente. Ver o cabeçalho de `tabelaDoFluxo.js`.
+// ⚠ A agregação das SEIS COLUNAS mora à parte da leitura: aquele arquivo lê o VOCABULÁRIO do
+// servidor e este AGREGA para a tabela desta tela. Ver o cabeçalho de `tabelaDoFluxo.js`.
 import {
-  COLUNAS, COLUNAS_EM_PERCENTUAL, STATUS, emPercentual, linhaDoMes, linhasDosDias,
+  COLUNAS, COLUNAS_EM_PERCENTUAL, STATUS, emPercentual, gradeTransposta, linhasDosDias,
+  navegacaoDoPar, parDeMeses,
 } from "./lib/tabelaDoFluxo";
 // ⚠ `diasDoMes` é aritmética de STRING, nunca `toISOString()`: às 22h de Brasília o ISO devolveria
 // o dia seguinte. Ela é a única coisa que sobrou de `dadosDeDemonstracao` no caminho do fluxo.
 import { diasDoMes } from "./lib/dadosDeDemonstracao";
 import { PopUpDeGuias } from "./PopUpDeGuias";
 
-/** ⚠ 10 por vez (v3 §3.7). O resto entra ao chegar no fim da rolagem. */
-const DIAS_POR_VEZ = 10;
+/**
+ * ⚠⚠ A FOLGA que a tela pede ao servidor quando a seta chega na BORDA da janela carregada.
+ *
+ * Pedir a janela começando exatamente no mês alvo faria o passo SEGUINTE, na mesma direção, ir ao
+ * servidor de novo — e andar um mês é a navegação mais comum desta tela. Um mês de folga atrás
+ * resolve isso sem carregar nada a mais: a janela tem 12 meses de qualquer jeito.
+ *
+ * ⚠ `DIAS_POR_VEZ` (10) morava aqui e SAIU: o mês inteiro passou a ser desenhado de uma vez. Ver o
+ * cabeçalho de `TabelaDeDias`.
+ */
+const MESES_DE_FOLGA = 1;
 
 /** ⚠ R$ × % — v3 §3.6. Entrada e Resultado seguem em R$ nos dois. */
 const UNIDADES = [
@@ -190,89 +208,152 @@ function CelulasDoPeriodo({ linha, unidade, comFolha }) {
 }
 
 /**
- * ⚠⚠ A MESMA TABELA MUDA — ela não abre uma segunda embaixo.
+ * ⚠⚠ A FORMA v4 — DOIS MESES LADO A LADO, EM DIAS (29/08/2026). Isto INVERTE o v3.
  *
- * > v3 §3.7: *"Clique numa linha de mês **substitui a tabela de meses pela tabela de dias daquele
- * > mês**. Não é expansão inline: os outros meses somem."*
+ * > Dono: *"ao invés de mostrar o mês ele vai mostrar os dias mesmo (…) 30 dias à esquerda sendo o
+ * > mês corrente e 30 dias à direita sendo o mês seguinte. Setas cabeçalho para andar para frente e
+ * > para trás entre os meses, botão para ver o horizonte e aí mudamos a tabela para mês."*
  *
- * ⚠ As COLUNAS não mudam entre as duas visões — o que troca é o que a LINHA significa. Trocá-las
- * junto faria a pessoa reaprender a tabela a cada clique.
+ * No v3 §3.7 os dias eram um MERGULHO a partir da tabela de meses ("os outros meses somem"), e as
+ * setas sumiam dentro dele. Agora os dias são o estado inicial, as setas são o controle principal e
+ * a tabela de meses virou o **Horizonte**, atrás de um botão.
  *
- * ⚠⚠ **A LINHA DO MÊS NÃO RECEBE `role="button"`**, embora o mockup do dono o use: isso a tiraria da
- * semântica de tabela, e a decisão já estava escrita neste app antes do v3. Quem carrega o nome
- * acessível e o teclado é o `<button>` dentro do `<th scope="row">` — que dá Enter, Espaço e foco de
- * graça, sem `onKeyDown` à mão. A errata §7.5 da Constituição adotou exatamente isso.
+ * ⚠ O que NÃO mudou, e não pode mudar: as cinco categorias, o `status` por célula nos três canais,
+ * o traço para ausência, e a linha **"no mês"** vindo primeiro em cada bloco — as projeções sem dia
+ * (recorrência, imposto previsto, folha) continuam ali, e espalhá-las pelos dias inventaria
+ * precisão que ninguém informou.
+ *
+ * ⚠⚠ **A PAGINAÇÃO DE 10 DIAS SAIU.** O v3 mostrava 10 por vez e anexava +10 na rolagem, porque a
+ * tabela era única e altíssima. O dono descreveu *"30 dias à esquerda e 30 à direita"*: mostrar 10 e
+ * exigir rolagem para ver o dia 12 contraria o pedido. Hoje o mês inteiro é desenhado e quem cede é
+ * a ROLAGEM INTERNA do bloco — a mesma regra do `.table-wrap`, que existe para a página não rolar
+ * para o lado.
  */
-function TabelaDoFluxo({
-  meses, cicloAtual, mesAberto, unidade, comFolha, diasVisiveis,
-  aoAbrirMes, aoVoltar, aoRolar,
-}) {
-  const emDias = Boolean(mesAberto);
+function TabelaDeDias({ bloco, unidade, comFolha, cabecalho }) {
   const colunas = COLUNAS.filter((c) => comFolha || c.chave !== "folha");
-  const dodia = emDias ? linhasDosDias(mesAberto, diasDoMes(mesAberto.competencia).length) : null;
-  const visiveis = dodia ? dodia.dias.slice(0, diasVisiveis) : [];
+
+  // ⚠⚠ BLOCO SEM MÊS NÃO É BLOCO VAZIO. Andando até a borda da janela, o mês da direita pode não ter
+  // vindo nesta consulta. Desenhar 30 dias em traço afirmaria *"este mês não tem nada"* — e o certo
+  // é *"este mês não está nesta consulta"*. São coisas diferentes, e a tela diz qual é.
+  if (!bloco.mes) {
+    return (
+      <div className="fluxo-v4-bloco" data-mes={bloco.competencia} data-ausente="sim">
+        {cabecalho}
+        <p className="fluxo-v4-ausente">
+          {rotuloDoMes(bloco.competencia)} não veio nesta consulta — use as setas para carregá-lo.
+          Isto não quer dizer que o mês esteja sem lançamento.
+        </p>
+      </div>
+    );
+  }
+
+  const dodia = linhasDosDias(bloco.mes, diasDoMes(bloco.competencia).length);
 
   return (
-    <div
-      className={emDias ? "table-wrap table-wrap--dias" : "table-wrap"}
-      onScroll={emDias ? aoRolar : undefined}
-    >
-      <table className="table table--fluxo-v3">
-        <thead>
+    <div className="fluxo-v4-bloco" data-mes={bloco.competencia}>
+      {cabecalho}
+      <div className="table-wrap table-wrap--dias">
+        <table className="table table--fluxo-v3">
+          <thead>
+            <tr>
+              <th scope="col" className="col-periodo">Dia</th>
+              {colunas.map((c) => (
+                <th key={c.chave} scope="col" data-coluna={c.chave}>{c.rotulo}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {dodia.semDia ? (
+              <tr className="fluxo-v3-sem-dia">
+                <th scope="row">no mês</th>
+                <CelulasDoPeriodo linha={dodia.semDia} unidade={unidade} comFolha={comFolha} />
+              </tr>
+            ) : null}
+            {dodia.dias.map((d) => (
+              <tr key={d.dia}>
+                <th scope="row">dia {String(d.dia).padStart(2, "0")}</th>
+                <CelulasDoPeriodo linha={d} unidade={unidade} comFolha={comFolha} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ⚠⚠ O HORIZONTE — a grade TRANSPOSTA, com o rótulo do mês EMBAIXO.
+ *
+ * > *"botão para ver o horizonte e aí mudamos a tabela para mês, e mantemos lateralizado, ou seja,
+ * > coluna com entrada, saída, impostos, folha e resultado e logo abaixo o mês a que se refere. Um
+ * > mês ao lado do outro."*
+ *
+ * ⚠⚠ **O RÓTULO DE BAIXO É `<th scope="col">` DENTRO DE UM `<tfoot>`, nunca um `<td>` solto.** Uma
+ * tabela transposta continua sendo tabela para quem usa leitor de tela; sem o `scope`, cada número
+ * perde o nome da coluna a que pertence, e a tela vira uma parede de valores anônimos.
+ *
+ * ⚠ **Clicar na coluna volta para os dias DAQUELE mês** — o caminho de ida e volta é o mesmo, e é
+ * por isso que o botão vive no rodapé, que é onde o nome do mês está.
+ */
+function Horizonte({ meses, unidade, comFolha, cicloAtual, aoAbrirMes }) {
+  const g = gradeTransposta(meses, { comFolha });
+
+  return (
+    <div className="table-wrap">
+      <table className="table table--fluxo-v4-horizonte">
+        {/*
+          ⚠⚠ **NÃO HÁ `<thead>`, E ISSO É DELIBERADO.** A primeira versão tinha um, com "Categoria"
+          visível e os meses em `.sr-only` — e no navegador ele virava uma faixa cinza com uma
+          palavra e onze células vazias, além de dar DOIS cabeçalhos de coluna para o mesmo mês (o
+          de cima oculto e o de baixo visível), que o leitor de tela lê duas vezes.
+
+          ⚠ A tabela continua íntegra sem ele: cada LINHA é nomeada pelo `<th scope="row">` da
+          categoria, e cada COLUNA pelo `<th scope="col">` do `<tfoot>` — que é onde o dono pediu o
+          nome do mês (*"e logo abaixo o mês a que se refere"*). O `<caption>` diz o que a tabela é
+          para quem não a vê, e é `.sr-only` porque o card já tem título.
+        */}
+        <caption className="sr-only">
+          Horizonte: cada coluna é um mês, e o nome dele está no rodapé da coluna.
+        </caption>
+        <tbody>
+          {g.linhas.map((l) => (
+            <tr key={l.chave} data-categoria={l.chave}>
+              <th scope="row">{l.rotulo}</th>
+              {l.celulas.map((celula, i) => (
+                <Celula
+                  key={g.competencias[i]}
+                  celula={celula}
+                  coluna={l.chave}
+                  unidade={unidade}
+                  entradaDoPeriodo={g.entradas[i]}
+                />
+              ))}
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
           <tr>
-            <th scope="col" className="col-periodo">{emDias ? "Dia" : "Mês"}</th>
-            {colunas.map((c) => (
-              <th key={c.chave} scope="col" data-coluna={c.chave}>{c.rotulo}</th>
+            <th scope="row" className="col-periodo sr-only">Mês</th>
+            {g.competencias.map((c) => (
+              <th
+                key={c}
+                scope="col"
+                data-agora={c === cicloAtual ? "sim" : undefined}
+              >
+                <button
+                  type="button"
+                  className="fluxo-v3-periodo"
+                  onClick={() => aoAbrirMes(c)}
+                  title={`Ver ${rotuloDoMes(c)} dia a dia`}
+                >
+                  {mesCurto(c)}
+                </button>
+              </th>
             ))}
           </tr>
-        </thead>
-        <tbody>
-          {!emDias && meses.map((mes) => {
-            const linha = linhaDoMes(mes);
-            const agora = mes.competencia === cicloAtual;
-            return (
-              <tr key={mes.competencia} data-agora={agora ? "sim" : undefined}>
-                <th scope="row">
-                  <button
-                    type="button"
-                    className="fluxo-v3-periodo"
-                    onClick={() => aoAbrirMes(mes.competencia)}
-                    title={`Ver ${rotuloDoMes(mes.competencia)} dia a dia`}
-                  >
-                    {mesCurto(mes.competencia)}
-                  </button>
-                </th>
-                <CelulasDoPeriodo linha={linha} unidade={unidade} comFolha={comFolha} />
-              </tr>
-            );
-          })}
-
-          {emDias && (
-            <>
-              {/* ⚠⚠ "NO MÊS" VEM PRIMEIRO, E É A MAIORIA DO DINHEIRO. As projeções não têm dia (o
-                  prazo de recebimento é contado em meses, a recorrência diz o ciclo, a folha é por
-                  competência). Espalhá-las pelos dias inventaria precisão que ninguém informou. */}
-              {dodia.semDia ? (
-                <tr className="fluxo-v3-sem-dia">
-                  <th scope="row">no mês</th>
-                  <CelulasDoPeriodo linha={dodia.semDia} unidade={unidade} comFolha={comFolha} />
-                </tr>
-              ) : null}
-              {visiveis.map((d) => (
-                <tr key={d.dia}>
-                  <th scope="row">dia {String(d.dia).padStart(2, "0")}</th>
-                  <CelulasDoPeriodo linha={d} unidade={unidade} comFolha={comFolha} />
-                </tr>
-              ))}
-            </>
-          )}
-        </tbody>
+        </tfoot>
       </table>
-
-      {/* ⚠ Ele some no fim, senão a frase promete um resto que não existe. */}
-      {emDias && visiveis.length < dodia.dias.length ? (
-        <span className="fluxo-v3-mais">Role para ver mais dias</span>
-      ) : null}
     </div>
   );
 }
@@ -306,21 +387,25 @@ function Dre({ dados }) {
 
 export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
   const [visao, setVisao] = useState("fluxo");
-  /** ⚠ `rs` × `pct` — v3 §3.6. Ele combina livremente com Fluxo/DRE e sobrevive ao drill-in. */
+  /** ⚠ `rs` × `pct` — v3 §3.6. Ele combina livremente com Fluxo/DRE e sobrevive à troca de modo. */
   const [unidade, setUnidade] = useState("rs");
   /**
-   * ⚠⚠ ONDE A TABELA COMEÇA — e ela é OUTRA COISA que a competência da casca.
+   * ⚠⚠ **DIAS É O ESTADO INICIAL (v4, 29/08/2026)** — e isto INVERTE o v3, em que os dias eram um
+   * mergulho a partir da tabela de meses. Decisão do dono: *"ao invés de mostrar o mês ele vai
+   * mostrar os dias mesmo"*. O `horizonte` é a antiga tabela de meses, transposta, atrás do botão.
+   */
+  const [modo, setModo] = useState("dias");
+  /**
+   * ⚠⚠ ONDE A TABELA COMEÇA — e são DUAS coisas diferentes, que já foram uma só e custaram caro.
    *
-   * `competencia` é o "hoje" (o mês que a tela pinta de ciano, e que decide o que é passado);
-   * `janelaInicio` é só navegação com as setas. Enquanto eram um valor só, andar com a seta movia
-   * o "hoje" junto e o ciano escorregava com a tabela.
-   * ⚠ `null` = posição padrão, decidida pelo servidor (corrente−4). A tela não a calcula.
+   * `competencia` é o "hoje" (o mês que a tela marca, e que decide o que é passado); `janelaInicio`
+   * é a posição da CONSULTA (12 meses); `mesEsquerda` é o bloco da esquerda na visão de dias.
+   * ⚠ `null` nos dois = padrão decidido pelo SERVIDOR (janela) e pelo ciclo (bloco). A tela não os
+   * calcula — enquanto o início da janela e o "hoje" eram um valor só, andar com a seta movia o
+   * "hoje" junto e a marca do mês corrente escorregava com a tabela.
    */
   const [janelaInicio, setJanelaInicio] = useState(null);
-  /** ⚠ O mês aberto no drill-in. Nasce fechado: mergulho não é estado inicial. */
-  const [mesAberto, setMesAberto] = useState(null);
-  /** ⚠ 10 por vez, +10 ao fim da rolagem (v3 §3.7). */
-  const [diasVisiveis, setDiasVisiveis] = useState(DIAS_POR_VEZ);
+  const [mesEsquerda, setMesEsquerda] = useState(null);
   /** ⚠ Fechar o pop-up com Esc vale só para ESTA sessão — e não grava nada. */
   const [popUpDispensado, setPopUpDispensado] = useState(false);
 
@@ -341,7 +426,10 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
 
   const meses = Array.isArray(dados?.meses) ? dados.meses : [];
   const janela = dados?.janela || null;
-  const mesDoDrill = mesAberto ? meses.find((m) => m.competencia === mesAberto) || null : null;
+  /** ⚠ O ciclo do servidor manda no bloco da esquerda enquanto ninguém tiver andado. */
+  const esquerda = mesEsquerda || dados?.cicloAtual || competencia;
+  const par = parDeMeses(meses, esquerda);
+  const nav = navegacaoDoPar({ meses, esquerda, janela });
   /**
    * ⚠⚠ A COLUNA FOLHA SÓ EXISTE SE HOUVER FOLHA (v3 §3.2), e **quem decide é o servidor**.
    * ⚠ `!== false`: resposta que não trouxesse o campo mostraria a coluna vazia, que é barato —
@@ -353,24 +441,42 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
   const mostraPopUp = visao === "fluxo" && !popUpDispensado
     && Boolean(alerta?.ackPending) && (alerta?.itens?.length > 0);
 
-  function andarJanela(passos) {
-    const base = janela?.inicio;
-    if (!base) return;
-    setMesAberto(null);
-    setJanelaInicio(somarCompetencia(base, passos));
+  /**
+   * ⚠⚠ AS SETAS ANDAM **MÊS A MÊS** NA VISÃO DE DIAS, e **janela a janela** no horizonte.
+   *
+   * > Dono: *"setas cabeçalho para andar para frente e para trás entre os meses"*.
+   *
+   * ⚠ Não são dois botões com dois significados: nos dois modos elas movem **o período que está na
+   * tela**, e é isso que o rótulo acessível diz. O que muda é o tamanho do passo, porque o que está
+   * na tela é diferente.
+   *
+   * ⚠⚠ **DENTRO DA JANELA O PASSO NÃO VAI AO SERVIDOR** — os 12 meses já vieram na mesma consulta.
+   * Só na BORDA dela a tela pede uma janela nova, e pede **com uma folga atrás**, para o passo
+   * seguinte na mesma direção também ser de graça. Pedir a cada passo faria a seta parecer lenta na
+   * navegação mais comum, que é andar um mês.
+   */
+  function andarNoTempo(passos) {
+    if (modo === "horizonte") {
+      const base = janela?.inicio;
+      if (!base) return;
+      setJanelaInicio(somarCompetencia(base, passos));
+      return;
+    }
+    const alvo = somarCompetencia(esquerda, passos);
+    if (!alvo) return;
+    setMesEsquerda(alvo);
+    const precisa = passos < 0 ? nav.precisaDeConsultaParaVoltar : nav.precisaDeConsultaParaAvancar;
+    if (precisa) setJanelaInicio(somarCompetencia(alvo, -MESES_DE_FOLGA));
   }
 
+  /** ⚠ Do horizonte para os dias DAQUELE mês — o caminho de ida e volta é o mesmo. */
   function abrirMes(comp) {
-    setMesAberto(comp);
-    setDiasVisiveis(DIAS_POR_VEZ);
+    setMesEsquerda(comp);
+    setModo("dias");
   }
 
-  /** ⚠ Anexa mais 10 ao CHEGAR no fim, e nunca passa do número real de dias do mês. */
-  function aoRolar(ev) {
-    const el = ev.currentTarget;
-    if (el.scrollTop + el.clientHeight < el.scrollHeight - 24) return;
-    setDiasVisiveis((n) => n + DIAS_POR_VEZ);
-  }
+  const podeVoltar = modo === "horizonte" ? Boolean(janela?.podeVoltar) : nav.podeVoltar;
+  const podeAvancar = modo === "horizonte" ? Boolean(janela?.podeAvancar) : nav.podeAvancar;
 
   return (
     <section
@@ -380,6 +486,7 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
       aria-label="Fluxo de caixa e DRE"
       /* ⚠ Auditável no DOM, como `data-status` e `data-estado-nota`. */
       data-demonstracao={demonstracao ? "sim" : "nao"}
+      data-modo-do-fluxo={visao === "fluxo" ? modo : undefined}
     >
       <div className="card-header">
         <h2>{visao === "fluxo" ? "Fluxo de caixa" : "DRE"}</h2>
@@ -414,23 +521,35 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
             </div>
           ) : null}
 
-          {/* ⚠⚠ AS SETAS SOMEM NO DRILL-IN (v3 §3.7): dentro dos dias elas navegariam a janela de
-              MESES, que não está na tela — um controle que comanda o que ninguém vê. */}
-          {visao === "fluxo" && !mesAberto ? (
+          {/* ⚠⚠ O BOTÃO DO HORIZONTE É UM ALTERNADOR, e ele DIZ o estado (`aria-pressed`) em vez de
+              trocar de rótulo. Um botão que vira "Dias" quando está em dias faz a pessoa ler o
+              rótulo como "você está aqui" metade das vezes e como "vá para lá" na outra metade. */}
+          {visao === "fluxo" ? (
+            <button
+              type="button"
+              className="btn btn-alternador"
+              aria-pressed={modo === "horizonte"}
+              onClick={() => setModo((m) => (m === "horizonte" ? "dias" : "horizonte"))}
+            >
+              Horizonte
+            </button>
+          ) : null}
+
+          {visao === "fluxo" ? (
             <div className="fluxo-v3-navegacao">
               <button
                 type="button"
-                aria-label="Meses anteriores"
+                aria-label={modo === "horizonte" ? "Meses anteriores" : "Mês anterior"}
                 /* ⚠ DESABILITA no limite, nunca some: botão que some esconde que a ação existe, e
-                   botão que não responde parece defeito. Os dois limites vêm do SERVIDOR. */
-                disabled={!janela?.podeVoltar}
-                onClick={() => andarJanela(-1)}
+                   botão que não responde parece defeito. O limite vem do SERVIDOR. */
+                disabled={!podeVoltar}
+                onClick={() => andarNoTempo(-1)}
               >‹</button>
               <button
                 type="button"
-                aria-label="Meses seguintes"
-                disabled={!janela?.podeAvancar}
-                onClick={() => andarJanela(1)}
+                aria-label={modo === "horizonte" ? "Meses seguintes" : "Mês seguinte"}
+                disabled={!podeAvancar}
+                onClick={() => andarNoTempo(1)}
               >›</button>
             </div>
           ) : null}
@@ -449,28 +568,38 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
 
       {!atual.carregando && !atual.erro && dados ? (
         visao === "fluxo" ? (
-          <>
-            {mesDoDrill ? (
-              <div className="fluxo-v3-migalha">
-                {/* ⚠ A saída fica onde a pessoa entrou: ela clicou na tabela, e o caminho de volta
-                    está na tabela. */}
-                <button type="button" className="fluxo-v3-voltar" onClick={() => setMesAberto(null)}>
-                  ‹ Voltar aos meses
-                </button>
-                <strong>{rotuloDoMes(mesDoDrill.competencia)}</strong>
-              </div>
-            ) : null}
-            <TabelaDoFluxo
+          modo === "dias" ? (
+            /* ⚠⚠ "QUANDO A TELA PERMITIR" — abaixo de ~900px o segundo mês vai ABAIXO do primeiro,
+               nunca some, e a página não rola para o lado. A regra é do CSS (`.fluxo-v4-par`), e o
+               DOM é o mesmo nas duas larguras: esconder um bloco por media query faria a tela
+               mostrar menos dinheiro no celular sem dizer. */
+            <div className="fluxo-v4-par">
+              {par.map((bloco) => (
+                <TabelaDeDias
+                  key={bloco.competencia}
+                  bloco={bloco}
+                  unidade={unidade}
+                  comFolha={comFolha}
+                  cabecalho={(
+                    <h3
+                      className="fluxo-v4-mes"
+                      data-agora={bloco.competencia === dados.cicloAtual ? "sim" : undefined}
+                    >
+                      {rotuloDoMes(bloco.competencia)}
+                    </h3>
+                  )}
+                />
+              ))}
+            </div>
+          ) : (
+            <Horizonte
               meses={meses}
-              cicloAtual={dados.cicloAtual}
-              mesAberto={mesDoDrill}
               unidade={unidade}
               comFolha={comFolha}
-              diasVisiveis={diasVisiveis}
+              cicloAtual={dados.cicloAtual}
               aoAbrirMes={abrirMes}
-              aoRolar={aoRolar}
             />
-          </>
+          )
         ) : <Dre dados={dados} />
       ) : null}
 

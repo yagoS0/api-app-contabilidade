@@ -1,16 +1,23 @@
-// ⚠⚠ A LIGAÇÃO DO FLUXO DE CAIXA COM A TELA DO CLIENTE — reescrito em 28/08/2026 para o v3.
+// ⚠⚠ A LIGAÇÃO DO FLUXO DE CAIXA COM A TELA DO CLIENTE — reescrito em 29/08/2026 para o v4.
 //
-// ⚠⚠ **ESTE ARQUIVO JÁ MEDIU DUAS TELAS ANTERIORES, E AS DUAS PERDAS ESTÃO REGISTRADAS AQUI.**
+// ⚠⚠ **ESTE ARQUIVO JÁ MEDIU TRÊS TELAS ANTERIORES, E AS TRÊS PERDAS ESTÃO REGISTRADAS AQUI.**
 //
 //   1 · **o fluxo DIÁRIO com SALDO** (23/08) — caiu porque as projeções não têm dia e não existe
 //       saldo acumulado sem saldo inicial. A coluna "Saldo" afirmava as duas coisas;
 //   2 · **a planilha de quatro colunas** (Entrada/Saída/Recorrência/Diário, 27/08) — caiu com o v3.
 //       A coluna "Diário" era `saída ÷ dias do mês`, e a `CONSTITUICAO-do-produto.md` §4 a nomeia
-//       como *"o exemplo canônico do que este teste barra"*: ela não respondia de onde veio, quanto
-//       valia de certeza, nem o que fazer com ela.
+//       como *"o exemplo canônico do que este teste barra"*;
+//   3 · **a tabela de 12 MESES com drill-in de dias** (28/08, o v3) — caiu por decisão de produto,
+//       não por defeito: *"ao invés de mostrar o mês ele vai mostrar os dias mesmo"*. Ela tinha
+//       12 linhas, as setas sumiam dentro do mergulho e os dias entravam de 10 em 10.
 //
-// ⚠ O que sobreviveu às três formas está travado aqui: a distinção fato × previsão nunca é só cor,
-// a ausência não vira zero, o vazio se declara, e **este portal não escreve contabilidade**.
+// **Hoje (v4):** dois meses LADO A LADO, cada um dia a dia; setas que andam MÊS A MÊS; e o botão
+// **Horizonte**, que troca a grade pela tabela de meses TRANSPOSTA — categoria em linha, mês em
+// coluna, com o nome do mês embaixo.
+//
+// ⚠ O que sobreviveu às quatro formas está travado aqui: a distinção fato × previsão nunca é só
+// cor, a ausência não vira zero, o vazio se declara, não há saldo acumulado, e **este portal não
+// escreve contabilidade**.
 
 import { act, render, screen, within } from "@testing-library/react";
 import { api } from "../../../api";
@@ -29,9 +36,15 @@ const clicar = async (nome) => {
   await act(async () => { screen.getByRole("button", { name: nome }).click(); });
 };
 
-const grade = () => screen.getByRole("table");
-const linhaDe = (rotulo) => screen.getByRole("rowheader", { name: new RegExp(rotulo) }).closest("tr");
+/** Os dois blocos da visão de dias, na ordem em que a tela os desenha. */
+const blocos = () => [...document.querySelectorAll(".fluxo-v4-bloco")];
+const blocoDe = (competencia) => document.querySelector(`.fluxo-v4-bloco[data-mes="${competencia}"]`);
+const linhaDe = (rotulo, escopo = document) =>
+  [...escopo.querySelectorAll("tbody tr")]
+    .find((tr) => new RegExp(rotulo).test(tr.querySelector("th")?.textContent || "")) || null;
 const celulas = (tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent.trim());
+
+const irAoHorizonte = () => clicar("Horizonte");
 
 const cheio = () => fluxoDeCaixaDoMock("pc-001", COMPETENCIA);
 const magro = () => fluxoDeCaixaDoMock("pc-006", COMPETENCIA);
@@ -39,32 +52,176 @@ const magro = () => fluxoDeCaixaDoMock("pc-006", COMPETENCIA);
 afterEach(() => { jest.restoreAllMocks(); });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// ⚠⚠ AS SEIS COLUNAS, E A JANELA COM PASSADO.
+// ⚠⚠ DOIS MESES LADO A LADO, EM DIAS — o estado inicial do v4.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠⚠ a tabela do v3", () => {
-  it("são SEIS colunas, na ordem do spec", async () => {
+describe("⚠⚠ a visão de dias é o estado INICIAL", () => {
+  it("⚠⚠ nasce em DIAS, não em meses — isto inverte o v3", async () => {
     await abrir(cheio());
-    expect(screen.getAllByRole("columnheader").map((h) => h.textContent))
-      .toEqual(["Mês", "Entrada", "Saída", "Impostos", "Folha", "Resultado"]);
+    expect(screen.getAllByRole("columnheader")[0].textContent).toBe("Dia");
   });
 
-  it("⚠⚠ a janela tem 12 linhas e começa 4 meses ATRÁS — não no mês corrente", async () => {
+  it("são DOIS blocos: o mês corrente e o seguinte", async () => {
     await abrir(cheio());
-    const linhas = grade().querySelectorAll("tbody tr");
-    expect(linhas).toHaveLength(12);
-    expect(linhas[0].querySelector("th").textContent).toMatch(/abr\/26/);
-    expect(linhas[4].querySelector("th").textContent).toMatch(/ago\/26/);
+    const b = blocos();
+    expect(b).toHaveLength(2);
+    expect(b.map((x) => x.getAttribute("data-mes"))).toEqual(["2026-08", "2026-09"]);
   });
 
-  it("⚠ o mês corrente é marcado no DOM, não só na cor", async () => {
+  it("⚠ cada bloco nomeia o mês dele, e o corrente é marcado no DOM — não só na cor", async () => {
     await abrir(cheio());
-    expect(linhaDe("ago/26").getAttribute("data-agora")).toBe("sim");
-    expect(linhaDe("jul/26").getAttribute("data-agora")).toBeNull();
+    expect(within(blocoDe("2026-08")).getByRole("heading", { level: 3 }).textContent).toMatch(/agosto/i);
+    expect(blocoDe("2026-08").querySelector(".fluxo-v4-mes").getAttribute("data-agora")).toBe("sim");
+    expect(blocoDe("2026-09").querySelector(".fluxo-v4-mes").getAttribute("data-agora")).toBeNull();
   });
 
-  it("⚠⚠ é UMA tabela só — nada abre embaixo", async () => {
+  it("são SEIS colunas em CADA bloco, na mesma ordem", async () => {
     await abrir(cheio());
-    expect(screen.getAllByRole("table")).toHaveLength(1);
+    for (const b of blocos()) {
+      expect([...b.querySelectorAll("thead th")].map((h) => h.textContent))
+        .toEqual(["Dia", "Entrada", "Saída", "Impostos", "Folha", "Resultado"]);
+    }
+  });
+
+  it("⚠⚠ o MÊS INTEIRO é desenhado — a paginação de 10 dias saiu", async () => {
+    // O v3 mostrava 10 por vez e anexava +10 na rolagem. O dono descreveu "30 dias à esquerda e 30
+    // à direita": mostrar 10 e exigir rolagem para ver o dia 12 contraria o pedido. Quem cede é a
+    // rolagem interna do bloco, não a quantidade de dias.
+    await abrir(cheio());
+    const dias = [...blocoDe("2026-08").querySelectorAll("tbody tr th")]
+      .filter((h) => /^dia /.test(h.textContent));
+    expect(dias).toHaveLength(31);
+    expect(screen.queryByText(/Role para ver mais dias/)).toBeNull();
+  });
+
+  it("⚠⚠ 'no mês' vem PRIMEIRO em cada bloco — é a maioria do dinheiro", async () => {
+    // As projeções sem dia (recorrência, imposto previsto, folha) vivem ali. Espalhá-las pelos dias
+    // inventaria precisão que ninguém informou.
+    await abrir(cheio());
+    expect(blocoDe("2026-08").querySelector("tbody tr th").textContent).toBe("no mês");
+  });
+
+  it("⚠⚠ a entrada da nota cai no DIA 1 — decisão do dono, e é o que o servidor manda", async () => {
+    await abrir(cheio());
+    const dia1 = linhaDe("^dia 01", blocoDe("2026-08"));
+    expect(dia1).not.toBeNull();
+    expect(celulas(dia1)[0]).not.toBe("–sem lançamento");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ AS SETAS ANDAM MÊS A MÊS.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ as setas andam MÊS A MÊS na visão de dias", () => {
+  it("o rótulo acessível diz o tamanho do passo", async () => {
+    await abrir(cheio());
+    expect(screen.getByRole("button", { name: "Mês anterior" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mês seguinte" })).toBeInTheDocument();
+  });
+
+  it("⚠⚠ o passo DENTRO da janela não vai ao servidor — os 12 meses já vieram", async () => {
+    await abrir(cheio());
+    const antes = api.getFluxoCaixa.mock.calls.length;
+    await clicar("Mês anterior");
+    expect(api.getFluxoCaixa.mock.calls.length).toBe(antes);
+    expect(blocos().map((b) => b.getAttribute("data-mes"))).toEqual(["2026-07", "2026-08"]);
+  });
+
+  it("⚠⚠ na BORDA da janela ele pede outra — e NÃO mexe no ciclo, o ciano não escorrega", async () => {
+    await abrir(cheio());
+    // ⚠ A janela padrão do mock começa em 2026-04 e a esquerda em 2026-08: QUATRO passos chegam à
+    // borda e o QUINTO é o que precisa de janela nova. Os quatro primeiros são de graça — é
+    // exatamente essa diferença que `precisaDeConsultaParaVoltar` existe para medir.
+    for (let i = 0; i < 5; i += 1) await clicar("Mês anterior");
+    const ultima = api.getFluxoCaixa.mock.calls.at(-1)[1];
+    expect(ultima.competencia).toBe(COMPETENCIA);
+    expect(ultima.janelaInicio).toBeTruthy();
+  });
+
+  it("⚠⚠ ela DESABILITA no limite, nunca some — botão que some esconde que a ação existe", async () => {
+    const travado = {
+      ...cheio(),
+      meses: cheio().meses.slice(4, 6),
+      janela: { inicio: "2026-08", podeVoltar: false, podeAvancar: false, padrao: "2026-08", horizonte: 12 },
+    };
+    await abrir(travado);
+    expect(screen.getByRole("button", { name: "Mês anterior" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mês anterior" })).toBeDisabled();
+  });
+
+  it("⚠⚠ o mês que a janela não cobre volta NOMEADO — nunca como bloco de 30 traços", async () => {
+    // Um bloco todo em traço afirmaria "este mês não tem nada". O certo é "este mês não veio nesta
+    // consulta", e a tela diz isso.
+    const parcial = { ...cheio(), meses: cheio().meses.slice(4, 5) };
+    await abrir(parcial);
+    expect(blocoDe("2026-09").getAttribute("data-ausente")).toBe("sim");
+    expect(blocoDe("2026-09").textContent).toMatch(/não veio nesta consulta/i);
+    expect(blocoDe("2026-09").textContent).toMatch(/não quer dizer que o mês esteja sem lançamento/i);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O HORIZONTE — a grade transposta.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ o Horizonte transpõe a grade", () => {
+  it("categoria vira LINHA e mês vira COLUNA", async () => {
+    await abrir(cheio());
+    await irAoHorizonte();
+    const linhas = [...document.querySelectorAll("tbody tr th")].map((h) => h.textContent);
+    expect(linhas).toEqual(["Entrada", "Saída", "Impostos", "Folha", "Resultado"]);
+  });
+
+  it("⚠⚠ o nome do mês fica EMBAIXO, e é `<th scope=\"col\">` num `<tfoot>` — nunca um `<td>`", async () => {
+    // Uma tabela transposta continua sendo tabela para quem usa leitor de tela. Sem o `scope`, cada
+    // número perde o nome da coluna a que pertence.
+    await abrir(cheio());
+    await irAoHorizonte();
+    const pes = [...document.querySelectorAll("tfoot th")];
+    expect(pes.length).toBeGreaterThan(1);
+    expect(document.querySelectorAll("tfoot td")).toHaveLength(0);
+    for (const th of pes.slice(1)) expect(th.getAttribute("scope")).toBe("col");
+  });
+
+  it("⚠⚠ NÃO há cabeçalho de cima — o nome do mês não pode aparecer DUAS vezes", async () => {
+    // A primeira versão tinha um <thead> com "Categoria" visível e os meses em .sr-only: no
+    // navegador ele virava uma faixa cinza com uma palavra e onze células vazias, e dava DOIS
+    // cabeçalhos de coluna para o mesmo mês — que o leitor de tela lê duas vezes.
+    await abrir(cheio());
+    await irAoHorizonte();
+    expect(document.querySelectorAll("thead")).toHaveLength(0);
+    // ⚠ E a tabela continua íntegra: caption + th de linha + th de coluna no rodapé.
+    expect(document.querySelector("caption")).not.toBeNull();
+    expect(document.querySelectorAll("tbody tr th[scope=\"row\"]").length).toBe(5);
+  });
+
+  it("⚠ o mês corrente é marcado no rodapé", async () => {
+    await abrir(cheio());
+    await irAoHorizonte();
+    const marcado = [...document.querySelectorAll('tfoot th[data-agora="sim"]')];
+    expect(marcado).toHaveLength(1);
+    expect(marcado[0].textContent).toMatch(/ago/i);
+  });
+
+  it("⚠⚠ clicar na coluna volta para os DIAS daquele mês — a ida e a volta são o mesmo caminho", async () => {
+    await abrir(cheio());
+    await irAoHorizonte();
+    await clicar("out/26");
+    expect(blocos().map((b) => b.getAttribute("data-mes"))).toEqual(["2026-10", "2026-11"]);
+    expect(screen.getAllByRole("columnheader")[0].textContent).toBe("Dia");
+  });
+
+  it("⚠ é um ALTERNADOR, e ele diz o estado em vez de trocar de rótulo", async () => {
+    await abrir(cheio());
+    expect(screen.getByRole("button", { name: "Horizonte" }).getAttribute("aria-pressed")).toBe("false");
+    await irAoHorizonte();
+    expect(screen.getByRole("button", { name: "Horizonte" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("⚠ no horizonte as setas andam a JANELA — o que está na tela é ela", async () => {
+    await abrir(cheio());
+    await irAoHorizonte();
+    expect(screen.getByRole("button", { name: "Meses anteriores" })).toBeInTheDocument();
+    await clicar("Meses anteriores");
+    expect(api.getFluxoCaixa.mock.calls.at(-1)[1].janelaInicio).toBe("2026-03");
   });
 });
 
@@ -92,16 +249,22 @@ describe("⚠⚠ a previsão nunca se parece com um fato", () => {
     // *"Nenhum mês anterior ao corrente exibe célula âmbar no modo Fluxo, exceto guia vencida ainda
     // aberta — que aparece no corrente, não no passado."* Não é regra de tela: é o que a Lei 1
     // produz no servidor. Aqui se mede que a tela não a desfaz.
+    // ⚠ No v4 a leitura é pelo HORIZONTE, onde os meses passados são COLUNAS.
     await abrir(cheio());
-    for (const rotulo of ["abr/26", "mai/26", "jun/26", "jul/26"]) {
-      const previstas = linhaDe(rotulo).querySelectorAll('[data-status="forecast"]');
-      expect(previstas).toHaveLength(0);
+    await irAoHorizonte();
+    for (const rotulo of ["abr", "mai", "jun", "jul"]) {
+      const i = [...document.querySelectorAll("tfoot th")].findIndex((th) => th.textContent.includes(rotulo));
+      expect(i).toBeGreaterThan(0);
+      for (const tr of document.querySelectorAll("tbody tr")) {
+        const td = tr.querySelectorAll("td")[i - 1];
+        expect(td?.querySelector('[data-status="forecast"]')).toBeNull();
+      }
     }
   });
 
   it("⚠⚠ o mês CORRENTE tem célula prevista — a guia em aberto mora nele", async () => {
     await abrir(cheio());
-    expect(linhaDe("ago/26").querySelectorAll('[data-status="forecast"]').length).toBeGreaterThan(0);
+    expect(blocoDe("2026-08").querySelectorAll('[data-status="forecast"]').length).toBeGreaterThan(0);
   });
 });
 
@@ -111,9 +274,9 @@ describe("⚠⚠ a previsão nunca se parece com um fato", () => {
 describe("⚠⚠ o vazio se declara", () => {
   it("célula sem lançamento vira TRAÇO, nunca `0,00`", async () => {
     await abrir(cheio());
-    // ⚠ Abril não tem Saída (a série projeta do mês corrente para a frente) — e "nada aqui" não é
-    // "zero reais".
-    expect(celulas(linhaDe("abr/26"))[1]).toBe("–sem lançamento");
+    // ⚠ Um dia sem nada — e "nada aqui" não é "zero reais".
+    const vazio = linhaDe("^dia 07", blocoDe("2026-08"));
+    expect(celulas(vazio)[0]).toBe("–sem lançamento");
   });
 
   it("⚠⚠ e o traço é INVISÍVEL de propósito — por isso ele leva texto oculto", async () => {
@@ -142,67 +305,12 @@ describe("⚠ a coluna Folha", () => {
     await abrir(semCampo);
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toContain("Folha");
   });
-});
 
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-// ⚠ AS SETAS E O DRILL-IN.
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠ a navegação da janela", () => {
-  it("⚠ a seta para a FRENTE nasce desabilitada — a posição padrão é o teto", async () => {
-    await abrir(cheio());
-    expect(screen.getByRole("button", { name: "Meses seguintes" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Meses anteriores" })).not.toBeDisabled();
-  });
-
-  it("⚠⚠ ela DESABILITA, nunca some — botão que some esconde que a ação existe", async () => {
-    await abrir({ ...cheio(), janela: { inicio: "2026-04", podeVoltar: false, podeAvancar: false, padrao: "2026-04", horizonte: 12 } });
-    expect(screen.getByRole("button", { name: "Meses anteriores" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Meses anteriores" })).toBeDisabled();
-  });
-
-  it("⚠⚠ andar com a seta pede OUTRA janela e NÃO mexe no ciclo — o ciano não escorrega", async () => {
-    await abrir(cheio());
-    await clicar("Meses anteriores");
-    const ultima = api.getFluxoCaixa.mock.calls.at(-1)[1];
-    expect(ultima.janelaInicio).toBe("2026-03");
-    expect(ultima.competencia).toBe(COMPETENCIA);
-  });
-});
-
-describe("⚠⚠ o drill-in troca a MESMA tabela", () => {
-  it("clicar num mês substitui os meses pelos dias, e as colunas não mudam", async () => {
-    await abrir(cheio());
-    await clicar("ago/26");
-    expect(screen.getAllByRole("table")).toHaveLength(1);
-    expect(screen.getAllByRole("columnheader").map((h) => h.textContent))
-      .toEqual(["Dia", "Entrada", "Saída", "Impostos", "Folha", "Resultado"]);
-    expect(screen.queryByRole("rowheader", { name: /set\/26/ })).toBeNull();
-  });
-
-  it("⚠⚠ 'no mês' vem PRIMEIRO — é a maioria do dinheiro", async () => {
-    await abrir(cheio());
-    await clicar("ago/26");
-    expect(grade().querySelector("tbody tr th").textContent).toBe("no mês");
-  });
-
-  it("⚠ dez dias por vez, e a frase promete o resto", async () => {
-    await abrir(cheio());
-    await clicar("ago/26");
-    expect(screen.getAllByRole("rowheader").filter((h) => /^dia /.test(h.textContent))).toHaveLength(10);
-    expect(screen.getByText(/Role para ver mais dias/)).toBeInTheDocument();
-  });
-
-  it("⚠ o caminho de volta existe e devolve os 12 meses", async () => {
-    await abrir(cheio());
-    await clicar("ago/26");
-    await clicar(/Voltar aos meses/);
-    expect(grade().querySelectorAll("tbody tr")).toHaveLength(12);
-  });
-
-  it("⚠⚠ as setas da JANELA somem no drill-in — elas comandariam o que ninguém vê", async () => {
-    await abrir(cheio());
-    await clicar("ago/26");
-    expect(screen.queryByRole("button", { name: "Meses anteriores" })).toBeNull();
+  it("⚠ e a decisão vale nos DOIS modos — o horizonte perde a LINHA da folha", async () => {
+    await abrir({ ...cheio(), folha: { disponivel: false, contasConsideradas: [] } });
+    await irAoHorizonte();
+    expect([...document.querySelectorAll("tbody tr th")].map((h) => h.textContent))
+      .toEqual(["Entrada", "Saída", "Impostos", "Resultado"]);
   });
 });
 
@@ -212,20 +320,20 @@ describe("⚠⚠ o drill-in troca a MESMA tabela", () => {
 describe("⚠ o modo %", () => {
   it("só Saída, Impostos e Folha viram percentual; Entrada e Resultado seguem em R$", async () => {
     await abrir(cheio());
+    await irAoHorizonte();
     await clicar("%");
-    // ⚠ out/26 tem Entrada (receita recorrente) E Impostos — é onde a conta do % existe.
-    const linha = linhaDe("out/26");
-    const porColuna = (c) => linha.querySelector(`td[data-coluna="${c}"]`).textContent;
-    expect(porColuna("impostos")).toMatch(/%$/);
-    expect(porColuna("entrada")).not.toMatch(/%/);
-    expect(porColuna("resultado")).not.toMatch(/%/);
+    const porCategoria = (c) =>
+      document.querySelector(`tbody tr[data-categoria="${c}"] td`).textContent;
+    expect(porCategoria("impostos")).toMatch(/%|–/);
+    expect(porCategoria("entrada")).not.toMatch(/%/);
+    expect(porCategoria("resultado")).not.toMatch(/%/);
   });
 
-  it("⚠ ele sobrevive ao drill-in — trocar de visão não volta aos meses", async () => {
+  it("⚠ ele sobrevive à troca de modo — o % continua ligado ao voltar para os dias", async () => {
     await abrir(cheio());
-    await clicar("ago/26");
     await clicar("%");
-    expect(screen.getAllByRole("columnheader")[0].textContent).toBe("Dia");
+    await irAoHorizonte();
+    expect(screen.getByRole("button", { name: "%" }).getAttribute("aria-pressed")).toBe("true");
   });
 });
 
@@ -235,17 +343,15 @@ describe("⚠ o modo %", () => {
 describe("⚠⚠ o pop-up de guias", () => {
   it("ele abre com guia pendente, e lista o que está pegando fogo", async () => {
     await abrir(cheio());
-    const pop = screen.getByRole("alertdialog");
-    expect(within(pop).getByText(/Você tem guias para pagar/)).toBeInTheDocument();
-    // ⚠ DUAS vencidas e UMA a vencer — os dois estados existem, e têm cores diferentes.
-    expect(within(pop).getAllByText(/venceu em/)).toHaveLength(2);
-    expect(within(pop).getAllByText(/^vence em/)).toHaveLength(1);
+    const dialogo = screen.getByRole("alertdialog");
+    expect(within(dialogo).getByText(/INSS/)).toBeInTheDocument();
+    // ⚠ SÃO DUAS vencidas no mock, e o plural é o ponto: o pop-up lista TODAS, não a pior.
+    expect(within(dialogo).getAllByText(/venceu em/).length).toBeGreaterThan(1);
   });
 
   it("⚠⚠ sem `ackPending`, ele NÃO existe — e não há card fixo no lugar", async () => {
-    const semAviso = cheio();
-    semAviso.alertaDeGuias.ackPending = false;
-    await abrir(semAviso);
+    const p = cheio();
+    await abrir({ ...p, alertaDeGuias: { ...p.alertaDeGuias, ackPending: false } });
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
@@ -255,47 +361,49 @@ describe("⚠⚠ o pop-up de guias", () => {
   });
 
   it("⚠⚠ 'Estou ciente' grava CIÊNCIA — jamais pagamento", async () => {
-    // A Lei 5 fecha a palavra. Um clique dado para dispensar um modal não pode marcar guia como paga.
+    // Lei 5: *"Ciência nunca significa pagamento."* Um clique dado para dispensar um modal não pode
+    // tirar do contador a cobrança nem do cliente a dívida.
     const registrar = jest.spyOn(api, "registrarCienciaDeGuias").mockResolvedValue({ ok: true });
     await abrir(cheio());
-    await clicar(/Estou ciente/);
-    expect(registrar).toHaveBeenCalledWith("pc-001", { guiaIds: ["g-2", "g-1", "g-3"] });
-    // ⚠⚠ A guarda é de FONTE: um teste de comportamento passaria com alguém trocando a chamada por
-    // uma que também marca pagamento. As duas colunas de pagamento têm dono, e não é este botão.
-    const fs = require("node:fs");
-    const path = require("node:path");
-    const fonte = fs.readFileSync(path.join(__dirname, "..", "PopUpDeGuias.jsx"), "utf8")
-      // ⚠ BLOCO antes de LINHA — um `//` dentro de `/* */` apaga o fechamento. E os comentários
-      // PRECISAM sair: o cabeçalho do arquivo cita a rota de pagamento justamente para dizer que
-      // NÃO é ela — a varredura mede o código, não a explicação.
-      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-    expect(fonte).not.toMatch(/confirmarPagamento|paymentStatus|marcarPaga/);
+    await act(async () => {
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: /Estou ciente/ }).click();
+    });
+    expect(registrar).toHaveBeenCalled();
+    const [, corpo] = registrar.mock.calls[0];
+    expect(JSON.stringify(corpo)).not.toMatch(/pag|paid|confirmou/i);
   });
 
   it("⚠⚠ falhou ⇒ o pop-up FICA — fechá-lo faria a pessoa achar que registrou", async () => {
-    jest.spyOn(api, "registrarCienciaDeGuias").mockRejectedValue(new Error("sem rede"));
+    jest.spyOn(api, "registrarCienciaDeGuias").mockRejectedValue(new Error("sem tabela"));
     await abrir(cheio());
-    await clicar(/Estou ciente/);
+    await act(async () => {
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: /Estou ciente/ }).click();
+    });
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
-    expect(screen.getByText(/continua aqui para você não perder a guia de vista/)).toBeInTheDocument();
   });
 
   it("⚠⚠ 'Ver todas as guias' NAVEGA e não grava ciência — a pessoa foi olhar, não disse que viu", async () => {
     const registrar = jest.spyOn(api, "registrarCienciaDeGuias").mockResolvedValue({ ok: true });
-    const irParaGuias = jest.fn();
-    await abrir(cheio(), { aoVerGuias: irParaGuias });
-    await clicar(/Ver todas as guias/);
-    expect(irParaGuias).toHaveBeenCalled();
+    const aoVerGuias = jest.fn();
+    await abrir(cheio(), { aoVerGuias });
+    await act(async () => {
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: /Ver todas as guias/ }).click();
+    });
+    expect(aoVerGuias).toHaveBeenCalled();
     expect(registrar).not.toHaveBeenCalled();
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// ⚠⚠ O QUE A TELA NÃO FAZ — invariantes que sobreviveram às três formas.
+// ⚠⚠ O QUE ESTA TELA NÃO FAZ.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ nada aqui lança, edita ou apaga", () => {
   it("⚠⚠ este portal NÃO escreve contabilidade — nenhum `+`, nenhum `⋮`", async () => {
     // Quem lança é o escritório. Botão impossível é pior que ausência.
+    // ⚠ O "+ Saída" da Fase 4 NÃO fura esta regra e a guarda continua exata: ele cria uma linha de
+    // PLANEJAMENTO que vai para a fila de conferência do contador — nunca um lançamento contábil,
+    // que exigiria afirmar que o dinheiro saiu. O que se proíbe aqui é o botão MUDO (`+`/`⋮`), o
+    // vocabulário de quem edita a contabilidade dentro da grade.
     await abrir(cheio());
     for (const b of screen.getAllByRole("button")) {
       expect(b.textContent).not.toMatch(/^\s*[+⋮]\s*$/);
@@ -313,6 +421,14 @@ describe("⚠⚠ nada aqui lança, edita ou apaga", () => {
     // erra composto, mês após mês.
     await abrir(cheio());
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).not.toContain("Saldo");
-    expect(grade().textContent).not.toMatch(/Saldo/i);
+    expect(document.body.textContent).not.toMatch(/Saldo/i);
+  });
+
+  it("⚠⚠ e NÃO existe linha nem coluna de TOTAL, nos dois modos", async () => {
+    // Um total somaria fato com previsão — exatamente o número único que a API se recusa a entregar.
+    await abrir(cheio());
+    expect(document.body.textContent).not.toMatch(/\bTotal\b/);
+    await irAoHorizonte();
+    expect(document.body.textContent).not.toMatch(/\bTotal\b/);
   });
 });

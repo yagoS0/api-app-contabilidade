@@ -894,7 +894,20 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 }
 .fluxo-v3-navegacao > button:disabled { opacity: .35; cursor: default; }
 
-/* A barra de contexto da visão de dias. */
+/*
+   ⚠⚠ LÁPIDE — .fluxo-v3-migalha, .fluxo-v3-voltar e .fluxo-v3-mais ficaram SEM MARCAÇÃO em
+   29/08/2026, com a forma v4.
+
+   A migalha e o "Voltar aos meses" eram a saída do DRILL-IN: no v3 clicar num mês substituía a
+   tabela, e sem esse caminho a tela ficava sem volta. No v4 não há mergulho — os dias SÃO o estado
+   inicial e o Horizonte é um alternador que volta sozinho. O "Role para ver mais dias" prometia os
+   10 dias seguintes, e hoje o mês inteiro é desenhado.
+
+   ⚠ Ficam ANOTADOS e não apagados: CSS órfão é barato e a decisão de apagar é à parte (o precedente
+   escrito deste projeto é o DefisNaoDevida.jsx). Quem for apagar: confira antes que nenhuma outra
+   tela os use — .fluxo-v3-voltar tem cara de utilitário e não é.
+*/
+/* A barra de contexto da visão de dias — SEM CONSUMIDOR desde 29/08/2026. */
 .fluxo-v3-migalha { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .fluxo-v3-migalha > strong { font-size: .9rem; }
 .fluxo-v3-voltar {
@@ -945,3 +958,76 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 /* ⚠ O card do resumo usa os MESMOS canais da célula da tabela (cor + itálico), porque mostra o
    MESMO número. Uma regra própria aqui divergiria da linha do mês corrente logo abaixo. */
 .card > .numero[data-status="forecast"] { color: var(--previsto); font-style: italic; }
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+   A FORMA v4 DO FLUXO — dois meses lado a lado (em dias) e o horizonte transposto (29/08/2026).
+
+   Dono: "dois meses de uma vez QUANDO A TELA PERMITIR, ou seja 30 dias à esquerda sendo o mês
+   corrente e 30 dias à direita sendo o mês seguinte".
+
+   ATENÇÃO: "quando a tela permitir" é sobre COLOCAR OS DOIS LADO A LADO, nunca sobre MOSTRAR os
+   dois. Abaixo do ponto de quebra o segundo mês vai ABAIXO do primeiro — ele nunca some. O DOM é o
+   mesmo nas duas larguras; esconder um bloco por media query faria a tela mostrar menos dinheiro no
+   celular sem dizer que está mostrando menos.
+   ───────────────────────────────────────────────────────────────────────────────────────────── */
+.fluxo-v4-par { display: grid; gap: 18px; }
+
+/* O ponto de quebra é medido pelo CONTEÚDO, não escolhido: cada bloco precisa de ~430px (a coluna
+   do dia mais as cinco de valor), e 900px é onde os dois cabem sem o .table-wrap ter de rolar para
+   o lado. Abaixo disso eles empilham. */
+@media (min-width: 900px) {
+  .fluxo-v4-par { grid-template-columns: 1fr 1fr; }
+}
+
+/* min-width: 0 é obrigatório nas duas colunas da grade: sem ele o item assume o min-content da
+   tabela e a PÁGINA INTEIRA passa a rolar para o lado em 375px, com o .table-wrap deixando de
+   conter a tabela. É o mesmo comentário que a .topbar e a barra lateral já carregam. */
+.fluxo-v4-bloco { min-width: 0; }
+
+.fluxo-v4-mes {
+  margin: 0 0 8px;
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+/* A marca do mês corrente é a MESMA do resto da tela (ciano), e ela some no bloco que não é hoje. */
+.fluxo-v4-mes[data-agora="sim"] { color: var(--ciano); }
+
+/* O mês que a janela não cobriu. Ele NÃO é uma tabela vazia: 30 dias em traço afirmariam "este mês
+   não tem nada", e o que se sabe é "este mês não veio nesta consulta". */
+.fluxo-v4-ausente {
+  margin: 0;
+  padding: 18px 14px;
+  font-size: .8rem;
+  color: var(--muted);
+  background: var(--cabecalho-tabela);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+/* ⚠⚠ O HORIZONTE — categoria em linha, mês em coluna, e o NOME DO MÊS EMBAIXO (o "lateralizado"
+   que o dono pediu). O rótulo de baixo é <th scope="col"> dentro de <tfoot>: uma tabela transposta
+   continua sendo tabela para quem usa leitor de tela. */
+.table--fluxo-v4-horizonte th:first-child,
+.table--fluxo-v4-horizonte td:first-child { text-align: left; font-weight: 500; }
+.table--fluxo-v4-horizonte .col-periodo { width: 108px; }
+.table--fluxo-v4-horizonte tfoot th {
+  background: var(--cabecalho-tabela);
+  border-top: 1px solid var(--border);
+  font-size: .72rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+.table--fluxo-v4-horizonte tfoot th[data-agora="sim"] { color: var(--ciano); }
+.table--fluxo-v4-horizonte tbody tr[data-categoria="resultado"] > * {
+  border-top: 2px solid var(--border);
+}
+
+/* O alternador do Horizonte. Ele DIZ o estado com aria-pressed em vez de trocar de rótulo — um
+   botão que vira "Dias" quando está em dias se lê como "você está aqui" metade das vezes e como
+   "vá para lá" na outra metade. */
+.btn-alternador[aria-pressed="true"] {
+  background: var(--neutral-surface);
+  border-color: var(--text-2);
+  color: var(--text);
+}
