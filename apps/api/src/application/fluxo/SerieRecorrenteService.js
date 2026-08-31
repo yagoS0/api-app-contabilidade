@@ -34,7 +34,6 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 // a gravacao e a leitura da mesma chave divergirem — o defeito que o cabecalho daquele arquivo
 // documenta.
 import { chaveDaDescricao } from "../declarados/lib/motorDeSugestao.js";
-import { whereFaturamentoEmit } from "../notas/apuracao/v2/FechamentoService.js";
 import {
   LEITURA,
   PERIODICIDADE,
@@ -83,6 +82,29 @@ export const ESTADO_DA_SERIE = Object.freeze({
  * linha da tela, senão a decisão dele não faz nada.
  */
 export function serieEntraNoFluxo(serie) {
+  // ⚠⚠ SÉRIE DE RECEITA NÃO ENTRA NO FLUXO — e isso REVERTE a decisão de 25/08/2026.
+  //
+  // > Dono, 30/08/2026: *"não precisamos que as notas de entrada apareçam, já que elas são usadas
+  // > no mês seguinte, então não usamos elas para se repetir."*
+  //
+  // ⚠⚠ **O QUE ELE ESTÁ IMPEDINDO É CONTAGEM DOBRADA, e ela estava VIVA.** Desde o v4 (29/08) a
+  // nota emitida vira Entrada **no dia 1 do mês seguinte** — essa é a projeção da receita. Uma
+  // série de RECEITA projeta a MESMA nota uma segunda vez, pela média da contraparte: o mesmo
+  // faturamento entrando por duas portas.
+  //
+  // ⚠ Medido em produção (30/08/2026): das **12** séries da base, **11 eram de RECEITA e estavam
+  // ATIVAS** — nove na SINCROSAT e uma na ERISANGELA, que tem cliente único. Não era risco: era o
+  // estado corrente.
+  //
+  // ⚠ A decisão antiga (*"o mesmo para receita: se eu tenho emitido nota para o mesmo cliente há
+  // 3 meses, a chance de continuar com ele é grande"*) fica registrada porque ela não estava errada
+  // quando foi tomada: naquele desenho a receita da nota **não** entrava sozinha no fluxo. O que a
+  // derrubou foi a regra do dia 1, que passou a fazer o mesmo trabalho.
+  //
+  // ⚠⚠ **O DADO NÃO É APAGADO** — as 11 séries continuam na tabela, com o histórico delas. O que
+  // muda é elas deixarem de ser LIDAS pelo fluxo. Apagar linha de produção é decisão do dono.
+  if (texto(serie?.lado) === LADO.RECEITA) return false;
+
   const estado = texto(serie?.estado);
   const origem = texto(serie?.origem);
   if (estado === ESTADO_DA_SERIE.ATIVA) return true;
@@ -97,6 +119,9 @@ export function serieEntraNoFluxo(serie) {
  * cliente. Há teste exigindo que os dois concordem, caso a caso.
  */
 export const WHERE_SERIE_NO_FLUXO = Object.freeze({
+  // ⚠⚠ O `lado` entrou aqui em 30/08/2026 junto com a função — e as duas têm de andar juntas,
+  // senão o `where` traz do banco a linha que a função recusa e ela vira linha fantasma na tela.
+  lado: LADO.DESPESA,
   OR: [
     { estado: ESTADO_DA_SERIE.ATIVA },
     { estado: ESTADO_DA_SERIE.PENDENTE, origem: ORIGEM_DA_SERIE.DECLARADA },
@@ -204,15 +229,18 @@ export function cicloDeHoje(agora = new Date()) {
  *
  * | lado | população | chave |
  * |---|---|---|
- * | RECEITA | `PortalInvoice` `papel: EMIT`, `statusEfetivo: autorizada` | `tomadorDoc` |
  * | DESPESA | `PortalInvoice` `papel: DEST`, não cancelada | `emitenteDoc` |
  *
- * ⚠ A receita usa `whereFaturamentoEmit()` — a definição de faturamento da casa, por INCLUSÃO.
- * Escrevê-la aqui de novo seria a sexta cópia, e a receita que o fluxo projeta tem de sair da mesma
- * população que a apuração usa.
+ * ⚠⚠ **A LINHA DA RECEITA SAIU EM 30/08/2026** — dono: *"não usamos elas [as notas de entrada] para
+ * se repetir"*. A nota emitida já vira Entrada no **dia 1 do mês seguinte**; propor série sobre ela
+ * projetaria o mesmo faturamento duas vezes. Ver `serieEntraNoFluxo` para o argumento inteiro e os
+ * números medidos.
+ *
+ * ⚠ Com ela saiu o uso de `whereFaturamentoEmit()` aqui. **Aquela função continua sendo a definição
+ * de faturamento da casa** e tem outros cinco consumidores — não a apague achando que ficou órfã.
  *
  * ⚠ A despesa não tem equivalente (nota RECEBIDA não passa pelo nosso ciclo de autorização), então
- * ali o critério é por EXCLUSÃO da cancelada. A assimetria é real e está dita.
+ * o critério é por EXCLUSÃO da cancelada.
  */
 async function observacoesPorContraparte({ portalClientId, client }) {
   const escopo = { clientId: String(portalClientId) };
@@ -221,11 +249,10 @@ async function observacoesPorContraparte({ portalClientId, client }) {
     tomadorDoc: true, tomadorNome: true, emitenteDoc: true, emitenteNome: true,
   };
 
-  const [emitidas, recebidas] = await Promise.all([
-    client.portalInvoice.findMany({
-      where: { ...escopo, ...whereFaturamentoEmit(), competencia: { not: null }, total: { not: null } },
-      select: campos,
-    }),
+  // ⚠⚠ A CONSULTA DAS EMITIDAS SAIU EM 30/08/2026, junto com a série de receita. Deixar a query e
+  // descartar o resultado seria ler 1.897 notas por varredura para jogar fora — e um dia alguém
+  // reintroduziria o `juntar` achando que "já estava quase lá".
+  const [recebidas] = await Promise.all([
     client.portalInvoice.findMany({
       where: { ...escopo, papel: "DEST", competencia: { not: null }, total: { not: null } },
       select: campos,
@@ -235,6 +262,9 @@ async function observacoesPorContraparte({ portalClientId, client }) {
   const series = new Map();
   let semContraparte = 0;
 
+  // ⚠ `semContraparte` conta a nota que NÃO PÔDE virar série por falta de documento — e por isso
+  // ele agora fala só das RECEBIDAS. Contar também as emitidas mostraria ao contador um número de
+  // "notas fora do alcance" de uma população que **nenhuma regra olha mais**.
   const juntar = (lado, notas, campoDoc, campoNome) => {
     for (const n of notas) {
       if (foiCancelada(n)) continue;
@@ -257,7 +287,11 @@ async function observacoesPorContraparte({ portalClientId, client }) {
     }
   };
 
-  juntar(LADO.RECEITA, emitidas, "tomadorDoc", "tomadorNome");
+  // ⚠⚠ SÓ DESPESA (30/08/2026) — dono: *"não usamos elas [as notas de entrada] para se repetir; o
+  // que deveria acontecer com as recebidas, que são entradas de despesas"*. A receita da nota
+  // emitida já entra no fluxo pelo **dia 1 do mês seguinte**; propor série sobre ela é oferecer ao
+  // contador uma linha que dobra o faturamento. Ver o porquê inteiro em `serieEntraNoFluxo`.
+  //
   juntar(LADO.DESPESA, recebidas, "emitenteDoc", "emitenteNome");
 
   return { series: [...series.values()], semContraparte };
