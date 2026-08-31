@@ -18,6 +18,9 @@
 
 import { readFileSync } from "node:fs";
 import { google } from "googleapis";
+// ⚠ Regra pura, SEM `config.js` — importar a config mataria este script justamente no caso que ele
+// existe para diagnosticar (ambiente mal configurado).
+import { remetenteDaCaixa } from "../src/infrastructure/mail/lib/remetente.js";
 
 const [caminho, subject] = process.argv.slice(2);
 const iEnviar = process.argv.indexOf("--enviar-para");
@@ -73,8 +76,19 @@ if (!destino) {
 
 // ⚠ A partir daqui SAI E-MAIL DE VERDADE, pela caixa impersonada.
 const gmail = google.gmail({ version: "v1", auth });
+/**
+ * ⚠ O `From` do teste herda o NOME DE EXIBIÇÃO de `SMTP_FROM` quando ele aponta para esta caixa.
+ *
+ * > Dono: *"o ultimo email enviado, de delegação veio como envio"*
+ *
+ * Antes, o teste sempre saía como endereço puro e a caixa de entrada mostrava `envio` — quem
+ * conferisse concluiria que o nome de exibição tinha quebrado, sendo que o envio real estava certo.
+ * ⚠ `remetenteDaCaixa` recusa o nome de um `SMTP_FROM` que aponte para OUTRO endereço: o Gmail
+ * exige que o `From` seja o da caixa impersonada, e herdar errado trocaria "sem nome" por "não sai".
+ */
+const remetente = remetenteDaCaixa(subject, process.env.SMTP_FROM);
 const mime = [
-  `From: ${subject}`,
+  `From: ${remetente}`,
   `To: ${destino}`,
   `Reply-To: ${subject}`,
   "Subject: =?UTF-8?B?" + Buffer.from("Teste de delegacao - Altan").toString("base64") + "?=",

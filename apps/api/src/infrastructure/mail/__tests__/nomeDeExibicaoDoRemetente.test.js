@@ -7,26 +7,14 @@
 // protege é o cabeçalho, que não é texto livre.
 //
 // ⚠⚠ Os dois modos de quebrar são SILENCIOSOS — o e-mail sai, e sai errado. Não há erro para ler.
+//
+// ⚠ O import é do módulo puro (`lib/remetente.js`), NÃO do `EmailService` — é o mesmo motivo por
+// que o módulo existe: nada aqui depende de `config.js`, e por isso não há mock nenhum nesta suíte.
 
-// ⚠ `config.js` valida ambiente inteiro ao ser importado; aqui só interessa a função pura.
-jest.mock("../../../config.js", () => ({
-  USE_GMAIL_API: false,
-  FROM: "",
-  SMTP_HOST: "",
-  SMTP_PORT: 587,
-  SMTP_USER: "",
-  SMTP_PASS: "",
-  GMAIL_DELEGATED_USER: "",
-  MAIL_REPLY_TO: "",
-  GOOGLE_APPLICATION_CREDENTIALS: "",
-  GOOGLE_APPLICATION_CREDENTIALS_JSON: "",
-  log: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
-}));
-
-import { montarRemetente } from "../EmailService.js";
+import { montarRemetente, remetenteDaCaixa } from "../lib/remetente.js";
 
 describe("o nome de exibição do remetente", () => {
-  it("o formato de hoje — endereço puro — segue intocado", () => {
+  it("o formato de antes — endereço puro — segue intocado", () => {
     // É o caminho de quem não configurou nome nenhum. Ele não pode mudar de forma.
     expect(montarRemetente("envio@altan.company")).toBe("envio@altan.company");
   });
@@ -73,6 +61,38 @@ describe("o nome de exibição do remetente", () => {
       const saida = montarRemetente(`${nome} <envio@altan.company>`);
       const endereco = (saida.match(/<([^>]+)>/) || [, saida])[1];
       expect(endereco).toBe("envio@altan.company");
+    }
+  });
+});
+
+// > Dono: *"o ultimo email enviado, de delegação veio como envio"*
+//
+// O verificador de delegação monta o MIME dele próprio (de propósito: ele roda quando a config está
+// quebrada), então saía sempre sem nome — e quem conferisse concluiria que o nome tinha quebrado.
+describe("⚠ o remetente do verificador de delegação", () => {
+  const CAIXA = "envio@altan.company";
+
+  it("herda o nome quando `SMTP_FROM` aponta para a MESMA caixa", () => {
+    expect(remetenteDaCaixa(CAIXA, "Altan Contabilidade <envio@altan.company>")).toBe(
+      "Altan Contabilidade <envio@altan.company>"
+    );
+  });
+
+  it("⚠⚠ RECUSA o nome de um `SMTP_FROM` que aponta para OUTRO endereço", () => {
+    // Herdar aqui trocaria "e-mail sem nome" por "e-mail que não sai": o Gmail exige que o `From`
+    // seja o da caixa impersonada.
+    expect(remetenteDaCaixa(CAIXA, "Outra Casa <contato@outrodominio.com>")).toBe(CAIXA);
+  });
+
+  it("⚠ a comparação do endereço ignora a caixa alta — Workspace é case-insensitive", () => {
+    expect(remetenteDaCaixa(CAIXA, "Altan Contabilidade <Envio@Altan.Company>")).toBe(
+      "Altan Contabilidade <Envio@Altan.Company>"
+    );
+  });
+
+  it("`SMTP_FROM` ausente ou sem nome cai na caixa pura — o comportamento de antes", () => {
+    for (const v of [undefined, "", "   ", "envio@altan.company"]) {
+      expect(remetenteDaCaixa(CAIXA, v)).toBe(CAIXA);
     }
   });
 });

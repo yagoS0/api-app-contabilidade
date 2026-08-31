@@ -16,46 +16,9 @@ import {
   GOOGLE_APPLICATION_CREDENTIALS_JSON,
   log,
 } from "../../config.js";
-
-function encodeHeaderUtf8(value) {
-  const s = String(value ?? "");
-  if (/^[\x20-\x7E]*$/.test(s)) return s;
-  const b64 = Buffer.from(s, "utf8").toString("base64");
-  return `=?UTF-8?B?${b64}?=`;
-}
-
-/**
- * ⚠ O NOME DE EXIBIÇÃO do remetente — o que a caixa de entrada mostra em negrito (30/08/2026)
- *
- * > Dono: *"o email aparece na caixa de entrada como: envio, conseguimos mudar isso?"*
- *
- * O `From` saía como endereço puro (`envio@altan.company`) e o Gmail mostrava a parte antes
- * do `@`. Com `SMTP_FROM="Altan Contabilidade <envio@altan.company>"` ele passa a mostrar o nome.
- *
- * ⚠⚠ Esta função existe porque o cabeçalho NÃO é texto livre. Dois modos de quebrar, os dois
- * silenciosos — o e-mail SAI, e sai errado:
- *   1. **acento** (`Contabilidade Ltda · Endereço`) vai cru e vira mojibake no cliente de e-mail;
- *   2. **vírgula ou ponto** (`Altan Contabilidade, Ltda.`) são `specials` do RFC 5322 dentro de um
- *      `phrase` — o parser lê a vírgula como SEPARADOR e o `From` vira DOIS remetentes.
- *
- * ⚠ `encoded-word` (`=?UTF-8?B?…?=`) NUNCA pode ir entre aspas: entre aspas ele deixa de ser
- * decodificado e o cliente mostra a base64 literal. Por isso os dois ramos são exclusivos.
- */
-const ESPECIAIS_DO_PHRASE = /[()<>@,;:\\".[\]]/;
-
-export function montarRemetente(from) {
-  const bruto = String(from ?? "").trim();
-  const m = bruto.match(/^(.*)<([^>]+)>\s*$/);
-  // Endereço puro (o formato de hoje) segue intocado — é o caminho de quem não configurou nome.
-  if (!m) return bruto;
-  const nome = m[1].trim().replace(/^"(.*)"$/, "$1");
-  const endereco = m[2].trim();
-  if (!nome) return endereco;
-  const codificado = encodeHeaderUtf8(nome);
-  if (codificado !== nome) return `${codificado} <${endereco}>`;
-  if (ESPECIAIS_DO_PHRASE.test(nome)) return `"${nome.replace(/"/g, '\\"')}" <${endereco}>`;
-  return `${nome} <${endereco}>`;
-}
+// ⚠ Regra pura do cabeçalho, em módulo próprio porque `scripts/verificar-delegacao-gmail.mjs`
+// também precisa dela e NÃO pode importar `config.js` (ele existe para rodar com a config quebrada).
+import { encodeHeaderUtf8, montarRemetente } from "./lib/remetente.js";
 
 // Normaliza a private_key vinda de env var. Em painéis como Railway/Heroku, ao colar
 // o JSON inteiro como string, as quebras de linha reais às vezes viram `\\n` literais
