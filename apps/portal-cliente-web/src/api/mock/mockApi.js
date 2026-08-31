@@ -1151,6 +1151,10 @@ function criarEstado() {
      * modo offline — em produção quem guarda é `saidas_avulsas_cliente` e `series_recorrentes`.
      */
     saidasDoCliente: new Map(),
+    // ⚠⚠ O que o cliente MEXEU nas séries do fluxo (31/08/2026): `empresa -> { serieId: dia }` e
+    // `empresa -> [serieId]`. Sem eles, mudar o dia e excluir não mudariam nada na tela offline.
+    diasDasSeries: new Map(),
+    seriesExcluidas: new Map(),
     tokensRedefinicao,
     numeracaoNfse,
     tentativasNfse,
@@ -2009,6 +2013,8 @@ export function createMockApi() {
         // escrita e não a mostra treina a tela a parecer quebrada. É a quinta vez que este mock
         // teria escondido um ramo.
         saidasDoCliente: estado.saidasDoCliente.get(id) || [],
+        diasDasSeries: estado.diasDasSeries.get(id) || {},
+        seriesExcluidas: estado.seriesExcluidas.get(id) || [],
       });
     },
 
@@ -2117,12 +2123,82 @@ export function createMockApi() {
       // pedir a remoção na tabela errada devolve "não encontrada". Um mock que ignorasse o tipo
       // deixaria a tela mandar o parâmetro errado e só descobrir em produção.
       const alvo = lista.find((s) => s.id === String(saidaId) && s.tipo === esperado);
+      /**
+       * ⚠⚠ A SÉRIE DO FIXTURE NÃO MORA EM `saidasDoCliente` — ela é do fluxo, e o cliente passou a
+       * poder tirá-la em 31/08/2026 (dono: *"pode ser excluído uma saída pelo usuário"*).
+       *
+       * ⚠ Antes, este ramo devolvia 404 sobre uma linha que está na frente da pessoa: o mock
+       * recusava o que o servidor aceita, e a tela pareceria quebrada offline.
+       * ⚠ No servidor ela não é APAGADA — é marcada, e continua na Conferência do contador. Aqui
+       * ela some da tela do cliente, que é o que este mock existe para mostrar.
+       */
+      if (!alvo && esperado === "RECORRENTE") {
+        /**
+         * ⚠⚠ O ID TEM DE SER DE UMA SÉRIE QUE EXISTE NO FLUXO — achado por teste em 31/08/2026.
+         *
+         * A primeira versão deste ramo aceitava QUALQUER id e respondia `ok`, "excluindo" uma série
+         * inexistente. O servidor real recusa (`buscarSerieDoCliente` → `serie_nao_encontrada`), e
+         * um mock mais permissivo esconderia exatamente o caso em que a tela manda o `tipo` errado:
+         * ela receberia sucesso offline e "não encontrada" em produção.
+         */
+        /**
+         * ⚠⚠ A EXISTÊNCIA É MEDIDA **SEM** AS EXCLUSÕES — e a ordem errada aqui foi pega por teste.
+         *
+         * Com `seriesExcluidas` aplicado, a série já excluída não aparece no fixture e a SEGUNDA
+         * tentativa respondia "não encontrada" em vez de "já excluída". São recusas diferentes e
+         * pedem coisas diferentes de quem lê: uma é engano de id, a outra é "isso já está feito".
+         * ⚠ É o que o servidor faz: `buscarSerieDoCliente` ACHA a linha de qualquer jeito (ela não
+         * é apagada) e só então recusa por já excluída.
+         */
+        const existe = fluxoDeCaixaDoMock(id, competenciaPadrao(), {
+          saidasDoCliente: estado.saidasDoCliente.get(id) || [],
+          diasDasSeries: estado.diasDasSeries.get(id) || {},
+          seriesExcluidas: [],
+        }).meses.flatMap((m) => m.linhas || [])
+          .some((l) => l?.referencia?.tipo === "serie" && l.referencia.id === String(saidaId));
+        if (!existe) throw new ApiError(404, "saida_nao_encontrada", { error: "saida_nao_encontrada" });
+
+        const jaExcluidas = estado.seriesExcluidas.get(id) || [];
+        if (jaExcluidas.includes(String(saidaId))) {
+          throw new ApiError(409, "serie_ja_excluida", { error: "serie_ja_excluida" });
+        }
+        estado.seriesExcluidas.set(id, [...jaExcluidas, String(saidaId)]);
+        return { ok: true, tipo: esperado, apagada: false };
+      }
       if (!alvo) throw new ApiError(404, "saida_nao_encontrada", { error: "saida_nao_encontrada" });
       if (alvo.estado !== "PENDENTE") {
         throw new ApiError(409, "saida_ja_decidida", { error: "saida_ja_decidida" });
       }
       estado.saidasDoCliente.set(id, lista.filter((s) => s.id !== alvo.id));
       return { ok: true };
+    },
+
+    /**
+     * ⚠⚠ O CLIENTE DIZ EM QUE DIA A SAÍDA CAI — vale para a SÉRIE INTEIRA (31/08/2026).
+     *
+     * > Dono: *"série inteira: esse pagamento é sempre dia 10."*
+     *
+     * ⚠ As MESMAS recusas do servidor, com os mesmos códigos: um mock mais permissivo deixaria a
+     * tela mandar um dia inválido e só descobrir em produção.
+     * ⚠ `null` LIMPA e devolve a linha à estimativa — é o desfazer do próprio cliente.
+     */
+    async definirDiaDaSaida(companyId, saidaId, dia) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const atual = { ...(estado.diasDasSeries.get(id) || {}) };
+      if (dia == null) {
+        delete atual[String(saidaId)];
+        estado.diasDasSeries.set(id, atual);
+        return { ok: true, dia: null };
+      }
+      const n = Number(dia);
+      // ⚠ Guard por TIPO: `Number(null) === 0` e 0 é finito — truthy deixaria passar.
+      if (!Number.isInteger(n) || n < 1 || n > 31) {
+        throw new ApiError(400, "dia_invalido", { error: "dia_invalido" });
+      }
+      atual[String(saidaId)] = n;
+      estado.diasDasSeries.set(id, atual);
+      return { ok: true, dia: n };
     },
 
     /**

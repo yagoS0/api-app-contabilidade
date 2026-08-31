@@ -3226,6 +3226,34 @@ function synthesizeLpEntries(companyId, competencia, debitos) {
   mockEntriesByCompany.set(companyId, list);
 }
 
+/**
+ * ⚠⚠ O QUE O CLIENTE MEXEU — os DOIS casos, porque eles se desenham diferente (31/08/2026).
+ *
+ * `sm-1` mudou o DIA: tem antes (4, estimado pelas emissões) e depois (10, dito por ele).
+ * `sm-2` TIROU do fluxo: não tem "depois" nenhum — e uma tela que tentasse mostrar um mostraria
+ * um traço onde deveria estar a explicação.
+ *
+ * ⚠ Os dias observados de `sm-1` são os da SPO TECNOLOGIA em produção: 20, 2 e 4. Mediana 4.
+ */
+const MEXIDAS_DO_MOCK = Object.freeze([
+  {
+    id: "sm-1", rotulo: "SPO TECNOLOGIA LTDA.", contraparteDoc: "28070056000131",
+    estadoDaSerie: "ATIVA", origem: "DETECTADA",
+    diaEstimado: 4, diaDoCliente: 10,
+    diaDefinidoPor: "u-cliente", diaDefinidoEm: "2026-08-31T14:02:00.000Z",
+    excluidaPeloClienteEm: null, excluidaPeloClientePor: null,
+  },
+  {
+    id: "sm-2", rotulo: "CLOUDFACIL COMPUTACAO EM NUVEM LTDA ME", contraparteDoc: "17772370000167",
+    estadoDaSerie: "ATIVA", origem: "DETECTADA",
+    diaEstimado: 2, diaDoCliente: null,
+    diaDefinidoPor: null, diaDefinidoEm: null,
+    excluidaPeloClienteEm: "2026-08-31T15:20:00.000Z", excluidaPeloClientePor: "u-cliente",
+  },
+]);
+
+const mexidasDesfeitas = new Set();
+
 export function createMockApi() {
   let accessToken = "";
 
@@ -7373,6 +7401,27 @@ export function createMockApi() {
           { id: "sa-2", data: "2026-09-30", valor: "820.00", descricao: "Curso da equipe", estado: "PENDENTE" },
         ],
       };
+    },
+
+    /**
+     * ⚠⚠ A QUARTA FILA, no mock — e ela exercita OS DOIS casos (31/08/2026).
+     *
+     * Um mock com só um deles esconderia metade da tela: "mudou o dia" e "tirou do fluxo" pedem
+     * desenhos diferentes (o primeiro tem ANTES e DEPOIS, o segundo não tem depois nenhum).
+     * ⚠ O `diaEstimado` da primeira são os dias reais da SPO em produção — 20, 2, 4 → mediana 4.
+     */
+    async getConferenciaMexidasDoCliente(_companyId) {
+      await delay(60);
+      if (mexidasDesfeitas.size) {
+        return { ok: true, indisponivel: false, mexidas: MEXIDAS_DO_MOCK.filter((m) => !mexidasDesfeitas.has(m.id)) };
+      }
+      return { ok: true, indisponivel: false, mexidas: MEXIDAS_DO_MOCK };
+    },
+
+    async postConferenciaMexidaDesfazer(_companyId, serieId) {
+      await delay(60);
+      mexidasDesfeitas.add(String(serieId));
+      return { ok: true };
     },
 
     async postConferenciaSaidaDecidir(_companyId, saidaId, { estado, motivoRecusa } = {}) {

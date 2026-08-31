@@ -217,12 +217,16 @@ function linhasDoPresenteEDoFuturo(ciclo) {
     // ⚠⚠ A FAIXA mín/máx — a mediana sozinha erraria por um terço rotineiramente.
     {
       fonte: "SERIE_DESPESA", direcao: "SAIDA", procedencia: "PREVISAO", competencia: mes(1),
-      dia: null,
-      diaDesconhecido: { motivo: "serie_sem_dia", frase: FRASE_SERIE_SEM_DIA },
+      // ⚠⚠ COM DIA, ESTIMADO PELAS EMISSÕES (31/08/2026). Os três dias são os da SPO TECNOLOGIA em
+      // produção — 20, 2 e 4 —, e a mediana deles é 4. Números iguais nas três notas fariam a
+      // mediana parecer óbvia e esconderiam o ramo que importa.
+      dia: 4,
+      diaDesconhecido: null,
       valor: 130, rotulo: "ANTHROPIC PBC",
       base: {
         frase: "recorrência marcada · MENSAL", n: 3, min: 120, max: 140, cv: 0.0769,
         origem: "DETECTADA", valorDeclarado: null, valorObservado: 130,
+        origemDoDia: "emissao", diasObservados: [20, 2, 4], estadoDaSerie: "ATIVA",
       },
       referencia: { tipo: "serie", id: "s-1" },
     },
@@ -231,6 +235,9 @@ function linhasDoPresenteEDoFuturo(ciclo) {
       fonte: "SERIE_DESPESA", direcao: "SAIDA", procedencia: "PREVISAO", competencia: mes(1),
       dia: null,
       diaDesconhecido: { motivo: "serie_sem_dia", frase: FRASE_SERIE_SEM_DIA },
+      // ⚠⚠ ESTA CONTINUA SEM DIA, e não é esquecimento: ela foi DECLARADA, não detectada — não há
+      // nota nenhuma de onde estimar o dia. É o ramo "no mês" que precisa continuar alcançável
+      // offline, e é exatamente a linha em que o cliente vai querer DIZER o dia.
       valor: 1180, rotulo: "Jantar com clientes",
       base: {
         frase: "recorrência marcada · MENSAL", n: 3, min: 900, max: 1400, cv: 0.21,
@@ -385,7 +392,32 @@ export function fluxoDeCaixaDoMock(companyId, competencia, opcoes = {}) {
     // não depende de a empresa ter apuração. Deixá-las de fora dali esconderia offline justamente
     // o caso em que a linha do cliente é a ÚNICA da tela.
     ...linhasDasSaidasDoCliente(opcoes.saidasDoCliente, ciclo),
-  ];
+  ]
+    /**
+     * ⚠⚠ O QUE O CLIENTE MEXEU NAS SÉRIES — aplicado SOBRE o fixture (31/08/2026).
+     *
+     * Sem isto, mudar o dia ou tirar a saída não mudaria NADA na tela offline, e a tela pareceria
+     * quebrada para quem a confere no mock. É a mesma razão de `saidasDoCliente` logo acima — e o
+     * cabeçalho dela já conta que este mock escondeu ramo cinco vezes.
+     *
+     * ⚠ A ordem importa: EXCLUIR primeiro (a linha some), só então trocar o dia — trocar o dia de
+     * uma linha que vai sumir é trabalho jogado fora, e mascararia um bug de ordem no servidor.
+     */
+    .filter((l) => !(l?.referencia?.tipo === "serie" && (opcoes.seriesExcluidas || []).includes(l.referencia.id)))
+    .map((l) => {
+      if (l?.referencia?.tipo !== "serie") return l;
+      const dia = (opcoes.diasDasSeries || {})[l.referencia.id];
+      if (!Number.isInteger(dia)) return l;
+      // ⚠ Encaixa no mês, como o servidor: dia 31 em fevereiro vira 28, senão a linha sumiria.
+      const ultimo = new Date(Date.UTC(Number(l.competencia.slice(0, 4)), Number(l.competencia.slice(5, 7)), 0)).getUTCDate();
+      return {
+        ...l,
+        dia: Math.min(dia, ultimo),
+        // ⚠ Com dia, o motivo SOME — senão a tela diz "não sabemos o dia" embaixo de um dia.
+        diaDesconhecido: null,
+        base: { ...(l.base || {}), origemDoDia: "cliente" },
+      };
+    });
 
   /**
    * ⚠⚠ A JANELA E O "HOJE" SÃO DUAS COISAS — e o mock precisa honrar as duas, senão as setas ‹ ›

@@ -93,8 +93,55 @@ function tituloDaGaveta({ competencia, dia, balde }) {
  * `data-procedencia` no DOM e a classe (`neutro`/`aviso`) que a folha de estilo pinta — nenhuma
  * delas é `ok`. Impressão em preto e branco e daltonismo tiram a cor; as outras duas ficam.
  */
-function LinhaDaGaveta({ linha }) {
+/**
+ * ⚠⚠ O QUE O CLIENTE PODE FAZER COM UMA SAÍDA QUE SE REPETE (31/08/2026).
+ *
+ * > Dono: *"pode ser excluído uma saída pelo usuário. ou alterado a data"* — escopo: *"série
+ * > inteira: esse pagamento é sempre dia 10."*
+ *
+ * ⚠⚠ **SÓ SOBRE `SERIE_DESPESA`.** Guia, imposto projetado, folha e nota emitida NÃO ganham botão
+ * nenhum: guia é dívida com a Receita, e mexer nela pelo lado de quem paga é o desfecho que este
+ * portal nunca pode oferecer. A lista é FECHADA, e por fonte — não por balde.
+ */
+const FONTES_QUE_O_CLIENTE_MEXE = Object.freeze(["SERIE_DESPESA"]);
+
+function podeMexer(linha) {
+  return FONTES_QUE_O_CLIENTE_MEXE.includes(linha?.fonte)
+    && linha?.referencia?.tipo === "serie"
+    && Boolean(linha?.referencia?.id);
+}
+
+/**
+ * A frase que diz DE ONDE veio o dia.
+ *
+ * ⚠⚠ Sem ela, "dia 4" se lê como VENCIMENTO — e não é: é a mediana das datas em que as notas foram
+ * emitidas. O cliente pagaria por ela. Por isso a frase mostra os dias observados: são 20, 2 e 4 na
+ * série real, e o 4 não é óbvio olhando só o resultado.
+ */
+function fraseDoDia(linha) {
+  if (linha.origemDoDia === "cliente") return "Dia definido por você.";
+  if (linha.origemDoDia !== "emissao") return null;
+  const dias = Array.isArray(linha.diasObservados) ? linha.diasObservados : [];
+  return dias.length
+    ? `Dia estimado: as notas foram emitidas nos dias ${dias.join(", ")}.`
+    : "Dia estimado pelas datas em que as notas foram emitidas.";
+}
+
+function LinhaDaGaveta({ linha, aoMudarDia, aoExcluir, ocupada }) {
   const leitura = leituraDaProcedencia(linha.procedencia);
+  const [editando, setEditando] = useState(false);
+  const [dia, setDia] = useState(linha.dia == null ? "" : String(linha.dia));
+  const mexivel = podeMexer(linha);
+  const frase = fraseDoDia(linha);
+
+  async function salvarDia(ev) {
+    ev.preventDefault();
+    // ⚠ Campo vazio LIMPA o dia (volta para a estimativa) — não é "cancelar". Cancelar é o outro
+    // botão, e confundir os dois faria o cliente apagar sem querer o que ele mesmo definiu.
+    await aoMudarDia(linha.referencia.id, dia.trim() === "" ? null : Number(dia));
+    setEditando(false);
+  }
+
   return (
     <li
       className="gaveta-linha"
@@ -116,6 +163,52 @@ function LinhaDaGaveta({ linha }) {
         paisagem, e aí ninguém lê o da linha que importa).
       */}
       {linha.frase ? <p className="gaveta-frase">{linha.frase}</p> : null}
+      {/* ⚠ A frase do DIA é separada da frase do VALOR: elas respondem perguntas diferentes
+          ("por que esta linha existe?" x "por que neste dia?") e juntá-las esconderia a segunda. */}
+      {frase ? <p className="gaveta-frase gaveta-frase--dia">{frase}</p> : null}
+
+      {mexivel ? (
+        <div className="gaveta-acoes">
+          {editando ? (
+            <form className="gaveta-dia-form" onSubmit={salvarDia}>
+              <label>
+                Dia do mês
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={dia}
+                  onChange={(e) => setDia(e.target.value)}
+                  // ⚠ `inputMode` numérico abre o teclado certo no celular, onde este portal é lido.
+                  inputMode="numeric"
+                  autoFocus
+                />
+              </label>
+              {/* ⚠⚠ A FRASE DO ESCOPO, e ela não é decoração: o dono escolheu "série inteira", e o
+                  cliente precisa saber que não está corrigindo só este mês. Sem ela, ele mudaria
+                  setembro achando que outubro fica como estava. */}
+              <p className="gaveta-nota">Vale para todos os meses. Deixe em branco para voltar ao dia estimado.</p>
+              <div className="gaveta-acoes">
+                <button type="submit" className="btn btn-primario" disabled={ocupada}>Salvar</button>
+                <button type="button" className="btn" onClick={() => { setDia(linha.dia == null ? "" : String(linha.dia)); setEditando(false); }}>
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <button type="button" className="btn btn-pequeno" onClick={() => setEditando(true)} disabled={ocupada}>
+                {linha.dia == null ? "Definir o dia" : "Mudar o dia"}
+              </button>
+              {/* ⚠ "Tirar do fluxo", não "Excluir": nada é apagado — a linha sai da projeção dele e
+                  continua visível para o contador, que pode desfazer. O verbo tem de dizer isso. */}
+              <button type="button" className="btn btn-pequeno" onClick={() => aoExcluir(linha)} disabled={ocupada}>
+                Tirar do fluxo
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -167,6 +260,53 @@ function Gaveta({ competencia, dia, balde, linhasDoMes, companyId, aoFechar, aoM
 
   function campo(k) {
     return (ev) => setForm((f) => ({ ...f, [k]: ev.target.value }));
+  }
+
+  /**
+   * ⚠⚠ O CLIENTE DIZ O DIA DA SÉRIE — e a tela NÃO altera a linha na mão (31/08/2026).
+   *
+   * Quem recarrega é quem tem os dados (`aoMudar`). Mexer na linha aqui faria a gaveta e a tabela
+   * discordarem até a próxima consulta — a mesma regra do formulário de acrescentar, logo abaixo.
+   */
+  async function mudarODia(serieId, dia) {
+    setErro(null);
+    setSalvando(true);
+    try {
+      await api.definirDiaDaSaida(companyId, serieId, dia);
+      aoMudar?.();
+    } catch (e) {
+      setErro(e);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  /**
+   * ⚠⚠ TIRAR DO FLUXO PERGUNTA ANTES — e a pergunta diz o que realmente acontece.
+   *
+   * Ela é uma projeção que pode ter entrado sozinha (a regra dos 10%), então tirá-la é barato de
+   * errar e chato de descobrir: a linha some e ninguém lembra por quê. ⚠ A frase diz que o contador
+   * continua vendo — é o que impede o cliente de achar que apagou algo do escritório.
+   */
+  async function tirarDoFluxo(linha) {
+    // eslint-disable-next-line no-alert
+    const ok = window.confirm(
+      `Tirar "${linha.rotulo}" do seu fluxo?
+
+`
+      + "Ela deixa de aparecer nos próximos meses. O seu contador continua vendo, e pode trazê-la de volta.",
+    );
+    if (!ok) return;
+    setErro(null);
+    setSalvando(true);
+    try {
+      await api.removerSaidaDoFluxo(companyId, linha.referencia.id, { tipo: TIPO_DA_SAIDA.RECORRENTE });
+      aoMudar?.();
+    } catch (e) {
+      setErro(e);
+    } finally {
+      setSalvando(false);
+    }
   }
 
   async function salvar(ev) {
@@ -245,7 +385,15 @@ function Gaveta({ competencia, dia, balde, linhasDoMes, companyId, aoFechar, aoM
           </p>
         ) : (
           <ul className="gaveta-lista">
-            {linhas.map((l) => <LinhaDaGaveta key={l.chave} linha={l} />)}
+            {linhas.map((l) => (
+              <LinhaDaGaveta
+                key={l.chave}
+                linha={l}
+                ocupada={salvando}
+                aoMudarDia={mudarODia}
+                aoExcluir={tirarDoFluxo}
+              />
+            ))}
           </ul>
         )}
 

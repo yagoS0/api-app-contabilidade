@@ -455,8 +455,9 @@ export function createRealApi() {
      * o ato do contador pelo lado do cliente. ⚠ A recusa é NOMEADA para a tela poder DIZER o que
      * houve, em vez de o botão só falhar.
      *
-     * ⚠ **NÃO EXISTE PATCH**, e a ausência é a resposta do dono: *"só acrescentar"*. Nada aqui
-     * altera linha que o sistema previu, e não há caminho para o cliente mexer numa guia.
+     * ⚠⚠ **O `PATCH` PASSOU A EXISTIR EM 31/08/2026** — dono: *"pode ser excluído uma saída pelo
+     * usuário. ou alterado a data"*. Ele é `definirDiaDaSaida`, logo abaixo, e mexe em UM campo.
+     * O que a regra antiga protegia continua de pé: nada aqui alcança uma guia.
      */
     async removerSaidaDoFluxo(companyId, saidaId, { tipo } = {}) {
       // ⚠⚠ O `tipo` VIAJA porque as duas formas moram em TABELAS diferentes e o servidor despacha
@@ -467,6 +468,20 @@ export function createRealApi() {
         `/client/companies/${encodeURIComponent(companyId)}/fluxo/saidas/${encodeURIComponent(saidaId)}`
         + qs({ tipo: tipo || undefined }),
         { method: "DELETE" },
+      );
+    },
+    /**
+     * ⚠⚠ O CLIENTE DIZ EM QUE DIA ESTA SAÍDA CAI — e vale para a SÉRIE INTEIRA (31/08/2026).
+     *
+     * > Dono: *"série inteira: esse pagamento é sempre dia 10."*
+     *
+     * ⚠ `dia: null` LIMPA e devolve a linha à ESTIMATIVA pelas emissões — é o desfazer do próprio
+     * cliente, e por isso o `null` é enviado, nunca omitido: omitir viraria "não mexa nisto".
+     */
+    async definirDiaDaSaida(companyId, saidaId, dia) {
+      return pedir(
+        `/client/companies/${encodeURIComponent(companyId)}/fluxo/saidas/${encodeURIComponent(saidaId)}/dia`,
+        { method: "PATCH", body: JSON.stringify({ dia: dia == null ? null : Number(dia) }) },
       );
     },
     /**

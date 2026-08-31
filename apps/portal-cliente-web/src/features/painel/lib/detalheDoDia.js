@@ -151,6 +151,15 @@ export function linhasDoDia(linhasDoMes, opcoes = {}) {
       // ⚠⚠ A FRASE É O QUE DIZ DE ONDE O NÚMERO VEIO, e ela vem do SERVIDOR pronta. `null` quando
       // não há — a tela não escreve uma de reserva, senão as duas divergem na primeira correção.
       frase: frase || null,
+      // ⚠⚠ A REFERÊNCIA viaja para a tela poder AGIR sobre a linha (mudar o dia, tirar do fluxo).
+      // Sem ela a gaveta mostra a série e não tem como NOMEÁ-LA para o servidor.
+      referencia: l?.referencia || null,
+      // ⚠⚠ DE ONDE VEIO O DIA. É o que deixa a tela dizer "estimado pelas emissões" em vez de
+      // mostrar um dia seco — que se lê como VENCIMENTO, e não é.
+      origemDoDia: l?.base?.origemDoDia || null,
+      // ⚠ Os dias observados: sem eles, "por que dia 4?" não tem resposta na tela de quem paga.
+      diasObservados: Array.isArray(l?.base?.diasObservados) ? l.base.diasObservados : null,
+      estadoDaSerie: l?.base?.estadoDaSerie || null,
     });
   });
 

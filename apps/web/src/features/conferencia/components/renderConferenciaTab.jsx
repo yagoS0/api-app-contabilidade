@@ -25,6 +25,7 @@ import { PainelDeCasamentos } from "./PainelDeCasamentos";
 // "coisas para o contador confirmar". ⚠ A feature é PRÓPRIA para o fluxo importá-la depois.
 import { PainelDeRecorrencias } from "../../recorrencia/components/PainelDeRecorrencias";
 import { PainelDeSaidasDoCliente } from "./PainelDeSaidasDoCliente";
+import { PainelDeMexidasDoCliente } from "./PainelDeMexidasDoCliente";
 import { PainelDeLancadosPorRegra } from "./PainelDeLancadosPorRegra";
 import { PainelDeRegras } from "./PainelDeRegras";
 import { debitosQueCasamComNota } from "../lib/contabilizacaoEmLote";
@@ -886,6 +887,10 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
         para o contador na aba de conferência"*.
       */}
       <PainelDeSaidasDoCliente companyId={companyId} podeEscrever={podeEscrever} />
+      {/* ⚠⚠ DEPOIS das três filas de decisão, e não entre elas: esta é CIÊNCIA, não tarefa. Posta
+          no meio, ela seria lida como mais uma coisa a resolver — e ela não espera nada de você.
+          ⚠ Ela não desenha nada quando não há mexida nenhuma; ver o cabeçalho do painel. */}
+      <PainelDeMexidasDoCliente companyId={companyId} podeEscrever={podeEscrever} />
 
       {/*
         ⚠⚠ O EXTRATO DO QUE ENTROU SEM CLIQUE vem ANTES das regras, e a ordem é a decisão.
