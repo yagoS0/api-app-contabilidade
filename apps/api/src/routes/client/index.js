@@ -20,6 +20,8 @@ import {
   RECUSA_DA_SERIE,
   SerieRecusada,
   declararSerie,
+  definirDiaDaSerie,
+  excluirSerieDoCliente,
   removerSerieDeclarada,
 } from "../../application/fluxo/SerieRecorrenteService.js";
 // ⚠⚠ ESTA LINHA DIZIA "o corpo é COMPARTILHADO com a rota do CONTADOR — um cálculo só, dois
@@ -1007,10 +1009,56 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         return res.json({ ok: true, tipo });
       }
       if (tipo === "RECORRENTE") {
-        await removerSerieDeclarada({ portalClientId: companyId, serieId: saidaId });
-        return res.json({ ok: true, tipo });
+        /**
+         * ⚠⚠ O CLIENTE TIRA QUALQUER SAÍDA DO FLUXO DELE — não só a que ele declarou (31/08/2026).
+         *
+         * > Dono: *"pode ser excluído uma saída pelo usuário."*
+         *
+         * Antes, esta porta chamava `removerSerieDeclarada` direto e RECUSAVA a série DETECTADA com
+         * "fale com o seu contador". Era coerente com o desenho de então (*"só acrescentar"*), e o
+         * dono o reverteu: a linha de 3.200 da SINCROSAT entrou sozinha pela regra dos 10%, e quem
+         * paga precisa poder tirá-la.
+         *
+         * ⚠ `excluirSerieDoCliente` decide entre APAGAR (a declarada dele, ainda não decidida) e
+         * MARCAR como excluída (todas as outras) — e a marcada continua visível na Conferência,
+         * com autor, data e desfazer. Sumir da tela do contador é o desfecho que não pode acontecer.
+         */
+        const r = await excluirSerieDoCliente({
+          portalClientId: companyId,
+          serieId: saidaId,
+          usuarioId: req.auth?.user?.id,
+        });
+        return res.json({ ok: true, tipo, apagada: r?.apagada === true });
       }
       return res.status(400).json({ ok: false, error: "tipo_invalido" });
+    } catch (err) {
+      return responderRecusaDaSaida(res, err, log, companyId);
+    }
+  });
+
+  /**
+   * ⚠⚠ O CLIENTE DIZ EM QUE DIA A SAÍDA CAI (31/08/2026).
+   *
+   * > Dono: *"ou alterado a data"* — escopo: *"série inteira: esse pagamento é sempre dia 10."*
+   *
+   * ⚠⚠ **É PATCH, e ele não contradiz o "só acrescentar" de 29/08 — o dono reverteu aquilo.** O que
+   * continua valendo é o que aquela regra protegia: **nada aqui alcança uma GUIA**. Esta porta só
+   * escreve `diaDoMes` de uma série de despesa; dívida com a Receita não muda de data por aqui.
+   *
+   * ⚠ Piso `requireClientCompanyAccess()` sem `minRole` — o mesmo das outras rotas de fluxo. Dizer
+   * em que dia você paga não é ato fiscal.
+   * ⚠ `dia: null` LIMPA e devolve a linha à estimativa pelas emissões. É o desfazer do cliente.
+   */
+  router.patch("/companies/:companyId/fluxo/saidas/:saidaId/dia", requireClientCompanyAccess(), async (req, res) => {
+    const companyId = String(req.params.companyId);
+    try {
+      const serie = await definirDiaDaSerie({
+        portalClientId: companyId,
+        serieId: String(req.params.saidaId),
+        dia: req.body?.dia ?? null,
+        usuarioId: req.auth?.user?.id,
+      });
+      return res.json({ ok: true, dia: serie?.diaDoMes ?? null });
     } catch (err) {
       return responderRecusaDaSaida(res, err, log, companyId);
     }

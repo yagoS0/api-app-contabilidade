@@ -105,6 +105,11 @@ export function serieEntraNoFluxo(serie) {
   // muda é elas deixarem de ser LIDAS pelo fluxo. Apagar linha de produção é decisão do dono.
   if (texto(serie?.lado) === LADO.RECEITA) return false;
 
+  // ⚠⚠ EXCLUÍDA PELO CLIENTE SAI DO FLUXO — mas continua na Conferência (31/08/2026).
+  // Dono: *"pode ser excluído uma saída pelo usuário."* ⚠ Ela não vira `RECUSADA`: aquela palavra é
+  // do CONTADOR. A distinção é o que a fila "o cliente mexeu" mostra, e o que o desfazer reverte.
+  if (serie?.excluidaPeloClienteEm) return false;
+
   const estado = texto(serie?.estado);
   const origem = texto(serie?.origem);
   if (estado === ESTADO_DA_SERIE.ATIVA) return true;
@@ -122,6 +127,9 @@ export const WHERE_SERIE_NO_FLUXO = Object.freeze({
   // ⚠⚠ O `lado` entrou aqui em 30/08/2026 junto com a função — e as duas têm de andar juntas,
   // senão o `where` traz do banco a linha que a função recusa e ela vira linha fantasma na tela.
   lado: LADO.DESPESA,
+  // ⚠⚠ O par do `if (serie?.excluidaPeloClienteEm)` da função — e os dois TÊM de andar juntos, senão
+  // o `where` traz do banco a série que o cliente excluiu e ela vira linha fantasma na tela dele.
+  excluidaPeloClienteEm: null,
   OR: [
     { estado: ESTADO_DA_SERIE.ATIVA },
     { estado: ESTADO_DA_SERIE.PENDENTE, origem: ORIGEM_DA_SERIE.DECLARADA },
@@ -163,6 +171,8 @@ export const RECUSA_DA_SERIE = Object.freeze({
   NAO_DECLARADA: "serie_nao_declarada",
   JA_DECIDIDA: "serie_ja_decidida",
   INDISPONIVEL: "recorrencia_indisponivel",
+  DIA_INVALIDO: "dia_invalido",
+  JA_EXCLUIDA: "serie_ja_excluida",
 });
 
 export const FRASE_DA_RECUSA_DA_SERIE = Object.freeze({
@@ -179,6 +189,8 @@ export const FRASE_DA_RECUSA_DA_SERIE = Object.freeze({
     "O seu contador já decidiu sobre esta recorrência, então ela não pode mais ser apagada aqui.",
   [RECUSA_DA_SERIE.INDISPONIVEL]:
     "A tabela de recorrências ainda não existe neste banco. A migration não foi aplicada.",
+  [RECUSA_DA_SERIE.DIA_INVALIDO]: "O dia precisa ser um número inteiro de 1 a 31.",
+  [RECUSA_DA_SERIE.JA_EXCLUIDA]: "Esta saída já foi retirada do seu fluxo.",
 });
 
 export class SerieRecusada extends Error {
@@ -219,6 +231,18 @@ function competenciaDaNota(d) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+/**
+ * `DateTime` do Prisma → o DIA do mês (1–31), ou `null`.
+ *
+ * ⚠⚠ **Acessador UTC, pela mesma razão de `competenciaDaNota` logo acima** — e aqui o erro seria
+ * ainda mais visível: com acessador local, uma nota emitida às 21h de Brasília no dia 4 viraria
+ * dia 5, e a série inteira mudaria de dia conforme a hora em que as notas entraram.
+ */
+function diaDaNota(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
+  return d.getUTCDate();
+}
+
 /** A competência do mês corrente. ⚠ É o "agora" INJETADO no detector — ele não lê relógio nenhum. */
 export function cicloDeHoje(agora = new Date()) {
   return `${agora.getUTCFullYear()}-${String(agora.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -247,6 +271,10 @@ async function observacoesPorContraparte({ portalClientId, client }) {
   const campos = {
     clientId: true, competencia: true, total: true, statusEfetivo: true, status: true,
     tomadorDoc: true, tomadorNome: true, emitenteDoc: true, emitenteNome: true,
+    // ⚠ `issueDate` entrou em 31/08/2026 para a série ganhar DIA — dono: *"eu quero que entre em
+    // algum dia, pode ser no dia em que a nota foi emitida"*. Medido antes de prometer: 1.964 de
+    // 1.964 notas recebidas têm a data preenchida, então nenhuma empresa fica sem o dado.
+    issueDate: true,
   };
 
   // ⚠⚠ A CONSULTA DAS EMITIDAS SAIU EM 30/08/2026, junto com a série de receita. Deixar a query e
@@ -283,7 +311,10 @@ async function observacoesPorContraparte({ portalClientId, client }) {
       if (!s.rotulo || s.rotulo === doc) s.rotulo = texto(n[campoNome]) || doc;
       // ⚠ `total` é `Decimal`: ele viaja como está, e quem decide se é número é o `numero()` do
       // detector — que aceita `Decimal` pelo `toString` e recusa o resto por TIPO.
-      s.observacoes.push({ competencia, valor: n.total });
+      // ⚠ `dia` pode ser `null` (nota sem `issueDate`) e o detector trata isso: ele calcula o dia
+      // típico só com as que têm. Medido em 31/08/2026: 1.964 de 1.964 recebidas têm a data — o
+      // ramo do nulo existe para não quebrar quando uma fonte nova trouxer nota sem ela.
+      s.observacoes.push({ competencia, valor: n.total, dia: diaDaNota(n.issueDate) });
     }
   };
 
@@ -316,11 +347,25 @@ async function quantasDespesasSoDoExtrato({ portalClientId, client }) {
   }
 }
 
-/** As séries já marcadas, indexadas por `lado|chave`. ⚠ Sem a tabela, devolve marcador de ausência. */
+/**
+ * As séries já marcadas, indexadas por `lado|chave`. ⚠ Sem a tabela, devolve marcador de ausência.
+ *
+ * ⚠⚠ **SÓ DESPESA (31/08/2026)** — dono: *"elimine as entradas da aba A lançar (…) as receitas devem
+ * sair, pois causam confusão com o retorno do SERPRO, entradas não devem estar ali."*
+ *
+ * A receita já não é DETECTADA (a consulta das emitidas saiu em 30/08) e já não entra no fluxo
+ * (`serieEntraNoFluxo` a recusa). Mas as 11 séries de receita ATIVAS que ficaram na tabela voltavam
+ * à tela por um ramo específico lá embaixo — *"a série marcada que não tem mais observação NÃO
+ * SOME"* —, escrito para proteger DESPESA órfã e que as ressuscitava de carona.
+ *
+ * ⚠ O filtro é aqui, na consulta, e não no laço: filtrar depois leria 11 linhas por varredura para
+ * jogar fora, e um dia alguém removeria o filtro do laço achando que o `where` já cuidava.
+ * ⚠⚠ O DADO NÃO É APAGADO por esta função — ela só deixa de LER. Apagar é decisão do dono.
+ */
 async function marcadasPorChave({ portalClientId, client }) {
   try {
     const linhas = await client.serieRecorrente.findMany({
-      where: { portalClientId: String(portalClientId) },
+      where: { portalClientId: String(portalClientId), lado: LADO.DESPESA },
     });
     const mapa = new Map();
     for (const l of linhas) mapa.set(`${l.lado}|${l.chave}`, l);
@@ -772,4 +817,130 @@ export async function autoAtivarSeriesEstaveis({
     }
   }
   return { ativadas: ativadas.length, series: ativadas };
+}
+
+/**
+ * ⚠⚠ O CLIENTE DIZ EM QUE DIA ESTA SAÍDA CAI — e vale para a SÉRIE INTEIRA (31/08/2026).
+ *
+ * > Dono: *"ou alterado a data"* — e, sobre o escopo: *"série inteira: esse pagamento é sempre
+ * > dia 10."*
+ *
+ * ⚠⚠ **ELE GRAVA EM `diaDoMes`, NUNCA EM `baseDaObservacao`.** A base é reescrita a cada varredura;
+ * no mesmo campo, a próxima rodada apagaria a correção dele — e ele corrigiria de novo, todo mês,
+ * sem nunca entender por quê. `diaDoMes` vence a estimativa em `FluxoDeCaixaService`.
+ *
+ * ⚠ Ele NÃO exige que a série seja `DECLARADA`. Dizer em que dia uma despesa cai não é decidir se
+ * ela é recorrente — é informação de quem paga, e vale igual sobre a série que o sistema detectou.
+ * ⚠ `null` LIMPA o dia e devolve a linha à estimativa. É o desfazer do próprio cliente.
+ */
+export async function definirDiaDaSerie({
+  portalClientId,
+  serieId,
+  dia,
+  usuarioId,
+  agora = new Date(),
+  client = prisma,
+}) {
+  const alvo = dia == null ? null : Number(dia);
+  if (alvo != null && !(Number.isInteger(alvo) && alvo >= 1 && alvo <= 31)) {
+    recusar(RECUSA_DA_SERIE.DIA_INVALIDO);
+  }
+
+  const serie = await buscarSerieDoCliente({ portalClientId, serieId, client });
+  try {
+    return await client.serieRecorrente.update({
+      where: { id: serie.id },
+      data: {
+        diaDoMes: alvo,
+        // ⚠ Quem disse e quando — a fila "o cliente mexeu" do contador lê daqui. Sem isso, a
+        // alteração aparece na tela dele sem autor e sem data, que é o mesmo que não aparecer.
+        diaDefinidoPor: alvo == null ? null : (texto(usuarioId) || null),
+        diaDefinidoEm: alvo == null ? null : agora,
+      },
+    });
+  } catch (e) {
+    if (tabelaAusente(e)) recusar(RECUSA_DA_SERIE.INDISPONIVEL);
+    throw e;
+  }
+}
+
+/**
+ * ⚠⚠ O CLIENTE TIRA A SAÍDA DO FLUXO DELE — e a linha NÃO É APAGADA (31/08/2026).
+ *
+ * > Dono: *"pode ser excluído uma saída pelo usuário."*
+ *
+ * ⚠⚠ **NÃO VIRA `RECUSADA`.** Aquele estado é a palavra do CONTADOR sobre uma sugestão; usá-lo aqui
+ * atribuiria a ele uma decisão que não tomou, e apagaria a diferença entre *"o escritório disse que
+ * não"* e *"o cliente tirou do fluxo dele"* — que é a distinção que a Conferência mostra.
+ *
+ * ⚠ A série some do fluxo (`serieEntraNoFluxo` a recusa) e CONTINUA na Conferência, com autor e
+ * data, e o contador pode desfazer. Apagar a linha tiraria dele qualquer chance de saber.
+ */
+export async function excluirSerieDoCliente({
+  portalClientId,
+  serieId,
+  usuarioId,
+  agora = new Date(),
+  client = prisma,
+}) {
+  const serie = await buscarSerieDoCliente({ portalClientId, serieId, client });
+  // ⚠ Excluir duas vezes não é erro de banco, é recusa nomeada — senão a segunda gravação trocaria
+  // o autor e a data da primeira, e o contador leria a hora errada do que aconteceu.
+  if (serie.excluidaPeloClienteEm) recusar(RECUSA_DA_SERIE.JA_EXCLUIDA);
+
+  /**
+   * ⚠⚠ A SÉRIE QUE O PRÓPRIO CLIENTE DECLAROU, E QUE O CONTADOR AINDA NÃO DECIDIU, É APAGADA.
+   *
+   * Ela é dele, ninguém do escritório se manifestou sobre ela, e marcá-la como "excluída pelo
+   * cliente" encheria a fila do contador com o cliente desfazendo o próprio engano — ruído numa
+   * fila que existe para mostrar o que ELE precisa saber.
+   * ⚠ A regra de quem pode apagar mora em `removerSerieDeclarada`, e é chamada, não copiada: duas
+   * escritas dela é como um dia o cliente passaria a apagar série que o contador já confirmou.
+   */
+  if (serie.origem === ORIGEM_DA_SERIE.DECLARADA && serie.estado === ESTADO_DA_SERIE.PENDENTE) {
+    await removerSerieDeclarada({ portalClientId, serieId: serie.id, client });
+    return { apagada: true };
+  }
+
+  return client.serieRecorrente.update({
+    where: { id: serie.id },
+    data: { excluidaPeloClienteEm: agora, excluidaPeloClientePor: texto(usuarioId) || null },
+  });
+}
+
+/**
+ * ⚠ O DESFAZER, do lado do CONTADOR — a série volta ao fluxo do cliente.
+ *
+ * Ele é o par do botão da fila *"o cliente mexeu"*. Sem ele, a exclusão do cliente seria definitiva
+ * na prática: o contador veria o que aconteceu e não teria o que fazer a respeito.
+ * ⚠ Ele limpa a exclusão, e NÃO toca no `estado` — a decisão do contador sobre a série continua a
+ * que era antes de o cliente mexer.
+ */
+export async function reverterExclusaoDoCliente({ portalClientId, serieId, client = prisma }) {
+  const serie = await buscarSerieDoCliente({ portalClientId, serieId, client });
+  return client.serieRecorrente.update({
+    where: { id: serie.id },
+    data: { excluidaPeloClienteEm: null, excluidaPeloClientePor: null },
+  });
+}
+
+/**
+ * A série desta empresa, ou recusa nomeada.
+ *
+ * ⚠⚠ O `portalClientId` entra no `where`, e não é conferido depois de buscar: um id de série de
+ * OUTRA empresa tem de responder "não existe nesta empresa", nunca devolver a linha para o chamador
+ * decidir. Multi-tenancy é invariante, não checagem opcional.
+ */
+async function buscarSerieDoCliente({ portalClientId, serieId, client }) {
+  let serie = null;
+  try {
+    serie = await client.serieRecorrente.findFirst({
+      where: { id: String(serieId || ""), portalClientId: String(portalClientId) },
+    });
+  } catch (e) {
+    if (tabelaAusente(e)) recusar(RECUSA_DA_SERIE.INDISPONIVEL);
+    throw e;
+  }
+  if (!serie) recusar(RECUSA_DA_SERIE.NAO_ENCONTRADA);
+  return serie;
 }

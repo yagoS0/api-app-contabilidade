@@ -4247,6 +4247,32 @@ model SerieRecorrente {
   /// pela mesma razão que a entrada não se marca sozinha.
   saidaSugeridaEm DateTime?
 
+  /// ⚠⚠ O DIA DO MÊS EM QUE ESTA SAÍDA CAI — informado pelo CLIENTE (31/08/2026).
+  ///
+  /// > Dono: *"pode ser excluído uma saída pelo usuário. ou alterado a data"* — e, sobre o escopo:
+  /// > *"série inteira — esse pagamento é sempre dia 10"*.
+  ///
+  /// ⚠⚠ **NULO NÃO É "SEM DIA".** Nulo significa *"o cliente não disse"*, e aí vale a ESTIMATIVA
+  /// que mora em `baseDaObservacao.dia` (mediana dos dias de emissão das notas). Este campo existe
+  /// separado da estimativa justamente para que a próxima varredura, que reescreve a base, **não
+  /// apague a correção dele** — se fossem o mesmo campo, ele corrigiria o dia todo mês, para sempre.
+  /// ⚠ Vale para a SÉRIE INTEIRA, todos os meses. Exceção de um mês só não existe aqui, por decisão
+  /// explícita do dono: ela exigiria tabela por série × competência e uma tela que distinguisse
+  /// "este mês" de "sempre" — e quem erra essa distinção corrige o mês errado sem perceber.
+  diaDoMes       Int?
+  diaDefinidoPor String?
+  diaDefinidoEm  DateTime?
+
+  /// ⚠⚠ EXCLUÍDA PELO CLIENTE — e ela **não vira `RECUSADA`**, de propósito.
+  ///
+  /// `RECUSADA` é a palavra do CONTADOR sobre uma sugestão. Reusá-la aqui atribuiria a ele uma
+  /// decisão que ele não tomou, e apagaria a diferença entre *"o escritório disse que não"* e *"o
+  /// cliente tirou do fluxo dele"* — que é exatamente a distinção que a fila "o cliente mexeu"
+  /// existe para mostrar.
+  /// ⚠ A linha NÃO é apagada: some do fluxo, continua na Conferência, e o contador pode desfazer.
+  excluidaPeloClienteEm DateTime?
+  excluidaPeloClientePor String?
+
   criadaEm     DateTime @default(now())
   atualizadaEm DateTime @updatedAt
 

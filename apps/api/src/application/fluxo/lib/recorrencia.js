@@ -237,6 +237,32 @@ export function ciclosConsecutivosNoFim(ciclos) {
  * @param {boolean} entrada.jaMarcada se o contador já marcou esta série
  * @returns {{leitura: string, valorProjetado: number|null, base: object}}
  */
+/**
+ * ⚠⚠ O DIA TÍPICO DA SÉRIE — e ele é uma ESTIMATIVA, nunca um vencimento (31/08/2026).
+ *
+ * > Dono: *"eu quero que entre em algum dia, pode ser no dia em que a nota foi emitida, não tem
+ * > problema, pode ser modificado posteriormente."*
+ *
+ * ⚠⚠ **NÃO EXISTE "O DIA" DA SÉRIE, e a série real prova.** A SPO TECNOLOGIA, da SINCROSAT, foi
+ * emitida em **20/03, 02/04 e 04/05**: o valor não varia nada (3.200 nas três) e o dia varia 18
+ * dias. Por isso ele é resumido como o valor é — pela MEDIANA — e por isso `dias` viaja junto: sem
+ * as observações, *"por que dia 4?"* não tem resposta, e é a pergunta que o contador vai fazer.
+ *
+ * ⚠ **Arredonda para BAIXO** numa mediana quebrada (dois dias no meio). Numa projeção de SAÍDA, o
+ * dia mais cedo é o conservador: a queda de saldo aparece antes do que talvez aconteça, nunca
+ * depois. Séries de receita não passam por aqui — elas saíram do fluxo em 30/08/2026.
+ *
+ * ⚠ Observação sem dia é IGNORADA, não vira zero: `Number(null) === 0` e 0 é finito, então o
+ * guard é por `Number.isInteger` mais faixa, nunca por truthy.
+ */
+export function diaTipico(observacoes) {
+  const dias = (Array.isArray(observacoes) ? observacoes : [])
+    .map((o) => Number(o?.dia))
+    .filter((d) => Number.isInteger(d) && d >= 1 && d <= 31);
+  if (!dias.length) return { dia: null, dias: [] };
+  return { dia: Math.floor(mediana(dias)), dias };
+}
+
 export function lerSerie({ observacoes, periodicidade = PERIODICIDADE.MENSAL, cicloAtual, jaMarcada = false } = {}) {
   // ⚠⚠ PERIODICIDADE FORA DA LISTA FECHADA **RECUSA**, e não cai em MENSAL.
   //
@@ -275,6 +301,9 @@ export function lerSerie({ observacoes, periodicidade = PERIODICIDADE.MENSAL, ci
       : null,
     // ⚠ `null` quando não se sabe o "agora" — nunca 0, que seria "aconteceu neste ciclo".
     ciclosDesdeAUltima: cicloDeAgora != null && ultimo != null ? cicloDeAgora - ultimo : null,
+    // ⚠⚠ O DIA e as observações que o produziram. Ele sai das notas, e é ESTIMATIVA — a linha
+    // continua `PREVISAO` no fluxo. Ver `diaTipico`.
+    ...diaTipico(observacoes),
   };
 
   // ── A SAÍDA vem antes da entrada: uma série JÁ MARCADA que sumiu não deve ser reavaliada como

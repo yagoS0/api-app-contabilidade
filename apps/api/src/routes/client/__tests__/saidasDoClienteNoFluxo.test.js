@@ -240,10 +240,25 @@ describe("⚠⚠ a rota REAL: o que ela não abre", () => {
     expect(FONTE).toContain('router.delete("/companies/:companyId/fluxo/saidas/:saidaId"');
   });
 
-  it("⚠⚠ NÃO EXISTE `PATCH` de saída — o dono respondeu 'só acrescentar'", () => {
-    // ⚠ Um PATCH abriria o cliente editando o que o SISTEMA previu (a recorrência detectada, o
-    // imposto, a guia). É a diferença entre acrescentar uma linha e reescrever o fluxo.
-    expect(FONTE).not.toMatch(/router\.patch\([^)]*fluxo\/saidas/);
+  /**
+   * ⚠⚠ O `PATCH` PASSOU A EXISTIR EM 31/08/2026 — e isto REVERTE a regra que este teste travava.
+   *
+   * A regra era: *"NÃO existe PATCH — o dono respondeu 'só acrescentar'"*, escrita em 29/08 porque
+   * um PATCH abriria o cliente editando o que o SISTEMA previu. O dono a reverteu com o caso na
+   * mão: *"pode ser excluído uma saída pelo usuário. ou alterado a data"* — a linha de 3.200 da
+   * SINCROSAT entrou sozinha pela regra dos 10% e ele não tinha como corrigi-la.
+   *
+   * ⚠⚠ **O QUE A REGRA PROTEGIA CONTINUA PROTEGIDO, e é o que estes três `expect` medem:** o PATCH
+   * existe para UM campo — o dia de uma série de despesa — e não alcança guia nem imposto. A
+   * diferença entre "corrigir o dia de uma despesa sua" e "reescrever o fluxo" é o escopo, e ele
+   * está aqui.
+   */
+  it("⚠⚠ o `PATCH` existe, e SÓ para o dia da série", () => {
+    expect(FONTE).toMatch(/router\.patch\([^)]*fluxo\/saidas\/:saidaId\/dia/);
+    // ⚠ Nenhum PATCH genérico de saída: o caminho tem de nomear o que ele muda.
+    expect(FONTE).not.toMatch(/router\.patch\("\/companies\/:companyId\/fluxo\/saidas"/);
+    // ⚠⚠ E `PUT` continua não existindo: ele diria "substitua a saída inteira", que é justamente o
+    // "reescrever o fluxo" que a regra de 29/08 impedia e que o dono NÃO pediu.
     expect(FONTE).not.toMatch(/router\.put\([^)]*fluxo\/saidas/);
   });
 
@@ -303,7 +318,13 @@ describe("⚠⚠ DELETE despacha por `tipo`", () => {
     // O dublê é cópia; sem esta varredura ele poderia estar certo com a rota errada.
     // ⚠ `toContain`, não regex: o trecho tem `(`, `{` e `?`, e escapá-los à mão é onde a varredura
     // vira uma expressão que casa com outra coisa — ou com nada, passando por engano.
-    expect(FONTE).toContain("removerSerieDeclarada({ portalClientId: companyId, serieId: saidaId })");
+    // ⚠⚠ TROCADO EM 31/08/2026: a rota deixou de chamar `removerSerieDeclarada` DIRETO. Ela
+    // recusava a série DETECTADA com "fale com o seu contador" — coerente com o "só acrescentar" de
+    // 29/08, e revertido pelo dono: *"pode ser excluído uma saída pelo usuário."*
+    // ⚠ `excluirSerieDoCliente` decide entre APAGAR (a declarada dele, ainda não decidida) e MARCAR
+    // como excluída. A regra de quem pode apagar continua morando em `removerSerieDeclarada`, que
+    // ele CHAMA — é o que impede a duplicação de virar divergência.
+    expect(FONTE).toContain("excluirSerieDoCliente({");
     expect(FONTE).toContain('String(req.query?.tipo || "AVULSA")');
   });
 });
