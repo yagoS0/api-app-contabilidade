@@ -1726,10 +1726,13 @@ export function createMockApi() {
           camada: "NOSSA", podeTentarDeNovo: false,
         });
       }
-      if (nota.confirmadaPeloAdn === false) {
-        throw new ApiError(422, "nota_sem_chave", "Esta nota ainda não voltou do sistema nacional.");
-      }
-      if (nota._statusEfetivo === "cancelada" || nota.status === "CANCELADA") {
+      /**
+       * ⚠⚠ A recusa `confirmadaPeloAdn === false` SAIU em 31/08/2026 — a rota real passou a ler
+       * `ServiceInvoice` e cancela a nota recém-emitida (dono: *"quero poder cancelar logo após a
+       * emissão, simples"*). O mock recusava o que o servidor aceita, escondendo o ramo offline.
+       */
+      if (nota._statusEfetivo === "cancelada" || nota.status === "CANCELADA"
+        || nota.status === "CANCELAMENTO_ENVIADO") {
         throw new ApiError(422, "nota_ja_cancelada", "Esta nota já consta cancelada.");
       }
 
@@ -1781,9 +1784,16 @@ export function createMockApi() {
         );
       }
 
-      nota.status = "CANCELADA";
-      nota._statusEfetivo = "cancelada";
-      return { ok: true, evento: "e101101", status: "cancelled", notaId: nota.invoiceId, numero: nota.numero };
+      /**
+       * ⚠⚠ `CANCELAMENTO_ENVIADO`, não `CANCELADA` — como a produção (31/08/2026). O evento foi
+       * ACEITO, mas quem afirma o estado final é o ADN, e a lista real só diz "Cancelada" quando a
+       * captura trouxer o evento. Um mock que pulasse direto para CANCELADA esconderia o chip
+       * intermediário — exatamente o ramo que o dono veio cobrar.
+       * ⚠ `_statusEfetivo` fica como está: ele alimenta a marca d'água do DANFSe, e o ADN ainda
+       * não afirmou nada.
+       */
+      nota.status = "CANCELAMENTO_ENVIADO";
+      return { ok: true, evento: "e101101", status: "cancelled", refletidoNaLista: false, notaId: nota.invoiceId, numero: nota.numero };
     },
 
     // --- Guias --------------------------------------------------------------

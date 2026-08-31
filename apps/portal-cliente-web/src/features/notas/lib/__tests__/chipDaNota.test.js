@@ -99,11 +99,15 @@ describe("⚠ o mapa é CONGELADO — ninguém acrescenta um sexto valor por eng
     expect(Object.isFrozen(CHIP_POR_STATUS)).toBe(true);
   });
 
-  it("os cinco `data-status` são os que o CSS conhece", () => {
+  it("os `data-status` são os que o CSS conhece — e a sexta ENTRADA não criou cor nova", () => {
     // ⚠ A lista é lida do CSS por `guias/__tests__/chipDaGuiaTemCor.test.js` (o mesmo arranjo); aqui
-    // o que se trava é que estes cinco nomes não mudem sozinhos — eles são o vocabulário que o app
+    // o que se trava é que estes nomes não mudem sozinhos — eles são o vocabulário que o app
     // mobile espelha.
+    // ⚠ `CANCELAMENTO_ENVIADO` (31/08/2026) REUSA `processando` de propósito: cor nova exigiria
+    // CSS novo nos dois apps, e o neutro do Pendente já diz o que precisa — não está valendo como
+    // emitida, e o ADN ainda não afirmou o cancelamento.
     expect(Object.values(CHIP_POR_STATUS).map((c) => c.status).sort())
-      .toEqual(["cancelada", "emitida", "processando", "rejeitada", "substituida"]);
+      .toEqual(["cancelada", "emitida", "processando", "processando", "rejeitada", "substituida"]);
+    expect(CHIP_POR_STATUS.CANCELAMENTO_ENVIADO.rotulo).toBe("Cancelamento enviado");
   });
 });

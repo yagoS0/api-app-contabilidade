@@ -120,6 +120,28 @@ export function podeCancelar(nota, { cancelamentoEnviado = false, cnpjDaEmpresa 
   }
 
   const situacao = String(nota.status || "").toUpperCase();
+  /**
+   * ⚠⚠ O CANCELAMENTO QUE NÓS JÁ ENVIAMOS — agora vindo do SERVIDOR, não só da sessão (31/08/2026).
+   *
+   * > Dono: *"consegui tentar cancelar uma nota que já está cancelada"* → *"deixa o botão de
+   * > cancelar cinza (…) até ter o retorno do ADN então."*
+   *
+   * O guard `cancelamentoEnviado` lá em cima é estado DE SESSÃO e morre no recarregamento — foi
+   * exatamente assim que o dono conseguiu pedir o segundo cancelamento. O servidor passou a dizer
+   * `CANCELAMENTO_ENVIADO` na própria nota (a prova é `ServiceInvoice.status = "cancelled"`, que
+   * só é gravado depois de o sistema nacional ACEITAR o evento), e este ramo é o que sobrevive.
+   */
+  if (situacao === "CANCELAMENTO_ENVIADO") {
+    return {
+      pode: false,
+      motivo: MOTIVO_NAO_CANCELAVEL.CANCELAMENTO_ENVIADO,
+      escopo: ESCOPO.NOTA,
+      resumo: "Cancelamento enviado.",
+      texto:
+        "O cancelamento já foi enviado ao sistema nacional. A lista mostra a nota como cancelada "
+        + "assim que a consulta trouxer o evento.",
+    };
+  }
   if (situacao === "CANCELADA" || situacao === "SUBSTITUIDA") {
     return {
       pode: false,

@@ -46,6 +46,16 @@
  */
 export const CHIP_POR_STATUS = Object.freeze({
   EMITIDA: { status: "emitida", rotulo: "Emitida" },
+  /**
+   * ⚠⚠ NÓS mandamos cancelar e o sistema nacional ACEITOU — o ADN só ainda não devolveu o evento
+   * (31/08/2026). Dono: *"deixa o botão de cancelar cinza e tire o status de emitida até ter o
+   * retorno do ADN então."* Dizer "Emitida" aqui oferecia um segundo cancelamento que voltaria
+   * recusado e se leria como "o primeiro falhou". Dizer "Cancelada" afirmaria pelo ADN o que só
+   * ele afirma. O intermediário é a verdade inteira.
+   * ⚠ `data-status: "processando"` — a cor neutra do Pendente: não é verde (não está valendo como
+   * emitida) nem o tom da cancelada (o ADN ainda não disse).
+   */
+  CANCELAMENTO_ENVIADO: { status: "processando", rotulo: "Cancelamento enviado" },
   CANCELADA: { status: "cancelada", rotulo: "Cancelada" },
   SUBSTITUIDA: { status: "substituida", rotulo: "Substituída" },
   REJEITADA: { status: "rejeitada", rotulo: "Rejeitada" },

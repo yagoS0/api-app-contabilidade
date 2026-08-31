@@ -70,6 +70,7 @@ import {
   planoDeRetentativa,
   recontar,
   MODO,
+  marcarNotasCanceladas,
 } from "../application/nfse/lote/emissaoLote.js";
 
 /** 10 MB — o mesmo teto dos outros uploads do portal do cliente (`routes/client/index.js`). */
@@ -322,7 +323,9 @@ export function createNfseLoteRouter({ log = null, resolverCompanyId = null } = 
         reconhecido: true,
         lote: paraTela(atual),
         /** ⚠ O que uma retentativa faria — para a tela oferecer sem uma segunda ida ao servidor. */
-        retentativa: planoDeRetentativa(atual),
+        // ⚠ Enriquecido com as notas que NÓS cancelamos — é o que faz a linha cancelada aparecer
+        // como retentável no plano (31/08/2026). Só leitura; nada é gravado.
+        retentativa: planoDeRetentativa(await marcarNotasCanceladas({ prisma, lote: atual })),
       });
     }
 
@@ -424,7 +427,10 @@ export function createNfseLoteRouter({ log = null, resolverCompanyId = null } = 
     const lote = await prisma.loteEmissaoNfse.findUnique({ where: { id: String(req.params.loteId) } });
     if (!lote || lote.companyId !== companyId) return res.status(404).json({ error: "lote_nao_encontrado" });
 
-    const atual = await recontar({ prisma, loteId: lote.id });
+    const atual = await marcarNotasCanceladas({
+      prisma,
+      lote: await recontar({ prisma, loteId: lote.id }),
+    });
     const plano = planoDeRetentativa(atual);
 
     // ⚠⚠ NADA RETENTÁVEL É **422 NOMEADO**, nunca um 202 que não emite nada. É por aqui que passa a
@@ -547,6 +553,9 @@ function paraTela(lote) {
       rpsSerie: l.rpsSerie,
       rpsNumero: l.rpsNumero,
       serviceInvoiceId: l.serviceInvoiceId,
+      // ⚠ A marca de "nós cancelamos esta nota" — só existe quando o lote passou por
+      // `marcarNotasCanceladas`; nas demais serializações sai `false`, que é o estado seguro.
+      notaCancelada: l.notaCancelada === true,
       camada: l.camada,
       codigo: l.codigo,
       mensagem: l.mensagem,
