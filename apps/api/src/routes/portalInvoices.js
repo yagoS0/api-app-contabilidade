@@ -165,7 +165,28 @@ function serializeEmitidaNaoConfirmada(si, { emitenteNome, emitenteDoc }) {
     numero: si.numeroNfse || null,
     competencia: formatCompetencia(si.competencia),
     issueDate: dateToIso(si.createdAt),
-    status: "EMITIDA",
+    /**
+     * ⚠⚠ O STATUS SAI DO NOSSO REGISTRO — era `"EMITIDA"` CRAVADO até 31/08/2026.
+     *
+     * > Dono: *"ajuste também os status das notas canceladas, mesmo canceladas estão como
+     * > emitidas"*.
+     *
+     * O comentário antigo dizia *"a nota FOI emitida; um status novo a pintaria de rascunho ou de
+     * erro"* — e estava certo enquanto o cancelamento desta nota **não existia**. Ele passou a
+     * existir no mesmo dia (a rota de cancelar passou a ler `ServiceInvoice`), e aí o literal virou
+     * mentira: `NfseRepository.updateByChaveAcesso` grava `status: "cancelled"` na NOSSA linha,
+     * logo depois de o evento ser aceito, e a lista continuava dizendo "Emitida".
+     *
+     * ⚠⚠ **ISTO NÃO É A CAPTURA.** Quem é autoridade sobre a nota é o ADN, e a linha dele
+     * (`PortalInvoice`) continua mandando quando existir. O que se afirma aqui é mais estreito e é
+     * NOSSO: *"nós mandamos cancelar esta nota e o sistema nacional aceitou"*. Não afirmar isso era
+     * esconder um ato que nós mesmos praticamos.
+     *
+     * ⚠ Vocabulário FECHADO: só `cancelled` vira `CANCELADA`. Status que esta função não conhece
+     * continua `EMITIDA` — a linha só chega aqui depois de `STATUS_SEM_NOTA` já ter tirado
+     * `pending`/`rejected`/`falha_envio`, então o que sobra é nota que existe.
+     */
+    status: String(si.status || "").toLowerCase() === "cancelled" ? "CANCELADA" : "EMITIDA",
     total: decimalToNumber(si.valorServicos),
     emitente: { nome: emitenteNome || null, cnpj: emitenteDoc || null },
     tomador: { nome: si.tomadorNome || null, cnpjCpf: si.tomadorDoc || null },

@@ -429,3 +429,42 @@ describe("⚠⚠ o `ciclo` viaja no contrato do cliente", () => {
     expect(prisma.portalInvoiceEvent.findMany).not.toHaveBeenCalled();
   });
 });
+
+// ⚠⚠ A NOTA QUE NÓS CANCELAMOS NÃO PODE CONTINUAR DIZENDO "EMITIDA" (31/08/2026)
+//
+// > Dono: *"ajuste também os status das notas canceladas, mesmo canceladas estão como emitidas"*.
+//
+// `serializeEmitidaNaoConfirmada` cravava `status: "EMITIDA"`, e o comentário de lá defendia isso
+// — com razão, enquanto o cancelamento desta nota **não existia**. Ele passou a existir no MESMO
+// dia (a rota de cancelar passou a ler `ServiceInvoice`), e o literal virou mentira: o nosso
+// registro fica `cancelled` logo depois de o evento ser aceito, e a lista continuava dizendo
+// Emitida — com o botão Cancelar habilitado por cima.
+describe("⚠⚠ o status da nota NOSSA sai do NOSSO registro", () => {
+  it("nota que nós cancelamos aparece como CANCELADA", async () => {
+    cenario.doAdn = [];
+    cenario.nossas = [si(9, { status: "cancelled" })];
+    const r = await listar();
+    const nossa = r.body.data.find((x) => x.invoiceId === "si-9");
+    expect(nossa.status).toBe("CANCELADA");
+    // ⚠ E ela continua sendo NOSSA e não confirmada: o que mudou é o status, não a procedência.
+    expect(nossa.confirmadaPeloAdn).toBe(false);
+  });
+
+  it("nota emitida e não cancelada continua EMITIDA", async () => {
+    cenario.doAdn = [];
+    cenario.nossas = [si(9)];
+    const r = await listar();
+    expect(r.body.data.find((x) => x.invoiceId === "si-9").status).toBe("EMITIDA");
+  });
+
+  it("⚠ o vocabulário é FECHADO — status desconhecido não inventa rótulo novo", async () => {
+    // A linha só chega aqui depois de `STATUS_SEM_NOTA` tirar pending/rejected/falha_envio: o que
+    // sobra é nota que existe, e o padrão honesto para ela é EMITIDA.
+    for (const status of ["issued", "AUTORIZADA", "coisa-nova", "", null]) {
+      cenario.doAdn = [];
+      cenario.nossas = [si(9, { status })];
+      const r = await listar();
+      expect(r.body.data.find((x) => x.invoiceId === "si-9").status).toBe("EMITIDA");
+    }
+  });
+});

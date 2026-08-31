@@ -151,6 +151,16 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
       // ⚠ QUANDO foi pago. Sem esta coluna a guia paga não tem mês, e um fato sem data não se
       // coloca em lugar nenhum — viraria um chute de mês.
       paymentConfirmedAt: true,
+      // ⚠⚠ A COMPOSIÇÃO POR TRIBUTO (31/08/2026) — dono: *"as guias de presumido, no caso da
+      // sincrosat, aparece como outras (…) apenas no cliente, mas no contador está PIS e COFINS
+      // bem denominado."*
+      //
+      // A DARF do Lucro Presumido é gravada como `tipo: "OUTRA"` — UM documento com até quatro
+      // tributos dentro —, e é a composição que diz quais. Ela estava fora deste `select`, então
+      // `rotuloDaGuia` nunca teve o que ler e devolvia "OUTRA" cru para o painel e para o fluxo.
+      // ⚠ É a armadilha de sempre desta casa: coluna fora de um `select` explícito volta
+      // `undefined`, e quem a lê não erra — só não encontra nada.
+      extracted: true,
     },
     orderBy: { vencimento: "asc" },
   });
@@ -320,12 +330,52 @@ export function vencimentoDaGuia(g) {
   return { data: new Date(Date.UTC(ano, mes, DIA_DO_VENCIMENTO_LEGAL)), presumido: true };
 }
 
+/**
+ * Nome curto do tributo de uma linha da composição ("IRRF - ALUG…" → "IRRF").
+ *
+ * ⚠ ESPELHO de `tributoCurto` (`portal-cliente-web/src/features/guias/lib/rotuloGuia.js`), que por
+ * sua vez espelha o do portal do contador. A regra não é inventada aqui.
+ */
+function tributoCurto(c) {
+  if (c?.tributo) return String(c.tributo).trim();
+  const den = String(c?.denominacao || "").trim();
+  if (den) return (den.split(/\s*[-–—]\s*/)[0] || den).trim();
+  return String(c?.codigo || "").trim() || "?";
+}
+
+/**
+ * ⚠⚠ COMO UMA GUIA SE CHAMA NO FLUXO E NO PAINEL DO CLIENTE (31/08/2026).
+ *
+ * > Dono: *"as guias de presumido, no caso da sincrosat, aparece como outras (…) elas aparecem
+ * > outras apenas no cliente, mas no contador está PIS e COFINS bem denominado."*
+ *
+ * ⚠⚠ **HAVIA DOIS RÓTULOS, e só um sabia ler a composição.** A **aba Guias** do cliente usa
+ * `features/guias/lib/rotuloGuia.js`, que lê `extracted.composicao` e escreve "PIS · COFINS" —
+ * conserto de 24/08/2026, amarrado por teste ao rótulo do contador. Já o **painel** (`GuiasVencidas`)
+ * e o **fluxo de caixa** recebem o rótulo pronto DAQUI, e esta função devolvia o `tipo` cru. Mesma
+ * empresa, mesma guia, dois nomes — dependendo da tela.
+ *
+ * ⚠ A DARF do Lucro Presumido é UM documento com até quatro tributos dentro, gravado como
+ * `tipo: "OUTRA"`. Medido em produção em 31/08/2026: **13 das 20 guias `OUTRA` têm composição**, e
+ * a da SINCROSAT traz `PIS - FATURAMENTO - PJ EM GERAL` e `COFINS - FATURAMENTO/PJ EM GERAL`.
+ *
+ * ⚠⚠ **SEM COMPOSIÇÃO O RÓTULO CONTINUA "OUTRA", e isso é a resposta certa** — as outras 7. É o
+ * que está GRAVADO; inventar "PIS · COFINS" numa guia cuja composição não foi lida afirmaria ao
+ * cliente quais impostos ele está pagando, sem ninguém ter medido.
+ */
 function rotuloDaGuia(g) {
   const tipo = texto(g.tipo) || "OUTRA";
   // ⚠ A parcela de parcelamento NÃO é o DAS do mês — o que as separa é o `parcelamentoId`, e a
   // regra é a de `guideContract.isGuiaDeParcelamento`. Aqui só o RÓTULO muda; nenhuma leitura de
   // compliance é reimplementada.
+  // ⚠⚠ E ELA DECIDE ANTES DO TIPO, como no rótulo do cliente: a parcela é gravada com o tipo do
+  // imposto, então inverter a ordem a faria aparecer como o DAS do mês.
   if (g.parcelamentoId) return `Parcela${g.numeroParcela ? ` ${g.numeroParcela}` : ""} de parcelamento`;
+  if (tipo.toUpperCase() === "OUTRA") {
+    const comp = Array.isArray(g?.extracted?.composicao) ? g.extracted.composicao : [];
+    const nomes = [...new Set(comp.map(tributoCurto).filter(Boolean))];
+    if (nomes.length) return nomes.join(" · ");
+  }
   return tipo;
 }
 
