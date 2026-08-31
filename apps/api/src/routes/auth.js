@@ -176,6 +176,24 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
             accountType: result.user.accountType || "CLIENT",
             defaultClientId: null,
             name: result.user.name || null,
+            /**
+             * ⚠⚠ A PORTA DO PORTAL DO CLIENTE — ela TEM de viajar na resposta do login (30/08/2026)
+             *
+             * > Dono: *"alterou os logins, nao consigo acessar o portal do cliente com meu login novo"*
+             *
+             * O campo existe no banco, `sanitizeUser` o carrega e os três middlewares o leem — mas
+             * este objeto é montado À MÃO, campo a campo, e a marca ficou de fora. O efeito é que
+             * `accountGate.exigirContaDeCliente`, no portal, via `accountType: "FIRM"` sem a marca e
+             * recusava na TELA: o servidor, que autorizaria, nunca chegava a ser chamado.
+             *
+             * ⚠ Não foi a troca de e-mail que quebrou — o login sempre esteve assim; a marca é de
+             * hoje e nunca chegou à tela. O e-mail novo só foi a primeira vez que se tentou entrar.
+             *
+             * ⚠⚠ Isto é MENSAGEM, não autorização: quem autoriza são `requireAccountType` e
+             * `requireClientCompanyAccess`, que leem a mesma marca do banco a cada requisição.
+             * ⚠ `=== true` na origem (`sanitizeUser`), nunca truthy — ausência não é permissão.
+             */
+            podeAbrirPortalDoCliente: result.user.podeAbrirPortalDoCliente === true,
           },
         });
       }
