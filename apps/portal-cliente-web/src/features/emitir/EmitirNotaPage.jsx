@@ -56,6 +56,7 @@ import {
   SITUACAO as SITUACAO_CODIGO,
   carregarServicosNacionais,
   codigoParaOPayload,
+  codigoQueANotaDeclara,
   codigosOferecidos,
   conferirCodigoEscolhido,
   descricaoDoCodigo,
@@ -478,7 +479,13 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
 
   const portao = lerPortaoEmissao(empresa);
   const legacy = empresa.legacyCompany || null;
-  const codigoServicoNacional = legacy?.codigoServicoNacional || null;
+  /**
+   * ⚠⚠ NÃO É `legacy?.codigoServicoNacional` — a prévia mentia (31/08/2026).
+   *
+   * Ela lia o SINGULAR do cadastro e não mudava com a escolha: a nota saía com um código e o
+   * espelho afirmava outro. Hoje ela pergunta `codigoQueANotaDeclara`, que responde o que vai SAIR
+   * na nota. ⚠ A montagem fica logo abaixo do `cadastroDeCodigos`, que é quem sabe a situação.
+   */
   const cadastroIncompleto = legacy
     ? CAMPOS_EXIGIDOS_DA_EMPRESA.filter(([campo]) => !legacy[campo]).map(([, nome]) => nome)
     : [];
@@ -764,6 +771,14 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   );
   const [codigoEscolhido, setCodigoEscolhido] = useState("");
   const [servicosOficiais, setServicosOficiais] = useState(null);
+
+  // ⚠⚠ O QUE A PRÉVIA MOSTRA — ver o comentário lá em cima, onde a leitura antiga morava.
+  const codigoServicoNacional = codigoQueANotaDeclara({
+    situacao: cadastroDeCodigos.situacao,
+    oferecidos: cadastroDeCodigos.oferecidos,
+    escolhido: codigoEscolhido,
+    singular: legacy?.codigoServicoNacional,
+  });
 
   // ⚠ TROCAR DE EMPRESA ZERA A ESCOLHA — o código é do cadastro DELA. Manter a escolha anterior
   // emitiria sob um serviço que a nova empresa pode nem declarar.
