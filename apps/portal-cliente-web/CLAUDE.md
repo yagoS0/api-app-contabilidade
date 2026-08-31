@@ -1785,6 +1785,49 @@ Medição (só leitura, zero chamada externa): `apps/api/scripts/diag-guias-lp-p
 
 ---
 
+## ⚠⚠ A BAIXA LANÇADA QUITA A GUIA — o elo que só existia num sentido (30/08/2026)
+
+> Dono: *"apareceram impostos que estão pagos na circular e lançados em lançamentos como aberto."*
+
+⚠⚠ **`GuideToProvisionService` promovia a PROVISÃO quando a guia era paga; a volta não existia.** A
+baixa lançada — o ato contábil que tira o dinheiro do caixa — não devolvia nada à guia, e ela ficava
+`OPEN` para sempre.
+
+⚠⚠ **Medido em produção:** **20 provisões de DAS com `statusPagamento: "PAGO"`, com baixa lançada,
+cuja guia continuava aberta.** Duas já liberadas ao cliente — LENTE 06/2026 (R$ 15.033,58, baixa em
+14/07) e CHAYM 06/2026 (R$ 1.058,40, baixa em 05/07) —, ou seja **cobrança em aberto na tela de quem
+já tinha pago**. ⚠ E isso passou a ser mais visível no mesmo dia, porque a aba de guias deixou de
+filtrar por `liberadaCliente`.
+
+- ⚠⚠ **A CHAVE É A COMPETÊNCIA, e não é palpite:** a provisão do DAS nasce do **extrato do PGDAS-D**
+  (`amountSource: "das_total"`), não da guia, então ela **não tem `sourceGuideId`**. Quem liga as
+  duas é a competência — a MESMA chave que a Circular já usa para decidir entre desenhar a provisão
+  real ou sintetizar a linha a partir da guia (`mesesComDas`). Ela só passou a valer nos dois
+  sentidos. ⚠ Havendo `sourceGuideId`, ele vence.
+- ⚠⚠ **PARCELA DE PARCELAMENTO FICA DE FORA.** Ela é gravada como `tipo: "SIMPLES"`, idêntica ao DAS,
+  e só `parcelamentoId` as separa: sem essa trava, a baixa do DAS do mês quitaria a parcela daquele
+  mês — dívida antiga, de outro acordo.
+- ⚠ **Baixa PARCIAL não quita**; **nunca rebaixa** guia já paga (inclusive a confirmada pelo
+  cliente, cuja procedência este caminho não pode sobrescrever); e a data é a **da baixa**, o mesmo
+  dia que foi para o razão.
+- ⚠ **Best-effort, FORA da transação**: a baixa é o ato contábil e já está gravada. Falhar aqui não
+  pode desfazê-la — no pior caso a guia segue aberta, que é o estado de antes.
+- ⚠ A regra é pura (`apps/api/.../guides/lib/guiaQuitadaPelaBaixa.js`) e o script do passado
+  (`quitar-guias-com-baixa-lancada.mjs`) **usa a mesma função**, nunca uma segunda leitura.
+
+⚠⚠ **E A CIRCULAR EM SI NÃO MUDOU — a regra dela está certa e continua valendo:** *"PAGO só com
+BAIXA lançada; guia PAID sem baixa = pagamento localizado no SERPRO, o contador ainda precisa
+lançar"*. Medido: apenas **1** célula em toda a carteira está aberta com a guia paga, e é
+legítima (INSS 07/2026 da ERISANGELA, pago no SERPRO e ainda não lançado). ⚠ Ela já carrega o sinal
+próprio, `pagamentoLocalizado`, e a tela o desenha.
+
+⚠ **Três vínculos diferentes convivem aqui, e confundi-los custou dois diagnósticos errados nesta
+sessão:** `sourceGuideId` (baixa → guia, usado pelas linhas SINTÉTICAS), `openEntryId` (baixa →
+provisão, usado pelas linhas REAIS) e a competência do lançamento — que é o mês em que o dinheiro
+SAIU, e **não** o do imposto (esse está no histórico: *"PAGAMENTO DAS - 05/2026"*).
+
+---
+
 ## ⚠⚠ A DATA DO PAGAMENTO É INFORMADA, NUNCA O RELÓGIO (30/08/2026)
 
 > Dono: *"ao clicar em confirmar pagamento, o pagamento foi posto no dia 30 de agosto mesmo não
