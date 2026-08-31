@@ -296,6 +296,20 @@ export function toGuideResponse(item, { publico = PUBLICO.CLIENTE } = {}) {
     // ⚠ O texto do aviso vem PRONTO daqui, e os dois portais leem o mesmo. Escrito em cada tela,
     // eles divergiriam na primeira correção — e este é o aviso que precede um gasto e um valor maior.
     avisoDeRecalculo: avisoDeRecalculo({ guide: item, now, ehCliente: publico !== PUBLICO.ESCRITORIO }),
+    /**
+     * ⚠⚠ SE O CONTADOR JÁ LIBEROU ESTA GUIA (30/08/2026).
+     *
+     * Ele desce porque a lista do cliente **parou de filtrar** por este campo (dono: *"INSS e
+     * parcelamento não aparecem"*), enquanto **download, recálculo e confirmação continuam
+     * exigindo `true`**. Sem o campo na resposta, a tela ofereceria um botão "Baixar PDF" que
+     * responde 404 — e botão impossível é pior que ausência, regra escrita desta casa.
+     *
+     * ⚠ `Boolean(...)`, nunca o valor cru: a coluna é anulável, e `null` na tela cairia em
+     * "não liberada" por coerção — que é o que se quer, mas por acidente. Aqui é por decisão.
+     * ⚠ O ESCRITÓRIO já lia este estado por outro caminho; o que muda é ele existir no contrato
+     * do CLIENTE.
+     */
+    liberadaCliente: Boolean(item.liberadaCliente),
     // Q24: vínculo de parcelamento (pra UI rotular a guia como parcelamento, não "DAS").
     parcelamentoId: item.parcelamentoId || null,
     numeroParcela: item.numeroParcela != null ? Number(item.numeroParcela) : null,

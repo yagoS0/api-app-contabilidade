@@ -863,9 +863,14 @@ function criarEstado() {
     }
   }
 
-  // Só a pc-001 tem guias LIBERADAS. A rota /client já filtra `liberadaCliente`,
-  // então a pc-002 responde lista vazia — que é o estado real de quem ainda não
-  // teve nada liberado pelo contador.
+  // ⚠⚠ ESTE BLOCO DIZIA "a rota /client já filtra `liberadaCliente`" E FICOU FALSO EM 30/08/2026:
+  // a lista do cliente parou de filtrar (dono: *"INSS e parcelamento não aparecem"*). Só as AÇÕES
+  // — baixar, recalcular, confirmar pagamento — continuam exigindo a liberação.
+  //
+  // ⚠⚠ POR ISSO O MOCK PRECISA DE GUIA **NÃO LIBERADA**, e ela está plantada abaixo: sem ela o
+  // desenho da linha travada (botão desabilitado + a frase *"seu contador ainda não liberou"*)
+  // só existiria em produção. Medido lá: **232 não liberadas contra 24 liberadas** na carteira —
+  // o estado comum é justamente o que faltava offline. Sexta vez que o mock esconderia um ramo.
   const guias = [];
   const circular = new Map(); // competencia -> dasTotal do extrato PGDAS-D
   const hoje = new Date();
@@ -893,6 +898,10 @@ function criarEstado() {
         ["SIMPLES", das],
         ["INSS", Number((das * 0.42).toFixed(2))],
       ]) {
+        // ⚠⚠ O INSS DA COMPETÊNCIA MAIS ANTIGA NÃO FOI LIBERADO — é o caso do dono, literalmente:
+        // *"INSS e parcelamento não aparecem"*. Uma só, e da espécie que ele nomeou, para a linha
+        // travada aparecer sem afogar a lista.
+        const liberada = !(tipo === "INSS" && comp === competencias[0]);
         seqGuia += 1;
         guias.push({
           _clientId: empresa.companyId,
@@ -953,8 +962,10 @@ function criarEstado() {
           // exercitar a tela, e uma tela que só é vista num dos estados é uma tela não conferida —
           // as três AUSÊNCIAS são o que mais importa aqui, e são as mais fáceis de deixar de fora.
           ...linhaDigitavelDoMock(seqGuia, valor),
-          liberadaCliente: true,
-          liberadaEm: venc.toISOString(),
+          liberadaCliente: liberada,
+          // ⚠ Sem liberação não há data de liberação. Carimbar uma aqui afirmaria um ato que não
+          // aconteceu — e é por campos assim que "liberada" e "não liberada" ficam indistinguíveis.
+          liberadaEm: liberada ? venc.toISOString() : null,
           vazioEm: null,
           vazioPor: null,
           vazioMotivo: null,
@@ -1721,7 +1732,8 @@ export function createMockApi() {
 
       const filtradas = estado.guias
         .filter((g) => g._clientId === id)
-        .filter((g) => g.liberadaCliente) // o /client só devolve liberadas
+        // ⚠⚠ O FILTRO SAIU EM 30/08/2026, junto com o da rota real — e as duas têm de sair juntas:
+        // mock que esconde o que o servidor mostra treina a tela para um estado que não existe.
         .filter((g) => (competencia ? g.competencia === competencia : true));
 
       const total = filtradas.length;

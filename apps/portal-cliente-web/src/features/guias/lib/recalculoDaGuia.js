@@ -7,6 +7,26 @@
 // ⚠⚠ ELA NÃO É A PERMISSÃO. Quem decide é o servidor, a cada pedido: guia liberada, guia vencida,
 // guia recalculável. Esta regra existe para a tela não oferecer um botão que vai voltar recusado —
 // a mesma disciplina já escrita para a flag de emissão do cliente.
+//
+// ## ⚠⚠ A GUIA APARECE MESMO SEM ESTAR LIBERADA — E NENHUMA AÇÃO ABRE JUNTO (30/08/2026)
+//
+// > Dono: *"arruma a aba de guias, INSS e parcelamento não aparecem"*.
+//
+// A lista do cliente parou de filtrar por `liberadaCliente`. ⚠⚠ **A RAZÃO É DESTA ABA, e não de
+// nenhuma outra** — dono, no mesmo dia: *"a aba de guias é aba de guias, o fluxo é o fluxo."* Uma
+// aba chamada Guias que esconde a maior parte das guias da empresa está errada por conta própria:
+// medido em produção, a ERISANGELA via **7 de 17**, e a carteira inteira tem **24 liberadas contra
+// 232 não liberadas**. `liberadaCliente` marca que o contador ENVIOU a guia — nunca que ela existe.
+//
+// ⚠⚠ **MAS AS TRÊS ROTAS DE AÇÃO CONTINUAM EXIGINDO `liberadaCliente: true`** — download,
+// recálculo e confirmação de pagamento, cada uma no seu próprio `where`. Então a tela **tem** de
+// saber disso: um "Baixar PDF" que responde 404 é pior que a ausência dele, e é a regra escrita
+// desta casa (*botão impossível não some e diz por quê*).
+//
+// ⚠ `canRecalculate` e `canConfirmPayment` **NÃO olham a liberação** no servidor (eles saem de
+// `canGuideRecalculate`/`canGuideConfirmPayment`, que só leem o estado da guia). Antes isso era
+// inofensivo, porque a guia não liberada nem chegava na tela. Hoje chega — e sem esta guarda os
+// dois botões apareceriam para ela.
 
 /**
  * O botão aparece?
@@ -20,8 +40,48 @@
  *
  * ⚠ Contrato ANTIGO (sem os campos) NÃO oferece — ausência de campo não é permissão.
  */
+/**
+ * ⚠⚠ O CONTADOR JÁ LIBEROU ESTA GUIA? — a ÚNICA leitura do campo nesta tela.
+ *
+ * ⚠ `=== true`, nunca truthy nem `!== false`: contrato antigo (sem o campo) responde
+ * `undefined`, e **ausência não é permissão**. Falha fechado — a guia aparece na lista e as ações
+ * não, que é exatamente o que o servidor faria.
+ */
+export function liberadaAoCliente(guia) {
+  return guia?.liberadaCliente === true;
+}
+
+/**
+ * O "Baixar PDF" funciona?
+ *
+ * ⚠ O download refaz a checagem (`liberadaCliente: true` no `where`) e devolve **404**. Oferecer o
+ * botão mesmo assim daria um clique que não faz nada e um erro genérico que não explica nada.
+ */
+export function podeBaixarPdf(guia) {
+  return liberadaAoCliente(guia);
+}
+
+/**
+ * ⚠⚠ O QUE A TELA DIZ NO LUGAR DA AÇÃO — e ela diz o CONSERTO, não só a recusa.
+ *
+ * ⚠ A frase não culpa nem alarma: a guia existe, o valor está à vista, e o que falta é um passo
+ * do contador. É o mesmo molde da situação fiscal (*"fale com o seu contador"*) e o oposto de
+ * sumir com a linha, que faria o cliente concluir que a dívida não existe.
+ * ⚠⚠ **E ELA NÃO CITA O FLUXO.** Dono, 30/08/2026: *"a aba de guias é aba de guias, o fluxo é o
+ * fluxo."* Explicar uma tela pela outra obriga o cliente a conhecer as duas para entender uma —
+ * esta aba lista as guias da empresa, e isso basta como razão de a linha estar aqui.
+ * ⚠ Guia liberada NÃO tem frase: ausência visível não se descreve (critério do dono).
+ */
+export function motivoDaGuiaNaoLiberada(guia) {
+  if (liberadaAoCliente(guia)) return null;
+  return "Seu contador ainda não liberou esta guia. Para receber o documento e pagar, fale com ele.";
+}
+
 export function podePedirGuiaAtualizada(guia) {
-  return guia?.canRecalculate === true
+  // ⚠ A liberação vem PRIMEIRO: sem ela o servidor recusa antes de qualquer outra conta, e este
+  // botão é o que gasta dinheiro do escritório.
+  return liberadaAoCliente(guia)
+    && guia?.canRecalculate === true
     && guia?.vencida === true
     && Boolean(guia?.avisoDeRecalculo?.texto);
 }
@@ -93,7 +153,8 @@ export function avisoDosAcrescimos(acrescimos) {
  * ⚠ `canConfirmPayment` vem do servidor; ausência do campo NÃO oferece o botão.
  */
 export function podeConfirmarPagamento(guia) {
-  return guia?.canConfirmPayment === true;
+  // ⚠ Idem: a rota de confirmação tem `liberadaCliente: true` no `where` e devolve 404.
+  return liberadaAoCliente(guia) && guia?.canConfirmPayment === true;
 }
 
 /**

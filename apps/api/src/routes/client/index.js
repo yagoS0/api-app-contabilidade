@@ -1069,8 +1069,33 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       status,
       page,
       limit,
-      // Portal Cliente (#3.1): o cliente só vê guias liberadas pelo contador.
-      apenasLiberadas: true,
+      /**
+       * ⚠⚠ A LISTA DEIXOU DE FILTRAR POR `liberadaCliente` EM 30/08/2026 — dono: *"arruma a aba
+       * de guias, INSS e parcelamento não aparecem"*.
+       *
+       * ⚠⚠ **A RAZÃO É DESTA ABA, E NÃO DE NENHUMA OUTRA** — dono, no mesmo dia: *"a aba de guias
+       * é aba de guias, o fluxo é o fluxo."* Uma aba chamada Guias que esconde a maior parte das
+       * guias da empresa está errada por conta própria; não é preciso invocar outra tela para ver
+       * isso, e invocar seria trocar o motivo certo por um empréstimo.
+       *
+       * ⚠ `liberadaCliente` marca que o contador **ENVIOU** a guia (o botão "Liberar ao cliente"
+       * dispara o e-mail) — nunca que ela existe. Filtrar a LISTA por ele fazia um registro de
+       * ENVIO decidir o que o cliente sabe dever.
+       *
+       * ⚠ Medido em produção (`scripts/diag-guias-do-cliente.mjs`): a ERISANGELA vêa **7 de 17**
+       * guias, e a carteira inteira **24 liberadas contra 232 não liberadas**. Não eram algumas
+       * guias escondidas: era a maior parte da dívida da carteira.
+       *
+       * ⚠⚠ **E O GATE NÃO FOI REMOVIDO, SÓ A LISTA.** Download, recálculo e confirmação de
+       * pagamento continuam exigindo `liberadaCliente: true`, cada um no seu próprio `where` —
+       * ver as rotas abaixo, que **não foram tocadas**. A aba passa a DIZER que a guia existe; o
+       * que se FAZ com ela continua dependendo do contador ter liberado. ⚠ O recálculo em
+       * especial gasta dinheiro do escritório, e o comentário dele diz *"este gate NÃO se
+       * afrouxa"* — continua valendo, palavra por palavra.
+       * ⚠ Por isso `liberadaCliente` desce na resposta (`toGuideResponse`): sem ele a tela
+       * ofereceria um botão de baixar que responde 404, que é pior que a ausência.
+       */
+      apenasLiberadas: false,
     });
     return res.json({
       // ⚠⚠ O PÚBLICO É EXPLÍCITO, e `.map(toGuideResponse)` cru não serve: o `map` passa o ÍNDICE

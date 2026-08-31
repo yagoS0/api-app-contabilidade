@@ -6,10 +6,16 @@
 import {
   podePedirGuiaAtualizada, avisoAntesDePedir, leituraDaRecusa, avisoDosAcrescimos,
   podeConfirmarPagamento, avisoAntesDeConfirmar,
+  liberadaAoCliente, motivoDaGuiaNaoLiberada, podeBaixarPdf,
 } from "../recalculoDaGuia";
 
+// ⚠⚠ `liberadaCliente: true` ENTROU NA FIXTURE EM 30/08/2026, e não é ruído: a lista do cliente
+// parou de filtrar por ele (dono: *"INSS e parcelamento não aparecem"*), então guia não liberada
+// **chega à tela** e as três ações passaram a exigi-lo. Sem o campo aqui, todos os casos abaixo
+// mediriam a guarda nova em vez do que eles existem para medir.
 const VENCIDA = {
   guideId: "g1",
+  liberadaCliente: true,
   canRecalculate: true,
   vencida: true,
   avisoDeRecalculo: {
@@ -131,9 +137,13 @@ describe("⚠⚠ A GUIA NOVA PODE TER VINDO SEM JUROS E MULTA — e o cliente pr
 });
 
 describe("⚠⚠ CONFIRMAR QUE PAGOU — e o que a confirmação NÃO faz", () => {
+  // ⚠ `liberadaCliente: true` em toda fixture daqui: a rota de confirmação exige a liberação
+  // desde 30/08/2026, e sem o campo estes casos mediriam a guarda nova, não a deles.
+  const PAGAVEL = { liberadaCliente: true, canConfirmPayment: true };
+
   it("guia em aberto oferece; guia paga não", () => {
-    expect(podeConfirmarPagamento({ canConfirmPayment: true })).toBe(true);
-    expect(podeConfirmarPagamento({ canConfirmPayment: false })).toBe(false);
+    expect(podeConfirmarPagamento(PAGAVEL)).toBe(true);
+    expect(podeConfirmarPagamento({ ...PAGAVEL, canConfirmPayment: false })).toBe(false);
   });
 
   it("⚠ campo ausente NÃO oferece — ausência não é permissão", () => {
@@ -145,20 +155,64 @@ describe("⚠⚠ CONFIRMAR QUE PAGOU — e o que a confirmação NÃO faz", () =
   it("⚠⚠ a confirmação diz que a BAIXA CONTÁBIL continua com o contador", () => {
     // Um "confirmar pagamento?" seco faria o cliente achar que o assunto está encerrado dos dois
     // lados — e não está.
-    const a = avisoAntesDeConfirmar({ canConfirmPayment: true });
+    const a = avisoAntesDeConfirmar(PAGAVEL);
     expect(a.texto).toMatch(/baixa na contabilidade continua sendo feita por ele/i);
     expect(a.texto).toMatch(/sua confirmação não a lança/i);
   });
 
   it("⚠ e diz que NÃO precisa anexar comprovante (decisão do dono)", () => {
-    expect(avisoAntesDeConfirmar({ canConfirmPayment: true }).texto).toMatch(/Não é preciso anexar comprovante/i);
+    expect(avisoAntesDeConfirmar(PAGAVEL).texto).toMatch(/Não é preciso anexar comprovante/i);
   });
 
   it("⚠ o rótulo do botão é a AFIRMAÇÃO dele, não um 'OK'", () => {
-    expect(avisoAntesDeConfirmar({ canConfirmPayment: true }).rotuloConfirmar).toBe("Já paguei esta guia");
+    expect(avisoAntesDeConfirmar(PAGAVEL).rotuloConfirmar).toBe("Já paguei esta guia");
   });
 
   it("sem oferta não há aviso", () => {
     expect(avisoAntesDeConfirmar({ canConfirmPayment: false })).toBeNull();
+  });
+});
+
+
+// ⚠⚠ A GUIA QUE O CONTADOR AINDA NÃO LIBEROU (30/08/2026)
+//
+// > Dono: *"arruma a aba de guias, INSS e parcelamento não aparecem"*.
+//
+// A lista abriu; as AÇÕES não. As três rotas (baixar, recalcular, confirmar pagamento) continuam
+// com `liberadaCliente: true` no `where` e respondem **404** — a tela tem de saber disso, senão
+// oferece um botão que não faz nada.
+describe("⚠⚠ guia NÃO LIBERADA aparece na lista, e nenhuma ação abre junto", () => {
+  const NAO_LIBERADA = { ...VENCIDA, liberadaCliente: false, canConfirmPayment: true };
+
+  it("⚠⚠ `=== true`, nunca truthy — contrato antigo (sem o campo) NÃO é permissão", () => {
+    expect(liberadaAoCliente({ ...VENCIDA })).toBe(true);
+    for (const v of [false, null, undefined, 0, "", "true", 1]) {
+      expect(liberadaAoCliente({ liberadaCliente: v })).toBe(false);
+    }
+  });
+
+  it("⚠⚠ as TRÊS ações fecham juntas — e a mesma guia liberada as abre", () => {
+    expect(podeBaixarPdf(NAO_LIBERADA)).toBe(false);
+    expect(podePedirGuiaAtualizada(NAO_LIBERADA)).toBe(false);
+    expect(podeConfirmarPagamento(NAO_LIBERADA)).toBe(false);
+
+    const liberada = { ...NAO_LIBERADA, liberadaCliente: true };
+    expect(podeBaixarPdf(liberada)).toBe(true);
+    expect(podePedirGuiaAtualizada(liberada)).toBe(true);
+    expect(podeConfirmarPagamento(liberada)).toBe(true);
+  });
+
+  it("⚠⚠ a frase diz o CONSERTO, e nunca que a guia não existe", () => {
+    const m = motivoDaGuiaNaoLiberada(NAO_LIBERADA);
+    expect(m).toMatch(/contador/i);
+    // ⚠⚠ E NÃO CITA O FLUXO — dono: *"a aba de guias é aba de guias, o fluxo é o fluxo."* Explicar
+    // uma tela pela outra obriga o cliente a conhecer as duas para entender uma.
+    expect(m).not.toMatch(/fluxo/i);
+    // ⚠⚠ E NUNCA pode negar a dívida: sumir com a guia é o desfecho caro desta tela.
+    expect(m).not.toMatch(/não existe|inexistente|nenhuma guia/i);
+  });
+
+  it("⚠ guia LIBERADA não tem frase — ausência visível não se descreve (critério do dono)", () => {
+    expect(motivoDaGuiaNaoLiberada({ ...VENCIDA })).toBeNull();
   });
 });

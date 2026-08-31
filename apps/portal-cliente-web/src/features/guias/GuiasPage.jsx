@@ -5,7 +5,7 @@ import { linhaDigitavelDaGuia } from "./lib/linhaDigitavelTela";
 import { detalheDaGuia, rotuloDaGuia } from "./lib/rotuloGuia";
 import {
   avisoAntesDeConfirmar, avisoAntesDePedir, avisoDosAcrescimos, leituraDaRecusa,
-  podeConfirmarPagamento, podePedirGuiaAtualizada,
+  podeConfirmarPagamento, podePedirGuiaAtualizada, motivoDaGuiaNaoLiberada, podeBaixarPdf,
 } from "./lib/recalculoDaGuia";
 import { useCarregamento } from "../../lib/hooks";
 import { mensagemDeErro } from "../../lib/mensagens";
@@ -105,12 +105,17 @@ function baixarArquivo({ contentBase64, fileName, mimeType }) {
 }
 
 /**
- * Guias liberadas ao cliente.
+ * As guias da empresa.
  *
- * ⚠ A rota `/client/companies/:id/guides` já responde com `apenasLiberadas:
- * true` — o cliente só vê o que o contador liberou, e o download refaz a mesma
- * checagem (`liberadaCliente: true` no `where`). Esta tela NÃO tem, e não deve
- * ganhar, nenhum controle que contorne isso.
+ * ⚠⚠ **ESTE BLOCO DIZIA "Guias liberadas ao cliente" E FICOU FALSO EM 30/08/2026.** Dono:
+ * *"arruma a aba de guias, INSS e parcelamento não aparecem"*. A rota parou de filtrar por
+ * `liberadaCliente` — ela negava a existência de guias que o FLUXO, na tela ao lado, já mostrava,
+ * inclusive pelo botão *"Ver todas as guias"* que leva até aqui.
+ *
+ * ⚠⚠ **O GATE NÃO CAIU — ELE MUDOU DE ALCANCE.** Download, recálculo e confirmação de pagamento
+ * continuam exigindo `liberadaCliente: true` no servidor, cada um no seu `where`. Esta tela
+ * continua sem qualquer controle que contorne isso: o que ela ganhou foi a obrigação de DIZER,
+ * na linha, que a guia ainda não foi liberada — ver `motivoDaGuiaNaoLiberada`.
  *
  * Contrato lido em `toGuideResponse`
  * (apps/api/src/application/guides/GuideService.js) — o app mobile não consome
@@ -362,7 +367,9 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                 {guias.map((guia) => {
                   const chip = chipDaGuia(guia.paymentStatus);
                   return (
-                    <tr key={guia.guideId}>
+                    /* ⚠ `data-liberada` é audível no DOM, como `data-status` — e a distinção
+                       da linha não é só cor: a frase do motivo está na célula de ações. */
+                    <tr key={guia.guideId} data-liberada={guia.liberadaCliente ? "sim" : "nao"}>
                       <td>
                         <span className="truncar" title={detalheDaGuia(guia) || rotuloDaGuia(guia)}>
                           {rotuloDaGuia(guia)}
@@ -398,6 +405,10 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                       </td>
                       <CelulaLinhaDigitavel guia={guia} />
                       <td>
+                        {/* ⚠⚠ GUIA NÃO LIBERADA NÃO PERDE O BOTÃO — ele fica DESABILITADO, com o
+                            motivo ao lado. Sumir com ele esconderia que o documento existe, e o
+                            cliente não saberia o que pedir ao contador. ⚠ O `title` carrega a
+                            mesma frase, para quem chega pelo teclado. */}
                         <button
                           type="button"
                           className="btn"
@@ -406,11 +417,15 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                              só da própria linha os outros 24 botões ficavam com APARÊNCIA normal
                              e o clique não fazia nada — sem spinner, sem erro, sem fila. Filtro
                              fantasma no botão que é a saída de pagamento da guia. */
-                          disabled={Boolean(baixandoId)}
+                          disabled={Boolean(baixandoId) || !podeBaixarPdf(guia)}
+                          title={motivoDaGuiaNaoLiberada(guia) || undefined}
                           onClick={() => baixar(guia)}
                         >
                           {baixandoId === guia.guideId ? "Baixando…" : "Baixar PDF"}
                         </button>
+                        {motivoDaGuiaNaoLiberada(guia) ? (
+                          <span className="meta meta--bloco">{motivoDaGuiaNaoLiberada(guia)}</span>
+                        ) : null}
                         {/* ⚠⚠ SÓ NA GUIA VENCIDA (decisão do dono). Guia em aberto não tem por que
                             ser regerada pelo cliente: o valor seria o mesmo, e o gasto, não.
                             ⚠ Quem decide é `podePedirGuiaAtualizada`, que lê o veredito PRONTO do

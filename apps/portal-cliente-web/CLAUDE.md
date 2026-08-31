@@ -1754,10 +1754,32 @@ não fato — e a divergência apareceria como o contador vendo "PIS · COFINS" 
 - O `title` da célula passou a levar o detalhamento por tributo **com valor** — sai da mesma
   `composicao`, nenhum número novo é calculado. É o documento que o cliente vai pagar.
 
-**2 · A INVISIBILIDADE — não é defeito, é a regra.** Medido em produção: **8 das 9** DARFs de LP
-estão com **`liberadaCliente: false`**. A rota já responde com `apenasLiberadas: true` (o cliente
-só vê o que o contador liberou) e o download refaz a checagem. Enquanto o contador não clicar em
-"Liberar ao cliente", elas não aparecem — com ou sem este conserto. **Não afrouxe esse gate.**
+**2 · A INVISIBILIDADE — era a regra, e o dono a derrubou em 30/08/2026.** Medido à época:
+**8 das 9** DARFs de LP com `liberadaCliente: false`; a rota respondia `apenasLiberadas: true` e as
+guias só apareciam depois do clique em "Liberar ao cliente".
+
+⚠⚠ **HOJE A LISTA NÃO FILTRA MAIS.** Dono: *"arruma a aba de guias, INSS e parcelamento não
+aparecem"* — e, quando expliquei o conserto pela tela vizinha, o critério: *"a aba de guias é aba
+de guias, o fluxo é o fluxo."* Uma aba chamada Guias que esconde a maior parte das guias da empresa
+está errada **por conta própria**, sem precisar de nenhuma outra tela para justificar.
+
+⚠⚠ **O QUE `liberadaCliente` REALMENTE MARCA É QUE O CONTADOR ENVIOU A GUIA** — o botão "Liberar ao
+cliente" dispara o e-mail. Filtrar a LISTA por ele fazia um registro de **envio** decidir o que o
+cliente sabe **dever**. Medido em 30/08/2026 (`scripts/diag-guias-do-cliente.mjs`): a ERISANGELA via
+**7 de 17** guias, e a carteira inteira tem **24 liberadas contra 232 não liberadas**.
+
+⚠⚠ **O GATE NÃO CAIU — ELE MUDOU DE ALCANCE, E ISSO NÃO SE AFROUXA.** As três rotas de AÇÃO
+(download, recálculo, confirmação de pagamento) continuam exigindo `liberadaCliente: true`, cada uma
+no seu próprio `where` — o recálculo em especial gasta dinheiro do escritório. A tela ganhou a
+obrigação de **dizer**: botão desabilitado, `data-liberada` no `<tr>`, e a frase *"Seu contador
+ainda não liberou esta guia"* com o conserto (falar com ele).
+
+⚠ **E a célula da linha digitável encurtou junto**: ela dizia *"Baixe o PDF para pagar"* ao lado de
+um botão desabilitado — duas frases da mesma linha se contradizendo. Achado no NAVEGADOR, com a
+suíte verde: as duas metades estavam certas cada uma por si.
+⚠ A varredura que trava as duas pontas é `routes/client/__tests__/guiasDoClienteAparecem.test.js`,
+e ela é de FONTE — a suíte inteira ficou verde com a mudança, porque ninguém nunca tinha afirmado
+o `apenasLiberadas` desta rota.
 
 Medição (só leitura, zero chamada externa): `apps/api/scripts/diag-guias-lp-portal-cliente.mjs`.
 
