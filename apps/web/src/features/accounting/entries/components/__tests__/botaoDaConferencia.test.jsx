@@ -14,7 +14,9 @@ import { BotaoDaConferencia } from "../renderAccountingEntriesTab";
 
 const cheio = { ok: true, total: 6, declarados: 3, series: 1, saidas: 2, indisponiveis: [] };
 
-const botao = () => screen.getByRole("button", { name: /Conferência/ });
+// ⚠ O RÓTULO virou "A lançar" em 30/08/2026 (dono: *"o nome Conferência me parece ruim para
+// esse botão"*). Mudou só o TEXTO: a chave de navegação, o handler e os `data-*` são os mesmos.
+const botao = () => screen.getByRole("button", { name: /A lançar/ });
 
 describe("⚠⚠ o número soma AS TRÊS filas", () => {
   it("o selo mostra o TOTAL, não a fila dos declarados", () => {
@@ -53,7 +55,9 @@ describe("⚠⚠ âmbar SÓ quando há o que conferir", () => {
     />);
     expect(botao()).toBeInTheDocument();
     expect(botao().querySelector("span")).toBeNull();
-    expect(botao().getAttribute("title")).toMatch(/fila de conferência/i);
+    // ⚠ O `title` acompanhou o rótulo em 30/08/2026: ele nomeia o CONTEÚDO da fila (o que o
+    // cliente e o extrato trouxeram), não o ato de conferir.
+    expect(botao().getAttribute("title")).toMatch(/cliente e o extrato/i);
   });
 
   it("⚠⚠ SEM contagem (falha de rede) o botão também fica, e sem selo", () => {

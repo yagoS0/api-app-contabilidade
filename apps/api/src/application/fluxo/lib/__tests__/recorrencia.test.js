@@ -498,3 +498,44 @@ describe("⚠ os VALORES viajam na base — `min`/`max`/`mediana` não bastam", 
     expect(dentroDaFaixaDaMediana([1045, 1050, 1055])).toBe(true);
   });
 });
+
+// ⚠⚠ A FAIXA OLHA AS ÚLTIMAS OBSERVAÇÕES, NÃO A HISTÓRIA INTEIRA (30/08/2026)
+//
+// Decisão do dono, tomada com os números na frente. Medido em produção
+// (`scripts/diag-series-de-despesa.mjs`): das 19 despesas que a LENTE sugere, a leitura antiga
+// auto-ativava **2**; a nova, **7**. Na SINCROSAT a antiga pegava **ZERO** de 3 — foi o caso que ele
+// relatou (*"o da lente já apareceu as saídas, mas sincrosat não"*).
+//
+// ⚠ E o critério é o MESMO que ele já tinha dado para a receita projetada: *"se em 3 meses seguidos
+// aparece a mesma receita, pode colocar ela para frente"*. O que decide é a estabilidade RECENTE.
+describe("⚠⚠ podeAutoAtivar olha as ÚLTIMAS observações", () => {
+  const base = (valores) => ({ n: valores.length, valores, periodicidade: "MENSAL" });
+
+  it("⚠⚠ oscilação ANTIGA não barra mais quem está estável agora", () => {
+    // 2.000 há um ano; 1.000/1.050/1.020 nos últimos três meses. A leitura antiga barrava por causa
+    // do 2.000 — um fornecedor estável há três meses ficava fora para sempre.
+    expect(podeAutoAtivar(base([2000, 500, 1000, 1050, 1020]))).toBe(true);
+  });
+
+  it("⚠⚠ oscilação AGORA continua barrando — é ela que importa para projetar", () => {
+    expect(podeAutoAtivar(base([1000, 1000, 1000, 1000, 1180]))).toBe(false);
+  });
+
+  it("⚠⚠ o exemplo do dono (a Lente: 1.000 · 1.050 · 1.180) continua FORA", () => {
+    // ⚠ Ele é o caso que separa a FAIXA do coeficiente de variação (que daria ≈8,6% e passaria).
+    // Com só três observações, "as últimas três" são todas elas — o veredito não muda.
+    expect(podeAutoAtivar(base([1000, 1050, 1180]))).toBe(false);
+  });
+
+  it("⚠ o piso de 3 continua valendo sobre o TOTAL", () => {
+    // Duas observações estáveis não bastam: a janela escolhe QUAIS valores entram na faixa, ela não
+    // afrouxa quantos precisam existir.
+    expect(podeAutoAtivar(base([1000, 1010]))).toBe(false);
+  });
+
+  it("⚠⚠ a janela é do FIM do array, nunca dos valores mais parecidos entre si", () => {
+    // Ordenar por valor faria a faixa passar SEMPRE: os três mais próximos sempre cabem em ±10%.
+    // Aqui os três últimos são 100 · 5.000 · 100 — e a série tem de ser recusada.
+    expect(podeAutoAtivar(base([1000, 1000, 1000, 100, 5000, 100]))).toBe(false);
+  });
+});

@@ -392,5 +392,33 @@ export function dentroDaFaixaDaMediana(valores, tolerancia = TOLERANCIA_DA_FAIXA
 export function podeAutoAtivar(base, tolerancia = TOLERANCIA_DA_FAIXA) {
   const n = Number(base?.n);
   if (!Number.isFinite(n) || n < PISO_DE_OBSERVACOES) return false;
-  return dentroDaFaixaDaMediana(base?.valores, tolerancia);
+  /**
+   * ⚠⚠ A FAIXA É SOBRE AS **ÚLTIMAS** OBSERVAÇÕES, NÃO SOBRE A HISTÓRIA INTEIRA (30/08/2026).
+   *
+   * Decisão do dono, escolhida com os números na frente. As três leituras de *"variação ≤ 10%"*
+   * discordam no dado real (`scripts/diag-series-de-despesa.mjs`, 30/08/2026):
+   *
+   * | leitura | LENTE (19 sugerem) | SINCROSAT (3 sugerem) |
+   * |---|---|---|
+   * | toda a história em mediana ±10% | **2** | **0** |
+   * | as ÚLTIMAS 3 em ±10% | **7** | **3** |
+   * | coeficiente de variação ≤ 10% | 3 | 1 |
+   *
+   * ⚠⚠ **A LEITURA ANTERIOR ERA QUASE INERTE.** Uma série de 37 observações ao longo de três anos
+   * quase nunca cabe inteira em ±10% — bastava UMA nota fora, em qualquer mês da história, para
+   * barrar um fornecedor que está estável há um ano. Na SINCROSAT ela pegava **zero**.
+   *
+   * ⚠ **E este critério é O MESMO que o dono já deu para a receita projetada** (*"se em 3 meses
+   * seguidos aparece a mesma receita, pode colocar ela para frente"*): o que decide é a
+   * estabilidade RECENTE, porque é ela que sustenta a projeção para a frente. Oscilação de dois
+   * anos atrás não diz nada sobre o mês que vem; oscilação AGORA diz tudo.
+   *
+   * ⚠ O piso continua sendo `PISO_DE_OBSERVACOES` sobre o TOTAL: três valores estáveis não bastam
+   * se são os únicos três que existem e estão espalhados — quem cuida disso é `consecutivos`, em
+   * `lerSerie`. Aqui a janela só escolhe QUAIS valores entram na faixa.
+   * ⚠⚠ A janela é do FIM do array, e ele já vem em ordem de ciclo. Ordenar por valor aqui faria a
+   * faixa passar sempre — os três mais parecidos entre si sempre cabem em ±10%.
+   */
+  const valores = Array.isArray(base?.valores) ? base.valores : [];
+  return dentroDaFaixaDaMediana(valores.slice(-PISO_DE_OBSERVACOES), tolerancia);
 }
