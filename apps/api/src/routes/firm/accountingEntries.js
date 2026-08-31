@@ -39,7 +39,7 @@ import {
   resolveCaixaAccount,
 } from "../../application/accounting/InssPagamentoService.js";
 import { markGuidePaidManual } from "../../application/guides/GuidePaymentStatusService.js";
-import { guiaQuitadaPelaBaixa } from "../../application/guides/lib/guiaQuitadaPelaBaixa.js";
+import { baixaPodeDatarAGuia, guiaQuitadaPelaBaixa } from "../../application/guides/lib/guiaQuitadaPelaBaixa.js";
 // Q50: históricos agnósticos de competência (chave normalizada com {{competencia}}).
 import { normalizarHistorico } from "../../application/accounting/historicoCompetencia.js";
 // Saldo da provisão — mesma conta usada pelo estorno (ver `saldoProvisao.js`).
@@ -3364,8 +3364,9 @@ export function createAccountingEntriesRouter({ log }) {
        * ⚠ A REGRA é pura e está em `guides/lib/guiaQuitadaPelaBaixa.js`, com o porquê da chave.
        * ⚠ **BEST-EFFORT, FORA DA TRANSAÇÃO**: a baixa é o ato contábil e já está gravada. Falhar
        * aqui não pode desfazê-la — no pior caso a guia segue aberta, que é o estado de antes.
-       * ⚠ **NUNCA REBAIXA**: guia já `PAID` é deixada em paz, inclusive a confirmada pelo cliente,
-       * cuja procedência este caminho não pode sobrescrever.
+       * ⚠ **NUNCA REBAIXA**: guia paga por SERPRO (prova) ou MANUAL (o contador) é deixada em paz.
+       * ⚠⚠ **MAS CORRIGE A DO CLIENTE** — o clique não é prova e o lançamento é, e a hierarquia é a
+       * que `procedenciaDoPagamento.js` já escreve. Ver `baixaPodeDatarAGuia`.
        * ⚠ A data é a **da baixa** — o dia que o contador afirma que o dinheiro saiu, e o mesmo que
        * foi para o razão. `paymentConfirmedAt` é quando o dinheiro saiu, nunca o instante do clique.
        */
@@ -3373,12 +3374,12 @@ export function createAccountingEntriesRouter({ log }) {
         const { alvo } = guiaQuitadaPelaBaixa({ provisao: openEntry, novoStatus });
         if (alvo) {
           const guia = await prisma.guide.findFirst({
-            where: alvo.guideId
-              ? { id: alvo.guideId, portalClientId }
-              : { ...alvo, status: "PROCESSED", paymentStatus: { not: "PAID" } },
-            select: { id: true, paymentStatus: true },
+            // ⚠ O filtro por `paymentStatus` SAIU do `where`: guia paga pelo CLIENTE também entra,
+            // e quem decide é `baixaPodeDatarAGuia`. Filtrar aqui esconderia justamente o caso.
+            where: alvo.guideId ? { id: alvo.guideId, portalClientId } : { ...alvo, status: "PROCESSED" },
+            select: { id: true, paymentStatus: true, paymentStatusSource: true },
           });
-          if (guia && guia.paymentStatus !== "PAID") {
+          if (guia && baixaPodeDatarAGuia(guia)) {
             await markGuidePaidManual({ guideId: guia.id, userId: req.auth?.user?.id, pagoEm: data });
           }
         }

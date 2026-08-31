@@ -77,3 +77,35 @@ describe("a baixa quita a guia", () => {
     }
   });
 });
+
+// ⚠⚠ A BAIXA CORRIGE A DATA QUE O CLIENTE INFORMOU — mas nunca a prova (30/08/2026)
+//
+// Caso relatado pelo dono: *"um pagamento de 1.876,46 que não faz sentido na Erisangela"*. Era a
+// soma de DUAS guias que o cliente confirmou no mesmo dia (30/08), ambas carimbadas com a data do
+// CLIQUE: R$ 1.552,63 + R$ 323,83. Uma delas está provada no razão em 13/06/2026 — três
+// lançamentos contra o caixa que somam exatamente o valor da guia.
+describe("⚠⚠ quem pode receber a data da baixa", () => {
+  const { baixaPodeDatarAGuia } = require("../guiaQuitadaPelaBaixa.js");
+
+  it("guia NÃO paga: sim", () => {
+    expect(baixaPodeDatarAGuia({ paymentStatus: "OPEN" })).toBe(true);
+    expect(baixaPodeDatarAGuia({ paymentStatus: "OVERDUE" })).toBe(true);
+    expect(baixaPodeDatarAGuia({})).toBe(true);
+  });
+
+  it("⚠⚠ paga pelo CLIENTE: SIM — o clique não é prova, o lançamento do contador é", () => {
+    expect(baixaPodeDatarAGuia({ paymentStatus: "PAID", paymentStatusSource: "CLIENTE" })).toBe(true);
+  });
+
+  it("⚠⚠ paga por SERPRO ou MANUAL: NÃO — sobrescrever seria apagar evidência melhor", () => {
+    expect(baixaPodeDatarAGuia({ paymentStatus: "PAID", paymentStatusSource: "SERPRO" })).toBe(false);
+    expect(baixaPodeDatarAGuia({ paymentStatus: "PAID", paymentStatusSource: "MANUAL" })).toBe(false);
+  });
+
+  it("⚠ procedência AUSENTE conta como já respondida — guia paga antes de a coluna existir", () => {
+    // Tratá-la como "cliente" mexeria em contabilidade fechada por causa de um campo em branco.
+    for (const v of [null, undefined, "", "   ", "OUTRA_COISA"]) {
+      expect(baixaPodeDatarAGuia({ paymentStatus: "PAID", paymentStatusSource: v })).toBe(false);
+    }
+  });
+});
