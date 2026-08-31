@@ -1676,3 +1676,16 @@ tr[data-atrasada="sim"] .guias-atraso-quando { color: var(--danger); }
   border-top: 2px solid var(--border);
   font-weight: 600;
 }
+
+/* ⚠⚠ A FAIXA DA VISITA DO ESCRITÓRIO (30/08/2026) — ela existe para o contador não ler a tela do
+   cliente como se fosse a dele. É âmbar porque é ATENÇÃO permanente da sessão, e não erro: nada
+   está quebrado, o que muda é DE QUEM é a tela.
+   ⚠ Fica ACIMA da topbar e não rola junto por acidente: ela é o contexto de tudo abaixo dela. */
+.faixa-visita {
+  padding: 8px 16px;
+  background: var(--warning-surface);
+  border-bottom: 1px solid var(--warning-surface-border);
+  color: var(--text);
+  font-size: .82rem;
+  line-height: 1.4;
+}

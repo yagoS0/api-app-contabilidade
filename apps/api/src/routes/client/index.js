@@ -180,6 +180,37 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
     return prisma.company.findUnique({ where: { id: portal.companyId } });
   }
 
+  /**
+   * As colunas da empresa que a LISTA do cliente devolve.
+   *
+   * ⚠⚠ Ela virou constante em 30/08/2026 porque passaram a existir DUAS consultas — a do cliente
+   * (`companyClientUser`) e a do visitante do escritório (`companyFirmAccess`). Dois `select`
+   * escritos à mão divergiriam na primeira correção, e a divergência apareceria como campo
+   * `undefined` **sem erro nenhum** — a armadilha do `legacyCompanySelect`, que já mordeu três
+   * vezes nesta base.
+   *
+   * ⚠ O PORTÃO DE EMISSÃO precisa viajar até o app do cliente. A coluna existe desde 18/08/2026 e
+   * não aparecia aqui — o app só descobria o portão pela RECUSA, depois de o usuário preencher a
+   * nota inteira.
+   * ⚠ **SÓ A FLAG.** `emissaoClienteLiberadaEm`/`...Por` respondem *"quem autorizou este cliente a
+   * emitir?"* — é registro de AUDITORIA do contador, e o id/instante de um usuário do escritório
+   * não é dado do cliente. Ampliar este `select` é o caminho por onde vazamento entre lados
+   * acontece sem ninguém notar.
+   */
+  const LEGACY_COMPANY_DA_LISTA = Object.freeze({
+    id: true,
+    razao: true,
+    cnpj: true,
+    guideNotificationEmail: true,
+    inscricaoMunicipal: true,
+    uf: true,
+    municipio: true,
+    createdAt: true,
+    updatedAt: true,
+    companyId: true,
+    emissaoClienteLiberada: true,
+  });
+
   router.get("/companies", async (req, res) => {
     const userId = String(req.auth.user.id);
     const legacyCompanySelect = {
@@ -252,35 +283,34 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       legacy?.enderecoJson && typeof legacy.enderecoJson === "object"
         ? legacy.enderecoJson[field] || null
         : null;
-    const links = await prisma.companyClientUser.findMany({
-      where: { userId, status: "ACTIVE" },
-      include: {
-        company: {
-          select: {
-            id: true,
-            razao: true,
-            cnpj: true,
-            guideNotificationEmail: true,
-            inscricaoMunicipal: true,
-            uf: true,
-            municipio: true,
-            createdAt: true,
-            updatedAt: true,
-            companyId: true,
-            // ⚠ O PORTÃO DE EMISSÃO PRECISA VIAJAR ATÉ O APP DO CLIENTE. A coluna existe desde
-            // 18/08/2026 e **não aparecia aqui** — o app só descobria o portão pela RECUSA, depois
-            // de o usuário preencher a nota inteira. Ver `emissaoNfseLiberada`, abaixo.
-            //
-            // ⚠ **SÓ A FLAG.** `emissaoClienteLiberadaEm`/`...Por` respondem *"quem autorizou este
-            // cliente a emitir?"* — é registro de AUDITORIA do contador, e o id/instante de um
-            // usuário do escritório não é dado do cliente. Ampliar este `select` é o caminho por
-            // onde vazamento entre lados acontece sem ninguém notar.
-            emissaoClienteLiberada: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    /**
+     * ⚠⚠ O VISITANTE DO ESCRITÓRIO LISTA A CARTEIRA DELE, NÃO VÍNCULOS DE CLIENTE (30/08/2026).
+     *
+     * > Dono: *"não estou conseguindo acessar o portal do cliente com meu acesso de contador."*
+     *
+     * ⚠⚠ **ABRIR SÓ A PORTA ENTREGARIA UMA TELA VAZIA.** Esta rota lista por `companyClientUser`,
+     * e um usuário do escritório não tem vínculo nenhum ali — medido em 30/08/2026: **0** para o
+     * único usuário FIRM da base, contra **34** empresas na carteira dele (`companyFirmAccess`).
+     * Logado e sem empresa nenhuma é pior que a recusa clara.
+     *
+     * ⚠ A fonte muda; o RESTO da rota não. As duas consultas devolvem `{ role, company }`, então o
+     * serializador abaixo continua sendo um só — duas montagens do mesmo payload divergiriam na
+     * primeira correção.
+     * ⚠⚠ O papel devolvido é `FINANCEIRO`, o MESMO que `requireClientCompanyAccess` concede à
+     * visita. Mandar `OWNER` daqui faria a TELA oferecer emissão de nota e gestão de usuários que o
+     * servidor recusaria — botão impossível, e no caminho que pratica ato fiscal.
+     */
+    const ehVisitaDoEscritorio = req.auth?.user?.podeAbrirPortalDoCliente === true;
+    const links = ehVisitaDoEscritorio
+      ? (await prisma.companyFirmAccess.findMany({
+          where: { userId, status: "ACTIVE" },
+          include: { company: { select: LEGACY_COMPANY_DA_LISTA } },
+        })).map((l) => ({ ...l, role: "FINANCEIRO" }))
+      : await prisma.companyClientUser.findMany({
+          where: { userId, status: "ACTIVE" },
+          include: { company: { select: LEGACY_COMPANY_DA_LISTA } },
+          orderBy: { createdAt: "desc" },
+        });
     const companyIds = links.map((link) => link.company.companyId).filter(Boolean);
     const legacyCompanies = companyIds.length
       ? await prisma.company.findMany({

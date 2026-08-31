@@ -1,0 +1,15 @@
+-- ⚠⚠ QUEM DO ESCRITÓRIO PODE ABRIR O PORTAL DO CLIENTE (30/08/2026)
+--
+-- Dono: "não estou conseguindo acessar o portal do cliente com meu acesso de contador (…) o meu
+-- acesso admin deve ser o único a conseguir isso."
+--
+-- ⚠ ADITIVA e com DEFAULT FALSE: nenhuma conta existente muda de comportamento ao aplicar. A porta
+-- só abre para quem for marcado, um a um.
+--
+-- ⚠⚠ NÃO É O `role`. `role = 'admin'` é bypass total nos três middlewares desta casa — promover a
+-- conta para abrir uma porta daria privilégio sobre o sistema inteiro. Medido em 30/08/2026: zero
+-- usuários com role 'admin' na base.
+--
+-- Para ligar (ato do dono, depois de aplicar):
+--   UPDATE "User" SET "podeAbrirPortalDoCliente" = true WHERE email = 'yago@belgencontabilidade.com';
+ALTER TABLE "User" ADD COLUMN "podeAbrirPortalDoCliente" BOOLEAN NOT NULL DEFAULT false;

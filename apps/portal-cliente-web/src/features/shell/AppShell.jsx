@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { api } from "../../api";
 import { limparSessao, lerEmpresaSalva, salvarEmpresa } from "../../api/sessionStore";
+import { ehVisitaDoEscritorio } from "../../api/accountGate";
 import { AlertaErro, Carregando, Vazio } from "../../components/ui";
 import { useCarregamento, useRota } from "../../lib/hooks";
 import { competenciaPadrao, fmtCnpj, texto } from "../../lib/format";
@@ -188,6 +189,27 @@ export function AppShell({ user }) {
 
   return (
     <div className="app">
+      {/*
+        ⚠⚠ A FAIXA DA VISITA — obrigatória, e ela é o que mantém a exceção honesta (30/08/2026).
+
+        O portal do cliente abriu para um usuário do ESCRITÓRIO marcado (dono: *"o meu acesso admin
+        deve ser o único a conseguir isso"*). ⚠⚠ **Sem dizer isso na tela, ele lê os números de UMA
+        empresa achando que são os dele** — que é textualmente o risco escrito em `accountGate.js`,
+        e a razão pela qual essa porta era fechada. A porta abriu; o aviso é o que a substitui.
+
+        ⚠ Ela nomeia a EMPRESA: numa carteira de 34, "você é visitante" sem dizer de quem é a tela
+        não impede a confusão, só a nomeia.
+        ⚠ `role="status"`, não `alert`: é contexto permanente da sessão, não um evento — e um
+        `alert` seria reanunciado a cada troca de tela por quem usa leitor de tela.
+      */}
+      {ehVisitaDoEscritorio(user) ? (
+        <div className="faixa-visita" role="status">
+          <strong>Você está vendo o portal do cliente</strong>
+          {empresaAtiva ? <> — {texto(empresaAtiva.razao)}</> : null}
+          . Esta é a tela DELE, com os números DELE. Emitir nota, pró-labore e o certificado ficam
+          fechados aqui.
+        </div>
+      ) : null}
       <header className="topbar">
         {/* ⚠ A MARCA AQUI É SÓ O SOL, E ELA VOLTA AO INÍCIO — pedido do dono, 23/08/2026:
             *"tire a 'Altan contabilidade' e deixe apenas o Sol no canto superior, e ao clicar volta

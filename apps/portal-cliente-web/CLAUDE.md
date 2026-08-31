@@ -1976,6 +1976,68 @@ o `<span class="brand">` da topbar e o `<title>` da aba (hoje `Altan Contabilida
   última letra): 359,8, contra 370 da caixa. **Trocar a fonte da marca obriga a medir de novo** —
   errar para menos corta a última letra de "CONTABILIDADE", porque a raiz de um SVG recorta.
 
+## ⚠⚠ O ESCRITÓRIO ENTRA AQUI — só quem tem a MARCA, e só para VER (30/08/2026)
+
+> Dono: *"não estou conseguindo acessar o portal do cliente com meu acesso de contador"* · *"o meu
+> acesso admin deve ser o único a conseguir isso."*
+
+⚠⚠ **O "acesso admin" NÃO EXISTIA.** Medido na base em 30/08/2026: **zero** usuários com
+`role: "admin"`; o único usuário FIRM é `yago@belgencontabilidade.com`, com role **`contador`**. A
+exceção `role === "admin"` que já existe nos três middlewares da api **nunca foi acionada por
+ninguém**.
+
+⚠⚠ **E NÃO SE PROMOVE A CONTA PARA ABRIR UMA PORTA.** `admin` é **bypass total** em
+`requireAccountType`, `requireClientCompanyAccess` e `requireFirmCompanyAccess` — quem o tem ganha
+OWNER em qualquer empresa do banco, fora da carteira inclusive. Por isso a porta é uma **marca por
+usuário**: `User.podeAbrirPortalDoCliente` (migration `20260830190000`, aditiva, **escrita e NÃO
+aplicada**; ligar a coluna na conta é ato do dono).
+
+⚠ **Nem "qualquer conta FIRM".** Hoje seria a mesma coisa — há um único usuário FIRM —, e deixaria
+de ser no dia em que entrar um segundo contador, **sem ninguém decidir**.
+
+### ⚠⚠ ABRIR A PORTA NÃO BASTAVA: a tela abriria VAZIA
+
+`GET /client/companies` lista por `companyClientUser`, e um usuário do escritório não tem vínculo
+nenhum ali. Medido: **0** vínculos de cliente contra **34** empresas na carteira dele
+(`companyFirmAccess`). Logado e sem empresa nenhuma é pior que a recusa clara. Hoje o visitante
+lista a **carteira**, pela mesma rota e pelo mesmo serializador.
+
+### ⚠⚠ O PISO É `FINANCEIRO`, E É A DECISÃO DE SEGURANÇA DESTA ENTREGA
+
+**Este portal EMITE NFS-e**, e a emissão exige `CLIENT_ADMIN`+. Com OWNER, o contador emitiria nota
+fiscal **em nome do cliente**, no CNPJ dele, sem volta — a NFS-e não tem inutilização. Com
+`FINANCEIRO` ele vê notas, guias, alíquota e fluxo (que é o que ele foi conferir) e é recusado em
+emissão, pró-labore, certificado, quadro societário e gestão de usuários.
+
+⚠ Consequência aceita e nomeada: a **Situação fiscal** (piso `CLIENT_ADMIN`) não abre por aqui. Ela
+já está inteira no portal do escritório, que é de onde ela vem.
+
+⚠⚠ **O ESCOPO É A CARTEIRA DELE**, por `companyFirmAccess` — nunca "qualquer empresa". Sem isso o id
+na URL alcançaria empresa de outro escritório; multi-tenancy é invariante desta casa.
+
+### ⚠⚠ A FAIXA É OBRIGATÓRIA — ela é o que substitui a porta fechada
+
+`accountGate.js` dizia, com todas as letras, por que a porta existia: *"uma conta FIRM que entrasse
+aqui veria a tela do cliente — com UMA empresa, os números DELA — e concluiria coisas erradas sobre
+a própria carteira"*. **Esse risco não sumiu com a porta.** A faixa (`.faixa-visita`, `role="status"`,
+âmbar) nomeia a EMPRESA e diz o que está fechado. Numa carteira de 34, "você é visitante" sem dizer
+de quem é a tela nomeia a confusão em vez de impedi-la.
+
+⚠ `role="status"`, nunca `alert`: é contexto permanente da sessão, e um `alert` seria reanunciado a
+cada troca de tela por quem usa leitor de tela.
+
+### ⚠ O mock tem as DUAS contas, e é o par que prova a regra
+
+`contador@exemplo.com` continua **recusada** (`not_a_client`) e `visita@exemplo.com` entra. Só uma
+delas provaria que "conta FIRM entra" — que é exatamente o desenho recusado. ⚠ E a segunda traz
+`empresas` preenchidas: mock com lista vazia mostraria a tela logada e vazia, o estado que este
+conserto existe para evitar.
+
+⚠ **A marca abre SÓ esta porta.** Um CLIENTE com o campo ligado por engano não vira conta FIRM — a
+exceção em `requireAccountType` só vale quando o esperado é `CLIENT`. Há teste.
+
+---
+
 ## AUTENTICAÇÃO
 
 ⚠ **`accountGate.js` é regra de PRODUTO**: conta `FIRM` que entrasse aqui veria a tela do cliente —

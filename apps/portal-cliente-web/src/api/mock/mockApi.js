@@ -582,6 +582,32 @@ function criarEstado() {
       defaultClientId: null,
       empresas: [],
     },
+    {
+      /**
+       * ⚠⚠ O VISITANTE DO ESCRITÓRIO — a conta MARCADA (30/08/2026).
+       *
+       * > Dono: *"não estou conseguindo acessar o portal do cliente com meu acesso de contador (…)
+       * > o meu acesso admin deve ser o único a conseguir isso."*
+       *
+       * ⚠ Ela existe ao LADO da `contador@exemplo.com`, e é o par que dá sentido às duas: a de cima
+       * continua sendo recusada (`not_a_client`) e esta entra. Só uma delas não prova regra nenhuma
+       * — provaria que "conta FIRM entra", que é exatamente o desenho recusado.
+       * ⚠ `podeAbrirPortalDoCliente` é a MARCA POR USUÁRIO, nunca o `role`: `admin` é bypass total
+       * nos três middlewares da api, e promover a conta para abrir uma porta daria privilégio sobre
+       * o sistema inteiro.
+       * ⚠ `empresas` traz a carteira: no servidor a lista vem de `companyFirmAccess`, e um mock com
+       * lista vazia mostraria a tela logada e VAZIA — o estado que o conserto existe para evitar.
+       */
+      id: "u-contador-visita",
+      email: "visita@exemplo.com",
+      senha: "123456",
+      role: "contador",
+      accountType: "FIRM",
+      podeAbrirPortalDoCliente: true,
+      name: "Yago (escritório)",
+      defaultClientId: null,
+      empresas: ["pc-001", "pc-002", "pc-005"],
+    },
   ];
 
   // --- Notas -----------------------------------------------------------------
@@ -1338,6 +1364,10 @@ export function createMockApi() {
           accountType: usuario.accountType,
           defaultClientId: usuario.defaultClientId,
           name: usuario.name,
+          // ⚠ O campo tem de viajar aqui como viaja no real (`sanitizeUser`): é ele que
+          // `exigirContaDeCliente` lê, e sem ele o mock recusaria a conta que o servidor aceita.
+          // ⚠ `=== true`, nunca truthy — ausência não é permissão, dos dois lados.
+          podeAbrirPortalDoCliente: usuario.podeAbrirPortalDoCliente === true,
         },
       };
       // Mesma trava do real — a chamada mora nos dois para não divergirem.
