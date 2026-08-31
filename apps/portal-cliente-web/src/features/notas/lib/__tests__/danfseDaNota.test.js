@@ -6,6 +6,7 @@
 // escritório sem olhar faria a regra ler um campo que nunca chega.
 
 import {
+  podeEntrarNoLoteDeDanfse,
   MOTIVO_SEM_DANFSE,
   lerRecusaDanfse,
   nomeDoArquivoDanfse,
@@ -134,5 +135,39 @@ describe("nomeDoArquivoDanfse", () => {
 
   test("caracteres fora de `[\\w.-]` são removidos — o mesmo corte do `Content-Disposition`", () => {
     expect(nomeDoArquivoDanfse(nota({ numero: "13/000 A" }))).toBe("danfse-13000A.pdf");
+  });
+});
+
+// ⚠⚠ AS DUAS PORTAS DO DANFSe NÃO ALCANÇAM A MESMA POPULAÇÃO (31/08/2026)
+//
+// Achado por teste de usabilidade no navegador, no MESMO dia em que a causa foi introduzida: ao
+// liberar o DANFSe da nota ainda não confirmada, ela passou a ser MARCÁVEL na seleção da página —
+// e o zip do lote (que filtra `PortalInvoice`) vinha SEM ela. "Baixar 3 DANFSe" entregava 2, e a
+// ausente só aparecia abrindo o `RELATORIO.txt` lá dentro.
+//
+// ⚠ `selecaoDeNotas.js` afirma por escrito que no escopo PÁGINA *"o que não gera nem pode ser
+// marcado: 'Baixar 3 DANFSe' é uma promessa que se cumpre"*. Este bloco é o que a mantém verdadeira.
+describe("⚠⚠ podeEntrarNoLoteDeDanfse — mais estrita que a porta individual", () => {
+  it("⚠⚠ a nota AINDA NÃO CONFIRMADA pode individualmente, mas NÃO entra no lote", () => {
+    const naoConfirmada = nota({ confirmadaPeloAdn: false, hasXml: false });
+    // A porta individual acha `ServiceInvoice` desde 24/08 — este ramo continua liberado.
+    expect(podeGerarDanfse(naoConfirmada).pode).toBe(true);
+    // A do lote filtra `PortalInvoice`, onde ela ainda não está.
+    expect(podeEntrarNoLoteDeDanfse(naoConfirmada)).toBe(false);
+  });
+
+  it("a nota confirmada e com XML entra no lote", () => {
+    expect(podeEntrarNoLoteDeDanfse(nota())).toBe(true);
+  });
+
+  it("⚠ o que já não gera DANFSe também não entra — a segunda pergunta não afrouxa a primeira", () => {
+    expect(podeEntrarNoLoteDeDanfse(nota({ type: "NFE" }))).toBe(false);
+    expect(podeEntrarNoLoteDeDanfse(nota({ hasXml: false }))).toBe(false);
+    expect(podeEntrarNoLoteDeDanfse(null)).toBe(false);
+  });
+
+  it("⚠ `undefined` continua sendo lido como CONFIRMADA — contrato antigo e app mobile", () => {
+    const { confirmadaPeloAdn, ...semOCampo } = nota();
+    expect(podeEntrarNoLoteDeDanfse(semOCampo)).toBe(true);
   });
 });

@@ -52,6 +52,7 @@ jest.mock("../../infrastructure/db/NfseRepository.js", () => ({
 }));
 
 import { createNfseRouter } from "../nfse.js";
+import { ensureEmissaoNfseAutorizada } from "../middlewares/emissaoNfseGate.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { NfseService } from "../../application/nfse/NfseService.js";
 import { NfseRepository } from "../../infrastructure/db/NfseRepository.js";
@@ -295,5 +296,74 @@ describe("a ordem das duas checagens", () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toBe("forbidden");
     expect(NfseService.issue).not.toHaveBeenCalled();
+  });
+});
+
+// ⚠⚠ A VISITA DO ESCRITÓRIO NÃO EMITE E NÃO CANCELA (31/08/2026)
+//
+// Achado em teste de usabilidade no navegador, no MESMO dia em que a visita ao portal do cliente
+// foi construída. O desenho dela diz, no código e na faixa que o visitante lê na tela: *"ela abre a
+// porta, NÃO DÁ PODER (…) é recusado em emissão de NFS-e"*. O código fazia o contrário:
+// `isAdminLike` é `admin || contador`, e o visitante é um `contador` — caía no bypass do escritório
+// e passava SEM TOCAR NO BANCO.
+//
+// ⚠ Emitir nota em nome do cliente é ato fiscal IRREVERSÍVEL no CNPJ de outro.
+describe("⚠⚠ o visitante do escritório é recusado no portão de emissão", () => {
+  function reqDeVisita(extra = {}) {
+    return {
+      auth: { user: { id: "u-firm", role: "contador", accountType: "FIRM" } },
+      // ⚠ A marca é posta por `requireClientCompanyAccess` — é o que distingue "entrou pelo portal
+      // do cliente como visita" de "é o contador no portal dele".
+      access: { role: "FINANCEIRO", visitaDoEscritorio: true },
+      params: {}, body: {}, query: {},
+      ...extra,
+    };
+  }
+  function resFalso() {
+    return {
+      statusCode: null, corpo: null,
+      status(c) { this.statusCode = c; return this; },
+      json(b) { this.corpo = b; return this; },
+    };
+  }
+
+  it("⚠⚠ recusa com código próprio, e ANTES de qualquer consulta ao banco", async () => {
+    const res = resFalso();
+    const r = await ensureEmissaoNfseAutorizada(reqDeVisita(), res, "company-legada-1", {});
+    expect(r.ok).toBe(false);
+    expect(res.statusCode).toBe(403);
+    expect(res.corpo.error).toBe("EMISSAO_VISITA_DO_ESCRITORIO");
+    // ⚠ A recusa NOMEIA a saída: o portal do escritório, onde o ato fica registrado como dele.
+    expect(res.corpo.correcao).toMatch(/portal do escrit/i);
+  });
+
+  it("⚠⚠ e ela vem ANTES do bypass do escritório — `contador` não a atravessa", async () => {
+    // É o ponto: o visitante É admin-like. Sem a ordem certa, o bypass o deixaria passar.
+    const res = resFalso();
+    const r = await ensureEmissaoNfseAutorizada(reqDeVisita(), res, "company-legada-1", {});
+    expect(r.ok).toBe(false);
+    expect(r.via).toBeUndefined();
+  });
+
+  it("⚠⚠ o CONTADOR no portal DELE continua passando — sem `req.access`, a guarda não morde", async () => {
+    // `/firm/...` e `POST /nfse/issue` não passam por `requireClientCompanyAccess`: é por ali que a
+    // emissão real acontece, e quebrá-la é a regressão mais cara desta entrega.
+    const res = resFalso();
+    const semAccess = { auth: { user: { id: "u-firm", role: "contador", accountType: "FIRM" } }, params: {}, body: {}, query: {} };
+    const r = await ensureEmissaoNfseAutorizada(semAccess, res, "company-legada-1", {});
+    expect(r.ok).toBe(true);
+    expect(r.via).toBe("ESCRITORIO");
+  });
+
+  it("⚠ `=== true`, nunca truthy — ausência da marca não fecha nem abre por coerção", async () => {
+    for (const marca of [undefined, null, false, 0, "", "true", 1]) {
+      const res = resFalso();
+      const r = await ensureEmissaoNfseAutorizada(
+        reqDeVisita({ access: { role: "FINANCEIRO", visitaDoEscritorio: marca } }),
+        res, "company-legada-1", {}
+      );
+      // Sem a marca literal, o contador segue pelo caminho normal do escritório.
+      expect(r.ok).toBe(true);
+    }
   });
 });

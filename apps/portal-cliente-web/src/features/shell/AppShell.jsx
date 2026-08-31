@@ -366,6 +366,9 @@ export function AppShell({ user }) {
               aoReaproveitar={reaproveitarNota}
               aoEmitir={abrirEmissao}
               aoPrepararLote={abrirLote}
+              /* ⚠⚠ A visita do escritório NÃO emite (31/08/2026) — a faixa desta mesma casca já
+                 promete isso ao visitante, e a lista oferecia o botão assim mesmo. */
+              visitaDoEscritorio={ehVisitaDoEscritorio(user)}
             />
           )
         ) : rota === "guias" ? (

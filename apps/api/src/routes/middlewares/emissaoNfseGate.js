@@ -45,6 +45,44 @@ export async function ensureEmissaoNfseAutorizada(req, res, legacyCompanyId, { l
     return { ok: false };
   }
 
+  /**
+   * ⚠⚠ A VISITA DO ESCRITÓRIO NÃO EMITE — e ela vem ANTES do bypass do escritório (31/08/2026).
+   *
+   * Achado em teste de usabilidade no navegador, no mesmo dia em que a visita foi construída.
+   * A porta do portal do cliente (`podeAbrirPortalDoCliente`) foi desenhada com esta frase, escrita
+   * no próprio código e na faixa que o visitante lê na tela: *"ELA ABRE A PORTA, NÃO DÁ PODER (…) é
+   * recusado em emissão de NFS-e, pró-labore, certificado e gestão de usuários. Emitir nota em nome
+   * do cliente é ato fiscal irreversível no CNPJ de outro."*
+   *
+   * ⚠⚠ **E O CÓDIGO FAZIA O CONTRÁRIO.** `isAdminLike` é `role === "admin" || role === "contador"`,
+   * e o visitante é justamente um `contador` — então ele caía no bypass da linha seguinte e passava
+   * **sem tocar no banco**. A rota do cliente entra com `requireClientCompanyAccess()` SEM `minRole`
+   * (quem responde "este papel emite?" é este portão), então nada mais o barrava: a faixa dizia
+   * "fechado aqui" e o servidor aceitava.
+   *
+   * ⚠ O bypass do escritório CONTINUA INTEIRO no caminho dele — `/firm/...` e `POST /nfse/issue`
+   * não passam por `requireClientCompanyAccess`, então `req.access` nem existe lá e esta guarda não
+   * morde. É por aquele caminho que a emissão real do contador acontece, e quebrá-lo seria a
+   * regressão mais cara desta entrega (está escrito assim em `decidirEmissaoCliente`).
+   *
+   * ⚠ `=== true`, nunca truthy: a marca é posta por `requireClientCompanyAccess` e ausência não é
+   * permissão — nem no sentido de abrir, nem no de fechar.
+   */
+  if (req?.access?.visitaDoEscritorio === true) {
+    res.status(403).json({
+      ok: false,
+      error: "EMISSAO_VISITA_DO_ESCRITORIO",
+      codigo: "EMISSAO_VISITA_DO_ESCRITORIO",
+      message:
+        "Você está no portal do cliente como visita do escritório. Emitir ou cancelar nota fiscal "
+        + "em nome do cliente não é permitido por aqui.",
+      correcao:
+        "Use o portal do escritório para emitir por esta empresa — lá o ato fica registrado como "
+        + "seu, com o certificado e a autorização do escritório.",
+    });
+    return { ok: false };
+  }
+
   // Admin / contador do escritório: passa sem tocar no banco. É o caminho por onde a emissão real
   // acontece hoje.
   if (isAdminLike(user)) {

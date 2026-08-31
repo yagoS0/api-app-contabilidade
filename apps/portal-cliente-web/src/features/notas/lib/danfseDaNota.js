@@ -176,6 +176,32 @@ export function lerRecusaDanfse(err) {
  * ⚠ O contrato do cliente não traz `chaveAcesso`, então aqui a base é o NÚMERO (o servidor tenta a
  * chave primeiro). Os dois nomes descrevem a mesma nota; nenhum deles é inventado.
  */
+/**
+ * ⚠⚠ ESTA NOTA PODE ENTRAR NO ZIP DO LOTE? — pergunta DIFERENTE de `podeGerarDanfse` (31/08/2026).
+ *
+ * As duas portas do DANFSe não alcançam a mesma população, e ignorar isso quebrou uma promessa:
+ *
+ * | porta | rota | acha a nota recém-emitida? |
+ * |---|---|---|
+ * | individual | `GET /notas/:id/danfse` | **sim** — lê `PortalInvoice` E `ServiceInvoice` (conserto de 24/08) |
+ * | lote | `GET /invoices/danfse/bulk?ids=` | **não** — filtra `PortalInvoice` pelo mesmo `where` da listagem |
+ *
+ * ⚠⚠ **E ISTO É REGRESSÃO DE HOJE, DA MINHA MÃO.** Ao liberar o DANFSe da nota ainda não confirmada
+ * (`confirmadaPeloAdn === false` ⇒ `pode: true`), ela passou a ser MARCÁVEL na seleção da página —
+ * e `selecaoDeNotas.js` afirma, por escrito, que no escopo PÁGINA *"o que não gera nem pode ser
+ * marcado: 'Baixar 3 DANFSe' é uma promessa que se cumpre"*. Marcadas 3, o zip vinha com 2, e a
+ * ausente só aparecia abrindo o `RELATORIO.txt` lá dentro.
+ *
+ * ⚠ O botão INDIVIDUAL continua liberado — ele funciona. O que esta função faz é impedir que a nota
+ * entre num zip que não pode carregá-la.
+ */
+export function podeEntrarNoLoteDeDanfse(nota) {
+  if (!podeGerarDanfse(nota).pode) return false;
+  // ⚠ `=== false` e não truthy: contrato antigo (e o app mobile) não mandam o campo, e ausência é
+  // lida como CONFIRMADA em todo este módulo. Ver `podeGerarDanfse`.
+  return nota?.confirmadaPeloAdn !== false;
+}
+
 export function nomeDoArquivoDanfse(nota) {
   const base = String(nota?.numero || nota?.invoiceId || "nota").replace(/[^\w.-]/g, "");
   return `danfse-${base || "nota"}.pdf`;
