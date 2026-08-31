@@ -112,6 +112,23 @@ const MENSAGENS = {
   // conserto que o backend escreveu não chega ao olho de quem precisa dele.
   arquivo_grande_demais:
     "O extrato passa de 10 MB. Baixe o arquivo do banco em períodos menores e envie um de cada vez.",
+
+  // --- Emissão em lote ---
+  //
+  // ⚠⚠ SEM ESTA ENTRADA O 503 DA INTEGRAÇÃO DESLIGADA CAÍA EM `internal_error` (31/08/2026):
+  // *"Algo deu errado do nosso lado. Tente de novo em instantes."* — e o cliente tentaria de novo
+  // para sempre, porque não há nada do lado dele para dar certo. É exatamente a lição escrita no
+  // `arquivo_grande_demais` logo acima: `mensagemDeErro` resolve por CÓDIGO e **não lê**
+  // `err.message`, então o texto que o servidor escreveu não chega sozinho ao olho de ninguém.
+  // ⚠ Quem liga a integração é o escritório, não o cliente — a frase precisa dizer isso, senão ela
+  // descreve um impedimento sem apontar quem o resolve.
+  emissao_lote_desligada:
+    "A emissão de nota em lote ainda não está habilitada para a sua empresa. Fale com o seu "
+    + "escritório de contabilidade — a emissão de uma nota por vez continua funcionando.",
+  // ⚠ A retentativa que não tem o que retentar: o lote inteiro já virou nota, e isso é BOA notícia.
+  nada_a_retentar:
+    "Nenhuma linha desta planilha pode ser emitida de novo. Só voltam a ser tentadas as linhas que "
+    + "não geraram nota — as recusadas e as que não chegaram a ser tentadas.",
   arquivo_invalido: "Não conseguimos ler este arquivo. Confira se ele é o .OFX que o banco gerou.",
   // ⚠ As recusas do PRÓPRIO serviço de import. Os códigos foram LIDOS de `RECUSA_DO_IMPORT`
   // (`apps/api/src/application/declarados/ImportOfxService.js`), não deduzidos — uma primeira versão

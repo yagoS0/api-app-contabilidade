@@ -204,6 +204,21 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
     setLeitura(null);
     setRecusa(null);
     setEmAjuste(null);
+    /**
+     * ⚠⚠ PLANILHA NOVA ZERA O RELATÓRIO DO LOTE ANTERIOR (31/08/2026).
+     *
+     * Achado em teste de usabilidade: depois de emitir, subir outra planilha mostrava a
+     * conferência das linhas NOVAS e, logo abaixo, o relatório do lote ANTIGO — com os números das
+     * notas e os botões de DANFSe. Pior: `{lote ? <RelatorioDoLote/> : <BlocoDeEmissao/>}` fazia o
+     * botão "Emitir N notas" DESAPARECER, e a tela ficava sem saída até sair e voltar.
+     *
+     * ⚠ O motivo já estava escrito no efeito de troca de empresa, logo acima: relatório de um lote
+     * visível sob outro contexto faz acreditar que se emitiu o que não se emitiu. Valia para a
+     * empresa e não valia para o arquivo — e é o arquivo que muda com mais frequência.
+     */
+    setLote(null);
+    setReconhecido(false);
+    setErroEmissao(null);
     // ⚠ OS AJUSTES SÃO DESCARTADOS, as consultas NÃO. O ajuste é chaveado pelo NÚMERO DA LINHA, e
     // um arquivo novo pode ter outra ordem — aplicá-lo levaria a correção para a nota errada. A
     // consulta é chaveada pelo DOCUMENTO, que não muda de significado entre arquivos.
@@ -786,7 +801,19 @@ function BlocoDeEmissao({
  */
 function BotaoDanfseDaLinha({ linha, companyId }) {
   const [estado, setEstado] = useState({ fase: "ocioso", erro: null });
-  if (!linha?.serviceInvoiceId) return <span className="muted">—</span>;
+  /**
+   * ⚠⚠ O DESFECHO DECIDE, NÃO A PRESENÇA DO id (31/08/2026).
+   *
+   * Achado em teste de usabilidade: numa linha **recusada pela Receita** o botão aparecia e
+   * entregava um PDF — DANFSe de nota que não existe. A linha recusada pode ter
+   * `serviceInvoiceId` (a recusa acontece DEPOIS da reserva do número), e a guarda só olhava o id.
+   *
+   * ⚠ A pergunta certa é a do desfecho: só `emitida` tem documento. É a mesma disciplina do
+   * `estadoDaLinhaDoLote.js` — a tela só REBAIXA, nunca promove.
+   */
+  if (linha?.desfecho !== "emitida" || !linha?.serviceInvoiceId) {
+    return <span className="muted">—</span>;
+  }
 
   async function baixar() {
     setEstado({ fase: "gerando", erro: null });
