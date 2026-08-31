@@ -504,6 +504,48 @@ function makeGuidesByCompany(companies) {
       return { ...base, ...recalculoDoMock(base) };
     });
     if (company.temParcelamento) guides.unshift(...makeParcelaGuides(company));
+    /**
+     * ⚠⚠ O DAS RECALCULADO — o ÚNICO caso em que o badge "↻" existe, e ele era INALCANÇÁVEL
+     * OFFLINE até 30/08/2026.
+     *
+     * `valorRecalculado` NÃO é coluna: ele nasce no ENRIQUECIMENTO de `listGuidesByCompany`, no
+     * backend, que mostra o valor do EXTRATO do PGDAS-D como principal e o de COBRANÇA no badge. O
+     * mock não passa por lá — então a célula com badge nunca aparecia no modo demonstração, e foi
+     * por isso que o **"R$ R$ 323,83"** (um `R$` literal somado ao que `fmtMoney` já traz) viveu
+     * até o dono achá-lo num print de produção.
+     *
+     * ⚠⚠ ELA VAI EM **TODA** EMPRESA, e não junto das parcelas. A primeira versão a pôs dentro de
+     * `makeParcelaGuides`, que só roda na empresa com `temParcelamento` — e essa some do dashboard
+     * quando o filtro de competência está ligado. Ramo plantado num lugar inalcançável continua
+     * sendo ramo inalcançável.
+     *
+     * ⚠ Ela é DAS do mês, SEM `parcelamentoId` — é a distinção que o conserto do mesmo dia fez: a
+     * PARCELA saiu do enriquecimento e nunca mais traz badge; o DAS continua trazendo.
+     * ⚠ O par de valores é o real da ERISANGELA em 05/2026: extrato R$ 1.438,55, cobrança
+     * R$ 1.552,63 (juros de 99,69 e multa de 14,39).
+     */
+    guides.unshift({
+      id: `mock-das-recalculado-${company.companyId}`,
+      portalClientId: company.companyId,
+      tipo: "SIMPLES",
+      competencia: competenciaAnteriorMock(),
+      status: "PROCESSED",
+      emailStatus: "SENT",
+      paymentStatus: "OPEN",
+      paymentStatusSource: "SERPRO",
+      paymentConfirmedAt: null,
+      serproService: "GERARDAS161",
+      canConfirmPayment: true,
+      canRecalculate: false,
+      vencimento: new Date(Date.now() + 5 * 86400000).toISOString(),
+      valor: "1438.55",
+      valorRecalculado: 1552.63,
+      parcelamentoId: null,
+      parcelamentoLabel: null,
+      numeroParcela: null,
+      quantidadeParcelas: null,
+      ...linhaDigitavelDoMock(seqLinha++),
+    });
     // ⚠⚠ A DARF CONSOLIDADA DO LUCRO PRESUMIDO — sem ela o ramo `DARF_PRESUMIDO` do Recalcular
     // seria INALCANÇÁVEL offline, e ele é justamente o que a entrega de 27/08/2026 acrescentou.
     // ⚠ O que a identifica é o `sourceFileId`, NUNCA `tipo: "OUTRA"`: a guia de INSS/DCTFWeb é
