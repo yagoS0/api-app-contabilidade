@@ -2382,6 +2382,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         status,
         page,
         limit,
+        // ⚠⚠ O PÚBLICO decide o VALOR mostrado desde 30/08/2026: o escritório vê o do extrato do
+        // PGDAS-D (com o de cobrança no badge "↻"); o cliente vê o que ele PAGA. O default da
+        // função é o público estreito, então esta linha não é cerimônia — sem ela o contador perde
+        // o enriquecimento que esta tela existe para mostrar.
+        publico: PUBLICO.ESCRITORIO,
       });
       return res.json({
         // ⚠⚠ NUNCA `.map(toGuideResponse)` CRU: o `map` passa o ÍNDICE como 2º argumento, e o 2º

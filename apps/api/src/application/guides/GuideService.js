@@ -128,6 +128,14 @@ export async function listGuidesByCompany({
   limit = 25,
   // Portal Cliente (#3.1): quando true, retorna SÓ guias liberadas ao cliente (usado pelo /client).
   apenasLiberadas = false,
+  /**
+   * ⚠⚠ QUEM VAI LER ESTA LISTA — e desde 30/08/2026 isso muda o VALOR mostrado.
+   *
+   * O default é o público MAIS ESTREITO, como em `toGuideResponse` e pelo mesmo motivo: chamador
+   * novo que esquecer o parâmetro perde o enriquecimento do contador (visível e barato de
+   * consertar), em vez de mostrar material de trabalho dele ao cliente.
+   */
+  publico = PUBLICO.CLIENTE,
 }) {
   const take = Math.min(Math.max(Number(limit) || 25, 1), 200);
   const pageNum = Math.max(Number(page) || 1, 1);
@@ -150,16 +158,52 @@ export async function listGuidesByCompany({
     prisma.guide.count({ where }),
   ]);
 
-  // Enriquecimento: para guias SIMPLES, o valor MOSTRADO ao contador é o do extrato PGDAS-D
-  // (CompanyMonthlyCircular.dasTotal — imutável após 1ª captura), não o do PDF de cobrança
-  // (que pode ter sido recalculado pelo SERPRO com juros/multa). O valor recalculado fica
-  // exposto separadamente em `valorRecalculado` para badge "↻".
+  /**
+   * ⚠⚠ O ENRIQUECIMENTO DO DAS — e ele tem DUAS exclusões, as duas conquistadas por defeito.
+   *
+   * Para guias do SIMPLES, o valor MOSTRADO ao contador é o do extrato PGDAS-D
+   * (`CompanyMonthlyCircular.dasTotal`, imutável após a 1ª captura), não o do PDF de cobrança —
+   * que pode ter sido recalculado pelo SERPRO com juros e multa. O valor de cobrança fica em
+   * `valorRecalculado`, para o badge "↻".
+   *
+   * ## ⚠⚠ EXCLUSÃO 1 — A PARCELA DE PARCELAMENTO NÃO É DAS (30/08/2026)
+   *
+   * > Dono, com o print na tela: *"há um bug entre o valor da parcela e o do Simples Nacional (…)
+   * > aparece como se o parcelamento fosse uma retificada do Simples Nacional, o que não é verdade;
+   * > o único valor que deveria aparecer ali é o de 323,83."*
+   *
+   * ⚠⚠ **A PARCELA É GRAVADA COMO `tipo: "SIMPLES"`, IDÊNTICA AO DAS** — só `parcelamentoId` as
+   * separa. Sem esta exclusão ela pegava o `dasTotal` do mês e a tela mostrava o DAS no lugar da
+   * parcela, com o badge "↻" e um `title` afirmando *"guia recalculada pelo SERPRO"*: uma afirmação
+   * falsa sobre documento fiscal, e ela chegava ao CLIENTE.
+   *
+   * ⚠ Medido antes do conserto: 3 parcelas, **todas liberadas ao cliente** — ERISANGELA 06 e
+   * 07/2026 (R$ 323,83 aparecendo como R$ 1.441,25 e R$ 1.437,15) e ALESSANDRO NIGRO 07/2026
+   * (R$ 332,65 como R$ 1.954,87).
+   *
+   * ⚠ A regra JÁ EXISTIA nesta casa e este ponto é que não a seguia: `rotuloGuia` diz, com todas as
+   * letras, que **o parcelamento decide ANTES do tipo** — senão a parcela apareceria como o DAS.
+   *
+   * ## ⚠⚠ EXCLUSÃO 2 — O CLIENTE PRECISA SABER QUANTO PAGAR
+   *
+   * O enriquecimento nasceu para a tela do CONTADOR (a frase original dizia isso: *"o valor mostrado
+   * ao contador"*), e o cliente passou a ler a mesma lista quando a aba de guias abriu, em
+   * 30/08/2026. Para ele a pergunta é outra: **quanto eu pago?** — e a resposta é o valor da GUIA,
+   * não o do extrato, que numa guia recalculada é MENOR do que ele deve.
+   *
+   * ⚠ Mas o extrato **continua preenchendo o vazio**: guia sem valor lido do PDF (medido: 36 na
+   * carteira, quase todas com `valor: 0,00`) mostraria `R$ 0,00` ao cliente, que é afirmar que ele
+   * não deve nada. Ali o extrato é o único número que existe, e ele É o DAS do mês.
+   * ⚠⚠ E o cliente **não recebe `valorRecalculado`**: os dois valores em conflito são material de
+   * trabalho do contador. É a mesma regra que a linha digitável já segue neste projeto — *"o cliente
+   * não vê os dois valores da divergência"*.
+   */
+  const ehParcela = (g) => Boolean(g?.parcelamentoId);
+  const ehDasDoMes = (g) => String(g?.tipo || "").toUpperCase() === "SIMPLES" && !ehParcela(g);
+  const paraOEscritorio = String(publico).toUpperCase() === PUBLICO.ESCRITORIO;
+
   const simplesCompetencias = [
-    ...new Set(
-      rawItems
-        .filter((g) => String(g.tipo || "").toUpperCase() === "SIMPLES" && g.competencia)
-        .map((g) => g.competencia)
-    ),
+    ...new Set(rawItems.filter((g) => ehDasDoMes(g) && g.competencia).map((g) => g.competencia)),
   ];
   let circularByComp = new Map();
   if (simplesCompetencias.length > 0) {
@@ -170,13 +214,23 @@ export async function listGuidesByCompany({
     circularByComp = new Map(circulars.map((c) => [c.competencia, c]));
   }
   const items = rawItems.map((g) => {
-    if (String(g.tipo || "").toUpperCase() !== "SIMPLES") return g;
+    // ⚠⚠ A PARCELA SAI AQUI, antes de qualquer conta. O valor dela é o dela.
+    if (!ehDasDoMes(g)) return g;
     const circ = circularByComp.get(g.competencia);
     const extratoValor = circ?.dasTotal != null ? Number(circ.dasTotal) : null;
     const guideOriginal = g.valorOriginal != null ? Number(g.valorOriginal) : null;
     const valorOriginal = extratoValor != null ? extratoValor : guideOriginal;
     const valorAtual = g.valor != null ? Number(g.valor) : null;
     if (valorOriginal == null) return g; // sem fonte de truth; mantém o valor do PDF
+
+    if (!paraOEscritorio) {
+      // ⚠⚠ CLIENTE: o valor da GUIA vence — é o que ele paga. O extrato só preenche o VAZIO, e
+      // "vazio" inclui o zero: `R$ 0,00` numa guia afirma que não se deve nada.
+      // ⚠ Sem `valorRecalculado`: os dois valores em conflito são do contador.
+      const temValorProprio = valorAtual != null && Math.abs(valorAtual) > 0.009;
+      return temValorProprio ? g : { ...g, valor: valorOriginal };
+    }
+
     const recalculado = valorAtual != null && Math.abs(valorAtual - valorOriginal) > 0.01;
     return {
       ...g,
