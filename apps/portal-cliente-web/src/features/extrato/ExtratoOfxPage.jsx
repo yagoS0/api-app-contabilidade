@@ -22,6 +22,7 @@ import {
   linhasDoRelatorio,
   motivoLegivel,
 } from "./lib/relatorioDoExtrato";
+import { brl } from "../../lib/format";
 
 const CLASSE_POR_TOM = {
   [TOM.OK]: "chip chip--ok",
@@ -226,7 +227,10 @@ export function ExtratoOfxPage({ empresa, api, aoVoltar }) {
                       <tr key={`${d.fitId || "sem-id"}-${i}`}>
                         <td>{motivoLegivel(d)}</td>
                         <td>{d.dtPosted || "—"}</td>
-                        <td className="num">{d.trnAmt || "—"}</td>
+                        {/* ⚠ `brl`, e não a string do OFX: ela sai "-1500.00" — ponto decimal, sem
+                            milhar e sem R$ — numa coluna ao lado de motivos cuidadosamente
+                            traduzidos. Valor ilegível cai no traço, nunca em zero. */}
+                        <td className="num">{brl(d.trnAmt)}</td>
                       </tr>
                     ))}
                   </tbody>

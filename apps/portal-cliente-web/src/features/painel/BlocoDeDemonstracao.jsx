@@ -384,6 +384,40 @@ function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir, diaDeHoje 
               que existe. Hoje eles entram (a) no RESULTADO ACUMULADO, que começa por eles, e
               (b) no TOTAL do rodapé. Por isso o último dia e o rodapé fecham no mesmo número.
             */}
+            {/*
+              ⚠⚠ A LINHA "sem dia" — O DINHEIRO QUE NÃO CABE EM DIA NENHUM (31/08/2026).
+              >
+              > Dono: *"pode atacar o dinheiro sem dia"*, depois de o teste de usabilidade medir que
+              > **R$ 5.902,00** (folha + imposto sem dia) entravam no Resultado do dia 1 e no rodapé
+              > e **não tinham linha nenhuma** — e que a série "Jantar com clientes" (R$ 1.180, sem
+              > dia) era **inalcançável**: não havia onde clicar para lhe dar um dia.
+
+              ⚠⚠ **ELA NÃO É A VOLTA DO "no mês" QUE VOCÊ MANDOU SUMIR.** Aquela estava SEMPRE lá,
+              inclusive vazia, e repetia o total que hoje mora no rodapé. Esta só existe quando há
+              dinheiro sem dia — na maioria dos meses ela não aparece — e mostra **só o que não tem
+              dia**, nunca o total do mês.
+
+              ⚠ A agregação é a que `linhasDosDias` **já devolvia** (`dodia.semDia`): nada é somado
+              de novo aqui. Ela é a mesma que o acumulado do primeiro dia já usava — por isso a
+              linha do dia 1 continua fechando com o que a tabela mostra.
+
+              ⚠ Ela vem ANTES dos dias, e fora da rolagem dos dez: é contexto do mês inteiro, e
+              rolar para achá-la seria o mesmo que não tê-la.
+            */}
+            {dodia.semDia ? (
+              <tr data-linha-sem-dia="sim">
+                <th scope="row">
+                  <BotaoDoPeriodo aoAbrir={() => aoAbrir?.(null, null)}>sem dia</BotaoDoPeriodo>
+                </th>
+                <CelulasDoPeriodo
+                  linha={dodia.semDia}
+                  unidade={unidade}
+                  comFolha={comFolha}
+                  aoAbrir={(coluna) => aoAbrir?.(null, coluna)}
+                  rotuloDoPeriodo="sem dia"
+                />
+              </tr>
+            ) : null}
             {dias.map((d) => (
               /* ⚠ `data-hoje` é auditável no DOM, como `data-status` — e é ele que o CSS pinta de
                  ciano. Cor cravada no JSX não sobreviveria à troca de tema. */
@@ -674,7 +708,19 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, hoje: 
    */
   const comFolha = dados?.folha?.disponivel !== false;
 
-  const alerta = dados?.alertaDeGuias || null;
+  /**
+   * ⚠⚠ O ALERTA SAI DO FLUXO, NUNCA DE `atual` (31/08/2026).
+   *
+   * Lia `dados?.alertaDeGuias`, e `dados` é o payload da visão ATUAL — no DRE ele não tem esse
+   * campo, então a tabela de guias vencidas **sumia do Início** ao alternar. Quem deixasse o painel
+   * em DRE deixava de ver a guia vencida, que é exatamente a perda que `GuiasVencidas` existe para
+   * impedir (o corte do card "Próximos vencimentos" a deixou nomeada).
+   *
+   * ⚠ A visão nasce em `fluxo`, então quando alguém alterna para o DRE este payload já veio. Dado
+   * de alguns segundos atrás sobre guia VENCIDA continua verdadeiro — e a alternativa (esconder)
+   * é a que mente.
+   */
+  const alerta = fluxoQuery.dados?.alertaDeGuias || null;
   const mostraPopUp = visao === "fluxo" && !popUpDispensado
     && Boolean(alerta?.ackPending) && (alerta?.itens?.length > 0);
 
@@ -822,11 +868,15 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, hoje: 
         para ver quanto e quando. Sem ela, dispensado o pop-up, a guia vencida some do Início — que
         é a perda que o corte do card "Próximos vencimentos" (28/08) deixou nomeada.
 
-        ⚠ Só na visão de FLUXO: no DRE ela não tem o que fazer.
+        ⚠⚠ ESTA LINHA DIZIA "só na visão de FLUXO: no DRE ela não tem o que fazer" — e ela
+        contradizia o parágrafo logo acima, que é o motivo de o componente existir. Achado em teste
+        de usabilidade em 31/08/2026: alternando para o DRE, a guia vencida sumia do Início, que é
+        a perda que este bloco existe para impedir. Guia vencida não é assunto do fluxo — é a linha
+        mais urgente da tela, e ela vale nas duas visões.
         ⚠ Ela some sozinha quando não há guia em atraso, e nada é dito — frase que descreve uma
         ausência já visível é ruído (critério do dono).
       */}
-      {!atual.carregando && !atual.erro && dados && visao === "fluxo" ? (
+      {!atual.carregando && !atual.erro ? (
         <GuiasVencidas alerta={alerta} aoVerGuias={aoVerGuias} />
       ) : null}
 

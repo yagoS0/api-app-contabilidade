@@ -78,8 +78,12 @@ function dataDoDia(competencia, dia) {
  * aqui de "sem data" ou "projeções" faria a pessoa duvidar de que clicou naquela linha.
  */
 function tituloDaGaveta({ competencia, dia, balde }) {
+  // ⚠ "sem dia", e não "no mês" (31/08/2026): a LINHA que abre esta gaveta se chama "sem dia", e
+  // "no mês" é o TOTAL DO RODAPÉ — outro número. Dois nomes para a mesma coisa numa tela em que o
+  // vizinho é uma coisa diferente com o nome antigo é como se lê o número errado.
+  // ⚠ O estado vazio desta mesma gaveta já dizia "sem dia neste mês"; era o título que destoava.
   const quando = dia == null
-    ? `no mês · ${rotuloDoMes(competencia)}`
+    ? `sem dia · ${rotuloDoMes(competencia)}`
     : `dia ${String(dia).padStart(2, "0")} de ${rotuloDoMes(competencia)}`;
   const rotulo = rotuloDoBalde(balde);
   return rotulo ? `${rotulo} · ${quando}` : quando;

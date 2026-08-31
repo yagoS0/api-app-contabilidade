@@ -541,7 +541,9 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 }
 .lista-empresas button:hover { background: var(--bg); }
 .lista-empresas button[aria-current="true"] { border-color: var(--primary); background: var(--primary-surface); }
-.lista-empresas .razao { font-weight: 600; }
+/* ⚠ `block`: os dois <span> nasceram inline e a razão social colava no CNPJ
+   ("…Ltda12.345.678/0001-90"). O markup já previa duas linhas. */
+.lista-empresas .razao { font-weight: 600; display: block; }
 .lista-empresas .meta { color: var(--muted); font-size: .82rem; }
 
 /* =============================================================================

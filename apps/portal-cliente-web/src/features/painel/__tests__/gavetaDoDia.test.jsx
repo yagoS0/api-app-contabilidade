@@ -104,11 +104,14 @@ describe("⚠⚠ as TRÊS entradas abrem a MESMA gaveta", () => {
     expect(screen.queryByLabelText("Valor")).not.toBeInTheDocument();
   });
 
-  it("⚠⚠ `dia: null` é a gaveta do 'no mês' — as projeções sem dia, e o título diz isso", () => {
+  // ⚠ O TÍTULO passou a dizer "sem dia" em 31/08/2026: é assim que a LINHA que abre esta gaveta se
+  // chama, e "no mês" ficou sendo só o TOTAL DO RODAPÉ — outro número. O que a gaveta MOSTRA não
+  // mudou: continuam sendo as linhas sem dia.
+  it("⚠⚠ `dia: null` é a gaveta do 'sem dia' — as projeções sem dia, e o título diz isso", () => {
     abrir({ dia: null, balde: null });
     expect(screen.getByText("Folha de pagamento")).toBeInTheDocument();
     expect(screen.queryByText("DAS 07/2026")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toMatch(/no mês/i);
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toMatch(/sem dia/i);
   });
 
   it("⚠ o título nomeia o recorte E o mês — o clique tem de se reconhecer na caixa que abriu", () => {

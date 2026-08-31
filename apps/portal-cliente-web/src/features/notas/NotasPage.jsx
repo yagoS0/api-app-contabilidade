@@ -571,7 +571,11 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                         <Chip
                           status={chip.status}
                           title={estadoLinha.title || undefined}
-                          aria-label={estadoLinha.aria ? `${chip.rotulo} — ${estadoLinha.aria}` : undefined}
+                          /* ⚠ `estadoLinha.aria` JÁ COMEÇA pelo rótulo do chip ("Emitida —
+                             aguardando confirmação…"), e concatenar os dois fazia o leitor de tela
+                             ouvir "Emitida — Emitida — aguardando…". Achado em teste de
+                             usabilidade, 31/08/2026. */
+                          aria-label={estadoLinha.aria || undefined}
                         >
                           {chip.rotulo}
                         </Chip>

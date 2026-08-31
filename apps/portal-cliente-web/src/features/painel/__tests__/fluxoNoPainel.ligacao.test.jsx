@@ -164,9 +164,21 @@ describe("⚠⚠ a visão de dias é o estado INICIAL", () => {
      */
     await abrir(cheio());
     const bloco = blocoDe("2026-08");
-    expect(bloco.querySelector("tbody tr th").textContent).toMatch(/^dia /);
-    expect([...bloco.querySelectorAll("tbody tr th")].map((h) => h.textContent))
-      .not.toContain("no mês");
+    /**
+     * ⚠⚠ A ASSERÇÃO MUDOU DE FORMA EM 31/08/2026, E O QUE ELA PROTEGE NÃO MUDOU.
+     *
+     * Ela era `toMatch(/^dia /)` na PRIMEIRA linha do corpo — uma forma de dizer "o 'no mês' não
+     * está aqui". Hoje a primeira linha pode ser **"sem dia"**, que é outra coisa e nasceu do
+     * pedido *"pode atacar o dinheiro sem dia"*: ela só aparece quando existe dinheiro sem dia e
+     * mostra **só esse subconjunto**, nunca o total do mês.
+     *
+     * ⚠ O que continua travado é o literal: **"no mês" não volta ao corpo**. Ele é o total do mês
+     * inteiro e mora no rodapé — duas linhas com o mesmo número em lugares diferentes é como a
+     * tabela passa a discordar de si mesma.
+     */
+    const cabecalhos = [...bloco.querySelectorAll("tbody tr th")].map((h) => h.textContent);
+    expect(cabecalhos).not.toContain("no mês");
+    expect(cabecalhos.every((t) => /^dia /.test(t) || t === "sem dia")).toBe(true);
     const total = bloco.querySelector("tfoot tr");
     expect(total).not.toBeNull();
     expect(total.querySelector('th[scope="row"]').textContent).toBe("no mês");
@@ -525,5 +537,64 @@ describe("⚠⚠ nada aqui lança, edita ou apaga", () => {
     expect(document.body.textContent).not.toMatch(/\bTotal\b/);
     await irAoHorizonte();
     expect(document.body.textContent).not.toMatch(/\bTotal\b/);
+  });
+});
+
+// ⚠⚠ A LINHA "sem dia" — O DINHEIRO QUE NÃO CABE EM DIA NENHUM (31/08/2026)
+//
+// > Dono: *"pode atacar o dinheiro sem dia"*, depois de o teste de usabilidade medir que a folha e
+// > o imposto sem dia (R$ 5.902,00 no mock) entravam no Resultado do dia 1 e no rodapé e **não
+// > tinham linha nenhuma** — e que a série sem dia era **inalcançável**: não havia onde clicar
+// > para lhe dar um dia.
+//
+// ⚠⚠ ELA NÃO É A VOLTA DO "no mês". Aquela estava SEMPRE lá, inclusive vazia, e repetia o total do
+// mês; esta só aparece quando há dinheiro sem dia e mostra **só esse subconjunto**. O teste do
+// "no mês" continua ao lado, travando que o literal não volta ao corpo.
+describe("⚠⚠ a linha 'sem dia'", () => {
+  const cabecalhosDoCorpo = (bloco) =>
+    [...bloco.querySelectorAll("tbody tr th")].map((h) => h.textContent);
+
+  it("aparece quando há dinheiro sem dia, e vem ANTES dos dias", async () => {
+    await abrir(cheio());
+    const bloco = blocoDe("2026-08");
+    const cabecalhos = cabecalhosDoCorpo(bloco);
+    expect(cabecalhos).toContain("sem dia");
+    // ⚠ Primeira do corpo: é contexto do mês inteiro, e rolar para achá-la seria não tê-la.
+    expect(cabecalhos[0]).toBe("sem dia");
+  });
+
+  it("⚠⚠ ela é CLICÁVEL — é por aqui que a série sem dia deixa de ser inalcançável", async () => {
+    await abrir(cheio());
+    const bloco = blocoDe("2026-08");
+    const linha = bloco.querySelector('tr[data-linha-sem-dia="sim"]');
+    expect(linha).not.toBeNull();
+    // O cabeçalho e as células de valor abrem a gaveta, como nas linhas de dia.
+    expect(linha.querySelector("th button")).not.toBeNull();
+    expect(linha.querySelectorAll("td button").length).toBeGreaterThan(0);
+  });
+
+  it("⚠⚠ SEM dinheiro sem dia ela NÃO aparece — não é o 'no mês' de volta", async () => {
+    // Todas as linhas com dia ⇒ nada a agregar fora dos dias ⇒ a linha não existe.
+    const base = cheio();
+    const comDia = {
+      ...base,
+      meses: (base.meses || []).map((m) => ({
+        ...m,
+        linhas: (m.linhas || []).map((l) => ({ ...l, dia: l.dia || 1, diaDesconhecido: null })),
+      })),
+    };
+    await abrir(comDia);
+    const bloco = blocoDe("2026-08");
+    expect(cabecalhosDoCorpo(bloco)).not.toContain("sem dia");
+  });
+
+  it("⚠ e o rodapé 'no mês' continua sendo o total do MÊS INTEIRO, não o dela", async () => {
+    await abrir(cheio());
+    const bloco = blocoDe("2026-08");
+    const semDia = bloco.querySelector('tr[data-linha-sem-dia="sim"]');
+    const rodape = bloco.querySelector("tfoot tr");
+    expect(rodape.querySelector('th[scope="row"]').textContent).toBe("no mês");
+    // ⚠ Se os dois mostrassem o mesmo número, um dos dois estaria mentindo.
+    expect(semDia.textContent).not.toBe(rodape.textContent);
   });
 });

@@ -64,6 +64,21 @@ function rotaDaUrl() {
  * Roteamento por hash — 20 linhas em vez de uma dependência.
  * Serve ao que o cliente espera do navegador: botão Voltar e link colável.
  */
+/**
+ * ⚠ O título da aba por destino (31/08/2026) — achado em teste de usabilidade.
+ *
+ * `document.title` era "Altan Contabilidade" em TODAS as telas. Como cada destino gera entrada de
+ * histórico (o roteamento é por hash), aba, histórico e favorito ficavam indistinguíveis entre si.
+ * ⚠ A MARCA FICA NO FIM, nunca sozinha: é ela que identifica a aba numa janela com dez abertas.
+ */
+const MARCA = "Altan Contabilidade";
+const TITULO_POR_ROTA = Object.freeze({
+  home: "Início",
+  notas: "Notas",
+  guias: "Guias",
+  fiscal: "Situação fiscal",
+});
+
 export function useRota() {
   const [rota, setRota] = useState(rotaDaUrl);
 
@@ -72,6 +87,12 @@ export function useRota() {
     window.addEventListener("hashchange", aoMudar);
     return () => window.removeEventListener("hashchange", aoMudar);
   }, []);
+
+  // ⚠ Rota fora do mapa cai na marca sozinha — nunca num título inventado a partir da chave.
+  useEffect(() => {
+    const nome = TITULO_POR_ROTA[rota];
+    document.title = nome ? `${nome} · ${MARCA}` : MARCA;
+  }, [rota]);
 
   const navegar = useCallback((destino) => {
     const alvo = ROTAS.includes(destino) ? destino : ROTA_PADRAO;

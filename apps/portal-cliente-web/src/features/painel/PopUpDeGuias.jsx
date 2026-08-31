@@ -67,9 +67,22 @@ export function PopUpDeGuias({ companyId, alerta, aoVerGuias, aoFechar, aoConfir
         ref={caixaRef}
       >
         <h2 id="pop-guias-titulo">Você tem guias para pagar</h2>
+        {/*
+          ⚠⚠ A FRASE DIZ QUE CIÊNCIA NÃO PAGA (31/08/2026) — achado em teste de usabilidade.
+
+          O texto era *"Este aviso volta a aparecer até que você ou seu contador confirmem"*, e
+          **"confirmem" se lê como confirmar o PAGAMENTO** — o botão que tira a guia da frente com
+          um clique. A Lei 5 fecha a palavra (*"Ciência nunca significa pagamento"*) e este arquivo
+          já a chamava de *"a linha mais fina desta tela"*, mas só em COMENTÁRIO: nada disso chegava
+          ao olho de quem clica.
+
+          ⚠ `Guide.clienteConfirmouEm` guarda outro fato — *"eu paguei esta guia"*, e move
+          `paymentStatus`. Um clique dado para dispensar um modal não pode tirar do contador a
+          cobrança nem do cliente a dívida.
+        */}
         <p className="meta meta--bloco">
-          Confira antes de continuar. Este aviso volta a aparecer até que você ou seu contador
-          confirmem.
+          Confira antes de continuar. <strong>Marcar como ciente não paga nem baixa nada</strong> —
+          é só para este aviso parar de aparecer. O pagamento continua em aberto até você pagar.
         </p>
 
         {itens.map((i) => (

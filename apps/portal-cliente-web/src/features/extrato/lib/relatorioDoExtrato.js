@@ -97,7 +97,9 @@ export function linhasDoRelatorio(relatorio) {
     linhas.push({
       chave: "descartadas",
       tom: TOM.ATENCAO,
-      rotulo: "linhas que não deu para ler",
+      // ⚠ Singular quando é UMA — e uma só é o caso mais comum do envio. "1 linhas" numa tela que
+      // traduz cada motivo com cuidado destoa de tudo ao redor.
+      rotulo: descartes.total === 1 ? "linha que não deu para ler" : "linhas que não deu para ler",
       valor: descartes.total,
       // ⚠⚠ "pelo menos" quando o total não veio — nunca um número com cara de final.
       aproximado: !descartes.exato,
