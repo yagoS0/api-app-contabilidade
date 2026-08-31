@@ -17,8 +17,7 @@ import {
   fmtCompetencia,
   fmtDateBr,
   inteiro,
-  texto,
-} from "../../lib/format";
+  texto, hojeNoCampoDeData, } from "../../lib/format";
 
 const OPCOES_COMPETENCIA = competenciasRecentes(12);
 const LIMITE = 25;
@@ -157,6 +156,18 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
   const [recusa, setRecusa] = useState(null);
   const [avisoAcrescimo, setAvisoAcrescimo] = useState(null);
   const [confirmacao, setConfirmacao] = useState(null);   // { guia, aviso }
+  /**
+   * ⚠⚠ O DIA EM QUE ELE PAGOU — e ele nasce VAZIO, de propósito (30/08/2026).
+   *
+   * > Dono: *"ao clicar em confirmar pagamento, o pagamento foi posto no dia 30 de agosto mesmo não
+   * > sendo verdade."*
+   *
+   * ⚠⚠ **NÃO PODE NASCER COM "HOJE" PREENCHIDO.** Um padrão é aceito com um clique, e aí a tela
+   * volta a gravar o dia do clique — exatamente o defeito relatado, só que com a aparência de ter
+   * sido conferido. É a mesma regra que o lote já carrega para o município do tomador: *"valor
+   * escolhido pelo sistema fica indistinguível de valor conferido por uma pessoa"*.
+   */
+  const [pagoEm, setPagoEm] = useState("");
   const [confirmando, setConfirmando] = useState(false);
   const [avisoConfirmacao, setAvisoConfirmacao] = useState(null);
   const total = resposta?.total ?? 0;
@@ -199,8 +210,9 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
     setConfirmando(true);
     setRecusa(null);
     try {
-      const r = await api.confirmarPagamentoDaGuia(companyId, guia.guideId);
+      const r = await api.confirmarPagamentoDaGuia(companyId, guia.guideId, { pagoEm });
       setConfirmacao(null);
+      setPagoEm("");
       setAvisoConfirmacao(r?.aviso || null);
       await query.recarregar();
     } catch (err) {
@@ -291,10 +303,42 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
           <p className="meta">
             Guia {rotuloDaGuia(confirmacao.guia)} · {fmtCompetencia(confirmacao.guia.competencia)}
           </p>
-          <button type="button" className="btn" disabled={confirmando} onClick={confirmarPagamento}>
+          {/* ⚠⚠ A DATA É DIGITADA, NÃO DEDUZIDA. É ela que vai para `paymentConfirmedAt`, o campo de
+              onde o fluxo tira o MÊS e o DIA em que o dinheiro saiu — e só o cliente sabe qual é.
+              ⚠ `max` de HOJE fecha a porta do futuro no próprio campo, antes da viagem; a recusa do
+              servidor continua existindo, porque quem valida não pode ser a tela. */}
+          <label className="campo" htmlFor="pago-em">
+            <span>Em que dia você pagou?</span>
+            <input
+              id="pago-em"
+              type="date"
+              value={pagoEm}
+              /* ⚠⚠ `hojeNoCampoDeData`, NUNCA `toISOString()`: aquele converte para UTC e às 21h
+                 de Brasília devolve o dia SEGUINTE — o campo passaria a aceitar amanhã. Achado no
+                 NAVEGADOR: com `toISOString()` o `max` saiu 2026-08-31 num dia 30. */
+              max={hojeNoCampoDeData()}
+              onChange={(e) => setPagoEm(e.target.value)}
+              disabled={confirmando}
+              required
+            />
+          </label>
+          {/* ⚠ O botão só abre com a data preenchida — e o `title` diz por quê, senão ele fica
+              cinza sem explicação e a pessoa não sabe o que falta. */}
+          <button
+            type="button"
+            className="btn"
+            disabled={confirmando || !pagoEm}
+            title={!pagoEm ? "Informe o dia em que você pagou esta guia." : undefined}
+            onClick={confirmarPagamento}
+          >
             {confirmando ? "Registrando…" : confirmacao.aviso.rotuloConfirmar}
           </button>
-          <button type="button" className="btn" disabled={confirmando} onClick={() => setConfirmacao(null)}>
+          <button
+            type="button"
+            className="btn"
+            disabled={confirmando}
+            onClick={() => { setConfirmacao(null); setPagoEm(""); }}
+          >
             Cancelar
           </button>
         </div>
@@ -438,7 +482,9 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                             className="btn"
                             style={{ marginTop: 6 }}
                             disabled={confirmando}
-                            onClick={() => { setRecusa(null); setConfirmacao({ guia, aviso: avisoAntesDeConfirmar(guia) }); }}
+                            /* ⚠ Abrir a caixa ZERA a data: a que sobrou de outra guia seria aceita por engano na
+                               próxima, e ninguém veria — são pagamentos diferentes. */
+                            onClick={() => { setRecusa(null); setPagoEm(""); setConfirmacao({ guia, aviso: avisoAntesDeConfirmar(guia) }); }}
                           >
                             Já paguei
                           </button>

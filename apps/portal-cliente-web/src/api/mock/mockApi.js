@@ -1811,7 +1811,7 @@ export function createMockApi() {
      * valor que faz a Circular do CONTADOR mostrar "⏳ cliente" e o razão NÃO ser marcado.
      * Gravar "MANUAL" aqui esconderia justamente a distinção que a entrega existe para criar.
      */
-    async confirmarPagamentoDaGuia(companyId, guideId) {
+    async confirmarPagamentoDaGuia(companyId, guideId, { pagoEm } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
       const guia = estado.guias.find((g) => g._clientId === id && g.guideId === String(guideId));
@@ -1821,10 +1821,40 @@ export function createMockApi() {
           message: "Esta guia já consta como paga.",
         });
       }
+      /**
+       * ⚠⚠ O MOCK RECUSA A DATA COMO O SERVIDOR RECUSA (30/08/2026), e tem de ser assim: mock que
+       * aceita o que o real rejeita treina a tela errada — regra escrita deste app.
+       * ⚠ A ordem das recusas é a mesma da regra pura (`application/guides/lib/dataDoPagamento.js`),
+       * e os códigos também: a tela traduz pelo código, não pela frase.
+       */
+      const bruto = String(pagoEm ?? "").trim();
+      if (!bruto) {
+        throw new ApiError(400, "DATA_DO_PAGAMENTO_AUSENTE", "Informe o dia em que você pagou esta guia.", {
+          message: "Informe o dia em que você pagou esta guia.",
+        });
+      }
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(bruto);
+      const dt = m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : null;
+      const valida = Boolean(m) && dt.getUTCFullYear() === Number(m[1])
+        && dt.getUTCMonth() === Number(m[2]) - 1 && dt.getUTCDate() === Number(m[3]);
+      if (!valida) {
+        throw new ApiError(400, "DATA_DO_PAGAMENTO_INVALIDA", "Esta data não existe.", {
+          message: "Esta data não existe. Informe o dia em que você pagou, no formato dia/mês/ano.",
+        });
+      }
+      const agoraD = new Date();
+      if (dt.getTime() > Date.UTC(agoraD.getUTCFullYear(), agoraD.getUTCMonth(), agoraD.getUTCDate())) {
+        throw new ApiError(400, "DATA_DO_PAGAMENTO_NO_FUTURO", "Esta data ainda não chegou.", {
+          message: "Esta data ainda não chegou. Informe o dia em que você já pagou.",
+        });
+      }
+
       const agora = new Date().toISOString();
       guia.paymentStatus = "PAID";
       guia.paymentStatusSource = "CLIENTE";
-      guia.paymentConfirmedAt = agora;
+      // ⚠⚠ A DATA DO PAGAMENTO É A INFORMADA; o CLIQUE continua sendo `agora`. São dois fatos, e
+      // colapsá-los foi o defeito.
+      guia.paymentConfirmedAt = dt.toISOString();
       guia.clienteConfirmouEm = agora;
       guia.canConfirmPayment = false;
       guia.vencida = false;

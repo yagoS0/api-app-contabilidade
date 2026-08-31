@@ -67,6 +67,10 @@ import {
   markGuidePaidByCliente,
   canGuideConfirmPayment,
 } from "../../application/guides/GuidePaymentStatusService.js";
+import {
+  FRASE_DA_RECUSA,
+  lerDataDoPagamentoInformada,
+} from "../../application/guides/lib/dataDoPagamento.js";
 import { comContextoSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
 import { reemitirDarfLp } from "../../application/fiscal/lp/LucroPresumidoProvisaoService.js";
@@ -1281,7 +1285,25 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         });
       }
 
-      const atualizada = await markGuidePaidByCliente({ guideId: guide.id, userId: req.auth?.user?.id });
+      /**
+       * ⚠⚠ A DATA DO PAGAMENTO É INFORMADA PELO CLIENTE (30/08/2026).
+       *
+       * > Dono: *"ao clicar em confirmar pagamento, o pagamento foi posto no dia 30 de agosto mesmo
+       * > não sendo verdade."*
+       *
+       * Isto gravava `new Date()`, o instante do CLIQUE — e `paymentConfirmedAt` é o dia em que o
+       * dinheiro SAIU, de onde o fluxo tira o mês e o dia da linha. ⚠ Só o cliente sabe: aqui não
+       * há comprovante nem data digitada pelo contador, então ela é **obrigatória** e a recusa é
+       * NOMEADA — a tela precisa dizer qual das três coisas faltou.
+       */
+      const { data: pagoEm, recusa } = lerDataDoPagamentoInformada(req.body?.pagoEm);
+      if (recusa) {
+        return res.status(400).json({ ok: false, error: recusa, message: FRASE_DA_RECUSA[recusa] });
+      }
+
+      const atualizada = await markGuidePaidByCliente({
+        guideId: guide.id, userId: req.auth?.user?.id, pagoEm,
+      });
       return res.json({
         ok: true,
         guide: toGuideResponse(atualizada, { publico: PUBLICO.CLIENTE }),

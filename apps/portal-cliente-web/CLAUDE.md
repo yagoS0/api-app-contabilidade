@@ -1785,6 +1785,50 @@ Medição (só leitura, zero chamada externa): `apps/api/scripts/diag-guias-lp-p
 
 ---
 
+## ⚠⚠ A DATA DO PAGAMENTO É INFORMADA, NUNCA O RELÓGIO (30/08/2026)
+
+> Dono: *"ao clicar em confirmar pagamento, o pagamento foi posto no dia 30 de agosto mesmo não
+> sendo verdade."*
+
+⚠⚠ **`Guide.paymentConfirmedAt` NÃO É O INSTANTE DO CLIQUE — é o dia em que o dinheiro saiu**, e é
+dele que `FluxoDeCaixaService.linhasDasGuias` tira o **mês** e o **dia** da linha do fluxo. Os três
+caminhos que marcavam a guia como paga gravavam `new Date()`.
+
+⚠⚠ **Medido antes do conserto** (`apps/api/scripts/diag-data-do-pagamento.mjs`, só leitura): das
+**20** guias pagas com comprovante do SERPRO guardado, **20 divergiam** da data real de arrecadação.
+E não por um dia: a LENTE tinha INSS de 04/2026 arrecadado em **16/07** gravado como **27/08** —
+dois meses adiante, num campo que decide em que MÊS o dinheiro aparece.
+
+| caminho | a data verdadeira estava… |
+|---|---|
+| consulta de pagamento (contador) | numa variável `dataPagamentoReal`, **calculada e nunca usada** |
+| baixa do INSS (contador) | na `dataPagamento` que ele **acabara de digitar** para gerar o lançamento |
+| "Já paguei" (cliente) | **em ninguém** — só ele sabe, e agora a tela pergunta |
+
+- ⚠⚠ **O CAMPO NASCE VAZIO.** Um padrão de "hoje" seria aceito com um clique e a tela voltaria a
+  gravar o dia do clique, agora *com aparência de conferido* — a mesma regra que o lote já carrega
+  para o município do tomador.
+- ⚠ **A regra é pura e tem recusa NOMEADA** (`apps/api/.../guides/lib/dataDoPagamento.js`): ausente ×
+  inválida × no futuro, três frases diferentes. ⚠ **31 de fevereiro é recusado** — `Date.UTC` rola
+  para março sem erro nenhum, e a validação é por RECONSTRUÇÃO. ⚠ **Não há piso**: guia antiga paga
+  há anos é fato legítimo.
+- ⚠⚠ **`pagoEm` nulo grava `null`, e isso é deliberado.** Sem comprovante e sem data digitada,
+  ninguém sabe quando o dinheiro saiu; a guia cai em `semMes` no fluxo, que é *"pago, dia
+  desconhecido"*. Carimbar o relógio para não deixar o campo vazio foi o que produziu as 20 datas
+  erradas. Na consulta do contador isso vem **dito**, apontando o "Dar baixa" da Circular.
+- ⚠⚠ **DOIS FATOS, DUAS COLUNAS:** `clienteConfirmouEm` continua sendo *quando ele clicou* (e
+  continua `agora`); `paymentConfirmedAt` é *quando pagou*. Colapsá-los foi o defeito.
+- ⚠⚠ **ACHADO NO NAVEGADOR, com a suíte verde:** o `max` do campo saiu `2026-08-31` num dia **30** —
+  `new Date().toISOString()` converte para UTC e às 21h de Brasília devolve o dia seguinte. Pior, o
+  **teste comparava contra a mesma expressão errada**: teste e código pelo mesmo cálculo não é
+  teste, é espelho. Hoje existe `hojeNoCampoDeData` em `lib/format.js`, e o caso prova a função com
+  uma hora fixa.
+- ⚠ **O passado tem script próprio**, `apps/api/scripts/corrigir-data-do-pagamento.mjs`: ele é
+  **dry-run por padrão**, só toca guia que TEM comprovante, nunca apaga data e grava uma por vez.
+  Aplicá-lo em produção é ato do dono. Medido: **20 linhas a corrigir**, nenhuma já certa.
+
+---
+
 ## ⚠⚠ A SITUAÇÃO FISCAL (`src/features/fiscal/`) — 21/08/2026
 
 > Dono: *"um símbolo de situação fiscal, onde mostraremos a tabela da situação fiscal ao cliente"*.

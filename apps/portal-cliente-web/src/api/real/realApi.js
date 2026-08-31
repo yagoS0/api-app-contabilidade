@@ -346,10 +346,17 @@ export function createRealApi() {
      *
      * ⚠ ZERO CUSTO: é escrita local, sem chamada externa. Nada a ver com o "Pedir guia atualizada".
      */
-    async confirmarPagamentoDaGuia(companyId, guideId) {
+    /**
+     * ⚠⚠ `pagoEm` É OBRIGATÓRIO desde 30/08/2026 — dono: *"ao clicar em confirmar pagamento, o
+     * pagamento foi posto no dia 30 de agosto mesmo não sendo verdade"*. O servidor gravava o
+     * instante do CLIQUE num campo que é **o dia em que o dinheiro saiu**, e de onde o fluxo tira o
+     * mês e o dia da linha. ⚠ Formato "AAAA-MM-DD" (o valor cru de um `<input type="date">`);
+     * quem valida é o servidor, com recusa NOMEADA.
+     */
+    async confirmarPagamentoDaGuia(companyId, guideId, { pagoEm } = {}) {
       return pedir(
         `/client/companies/${encodeURIComponent(companyId)}/guides/${encodeURIComponent(guideId)}/confirmar-pagamento`,
-        { method: "POST" }
+        { method: "POST", body: { pagoEm } }
       );
     },
 

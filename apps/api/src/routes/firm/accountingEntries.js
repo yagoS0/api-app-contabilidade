@@ -3511,7 +3511,11 @@ export function createAccountingEntriesRouter({ log }) {
         return res.status(409).json({ error: inssBaixa.reason || "baixa_skipped" });
       }
       // Selo verde da Circular depende de paymentStatus=PAID: marca a guia como paga (fonte MANUAL).
-      await markGuidePaidManual({ guideId, userId: req.auth?.user?.id });
+      // ⚠⚠ `pagoEm: data` é A MESMA data que gerou a BAIXA logo acima — a que o contador digitou.
+      // Até 30/08/2026 esta chamada ignorava a data e carimbava `new Date()`: o lançamento contábil
+      // ficava no dia certo e a guia, no dia do clique. Dois registros do MESMO pagamento em datas
+      // diferentes, e o fluxo lendo o errado.
+      await markGuidePaidManual({ guideId, userId: req.auth?.user?.id, pagoEm: data });
       return res.status(201).json({ ok: true, inssBaixa });
     } catch (err) {
       if (err?.code === "MES_FECHADO") {
