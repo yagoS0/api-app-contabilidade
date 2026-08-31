@@ -11,6 +11,7 @@ import {
   SMTP_USER,
   SMTP_PASS,
   GMAIL_DELEGATED_USER,
+  MAIL_REPLY_TO,
   GOOGLE_APPLICATION_CREDENTIALS,
   GOOGLE_APPLICATION_CREDENTIALS_JSON,
   log,
@@ -71,7 +72,7 @@ async function getGmailService() {
   const delegatedUser = String(GMAIL_DELEGATED_USER || "").trim().toLowerCase();
   if (!delegatedUser) {
     const err = new Error(
-      "GMAIL_DELEGATED_USER ausente — defina a caixa do Workspace a ser impersonada (ex: contabilidade@altan.company)."
+      "GMAIL_DELEGATED_USER ausente — defina a caixa do Workspace a ser impersonada (ex: envio@altan.company)."
     );
     err.code = "GMAIL_DELEGATED_USER_MISSING";
     throw err;
@@ -117,8 +118,13 @@ function buildMimeMessage({ from, to, subject, html, attachments }) {
    */
   const fromDomain = fromEmail.split("@")[1] || "altan.company";
   const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2, 10)}@${fromDomain}>`;
-  // Reply-To: contador (não bounce pra service account). Mesmo email se não definido.
-  const replyTo = fromEmail;
+  /**
+   * ⚠ Reply-To: o contador, nunca a service account (o bounce voltaria para uma caixa que não
+   * existe). `MAIL_REPLY_TO` vazia mantém o comportamento de sempre — responde para o remetente.
+   * ⚠ Ela existe porque a caixa que assina passou a ser `envio@`, um nome de caixa de SAÍDA, e a
+   * resposta do cliente a um e-mail de guia ("paguei", "o PDF não abriu") precisa chegar em alguém.
+   */
+  const replyTo = MAIL_REPLY_TO || fromEmail;
   let head =
     `From: ${from}\r\n` +
     `To: ${to}\r\n` +
