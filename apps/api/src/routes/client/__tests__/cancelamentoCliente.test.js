@@ -29,6 +29,8 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     company: { findUnique: jest.fn(), findMany: jest.fn() },
     portalClient: { findUnique: jest.fn(), findMany: jest.fn() },
     portalInvoice: { findFirst: jest.fn() },
+    // ⚠ A união na leitura de 31/08/2026: a nota recém-emitida ainda é um `ServiceInvoice`.
+    serviceInvoice: { findFirst: jest.fn() },
     companyClientUser: { findUnique: jest.fn(), findMany: jest.fn() },
     companyFirmAccess: { findUnique: jest.fn(), findMany: jest.fn() },
     $transaction: jest.fn(async (arg) => (typeof arg === "function" ? arg(prisma) : Promise.all(arg))),
@@ -124,6 +126,8 @@ beforeEach(() => {
     where?.companyId_userId?.companyId === PORTAL_ID ? cenario.clientLink : null
   );
   prisma.companyFirmAccess.findUnique.mockImplementation(async () => cenario.firmLink);
+  // ⚠ Por padrão NÃO existe nota nossa — quem quer o ramo novo o arma no próprio caso.
+  prisma.serviceInvoice.findFirst.mockResolvedValue(null);
 });
 
 describe("⚠⚠ O MESMO PORTÃO DA EMISSÃO — e nada sai da máquina quando ele fecha", () => {
@@ -433,5 +437,89 @@ describe("o desfecho feliz", () => {
     expect(NfseService.sendEvent).toHaveBeenCalledWith(
       expect.objectContaining({ tipoEvento: "e101101" })
     );
+  });
+});
+
+
+// ⚠⚠ CANCELAR LOGO APÓS EMITIR — a união na leitura (31/08/2026)
+//
+// > Dono: *"eu emiti duas notas em lote na sincrosat e não consigo cancelar elas após a emissão,
+// > as outras eu consigo, quero poder cancelar logo após a emissão, simples."*
+//
+// A emissão grava `ServiceInvoice`; `PortalInvoice` é a projeção do ADN. Entre um e outro o
+// `notaId` que a lista mostra é um `ServiceInvoice.id`, e esta rota respondia **404**.
+//
+// ⚠⚠ A RAZÃO QUE A TELA DAVA ERA FALSA, e foi MEDIDA contra produção em 31/08: as duas notas
+// emitidas naquele dia tinham `chaveAcesso` preenchida **desde a emissão**.
+describe("⚠⚠ a nota que ACABAMOS de emitir também cancela", () => {
+  const CHAVE_NOSSA = "35260800000000000000000000000000000000000042";
+
+  function armarNotaNossa(extra = {}) {
+    prisma.portalInvoice.findFirst.mockResolvedValue(null);
+    prisma.serviceInvoice.findFirst.mockImplementation(async ({ where }) =>
+      where?.id === NOTA_ID && where?.companyId === LEGACY_ID
+        ? {
+          id: NOTA_ID,
+          chaveAcesso: CHAVE_NOSSA,
+          numeroNfse: "42",
+          status: "issued",
+          tomadorDoc: "44555666000177",
+          ...extra,
+        }
+        : null
+    );
+  }
+
+  it("⚠⚠ o evento SAI, com a chave da NOSSA emissão — cancelar aqui cancela a nota de verdade", async () => {
+    armarNotaNossa();
+    const r = await cancelar(usuarioCliente());
+    expect(r.status).toBe(200);
+    // ⚠ É o que prova que o ato é real: `sendEvent` transmite o `e101101` ao sistema nacional.
+    expect(NfseService.sendEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ chaveAcesso: CHAVE_NOSSA, tipoEvento: "e101101" })
+    );
+  });
+
+  it("⚠⚠ O ESCOPO É POR EMPRESA — o `where` leva o `companyId` resolvido, nunca só o id", async () => {
+    // Sem isto, quem soubesse o id de uma nota (ele está no relatório do lote, na tela) cancelaria
+    // a nota de outra empresa.
+    armarNotaNossa();
+    await cancelar(usuarioCliente());
+    expect(prisma.serviceInvoice.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ companyId: LEGACY_ID }) })
+    );
+  });
+
+  it("⚠ e o nosso registro acompanha — a nossa base não pode dizer `issued` depois de cancelarmos", async () => {
+    armarNotaNossa();
+    await cancelar(usuarioCliente());
+    expect(NfseRepository.updateByChaveAcesso).toHaveBeenCalledWith(
+      CHAVE_NOSSA,
+      expect.objectContaining({ status: "cancelled" })
+    );
+  });
+
+  it("⚠⚠ nota nossa JÁ cancelada não vai duas vezes — o segundo pedido volta recusado e se lê como falha", async () => {
+    armarNotaNossa({ status: "cancelled" });
+    const r = await cancelar(usuarioCliente());
+    expect(r.status).toBe(422);
+    expect(r.body.error).toBe("nota_ja_cancelada");
+    expect(NfseService.sendEvent).not.toHaveBeenCalled();
+  });
+
+  it("⚠ sem chave, nada sai — o `chNFSe` é obrigatório e 50 zeros pediriam o cancelamento de nota nenhuma", async () => {
+    armarNotaNossa({ chaveAcesso: null });
+    const r = await cancelar(usuarioCliente());
+    expect(r.status).toBe(422);
+    expect(r.body.error).toBe("nota_sem_chave");
+    expect(NfseService.sendEvent).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ e a nota que NÃO é nossa nem do ADN continua 404 — a união não afrouxou o escopo", async () => {
+    prisma.portalInvoice.findFirst.mockResolvedValue(null);
+    prisma.serviceInvoice.findFirst.mockResolvedValue(null);
+    const r = await cancelar(usuarioCliente());
+    expect(r.status).toBe(404);
+    expect(NfseService.sendEvent).not.toHaveBeenCalled();
   });
 });

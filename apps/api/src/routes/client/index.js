@@ -1991,7 +1991,7 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       // A nota é DESTA empresa? E ela tem chave? Sem chave não há evento a montar — o `chNFSe` é
       // obrigatório no `pedRegEvento`, e fabricar 50 zeros seria pedir o cancelamento de "nota
       // nenhuma".
-      const nota = await prisma.portalInvoice.findFirst({
+      let nota = await prisma.portalInvoice.findFirst({
         where: { id: notaId, clientId: portalClientId },
         select: {
           id: true, chaveAcesso: true, numero: true, status: true, statusEfetivo: true,
@@ -2001,6 +2001,59 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           papel: true, type: true, tomadorDoc: true, emitenteDoc: true,
         },
       });
+
+      /**
+       * ⚠⚠ A NOTA QUE ACABAMOS DE EMITIR AINDA NÃO É UMA `PortalInvoice` (31/08/2026).
+       *
+       * > Dono: *"eu emiti duas notas em lote na sincrosat e não consigo cancelar elas após a
+       * > emissão, as outras eu consigo, quero poder cancelar logo após a emissão, simples."*
+       *
+       * É a MESMA união na leitura que o DANFSe já faz desde 24/08 (`danfseDaNotaDoPortal.js`), e
+       * pela mesma razão: a emissão grava `ServiceInvoice`, `PortalInvoice` é a projeção do ADN, e
+       * entre um e outro o `notaId` que a lista mostra é um `ServiceInvoice.id` — esta rota
+       * respondia **404**, e a tela desabilitava o botão por isso.
+       *
+       * ⚠⚠ **A RAZÃO QUE A TELA DAVA ERA FALSA, e foi medida.** Ela dizia *"o cancelamento é
+       * identificado pela CHAVE, que só existe depois que o sistema nacional devolve a nota"*.
+       * Medido em produção em 31/08/2026 (`scripts/diag-cancelamento.mjs`): as duas notas emitidas
+       * naquele dia tinham `chaveAcesso` preenchida **desde a emissão**. A chave está lá; era esta
+       * rota que não a procurava.
+       *
+       * ⚠ **A SAÍDA NÃO É GRAVAR `PortalInvoice` NA EMISSÃO** — está proibido, com motivo longo, em
+       * `apps/api/CLAUDE.md`: o encontro das duas escritas já produziu faturamento somado duas
+       * vezes. A saída é LER também do outro lado.
+       *
+       * ⚠⚠ **O ESCOPO É `legacyCompanyId`, resolvido lá em cima ANTES do portão.** Cair para
+       * `where: { id }` sozinho deixaria uma empresa cancelar a nota de outra a quem soubesse o id
+       * — e o id de uma nota emitida está no relatório do lote, na tela.
+       *
+       * ⚠ `papel: "EMIT"` e `type: "NFSE"` são CRAVADOS, e não suposição: esta linha nasce de
+       * `NfseService.issue`, então ela é, por definição, uma NFS-e emitida por nós. É a mesma
+       * leitura que `serializeEmitidaNaoConfirmada` já faz na listagem.
+       */
+      if (!nota) {
+        const nossa = await prisma.serviceInvoice.findFirst({
+          where: { id: notaId, companyId: legacyCompanyId },
+          select: { id: true, chaveAcesso: true, numeroNfse: true, status: true, tomadorDoc: true },
+        });
+        if (nossa) {
+          nota = {
+            id: nossa.id,
+            chaveAcesso: nossa.chaveAcesso,
+            numero: nossa.numeroNfse,
+            status: nossa.status,
+            statusEfetivo: nossa.status,
+            papel: "EMIT",
+            type: "NFSE",
+            tomadorDoc: nossa.tomadorDoc,
+            // ⚠ O emitente é a PRÓPRIA empresa — é ela que emitiu. Deixar `null` faria a guarda de
+            // "nota recebida" comparar contra vazio; `tomadorDoc !== emitenteDoc` continua sendo a
+            // leitura certa, e `papel: "EMIT"` já a resolve antes.
+            emitenteDoc: null,
+          };
+        }
+      }
+
       if (!nota) {
         return res.status(404).json({ ok: false, error: "nota_nao_encontrada" });
       }
@@ -2030,8 +2083,19 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       );
       const docTomador = normalizeDoc(nota.tomadorDoc);
       const docEmitente = normalizeDoc(nota.emitenteDoc);
-      const recebida = String(nota.papel || "").toUpperCase() === "DEST"
-        || (Boolean(cnpjDaEmpresa) && docTomador === cnpjDaEmpresa && docEmitente !== cnpjDaEmpresa);
+      /**
+       * ⚠⚠ `papel: "EMIT"` ENCERRA A PERGUNTA (31/08/2026). A comparação de CNPJ existe como
+       * SEGUNDA fonte, para a nota cujo `papel` não veio da captura — e ela erra num caso real: a
+       * empresa que emite para SI MESMA tem `docTomador === cnpjDaEmpresa`, e a linha seria acusada
+       * de "recebida" sobre uma nota que ela emitiu.
+       * ⚠ Isso passou a importar agora porque a nota vinda de `ServiceInvoice` **não tem**
+       * `emitenteDoc` — ela é a nossa emissão, e o emitente é a própria empresa.
+       */
+      const nossaEmissao = String(nota.papel || "").toUpperCase() === "EMIT";
+      const recebida = !nossaEmissao && (
+        String(nota.papel || "").toUpperCase() === "DEST"
+        || (Boolean(cnpjDaEmpresa) && docTomador === cnpjDaEmpresa && docEmitente !== cnpjDaEmpresa)
+      );
       if (recebida) {
         return res.status(422).json({
           ok: false,

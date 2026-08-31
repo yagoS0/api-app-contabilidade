@@ -56,10 +56,26 @@ describe("podeCancelar", () => {
     expect(podeCancelar(nota({ type: "NFE" })).motivo).toBe(MOTIVO_NAO_CANCELAVEL.NAO_E_NFSE);
   });
 
-  it("⚠ emitida por nós e ainda não confirmada: não pode (o cancelamento é pela CHAVE)", () => {
-    expect(podeCancelar(nota({ confirmadaPeloAdn: false })).motivo).toBe(
-      MOTIVO_NAO_CANCELAVEL.NAO_CONFIRMADA
-    );
+  /**
+   * ⚠⚠ VIROU O CONTRÁRIO EM 31/08/2026 — e o que caiu foi a PREMISSA, não a regra.
+   *
+   * > Dono: *"quero poder cancelar logo após a emissão, simples."*
+   *
+   * O caso dizia *"não pode: o cancelamento é pela CHAVE"*, e a chave só existiria depois de o
+   * sistema nacional devolver a nota. **Medido contra produção em 31/08**: as duas notas emitidas
+   * naquele dia tinham `chaveAcesso` preenchida desde a emissão. A chave estava lá; o que faltava
+   * era a ROTA procurá-la — ela lia só `PortalInvoice`, e agora lê dos dois lados, como o DANFSe.
+   */
+  it("⚠⚠ emitida por nós e ainda não confirmada: PODE — a chave existe desde a emissão", () => {
+    expect(podeCancelar(nota({ confirmadaPeloAdn: false })).pode).toBe(true);
+  });
+
+  it("⚠ e as outras guardas continuam valendo sobre ela", () => {
+    // A reversão abriu UM caminho, não todos: recebida, NF-e e já cancelada seguem recusando.
+    expect(podeCancelar(nota({ confirmadaPeloAdn: false, type: "NFE" })).motivo)
+      .toBe(MOTIVO_NAO_CANCELAVEL.NAO_E_NFSE);
+    expect(podeCancelar(nota({ confirmadaPeloAdn: false, status: "CANCELADA" })).motivo)
+      .toBe(MOTIVO_NAO_CANCELAVEL.JA_CANCELADA);
   });
 
   it("⚠ `undefined` (contrato antigo) é lido como CONFIRMADA", () => {
@@ -68,7 +84,8 @@ describe("podeCancelar", () => {
   });
 
   it("todo impedimento tem `resumo` curto — é o que fica ao lado do botão desabilitado", () => {
-    for (const patch of [{ status: "CANCELADA" }, { type: "NFE" }, { confirmadaPeloAdn: false }]) {
+    // ⚠ `confirmadaPeloAdn: false` SAIU desta lista em 31/08/2026: deixou de ser impedimento.
+    for (const patch of [{ status: "CANCELADA" }, { type: "NFE" }]) {
       const r = podeCancelar(nota(patch));
       expect(r.pode).toBe(false);
       expect(String(r.resumo).length).toBeGreaterThan(0);
