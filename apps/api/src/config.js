@@ -30,7 +30,7 @@ export const GOOGLE_APPLICATION_CREDENTIALS_JSON =
 
 // Gmail API (delegated / DWD)
 export const USE_GMAIL_API = process.env.USE_GMAIL_API === "1" || false;
-export const GMAIL_DELEGATED_USER = process.env.GMAIL_DELEGATED_USER || ""; // e.g. "yago@belgencontabilidade.com"
+export const GMAIL_DELEGATED_USER = process.env.GMAIL_DELEGATED_USER || ""; // e.g. "contabilidade@altan.company"
 
 // SMTP (fallback)
 export const SMTP_HOST = process.env.SMTP_HOST || "smtp.gmail.com";

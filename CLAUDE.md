@@ -666,21 +666,50 @@ o `try_files` do Caddy devolvia o **`index.html` com 200 e `text/html`**).
   usuário final. A comparação é `=== "mock"`, nunca `!== "real"`: `real_with_mock_fallback` **fala
   com o backend de verdade**, e chamá-lo de demonstração diria que números de produção são fictícios.
 
-### ⚠⚠ PENDÊNCIA NOMEADA: o nome "Belgen" continua no código
+### ✅ 30/08/2026 — a marca saiu do CÓDIGO, e o Workspace migrou para `altan.company`
 
-O dono decidiu, em 23/08/2026, aplicar a marca **só nas telas** — e-mail fica para depois. Então
-isto **não é descuido, é uma decisão com data**, e está aqui para não virar descoberta de novo:
+⚠⚠ **ESTA SEÇÃO ERA UMA PENDÊNCIA ("o nome Belgen continua no código") E FOI RESOLVIDA.** O dono
+decidiu migrar o Workspace inteiro — domínio novo **`altan.company`**, Workspace NOVO, e o antigo
+(`belgencontabilidade.com`) **será encerrado**.
+
+**O que mudou no código** (7 ocorrências, 5 arquivos, todas na api):
 
 | onde | o quê |
 |---|---|
-| `apps/api/src/application/auth/PasswordResetService.js:122` | assina *"Equipe Belgen Contabilidade"* |
-| `apps/api/src/application/guides/GuideCompanyEmailService.js:56` | idem |
-| `apps/api/src/workers/guideEmailWorker.js:101` | idem |
-| `apps/api/src/infrastructure/mail/EmailService.js:104,108` | `boundary = "===belgen-"` e `fromDomain` padrão `belgencontabilidade.com` |
+| `PasswordResetService.js` · `GuideCompanyEmailService.js` · `guideEmailWorker.js` | a assinatura **"Equipe Altan Contabilidade"** — ⚠ os três CHEGAM AO CLIENTE |
+| `EmailService.js` (`fromDomain`) | o domínio do `Message-ID`, agora `altan.company` |
+| `EmailService.js` (`boundary`) · `EmailService.js` (msg de erro) · `config.js` (comentário) | técnicos/exemplo |
 
-⚠ **Os três primeiros são texto que CHEGA AO CLIENTE.** O quarto é técnico e depende do Workspace
-real (`SMTP_FROM`/`GMAIL_DELEGATED_USER`) — **trocar o domínio sem o novo confirmado derruba o
-envio**. Não mexa em nenhum dos quatro sem decisão explícita do dono.
+⚠⚠ **O `fromDomain` NÃO É COSMÉTICO.** `Message-ID` de um domínio diferente do que assina é sinal de
+spoof para filtro de spam — e este e-mail leva **PDF de guia em anexo**, o perfil que mais cai em
+spam. Ele é fallback (só morde com `From` malformado), mas tem de acompanhar o remetente.
+
+### ⚠⚠ O QUE MUDA FORA DO CÓDIGO — e a ordem importa
+
+⚠ **Trocar as variáveis antes de a caixa nova existir DERRUBA o envio de guias.** Ordem:
+caixa criada e recebendo → delegação autorizada → variáveis → login.
+
+| medido em 30/08/2026 | valor |
+|---|---|
+| `USE_GMAIL_API` | `1` (Gmail API com delegação domain-wide) |
+| `GMAIL_DELEGATED_USER` | `contabilidade@belgencontabilidade.com` → **`contabilidade@altan.company`** |
+| `SMTP_FROM` | idem — ⚠ ele **VENCE** `GMAIL_DELEGATED_USER` (`config.js`). Trocar só um faz o sistema impersonar uma caixa e assinar como outra |
+| service account **de produção** | `enviodeguias@enviodeguias.iam.gserviceaccount.com`, projeto `enviodeguias`, client_id `101418586271467768722` |
+| service account **nova** | `envio-de-guias@envio-de-guias-507214.iam.gserviceaccount.com`, projeto `envio-de-guias`, sob a organização `altan.company` |
+
+⚠⚠ **SÃO DUAS SERVICE ACCOUNTS EM DOIS PROJETOS, e confundi-las é o erro caro:** autorizar no
+Workspace novo o client_id da conta ERRADA produz `invalid_grant` no envio, com tudo "parecendo
+configurado". A decisão do dono foi **migrar para a nova**, porque o projeto antigo está **fora** da
+organização `altan.company` e encerrar o Workspace antigo pode arrastá-lo junto.
+
+⚠ **A service account é do Google CLOUD, não do Workspace.** A delegação domain-wide é o *Workspace*
+autorizando um client_id — por isso a conta antiga funcionaria com o domínio novo, se autorizada. O
+que decide a migração é a **posse do projeto**, não a técnica.
+
+⚠ **Existe um login de EMERGÊNCIA fora do banco:** `AUTH_USERS` traz o usuário **`YAGO`**, com
+**`role: admin`**. Ele é a rede de segurança durante a troca do e-mail de login — e ⚠⚠ ele também
+qualifica a frase *"zero usuários com role admin"* que a entrega da visita ao portal do cliente
+mediu: aquela medição olhou a tabela `User`, e este usuário não está nela.
 
 ### O que ficou de fora, com motivo
 

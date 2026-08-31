@@ -119,7 +119,7 @@ export async function enviarEmailRedefinicao({ to, nome, token, expiraEmMinutos 
     <p><strong>Este link vale por ${escapeHtml(expiraEmMinutos)} minutos</strong> e só pode ser usado uma vez.</p>
     <p>Se não foi você que pediu, ignore este e-mail — sua senha atual continua valendo e ninguém
     consegue alterá-la sem este link.</p>
-    <p style="margin-top:1.5em">Um abraço,<br><strong>Equipe Belgen Contabilidade</strong></p>
+    <p style="margin-top:1.5em">Um abraço,<br><strong>Equipe Altan Contabilidade</strong></p>
     </body></html>
   `;
   await new EmailService().send({

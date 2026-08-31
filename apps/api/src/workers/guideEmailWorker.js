@@ -98,7 +98,7 @@ async function processOneGuide({ guide, emailService }) {
       <p>Aqui está sua guia de <strong>${typeLabelSafe}</strong> (competência <strong>${competenciaLabel}</strong>).</p>
       <p>O PDF segue em anexo.</p>
       ${vencLine}
-      <p style="margin-top:1.5em">Um abraço,<br><strong>Equipe Belgen Contabilidade</strong></p>
+      <p style="margin-top:1.5em">Um abraço,<br><strong>Equipe Altan Contabilidade</strong></p>
       </body></html>
     `;
     try {

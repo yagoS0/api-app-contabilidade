@@ -71,7 +71,7 @@ async function getGmailService() {
   const delegatedUser = String(GMAIL_DELEGATED_USER || "").trim().toLowerCase();
   if (!delegatedUser) {
     const err = new Error(
-      "GMAIL_DELEGATED_USER ausente — defina a caixa do Workspace a ser impersonada (ex: contabilidade@belgencontabilidade.com)."
+      "GMAIL_DELEGATED_USER ausente — defina a caixa do Workspace a ser impersonada (ex: contabilidade@altan.company)."
     );
     err.code = "GMAIL_DELEGATED_USER_MISSING";
     throw err;
@@ -101,11 +101,21 @@ async function getGmailService() {
 }
 
 function buildMimeMessage({ from, to, subject, html, attachments }) {
-  const boundary = "===belgen-" + Date.now();
+  // ⚠ Separador MIME. É técnico e invisível — só precisa ser único e não aparecer no conteúdo.
+  const boundary = "===altan-" + Date.now();
   const encodedSubject = encodeHeaderUtf8(subject);
   // Extrai domínio do "from" pra usar no Message-ID (boa prática anti-spam).
   const fromEmail = (String(from).match(/<([^>]+)>/) || [, String(from).trim()])[1];
-  const fromDomain = fromEmail.split("@")[1] || "belgencontabilidade.com";
+  /**
+   * ⚠ O domínio do `Message-ID` — e o fallback é o ÚLTIMO recurso, não o normal.
+   *
+   * Ele só morde se o `From` vier sem `@`, o que significa `SMTP_FROM`/`GMAIL_DELEGATED_USER`
+   * mal configurados. ⚠⚠ **Ele TEM de acompanhar o domínio do remetente**: `Message-ID` de um
+   * domínio que não é o de quem assina é sinal de spoof para filtro de spam — e este e-mail leva
+   * PDF de guia em anexo, o perfil que mais cai em spam.
+   * ⚠ Migrado de `belgencontabilidade.com` em 30/08/2026, junto com o Workspace.
+   */
+  const fromDomain = fromEmail.split("@")[1] || "altan.company";
   const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2, 10)}@${fromDomain}>`;
   // Reply-To: contador (não bounce pra service account). Mesmo email se não definido.
   const replyTo = fromEmail;
