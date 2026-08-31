@@ -16,7 +16,7 @@ import {
   descricaoDoCodigo,
   rotuloDoCodigo,
 } from "../emitir/lib/codigoServicoDaNota";
-import { CAMPOS_DA_REVISAO, CAMPOS_DE_ENDERECO, NOME_DO_ARQUIVO_MODELO } from "./lib/colunasDoLote";
+import { CAMPOS_DA_REVISAO, CAMPOS_DE_ENDERECO, NOME_DO_ARQUIVO_MODELO, valoresDoAjuste } from "./lib/colunasDoLote";
 import {
   ESTADO,
   apresentacaoDoEstado,
@@ -481,6 +481,7 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
 
           {lote ? (
             <RelatorioDoLote
+              companyId={companyId}
               lote={lote}
               reconhecido={reconhecido}
               ocupado={emitindo}
@@ -682,7 +683,15 @@ function LinhaDoLote({ linha, emAjuste, aoAbrirAjuste, aoFecharAjuste, aoSalvar,
       {emAjuste ? (
         <tr>
           <td colSpan={7}>
-            <FormularioDeAjuste valores={valores} numero={linha.numero} aoSalvar={aoSalvar} aoCancelar={aoFecharAjuste} />
+            {/* ⚠⚠ `valoresDoAjuste`, NÃO `linha.valores` — o endereço nunca esteve na planilha, e
+                semear o formulário só com as células do arquivo abria o bloco inteiro em branco
+                numa linha cujo endereço o servidor JÁ resolveu. Ver o cabeçalho da função. */}
+            <FormularioDeAjuste
+              valores={valoresDoAjuste(linha)}
+              numero={linha.numero}
+              aoSalvar={aoSalvar}
+              aoCancelar={aoFecharAjuste}
+            />
           </td>
         </tr>
       ) : null}
@@ -756,7 +765,60 @@ function BlocoDeEmissao({
  * existir uma nota fiscal no mundo e ninguém sabe qual. Enterrá-la no meio de uma tabela de 50
  * linhas seria esconder exatamente o que precisa de ação humana.
  */
-function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar, aoRetentar }) {
+/**
+ * ⚠⚠ BAIXAR A DANFSe DA NOTA QUE ACABOU DE SAIR (31/08/2026).
+ *
+ * > Dono: *"ao emitir a nota não consigo baixar a danfe, o que também deveríamos conseguir de
+ * > imediato."*
+ *
+ * ⚠⚠ **O `id` AQUI É UM `ServiceInvoice.id`, NÃO UM `PortalInvoice.id`** — e é por isso que o botão
+ * funciona. A emissão grava `ServiceInvoice`; `PortalInvoice` é a projeção do ADN e só existe
+ * depois da captura. A rota do DANFSe já lê dos DOIS lados desde 24/08/2026 (o dono pediu
+ * exatamente isto: *"ao emitir a nota pelo portal do cliente preciso que a DANFE esteja
+ * imediatamente disponível"*), e este botão é o que faltava para alguém poder usar aquilo daqui.
+ *
+ * ⚠ **NÃO uso o download em LOTE** (`invoices/danfse/bulk`): ele filtra `PortalInvoice`, e a nota
+ * recém-emitida ainda não está lá — o zip voltaria sem ela, em silêncio. Uma por uma, pelo id que
+ * o relatório já traz.
+ *
+ * ⚠ Sem `serviceInvoiceId` a linha NÃO virou nota (recusada, não tentada), e aí não há o que
+ * baixar. O traço diz isso; um botão desabilitado sugeriria que existe um PDF esperando.
+ */
+function BotaoDanfseDaLinha({ linha, companyId }) {
+  const [estado, setEstado] = useState({ fase: "ocioso", erro: null });
+  if (!linha?.serviceInvoiceId) return <span className="muted">—</span>;
+
+  async function baixar() {
+    setEstado({ fase: "gerando", erro: null });
+    try {
+      const blob = await api.fetchDanfseBlob(companyId, linha.serviceInvoiceId);
+      // ⚠ O nome leva o número da NOTA, não o da linha da planilha: é o número que o cliente vai
+      // procurar depois, e o da linha não significa nada fora desta tela.
+      const base = String(linha.rpsNumero || linha.serviceInvoiceId).replace(/[^\w.-]/g, "");
+      baixarBlob(blob, `danfse-${base || "nota"}.pdf`);
+      setEstado({ fase: "ocioso", erro: null });
+    } catch (err) {
+      // ⚠⚠ A RECUSA CHEGA NOMEADA. `danfse_sem_qrcode` (503) é um DANFSe que não vale como
+      // documento auxiliar, e o portal já trata isso como recusa, nunca como PDF gerado.
+      setEstado({ fase: "recusado", erro: err });
+    }
+  }
+
+  return (
+    <>
+      <button type="button" className="btn-link" onClick={baixar} disabled={estado.fase === "gerando"}>
+        {estado.fase === "gerando" ? "Gerando…" : "Baixar"}
+      </button>
+      {estado.erro ? (
+        <span className="muted" style={{ fontSize: ".72rem", display: "block", color: "var(--danger)" }}>
+          {String(estado.erro?.code || estado.erro?.message || "não deu para gerar agora")}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+function RelatorioDoLote({ companyId, lote, reconhecido, ocupado, aoRetomar, aoRetentar }) {
   const resumo = resumoDaEmissao(lote);
   const aviso = avisoDaLinhaIndeterminada(lote);
   const convite = conviteParaRetomar(lote);
@@ -897,6 +959,10 @@ function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar, aoRetentar }) 
                   O carimbo já existia no registro (`tentadaEm`) e só não chegava à tela. */}
               <th>Quando</th>
               <th>Observação</th>
+              {/* ⚠⚠ A COLUNA DA DANFSe (31/08/2026) — dono: *"ao emitir a nota não consigo baixar a
+                  danfe, o que também deveríamos conseguir de imediato."* Sem ela, quem emite um
+                  lote de 40 notas tem de ir à aba Notas e caçar uma a uma. */}
+              <th>DANFSe</th>
             </tr>
           </thead>
           <tbody>
@@ -915,6 +981,7 @@ function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar, aoRetentar }) 
                       aqui carimbaria de fato o que nunca aconteceu. */}
                   <td>{fmtDataHora(l.tentadaEm)}</td>
                   <td>{l.mensagem || l.correcao || "—"}</td>
+                  <td><BotaoDanfseDaLinha linha={l} companyId={companyId} /></td>
                 </tr>
               );
             })}

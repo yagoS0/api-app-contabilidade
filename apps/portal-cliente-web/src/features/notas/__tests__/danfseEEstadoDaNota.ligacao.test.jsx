@@ -234,20 +234,26 @@ describe("⚠ BOTÃO IMPOSSÍVEL NÃO SOME — ele fica desabilitado DIZENDO POR
     expect(screen.getByText("Sem o XML guardado.")).toBeInTheDocument();
   });
 
-  test("⚠ nota AINDA NÃO CONFIRMADA pelo ADN: desabilitado (a rota lê `PortalInvoice`, e ela não está lá)", async () => {
+  /**
+   * ⚠⚠ VIROU O CONTRÁRIO EM 31/08/2026 — dono: *"ao emitir a nota não consigo baixar a danfe, o que
+   * também deveríamos conseguir de imediato."*
+   *
+   * Este caso travava o botão DESABILITADO com o argumento *"a rota lê `PortalInvoice`, e ela não
+   * está lá"* — verdade em 19/08, **falsa desde 24/08**, quando a rota passou a ler também de
+   * `ServiceInvoice` (a pedido do mesmo dono, com as mesmas palavras: *"imediatamente
+   * disponível"*). O servidor foi consertado; a tela continuou recusando, e o teste segurou a
+   * recusa no lugar.
+   *
+   * ⚠ O que ele mede agora é o desfecho que o dono pediu: o botão CLICA e o PDF é buscado.
+   */
+  test("⚠⚠ nota AINDA NÃO CONFIRMADA pelo ADN: o botão CLICA e busca o PDF", async () => {
     api.getInvoices.mockResolvedValue(respostaDeNotas([nota({ confirmadaPeloAdn: false, hasXml: false })]));
     await abrirNotas();
-    expect(botaoDanfse()).toBeDisabled();
-    // ⚠⚠ ATUALIZADO DUAS VEZES EM 19/08/2026, e a segunda desfez a primeira. Quando o botão
-    // Cancelar entrou na mesma linha, a MESMA frase passou a aparecer duas vezes e eu escopei a
-    // asserção na célula do DANFSe. O dono então mandou CONSOLIDAR: "Ainda não confirmada." é
-    // estado da NOTA, e a linha o diz uma vez só — pela opacidade e pelo `title`/`aria` do chip.
-    // Ver `lib/impedimento.js`.
-    //
-    // ⚠ O motivo desta ação não sumiu: ele está no `title` do botão, que não é texto na tela.
-    expect(botaoDanfse().getAttribute("title")).toMatch(/ainda não voltou/i);
-    expect(document.querySelector("tbody tr").textContent).not.toMatch(/Ainda não confirmada/);
-    expect(api.fetchDanfseBlob).not.toHaveBeenCalled();
+    expect(botaoDanfse()).toBeEnabled();
+    await act(async () => {
+      fireEvent.click(botaoDanfse());
+    });
+    expect(api.fetchDanfseBlob).toHaveBeenCalled();
   });
 });
 

@@ -55,21 +55,30 @@ export function podeGerarDanfse(nota) {
     };
   }
 
-  // ⚠ ESTE RAMO EXISTE POR CAUSA DA OUTRA MUDANÇA DA MESMA ENTREGA. A nota que nós acabamos de
-  // emitir aparece na lista antes de o ADN a devolver (`confirmadaPeloAdn: false`), e o id dela é
-  // um `ServiceInvoice.id`: a rota do DANFSe lê `PortalInvoice` e responderia 404. Dizer isso é a
-  // resposta certa; oferecer o botão para receber "nota não encontrada" seria a errada.
+  /**
+   * ⚠⚠ A NOTA RECÉM-EMITIDA **PODE** GERAR DANFSe — e este ramo virou o contrário em 31/08/2026.
+   *
+   * > Dono: *"ao emitir a nota não consigo baixar a danfe, o que também deveríamos conseguir de
+   * > imediato."*
+   *
+   * ⚠⚠ **A PREMISSA DESTE RAMO CAIU E NINGUÉM VOLTOU AQUI.** Ele dizia, com razão em 19/08: *"o id
+   * dela é um `ServiceInvoice.id`, a rota do DANFSe lê `PortalInvoice` e responderia 404"*. Em
+   * **24/08** a rota passou a ler dos DOIS lados — por um pedido do dono com estas palavras:
+   * *"ao emitir a nota pelo portal do cliente preciso que a DANFE esteja imediatamente
+   * disponível"*. O servidor foi consertado e a TELA continuou recusando o que ele serve.
+   *
+   * ⚠⚠ **E O `hasXml` NÃO VALE COMO GUARDA AQUI.** `serializeEmitidaNaoConfirmada` crava
+   * `hasXml: false` de propósito, e o comentário de lá diz o que ele significa: *"não é 'não temos
+   * o XML': é 'não há rota que o sirva por este id'"* — a rota do **XML** lê `PortalInvoice`. O XML
+   * existe, em `ServiceInvoice.xml`, e é dele que o DANFSe sai. Manter o `hasXml` na frente trocaria
+   * uma recusa errada por outra.
+   *
+   * ⚠ Por isso o botão passa a CLICAR e quem decide é o servidor: se o XML de lá for a DPS (a nota
+   * recusada) ou faltar o QR Code, ele responde recusa NOMEADA e `lerRecusaDanfse` a mostra. É a
+   * regra desta casa — o servidor recusa com nome, a tela não adivinha antes.
+   */
   if (nota.confirmadaPeloAdn === false) {
-    return {
-      pode: false,
-      motivo: MOTIVO_SEM_DANFSE.NAO_CONFIRMADA,
-      // ⚠ Estado da NOTA — a opacidade da linha e o `title`/`aria` do chip já o carregam.
-      escopo: ESCOPO.NOTA,
-      resumo: "Ainda não confirmada.",
-      texto:
-        "O DANFSe é gerado a partir do XML que o sistema nacional devolve, e esta nota ainda não "
-        + "voltou de lá. Assim que a consulta trouxer a nota, o documento fica disponível.",
-    };
+    return { pode: true, motivo: null, escopo: null, resumo: null, texto: null };
   }
 
   if (!nota.hasXml) {

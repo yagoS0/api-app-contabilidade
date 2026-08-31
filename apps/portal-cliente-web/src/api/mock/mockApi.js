@@ -1347,6 +1347,23 @@ function exigirAcessoEmpresa(companyId) {
 // API
 // -----------------------------------------------------------------------------
 
+/**
+ * O PDF do DANFSe, como BLOB.
+ *
+ * ⚠ `pdfDeUmaLinha` devolve BASE64 (é o formato da rota de guia, que responde JSON). A rota real do
+ * DANFSe responde o PDF **cru**, e a tela faz `res.blob()` — então o mock decodifica aqui, para que
+ * o par mock/real entregue o mesmo TIPO à tela.
+ * ⚠ Extraída em 31/08/2026 porque passaram a existir DOIS caminhos que devolvem DANFSe (a nota
+ * capturada e a recém-emitida) — e duas cópias divergiriam no primeiro conserto.
+ */
+function pdfDoDanfse(texto) {
+  const base64 = pdfDeUmaLinha(texto);
+  const binario = window.atob(base64);
+  const bytes = new Uint8Array(binario.length);
+  for (let i = 0; i < binario.length; i += 1) bytes[i] = binario.charCodeAt(i);
+  return new Blob([bytes], { type: "application/pdf" });
+}
+
 export function createMockApi() {
   return {
     // --- Auth ---------------------------------------------------------------
@@ -1518,9 +1535,25 @@ export function createMockApi() {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
       const nota = estado.notas.find((n) => n.clientId === id && n.invoiceId === String(notaId));
-      // O backend lê `PortalInvoice`; a nota emitida-e-não-confirmada não está lá.
-      if (!nota || nota.confirmadaPeloAdn === false) {
+      /**
+       * ⚠⚠ A NOTA RECÉM-EMITIDA GERA DANFSe — e este dublê dizia o contrário até 31/08/2026.
+       *
+       * O comentário antigo era *"o backend lê `PortalInvoice`; a nota emitida-e-não-confirmada não
+       * está lá"*. Verdade em 19/08; **falso desde 24/08**, quando `danfseDaNotaDoPortal.js` passou
+       * a ler também de `ServiceInvoice` a pedido do dono (*"preciso que a DANFE esteja
+       * imediatamente disponível"*). O mock ficou para trás e passou a RECUSAR o que o servidor
+       * serve — escondendo offline exatamente o ramo que o dono veio cobrar.
+       *
+       * ⚠ `hasXml` também não vale de guarda aqui: nas notas ainda não confirmadas ele é `false` de
+       * propósito, e significa "a rota do XML não serve por este id" — não "não há XML".
+       */
+      if (!nota) {
         throw new ApiError(404, "nota_nao_encontrada", "Nota não encontrada nesta empresa.");
+      }
+      if (nota.confirmadaPeloAdn === false) {
+        // ⚠ Sai PDF, como o servidor. O XML de onde ele nasce é o de `ServiceInvoice`, guardado na
+        // emissão — por isso o ramo do `hasXml` (logo abaixo) NÃO se aplica a esta nota.
+        return pdfDoDanfse(`DANFSe MOCK - nota ${nota.numero || nota.invoiceId}`);
       }
       if (!nota.hasXml) {
         throw new ApiError(
@@ -1543,11 +1576,7 @@ export function createMockApi() {
       // ⚠ `pdfDeUmaLinha` devolve BASE64 (é o formato da rota de guia, que responde JSON). A rota
       // real do DANFSe responde o PDF **cru**, e a tela faz `res.blob()` — então o mock decodifica
       // aqui, para que o par mock/real entregue o mesmo tipo à tela.
-      const base64 = pdfDeUmaLinha(`DANFSe MOCK - nota ${nota.numero}`);
-      const binario = window.atob(base64);
-      const bytes = new Uint8Array(binario.length);
-      for (let i = 0; i < binario.length; i += 1) bytes[i] = binario.charCodeAt(i);
-      return new Blob([bytes], { type: "application/pdf" });
+      return pdfDoDanfse(`DANFSe MOCK - nota ${nota.numero}`);
     },
 
     // O DANFSe EM LOTE, offline — o zip com os PDFs + `RELATORIO.txt`.
@@ -2565,7 +2594,10 @@ export function createMockApi() {
 
     async emitirLoteDeNotas(companyId, arquivo, { consultas = null, ajustes = null } = {}) {
       await dormir();
-      exigirAcessoEmpresa(companyId);
+      // ⚠ O id RESOLVIDO, não o `companyId` cru: é por ele que `estado.notas` é chaveado (ver
+      // `fetchDanfseBlob`). Registrar a nota com o outro faria o download responder "não
+      // encontrada" — e foi exatamente o que aconteceu na primeira versão deste registro.
+      const idDaEmpresa = exigirAcessoEmpresa(companyId);
       const nome = String(arquivo?.name || "").toLowerCase();
 
       // ⚠⚠ A FLAG DESLIGADA É O ESTADO DE NASCENÇA, e a recusa é do SERVIDOR — não da tela. Como
@@ -2594,6 +2626,48 @@ export function createMockApi() {
       const loteId = `lote-mock-${Object.keys(LOTES_EMISSAO_MOCK).length + 1}`;
       const lote = montarLoteDoMock(loteId, prontas, nome);
       LOTES_EMISSAO_MOCK[loteId] = lote;
+
+      /**
+       * ⚠⚠ O LOTE PASSA A REGISTRAR AS NOTAS QUE EMITIU (31/08/2026) — e o mock mentia em DOIS
+       * pontos por não fazer isso.
+       *
+       * 1. Emitir um lote offline não mudava a lista de Notas. O comentário da emissão AVULSA já
+       *    diz por que isso importa: *"emitir e a lista de Notas não mudar é o defeito mais fácil
+       *    de deixar passar offline — e é o primeiro lugar onde o cliente vai conferir se deu
+       *    certo"*. Valia para uma nota e não valia para quarenta.
+       * 2. Sem a nota registrada, `fetchDanfseBlob` respondia `nota_nao_encontrada` para o
+       *    `serviceInvoiceId` do relatório — e o botão "Baixar" do lote, que é exatamente o que o
+       *    dono veio cobrar em 31/08, **não podia ser exercido offline**.
+       *
+       * ⚠ `invoiceId` É O `serviceInvoiceId`, e não um id novo: é assim no servidor — a emissão
+       * grava `ServiceInvoice`, e é esse id que o relatório carrega e que as rotas resolvem.
+       * ⚠ `confirmadaPeloAdn: false` e `hasXml: false`, como `serializeEmitidaNaoConfirmada`: a
+       * captura do ADN ainda não aconteceu. O DANFSe sai assim mesmo — é o conserto de 24/08.
+       */
+      const empresaDoLote = estado.empresas.find((e) => e.companyId === idDaEmpresa) || null;
+      for (const l of lote.linhas || []) {
+        if (l.desfecho !== "emitida" || !l.serviceInvoiceId) continue;
+        const agora = new Date().toISOString();
+        estado.notas.push({
+          clientId: idDaEmpresa,
+          invoiceId: l.serviceInvoiceId,
+          type: "NFSE",
+          numero: l.rpsNumero || null,
+          competencia: competenciaPadrao(),
+          issueDate: agora,
+          status: "EMITIDA",
+          total: Number(l.valorServicos) || 0,
+          emitente: { nome: empresaDoLote?.razao || "", cnpj: empresaDoLote?.cnpj || "" },
+          tomador: { nome: l.tomadorNome || "", cnpjCpf: l.tomadorDoc || "" },
+          updatedAt: agora,
+          hasXml: false,
+          hasPdf: false,
+          descricao: null,
+          papel: "EMIT",
+          confirmadaPeloAdn: false,
+          _statusEfetivo: "autorizada",
+        });
+      }
 
       // ⚠⚠ RECONHECIDO NÃO É "JÁ FOI EMITIDA" — e o mock precisa provar isso, senão o ramo em que
       // a tela oferece a RETENTATIVA (lote reconhecido com 0 emitidas) só existiria em produção.
