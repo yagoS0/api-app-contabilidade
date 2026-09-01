@@ -267,6 +267,7 @@ function RegimeHistoricoEditor({ historico, onChange }) {
 
 import {
   AvisoAcessoNovoCriado,
+  AvisoVinculoCriado,
   AvisoEmailCompartilhado,
   ConfirmacaoAcessoProprio,
 } from "./ResponsavelCompartilhado";
@@ -382,6 +383,7 @@ export function CompanyForm({
   onConfirmarAcessoProprio = null,
   onCancelarAcessoProprio = null,
   acessoProprioCriado = null,        // o aviso de "a conta nova nasce sem senha"
+  vinculoCriado = null,              // o aviso de "esta empresa mudou de conta"
   empresaAtualId = null,             // para o aviso não acusar a própria empresa editada
   razaoSocialAtual = null,
   // Q11.1: zona de risco — botões só aparecem em modo edição (cnpjReadOnly=true)
@@ -482,6 +484,7 @@ export function CompanyForm({
           onCancelar={onCancelarAcessoProprio}
         />
         <AvisoAcessoNovoCriado acessoNovo={acessoProprioCriado} />
+        <AvisoVinculoCriado vinculoCriado={vinculoCriado} />
       </div>
       {showOwnerPassword ? (
         <label>

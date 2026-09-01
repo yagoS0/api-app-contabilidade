@@ -18,7 +18,7 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 
-/** As três saídas possíveis. Vocabulário fechado — a rota faz `switch` sobre ele. */
+/** As saídas possíveis. Vocabulário fechado — a rota faz `switch` sobre ele. */
 export const DECISAO = Object.freeze({
   /** A conta é desta empresa e SÓ dela: renomear continua certo. É o caso comum. */
   RENOMEAR: "RENOMEAR",
@@ -26,6 +26,14 @@ export const DECISAO = Object.freeze({
   PEDIR_CONFIRMACAO: "PEDIR_CONFIRMACAO",
   /** Confirmado: a editada ganha acesso próprio; as outras ficam exatamente onde estavam. */
   CRIAR_ACESSO_PROPRIO: "CRIAR_ACESSO_PROPRIO",
+  /**
+   * ⚠⚠ O e-mail digitado JÁ É de uma conta que existe. O contador precisa ver DE QUEM é e o que
+   * ela já atende ANTES — é confirmação diferente da de cima, porque a consequência é outra:
+   * lá se CRIA conta, aqui esta empresa passa a pertencer a uma conta que já existe.
+   */
+  PEDIR_CONFIRMACAO_VINCULO: "PEDIR_CONFIRMACAO_VINCULO",
+  /** Confirmado: esta empresa é VINCULADA à conta existente; o vínculo antigo sai. */
+  VINCULAR_CONTA_EXISTENTE: "VINCULAR_CONTA_EXISTENTE",
 });
 
 /**
@@ -36,8 +44,27 @@ export const DECISAO = Object.freeze({
  *   contar fora abriria a janela em que uma empresa nova é vinculada entre a contagem e o update,
  *   e o arrasto voltaria por essa fresta.
  * @param {boolean} confirmado  O contador viu o aviso na tela e confirmou.
+ * @param {boolean} contaDestinoExiste  O e-mail digitado já pertence a OUTRO `User`.
  */
-export function decidirTrocaDeEmail({ vinculosDaConta, confirmado }) {
+export function decidirTrocaDeEmail({ vinculosDaConta, confirmado, contaDestinoExiste }) {
+  // ⚠⚠ ESTE RAMO VEM PRIMEIRO, E ELE REVOGA UMA RECUSA — decisão do dono, 30/08/2026:
+  // *"podemos usar o mesmo email para mais de uma empresa, assim damos o acesso da mesma pessoa a
+  // todas as suas empresas"*. Até aqui a rota lançava `owner_email_already_in_use` neste ponto,
+  // com o motivo escrito em 19/08: *"reaproveitar a conta alheia é como este problema começou"*.
+  //
+  // ⚠ O motivo antigo NÃO era burocracia, e por isso a recusa virou um CAMINHO, não um sumiço: o
+  // que ele impedia era ASSUMIR a conta de outro **em silêncio**. A confirmação abaixo repõe
+  // exatamente essa proteção — o contador vê de quem é a conta e o que ela já atende antes de
+  // qualquer escrita.
+  //
+  // ⚠ E a assimetria que isto fecha estava medida: `CompanyProvisioningService` SEMPRE reusou o
+  // `User` existente ao CRIAR empresa. Vincular era permitido pela porta da criação e recusado
+  // pela porta da edição — o mesmo ato, dois vereditos.
+  if (contaDestinoExiste === true) {
+    if (confirmado === true) return DECISAO.VINCULAR_CONTA_EXISTENTE;
+    return DECISAO.PEDIR_CONFIRMACAO_VINCULO;
+  }
+
   // ⚠ `<= 1` e não `=== 1`: contagem 0 é estado impossível (a rota só chega aqui com um vínculo
   // OWNER na mão), mas se acontecer, renomear a conta de ninguém não arrasta ninguém. Já um
   // `!== 1` mandaria o caso degenerado para o caminho que CRIA conta — escrita a mais por causa

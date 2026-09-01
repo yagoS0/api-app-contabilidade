@@ -713,6 +713,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 onConfirmarAcessoProprio={editPanel?.onConfirmarAcessoProprio}
                 onCancelarAcessoProprio={editPanel?.onCancelarAcessoProprio}
                 acessoProprioCriado={editPanel?.acessoProprioCriado}
+                vinculoCriado={editPanel?.vinculoCriado}
               />
               </Suspense>
             )}

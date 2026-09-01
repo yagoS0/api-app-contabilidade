@@ -27,10 +27,40 @@
 /** Onde a senha da conta nova se define. A ação JÁ EXISTE — não se constrói outra. */
 export const ONDE_DEFINIR_SENHA = "Credenciais → Acesso ao portal do cliente";
 
+/** Os dois atos que esta confirmação cobre. Vocabulário fechado. */
+export const MODO = Object.freeze({
+  /** A conta ATUAL é de várias empresas: esta ganha acesso PRÓPRIO, novo, sem senha. */
+  ACESSO_PROPRIO: "ACESSO_PROPRIO",
+  /** O e-mail digitado JÁ É de uma conta: esta empresa passa a pertencer a ELA. */
+  VINCULO: "VINCULO",
+});
+
 export const TITULO_CONFIRMACAO = "Este e-mail responde por mais de uma empresa";
+export const TITULO_CONFIRMACAO_VINCULO = "Este e-mail já é de uma conta existente";
+
+/**
+ * O título, pelo modo.
+ *
+ * ⚠ Título fixo era certo enquanto havia um ato só. Com dois, ele passaria a anunciar
+ * "responde por mais de uma empresa" numa tela que vai VINCULAR a empresa a outra conta —
+ * frase verdadeira sobre outra coisa, que é o pior tipo de rótulo errado.
+ */
+export function tituloDaConfirmacao(detalhes) {
+  return detalhes?.modo === MODO.VINCULO ? TITULO_CONFIRMACAO_VINCULO : TITULO_CONFIRMACAO;
+}
 
 /** O código que o servidor devolve (409) quando a conta do responsável é compartilhada. */
 export const CODIGO_CONTA_COMPARTILHADA = "owner_email_conta_compartilhada";
+
+/**
+ * O código do 409 quando o e-mail digitado JÁ É de uma conta que existe.
+ *
+ * ⚠⚠ ELE SUBSTITUI O ANTIGO `owner_email_already_in_use`, que era RECUSA FINAL e chegava à tela
+ * como código cru — foi este o erro que o dono levou ao salvar a ALESSANDRO. Hoje é PEDIDO DE
+ * CONFIRMAÇÃO: decisão dele, 30/08/2026, *"podemos usar o mesmo email para mais de uma empresa,
+ * assim damos o acesso da mesma pessoa a todas as suas empresas"*.
+ */
+export const CODIGO_CONTA_EXISTENTE = "owner_email_conta_existente";
 
 function limpar(valor) {
   return String(valor || "").trim();
@@ -53,6 +83,10 @@ export function detalhesDaContaCompartilhada(err) {
   if (codigo !== CODIGO_CONTA_COMPARTILHADA) return null;
   const p = err?.payload || {};
   return {
+    // ⚠ O MODO viaja no objeto porque a tela mostra UM componente para DOIS atos diferentes.
+    //   Sem ele, a confirmação de vincular sairia com o texto de criar conta — e o contador
+    //   confirmaria lendo a consequência errada, num ato que remove acesso de alguém.
+    modo: MODO.ACESSO_PROPRIO,
     emailAtual: p.emailAtual || null,
     nomeAtual: p.nomeAtual || null,
     emailNovo: p.emailNovo || null,
@@ -60,6 +94,79 @@ export function detalhesDaContaCompartilhada(err) {
     outrasEmpresas: Number(p.outrasEmpresas) || 0,
     outras: Array.isArray(p.outras) ? p.outras : [],
     contaNovaSemSenha: p.contaNovaSemSenha === true,
+  };
+}
+
+/**
+ * Lê a recusa de VÍNCULO. Devolve os detalhes do ato, ou `null` se o erro for outro.
+ *
+ * ⚠ É função SEPARADA da irmã de cima, e não um parâmetro dela, porque as duas confirmações
+ * descrevem atos DIFERENTES: lá se CRIA uma conta nova (que nasce sem senha); aqui esta empresa
+ * passa a pertencer a uma conta que JÁ EXISTE (e já tem senha). Um `if` dentro de uma função só
+ * faria a tela escolher o texto por um booleano, e o texto errado num ato irreversível é pior que
+ * a duplicação de dez linhas.
+ */
+export function detalhesDaContaExistente(err) {
+  const codigo = err?.code || err?.payload?.error;
+  if (codigo !== CODIGO_CONTA_EXISTENTE) return null;
+  const p = err?.payload || {};
+  return {
+    modo: MODO.VINCULO,
+    emailAtual: p.emailAtual || null,
+    nomeAtual: p.nomeAtual || null,
+    emailNovo: p.emailNovo || null,
+    nomeDaContaDestino: p.nomeDaContaDestino || null,
+    empresasDoDestino: Number(p.empresasDoDestino) || 0,
+    outras: Array.isArray(p.outras) ? p.outras : [],
+    contaDestinoJaTemSenha: p.contaDestinoJaTemSenha === true,
+    acessoAntigoPerdeEstaEmpresa: p.acessoAntigoPerdeEstaEmpresa === true,
+  };
+}
+
+/**
+ * O texto da confirmação do VÍNCULO, montado do que o SERVIDOR devolveu.
+ *
+ * ⚠ Ele diz o que acontece com CADA LADO — quem ganha a empresa e quem a perde. Só "vamos vincular
+ * à conta existente" deixaria o contador sem saber que o acesso ANTIGO acaba.
+ */
+export function fraseDeConfirmacaoDeVinculo({ detalhes, razaoSocial } = {}) {
+  if (!detalhes) return "";
+  const empresa = limpar(razaoSocial) || "esta empresa";
+  const atual = limpar(detalhes.emailAtual) || "o e-mail atual";
+  const novo = limpar(detalhes.emailNovo) || "o e-mail novo";
+  const nome = limpar(detalhes.nomeDaContaDestino);
+  const jaAtende = Number(detalhes.empresasDoDestino) || 0;
+
+  const linhas = [
+    nome ? `${novo} já é uma conta existente, de ${nome}.` : `${novo} já é uma conta existente.`,
+    jaAtende === 0
+      ? `Hoje ela não responde por nenhuma outra empresa desta carteira.`
+      : jaAtende === 1
+        ? `Hoje ela já responde por 1 outra empresa.`
+        : `Hoje ela já responde por ${jaAtende} outras empresas.`,
+    "",
+    `${empresa} passa a pertencer a essa conta — quem entrar com ${novo} passará a vê-la junto das demais.`,
+    // ⚠ ESTA LINHA NÃO PODE SAIR. É a consequência que ninguém pede e que acontece.
+    `${atual} PERDE o acesso a ${empresa}. As outras empresas de ${atual}, se houver, ficam como estão.`,
+    "",
+    // ⚠ A diferença que separa esta confirmação da irmã: aqui NÃO se define senha nenhuma.
+    `${novo} já tem senha própria — nada a definir, e nada muda para quem já usa essa conta.`,
+  ];
+  return linhas.join("\n");
+}
+
+/** O aviso que fica DEPOIS do salvar, quando a empresa foi vinculada a uma conta existente. */
+export function avisoDeVinculoCriado(acessoVinculado) {
+  if (!acessoVinculado?.email) return null;
+  const nome = limpar(acessoVinculado.nome);
+  return {
+    userId: acessoVinculado.userId || null,
+    email: acessoVinculado.email,
+    texto: nome
+      ? `Esta empresa passou a pertencer à conta ${acessoVinculado.email} (${nome}), que já existia. `
+        + `Nenhuma senha foi criada nem alterada.`
+      : `Esta empresa passou a pertencer à conta ${acessoVinculado.email}, que já existia. `
+        + `Nenhuma senha foi criada nem alterada.`,
   };
 }
 
@@ -114,6 +221,9 @@ export function avisoDeEmailCompartilhado({ email, empresas, empresaAtualId } = 
  */
 export function fraseDeConfirmacao({ detalhes, razaoSocial } = {}) {
   if (!detalhes) return "";
+  // ⚠ O despacho fica AQUI, no único ponto que a tela chama — não no componente. Escrito lá, a
+  //   próxima tela a reusar esta lib escolheria o texto por conta própria.
+  if (detalhes.modo === MODO.VINCULO) return fraseDeConfirmacaoDeVinculo({ detalhes, razaoSocial });
   const empresa = limpar(razaoSocial) || "esta empresa";
   const atual = limpar(detalhes.emailAtual) || "o e-mail atual";
   const novo = limpar(detalhes.emailNovo) || "o e-mail novo";
@@ -145,4 +255,15 @@ export function avisoDeAcessoNovo(acessoNovo) {
       `Acesso próprio criado para ${acessoNovo.email}. Ele ainda NÃO tem senha — `
       + `defina uma em ${ONDE_DEFINIR_SENHA} antes de avisar o cliente.`,
   };
+}
+
+/**
+ * O leitor ÚNICO que a tela usa: devolve os detalhes de qualquer uma das duas confirmações,
+ * já com o `modo`, ou `null` se o erro for outro.
+ *
+ * ⚠ Existe para o `catch` do salvar ter UM ponto de decisão. Dois `if` encadeados no hook seriam
+ * dois lugares para esquecer o terceiro modo, no dia em que ele existir.
+ */
+export function detalhesDaConfirmacaoDoResponsavel(err) {
+  return detalhesDaContaCompartilhada(err) || detalhesDaContaExistente(err);
 }

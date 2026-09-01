@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { detalhesDaContaCompartilhada } from "../../lib/portal/responsavelCompartilhado";
+import { detalhesDaConfirmacaoDoResponsavel } from "../../lib/portal/responsavelCompartilhado";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useCompanies } from "../../features/companies/list/hooks/useManageCompanies";
 import { useCompanyGuides } from "../../features/guides/list/hooks/useManageCompanyGuides";
@@ -606,6 +606,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   // Defeito que isto fecha: um login enxergando nove empresas (produção, 19/08/2026).
   const [confirmacaoAcessoProprio, setConfirmacaoAcessoProprio] = useState(null);
   const [acessoProprioCriado, setAcessoProprioCriado] = useState(null);
+  const [vinculoCriado, setVinculoCriado] = useState(null);
 
   async function salvarEdicaoDaEmpresa({ confirmarNovoAcesso } = {}) {
     if (!companiesState.selectedCompanyId) return;
@@ -620,14 +621,19 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       setConfirmacaoAcessoProprio(null);
       // ⚠ A conta nova nasce SEM SENHA. Sem este aviso o contador troca o e-mail, avisa o cliente,
       // e o cliente não consegue entrar — sem ninguém saber por quê.
+      // ⚠ Os DOIS desfechos, e eles dizem coisas diferentes: `acessoNovo` = conta CRIADA (nasce
+      //   sem senha, e o aviso é o que impede o cliente de ficar de fora); `acessoVinculado` =
+      //   esta empresa passou a pertencer a uma conta que JÁ EXISTIA (nada a definir).
       setAcessoProprioCriado(resposta?.acessoNovo || null);
+      setVinculoCriado(resposta?.acessoVinculado || null);
       feedback.setMessage("Cadastro da empresa atualizado com sucesso.");
       await loadCompanies();
       // ⚠ Com acesso novo criado a tela NÃO troca de aba: o aviso de "defina a senha" some junto,
       // e ele é a única coisa que impede o cliente de ficar de fora sem explicação.
-      if (!resposta?.acessoNovo) setCompanyDetailTab("lancamentos");
+      // ⚠ Com QUALQUER dos dois avisos a tela NÃO troca de aba — o aviso some junto com ela.
+      if (!resposta?.acessoNovo && !resposta?.acessoVinculado) setCompanyDetailTab("lancamentos");
     } catch (err) {
-      const detalhes = detalhesDaContaCompartilhada(err);
+      const detalhes = detalhesDaConfirmacaoDoResponsavel(err);
       if (detalhes) {
         // Não é erro do contador: é um ato de consequência esperando confirmação.
         setConfirmacaoAcessoProprio(detalhes);
@@ -643,6 +649,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   async function handleUpdateCompany(event) {
     event.preventDefault();
     setAcessoProprioCriado(null);
+    setVinculoCriado(null);
     // ⚠ O salvar normal NUNCA confirma. A confirmação vale para UM clique, o do painel — se ela
     // viajasse daqui, reabrir a tela e salvar de novo criaria acesso novo sem ninguém ter lido nada.
     await salvarEdicaoDaEmpresa({ confirmarNovoAcesso: false });
@@ -1284,6 +1291,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     confirmarAcessoProprio,
     cancelarAcessoProprio,
     acessoProprioCriado,
+    // ⚠ Sai ao lado do irmão porque são desfechos EXCLUSIVOS e com consequências opostas:
+    //   um cria conta sem senha (é preciso definir uma); o outro só muda de dono (nada a fazer).
+    vinculoCriado,
     handleResendGuide,
     handleConfirmGuidePayment,
     handleRecalculateGuide,

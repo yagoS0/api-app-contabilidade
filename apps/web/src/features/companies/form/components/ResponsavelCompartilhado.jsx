@@ -22,7 +22,9 @@
 import {
   ONDE_DEFINIR_SENHA,
   TITULO_CONFIRMACAO,
+  tituloDaConfirmacao,
   avisoDeAcessoNovo,
+  avisoDeVinculoCriado,
   avisoDeEmailCompartilhado,
   fraseDeConfirmacao,
 } from "../../../../lib/portal/responsavelCompartilhado";
@@ -79,14 +81,18 @@ export function AvisoEmailCompartilhado({ email, empresas, empresaAtualId, carre
 export function ConfirmacaoAcessoProprio({ detalhes, razaoSocial, salvando = false, onConfirmar, onCancelar }) {
   if (!detalhes) return null;
   const frase = fraseDeConfirmacao({ detalhes, razaoSocial });
+  // ⚠ O título vem do MODO. Fixo, ele anunciaria "responde por mais de uma empresa" numa tela que
+  //   vai VINCULAR a empresa a outra conta — rótulo verdadeiro sobre outra coisa, num ato que
+  //   REMOVE o acesso de alguém.
+  const titulo = tituloDaConfirmacao(detalhes);
   return (
     <div
       role="alertdialog"
-      aria-label={TITULO_CONFIRMACAO}
+      aria-label={titulo}
       data-testid="confirmacao-acesso-proprio"
       style={{ ...CAIXA_AVISO, gap: 10 }}
     >
-      <strong>{TITULO_CONFIRMACAO}</strong>
+      <strong>{titulo}</strong>
       {/* `pre-line` porque a frase já vem quebrada da lib — as quebras separam o que acontece de
           cada lado, e juntá-las num parágrafo só é o que faz ninguém ler. */}
       <div style={{ whiteSpace: "pre-line" }}>{frase}</div>
@@ -141,6 +147,29 @@ export function AvisoAcessoNovoCriado({ acessoNovo }) {
       <span>{aviso.texto}</span>
       <span style={{ color: "var(--text-muted)" }}>
         Enquanto ninguém definir uma senha em {ONDE_DEFINIR_SENHA}, {aviso.email} não entra no portal.
+      </span>
+    </div>
+  );
+}
+
+/**
+ * DEPOIS do salvar: a empresa passou a pertencer a uma conta que JÁ EXISTIA.
+ *
+ * ⚠ Componente SEPARADO do `AvisoAcessoNovoCriado`, e a diferença é a razão de existir: lá o
+ * aviso manda DEFINIR SENHA (sem isso o cliente não entra); aqui não há senha a definir, e
+ * repetir aquela frase mandaria o contador a uma tela onde não há nada a fazer.
+ *
+ * ⚠ E ele diz a consequência que ninguém pede: o acesso ANTIGO perdeu esta empresa.
+ */
+export function AvisoVinculoCriado({ vinculoCriado }) {
+  const aviso = avisoDeVinculoCriado(vinculoCriado);
+  if (!aviso) return null;
+  return (
+    <div style={CAIXA_AVISO} data-testid="aviso-vinculo-criado">
+      <strong>Empresa vinculada a uma conta existente</strong>
+      <span>{aviso.texto}</span>
+      <span style={{ color: "var(--text-muted)" }}>
+        Quem entrar com {aviso.email} passa a ver esta empresa junto das demais dessa conta.
       </span>
     </div>
   );

@@ -298,7 +298,30 @@ describe("PATCH /firm/companies/:id — troca do e-mail do responsável e a cont
     expect(banco.vinculos).toHaveLength(1);
   });
 
-  test("PRESERVADO: e-mail novo já pertence a OUTRO usuário → 409 owner_email_already_in_use", async () => {
+  // ═════════════════════════════════════════════════════════════════════════════════════════
+  // ⚠⚠ OS DOIS TESTES ABAIXO FORAM **INVERTIDOS** EM 30/08/2026 — NÃO APAGADOS.
+  //
+  // Eles travavam a RECUSA `owner_email_already_in_use`, preservada em 19/08 com este motivo:
+  //   *"reaproveitar a conta alheia é como este problema começou. A confirmação abaixo autoriza
+  //    CRIAR conta, nunca ASSUMIR a de outro."*
+  //
+  // **O dono revogou a recusa em 30/08/2026**, com a tela na frente, depois de levar o erro ao
+  // salvar a ALESSANDRO: *"podemos usar o mesmo email para mais de uma empresa, assim damos o
+  // acesso da mesma pessoa a todas as suas empresas"*.
+  //
+  // ⚠ O motivo antigo NÃO era burocracia, e é por isso que a recusa virou um CAMINHO COM
+  // CONFIRMAÇÃO, e não um sumiço: o que ele impedia era assumir a conta de outro **em silêncio**.
+  // Sem confirmação, isto reabriria o defeito de 19/08 por outra porta.
+  //
+  // ⚠ E a assimetria que a revogação fecha estava medida: `CompanyProvisioningService` SEMPRE
+  // reusou o `User` existente ao CRIAR empresa. Vincular era permitido pela porta da criação e
+  // recusado pela porta da edição — o mesmo ato, dois vereditos.
+  //
+  // Medido em produção no mesmo dia: a carteira JÁ tem dono compartilhado legítimo
+  // (`vssouzaempreiteira@gmail.com` → 3 empresas; outro → 2).
+  // ═════════════════════════════════════════════════════════════════════════════════════════
+
+  test("INVERTIDO (dono, 30/08/2026): e-mail de OUTRO usuário → 409 pedindo CONFIRMAÇÃO, e nada é escrito", async () => {
     semearUsuario({ id: "user-dono", email: EMAIL_ANTIGO });
     semearUsuario({ id: "user-alheio", email: EMAIL_NOVO, name: "Outra Pessoa" });
     semearVinculo({ companyId: PORTAL_EDITADA, userId: "user-dono" });
@@ -306,13 +329,17 @@ describe("PATCH /firm/companies/:id — troca do e-mail do responsável e a cont
     const res = await salvar(app, { ownerEmail: EMAIL_NOVO });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe("owner_email_already_in_use");
-    // ⚠ E NADA foi reaproveitado: reusar a conta alheia é EXATAMENTE como o problema começou.
+    expect(res.body.error).toBe("owner_email_conta_existente");
+    // ⚠ A CONFIRMAÇÃO REPETE OS DADOS: de quem é a conta, para o contador decidir vendo.
+    expect(res.body.emailNovo).toBe(EMAIL_NOVO);
+    expect(res.body.nomeDaContaDestino).toBe("Outra Pessoa");
+    // ⚠⚠ A METADE QUE **NÃO** MUDOU, e é a que importa: sem confirmar, NADA foi escrito.
+    // O `throw` aborta a transação inteira — nem o cadastro da empresa é salvo.
     expect(donoDe(PORTAL_EDITADA)).toEqual({ userId: "user-dono", email: EMAIL_ANTIGO });
     expect(banco.vinculos.filter((v) => v.userId === "user-alheio")).toHaveLength(0);
   });
 
-  test("PRESERVADO: a recusa por conta alheia vale TAMBÉM quando a conta atual é compartilhada", async () => {
+  test("INVERTIDO (dono, 30/08/2026): CONFIRMANDO, a empresa é VINCULADA à conta existente", async () => {
     semearUsuario({ id: "user-dono", email: EMAIL_ANTIGO });
     semearUsuario({ id: "user-alheio", email: EMAIL_NOVO });
     semearVinculo({ companyId: PORTAL_EDITADA, userId: "user-dono" });
@@ -320,10 +347,16 @@ describe("PATCH /firm/companies/:id — troca do e-mail do responsável e a cont
 
     const res = await salvar(app, { ownerEmail: EMAIL_NOVO, confirmarNovoAcesso: true });
 
-    // Nem confirmando: a confirmação autoriza CRIAR conta, nunca ASSUMIR a de outro.
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe("owner_email_already_in_use");
+    expect(res.status).toBe(200);
+    // ⚠ A empresa editada passa a pertencer à conta que JÁ EXISTIA.
+    expect(donoDe(PORTAL_EDITADA)).toEqual({ userId: "user-alheio", email: EMAIL_NOVO });
+    // ⚠⚠ NENHUMA CONTA É CRIADA — é o que separa este caminho do `CRIAR_ACESSO_PROPRIO`.
     expect(prismaMock.user.create).not.toHaveBeenCalled();
+    // ⚠⚠ E A CONTA DESTINO NÃO É RENOMEADA: ela atende outras empresas, e renomeá-la seria o
+    // arrasto de 19/08/2026 entrando por outra porta.
+    expect(banco.users.get("user-alheio")).toMatchObject({ email: EMAIL_NOVO });
+    // ⚠ A OUTRA empresa da conta antiga fica exatamente onde estava.
+    expect(donoDe("portal-outra")).toEqual({ userId: "user-dono", email: EMAIL_ANTIGO });
   });
 
   // ───────────────────────────────────────────────────────────────────────────────────────────

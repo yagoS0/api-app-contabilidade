@@ -430,6 +430,7 @@ function App() {
           onCancelarAcessoProprio: companiesWorkspace.cancelarAcessoProprio,
           // E o aviso de que a conta nova nasce SEM SENHA — sem ele o cliente descobre tentando entrar.
           acessoProprioCriado: companiesWorkspace.acessoProprioCriado,
+          vinculoCriado: companiesWorkspace.vinculoCriado,
         }}
         accountingPanel={{
           entries: accountingWorkspace.accountingEntriesState.entries,
