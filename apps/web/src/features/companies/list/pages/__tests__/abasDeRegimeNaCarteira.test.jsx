@@ -9,7 +9,7 @@
 //      sem o aviso solto as marcações sumiriam em silêncio);
 //   4. ⚠ o filtro "Regime" saiu INTEIRO — nem `<select>`, nem chip, nem contagem no botão;
 //   5. ⚠ a aba ativa sai no CABEÇALHO IMPRESSO;
-//   6. a escolha da aba PERSISTE, como o modo de visão;
+//   6. a escolha da aba PERSISTE em `localStorage` (⚠ o modo de VISÃO não persiste mais);
 //   7. `Ano` e `Calendário` não ganham abas — são o outro eixo (o tempo).
 //
 // E a barra de ações depois do pedido de 18/08/2026: hambúrguer com gaveta lateral nascendo
@@ -39,8 +39,16 @@ const CARTEIRA = [
   empresa("p1", "GAMA PRESUMIDO LTDA", "LUCRO_PRESUMIDO"),
 ];
 
+// ⚠⚠ A CARTEIRA ABRE NO CALENDÁRIO desde 01/09/2026, e as abas de REGIME só existem na visão de
+// Tabela — o Calendário é o outro eixo (o tempo) e nunca foi recortado por regime. Por isso o
+// helper troca de visão logo depois de montar. Sem isso, todo caso aqui mediria a ausência da barra
+// de regime numa tela que nunca a teve, e ficaria verde pelo motivo errado.
+function irParaTabela() {
+  fireEvent.click(screen.getByRole("button", { name: /^Tabela$/ }));
+}
+
 function montar(props = {}) {
-  return render(
+  const r = render(
     <CompaniesHomePage
       user={{ name: "Contador" }}
       companies={CARTEIRA}
@@ -55,13 +63,15 @@ function montar(props = {}) {
       {...props}
     />,
   );
+  irParaTabela();
+  return r;
 }
 
 beforeEach(() => {
   try { localStorage.clear(); } catch { /* jsdom sempre tem, mas o app não conta com isso */ }
 });
 
-/** A barra de abas de regime (a outra é a de visões: Tabela/Cards/Ano/Calendário). */
+/** A barra de abas de regime (a outra é a de visões, hoje só Calendário/Tabela). */
 function barraDeRegime() {
   return screen.getByRole("group", { name: "Regime tributário" });
 }
@@ -120,20 +130,36 @@ describe("são duas tabelas: trocar de aba troca as linhas", () => {
     expect(razoesVisiveis()).toEqual(["GAMA PRESUMIDO LTDA"]);
   });
 
-  test("a aba vale também na visão Cards", () => {
-    montar();
-    fireEvent.click(screen.getByRole("button", { name: "Cards" }));
-    clicarAba("Lucro Presumido");
-    expect(razoesVisiveis()).toEqual(["GAMA PRESUMIDO LTDA"]);
-  });
+  // ⚠⚠ O CASO "a aba vale também na visão Cards" SAIU EM 01/09/2026 — a visão Cards foi removida
+  // do produto a pedido do dono. Ele afirmava que o recorte por regime valia nas DUAS listas da
+  // carteira; hoje há uma lista só, e é a Tabela, coberta pelos dois casos acima.
 
-  test("⚠ `Ano` e `Calendário` NÃO ganham abas de regime — são o outro eixo, o tempo", () => {
-    montar();
-    fireEvent.click(screen.getByRole("button", { name: "Ano" }));
+  test("⚠ o Calendário NÃO ganha abas de regime — é o outro eixo, o tempo", () => {
+    // ⚠ Este caso media `Ano` até 01/09/2026. `Ano` não é mais uma visão da carteira: virou
+    // granularidade DENTRO do Calendário. A afirmação não mudou de conteúdo — mudou o caminho até
+    // ela, e agora basta NÃO ir para a Tabela, porque o Calendário é o padrão.
+    render(
+      <CompaniesHomePage
+        user={{ name: "Contador" }}
+        companies={CARTEIRA}
+        loadingCompanies={false}
+        onCreateCompany={jest.fn()}
+        onRefreshCompanies={jest.fn()}
+        onOpenCompany={jest.fn()}
+        onLogout={jest.fn()}
+        dashboardCompetencia="2026-07"
+        onChangeCompetencia={jest.fn()}
+        api={{}}
+      />,
+    );
     expect(screen.queryByRole("group", { name: "Regime tributário" })).toBeNull();
   });
 
-  test("a escolha PERSISTE, como o modo de visão", () => {
+  // ⚠⚠ ESTE CASO SE CHAMAVA "a escolha PERSISTE, como o modo de visão", e a comparação FICOU FALSA
+  // em 01/09/2026: o `modoVisao` DEIXOU de persistir (a carteira abre sempre no Calendário, por
+  // decisão do dono). A persistência da ABA continua inteira e é o que este caso mede — só o
+  // vizinho que ele citava é que não existe mais.
+  test("a escolha da aba PERSISTE em `dashboard:abaRegime`", () => {
     const { unmount } = montar();
     clicarAba("Lucro Presumido");
     expect(localStorage.getItem("dashboard:abaRegime")).toBe("LUCRO_PRESUMIDO");

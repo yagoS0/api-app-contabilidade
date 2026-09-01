@@ -677,26 +677,6 @@
   box-shadow: 0 0 0 3px rgba(189, 147, 249, 0.2);
 }
 
-.cards-grid--dashboard {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-/* Cards são o padrão ABAIXO de 1024px (acima disso a tabela assume) — e nesta faixa duas colunas
-   é o limite em que o card ainda cabe sem espremer os chips de guia. */
-@media (max-width: 1023px) {
-  .cards-grid--dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (max-width: 639px) {
-  .cards-grid--dashboard { grid-template-columns: 1fr; }
-}
-
-.dashboard-home__empty {
-  margin: 0;
-  color: #aeb6d3;
-}
-
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1074,99 +1054,13 @@
   }
 }
 
-/* Cards */
-.cards-grid {
-  display: grid;
-  /* QUATRO por linha na tela larga. `auto-fill` deixava a contagem à mercê da largura disponível:
-     bastava o padding do container mudar pra virar 3 e o layout "respirar" diferente sem motivo.
-     Aqui a contagem é explícita e degrada em passos previsíveis — 4 → 3 → 2 → 1.
-     `minmax(0, 1fr)` (e não `1fr`) impede que um nome de empresa comprido estique a coluna. */
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-
-@media (max-width: 1200px) {
-  .cards-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-
-@media (max-width: 900px) {
-  .cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (max-width: 620px) {
-  .cards-grid { grid-template-columns: 1fr; }
-}
-
-.company-tile {
-  background: var(--bg-surface);
-  border: 1px solid transparent;
-  border-radius: 12px;
-  box-shadow: none;
-  padding: 16px;
-  /* FLEX em coluna, não grid: com grid, cada card distribuía o espaço entre as linhas que TINHA,
-     então o botão "Acessar" parava numa altura diferente em cada card — empresa sem pendência
-     terminava mais alto que a com. Em flex, o botão é empurrado para a base (margin-top:auto) e
-     todos se alinham na mesma linha, independente do que há no meio. */
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
-}
-
-.company-tile:hover {
-  transform: translateY(-1px);
-  border-color: var(--border);
-  box-shadow: 0 12px 28px rgba(17, 18, 27, 0.2);
-}
-
-.company-tile__body {
-  display: grid;
-  gap: 2px;
-}
-
-.company-tile h3 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.company-tile p {
-  margin: 0;
-  font-size: 0.875rem;
-  color: var(--text-faint);
-}
-
-.company-serpro-status {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.compliance-tags {
-  margin: 0;
-  min-height: 1.35em;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.company-tile__action {
-  width: 100%;
-  /* Ancora o botão na base do card — é o que iguala o rodapé de todos na mesma fileira. */
-  margin-top: auto;
-  min-height: 36px;
-  padding-inline: 16px;
-  border-radius: 8px;
-  background: #bd93f9;
-  color: #1a1b26;
-  font-weight: 700;
-}
-
-.company-tile__action:hover:not(:disabled) {
-  background: #ac7ef4;
-}
-
+/* ⚠⚠ O CSS DA VISÃO EM CARDS SAIU EM 01/09/2026, com o componente (dono: *"retirar totalmente a
+   visualização em Cards"*). Eram `.cards-grid`, `.cards-grid--dashboard` (mais as 4 media queries
+   de cada), `.company-tile*`, `.company-serpro-status`, `.compliance-tags` e `.dashboard-home__empty`
+   — ~110 linhas, todas sem um `className` correspondente no `src` depois da remoção (conferido por
+   varredura, não por memória).
+   ⚠⚠ `.company-card` NÃO SAIU, e ela fica logo abaixo: é OUTRA classe, viva em
+   `renderCompanyDetailPage.jsx:1205`. Os nomes se parecem e não têm relação nenhuma. */
 .company-card {
   background: var(--bg-subtle);
   border: 1px solid var(--border);
@@ -1513,10 +1407,6 @@ th {
   .dashboard-home__user-meta {
     width: 100%;
     justify-items: start;
-  }
-
-  .cards-grid--dashboard {
-    grid-template-columns: 1fr;
   }
 
   .guides-filters {

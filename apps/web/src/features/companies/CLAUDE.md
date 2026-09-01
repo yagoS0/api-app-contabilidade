@@ -10,16 +10,98 @@ Feature da carteira de empresas: dashboard (lista), detalhe (abas), formulário,
   empresa tem particularidade, ela precisa ser lida antes de mexer em qualquer número).
 - `form/`, `certificate/`.
 
-## Dashboard — quatro visões
+## ⚠⚠ Dashboard — DUAS visões (01/09/2026). Eram quatro.
 
-`modoVisao` em `renderCompaniesHomePage`: **Tabela · Cards · Ano · Calendário**. As duas primeiras
-listam a carteira do mês; as outras são o mesmo recorte por outro eixo (o tempo).
+> Dono: *"retirar totalmente a visualização em Cards, colocar a visualização de Ano dentro do
+> Calendário, e sempre que abrir abre no Calendário, sendo o modo Tabela selecionável."*
 
-**Tabela é o padrão em ≥1024px; cards abaixo disso** — a grade de 6 colunas não sobrevive a 375px,
-e o card mostra 8 empresas onde a tabela mostra 15+. A escolha **persiste** em `localStorage`
-(antes era `useState` puro e quem preferia cards voltava ao padrão a cada refresh).
-⚠ `window.innerWidth === 0` conta como *"ainda não sei"*, não como estreito — a mesma armadilha que
-já fez o calendário abrir em modo celular numa janela grande.
+`modoVisao` em `renderCompaniesHomePage`: **Calendário** (o padrão) **· Tabela**.
+
+| | antes | agora |
+|---|---|---|
+| visões | Tabela · Cards · Ano · Calendário | **Calendário · Tabela** |
+| padrão | Tabela ≥1024px, Cards abaixo | **Calendário, sempre** |
+| memória | `localStorage: dashboard:modoVisao` | **nenhuma** |
+| Ano | uma das quatro visões | **granularidade DENTRO do Calendário** |
+| Cards | uma das quatro visões | **apagado** — componente, CSS e gates |
+
+⚠⚠ **CARDS FOI APAGADO; ANO NÃO.** `CompanyCard`, `Pill` e `FISCAL_META` saíram de
+`renderCompanyCard.jsx` (o ARQUIVO fica — `getComplianceTags` tem quatro consumidores vivos, ver a
+lápide lá dentro) e ~110 linhas de CSS saíram do `App.css`. O Ano só mudou de casa: é o quinto item
+do seletor de granularidade do `CalendarioGrid`, antes de Mês/Semana/Dia/Agenda, com atalho `N`
+(`A` já é a Agenda).
+
+⚠⚠ **A REMOÇÃO EXPÔS DOIS DEFEITOS, e os dois foram consertados junto:**
+1. **o leitor do `localStorage` não validava nada** (`if (salvo) return salvo`) e a cadeia de render
+   terminava num `else` que era o **Cards**. Removida a visão, quem tivesse `"cards"` gravado
+   ficaria com o conteúdo de uma visão e **nenhuma aba acesa** (o `Tabs` compara `item.key ===
+   active`). E não era hipotético: a heurística de largura **gravava `"cards"` sozinha** em qualquer
+   tela <1024px, sem ninguém escolher nada. **A cura foi a que o dono pediu** — abre sempre no
+   Calendário, sem memória, então a chave órfã é ignorada por construção e não há migração a
+   escrever;
+2. **a frase do vazio MENTIA.** A condição era `modoVisao !== "tabela"`, então em Ano e Calendário —
+   que não leem `empresasVisiveis` — a página imprimia *"Nenhuma empresa encontrada para os filtros
+   atuais"* **embaixo de uma grade cheia**. Abrindo no Calendário isso viraria o caso comum. A frase
+   saiu; quem responde pelo vazio da lista é a própria `CompaniesTable`, na linha dela.
+
+⚠ **A impressão custou zero e não pode ser mexida:** `data-print-area` está no ramo da Tabela e
+`imprimirListagem` **já forçava a Tabela** antes de `window.print()`. Aquela linha era exceção e
+virou o caminho normal — é ela que garante que o papel tem conteúdo.
+
+⚠ **O que morreu foi DESENHO, não informação** — conferido campo a campo. O único candidato a perda
+era *"Notas emitidas: R$ …"* do card; a Tabela mostra o mesmo `company.notasEmitidas.total`
+(`renderCompaniesTable.jsx:205`) **e ainda ordena por ele** (`:545`).
+
+### ⚠⚠ O Ano dentro do Calendário — e a franqueza sobre o que ele é
+
+**Não é a mesma grade com zoom.** Ano é `empresa × mês`; a grade de dias é `semana × dia`, e ali a
+empresa nem é eixo — é rótulo dentro do chip. **Mas as duas leem o MESMO dado:** os dois marcadores
+do Ano (`CompanyMonthlyCircular.fechadoContabilEm` e `ApuracaoSnapshot.estado`) já estavam no
+calendário como `pendenciasDoMes`, com a MESMA constante `APURADA = new Set(["transmitida",
+"confirmada"])` dos dois lados, e o clique é idêntico. Formalmente: **o Ano é o `pendenciasDoMes` do
+Calendário, ×12 meses, em grade — e com o estado POSITIVO visível.**
+
+- ⚠⚠ **O ESTADO BOM APARECE no Ano, e isso é divergência DELIBERADA.** `piorEstadoDoDia` ignora
+  `resolvida` de propósito (*"estado bom não grita"*); a grade anual existe justamente para dizer
+  *"fevereiro a maio estão fechados"*. O princípio vale para a grade de DIAS, não para ela.
+- ⚠ **O ano vem CONTROLADO do calendário** (prop `ano` do `AnnualGrid`): quem navega são os `‹ ›`
+  do cabeçalho, os mesmos que andam mês e semana. Com a prop, a navegação interna do `AnnualGrid`
+  **não renderiza** — dois pares de setas para o mesmo valor é como as duas discordam.
+- ⚠ **O que SOME no modo Ano, e por quê:** os 3 checkboxes de categoria (o Ano não tem guia,
+  obrigação nem marco), a legenda `cor = estado` (lá teal é "fechado" e verde é "apurado" — a grade
+  anual traz a legenda dela), e a sidebar (ela conta obrigações do MÊS visível e estreita a carteira
+  ao clicar num dia). ⚠ `grupoSelecionado`/`detalhe`/`criando` são **limpos na troca** — os três
+  referenciam uma DATA, e no Ano não existe dia.
+- ⚠⚠ **O seletor de empresa fica DESABILITADO, com o motivo — nunca escondido.**
+  `GET /firm/companies/annual` **não aceita `companyId`**: devolve a carteira inteira, sempre. Ativo,
+  seria um controle que não comanda o que promete; escondido, ninguém saberia que a filtragem existe
+  nas outras granularidades.
+- ⚠ **`carregar()` desvia:** no modo Ano ele **não chama `getCalendario`** (a rota valida
+  `^\d{4}-\d{2}$` e responderia 400 para um ano). Quem busca é o próprio `AnnualGrid`.
+- ⚠ **Import entre features, deliberado:** `renderAnnualGrid.jsx` continua morando na feature da
+  CARTEIRA, que é de quem ele fala. Não há ciclo — ele só importa o React.
+- ⚠ **Largura:** o `CalendarioGrid` se impõe `var(--content-wide)` (90%) e a grade anual não declara
+  largura; dentro dele ela **herda** os 90%. É mudança visual não pedida, é a resposta certa, e fica
+  dita.
+
+### ⚠ A rede de teste, que não existia
+
+**Nenhuma das três visões envolvidas tinha um único teste** — não havia `__tests__` para
+`renderCompanyCard.jsx`, nem para `renderAnnualGrid.jsx`, nem para a feature `calendario/` inteira.
+Medido antes de mexer: **apagar o `AnnualGrid` não produzia um vermelho**. Hoje há
+`list/pages/__tests__/carteiraAbreNoCalendario.test.jsx` (12 casos). **Experimentos executados:**
+devolvendo o padrão para Tabela, **10 vermelhos**; tirando o Ano da granularidade, **7**.
+
+⚠ Dois testes existentes foram adaptados, e o motivo fica escrito neles: `fecharEmLoteTemPorta` e
+`abasDeRegimeNaCarteira` medem controles que vivem na **Tabela**, então os helpers deles trocam de
+visão depois de montar. O caso *"a aba vale também na visão Cards"* **saiu** (a visão não existe), e
+o *"a escolha PERSISTE, como o modo de visão"* foi **renomeado**: a aba continua persistindo em
+`dashboard:abaRegime`, o vizinho que ele citava é que não persiste mais.
+
+⚠ **Dívida paga de passagem:** tocar `renderCalendarioGrid.jsx` obrigava a trocar o `#FF4757` que
+`styles/__tests__/tintaProibidaNaoVolta.test.js` isentava por escrito (*"quem tocar aquele arquivo
+troca o hex e apaga esta exceção"*). Hoje é `var(--danger)` + `--danger-surface`, e **a varredura
+não tem mais lista de isentos**.
 
 ### A regra de cor (`styles/tokens.css`)
 
@@ -101,7 +183,9 @@ coisa é?* (`▮` guia · `▤` obrigação · `◆` marco) — a forma é o que
   escondidos, e o dia ficava igual a um dia tranquilo. Resolvido **não** pinta a borda: estado bom
   não grita.
 
-Quatro visões: **Mês · Semana · Dia · Agenda**, com atalhos `M S D A` e `T` (hoje) — ignorados
+⚠ **CINCO granularidades desde 01/09/2026: Ano · Mês · Semana · Dia · Agenda**, com atalhos
+`N M S D A` e `T` (hoje) — o `N` é do **A**no porque o `A` já era a Agenda, e roubar uma tecla
+que o contador já usa é pior que uma tecla menos óbvia. Ignorados
 quando o foco está num campo. **Agenda é o default em tela estreita E dentro da empresa**
 (`companyIdFixo`): uma empresa tem 3–6 eventos no mês, e a grade gasta 42 células para mostrar 4
 marcadores; na página principal, com trinta empresas, a densidade é a informação e a grade continua
@@ -204,7 +288,10 @@ esses, saem dos lançamentos de verdade do mock.
 
 ## Dashboard — reorganização (Lote C)
 
-- **Cards** (uma competência) e **Ano** (`components/renderAnnualGrid.jsx` →
+- ⚠⚠ **ESTE ITEM DIZIA "Cards (uma competência) e Ano" E FICOU FALSO EM 01/09/2026** — Cards foi
+  apagado e Ano virou granularidade do Calendário (ver "Dashboard — DUAS visões", no topo). O que
+  segue valendo inteiro é a descrição da GRADE ANUAL, que não mudou:
+  ~~**Cards** (uma competência) e~~ **Ano** (`components/renderAnnualGrid.jsx` →
   `GET /firm/companies/annual?ano=`) — o Calendário entrou depois. Na grade anual
   cada célula tem **dois** indicadores — ■ fechamento contábil e ● apuração transmitida (são
   coisas diferentes e podem divergir; por isso não viram um só). Clicar abre a empresa **naquela
@@ -882,7 +969,13 @@ silenciava três telas: "+ Parcelamento Simples" nunca aparecia, e o filtro por 
 do "+ Subir Guia" recebia undefined. Hoje há um `companyRegime` único no topo do componente, com
 fallback para as duas formas. Não voltar a ler do topo do payload.
 
-## Card da empresa (Lote C)
+## ⚠⚠ Card da empresa (Lote C) — A TELA NÃO EXISTE MAIS (01/09/2026)
+
+⚠ O `CompanyCard` foi apagado a pedido do dono. **Esta seção fica como história**, e não como
+descrição do que está na tela: cada decisão dela (o design único de regime/SERPRO/A1, o selo
+"Enviado" no lugar das tags, `folha` na linha da identidade, `fiscalSituacao: null` que não vira
+selo) foi tomada com um argumento que continua valendo — e vários deles a **Tabela** herdou. Ler
+como registro, nunca como mapa.
 
 - **Regime · SERPRO · A1** usam **um só design** (pílula com borda) — antes SERPRO era badge com
   classe CSS e A1 era fonte colorida.
@@ -1180,7 +1273,9 @@ barra de abas do app, com `mode="view"` (trocar de aba não navega).
   (aquele critério existe contra o filtro *escondido*; uma aba em cima da tabela é o oposto disso).
   Onde ela **tem** de aparecer é no **cabeçalho impresso**, e aparece: `Regime: Lucro Presumido · 11
   empresa(s) · …`.
-- ⚠ **Só em Tabela e Cards.** `Ano` e `Calendário` são o outro eixo (o tempo) e não foram tocados —
+- ⚠ **Só na TABELA** (dizia "Tabela e Cards" até 01/09/2026, quando o Cards saiu). O `Calendário`
+  é o outro eixo (o tempo) e não foi tocado — e o `Ano`, que também era uma visão, hoje vive dentro
+  dele —
   a grade anual nem passa por `filteredCompanies`, ela tem busca própria no servidor.
 - **A barra "Fechamento do mês" (`contagemApuracao`) NÃO passou a contar por aba**: ela conta sobre a
   carteira inteira, como sempre contou (já não respeita busca nem os filtros do painel). São chips de

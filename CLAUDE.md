@@ -189,9 +189,14 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   prévia (reusa `FechamentoModal`) + **extrato do Simples** (`syncPgdasCircular`) + fechar/transmitir/retificar
   por dentro da empresa. Cadastro enxuto (só regime + atividades permitidas). Tela de lote global vira
   **select-only** (só seleciona fechadas + apura em lote; o filtro `estado="fechada"` já é server-side).
-- [x] **Reorganização do dashboard + fluxo fiscal (Lote C)** — dashboard com **duas visões**
-  (Cards ⇄ **Ano**: grade 12 meses × empresas, fechamento contábil + apuração por célula, clique
-  abre a empresa naquela competência); **filtros recolhidos** (só busca + competência aparentes,
+- [x] **Reorganização do dashboard + fluxo fiscal (Lote C)** — ⚠⚠ **as "duas visões (Cards ⇄ Ano)"
+  deste item DEIXARAM DE EXISTIR em 01/09/2026** (dono: *"retirar totalmente a visualização em
+  Cards, colocar a visualização de Ano dentro do Calendário, e sempre que abrir abre no Calendário,
+  sendo o modo Tabela selecionável"*). Hoje a carteira tem **Calendário** (padrão, sem memória) e
+  **Tabela**; a grade anual continua existindo, como **granularidade dentro do Calendário** — mesma
+  grade 12 meses × empresas, mesmo fechamento contábil + apuração por célula, mesmo clique abrindo
+  a empresa naquela competência. Ver `apps/web/src/features/companies/CLAUDE.md`, seção
+  "Dashboard — DUAS visões". O resto do item vale: **filtros recolhidos** (só busca + competência aparentes,
   com setas ‹ ›); **card redesenhado** (regime·SERPRO·A1 no mesmo design; tags de guia dão lugar a
   "Enviado" quando todas enviadas; ⚠ pendência fiscal; selo PARC); **selo de processos em segundo
   plano**. "Funções em lote" virou **Consultas** e absorveu **Pendências** (aba "Situação Fiscal").

@@ -153,19 +153,16 @@ describe("⚠⚠ e eles não voltam ao código", () => {
     // linha da tabela em hover. Eram **103 sites** em 24/08/2026.
     expect(contraste("#FF4757", token("bg-subtle"))).toBeLessThan(4.5);
     expect(contraste(token("danger"), token("bg-subtle"))).toBeGreaterThanOrEqual(4.5);
-    // ⚠⚠ UMA EXCEÇÃO, E ELA É TEMPORÁRIA E DECLARADA: `renderCalendarioGrid.jsx` estava sendo
-    // editado por OUTRA SESSÃO nesta mesma árvore no dia da varredura. Editar arquivo em trabalho
-    // alheio é como se perde alteração — e é o único motivo do adiamento; o site é uma caixa de erro
-    // comum, de uma linha. **Quem tocar aquele arquivo troca o hex e apaga esta exceção.**
+    // ⚠⚠ A EXCEÇÃO SAIU EM 01/09/2026 — A DÍVIDA FOI PAGA. Ela isentava
+    // `renderCalendarioGrid.jsx`, que em 24/08 estava sendo editado por OUTRA SESSÃO nesta mesma
+    // árvore; o adiamento tinha esse único motivo, e este teste mandava, por escrito, que *"quem
+    // tocar aquele arquivo troca o hex e apaga esta exceção"*. A entrega que pôs a visão de Ano
+    // dentro do Calendário tocou o arquivo, então o hex virou `var(--danger)` e o fundo virou o par
+    // `--danger-surface` — e a isenção saiu junto, no mesmo commit.
     //
-    // ⚠ A exceção é por ARQUIVO, sem número de linha: prender a linha faria este teste ficar
-    // vermelho a cada edição do vizinho, e teste que fica vermelho por motivo errado é teste que
-    // alguém desliga.
-    const fora = varrer(["#FF4757"]).filter((a) => !a.includes("renderCalendarioGrid"));
-    expect(fora).toEqual([]);
-    // ⚠ E a exceção precisa continuar EXISTINDO: se ela sumir sozinha, é porque alguém já
-    // consertou — e aí a linha acima tem de sair junto, em vez de proteger um caso que não há.
-    expect(varrer(["#FF4757"]).length).toBe(1);
+    // ⚠ Não há mais lista de isentos: a varredura é sobre o `src` INTEIRO, sem filtro nenhum. Uma
+    // exceção que sobrevive ao conserto vira permissão permanente para o próximo.
+    expect(varrer(["#FF4757"])).toEqual([]);
   });
 
   it("`#69FF47` literal também não volta — ele É `--success`, byte a byte", () => {

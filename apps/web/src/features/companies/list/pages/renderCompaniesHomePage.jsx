@@ -5,8 +5,12 @@ import { AppShell } from "../../../../components/layout/AppShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 import { Tabs } from "../../../../components/ui/Tabs";
-import { CompanyCard, getComplianceTags } from "../components/renderCompanyCard";
-import { AnnualGrid } from "../components/renderAnnualGrid";
+// ⚠⚠ `CompanyCard` NÃO É MAIS IMPORTADO — o componente foi apagado em 01/09/2026. O ARQUIVO fica,
+// e não é sobra: `getComplianceTags` e `COMPLIANCE_CANDIDATES` moram nele e têm quatro consumidores
+// vivos (a tabela, a barra de seleção e DOIS filtros desta página, logo abaixo).
+// ⚠⚠ `AnnualGrid` também saiu daqui: ele agora é renderizado DENTRO do `CalendarioGrid`, como
+// granularidade. Importá-lo nos dois lugares daria duas portas para a mesma grade.
+import { getComplianceTags } from "../components/renderCompanyCard";
 import { CompaniesTable } from "../components/renderCompaniesTable";
 import { BarraSelecaoEmpresas } from "../components/BarraSelecaoEmpresas";
 import { CalendarioGrid } from "../../../calendario/components/renderCalendarioGrid";
@@ -320,26 +324,28 @@ export function CompaniesHomePage({
   message,
   error,
 }) {
-  // Quatro formas de ver a MESMA carteira: tabela (densa, o padrão no desktop), cards (padrão no
-  // celular), grade anual e calendário.
+  // ⚠⚠ DUAS FORMAS DE VER A MESMA CARTEIRA — eram QUATRO até 01/09/2026.
   //
-  // ⚠ A escolha PERSISTE. Antes era `useState` puro: quem preferia cards voltava para o padrão a
-  // cada refresh. E o padrão depende da largura — a tabela de 6 colunas não sobrevive a 375px,
-  // e o card mostra 8 empresas onde a tabela mostra 15+.
-  const [modoVisao, setModoVisao] = useState(() => {
-    try {
-      const salvo = localStorage.getItem("dashboard:modoVisao");
-      if (salvo) return salvo;
-    } catch { /* localStorage bloqueado (modo privado) não pode derrubar a tela */ }
-    // `window.innerWidth` 0 significa "ainda não sei" (container sem layout), não "estreito" —
-    // a mesma armadilha que já fez o calendário abrir em modo celular numa janela grande.
-    const largura = typeof window !== "undefined" ? window.innerWidth : 0;
-    return largura === 0 || largura >= 1024 ? "tabela" : "cards";
-  });
-  function trocarVisao(modo) {
-    setModoVisao(modo);
-    try { localStorage.setItem("dashboard:modoVisao", modo); } catch { /* idem */ }
-  }
+  // > Dono: *"retirar totalmente a visualização em Cards, colocar a visualização de Ano dentro do
+  // > Calendário, e sempre que abrir abre no Calendário, sendo o modo Tabela selecionável."*
+  //
+  // **Cards** foi removido inteiro (o componente, o CSS e os três gates). **Ano** não morreu: virou
+  // a granularidade mais larga DENTRO do Calendário, ao lado de Mês/Semana/Dia/Agenda — mesmo dado,
+  // mesma rota, mesmo clique, agora com uma navegação só.
+  //
+  // ⚠⚠ E A ESCOLHA DEIXOU DE PERSISTIR. Ela morava em `localStorage: dashboard:modoVisao`, e havia
+  // DOIS defeitos ali que a remoção do Cards transformaria em tela quebrada:
+  //   1. o leitor não validava nada (`if (salvo) return salvo`) — qualquer string passava, e a
+  //      cadeia de render terminava num `else` que era o CARDS. Removida a visão, quem tivesse
+  //      `"cards"` gravado ficaria com o conteúdo de uma visão e NENHUMA aba acesa (o `Tabs`
+  //      compara `item.key === active`);
+  //   2. a heurística de largura GRAVAVA `"cards"` sozinha em qualquer tela <1024px — ou seja, há
+  //      contador com essa string salva sem nunca ter escolhido nada.
+  // A cura é a que o dono pediu: **abre SEMPRE no Calendário**, sem memória. Sem leitura, a chave
+  // órfã de quem já usou o app é ignorada por construção — não há migração a escrever. E a
+  // heurística de largura saiu junto: ela só existia para escolher entre Tabela e Cards.
+  const [modoVisao, setModoVisao] = useState("calendario");
+  const trocarVisao = setModoVisao;
 
   // ─── IMPRESSÃO ───────────────────────────────────────────────────────────────────────────────
   // Duas coisas precisam acontecer ANTES do diálogo do navegador abrir: a visão vira tabela (cards
@@ -1092,11 +1098,12 @@ export function CompaniesHomePage({
             <Tabs
               mode="view"
               ariaLabel="Visão da carteira"
+              /* ⚠ O Calendário vem PRIMEIRO porque é o padrão — a barra tem de ler na ordem em
+                 que a tela abre. "Ano" saiu daqui e virou granularidade lá dentro; "Cards" saiu
+                 de vez. */
               items={[
-                { key: "tabela", label: "Tabela" },
-                { key: "cards", label: "Cards" },
-                { key: "ano", label: "Ano" },
                 { key: "calendario", label: "Calendário" },
+                { key: "tabela", label: "Tabela" },
               ]}
               active={modoVisao}
               onChange={trocarVisao}
@@ -1124,7 +1131,7 @@ export function CompaniesHomePage({
               empresa e olhar o cadeado. Aqui ela vira contagem, e cada contagem vira lista de
               trabalho. Some inteira quando o servidor não responde: um número errado sobre
               fechamento é pior que número nenhum. */}
-          {(modoVisao === "cards" || modoVisao === "tabela") && contagemApuracao && (
+          {modoVisao === "tabela" && contagemApuracao && (
             <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
               <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", fontWeight: 700, marginRight: 2 }}>
                 APURAÇÃO DO MÊS
@@ -1204,7 +1211,7 @@ export function CompaniesHomePage({
               ⚠ Só a barra saiu: chip de filtro e ordenação continuam lendo `estadoApuracao`. */}
 
           {/* Os filtros abaixo são da visão de cards — a grade anual tem navegação própria (ano). */}
-          {(modoVisao === "cards" || modoVisao === "tabela") && (
+          {modoVisao === "tabela" && (
           <section
             aria-label="Filtros"
             style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 16 }}
@@ -1389,7 +1396,7 @@ export function CompaniesHomePage({
               ⚠ A CONTAGEM VAI NO TEXTO, não no `badge` do componente — aquele badge é vermelho
               (`--state-danger`), e o 22 pareceria 22 problemas. O ponto colorido é a MESMA cor de
               categoria do card e da linha (ciano Simples · laranja Presumido), nunca `--state-*`. */}
-          {(modoVisao === "cards" || modoVisao === "tabela") && (
+          {modoVisao === "tabela" && (
             <div style={{ marginBottom: 10 }}>
               <Tabs
                 mode="view"
@@ -1412,11 +1419,11 @@ export function CompaniesHomePage({
             </div>
           )}
 
-          {modoVisao === "calendario" ? (
-            <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany} />
-          ) : modoVisao === "ano" ? (
-            <AnnualGrid api={api} onOpenCompany={onOpenCompany} />
-          ) : modoVisao === "tabela" ? (
+          {/* ⚠⚠ O CALENDÁRIO É O PRIMEIRO RAMO **E** O FALLBACK. Antes a cadeia terminava em
+              `… : tabela ? <tabela> : <CARDS>` — ou seja, o Cards era o `else` de tudo que não
+              casasse. Hoje o `else` é o padrão declarado da tela, então valor inesperado em
+              `modoVisao` cai onde a tela abre, não numa visão que não existe mais. */}
+          {modoVisao === "tabela" ? (
             <>
             {/* ⚠ FORA do `data-print-area`: a barra é gesto de tela, e uma folha impressa com
                 "8 empresas selecionadas" descreveria um estado que o papel não tem. */}
@@ -1508,18 +1515,18 @@ export function CompaniesHomePage({
             </div>
             </>
           ) : (
-          <section className="cards-grid cards-grid--dashboard" aria-label="Lista de empresas">
-            {empresasVisiveis.map((company) => (
-              <CompanyCard key={company.companyId} company={company} onAccess={onOpenCompany} acoesGuia={acoesGuia} />
-            ))}
-          </section>
+            <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany} />
           )}
 
-          {/* A tabela já diz "nenhuma empresa" na própria linha vazia — repetir aqui duplicaria a
-              mensagem embaixo dela. */}
-          {!loadingCompanies && modoVisao !== "tabela" && empresasVisiveis.length === 0 ? (
-            <p className="text-muted dashboard-home__empty">Nenhuma empresa encontrada para os filtros atuais.</p>
-          ) : null}
+          {/* ⚠⚠ A FRASE "Nenhuma empresa encontrada para os filtros atuais" SAIU DAQUI, e ela já
+              MENTIA antes desta entrega. A condição era `modoVisao !== "tabela"` — então em Ano e
+              em Calendário, que não leem `empresasVisiveis` (o Ano busca no servidor; o Calendário
+              lista eventos, não empresas), a página imprimia essa frase EMBAIXO de uma grade cheia.
+              Passava despercebido porque nenhuma das duas era o padrão; abrindo no Calendário, ela
+              viraria o caso comum — todo dia, para todo mundo.
+              ⚠ Nada se perdeu: quem responde pelo vazio da lista é a própria `CompaniesTable`, na
+              linha dela, com o botão de limpar filtros ao lado. Uma segunda frase embaixo da
+              tabela era duplicação; embaixo do calendário era falsidade. */}
         </section>
 
         <Feedback message={message} error={error} />

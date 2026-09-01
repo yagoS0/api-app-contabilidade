@@ -60,8 +60,20 @@ function travas() {
   };
 }
 
+// ⚠⚠ A CARTEIRA ABRE NO CALENDÁRIO desde 01/09/2026 (dono: *"sempre que abrir abre no
+// Calendário, sendo o modo Tabela selecionável"*), e TUDO que este arquivo mede — os chips de
+// APURAÇÃO DO MÊS e o botão de fechar em lote — vive na visão de TABELA. Por isso o helper troca
+// de visão logo depois de montar: sem isso os seis casos aqui mediriam a ausência dos controles
+// numa tela que simplesmente não é a deles, e ficariam verdes pelo motivo errado no dia em que o
+// botão voltasse a sumir de verdade.
+// ⚠ Quem trava o padrão (Calendário) é `carteiraAbreNoCalendario.test.jsx` — aqui não se afirma
+// nada sobre qual visão abre, só se navega até a que interessa.
+function irParaTabela() {
+  fireEvent.click(screen.getByRole("button", { name: /^Tabela$/ }));
+}
+
 function montar(api = {}) {
-  return render(
+  const r = render(
     <CompaniesHomePage
       user={{ name: "Contador" }}
       companies={CARTEIRA}
@@ -75,6 +87,8 @@ function montar(api = {}) {
       api={{ getCarteiraFechamento: jest.fn(async () => travas()), ...api }}
     />,
   );
+  irParaTabela();
+  return r;
 }
 
 beforeEach(() => {

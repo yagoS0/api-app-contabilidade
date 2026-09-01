@@ -20,6 +20,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // o calendário, a aba da empresa e o chip da listagem principal precisam da MESMA leitura.
 import { cicloDaOcorrencia, aparenciaDaOcorrencia, CICLO } from "../../obrigacoes/lib/cicloObrigacao";
 import { Tabs } from "../../../components/ui/Tabs";
+// ⚠ Import entre features, e é deliberado: a grade anual continua morando na feature da CARTEIRA,
+// que é de quem ela fala (empresa × mês). Mover o arquivo para cá renomearia o dono do assunto por
+// causa de onde ele é renderizado. Não há ciclo — `renderAnnualGrid` só importa o React.
+import { AnnualGrid } from "../../companies/list/components/renderAnnualGrid";
 
 const COR = {
   fundo: "#21222C", fundoFora: "#1B1C24", borda: "#44475A", texto: "#F8F8F2", suave: "#A7B0C0",
@@ -345,7 +349,13 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
   // `!companyIdFixo` — resultado: na aba da empresa a barra renderizava como uma coluna VAZIA de
   // 288px, roubando largura da grade, e o botão ☰ alternava o nada. Foi o que o dono viu: "esse
   // menu lateral não faz nada". Aqui ele deixa de existir, junto com o botão que o abre.
-  const temSidebar = !companyIdFixo;
+  //
+  // ⚠⚠ E NO MODO ANO ELA TAMBÉM NÃO EXISTE, pelo mesmo argumento. O painel conta as obrigações em
+  // aberto do MÊS VISÍVEL e estreita a carteira ao clicar numa obrigação daquele dia — não há mês
+  // visível nem obrigação clicável numa grade de doze meses. O botão ☰ sai junto: ele alternaria
+  // um painel que fala de outra tela. ⚠ `sidebarAberta` é preservada, então voltar para Mês
+  // devolve o painel como ele estava.
+  const temSidebar = !companyIdFixo && visao !== "ano";
   const sidebarVisivel = temSidebar && sidebarAberta;
   const [porDia, setPorDia] = useState({});
   const [feriadosPorDia, setFeriadosPorDia] = useState({});
@@ -367,6 +377,12 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
 
   const carregar = useCallback(async () => {
     if (!api) return;
+    // ⚠⚠ O MODO ANO NÃO PASSA POR AQUI. `GET /firm/calendario` valida `^\d{4}-\d{2}$` e responderia
+    // 400 para um ano; a grade anual tem porta própria (`GET /firm/companies/annual?ano=`) e busca
+    // sozinha. Buscar o mês corrente para desenhar doze não é só desperdício — é uma requisição
+    // cujo resultado nenhuma célula da tela em frente do contador está mostrando.
+    // ⚠ `visao` está nas dependências, então voltar de Ano para Mês recarrega sozinho.
+    if (visao === "ano") { setCarregando(false); return; }
     setCarregando(true);
     setErro(null);
     try {
@@ -437,10 +453,14 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
         alvo?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(alvo?.tagName || "");
       if (digitando) return;
       const tecla = String(e.key || "").toLowerCase();
-      if (tecla === "m") setVisao("mes");
-      else if (tecla === "s") setVisao("semana");
-      else if (tecla === "d") setVisao("dia");
-      else if (tecla === "a") setVisao("agenda");
+      // ⚠ Pelo `trocarVisao`, nunca pelo `setVisao` cru: é ele que limpa o dia selecionado ao
+      // entrar no Ano. Um atalho que pulasse essa limpeza deixaria o detalhe de um dia aberto por
+      // cima de uma grade que não tem dias.
+      if (tecla === "m") trocarVisao("mes");
+      else if (tecla === "n") trocarVisao("ano");
+      else if (tecla === "s") trocarVisao("semana");
+      else if (tecla === "d") trocarVisao("dia");
+      else if (tecla === "a") trocarVisao("agenda");
       else if (tecla === "t") setReferencia(hojeISO());
       else return;
       e.preventDefault();
@@ -460,9 +480,25 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
     return () => window.removeEventListener("keydown", aoTeclar);
   }, [criando, detalhe]);
 
+  // ⚠⚠ TROCAR DE VISÃO LIMPA O QUE É DE UM DIA. `grupoSelecionado`, `detalhe` e `criando`
+  // referenciam todos uma DATA (`{grupoChave, data}`, o item clicado, o dia do formulário). No modo
+  // Ano não existe dia: um detalhe aberto sobreviveria à troca e ficaria falando de um 18 de agosto
+  // que não está mais desenhado em lugar nenhum — e o formulário de criação gravaria evento num dia
+  // que ninguém escolheu nesta tela.
+  function trocarVisao(nova) {
+    if (nova === "ano") {
+      setGrupoSelecionado(null);
+      setDetalhe(null);
+      setCriando(null);
+    }
+    setVisao(nova);
+  }
+
   function navegar(passo) {
     const [y, m, d] = referencia.split("-").map(Number);
     const base = new Date(Date.UTC(y, m - 1, d));
+    // O Ano anda de ANO — é a granularidade da visão, como o mês é a da grade e da agenda.
+    if (visao === "ano") { base.setUTCFullYear(base.getUTCFullYear() + passo); setReferencia(iso(base)); return; }
     // ⚠ AGENDA ANDA POR MÊS, como a grade. `diasDaAgenda` monta a lista a partir de `competencia`
     // — ou seja, cobre o MÊS inteiro —, mas a agenda caía no `else` e avançava um DIA. O clique em
     // › mudava a referência sem mudar o mês, então a lista continuava idêntica: a seta parecia não
@@ -478,6 +514,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
     const [y, m, d] = referencia.split("-").map(Number);
     // Agenda cobre o mês inteiro — o rótulo tem que dizer isso. Caía no cálculo da SEMANA e
     // anunciava "3 ago – 9 ago" para uma lista que ia até o dia 31.
+    if (visao === "ano") return String(y);
     if (visao === "mes" || visao === "agenda") return `${MESES[m - 1]} de ${y}`;
     if (visao === "dia") return `${d} de ${MESES[m - 1]} de ${y}`;
     const semana = diasDaSemana(referencia);
@@ -756,12 +793,19 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
         <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           {/* Travado numa empresa não tem o que escolher — o seletor sairia mentindo que dá. */}
           {!companyIdFixo && (
+            /* ⚠⚠ NO MODO ANO ELE FICA DESABILITADO, COM O MOTIVO — e nunca escondido.
+               `GET /firm/companies/annual` não aceita `companyId`: ela devolve a carteira inteira,
+               sempre. Deixá-lo ativo ali seria um controle que a pessoa mexe e que não comanda o
+               que promete — o "filtro fantasma" que este projeto já nomeou várias vezes. Some da
+               tela e ninguém saberia que a filtragem existe nas outras visões. */
             <select
-              value={companyId}
+              value={visao === "ano" ? "" : companyId}
+              disabled={visao === "ano"}
+              title={visao === "ano" ? "A visão de Ano mostra a carteira inteira — ela não filtra por empresa. Escolha Mês, Semana, Dia ou Agenda para filtrar." : undefined}
               onChange={(e) => setCompanyId(e.target.value)}
-              style={{ ...btn(false), color: COR.texto, background: COR.fundo }}
+              style={{ ...btn(false), color: COR.texto, background: COR.fundo, opacity: visao === "ano" ? 0.55 : 1 }}
             >
-              <option value="">Todas as empresas</option>
+              <option value="">{visao === "ano" ? "Todas as empresas (o Ano não filtra)" : "Todas as empresas"}</option>
               {empresas.map((e) => <option key={e.companyId} value={e.companyId}>{e.razao}</option>)}
             </select>
           )}
@@ -769,11 +813,16 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
             mode="view"
             size="sm"
             ariaLabel="Granularidade do calendário"
-            items={[["mes", "Mês", "M"], ["semana", "Semana", "S"], ["dia", "Dia", "D"], ["agenda", "Agenda", "A"]].map(
+            /* ⚠ "Ano" entrou aqui em 01/09/2026, vindo da barra de visões da carteira (dono:
+               *"colocar a visualização de Ano dentro do Calendário"*). Ele é a granularidade mais
+               larga, então vem PRIMEIRO — a barra lê ano → mês → semana → dia → agenda.
+               ⚠ O atalho é `N`, não `A`: `A` já é a Agenda, e roubar uma tecla que o contador já
+               usa é pior que uma tecla menos óbvia. `N` está em "aNo" e estava livre. */
+            items={[["ano", "Ano", "N"], ["mes", "Mês", "M"], ["semana", "Semana", "S"], ["dia", "Dia", "D"], ["agenda", "Agenda", "A"]].map(
               ([k, label, tecla]) => ({ key: k, label, title: companyIdFixo ? label : `${label} (${tecla})` }),
             )}
             active={visao}
-            onChange={setVisao}
+            onChange={trocarVisao}
           />
         </div>
       </div>
@@ -781,6 +830,13 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
       {/* Legenda/filtro EM CIMA, em linha — não na lateral. Ao lado do calendário fica só a lista
           de empresas; a legenda é sobre o que a GRADE mostra, e ali embaixo da lista competia por
           altura com ela. Continua agindo na exibição, não na busca. */}
+      {/* ⚠⚠ A LINHA INTEIRA SOME NO MODO ANO, e as duas metades somem por motivos diferentes.
+          Os três checkboxes filtram guia/obrigação/marco — o Ano não desenha nenhum dos três; ele
+          desenha fechamento contábil e apuração, que não são categoria nenhuma. E a legenda
+          `cor = estado` descreve uma escala que ali NÃO VALE: no Ano teal é "fechado" e verde é
+          "apurado", e a grade anual carrega a legenda própria dela. Deixar esta legenda acesa
+          ensinaria a ler a tela de baixo com a chave da tela de cima. */}
+      {visao !== "ano" && (
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 10, paddingBottom: 10, borderBottom: `1px solid ${COR.borda}` }}>
         {CATEGORIAS.map((c) => (
           <label
@@ -811,9 +867,17 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
           ))}
         </span>
       </div>
+      )}
 
+      {/* ⚠ O hex literal `#FF4757` saiu daqui em 01/09/2026. Ele é o vizinho de UM DÍGITO de
+            `--danger` (`#FF5757`) e mede 4,27:1 sobre `--bg-subtle` — abaixo do mínimo 4,5:1 da
+            WCAG AA, onde o token passa. Era a ÚLTIMA ocorrência do app, adiada em 24/08 só porque
+            outra sessão editava este arquivo; `tintaProibidaNaoVolta.test.js` mandava, por escrito,
+            que quem tocasse este arquivo pagasse a dívida — e a exceção de lá saiu junto.
+            ⚠ O fundo é o par `-surface` do token, nunca `${cor}22`: concatenar hex quebra em
+            silêncio assim que a cor vira `var(--…)`. */}
       {erro && (
-        <div style={{ padding: "8px 12px", borderRadius: 6, background: "rgba(255,71,87,0.12)", border: "1px solid #FF4757", color: "#FF4757", marginBottom: 10, fontSize: "0.82rem" }}>
+        <div style={{ padding: "8px 12px", borderRadius: 6, background: "var(--danger-surface)", border: "1px solid var(--danger)", color: "var(--danger)", marginBottom: 10, fontSize: "0.82rem" }}>
           {erro}
         </div>
       )}
@@ -958,7 +1022,18 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
           colunas pede ~1185px. Somada aos 232px do painel isso estoura a linha, o `flex-wrap`
           entra e o painel vai parar EM CIMA da grade em vez de ao lado dela. */}
       <div style={{ flex: "1 1 0", minWidth: 0, display: estreita && sidebarVisivel ? "none" : "block" }}>
-      {visao === "agenda" ? (
+      {visao === "ano" ? (
+        /* ⚠⚠ NÃO É A MESMA GRADE COM ZOOM, e confundir isso é o erro caro aqui. A grade de dias é
+           `semana × dia` e a empresa nem é eixo — é rótulo dentro do chip. O Ano é `empresa × mês`.
+           O que as une é o DADO: os dois marcadores do Ano (`CompanyMonthlyCircular.fechadoContabilEm`
+           e `ApuracaoSnapshot.estado`) já estão aqui como `pendenciasDoMes`, com a MESMA constante
+           `APURADA = new Set(["transmitida","confirmada"])` dos dois lados, e o clique é idêntico.
+           Formalmente: o Ano é o `pendenciasDoMes` desta tela, ×12 meses, em grade.
+           ⚠ A LARGURA: esta `<section>` se impõe `var(--content-wide)` (90%) e a grade anual não
+           declara largura nenhuma — dentro daqui ela HERDA os 90%. É mudança visual que o dono não
+           pediu, é a resposta certa (ela sempre quis largura de trabalho), e fica dita. */
+        <AnnualGrid api={api} onOpenCompany={onOpenCompany} ano={Number(referencia.slice(0, 4))} />
+      ) : visao === "agenda" ? (
         <div style={{ border: `1px solid ${COR.borda}`, borderRadius: 8, overflow: "hidden" }}>
           {/* ⚠ VAZIO MUDO NUNCA (princípio 7). Era só "Nada neste período." — e "nada" ali pode ser
               duas coisas muito diferentes: o mês não tem evento, ou a empresa não tem obrigação
