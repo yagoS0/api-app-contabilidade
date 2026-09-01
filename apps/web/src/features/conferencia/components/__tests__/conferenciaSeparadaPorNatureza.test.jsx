@@ -20,6 +20,7 @@ const mockGetRegras = jest.fn();
 const mockGetRecorrencias = jest.fn();
 const mockGetSaidas = jest.fn();
 const mockGetMexidas = jest.fn();
+const mockGetPendencias = jest.fn();
 
 // ⚠ Delegação, nunca referência direta: o `jest.mock` é hoisted e os painéis chamam
 // `createApiClient()` no corpo do módulo — tocar nos dublês aqui estoura no TDZ. Mesmo desenho do
@@ -35,6 +36,7 @@ jest.mock("../../../../api/client", () => ({
     getRecorrencias: (...a) => mockGetRecorrencias(...a),
     getConferenciaSaidasDoCliente: (...a) => mockGetSaidas(...a),
     getConferenciaMexidasDoCliente: (...a) => mockGetMexidas(...a),
+    getConferenciaPendencias: (...a) => mockGetPendencias(...a),
   }),
 }));
 
@@ -119,6 +121,7 @@ beforeEach(() => {
   // ⚠ `indisponivel` basta para o painel desenhar, e evita inventar a forma de uma mexida — que
   // este arquivo não mediu. Ele mede COLOCAÇÃO, não o conteúdo daquele painel.
   mockGetMexidas.mockResolvedValue({ ok: true, indisponivel: true, mexidas: [] });
+  mockGetPendencias.mockResolvedValue({ ok: true, declaradosForaDaCompetencia: 0 });
 });
 
 const montar = async () => {
@@ -239,5 +242,49 @@ describe("⚠⚠ a origem da linha — o que responde «saídas do cliente» DEN
     });
     await montar();
     expect(screen.queryByText(/ORIGEM_NOVA_DO_BACKEND/)).toBeNull();
+  });
+});
+
+describe("⚠⚠ «19 a lançar» abrindo em 6 — a tela DIZ quantos ficaram fora do mês", () => {
+  // > Dono, sobre a ALBATROZ em produção (01/09/2026): *"aparecem 19 a lançar mas ao abrir não
+  // > aparece isso tudo"*.
+  //
+  // O selo do botão conta a fila em QUALQUER mês (decisão deliberada: a nota de julho que ninguém
+  // conferiu não pode sumir porque o contador olha agosto). Esta tela abre FILTRADA. Os dois estão
+  // certos e falam de populações diferentes — e a diferença se lia como despesa perdida.
+
+  it("⚠⚠ com declarados em outros meses, a tela avisa e diz quantos", async () => {
+    mockGetPendencias.mockResolvedValue({ ok: true, declaradosForaDaCompetencia: 13 });
+    await montar();
+    const secao = secaoDe(NATUREZA.VIRA_LANCAMENTO);
+    await waitFor(() => expect(within(secao).getByText(/outras competências/i)).toBeInTheDocument());
+    expect(secao.textContent).toMatch(/13/);
+  });
+
+  it("⚠ ela pergunta ao servidor PELA competência aberta — senão não haveria o que comparar", async () => {
+    await montar();
+    await waitFor(() => expect(mockGetPendencias).toHaveBeenCalled());
+    expect(mockGetPendencias).toHaveBeenCalledWith("emp-1", { competencia: "2026-07" });
+  });
+
+  it("⚠ zero não vira aviso — não há nada fora do mês", async () => {
+    mockGetPendencias.mockResolvedValue({ ok: true, declaradosForaDaCompetencia: 0 });
+    await montar();
+    expect(within(secaoDe(NATUREZA.VIRA_LANCAMENTO)).queryByText(/outras competências/i)).toBeNull();
+  });
+
+  it("⚠⚠ AUSÊNCIA também não vira aviso — backend antigo ou falha não inventam um número", async () => {
+    // `null` é "não sei quantos", e um aviso sem número seria pior que silêncio. Caminho diferente
+    // do zero, mesmo desenho — a regra de sempre desta casa.
+    mockGetPendencias.mockResolvedValue({ ok: true });
+    await montar();
+    expect(within(secaoDe(NATUREZA.VIRA_LANCAMENTO)).queryByText(/outras competências/i)).toBeNull();
+  });
+
+  it("⚠ e a contagem que falha não derruba a fila", async () => {
+    mockGetPendencias.mockRejectedValue(new Error("rede"));
+    await montar();
+    expect(within(secaoDe(NATUREZA.VIRA_LANCAMENTO)).getAllByText("GOOGLE CLOUD BRASIL").length)
+      .toBeGreaterThan(0);
   });
 });

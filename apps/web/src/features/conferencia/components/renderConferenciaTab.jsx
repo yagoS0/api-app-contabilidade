@@ -683,6 +683,34 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
   // há o que abortar. O que se pode garantir é que resposta velha não escreve estado.
   const consultaAtual = useRef(0);
 
+  /**
+   * ⚠⚠ QUANTOS DECLARADOS ESTÃO FORA DO MÊS QUE ESTA TELA ABRIU (01/09/2026).
+   *
+   * > Dono, sobre a ALBATROZ em produção: *"aparecem 19 a lançar mas ao abrir não aparece isso
+   * > tudo"*.
+   *
+   * O selo do botão conta a fila em QUALQUER mês, de propósito (a nota de julho que ninguém
+   * conferiu não pode sumir porque o contador está olhando agosto). Esta tela abre FILTRADA pela
+   * competência. Os dois estão certos e descrevem populações diferentes — e era essa diferença que
+   * se lia como número errado.
+   * ⚠ A tela **não esconde e não recalcula**: ela DIZ quantos ficaram fora, e aponta onde vê-los.
+   */
+  const [fora, setFora] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    if (!companyId || typeof conferenciaApi.getConferenciaPendencias !== "function") return undefined;
+    conferenciaApi.getConferenciaPendencias(companyId, { competencia: competenciaDaConsulta })
+      .then((r) => {
+        if (!vivo) return;
+        // ⚠ `> 0` por TIPO: ausência (backend antigo, falha) e zero dão no mesmo desenho — nenhum
+        // aviso —, mas por caminhos diferentes. Nunca `Number(x) > 0`.
+        const n = typeof r?.declaradosForaDaCompetencia === "number" ? r.declaradosForaDaCompetencia : null;
+        setFora(n);
+      })
+      .catch(() => { if (vivo) setFora(null); });
+    return () => { vivo = false; };
+  }, [companyId, competenciaDaConsulta, versao]);
+
   const carregar = useCallback(async () => {
     if (!companyId) return;
     const minha = ++consultaAtual.current;
@@ -993,6 +1021,20 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
                 {" "}Se você esperava ver as notas recebidas aqui, elas ainda não foram varridas para a fila.
               </>
             )}
+          </div>
+        ) : null}
+
+        {/*
+          ⚠⚠ O AVISO QUE FAZIA FALTA: o selo do botão conta a fila inteira e esta tela mostra um mês.
+          Sem esta linha, "19 a lançar" abrindo em 6 se lê como despesa perdida.
+          ⚠ Ele é NEUTRO, nunca âmbar: não há nada a fazer aqui — o trabalho existe, noutro mês.
+        */}
+        {fora !== null && fora > 0 ? (
+          <div style={{ ...card, color: "var(--text-muted)" }}>
+            Há mais <strong>{fora}</strong> lançamento(s) esperando conferência em{" "}
+            <strong>outras competências</strong>. Esta tela mostra{" "}
+            {recorte === "sem-competencia" ? "as que chegaram sem competência" : competencia || "a competência atual"}
+            {" "}— troque a competência no topo da empresa para vê-los.
           </div>
         ) : null}
 

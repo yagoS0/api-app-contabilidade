@@ -262,6 +262,30 @@ export function createConferenciaRouter({ log } = {}) {
     const portalClientId = String(req.params.companyId);
     const indisponiveis = [];
 
+    /**
+     * ⚠⚠ A COMPETÊNCIA É OPCIONAL, E É ELA QUE CONSERTA O "19 QUE NÃO APARECE" (01/09/2026).
+     *
+     * > Dono, sobre a ALBATROZ em produção: *"aparecem 19 a lançar mas ao abrir não aparece isso
+     * > tudo"*.
+     *
+     * O selo do botão **não filtra por competência, de propósito** — a fila é o que espera alguém
+     * em QUALQUER mês, e contar só o mês visível esconderia a nota de julho que ninguém conferiu.
+     * Já a TELA abre filtrada pela competência. Os dois estão certos e **descrevem populações
+     * diferentes**, e é essa diferença que se lia como número errado.
+     *
+     * Com `?competencia=`, esta rota devolve TAMBÉM o recorte — e é a tela que passa a dizer
+     * quantos ficaram fora do mês aberto. ⚠ O selo continua chamando SEM competência: o número
+     * dele não muda.
+     */
+    const competencia = req.query.competencia ? String(req.query.competencia) : null;
+    if (competencia && competencia !== COMPETENCIA_AUSENTE && !COMPETENCIA_RE.test(competencia)) {
+      return res.status(400).json({
+        ok: false,
+        error: "competencia_invalida",
+        message: `Use AAAA-MM, ou "${COMPETENCIA_AUSENTE}" para as que chegaram sem competência.`,
+      });
+    }
+
     // ⚠ `count`, nunca `findMany().length`: a barra pede este número a cada abertura da aba, e
     // trazer a fila inteira para medir o tamanho dela é o custo que esta rota existe para evitar.
     const declarados = await prisma.lancamentoDeclarado
@@ -297,9 +321,48 @@ export function createConferenciaRouter({ log } = {}) {
           return 0;
         });
 
+    /**
+     * ⚠⚠ QUANTOS DELES ESTÃO NO MÊS QUE A TELA ABRIU. `null` quando ninguém perguntou — e `null`
+     * não é zero: "não pedi o recorte" e "não há nenhum neste mês" são respostas diferentes, e
+     * desenhar as duas iguais faria a tela afirmar que o mês está limpo sem ter contado.
+     * ⚠ `sem-competencia` é RECORTE, não competência: `competencia = null` no banco. Sem este ramo
+     * a nota que chegou sem competência ficaria fora dos dois lados da conta.
+     */
+    const declaradosNaCompetencia = !competencia || indisponiveis.includes("declarados")
+      ? null
+      : await prisma.lancamentoDeclarado
+        .count({
+          where: {
+            portalClientId,
+            estado: { in: [ESTADO.AGUARDANDO_PAGAMENTO, ESTADO.A_CONFERIR] },
+            competencia: competencia === COMPETENCIA_AUSENTE ? null : competencia,
+          },
+        })
+        .catch((e) => {
+          if (!tabelaAusenteNaContagem(e)) throw e;
+          return null;
+        });
+
     return res.json({
       ok: true,
       total: declarados + series + saidas,
+      /**
+       * ⚠⚠ `aLancar` × `noFluxo` — a separação que o rótulo do botão exigia (01/09/2026).
+       *
+       * > Dono: *"tudo que virar lançamento deve entrar no fluxo, mas nem tudo do fluxo
+       * > necessariamente deve ser um lançamento"*.
+       *
+       * O botão se chama **"A lançar"** e mostrava `total`, que soma as TRÊS filas — sendo que
+       * recorrências e saídas do cliente **nunca viram lançamento** (o próprio serviço delas diz
+       * *"CONFIRMAR NÃO LANÇA NADA"*). O número prometia um trabalho que não existia.
+       * ⚠ `total` FICA, e não é sobra: ele é a resposta a *"quanto há para decidir nesta tela?"*.
+       * O que mudou é que quem desenha "A lançar" usa `aLancar`.
+       */
+      aLancar: declarados,
+      noFluxo: series + saidas,
+      declaradosNaCompetencia,
+      declaradosForaDaCompetencia:
+        declaradosNaCompetencia == null ? null : declarados - declaradosNaCompetencia,
       declarados,
       series,
       saidas,

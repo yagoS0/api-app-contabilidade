@@ -514,12 +514,76 @@ describe("⚠⚠ GET /conferencia/pendencias soma AS TRÊS filas", () => {
     expect(r.body).toMatchObject({ ok: true, total: 9, declarados: 3, series: 2, saidas: 4 });
   });
 
+  it("⚠⚠ `aLancar` é SÓ o que vira lançamento; o fluxo vai separado (01/09/2026)", async () => {
+    // > Dono: *"tudo que virar lançamento deve entrar no fluxo, mas nem tudo do fluxo
+    // > necessariamente deve ser um lançamento"*.
+    //
+    // O botão se chama "A lançar" e mostrava `total`, que soma as três — sendo que recorrências e
+    // saídas do cliente NUNCA viram lançamento. O número prometia trabalho que não existia.
+    contarCom({ declarados: 3, series: 2, saidas: 4 });
+    const r = await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
+    expect(r.body.aLancar).toBe(3);
+    expect(r.body.noFluxo).toBe(6);
+  });
+
+  it("⚠ e `total` FICA — ele responde «quanto há para decidir nesta tela?»", async () => {
+    // Tirá-lo esconderia o que o cliente digitou, que é o que a soma das três existia para mostrar.
+    contarCom({ declarados: 3, series: 2, saidas: 4 });
+    const r = await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
+    expect(r.body.total).toBe(9);
+  });
+
   it("⚠⚠ contar só os DECLARADOS faria o contador nunca ver o que o cliente digitou", async () => {
     // É o defeito que esta rota existe para não cometer: o pedido do dono é justamente sobre o que
     // o CLIENTE escreve chegar até ele.
     contarCom({ declarados: 0, series: 0, saidas: 5 });
     const r = await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
     expect(r.body.total).toBe(5);
+  });
+
+  it("⚠⚠ com `?competencia=`, devolve o RECORTE e quantos ficaram FORA dele", async () => {
+    // > Dono, sobre a ALBATROZ em produção: *"aparecem 19 a lançar mas ao abrir não aparece isso
+    // > tudo"*. O selo conta a fila em qualquer mês; a TELA abre filtrada. Os dois estão certos, e
+    // a diferença é o que se lia como despesa perdida.
+    prisma.serieRecorrente = { count: jest.fn(async () => 0) };
+    prisma.saidaAvulsaCliente = { count: jest.fn(async () => 0) };
+    prisma.lancamentoDeclarado = {
+      // ⚠ O SEGUNDO `count` é o do recorte — ele é o único que leva `competencia` no `where`.
+      count: jest.fn(async (args) => (args?.where?.competencia === undefined ? 19 : 6)),
+    };
+    const r = await request(makeApp())
+      .get("/firm/companies/emp-1/conferencia/pendencias?competencia=2026-07");
+    expect(r.status).toBe(200);
+    expect(r.body.declarados).toBe(19);
+    expect(r.body.declaradosNaCompetencia).toBe(6);
+    expect(r.body.declaradosForaDaCompetencia).toBe(13);
+  });
+
+  it("⚠⚠ SEM competência os dois campos vêm `null` — não pedi o recorte ≠ não há nenhum", async () => {
+    // Desenhar as duas iguais faria a tela afirmar que o mês está limpo sem ter contado.
+    contarCom({ declarados: 19 });
+    const r = await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias");
+    expect(r.body.declaradosNaCompetencia).toBeNull();
+    expect(r.body.declaradosForaDaCompetencia).toBeNull();
+  });
+
+  it("⚠ `sem-competencia` é RECORTE, e vira `competencia: null` no banco", async () => {
+    // `where.competencia = "2026-07"` não casa com NULL em SQL — sem este ramo, a nota que chegou
+    // sem competência ficaria fora dos DOIS lados da conta.
+    prisma.serieRecorrente = { count: jest.fn(async () => 0) };
+    prisma.saidaAvulsaCliente = { count: jest.fn(async () => 0) };
+    prisma.lancamentoDeclarado = { count: jest.fn(async () => 4) };
+    await request(makeApp())
+      .get("/firm/companies/emp-1/conferencia/pendencias?competencia=sem-competencia");
+    const chamadas = prisma.lancamentoDeclarado.count.mock.calls.map((c) => c[0]?.where?.competencia);
+    expect(chamadas).toContain(null);
+  });
+
+  it("⚠ competência malformada RECUSA nomeando — não vira filtro silencioso", async () => {
+    contarCom({ declarados: 1 });
+    const r = await request(makeApp()).get("/firm/companies/emp-1/conferencia/pendencias?competencia=julho");
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("competencia_invalida");
   });
 
   it("⚠⚠ é `count`, nunca a fila inteira — a barra de Lançamentos pede isto a cada abertura", async () => {

@@ -7440,9 +7440,25 @@ export function createMockApi() {
       return { ok: true, saida: { id: saidaId, estado } };
     },
 
-    async getConferenciaPendencias(_companyId) {
+    async getConferenciaPendencias(_companyId, { competencia } = {}) {
       await delay(40);
-      return { ok: true, total: 6, declarados: 3, series: 1, saidas: 2, indisponiveis: [] };
+      // ⚠⚠ O MOCK PRECISA EXERCITAR A DIVERGÊNCIA, senão o aviso "há N em outras competências"
+      // nasce inalcançável offline — e foi exatamente essa divergência que apareceu em produção
+      // como "aparecem 19 a lançar mas ao abrir não aparece isso tudo".
+      // ⚠ 3 declarados no total, 2 no mês pedido: sobra 1 fora. Números diferentes de propósito.
+      const naCompetencia = competencia ? 2 : null;
+      return {
+        ok: true,
+        total: 6,
+        aLancar: 3,
+        noFluxo: 3,
+        declarados: 3,
+        series: 1,
+        saidas: 2,
+        declaradosNaCompetencia: naCompetencia,
+        declaradosForaDaCompetencia: naCompetencia == null ? null : 3 - naCompetencia,
+        indisponiveis: [],
+      };
     },
 
     async getConferenciaFila(_companyId, { competencia, estado } = {}) {

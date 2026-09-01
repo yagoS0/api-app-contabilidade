@@ -694,18 +694,43 @@ export function BotaoDaConferencia({ pendencias, onOpenConferencia }) {
   // ⚠ Sem handler ele NÃO renderiza: um botão em que a pessoa clica e nada acontece é pior que a
   // ausência dele — a mesma regra do seletor de competência do portal do cliente.
   if (!onOpenConferencia) return null;
-  // ⚠ `> 0` por TIPO, nunca truthy: `Number(null)` é 0 e 0 é finito. A contagem ausente (`null`)
-  // e a contagem zero têm de dar no mesmo desenho — sem selo —, mas por caminhos diferentes.
-  const total = typeof pendencias?.total === "number" ? pendencias.total : null;
+  /**
+   * ⚠⚠ O SELO MOSTRAVA `total`, QUE SOMA TRÊS FILAS — e o botão se chama "A lançar".
+   *
+   * > Dono, sobre a ALBATROZ em produção (01/09/2026): *"aparecem 19 a lançar mas ao abrir não
+   * > aparece isso tudo"* … *"tudo que virar lançamento deve entrar no fluxo, mas nem tudo do fluxo
+   * > necessariamente deve ser um lançamento"*.
+   *
+   * `total` = declarados + recorrências + saídas do cliente. As duas últimas **nunca viram
+   * lançamento** — o serviço das saídas diz de si mesmo *"CONFIRMAR NÃO LANÇA NADA"*. O número
+   * prometia um trabalho que não existia, e abrir a tela mostrava menos do que o selo dizia.
+   *
+   * ⚠ **O QUE VEM DO FLUXO NÃO SOME — ele ganha marca PRÓPRIA**, ao lado. Tirá-lo do selo e não o
+   * mostrar em lugar nenhum faria o contador nunca ver o que o cliente digitou, que é exatamente o
+   * que a contagem das três filas existia para resolver.
+   * ⚠ Backend antigo não manda `aLancar`: cai em `declarados`, e só depois em ausência. Ausência
+   * continua não sendo zero — as duas dão "sem selo", por caminhos diferentes.
+   */
+  const num = (v) => (typeof v === "number" ? v : null);
+  // ⚠ A cadeia termina em `total` de propósito: a rota real SEMPRE manda `declarados`, então este
+  // último degrau só é alcançado por payload mínimo — e é ele que preserva a distinção entre
+  // **zero conhecido** e **contagem ausente**, que o `data-pendencias` publica no DOM.
+  const aLancar = num(pendencias?.aLancar) ?? num(pendencias?.declarados) ?? num(pendencias?.total);
+  const noFluxo = num(pendencias?.noFluxo)
+    ?? (num(pendencias?.series) != null && num(pendencias?.saidas) != null
+      ? pendencias.series + pendencias.saidas
+      : null);
+  const total = aLancar;
   const temFila = total !== null && total > 0;
+  const temFluxo = noFluxo !== null && noFluxo > 0;
 
   return (
     <button
       type="button"
       onClick={onOpenConferencia}
       title={
-        temFila
-          ? `${pendencias.declarados} lançamento(s) declarado(s), ${pendencias.series} recorrência(s) e ${pendencias.saidas} saída(s) do cliente esperando você`
+        temFila || temFluxo
+          ? `${aLancar ?? 0} para virar lançamento; ${noFluxo ?? 0} que entram só no fluxo de caixa (recorrências e saídas do cliente) e não viram lançamento`
           : "O que o cliente e o extrato trouxeram, esperando lançamento"
       }
       data-pendencias={total ?? undefined}
@@ -728,6 +753,19 @@ export function BotaoDaConferencia({ pendencias, onOpenConferencia }) {
           }}
         >
           {total}
+        </span>
+      ) : null}
+      {/* ⚠ NEUTRO, nunca âmbar: âmbar significa "falta fazer", e o que está aqui não pede
+          lançamento nenhum. Ele existe para o que o cliente digitou não sumir do olhar do
+          contador — e para o número do lado esquerdo parar de prometer o que não é. */}
+      {temFluxo ? (
+        <span
+          style={{
+            fontSize: "0.72rem", fontWeight: 500,
+            color: "var(--text-muted)",
+          }}
+        >
+          · {noFluxo} no fluxo
         </span>
       ) : null}
     </button>

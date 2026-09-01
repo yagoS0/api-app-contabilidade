@@ -1818,8 +1818,18 @@ export function createRealApi() {
       });
     },
 
-    async getConferenciaPendencias(companyId) {
-      return request(`/firm/companies/${companyId}/conferencia/pendencias`);
+    /**
+     * ⚠ `competencia` é OPCIONAL, e quem a passa é a TELA, não o botão.
+     *
+     * O selo da barra de Lançamentos chama SEM ela de propósito — a fila é o que espera alguém em
+     * qualquer mês. A tela abre filtrada, e passa a competência para poder dizer quantos ficaram
+     * fora do mês aberto. Sem isso os dois números divergem e se leem como defeito.
+     */
+    async getConferenciaPendencias(companyId, { competencia } = {}) {
+      const q = new URLSearchParams();
+      if (competencia) q.set("competencia", competencia);
+      const qs = q.toString();
+      return request(`/firm/companies/${companyId}/conferencia/pendencias${qs ? `?${qs}` : ""}`);
     },
     async getConferenciaFila(companyId, { competencia, estado, pagina, porPagina } = {}) {
       const q = new URLSearchParams();
