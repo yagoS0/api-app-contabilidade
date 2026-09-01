@@ -33,6 +33,7 @@ import {
   listarFila,
   sugestoesDePagamento,
   varrerInvariantes,
+  liberarDeclaradoNoFluxo,
 } from "../../application/declarados/DeclaradoService.js";
 import {
   RegraRecusada,
@@ -507,6 +508,32 @@ export function createConferenciaRouter({ log } = {}) {
    * rota. ⚠ A conta vem do CORPO porque é escolha de quem clica; o sistema não elege nenhuma.
    * ⚠ O `portalClientId` sai do PATH, nunca do corpo: é a guarda de multi-tenancy de sempre.
    */
+  /**
+   * ⚠⚠⚠ LIBERAR A DESPESA NO FLUXO — sem lançar. Decisão do dono, 01/09/2026.
+   *
+   * > *"temos um botão fluxo, que apenas libera no fluxo mas não lança"*.
+   *
+   * ⚠ `data` opcional: ausente cai na EMISSÃO da nota (*"na data da emissão mais o contador pode
+   * alterar"*); `null` TIRA do fluxo. As duas não podem se confundir — ver o serviço.
+   * ⚠ `minRole: "ACCOUNTANT"`: isto muda o que o CLIENTE vê no fluxo dele.
+   */
+  router.post("/conferencia/:declaradoId/fluxo", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const r = await liberarDeclaradoNoFluxo({
+        portalClientId: String(req.params.companyId),
+        declaradoId: String(req.params.declaradoId),
+        // ⚠ `hasOwnProperty`, nunca `req.body?.data || undefined`: com `||`, o `null` que TIRA do
+        // fluxo viraria `undefined`, que é "use a emissão" — o clique de remover passaria a
+        // reinserir a linha. É a regra `undefined` ≠ `null` que este projeto já registra.
+        ...(Object.prototype.hasOwnProperty.call(req.body || {}, "data") ? { data: req.body.data } : {}),
+        usuarioId: String(req.auth?.user?.id || ""),
+      });
+      return res.json({ ok: true, declarado: { id: r.id, previstoNoFluxoEm: r.previstoNoFluxoEm } });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
   router.post("/conferencia/saidas-do-cliente/:saidaId/lancar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     try {
       const saida = await lancarSaidaAvulsa({

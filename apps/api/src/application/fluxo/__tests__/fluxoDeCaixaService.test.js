@@ -36,7 +36,7 @@ const apuracao = (extra = {}) => ({
   dasRetornadoSerpro: "600.00", dasSimuladoSerpro: null, ...extra,
 });
 
-function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo = null, erroNaSerie = null, primeiraNota = undefined, folhas = [], contasDeFolha = [], apuradas = [], transmitidas = [], saidasDoCliente = null, despesas = [] } = {}) {
+function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo = null, erroNaSerie = null, primeiraNota = undefined, folhas = [], contasDeFolha = [], apuradas = [], transmitidas = [], saidasDoCliente = null, despesas = [], previstas = null } = {}) {
   return {
     portalClient: { findUnique: jest.fn(async () => ({ id: "emp-1", prazoRecebimentoMeses: prazo })) },
     guide: { findMany: jest.fn(async () => guias) },
@@ -77,6 +77,11 @@ function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo 
      * aparecer também como despesa — o mesmo dinheiro contado duas vezes — e a asserção passaria.
      * É a mesma lição que o filtro de `estado` das saídas já carrega logo abaixo.
      */
+    /**
+     * ⚠ `previstas: null` deixa o DELEGATE de fora — o estado real da máquina sem `prisma generate`,
+     * e o que a guarda `!client?.lancamentoDeclarado?.findMany` atravessa sem TypeError.
+     */
+    ...(previstas === null ? {} : { lancamentoDeclarado: { findMany: jest.fn(async () => previstas) } }),
     accountingEntry: {
       findMany: jest.fn(async ({ where } = {}) => (where?.tipo === "DESPESA" ? despesas : folhas)),
     },
@@ -1188,5 +1193,73 @@ describe("⚠⚠⚠ e a saída LANCADA sai do fluxo — senão o mesmo dinheiro 
     expect(lancadas).toHaveLength(1);
     expect(lancadas[0].valor).toBe(3500);
     expect(lancadas[0].procedencia).toBe("FATO");
+  });
+});
+
+describe("⚠⚠⚠ A DESPESA LIBERADA NO FLUXO, sem lançar — o «nem tudo» da regra do dono", () => {
+  // > *"temos um botão fluxo, que apenas libera no fluxo mas não lança"* … *"nem tudo do fluxo
+  // > necessariamente deve ser um lançamento"*.
+  const prevista = (extra = {}) => ({
+    id: "dec-1",
+    previstoNoFluxoEm: new Date("2026-09-25T00:00:00.000Z"),
+    valor: "1500.00",
+    valorAjustado: null,
+    descricaoOriginal: "GOOGLE CLOUD BRASIL",
+    ...extra,
+  });
+  const previstasDe = (r) => linhasDe(r, "DESPESA_PREVISTA");
+
+  it("⚠⚠ ela aparece no fluxo como PREVISÃO — ninguém provou que o dinheiro saiu", async () => {
+    const r = await montar(clientDe({ previstas: [prevista()] }));
+    expect(previstasDe(r)).toHaveLength(1);
+    expect(previstasDe(r)[0].procedencia).toBe("PREVISAO");
+  });
+
+  it("⚠ no dia que o contador informou, como SAÍDA", async () => {
+    const r = await montar(clientDe({ previstas: [prevista()] }));
+    const l = previstasDe(r)[0];
+    expect(l.competencia).toBe("2026-09");
+    expect(l.dia).toBe(25);
+    expect(l.direcao).toBe("SAIDA");
+    expect(l.valor).toBe(1500);
+  });
+
+  it("⚠⚠ `valorAjustado` vence — é o contador dizendo que o documento não reflete o que vai sair", async () => {
+    const r = await montar(clientDe({ previstas: [prevista({ valorAjustado: "900.00" })] }));
+    expect(previstasDe(r)[0].valor).toBe(900);
+  });
+
+  it("⚠ valor zerado ou ilegível não vira linha — zero no fluxo é afirmação", async () => {
+    const r = await montar(clientDe({ previstas: [prevista({ valor: "0.00" })] }));
+    expect(previstasDe(r)).toHaveLength(0);
+  });
+
+  it("⚠⚠ e ela NÃO é FATO — é o que a separa da despesa lançada", async () => {
+    // A lançada tem partida dobrada atrás dela; esta tem a palavra do contador sobre uma data.
+    const r = await montar(clientDe({ previstas: [prevista()] }));
+    expect(previstasDe(r)[0].base.saidaDeCaixa).toBe(false);
+  });
+
+  it("⚠⚠ delegate AUSENTE não derruba o fluxo — é o estado real sem `prisma generate`", async () => {
+    // `undefined.findMany` derrubaria a tela INTEIRA do cliente por causa de uma coluna nova.
+    const r = await montar(clientDe({ previstas: null }));
+    expect(previstasDe(r)).toHaveLength(0);
+    expect(r.meses.length).toBeGreaterThan(0);
+  });
+
+  it("⚠⚠ e COLUNA ausente (migration não aplicada) também não — P2022 degrada", async () => {
+    const cliente = clientDe({ previstas: [] });
+    cliente.lancamentoDeclarado.findMany = jest.fn(async () => {
+      throw Object.assign(new Error("coluna"), { code: "P2022" });
+    });
+    const r = await montar(cliente);
+    expect(previstasDe(r)).toHaveLength(0);
+    expect(r.meses.length).toBeGreaterThan(0);
+  });
+
+  it("⚠ erro DESCONHECIDO continua estourando — só as duas ausências são toleradas", async () => {
+    const cliente = clientDe({ previstas: [] });
+    cliente.lancamentoDeclarado.findMany = jest.fn(async () => { throw new Error("banco fora"); });
+    await expect(montar(cliente)).rejects.toThrow(/banco fora/);
   });
 });

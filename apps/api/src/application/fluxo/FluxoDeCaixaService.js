@@ -922,7 +922,7 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     (janela?.horizonte ?? HORIZONTE_MESES) - ((mesesDaCompetencia(ciclo) ?? 0) - (mesesDaCompetencia(inicio) ?? 0)),
   );
 
-  const [guias, notas, series, snapshot, folha, saidasDoCliente, despesas] = await Promise.all([
+  const [guias, notas, series, snapshot, folha, saidasDoCliente, despesas, previstas] = await Promise.all([
     linhasDasGuias({ portalClientId, cicloAtual: ciclo, hoje: dia, client }),
     linhasDasNotas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
     linhasDasSeries({ portalClientId, cicloAtual: ciclo, mesesAProjetar: mesesFuturosDaJanela, client }),
@@ -936,6 +936,8 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     // ⚠⚠ A DESPESA LANÇADA — o que faz valer a regra do dono (*"ao lançar entra no fluxo"*). Até
     // 01/09/2026 ela não estava aqui, e o trabalho principal da Conferência não chegava ao cliente.
     linhasDasDespesasLancadas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
+    // ⚠ A outra metade da regra do dono: o que o contador liberou no fluxo SEM lançar.
+    linhasDasDespesasPrevistas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
   ]);
 
   const aliquota = aliquotaEfetiva(snapshot);
@@ -1014,6 +1016,7 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     // ⚠ Mesma forma de linha, mesmo balde de saída — o que a distingue é a FONTE e a PROCEDÊNCIA
     // (FATO: a partida dobrada prova que o dinheiro saiu).
     ...despesas.linhas,
+    ...previstas.linhas,
     // ⚠ O que o CLIENTE acrescentou entra por último, mas sem privilégio nenhum: mesma forma de
     // linha, mesmo balde de saída, mesma procedência PREVISAO.
     ...saidasDoCliente.linhas,
@@ -1337,6 +1340,88 @@ async function linhasDasDespesasLancadas({ portalClientId, cicloAtual, janelaIni
   }
 
   return { linhas, disponivel: linhas.length > 0 };
+}
+
+/**
+ * ⚠⚠⚠ A DESPESA QUE O CONTADOR LIBEROU NO FLUXO — sem lançar. Decisão do dono, 01/09/2026.
+ *
+ * > *"temos um botão fluxo, que apenas libera no fluxo mas não lança"*.
+ *
+ * É a segunda metade da regra dele: *"tudo que virar lançamento deve entrar no fluxo, mas nem tudo
+ * do fluxo necessariamente deve ser um lançamento"*. Esta função é o "nem tudo".
+ *
+ * ⚠⚠ **PREVISÃO, NUNCA FATO.** Nada aqui provou que o dinheiro saiu — o contador só disse por volta
+ * de quando ele deve sair. Chamá-la de fato faria o dono da empresa somá-la ao que já aconteceu.
+ *
+ * ⚠⚠ **A JÁ LANÇADA FICA DE FORA (`accountingEntryId: null`), e essa cláusula evita contagem dupla.**
+ * Lançada, ela vira `FONTE.DESPESA_LANCADA` como FATO; sem a cláusula, o mesmo dinheiro apareceria
+ * duas vezes na tela do cliente — uma como previsão, outra como fato.
+ *
+ * ⚠ **RECUSADA fica de fora** pelo motivo oposto: o contador disse que a despesa não existe, e
+ * mantê-la no fluxo diria ao cliente o contrário do que ele decidiu.
+ *
+ * ⚠ **A COLUNA PODE NÃO EXISTIR** (a migration é ato do dono): P2021/P2022 devolvem lista vazia e
+ * `indisponivel`, nunca uma exceção — derrubar o fluxo inteiro por causa de uma coluna nova seria
+ * trocar uma funcionalidade que falta por uma tela que não abre.
+ */
+async function linhasDasDespesasPrevistas({ portalClientId, cicloAtual, janelaInicio, client }) {
+  // ⚠⚠ O DELEGATE pode não existir — é o estado REAL da máquina em que o `prisma generate` não
+  // rodou (EPERM no Windows com o servidor de dev de pé), e `undefined.findMany` derrubaria o fluxo
+  // INTEIRO. Mesma guarda que `linhasDasSaidasDoCliente` já carrega.
+  if (!client?.lancamentoDeclarado?.findMany) return { linhas: [], indisponivel: true };
+
+  let declarados = [];
+  try {
+    declarados = await client.lancamentoDeclarado.findMany({
+      where: {
+        portalClientId: String(portalClientId),
+        previstoNoFluxoEm: { not: null },
+        accountingEntryId: null,
+        estado: { not: "RECUSADO" },
+      },
+      select: {
+        id: true, previstoNoFluxoEm: true, valor: true, valorAjustado: true, descricaoOriginal: true,
+      },
+      orderBy: { previstoNoFluxoEm: "asc" },
+    });
+  } catch (e) {
+    // ⚠ P2021 = tabela ausente · P2022 = COLUNA ausente. A segunda é o estado real enquanto a
+    // migration `20260901190000` não for aplicada.
+    if (e?.code !== "P2021" && e?.code !== "P2022") throw e;
+    return { linhas: [], indisponivel: true };
+  }
+
+  const base = mesesDaCompetencia(janelaInicio || cicloAtual);
+  const linhas = [];
+
+  for (const d of declarados) {
+    const competencia = competenciaDaData(d.previstoNoFluxoEm);
+    if (!competencia) continue;
+    const emMeses = mesesDaCompetencia(competencia);
+    if (base == null || emMeses == null || emMeses < base) continue;
+
+    // ⚠ `valorAjustado` vence quando existe — é o ato do contador dizendo que o documento não
+    // reflete o que de fato vai sair. Mesma precedência de `montarLancamento`.
+    const valor = numero(d.valorAjustado ?? d.valor) || 0;
+    if (!(valor > 0)) continue;
+
+    linhas.push(montarLinha({
+      fonte: FONTE.DESPESA_PREVISTA,
+      direcao: DIRECAO.SAIDA,
+      procedencia: PROCEDENCIA.PREVISAO,
+      competencia,
+      dia: diaDaData(d.previstoNoFluxoEm),
+      valor,
+      rotulo: "Despesa prevista",
+      base: {
+        frase: `${texto(d.descricaoOriginal) || "Despesa"} · previsão do seu contador`,
+        // ⚠ A prova de que isto NÃO é caixa realizado — a mesma marca que a folha usa, invertida.
+        saidaDeCaixa: false,
+      },
+    }));
+  }
+
+  return { linhas, disponivel: linhas.length > 0, indisponivel: false };
 }
 
 async function linhasDaFolha({ portalClientId, cicloAtual, client }) {

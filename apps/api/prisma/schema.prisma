@@ -4019,6 +4019,23 @@ model LancamentoDeclarado {
   /// ⚠ SEM FK, de propósito — mesmo desenho de `AccountingEntry.estornoDeEntryId`. Com `SetNull` um
   /// lançamento apagado por fora deixaria a linha em CONTABILIZADO apontando para nada, e o
   /// apagamento da evidência seria silencioso. Sem FK o id fica, e a varredura o denuncia.
+  /// ⚠⚠ A DATA EM QUE ESTA DESPESA ENTRA NO FLUXO DO CLIENTE — decisão do dono, 01/09/2026.
+  ///
+  /// > *"temos um botão fluxo, que apenas libera no fluxo mas não lança"* e, sobre a data:
+  /// > **"na data da emissão mais o contador pode alterar"**.
+  ///
+  /// ⚠ **PRESENÇA = LIBERADA.** Não há estado novo: nulo quer dizer *"não está no fluxo"*, e um
+  /// estado a mais faria a fila do contador ter duas gramáticas para a mesma linha.
+  ///
+  /// ⚠⚠ **ELA NÃO É `dataPagamento`, e confundi-las quebra a invariante do caixa.**
+  /// `dataPagamento` é PROVA (ou declaração) de que o dinheiro saiu, e é ela que vira a data do
+  /// lançamento contábil. Esta é uma PREVISÃO de quando vai sair: entra no fluxo como
+  /// `PROCEDENCIA.PREVISAO` e **nunca** alimenta o razão.
+  ///
+  /// ⚠ `@db.Date`: é data CIVIL, sem hora. Com `DateTime` cheio, às 22h de Brasília ela viraria o
+  /// dia seguinte na leitura em UTC — a mesma armadilha de `SaidaAvulsaCliente.data`.
+  previstoNoFluxoEm DateTime? @db.Date
+
   accountingEntryId String?
   regraId           String?
   /// ⚠⚠ SEMPRE `codigoCompleto`. O reduzido é mutável; o completo é a âncora desta casa.

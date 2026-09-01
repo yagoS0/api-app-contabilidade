@@ -74,6 +74,13 @@ export const FONTE = Object.freeze({
    */
   DESPESA_LANCADA: "DESPESA_LANCADA",
   /**
+   * ⚠⚠ A DESPESA LIBERADA NO FLUXO SEM LANÇAR — espelho de `FONTE` no servidor (01/09/2026).
+   *
+   * ⚠ Diferença para `DESPESA_LANCADA`: esta é sempre PREVISÃO. Ninguém provou que o dinheiro vai
+   * sair naquele dia — o contador informou uma data (por padrão, a da emissão da nota).
+   */
+  DESPESA_PREVISTA: "DESPESA_PREVISTA",
+  /**
    * ⚠⚠ A RECEITA QUE O HISTÓRICO PROJETA (30/08/2026) — espelho de `FONTE` no servidor.
    *
    * ⚠ Sem esta entrada e sem o rótulo abaixo, a linha aparece como *"Origem desconhecida"* — sem
@@ -152,6 +159,7 @@ export const ROTULO_DA_FONTE = Object.freeze({
   // indistinguível do recebimento de uma nota que existe.
   [FONTE.RECEITA_PROJETADA]: "Receita prevista pelo histórico",
   [FONTE.DESPESA_LANCADA]: "Despesa lançada",
+  [FONTE.DESPESA_PREVISTA]: "Despesa prevista pelo contador",
 });
 
 export function rotuloDaFonte(f) {
