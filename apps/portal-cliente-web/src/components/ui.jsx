@@ -112,8 +112,15 @@ export function Carregando({ children = "Carregando…" }) {
  */
 export function AlertaErro({ erro, padrao, aoTentarNovamente }) {
   if (!erro) return null;
+  // ⚠⚠ O CÓDIGO VIAJA NO DOM (31/08/2026, teste de usabilidade). Achado: `not_a_client` (nossa
+  // trava de produto, decidida no navegador) e `forbidden_account_type` (a recusa do SERVIDOR)
+  // mostram a MESMA frase — e isso está certo para quem lê, porque o conserto é o mesmo. Mas quem
+  // atende a pessoa não conseguia distinguir se a porta foi fechada aqui ou lá, que é a primeira
+  // pergunta de qualquer diagnóstico. ⚠ A distinção vai para o DOM, não para a tela: é o mesmo
+  // arranjo de `data-status`, `data-estado-nota` e `data-situacao-fiscal`.
+  const codigo = typeof erro === "object" && erro ? erro.code || erro.codigo || null : null;
   return (
-    <div className="alerta alerta-erro" role="alert">
+    <div className="alerta alerta-erro" role="alert" data-erro-codigo={codigo || undefined}>
       <p>{mensagemDeErro(erro, padrao)}</p>
       {aoTentarNovamente ? (
         <p>

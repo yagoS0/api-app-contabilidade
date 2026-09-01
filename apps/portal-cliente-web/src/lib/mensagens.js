@@ -39,6 +39,20 @@ const MENSAGENS = {
     "Não conseguimos enviar e-mails neste momento. Fale com o seu contador para redefinir sua senha.",
 
   // --- Trava de produto: este portal é do CLIENTE ---
+  //
+  // ⚠⚠ AS DUAS FRASES SÃO IGUAIS DE PROPÓSITO, e isso foi conferido em 31/08/2026 depois de um
+  // teste de usabilidade apontá-las como indistinguíveis. Elas descrevem a MESMA situação por
+  // lados diferentes — `not_a_client` é a nossa trava de produto (`accountGate.js`, decidida no
+  // navegador) e `forbidden_account_type` é a recusa do SERVIDOR (`requireAccountType`) —, e para
+  // quem lê o CONSERTO É O MESMO: usar o portal do escritório. Duas redações para a mesma saída
+  // fariam a pessoa procurar uma diferença que não existe.
+  //
+  // ⚠ O que faltava era a distinção existir para QUEM DIAGNOSTICA, e ela passou a viajar no DOM:
+  // `AlertaErro` escreve `data-erro-codigo`. Distinção que serve ao suporte não vira texto na tela
+  // de quem só quer entrar.
+  //
+  // ⚠ E a frase continua verdadeira depois de 30/08/2026, quando o escritório passou a poder
+  // entrar aqui: quem tem `User.podeAbrirPortalDoCliente` NÃO recebe nenhuma das duas — ele entra.
   not_a_client:
     "Esta conta é do escritório de contabilidade, não de um cliente. Use o portal do escritório.",
   forbidden_account_type:

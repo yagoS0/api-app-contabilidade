@@ -1000,6 +1000,118 @@ function criarEstado() {
         });
       }
     }
+    // ⚠⚠ OS TRÊS RAMOS QUE O MOCK ESCONDIA — sétima vez nesta base (31/08/2026).
+    //
+    // Até aqui TODA guia do mock nascia com `extracted: null`, `parcelamentoId: null` e um dos dois
+    // tipos (`SIMPLES`/`INSS`). Consequência: o rótulo da **DARF consolidada do Lucro Presumido** —
+    // consertado no MESMO dia, e que é o que faz a guia se chamar "PIS · COFINS" em vez de "OUTRA"
+    // — era **inalcançável offline**, e o mesmo valia para a precedência da PARCELA.
+    //
+    // ⚠ A COMPOSIÇÃO NÃO FOI INVENTADA: as denominações são as MEDIDAS em produção em 31/08/2026
+    // (`scripts/diag-denominacao-composicao.mjs`), incluindo o campo `tributo` já preenchido, que é
+    // a forma de 24 dos 29 itens da base. Os VALORES são fictícios, como todo dinheiro deste mock.
+    //
+    // ⚠ E o `valor` que se escreve aqui pode NÃO ser o que a tela mostra: `linhaDigitavelDoMock`
+    // devolve `valor` nos ramos em que a linha digitável foi lida, e o spread vem depois — de
+    // propósito, para o número impresso na linha e o da guia baterem. Quem for conferir um valor
+    // específico nestas linhas tem de olhar o ramo do `seq % 4`, não só o literal.
+    {
+      const doPresumido = empresas.find((e) => e.companyId === "pc-005");
+      const compAtual = competencias[competencias.length - 2];
+      const [ya, ma] = compAtual.split("-").map(Number);
+      const vencDarf = new Date(Date.UTC(ya, ma, 25));
+      const base = {
+        _clientId: doPresumido?.companyId,
+        companyId: doPresumido?.companyId,
+        competencia: compAtual,
+        valorRecalculado: null,
+        status: "PROCESSED",
+        emailStatus: "SENT",
+        emailLastError: null,
+        paymentStatus: "OPEN",
+        paymentStatusSource: null,
+        paymentConfirmedAt: null,
+        serproLastCheckedAt: null,
+        serproLastCheckResult: null,
+        serproService: null,
+        canConfirmPayment: true,
+        canRecalculate: false,
+        vencida: false,
+        vencimentoEstimado: false,
+        avisoDeRecalculo: null,
+        numeroParcela: null,
+        quantidadeParcelas: null,
+        anoMesParcela: null,
+        baixada: false,
+        parcelaEstado: null,
+        parcelamentoLabel: null,
+        parcelamentoTipo: null,
+        parcelamentoNumero: null,
+        parcelamentoId: null,
+        liberadaCliente: true,
+        vazioEm: null,
+        vazioPor: null,
+        vazioMotivo: null,
+        vencimento: vencDarf.toISOString(),
+        createdAt: vencDarf.toISOString(),
+        updatedAt: vencDarf.toISOString(),
+      };
+      if (doPresumido) {
+        seqGuia += 1;
+        guias.push({
+          ...base,
+          guideId: `gui-${seqGuia}`,
+          // ⚠⚠ É ASSIM QUE ELA É GRAVADA: um documento só, `tipo: "OUTRA"`, com os tributos DENTRO.
+          // Sem esta linha, a tela que escreve "PIS · COFINS" nunca é exercida offline.
+          tipo: "OUTRA",
+          valor: 1435.49,
+          extracted: {
+            composicao: [
+              { tributo: "PIS", denominacao: "PIS - FATURAMENTO - PJ EM GERAL", total: 431.25 },
+              { tributo: "COFINS", denominacao: "COFINS - FATURAMENTO/PJ EM GERAL", total: 1004.24 },
+            ],
+          },
+          ...linhaDigitavelDoMock(seqGuia, 1435.49),
+          liberadaEm: vencDarf.toISOString(),
+        });
+        // ⚠⚠ O CONTRAPONTO, e ele importa tanto quanto: `OUTRA` **sem composição** continua se
+        // chamando "OUTRA", porque é o que está GRAVADO. Medido: 7 das 20 guias `OUTRA` da base
+        // estão assim. Sem esta linha, "OUTRA" pareceria um estado que não existe mais.
+        seqGuia += 1;
+        guias.push({
+          ...base,
+          guideId: `gui-${seqGuia}`,
+          tipo: "OUTRA",
+          valor: 320.18,
+          extracted: null,
+          ...linhaDigitavelDoMock(seqGuia, 320.18),
+          liberadaEm: vencDarf.toISOString(),
+        });
+      }
+      // ⚠⚠ A PARCELA DE PARCELAMENTO — na empresa do SIMPLES, que é onde ela existe (PARCSN).
+      // Ela é gravada com `tipo: "SIMPLES"`, IDÊNTICA ao DAS do mês: o que as separa é o
+      // `parcelamentoId`, e o rótulo tem de decidir por ele ANTES do tipo. Sem esta linha, a
+      // precedência que impede a parcela de se passar pelo DAS não é exercida offline.
+      seqGuia += 1;
+      guias.push({
+        ...base,
+        _clientId: empresas[0].companyId,
+        companyId: empresas[0].companyId,
+        guideId: `gui-${seqGuia}`,
+        tipo: "SIMPLES",
+        valor: 512.7,
+        extracted: null,
+        parcelamentoId: "parc-mock-1",
+        numeroParcela: 7,
+        quantidadeParcelas: 60,
+        parcelamentoLabel: "Parcela 7 de parcelamento",
+        parcelamentoTipo: "PARCSN",
+        parcelamentoNumero: "0211.00012.0011122233.26-69",
+        ...linhaDigitavelDoMock(seqGuia, 512.7),
+        liberadaEm: vencDarf.toISOString(),
+      });
+    }
+
     // Ordem da rota: updatedAt desc.
     guias.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
   }
