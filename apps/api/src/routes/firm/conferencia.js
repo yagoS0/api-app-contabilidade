@@ -114,6 +114,16 @@ function serializar(d) {
     detalheServico: d.detalheServico,
 
     dataPagamento: d.dataPagamento ? dataCivilISO(d.dataPagamento) : null,
+    /**
+     * ⚠⚠ A DATA EM QUE ESTA DESPESA ENTRA NO FLUXO — decisão do dono, 01/09/2026 (*"temos um botão
+     * fluxo, que apenas libera no fluxo mas não lança"*).
+     *
+     * ⚠ Presença = liberada. `null` = fora do fluxo — e é o que faz a tela desenhar o botão como
+     * "Pôr no fluxo" em vez de "Tirar do fluxo".
+     * ⚠ Ela NÃO é `dataPagamento`: aquela é prova de que o dinheiro saiu e vira a data do
+     * lançamento; esta é previsão e nunca vai ao razão.
+     */
+    previstoNoFluxoEm: d.previstoNoFluxoEm ? dataCivilISO(d.previstoNoFluxoEm) : null,
     // ⚠ A PROCEDÊNCIA DA DATA VAI PARA A TELA. É ela que permite dizer "declarado" em vez de deixar
     // o contador achar que o banco confirmou o pagamento.
     origemPagamento: d.origemPagamento,

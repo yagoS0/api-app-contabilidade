@@ -1853,6 +1853,27 @@ export function createRealApi() {
         body: JSON.stringify(corpo || {}),
       });
     },
+    /**
+     * ⚠⚠ PÔR (ou TIRAR) a despesa no fluxo do cliente, SEM lançar — dono, 01/09/2026.
+     *
+     * ⚠ `data` ausente ⇒ o servidor usa a EMISSÃO da nota. `data: null` ⇒ TIRA do fluxo. As duas
+     * não podem se confundir, e é por isso que o corpo só carrega a chave quando ela foi passada:
+     * com `{ data: data || undefined }`, o clique de remover viraria "use a emissão".
+     */
+    async postConferenciaFluxo(companyId, declaradoId, { data } = {}) {
+      const corpo = data === undefined ? {} : { data };
+      return request(`/firm/companies/${companyId}/conferencia/${declaradoId}/fluxo`, {
+        method: "POST",
+        body: JSON.stringify(corpo),
+      });
+    },
+    /** ⚠ A saída do cliente virando lançamento contábil. A conta é escolha de quem clica. */
+    async postConferenciaSaidaLancar(companyId, saidaId, { contaDespesa } = {}) {
+      return request(`/firm/companies/${companyId}/conferencia/saidas-do-cliente/${saidaId}/lancar`, {
+        method: "POST",
+        body: JSON.stringify({ contaDespesa }),
+      });
+    },
     // As sugestões de casamento débito × nota. ⚠ DERIVADAS NA LEITURA — não há coluna de sugestão.
     async getConferenciaCasamentos(companyId) {
       return request(`/firm/companies/${companyId}/conferencia/casamentos`);

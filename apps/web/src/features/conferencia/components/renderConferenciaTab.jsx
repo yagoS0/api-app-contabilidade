@@ -502,10 +502,52 @@ function motivosDeBloqueioVisiveis(acoes, item, opcoes) {
   return vistas;
 }
 
-function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir }) {
+function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, contas = [], onLancar, onFluxo, ocupado }) {
   const estado = leituraDoEstado(item.estado);
   const doc = leituraDoDocumento(item);
   const acoes = acoesDaLinha(item);
+
+  /**
+   * ⚠⚠ A CONTA NA PRÓPRIA LINHA — decisão do dono, 01/09/2026.
+   *
+   * > *"tudo que vem da nota vem em uma única linha, nessa linha podemos adicionar a conta e
+   * > lançar"*.
+   *
+   * Antes disto a conta só existia dentro do modal: para lançar uma despesa era preciso abrir uma
+   * caixa, escolher e confirmar, uma por uma. ⚠ O modal **não morreu** — ele continua sendo o
+   * caminho quando a ação precisa de DATA (a invariante do caixa) ou de motivo/valor.
+   *
+   * ⚠ O contador digita e lê o REDUZIDO; o POST leva o `codigoCompleto`, traduzido no clique. É a
+   * mesma disciplina do modal, e a tradução é a MESMA função — duas divergiriam.
+   */
+  const [conta, setConta] = useState("");
+  // ⚠⚠ `reduzidoDoCompleto` devolve `{ valor, motivo }`, NUNCA uma string: o motivo é quem responde
+  // "por que o campo veio vazio?" (`FORA_DO_PLANO`, `COMPLETO_AMBIGUO`). Descartá-lo com
+  // `.valor || ""` já foi defeito medido neste arquivo, em 26/08/2026.
+  const daSugestaoNaLinha = useMemo(
+    () => reduzidoDoCompleto(item?.sugestao?.conta || item?.contaSugerida, contas),
+    [item, contas],
+  );
+  // ⚠ O plano chega DEPOIS do primeiro render (é carregado à parte). Sem este efeito o campo
+  // nasceria vazio e ficaria vazio, e a sugestão da Fase C voltaria a ser trabalho invisível.
+  // ⚠ E ele para de escrever assim que o contador digita — senão sobrescreveria a escolha dele.
+  const jaMexeu = useRef(false);
+  useEffect(() => {
+    if (jaMexeu.current) return;
+    if (daSugestaoNaLinha.valor) setConta(daSugestaoNaLinha.valor);
+  }, [daSugestaoNaLinha.valor]);
+
+  const traducao = useMemo(() => completoDoReduzido(conta, contas), [conta, contas]);
+  // ⚠⚠ Lançar da LINHA só vale quando a ação não pede mais nada. `confirmar` a partir de
+  // `AGUARDANDO_PAGAMENTO` exige a DATA junto — ali o caminho continua sendo o modal, porque a
+  // data é a afirmação de quando o dinheiro saiu e não se digita de passagem.
+  const podeLancarDaLinha = acoes.includes("confirmar") && !acaoPedeData("confirmar", item);
+  const bloqueioDoLancar = motivoDeBloqueio("confirmar", item, { podeEscrever, podeEscolherConta })
+    || (!conta ? "Escolha a conta de despesa desta linha." : null)
+    || (traducao.motivo ? FRASE_DO_MOTIVO_DA_CONTA[traducao.motivo] : null);
+
+  // ⚠ Presença da data = está no fluxo. `null` = fora dele — e é o que troca o rótulo do botão.
+  const noFluxo = Boolean(item.previstoNoFluxoEm);
   // ⚠⚠ É ISTO QUE RESPONDE "saídas do cliente" DENTRO da fila, sem duplicar a linha. A coluna
   // `origem` existe no model desde sempre, já viajava no serializador da rota, e **não aparecia em
   // lugar nenhum da tela**: a fila é homogênea por construção (toda linha é um `LancamentoDeclarado`),
@@ -557,6 +599,27 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir }) {
             tela: o serializador da rota a descartava, e a tela não a lia. Duas camadas de trabalho
             invisível, achadas por auditoria em 25/08/2026. */}
         <ContaSugerida item={item} />
+        {/*
+          ⚠⚠ O CAMPO NA LINHA — *"nessa linha podemos adicionar a conta e lançar"* (dono, 01/09/2026).
+          Ele só aparece onde há o que lançar: numa linha já contabilizada ou recusada, um campo de
+          conta prometeria uma edição que não existe.
+          ⚠ `datalist` compartilhado com o modal: oferecer listas diferentes faria a mesma conta ser
+          aceita num caminho e recusada no outro.
+        */}
+        {podeLancarDaLinha ? (
+          <input
+            list="contas-da-conferencia"
+            value={conta}
+            onChange={(e) => { jaMexeu.current = true; setConta(e.target.value); }}
+            placeholder="conta — ex.: 401"
+            aria-label={`Conta contábil de ${item.descricaoOriginal || "esta despesa"}`}
+            style={{
+              marginTop: 4, width: "100%", maxWidth: 140, fontSize: "0.78rem",
+              // ⚠ Valor recusado fica vermelho NA HORA, não só no clique.
+              ...(conta && traducao.motivo ? { borderColor: "var(--state-danger)" } : {}),
+            }}
+          />
+        ) : null}
       </td>
       <td className="tabela__num">
         {dinheiro(item.valorAjustado ?? item.valor)}
@@ -576,6 +639,62 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir }) {
       <td><Selo token={estado.token} title={estado.frase}>{estado.rotulo}</Selo></td>
       <td>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {/*
+            ⚠⚠ LANÇAR DA PRÓPRIA LINHA — o pedido do dono. Ele usa a conta digitada ao lado e NÃO
+            abre modal. Some quando a ação pede DATA: ali a invariante do caixa manda perguntar, e
+            o modal continua sendo o caminho (o botão "Confirmar" do laço abaixo).
+            ⚠ Bloqueado, ele FICA VISÍVEL com o motivo — botão que some esconde que a ação existe.
+          */}
+          {podeLancarDaLinha ? (
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={Boolean(bloqueioDoLancar) || ocupado}
+              title={bloqueioDoLancar || undefined}
+              onClick={() => onLancar?.(item, traducao.valor)}
+            >
+              Lançar
+            </Button>
+          ) : null}
+          {/*
+            ⚠⚠ O BOTÃO FLUXO — *"apenas libera no fluxo mas não lança"* (dono, 01/09/2026).
+            É a segunda metade da regra dele: *"nem tudo do fluxo necessariamente deve ser um
+            lançamento"*. Ele NÃO toca no razão.
+            ⚠ NEUTRO, nunca accent: pôr no fluxo não é o ato principal desta tela, e duas ações
+            primárias lado a lado fazem as duas perderem o significado.
+            ⚠ O rótulo diz o que o clique FAZ, e a data em que ela está sai visível ao lado — não em
+            `title`, que não aparece no teclado nem no toque.
+          */}
+          {onFluxo && !item.accountingEntryId && item.estado !== "RECUSADO" ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!podeEscrever || ocupado}
+              title={!podeEscrever ? "Você não tem permissão para mexer no fluxo desta empresa." : undefined}
+              onClick={() => onFluxo(item, noFluxo ? null : undefined)}
+            >
+              {noFluxo ? "Tirar do fluxo" : "Pôr no fluxo"}
+            </Button>
+          ) : null}
+          {/* ⚠ A data em que ela está no fluxo sai VISÍVEL, não em `title`: é o que distingue "no
+              fluxo" de "no fluxo em 25/09", e `title` não aparece no teclado nem no toque. */}
+          {noFluxo ? (
+            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", alignSelf: "center" }}>
+              no fluxo em {dataCivil(item.previstoNoFluxoEm)}
+            </span>
+          ) : null}
+          {/*
+            ⚠⚠ DÍVIDA CONHECIDA (01/09/2026): a linha que lança sozinha fica com DOIS botões para o
+            mesmo ato — "Lançar" (usa a conta ao lado, sem modal) e "Confirmar" (abre o modal).
+            É confuso, e o certo seria tirar o segundo.
+            ⚠ NÃO foi tirado ainda porque `conferenciaNaTela.ligacao.test.jsx` alcança o modal por
+            ele em ~15 casos, cada um guardando uma garantia diferente (a confirmação repete os
+            dados; a recusa do servidor aparece DENTRO do diálogo; a data provada não viaja no
+            corpo; o seletor de conta traduz reduzido↔completo). Cortá-lo às cegas exigiria
+            reescrever os quinze, e teste reescrito às pressas é como uma garantia se perde.
+            ⚠ **Está com o dono.** Removê-lo é uma linha aqui mais a migração daqueles casos para o
+            caminho que ainda usa o modal (`AGUARDANDO_PAGAMENTO`, que pede a data).
+          */}
           {acoes.map((acao) => {
             const bloqueio = motivoDeBloqueio(acao, item, { podeEscrever, podeEscolherConta });
             return (
@@ -806,6 +925,58 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
     setAviso(null);
     setAcaoAberta({ acao, item });
   }, []);
+
+  /**
+   * ⚠⚠ LANÇAR DA PRÓPRIA LINHA — decisão do dono, 01/09/2026 (*"nessa linha podemos adicionar a
+   * conta e lançar"*).
+   *
+   * ⚠ Ele chama a MESMA rota e a MESMA ação (`confirmar`) que o modal chama. O que mudou foi de
+   * onde a conta vem; a regra do servidor é uma só, e uma segunda porta com outro verbo seria duas
+   * regras para o mesmo ato.
+   * ⚠ O `codigoCompleto` já vem traduzido da linha — a tela nunca manda o reduzido.
+   */
+  const lancarDaLinha = useCallback(
+    async (item, contaCompleta) => {
+      if (!item?.id || !contaCompleta) return;
+      setEnviando(true);
+      try {
+        await conferenciaApi.postConferenciaAcao(companyId, item.id, "confirmar", { conta: contaCompleta });
+        setAviso(null);
+        await carregar();
+        // ⚠ O painel de casamentos e o extrato de lançados por regra mudam junto: a despesa saiu da
+        // fila e entrou no razão.
+        setVersao((v) => v + 1);
+      } catch (e) {
+        setAviso(e?.message || "O servidor recusou este lançamento.");
+      } finally {
+        setEnviando(false);
+      }
+    },
+    [companyId, carregar],
+  );
+
+  /**
+   * ⚠⚠ PÔR/TIRAR DO FLUXO — *"apenas libera no fluxo mas não lança"*.
+   *
+   * ⚠ `data` chega `undefined` para PÔR (o servidor usa a emissão da nota, que foi a escolha do
+   * dono) e `null` para TIRAR. Colapsar os dois faria o botão de remover reinserir a linha.
+   */
+  const mexerNoFluxo = useCallback(
+    async (item, data) => {
+      if (!item?.id) return;
+      setEnviando(true);
+      try {
+        await conferenciaApi.postConferenciaFluxo(companyId, item.id, data === null ? { data: null } : {});
+        setAviso(null);
+        await carregar();
+      } catch (e) {
+        setAviso(e?.message || "O servidor recusou esta mudança no fluxo.");
+      } finally {
+        setEnviando(false);
+      }
+    },
+    [companyId, carregar],
+  );
 
   /**
    * ⚠⚠ ABRIR O LOTE EXIGE SABER QUAIS DÉBITOS JÁ CASAM COM UMA NOTA — e sem essa resposta ele NÃO
@@ -1085,6 +1256,10 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
                       podeEscrever={podeEscrever}
                       podeEscolherConta={podeEscolherConta}
                       onAgir={abrir}
+                      contas={contas}
+                      onLancar={lancarDaLinha}
+                      onFluxo={mexerNoFluxo}
+                      ocupado={enviando}
                     />
                   ))}
                 </tbody>

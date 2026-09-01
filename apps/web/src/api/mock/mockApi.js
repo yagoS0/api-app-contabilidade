@@ -3253,6 +3253,12 @@ const MEXIDAS_DO_MOCK = Object.freeze([
 ]);
 
 const mexidasDesfeitas = new Set();
+/**
+ * ⚠ O que o contador liberou no FLUXO, offline. Chave = id do declarado.
+ * ⚠ Ele guarda também a EMISSÃO, porque é o padrão quando ninguém manda data — sem isso o ramo
+ * "cai na emissão" ficaria inalcançável no navegador.
+ */
+const declaradosNoFluxo = new Map();
 
 /** ⚠ Estado em memória das fotos de simulação, por empresa. Ver o par acima. */
 const mockSimulacoesPlanejamento = {};
@@ -7427,6 +7433,34 @@ export function createMockApi() {
       return { ok: true };
     },
 
+    /**
+     * ⚠⚠ PÔR/TIRAR do fluxo, offline. O mock guarda a data para a tela poder alternar o rótulo do
+     * botão ("Pôr no fluxo" × "Tirar do fluxo") — sem estado, o clique não teria efeito visível e
+     * o ramo de remover nasceria inalcançável.
+     */
+    async postConferenciaFluxo(_companyId, declaradoId, { data } = {}) {
+      await delay(60);
+      // ⚠ `undefined` = "não mandei data" ⇒ cai na emissão (o mock usa a do item). `null` = tirar.
+      const alvo = declaradosNoFluxo.get(String(declaradoId));
+      const escolhida = data === null ? null : (data === undefined ? (alvo?.emissao || null) : data);
+      if (escolhida) declaradosNoFluxo.set(String(declaradoId), { ...(alvo || {}), previsto: escolhida });
+      else declaradosNoFluxo.delete(String(declaradoId));
+      return { ok: true, declarado: { id: declaradoId, previstoNoFluxoEm: escolhida } };
+    },
+
+    async postConferenciaSaidaLancar(_companyId, saidaId, { contaDespesa } = {}) {
+      await delay(60);
+      // ⚠ O mock exerce a recusa do SERVIDOR: sem conta não há lançamento, e o sistema não escolhe
+      // uma. Um mock permissivo deixaria a tela mandar o pedido incompleto.
+      if (!String(contaDespesa || "").trim()) {
+        const e = new Error("Escolha a conta de despesa: o sistema não escolhe uma por você.");
+        e.code = "saida_sem_conta";
+        e.status = 400;
+        throw e;
+      }
+      return { ok: true, saida: { id: saidaId, estado: "LANCADA", accountingEntryId: "ae-mock" } };
+    },
+
     async postConferenciaSaidaDecidir(_companyId, saidaId, { estado, motivoRecusa } = {}) {
       await delay(60);
       // ⚠ O mock exerce a recusa do SERVIDOR: recusar sem motivo não passa. Um mock permissivo
@@ -7668,7 +7702,15 @@ export function createMockApi() {
         : base.filter((d) => d.competencia);
 
       const estados = estado ? String(estado).split(",") : ["AGUARDANDO_PAGAMENTO", "A_CONFERIR"];
-      const itens = doRecorte.filter((d) => estados.includes(d.estado));
+      // ⚠⚠ O QUE O CONTADOR LIBEROU NO FLUXO viaja na linha, offline — sem isto o botão "Tirar do
+      // fluxo" e o rótulo com a data nasceriam INALCANÇÁVEIS no navegador, e é a quinta vez que
+      // este mock esconderia um ramo. A emissão é memorizada porque é o padrão do servidor quando
+      // ninguém manda data.
+      const itens = doRecorte.filter((d) => estados.includes(d.estado)).map((d) => {
+        const guardado = declaradosNoFluxo.get(d.id);
+        if (!guardado) declaradosNoFluxo.set(d.id, { emissao: d.dataDocumento || null });
+        return { ...d, previstoNoFluxoEm: guardado?.previsto || null };
+      });
 
       return {
         ok: true,
