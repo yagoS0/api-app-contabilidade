@@ -35,9 +35,7 @@ import { mostraApuracaoDoSimples } from "../../../apuracao-lp/lib/regimeDaAba";
 // já foram conferidas?". Sem o seletor, a aba mostraria sempre o mês default e não haveria como
 // conferir outro. ⚠ O recorte "sem competência" é um botão DENTRO da aba, não um valor do seletor —
 // ele não é um mês, e pô-lo aqui faria o seletor global mudar de significado.
-// ⚠ `lancamentosAutomaticos` ENTRA: o extrato é por COMPETÊNCIA (*"o que entrou sem eu clicar NESTE
-// mês"*), e sem o seletor no topo a aba mostraria um mês que ninguém escolheu.
-const TABS_COM_COMPETENCIA = new Set(["lancamentos", "lancamentosAutomaticos", "conferencia", "circular", "cadastroFiscal", "guides", "notasFiscais", "auditoria"]);
+const TABS_COM_COMPETENCIA = new Set(["lancamentos", "conferencia", "circular", "cadastroFiscal", "guides", "notasFiscais", "auditoria"]);
 
 // Navegação da empresa em 2 níveis: grupos grandes (Anotações, Contabilidade, Fiscal, Empresa)
 // e, abaixo, as sub-abas do grupo ativo. A aba ativa continua vindo do segmento da URL (activeTab);
@@ -59,20 +57,19 @@ const GROUPS = [
     // A rota /plano-contas segue válida — só não tem botão próprio aqui.
     tabs: [
       { key: "lancamentos", label: "Lançamentos" },
-      /**
-       * ⚠⚠ LOGO DEPOIS DE LANÇAMENTOS, e a vizinhança é o argumento — dono, 01/09/2026:
+      /*
+       * ⚠⚠ AQUI FICOU, POR ALGUMAS HORAS, A ABA "LANÇAMENTOS AUTOMÁTICOS" — criada e removida em
+       * 01/09/2026, as duas por decisão do dono (*"devolva a aba pras regras"*).
        *
-       * > *"regras de lançamento recorrente, quando marcadas, vão para uma sub aba de lançamentos
-       * > automáticos"*.
+       * ⚠ O ARGUMENTO QUE A DERRUBOU, e vale contra a próxima aba: a assimetria. Ela mostrava a
+       * CONSEQUÊNCIA da automação (uma tabela curta) numa aba de topo, enquanto a CAUSA — a
+       * Conferência inteira — continua sendo um botão dentro de Lançamentos. E este cabeçalho já
+       * perdeu uma aba pelo mesmo motivo (a Conferência, em 29/08/2026: *"muitas abas"*).
        *
-       * É a contabilidade que o contador **não escreveu**: nasceu de regra, sem ninguém clicar. Ela
-       * fica ao lado de Lançamentos porque é a mesma matéria — o razão do mês —, só que com uma
-       * pergunta a mais: *tem papel atrás disto?*
-       * ⚠ Ela NÃO entra em `TABS_COM_COMPETENCIA`? Entra: o extrato é por COMPETÊNCIA (o recorte é
-       * *"o que entrou sem eu clicar NESTE mês"*), e sem o seletor no topo a aba mostraria um mês
-       * que ninguém escolheu.
+       * ⚠ O conteúdo NÃO foi removido: virou bloco recolhido na seção «Regras» da Conferência, que
+       * é onde a pergunta dele nasce. O segmento `/lancamentos-automaticos` continua respondendo
+       * (ver `rotasDaEmpresa.js`) — sem ele, todo link guardado cairia em Anotações sem erro nenhum.
        */
-      { key: "lancamentosAutomaticos", label: "Lançamentos automáticos" },
       /*
        * ⚠⚠ AQUI FICAVA "CONFERÊNCIA", E ELA SAIU DO CABEÇALHO EM 29/08/2026 — decisão do dono:
        * *"essas saídas que o cliente digitar aparecem para o contador na aba de conferência, aba

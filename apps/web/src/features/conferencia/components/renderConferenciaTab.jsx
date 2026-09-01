@@ -26,13 +26,14 @@ import { PainelDeCasamentos } from "./PainelDeCasamentos";
 import { PainelDeRecorrencias } from "../../recorrencia/components/PainelDeRecorrencias";
 import { PainelDeSaidasDoCliente } from "./PainelDeSaidasDoCliente";
 import { PainelDeMexidasDoCliente } from "./PainelDeMexidasDoCliente";
+import { PainelDeLancadosPorRegra } from "./PainelDeLancadosPorRegra";
 import { PainelDeRegras } from "./PainelDeRegras";
-import { NATUREZA, SECAO, origemDaLinha } from "../lib/naturezaDaConferencia";
+import { NATUREZA, SECAO, origemDaLinha, veioDeExtrato } from "../lib/naturezaDaConferencia";
 // ⚠ Import entre features, deliberado: a URL da aba da empresa tem UMA fonte
 // (`companyTabPath`), e reconstruí-la aqui faria o link levar a um lugar e o clique a outro.
 import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
 import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
-import { debitosQueCasamComNota } from "../lib/contabilizacaoEmLote";
+import { debitosQueCasamComNota, FRASE_DO_FORA_DO_LOTE } from "../lib/contabilizacaoEmLote";
 import {
   ACAO,
   COMPETENCIA_AUSENTE,
@@ -513,7 +514,7 @@ function motivosDeBloqueioVisiveis(acoes, item, opcoes) {
   return vistas;
 }
 
-function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, contas = [], onLancar, onFluxo, ocupado }) {
+function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, contas = [], onLancar, onFluxo, ocupado, motivoDoCasamento }) {
   const estado = leituraDoEstado(item.estado);
   const doc = leituraDoDocumento(item);
   const acoes = acoesDaLinha(item);
@@ -553,7 +554,30 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
   // `AGUARDANDO_PAGAMENTO` exige a DATA junto — ali o caminho continua sendo o modal, porque a
   // data é a afirmação de quando o dinheiro saiu e não se digita de passagem.
   const podeLancarDaLinha = acoes.includes("confirmar") && !acaoPedeData("confirmar", item);
+  /**
+   * ⚠⚠⚠ A DESPESA EM DOBRO — a guarda que faltava na linha (01/09/2026).
+   *
+   * Um débito de extrato que é o PAGAMENTO de uma nota da fila não pode ser contabilizado à parte:
+   * a nota vira um lançamento e o débito vira outro, para o mesmo dinheiro que saiu uma vez. O lote
+   * já recusava abrir sem saber disto; a linha não sabia.
+   *
+   * ⚠⚠ NA DÚVIDA, BLOQUEIA — e só o que corre risco. Sem a resposta (`null`), o bloqueio vale
+   * apenas para as linhas que NASCERAM DE EXTRATO: são as únicas que podem ser o pagamento de uma
+   * nota. Bloquear a fila inteira por uma falha de rede pararia o trabalho que não corre risco
+   * nenhum; deixar o débito passar é o que erra dinheiro.
+   * ⚠ As DUAS frases já existem em `contabilizacaoEmLote` e são reusadas: uma manda casar no painel
+   * acima, a outra diz que não há o que casar (a nota já foi lançada) e o conserto é outro. Escrever
+   * uma terceira aqui faria a mesma tela dar dois conselhos para o mesmo caso.
+   */
+  const riscoDeDobro = motivoDoCasamento
+    ? FRASE_DO_FORA_DO_LOTE[motivoDoCasamento]
+    : (motivoDoCasamento === null && veioDeExtrato(item)
+      ? "Ainda não foi possível conferir se este débito já é o pagamento de uma nota da fila. "
+        + "Sem essa conferência, lançar aqui pode pôr a mesma despesa duas vezes."
+      : null);
+
   const bloqueioDoLancar = motivoDeBloqueio("confirmar", item, { podeEscrever, podeEscolherConta })
+    || riscoDeDobro
     || (!conta ? "Escolha a conta de despesa desta linha." : null)
     || (traducao.motivo ? FRASE_DO_MOTIVO_DA_CONTA[traducao.motivo] : null);
 
@@ -687,6 +711,17 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
               {noFluxo ? "Tirar do fluxo" : "Pôr no fluxo"}
             </Button>
           ) : null}
+          {/* ⚠⚠ O RISCO DE DESPESA EM DOBRO SAI VISÍVEL, não só no `title` — `title` não aparece no
+              teclado nem no toque, e este é o único bloqueio desta tela que, ignorado, erra
+              DINHEIRO. Ele diz o que fazer (casar no painel acima), não só que não pode. */}
+          {riscoDeDobro && podeLancarDaLinha ? (
+            <div style={{
+              flexBasis: "100%", fontSize: "0.72rem", color: "var(--state-warn)",
+              textAlign: "right", maxWidth: 360, marginLeft: "auto",
+            }}>
+              {riscoDeDobro}
+            </div>
+          ) : null}
           {/* ⚠ A data em que ela está no fluxo sai VISÍVEL, não em `title`: é o que distingue "no
               fluxo" de "no fluxo em 25/09", e `title` não aparece no teclado nem no toque. */}
           {noFluxo ? (
@@ -750,7 +785,7 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
   );
 }
 
-export function ConferenciaTab({ companyId, competencia, podeEscrever = true, aoVoltar, aoAbrirAba }) {
+export function ConferenciaTab({ companyId, competencia, podeEscrever = true, aoVoltar }) {
   const [fila, setFila] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -764,6 +799,26 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState(null);
   const [varrendo, setVarrendo] = useState(false);
+  /**
+   * ⚠⚠⚠ QUAIS DÉBITOS JÁ CASAM COM UMA NOTA — e é isto que impede a DESPESA EM DOBRO na linha.
+   *
+   * O lote já se protegia: `abrirLote` **recusa abrir** sem esta resposta, porque *"contabilizar à
+   * parte um débito que é o pagamento de uma nota duplica a despesa: a nota vira um lançamento e o
+   * débito vira outro, para o mesmo dinheiro que saiu uma vez"*.
+   *
+   * ⚠⚠ **A LINHA NÃO SE PROTEGIA — nem antes.** Achado por análise de UI/UX em 01/09/2026, e o
+   * relatório atribuiu o furo ao botão «Lançar» criado no mesmo dia. **Medido: o furo é ANTERIOR** —
+   * o «Confirmar» do modal nunca consultou isto, e `motivoDeBloqueio` não conhece casamento nenhum.
+   * O que o «Lançar» fez foi tirar o modal do caminho: de três cliques para um.
+   *
+   * ⚠ TRÊS ESTADOS, e o do meio é o que a maioria colapsa:
+   *   `Map`  → sei quais casam
+   *   `null` → **NÃO SEI** (a consulta falhou) ⇒ bloqueia os débitos de extrato, como o lote faz
+   *   ⚠ antes da primeira resposta ele também é `null`: "ainda não sei" e "não consegui saber" têm
+   *     a mesma resposta segura, e distingui-los só mudaria o TEXTO — não a decisão.
+   */
+  const [quaisCasam, setQuaisCasam] = useState(null);
+
   // ⚠⚠ O LOTE (Fase C). `null` = fechado; `{ idsQueCasam }` = aberto.
   const [lote, setLote] = useState(null);
   const [abrindoLote, setAbrindoLote] = useState(false);
@@ -1154,6 +1209,9 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
         <PainelDeCasamentos
           key={versao}
           companyId={companyId}
+          /* ⚠ A MESMA resposta alimenta o painel e o bloqueio da fila. Uma segunda consulta daqui
+             divergiria da dele no instante em que uma recarregasse e a outra não. */
+          aoSaberQuaisCasam={setQuaisCasam}
           podeEscrever={podeEscrever}
           aoCasar={() => {
             setVersao((v) => v + 1);
@@ -1319,6 +1377,10 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
                           podeEscrever={podeEscrever}
                           podeEscolherConta={podeEscolherConta}
                           onAgir={abrir}
+                          /* ⚠⚠ O VEREDITO DO CASAMENTO. `undefined` = esta linha não casa com nota
+                             nenhuma; uma string = casa, e a string É o motivo; `null` = não sabemos
+                             ainda (a consulta falhou ou não voltou). */
+                          motivoDoCasamento={quaisCasam === null ? null : quaisCasam.get(item.id)}
                           contas={contas}
                           onLancar={lancarDaLinha}
                           onFluxo={mexerNoFluxo}
@@ -1375,20 +1437,31 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
           para a mesma empresa, e o seletor da regra poderia oferecer conta que a fila recusa.
         */}
         {/*
-          ⚠⚠ O CAMINHO PARA A CONSEQUÊNCIA, ao lado da causa. O extrato do que a automação lançou
-          saiu desta tela (ver o comentário na seção acima), e o argumento dele era justamente a
-          VIZINHANÇA com as regras — *"o contador ligaria mais uma regra sem ter olhado o que a
-          anterior fez"*. Perdida a adjacência, fica o link.
-          ⚠ `<a href>` de verdade, com `companyTabPath`: é a MESMA função que a navegação usa, e
-          Ctrl+clique abre em nova guia. Duas construções da mesma URL divergem na primeira correção.
+          ⚠⚠ A CONSEQUÊNCIA AO LADO DA CAUSA — e por algumas horas, em 01/09/2026, isto foi uma aba
+          própria e depois um link. O dono devolveu o conteúdo para cá (*"devolva a aba pras
+          regras"*).
+
+          ⚠ RECOLHIDO: é CIÊNCIA (o que a automação já fez), não tarefa — ninguém espera decisão
+          dele, e aberto empurraria para baixo o que pede ação numa tela que já rola quase seis
+          telas. O `<summary>` traz a contagem, o valor e quantos estão SEM NOTA, que é o que diz se
+          vale a pena abrir.
+          ⚠ Ele vem ANTES do CRUD das regras, e a ordem é o argumento de sempre: *"o contador
+          ligaria mais uma regra sem ter olhado o que a anterior fez"*.
+          ⚠ Ele some sozinho quando não há nada lançado por regra — o estado normal com a automação
+          desligada.
         */}
-        <a
-          href={companyTabPath(companyId, "lancamentosAutomaticos")}
-          onClick={(e) => oNavegadorAssumeOClique(e) || (e.preventDefault(), aoAbrirAba?.("lancamentosAutomaticos"))}
-          style={{ fontSize: "0.78rem", color: "var(--text-muted)", justifySelf: "start" }}
-        >
-          Ver o que estas regras já lançaram sozinhas →
-        </a>
+        <PainelDeLancadosPorRegra
+          companyId={companyId}
+          competencia={competencia}
+          podeEscrever={podeEscrever}
+          recolhido
+          aoDesfazer={() => {
+            // ⚠ A fila muda (as linhas voltam a esperar conferência) e o painel de casamentos
+            // também. Sem isto, o contador desfaz e vê a tela igual.
+            setVersao((v) => v + 1);
+            carregar();
+          }}
+        />
 
         <PainelDeRegras companyId={companyId} contas={contas} podeEscrever={podeEscrever} />
       </SecaoDaConferencia>

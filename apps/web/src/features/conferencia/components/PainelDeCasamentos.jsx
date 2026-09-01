@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createApiClient } from "../../../api/client";
+import { debitosQueCasamComNota } from "../lib/contabilizacaoEmLote";
 import { Button } from "../../../components/ui/Button";
 import { Modal } from "../../../components/ui/Modal";
 import {
@@ -85,7 +86,22 @@ function ConfirmarCasamento({ linha, ocupado, onFechar, onConfirmar }) {
   );
 }
 
-export function PainelDeCasamentos({ companyId, podeEscrever = true, aoCasar }) {
+export function PainelDeCasamentos({
+  companyId, podeEscrever = true, aoCasar,
+  /**
+   * ⚠⚠ ELE REPORTA QUAIS DÉBITOS JÁ CASAM COM UMA NOTA — e a aba usa isso para BLOQUEAR o «Lançar»
+   * daquelas linhas (01/09/2026).
+   *
+   * O motivo de o painel reportar, em vez de a aba consultar por conta própria, é que a resposta é
+   * a MESMA: duas leituras do mesmo endpoint na mesma tela divergiriam no instante em que uma
+   * recarregasse e a outra não — e a que a fila usasse seria a que ninguém confere.
+   *
+   * ⚠ Ele reporta SEMPRE que a consulta termina, inclusive com `Map` vazio (não há o que casar) e
+   * inclusive quando ele mesmo não renderiza. E reporta `null` quando FALHOU: `null` é *"não sei"*,
+   * e é diferente de *"nenhum casa"* — a fila trata os dois de formas opostas.
+   */
+  aoSaberQuaisCasam,
+}) {
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -97,14 +113,21 @@ export function PainelDeCasamentos({ companyId, podeEscrever = true, aoCasar }) 
     setCarregando(true);
     setErro(null);
     try {
-      setDados(await casamentosApi.getConferenciaCasamentos(companyId));
+      const r = await casamentosApi.getConferenciaCasamentos(companyId);
+      setDados(r);
+      // ⚠ Reporta ANTES de qualquer render condicional deste painel: ele some quando não há nada a
+      // casar, e a fila precisa da resposta mesmo assim (um `Map` vazio é uma resposta).
+      aoSaberQuaisCasam?.(debitosQueCasamComNota(r));
     } catch (e) {
       setErro(e?.message || "Não foi possível carregar as sugestões.");
       setDados(null);
+      // ⚠⚠ `null` = NÃO SEI. A fila bloqueia o «Lançar» dos débitos de extrato enquanto não souber —
+      // é a mesma postura do lote, que RECUSA abrir sem esta resposta.
+      aoSaberQuaisCasam?.(null);
     } finally {
       setCarregando(false);
     }
-  }, [companyId]);
+  }, [companyId, aoSaberQuaisCasam]);
 
   useEffect(() => {
     carregar();

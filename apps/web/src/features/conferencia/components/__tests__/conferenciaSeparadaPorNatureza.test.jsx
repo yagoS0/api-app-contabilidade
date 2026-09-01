@@ -169,6 +169,7 @@ describe("⚠⚠ cada painel sob a seção que a REGRA manda — o DOM conferido
   const ONDE_APARECE = [
     [BLOCO.CASAMENTOS, "Débitos do extrato sem nota vinculada"],
     [BLOCO.FILA, "GOOGLE CLOUD BRASIL"],
+    [BLOCO.LANCADOS_POR_REGRA, /Lançados por regra/],
     [BLOCO.RECORRENCIAS, "Recorrências"],
     [BLOCO.SAIDAS_DO_CLIENTE, "Saídas que o cliente acrescentou"],
     [BLOCO.REGRAS, "Regras do fornecedor"],
@@ -179,19 +180,24 @@ describe("⚠⚠ cada painel sob a seção que a REGRA manda — o DOM conferido
     expect(within(secaoDe(natureza(bloco))).getAllByText(texto).length).toBeGreaterThan(0);
   });
 
-  it("⚠⚠ o extrato «lançados por regra» NÃO está mais aqui — virou aba própria", async () => {
-    // Dono, 01/09/2026: *"regras de lançamento recorrente, quando marcadas, vão para uma sub aba de
-    // lançamentos automáticos"*. Ele não foi duplicado: saiu desta tela.
+  it("⚠⚠⚠ o extrato «lançados por regra» está na seção REGRAS, e RECOLHIDO", async () => {
+    // ⚠⚠ ELE FOI E VOLTOU NO MESMO DIA: virou aba própria e o dono a devolveu — *"devolva a aba
+    // pras regras"*. A causa ao lado da consequência era o argumento da posição original.
+    // ⚠ RECOLHIDO porque é CIÊNCIA, não tarefa: ninguém espera decisão dele, e aberto empurraria
+    // para baixo o que pede ação.
     await montar();
-    expect(screen.queryByText(/Lançados por regra/)).toBeNull();
+    const secao = secaoDe(NATUREZA.REGRA);
+    const resumo = within(secao).getByText(/Lançados por regra/);
+    expect(resumo.closest("details")).not.toBeNull();
+    expect(resumo.closest("details").open).toBe(false);
   });
 
-  it("⚠ e o caminho para ela fica junto das REGRAS — a causa ao lado da consequência", async () => {
-    // O argumento que o painel carregava aqui era a VIZINHANÇA: *"o contador ligaria mais uma regra
-    // sem ter olhado o que a anterior fez"*. Perdida a adjacência, fica o link.
+  it("⚠ o resumo diz se vale a pena abrir — contagem, valor e quantos estão SEM NOTA", async () => {
+    // Um "Lançados por regra" mudo não informa nada, e o custo de abrir é a rolagem que o
+    // recolhimento existe para poupar.
     await montar();
-    const link = within(secaoDe(NATUREZA.REGRA)).getByRole("link", { name: /já lançaram sozinhas/i });
-    expect(link).toHaveAttribute("href", "/companies/emp-1/lancamentos-automaticos");
+    const sumario = within(secaoDe(NATUREZA.REGRA)).getByText(/Lançados por regra/).closest("summary");
+    expect(sumario.textContent).toMatch(/1 lançamento/);
   });
 
   it("⚠ o sexto painel (mexidas do cliente) também — ele não pede nada e é o que se esquece", async () => {

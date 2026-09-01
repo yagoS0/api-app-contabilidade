@@ -20,6 +20,7 @@ const mockGetPlano = jest.fn();
 const mockPostAcao = jest.fn();
 const mockPostFluxo = jest.fn();
 const mockGetPendencias = jest.fn();
+const mockGetCasamentos = jest.fn();
 
 jest.mock("../../../../api/client", () => ({
   createApiClient: () => ({
@@ -28,6 +29,7 @@ jest.mock("../../../../api/client", () => ({
     postConferenciaFluxo: (...a) => mockPostFluxo(...a),
     getChartOfAccounts: (...a) => mockGetPlano(...a),
     getConferenciaPendencias: (...a) => mockGetPendencias(...a),
+    getConferenciaCasamentos: (...a) => mockGetCasamentos(...a),
   }),
 }));
 
@@ -70,6 +72,8 @@ beforeEach(() => {
   mockPostAcao.mockResolvedValue({ ok: true });
   mockPostFluxo.mockResolvedValue({ ok: true });
   mockGetPendencias.mockResolvedValue({ ok: true, declaradosForaDaCompetencia: 0 });
+  // ⚠ Vazio por padrão: sem casamento nenhum, o bloqueio da despesa em dobro não morde.
+  mockGetCasamentos.mockResolvedValue({ ok: true, linhas: [] });
 });
 
 const montar = async () => {
@@ -187,5 +191,125 @@ describe("⚠⚠⚠ «Fluxo» — libera no fluxo e NÃO lança", () => {
     responder({ estado: "RECUSADO", motivoRecusa: "não é despesa da empresa" });
     await montar();
     expect(screen.queryByRole("button", { name: /no fluxo/i })).toBeNull();
+  });
+});
+
+describe("⚠⚠⚠ A DESPESA EM DOBRO — a guarda que faltava na LINHA (01/09/2026)", () => {
+  // Um débito de extrato que é o PAGAMENTO de uma nota da fila não pode ser contabilizado à parte:
+  // a nota vira um lançamento e o débito vira outro, para o mesmo dinheiro que saiu uma vez.
+  //
+  // ⚠⚠ O LOTE JÁ SE PROTEGIA (`abrirLote` recusa abrir sem esta resposta) e a LINHA NÃO — nem
+  // antes: o «Confirmar» do modal também nunca consultou. O «Lançar» só tirou o modal do caminho.
+  //
+  // ⚠⚠ **ESTE BLOCO JÁ NASCEU ERRADO UMA VEZ, e a lição vale mais que ele.** A primeira versão
+  // afirmava só `toBeDisabled()`. O botão nasce desabilitado por OUTRO motivo — *"escolha a conta"*,
+  // enquanto o plano de contas não chegou — então o `waitFor` passava no primeiro render e o teste
+  // nunca alcançava o estado que dizia medir. Desligando a guarda, ele continuava verde.
+  // Agora cada caso espera a conta RESOLVER e afirma o MOTIVO, nunca o `disabled` sozinho.
+
+  // ⚠ A descrição fica a mesma do resto do arquivo de propósito: o `montar()` espera por ela, e o
+  // que está sob teste é a ORIGEM (extrato) e o casamento — não o texto.
+  const DEBITO = { ...LINHA, id: "dec-9", origem: "OFX_CLIENTE" };
+
+  const casamentoCom = (linhas) => mockGetCasamentos.mockResolvedValue({ ok: true, linhas });
+
+  const casaComNota = [{
+    debito: { id: "dec-9", descricaoOriginal: "GOOGLE CLOUD BRASIL", valor: "890.00" },
+    sugestao: { nota: { id: "dec-2", descricaoOriginal: "KODA BEAR", valor: "890.00" } },
+    candidatos: [],
+  }];
+
+  /**
+   * ⚠⚠ ESPERA A CONTA RESOLVER antes de olhar o botão. Sem isto, todo caso mede o bloqueio de
+   * "sem conta" achando que mede o de despesa em dobro.
+   */
+  const montarComConta = async () => {
+    await montar();
+    await waitFor(() => expect(campoDaConta()).toHaveValue("401"));
+  };
+
+  const motivoDoBotao = () => botao("Lançar").getAttribute("title");
+
+  it("⚠⚠ débito que JÁ CASA com uma nota é bloqueado PELO MOTIVO CERTO", async () => {
+    responder(DEBITO);
+    casamentoCom(casaComNota);
+    await montarComConta();
+    await waitFor(() => expect(motivoDoBotao()).toMatch(/duas vezes/i));
+    expect(botao("Lançar")).toBeDisabled();
+  });
+
+  it("⚠⚠ e o motivo sai VISÍVEL, não só no `title` — é o único bloqueio que erra DINHEIRO", async () => {
+    // `title` não aparece no teclado nem no toque, e a regra da casa o recusa como via única.
+    responder(DEBITO);
+    casamentoCom(casaComNota);
+    await montarComConta();
+    await waitFor(() => expect(screen.getByText(/lançaria a mesma despesa duas vezes/i)).toBeInTheDocument());
+  });
+
+  it("⚠ e ele diz O QUE FAZER — casar com a nota no painel acima", async () => {
+    responder(DEBITO);
+    casamentoCom(casaComNota);
+    await montarComConta();
+    await waitFor(() => expect(screen.getByText(/case-o com a nota no painel acima/i)).toBeInTheDocument());
+  });
+
+  it("⚠⚠ nota JÁ CONTABILIZADA tem frase PRÓPRIA — o conserto é outro", async () => {
+    // Ali não há o que casar: o caminho é desfazer e refazer. Com uma frase só, a tela mandaria
+    // casar num painel que diz, ao lado, que não há o que casar.
+    responder(DEBITO);
+    casamentoCom([{
+      debito: { id: "dec-9", descricaoOriginal: "GOOGLE CLOUD BRASIL", valor: "890.00" },
+      sugestao: { nota: { id: "dec-2" }, podeFundir: false },
+      candidatos: [{ nota: { id: "dec-2" }, podeFundir: false }],
+    }]);
+    await montarComConta();
+    await waitFor(() => expect(screen.getByText(/JÁ contabilizou/i)).toBeInTheDocument());
+    expect(screen.queryByText(/case-o com a nota no painel acima/i)).toBeNull();
+  });
+
+  it("⚠⚠ débito que NÃO casa com nada fica LANÇÁVEL — a guarda não pode travar o trabalho", async () => {
+    responder(DEBITO);
+    casamentoCom([{
+      debito: { id: "outro-debito", descricaoOriginal: "TARIFA", valor: "12.00" },
+      sugestao: null,
+      candidatos: [],
+    }]);
+    await montarComConta();
+    await waitFor(() => expect(botao("Lançar")).not.toBeDisabled());
+  });
+
+  it("⚠⚠ SEM A RESPOSTA, o débito de extrato BLOQUEIA — a mesma postura do lote", async () => {
+    // `abrirLote` RECUSA abrir sem saber quais casam. Na dúvida, não se contabiliza.
+    responder(DEBITO);
+    mockGetCasamentos.mockRejectedValue(new Error("rede fora"));
+    await montarComConta();
+    await waitFor(() => expect(motivoDoBotao()).toMatch(/não foi possível conferir/i));
+    expect(screen.getByText(/não foi possível conferir/i)).toBeInTheDocument();
+  });
+
+  it("⚠⚠ mas a linha de NOTA continua lançável mesmo sem a resposta", async () => {
+    // Só o que nasceu de EXTRATO pode ser o pagamento de uma nota. Bloquear a fila inteira por uma
+    // falha de rede pararia o trabalho que não corre risco nenhum.
+    responder({ origem: "NOTA_RECEBIDA" });
+    mockGetCasamentos.mockRejectedValue(new Error("rede fora"));
+    await montarComConta();
+    await waitFor(() => expect(botao("Lançar")).not.toBeDisabled());
+  });
+
+  it("⚠ o extrato em PLANILHA conta igual ao OFX — as duas origens vêm do banco", async () => {
+    responder({ ...DEBITO, origem: "EXTRATO_EXCEL_CLIENTE" });
+    mockGetCasamentos.mockRejectedValue(new Error("rede fora"));
+    await montarComConta();
+    await waitFor(() => expect(motivoDoBotao()).toMatch(/não foi possível conferir/i));
+  });
+
+  it("⚠⚠ a consulta é UMA só — a fila usa a resposta do painel, não uma segunda", async () => {
+    // Duas leituras do mesmo endpoint na mesma tela divergem no instante em que uma recarrega e a
+    // outra não, e a que a fila usasse seria a que ninguém confere.
+    responder(DEBITO);
+    casamentoCom(casaComNota);
+    await montarComConta();
+    await waitFor(() => expect(mockGetCasamentos).toHaveBeenCalled());
+    expect(mockGetCasamentos).toHaveBeenCalledTimes(1);
   });
 });
