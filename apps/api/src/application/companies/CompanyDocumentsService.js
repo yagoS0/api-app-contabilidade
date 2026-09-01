@@ -15,6 +15,10 @@ import { GuideStorageService } from "../guides/GuideStorageService.js";
 
 export const TIPOS_DOCUMENTO = [
   "CONTRATO_SOCIAL",
+  // ⚠ Acrescentado em 01/09/2026. Ao contrário dos outros, ele NÃO é enviado por upload: é gerado
+  // pelo servidor a partir de uma foto de simulação (`SimulacaoPlanejamentoService`), e chega aqui
+  // pela MESMA porta (`adicionar`) — de propósito, para não existir um segundo caminho de storage.
+  "PLANEJAMENTO_TRIBUTARIO",
   "CARTAO_CNPJ",
   "INSCRICAO_ESTADUAL",
   "INSCRICAO_MUNICIPAL",

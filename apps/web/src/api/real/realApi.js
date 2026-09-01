@@ -2173,6 +2173,21 @@ export function createRealApi() {
     async getDadosPlanejamento(companyId) {
       return request(`/firm/companies/${companyId}/planejamento`);
     },
+    // ⚠ A FOTO da simulação. Salvar e gerar o PDF são DOIS atos, e a separação é deliberada: o
+    // segundo pode falhar (sem Volume no Railway, o storage recusa) sem desfazer o primeiro — e a
+    // tela precisa poder dizer "a simulação foi salva, o PDF não".
+    async listarSimulacoesPlanejamento(companyId) {
+      return request(`/firm/companies/${companyId}/planejamento/simulacoes`);
+    },
+    async salvarSimulacaoPlanejamento(companyId, payload) {
+      return request(`/firm/companies/${companyId}/planejamento/simulacoes`, { method: "POST", body: payload });
+    },
+    async gerarDocumentoDaSimulacao(companyId, simulacaoId) {
+      return request(
+        `/firm/companies/${companyId}/planejamento/simulacoes/${simulacaoId}/documento`,
+        { method: "POST" },
+      );
+    },
     // Q15 — fechamento
     async getFechamento(companyId, competencia) {
       return request(`/firm/companies/${companyId}/fechamento/${competencia}`);

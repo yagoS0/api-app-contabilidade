@@ -3254,6 +3254,9 @@ const MEXIDAS_DO_MOCK = Object.freeze([
 
 const mexidasDesfeitas = new Set();
 
+/** ⚠ Estado em memória das fotos de simulação, por empresa. Ver o par acima. */
+const mockSimulacoesPlanejamento = {};
+
 export function createMockApi() {
   let accessToken = "";
 
@@ -8640,6 +8643,48 @@ export function createMockApi() {
     //
     // Os demais cenários existem porque cada FONTE de folha/RBT12 se lê diferente na tela: folha do
     // fechamento, folha digitada na circular, folha somada dos lançamentos, e o nada.
+    // ⚠⚠ O MOCK GUARDA ESTADO DE VERDADE, e não devolve resposta fixa: as regras que importam aqui
+    // (a foto sobreviver ao PDF falhar, a lista crescer a cada salvamento) só se conferem mexendo.
+    // Mock imutável passaria por elas sem testar nada — este projeto foi mordido por isso.
+    async listarSimulacoesPlanejamento(companyId) {
+      await delay(50);
+      return { ok: true, simulacoes: (mockSimulacoesPlanejamento[companyId] || []).slice().reverse() };
+    },
+    async salvarSimulacaoPlanejamento(companyId, payload) {
+      await delay(80);
+      const lista = mockSimulacoesPlanejamento[companyId] || (mockSimulacoesPlanejamento[companyId] = []);
+      const simulacao = {
+        id: `sim-${lista.length + 1}`,
+        portalClientId: companyId,
+        competencia: payload?.competencia || null,
+        entradas: payload?.entradas || {},
+        resultado: payload?.resultado || {},
+        procedencias: payload?.procedencias || null,
+        vigenciaTabelas: payload?.vigenciaTabelas || null,
+        documentoId: null,
+        geradoEm: new Date().toISOString(),
+      };
+      lista.push(simulacao);
+      return { ok: true, simulacao };
+    },
+    async gerarDocumentoDaSimulacao(companyId, simulacaoId) {
+      await delay(120);
+      const lista = mockSimulacoesPlanejamento[companyId] || [];
+      const simulacao = lista.find((s) => s.id === simulacaoId);
+      if (!simulacao) return { ok: false, error: "simulacao_nao_encontrada" };
+      // ⚠ A sentinela reproduz OFFLINE a falha de armazenamento — sem ela, o ramo em que "a foto
+      // sobrevive e o PDF não" só existiria em produção, que é onde este projeto já foi mordido
+      // quatro vezes por ramo inalcançável.
+      if (String(companyId).includes("sem-storage")) {
+        return {
+          ok: false,
+          error: "documento_nao_gerado",
+          message: "A simulação foi salva, mas o PDF não pôde ser guardado. Verifique o armazenamento de arquivos.",
+        };
+      }
+      simulacao.documentoId = `doc-${simulacaoId}`;
+      return { ok: true, simulacao, documento: { id: simulacao.documentoId, nome: "Planejamento tributário" } };
+    },
     async getDadosPlanejamento(companyId) {
       await delay(70);
       const idx = mockCompanies.findIndex((c) => c.companyId === companyId);

@@ -943,6 +943,7 @@ model PortalClient {
   ofxImports              OfxImport[]
   mapeamentosExtrato      MapeamentoExtrato[]
   cienciasDeGuias         CienciaDeGuias[]
+  simulacoesPlanejamento  SimulacaoPlanejamento[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -3114,6 +3115,54 @@ model RelatorioFaturamento {
   @@unique([portalClientId, competencia])
   @@index([portalClientId, competencia])
   @@map("relatorios_faturamento")
+}
+
+/// A FOTO DE UMA SIMULAÇÃO DE PLANEJAMENTO TRIBUTÁRIO — e ela se GRAVA porque NÃO É DERIVÁVEL.
+///
+/// ⚠⚠ É o oposto do DANFSe, que não se salva porque sai inteiro do `xmlRaw` imutável. Aqui o
+/// resultado depende (a) do que o contador DIGITOU POR CIMA do prefill, (b) do RBT12 e da folha
+/// **no instante da simulação** e (c) das tabelas fiscais vigentes naquela data. Recalcular amanhã
+/// devolve outro número, legitimamente — e o PDF que já foi ao cliente afirma o de ontem.
+///
+/// Molde: `RelatorioFaturamento` (mesma forma, mesmo `geradoEm`/`geradoPor`). O que muda é a chave:
+/// ⚠⚠ NÃO há `@@unique` por competência. Uma empresa tem VÁRIAS simulações legítimas do mesmo mês —
+/// é literalmente o produto ("e se o pró-labore subir?"). Um `@@unique([portalClientId,
+/// competencia])` faria a segunda apagar a primeira, e a primeira pode já ter sido impressa e
+/// entregue ao cliente.
+model SimulacaoPlanejamento {
+  id             String @id @default(uuid())
+  portalClientId String
+  /// A competência de REFERÊNCIA da simulação (a janela de dados que ela usou). YYYY-MM.
+  competencia    String
+
+  /// ⚠ O QUE FOI DIGITADO. Guardado à parte do resultado de propósito: é o que permite reabrir a
+  /// simulação e ver as premissas, e é o que distingue dois PDFs da mesma empresa com números
+  /// diferentes.
+  entradas Json
+  /// O resultado inteiro, na forma que o motor devolveu (regimes, vencedor, Fator R, comparativo).
+  resultado Json
+  /// ⚠⚠ A PROCEDÊNCIA DE CADA CAMPO — de onde veio cada número (da empresa, digitado por cima,
+  /// informado, ausente com motivo). Sem ela, dois PDFs da mesma empresa com números diferentes
+  /// não se distinguem NO PAPEL, que é onde eles circulam.
+  procedencias Json?
+  /// A vigência das tabelas usadas. ⚠ Uma simulação de 2026 relida em 2029 tem de dizer com QUE
+  /// tabela ela foi feita — senão ela se apresenta como se fosse a conta de hoje.
+  vigenciaTabelas Json?
+
+  /// ⚠ O `CompanyDocument` gerado a partir DESTA foto, quando houver. Nulo = a foto existe e o PDF
+  /// não foi gerado (ou foi apagado). Não é o mesmo que "a simulação não existe".
+  documentoId String?
+
+  geradoEm  DateTime @default(now())
+  /// `User.id` de quem mandou gerar. Nulo para geração feita fora de uma sessão.
+  geradoPor String?
+
+  createdAt DateTime @default(now())
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, geradoEm])
+  @@map("simulacoes_planejamento")
 }
 
 // Log auditável da decisão mensal do Fator R (III vs V).

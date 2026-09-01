@@ -108,6 +108,8 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   // formulário na troca de empresa precisa dele, e estado declarado depois de quem o usa é o tipo
   // de coisa que funciona por closure e confunde quem lê.
   const [recusaDeColagem, setRecusaDeColagem] = useState(null); // { campo, texto }
+  const [guardando, setGuardando] = useState(false);
+  const [desfechoDoGuardar, setDesfechoDoGuardar] = useState(null); // { tom, texto }
   // ⚠⚠ O CENÁRIO NASCE EM 2026, e isso é decisão: é o ano corrente, e a resposta dele — IBS e CBS
   // são ZERO para o optante — é a que a maioria dos contadores precisa ver primeiro. Abrir em 2027
   // mostraria um número que ainda depende de uma alíquota que não existe.
@@ -451,6 +453,50 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   // que é o campo ILEGÍVEL — são duas coisas: uma fala da lei, a outra do que foi digitado.
   const issForaDaFaixa = issLido.valor != null
     && (issLido.valor / 100 < ISS_FAIXA_LEGAL.minimo || issLido.valor / 100 > ISS_FAIXA_LEGAL.maximo);
+
+  /**
+   * GUARDA A FOTO E GERA O PDF — dois atos, nesta ordem, e o segundo pode falhar sozinho.
+   *
+   * ⚠⚠ O QUE VAI PARA O SERVIDOR É O QUE A TELA CALCULOU, não um pedido de recálculo. A foto tem
+   * de guardar exatamente o que o contador viu — recalcular no servidor devolveria outro número
+   * assim que o RBT12 ou as tabelas mudassem, e o PDF deixaria de descrever o que foi entregue.
+   */
+  async function guardarSimulacao() {
+    if (!empresaId || guardando) return;
+    setGuardando(true);
+    setDesfechoDoGuardar(null);
+    try {
+      const salvo = await api.salvarSimulacaoPlanejamento(empresaId, {
+        competencia: prefill.referencia?.competencia || null,
+        entradas,
+        resultado,
+        // ⚠ A procedência viaja junto: é ela que distingue DOIS PDFs da mesma empresa com números
+        // diferentes. Sem ela, a diferença parece erro de cálculo no papel.
+        procedencias,
+        vigenciaTabelas: resultado?.ibsCbs?.vigencia || null,
+      });
+      if (!salvo?.ok) {
+        setDesfechoDoGuardar({ tom: "erro", texto: salvo?.message || "Não foi possível salvar a simulação." });
+        return;
+      }
+      const doc = await api.gerarDocumentoDaSimulacao(empresaId, salvo.simulacao.id);
+      if (!doc?.ok) {
+        // ⚠⚠ A FOTO SOBREVIVEU. Dizer só "falhou" mandaria o contador refazer a simulação inteira
+        // à toa — e o defeito nem é dele: sem o Volume no Railway o storage recusa.
+        setDesfechoDoGuardar({
+          tom: "erro",
+          texto: doc?.message
+            || "A simulação foi salva, mas o PDF não pôde ser guardado. Verifique o armazenamento de arquivos.",
+        });
+        return;
+      }
+      setDesfechoDoGuardar({ tom: "ok", texto: "Guardado em Documentos da empresa." });
+    } catch (err) {
+      setDesfechoDoGuardar({ tom: "erro", texto: err?.message || "Não foi possível guardar." });
+    } finally {
+      setGuardando(false);
+    }
+  }
 
   useEffect(() => {
     if (!imprimindo) return undefined;
@@ -935,7 +981,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
               {" "}{resultado.aviso}
             </div>
 
-            <div data-print-hide>
+            <div data-print-hide style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <button
                 type="button"
                 onClick={() => setImprimindo(true)}
@@ -943,6 +989,45 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
               >
                 🖨 Imprimir / salvar em PDF
               </button>
+
+              {/* ⚠⚠ GUARDAR SÓ EXISTE COM EMPRESA ESCOLHIDA. Em simulação livre não há onde
+                  guardar — a foto pertence a uma empresa, e os Documentos são dela. O botão fica
+                  DESABILITADO com o motivo, nunca escondido: sumir esconderia que a ação existe.
+                  ⚠ Ele é `<button>` e não link: abre um ato, não uma rota. */}
+              {empresas.length > 0 && (
+                <button
+                  type="button"
+                  onClick={guardarSimulacao}
+                  disabled={!empresaId || guardando}
+                  title={empresaId
+                    ? "Salva esta simulação e gera o PDF em Documentos da empresa."
+                    : "Escolha uma empresa acima: a simulação livre não tem onde ser guardada."}
+                  style={{
+                    background: "transparent", border: `1px solid ${empresaId ? C.accent : C.borda}`,
+                    color: empresaId ? C.accent : C.muted, borderRadius: 6, padding: "6px 12px",
+                    font: "inherit", fontSize: "0.8rem",
+                    cursor: !empresaId || guardando ? "not-allowed" : "pointer",
+                    opacity: empresaId ? 1 : 0.6,
+                  }}
+                >
+                  {guardando ? "Guardando…" : "💾 Guardar em Documentos"}
+                </button>
+              )}
+
+              {/* ⚠⚠ OS DOIS ATOS TÊM DESFECHOS DIFERENTES, e a frase tem de distinguir: a foto pode
+                  ter sido salva e o PDF não (sem o Volume no Railway, o storage recusa). Dizer só
+                  "falhou" faria o contador simular tudo de novo à toa. */}
+              {desfechoDoGuardar ? (
+                <span
+                  role="status"
+                  style={{
+                    fontSize: "0.76rem", lineHeight: 1.5,
+                    color: desfechoDoGuardar.tom === "erro" ? "var(--state-warn)" : C.muted,
+                  }}
+                >
+                  {desfechoDoGuardar.texto}
+                </span>
+              ) : null}
             </div>
           </div>
         )}
