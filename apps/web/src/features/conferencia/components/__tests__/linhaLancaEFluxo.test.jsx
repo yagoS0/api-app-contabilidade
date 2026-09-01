@@ -10,7 +10,7 @@
 //   1. o botão de TIRAR do fluxo não pode reinserir a linha (`undefined` ≠ `null`);
 //   2. lançar da linha usa a MESMA rota e a MESMA ação do modal — nunca um segundo verbo;
 //   3. a tela manda o `codigoCompleto`, nunca o reduzido que o contador digita;
-//   4. a dívida conhecida (dois botões para o mesmo ato) não sumir de vista.
+//   4. a linha não voltar a ter dois botões para o mesmo ato.
 
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
@@ -103,7 +103,10 @@ describe("⚠⚠ «Lançar» da linha — mesma rota, mesma ação, sem modal", 
     await montar();
     await waitFor(() => expect(campoDaConta()).toHaveValue("401"));
     await clicar("Lançar");
-    expect(mockPostAcao).toHaveBeenCalledWith("emp-1", "dec-1", "confirmar", { conta: "411020001" });
+    // ⚠⚠ `contaAplicada`, NUNCA `conta`: é a chave que o servidor lê (`routes/firm/conferencia.js`).
+    // A primeira versão deste caminho mandava `conta` e a conta era ignorada EM SILÊNCIO — o
+    // lançamento recusaria por falta dela, e este teste passava afirmando a chave errada.
+    expect(mockPostAcao).toHaveBeenCalledWith("emp-1", "dec-1", "confirmar", { contaAplicada: "411020001" });
   });
 
   it("⚠⚠ e NÃO abre modal — era o clique a mais que o dono pediu para tirar", async () => {
@@ -113,17 +116,15 @@ describe("⚠⚠ «Lançar» da linha — mesma rota, mesma ação, sem modal", 
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("⚠⚠ DÍVIDA CONHECIDA: a linha tem DOIS botões para o mesmo ato, e isto está com o dono", () => {
-    // ⚠ Este teste afirma o estado ATUAL, não o desejado — e existe para a dívida não sumir de
-    // vista. "Lançar" usa a conta da linha e não abre modal; "Confirmar" abre o modal.
-    //
-    // Tirar o segundo é uma linha em `renderConferenciaTab.jsx` MAIS a migração de ~15 casos de
-    // `conferenciaNaTela.ligacao.test.jsx`, que alcançam o modal por ele — cada um guardando uma
-    // garantia diferente. Quando o dono decidir, este teste vira o inverso.
-    return montar().then(() => {
-      expect(screen.getByRole("button", { name: "Lançar" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Confirmar" })).toBeInTheDocument();
-    });
+  it("⚠⚠ UM botão só para o ato — o «Confirmar» duplicado saiu (dono, 01/09/2026)", async () => {
+    // ⚠⚠ ESTE TESTE AFIRMAVA O CONTRÁRIO por algumas horas, registrando a dívida: a linha tinha
+    // "Lançar" E "Confirmar", e o contador teria de descobrir por tentativa qual dos dois usava a
+    // conta que ele acabou de digitar ao lado. O dono mandou tirar, e os ~15 casos de
+    // `conferenciaNaTela.ligacao.test.jsx` que alcançavam o modal por ele foram migrados um a um
+    // para a ação que AINDA pede modal (a que pede data) — nenhuma garantia foi descartada.
+    await montar();
+    expect(screen.getByRole("button", { name: "Lançar" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirmar" })).toBeNull();
   });
 
   it("⚠⚠ quando a ação pede DATA, o caminho volta a ser o modal", async () => {

@@ -684,18 +684,15 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
             </span>
           ) : null}
           {/*
-            ⚠⚠ DÍVIDA CONHECIDA (01/09/2026): a linha que lança sozinha fica com DOIS botões para o
-            mesmo ato — "Lançar" (usa a conta ao lado, sem modal) e "Confirmar" (abre o modal).
-            É confuso, e o certo seria tirar o segundo.
-            ⚠ NÃO foi tirado ainda porque `conferenciaNaTela.ligacao.test.jsx` alcança o modal por
-            ele em ~15 casos, cada um guardando uma garantia diferente (a confirmação repete os
-            dados; a recusa do servidor aparece DENTRO do diálogo; a data provada não viaja no
-            corpo; o seletor de conta traduz reduzido↔completo). Cortá-lo às cegas exigiria
-            reescrever os quinze, e teste reescrito às pressas é como uma garantia se perde.
-            ⚠ **Está com o dono.** Removê-lo é uma linha aqui mais a migração daqueles casos para o
-            caminho que ainda usa o modal (`AGUARDANDO_PAGAMENTO`, que pede a data).
+            ⚠⚠ `confirmar` SAI DO LAÇO quando a linha já lança sozinha — decisão do dono, 01/09/2026
+            (*"tira o Confirmar duplicado"*).
+            Sem isto a mesma linha teria DOIS botões para o mesmo ato ("Lançar", que usa a conta ao
+            lado, e "Confirmar", que abre o modal), e o contador teria de descobrir por tentativa
+            qual dos dois usa a conta que ele acabou de digitar.
+            ⚠ Ele VOLTA quando a ação pede DATA: ali o modal é o caminho, porque a data é a
+            afirmação de quando o dinheiro saiu e não se digita de passagem.
           */}
-          {acoes.map((acao) => {
+          {acoes.filter((acao) => !(podeLancarDaLinha && acao === "confirmar")).map((acao) => {
             const bloqueio = motivoDeBloqueio(acao, item, { podeEscrever, podeEscolherConta });
             return (
               <Button
@@ -940,7 +937,26 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
       if (!item?.id || !contaCompleta) return;
       setEnviando(true);
       try {
-        await conferenciaApi.postConferenciaAcao(companyId, item.id, "confirmar", { conta: contaCompleta });
+        /**
+         * ⚠⚠ O CORPO SAI DE `montarCorpo`, NUNCA MONTADO À MÃO AQUI — e isto é conserto de defeito
+         * que eu mesmo introduzi horas antes (01/09/2026).
+         *
+         * A primeira versão mandava `{ conta: … }`. O servidor lê **`contaAplicada`**
+         * (`routes/firm/conferencia.js`), então a conta era **ignorada em silêncio** e o lançamento
+         * recusaria por falta dela. ⚠ E o meu próprio teste travou o erro, porque afirmava a chave
+         * errada — foi o teste do modal, que já media `contaAplicada`, que denunciou.
+         *
+         * ⚠ Reusar é o ponto: uma segunda montagem do corpo divergiria na primeira correção, e a
+         * que ninguém abre é a que erra. `montarCorpo` também garante que a data NÃO viaja quando
+         * ela já foi provada pelo extrato — a prova não é rebaixada a declaração.
+         */
+        const corpo = montarCorpo({
+          acao: "confirmar",
+          item,
+          cfg: ACAO.confirmar,
+          contaCompleta,
+        });
+        await conferenciaApi.postConferenciaAcao(companyId, item.id, "confirmar", corpo);
         setAviso(null);
         await carregar();
         // ⚠ O painel de casamentos e o extrato de lançados por regra mudam junto: a despesa saiu da

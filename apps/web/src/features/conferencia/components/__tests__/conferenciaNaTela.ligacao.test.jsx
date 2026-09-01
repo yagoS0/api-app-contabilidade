@@ -61,6 +61,20 @@ const item = (extra = {}) => ({
   ...extra,
 });
 
+/**
+ * ⚠⚠ A LINHA QUE AINDA PASSA PELO MODAL — desde 01/09/2026 (dono: *"tira o Confirmar duplicado"*).
+ *
+ * A linha em `A_CONFERIR` ganhou conta e botão **"Lançar"** na própria linha, e o `Confirmar` saiu
+ * dela: dois botões para o mesmo ato faziam o contador descobrir por tentativa qual usava a conta
+ * digitada ao lado.
+ *
+ * ⚠ O MODAL NÃO MORREU — ele é o caminho quando a ação pede **DATA**, e a data é a afirmação de
+ * quando o dinheiro saiu (não se digita de passagem). É por aqui que os casos abaixo o alcançam.
+ * ⚠ Cada garantia que eles guardavam continua a mesma; só mudou a porta.
+ */
+const itemNoModal = (extra = {}) =>
+  item({ estado: "AGUARDANDO_PAGAMENTO", dataPagamento: null, origemPagamento: null, ...extra });
+
 const responder = (itens, porEstado = {}) =>
   mockGetFila.mockResolvedValue({ ok: true, itens, porEstado, total: itens.length });
 
@@ -105,10 +119,12 @@ describe("⚠ o botão bloqueado fica VISÍVEL, com o motivo", () => {
     expect(botao).toHaveAttribute("title", expect.stringMatching(/fechada/i));
   });
 
-  it("⚠ competência ausente impede confirmar, com o conserto nomeado", async () => {
+  it("⚠ competência ausente impede lançar, com o conserto nomeado", async () => {
+    // ⚠ O botão da linha passou a ser "Lançar" (o `Confirmar` saiu dela em 01/09/2026). O motivo do
+    // bloqueio é o MESMO — `motivoDeBloqueio("confirmar", …)` — e continua visível no `title`.
     responder([item({ competencia: null })]);
     montar();
-    const botao = await screen.findByRole("button", { name: /^Confirmar$/i });
+    const botao = await screen.findByRole("button", { name: /^Lançar$/i });
     expect(botao).toBeDisabled();
     expect(botao).toHaveAttribute("title", expect.stringMatching(/competência/i));
   });
@@ -116,7 +132,7 @@ describe("⚠ o botão bloqueado fica VISÍVEL, com o motivo", () => {
   it("⚠ quem não pode escrever vê os botões, desabilitados, com o motivo do papel", async () => {
     responder([item()]);
     montar({ podeEscrever: false });
-    const botao = await screen.findByRole("button", { name: /^Confirmar$/i });
+    const botao = await screen.findByRole("button", { name: /^Lançar$/i });
     expect(botao).toBeDisabled();
     expect(botao).toHaveAttribute("title", expect.stringMatching(/perfil/i));
   });
@@ -239,7 +255,7 @@ describe("⚠⚠ O MODAL PERGUNTA ANTES DE ENVIAR", () => {
   });
 
   it("⚠ a confirmação REPETE OS DADOS — 'tem certeza?' não é confirmação", async () => {
-    responder([item()]);
+    responder([itemNoModal()]);
     montar();
     fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
     const dialogo = await screen.findByRole("dialog");
@@ -248,7 +264,7 @@ describe("⚠⚠ O MODAL PERGUNTA ANTES DE ENVIAR", () => {
   });
 
   it("com tudo preenchido, envia a ação com o segmento certo", async () => {
-    responder([item()]);
+    responder([itemNoModal()]);
     montar();
     fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
     const dialogo = await screen.findByRole("dialog");
@@ -267,7 +283,7 @@ describe("⚠ o erro do servidor APARECE — 'não veio nada' e 'deu erro' não 
   });
 
   it("⚠ a recusa da AÇÃO chega ao contador com o texto dela", async () => {
-    responder([item()]);
+    responder([itemNoModal()]);
     mockPostAcao.mockRejectedValue(new Error("A competência está fechada."));
     montar();
     fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
@@ -335,7 +351,7 @@ describe("⚠⚠ A RECUSA DO SERVIDOR APARECE DENTRO DO MODAL (auditoria 25/08/2
   it("⚠⚠ o texto do erro fica DENTRO do diálogo, não atrás do overlay", async () => {
     // Era desenhado no corpo da aba — sob o scrim do `.modal-fundo` (z-index 1000). O contador via
     // o botão piscar "Enviando…", voltar, e nada mudar.
-    responder([item()]);
+    responder([itemNoModal()]);
     mockPostAcao.mockRejectedValue(new Error("A competência está fechada."));
     montar();
     fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
@@ -347,7 +363,7 @@ describe("⚠⚠ A RECUSA DO SERVIDOR APARECE DENTRO DO MODAL (auditoria 25/08/2
   });
 
   it("⚠ e o corpo da aba NÃO mostra o mesmo texto ao mesmo tempo", async () => {
-    responder([item()]);
+    responder([itemNoModal()]);
     mockPostAcao.mockRejectedValue(new Error("recusa_do_servidor"));
     montar();
     fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
@@ -419,11 +435,16 @@ describe("⚠⚠ O CORPO QUE VAI AO SERVIDOR (a lacuna que deixou o bug crítico
   it("⚠⚠ com data JÁ PROVADA pelo extrato, a data NÃO viaja — a prova não é rebaixada", async () => {
     // Mandar a mesma data de volta faria o servidor tratá-la como "trouxe o bloco", zerar a
     // procedência e gravar DECLARADO_PELO_CONTADOR por cima de um OFX.
+    // ⚠ Desde 01/09/2026 esta linha lança pela PRÓPRIA LINHA, e é o lugar certo para esta garantia:
+    // é o caminho que a data já provada de fato percorre. O corpo continua saindo de `montarCorpo`.
     responder([item()]);
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
-    const dialogo = await screen.findByRole("dialog");
-    fireEvent.click(within(dialogo).getByRole("button", { name: /^Confirmar$/i }));
+    // ⚠ O PLANO CHEGA DEPOIS: até ele chegar, a conta da linha não traduz e o botão fica
+    // desabilitado. `fireEvent.click` num botão desabilitado não faz NADA e não avisa — esperar
+    // aqui é o que separa "a tela não enviou" de "o teste clicou cedo demais".
+    const lancar = await screen.findByRole("button", { name: /^Lançar$/i });
+    await waitFor(() => expect(lancar).not.toBeDisabled());
+    fireEvent.click(lancar);
 
     await waitFor(() => expect(mockPostAcao).toHaveBeenCalled());
     expect(corpoEnviado()).not.toHaveProperty("dataPagamento");
@@ -431,11 +452,14 @@ describe("⚠⚠ O CORPO QUE VAI AO SERVIDOR (a lacuna que deixou o bug crítico
   });
 
   it("⚠ a CONTA vai junto quando a ação cria lançamento", async () => {
+    // ⚠ Pela LINHA: a conta sai do campo ao lado, traduzida para `codigoCompleto`. A chave é
+    // `contaAplicada` — mandar `conta` faria o servidor ignorá-la em silêncio (defeito real de
+    // 01/09/2026, achado por este bloco).
     responder([item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } })]);
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
-    const dialogo = await screen.findByRole("dialog");
-    fireEvent.click(within(dialogo).getByRole("button", { name: /^Confirmar$/i }));
+    const lancar2 = await screen.findByRole("button", { name: /^Lançar$/i });
+    await waitFor(() => expect(lancar2).not.toBeDisabled());
+    fireEvent.click(lancar2);
     await waitFor(() => expect(mockPostAcao).toHaveBeenCalled());
     expect(corpoEnviado()).toMatchObject({ contaAplicada: "411030012" });
   });
@@ -462,7 +486,10 @@ describe("⚠⚠ O CORPO QUE VAI AO SERVIDOR (a lacuna que deixou o bug crítico
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ O SELETOR DE CONTA na Conferência", () => {
   const abrirConfirmar = async (itemDado) => {
-    responder([itemDado]);
+    // ⚠⚠ O MODAL É ALCANÇADO PELA AÇÃO QUE PEDE DATA desde 01/09/2026 — na linha em `A_CONFERIR` o
+    // `Confirmar` saiu (o "Lançar" da própria linha o substituiu). O seletor de conta DENTRO do
+    // modal continua existindo e continua precisando de cada garantia abaixo.
+    responder([{ ...itemDado, estado: "AGUARDANDO_PAGAMENTO", dataPagamento: null, origemPagamento: null }]);
     montar();
     fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
     return screen.findByRole("dialog");
@@ -546,21 +573,20 @@ describe("⚠⚠ O SELETOR DE CONTA na Conferência", () => {
   // ⚠⚠ O BLOQUEIO DA LINHA CAIU — e é o ponto da entrega. Antes, linha sem conta conhecida tinha o
   // botão Confirmar DESABILITADO ("não é contabilizável por aqui"). Com o seletor, ela abre o modal
   // e o contador escolhe.
-  it("⚠⚠ linha SEM conta conhecida agora ABRE o modal — o seletor é o caminho", async () => {
-    // ⚠ `contaSugerida` também some: ela é a SEGUNDA fonte de `contaQueSeraUsada`, e o campo do
-    // modal cai nela quando a sugestão derivada não resolve. Com as duas presentes, este teste
-    // provaria o contrário do que o nome dele diz.
+  it("⚠⚠ linha SEM conta conhecida NÃO fica bloqueada — o seletor DA LINHA é o caminho", async () => {
+    // ⚠⚠ ESTE TESTE DIZIA "agora ABRE o modal", e a porta mudou em 01/09/2026: o seletor desceu para
+    // a própria linha. A GARANTIA é a mesma e é a que importa — linha sem conta conhecida não é um
+    // beco: há onde escolher, e ela só envia depois de escolhida.
+    // ⚠ `contaSugerida` também some: ela é a SEGUNDA fonte da conta, e com as duas presentes o
+    // teste provaria o contrário do que o nome dele diz.
     responder([item({ contaSugerida: null, sugestao: { conta: null, motivo: "nada_conhecido", frase: "" } })]);
     montar();
-    const botao = await screen.findByRole("button", { name: /^Confirmar$/i });
-    expect(botao).not.toBeDisabled();
-    fireEvent.click(botao);
-    const d = await screen.findByRole("dialog");
-    expect(campoDaConta(d)).toHaveValue("");
-    // ⚠ e ele só envia depois de escolher
-    expect(botaoConfirmar(d)).toBeDisabled();
-    fireEvent.change(campoDaConta(d), { target: { value: "402" } });
-    fireEvent.click(botaoConfirmar(d));
+    const campo = await screen.findByLabelText(/Conta contábil de GOOGLE CLOUD BRASIL/i);
+    expect(campo).toHaveValue("");
+    expect(screen.getByRole("button", { name: /^Lançar$/i })).toBeDisabled();
+    fireEvent.change(campo, { target: { value: "402" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Lançar$/i })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: /^Lançar$/i }));
     await waitFor(() => expect(mockPostAcao).toHaveBeenCalled());
     expect(corpoEnviado()).toMatchObject({ contaAplicada: "411020002" });
   });
@@ -574,7 +600,7 @@ describe("⚠⚠ O SELETOR DE CONTA na Conferência", () => {
     ]);
     responder([item({ contaSugerida: null, sugestao: { conta: null, motivo: "nada_conhecido", frase: "" } })]);
     montar();
-    const botao = await screen.findByRole("button", { name: /^Confirmar$/i });
+    const botao = await screen.findByRole("button", { name: /^Lançar$/i });
     await waitFor(() => expect(botao).toBeDisabled());
   });
 });
@@ -587,7 +613,8 @@ describe("⚠⚠ O SELETOR DE CONTA na Conferência", () => {
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ quando o plano de contas NÃO vem", () => {
   const abrir = async () => {
-    responder([item()]);
+    // ⚠ Pelo caminho que ainda usa o modal (a ação que pede data) — ver `itemNoModal`.
+    responder([itemNoModal()]);
     montar();
     fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
     return screen.findByRole("dialog");
@@ -626,7 +653,7 @@ describe("⚠⚠ quando o plano de contas NÃO vem", () => {
     // silêncio e o contador tinha de digitar o código.
     let liberar;
     mockGetPlano.mockImplementationOnce(() => new Promise((r) => { liberar = r; }));
-    responder([item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } })]);
+    responder([itemNoModal({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } })]);
     montar();
     fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
     const d = await screen.findByRole("dialog");
@@ -640,7 +667,7 @@ describe("⚠⚠ quando o plano de contas NÃO vem", () => {
 describe("⚠⚠ o CAIXA torto derruba a linha — e a tela nunca dizia", () => {
   it("sem `111010001` no plano, o envio é bloqueado COM o motivo", async () => {
     mockGetPlano.mockResolvedValueOnce(PLANO_DO_TESTE.filter((c) => c.codigo !== "5"));
-    responder([item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } })]);
+    responder([itemNoModal({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } })]);
     montar();
     fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
     const d = await screen.findByRole("dialog");
