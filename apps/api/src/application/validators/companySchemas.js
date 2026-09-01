@@ -1,3 +1,4 @@
+import { emailValido } from "@contabilidade/shared/email";
 // Q8.A.4: schemas Zod para validação rigorosa de input em POST/PATCH /firm/companies.
 // Complementa `validateAndNormalizeCompanyProfile` (mantida) — Zod roda PRIMEIRO,
 // se passar, a normalização legada cuida das transformações.
@@ -25,7 +26,14 @@ const companyBaseFields = {
   razaoSocial: z.string().min(1, "razão social obrigatória").max(200),
   nomeFantasia: z.string().max(200).optional().nullable(),
   cnpj: z.string().regex(cnpjRegex, "CNPJ em formato inválido"),
-  email: z.string().email().optional().nullable(),
+  // ⚠⚠ O `.or(z.literal(""))` E O "TERCEIRO CAMPO" que `companyEmailVazio.test.js:8-9` antecipa:
+  //   *"o guideNotificationEmail ja tinha .or(z.literal("")) — o mesmo tropeço, remendado só
+  //   naquele campo. Este teste trava a regra para os dois, e para quem for adicionar o terceiro."*
+  //   Sem ele, string vazia reprova o PATCH INTEIRO com `validation_failed`. Hoje escapa só
+  //   porque `realApi` manda `null`; passa a existir campo na tela, e o vazio vira caminho normal.
+  // ⚠ `.refine(emailValido)`, nao `.email()`: o Zod v4 restringe o alfabeto e RECUSA `joao@…` com
+  //   acento, que o servidor sempre aceitou. Uma regra so — a do servidor.
+  email: z.string().refine((v) => v === "" || emailValido(v), "E-mail da empresa inválido").or(z.literal("")).optional().nullable(),
   telefone: z.string().max(40).optional().nullable(),
   inscricaoMunicipal: z.string().max(60).optional().nullable(),
   // Código IBGE do município emissor da NFS-e. O Zod só confere a FORMA (string curta); quem diz
@@ -70,7 +78,7 @@ const companyBaseFields = {
   cnaesSecundarios: z.array(z.string().max(20)).max(50).optional(),
   regimeTributario: z.enum(["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI", "OUTRO"]).optional().nullable(),
   endereco: enderecoSchema,
-  guideNotificationEmail: z.string().email().or(z.literal("")).optional().nullable(),
+  guideNotificationEmail: z.string().refine((v) => v === "" || emailValido(v), "E-mail para guias inválido").or(z.literal("")).optional().nullable(),
   hasProlabore: z.boolean().optional(),
   temFolha: z.boolean().optional(),
   empresaZerada: z.boolean().optional(),
@@ -86,7 +94,7 @@ const companyBaseFieldsOptional = Object.fromEntries(
 );
 
 export const companyCreateSchema = z.object({
-  ownerEmail: z.string().email("ownerEmail inválido"),
+  ownerEmail: z.string().refine(emailValido, "E-mail do responsável inválido"),
   ownerName: z.string().max(120).optional().nullable(),
   ownerPassword: senhaForte.optional(), // só obrigatório se owner ainda não existe
   company: z.object(companyBaseFieldsOptional).optional(),
@@ -103,7 +111,7 @@ export const companyUpdateSchema = z.object({
   // O `guideNotificationEmail` logo acima já tinha `.or(z.literal(""))` — alguém tropeçou nisso lá
   // e remendou só naquele campo. Aqui vale a mesma regra: campo em branco na EDIÇÃO significa "não
   // mexer", não "e-mail inválido".
-  ownerEmail: z.string().email().or(z.literal("")).optional().nullable(),
+  ownerEmail: z.string().refine((v) => v === "" || emailValido(v), "E-mail do responsável inválido").or(z.literal("")).optional().nullable(),
   company: z.object({
     ...companyBaseFields,
     cnpj: z.string().optional(), // pode vir mas é ignorado (CNPJ imutável)

@@ -1,3 +1,5 @@
+import { descricoesGravadas, fundirDescricoes } from "../../../../lib/cnae/descricoesDeAtividades";
+import { estadoDoResponsavel } from "../../../../lib/portal/responsavelCompartilhado";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -70,6 +72,22 @@ function applyBrasilApiData(data, onChange) {
       .filter(Boolean);
     onChange("cnaesSecundarios", secundarios.join(", "));
   }
+
+  // ⚠⚠ A DESCRICAO PASSOU A SER GRAVADA (decisao do dono, 30/08/2026). Antes ela vivia so num
+  //   `useState` e morria com a tela: a consulta trazia o texto oficial e o cadastro guardava
+  //   numero nu. O formato e o que JA existe em producao — "codigo - descricao" —, na coluna
+  //   `Company.atividades`, que e a UNICA fonte de texto de atividade da carteira e alimenta a
+  //   descricao do servico na NFS-e (`descricaoSugerida.js`).
+  // ⚠ ELA NAO DECIDE CODIGO NENHUM: `cnaePrincipal`/`cnaesSecundarios` continuam sendo a
+  //   autoridade sobre QUAIS atividades a empresa tem. Esta lista so acrescenta TEXTO a codigos
+  //   que ja foram escolhidos — o backend descarta o que nao casar.
+  const descritas = [];
+  if (cnae && data.cnae_fiscal_descricao) descritas.push(`${cnae} - ${data.cnae_fiscal_descricao}`);
+  for (const c of Array.isArray(data.cnaes_secundarios) ? data.cnaes_secundarios : []) {
+    const codigo = String(c?.codigo || "").replace(/\D+/g, "");
+    if (codigo && c?.descricao) descritas.push(`${codigo} - ${c.descricao}`);
+  }
+  onChange("atividadesDescritas", descritas);
 }
 
 // Descrições dos CNAEs vindas da consulta — só para EXIBIR ao lado do código. O que é gravado
@@ -268,6 +286,7 @@ function RegimeHistoricoEditor({ historico, onChange }) {
 import {
   AvisoAcessoNovoCriado,
   AvisoVinculoCriado,
+  SemResponsavel,
   AvisoEmailCompartilhado,
   ConfirmacaoAcessoProprio,
 } from "./ResponsavelCompartilhado";
@@ -396,7 +415,16 @@ export function CompanyForm({
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [cnpjError, setCnpjError] = useState(null);
   // Descrições dos CNAEs da última consulta — só para exibir; o que é gravado é o código.
-  const [cnaeDescricoes, setCnaeDescricoes] = useState(() => new Map());
+  // ⚠⚠ A LEGENDA NASCE DO QUE ESTA GRAVADO, e nao vazia. Em modo EDICAO `handleCnpjBlur` nunca
+  //   roda (`cnpjReadOnly`), entao o mapa ficava SEMPRE vazio e o CNAE saia como numero nu —
+  //   inclusive nas 12 de 34 empresas que TEM o texto no banco (medido em producao, 30/08/2026).
+  // ⚠ A consulta VENCE o gravado quando roda (`fundirDescricoes`): ela e a fonte oficial e mais
+  //   nova. O gravado e o piso, nao o teto.
+  const [cnaeDaConsulta, setCnaeDaConsulta] = useState(() => new Map());
+  const cnaeDescricoes = fundirDescricoes(
+    descricoesGravadas(form.atividadesGravadas),
+    cnaeDaConsulta
+  );
 
   // Q11.2: RHF "paralelo" — não possui o state (continua sendo `form` externo), só faz
   // validação visual em tempo real. Vantagem: zero refactor dos callers (continua chamando
@@ -426,7 +454,7 @@ export function CompanyForm({
     try {
       const data = await fetchCnpjData(digits);
       applyBrasilApiData(data, onChange);
-      setCnaeDescricoes(descricoesDosCnaes(data));
+      setCnaeDaConsulta(descricoesDosCnaes(data));
     } catch {
       setCnpjError("CNPJ não encontrado ou inválido.");
     } finally {
@@ -455,16 +483,39 @@ export function CompanyForm({
       </label>
       <label>
         E-mail do responsável (login do portal)
+        {/* ⚠⚠ `required` SO NA CRIACAO. Na EDICAO, campo em branco significa "nao mexer" — e o
+            contrato de `omitIfEmpty` (`realApi.js`), travado por `companyEmailVazio.test.js`
+            ("ownerEmail vazio NAO reprova a atualizacao"). Incondicional, o HTML5 contradizia o
+            backend: o navegador bloqueava o submit com um balao nativo e o botao "Salvar
+            alteracoes" PARECIA nao fazer nada. */}
         <input
-          type="email"
+          // ⚠⚠ `text` + `inputMode`, NAO `type="email"`: a validacao NATIVA do navegador era a
+          //   TERCEIRA regra discordante — ela recusa `joao@…` com acento, que o servidor aceita,
+          //   e o unico aviso dela e um balao fora do vocabulario do app. O `inputMode` mantem o
+          //   teclado de e-mail no celular sem trazer a validacao junto.
+          type="text"
+          inputMode="email"
           value={form.ownerEmail}
           onChange={(event) => handleChange("ownerEmail", event.target.value)}
-          required
+          required={!cnpjReadOnly}
         />
         {errors.ownerEmail && (
           <span style={ERROR_TEXT_STYLE}>{errors.ownerEmail.message}</span>
         )}
+        {cnpjReadOnly && (
+          <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
+            Em branco = não alterar o responsável.
+          </span>
+        )}
       </label>
+      {/* ⚠⚠ CELULA VAZIA E PROIBIDA: sem responsavel o campo fica em branco E a tela diz por que.
+          Antes, o formulario CAIA para o e-mail da EMPRESA (`company.ownerEmail || company.email`)
+          — sao coisas diferentes, e o e-mail da empresa recebe guias, nao abre portal. */}
+      <SemResponsavel estado={estadoDoResponsavel({
+        ownerEmail: form.ownerEmail,
+        emailDaEmpresa: form.email,
+        edicao: cnpjReadOnly,
+      })} />
       {/* ⚠ AVISA, NÃO PROÍBE — e fica COLADO no campo, não numa faixa no topo: o aviso é sobre o
           que acabou de ser digitado, e longe do campo ele vira paisagem. */}
       <div className="full">
@@ -552,14 +603,45 @@ export function CompanyForm({
         Nome fantasia
         <input value={form.nomeFantasia} onChange={(event) => onChange("nomeFantasia", event.target.value)} />
       </label>
+      {/* ⚠⚠ ESTE CAMPO NAO EXISTIA NA TELA e MESMO ASSIM era enviado e validado
+          (`useManageCompanyForm` semeia, `realApi` envia, `companySchemas` valida com
+          `z.string().email()`). Valor legado que nao fosse e-mail reprovava o PATCH INTEIRO com
+          `validation_failed`, e nao havia onde corrigir: a empresa nao salvava mais nada, para
+          sempre. Medido hoje: so 1 empresa tem o campo, e ela passa — e prevencao. */}
+      <label className="full">
+        E-mail da empresa
+        <input
+          // ⚠⚠ `text` + `inputMode`, NAO `type="email"`: a validacao NATIVA do navegador era a
+          //   TERCEIRA regra discordante — ela recusa `joao@…` com acento, que o servidor aceita,
+          //   e o unico aviso dela e um balao fora do vocabulario do app. O `inputMode` mantem o
+          //   teclado de e-mail no celular sem trazer a validacao junto.
+          type="text"
+          inputMode="email"
+          value={form.email}
+          onChange={(event) => handleChange("email", event.target.value)}
+          placeholder="o e-mail do cadastro da empresa — NAO e o login do portal"
+        />
+        {errors.email && <span style={ERROR_TEXT_STYLE}>{errors.email.message}</span>}
+      </label>
+      {/* ⚠ Aqui o onChange e o `handleChange`, nao o cru: e ele que dispara o `trigger` do
+          schema. Com o cru, o unico aviso era o balao NATIVO do navegador — fora do vocabulario
+          do app e em posicao que depende da rolagem de um formulario de dez secoes. */}
       <label className="full">
         E-mail para recebimento das guias
         <input
-          type="email"
+          // ⚠⚠ `text` + `inputMode`, NAO `type="email"`: a validacao NATIVA do navegador era a
+          //   TERCEIRA regra discordante — ela recusa `joao@…` com acento, que o servidor aceita,
+          //   e o unico aviso dela e um balao fora do vocabulario do app. O `inputMode` mantem o
+          //   teclado de e-mail no celular sem trazer a validacao junto.
+          type="text"
+          inputMode="email"
           value={form.guideNotificationEmail}
-          onChange={(event) => onChange("guideNotificationEmail", event.target.value)}
+          onChange={(event) => handleChange("guideNotificationEmail", event.target.value)}
           placeholder="pode ser o mesmo para várias empresas"
         />
+        {errors.guideNotificationEmail && (
+          <span style={ERROR_TEXT_STYLE}>{errors.guideNotificationEmail.message}</span>
+        )}
       </label>
       <label>
         Telefone
@@ -574,6 +656,36 @@ export function CompanyForm({
           <option value="LUCRO_REAL">LUCRO_REAL</option>
         </select>
       </label>
+      {/* ⚠⚠ O ANEXO SO APARECE NO SIMPLES. Em outro regime ele nao existe, e um campo vazio ali
+          seria lido como "falta preencher" numa empresa que nao deve preencher nada.
+          ⚠ Nada vem pre-selecionado: o anexo decide a aliquota da empresa, e escolher por ela
+          seria o portal afirmando um enquadramento que ninguem conferiu. */}
+      {form.regimeTributario === "SIMPLES" && (
+        <>
+          <label>
+            Anexo do Simples
+            <select
+              value={form.simplesAnexo}
+              onChange={(event) => onChange("simplesAnexo", event.target.value)}
+            >
+              <option value="">— não informado —</option>
+              <option value="I">I</option>
+              <option value="II">II</option>
+              <option value="III">III</option>
+              <option value="IV">IV</option>
+              <option value="V">V</option>
+            </select>
+          </label>
+          <label>
+            Data de opção pelo Simples
+            <input
+              type="date"
+              value={form.simplesDataOpcao}
+              onChange={(event) => onChange("simplesDataOpcao", event.target.value)}
+            />
+          </label>
+        </>
+      )}
       <label>
         Pró-labore
         <select

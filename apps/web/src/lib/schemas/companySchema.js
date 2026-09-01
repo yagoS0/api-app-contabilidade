@@ -1,3 +1,4 @@
+import { emailValido } from "@contabilidade/shared/email";
 // Q11.2: schema Zod do formulário de empresa.
 //
 // MIRROR de apps/api/src/application/validators/companySchemas.js — mantenha SINCRONIZADO.
@@ -24,7 +25,7 @@ export const companyCreateFormSchema = z.object({
   ownerEmail: z
     .string()
     .min(1, "E-mail é obrigatório")
-    .email("E-mail inválido (formato: exemplo@dominio.com)"),
+    .refine(emailValido, "E-mail inválido (formato: exemplo@dominio.com)"),
   ownerPassword: strongPasswordSchema, // Q27.A: 8 + minúscula + maiúscula + número + especial
   cnpj: z
     .string()
@@ -37,7 +38,7 @@ export const companyCreateFormSchema = z.object({
   nomeFantasia: z.string().max(200).optional().or(z.literal("")),
   guideNotificationEmail: z
     .string()
-    .email("E-mail inválido")
+    .refine(emailValido, "E-mail inválido")
     .or(z.literal(""))
     .optional(),
   telefone: z.string().max(40).optional().or(z.literal("")),
@@ -120,4 +121,11 @@ export const companyCreateFormSchema = z.object({
 export const companyUpdateFormSchema = companyCreateFormSchema.partial().extend({
   // Em edição, senha é opcional; se vier, precisa ser forte (ou string vazia = não altera).
   ownerPassword: strongPasswordSchema.or(z.literal("")).optional(),
+  // ⚠⚠ NA EDIÇÃO, E-MAIL DO RESPONSÁVEL EM BRANCO SIGNIFICA "NÃO MEXER" — é o contrato de
+  //   `omitIfEmpty` (`realApi.js`), travado no backend por `companyEmailVazio.test.js`
+  //   ("ownerEmail vazio NÃO reprova a atualização").
+  //   ⚠ O `.partial()` NÃO bastava: ele só admite `undefined`, e o formulário guarda `""`
+  //   (`useManageCompanyForm`), que É string — então o `.min(1, "E-mail é obrigatório")` do
+  //   schema de criação continuava reprovando, e o "Salvar alterações" parecia não fazer nada.
+  ownerEmail: z.string().refine(emailValido, "E-mail inválido (formato: exemplo@dominio.com)").or(z.literal("")).optional(),
 });

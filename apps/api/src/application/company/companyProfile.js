@@ -1,3 +1,4 @@
+import { emailValido } from "@contabilidade/shared/email";
 const REGIMES = new Set(["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL"]);
 const SIMPLES_ANEXOS = new Set(["I", "II", "III", "IV", "V"]);
 // Histórico aceita MEI também: é regime que a empresa já teve, não o que o portal opera hoje.
@@ -18,7 +19,10 @@ function normalizeOptionalNotificationEmail(value) {
   // direto → TypeError (500) ao cadastrar/editar empresa sem e-mail de notificação.
   // O campo é OPCIONAL: vazio agora vira {ok:true, data:null}, como o nome promete.
   if (!raw) return { ok: true, data: null };
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+  // ⚠ A REGRA E A COMPARTILHADA (`packages/shared/src/email`). Ela ERA esta regex, e virou funcao
+  //   para que Zod e front julguem igual — antes eram TRES regras discordando no mesmo campo, e o
+  //   contador via "e-mail invalido" num valor que o servidor aceitaria.
+  if (!emailValido(raw)) {
     return { ok: false, error: "company_guide_notification_email_invalid" };
   }
   return { ok: true, data: raw };

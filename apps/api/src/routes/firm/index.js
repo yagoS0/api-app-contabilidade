@@ -1293,10 +1293,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                 // deixa nu o codigo que nao tinha texto. ⚠⚠ NUNCA completa descricao que nao
                 // existe — `CnaeAnexo` cobre ~10% da CNAE 2.3, e inventar texto no cadastro poria
                 // uma descricao nao conferida na nota fiscal do cliente.
-                atividades: mesclarAtividades(legacyAtual?.atividades, [
-                  normalizedCompany.cnaePrincipal,
-                  ...normalizedCompany.cnaesSecundarios,
-                ]),
+                atividades: mesclarAtividades(
+                  legacyAtual?.atividades,
+                  [normalizedCompany.cnaePrincipal, ...normalizedCompany.cnaesSecundarios],
+                  // ⚠ O que a CONSULTA ao CNPJ trouxe nesta edicao, se trouxe. E texto de terceiro
+                  //   (BrasilAPI), entao ele so ENTRA junto do codigo — nunca decide qual codigo a
+                  //   empresa tem, que continua saindo de `cnaePrincipal`/`cnaesSecundarios`.
+                  { descritas: Array.isArray(body?.atividadesDescritas) ? body.atividadesDescritas : [] }
+                ),
                 tipoTributario: normalizedCompany.regimeTributario,
                 regimeTributario: normalizedCompany.regimeTributario,
                 // ⚠⚠ SPREAD CONDICIONAL, e antes eram tres atribuicoes secas com `|| null`.

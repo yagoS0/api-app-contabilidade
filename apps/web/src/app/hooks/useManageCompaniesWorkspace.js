@@ -626,8 +626,22 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       //   esta empresa passou a pertencer a uma conta que JÁ EXISTIA (nada a definir).
       setAcessoProprioCriado(resposta?.acessoNovo || null);
       setVinculoCriado(resposta?.acessoVinculado || null);
-      feedback.setMessage("Cadastro da empresa atualizado com sucesso.");
+      // ⚠⚠ O FORMULARIO ACEITA O QUE O SERVIDOR GRAVOU. Ele e um `useState` re-semeado SO quando
+      //   muda `companyId` (linha ~1030), entao depois de salvar ele continuava com o que foi
+      //   DIGITADO — e a ficha, lida do servidor, com o valor velho. As duas telas discordavam
+      //   sempre que a gravacao nao acontecia, e o formulario "ja alterado" PARECIA prova de que
+      //   tinha salvo. Era metade do relato do dono.
+      // ⚠ DO RETORNO DO PATCH, nunca de um `useEffect`: o comentario de `:1023-1027` explica por
+      //   que a dependencia e `companyId` — um efeito ligado a lista apagaria edicao nao salva a
+      //   cada refresh de fundo.
+      // ⚠⚠ E SO NO SUCESSO. No erro o valor digitado TEM de permanecer, senao o contador perde o
+      //   que escreveu justamente quando precisa corrigi-lo (ver o `catch`).
+      if (resposta?.company) editCompanyForm.replace(mapCompanyToEditForm(resposta.company));
       await loadCompanies();
+      // ⚠ A MENSAGEM VEM DEPOIS DA CARGA: `loadCompanies` abre com `feedback.clearFeedback()`
+      //   (linha ~152), entao setada antes ela era APAGADA antes de aparecer — o "salvou" que
+      //   ninguem via. Mesma ordem que `handleCreateCompany` ja usa.
+      feedback.setMessage("Cadastro da empresa atualizado com sucesso.");
       // ⚠ Com acesso novo criado a tela NÃO troca de aba: o aviso de "defina a senha" some junto,
       // e ele é a única coisa que impede o cliente de ficar de fora sem explicação.
       // ⚠ Com QUALQUER dos dois avisos a tela NÃO troca de aba — o aviso some junto com ela.

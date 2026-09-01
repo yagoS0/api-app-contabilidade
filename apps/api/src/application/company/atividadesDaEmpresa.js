@@ -34,9 +34,12 @@ import { normalizarCnae } from "../notas/apuracao/v2/CnaesDaEmpresaService.js";
  *
  * @param {string[]} atividadesAtuais  o que está gravado em `Company.atividades` hoje
  * @param {string[]} codigos           `[cnaePrincipal, ...cnaesSecundarios]` do payload normalizado
+ * @param {{descritas?: string[]}} opcoes  linhas `"código - descrição"` que a CONSULTA ao CNPJ
+ *   acabou de trazer. ⚠ ELAS VENCEM o que está gravado: são a fonte oficial e são mais novas.
+ *   Ausentes, o comportamento é exatamente o de antes.
  * @returns {string[]} uma linha por código, na ordem dos `codigos`
  */
-export function mesclarAtividades(atividadesAtuais, codigos) {
+export function mesclarAtividades(atividadesAtuais, codigos, opcoes = {}) {
   const atuais = Array.isArray(atividadesAtuais) ? atividadesAtuais : [];
   const entram = Array.isArray(codigos) ? codigos : [];
 
@@ -50,6 +53,15 @@ export function mesclarAtividades(atividadesAtuais, codigos) {
     //   quando o mesmo código aparecesse duas vezes, e a preservação viraria loteria de ordem.
     if (!temDescricao(linha)) continue;
     if (!descritaPorCodigo.has(chave)) descritaPorCodigo.set(chave, String(linha));
+  }
+
+  // ⚠ A CONSULTA POR CIMA DO GRAVADO. Ela roda só na criação e quando o CNPJ é digitado; quando
+  //   roda, o texto dela é o oficial do dia. Sem esta camada, uma empresa cujo CNAE mudou de nome
+  //   na Receita ficaria com a descrição antiga para sempre.
+  for (const linha of Array.isArray(opcoes?.descritas) ? opcoes.descritas : []) {
+    const chave = normalizarCnae(linha);
+    if (!chave || !temDescricao(linha)) continue;
+    descritaPorCodigo.set(chave, String(linha));
   }
 
   const saida = [];

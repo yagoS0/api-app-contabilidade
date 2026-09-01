@@ -267,3 +267,35 @@ export function avisoDeAcessoNovo(acessoNovo) {
 export function detalhesDaConfirmacaoDoResponsavel(err) {
   return detalhesDaContaCompartilhada(err) || detalhesDaContaExistente(err);
 }
+
+/**
+ * A empresa tem responsável com acesso ao portal? `null` = tem (a tela não diz nada).
+ *
+ * ⚠⚠ ESTA FUNÇÃO EXISTE PORQUE O CAMPO PASSOU A PODER FICAR VAZIO. Até 30/08/2026
+ * `mapCompanyToEditForm` fazia `company?.ownerEmail || company?.email` — o campo *"E-mail do
+ * responsável (login do portal)"* CAÍA para o e-mail da EMPRESA quando não havia vínculo OWNER.
+ * São coisas diferentes: um é login do portal do cliente, o outro recebe guias. E, ao salvar, o
+ * e-mail da empresa viajava como `ownerEmail` e disparava o ramo de TROCA DE DONO sem ninguém ter
+ * tocado no campo.
+ *
+ * ⚠ Tirado o fallback, **célula vazia é proibida**: o branco tem de dizer por quê. Sem isso o
+ * contador veria um campo obrigatório em branco e concluiria que o cadastro se perdeu.
+ *
+ * ⚠ Medido em produção (30/08/2026): **0 de 34 empresas** estão sem OWNER ativo hoje — o fallback
+ * era armadilha latente, não a causa do defeito relatado. Este aviso é a rede para quando houver.
+ */
+export function estadoDoResponsavel({ ownerEmail, emailDaEmpresa, edicao } = {}) {
+  if (limpar(ownerEmail)) return null;
+  // ⚠ Na CRIAÇÃO o campo em branco é o estado normal (ninguém digitou ainda) — avisar ali seria
+  //   ruído em toda empresa nova. O aviso é sobre uma empresa que EXISTE e não tem responsável.
+  if (!edicao) return null;
+  const daEmpresa = limpar(emailDaEmpresa);
+  return {
+    titulo: "Esta empresa não tem responsável com acesso ao portal",
+    texto: daEmpresa
+      ? `O e-mail ${daEmpresa} está no cadastro da empresa, mas ele NÃO é login: serve para receber `
+        + `as guias. Para o cliente entrar no portal é preciso um responsável.`
+      : "Para o cliente entrar no portal do cliente é preciso um responsável com e-mail próprio.",
+    ondeResolver: ONDE_DEFINIR_SENHA,
+  };
+}

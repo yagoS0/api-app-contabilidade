@@ -158,6 +158,11 @@ function buildCompanyPayload(input) {
     hasProlabore: Boolean(input.hasProlabore),
     temFolha: Boolean(input.temFolha),
     empresaZerada: Boolean(input.empresaZerada),
+    // ⚠⚠ FORA de `company`, e de proposito: a rota le `body.atividadesDescritas`, e `company`
+    //   passa pelo Zod (`companySchemas`) — campo desconhecido ali e descartado ou recusado.
+    //   Ele tambem NAO e campo do perfil: e o texto que a consulta ao CNPJ trouxe AGORA, usado so
+    //   para acrescentar descricao a codigos que `cnaePrincipal`/`cnaesSecundarios` ja escolheram.
+    atividadesDescritas: Array.isArray(input.atividadesDescritas) ? input.atividadesDescritas : [],
     company: {
       cnpj: String(input.cnpj || "").trim(),
       razaoSocial: String(input.razaoSocial || "").trim(),
@@ -166,6 +171,19 @@ function buildCompanyPayload(input) {
       guideNotificationEmail: String(input.guideNotificationEmail || "").trim().toLowerCase() || null,
       telefone: txt(input.telefone),
       regimeTributario: String(input.regimeTributario || "SIMPLES"),
+      // ⚠⚠ O BLOCO `simples` SO VIAJA QUANDO O REGIME E SIMPLES. Mandado sempre, ele apagaria o
+      //   anexo de toda empresa do Presumido a cada salvar — e o backend recusa
+      //   (`company_simples_not_allowed_for_regime`) se vier com anexo fora do Simples.
+      // ⚠ E quando viaja, viaja INTEIRO: e a presenca da chave `simples` que autoriza a rota a
+      //   escrever as tres colunas (spread condicional). Omitir = "nao mexer".
+      ...(String(input.regimeTributario || "SIMPLES") === "SIMPLES"
+        ? {
+            simples: {
+              anexo: String(input.simplesAnexo || "").trim() || null,
+              dataOpcao: String(input.simplesDataOpcao || "").trim() || null,
+            },
+          }
+        : {}),
       cnaePrincipal: String(input.cnaePrincipal || "").trim(),
       // Antes era `[]` fixo: os CNAEs secundários NUNCA eram enviados, mesmo vindo da
       // BrasilAPI. Aceita array ou string separada por vírgula (o form usa string).

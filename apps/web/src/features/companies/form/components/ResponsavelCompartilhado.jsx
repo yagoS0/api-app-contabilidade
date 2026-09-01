@@ -24,6 +24,7 @@ import {
   TITULO_CONFIRMACAO,
   tituloDaConfirmacao,
   avisoDeAcessoNovo,
+  estadoDoResponsavel,
   avisoDeVinculoCriado,
   avisoDeEmailCompartilhado,
   fraseDeConfirmacao,
@@ -171,6 +172,23 @@ export function AvisoVinculoCriado({ vinculoCriado }) {
       <span style={{ color: "var(--text-muted)" }}>
         Quem entrar com {aviso.email} passa a ver esta empresa junto das demais dessa conta.
       </span>
+    </div>
+  );
+}
+
+/**
+ * A empresa não tem responsável — o campo fica em branco COM o motivo.
+ *
+ * ⚠ Ele não bloqueia nada e não sugere um e-mail. Sugerir o da empresa é literalmente o defeito
+ * que o fallback removido cometia, só que com a tela dizendo em voz alta.
+ */
+export function SemResponsavel({ estado }) {
+  if (!estado) return null;
+  return (
+    <div className="full" style={CAIXA_AVISO} data-testid="sem-responsavel">
+      <strong>{estado.titulo}</strong>
+      <span>{estado.texto}</span>
+      <span style={{ color: "var(--text-muted)" }}>Onde resolver: {estado.ondeResolver}</span>
     </div>
   );
 }
