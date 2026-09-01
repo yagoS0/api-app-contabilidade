@@ -1,0 +1,221 @@
+// IBS E CBS NO SIMPLES NACIONAL — "por dentro" × "por fora", e o que a tela pode afirmar.
+//
+// ⚠⚠ TODO NÚMERO AQUI SAI DA LEI OU DE UM CAMPO DIGITADO. Nada é estimado por este módulo.
+// A fonte é `docs/reforma-consumo/` (LC 214/2025 e LC 227/2026, textos compilados do Planalto, com
+// SHA-256), e o resumo verificado está em `docs/fontes-fiscais.md` §6.1. **Ler o §6.1 antes de
+// mexer**: a pesquisa que o escreveu derrubou quatro afirmações de um plano redigido sem a lei.
+//
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// AS TRÊS COISAS QUE ESTE MÓDULO EXISTE PARA NÃO DEIXAR A TELA ERRAR
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//
+// 1 · ⚠⚠ EM 2026, PARA O OPTANTE, IBS E CBS SÃO **ZERO** — e é literal.
+//     LC 214/2025, art. 348, III, "c": as alíquotas de teste dos arts. 343 (IBS 0,1%) e 346
+//     (CBS 0,9%) *"não serão aplicadas em relação às operações dos contribuintes optantes pelo
+//     Simples Nacional"*. Qualquer outro número numa competência de 2026 é INVENÇÃO.
+//     ⚠ E os Anexos com coluna de CBS/IBS **também não valem em 2026**: o art. 519 da LC 214 (que
+//     os reescreve) só produz efeitos em 1º/01/2027 (art. 544, III, redação da LC 227/2026).
+//
+// 2 · ⚠⚠ PARA 2027-2028, O IBS É CONHECIDO POR LEI E SÓ A CBS É DESCONHECIDA.
+//     O IBS é 0,05% estadual + 0,05% municipal (art. 344) — **está na lei, não se digita**.
+//     A alíquota de referência do IBS só é fixada *"para os anos de 2029 a 2033"* (art. 349, II).
+//     A da CBS para 2027 será fixada pelo **Senado** até **15/12/2026** (art. 349, § 1º, II, com a
+//     prorrogação de 45 dias do art. 353, § 2º) — ou seja, **hoje ela não existe**, e o contador
+//     digita a estimativa dele. O PDF imprime que ela não está em lei.
+//     ⚠ Os números que circulam (27,91% · 18,7% · 26,5%) **não estão nesta lei** e não entram aqui.
+//
+// 3 · ⚠⚠ NA 6ª FAIXA NÃO HÁ IBS DENTRO DO DAS — e isso muda o crédito.
+//     Medido nos cinco anexos: a 6ª faixa tem duas colunas a menos, caem o ICMS/ISS **e o IBS**
+//     (sublimite, LC 123 art. 13-A). Quem está nela transfere crédito calculado **só sobre a CBS**.
+//     O dado gerado grava essas colunas como `null` — e `null` aqui NÃO é zero.
+
+import { ANEXOS_SIMPLES_2027, VIGENCIA_ANEXOS_2027 } from "./anexosSimples2027.data";
+
+/** Os dois cenários que a tela sabe responder. Lista FECHADA. */
+export const CENARIO = Object.freeze({
+  EM_2026: "2026",
+  DE_2027_A_2028: "2027-2028",
+});
+
+/**
+ * ⚠ O IBS de 2027-2028 está NA LEI, em duas parcelas. Some as duas para ter o total da operação.
+ * LC 214/2025, art. 344.
+ */
+export const IBS_2027_2028 = Object.freeze({
+  estadual: 0.05,
+  municipal: 0.05,
+  total: 0.1,
+  fundamento: "LC 214/2025, art. 344",
+});
+
+/** As alíquotas de TESTE de 2026 — que existem, e que **não alcançam o optante**. */
+export const TESTE_2026 = Object.freeze({
+  ibs: 0.1,
+  cbs: 0.9,
+  fundamentoIbs: "LC 214/2025, art. 343",
+  fundamentoCbs: "LC 214/2025, art. 346",
+  fundamentoDaExclusao: 'LC 214/2025, art. 348, III, "c"',
+});
+
+/**
+ * A JANELA DA OPÇÃO "POR FORA".
+ *
+ * ⚠⚠ A REDAÇÃO ORIGINAL DA LC 214 DIZIA "setembro e ABRIL", com outra numeração de parágrafos.
+ * Foi a LC 227/2026 que mudou para **março** e renumerou (§ 9º e § 10 do art. 13 da LC 123). As
+ * duas versões estão impressas lado a lado no arquivo do Planalto, e ler a errada anuncia a data
+ * errada ao contador.
+ *
+ * ⚠⚠ E ELA DEPENDE DE ATO DO CGSN — o § 10 diz *"na forma regulamentada pelo CGSN"*, e **não há
+ * prova neste repositório de que essa regulamentação exista**. A tela pode dizer qual é a JANELA
+ * LEGAL; ela **não pode** afirmar que o procedimento está disponível.
+ */
+export const OPCAO_POR_FORA = Object.freeze({
+  meses: ["setembro", "março"],
+  semestres: ["janeiro", "julho"],
+  irretratavel: true,
+  fundamento: "LC 123/2006, art. 13, §§ 9º e 10 (redação da LC 227/2026); LC 214/2025, art. 41, § 3º",
+  dependeDeRegulamentacao: true,
+  // ⚠ "corrente ou ANTERIOR" é o texto do art. 41, § 5º, e ele fala de quando o ressarcimento foi
+  // RECEBIDO — não de quanto tempo a trava dura. Parafrasear isso como "no ano seguinte" muda o
+  // que a frase afirma.
+  travaDeSaida:
+    "Quem recebeu ressarcimento de créditos de IBS/CBS no ano-calendário corrente ou anterior "
+    + "não pode sair do regime regular (LC 214/2025, art. 41, § 5º).",
+});
+
+/** `"III"` → a linha da faixa naquele anexo, ou `null`. Sem inventar faixa nenhuma. */
+function faixaDoAnexo(anexo, faixa) {
+  const a = ANEXOS_SIMPLES_2027[String(anexo || "").toUpperCase()];
+  if (!a) return null;
+  return a.faixas.find((f) => f.faixa === Number(faixa)) || null;
+}
+
+/**
+ * O CRÉDITO QUE A EMPRESA DO SIMPLES TRANSFERE AO ADQUIRENTE — **"por dentro"**, o padrão.
+ *
+ * ⚠⚠ ESTA CONTA É EXATA, NÃO É ESTIMATIVA, e a lei diz a fórmula:
+ *
+ * > LC 123/2006, art. 23, § 1º-A: o adquirente não optante tem crédito *"em montante equivalente
+ * > ao cobrado por meio desse regime único"*.
+ * > § 2º: a alíquota do crédito *"corresponderá aos percentuais de ICMS, IBS e CBS previstos nos
+ * > Anexos I a V (…) para a faixa de receita bruta a que a (…) empresa estiver sujeita no mês de
+ * > operação"*.
+ *
+ *     crédito = alíquota efetiva do Simples × (%CBS + %IBS do Anexo, na faixa)
+ *
+ * ⚠ `null` na 6ª faixa NÃO entra como zero — ele sai NOMEADO em `semIbsNoDas`, porque a diferença
+ * entre "a partilha do IBS é zero" e "o IBS não está no DAS" é o que explica o número ao contador.
+ *
+ * @param {{anexo: string, faixa: number, aliquotaEfetivaPct: number}} entrada
+ * @returns {object|null} `null` quando falta insumo — nunca um número por omissão.
+ */
+export function creditoPorDentro({ anexo, faixa, aliquotaEfetivaPct }) {
+  const linha = faixaDoAnexo(anexo, faixa);
+  if (!linha) return null;
+  if (!Number.isFinite(Number(aliquotaEfetivaPct)) || Number(aliquotaEfetivaPct) <= 0) return null;
+
+  const pctCbs = linha.partilha.CBS;
+  const pctIbs = linha.partilha.IBS;
+  // ⚠ A CBS tem de existir em toda faixa — se não existir, a fonte não é a de 2027 e não se calcula.
+  if (!Number.isFinite(Number(pctCbs))) return null;
+
+  const semIbsNoDas = pctIbs == null;
+  const somaPct = Number(pctCbs) + (semIbsNoDas ? 0 : Number(pctIbs));
+  const efetiva = Number(aliquotaEfetivaPct);
+
+  return {
+    anexo: String(anexo).toUpperCase(),
+    faixa: Number(faixa),
+    aliquotaEfetivaPct: efetiva,
+    percentualCbs: Number(pctCbs),
+    percentualIbs: semIbsNoDas ? null : Number(pctIbs),
+    somaPercentual: Number(somaPct.toFixed(4)),
+    /** O quanto da operação vira crédito para o adquirente. Em pontos percentuais da operação. */
+    creditoPct: Number(((efetiva * somaPct) / 100).toFixed(6)),
+    // ⚠⚠ Na 6ª faixa o IBS não está no DAS (sublimite, art. 13-A): não há parcela a transferir, e
+    // o crédito sai SÓ da CBS. Sem esta marca o número pareceria menor por engano de cálculo.
+    semIbsNoDas,
+    vigencia: VIGENCIA_ANEXOS_2027,
+    fundamento: "LC 123/2006, art. 23, §§ 1º-A e 2º (redação da LC 214/2025, ajustada pela LC 227/2026)",
+  };
+}
+
+/**
+ * O QUE A OPÇÃO **"POR FORA"** MUDA PARA O ADQUIRENTE.
+ *
+ * Fora do regime único, o IBS e a CBS são destacados cheios e o adquirente se credita do valor
+ * integral — não mais da fatia do Anexo. Para 2027-2028:
+ *
+ *     transferido = CBS estimada (digitada) + IBS 0,1% (da lei)
+ *
+ * ⚠⚠ A CBS É A ÚNICA INCÓGNITA, e ela vem DIGITADA. Sem o número, esta função devolve `null` —
+ * ela **não estima**, não usa "os 26,5% que circulam" e não repete número de notícia.
+ *
+ * ⚠ O que esta função NÃO afirma, e a tela também não pode: **como o DAS é recomposto** quando as
+ * parcelas de IBS/CBS saem dele. O § 9º do art. 13 diz apenas que elas *"não serão cobradas pelo
+ * regime único"*; a forma é remetida à regulamentação, e não há prova dela neste repositório.
+ */
+export function transferidoPorFora({ cbsEstimadaPct }) {
+  const cbs = Number(cbsEstimadaPct);
+  if (!Number.isFinite(cbs) || cbs <= 0) return null;
+  return {
+    cbsPct: cbs,
+    ibsPct: IBS_2027_2028.total,
+    totalPct: Number((cbs + IBS_2027_2028.total).toFixed(6)),
+    cbsEhEstimativa: true,
+    fundamentoIbs: IBS_2027_2028.fundamento,
+    // ⚠ Esta frase vai IMPRESSA no PDF. Um percentual sem ela é lido como se fosse lei.
+    avisoDaCbs:
+      "A alíquota da CBS foi INFORMADA nesta simulação e não está em lei: ela será fixada por "
+      + "resolução do Senado Federal até 15/12/2026 (LC 214/2025, art. 349, § 1º, II, com a "
+      + "prorrogação do art. 353, § 2º).",
+  };
+}
+
+/**
+ * A RESPOSTA DA TELA, por cenário.
+ *
+ * ⚠⚠ O CENÁRIO 2026 NÃO É "SEM DADO" — É ZERO, COM FUNDAMENTO. Devolver `null` ali faria a tela
+ * dizer "não foi possível calcular" sobre um fato que a lei afirma com todas as letras.
+ */
+export function ibsCbsDoSimples({ cenario, anexo, faixa, aliquotaEfetivaPct, cbsEstimadaPct }) {
+  if (cenario === CENARIO.EM_2026) {
+    return {
+      cenario,
+      zeroPorLei: true,
+      creditoPct: 0,
+      titulo: "Em 2026, o Simples Nacional não recolhe IBS nem CBS",
+      explicacao:
+        "As alíquotas de teste de 2026 — IBS 0,1% e CBS 0,9% — não alcançam quem é optante pelo "
+        + "Simples Nacional. Nada muda no DAS desta empresa neste ano, e nenhum crédito de IBS/CBS "
+        + "é transferido a quem compra dela.",
+      fundamento: TESTE_2026.fundamentoDaExclusao,
+      // ⚠ A decisão que EXISTE em 2026 é a da janela de setembro, e ela vale para 2027 —
+      // é por isso que o cenário de 2027 fica ao lado, e não escondido.
+      proximoPasso: CENARIO.DE_2027_A_2028,
+    };
+  }
+
+  if (cenario === CENARIO.DE_2027_A_2028) {
+    const porDentro = creditoPorDentro({ anexo, faixa, aliquotaEfetivaPct });
+    const porFora = transferidoPorFora({ cbsEstimadaPct });
+    return {
+      cenario,
+      zeroPorLei: false,
+      porDentro,
+      porFora,
+      // ⚠ A diferença só existe quando os DOIS lados existem. Sem a CBS digitada não se compara —
+      // e a tela diz o que falta, em vez de mostrar meia comparação.
+      diferencaPct:
+        porDentro && porFora
+          ? Number((porFora.totalPct - porDentro.creditoPct).toFixed(6))
+          : null,
+      janela: OPCAO_POR_FORA,
+      vigencia: VIGENCIA_ANEXOS_2027,
+    };
+  }
+
+  // ⚠ Cenário desconhecido não vira o de 2026 nem o de 2027 — vira recusa nomeada. Cair num deles
+  // faria uma competência futura ser respondida com a regra do ano errado.
+  return { cenario: null, zeroPorLei: false, motivo: "cenario_desconhecido" };
+}
