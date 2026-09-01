@@ -242,6 +242,24 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   // direto, e doze campos que não mudam número nenhum seriam um controle mentiroso: dão ao usuário
   // a impressão de estar refinando a conta enquanto o resultado fica igual.
   const podeDetalhar = mesesInicioAtividade != null;
+
+  // ⚠⚠ O RBT12 FANTASMA (01/09/2026). O campo mostrava vazio e o ESTADO continuava cheio:
+  // `value={mesesInicioAtividade ? "" : rbt12}` esconde a exibição e não toca em `rbt12`.
+  //
+  // Com a empresa em início de atividade, o RBT12 é DERIVADO (proporcionalizado pela regra da
+  // Resolução CGSN 140/2018, art. 22) — o valor digitado antes deixa de valer. Mas ele continuava
+  // viajando em `entradas.rbt12`, e daí saíam DOIS números:
+  //   · o `GaugeFatorR` lê `resultado.fatorR`, calculado pelo motor sobre o RBT12 PROPORCIONALIZADO;
+  //   · o `PainelProLabore` lê `entradas.rbt12`, que era o FANTASMA.
+  // Os dois aparecem um embaixo do outro, com percentuais de Fator R DIFERENTES para a mesma
+  // empresa — e o PDF imprimia os dois RBT12.
+  //
+  // ⚠ Limpar o ESTADO (e não só a exibição) é o que dá uma fonte só. Perde-se o que estava digitado
+  // ao ligar "meses de atividade", e isso é aceitável: aquele número deixou de ser aplicável, e um
+  // valor guardado que não é usado é exatamente o fantasma.
+  useEffect(() => {
+    if (mesesInicioAtividade) setRbt12("");
+  }, [mesesInicioAtividade]);
   const detalhando = podeDetalhar && detalharMeses;
 
   // Ao abrir, cada mês já vem com a receita uniforme — o usuário EDITA o que sabe, não digita tudo.
@@ -353,7 +371,11 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   const proLabore = useMemo(() => {
     if (!temReceita || !sujeitoFatorR) return null;
     return simularProLaboreParaFatorR({
-      rbt12: entradas.rbt12,
+      // ⚠⚠ O RBT12 QUE O MOTOR APLICOU, nunca o do campo. Em início de atividade eles são coisas
+      // diferentes (o do motor é o proporcionalizado), e ler o do campo aqui punha dois Fator R
+      // diferentes na mesma tela, um embaixo do outro. `resultado.inicioAtividade.rbt12` é a mesma
+      // fonte que alimenta o `GaugeFatorR`.
+      rbt12: resultado?.inicioAtividade?.proporcionalizado ? resultado.inicioAtividade.rbt12 : entradas.rbt12,
       folha12mAtual: entradas.folhaAnual,
       economiaNoDas: economiaAnexo,
       anexoDestino: resultado?.anexoResolvido === "V" ? "III" : (resultado?.anexoResolvido || "III"),
