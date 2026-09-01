@@ -76,6 +76,13 @@ export function AppShell({ user }) {
   // roteamento é por hash com três destinos fixos, e a casca é quem monta a tela ativa. ⚠ Ele NÃO
   // emite nada — prepara e confere a planilha. A emissão em lote é fase seguinte.
   const [loteAberto, setLoteAberto] = useState(false);
+  // ⚠⚠ O TRABALHO QUE A TROCA DE EMPRESA DESCARTA (31/08/2026, teste de usabilidade).
+  //
+  // A planilha conferida e os ajustes digitados são descartados na troca — e isso está CERTO
+  // (conferir a planilha de uma empresa sob o nome de outra prepararia notas no CNPJ errado). O
+  // que faltava era dizê-lo ANTES do clique. ⚠ Quem responde "há trabalho aqui?" é a TELA DO LOTE,
+  // que é a única que sabe; a casca só carrega a resposta até o seletor.
+  const [trabalhoNoLote, setTrabalhoNoLote] = useState(null);
   // ⚠ O EXTRATO É O SEGUNDO MODO DA ROTA `home`, pelo mesmo motivo do lote e da emissão: o
   // roteamento é por hash com QUATRO destinos fixos, e a casca é quem monta a tela ativa.
   // ⚠⚠ Uma rota nova custaria as três listas em sincronia (`ROTAS` em `lib/hooks.js`, `ABAS` aqui e
@@ -357,7 +364,11 @@ export function AppShell({ user }) {
               aoRecarregarEmpresas={empresasQuery.recarregar}
             />
           ) : loteAberto ? (
-            <LotePlanilhaPage empresa={empresaAtiva} aoVoltar={() => setLoteAberto(false)} />
+            <LotePlanilhaPage
+              empresa={empresaAtiva}
+              aoVoltar={() => setLoteAberto(false)}
+              aoMudarTrabalho={setTrabalhoNoLote}
+            />
           ) : (
             <NotasPage
               empresa={empresaAtiva}
@@ -415,6 +426,9 @@ export function AppShell({ user }) {
           ativaId={empresaAtiva?.companyId || null}
           aoEscolher={escolherEmpresa}
           aoFechar={() => setSeletorAberto(false)}
+          // ⚠ Só com o lote ABERTO: fechada a tela, o estado dela já não existe, e avisar de uma
+          // perda que não vai acontecer é a frase que descreve uma ausência — cortada por regra.
+          avisoAoTrocar={loteAberto ? trabalhoNoLote : null}
         />
       ) : null}
     </div>

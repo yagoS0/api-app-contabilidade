@@ -40,6 +40,30 @@ export const TIPO = Object.freeze({
 });
 
 /**
+ * ⚠⚠ ESTE DESFECHO DEIXA O FORMULÁRIO NA TELA? (31/08/2026, teste de usabilidade)
+ *
+ * Achado: **qualquer** desfecho substituía o formulário inteiro pelo painel — inclusive a recusa
+ * mais barata que existe, a que nem saiu da máquina (CPF com dígito errado, valor zero). Quem
+ * digitou um dígito a mais perdia a tela de edição e tinha de clicar "Corrigir e enviar de novo"
+ * para reencontrar o próprio texto. É o erro que mais se comete numa sessão de digitação, cobrado
+ * ao preço do mais raro.
+ *
+ * ⚠⚠ A LINHA DE CORTE É "A DPS SAIU DAQUI?", nunca "é grave?": onde nada saiu não houve ato fiscal
+ * nenhum — nenhum número consumido, nenhuma nota possível no mundo —, e o estado certo da tela é o
+ * formulário de onde a recusa veio, com o motivo em cima dele.
+ *
+ * ⚠ SUCESSO, TRANSPORTE, RECEITA, PORTAO, EMPRESA e DESCONHECIDO **continuam tomando a tela**, e
+ * isso não se afrouxa: eles falam de uma nota que existe ou que pode existir, ou de um impedimento
+ * que não se resolve no formulário. O TRANSPORTE ainda APAGA o formulário de propósito — para
+ * tirar do caminho o "enviar de novo" de um clique só sobre uma nota que talvez já exista.
+ *
+ * ⚠ Lista de INCLUSÃO: tipo novo entra tomando a tela, que é o lado seguro.
+ */
+export function desfechoMantemOFormulario(desfecho) {
+  return desfecho?.tipo === TIPO.NOSSA || desfecho?.tipo === TIPO.PEDIDO_INVALIDO;
+}
+
+/**
  * Códigos que descrevem um impedimento do CADASTRO da empresa (ou da numeração dela).
  * Nenhum deles é corrigível dentro do formulário — todos terminam em "fale com o seu contador".
  */

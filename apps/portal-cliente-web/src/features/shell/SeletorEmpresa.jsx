@@ -12,8 +12,20 @@ import { roleLabel } from "../../lib/roles";
  * O papel (`myRole`) aparece porque ele muda o que a pessoa pode fazer ali
  * dentro — e o mesmo e-mail costuma ter papéis diferentes em empresas
  * diferentes.
+ *
+ * ⚠⚠ `avisoAoTrocar` — O TRABALHO QUE A TROCA DESCARTA, DITO ANTES DO CLIQUE (31/08/2026).
+ *
+ * Achado em teste de usabilidade: quem conferiu uma planilha de lote e ajustou linhas perdia tudo
+ * ao trocar de empresa, **em silêncio**. O descarte em si está certo e é deliberado (conferir a
+ * planilha de uma empresa sob o nome de outra prepararia notas no CNPJ errado) — o que faltava era
+ * a pessoa **poder decidir**. Aqui o critério do dono manda ficar: é texto que muda uma decisão.
+ *
+ * ⚠ É um AVISO, não uma confirmação em duas etapas. Quem chegou a este diálogo veio para trocar
+ * de empresa; pôr uma segunda pergunta no caminho ensina a clicar sem ler, que é o que a
+ * confirmação do lote já evita por não se repetir. `null` ⇒ nada é dito, pela regra deste app:
+ * sai a frase que descreve uma ausência, fica a que impede uma perda de ser descoberta depois.
  */
-export function SeletorEmpresa({ empresas, ativaId, aoEscolher, aoFechar }) {
+export function SeletorEmpresa({ empresas, ativaId, aoEscolher, aoFechar, avisoAoTrocar = null }) {
   // ⚠ Esc, foco que entra, foco PRESO no diálogo (o Tab não sai) e foco que volta ao fechar — a
   // metade que `aria-modal="true"` promete e que os três diálogos deste app não cumpriam.
   const { caixaRef } = useDialogoModal({ aoFechar });
@@ -34,6 +46,13 @@ export function SeletorEmpresa({ empresas, ativaId, aoEscolher, aoFechar }) {
         ref={caixaRef}
       >
         <h2 id="titulo-troca-empresa">Escolher empresa</h2>
+        {/* ⚠ `role="status"`, nunca `alert`: é contexto do que está na tela, e a pessoa acabou de
+            abrir este diálogo — um `alert` interromperia a leitura da lista que ela veio ler. */}
+        {avisoAoTrocar ? (
+          <p className="alerta alerta-aviso" role="status" data-aviso-troca="sim">
+            {avisoAoTrocar}
+          </p>
+        ) : null}
         <ul className="lista-empresas">
           {empresas.map((empresa) => {
             const ativa = empresa.companyId === ativaId;

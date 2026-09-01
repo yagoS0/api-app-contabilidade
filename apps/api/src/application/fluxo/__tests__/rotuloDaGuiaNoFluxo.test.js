@@ -128,3 +128,39 @@ describe("⚠⚠ a DARF do Presumido se chama pelos tributos que ela contém", (
     expect(r).toBe("Parcela 7 de parcelamento");
   });
 });
+
+// ⚠⚠ UMA HIPÓTESE MEDIDA E DESCARTADA (31/08/2026) — para ninguém "consertar" o que não quebrou.
+//
+// Um teste de usabilidade levantou que `tributoCurto` corta a denominação no primeiro hífen, e que
+// uma denominação começando pelo CÓDIGO DE RECEITA (`"2172-01 COFINS - FATURAMENTO"`) devolveria
+// **`"2172"`** — um número no lugar do nome do tributo, na tela de quem paga. O raciocínio está
+// certo sobre a função. **A base não o confirma.**
+//
+// Medido em produção (`scripts/diag-denominacao-composicao.mjs`, só leitura): 165 guias com
+// `extracted`, **13 com composição, 29 itens**, e o curto virou número puro em **ZERO** deles —
+// 24 itens trazem `tributo` já preenchido (PIS · COFINS · IRPJ · CSLL · IRRF), e os 5 restantes
+// têm denominação sem código na frente (`CP SEGURADOS`).
+//
+// ⚠ Por isso `tributoCurto` NÃO foi alterado. Ela tem TRÊS cópias (api, portal do cliente, portal
+// do escritório), e mexer nas três por uma forma que ninguém observou trocaria um defeito
+// hipotético por um risco real no rótulo de documento que o cliente paga. Se a forma aparecer, o
+// script acima a mostra: ele lista todo curto que virou número puro, com a denominação inteira.
+describe("⚠ o rótulo é fiel às formas que a base REALMENTE tem", () => {
+  it("com `tributo` preenchido, é ele que manda — é o caso de 24 dos 29 itens medidos", async () => {
+    const comp = [
+      { tributo: "PIS", denominacao: "PIS - FATURAMENTO - PJ EM GERAL", total: 431.25 },
+      { tributo: "COFINS", denominacao: "COFINS - FATURAMENTO/PJ EM GERAL", total: 1004.24 },
+    ];
+    const [r] = await rotulosDoFluxo([guia({ extracted: { composicao: comp } })]);
+    expect(r).toBe("PIS · COFINS");
+  });
+
+  it("denominação SEM código na frente sai inteira — é o caso de `CP SEGURADOS`", async () => {
+    const [r] = await rotulosDoFluxo([
+      guia({ tipo: "INSS", extracted: { composicao: [{ denominacao: "CP SEGURADOS", total: 178.31 }] } }),
+    ]);
+    // ⚠ `INSS` não passa pela composição (a regra é só da DARF consolidada), e é isso que se prova:
+    // a composição não sequestra o nome de um tipo que já se nomeia sozinho.
+    expect(r).toBe("INSS");
+  });
+});

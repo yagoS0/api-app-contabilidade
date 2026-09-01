@@ -70,7 +70,7 @@ import {
  *
  * ⚠ **CPF NÃO SE CONSULTA** — decisão do dono, e a guarda é a mesma da emissão avulsa.
  */
-export function LotePlanilhaPage({ empresa, aoVoltar }) {
+export function LotePlanilhaPage({ empresa, aoVoltar, aoMudarTrabalho }) {
   const companyId = empresa.companyId;
 
   const [arquivo, setArquivo] = useState(null);
@@ -117,6 +117,33 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
   // ⚠⚠ TROCAR DE EMPRESA DESCARTA TUDO. A planilha, os ajustes e as consultas foram feitos para
   // OUTRA empresa; conferi-los aqui prepararia notas no CNPJ errado — o pior desfecho possível num
   // portal multi-empresa. É a mesma disciplina do modelo de emissão na casca.
+  // ⚠⚠ O QUE A TROCA DE EMPRESA VAI DESCARTAR — dito ANTES do clique (31/08/2026).
+  //
+  // Achado em teste de usabilidade: quem conferia uma planilha e ajustava linhas perdia tudo ao
+  // trocar de empresa, em SILÊNCIO. O descarte continua igual e continua certo — o que mudou é a
+  // pessoa poder decidir. ⚠ Quem sabe se há trabalho aqui é ESTA tela; a casca só leva a frase até
+  // o seletor. ⚠ E o RELATÓRIO DE UM LOTE JÁ EMITIDO **não** entra: aquelas notas existem e estão
+  // gravadas no servidor; dizer que a troca as descarta seria assustar com uma perda que não há.
+  const trabalhoDaTela = useMemo(() => {
+    if (!leitura) return null;
+    const linhas = Number(leitura?.resumo?.total) || (leitura?.linhas?.length ?? 0);
+    const quantosAjustes = Object.keys(ajustes || {}).length;
+    const planilha = linhas === 1 ? "1 linha conferida" : `${linhas} linhas conferidas`;
+    // ⚠ Os ajustes são o que MAIS custa: eles só existem nesta tela (a planilha no disco continua
+    // com o valor antigo), então perdê-los é perder digitação que não está em lugar nenhum.
+    const cauda = quantosAjustes
+      ? `, com ${quantosAjustes === 1 ? "1 ajuste" : `${quantosAjustes} ajustes`} que só existem aqui`
+      : "";
+    return `Você tem uma planilha nesta tela (${planilha}${cauda}). Trocar de empresa descarta tudo — a planilha conferida é desta empresa, e emitir com ela em outra sairia no CNPJ errado.`;
+  }, [leitura, ajustes]);
+
+  useEffect(() => {
+    aoMudarTrabalho?.(trabalhoDaTela);
+  }, [trabalhoDaTela, aoMudarTrabalho]);
+
+  // ⚠ E some ao sair da tela: um aviso sobre um estado que já não existe é pior que nenhum.
+  useEffect(() => () => aoMudarTrabalho?.(null), [aoMudarTrabalho]);
+
   useEffect(() => {
     setArquivo(null);
     setLeitura(null);

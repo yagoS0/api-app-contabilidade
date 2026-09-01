@@ -94,3 +94,50 @@ describe("⚠⚠ as recusas do lote têm frase própria — nunca o erro genéri
     expect(mensagemDeErro({ code: "internal_error" })).toMatch(/nosso lado|tente de novo/i);
   });
 });
+
+describe("⚠⚠ a troca de empresa DIZ o que vai descartar", () => {
+  /**
+   * Achado em teste de usabilidade (31/08/2026): quem conferia uma planilha e ajustava linhas
+   * perdia tudo ao trocar de empresa, **em silêncio**.
+   *
+   * ⚠ O DESCARTE NÃO MUDOU, e não pode mudar: a planilha conferida é de UMA empresa, e emitir com
+   * ela em outra sairia no CNPJ errado — é a mesma razão que faz a casca fechar o lote e a tela
+   * limpar o próprio estado. O que faltava era a pessoa poder decidir antes do clique.
+   *
+   * ⚠ Varredura da FONTE, como as três acima: o que se protege são ligações (`aoMudarTrabalho` →
+   * casca → `avisoAoTrocar`), e ligação faltando não quebra render nenhum — o aviso simplesmente
+   * não aparece, que é o defeito de origem.
+   */
+  const FONTE_CASCA = fs.readFileSync(path.join(__dirname, "../../shell/AppShell.jsx"), "utf8");
+  const FONTE_SELETOR = fs.readFileSync(path.join(__dirname, "../../shell/SeletorEmpresa.jsx"), "utf8");
+
+  it("a tela do lote REPORTA o trabalho que tem", () => {
+    expect(FONTE_PAGINA).toContain("aoMudarTrabalho");
+    // ⚠ A frase sai do que está na tela (linhas e ajustes), nunca de um texto fixo: fixa, ela
+    // avisaria de perda em tela vazia e mentiria sobre o tamanho da perda em tela cheia.
+    expect(FONTE_PAGINA).toMatch(/linhas? conferidas?/);
+    expect(FONTE_PAGINA).toMatch(/ajustes?/);
+  });
+
+  it("⚠⚠ e ela LIMPA o sinal ao sair — aviso sobre estado que já não existe é pior que nenhum", () => {
+    expect(FONTE_PAGINA).toMatch(/aoMudarTrabalho\?\.\(null\)/);
+  });
+
+  it("a casca leva o sinal até o seletor, e SÓ com o lote aberto", () => {
+    expect(FONTE_CASCA).toContain("avisoAoTrocar={loteAberto ? trabalhoNoLote : null}");
+  });
+
+  it("o seletor RENDERIZA o aviso, como `status` e não como `alert`", () => {
+    // `alert` interromperia a leitura da lista de empresas que a pessoa abriu o diálogo para ler.
+    expect(FONTE_SELETOR).toContain("avisoAoTrocar");
+    expect(FONTE_SELETOR).toMatch(/data-aviso-troca/);
+    expect(FONTE_SELETOR).toMatch(/role="status"/);
+    expect(FONTE_SELETOR).not.toMatch(/role="alert"/);
+  });
+
+  it("⚠ o descarte NÃO virou uma confirmação em duas etapas", () => {
+    // Quem chegou ao diálogo veio para trocar de empresa. Uma segunda pergunta no caminho ensina a
+    // clicar sem ler — o mesmo argumento que mantém a confirmação do lote em UM bloco, não 50.
+    expect(FONTE_SELETOR).not.toMatch(/window\.confirm|Tem certeza/i);
+  });
+});
