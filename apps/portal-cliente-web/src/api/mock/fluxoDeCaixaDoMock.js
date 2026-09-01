@@ -479,6 +479,22 @@ export function fluxoDeCaixaDoMock(companyId, competencia, opcoes = {}) {
       id: "g-4", rotulo: "OUTRA", valor: 214.77, vencimento: `${somarMeses(ciclo, -2)}-25`,
       atrasada: true, competencia: somarMeses(ciclo, -3), estado: "overdue",
     },
+    /**
+     * ⚠⚠ A QUINTA — o RÓTULO COMPOSTO da DARF do Lucro Presumido (31/08/2026).
+     *
+     * Ele é o conserto que o dono pediu (*"as guias de presumido, no caso da sincrosat, aparece
+     * como outras"*): quando a guia tem `extracta.composicao`, o SERVIDOR manda `"PIS · COFINS"`
+     * pronto, e este mock manda a string do jeito que ele mandaria.
+     *
+     * ⚠ Sem ela, o desenho do rótulo composto — o mais LONGO que este pop-up recebe, e o que mais
+     * pressiona a coluna — só existiria em produção, que é justamente onde o dono o viu errado.
+     * Sétima vez que este mock esconderia um ramo. ⚠ A `OUTRA` acima FICA: sem composição gravada,
+     * "OUTRA" continua sendo a resposta certa, e as duas precisam ser vistas lado a lado.
+     */
+    {
+      id: "g-5", rotulo: "PIS · COFINS", valor: 1435.49, vencimento: `${somarMeses(ciclo, -1)}-25`,
+      atrasada: true, competencia: somarMeses(ciclo, -2), estado: "overdue",
+    },
   ];
 
   const cientes = new Set(opcoes.cientes || []);
