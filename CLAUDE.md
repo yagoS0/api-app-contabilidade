@@ -275,7 +275,8 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     NOME DE PEÇA CONTÁBIL. Período anterior tem o **mesmo tamanho**; base zero **não vira
     percentual**; mês sem lançamento entra na série **com zero**, visualmente distinto.
   - **Planejamento tributário** (`features/planejamento/`) — motor local com as tabelas em
-    `tabelasFiscais.js`, cada valor citando a lei; 95 testes, dos quais 24 são **casos dourados
+    `tabelasFiscais.js`, cada valor citando a lei; ⚠ **356 testes na feature** (a linha dizia 95 até
+    01/09/2026), dos quais **32** são **casos dourados
     calculados à mão**. ⚠ A **recusa de calcular tem o mesmo peso visual do resultado**
     (`CardRegime.jsx`): número ausente diagramado em cinza vira ausência de dúvida. O PDF sai com
     a **data de vigência das tabelas e os avisos de escopo impressos**, porque circula sozinho.
@@ -313,6 +314,24 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     - ⚠ **Regime atual sem default.** `apuracaoV2.mapRegime` e `PerfilFiscalService` terminam em
       `return "SIMPLES_NACIONAL"`; aqui texto irreconhecível devolve `null` e a tela diz que não
       sabe — o comparativo inteiro se lê a partir do "hoje você está no X".
+    - ✅ **CONSERTOS DE TELA (01/09/2026)** — o dono avaliou como *"bem podre (…) está tudo muito
+      bugado"*, e os quatro defeitos foram MEDIDOS no navegador antes de mexer:
+      · **A RESPOSTA VINHA DEPOIS DE MIL PIXELS DE FORMULÁRIO** (página 2.806px, formulário até
+      1.025px, primeiro resultado só aos 1.055px). O bloco de resultado subiu; hoje ele aparece aos
+      **298px**. ⚠ Nenhum campo sumiu — o formulário desceu, não encolheu.
+      · **10 campos, 10 SEM `id`**, e o `OrigemDoCampo` renderizava DENTRO do `<label>`: o nome
+      acessível da receita era literalmente *"Receita anual (R$)da empresa · notas fiscais emitidas
+      e autorizadas de 09/2025 a 08/2026…"*, e MUDAVA com o dado da empresa. Hoje há um componente
+      `Campo` (rótulo com `htmlFor`, controle com `id`, descrição por **`aria-describedby`**).
+      ⚠ A procedência não sumiu — mudou de canal.
+      · ⚠⚠ **A IMPRESSÃO PERDIA O DETALHAMENTO POR TRIBUTO.** Ele é render CONDICIONAL do React
+      (`{aberto && …}`), não `<details>` — **nenhuma regra de CSS salva**, o conteúdo não está no
+      DOM. O efeito de impressão passou a ABRIR os cards antes do `print()` e a RESTAURAR depois,
+      no molde do `imprimirListagem` da carteira.
+      · ⚠ **A barra do Gauge saía VAZIA no papel**: ela é `background`, e o navegador descarta cor
+      de fundo ao imprimir. Ganhou `print-color-adjust: exact`, como a `LogoAltan tom="papel"`.
+      Travado em `hierarquiaEAcessibilidade.test.jsx` (8). Experimentos: devolvendo a procedência ao
+      rótulo, 1 vermelho; tirando a abertura dos cards, 2.
     - **IBS/CBS: não construído, e a porta ficou aberta** — `tabelasFiscais.js` + um `custoAnual*`
       novo em `comparador.js` é tudo que o desenho pede. Ver o relatório da entrega; nada de
       alíquota/base/transição foi escrito (LC 214/2025 em transição).

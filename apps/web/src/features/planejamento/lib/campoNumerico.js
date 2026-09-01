@@ -12,7 +12,8 @@
 //     String(31500)      ->  "31500"      ->  deCampo  ->  31.500          (ileso!)
 //
 // ⚠ Só valor COM CENTAVOS era afetado — e é por isso que nada pegou o defeito: o mock usava
-// inteiros redondos, e o motor (95 testes, 24 deles casos dourados calculados à mão) estava
+// inteiros redondos, e o motor (medido em 01/09/2026: 356 testes na feature, 32 deles casos dourados
+// calculados à mão) estava
 // perfeito. O que ninguém media era a LIGAÇÃO prefill → input → cálculo.
 //
 // As duas consequências, exatamente como o dono as viu na tela:

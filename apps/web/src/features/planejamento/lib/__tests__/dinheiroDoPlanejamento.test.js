@@ -1,6 +1,7 @@
 // ⚠⚠ A PORTA DO TECLADO DO PLANEJAMENTO — ela não tinha um único teste até 01/09/2026.
 //
-// O motor tem 230 testes, 24 deles casos dourados calculados à mão, e está certo. O que ninguém
+// O motor tem 356 testes na feature, 32 deles casos dourados calculados à mão (medido em
+// 01/09/2026), e está certo. O que ninguém
 // media era o que CHEGA nele. Medido contra a função de verdade, antes desta entrega:
 //
 //     "1234.56"   -> 123456   (×100)     — é o formato que o Excel exporta

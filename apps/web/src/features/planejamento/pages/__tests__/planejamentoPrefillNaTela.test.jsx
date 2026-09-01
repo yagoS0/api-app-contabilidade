@@ -1,6 +1,6 @@
 // A LIGAÇÃO PREFILL → INPUT → CÁLCULO — a camada que não tinha um único teste.
 //
-// ⚠⚠ ELA É A LIÇÃO INTEIRA DE 25/08/2026. O motor fiscal tem 95 testes (24 casos dourados
+// ⚠⚠ ELA É A LIÇÃO INTEIRA DE 25/08/2026. O motor fiscal tem 356 testes na feature (32 casos dourados
 // calculados à mão) e estava CERTO. `prefillDaEmpresa` tem 15 e estava CERTO. Entre um e outro,
 // o número passava por `String(n)` e voltava por um parser pt-BR — e ninguém media essa passagem.
 //

@@ -72,12 +72,42 @@ const ROTULO_REGIME = {
  * quebrado, e o contador preencheria "o que estava lá antes". A origem apurada é discreta de
  * propósito — ela informa, não alerta. E nada aqui é verde: verde é concluído, nunca "confie".
  */
-function OrigemDoCampo({ campo }) {
+// ⚠⚠ ELE RECEBE UM `id` E FICA FORA DO `<label>` — defeito MEDIDO no navegador em 01/09/2026.
+//
+// Enquanto ele renderizava DENTRO do `<label>`, o texto dele entrava no NOME ACESSÍVEL do campo.
+// Medido, literalmente:
+//
+//     "Receita anual (R$)da empresa · notas fiscais emitidas e autorizadas de 09/2025 a 08/2026 (…"
+//
+// Quatro dos campos estavam assim. O nome de um campo tem de ser o que ele PEDE; a procedência é
+// descrição — e ela MUDA com o dado, então o nome do campo mudava de empresa para empresa.
+// Hoje ela é ligada por `aria-describedby`, que é exatamente o canal para isso.
+function OrigemDoCampo({ campo, id }) {
   if (!campo) return null;
   if (campo.apurado) {
-    return <span style={{ fontSize: "0.68rem", color: C.muted, lineHeight: 1.35 }}>da empresa · {campo.origem}</span>;
+    return <span id={id} style={{ fontSize: "0.68rem", color: C.muted, lineHeight: 1.35 }}>da empresa · {campo.origem}</span>;
   }
-  return <span style={{ fontSize: "0.68rem", color: C.alerta, lineHeight: 1.35 }}>⚠ {campo.motivoAusencia}</span>;
+  return <span id={id} style={{ fontSize: "0.68rem", color: C.alerta, lineHeight: 1.35 }}>⚠ {campo.motivoAusencia}</span>;
+}
+
+/**
+ * UM CAMPO DO FORMULÁRIO — rótulo, controle e as notas que o descrevem.
+ *
+ * ⚠⚠ O `<label>` envolve SÓ O TEXTO e aponta para o campo por `htmlFor`/`id`. Envolvendo o
+ * controle inteiro (como estava), tudo que fosse renderizado ali dentro virava parte do nome
+ * acessível — procedência, aviso de colagem, recusa de faixa. **Medido: 10 campos, 10 sem `id`.**
+ *
+ * ⚠ `abaixo` é o que descreve o campo (procedência, recusas) e entra em `aria-describedby`.
+ */
+function Campo({ id, rotuloTexto, children, abaixo = null, estilo = null }) {
+  const idDaDescricao = abaixo ? `${id}-desc` : undefined;
+  return (
+    <div style={estilo || rotulo}>
+      <label htmlFor={id}>{rotuloTexto}</label>
+      {typeof children === "function" ? children({ id, "aria-describedby": idDaDescricao }) : children}
+      {abaixo ? <div id={idDaDescricao} style={{ display: "grid", gap: 2 }}>{abaixo}</div> : null}
+    </div>
+  );
 }
 
 export function PlanejamentoPage({ api = null, empresas = [], empresa = null, onVoltar, empresaFixa = false }) {
@@ -365,10 +395,11 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
 
   const temReceita = entradas.receitaAnual > 0;
   const resultado = useMemo(() => (temReceita ? compararRegimes(entradas) : null), [entradas, temReceita]);
-  // ⚠ DERIVADA DO RESULTADO, nunca recalculada aqui. Uma segunda conta na tela divergiria do motor
-  // na primeira correção — e é o motor que decide o número que vai ao PDF.
   // ⚠ DERIVADO do resultado do motor, nunca recalculado aqui — a tabela REARRANJA o que já foi
-  // calculado. Uma segunda conta na camada de apresentação divergiria do motor na primeira correção.
+  // calculado. Uma segunda conta na camada de apresentação divergiria do motor na primeira
+  // correção, e é o motor que decide o número que vai ao PDF.
+  // ⚠ Estas duas linhas eram QUATRO, dizendo a mesma coisa duas vezes seguidas — cortado em
+  // 01/09/2026 na varredura de texto que o dono pediu.
   const comparativo = useMemo(
     () => (resultado ? montarComparativo(resultado, entradas) : null),
     [resultado, entradas],
@@ -517,14 +548,29 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   useEffect(() => {
     if (!imprimindo) return undefined;
     document.body.classList.add("imprimindo");
+    // ⚠⚠ OS CARDS SÃO ABERTOS ANTES DE IMPRIMIR — sem isto o PDF saía SEM o detalhamento por
+    // tributo, a menos que o contador tivesse aberto os três cards à mão antes de clicar.
+    // ⚠ É render CONDICIONAL do React (`{aberto && …}`), não `<details>`: **nenhuma regra de CSS
+    // salva** — o conteúdo simplesmente não está no DOM. Por isso o conserto é de ESTADO, no mesmo
+    // efeito, exatamente como `imprimirListagem` força a Tabela na carteira antes do `print()`.
+    // ⚠ E o estado é RESTAURADO no cleanup: quem tinha os cards fechados na tela não os encontra
+    // abertos depois de imprimir.
+    const abertosAntes = abertos;
+    setAbertos(Object.fromEntries((resultado?.regimes || []).map((r) => [r.regime, true])));
     const limpar = () => setImprimindo(false);
     window.addEventListener("afterprint", limpar);
+    // ⚠ 60ms: o `setAbertos` acima é assíncrono, e o `print()` tem de acontecer DEPOIS do render
+    // que abre os cards. É a mesma folga que a listagem da carteira usa, pelo mesmo motivo.
     const t = window.setTimeout(() => window.print(), 60);
     return () => {
       window.clearTimeout(t);
       window.removeEventListener("afterprint", limpar);
       document.body.classList.remove("imprimindo");
+      setAbertos(abertosAntes);
     };
+    // ⚠ `abertos` e `resultado` de propósito FORA das dependências: incluí-los faria o efeito
+    // rodar de novo ao abrir os cards, e o cleanup restauraria o estado no meio da impressão.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imprimindo]);
 
   return (
@@ -586,294 +632,17 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
           </div>
         )}
 
-        {/* ── ENTRADAS ─────────────────────────────────────────────────────── */}
-        <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, display: "grid", gap: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
-            <label style={rotulo}>Receita anual (R$)
-              {/* ⚠ `inputMode="numeric"`: o campo é um FLUXO DE DÍGITOS em centavos, e o teclado
-                  do celular não deve oferecer separador nenhum — não há o que digitar além de
-                  algarismos. */}
-              <input
-                value={receita}
-                onChange={(e) => setReceita(mascararDinheiro(e.target.value))}
-                onPaste={aoColar(setReceita, "receita")}
-                inputMode="numeric"
-                placeholder="0,00"
-                style={campo}
-              />
-              <RecusaDeColagem campo="receita" />
-              {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.receitaAnual} />}
-            </label>
-            <label style={rotulo}>RBT12 (R$) — receita dos 12 meses anteriores
-              <input
-                value={mesesInicioAtividade ? "" : rbt12}
-                onChange={(e) => setRbt12(mascararDinheiro(e.target.value))}
-                onPaste={aoColar(setRbt12, "rbt12")}
-                inputMode="numeric"
-                disabled={Boolean(mesesInicioAtividade)}
-                placeholder={mesesInicioAtividade ? "proporcionalizado — empresa em início de atividade" : "igual à receita anual"}
-                style={{ ...campo, opacity: mesesInicioAtividade ? 0.5 : 1 }}
-              />
-              <RecusaDeColagem campo="rbt12" />
-              {prefill.temEmpresa && !mesesInicioAtividade && <OrigemDoCampo campo={prefill.campos.rbt12} />}
-            </label>
-            {/* ⚠ Entrada, não inferência: a receita não diz em que mês a empresa está. Duas empresas
-                com o mesmo acumulado podem estar no 2º ou no 9º mês, e a alíquota sai diferente. */}
-            <label style={rotulo}>Meses de atividade — só se a empresa está começando
-              <input
-                value={mesesAtividade}
-                onChange={(e) => setMesesAtividade(e.target.value)}
-                inputMode="numeric"
-                placeholder="vazio = 12 meses ou mais"
-                style={campo}
-              />
-            </label>
-            {/* ⚠ A FOLHA É O CAMPO CRÍTICO DESTA TELA. Vazio = NÃO INFORMADA, e o placeholder diz
-                isso: "0,00" convidava a ler o vazio como zero, que é exatamente a confusão que
-                joga a empresa no Anexo V sem ninguém ter informado a folha. */}
-            <label style={rotulo}>Folha anual, com pró-labore (R$)
-              <input
-                value={folha}
-                onChange={(e) => setFolha(mascararDinheiro(e.target.value))}
-                onPaste={aoColar(setFolha, "folha")}
-                inputMode="numeric"
-                placeholder="vazio = não informada"
-                style={campo}
-              />
-              <RecusaDeColagem campo="folha" />
-              {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.folhaAnual} />}
-            </label>
-            <label style={rotulo}>Atividade no Lucro Presumido
-              <select
-                value={atividade}
-                onChange={(e) => { setAtividade(e.target.value); setCategoriaConfirmada(true); }}
-                style={campo}
-              >
-                {Object.entries(ATIVIDADES_PRESUMIDO).map(([k, a]) => <option key={k} value={k}>{a.rotulo}</option>)}
-              </select>
-              {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.atividadePresumido} />}
-            </label>
-            {/* ⚠⚠ "SUGERIDO, CONFIRME" — a forma que o dono pediu, e a diferença entre SUGERIR e
-                DERIVAR. O catálogo de CNAE do portal mapeia ANEXO DO SIMPLES; a presunção é a Lei
-                9.249, outra lei. Errar entre 8% e 32% de IRPJ inverte a comparação de regimes.
-                ⚠ As EXCEÇÕES aparecem: sem elas o contador confirmaria sem saber o quê. */}
-            {prefill.presumido?.sugestao && !categoriaConfirmada ? (
-              <div style={{
-                gridColumn: "1 / -1", padding: "8px 10px", border: `1px solid ${C.alerta}44`,
-                borderRadius: 6, background: "#1A1B26", display: "grid", gap: 6,
-              }}>
-                <div style={{ fontSize: "0.74rem", color: C.alerta, lineHeight: 1.45 }}>
-                  ⚠ <strong>{prefill.presumido.rotulo}</strong> foi <strong>sugerido</strong> pelo CNAE
-                  {prefill.presumido.confianca === "media" ? " (confiança média)" : ""} — confirme no seletor acima.
-                </div>
-                <div style={{ fontSize: "0.7rem", color: C.muted, lineHeight: 1.45 }}>{prefill.presumido.motivo}</div>
-                {prefill.presumido.excecoes?.length ? (
-                  <ul style={{ margin: 0, paddingLeft: 16, fontSize: "0.68rem", color: C.muted, lineHeight: 1.45 }}>
-                    {prefill.presumido.excecoes.map((e) => <li key={e}>{e}</li>)}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
-            {/* ⚠⚠ A PERGUNTA DOS R$ 120.000 (Lei 9.249/1995, art. 15, § 4º) — ela APARECE, e não se
-                responde sozinha. `PRESUNCAO_IRPJ.servicosAte120k = 0.16` existia como constante e
-                nunca entrava em conta nenhuma; medido em produção, 10 das 18 empresas com dado
-                apurado têm receita abaixo do limite, ou seja o simulador presumia o DOBRO do IRPJ
-                na maioria da carteira.
-                ⚠ Nada é pré-selecionado: valor escolhido pelo sistema fica indistinguível de valor
-                conferido por uma pessoa, e o que se afirma aqui é enquadramento fiscal.
-                ⚠⚠ E ELE É IRMÃO DO <label> ACIMA, NUNCA FILHO: rótulo dentro de rótulo associa o
-                rádio ao controle errado. */}
-            {ofertaDo16?.cabe ? (
-              <div style={{
-                gridColumn: "1 / -1", padding: "8px 10px", border: `1px solid ${C.borda}`,
-                borderRadius: 6, background: "#1A1B26", display: "grid", gap: 6,
-              }}>
-                <div style={{ fontSize: "0.74rem", color: C.texto, lineHeight: 1.45 }}>{ofertaDo16.pergunta}</div>
-                <ul style={{ margin: 0, paddingLeft: 16, fontSize: "0.7rem", color: C.muted, lineHeight: 1.45 }}>
-                  {ofertaDo16.excecoes.map((e) => <li key={e}>{e}</li>)}
-                </ul>
-                <div style={{ display: "flex", gap: 14, fontSize: "0.76rem", color: C.texto }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
-                    <input type="radio" name="servicos16" checked={servicos16 === true} onChange={() => setServicos16(true)} />
-                    Enquadra — usar 16%
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
-                    <input type="radio" name="servicos16" checked={servicos16 === false} onChange={() => setServicos16(false)} />
-                    Não enquadra — 32%
-                  </label>
-                </div>
-                {/* ⚠ ENQUANTO NINGUÉM RESPONDE, A TELA DIZ O QUE A OMISSÃO CUSTA. Ausência de
-                    resposta não é resposta, e aqui ela deixa o Presumido mais caro do que pode ser. */}
-                {servicos16 == null ? (
-                  <div style={{ fontSize: "0.7rem", color: C.alerta, lineHeight: 1.4 }}>
-                    ⚠ Sem resposta, o comparativo usa 32% — o total do Lucro Presumido pode estar superestimado.
-                  </div>
-                ) : null}
-                {ofertaDo16.aviso ? (
-                  <div style={{ fontSize: "0.7rem", color: C.alerta, lineHeight: 1.4 }}>⚠ {ofertaDo16.aviso}</div>
-                ) : null}
-              </div>
-            ) : null}
-            <label style={rotulo}>Anexo do Simples
-              <select value={anexo} onChange={(e) => setAnexo(e.target.value)} disabled={sujeitoFatorR} style={{ ...campo, opacity: sujeitoFatorR ? 0.5 : 1 }}>
-                {Object.entries(ANEXOS).map(([k, a]) => <option key={k} value={k}>{a.nome}</option>)}
-              </select>
-              {prefill.temEmpresa && !sujeitoFatorR && <OrigemDoCampo campo={prefill.campos.anexo} />}
-            </label>
-            <label style={rotulo}>Alíquota de ISS do município (%)
-              {/* ⚠ PERCENTUAL: continua `inputMode="decimal"` e aceitando vírgula E ponto — de 0 a
-                  100 não há separador de milhar, logo não há ambiguidade, e a máscara de centavos
-                  aqui transformaria `5` em `0,05`. O que mudou é QUEM LÊ (`lerPercentual`). */}
-              <input value={iss} onChange={(e) => setIss(e.target.value)} inputMode="decimal" placeholder="deixe vazio se não souber" style={campo} />
-              {issLido.fora && (
-                <span style={{ display: "block", marginTop: 4, fontSize: "0.72rem", color: "var(--state-warn)" }}>
-                  {textoDoPercentualForaDaFaixa("A alíquota de ISS")}
-                </span>
-              )}
-              {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.aliquotaIss} />}
-            </label>
-          </div>
+        {/* ⚠⚠⚠ A RESPOSTA VEM ANTES DO FORMULÁRIO — reordenação de 01/09/2026, e o motivo é
+            MEDIDO, não estético. Antes: a página tinha 2.806px, o formulário terminava aos
+            1.025px e o PRIMEIRO RESULTADO só aparecia aos 1.055px. O contador preenchia mil
+            pixels de campos para descobrir, rolando, qual regime era mais barato — e o dono
+            resumiu a tela como *"bem podre"*.
 
-          {/* O regime ATUAL não é entrada do cálculo — é o ponto de partida da conversa ("hoje você
-              está no X"). Aparece como leitura, com origem, e some quando não se sabe qual é. */}
-          {prefill.temEmpresa && (
-            <div style={{ fontSize: "0.78rem", color: prefill.campos.regimeAtual.apurado ? C.muted : C.alerta, lineHeight: 1.45 }}>
-              {prefill.campos.regimeAtual.apurado
-                ? <>Regime atual da empresa: <strong style={{ color: C.texto }}>{ROTULO_REGIME[prefill.campos.regimeAtual.valor] || prefill.campos.regimeAtual.valor}</strong> · {prefill.campos.regimeAtual.origem}</>
-                : <>⚠ {prefill.campos.regimeAtual.motivoAusencia}</>}
-            </div>
-          )}
+            ⚠ O formulário NÃO encolheu e NENHUM campo sumiu: ele apenas desceu. Quem chega para
+            conferir premissas rola uma vez; quem chega para ver a resposta não rola nenhuma.
 
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.82rem", cursor: "pointer" }}>
-            <input type="checkbox" checked={sujeitoFatorR} onChange={(e) => setSujeitoFatorR(e.target.checked)} />
-            Atividade sujeita ao Fator R (o anexo passa a sair da folha, não da escolha)
-          </label>
-          {/* ⚠⚠ A DIVERGÊNCIA ENTRE O PERFIL DE ATIVIDADES E O CADASTRO APARECE, E NÃO É CORRIGIDA
-              EM SILÊNCIO. Ela é o defeito que o dono relatou em 25/08/2026: o Perfil fiscal
-              mostrava os dois CNAEs como "III ou V (Fator R) — sim" e esta tela exibia o checkbox
-              desmarcado. Hoje a resposta é DERIVADA do perfil; o que sobra é o cadastro estar
-              desatualizado, e quem o conserta é o contador. */}
-          {prefill.fatorR?.divergencia ? (
-            <div style={{ fontSize: "0.72rem", color: C.alerta, lineHeight: 1.4, marginTop: 2 }}>
-              ⚠ {prefill.fatorR.divergencia.frase}
-            </div>
-          ) : null}
-          {prefill.temEmpresa && <div style={{ marginTop: -4 }}><OrigemDoCampo campo={prefill.campos.sujeitoFatorR} /></div>}
-
-          {/* O Lucro Real só entra com estes dois — e o card diz isso enquanto faltarem. */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, paddingTop: 8, borderTop: `1px solid ${C.borda}` }}>
-            <label style={rotulo}>Margem de lucro real (%) — só para comparar com o Lucro Real
-              <input value={margem} onChange={(e) => setMargem(e.target.value)} inputMode="decimal" placeholder="não estimamos por você" style={campo} />
-              {margemLida.fora && (
-                <span style={{ display: "block", marginTop: 4, fontSize: "0.72rem", color: "var(--state-warn)" }}>
-                  {/* ⚠⚠ Aqui a guarda é a que impede IMPOSTO NEGATIVO: margem negativa entrava em
-                      `custoAnualReal` sem barreira nenhuma, e o `sort` do comparador coroaria o
-                      Lucro Real como vencedor por causa disso — num PDF que vai ao cliente. */}
-                  {textoDoPercentualForaDaFaixa("A margem de lucro")}
-                </span>
-              )}
-            </label>
-            <label style={rotulo}>Créditos anuais de PIS/COFINS (R$)
-              <input
-                value={creditos}
-                onChange={(e) => setCreditos(mascararDinheiro(e.target.value))}
-                onPaste={aoColar(setCreditos, "creditos")}
-                inputMode="numeric"
-                placeholder="não estimamos por você"
-                style={campo}
-              />
-              <RecusaDeColagem campo="creditos" />
-            </label>
-          </div>
-
-          {mesesInicioAtividade && (
-            <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ fontSize: "0.78rem", color: C.alerta }}>
-                ⚠ Início de atividade: o RBT12 deixa de ser digitado e passa a ser <strong>proporcionalizado</strong> a
-                partir da receita informada — o campo acima está desativado de propósito.
-              </div>
-
-              {/* ⚠ SUGESTÃO ATIVA, NÃO CAIXINHA MUDA. O efeito da rampa é invisível para quem não
-                  conhece a regra: o usuário não tem como adivinhar que detalhar os meses pode
-                  baixar a alíquota E revelar um estouro de limite. Se a tela não disser, o padrão
-                  (receita uniforme) vira a resposta por omissão. */}
-              {!detalharMeses && (
-                <div style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${C.borda}`, fontSize: "0.78rem", lineHeight: 1.5 }}>
-                  Empresa em rampa costuma pagar <strong>menos</strong> nos primeiros meses — e é também
-                  quando o limite proporcional pode estourar sem aparecer no total do ano.{" "}
-                  <button
-                    type="button"
-                    onClick={() => setDetalharMeses(true)}
-                    style={{ background: "transparent", border: "none", color: C.accent, font: "inherit", fontSize: "0.78rem", textDecoration: "underline", cursor: "pointer", padding: 0 }}
-                  >
-                    Detalhar a receita mês a mês
-                  </button>{" "}
-                  para ver o efeito.
-                </div>
-              )}
-
-              {detalhando && (
-                <div style={{ padding: 10, borderRadius: 8, border: `1px solid ${C.borda}`, display: "grid", gap: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <strong style={{ fontSize: "0.78rem" }}>Receita mês a mês ({mesesInicioAtividade} {mesesInicioAtividade === 1 ? "mês" : "meses"})</strong>
-                    <button
-                      type="button"
-                      onClick={() => { setDetalharMeses(false); setSerieMensal([]); }}
-                      style={{ background: "transparent", border: `1px solid ${C.borda}`, color: C.texto, borderRadius: 6, padding: "3px 9px", font: "inherit", fontSize: "0.74rem", cursor: "pointer" }}
-                    >
-                      Voltar à receita uniforme
-                    </button>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
-                    {Array.from({ length: mesesInicioAtividade }, (_, i) => (
-                      <label key={i} style={rotulo}>{i + 1}º mês
-                        <input
-                          value={serieMensal[i] ?? ""}
-                          onChange={(e) => setSerieMensal((a) => { const p = [...a]; p[i] = mascararDinheiro(e.target.value); return p; })}
-                          onPaste={(evento) => {
-                            const colado = evento.clipboardData?.getData("text");
-                            if (colado == null) return;
-                            evento.preventDefault();
-                            const r = colarDinheiro(colado);
-                            if (!r.ok) { setRecusaDeColagem({ campo: `serie-${i}`, texto: textoDaRecusaDeColarDinheiro(r) }); return; }
-                            setRecusaDeColagem(null);
-                            setSerieMensal((a) => { const p = [...a]; p[i] = r.mascarado; return p; });
-                          }}
-                          inputMode="decimal"
-                          style={campo}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                  <div style={{ fontSize: "0.74rem", color: C.muted, lineHeight: 1.5 }}>
-                    A <strong>receita anual</strong> continua sendo a base da comparação entre regimes. A série
-                    define o <strong>RBT12 proporcionalizado</strong> (média dos meses anteriores × 12) e a receita
-                    acumulada que o <strong>limite proporcional</strong> do ano de início verifica.
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          {num(mesesAtividade) != null && !mesesInicioAtividade && (
-            <div style={{ fontSize: "0.78rem", color: C.alerta }}>
-              Informe de 1 a 12 meses. Do 13º mês em diante a empresa já tem os 12 meses de histórico:
-              deixe o campo vazio e preencha o RBT12 real.
-            </div>
-          )}
-          {issForaDaFaixa && (
-            <div style={{ fontSize: "0.78rem", color: C.alerta }}>
-              A alíquota de ISS informada está fora da faixa legal de 2% a 5% (LC 116/2003) — confira o cadastro.
-            </div>
-          )}
-          {avisoTrava && <div style={{ fontSize: "0.78rem", color: C.alerta }}>⚠ {avisoTrava}</div>}
-        </div>
-
-        {!temReceita && (
-          <div style={{ padding: 24, textAlign: "center", color: C.muted, fontSize: "0.86rem" }}>
-            Informe a receita anual para comparar os regimes.
-          </div>
-        )}
-
+            ⚠ Com o formulário vazio não há `resultado` e este bloco não renderiza — a tela abre
+            no formulário, que é o certo: ali a pergunta ainda não foi feita. */}
         {/* ── RESULTADO ────────────────────────────────────────────────────── */}
         {resultado && (
           <div data-print-area style={{ display: "grid", gap: 14 }}>
@@ -1069,6 +838,351 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
             </div>
           </div>
         )}
+
+        {/* ── ENTRADAS ─────────────────────────────────────────────────────── */}
+        <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, display: "grid", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
+            <Campo
+              id="pl-receita"
+              rotuloTexto="Receita anual (R$)"
+              abaixo={<>
+                <RecusaDeColagem campo="receita" />
+                {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.receitaAnual} />}
+              </>}
+            >
+              {/* ⚠ `inputMode="numeric"`: o campo é um FLUXO DE DÍGITOS em centavos, e o teclado
+                  do celular não deve oferecer separador nenhum — não há o que digitar além de
+                  algarismos. */}
+              {(a) => (
+                <input
+                  {...a}
+                  value={receita}
+                  onChange={(e) => setReceita(mascararDinheiro(e.target.value))}
+                  onPaste={aoColar(setReceita, "receita")}
+                  inputMode="numeric"
+                  placeholder="0,00"
+                  style={campo}
+                />
+              )}
+            </Campo>
+            <Campo
+              id="pl-rbt12"
+              rotuloTexto="RBT12 (R$) — receita dos 12 meses anteriores"
+              abaixo={<>
+                <RecusaDeColagem campo="rbt12" />
+                {prefill.temEmpresa && !mesesInicioAtividade && <OrigemDoCampo campo={prefill.campos.rbt12} />}
+              </>}
+            >
+              {(a) => (
+                <input
+                  {...a}
+                  value={mesesInicioAtividade ? "" : rbt12}
+                  onChange={(e) => setRbt12(mascararDinheiro(e.target.value))}
+                  onPaste={aoColar(setRbt12, "rbt12")}
+                  inputMode="numeric"
+                  disabled={Boolean(mesesInicioAtividade)}
+                  placeholder={mesesInicioAtividade ? "proporcionalizado — empresa em início de atividade" : "igual à receita anual"}
+                  style={{ ...campo, opacity: mesesInicioAtividade ? 0.5 : 1 }}
+                />
+              )}
+            </Campo>
+            {/* ⚠ Entrada, não inferência: a receita não diz em que mês a empresa está. Duas empresas
+                com o mesmo acumulado podem estar no 2º ou no 9º mês, e a alíquota sai diferente. */}
+            <Campo id="pl-meses" rotuloTexto="Meses de atividade — só se a empresa está começando">
+              {(a) => (
+                <input
+                  {...a}
+                  value={mesesAtividade}
+                  onChange={(e) => setMesesAtividade(e.target.value)}
+                  inputMode="numeric"
+                  placeholder="vazio = 12 meses ou mais"
+                  style={campo}
+                />
+              )}
+            </Campo>
+            {/* ⚠ A FOLHA É O CAMPO CRÍTICO DESTA TELA. Vazio = NÃO INFORMADA, e o placeholder diz
+                isso: "0,00" convidava a ler o vazio como zero, que é exatamente a confusão que
+                joga a empresa no Anexo V sem ninguém ter informado a folha. */}
+            <Campo
+              id="pl-folha"
+              rotuloTexto="Folha anual, com pró-labore (R$)"
+              abaixo={<>
+                <RecusaDeColagem campo="folha" />
+                {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.folhaAnual} />}
+              </>}
+            >
+              {(a) => (
+                <input
+                  {...a}
+                  value={folha}
+                  onChange={(e) => setFolha(mascararDinheiro(e.target.value))}
+                  onPaste={aoColar(setFolha, "folha")}
+                  inputMode="numeric"
+                  placeholder="vazio = não informada"
+                  style={campo}
+                />
+              )}
+            </Campo>
+            <Campo
+              id="pl-atividade"
+              rotuloTexto="Atividade no Lucro Presumido"
+              abaixo={prefill.temEmpresa ? <OrigemDoCampo campo={prefill.campos.atividadePresumido} /> : null}
+            >
+              {(a) => (
+                <select
+                  {...a}
+                  value={atividade}
+                  onChange={(e) => { setAtividade(e.target.value); setCategoriaConfirmada(true); }}
+                  style={campo}
+                >
+                  {Object.entries(ATIVIDADES_PRESUMIDO).map(([k, at]) => <option key={k} value={k}>{at.rotulo}</option>)}
+                </select>
+              )}
+            </Campo>
+            {/* ⚠⚠ "SUGERIDO, CONFIRME" — a forma que o dono pediu, e a diferença entre SUGERIR e
+                DERIVAR. O catálogo de CNAE do portal mapeia ANEXO DO SIMPLES; a presunção é a Lei
+                9.249, outra lei. Errar entre 8% e 32% de IRPJ inverte a comparação de regimes.
+                ⚠ As EXCEÇÕES aparecem: sem elas o contador confirmaria sem saber o quê. */}
+            {prefill.presumido?.sugestao && !categoriaConfirmada ? (
+              <div style={{
+                gridColumn: "1 / -1", padding: "8px 10px", border: `1px solid ${C.alerta}44`,
+                borderRadius: 6, background: "#1A1B26", display: "grid", gap: 6,
+              }}>
+                <div style={{ fontSize: "0.74rem", color: C.alerta, lineHeight: 1.45 }}>
+                  ⚠ <strong>{prefill.presumido.rotulo}</strong> foi <strong>sugerido</strong> pelo CNAE
+                  {prefill.presumido.confianca === "media" ? " (confiança média)" : ""} — confirme no seletor acima.
+                </div>
+                <div style={{ fontSize: "0.7rem", color: C.muted, lineHeight: 1.45 }}>{prefill.presumido.motivo}</div>
+                {prefill.presumido.excecoes?.length ? (
+                  <ul style={{ margin: 0, paddingLeft: 16, fontSize: "0.68rem", color: C.muted, lineHeight: 1.45 }}>
+                    {prefill.presumido.excecoes.map((e) => <li key={e}>{e}</li>)}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+            {/* ⚠⚠ A PERGUNTA DOS R$ 120.000 (Lei 9.249/1995, art. 15, § 4º) — ela APARECE, e não se
+                responde sozinha. `PRESUNCAO_IRPJ.servicosAte120k = 0.16` existia como constante e
+                nunca entrava em conta nenhuma; medido em produção, 10 das 18 empresas com dado
+                apurado têm receita abaixo do limite, ou seja o simulador presumia o DOBRO do IRPJ
+                na maioria da carteira.
+                ⚠ Nada é pré-selecionado: valor escolhido pelo sistema fica indistinguível de valor
+                conferido por uma pessoa, e o que se afirma aqui é enquadramento fiscal.
+                ⚠⚠ E ELE É IRMÃO DO <label> ACIMA, NUNCA FILHO: rótulo dentro de rótulo associa o
+                rádio ao controle errado. */}
+            {ofertaDo16?.cabe ? (
+              <div style={{
+                gridColumn: "1 / -1", padding: "8px 10px", border: `1px solid ${C.borda}`,
+                borderRadius: 6, background: "#1A1B26", display: "grid", gap: 6,
+              }}>
+                <div style={{ fontSize: "0.74rem", color: C.texto, lineHeight: 1.45 }}>{ofertaDo16.pergunta}</div>
+                <ul style={{ margin: 0, paddingLeft: 16, fontSize: "0.7rem", color: C.muted, lineHeight: 1.45 }}>
+                  {ofertaDo16.excecoes.map((e) => <li key={e}>{e}</li>)}
+                </ul>
+                <div style={{ display: "flex", gap: 14, fontSize: "0.76rem", color: C.texto }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
+                    <input type="radio" name="servicos16" checked={servicos16 === true} onChange={() => setServicos16(true)} />
+                    Enquadra — usar 16%
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
+                    <input type="radio" name="servicos16" checked={servicos16 === false} onChange={() => setServicos16(false)} />
+                    Não enquadra — 32%
+                  </label>
+                </div>
+                {/* ⚠ ENQUANTO NINGUÉM RESPONDE, A TELA DIZ O QUE A OMISSÃO CUSTA. Ausência de
+                    resposta não é resposta, e aqui ela deixa o Presumido mais caro do que pode ser. */}
+                {servicos16 == null ? (
+                  <div style={{ fontSize: "0.7rem", color: C.alerta, lineHeight: 1.4 }}>
+                    ⚠ Sem resposta, o comparativo usa 32% — o total do Lucro Presumido pode estar superestimado.
+                  </div>
+                ) : null}
+                {ofertaDo16.aviso ? (
+                  <div style={{ fontSize: "0.7rem", color: C.alerta, lineHeight: 1.4 }}>⚠ {ofertaDo16.aviso}</div>
+                ) : null}
+              </div>
+            ) : null}
+            <Campo
+              id="pl-anexo"
+              rotuloTexto="Anexo do Simples"
+              abaixo={prefill.temEmpresa && !sujeitoFatorR ? <OrigemDoCampo campo={prefill.campos.anexo} /> : null}
+            >
+              {(a) => (
+                <select {...a} value={anexo} onChange={(e) => setAnexo(e.target.value)} disabled={sujeitoFatorR} style={{ ...campo, opacity: sujeitoFatorR ? 0.5 : 1 }}>
+                  {Object.entries(ANEXOS).map(([k, an]) => <option key={k} value={k}>{an.nome}</option>)}
+                </select>
+              )}
+            </Campo>
+            <Campo
+              id="pl-iss"
+              rotuloTexto="Alíquota de ISS do município (%)"
+              abaixo={<>
+                {issLido.fora && (
+                  <span style={{ fontSize: "0.72rem", color: "var(--state-warn)" }}>
+                    {textoDoPercentualForaDaFaixa("A alíquota de ISS")}
+                  </span>
+                )}
+                {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.aliquotaIss} />}
+              </>}
+            >
+              {/* ⚠ PERCENTUAL: continua `inputMode="decimal"` e aceitando vírgula E ponto — de 0 a
+                  100 não há separador de milhar, logo não há ambiguidade, e a máscara de centavos
+                  aqui transformaria `5` em `0,05`. O que mudou é QUEM LÊ (`lerPercentual`). */}
+              {(a) => (
+                <input {...a} value={iss} onChange={(e) => setIss(e.target.value)} inputMode="decimal" placeholder="deixe vazio se não souber" style={campo} />
+              )}
+            </Campo>
+          </div>
+
+          {/* O regime ATUAL não é entrada do cálculo — é o ponto de partida da conversa ("hoje você
+              está no X"). Aparece como leitura, com origem, e some quando não se sabe qual é. */}
+          {prefill.temEmpresa && (
+            <div style={{ fontSize: "0.78rem", color: prefill.campos.regimeAtual.apurado ? C.muted : C.alerta, lineHeight: 1.45 }}>
+              {prefill.campos.regimeAtual.apurado
+                ? <>Regime atual da empresa: <strong style={{ color: C.texto }}>{ROTULO_REGIME[prefill.campos.regimeAtual.valor] || prefill.campos.regimeAtual.valor}</strong> · {prefill.campos.regimeAtual.origem}</>
+                : <>⚠ {prefill.campos.regimeAtual.motivoAusencia}</>}
+            </div>
+          )}
+
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.82rem", cursor: "pointer" }}>
+            <input type="checkbox" checked={sujeitoFatorR} onChange={(e) => setSujeitoFatorR(e.target.checked)} />
+            Atividade sujeita ao Fator R (o anexo passa a sair da folha, não da escolha)
+          </label>
+          {/* ⚠⚠ A DIVERGÊNCIA ENTRE O PERFIL DE ATIVIDADES E O CADASTRO APARECE, E NÃO É CORRIGIDA
+              EM SILÊNCIO. Ela é o defeito que o dono relatou em 25/08/2026: o Perfil fiscal
+              mostrava os dois CNAEs como "III ou V (Fator R) — sim" e esta tela exibia o checkbox
+              desmarcado. Hoje a resposta é DERIVADA do perfil; o que sobra é o cadastro estar
+              desatualizado, e quem o conserta é o contador. */}
+          {prefill.fatorR?.divergencia ? (
+            <div style={{ fontSize: "0.72rem", color: C.alerta, lineHeight: 1.4, marginTop: 2 }}>
+              ⚠ {prefill.fatorR.divergencia.frase}
+            </div>
+          ) : null}
+          {prefill.temEmpresa && <div style={{ marginTop: -4 }}><OrigemDoCampo campo={prefill.campos.sujeitoFatorR} /></div>}
+
+          {/* O Lucro Real só entra com estes dois — e o card diz isso enquanto faltarem. */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, paddingTop: 8, borderTop: `1px solid ${C.borda}` }}>
+            <Campo
+              id="pl-margem"
+              rotuloTexto="Margem de lucro real (%) — só para comparar com o Lucro Real"
+              abaixo={margemLida.fora ? (
+                <span style={{ fontSize: "0.72rem", color: "var(--state-warn)" }}>
+                  {/* ⚠⚠ Aqui a guarda é a que impede IMPOSTO NEGATIVO: margem negativa entrava em
+                      `custoAnualReal` sem barreira nenhuma, e o `sort` do comparador coroaria o
+                      Lucro Real como vencedor por causa disso — num PDF que vai ao cliente. */}
+                  {textoDoPercentualForaDaFaixa("A margem de lucro")}
+                </span>
+              ) : null}
+            >
+              {(a) => (
+                <input {...a} value={margem} onChange={(e) => setMargem(e.target.value)} inputMode="decimal" placeholder="não estimamos por você" style={campo} />
+              )}
+            </Campo>
+            <Campo
+              id="pl-creditos"
+              rotuloTexto="Créditos anuais de PIS/COFINS (R$)"
+              abaixo={<RecusaDeColagem campo="creditos" />}
+            >
+              {(a) => (
+                <input
+                  {...a}
+                  value={creditos}
+                  onChange={(e) => setCreditos(mascararDinheiro(e.target.value))}
+                  onPaste={aoColar(setCreditos, "creditos")}
+                  inputMode="numeric"
+                  placeholder="não estimamos por você"
+                  style={campo}
+                />
+              )}
+            </Campo>
+          </div>
+
+          {mesesInicioAtividade && (
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: "0.78rem", color: C.alerta }}>
+                ⚠ Início de atividade: o RBT12 deixa de ser digitado e passa a ser <strong>proporcionalizado</strong> a
+                partir da receita informada — o campo acima está desativado de propósito.
+              </div>
+
+              {/* ⚠ SUGESTÃO ATIVA, NÃO CAIXINHA MUDA. O efeito da rampa é invisível para quem não
+                  conhece a regra: o usuário não tem como adivinhar que detalhar os meses pode
+                  baixar a alíquota E revelar um estouro de limite. Se a tela não disser, o padrão
+                  (receita uniforme) vira a resposta por omissão. */}
+              {!detalharMeses && (
+                <div style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${C.borda}`, fontSize: "0.78rem", lineHeight: 1.5 }}>
+                  Empresa em rampa costuma pagar <strong>menos</strong> nos primeiros meses — e é também
+                  quando o limite proporcional pode estourar sem aparecer no total do ano.{" "}
+                  <button
+                    type="button"
+                    onClick={() => setDetalharMeses(true)}
+                    style={{ background: "transparent", border: "none", color: C.accent, font: "inherit", fontSize: "0.78rem", textDecoration: "underline", cursor: "pointer", padding: 0 }}
+                  >
+                    Detalhar a receita mês a mês
+                  </button>{" "}
+                  para ver o efeito.
+                </div>
+              )}
+
+              {detalhando && (
+                <div style={{ padding: 10, borderRadius: 8, border: `1px solid ${C.borda}`, display: "grid", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                    <strong style={{ fontSize: "0.78rem" }}>Receita mês a mês ({mesesInicioAtividade} {mesesInicioAtividade === 1 ? "mês" : "meses"})</strong>
+                    <button
+                      type="button"
+                      onClick={() => { setDetalharMeses(false); setSerieMensal([]); }}
+                      style={{ background: "transparent", border: `1px solid ${C.borda}`, color: C.texto, borderRadius: 6, padding: "3px 9px", font: "inherit", fontSize: "0.74rem", cursor: "pointer" }}
+                    >
+                      Voltar à receita uniforme
+                    </button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
+                    {Array.from({ length: mesesInicioAtividade }, (_, i) => (
+                      <label key={i} style={rotulo}>{i + 1}º mês
+                        <input
+                          value={serieMensal[i] ?? ""}
+                          onChange={(e) => setSerieMensal((a) => { const p = [...a]; p[i] = mascararDinheiro(e.target.value); return p; })}
+                          onPaste={(evento) => {
+                            const colado = evento.clipboardData?.getData("text");
+                            if (colado == null) return;
+                            evento.preventDefault();
+                            const r = colarDinheiro(colado);
+                            if (!r.ok) { setRecusaDeColagem({ campo: `serie-${i}`, texto: textoDaRecusaDeColarDinheiro(r) }); return; }
+                            setRecusaDeColagem(null);
+                            setSerieMensal((a) => { const p = [...a]; p[i] = r.mascarado; return p; });
+                          }}
+                          inputMode="decimal"
+                          style={campo}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: "0.74rem", color: C.muted, lineHeight: 1.5 }}>
+                    A <strong>receita anual</strong> continua sendo a base da comparação entre regimes. A série
+                    define o <strong>RBT12 proporcionalizado</strong> (média dos meses anteriores × 12) e a receita
+                    acumulada que o <strong>limite proporcional</strong> do ano de início verifica.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {num(mesesAtividade) != null && !mesesInicioAtividade && (
+            <div style={{ fontSize: "0.78rem", color: C.alerta }}>
+              Informe de 1 a 12 meses. Do 13º mês em diante a empresa já tem os 12 meses de histórico:
+              deixe o campo vazio e preencha o RBT12 real.
+            </div>
+          )}
+          {issForaDaFaixa && (
+            <div style={{ fontSize: "0.78rem", color: C.alerta }}>
+              A alíquota de ISS informada está fora da faixa legal de 2% a 5% (LC 116/2003) — confira o cadastro.
+            </div>
+          )}
+          {avisoTrava && <div style={{ fontSize: "0.78rem", color: C.alerta }}>⚠ {avisoTrava}</div>}
+        </div>
+
+        {!temReceita && (
+          <div style={{ padding: 24, textAlign: "center", color: C.muted, fontSize: "0.86rem" }}>
+            Informe a receita anual para comparar os regimes.
+          </div>
+        )}
+
       </div>
     </div>
   );
