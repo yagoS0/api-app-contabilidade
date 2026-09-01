@@ -1707,24 +1707,8 @@ tr[data-atrasada="sim"] .guias-atraso-quando { color: var(--danger); }
   font-weight: 600;
 }
 
-/* ⚠⚠ A FAIXA DA VISITA DO ESCRITÓRIO (30/08/2026) — ela existe para o contador não ler a tela do
-   cliente como se fosse a dele. É âmbar porque é ATENÇÃO permanente da sessão, e não erro: nada
-   está quebrado, o que muda é DE QUEM é a tela.
-   ⚠ Fica ACIMA da topbar e não rola junto por acidente: ela é o contexto de tudo abaixo dela. */
-.faixa-visita {
-  /* ⚠⚠ SEM ESTA LINHA A FAIXA CAI NA COLUNA DA BARRA DE ÍCONES — 56px, uma palavra por linha,
-     ~560px de altura empurrando a tela inteira para baixo. Defeito subido em PRODUÇÃO em
-     31/08/2026 e relatado pelo dono no mesmo dia, com o print.
-     `.app` é `grid-template-columns: 56px minmax(0, 1fr)`, e quem atravessa as duas colunas
-     precisa DIZER isso — a `.topbar` diz (`grid-column: 1 / -1`, logo acima) e esta não dizia.
-     ⚠ Ela nasceu junto com a faixa e passou porque a faixa só existe para o usuário de VISITA:
-     toda conferência daquela entrega foi feita com a conta de CLIENTE, que não a renderiza.
-     É a mesma família do "mock esconde ramo" — ramo que ninguém abre é ramo que ninguém vê. */
-  grid-column: 1 / -1;
-  padding: 8px 16px;
-  background: var(--warning-surface);
-  border-bottom: 1px solid var(--warning-surface-border);
-  color: var(--text);
-  font-size: .82rem;
-  line-height: 1.4;
-}
+/* ⚠ A `.faixa-visita` MORREU AQUI em 01/09/2026 — o dono a viu em produção e mandou tirar
+   ("tire esse texto do início"). A lápide fica porque a remoção desfez DOIS defeitos de grid de
+   uma vez (a coluna de 56px e a topbar esticada na linha `1fr` — `.app` só declara duas linhas), e
+   quem reintroduzir uma filha nova em `.app` cai nos dois de novo. A condição de visita continua
+   nomeada na linha do CNPJ da topbar. */

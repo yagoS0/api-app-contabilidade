@@ -2015,16 +2015,31 @@ já está inteira no portal do escritório, que é de onde ela vem.
 ⚠⚠ **O ESCOPO É A CARTEIRA DELE**, por `companyFirmAccess` — nunca "qualquer empresa". Sem isso o id
 na URL alcançaria empresa de outro escritório; multi-tenancy é invariante desta casa.
 
-### ⚠⚠ A FAIXA É OBRIGATÓRIA — ela é o que substitui a porta fechada
+### ⚠⚠ A FAIXA FOI REMOVIDA PELO DONO (01/09/2026) — esta seção a chamava de "obrigatória"
 
-`accountGate.js` dizia, com todas as letras, por que a porta existia: *"uma conta FIRM que entrasse
-aqui veria a tela do cliente — com UMA empresa, os números DELA — e concluiria coisas erradas sobre
-a própria carteira"*. **Esse risco não sumiu com a porta.** A faixa (`.faixa-visita`, `role="status"`,
-âmbar) nomeia a EMPRESA e diz o que está fechado. Numa carteira de 34, "você é visitante" sem dizer
-de quem é a tela nomeia a confusão em vez de impedi-la.
+⚠⚠ **AS DUAS DECISÕES FICAM ESCRITAS, porque quem ler só uma "conserta" a outra.** A faixa
+(`.faixa-visita`) nasceu em 30/08 como a substituta da porta fechada — e **morreu em produção em
+dois dias, por dois defeitos de grid empilhados**:
 
-⚠ `role="status"`, nunca `alert`: é contexto permanente da sessão, e um `alert` seria reanunciado a
-cada troca de tela por quem usa leitor de tela.
+1. ela subiu **sem `grid-column`** e caiu na coluna de 56px da barra de ícones: uma palavra por
+   linha, ~560px de altura (relatado pelo dono, com print);
+2. consertada, apareceu o que o primeiro defeito escondia: `.app` declara **DUAS** linhas de grid
+   (`auto` + `minmax(0,1fr)`), e a faixa era uma TERCEIRA filha — a topbar caía na linha `1fr` e
+   **esticava**, abrindo um vão de tela inteira. O dono viu e decidiu: *"tire esse texto do início,
+   ajuste essa tela"*.
+
+⚠⚠ **O RISCO QUE ELA COBRIA NÃO SUMIU** (`accountGate.js`: o visitante lê os números de UMA empresa
+como se fossem os dele) — **ele mudou de lugar**: a linha do CNPJ da topbar diz
+**"· visita do escritório"**, sempre à vista, sem mexer no grid. Travado em
+`shell/__tests__/faixaDaVisitaAtravessaAsColunas.test.js`, que registra a história inteira.
+
+⚠ **A lição que fica é de MÉTODO**: a faixa só renderiza para `visita@exemplo.com`, e toda a
+conferência daquela entrega foi feita com a conta de CLIENTE. Ramo que ninguém abre é ramo que
+ninguém vê — a mesma família do "mock esconde ramo", agora numa CONTA. Mexeu na casca? Abra as
+duas contas no navegador.
+
+⚠ E quem acrescentar uma **filha nova em `.app`** cai nos dois defeitos de novo: ou declara
+`grid-column: 1 / -1` E revê as `grid-template-rows`, ou o layout quebra sem erro nenhum.
 
 ### ⚠ O mock tem as DUAS contas, e é o par que prova a regra
 

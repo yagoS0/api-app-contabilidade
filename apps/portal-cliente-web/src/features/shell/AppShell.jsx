@@ -197,26 +197,22 @@ export function AppShell({ user }) {
   return (
     <div className="app">
       {/*
-        ⚠⚠ A FAIXA DA VISITA — obrigatória, e ela é o que mantém a exceção honesta (30/08/2026).
+        ⚠⚠ A FAIXA DA VISITA FOI REMOVIDA PELO DONO (01/09/2026) — e a decisão anterior dizia que
+        ela era "obrigatória". As duas coisas ficam escritas, porque quem ler só uma reintroduz a
+        outra.
 
-        O portal do cliente abriu para um usuário do ESCRITÓRIO marcado (dono: *"o meu acesso admin
-        deve ser o único a conseguir isso"*). ⚠⚠ **Sem dizer isso na tela, ele lê os números de UMA
-        empresa achando que são os dele** — que é textualmente o risco escrito em `accountGate.js`,
-        e a razão pela qual essa porta era fechada. A porta abriu; o aviso é o que a substitui.
+        O que aconteceu: a faixa subiu QUEBRADA (caiu na coluna de 56px do grid — uma palavra por
+        linha) e, consertada, o dono a viu em produção e mandou tirar: *"tire esse texto do início,
+        ajuste essa tela"*. ⚠ Havia um SEGUNDO defeito escondido pelo primeiro: `.app` declara DUAS
+        linhas de grid (`auto` + `minmax(0,1fr)`), e a faixa era uma TERCEIRA filha — a topbar caía
+        na linha `1fr` e ESTICAVA, abrindo um vão de tela inteira entre a faixa e o conteúdo.
+        Remover a faixa desfaz os dois.
 
-        ⚠ Ela nomeia a EMPRESA: numa carteira de 34, "você é visitante" sem dizer de quem é a tela
-        não impede a confusão, só a nomeia.
-        ⚠ `role="status"`, não `alert`: é contexto permanente da sessão, não um evento — e um
-        `alert` seria reanunciado a cada troca de tela por quem usa leitor de tela.
+        ⚠ O RISCO QUE ELA COBRIA NÃO SUMIU (accountGate.js: o visitante lê os números de UMA
+        empresa como se fossem os dele) — ele mudou de lugar: a linha do CNPJ na topbar diz
+        "· visita do escritório", logo abaixo. Está sempre à vista, nomeia a condição, e não mexe
+        no grid. Se um dia nem isso puder ficar, é decisão do dono, não limpeza.
       */}
-      {ehVisitaDoEscritorio(user) ? (
-        <div className="faixa-visita" role="status">
-          <strong>Você está vendo o portal do cliente</strong>
-          {empresaAtiva ? <> — {texto(empresaAtiva.razao)}</> : null}
-          . Esta é a tela DELE, com os números DELE. Emitir nota, pró-labore e o certificado ficam
-          fechados aqui.
-        </div>
-      ) : null}
       <header className="topbar">
         {/* ⚠ A MARCA AQUI É SÓ O SOL, E ELA VOLTA AO INÍCIO — pedido do dono, 23/08/2026:
             *"tire a 'Altan contabilidade' e deixe apenas o Sol no canto superior, e ao clicar volta
@@ -257,6 +253,10 @@ export function AppShell({ user }) {
               <div className="empresa-cnpj">
                 {fmtCnpj(empresaAtiva.cnpj)}
                 {empresaAtiva.myRole ? ` · ${roleLabel(empresaAtiva.myRole)}` : ""}
+                {/* ⚠ O que restou da faixa da visita (removida pelo dono em 01/09/2026): a
+                    condição continua NOMEADA, no lugar que não quebra o grid. Ver o comentário
+                    acima da topbar. */}
+                {ehVisitaDoEscritorio(user) ? " · visita do escritório" : ""}
               </div>
             </>
           ) : (
