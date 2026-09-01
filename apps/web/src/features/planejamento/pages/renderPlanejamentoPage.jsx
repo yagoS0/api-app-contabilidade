@@ -102,6 +102,10 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   const [creditos, setCreditos] = useState("");
   const [abertos, setAbertos] = useState({});
   const [imprimindo, setImprimindo] = useState(false);
+  // ⚠ Mora aqui, com os outros, e não junto do `aoColar` lá embaixo: o efeito que limpa o
+  // formulário na troca de empresa precisa dele, e estado declarado depois de quem o usa é o tipo
+  // de coisa que funciona por closure e confunde quem lê.
+  const [recusaDeColagem, setRecusaDeColagem] = useState(null); // { campo, texto }
 
   // ── SELETOR DE EMPRESA ────────────────────────────────────────────────────────────────────────
   // ⚠ A lista vem PRONTA de fora (`empresas`), da mesma leitura que o dashboard usa
@@ -141,6 +145,51 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   }, [api, empresaId]);
 
   const prefill = useMemo(() => prefillDaEmpresa(dadosEmpresa), [dadosEmpresa]);
+
+  // ⚠⚠⚠ TROCAR DE EMPRESA LIMPA O FORMULÁRIO INTEIRO — e a ausência disto era o pior defeito
+  // desta tela (01/09/2026).
+  //
+  // O efeito de prefill, logo abaixo, começa com `if (!prefill.temEmpresa) return` e só ESCREVE os
+  // campos que a empresa tem. Ele nunca limpou nada — e nem chega a rodar quando se volta para
+  // "Simulação livre", porque ali não há empresa. Resultado: **todo estado atravessava a troca**.
+  //
+  // ⚠⚠ E UM DELES IMPRIME AFIRMAÇÃO FISCAL FALSA. `servicos16` é a confirmação do art. 15, § 4º da
+  // Lei 9.249/1995, e `lucroPresumido.js` escreve, com essas letras:
+  //
+  //     "IRPJ presumido a 16% POR CONFIRMAÇÃO DO CONTADOR"
+  //
+  // Confirmar "usar 16%" na empresa A e trocar para a B fazia o PDF da B — que vai ao cliente —
+  // atribuir a uma PESSOA uma decisão que ela nunca tomou sobre AQUELA empresa. E o § 4º exclui
+  // serviços hospitalares, de transporte e de profissão regulamentada: a confirmação herdada pode
+  // ser ilegal para a empresa que a herdou, e o número sai menor, que é o erro que ninguém confere.
+  //
+  // ⚠ Os outros que vazavam, cada um com seu custo: `anexo` e `sujeitoFatorR` (o Fator R da empresa
+  // errada — o mesmo defeito que o comentário do prefill já nomeia para a folha), `margem` e
+  // `creditos` (entram na conta do Lucro Real), `mesesAtividade` e `serieMensal` (proporcionalizam
+  // o RBT12 de uma empresa que não está começando) e `categoriaConfirmada` (faz a sugestão do CNAE
+  // aparecer como já conferida).
+  //
+  // ⚠⚠ A ORDEM É O QUE FAZ ISTO FUNCIONAR: este efeito depende de `empresaId` e roda no INSTANTE da
+  // troca; o de prefill depende de `prefill`, que só muda quando a resposta da API chega. Entre um
+  // e outro os campos ficam em branco, e isso é a verdade — ainda não sabemos nada da empresa nova.
+  // Inverter a ordem faria a limpeza apagar o que o prefill acabou de escrever.
+  useEffect(() => {
+    setReceita("");
+    setRbt12("");
+    setMesesAtividade("");
+    setSerieMensal([]);
+    setFolha("");
+    setAnexo("III");
+    setSujeitoFatorR(false);
+    setAtividade("servicos");
+    setServicos16(null);
+    setCategoriaConfirmada(false);
+    setIss("");
+    setMargem("");
+    setCreditos("");
+    setAbertos({});
+    setRecusaDeColagem(null);
+  }, [empresaId]);
 
   // Modo carteira: pré-preenche com o que a empresa já tem. Editável — é cenário, não cadastro.
   //
@@ -217,7 +266,6 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   // R$ 15,00; passar pelo `deCampo` faria `1234.56` virar 123.456. `colarDinheiro` aceita só o que
   // tem UMA leitura e RECUSA COM MOTIVO o que tem duas (`1.500`, `1,500`) — campo intocado mais uma
   // frase é melhor que um número plausível e errado.
-  const [recusaDeColagem, setRecusaDeColagem] = useState(null); // { campo, texto }
   function aoColar(setter, campo) {
     return (evento) => {
       const colado = evento.clipboardData?.getData("text");
