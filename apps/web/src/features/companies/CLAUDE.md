@@ -1457,3 +1457,53 @@ poder **nomear** quem está dentro da janela — o backend continua sendo a auto
   `app/hooks/useManageCompaniesWorkspace.js` (expõe `dashboardCompetencia` +
   `changeDashboardCompetencia`).
 - Toda chamada nova precisa de par mock/real em `src/api/`.
+
+## ⚠⚠ O CADASTRO DE EMPRESAS — a varredura de 30/08/2026
+
+> Dono: *"O CADASTRO DAS EMPRESAS ESTA CHEIO DE ERROS (…) ta tudo uma bagunça"*, com cinco defeitos
+> nomeados. Três explorações em paralelo mapearam tudo com arquivo:linha.
+
+⚠⚠ **A ANÁLISE INICIAL DIZIA QUE QUATRO DOS CINCO RELATOS ERAM O MESMO DEFEITO. A MEDIÇÃO CONTRA
+PRODUÇÃO DERRUBOU ISSO** — e o registro fica aqui porque o erro de método é o achado mais caro:
+
+| a análise dizia | medido (`scripts/diag-cadastro-empresas.mjs`, `diag-donos-compartilhados.mjs`) |
+|---|---|
+| o form da ALESSANDRO herdou o e-mail da empresa | ela **TEM** OWNER ativo e `Company.email` **vazio** — o fallback não disparou nela |
+| empresas sem OWNER (onde o fallback dispara) | **0 de 34** — armadilha **latente**, não a causa |
+| anexo do Simples sendo apagado | **0 de 34** preenchidos — perda **futura** |
+| `Company.email` que o Zod reprova | **0** (1 empresa tem o campo) — preventivo |
+| **`atividades` com descrição sendo apagada** | **12 de 34 empresas** — ✅ perda **REAL e em curso** |
+
+**A causa real do 409:** o responsável da ALESSANDRO era `contato@agencialente.com` — o e-mail de
+OUTRA empresa. O contador estava **corrigindo** isso, apontando a ALESSANDRO **NIGRO** para a conta
+que já é dona da **KLAUS NIGRO**. Ele fazia o que descreveu, e a edição recusava porque a conta
+**já existe** — enquanto a CRIAÇÃO sempre reusou a conta. Mesmo ato, dois vereditos.
+
+### O que mudou (commits `121fef90`, `ff4d818a`, `2e1c0ff8`)
+
+- ⚠⚠ **A edição VINCULA conta existente, com confirmação** (decisão do dono). `decidirTrocaDeEmail`
+  ganhou `VINCULAR_CONTA_EXISTENTE`/`PEDIR_CONFIRMACAO_VINCULO`; a guarda virou um CAMINHO, não um
+  `throw`. **Os dois testes `PRESERVADO` foram INVERTIDOS, não apagados**, com a decisão datada ao
+  lado do motivo que ela revoga. A metade que não mudou continua travada: **sem confirmar, nada é
+  escrito** (o `throw` aborta a transação).
+  ⚠ **A conta destino NÃO é renomeada**, nem com `ownerName` no payload — seria o arrasto de
+  19/08/2026 por outra porta.
+  ⚠ O `else` do `RENOMEAR` virou `else if` explícito: solto, ele alcançaria o ramo novo e faria
+  `user.update({email})` na conta ANTIGA com um e-mail que já existe.
+- ⚠⚠ **Duas perdas de dado pararam.** O anexo do Simples e a **descrição dos CNAEs** eram
+  sobrescritos a cada "Salvar alterações". A segunda é a que doía: `Company.atividades` é a ÚNICA
+  fonte de texto de atividade da carteira, e alimenta o **`xDescServ` da DPS** — o dado apagado
+  reaparecia como nota fiscal sem descrição, dias depois, sem ninguém ligar as pontas.
+- ⚠⚠ **50 códigos de recusa passaram a ter texto** (`packages/shared/src/erros/`). `mapKnownError`
+  não tinha um único `company_*`; o contador lia `company_cnae_principal_required` na tela.
+  **O teste-armadilha é a entrega**, não o dicionário: `todoErroTemTexto.test.js` varre a FONTE e
+  exige texto para todo `error:` — e **pegou dois órfãos na primeira execução**.
+- **O formulário aceita o que o servidor gravou** (do RETORNO do PATCH, só no sucesso). Era isto que
+  fazia o "já está alterado" parecer prova de que salvou.
+- **Uma validação de e-mail, não três** (`packages/shared/src/email`). O caso que decidiu: endereço
+  com **acento** passava no servidor e era recusado pelo HTML5 e pelo Zod.
+- Campos novos: **E-mail da empresa** (era validado sem existir na tela) e **Anexo do Simples**.
+
+⚠ **O ramo "empresa sem responsável" NÃO é alcançável no mock** (as 6 têm dono) — oitava vez que o
+mock esconde um ramo neste projeto. Ele é coberto por teste em
+`lib/portal/__tests__/responsavelCompartilhado.test.js`, não pelo navegador.
