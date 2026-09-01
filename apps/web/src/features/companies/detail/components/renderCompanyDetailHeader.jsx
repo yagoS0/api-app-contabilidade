@@ -112,6 +112,13 @@ const GROUPS = [
       // ⚠ Esconder errava barato (some uma aba); despachar erra caro (mostra a apuração de outro
       // regime). Por isso a leitura virou regra com teste próprio, e não um `if` aqui.
       { key: "cadastroFiscal", label: "Apuração" },
+      // ⚠ PLANEJAMENTO VEM DEPOIS DE APURAÇÃO, e a ordem é o argumento: ele lê o MESMO RBT12 e a
+      // MESMA folha que a apuração acabou de apurar. Antes dela, o contador estaria simulando sobre
+      // número que ele ainda não conferiu.
+      // ⚠⚠ E ELE FICA FORA DE `TABS_COM_COMPETENCIA`: o planejamento usa o mês corrente e uma
+      // janela de 12 meses. Um seletor de mês no topo prometeria um filtro que a rota ignora — é o
+      // mesmo argumento já escrito para o Perfil fiscal.
+      { key: "planejamento", label: "Planejamento" },
       { key: "guides", label: "Guias" },
       { key: "sitfis", label: "Situação Fiscal" },
       // ⚠⚠ `emissaoNfse` NÃO ENTRA AQUI — e a ausência é decisão, não esquecimento (dono,

@@ -80,7 +80,7 @@ function OrigemDoCampo({ campo }) {
   return <span style={{ fontSize: "0.68rem", color: C.alerta, lineHeight: 1.35 }}>⚠ {campo.motivoAusencia}</span>;
 }
 
-export function PlanejamentoPage({ api = null, empresas = [], empresa = null, onVoltar }) {
+export function PlanejamentoPage({ api = null, empresas = [], empresa = null, onVoltar, empresaFixa = false }) {
   const [receita, setReceita] = useState("");
   const [rbt12, setRbt12] = useState("");
   const [mesesAtividade, setMesesAtividade] = useState("");
@@ -128,6 +128,22 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   const [dadosEmpresa, setDadosEmpresa] = useState(empresa || null);
   const [carregando, setCarregando] = useState(false);
   const [erroCarga, setErroCarga] = useState(null);
+
+  // ⚠⚠ A EMPRESA PODE CHEGAR DEPOIS DA MONTAGEM, e `useState` só lê o valor inicial UMA VEZ.
+  // Defeito medido no navegador ao ligar a aba dentro da empresa (01/09/2026): a página de detalhe
+  // monta a aba antes de `selectedCompany` existir, então `empresa` chega `{ id: undefined }`,
+  // `empresaId` nasce `""` — e quando a empresa enfim chega, **o estado não acompanha**. A aba
+  // ficava eternamente em "Simulação livre", sem carregar, sem erro e sem nada dizendo por quê.
+  //
+  // ⚠ O precedente está neste mesmo repositório, com o mesmo argumento: `CalendarioGrid` sincroniza
+  // `companyIdFixo` por efeito, *"trocar de empresa sem desmontar o componente deixaria o filtro na
+  // empresa anterior — o cabeçalho diria uma coisa e a grade mostraria outra"*.
+  //
+  // ⚠ Só sincroniza quando há id: um `null` vindo daqui apagaria a escolha de quem está na tela
+  // global usando o seletor.
+  useEffect(() => {
+    if (empresa?.id) setEmpresaId(empresa.id);
+  }, [empresa?.id]);
 
   useEffect(() => {
     let cancelado = false;
@@ -528,7 +544,27 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
             A porta de entrada do modo carteira. Nasce em "Simulação livre" de propósito: a tela
             continua servindo à reunião com prospect, onde a empresa ainda não existe no sistema.
             A lista é a da carteira de quem está logado — ver o comentário do estado acima. */}
-        {empresas.length > 0 && (
+        {/* ⚠⚠ AS DUAS TELAS NÃO SÃO A MESMA PORTA, e é decisão do dono (01/09/2026): a página
+            GLOBAL fica para a **simulação livre** (*"deixa a global para testar empresa que estão
+            chegando"*) e **cada empresa tem a sua**, dentro dela.
+            ⚠ Por isso o seletor some com `empresaFixa`: dentro de uma empresa, trocar de empresa
+            por aqui seria uma segunda porta para a mesma tela — o defeito que este projeto já
+            nomeou com a emissão de NFS-e. */}
+        {/* ⚠⚠ O ESTADO DA CARGA MORA FORA DO SELETOR — defeito meu, pego no navegador ao ligar a aba
+            dentro da empresa. Estas duas linhas viviam DENTRO do bloco do seletor; escondendo o
+            seletor com `empresaFixa`, o "Carregando…" e a mensagem de erro sumiram junto, e a aba
+            ficava MUDA: nem os campos preenchiam, nem se dizia por quê.
+            ⚠ É a "meia remoção" que este projeto nomeia repetidamente — tirar um controle e levar
+            junto a informação que não era dele. Elas dependem de haver EMPRESA, não de haver
+            seletor. */}
+        {empresaId && (carregando || erroCarga) ? (
+          <div data-print-hide style={{ display: "grid", gap: 4 }}>
+            {carregando && <span style={{ fontSize: "0.76rem", color: C.muted }}>Carregando os dados da empresa…</span>}
+            {erroCarga && <span style={{ fontSize: "0.76rem", color: C.alerta }}>⚠ {erroCarga}</span>}
+          </div>
+        ) : null}
+
+        {!empresaFixa && empresas.length > 0 && (
           <div data-print-hide style={{ padding: 12, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, display: "grid", gap: 8 }}>
             <label style={{ ...rotulo, maxWidth: 520 }}>Empresa
               <select value={empresaId} onChange={(e) => setEmpresaId(e.target.value)} style={campo}>
@@ -540,8 +576,6 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
                 ))}
               </select>
             </label>
-            {carregando && <span style={{ fontSize: "0.76rem", color: C.muted }}>Carregando os dados da empresa…</span>}
-            {erroCarga && <span style={{ fontSize: "0.76rem", color: C.alerta }}>⚠ {erroCarga}</span>}
             {prefill.temEmpresa && prefill.referencia && (
               <span style={{ fontSize: "0.72rem", color: C.muted, lineHeight: 1.45 }}>
                 Campos apurados sobre os 12 meses de <strong>{prefill.referencia.janelaRotulo}</strong>.
@@ -994,7 +1028,11 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
                   guardar — a foto pertence a uma empresa, e os Documentos são dela. O botão fica
                   DESABILITADO com o motivo, nunca escondido: sumir esconderia que a ação existe.
                   ⚠ Ele é `<button>` e não link: abre um ato, não uma rota. */}
-              {empresas.length > 0 && (
+              {/* ⚠⚠ A CONDIÇÃO É `empresaFixa || empresas.length`, e não só a segunda — defeito meu,
+                  pego ao ligar a aba: dentro da empresa a lista `empresas` NÃO é passada (é ela que
+                  faz o seletor sumir), então `empresas.length > 0` escondia o botão exatamente onde
+                  ele mais serve. O que decide se dá para guardar é haver EMPRESA, não haver LISTA. */}
+              {(empresaFixa || empresas.length > 0) && (
                 <button
                   type="button"
                   onClick={guardarSimulacao}

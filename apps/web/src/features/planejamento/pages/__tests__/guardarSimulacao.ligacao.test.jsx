@@ -124,3 +124,65 @@ describe("⚠⚠ os DOIS atos, e os desfechos que não podem ser o mesmo", () =>
     expect(corpo.procedencias).toBeTruthy();
   });
 });
+
+describe("⚠⚠⚠ A EMPRESA QUE CHEGA DEPOIS — defeito achado no navegador em 01/09/2026", () => {
+  // A página de detalhe monta a aba ANTES de `selectedCompany` existir, então `empresa` chega
+  // `{ id: undefined }`. `useState` só lê o valor inicial UMA VEZ: `empresaId` nascia `""` e não
+  // acompanhava quando a empresa enfim chegava. A aba ficava eternamente em "Simulação livre",
+  // sem carregar, sem erro, e sem nada dizendo por quê.
+  //
+  // ⚠ Nem o build nem os testes de varredura pegam isto. Só abrir a tela.
+
+  function montarComEmpresaTardia() {
+    const cliente = {
+      getDadosPlanejamento: jest.fn(async () => payload()),
+      salvarSimulacaoPlanejamento: jest.fn(async () => ({ ok: true, simulacao: { id: "sim-1" } })),
+      gerarDocumentoDaSimulacao: jest.fn(async () => ({ ok: true, documento: { id: "doc-1" } })),
+    };
+    const { rerender } = render(
+      <PlanejamentoPage api={cliente} empresa={{ id: undefined }} empresaFixa />,
+    );
+    return {
+      cliente,
+      chegar: () => rerender(<PlanejamentoPage api={cliente} empresa={{ id: "e1" }} empresaFixa />),
+    };
+  }
+
+  it("⚠⚠ a empresa chegando DEPOIS, os dados carregam mesmo assim", async () => {
+    const { cliente, chegar } = montarComEmpresaTardia();
+    expect(cliente.getDadosPlanejamento).not.toHaveBeenCalled();
+
+    await act(async () => { chegar(); });
+    await waitFor(() => expect(cliente.getDadosPlanejamento).toHaveBeenCalledWith("e1"));
+    await waitFor(() => expect(screen.getAllByDisplayValue("300.000,00").length).toBeGreaterThan(0));
+  });
+
+  it("⚠ e o botão de guardar HABILITA — antes ele ficava preso em 'simulação livre'", async () => {
+    const { chegar } = montarComEmpresaTardia();
+    await act(async () => { chegar(); });
+    await waitFor(() => expect(botao()).not.toBeDisabled());
+  });
+});
+
+describe("⚠⚠ `empresaFixa` — as duas telas não são a mesma porta", () => {
+  it("dentro da empresa NÃO há seletor de empresa", () => {
+    // Trocar de empresa de dentro de uma empresa seria uma segunda porta para a mesma tela — o
+    // defeito que este projeto já nomeou com a emissão de NFS-e.
+    render(<PlanejamentoPage api={{ getDadosPlanejamento: jest.fn(async () => payload()) }} empresa={{ id: "e1" }} empresaFixa />);
+    expect(screen.queryByRole("combobox", { name: /^Empresa$/ })).toBeNull();
+  });
+
+  it("⚠⚠ mas o ESTADO DA CARGA continua visível — ele não é do seletor, é da empresa", async () => {
+    // Defeito meu, pego no navegador: o "Carregando…" e a mensagem de erro viviam DENTRO do bloco
+    // do seletor. Escondendo o seletor, sumiram junto — a "meia remoção" que este projeto nomeia.
+    render(
+      <PlanejamentoPage
+        api={{ getDadosPlanejamento: jest.fn(async () => ({ ok: false, error: "company_not_found" })) }}
+        empresa={{ id: "e1" }}
+        empresaFixa
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/Não foi possível carregar os dados desta empresa/i)).toBeInTheDocument());
+  });
+});

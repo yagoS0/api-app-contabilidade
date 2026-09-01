@@ -41,6 +41,12 @@ const CompanyForm = lazy(() =>
 const EmissaoNfseTab = lazy(() =>
   import("../components/renderEmissaoNfseTab").then((m) => ({ default: m.EmissaoNfseTab }))
 );
+// ⚠ A MESMA `PlanejamentoPage` da tela global — não uma segunda tela. Duas implementações do
+// mesmo comparativo divergiriam na primeira correção fiscal, e a que ninguém abre é a que erra.
+// O que muda é o MODO: aqui ela nasce presa à empresa e sem o seletor (`empresaFixa`).
+const PlanejamentoPage = lazy(() =>
+  import("../../../planejamento/pages/renderPlanejamentoPage.jsx").then((m) => ({ default: m.PlanejamentoPage })),
+);
 const AccountingEntriesTab = lazy(() =>
   import("../../../accounting/entries/components/renderAccountingEntriesTab").then((m) => ({ default: m.AccountingEntriesTab }))
 );
@@ -138,6 +144,13 @@ const companyDocsApi = createApiClient();
 // O CalendarioGrid chama a API por conta própria (mesmo padrão do SITFIS e do Apuração v2) —
 // a página de detalhe não tem `api` em escopo.
 const obrigacoesApi = createApiClient();
+// ⚠⚠ CLIENTE PRÓPRIO, e não `api` solto — foi assim que eu quebrei a aba na primeira tentativa.
+// `CompanyDetailPage` NÃO recebe `api` por prop (a assinatura dela é `{ company, guidesPanel, … }`),
+// e `<PlanejamentoPage api={api} …>` compilou, passou nos testes e explodiu **só no navegador**,
+// com `ReferenceError: api is not defined` e a página em branco.
+// ⚠ QUARTA VEZ que um identificador órfão atravessa o `npm run build` neste projeto: o build não o
+// pega, e os testes desta aba são varredura de TEXTO, que também não. Quem pegou foi abrir a tela.
+const planejamentoApi = createApiClient();
 const RelatoriosTab = lazy(() =>
   import("../../../relatorios/components/RelatoriosTab").then((m) => ({ default: m.RelatoriosTab })),
 );
@@ -935,6 +948,40 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
               (ele o renderiza por dentro); as que montam a moldura à mão precisam declará-lo, e
               **nada obriga**. Migrar esta aba para o primitivo resolveria a classe inteira — é
               trabalho à parte, e fica nomeado. */}
+          <Feedback message={feedback.message} error={feedback.error} />
+        </div>
+      </div>
+    );
+  }
+
+  // ⚠⚠ PLANEJAMENTO TRIBUTÁRIO DENTRO DA EMPRESA — a TERCEIRA das três peças (as outras são a
+  // entrada em `GROUPS` e o par em `SEGMENT_TO_TAB`/`TAB_TO_SEGMENT`). Faltando esta, o clique na
+  // aba abriria Anotações **sem erro nenhum**.
+  //
+  // ⚠⚠ É A MESMA TELA DA PÁGINA GLOBAL, presa à empresa por `empresaFixa`. Não é uma segunda
+  // implementação: duas telas do mesmo comparativo divergiriam na primeira correção fiscal, e a
+  // que ninguém abre é a que erra. O que muda é o MODO — aqui não há seletor de empresa e não há
+  // simulação livre; lá não há empresa e não há como guardar.
+  if (companyDetailTab === "planejamento") {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="planejamento"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+        <div style={{ flex: 1, padding: 24 }}>
+          <ErrorBoundary>
+            <Suspense fallback={<TabLoadingFallback />}>
+              {/* ⚠ `empresas` NÃO é passada: sem ela o seletor não renderiza, e a tela não oferece
+                  trocar de empresa de dentro da empresa. */}
+              <PlanejamentoPage api={planejamentoApi} empresa={{ id: companyId }} empresaFixa />
+            </Suspense>
+          </ErrorBoundary>
+          {/* ⚠ O `Feedback` é declarado à mão porque esta aba monta a moldura à mão — a mesma
+              lacuna estrutural que o comentário do Perfil fiscal, oito linhas acima, registra. */}
           <Feedback message={feedback.message} error={feedback.error} />
         </div>
       </div>

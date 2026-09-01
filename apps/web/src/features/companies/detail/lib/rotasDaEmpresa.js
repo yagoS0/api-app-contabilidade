@@ -50,6 +50,9 @@ export const SEGMENT_TO_TAB = {
   // ⚠ O PAR EM `TAB_TO_SEGMENT` É OBRIGATÓRIO — sem ele o clique na aba não navega e a URL cai em
   // Anotações, sem erro nenhum.
   "perfil-fiscal": "perfilFiscal",
+  // ⚠ SEM O PAR, A URL CAI EM ANOTAÇÕES SEM ERRO NENHUM — o defeito que este arquivo já registra
+  // duas vezes. As duas metades andam juntas.
+  planejamento: "planejamento",
   // Sugestão e Pendências eram sub-abas INTERNAS do Cadastro (estado local, não URL); desde
   // 24/08/2026 a Sugestão é um MODAL, aberto pelo botão de pendências da própria Apuração.
   // Links antigos continuam caindo no Cadastro Fiscal, que é onde o botão está.
@@ -85,6 +88,7 @@ export const TAB_TO_SEGMENT = {
   // ⚠ O par da entrada acima. Faltando esta linha, a aba Perfil fiscal vira `<button>` mudo e o
   // clique cai em Anotações — é o defeito que o `CLAUDE.md` deste módulo já registra.
   perfilFiscal: "perfil-fiscal",
+  planejamento: "planejamento",
   emissaoNfse: "emissao-nfse",
   planoContas: "plano-contas",
   cadastro: "cadastro",
