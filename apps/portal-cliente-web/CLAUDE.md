@@ -2054,10 +2054,84 @@ mesmo nos quatro. ⚠ Não é o mesmo código que `invalid_token` ("sua sessão 
 da anterior pode responder depois da nova, e a tela mostraria os números de uma empresa sob o nome
 de outra.
 
+## ⚠⚠ A RODADA DE USABILIDADE — sete achados, e um deles nasceu no conserto (31/08/2026)
+
+> Dono: *"quero que lance múltiplos agentes para testar toda a usabilidade do nosso projeto do lado
+> do cliente, tem que validar tudo nos mínimos detalhes"* — e, depois do relatório: *"sim, pode
+> atacar o dinheiro sem dia, e **acerte tudo**"*.
+
+⚠⚠ **UM DOS "ACHADOS" FOI MEDIDO E DESCARTADO, e isso vale tanto quanto os consertos.** A hipótese
+de que `tributoCurto` devolveria `"2172"` para uma denominação começando pelo código de receita está
+CERTA sobre a função e **falsa sobre a base**: medido em produção (`diag-denominacao-composicao.mjs`,
+só leitura), 165 guias com `extracted`, **13 com composição, 29 itens, ZERO** em que o curto virou
+número. A função tem **três cópias**; mexer nas três por uma forma que ninguém observou trocaria um
+defeito hipotético por risco real no rótulo do documento que o cliente paga. **Não foi alterada**, e
+o argumento está travado em teste.
+
+| o que era | onde | o que ficou |
+|---|---|---|
+| o dinheiro **sem dia** não tinha linha (R$ 5.902,00 invisíveis em ago; uma série de R$ 1.180,00 **inalcançável** em set) | `BlocoDeDemonstracao` | linha `sem dia` no `<tbody>`, clicável; a gaveta passou a se chamar **"sem dia"** — *"no mês"* virou só o total do rodapé |
+| `pTotTribSN` **sem guarda local** no Simples | `impostosDaNota` | a tela recusa antes, com o critério **DO SERVIDOR** (zero passa, negativo não) |
+| recusa barata tomava a **tela inteira** | `desfechoEmissao` | onde nada saiu da máquina, o motivo entra **acima** do formulário, que fica preenchido |
+| a troca de empresa **descartava a planilha em silêncio** | `SeletorEmpresa` + lote | aviso com a contagem real de linhas e ajustes, ANTES do clique |
+| jargão do servidor (`pTotTribSN`, `opSimpNac=3`, `pTotTribFed`) na tela do cliente | `desfechoEmissao` | frase por CÓDIGO — ⚠ a da **RECEITA** continua CITADA |
+| `BotaoCopiar`: o `aria-label` fixo **escondia o desfecho** | `components/ui` | região `aria-live` FORA do botão, e só quando há desfecho |
+| aba Guias em 375px: linhas de 228px | `app.css` | piso em `ch` nas duas colunas de texto |
+
+### ⚠⚠ O DEFEITO QUE O CONSERTO CRIOU — e por que ele fica escrito
+
+O anúncio do `BotaoCopiar` (`.sr-only`, `position: absolute`) entrou numa tabela cujo `.table-wrap`
+**não era `position: relative`**. Ele se ancorou fora do contexto de rolagem, ficou em `left: 548px`
+numa tela de 375 e **fez a página inteira rolar para o lado** — exatamente o que aquele bloco de CSS
+existe para impedir. ⚠ Os **1.409 testes estavam verdes**; quem pegou foi o navegador.
+
+⚠ O conserto é do CONTÊINER, não daquele `<span>`: qualquer absoluto que entre numa tabela daqui em
+diante cai na mesma armadilha. ⚠ E o modal "Escolher empresa" medindo 548px em 375 era o **mesmo**
+defeito, não um segundo: com o documento esticado, o backdrop esticava junto. Hoje mede 343.
+
+### Os números de 375px, medidos no navegador
+
+| aba Guias, competência "Todas" (18 guias) | antes | depois |
+|---|---|---|
+| altura da tabela | 2.881 | **2.271** |
+| linha mais alta | 228 | **170** |
+| largura (rolagem lateral, que já existia) | 720 | 795 |
+
+⚠ O que inflava era **texto estrangulado**, não excesso de conteúdo: a frase da ausência da linha
+digitável a 121px e *"Seu contador ainda não liberou esta guia…"* a 120px. **As duas frases FICAM** —
+sem elas o cliente não sabe por que não há número nem por que o botão está desabilitado.
+⚠⚠ **Nenhuma coluna foi escondida, e há teste sobre isso:** coluna de guia que some é dívida com a
+Receita sumindo da tela de quem paga. ⚠ A **FORMA** da tabela em tela estreita (virar cartões,
+esconder colunas) **não foi mexida** — forma de tela é decisão do dono.
+
+### ⚠⚠ O MOCK ESCONDIA TRÊS RAMOS DA GUIA — sétima vez nesta base
+
+Toda guia nascia com `extracted: null`, `parcelamentoId: null` e um dos dois tipos
+(`SIMPLES`/`INSS`). O rótulo **"PIS · COFINS"** da DARF do Presumido — consertado no mesmo dia — era
+**inalcançável offline**, e a precedência da **parcela** sobre o tipo também.
+
+Entraram a `OUTRA` **com** composição, a `OUTRA` **sem** (o contraponto: 7 das 20 da base estão
+assim, e `"OUTRA"` é o que está GRAVADO) e a parcela. ⚠ As denominações são as **medidas em
+produção**, com o campo `tributo` já preenchido — a forma de 24 dos 29 itens. Só o dinheiro é
+fictício. ⚠ E o `valor` escrito ali pode não ser o que a tela mostra: `linhaDigitavelDoMock`
+devolve `valor` nos ramos em que a linha foi lida, e o spread vem depois — de propósito, para o
+número da linha e o da guia baterem.
+
+### ⚠ `not_a_client` × `forbidden_account_type` — a frase igual é DELIBERADA
+
+As duas descrevem a mesma situação por lados diferentes (nossa trava de produto × a recusa do
+servidor), e para quem lê **o conserto é o mesmo**. Duas redações fariam a pessoa procurar uma
+diferença que não existe. O que faltava era a distinção existir para **quem diagnostica**: ela foi
+para o DOM (`data-erro-codigo` no `AlertaErro`), como `data-status` e `data-situacao-fiscal` já
+fazem. ⚠ Erro sem código **não** fabrica atributo vazio.
+
+---
+
 ## TESTES
 
-`npm test -w @contabilidade/portal-cliente-web` → **1.132 testes, 58 suítes, todas verdes** (medido
-em 27/08/2026, depois do fluxo de caixa real; ⚠ nesta rodada uma suíte foi **removida** —
+`npm test -w @contabilidade/portal-cliente-web` → **1.428 testes, 74 suítes, todas verdes** (medido
+em 31/08/2026, depois da rodada de usabilidade; eram 1.132/58 em 27/08, ⚠ e naquela rodada uma
+suíte foi **removida** —
 `diaDoFluxo.ligacao.test.jsx`, do painel do dia, que deixou de existir — e duas nasceram no lugar;
 eram 968/52 em 24/08 depois do `ciclo` no contrato, eram 947/51 no meio da rodada da auditoria, eram 894/48 em 23/08 com a marca da topbar, 814/45 depois
 da marca, 807/44 depois da situação fiscal, 683/38 em 20/08, e 557/32 antes do lote por planilha). Não existiam até 18/08 (`d5a91490` subiu os primeiros 101).
