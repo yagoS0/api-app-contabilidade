@@ -81,3 +81,85 @@ export function deCampo(v) {
   const n = Number(String(v).replace(/\./g, "").replace(",", "."));
   return Number.isFinite(n) ? n : null;
 }
+
+// ─── ⚠⚠ A CAMADA DE DINHEIRO (01/09/2026) ────────────────────────────────────────────────────────
+//
+// > Dono: *"os textos, os campos, devem ser melhorados"* · *"está tudo muito bugado"*.
+//
+// ⚠⚠ O CONSERTO DE 25/08 FOI METADE DO CAMINHO, e a outra metade ficou aberta por uma semana. O
+// `deCampo` acima está CERTO para digitação pt-BR e continua intocado — o que faltava era impedir
+// que chegasse nele um texto que ele lê de outro jeito. Medido agora, contra a função de verdade:
+//
+//     "889.286,09"     -> 889286.09     ✓
+//     "1234.56"        -> 123456        ✗ ×100 EM SILÊNCIO — e é o formato que o Excel exporta
+//     "1,500.00"       -> 1.5           ✗ ÷1000 — é o formato que uma planilha em inglês exporta
+//     "R$ 889.286,09"  -> null          ✗ "não informada" para um valor copiado da PRÓPRIA tela
+//     "-5"             -> -5            ✗ margem negativa entra na conta e o total sai negativo
+//
+// ⚠ Os dois primeiros são o defeito CARO: mudam a ordem de grandeza sem nada na tela dizendo, e o
+// PDF que sai daqui vai ao cliente. `1234.56` lido como 123.456 põe a empresa duas faixas acima.
+//
+// ⚠⚠ A SOLUÇÃO NÃO É UM PARSER MAIS ESPERTO — é tornar a ambiguidade IMPOSSÍVEL DE ESCREVER. É a
+// decisão que a emissão de nota fiscal já tomou, pelo mesmo motivo e com o mesmo custo (lá o erro
+// emitia a nota por 1/1000 do valor). Por isso aqui se REUSA aquele módulo, e não se escreve um
+// segundo: duas gramáticas de número dentro do MESMO app divergem na primeira correção, e a
+// divergência apareceria como o mesmo texto virando dois números em duas telas.
+//
+// ⚠ ISTO NÃO VALE PARA PERCENTUAL. Alíquota de ISS e margem vão de 0 a 100 e não têm separador de
+// milhar, logo não têm a ambiguidade — e a máscara de centavos transformaria `5` em `0,05`. Eles
+// continuam em `deCampo`/`paraCampo`, agora com guarda de FAIXA (abaixo).
+
+// ⚠ A autoridade de PERCENTUAL deste app — ver `lerPercentual`, mais abaixo.
+import { lerPercentualCarga } from "../../../lib/nfse/cadastroEmissaoNfse";
+
+export {
+  mascararValorDigitado as mascararDinheiro,
+  lerValorDoCampo as lerDinheiro,
+  formatarValorParaCampo as dinheiroParaCampo,
+  lerValorColado as colarDinheiro,
+  textoDaRecusaDeColagem as textoDaRecusaDeColarDinheiro,
+} from "../../notas/lib/valorDaNota";
+
+/**
+ * O leitor de PERCENTUAL — e ele NÃO pode ser o `deCampo` acima.
+ *
+ * ⚠⚠ DEFEITO ACHADO POR MEDIÇÃO EM 01/09/2026, e ele não estava no plano: `deCampo` remove TODO
+ * ponto como separador de milhar, o que é certo para dinheiro em pt-BR e **errado para
+ * percentual**. Medido:
+ *
+ *     deCampo("3.5")    -> 35        ✗ um ISS de 3,5% vira 35% — erro de DEZ vezes
+ *     deCampo("11.33")  -> 1133      ✗ e este é o exemplo que o `apps/web/CLAUDE.md` já cita
+ *
+ * ⚠ A regra escrita desta casa sempre foi o contrário, e está no `CLAUDE.md` da feature de
+ * empresas, sobre a carga tributária: *"**Vírgula E ponto** são aceitos como decimal (percentual de
+ * 0 a 100 não tem milhar). ⚠ Não reuse o normalizador de moeda: ele trata ponto como milhar e faria
+ * `11.33` virar `1133`"*. A regra existia; este campo é que não a seguia.
+ *
+ * ⚠⚠ POR ISSO ELE REUSA `lerPercentualCarga`, e não escreve uma segunda gramática. Aquela função já
+ * é a autoridade de percentual deste app (vírgula→ponto, até duas casas, faixa 0–100), e duas
+ * leituras do mesmo número divergem na primeira correção.
+ *
+ * ⚠⚠ E A FAIXA NÃO É DETALHE: negativo era aceito, `margem` negativa entra em `custoAnualReal` sem
+ * guarda e produz **imposto negativo** — o `sort` do comparador coroaria o Lucro Real como vencedor
+ * por causa disso, num PDF que vai ao cliente.
+ *
+ * ⚠ `null` NÃO é a mesma coisa que `fora`: campo vazio é ausência (a tela não afirma nada); fora de
+ * faixa é um número que a pessoa digitou e que precisa ser DITO. Apagar em silêncio faria o campo
+ * "não aceitar" sem explicar por quê.
+ *
+ * @returns {{valor: number|null, fora: boolean}}
+ */
+export function lerPercentual(v) {
+  const r = lerPercentualCarga(v);
+  if (!r.preenchido) return { valor: null, fora: false };
+  if (r.problema) return { valor: null, fora: true };
+  return { valor: r.valor, fora: false };
+}
+
+/** A frase da recusa — na TELA, ao lado do campo. Nunca só um campo que não aceita. */
+export function textoDoPercentualForaDaFaixa(rotuloDoCampo) {
+  return (
+    `${rotuloDoCampo} precisa ser um percentual entre 0 e 100, com até duas casas `
+    + "(ex.: 3,5 ou 3.5). O que está digitado não entrou na conta."
+  );
+}

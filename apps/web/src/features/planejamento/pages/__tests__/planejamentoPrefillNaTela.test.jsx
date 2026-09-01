@@ -124,8 +124,12 @@ describe("⚠ O QUE NÃO PODE TER MUDADO JUNTO", () => {
   });
 
   it("valor REDONDO continua funcionando — era o único formato que o mock exercitava", async () => {
+    // ⚠ O TEXTO DO CAMPO MUDOU EM 01/09/2026, e é mudança deliberada: os campos de dinheiro passaram
+    // a ser MASCARADOS (fluxo de dígitos em centavos, o mesmo da emissão de nota fiscal), e a forma
+    // canônica da máscara sempre traz as duas casas. Era "1.850.000", é "1.850.000,00". O NÚMERO não
+    // mudou — `lerDinheiro` devolve 1850000 nos dois casos —, e é o número que o motor recebe.
     montar({ receitaAnual: ok(1_850_000), rbt12: ok(1_790_000) });
-    await waitFor(() => expect(screen.getByDisplayValue("1.850.000")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByDisplayValue("1.850.000,00")).toBeInTheDocument());
     expect(screen.queryByText(/não é elegível a este regime/i)).not.toBeInTheDocument();
   });
 });
@@ -189,7 +193,7 @@ describe("⚠⚠ A PERGUNTA DOS R$ 120.000 (art. 15, § 4º) APARECE E NÃO SE R
   it("com receita dentro do limite, a pergunta aparece com as exceções nomeadas", async () => {
     montar(PEQUENA);
     // ⚠ receita e RBT12 têm o mesmo valor aqui, logo DOIS inputs o exibem.
-    await waitFor(() => expect(screen.getAllByDisplayValue("100.000").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByDisplayValue("100.000,00").length).toBeGreaterThan(0));
     expect(screen.getByText(/a presunção de IRPJ pode ser de 16%/i)).toBeInTheDocument();
     // ⚠ Caso concreto na carteira: terapia ocupacional é profissão regulamentada e NÃO tem direito.
     expect(screen.getByText(/profissão legalmente regulamentada/i)).toBeInTheDocument();
@@ -199,7 +203,7 @@ describe("⚠⚠ A PERGUNTA DOS R$ 120.000 (art. 15, § 4º) APARECE E NÃO SE R
   it("⚠⚠ NADA vem pré-selecionado — valor escolhido pelo sistema fica indistinguível de conferido", async () => {
     montar(PEQUENA);
     // ⚠ receita e RBT12 têm o mesmo valor aqui, logo DOIS inputs o exibem.
-    await waitFor(() => expect(screen.getAllByDisplayValue("100.000").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByDisplayValue("100.000,00").length).toBeGreaterThan(0));
     expect(screen.getByLabelText(/Enquadra — usar 16%/i)).not.toBeChecked();
     expect(screen.getByLabelText(/Não enquadra — 32%/i)).not.toBeChecked();
   });
@@ -207,7 +211,7 @@ describe("⚠⚠ A PERGUNTA DOS R$ 120.000 (art. 15, § 4º) APARECE E NÃO SE R
   it("⚠ e enquanto ninguém responde, a tela DIZ o que a omissão custa", async () => {
     montar(PEQUENA);
     // ⚠ receita e RBT12 têm o mesmo valor aqui, logo DOIS inputs o exibem.
-    await waitFor(() => expect(screen.getAllByDisplayValue("100.000").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByDisplayValue("100.000,00").length).toBeGreaterThan(0));
     // ⚠ A frase aparece em DOIS lugares, e isso é o desenho: ao lado da pergunta (onde se
     // responde) e dentro de "o que este total não considera", no card do Presumido (onde o número
     // é lido). Uma consulta singular estoura com "multiple found" e faz parecer defeito.

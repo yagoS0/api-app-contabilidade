@@ -32,7 +32,17 @@ import { prefillDaEmpresa, procedenciaDosCampos } from "../lib/prefillDaEmpresa"
 // ⚠⚠ AS DUAS METADES DO CAMPO NUMÉRICO VÊM DO MESMO ARQUIVO, E ISSO É O CONSERTO.
 // `deCampo` morava solta aqui e `paraCampo` não existia — quem escrevia no input era
 // `String(n)`, que produz "888286.09" e é lido como 88.828.609. Ver `lib/campoNumerico.js`.
-import { paraCampo, deCampo as num } from "../lib/campoNumerico";
+import {
+  paraCampo,
+  deCampo as num,
+  mascararDinheiro,
+  lerDinheiro,
+  dinheiroParaCampo,
+  colarDinheiro,
+  textoDaRecusaDeColarDinheiro,
+  lerPercentual,
+  textoDoPercentualForaDaFaixa,
+} from "../lib/campoNumerico";
 import { CardRegime } from "../components/CardRegime";
 import { GaugeFatorR } from "../components/GaugeFatorR";
 import { TabelaComparativa } from "../components/TabelaComparativa";
@@ -145,9 +155,12 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     // devolvendo 88.828.609 ao motor. Medido em produção antes do conserto: 12 de 18 empresas com
     // o valor inflado ×100, 3 com o card do Presumido morto ("inelegível") e 7 com o do Simples
     // ("Sem RBT12"). Valor sem centavos passava ileso — e o mock só tinha valores redondos.
-    setReceita(paraCampo(v.receitaAnual));
-    setRbt12(paraCampo(v.rbt12));
-    setFolha(paraCampo(v.folhaAnual));
+    // ⚠ `dinheiroParaCampo`, não `paraCampo`: os campos de dinheiro passaram a ser MASCARADOS
+    // (01/09/2026), e o texto que o prefill escreve tem de estar na mesma forma que o teclado
+    // produz — senão o primeiro toque na tecla reformata o campo inteiro e o número salta.
+    setReceita(dinheiroParaCampo(v.receitaAnual));
+    setRbt12(dinheiroParaCampo(v.rbt12));
+    setFolha(dinheiroParaCampo(v.folhaAnual));
     // ⚠ O ISS viaja em FRAÇÃO no payload e é PERCENTUAL no campo. A conversão é esta; o que não
     // pode voltar é o `String()` em volta dela (3,5% viraria 35%).
     setIss(v.aliquotaIss == null ? "" : paraCampo(Math.round(v.aliquotaIss * 1e6) / 1e4));
@@ -186,7 +199,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   useEffect(() => {
     if (!detalhando) return;
     setSerieMensal((atual) => {
-      const media = (num(receita) || 0) / 12;
+      const media = (lerDinheiro(receita) || 0) / 12;
       // ⚠ MESMO defeito, terceiro lugar: `String(1234.56)` vira 123.456 na volta.
       const padrao = media ? paraCampo(Math.round(media * 100) / 100) : "";
       return Array.from({ length: mesesInicioAtividade }, (_, i) => atual[i] ?? padrao);
@@ -195,27 +208,62 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
 
   const receitasMensais = useMemo(() => {
     if (!detalhando) return null;
-    return Array.from({ length: mesesInicioAtividade }, (_, i) => num(serieMensal[i]) || 0);
+    return Array.from({ length: mesesInicioAtividade }, (_, i) => lerDinheiro(serieMensal[i]) || 0);
   }, [detalhando, mesesInicioAtividade, serieMensal]);
 
+  // ⚠⚠ COLAR É O CASO PERIGOSO, e é por isso que ele tem gramática própria. Quem cola vem de
+  // planilha, e planilha escreve `1234.56` (Excel pt-BR), `1,500.00` (planilha em inglês) ou
+  // `R$ 889.286,09` (copiado desta própria tela). Passar o colado pela máscara faria `1500` virar
+  // R$ 15,00; passar pelo `deCampo` faria `1234.56` virar 123.456. `colarDinheiro` aceita só o que
+  // tem UMA leitura e RECUSA COM MOTIVO o que tem duas (`1.500`, `1,500`) — campo intocado mais uma
+  // frase é melhor que um número plausível e errado.
+  const [recusaDeColagem, setRecusaDeColagem] = useState(null); // { campo, texto }
+  function aoColar(setter, campo) {
+    return (evento) => {
+      const colado = evento.clipboardData?.getData("text");
+      if (colado == null) return;
+      evento.preventDefault();
+      const r = colarDinheiro(colado);
+      if (r.ok) { setter(r.mascarado); setRecusaDeColagem(null); return; }
+      setRecusaDeColagem({ campo, texto: textoDaRecusaDeColarDinheiro(r) });
+    };
+  }
+  /** A frase da recusa, ao lado do campo que a causou — nunca uma barra global. */
+  function RecusaDeColagem({ campo }) {
+    if (recusaDeColagem?.campo !== campo) return null;
+    return (
+      <span style={{ display: "block", marginTop: 4, fontSize: "0.72rem", color: "var(--state-warn)" }}>
+        {recusaDeColagem.texto}
+      </span>
+    );
+  }
+
+  // ⚠⚠ PERCENTUAL TEM LEITOR PRÓPRIO desde 01/09/2026: `deCampo` remove todo ponto como milhar, e
+  // isso é certo para dinheiro e ERRADO aqui — `3.5` virava 35 (um ISS dez vezes maior) e `11.33`
+  // virava 1133. Ver `lerPercentual`.
+  const issLido = lerPercentual(iss);
+  const margemLida = lerPercentual(margem);
+
   const entradas = useMemo(() => ({
-    receitaAnual: num(receita) || 0,
-    rbt12: num(rbt12) ?? num(receita),
+    receitaAnual: lerDinheiro(receita) || 0,
+    rbt12: lerDinheiro(rbt12) ?? lerDinheiro(receita),
     // ⚠⚠ `num(folha)`, NÃO `num(folha) || 0`. Campo vazio significa FOLHA NÃO INFORMADA, e o motor
     // trata `null` como ausência: sem folha o Fator R não se calcula e o Simples sai indisponível,
     // em vez de cair no Anexo V (a alíquota maior) por causa de um zero que ninguém digitou. Folha
     // realmente zero continua sendo possível — digite 0.
-    folhaAnual: num(folha),
+    folhaAnual: lerDinheiro(folha),
     anexoSimples: anexo,
     sujeitoAoFatorR: sujeitoFatorR,
     atividadePresumido: atividade,
-    aliquotaIss: num(iss) == null ? null : num(iss) / 100,
-    margemLucro: num(margem) == null ? null : num(margem) / 100,
-    creditosPisCofins: num(creditos),
+    // ⚠ Fora da faixa NÃO entra na conta — e a tela DIZ isso, logo abaixo do campo. Silenciar aqui
+    // faria a margem de "-5" produzir imposto negativo, e o `sort` coroaria o Lucro Real vencedor.
+    aliquotaIss: issLido.valor == null ? null : issLido.valor / 100,
+    margemLucro: margemLida.valor == null ? null : margemLida.valor / 100,
+    creditosPisCofins: lerDinheiro(creditos),
     mesesDeAtividade: mesesInicioAtividade,
     receitasMensais,
     servicosAte120kConfirmado: servicos16,
-  }), [receita, rbt12, folha, anexo, sujeitoFatorR, atividade, iss, margem, creditos, mesesInicioAtividade, receitasMensais, servicos16]);
+  }), [receita, rbt12, folha, anexo, sujeitoFatorR, atividade, issLido.valor, margemLida.valor, creditos, mesesInicioAtividade, receitasMensais, servicos16]);
 
   const temReceita = entradas.receitaAnual > 0;
   const resultado = useMemo(() => (temReceita ? compararRegimes(entradas) : null), [entradas, temReceita]);
@@ -271,9 +319,9 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   // Cada linha diz se o valor veio da empresa (e de onde), se foi digitado por cima, se foi
   // informado nesta simulação, ou se não foi possível apurar.
   const procedencias = useMemo(() => procedenciaDosCampos(prefill, {
-    receitaAnual: num(receita),
-    rbt12: num(rbt12),
-    folhaAnual: num(folha),
+    receitaAnual: lerDinheiro(receita),
+    rbt12: lerDinheiro(rbt12),
+    folhaAnual: lerDinheiro(folha),
     // O regime atual não é editável na tela: ele descreve de onde a empresa está saindo.
     regimeAtual: prefill.valores?.regimeAtual ?? null,
     // ⚠ Sujeito ao Fator R: o anexo do seletor não vale nada (o campo fica desabilitado e quem
@@ -281,9 +329,9 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     // escolha que não existiu — a linha tem de dizer que o anexo sai da folha.
     anexo: sujeitoFatorR ? null : anexo,
     sujeitoFatorR,
-    aliquotaIss: num(iss) == null ? null : num(iss) / 100,
+    aliquotaIss: issLido.valor == null ? null : issLido.valor / 100,
     atividadePresumido: atividade,
-  }), [prefill, receita, rbt12, folha, anexo, sujeitoFatorR, iss, atividade]);
+  }), [prefill, receita, rbt12, folha, anexo, sujeitoFatorR, issLido.valor, atividade]);
 
   const valorImpresso = (linha) => {
     if (linha.valor === null || linha.valor === undefined || linha.valor === "") return "—";
@@ -315,7 +363,10 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
       + `Premissa de receita: ${premissaReceita}. `
       + "A partir do 13º mês passa a valer o RBT12 real dos 12 meses anteriores."
     : null;
-  const issForaDaFaixa = num(iss) != null && (num(iss) / 100 < ISS_FAIXA_LEGAL.minimo || num(iss) / 100 > ISS_FAIXA_LEGAL.maximo);
+  // ⚠ Este é o aviso da faixa LEGAL do ISS (2% a 5%, LC 116). Não confundir com `issLido.fora`,
+  // que é o campo ILEGÍVEL — são duas coisas: uma fala da lei, a outra do que foi digitado.
+  const issForaDaFaixa = issLido.valor != null
+    && (issLido.valor / 100 < ISS_FAIXA_LEGAL.minimo || issLido.valor / 100 > ISS_FAIXA_LEGAL.maximo);
 
   useEffect(() => {
     if (!imprimindo) return undefined;
@@ -375,18 +426,31 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
         <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, display: "grid", gap: 12 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
             <label style={rotulo}>Receita anual (R$)
-              <input value={receita} onChange={(e) => setReceita(e.target.value)} inputMode="decimal" placeholder="0,00" style={campo} />
+              {/* ⚠ `inputMode="numeric"`: o campo é um FLUXO DE DÍGITOS em centavos, e o teclado
+                  do celular não deve oferecer separador nenhum — não há o que digitar além de
+                  algarismos. */}
+              <input
+                value={receita}
+                onChange={(e) => setReceita(mascararDinheiro(e.target.value))}
+                onPaste={aoColar(setReceita, "receita")}
+                inputMode="numeric"
+                placeholder="0,00"
+                style={campo}
+              />
+              <RecusaDeColagem campo="receita" />
               {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.receitaAnual} />}
             </label>
             <label style={rotulo}>RBT12 (R$) — receita dos 12 meses anteriores
               <input
                 value={mesesInicioAtividade ? "" : rbt12}
-                onChange={(e) => setRbt12(e.target.value)}
-                inputMode="decimal"
+                onChange={(e) => setRbt12(mascararDinheiro(e.target.value))}
+                onPaste={aoColar(setRbt12, "rbt12")}
+                inputMode="numeric"
                 disabled={Boolean(mesesInicioAtividade)}
                 placeholder={mesesInicioAtividade ? "proporcionalizado — empresa em início de atividade" : "igual à receita anual"}
                 style={{ ...campo, opacity: mesesInicioAtividade ? 0.5 : 1 }}
               />
+              <RecusaDeColagem campo="rbt12" />
               {prefill.temEmpresa && !mesesInicioAtividade && <OrigemDoCampo campo={prefill.campos.rbt12} />}
             </label>
             {/* ⚠ Entrada, não inferência: a receita não diz em que mês a empresa está. Duas empresas
@@ -406,11 +470,13 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
             <label style={rotulo}>Folha anual, com pró-labore (R$)
               <input
                 value={folha}
-                onChange={(e) => setFolha(e.target.value)}
-                inputMode="decimal"
+                onChange={(e) => setFolha(mascararDinheiro(e.target.value))}
+                onPaste={aoColar(setFolha, "folha")}
+                inputMode="numeric"
                 placeholder="vazio = não informada"
                 style={campo}
               />
+              <RecusaDeColagem campo="folha" />
               {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.folhaAnual} />}
             </label>
             <label style={rotulo}>Atividade no Lucro Presumido
@@ -491,7 +557,15 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
               {prefill.temEmpresa && !sujeitoFatorR && <OrigemDoCampo campo={prefill.campos.anexo} />}
             </label>
             <label style={rotulo}>Alíquota de ISS do município (%)
+              {/* ⚠ PERCENTUAL: continua `inputMode="decimal"` e aceitando vírgula E ponto — de 0 a
+                  100 não há separador de milhar, logo não há ambiguidade, e a máscara de centavos
+                  aqui transformaria `5` em `0,05`. O que mudou é QUEM LÊ (`lerPercentual`). */}
               <input value={iss} onChange={(e) => setIss(e.target.value)} inputMode="decimal" placeholder="deixe vazio se não souber" style={campo} />
+              {issLido.fora && (
+                <span style={{ display: "block", marginTop: 4, fontSize: "0.72rem", color: "var(--state-warn)" }}>
+                  {textoDoPercentualForaDaFaixa("A alíquota de ISS")}
+                </span>
+              )}
               {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.aliquotaIss} />}
             </label>
           </div>
@@ -526,9 +600,25 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, paddingTop: 8, borderTop: `1px solid ${C.borda}` }}>
             <label style={rotulo}>Margem de lucro real (%) — só para comparar com o Lucro Real
               <input value={margem} onChange={(e) => setMargem(e.target.value)} inputMode="decimal" placeholder="não estimamos por você" style={campo} />
+              {margemLida.fora && (
+                <span style={{ display: "block", marginTop: 4, fontSize: "0.72rem", color: "var(--state-warn)" }}>
+                  {/* ⚠⚠ Aqui a guarda é a que impede IMPOSTO NEGATIVO: margem negativa entrava em
+                      `custoAnualReal` sem barreira nenhuma, e o `sort` do comparador coroaria o
+                      Lucro Real como vencedor por causa disso — num PDF que vai ao cliente. */}
+                  {textoDoPercentualForaDaFaixa("A margem de lucro")}
+                </span>
+              )}
             </label>
             <label style={rotulo}>Créditos anuais de PIS/COFINS (R$)
-              <input value={creditos} onChange={(e) => setCreditos(e.target.value)} inputMode="decimal" placeholder="não estimamos por você" style={campo} />
+              <input
+                value={creditos}
+                onChange={(e) => setCreditos(mascararDinheiro(e.target.value))}
+                onPaste={aoColar(setCreditos, "creditos")}
+                inputMode="numeric"
+                placeholder="não estimamos por você"
+                style={campo}
+              />
+              <RecusaDeColagem campo="creditos" />
             </label>
           </div>
 
@@ -575,7 +665,16 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
                       <label key={i} style={rotulo}>{i + 1}º mês
                         <input
                           value={serieMensal[i] ?? ""}
-                          onChange={(e) => setSerieMensal((a) => { const p = [...a]; p[i] = e.target.value; return p; })}
+                          onChange={(e) => setSerieMensal((a) => { const p = [...a]; p[i] = mascararDinheiro(e.target.value); return p; })}
+                          onPaste={(evento) => {
+                            const colado = evento.clipboardData?.getData("text");
+                            if (colado == null) return;
+                            evento.preventDefault();
+                            const r = colarDinheiro(colado);
+                            if (!r.ok) { setRecusaDeColagem({ campo: `serie-${i}`, texto: textoDaRecusaDeColarDinheiro(r) }); return; }
+                            setRecusaDeColagem(null);
+                            setSerieMensal((a) => { const p = [...a]; p[i] = r.mascarado; return p; });
+                          }}
                           inputMode="decimal"
                           style={campo}
                         />
