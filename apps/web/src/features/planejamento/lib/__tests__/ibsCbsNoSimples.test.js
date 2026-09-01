@@ -8,6 +8,7 @@ import {
   TESTE_2026,
   OPCAO_POR_FORA,
   creditoPorDentro,
+  impostoDaEmpresa,
   transferidoPorFora,
   ibsCbsDoSimples,
 } from "../ibsCbsNoSimples";
@@ -210,5 +211,72 @@ describe("⚠⚠ o DADO GERADO continua sendo o que a lei diz", () => {
 
   it("as alíquotas NOMINAIS não mudaram em relação a 2026", () => {
     expect(ANEXOS_SIMPLES_2027.I.faixas.map((f) => f.aliquota)).toEqual([4, 7.3, 9.5, 10.7, 14.3, 18.9]);
+  });
+});
+
+describe("⚠⚠⚠ QUANTO A EMPRESA VAI PAGAR — a metade que faltava", () => {
+  // > Dono, 01/09/2026: "o que não ficou claro no CBS e IBS é quanto meu cliente vai pagar de
+  // > imposto; no caso ela só diz quanto de crédito ele vai gerar."
+  const base = { anexo: "III", faixa: 1, aliquotaEfetivaPct: 6, dasAnual: 6000, receitaAnual: 100000 };
+
+  it("⚠⚠ POR DENTRO, O DAS NÃO MUDA — e é medição, não opinião", () => {
+    // As alíquotas nominais e as parcelas a deduzir dos Anexos são as MESMAS de 2026. Alíquota
+    // efetiva igual ⇒ DAS igual. É a coisa mais valiosa a dizer ao contador: ficar como está não
+    // aumenta o imposto da empresa dele.
+    const r = impostoDaEmpresa(base);
+    expect(r.porDentro.dasAnual).toBe(6000);
+    expect(r.porDentro.mudaEmRelacaoAHoje).toBe(false);
+    expect(r.porDentro.explicacao).toMatch(/não muda/i);
+  });
+
+  it("e ele mostra QUANTO do DAS já é CBS e IBS hoje", () => {
+    //   CBS 15,43% de 6.000 = 925,80   ·   IBS 0,17% de 6.000 = 10,20
+    const r = impostoDaEmpresa(base);
+    expect(r.porDentro.cbsDentroDoDas).toBeCloseTo(925.8, 2);
+    expect(r.porDentro.ibsDentroDoDas).toBeCloseTo(10.2, 2);
+  });
+
+  it("⚠ na 6ª faixa não há IBS dentro do DAS — e o campo sai `null`, não zero", () => {
+    const r = impostoDaEmpresa({ ...base, faixa: 6, aliquotaEfetivaPct: 30, dasAnual: 30000 });
+    expect(r.porDentro.ibsDentroDoDas).toBeNull();
+    expect(r.porDentro.semIbsNoDas).toBe(true);
+  });
+
+  it("⚠⚠ POR FORA: a PARCELA QUE SAI do DAS é exata — a lei diz que ela não é cobrada", () => {
+    //   15,60% de 6.000 = 936,00
+    const r = impostoDaEmpresa({ ...base, cbsEstimadaPct: 8.8 });
+    expect(r.porFora.parcelaQueSaiDoDas).toBeCloseTo(936, 2);
+    expect(r.porFora.fundamentoDaSaida).toMatch(/art\. 13, § 9º/);
+  });
+
+  it("o débito no regime regular é sobre a RECEITA, e sai marcado como BRUTO", () => {
+    //   8,90% de 100.000 = 8.900,00
+    const r = impostoDaEmpresa({ ...base, cbsEstimadaPct: 8.8 });
+    expect(r.porFora.debitoSobreAReceita).toBeCloseTo(8900, 2);
+  });
+
+  it("⚠⚠⚠ E A CONTA NÃO FECHA — dizer isso É o produto", () => {
+    // Faltam os créditos das compras (a tela não sabe o que a empresa compra) e a forma de
+    // recomposição do DAS (a lei não a traz — varrido o texto). Um "total por fora" cravado seria
+    // número inventado num documento que vai ao cliente.
+    const r = impostoDaEmpresa({ ...base, cbsEstimadaPct: 8.8 });
+    expect(r.porFora.liquidoNaoCalculavel).toBe(true);
+    expect(r.porFora.porQueNaoFecha).toHaveLength(2);
+    expect(r.porFora.porQueNaoFecha.join(" ")).toMatch(/folha não gera crédito/i);
+    expect(r.porFora.porQueNaoFecha.join(" ")).toMatch(/não traz a fórmula de recomposição/i);
+    // ⚠ E NÃO existe um campo de total: se existisse, alguém o mostraria.
+    expect(r.porFora.totalPorFora).toBeUndefined();
+    expect(r.porFora.dasFinal).toBeUndefined();
+  });
+
+  it("⚠ sem a CBS digitada, o lado 'por fora' inteiro é `null` — nada é estimado", () => {
+    const r = impostoDaEmpresa(base);
+    expect(r.porDentro).not.toBeNull();
+    expect(r.porFora).toBeNull();
+  });
+
+  it("⚠ sem DAS não se responde nada — nunca um número por omissão", () => {
+    expect(impostoDaEmpresa({ ...base, dasAnual: null })).toBeNull();
+    expect(impostoDaEmpresa({ ...base, dasAnual: 0 })).toBeNull();
   });
 });

@@ -119,6 +119,62 @@ describe("⚠⚠ 2027–2028 na TELA: por dentro × por fora", () => {
   });
 });
 
+describe("⚠⚠⚠ QUANTO A EMPRESA PAGA — defeito relatado pelo dono em 01/09/2026", () => {
+  // > "o que não ficou claro no CBS e IBS é quanto meu cliente vai pagar de imposto; no caso ela
+  // > só diz quanto de crédito ele vai gerar."
+  //
+  // O crédito transferido responde "quanto o cliente DO meu cliente ganha". Quem precisa decidir
+  // entre ficar e sair precisa da outra metade, e ela vem PRIMEIRO na tela.
+
+  it("⚠⚠ diz que o DAS NÃO MUDA ficando por dentro — a afirmação mais valiosa do bloco", () => {
+    montar();
+    comReceita();
+    irPara("2027–2028");
+    expect(within(bloco()).getByText(/Quanto esta empresa vai pagar/i)).toBeInTheDocument();
+    // ⚠ `getAllByText`: a frase aparece no destaque E na explicação logo abaixo — de
+    // propósito, porque a segunda é a que diz POR QUE ele não muda.
+    expect(within(bloco()).getAllByText(/o DAS não muda/i).length).toBeGreaterThan(0);
+  });
+
+  it("⚠ e mostra quanto DO DAS já é CBS e IBS", () => {
+    montar();
+    comReceita();
+    irPara("2027–2028");
+    expect(within(bloco()).getByText(/é CBS/i)).toBeInTheDocument();
+  });
+
+  it("saindo por fora, mostra o que SAI do DAS e o débito que ENTRA", () => {
+    montar();
+    comReceita();
+    irPara("2027–2028");
+    fireEvent.change(within(bloco()).getByLabelText(/Alíquota da CBS/i), { target: { value: "8,8" } });
+    expect(within(bloco()).getByText(/saem .* do DAS por ano/i)).toBeInTheDocument();
+    expect(within(bloco()).getByText(/antes dos créditos das compras/i)).toBeInTheDocument();
+  });
+
+  it("⚠⚠⚠ e DIZ que a conta não fecha, com os dois motivos — isto É o produto", () => {
+    // Um "total por fora" cravado seria número inventado num documento que vai ao cliente: faltam
+    // os créditos das compras (a tela não sabe o que a empresa compra) e a fórmula de recomposição
+    // do DAS, que a lei não traz.
+    montar();
+    comReceita();
+    irPara("2027–2028");
+    fireEvent.change(within(bloco()).getByLabelText(/Alíquota da CBS/i), { target: { value: "8,8" } });
+    expect(within(bloco()).getByText(/Não dá para fechar esse total aqui/i)).toBeInTheDocument();
+    expect(within(bloco()).getByText(/folha não gera crédito/i)).toBeInTheDocument();
+    expect(within(bloco()).getByText(/não traz a fórmula de recomposição/i)).toBeInTheDocument();
+  });
+
+  it("⚠ o 'quanto paga' aparece ANTES do 'quanto de crédito' — é a ordem da decisão", () => {
+    montar();
+    comReceita();
+    irPara("2027–2028");
+    const texto = bloco().textContent;
+    expect(texto.indexOf("Quanto esta empresa vai pagar"))
+      .toBeLessThan(texto.indexOf("E quanto de crédito ela transfere"));
+  });
+});
+
 describe("⚠ o bloco não aparece onde não faz pergunta", () => {
   it("sem receita não há anexo nem faixa — o bloco não renderiza", () => {
     montar();

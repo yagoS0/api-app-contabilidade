@@ -173,12 +173,106 @@ export function transferidoPorFora({ cbsEstimadaPct }) {
 }
 
 /**
+ * ⚠⚠⚠ QUANTO A EMPRESA VAI PAGAR — a pergunta que decide, e que faltava.
+ *
+ * > Dono, 01/09/2026: *"o que não ficou claro no CBS e IBS é quanto meu cliente vai pagar de
+ * > imposto; no caso ela só diz quanto de crédito ele vai gerar."*
+ *
+ * Ele está certo: o crédito transferido responde *"quanto o cliente DO meu cliente ganha"*. Quem
+ * decide ficar ou sair precisa da outra metade.
+ *
+ * ─── POR DENTRO (o padrão) ────────────────────────────────────────────────────────────────────
+ * ⚠⚠ **O DAS NÃO MUDA**, e isso é medição, não opinião: as **alíquotas nominais e as parcelas a
+ * deduzir dos Anexos I a V são as MESMAS** na redação de 2027-2028 e na de hoje (conferido no
+ * gerador, `nominaisAnexoI`). Alíquota efetiva igual ⇒ DAS igual. O que muda é só a REPARTIÇÃO
+ * interna: onde havia COFINS + PIS, passa a haver CBS + uma fatia de IBS.
+ * Isto é o mais valioso a dizer ao contador: **ficar como está não aumenta o imposto dela**.
+ *
+ * ─── POR FORA (a opção) ───────────────────────────────────────────────────────────────────────
+ * Duas coisas mudam, e só uma é calculável:
+ *
+ * 1. ✅ **A parcela de IBS/CBS SAI do DAS** — LC 123/2006, art. 13, § 9º: *"as parcelas a eles
+ *    relativas **não serão cobradas pelo regime único**"*. Quanto sai é exato:
+ *    `DAS × (%CBS + %IBS do Anexo, na faixa)`.
+ * 2. ⚠⚠ **ENTRA IBS/CBS NO REGIME REGULAR — e o valor LÍQUIDO não é calculável aqui.** O débito
+ *    sobre a receita é `receita × (CBS estimada + IBS 0,1%)`, mas o que se paga é isso **menos os
+ *    créditos das próprias compras**, e esta tela não sabe o que a empresa compra. Serviço
+ *    intensivo em mão de obra quase não tem crédito de entrada (**folha não gera crédito**);
+ *    comércio pode ter muito.
+ *
+ * ⚠⚠ E O QUE A LEI **NÃO** DIZ, e por isso este módulo também não: **como o DAS é recomposto**
+ * quando as parcelas saem. Varrido o texto: o § 9º diz apenas que elas não serão cobradas; não há
+ * fórmula de recomposição em lugar nenhum. O que se afirma é a PARCELA QUE SAI — não que o DAS
+ * final seja exatamente a diferença.
+ *
+ * @returns {object|null} `null` sem os insumos — nunca um número por omissão.
+ */
+export function impostoDaEmpresa({
+  anexo, faixa, aliquotaEfetivaPct, dasAnual, receitaAnual, cbsEstimadaPct,
+}) {
+  const credito = creditoPorDentro({ anexo, faixa, aliquotaEfetivaPct });
+  if (!credito) return null;
+  const das = Number(dasAnual);
+  if (!Number.isFinite(das) || das <= 0) return null;
+
+  // ⚠ A parcela que sai é sobre o DAS, não sobre a receita: ela é a fatia do próprio DAS que os
+  // Anexos destinam a CBS e IBS.
+  const parcelaQueSaiDoDas = Number(((das * credito.somaPercentual) / 100).toFixed(2));
+
+  const receita = Number(receitaAnual);
+  const porFora = transferidoPorFora({ cbsEstimadaPct });
+  const debitoPorFora = porFora && Number.isFinite(receita) && receita > 0
+    ? Number(((receita * porFora.totalPct) / 100).toFixed(2))
+    : null;
+
+  return {
+    porDentro: {
+      dasAnual: das,
+      // ⚠⚠ A afirmação que o contador precisa ouvir, e ela é PROVÁVEL, não estimada.
+      mudaEmRelacaoAHoje: false,
+      explicacao:
+        "O DAS não muda: as alíquotas nominais e as parcelas a deduzir dos Anexos são as mesmas "
+        + "de hoje. O que muda é a repartição interna — onde havia COFINS e PIS, passa a haver CBS "
+        + "e uma fatia de IBS.",
+      cbsDentroDoDas: Number(((das * credito.percentualCbs) / 100).toFixed(2)),
+      ibsDentroDoDas: credito.percentualIbs == null
+        ? null
+        : Number(((das * credito.percentualIbs) / 100).toFixed(2)),
+      semIbsNoDas: credito.semIbsNoDas,
+    },
+    porFora: porFora
+      ? {
+        parcelaQueSaiDoDas,
+        fundamentoDaSaida: "LC 123/2006, art. 13, § 9º (incluído pela LC 227/2026)",
+        /** O DÉBITO sobre a receita, no regime regular. ⚠ BRUTO — antes dos créditos de compra. */
+        debitoSobreAReceita: debitoPorFora,
+        /**
+         * ⚠⚠ A CONTA NÃO FECHA AQUI, E DIZER ISSO É O PRODUTO. Faltam (a) os créditos das compras
+         * da empresa, que esta tela não conhece, e (b) a forma de recomposição do DAS, que a lei
+         * remete à regulamentação. Um "total por fora" cravado seria número inventado.
+         */
+        liquidoNaoCalculavel: true,
+        porQueNaoFecha: [
+          "Os créditos das compras da empresa não entram nesta conta — esta tela não sabe o que ela "
+          + "compra. Serviço intensivo em mão de obra quase não tem crédito de entrada, porque folha "
+          + "não gera crédito.",
+          "A lei diz que as parcelas de IBS/CBS não são cobradas pelo regime único, mas não traz a "
+          + "fórmula de recomposição do DAS. O que está afirmado aqui é a parcela que SAI.",
+        ],
+      }
+      : null,
+  };
+}
+
+/**
  * A RESPOSTA DA TELA, por cenário.
  *
  * ⚠⚠ O CENÁRIO 2026 NÃO É "SEM DADO" — É ZERO, COM FUNDAMENTO. Devolver `null` ali faria a tela
  * dizer "não foi possível calcular" sobre um fato que a lei afirma com todas as letras.
  */
-export function ibsCbsDoSimples({ cenario, anexo, faixa, aliquotaEfetivaPct, cbsEstimadaPct }) {
+export function ibsCbsDoSimples({
+  cenario, anexo, faixa, aliquotaEfetivaPct, cbsEstimadaPct, dasAnual, receitaAnual,
+}) {
   if (cenario === CENARIO.EM_2026) {
     return {
       cenario,
@@ -204,6 +298,12 @@ export function ibsCbsDoSimples({ cenario, anexo, faixa, aliquotaEfetivaPct, cbs
       zeroPorLei: false,
       porDentro,
       porFora,
+      // ⚠⚠ QUANTO A EMPRESA PAGA — é a pergunta que decide, e ela vem PRIMEIRO na tela. O crédito
+      // transferido responde "quanto o cliente DO meu cliente ganha"; sozinho, ele não ajuda quem
+      // precisa escolher entre ficar e sair.
+      imposto: impostoDaEmpresa({
+        anexo, faixa, aliquotaEfetivaPct, dasAnual, receitaAnual, cbsEstimadaPct,
+      }),
       // ⚠ A diferença só existe quando os DOIS lados existem. Sem a CBS digitada não se compara —
       // e a tela diz o que falta, em vez de mostrar meia comparação.
       diferencaPct:

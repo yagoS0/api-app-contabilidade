@@ -904,6 +904,11 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
                      módulo trabalha em PONTOS PERCENTUAIS. A conversão é aqui, uma vez — passar a
                      fração adiante daria um crédito cem vezes menor, e plausível. */
                   aliquotaEfetivaPct={simples.aliquotaEfetiva * 100}
+                  /* ⚠ O DAS anual e a receita são o que responde "quanto ela PAGA" — sem eles o
+                     bloco só saberia dizer quanto de crédito ela transfere, que foi exatamente o
+                     defeito relatado. */
+                  dasAnual={simples.das}
+                  receitaAnual={entradas.receitaAnual}
                   cores={C}
                   rotulo={rotulo}
                   campo={campo}

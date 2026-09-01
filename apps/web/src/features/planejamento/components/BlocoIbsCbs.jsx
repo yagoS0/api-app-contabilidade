@@ -16,6 +16,9 @@ import {
 } from "../lib/ibsCbsNoSimples";
 import { lerPercentual, textoDoPercentualForaDaFaixa } from "../lib/campoNumerico";
 
+const brl = (n) =>
+  n == null ? "—" : `R$ ${Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 const pct = (n, casas = 3) =>
   n == null ? "—" : `${Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: casas })}%`;
 
@@ -27,6 +30,8 @@ export function BlocoIbsCbs({
   anexo,
   faixa,
   aliquotaEfetivaPct,
+  dasAnual,
+  receitaAnual,
   cores: C,
   rotulo,
   campo,
@@ -38,6 +43,8 @@ export function BlocoIbsCbs({
     faixa,
     aliquotaEfetivaPct,
     cbsEstimadaPct: cbsLida.valor,
+    dasAnual,
+    receitaAnual,
   });
 
   const caixa = {
@@ -132,6 +139,64 @@ export function BlocoIbsCbs({
             (<strong>{IBS_2027_2028.fundamento}</strong>). Só a CBS falta ser fixada — por resolução
             do Senado, até <strong>15/12/2026</strong>.
           </p>
+
+          {/* ⚠⚠⚠ QUANTO A EMPRESA PAGA — VEM PRIMEIRO. Defeito relatado pelo dono em 01/09/2026:
+              *"o que não ficou claro no CBS e IBS é quanto meu cliente vai pagar de imposto; no
+              caso ela só diz quanto de crédito ele vai gerar"*. O crédito transferido responde
+              "quanto o cliente DO meu cliente ganha" — sozinho, ele não ajuda quem precisa
+              escolher entre ficar e sair. */}
+          {r.imposto ? (
+            <div style={{ padding: 10, borderRadius: 8, border: `1px solid ${C.borda}`, display: "grid", gap: 6 }}>
+              <div style={{ fontSize: "0.8rem", fontWeight: 700, color: C.texto }}>
+                Quanto esta empresa vai pagar
+              </div>
+
+              <div style={{ fontSize: "0.78rem", color: C.texto, lineHeight: 1.5 }}>
+                <strong>Ficando por dentro: o DAS não muda</strong> — {brl(r.imposto.porDentro.dasAnual)} por ano,
+                o mesmo de hoje.
+              </div>
+              {/* ⚠ É a afirmação mais valiosa do bloco, e ela é MEDIÇÃO: as alíquotas nominais e as
+                  parcelas a deduzir dos Anexos são as mesmas de 2026 (travado no gerador). */}
+              <div style={{ fontSize: "0.72rem", color: C.muted, lineHeight: 1.5 }}>
+                {r.imposto.porDentro.explicacao} Dentro dele,{" "}
+                <strong>{brl(r.imposto.porDentro.cbsDentroDoDas)}</strong> é CBS
+                {r.imposto.porDentro.ibsDentroDoDas != null ? (
+                  <> e <strong>{brl(r.imposto.porDentro.ibsDentroDoDas)}</strong> é IBS</>
+                ) : (
+                  <> — nesta faixa não há parcela de IBS no DAS (sublimite)</>
+                )}.
+              </div>
+
+              {r.imposto.porFora ? (
+                <>
+                  <div style={{ fontSize: "0.78rem", color: C.texto, lineHeight: 1.5, marginTop: 4 }}>
+                    <strong>Saindo por fora:</strong> saem{" "}
+                    {brl(r.imposto.porFora.parcelaQueSaiDoDas)} do DAS por ano, e entra um débito de{" "}
+                    {brl(r.imposto.porFora.debitoSobreAReceita)} de IBS/CBS no regime regular —{" "}
+                    <strong>antes dos créditos das compras</strong>.
+                  </div>
+                  {/* ⚠⚠ DIZER QUE A CONTA NÃO FECHA É O PRODUTO. Um "total por fora" cravado aqui
+                      seria número inventado num documento que vai ao cliente. */}
+                  <div style={{ fontSize: "0.72rem", color: "var(--state-warn)", lineHeight: 1.5 }}>
+                    ⚠ <strong>Não dá para fechar esse total aqui</strong>, e por dois motivos:
+                    <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
+                      {r.imposto.porFora.porQueNaoFecha.map((m) => (
+                        <li key={m} style={{ marginBottom: 2 }}>{m}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: "0.72rem", color: C.muted, lineHeight: 1.5 }}>
+                  Informe a alíquota da CBS acima para ver o lado “por fora”.
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          <div style={{ fontSize: "0.78rem", fontWeight: 700, color: C.texto, marginTop: 2 }}>
+            E quanto de crédito ela transfere a quem compra dela
+          </div>
 
           <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>
             <div style={{ padding: 10, borderRadius: 8, border: `1px solid ${C.borda}` }}>
