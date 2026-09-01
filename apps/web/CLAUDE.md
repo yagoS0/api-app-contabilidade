@@ -404,6 +404,61 @@ simplesmente não aparece. ⚠ Quinta vez que o mock escondeu um ramo: a fila s�
 **Experimentos executados:** `leituraDoDocumento` voltando a olhar só o OFX ⇒ **1 vermelho**;
 recorrência declarada como "vira lançamento" ⇒ **3**; os dois rótulos novos removidos ⇒ **4**.
 
+### ⚠⚠ E NO MESMO DIA A TELA FOI MEDIDA NO NAVEGADOR (01/09/2026)
+
+> Dono, com ela na frente: *"o ui e UX dessa pagina é um total loucura e ainda foi criado uma aba de
+> lançamentos automáticos"*.
+
+Medido em 1440×900, mock, empresa `04bf356c`. **Nada foi estimado** — os números saíram do DOM:
+
+| | antes | depois |
+|---|---|---|
+| altura da página | **6.302px** (7,00 telas) | **5.311px** (5,90 telas) |
+| `<table>` na fila | **11**, para **11 linhas** | **1** |
+| cabeçalhos de 9 colunas lidos | **11** | **1** |
+| arranjos de coluna distintos | **11** | **1** |
+| elementos de cabeçalho (`h1..h6`) na página | **1** | **8** (3 `h2` + 5 `h3`) |
+| tinta pedida a token INEXISTENTE | **12 sites / 10 elementos** | **0** |
+| botões escritos "Atualizar" | **3**, idênticos | 3, com nome próprio |
+
+Os quatro defeitos, e o que cada um custava:
+
+- ⚠⚠ **`--muted` e `--text-2` NÃO EXISTEM**, e `color: var(--indefinido)` **não é erro**: a
+  declaração é descartada no valor computado e o elemento **herda `--text`**. Medido: 10 elementos
+  que pediam tinta apagada saíam em `rgb(248,248,242)` — a mesma tinta do valor em reais ao lado.
+  Console limpo, build verde, hierarquia morta. Estavam em `PainelDeMexidasDoCliente` (5),
+  `PainelDeSaidasDoCliente` (6) e `renderConferenciaTab` (1) — **os três desta tela, e só eles em
+  todo o `src`**. Guarda: **`styles/__tests__/tokenDeTintaExiste.test.js`**, que varre `src` inteiro
+  sem lista de isentos. ⚠ O conserto foi no USO: definir os dois nomes criaria sinônimos de
+  `--text-muted`, que é como a paleta volta a ter 841 valores.
+- ⚠⚠ **A FILA ERA 11 TABELAS.** `agruparPorFornecedor` chaveia pelo CNPJ e, **sem CNPJ — o caso de
+  todo débito de extrato** —, cai na própria descrição: o agrupamento degenera em **um grupo por
+  linha**. Cada grupo era um `card` com `<table>` própria, então o cabeçalho de 9 colunas repetia 11
+  vezes e, pior, **cada tabela se dimensionava sozinha**: a coluna Valor começava em x=733 numa e
+  x=657 na seguinte — o número que se varre de cima a baixo **serpenteava**. Hoje é uma tabela com
+  um `<tbody>` por fornecedor. ⚠ **AGRUPAR NÃO SAIU** (o fornecedor com cinco notas é o caso que ele
+  serve); o que saiu foi a moldura repetida. Travado em
+  `components/__tests__/filaEmUmaTabelaSo.test.jsx`.
+- ⚠ **A linha de grupo só fala quando tem o que dizer** — `cabecalhoDoGrupo` em
+  `lib/conferenciaTela.js`, com teste próprio. Em **11 de 11** grupos o título era, caractere por
+  caractere, a descrição da única linha dele, e o resumo repetia o valor da coluna Valor. Ela
+  aparece com **CNPJ** (que nenhuma linha mostra) ou com **duas ou mais linhas** (o total, que
+  nenhuma linha mostra) — nunca por ser bonita. ⚠ O `th` do grupo desliga `text-transform` e
+  `letter-spacing`: o `App.css` põe **uppercase em todo `th`**, e nome próprio não é rótulo de
+  coluna.
+- ⚠ **Um `<strong>` não é um cabeçalho.** As três seções e os painéis eram `<strong>`, e a página
+  inteira — 6.302px, sete blocos — tinha **um único** elemento de heading. Hoje: seção = `h2`,
+  painel = `h3`, tamanho **inalterado** (é semântica, não redesenho).
+- ⚠ **Três botões "Atualizar"** recarregando três consultas diferentes. Viraram *Atualizar a fila* ·
+  *Atualizar os débitos* · *Atualizar as recorrências*.
+
+**O que NÃO foi mexido, porque é decisão do dono** — está no relatório da entrega; em resumo: a aba
+**Lançamentos automáticos** (a assimetria que ele apontou: a CONSEQUÊNCIA virou aba de topo e a
+CAUSA, a Conferência, continua um botão dentro de Lançamentos), o **empilhamento dos 7 blocos numa
+tela só**, e o **risco de despesa em dobro** — 6 das 11 linhas da fila apareciam **também** no painel
+de casamentos, e o botão «Lançar» da linha (novo) **não** consulta `debitosQueCasamComNota`, que é a
+guarda que o LOTE exige antes de abrir.
+
 ## ⚠⚠ A ABA FLUXO DE CAIXA FOI REMOVIDA (29/08/2026) — ela existiu por dois dias
 
 Construída em 27/08 (`features/fluxo/`, regra pura com 40 testes, conferida no navegador) e

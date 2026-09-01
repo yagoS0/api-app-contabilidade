@@ -290,7 +290,7 @@ export function PainelDeRecorrencias({ companyId, podeEscrever = true, cicloAtua
   return (
     <div style={{ ...card, display: "grid", gap: 12 }}>
       <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
-        <strong>Recorrências</strong>
+        <h3 style={{ margin: 0, fontSize: "1rem" }}>Recorrências</h3>
         <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
           {aDecidir.length} esperando decisão · {series.length} série(s) observada(s)
         </span>
@@ -299,7 +299,7 @@ export function PainelDeRecorrencias({ companyId, podeEscrever = true, cicloAtua
           {verTodas ? "Só as que pedem decisão" : "Ver todas"}
         </Button>
         <Button size="sm" variant="secondary" onClick={carregar} disabled={carregando}>
-          {carregando ? "Carregando…" : "Atualizar"}
+          {carregando ? "Carregando…" : "Atualizar as recorrências"}
         </Button>
       </div>
 

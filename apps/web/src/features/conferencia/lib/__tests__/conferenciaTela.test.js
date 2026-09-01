@@ -12,6 +12,7 @@ import {
   acaoPedeData,
   acoesDaLinha,
   agruparPorFornecedor,
+  cabecalhoDoGrupo,
   cnpjFormatado,
   contagemParaTela,
   dataCivil,
@@ -707,5 +708,42 @@ describe("⚠⚠ podeEscolherConta — o seletor derruba o bloqueio, mas só qua
       .toMatch(/competência/i);
     expect(motivoDeBloqueio("confirmar", semConta, { podeEscrever: false, podeEscolherConta: true }))
       .toMatch(/perfil/i);
+  });
+});
+
+// ⚠⚠ O CABEÇALHO DO GRUPO — medido no navegador antes de existir esta regra (01/09/2026): a fila
+// mostrava **11 grupos para 11 linhas**, nenhum com mais de uma, e em 11 de 11 o título do grupo era
+// a descrição EXATA da única linha dele, com um resumo "1 lançamento(s) · R$ X" repetindo o valor da
+// coluna Valor logo abaixo. A regra não desliga o agrupamento: ela cala o grupo que não diz nada.
+describe("⚠⚠ cabecalhoDoGrupo — o grupo só fala quando tem o que dizer", () => {
+  const linha = (v) => ({ id: `d-${v}`, descricaoOriginal: "PAGTO KODA BEAR", valor: v });
+
+  it("grupo de UMA linha SEM CNPJ não desenha cabeçalho — ele repetiria a linha", () => {
+    const [g] = agruparPorFornecedor([linha(890)]);
+    expect(g.itens).toHaveLength(1);
+    expect(g.cnpj).toBeNull();
+    expect(cabecalhoDoGrupo(g)).toBeNull();
+  });
+
+  it("⚠ COM CNPJ ele aparece mesmo com uma linha só — o CNPJ não está em nenhuma linha", () => {
+    const [g] = agruparPorFornecedor([{ ...linha(890), cnpjFornecedor: "12345678000190" }]);
+    const cab = cabecalhoDoGrupo(g);
+    expect(cab).not.toBeNull();
+    expect(cab.cnpj).toBe("12345678000190");
+    // ⚠ E o RESUMO fica de fora: "1 lançamento(s) · R$ 890,00" repetiria a coluna Valor da linha.
+    expect(cab.resumo).toBeNull();
+  });
+
+  it("⚠⚠ com DUAS ou mais linhas ele aparece sempre — o total do fornecedor não está em linha nenhuma", () => {
+    const [g] = agruparPorFornecedor([linha(100), linha(50)]);
+    expect(g.itens).toHaveLength(2);
+    const cab = cabecalhoDoGrupo(g);
+    expect(cab).not.toBeNull();
+    expect(cab.resumo).toContain(dinheiro(150));
+  });
+
+  it("⚠ nulo/vazio não estoura e não inventa cabeçalho", () => {
+    expect(cabecalhoDoGrupo(null)).toBeNull();
+    expect(cabecalhoDoGrupo({ nome: "X", cnpj: null, itens: [], total: 0 })).toBeNull();
   });
 });

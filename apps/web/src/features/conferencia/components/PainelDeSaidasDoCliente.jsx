@@ -90,8 +90,8 @@ export function PainelDeSaidasDoCliente({ companyId, podeEscrever = true, aoDeci
   if (estado.indisponivel) {
     return (
       <div style={{ ...card, display: "grid", gap: 6 }}>
-        <strong style={{ fontSize: "0.92rem" }}>Saídas que o cliente acrescentou</strong>
-        <span style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>
+        <h3 style={{ margin: 0, fontSize: "0.92rem" }}>Saídas que o cliente acrescentou</h3>
+        <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
           Não foi possível ler esta fila neste ambiente — a tabela ainda não existe neste banco.
           Isto é uma limitação do sistema, não uma afirmação sobre esta empresa.
         </span>
@@ -102,8 +102,8 @@ export function PainelDeSaidasDoCliente({ companyId, podeEscrever = true, aoDeci
   return (
     <div style={{ ...card, display: "grid", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-        <strong style={{ fontSize: "0.92rem" }}>Saídas que o cliente acrescentou</strong>
-        <span style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>
+        <h3 style={{ margin: 0, fontSize: "0.92rem" }}>Saídas que o cliente acrescentou</h3>
+        <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
           {/* ⚠ A frase é obrigatória: sem ela, a lista se parece com uma fila de lançamento, e o
               contador procuraria a conta contábil que não existe aqui. */}
           Confirmar aqui não lança nada — só diz se a previsão fica no fluxo do cliente.
@@ -111,23 +111,23 @@ export function PainelDeSaidasDoCliente({ companyId, podeEscrever = true, aoDeci
       </div>
 
       {estado.carregando ? (
-        <span style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>Carregando…</span>
+        <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>Carregando…</span>
       ) : null}
 
       {estado.erro ? (
-        <span style={{ fontSize: "0.82rem", color: "var(--state-danger, #FF5555)" }}>
+        <span style={{ fontSize: "0.82rem", color: "var(--state-danger)" }}>
           Não foi possível carregar esta fila.
         </span>
       ) : null}
 
       {aviso ? (
-        <span style={{ fontSize: "0.82rem", color: "var(--state-warn, #F1FA8C)" }}>{aviso}</span>
+        <span style={{ fontSize: "0.82rem", color: "var(--state-warn)" }}>{aviso}</span>
       ) : null}
 
       {!estado.carregando && !estado.erro && !estado.saidas.length ? (
         // ⚠ Vazio DIZ que está vazio. Um painel que some quando não há nada esconde que a fila
         // existe — e o contador não saberia que o cliente PODE escrever aqui.
-        <span style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>
+        <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
           O cliente não acrescentou nenhuma saída ainda.
         </span>
       ) : null}
@@ -143,7 +143,7 @@ export function PainelDeSaidasDoCliente({ companyId, podeEscrever = true, aoDeci
         >
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "baseline" }}>
             <strong style={{ fontSize: "0.88rem" }}>{s.descricao}</strong>
-            <span style={{ fontSize: "0.82rem", color: "var(--text-2)" }}>
+            <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
               {dataBr(s.data)} · {brl(s.valor)}
             </span>
           </div>
@@ -203,7 +203,7 @@ export function PainelDeSaidasDoCliente({ companyId, podeEscrever = true, aoDeci
           ) : (
             // ⚠ Sem permissão o botão não aparece, e o motivo é dito: o servidor recusaria com 403,
             // e um botão que sempre falha é pior que a ausência dele.
-            <span style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>
+            <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
               Só um contador da empresa pode decidir sobre esta saída.
             </span>
           )}

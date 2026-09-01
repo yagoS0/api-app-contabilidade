@@ -450,6 +450,42 @@ export function agruparPorFornecedor(itens) {
 }
 
 /**
+ * ⚠⚠ O CABEÇALHO DO GRUPO SÓ EXISTE QUANDO ELE DIZ ALGO QUE A LINHA NÃO DIZ (01/09/2026).
+ *
+ * MEDIDO NO NAVEGADOR antes de mexer, na empresa de teste: a fila tinha **11 grupos para 11 linhas**
+ * — nenhum com mais de uma — e, em **11 de 11**, o título do grupo era, caractere por caractere, a
+ * DESCRIÇÃO da única linha dele ("PAGTO KODA BEAR" em cima de "PAGTO KODA BEAR"). Ao lado, o resumo
+ * dizia "1 lançamento(s) · R$ 890,00" — o mesmo valor da coluna Valor daquela linha. Mesma frase e
+ * mesmo número, duas vezes, onze vezes.
+ *
+ * ⚠ A CAUSA é `agruparPorFornecedor`, e ela não é defeito: sem CNPJ — o caso de **todo** débito de
+ * extrato — a chave vira a própria descrição, e o agrupamento degenera em um grupo por linha.
+ * Agrupar continua CERTO: o fornecedor com cinco notas é exatamente o caso que ele existe para
+ * servir. O que não se sustenta é o grupo de UM cobrar uma faixa de tela para repetir a linha.
+ *
+ * ⚠ Ele não some por "ser pequeno" — some por **não acrescentar nada**. Grupo com CNPJ continua
+ * aparecendo mesmo com uma linha só (a linha não mostra CNPJ nenhum), e grupo com duas ou mais
+ * linhas continua aparecendo sempre (o total do fornecedor não está em nenhuma linha).
+ *
+ * @returns `null` quando não há o que dizer, ou `{ nome, cnpj, resumo }`.
+ */
+export function cabecalhoDoGrupo(g) {
+  if (!g) return null;
+  const quantos = g.itens?.length ?? 0;
+  // ⚠ `<= 1` e não `=== 1`: um grupo vazio também não tem o que dizer, e a forma não pode depender
+  // de o chamador garantir que ele nunca chega.
+  if (!g.cnpj && quantos <= 1) return null;
+  return {
+    nome: g.nome,
+    cnpj: g.cnpj || null,
+    // ⚠ O RESUMO É SÓ DO GRUPO DE VERDADE. Com uma linha só, "1 lançamento(s) · R$ 1.500,00" repete
+    // a coluna Valor da linha logo abaixo — o mesmo número, duas vezes, na mesma faixa de tela. O
+    // total de um fornecedor é informação quando há mais de uma linha para somar; antes disso é eco.
+    resumo: quantos > 1 ? `${quantos} lançamento(s) · ${dinheiro(g.total)}` : null,
+  };
+}
+
+/**
  * O painel de contagem, a partir do `porEstado` do servidor.
  *
  * ⚠⚠ O TOTAL VEM DO `groupBy` DO SERVIDOR, NUNCA DE `itens.length`. Lista paginada como total

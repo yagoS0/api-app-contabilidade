@@ -40,6 +40,7 @@ import {
   acaoPedeData,
   acoesDaLinha,
   agruparPorFornecedor,
+  cabecalhoDoGrupo,
   cnpjFormatado,
   contaQueSeraUsada,
   contagemParaTela,
@@ -101,7 +102,14 @@ function SecaoDaConferencia({ natureza, children }) {
       style={{ display: "grid", gap: 16, borderLeft: "2px solid var(--border)", paddingLeft: 16 }}
     >
       <div style={{ display: "grid", gap: 2 }}>
-        <strong style={{ fontSize: "0.95rem" }}>{titulo}</strong>
+        {/* ⚠⚠ `<h2>` E NÃO `<strong>` — medido no navegador em 01/09/2026: a tela toda, **6.302px**
+            de altura e sete blocos empilhados, tinha **UM ÚNICO** elemento de cabeçalho (o `<h3>` do
+            painel "O cliente mexeu"). `<strong>` põe o texto em negrito e não cria estrutura: quem
+            navega por cabeçalhos — leitor de tela, e o próprio olho — não tinha esqueleto nenhum
+            para pular de seção em seção, exatamente na tela em que a separação é o produto.
+            ⚠ O tamanho continua o mesmo (`0.95rem`) e a margem é zerada: isto é semântica, não
+            redesenho. Trocar a aparência junto esconderia qual das duas coisas mudou. */}
+        <h2 style={{ margin: 0, fontSize: "0.95rem" }}>{titulo}</h2>
         {/* ⚠ A frase é do CORPO, nunca `title`: ela diz se o clique mexe na contabilidade, e
             `title` não aparece no teclado nem no toque. */}
         <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{frase}</span>
@@ -1058,7 +1066,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
             padding: "6px 10px", borderRadius: 8, cursor: "pointer",
             font: "inherit", fontSize: "0.8rem",
             // ⚠ Os MESMOS tokens do resto desta tela (`card` acima) — nunca um hex novo aqui.
-            color: "var(--text-2)", background: "transparent",
+            color: "var(--text-muted)", background: "transparent",
             border: "1px solid var(--border)",
           }}
         >
@@ -1112,7 +1120,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
             {abrindoLote ? "Abrindo…" : "Contabilizar em lote"}
           </Button>
           <Button size="sm" variant="secondary" onClick={carregar} disabled={carregando}>
-            {carregando ? "Carregando…" : "Atualizar"}
+            {carregando ? "Carregando…" : "Atualizar a fila"}
           </Button>
         </div>
 
@@ -1226,18 +1234,24 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
           </div>
         ) : null}
 
-        {grupos.map((g) => (
-          <div key={g.chave} style={{ ...card, display: "grid", gap: 10 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-              <strong>{g.nome}</strong>
-              {g.cnpj ? (
-                <span style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>{cnpjFormatado(g.cnpj)}</span>
-              ) : null}
-              <span style={{ flex: 1 }} />
-              <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
-                {g.itens.length} lançamento(s) · {dinheiro(g.total)}
-              </span>
-            </div>
+        {/*
+          ⚠⚠ UMA TABELA SÓ PARA A FILA INTEIRA — conserto medido no navegador em 01/09/2026, com a
+          tela na frente do dono (*"o ui e UX dessa pagina é um total loucura"*).
+
+          Antes, cada grupo era um `card` com uma `<table>` PRÓPRIA. Medido: **11 tabelas para 11
+          linhas**, ou seja o cabeçalho de **9 colunas repetido 11 vezes** para 11 linhas de dado —
+          e, pior, **11 arranjos de coluna diferentes**, porque tabelas irmãs se dimensionam cada uma
+          pelo próprio conteúdo. A coluna Valor começava em x=733 numa e x=657 na seguinte: o número
+          que o contador varre de cima a baixo **serpenteava** pela página.
+
+          ⚠ AGRUPAR NÃO SAIU — o fornecedor continua sendo a unidade de conferência, agora como
+          `<tbody>` com uma linha de grupo. O que mudou é que a moldura é uma só, então as colunas
+          se alinham e o cabeçalho é lido uma vez.
+          ⚠ A linha de grupo só aparece quando tem o que dizer (`cabecalhoDoGrupo`, com teste
+          próprio) — ver o argumento lá.
+        */}
+        {grupos.length > 0 ? (
+          <div style={{ ...card, display: "grid", gap: 10 }}>
             {/* ⚠ `.tabela--densa` do `App.css` — a tela não manda `th`/`td` inline. */}
             <div style={{ overflowX: "auto" }}>
               <table className="tabela--densa">
@@ -1254,25 +1268,70 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
                     <th />
                   </tr>
                 </thead>
-                <tbody>
-                  {g.itens.map((item) => (
-                    <LinhaDoDeclarado
-                      key={item.id}
-                      item={item}
-                      podeEscrever={podeEscrever}
-                      podeEscolherConta={podeEscolherConta}
-                      onAgir={abrir}
-                      contas={contas}
-                      onLancar={lancarDaLinha}
-                      onFluxo={mexerNoFluxo}
-                      ocupado={enviando}
-                    />
-                  ))}
-                </tbody>
+                {grupos.map((g) => {
+                  const cab = cabecalhoDoGrupo(g);
+                  return (
+                    <tbody key={g.chave}>
+                      {cab ? (
+                        <tr>
+                          {/* ⚠ `<th scope="colgroup">`, não um `<td>` pintado: quem navega por leitor
+                              de tela precisa que o fornecedor seja cabeçalho das linhas dele. */}
+                          <th
+                            scope="colgroup"
+                            colSpan={9}
+                            style={{
+                              textAlign: "left",
+                              // ⚠⚠ O `App.css` põe `text-transform: uppercase` e `letter-spacing`
+                              // em TODO `th` — é o desenho do cabeçalho de COLUNA, e ele estava
+                              // gritando o nome do fornecedor ("GOOGLE CLOUD BRASIL COMPUTACAO
+                              // LTDA") e o CNPJ. Nome próprio não é rótulo de coluna: aqui o `th`
+                              // é semântica (o grupo é cabeçalho das linhas dele), não estilo.
+                              textTransform: "none",
+                              letterSpacing: "normal",
+                              fontSize: "0.85rem",
+                              color: "var(--text)",
+                              background: "transparent",
+                              // ⚠ Sem cor de estado — um fornecedor não é pendência nem conclusão.
+                              // A separação é o filete de `--border`, a mesma régua das seções.
+                              borderTop: "1px solid var(--border)",
+                              paddingTop: 10,
+                            }}
+                          >
+                            <span style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                              <strong>{cab.nome}</strong>
+                              {cab.cnpj ? (
+                                <span style={{ color: "var(--text-muted)", fontSize: "0.82rem", fontWeight: 400 }}>
+                                  {cnpjFormatado(cab.cnpj)}
+                                </span>
+                              ) : null}
+                              <span style={{ flex: 1 }} />
+                              <span style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontWeight: 400 }}>
+                                {cab.resumo}
+                              </span>
+                            </span>
+                          </th>
+                        </tr>
+                      ) : null}
+                      {g.itens.map((item) => (
+                        <LinhaDoDeclarado
+                          key={item.id}
+                          item={item}
+                          podeEscrever={podeEscrever}
+                          podeEscolherConta={podeEscolherConta}
+                          onAgir={abrir}
+                          contas={contas}
+                          onLancar={lancarDaLinha}
+                          onFluxo={mexerNoFluxo}
+                          ocupado={enviando}
+                        />
+                      ))}
+                    </tbody>
+                  );
+                })}
               </table>
             </div>
           </div>
-        ))}
+        ) : null}
       </SecaoDaConferencia>
 
       <SecaoDaConferencia natureza={NATUREZA.SO_FLUXO}>

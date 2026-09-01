@@ -80,7 +80,7 @@ export function PainelDeLancadosPorRegra({
 
   if (!sumirQuandoVazio && (estado.carregando || estado.indisponivel || !linhas.length)) {
     return (
-      <div style={{ ...card, color: "var(--text-muted, var(--text))" }}>
+      <div style={{ ...card, color: "var(--text-muted)" }}>
         {estado.carregando ? "Carregando…" : null}
         {/* ⚠⚠ TRÊS AUSÊNCIAS, TRÊS FRASES. "A tabela não existe neste banco" (migration não
             aplicada), "nada entrou sozinho neste mês" e "carregando" são respostas diferentes, e
@@ -127,7 +127,7 @@ export function PainelDeLancadosPorRegra({
         <strong style={{ flex: 1 }}>
           Lançados por regra · {estado.dados?.competencia || competencia}
         </strong>
-        <span style={{ color: "var(--text-muted, var(--text))", fontSize: 13 }}>
+        <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
           {linhas.length} {linhas.length === 1 ? "lançamento" : "lançamentos"} · {brl(estado.dados?.valor)}
           {/* ⚠ O número vem do SERVIDOR (`semNota`), não recontado aqui: duas contagens da mesma
               coisa divergem, e a que ninguém confere é a que erra. */}
@@ -141,7 +141,7 @@ export function PainelDeLancadosPorRegra({
 
       {/* ⚠⚠ A FRASE DIZ O QUE ACONTECEU, não o que o sistema fez de bom. É a tela em que o contador
           confere contabilidade que ele não escreveu. */}
-      <p style={{ margin: "6px 0 0", color: "var(--text-muted, var(--text))", fontSize: 13 }}>
+      <p style={{ margin: "6px 0 0", color: "var(--text-muted)", fontSize: 13 }}>
         Estes lançamentos nasceram sozinhos, por regra, sem ninguém clicar. A data é presumida — o
         extrato do banco a corrige quando o débito real chegar.
       </p>
@@ -149,7 +149,7 @@ export function PainelDeLancadosPorRegra({
       <div style={{ overflowX: "auto", marginTop: 12 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
-            <tr style={{ textAlign: "left", color: "var(--text-muted, var(--text))" }}>
+            <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
               <th style={{ padding: "4px 8px" }}>
                 <span className="sr-only">Selecionar</span>
               </th>
@@ -235,7 +235,7 @@ export function PainelDeLancadosPorRegra({
           >
             {enviando ? "Desfazendo…" : `Desfazer ${marcados.size || ""}`.trim()}
           </Button>
-          <span style={{ fontSize: 12, color: "var(--text-muted, var(--text))" }}>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
             Desfazer apaga o lançamento do razão e devolve a nota à fila.
           </span>
         </div>
