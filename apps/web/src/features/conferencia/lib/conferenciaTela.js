@@ -12,6 +12,8 @@
 // fechamento · `--state-neutral` é o padrão. Usar um fora do significado recria o problema que o
 // redesign resolveu: quando quase tudo é vermelho, nada se destaca.
 
+import { veioDeExtrato } from "./naturezaDaConferencia";
+
 /** ⚠ Espelho do vocabulário do backend. Valor novo lá que não chegue aqui cai em `desconhecido`. */
 export const ESTADO = Object.freeze({
   AGUARDANDO_PAGAMENTO: "AGUARDANDO_PAGAMENTO",
@@ -25,6 +27,17 @@ export const ORIGEM_PAGAMENTO = Object.freeze({
   OFX: "OFX",
   DECLARADO_PELO_CONTADOR: "DECLARADO_PELO_CONTADOR",
   CLIENTE: "CLIENTE",
+  /**
+   * ⚠⚠ OS DOIS ABAIXO FALTAVAM ATÉ 01/09/2026, e o efeito era silencioso: o backend tem CINCO
+   * valores e esta tela espelhava TRÊS, então toda linha com um dos dois caía no fallback e o
+   * contador lia **"Procedência desconhecida"** — sobre uma data que o sistema sabe de onde veio.
+   *
+   * ⚠ O fallback não mentia (ele diz "não reconheço"), e é por isso que ninguém percebeu. O que se
+   * perdia era informação: numa a PROVA era rebaixada a desconhecida; na outra sumia justamente o
+   * aviso de que ninguém viu o pagamento acontecer.
+   */
+  EXTRATO_EXCEL: "EXTRATO_EXCEL",
+  PRESUMIDO_POR_REGRA: "PRESUMIDO_POR_REGRA",
 });
 
 /** ⚠ O recorte das que chegaram sem competência. É o MESMO literal que a rota aceita. */
@@ -115,6 +128,32 @@ const LEITURA_DA_ORIGEM = Object.freeze({
     rotulo: "Informado pelo cliente",
     ehProva: false,
     frase: "A data veio do cliente, sem comprovante. É declaração, não prova.",
+  },
+  /**
+   * ⚠⚠ É PROVA, e é valor SEPARADO do OFX — os dois textos saem da documentação do próprio enum do
+   * backend, não de redação nova. O que a data afirma ("o dinheiro saiu neste dia") quem afirma é o
+   * banco, nos dois formatos; o que muda é que a planilha passa por um mapeamento de colunas que
+   * uma pessoa definiu, num programa em que qualquer célula se altera. As duas provam, e não com a
+   * mesma força — e a tela do contador é exatamente onde essa diferença importa.
+   */
+  [ORIGEM_PAGAMENTO.EXTRATO_EXCEL]: {
+    rotulo: "Extrato em planilha",
+    ehProva: true,
+    frase: "A data veio do extrato do banco, lido de uma planilha — é prova, e as colunas foram mapeadas por alguém.",
+  },
+  /**
+   * ⚠⚠ DECLARAÇÃO, NUNCA PROVA — e é a linha mais delicada desta lista.
+   *
+   * Ninguém viu este pagamento acontecer: uma regra do fornecedor presumiu a data, e o lançamento
+   * que saiu dela afirma que o dinheiro saiu do caixa naquele dia. `ehProva: false` é o que impede a
+   * tela de tratá-la como um débito do extrato.
+   * ⚠ Ela NÃO é `DECLARADO_PELO_CONTADOR`: aquele diz "uma pessoa afirmou esta data" e atribuiria ao
+   * contador um ato que ele não praticou naquele mês. O conserto de cada um é diferente.
+   */
+  [ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA]: {
+    rotulo: "Presumida por regra",
+    ehProva: false,
+    frase: "Ninguém viu este pagamento: uma regra do fornecedor presumiu a data. É declaração, não prova — o extrato a corrige quando o débito chegar.",
   },
 });
 
@@ -355,7 +394,12 @@ export function contaQueSeraUsada(item) {
  * nunca teve documento; desabilitá-lo com o motivo é a resposta honesta.
  */
 export function leituraDoDocumento(item) {
-  if (item?.origem === "OFX_CLIENTE") {
+  // ⚠⚠ ATÉ 01/09/2026 ISTO COMPARAVA SÓ `"OFX_CLIENTE"`, e a linha vinda da PLANILHA de extrato caía
+  // no ramo de baixo — dizendo *"a nota de origem não está mais na base"* sobre uma linha que NUNCA
+  // teve nota. Afirmava um documento apagado que nunca existiu, e mandava o contador procurá-lo.
+  // ⚠ São DUAS origens de extrato (`OFX_CLIENTE` e `EXTRATO_EXCEL_CLIENTE`), e o backend as separa
+  // de propósito; quem sabe quais são é `lib/naturezaDaConferencia.js`, não uma string aqui.
+  if (veioDeExtrato(item)) {
     return { temDocumento: false, motivo: "Veio do extrato bancário — não há nota vinculada." };
   }
   if (!item?.nota) {

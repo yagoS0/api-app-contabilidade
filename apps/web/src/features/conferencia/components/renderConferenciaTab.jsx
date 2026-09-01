@@ -28,6 +28,7 @@ import { PainelDeSaidasDoCliente } from "./PainelDeSaidasDoCliente";
 import { PainelDeMexidasDoCliente } from "./PainelDeMexidasDoCliente";
 import { PainelDeLancadosPorRegra } from "./PainelDeLancadosPorRegra";
 import { PainelDeRegras } from "./PainelDeRegras";
+import { NATUREZA, SECAO, origemDaLinha } from "../lib/naturezaDaConferencia";
 import { debitosQueCasamComNota } from "../lib/contabilizacaoEmLote";
 import {
   ACAO,
@@ -69,6 +70,43 @@ const card = {
   borderRadius: 10,
   padding: 16,
 };
+
+/**
+ * ⚠⚠ A MOLDURA QUE RESPONDE AO PEDIDO DO DONO — *"separe visualmente o que são regras, saídas do
+ * cliente, o que é para virar lançamento e o que é para o fluxo"*.
+ *
+ * A tela tinha SEIS painéis mais a fila, todos com o MESMO `card` neutro, empilhados num `grid` sem
+ * um único título: nada dizia que confirmar numa caixa cria lançamento contábil e na caixa de cima
+ * não cria nada. A seção diz.
+ *
+ * ⚠ SEM COR DE ESTADO, e isso é a regra da casa, não economia: `--state-danger` bloqueia
+ * fechamento, verde é concluído, âmbar é pendência — e uma seção não é nenhuma das três. Ela se
+ * distingue por **título + frase + uma barra de `--border`**. Pintá-la com um token de estado faria
+ * a tela inteira gritar uma cor que significa outra coisa.
+ *
+ * ⚠ O TEXTO NÃO MORA AQUI: vem de `lib/naturezaDaConferencia.js`, e é o texto que a tela JÁ dizia
+ * (a frase do modal de confirmação e a do painel de saídas). Redigir de novo aqui faria a mesma
+ * tela afirmar duas coisas sobre o mesmo ato.
+ */
+function SecaoDaConferencia({ natureza, children }) {
+  const { titulo, frase } = SECAO[natureza];
+  return (
+    // ⚠ `<section>` com `aria-label`, não um `<div>`: quem navega por leitor de tela pula de região
+    // em região, e a separação que o dono pediu tem de existir também para quem não a vê.
+    <section
+      aria-label={titulo}
+      style={{ display: "grid", gap: 16, borderLeft: "2px solid var(--border)", paddingLeft: 16 }}
+    >
+      <div style={{ display: "grid", gap: 2 }}>
+        <strong style={{ fontSize: "0.95rem" }}>{titulo}</strong>
+        {/* ⚠ A frase é do CORPO, nunca `title`: ela diz se o clique mexe na contabilidade, e
+            `title` não aparece no teclado nem no toque. */}
+        <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{frase}</span>
+      </div>
+      {children}
+    </section>
+  );
+}
 
 function Selo({ token, children, title, onClick, ativo }) {
   const Tag = onClick ? "button" : "span";
@@ -468,12 +506,35 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir }) {
   const estado = leituraDoEstado(item.estado);
   const doc = leituraDoDocumento(item);
   const acoes = acoesDaLinha(item);
+  // ⚠⚠ É ISTO QUE RESPONDE "saídas do cliente" DENTRO da fila, sem duplicar a linha. A coluna
+  // `origem` existe no model desde sempre, já viajava no serializador da rota, e **não aparecia em
+  // lugar nenhum da tela**: a fila é homogênea por construção (toda linha é um `LancamentoDeclarado`),
+  // então a heterogeneidade que o dono quer ver não está na tabela — está neste campo.
+  const origem = origemDaLinha(item);
 
   return (
     <tr>
       <td>
         <div style={{ display: "grid", gap: 2 }}>
           <span>{item.descricaoOriginal}</span>
+          {origem ? (
+            // ⚠ Chip NEUTRO, e de propósito: de onde a despesa veio é PROCEDÊNCIA, não estado — não
+            // pede ação nem diz que algo está concluído. Cor de estado aqui competiria com os selos
+            // que dizem o que fazer. Mesmo argumento das pílulas de configuração da carteira.
+            <span
+              title={origem.titulo}
+              style={{
+                justifySelf: "start",
+                fontSize: "0.7rem",
+                color: "var(--text-muted)",
+                border: "1px solid var(--border)",
+                borderRadius: 999,
+                padding: "0 6px",
+              }}
+            >
+              {origem.rotulo}
+            </span>
+          ) : null}
           {item.detalheServico ? (
             // ⚠ `xDescServ` é DETALHE, nunca substituto do histórico: o histórico do lançamento é o
             // nome do fornecedor (medido nos 130 lançamentos do Excel).
@@ -860,162 +921,179 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
         </div>
       </div>
 
-      {/* ⚠ ACIMA DA FILA de propósito: um débito de extrato sem nota vinculada é o que pode virar
-          despesa contada duas vezes, e é o que o contador precisa ver primeiro. O painel some
-          sozinho quando não há nada a casar. */}
-      <PainelDeCasamentos
-        key={versao}
-        companyId={companyId}
-        podeEscrever={podeEscrever}
-        aoCasar={() => {
-          setVersao((v) => v + 1);
-          carregar();
-        }}
-      />
+      <SecaoDaConferencia natureza={NATUREZA.VIRA_LANCAMENTO}>
+        {/* ⚠ ACIMA DA FILA de propósito: um débito de extrato sem nota vinculada é o que pode virar
+            despesa contada duas vezes, e é o que o contador precisa ver primeiro. O painel some
+            sozinho quando não há nada a casar. */}
+        <PainelDeCasamentos
+          key={versao}
+          companyId={companyId}
+          podeEscrever={podeEscrever}
+          aoCasar={() => {
+            setVersao((v) => v + 1);
+            carregar();
+          }}
+        />
 
-      {/* ⚠ ABAIXO do painel de casamentos e ACIMA da fila: casar um débito é o que evita a despesa
-          em dobro AGORA; a recorrência olha para a frente. Ela some sozinha quando não há decisão
-          esperando — mesmo desenho do painel de casamentos. */}
-      <PainelDeRecorrencias companyId={companyId} podeEscrever={podeEscrever} />
+        {/*
+          ⚠⚠ O EXTRATO DO QUE ENTROU SEM CLIQUE vem ANTES das regras, e a ordem é a decisão.
 
-      {/*
-        ⚠⚠ A TERCEIRA FILA DESTA TELA (29/08/2026) — o que o CLIENTE escreveu no fluxo dele.
+          Ele é a CONSEQUÊNCIA da automação, e as regras são a causa. Quem abre esta tela precisa ver
+          primeiro o que já aconteceu na contabilidade dele — e só depois mexer no que vai acontecer.
+          Invertido, o contador ligaria mais uma regra sem ter olhado o que a anterior fez.
+          ⚠ Ele some sozinho quando não há nada lançado por regra, que é o estado normal.
+        */}
+        {/*
+          ⚠⚠ ELE NÃO LEVA `key={versao}`, e a ausência é a correção — achada no navegador (30/08/2026).
 
-        Ela fica ao lado das recorrências, com a MESMA forma (confirmar · recusar com motivo): duas
-        filas na mesma tela com desenhos diferentes fariam a pessoa reaprender a decisão em cada uma.
-        ⚠ E ela é o que faz o pedido do dono fechar: *"essas saídas que o cliente digitar aparecem
-        para o contador na aba de conferência"*.
-      */}
-      <PainelDeSaidasDoCliente companyId={companyId} podeEscrever={podeEscrever} />
-      {/* ⚠⚠ DEPOIS das três filas de decisão, e não entre elas: esta é CIÊNCIA, não tarefa. Posta
-          no meio, ela seria lida como mais uma coisa a resolver — e ela não espera nada de você.
-          ⚠ Ela não desenha nada quando não há mexida nenhuma; ver o cabeçalho do painel. */}
-      <PainelDeMexidasDoCliente companyId={companyId} podeEscrever={podeEscrever} />
+          Com a `key` amarrada a `versao`, desfazer bumpava a versão, a `key` mudava, o React
+          DESMONTAVA o painel e o relatório *"1 de 2 desfeitos · dec-r2: a competência está fechada"*
+          morria no mesmo instante em que nascia. Ficava a metade que já funcionava (o desfazer) e
+          sumia a metade que este extrato existe para dar: **saber o que NÃO foi desfeito**.
+          ⚠ Ele se recarrega sozinho depois de desfazer; quem precisa da `key` é o painel de
+          casamentos, que não tem recarga própria.
+        */}
+        <PainelDeLancadosPorRegra
+          companyId={companyId}
+          competencia={competencia}
+          podeEscrever={podeEscrever}
+          aoDesfazer={() => {
+            setVersao((v) => v + 1);
+            carregar();
+          }}
+        />
 
-      {/*
-        ⚠⚠ O EXTRATO DO QUE ENTROU SEM CLIQUE vem ANTES das regras, e a ordem é a decisão.
-
-        Ele é a CONSEQUÊNCIA da automação, e as regras são a causa. Quem abre esta tela precisa ver
-        primeiro o que já aconteceu na contabilidade dele — e só depois mexer no que vai acontecer.
-        Invertido, o contador ligaria mais uma regra sem ter olhado o que a anterior fez.
-        ⚠ Ele some sozinho quando não há nada lançado por regra, que é o estado normal.
-      */}
-      {/*
-        ⚠⚠ ELE NÃO LEVA `key={versao}`, e a ausência é a correção — achada no navegador (30/08/2026).
-
-        Com a `key` amarrada a `versao`, desfazer bumpava a versão, a `key` mudava, o React
-        DESMONTAVA o painel e o relatório *"1 de 2 desfeitos · dec-r2: a competência está fechada"*
-        morria no mesmo instante em que nascia. Ficava a metade que já funcionava (o desfazer) e
-        sumia a metade que este extrato existe para dar: **saber o que NÃO foi desfeito**.
-        ⚠ Ele se recarrega sozinho depois de desfazer; quem precisa da `key` é o painel de
-        casamentos, que não tem recarga própria.
-      */}
-      <PainelDeLancadosPorRegra
-        companyId={companyId}
-        competencia={competencia}
-        podeEscrever={podeEscrever}
-        aoDesfazer={() => {
-          setVersao((v) => v + 1);
-          carregar();
-        }}
-      />
-
-      {/*
-        ⚠⚠ AS REGRAS FICAM POR ÚLTIMO, e é a tela mais perigosa desta aba: marcar uma regra aqui faz
-        nascer lançamento contábil sem ninguém clicar. Ela vem depois da fila de propósito — o
-        contador chega nela tendo visto as despesas concretas, e não como primeiro ato.
-        ⚠ `contas` é o plano JÁ CARREGADO desta tela: uma segunda busca daria dois planos possíveis
-        para a mesma empresa, e o seletor da regra poderia oferecer conta que a fila recusa.
-      */}
-      <PainelDeRegras companyId={companyId} contas={contas} podeEscrever={podeEscrever} />
-
-      {erro ? (
-        <div style={{ ...card, borderColor: "var(--state-danger)", color: "var(--state-danger)" }}>{erro}</div>
-      ) : null}
-      {/* ⚠ Só quando não há modal — com ele aberto, o aviso vai DENTRO dele (ver `ModalDaAcao`). */}
-      {aviso && !acaoAberta ? (
-        <div role="alert" style={{ ...card, borderColor: "var(--state-warn)", color: "var(--state-warn)" }}>
-          {aviso}
-        </div>
-      ) : null}
-
-      {!carregando && grupos.length === 0 ? (
-        // ⚠⚠ ESTADO VAZIO DIZ POR QUÊ, e distingue as duas causas. "Nada aqui" faria "a fila está
-        // limpa" e "ninguém varreu as notas ainda" ficarem iguais.
-        <div style={{ ...card, color: "var(--text-muted)" }}>
-          {estadoFiltrado ? (
-            <>
-              Nenhuma despesa neste estado
-              {recorte === "sem-competencia" ? " sem competência" : competencia ? ` em ${competencia}` : ""}.
-              {" "}
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEstadoFiltrado(null)}>
-                Ver a fila inteira
-              </button>
-            </>
-          ) : (
-            <>
-              Nenhuma despesa esperando conferência
-              {recorte === "sem-competencia" ? " sem competência" : competencia ? ` em ${competencia}` : ""}.
-              {" "}Se você esperava ver as notas recebidas aqui, elas ainda não foram varridas para a fila.
-            </>
-          )}
-        </div>
-      ) : null}
-
-      {/* ⚠⚠ A LISTA É TRUNCADA E A TELA DIZ ISSO — achado por auditoria em 25/08/2026.
-          O servidor devolve no máximo 50 linhas por página e a tela nunca lia `total`. Com 137 em
-          `A_CONFERIR`, o selo dizia 137, a lista mostrava 50, e o contador concluía exatamente o que
-          o desenho dos selos existe para impedir: que o sistema perdeu despesa. */}
-      {fila && fila.total > (fila.itens?.length ?? 0) ? (
-        <div style={{ ...card, borderColor: "var(--state-warn)", color: "var(--text-muted)" }}>
-          Mostrando <strong>{fila.itens.length}</strong> de <strong>{fila.total}</strong> lançamentos.
-          Use os filtros de estado e a competência para reduzir a fila — ainda não há navegação por página.
-        </div>
-      ) : null}
-
-      {grupos.map((g) => (
-        <div key={g.chave} style={{ ...card, display: "grid", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <strong>{g.nome}</strong>
-            {g.cnpj ? (
-              <span style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>{cnpjFormatado(g.cnpj)}</span>
-            ) : null}
-            <span style={{ flex: 1 }} />
-            <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
-              {g.itens.length} lançamento(s) · {dinheiro(g.total)}
-            </span>
+        {erro ? (
+          <div style={{ ...card, borderColor: "var(--state-danger)", color: "var(--state-danger)" }}>{erro}</div>
+        ) : null}
+        {/* ⚠ Só quando não há modal — com ele aberto, o aviso vai DENTRO dele (ver `ModalDaAcao`). */}
+        {aviso && !acaoAberta ? (
+          <div role="alert" style={{ ...card, borderColor: "var(--state-warn)", color: "var(--state-warn)" }}>
+            {aviso}
           </div>
-          {/* ⚠ `.tabela--densa` do `App.css` — a tela não manda `th`/`td` inline. */}
-          <div style={{ overflowX: "auto" }}>
-            <table className="tabela--densa">
-              <thead>
-                <tr>
-                  <th>Descrição</th>
-                  <th>Documento</th>
-                  <th>Emissão</th>
-                  <th>Pagamento</th>
-                  <th>Conta</th>
-                  <th className="tabela__num">Valor</th>
-                  <th>Competência</th>
-                  <th>Estado</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {g.itens.map((item) => (
-                  <LinhaDoDeclarado
-                    key={item.id}
-                    item={item}
-                    podeEscrever={podeEscrever}
-                    podeEscolherConta={podeEscolherConta}
-                    onAgir={abrir}
-                  />
-                ))}
-              </tbody>
-            </table>
+        ) : null}
+
+        {!carregando && grupos.length === 0 ? (
+          // ⚠⚠ ESTADO VAZIO DIZ POR QUÊ, e distingue as duas causas. "Nada aqui" faria "a fila está
+          // limpa" e "ninguém varreu as notas ainda" ficarem iguais.
+          <div style={{ ...card, color: "var(--text-muted)" }}>
+            {estadoFiltrado ? (
+              <>
+                Nenhuma despesa neste estado
+                {recorte === "sem-competencia" ? " sem competência" : competencia ? ` em ${competencia}` : ""}.
+                {" "}
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEstadoFiltrado(null)}>
+                  Ver a fila inteira
+                </button>
+              </>
+            ) : (
+              <>
+                Nenhuma despesa esperando conferência
+                {recorte === "sem-competencia" ? " sem competência" : competencia ? ` em ${competencia}` : ""}.
+                {" "}Se você esperava ver as notas recebidas aqui, elas ainda não foram varridas para a fila.
+              </>
+            )}
           </div>
-        </div>
-      ))}
+        ) : null}
+
+        {/* ⚠⚠ A LISTA É TRUNCADA E A TELA DIZ ISSO — achado por auditoria em 25/08/2026.
+            O servidor devolve no máximo 50 linhas por página e a tela nunca lia `total`. Com 137 em
+            `A_CONFERIR`, o selo dizia 137, a lista mostrava 50, e o contador concluía exatamente o que
+            o desenho dos selos existe para impedir: que o sistema perdeu despesa. */}
+        {fila && fila.total > (fila.itens?.length ?? 0) ? (
+          <div style={{ ...card, borderColor: "var(--state-warn)", color: "var(--text-muted)" }}>
+            Mostrando <strong>{fila.itens.length}</strong> de <strong>{fila.total}</strong> lançamentos.
+            Use os filtros de estado e a competência para reduzir a fila — ainda não há navegação por página.
+          </div>
+        ) : null}
+
+        {grupos.map((g) => (
+          <div key={g.chave} style={{ ...card, display: "grid", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+              <strong>{g.nome}</strong>
+              {g.cnpj ? (
+                <span style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>{cnpjFormatado(g.cnpj)}</span>
+              ) : null}
+              <span style={{ flex: 1 }} />
+              <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                {g.itens.length} lançamento(s) · {dinheiro(g.total)}
+              </span>
+            </div>
+            {/* ⚠ `.tabela--densa` do `App.css` — a tela não manda `th`/`td` inline. */}
+            <div style={{ overflowX: "auto" }}>
+              <table className="tabela--densa">
+                <thead>
+                  <tr>
+                    <th>Descrição</th>
+                    <th>Documento</th>
+                    <th>Emissão</th>
+                    <th>Pagamento</th>
+                    <th>Conta</th>
+                    <th className="tabela__num">Valor</th>
+                    <th>Competência</th>
+                    <th>Estado</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {g.itens.map((item) => (
+                    <LinhaDoDeclarado
+                      key={item.id}
+                      item={item}
+                      podeEscrever={podeEscrever}
+                      podeEscolherConta={podeEscolherConta}
+                      onAgir={abrir}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </SecaoDaConferencia>
+
+      <SecaoDaConferencia natureza={NATUREZA.SO_FLUXO}>
+        {/*
+          ⚠⚠ ESTA POSIÇÃO MUDOU EM 01/09/2026, e a frase anterior ("ABAIXO do painel de casamentos e
+          ACIMA da fila") virou falsa: a recorrência desceu para DEPOIS da fila, junto com o resto do
+          fluxo. O argumento antigo — *"casar um débito evita a despesa em dobro AGORA; a recorrência
+          olha para a frente"* — continua valendo e é o que a mantém no fim: ela é a mais distante do
+          que a contabilidade precisa hoje. O que mudou foi a régua: a tela passou a agrupar por
+          DESTINO, e recorrência não vira lançamento.
+          ⚠ Ela some sozinha quando não há decisão esperando — mesmo desenho do painel de casamentos.
+        */}
+        <PainelDeRecorrencias companyId={companyId} podeEscrever={podeEscrever} />
+
+        {/*
+          ⚠⚠ A TERCEIRA FILA DESTA TELA (29/08/2026) — o que o CLIENTE escreveu no fluxo dele.
+
+          Ela fica ao lado das recorrências, com a MESMA forma (confirmar · recusar com motivo): duas
+          filas na mesma tela com desenhos diferentes fariam a pessoa reaprender a decisão em cada uma.
+          ⚠ E ela é o que faz o pedido do dono fechar: *"essas saídas que o cliente digitar aparecem
+          para o contador na aba de conferência"*.
+        */}
+        <PainelDeSaidasDoCliente companyId={companyId} podeEscrever={podeEscrever} />
+
+        {/* ⚠⚠ DEPOIS das três filas de decisão, e não entre elas: esta é CIÊNCIA, não tarefa. Posta
+            no meio, ela seria lida como mais uma coisa a resolver — e ela não espera nada de você.
+            ⚠ Ela não desenha nada quando não há mexida nenhuma; ver o cabeçalho do painel. */}
+        <PainelDeMexidasDoCliente companyId={companyId} podeEscrever={podeEscrever} />
+      </SecaoDaConferencia>
+
+      <SecaoDaConferencia natureza={NATUREZA.REGRA}>
+        {/*
+          ⚠⚠ AS REGRAS FICAM POR ÚLTIMO, e é a tela mais perigosa desta aba: marcar uma regra aqui faz
+          nascer lançamento contábil sem ninguém clicar. Ela vem depois da fila de propósito — o
+          contador chega nela tendo visto as despesas concretas, e não como primeiro ato.
+          ⚠⚠ ESTA FRASE ERA FALSA ATÉ 01/09/2026: no DOM, `PainelDeRegras` renderizava ANTES do
+          bloco da fila (o `{erro}` e o `grupos.map` vinham DEPOIS dele). O comentário descrevia a
+          intenção, e ninguém conferiu o resultado. O agrupamento por seção a tornou verdadeira — a
+          fila está na primeira seção, esta é a última.
+          ⚠ `contas` é o plano JÁ CARREGADO desta tela: uma segunda busca daria dois planos possíveis
+          para a mesma empresa, e o seletor da regra poderia oferecer conta que a fila recusa.
+        */}
+        <PainelDeRegras companyId={companyId} contas={contas} podeEscrever={podeEscrever} />
+      </SecaoDaConferencia>
 
       {varrendo ? (
         <ModalDaVarredura

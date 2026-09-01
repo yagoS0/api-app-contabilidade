@@ -7587,6 +7587,28 @@ export function createMockApi() {
           motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
         },
         {
+          // ⚠⚠ A QUARTA ORIGEM, e ela NASCERIA INALCANÇÁVEL OFFLINE sem esta linha (01/09/2026).
+          //
+          // A fila do mock só tinha `NOTA_RECEBIDA` e `OFX_CLIENTE` — ou seja, o chip de origem que
+          // responde *"veio da planilha que o cliente mandou"* não podia ser visto no navegador, e
+          // foi assim que `leituraDoDocumento` passou a dizer *"a nota de origem não está mais na
+          // base"* sobre uma linha que NUNCA teve nota, sem ninguém ver. É a quinta vez que este
+          // mock esconde um ramo.
+          // ⚠ A forma é COPIADA de `ImportExcelExtratoService`, que é quem grava esta origem de
+          // verdade: `A_CONFERIR` (o débito do extrato JÁ é o pagamento), `origemPagamento` próprio
+          // — `EXTRATO_EXCEL`, que prova, mas não com a mesma força do OFX —, sem nota e sem CNPJ.
+          // ⚠ `CLIENTE_MANUAL` continua fora, e é a resposta honesta: medido no backend, essa
+          // origem está no vocabulário e **não tem escritor nenhum**. Fabricá-la aqui inventaria uma
+          // linha que o sistema não produz.
+          id: "dec-14", origem: "EXTRATO_EXCEL_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",
+          valor: "417.90", valorAjustado: null, competencia: comp,
+          descricaoOriginal: "PAGTO ENERGIA DISTRIBUIDORA", cnpjFornecedor: null,
+          dataDocumento: null, detalheServico: null,
+          dataPagamento: comp + "-06", origemPagamento: "EXTRATO_EXCEL",
+          contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
+        },
+        {
           // ⚠ O AMBÍGUO: duas notas se parecem com ele e o sistema não escolhe. Ele também fica de
           // fora do lote — ambiguidade não autoriza contabilizar à parte.
           id: "dec-10", origem: "OFX_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",

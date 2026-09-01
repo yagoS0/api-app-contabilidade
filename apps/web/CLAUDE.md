@@ -328,6 +328,82 @@ painéis que os acionavam saíram da tela juntos, quando a aba enxugou.
 `CompetenciaStateMachine.reabrirCompetencia` no backend, que exige `reason` e tem teste próprio. A
 porta some da tela; o ato continua existindo. Por isso ficam anotados, não apagados.
 
+## ⚠⚠ A TELA "A LANÇAR" GANHOU TRÊS SEÇÕES (01/09/2026)
+
+> Dono: *"na página A lançar, separe visualmente o que são regras, saídas do cliente, o que é para
+> virar lançamento e o que é para o fluxo."*
+
+A tela é a **Conferência** (`features/conferencia/components/renderConferenciaTab.jsx`); *"A lançar"*
+é o rótulo do BOTÃO dentro de Lançamentos. Ela tinha **seis painéis mais a fila**, todos com o MESMO
+objeto `card` neutro, num `grid` sem um único título — **nada dizia que confirmar numa caixa cria
+lançamento contábil e na caixa vizinha não cria nada.**
+
+⚠⚠ **AS QUATRO PALAVRAS DO DONO NÃO SÃO QUATRO IRMÃS — SÃO DOIS EIXOS DE DOIS:**
+
+| | |
+|---|---|
+| regras · saídas do cliente | **QUEM DISSE** — origem |
+| vira lançamento · é só fluxo | **O QUE ACONTECE** — destino |
+
+Uma saída do cliente **já é** "só fluxo": a mesma linha responde às duas perguntas, e empilhá-las
+como quatro caixas irmãs pediria que ela aparecesse duas vezes — a confusão que a separação existe
+para desfazer. Daí o desenho: **destino vira SEÇÃO, origem vira CHIP na linha.**
+
+Regra em `features/conferencia/lib/naturezaDaConferencia.js` (25 testes) — é ela que responde
+`natureza(bloco)`, e as seções são montadas em JSX à mão (os painéis recebem props diferentes). O que
+impede as duas de divergirem é `conferenciaSeparadaPorNatureza.test.jsx` (20), que **lê o mapa** e
+exige que cada painel esteja sob o título que ele manda.
+
+- **«Vira lançamento contábil»** — casamentos · lançados por regra · a fila.
+- **«Só entra no fluxo — não lança nada»** — recorrências · saídas do cliente · mexidas do cliente.
+- **«Regras — o que decide sozinho»** — o CRUD de regras. ⚠ Regra não é origem nem destino: é a
+  **causa**, e é por isso que ela tem seção própria.
+
+⚠ **AS FRASES SÃO AS QUE A TELA JÁ DIZIA** — a do modal de confirmação e a do `PainelDeSaidasDoCliente`.
+Redigir de novo faria a mesma tela afirmar duas coisas sobre o mesmo ato. ⚠ **Sem cor de estado**: a
+seção se distingue por título + frase + barra de `--border`; `--state-danger` bloqueia fechamento e
+verde é concluído, e uma seção não é nenhum dos dois.
+
+⚠ **AGRUPAR REORDENOU A TELA**, e não havia como não: os painéis do fluxo estavam INTERCALADOS entre
+os que lançam. Cada argumento de ordem já escrito na tela foi preservado (casamentos acima da fila; o
+extrato do que entrou sem clique antes das regras; as mexidas depois das filas de decisão).
+⚠⚠ **E uma quarta afirmação — o comentário de `PainelDeRegras` dizendo *"ela vem depois da fila de
+propósito"* — era FALSA no DOM**: as regras renderizavam ANTES do bloco da fila. O comentário
+descrevia a intenção e ninguém conferiu o resultado; o agrupamento a tornou verdadeira.
+
+### ⚠⚠ Os DOIS espelhos de vocabulário estavam incompletos — e o segundo era o caro
+
+Ao trazer `origem` para a linha, mediu-se o resto. `vocabularioDaConferenciaEspelhado.test.js` LÊ a
+fonte da api (`application/declarados/lib/estadosDeclarado.js`) e trava as duas listas:
+
+| enum | backend | tela, antes | efeito |
+|---|---|---|---|
+| `ORIGEM` | 4 | **0** | nenhuma linha dizia de onde a despesa veio |
+| `ORIGEM_PAGAMENTO` | 5 | **3** | **"Procedência desconhecida"** em duas delas |
+
+- ⚠⚠ **`leituraDoDocumento` comparava só `"OFX_CLIENTE"`**, então a linha vinda da PLANILHA de
+  extrato caía no ramo de baixo e dizia *"a nota de origem não está mais na base"* — **afirmando um
+  documento apagado que nunca existiu**, e mandando o contador procurá-lo. São DUAS origens de
+  extrato, e quem sabe quais são é a lib (`veioDeExtrato`), não uma string.
+- ⚠⚠ **`EXTRATO_EXCEL` é PROVA** (o enum do backend a documenta com um *"Por que PROVA"* próprio: quem
+  afirma que o dinheiro saiu é o banco, nos dois formatos) e saía como procedência desconhecida.
+  ⚠ O teste que dizia *"SÓ O OFX é prova"* foi **atualizado, não afrouxado**: a lista continua de
+  INCLUSÃO, e agora tem dois membros nomeados.
+- ⚠⚠ **`PRESUMIDO_POR_REGRA` também caía no fallback**, e é a mais delicada: some justamente o aviso
+  de que **ninguém viu o pagamento acontecer**. Ela **não** é `DECLARADO_PELO_CONTADOR` — aquele
+  atribuiria ao contador um ato que ele não praticou.
+- ⚠ **O fallback NÃO mentia** (ele diz "não reconheço"), e é por isso que ninguém percebeu por meses.
+  Ele continua lá — é a rede para o valor que nascer amanhã.
+
+⚠ **`CLIENTE_MANUAL` fica sem linha no mock, de propósito:** medido no backend, essa origem está no
+vocabulário e **não tem escritor nenhum**. O chip existe (o vocabulário é fechado e vem de lá) e
+simplesmente não aparece. ⚠ Quinta vez que o mock escondeu um ramo: a fila só tinha `NOTA_RECEBIDA` e
+`OFX_CLIENTE`, e foi por isso que o defeito de `leituraDoDocumento` viveu sem ser visto. A linha
+`dec-14` entrou com a forma COPIADA de `ImportExcelExtratoService`, que é quem grava aquela origem.
+
+**Experimentos executados:** `leituraDoDocumento` voltando a olhar só o OFX ⇒ **1 vermelho**;
+recorrência declarada como "vira lançamento" ⇒ **3**; os dois rótulos novos removidos ⇒ **4**.
+
 ## ⚠⚠ A ABA FLUXO DE CAIXA FOI REMOVIDA (29/08/2026) — ela existiu por dois dias
 
 Construída em 27/08 (`features/fluxo/`, regra pura com 40 testes, conferida no navegador) e

@@ -108,9 +108,28 @@ describe("⚠⚠ A PROCEDÊNCIA DA DATA — prova × declaração", () => {
     expect(leituraDaOrigemDoPagamento("PIX_DIRETO_DO_BANCO").ehProva).toBe(false);
   });
 
-  it("⚠⚠ SÓ O OFX é prova — a lista é de INCLUSÃO", () => {
+  it("⚠⚠ A LISTA DE PROVA É DE INCLUSÃO, e são exatamente DUAS — as duas do BANCO", () => {
+    // ⚠⚠ ESTE TESTE DIZIA "SÓ O OFX" ATÉ 01/09/2026, e a lista envelheceu, não a invariante.
+    // `EXTRATO_EXCEL` sempre foi prova na FONTE (`application/declarados/lib/estadosDeclarado.js`,
+    // que a documenta com um "**Por que PROVA**" próprio): quem afirma que o dinheiro saiu é o
+    // banco, nos dois formatos. O que faltava era esta tela conhecer o valor — ela espelhava três
+    // dos cinco, e a linha da planilha lia "Procedência desconhecida".
+    // ⚠ O QUE NÃO MUDOU, e é o que este teste existe para guardar: a lista é de INCLUSÃO. Nada vira
+    // prova por default — nem ausência, nem valor novo, nem o que uma pessoa declarou.
     const provas = Object.values(ORIGEM_PAGAMENTO).filter((o) => leituraDaOrigemDoPagamento(o).ehProva);
-    expect(provas).toEqual([ORIGEM_PAGAMENTO.OFX]);
+    expect(provas.sort()).toEqual([ORIGEM_PAGAMENTO.EXTRATO_EXCEL, ORIGEM_PAGAMENTO.OFX].sort());
+  });
+
+  it("⚠⚠ e as TRÊS declarações continuam fora dela — inclusive a presumida por REGRA", () => {
+    // A presumida por regra é a mais delicada: o lançamento dela afirma uma saída de caixa que
+    // ninguém testemunhou. Tratá-la como prova apagaria exatamente esse aviso.
+    for (const o of [
+      ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR,
+      ORIGEM_PAGAMENTO.CLIENTE,
+      ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA,
+    ]) {
+      expect(leituraDaOrigemDoPagamento(o).ehProva).toBe(false);
+    }
   });
 });
 
@@ -236,6 +255,23 @@ describe("⚠⚠ O DOCUMENTO — quando não dá para abrir, a tela DIZ POR QUÊ
     const r = leituraDoDocumento(linha({ origem: "OFX_CLIENTE", nota: null }));
     expect(r.temDocumento).toBe(false);
     expect(r.motivo).toMatch(/extrato/i);
+  });
+
+  it("⚠⚠ o extrato em PLANILHA diz o mesmo — ele também nunca teve nota", () => {
+    // Até 01/09/2026 a comparação era só `"OFX_CLIENTE"`, e a linha da planilha caía no ramo de
+    // cima, afirmando *"a nota de origem não está mais na base"* sobre uma linha que NUNCA teve
+    // nota. É afirmar um documento apagado que nunca existiu — e mandar o contador procurá-lo.
+    const r = leituraDoDocumento(linha({ origem: "EXTRATO_EXCEL_CLIENTE", nota: null }));
+    expect(r.temDocumento).toBe(false);
+    expect(r.motivo).toMatch(/extrato/i);
+    expect(r.motivo).not.toMatch(/não está mais na base/i);
+  });
+
+  it("⚠ origem que a tela NÃO conhece cai na leitura da NOTA, nunca em «veio do extrato»", () => {
+    // Na dúvida, o caminho de sempre. Dizer "veio do extrato" sobre origem desconhecida inventaria
+    // a procedência da despesa.
+    const r = leituraDoDocumento(linha({ origem: "ORIGEM_NOVA_DO_BACKEND", nota: null }));
+    expect(r.motivo).toMatch(/não está mais na base/i);
   });
 
   it("⚠ componente ausente vira traço, nunca string colada", () => {
