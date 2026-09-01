@@ -138,3 +138,44 @@ describe("⚠⚠ o ESCOPO — a carteira dele, nunca 'qualquer empresa'", () => 
     expect(mockFindUniqueClient).not.toHaveBeenCalled();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O MESTRE — decisão do dono, 01/09/2026, e ela REVERTE o piso para UMA conta.
+//
+// > Dono: *"o meu login e senha em ambos os portais é de mestre, eu posso executar o que eu quiser,
+// > emitir nota em qualquer empresa etc, apenas o meu deve fazer isso."*
+//
+// O cabeçalho desta suíte dizia que promover a conta a `admin` "daria privilégio sobre o sistema
+// inteiro" — e é LITERALMENTE o que foi pedido. O mecanismo não mudou uma linha: `role === "admin"`
+// sempre foi o bypass; o que mudou foi a conta do dono passar a tê-lo. O piso FINANCEIRO continua
+// de pé para QUALQUER OUTRO usuário com a marca da porta — mestre é o ROLE, não a marca.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ o MESTRE — `role: admin` passa por cima do piso, e só ele", () => {
+  const MESTRE = { id: "u-dono", role: "admin", accountType: "FIRM", podeAbrirPortalDoCliente: true };
+
+  it("⚠⚠ entra como OWNER mesmo onde a visita é recusada — o piso não o alcança", async () => {
+    const { req, res } = chamada(MESTRE);
+    let passou = false;
+    await requireClientCompanyAccess("OWNER")(req, res, () => { passou = true; });
+    expect(passou).toBe(true);
+    expect(req.access.role).toBe("OWNER");
+    // ⚠ E SEM a marca de visita: é ela que o portão de emissão usa para recusar — o mestre não a
+    // recebe, e é por isso que ele emite.
+    expect(req.access.visitaDoEscritorio).toBeUndefined();
+  });
+
+  it("⚠ 'qualquer empresa' é literal — o ramo nem consulta a carteira", async () => {
+    const { req, res } = chamada(MESTRE, { companyId: "pc-de-outro-escritorio" });
+    let passou = false;
+    await requireClientCompanyAccess()(req, res, () => { passou = true; });
+    expect(passou).toBe(true);
+    expect(mockFindUniqueFirm).not.toHaveBeenCalled();
+    expect(mockFindUniqueClient).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ e o VISITANTE COMUM continua no piso — é o 'apenas o meu'", async () => {
+    const { req, res } = chamada(VISITANTE);
+    await requireClientCompanyAccess("OWNER")(req, res, () => {});
+    expect(res.statusCode).toBe(403);
+  });
+});

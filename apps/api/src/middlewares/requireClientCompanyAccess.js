@@ -24,6 +24,17 @@ export function requireClientCompanyAccess(minRole) {
     if (!user) return res.status(401).json({ error: "unauthorized" });
 
     const role = String(user.role || "").toLowerCase();
+    /**
+     * ⚠⚠ O MESTRE (01/09/2026). Este ramo sempre existiu e nunca tinha sido exercido — medido em
+     * 30/08: zero usuários com `role: "admin"`. A conta do DONO foi promovida a `admin` por decisão
+     * explícita dele: *"o meu login e senha em ambos os portais é de mestre, eu posso executar o
+     * que eu quiser, emitir nota em qualquer empresa etc, apenas o meu deve fazer isso."*
+     *
+     * ⚠⚠ Isto REVERTE, para o `admin` e só para ele, o piso FINANCEIRO da visita (logo abaixo, que
+     * continua valendo para qualquer outro usuário do escritório com a marca). OWNER aqui alcança a
+     * emissão de NFS-e em nome do cliente — irreversível, no CNPJ de outro — e é exatamente o que
+     * foi pedido. ⚠ "Qualquer empresa" é literal: este ramo não consulta a carteira.
+     */
     if (role === "admin") {
       req.access = { role: "OWNER", status: "ACTIVE" };
       return next();
