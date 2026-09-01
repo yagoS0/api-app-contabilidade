@@ -393,7 +393,9 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
       ) : (
         <>
           <div className="table-wrap">
-            <table className="table">
+            {/* ⚠ `tabela-guias` existe só para o piso de largura da coluna da linha digitável
+                (`app.css`) — sem ele, em 375px a frase da ausência inflava a linha para 228px. */}
+            <table className="table tabela-guias">
               <thead>
                 <tr>
                   <th scope="col">Guia</th>

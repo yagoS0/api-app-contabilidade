@@ -283,7 +283,17 @@ label > input, label > select { margin-top: 4px; color: var(--text); }
 
 /* --- Tabela --------------------------------------------------------------- */
 /* .table-wrap: em 375px a tabela rola DENTRO dela em vez de esticar a página. */
-.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+/* ⚠⚠ `position: relative` NÃO É DECORAÇÃO — ele é o que impede a PÁGINA de rolar para o lado.
+   Achado no navegador em 375px (31/08/2026), na aba Guias, com a suíte inteira VERDE: um
+   `.sr-only` dentro da tabela (o anúncio do `BotaoCopiar`) é `position: absolute`, e sem um
+   ancestral posicionado ele se ancora fora deste contêiner — ficava em `left: 548px` numa tela de
+   375 e empurrava `documentElement.scrollWidth` para 549. A tabela continuava contida; a PÁGINA é
+   que passava a rolar, que é exatamente o que este bloco existe para impedir.
+   ⚠ Vale para qualquer absoluto que entre numa tabela daqui em diante — o conserto é do
+   contêiner, não daquele `<span>`. ⚠ Não quebra os `position: sticky` dos filhos (cabeçalho dos
+   dias, rodapé do fluxo): sticky se resolve contra o ancestral de ROLAGEM, que continua sendo
+   este mesmo elemento. */
+.table-wrap { position: relative; overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .table { width: 100%; border-collapse: collapse; font-size: .9rem; min-width: 720px; }
 .table th, .table td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .table thead th { font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); background: var(--bg); }
@@ -735,6 +745,24 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
    ⚠⚠ `position: sticky` no `thead` só funciona porque ESTE contêiner rola de verdade — sticky dentro
    de um wrap que não rola é INERTE: não gruda, não avisa, e ninguém percebe. É a mesma armadilha que
    o `.table-wrap--alto` desta base já registrou. */
+/* ⚠⚠ A COLUNA DA LINHA DIGITÁVEL TEM PISO DE LARGURA — medido em 375px (31/08/2026).
+   Achado em teste de usabilidade: em tela estreita a tabela de Guias apertava esta coluna a 121px,
+   e a frase da ausência ("Em conferência com o contador — o número impresso no documento não
+   confere…") quebrava em oito linhas, inflando a LINHA INTEIRA para **228px** de altura. Com 18
+   guias, isso é uma tabela de mais de 2.500px em que se rola muito para ver pouco.
+   ⚠ O piso não esconde nada e não muda a forma da tabela — decisões de forma são do dono. Ele
+   deixa a tabela um pouco mais larga, e ela continua rolando DENTRO do `.table-wrap`, que é o
+   comportamento já decidido para tela estreita. A alternativa (truncar a frase) foi recusada: ela
+   diz o que está em conferência, e cortá-la deixaria o cliente sem saber por que não há número.
+   ⚠ `ch` e não `px`: o conteúdo é texto, e a medida certa é a do caractere. */
+.tabela-guias td:nth-child(6),
+.tabela-guias th:nth-child(6) { min-width: 22ch; }
+/* ⚠ E a de AÇÕES, pelo mesmo motivo e com a mesma medição: ela carrega a frase de 30/08/2026
+   ("Seu contador ainda não liberou esta guia…"), que FICA — sem ela o botão desabilitado não diz
+   por que está desabilitado. Estrangulada a 120px, ela sozinha respondia por linhas de 206px. */
+.tabela-guias td:nth-child(7),
+.tabela-guias th:nth-child(7) { min-width: 20ch; }
+
 .table-wrap--planilha-alta { max-height: 340px; overflow-y: auto; }
 .table-wrap--planilha-alta thead th,
 .table-wrap--planilha-alta thead td { position: sticky; top: 0; z-index: 2; }
