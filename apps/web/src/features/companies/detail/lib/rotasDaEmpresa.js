@@ -53,6 +53,7 @@ export const SEGMENT_TO_TAB = {
   // ⚠ SEM O PAR, A URL CAI EM ANOTAÇÕES SEM ERRO NENHUM — o defeito que este arquivo já registra
   // duas vezes. As duas metades andam juntas.
   planejamento: "planejamento",
+  "lancamentos-automaticos": "lancamentosAutomaticos",
   // Sugestão e Pendências eram sub-abas INTERNAS do Cadastro (estado local, não URL); desde
   // 24/08/2026 a Sugestão é um MODAL, aberto pelo botão de pendências da própria Apuração.
   // Links antigos continuam caindo no Cadastro Fiscal, que é onde o botão está.
@@ -89,6 +90,7 @@ export const TAB_TO_SEGMENT = {
   // clique cai em Anotações — é o defeito que o `CLAUDE.md` deste módulo já registra.
   perfilFiscal: "perfil-fiscal",
   planejamento: "planejamento",
+  lancamentosAutomaticos: "lancamentos-automaticos",
   emissaoNfse: "emissao-nfse",
   planoContas: "plano-contas",
   cadastro: "cadastro",

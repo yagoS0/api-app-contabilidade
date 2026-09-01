@@ -11,6 +11,7 @@
 
 import {
   BLOCO,
+  BLOCO_QUE_MUDOU_DE_TELA,
   NATUREZA,
   SECAO,
   SECOES_NA_ORDEM,
@@ -23,7 +24,6 @@ import {
 describe("⚠⚠ o destino de cada bloco — é o que vira SEÇÃO", () => {
   it.each([
     [BLOCO.CASAMENTOS, NATUREZA.VIRA_LANCAMENTO],
-    [BLOCO.LANCADOS_POR_REGRA, NATUREZA.VIRA_LANCAMENTO],
     [BLOCO.FILA, NATUREZA.VIRA_LANCAMENTO],
     [BLOCO.RECORRENCIAS, NATUREZA.SO_FLUXO],
     [BLOCO.SAIDAS_DO_CLIENTE, NATUREZA.SO_FLUXO],
@@ -51,7 +51,16 @@ describe("⚠⚠ o destino de cada bloco — é o que vira SEÇÃO", () => {
     expect(natureza(undefined)).toBeNull();
   });
 
-  it("os sete blocos declarados estão todos mapeados — a lista é fechada dos dois lados", () => {
+  it("⚠⚠ `LANCADOS_POR_REGRA` SAIU desta tela — e a lápide diz para onde", () => {
+    // Dono, 01/09/2026: *"vão para uma sub aba de lançamentos automáticos"*. Ele não foi duplicado.
+    // ⚠ Sem a lápide, o nome sumiria do vocabulário e a próxima pessoa o reintroduziria aqui
+    // achando que ficou esquecido — e a tela voltaria a mostrar o extrato em dois lugares.
+    expect(BLOCO.LANCADOS_POR_REGRA).toBeUndefined();
+    expect(natureza("LANCADOS_POR_REGRA")).toBeNull();
+    expect(BLOCO_QUE_MUDOU_DE_TELA.LANCADOS_POR_REGRA).toBe("lancamentosAutomaticos");
+  });
+
+  it("os blocos declarados estão todos mapeados — a lista é fechada dos dois lados", () => {
     for (const b of Object.values(BLOCO)) expect(natureza(b)).not.toBeNull();
   });
 });

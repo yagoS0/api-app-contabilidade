@@ -26,9 +26,12 @@ import { PainelDeCasamentos } from "./PainelDeCasamentos";
 import { PainelDeRecorrencias } from "../../recorrencia/components/PainelDeRecorrencias";
 import { PainelDeSaidasDoCliente } from "./PainelDeSaidasDoCliente";
 import { PainelDeMexidasDoCliente } from "./PainelDeMexidasDoCliente";
-import { PainelDeLancadosPorRegra } from "./PainelDeLancadosPorRegra";
 import { PainelDeRegras } from "./PainelDeRegras";
 import { NATUREZA, SECAO, origemDaLinha } from "../lib/naturezaDaConferencia";
+// ⚠ Import entre features, deliberado: a URL da aba da empresa tem UMA fonte
+// (`companyTabPath`), e reconstruí-la aqui faria o link levar a um lugar e o clique a outro.
+import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
+import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
 import { debitosQueCasamComNota } from "../lib/contabilizacaoEmLote";
 import {
   ACAO,
@@ -739,7 +742,7 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
   );
 }
 
-export function ConferenciaTab({ companyId, competencia, podeEscrever = true, aoVoltar }) {
+export function ConferenciaTab({ companyId, competencia, podeEscrever = true, aoVoltar, aoAbrirAba }) {
   const [fila, setFila] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -1151,32 +1154,19 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
         />
 
         {/*
-          ⚠⚠ O EXTRATO DO QUE ENTROU SEM CLIQUE vem ANTES das regras, e a ordem é a decisão.
+          ⚠⚠ O EXTRATO DO QUE ENTROU SEM CLIQUE **MUDOU DE TELA** em 01/09/2026 — decisão do dono:
+          *"regras de lançamento recorrente, quando marcadas, vão para uma sub aba de lançamentos
+          automáticos"*.
 
-          Ele é a CONSEQUÊNCIA da automação, e as regras são a causa. Quem abre esta tela precisa ver
-          primeiro o que já aconteceu na contabilidade dele — e só depois mexer no que vai acontecer.
-          Invertido, o contador ligaria mais uma regra sem ter olhado o que a anterior fez.
-          ⚠ Ele some sozinho quando não há nada lançado por regra, que é o estado normal.
-        */}
-        {/*
-          ⚠⚠ ELE NÃO LEVA `key={versao}`, e a ausência é a correção — achada no navegador (30/08/2026).
+          Ele NÃO foi duplicado: aqui era um bloco entre seis; lá é a tela inteira, com as colunas
+          que ele pediu (data do lançamento · descrição da nota/OFX · descrição do lançamento ·
+          valor) e a pergunta que faltava — *tem nota comprovando a ocorrência?*
 
-          Com a `key` amarrada a `versao`, desfazer bumpava a versão, a `key` mudava, o React
-          DESMONTAVA o painel e o relatório *"1 de 2 desfeitos · dec-r2: a competência está fechada"*
-          morria no mesmo instante em que nascia. Ficava a metade que já funcionava (o desfazer) e
-          sumia a metade que este extrato existe para dar: **saber o que NÃO foi desfeito**.
-          ⚠ Ele se recarrega sozinho depois de desfazer; quem precisa da `key` é o painel de
-          casamentos, que não tem recarga própria.
+          ⚠ O ARGUMENTO QUE ELE CARREGAVA AQUI NÃO SE PERDEU, e é por isso que sobra um caminho e
+          não um silêncio: *"quem abre esta tela precisa ver primeiro o que já aconteceu na
+          contabilidade dele — e só depois mexer no que vai acontecer"*. O link fica junto das
+          REGRAS (logo abaixo), que são a causa daquilo.
         */}
-        <PainelDeLancadosPorRegra
-          companyId={companyId}
-          competencia={competencia}
-          podeEscrever={podeEscrever}
-          aoDesfazer={() => {
-            setVersao((v) => v + 1);
-            carregar();
-          }}
-        />
 
         {erro ? (
           <div style={{ ...card, borderColor: "var(--state-danger)", color: "var(--state-danger)" }}>{erro}</div>
@@ -1325,6 +1315,22 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
           ⚠ `contas` é o plano JÁ CARREGADO desta tela: uma segunda busca daria dois planos possíveis
           para a mesma empresa, e o seletor da regra poderia oferecer conta que a fila recusa.
         */}
+        {/*
+          ⚠⚠ O CAMINHO PARA A CONSEQUÊNCIA, ao lado da causa. O extrato do que a automação lançou
+          saiu desta tela (ver o comentário na seção acima), e o argumento dele era justamente a
+          VIZINHANÇA com as regras — *"o contador ligaria mais uma regra sem ter olhado o que a
+          anterior fez"*. Perdida a adjacência, fica o link.
+          ⚠ `<a href>` de verdade, com `companyTabPath`: é a MESMA função que a navegação usa, e
+          Ctrl+clique abre em nova guia. Duas construções da mesma URL divergem na primeira correção.
+        */}
+        <a
+          href={companyTabPath(companyId, "lancamentosAutomaticos")}
+          onClick={(e) => oNavegadorAssumeOClique(e) || (e.preventDefault(), aoAbrirAba?.("lancamentosAutomaticos"))}
+          style={{ fontSize: "0.78rem", color: "var(--text-muted)", justifySelf: "start" }}
+        >
+          Ver o que estas regras já lançaram sozinhas →
+        </a>
+
         <PainelDeRegras companyId={companyId} contas={contas} podeEscrever={podeEscrever} />
       </SecaoDaConferencia>
 

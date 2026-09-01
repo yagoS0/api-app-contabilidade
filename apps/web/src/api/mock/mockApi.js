@@ -8149,18 +8149,58 @@ export function createMockApi() {
     async getLancadosPorRegra(_companyId, competencia) {
       await delay(70);
       const comp = competencia || "2026-08";
+      /**
+       * ⚠⚠ AS TRÊS RESPOSTAS DA PERGUNTA DO DONO precisam ser alcançáveis OFFLINE — *"no caso de não
+       * ter uma nota comprovando a ocorrência desse lançamento ela deve ser retirada"*:
+       *
+       *   1. TEM nota (o caso normal);
+       *   2. NUNCA teve — nasceu de um débito de extrato;
+       *   3. TEVE e a nota sumiu (a FK é `SetNull`).
+       *
+       * Com só o primeiro, os dois avisos âmbar da tela nasceriam inalcançáveis no navegador — é a
+       * sexta vez que este mock esconderia um ramo.
+       * ⚠ E a terceira linha traz `lancamentoNoRazao: false`: o lançamento apagado por fora, que é
+       * o que impede a tela de oferecer "tirar" o que já não existe.
+       */
       const linhas = [
         {
           id: "dec-r1", descricaoOriginal: "ALESSANDRO NIGRO", cnpjFornecedor: "12345678000190",
           valor: "1180.00", valorAjustado: null, competencia: comp,
           dataPagamento: `${comp}-15`, contaAplicada: "411030012",
           regraId: "reg-1", accountingEntryId: "ae-r1", decididoEm: `${comp}-15T03:00:00.000Z`,
+          origem: "NOTA_RECEBIDA",
+          notaRecebidaId: "nota-r1",
+          notaRecebida: { numero: "1042", serie: "1", type: "NFSE" },
+          historicoDoLancamento: "ALESSANDRO NIGRO",
+          dataDoLancamento: `${comp}-15`,
+          lancamentoNoRazao: true,
         },
         {
-          id: "dec-r2", descricaoOriginal: "ALESSANDRO NIGRO", cnpjFornecedor: "12345678000190",
+          // ⚠ Nasceu de um débito de EXTRATO: nunca houve documento. É o caso que o dono quer ver.
+          id: "dec-r2", descricaoOriginal: "PAGTO ALESSANDRO NIGRO", cnpjFornecedor: "12345678000190",
           valor: "1050.00", valorAjustado: null, competencia: comp,
           dataPagamento: `${comp}-15`, contaAplicada: "411030012",
           regraId: "reg-1", accountingEntryId: "ae-r2", decididoEm: `${comp}-15T03:00:00.000Z`,
+          origem: "OFX_CLIENTE",
+          notaRecebidaId: null,
+          notaRecebida: null,
+          historicoDoLancamento: "PAGTO ALESSANDRO NIGRO",
+          dataDoLancamento: `${comp}-15`,
+          lancamentoNoRazao: true,
+        },
+        {
+          // ⚠ Teve nota e ela sumiu, E o lançamento sumiu do razão — as duas ausências que a tela
+          // distingue de "nunca houve".
+          id: "dec-r3", descricaoOriginal: "COPIADORA SAO JORGE LTDA", cnpjFornecedor: "44555666000177",
+          valor: "312.40", valorAjustado: null, competencia: comp,
+          dataPagamento: `${comp}-08`, contaAplicada: "411020008",
+          regraId: "reg-2", accountingEntryId: "ae-r3", decididoEm: `${comp}-08T03:00:00.000Z`,
+          origem: "NOTA_RECEBIDA",
+          notaRecebidaId: "nota-apagada",
+          notaRecebida: null,
+          historicoDoLancamento: null,
+          dataDoLancamento: null,
+          lancamentoNoRazao: false,
         },
       ];
       return {
@@ -8168,7 +8208,10 @@ export function createMockApi() {
         indisponivel: false,
         competencia: comp,
         total: linhas.length,
-        valor: 2230,
+        valor: 2542.4,
+        // ⚠ O número vem do SERVIDOR, e a tela não o reconta: duas contagens da mesma coisa
+        // divergem, e a que ninguém confere é a que erra.
+        semNota: linhas.filter((l) => !l.notaRecebidaId).length,
         linhas,
       };
     },

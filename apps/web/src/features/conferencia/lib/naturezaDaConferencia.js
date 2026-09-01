@@ -127,9 +127,21 @@ export const BLOCO = Object.freeze({
   RECORRENCIAS: "RECORRENCIAS",
   SAIDAS_DO_CLIENTE: "SAIDAS_DO_CLIENTE",
   MEXIDAS_DO_CLIENTE: "MEXIDAS_DO_CLIENTE",
-  LANCADOS_POR_REGRA: "LANCADOS_POR_REGRA",
   REGRAS: "REGRAS",
   FILA: "FILA",
+});
+
+/**
+ * ⚠⚠ LÁPIDE — `LANCADOS_POR_REGRA` SAIU DESTA TELA em 01/09/2026 (dono: *"vão para uma sub aba de
+ * lançamentos automáticos"*).
+ *
+ * Ele ERA um bloco de «Vira lançamento contábil» aqui; hoje é a aba própria
+ * `lancamentosAutomaticos`, com as colunas que o dono pediu. O nome fica registrado para que
+ * ninguém o reintroduza nesta lista achando que ficou esquecido — e para que quem procurar o
+ * extrato saiba onde ele foi parar.
+ */
+export const BLOCO_QUE_MUDOU_DE_TELA = Object.freeze({
+  LANCADOS_POR_REGRA: "lancamentosAutomaticos",
 });
 
 /**
@@ -149,9 +161,9 @@ export const BLOCO = Object.freeze({
  * FALSA no DOM antes desta entrega e passou a ser verdadeira com o agrupamento.
  */
 const NATUREZA_DO_BLOCO = Object.freeze({
-  // Vira lançamento: casar um débito ao seu documento, o que a regra já lançou sozinha, e a fila.
+  // Vira lançamento: casar um débito ao seu documento, e a fila.
+  // ⚠ `LANCADOS_POR_REGRA` saiu — ver a lápide acima.
   [BLOCO.CASAMENTOS]: NATUREZA.VIRA_LANCAMENTO,
-  [BLOCO.LANCADOS_POR_REGRA]: NATUREZA.VIRA_LANCAMENTO,
   [BLOCO.FILA]: NATUREZA.VIRA_LANCAMENTO,
 
   // ⚠ RECORRÊNCIA É FLUXO, e isso foi medido, não suposto: o painel dela diz de si mesmo que

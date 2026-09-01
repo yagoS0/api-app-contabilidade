@@ -168,7 +168,6 @@ describe("⚠⚠ cada painel sob a seção que a REGRA manda — o DOM conferido
   // falha; se a regra mudar, o esperado muda junto — que é o ponto de ler `natureza()` aqui.
   const ONDE_APARECE = [
     [BLOCO.CASAMENTOS, "Débitos do extrato sem nota vinculada"],
-    [BLOCO.LANCADOS_POR_REGRA, /Lançados por regra/],
     [BLOCO.FILA, "GOOGLE CLOUD BRASIL"],
     [BLOCO.RECORRENCIAS, "Recorrências"],
     [BLOCO.SAIDAS_DO_CLIENTE, "Saídas que o cliente acrescentou"],
@@ -178,6 +177,21 @@ describe("⚠⚠ cada painel sob a seção que a REGRA manda — o DOM conferido
   it.each(ONDE_APARECE)("%s aparece dentro da seção dele", async (bloco, texto) => {
     await montar();
     expect(within(secaoDe(natureza(bloco))).getAllByText(texto).length).toBeGreaterThan(0);
+  });
+
+  it("⚠⚠ o extrato «lançados por regra» NÃO está mais aqui — virou aba própria", async () => {
+    // Dono, 01/09/2026: *"regras de lançamento recorrente, quando marcadas, vão para uma sub aba de
+    // lançamentos automáticos"*. Ele não foi duplicado: saiu desta tela.
+    await montar();
+    expect(screen.queryByText(/Lançados por regra/)).toBeNull();
+  });
+
+  it("⚠ e o caminho para ela fica junto das REGRAS — a causa ao lado da consequência", async () => {
+    // O argumento que o painel carregava aqui era a VIZINHANÇA: *"o contador ligaria mais uma regra
+    // sem ter olhado o que a anterior fez"*. Perdida a adjacência, fica o link.
+    await montar();
+    const link = within(secaoDe(NATUREZA.REGRA)).getByRole("link", { name: /já lançaram sozinhas/i });
+    expect(link).toHaveAttribute("href", "/companies/emp-1/lancamentos-automaticos");
   });
 
   it("⚠ o sexto painel (mexidas do cliente) também — ele não pede nada e é o que se esquece", async () => {

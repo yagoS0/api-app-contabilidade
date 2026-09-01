@@ -34,7 +34,18 @@ function diaBr(iso) {
   return m ? `${m[3]}/${m[2]}` : "—";
 }
 
-export function PainelDeLancadosPorRegra({ companyId, competencia, podeEscrever = true, aoDesfazer }) {
+export function PainelDeLancadosPorRegra({
+  companyId, competencia, podeEscrever = true, aoDesfazer,
+  /**
+   * ⚠⚠ NUMA ABA PRÓPRIA, SUMIR DEIXARIA A TELA EM BRANCO — e tela em branco não distingue "não há
+   * lançamento automático" de "não carregou".
+   *
+   * Dentro de "A lançar" ele é UM bloco entre vários e sumir é a resposta certa (com a automação
+   * desligada, que é o estado normal, um bloco permanente afirmaria o óbvio). Na aba
+   * **Lançamentos automáticos** ele é a tela inteira, e ali o vazio precisa DIZER que está vazio.
+   */
+  sumirQuandoVazio = true,
+}) {
   const [estado, setEstado] = useState({ carregando: true, dados: null, indisponivel: false, erro: null });
   const [marcados, setMarcados] = useState(() => new Set());
   const [enviando, setEnviando] = useState(false);
@@ -61,10 +72,29 @@ export function PainelDeLancadosPorRegra({ companyId, competencia, podeEscrever 
 
   const linhas = Array.isArray(estado.dados?.linhas) ? estado.dados.linhas : [];
 
-  // ⚠⚠ O PAINEL SOME QUANDO NÃO HÁ NADA — e sumir é a resposta certa aqui: com a automação
-  // desligada (que é o estado normal), um bloco permanente dizendo "nenhum lançamento automático"
-  // ocuparia a tela para afirmar o óbvio. Ele aparece exatamente quando há o que auditar.
-  if (estado.carregando || estado.indisponivel || !linhas.length) return null;
+  // ⚠⚠ O PAINEL SOME QUANDO NÃO HÁ NADA — e sumir é a resposta certa DENTRO de "A lançar": com a
+  // automação desligada (que é o estado normal), um bloco permanente dizendo "nenhum lançamento
+  // automático" ocuparia a tela para afirmar o óbvio. Ele aparece exatamente quando há o que auditar.
+  // ⚠ Na ABA própria isso se inverte — ver `sumirQuandoVazio`.
+  if (sumirQuandoVazio && (estado.carregando || estado.indisponivel || !linhas.length)) return null;
+
+  if (!sumirQuandoVazio && (estado.carregando || estado.indisponivel || !linhas.length)) {
+    return (
+      <div style={{ ...card, color: "var(--text-muted, var(--text))" }}>
+        {estado.carregando ? "Carregando…" : null}
+        {/* ⚠⚠ TRÊS AUSÊNCIAS, TRÊS FRASES. "A tabela não existe neste banco" (migration não
+            aplicada), "nada entrou sozinho neste mês" e "carregando" são respostas diferentes, e
+            desenhá-las iguais faria o contador concluir que a automação está quieta quando ela
+            simplesmente não pôde ser consultada. */}
+        {!estado.carregando && estado.indisponivel
+          ? "Não foi possível consultar os lançamentos automáticos desta empresa."
+          : null}
+        {!estado.carregando && !estado.indisponivel && !linhas.length
+          ? `Nenhum lançamento nasceu por regra em ${competencia}. Com a automação desligada, este é o estado normal.`
+          : null}
+      </div>
+    );
+  }
 
   const alternar = (id) => setMarcados((s) => {
     const novo = new Set(s);
@@ -99,6 +129,13 @@ export function PainelDeLancadosPorRegra({ companyId, competencia, podeEscrever 
         </strong>
         <span style={{ color: "var(--text-muted, var(--text))", fontSize: 13 }}>
           {linhas.length} {linhas.length === 1 ? "lançamento" : "lançamentos"} · {brl(estado.dados?.valor)}
+          {/* ⚠ O número vem do SERVIDOR (`semNota`), não recontado aqui: duas contagens da mesma
+              coisa divergem, e a que ninguém confere é a que erra. */}
+          {estado.dados?.semNota ? (
+            <span style={{ color: "var(--state-warn)" }}>
+              {" "}· {estado.dados.semNota} sem nota
+            </span>
+          ) : null}
         </span>
       </div>
 
@@ -116,8 +153,12 @@ export function PainelDeLancadosPorRegra({ companyId, competencia, podeEscrever 
               <th style={{ padding: "4px 8px" }}>
                 <span className="sr-only">Selecionar</span>
               </th>
-              <th style={{ padding: "4px 8px" }}>Fornecedor</th>
-              <th style={{ padding: "4px 8px" }}>Data presumida</th>
+              {/* ⚠⚠ AS COLUNAS SÃO AS QUE O DONO PEDIU, nesta ordem — 01/09/2026: *"ali eles
+                  ficam sempre com a data do lançamento, descrição vinda da nota ou OFX, descrição
+                  do lançamento, valor"*. */}
+              <th style={{ padding: "4px 8px" }}>Data do lançamento</th>
+              <th style={{ padding: "4px 8px" }}>Descrição (nota ou extrato)</th>
+              <th style={{ padding: "4px 8px" }}>Descrição do lançamento</th>
               <th style={{ padding: "4px 8px" }}>Conta</th>
               <th style={{ padding: "4px 8px", textAlign: "right" }}>Valor</th>
             </tr>
@@ -138,8 +179,42 @@ export function PainelDeLancadosPorRegra({ companyId, competencia, podeEscrever 
                     onChange={() => alternar(l.id)}
                   />
                 </td>
-                <td style={{ padding: "6px 8px" }}>{l.descricaoOriginal || "—"}</td>
-                <td style={{ padding: "6px 8px" }}>{diaBr(l.dataPagamento)}</td>
+                {/* ⚠ A data do RAZÃO quando ela existe; a presumida quando o razão não foi
+                    lido. Nunca as duas somadas — são afirmações diferentes. */}
+                <td style={{ padding: "6px 8px" }}>{diaBr(l.dataDoLancamento || l.dataPagamento)}</td>
+                <td style={{ padding: "6px 8px" }}>
+                  {l.descricaoOriginal || "—"}
+                  {/*
+                    ⚠⚠ A PERGUNTA DO DONO NA LINHA: *"no caso de não ter uma nota comprovando a
+                    ocorrência desse lançamento ela deve ser retirada"*.
+                    ⚠ Âmbar, não vermelho: falta de nota não bloqueia fechamento nenhum — é uma
+                    pendência a decidir, e vermelho aqui competiria com o que trava o mês.
+                    ⚠ E o texto distingue as DUAS ausências: nunca houve documento (veio do extrato)
+                    × houve e sumiu (a FK é `SetNull`).
+                  */}
+                  {!l.notaRecebidaId ? (
+                    <div style={{ fontSize: 12, color: "var(--state-warn)" }}>sem nota comprovando</div>
+                  ) : !l.notaRecebida ? (
+                    <div style={{ fontSize: 12, color: "var(--state-warn)" }}>
+                      a nota que comprovava não está mais na base
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: "var(--text-faint)" }}>
+                      {l.notaRecebida.tipo || l.notaRecebida.type || "nota"} {l.notaRecebida.numero}
+                    </div>
+                  )}
+                </td>
+                <td style={{ padding: "6px 8px" }}>
+                  {l.historicoDoLancamento || "—"}
+                  {/* ⚠⚠ O LANÇAMENTO SUMIU DO RAZÃO — `accountingEntryId` não tem FK, então ele pode
+                      apontar para linha apagada por fora. Sem isto a tela ofereceria "tirar" algo
+                      que já não existe, e a recusa só apareceria no clique. */}
+                  {l.lancamentoNoRazao === false ? (
+                    <div style={{ fontSize: 12, color: "var(--state-warn)" }}>
+                      não está mais no razão
+                    </div>
+                  ) : null}
+                </td>
                 <td style={{ padding: "6px 8px" }}>{l.contaAplicada || "—"}</td>
                 <td style={{ padding: "6px 8px", textAlign: "right" }}>
                   {brl(l.valorAjustado ?? l.valor)}
