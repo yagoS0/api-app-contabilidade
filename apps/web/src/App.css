@@ -509,6 +509,17 @@
 /* Dashboard home */
 .dashboard-home {
   display: grid;
+  /* ⚠⚠ `minmax(0, 1fr)`, NUNCA o `1fr` implícito — achado no navegador em 01/09/2026, quando a
+     visão de Ano passou a morar dentro do Calendário. A trilha implícita de um grid é `auto`, que
+     cresce até o MIN-CONTENT do item; o min-content da grade anual é ~675px (coluna Empresa com
+     `minWidth: 220` mais doze meses). Numa janela de 604px a trilha ia a 675, o documento a 808, e
+     a PÁGINA INTEIRA rolava para o lado — arrastando o cabeçalho e os botões "Nova empresa" e
+     "Onboardings" para fora da tela.
+     ⚠ `max-width: 100%` no filho NÃO resolve: 100% é medido contra a trilha, que já cresceu.
+     Quem tem de ser impedida de crescer é a TRILHA.
+     ⚠ É a mesma armadilha que o portal do cliente já registra (`min-width: 0` nas duas colunas da
+     grade dele) e que o `.topbar` daqui carrega no comentário gêmeo. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   padding: 24px;
   border-radius: 18px;

@@ -771,7 +771,19 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
   return (
     /* Largura de trabalho (~90%). A grade de mês são 7 colunas que precisam caber vários eventos
        por dia; estreita, cada célula vira uma pilha de "+N". */
-    <section aria-label="Calendário fiscal" style={{ width: "var(--content-wide)", margin: "0 auto" }}>
+    /* ⚠⚠ `maxWidth: 100%` ENTROU EM 01/09/2026, e não é enfeite: sem ele a PÁGINA INTEIRA rolava
+       para o lado no modo Ano. Medido no navegador, numa janela de 604px: esta `<section>` é item
+       flex com `min-width: auto`, então ela CRESCE até o min-content do filho — e o min-content da
+       grade anual é ~675px (a coluna Empresa tem `minWidth: 220` mais doze meses). Ela ia a 675, o
+       documento a 808, e o cabeçalho da página inteiro era arrastado junto: os botões "Nova
+       empresa"/"Onboardings" saíam da tela.
+       ⚠ `max-width` CLAMPA o mínimo automático do flex, que é o que resolve — `minWidth: 0` sozinho
+       não resolveria, porque o filho que estoura é um bloco com `overflow-x: auto`.
+       ⚠ Só o Ano expunha isso: a grade de dias usa `minmax(0,1fr)` e tem min-content pequeno, e a
+       Agenda é uma lista. A grade anual rola DENTRO do contêiner dela, como sempre rolou.
+       ⚠⚠ E ISTO NÃO TEM COMO SER TRAVADO POR TESTE AQUI: o jsdom não faz layout — `scrollWidth` é
+       sempre 0. Foi achado e conferido no navegador, e é o motivo de este comentário existir. */
+    <section aria-label="Calendário fiscal" style={{ width: "var(--content-wide)", maxWidth: "100%", margin: "0 auto" }}>
       {/* Cabeçalho: navegação à esquerda, granularidade à direita — como no Google Calendar. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         {temSidebar && (
@@ -1116,8 +1128,19 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
       </div>
 
       {/* Apuração e fechamento são estado do MÊS, não têm dia. Ficam fora da grade de propósito:
-          pendurá-los num dia inventaria um prazo que não existe. */}
-      {pendencias.length > 0 && (
+          pendurá-los num dia inventaria um prazo que não existe.
+
+          ⚠⚠ E NO MODO ANO ELE NÃO APARECE — achado NO NAVEGADOR em 01/09/2026, com a suíte verde.
+          Duas razões, e a segunda é a que pega:
+          1. o título diz *"do mês"* embaixo de uma grade de DOZE meses, e o mês de que ele fala não
+             está escolhido em lugar nenhum daquela tela;
+          2. ⚠ o conteúdo é ESTADO VELHO. `carregar()` não roda no Ano (a rota do calendário
+             responderia 400 para um ano), então `pendencias` guarda o que o ÚLTIMO mês visitado
+             trouxe — a tela mostrava as pendências de agosto sob a grade de 2026 inteiro.
+          ⚠ E há a razão de fundo: a grade anual É o `pendenciasDoMes`, ×12 meses. Manter a lista de
+          chips do mês embaixo dela é afirmar o MESMO fato duas vezes, com as duas se contradizendo —
+          o defeito que este projeto passa o dia desfazendo. */}
+      {visao !== "ano" && pendencias.length > 0 && (
         <div style={{ marginTop: 14 }}>
           <div style={{ color: COR.texto, fontSize: "0.85rem", fontWeight: 700, marginBottom: 6 }}>
             {variasCompetencias ? "Pendências do período" : "Pendências do mês"}

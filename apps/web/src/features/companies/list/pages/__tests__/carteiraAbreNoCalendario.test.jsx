@@ -191,6 +191,27 @@ describe("⚠⚠ o Ano virou granularidade DENTRO do Calendário", () => {
     expect(screen.getByText(/fechamento contábil/i)).toBeInTheDocument();
   });
 
+  test("⚠⚠ as `Pendências do mês` somem no Ano — elas eram ESTADO VELHO ali", async () => {
+    // Achado no NAVEGADOR, com a suíte verde. Como `carregar()` não roda no modo Ano, `pendencias`
+    // guardava o que o último mês visitado trouxe: a tela mostrava as pendências de AGOSTO sob a
+    // grade de 2026 inteiro, com o título dizendo "do mês". E a grade anual JÁ é o `pendenciasDoMes`
+    // ×12 — manter a lista embaixo dela é o mesmo fato afirmado duas vezes.
+    const cliente = api({
+      getCalendario: jest.fn(async () => ({
+        dias: [],
+        pendenciasDoMes: [
+          { tipo: "apuracao", companyId: "c1", competencia: "2026-07", titulo: "Apuracao nao transmitida" },
+        ],
+      })),
+    });
+    montar({ api: cliente });
+    expect(await screen.findByText(/Pendências do mês/)).toBeInTheDocument();
+
+    await act(async () => { irParaOAno(); });
+    expect(screen.queryByText(/Pendências do mês/)).toBeNull();
+    expect(screen.queryByText(/Pendências do período/)).toBeNull();
+  });
+
   test("⚠ o Ano NÃO chama `getCalendario` — ele tem porta própria", async () => {
     const cliente = api();
     montar({ api: cliente });
