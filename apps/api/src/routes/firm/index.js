@@ -1159,7 +1159,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
       const companyInput = body.company && typeof body.company === "object" ? body.company : body;
       const parsedCompany = validateAndNormalizeCompanyProfile(companyInput);
-      if (!parsedCompany.ok) return res.status(400).json({ error: parsedCompany.error });
+      if (!parsedCompany.ok) // ⚠⚠ O `details` VIAJA. `company_endereco_required_fields_missing` sempre carregou os campos
+        // exatos que faltam (`companyProfile.normalizeEndereco`), e a rota os DESCARTAVA — o front
+        // nao "ignorava" o detalhe, ele nunca recebia. Com ele, a tela diz "Faltam CEP e Numero"
+        // em vez de "o endereco esta incompleto", que manda procurar em seis campos.
+        return res.status(400).json({
+          error: parsedCompany.error,
+          ...(parsedCompany.details ? { details: parsedCompany.details } : {}),
+        });
       const normalizedCompany = parsedCompany.data;
       const ownerEmailInput = String(body.ownerEmail || "")
         .trim()

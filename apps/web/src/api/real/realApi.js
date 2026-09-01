@@ -1,3 +1,4 @@
+import { mensagemDoErroDeCadastro } from "@contabilidade/shared/erros-cadastro-empresa";
 function getApiBaseUrl() {
   return String(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 }
@@ -109,6 +110,21 @@ export function mapKnownError(payload, status) {
     const resto = payload.issues.length > 4 ? ` (+${payload.issues.length - 4})` : "";
     return `Não foi possível salvar — ${detalhes}${resto}`;
   }
+
+  // ⚠⚠ O DICIONÁRIO DO CADASTRO DE EMPRESA — 48 códigos que chegavam à tela em `snake_case`.
+  // Foi o defeito relatado pelo dono ("avisos que não aparecem"): `mapKnownError` não tinha um
+  // único `company_*`, o fallback abaixo devolvia `payload.error` cru, e `Feedback.jsx` imprimia
+  // a string. Foi também por aqui que o 409 do responsável ficou ilegível.
+  //
+  // ⚠ A PRECEDÊNCIA É **dicionário > `message` do servidor > código**, e a ordem importa: o
+  // dicionário é texto escrito para o contador, com o que FAZER; o `message` do servidor é
+  // técnico e existe em poucos casos (`cnpj_imutavel`). Invertida, a frase pior venceria a melhor
+  // exatamente nos casos em que alguém se deu ao trabalho de escrever as duas.
+  //
+  // ⚠⚠ DELEGA, não copia. O texto mora em `packages/shared` porque espelhá-lo aqui divergiria na
+  // primeira correção — precedente medido na lista do IBGE.
+  const doCadastro = mensagemDoErroDeCadastro(payload?.error, payload);
+  if (doCadastro) return doCadastro;
 
   // Fallback: prefere a mensagem humana do backend ({error, message}) antes do código cru.
   return reason || String(payload?.message || "").trim() || payload?.error || `request_failed_${status}`;
