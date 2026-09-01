@@ -151,12 +151,24 @@ export function BlocoIbsCbs({
                 Quanto esta empresa vai pagar
               </div>
 
-              <div style={{ fontSize: "0.78rem", color: C.texto, lineHeight: 1.5 }}>
-                <strong>Ficando por dentro: o DAS não muda</strong> — {brl(r.imposto.porDentro.dasAnual)} por ano,
-                o mesmo de hoje.
-              </div>
-              {/* ⚠ É a afirmação mais valiosa do bloco, e ela é MEDIÇÃO: as alíquotas nominais e as
-                  parcelas a deduzir dos Anexos são as mesmas de 2026 (travado no gerador). */}
+              {/*
+                ⚠⚠ ESTA FRASE ERA CRAVADA ("o DAS não muda") E É FALSA NA 6ª FAIXA — a alíquota
+                nominal do Anexo cai 0,10 pp em 2027-2028 nos cinco anexos, e volta em 2029. Hoje
+                ela vem de `mudaEmRelacaoAHoje`, que é MEDIDO contra a tabela vigente.
+                ⚠ No caso que muda a tela **não inventa o DAS novo**: ele depende do RBT12, que esta
+                simulação não recebe. Ela diz o que muda, o sentido, e que o número não foi calculado.
+              */}
+              {r.imposto.porDentro.mudaEmRelacaoAHoje ? (
+                <div style={{ fontSize: "0.78rem", color: C.texto, lineHeight: 1.5 }}>
+                  <strong>Ficando por dentro: nesta faixa o DAS muda — para menos.</strong> Hoje ele é{" "}
+                  {brl(r.imposto.porDentro.dasAnual)} por ano; o valor de 2027-2028 não é calculado aqui.
+                </div>
+              ) : (
+                <div style={{ fontSize: "0.78rem", color: C.texto, lineHeight: 1.5 }}>
+                  <strong>Ficando por dentro: o DAS não muda</strong> — {brl(r.imposto.porDentro.dasAnual)} por ano,
+                  o mesmo de hoje.
+                </div>
+              )}
               <div style={{ fontSize: "0.72rem", color: C.muted, lineHeight: 1.5 }}>
                 {r.imposto.porDentro.explicacao} Dentro dele,{" "}
                 <strong>{brl(r.imposto.porDentro.cbsDentroDoDas)}</strong> é CBS

@@ -13,9 +13,23 @@
 // de teste "não serão aplicadas em relação às operações dos contribuintes optantes pelo Simples
 // Nacional".
 //
-// ⚠ As alíquotas NOMINAIS e as parcelas a deduzir NÃO mudaram. O que mudou foi a REPARTIÇÃO:
-// COFINS + PIS deram lugar a CBS, e uma fatia pequena virou IBS (Anexo I, 1ª faixa:
-// CBS 15,33% + IBS 0,17% = os 15,50% que eram COFINS 12,74% + PIS 2,76%).
+// ⚠⚠ AS PARCELAS A DEDUZIR NÃO MUDARAM, E AS ALÍQUOTAS NOMINAIS MUDARAM NA 6ª FAIXA — 0,10 ponto
+// a menos, nos CINCO anexos, e só na vigência 1º/1/2027 a 31/12/2028 (a lei já traz a tabela de
+// 2029, em que ela volta ao valor de hoje):
+//
+//     anexo   2026      2027-2028   2029+
+//     I       19,00%    18,90%      19,00%
+//     II      30,00%    29,90%      30,00%
+//     III     33,00%    32,90%      33,00%
+//     IV      33,00%    32,90%      33,00%
+//     V       30,50%    30,40%      30,50%
+//
+// ⚠ Nas faixas 1 a 5 nada muda, e é por isso que a frase "o DAS não muda" vale para quase toda a
+// carteira — mas NÃO para todo mundo. Quem a afirmar sem olhar a faixa põe um número errado num PDF.
+//
+// O que mudou em TODAS as faixas foi a REPARTIÇÃO: COFINS + PIS deram lugar a CBS, e uma fatia
+// pequena virou IBS (Anexo I, 1ª faixa: CBS 15,33% + IBS 0,17% = os 15,50% que eram COFINS 12,74%
+// + PIS 2,76%).
 //
 // ⚠ As COLUNAS diferem por anexo: o II tem IPI, o IV NÃO tem CPP (patronal por fora, art. 13
 // § 5º-C) e o I não tem ISS. Ler por índice em vez de por nome é como se erra isso.

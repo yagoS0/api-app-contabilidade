@@ -133,7 +133,30 @@ describe("⚠⚠⚠ QUANTO A EMPRESA PAGA — defeito relatado pelo dono em 01/0
     expect(within(bloco()).getByText(/Quanto esta empresa vai pagar/i)).toBeInTheDocument();
     // ⚠ `getAllByText`: a frase aparece no destaque E na explicação logo abaixo — de
     // propósito, porque a segunda é a que diz POR QUE ele não muda.
+    // ⚠⚠ E ela vale porque esta receita cai numa faixa que NÃO muda. Ver o caso da 6ª faixa abaixo.
     expect(within(bloco()).getAllByText(/o DAS não muda/i).length).toBeGreaterThan(0);
+  });
+
+  it("⚠⚠ na 6ª FAIXA a tela para de dizer «não muda» — lá a nominal do Anexo cai 0,10 pp", () => {
+    // A frase era CRAVADA no componente e é falsa acima de R$ 3,6 mi de RBT12: a lei baixa a
+    // alíquota nominal da 6ª faixa em 2027-2028 (e a devolve em 2029). Um "não muda" ali afirmaria
+    // um número errado no PDF que vai ao cliente.
+    montar();
+    comReceita("400000000"); // R$ 4.000.000,00 — 6ª faixa
+    irPara("2027–2028");
+    expect(within(bloco()).getByText(/o DAS muda — para menos/i)).toBeInTheDocument();
+    expect(within(bloco()).queryByText(/Ficando por dentro: o DAS não muda/i)).toBeNull();
+  });
+
+  it("⚠ e ali ela NÃO inventa o DAS novo — diz que não foi calculado, e por quê", () => {
+    montar();
+    comReceita("400000000");
+    irPara("2027–2028");
+    // ⚠ Contra o `textContent` do bloco: a explicação é um nó de texto no meio de `<strong>`s, e o
+    // `getByText` casaria com o elemento inteiro, não com o trecho.
+    expect(bloco().textContent).toMatch(/não é calculado aqui/i);
+    expect(bloco().textContent).toMatch(/33,00%/);
+    expect(bloco().textContent).toMatch(/32,90%/);
   });
 
   it("⚠ e mostra quanto DO DAS já é CBS e IBS", () => {

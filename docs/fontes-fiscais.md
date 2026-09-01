@@ -589,9 +589,29 @@ para o PDF do planejamento.
 
 ⚠ **Não foi a LC 227/2026 que reescreveu os Anexos** — ela não toca em Anexo nenhum da LC 123.
 ⚠ **Em 2026 valem os Anexos ANTIGOS**, sem CBS e sem IBS na partilha.
-⚠ As **alíquotas nominais e as parcelas a deduzir NÃO mudaram** (Anexo I: 4,00% · 7,30% · 9,50% ·
-10,70% · 14,30% · 18,90%). O que mudou foi a **repartição**: `COFINS` + `PIS` deram lugar a `CBS`, e
-uma fatia pequena virou `IBS` (Anexo I, 1ª faixa: CBS 15,33% + IBS 0,17% = os 15,50% que eram
+⚠⚠ **AS PARCELAS A DEDUZIR NÃO MUDARAM; AS ALÍQUOTAS NOMINAIS MUDARAM NA 6ª FAIXA.** Esta linha
+dizia *"as alíquotas nominais e as parcelas a deduzir NÃO mudaram"* e **listava 18,90%** como
+prova — contra os **19,00%** de hoje. O número estava lido certo e a frase estava errada; ela se
+propagou para o dado gerado, para a lib, para a tela e para um teste, virando *"o DAS não muda"*
+num PDF que vai ao cliente. Corrigida em 01/09/2026.
+
+O que a fonte diz (Anexos do art. 519, cada tabela com a **vigência escrita** no próprio texto):
+
+| anexo | 2026 | **1º/1/2027 a 31/12/2028** | a partir de 1º/1/2029 |
+|---|---|---|---|
+| I | 19,00% | **18,90%** | 19,00% |
+| II | 30,00% | **29,90%** | 30,00% |
+| III | 33,00% | **32,90%** | 33,00% |
+| IV | 33,00% | **32,90%** | 33,00% |
+| V | 30,50% | **30,40%** | 30,50% |
+
+⚠ **As faixas 1 a 5 são idênticas** (alíquota e parcela a deduzir), e é por isso que *"o DAS não
+muda"* vale para quase toda a carteira — mas **não para todo mundo**. Na 6ª faixa o DAS muda, para
+menos. ⚠ E a queda é **temporária**: a lei já traz a tabela de 2029, em que a 6ª faixa volta ao valor
+de hoje.
+
+O que mudou em TODAS as faixas foi a **repartição**: `COFINS` + `PIS` deram lugar a `CBS`, e uma
+fatia pequena virou `IBS` (Anexo I, 1ª faixa: CBS 15,33% + IBS 0,17% = os 15,50% que eram
 COFINS 12,74% + PIS 2,76%).
 ⚠ **As tabelas ainda NÃO estão no código** — ver a ressalva de extração em `docs/reforma-consumo/`.
 

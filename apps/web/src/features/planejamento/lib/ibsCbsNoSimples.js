@@ -30,6 +30,12 @@
 //     O dado gerado grava essas colunas como `null` — e `null` aqui NÃO é zero.
 
 import { ANEXOS_SIMPLES_2027, VIGENCIA_ANEXOS_2027 } from "./anexosSimples2027.data";
+// ⚠ A tabela VIGENTE (2026). Ela entra aqui para que "o DAS muda?" seja MEDIDO contra ela, e não
+// afirmado por um literal — ver `mudancaDaNominal`.
+import { ANEXOS } from "./tabelasFiscais";
+
+/** `18.9` → `"18,90%"`. Duas casas porque é como a lei imprime a alíquota. */
+const fmtPct = (n) => `${Number(n).toFixed(2).replace(".", ",")}%`;
 
 /** Os dois cenários que a tela sabe responder. Lista FECHADA. */
 export const CENARIO = Object.freeze({
@@ -207,6 +213,55 @@ export function transferidoPorFora({ cbsEstimadaPct }) {
  *
  * @returns {object|null} `null` sem os insumos — nunca um número por omissão.
  */
+/**
+ * ⚠⚠ A 6ª FAIXA MUDA DE ALÍQUOTA EM 2027-2028, E ISSO QUASE VIROU UMA MENTIRA NO PDF.
+ *
+ * Esta função existia como a constante `mudaEmRelacaoAHoje: false`, cravada, com a frase *"as
+ * alíquotas nominais e as parcelas a deduzir dos Anexos são as mesmas de hoje"*. **Ela é falsa na
+ * 6ª faixa dos CINCO anexos**, e o erro nasceu de uma frase, não de um número: o gerador leu a
+ * fonte certo (`18,90` está no literal dele desde sempre) e o comentário ao lado dizia "as nominais
+ * NÃO mudaram" — essa frase se propagou para o dado, a doc, a lib, a tela e o teste.
+ *
+ * Medido na fonte versionada (`docs/reforma-consumo/lcp214.htm`, os Anexos do art. 519), a 6ª faixa
+ * cai **0,10 ponto percentual** em 2027-2028 e **volta ao valor de hoje em 2029** — a lei já traz
+ * as duas tabelas, com as vigências escritas:
+ *
+ *     anexo   2026      1º/1/2027 a 31/12/2028    a partir de 1º/1/2029
+ *     I       19,00%    18,90%                    19,00%
+ *     II      30,00%    29,90%                    30,00%
+ *     III     33,00%    32,90%                    33,00%
+ *     IV      33,00%    32,90%                    33,00%
+ *     V       30,50%    30,40%                    30,50%
+ *
+ * ⚠⚠ AS FAIXAS 1 A 5 NÃO MUDAM — nem alíquota nem parcela a deduzir. Ou seja, a afirmação valiosa
+ * ("ficar como está não aumenta o imposto") continua verdadeira para a esmagadora maioria da
+ * carteira; o que não se podia é dizê-la para TODO MUNDO.
+ *
+ * ⚠ A comparação é MEDIDA a cada chamada, contra as duas tabelas. Um literal aqui seria a mesma
+ * frase cravada de novo, com outra roupa.
+ */
+export function mudancaDaNominal(anexo, faixa) {
+  const hoje = ANEXOS[anexo]?.faixas?.[Number(faixa) - 1];
+  const dep = ANEXOS_SIMPLES_2027[anexo]?.faixas?.[Number(faixa) - 1];
+  if (!hoje || !dep) return null;
+
+  // ⚠ Unidades DIFERENTES nas duas tabelas: a de hoje guarda FRAÇÃO (`0.1900`) e a de 2027 guarda
+  // PONTOS PERCENTUAIS (`18.9`). Comparar cru daria "mudou" em todas as faixas — e o arredondamento
+  // é a 2 casas porque é assim que a lei imprime.
+  const nominalHoje = Number((hoje.aliquota * 100).toFixed(2));
+  const nominal2027 = Number(Number(dep.aliquota).toFixed(2));
+  const deduzirHoje = Number(hoje.pd);
+  const deduzir2027 = Number(dep.deduzir);
+
+  return {
+    nominalHoje,
+    nominal2027,
+    deduzirHoje,
+    deduzir2027,
+    mudou: nominalHoje !== nominal2027 || deduzirHoje !== deduzir2027,
+  };
+}
+
 export function impostoDaEmpresa({
   anexo, faixa, aliquotaEfetivaPct, dasAnual, receitaAnual, cbsEstimadaPct,
 }) {
@@ -225,15 +280,39 @@ export function impostoDaEmpresa({
     ? Number(((receita * porFora.totalPct) / 100).toFixed(2))
     : null;
 
+  // ⚠⚠ MEDIDO, nunca cravado — ver `mudancaDaNominal`.
+  const mudanca = mudancaDaNominal(anexo, faixa);
+  const muda = mudanca ? mudanca.mudou : false;
+
   return {
     porDentro: {
       dasAnual: das,
-      // ⚠⚠ A afirmação que o contador precisa ouvir, e ela é PROVÁVEL, não estimada.
-      mudaEmRelacaoAHoje: false,
-      explicacao:
-        "O DAS não muda: as alíquotas nominais e as parcelas a deduzir dos Anexos são as mesmas "
-        + "de hoje. O que muda é a repartição interna — onde havia COFINS e PIS, passa a haver CBS "
-        + "e uma fatia de IBS.",
+      /**
+       * ⚠⚠ A afirmação que o contador precisa ouvir — e ela NÃO vale para todo mundo.
+       *
+       * Nas faixas 1 a 5 o DAS realmente não muda. Na **6ª faixa** a alíquota nominal cai 0,10 pp
+       * em 2027-2028 (e volta em 2029), então o DAS muda — para MENOS. Dizer "não muda" ali seria
+       * afirmar um número errado num papel que vai ao cliente.
+       */
+      mudaEmRelacaoAHoje: muda,
+      /**
+       * ⚠⚠ O NOVO DAS **NÃO É CALCULADO AQUI**, e a ausência é deliberada: a alíquota EFETIVA sai de
+       * `(RBT12 × nominal − parcela a deduzir) / RBT12`, e esta função não recebe o RBT12 — recebe a
+       * efetiva já pronta. Recompor o RBT12 a partir da receita anual seria supor que os dois são o
+       * mesmo número, o que é falso em início de atividade (o RBT12 é proporcionalizado). O que a
+       * tela afirma é a MUDANÇA e o sentido dela; o número novo exigiria um dado que ela não tem.
+       */
+      novoDasNaoCalculado: muda,
+      mudanca,
+      explicacao: muda
+        ? "O DAS muda, e para MENOS: nesta faixa a alíquota nominal do Anexo cai de "
+          + `${fmtPct(mudanca.nominalHoje)} para ${fmtPct(mudanca.nominal2027)} em 2027-2028 `
+          + `(e volta a ${fmtPct(mudanca.nominalHoje)} a partir de 2029). A parcela a deduzir não `
+          + "muda. O valor novo não é calculado aqui porque depende do RBT12, que esta simulação "
+          + "não recebe."
+        : "O DAS não muda: nesta faixa a alíquota nominal e a parcela a deduzir do Anexo são as "
+          + "mesmas de hoje. O que muda é a repartição interna — onde havia COFINS e PIS, passa a "
+          + "haver CBS e uma fatia de IBS.",
       cbsDentroDoDas: Number(((das * credito.percentualCbs) / 100).toFixed(2)),
       ibsDentroDoDas: credito.percentualIbs == null
         ? null

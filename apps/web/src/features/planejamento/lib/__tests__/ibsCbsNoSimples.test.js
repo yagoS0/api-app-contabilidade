@@ -9,10 +9,12 @@ import {
   OPCAO_POR_FORA,
   creditoPorDentro,
   impostoDaEmpresa,
+  mudancaDaNominal,
   transferidoPorFora,
   ibsCbsDoSimples,
 } from "../ibsCbsNoSimples";
 import { ANEXOS_SIMPLES_2027 } from "../anexosSimples2027.data";
+import { ANEXOS } from "../tabelasFiscais";
 
 describe("⚠⚠ 2026: para o optante, IBS e CBS são ZERO — e é a lei que diz", () => {
   it("o cenário de 2026 responde ZERO com fundamento, nunca 'não deu para calcular'", () => {
@@ -209,8 +211,84 @@ describe("⚠⚠ o DADO GERADO continua sendo o que a lei diz", () => {
     expect(ANEXOS_SIMPLES_2027.II.colunas).toContain("IPI");
   });
 
-  it("as alíquotas NOMINAIS não mudaram em relação a 2026", () => {
+  it("⚠⚠ as nominais das faixas 1 a 5 não mudaram — e a 6ª MUDOU", () => {
+    // ⚠⚠ ESTE TESTE SE CHAMAVA "as alíquotas NOMINAIS não mudaram em relação a 2026" E O TÍTULO
+    // MENTIA: ele comparava contra um literal que JÁ trazia `18.9`, ou seja afirmava a igualdade
+    // enquanto media a diferença. Passava verde sobre a frase errada.
     expect(ANEXOS_SIMPLES_2027.I.faixas.map((f) => f.aliquota)).toEqual([4, 7.3, 9.5, 10.7, 14.3, 18.9]);
+    expect(ANEXOS.I.faixas[5].aliquota * 100).toBeCloseTo(19, 2); // hoje
+    expect(ANEXOS_SIMPLES_2027.I.faixas[5].aliquota).toBeCloseTo(18.9, 2); // 2027-2028
+  });
+});
+
+describe("⚠⚠⚠ O DAS MUDA NA 6ª FAIXA — a frase mais valiosa da tela não valia para todo mundo", () => {
+  // Medido na fonte versionada (`docs/reforma-consumo/lcp214.htm`, Anexos do art. 519): a 6ª faixa
+  // cai 0,10 pp na vigência 1º/1/2027–31/12/2028 e VOLTA ao valor de hoje a partir de 1º/1/2029.
+  // A lei traz as duas tabelas, com as vigências escritas. Nas faixas 1 a 5 nada muda.
+  const SEXTA = { I: [19, 18.9], II: [30, 29.9], III: [33, 32.9], IV: [33, 32.9], V: [30.5, 30.4] };
+
+  it.each(Object.keys(SEXTA))("Anexo %s: faixas 1 a 5 idênticas — alíquota E parcela a deduzir", (anexo) => {
+    for (let faixa = 1; faixa <= 5; faixa += 1) {
+      const m = mudancaDaNominal(anexo, faixa);
+      expect(m.mudou).toBe(false);
+      expect(m.nominal2027).toBeCloseTo(m.nominalHoje, 2);
+      expect(m.deduzir2027).toBe(m.deduzirHoje);
+    }
+  });
+
+  it.each(Object.entries(SEXTA))("Anexo %s: a 6ª faixa cai de %s para o valor de 2027-2028", (anexo, [hoje, dep]) => {
+    const m = mudancaDaNominal(anexo, 6);
+    expect(m.mudou).toBe(true);
+    expect(m.nominalHoje).toBeCloseTo(hoje, 2);
+    expect(m.nominal2027).toBeCloseTo(dep, 2);
+    // ⚠ A PARCELA A DEDUZIR NÃO MUDA — é o que faz a diferença ser exatamente a alíquota.
+    expect(m.deduzir2027).toBe(m.deduzirHoje);
+  });
+
+  it("⚠ a queda é de 0,10 ponto percentual, nos CINCO — não é ruído de leitura", () => {
+    for (const anexo of Object.keys(SEXTA)) {
+      const m = mudancaDaNominal(anexo, 6);
+      expect(Number((m.nominalHoje - m.nominal2027).toFixed(2))).toBe(0.1);
+    }
+  });
+
+  it("⚠ anexo ou faixa que não existem devolvem `null` — nunca «não mudou» por omissão", () => {
+    expect(mudancaDaNominal("IX", 1)).toBeNull();
+    expect(mudancaDaNominal("I", 9)).toBeNull();
+    expect(mudancaDaNominal(undefined, undefined)).toBeNull();
+  });
+});
+
+describe("⚠⚠⚠ e a TELA deixa de afirmar «o DAS não muda» para quem ele muda", () => {
+  const base = { anexo: "III", faixa: 1, aliquotaEfetivaPct: 6, dasAnual: 6000, receitaAnual: 100000 };
+
+  it("faixa 1: continua dizendo que não muda — vale para a maioria da carteira", () => {
+    const r = impostoDaEmpresa(base);
+    expect(r.porDentro.mudaEmRelacaoAHoje).toBe(false);
+    expect(r.porDentro.explicacao).toMatch(/não muda/i);
+    expect(r.porDentro.novoDasNaoCalculado).toBe(false);
+  });
+
+  it("⚠⚠ 6ª faixa: diz que MUDA, para menos, e nomeia as duas alíquotas", () => {
+    const r = impostoDaEmpresa({ ...base, faixa: 6, aliquotaEfetivaPct: 30, dasAnual: 30000 });
+    expect(r.porDentro.mudaEmRelacaoAHoje).toBe(true);
+    expect(r.porDentro.explicacao).toMatch(/muda, e para MENOS/i);
+    expect(r.porDentro.explicacao).toContain("33,00%");
+    expect(r.porDentro.explicacao).toContain("32,90%");
+  });
+
+  it("⚠⚠ e ela NÃO inventa o DAS novo — ele depende do RBT12, que esta simulação não recebe", () => {
+    // Recompor o RBT12 a partir da receita anual suporia que os dois são o mesmo número, o que é
+    // falso em início de atividade (o RBT12 é proporcionalizado). Melhor ausência que número torto.
+    const r = impostoDaEmpresa({ ...base, faixa: 6, aliquotaEfetivaPct: 30, dasAnual: 30000 });
+    expect(r.porDentro.novoDasNaoCalculado).toBe(true);
+    expect(r.porDentro.dasAnual).toBe(30000); // o de HOJE, e a frase diz que é o de hoje
+    expect(r.porDentro.explicacao).toMatch(/não é calculado aqui/i);
+  });
+
+  it("⚠ a explicação diz que em 2029 volta ao valor de hoje — a lei já traz a tabela", () => {
+    const r = impostoDaEmpresa({ ...base, faixa: 6, aliquotaEfetivaPct: 30, dasAnual: 30000 });
+    expect(r.porDentro.explicacao).toMatch(/2029/);
   });
 });
 
