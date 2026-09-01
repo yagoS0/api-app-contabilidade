@@ -442,6 +442,49 @@ describe("⚠ o modo %", () => {
     await irAoHorizonte();
     expect(screen.getByRole("button", { name: "%" }).getAttribute("aria-pressed")).toBe("true");
   });
+
+  /**
+   * ⚠⚠ A BASE DO PERCENTUAL DE UM DIA É A ENTRADA DO **MÊS** (01/09/2026).
+   *
+   * > Dono, com a tela na frente: *"ao clicar em porcentagem os dias saem, mas deveriam se
+   * > transformar em porcentagem"*.
+   *
+   * O defeito: cada linha de dia usava a PRÓPRIA entrada como denominador — e quase nenhum dia tem
+   * entrada (ela cai no dia 1) —, então no modo % toda célula de imposto/folha dos dias virava
+   * traço "sem base" e a tabela parecia esvaziar. Só o rodapé convertia.
+   *
+   * ⚠ Com a base do mês, o dia mostra a FATIA dele no MESMO denominador do rodapé — e as fatias
+   * SOMAM para o total, que é o que uma coluna de percentuais promete. Conferido no navegador com
+   * o mock: sem dia 16,0% + dia 20 8,7% = os 24,7% do rodapé.
+   */
+  it("⚠⚠ na visão de DIAS, a linha com imposto vira percentual — sobre a entrada do MÊS", async () => {
+    await abrir(cheio());
+    await clicar("%");
+    const bloco = blocoDe("2026-08");
+
+    // A linha "sem dia" (INSS + folha, nenhuma entrada própria) mostra percentual, não traço.
+    const semDia = bloco.querySelector('tr[data-linha-sem-dia="sim"]');
+    expect(semDia.textContent).toMatch(/%/);
+    expect(semDia.textContent).not.toMatch(/sem base para calcular/);
+
+    // ⚠ E o denominador é o do rodapé: a fatia do dia nunca passa do total do mês.
+    const rodape = bloco.querySelector("tfoot tr");
+    const pct = (texto) => (texto.match(/(\d+[.,]\d+)%/g) || []).map((x) => Number(x.replace("%", "").replace(",", ".")));
+    const doRodape = pct(rodape.textContent);
+    const daLinha = pct(semDia.textContent);
+    expect(doRodape.length).toBeGreaterThan(0);
+    expect(daLinha.length).toBeGreaterThan(0);
+    expect(Math.max(...daLinha)).toBeLessThanOrEqual(Math.max(...doRodape) + 0.05);
+  });
+
+  it("⚠ e Entrada/Resultado do DIA continuam em R$ — a regra fechada não mudou de alcance", async () => {
+    await abrir(cheio());
+    await clicar("%");
+    const dia1 = linhaDe("^dia 01", blocoDe("2026-08"));
+    const [entrada, , , , resultado] = celulas(dia1);
+    expect(entrada).not.toMatch(/%/);
+    expect(resultado).not.toMatch(/%/);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────

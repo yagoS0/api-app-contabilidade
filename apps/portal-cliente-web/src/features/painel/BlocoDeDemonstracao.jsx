@@ -254,8 +254,24 @@ function Celula({ celula, coluna, unidade, entradaDoPeriodo, aoAbrir, rotuloDoPe
   );
 }
 
-/** As cinco células de uma linha — mês ou dia, o mesmo desenho. */
-function CelulasDoPeriodo({ linha, unidade, comFolha, aoAbrir, rotuloDoPeriodo }) {
+/**
+ * As cinco células de uma linha — mês ou dia, o mesmo desenho.
+ *
+ * ⚠⚠ `entradaDaBase` — A BASE DO PERCENTUAL DE UM DIA É A ENTRADA DO **MÊS** (01/09/2026).
+ *
+ * > Dono: *"ao clicar em porcentagem os dias saem, mas deveriam se transformar em porcentagem"*.
+ *
+ * O defeito: cada linha de dia usava a PRÓPRIA entrada como denominador — e quase nenhum dia tem
+ * entrada (ela cai no dia 1), então no modo `%` toda célula de imposto/folha dos dias virava traço
+ * ("sem base") e a tabela parecia esvaziar. Só o rodapé convertia.
+ *
+ * ⚠ Com a entrada do MÊS como base, o dia mostra a FATIA dele no mesmo denominador do rodapé — e
+ * os dias SOMAM para o total, que é o que uma coluna de percentuais promete. Denominadores
+ * diferentes por linha somariam para nada.
+ * ⚠ O rodapé não passa a prop: a linha dele É o mês, e a base cai na própria entrada.
+ * ⚠ Mês sem entrada continua traço em TODAS as linhas — dividir por zero segue proibido (§3.6).
+ */
+function CelulasDoPeriodo({ linha, unidade, comFolha, aoAbrir, rotuloDoPeriodo, entradaDaBase }) {
   return COLUNAS
     .filter((c) => comFolha || c.chave !== "folha")
     .map((c) => (
@@ -264,7 +280,7 @@ function CelulasDoPeriodo({ linha, unidade, comFolha, aoAbrir, rotuloDoPeriodo }
         celula={linha[c.chave]}
         coluna={c.chave}
         unidade={unidade}
-        entradaDoPeriodo={linha.entrada}
+        entradaDoPeriodo={entradaDaBase !== undefined ? entradaDaBase : linha.entrada}
         aoAbrir={aoAbrir}
         rotuloDoPeriodo={rotuloDoPeriodo}
       />
@@ -415,6 +431,7 @@ function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir, diaDeHoje 
                   comFolha={comFolha}
                   aoAbrir={(coluna) => aoAbrir?.(null, coluna)}
                   rotuloDoPeriodo="sem dia"
+                  entradaDaBase={totalDoMes.entrada}
                 />
               </tr>
             ) : null}
@@ -433,6 +450,7 @@ function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir, diaDeHoje 
                   comFolha={comFolha}
                   aoAbrir={(coluna) => aoAbrir?.(d.dia, coluna)}
                   rotuloDoPeriodo={`dia ${String(d.dia).padStart(2, "0")}`}
+                  entradaDaBase={totalDoMes.entrada}
                 />
               </tr>
             ))}
