@@ -36,7 +36,7 @@ const apuracao = (extra = {}) => ({
   dasRetornadoSerpro: "600.00", dasSimuladoSerpro: null, ...extra,
 });
 
-function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo = null, erroNaSerie = null, primeiraNota = undefined, folhas = [], contasDeFolha = [], apuradas = [], transmitidas = [], saidasDoCliente = null } = {}) {
+function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo = null, erroNaSerie = null, primeiraNota = undefined, folhas = [], contasDeFolha = [], apuradas = [], transmitidas = [], saidasDoCliente = null, despesas = [] } = {}) {
   return {
     portalClient: { findUnique: jest.fn(async () => ({ id: "emp-1", prazoRecebimentoMeses: prazo })) },
     guide: { findMany: jest.fn(async () => guias) },
@@ -69,7 +69,17 @@ function clientDe({ guias = [], notas = [], series = [], snapshot = null, prazo 
     // ⚠ As duas tabelas que a FOLHA lê. Elas existem no dublê mesmo quando o caso não fala de
     // folha, porque `derivarFolha12m` NÃO tem `catch`: método faltando derruba a suíte inteira, que
     // é exatamente o que se quer se alguém trocar a leitura por uma que engole erro.
-    accountingEntry: { findMany: jest.fn(async () => folhas) },
+    /**
+     * ⚠⚠ O DUBLÊ FILTRA POR `tipo`, e isso deixou de ser detalhe em 01/09/2026.
+     *
+     * Desde que a DESPESA lançada passou a alimentar o fluxo, este delegate é lido DUAS vezes com
+     * `where.tipo` diferente. Um dublê que devolvesse a mesma lista para os dois faria a folha
+     * aparecer também como despesa — o mesmo dinheiro contado duas vezes — e a asserção passaria.
+     * É a mesma lição que o filtro de `estado` das saídas já carrega logo abaixo.
+     */
+    accountingEntry: {
+      findMany: jest.fn(async ({ where } = {}) => (where?.tipo === "DESPESA" ? despesas : folhas)),
+    },
     chartOfAccount: { findMany: jest.fn(async () => contasDeFolha) },
     /**
      * ⚠⚠ AS SAÍDAS QUE O CLIENTE ACRESCENTOU.
@@ -1035,5 +1045,148 @@ describe("⚠⚠ a saída do cliente entra no fluxo", () => {
   it("⚠ com o delegate presente, a indisponibilidade some", async () => {
     const r = await montar(clientDe({ saidasDoCliente: [] }));
     expect(r.saidasDoClienteIndisponiveis).toBe(false);
+  });
+});
+
+describe("⚠⚠⚠ A DESPESA LANÇADA ENTRA NO FLUXO — decisão do dono, 01/09/2026", () => {
+  // > *"tudo que virar lançamento deve entrar no fluxo"* … *"nessa linha podemos adicionar a conta
+  // > e lançar, **ao lançar entra no fluxo**"*.
+  //
+  // ⚠⚠ ANTES DISTO A REGRA NÃO VALIA, e foi medição que mostrou: este serviço lia `accountingEntry`
+  // **apenas com `tipo: "FOLHA"`**. A despesa que o contador lança na Conferência — o trabalho
+  // principal daquela tela — não aparecia no fluxo do cliente em lugar nenhum.
+
+  const CAIXA_C = { codigo: "5", codigoCompleto: "111010001", portalClientId: null };
+  const DESPESA_C = { codigo: "401", codigoCompleto: "411020001", portalClientId: null };
+
+  const despesaLancada = (extra = {}) => ({
+    competencia: "2026-09",
+    historico: "GOOGLE CLOUD BRASIL",
+    data: new Date("2026-09-18T00:00:00.000Z"),
+    lines: [
+      { tipo: "D", valor: "1500.00", conta: "401" },
+      { tipo: "C", valor: "1500.00", conta: "5" },
+    ],
+    ...extra,
+  });
+
+  const comDespesa = (despesas) => clientDe({ despesas, contasDeFolha: [CAIXA_C, DESPESA_C] });
+  const linhasDeDespesa = (r) => linhasDe(r, "DESPESA_LANCADA");
+
+  it("⚠⚠ ela aparece no fluxo, com fonte própria", async () => {
+    const r = await montar(comDespesa([despesaLancada()]));
+    expect(linhasDeDespesa(r)).toHaveLength(1);
+  });
+
+  it("⚠⚠ como FATO — a partida dobrada prova que o dinheiro saiu", async () => {
+    // O lançamento de despesa desta casa é `D despesa / C caixa`: ele AFIRMA a saída do dinheiro.
+    // Chamá-lo de previsão faria o dono somá-lo ao que ainda vai acontecer.
+    const r = await montar(comDespesa([despesaLancada()]));
+    expect(linhasDeDespesa(r)[0].procedencia).toBe("FATO");
+  });
+
+  it("⚠ no DIA do lançamento, e é ele que a data do lançamento afirma", async () => {
+    const r = await montar(comDespesa([despesaLancada()]));
+    const l = linhasDeDespesa(r)[0];
+    expect(l.competencia).toBe("2026-09");
+    expect(l.dia).toBe(18);
+  });
+
+  it("⚠ e como SAÍDA, com o valor da perna que credita caixa", async () => {
+    const r = await montar(comDespesa([despesaLancada()]));
+    expect(linhasDeDespesa(r)[0].direcao).toBe("SAIDA");
+    expect(linhasDeDespesa(r)[0].valor).toBe(1500);
+  });
+
+  it("⚠⚠ lançamento que NÃO credita caixa fica de fora — não é saída de dinheiro", async () => {
+    // Uma reclassificação entre contas de despesa existe no razão e não tem lugar no fluxo.
+    const semCaixa = despesaLancada({
+      lines: [
+        { tipo: "D", valor: "1500.00", conta: "401" },
+        { tipo: "C", valor: "1500.00", conta: "401" },
+      ],
+    });
+    const r = await montar(comDespesa([semCaixa]));
+    expect(linhasDeDespesa(r)).toHaveLength(0);
+  });
+
+  it("⚠⚠ quem diz que a conta é CAIXA é o `codigoCompleto`, nunca o reduzido", async () => {
+    // O reduzido `5` é CAIXA enquanto o COMPLETO `5` é IRPJ/CSLL — 41 contas do plano têm os dois
+    // apontando para grupos diferentes, e trocar inverte despesa com imposto sem erro nenhum.
+    const naoEhCaixa = { codigo: "5", codigoCompleto: "5", portalClientId: null };
+    const r = await montar(clientDe({
+      despesas: [despesaLancada()],
+      contasDeFolha: [naoEhCaixa, DESPESA_C],
+    }));
+    expect(linhasDeDespesa(r)).toHaveLength(0);
+  });
+
+  it("⚠⚠ a FOLHA não é lida como despesa — são duas perguntas diferentes", async () => {
+    // O dublê filtra por `tipo` de propósito: sem isso, a folha apareceria também como despesa e o
+    // mesmo dinheiro seria contado duas vezes, com o teste passando.
+    const r = await montar(clientDe({
+      folhas: [despesaLancada({ historico: "PAGO PRO-LAB 08/2026" })],
+      despesas: [],
+      contasDeFolha: [CAIXA_C, DESPESA_C],
+    }));
+    expect(linhasDeDespesa(r)).toHaveLength(0);
+  });
+
+  it("⚠ a frase da linha traz o histórico do razão, cru", async () => {
+    // É o nome do fornecedor — é ele que faz o cliente reconhecer a linha.
+    const r = await montar(comDespesa([despesaLancada()]));
+    expect(linhasDeDespesa(r)[0].base.frase).toMatch(/GOOGLE CLOUD BRASIL/);
+  });
+});
+
+describe("⚠⚠⚠ e a saída LANCADA sai do fluxo — senão o mesmo dinheiro conta duas vezes", () => {
+  // ⚠ O aviso que pedia isto foi escrito no MESMO dia, horas antes: quando `LANCADA` entrou na
+  // lista, despesa ainda não alimentava o fluxo e tirá-la a faria SUMIR da tela do cliente. Agora o
+  // lançamento dela é uma linha por direito próprio.
+  const saida = (estado) => ({
+    id: "sa-1", data: new Date("2026-09-18T00:00:00.000Z"), valor: "3500.00",
+    descricao: "Reforma da sala", estado,
+  });
+  const doCliente = (r) => linhasDe(r, "SAIDA_DO_CLIENTE");
+
+  it("PENDENTE e CONFIRMADA continuam entrando", async () => {
+    const r = await montar(clientDe({ saidasDoCliente: [saida("PENDENTE"), saida("CONFIRMADA")] }));
+    expect(doCliente(r)).toHaveLength(2);
+  });
+
+  it("⚠⚠ LANCADA não entra mais — quem a representa agora é o lançamento", async () => {
+    const r = await montar(clientDe({ saidasDoCliente: [saida("LANCADA")] }));
+    expect(doCliente(r)).toHaveLength(0);
+  });
+
+  it("⚠ e RECUSADA segue fora, como sempre esteve", async () => {
+    const r = await montar(clientDe({ saidasDoCliente: [saida("RECUSADA")] }));
+    expect(doCliente(r)).toHaveLength(0);
+  });
+
+  it("⚠⚠ a linha NÃO some da tela: ela troca de fonte, de PREVISÃO para FATO", async () => {
+    // É a leitura que o cliente faz: "você acrescentou" vira "despesa lançada". Some a previsão,
+    // aparece o fato — e o total do mês não muda de tamanho por causa disso.
+    const r = await montar(clientDe({
+      saidasDoCliente: [saida("LANCADA")],
+      despesas: [{
+        competencia: "2026-09",
+        historico: "Reforma da sala",
+        data: new Date("2026-09-18T00:00:00.000Z"),
+        lines: [
+          { tipo: "D", valor: "3500.00", conta: "401" },
+          { tipo: "C", valor: "3500.00", conta: "5" },
+        ],
+      }],
+      contasDeFolha: [
+        { codigo: "5", codigoCompleto: "111010001", portalClientId: null },
+        { codigo: "401", codigoCompleto: "411020001", portalClientId: null },
+      ],
+    }));
+    expect(doCliente(r)).toHaveLength(0);
+    const lancadas = linhasDe(r, "DESPESA_LANCADA");
+    expect(lancadas).toHaveLength(1);
+    expect(lancadas[0].valor).toBe(3500);
+    expect(lancadas[0].procedencia).toBe("FATO");
   });
 });

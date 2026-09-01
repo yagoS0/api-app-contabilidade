@@ -155,6 +155,21 @@ export const FONTE = Object.freeze({
    * aparece como *"Origem desconhecida"*.
    */
   RECEITA_PROJETADA: "RECEITA_PROJETADA",
+  /**
+   * ⚠⚠ A DESPESA QUE O CONTADOR LANÇOU — decisão do dono, 01/09/2026: *"ao lançar entra no fluxo"*.
+   *
+   * ⚠⚠ ANTES DELA A REGRA NÃO VALIA: o serviço lia `accountingEntry` só com `tipo: "FOLHA"`, e a
+   * despesa lançada na Conferência — o trabalho principal daquela tela — não aparecia no fluxo do
+   * cliente em lugar nenhum.
+   *
+   * ⚠ Ela NÃO é `SAIDA_DO_CLIENTE`: aquela é um plano que o cliente escreveu e que não é
+   * contabilidade. Esta é lançamento contábil, com partida dobrada, e por isso é sempre
+   * `PROCEDENCIA.FATO` — o lançamento AFIRMA que o dinheiro saiu.
+   * ⚠ E não é `SERIE_DESPESA`: aquela é previsão detectada por repetição, sem documento atrás.
+   *
+   * ⚠ Cai no balde **`saida`** — nem impostos, nem folha.
+   */
+  DESPESA_LANCADA: "DESPESA_LANCADA",
 });
 
 /** Por que o DIA não é conhecido. ⚠ `dia: null` nunca vira "dia 20" — ele vem com o motivo. */

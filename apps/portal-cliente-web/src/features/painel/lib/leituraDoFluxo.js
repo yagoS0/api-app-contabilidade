@@ -65,6 +65,15 @@ export const FONTE = Object.freeze({
    */
   SAIDA_DO_CLIENTE: "SAIDA_DO_CLIENTE",
   /**
+   * ⚠⚠ A DESPESA QUE O CONTADOR LANÇOU — espelho de `FONTE` no servidor (01/09/2026).
+   *
+   * Sem esta entrada e sem o rótulo, a linha chegaria na tela como **"Origem desconhecida"** — e é
+   * a linha do trabalho principal da Conferência. Mudou lá, muda aqui.
+   * ⚠ Ela cai no balde `saida` por `direcao`, e é sempre `FATO`: o lançamento é
+   * `D despesa / C caixa`, ou seja a partida dobrada afirma que o dinheiro saiu.
+   */
+  DESPESA_LANCADA: "DESPESA_LANCADA",
+  /**
    * ⚠⚠ A RECEITA QUE O HISTÓRICO PROJETA (30/08/2026) — espelho de `FONTE` no servidor.
    *
    * ⚠ Sem esta entrada e sem o rótulo abaixo, a linha aparece como *"Origem desconhecida"* — sem
@@ -142,6 +151,7 @@ export const ROTULO_DA_FONTE = Object.freeze({
   // ⚠ O rótulo diz que é PREVISÃO e de onde ela sai. "Receita prevista" sozinho seria
   // indistinguível do recebimento de uma nota que existe.
   [FONTE.RECEITA_PROJETADA]: "Receita prevista pelo histórico",
+  [FONTE.DESPESA_LANCADA]: "Despesa lançada",
 });
 
 export function rotuloDaFonte(f) {
