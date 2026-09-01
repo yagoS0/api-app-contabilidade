@@ -46,6 +46,8 @@ import {
 import { CardRegime } from "../components/CardRegime";
 import { GaugeFatorR } from "../components/GaugeFatorR";
 import { TabelaComparativa } from "../components/TabelaComparativa";
+import { BlocoIbsCbs } from "../components/BlocoIbsCbs";
+import { CENARIO } from "../lib/ibsCbsNoSimples";
 import { PainelProLabore } from "../components/PainelProLabore";
 import { simularProLaboreParaFatorR } from "../lib/proLabore";
 import { montarComparativo } from "../lib/comparativoDeRegimes";
@@ -106,6 +108,13 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   // formulário na troca de empresa precisa dele, e estado declarado depois de quem o usa é o tipo
   // de coisa que funciona por closure e confunde quem lê.
   const [recusaDeColagem, setRecusaDeColagem] = useState(null); // { campo, texto }
+  // ⚠⚠ O CENÁRIO NASCE EM 2026, e isso é decisão: é o ano corrente, e a resposta dele — IBS e CBS
+  // são ZERO para o optante — é a que a maioria dos contadores precisa ver primeiro. Abrir em 2027
+  // mostraria um número que ainda depende de uma alíquota que não existe.
+  const [cenarioIbsCbs, setCenarioIbsCbs] = useState(CENARIO.EM_2026);
+  // ⚠ A CBS estimada NÃO tem padrão, nem "os 26,5% que circulam". Campo vazio é a verdade sobre um
+  // percentual que o Senado só fixa até 15/12/2026.
+  const [cbsEstimada, setCbsEstimada] = useState("");
 
   // ── SELETOR DE EMPRESA ────────────────────────────────────────────────────────────────────────
   // ⚠ A lista vem PRONTA de fora (`empresas`), da mesma leitura que o dashboard usa
@@ -189,6 +198,11 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     setCreditos("");
     setAbertos({});
     setRecusaDeColagem(null);
+    // ⚠ A CBS estimada é premissa DA SIMULAÇÃO, e sai junto com o resto — herdada, ela apareceria
+    // no PDF de outra empresa como se alguém a tivesse informado ali.
+    setCbsEstimada("");
+    // ⚠ O CENÁRIO NÃO se limpa: ele é a lente de quem está olhando, não dado da empresa. Zerá-lo
+    // jogaria o contador de volta para 2026 a cada troca, no meio de uma comparação.
   }, [empresaId]);
 
   // Modo carteira: pré-preenche com o que a empresa já tem. Editável — é cenário, não cadastro.
@@ -865,6 +879,37 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
                 composição, e é a composição que sustenta (ou derruba) a conclusão — inclusive a de
                 que "o Presumido compensa acima de X", que não vale para quem tem folha. */}
             {comparativo && <TabelaComparativa comparativo={comparativo} />}
+
+            {/* ⚠⚠ IBS/CBS — só para quem É (ou seria) optante pelo Simples. Este bloco responde a
+                decisão da janela de setembro, e a opção do art. 41, § 3º da LC 214 é do OPTANTE:
+                para uma empresa do Presumido ele não faz pergunta nenhuma, e mostrá-lo ali seria
+                oferecer uma decisão que ela não tem para tomar.
+                ⚠ A condição é o Simples ter sido CALCULADO — `indisponivel` (folha ausente numa
+                atividade de Fator R) significa que nem anexo nem faixa existem, e sem eles o
+                crédito não sai. */}
+            {(() => {
+              const simples = (resultado?.regimes || []).find(
+                (x) => /Simples/i.test(x.regime) && x.faixa != null && x.aliquotaEfetiva != null,
+              );
+              if (!simples) return null;
+              return (
+                <BlocoIbsCbs
+                  cenario={cenarioIbsCbs}
+                  aoTrocarCenario={setCenarioIbsCbs}
+                  cbsEstimada={cbsEstimada}
+                  aoMudarCbs={setCbsEstimada}
+                  anexo={resultado.anexoResolvido}
+                  faixa={simples.faixa}
+                  /* ⚠ `aliquotaEfetiva` é FRAÇÃO no motor (`das = aliquotaEfetiva × receita`) e o
+                     módulo trabalha em PONTOS PERCENTUAIS. A conversão é aqui, uma vez — passar a
+                     fração adiante daria um crédito cem vezes menor, e plausível. */
+                  aliquotaEfetivaPct={simples.aliquotaEfetiva * 100}
+                  cores={C}
+                  rotulo={rotulo}
+                  campo={campo}
+                />
+              );
+            })()}
 
             {resultado.fatorR && <GaugeFatorR fatorR={resultado.fatorR} economiaSeMudar={economiaAnexo} />}
 
