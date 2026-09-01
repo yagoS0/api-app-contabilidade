@@ -759,7 +759,17 @@ async function linhasDasSaidasDoCliente({ portalClientId, cicloAtual, janelaInic
     saidas = await client.saidaAvulsaCliente.findMany({
       where: {
         portalClientId: String(portalClientId),
-        estado: { in: [ESTADO_DA_SAIDA.PENDENTE, ESTADO_DA_SAIDA.CONFIRMADA] },
+        /**
+         * ⚠⚠ `LANCADA` ENTRA AQUI, e a inclusão é o oposto do que o instinto pede (01/09/2026).
+         *
+         * Medido: este serviço lê `accountingEntry` apenas com `tipo: "FOLHA"` — **lançamento de
+         * despesa NÃO alimenta o fluxo**. Se a saída lançada parasse de contribuir, ela SUMIRIA da
+         * tela do cliente, que é o contrário da regra do dono (*"tudo que virar lançamento deve
+         * entrar no fluxo"*).
+         * ⚠⚠ Quem um dia fizer a DESPESA alimentar o fluxo tem de TIRAR `LANCADA` desta lista, ou o
+         * mesmo valor passa a ser contado duas vezes.
+         */
+        estado: { in: [ESTADO_DA_SAIDA.PENDENTE, ESTADO_DA_SAIDA.CONFIRMADA, ESTADO_DA_SAIDA.LANCADA] },
       },
       select: { id: true, data: true, valor: true, descricao: true, estado: true },
       orderBy: { data: "asc" },

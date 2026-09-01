@@ -19,6 +19,14 @@
  */
 
 import { prisma } from "../../infrastructure/db/prisma.js";
+// ⚠⚠ A FORMA DO LANÇAMENTO É A MESMA DO DECLARADO, e isto é reuso, não conveniência: `montarLancamento`
+// já carrega TODAS as guardas do razão (conta fora do plano, ambígua, sintética, caixa torto) e a
+// invariante `D despesa / C caixa`. Uma segunda forma divergiria na primeira correção, e a que
+// ninguém abre é a que erra.
+import { montarLancamento } from "../declarados/lib/formaDoLancamento.js";
+import { carregarPlano } from "../accounting/AliquotaPorLancamentosService.js";
+import { isMonthClosed } from "../accounting/fechamentoContabil.js";
+import { competenciaDaData } from "./lib/fluxoDeCaixa.js";
 
 const texto = (v) => String(v ?? "").trim();
 
@@ -30,6 +38,17 @@ export const ESTADO_DA_SAIDA = Object.freeze({
   PENDENTE: "PENDENTE",
   CONFIRMADA: "CONFIRMADA",
   RECUSADA: "RECUSADA",
+  /**
+   * ⚠⚠ VIROU LANÇAMENTO CONTÁBIL — decisão do dono, 01/09/2026.
+   *
+   * > *"alguma coisa só aparecem para o fluxo, não me dando opção de colocar como lançamentos"* …
+   * > *"tudo que virar lançamento deve entrar no fluxo, mas nem tudo do fluxo necessariamente deve
+   * > ser um lançamento"*.
+   *
+   * ⚠ Ela NÃO substitui `CONFIRMADA`: confirmar põe a previsão no fluxo, lançar leva ao razão. E a
+   * saída lançada **continua no fluxo** — ver `accountingEntryId` no schema.
+   */
+  LANCADA: "LANCADA",
 });
 
 export const RECUSA_DA_SAIDA = Object.freeze({
@@ -41,6 +60,22 @@ export const RECUSA_DA_SAIDA = Object.freeze({
   NAO_ENCONTRADA: "saida_nao_encontrada",
   JA_DECIDIDA: "saida_ja_decidida",
   INDISPONIVEL: "saidas_indisponiveis",
+  /** ⚠ Idempotência: a saída já tem lançamento. Um segundo seria despesa em dobro no razão. */
+  JA_LANCADA: "saida_ja_lancada",
+  /**
+   * ⚠⚠ A DATA AINDA NÃO CHEGOU — e esta é a guarda que protege a invariante do caixa.
+   *
+   * O lançamento é `D despesa / C caixa` **na data da saída**: ele AFIRMA que o dinheiro saiu
+   * naquele dia. Uma saída planejada para o mês que vem não saiu de lugar nenhum, e lançá-la hoje
+   * gravaria uma afirmação falsa sobre o caixa — em silêncio, que é o pior modo.
+   */
+  DATA_FUTURA: "saida_com_data_futura",
+  /** O mês está fechado: lançar ali escreveria sem rastro de reabertura. */
+  MES_FECHADO: "mes_fechado",
+  /** Sem conta de despesa não há lançamento — e o sistema não escolhe uma. */
+  SEM_CONTA: "saida_sem_conta",
+  /** A recusa da FORMA do lançamento (conta sintética, fora do plano, caixa torto) chega nomeada. */
+  FORMA_INVALIDA: "forma_invalida",
 });
 
 export const FRASE_DA_RECUSA_DA_SAIDA = Object.freeze({
@@ -53,6 +88,17 @@ export const FRASE_DA_RECUSA_DA_SAIDA = Object.freeze({
   [RECUSA_DA_SAIDA.JA_DECIDIDA]: "Esta saída já foi decidida pelo seu contador.",
   [RECUSA_DA_SAIDA.INDISPONIVEL]:
     "A tabela de saídas planejadas ainda não existe neste banco. A migration não foi aplicada.",
+  [RECUSA_DA_SAIDA.JA_LANCADA]:
+    "Esta saída já virou lançamento contábil. Um segundo lançaria a mesma despesa duas vezes.",
+  // ⚠ A frase diz a CONSEQUÊNCIA, não só a regra: é ela que impede o contador de achar que o
+  // sistema está sendo burocrático com uma data.
+  [RECUSA_DA_SAIDA.DATA_FUTURA]:
+    "Esta saída ainda não aconteceu. O lançamento afirma que o dinheiro saiu na data dela, e essa "
+    + "data ainda não chegou — lance quando ela chegar, ou corrija a data com o cliente.",
+  [RECUSA_DA_SAIDA.MES_FECHADO]:
+    "A competência desta saída está fechada. Reabra o mês antes de lançar.",
+  [RECUSA_DA_SAIDA.SEM_CONTA]: "Escolha a conta de despesa: o sistema não escolhe uma por você.",
+  [RECUSA_DA_SAIDA.FORMA_INVALIDA]: "O lançamento não pôde ser montado com esta conta.",
 });
 
 export class SaidaRecusada extends Error {
@@ -64,8 +110,13 @@ export class SaidaRecusada extends Error {
   }
 }
 
-function recusar(codigo) {
-  throw new SaidaRecusada(codigo, FRASE_DA_RECUSA_DA_SAIDA[codigo] || codigo);
+/**
+ * ⚠ `frase` opcional: ela existe para a recusa da FORMA do lançamento chegar com o texto que
+ * `montarLancamento` escreveu (ele nomeia a conta sintética, a ambígua, a que está fora do plano).
+ * Substituí-lo por um genérico faria o contador perder o único texto que diz QUAL conta corrigir.
+ */
+function recusar(codigo, frase = null) {
+  throw new SaidaRecusada(codigo, frase || FRASE_DA_RECUSA_DA_SAIDA[codigo] || codigo);
 }
 
 /**
@@ -228,4 +279,114 @@ export async function decidirSaidaAvulsa({
     if (tabelaAusente(e)) recusar(RECUSA_DA_SAIDA.INDISPONIVEL);
     throw e;
   }
+}
+
+/**
+ * ⚠⚠⚠ A SAÍDA DO CLIENTE VIRA LANÇAMENTO CONTÁBIL — decisão do dono, 01/09/2026.
+ *
+ * > *"alguma coisa só aparecem para o fluxo, não me dando opção de colocar como lançamentos"*, e,
+ * > perguntado entre mandar para a fila ou lançar direto: **"vira lançamento contábil direto"**.
+ *
+ * ⚠⚠ **EU RECOMENDEI A FILA E ELE ESCOLHEU O DIRETO; o que fica aqui é a CONSEQUÊNCIA**, para
+ * ninguém a redescobrir. O lançamento é `D despesa / C caixa` na data que o CLIENTE informou — ou
+ * seja, ele afirma que o dinheiro saiu naquele dia com base na palavra do cliente, sem comprovante.
+ * Isso não é inédito nesta casa (`DECLARADO_PELO_CONTADOR` já é declaração, não prova), mas ali
+ * quem declara é o contador; aqui a origem é o cliente.
+ *
+ * ⚠ **O QUE TORNA A DECISÃO SEGURA, e é o que não pode ser removido:**
+ *   1. `DATA_FUTURA` recusa — previsão do mês que vem não virou saída de caixa nenhuma;
+ *   2. `MES_FECHADO` recusa — a mesma guarda do declarado;
+ *   3. `accountingEntryId` torna o ato idempotente — dois cliques não viram duas despesas;
+ *   4. a CONTA é escolhida por quem clica; o sistema não elege nenhuma.
+ *
+ * ⚠⚠ **A SAÍDA NÃO SAI DO FLUXO.** Medido: o fluxo lê `accountingEntry` só de `tipo: "FOLHA"`, então
+ * despesa lançada não o alimenta. Tirá-la daqui a faria SUMIR da tela do cliente — o oposto da regra
+ * do dono. Ela fica, com estado `LANCADA`.
+ *
+ * ⚠ A FORMA é `montarLancamento`, a MESMA do declarado. A saída é traduzida para a forma que ela
+ * espera; nenhuma regra de razão é reescrita aqui.
+ */
+export async function lancarSaidaAvulsa({
+  portalClientId, saidaId, contaDespesa, usuarioId, agora = new Date(), client = prisma,
+}) {
+  const m = modelo(client);
+  const conta = texto(contaDespesa);
+  // ⚠ Antes de qualquer ida ao banco: sem conta não há o que montar, e o sistema não escolhe uma.
+  if (!conta) recusar(RECUSA_DA_SAIDA.SEM_CONTA);
+
+  let atual;
+  try {
+    atual = await m.findFirst({
+      where: { id: String(saidaId), portalClientId: String(portalClientId) },
+      select: { id: true, estado: true, data: true, valor: true, descricao: true, accountingEntryId: true },
+    });
+  } catch (e) {
+    if (tabelaAusente(e)) recusar(RECUSA_DA_SAIDA.INDISPONIVEL);
+    throw e;
+  }
+  if (!atual) recusar(RECUSA_DA_SAIDA.NAO_ENCONTRADA);
+  // ⚠ A idempotência vem ANTES do estado: uma linha já lançada tem de dizer "já lançada", nunca
+  // "estado inválido" — consertos diferentes, e o segundo mandaria procurar defeito onde não há.
+  if (atual.accountingEntryId) recusar(RECUSA_DA_SAIDA.JA_LANCADA);
+  if (atual.estado !== ESTADO_DA_SAIDA.PENDENTE && atual.estado !== ESTADO_DA_SAIDA.CONFIRMADA) {
+    recusar(RECUSA_DA_SAIDA.ESTADO_INVALIDO);
+  }
+
+  /**
+   * ⚠⚠ A DATA FUTURA RECUSA, e a comparação é por DIA CIVIL, não por instante.
+   *
+   * `data` é `@db.Date` (sem hora) e `agora` tem hora: comparar os dois crus recusaria uma saída de
+   * HOJE em qualquer horário depois da meia-noite UTC. O que se pergunta é *"este dia já chegou?"*.
+   */
+  const diaDaSaida = String(atual.data instanceof Date ? atual.data.toISOString().slice(0, 10) : atual.data || "");
+  const hoje = new Date(agora.getTime()).toISOString().slice(0, 10);
+  if (!diaDaSaida) recusar(RECUSA_DA_SAIDA.DATA_INVALIDA);
+  if (diaDaSaida > hoje) recusar(RECUSA_DA_SAIDA.DATA_FUTURA);
+
+  const competencia = competenciaDaData(atual.data);
+  if (await isMonthClosed(String(portalClientId), competencia)) recusar(RECUSA_DA_SAIDA.MES_FECHADO);
+
+  const plano = await carregarPlano(String(portalClientId), client);
+  /**
+   * ⚠⚠ A TRADUÇÃO PARA A FORMA DO DECLARADO — e cada campo tem um porquê:
+   *   `dataPagamento`  ← a data da saída. É ela que o lançamento AFIRMA.
+   *   `descricaoOriginal` ← a descrição do cliente, crua. O histórico do razão desta casa é o texto
+   *                         de origem, nunca uma frase montada (medido nos 130 lançamentos do Excel).
+   *   `contaAplicada`  ← a conta que quem clicou escolheu.
+   * ⚠ `valorAjustado` fica AUSENTE de propósito: não existe ajuste de valor neste caminho, e mandar
+   * `null` explicitamente seria dizer que houve um e foi apagado.
+   */
+  const forma = montarLancamento({
+    // ⚠⚠ SEM ISTO O LANÇAMENTO NASCE SEM EMPRESA. `montarLancamento` lê `declarado.portalClientId`
+    // e o copia para o `entry` — omiti-lo criaria a despesa com `portalClientId: undefined`. É a
+    // guarda de multi-tenancy do módulo inteiro, e ela vem do PATH, nunca do corpo do pedido.
+    portalClientId: String(portalClientId),
+    competencia,
+    dataPagamento: atual.data,
+    descricaoOriginal: atual.descricao,
+    valor: atual.valor,
+    contaAplicada: conta,
+  }, plano);
+  if (!forma.ok) recusar(RECUSA_DA_SAIDA.FORMA_INVALIDA, forma.frase || null);
+
+  /**
+   * ⚠⚠ NA MESMA TRANSAÇÃO. Fora dela, um erro entre as duas escritas deixaria o lançamento no razão
+   * com a saída dizendo que nunca foi lançada — e o próximo clique criaria o segundo.
+   */
+  return client.$transaction(async (tx) => {
+    const entry = await tx.accountingEntry.create({ data: forma.entry, select: { id: true } });
+    return tx.saidaAvulsaCliente.update({
+      where: { id: atual.id },
+      data: {
+        estado: ESTADO_DA_SAIDA.LANCADA,
+        accountingEntryId: entry.id,
+        // ⚠ Lançar TAMBÉM é decidir: sem isto, uma saída lançada ficaria sem autor e sem data da
+        // decisão, e a fila do contador não saberia dizer quem a tirou de lá.
+        decididaPor: texto(usuarioId) || null,
+        decididaEm: agora,
+        // ⚠ Motivo de recusa pendurado numa linha lançada seria história contando o contrário.
+        motivoRecusa: null,
+      },
+    });
+  });
 }

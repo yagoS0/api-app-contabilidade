@@ -7,8 +7,14 @@
 // FLUXO, e não no razão. `LancamentoDeclarado` exige data de PAGAMENTO justamente porque afirma que
 // o dinheiro saiu — e uma saída planejada para o mês que vem não saiu de lugar nenhum.
 
+jest.mock("../../accounting/fechamentoContabil.js", () => ({
+  isMonthClosed: jest.fn(async () => false),
+}));
+
+import { isMonthClosed } from "../../accounting/fechamentoContabil.js";
 import {
   ESTADO_DA_SAIDA,
+  lancarSaidaAvulsa,
   RECUSA_DA_SAIDA,
   SaidaRecusada,
   criarSaidaAvulsa,
@@ -248,8 +254,43 @@ describe("⚠⚠ nada neste serviço encosta no razão", () => {
       // própria explicação.
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\/\/.*$/gm, "");
-    expect(fonte).not.toMatch(/accountingEntry|lancamentoDeclarado/i);
-    expect(fonte).not.toMatch(/\$transaction|\$executeRaw|\$queryRaw/);
+    // ⚠⚠ ESTA VARREDURA PROIBIA `accountingEntry` NO ARQUIVO INTEIRO ATÉ 01/09/2026, e o dono
+    // reverteu: *"não me dando opção de colocar como lançamentos"* … **"vira lançamento contábil
+    // direto"**. `lancarSaidaAvulsa` ESCREVE no razão, de propósito.
+    //
+    // ⚠ O QUE A VARREDURA PROTEGIA CONTINUA PROTEGIDO, e mudou de alvo em vez de sumir: o
+    // `decidirSaidaAvulsa` — o CONFIRMAR, que é o que o cliente e o contador usam todo dia — não
+    // pode encostar no razão. "Confirmar não lança nada" segue sendo verdade; o que existe agora é
+    // um verbo DIFERENTE, com guardas próprias (data futura, mês fechado, idempotência).
+    const decidir = fonte.slice(fonte.indexOf("export async function decidirSaidaAvulsa"));
+    const soODecidir = decidir.slice(0, decidir.indexOf("export async function lancarSaidaAvulsa"));
+    expect(soODecidir).not.toMatch(/accountingEntry|lancamentoDeclarado/i);
+    expect(soODecidir).not.toMatch(/\$transaction|\$executeRaw|\$queryRaw/);
+  });
+
+  it("⚠⚠ e o LANÇAR é o único que escreve no razão — a exceção é nomeada, não geral", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "SaidaAvulsaService.js"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    // ⚠ Uma só criação de lançamento no arquivo. Duas seriam dois caminhos para a mesma despesa.
+    expect((fonte.match(/accountingEntry\.create/g) || []).length).toBe(1);
+    // ⚠ E ela mora DENTRO de uma transação: fora dela, um erro entre as duas escritas deixaria o
+    // lançamento no razão com a saída dizendo que nunca foi lançada — e o clique seguinte criaria
+    // o segundo.
+    expect(fonte).toMatch(/\$transaction/);
+  });
+
+  it("⚠⚠ criar e remover continuam SEM tocar no razão", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const fonte = fs.readFileSync(path.join(__dirname, "..", "SaidaAvulsaService.js"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    const criar = fonte.slice(fonte.indexOf("export async function criarSaidaAvulsa"));
+    expect(criar.slice(0, criar.indexOf("export async function listarSaidasPendentes")))
+      .not.toMatch(/accountingEntry/i);
   });
 
   it("⚠ e o comentário que EXPLICA a distinção continua no arquivo cru", () => {
@@ -260,5 +301,177 @@ describe("⚠⚠ nada neste serviço encosta no razão", () => {
     const cru = fs.readFileSync(path.join(__dirname, "..", "SaidaAvulsaService.js"), "utf8");
     expect(cru).toMatch(/LancamentoDeclarado/);
     expect(cru).toMatch(/não saiu de lugar nenhum/i);
+  });
+});
+
+describe("⚠⚠⚠ LANÇAR a saída do cliente — decisão do dono, 01/09/2026", () => {
+  // > *"não me dando opção de colocar como lançamentos"* e, entre a fila e o direto:
+  // > **"vira lançamento contábil direto"**.
+  //
+  // ⚠ Eu recomendei a fila e ele escolheu o direto. O que este bloco trava são as guardas que
+  // tornam a escolha segura — elas não são detalhe, são a razão de o direto ser aceitável.
+  const HOJE = new Date("2026-09-20T12:00:00.000Z");
+
+  const PLANO = [
+    { portalClientId: null, codigo: "5", nome: "Caixa", codigoCompleto: "111010001", analitica: true },
+    { portalClientId: null, codigo: "401", nome: "Aluguel", codigoCompleto: "411020001", analitica: true },
+    { portalClientId: null, codigo: "400", nome: "Despesas Gerais", codigoCompleto: "41102", analitica: false },
+  ];
+
+  const clientParaLancar = ({ saida = {}, criouEntry = { id: "ae-1" } } = {}) => {
+    const alvo = {
+      id: "sa-1",
+      estado: ESTADO_DA_SAIDA.PENDENTE,
+      data: new Date("2026-09-18T00:00:00.000Z"),
+      valor: "3500.00",
+      descricao: "Reforma da sala",
+      accountingEntryId: null,
+      ...saida,
+    };
+    const update = jest.fn(async (args) => ({ id: "sa-1", ...args.data }));
+    const create = jest.fn(async () => criouEntry);
+    const client = {
+      saidaAvulsaCliente: { findFirst: jest.fn(async () => alvo), findMany: jest.fn(async () => []), update },
+      chartOfAccount: { findMany: jest.fn(async () => PLANO) },
+      accountingEntry: { create },
+      // ⚠ O dublê da transação EXECUTA o callback com ele mesmo: é o que faz o teste medir as duas
+      // escritas de verdade, em vez de provar que `$transaction` foi chamada.
+      $transaction: jest.fn(async (fn) => fn(client)),
+    };
+    return { client, update, create };
+  };
+
+  const lancar = (client, extra = {}) => lancarSaidaAvulsa({
+    portalClientId: "emp-1",
+    saidaId: "sa-1",
+    contaDespesa: "411020001",
+    usuarioId: "u1",
+    agora: HOJE,
+    client,
+    ...extra,
+  });
+
+  beforeEach(() => { isMonthClosed.mockResolvedValue(false); });
+
+  it("cria o lançamento e marca a saída como LANCADA, com o vínculo", async () => {
+    const { client, update, create } = clientParaLancar();
+    const r = await lancar(client);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(r.estado).toBe(ESTADO_DA_SAIDA.LANCADA);
+    expect(update.mock.calls[0][0].data.accountingEntryId).toBe("ae-1");
+  });
+
+  it("⚠⚠ o lançamento é `D despesa / C caixa` — a invariante do caixa, intacta", async () => {
+    const { client, create } = clientParaLancar();
+    await lancar(client);
+    const linhas = create.mock.calls[0][0].data.lines.create;
+    expect(linhas.find((l) => l.tipo === "D").conta).toBe("401");
+    expect(linhas.find((l) => l.tipo === "C").conta).toBe("5");
+  });
+
+  it("⚠⚠ e ele carrega o `portalClientId` — sem isso a despesa nasce SEM EMPRESA", async () => {
+    // Furo real, achado antes do primeiro teste: `montarLancamento` copia esse campo do objeto que
+    // recebe, e omiti-lo criaria a linha com `undefined`. Multi-tenancy é a guarda do módulo.
+    const { client, create } = clientParaLancar();
+    await lancar(client);
+    expect(create.mock.calls[0][0].data.portalClientId).toBe("emp-1");
+  });
+
+  it("⚠ a DATA do lançamento é a da saída — é ela que afirma quando o dinheiro saiu", async () => {
+    const { client, create } = clientParaLancar();
+    await lancar(client);
+    expect(create.mock.calls[0][0].data.competencia).toBe("2026-09");
+  });
+
+  it("⚠⚠ DATA FUTURA RECUSA — previsão do mês que vem não saiu de lugar nenhum", async () => {
+    const { client, create } = clientParaLancar({ saida: { data: new Date("2026-10-05T00:00:00.000Z") } });
+    const e = await pegarRecusa(() => lancar(client));
+    expect(e).toBeInstanceOf(SaidaRecusada);
+    expect(e.codigo).toBe(RECUSA_DA_SAIDA.DATA_FUTURA);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("⚠ a saída de HOJE passa — a comparação é por DIA CIVIL, não por instante", async () => {
+    // `data` é `@db.Date` e `agora` tem hora: comparar crus recusaria a saída de hoje depois da
+    // meia-noite UTC.
+    const { client, create } = clientParaLancar({ saida: { data: new Date("2026-09-20T00:00:00.000Z") } });
+    await lancar(client);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("⚠⚠ MÊS FECHADO recusa — a mesma guarda do declarado", async () => {
+    isMonthClosed.mockResolvedValue(true);
+    const { client, create } = clientParaLancar();
+    const e = await pegarRecusa(() => lancar(client));
+    expect(e.codigo).toBe(RECUSA_DA_SAIDA.MES_FECHADO);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ JÁ LANÇADA recusa — dois cliques não viram duas despesas no razão", async () => {
+    const { client, create } = clientParaLancar({ saida: { accountingEntryId: "ae-velho" } });
+    const e = await pegarRecusa(() => lancar(client));
+    expect(e.codigo).toBe(RECUSA_DA_SAIDA.JA_LANCADA);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("⚠ e ela diz «já lançada», nunca «estado inválido» — consertos diferentes", async () => {
+    const { client } = clientParaLancar({
+      saida: { accountingEntryId: "ae-velho", estado: ESTADO_DA_SAIDA.LANCADA },
+    });
+    const e = await pegarRecusa(() => lancar(client));
+    expect(e.codigo).toBe(RECUSA_DA_SAIDA.JA_LANCADA);
+  });
+
+  it("⚠ saída RECUSADA não vira lançamento", async () => {
+    const { client, create } = clientParaLancar({ saida: { estado: ESTADO_DA_SAIDA.RECUSADA } });
+    const e = await pegarRecusa(() => lancar(client));
+    expect(e.codigo).toBe(RECUSA_DA_SAIDA.ESTADO_INVALIDO);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("⚠ a CONFIRMADA vira — ela já está no fluxo, e lançar é o passo seguinte", async () => {
+    const { client, create } = clientParaLancar({ saida: { estado: ESTADO_DA_SAIDA.CONFIRMADA } });
+    await lancar(client);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("⚠⚠ SEM CONTA recusa ANTES de qualquer ida ao banco — o sistema não escolhe uma", async () => {
+    const { client } = clientParaLancar();
+    const e = await pegarRecusa(() => lancar(client, { contaDespesa: "  " }));
+    expect(e.codigo).toBe(RECUSA_DA_SAIDA.SEM_CONTA);
+    expect(client.saidaAvulsaCliente.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ conta SINTÉTICA recusa, e a frase da FORMA chega inteira", async () => {
+    // É a trava do registro I250 da ECD (`IND_CTA = "A"`), e ela vem de `montarLancamento` — não é
+    // reimplementada aqui. A frase nomeia a conta, que é o que o contador precisa para corrigir.
+    const { client, create } = clientParaLancar();
+    const e = await pegarRecusa(() => lancar(client, { contaDespesa: "41102" }));
+    expect(e.codigo).toBe(RECUSA_DA_SAIDA.FORMA_INVALIDA);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("⚠ conta fora do plano recusa", async () => {
+    const { client, create } = clientParaLancar();
+    const e = await pegarRecusa(() => lancar(client, { contaDespesa: "999999999" }));
+    expect(e.codigo).toBe(RECUSA_DA_SAIDA.FORMA_INVALIDA);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ as duas escritas acontecem na MESMA transação", async () => {
+    // Fora dela, um erro no meio deixaria o lançamento no razão com a saída dizendo que nunca foi
+    // lançada — e o clique seguinte criaria o segundo.
+    const { client } = clientParaLancar();
+    await lancar(client);
+    expect(client.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("⚠ lançar TAMBÉM é decidir: grava quem e quando, e limpa motivo de recusa", async () => {
+    const { client, update } = clientParaLancar();
+    await lancar(client);
+    const data = update.mock.calls[0][0].data;
+    expect(data.decididaPor).toBe("u1");
+    expect(data.decididaEm).toEqual(HOJE);
+    expect(data.motivoRecusa).toBeNull();
   });
 });

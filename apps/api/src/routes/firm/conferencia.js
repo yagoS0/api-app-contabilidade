@@ -61,6 +61,7 @@ import {
   SaidaRecusada,
   RECUSA_DA_SAIDA,
   decidirSaidaAvulsa,
+  lancarSaidaAvulsa,
   listarSaidasPendentes,
 } from "../../application/fluxo/SaidaAvulsaService.js";
 
@@ -496,6 +497,33 @@ export function createConferenciaRouter({ log } = {}) {
    * declarado. ⚠ **RECUSAR EXIGE MOTIVO** (o serviço recusa sem ele): ausência nunca é resposta, e o
    * cliente precisa saber por que a linha dele saiu.
    */
+  /**
+   * ⚠⚠⚠ A SAÍDA DO CLIENTE VIRA LANÇAMENTO CONTÁBIL — decisão do dono, 01/09/2026.
+   *
+   * > *"alguma coisa só aparecem para o fluxo, não me dando opção de colocar como lançamentos"*, e,
+   * > entre mandar para a fila ou lançar direto: **"vira lançamento contábil direto"**.
+   *
+   * ⚠ `minRole: "ACCOUNTANT"` como o decidir — isto ESCREVE NO RAZÃO, e é o ato mais pesado desta
+   * rota. ⚠ A conta vem do CORPO porque é escolha de quem clica; o sistema não elege nenhuma.
+   * ⚠ O `portalClientId` sai do PATH, nunca do corpo: é a guarda de multi-tenancy de sempre.
+   */
+  router.post("/conferencia/saidas-do-cliente/:saidaId/lancar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const saida = await lancarSaidaAvulsa({
+        portalClientId: String(req.params.companyId),
+        saidaId: String(req.params.saidaId),
+        contaDespesa: req.body?.contaDespesa,
+        usuarioId: String(req.auth?.user?.id || ""),
+      });
+      return res.json({
+        ok: true,
+        saida: { id: saida.id, estado: saida.estado, accountingEntryId: saida.accountingEntryId },
+      });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
   router.post("/conferencia/saidas-do-cliente/:saidaId/decidir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     try {
       const saida = await decidirSaidaAvulsa({

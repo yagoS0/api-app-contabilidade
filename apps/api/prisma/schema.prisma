@@ -4393,9 +4393,14 @@ model SaidaAvulsaCliente {
   valor     Decimal @db.Decimal(18, 2)
   descricao String
 
-  /// PENDENTE | CONFIRMADA | RECUSADA — ⚠ a MESMA forma da série declarada, de propósito: as duas
-  /// caem na mesma fila do contador e uma segunda gramática de estado faria a fila falar duas
-  /// línguas.
+  /// PENDENTE | CONFIRMADA | RECUSADA | LANCADA — ⚠ a MESMA forma da série declarada, de propósito:
+  /// as duas caem na mesma fila do contador e uma segunda gramática de estado faria a fila falar
+  /// duas línguas.
+  ///
+  /// ⚠⚠ `LANCADA` entrou em 01/09/2026 (dono: *"não me dando opção de colocar como lançamentos"*).
+  /// Ela NÃO substitui `CONFIRMADA`: confirmar põe a previsão no fluxo, lançar leva ao razão. Uma
+  /// saída lançada **continua contribuindo para o fluxo do cliente** — ver o comentário de
+  /// `accountingEntryId`.
   estado String @default("PENDENTE")
 
   /// ⚠ Ausência nunca é resposta: recusar exige dizer por quê, como em `LancamentoDeclarado`.
@@ -4406,6 +4411,22 @@ model SaidaAvulsaCliente {
 
   decididaPor String?
   decididaEm  DateTime?
+
+  /// ⚠⚠ O LANÇAMENTO QUE NASCEU DESTA SAÍDA — e é ele que torna o ato IDEMPOTENTE.
+  ///
+  /// Sem esta coluna, clicar duas vezes em "Lançar" criaria DOIS lançamentos contábeis para a mesma
+  /// despesa. É a mesma âncora que `LancamentoDeclarado.accountingEntryId` já usa.
+  ///
+  /// ⚠⚠ **SEM FK, de propósito** — igual ao declarado: o lançamento pode ser apagado por fora, e uma
+  /// FK faria o apagamento cascatear ou falhar. A leitura trata o id órfão como "não existe mais".
+  ///
+  /// ⚠⚠ E A SAÍDA LANÇADA **NÃO SAI DO FLUXO**. Medido em 01/09/2026: `FluxoDeCaixaService` lê
+  /// `accountingEntry` apenas com `tipo: "FOLHA"` — lançamento de DESPESA não alimenta o fluxo. Se
+  /// a linha parasse de contribuir ao ser lançada, ela **sumiria** do fluxo do cliente, que é o
+  /// oposto da regra do dono (*"tudo que virar lançamento deve entrar no fluxo"*).
+  /// ⚠ Quem um dia fizer a despesa alimentar o fluxo TEM de excluir as saídas `LANCADA` de lá, ou o
+  /// valor passa a ser contado duas vezes. Está escrito aqui porque é onde se olha.
+  accountingEntryId String?
 
   portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
 
