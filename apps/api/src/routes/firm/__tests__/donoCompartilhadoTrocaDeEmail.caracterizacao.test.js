@@ -684,13 +684,22 @@ describe("⚠⚠ salvar SEM mudar o e-mail do responsável — o caso do KLAUS N
     expect(banco.vinculos.filter((v) => v.status === "ACTIVE")).toHaveLength(2);
   });
 
-  test("conta compartilhada: o NOME digitado não renomeia a conta dos outros — e não bloqueia o salvar", async () => {
-    // Renomear uma conta que atende outras empresas é o arrasto de 19/08/2026 por outra porta.
+  // ⚠⚠ ESTE TESTE FOI INVERTIDO NO MESMO DIA EM QUE NASCEU (02/09/2026). A primeira versão
+  //   afirmava que, em conta compartilhada, o nome digitado NÃO renomeava — "o arrasto de 19/08 por
+  //   outra porta". Estava errada, e o dono viu na hora: *"quando eu escrevo e salvo ele volta com
+  //   o nome antigo"*. O arrasto de 19/08 era do E-MAIL (login); o NOME é da pessoa, e a pessoa é
+  //   a mesma nas duas empresas. Aceitar o nome e descartá-lo em silêncio era o defeito pior.
+  test("⚠⚠ conta compartilhada: o NOME digitado RENOMEIA a pessoa — e ela é a mesma nas duas empresas", async () => {
     contaDeDuasEmpresas();
     const res = await salvar(app, { ownerEmail: EMAIL_ANTIGO, ownerName: "Nome Novo" });
     expect(res.status).toBe(200);
-    expect(banco.users.get("user-liz").name).toBe("JULIA");
-    expect(prismaMock.company.update).toHaveBeenCalledTimes(1);
+    expect(banco.users.get("user-liz").name).toBe("Nome Novo");
+    // ⚠ A resposta já volta com o nome novo — é dela que a tela se re-semeia.
+    expect(res.body.company.ownerName).toBe("Nome Novo");
+    // E o LOGIN não foi tocado: nenhum e-mail mudou, nenhum vínculo se moveu.
+    expect(banco.users.get("user-liz").email).toBe(EMAIL_ANTIGO);
+    expect(donoDe("portal-lente")).toEqual({ userId: "user-liz", email: EMAIL_ANTIGO });
+    expect(prismaMock.user.create).not.toHaveBeenCalled();
   });
 
   test("PRESERVADO: conta de UMA empresa, mesmo e-mail, nome novo → o nome é atualizado", async () => {

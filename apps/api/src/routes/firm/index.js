@@ -1652,14 +1652,20 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                   semSenha: true,
                 };
               } else if (decisao === DECISAO.MANTER_CONTA) {
-                // ⚠⚠ O E-MAIL NÃO MUDOU (02/09/2026) — nada a fazer com a conta, e o salvar SEGUE.
+                // ⚠⚠ O E-MAIL NÃO MUDOU (02/09/2026) — nada a fazer com o LOGIN, e o salvar SEGUE.
                 // Era aqui que o cadastro inteiro morria: com o mesmo e-mail e conta de 2+
                 // empresas, a decisão pedia confirmação de uma troca que não existia.
-                // ⚠ O NOME só é atualizado em conta de UMA empresa: renomear uma conta que atende
-                //   outras é o arrasto de 19/08/2026 (defeito de produção) por outra porta. Numa
-                //   conta compartilhada o nome fica como está — e o salvar do resto não é
-                //   bloqueado por isso.
-                if (ownerNameInput && Number(vinculosDaConta) <= 1) {
+                //
+                // ⚠⚠ O NOME É ATUALIZADO SEMPRE — e a primeira versão deste ramo (horas antes,
+                //   no mesmo dia) NÃO atualizava em conta compartilhada, "para não arrastar". Era
+                //   erro, relatado pelo dono na hora: *"quando eu escrevo e salvo ele volta com o
+                //   nome antigo"* — a tela aceitava o nome e o descartava em silêncio, o defeito
+                //   que esta casa mais condena. O arrasto de 19/08/2026 era do E-MAIL (o LOGIN,
+                //   que levava nove empresas para outra conta); o nome é da PESSOA, e a pessoa é a
+                //   mesma nas duas empresas — Julia é Julia na KLAUS e na LENTE. Renomeá-la numa é
+                //   renomeá-la, ponto. Quem quer OUTRA pessoa troca o e-mail, e aí cai nas
+                //   confirmações acima.
+                if (ownerNameInput) {
                   await tx.user.update({ where: { id: ownerLink.userId }, data: { name: ownerNameInput } });
                 }
               } else if (decisao === DECISAO.RENOMEAR) {
