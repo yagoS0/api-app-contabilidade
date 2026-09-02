@@ -1674,6 +1674,44 @@ th {
   min-height: 0;
 }
 
+/* ─── A GAVETA ──────────────────────────────────────────────────────────────────────────────
+   ⚠⚠ Variante do MESMO overlay (`Modal lateral`), nunca um segundo overlay: Esc, clique no fundo,
+   foco preso e foco de volta ao gatilho vêm de graça — foi a ausência disso nos 43 overlays à mão
+   que criou o primitivo.
+
+   ⚠ Ela existe por decisão do dono (01/09/2026): *"os lançamentos automáticos podemos colocar um
+   botão nesse a lançar que abre um menu lateral"*. O conteúdo é CIÊNCIA (o que a regra já lançou),
+   e ciência ocupando o meio da tela empurra para baixo o que pede ação.
+
+   ⚠ `--content-max` como teto: a gaveta é larga o bastante para uma tabela de 5 colunas e nunca
+   toma a tela inteira — quem a abriu precisa continuar vendo de onde veio. */
+.modal-fundo--lateral {
+  align-items: stretch;
+  justify-content: flex-end;
+  padding: 0;
+}
+
+.modal-caixa--lateral {
+  width: min(680px, 100%);
+  max-width: min(680px, 100%);
+  max-height: 100vh;
+  height: 100vh;
+  border-radius: 0;
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+  box-shadow: -18px 0 48px rgba(0, 0, 0, 0.45);
+}
+
+/* ⚠ Em tela estreita ela vira a tela inteira: uma gaveta de 680px num telefone seria a mesma coisa
+   com uma faixa inútil de fundo escuro à esquerda. */
+@media (max-width: 720px) {
+  .modal-caixa--lateral {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
 .modal-rodape {
   display: flex;
   gap: var(--space-2);

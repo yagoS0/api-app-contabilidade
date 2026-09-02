@@ -179,7 +179,10 @@ describe("⚠⚠ cada painel sob a seção que a REGRA manda — o DOM conferido
   const ONDE_APARECE = [
     [BLOCO.CASAMENTOS, "Débitos do extrato sem nota vinculada"],
     [BLOCO.FILA, "GOOGLE CLOUD BRASIL"],
-    [BLOCO.LANCADOS_POR_REGRA, /Lançados por regra/],
+    // ⚠⚠ O que fica na SEÇÃO é a PORTA: desde 01/09/2026 o extrato mora numa gaveta lateral
+    // (*"os lançamentos automáticos podemos colocar um botão nesse a lançar que abre um menu
+    // lateral"*). O botão continua sendo o que a régua manda — ao lado da causa.
+    [BLOCO.LANCADOS_POR_REGRA, /Ver o que as regras já lançaram/],
     [BLOCO.RECORRENCIAS, "Recorrências"],
     [BLOCO.SAIDAS_DO_CLIENTE, "Saídas que o cliente acrescentou"],
     [BLOCO.REGRAS, "Regras do fornecedor"],
@@ -190,24 +193,45 @@ describe("⚠⚠ cada painel sob a seção que a REGRA manda — o DOM conferido
     expect(within(secaoDe(natureza(bloco))).getAllByText(texto).length).toBeGreaterThan(0);
   });
 
-  it("⚠⚠⚠ o extrato «lançados por regra» está na seção REGRAS, e RECOLHIDO", async () => {
-    // ⚠⚠ ELE FOI E VOLTOU NO MESMO DIA: virou aba própria e o dono a devolveu — *"devolva a aba
-    // pras regras"*. A causa ao lado da consequência era o argumento da posição original.
-    // ⚠ RECOLHIDO porque é CIÊNCIA, não tarefa: ninguém espera decisão dele, e aberto empurraria
-    // para baixo o que pede ação.
+  it("⚠⚠⚠ o extrato «lançados por regra» abre numa GAVETA — e o botão dela fica na seção REGRAS", async () => {
+    // ⚠⚠ ELE MUDOU DE LUGAR TRÊS VEZES EM DOIS DIAS, e as três foram decisão do dono: bloco aqui →
+    // aba própria → de volta recolhido (*"devolva a aba pras regras"*) → gaveta lateral
+    // (*"os lançamentos automáticos podemos colocar um botão nesse a lançar que abre um menu
+    // lateral"*).
+    //
+    // ⚠ O ARGUMENTO DA VIZINHANÇA sobreviveu às três: a porta fica ao lado da CAUSA — *"o contador
+    // ligaria mais uma regra sem ter olhado o que a anterior fez"*.
     await montar();
     const secao = secaoDe(NATUREZA.REGRA);
-    const resumo = within(secao).getByText(/Lançados por regra/);
-    expect(resumo.closest("details")).not.toBeNull();
-    expect(resumo.closest("details").open).toBe(false);
+    const botao = within(secao).getByRole("button", { name: /Ver o que as regras já lançaram/i });
+
+    // ⚠⚠ FECHADA, O EXTRATO NÃO ESTÁ NA TELA — é o ponto da gaveta: ele deixou de ocupar rolagem
+    // numa tela que já rola quase seis telas.
+    expect(screen.queryByText(/Lançados por regra/)).toBeNull();
+
+    fireEvent.click(botao);
+    const gaveta = await screen.findByRole("dialog");
+    expect(gaveta).toHaveAccessibleName(/Lançamentos automáticos/i);
+    expect(await within(gaveta).findByText(/Lançados por regra/)).toBeInTheDocument();
   });
 
-  it("⚠ o resumo diz se vale a pena abrir — contagem, valor e quantos estão SEM NOTA", async () => {
-    // Um "Lançados por regra" mudo não informa nada, e o custo de abrir é a rolagem que o
-    // recolhimento existe para poupar.
+  it("⚠⚠ a gaveta é o `Modal lateral` — não um overlay novo", async () => {
+    // ⚠ Esc, clique no fundo, foco preso e foco de volta ao gatilho vêm do primitivo. Foi a
+    // ausência disso nos 43 overlays escritos à mão que criou o `Modal`.
     await montar();
-    const sumario = within(secaoDe(NATUREZA.REGRA)).getByText(/Lançados por regra/).closest("summary");
-    expect(sumario.textContent).toMatch(/1 lançamento/);
+    fireEvent.click(within(secaoDe(NATUREZA.REGRA)).getByRole("button", { name: /Ver o que as regras já lançaram/i }));
+    const gaveta = await screen.findByRole("dialog");
+    expect(gaveta).toHaveClass("modal-fundo--lateral");
+    expect(gaveta.querySelector(".modal-caixa--lateral")).not.toBeNull();
+  });
+
+  it("⚠ e ela FECHA — pelo ✕, e o extrato sai da tela junto", async () => {
+    await montar();
+    fireEvent.click(within(secaoDe(NATUREZA.REGRA)).getByRole("button", { name: /Ver o que as regras já lançaram/i }));
+    const gaveta = await screen.findByRole("dialog");
+    fireEvent.click(within(gaveta).getByRole("button", { name: /Fechar/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByText(/Lançados por regra/)).toBeNull();
   });
 
   it("⚠ o sexto painel (mexidas do cliente) também — ele não pede nada e é o que se esquece", async () => {

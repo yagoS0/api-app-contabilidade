@@ -36,17 +36,20 @@ function diaBr(iso) {
 
 export function PainelDeLancadosPorRegra({
   companyId, competencia, podeEscrever = true, aoDesfazer,
-  /**
-   * ⚠⚠ RECOLHIDO — decisão do dono, 01/09/2026 (*"devolva a aba pras regras"*).
+  /*
+   * ⚠⚠ LÁPIDE — `recolhido` VIVEU UM DIA (01/09/2026), e o motivo dele foi cumprido por outro meio.
    *
-   * Ele volta para a seção «Regras» da Conferência, mas FECHADO: a tela já tem quase seis telas de
-   * rolagem, e este bloco é CIÊNCIA (o que a automação já fez), não tarefa — ninguém está esperando
-   * uma decisão dele. Aberto por padrão, empurraria para baixo o que pede ação.
+   * Ele fazia este painel virar um `<details>` fechado dentro da seção «Regras». O argumento era o
+   * custo de rolagem: a tela já rola quase seis telas, e este bloco é CIÊNCIA (o que a automação já
+   * fez), não tarefa. O dono resolveu o mesmo problema melhor — *"os lançamentos automáticos
+   * podemos colocar um botão nesse a lançar que abre um menu lateral"* —, e numa GAVETA o extrato
+   * não ocupa rolagem nenhuma.
    *
-   * ⚠ `sumirQuandoVazio` foi retirado junto: existiu por algumas horas para a aba própria, onde
-   * sumir deixaria a tela em branco. Sem a aba, prop que ninguém passa é código morto.
+   * ⚠ A prop saiu porque ficou sem chamador NO MESMO DIA em que nasceu, e um ramo `<details>` que
+   * ninguém renderiza convida a próxima pessoa a "restaurar" um layout que o dono já trocou.
+   * ⚠ `sumirQuandoVazio` morreu antes, pelo mesmo motivo: existiu para a aba própria, que durou
+   * horas.
    */
-  recolhido = false,
 }) {
   const [estado, setEstado] = useState({ carregando: true, dados: null, indisponivel: false, erro: null });
   const [marcados, setMarcados] = useState(() => new Set());
@@ -123,28 +126,16 @@ export function PainelDeLancadosPorRegra({
     </span>
   );
 
-  /**
-   * ⚠⚠ `<details>` É SEGURO AQUI, e não é em toda tela: a regra da casa manda abri-lo por
-   * JAVASCRIPT antes de imprimir, porque o CSS sozinho não o faz. A Conferência **não é impressa**
-   * — medido: zero `data-print-area` em `renderConferenciaTab.jsx`. Não há papel a proteger.
-   */
-  const Envelope = recolhido ? "details" : "div";
-
   return (
-    <Envelope style={{ ...card, borderColor: "var(--state-warn)" }}>
-      {recolhido ? (
-        <summary style={{ cursor: "pointer", display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-          <strong>Lançados por regra · {estado.dados?.competencia || competencia}</strong>
-          {resumo}
-        </summary>
-      ) : (
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-          <h3 style={{ flex: 1, margin: 0, font: "inherit", fontWeight: 700 }}>
-            Lançados por regra · {estado.dados?.competencia || competencia}
-          </h3>
-          {resumo}
-        </div>
-      )}
+    <div style={{ ...card, borderColor: "var(--state-warn)" }}>
+      {/* ⚠ O `h3` FICA, dentro da gaveta: ela tem título próprio (o `aria-label` do diálogo), e sem
+          este cabeçalho o conteúdo perderia a competência de que fala — que é o recorte inteiro. */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        <h3 style={{ flex: 1, margin: 0, font: "inherit", fontWeight: 700 }}>
+          Lançados por regra · {estado.dados?.competencia || competencia}
+        </h3>
+        {resumo}
+      </div>
 
       {/* ⚠⚠ A FRASE DIZ O QUE ACONTECEU, não o que o sistema fez de bom. É a tela em que o contador
           confere contabilidade que ele não escreveu. */}
@@ -266,6 +257,6 @@ export function PainelDeLancadosPorRegra({
           )}
         </div>
       ) : null}
-    </Envelope>
+    </div>
   );
 }

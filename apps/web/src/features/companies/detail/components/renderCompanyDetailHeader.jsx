@@ -66,7 +66,7 @@ const GROUPS = [
        * Conferência inteira — continua sendo um botão dentro de Lançamentos. E este cabeçalho já
        * perdeu uma aba pelo mesmo motivo (a Conferência, em 29/08/2026: *"muitas abas"*).
        *
-       * ⚠ O conteúdo NÃO foi removido: virou bloco recolhido na seção «Regras» da Conferência, que
+       * ⚠ O conteúdo NÃO foi removido: virou gaveta lateral aberta pela seção «Regras» da Conferência, que
        * é onde a pergunta dele nasce. O segmento `/lancamentos-automaticos` continua respondendo
        * (ver `rotasDaEmpresa.js`) — sem ele, todo link guardado cairia em Anotações sem erro nenhum.
        */

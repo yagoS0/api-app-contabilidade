@@ -781,6 +781,8 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState(null);
   const [varrendo, setVarrendo] = useState(false);
+  // ⚠ A gaveta do extrato das regras. Ver o bloco na seção «Regras».
+  const [vendoLancadosPorRegra, setVendoLancadosPorRegra] = useState(false);
   /**
    * ⚠⚠ O ESTADO DA VARREDURA AUTOMÁTICA — decisão do dono, 01/09/2026: *"elas devem ser trazidas
    * automaticamente, como tem na aba de notas fiscais deve aparecer ali"*.
@@ -1494,35 +1496,59 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
           ⚠ `contas` é o plano JÁ CARREGADO desta tela: uma segunda busca daria dois planos possíveis
           para a mesma empresa, e o seletor da regra poderia oferecer conta que a fila recusa.
         */}
-        {/*
-          ⚠⚠ A CONSEQUÊNCIA AO LADO DA CAUSA — e por algumas horas, em 01/09/2026, isto foi uma aba
-          própria e depois um link. O dono devolveu o conteúdo para cá (*"devolva a aba pras
-          regras"*).
+        {/* ⚠⚠ O EXTRATO DO QUE A REGRA JÁ LANÇOU MUDOU DE LUGAR PELA TERCEIRA VEZ EM DOIS DIAS —
+            e as três foram decisão do dono. Era um bloco aqui; virou aba própria; voltou recolhido
+            para cá (*"devolva a aba pras regras"*); e em 01/09/2026: *"os lançamentos automáticos
+            podemos colocar um botão nesse a lançar que abre um menu lateral"*.
 
-          ⚠ RECOLHIDO: é CIÊNCIA (o que a automação já fez), não tarefa — ninguém espera decisão
-          dele, e aberto empurraria para baixo o que pede ação numa tela que já rola quase seis
-          telas. O `<summary>` traz a contagem, o valor e quantos estão SEM NOTA, que é o que diz se
-          vale a pena abrir.
-          ⚠ Ele vem ANTES do CRUD das regras, e a ordem é o argumento de sempre: *"o contador
-          ligaria mais uma regra sem ter olhado o que a anterior fez"*.
-          ⚠ Ele some sozinho quando não há nada lançado por regra — o estado normal com a automação
-          desligada.
-        */}
-        <PainelDeLancadosPorRegra
-          companyId={companyId}
-          competencia={competencia}
-          podeEscrever={podeEscrever}
-          recolhido
-          aoDesfazer={() => {
-            // ⚠ A fila muda (as linhas voltam a esperar conferência) e o painel de casamentos
-            // também. Sem isto, o contador desfaz e vê a tela igual.
-            setVersao((v) => v + 1);
-            carregar();
-          }}
-        />
+            ⚠ O ARGUMENTO DA VIZINHANÇA CONTINUA VALENDO e é o que decide ONDE fica o botão: ele
+            abre a gaveta de dentro da seção das REGRAS, ao lado da causa — *"o contador ligaria
+            mais uma regra sem ter olhado o que a anterior fez"*.
+            ⚠ O que mudou é o custo: recolhido, o extrato ainda ocupava uma linha e uma decisão
+            ("abro ou não?") numa tela que já rola quase seis telas. Na gaveta ele é ciência que se
+            consulta, não conteúdo que se rola por cima. */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <Button size="sm" variant="secondary" onClick={() => setVendoLancadosPorRegra(true)}>
+            Ver o que as regras já lançaram
+          </Button>
+          <span style={{ fontSize: "0.78rem", color: "var(--text-faint)" }}>
+            Abre ao lado, sem sair desta tela.
+          </span>
+        </div>
 
         <PainelDeRegras companyId={companyId} contas={contas} podeEscrever={podeEscrever} />
       </SecaoDaConferencia>
+
+      {/* ─────────────────────────────────────────────────────────────────────────────────────────
+          ⚠⚠ A GAVETA DOS LANÇAMENTOS AUTOMÁTICOS — dono, 01/09/2026: *"os lançamentos automáticos
+          podemos colocar um botão nesse a lançar que abre um menu lateral"*.
+
+          ⚠ É o `Modal lateral`, não um overlay novo: Esc, clique no fundo, foco preso e foco de
+          volta ao gatilho vêm do primitivo. Escrever o quarto-e-quarenta-e-quatro overlay à mão
+          para "só uma gaveta" é como os 43 anteriores nasceram.
+          ⚠⚠ O PAINEL VAI INTEIRO, com o desfazer dentro: ele é o único lugar do sistema onde se
+          desfaz um lançamento que ninguém mandou fazer, e uma gaveta "só de leitura" obrigaria a
+          fechá-la para agir sobre o que ela acabou de mostrar.
+          ───────────────────────────────────────────────────────────────────────────────────────── */}
+      {vendoLancadosPorRegra ? (
+        <Modal
+          titulo="Lançamentos automáticos — o que as regras já lançaram"
+          lateral
+          aoFechar={() => setVendoLancadosPorRegra(false)}
+        >
+          <PainelDeLancadosPorRegra
+            companyId={companyId}
+            competencia={competencia}
+            podeEscrever={podeEscrever}
+            aoDesfazer={() => {
+              // ⚠ A fila muda (as linhas voltam a esperar conferência) e o painel de casamentos
+              // também. Sem isto, o contador desfaz e vê a tela igual atrás da gaveta.
+              setVersao((v) => v + 1);
+              carregar();
+            }}
+          />
+        </Modal>
+      ) : null}
 
       {varrendo ? (
         <ModalDaVarredura

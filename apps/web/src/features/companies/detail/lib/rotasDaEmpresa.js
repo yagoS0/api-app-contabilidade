@@ -59,7 +59,7 @@ export const SEGMENT_TO_TAB = {
    *
    * Apagá-lo faria todo link guardado cair em **Anotações sem erro nenhum** — o defeito que este
    * arquivo já registra duas vezes. Ele aponta para `conferencia` porque é lá que o conteúdo está
-   * hoje (bloco recolhido na seção «Regras»).
+   * hoje (gaveta lateral aberta pela seção «Regras»).
    * ⚠ E ele NÃO tem par em `TAB_TO_SEGMENT`: não há aba para onde voltar. Mesmo desenho do
    * `/fluxo-de-caixa`.
    */

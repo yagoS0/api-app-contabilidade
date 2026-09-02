@@ -34,6 +34,12 @@ const FOCAVEIS = [
  * @param {boolean}  [ocupado]         Gravando: `Esc` e o fundo param de fechar. ⚠ O ✕ TAMBÉM some
  *                                     — botão que não faz nada é pior que botão ausente.
  * @param {"sm"|"md"|"lg"} [tamanho]
+ * @param {boolean} [lateral]        ⚠⚠ GAVETA: a mesma caixa colada na borda direita, da altura da
+ *                                   tela. É variante do MESMO primitivo de propósito — Esc, clique
+ *                                   no fundo, foco preso, foco de volta ao gatilho e o `ocupado`
+ *                                   desligando as três saídas são exatamente os mesmos, e foi a
+ *                                   ausência deles nos 43 overlays à mão que criou este arquivo.
+ *                                   ⚠ Com `lateral`, `tamanho` é ignorado: a largura é da gaveta.
  * @param {import("react").ReactNode} [rodape]  Botões. A ação primária vai por último (à direita).
  */
 export function Modal({
@@ -41,6 +47,7 @@ export function Modal({
   aoFechar,
   ocupado = false,
   tamanho = "md",
+  lateral = false,
   rodape = null,
   children,
 }) {
@@ -111,7 +118,7 @@ export function Modal({
 
   return (
     <div
-      className="modal-fundo"
+      className={`modal-fundo${lateral ? " modal-fundo--lateral" : ""}`}
       role="dialog"
       aria-modal="true"
       aria-label={titulo}
@@ -119,7 +126,15 @@ export function Modal({
     >
       {/* `tabIndex={-1}`: focável por código, nunca pela ordem de Tab. É o alvo de último recurso
           do foco inicial e o refúgio do trap quando não há nenhum elemento focável dentro. */}
-      <div className="modal-caixa" style={{ maxWidth: largura }} ref={caixaRef} tabIndex={-1}>
+      <div
+        className={`modal-caixa${lateral ? " modal-caixa--lateral" : ""}`}
+        /* ⚠ A gaveta NÃO leva `maxWidth` inline: a largura dela é da classe, e um valor aqui
+           venceria a regra por especificidade — o defeito ficaria "a gaveta abre estreita no meio
+           da tela", que é como um overlay à mão se parece. */
+        style={lateral ? undefined : { maxWidth: largura }}
+        ref={caixaRef}
+        tabIndex={-1}
+      >
         <div className="modal-topo">
           <strong className="modal-titulo">{titulo}</strong>
           {ocupado ? null : (
