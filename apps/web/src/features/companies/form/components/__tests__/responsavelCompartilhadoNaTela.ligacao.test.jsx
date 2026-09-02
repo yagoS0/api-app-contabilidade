@@ -122,6 +122,37 @@ describe("1–2. o formulário RENDERIZA o aviso e a confirmação (a ligação)
     expect(painel).toHaveTextContent("Credenciais → Acesso ao portal do cliente");
     expect(painel.textContent.toLowerCase()).not.toContain("tem certeza");
   });
+
+  // ⚠⚠ O SEGUNDO ATO — `owner_email_conta_existente`. Ele NAO tinha teste de tela, e e justamente
+  //   o que o dono usa: *"damos o acesso da mesma pessoa a todas as suas empresas"*. Sem este
+  //   caso, o painel podia deixar de renderizar no modo VINCULO sem nada ficar vermelho.
+  it("⚠ o 409 de CONTA EXISTENTE vira a confirmacao do VINCULO, com titulo e consequencias proprios", () => {
+    montar({
+      razaoSocialAtual: "ALESSANDRO NIGRO LTDA",
+      confirmacaoAcessoProprio: {
+        modo: "VINCULO",
+        emailAtual: "contato@agencialente.com",
+        nomeAtual: "Dono antigo",
+        emailNovo: "liz@hotmail.com",
+        nomeDaContaDestino: "JULIA PACHECO",
+        empresasDoDestino: 2,
+        outras: OUTRAS,
+        contaDestinoJaTemSenha: true,
+        acessoAntigoPerdeEstaEmpresa: true,
+      },
+    });
+
+    const painel = screen.getByTestId("confirmacao-acesso-proprio");
+    // ⚠ O TITULO E O DO ATO CERTO — fixo, ele anunciaria "responde por mais de uma empresa".
+    expect(painel).toHaveTextContent("Este e-mail já é de uma conta existente");
+    expect(painel).toHaveTextContent("JULIA PACHECO");
+    expect(painel).toHaveTextContent("ALESSANDRO NIGRO LTDA passa a pertencer a essa conta");
+    // ⚠ As DUAS consequencias, e a segunda e a que ninguem pede.
+    expect(painel).toHaveTextContent("PERDE o acesso");
+    expect(painel).toHaveTextContent("já tem senha própria");
+    // ⚠ E o que NAO pode aparecer: aqui nao nasce conta nenhuma.
+    expect(painel).not.toHaveTextContent("nasce SEM SENHA");
+  });
 });
 
 describe("3. os botões da confirmação chamam quem o editPanel passou", () => {
@@ -237,22 +268,51 @@ describe("4. o mock reproduz a regra — os ramos são alcançáveis offline", (
     expect(depois.find((c) => c.companyId === b.companyId).ownerEmail).toBe(email);
   });
 
-  it("e-mail que já é de OUTRO responsável continua recusado, mesmo confirmando", async () => {
+  // ⚠⚠ ESTE TESTE FOI INVERTIDO, NAO APAGADO — 02/09/2026.
+  //
+  // Ele travava a regra ANTIGA: *"a confirmacao autoriza CRIAR conta, nunca ASSUMIR a de outro —
+  // foi assim que tudo comecou"* (19/08/2026, commit `33928cec`). Essa regra foi REVOGADA pelo
+  // dono em 30/08/2026: *"podemos usar o mesmo email para mais de uma empresa, assim damos o
+  // acesso da mesma pessoa a todas as suas empresas"*.
+  //
+  // ⚠ O motivo antigo continua valendo contra assumir conta alheia EM SILENCIO — e e a
+  // confirmacao que o repoe. O que caiu foi a recusa FINAL.
+  //
+  // ⚠ E o mock ficou 3 dias recusando o que a producao ja aceitava: offline a tela mostrava um
+  // beco sem saida que o servidor nao tem. Foi a QUINTA vez que o mock escondeu um ramo aqui.
+  it("e-mail que ja e de OUTRO responsavel PEDE CONFIRMACAO — nao recusa mais", async () => {
     const api = createMockApi();
     const { a } = await duasEmpresasNoMesmoEmail(api);
     const outroGrupo = await duasEmpresasNoMesmoEmail(api);
 
     let recusa = null;
     try {
-      await api.updateCompany(
-        a.companyId,
-        { ...a, ownerEmail: outroGrupo.email, razaoSocial: a.razao, cnpj: a.cnpj },
-        { confirmarNovoAcesso: true }
-      );
+      await api.updateCompany(a.companyId, { ...a, ownerEmail: outroGrupo.email, razaoSocial: a.razao, cnpj: a.cnpj });
     } catch (err) {
       recusa = err;
     }
-    // A confirmação autoriza CRIAR conta, nunca ASSUMIR a de outro — foi assim que tudo começou.
-    expect(recusa?.code).toBe("owner_email_already_in_use");
+    expect(recusa?.code).toBe("owner_email_conta_existente");
+    expect(recusa.payload.emailNovo).toBe(outroGrupo.email);
+    expect(recusa.payload.empresasDoDestino).toBe(2);
+    expect(recusa.payload.acessoAntigoPerdeEstaEmpresa).toBe(true);
+  });
+
+  it("⚠ CONFIRMANDO, a empresa passa MESMO para a conta existente — o pedido do dono", async () => {
+    const api = createMockApi();
+    const { a } = await duasEmpresasNoMesmoEmail(api);
+    const outroGrupo = await duasEmpresasNoMesmoEmail(api);
+
+    const res = await api.updateCompany(
+      a.companyId,
+      { ...a, ownerEmail: outroGrupo.email, razaoSocial: a.razao, cnpj: a.cnpj },
+      { confirmarNovoAcesso: true }
+    );
+
+    // ⚠ `acessoVinculado`, nunca `acessoNovo`: a conta destino JA TEM senha, e o aviso da tela
+    //   muda por causa disso.
+    expect(res.acessoVinculado).toMatchObject({ email: outroGrupo.email, semSenha: false });
+    expect(res.acessoNovo).toBeUndefined();
+    const depois = await api.listCompanies();
+    expect(depois.find((c) => c.companyId === a.companyId).ownerEmail).toBe(outroGrupo.email);
   });
 });

@@ -1671,7 +1671,33 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
               const companiesDoClient = await tx.company.count({
                 where: { clientId: updatedLegacy.clientId },
               });
-              if (companiesDoClient <= 1) {
+              // ⚠⚠ E ELE DERRUBAVA A TROCA DE RESPONSAVEL INTEIRA — defeito medido em producao,
+              // 02/09/2026, e relatado pelo dono como *"nao consigo alterar o responsavel das
+              // empresas"*.
+              //
+              // `Client.email` e `Client.login` sao os DOIS `@unique`. Este update roda na MESMA
+              // transacao, DEPOIS de o vinculo ja ter sido gravado: batendo no `@unique` ele
+              // estoura P2002 e a transacao INTEIRA volta atras. O contador confirma o vinculo,
+              // recebe um erro tecnico, e nada muda — inclusive o cadastro, que tambem e desfeito.
+              //
+              // ⚠ Nao e caso de borda: medido, 22 dos 24 e-mails de responsavel da carteira JA
+              // existem como `Client`, e 20 das 34 empresas entram neste `if`. Vincular a conta de
+              // alguem que ja e dono de outra empresa — que e exatamente o pedido do dono,
+              // *"damos o acesso da mesma pessoa a todas as suas empresas"* — batia SEMPRE.
+              //
+              // ⚠ A saida e PULAR, nao repontar `Company.clientId`: o `Client` legado carrega
+              // `invoices` e `serviceInvoices`, e mover a empresa de dono legado arrastaria nota
+              // fiscal junto. E ele NAO e login (o comentario acima ja mede isso: nada em
+              // `routes/auth.js` autentica contra `Client`), entao o dado ficar com o e-mail
+              // antigo e uma imprecisao — perder a troca do responsavel e o defeito.
+              const clientComEsseEmail = await tx.client.findFirst({
+                where: {
+                  OR: [{ email: ownerEmailInput }, { login: ownerEmailInput }],
+                  NOT: { id: updatedLegacy.clientId },
+                },
+                select: { id: true },
+              });
+              if (companiesDoClient <= 1 && !clientComEsseEmail) {
                 await tx.client.update({
                   where: { id: updatedLegacy.clientId },
                   data: { email: ownerEmailInput, login: ownerEmailInput },

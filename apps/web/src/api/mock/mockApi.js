@@ -3380,10 +3380,36 @@ export function createMockApi() {
             c.companyId !== companyId
             && String(c.ownerEmail || "").trim().toLowerCase() === emailNovoMock
         );
-        if (deOutro) {
-          const err = new Error("owner_email_already_in_use");
-          err.code = "owner_email_already_in_use";
+        // ⚠⚠ ESTE RAMO RECUSAVA COM `owner_email_already_in_use` — a recusa FINAL que o dono
+        //   REVOGOU em 30/08/2026 (*"podemos usar o mesmo email para mais de uma empresa"*). O
+        //   servidor ja pedia confirmacao (`owner_email_conta_existente`) e o mock continuava
+        //   recusando: offline a tela mostrava um beco sem saida que producao nao tem mais.
+        //   Quinta vez que o mock esconde um ramo neste projeto.
+        if (deOutro && confirmarNovoAcesso !== true) {
+          const donoDestino = mockCompanies.find(
+            (c) =>
+              c.companyId !== companyId
+              && String(c.ownerEmail || "").trim().toLowerCase() === emailNovoMock
+          );
+          const doDestino = mockCompanies.filter(
+            (c) =>
+              c.companyId !== companyId
+              && String(c.ownerEmail || "").trim().toLowerCase() === emailNovoMock
+          );
+          const err = new Error("owner_email_conta_existente");
+          err.code = "owner_email_conta_existente";
           err.status = 409;
+          err.payload = {
+            error: "owner_email_conta_existente",
+            emailAtual: emailAtualMock,
+            nomeAtual: atualMock.ownerName || null,
+            emailNovo: emailNovoMock,
+            nomeDaContaDestino: donoDestino?.ownerName || null,
+            empresasDoDestino: doDestino.length,
+            outras: doDestino.map((c) => ({ id: c.companyId, razao: c.razao, cnpj: c.cnpj })),
+            contaDestinoJaTemSenha: true,
+            acessoAntigoPerdeEstaEmpresa: true,
+          };
           throw err;
         }
         if (daConta.length > 1 && confirmarNovoAcesso !== true) {
@@ -3497,17 +3523,35 @@ export function createMockApi() {
       // ⚠ Só quando o acesso PRÓPRIO foi mesmo criado. As outras empresas do e-mail antigo não são
       // tocadas aqui — que é literalmente a garantia do conserto, e offline ela se vê olhando
       // `mockCompanies` depois do salvar.
-      const criouAcessoProprio =
+      const trocouDeConta =
         confirmarNovoAcesso === true
         && emailNovoMock
         && emailAtualMock
         && emailNovoMock !== emailAtualMock;
+      // ⚠ OS DOIS DESFECHOS DIZEM COISAS DIFERENTES, e o mock precisa exercer os dois: conta
+      //   CRIADA nasce sem senha; conta que JA EXISTIA nao tem nada a definir. Com um so, a tela
+      //   do vinculo nunca era vista offline.
+      const vinculouContaExistente = trocouDeConta
+        && mockCompanies.some(
+          (c) =>
+            c.companyId !== companyId
+            && String(c.ownerEmail || "").trim().toLowerCase() === emailNovoMock
+        );
       return {
         ok: true,
         company: next,
-        ...(criouAcessoProprio
-          ? { acessoNovo: { userId: `mock-user-${companyId}`, email: emailNovoMock, semSenha: true } }
-          : {}),
+        ...(vinculouContaExistente
+          ? {
+              acessoVinculado: {
+                userId: `mock-user-${emailNovoMock}`,
+                email: emailNovoMock,
+                nome: null,
+                semSenha: false,
+              },
+            }
+          : trocouDeConta
+            ? { acessoNovo: { userId: `mock-user-${companyId}`, email: emailNovoMock, semSenha: true } }
+            : {}),
       };
     },
     async getCompanyGuides(companyId) {

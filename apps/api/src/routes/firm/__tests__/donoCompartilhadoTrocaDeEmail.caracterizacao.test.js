@@ -183,11 +183,35 @@ function ligarPrismaAoBanco() {
     return semearVinculo(create);
   });
 
+  // ⚠⚠ O BANCO DE MENTIRA PASSOU A HONRAR OS DOIS `@unique` DE `Client` (`email` e `login`).
+  //   Sem isso o defeito de 02/09/2026 era INVISIVEL aqui: a rota chamava `client.update` com um
+  //   e-mail ja usado, o dubla aceitava de bom grado, e o teste passava sobre um caminho que em
+  //   producao estourava P2002 e derrubava a transacao inteira.
   prismaMock.client.update.mockImplementation(async ({ where, data }) => {
     const c = banco.clients.get(where.id);
     if (!c) throw new Error(`client ${where.id} inexistente`);
+    for (const campo of ["email", "login"]) {
+      if (data?.[campo] === undefined) continue;
+      const colide = [...banco.clients.values()].some((o) => o.id !== where.id && o[campo] === data[campo]);
+      if (colide) {
+        const err = new Error(
+          `Unique constraint failed on the fields: (\`${campo}\`)`
+        );
+        err.code = "P2002";
+        err.meta = { target: [campo] };
+        throw err;
+      }
+    }
     Object.assign(c, data);
     return { ...c };
+  });
+  prismaMock.client.findFirst.mockImplementation(async ({ where }) => {
+    const alvos = Array.isArray(where?.OR) ? where.OR : [];
+    const excluido = where?.NOT?.id;
+    const achado = [...banco.clients.values()].find(
+      (c) => c.id !== excluido && alvos.some((o) => (o.email && c.email === o.email) || (o.login && c.login === o.login))
+    );
+    return achado ? { ...achado } : null;
   });
   prismaMock.client.create.mockImplementation(async ({ data }) => {
     const id = `client-novo-${banco.clients.size + 1}`;
@@ -506,5 +530,90 @@ describe("PATCH /firm/companies/:id — troca do e-mail do responsável e a cont
     }
     expect(banco.users.get("user-dono").email).toBe(EMAIL_ANTIGO);
     expect(banco.vinculos.filter((v) => v.userId === "user-dono" && v.status === "ACTIVE")).toHaveLength(8);
+  });
+});
+
+// ⚠⚠ O CLIENT LEGADO NAO PODE DERRUBAR A TROCA DO RESPONSAVEL — defeito de producao, 02/09/2026.
+//
+// Relato do dono, literal: *"EM PRODUCAO DEVE PODER ALTERAR TUDO NO CADASTRO, MENOS O CNPJ, MAS
+// NAO CONSIGO ALTERAR O RESPONSAVEL DAS EMPRESAS"*.
+//
+// O que acontecia: depois de o contador CONFIRMAR o vinculo, a rota ainda executava, na MESMA
+// transacao, `tx.client.update({ data: { email, login } })` na tabela LEGADA. Os dois campos sao
+// `@unique`, e o e-mail de destino ja pertencia a outro `Client` — porque o provisionamento cria
+// um `Client` por e-mail de dono. P2002, transacao inteira revertida, vinculo perdido.
+//
+// ⚠ Medido em producao antes do conserto: **22 dos 24** e-mails de responsavel da carteira JA
+// existem como `Client`, e **20 das 34** empresas caem no `if` que dispara o update. Vincular a
+// conta de alguem que ja e dono de outra empresa — o pedido do dono — batia SEMPRE.
+describe("PATCH /firm/companies/:id — o Client legado nao derruba a troca do responsavel", () => {
+  let app;
+  const EMAIL_DESTINO = "ja.existe@empresa.com";
+  const CLIENT_DO_DESTINO = "client-do-destino";
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetBanco();
+    ligarPrismaAoBanco();
+    banco.clients.set(CLIENT_LEGACY, { id: CLIENT_LEGACY, email: EMAIL_ANTIGO, login: EMAIL_ANTIGO, name: "Dono", quantasCompanies: 1 });
+    // O `Client` legado da OUTRA empresa, ja com o e-mail de destino — o estado real da carteira.
+    banco.clients.set(CLIENT_DO_DESTINO, { id: CLIENT_DO_DESTINO, email: EMAIL_DESTINO, login: EMAIL_DESTINO, name: "Destino", quantasCompanies: 1 });
+    app = montarApp();
+  });
+
+  function cenarioDoDono() {
+    // A empresa editada tem o dono dela; o e-mail de destino ja e conta de OUTRA empresa.
+    semearUsuario({ id: "user-dono", email: EMAIL_ANTIGO });
+    semearVinculo({ companyId: PORTAL_EDITADA, userId: "user-dono" });
+    semearUsuario({ id: "user-destino", email: EMAIL_DESTINO, name: "JULIA" });
+    semearVinculo({ companyId: "portal-outra-1", userId: "user-destino" });
+  }
+
+  test("⚠⚠ CONFIRMADO, O VINCULO GRAVA — antes disto a transacao inteira voltava atras (P2002)", async () => {
+    cenarioDoDono();
+
+    // 1o salvar: o servidor pede confirmacao (este pedaco ja funcionava).
+    const aviso = await salvar(app, { ownerEmail: EMAIL_DESTINO });
+    expect(aviso.status).toBe(409);
+    expect(aviso.body.error).toBe("owner_email_conta_existente");
+
+    // 2o salvar: o contador confirmou na tela. ANTES: 500, e nada mudava.
+    const res = await salvar(app, { ownerEmail: EMAIL_DESTINO, confirmarNovoAcesso: true });
+    expect(res.status).toBe(200);
+    expect(donoDe(PORTAL_EDITADA)).toEqual({ userId: "user-destino", email: EMAIL_DESTINO });
+  });
+
+  test("o `Client` legado do destino fica INTACTO — ele carrega notas fiscais", async () => {
+    cenarioDoDono();
+    await salvar(app, { ownerEmail: EMAIL_DESTINO, confirmarNovoAcesso: true });
+
+    expect(banco.clients.get(CLIENT_DO_DESTINO)).toMatchObject({ email: EMAIL_DESTINO, login: EMAIL_DESTINO });
+    // ⚠ E o da empresa editada NAO e renomeado: renomea-lo exigiria roubar o e-mail do outro.
+    expect(banco.clients.get(CLIENT_LEGACY)).toMatchObject({ email: EMAIL_ANTIGO });
+    expect(prismaMock.client.update).not.toHaveBeenCalled();
+  });
+
+  test("⚠ a EMPRESA nao se perde junto: o cadastro editado tambem e gravado", async () => {
+    // A transacao abortada levava o `company.update` junto — o contador perdia a edicao inteira,
+    // nao so a troca do responsavel.
+    cenarioDoDono();
+    const res = await salvar(app, { ownerEmail: EMAIL_DESTINO, confirmarNovoAcesso: true });
+
+    expect(res.status).toBe(200);
+    expect(prismaMock.company.update).toHaveBeenCalled();
+  });
+
+  test("PRESERVADO: sem colisao, o `Client` legado continua acompanhando o e-mail novo", async () => {
+    // O caso comum nao mudou — e a prova de que o conserto e uma GUARDA, nao a remocao do update.
+    semearUsuario({ id: "user-dono", email: EMAIL_ANTIGO });
+    semearVinculo({ companyId: PORTAL_EDITADA, userId: "user-dono" });
+
+    const res = await salvar(app, { ownerEmail: "ninguem.usa@empresa.com" });
+
+    expect(res.status).toBe(200);
+    expect(banco.clients.get(CLIENT_LEGACY)).toMatchObject({
+      email: "ninguem.usa@empresa.com",
+      login: "ninguem.usa@empresa.com",
+    });
   });
 });
