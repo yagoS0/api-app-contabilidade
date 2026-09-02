@@ -778,7 +778,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
             padding: "6px 10px", borderRadius: 8, cursor: "pointer",
             font: "inherit", fontSize: "0.8rem",
             // ⚠ Os MESMOS tokens do resto desta tela (`card` acima) — nunca um hex novo aqui.
-            color: "var(--text-2)", background: "transparent",
+            color: "var(--text-muted)", background: "transparent",
             border: "1px solid var(--border)",
           }}
         >

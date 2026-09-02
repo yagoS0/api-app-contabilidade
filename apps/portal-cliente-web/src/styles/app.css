@@ -915,7 +915,7 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 .fluxo-v3-migalha { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .fluxo-v3-migalha > strong { font-size: .9rem; }
 .fluxo-v3-voltar {
-  font: inherit; font-size: .78rem; cursor: pointer; color: var(--text-2);
+  font: inherit; font-size: .78rem; cursor: pointer; color: var(--muted);
   border: 1px solid var(--border); background: var(--surface);
   border-radius: var(--radius); padding: 5px 10px;
 }
@@ -1008,7 +1008,7 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
   margin: 0 0 8px;
   font-size: .82rem;
   font-weight: 600;
-  color: var(--text-2);
+  color: var(--muted);
 }
 /* A marca do mês corrente é a MESMA do resto da tela (ciano), e ela some no bloco que não é hoje. */
 .fluxo-v4-mes[data-agora="sim"] { color: var(--ciano); }
@@ -1048,7 +1048,7 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
    "vá para lá" na outra metade. */
 .btn-alternador[aria-pressed="true"] {
   background: var(--neutral-surface);
-  border-color: var(--text-2);
+  border-color: var(--muted);
   color: var(--text);
 }
 
@@ -1119,7 +1119,7 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
   border-radius: var(--radius);
 }
 .dre-nao-classificado > p { margin: 0; font-size: .8rem; color: var(--muted); }
-.dre-nc-valor { font-weight: 600; color: var(--text-2); }
+.dre-nc-valor { font-weight: 600; color: var(--muted); }
 
 /* "Não é peça fiscal" — ela impede uma AFIRMAÇÃO, não descreve uma ausência. */
 .dre-rodape { margin: 14px 0 0; font-size: .76rem; color: var(--muted); }
