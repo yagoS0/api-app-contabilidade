@@ -165,7 +165,31 @@ function serializeEmitidaNaoConfirmada(si, { emitenteNome, emitenteDoc }) {
     numero: si.numeroNfse || null,
     competencia: formatCompetencia(si.competencia),
     issueDate: dateToIso(si.createdAt),
-    status: "EMITIDA",
+    /**
+     * ⚠⚠ O STATUS SAI DO NOSSO REGISTRO — era `"EMITIDA"` CRAVADO até 31/08/2026.
+     *
+     * > Dono: *"ajuste também os status das notas canceladas, mesmo canceladas estão como
+     * > emitidas"*.
+     *
+     * O comentário antigo dizia *"a nota FOI emitida; um status novo a pintaria de rascunho ou de
+     * erro"* — e estava certo enquanto o cancelamento desta nota **não existia**. Ele passou a
+     * existir no mesmo dia (a rota de cancelar passou a ler `ServiceInvoice`), e aí o literal virou
+     * mentira: `NfseRepository.updateByChaveAcesso` grava `status: "cancelled"` na NOSSA linha,
+     * logo depois de o evento ser aceito, e a lista continuava dizendo "Emitida".
+     *
+     * ⚠⚠ **ISTO NÃO É A CAPTURA.** Quem é autoridade sobre a nota é o ADN, e a linha dele
+     * (`PortalInvoice`) continua mandando quando existir. O que se afirma aqui é mais estreito e é
+     * NOSSO: *"nós mandamos cancelar esta nota e o sistema nacional aceitou"*. Não afirmar isso era
+     * esconder um ato que nós mesmos praticamos.
+     *
+     * ⚠ Vocabulário FECHADO: só `cancelled` vira `CANCELADA`. Status que esta função não conhece
+     * continua `EMITIDA` — a linha só chega aqui depois de `STATUS_SEM_NOTA` já ter tirado
+     * `pending`/`rejected`/`falha_envio`, então o que sobra é nota que existe.
+     */
+    // ⚠ `CANCELAMENTO_ENVIADO`, não `CANCELADA` — dono: *"tire o status de emitida até ter o
+    // retorno do ADN então"*. Quem afirma o estado final é o ADN; o que nós afirmamos é o nosso
+    // ato aceito. É o MESMO vocabulário da sobreposição da listagem, e as duas têm de andar juntas.
+    status: String(si.status || "").toLowerCase() === "cancelled" ? "CANCELAMENTO_ENVIADO" : "EMITIDA",
     total: decimalToNumber(si.valorServicos),
     emitente: { nome: emitenteNome || null, cnpj: emitenteDoc || null },
     tomador: { nome: si.tomadorNome || null, cnpjCpf: si.tomadorDoc || null },
@@ -521,7 +545,53 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
 
       const comCiclo = montarIndiceDeCiclo({ notas: items, eventos, relacionadas });
 
-      const janela = intercalar(comCiclo.map(serializeInvoice), nossas, sortKey, sortOrder);
+      /**
+       * ⚠⚠ O CANCELAMENTO QUE NÓS ENVIAMOS SOBREPÕE A LINHA CAPTURADA (31/08/2026).
+       *
+       * > Dono: *"essas 3 notas estão canceladas, e o status é emitida e eu consigo clicar no
+       * > botão de cancelar"* → *"deixa o botão de cancelar cinza e tire o status de emitida até
+       * > ter o retorno do ADN então."*
+       *
+       * O caso medido: as notas 160/161/162 são NOSSAS emissões, canceladas às 17:49 (o evento
+       * `e101101` foi ACEITO pelo sistema nacional, e `ServiceInvoice.status = "cancelled"` é a
+       * prova). Mas o ADN as capturou ANTES do evento — a linha `PortalInvoice` diz `autorizada`,
+       * e é ela que vence na lista. A tela dizia "Emitida" com o Cancelar clicável, e o segundo
+       * pedido voltaria recusado, lido como "o cancelamento falhou".
+       *
+       * ⚠⚠ **NADA É ESCRITO EM `PortalInvoice`** — a regra da casa continua inteira (o encontro
+       * das duas escritas já produziu faturamento somado duas vezes). A sobreposição é NA LEITURA,
+       * como toda a união desta rota, e o que ela afirma é o NOSSO ato: *"nós mandamos cancelar e
+       * o sistema nacional aceitou"*. Por isso o status é `CANCELAMENTO_ENVIADO`, e não
+       * `CANCELADA`: quem afirma o estado final da nota é o ADN, quando trouxer o evento — e aí a
+       * linha capturada passa a dizer CANCELADA sozinha e esta sobreposição deixa de casar.
+       *
+       * ⚠ Só `papel: "EMIT"`: cancelar é ato do emitente, então só a NOSSA cópia da nota pode ter
+       * um cancelamento nosso. A cópia DEST da mesma chave (outra empresa da carteira) segue como
+       * o ADN a descreve.
+       */
+      const chavesEmit = comCiclo
+        .filter((n) => String(n.papel || "").toUpperCase() === "EMIT" && n.chaveAcesso)
+        .map((n) => n.chaveAcesso);
+      const cancelamentosNossos = chavesEmit.length
+        ? new Set(
+          (await prisma.serviceInvoice.findMany({
+            where: { chaveAcesso: { in: chavesEmit }, status: "cancelled" },
+            select: { chaveAcesso: true },
+          })).map((s) => s.chaveAcesso)
+        )
+        : new Set();
+
+      const capturadas = comCiclo.map(serializeInvoice).map((item, i) => {
+        const cru = comCiclo[i];
+        const cancelamentoEnviado = String(cru.papel || "").toUpperCase() === "EMIT"
+          && cancelamentosNossos.has(cru.chaveAcesso)
+          // ⚠ Quando o ADN JÁ diz cancelada/substituída, ele vence — a sobreposição é só para a
+          // janela em que a captura ainda não trouxe o evento.
+          && item.status === "EMITIDA";
+        return cancelamentoEnviado ? { ...item, status: "CANCELAMENTO_ENVIADO" } : item;
+      });
+
+      const janela = intercalar(capturadas, nossas, sortKey, sortOrder);
       const data = janela.slice(skip - inicioP, skip - inicioP + take);
 
       // ⚠ OS TOTAIS CONTAM AS NOSSAS. A nota emitida existe e vale o que vale; deixá-la fora do

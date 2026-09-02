@@ -1795,6 +1795,29 @@ export function createRealApi() {
       });
     },
 
+    /**
+     * ⚠⚠ O QUE O CLIENTE MEXEU NAS SAÍDAS QUE ELE NÃO CRIOU — a quarta fila (31/08/2026).
+     *
+     * > Dono: *"pode ser excluído uma saída pelo usuário. ou alterado a data"* e *"planeje e pense,
+     * > como isso vai ser mostrado ao contador."*
+     *
+     * ⚠⚠ A linha que ele mexeu pode ter entrado no fluxo SOZINHA (a regra dos 10%). Se ele a exclui
+     * e ela só some, o escritório continua achando que a projeção existe — e o fluxo que os dois
+     * olham deixa de ser o mesmo fluxo.
+     * ⚠ Ela NÃO entra na contagem âmbar do botão "A lançar": as outras três filas pedem uma
+     * DECISÃO, esta é CIÊNCIA. Âmbar permanente treina o olho a ignorar a cor.
+     */
+    async getConferenciaMexidasDoCliente(companyId) {
+      return request(`/firm/companies/${companyId}/conferencia/mexidas-do-cliente`);
+    },
+
+    /** ⚠ O desfazer: a série volta ao fluxo do cliente. Sem ele, a exclusão é definitiva na prática. */
+    async postConferenciaMexidaDesfazer(companyId, serieId) {
+      return request(`/firm/companies/${companyId}/conferencia/mexidas-do-cliente/${serieId}/desfazer`, {
+        method: "POST",
+      });
+    },
+
     async getConferenciaPendencias(companyId) {
       return request(`/firm/companies/${companyId}/conferencia/pendencias`);
     },

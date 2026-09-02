@@ -47,6 +47,7 @@ import { lerSerie, PERIODICIDADE } from "./lib/recorrencia.js";
 import {
   DIA_DESCONHECIDO,
   DIRECAO,
+  ORIGEM_DO_DIA,
   FONTE,
   FRASE_DO_SEM_IMPOSTO,
   FRASE_DO_SEM_MES,
@@ -63,6 +64,8 @@ import {
   competenciaDaData,
   competenciaDeMeses,
   diaDaData,
+  diaDoMesValido,
+  encaixarNoMes,
   fraseDaAliquota,
   mesesDaCompetencia,
   montarLinha,
@@ -148,6 +151,16 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
       // ⚠ QUANDO foi pago. Sem esta coluna a guia paga não tem mês, e um fato sem data não se
       // coloca em lugar nenhum — viraria um chute de mês.
       paymentConfirmedAt: true,
+      // ⚠⚠ A COMPOSIÇÃO POR TRIBUTO (31/08/2026) — dono: *"as guias de presumido, no caso da
+      // sincrosat, aparece como outras (…) apenas no cliente, mas no contador está PIS e COFINS
+      // bem denominado."*
+      //
+      // A DARF do Lucro Presumido é gravada como `tipo: "OUTRA"` — UM documento com até quatro
+      // tributos dentro —, e é a composição que diz quais. Ela estava fora deste `select`, então
+      // `rotuloDaGuia` nunca teve o que ler e devolvia "OUTRA" cru para o painel e para o fluxo.
+      // ⚠ É a armadilha de sempre desta casa: coluna fora de um `select` explícito volta
+      // `undefined`, e quem a lê não erra — só não encontra nada.
+      extracted: true,
     },
     orderBy: { vencimento: "asc" },
   });
@@ -317,12 +330,52 @@ export function vencimentoDaGuia(g) {
   return { data: new Date(Date.UTC(ano, mes, DIA_DO_VENCIMENTO_LEGAL)), presumido: true };
 }
 
+/**
+ * Nome curto do tributo de uma linha da composição ("IRRF - ALUG…" → "IRRF").
+ *
+ * ⚠ ESPELHO de `tributoCurto` (`portal-cliente-web/src/features/guias/lib/rotuloGuia.js`), que por
+ * sua vez espelha o do portal do contador. A regra não é inventada aqui.
+ */
+function tributoCurto(c) {
+  if (c?.tributo) return String(c.tributo).trim();
+  const den = String(c?.denominacao || "").trim();
+  if (den) return (den.split(/\s*[-–—]\s*/)[0] || den).trim();
+  return String(c?.codigo || "").trim() || "?";
+}
+
+/**
+ * ⚠⚠ COMO UMA GUIA SE CHAMA NO FLUXO E NO PAINEL DO CLIENTE (31/08/2026).
+ *
+ * > Dono: *"as guias de presumido, no caso da sincrosat, aparece como outras (…) elas aparecem
+ * > outras apenas no cliente, mas no contador está PIS e COFINS bem denominado."*
+ *
+ * ⚠⚠ **HAVIA DOIS RÓTULOS, e só um sabia ler a composição.** A **aba Guias** do cliente usa
+ * `features/guias/lib/rotuloGuia.js`, que lê `extracted.composicao` e escreve "PIS · COFINS" —
+ * conserto de 24/08/2026, amarrado por teste ao rótulo do contador. Já o **painel** (`GuiasVencidas`)
+ * e o **fluxo de caixa** recebem o rótulo pronto DAQUI, e esta função devolvia o `tipo` cru. Mesma
+ * empresa, mesma guia, dois nomes — dependendo da tela.
+ *
+ * ⚠ A DARF do Lucro Presumido é UM documento com até quatro tributos dentro, gravado como
+ * `tipo: "OUTRA"`. Medido em produção em 31/08/2026: **13 das 20 guias `OUTRA` têm composição**, e
+ * a da SINCROSAT traz `PIS - FATURAMENTO - PJ EM GERAL` e `COFINS - FATURAMENTO/PJ EM GERAL`.
+ *
+ * ⚠⚠ **SEM COMPOSIÇÃO O RÓTULO CONTINUA "OUTRA", e isso é a resposta certa** — as outras 7. É o
+ * que está GRAVADO; inventar "PIS · COFINS" numa guia cuja composição não foi lida afirmaria ao
+ * cliente quais impostos ele está pagando, sem ninguém ter medido.
+ */
 function rotuloDaGuia(g) {
   const tipo = texto(g.tipo) || "OUTRA";
   // ⚠ A parcela de parcelamento NÃO é o DAS do mês — o que as separa é o `parcelamentoId`, e a
   // regra é a de `guideContract.isGuiaDeParcelamento`. Aqui só o RÓTULO muda; nenhuma leitura de
   // compliance é reimplementada.
+  // ⚠⚠ E ELA DECIDE ANTES DO TIPO, como no rótulo do cliente: a parcela é gravada com o tipo do
+  // imposto, então inverter a ordem a faria aparecer como o DAS do mês.
   if (g.parcelamentoId) return `Parcela${g.numeroParcela ? ` ${g.numeroParcela}` : ""} de parcelamento`;
+  if (tipo.toUpperCase() === "OUTRA") {
+    const comp = Array.isArray(g?.extracted?.composicao) ? g.extracted.composicao : [];
+    const nomes = [...new Set(comp.map(tributoCurto).filter(Boolean))];
+    if (nomes.length) return nomes.join(" · ");
+  }
   return tipo;
 }
 
@@ -574,6 +627,24 @@ async function linhasDasSeries({ portalClientId, cicloAtual, mesesAProjetar = HO
     }
 
     const ehReceita = s.lado === LADO.RECEITA;
+    /**
+     * ⚠⚠ O DIA DA RECORRÊNCIA — e a ORDEM É A REGRA (31/08/2026).
+     *
+     * > Dono: *"eu quero que entre em algum dia, pode ser no dia em que a nota foi emitida (…)
+     * > pode ser modificado posteriormente"* e *"ou alterado a data"*.
+     *
+     * ⚠⚠ **O CLIENTE VENCE A ESTIMATIVA, SEMPRE.** Quem paga sabe quando paga; a mediana das
+     * emissões é palpite sobre o passado. Se a estimativa vencesse, a próxima varredura desfaria a
+     * correção dele em silêncio — e ele corrigiria de novo, para sempre.
+     * ⚠ Sem nenhum dos dois a linha continua em "no mês", com o motivo de sempre. Ausência de dia
+     * NÃO vira dia 1: inventar precisão é o que este payload existe para não fazer.
+     */
+    const diaDoCliente = diaDoMesValido(s.diaDoMes);
+    const diaEstimado = diaDoMesValido(s.baseDaObservacao?.dia);
+    const diaDaSerie = diaDoCliente != null ? diaDoCliente : diaEstimado;
+    const origemDoDia = diaDoCliente != null
+      ? ORIGEM_DO_DIA.CLIENTE
+      : (diaEstimado != null ? ORIGEM_DO_DIA.EMISSAO : null);
     const passo = { MENSAL: 1, TRIMESTRAL: 3, ANUAL: 12 }[s.periodicidade] || 1;
     // ⚠ A série se repete ao longo do horizonte, no ritmo dela. Uma linha só, no mês corrente,
     // faria uma recorrência mensal parecer um pagamento único.
@@ -582,13 +653,20 @@ async function linhasDasSeries({ portalClientId, cicloAtual, mesesAProjetar = HO
     // 12 à frente joga os 4 últimos para FORA da janela — e eles iam engordar `foraDoHorizonte`,
     // que existe para contar o que se perdeu, não o que nunca foi pedido.
     for (let i = 0; i < mesesAProjetar; i += passo) {
+      const competenciaDaVez = competenciaDeMeses(base + i);
+      // ⚠⚠ O dia é ENCAIXADO no mês, e isso não é detalhe: dia 31 numa série mensal cairia fora de
+      // fevereiro, abril, junho, setembro e novembro. Sem o encaixe, a linha SUMIRIA nesses meses —
+      // dinheiro desaparecendo da projeção cinco vezes por ano, sem erro nenhum na tela.
+      const diaDaLinha = diaDaSerie == null ? null : encaixarNoMes(competenciaDaVez, diaDaSerie);
       linhas.push(montarLinha({
         fonte: ehReceita ? FONTE.SERIE_RECEITA : FONTE.SERIE_DESPESA,
         direcao: ehReceita ? DIRECAO.ENTRADA : DIRECAO.SAIDA,
         procedencia: PROCEDENCIA.PREVISAO,
-        competencia: competenciaDeMeses(base + i),
-        dia: null,
-        diaDesconhecido: DIA_DESCONHECIDO.SERIE_SEM_DIA,
+        competencia: competenciaDaVez,
+        dia: diaDaLinha,
+        // ⚠ Com dia, o motivo SOME — deixá-lo preenchido faria a tela dizer "não sabemos o dia"
+        // embaixo de um dia. Sem dia, ele continua sendo o de sempre.
+        diaDesconhecido: diaDaLinha == null ? DIA_DESCONHECIDO.SERIE_SEM_DIA : null,
         valor,
         rotulo: texto(s.rotulo) || texto(s.chave),
         // ⚠⚠ A EVIDÊNCIA CONGELADA NA DECISÃO viaja com a linha — é ela que responde "por que esta
@@ -600,6 +678,12 @@ async function linhasDasSeries({ portalClientId, cicloAtual, mesesAProjetar = HO
           max: numero(s.baseDaObservacao?.max),
           cv: numero(s.baseDaObservacao?.cv),
           origem: s.origem,
+          // ⚠⚠ DE ONDE VEIO O DIA — é o que permite às duas telas distinguirem "estimado pelas
+          // emissões" de "informado pelo cliente". Ver `ORIGEM_DO_DIA`.
+          origemDoDia,
+          // ⚠ Os dias observados viajam como `valores` viaja: sem eles, "por que dia 4?" não tem
+          // resposta. Na SPO são 20, 2 e 4 — a mediana não é óbvia olhando só o resultado.
+          diasObservados: Array.isArray(s.baseDaObservacao?.dias) ? s.baseDaObservacao.dias : null,
           // ⚠⚠ O ESTADO DA SÉRIE VIAJA — achado NO NAVEGADOR em 29/08/2026, no mock: sem ele a tela
           // do cliente mostrava botão "Remover" em recorrência que o contador JÁ tinha confirmado,
           // e o servidor recusaria com `serie_ja_decidida`. Um botão que sempre falha é pior que a

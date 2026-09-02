@@ -121,3 +121,54 @@ export function rotuloDaColuna(chave) {
  * chamado `undefined.xlsx` — é a mesma razão já registrada em `notas/lib/loteDanfse.js`.
  */
 export const NOME_DO_ARQUIVO_MODELO = "modelo-emissao-em-lote.xlsx";
+
+/**
+ * ⚠⚠ O QUE O FORMULÁRIO DE AJUSTE MOSTRA AO ABRIR — e ele NÃO é só a planilha (31/08/2026).
+ *
+ * > Dono: *"ao abrir os ajustes o endereço do tomador não está preenchido e deveria."*
+ *
+ * ⚠⚠ **O ENDEREÇO NUNCA ESTEVE NA PLANILHA.** Ele saiu dela em 20/08/2026 e passou a vir do
+ * cadastro de tomador ou da Receita — e o formulário continuou sendo semeado só com as células do
+ * arquivo. Resultado: numa linha PRONTA, cujo endereço o servidor já resolveu, o bloco inteiro
+ * abria em branco. Quem lê conclui que o sistema não tem o endereço, e digita de novo o que já
+ * existe — ou pior, desiste da linha achando que falta dado.
+ *
+ * ⚠⚠ **AS CHAVES NÃO BATEM, e é por isso que isto é uma função e não um spread.** O payload usa
+ * `CEP` (maiúsculo, como o XML da NFS-e) e o formulário usa `cep`. Um `{...endereco}` traria a
+ * chave errada e o campo continuaria vazio — com o dado do lado, invisível.
+ *
+ * ⚠ `dados` é NULO quando a linha não está PRONTA nem em CONFERIR (é o próprio servidor que só o
+ * monta nesses dois estados). Aí o campo abre vazio mesmo — que é a verdade: não há endereço
+ * resolvido, e é justamente o que o ajuste existe para receber.
+ *
+ * ⚠ A CÉLULA DIGITADA VENCE. Quem já ajustou esta linha vê o que ELE escreveu, não o que o servidor
+ * resolveu antes — senão o formulário desfaria a correção dele toda vez que reabrisse.
+ */
+export function valoresDoAjuste(linha) {
+  const celulas = linha?.valores || {};
+  const tomador = linha?.dados?.tomador || null;
+  if (!tomador) return celulas;
+
+  const endereco = tomador.endereco || {};
+  const resolvidos = {
+    nome: tomador.nome,
+    email: tomador.email,
+    cMun: endereco.cMun,
+    // ⚠ `CEP` → `cep`: a única chave que muda de caixa entre o payload e o formulário.
+    cep: endereco.CEP,
+    xLgr: endereco.xLgr,
+    nro: endereco.nro,
+    xBairro: endereco.xBairro,
+    xCpl: endereco.xCpl,
+  };
+
+  const saida = { ...celulas };
+  for (const [chave, valor] of Object.entries(resolvidos)) {
+    // ⚠ Guarda por VAZIO, não por truthy: o número "0" e o CEP não existem como zero, mas o
+    // complemento pode ser uma string vazia legítima — e `undefined`/`null` não são resposta.
+    if (String(saida[chave] ?? "") !== "") continue;
+    if (valor == null || String(valor) === "") continue;
+    saida[chave] = String(valor);
+  }
+  return saida;
+}

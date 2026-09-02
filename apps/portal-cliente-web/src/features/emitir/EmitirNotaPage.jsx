@@ -5,7 +5,7 @@ import { useCarregamento } from "../../lib/hooks";
 import { roleLabel } from "../../lib/roles";
 import { carregarMunicipiosIbge } from "../../lib/municipios/municipioIbge";
 import { ESTADO, lerPortaoEmissao } from "./lib/portaoEmissao";
-import { TIPO, lerErroEmissao, lerResultado } from "./lib/desfechoEmissao";
+import { TIPO, desfechoMantemOFormulario, lerErroEmissao, lerResultado } from "./lib/desfechoEmissao";
 import {
   NAO_CONSULTA,
   ORIGEM,
@@ -56,6 +56,7 @@ import {
   SITUACAO as SITUACAO_CODIGO,
   carregarServicosNacionais,
   codigoParaOPayload,
+  codigoQueANotaDeclara,
   codigosOferecidos,
   conferirCodigoEscolhido,
   descricaoDoCodigo,
@@ -70,6 +71,7 @@ import {
   aliquotaIssParaOPayload,
   camposDeImposto,
   conferirAliquotaIss,
+  conferirPTotTribSN,
   lerRegime,
   pTotTribSNParaOPayload,
 } from "./lib/impostosDaNota";
@@ -494,7 +496,13 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
 
   const portao = lerPortaoEmissao(empresa);
   const legacy = empresa.legacyCompany || null;
-  const codigoServicoNacional = legacy?.codigoServicoNacional || null;
+  /**
+   * ⚠⚠ NÃO É `legacy?.codigoServicoNacional` — a prévia mentia (31/08/2026).
+   *
+   * Ela lia o SINGULAR do cadastro e não mudava com a escolha: a nota saía com um código e o
+   * espelho afirmava outro. Hoje ela pergunta `codigoQueANotaDeclara`, que responde o que vai SAIR
+   * na nota. ⚠ A montagem fica logo abaixo do `cadastroDeCodigos`, que é quem sabe a situação.
+   */
   const cadastroIncompleto = legacy
     ? CAMPOS_EXIGIDOS_DA_EMPRESA.filter(([campo]) => !legacy[campo]).map(([, nome]) => nome)
     : [];
@@ -805,6 +813,14 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   const [codigoEscolhido, setCodigoEscolhido] = useState("");
   const [servicosOficiais, setServicosOficiais] = useState(null);
 
+  // ⚠⚠ O QUE A PRÉVIA MOSTRA — ver o comentário lá em cima, onde a leitura antiga morava.
+  const codigoServicoNacional = codigoQueANotaDeclara({
+    situacao: cadastroDeCodigos.situacao,
+    oferecidos: cadastroDeCodigos.oferecidos,
+    escolhido: codigoEscolhido,
+    singular: legacy?.codigoServicoNacional,
+  });
+
   // ⚠ TROCAR DE EMPRESA ZERA A ESCOLHA — o código é do cadastro DELA. Manter a escolha anterior
   // emitiria sob um serviço que a nova empresa pode nem declarar.
   useEffect(() => {
@@ -889,6 +905,9 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     issRetido: form.issRetido,
     aliquota: form.aliquota,
   });
+
+  // ⚠ E a do `pTotTribSN`, pelo MESMO motivo — ela faltava (31/08/2026). Ver `conferirPTotTribSN`.
+  const conferenciaPTotTribSN = conferirPTotTribSN({ regime, pTotTribSN: form.pTotTribSN });
 
   const valoresDaPrevia = useMemo(
     () => ({
@@ -1015,6 +1034,16 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
       return;
     }
 
+    // ⚠⚠ NO SIMPLES, SEM A ALÍQUOTA EFETIVA, NADA SAI DAQUI.
+    //
+    // `NfseService.js:626` exige `pTotTribSN` quando `opSimpNac=3` (`MISSING_P_TOT_TRIB_SN`) — a
+    // recusa viria de qualquer jeito, e chegar nela pelo clique de EMITIR é o pior momento
+    // possível. ⚠ O critério é o DELE: ZERO passa, negativo não (ver `conferirPTotTribSN`).
+    if (!conferenciaPTotTribSN.ok) {
+      document.getElementById("emitir-ptottribsn")?.focus();
+      return;
+    }
+
     setEnviando(true);
     try {
       const payload = montarPayload(form, {
@@ -1107,7 +1136,13 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
         </button>
       </div>
 
-      {desfecho ? (
+      {/* ⚠⚠ RECUSA BARATA NÃO CUSTA A TELA INTEIRA (31/08/2026 — teste de usabilidade).
+          Onde NADA saiu da máquina (`NOSSA`, `PEDIDO_INVALIDO`) o painel entra ACIMA do
+          formulário, que continua na tela e preenchido: a pessoa lê o motivo e corrige o campo,
+          sem ter de clicar para reencontrar o que digitou. Os outros desfechos SUBSTITUEM a tela
+          como sempre — eles falam de uma nota que existe ou pode existir. Ver
+          `desfechoMantemOFormulario`. */}
+      {desfecho && !desfechoMantemOFormulario(desfecho) ? (
         <DesfechoEmissao
           desfecho={desfecho}
           aoVoltarParaNotas={aoVoltarParaNotas}
@@ -1127,6 +1162,18 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
         />
       ) : (
         <>
+          {/* ⚠ O mesmo painel, no mesmo lugar em que o cadastro incompleto já avisa — e com o
+              MESMO componente, nunca uma segunda redação da recusa: duas frases para o mesmo
+              código divergiriam na primeira correção. `aoCorrigir` aqui só fecha o alerta; o
+              formulário nunca saiu. */}
+          {desfecho && desfechoMantemOFormulario(desfecho) ? (
+            <DesfechoEmissao
+              desfecho={desfecho}
+              aoVoltarParaNotas={aoVoltarParaNotas}
+              aoCorrigir={() => setDesfecho(null)}
+              aoNovaNota={() => setDesfecho(null)}
+            />
+          ) : null}
           {cadastroIncompleto.length ? (
             // ⚠ AVISO, NÃO BLOQUEIO — e a diferença é de fonte do dado. O portão é bloqueio porque
             // `emissaoNfseLiberada` existe justamente para a tela decidir. Isto aqui é a MESMA
@@ -1856,6 +1903,16 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                   <span className="hint">Procurando a alíquota efetiva desta empresa…</span>
                 ) : escolhaAliquota?.valor === null ? (
                   <span className="hint">{textoDaProcedencia(escolhaAliquota, competenciaDaNota)}</span>
+                ) : null}
+                {/* ⚠ O QUE FALTA PARA EMITIR — e o submit é recusado aqui mesmo (ver `emitir`).
+                    Isto NÃO é a legenda cortada em 19/08: aquela DESCREVIA a procedência de um
+                    campo preenchido; esta impede a pessoa a descobrir a recusa no clique de um ato
+                    fiscal. É o mesmo pareamento que a alíquota de ISS já tinha, e que só faltava
+                    aqui. ⚠ Enquanto a busca está em voo NÃO se diz que falta — o campo pode estar
+                    a um instante de ser preenchido, e acusar falta ali seria acusar o nosso
+                    próprio tempo de resposta. */}
+                {!serieAliquota.carregando && !conferenciaPTotTribSN.ok ? (
+                  <span className="hint">{conferenciaPTotTribSN.falta}</span>
                 ) : null}
                 {/* ⚠ OS DOIS LADOS À VISTA quando a pessoa sobrescreve — a mesma disciplina do
                     nome do tomador. */}

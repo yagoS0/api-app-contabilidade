@@ -4,7 +4,7 @@ import { AlertaErro, CardNumero, Carregando, Chip, Vazio } from "../../component
 import { useCarregamento } from "../../lib/hooks";
 import { baixarBlob } from "../../lib/baixarBlob";
 import { modeloDeEmissaoDaNota, podeReaproveitar } from "../emitir/lib/reaproveitarNota";
-import { lerRecusaDanfse, nomeDoArquivoDanfse, podeGerarDanfse } from "./lib/danfseDaNota";
+import { lerRecusaDanfse, nomeDoArquivoDanfse, podeEntrarNoLoteDeDanfse, podeGerarDanfse } from "./lib/danfseDaNota";
 import { LOTE_MAXIMO, lerRecusaLote, nomeDoArquivoLoteDanfse } from "./lib/loteDanfse";
 import {
   ESCOPO_DO_LOTE,
@@ -224,7 +224,7 @@ function BarraDeSelecao({ companyId, cnpj, competencia, selecionadas, escopo, to
   );
 }
 
-export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoReaproveitar, aoEmitir, aoPrepararLote }) {
+export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoReaproveitar, aoEmitir, aoPrepararLote, visitaDoEscritorio = false }) {
   const companyId = empresa.companyId;
   // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026 (ver `competenciaPadrao` em
   // `lib/format.js`). Antes abria em "Todas". ⚠ Isto ESTREITA o que a tela mostra ao abrir: quem
@@ -291,10 +291,13 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
    * ⚠⚠ SÓ SE MARCA O QUE GERA DANFSe — a caixa nasce DESABILITADA no resto, com o motivo no `title`
    * que a linha já mostra. É o oposto de deixar marcar e depois entregar um zip sem aquela nota: a
    * pessoa conferiria o número da barra contra o conteúdo do arquivo e não bateria.
-   * ⚠ `podeGerarDanfse` é a MESMA função que o botão da linha usa — duas leituras divergiriam.
+   * ⚠⚠ A PERGUNTA DA CAIXA É `podeEntrarNoLoteDeDanfse`, NÃO `podeGerarDanfse` (31/08/2026) — e a
+   * diferença é a promessa desta barra. A porta individual acha a nota recém-emitida (lê os dois
+   * lados); a do LOTE não (filtra `PortalInvoice`). Marcá-la aqui fazia "Baixar 3" entregar 2.
+   * ⚠ Continua sendo UMA leitura só, compartilhada com a caixa da linha — duas divergiriam.
    */
   const selecionaveis = useMemo(
-    () => (notas || []).filter((n) => podeGerarDanfse(n).pode).map((n) => n.invoiceId),
+    () => (notas || []).filter((n) => podeEntrarNoLoteDeDanfse(n)).map((n) => n.invoiceId),
     [notas],
   );
 
@@ -334,7 +337,25 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
             que diz QUAL guarda está fechada e o que fazer — e que tem o seu próprio "Voltar".
             Um botão desabilitado aqui não serviria: o motivo não cabe num `title`, e o portão é
             resposta do servidor, não da lista. */}
-        <button type="button" className="btn btn-primary" onClick={aoEmitir}>
+        {/* ⚠⚠ A EXCEÇÃO DA VISITA DO ESCRITÓRIO (31/08/2026) — e ela NÃO contradiz a regra acima.
+            A regra existe porque a lista **não sabe** se o portão do cliente está aberto: aquilo é
+            resposta do servidor. Aqui ela SABE, localmente e sem perguntar a ninguém — quem está
+            logado é do escritório, e a faixa no topo desta mesma tela já diz ao visitante que
+            *"emitir nota, pró-labore e o certificado ficam fechados aqui"*.
+            ⚠ Oferecer o botão depois dessa frase é a tela se contradizendo em duas linhas. E o
+            motivo CABE no `title`, porque é um só e é conhecido.
+            ⚠⚠ A GARANTIA CONTINUA SENDO O SERVIDOR: `ensureEmissaoNfseAutorizada` recusa a visita
+            com `EMISSAO_VISITA_DO_ESCRITORIO`, antes de tocar no banco. Isto aqui é a conveniência
+            de não oferecer um ato fiscal irreversível que vai ser recusado. */}
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={aoEmitir}
+          disabled={visitaDoEscritorio}
+          title={visitaDoEscritorio
+            ? "Você está como visita do escritório. Emitir nota em nome do cliente é feito pelo portal do escritório."
+            : undefined}
+        >
           Emitir nota
         </button>
         {/* ⚠⚠ O RÓTULO ERA "Preparar lote por planilha", E O COMENTÁRIO AQUI EXPLICAVA QUE ELE
@@ -348,7 +369,17 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
             ⚠ Ele aparece SEMPRE, como o "Emitir nota" ao lado: baixar o modelo e conferir uma
             planilha são LEITURA (a rota entra sem papel mínimo), então não há portão a espelhar —
             quem recusa a EMISSÃO é o servidor, na rota que emite. */}
-        <button type="button" className="btn" onClick={aoPrepararLote}>
+        {/* ⚠ Mesma razão: preparar a planilha é leitura, mas a tela do lote EMITE — e a última
+            coisa que a visita pode fazer é emitir em série no CNPJ do cliente. */}
+        <button
+          type="button"
+          className="btn"
+          onClick={aoPrepararLote}
+          disabled={visitaDoEscritorio}
+          title={visitaDoEscritorio
+            ? "Você está como visita do escritório. A emissão em lote é feita pelo portal do escritório."
+            : undefined}
+        >
           Emissão em Lote
         </button>
       </div>
@@ -512,7 +543,7 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                           type="checkbox"
                           aria-label={`Selecionar a nota ${texto(nota.numero)}`}
                           checked={selecionadas.has(nota.invoiceId)}
-                          disabled={!podeGerarDanfse(nota).pode}
+                          disabled={!podeEntrarNoLoteDeDanfse(nota)}
                           onChange={() => alternar(nota.invoiceId)}
                         />
                       </td>
@@ -540,7 +571,11 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                         <Chip
                           status={chip.status}
                           title={estadoLinha.title || undefined}
-                          aria-label={estadoLinha.aria ? `${chip.rotulo} — ${estadoLinha.aria}` : undefined}
+                          /* ⚠ `estadoLinha.aria` JÁ COMEÇA pelo rótulo do chip ("Emitida —
+                             aguardando confirmação…"), e concatenar os dois fazia o leitor de tela
+                             ouvir "Emitida — Emitida — aguardando…". Achado em teste de
+                             usabilidade, 31/08/2026. */
+                          aria-label={estadoLinha.aria || undefined}
                         >
                           {chip.rotulo}
                         </Chip>

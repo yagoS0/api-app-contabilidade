@@ -140,14 +140,27 @@ describe("⚠⚠ a leitura é SÓ LEITURA", () => {
 });
 
 describe("⚠⚠ a chave é a CONTRAPARTE, e os dois lados saem da mesma tabela", () => {
-  it("a receita se agrupa por `tomadorDoc`", async () => {
-    const { client } = clientDe({ emitidas: [emitida(5), emitida(6), emitida(7)] });
+  it("⚠⚠ a RECEITA não é mais proposta — só DESPESA sai do detector (30/08/2026)", async () => {
+    /**
+     * ⚠⚠ ISTO REVERTE 25/08/2026 (*"o mesmo para receita: se eu tenho emitido nota para o mesmo
+     * cliente há 3 meses, a chance de continuar com ele é grande"*). Dono, 30/08: *"não precisamos
+     * que as notas de entrada apareçam, já que elas são usadas no mês seguinte, então não usamos
+     * elas para se repetir."*
+     *
+     * ⚠⚠ O que ele impede é CONTAGEM DOBRADA, e ela estava viva: desde o v4 a nota emitida vira
+     * Entrada no **dia 1 do mês seguinte**, e a série de receita projetaria a mesma nota de novo.
+     * Medido em produção: das 12 séries da base, **11 eram de RECEITA e estavam ATIVAS**.
+     */
+    // ⚠ As emitidas ENTRAM no dublê de propósito: o caso prova que elas são LIDAS e mesmo assim
+    // não viram série. Um dublê sem elas provaria só que uma lista vazia não gera nada.
+    const { client } = clientDe({
+      emitidas: [emitida(5), emitida(6), emitida(7)],
+      recebidas: [recebida(5), recebida(6), recebida(7)],
+    });
     const r = await ler(client);
-    const receita = r.series.find((s) => s.lado === LADO.RECEITA);
-    expect(receita.chave).toBe("11222333000181");
-    expect(receita.contraparteDoc).toBe("11222333000181");
-    expect(receita.rotulo).toBe("CLIENTE ALFA");
-    expect(receita.base.n).toBe(3);
+    expect(r.series.find((s2) => s2.lado === LADO.RECEITA)).toBeUndefined();
+    expect(r.series.length).toBeGreaterThan(0);
+    expect(r.series.every((s2) => s2.lado === LADO.DESPESA)).toBe(true);
   });
 
   it("a despesa se agrupa por `emitenteDoc`", async () => {
@@ -157,11 +170,16 @@ describe("⚠⚠ a chave é a CONTRAPARTE, e os dois lados saem da mesma tabela"
     expect(despesa.rotulo).toBe("ANTHROPIC BRASIL");
   });
 
-  it("⚠⚠ a receita usa a definição de faturamento da CASA — não uma escrita aqui", async () => {
-    const { client } = clientDe({ emitidas: [emitida(7)] });
+  it("⚠⚠ o detector NÃO consulta mais as notas emitidas (30/08/2026)", async () => {
+    // ⚠ Ler 1.897 notas por varredura para descartá-las seria caro e enganoso: alguém veria a query
+    // e reintroduziria o `juntar` da receita achando que "já estava quase lá".
+    // ⚠ A `whereFaturamentoEmit()` NÃO ficou órfã — ela é a definição de faturamento da casa e tem
+    // outros consumidores. O que saiu foi o uso dela AQUI.
+    const { client } = clientDe({ emitidas: [emitida(7)], recebidas: [recebida(5), recebida(6), recebida(7)] });
     await ler(client);
-    const where = client.portalInvoice.findMany.mock.calls[0][0].where;
-    expect(where).toMatchObject({ papel: "EMIT", statusEfetivo: "autorizada" });
+    const wheres = client.portalInvoice.findMany.mock.calls.map((c) => c[0].where);
+    expect(wheres.every((w) => w.papel === "DEST")).toBe(true);
+    expect(wheres.some((w) => w.papel === "EMIT")).toBe(false);
   });
 
   it("⚠⚠ nota CANCELADA não é observação — e o critério olha as DUAS colunas", async () => {
@@ -199,19 +217,21 @@ describe("⚠⚠ nada some em silêncio", () => {
   });
 
   it("⚠ nota sem contraparte é contada, não descartada calada", async () => {
-    const { client } = clientDe({ emitidas: [emitida(5), nota({ tomadorDoc: null })] });
+    // ⚠ A contagem passou a falar só das RECEBIDAS em 30/08/2026: as emitidas deixaram de ser
+    // olhadas, e contar "fora do alcance" numa população que nenhuma regra lê seria aviso falso.
+    const { client } = clientDe({ recebidas: [recebida(5), recebida(6), nota({ papel: "DEST", emitenteDoc: null })] });
     const r = await ler(client);
     expect(r.foraDoAlcance.find((f) => f.motivo === FORA_DO_ALCANCE.SEM_CONTRAPARTE).quantos).toBe(1);
   });
 
   it("⚠ sem nada fora do alcance, a lista fica VAZIA — não se inventa aviso", async () => {
-    const { client } = clientDe({ emitidas: [emitida(5)] });
+    const { client } = clientDe({ recebidas: [recebida(5)] });
     expect((await ler(client)).foraDoAlcance).toEqual([]);
   });
 
   it("⚠⚠ a tabela ausente vira `indisponivel`, NUNCA 'esta empresa não tem recorrência'", async () => {
     const p2021 = Object.assign(new Error("tabela não existe"), { code: "P2021" });
-    const { client } = clientDe({ emitidas: [emitida(5)], erroNaTabela: p2021 });
+    const { client } = clientDe({ recebidas: [recebida(5)], erroNaTabela: p2021 });
     const r = await ler(client);
     expect(r.indisponivel).toBe(true);
     // ⚠ E a observação continua respondendo: o detector é puro e não depende da tabela.
@@ -229,10 +249,12 @@ describe("⚠⚠ nada some em silêncio", () => {
 // ⚠⚠ SÓ A MARCAÇÃO PÕE A LINHA NO FLUXO.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ `entraNoFluxo` é a marcação, nunca a observação", () => {
-  const tres = [emitida(5), emitida(6), emitida(7)];
+  // ⚠ RECEBIDAS desde 30/08/2026: o detector não lê mais as emitidas, então uma fixture de
+  // emitidas produziria ZERO séries e todo caso daqui mediria a lista vazia.
+  const tres = [recebida(5), recebida(6), recebida(7)];
 
   it("série com padrão claro e SEM marcação NÃO entra no fluxo", async () => {
-    const { client } = clientDe({ emitidas: tres });
+    const { client } = clientDe({ recebidas: tres });
     const s = (await ler(client)).series[0];
     expect(s.leitura).toBe(LEITURA.SUGERE_ENTRADA);
     // ⚠⚠ ELA SUGERE, E SÓ. `estado` nulo — candidata não é PENDENTE, que é um estado GRAVADO.
@@ -242,8 +264,10 @@ describe("⚠⚠ `entraNoFluxo` é a marcação, nunca a observação", () => {
 
   it("marcada ATIVA, entra", async () => {
     const { client } = clientDe({
-      emitidas: tres,
-      marcadas: [{ id: "s-1", lado: LADO.RECEITA, chave: "11222333000181", estado: ESTADO_DA_SERIE.ATIVA, periodicidade: PERIODICIDADE.MENSAL, rotulo: "CLIENTE ALFA" }],
+      recebidas: tres,
+      // ⚠ A fixture passou de RECEITA para DESPESA em 30/08/2026: série de receita não entra mais no
+      // fluxo, e o que ESTE caso mede é a MARCAÇÃO, não o lado. Mantendo RECEITA ele mediria a regra nova.
+      marcadas: [{ id: "s-1", lado: LADO.DESPESA, chave: "98765432000155", estado: ESTADO_DA_SERIE.ATIVA, periodicidade: PERIODICIDADE.MENSAL, rotulo: "ANTHROPIC" }],
     });
     const s = (await ler(client)).series[0];
     expect(s.entraNoFluxo).toBe(true);
@@ -254,8 +278,8 @@ describe("⚠⚠ `entraNoFluxo` é a marcação, nunca a observação", () => {
     "⚠ marcada %s NÃO entra — os três existem para não entrar, cada um por um motivo",
     async (estado) => {
       const { client } = clientDe({
-        emitidas: tres,
-        marcadas: [{ id: "s-1", lado: LADO.RECEITA, chave: "11222333000181", estado, periodicidade: PERIODICIDADE.MENSAL, rotulo: "X" }],
+        recebidas: tres,
+        marcadas: [{ id: "s-1", lado: LADO.DESPESA, chave: "98765432000155", estado, periodicidade: PERIODICIDADE.MENSAL, rotulo: "X" }],
       });
       expect((await ler(client)).series[0].entraNoFluxo).toBe(false);
     },
@@ -331,12 +355,14 @@ describe("⚠⚠ a série marcada que perdeu as observações NÃO SOME da tela"
 describe("⚠ a periodicidade da série MARCADA manda", () => {
   it("⚠⚠ a taxa ANUAL só é lida como anual porque alguém a declarou assim", async () => {
     const anuais = [
-      emitida(3, { competencia: new Date("2024-03-01T00:00:00.000Z") }),
-      emitida(3, { competencia: new Date("2025-03-01T00:00:00.000Z") }),
-      emitida(3, { competencia: new Date("2026-03-01T00:00:00.000Z") }),
+      recebida(3, { competencia: new Date("2024-03-01T00:00:00.000Z") }),
+      recebida(3, { competencia: new Date("2025-03-01T00:00:00.000Z") }),
+      recebida(3, { competencia: new Date("2026-03-01T00:00:00.000Z") }),
     ];
-    const marcadas = [{ id: "s-1", lado: LADO.RECEITA, chave: "11222333000181", estado: ESTADO_DA_SERIE.ATIVA, periodicidade: PERIODICIDADE.ANUAL, rotulo: "CONSELHO" }];
-    const { client } = clientDe({ emitidas: anuais, marcadas });
+    // ⚠ DESPESA, e não RECEITA: a taxa anual do Conselho é despesa — a fixture antiga usava o lado
+    // errado e só não incomodava porque o lado não decidia nada até 30/08/2026.
+    const marcadas = [{ id: "s-1", lado: LADO.DESPESA, chave: "98765432000155", estado: ESTADO_DA_SERIE.ATIVA, periodicidade: PERIODICIDADE.ANUAL, rotulo: "CONSELHO" }];
+    const { client } = clientDe({ recebidas: anuais, marcadas });
     const s = (await ler(client)).series[0];
     expect(s.periodicidade).toBe(PERIODICIDADE.ANUAL);
     expect(s.leitura).toBe(LEITURA.CONTINUA);
@@ -346,11 +372,11 @@ describe("⚠ a periodicidade da série MARCADA manda", () => {
     // É a limitação declarada no cabeçalho: não há de onde deduzir a periodicidade de uma candidata,
     // e ler as três e escolher a que "fecha" seria o sistema decidindo qual é o padrão.
     const anuais = [
-      emitida(3, { competencia: new Date("2024-03-01T00:00:00.000Z") }),
-      emitida(3, { competencia: new Date("2025-03-01T00:00:00.000Z") }),
-      emitida(3, { competencia: new Date("2026-03-01T00:00:00.000Z") }),
+      recebida(3, { competencia: new Date("2024-03-01T00:00:00.000Z") }),
+      recebida(3, { competencia: new Date("2025-03-01T00:00:00.000Z") }),
+      recebida(3, { competencia: new Date("2026-03-01T00:00:00.000Z") }),
     ];
-    const { client } = clientDe({ emitidas: anuais });
+    const { client } = clientDe({ recebidas: anuais });
     const s = (await ler(client)).series[0];
     expect(s.periodicidade).toBe(PERIODICIDADE.MENSAL);
     expect(s.leitura).toBe(LEITURA.POUCAS_OBSERVACOES);

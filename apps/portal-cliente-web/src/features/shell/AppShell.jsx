@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { api } from "../../api";
 import { limparSessao, lerEmpresaSalva, salvarEmpresa } from "../../api/sessionStore";
+import { ehVisitaDoEscritorio } from "../../api/accountGate";
 import { AlertaErro, Carregando, Vazio } from "../../components/ui";
 import { useCarregamento, useRota } from "../../lib/hooks";
 import { competenciaPadrao, fmtCnpj, texto } from "../../lib/format";
@@ -75,6 +76,13 @@ export function AppShell({ user }) {
   // roteamento é por hash com três destinos fixos, e a casca é quem monta a tela ativa. ⚠ Ele NÃO
   // emite nada — prepara e confere a planilha. A emissão em lote é fase seguinte.
   const [loteAberto, setLoteAberto] = useState(false);
+  // ⚠⚠ O TRABALHO QUE A TROCA DE EMPRESA DESCARTA (31/08/2026, teste de usabilidade).
+  //
+  // A planilha conferida e os ajustes digitados são descartados na troca — e isso está CERTO
+  // (conferir a planilha de uma empresa sob o nome de outra prepararia notas no CNPJ errado). O
+  // que faltava era dizê-lo ANTES do clique. ⚠ Quem responde "há trabalho aqui?" é a TELA DO LOTE,
+  // que é a única que sabe; a casca só carrega a resposta até o seletor.
+  const [trabalhoNoLote, setTrabalhoNoLote] = useState(null);
   // ⚠ O EXTRATO É O SEGUNDO MODO DA ROTA `home`, pelo mesmo motivo do lote e da emissão: o
   // roteamento é por hash com QUATRO destinos fixos, e a casca é quem monta a tela ativa.
   // ⚠⚠ Uma rota nova custaria as três listas em sincronia (`ROTAS` em `lib/hooks.js`, `ABAS` aqui e
@@ -188,6 +196,23 @@ export function AppShell({ user }) {
 
   return (
     <div className="app">
+      {/*
+        ⚠⚠ A FAIXA DA VISITA FOI REMOVIDA PELO DONO (01/09/2026) — e a decisão anterior dizia que
+        ela era "obrigatória". As duas coisas ficam escritas, porque quem ler só uma reintroduz a
+        outra.
+
+        O que aconteceu: a faixa subiu QUEBRADA (caiu na coluna de 56px do grid — uma palavra por
+        linha) e, consertada, o dono a viu em produção e mandou tirar: *"tire esse texto do início,
+        ajuste essa tela"*. ⚠ Havia um SEGUNDO defeito escondido pelo primeiro: `.app` declara DUAS
+        linhas de grid (`auto` + `minmax(0,1fr)`), e a faixa era uma TERCEIRA filha — a topbar caía
+        na linha `1fr` e ESTICAVA, abrindo um vão de tela inteira entre a faixa e o conteúdo.
+        Remover a faixa desfaz os dois.
+
+        ⚠ O RISCO QUE ELA COBRIA NÃO SUMIU (accountGate.js: o visitante lê os números de UMA
+        empresa como se fossem os dele) — ele mudou de lugar: a linha do CNPJ na topbar diz
+        "· visita do escritório", logo abaixo. Está sempre à vista, nomeia a condição, e não mexe
+        no grid. Se um dia nem isso puder ficar, é decisão do dono, não limpeza.
+      */}
       <header className="topbar">
         {/* ⚠ A MARCA AQUI É SÓ O SOL, E ELA VOLTA AO INÍCIO — pedido do dono, 23/08/2026:
             *"tire a 'Altan contabilidade' e deixe apenas o Sol no canto superior, e ao clicar volta
@@ -228,6 +253,10 @@ export function AppShell({ user }) {
               <div className="empresa-cnpj">
                 {fmtCnpj(empresaAtiva.cnpj)}
                 {empresaAtiva.myRole ? ` · ${roleLabel(empresaAtiva.myRole)}` : ""}
+                {/* ⚠ O que restou da faixa da visita (removida pelo dono em 01/09/2026): a
+                    condição continua NOMEADA, no lugar que não quebra o grid. Ver o comentário
+                    acima da topbar. */}
+                {ehVisitaDoEscritorio(user) ? " · visita do escritório" : ""}
               </div>
             </>
           ) : (
@@ -335,7 +364,11 @@ export function AppShell({ user }) {
               aoRecarregarEmpresas={empresasQuery.recarregar}
             />
           ) : loteAberto ? (
-            <LotePlanilhaPage empresa={empresaAtiva} aoVoltar={() => setLoteAberto(false)} />
+            <LotePlanilhaPage
+              empresa={empresaAtiva}
+              aoVoltar={() => setLoteAberto(false)}
+              aoMudarTrabalho={setTrabalhoNoLote}
+            />
           ) : (
             <NotasPage
               empresa={empresaAtiva}
@@ -344,6 +377,9 @@ export function AppShell({ user }) {
               aoReaproveitar={reaproveitarNota}
               aoEmitir={abrirEmissao}
               aoPrepararLote={abrirLote}
+              /* ⚠⚠ A visita do escritório NÃO emite (31/08/2026) — a faixa desta mesma casca já
+                 promete isso ao visitante, e a lista oferecia o botão assim mesmo. */
+              visitaDoEscritorio={ehVisitaDoEscritorio(user)}
             />
           )
         ) : rota === "guias" ? (
@@ -390,6 +426,9 @@ export function AppShell({ user }) {
           ativaId={empresaAtiva?.companyId || null}
           aoEscolher={escolherEmpresa}
           aoFechar={() => setSeletorAberto(false)}
+          // ⚠ Só com o lote ABERTO: fechada a tela, o estado dela já não existe, e avisar de uma
+          // perda que não vai acontecer é a frase que descreve uma ausência — cortada por regra.
+          avisoAoTrocar={loteAberto ? trabalhoNoLote : null}
         />
       ) : null}
     </div>

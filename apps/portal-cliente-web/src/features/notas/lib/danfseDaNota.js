@@ -55,21 +55,30 @@ export function podeGerarDanfse(nota) {
     };
   }
 
-  // ⚠ ESTE RAMO EXISTE POR CAUSA DA OUTRA MUDANÇA DA MESMA ENTREGA. A nota que nós acabamos de
-  // emitir aparece na lista antes de o ADN a devolver (`confirmadaPeloAdn: false`), e o id dela é
-  // um `ServiceInvoice.id`: a rota do DANFSe lê `PortalInvoice` e responderia 404. Dizer isso é a
-  // resposta certa; oferecer o botão para receber "nota não encontrada" seria a errada.
+  /**
+   * ⚠⚠ A NOTA RECÉM-EMITIDA **PODE** GERAR DANFSe — e este ramo virou o contrário em 31/08/2026.
+   *
+   * > Dono: *"ao emitir a nota não consigo baixar a danfe, o que também deveríamos conseguir de
+   * > imediato."*
+   *
+   * ⚠⚠ **A PREMISSA DESTE RAMO CAIU E NINGUÉM VOLTOU AQUI.** Ele dizia, com razão em 19/08: *"o id
+   * dela é um `ServiceInvoice.id`, a rota do DANFSe lê `PortalInvoice` e responderia 404"*. Em
+   * **24/08** a rota passou a ler dos DOIS lados — por um pedido do dono com estas palavras:
+   * *"ao emitir a nota pelo portal do cliente preciso que a DANFE esteja imediatamente
+   * disponível"*. O servidor foi consertado e a TELA continuou recusando o que ele serve.
+   *
+   * ⚠⚠ **E O `hasXml` NÃO VALE COMO GUARDA AQUI.** `serializeEmitidaNaoConfirmada` crava
+   * `hasXml: false` de propósito, e o comentário de lá diz o que ele significa: *"não é 'não temos
+   * o XML': é 'não há rota que o sirva por este id'"* — a rota do **XML** lê `PortalInvoice`. O XML
+   * existe, em `ServiceInvoice.xml`, e é dele que o DANFSe sai. Manter o `hasXml` na frente trocaria
+   * uma recusa errada por outra.
+   *
+   * ⚠ Por isso o botão passa a CLICAR e quem decide é o servidor: se o XML de lá for a DPS (a nota
+   * recusada) ou faltar o QR Code, ele responde recusa NOMEADA e `lerRecusaDanfse` a mostra. É a
+   * regra desta casa — o servidor recusa com nome, a tela não adivinha antes.
+   */
   if (nota.confirmadaPeloAdn === false) {
-    return {
-      pode: false,
-      motivo: MOTIVO_SEM_DANFSE.NAO_CONFIRMADA,
-      // ⚠ Estado da NOTA — a opacidade da linha e o `title`/`aria` do chip já o carregam.
-      escopo: ESCOPO.NOTA,
-      resumo: "Ainda não confirmada.",
-      texto:
-        "O DANFSe é gerado a partir do XML que o sistema nacional devolve, e esta nota ainda não "
-        + "voltou de lá. Assim que a consulta trouxer a nota, o documento fica disponível.",
-    };
+    return { pode: true, motivo: null, escopo: null, resumo: null, texto: null };
   }
 
   if (!nota.hasXml) {
@@ -167,6 +176,32 @@ export function lerRecusaDanfse(err) {
  * ⚠ O contrato do cliente não traz `chaveAcesso`, então aqui a base é o NÚMERO (o servidor tenta a
  * chave primeiro). Os dois nomes descrevem a mesma nota; nenhum deles é inventado.
  */
+/**
+ * ⚠⚠ ESTA NOTA PODE ENTRAR NO ZIP DO LOTE? — pergunta DIFERENTE de `podeGerarDanfse` (31/08/2026).
+ *
+ * As duas portas do DANFSe não alcançam a mesma população, e ignorar isso quebrou uma promessa:
+ *
+ * | porta | rota | acha a nota recém-emitida? |
+ * |---|---|---|
+ * | individual | `GET /notas/:id/danfse` | **sim** — lê `PortalInvoice` E `ServiceInvoice` (conserto de 24/08) |
+ * | lote | `GET /invoices/danfse/bulk?ids=` | **não** — filtra `PortalInvoice` pelo mesmo `where` da listagem |
+ *
+ * ⚠⚠ **E ISTO É REGRESSÃO DE HOJE, DA MINHA MÃO.** Ao liberar o DANFSe da nota ainda não confirmada
+ * (`confirmadaPeloAdn === false` ⇒ `pode: true`), ela passou a ser MARCÁVEL na seleção da página —
+ * e `selecaoDeNotas.js` afirma, por escrito, que no escopo PÁGINA *"o que não gera nem pode ser
+ * marcado: 'Baixar 3 DANFSe' é uma promessa que se cumpre"*. Marcadas 3, o zip vinha com 2, e a
+ * ausente só aparecia abrindo o `RELATORIO.txt` lá dentro.
+ *
+ * ⚠ O botão INDIVIDUAL continua liberado — ele funciona. O que esta função faz é impedir que a nota
+ * entre num zip que não pode carregá-la.
+ */
+export function podeEntrarNoLoteDeDanfse(nota) {
+  if (!podeGerarDanfse(nota).pode) return false;
+  // ⚠ `=== false` e não truthy: contrato antigo (e o app mobile) não mandam o campo, e ausência é
+  // lida como CONFIRMADA em todo este módulo. Ver `podeGerarDanfse`.
+  return nota?.confirmadaPeloAdn !== false;
+}
+
 export function nomeDoArquivoDanfse(nota) {
   const base = String(nota?.numero || nota?.invoiceId || "nota").replace(/[^\w.-]/g, "");
   return `danfse-${base || "nota"}.pdf`;

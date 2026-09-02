@@ -149,11 +149,105 @@ export function linhasDosDias(mes, quantosDias) {
   }
 
   const daLista = (doDia, competencia) => linhaDoMes({ competencia, linhas: doDia });
+  const linhaSemDia = semDia.length ? { ...daLista(semDia, mes?.competencia), dia: null } : null;
+  const dias = [...porDia.entries()].map(([dia, doDia]) => ({ ...daLista(doDia, mes?.competencia), dia }));
+
   return {
     // ⚠ Vem PRIMEIRO na tela: é a maioria do dinheiro, e escondê-la faria o mês parecer menor.
-    semDia: semDia.length ? { ...daLista(semDia, mes?.competencia), dia: null } : null,
-    dias: [...porDia.entries()].map(([dia, doDia]) => ({ ...daLista(doDia, mes?.competencia), dia })),
+    semDia: linhaSemDia,
+    dias: acumularResultado(linhaSemDia, dias),
   };
+}
+
+/**
+ * ⚠⚠ O RESULTADO DA LINHA DO DIA É ACUMULADO DENTRO DO MÊS (30/08/2026) — decisão do dono:
+ *
+ * > *"o resultado deve repetir a entrada em todas as linhas, e diminuir nas linhas da saída, e
+ * > assim ficar até o último dia mostrando o resultado do mês."*
+ *
+ * Até aqui cada dia mostrava o resultado DAQUELE DIA — e o dia 02 de um mês com entrada no dia 01
+ * aparecia vazio, como se não houvesse dinheiro. O que o dono quer ler é *"quanto sobra hoje"*, e a
+ * última linha passa a ser o resultado do mês.
+ *
+ * ⚠⚠ **ISTO NÃO É O "SALDO ACUMULADO" QUE A LEI 3 PROÍBE, e a diferença é o que sustenta a
+ * decisão.** A Lei 3 fala de saldo que ATRAVESSA MESES: *"sem âncora de conciliação não há
+ * acumulado"* — sem saldo inicial, um número que se arrasta desde janeiro afirma um caixa que
+ * ninguém conferiu. Aqui o acumulado **nasce em zero no dia 1 e morre no último dia do mês**: ele é
+ * a soma das linhas que a própria tabela mostra, e não afirma nada sobre o dinheiro que havia antes.
+ * ⚠ Cada mês recomeça — não há transporte de um bloco para o outro.
+ *
+ * ⚠⚠ **A LINHA "no mês" ENTRA NO ACUMULADO, e ela vem primeiro.** É lá que moram a folha e o
+ * imposto previsto sem dia; deixá-los de fora faria o resultado do último dia discordar do
+ * resultado do mês — que é justamente o número que o dono quer ler ali.
+ *
+ * ⚠⚠ **O STATUS É O DO ELO MAIS FRACO, acumulado junto.** Um resultado que soma um fato com uma
+ * previsão **não é um fato**: bastou uma parcela prevista para a linha inteira ser prevista, e isso
+ * vale para todas as linhas seguintes — o acumulado carrega a incerteza para a frente.
+ *
+ * ⚠ Dia sem lançamento nenhum **continua mostrando o acumulado**, e é o pedido (*"repetir em todas
+ * as linhas"*). O que não existe ali é lançamento, não é dinheiro.
+ */
+function acumularResultado(linhaSemDia, dias) {
+  let acumulado = null;
+  const somar = (atual, celula) => {
+    if (!celula) return atual;
+    const valor = (atual?.valor || 0) + (Number(celula.valor) || 0);
+    // ⚠ Uma vez PREVISTO, segue previsto: a incerteza não se desfaz nas linhas seguintes.
+    const status = atual?.status === STATUS.PREVISTO || celula.status === STATUS.PREVISTO
+      ? STATUS.PREVISTO
+      : STATUS.CONFIRMADO;
+    return { valor, status };
+  };
+
+  acumulado = somar(acumulado, linhaSemDia?.resultado);
+  return dias.map((d) => {
+    acumulado = somar(acumulado, d.resultado);
+    // ⚠ Antes do primeiro lançamento do mês o acumulado é `null`, e a célula continua sendo o
+    // TRAÇO — nunca `R$ 0,00`. Zero é uma afirmação ("conferi, é zero"), e aqui ainda não há o que
+    // conferir.
+    return { ...d, resultado: acumulado ? { ...acumulado } : null };
+  });
+}
+
+/**
+ * ⚠⚠ A JANELA DE 10 DIAS EM TORNO DE HOJE (30/08/2026) — decisão do dono:
+ *
+ * > *"a tabela do fluxo deve mostrar apenas os 10 dias, para que sempre seja visto o dia em que
+ * > estamos: 5 para trás e 4 para frente."*
+ *
+ * ⚠⚠ **ISTO REVISA O "30 DIAS À ESQUERDA E 30 À DIREITA" DO v4** (29/08). O mês inteiro empurrava o
+ * dia de hoje para fora da dobra: numa tabela de 31 linhas, o dia 27 só aparece rolando. O que ele
+ * quer ver ao abrir é ONDE ESTÁ HOJE.
+ *
+ * ⚠⚠ **A CONTA É FEITA SOBRE O MÊS INTEIRO E SÓ DEPOIS A JANELA CORTA.** Se o acumulado começasse
+ * no primeiro dia VISÍVEL, o Resultado da primeira linha ignoraria tudo que veio antes no mês — e o
+ * número seria falso justamente na linha que abre a tela. Por isso `linhasDosDias` continua
+ * devolvendo o mês inteiro e o corte acontece aqui.
+ *
+ * ⚠ **Nas bordas do mês a janela ANDA, não encolhe:** dia 2 mostra do 1 ao 10, dia 30 mostra do 22
+ * ao 31. Encolher daria três linhas no começo do mês, que é quando ele mais precisa de contexto.
+ * ⚠ **Mês que não é o de hoje não tem "hoje"**: a janela começa no dia 1. Escolher um dia ali seria
+ * o sistema apontando para uma data que não significa nada naquele mês.
+ */
+export const DIAS_ANTES = 5;
+export const DIAS_DEPOIS = 4;
+
+export function janelaDeDias(dias, { diaDeHoje = null, antes = DIAS_ANTES, depois = DIAS_DEPOIS } = {}) {
+  const lista = Array.isArray(dias) ? dias : [];
+  const tamanho = antes + depois + 1;
+  if (lista.length <= tamanho) return lista;
+
+  const hoje = Number(diaDeHoje);
+  // ⚠ Sem hoje (outro mês), começa no dia 1 — nunca no meio.
+  if (!Number.isInteger(hoje)) return lista.slice(0, tamanho);
+
+  const i = lista.findIndex((d) => d.dia === hoje);
+  if (i < 0) return lista.slice(0, tamanho);
+
+  // ⚠ A janela ANDA para caber: `Math.min` no fim e `Math.max` no começo, nesta ordem — invertido,
+  // o começo do mês devolveria índice negativo e o `slice` cortaria pelo fim.
+  const inicio = Math.max(0, Math.min(i - antes, lista.length - tamanho));
+  return lista.slice(inicio, inicio + tamanho);
 }
 
 /**

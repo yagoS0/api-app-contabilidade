@@ -8,6 +8,7 @@
 // Mesmo arranjo de `faltasParaEmitir` × `REQUIRED_COMPANY_FIELDS`.
 
 import {
+  codigoQueANotaDeclara,
   SITUACAO,
   codigoParaOPayload,
   codigosOferecidos,
@@ -196,5 +197,61 @@ describe("⚠⚠ O AMARRE COM A AUTORIDADE — a tela e o servidor concordam, ca
       if (bruto === "" || bruto === null) continue; // "não veio nada" é outro caminho
       expect(daTela === null).toBe(daAutoridade.codigo === "NFSE_CODIGO_SERVICO_INVALIDO");
     }
+  });
+});
+
+// ⚠⚠ O QUE A PRÉVIA MOSTRA É O QUE A NOTA DECLARA (31/08/2026)
+//
+// Achado em teste de usabilidade: com vários códigos, o espelho da nota mostrava o SINGULAR do
+// cadastro e não mudava com a escolha — a nota saía com um código e a prévia afirmava outro. E com
+// NADA escolhido ela já afirmava o singular, enquanto a tela recusa emitir: o espelho elegia.
+describe("⚠⚠ codigoQueANotaDeclara — a pergunta da PRÉVIA", () => {
+  it("⚠⚠ VÁRIOS: devolve o ESCOLHIDO, nunca o singular do cadastro", () => {
+    expect(codigoQueANotaDeclara({
+      situacao: SITUACAO.VARIOS,
+      oferecidos: ["070201", "140201"],
+      escolhido: "140201",
+      singular: "070201",
+    })).toBe("140201");
+  });
+
+  it("⚠⚠ VÁRIOS e nada escolhido: `null` — a prévia mostra traço, e para de eleger", () => {
+    expect(codigoQueANotaDeclara({
+      situacao: SITUACAO.VARIOS,
+      oferecidos: ["070201", "140201"],
+      escolhido: "",
+      singular: "070201",
+    })).toBeNull();
+  });
+
+  it("⚠ escolha fora dos oferecidos não vira afirmação", () => {
+    expect(codigoQueANotaDeclara({
+      situacao: SITUACAO.VARIOS,
+      oferecidos: ["070201"],
+      escolhido: "999999",
+      singular: "070201",
+    })).toBeNull();
+  });
+
+  it("ÚNICO: devolve o código — é o que o servidor vai usar", () => {
+    expect(codigoQueANotaDeclara({
+      situacao: SITUACAO.UNICO,
+      oferecidos: ["070201"],
+      escolhido: "",
+      singular: "070201",
+    })).toBe("070201");
+  });
+
+  it("SEM_CODIGO: `null`", () => {
+    expect(codigoQueANotaDeclara({ situacao: SITUACAO.SEM_CODIGO, oferecidos: [], singular: null }))
+      .toBeNull();
+  });
+
+  it("⚠⚠ ela NÃO é `codigoParaOPayload` — no ÚNICO as duas respondem coisas diferentes", () => {
+    const entrada = { situacao: SITUACAO.UNICO, oferecidos: ["070201"], escolhido: "", singular: "070201" };
+    // "que campo eu MANDO?" → nenhum: o servidor usa o cadastro (o caminho de sempre).
+    expect(codigoParaOPayload(entrada)).toBeNull();
+    // "o que vai SAIR na nota?" → o código do cadastro.
+    expect(codigoQueANotaDeclara(entrada)).toBe("070201");
   });
 });

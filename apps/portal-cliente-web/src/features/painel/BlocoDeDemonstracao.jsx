@@ -32,7 +32,7 @@
 // por simetria**: espelho sem consumidor não é código morto barato, é obrigação de sincronizar
 // para sempre numa cópia que ninguém abre.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../api";
 import { AlertaErro, Carregando } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
@@ -44,7 +44,8 @@ import { mesCurto, rotuloDoMes, somarCompetencia } from "./lib/leituraDoFluxo";
 // ⚠ A agregação das SEIS COLUNAS mora à parte da leitura: aquele arquivo lê o VOCABULÁRIO do
 // servidor e este AGREGA para a tabela desta tela. Ver o cabeçalho de `tabelaDoFluxo.js`.
 import {
-  COLUNAS, COLUNAS_EM_PERCENTUAL, STATUS, emPercentual, gradeTransposta, linhasDosDias,
+  COLUNAS, COLUNAS_EM_PERCENTUAL, STATUS, emPercentual, gradeTransposta, linhasDosDias, DIAS_ANTES,
+  linhaDoMes,
   navegacaoDoPar, parDeMeses,
 } from "./lib/tabelaDoFluxo";
 // ⚠ `diasDoMes` é aritmética de STRING, nunca `toISOString()`: às 22h de Brasília o ISO devolveria
@@ -52,6 +53,8 @@ import {
 import { diasDoMes } from "./lib/dadosDeDemonstracao";
 import { PopUpDeGuias } from "./PopUpDeGuias";
 import { SuasSaidas } from "./SuasSaidas";
+import { GavetaDoDia } from "./GavetaDoDia";
+import { GuiasVencidas } from "./GuiasVencidas";
 
 /**
  * ⚠⚠ A FOLGA que a tela pede ao servidor quando a seta chega na BORDA da janela carregada.
@@ -72,7 +75,14 @@ const UNIDADES = [
 ];
 
 const VISOES = [
-  { chave: "fluxo", rotulo: "Fluxo de caixa" },
+  /**
+   * ⚠ O rótulo é **"Fluxo"**, não "Fluxo de caixa" — decisão do dono, 30/08/2026: *"escreva apenas
+   * Fluxo no seletor"*. O par com "DRE" já diz do que se trata, e o nome longo fazia o alternador
+   * ocupar metade da barra ao lado de uma palavra de três letras.
+   * ⚠ A CHAVE continua `"fluxo"`: ela é o vocabulário que o resto do arquivo lê (`visao === "fluxo"`
+   * aparece em sete lugares) e mudá-la quebraria tudo em silêncio.
+   */
+  { chave: "fluxo", rotulo: "Fluxo" },
   { chave: "dre", rotulo: "DRE" },
 ];
 
@@ -151,12 +161,49 @@ const pctFmt = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximu
  * ⚠ Célula ausente vira traço INVISÍVEL (v3 §3.2, "sem peso visual") **com texto oculto**: sem ele,
  * "não há lançamento" e "não carregou" ficam iguais para quem não vê a tela.
  */
-function Celula({ celula, coluna, unidade, entradaDoPeriodo }) {
+function Celula({ celula, coluna, unidade, entradaDoPeriodo, aoAbrir, rotuloDoPeriodo }) {
+  /**
+   * ⚠⚠ A CÉLULA É CLICÁVEL — decisão do dono, 30/08/2026: *"todos os blocos de saída devem e podem
+   * ser clicados, isso abre um menu lateral que mostra as saídas naquele dia, com suas descrições"*
+   * · *"o de impostos também"*.
+   *
+   * ⚠ **O `<button>` fica DENTRO do `<td>`**, nunca um `onClick` na célula ou um `role="button"` na
+   * linha: `role` na `<tr>` a tiraria da semântica de tabela, e a decisão já está escrita nesta casa
+   * a propósito do `PainelDoDia`. Assim a tabela continua tabela e o alvo continua focável pelo
+   * teclado.
+   * ⚠⚠ **RESULTADO NÃO ABRE.** Ele é uma CONTA (entrada − saídas), não um conjunto de lançamentos:
+   * uma gaveta ali teria de inventar o que listar. Quem responde "de onde veio" são as outras
+   * quatro colunas.
+   */
+  const abre = typeof aoAbrir === "function" && coluna !== "resultado";
+
   if (!celula) {
+    /**
+     * ⚠⚠ A CÉLULA VAZIA CONTINUA CLICÁVEL NA COLUNA DE SAÍDA, e é o pedido do dono: *"ele deve
+     * clicar no campo do dia, abre um menu lateral e aí ele digita a saída"*. Um dia sem nada é
+     * justamente onde ele quer acrescentar — e um alvo que só existe quando já há valor tornaria a
+     * ação inalcançável no caso mais comum.
+     * ⚠ Nas outras colunas o traço continua inerte: abrir uma gaveta vazia de impostos não oferece
+     * nada, e um clique que não faz nada se lê como defeito.
+     */
+    if (!abre || coluna !== "saida") {
+      return (
+        <td className="num" data-coluna={coluna}>
+          <span className="fluxo-v3-vazio" aria-hidden="true">–</span>
+          <span className="sr-only">sem lançamento</span>
+        </td>
+      );
+    }
     return (
       <td className="num" data-coluna={coluna}>
-        <span className="fluxo-v3-vazio" aria-hidden="true">–</span>
-        <span className="sr-only">sem lançamento</span>
+        <button
+          type="button"
+          className="fluxo-v4-celula"
+          onClick={() => aoAbrir(coluna)}
+          aria-label={`Acrescentar saída em ${rotuloDoPeriodo}`}
+        >
+          <span className="fluxo-v3-vazio" aria-hidden="true">–</span>
+        </button>
       </td>
     );
   }
@@ -176,25 +223,55 @@ function Celula({ celula, coluna, unidade, entradaDoPeriodo }) {
   }
 
   const previsto = celula.status === STATUS.PREVISTO;
+  const texto = ehPercentual ? `${pctFmt.format(pct)}%` : naGrade(celula.valor);
+  /* ⚠ O terceiro canal. "Previsto" é a palavra da Lei 5 — ela cobre compromisso E presunção, que
+     por fora são a mesma cor. ⚠ Sendo botão, ele vira o NOME ACESSÍVEL, e por isso diz também o
+     que o clique faz e de que período é: "R$ 1.437,15" sozinho não é um rótulo de ação. */
+  const rotulo = abre
+    ? `${texto}${previsto ? ", previsto" : ""} — ver em ${rotuloDoPeriodo}`
+    : (previsto ? `${texto}, previsto` : undefined);
+
+  const valor = (
+    <span
+      className="fluxo-v3-valor"
+      data-coluna={coluna}
+      data-status={celula.status}
+      data-negativo={coluna === "resultado" && celula.valor < 0 ? "sim" : undefined}
+      aria-label={abre ? undefined : rotulo}
+    >
+      {texto}
+    </span>
+  );
+
   return (
     <td className="num" data-coluna={coluna}>
-      <span
-        className="fluxo-v3-valor"
-        data-coluna={coluna}
-        data-status={celula.status}
-        data-negativo={coluna === "resultado" && celula.valor < 0 ? "sim" : undefined}
-        /* ⚠ O terceiro canal. "Previsto" é a palavra da Lei 5 — ela cobre compromisso E presunção,
-           que por fora são a mesma cor. */
-        aria-label={previsto ? `${ehPercentual ? pctFmt.format(pct) + "%" : naGrade(celula.valor)}, previsto` : undefined}
-      >
-        {ehPercentual ? `${pctFmt.format(pct)}%` : naGrade(celula.valor)}
-      </span>
+      {abre ? (
+        <button type="button" className="fluxo-v4-celula" onClick={() => aoAbrir(coluna)} aria-label={rotulo}>
+          {valor}
+        </button>
+      ) : valor}
     </td>
   );
 }
 
-/** As cinco células de uma linha — mês ou dia, o mesmo desenho. */
-function CelulasDoPeriodo({ linha, unidade, comFolha }) {
+/**
+ * As cinco células de uma linha — mês ou dia, o mesmo desenho.
+ *
+ * ⚠⚠ `entradaDaBase` — A BASE DO PERCENTUAL DE UM DIA É A ENTRADA DO **MÊS** (01/09/2026).
+ *
+ * > Dono: *"ao clicar em porcentagem os dias saem, mas deveriam se transformar em porcentagem"*.
+ *
+ * O defeito: cada linha de dia usava a PRÓPRIA entrada como denominador — e quase nenhum dia tem
+ * entrada (ela cai no dia 1), então no modo `%` toda célula de imposto/folha dos dias virava traço
+ * ("sem base") e a tabela parecia esvaziar. Só o rodapé convertia.
+ *
+ * ⚠ Com a entrada do MÊS como base, o dia mostra a FATIA dele no mesmo denominador do rodapé — e
+ * os dias SOMAM para o total, que é o que uma coluna de percentuais promete. Denominadores
+ * diferentes por linha somariam para nada.
+ * ⚠ O rodapé não passa a prop: a linha dele É o mês, e a base cai na própria entrada.
+ * ⚠ Mês sem entrada continua traço em TODAS as linhas — dividir por zero segue proibido (§3.6).
+ */
+function CelulasDoPeriodo({ linha, unidade, comFolha, aoAbrir, rotuloDoPeriodo, entradaDaBase }) {
   return COLUNAS
     .filter((c) => comFolha || c.chave !== "folha")
     .map((c) => (
@@ -203,7 +280,9 @@ function CelulasDoPeriodo({ linha, unidade, comFolha }) {
         celula={linha[c.chave]}
         coluna={c.chave}
         unidade={unidade}
-        entradaDoPeriodo={linha.entrada}
+        entradaDoPeriodo={entradaDaBase !== undefined ? entradaDaBase : linha.entrada}
+        aoAbrir={aoAbrir}
+        rotuloDoPeriodo={rotuloDoPeriodo}
       />
     ));
 }
@@ -230,7 +309,20 @@ function CelulasDoPeriodo({ linha, unidade, comFolha }) {
  * a ROLAGEM INTERNA do bloco — a mesma regra do `.table-wrap`, que existe para a página não rolar
  * para o lado.
  */
-function TabelaDeDias({ bloco, unidade, comFolha, cabecalho }) {
+/**
+ * ⚠ O rótulo do dia vira BOTÃO, e não a linha inteira: `role="button"` numa `<tr>` a tiraria da
+ * semântica de tabela — a decisão já está escrita nesta casa a propósito do `PainelDoDia`.
+ */
+function BotaoDoPeriodo({ aoAbrir, children }) {
+  return (
+    <button type="button" className="fluxo-v4-dia" onClick={aoAbrir}>
+      {children}
+    </button>
+  );
+}
+
+function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir, diaDeHoje = null }) {
+  const caixaDeRolagem = useRef(null);
   const colunas = COLUNAS.filter((c) => comFolha || c.chave !== "folha");
 
   // ⚠⚠ BLOCO SEM MÊS NÃO É BLOCO VAZIO. Andando até a borda da janela, o mês da direita pode não ter
@@ -249,11 +341,45 @@ function TabelaDeDias({ bloco, unidade, comFolha, cabecalho }) {
   }
 
   const dodia = linhasDosDias(bloco.mes, diasDoMes(bloco.competencia).length);
+  /**
+   * ⚠⚠ OS 10 DIAS PASSARAM A SER ROLAGEM, NÃO CORTE (30/08/2026) — dono: *"os dias devem ser
+   * passados com rolagem, não com seta."*
+   *
+   * O MÊS INTEIRO é desenhado; quem mostra dez de cada vez é a ALTURA do `.table-wrap--dias`, e
+   * quem anda é a rolagem. ⚠ Cortar em JavaScript tiraria os outros dias do DOM: quem rolasse não
+   * acharia nada, e quem usa leitor de tela nunca saberia que eles existem — é a mesma decisão que
+   * a tabela de guias em atraso já carrega.
+   * ⚠ `janelaDeDias` (o corte) fica na lib, SEM CHAMADOR e com teste: ela é a regra de "onde a
+   * janela começa", e é dela que sai a rolagem inicial abaixo.
+   */
+  const dias = dodia.dias;
+  /* ⚠ O total do MÊS INTEIRO, pela MESMA agregação da tabela — nunca uma soma nova. */
+  const totalDoMes = linhaDoMes(bloco.mes);
+
+  /**
+   * ⚠⚠ A TELA ABRE MOSTRANDO HOJE, e é o motivo de a janela existir: *"para que sempre seja visto o
+   * dia em que estamos"*. Sem esta rolagem inicial, o mês abriria no dia 1 e o dia de hoje ficaria
+   * a vinte linhas de distância — que é exatamente o defeito que o pedido desfaz.
+   *
+   * ⚠ Ela usa `scrollTop` direto, e não `scrollIntoView`: este último rola TAMBÉM a página, e a
+   * tela saltaria para o meio do fluxo ao abrir.
+   * ⚠ `5` linhas acima é o mesmo "5 para trás" que ele pediu — a linha de hoje nasce com contexto
+   * atrás, não colada no topo.
+   * ⚠ Só o mês de HOJE rola: nos outros não há dia para onde ir, e rolar ali esconderia o dia 1 sem
+   * motivo.
+   */
+  useEffect(() => {
+    const caixa = caixaDeRolagem.current;
+    if (!caixa || !Number.isInteger(diaDeHoje)) return;
+    const linha = caixa.querySelector('tbody tr[data-hoje="sim"]');
+    if (!linha) return;
+    caixa.scrollTop = Math.max(0, linha.offsetTop - linha.offsetHeight * DIAS_ANTES);
+  }, [diaDeHoje, bloco.competencia]);
 
   return (
     <div className="fluxo-v4-bloco" data-mes={bloco.competencia}>
       {cabecalho}
-      <div className="table-wrap table-wrap--dias">
+      <div className="table-wrap table-wrap--dias" ref={caixaDeRolagem}>
         <table className="table table--fluxo-v3">
           <thead>
             <tr>
@@ -264,19 +390,92 @@ function TabelaDeDias({ bloco, unidade, comFolha, cabecalho }) {
             </tr>
           </thead>
           <tbody>
+            {/*
+              ⚠⚠ A LINHA "no mês" SAIU DO CORPO EM 30/08/2026 — dono: *"esse no mês tem que sumir
+              daí, e abaixo da tabela, no footer dela, deve haver um resumo da coluna: total de
+              entrada, saída, impostos…"*
+
+              ⚠⚠ **O DINHEIRO DELA NÃO SUMIU — ELE MUDOU DE LUGAR, DUAS VEZES.** É lá que moram a
+              folha e o imposto previsto sem dia, e some-los seria a tela mostrar menos dinheiro do
+              que existe. Hoje eles entram (a) no RESULTADO ACUMULADO, que começa por eles, e
+              (b) no TOTAL do rodapé. Por isso o último dia e o rodapé fecham no mesmo número.
+            */}
+            {/*
+              ⚠⚠ A LINHA "sem dia" — O DINHEIRO QUE NÃO CABE EM DIA NENHUM (31/08/2026).
+              >
+              > Dono: *"pode atacar o dinheiro sem dia"*, depois de o teste de usabilidade medir que
+              > **R$ 5.902,00** (folha + imposto sem dia) entravam no Resultado do dia 1 e no rodapé
+              > e **não tinham linha nenhuma** — e que a série "Jantar com clientes" (R$ 1.180, sem
+              > dia) era **inalcançável**: não havia onde clicar para lhe dar um dia.
+
+              ⚠⚠ **ELA NÃO É A VOLTA DO "no mês" QUE VOCÊ MANDOU SUMIR.** Aquela estava SEMPRE lá,
+              inclusive vazia, e repetia o total que hoje mora no rodapé. Esta só existe quando há
+              dinheiro sem dia — na maioria dos meses ela não aparece — e mostra **só o que não tem
+              dia**, nunca o total do mês.
+
+              ⚠ A agregação é a que `linhasDosDias` **já devolvia** (`dodia.semDia`): nada é somado
+              de novo aqui. Ela é a mesma que o acumulado do primeiro dia já usava — por isso a
+              linha do dia 1 continua fechando com o que a tabela mostra.
+
+              ⚠ Ela vem ANTES dos dias, e fora da rolagem dos dez: é contexto do mês inteiro, e
+              rolar para achá-la seria o mesmo que não tê-la.
+            */}
             {dodia.semDia ? (
-              <tr className="fluxo-v3-sem-dia">
-                <th scope="row">no mês</th>
-                <CelulasDoPeriodo linha={dodia.semDia} unidade={unidade} comFolha={comFolha} />
+              <tr data-linha-sem-dia="sim">
+                <th scope="row">
+                  <BotaoDoPeriodo aoAbrir={() => aoAbrir?.(null, null)}>sem dia</BotaoDoPeriodo>
+                </th>
+                <CelulasDoPeriodo
+                  linha={dodia.semDia}
+                  unidade={unidade}
+                  comFolha={comFolha}
+                  aoAbrir={(coluna) => aoAbrir?.(null, coluna)}
+                  rotuloDoPeriodo="sem dia"
+                  entradaDaBase={totalDoMes.entrada}
+                />
               </tr>
             ) : null}
-            {dodia.dias.map((d) => (
-              <tr key={d.dia}>
-                <th scope="row">dia {String(d.dia).padStart(2, "0")}</th>
-                <CelulasDoPeriodo linha={d} unidade={unidade} comFolha={comFolha} />
+            {dias.map((d) => (
+              /* ⚠ `data-hoje` é auditável no DOM, como `data-status` — e é ele que o CSS pinta de
+                 ciano. Cor cravada no JSX não sobreviveria à troca de tema. */
+              <tr key={d.dia} data-hoje={d.dia === diaDeHoje ? "sim" : undefined}>
+                <th scope="row">
+                  <BotaoDoPeriodo aoAbrir={() => aoAbrir?.(d.dia, null)}>
+                    dia {String(d.dia).padStart(2, "0")}
+                  </BotaoDoPeriodo>
+                </th>
+                <CelulasDoPeriodo
+                  linha={d}
+                  unidade={unidade}
+                  comFolha={comFolha}
+                  aoAbrir={(coluna) => aoAbrir?.(d.dia, coluna)}
+                  rotuloDoPeriodo={`dia ${String(d.dia).padStart(2, "0")}`}
+                  entradaDaBase={totalDoMes.entrada}
+                />
               </tr>
             ))}
           </tbody>
+          {/*
+            ⚠⚠ O RESUMO DA COLUNA, NO RODAPÉ — dono, 30/08/2026. Ele é o total do MÊS INTEIRO, não
+            o dos dez dias à vista: a tabela rola, e um total que mudasse com a rolagem seria um
+            número diferente a cada olhada.
+            ⚠ Ele sai de `linhaDoMes` sobre TODAS as linhas do mês — a mesma agregação que a tabela
+            já usa, e por isso ele fecha com o acumulado do último dia. Uma segunda soma escrita
+            aqui divergiria da primeira na correção seguinte.
+            ⚠⚠ `<th scope="row">` no rodapé, nunca um `<td>` solto: para quem usa leitor de tela, a
+            linha de total precisa ter nome — senão são cinco números órfãos.
+          */}
+          <tfoot>
+            <tr className="fluxo-v4-total">
+              <th scope="row">no mês</th>
+              <CelulasDoPeriodo
+                linha={totalDoMes}
+                unidade={unidade}
+                comFolha={comFolha}
+                rotuloDoPeriodo="no mês"
+              />
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
@@ -447,7 +646,7 @@ function Dre({ dados }) {
   );
 }
 
-export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
+export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, hoje: hojeInjetado = null }) {
   const [visao, setVisao] = useState("fluxo");
   /** ⚠ `rs` × `pct` — v3 §3.6. Ele combina livremente com Fluxo/DRE e sobrevive à troca de modo. */
   const [unidade, setUnidade] = useState("rs");
@@ -470,6 +669,34 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
   const [mesEsquerda, setMesEsquerda] = useState(null);
   /** ⚠ Fechar o pop-up com Esc vale só para ESTA sessão — e não grava nada. */
   const [popUpDispensado, setPopUpDispensado] = useState(false);
+  /**
+   * ⚠⚠ A GAVETA — UMA SÓ, e o estado mora AQUI (30/08/2026).
+   *
+   * ⚠ Ela não pode viver dentro de `TabelaDeDias`: são DOIS blocos lado a lado, e um estado por
+   * bloco deixaria duas gavetas abertas ao mesmo tempo — cada uma cobrindo metade da outra.
+   * ⚠ `balde: null` é o clique no DIA (mostra tudo + o formulário); com balde, é o clique na
+   * célula daquela coluna.
+   */
+  const [gaveta, setGaveta] = useState(null);
+
+  /**
+   * ⚠ O RELÓGIO É LIDO AQUI, na borda, e desce INJETADO — a regra pura (`janelaDeDias`) continua
+   * sem ler relógio nenhum, que é a disciplina deste projeto inteiro.
+   * ⚠ Acessadores UTC, como as competências são escritas: às 21h de Brasília o `getDate()` local e o
+   * UTC divergem, e a linha de ciano cairia no dia errado.
+   */
+  /**
+   * ⚠⚠ O DIA DE HOJE É INJETÁVEL, e a razão é teste — não gosto.
+   *
+   * A janela de 10 dias se ancora em hoje; lendo o relógio direto, o mesmo teste passaria em agosto
+   * e cairia em setembro. É a mesma disciplina que `montarFluxoDeCaixa` já aplica no servidor
+   * (*"o `hoje` é INJETADO"*), agora deste lado.
+   * ⚠ O padrão continua sendo o relógio de verdade, lido AQUI na borda — a regra pura
+   * (`janelaDeDias`) segue sem ler relógio nenhum.
+   * ⚠ Acessador UTC, como as competências são escritas: às 21h de Brasília o dia local e o UTC
+   * divergem, e a linha de ciano cairia no dia errado.
+   */
+  const diaDeHoje = Number.isInteger(hojeInjetado) ? hojeInjetado : new Date().getUTCDate();
 
   const fluxoQuery = useCarregamento(
     () => api.getFluxoCaixa(companyId, { competencia, janelaInicio }),
@@ -499,7 +726,19 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
    */
   const comFolha = dados?.folha?.disponivel !== false;
 
-  const alerta = dados?.alertaDeGuias || null;
+  /**
+   * ⚠⚠ O ALERTA SAI DO FLUXO, NUNCA DE `atual` (31/08/2026).
+   *
+   * Lia `dados?.alertaDeGuias`, e `dados` é o payload da visão ATUAL — no DRE ele não tem esse
+   * campo, então a tabela de guias vencidas **sumia do Início** ao alternar. Quem deixasse o painel
+   * em DRE deixava de ver a guia vencida, que é exatamente a perda que `GuiasVencidas` existe para
+   * impedir (o corte do card "Próximos vencimentos" a deixou nomeada).
+   *
+   * ⚠ A visão nasce em `fluxo`, então quando alguém alterna para o DRE este payload já veio. Dado
+   * de alguns segundos atrás sobre guia VENCIDA continua verdadeiro — e a alternativa (esconder)
+   * é a que mente.
+   */
+  const alerta = fluxoQuery.dados?.alertaDeGuias || null;
   const mostraPopUp = visao === "fluxo" && !popUpDispensado
     && Boolean(alerta?.ackPending) && (alerta?.itens?.length > 0);
 
@@ -551,7 +790,15 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
       data-modo-do-fluxo={visao === "fluxo" ? modo : undefined}
     >
       <div className="card-header">
-        <h2>{visao === "fluxo" ? "Fluxo de caixa" : "DRE"}</h2>
+        {/*
+          ⚠⚠ O TÍTULO "Fluxo de caixa" SAIU DA ESQUERDA — decisão do dono, 30/08/2026: *"tire fluxo
+          de caixa da esquerda"*. Ele repetia, em texto grande, a palavra que o botão pressionado ao
+          lado já diz — e o alternador é quem manda, porque é ele que muda.
+          ⚠ **O `<h2>` NÃO SUMIU: ele virou `.sr-only`.** Apagá-lo deixaria a seção sem cabeçalho de
+          nível 2, e quem navega por lista de títulos perderia o bloco inteiro. ⚠ E ele mantém o nome
+          LONGO ("Fluxo de caixa"), porque fora da tela não existe o botão ao lado para dar contexto.
+        */}
+        <h2 className="sr-only">{visao === "fluxo" ? "Fluxo de caixa" : "DRE"}</h2>
         <div className="page-actions">
           {/* ⚠ Trocar de visão NÃO navega — são botões, jamais `<a href>`. Inventar `#/dre` daria um
               hash que o `useRota` recusa e devolve ao padrão: o "filtro fantasma" dentro da tela. */}
@@ -628,6 +875,29 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
         aoTentarNovamente={atual.recarregar}
       />
 
+      {/*
+        ⚠⚠ A TABELA DE GUIAS EM ATRASO, ACIMA DO FLUXO — decisão do dono, 30/08/2026: *"a parte que
+        eu falei da tabela com as guias vencidas em cima do fluxo não aparece; ela deve aparecer com
+        duas linhas e meia caso tenha mais de 3 guias, para que o cliente saiba que precisa rolar
+        para ver mais."*
+
+        ⚠⚠ ELA NÃO SUBSTITUI O POP-UP, e as duas respondem perguntas diferentes: o pop-up
+        INTERROMPE uma vez e se dispensa com "Estou ciente"; a tabela FICA, e é onde o cliente volta
+        para ver quanto e quando. Sem ela, dispensado o pop-up, a guia vencida some do Início — que
+        é a perda que o corte do card "Próximos vencimentos" (28/08) deixou nomeada.
+
+        ⚠⚠ ESTA LINHA DIZIA "só na visão de FLUXO: no DRE ela não tem o que fazer" — e ela
+        contradizia o parágrafo logo acima, que é o motivo de o componente existir. Achado em teste
+        de usabilidade em 31/08/2026: alternando para o DRE, a guia vencida sumia do Início, que é
+        a perda que este bloco existe para impedir. Guia vencida não é assunto do fluxo — é a linha
+        mais urgente da tela, e ela vale nas duas visões.
+        ⚠ Ela some sozinha quando não há guia em atraso, e nada é dito — frase que descreve uma
+        ausência já visível é ruído (critério do dono).
+      */}
+      {!atual.carregando && !atual.erro ? (
+        <GuiasVencidas alerta={alerta} aoVerGuias={aoVerGuias} />
+      ) : null}
+
       {!atual.carregando && !atual.erro && dados ? (
         visao === "fluxo" ? (
           modo === "dias" ? (
@@ -642,6 +912,14 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
                   bloco={bloco}
                   unidade={unidade}
                   comFolha={comFolha}
+                  /* ⚠ O bloco diz QUAL mês é o dele — a gaveta precisa das linhas daquele mês, e
+                     os dois blocos da tela são meses diferentes. */
+                  aoAbrir={(dia, balde) => setGaveta({ competencia: bloco.competencia, dia, balde })}
+                  /* ⚠⚠ SÓ O MÊS CORRENTE TEM "HOJE". Passar o dia para os outros pintaria de ciano
+                     uma data que não significa nada naquele mês — e o ciano, nesta tela, quer dizer
+                     "é aqui que você está". ⚠ Quem é o mês corrente é o SERVIDOR (`cicloAtual`),
+                     nunca uma conta feita aqui. */
+                  diaDeHoje={bloco.competencia === dados.cicloAtual ? diaDeHoje : null}
                   cabecalho={(
                     <h3
                       className="fluxo-v4-mes"
@@ -666,15 +944,32 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias }) {
       ) : null}
 
       {/*
-        ⚠⚠ A LISTA FICA ABAIXO DOS DOIS BLOCOS, e NÃO dentro de cada um. Uma saída recorrente
-        aparece em oito meses da janela: repetida por bloco, ela daria oito botões de remover para
-        UMA coisa só, e a pessoa não saberia qual clicar.
-        ⚠ Ela só existe na visão de FLUXO: no DRE não há o que acrescentar, e um formulário ali
-        sugeriria que o cliente pode mexer numa peça contábil.
+        ⚠⚠ O PAINEL "SUAS SAÍDAS" SAIU DAQUI EM 30/08/2026 — dono: *"essa aba de saídas ao final da
+        tabela tem que sumir daí, isso não existe."*
+
+        Ele existia para o cliente ACRESCENTAR e REMOVER as próprias saídas, e a primeira metade
+        mudou de lugar: hoje se acrescenta clicando na célula do dia, na GAVETA — que é onde ele já
+        está olhando quando pensa na saída.
+
+        ⚠⚠ **A PERDA FICA NOMEADA, e é real: com o painel some o botão de REMOVER** a saída
+        pendente. A gaveta lista o que ele escreveu, mas ainda não oferece apagar. Enquanto isso, a
+        recusa continua sendo do contador, na Conferência.
+        ⚠ `SuasSaidas.jsx` **não foi apagado** — apagar componente é decisão à parte nesta casa, e o
+        formulário dele é o molde do da gaveta.
       */}
-      {!atual.carregando && !atual.erro && dados && visao === "fluxo" ? (
-        <SuasSaidas companyId={companyId} meses={meses} aoMudar={atual.recarregar} />
-      ) : null}
+
+      <GavetaDoDia
+        aberta={Boolean(gaveta)}
+        competencia={gaveta?.competencia}
+        dia={gaveta?.dia ?? null}
+        balde={gaveta?.balde ?? null}
+        linhasDoMes={(meses.find((m) => m.competencia === gaveta?.competencia)?.linhas) || []}
+        companyId={companyId}
+        aoFechar={() => setGaveta(null)}
+        /* ⚠ Criada a saída, quem recarrega é o BLOCO — com a MESMA consulta que desenha a tabela.
+           Acrescentar a linha na mão faria a gaveta e a tabela discordarem até a próxima leitura. */
+        aoMudar={() => { setGaveta(null); atual.recarregar(); }}
+      />
 
       {mostraPopUp ? (
         <PopUpDeGuias

@@ -23,6 +23,29 @@ jest.mock("../../../application/declarados/VarreduraDeNotasService.js", () => ({
   })),
 }));
 
+/**
+ * ⚠⚠ A AUTO-ATIVAÇÃO DE SÉRIES PRECISA DE DUBLÊ, e sem ele esta suíte ESTOURA O TIMEOUT.
+ *
+ * `POST /conferencia/varrer-notas` não termina na varredura: ela chama `listarSeries` (o detector,
+ * que consulta o banco) e `autoAtivarSeriesEstaveis`. Sem banco alcançável, o Prisma fica tentando
+ * conectar e os quatro casos desta rota morrem em "Exceeded timeout of 5000 ms" — não por regra
+ * nenhuma, por espera.
+ *
+ * ⚠ O `try/catch` da rota NÃO salva: ele pega exceção, e o que acontece aqui é uma promessa que
+ * demora. Falha por lentidão não vira `autoAtivadas: null` a tempo.
+ *
+ * ⚠ O que estes quatro casos medem é a DATA-PISO e o relatório da varredura. Deixar a recorrência
+ * bater no banco real fazia eles medirem a conexão.
+ */
+jest.mock("../../../application/fluxo/SerieRecorrenteService.js", () => ({
+  // ⚠ `requireActual` + sobrescrita das DUAS que tocam o banco: o módulo exporta vocabulário que a
+  // rota também usa (`ESTADO_DA_SERIE`), e uma fábrica que só devolvesse as duas deixaria o resto
+  // `undefined` — trocando um timeout por um `TypeError`.
+  ...jest.requireActual("../../../application/fluxo/SerieRecorrenteService.js"),
+  listarSeries: jest.fn(async () => ({ series: [], foraDoAlcance: [], indisponivel: false })),
+  autoAtivarSeriesEstaveis: jest.fn(async () => ({ ativadas: 0, series: [] })),
+}));
+
 jest.mock("../../../application/declarados/DeclaradoService.js", () => {
   const real = jest.requireActual("../../../application/declarados/DeclaradoService.js");
   return {

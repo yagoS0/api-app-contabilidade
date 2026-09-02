@@ -237,6 +237,32 @@ export function ciclosConsecutivosNoFim(ciclos) {
  * @param {boolean} entrada.jaMarcada se o contador já marcou esta série
  * @returns {{leitura: string, valorProjetado: number|null, base: object}}
  */
+/**
+ * ⚠⚠ O DIA TÍPICO DA SÉRIE — e ele é uma ESTIMATIVA, nunca um vencimento (31/08/2026).
+ *
+ * > Dono: *"eu quero que entre em algum dia, pode ser no dia em que a nota foi emitida, não tem
+ * > problema, pode ser modificado posteriormente."*
+ *
+ * ⚠⚠ **NÃO EXISTE "O DIA" DA SÉRIE, e a série real prova.** A SPO TECNOLOGIA, da SINCROSAT, foi
+ * emitida em **20/03, 02/04 e 04/05**: o valor não varia nada (3.200 nas três) e o dia varia 18
+ * dias. Por isso ele é resumido como o valor é — pela MEDIANA — e por isso `dias` viaja junto: sem
+ * as observações, *"por que dia 4?"* não tem resposta, e é a pergunta que o contador vai fazer.
+ *
+ * ⚠ **Arredonda para BAIXO** numa mediana quebrada (dois dias no meio). Numa projeção de SAÍDA, o
+ * dia mais cedo é o conservador: a queda de saldo aparece antes do que talvez aconteça, nunca
+ * depois. Séries de receita não passam por aqui — elas saíram do fluxo em 30/08/2026.
+ *
+ * ⚠ Observação sem dia é IGNORADA, não vira zero: `Number(null) === 0` e 0 é finito, então o
+ * guard é por `Number.isInteger` mais faixa, nunca por truthy.
+ */
+export function diaTipico(observacoes) {
+  const dias = (Array.isArray(observacoes) ? observacoes : [])
+    .map((o) => Number(o?.dia))
+    .filter((d) => Number.isInteger(d) && d >= 1 && d <= 31);
+  if (!dias.length) return { dia: null, dias: [] };
+  return { dia: Math.floor(mediana(dias)), dias };
+}
+
 export function lerSerie({ observacoes, periodicidade = PERIODICIDADE.MENSAL, cicloAtual, jaMarcada = false } = {}) {
   // ⚠⚠ PERIODICIDADE FORA DA LISTA FECHADA **RECUSA**, e não cai em MENSAL.
   //
@@ -275,6 +301,9 @@ export function lerSerie({ observacoes, periodicidade = PERIODICIDADE.MENSAL, ci
       : null,
     // ⚠ `null` quando não se sabe o "agora" — nunca 0, que seria "aconteceu neste ciclo".
     ciclosDesdeAUltima: cicloDeAgora != null && ultimo != null ? cicloDeAgora - ultimo : null,
+    // ⚠⚠ O DIA e as observações que o produziram. Ele sai das notas, e é ESTIMATIVA — a linha
+    // continua `PREVISAO` no fluxo. Ver `diaTipico`.
+    ...diaTipico(observacoes),
   };
 
   // ── A SAÍDA vem antes da entrada: uma série JÁ MARCADA que sumiu não deve ser reavaliada como
@@ -392,5 +421,33 @@ export function dentroDaFaixaDaMediana(valores, tolerancia = TOLERANCIA_DA_FAIXA
 export function podeAutoAtivar(base, tolerancia = TOLERANCIA_DA_FAIXA) {
   const n = Number(base?.n);
   if (!Number.isFinite(n) || n < PISO_DE_OBSERVACOES) return false;
-  return dentroDaFaixaDaMediana(base?.valores, tolerancia);
+  /**
+   * ⚠⚠ A FAIXA É SOBRE AS **ÚLTIMAS** OBSERVAÇÕES, NÃO SOBRE A HISTÓRIA INTEIRA (30/08/2026).
+   *
+   * Decisão do dono, escolhida com os números na frente. As três leituras de *"variação ≤ 10%"*
+   * discordam no dado real (`scripts/diag-series-de-despesa.mjs`, 30/08/2026):
+   *
+   * | leitura | LENTE (19 sugerem) | SINCROSAT (3 sugerem) |
+   * |---|---|---|
+   * | toda a história em mediana ±10% | **2** | **0** |
+   * | as ÚLTIMAS 3 em ±10% | **7** | **3** |
+   * | coeficiente de variação ≤ 10% | 3 | 1 |
+   *
+   * ⚠⚠ **A LEITURA ANTERIOR ERA QUASE INERTE.** Uma série de 37 observações ao longo de três anos
+   * quase nunca cabe inteira em ±10% — bastava UMA nota fora, em qualquer mês da história, para
+   * barrar um fornecedor que está estável há um ano. Na SINCROSAT ela pegava **zero**.
+   *
+   * ⚠ **E este critério é O MESMO que o dono já deu para a receita projetada** (*"se em 3 meses
+   * seguidos aparece a mesma receita, pode colocar ela para frente"*): o que decide é a
+   * estabilidade RECENTE, porque é ela que sustenta a projeção para a frente. Oscilação de dois
+   * anos atrás não diz nada sobre o mês que vem; oscilação AGORA diz tudo.
+   *
+   * ⚠ O piso continua sendo `PISO_DE_OBSERVACOES` sobre o TOTAL: três valores estáveis não bastam
+   * se são os únicos três que existem e estão espalhados — quem cuida disso é `consecutivos`, em
+   * `lerSerie`. Aqui a janela só escolhe QUAIS valores entram na faixa.
+   * ⚠⚠ A janela é do FIM do array, e ele já vem em ordem de ciclo. Ordenar por valor aqui faria a
+   * faixa passar sempre — os três mais parecidos entre si sempre cabem em ±10%.
+   */
+  const valores = Array.isArray(base?.valores) ? base.valores : [];
+  return dentroDaFaixaDaMediana(valores.slice(-PISO_DE_OBSERVACOES), tolerancia);
 }

@@ -658,7 +658,8 @@ function ActionMenu({ label, items, accent }) {
 }
 
 /**
- * ⚠⚠ O BOTÃO DA CONFERÊNCIA — ela era ABA do cabeçalho até 29/08/2026.
+ * ⚠⚠ O BOTÃO DA FILA — ele se chamava **"Conferência"** até 30/08/2026, e era ABA do cabeçalho
+ * até 29/08/2026.
  *
  * > Dono: *"essa aba deve estar dentro dos lançamentos, como um botão com aviso quando há
  * > conferência a ser feita, como notas recebidas"*.
@@ -674,6 +675,20 @@ function ActionMenu({ label, items, accent }) {
  *
  * ⚠ Ele é EXPORTADO para poder ser medido sozinho — renderizar a aba inteira num teste exigiria
  * três dezenas de props e provaria menos.
+ *
+ * ## ⚠⚠ O NOME: "A lançar" (30/08/2026)
+ *
+ * > Dono: *"o nome 'Conferência' me parece ruim para esse botão."*
+ *
+ * "Conferência" nomeava o ATO de quem olha, e não o que está dentro — e o mesmo verbo já significa
+ * outra coisa nesta casa (conferir o extrato, a conferência do ADN, a auditoria pré-apuração).
+ * **"A lançar" nomeia o que falta fazer**, e o número ao lado passa a ser lido como *"quantos
+ * faltam"* em vez de *"quantos existem"*.
+ *
+ * ⚠ **Mudou só o TEXTO.** A chave de navegação (`conferencia`), a rota, o handler e os `data-*`
+ * continuam os mesmos — o despacho desta casa é por cadeia de `if` com chave em string, e renomear
+ * a chave quebra em silêncio. É a mesma lição do rótulo "Emissão em Lote" no portal do cliente.
+ * ⚠ A TELA de destino continua se chamando Conferência; o que mudou é a porta.
  */
 export function BotaoDaConferencia({ pendencias, onOpenConferencia }) {
   // ⚠ Sem handler ele NÃO renderiza: um botão em que a pessoa clica e nada acontece é pior que a
@@ -691,7 +706,7 @@ export function BotaoDaConferencia({ pendencias, onOpenConferencia }) {
       title={
         temFila
           ? `${pendencias.declarados} lançamento(s) declarado(s), ${pendencias.series} recorrência(s) e ${pendencias.saidas} saída(s) do cliente esperando você`
-          : "A fila de conferência — o que o cliente e o extrato trouxeram"
+          : "O que o cliente e o extrato trouxeram, esperando lançamento"
       }
       data-pendencias={total ?? undefined}
       style={{
@@ -703,7 +718,7 @@ export function BotaoDaConferencia({ pendencias, onOpenConferencia }) {
         border: `1px solid ${temFila ? "var(--state-warn, #F1FA8C)" : "rgba(189,147,249,0.28)"}`,
       }}
     >
-      Conferência
+      A lançar
       {temFila ? (
         <span
           style={{

@@ -52,6 +52,7 @@ import { listarMapeamentos, salvarMapeamento } from "../../application/declarado
 import { ESTADO, ORIGEM_PAGAMENTO, TRANSICAO } from "../../application/declarados/lib/estadosDeclarado.js";
 import {
   ESTADO_DA_SERIE,
+  reverterExclusaoDoCliente,
   autoAtivarSeriesEstaveis,
   cicloDeHoje,
   listarSeries,
@@ -306,6 +307,85 @@ export function createConferenciaRouter({ log } = {}) {
       // respostas diferentes, e a segunda não pode se disfarçar da primeira.
       indisponiveis,
     });
+  });
+
+  /**
+   * ⚠⚠ O QUE O CLIENTE MEXEU NAS SAÍDAS QUE ELE NÃO CRIOU — a QUARTA fila (31/08/2026).
+   *
+   * > Dono: *"pode ser excluído uma saída pelo usuário. ou alterado a data"* e, sobre esta tela:
+   * > *"planeje e pense, como isso vai ser mostrado ao contador."*
+   *
+   * ⚠⚠ **POR QUE ELA EXISTE.** A linha de 3.200 da SINCROSAT não foi o cliente que criou — foi a
+   * regra dos 10%, sozinha. Se ele a exclui e ela simplesmente some, o escritório continua achando
+   * que a projeção existe, e o fluxo que os dois olham deixa de ser o mesmo fluxo. Aqui ele vê o
+   * que era, o que virou, quem fez e quando — e pode desfazer.
+   *
+   * ⚠⚠ **ELA NÃO ENTRA NA CONTAGEM ÂMBAR** de `/conferencia/pendencias`, de propósito. As três
+   * filas de lá pedem uma DECISÃO do contador; esta é CIÊNCIA. Âmbar permanente treina o olho a
+   * ignorar a cor que significa "falta fazer" — é a regra que já governa aquele botão.
+   *
+   * ⚠ Sem `minRole`: ler é leitura, como as outras filas. Quem desfaz tem piso próprio, abaixo.
+   */
+  router.get("/conferencia/mexidas-do-cliente", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    try {
+      const linhas = await prisma.serieRecorrente.findMany({
+        where: {
+          portalClientId,
+          // ⚠ Só o que o CLIENTE tocou. A série que o contador confirmou e ninguém mexeu não é
+          // notícia — encher esta fila com o estado normal é o mesmo que apagá-la.
+          OR: [{ excluidaPeloClienteEm: { not: null } }, { diaDefinidoEm: { not: null } }],
+        },
+        orderBy: { atualizadaEm: "desc" },
+      });
+      return res.json({
+        ok: true,
+        indisponivel: false,
+        mexidas: linhas.map((l) => ({
+          id: l.id,
+          rotulo: l.rotulo,
+          contraparteDoc: l.contraparteDoc,
+          estadoDaSerie: l.estado,
+          origem: l.origem,
+          // ⚠ O QUE ERA: a estimativa pelas emissões continua guardada em `baseDaObservacao`, então
+          // a tela mostra "dia 4 → dia 10" e não só "dia 10". Um "depois" sem "antes" não é notícia.
+          diaEstimado: Number.isInteger(l.baseDaObservacao?.dia) ? l.baseDaObservacao.dia : null,
+          diaDoCliente: l.diaDoMes ?? null,
+          diaDefinidoPor: l.diaDefinidoPor || null,
+          diaDefinidoEm: l.diaDefinidoEm ? l.diaDefinidoEm.toISOString() : null,
+          excluidaPeloClienteEm: l.excluidaPeloClienteEm ? l.excluidaPeloClienteEm.toISOString() : null,
+          excluidaPeloClientePor: l.excluidaPeloClientePor || null,
+        })),
+      });
+    } catch (e) {
+      // ⚠ Tabela/coluna ausente devolve LISTA VAZIA + `indisponivel`, nunca 503 — a mesma assimetria
+      // deliberada das outras filas: derrubar esta leitura tiraria do ar a tela inteira.
+      if (tabelaAusenteNaContagem(e)) return res.json({ ok: true, indisponivel: true, mexidas: [] });
+      log.error({ err: e }, "Falha ao listar o que o cliente mexeu");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  /**
+   * ⚠ O DESFAZER — a série excluída pelo cliente volta ao fluxo dele.
+   *
+   * Sem ele, a exclusão seria definitiva na prática: o contador veria o que aconteceu e não teria o
+   * que fazer a respeito. ⚠ Ele NÃO toca no `estado` — a decisão do contador sobre a série continua
+   * a que era antes de o cliente mexer.
+   * ⚠ `ACCOUNTANT`, como toda escrita desta tela.
+   */
+  router.post("/conferencia/mexidas-do-cliente/:serieId/desfazer", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      await reverterExclusaoDoCliente({
+        portalClientId: String(req.params.companyId),
+        serieId: String(req.params.serieId),
+      });
+      return res.json({ ok: true });
+    } catch (e) {
+      if (e?.codigo) return res.status(400).json({ ok: false, error: e.codigo, message: e.message });
+      log.error({ err: e }, "Falha ao desfazer a exclusão do cliente");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
   });
 
   /**

@@ -12,6 +12,10 @@ import {
 const LINHA = "858800000342220003282624010720261829070844066762";
 
 const guia = (over = {}) => ({
+  // ⚠⚠ `liberadaCliente: true` entrou em 30/08/2026: a aba passou a listar guia NÃO liberada, e a
+  // frase da célula só promete o PDF para quem pode baixá-lo. Sem o campo, todo caso daqui
+  // mediria a guarda nova em vez do que ele existe para medir.
+  liberadaCliente: true,
   valor: 3422,
   linhaDigitavel: null,
   linhaDigitavelSituacao: "NAO_TENTADA",
@@ -75,5 +79,40 @@ describe("⚠⚠ as três ausências, com frases distintas", () => {
   it("situação desconhecida cai em NAO_TENTADA, nunca em 'temos a linha'", () => {
     expect(linhaDigitavelDaGuia(guia({ linhaDigitavelSituacao: "ALGO_NOVO" })).situacao).toBe(SITUACAO.NAO_TENTADA);
     expect(linhaDigitavelDaGuia(guia({ linhaDigitavelSituacao: "DISPONIVEL" })).linhaLimpa).toBeNull();
+  });
+});
+
+// ⚠⚠ A FRASE NÃO PROMETE UM PDF QUE NÃO ABRE (30/08/2026)
+//
+// Desde que a aba passou a listar guia NÃO liberada (dono: *"arruma a aba de guias, INSS e
+// parcelamento não aparecem"*), o download dela responde 404. A célula dizia "Baixe o PDF para
+// pagar" ao lado do botão desabilitado — duas frases da MESMA linha se contradizendo.
+//
+// ⚠ Achado no NAVEGADOR, com a suíte verde. Nenhum teste de unidade pegaria: as duas metades
+// estavam certas cada uma por si.
+describe("⚠⚠ guia NÃO liberada não é mandada baixar o PDF", () => {
+  const semLinha = (extra) => ({ linhaDigitavelSituacao: "NAO_ENCONTRADA", ...extra });
+
+  it("liberada: a saída pelo PDF é oferecida", () => {
+    expect(linhaDigitavelDaGuia(semLinha({ liberadaCliente: true })).aviso)
+      .toMatch(/Baixe o PDF para pagar/);
+  });
+
+  it("⚠⚠ NÃO liberada: a frase encurta e não oferece nada que não abra", () => {
+    const aviso = linhaDigitavelDaGuia(semLinha({ liberadaCliente: false })).aviso;
+    expect(aviso).toMatch(/não traz linha digitável/i);
+    expect(aviso).not.toMatch(/PDF/i);
+    // ⚠ E ela NÃO repete o motivo: ele já está na célula de ações, e dizer o mesmo duas vezes na
+    // mesma linha é o defeito que o `ESCOPO` de `notas/lib/impedimento.js` já nomeia neste app.
+    expect(aviso).not.toMatch(/contador/i);
+  });
+
+  it("⚠ vale para as TRÊS ausências, não só para uma", () => {
+    for (const situacao of ["NAO_ENCONTRADA", "NAO_TENTADA", "DIVERGENTE"]) {
+      expect(linhaDigitavelDaGuia({ linhaDigitavelSituacao: situacao, liberadaCliente: false }).aviso)
+        .not.toMatch(/PDF/i);
+      expect(linhaDigitavelDaGuia({ linhaDigitavelSituacao: situacao, liberadaCliente: true }).aviso)
+        .toMatch(/PDF/i);
+    }
   });
 });

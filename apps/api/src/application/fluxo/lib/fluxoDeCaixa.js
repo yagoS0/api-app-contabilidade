@@ -188,6 +188,29 @@ export const FRASE_DO_DIA_DESCONHECIDO = Object.freeze({
     "A folha é lançada por competência, e a data do pagamento não está no lançamento.",
 });
 
+/**
+ * ⚠⚠ DE ONDE VEIO O DIA de uma linha de recorrência — vocabulário FECHADO (31/08/2026).
+ *
+ * > Dono: *"eu quero que entre em algum dia, pode ser no dia em que a nota foi emitida"* e
+ * > *"pode ser excluído uma saída pelo usuário. ou alterado a data."*
+ *
+ * ⚠⚠ **AS DUAS TELAS PRECISAM DIZER QUAL É QUAL.** Sem isto, o contador abre o fluxo, lê "dia 10" e
+ * não tem como saber se foi o sistema que estimou ou se foi o cliente que afirmou — e essas duas
+ * coisas merecem confiança diferente. Estimado é palpite sobre o passado; definido é alguém dizendo
+ * quando vai pagar.
+ */
+export const ORIGEM_DO_DIA = Object.freeze({
+  /** Mediana dos dias em que as notas da série foram EMITIDAS. É estimativa, não vencimento. */
+  EMISSAO: "emissao",
+  /** O cliente abriu a linha e disse o dia. ⚠ Ele vence a estimativa, sempre. */
+  CLIENTE: "cliente",
+});
+
+export const FRASE_DA_ORIGEM_DO_DIA = Object.freeze({
+  [ORIGEM_DO_DIA.EMISSAO]: "Dia estimado pelas datas em que as notas foram emitidas.",
+  [ORIGEM_DO_DIA.CLIENTE]: "Dia informado pelo cliente.",
+});
+
 /** Por que uma linha não pôde ser posta em mês nenhum. ⚠ Vocabulário FECHADO. */
 export const SEM_MES = Object.freeze({
   /** ⚠⚠ Guia liberada e em aberto, SEM vencimento. Medido: 51 guias de DAS assim. */
@@ -395,6 +418,34 @@ export function competenciaDeMeses(meses) {
   const ano = Math.floor(meses / 12);
   const mes = (meses % 12) + 1;
   return `${ano}-${String(mes).padStart(2, "0")}`;
+}
+
+/**
+ * Um dia do mês legível (1–31), ou `null`.
+ *
+ * ⚠ Guarda por TIPO, nunca por truthy: `Number(null) === 0` e 0 é finito, então `!dia` deixaria o
+ * nulo passar como zero e `Number.isFinite` aceitaria `4.7`. É a mesma regra do `numero()` daqui.
+ */
+export function diaDoMesValido(v) {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 1 && n <= 31 ? n : null;
+}
+
+/**
+ * ⚠⚠ ENCAIXA um dia do mês na competência — dia 31 em fevereiro vira 28 (ou 29).
+ *
+ * Sem isto, uma recorrência de dia 31 **sumiria** de fevereiro, abril, junho, setembro e novembro:
+ * cinco meses por ano em que o dinheiro desapareceria da projeção, sem erro nenhum na tela.
+ * ⚠ `Date.UTC(ano, mes, 0)` é o último dia do mês ANTERIOR ao índice — com `mes` já 1-based, ele é
+ * o último dia da própria competência. Acessador UTC, como todo o resto deste módulo.
+ */
+export function encaixarNoMes(competencia, dia) {
+  const alvo = diaDoMesValido(dia);
+  if (alvo == null) return null;
+  const m = /^(\d{4})-(\d{2})$/.exec(String(competencia ?? "").trim());
+  if (!m) return null;
+  const ultimo = new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).getUTCDate();
+  return Math.min(alvo, ultimo);
 }
 
 /** Soma meses a uma competência. ⚠ Vira ano sozinho — dezembro + 1 é janeiro do ano seguinte. */

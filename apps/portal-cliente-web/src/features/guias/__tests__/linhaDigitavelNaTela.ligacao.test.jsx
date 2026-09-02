@@ -29,6 +29,10 @@ const LINHA = "858800000342220003282624010720261829070844066762";
 const MASCARA = "85880000034-2 22000328262-4 01072026182-9 07084406676-2";
 
 const guia = (over = {}) => ({
+  // ⚠⚠ `liberadaCliente: true` entrou em 30/08/2026: a aba passou a listar guia NÃO liberada, e a
+  // frase da célula só promete o PDF para quem pode baixá-lo. Sem o campo, todo caso daqui
+  // mediria a guarda nova em vez do que ele existe para medir.
+  liberadaCliente: true,
   guideId: "g1",
   tipo: "SIMPLES",
   competencia: "2026-06",

@@ -53,7 +53,7 @@ function buildEmailHtml({ razao, competencia, typeLabels }) {
     <p>Olá, <strong>${razaoSafe}</strong>,</p>
     ${intro}
     <p>Os PDFs estão em anexo.</p>
-    <p style="margin-top:1.5em">Um abraço,<br><strong>Equipe Belgen Contabilidade</strong></p>
+    <p style="margin-top:1.5em">Um abraço,<br><strong>Equipe Altan Contabilidade</strong></p>
     </body></html>
   `;
 }

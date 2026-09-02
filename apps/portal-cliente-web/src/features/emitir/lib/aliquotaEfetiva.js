@@ -16,8 +16,16 @@
 // Medido em produção: onde não há INSS à parte as duas coincidem (6,00%); onde há, divergem em
 // mais de um ponto (6,00% × 7,26%; 6,00% × 7,83%; 6,24% × 7,01%).
 //
-// ⚠ E `efetiva` NÃO É UM CAMPO ERRADO — ela está CERTA onde é usada, e isto está escrito aqui para
-// que ninguém a "conserte". Decisão do dono, 18/08/2026: *"no painel isso está correto, pois ali
+// ⚠⚠ **`efetiva` FICOU SEM CONSUMIDOR EM 30/08/2026** — o painel passou a ler a alíquota pelo que
+// foi LANÇADO (`deLancamentos.aliquotaComFolha`), por ordem do dono. **A DISTINÇÃO abaixo continua
+// valendo inteira**: o que mudou foi de onde o painel tira o "tudo", não o fato de ele querer tudo.
+// ⚠ **ESTA TELA NÃO MUDOU**: a nota segue em `deReceita`, só o DAS. Não "alinhe" as duas.
+// ⚠ Por que `efetiva` caiu: ela é refém de qual guia alguém marcou como paga — na ERISANGELA de
+// 07/2026 a única guia paga era o INSS de R$ 178,31 e o card anunciou **0,77%** de carga
+// tributária. Ver `application/accounting/lib/impostosSobreReceita.js`.
+//
+// ⚠ E `efetiva` NÃO É UM CAMPO ERRADO — ela está CERTA onde era usada, e isto está escrito aqui
+// para que ninguém a "conserte". Decisão do dono, 18/08/2026: *"no painel isso está correto, pois ali
 // temos a alíquota efetiva total, com todos os impostos; no caso da nota precisamos preencher
 // apenas com a alíquota do Simples Nacional."*
 //

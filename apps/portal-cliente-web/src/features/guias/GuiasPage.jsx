@@ -5,7 +5,7 @@ import { linhaDigitavelDaGuia } from "./lib/linhaDigitavelTela";
 import { detalheDaGuia, rotuloDaGuia } from "./lib/rotuloGuia";
 import {
   avisoAntesDeConfirmar, avisoAntesDePedir, avisoDosAcrescimos, leituraDaRecusa,
-  podeConfirmarPagamento, podePedirGuiaAtualizada,
+  podeConfirmarPagamento, podePedirGuiaAtualizada, motivoDaGuiaNaoLiberada, podeBaixarPdf,
 } from "./lib/recalculoDaGuia";
 import { useCarregamento } from "../../lib/hooks";
 import { mensagemDeErro } from "../../lib/mensagens";
@@ -17,8 +17,7 @@ import {
   fmtCompetencia,
   fmtDateBr,
   inteiro,
-  texto,
-} from "../../lib/format";
+  texto, hojeNoCampoDeData, } from "../../lib/format";
 
 const OPCOES_COMPETENCIA = competenciasRecentes(12);
 const LIMITE = 25;
@@ -105,12 +104,17 @@ function baixarArquivo({ contentBase64, fileName, mimeType }) {
 }
 
 /**
- * Guias liberadas ao cliente.
+ * As guias da empresa.
  *
- * ⚠ A rota `/client/companies/:id/guides` já responde com `apenasLiberadas:
- * true` — o cliente só vê o que o contador liberou, e o download refaz a mesma
- * checagem (`liberadaCliente: true` no `where`). Esta tela NÃO tem, e não deve
- * ganhar, nenhum controle que contorne isso.
+ * ⚠⚠ **ESTE BLOCO DIZIA "Guias liberadas ao cliente" E FICOU FALSO EM 30/08/2026.** Dono:
+ * *"arruma a aba de guias, INSS e parcelamento não aparecem"*. A rota parou de filtrar por
+ * `liberadaCliente` — ela negava a existência de guias que o FLUXO, na tela ao lado, já mostrava,
+ * inclusive pelo botão *"Ver todas as guias"* que leva até aqui.
+ *
+ * ⚠⚠ **O GATE NÃO CAIU — ELE MUDOU DE ALCANCE.** Download, recálculo e confirmação de pagamento
+ * continuam exigindo `liberadaCliente: true` no servidor, cada um no seu `where`. Esta tela
+ * continua sem qualquer controle que contorne isso: o que ela ganhou foi a obrigação de DIZER,
+ * na linha, que a guia ainda não foi liberada — ver `motivoDaGuiaNaoLiberada`.
  *
  * Contrato lido em `toGuideResponse`
  * (apps/api/src/application/guides/GuideService.js) — o app mobile não consome
@@ -152,6 +156,18 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
   const [recusa, setRecusa] = useState(null);
   const [avisoAcrescimo, setAvisoAcrescimo] = useState(null);
   const [confirmacao, setConfirmacao] = useState(null);   // { guia, aviso }
+  /**
+   * ⚠⚠ O DIA EM QUE ELE PAGOU — e ele nasce VAZIO, de propósito (30/08/2026).
+   *
+   * > Dono: *"ao clicar em confirmar pagamento, o pagamento foi posto no dia 30 de agosto mesmo não
+   * > sendo verdade."*
+   *
+   * ⚠⚠ **NÃO PODE NASCER COM "HOJE" PREENCHIDO.** Um padrão é aceito com um clique, e aí a tela
+   * volta a gravar o dia do clique — exatamente o defeito relatado, só que com a aparência de ter
+   * sido conferido. É a mesma regra que o lote já carrega para o município do tomador: *"valor
+   * escolhido pelo sistema fica indistinguível de valor conferido por uma pessoa"*.
+   */
+  const [pagoEm, setPagoEm] = useState("");
   const [confirmando, setConfirmando] = useState(false);
   const [avisoConfirmacao, setAvisoConfirmacao] = useState(null);
   const total = resposta?.total ?? 0;
@@ -194,8 +210,9 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
     setConfirmando(true);
     setRecusa(null);
     try {
-      const r = await api.confirmarPagamentoDaGuia(companyId, guia.guideId);
+      const r = await api.confirmarPagamentoDaGuia(companyId, guia.guideId, { pagoEm });
       setConfirmacao(null);
+      setPagoEm("");
       setAvisoConfirmacao(r?.aviso || null);
       await query.recarregar();
     } catch (err) {
@@ -286,10 +303,42 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
           <p className="meta">
             Guia {rotuloDaGuia(confirmacao.guia)} · {fmtCompetencia(confirmacao.guia.competencia)}
           </p>
-          <button type="button" className="btn" disabled={confirmando} onClick={confirmarPagamento}>
+          {/* ⚠⚠ A DATA É DIGITADA, NÃO DEDUZIDA. É ela que vai para `paymentConfirmedAt`, o campo de
+              onde o fluxo tira o MÊS e o DIA em que o dinheiro saiu — e só o cliente sabe qual é.
+              ⚠ `max` de HOJE fecha a porta do futuro no próprio campo, antes da viagem; a recusa do
+              servidor continua existindo, porque quem valida não pode ser a tela. */}
+          <label className="campo" htmlFor="pago-em">
+            <span>Em que dia você pagou?</span>
+            <input
+              id="pago-em"
+              type="date"
+              value={pagoEm}
+              /* ⚠⚠ `hojeNoCampoDeData`, NUNCA `toISOString()`: aquele converte para UTC e às 21h
+                 de Brasília devolve o dia SEGUINTE — o campo passaria a aceitar amanhã. Achado no
+                 NAVEGADOR: com `toISOString()` o `max` saiu 2026-08-31 num dia 30. */
+              max={hojeNoCampoDeData()}
+              onChange={(e) => setPagoEm(e.target.value)}
+              disabled={confirmando}
+              required
+            />
+          </label>
+          {/* ⚠ O botão só abre com a data preenchida — e o `title` diz por quê, senão ele fica
+              cinza sem explicação e a pessoa não sabe o que falta. */}
+          <button
+            type="button"
+            className="btn"
+            disabled={confirmando || !pagoEm}
+            title={!pagoEm ? "Informe o dia em que você pagou esta guia." : undefined}
+            onClick={confirmarPagamento}
+          >
             {confirmando ? "Registrando…" : confirmacao.aviso.rotuloConfirmar}
           </button>
-          <button type="button" className="btn" disabled={confirmando} onClick={() => setConfirmacao(null)}>
+          <button
+            type="button"
+            className="btn"
+            disabled={confirmando}
+            onClick={() => { setConfirmacao(null); setPagoEm(""); }}
+          >
             Cancelar
           </button>
         </div>
@@ -344,7 +393,9 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
       ) : (
         <>
           <div className="table-wrap">
-            <table className="table">
+            {/* ⚠ `tabela-guias` existe só para o piso de largura da coluna da linha digitável
+                (`app.css`) — sem ele, em 375px a frase da ausência inflava a linha para 228px. */}
+            <table className="table tabela-guias">
               <thead>
                 <tr>
                   <th scope="col">Guia</th>
@@ -362,7 +413,9 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                 {guias.map((guia) => {
                   const chip = chipDaGuia(guia.paymentStatus);
                   return (
-                    <tr key={guia.guideId}>
+                    /* ⚠ `data-liberada` é audível no DOM, como `data-status` — e a distinção
+                       da linha não é só cor: a frase do motivo está na célula de ações. */
+                    <tr key={guia.guideId} data-liberada={guia.liberadaCliente ? "sim" : "nao"}>
                       <td>
                         <span className="truncar" title={detalheDaGuia(guia) || rotuloDaGuia(guia)}>
                           {rotuloDaGuia(guia)}
@@ -398,6 +451,10 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                       </td>
                       <CelulaLinhaDigitavel guia={guia} />
                       <td>
+                        {/* ⚠⚠ GUIA NÃO LIBERADA NÃO PERDE O BOTÃO — ele fica DESABILITADO, com o
+                            motivo ao lado. Sumir com ele esconderia que o documento existe, e o
+                            cliente não saberia o que pedir ao contador. ⚠ O `title` carrega a
+                            mesma frase, para quem chega pelo teclado. */}
                         <button
                           type="button"
                           className="btn"
@@ -406,11 +463,15 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                              só da própria linha os outros 24 botões ficavam com APARÊNCIA normal
                              e o clique não fazia nada — sem spinner, sem erro, sem fila. Filtro
                              fantasma no botão que é a saída de pagamento da guia. */
-                          disabled={Boolean(baixandoId)}
+                          disabled={Boolean(baixandoId) || !podeBaixarPdf(guia)}
+                          title={motivoDaGuiaNaoLiberada(guia) || undefined}
                           onClick={() => baixar(guia)}
                         >
                           {baixandoId === guia.guideId ? "Baixando…" : "Baixar PDF"}
                         </button>
+                        {motivoDaGuiaNaoLiberada(guia) ? (
+                          <span className="meta meta--bloco">{motivoDaGuiaNaoLiberada(guia)}</span>
+                        ) : null}
                         {/* ⚠⚠ SÓ NA GUIA VENCIDA (decisão do dono). Guia em aberto não tem por que
                             ser regerada pelo cliente: o valor seria o mesmo, e o gasto, não.
                             ⚠ Quem decide é `podePedirGuiaAtualizada`, que lê o veredito PRONTO do
@@ -423,7 +484,9 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                             className="btn"
                             style={{ marginTop: 6 }}
                             disabled={confirmando}
-                            onClick={() => { setRecusa(null); setConfirmacao({ guia, aviso: avisoAntesDeConfirmar(guia) }); }}
+                            /* ⚠ Abrir a caixa ZERA a data: a que sobrou de outra guia seria aceita por engano na
+                               próxima, e ninguém veria — são pagamentos diferentes. */
+                            onClick={() => { setRecusa(null); setPagoEm(""); setConfirmacao({ guia, aviso: avisoAntesDeConfirmar(guia) }); }}
                           >
                             Já paguei
                           </button>

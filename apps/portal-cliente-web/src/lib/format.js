@@ -160,3 +160,19 @@ export function mesCorrente() {
 export function competenciaPadrao() {
   return mesCorrente();
 }
+
+/**
+ * ⚠⚠ O DIA DE HOJE, NO RELÓGIO DE QUEM ESTÁ OLHANDO — "AAAA-MM-DD", para `<input type="date">`.
+ *
+ * ⚠⚠ **NUNCA `new Date().toISOString().slice(0, 10)`.** Esse converte para **UTC**: às 21h de
+ * Brasília (UTC−3) ele devolve o dia SEGUINTE. Foi exatamente o que aconteceu ao pôr o `max` no
+ * campo "em que dia você pagou" — o navegador mostrou `2026-08-31` num dia 30, e a suíte não pegou
+ * porque o teste comparava contra a MESMA expressão errada.
+ *
+ * ⚠ O projeto já carrega este aviso em dois lugares (`diasDoMes` do fluxo, `fmtDateBr`): aritmética
+ * de data aqui é por PARTES locais, jamais por ISO.
+ */
+export function hojeNoCampoDeData(agora = new Date()) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${agora.getFullYear()}-${p(agora.getMonth() + 1)}-${p(agora.getDate())}`;
+}

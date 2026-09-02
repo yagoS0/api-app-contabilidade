@@ -2383,6 +2383,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         status,
         page,
         limit,
+        // ⚠⚠ O PÚBLICO decide o VALOR mostrado desde 30/08/2026: o escritório vê o do extrato do
+        // PGDAS-D (com o de cobrança no badge "↻"); o cliente vê o que ele PAGA. O default da
+        // função é o público estreito, então esta linha não é cerimônia — sem ela o contador perde
+        // o enriquecimento que esta tela existe para mostrar.
+        publico: PUBLICO.ESCRITORIO,
       });
       return res.json({
         // ⚠⚠ NUNCA `.map(toGuideResponse)` CRU: o `map` passa o ÍNDICE como 2º argumento, e o 2º
@@ -3722,7 +3727,20 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           ? `Comprovante encontrado com total R$ ${Number(comprovante.total).toFixed(2)}, diferente da guia (R$ ${totalGuia.toFixed(2)}) — confira antes de lançar.`
           : "Comprovante encontrado, mas não foi possível ler os valores com segurança — confira antes de lançar.";
       }
-      // Data do pagamento: a da arrecadação quando confiável; senão o dia da confirmação.
+      /**
+       * ⚠⚠ A DATA DO PAGAMENTO: a da ARRECADAÇÃO do comprovante — e desde 30/08/2026 ela É USADA.
+       *
+       * ⚠⚠ **Esta variável era calculada AQUI e nunca lida em lugar nenhum**, enquanto
+       * `markGuidePaidManual` carimbava `new Date()`. O comentário dela ainda dizia *"senão o dia
+       * da confirmação"*, descrevendo um comportamento que morava em outro arquivo. Medido antes do
+       * conserto: das 20 guias com comprovante guardado, **20** tinham `paymentConfirmedAt`
+       * diferente da arrecadação — a LENTE com INSS de 04/2026 arrecadado em **16/07** e gravado
+       * em **27/08**, dois meses adiante, num campo que decide o MÊS do fluxo.
+       *
+       * ⚠ `batendo` continua sendo o portão: comprovante cujo total não confere com a guia não
+       * comanda nada, e aí a data fica **nula** — "pago, dia desconhecido" é uma resposta; um
+       * carimbo do relógio não é.
+       */
       const dataPagamentoReal = batendo && comprovante?.dataArrecadacao ? comprovante.dataArrecadacao : null;
 
       // Esta rota não cria mais NENHUM lançamento — logo, não há mês contábil a proteger aqui.
@@ -3733,7 +3751,18 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const updated = await markGuidePaidManual({
         guideId: scoped.guide.id,
         userId: req.auth.user.id,
+        pagoEm: dataPagamentoReal,
       });
+
+      // ⚠⚠ SEM DATA, O CONTADOR PRECISA SABER — senão a guia fica paga "em lugar nenhum" no fluxo
+      // e ninguém descobre por quê. A saída já existe e está nomeada: "Dar baixa" na Circular pede
+      // a data. ⚠ A frase entra no aviso que a tela já mostra, em vez de um canal novo.
+      if (!dataPagamentoReal) {
+        const semData = "Marcada como paga, mas SEM a data do pagamento — o comprovante não trouxe "
+          + "a data da arrecadação. Ela é o dia em que o dinheiro saiu, e o fluxo depende dela: "
+          + "informe-a ao dar baixa na Circular.";
+        comprovanteAviso = comprovanteAviso ? `${comprovanteAviso} ${semData}` : semData;
+      }
 
       // Parcela também NÃO lança aqui: o lançamento foi para a aba Parcelamento, onde as
       // parcelas são acompanhadas. Confirmar pagamento só marca e guarda o comprovante.

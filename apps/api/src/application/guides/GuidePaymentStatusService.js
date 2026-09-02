@@ -38,11 +38,33 @@ async function updateGuidePaymentStatus(guideId, data) {
   });
 }
 
-export async function markGuidePaidManual({ guideId, userId }) {
+/**
+ * ⚠⚠ `pagoEm` É O DIA EM QUE O DINHEIRO SAIU, E ELE PASSOU A SER PARÂMETRO EM 30/08/2026.
+ *
+ * > Dono: *"ao clicar em confirmar pagamento, o pagamento foi posto no dia 30 de agosto mesmo não
+ * > sendo verdade."*
+ *
+ * Isto gravava `new Date()` — o instante do CLIQUE. E `paymentConfirmedAt` não é isso: é dele que
+ * `FluxoDeCaixaService.linhasDasGuias` tira o **mês** e o **dia** da linha do fluxo.
+ *
+ * ⚠⚠ **E OS DOIS CHAMADORES JÁ TINHAM A DATA CERTA NA MÃO.** Em `routes/firm/index.js` havia uma
+ * variável `dataPagamentoReal` — *"a da arrecadação quando confiável"* — **calculada e nunca
+ * usada**; em `routes/firm/accountingEntries.js` é a `dataPagamento` que o contador digitou para
+ * gerar a baixa. Medido antes do conserto: das 20 guias pagas com comprovante do SERPRO guardado,
+ * **20 divergiam** da data real de arrecadação (`scripts/diag-data-do-pagamento.mjs`).
+ *
+ * ⚠⚠ **`pagoEm` NULO GRAVA `null`, e isso é deliberado.** Sem comprovante e sem data digitada,
+ * ninguém sabe quando o dinheiro saiu — e a guia entra em `semMes` no fluxo, que é "pago, dia
+ * desconhecido". Carimbar o relógio para "não deixar o campo vazio" foi exatamente o que produziu
+ * as 20 datas erradas.
+ *
+ * @param {{guideId: string, userId: string, pagoEm?: Date|null}} p
+ */
+export async function markGuidePaidManual({ guideId, userId, pagoEm = null }) {
   return updateGuidePaymentStatus(guideId, {
     paymentStatus: "PAID",
     paymentStatusSource: "MANUAL",
-    paymentConfirmedAt: new Date(),
+    paymentConfirmedAt: pagoEm instanceof Date ? pagoEm : null,
     paymentConfirmedByUserId: String(userId),
     serproLastCheckResult: "MANUAL_CONFIRMED",
   });
@@ -64,17 +86,28 @@ export async function markGuidePaidManual({ guideId, userId }) {
  * ⚠ SEM COMPROVANTE (decisão do dono): o cliente confirma sem anexar. `comprovantePdfFileId` NÃO é
  * tocado — a prova continua vindo do SERPRO quando a consulta de pagamento rodar.
  */
-export async function markGuidePaidByCliente({ guideId, userId }) {
+/**
+ * ⚠⚠ DOIS FATOS, DUAS DATAS — e eles estavam colapsados num só até 30/08/2026.
+ *
+ *  - `clienteConfirmouEm` é **quando ele clicou**. Continua sendo `agora`, e está certo.
+ *  - `paymentConfirmedAt` é **quando o dinheiro saiu**, e só o cliente sabe. Vem por `pagoEm`.
+ *
+ * ⚠ O comentário antigo justificava o carimbo assim: *"deixá-lo nulo faria a linha aparecer paga
+ * sem data"*. Era verdade e era o defeito — preencher um campo para ele não ficar vazio é fabricar
+ * um fato, e este aqui decide em que dia o dinheiro aparece no fluxo do cliente.
+ *
+ * @param {{guideId: string, userId: string, pagoEm: Date}} p
+ */
+export async function markGuidePaidByCliente({ guideId, userId, pagoEm }) {
   const agora = new Date();
   return updateGuidePaymentStatus(guideId, {
     paymentStatus: "PAID",
     paymentStatusSource: "CLIENTE",
     clienteConfirmouEm: agora,
     clienteConfirmouPorUserId: userId ? String(userId) : null,
-    // ⚠ `paymentConfirmedAt` recebe a data TAMBÉM: ela é o campo que a tela do contador já lê para
-    // dizer "confirmado em …", e deixá-lo nulo faria a linha aparecer paga sem data. O que a
-    // distingue não é a ausência da data — é a PROCEDÊNCIA.
-    paymentConfirmedAt: agora,
+    // ⚠⚠ A DATA DO PAGAMENTO É A INFORMADA, NUNCA `agora`. O que distingue esta confirmação de
+    // uma prova continua sendo a PROCEDÊNCIA (`paymentStatusSource: "CLIENTE"`), e não a data.
+    paymentConfirmedAt: pagoEm instanceof Date ? pagoEm : null,
     paymentConfirmedByUserId: userId ? String(userId) : null,
     serproLastCheckResult: "CLIENTE_CONFIRMOU",
   });

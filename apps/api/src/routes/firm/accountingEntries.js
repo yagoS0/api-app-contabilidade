@@ -39,6 +39,7 @@ import {
   resolveCaixaAccount,
 } from "../../application/accounting/InssPagamentoService.js";
 import { markGuidePaidManual } from "../../application/guides/GuidePaymentStatusService.js";
+import { baixaPodeDatarAGuia, guiaQuitadaPelaBaixa } from "../../application/guides/lib/guiaQuitadaPelaBaixa.js";
 // Q50: históricos agnósticos de competência (chave normalizada com {{competencia}}).
 import { normalizarHistorico } from "../../application/accounting/historicoCompetencia.js";
 // Saldo da provisão — mesma conta usada pelo estorno (ver `saldoProvisao.js`).
@@ -3348,6 +3349,44 @@ export function createAccountingEntriesRouter({ log }) {
         });
         return { entry: fullBaixa, openEntry: updatedOpen };
       });
+      /**
+       * ⚠⚠ A BAIXA FECHA O CÍRCULO: ela devolve o estado À GUIA (30/08/2026).
+       *
+       * > Dono: *"apareceram impostos que estão pagos na circular e lançados em lançamentos como
+       * > aberto."*
+       *
+       * ⚠⚠ **O ELO EXISTIA NUM SENTIDO SÓ.** `GuideToProvisionService` promovia a PROVISÃO quando a
+       * guia era paga; a volta — a baixa lançada quitando a guia — não existia. Medido em produção:
+       * **20 provisões de DAS `PAGO`, com baixa lançada e o dinheiro fora do caixa, cuja guia
+       * continuava `OPEN`** — duas já liberadas ao cliente (LENTE 06/2026 R$ 15.033,58 e CHAYM
+       * 06/2026 R$ 1.058,40), ou seja, cobrança em aberto na tela de quem já tinha pago.
+       *
+       * ⚠ A REGRA é pura e está em `guides/lib/guiaQuitadaPelaBaixa.js`, com o porquê da chave.
+       * ⚠ **BEST-EFFORT, FORA DA TRANSAÇÃO**: a baixa é o ato contábil e já está gravada. Falhar
+       * aqui não pode desfazê-la — no pior caso a guia segue aberta, que é o estado de antes.
+       * ⚠ **NUNCA REBAIXA**: guia paga por SERPRO (prova) ou MANUAL (o contador) é deixada em paz.
+       * ⚠⚠ **MAS CORRIGE A DO CLIENTE** — o clique não é prova e o lançamento é, e a hierarquia é a
+       * que `procedenciaDoPagamento.js` já escreve. Ver `baixaPodeDatarAGuia`.
+       * ⚠ A data é a **da baixa** — o dia que o contador afirma que o dinheiro saiu, e o mesmo que
+       * foi para o razão. `paymentConfirmedAt` é quando o dinheiro saiu, nunca o instante do clique.
+       */
+      try {
+        const { alvo } = guiaQuitadaPelaBaixa({ provisao: openEntry, novoStatus });
+        if (alvo) {
+          const guia = await prisma.guide.findFirst({
+            // ⚠ O filtro por `paymentStatus` SAIU do `where`: guia paga pelo CLIENTE também entra,
+            // e quem decide é `baixaPodeDatarAGuia`. Filtrar aqui esconderia justamente o caso.
+            where: alvo.guideId ? { id: alvo.guideId, portalClientId } : { ...alvo, status: "PROCESSED" },
+            select: { id: true, paymentStatus: true, paymentStatusSource: true },
+          });
+          if (guia && baixaPodeDatarAGuia(guia)) {
+            await markGuidePaidManual({ guideId: guia.id, userId: req.auth?.user?.id, pagoEm: data });
+          }
+        }
+      } catch (err) {
+        log.warn({ err: err?.message, entryId }, "baixa lançada, mas a guia não pôde ser quitada");
+      }
+
       // Q37: memoriza as contas D/C da baixa por (empresa, eventType) → próxima baixa vem pré-preenchida
       // com o último preenchido. Best-effort.
       const dLine = lines.find((l) => String(l.tipo).toUpperCase() === "D");
@@ -3511,7 +3550,11 @@ export function createAccountingEntriesRouter({ log }) {
         return res.status(409).json({ error: inssBaixa.reason || "baixa_skipped" });
       }
       // Selo verde da Circular depende de paymentStatus=PAID: marca a guia como paga (fonte MANUAL).
-      await markGuidePaidManual({ guideId, userId: req.auth?.user?.id });
+      // ⚠⚠ `pagoEm: data` é A MESMA data que gerou a BAIXA logo acima — a que o contador digitou.
+      // Até 30/08/2026 esta chamada ignorava a data e carimbava `new Date()`: o lançamento contábil
+      // ficava no dia certo e a guia, no dia do clique. Dois registros do MESMO pagamento em datas
+      // diferentes, e o fluxo lendo o errado.
+      await markGuidePaidManual({ guideId, userId: req.auth?.user?.id, pagoEm: data });
       return res.status(201).json({ ok: true, inssBaixa });
     } catch (err) {
       if (err?.code === "MES_FECHADO") {

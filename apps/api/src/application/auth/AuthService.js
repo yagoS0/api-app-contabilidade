@@ -42,6 +42,20 @@ function sanitizeUser(user, overrides = {}) {
     role,
     status: user.status || "active",
     accountType: user.accountType || inferredAccountType,
+    /**
+     * ⚠⚠ A PORTA DO PORTAL DO CLIENTE, PARA QUEM É DO ESCRITÓRIO (30/08/2026).
+     *
+     * Ela viaja no login porque é a TELA que precisa dela: `accountGate.js`, no portal do cliente,
+     * recusa quem não é `CLIENT` antes de qualquer chamada. Sem o campo aqui, o portal continuaria
+     * barrando na porta e o servidor jamais seria consultado.
+     *
+     * ⚠ `=== true`, nunca truthy — e o `Boolean()` é aqui, na origem: usuário vindo de fonte que
+     * não tem a coluna (o `source: "env"` do bootstrap) responderia `undefined`, e ausência não é
+     * permissão. Falha fechado.
+     * ⚠⚠ E ela NÃO É A AUTORIZAÇÃO: quem autoriza são `requireAccountType` e
+     * `requireClientCompanyAccess`, que leem a MESMA marca no servidor. Esta é a mensagem legível.
+     */
+    podeAbrirPortalDoCliente: user.podeAbrirPortalDoCliente === true,
     source: user.source || "db",
     ...overrides,
   };

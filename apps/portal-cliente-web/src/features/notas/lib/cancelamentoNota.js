@@ -120,6 +120,28 @@ export function podeCancelar(nota, { cancelamentoEnviado = false, cnpjDaEmpresa 
   }
 
   const situacao = String(nota.status || "").toUpperCase();
+  /**
+   * ⚠⚠ O CANCELAMENTO QUE NÓS JÁ ENVIAMOS — agora vindo do SERVIDOR, não só da sessão (31/08/2026).
+   *
+   * > Dono: *"consegui tentar cancelar uma nota que já está cancelada"* → *"deixa o botão de
+   * > cancelar cinza (…) até ter o retorno do ADN então."*
+   *
+   * O guard `cancelamentoEnviado` lá em cima é estado DE SESSÃO e morre no recarregamento — foi
+   * exatamente assim que o dono conseguiu pedir o segundo cancelamento. O servidor passou a dizer
+   * `CANCELAMENTO_ENVIADO` na própria nota (a prova é `ServiceInvoice.status = "cancelled"`, que
+   * só é gravado depois de o sistema nacional ACEITAR o evento), e este ramo é o que sobrevive.
+   */
+  if (situacao === "CANCELAMENTO_ENVIADO") {
+    return {
+      pode: false,
+      motivo: MOTIVO_NAO_CANCELAVEL.CANCELAMENTO_ENVIADO,
+      escopo: ESCOPO.NOTA,
+      resumo: "Cancelamento enviado.",
+      texto:
+        "O cancelamento já foi enviado ao sistema nacional. A lista mostra a nota como cancelada "
+        + "assim que a consulta trouxer o evento.",
+    };
+  }
   if (situacao === "CANCELADA" || situacao === "SUBSTITUIDA") {
     return {
       pode: false,
@@ -131,21 +153,26 @@ export function podeCancelar(nota, { cancelamentoEnviado = false, cnpjDaEmpresa 
     };
   }
 
-  // ⚠ A nota emitida por nós e ainda não confirmada pelo ADN vive em outra tabela, e o pedido de
-  // cancelamento é identificado pela CHAVE — que só existe depois que o sistema nacional devolve
-  // a nota. Ver `notasEmitidasNaoConfirmadas.js` no backend.
-  if (nota.confirmadaPeloAdn === false) {
-    return {
-      pode: false,
-      motivo: MOTIVO_NAO_CANCELAVEL.NAO_CONFIRMADA,
-      escopo: ESCOPO.NOTA,
-      resumo: "Ainda não confirmada.",
-      texto:
-        "Esta nota ainda não voltou do sistema nacional, e o cancelamento é identificado pela "
-        + "chave de acesso dela. Assim que a consulta a trouxer, o cancelamento fica disponível.",
-    };
-  }
-
+  /**
+   * ⚠⚠ A NOTA RECÉM-EMITIDA **PODE** SER CANCELADA — este ramo virou o contrário em 31/08/2026.
+   *
+   * > Dono: *"eu emiti duas notas em lote na sincrosat e não consigo cancelar elas após a emissão,
+   * > as outras eu consigo, quero poder cancelar logo após a emissão, simples."*
+   *
+   * ⚠⚠ **A RAZÃO QUE ESTE RAMO DAVA ERA FALSA, e foi MEDIDA.** Ele dizia *"o cancelamento é
+   * identificado pela CHAVE, que só existe depois que o sistema nacional devolve a nota"*. Em
+   * 31/08/2026, contra produção: as duas notas emitidas naquele dia tinham `chaveAcesso`
+   * preenchida **desde a emissão**. A chave estava lá; o que faltava era a ROTA procurá-la — ela
+   * lia só `PortalInvoice`, e o id que esta lista mostra é um `ServiceInvoice.id`.
+   *
+   * ⚠ A rota passou a ler dos DOIS lados, como o DANFSe já fazia desde 24/08. O escopo continua
+   * fechado por empresa lá (`companyId` resolvido antes do portão), e as guardas de nota recebida
+   * e de NF-e continuam valendo — inclusive contra quem chamar a rota direto.
+   *
+   * ⚠ `MOTIVO_NAO_CANCELAVEL.NAO_CONFIRMADA` FICA no vocabulário: o servidor ainda pode recusar
+   * assim (a nota emitida FORA do portal, que não tem `ServiceInvoice` nosso), e `lerRecusa` a
+   * traduz. O que sai é a tela ADIVINHAR a recusa antes de perguntar.
+   */
   return { pode: true, motivo: null, escopo: null, resumo: null, texto: null };
 }
 

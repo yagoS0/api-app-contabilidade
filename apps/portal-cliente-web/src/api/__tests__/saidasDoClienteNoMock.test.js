@@ -159,3 +159,86 @@ describe("⚠⚠ o par mock/real — função só do mock NUNCA é alcançada no
     }
   });
 });
+
+// ⚠⚠ O CLIENTE MEXE NA SÉRIE — o dia e a retirada do fluxo (31/08/2026)
+//
+// > Dono: *"pode ser excluído uma saída pelo usuário. ou alterado a data"* — escopo: *"série
+// > inteira: esse pagamento é sempre dia 10."*
+//
+// ⚠ O mock precisa MOSTRAR o efeito, não só aceitar a chamada: um mock que grava e não muda a tela
+// treina a tela a parecer quebrada offline. É a razão pela qual `saidasDoCliente` viaja para o
+// fixture, e o cabeçalho dela já conta que este mock escondeu ramo cinco vezes.
+describe("⚠⚠ o cliente mexe na série do fluxo", () => {
+  /**
+   * ⚠⚠ `estado` DO MOCK É DE MÓDULO — `createMockApi()` não o recria (`const estado = criarEstado()`
+   * no topo). Os outros casos desta suíte não sentem isso porque cada um cria uma saída NOVA; estes
+   * mexem em séries do FIXTURE, que são as mesmas em todos. Sem esta limpeza, o caso que define o
+   * dia deixaria o próximo lendo `dia 10` onde ele espera a estimativa — e a suíte passaria ou
+   * falharia conforme a ORDEM, que é o pior tipo de teste.
+   */
+  beforeEach(async () => {
+    await mockApi.definirDiaDaSaida(EMPRESA, "s-1", null);
+  });
+
+  async function serieDoFluxo(rotulo) {
+    const r = await fluxo();
+    return r.meses.flatMap((m) => m.linhas).find((l) => l.rotulo === rotulo) || null;
+  }
+
+  it("a série DETECTADA já vem com dia ESTIMADO, e diz de onde ele veio", async () => {
+    const l = await serieDoFluxo("ANTHROPIC PBC");
+    expect(l.dia).toBe(4);
+    expect(l.diaDesconhecido).toBeNull();
+    expect(l.base.origemDoDia).toBe("emissao");
+    // ⚠ Os dias observados viajam: 20, 2, 4 — a mediana 4 não é óbvia olhando só o resultado.
+    expect(l.base.diasObservados).toEqual([20, 2, 4]);
+  });
+
+  it("⚠ a série DECLARADA continua SEM dia — não há nota de onde estimar", async () => {
+    const l = await serieDoFluxo("Jantar com clientes");
+    expect(l.dia).toBeNull();
+    expect(l.diaDesconhecido?.motivo).toBe("serie_sem_dia");
+  });
+
+  it("definir o dia MOVE a linha, e a origem passa a ser o cliente", async () => {
+    await mockApi.definirDiaDaSaida(EMPRESA, "s-1", 10);
+    const l = await serieDoFluxo("ANTHROPIC PBC");
+    expect(l.dia).toBe(10);
+    expect(l.base.origemDoDia).toBe("cliente");
+  });
+
+  it("⚠ dia em branco LIMPA e devolve a linha à estimativa", async () => {
+    await mockApi.definirDiaDaSaida(EMPRESA, "s-1", 10);
+    await mockApi.definirDiaDaSaida(EMPRESA, "s-1", null);
+    const l = await serieDoFluxo("ANTHROPIC PBC");
+    expect(l.dia).toBe(4);
+    expect(l.base.origemDoDia).toBe("emissao");
+  });
+
+  it("⚠⚠ dia fora de 1–31 recusa com o MESMO código do servidor", async () => {
+    // Guard por TIPO: `Number(null) === 0` e 0 é finito — truthy deixaria passar.
+    for (const v of [0, 32, -1, 4.7, "abc"]) {
+      await expect(mockApi.definirDiaDaSaida(EMPRESA, "s-1", v))
+        .rejects.toMatchObject({ code: "dia_invalido" });
+    }
+  });
+
+  it("tirar do fluxo faz a linha SUMIR de todos os meses", async () => {
+    await mockApi.removerSaidaDoFluxo(EMPRESA, "s-1", { tipo: "RECORRENTE" });
+    expect(await serieDoFluxo("ANTHROPIC PBC")).toBeNull();
+  });
+
+  it("⚠⚠ tirar duas vezes recusa — senão a segunda apagaria a hora da primeira", async () => {
+    // ⚠ `s-4`, e não `s-1`: o caso acima já tirou a `s-1` e o estado do mock é de módulo (ver o
+    // `beforeEach`). Reusá-la aqui mediria a ordem dos casos, não o comportamento.
+    await mockApi.removerSaidaDoFluxo(EMPRESA, "s-4", { tipo: "RECORRENTE" });
+    await expect(mockApi.removerSaidaDoFluxo(EMPRESA, "s-4", { tipo: "RECORRENTE" }))
+      .rejects.toMatchObject({ code: "serie_ja_excluida" });
+  });
+
+  it("⚠⚠ id que não é de série nenhuma recusa — o mock NÃO pode ser mais permissivo que o servidor", () => {
+    // Foi este caso que pegou a primeira versão do ramo, que respondia `ok` para qualquer id.
+    return expect(mockApi.removerSaidaDoFluxo(EMPRESA, "nao-existe", { tipo: "RECORRENTE" }))
+      .rejects.toMatchObject({ code: "saida_nao_encontrada" });
+  });
+});

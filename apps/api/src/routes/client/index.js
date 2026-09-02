@@ -20,6 +20,8 @@ import {
   RECUSA_DA_SERIE,
   SerieRecusada,
   declararSerie,
+  definirDiaDaSerie,
+  excluirSerieDoCliente,
   removerSerieDeclarada,
 } from "../../application/fluxo/SerieRecorrenteService.js";
 // ⚠⚠ ESTA LINHA DIZIA "o corpo é COMPARTILHADO com a rota do CONTADOR — um cálculo só, dois
@@ -67,6 +69,10 @@ import {
   markGuidePaidByCliente,
   canGuideConfirmPayment,
 } from "../../application/guides/GuidePaymentStatusService.js";
+import {
+  FRASE_DA_RECUSA,
+  lerDataDoPagamentoInformada,
+} from "../../application/guides/lib/dataDoPagamento.js";
 import { comContextoSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
 import { reemitirDarfLp } from "../../application/fiscal/lp/LucroPresumidoProvisaoService.js";
@@ -176,6 +182,37 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
     return prisma.company.findUnique({ where: { id: portal.companyId } });
   }
 
+  /**
+   * As colunas da empresa que a LISTA do cliente devolve.
+   *
+   * ⚠⚠ Ela virou constante em 30/08/2026 porque passaram a existir DUAS consultas — a do cliente
+   * (`companyClientUser`) e a do visitante do escritório (`companyFirmAccess`). Dois `select`
+   * escritos à mão divergiriam na primeira correção, e a divergência apareceria como campo
+   * `undefined` **sem erro nenhum** — a armadilha do `legacyCompanySelect`, que já mordeu três
+   * vezes nesta base.
+   *
+   * ⚠ O PORTÃO DE EMISSÃO precisa viajar até o app do cliente. A coluna existe desde 18/08/2026 e
+   * não aparecia aqui — o app só descobria o portão pela RECUSA, depois de o usuário preencher a
+   * nota inteira.
+   * ⚠ **SÓ A FLAG.** `emissaoClienteLiberadaEm`/`...Por` respondem *"quem autorizou este cliente a
+   * emitir?"* — é registro de AUDITORIA do contador, e o id/instante de um usuário do escritório
+   * não é dado do cliente. Ampliar este `select` é o caminho por onde vazamento entre lados
+   * acontece sem ninguém notar.
+   */
+  const LEGACY_COMPANY_DA_LISTA = Object.freeze({
+    id: true,
+    razao: true,
+    cnpj: true,
+    guideNotificationEmail: true,
+    inscricaoMunicipal: true,
+    uf: true,
+    municipio: true,
+    createdAt: true,
+    updatedAt: true,
+    companyId: true,
+    emissaoClienteLiberada: true,
+  });
+
   router.get("/companies", async (req, res) => {
     const userId = String(req.auth.user.id);
     const legacyCompanySelect = {
@@ -248,35 +285,34 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       legacy?.enderecoJson && typeof legacy.enderecoJson === "object"
         ? legacy.enderecoJson[field] || null
         : null;
-    const links = await prisma.companyClientUser.findMany({
-      where: { userId, status: "ACTIVE" },
-      include: {
-        company: {
-          select: {
-            id: true,
-            razao: true,
-            cnpj: true,
-            guideNotificationEmail: true,
-            inscricaoMunicipal: true,
-            uf: true,
-            municipio: true,
-            createdAt: true,
-            updatedAt: true,
-            companyId: true,
-            // ⚠ O PORTÃO DE EMISSÃO PRECISA VIAJAR ATÉ O APP DO CLIENTE. A coluna existe desde
-            // 18/08/2026 e **não aparecia aqui** — o app só descobria o portão pela RECUSA, depois
-            // de o usuário preencher a nota inteira. Ver `emissaoNfseLiberada`, abaixo.
-            //
-            // ⚠ **SÓ A FLAG.** `emissaoClienteLiberadaEm`/`...Por` respondem *"quem autorizou este
-            // cliente a emitir?"* — é registro de AUDITORIA do contador, e o id/instante de um
-            // usuário do escritório não é dado do cliente. Ampliar este `select` é o caminho por
-            // onde vazamento entre lados acontece sem ninguém notar.
-            emissaoClienteLiberada: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    /**
+     * ⚠⚠ O VISITANTE DO ESCRITÓRIO LISTA A CARTEIRA DELE, NÃO VÍNCULOS DE CLIENTE (30/08/2026).
+     *
+     * > Dono: *"não estou conseguindo acessar o portal do cliente com meu acesso de contador."*
+     *
+     * ⚠⚠ **ABRIR SÓ A PORTA ENTREGARIA UMA TELA VAZIA.** Esta rota lista por `companyClientUser`,
+     * e um usuário do escritório não tem vínculo nenhum ali — medido em 30/08/2026: **0** para o
+     * único usuário FIRM da base, contra **34** empresas na carteira dele (`companyFirmAccess`).
+     * Logado e sem empresa nenhuma é pior que a recusa clara.
+     *
+     * ⚠ A fonte muda; o RESTO da rota não. As duas consultas devolvem `{ role, company }`, então o
+     * serializador abaixo continua sendo um só — duas montagens do mesmo payload divergiriam na
+     * primeira correção.
+     * ⚠⚠ O papel devolvido é `FINANCEIRO`, o MESMO que `requireClientCompanyAccess` concede à
+     * visita. Mandar `OWNER` daqui faria a TELA oferecer emissão de nota e gestão de usuários que o
+     * servidor recusaria — botão impossível, e no caminho que pratica ato fiscal.
+     */
+    const ehVisitaDoEscritorio = req.auth?.user?.podeAbrirPortalDoCliente === true;
+    const links = ehVisitaDoEscritorio
+      ? (await prisma.companyFirmAccess.findMany({
+          where: { userId, status: "ACTIVE" },
+          include: { company: { select: LEGACY_COMPANY_DA_LISTA } },
+        })).map((l) => ({ ...l, role: "FINANCEIRO" }))
+      : await prisma.companyClientUser.findMany({
+          where: { userId, status: "ACTIVE" },
+          include: { company: { select: LEGACY_COMPANY_DA_LISTA } },
+          orderBy: { createdAt: "desc" },
+        });
     const companyIds = links.map((link) => link.company.companyId).filter(Boolean);
     const legacyCompanies = companyIds.length
       ? await prisma.company.findMany({
@@ -973,10 +1009,56 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         return res.json({ ok: true, tipo });
       }
       if (tipo === "RECORRENTE") {
-        await removerSerieDeclarada({ portalClientId: companyId, serieId: saidaId });
-        return res.json({ ok: true, tipo });
+        /**
+         * ⚠⚠ O CLIENTE TIRA QUALQUER SAÍDA DO FLUXO DELE — não só a que ele declarou (31/08/2026).
+         *
+         * > Dono: *"pode ser excluído uma saída pelo usuário."*
+         *
+         * Antes, esta porta chamava `removerSerieDeclarada` direto e RECUSAVA a série DETECTADA com
+         * "fale com o seu contador". Era coerente com o desenho de então (*"só acrescentar"*), e o
+         * dono o reverteu: a linha de 3.200 da SINCROSAT entrou sozinha pela regra dos 10%, e quem
+         * paga precisa poder tirá-la.
+         *
+         * ⚠ `excluirSerieDoCliente` decide entre APAGAR (a declarada dele, ainda não decidida) e
+         * MARCAR como excluída (todas as outras) — e a marcada continua visível na Conferência,
+         * com autor, data e desfazer. Sumir da tela do contador é o desfecho que não pode acontecer.
+         */
+        const r = await excluirSerieDoCliente({
+          portalClientId: companyId,
+          serieId: saidaId,
+          usuarioId: req.auth?.user?.id,
+        });
+        return res.json({ ok: true, tipo, apagada: r?.apagada === true });
       }
       return res.status(400).json({ ok: false, error: "tipo_invalido" });
+    } catch (err) {
+      return responderRecusaDaSaida(res, err, log, companyId);
+    }
+  });
+
+  /**
+   * ⚠⚠ O CLIENTE DIZ EM QUE DIA A SAÍDA CAI (31/08/2026).
+   *
+   * > Dono: *"ou alterado a data"* — escopo: *"série inteira: esse pagamento é sempre dia 10."*
+   *
+   * ⚠⚠ **É PATCH, e ele não contradiz o "só acrescentar" de 29/08 — o dono reverteu aquilo.** O que
+   * continua valendo é o que aquela regra protegia: **nada aqui alcança uma GUIA**. Esta porta só
+   * escreve `diaDoMes` de uma série de despesa; dívida com a Receita não muda de data por aqui.
+   *
+   * ⚠ Piso `requireClientCompanyAccess()` sem `minRole` — o mesmo das outras rotas de fluxo. Dizer
+   * em que dia você paga não é ato fiscal.
+   * ⚠ `dia: null` LIMPA e devolve a linha à estimativa pelas emissões. É o desfazer do cliente.
+   */
+  router.patch("/companies/:companyId/fluxo/saidas/:saidaId/dia", requireClientCompanyAccess(), async (req, res) => {
+    const companyId = String(req.params.companyId);
+    try {
+      const serie = await definirDiaDaSerie({
+        portalClientId: companyId,
+        serieId: String(req.params.saidaId),
+        dia: req.body?.dia ?? null,
+        usuarioId: req.auth?.user?.id,
+      });
+      return res.json({ ok: true, dia: serie?.diaDoMes ?? null });
     } catch (err) {
       return responderRecusaDaSaida(res, err, log, companyId);
     }
@@ -1069,8 +1151,33 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       status,
       page,
       limit,
-      // Portal Cliente (#3.1): o cliente só vê guias liberadas pelo contador.
-      apenasLiberadas: true,
+      /**
+       * ⚠⚠ A LISTA DEIXOU DE FILTRAR POR `liberadaCliente` EM 30/08/2026 — dono: *"arruma a aba
+       * de guias, INSS e parcelamento não aparecem"*.
+       *
+       * ⚠⚠ **A RAZÃO É DESTA ABA, E NÃO DE NENHUMA OUTRA** — dono, no mesmo dia: *"a aba de guias
+       * é aba de guias, o fluxo é o fluxo."* Uma aba chamada Guias que esconde a maior parte das
+       * guias da empresa está errada por conta própria; não é preciso invocar outra tela para ver
+       * isso, e invocar seria trocar o motivo certo por um empréstimo.
+       *
+       * ⚠ `liberadaCliente` marca que o contador **ENVIOU** a guia (o botão "Liberar ao cliente"
+       * dispara o e-mail) — nunca que ela existe. Filtrar a LISTA por ele fazia um registro de
+       * ENVIO decidir o que o cliente sabe dever.
+       *
+       * ⚠ Medido em produção (`scripts/diag-guias-do-cliente.mjs`): a ERISANGELA vêa **7 de 17**
+       * guias, e a carteira inteira **24 liberadas contra 232 não liberadas**. Não eram algumas
+       * guias escondidas: era a maior parte da dívida da carteira.
+       *
+       * ⚠⚠ **E O GATE NÃO FOI REMOVIDO, SÓ A LISTA.** Download, recálculo e confirmação de
+       * pagamento continuam exigindo `liberadaCliente: true`, cada um no seu próprio `where` —
+       * ver as rotas abaixo, que **não foram tocadas**. A aba passa a DIZER que a guia existe; o
+       * que se FAZ com ela continua dependendo do contador ter liberado. ⚠ O recálculo em
+       * especial gasta dinheiro do escritório, e o comentário dele diz *"este gate NÃO se
+       * afrouxa"* — continua valendo, palavra por palavra.
+       * ⚠ Por isso `liberadaCliente` desce na resposta (`toGuideResponse`): sem ele a tela
+       * ofereceria um botão de baixar que responde 404, que é pior que a ausência.
+       */
+      apenasLiberadas: false,
     });
     return res.json({
       // ⚠⚠ O PÚBLICO É EXPLÍCITO, e `.map(toGuideResponse)` cru não serve: o `map` passa o ÍNDICE
@@ -1256,7 +1363,25 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         });
       }
 
-      const atualizada = await markGuidePaidByCliente({ guideId: guide.id, userId: req.auth?.user?.id });
+      /**
+       * ⚠⚠ A DATA DO PAGAMENTO É INFORMADA PELO CLIENTE (30/08/2026).
+       *
+       * > Dono: *"ao clicar em confirmar pagamento, o pagamento foi posto no dia 30 de agosto mesmo
+       * > não sendo verdade."*
+       *
+       * Isto gravava `new Date()`, o instante do CLIQUE — e `paymentConfirmedAt` é o dia em que o
+       * dinheiro SAIU, de onde o fluxo tira o mês e o dia da linha. ⚠ Só o cliente sabe: aqui não
+       * há comprovante nem data digitada pelo contador, então ela é **obrigatória** e a recusa é
+       * NOMEADA — a tela precisa dizer qual das três coisas faltou.
+       */
+      const { data: pagoEm, recusa } = lerDataDoPagamentoInformada(req.body?.pagoEm);
+      if (recusa) {
+        return res.status(400).json({ ok: false, error: recusa, message: FRASE_DA_RECUSA[recusa] });
+      }
+
+      const atualizada = await markGuidePaidByCliente({
+        guideId: guide.id, userId: req.auth?.user?.id, pagoEm,
+      });
       return res.json({
         ok: true,
         guide: toGuideResponse(atualizada, { publico: PUBLICO.CLIENTE }),
@@ -1368,6 +1493,12 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         deLancamentos: deLancamentos
           ? {
               aliquota: deLancamentos.aliquota,
+              // ⚠⚠ O SEGUNDO NÚMERO (30/08/2026) — com o INSS patronal dentro. É ELE que o painel do
+              // cliente lê; `aliquota` (só receita/resultado) fica porque responde a pergunta da NOTA.
+              // Mandar um só obrigaria a tela a escolher sem saber que há escolha.
+              aliquotaComFolha: deLancamentos.aliquotaComFolha,
+              impostoSobreFolha: deLancamentos.impostoSobreFolha,
+              impostosComFolha: deLancamentos.impostosComFolha,
               situacao: deLancamentos.situacao,
               base: deLancamentos.base,
               receitaBruta: deLancamentos.receitaBruta,
@@ -1461,6 +1592,12 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           deLancamentos: lancByComp.get(comp)
             ? {
                 aliquota: lancByComp.get(comp).aliquota,
+                // ⚠ O MESMO acréscimo da rota singular, e ele PRECISA estar nas duas: uma só deixaria
+                // o card do painel (que lê a SÉRIE) com um número e a tela de detalhe com outro, sobre
+                // a mesma empresa e o mesmo mês.
+                aliquotaComFolha: lancByComp.get(comp).aliquotaComFolha,
+                impostoSobreFolha: lancByComp.get(comp).impostoSobreFolha,
+                impostosComFolha: lancByComp.get(comp).impostosComFolha,
                 situacao: lancByComp.get(comp).situacao,
                 base: lancByComp.get(comp).base,
                 receitaBruta: lancByComp.get(comp).receitaBruta,
@@ -1898,7 +2035,7 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       // A nota é DESTA empresa? E ela tem chave? Sem chave não há evento a montar — o `chNFSe` é
       // obrigatório no `pedRegEvento`, e fabricar 50 zeros seria pedir o cancelamento de "nota
       // nenhuma".
-      const nota = await prisma.portalInvoice.findFirst({
+      let nota = await prisma.portalInvoice.findFirst({
         where: { id: notaId, clientId: portalClientId },
         select: {
           id: true, chaveAcesso: true, numero: true, status: true, statusEfetivo: true,
@@ -1908,6 +2045,59 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           papel: true, type: true, tomadorDoc: true, emitenteDoc: true,
         },
       });
+
+      /**
+       * ⚠⚠ A NOTA QUE ACABAMOS DE EMITIR AINDA NÃO É UMA `PortalInvoice` (31/08/2026).
+       *
+       * > Dono: *"eu emiti duas notas em lote na sincrosat e não consigo cancelar elas após a
+       * > emissão, as outras eu consigo, quero poder cancelar logo após a emissão, simples."*
+       *
+       * É a MESMA união na leitura que o DANFSe já faz desde 24/08 (`danfseDaNotaDoPortal.js`), e
+       * pela mesma razão: a emissão grava `ServiceInvoice`, `PortalInvoice` é a projeção do ADN, e
+       * entre um e outro o `notaId` que a lista mostra é um `ServiceInvoice.id` — esta rota
+       * respondia **404**, e a tela desabilitava o botão por isso.
+       *
+       * ⚠⚠ **A RAZÃO QUE A TELA DAVA ERA FALSA, e foi medida.** Ela dizia *"o cancelamento é
+       * identificado pela CHAVE, que só existe depois que o sistema nacional devolve a nota"*.
+       * Medido em produção em 31/08/2026 (`scripts/diag-cancelamento.mjs`): as duas notas emitidas
+       * naquele dia tinham `chaveAcesso` preenchida **desde a emissão**. A chave está lá; era esta
+       * rota que não a procurava.
+       *
+       * ⚠ **A SAÍDA NÃO É GRAVAR `PortalInvoice` NA EMISSÃO** — está proibido, com motivo longo, em
+       * `apps/api/CLAUDE.md`: o encontro das duas escritas já produziu faturamento somado duas
+       * vezes. A saída é LER também do outro lado.
+       *
+       * ⚠⚠ **O ESCOPO É `legacyCompanyId`, resolvido lá em cima ANTES do portão.** Cair para
+       * `where: { id }` sozinho deixaria uma empresa cancelar a nota de outra a quem soubesse o id
+       * — e o id de uma nota emitida está no relatório do lote, na tela.
+       *
+       * ⚠ `papel: "EMIT"` e `type: "NFSE"` são CRAVADOS, e não suposição: esta linha nasce de
+       * `NfseService.issue`, então ela é, por definição, uma NFS-e emitida por nós. É a mesma
+       * leitura que `serializeEmitidaNaoConfirmada` já faz na listagem.
+       */
+      if (!nota) {
+        const nossa = await prisma.serviceInvoice.findFirst({
+          where: { id: notaId, companyId: legacyCompanyId },
+          select: { id: true, chaveAcesso: true, numeroNfse: true, status: true, tomadorDoc: true },
+        });
+        if (nossa) {
+          nota = {
+            id: nossa.id,
+            chaveAcesso: nossa.chaveAcesso,
+            numero: nossa.numeroNfse,
+            status: nossa.status,
+            statusEfetivo: nossa.status,
+            papel: "EMIT",
+            type: "NFSE",
+            tomadorDoc: nossa.tomadorDoc,
+            // ⚠ O emitente é a PRÓPRIA empresa — é ela que emitiu. Deixar `null` faria a guarda de
+            // "nota recebida" comparar contra vazio; `tomadorDoc !== emitenteDoc` continua sendo a
+            // leitura certa, e `papel: "EMIT"` já a resolve antes.
+            emitenteDoc: null,
+          };
+        }
+      }
+
       if (!nota) {
         return res.status(404).json({ ok: false, error: "nota_nao_encontrada" });
       }
@@ -1937,8 +2127,19 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       );
       const docTomador = normalizeDoc(nota.tomadorDoc);
       const docEmitente = normalizeDoc(nota.emitenteDoc);
-      const recebida = String(nota.papel || "").toUpperCase() === "DEST"
-        || (Boolean(cnpjDaEmpresa) && docTomador === cnpjDaEmpresa && docEmitente !== cnpjDaEmpresa);
+      /**
+       * ⚠⚠ `papel: "EMIT"` ENCERRA A PERGUNTA (31/08/2026). A comparação de CNPJ existe como
+       * SEGUNDA fonte, para a nota cujo `papel` não veio da captura — e ela erra num caso real: a
+       * empresa que emite para SI MESMA tem `docTomador === cnpjDaEmpresa`, e a linha seria acusada
+       * de "recebida" sobre uma nota que ela emitiu.
+       * ⚠ Isso passou a importar agora porque a nota vinda de `ServiceInvoice` **não tem**
+       * `emitenteDoc` — ela é a nossa emissão, e o emitente é a própria empresa.
+       */
+      const nossaEmissao = String(nota.papel || "").toUpperCase() === "EMIT";
+      const recebida = !nossaEmissao && (
+        String(nota.papel || "").toUpperCase() === "DEST"
+        || (Boolean(cnpjDaEmpresa) && docTomador === cnpjDaEmpresa && docEmitente !== cnpjDaEmpresa)
+      );
       if (recebida) {
         return res.status(422).json({
           ok: false,

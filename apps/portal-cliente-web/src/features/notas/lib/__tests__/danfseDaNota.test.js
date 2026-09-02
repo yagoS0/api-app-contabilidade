@@ -6,6 +6,7 @@
 // escritório sem olhar faria a regra ler um campo que nunca chega.
 
 import {
+  podeEntrarNoLoteDeDanfse,
   MOTIVO_SEM_DANFSE,
   lerRecusaDanfse,
   nomeDoArquivoDanfse,
@@ -34,16 +35,30 @@ describe("podeGerarDanfse", () => {
     expect(r.texto).toMatch(/inventado/i);
   });
 
-  test("⚠ emitida por nós e ainda não confirmada pelo ADN: não pode", () => {
-    // O id dela é um `ServiceInvoice.id` e a rota lê `PortalInvoice` — pedir o PDF devolveria 404.
+  /**
+   * ⚠⚠ ESTE PAR DE CASOS VIROU O CONTRÁRIO EM 31/08/2026 — e o que caiu foi a PREMISSA, não a regra.
+   *
+   * Eles diziam *"não pode: o id dela é um `ServiceInvoice.id` e a rota lê `PortalInvoice`, pedir o
+   * PDF devolveria 404"*. Isso era verdade em 19/08. Em **24/08** a rota passou a ler dos dois
+   * lados, a pedido do dono; a tela não voltou aqui, e em 31/08 ele veio cobrar: *"ao emitir a nota
+   * não consigo baixar a danfe, o que também deveríamos conseguir de imediato."*
+   *
+   * ⚠⚠ E o `hasXml: false` destas notas NÃO é uma segunda razão para recusar: ele é cravado por
+   * `serializeEmitidaNaoConfirmada`, cujo próprio comentário diz que significa *"não há rota que o
+   * sirva por este id"* — a rota do XML. O XML existe, em `ServiceInvoice.xml`, e o DANFSe sai dele.
+   */
+  test("⚠⚠ emitida por nós e AINDA NÃO confirmada pelo ADN: PODE — o servidor lê do outro lado", () => {
     const r = podeGerarDanfse(nota({ confirmadaPeloAdn: false, hasXml: false }));
-    expect(r.motivo).toBe(MOTIVO_SEM_DANFSE.NAO_CONFIRMADA);
+    expect(r.pode).toBe(true);
+    expect(r.motivo).toBeNull();
   });
 
-  test("⚠ a NÃO CONFIRMAÇÃO vence a falta de XML — o motivo certo é o mais informativo dos dois", () => {
-    const r = podeGerarDanfse(nota({ confirmadaPeloAdn: false, hasXml: false }));
-    expect(r.motivo).toBe(MOTIVO_SEM_DANFSE.NAO_CONFIRMADA);
-    expect(r.texto).not.toMatch(/não guardamos o XML/i);
+  test("⚠⚠ e o `hasXml: false` dela NÃO barra — ele descreve a rota do XML, não a do DANFSe", () => {
+    // Se o XML de lá não servir (a nota recusada guarda a DPS), quem recusa é o SERVIDOR, nomeado.
+    expect(podeGerarDanfse(nota({ confirmadaPeloAdn: false, hasXml: false })).pode).toBe(true);
+    // ⚠ Mas na nota JÁ CONFIRMADA o `hasXml` continua valendo: ali ele significa mesmo "não há XML".
+    expect(podeGerarDanfse(nota({ confirmadaPeloAdn: true, hasXml: false })).motivo)
+      .toBe(MOTIVO_SEM_DANFSE.SEM_XML);
   });
 
   test("⚠ `undefined` (contrato antigo, ou o app mobile) é lido como CONFIRMADA, não como falsa", () => {
@@ -56,7 +71,9 @@ describe("podeGerarDanfse", () => {
   });
 
   test("⚠ TODO motivo tem `resumo` curto — é ele que a tabela mostra ao lado do botão desabilitado", () => {
-    for (const patch of [{ type: "NFE" }, { hasXml: false }, { confirmadaPeloAdn: false }]) {
+    // ⚠ `confirmadaPeloAdn: false` SAIU desta lista em 31/08/2026: ela deixou de ser uma recusa —
+    // a nota recém-emitida PODE gerar DANFSe. Ver o par de casos lá em cima.
+    for (const patch of [{ type: "NFE" }, { hasXml: false }]) {
       const r = podeGerarDanfse(nota(patch));
       expect(r.pode).toBe(false);
       expect(String(r.resumo || "").length).toBeGreaterThan(0);
@@ -118,5 +135,39 @@ describe("nomeDoArquivoDanfse", () => {
 
   test("caracteres fora de `[\\w.-]` são removidos — o mesmo corte do `Content-Disposition`", () => {
     expect(nomeDoArquivoDanfse(nota({ numero: "13/000 A" }))).toBe("danfse-13000A.pdf");
+  });
+});
+
+// ⚠⚠ AS DUAS PORTAS DO DANFSe NÃO ALCANÇAM A MESMA POPULAÇÃO (31/08/2026)
+//
+// Achado por teste de usabilidade no navegador, no MESMO dia em que a causa foi introduzida: ao
+// liberar o DANFSe da nota ainda não confirmada, ela passou a ser MARCÁVEL na seleção da página —
+// e o zip do lote (que filtra `PortalInvoice`) vinha SEM ela. "Baixar 3 DANFSe" entregava 2, e a
+// ausente só aparecia abrindo o `RELATORIO.txt` lá dentro.
+//
+// ⚠ `selecaoDeNotas.js` afirma por escrito que no escopo PÁGINA *"o que não gera nem pode ser
+// marcado: 'Baixar 3 DANFSe' é uma promessa que se cumpre"*. Este bloco é o que a mantém verdadeira.
+describe("⚠⚠ podeEntrarNoLoteDeDanfse — mais estrita que a porta individual", () => {
+  it("⚠⚠ a nota AINDA NÃO CONFIRMADA pode individualmente, mas NÃO entra no lote", () => {
+    const naoConfirmada = nota({ confirmadaPeloAdn: false, hasXml: false });
+    // A porta individual acha `ServiceInvoice` desde 24/08 — este ramo continua liberado.
+    expect(podeGerarDanfse(naoConfirmada).pode).toBe(true);
+    // A do lote filtra `PortalInvoice`, onde ela ainda não está.
+    expect(podeEntrarNoLoteDeDanfse(naoConfirmada)).toBe(false);
+  });
+
+  it("a nota confirmada e com XML entra no lote", () => {
+    expect(podeEntrarNoLoteDeDanfse(nota())).toBe(true);
+  });
+
+  it("⚠ o que já não gera DANFSe também não entra — a segunda pergunta não afrouxa a primeira", () => {
+    expect(podeEntrarNoLoteDeDanfse(nota({ type: "NFE" }))).toBe(false);
+    expect(podeEntrarNoLoteDeDanfse(nota({ hasXml: false }))).toBe(false);
+    expect(podeEntrarNoLoteDeDanfse(null)).toBe(false);
+  });
+
+  it("⚠ `undefined` continua sendo lido como CONFIRMADA — contrato antigo e app mobile", () => {
+    const { confirmadaPeloAdn, ...semOCampo } = nota();
+    expect(podeEntrarNoLoteDeDanfse(semOCampo)).toBe(true);
   });
 });

@@ -210,6 +210,17 @@ const MOTIVO_DESFECHO_DESCONHECIDO =
 /** Por que esta linha NÃO pode ser retentada — `null` quando ela pode. */
 export function bloqueioDaRetentativa(linha, lote = null) {
   const desfecho = linha?.desfecho;
+  /**
+   * ⚠⚠ ESPELHO do ramo de 31/08/2026: a linha cuja nota NÓS cancelamos volta a ser retentável —
+   * reemitir depois de cancelar é o ciclo fiscal legítimo. `notaCancelada` chega do servidor
+   * (`paraTela`), que a deriva de `ServiceInvoice.status === "cancelled"`; a tela nunca a inventa.
+   */
+  if (desfecho === DESFECHO.EMITIDA && linha?.notaCancelada === true) {
+    if (Number.isInteger(lote?.linhaIndeterminada) && linha?.numeroLinha === lote.linhaIndeterminada) {
+      return MOTIVO_NAO_RETENTAVEL[DESFECHO.INDETERMINADA];
+    }
+    return null;
+  }
   if (!DESFECHOS_RETENTAVEIS.includes(desfecho)) {
     return MOTIVO_NAO_RETENTAVEL[desfecho] || MOTIVO_DESFECHO_DESCONHECIDO;
   }

@@ -30,13 +30,28 @@ export const GOOGLE_APPLICATION_CREDENTIALS_JSON =
 
 // Gmail API (delegated / DWD)
 export const USE_GMAIL_API = process.env.USE_GMAIL_API === "1" || false;
-export const GMAIL_DELEGATED_USER = process.env.GMAIL_DELEGATED_USER || ""; // e.g. "yago@belgencontabilidade.com"
+export const GMAIL_DELEGATED_USER = process.env.GMAIL_DELEGATED_USER || ""; // e.g. "envio@altan.company"
 
 // SMTP (fallback)
 export const SMTP_HOST = process.env.SMTP_HOST || "smtp.gmail.com";
 export const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 export const SMTP_USER = process.env.SMTP_USER || "";
 export const SMTP_PASS = process.env.SMTP_PASS || "";
+
+/**
+ * ⚠⚠ PARA ONDE VÃO AS RESPOSTAS DO CLIENTE (30/08/2026).
+ *
+ * O `Reply-To` sempre foi o PRÓPRIO remetente, cravado — e o comentário de `EmailService.js` já
+ * prometia a saída (*"mesmo email se não definido"*), que nunca existiu.
+ *
+ * Ela passou a importar na migração para `altan.company`: a caixa que assina virou **`envio@`**, um
+ * nome de caixa de SAÍDA. O e-mail de guia é respondido por cliente ("paguei", "não abriu o PDF"),
+ * e sem esta variável essas respostas ficam numa caixa que ninguém abre.
+ *
+ * ⚠ VAZIA = o comportamento de sempre (responde para o remetente). Nada muda até alguém definir.
+ * ⚠ NUNCA aponte para a service account: o bounce voltaria para uma caixa que não existe.
+ */
+export const MAIL_REPLY_TO = (process.env.MAIL_REPLY_TO || "").trim();
 
 // REMETENTE padrão (usado no cabeçalho do e-mail)
 // prioridade: SMTP_FROM > GMAIL_DELEGATED_USER

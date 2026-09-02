@@ -12,11 +12,21 @@
 // numa tela cujo assunto é "quanto eu pago". O que o cliente precisa saber é que aquele número está
 // sendo conferido e por isso não está disponível — que é a verdade.
 //
+// ⚠⚠ **E A FRASE SÓ PROMETE O PDF QUANDO O PDF EXISTE PARA ESTE CLIENTE (30/08/2026).** Desde que a
+// aba passou a listar guia não liberada, o download dela responde 404 — e a linha exibia
+// *"Baixe o PDF para pagar"* ao lado de um botão desabilitado, duas frases da mesma linha se
+// contradizendo. Achado no NAVEGADOR, com a suíte verde.
+// ⚠ A frase encurta, e não repete o motivo: ele já está na célula de ações
+// (`motivoDaGuiaNaoLiberada`), e dizer a mesma coisa duas vezes na mesma linha é o defeito que o
+// `ESCOPO` de `notas/lib/impedimento.js` já nomeia neste app.
+//
 // ⚠ Nos TRÊS casos o "Baixar PDF" continua sendo a saída, e a frase diz isso. Ausência de linha
 // nunca pode virar ausência de caminho para pagar.
 //
 // ⚠ De-para de LISTA FECHADA (mesma disciplina do portal do contador): o cliente nunca vê o motivo
 // técnico, mas motivo desconhecido também não vira frase inventada — cai no texto neutro.
+
+import { liberadaAoCliente } from "./recalculoDaGuia.js";
 
 export const SITUACAO = Object.freeze({
   DISPONIVEL: "DISPONIVEL",
@@ -47,6 +57,14 @@ export function formatarLinhaDigitavel(linha) {
  * @returns {{situacao: string, linhaLimpa: string|null, linhaFormatada: string|null,
  *            aviso: string|null, tom: "neutro"|"atencao"}}
  */
+/**
+ * ⚠ A promessa do PDF, ou nada. Guia não liberada não tem download (o servidor devolve 404), e
+ * mandar o cliente baixá-lo seria oferecer uma saída que não abre.
+ */
+function saidaPeloPdf(guia) {
+  return liberadaAoCliente(guia) ? " Baixe o PDF para pagar." : "";
+}
+
 export function linhaDigitavelDaGuia(guia) {
   const situacao = String(guia?.linhaDigitavelSituacao || SITUACAO.NAO_TENTADA);
 
@@ -69,7 +87,8 @@ export function linhaDigitavelDaGuia(guia) {
       // ⚠ Sem os dois números, e sem sugerir que o cliente pague "assim mesmo".
       aviso:
         "Em conferência com o contador — o número impresso no documento não confere com o valor "
-        + "desta guia. Enquanto isso, use o PDF para pagar.",
+        + "desta guia."
+        + (liberadaAoCliente(guia) ? " Enquanto isso, use o PDF para pagar." : ""),
       tom: "atencao",
     };
   }
@@ -79,7 +98,7 @@ export function linhaDigitavelDaGuia(guia) {
       situacao: SITUACAO.NAO_ENCONTRADA,
       linhaLimpa: null,
       linhaFormatada: null,
-      aviso: "Este documento não traz linha digitável. Baixe o PDF para pagar.",
+      aviso: `Este documento não traz linha digitável.${saidaPeloPdf(guia)}`,
       tom: "neutro",
     };
   }
@@ -89,7 +108,7 @@ export function linhaDigitavelDaGuia(guia) {
     linhaLimpa: null,
     linhaFormatada: null,
     // ⚠ NÃO diz "não tem" — diz que ainda não foi lida. São coisas diferentes.
-    aviso: "Ainda não lemos a linha digitável desta guia. Baixe o PDF para pagar.",
+    aviso: `Ainda não lemos a linha digitável desta guia.${saidaPeloPdf(guia)}`,
     tom: "neutro",
   };
 }

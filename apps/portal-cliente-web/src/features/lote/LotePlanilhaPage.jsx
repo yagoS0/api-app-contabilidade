@@ -16,7 +16,7 @@ import {
   descricaoDoCodigo,
   rotuloDoCodigo,
 } from "../emitir/lib/codigoServicoDaNota";
-import { CAMPOS_DA_REVISAO, CAMPOS_DE_ENDERECO, NOME_DO_ARQUIVO_MODELO } from "./lib/colunasDoLote";
+import { CAMPOS_DA_REVISAO, CAMPOS_DE_ENDERECO, NOME_DO_ARQUIVO_MODELO, valoresDoAjuste } from "./lib/colunasDoLote";
 import {
   ESTADO,
   apresentacaoDoEstado,
@@ -70,7 +70,7 @@ import {
  *
  * ⚠ **CPF NÃO SE CONSULTA** — decisão do dono, e a guarda é a mesma da emissão avulsa.
  */
-export function LotePlanilhaPage({ empresa, aoVoltar }) {
+export function LotePlanilhaPage({ empresa, aoVoltar, aoMudarTrabalho }) {
   const companyId = empresa.companyId;
 
   const [arquivo, setArquivo] = useState(null);
@@ -117,6 +117,33 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
   // ⚠⚠ TROCAR DE EMPRESA DESCARTA TUDO. A planilha, os ajustes e as consultas foram feitos para
   // OUTRA empresa; conferi-los aqui prepararia notas no CNPJ errado — o pior desfecho possível num
   // portal multi-empresa. É a mesma disciplina do modelo de emissão na casca.
+  // ⚠⚠ O QUE A TROCA DE EMPRESA VAI DESCARTAR — dito ANTES do clique (31/08/2026).
+  //
+  // Achado em teste de usabilidade: quem conferia uma planilha e ajustava linhas perdia tudo ao
+  // trocar de empresa, em SILÊNCIO. O descarte continua igual e continua certo — o que mudou é a
+  // pessoa poder decidir. ⚠ Quem sabe se há trabalho aqui é ESTA tela; a casca só leva a frase até
+  // o seletor. ⚠ E o RELATÓRIO DE UM LOTE JÁ EMITIDO **não** entra: aquelas notas existem e estão
+  // gravadas no servidor; dizer que a troca as descarta seria assustar com uma perda que não há.
+  const trabalhoDaTela = useMemo(() => {
+    if (!leitura) return null;
+    const linhas = Number(leitura?.resumo?.total) || (leitura?.linhas?.length ?? 0);
+    const quantosAjustes = Object.keys(ajustes || {}).length;
+    const planilha = linhas === 1 ? "1 linha conferida" : `${linhas} linhas conferidas`;
+    // ⚠ Os ajustes são o que MAIS custa: eles só existem nesta tela (a planilha no disco continua
+    // com o valor antigo), então perdê-los é perder digitação que não está em lugar nenhum.
+    const cauda = quantosAjustes
+      ? `, com ${quantosAjustes === 1 ? "1 ajuste" : `${quantosAjustes} ajustes`} que só existem aqui`
+      : "";
+    return `Você tem uma planilha nesta tela (${planilha}${cauda}). Trocar de empresa descarta tudo — a planilha conferida é desta empresa, e emitir com ela em outra sairia no CNPJ errado.`;
+  }, [leitura, ajustes]);
+
+  useEffect(() => {
+    aoMudarTrabalho?.(trabalhoDaTela);
+  }, [trabalhoDaTela, aoMudarTrabalho]);
+
+  // ⚠ E some ao sair da tela: um aviso sobre um estado que já não existe é pior que nenhum.
+  useEffect(() => () => aoMudarTrabalho?.(null), [aoMudarTrabalho]);
+
   useEffect(() => {
     setArquivo(null);
     setLeitura(null);
@@ -204,6 +231,21 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
     setLeitura(null);
     setRecusa(null);
     setEmAjuste(null);
+    /**
+     * ⚠⚠ PLANILHA NOVA ZERA O RELATÓRIO DO LOTE ANTERIOR (31/08/2026).
+     *
+     * Achado em teste de usabilidade: depois de emitir, subir outra planilha mostrava a
+     * conferência das linhas NOVAS e, logo abaixo, o relatório do lote ANTIGO — com os números das
+     * notas e os botões de DANFSe. Pior: `{lote ? <RelatorioDoLote/> : <BlocoDeEmissao/>}` fazia o
+     * botão "Emitir N notas" DESAPARECER, e a tela ficava sem saída até sair e voltar.
+     *
+     * ⚠ O motivo já estava escrito no efeito de troca de empresa, logo acima: relatório de um lote
+     * visível sob outro contexto faz acreditar que se emitiu o que não se emitiu. Valia para a
+     * empresa e não valia para o arquivo — e é o arquivo que muda com mais frequência.
+     */
+    setLote(null);
+    setReconhecido(false);
+    setErroEmissao(null);
     // ⚠ OS AJUSTES SÃO DESCARTADOS, as consultas NÃO. O ajuste é chaveado pelo NÚMERO DA LINHA, e
     // um arquivo novo pode ter outra ordem — aplicá-lo levaria a correção para a nota errada. A
     // consulta é chaveada pelo DOCUMENTO, que não muda de significado entre arquivos.
@@ -481,6 +523,7 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
 
           {lote ? (
             <RelatorioDoLote
+              companyId={companyId}
               lote={lote}
               reconhecido={reconhecido}
               ocupado={emitindo}
@@ -682,7 +725,15 @@ function LinhaDoLote({ linha, emAjuste, aoAbrirAjuste, aoFecharAjuste, aoSalvar,
       {emAjuste ? (
         <tr>
           <td colSpan={7}>
-            <FormularioDeAjuste valores={valores} numero={linha.numero} aoSalvar={aoSalvar} aoCancelar={aoFecharAjuste} />
+            {/* ⚠⚠ `valoresDoAjuste`, NÃO `linha.valores` — o endereço nunca esteve na planilha, e
+                semear o formulário só com as células do arquivo abria o bloco inteiro em branco
+                numa linha cujo endereço o servidor JÁ resolveu. Ver o cabeçalho da função. */}
+            <FormularioDeAjuste
+              valores={valoresDoAjuste(linha)}
+              numero={linha.numero}
+              aoSalvar={aoSalvar}
+              aoCancelar={aoFecharAjuste}
+            />
           </td>
         </tr>
       ) : null}
@@ -756,7 +807,72 @@ function BlocoDeEmissao({
  * existir uma nota fiscal no mundo e ninguém sabe qual. Enterrá-la no meio de uma tabela de 50
  * linhas seria esconder exatamente o que precisa de ação humana.
  */
-function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar, aoRetentar }) {
+/**
+ * ⚠⚠ BAIXAR A DANFSe DA NOTA QUE ACABOU DE SAIR (31/08/2026).
+ *
+ * > Dono: *"ao emitir a nota não consigo baixar a danfe, o que também deveríamos conseguir de
+ * > imediato."*
+ *
+ * ⚠⚠ **O `id` AQUI É UM `ServiceInvoice.id`, NÃO UM `PortalInvoice.id`** — e é por isso que o botão
+ * funciona. A emissão grava `ServiceInvoice`; `PortalInvoice` é a projeção do ADN e só existe
+ * depois da captura. A rota do DANFSe já lê dos DOIS lados desde 24/08/2026 (o dono pediu
+ * exatamente isto: *"ao emitir a nota pelo portal do cliente preciso que a DANFE esteja
+ * imediatamente disponível"*), e este botão é o que faltava para alguém poder usar aquilo daqui.
+ *
+ * ⚠ **NÃO uso o download em LOTE** (`invoices/danfse/bulk`): ele filtra `PortalInvoice`, e a nota
+ * recém-emitida ainda não está lá — o zip voltaria sem ela, em silêncio. Uma por uma, pelo id que
+ * o relatório já traz.
+ *
+ * ⚠ Sem `serviceInvoiceId` a linha NÃO virou nota (recusada, não tentada), e aí não há o que
+ * baixar. O traço diz isso; um botão desabilitado sugeriria que existe um PDF esperando.
+ */
+function BotaoDanfseDaLinha({ linha, companyId }) {
+  const [estado, setEstado] = useState({ fase: "ocioso", erro: null });
+  /**
+   * ⚠⚠ O DESFECHO DECIDE, NÃO A PRESENÇA DO id (31/08/2026).
+   *
+   * Achado em teste de usabilidade: numa linha **recusada pela Receita** o botão aparecia e
+   * entregava um PDF — DANFSe de nota que não existe. A linha recusada pode ter
+   * `serviceInvoiceId` (a recusa acontece DEPOIS da reserva do número), e a guarda só olhava o id.
+   *
+   * ⚠ A pergunta certa é a do desfecho: só `emitida` tem documento. É a mesma disciplina do
+   * `estadoDaLinhaDoLote.js` — a tela só REBAIXA, nunca promove.
+   */
+  if (linha?.desfecho !== "emitida" || !linha?.serviceInvoiceId) {
+    return <span className="muted">—</span>;
+  }
+
+  async function baixar() {
+    setEstado({ fase: "gerando", erro: null });
+    try {
+      const blob = await api.fetchDanfseBlob(companyId, linha.serviceInvoiceId);
+      // ⚠ O nome leva o número da NOTA, não o da linha da planilha: é o número que o cliente vai
+      // procurar depois, e o da linha não significa nada fora desta tela.
+      const base = String(linha.rpsNumero || linha.serviceInvoiceId).replace(/[^\w.-]/g, "");
+      baixarBlob(blob, `danfse-${base || "nota"}.pdf`);
+      setEstado({ fase: "ocioso", erro: null });
+    } catch (err) {
+      // ⚠⚠ A RECUSA CHEGA NOMEADA. `danfse_sem_qrcode` (503) é um DANFSe que não vale como
+      // documento auxiliar, e o portal já trata isso como recusa, nunca como PDF gerado.
+      setEstado({ fase: "recusado", erro: err });
+    }
+  }
+
+  return (
+    <>
+      <button type="button" className="btn-link" onClick={baixar} disabled={estado.fase === "gerando"}>
+        {estado.fase === "gerando" ? "Gerando…" : "Baixar"}
+      </button>
+      {estado.erro ? (
+        <span className="muted" style={{ fontSize: ".72rem", display: "block", color: "var(--danger)" }}>
+          {String(estado.erro?.code || estado.erro?.message || "não deu para gerar agora")}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+function RelatorioDoLote({ companyId, lote, reconhecido, ocupado, aoRetomar, aoRetentar }) {
   const resumo = resumoDaEmissao(lote);
   const aviso = avisoDaLinhaIndeterminada(lote);
   const convite = conviteParaRetomar(lote);
@@ -897,6 +1013,10 @@ function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar, aoRetentar }) 
                   O carimbo já existia no registro (`tentadaEm`) e só não chegava à tela. */}
               <th>Quando</th>
               <th>Observação</th>
+              {/* ⚠⚠ A COLUNA DA DANFSe (31/08/2026) — dono: *"ao emitir a nota não consigo baixar a
+                  danfe, o que também deveríamos conseguir de imediato."* Sem ela, quem emite um
+                  lote de 40 notas tem de ir à aba Notas e caçar uma a uma. */}
+              <th>DANFSe</th>
             </tr>
           </thead>
           <tbody>
@@ -915,6 +1035,7 @@ function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar, aoRetentar }) 
                       aqui carimbaria de fato o que nunca aconteceu. */}
                   <td>{fmtDataHora(l.tentadaEm)}</td>
                   <td>{l.mensagem || l.correcao || "—"}</td>
+                  <td><BotaoDanfseDaLinha linha={l} companyId={companyId} /></td>
                 </tr>
               );
             })}

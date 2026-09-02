@@ -25,6 +25,33 @@ function Bloco({ bloco }) {
   const total = totalDoBloco(colunas, registros);
   const cru = naoVirouTabela(bloco);
 
+  /**
+   * ⚠⚠ BLOCO SEM CORPO NÃO RENDERIZA O TÍTULO SOZINHO (31/08/2026) — achado em teste de usabilidade.
+   *
+   * A remoção do `naoInterpretado` (a lápide logo abaixo) ficou **pela metade**: o `<h4>` continuava,
+   * e o cliente lia
+   *
+   *     PROCURADORIA-GERAL DA FAZENDA NACIONAL
+   *     Pendência - Inscrição em Dívida Ativa
+   *
+   * e **mais nada**. Medido no mock: o bloco tem `colunas` (então não é `cru`) e `registros: []`
+   * (então não há tabela), com as três linhas de `naoInterpretado` carregando inscrição, devedor e
+   * **R$ 3.410,55** — que não são desenhados. O único total na página era o R$ 2.443,70 da Receita.
+   *
+   * ⚠⚠ **ISSO ERA O PIOR DOS DOIS MUNDOS**: nem o *"tirar tudo, sem marca nenhuma"* que o dono
+   * pediu, nem o conteúdo. Um título que afirma "há pendência de inscrição em dívida ativa" e nada
+   * embaixo é a acusação sem a informação.
+   *
+   * ⚠ Isto NÃO reverte a decisão dele — **completa**. Restaurar o corpo é que a reverteria, e a
+   * consequência que ele aceitou por escrito está na lápide: estes blocos deixam de aparecer aqui,
+   * e quem responde por eles é o contador, que lê o PDF oficial.
+   */
+  const temCorpo = cru
+    || descricao.length > 0
+    || (colunas.length > 0 && registros.length > 0)
+    || anotacoes.length > 0;
+  if (!temCorpo) return null;
+
   return (
     <div className="sitfis-bloco">
       {titulo ? <h4 className="sitfis-bloco-titulo">{titulo}</h4> : null}

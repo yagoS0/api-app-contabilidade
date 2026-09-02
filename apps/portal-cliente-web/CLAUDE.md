@@ -199,6 +199,47 @@ este projeto já pagou caro por bloqueio anotado que envelheceu calado.
 | a entrada da nota | "no mês" (prazo de recebimento em meses) | **dia 1** do mês seguinte |
 | o cliente escreve | nada | **acrescenta saídas** ao próprio fluxo |
 
+### ⚠⚠ OS DEZ DIAS SÃO ROLAGEM, E O "no mês" DESCEU PARA O RODAPÉ (30/08/2026)
+
+**Duas correções do dono no mesmo dia, e as duas revertem decisões da tabela acima.**
+
+> *"a tabela do fluxo deve mostrar apenas os 10 dias, para que sempre seja visto o dia em que
+> estamos: 5 para trás e 4 para frente"* — e, logo depois, corrigindo o desenho que eu tinha feito
+> para isso: *"os dias devem ser passados com **rolagem**, não com seta"*.
+>
+> *"esse **no mês** tem que sumir daí, e abaixo da tabela, no **footer** dela, deve haver um resumo
+> da coluna: total de entrada, saída, impostos…"*
+
+| | v4 (29/08) | hoje |
+|---|---|---|
+| quantos dias à vista | o mês inteiro, 31 linhas | **dez**, e o dia de hoje sempre entre eles |
+| quem mostra dez | — | a **altura** de `.table-wrap--dias` (414px), nunca um `slice` |
+| como se anda | — | **rolagem**; a caixa abre rolada em hoje−5 |
+| a linha "no mês" | **primeira** de cada bloco | **fora do corpo**, virou o **total** do `<tfoot>` |
+
+- ⚠⚠ **O MÊS INTEIRO CONTINUA NO DOM.** Cortar em JavaScript tiraria os outros dias de lá: quem
+  rolasse não acharia nada, e quem usa leitor de tela nunca saberia que eles existem. `janelaDeDias`
+  (o corte que existiu por algumas horas) **fica na lib, sem chamador e com teste** — é ela que
+  define "onde a janela começa", e é dela que sai a rolagem inicial.
+- ⚠⚠ **O DINHEIRO DO "no mês" NÃO SUMIU — ele mudou de lugar, duas vezes.** É ali que moram a folha
+  e o imposto previsto sem dia. Hoje eles entram (a) no **resultado acumulado**, que começa por eles,
+  e (b) no **total do rodapé**. Por isso o último dia e o rodapé fecham no mesmo número — conferido
+  no navegador (13.600,45 nos dois). Somem-nos e a tela passa a mostrar menos dinheiro do que existe.
+- ⚠ **O total é do MÊS INTEIRO, não dos dez à vista**: um número que mudasse com a rolagem seria um
+  número diferente a cada olhada. Ele sai de `linhaDoMes` — a **mesma** agregação da tabela, nunca
+  uma soma nova, que divergiria na primeira correção.
+- ⚠⚠ **O rodapé é `sticky` no pé da caixa**, e sem isso ele só apareceria depois de rolar até o dia
+  31. O `sticky` vai nas **células**, nunca no `<tfoot>` (elemento de agrupamento não aceita
+  posicionamento, e a falha é silenciosa), com fundo **opaco**. ⚠ Ele só funciona porque essa caixa
+  rola no vertical: **mexer no `max-height` desliga isto sem erro nenhum**.
+- ⚠ **`<th scope="row">` no rodapé**, não um `<td>` solto — senão a linha de total vira cinco números
+  órfãos para quem usa leitor de tela.
+- ⚠ **Isto NÃO devolve a faixa branca** que o dono mandou tirar depois do Resultado. Aquela vinha de
+  outra causa (a tabela era `width: auto` e ficava 227px mais estreita que o bloco); hoje ela é
+  `width: 100%` da caixa de conteúdo, e a barra de rolagem fica **ao lado** da tabela, não dentro.
+- ⚠ A conta da altura: linha do corpo ≈ 38px, cabeçalho ≈ 34px ⇒ `34 + 10 × 38 = 414`. **Mudar o
+  `padding` de `.table--fluxo-v3 td` obriga a refazer a conta.**
+
 ### Onde cada coisa mora
 
 | arquivo | o quê |
@@ -943,6 +984,21 @@ divergem em mais de um ponto (6,00% × 7,26%; 6,00% × 7,83%; 6,24% × 7,01%).
 fixou a distinção: o PAINEL responde *quanto esta empresa paga de imposto?* (tudo, INSS incluso — é
 gestão); a NOTA responde *quanto desta nota é tributo do Simples?* (só o DAS — é documento fiscal).
 Trocar uma pela outra estraga a tela de destino nos dois sentidos.
+
+⚠⚠ **E `efetiva` FICOU SEM CONSUMIDOR EM 30/08/2026 — a DISTINÇÃO acima continua valendo inteira, o
+que mudou foi de onde o painel tira o "tudo".** Dono: *"use sempre o que foi lançada, ou seja, veio
+do extrato do simples nacional, ou veio do presumido, para cálculo a alíquota"*. Hoje o card lê
+`deLancamentos.aliquotaComFolha` — imposto sobre receita + IRPJ/CSLL + **INSS patronal**, tudo pelo
+razão. ⚠ A NOTA não mudou: ela segue em `deReceita`, só o DAS.
+
+⚠⚠ **O QUE DERRUBOU `efetiva` FOI MEDIÇÃO, e ela vale a pena estar escrita:** o campo é refém de
+*qual guia alguém marcou como paga*. Na ERISANGELA de 07/2026 a única guia `PAID` era o INSS de
+R$ 178,31, e o card anunciou **0,77%** de carga tributária — a mesma família do *"1,41%"* que o dono
+relatou como impossível. Pelo lançado dá **7,01%**.
+
+⚠ **E o novo número REPRODUZ o antigo onde o antigo estava completo**, o que é a prova de que a
+troca não inventou nada: medido na carteira em 07/2026, PRISMA **7,83% → 7,83%** e LENTE
+**13,59% → 13,59%**, idênticos. **6 empresas ganham número, nenhuma perde.**
 
 ⚠⚠ **Zero nunca é fabricado.** O backend calcula `d > 0 ? n/d*100 : 0` — sem receita ou sem extrato
 do PGDAS-D a resposta é `0`, indistinguível de uma alíquota de zero por cento, que numa nota fiscal
@@ -1698,12 +1754,121 @@ não fato — e a divergência apareceria como o contador vendo "PIS · COFINS" 
 - O `title` da célula passou a levar o detalhamento por tributo **com valor** — sai da mesma
   `composicao`, nenhum número novo é calculado. É o documento que o cliente vai pagar.
 
-**2 · A INVISIBILIDADE — não é defeito, é a regra.** Medido em produção: **8 das 9** DARFs de LP
-estão com **`liberadaCliente: false`**. A rota já responde com `apenasLiberadas: true` (o cliente
-só vê o que o contador liberou) e o download refaz a checagem. Enquanto o contador não clicar em
-"Liberar ao cliente", elas não aparecem — com ou sem este conserto. **Não afrouxe esse gate.**
+**2 · A INVISIBILIDADE — era a regra, e o dono a derrubou em 30/08/2026.** Medido à época:
+**8 das 9** DARFs de LP com `liberadaCliente: false`; a rota respondia `apenasLiberadas: true` e as
+guias só apareciam depois do clique em "Liberar ao cliente".
+
+⚠⚠ **HOJE A LISTA NÃO FILTRA MAIS.** Dono: *"arruma a aba de guias, INSS e parcelamento não
+aparecem"* — e, quando expliquei o conserto pela tela vizinha, o critério: *"a aba de guias é aba
+de guias, o fluxo é o fluxo."* Uma aba chamada Guias que esconde a maior parte das guias da empresa
+está errada **por conta própria**, sem precisar de nenhuma outra tela para justificar.
+
+⚠⚠ **O QUE `liberadaCliente` REALMENTE MARCA É QUE O CONTADOR ENVIOU A GUIA** — o botão "Liberar ao
+cliente" dispara o e-mail. Filtrar a LISTA por ele fazia um registro de **envio** decidir o que o
+cliente sabe **dever**. Medido em 30/08/2026 (`scripts/diag-guias-do-cliente.mjs`): a ERISANGELA via
+**7 de 17** guias, e a carteira inteira tem **24 liberadas contra 232 não liberadas**.
+
+⚠⚠ **O GATE NÃO CAIU — ELE MUDOU DE ALCANCE, E ISSO NÃO SE AFROUXA.** As três rotas de AÇÃO
+(download, recálculo, confirmação de pagamento) continuam exigindo `liberadaCliente: true`, cada uma
+no seu próprio `where` — o recálculo em especial gasta dinheiro do escritório. A tela ganhou a
+obrigação de **dizer**: botão desabilitado, `data-liberada` no `<tr>`, e a frase *"Seu contador
+ainda não liberou esta guia"* com o conserto (falar com ele).
+
+⚠ **E a célula da linha digitável encurtou junto**: ela dizia *"Baixe o PDF para pagar"* ao lado de
+um botão desabilitado — duas frases da mesma linha se contradizendo. Achado no NAVEGADOR, com a
+suíte verde: as duas metades estavam certas cada uma por si.
+⚠ A varredura que trava as duas pontas é `routes/client/__tests__/guiasDoClienteAparecem.test.js`,
+e ela é de FONTE — a suíte inteira ficou verde com a mudança, porque ninguém nunca tinha afirmado
+o `apenasLiberadas` desta rota.
 
 Medição (só leitura, zero chamada externa): `apps/api/scripts/diag-guias-lp-portal-cliente.mjs`.
+
+---
+
+## ⚠⚠ A BAIXA LANÇADA QUITA A GUIA — o elo que só existia num sentido (30/08/2026)
+
+> Dono: *"apareceram impostos que estão pagos na circular e lançados em lançamentos como aberto."*
+
+⚠⚠ **`GuideToProvisionService` promovia a PROVISÃO quando a guia era paga; a volta não existia.** A
+baixa lançada — o ato contábil que tira o dinheiro do caixa — não devolvia nada à guia, e ela ficava
+`OPEN` para sempre.
+
+⚠⚠ **Medido em produção:** **20 provisões de DAS com `statusPagamento: "PAGO"`, com baixa lançada,
+cuja guia continuava aberta.** Duas já liberadas ao cliente — LENTE 06/2026 (R$ 15.033,58, baixa em
+14/07) e CHAYM 06/2026 (R$ 1.058,40, baixa em 05/07) —, ou seja **cobrança em aberto na tela de quem
+já tinha pago**. ⚠ E isso passou a ser mais visível no mesmo dia, porque a aba de guias deixou de
+filtrar por `liberadaCliente`.
+
+- ⚠⚠ **A CHAVE É A COMPETÊNCIA, e não é palpite:** a provisão do DAS nasce do **extrato do PGDAS-D**
+  (`amountSource: "das_total"`), não da guia, então ela **não tem `sourceGuideId`**. Quem liga as
+  duas é a competência — a MESMA chave que a Circular já usa para decidir entre desenhar a provisão
+  real ou sintetizar a linha a partir da guia (`mesesComDas`). Ela só passou a valer nos dois
+  sentidos. ⚠ Havendo `sourceGuideId`, ele vence.
+- ⚠⚠ **PARCELA DE PARCELAMENTO FICA DE FORA.** Ela é gravada como `tipo: "SIMPLES"`, idêntica ao DAS,
+  e só `parcelamentoId` as separa: sem essa trava, a baixa do DAS do mês quitaria a parcela daquele
+  mês — dívida antiga, de outro acordo.
+- ⚠ **Baixa PARCIAL não quita**; **nunca rebaixa** guia já paga (inclusive a confirmada pelo
+  cliente, cuja procedência este caminho não pode sobrescrever); e a data é a **da baixa**, o mesmo
+  dia que foi para o razão.
+- ⚠ **Best-effort, FORA da transação**: a baixa é o ato contábil e já está gravada. Falhar aqui não
+  pode desfazê-la — no pior caso a guia segue aberta, que é o estado de antes.
+- ⚠ A regra é pura (`apps/api/.../guides/lib/guiaQuitadaPelaBaixa.js`) e o script do passado
+  (`quitar-guias-com-baixa-lancada.mjs`) **usa a mesma função**, nunca uma segunda leitura.
+
+⚠⚠ **E A CIRCULAR EM SI NÃO MUDOU — a regra dela está certa e continua valendo:** *"PAGO só com
+BAIXA lançada; guia PAID sem baixa = pagamento localizado no SERPRO, o contador ainda precisa
+lançar"*. Medido: apenas **1** célula em toda a carteira está aberta com a guia paga, e é
+legítima (INSS 07/2026 da ERISANGELA, pago no SERPRO e ainda não lançado). ⚠ Ela já carrega o sinal
+próprio, `pagamentoLocalizado`, e a tela o desenha.
+
+⚠ **Três vínculos diferentes convivem aqui, e confundi-los custou dois diagnósticos errados nesta
+sessão:** `sourceGuideId` (baixa → guia, usado pelas linhas SINTÉTICAS), `openEntryId` (baixa →
+provisão, usado pelas linhas REAIS) e a competência do lançamento — que é o mês em que o dinheiro
+SAIU, e **não** o do imposto (esse está no histórico: *"PAGAMENTO DAS - 05/2026"*).
+
+---
+
+## ⚠⚠ A DATA DO PAGAMENTO É INFORMADA, NUNCA O RELÓGIO (30/08/2026)
+
+> Dono: *"ao clicar em confirmar pagamento, o pagamento foi posto no dia 30 de agosto mesmo não
+> sendo verdade."*
+
+⚠⚠ **`Guide.paymentConfirmedAt` NÃO É O INSTANTE DO CLIQUE — é o dia em que o dinheiro saiu**, e é
+dele que `FluxoDeCaixaService.linhasDasGuias` tira o **mês** e o **dia** da linha do fluxo. Os três
+caminhos que marcavam a guia como paga gravavam `new Date()`.
+
+⚠⚠ **Medido antes do conserto** (`apps/api/scripts/diag-data-do-pagamento.mjs`, só leitura): das
+**20** guias pagas com comprovante do SERPRO guardado, **20 divergiam** da data real de arrecadação.
+E não por um dia: a LENTE tinha INSS de 04/2026 arrecadado em **16/07** gravado como **27/08** —
+dois meses adiante, num campo que decide em que MÊS o dinheiro aparece.
+
+| caminho | a data verdadeira estava… |
+|---|---|
+| consulta de pagamento (contador) | numa variável `dataPagamentoReal`, **calculada e nunca usada** |
+| baixa do INSS (contador) | na `dataPagamento` que ele **acabara de digitar** para gerar o lançamento |
+| "Já paguei" (cliente) | **em ninguém** — só ele sabe, e agora a tela pergunta |
+
+- ⚠⚠ **O CAMPO NASCE VAZIO.** Um padrão de "hoje" seria aceito com um clique e a tela voltaria a
+  gravar o dia do clique, agora *com aparência de conferido* — a mesma regra que o lote já carrega
+  para o município do tomador.
+- ⚠ **A regra é pura e tem recusa NOMEADA** (`apps/api/.../guides/lib/dataDoPagamento.js`): ausente ×
+  inválida × no futuro, três frases diferentes. ⚠ **31 de fevereiro é recusado** — `Date.UTC` rola
+  para março sem erro nenhum, e a validação é por RECONSTRUÇÃO. ⚠ **Não há piso**: guia antiga paga
+  há anos é fato legítimo.
+- ⚠⚠ **`pagoEm` nulo grava `null`, e isso é deliberado.** Sem comprovante e sem data digitada,
+  ninguém sabe quando o dinheiro saiu; a guia cai em `semMes` no fluxo, que é *"pago, dia
+  desconhecido"*. Carimbar o relógio para não deixar o campo vazio foi o que produziu as 20 datas
+  erradas. Na consulta do contador isso vem **dito**, apontando o "Dar baixa" da Circular.
+- ⚠⚠ **DOIS FATOS, DUAS COLUNAS:** `clienteConfirmouEm` continua sendo *quando ele clicou* (e
+  continua `agora`); `paymentConfirmedAt` é *quando pagou*. Colapsá-los foi o defeito.
+- ⚠⚠ **ACHADO NO NAVEGADOR, com a suíte verde:** o `max` do campo saiu `2026-08-31` num dia **30** —
+  `new Date().toISOString()` converte para UTC e às 21h de Brasília devolve o dia seguinte. Pior, o
+  **teste comparava contra a mesma expressão errada**: teste e código pelo mesmo cálculo não é
+  teste, é espelho. Hoje existe `hojeNoCampoDeData` em `lib/format.js`, e o caso prova a função com
+  uma hora fixa.
+- ⚠ **O passado tem script próprio**, `apps/api/scripts/corrigir-data-do-pagamento.mjs`: ele é
+  **dry-run por padrão**, só toca guia que TEM comprovante, nunca apaga data e grava uma por vez.
+  Aplicá-lo em produção é ato do dono. Medido: **20 linhas a corrigir**, nenhuma já certa.
 
 ---
 
@@ -1811,6 +1976,83 @@ o `<span class="brand">` da topbar e o `<title>` da aba (hoje `Altan Contabilida
   última letra): 359,8, contra 370 da caixa. **Trocar a fonte da marca obriga a medir de novo** —
   errar para menos corta a última letra de "CONTABILIDADE", porque a raiz de um SVG recorta.
 
+## ⚠⚠ O ESCRITÓRIO ENTRA AQUI — só quem tem a MARCA, e só para VER (30/08/2026)
+
+> Dono: *"não estou conseguindo acessar o portal do cliente com meu acesso de contador"* · *"o meu
+> acesso admin deve ser o único a conseguir isso."*
+
+⚠⚠ **O "acesso admin" NÃO EXISTIA.** Medido na base em 30/08/2026: **zero** usuários com
+`role: "admin"`; o único usuário FIRM é `yago@belgencontabilidade.com`, com role **`contador`**. A
+exceção `role === "admin"` que já existe nos três middlewares da api **nunca foi acionada por
+ninguém**.
+
+⚠⚠ **E NÃO SE PROMOVE A CONTA PARA ABRIR UMA PORTA.** `admin` é **bypass total** em
+`requireAccountType`, `requireClientCompanyAccess` e `requireFirmCompanyAccess` — quem o tem ganha
+OWNER em qualquer empresa do banco, fora da carteira inclusive. Por isso a porta é uma **marca por
+usuário**: `User.podeAbrirPortalDoCliente` (migration `20260830190000`, aditiva, **escrita e NÃO
+aplicada**; ligar a coluna na conta é ato do dono).
+
+⚠ **Nem "qualquer conta FIRM".** Hoje seria a mesma coisa — há um único usuário FIRM —, e deixaria
+de ser no dia em que entrar um segundo contador, **sem ninguém decidir**.
+
+### ⚠⚠ ABRIR A PORTA NÃO BASTAVA: a tela abriria VAZIA
+
+`GET /client/companies` lista por `companyClientUser`, e um usuário do escritório não tem vínculo
+nenhum ali. Medido: **0** vínculos de cliente contra **34** empresas na carteira dele
+(`companyFirmAccess`). Logado e sem empresa nenhuma é pior que a recusa clara. Hoje o visitante
+lista a **carteira**, pela mesma rota e pelo mesmo serializador.
+
+### ⚠⚠ O PISO É `FINANCEIRO`, E É A DECISÃO DE SEGURANÇA DESTA ENTREGA
+
+**Este portal EMITE NFS-e**, e a emissão exige `CLIENT_ADMIN`+. Com OWNER, o contador emitiria nota
+fiscal **em nome do cliente**, no CNPJ dele, sem volta — a NFS-e não tem inutilização. Com
+`FINANCEIRO` ele vê notas, guias, alíquota e fluxo (que é o que ele foi conferir) e é recusado em
+emissão, pró-labore, certificado, quadro societário e gestão de usuários.
+
+⚠ Consequência aceita e nomeada: a **Situação fiscal** (piso `CLIENT_ADMIN`) não abre por aqui. Ela
+já está inteira no portal do escritório, que é de onde ela vem.
+
+⚠⚠ **O ESCOPO É A CARTEIRA DELE**, por `companyFirmAccess` — nunca "qualquer empresa". Sem isso o id
+na URL alcançaria empresa de outro escritório; multi-tenancy é invariante desta casa.
+
+### ⚠⚠ A FAIXA FOI REMOVIDA PELO DONO (01/09/2026) — esta seção a chamava de "obrigatória"
+
+⚠⚠ **AS DUAS DECISÕES FICAM ESCRITAS, porque quem ler só uma "conserta" a outra.** A faixa
+(`.faixa-visita`) nasceu em 30/08 como a substituta da porta fechada — e **morreu em produção em
+dois dias, por dois defeitos de grid empilhados**:
+
+1. ela subiu **sem `grid-column`** e caiu na coluna de 56px da barra de ícones: uma palavra por
+   linha, ~560px de altura (relatado pelo dono, com print);
+2. consertada, apareceu o que o primeiro defeito escondia: `.app` declara **DUAS** linhas de grid
+   (`auto` + `minmax(0,1fr)`), e a faixa era uma TERCEIRA filha — a topbar caía na linha `1fr` e
+   **esticava**, abrindo um vão de tela inteira. O dono viu e decidiu: *"tire esse texto do início,
+   ajuste essa tela"*.
+
+⚠⚠ **O RISCO QUE ELA COBRIA NÃO SUMIU** (`accountGate.js`: o visitante lê os números de UMA empresa
+como se fossem os dele) — **ele mudou de lugar**: a linha do CNPJ da topbar diz
+**"· visita do escritório"**, sempre à vista, sem mexer no grid. Travado em
+`shell/__tests__/faixaDaVisitaAtravessaAsColunas.test.js`, que registra a história inteira.
+
+⚠ **A lição que fica é de MÉTODO**: a faixa só renderiza para `visita@exemplo.com`, e toda a
+conferência daquela entrega foi feita com a conta de CLIENTE. Ramo que ninguém abre é ramo que
+ninguém vê — a mesma família do "mock esconde ramo", agora numa CONTA. Mexeu na casca? Abra as
+duas contas no navegador.
+
+⚠ E quem acrescentar uma **filha nova em `.app`** cai nos dois defeitos de novo: ou declara
+`grid-column: 1 / -1` E revê as `grid-template-rows`, ou o layout quebra sem erro nenhum.
+
+### ⚠ O mock tem as DUAS contas, e é o par que prova a regra
+
+`contador@exemplo.com` continua **recusada** (`not_a_client`) e `visita@exemplo.com` entra. Só uma
+delas provaria que "conta FIRM entra" — que é exatamente o desenho recusado. ⚠ E a segunda traz
+`empresas` preenchidas: mock com lista vazia mostraria a tela logada e vazia, o estado que este
+conserto existe para evitar.
+
+⚠ **A marca abre SÓ esta porta.** Um CLIENTE com o campo ligado por engano não vira conta FIRM — a
+exceção em `requireAccountType` só vale quando o esperado é `CLIENT`. Há teste.
+
+---
+
 ## AUTENTICAÇÃO
 
 ⚠ **`accountGate.js` é regra de PRODUTO**: conta `FIRM` que entrasse aqui veria a tela do cliente —
@@ -1827,10 +2069,84 @@ mesmo nos quatro. ⚠ Não é o mesmo código que `invalid_token` ("sua sessão 
 da anterior pode responder depois da nova, e a tela mostraria os números de uma empresa sob o nome
 de outra.
 
+## ⚠⚠ A RODADA DE USABILIDADE — sete achados, e um deles nasceu no conserto (31/08/2026)
+
+> Dono: *"quero que lance múltiplos agentes para testar toda a usabilidade do nosso projeto do lado
+> do cliente, tem que validar tudo nos mínimos detalhes"* — e, depois do relatório: *"sim, pode
+> atacar o dinheiro sem dia, e **acerte tudo**"*.
+
+⚠⚠ **UM DOS "ACHADOS" FOI MEDIDO E DESCARTADO, e isso vale tanto quanto os consertos.** A hipótese
+de que `tributoCurto` devolveria `"2172"` para uma denominação começando pelo código de receita está
+CERTA sobre a função e **falsa sobre a base**: medido em produção (`diag-denominacao-composicao.mjs`,
+só leitura), 165 guias com `extracted`, **13 com composição, 29 itens, ZERO** em que o curto virou
+número. A função tem **três cópias**; mexer nas três por uma forma que ninguém observou trocaria um
+defeito hipotético por risco real no rótulo do documento que o cliente paga. **Não foi alterada**, e
+o argumento está travado em teste.
+
+| o que era | onde | o que ficou |
+|---|---|---|
+| o dinheiro **sem dia** não tinha linha (R$ 5.902,00 invisíveis em ago; uma série de R$ 1.180,00 **inalcançável** em set) | `BlocoDeDemonstracao` | linha `sem dia` no `<tbody>`, clicável; a gaveta passou a se chamar **"sem dia"** — *"no mês"* virou só o total do rodapé |
+| `pTotTribSN` **sem guarda local** no Simples | `impostosDaNota` | a tela recusa antes, com o critério **DO SERVIDOR** (zero passa, negativo não) |
+| recusa barata tomava a **tela inteira** | `desfechoEmissao` | onde nada saiu da máquina, o motivo entra **acima** do formulário, que fica preenchido |
+| a troca de empresa **descartava a planilha em silêncio** | `SeletorEmpresa` + lote | aviso com a contagem real de linhas e ajustes, ANTES do clique |
+| jargão do servidor (`pTotTribSN`, `opSimpNac=3`, `pTotTribFed`) na tela do cliente | `desfechoEmissao` | frase por CÓDIGO — ⚠ a da **RECEITA** continua CITADA |
+| `BotaoCopiar`: o `aria-label` fixo **escondia o desfecho** | `components/ui` | região `aria-live` FORA do botão, e só quando há desfecho |
+| aba Guias em 375px: linhas de 228px | `app.css` | piso em `ch` nas duas colunas de texto |
+
+### ⚠⚠ O DEFEITO QUE O CONSERTO CRIOU — e por que ele fica escrito
+
+O anúncio do `BotaoCopiar` (`.sr-only`, `position: absolute`) entrou numa tabela cujo `.table-wrap`
+**não era `position: relative`**. Ele se ancorou fora do contexto de rolagem, ficou em `left: 548px`
+numa tela de 375 e **fez a página inteira rolar para o lado** — exatamente o que aquele bloco de CSS
+existe para impedir. ⚠ Os **1.409 testes estavam verdes**; quem pegou foi o navegador.
+
+⚠ O conserto é do CONTÊINER, não daquele `<span>`: qualquer absoluto que entre numa tabela daqui em
+diante cai na mesma armadilha. ⚠ E o modal "Escolher empresa" medindo 548px em 375 era o **mesmo**
+defeito, não um segundo: com o documento esticado, o backdrop esticava junto. Hoje mede 343.
+
+### Os números de 375px, medidos no navegador
+
+| aba Guias, competência "Todas" (18 guias) | antes | depois |
+|---|---|---|
+| altura da tabela | 2.881 | **2.271** |
+| linha mais alta | 228 | **170** |
+| largura (rolagem lateral, que já existia) | 720 | 795 |
+
+⚠ O que inflava era **texto estrangulado**, não excesso de conteúdo: a frase da ausência da linha
+digitável a 121px e *"Seu contador ainda não liberou esta guia…"* a 120px. **As duas frases FICAM** —
+sem elas o cliente não sabe por que não há número nem por que o botão está desabilitado.
+⚠⚠ **Nenhuma coluna foi escondida, e há teste sobre isso:** coluna de guia que some é dívida com a
+Receita sumindo da tela de quem paga. ⚠ A **FORMA** da tabela em tela estreita (virar cartões,
+esconder colunas) **não foi mexida** — forma de tela é decisão do dono.
+
+### ⚠⚠ O MOCK ESCONDIA TRÊS RAMOS DA GUIA — sétima vez nesta base
+
+Toda guia nascia com `extracted: null`, `parcelamentoId: null` e um dos dois tipos
+(`SIMPLES`/`INSS`). O rótulo **"PIS · COFINS"** da DARF do Presumido — consertado no mesmo dia — era
+**inalcançável offline**, e a precedência da **parcela** sobre o tipo também.
+
+Entraram a `OUTRA` **com** composição, a `OUTRA` **sem** (o contraponto: 7 das 20 da base estão
+assim, e `"OUTRA"` é o que está GRAVADO) e a parcela. ⚠ As denominações são as **medidas em
+produção**, com o campo `tributo` já preenchido — a forma de 24 dos 29 itens. Só o dinheiro é
+fictício. ⚠ E o `valor` escrito ali pode não ser o que a tela mostra: `linhaDigitavelDoMock`
+devolve `valor` nos ramos em que a linha foi lida, e o spread vem depois — de propósito, para o
+número da linha e o da guia baterem.
+
+### ⚠ `not_a_client` × `forbidden_account_type` — a frase igual é DELIBERADA
+
+As duas descrevem a mesma situação por lados diferentes (nossa trava de produto × a recusa do
+servidor), e para quem lê **o conserto é o mesmo**. Duas redações fariam a pessoa procurar uma
+diferença que não existe. O que faltava era a distinção existir para **quem diagnostica**: ela foi
+para o DOM (`data-erro-codigo` no `AlertaErro`), como `data-status` e `data-situacao-fiscal` já
+fazem. ⚠ Erro sem código **não** fabrica atributo vazio.
+
+---
+
 ## TESTES
 
-`npm test -w @contabilidade/portal-cliente-web` → **1.132 testes, 58 suítes, todas verdes** (medido
-em 27/08/2026, depois do fluxo de caixa real; ⚠ nesta rodada uma suíte foi **removida** —
+`npm test -w @contabilidade/portal-cliente-web` → **1.428 testes, 74 suítes, todas verdes** (medido
+em 31/08/2026, depois da rodada de usabilidade; eram 1.132/58 em 27/08, ⚠ e naquela rodada uma
+suíte foi **removida** —
 `diaDoFluxo.ligacao.test.jsx`, do painel do dia, que deixou de existir — e duas nasceram no lugar;
 eram 968/52 em 24/08 depois do `ciclo` no contrato, eram 947/51 no meio da rodada da auditoria, eram 894/48 em 23/08 com a marca da topbar, 814/45 depois
 da marca, 807/44 depois da situação fiscal, 683/38 em 20/08, e 557/32 antes do lote por planilha). Não existiam até 18/08 (`d5a91490` subiu os primeiros 101).

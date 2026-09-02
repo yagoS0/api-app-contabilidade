@@ -303,3 +303,124 @@ describe("⚠⚠ A PROVA DO CORPO: a alíquota de ISS não viaja sem retenção"
     expect(api.emitirNfse).not.toHaveBeenCalled();
   });
 });
+
+// ⚠⚠ A GUARDA QUE FALTAVA NO `pTotTribSN` — achada em teste de usabilidade (31/08/2026).
+//
+// A alíquota de ISS tinha conferência local desde 20/08 e esta NÃO tinha, na MESMA tela e no campo
+// vizinho. No Simples o servidor EXIGE o campo (`MISSING_P_TOT_TRIB_SN`), então a empresa cuja
+// alíquota o portal não conseguiu preencher — e são as que abrem o campo vazio — preenchia a nota
+// inteira e descobria a recusa **no clique de emitir**, que é um ato fiscal.
+//
+// ⚠ Os casos medem por NÃO-CHAMADA de `api.emitirNfse`: é a única forma de provar que o ato não
+// aconteceu. Medir a frase na tela provaria só que a tela fala.
+describe("⚠⚠ NO SIMPLES, SEM A ALÍQUOTA EFETIVA, NADA SAI DAQUI", () => {
+  test("submeter com o campo vazio NÃO emite, e a tela diz o que falta", async () => {
+    // `getAliquotas` é `[]` (o padrão desta suíte): é exatamente a empresa sem extrato apurado.
+    await renderizar(SIMPLES);
+    preencherOMinimo();
+
+    await act(async () => {
+      fireEvent.submit(document.querySelector("form.pane-form"));
+    });
+
+    expect(api.emitirNfse).not.toHaveBeenCalled();
+    expect(screen.getByText(/Informe a alíquota efetiva do Simples desta nota/i)).toBeInTheDocument();
+  });
+
+  test("⚠⚠ preenchida, a MESMA nota emite — a guarda não trava quem está em ordem", async () => {
+    await renderizar(SIMPLES);
+    preencherOMinimo();
+    fireEvent.change(document.getElementById("emitir-ptottribsn"), { target: { value: "6.24" } });
+
+    const corpo = await submeterEPegarOCorpo();
+    expect(corpo.totTrib.pTotTribSN).toBe(6.24);
+  });
+
+  test("⚠⚠ ZERO EMITE — o critério é o do servidor, que aceita zero e recusa negativo", async () => {
+    // `NfseService.js:626` recusa ausente/NaN/`< 0`. Endurecer para `> 0` (como a alíquota de ISS,
+    // que é outra regra, `:766`) faria a tela recusar nota que o sistema nacional aceita.
+    await renderizar(SIMPLES);
+    preencherOMinimo();
+    fireEvent.change(document.getElementById("emitir-ptottribsn"), { target: { value: "0" } });
+
+    const corpo = await submeterEPegarOCorpo();
+    expect(corpo.totTrib.pTotTribSN).toBe(0);
+  });
+
+  test("⚠⚠ O PRESUMIDO NÃO É AFETADO — o campo não existe lá, e a guarda não o inventa", async () => {
+    // Se a guarda olhasse o valor fora do Simples, ela bloquearia a emissão do Presumido por um
+    // número que aquela nota nunca declara. O erro simétrico, e igualmente caro.
+    await renderizar(PRESUMIDO);
+    preencherOMinimo();
+
+    const corpo = await submeterEPegarOCorpo();
+    expect(corpo.totTrib).toBeUndefined();
+    expect(document.getElementById("emitir-ptottribsn")).toBeNull();
+  });
+});
+
+// ⚠⚠ RECUSA BARATA NÃO CUSTA A TELA INTEIRA — achado em teste de usabilidade (31/08/2026).
+//
+// **Qualquer** desfecho substituía o formulário pelo painel, inclusive a recusa que nem saiu da
+// máquina (CPF com dígito errado, valor zero). Quem digitou um dígito a mais perdia a tela de
+// edição e tinha de clicar para reencontrar o próprio texto — o erro mais comum de uma sessão de
+// digitação, cobrado ao preço do mais raro.
+//
+// ⚠⚠ A LINHA DE CORTE É "A DPS SAIU DAQUI?", e é ela que estes casos travam nos DOIS sentidos.
+describe("⚠⚠ o formulário SOBREVIVE à recusa em que nada saiu da máquina", () => {
+  /** Faz o espião recusar naquela camada, com a forma que `lerErroEmissao` lê. */
+  function recusarCom(camada, codigo, status) {
+    api.emitirNfse.mockRejectedValue(
+      Object.assign(new Error("recusa simulada"), {
+        status,
+        code: codigo,
+        corpo: { camada, codigo, message: "Documento do tomador inválido.", correcao: "Confira o CPF." },
+      })
+    );
+  }
+
+  test("camada NOSSA: o motivo aparece E o formulário continua na tela, preenchido", async () => {
+    recusarCom("NOSSA", "tomador_cpf_digito_invalido", 400);
+    await renderizar(SIMPLES);
+    preencherOMinimo();
+    fireEvent.change(document.getElementById("emitir-ptottribsn"), { target: { value: "6.24" } });
+
+    await act(async () => {
+      fireEvent.submit(document.querySelector("form.pane-form"));
+    });
+
+    // O motivo está à vista…
+    expect(screen.getByText(/A nota não chegou a ser enviada/i)).toBeInTheDocument();
+    // …e o formulário NÃO sumiu — com o que a pessoa digitou ainda lá.
+    expect(document.querySelector("form.pane-form")).not.toBeNull();
+    expect(document.getElementById("emitir-nome").value).toBe("TOMADOR EXEMPLO LTDA");
+    expect(document.getElementById("emitir-descricao").value).toBe("Servico prestado");
+  });
+
+  test("⚠⚠ camada TRANSPORTE: o formulário SAI — e isso NÃO se afrouxa", async () => {
+    // Ali o desfecho é DESCONHECIDO: a nota pode existir. Tirar o formulário é o que impede o
+    // "enviar de novo" de um clique só sobre uma nota que talvez já tenha sido emitida.
+    recusarCom("TRANSPORTE", "nfse_transporte", 502);
+    await renderizar(SIMPLES);
+    preencherOMinimo();
+    fireEvent.change(document.getElementById("emitir-ptottribsn"), { target: { value: "6.24" } });
+
+    await act(async () => {
+      fireEvent.submit(document.querySelector("form.pane-form"));
+    });
+
+    expect(document.querySelector("form.pane-form")).toBeNull();
+  });
+
+  test("⚠ e o SUCESSO também toma a tela, como sempre tomou", async () => {
+    await renderizar(SIMPLES);
+    preencherOMinimo();
+    fireEvent.change(document.getElementById("emitir-ptottribsn"), { target: { value: "6.24" } });
+
+    await act(async () => {
+      fireEvent.submit(document.querySelector("form.pane-form"));
+    });
+
+    expect(document.querySelector("form.pane-form")).toBeNull();
+  });
+});

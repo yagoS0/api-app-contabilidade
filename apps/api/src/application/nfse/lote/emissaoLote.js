@@ -162,7 +162,25 @@ function desfechosDoModo(modo) {
  */
 export function bloqueioDaRetentativa(linha, lote = null) {
   const desfecho = linha?.desfecho;
-  if (!DESFECHOS_RETENTAVEIS.includes(desfecho)) {
+  /**
+   * ⚠⚠ A NOTA CANCELADA REABRE A LINHA (31/08/2026) — e é a ÚNICA exceção à lista de inclusão.
+   *
+   * > Dono, com o caso na mão: cancelou as notas do lote, subiu a MESMA planilha para reemitir, e
+   * > a idempotência devolveu o lote antigo — com as notas canceladas — e `nada_a_retentar`.
+   * > *"eu subi a mesma planilha."*
+   *
+   * A regra da lista continua verdadeira: `EMITIDA` bloqueia porque *a nota existe*. Cancelada, a
+   * nota ainda existe (não há inutilização) — mas **deixou de valer**, e reemitir depois de
+   * cancelar é exatamente o ciclo fiscal legítimo: é PARA isso que se cancela por "erro na
+   * emissão".
+   *
+   * ⚠⚠ `notaCancelada` NÃO é coluna da linha — é marca posta por `marcarNotasCanceladas`, que lê
+   * `ServiceInvoice.status === "cancelled"` (gravado só depois de o sistema nacional ACEITAR o
+   * evento `e101101`). Linha crua do banco nunca tem a marca, então nada afrouxa por omissão.
+   * ⚠ A guarda da linha indeterminada continua valendo sobre ela, logo abaixo.
+   */
+  const reemitivel = desfecho === DESFECHO_LINHA.EMITIDA && linha?.notaCancelada === true;
+  if (!reemitivel && !DESFECHOS_RETENTAVEIS.includes(desfecho)) {
     return MOTIVO_NAO_RETENTAVEL[desfecho] || MOTIVO_DESFECHO_DESCONHECIDO;
   }
   if (Number.isInteger(lote?.linhaIndeterminada) && linha?.numeroLinha === lote.linhaIndeterminada) {
@@ -397,7 +415,28 @@ export async function processarLoteEmissao({
   // divergiriam na primeira correção, e a divergência apareceria como uma linha `emitida` sendo
   // reservada para envio.
   const desfechosSelecionados = desfechosDoModo(modo);
-  const pendentes = await selecionarParaRetomada({ prisma, lote, modo });
+  let pendentes = await selecionarParaRetomada({ prisma, lote, modo });
+
+  /**
+   * ⚠⚠ NA RETENTATIVA, AS EMITIDAS-CANCELADAS ENTRAM NA FILA (31/08/2026) — ver o cabeçalho de
+   * `bloqueioDaRetentativa`. A seleção é em duas partes de propósito: a query por desfecho não
+   * enxerga `ServiceInvoice`, e alargar o `in` dela deixaria passar TODA emitida.
+   */
+  if (modo === MODO.RETENTATIVA) {
+    const emitidas = await prisma.loteEmissaoNfseLinha.findMany({
+      where: {
+        loteId: lote.id,
+        desfecho: DESFECHO_LINHA.EMITIDA,
+        ...(Number.isInteger(lote.linhaIndeterminada)
+          ? { numeroLinha: { not: lote.linhaIndeterminada } }
+          : {}),
+      },
+      orderBy: { numeroLinha: "asc" },
+    });
+    const marcadas = (await marcarNotasCanceladas({ prisma, lote: { linhas: emitidas } })).linhas
+      .filter((l) => l.notaCancelada === true);
+    pendentes = [...pendentes, ...marcadas].sort((a, b) => a.numeroLinha - b.numeroLinha);
+  }
 
   for (const linha of pendentes) {
     // ⚠⚠ A RESERVA DA LINHA É ATÔMICA — `updateMany` COM O DESFECHO NO `where`, e o `count` é lido.
@@ -417,8 +456,17 @@ export async function processarLoteEmissao({
     // `emitida` e `indeterminada` não estão nele em modo nenhum — nem por omissão, nem por
     // default, nem por modo desconhecido (ver `desfechosDoModo`). Trocar isto por um `updateMany`
     // sem desfecho no `where` é o que reintroduziria a nota duplicada.
+    /**
+     * ⚠⚠ A linha CANCELADA sai de `emitida`, e SÓ dela — nunca pelo conjunto geral. Alargar
+     * `desfechosSelecionados` com `emitida` deixaria a reserva aceitar emitida NÃO cancelada num
+     * processamento concorrente. A atomicidade do `updateMany` continua sendo o que impede a
+     * emissão dupla: dois processos leem a mesma marca, mas só UM vira a linha para `enviando`.
+     */
+    const saidaPermitida = linha.notaCancelada === true
+      ? [DESFECHO_LINHA.EMITIDA]
+      : desfechosSelecionados;
     const reservada = await prisma.loteEmissaoNfseLinha.updateMany({
-      where: { id: linha.id, desfecho: { in: desfechosSelecionados } },
+      where: { id: linha.id, desfecho: { in: saidaPermitida } },
       data: { desfecho: DESFECHO_LINHA.ENVIANDO, tentadaEm: new Date() },
     });
     if (reservada.count !== 1) {
@@ -444,7 +492,11 @@ export async function processarLoteEmissao({
         // (`NFSE_NUMERO_EM_ESTADO_INDETERMINADO`) — desfecho desconhecido não libera número. Esse
         // código está em `CODIGOS_ANTES_DE_QUALQUER_ENVIO`: a linha vira recusa NOSSA e o lote
         // segue, sem nada ter saído da máquina.
-        retryInvoiceId: linha.serviceInvoiceId || null,
+        // ⚠⚠ A LINHA CANCELADA RESERVA NÚMERO **NOVO** — o antigo foi CONSUMIDO pela nota
+        // cancelada, que continua existindo (não há inutilização). Reusar `retryInvoiceId` aqui
+        // sobrescreveria o registro da nota cancelada com a nova, apagando o histórico de um
+        // documento fiscal. E não há buraco de numeração: o número velho está ocupado.
+        retryInvoiceId: linha.notaCancelada === true ? null : (linha.serviceInvoiceId || null),
       });
     } catch (err) {
       // ⚠⚠ EXCEÇÃO NÃO É DESFECHO. Só os códigos comprovadamente de pré-voo viram recusa local; o
@@ -544,6 +596,39 @@ export async function processarLoteEmissao({
  * Quem decide o que fazer com a linha indeterminada é o CONTADOR, olhando o portal nacional. Nunca
  * este código.
  */
+/**
+ * ⚠⚠ MARCA, NAS LINHAS EMITIDAS, AS NOTAS QUE NÓS CANCELAMOS — só leitura, nada é gravado.
+ *
+ * A prova é `ServiceInvoice.status === "cancelled"`, que só existe depois de o sistema nacional
+ * aceitar o evento. A marca (`notaCancelada: true`) vive no OBJETO devolvido, nunca no banco — a
+ * regra pura (`bloqueioDaRetentativa`) a lê, e linha sem a marca continua bloqueada.
+ */
+export async function marcarNotasCanceladas({ prisma, lote }) {
+  const ids = (lote?.linhas || [])
+    .filter((l) => l.desfecho === DESFECHO_LINHA.EMITIDA && l.serviceInvoiceId)
+    .map((l) => l.serviceInvoiceId);
+  if (!ids.length) return lote;
+  /**
+   * ⚠ O delegate pode não existir (o `prisma generate` que não rodou — EPERM no Windows com o
+   * servidor de dev de pé; precedente em `/conferencia/pendencias`). Falha FECHADO: sem como
+   * perguntar, nenhuma linha ganha a marca e a emitida continua bloqueada — a direção segura.
+   */
+  if (!prisma?.serviceInvoice?.findMany) return lote;
+  const canceladas = new Set(
+    (await prisma.serviceInvoice.findMany({
+      where: { id: { in: ids }, status: "cancelled" },
+      select: { id: true },
+    })).map((s) => s.id)
+  );
+  if (!canceladas.size) return lote;
+  return {
+    ...lote,
+    linhas: lote.linhas.map((l) =>
+      canceladas.has(l.serviceInvoiceId) ? { ...l, notaCancelada: true } : l
+    ),
+  };
+}
+
 export async function selecionarParaRetomada({ prisma, lote, modo = MODO.RETOMADA }) {
   const where = { loteId: lote.id, desfecho: { in: desfechosDoModo(modo) } };
   if (Number.isInteger(lote.linhaIndeterminada)) {

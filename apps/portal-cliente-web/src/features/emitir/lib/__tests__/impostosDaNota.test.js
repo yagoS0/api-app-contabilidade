@@ -13,6 +13,7 @@ import {
   lerRegime,
   camposDeImposto,
   conferirAliquotaIss,
+  conferirPTotTribSN,
   aliquotaIssParaOPayload,
   pTotTribSNParaOPayload,
 } from "../impostosDaNota";
@@ -143,5 +144,70 @@ describe("⚠ com retenção a alíquota é OBRIGATÓRIA — e a tela diz ANTES"
 
   test("⚠ no Simples a conferência nunca bloqueia — o bloco inteiro saiu da tela", () => {
     expect(conferirAliquotaIss({ regime: REGIME.SIMPLES, issRetido: true, aliquota: "" }).ok).toBe(true);
+  });
+});
+
+// ⚠⚠ A GUARDA QUE FALTAVA — achada em teste de usabilidade (31/08/2026).
+//
+// A alíquota de ISS tinha conferência local e o `pTotTribSN` não tinha: no Simples, a empresa sem
+// alíquota apurada preenchia a nota inteira e só descobria a recusa ao clicar em EMITIR.
+//
+// ⚠⚠ O CASO QUE MAIS IMPORTA AQUI É O ZERO, e ele separa esta regra da irmã: o servidor recusa
+// `pTotTribSN` ausente/NaN/`< 0` (`NfseService.js:626`) e **aceita zero**; a alíquota de ISS, essa,
+// é exigida `> 0` (`:766`). Copiar o critério do ISS faria a tela recusar nota que o sistema
+// nacional aceita.
+describe("⚠⚠ o `pTotTribSN` tem guarda local, e o critério é o DO SERVIDOR", () => {
+  it("no Simples, campo vazio NÃO emite — e a frase diz que a recusa viria de qualquer jeito", () => {
+    const r = conferirPTotTribSN({ regime: REGIME.SIMPLES, pTotTribSN: "" });
+    expect(r.ok).toBe(false);
+    expect(r.falta).toMatch(/al[íi]quota efetiva do Simples/i);
+  });
+
+  it("⚠⚠ ZERO PASSA — é o que `NfseService.js:626` aceita (`< 0` é que recusa)", () => {
+    expect(conferirPTotTribSN({ regime: REGIME.SIMPLES, pTotTribSN: "0" }).ok).toBe(true);
+    expect(conferirPTotTribSN({ regime: REGIME.SIMPLES, pTotTribSN: "0.00" }).ok).toBe(true);
+  });
+
+  it("⚠ VÍRGULA é ausência aqui, e concorda com o payload — o campo é `type=number`", () => {
+    // `percentual` não lê vírgula, e `pTotTribSNParaOPayload` devolveria `null` — ou seja, o corpo
+    // sairia SEM o campo e o servidor recusaria. A guarda tem de recusar o mesmo, senão ela libera
+    // exatamente o caso que existe para pegar. ⚠ Na tela isto não acontece: o `<input
+    // type="number">` não aceita a vírgula. É o contrato da regra que está sendo travado.
+    expect(conferirPTotTribSN({ regime: REGIME.SIMPLES, pTotTribSN: "6,24" }).ok).toBe(false);
+    expect(pTotTribSNParaOPayload({ regime: REGIME.SIMPLES, pTotTribSN: "6,24" })).toBe(null);
+  });
+
+  it("negativo NÃO passa, com frase própria", () => {
+    const r = conferirPTotTribSN({ regime: REGIME.SIMPLES, pTotTribSN: "-1" });
+    expect(r.ok).toBe(false);
+    expect(r.falta).toMatch(/negativa/i);
+  });
+
+  it("valor legítimo passa", () => {
+    expect(conferirPTotTribSN({ regime: REGIME.SIMPLES, pTotTribSN: "6.24" }).ok).toBe(true);
+  });
+
+  it("⚠ texto ilegível é tratado como AUSENTE, nunca como zero", () => {
+    // `Number("abc")` é NaN, e o servidor recusa NaN — a tela diz o mesmo, antes.
+    expect(conferirPTotTribSN({ regime: REGIME.SIMPLES, pTotTribSN: "abc" }).ok).toBe(false);
+  });
+
+  it("⚠⚠ FORA DO SIMPLES não confere nada — o campo não existe e o grupo não viaja", () => {
+    // Conferir o que não é enviado bloquearia a emissão do Presumido por um número que ninguém
+    // declara. O regime INDEFINIDO entra junto, pelo mesmo motivo.
+    for (const regime of [REGIME.OUTRO, REGIME.DESCONHECIDO, undefined]) {
+      expect(conferirPTotTribSN({ regime, pTotTribSN: "" }).ok).toBe(true);
+      expect(conferirPTotTribSN({ regime, pTotTribSN: "-99" }).ok).toBe(true);
+    }
+  });
+
+  it("⚠ a guarda concorda com o que VAI no payload — as duas leem `camposDeImposto`", () => {
+    // Se divergirem, existe caso em que a tela libera e o corpo não leva o campo (ou o inverso).
+    for (const regime of [REGIME.SIMPLES, REGIME.OUTRO, REGIME.DESCONHECIDO]) {
+      const confere = conferirPTotTribSN({ regime, pTotTribSN: "6.24" });
+      const noPayload = pTotTribSNParaOPayload({ regime, pTotTribSN: "6.24" });
+      expect(confere.ok).toBe(true);
+      expect(noPayload === null).toBe(regime !== REGIME.SIMPLES);
+    }
   });
 });

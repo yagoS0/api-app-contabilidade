@@ -1290,12 +1290,19 @@ export function CompanyGuidesTable({
                     <span className="guides-grid__cell guides-grid__cell--competencia" role="cell">{guide.competencia || "-"}</span>
                     <span className="guides-grid__cell guides-grid__cell--valor guides-grid__money" role="cell">
                       {fmtMoney(guide.valor)}
+                      {/* ⚠⚠ O "R$" NÃO SE ESCREVE AQUI — `fmtMoney` já devolve "R$ 1.437,15", e o
+                          prefixo literal produzia **"R$ R$ 323,83"** na tela e no `title`. Achado
+                          pelo dono num print, em 30/08/2026, junto do defeito da parcela.
+                          ⚠ O badge só existe para o DAS do mês: a parcela de parcelamento saiu do
+                          enriquecimento (`listGuidesByCompany`), então aqui ela nunca mais traz
+                          `valorRecalculado` — e o `title` deixou de afirmar "recalculada pelo
+                          SERPRO" sobre um documento que nunca foi recalculado. */}
                       {guide.valorRecalculado != null && (
                         <span
                           style={{ marginLeft: 6, fontSize: "0.7rem", color: "#92400e", fontWeight: 700 }}
-                          title={`Guia recalculada pelo SERPRO. Valor do extrato (apuração): R$ ${fmtMoney(guide.valor)}. Valor atual da guia: R$ ${fmtMoney(guide.valorRecalculado)}.`}
+                          title={`Guia recalculada pelo SERPRO. Valor do extrato (apuração): ${fmtMoney(guide.valor)}. Valor atual da guia: ${fmtMoney(guide.valorRecalculado)}.`}
                         >
-                          ↻ R$ {fmtMoney(guide.valorRecalculado)}
+                          ↻ {fmtMoney(guide.valorRecalculado)}
                         </span>
                       )}
                     </span>

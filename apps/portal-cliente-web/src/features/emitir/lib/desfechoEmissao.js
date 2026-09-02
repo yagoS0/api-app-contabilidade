@@ -40,6 +40,30 @@ export const TIPO = Object.freeze({
 });
 
 /**
+ * ⚠⚠ ESTE DESFECHO DEIXA O FORMULÁRIO NA TELA? (31/08/2026, teste de usabilidade)
+ *
+ * Achado: **qualquer** desfecho substituía o formulário inteiro pelo painel — inclusive a recusa
+ * mais barata que existe, a que nem saiu da máquina (CPF com dígito errado, valor zero). Quem
+ * digitou um dígito a mais perdia a tela de edição e tinha de clicar "Corrigir e enviar de novo"
+ * para reencontrar o próprio texto. É o erro que mais se comete numa sessão de digitação, cobrado
+ * ao preço do mais raro.
+ *
+ * ⚠⚠ A LINHA DE CORTE É "A DPS SAIU DAQUI?", nunca "é grave?": onde nada saiu não houve ato fiscal
+ * nenhum — nenhum número consumido, nenhuma nota possível no mundo —, e o estado certo da tela é o
+ * formulário de onde a recusa veio, com o motivo em cima dele.
+ *
+ * ⚠ SUCESSO, TRANSPORTE, RECEITA, PORTAO, EMPRESA e DESCONHECIDO **continuam tomando a tela**, e
+ * isso não se afrouxa: eles falam de uma nota que existe ou que pode existir, ou de um impedimento
+ * que não se resolve no formulário. O TRANSPORTE ainda APAGA o formulário de propósito — para
+ * tirar do caminho o "enviar de novo" de um clique só sobre uma nota que talvez já exista.
+ *
+ * ⚠ Lista de INCLUSÃO: tipo novo entra tomando a tela, que é o lado seguro.
+ */
+export function desfechoMantemOFormulario(desfecho) {
+  return desfecho?.tipo === TIPO.NOSSA || desfecho?.tipo === TIPO.PEDIDO_INVALIDO;
+}
+
+/**
  * Códigos que descrevem um impedimento do CADASTRO da empresa (ou da numeração dela).
  * Nenhum deles é corrigível dentro do formulário — todos terminam em "fale com o seu contador".
  */
@@ -59,6 +83,72 @@ const CODIGOS_DE_EMPRESA = new Set([
  * tente outra vez" desfaria a proteção inteira.
  */
 const CODIGO_NUMERO_INDETERMINADO = "nfse_numero_em_estado_indeterminado";
+
+/**
+ * ⚠⚠ O JARGÃO DO SERVIDOR NÃO CHEGA AO CLIENTE (31/08/2026, teste de usabilidade).
+ *
+ * Achado: a tela renderiza `message`/`correcao` **cruas** do servidor, e as recusas da camada
+ * NOSSA são escritas para o CONTADOR — elas nomeiam campo de XML (`pTotTribSN`, `pTotTribFed`),
+ * citam o código da DPS (`opSimpNac=3`) e, pior, mandam a pessoa a uma tela que **só existe no
+ * portal do escritório** (*"Editar cadastro → Emissão de NFS-e"*). O cliente lia um caminho que
+ * ele não tem como percorrer.
+ *
+ * ⚠⚠ ISSO FURAVA UMA REGRA JÁ ESCRITA DESTE APP: `lib/mensagens.js` resolve por CÓDIGO e **não lê**
+ * `err.message`, de propósito — *"ela nunca devolve texto cru do servidor"*. O desfecho da emissão
+ * era o caminho por onde o texto do servidor entrava assim mesmo.
+ *
+ * ⚠ O MAPA É DE INCLUSÃO, e curto: só os códigos cuja frase do servidor carrega jargão ou aponta
+ * para a tela do contador. Todo o resto continua passando como está — inclusive, e principalmente,
+ * **a recusa da RECEITA, que é CITADA e nunca reescrita**: ali a fonte oficial vence, e traduzir a
+ * frase do sistema nacional seria apagar a única prova do que ele respondeu.
+ *
+ * ⚠ As frases terminam em "fale com o seu contador" onde o conserto é dele — que é o caso dos três
+ * campos de carga tributária: eles moram no cadastro da empresa, e o cliente não os edita.
+ */
+const FRASE_DO_CLIENTE = Object.freeze({
+  MISSING_P_TOT_TRIB_SN: {
+    message: "Falta a alíquota efetiva do Simples desta nota.",
+    correcao:
+      "Preencha o campo “Alíquota efetiva do Simples (%)” no formulário. Se ele estiver vazio e " +
+      "você não souber o percentual, peça ao seu contador.",
+  },
+  MISSING_TOT_TRIB_NAO_SIMPLES: {
+    message: "A carga tributária aproximada desta empresa não está cadastrada.",
+    correcao:
+      "Ela é preenchida pelo seu contador no cadastro da empresa, e vai impressa na nota por " +
+      "exigência da Lei 12.741/2012. Fale com ele.",
+  },
+  INVALID_TOT_TRIB_NAO_SIMPLES: {
+    message: "A carga tributária aproximada cadastrada para esta empresa não é um percentual válido.",
+    correcao: "Quem corrige esse cadastro é o seu contador. Fale com ele.",
+  },
+  NFSE_MUNICIPIO_NAO_CONFIGURADO: {
+    message: "O município da sua empresa não está configurado para emitir.",
+    correcao: "Quem preenche isso é o seu contador, no cadastro da empresa. Fale com ele.",
+  },
+  NFSE_REGIME_INDEFINIDO: {
+    message: "O regime tributário desta empresa não está cadastrado.",
+    correcao:
+      "A nota declara o regime, e emitir com o regime errado é declaração falsa — por isso ela " +
+      "não sai sem esse dado. Quem o cadastra é o seu contador.",
+  },
+  NO_COMPANY_CERT: {
+    message: "Esta empresa não tem certificado digital cadastrado para assinar a nota.",
+    correcao: "Quem cadastra o certificado é o seu contador. Fale com ele.",
+  },
+});
+
+/**
+ * Troca a frase do servidor pela do cliente quando existe uma — e a mantém quando não existe.
+ *
+ * ⚠ A troca é do PAR inteiro (`message` + `correcao`): substituir só a mensagem deixaria a
+ * correção do contador embaixo de um texto de cliente, apontando para uma tela que ele não tem.
+ */
+function comFraseDeCliente(base) {
+  const propria = base?.codigo ? FRASE_DO_CLIENTE[String(base.codigo).toUpperCase()] : null;
+  if (!propria) return base;
+  return { ...base, message: propria.message, correcao: propria.correcao };
+}
 
 function corpoDoErro(err) {
   const corpo = err?.corpo;
@@ -132,16 +222,21 @@ export function lerErroEmissao(err) {
     // reenviar COM ela é o que impede queimar um número novo a cada correção.
     // ⚠ `=== true`: numeração não se libera por coerção de tipo.
     const reaproveitavel = corpo.numeroReutilizavel === true && corpo.nfse?.id;
+    const daReceita = camada === "RECEITA";
     return {
-      ...base,
-      tipo: camada === "RECEITA" ? TIPO.RECEITA : TIPO.NOSSA,
+      // ⚠⚠ A TRADUÇÃO SÓ VALE PARA A RECUSA **NOSSA**. A da RECEITA é CITADA e nunca reescrita: a
+      // fonte oficial vence, e trocar a frase do sistema nacional apagaria a única prova do que
+      // ele respondeu — que é o que o contador precisa ler para saber o que corrigir.
+      ...(daReceita ? base : comFraseDeCliente(base)),
+      tipo: daReceita ? TIPO.RECEITA : TIPO.NOSSA,
       podeReenviar: true,
       retryInvoiceId: reaproveitavel ? String(corpo.nfse.id) : null,
     };
   }
 
   if (code && CODIGOS_DE_EMPRESA.has(code)) {
-    return { ...base, tipo: TIPO.EMPRESA };
+    // ⚠ Aqui também: o impedimento é do CADASTRO, e a frase do servidor aponta a tela do contador.
+    return { ...comFraseDeCliente(base), tipo: TIPO.EMPRESA };
   }
 
   // 400 sem camada = recusa do validador (`validateNfsePayload`), que é campo do formulário.

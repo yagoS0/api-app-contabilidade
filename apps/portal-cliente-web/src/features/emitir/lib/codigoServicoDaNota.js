@@ -101,6 +101,33 @@ export function codigoParaOPayload({ situacao, escolhido } = {}) {
 }
 
 /**
+ * ⚠⚠ QUAL CÓDIGO ESTA NOTA VAI DECLARAR — a pergunta da PRÉVIA (31/08/2026).
+ *
+ * Achado em teste de usabilidade: com vários códigos cadastrados, o espelho da nota mostrava o
+ * SINGULAR do cadastro e **não mudava** com a escolha — a nota saía com um código e a prévia
+ * afirmava outro. E com **nada escolhido** ela já afirmava o singular, enquanto a tela recusa
+ * emitir ("a tela não elege"): o espelho elegia.
+ *
+ * ⚠⚠ **NÃO É `codigoParaOPayload`, e a diferença é o ponto.** Aquela responde *"que campo eu
+ * MANDO?"* e devolve `null` no caso `UNICO` de propósito — nada é enviado e o servidor usa o
+ * cadastro, que é o caminho de sempre. Esta responde *"o que vai sair na nota?"*, e aí o caso
+ * `UNICO` tem resposta: o código do cadastro, que é exatamente o que o servidor vai usar.
+ *
+ * ⚠ Com `VARIOS` e nada escolhido devolve `null` — a prévia mostra traço. A tela continua sem
+ * eleger, e o espelho para de eleger junto.
+ */
+export function codigoQueANotaDeclara({ situacao, oferecidos = [], escolhido, singular } = {}) {
+  if (situacao === SITUACAO.SEM_CODIGO) return null;
+  if (situacao === SITUACAO.UNICO) {
+    // ⚠ O oferecido, e não o `singular` cru: `codigosOferecidos` já normalizou e recusou o que
+    // está fora da forma. Ler o cru devolveria à tela um código que a lib rejeitou.
+    return oferecidos[0] || normalizarCodigoServicoNacional(singular);
+  }
+  const codigo = normalizarCodigoServicoNacional(escolhido);
+  return codigo && oferecidos.includes(codigo) ? codigo : null;
+}
+
+/**
  * O formulário está pronto quanto ao código de serviço?
  *
  * ⚠ COM VÁRIOS E NENHUM ESCOLHIDO, A TELA NÃO ELEGE — ela diz o que falta. É a regra 3 do backend,

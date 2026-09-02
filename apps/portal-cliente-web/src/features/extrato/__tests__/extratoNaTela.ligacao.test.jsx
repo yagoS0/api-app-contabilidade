@@ -129,7 +129,9 @@ describe("⚠⚠ `descartadasTotal` — 'pelo menos N', nunca N", () => {
       descartadasTotal: 1,
     });
     expect(screen.getByText("sem_data")).toBeInTheDocument();
-    expect(screen.getByText("-1500.00")).toBeInTheDocument();
+    // ⚠ O valor sai FORMATADO desde 31/08/2026 — a string do OFX ("-1500.00": ponto decimal, sem
+    // milhar, sem R$) aparecia crua numa coluna ao lado de motivos cuidadosamente traduzidos.
+    expect(screen.getByText("-R$ 1.500,00")).toBeInTheDocument();
   });
 });
 

@@ -348,7 +348,10 @@ describe("⚠ BOTÃO IMPOSSÍVEL NÃO SOME — desabilitado, e o motivo continua
   test.each([
     ["nota já CANCELADA", { status: "CANCELADA" }, /já não está válida/i],
     ["NF-e", { type: "NFE" }, /apenas NFS-e/i],
-    ["ainda não confirmada pelo ADN", { confirmadaPeloAdn: false, hasXml: false }, /chave de acesso/i],
+    // ⚠⚠ "ainda não confirmada pelo ADN" SAIU desta lista em 31/08/2026 — dono: *"quero poder
+    // cancelar logo após a emissão, simples."* A premissa (a chave só existiria depois da captura)
+    // foi MEDIDA em produção e é falsa: ela está preenchida desde a emissão. O caso do botão que
+    // agora CLICA está no bloco logo abaixo.
     // ⚠⚠ NOTA RECEBIDA — dono, 20/08/2026. Cancelar é ato do EMITENTE.
     ["RECEBIDA (papel DEST)", { papel: "DEST" }, /emitida PARA a sua empresa/i],
     [
@@ -386,6 +389,22 @@ describe("⚠ BOTÃO IMPOSSÍVEL NÃO SOME — desabilitado, e o motivo continua
     await abrirNotas();
     const linha = document.querySelector("tbody tr");
     expect(linha.textContent).not.toMatch(/Ainda não confirmada/);
+  });
+
+  /**
+   * ⚠⚠ A NOTA RECÉM-EMITIDA ABRE O DIÁLOGO — o desfecho que o dono pediu em 31/08/2026.
+   *
+   * > *"eu emiti duas notas em lote na sincrosat e não consigo cancelar elas após a emissão (…)
+   * > quero poder cancelar logo após a emissão, simples."*
+   */
+  test("⚠⚠ ainda não confirmada pelo ADN: o botão CLICA e o diálogo abre", async () => {
+    api.getInvoices.mockResolvedValue(resposta([nota({ confirmadaPeloAdn: false, hasXml: false })]));
+    await abrirNotas();
+    const botao = botaoCancelarDaLinha();
+    expect(botao).toBeEnabled();
+    fireEvent.click(botao);
+    await act(async () => {});
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });
 

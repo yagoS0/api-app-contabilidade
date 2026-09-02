@@ -30,6 +30,9 @@ jest.mock("../../infrastructure/db/prisma.js", () => {
     // distinguir CANCELADA de SUBSTITUÍDA. Sem esta chave no dublê, a rota inteira dava 500 — e o
     // teste apontava para a paginação, que não tinha nada com isso.
     portalInvoiceEvent: { findMany: jest.fn() },
+    // ⚠ Entrou em 31/08/2026, com a sobreposição do cancelamento: a listagem pergunta se NÓS
+    // cancelamos as notas EMIT da página (`ServiceInvoice.status = "cancelled"`).
+    serviceInvoice: { findMany: jest.fn(async () => []) },
     portalSyncState: { findUnique: jest.fn() },
     companyClientUser: { findUnique: jest.fn() },
     companyFirmAccess: { findUnique: jest.fn() },
@@ -427,5 +430,101 @@ describe("⚠⚠ o `ciclo` viaja no contrato do cliente", () => {
     cenario.doAdn = [];
     await listar();
     expect(prisma.portalInvoiceEvent.findMany).not.toHaveBeenCalled();
+  });
+});
+
+// ⚠⚠ A NOTA QUE NÓS CANCELAMOS NÃO PODE CONTINUAR DIZENDO "EMITIDA" (31/08/2026)
+//
+// > Dono: *"ajuste também os status das notas canceladas, mesmo canceladas estão como emitidas"*.
+//
+// `serializeEmitidaNaoConfirmada` cravava `status: "EMITIDA"`, e o comentário de lá defendia isso
+// — com razão, enquanto o cancelamento desta nota **não existia**. Ele passou a existir no MESMO
+// dia (a rota de cancelar passou a ler `ServiceInvoice`), e o literal virou mentira: o nosso
+// registro fica `cancelled` logo depois de o evento ser aceito, e a lista continuava dizendo
+// Emitida — com o botão Cancelar habilitado por cima.
+describe("⚠⚠ o status da nota NOSSA sai do NOSSO registro", () => {
+  // ⚠ Dizia "CANCELADA" por algumas horas em 31/08/2026 — o dono corrigiu no mesmo dia: *"tire o
+  // status de emitida até ter o retorno do ADN então"*. Quem afirma o estado final é o ADN; o que
+  // nós afirmamos é o nosso ato aceito. O vocabulário é o MESMO da sobreposição da listagem.
+  it("nota que nós cancelamos aparece como CANCELAMENTO_ENVIADO", async () => {
+    cenario.doAdn = [];
+    cenario.nossas = [si(9, { status: "cancelled" })];
+    const r = await listar();
+    const nossa = r.body.data.find((x) => x.invoiceId === "si-9");
+    expect(nossa.status).toBe("CANCELAMENTO_ENVIADO");
+    // ⚠ E ela continua sendo NOSSA e não confirmada: o que mudou é o status, não a procedência.
+    expect(nossa.confirmadaPeloAdn).toBe(false);
+  });
+
+  it("nota emitida e não cancelada continua EMITIDA", async () => {
+    cenario.doAdn = [];
+    cenario.nossas = [si(9)];
+    const r = await listar();
+    expect(r.body.data.find((x) => x.invoiceId === "si-9").status).toBe("EMITIDA");
+  });
+
+  it("⚠ o vocabulário é FECHADO — status desconhecido não inventa rótulo novo", async () => {
+    // A linha só chega aqui depois de `STATUS_SEM_NOTA` tirar pending/rejected/falha_envio: o que
+    // sobra é nota que existe, e o padrão honesto para ela é EMITIDA.
+    for (const status of ["issued", "AUTORIZADA", "coisa-nova", "", null]) {
+      cenario.doAdn = [];
+      cenario.nossas = [si(9, { status })];
+      const r = await listar();
+      expect(r.body.data.find((x) => x.invoiceId === "si-9").status).toBe("EMITIDA");
+    }
+  });
+});
+
+
+// ⚠⚠ A NOTA CAPTURADA QUE NÓS CANCELAMOS — a sobreposição NA LEITURA (31/08/2026)
+//
+// > Dono: *"essas 3 notas estão canceladas, e o status é emitida e eu consigo clicar no botão de
+// > cancelar"* → *"deixa o botão de cancelar cinza e tire o status de emitida até ter o retorno do
+// > ADN então."*
+//
+// O caso real: as notas 160/161/162 são NOSSAS emissões, canceladas (evento ACEITO), mas o ADN as
+// capturou ANTES do evento — e a linha capturada, que vence na lista, dizia "Emitida".
+describe("⚠⚠ a capturada que nós cancelamos diz CANCELAMENTO_ENVIADO", () => {
+  function piEmit(n, over = {}) {
+    return { ...pi(n), papel: "EMIT", chaveAcesso: `chave-${n}`, ...over };
+  }
+
+  it("⚠⚠ EMIT com o nosso registro `cancelled`: o status intermediário — nunca EMITIDA", async () => {
+    cenario.doAdn = [piEmit(1)];
+    prisma.serviceInvoice.findMany.mockResolvedValue([{ chaveAcesso: "chave-1" }]);
+    const r = await listar();
+    expect(r.body.data[0].status).toBe("CANCELAMENTO_ENVIADO");
+  });
+
+  it("⚠⚠ e NADA é escrito em PortalInvoice — a sobreposição é na leitura", async () => {
+    // A regra da casa: a projeção do ADN não se escreve. `update` nem existe no dublê, então
+    // qualquer escrita derrubaria a rota — este caso afirma o desenho por dentro.
+    cenario.doAdn = [piEmit(1)];
+    prisma.serviceInvoice.findMany.mockResolvedValue([{ chaveAcesso: "chave-1" }]);
+    await listar();
+    expect(prisma.portalInvoice.update).toBeUndefined();
+  });
+
+  it("⚠ quando o ADN JÁ diz CANCELADA, ele vence — a sobreposição não rebaixa a confirmação", async () => {
+    cenario.doAdn = [piEmit(1, { status: "CANCELADA" })];
+    prisma.serviceInvoice.findMany.mockResolvedValue([{ chaveAcesso: "chave-1" }]);
+    const r = await listar();
+    expect(r.body.data[0].status).toBe("CANCELADA");
+  });
+
+  it("⚠⚠ a cópia DEST da MESMA chave não é tocada — cancelar é ato do emitente", async () => {
+    // A mesma nota existe na empresa do tomador (outra empresa da carteira). O cancelamento é
+    // nosso ATO como emitente; a cópia recebida segue como o ADN a descreve.
+    cenario.doAdn = [piEmit(1, { papel: "DEST" })];
+    prisma.serviceInvoice.findMany.mockResolvedValue([{ chaveAcesso: "chave-1" }]);
+    const r = await listar();
+    expect(r.body.data[0].status).toBe("EMITIDA");
+  });
+
+  it("sem cancelamento nosso, nada muda", async () => {
+    cenario.doAdn = [piEmit(1)];
+    prisma.serviceInvoice.findMany.mockResolvedValue([]);
+    const r = await listar();
+    expect(r.body.data[0].status).toBe("EMITIDA");
   });
 });

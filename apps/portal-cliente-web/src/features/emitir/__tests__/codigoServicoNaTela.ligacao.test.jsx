@@ -92,6 +92,13 @@ async function preencherOMinimo() {
   set("emitir-bairro", "CENTRO");
   set("emitir-descricao", "Servico de teste");
   set("emitir-valor", "1.000,00");
+  // ⚠⚠ A ALÍQUOTA EFETIVA ENTROU AQUI EM 31/08/2026, e o motivo vale ser lido: esta suíte mocka
+  // `getAliquotas` como `[]` numa empresa do SIMPLES, então o campo ficava VAZIO — e o payload que
+  // ela media era um que `NfseService.js:626` recusaria com `MISSING_P_TOT_TRIB_SN`. O submit
+  // passava porque a tela não conferia; hoje `conferirPTotTribSN` recusa antes, como o servidor.
+  // ⚠ Não é o assunto desta suíte (que mede o CÓDIGO DE SERVIÇO no payload): é o mínimo que uma
+  // pessoa real teria de preencher para chegar ao clique de emitir.
+  set("emitir-ptottribsn", "6.24");
   await act(async () => {});
 }
 

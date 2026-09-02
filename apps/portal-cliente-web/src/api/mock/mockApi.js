@@ -28,20 +28,71 @@ import { fluxoDeCaixaDoMock } from "./fluxoDeCaixaDoMock";
 import { LOTE_MAXIMO } from "../../features/notas/lib/loteDanfse";
 
 function mockDeLancamentos(id, faturamento) {
+  // ⚠⚠ A pc-001 É DO SIMPLES, E DESDE 30/08/2026 ELA TAMBÉM LÊ ESTE BLOCO — o dono mandou a
+  // alíquota vir SEMPRE do que foi lançado. Sem esta linha o caminho principal da tela ficaria
+  // **inalcançável offline** e o card do Simples cairia em *"não foi possível calcular pela
+  // contabilidade"* no modo demonstração: a QUINTA vez que o mock esconderia um ramo nesta base.
+  //
+  // ⚠ A FORMA COPIA A EMPRESA REAL, medida em produção (ERISANGELA, 04–07/2026): **uma** conta de
+  // imposto — `(-) DAS- SIMPLES NACIONAL` — e nada de IRPJ/CSLL, que no Simples estão dentro do
+  // DAS. Um mock com quatro tributos treinaria a tela para um desenho que o Simples nunca tem.
+  // ⚠ Os 6,24% são a alíquota REAL medida, não um número redondo: mock com valor cravado esconde
+  // ramo, e este projeto já pagou por isso.
+  if (id === "pc-001") {
+    const base = Number(faturamento.toFixed(2));
+    if (!(base > 0)) {
+      // ⚠ Competência sem nota é o caso `SEM_LANCAMENTO`, e ele PRECISA ser alcançável: é o que a
+      // tela desenha nos meses que o contador ainda não lançou.
+      return {
+        situacao: "SEM_LANCAMENTO", aliquota: null, base: 0, receitaBruta: 0, devolucoesEDescontos: 0,
+        impostos: 0, impostoSobreReceita: 0, impostoSobreResultado: 0, impostosPorConta: [], naoClassificadas: 0,
+      };
+    }
+    const impostoSobreReceita = Number((base * 0.0624).toFixed(2));
+    // ⚠⚠ O INSS PATRONAL PRECISA EXISTIR OFFLINE (30/08/2026): é ele que separa `aliquota` de
+    // `aliquotaComFolha`, e sem ele a tela mostraria os dois números IGUAIS no mock — e a frase
+    // *"(INSS de X incluído)"* nunca apareceria. R$ 178,31 é o valor REAL da ERISANGELA.
+    const impostoSobreFolha = 178.31;
+    const impostosComFolha = Number((impostoSobreReceita + impostoSobreFolha).toFixed(2));
+    return {
+      situacao: "CALCULADA",
+      aliquota: Number(((impostoSobreReceita / base) * 100).toFixed(4)),
+      aliquotaComFolha: Number(((impostosComFolha / base) * 100).toFixed(4)),
+      base,
+      receitaBruta: base,
+      devolucoesEDescontos: 0,
+      impostos: impostoSobreReceita,
+      impostosComFolha,
+      impostoSobreReceita,
+      impostoSobreResultado: 0,
+      impostoSobreFolha,
+      impostosPorConta: [
+        { codigo: "557", nome: "(-) DAS- SIMPLES NACIONAL", total: impostoSobreReceita },
+        { codigo: "240", nome: "INSS A PAGAR", total: impostoSobreFolha },
+      ],
+      naoClassificadas: 0,
+    };
+  }
   if (id === "pc-002") {
     const base = Number(faturamento.toFixed(2)) || 120000;
     const impostoSobreReceita = Number((base * 0.0365).toFixed(2));
     const impostoSobreResultado = Number((base * 0.0384).toFixed(2));
     const impostos = Number((impostoSobreReceita + impostoSobreResultado).toFixed(2));
+    // ⚠ O CONTRAPONTO: esta empresa NÃO tem INSS lançado, então `aliquotaComFolha === aliquota` e a
+    // frase do INSS NÃO aparece. Sem este caso, "com folha" e "sem folha" seriam indistinguíveis
+    // offline e a guarda `impostoSobreFolha > 0` nunca seria exercida.
     return {
       situacao: "CALCULADA",
       aliquota: Number(((impostos / base) * 100).toFixed(4)),
+      aliquotaComFolha: Number(((impostos / base) * 100).toFixed(4)),
       base,
       receitaBruta: base,
       devolucoesEDescontos: 0,
       impostos,
+      impostosComFolha: impostos,
       impostoSobreReceita,
       impostoSobreResultado,
+      impostoSobreFolha: 0,
       impostosPorConta: [
         { codigo: "420", nome: "(-) COFINS", total: Number((base * 0.03).toFixed(2)) },
         { codigo: "594", nome: "(-) IRPJ", total: Number((base * 0.024).toFixed(2)) },
@@ -547,6 +598,32 @@ function criarEstado() {
       defaultClientId: null,
       empresas: [],
     },
+    {
+      /**
+       * ⚠⚠ O VISITANTE DO ESCRITÓRIO — a conta MARCADA (30/08/2026).
+       *
+       * > Dono: *"não estou conseguindo acessar o portal do cliente com meu acesso de contador (…)
+       * > o meu acesso admin deve ser o único a conseguir isso."*
+       *
+       * ⚠ Ela existe ao LADO da `contador@exemplo.com`, e é o par que dá sentido às duas: a de cima
+       * continua sendo recusada (`not_a_client`) e esta entra. Só uma delas não prova regra nenhuma
+       * — provaria que "conta FIRM entra", que é exatamente o desenho recusado.
+       * ⚠ `podeAbrirPortalDoCliente` é a MARCA POR USUÁRIO, nunca o `role`: `admin` é bypass total
+       * nos três middlewares da api, e promover a conta para abrir uma porta daria privilégio sobre
+       * o sistema inteiro.
+       * ⚠ `empresas` traz a carteira: no servidor a lista vem de `companyFirmAccess`, e um mock com
+       * lista vazia mostraria a tela logada e VAZIA — o estado que o conserto existe para evitar.
+       */
+      id: "u-contador-visita",
+      email: "visita@exemplo.com",
+      senha: "123456",
+      role: "contador",
+      accountType: "FIRM",
+      podeAbrirPortalDoCliente: true,
+      name: "Yago (escritório)",
+      defaultClientId: null,
+      empresas: ["pc-001", "pc-002", "pc-005"],
+    },
   ];
 
   // --- Notas -----------------------------------------------------------------
@@ -828,9 +905,14 @@ function criarEstado() {
     }
   }
 
-  // Só a pc-001 tem guias LIBERADAS. A rota /client já filtra `liberadaCliente`,
-  // então a pc-002 responde lista vazia — que é o estado real de quem ainda não
-  // teve nada liberado pelo contador.
+  // ⚠⚠ ESTE BLOCO DIZIA "a rota /client já filtra `liberadaCliente`" E FICOU FALSO EM 30/08/2026:
+  // a lista do cliente parou de filtrar (dono: *"INSS e parcelamento não aparecem"*). Só as AÇÕES
+  // — baixar, recalcular, confirmar pagamento — continuam exigindo a liberação.
+  //
+  // ⚠⚠ POR ISSO O MOCK PRECISA DE GUIA **NÃO LIBERADA**, e ela está plantada abaixo: sem ela o
+  // desenho da linha travada (botão desabilitado + a frase *"seu contador ainda não liberou"*)
+  // só existiria em produção. Medido lá: **232 não liberadas contra 24 liberadas** na carteira —
+  // o estado comum é justamente o que faltava offline. Sexta vez que o mock esconderia um ramo.
   const guias = [];
   const circular = new Map(); // competencia -> dasTotal do extrato PGDAS-D
   const hoje = new Date();
@@ -858,6 +940,10 @@ function criarEstado() {
         ["SIMPLES", das],
         ["INSS", Number((das * 0.42).toFixed(2))],
       ]) {
+        // ⚠⚠ O INSS DA COMPETÊNCIA MAIS ANTIGA NÃO FOI LIBERADO — é o caso do dono, literalmente:
+        // *"INSS e parcelamento não aparecem"*. Uma só, e da espécie que ele nomeou, para a linha
+        // travada aparecer sem afogar a lista.
+        const liberada = !(tipo === "INSS" && comp === competencias[0]);
         seqGuia += 1;
         guias.push({
           _clientId: empresa.companyId,
@@ -918,8 +1004,10 @@ function criarEstado() {
           // exercitar a tela, e uma tela que só é vista num dos estados é uma tela não conferida —
           // as três AUSÊNCIAS são o que mais importa aqui, e são as mais fáceis de deixar de fora.
           ...linhaDigitavelDoMock(seqGuia, valor),
-          liberadaCliente: true,
-          liberadaEm: venc.toISOString(),
+          liberadaCliente: liberada,
+          // ⚠ Sem liberação não há data de liberação. Carimbar uma aqui afirmaria um ato que não
+          // aconteceu — e é por campos assim que "liberada" e "não liberada" ficam indistinguíveis.
+          liberadaEm: liberada ? venc.toISOString() : null,
           vazioEm: null,
           vazioPor: null,
           vazioMotivo: null,
@@ -928,6 +1016,118 @@ function criarEstado() {
         });
       }
     }
+    // ⚠⚠ OS TRÊS RAMOS QUE O MOCK ESCONDIA — sétima vez nesta base (31/08/2026).
+    //
+    // Até aqui TODA guia do mock nascia com `extracted: null`, `parcelamentoId: null` e um dos dois
+    // tipos (`SIMPLES`/`INSS`). Consequência: o rótulo da **DARF consolidada do Lucro Presumido** —
+    // consertado no MESMO dia, e que é o que faz a guia se chamar "PIS · COFINS" em vez de "OUTRA"
+    // — era **inalcançável offline**, e o mesmo valia para a precedência da PARCELA.
+    //
+    // ⚠ A COMPOSIÇÃO NÃO FOI INVENTADA: as denominações são as MEDIDAS em produção em 31/08/2026
+    // (`scripts/diag-denominacao-composicao.mjs`), incluindo o campo `tributo` já preenchido, que é
+    // a forma de 24 dos 29 itens da base. Os VALORES são fictícios, como todo dinheiro deste mock.
+    //
+    // ⚠ E o `valor` que se escreve aqui pode NÃO ser o que a tela mostra: `linhaDigitavelDoMock`
+    // devolve `valor` nos ramos em que a linha digitável foi lida, e o spread vem depois — de
+    // propósito, para o número impresso na linha e o da guia baterem. Quem for conferir um valor
+    // específico nestas linhas tem de olhar o ramo do `seq % 4`, não só o literal.
+    {
+      const doPresumido = empresas.find((e) => e.companyId === "pc-005");
+      const compAtual = competencias[competencias.length - 2];
+      const [ya, ma] = compAtual.split("-").map(Number);
+      const vencDarf = new Date(Date.UTC(ya, ma, 25));
+      const base = {
+        _clientId: doPresumido?.companyId,
+        companyId: doPresumido?.companyId,
+        competencia: compAtual,
+        valorRecalculado: null,
+        status: "PROCESSED",
+        emailStatus: "SENT",
+        emailLastError: null,
+        paymentStatus: "OPEN",
+        paymentStatusSource: null,
+        paymentConfirmedAt: null,
+        serproLastCheckedAt: null,
+        serproLastCheckResult: null,
+        serproService: null,
+        canConfirmPayment: true,
+        canRecalculate: false,
+        vencida: false,
+        vencimentoEstimado: false,
+        avisoDeRecalculo: null,
+        numeroParcela: null,
+        quantidadeParcelas: null,
+        anoMesParcela: null,
+        baixada: false,
+        parcelaEstado: null,
+        parcelamentoLabel: null,
+        parcelamentoTipo: null,
+        parcelamentoNumero: null,
+        parcelamentoId: null,
+        liberadaCliente: true,
+        vazioEm: null,
+        vazioPor: null,
+        vazioMotivo: null,
+        vencimento: vencDarf.toISOString(),
+        createdAt: vencDarf.toISOString(),
+        updatedAt: vencDarf.toISOString(),
+      };
+      if (doPresumido) {
+        seqGuia += 1;
+        guias.push({
+          ...base,
+          guideId: `gui-${seqGuia}`,
+          // ⚠⚠ É ASSIM QUE ELA É GRAVADA: um documento só, `tipo: "OUTRA"`, com os tributos DENTRO.
+          // Sem esta linha, a tela que escreve "PIS · COFINS" nunca é exercida offline.
+          tipo: "OUTRA",
+          valor: 1435.49,
+          extracted: {
+            composicao: [
+              { tributo: "PIS", denominacao: "PIS - FATURAMENTO - PJ EM GERAL", total: 431.25 },
+              { tributo: "COFINS", denominacao: "COFINS - FATURAMENTO/PJ EM GERAL", total: 1004.24 },
+            ],
+          },
+          ...linhaDigitavelDoMock(seqGuia, 1435.49),
+          liberadaEm: vencDarf.toISOString(),
+        });
+        // ⚠⚠ O CONTRAPONTO, e ele importa tanto quanto: `OUTRA` **sem composição** continua se
+        // chamando "OUTRA", porque é o que está GRAVADO. Medido: 7 das 20 guias `OUTRA` da base
+        // estão assim. Sem esta linha, "OUTRA" pareceria um estado que não existe mais.
+        seqGuia += 1;
+        guias.push({
+          ...base,
+          guideId: `gui-${seqGuia}`,
+          tipo: "OUTRA",
+          valor: 320.18,
+          extracted: null,
+          ...linhaDigitavelDoMock(seqGuia, 320.18),
+          liberadaEm: vencDarf.toISOString(),
+        });
+      }
+      // ⚠⚠ A PARCELA DE PARCELAMENTO — na empresa do SIMPLES, que é onde ela existe (PARCSN).
+      // Ela é gravada com `tipo: "SIMPLES"`, IDÊNTICA ao DAS do mês: o que as separa é o
+      // `parcelamentoId`, e o rótulo tem de decidir por ele ANTES do tipo. Sem esta linha, a
+      // precedência que impede a parcela de se passar pelo DAS não é exercida offline.
+      seqGuia += 1;
+      guias.push({
+        ...base,
+        _clientId: empresas[0].companyId,
+        companyId: empresas[0].companyId,
+        guideId: `gui-${seqGuia}`,
+        tipo: "SIMPLES",
+        valor: 512.7,
+        extracted: null,
+        parcelamentoId: "parc-mock-1",
+        numeroParcela: 7,
+        quantidadeParcelas: 60,
+        parcelamentoLabel: "Parcela 7 de parcelamento",
+        parcelamentoTipo: "PARCSN",
+        parcelamentoNumero: "0211.00012.0011122233.26-69",
+        ...linhaDigitavelDoMock(seqGuia, 512.7),
+        liberadaEm: vencDarf.toISOString(),
+      });
+    }
+
     // Ordem da rota: updatedAt desc.
     guias.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
   }
@@ -1079,6 +1279,10 @@ function criarEstado() {
      * modo offline — em produção quem guarda é `saidas_avulsas_cliente` e `series_recorrentes`.
      */
     saidasDoCliente: new Map(),
+    // ⚠⚠ O que o cliente MEXEU nas séries do fluxo (31/08/2026): `empresa -> { serieId: dia }` e
+    // `empresa -> [serieId]`. Sem eles, mudar o dia e excluir não mudariam nada na tela offline.
+    diasDasSeries: new Map(),
+    seriesExcluidas: new Map(),
     tokensRedefinicao,
     numeracaoNfse,
     tentativasNfse,
@@ -1272,6 +1476,23 @@ function exigirAcessoEmpresa(companyId) {
 // API
 // -----------------------------------------------------------------------------
 
+/**
+ * O PDF do DANFSe, como BLOB.
+ *
+ * ⚠ `pdfDeUmaLinha` devolve BASE64 (é o formato da rota de guia, que responde JSON). A rota real do
+ * DANFSe responde o PDF **cru**, e a tela faz `res.blob()` — então o mock decodifica aqui, para que
+ * o par mock/real entregue o mesmo TIPO à tela.
+ * ⚠ Extraída em 31/08/2026 porque passaram a existir DOIS caminhos que devolvem DANFSe (a nota
+ * capturada e a recém-emitida) — e duas cópias divergiriam no primeiro conserto.
+ */
+function pdfDoDanfse(texto) {
+  const base64 = pdfDeUmaLinha(texto);
+  const binario = window.atob(base64);
+  const bytes = new Uint8Array(binario.length);
+  for (let i = 0; i < binario.length; i += 1) bytes[i] = binario.charCodeAt(i);
+  return new Blob([bytes], { type: "application/pdf" });
+}
+
 export function createMockApi() {
   return {
     // --- Auth ---------------------------------------------------------------
@@ -1293,6 +1514,10 @@ export function createMockApi() {
           accountType: usuario.accountType,
           defaultClientId: usuario.defaultClientId,
           name: usuario.name,
+          // ⚠ O campo tem de viajar aqui como viaja no real (`sanitizeUser`): é ele que
+          // `exigirContaDeCliente` lê, e sem ele o mock recusaria a conta que o servidor aceita.
+          // ⚠ `=== true`, nunca truthy — ausência não é permissão, dos dois lados.
+          podeAbrirPortalDoCliente: usuario.podeAbrirPortalDoCliente === true,
         },
       };
       // Mesma trava do real — a chamada mora nos dois para não divergirem.
@@ -1439,9 +1664,25 @@ export function createMockApi() {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
       const nota = estado.notas.find((n) => n.clientId === id && n.invoiceId === String(notaId));
-      // O backend lê `PortalInvoice`; a nota emitida-e-não-confirmada não está lá.
-      if (!nota || nota.confirmadaPeloAdn === false) {
+      /**
+       * ⚠⚠ A NOTA RECÉM-EMITIDA GERA DANFSe — e este dublê dizia o contrário até 31/08/2026.
+       *
+       * O comentário antigo era *"o backend lê `PortalInvoice`; a nota emitida-e-não-confirmada não
+       * está lá"*. Verdade em 19/08; **falso desde 24/08**, quando `danfseDaNotaDoPortal.js` passou
+       * a ler também de `ServiceInvoice` a pedido do dono (*"preciso que a DANFE esteja
+       * imediatamente disponível"*). O mock ficou para trás e passou a RECUSAR o que o servidor
+       * serve — escondendo offline exatamente o ramo que o dono veio cobrar.
+       *
+       * ⚠ `hasXml` também não vale de guarda aqui: nas notas ainda não confirmadas ele é `false` de
+       * propósito, e significa "a rota do XML não serve por este id" — não "não há XML".
+       */
+      if (!nota) {
         throw new ApiError(404, "nota_nao_encontrada", "Nota não encontrada nesta empresa.");
+      }
+      if (nota.confirmadaPeloAdn === false) {
+        // ⚠ Sai PDF, como o servidor. O XML de onde ele nasce é o de `ServiceInvoice`, guardado na
+        // emissão — por isso o ramo do `hasXml` (logo abaixo) NÃO se aplica a esta nota.
+        return pdfDoDanfse(`DANFSe MOCK - nota ${nota.numero || nota.invoiceId}`);
       }
       if (!nota.hasXml) {
         throw new ApiError(
@@ -1464,11 +1705,7 @@ export function createMockApi() {
       // ⚠ `pdfDeUmaLinha` devolve BASE64 (é o formato da rota de guia, que responde JSON). A rota
       // real do DANFSe responde o PDF **cru**, e a tela faz `res.blob()` — então o mock decodifica
       // aqui, para que o par mock/real entregue o mesmo tipo à tela.
-      const base64 = pdfDeUmaLinha(`DANFSe MOCK - nota ${nota.numero}`);
-      const binario = window.atob(base64);
-      const bytes = new Uint8Array(binario.length);
-      for (let i = 0; i < binario.length; i += 1) bytes[i] = binario.charCodeAt(i);
-      return new Blob([bytes], { type: "application/pdf" });
+      return pdfDoDanfse(`DANFSe MOCK - nota ${nota.numero}`);
     },
 
     // O DANFSe EM LOTE, offline — o zip com os PDFs + `RELATORIO.txt`.
@@ -1618,10 +1855,13 @@ export function createMockApi() {
           camada: "NOSSA", podeTentarDeNovo: false,
         });
       }
-      if (nota.confirmadaPeloAdn === false) {
-        throw new ApiError(422, "nota_sem_chave", "Esta nota ainda não voltou do sistema nacional.");
-      }
-      if (nota._statusEfetivo === "cancelada" || nota.status === "CANCELADA") {
+      /**
+       * ⚠⚠ A recusa `confirmadaPeloAdn === false` SAIU em 31/08/2026 — a rota real passou a ler
+       * `ServiceInvoice` e cancela a nota recém-emitida (dono: *"quero poder cancelar logo após a
+       * emissão, simples"*). O mock recusava o que o servidor aceita, escondendo o ramo offline.
+       */
+      if (nota._statusEfetivo === "cancelada" || nota.status === "CANCELADA"
+        || nota.status === "CANCELAMENTO_ENVIADO") {
         throw new ApiError(422, "nota_ja_cancelada", "Esta nota já consta cancelada.");
       }
 
@@ -1673,9 +1913,16 @@ export function createMockApi() {
         );
       }
 
-      nota.status = "CANCELADA";
-      nota._statusEfetivo = "cancelada";
-      return { ok: true, evento: "e101101", status: "cancelled", notaId: nota.invoiceId, numero: nota.numero };
+      /**
+       * ⚠⚠ `CANCELAMENTO_ENVIADO`, não `CANCELADA` — como a produção (31/08/2026). O evento foi
+       * ACEITO, mas quem afirma o estado final é o ADN, e a lista real só diz "Cancelada" quando a
+       * captura trouxer o evento. Um mock que pulasse direto para CANCELADA esconderia o chip
+       * intermediário — exatamente o ramo que o dono veio cobrar.
+       * ⚠ `_statusEfetivo` fica como está: ele alimenta a marca d'água do DANFSe, e o ADN ainda
+       * não afirmou nada.
+       */
+      nota.status = "CANCELAMENTO_ENVIADO";
+      return { ok: true, evento: "e101101", status: "cancelled", refletidoNaLista: false, notaId: nota.invoiceId, numero: nota.numero };
     },
 
     // --- Guias --------------------------------------------------------------
@@ -1687,7 +1934,8 @@ export function createMockApi() {
 
       const filtradas = estado.guias
         .filter((g) => g._clientId === id)
-        .filter((g) => g.liberadaCliente) // o /client só devolve liberadas
+        // ⚠⚠ O FILTRO SAIU EM 30/08/2026, junto com o da rota real — e as duas têm de sair juntas:
+        // mock que esconde o que o servidor mostra treina a tela para um estado que não existe.
         .filter((g) => (competencia ? g.competencia === competencia : true));
 
       const total = filtradas.length;
@@ -1765,7 +2013,7 @@ export function createMockApi() {
      * valor que faz a Circular do CONTADOR mostrar "⏳ cliente" e o razão NÃO ser marcado.
      * Gravar "MANUAL" aqui esconderia justamente a distinção que a entrega existe para criar.
      */
-    async confirmarPagamentoDaGuia(companyId, guideId) {
+    async confirmarPagamentoDaGuia(companyId, guideId, { pagoEm } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
       const guia = estado.guias.find((g) => g._clientId === id && g.guideId === String(guideId));
@@ -1775,10 +2023,40 @@ export function createMockApi() {
           message: "Esta guia já consta como paga.",
         });
       }
+      /**
+       * ⚠⚠ O MOCK RECUSA A DATA COMO O SERVIDOR RECUSA (30/08/2026), e tem de ser assim: mock que
+       * aceita o que o real rejeita treina a tela errada — regra escrita deste app.
+       * ⚠ A ordem das recusas é a mesma da regra pura (`application/guides/lib/dataDoPagamento.js`),
+       * e os códigos também: a tela traduz pelo código, não pela frase.
+       */
+      const bruto = String(pagoEm ?? "").trim();
+      if (!bruto) {
+        throw new ApiError(400, "DATA_DO_PAGAMENTO_AUSENTE", "Informe o dia em que você pagou esta guia.", {
+          message: "Informe o dia em que você pagou esta guia.",
+        });
+      }
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(bruto);
+      const dt = m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : null;
+      const valida = Boolean(m) && dt.getUTCFullYear() === Number(m[1])
+        && dt.getUTCMonth() === Number(m[2]) - 1 && dt.getUTCDate() === Number(m[3]);
+      if (!valida) {
+        throw new ApiError(400, "DATA_DO_PAGAMENTO_INVALIDA", "Esta data não existe.", {
+          message: "Esta data não existe. Informe o dia em que você pagou, no formato dia/mês/ano.",
+        });
+      }
+      const agoraD = new Date();
+      if (dt.getTime() > Date.UTC(agoraD.getUTCFullYear(), agoraD.getUTCMonth(), agoraD.getUTCDate())) {
+        throw new ApiError(400, "DATA_DO_PAGAMENTO_NO_FUTURO", "Esta data ainda não chegou.", {
+          message: "Esta data ainda não chegou. Informe o dia em que você já pagou.",
+        });
+      }
+
       const agora = new Date().toISOString();
       guia.paymentStatus = "PAID";
       guia.paymentStatusSource = "CLIENTE";
-      guia.paymentConfirmedAt = agora;
+      // ⚠⚠ A DATA DO PAGAMENTO É A INFORMADA; o CLIQUE continua sendo `agora`. São dois fatos, e
+      // colapsá-los foi o defeito.
+      guia.paymentConfirmedAt = dt.toISOString();
       guia.clienteConfirmouEm = agora;
       guia.canConfirmPayment = false;
       guia.vencida = false;
@@ -1817,12 +2095,14 @@ export function createMockApi() {
           dasExtrato: Number(dasExtrato.toFixed(2)),
           efetiva: pct(impostosPagos, faturamento),
           deReceita: pct(dasExtrato, faturamento),
-          // ⚠⚠ O BLOCO DO PRESUMIDO PRECISA SER ALCANÇÁVEL OFFLINE. Este projeto já foi mordido
-          // QUATRO vezes por ramo que só existia contra o servidor real: a pc-001 é Simples, e sem
-          // este bloco o caminho `deLancamentos` — que é o do Lucro Presumido — nunca renderizaria
-          // no mock, e o `aliquotaDoPainel` seria testado só no papel.
+          // ⚠⚠ ESTE BLOCO É O CAMINHO ÚNICO DA TELA DESDE 30/08/2026 — dono: *"use sempre o que
+          // foi lançado"*. Ele dizia aqui *"o bloco do PRESUMIDO"*, e ficou falso no dia em que o
+          // Simples passou a lê-lo também. Este projeto já foi mordido QUATRO vezes por ramo que
+          // só existia contra o servidor real.
           //
           // ⚠ AS TRÊS SITUAÇÕES SÃO EXERCIDAS, e são elas que a tela precisa saber desenhar:
+          //   pc-001 → CALCULADA no SIMPLES, com UMA conta de imposto (o DAS), como a empresa
+          //            real — e SEM_LANCAMENTO nos meses sem nota;
           //   pc-002 → CALCULADA, com uma linha sem conta contábil (o caso REAL: 11 de 37
           //            provisões do Presumido nascem com a conta vazia);
           //   pc-003 → SEM_RECEITA_LANCADA (provisão existe, receita não foi lançada — medido em
@@ -1911,6 +2191,8 @@ export function createMockApi() {
         // escrita e não a mostra treina a tela a parecer quebrada. É a quinta vez que este mock
         // teria escondido um ramo.
         saidasDoCliente: estado.saidasDoCliente.get(id) || [],
+        diasDasSeries: estado.diasDasSeries.get(id) || {},
+        seriesExcluidas: estado.seriesExcluidas.get(id) || [],
       });
     },
 
@@ -2019,12 +2301,82 @@ export function createMockApi() {
       // pedir a remoção na tabela errada devolve "não encontrada". Um mock que ignorasse o tipo
       // deixaria a tela mandar o parâmetro errado e só descobrir em produção.
       const alvo = lista.find((s) => s.id === String(saidaId) && s.tipo === esperado);
+      /**
+       * ⚠⚠ A SÉRIE DO FIXTURE NÃO MORA EM `saidasDoCliente` — ela é do fluxo, e o cliente passou a
+       * poder tirá-la em 31/08/2026 (dono: *"pode ser excluído uma saída pelo usuário"*).
+       *
+       * ⚠ Antes, este ramo devolvia 404 sobre uma linha que está na frente da pessoa: o mock
+       * recusava o que o servidor aceita, e a tela pareceria quebrada offline.
+       * ⚠ No servidor ela não é APAGADA — é marcada, e continua na Conferência do contador. Aqui
+       * ela some da tela do cliente, que é o que este mock existe para mostrar.
+       */
+      if (!alvo && esperado === "RECORRENTE") {
+        /**
+         * ⚠⚠ O ID TEM DE SER DE UMA SÉRIE QUE EXISTE NO FLUXO — achado por teste em 31/08/2026.
+         *
+         * A primeira versão deste ramo aceitava QUALQUER id e respondia `ok`, "excluindo" uma série
+         * inexistente. O servidor real recusa (`buscarSerieDoCliente` → `serie_nao_encontrada`), e
+         * um mock mais permissivo esconderia exatamente o caso em que a tela manda o `tipo` errado:
+         * ela receberia sucesso offline e "não encontrada" em produção.
+         */
+        /**
+         * ⚠⚠ A EXISTÊNCIA É MEDIDA **SEM** AS EXCLUSÕES — e a ordem errada aqui foi pega por teste.
+         *
+         * Com `seriesExcluidas` aplicado, a série já excluída não aparece no fixture e a SEGUNDA
+         * tentativa respondia "não encontrada" em vez de "já excluída". São recusas diferentes e
+         * pedem coisas diferentes de quem lê: uma é engano de id, a outra é "isso já está feito".
+         * ⚠ É o que o servidor faz: `buscarSerieDoCliente` ACHA a linha de qualquer jeito (ela não
+         * é apagada) e só então recusa por já excluída.
+         */
+        const existe = fluxoDeCaixaDoMock(id, competenciaPadrao(), {
+          saidasDoCliente: estado.saidasDoCliente.get(id) || [],
+          diasDasSeries: estado.diasDasSeries.get(id) || {},
+          seriesExcluidas: [],
+        }).meses.flatMap((m) => m.linhas || [])
+          .some((l) => l?.referencia?.tipo === "serie" && l.referencia.id === String(saidaId));
+        if (!existe) throw new ApiError(404, "saida_nao_encontrada", { error: "saida_nao_encontrada" });
+
+        const jaExcluidas = estado.seriesExcluidas.get(id) || [];
+        if (jaExcluidas.includes(String(saidaId))) {
+          throw new ApiError(409, "serie_ja_excluida", { error: "serie_ja_excluida" });
+        }
+        estado.seriesExcluidas.set(id, [...jaExcluidas, String(saidaId)]);
+        return { ok: true, tipo: esperado, apagada: false };
+      }
       if (!alvo) throw new ApiError(404, "saida_nao_encontrada", { error: "saida_nao_encontrada" });
       if (alvo.estado !== "PENDENTE") {
         throw new ApiError(409, "saida_ja_decidida", { error: "saida_ja_decidida" });
       }
       estado.saidasDoCliente.set(id, lista.filter((s) => s.id !== alvo.id));
       return { ok: true };
+    },
+
+    /**
+     * ⚠⚠ O CLIENTE DIZ EM QUE DIA A SAÍDA CAI — vale para a SÉRIE INTEIRA (31/08/2026).
+     *
+     * > Dono: *"série inteira: esse pagamento é sempre dia 10."*
+     *
+     * ⚠ As MESMAS recusas do servidor, com os mesmos códigos: um mock mais permissivo deixaria a
+     * tela mandar um dia inválido e só descobrir em produção.
+     * ⚠ `null` LIMPA e devolve a linha à estimativa — é o desfazer do próprio cliente.
+     */
+    async definirDiaDaSaida(companyId, saidaId, dia) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const atual = { ...(estado.diasDasSeries.get(id) || {}) };
+      if (dia == null) {
+        delete atual[String(saidaId)];
+        estado.diasDasSeries.set(id, atual);
+        return { ok: true, dia: null };
+      }
+      const n = Number(dia);
+      // ⚠ Guard por TIPO: `Number(null) === 0` e 0 é finito — truthy deixaria passar.
+      if (!Number.isInteger(n) || n < 1 || n > 31) {
+        throw new ApiError(400, "dia_invalido", { error: "dia_invalido" });
+      }
+      atual[String(saidaId)] = n;
+      estado.diasDasSeries.set(id, atual);
+      return { ok: true, dia: n };
     },
 
     /**
@@ -2391,7 +2743,10 @@ export function createMockApi() {
 
     async emitirLoteDeNotas(companyId, arquivo, { consultas = null, ajustes = null } = {}) {
       await dormir();
-      exigirAcessoEmpresa(companyId);
+      // ⚠ O id RESOLVIDO, não o `companyId` cru: é por ele que `estado.notas` é chaveado (ver
+      // `fetchDanfseBlob`). Registrar a nota com o outro faria o download responder "não
+      // encontrada" — e foi exatamente o que aconteceu na primeira versão deste registro.
+      const idDaEmpresa = exigirAcessoEmpresa(companyId);
       const nome = String(arquivo?.name || "").toLowerCase();
 
       // ⚠⚠ A FLAG DESLIGADA É O ESTADO DE NASCENÇA, e a recusa é do SERVIDOR — não da tela. Como
@@ -2420,6 +2775,48 @@ export function createMockApi() {
       const loteId = `lote-mock-${Object.keys(LOTES_EMISSAO_MOCK).length + 1}`;
       const lote = montarLoteDoMock(loteId, prontas, nome);
       LOTES_EMISSAO_MOCK[loteId] = lote;
+
+      /**
+       * ⚠⚠ O LOTE PASSA A REGISTRAR AS NOTAS QUE EMITIU (31/08/2026) — e o mock mentia em DOIS
+       * pontos por não fazer isso.
+       *
+       * 1. Emitir um lote offline não mudava a lista de Notas. O comentário da emissão AVULSA já
+       *    diz por que isso importa: *"emitir e a lista de Notas não mudar é o defeito mais fácil
+       *    de deixar passar offline — e é o primeiro lugar onde o cliente vai conferir se deu
+       *    certo"*. Valia para uma nota e não valia para quarenta.
+       * 2. Sem a nota registrada, `fetchDanfseBlob` respondia `nota_nao_encontrada` para o
+       *    `serviceInvoiceId` do relatório — e o botão "Baixar" do lote, que é exatamente o que o
+       *    dono veio cobrar em 31/08, **não podia ser exercido offline**.
+       *
+       * ⚠ `invoiceId` É O `serviceInvoiceId`, e não um id novo: é assim no servidor — a emissão
+       * grava `ServiceInvoice`, e é esse id que o relatório carrega e que as rotas resolvem.
+       * ⚠ `confirmadaPeloAdn: false` e `hasXml: false`, como `serializeEmitidaNaoConfirmada`: a
+       * captura do ADN ainda não aconteceu. O DANFSe sai assim mesmo — é o conserto de 24/08.
+       */
+      const empresaDoLote = estado.empresas.find((e) => e.companyId === idDaEmpresa) || null;
+      for (const l of lote.linhas || []) {
+        if (l.desfecho !== "emitida" || !l.serviceInvoiceId) continue;
+        const agora = new Date().toISOString();
+        estado.notas.push({
+          clientId: idDaEmpresa,
+          invoiceId: l.serviceInvoiceId,
+          type: "NFSE",
+          numero: l.rpsNumero || null,
+          competencia: competenciaPadrao(),
+          issueDate: agora,
+          status: "EMITIDA",
+          total: Number(l.valorServicos) || 0,
+          emitente: { nome: empresaDoLote?.razao || "", cnpj: empresaDoLote?.cnpj || "" },
+          tomador: { nome: l.tomadorNome || "", cnpjCpf: l.tomadorDoc || "" },
+          updatedAt: agora,
+          hasXml: false,
+          hasPdf: false,
+          descricao: null,
+          papel: "EMIT",
+          confirmadaPeloAdn: false,
+          _statusEfetivo: "autorizada",
+        });
+      }
 
       // ⚠⚠ RECONHECIDO NÃO É "JÁ FOI EMITIDA" — e o mock precisa provar isso, senão o ramo em que
       // a tela oferece a RETENTATIVA (lote reconhecido com 0 emitidas) só existiria em produção.

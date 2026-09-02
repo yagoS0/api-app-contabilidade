@@ -136,6 +136,43 @@ export function conferirAliquotaIss({ regime, issRetido = false, aliquota = "" }
 }
 
 /**
+ * O `pTotTribSN` está em condição de emitir?
+ *
+ * ⚠⚠ ACHADO EM TESTE DE USABILIDADE (31/08/2026): a alíquota de ISS tinha guarda local e esta
+ * NÃO tinha. No Simples o campo é EXIGIDO pelo servidor, então a empresa que abrisse a tela sem
+ * alíquota apurada (ou apagasse o campo) preenchia a nota inteira, clicava em EMITIR — um ato
+ * fiscal — e só ali descobria a recusa. É literalmente o defeito que `conferirAliquotaIss` existe
+ * para não cometer, na tela ao lado do campo que já o resolvia.
+ *
+ * ⚠⚠ O CRITÉRIO NÃO É O MESMO DO ISS, E A DIFERENÇA É DA FONTE, não escolha desta tela:
+ * `NfseService.js:626` recusa `pTotTribSN` **ausente, NaN ou `< 0`** — e **ZERO PASSA**. A
+ * alíquota de ISS, essa, é exigida `> 0` (`:766`). Endurecer aqui para `> 0` faria a tela
+ * recusar uma nota que o sistema nacional aceita, que é o erro simétrico e igualmente caro.
+ *
+ * ⚠ Fora do Simples devolve `ok` sem olhar o valor: o campo não existe no formulário e o grupo
+ * `totTrib` não viaja (`pTotTribSNParaOPayload`). Conferir o que não é enviado bloquearia a
+ * emissão do Presumido por um número que ninguém declara.
+ *
+ * @returns {{ok: boolean, falta: string|null}} `falta` é a frase da tela; `null` quando está ok.
+ */
+export function conferirPTotTribSN({ regime, pTotTribSN = "" }) {
+  const { pTotTribSNNoFormulario } = camposDeImposto({ regime });
+  if (!pTotTribSNNoFormulario) return { ok: true, falta: null };
+  const n = percentual(pTotTribSN);
+  if (n === null) {
+    return {
+      ok: false,
+      falta:
+        "Informe a alíquota efetiva do Simples desta nota — sem ela a nota é recusada antes de sair daqui.",
+    };
+  }
+  if (n < 0) {
+    return { ok: false, falta: "A alíquota efetiva do Simples não pode ser negativa." };
+  }
+  return { ok: true, falta: null };
+}
+
+/**
  * A alíquota de ISS que VAI no payload — ou `null`, que significa NÃO MANDAR O CAMPO.
  *
  * ⚠ Fora do caso "não optante **com retenção marcada**" ela não viaja. Nem no Simples (o bloco

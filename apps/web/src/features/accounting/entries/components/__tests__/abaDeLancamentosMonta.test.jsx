@@ -58,13 +58,13 @@ describe("⚠⚠ ela monta sem ReferenceError", () => {
 
   it("⚠⚠ e o botão da Conferência aparece com o selo — o caso que quebrou", async () => {
     await montar({ onOpenConferencia: jest.fn() });
-    const b = screen.getByRole("button", { name: /Conferência/ });
+    const b = screen.getByRole("button", { name: /A lançar/ });
     expect(b).toHaveAttribute("data-pendencias", "4");
   });
 
   it("⚠ sem o handler, a barra monta igual — só sem o botão", async () => {
     await montar();
-    expect(screen.queryByRole("button", { name: /Conferência/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /A lançar/ })).toBeNull();
     expect(screen.getByRole("button", { name: /Import \/ Export/ })).toBeInTheDocument();
   });
 });
