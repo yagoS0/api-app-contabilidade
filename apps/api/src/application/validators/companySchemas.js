@@ -74,8 +74,18 @@ const companyBaseFields = {
   beneficioMunicipalNumero: z.string().max(20).optional().nullable(),
   beneficioMunicipalTipoReducao: z.string().max(20).optional().nullable(),
   beneficioMunicipalPRedBC: z.union([z.string().max(20), z.number()]).optional().nullable(),
-  cnaePrincipal: z.string().max(20).optional().nullable(),
-  cnaesSecundarios: z.array(z.string().max(20)).max(50).optional(),
+  // ⚠⚠ O `max(20)` TRAVAVA O CADASTRO DE 12 DAS 34 EMPRESAS — medido em producao (01/09/2026).
+  //   `Company.cnaePrincipal` guarda, nessas 12, a forma legada "codigo - descricao"
+  //   ("46.19-2-00 - Representantes comerciais…", 102 chars). O formulario le esse valor do banco,
+  //   devolve-o no payload, e o Zod recusava a empresa INTEIRA com `validation_failed` — antes de
+  //   o codigo chegar ao bloco do responsavel. Efeito: **nao dava para salvar NADA** nessas
+  //   empresas. E o defeito que o dono relatou como "nao consigo trocar o e-mail", "nao salva o
+  //   municipio" e "nao salva o CNAE" — os tres eram o MESMO 400.
+  // ⚠ O limite nao foi so afrouxado: `validateAndNormalizeCompanyProfile` passa a EXTRAIR o codigo
+  //   e a mandar a descricao para `atividades`, que e onde ela mora. O `max` aqui existe para
+  //   barrar texto absurdo, nao para julgar a forma — quem julga a forma e o normalizador.
+  cnaePrincipal: z.string().max(200).optional().nullable(),
+  cnaesSecundarios: z.array(z.string().max(200)).max(50).optional(),
   regimeTributario: z.enum(["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI", "OUTRO"]).optional().nullable(),
   endereco: enderecoSchema,
   guideNotificationEmail: z.string().refine((v) => v === "" || emailValido(v), "E-mail para guias inválido").or(z.literal("")).optional().nullable(),

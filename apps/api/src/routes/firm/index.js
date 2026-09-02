@@ -1299,7 +1299,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                   // ⚠ O que a CONSULTA ao CNPJ trouxe nesta edicao, se trouxe. E texto de terceiro
                   //   (BrasilAPI), entao ele so ENTRA junto do codigo — nunca decide qual codigo a
                   //   empresa tem, que continua saindo de `cnaePrincipal`/`cnaesSecundarios`.
-                  { descritas: Array.isArray(body?.atividadesDescritas) ? body.atividadesDescritas : [] }
+                  {
+                    descritas: [
+                      // ⚠⚠ AS DESCRICOES QUE VINHAM GRUDADAS NO PROPRIO `cnaePrincipal`. Em 12 das
+                      //   34 empresas a coluna do CODIGO guardava "codigo - descricao"; o
+                      //   normalizador passou a separar os dois, e sem esta linha a descricao
+                      //   sumiria no primeiro salvamento que finalmente funciona.
+                      ...(normalizedCompany.descricoesEmbutidas || []),
+                      // O que a consulta ao CNPJ trouxe agora vence, por ser mais nova.
+                      ...(Array.isArray(body?.atividadesDescritas) ? body.atividadesDescritas : []),
+                    ],
+                  }
                 ),
                 tipoTributario: normalizedCompany.regimeTributario,
                 regimeTributario: normalizedCompany.regimeTributario,
