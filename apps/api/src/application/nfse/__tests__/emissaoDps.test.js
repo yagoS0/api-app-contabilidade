@@ -452,13 +452,13 @@ describe("numeração na emissão", () => {
   //   • este caso **não segue**, porque ele é o ANÚNCIO. Derivando da constante ele passaria sempre,
   //     e a versão do documento fiscal poderia mudar sem nada ficar vermelho.
   //
-  // Medido em 01/09/2026, virando a constante para `"1.01"`: **852 de 853 testes continuam
-  // passando**, e o único vermelho é este. Ou seja, ele é hoje a ÚNICA coisa entre uma troca de
-  // versão e a produção — e é assim que se pretende que seja.
-  it("versão do leiaute sai da constante única (hoje 1.00)", async () => {
+  // ⚠⚠ ELE MORDEU: em 01/09/2026 a constante subiu de `"1.00"` para `"1.01"` e este foi o único
+  // vermelho da suíte — exatamente o papel dele. O literal foi trocado À MÃO, junto da decisão.
+  // A INÉRCIA da troca está medida em `dpsContraXsd.test.js` (o mesmo XML cabe nos dois esquemas).
+  it("versão do leiaute sai da constante única (hoje 1.01)", async () => {
     montarCenario();
     await NfseService.issue({ data: PAYLOAD_BASE, log });
-    expect(xmlEnviado()).toContain('versao="1.00"');
+    expect(xmlEnviado()).toContain('versao="1.01"');
   });
 
   // ── A SÉRIE AUTOMÁTICA, no caminho REAL da emissão (dono, 16/08/2026) ──────────────────────

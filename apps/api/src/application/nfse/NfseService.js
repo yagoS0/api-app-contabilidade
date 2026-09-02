@@ -38,18 +38,56 @@ import {
   log,
 } from "../../config.js";
 
-// ⚠ VERSÃO DO LEIAUTE — 1.00, E FICAR NELE É DECISÃO, NÃO INÉRCIA.
+// ⚠⚠ VERSÃO DO LEIAUTE — SUBIU PARA 1.01 EM 01/09/2026, COM A INÉRCIA MEDIDA.
+//
+// ⚠⚠ **ESTE BLOCO DIZIA "1.00, E FICAR NELE É DECISÃO, NÃO INÉRCIA" ATÉ 01/09/2026.** A decisão de
+// migrar é do dono e foi tomada junto com a de construir o IBS/CBS ("migrar para 1.01 e construir
+// IBS/CBS junto"). O que este comentário registra é a EVIDÊNCIA que autorizou a troca, porque uma
+// linha é fácil de subir e o efeito dela é um documento fiscal declarando outra versão.
 //
 // A Documentação Atual do portal publica o **1.01** (XSD de 11/02/2026; o pacote oficial traz
-// `Schemas/1.00` E `Schemas/1.01`). Há regra de expiração de versão (**E0001**/**E1260**), mas
-// ⚠ **a data de corte NÃO está publicada** — então migrar é decisão de risco, não urgência
-// conhecida. O que o 1.01 acrescenta é o grupo `IBSCBS` (reforma tributária), **facultativo** por
-// ora, e o projeto **não tem o XSD versionado** (não há um único `.xsd` na árvore): subir a versão
-// sem o schema para validar contra trocaria uma rejeição conhecida por uma desconhecida.
+// `Schemas/1.00` E `Schemas/1.01`). Há regra de expiração de versão (**E0001**/**E1260**), e
+// ⚠ **a data de corte NÃO está publicada**. O que o 1.01 acrescenta é o grupo `IBSCBS` (reforma
+// tributária), **facultativo** — ele NÃO é montado por este gerador; ver `INTEGRACAO_NFSE_IBSCBS`.
 //
-// Fica como CONSTANTE, num lugar só, para que a virada seja uma linha quando o dono decidir — e
-// não uma caçada por literais `"1.00"` espalhados. Ver o relatório da Fase 1.
-export const DPS_VERSAO = "1.00";
+// ⚠⚠ **A PROVA DE INÉRCIA: o MESMO XML que emitimos cabe nos DOIS esquemas.**
+// `__tests__/dpsContraXsd.test.js` › *"o MESMO XML emitido cabe nas DUAS versões do esquema"* roda a
+// checagem inteira (existência, ordem do `xs:sequence`, obrigatórios, `xs:choice`, facetas) contra
+// 1.00 **e** 1.01, em três cenários. Não é "gerar duas vezes e comparar": é o documento que sai
+// hoje cabendo nas duas.
+//
+// ⚠⚠ **DOZE TIPOS COMPLEXOS MUDARAM entre as versões, e CINCO deles o gerador escreve** — a leitura
+// anterior deste projeto dizia que só o `TCTribMunicipal` havia mudado, e estava errada:
+//
+//   TCInfDPS         +IBSCBS? no fim                → inerte (opcional, não escrevemos)
+//   TCServ           −lsadppu? −explRod?            → inerte (não escrevemos nenhum dos dois)
+//   TCInfoCompl      +xPed? +gItemPed? no meio      → inerte (opcionais; o que escrevemos continua
+//                                                     sendo subsequência válida)
+//   TCLocPrest       o grupo casava com o VAZIO e   → inerte SÓ porque `buildDpsXml` SEMPRE escreve
+//                    passou a exigir UMA opção        `<cLocPrestacao>` (ausente, cai para `cLocEmi`)
+//   TCEndereco       idem, com outra codificação    → inerte SÓ porque SEMPRE escrevemos `<endNac>`
+//
+// ⚠⚠ OS DOIS ÚLTIMOS SÃO "INERTE POR ACIDENTE FELIZ", NÃO POR CONSTRUÇÃO. Quem tornar o
+// `cLocPrestacao` ou o `endNac` condicional **precisa escrever o irmão** (`cPaisPrestacao` /
+// `endExt`): deixar os dois de fora é DPS **recusada no 1.01 e ACEITA no 1.00** — ou seja, o defeito
+// não apareceria antes da troca de versão.
+//
+// ⚠⚠ **ESTA CONSTANTE É O ORÁCULO.** `__tests__/dpsContraXsd.test.js` carrega o esquema
+// `Schemas/${DPS_VERSAO}` a partir DELA, e um teste falha se o diretório não existir. Antes de
+// 01/09/2026 o teste fixava `1.01` enquanto o gerador emitia `1.00`: **ele validava o documento
+// contra o esquema errado**. Isso importa daqui para a frente porque `TCTribMunicipal`
+// **reordenou os filhos** entre as versões — no instante em que o `tribMun` crescer (`pAliq`, `BM`,
+// `exigSusp`), um oráculo desalinhado aprovaria a ordem de uma versão num documento que declara a
+// outra. É a classe exata do E1235 que já custou três notas.
+// **Trocar esta linha muda o esquema conferido junto, por construção.**
+//
+// ⚠ O ANÚNCIO da troca é `emissaoDps.test.js` › *"versão do leiaute sai da constante única"*, que
+// fixa o literal DE PROPÓSITO — sem ele, a versão do documento fiscal mudaria sem nada ficar
+// vermelho. Ele é a única coisa entre uma troca de versão e a produção.
+//
+// ⚠ **A primeira emissão real em 1.01 precisa ser acompanhada.** Nenhum teste substitui isso: o
+// oráculo não confere as Regras de Negócio (`E####`) do Anexo I, e a expiração de versão é uma delas.
+export const DPS_VERSAO = "1.01";
 
 const REQUIRED_COMPANY_FIELDS = [
   "cnpj",
