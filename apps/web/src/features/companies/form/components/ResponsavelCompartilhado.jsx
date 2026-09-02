@@ -19,7 +19,9 @@
 // ⚠ NUNCA `--state-danger`. Vermelho, neste projeto, é o que BLOQUEIA o fechamento. Aqui nada
 // bloqueia: grupo de empresas com o mesmo dono é legítimo, e a troca confirmada é trabalho normal.
 
+import { useEffect, useRef } from "react";
 import {
+  MODO,
   ONDE_DEFINIR_SENHA,
   TITULO_CONFIRMACAO,
   tituloDaConfirmacao,
@@ -80,6 +82,25 @@ export function AvisoEmailCompartilhado({ email, empresas, empresaAtualId, carre
  * clicar sem ler, e o clique na linha errada recebe a mesma pergunta que o clique na certa.
  */
 export function ConfirmacaoAcessoProprio({ detalhes, razaoSocial, salvando = false, onConfirmar, onCancelar }) {
+  const caixa = useRef(null);
+  /**
+   * ⚠⚠ O PAINEL PRECISA VIR ATÉ O CONTADOR — achado da auditoria de 02/09/2026.
+   *
+   * Ele nasce COLADO ao campo do e-mail, no TOPO do formulário (é o campo que muda de dono, e é
+   * ele que precisa ser relido ao confirmar). O botão Salvar fica na barra FIXA do rodapé. Num
+   * formulário desta altura, quem clica embaixo não vê o que nasceu em cima — e o `Feedback` fica
+   * mudo de propósito (não é erro). Resultado relatado pelo dono: *"clico em salvar e não
+   * acontece nada"* / *"o responsável mudou mas apenas na tela de edição"* — a confirmação estava
+   * lá, fora da tela, esperando um clique que nunca veio.
+   *
+   * Rolar e FOCAR (é um `alertdialog`): o leitor de tela anuncia, o teclado já está dentro dele,
+   * e o olho vai atrás da rolagem. ⚠ `scrollIntoView` não existe no jsdom — daí o `?.`.
+   */
+  useEffect(() => {
+    if (!detalhes) return;
+    caixa.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    caixa.current?.focus?.({ preventScroll: true });
+  }, [detalhes]);
   if (!detalhes) return null;
   const frase = fraseDeConfirmacao({ detalhes, razaoSocial });
   // ⚠ O título vem do MODO. Fixo, ele anunciaria "responde por mais de uma empresa" numa tela que
@@ -88,6 +109,8 @@ export function ConfirmacaoAcessoProprio({ detalhes, razaoSocial, salvando = fal
   const titulo = tituloDaConfirmacao(detalhes);
   return (
     <div
+      ref={caixa}
+      tabIndex={-1}
       role="alertdialog"
       aria-label={titulo}
       data-testid="confirmacao-acesso-proprio"
@@ -118,7 +141,13 @@ export function ConfirmacaoAcessoProprio({ detalhes, razaoSocial, salvando = fal
             opacity: salvando ? 0.6 : 1,
           }}
         >
-          {salvando ? "Salvando…" : "Sim, criar acesso próprio para esta empresa"}
+          {/* ⚠ O botão diz o ATO — no modo VINCULO a empresa passa para uma conta que JÁ EXISTE;
+              "criar acesso próprio" ali seria confirmar lendo a consequência errada. */}
+          {salvando
+            ? "Salvando…"
+            : detalhes.modo === MODO.VINCULO
+              ? "Sim, vincular esta empresa à conta existente"
+              : "Sim, criar acesso próprio para esta empresa"}
         </button>
         <button
           type="button"

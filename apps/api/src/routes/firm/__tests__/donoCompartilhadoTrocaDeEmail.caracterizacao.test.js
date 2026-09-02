@@ -617,3 +617,98 @@ describe("PATCH /firm/companies/:id — o Client legado nao derruba a troca do r
     });
   });
 });
+
+// ⚠⚠ O CASO DO KLAUS NIGRO — salvar SEM mexer no responsável (02/09/2026).
+//
+// Relato do dono, a QUINTA vez: *"EU NAO CONSIGO ATUALIZAR O CADASTRO DO KLAUS NIGRO EM
+// PRODUÇÃO (…) NAO SALVA INCRIÇÃO MUNICIPAL, NAO MUDA RESPONSAVEL, NAO SALVA NADA"*.
+//
+// Medido em produção com o payload EXATO da tela (`buildCompanyPayload` sobre o que
+// `GET /firm/companies` devolve), sem mudar valor nenhum:
+//
+//   PATCH -> 409 owner_email_conta_compartilhada
+//      emailAtual: lizbarretodesousa@hotmail.com
+//      emailNovo:  lizbarretodesousa@hotmail.com     <- O MESMO
+//
+// A tela SEMPRE manda `ownerEmail`, e a rota decidia a TROCA sem perguntar se houve troca. Para
+// conta que atende 2+ empresas (5 na carteira: as 2 da liz, as 3 do vssouza) TODO salvar era
+// recusado — inscrição municipal, endereço, tudo —, porque o `throw` aborta a transação inteira.
+// E confirmando, `CRIAR_ACESSO_PROPRIO` tentava `user.create` com um e-mail que JÁ EXISTE.
+describe("⚠⚠ salvar SEM mudar o e-mail do responsável — o caso do KLAUS NIGRO", () => {
+  let app;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetBanco();
+    ligarPrismaAoBanco();
+    banco.clients.set(CLIENT_LEGACY, { id: CLIENT_LEGACY, email: EMAIL_ANTIGO, login: EMAIL_ANTIGO, name: "Dono", quantasCompanies: 1 });
+    app = montarApp();
+  });
+
+  function contaDeDuasEmpresas() {
+    semearUsuario({ id: "user-liz", email: EMAIL_ANTIGO, name: "JULIA" });
+    semearVinculo({ companyId: PORTAL_EDITADA, userId: "user-liz" });
+    semearVinculo({ companyId: "portal-lente", userId: "user-liz" });
+  }
+
+  test("⚠⚠ conta de 2 empresas + o MESMO e-mail → 200, e a EMPRESA é gravada (era 409 e nada)", async () => {
+    contaDeDuasEmpresas();
+
+    const res = await salvar(app, { ownerEmail: EMAIL_ANTIGO });
+
+    expect(res.status).toBe(200);
+    expect(res.body.error).toBeUndefined();
+    // O que o dono não conseguia: o cadastro da empresa CHEGA ao banco.
+    expect(prismaMock.company.update).toHaveBeenCalledTimes(1);
+    // E a CONTA fica exatamente como estava — nada criado, nada renomeado, nada movido.
+    expect(prismaMock.user.create).not.toHaveBeenCalled();
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(donoDe(PORTAL_EDITADA)).toEqual({ userId: "user-liz", email: EMAIL_ANTIGO });
+    expect(donoDe("portal-lente")).toEqual({ userId: "user-liz", email: EMAIL_ANTIGO });
+  });
+
+  test("⚠ o mesmo e-mail em CAIXA ALTA ou com espaço não vira 'troca' — a comparação é normalizada", async () => {
+    contaDeDuasEmpresas();
+    const res = await salvar(app, { ownerEmail: `  ${EMAIL_ANTIGO.toUpperCase()}  ` });
+    expect(res.status).toBe(200);
+    expect(prismaMock.user.create).not.toHaveBeenCalled();
+  });
+
+  test("⚠ com `confirmarNovoAcesso: true` e o mesmo e-mail, NÃO se cria conta (era P2002 em produção)", async () => {
+    // Era o segundo estrago: o contador confirmava o painel e a rota tentava `user.create` com
+    // um e-mail que já existe — colisão no `@unique`, transação revertida, cadastro perdido.
+    contaDeDuasEmpresas();
+    const res = await salvar(app, { ownerEmail: EMAIL_ANTIGO, confirmarNovoAcesso: true });
+    expect(res.status).toBe(200);
+    expect(prismaMock.user.create).not.toHaveBeenCalled();
+    expect(banco.vinculos.filter((v) => v.status === "ACTIVE")).toHaveLength(2);
+  });
+
+  test("conta compartilhada: o NOME digitado não renomeia a conta dos outros — e não bloqueia o salvar", async () => {
+    // Renomear uma conta que atende outras empresas é o arrasto de 19/08/2026 por outra porta.
+    contaDeDuasEmpresas();
+    const res = await salvar(app, { ownerEmail: EMAIL_ANTIGO, ownerName: "Nome Novo" });
+    expect(res.status).toBe(200);
+    expect(banco.users.get("user-liz").name).toBe("JULIA");
+    expect(prismaMock.company.update).toHaveBeenCalledTimes(1);
+  });
+
+  test("PRESERVADO: conta de UMA empresa, mesmo e-mail, nome novo → o nome é atualizado", async () => {
+    semearUsuario({ id: "user-dono", email: EMAIL_ANTIGO, name: "Nome Velho" });
+    semearVinculo({ companyId: PORTAL_EDITADA, userId: "user-dono" });
+    const res = await salvar(app, { ownerEmail: EMAIL_ANTIGO, ownerName: "Nome Novo" });
+    expect(res.status).toBe(200);
+    expect(banco.users.get("user-dono")).toMatchObject({ name: "Nome Novo", email: EMAIL_ANTIGO });
+  });
+
+  test("PRESERVADO: e-mail DIFERENTE numa conta de 2 empresas continua pedindo confirmação", async () => {
+    contaDeDuasEmpresas();
+    const res = await salvar(app, { ownerEmail: EMAIL_NOVO });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("owner_email_conta_compartilhada");
+    // ⚠ No banco real o `throw` reverte o `company.update` que veio antes; o dublê não tem
+    //   rollback, então aqui se mede o que importa: nenhuma conta foi criada nem movida.
+    expect(prismaMock.user.create).not.toHaveBeenCalled();
+    expect(donoDe(PORTAL_EDITADA)).toEqual({ userId: "user-liz", email: EMAIL_ANTIGO });
+  });
+});

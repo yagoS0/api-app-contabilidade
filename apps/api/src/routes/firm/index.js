@@ -46,6 +46,7 @@ import {
   hashDeSenhaInutilizavel,
   STATUS_DA_CONTA_NOVA,
 } from "../../application/companies/acessoDoResponsavel.js";
+import { normalizarEmail } from "@contabilidade/shared/email";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import { consumoDoMes } from "../../application/fiscal/serpro/SerproCallGuard.js";
 // Mesma definição de faturamento da apuração — a recusa de "marcar guia vazia" precisa concordar
@@ -1491,6 +1492,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                   vinculosDaConta,
                   confirmado: confirmarNovoAcessoInput,
                   contaDestinoExiste,
+                  // ⚠⚠ O E-MAIL MUDOU? — a pergunta que faltava (02/09/2026). A tela SEMPRE manda
+                  //   `ownerEmail` (semeia o campo com o valor gravado), então sem esta linha todo
+                  //   salvar de empresa cujo dono atende 2+ empresas caía em
+                  //   `owner_email_conta_compartilhada` com `emailAtual === emailNovo`, e a
+                  //   transação inteira voltava atrás — "não salva nada", medido no KLAUS NIGRO.
+                  //   Comparação NORMALIZADA (`normalizarEmail`), a mesma dos dois lados.
+                  emailMudou: normalizarEmail(ownerEmailInput) !== normalizarEmail(contaAtual?.email),
                 });
               }
 
@@ -1643,6 +1651,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                   // A tela aponta para a ação que JÁ existe (Credenciais → Acesso ao portal).
                   semSenha: true,
                 };
+              } else if (decisao === DECISAO.MANTER_CONTA) {
+                // ⚠⚠ O E-MAIL NÃO MUDOU (02/09/2026) — nada a fazer com a conta, e o salvar SEGUE.
+                // Era aqui que o cadastro inteiro morria: com o mesmo e-mail e conta de 2+
+                // empresas, a decisão pedia confirmação de uma troca que não existia.
+                // ⚠ O NOME só é atualizado em conta de UMA empresa: renomear uma conta que atende
+                //   outras é o arrasto de 19/08/2026 (defeito de produção) por outra porta. Numa
+                //   conta compartilhada o nome fica como está — e o salvar do resto não é
+                //   bloqueado por isso.
+                if (ownerNameInput && Number(vinculosDaConta) <= 1) {
+                  await tx.user.update({ where: { id: ownerLink.userId }, data: { name: ownerNameInput } });
+                }
               } else if (decisao === DECISAO.RENOMEAR) {
                 // RENOMEAR — o caminho de sempre, intacto.
                 //
@@ -1726,6 +1745,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             ownerEmail: ownerLinkAfter?.user?.email || null,
             ownerName: ownerLinkAfter?.user?.name || null,
           });
+        }, {
+          // ⚠ ESTA TRANSAÇÃO FAZ ~18 IDAS AO BANCO (portal, company, sócios, histórico, o bloco do
+          //   responsável com até 6 consultas, os dois `findFirst`, a releitura). O padrão do Prisma
+          //   é `timeout: 5000` / `maxWait: 2000` — contra o Postgres do Railway isso estoura como
+          //   P2028, que a rota devolve como `internal_error` SEM NOME: "não salva nada", de novo,
+          //   por outro caminho. Apontado na auditoria de 02/09/2026.
+          timeout: 20_000,
+          maxWait: 5_000,
         });
         const [comCompliance] = await attachGuideComplianceToCompaniesList([result]);
         const [company] = await anexarQuemLiberouEmissao([comCompliance]);

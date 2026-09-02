@@ -46,6 +46,47 @@ describe("decidirTrocaDeEmail", () => {
   });
 });
 
+// ⚠⚠ O E-MAIL NÃO MUDOU — o defeito que travava o cadastro inteiro de 5 empresas (02/09/2026).
+//
+// A tela SEMPRE manda `ownerEmail` (ela semeia o campo com o valor gravado). Sem este ramo, salvar
+// a inscrição municipal de uma empresa cujo dono atende 2+ empresas caía em `PEDIR_CONFIRMACAO`
+// com `emailAtual === emailNovo` — medido em produção no KLAUS NIGRO — e o `throw` abortava a
+// transação inteira. Confirmando era pior: `CRIAR_ACESSO_PROPRIO` com um e-mail que já existe.
+describe("⚠⚠ e-mail IGUAL ao atual → MANTER_CONTA, antes de qualquer outra pergunta", () => {
+  test("conta compartilhada, sem confirmação, e-mail igual → MANTER_CONTA (era PEDIR_CONFIRMACAO)", () => {
+    expect(decidirTrocaDeEmail({ vinculosDaConta: 2, confirmado: false, contaDestinoExiste: false, emailMudou: false }))
+      .toBe(DECISAO.MANTER_CONTA);
+  });
+
+  test("⚠ com confirmação também — confirmar uma troca que não existe não pode CRIAR conta", () => {
+    expect(decidirTrocaDeEmail({ vinculosDaConta: 2, confirmado: true, contaDestinoExiste: false, emailMudou: false }))
+      .toBe(DECISAO.MANTER_CONTA);
+  });
+
+  test("conta de uma empresa, e-mail igual → MANTER_CONTA (não RENOMEAR: não há o que renomear)", () => {
+    expect(decidirTrocaDeEmail({ vinculosDaConta: 1, confirmado: false, contaDestinoExiste: false, emailMudou: false }))
+      .toBe(DECISAO.MANTER_CONTA);
+  });
+
+  test("⚠ AUSENTE NÃO É 'não mudou' — chamador antigo continua decidindo a troca como sempre", () => {
+    // `undefined` preserva o comportamento de quem já chega sabendo que houve troca. Fosse
+    // `!emailMudou`, um chamador que esquecesse o parâmetro desligaria a proteção do arrasto.
+    expect(decidirTrocaDeEmail({ vinculosDaConta: 2, confirmado: false, contaDestinoExiste: false }))
+      .toBe(DECISAO.PEDIR_CONFIRMACAO);
+    expect(decidirTrocaDeEmail({ vinculosDaConta: 2, confirmado: false, contaDestinoExiste: false, emailMudou: undefined }))
+      .toBe(DECISAO.PEDIR_CONFIRMACAO);
+  });
+
+  test("e-mail que MUDOU segue as regras de sempre", () => {
+    expect(decidirTrocaDeEmail({ vinculosDaConta: 2, confirmado: false, contaDestinoExiste: false, emailMudou: true }))
+      .toBe(DECISAO.PEDIR_CONFIRMACAO);
+    expect(decidirTrocaDeEmail({ vinculosDaConta: 1, confirmado: false, contaDestinoExiste: false, emailMudou: true }))
+      .toBe(DECISAO.RENOMEAR);
+    expect(decidirTrocaDeEmail({ vinculosDaConta: 1, confirmado: false, contaDestinoExiste: true, emailMudou: true }))
+      .toBe(DECISAO.PEDIR_CONFIRMACAO_VINCULO);
+  });
+});
+
 describe("a conta nova nasce sem senha utilizável", () => {
   test("o hash não corresponde a nada que se possa adivinhar, e nunca é o mesmo duas vezes", async () => {
     const a = await hashDeSenhaInutilizavel();

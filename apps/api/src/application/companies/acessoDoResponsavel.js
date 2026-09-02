@@ -34,6 +34,21 @@ export const DECISAO = Object.freeze({
   PEDIR_CONFIRMACAO_VINCULO: "PEDIR_CONFIRMACAO_VINCULO",
   /** Confirmado: esta empresa é VINCULADA à conta existente; o vínculo antigo sai. */
   VINCULAR_CONTA_EXISTENTE: "VINCULAR_CONTA_EXISTENTE",
+  /**
+   * ⚠⚠ O E-MAIL NÃO MUDOU — não há troca a decidir (02/09/2026).
+   *
+   * Defeito medido em produção, relatado pelo dono cinco vezes como *"não salva nada"*: a tela
+   * SEMPRE manda `ownerEmail` (ela semeia o campo com o valor gravado), e a rota entrava aqui
+   * como se fosse troca. Para conta que atende 2+ empresas (5 empresas da carteira) o resultado
+   * era 409 `owner_email_conta_compartilhada` com `emailAtual === emailNovo` — e o `throw`
+   * abortava a transação inteira: inscrição municipal, endereço, tudo. E confirmando, o pior:
+   * `CRIAR_ACESSO_PROPRIO` tentava `user.create` com um e-mail que JÁ EXISTE (P2002).
+   *
+   * Nada sobre a CONTA se decide aqui: o e-mail fica, os vínculos ficam. O nome segue a regra de
+   * sempre na rota (só renomeia conta de UMA empresa — renomear conta compartilhada é o arrasto
+   * de 19/08/2026 por outra porta).
+   */
+  MANTER_CONTA: "MANTER_CONTA",
 });
 
 /**
@@ -45,8 +60,16 @@ export const DECISAO = Object.freeze({
  *   e o arrasto voltaria por essa fresta.
  * @param {boolean} confirmado  O contador viu o aviso na tela e confirmou.
  * @param {boolean} contaDestinoExiste  O e-mail digitado já pertence a OUTRO `User`.
+ * @param {boolean} [emailMudou]  O e-mail digitado é DIFERENTE do e-mail atual da conta. ⚠ Só
+ *   `false` explícito desvia para `MANTER_CONTA`; ausente (`undefined`) preserva o comportamento
+ *   de todo chamador antigo, que já chega aqui sabendo que houve troca.
  */
-export function decidirTrocaDeEmail({ vinculosDaConta, confirmado, contaDestinoExiste }) {
+export function decidirTrocaDeEmail({ vinculosDaConta, confirmado, contaDestinoExiste, emailMudou }) {
+  // ⚠⚠ SEM TROCA NÃO HÁ O QUE DECIDIR — e este ramo vem antes de TODOS os outros. Comparar
+  // `emailMudou === false` (e não `!emailMudou`) é deliberado: ausência do parâmetro não pode
+  // virar "não mudou", senão um chamador que esqueça de passá-lo desligaria a proteção do arrasto.
+  if (emailMudou === false) return DECISAO.MANTER_CONTA;
+
   // ⚠⚠ ESTE RAMO VEM PRIMEIRO, E ELE REVOGA UMA RECUSA — decisão do dono, 30/08/2026:
   // *"podemos usar o mesmo email para mais de uma empresa, assim damos o acesso da mesma pessoa a
   // todas as suas empresas"*. Até aqui a rota lançava `owner_email_already_in_use` neste ponto,
