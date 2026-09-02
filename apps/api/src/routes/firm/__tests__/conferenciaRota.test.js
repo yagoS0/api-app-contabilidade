@@ -67,6 +67,11 @@ jest.mock("../../../application/declarados/DeclaradoService.js", () => {
     aplicarTransicao: jest.fn(async () => ({ id: "d-1", estado: "CONTABILIZADO", valor: 1500 })),
     sugestoesDePagamento: jest.fn(async () => ({ linhas: [], totalDebitos: 0, totalNotas: 0 })),
     fundirPagamentoNaNota: jest.fn(async () => ({ id: "n-1", estado: "A_CONFERIR" })),
+    absorverDebitoJaContabilizado: jest.fn(async () => ({
+      debito: { id: "ofx-1", estado: "FUNDIDO", parDeclaradoId: "n-1" },
+      nota: { id: "n-1", estado: "CONTABILIZADO" },
+      divergencia: { diverge: true, dias: 7, dataDoLancamento: new Date("2026-07-15T00:00:00.000Z"), dataDoExtrato: new Date("2026-07-22T00:00:00.000Z") },
+    })),
     listarFila: jest.fn(async () => ({ itens: [], total: 0, pagina: 1, porPagina: 50 })),
     varrerInvariantes: jest.fn(async () => ({ ok: true })),
   };
@@ -434,10 +439,15 @@ describe("⚠⚠ o que a REVISÃO DA TELA apontou como faltando", () => {
 });
 
 describe("⚠⚠ O CASAMENTO DÉBITO × NOTA — as rotas", () => {
-  const { sugestoesDePagamento, fundirPagamentoNaNota } = require("../../../application/declarados/DeclaradoService.js");
+  const {
+    sugestoesDePagamento,
+    fundirPagamentoNaNota,
+    absorverDebitoJaContabilizado,
+  } = require("../../../application/declarados/DeclaradoService.js");
 
   const CASAMENTOS = () => request(makeApp()).get("/firm/companies/emp-1/conferencia/casamentos");
   const FUNDIR = (body) => request(makeApp()).post("/firm/companies/emp-1/conferencia/casamentos/fundir").send(body);
+  const ABSORVER = (body) => request(makeApp()).post("/firm/companies/emp-1/conferencia/casamentos/absorver").send(body);
 
   const debitoSerializavel = { id: "ofx-1", estado: ESTADO.A_CONFERIR, valor: 1500, descricaoOriginal: "PAGTO GOOGLE" };
   const notaSerializavel = { id: "n-1", estado: ESTADO.AGUARDANDO_PAGAMENTO, valor: 1500, descricaoOriginal: "GOOGLE CLOUD" };
@@ -505,6 +515,56 @@ describe("⚠⚠ O CASAMENTO DÉBITO × NOTA — as rotas", () => {
     const r = await FUNDIR({ declaradoOfxId: "ofx-1", declaradoNotaId: "n-1" });
     expect(r.status).toBe(400);
     expect(r.body.message).toMatch(/recarregue/i);
+  });
+
+  // ⚠⚠ ABSORVER — o quarto verbo (01/09/2026). A rota é irmã da de fundir, e o que a distingue
+  // está na RESPOSTA: a nota volta inteira (prova de que não foi tocada) e a divergência de datas
+  // viaja junto, porque absorver não corrige o razão.
+  it("⚠⚠ absorver manda os DOIS ids, escopados pelo PATH", async () => {
+    await ABSORVER({ declaradoOfxId: "ofx-1", declaradoNotaId: "n-1", portalClientId: "emp-INVASORA" });
+    const args = absorverDebitoJaContabilizado.mock.calls[0][0];
+    expect(args).toMatchObject({ portalClientId: "emp-1", declaradoOfxId: "ofx-1", declaradoNotaId: "n-1", usuarioId: "u-1" });
+  });
+
+  it("⚠⚠⚠ a DIVERGÊNCIA DE DATAS sai na resposta — decisão do dono: «absorve e AVISA»", async () => {
+    // ⚠ Campo fora do serializador some sem erro nenhum, e é justamente o aviso que sumiria: a tela
+    // mostraria o débito desaparecer e ninguém saberia que o razão está com outra data.
+    const r = await ABSORVER({ declaradoOfxId: "ofx-1", declaradoNotaId: "n-1" });
+    expect(r.status).toBe(200);
+    expect(r.body.divergencia).toEqual({
+      diverge: true, dias: 7, dataDoLancamento: "2026-07-15", dataDoExtrato: "2026-07-22",
+    });
+    // ⚠ Datas como DIA, nunca ISO completa — a mesma regra de `serializar`.
+    expect(r.body.divergencia.dataDoExtrato).not.toMatch(/T/);
+  });
+
+  it("⚠⚠ a NOTA volta na resposta, e é a prova de que ela não foi tocada", async () => {
+    const r = await ABSORVER({ declaradoOfxId: "ofx-1", declaradoNotaId: "n-1" });
+    expect(r.body.nota).toMatchObject({ id: "n-1", estado: "CONTABILIZADO" });
+    expect(r.body.declarado).toMatchObject({ id: "ofx-1", estado: "FUNDIDO" });
+  });
+
+  it("⚠ par incompleto recusa ANTES de tocar no serviço", async () => {
+    const r = await ABSORVER({ declaradoNotaId: "n-1" });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("par_incompleto");
+    expect(absorverDebitoJaContabilizado).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ a recusa «esta nota não está lançada» chega à tela — o conserto é usar o outro verbo", async () => {
+    absorverDebitoJaContabilizado.mockRejectedValueOnce(
+      new DeclaradoRecusado("nota_nao_esta_lancada", "Esta nota ainda não virou lançamento — o ato aqui é casar, não absorver."),
+    );
+    const r = await ABSORVER({ declaradoOfxId: "ofx-1", declaradoNotaId: "n-1" });
+    expect(r.status).toBe(400);
+    expect(r.body.message).toMatch(/casar/i);
+  });
+
+  it("⚠ escrever exige ACCOUNTANT — absorver tira um débito da fila", async () => {
+    jest.clearAllMocks();
+    await ABSORVER({ declaradoOfxId: "ofx-1", declaradoNotaId: "n-1" });
+    const comPiso = requireFirmCompanyAccess.mock.calls.filter(([o]) => o?.minRole === "ACCOUNTANT");
+    expect(comPiso.length).toBeGreaterThan(0);
   });
 });
 

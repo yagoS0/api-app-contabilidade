@@ -170,7 +170,8 @@ export const FRASE_DA_CANDIDATA = Object.freeze({
     "Você informou esta data à mão. Casar substitui a declaração pela data do extrato, que é prova.",
   [LEITURA_DA_CANDIDATA.JA_CONTABILIZADA]:
     "Esta nota já virou lançamento, e por isso não há o que casar — mas este débito é o pagamento dela. "
-    + "Não o contabilize à parte: seria a mesma despesa duas vezes. Para corrigir a data, desfaça o "
+    + "Não o contabilize à parte: seria a mesma despesa duas vezes. Absorver tira o débito da fila sem "
+    + "criar lançamento nenhum, e sem tocar no que já está no razão. Para corrigir a data, desfaça o "
     + "lançamento e refaça.",
   [LEITURA_DA_CANDIDATA.DATA_PRESUMIDA]:
     "Esta nota foi lançada sozinha, na data fixa que a regra deste fornecedor configurou — ninguém "
@@ -188,15 +189,78 @@ export const FRASE_DA_CANDIDATA = Object.freeze({
 export function lerCandidata(nota) {
   if (nota?.estado === ESTADO.CONTABILIZADO
     && nota?.origemPagamento === ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA) {
-    return { leitura: LEITURA_DA_CANDIDATA.DATA_PRESUMIDA, podeFundir: true };
+    return { leitura: LEITURA_DA_CANDIDATA.DATA_PRESUMIDA, podeFundir: true, podeAbsorver: false };
   }
   if (nota?.estado === ESTADO.CONTABILIZADO) {
-    return { leitura: LEITURA_DA_CANDIDATA.JA_CONTABILIZADA, podeFundir: false };
+    return { leitura: LEITURA_DA_CANDIDATA.JA_CONTABILIZADA, podeFundir: false, podeAbsorver: true };
   }
   if (nota?.estado === ESTADO.A_CONFERIR && !ehProvaDePagamento(nota?.origemPagamento)) {
-    return { leitura: LEITURA_DA_CANDIDATA.PAGAMENTO_DECLARADO, podeFundir: true };
+    return { leitura: LEITURA_DA_CANDIDATA.PAGAMENTO_DECLARADO, podeFundir: true, podeAbsorver: false };
   }
-  return { leitura: LEITURA_DA_CANDIDATA.SEM_PAGAMENTO, podeFundir: true };
+  return { leitura: LEITURA_DA_CANDIDATA.SEM_PAGAMENTO, podeFundir: true, podeAbsorver: false };
+}
+
+/**
+ * ⚠⚠ O QUARTO VERBO: **ABSORVER** — decisão do dono, 01/09/2026, e ele nasceu de um caso concreto.
+ *
+ * > *"eu posso ter feito os lançamentos através da nota, e depois importar o extrato, pois podem
+ * > haver pagamento a pessoa física, o que não gera nota, porém os pagamentos das notas estarão
+ * > contidos. Como não duplicar isso?"*
+ *
+ * ⚠⚠ **ATÉ AQUI ESSE CASO NÃO TINHA SAÍDA.** `JA_CONTABILIZADA` volta `podeFundir: false` — e com
+ * razão, não há data a preencher —, então a única coisa que a tela sabia dizer era *"não
+ * contabilize este débito à parte"*. O débito ficava na fila **para sempre**, e a instrução era um
+ * texto que depende de alguém ler e obedecer. A porta que existia de fato era a errada: qualquer
+ * clique em «Lançar» ali criava a segunda despesa.
+ *
+ * ⚠⚠ **O QUE ABSORVER FAZ, E — MAIS IMPORTANTE — O QUE ELE NÃO FAZ.** Ele marca o DÉBITO como
+ * `FUNDIDO` apontando para a nota, e para aí:
+ *
+ *   · **não cria lançamento** — o razão já tem o da nota;
+ *   · **não toca no lançamento que existe** — nem a data, nem a conta, nem o valor;
+ *   · **não muda a nota de estado** — ela continua `CONTABILIZADO`, como estava.
+ *
+ * É o reconhecimento sendo GRAVADO em vez de pedido por escrito: o débito sai da fila porque já
+ * está no razão, do outro lado.
+ *
+ * ⚠ Ele NÃO substitui `CORRIGIR_DATA_PRESUMIDA`: aquela nota foi lançada por uma REGRA, numa data
+ * que ninguém viu acontecer, e ali o extrato **corrige**. Aqui a data foi decidida por uma pessoa, e
+ * a decisão do dono é não sobrescrevê-la. Por isso `podeAbsorver` é exclusivo de `JA_CONTABILIZADA`.
+ */
+
+/**
+ * ⚠⚠ AS DUAS DATAS DIVERGEM? — a única perda da absorção, e por isso ela é DITA.
+ *
+ * > Dono, escolhendo entre absorver calado e absorver avisando: **"Absorve e AVISA a divergência"**.
+ *
+ * O lançamento afirma que o dinheiro saiu no dia que o contador usou; o extrato prova que saiu em
+ * outro. Absorver não corrige isso — corrigir exigiria reescrever um `AccountingEntry` que uma
+ * pessoa decidiu, o que é justamente o que o dono recusou. O que se pode fazer é **não deixar a
+ * diferença passar em silêncio**: quem quiser corrigir desfaz o lançamento e refaz.
+ *
+ * ⚠ `diverge: false` com `dias: 0` é resposta ("conferi, é o mesmo dia"); **data faltando é
+ * `diverge: null`** — "não sei" nunca se disfarça de "está tudo certo". A nota `CONTABILIZADO`
+ * sempre tem `dataPagamento` (é invariante da máquina), mas quem chama pode passar qualquer coisa.
+ *
+ * @returns {{diverge: boolean|null, dias: number|null, dataDoLancamento: Date|null, dataDoExtrato: Date|null}}
+ */
+export function divergenciaDeDatas({ debito, nota } = {}) {
+  const doExtrato = debito?.dataPagamento;
+  const doLancamento = nota?.dataPagamento;
+  if (!ehData(doExtrato) || !ehData(doLancamento)) {
+    return { diverge: null, dias: null, dataDoLancamento: null, dataDoExtrato: null };
+  }
+  // ⚠ Em dias civis inteiros: as duas colunas são `@db.Date`, e comparar milissegundos faria a
+  // mesma data com fusos diferentes parecer divergência.
+  const MS_DO_DIA = 24 * 60 * 60 * 1000;
+  const dia = (d) => Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / MS_DO_DIA);
+  const dias = dia(doExtrato) - dia(doLancamento);
+  return {
+    diverge: dias !== 0,
+    dias,
+    dataDoLancamento: doLancamento,
+    dataDoExtrato: doExtrato,
+  };
 }
 
 /** Os atos. Lista FECHADA. */

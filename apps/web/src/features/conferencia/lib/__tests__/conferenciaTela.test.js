@@ -427,7 +427,7 @@ describe("⚠ o tom vira `variant` do Button — num mapa nomeado, não numa tra
 
 describe("⚠⚠ O CASAMENTO — o sistema NUNCA escolhe entre notas", () => {
   const {
-    SEM_CASAMENTO, leituraDoCasamento, podeCasar, ordenarCasamentos,
+    SEM_CASAMENTO, leituraDoCasamento, podeCasar, podeAbsorver, fraseDaDivergencia, ordenarCasamentos,
   } = require("../conferenciaTela.js");
 
   const comSugestao = { debito: { id: "o-1" }, sugestao: { nota: { id: "n-1" } }, candidatos: [{}], motivo: null };
@@ -470,6 +470,28 @@ describe("⚠⚠ O CASAMENTO — o sistema NUNCA escolhe entre notas", () => {
     // Recusar por omissão tiraria o botão de toda linha no dia em que o campo não viesse.
     expect(podeCasar(comSugestao)).toBe(true);
   });
+
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
+  // ⚠⚠ O QUARTO VERBO: ABSORVER (dono, 01/09/2026) — e ele existe porque a nota JÁ LANÇADA era um
+  // beco sem saída. `podeFundir: false` e mais nada: o débito ficava na fila para sempre.
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
+  it("⚠⚠ a nota já contabilizada é a que se ABSORVE", () => {
+    expect(podeAbsorver({ ...comSugestao, sugestao: { nota: { id: "n-1" }, podeAbsorver: true } })).toBe(true);
+  });
+
+  it("⚠⚠ `podeAbsorver` AUSENTE é lido como FALSO — e a assimetria com `podeCasar` é proposital", () => {
+    // Lá o contrato antigo era *"toda sugestão se funde"*, e omissão significa o de sempre. Aqui o
+    // contrato antigo é *"este débito não tem saída"* — um botão que aparece por omissão de campo é
+    // um botão que ninguém decidiu mostrar.
+    expect(podeAbsorver(comSugestao)).toBe(false);
+    expect(podeAbsorver({ ...comSugestao, sugestao: { nota: { id: "n-1" }, podeAbsorver: "sim" } })).toBe(false);
+  });
+
+  it("⚠ sem sugestão não há verbo nenhum", () => {
+    expect(podeAbsorver({ debito: { id: "o-1" }, sugestao: null })).toBe(false);
+    expect(podeAbsorver({ sugestao: { nota: { id: "n-1" }, podeAbsorver: true } })).toBe(false);
+  });
+
 
   it("⚠⚠ AMBÍGUO é ÂMBAR, não vermelho — é o sistema funcionando, não quebrando", () => {
     expect(leituraDoCasamento(ambiguo).token).toBe("--state-warn");
@@ -745,5 +767,38 @@ describe("⚠⚠ cabecalhoDoGrupo — o grupo só fala quando tem o que dizer", 
   it("⚠ nulo/vazio não estoura e não inventa cabeçalho", () => {
     expect(cabecalhoDoGrupo(null)).toBeNull();
     expect(cabecalhoDoGrupo({ nome: "X", cnpj: null, itens: [], total: 0 })).toBeNull();
+  });
+});
+
+describe("⚠⚠ fraseDaDivergencia — a metade «e AVISA» da decisão do dono", () => {
+  const { fraseDaDivergencia } = require("../conferenciaTela.js");
+
+  it("⚠⚠ diverge: a frase diz as DUAS datas, quantos dias, e que absorver NÃO corrige", () => {
+    const f = fraseDaDivergencia({ diverge: true, dias: 5, dataDoLancamento: "2026-07-15", dataDoExtrato: "2026-07-20" });
+    expect(f).toMatch(/15\/07\/2026/);
+    expect(f).toMatch(/20\/07\/2026/);
+    expect(f).toMatch(/5 dias/);
+    expect(f).toMatch(/NÃO corrige/);
+    // ⚠ E diz QUAL É O CONSERTO. Aviso sem conserto ensina a ignorar o aviso.
+    expect(f).toMatch(/desfaça-o e refaça/i);
+  });
+
+  it("⚠ um dia é «1 dia», não «1 dias»", () => {
+    expect(fraseDaDivergencia({ diverge: true, dias: 1, dataDoLancamento: "2026-07-15", dataDoExtrato: "2026-07-16" }))
+      .toMatch(/1 dia de diferença/);
+  });
+
+  it("⚠ o sinal não vaza para a tela — «-5 dias de diferença» não é português", () => {
+    expect(fraseDaDivergencia({ diverge: true, dias: -5, dataDoLancamento: "2026-07-20", dataDoExtrato: "2026-07-15" }))
+      .toMatch(/5 dias de diferença/);
+  });
+
+  it("⚠⚠ mesma data NÃO vira aviso — e «não sei» também não", () => {
+    // ⚠ `diverge: null` é o «não sei» do servidor (faltou uma das datas). Inventar uma diferença
+    // que ninguém mediu é pior que não falar.
+    expect(fraseDaDivergencia({ diverge: false, dias: 0 })).toBeNull();
+    expect(fraseDaDivergencia({ diverge: null, dias: null })).toBeNull();
+    expect(fraseDaDivergencia(null)).toBeNull();
+    expect(fraseDaDivergencia(undefined)).toBeNull();
   });
 });

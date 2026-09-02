@@ -1285,3 +1285,203 @@ describe("⚠⚠ FUNDIR sobre nota de DATA PRESUMIDA — corrige, e não cria um
     expect(m.registros.get("n-9")).toMatchObject({ dataPagamento: DIA_REAL });
   });
 });
+
+
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠ ABSORVER — O QUARTO VERBO (01/09/2026), e o único que NÃO toca no outro lado.
+//
+// > Dono: *"eu posso ter feito os lançamentos através da nota, e depois importar o extrato, pois
+// > podem haver pagamento a pessoa física, o que não gera nota, porém os pagamentos das notas
+// > estarão contidos. Como não duplicar isso?"*
+//
+// ⚠⚠ ATÉ AQUI ESSE CASO NÃO TINHA SAÍDA NENHUMA: a nota já lançada volta `podeFundir: false`, e a
+// tela só sabia PEDIR que ninguém contabilizasse o débito à parte. Ele ficava na fila para sempre,
+// e a única porta que existia de fato era a errada.
+//
+// ⚠⚠ O QUE ESTE BLOCO MEDE É A NÃO-ESCRITA: nenhum `AccountingEntry` criado, nenhum atualizado, e
+// a nota voltando do banco IDÊNTICA. Um teste que só olhasse o débito ficar `FUNDIDO` passaria com
+// o razão sendo reescrito por baixo.
+// -------------------------------------------------------------------------------------------------
+describe("⚠⚠ ABSORVER o débito numa nota JÁ LANÇADA — sem criar e sem tocar no razão", () => {
+  const { absorverDebitoJaContabilizado } = require("../DeclaradoService.js");
+  const { LEITURA_DA_CANDIDATA, lerCandidata } = require("../lib/estadosDeclarado.js");
+
+  const DIA_DO_EXTRATO = new Date("2026-07-22T00:00:00.000Z");
+  const DIA_DO_LANCAMENTO = new Date("2026-07-15T00:00:00.000Z");
+
+  const debitoDoExtrato = (extra = {}) => ({
+    id: "ofx-7", portalClientId: "emp-1", origem: "OFX_CLIENTE", estado: ESTADO.A_CONFERIR,
+    valor: 1500, dataPagamento: DIA_DO_EXTRATO, origemPagamento: ORIGEM_PAGAMENTO.OFX,
+    descricaoOriginal: "PAGTO GOOGLE CLOUD", ofxImportId: "imp-7", fitId: "F7",
+    contaBancariaRef: "12345-6", parDeclaradoId: null, ...extra,
+  });
+
+  /** ⚠ A nota do caso do dono: o contador lançou por ela, à mão, ANTES de o extrato chegar. */
+  const notaLancada = (extra = {}) => ({
+    id: "n-7", portalClientId: "emp-1", origem: "NOTA_RECEBIDA", estado: ESTADO.CONTABILIZADO,
+    competencia: "2026-07", valor: 1500,
+    dataDocumento: new Date("2026-07-02T00:00:00.000Z"),
+    descricaoOriginal: "GOOGLE CLOUD BRASIL COMPUTACAO LTDA", cnpjFornecedor: "12345678000190",
+    dataPagamento: DIA_DO_LANCAMENTO, origemPagamento: ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR,
+    contaAplicada: "411020008", accountingEntryId: "ae-7", parDeclaradoId: null, ...extra,
+  });
+
+  /**
+   * ⚠ O dublê HONRA o `where` do `updateMany` — sem isso a pré-condição da corrida não teria prova.
+   * ⚠⚠ E ele expõe `accountingEntry` com `create` E `updateMany` dublados **de propósito**: é a
+   * única forma de a asserção "nada chegou ao razão" medir alguma coisa. Sem eles, um toque no
+   * razão explodiria com `TypeError` e o teste passaria pelo motivo errado.
+   */
+  function montar(registros) {
+    const mapa = new Map(registros.map((r) => [r.id, { ...r }]));
+    const razao = { criados: [], atualizados: [] };
+    const client = {
+      lancamentoDeclarado: {
+        findFirst: jest.fn(async ({ where }) => {
+          const r = mapa.get(where.id);
+          return r && r.portalClientId === where.portalClientId ? r : null;
+        }),
+        updateMany: jest.fn(async ({ where, data }) => {
+          const atual = mapa.get(where.id);
+          const casa = atual
+            && atual.portalClientId === where.portalClientId
+            && (where.estado === undefined || atual.estado === where.estado)
+            && (where.parDeclaradoId === undefined || (atual.parDeclaradoId ?? null) === where.parDeclaradoId);
+          if (!casa) return { count: 0 };
+          mapa.set(where.id, { ...atual, ...data });
+          return { count: 1 };
+        }),
+      },
+      accountingEntry: {
+        create: jest.fn(async (a) => { razao.criados.push(a); return { id: "ae-novo" }; }),
+        updateMany: jest.fn(async (a) => { razao.atualizados.push(a); return { count: 1 }; }),
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+      },
+    };
+    return { mapa, razao, client };
+  }
+
+  const absorver = (client, ofx = "ofx-7", nota = "n-7") => absorverDebitoJaContabilizado({
+    portalClientId: "emp-1", declaradoOfxId: ofx, declaradoNotaId: nota,
+    usuarioId: "u-1", agora: AGORA, client,
+  });
+
+  it("⚠⚠ o débito some ABSORVIDO — e é a única linha escrita", async () => {
+    const { client, mapa } = montar([debitoDoExtrato(), notaLancada()]);
+    const r = await absorver(client);
+
+    expect(mapa.get("ofx-7")).toMatchObject({ estado: ESTADO.FUNDIDO, parDeclaradoId: "n-7" });
+    expect(r.debito.estado).toBe(ESTADO.FUNDIDO);
+    // ⚠ UMA escrita, e só uma: a do débito.
+    expect(client.lancamentoDeclarado.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("⚠⚠⚠ A NOTA NÃO É TOCADA — nem estado, nem data, nem conta, nem lançamento", async () => {
+    // ⚠⚠ ESTA É A DECISÃO DO DONO, e ela é o que separa absorver de casar: a data do razão foi
+    // decidida por uma PESSOA. Sobrescrevê-la em silêncio apagaria essa decisão.
+    const antes = notaLancada();
+    const { client, mapa, razao } = montar([debitoDoExtrato(), antes]);
+    const r = await absorver(client);
+
+    expect(mapa.get("n-7")).toEqual(antes);
+    expect(r.nota).toEqual(antes);
+    // ⚠⚠ E NADA CHEGOU AO RAZÃO — nenhum lançamento criado, nenhum atualizado.
+    expect(razao.criados).toHaveLength(0);
+    expect(razao.atualizados).toHaveLength(0);
+  });
+
+  it("⚠⚠ A DIVERGÊNCIA DE DATAS VOLTA NA RESPOSTA — decisão do dono: «absorve e AVISA»", async () => {
+    // O razão diz 15/07; o banco prova 22/07. Absorver não corrige isso — quem quiser corrigir
+    // desfaz o lançamento e refaz. O que não pode é a diferença passar em silêncio.
+    const { client } = montar([debitoDoExtrato(), notaLancada()]);
+    const r = await absorver(client);
+    expect(r.divergencia).toMatchObject({
+      diverge: true, dias: 7, dataDoLancamento: DIA_DO_LANCAMENTO, dataDoExtrato: DIA_DO_EXTRATO,
+    });
+  });
+
+  it("mesma data: `diverge: false` — e o ato acontece igual", async () => {
+    const { client, mapa } = montar([
+      debitoDoExtrato({ dataPagamento: DIA_DO_LANCAMENTO }),
+      notaLancada(),
+    ]);
+    const r = await absorver(client);
+    expect(r.divergencia).toMatchObject({ diverge: false, dias: 0 });
+    expect(mapa.get("ofx-7").estado).toBe(ESTADO.FUNDIDO);
+  });
+
+  it("⚠⚠⚠ a nota lançada POR REGRA é RECUSADA — ali o ato certo é o casamento, que CORRIGE a data", async () => {
+    // ⚠⚠ As duas estão `CONTABILIZADO`. Absorver a de data PRESUMIDA jogaria fora a única prova
+    // que existe do dia real — e o dono construiu `CORRIGIR_DATA_PRESUMIDA` justamente para isso.
+    const porRegra = notaLancada({ origemPagamento: ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA });
+    expect(lerCandidata(porRegra).leitura).toBe(LEITURA_DA_CANDIDATA.DATA_PRESUMIDA);
+
+    const { client, mapa } = montar([debitoDoExtrato(), porRegra]);
+    await expect(absorver(client)).rejects.toMatchObject({
+      codigo: RECUSA_DO_SERVICO.NOTA_NAO_ESTA_LANCADA,
+    });
+    expect(mapa.get("ofx-7").estado).toBe(ESTADO.A_CONFERIR);
+  });
+
+  it("⚠⚠ e a nota AINDA EM ABERTO também é recusada — aquela se CASA", async () => {
+    // Absorvê-la deixaria a nota sem data de pagamento para sempre, e o débito sumido: a despesa
+    // ficaria no limbo, sem nunca virar lançamento.
+    const emAberto = notaLancada({
+      estado: ESTADO.AGUARDANDO_PAGAMENTO, dataPagamento: null, origemPagamento: null,
+      accountingEntryId: null, contaAplicada: null,
+    });
+    const { client, mapa } = montar([debitoDoExtrato(), emAberto]);
+    await expect(absorver(client)).rejects.toMatchObject({
+      codigo: RECUSA_DO_SERVICO.NOTA_NAO_ESTA_LANCADA,
+    });
+    expect(mapa.get("ofx-7").estado).toBe(ESTADO.A_CONFERIR);
+  });
+
+  it("⚠⚠ os DOIS LADOS têm de ser do tipo certo — a mesma guarda da fusão", async () => {
+    const { client } = montar([debitoDoExtrato({ id: "ofx-a" }), debitoDoExtrato({ id: "ofx-b" })]);
+    await expect(absorver(client, "ofx-a", "ofx-b")).rejects.toMatchObject({
+      codigo: RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE,
+    });
+  });
+
+  it("⚠ o casamento é RECONFERIDO no servidor — valor que não bate recusa", async () => {
+    // A sugestão que o contador viu pode ter envelhecido; quem decide no instante do clique é o
+    // servidor, e é a MESMA `debitoPagaNota` da fusão.
+    const { client, mapa } = montar([debitoDoExtrato(), notaLancada({ valor: 9999 })]);
+    await expect(absorver(client)).rejects.toMatchObject({
+      codigo: RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE,
+    });
+    expect(mapa.get("ofx-7").estado).toBe(ESTADO.A_CONFERIR);
+  });
+
+  it("⚠⚠ NA CORRIDA, o segundo request não absorve o mesmo débito duas vezes", async () => {
+    // A mesma assimetria da fusão: a leitura acontece FORA da escrita. O dublê congela o que os
+    // dois requests concorrentes veem e deixa a escrita enxergar o estado real.
+    const { client, mapa } = montar([debitoDoExtrato(), notaLancada(), notaLancada({ id: "n-8" })]);
+    const congelada = new Map([...mapa.entries()].map(([k, v]) => [k, { ...v }]));
+    client.lancamentoDeclarado.findFirst = jest.fn(async ({ where }) => congelada.get(where.id) ?? null);
+
+    await absorver(client);
+    await expect(absorver(client, "ofx-7", "n-8")).rejects.toMatchObject({
+      codigo: RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE,
+    });
+    expect(mapa.get("ofx-7").parDeclaradoId).toBe("n-7");
+  });
+
+  it("⚠⚠ MÊS FECHADO NÃO RECUSA — e a ausência da guarda é deliberada", async () => {
+    // ⚠ Nada aqui chega ao razão. Exigir mês aberto impediria de reconhecer, num mês já fechado,
+    // um débito que o próprio fechamento conferiu — e não reconhecer é deixá-lo oferecido ao lote
+    // como despesa sem nota, que é a contagem dupla.
+    isMonthClosed.mockResolvedValue(true);
+    const { client, mapa } = montar([debitoDoExtrato(), notaLancada()]);
+    await absorver(client);
+    expect(mapa.get("ofx-7").estado).toBe(ESTADO.FUNDIDO);
+    isMonthClosed.mockResolvedValue(false);
+  });
+
+  it("⚠ a auditoria fica: quem decidiu e quando", async () => {
+    const { client, mapa } = montar([debitoDoExtrato(), notaLancada()]);
+    await absorver(client);
+    expect(mapa.get("ofx-7")).toMatchObject({ decididoPor: "u-1", decididoEm: AGORA });
+  });
+});

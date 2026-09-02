@@ -797,6 +797,11 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
    *   ⚠ antes da primeira resposta ele também é `null`: "ainda não sei" e "não consegui saber" têm
    *     a mesma resposta segura, e distingui-los só mudaria o TEXTO — não a decisão.
    */
+  /**
+   * ⚠⚠ O AVISO DE DIVERGÊNCIA DE DATAS DA ABSORÇÃO — decisão do dono, 01/09/2026: *"absorve e
+   * AVISA"*. Ele vive AQUI, e não no painel, porque `key={versao}` remonta o painel a cada ato.
+   */
+  const [avisoDaDivergencia, setAvisoDaDivergencia] = useState(null);
   const [quaisCasam, setQuaisCasam] = useState(null);
 
   // ⚠⚠ O LOTE (Fase C). `null` = fechado; `{ idsQueCasam }` = aberto.
@@ -1157,6 +1162,12 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
              divergiria da dele no instante em que uma recarregasse e a outra não. */
           aoSaberQuaisCasam={setQuaisCasam}
           podeEscrever={podeEscrever}
+          /* ⚠⚠ O AVISO DA ABSORÇÃO MORA AQUI PORQUE O `key` ACIMA REMONTA O PAINEL — medido no
+             navegador em 01/09/2026: guardado lá dentro, ele nascia e morria no mesmo clique, e o
+             contador via o débito sumir sem nunca saber que o razão está com outra data. */
+          avisoDaDivergencia={avisoDaDivergencia}
+          aoAvisarDivergencia={setAvisoDaDivergencia}
+          aoDispensarAviso={() => setAvisoDaDivergencia(null)}
           aoCasar={() => {
             setVersao((v) => v + 1);
             carregar();

@@ -1940,6 +1940,23 @@ export function createRealApi() {
         body: JSON.stringify({ declaradoOfxId, declaradoNotaId }),
       });
     },
+    /**
+     * ⚠⚠ ABSORVER — o quarto verbo (01/09/2026), para a nota que JÁ virou lançamento.
+     *
+     * > Dono: *"eu posso ter feito os lançamentos através da nota, e depois importar o extrato (…)
+     * > como não duplicar isso?"*
+     *
+     * ⚠ A diferença para `postConferenciaFundir` é o que ele NÃO faz: nada é criado no razão e a
+     * nota não é tocada. O débito sai da fila porque a despesa já está lançada, do outro lado.
+     * ⚠⚠ A resposta traz `divergencia` — o razão pode estar com uma data e o banco com outra, e
+     * absorver não corrige isso. A decisão do dono foi AVISAR.
+     */
+    async postConferenciaAbsorver(companyId, { declaradoOfxId, declaradoNotaId }) {
+      return request(`/firm/companies/${companyId}/conferencia/casamentos/absorver`, {
+        method: "POST",
+        body: JSON.stringify({ declaradoOfxId, declaradoNotaId }),
+      });
+    },
     // ⚠⚠ `desde` É OBRIGATÓRIA (o servidor recusa com 400 sem ela). São 1.897 notas recebidas: sem
     // corte, a primeira varredura produz a base inteira — e isso não é fila, é muro. Um default
     // aqui faria a TELA escolher o tamanho do trabalho, que é decisão do contador.

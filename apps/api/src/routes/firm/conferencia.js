@@ -13,6 +13,7 @@
 //   POST /conferencia/varrer-notas?desde=AAAA-MM-DD   as notas recebidas viram fila
 //   GET  /conferencia/casamentos                 debito do extrato x nota (SO SUGERE)
 //   POST /conferencia/casamentos/fundir          o debito data a nota, e some absorvido
+//   POST /conferencia/casamentos/absorver        a nota JA foi lancada: o debito so some
 //
 // ⚠⚠ NENHUMA REGRA MORA AQUI. Quem decide se um ato pode acontecer é
 // `application/declarados/lib/estadosDeclarado.js`; quem monta o lançamento é
@@ -28,6 +29,7 @@ import {
   COMPETENCIA_AUSENTE,
   DeclaradoRecusado,
   RECUSA_DO_SERVICO,
+  absorverDebitoJaContabilizado,
   aplicarTransicao,
   fundirPagamentoNaNota,
   listarFila,
@@ -89,6 +91,44 @@ const STATUS_DA_RECUSA = Object.freeze({
 function decimalParaTexto(v) {
   if (v == null) return null;
   return typeof v === "object" && typeof v.toString === "function" ? v.toString() : String(v);
+}
+
+/**
+ * ⚠⚠ A DIVERGÊNCIA DE DATAS DA ABSORÇÃO — a única perda daquele ato, e por isso ela SAI na resposta.
+ *
+ * ⚠ `diverge: null` é *"não sei"* (faltou uma das datas) e nunca vira `false`. As duas afirmações
+ * são diferentes: "conferi, é o mesmo dia" e "não consegui conferir".
+ * ⚠ As datas saem como DIA, pelo mesmo motivo de `serializar`.
+ */
+function serializarDivergencia(d) {
+  if (!d) return null;
+  return {
+    diverge: d.diverge,
+    dias: d.dias,
+    dataDoLancamento: d.dataDoLancamento ? dataCivilISO(d.dataDoLancamento) : null,
+    dataDoExtrato: d.dataDoExtrato ? dataCivilISO(d.dataDoExtrato) : null,
+  };
+}
+
+/**
+ * ⚠⚠ A CANDIDATA DO CASAMENTO — e cada campo daqui existe porque a tela decide com ele.
+ *
+ * `podeFundir` e `podeAbsorver` são DOIS VERBOS DIFERENTES e nunca são verdade juntos: a nota em
+ * aberto se casa, a nota já lançada se absorve. Campo fora do serializador some sem erro nenhum, e
+ * este projeto já foi mordido três vezes por isso — sem eles a tela ofereceria «Casar» numa nota
+ * contabilizada, e o clique voltaria recusado.
+ */
+function serializarCandidata(c) {
+  return {
+    nota: serializar(c.nota),
+    pista: c.pista,
+    frase: c.frase,
+    leitura: c.leitura,
+    podeFundir: c.podeFundir,
+    podeAbsorver: c.podeAbsorver,
+    fraseDaCandidata: c.fraseDaCandidata,
+    divergencia: serializarDivergencia(c.divergencia),
+  };
 }
 
 /**
@@ -707,24 +747,8 @@ export function createConferenciaRouter({ log } = {}) {
           // ⚠⚠ `podeFundir` e `fraseDaCandidata` VIAJAM — sem eles a tela ofereceria "Casar" numa
           // nota já contabilizada, e o clique voltaria recusado. Campo fora do serializador some
           // sem erro nenhum, e este projeto já foi mordido três vezes por isso.
-          sugestao: l.sugestao
-            ? {
-              nota: serializar(l.sugestao.nota),
-              pista: l.sugestao.pista,
-              frase: l.sugestao.frase,
-              leitura: l.sugestao.leitura,
-              podeFundir: l.sugestao.podeFundir,
-              fraseDaCandidata: l.sugestao.fraseDaCandidata,
-            }
-            : null,
-          candidatos: l.candidatos.map((c) => ({
-            nota: serializar(c.nota),
-            pista: c.pista,
-            frase: c.frase,
-            leitura: c.leitura,
-            podeFundir: c.podeFundir,
-            fraseDaCandidata: c.fraseDaCandidata,
-          })),
+          sugestao: l.sugestao ? serializarCandidata(l.sugestao) : null,
+          candidatos: l.candidatos.map(serializarCandidata),
           motivo: l.motivo,
           frase: l.frase,
         })),
@@ -755,6 +779,49 @@ export function createConferenciaRouter({ log } = {}) {
         agora: new Date(),
       });
       return res.json({ ok: true, declarado: serializar(nota) });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
+  /**
+   * ⚠⚠ ABSORVER — o quarto verbo, e o único que NÃO mexe no outro lado (decisão do dono, 01/09/2026).
+   *
+   * > *"eu posso ter feito os lançamentos através da nota, e depois importar o extrato (…) como não
+   * > duplicar isso?"*
+   *
+   * A nota já virou lançamento; o débito do extrato é o pagamento dela. Absorver tira o débito da
+   * fila **sem criar lançamento e sem tocar no que já está no razão**. Antes disto, esse caso não
+   * tinha saída nenhuma: o débito ficava para sempre, e a única porta aberta era a errada.
+   *
+   * ⚠ A resposta devolve a DIVERGÊNCIA DE DATAS. O lançamento continua com a data que o contador
+   * usou, e o extrato prova outra — absorver não corrige isso, e a decisão do dono foi AVISAR.
+   * ⚠ Piso de ESCRITA, e sem guarda de mês fechado: nada aqui chega ao razão.
+   */
+  router.post("/conferencia/casamentos/absorver", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const { declaradoOfxId, declaradoNotaId } = req.body || {};
+      if (!declaradoOfxId || !declaradoNotaId) {
+        return res.status(400).json({
+          ok: false,
+          error: "par_incompleto",
+          message: "Informe qual débito e qual nota já lançada devem ser absorvidos.",
+        });
+      }
+      const r = await absorverDebitoJaContabilizado({
+        portalClientId: String(req.params.companyId),
+        declaradoOfxId: String(declaradoOfxId),
+        declaradoNotaId: String(declaradoNotaId),
+        usuarioId: req.auth?.user?.id || null,
+        agora: new Date(),
+      });
+      return res.json({
+        ok: true,
+        declarado: serializar(r.debito),
+        // ⚠ A nota volta INTEIRA e inalterada: é a prova, na resposta, de que a absorção não a tocou.
+        nota: serializar(r.nota),
+        divergencia: serializarDivergencia(r.divergencia),
+      });
     } catch (e) {
       return responderRecusa(res, e, log);
     }

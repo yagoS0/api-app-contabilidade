@@ -615,6 +615,47 @@ export function podeCasar(linha) {
   return linha.sugestao.podeFundir !== false;
 }
 
+/**
+ * ⚠⚠ O QUARTO VERBO NA TELA: **absorver** — decisão do dono, 01/09/2026.
+ *
+ * > *"eu posso ter feito os lançamentos através da nota, e depois importar o extrato (…) como não
+ * > duplicar isso?"*
+ *
+ * ⚠⚠ ELE NUNCA CONVIVE COM «CASAR», e a exclusão vem do SERVIDOR: `podeFundir` e `podeAbsorver`
+ * saem os dois de `lerCandidata`, e não há leitura em que os dois sejam verdade. Aqui só se lê a
+ * resposta — decidir de novo, no front, daria duas regras divergindo na primeira correção.
+ *
+ * ⚠ `podeAbsorver` ausente é lido como FALSO, e a assimetria com `podeCasar` é proposital: lá o
+ * contrato ANTIGO era "toda sugestão se funde", então omissão significa o comportamento de sempre.
+ * Aqui o contrato antigo é "este débito não tem saída nenhuma", e um botão que aparece por omissão
+ * de campo é um botão que ninguém decidiu mostrar.
+ */
+export function podeAbsorver(linha) {
+  if (!linha?.sugestao?.nota?.id || !linha?.debito?.id) return false;
+  return linha.sugestao.podeAbsorver === true;
+}
+
+/**
+ * ⚠⚠ O AVISO DA DIVERGÊNCIA — a metade *"e AVISA"* da decisão do dono.
+ *
+ * Absorver não corrige a data do razão: ela foi decidida por uma pessoa, e sobrescrevê-la em
+ * silêncio apagaria essa decisão. O que se pode fazer é não deixar a diferença passar calada.
+ *
+ * ⚠ Três respostas, e as três são diferentes: `null` quando não há o que avisar (mesmo dia, ou o
+ * servidor não mandou), a frase quando diverge. **`diverge: null` («não sei») também não vira
+ * aviso** — inventar uma diferença que ninguém mediu é pior que não falar.
+ */
+export function fraseDaDivergencia(divergencia) {
+  if (!divergencia || divergencia.diverge !== true) return null;
+  const dias = Math.abs(Number(divergencia.dias) || 0);
+  const quantos = dias === 1 ? "1 dia" : `${dias} dias`;
+  return (
+    `⚠ O lançamento está com ${dataCivil(divergencia.dataDoLancamento)} e o extrato prova `
+    + `${dataCivil(divergencia.dataDoExtrato)} — ${quantos} de diferença. Absorver NÃO corrige o `
+    + "lançamento; para acertar a data, desfaça-o e refaça."
+  );
+}
+
 /** ⚠ A ordem: o que tem decisão esperando primeiro; o que não tem nota, por último. */
 export function ordenarCasamentos(linhas) {
   const peso = (l) => (l?.sugestao ? 0 : l?.motivo === SEM_CASAMENTO.AMBIGUO ? 1 : 2);

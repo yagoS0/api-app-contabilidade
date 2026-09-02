@@ -7841,6 +7841,8 @@ export function createMockApi() {
               // ⚠ A nota espera pagamento: é o caso de sempre, e ela se funde.
               leitura: "sem_pagamento",
               podeFundir: true,
+              // ⚠ Os DOIS VERBOS nunca são verdade juntos: a nota em aberto se CASA.
+              podeAbsorver: false,
               fraseDaCandidata: "Esta nota ainda não tem data de pagamento.",
             },
             candidatos: [
@@ -7863,6 +7865,7 @@ export function createMockApi() {
               frase: "O nome do fornecedor aparece na descrição do banco.",
               leitura: "pagamento_declarado",
               podeFundir: true,
+              podeAbsorver: false,
               fraseDaCandidata: "Você informou esta data à mão. Casar substitui a declaração pela data do extrato, que é prova.",
             },
             candidatos: [
@@ -7907,15 +7910,24 @@ export function createMockApi() {
               frase: "O nome do fornecedor aparece na descrição do banco.",
               leitura: "ja_contabilizada",
               podeFundir: false,
+              // ⚠⚠ E ELA É A ÚNICA QUE SE ABSORVE — o quarto verbo (01/09/2026). Até ele existir,
+              // este caso não tinha saída nenhuma: o débito ficava na fila para sempre.
+              podeAbsorver: true,
+              // ⚠⚠ A DIVERGÊNCIA VIAJA COM A SUGESTÃO, e o mock a traz DIVERGINDO de propósito: o
+              // razão diz 15/07 e o extrato prova 20/07. Com as duas datas iguais, o aviso — que é
+              // a metade "e AVISA" da decisão do dono — nasceria inalcançável offline.
+              divergencia: { diverge: true, dias: 5, dataDoLancamento: "2026-07-15", dataDoExtrato: "2026-07-20" },
               fraseDaCandidata: "Esta nota já virou lançamento, e por isso não há o que casar — mas este débito é o "
-                + "pagamento dela. Não o contabilize à parte: seria a mesma despesa duas vezes. Para corrigir a data, "
+                + "pagamento dela. Não o contabilize à parte: seria a mesma despesa duas vezes. Absorver tira o débito "
+                + "da fila sem criar lançamento nenhum, e sem tocar no que já está no razão. Para corrigir a data, "
                 + "desfaça o lançamento e refaça.",
             },
             candidatos: [
               {
                 nota: { id: "dec-5", valor: "2400.00", descricaoOriginal: "SINTROPIA SERVICOS LTDA", dataDocumento: "2026-07-03" },
                 pista: "NOME_NO_MEMO", frase: "O nome do fornecedor aparece na descrição do banco.",
-                leitura: "ja_contabilizada", podeFundir: false,
+                leitura: "ja_contabilizada", podeFundir: false, podeAbsorver: true,
+                divergencia: { diverge: true, dias: 5, dataDoLancamento: "2026-07-15", dataDoExtrato: "2026-07-20" },
               },
             ],
             motivo: null, frase: "",
@@ -7939,6 +7951,9 @@ export function createMockApi() {
               frase: "O nome do fornecedor aparece na descrição do banco.",
               leitura: "data_presumida",
               podeFundir: true,
+              // ⚠⚠ ELA TAMBÉM ESTÁ CONTABILIZADA e mesmo assim NÃO se absorve: ali o extrato
+              // CORRIGE a data que a regra presumiu. Absorvê-la jogaria fora a única prova do dia.
+              podeAbsorver: false,
               fraseDaCandidata: "Esta nota foi lançada sozinha, na data fixa que a regra deste fornecedor configurou — "
                 + "ninguém provou que o dinheiro saiu naquele dia. Casar troca a data presumida pela do extrato, no "
                 + "lançamento que já existe. Nenhum lançamento novo é criado.",
@@ -7960,6 +7975,21 @@ export function createMockApi() {
     async postConferenciaFundir(_companyId, { declaradoOfxId, declaradoNotaId }) {
       await delay(140);
       return { ok: true, nota: { id: declaradoNotaId, estado: "A_CONFERIR" }, debito: { id: declaradoOfxId, estado: "FUNDIDO" } };
+    },
+    /**
+     * ⚠⚠ ABSORVER, offline — e a resposta é DIFERENTE da de fundir, de propósito.
+     *
+     * A nota volta `CONTABILIZADO` (não `A_CONFERIR`): ela não foi tocada. E a `divergencia` vem
+     * junto, divergindo — é ela que a tela mostra como aviso.
+     */
+    async postConferenciaAbsorver(_companyId, { declaradoOfxId, declaradoNotaId }) {
+      await delay(140);
+      return {
+        ok: true,
+        declarado: { id: declaradoOfxId, estado: "FUNDIDO", parDeclaradoId: declaradoNotaId },
+        nota: { id: declaradoNotaId, estado: "CONTABILIZADO" },
+        divergencia: { diverge: true, dias: 5, dataDoLancamento: "2026-07-15", dataDoExtrato: "2026-07-20" },
+      };
     },
     async postVarrerNotas(_companyId, desde) {
       await delay(200);
