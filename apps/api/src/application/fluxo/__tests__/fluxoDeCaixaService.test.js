@@ -12,10 +12,21 @@ import {
 
 const CICLO = "2026-08";
 
+/**
+ * ⚠⚠ `liberadaCliente: true` NO PADRÃO, e a escolha é deliberada (02/09/2026).
+ *
+ * Desde *"só confirmada após a liberação"* (dono), a guia em aberto **não liberada** entra no fluxo
+ * como PREVISÃO, e a liberada como COMPROMISSO. Os casos da Lei 1 abaixo medem o que uma guia na
+ * MÃO DO CLIENTE é — então é esse o estado que eles precisam declarar.
+ *
+ * ⚠ O outro ramo não fica sem rede: ele tem bloco próprio (*"a guia não liberada é PREVISÃO"*), e
+ * lá o `false` é explícito. Um padrão que servisse aos dois esconderia um dos dois.
+ */
 const guia = (extra = {}) => ({
   id: "g-1", tipo: "SIMPLES", competencia: "2026-07", valor: "1200.00",
   vencimento: new Date("2026-08-20T00:00:00.000Z"), paymentStatus: "OPEN",
-  numeroParcela: null, parcelamentoId: null, paymentConfirmedAt: null, ...extra,
+  numeroParcela: null, parcelamentoId: null, paymentConfirmedAt: null,
+  liberadaCliente: true, ...extra,
 });
 
 const nota = (extra = {}) => ({
@@ -1196,70 +1207,150 @@ describe("⚠⚠⚠ e a saída LANCADA sai do fluxo — senão o mesmo dinheiro 
   });
 });
 
-describe("⚠⚠⚠ A DESPESA LIBERADA NO FLUXO, sem lançar — o «nem tudo» da regra do dono", () => {
-  // > *"temos um botão fluxo, que apenas libera no fluxo mas não lança"* … *"nem tudo do fluxo
-  // > necessariamente deve ser um lançamento"*.
-  const prevista = (extra = {}) => ({
-    id: "dec-1",
-    previstoNoFluxoEm: new Date("2026-09-25T00:00:00.000Z"),
-    valor: "1500.00",
-    valorAjustado: null,
-    descricaoOriginal: "GOOGLE CLOUD BRASIL",
-    ...extra,
-  });
-  const previstasDe = (r) => linhasDe(r, "DESPESA_PREVISTA");
+describe("⚠⚠⚠ SÓ O QUE FOI LANÇADO É SAÍDA DE DESPESA NO FLUXO — regra do dono, 01/09/2026", () => {
+  // > *"só entra no fluxo aquilo que for lançado, ou seja as saídas do fluxo são as despesas
+  // > lançadas, o resto do fluxo continua como está"*.
+  //
+  // ⚠⚠ ESTE BLOCO MEDIA A `DESPESA_PREVISTA` — o que o contador liberava no fluxo SEM lançar. Ela
+  // nasceu e morreu no mesmo dia: a regra acima a tornou sem sentido. Não é um contribuinte que
+  // sumiu, é a pergunta que ele respondia que deixou de ser feita.
+  //
+  // ⚠ O RESTO DO FLUXO NÃO FOI TOCADO: guias, notas, séries, imposto, folha e as saídas do cliente
+  // continuam entrando como sempre entraram.
 
-  it("⚠⚠ ela aparece no fluxo como PREVISÃO — ninguém provou que o dinheiro saiu", async () => {
-    const r = await montar(clientDe({ previstas: [prevista()] }));
-    expect(previstasDe(r)).toHaveLength(1);
-    expect(previstasDe(r)[0].procedencia).toBe("PREVISAO");
-  });
-
-  it("⚠ no dia que o contador informou, como SAÍDA", async () => {
-    const r = await montar(clientDe({ previstas: [prevista()] }));
-    const l = previstasDe(r)[0];
-    expect(l.competencia).toBe("2026-09");
-    expect(l.dia).toBe(25);
-    expect(l.direcao).toBe("SAIDA");
-    expect(l.valor).toBe(1500);
+  it("⚠⚠ não existe mais fonte de despesa PREVISTA — só a lançada", async () => {
+    const r = await montar(clientDe({ previstas: [{
+      id: "dec-1",
+      previstoNoFluxoEm: new Date("2026-09-25T00:00:00.000Z"),
+      valor: "1500.00",
+      valorAjustado: null,
+      descricaoOriginal: "GOOGLE CLOUD BRASIL",
+    }] }));
+    expect(linhasDe(r, "DESPESA_PREVISTA")).toHaveLength(0);
   });
 
-  it("⚠⚠ `valorAjustado` vence — é o contador dizendo que o documento não reflete o que vai sair", async () => {
-    const r = await montar(clientDe({ previstas: [prevista({ valorAjustado: "900.00" })] }));
-    expect(previstasDe(r)[0].valor).toBe(900);
-  });
-
-  it("⚠ valor zerado ou ilegível não vira linha — zero no fluxo é afirmação", async () => {
-    const r = await montar(clientDe({ previstas: [prevista({ valor: "0.00" })] }));
-    expect(previstasDe(r)).toHaveLength(0);
-  });
-
-  it("⚠⚠ e ela NÃO é FATO — é o que a separa da despesa lançada", async () => {
-    // A lançada tem partida dobrada atrás dela; esta tem a palavra do contador sobre uma data.
-    const r = await montar(clientDe({ previstas: [prevista()] }));
-    expect(previstasDe(r)[0].base.saidaDeCaixa).toBe(false);
-  });
-
-  it("⚠⚠ delegate AUSENTE não derruba o fluxo — é o estado real sem `prisma generate`", async () => {
-    // `undefined.findMany` derrubaria a tela INTEIRA do cliente por causa de uma coluna nova.
-    const r = await montar(clientDe({ previstas: null }));
-    expect(previstasDe(r)).toHaveLength(0);
-    expect(r.meses.length).toBeGreaterThan(0);
-  });
-
-  it("⚠⚠ e COLUNA ausente (migration não aplicada) também não — P2022 degrada", async () => {
+  it("⚠⚠ e nem a coluna existe mais — ela foi APAGADA do banco em 02/09/2026", async () => {
+    // ⚠⚠ A lápide durou um dia: `previstoNoFluxoEm` saiu do schema por decisão do dono, depois de
+    // medido que estava VAZIA (0 preenchidas em 38 linhas) e sem leitor nem escritor.
+    // ⚠ O caso FICA mesmo sem a coluna: ele prova que o fluxo não tem fonte de despesa PREVISTA —
+    // e isso continua sendo verdade a ser defendida, com coluna ou sem ela.
     const cliente = clientDe({ previstas: [] });
-    cliente.lancamentoDeclarado.findMany = jest.fn(async () => {
-      throw Object.assign(new Error("coluna"), { code: "P2022" });
-    });
     const r = await montar(cliente);
-    expect(previstasDe(r)).toHaveLength(0);
-    expect(r.meses.length).toBeGreaterThan(0);
+    expect(linhasDe(r, "DESPESA_PREVISTA")).toHaveLength(0);
+    expect(cliente.lancamentoDeclarado.findMany).not.toHaveBeenCalled();
   });
 
-  it("⚠ erro DESCONHECIDO continua estourando — só as duas ausências são toleradas", async () => {
-    const cliente = clientDe({ previstas: [] });
-    cliente.lancamentoDeclarado.findMany = jest.fn(async () => { throw new Error("banco fora"); });
-    await expect(montar(cliente)).rejects.toThrow(/banco fora/);
+  it("⚠ o resto do fluxo continua como está — a regra falou só das saídas de despesa", async () => {
+    const r = await montar(clientDe({
+      guias: [guia()],
+      notas: [nota()],
+      saidasDoCliente: [{
+        id: "sa-1", data: new Date("2026-09-18T00:00:00.000Z"), valor: "3500.00",
+        descricao: "Reforma da sala", estado: "PENDENTE",
+      }],
+    }));
+    expect(linhasDe(r, "GUIA").length + linhasDe(r, "NOTA_EMITIDA").length).toBeGreaterThan(0);
+    expect(linhasDe(r, "SAIDA_DO_CLIENTE")).toHaveLength(1);
+  });
+});
+
+
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠⚠ A GUIA SÓ VIRA COMPROMISSO DEPOIS DE LIBERADA (02/09/2026).
+//
+// > Dono, em três frases da mesma conversa: *"as únicas guias que devem aparecer no portal do
+// > cliente são as liberadas pelo contador"* · *"no caso do fluxo a previsão permanece"* · **"só
+// > confirmada após a liberação"**.
+//
+// ⚠⚠ AS TRÊS JUNTAS DESENHAM UMA COISA SÓ, e nenhuma delas sozinha: o fluxo continua contando TODA
+// guia (a previsão do imposto não depende de o documento ter sido enviado — decisão de 30/08, que
+// fica de pé), mas a liberação decide o PESO da linha. Enquanto o papel não está na mão do cliente,
+// aquilo é previsão nossa; depois, é compromisso dele.
+//
+// ⚠ Isto NÃO é o recorte que caiu em 30/08. Aquele ESCONDIA a guia do fluxo — e era o que fazia o
+// número não bater com o portal do contador. Aqui nada some.
+// -------------------------------------------------------------------------------------------------
+describe("⚠⚠⚠ a liberação decide a PROCEDÊNCIA da guia — nunca se ela existe", () => {
+  const linhaDaGuia = (r) => linhasDe(r, "GUIA")[0];
+
+  it("⚠⚠ liberada e em aberto: COMPROMISSO", async () => {
+    const r = await montar(clientDe({ guias: [guia({ liberadaCliente: true })] }));
+    expect(linhaDaGuia(r).procedencia).toBe("COMPROMISSO");
+  });
+
+  it("⚠⚠⚠ NÃO liberada e em aberto: PREVISÃO — o cliente não recebeu o documento", async () => {
+    const r = await montar(clientDe({ guias: [guia({ liberadaCliente: false })] }));
+    expect(linhaDaGuia(r).procedencia).toBe("PREVISAO");
+  });
+
+  it("⚠⚠ e ela CONTINUA NO FLUXO, com o mesmo valor — a previsão permanece", async () => {
+    // ⚠⚠ É a diferença para o recorte que caiu em 30/08: lá a guia SUMIA, e o imposto do mês
+    // desaparecia da tela do cliente. Aqui ela conta igual; o que muda é como ela é lida.
+    const liberada = await montar(clientDe({ guias: [guia({ liberadaCliente: true })] }));
+    const nao = await montar(clientDe({ guias: [guia({ liberadaCliente: false })] }));
+    expect(linhasDe(nao, "GUIA")).toHaveLength(1);
+    expect(linhaDaGuia(nao).valor).toBe(linhaDaGuia(liberada).valor);
+    expect(linhaDaGuia(nao).competencia).toBe(linhaDaGuia(liberada).competencia);
+  });
+
+  it("⚠⚠ o `where` continua SEM `liberadaCliente` — recorte aqui é o defeito de 30/08", async () => {
+    const cliente = clientDe({ guias: [guia()] });
+    await montar(cliente);
+    const where = cliente.guide.findMany.mock.calls[0][0].where;
+    expect(where).not.toHaveProperty("liberadaCliente");
+  });
+
+  it("⚠⚠⚠ a guia PAGA é FATO mesmo sem liberação — o pagamento é fato consumado", async () => {
+    // ⚠ Escondê-la esvaziaria o passado do fluxo, que é o defeito que a Lei 1 consertou em 28/08.
+    // O dinheiro saiu; nenhuma decisão de envio desfaz isso.
+    const r = await montar(clientDe({
+      guias: [guia({
+        liberadaCliente: false,
+        paymentStatus: "PAID",
+        paymentConfirmedAt: new Date("2026-08-10T00:00:00.000Z"),
+      })],
+    }));
+    expect(linhaDaGuia(r).procedencia).toBe("FATO");
+  });
+
+  it("⚠⚠⚠ o POP-UP só cobra o que foi liberado", async () => {
+    // ⚠⚠ Ele interrompe o cliente dizendo "isto está vencido, veja suas guias" — e leva para a aba
+    // Guias, que desde hoje mostra só as liberadas. Cobrar por um documento que a tela seguinte não
+    // tem, e que ele nem pode baixar, seria mandá-lo procurar o que não existe para ele.
+    const vencida = { vencimento: new Date("2026-08-01T00:00:00.000Z"), paymentStatus: "OVERDUE" };
+    const r = await montar(clientDe({
+      guias: [
+        guia({ id: "g-lib", liberadaCliente: true, ...vencida }),
+        guia({ id: "g-nao", liberadaCliente: false, ...vencida }),
+      ],
+    }));
+    const ids = (r.alertaDeGuias?.itens || []).map((i) => i.id);
+    expect(ids).toContain("g-lib");
+    expect(ids).not.toContain("g-nao");
+  });
+
+  it("⚠⚠⚠ a linha DIZ por que é previsão — «Previsto» sozinho seria mentira por omissão", async () => {
+    // ⚠⚠ `PROCEDENCIA.PREVISAO` chega à tela do cliente como **"Previsto"**, e o próprio
+    // `leituraDoFluxo` do portal avisa: *"chamá-lo de previsão diria que alguém estimou o número, e
+    // ninguém estimou"*. Aqui ninguém estimou mesmo — o valor está impresso na guia. O que falta é
+    // o documento chegar. Sem esta frase, o cliente leria o número como chute nosso.
+    const r = await montar(clientDe({ guias: [guia({ liberadaCliente: false })] }));
+    expect(linhaDaGuia(r).base.frase).toMatch(/ainda não liberada pelo seu contador/i);
+  });
+
+  it("⚠ e a liberada NÃO carrega essa ressalva — ela não tem o que ressalvar", async () => {
+    const r = await montar(clientDe({ guias: [guia({ liberadaCliente: true })] }));
+    expect(linhaDaGuia(r).base.frase).not.toMatch(/não liberada/i);
+  });
+
+  it("⚠ mas as DUAS continuam somando no fluxo — o pop-up recorta, a previsão não", async () => {
+    const vencida = { vencimento: new Date("2026-08-01T00:00:00.000Z"), paymentStatus: "OVERDUE" };
+    const r = await montar(clientDe({
+      guias: [
+        guia({ id: "g-lib", liberadaCliente: true, ...vencida }),
+        guia({ id: "g-nao", liberadaCliente: false, ...vencida }),
+      ],
+    }));
+    expect(linhasDe(r, "GUIA")).toHaveLength(2);
   });
 });

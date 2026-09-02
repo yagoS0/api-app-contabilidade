@@ -9,7 +9,7 @@
 // impede a tela de divergir da regra é ESTE arquivo: ele lê `natureza(bloco)` de
 // `lib/naturezaDaConferencia.js` e exige que cada painel esteja sob o título que ela manda.
 
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 const mockGetFila = jest.fn();
@@ -21,6 +21,12 @@ const mockGetRecorrencias = jest.fn();
 const mockGetSaidas = jest.fn();
 const mockGetMexidas = jest.fn();
 const mockGetPendencias = jest.fn();
+const mockGetAutomacao = jest.fn();
+const mockDeleteAutomacao = jest.fn();
+const mockPostAutomatica = jest.fn(async () => ({
+  ok: true, ligada: true, desde: "2026-07-01",
+  varridas: 18, criados: 12, jaExistiam: 4, fora: [], recusados: [],
+}));
 
 // ⚠ Delegação, nunca referência direta: o `jest.mock` é hoisted e os painéis chamam
 // `createApiClient()` no corpo do módulo — tocar nos dublês aqui estoura no TDZ. Mesmo desenho do
@@ -37,6 +43,10 @@ jest.mock("../../../../api/client", () => ({
     getConferenciaSaidasDoCliente: (...a) => mockGetSaidas(...a),
     getConferenciaMexidasDoCliente: (...a) => mockGetMexidas(...a),
     getConferenciaPendencias: (...a) => mockGetPendencias(...a),
+    getVarreduraAutomatica: (...a) => mockGetAutomacao(...a),
+    postVarreduraAutomatica: (...a) => mockPostAutomatica(...a),
+    postVarrerNotas: jest.fn(async () => ({ ok: true, varridas: 0, criados: 0, jaExistiam: 0, fora: [], recusados: [] })),
+    deleteVarreduraAutomatica: (...a) => mockDeleteAutomacao(...a),
   }),
 }));
 
@@ -169,6 +179,10 @@ describe("⚠⚠ cada painel sob a seção que a REGRA manda — o DOM conferido
   const ONDE_APARECE = [
     [BLOCO.CASAMENTOS, "Débitos do extrato sem nota vinculada"],
     [BLOCO.FILA, "GOOGLE CLOUD BRASIL"],
+    // ⚠⚠ O que fica na SEÇÃO é a PORTA: desde 01/09/2026 o extrato mora numa gaveta lateral
+    // (*"os lançamentos automáticos podemos colocar um botão nesse a lançar que abre um menu
+    // lateral"*). O botão continua sendo o que a régua manda — ao lado da causa.
+    [BLOCO.LANCADOS_POR_REGRA, /Ver o que as regras já lançaram/],
     [BLOCO.RECORRENCIAS, "Recorrências"],
     [BLOCO.SAIDAS_DO_CLIENTE, "Saídas que o cliente acrescentou"],
     [BLOCO.REGRAS, "Regras do fornecedor"],
@@ -179,19 +193,45 @@ describe("⚠⚠ cada painel sob a seção que a REGRA manda — o DOM conferido
     expect(within(secaoDe(natureza(bloco))).getAllByText(texto).length).toBeGreaterThan(0);
   });
 
-  it("⚠⚠ o extrato «lançados por regra» NÃO está mais aqui — virou aba própria", async () => {
-    // Dono, 01/09/2026: *"regras de lançamento recorrente, quando marcadas, vão para uma sub aba de
-    // lançamentos automáticos"*. Ele não foi duplicado: saiu desta tela.
+  it("⚠⚠⚠ o extrato «lançados por regra» abre numa GAVETA — e o botão dela fica na seção REGRAS", async () => {
+    // ⚠⚠ ELE MUDOU DE LUGAR TRÊS VEZES EM DOIS DIAS, e as três foram decisão do dono: bloco aqui →
+    // aba própria → de volta recolhido (*"devolva a aba pras regras"*) → gaveta lateral
+    // (*"os lançamentos automáticos podemos colocar um botão nesse a lançar que abre um menu
+    // lateral"*).
+    //
+    // ⚠ O ARGUMENTO DA VIZINHANÇA sobreviveu às três: a porta fica ao lado da CAUSA — *"o contador
+    // ligaria mais uma regra sem ter olhado o que a anterior fez"*.
     await montar();
+    const secao = secaoDe(NATUREZA.REGRA);
+    const botao = within(secao).getByRole("button", { name: /Ver o que as regras já lançaram/i });
+
+    // ⚠⚠ FECHADA, O EXTRATO NÃO ESTÁ NA TELA — é o ponto da gaveta: ele deixou de ocupar rolagem
+    // numa tela que já rola quase seis telas.
     expect(screen.queryByText(/Lançados por regra/)).toBeNull();
+
+    fireEvent.click(botao);
+    const gaveta = await screen.findByRole("dialog");
+    expect(gaveta).toHaveAccessibleName(/Lançamentos automáticos/i);
+    expect(await within(gaveta).findByText(/Lançados por regra/)).toBeInTheDocument();
   });
 
-  it("⚠ e o caminho para ela fica junto das REGRAS — a causa ao lado da consequência", async () => {
-    // O argumento que o painel carregava aqui era a VIZINHANÇA: *"o contador ligaria mais uma regra
-    // sem ter olhado o que a anterior fez"*. Perdida a adjacência, fica o link.
+  it("⚠⚠ a gaveta é o `Modal lateral` — não um overlay novo", async () => {
+    // ⚠ Esc, clique no fundo, foco preso e foco de volta ao gatilho vêm do primitivo. Foi a
+    // ausência disso nos 43 overlays escritos à mão que criou o `Modal`.
     await montar();
-    const link = within(secaoDe(NATUREZA.REGRA)).getByRole("link", { name: /já lançaram sozinhas/i });
-    expect(link).toHaveAttribute("href", "/companies/emp-1/lancamentos-automaticos");
+    fireEvent.click(within(secaoDe(NATUREZA.REGRA)).getByRole("button", { name: /Ver o que as regras já lançaram/i }));
+    const gaveta = await screen.findByRole("dialog");
+    expect(gaveta).toHaveClass("modal-fundo--lateral");
+    expect(gaveta.querySelector(".modal-caixa--lateral")).not.toBeNull();
+  });
+
+  it("⚠ e ela FECHA — pelo ✕, e o extrato sai da tela junto", async () => {
+    await montar();
+    fireEvent.click(within(secaoDe(NATUREZA.REGRA)).getByRole("button", { name: /Ver o que as regras já lançaram/i }));
+    const gaveta = await screen.findByRole("dialog");
+    fireEvent.click(within(gaveta).getByRole("button", { name: /Fechar/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByText(/Lançados por regra/)).toBeNull();
   });
 
   it("⚠ o sexto painel (mexidas do cliente) também — ele não pede nada e é o que se esquece", async () => {
@@ -300,5 +340,92 @@ describe("⚠⚠ «19 a lançar» abrindo em 6 — a tela DIZ quantos ficaram fo
     await montar();
     expect(within(secaoDe(NATUREZA.VIRA_LANCAMENTO)).getAllByText("GOOGLE CLOUD BRASIL").length)
       .toBeGreaterThan(0);
+  });
+});
+
+
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠ A LINHA "ESTÃO TRAZENDO AS NOTAS SOZINHO?" — dono, 01/09/2026: *"elas devem ser trazidas
+// automaticamente, como tem na aba de notas fiscais deve aparecer ali"*.
+//
+// ⚠⚠ ELA EXISTE PELO MESMO MOTIVO DO AVISO *"Última busca há 2h…"* DA ABA NOTAS FISCAIS: **sem nota
+// na tela, o contador precisa saber se ninguém olhou, se olharam e não veio nada, ou se deu erro.**
+// Uma fila vazia não distingue as três — e a diferença entre elas é a diferença entre esperar e ir
+// consertar.
+// -------------------------------------------------------------------------------------------------
+describe("⚠⚠ a Conferência DIZ se as notas estão sendo trazidas sozinho", () => {
+  const montarCom = async (automacao) => {
+    mockGetAutomacao.mockResolvedValue(automacao);
+    const r = render(<ConferenciaTab companyId="emp-1" competencia="2026-07" podeEscrever />);
+    await waitFor(() => expect(mockGetAutomacao).toHaveBeenCalledWith("emp-1"));
+    return r;
+  };
+
+  it("⚠⚠ ligada e sem novidade: a tela DIZ que olhou — não fica muda", async () => {
+    await montarCom({
+      ok: true, ligada: true, indisponivel: false, desde: "2026-07-01",
+      ultimaTentativaEm: "2026-09-02T08:00:00.000Z", ultimoResultadoEm: null,
+    });
+    expect(await screen.findByText(/última busca não encontrou nota nova/i)).toBeInTheDocument();
+  });
+
+  it("⚠⚠ desligada: diz o que fazer, e NÃO se disfarça de erro", async () => {
+    await montarCom({ ok: true, ligada: false, indisponivel: false, desde: null });
+    expect(await screen.findByText(/não estão sendo trazidas sozinhas/i)).toBeInTheDocument();
+    // ⚠ Sem rotina ligada não há o que parar — e um botão que não faz nada é pior que nenhum.
+    expect(screen.queryByRole("button", { name: /parar de trazer sozinho/i })).toBeNull();
+  });
+
+  it("⚠⚠ ligada: dá a saída, e ela diz que a FILA não é desfeita", async () => {
+    // ⚠ "Parar de trazer" se lê facilmente como "tirar o que já veio" — e o que já entrou é fato
+    // consumado, com decisões do contador em cima.
+    await montarCom({
+      ok: true, ligada: true, indisponivel: false, desde: "2026-07-01",
+      ultimaTentativaEm: "2026-09-02T08:00:00.000Z", ultimoResultadoEm: "2026-09-02T08:00:00.000Z",
+      ultimoCriados: 12,
+    });
+    const botao = await screen.findByRole("button", { name: /parar de trazer sozinho/i });
+    expect(botao).toHaveAttribute("title", expect.stringMatching(/continuam lá/i));
+  });
+
+  it("⚠⚠ a falha da consulta vira «não sei», nunca «desligada»", async () => {
+    mockGetAutomacao.mockRejectedValue(new Error("500"));
+    render(<ConferenciaTab companyId="emp-1" competencia="2026-07" podeEscrever />);
+    expect(await screen.findByText(/não foi possível saber/i)).toBeInTheDocument();
+  });
+
+  it("⚠⚠⚠ LIGAR pela tela ATUALIZA a linha — sem isso ela NEGA o que a pessoa acabou de fazer", async () => {
+    // ⚠⚠ MEDIDO NO NAVEGADOR (01/09/2026): varrer com a caixa marcada ligava a rotina no servidor e
+    // a linha continuava dizendo "não estão sendo trazidas sozinhas" até alguém recarregar a
+    // página. A tela negava, por escrito, o ato que tinha acabado de acontecer.
+    const { default: React } = await import("react");
+    mockGetAutomacao.mockResolvedValueOnce({ ok: true, ligada: false, indisponivel: false, desde: null });
+    render(<ConferenciaTab companyId="emp-1" competencia="2026-07" podeEscrever />);
+    expect(await screen.findByText(/não estão sendo trazidas sozinhas/i)).toBeInTheDocument();
+
+    // a partir daqui o servidor responde LIGADA
+    mockGetAutomacao.mockResolvedValue({
+      ok: true, ligada: true, indisponivel: false, desde: "2026-07-01",
+      ultimaTentativaEm: "2026-09-02T08:00:00.000Z", ultimoResultadoEm: "2026-09-02T08:00:00.000Z",
+      ultimoCriados: 12,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Trazer notas$/ }));
+    const dialogo = await screen.findByRole("dialog");
+    fireEvent.change(within(dialogo).getByLabelText(/a partir de/i), { target: { value: "2026-07-01" } });
+    fireEvent.click(within(dialogo).getByRole("button", { name: /^Varrer$/ }));
+
+    await waitFor(() => expect(mockPostAutomatica).toHaveBeenCalledWith("emp-1", "2026-07-01"));
+    expect(await screen.findByText(/Trazendo as notas sozinho desde 01\/07\/2026/i)).toBeInTheDocument();
+    expect(screen.queryByText(/não estão sendo trazidas sozinhas/i)).toBeNull();
+  });
+
+  it("⚠ o botão «Trazer notas» diz que AJUSTA quando a rotina já está ligada", async () => {
+    // "Trazer notas" ali prometeria um ato avulso, e o que ele abre é a troca da data permanente.
+    await montarCom({
+      ok: true, ligada: true, indisponivel: false, desde: "2026-07-01",
+      ultimaTentativaEm: null, ultimoResultadoEm: null,
+    });
+    expect(await screen.findByRole("button", { name: /Trazer notas · ajustar/i })).toBeInTheDocument();
   });
 });

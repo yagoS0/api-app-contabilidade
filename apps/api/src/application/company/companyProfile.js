@@ -503,15 +503,43 @@ export function normalizeCamposEmissaoNfse(company = {}) {
   };
 }
 
+/**
+ * O CODIGO de um CNAE, quando o valor vier com a descricao grudada.
+ *
+ * ⚠ Os 7 PRIMEIROS digitos sao sempre o codigo, mesmo com numeros na descricao — a mesma leitura
+ * de `normalizarCnae` (`apuracao/v2/CnaesDaEmpresaService.js`) e de `descricoesDeAtividades` no
+ * front. Divergir aqui faria a coluna guardar um codigo que os outros dois nao reconhecem.
+ * ⚠ Devolve `null` quando nao ha 7 digitos: o valor segue CRU, e quem recusa e o validador de
+ * forma — nao esta funcao, que so extrai.
+ */
+function soCodigoDeCnae(valor) {
+  const digitos = String(valor || "").replace(/\D+/g, "").slice(0, 7);
+  return digitos.length === 7 ? digitos : null;
+}
+
 export function validateAndNormalizeCompanyProfile(input) {
   const company = input && typeof input === "object" ? input : {};
   const cnpj = onlyDigits(company.cnpj);
   const razaoSocial = asString(company.razaoSocial || company.razao);
   const nomeFantasia = asString(company.nomeFantasia) || null;
   const regimeTributario = normalizeRegimeTributario(company.regimeTributario);
-  const cnaePrincipal = asString(company.cnaePrincipal);
+  // ⚠⚠ A FORMA LEGADA "codigo - descricao" ENTRA E SAI SEPARADA. 12 das 34 empresas tem o
+  //   `cnaePrincipal` assim no banco (medido, 01/09/2026), e o formulario o devolve intacto.
+  //   Guardar o texto na coluna do CODIGO e o que fazia o Zod recusar a empresa inteira.
+  // ⚠ A DESCRICAO NAO E JOGADA FORA: ela sai em `atividadesDescritas`, e a rota a mescla em
+  //   `Company.atividades` — a coluna que de fato guarda texto de atividade, e que alimenta a
+  //   descricao do servico na NFS-e. Perder aqui seria perder na nota do cliente.
+  const cnaePrincipalCru = asString(company.cnaePrincipal);
+  const cnaePrincipal = soCodigoDeCnae(cnaePrincipalCru) || cnaePrincipalCru;
+  // As descricoes que vieram GRUDADAS nos codigos — do banco ou da consulta. Elas viajam a parte.
+  const descricoesEmbutidas = [cnaePrincipalCru, ...(Array.isArray(company.cnaesSecundarios) ? company.cnaesSecundarios : [])]
+    .map((v) => asString(v))
+    .filter((v) => soCodigoDeCnae(v) && /\p{L}/u.test(v.replace(/^[\d.\-/\s]+/u, "")));
   const cnaesSecundarios = Array.isArray(company.cnaesSecundarios)
-    ? [...new Set(company.cnaesSecundarios.map((x) => asString(x)).filter(Boolean))]
+    ? [...new Set(company.cnaesSecundarios.map((x) => {
+        const cru = asString(x);
+        return soCodigoDeCnae(cru) || cru;
+      }).filter(Boolean))]
     : [];
 
   if (!cnpj || cnpj.length !== 14) return { ok: false, error: "company_cnpj_invalid" };
@@ -623,6 +651,7 @@ export function validateAndNormalizeCompanyProfile(input) {
       regimeTributario,
       simples,
       cnaePrincipal,
+      descricoesEmbutidas,
       cnaesSecundarios,
       endereco: enderecoResult.data,
       email: asString(company.email).toLowerCase() || null,

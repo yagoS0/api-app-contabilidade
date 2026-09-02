@@ -1,12 +1,23 @@
-// ⚠⚠ A ABA DE GUIAS MOSTRA AS GUIAS DA EMPRESA — e as AÇÕES continuam travadas (30/08/2026)
+// ⚠⚠ A ABA DE GUIAS MOSTRA SÓ AS GUIAS LIBERADAS — e as AÇÕES continuam travadas (02/09/2026)
 //
-// > Dono: *"arruma a aba de guias, INSS e parcelamento não aparecem"* — e, logo depois, o critério:
-// > *"a aba de guias é aba de guias, o fluxo é o fluxo."*
+// > Dono, 02/09/2026: *"as únicas guias que devem aparecer no portal do cliente são as liberadas
+// > pelo contador"*.
 //
-// A lista deixou de filtrar por `liberadaCliente`. ⚠⚠ **`liberadaCliente` marca que o contador
-// ENVIOU a guia**, não que ela existe: filtrar a LISTA por ele fazia um registro de ENVIO decidir o
-// que o cliente sabe dever. Medido em produção (`scripts/diag-guias-do-cliente.mjs`): a ERISANGELA
-// via **7 de 17**, e a carteira inteira tem **24 liberadas contra 232 não liberadas**.
+// ⚠⚠⚠ **ESTE ARQUIVO AFIRMAVA O CONTRÁRIO ATÉ HOJE, E O CONTRÁRIO TAMBÉM ERA DECISÃO DELE.** Em
+// 30/08/2026: *"arruma a aba de guias, INSS e parcelamento não aparecem"*, com o critério *"a aba
+// de guias é aba de guias, o fluxo é o fluxo"*. Medido então em produção
+// (`scripts/diag-guias-do-cliente.mjs`): a ERISANGELA via **7 de 17** guias, e a carteira inteira
+// tinha **24 liberadas contra 232 não liberadas** — não eram algumas guias escondidas, era a maior
+// parte da dívida.
+//
+// ⚠⚠ **A REVERSÃO FOI FEITA COM ESSE CUSTO NA FRENTE DELE**, com os números do banco (3 liberadas
+// de 16; duas empresas ficariam com a aba VAZIA), e ele reafirmou. As duas versões estão aqui de
+// propósito: quem só ler uma delas vai achar que a outra é defeito.
+//
+// ⚠⚠ **O QUE NÃO VOLTOU JUNTO** é o que impede o defeito de 30/08 de renascer inteiro: o FLUXO
+// continua contando toda guia — *"no caso do fluxo a previsão permanece"* —, e o que a liberação
+// decide lá é a PROCEDÊNCIA (previsão × compromisso, *"só confirmada após a liberação"*). O imposto
+// do mês continua na tela do cliente; o que ele não vê é o DOCUMENTO que ninguém lhe entregou.
 //
 // ⚠⚠ ESTE TESTE É DE FONTE, e tinha de ser: a suíte inteira ficou VERDE com a mudança, porque
 // ninguém nunca afirmou o `apenasLiberadas` da rota do cliente. Um teste de comportamento com dublê
@@ -36,11 +47,26 @@ function trechoDaRota(caminho, verbo = "get") {
   return CODIGO.slice(alvo, alvo + 2500);
 }
 
-describe("⚠⚠ a LISTA de guias do cliente não filtra por liberação", () => {
-  it("⚠⚠ `apenasLiberadas` é FALSE na rota da lista", () => {
+describe("⚠⚠ a LISTA de guias do cliente mostra SÓ as liberadas", () => {
+  it("⚠⚠ `apenasLiberadas` é TRUE na rota da lista", () => {
     const trecho = trechoDaRota('"/companies/:companyId/guides"');
-    expect(trecho).toMatch(/apenasLiberadas:\s*false/);
-    expect(trecho).not.toMatch(/apenasLiberadas:\s*true/);
+    expect(trecho).toMatch(/apenasLiberadas:\s*true/);
+    expect(trecho).not.toMatch(/apenasLiberadas:\s*false/);
+  });
+
+  it("⚠⚠⚠ e o FLUXO continua SEM recorte — a previsão permanece", () => {
+    // ⚠⚠ É a metade que impede a reversão de virar o defeito de 30/08 outra vez. Se alguém puser
+    // `liberadaCliente` no `where` do fluxo, o imposto não liberado some da tela do cliente e o
+    // número volta a não bater com o portal do contador — que foi exatamente a reclamação.
+    const fluxo = fs.readFileSync(
+      path.join(__dirname, "..", "..", "..", "application", "fluxo", "FluxoDeCaixaService.js"),
+      "utf8",
+    );
+    const corpo = semComentarios(fluxo);
+    const i = corpo.indexOf("client.guide.findMany");
+    expect(i).toBeGreaterThan(-1);
+    const where = corpo.slice(i, corpo.indexOf("select:", i));
+    expect(where).not.toMatch(/liberadaCliente/);
   });
 
   it("⚠⚠ e o estado da liberação DESCE na resposta — senão a tela oferece o que o servidor recusa", () => {

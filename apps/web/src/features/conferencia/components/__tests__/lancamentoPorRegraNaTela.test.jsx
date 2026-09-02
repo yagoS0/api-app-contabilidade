@@ -314,19 +314,15 @@ describe("a montagem dentro da Conferencia", () => {
     // metade que este extrato existe para dar: saber o que NAO foi desfeito.
     const fs = require("node:fs");
     const path = require("node:path");
-    // ⚠⚠ O PAINEL MUDOU DE TELA em 01/09/2026 (virou a aba «Lançamentos automáticos»), e a
-    // garantia veio junto: ela é sobre o RELATÓRIO do desfazer, que morre se o React desmontar o
-    // painel. Onde ele é montado mudou; o que não pode mudar é ele não levar `key` variável.
-    const daAba = fs.readFileSync(
-      path.join(__dirname, "..", "..", "..", "companies", "detail", "pages", "renderCompanyDetailPage.jsx"),
-      "utf8",
-    );
-    const i = daAba.indexOf("<PainelDeLancadosPorRegra");
-    expect(i).toBeGreaterThan(-1);
-    expect(daAba.slice(i, i + 400)).not.toMatch(/key=/);
-
-    // ⚠ E o painel de casamentos CONTINUA com a dele, na Conferência: ele nao tem recarga propria.
+    // ⚠ O painel foi para uma aba própria e VOLTOU para a Conferência no mesmo dia (01/09/2026,
+    // decisão do dono). A garantia não mudou em nenhum dos dois lugares: ela é sobre o RELATÓRIO do
+    // desfazer, que morre se o React desmontar o painel.
     const fonte = fs.readFileSync(path.join(__dirname, "..", "renderConferenciaTab.jsx"), "utf8");
+    const i = fonte.indexOf("<PainelDeLancadosPorRegra");
+    expect(i).toBeGreaterThan(-1);
+    expect(fonte.slice(i, i + 400)).not.toMatch(/key=/);
+
+    // ⚠ E o painel de casamentos CONTINUA com a dele: ele nao tem recarga propria.
     const j = fonte.indexOf("<PainelDeCasamentos");
     expect(fonte.slice(j, j + 200)).toMatch(/key=\{versao\}/);
   });

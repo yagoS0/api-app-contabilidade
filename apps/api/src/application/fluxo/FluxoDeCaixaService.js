@@ -137,6 +137,12 @@ export function cicloDeHoje(agora = new Date()) {
  * ⚠ Liberar continua significando alguma coisa, e é outra coisa: é o que o cliente pode BAIXAR e
  * pagar (`GET /client/.../fluxo` e o download seguem com o gate). O fluxo diz *quanto vai sair*;
  * a liberação diz *o documento está na sua mão*.
+ *
+ * ⚠⚠ **E EM 02/09/2026 ELA VOLTOU A PESAR AQUI — sem virar recorte.** O dono: *"só confirmada após
+ * a liberação"*, logo depois de dizer que *"no caso do fluxo a previsão permanece"*. Ou seja: o
+ * `where` continua sem `liberadaCliente` (a previsão conta tudo, como ele decidiu em 30/08), e o
+ * que muda é a PROCEDÊNCIA de cada linha — previsão enquanto o documento não saiu, compromisso
+ * depois. ⚠ Quem apagar essa distinção faz o cliente ser cobrado por um papel que não recebeu.
  */
 async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
   const guias = await client.guide.findMany({
@@ -148,6 +154,16 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
     select: {
       id: true, tipo: true, competencia: true, valor: true, vencimento: true,
       paymentStatus: true, numeroParcela: true, parcelamentoId: true,
+      /**
+       * ⚠⚠ A LIBERAÇÃO ENTROU NO `select` (02/09/2026) — dono: *"só confirmada após a liberação"*.
+       *
+       * ⚠ Ela NÃO é recorte aqui: o `where` continua sem `liberadaCliente`, porque *"no caso do
+       * fluxo a previsão permanece"* (dono, no mesmo dia). O que a coluna decide é a PROCEDÊNCIA
+       * da linha — previsão × compromisso —, não se a guia existe.
+       * ⚠ Coluna fora de um `select` explícito volta `undefined` **sem erro**: seria toda guia
+       * lida como não liberada, e o compromisso sumiria da tela inteira.
+       */
+      liberadaCliente: true,
       // ⚠ QUANDO foi pago. Sem esta coluna a guia paga não tem mês, e um fato sem data não se
       // coloca em lugar nenhum — viraria um chute de mês.
       paymentConfirmedAt: true,
@@ -258,11 +274,28 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
 
     const vence = isoDaData(dataDeVencimento);
     const atrasada = vence != null && hoje != null && vence < hoje;
+    /**
+     * ⚠⚠⚠ A GUIA SÓ VIRA COMPROMISSO DEPOIS DE LIBERADA — decisão do dono, 02/09/2026:
+     * *"as únicas guias que devem aparecer no portal do cliente são as liberadas pelo contador"*,
+     * e, no mesmo dia: *"no caso do fluxo a previsão permanece"* e **"só confirmada após a
+     * liberação"**.
+     *
+     * ⚠⚠ AS TRÊS FRASES JUNTAS DESENHAM ISTO, e nenhuma delas sozinha: o fluxo continua contando
+     * TODA guia (a previsão do imposto não depende de o contador ter enviado o documento — foi a
+     * decisão de 30/08, e ela fica de pé), mas o que a liberação muda é o PESO da linha. Enquanto
+     * o documento não está na mão do cliente, aquilo é uma previsão nossa; liberado, vira um
+     * compromisso dele.
+     *
+     * ⚠ A guia PAGA não passa por aqui — ela sai acima como `FATO`, e continua saindo mesmo sem
+     * liberação: o pagamento é fato consumado, e escondê-lo esvaziaria o passado do fluxo (o
+     * defeito que a Lei 1 consertou em 28/08).
+     */
     linhas.push(montarLinha({
       fonte: FONTE.GUIA,
       direcao: DIRECAO.SAIDA,
-      // ⚠⚠ COMPROMISSO, não FATO: o valor e a data são conhecidos, e o dinheiro **não saiu**.
-      procedencia: PROCEDENCIA.COMPROMISSO,
+      // ⚠⚠ Nem FATO nem sempre COMPROMISSO: o dinheiro não saiu, e o compromisso só existe depois
+      // que o documento chega ao cliente. Antes disso, é previsão.
+      procedencia: g.liberadaCliente ? PROCEDENCIA.COMPROMISSO : PROCEDENCIA.PREVISAO,
       // ⚠⚠ O MÊS CORRENTE, NÃO O DO VENCIMENTO — Lei 1. A guia de julho que ninguém pagou é
       // dinheiro que sai de AGOSTO, e mostrá-la em julho diria que julho já custou aquilo.
       competencia: cicloAtual,
@@ -273,8 +306,21 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
       valor,
       rotulo,
       base: {
+        /**
+         * ⚠⚠ A FRASE DIZ POR QUE A LINHA É PREVISÃO — e sem ela o rótulo mentiria por omissão.
+         *
+         * `PROCEDENCIA.PREVISAO` sai na tela do cliente como **"Previsto"**, e o próprio
+         * `leituraDoFluxo` avisa: *"chamá-lo de previsão diria que alguém estimou o número, e
+         * ninguém estimou"*. Aqui ninguém estimou mesmo — o valor está na guia, impresso. O que
+         * falta é o documento chegar às mãos do cliente.
+         *
+         * ⚠ Por isso a razão viaja no texto: a linha continua sendo previsão (o dono: *"só
+         * confirmada após a liberação"*), e o cliente lê POR QUE ela ainda não é um compromisso
+         * dele, em vez de achar que o número é chute nosso.
+         */
         frase: `${rotulo} gerada${g.competencia ? `, competência ${g.competencia}` : ""}`
-          + (vence ? ` · vence em ${vence}` : ""),
+          + (vence ? ` · vence em ${vence}` : "")
+          + (g.liberadaCliente ? "" : " · ainda não liberada pelo seu contador"),
         vencimento: vence,
         atrasada,
         // ⚠⚠ A MARCA QUE SEPARA O DIA IMPRESSO NA GUIA DO DIA DERIVADO POR NÓS. Sem ela, os dois
@@ -288,9 +334,19 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
       referencia,
     }));
 
-    // ⚠ A lista que alimenta o pop-up sai DAQUI, da mesma consulta — uma segunda query com outro
-    // recorte é como as duas telas passam a discordar sobre quantas guias estão em atraso.
-    emAberto.push({ id: g.id, rotulo, valor, vencimento: vence, atrasada, competencia: g.competencia });
+    /**
+     * ⚠ A lista que alimenta o pop-up sai DAQUI, da mesma consulta — uma segunda query com outro
+     * recorte é como as duas telas passam a discordar sobre quantas guias estão em atraso.
+     *
+     * ⚠⚠ **E SÓ A LIBERADA ENTRA NELA** (02/09/2026). O pop-up interrompe o cliente para dizer
+     * *"isto está vencido, veja suas guias"* — e ele leva para a aba Guias, que desde hoje mostra
+     * só as liberadas. Uma guia não liberada ali mandaria o cliente procurar um documento que a
+     * tela seguinte não tem, e que ele nem pode baixar (o gate do download nunca foi afrouxado).
+     * ⚠ Ela NÃO some do fluxo: continua na soma, como PREVISÃO. O que ela não faz é cobrar.
+     */
+    if (g.liberadaCliente) {
+      emAberto.push({ id: g.id, rotulo, valor, vencimento: vence, atrasada, competencia: g.competencia });
+    }
   }
 
   return { linhas, semMes, emAberto, diaDoUltimoPagamento: diaDaData(ultimoPagamento) };
@@ -922,7 +978,7 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     (janela?.horizonte ?? HORIZONTE_MESES) - ((mesesDaCompetencia(ciclo) ?? 0) - (mesesDaCompetencia(inicio) ?? 0)),
   );
 
-  const [guias, notas, series, snapshot, folha, saidasDoCliente, despesas, previstas] = await Promise.all([
+  const [guias, notas, series, snapshot, folha, saidasDoCliente, despesas] = await Promise.all([
     linhasDasGuias({ portalClientId, cicloAtual: ciclo, hoje: dia, client }),
     linhasDasNotas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
     linhasDasSeries({ portalClientId, cicloAtual: ciclo, mesesAProjetar: mesesFuturosDaJanela, client }),
@@ -936,8 +992,6 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     // ⚠⚠ A DESPESA LANÇADA — o que faz valer a regra do dono (*"ao lançar entra no fluxo"*). Até
     // 01/09/2026 ela não estava aqui, e o trabalho principal da Conferência não chegava ao cliente.
     linhasDasDespesasLancadas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
-    // ⚠ A outra metade da regra do dono: o que o contador liberou no fluxo SEM lançar.
-    linhasDasDespesasPrevistas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
   ]);
 
   const aliquota = aliquotaEfetiva(snapshot);
@@ -1016,7 +1070,6 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     // ⚠ Mesma forma de linha, mesmo balde de saída — o que a distingue é a FONTE e a PROCEDÊNCIA
     // (FATO: a partida dobrada prova que o dinheiro saiu).
     ...despesas.linhas,
-    ...previstas.linhas,
     // ⚠ O que o CLIENTE acrescentou entra por último, mas sem privilégio nenhum: mesma forma de
     // linha, mesmo balde de saída, mesma procedência PREVISAO.
     ...saidasDoCliente.linhas,
@@ -1340,88 +1393,6 @@ async function linhasDasDespesasLancadas({ portalClientId, cicloAtual, janelaIni
   }
 
   return { linhas, disponivel: linhas.length > 0 };
-}
-
-/**
- * ⚠⚠⚠ A DESPESA QUE O CONTADOR LIBEROU NO FLUXO — sem lançar. Decisão do dono, 01/09/2026.
- *
- * > *"temos um botão fluxo, que apenas libera no fluxo mas não lança"*.
- *
- * É a segunda metade da regra dele: *"tudo que virar lançamento deve entrar no fluxo, mas nem tudo
- * do fluxo necessariamente deve ser um lançamento"*. Esta função é o "nem tudo".
- *
- * ⚠⚠ **PREVISÃO, NUNCA FATO.** Nada aqui provou que o dinheiro saiu — o contador só disse por volta
- * de quando ele deve sair. Chamá-la de fato faria o dono da empresa somá-la ao que já aconteceu.
- *
- * ⚠⚠ **A JÁ LANÇADA FICA DE FORA (`accountingEntryId: null`), e essa cláusula evita contagem dupla.**
- * Lançada, ela vira `FONTE.DESPESA_LANCADA` como FATO; sem a cláusula, o mesmo dinheiro apareceria
- * duas vezes na tela do cliente — uma como previsão, outra como fato.
- *
- * ⚠ **RECUSADA fica de fora** pelo motivo oposto: o contador disse que a despesa não existe, e
- * mantê-la no fluxo diria ao cliente o contrário do que ele decidiu.
- *
- * ⚠ **A COLUNA PODE NÃO EXISTIR** (a migration é ato do dono): P2021/P2022 devolvem lista vazia e
- * `indisponivel`, nunca uma exceção — derrubar o fluxo inteiro por causa de uma coluna nova seria
- * trocar uma funcionalidade que falta por uma tela que não abre.
- */
-async function linhasDasDespesasPrevistas({ portalClientId, cicloAtual, janelaInicio, client }) {
-  // ⚠⚠ O DELEGATE pode não existir — é o estado REAL da máquina em que o `prisma generate` não
-  // rodou (EPERM no Windows com o servidor de dev de pé), e `undefined.findMany` derrubaria o fluxo
-  // INTEIRO. Mesma guarda que `linhasDasSaidasDoCliente` já carrega.
-  if (!client?.lancamentoDeclarado?.findMany) return { linhas: [], indisponivel: true };
-
-  let declarados = [];
-  try {
-    declarados = await client.lancamentoDeclarado.findMany({
-      where: {
-        portalClientId: String(portalClientId),
-        previstoNoFluxoEm: { not: null },
-        accountingEntryId: null,
-        estado: { not: "RECUSADO" },
-      },
-      select: {
-        id: true, previstoNoFluxoEm: true, valor: true, valorAjustado: true, descricaoOriginal: true,
-      },
-      orderBy: { previstoNoFluxoEm: "asc" },
-    });
-  } catch (e) {
-    // ⚠ P2021 = tabela ausente · P2022 = COLUNA ausente. A segunda é o estado real enquanto a
-    // migration `20260901190000` não for aplicada.
-    if (e?.code !== "P2021" && e?.code !== "P2022") throw e;
-    return { linhas: [], indisponivel: true };
-  }
-
-  const base = mesesDaCompetencia(janelaInicio || cicloAtual);
-  const linhas = [];
-
-  for (const d of declarados) {
-    const competencia = competenciaDaData(d.previstoNoFluxoEm);
-    if (!competencia) continue;
-    const emMeses = mesesDaCompetencia(competencia);
-    if (base == null || emMeses == null || emMeses < base) continue;
-
-    // ⚠ `valorAjustado` vence quando existe — é o ato do contador dizendo que o documento não
-    // reflete o que de fato vai sair. Mesma precedência de `montarLancamento`.
-    const valor = numero(d.valorAjustado ?? d.valor) || 0;
-    if (!(valor > 0)) continue;
-
-    linhas.push(montarLinha({
-      fonte: FONTE.DESPESA_PREVISTA,
-      direcao: DIRECAO.SAIDA,
-      procedencia: PROCEDENCIA.PREVISAO,
-      competencia,
-      dia: diaDaData(d.previstoNoFluxoEm),
-      valor,
-      rotulo: "Despesa prevista",
-      base: {
-        frase: `${texto(d.descricaoOriginal) || "Despesa"} · previsão do seu contador`,
-        // ⚠ A prova de que isto NÃO é caixa realizado — a mesma marca que a folha usa, invertida.
-        saidaDeCaixa: false,
-      },
-    }));
-  }
-
-  return { linhas, disponivel: linhas.length > 0, indisponivel: false };
 }
 
 async function linhasDaFolha({ portalClientId, cicloAtual, client }) {

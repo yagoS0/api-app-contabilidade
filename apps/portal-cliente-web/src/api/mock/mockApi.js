@@ -624,6 +624,33 @@ function criarEstado() {
       defaultClientId: null,
       empresas: ["pc-001", "pc-002", "pc-005"],
     },
+    {
+      /**
+       * ⚠⚠ O MESTRE (02/09/2026) — e ele existe aqui porque o ramo dele era INALCANÇÁVEL offline.
+       *
+       * > Dono: *"esse meu usuario, no portal do cliente deve ter todos os poderes, inclusive de
+       * > emitir notas"* · *"nao esta feito pois ao logar nao consigo emitir"*.
+       *
+       * ⚠ Ele existe ao LADO da `visita@exemplo.com`, e é o par que dá sentido aos dois: a de cima
+       * entra e NÃO emite; esta entra e EMITE. Só uma delas provaria a regra errada — "conta FIRM
+       * marcada emite", que é o oposto do *"apenas o meu"*.
+       * ⚠⚠ A diferença é o **`role: "admin"`**, nunca a marca da porta. No servidor é o `admin` que
+       * `requireClientCompanyAccess` promove a OWNER, e é ele que `isAdminLike` deixa passar no
+       * portão de emissão.
+       * ⚠ Sexta vez que o mock esconde um ramo neste projeto: a tela desabilitava os dois botões
+       * do mestre e **nenhum teste e nenhuma sessão offline podiam ver isso**, porque não havia
+       * usuário `admin` aqui.
+       */
+      id: "u-contador-mestre",
+      email: "mestre@exemplo.com",
+      senha: "123456",
+      role: "admin",
+      accountType: "FIRM",
+      podeAbrirPortalDoCliente: true,
+      name: "Yago (mestre)",
+      defaultClientId: null,
+      empresas: ["pc-001", "pc-002", "pc-003", "pc-005"],
+    },
   ];
 
   // --- Notas -----------------------------------------------------------------
@@ -1598,7 +1625,26 @@ export function createMockApi() {
     async getCompanies() {
       await dormir();
       const usuario = usuarioAutenticado();
-      return estado.empresas.filter((e) => usuario.empresas.includes(e.companyId));
+      const minhas = estado.empresas.filter((e) => usuario.empresas.includes(e.companyId));
+      /**
+       * ⚠⚠ O MESTRE VÊ `myRole: OWNER` E A EMISSÃO LIBERADA EM TODAS — é o que o servidor manda.
+       *
+       * Medido em produção (02/09/2026, `yago@altan.company`): `GET /client/companies` devolve
+       * **34 de 34** com `myRole: "OWNER"` e `emissaoNfseLiberada: true`. A rota faz isso em
+       * `routes/client/index.js` (`ehMestre ? "OWNER" : "FINANCEIRO"` e
+       * `(ehVisitaDoEscritorio && ehMestre) || emissaoClienteLiberada === true`) porque
+       * `ensureEmissaoNfseAutorizada` aceita o `admin` por `isAdminLike`, SEM consultar a flag da
+       * empresa — esconder o botão aqui seria a tela recusando o que o servidor aceita.
+       *
+       * ⚠ Sem esta linha o mock mostraria `pc-003` (`emissaoNfseLiberada: false`) como NÃO LIBERADA
+       * para o mestre, e o ramo offline discordaria da produção — a divergência mock × real que
+       * este projeto já pagou várias vezes.
+       * ⚠ Vale SÓ para o `admin`. A visita comum continua lendo a flag de cada empresa.
+       */
+      if (String(usuario.role || "").toLowerCase() === "admin") {
+        return minhas.map((e) => ({ ...e, myRole: "OWNER", emissaoNfseLiberada: true }));
+      }
+      return minhas;
     },
 
     // --- Notas --------------------------------------------------------------

@@ -8,6 +8,25 @@
 
 import { podarInvisiveis, rascunhoVazio } from "../onboardingSpec";
 
+/**
+ * ⚠⚠ TETO DE TEMPO DESTE ARQUIVO — 20 s, e ele é DAQUI, nunca do `jest.config` (02/09/2026).
+ *
+ * ⚠⚠ **O PADRÃO DE 5 s NÃO SOBE NA CONFIGURAÇÃO**, e a razão é concreta: foi ele que expôs, em
+ * 01/09/2026, uma rota que PENDURAVA (a varredura de notas consultando o banco sem dublê). Um teto
+ * global maior teria transformado aquele defeito em *"a suíte está lenta hoje"* — que é exatamente
+ * como esta flutuação vinha sendo lida.
+ *
+ * ⚠⚠ **A MEDIÇÃO QUE JUSTIFICA O NÚMERO** (`jest --json`, 3.350 casos deste app): **11 casos** levam
+ * 3 s ou mais, concentrados em **5 arquivos** — este é um deles. O caso mais pesado marcou 18,5 s.
+ * Quem estoura não é o teste errado: é o que estava rodando quando a máquina engasgou, e por isso
+ * subir caso a caso seria correr atrás de um alvo que muda a cada execução.
+ *
+ * ⚠ O custo é jsdom montando tela de verdade (modal cheio, tabela, várias renderizações por caso).
+ * Não há espera, relógio nem rede aqui. Os outros ~3.339 casos deste app continuam com 5 s.
+ * ⚠ O precedente é da casa: `api: nfse/danfse/__tests__/danfse.test.js` já faz `jest.setTimeout(30000)`.
+ */
+jest.setTimeout(20000);
+
 describe("funil no modo mock — ponta a ponta, sem backend", () => {
   let api;
 

@@ -21,6 +21,7 @@ import {
   companyCreateSchema,
   validateCompanyInput,
 } from "../validators/companySchemas.js";
+import { mesclarAtividades } from "../company/atividadesDaEmpresa.js";
 import { getGlobalChartStatus } from "../accounting/globalChartStatus.js";
 import { aplicarRegrasAEmpresaNova } from "../obrigacoes/RegrasObrigacaoService.js";
 import { ROTINA_KEYS } from "../fiscal/serpro/SerproRuntimeSettings.js";
@@ -179,10 +180,23 @@ export async function provisionarEmpresa({ body, actorUserId, log = null } = {})
           telefone: normalizedCompany.telefone,
           endereco: enderecoToSingleLine(normalizedCompany.endereco),
           enderecoJson: normalizedCompany.endereco,
-          atividades: [
-            normalizedCompany.cnaePrincipal,
-            ...normalizedCompany.cnaesSecundarios,
-          ],
+          // ⚠ A DESCRICAO DO CNAE NASCE COM A EMPRESA. `normalizedCompany.cnaePrincipal` e
+          // `cnaesSecundarios` sao SO O CODIGO (7 digitos) desde 02/09/2026 — a coluna
+          // `Company.cnaePrincipal` tem 20 chars e a consulta a Receita traz
+          // `"46.19-2-00 - Representantes comerciais…"`, com ~90. O texto viaja a parte, em
+          // `descricoesEmbutidas`/`atividadesDescritas`, e e AQUI que ele volta a se juntar ao
+          // codigo. Sem esta mescla, empresa criada com a consulta preenchida nasceria com
+          // `atividades` de codigos nus — a mesma perda que a EDICAO ja consertou.
+          atividades: mesclarAtividades(
+            [],
+            [normalizedCompany.cnaePrincipal, ...normalizedCompany.cnaesSecundarios],
+            {
+              descritas: [
+                ...(normalizedCompany.descricoesEmbutidas || []),
+                ...(Array.isArray(payload?.atividadesDescritas) ? payload.atividadesDescritas : []),
+              ],
+            },
+          ),
           tipoTributario: normalizedCompany.regimeTributario,
           regimeTributario: normalizedCompany.regimeTributario,
           anexoSimples: normalizedCompany.simples?.anexo || null,

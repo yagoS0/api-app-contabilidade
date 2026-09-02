@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { api } from "../../api";
 import { limparSessao, lerEmpresaSalva, salvarEmpresa } from "../../api/sessionStore";
-import { ehVisitaDoEscritorio } from "../../api/accountGate";
+import { ehVisitaDoEscritorio, ehMestreDoEscritorio } from "../../api/accountGate";
 import { AlertaErro, Carregando, Vazio } from "../../components/ui";
 import { useCarregamento, useRota } from "../../lib/hooks";
 import { competenciaPadrao, fmtCnpj, texto } from "../../lib/format";
@@ -378,8 +378,15 @@ export function AppShell({ user }) {
               aoEmitir={abrirEmissao}
               aoPrepararLote={abrirLote}
               /* ⚠⚠ A visita do escritório NÃO emite (31/08/2026) — a faixa desta mesma casca já
-                 promete isso ao visitante, e a lista oferecia o botão assim mesmo. */
-              visitaDoEscritorio={ehVisitaDoEscritorio(user)}
+                 promete isso ao visitante, e a lista oferecia o botão assim mesmo.
+                 ⚠⚠ **MENOS O MESTRE (02/09/2026).** Dono: *"esse meu usuario, no portal do cliente
+                 deve ter todos os poderes, inclusive de emitir notas"*. O servidor JÁ concedia —
+                 medido em produção no mesmo dia: `myRole: OWNER`, `emissaoNfseLiberada: true` nas
+                 34 empresas, e o portão de emissão passando. Era ESTA LINHA que desabilitava os
+                 dois botões, porque o mestre também satisfaz `ehVisitaDoEscritorio`.
+                 ⚠ A visita SEM `admin` continua exatamente como era: os botões seguem
+                 desabilitados, com o motivo no `title`. Mestre é o ROLE, não a marca da porta. */
+              visitaDoEscritorio={ehVisitaDoEscritorio(user) && !ehMestreDoEscritorio(user)}
             />
           )
         ) : rota === "guias" ? (

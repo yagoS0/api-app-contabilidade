@@ -45,7 +45,11 @@ export const NATUREZA = Object.freeze({
 export const SECAO = Object.freeze({
   [NATUREZA.VIRA_LANCAMENTO]: {
     titulo: "Vira lançamento contábil",
-    frase: "O que for confirmado aqui cria um lançamento: débito na conta da despesa, crédito no caixa.",
+    // ⚠ *"por padrão"* entrou em 01/09/2026, quando o crédito virou escolhível (dono: *"devem ter
+    // opção de colocar débito e crédito"*). Sem essas duas palavras a seção AFIRMARIA o caixa, e a
+    // linha ao lado poderia estar creditando o banco — a tela negando o que ela mesma acabou de
+    // fazer. ⚠ O padrão continua dito, porque é ele que vale em quase toda linha.
+    frase: "O que for confirmado aqui cria um lançamento: débito na conta da despesa e, por padrão, crédito no caixa.",
   },
   [NATUREZA.SO_FLUXO]: {
     titulo: "Só entra no fluxo — não lança nada",
@@ -53,7 +57,15 @@ export const SECAO = Object.freeze({
   },
   [NATUREZA.REGRA]: {
     titulo: "Regras — o que decide sozinho",
-    frase: "Não é lançamento nem fluxo: é a configuração que decide o que vai acontecer com o que chegar depois.",
+    /**
+     * ⚠⚠ A FRASE MUDOU EM 01/09/2026, e mudar era obrigatório: ela dizia *"NÃO é lançamento nem
+     * fluxo"*, e desde que o extrato do que a automação lançou voltou para esta seção, isso passaria
+     * a ser FALSO — o que está recolhido ali dentro é lançamento contábil de verdade.
+     *
+     * A seção é sobre a AUTOMAÇÃO: a configuração que decide sozinha, e o que ela já fez. Manter a
+     * frase antiga faria a tela negar, no título, o conteúdo do próprio bloco.
+     */
+    frase: "É a configuração que decide sozinha o que vai acontecer com o que chegar depois — e, recolhido, o que ela já lançou.",
   },
 });
 
@@ -127,21 +139,9 @@ export const BLOCO = Object.freeze({
   RECORRENCIAS: "RECORRENCIAS",
   SAIDAS_DO_CLIENTE: "SAIDAS_DO_CLIENTE",
   MEXIDAS_DO_CLIENTE: "MEXIDAS_DO_CLIENTE",
+  LANCADOS_POR_REGRA: "LANCADOS_POR_REGRA",
   REGRAS: "REGRAS",
   FILA: "FILA",
-});
-
-/**
- * ⚠⚠ LÁPIDE — `LANCADOS_POR_REGRA` SAIU DESTA TELA em 01/09/2026 (dono: *"vão para uma sub aba de
- * lançamentos automáticos"*).
- *
- * Ele ERA um bloco de «Vira lançamento contábil» aqui; hoje é a aba própria
- * `lancamentosAutomaticos`, com as colunas que o dono pediu. O nome fica registrado para que
- * ninguém o reintroduza nesta lista achando que ficou esquecido — e para que quem procurar o
- * extrato saiba onde ele foi parar.
- */
-export const BLOCO_QUE_MUDOU_DE_TELA = Object.freeze({
-  LANCADOS_POR_REGRA: "lancamentosAutomaticos",
 });
 
 /**
@@ -162,9 +162,23 @@ export const BLOCO_QUE_MUDOU_DE_TELA = Object.freeze({
  */
 const NATUREZA_DO_BLOCO = Object.freeze({
   // Vira lançamento: casar um débito ao seu documento, e a fila.
-  // ⚠ `LANCADOS_POR_REGRA` saiu — ver a lápide acima.
   [BLOCO.CASAMENTOS]: NATUREZA.VIRA_LANCAMENTO,
   [BLOCO.FILA]: NATUREZA.VIRA_LANCAMENTO,
+
+  /**
+   * ⚠⚠ ESTE É O ÚNICO BLOCO QUE NÃO CAI NA SEÇÃO DA PRÓPRIA NATUREZA, e a exceção é decisão do
+   * dono (01/09/2026: *"devolva a aba pras regras"*).
+   *
+   * As linhas dele **são lançamentos contábeis** — pela régua do destino, ele pertenceria a «Vira
+   * lançamento contábil». Ele fica em «Regras» porque a pergunta que ele responde é sobre a
+   * AUTOMAÇÃO, não sobre a fila: *"o que a regra que eu liguei já fez?"*. É a consequência ao lado
+   * da causa, e era exatamente esse o argumento que a posição original dele carregava — *"o contador
+   * ligaria mais uma regra sem ter olhado o que a anterior fez"*.
+   *
+   * ⚠ A frase da seção foi corrigida junto (ela dizia "não é lançamento nem fluxo"). Deixar a
+   * frase velha faria a tela negar, no título, o conteúdo do próprio bloco.
+   */
+  [BLOCO.LANCADOS_POR_REGRA]: NATUREZA.REGRA,
 
   // ⚠ RECORRÊNCIA É FLUXO, e isso foi medido, não suposto: o painel dela diz de si mesmo que
   // *"NÃO DECIDE NADA"* e que existe para o fluxo futuro ("uma aproximação de 130 no fluxo"). Ela

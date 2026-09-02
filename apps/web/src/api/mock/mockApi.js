@@ -3253,15 +3253,26 @@ const MEXIDAS_DO_MOCK = Object.freeze([
 ]);
 
 const mexidasDesfeitas = new Set();
-/**
- * ⚠ O que o contador liberou no FLUXO, offline. Chave = id do declarado.
- * ⚠ Ele guarda também a EMISSÃO, porque é o padrão quando ninguém manda data — sem isso o ramo
- * "cai na emissão" ficaria inalcançável no navegador.
- */
-const declaradosNoFluxo = new Map();
 
 /** ⚠ Estado em memória das fotos de simulação, por empresa. Ver o par acima. */
 const mockSimulacoesPlanejamento = {};
+
+/**
+ * ⚠⚠ A VARREDURA AUTOMÁTICA DA CONFERÊNCIA, offline — estado de MÓDULO porque ligar e desligar
+ * precisam mudar a resposta seguinte. Um mock que respondesse sempre a mesma coisa esconderia o ato.
+ * ⚠ Nasce LIGADA: o estado interessante é o que tem data-piso e as duas marcas para desenhar.
+ */
+let varreduraAutomaticaDoMock = {
+  ligada: true,
+  desde: "2026-07-01",
+  ligadaEm: "2026-08-01T10:00:00.000Z",
+  // ⚠⚠ «OLHEI» É DEPOIS DE «TROUXE», e é o caso normal: varri hoje e não veio nada; a última que
+  // veio foi anteontem. É o único arranjo em que a distinção aparece na tela.
+  ultimaTentativaEm: "2026-09-02T08:00:00.000Z",
+  ultimoResultadoEm: "2026-08-31T08:00:00.000Z",
+  ultimoCriados: 12,
+  ultimoErro: null,
+};
 
 export function createMockApi() {
   let accessToken = "";
@@ -3369,10 +3380,36 @@ export function createMockApi() {
             c.companyId !== companyId
             && String(c.ownerEmail || "").trim().toLowerCase() === emailNovoMock
         );
-        if (deOutro) {
-          const err = new Error("owner_email_already_in_use");
-          err.code = "owner_email_already_in_use";
+        // ⚠⚠ ESTE RAMO RECUSAVA COM `owner_email_already_in_use` — a recusa FINAL que o dono
+        //   REVOGOU em 30/08/2026 (*"podemos usar o mesmo email para mais de uma empresa"*). O
+        //   servidor ja pedia confirmacao (`owner_email_conta_existente`) e o mock continuava
+        //   recusando: offline a tela mostrava um beco sem saida que producao nao tem mais.
+        //   Quinta vez que o mock esconde um ramo neste projeto.
+        if (deOutro && confirmarNovoAcesso !== true) {
+          const donoDestino = mockCompanies.find(
+            (c) =>
+              c.companyId !== companyId
+              && String(c.ownerEmail || "").trim().toLowerCase() === emailNovoMock
+          );
+          const doDestino = mockCompanies.filter(
+            (c) =>
+              c.companyId !== companyId
+              && String(c.ownerEmail || "").trim().toLowerCase() === emailNovoMock
+          );
+          const err = new Error("owner_email_conta_existente");
+          err.code = "owner_email_conta_existente";
           err.status = 409;
+          err.payload = {
+            error: "owner_email_conta_existente",
+            emailAtual: emailAtualMock,
+            nomeAtual: atualMock.ownerName || null,
+            emailNovo: emailNovoMock,
+            nomeDaContaDestino: donoDestino?.ownerName || null,
+            empresasDoDestino: doDestino.length,
+            outras: doDestino.map((c) => ({ id: c.companyId, razao: c.razao, cnpj: c.cnpj })),
+            contaDestinoJaTemSenha: true,
+            acessoAntigoPerdeEstaEmpresa: true,
+          };
           throw err;
         }
         if (daConta.length > 1 && confirmarNovoAcesso !== true) {
@@ -3486,17 +3523,35 @@ export function createMockApi() {
       // ⚠ Só quando o acesso PRÓPRIO foi mesmo criado. As outras empresas do e-mail antigo não são
       // tocadas aqui — que é literalmente a garantia do conserto, e offline ela se vê olhando
       // `mockCompanies` depois do salvar.
-      const criouAcessoProprio =
+      const trocouDeConta =
         confirmarNovoAcesso === true
         && emailNovoMock
         && emailAtualMock
         && emailNovoMock !== emailAtualMock;
+      // ⚠ OS DOIS DESFECHOS DIZEM COISAS DIFERENTES, e o mock precisa exercer os dois: conta
+      //   CRIADA nasce sem senha; conta que JA EXISTIA nao tem nada a definir. Com um so, a tela
+      //   do vinculo nunca era vista offline.
+      const vinculouContaExistente = trocouDeConta
+        && mockCompanies.some(
+          (c) =>
+            c.companyId !== companyId
+            && String(c.ownerEmail || "").trim().toLowerCase() === emailNovoMock
+        );
       return {
         ok: true,
         company: next,
-        ...(criouAcessoProprio
-          ? { acessoNovo: { userId: `mock-user-${companyId}`, email: emailNovoMock, semSenha: true } }
-          : {}),
+        ...(vinculouContaExistente
+          ? {
+              acessoVinculado: {
+                userId: `mock-user-${emailNovoMock}`,
+                email: emailNovoMock,
+                nome: null,
+                semSenha: false,
+              },
+            }
+          : trocouDeConta
+            ? { acessoNovo: { userId: `mock-user-${companyId}`, email: emailNovoMock, semSenha: true } }
+            : {}),
       };
     },
     async getCompanyGuides(companyId) {
@@ -7433,21 +7488,6 @@ export function createMockApi() {
       return { ok: true };
     },
 
-    /**
-     * ⚠⚠ PÔR/TIRAR do fluxo, offline. O mock guarda a data para a tela poder alternar o rótulo do
-     * botão ("Pôr no fluxo" × "Tirar do fluxo") — sem estado, o clique não teria efeito visível e
-     * o ramo de remover nasceria inalcançável.
-     */
-    async postConferenciaFluxo(_companyId, declaradoId, { data } = {}) {
-      await delay(60);
-      // ⚠ `undefined` = "não mandei data" ⇒ cai na emissão (o mock usa a do item). `null` = tirar.
-      const alvo = declaradosNoFluxo.get(String(declaradoId));
-      const escolhida = data === null ? null : (data === undefined ? (alvo?.emissao || null) : data);
-      if (escolhida) declaradosNoFluxo.set(String(declaradoId), { ...(alvo || {}), previsto: escolhida });
-      else declaradosNoFluxo.delete(String(declaradoId));
-      return { ok: true, declarado: { id: declaradoId, previstoNoFluxoEm: escolhida } };
-    },
-
     async postConferenciaSaidaLancar(_companyId, saidaId, { contaDespesa } = {}) {
       await delay(60);
       // ⚠ O mock exerce a recusa do SERVIDOR: sem conta não há lançamento, e o sistema não escolhe
@@ -7702,15 +7742,13 @@ export function createMockApi() {
         : base.filter((d) => d.competencia);
 
       const estados = estado ? String(estado).split(",") : ["AGUARDANDO_PAGAMENTO", "A_CONFERIR"];
-      // ⚠⚠ O QUE O CONTADOR LIBEROU NO FLUXO viaja na linha, offline — sem isto o botão "Tirar do
-      // fluxo" e o rótulo com a data nasceriam INALCANÇÁVEIS no navegador, e é a quinta vez que
-      // este mock esconderia um ramo. A emissão é memorizada porque é o padrão do servidor quando
-      // ninguém manda data.
-      const itens = doRecorte.filter((d) => estados.includes(d.estado)).map((d) => {
-        const guardado = declaradosNoFluxo.get(d.id);
-        if (!guardado) declaradosNoFluxo.set(d.id, { emissao: d.dataDocumento || null });
-        return { ...d, previstoNoFluxoEm: guardado?.previsto || null };
-      });
+      const itens = doRecorte
+        .filter((d) => estados.includes(d.estado))
+        // ⚠⚠ `contaCredito` VIAJA NA LINHA (01/09/2026) — dono: *"devem ter opção de colocar débito
+        // e crédito"*. `null` = ninguém escolheu, e vale o caixa. Sem a chave no mock, o campo do
+        // modal nasceria vazio offline mesmo para uma linha que TEM crédito escolhido, e o defeito
+        // só apareceria em produção — que é o pior momento possível.
+        .map((d) => ({ contaCredito: null, ...d }));
 
       return {
         ok: true,
@@ -7870,6 +7908,8 @@ export function createMockApi() {
               // ⚠ A nota espera pagamento: é o caso de sempre, e ela se funde.
               leitura: "sem_pagamento",
               podeFundir: true,
+              // ⚠ Os DOIS VERBOS nunca são verdade juntos: a nota em aberto se CASA.
+              podeAbsorver: false,
               fraseDaCandidata: "Esta nota ainda não tem data de pagamento.",
             },
             candidatos: [
@@ -7892,6 +7932,7 @@ export function createMockApi() {
               frase: "O nome do fornecedor aparece na descrição do banco.",
               leitura: "pagamento_declarado",
               podeFundir: true,
+              podeAbsorver: false,
               fraseDaCandidata: "Você informou esta data à mão. Casar substitui a declaração pela data do extrato, que é prova.",
             },
             candidatos: [
@@ -7936,15 +7977,24 @@ export function createMockApi() {
               frase: "O nome do fornecedor aparece na descrição do banco.",
               leitura: "ja_contabilizada",
               podeFundir: false,
+              // ⚠⚠ E ELA É A ÚNICA QUE SE ABSORVE — o quarto verbo (01/09/2026). Até ele existir,
+              // este caso não tinha saída nenhuma: o débito ficava na fila para sempre.
+              podeAbsorver: true,
+              // ⚠⚠ A DIVERGÊNCIA VIAJA COM A SUGESTÃO, e o mock a traz DIVERGINDO de propósito: o
+              // razão diz 15/07 e o extrato prova 20/07. Com as duas datas iguais, o aviso — que é
+              // a metade "e AVISA" da decisão do dono — nasceria inalcançável offline.
+              divergencia: { diverge: true, dias: 5, dataDoLancamento: "2026-07-15", dataDoExtrato: "2026-07-20" },
               fraseDaCandidata: "Esta nota já virou lançamento, e por isso não há o que casar — mas este débito é o "
-                + "pagamento dela. Não o contabilize à parte: seria a mesma despesa duas vezes. Para corrigir a data, "
+                + "pagamento dela. Não o contabilize à parte: seria a mesma despesa duas vezes. Absorver tira o débito "
+                + "da fila sem criar lançamento nenhum, e sem tocar no que já está no razão. Para corrigir a data, "
                 + "desfaça o lançamento e refaça.",
             },
             candidatos: [
               {
                 nota: { id: "dec-5", valor: "2400.00", descricaoOriginal: "SINTROPIA SERVICOS LTDA", dataDocumento: "2026-07-03" },
                 pista: "NOME_NO_MEMO", frase: "O nome do fornecedor aparece na descrição do banco.",
-                leitura: "ja_contabilizada", podeFundir: false,
+                leitura: "ja_contabilizada", podeFundir: false, podeAbsorver: true,
+                divergencia: { diverge: true, dias: 5, dataDoLancamento: "2026-07-15", dataDoExtrato: "2026-07-20" },
               },
             ],
             motivo: null, frase: "",
@@ -7968,6 +8018,9 @@ export function createMockApi() {
               frase: "O nome do fornecedor aparece na descrição do banco.",
               leitura: "data_presumida",
               podeFundir: true,
+              // ⚠⚠ ELA TAMBÉM ESTÁ CONTABILIZADA e mesmo assim NÃO se absorve: ali o extrato
+              // CORRIGE a data que a regra presumiu. Absorvê-la jogaria fora a única prova do dia.
+              podeAbsorver: false,
               fraseDaCandidata: "Esta nota foi lançada sozinha, na data fixa que a regra deste fornecedor configurou — "
                 + "ninguém provou que o dinheiro saiu naquele dia. Casar troca a data presumida pela do extrato, no "
                 + "lançamento que já existe. Nenhum lançamento novo é criado.",
@@ -7990,6 +8043,21 @@ export function createMockApi() {
       await delay(140);
       return { ok: true, nota: { id: declaradoNotaId, estado: "A_CONFERIR" }, debito: { id: declaradoOfxId, estado: "FUNDIDO" } };
     },
+    /**
+     * ⚠⚠ ABSORVER, offline — e a resposta é DIFERENTE da de fundir, de propósito.
+     *
+     * A nota volta `CONTABILIZADO` (não `A_CONFERIR`): ela não foi tocada. E a `divergencia` vem
+     * junto, divergindo — é ela que a tela mostra como aviso.
+     */
+    async postConferenciaAbsorver(_companyId, { declaradoOfxId, declaradoNotaId }) {
+      await delay(140);
+      return {
+        ok: true,
+        declarado: { id: declaradoOfxId, estado: "FUNDIDO", parDeclaradoId: declaradoNotaId },
+        nota: { id: declaradoNotaId, estado: "CONTABILIZADO" },
+        divergencia: { diverge: true, dias: 5, dataDoLancamento: "2026-07-15", dataDoExtrato: "2026-07-20" },
+      };
+    },
     async postVarrerNotas(_companyId, desde) {
       await delay(200);
       // ⚠ O relatório volta INTEIRO: o que entrou, o que já existia e o que foi RECUSADO com o
@@ -8005,6 +8073,50 @@ export function createMockApi() {
           { notaId: "nota-91", motivo: "cancelada", frase: "A nota foi cancelada." },
         ],
       };
+    },
+    /**
+     * ⚠⚠ A VARREDURA AUTOMÁTICA, offline — e ela nasce LIGADA no mock, de propósito.
+     *
+     * O estado interessante é o ligado: é ele que tem data-piso, «olhei» e «trouxe» para desenhar.
+     * Nascendo desligada, a linha de estado — que é a metade visível desta entrega — só apareceria
+     * para quem ligasse à mão, e o ramo ficaria inalcançável numa conferência offline.
+     *
+     * ⚠ `ultimaTentativaEm` é DEPOIS de `ultimoResultadoEm` de propósito: é o caso normal (olhei
+     * hoje, não veio nada; a última que veio foi anteontem) e o único em que a distinção aparece.
+     */
+    async getVarreduraAutomatica(_companyId) {
+      await delay(60);
+      if (!varreduraAutomaticaDoMock) {
+        return { ok: true, ligada: false, indisponivel: false, desde: null };
+      }
+      return { ok: true, indisponivel: false, ...varreduraAutomaticaDoMock };
+    },
+    async postVarreduraAutomatica(_companyId, desde) {
+      await delay(180);
+      varreduraAutomaticaDoMock = {
+        ligada: true,
+        desde,
+        ligadaEm: new Date().toISOString(),
+        ultimaTentativaEm: new Date().toISOString(),
+        ultimoResultadoEm: new Date().toISOString(),
+        ultimoCriados: 12,
+        ultimoErro: null,
+      };
+      // ⚠ O relatório volta com as MESMAS chaves do botão avulso — no servidor as duas portas
+      // compartilham o corpo (`varrerAgora`), e um mock que divergisse esconderia isso.
+      return {
+        ok: true, ligada: true, desde,
+        varridas: 18, criados: 12, jaExistiam: 4,
+        fora: [{ notaId: "nota-80", motivo: "anterior_ao_piso" }],
+        recusados: [
+          { notaId: "nota-90", motivo: "sem_valor", frase: "A nota não tem valor — não vira despesa." },
+        ],
+      };
+    },
+    async deleteVarreduraAutomatica(_companyId) {
+      await delay(80);
+      varreduraAutomaticaDoMock = null;
+      return { ok: true, ligada: false, desligadas: 1 };
     },
     async getConferenciaVarredura(_companyId) {
       await delay(60);

@@ -29,6 +29,11 @@
 // (analítica). Lançar em conta de agregação não falha aqui — falha na ENTREGA, meses depois, longe
 // do lançamento que a causou.
 import { ehContaSintetica, mensagemRecusa } from "../../accounting/lib/gateContaSintetica.js";
+// ⚠⚠ A REGRA DA DISPONIBILIDADE É IMPORTADA, NUNCA REESCRITA — e é a MESMA que decide o que entra
+// no fluxo de caixa e a que `RegraService` já usa para recusar o crédito de uma regra. Ela responde
+// pelo PREFIXO do `codigoCompleto`, nunca pelo nome. ⚠ NÃO reescrever como `!== NAO_DISPONIVEL`:
+// com isso `DISPONIVEL_NAO_CLASSIFICADO` e `INDETERMINADO` entrariam.
+import { entraNoFluxoDeCaixa } from "../../accounting/lib/disponibilidades.js";
 
 /**
  * ⚠ VALOR NOVO de `origem`, e é deliberado. `MANUAL` e `EXCEL` já respondem "quem digitou isto?".
@@ -59,6 +64,10 @@ export const RECUSA_DA_FORMA = Object.freeze({
   CAIXA_FORA_DO_PLANO: "caixa_fora_do_plano",
   CAIXA_AMBIGUO: "caixa_ambiguo",
   CAIXA_SINTETICO: "caixa_sintetico",
+  CREDITO_FORA_DO_PLANO: "credito_fora_do_plano",
+  CREDITO_AMBIGUO: "credito_ambiguo",
+  CREDITO_SINTETICO: "credito_sintetico",
+  CREDITO_NAO_E_DISPONIBILIDADE: "credito_nao_e_disponibilidade",
   VALOR_INVALIDO: "valor_invalido",
   SEM_HISTORICO: "sem_historico",
 });
@@ -84,6 +93,20 @@ export const FRASE_DA_RECUSA_DA_FORMA = Object.freeze({
   [RECUSA_DA_FORMA.CAIXA_SINTETICO]:
     "A conta de caixa (1.1.1.01.0001) desta empresa está marcada como SINTÉTICA (de agregação) e não "
     + "recebe lançamento. Corrija o plano de contas: é ela que recebe o crédito de toda despesa.",
+  // ⚠ As três abaixo são as irmãs das `CAIXA_*`, e existem separadas porque o CONSERTO é outro: lá
+  // o caixa é cravado e o plano é que está torto ("corrija o plano"); aqui a conta foi ESCOLHIDA
+  // por uma pessoa, e o conserto é escolher outra.
+  [RECUSA_DA_FORMA.CREDITO_FORA_DO_PLANO]:
+    "A conta de crédito escolhida não existe no plano desta empresa. Escolha outra, ou cadastre-a antes de lançar.",
+  [RECUSA_DA_FORMA.CREDITO_AMBIGUO]:
+    "Duas contas do plano desta empresa têm o código completo da conta de crédito escolhida. O sistema não escolhe entre elas.",
+  [RECUSA_DA_FORMA.CREDITO_SINTETICO]:
+    "A conta de crédito escolhida é SINTÉTICA (de agregação) e não recebe lançamento. Escolha uma conta analítica abaixo dela.",
+  // ⚠⚠ Resposta do dono, 29/08/2026: *"continua sendo disponibilidade (caixa/banco)"*. O que muda
+  // numa compra de ativo é o DÉBITO, que sempre foi livre.
+  [RECUSA_DA_FORMA.CREDITO_NAO_E_DISPONIBILIDADE]:
+    "O crédito de uma despesa sai de caixa ou banco. A conta escolhida não é de disponibilidade — "
+    + "se o que muda é a natureza do gasto (uma compra de ativo, por exemplo), quem muda é a conta de DÉBITO.",
   [RECUSA_DA_FORMA.VALOR_INVALIDO]: "O valor do lançamento precisa ser um número maior que zero.",
   [RECUSA_DA_FORMA.SEM_HISTORICO]: "O lançamento precisa de histórico.",
 });
@@ -186,14 +209,46 @@ export function montarLancamento(declarado, plano) {
     );
   }
 
-  const caixa = indice.get(CAIXA_CODIGO_COMPLETO);
-  if (!caixa) return recusa(RECUSA_DA_FORMA.CAIXA_FORA_DO_PLANO);
-  if (caixa.ambiguo) return recusa(RECUSA_DA_FORMA.CAIXA_AMBIGUO);
+  /**
+   * ⚠⚠ O CRÉDITO ESCOLHIDO VENCE O CAIXA CRAVADO (01/09/2026) — decisão do dono: *"aqueles que
+   * viram lançamento contábil devem ter opção de colocar débito e crédito"*.
+   *
+   * ⚠ `null`/vazio = ninguém escolheu, e aí é o caixa de sempre (`111010001`), que é o
+   * comportamento medido das 155 despesas existentes. A ausência NÃO é recusada.
+   * ⚠⚠ As recusas são SEPARADAS das do caixa de propósito: quando a conta foi escolhida por uma
+   * pessoa, o conserto é escolher outra; quando é o caixa cravado, o conserto é corrigir o PLANO.
+   * Uma frase só mandaria metade dos casos para o lugar errado.
+   */
+  const creditoEscolhido = String(declarado?.contaCredito || "").trim();
+  const completoDoCredito = creditoEscolhido || CAIXA_CODIGO_COMPLETO;
+  const escolhido = Boolean(creditoEscolhido) && creditoEscolhido !== CAIXA_CODIGO_COMPLETO;
+
+  const caixa = indice.get(completoDoCredito);
+  if (!caixa) return recusa(escolhido ? RECUSA_DA_FORMA.CREDITO_FORA_DO_PLANO : RECUSA_DA_FORMA.CAIXA_FORA_DO_PLANO);
+  if (caixa.ambiguo) return recusa(escolhido ? RECUSA_DA_FORMA.CREDITO_AMBIGUO : RECUSA_DA_FORMA.CAIXA_AMBIGUO);
+  /**
+   * ⚠⚠ O CRÉDITO TEM DE SER DISPONIBILIDADE — resposta do dono, 29/08/2026: *"continua sendo
+   * caixa/banco"*, e ele não foi revogado pelo pedido de 01/09 (lá o exemplo é *compra de ativo*,
+   * que muda o **débito**).
+   *
+   * ⚠⚠ SEM ESTA GUARDA, uma despesa creditando `fornecedores a pagar` sairia daqui — e ela AFIRMA
+   * que o dinheiro saiu do caixa, que é a invariante que sustenta o fluxo inteiro. O lançamento
+   * seria válido no razão e mentiria no caixa: some do fluxo (que só conta o que credita
+   * disponibilidade) sem nunca aparecer como obrigação em lugar nenhum.
+   * ⚠ Só vale para a conta ESCOLHIDA: o caixa cravado já é disponibilidade por construção, e
+   * medi-lo aqui recusaria a empresa cujo plano ainda não tem `codigoCompleto` na conta de caixa —
+   * que é problema de plano, e já tem recusa própria.
+   */
+  if (escolhido && !entraNoFluxoDeCaixa(caixa.conta)) {
+    return recusa(RECUSA_DA_FORMA.CREDITO_NAO_E_DISPONIBILIDADE);
+  }
   // ⚠ O caixa é CRAVADO (`111010001`), então esta recusa é sobre o PLANO estar torto, não sobre uma
   // escolha do contador — por isso ela tem motivo próprio, e a frase manda corrigir o plano em vez
   // de mandar escolher outra conta. Sem ela, a perna de crédito entraria em conta de agregação pelo
   // mesmo buraco que a de débito, e `POST /entries` recusaria as duas.
-  if (ehContaSintetica(caixa.conta)) return recusa(RECUSA_DA_FORMA.CAIXA_SINTETICO);
+  if (ehContaSintetica(caixa.conta)) {
+    return recusa(escolhido ? RECUSA_DA_FORMA.CREDITO_SINTETICO : RECUSA_DA_FORMA.CAIXA_SINTETICO);
+  }
 
   return {
     ok: true,

@@ -386,8 +386,13 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
         <Carregando>Carregando guias…</Carregando>
       ) : query.erro ? null : guias.length === 0 ? (
         <Vazio>
+          {/* ⚠⚠ O VAZIO NÃO PODE AFIRMAR "NÃO EXISTE GUIA" — desde 02/09/2026 a lista mostra só
+              as LIBERADAS (dono: *"as únicas guias que devem aparecer no portal do cliente são as
+              liberadas pelo contador"*), e daqui não dá para distinguir *"o contador ainda não
+              gerou"* de *"gerou e ainda não liberou"*. As duas terminam no mesmo lugar — esperar o
+              contador —, e é isso que a frase diz, sem escolher uma delas por conta própria. */}
           {competencia
-            ? `Nenhuma guia em ${fmtCompetencia(competencia)} — a guia costuma sair no mês seguinte. Escolha "Todas" para ver o histórico.`
+            ? `Nenhuma guia liberada em ${fmtCompetencia(competencia)} — ela costuma sair no mês seguinte, e aparece aqui quando seu contador liberar. Escolha "Todas" para ver o histórico.`
             : "Nenhuma guia liberada para esta empresa até agora."}
         </Vazio>
       ) : (

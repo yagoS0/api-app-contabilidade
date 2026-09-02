@@ -195,7 +195,8 @@ Fora: 1.595 pelo piso, **62 sem valor**, **60 canceladas** — todas nomeadas no
 ## ✅ FASE B2 — o extrato vira o PAGAMENTO da nota
 
 `POST /client/companies/:id/ofx/import` (o cliente sobe) · `GET /firm/companies/:id/conferencia/casamentos`
-e `POST .../conferencia/casamentos/fundir` (o contador confere).
+e `POST .../conferencia/casamentos/fundir` (o contador confere) · `POST .../conferencia/casamentos/absorver`
+(⚠ a nota JÁ foi lançada: o débito só some, e nada é escrito no razão).
 
 ### ⚠⚠ O parser de OFX foi EXTRAÍDO, não reescrito
 
@@ -287,6 +288,46 @@ contador, num segundo ato.
   Coluna de sugestão envelheceria calada.
 - ⚠ **A rota de fundir NÃO tem guarda de mês fechado**, e é deliberado: nada chega ao razão. Quem
   recusa mês fechado continua sendo `CONFIRMAR`.
+
+### ⚠⚠ ABSORVER — o QUARTO verbo, e o único que não toca no outro lado (01/09/2026)
+
+> Dono: *"eu posso ter feito os lançamentos através da nota, e depois importar o extrato, pois podem
+> haver pagamento a pessoa física, o que não gera nota, porém os pagamentos das notas estarão
+> contidos. **Como não duplicar isso?**"*
+
+⚠⚠ **ESSE CASO NÃO TINHA SAÍDA NENHUMA.** A nota já lançada volta `podeFundir: false` — e com razão,
+não há data a preencher —, então a tela só sabia PEDIR, por escrito, que ninguém contabilizasse o
+débito à parte. Ele ficava na fila **para sempre**, e a única porta que existia de fato era a
+errada: qualquer clique em «Lançar» ali criava a segunda despesa.
+
+`absorverDebitoJaContabilizado` grava **UMA linha**: o débito vira `FUNDIDO` apontando para a nota.
+
+| | fundir | absorver |
+|---|---|---|
+| a nota | recebe a data do extrato (ou a tem corrigida) | **não é tocada** |
+| o razão | nada é criado | **nada é criado, nada é alterado** |
+| o débito | `FUNDIDO` | `FUNDIDO` |
+| escritas | duas, numa `$transaction` | **uma** — e por isso não há transação aqui |
+
+- ⚠⚠ **QUEM DIZ QUE A NOTA SE ABSORVE É `lerCandidata`**, nunca um `if` no serviço. A nota lançada
+  **por regra** também está `CONTABILIZADO`, e para ela o ato certo é o casamento, que **corrige a
+  data presumida**; absorvê-la jogaria fora a única prova que existe do dia real.
+  ⚠ `podeFundir` e `podeAbsorver` **nunca são verdade juntos** — há teste sobre as cinco leituras.
+- ⚠⚠ **A DIVERGÊNCIA DE DATAS VIAJA, e é a única perda do ato.** O razão afirma o dia que uma pessoa
+  decidiu; o extrato prova outro. Absorver não corrige isso — corrigir exigiria reescrever um
+  `AccountingEntry` que alguém decidiu. Decisão do dono, escolhendo entre absorver calado e absorver
+  avisando: **"absorve e AVISA"**. `divergenciaDeDatas` responde em DIAS CIVIS, e **`diverge: null`
+  («não sei», falta uma das datas) nunca vira `false`**.
+- ⚠ **Sem guarda de mês fechado**, pelo mesmo motivo da fusão e com uma razão a mais: recusar num mês
+  fechado deixaria o débito oferecido ao lote como despesa sem nota — a contagem dupla que o ato
+  existe para impedir.
+- ⚠ A pré-condição viaja no `where` do `updateMany` (`estado` + `parDeclaradoId: null`), a mesma
+  disciplina da fusão contra a corrida.
+
+*Experimentos executados: sem a guarda de `lerCandidata`, **2 vermelhos**; absorver escrevendo a
+data na nota, **2**. Na tela: `podeAbsorver` lido por omissão, **6**; o aviso de divergência mudo,
+**5**; absorver chamando a rota da fusão, **4**; o aviso guardado dentro do painel (que o
+`key={versao}` remonta), **2**.*
 
 ## ⚠⚠ A FASE C0 (BACKFILL) FOI CANCELADA — a memória por descrição JÁ EXISTE
 
@@ -739,6 +780,52 @@ fornecedor, nunca a carteira inteira.
 ⚠ E mais duas recusas: **sem CNPJ** (a âncora aqui é só ele — a de descrição *se parece*, não
 identifica, e o que está em jogo é um lançamento sem clique) e **sem `diaDoLancamento`** (a data não
 se arbitra).
+
+### ⚠⚠⚠ O CRÉDITO DA REGRA FICOU TRÊS DIAS SEM CHEGAR AO RAZÃO — fechado em 01/09/2026
+
+⚠⚠ **A METADE DE BAIXO DESTA DECISÃO NUNCA ACONTECEU, e não havia sinal nenhum disso.**
+`lancarPorRegra` passava `contaCredito` para `aplicarTransicao` desde 29/08; `podeTransitar` **não
+lia o campo** e `LancamentoDeclarado` **não tinha a coluna**. O contador escolhia o crédito na regra
+do fornecedor, a regra o guardava, e o razão continuava creditando o caixa cravado — sem erro, sem
+log, sem nada na tela.
+
+⚠⚠ **O QUE ESCONDEU O DEFEITO FOI UM TESTE QUE MEDIA O ARGUMENTO, NÃO O EFEITO**:
+`lancamentoPorRegra.test.js` conferia que `dados.contaCredito` era PASSADO. Ninguém conferia que ele
+CHEGAVA. O experimento prova: desligando o tratamento do campo, a suíte inteira ficava **verde**.
+Hoje o mesmo experimento dá **6 vermelhos** — a corrente medida é *ato → coluna → linha de crédito
+do `AccountingEntry`*.
+
+⚠ Hoje o crédito é escolhível também **na Conferência** (decisão do dono, 01/09: *"aqueles que viram
+lançamento contábil devem ter opção de colocar débito e crédito"*), pela mesma coluna e com a mesma
+guarda de disponibilidade. ⚠ `undefined` = "não mexer", `null` = "voltar ao caixa" — sem a distinção,
+o «Lançar» da linha (que não tem campo de crédito) apagaria a escolha da regra a cada confirmação.
+
+### ⚠⚠ A VARREDURA AUTOMÁTICA — a data-piso vira decisão permanente (01/09/2026)
+
+> Dono: *"aquela parte onde diz «trazer notas» — elas devem ser trazidas automaticamente, como tem
+> na aba de notas fiscais deve aparecer ali."*
+
+⚠⚠ **MEDIDO ANTES**: `varrerNotasDaEmpresa` tinha **um** chamador, a rota. Nenhum worker. As notas
+chegavam sozinhas à base e paravam ali — virar FILA dependia de alguém clicar.
+
+⚠⚠ **A SAÍDA NÃO FOI AFROUXAR A DATA-PISO.** Ela é obrigatória porque, sem piso, a primeira
+varredura despeja a base inteira na fila (1.897 NFS-e recebidas) — não é fila, é muro; e um piso
+escolhido pelo SISTEMA faria o sistema decidir o tamanho do trabalho do contador. O que se guarda é
+a ESCOLHA dele (`varreduras_automaticas_de_notas`, uma linha por empresa), repetida a cada ciclo do
+`dfeNotasWorker`. A varredura é idempotente, então repetir o mesmo piso é seguro por construção —
+não há cursor a manter. ⚠ **Empresa sem linha não é varrida sozinha.**
+
+⚠⚠ **ELA ENFILEIRA E PARA AÍ**: `lancarPorRegraNaEmpresa` NÃO entra no caminho automático. Criar
+`AccountingEntry` a partir de um processo de fundo, sem ninguém presente, é mudar a forma como o
+lançamento acontece — pedido explícito do dono, não efeito colateral de "trazer as notas".
+
+⚠ *"Olhei"* e *"trouxe"* são gravados SEPARADOS (`ultimaTentativaEm` × `ultimoResultadoEm`), pela
+mesma lição que custou 29 dias de captura parada em produção.
+
+### ⚠⚠ ABSORVER — o quarto verbo (01/09/2026)
+
+Ver a seção **"FUNDIR NÃO É CONTABILIZAR"**, logo acima: o débito de um pagamento cuja nota **já
+virou lançamento** deixou de ser um beco sem saída.
 
 ### ⚠⚠ O CRÉDITO É RECUSADO SE NÃO FOR DISPONIBILIDADE
 

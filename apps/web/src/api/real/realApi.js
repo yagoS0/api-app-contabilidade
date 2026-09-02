@@ -1887,20 +1887,6 @@ export function createRealApi() {
         body: JSON.stringify(corpo || {}),
       });
     },
-    /**
-     * ⚠⚠ PÔR (ou TIRAR) a despesa no fluxo do cliente, SEM lançar — dono, 01/09/2026.
-     *
-     * ⚠ `data` ausente ⇒ o servidor usa a EMISSÃO da nota. `data: null` ⇒ TIRA do fluxo. As duas
-     * não podem se confundir, e é por isso que o corpo só carrega a chave quando ela foi passada:
-     * com `{ data: data || undefined }`, o clique de remover viraria "use a emissão".
-     */
-    async postConferenciaFluxo(companyId, declaradoId, { data } = {}) {
-      const corpo = data === undefined ? {} : { data };
-      return request(`/firm/companies/${companyId}/conferencia/${declaradoId}/fluxo`, {
-        method: "POST",
-        body: JSON.stringify(corpo),
-      });
-    },
     /** ⚠ A saída do cliente virando lançamento contábil. A conta é escolha de quem clica. */
     async postConferenciaSaidaLancar(companyId, saidaId, { contaDespesa } = {}) {
       return request(`/firm/companies/${companyId}/conferencia/saidas-do-cliente/${saidaId}/lancar`, {
@@ -1954,6 +1940,23 @@ export function createRealApi() {
         body: JSON.stringify({ declaradoOfxId, declaradoNotaId }),
       });
     },
+    /**
+     * ⚠⚠ ABSORVER — o quarto verbo (01/09/2026), para a nota que JÁ virou lançamento.
+     *
+     * > Dono: *"eu posso ter feito os lançamentos através da nota, e depois importar o extrato (…)
+     * > como não duplicar isso?"*
+     *
+     * ⚠ A diferença para `postConferenciaFundir` é o que ele NÃO faz: nada é criado no razão e a
+     * nota não é tocada. O débito sai da fila porque a despesa já está lançada, do outro lado.
+     * ⚠⚠ A resposta traz `divergencia` — o razão pode estar com uma data e o banco com outra, e
+     * absorver não corrige isso. A decisão do dono foi AVISAR.
+     */
+    async postConferenciaAbsorver(companyId, { declaradoOfxId, declaradoNotaId }) {
+      return request(`/firm/companies/${companyId}/conferencia/casamentos/absorver`, {
+        method: "POST",
+        body: JSON.stringify({ declaradoOfxId, declaradoNotaId }),
+      });
+    },
     // ⚠⚠ `desde` É OBRIGATÓRIA (o servidor recusa com 400 sem ela). São 1.897 notas recebidas: sem
     // corte, a primeira varredura produz a base inteira — e isso não é fila, é muro. Um default
     // aqui faria a TELA escolher o tamanho do trabalho, que é decisão do contador.
@@ -1965,6 +1968,31 @@ export function createRealApi() {
     },
     async getConferenciaVarredura(companyId) {
       return request(`/firm/companies/${companyId}/conferencia/varredura`);
+    },
+
+    // ── A VARREDURA AUTOMÁTICA (01/09/2026) ───────────────────────────────────────────────────
+    //
+    // > Dono: *"aquela parte onde diz «trazer notas» — elas devem ser trazidas automaticamente,
+    // > como tem na aba de notas fiscais deve aparecer ali."*
+    //
+    // ⚠⚠ A DATA-PISO CONTINUA OBRIGATÓRIA, e é o ponto: o que a automação guarda é a escolha do
+    // CONTADOR, repetida a cada ciclo de captura. Um piso escolhido pelo sistema despejaria as
+    // 1.897 notas recebidas na fila de uma vez.
+    async getVarreduraAutomatica(companyId) {
+      return request(`/firm/companies/${companyId}/conferencia/varredura-automatica`);
+    },
+    // ⚠ Ligar GUARDA a escolha **e varre na hora** — senão o contador escolhe a data e não vê nada
+    // acontecer até o próximo ciclo do worker, o que se lê como "não funcionou".
+    async postVarreduraAutomatica(companyId, desde) {
+      return request(`/firm/companies/${companyId}/conferencia/varredura-automatica`, {
+        method: "POST",
+        body: JSON.stringify({ desde }),
+      });
+    },
+    // ⚠ Desligar NÃO desfaz nada do que já entrou na fila: aquilo é fato consumado, e apagá-lo
+    // desfaria decisões que o contador já tomou sobre aquelas notas.
+    async deleteVarreduraAutomatica(companyId) {
+      return request(`/firm/companies/${companyId}/conferencia/varredura-automatica`, { method: "DELETE" });
     },
 
     // ── A REGRA DO FORNECEDOR, E O EXTRATO DO QUE ELA LANÇOU (29/08/2026) ─────────────────────

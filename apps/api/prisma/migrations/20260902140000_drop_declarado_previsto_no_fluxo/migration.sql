@@ -1,0 +1,18 @@
+-- ⚠⚠ DESTRUTIVA POR DECISAO DO DONO (02/09/2026) — ela APAGA uma coluna.
+--
+-- `previstoNoFluxoEm` nasceu e morreu em 01/09/2026: ela guardava a data em que a despesa entrava
+-- no fluxo do cliente SEM ser lancada (o botao «Fluxo»), e a regra que o dono deu horas depois
+-- ("so entra no fluxo aquilo que for lancado") matou o conceito inteiro. Ela ficou com lapide
+-- enquanto apagar era decisao dele; ele decidiu.
+--
+-- ⚠⚠ MEDIDO ANTES DE APAGAR, e e isto que torna a operacao segura:
+--   · ZERO linhas preenchidas (`COUNT("previstoNoFluxoEm") = 0` em 38 registros no dev);
+--   · ZERO escritores e ZERO leitores no codigo — a rota, o servico e o contribuinte do fluxo ja
+--     tinham sido removidos, e o unico `previstoNoFluxoEm` que restava em `src/` era um TESTE que
+--     prova que ninguem a le;
+--   · nenhum front a menciona a nao ser em fixture com `null`.
+--
+-- ⚠ `IF EXISTS` de proposito: a migration que a criou (`20260901190000`) foi aplicada no banco de
+-- desenvolvimento e pode nao ter chegado a todo ambiente. Sem ele, um banco que nunca recebeu a
+-- coluna quebraria aqui — e o efeito pretendido ("esta coluna nao existe") ja seria verdade.
+ALTER TABLE "lancamentos_declarados" DROP COLUMN IF EXISTS "previstoNoFluxoEm";

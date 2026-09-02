@@ -24,7 +24,9 @@ import {
   ESTADO,
   ESTADOS_SEM_LANCAMENTO,
   ehProvaDePagamento,
+  divergenciaDeDatas,
   FRASE_DA_CANDIDATA,
+  LEITURA_DA_CANDIDATA,
   lerCandidata,
   FRASE_DA_RECUSA,
   ORIGEM,
@@ -46,12 +48,13 @@ export const RECUSA_DO_SERVICO = Object.freeze({
   ORIGEM_INVALIDA: "origem_invalida",
   PAGAMENTO_SEM_PROCEDENCIA: "pagamento_sem_procedencia",
   CASAMENTO_NAO_CONFERE: "casamento_nao_confere",
-  /** ⚠ Já lançada: o lançamento dela JÁ é linha do fluxo. Uma previsão ao lado contaria em dobro. */
-  JA_LANCADO_NO_FLUXO: "ja_lancado_no_fluxo",
-  /** Despesa recusada não vai ao fluxo do cliente — diria o contrário da decisão do contador. */
-  RECUSADO_NAO_VAI_AO_FLUXO: "recusado_nao_vai_ao_fluxo",
-  /** ⚠ Sem data não há lugar na linha do tempo, e um dia chutado é uma afirmação sobre o caixa. */
-  SEM_DATA_PARA_O_FLUXO: "sem_data_para_o_fluxo",
+  /**
+   * ⚠ A nota não está no estado que a ABSORÇÃO exige (`CONTABILIZADO`, com data decidida por uma
+   * pessoa). Recusa PRÓPRIA porque o conserto é outro: absorver a nota errada não é "o casamento
+   * envelheceu", é usar o verbo errado — a que ainda não foi lançada se CASA, e a que foi lançada
+   * por REGRA se corrige pelo casamento.
+   */
+  NOTA_NAO_ESTA_LANCADA: "nota_nao_esta_lancada",
 });
 
 export const FRASE_DO_SERVICO = Object.freeze({
@@ -602,15 +605,26 @@ export async function sugestoesDePagamento({ portalClientId, client = prisma }) 
   // ⚠ A LEITURA DA CANDIDATA é acrescentada AQUI, e não dentro de `casarLote`: aquele módulo não
   // conhece estado, de propósito (há varredura provando). Ele responde "este débito paga esta
   // nota?"; o que se FAZ com o resultado é pergunta de estado, e mora em `estadosDeclarado.js`.
-  const comLeitura = (c) => {
+  //
+  // ⚠⚠ E A DIVERGÊNCIA DE DATAS VIAJA JUNTO, mas SÓ onde ela é a única perda do ato: na absorção
+  // (01/09/2026). Nos outros três verbos a data da nota vai ser preenchida ou corrigida pela do
+  // extrato — divergir é o estado de partida, não uma consequência a avisar.
+  const comLeitura = (debito) => (c) => {
     if (!c) return c;
     const r = lerCandidata(c.nota);
-    return { ...c, leitura: r.leitura, podeFundir: r.podeFundir, fraseDaCandidata: FRASE_DA_CANDIDATA[r.leitura] };
+    return {
+      ...c,
+      leitura: r.leitura,
+      podeFundir: r.podeFundir,
+      podeAbsorver: r.podeAbsorver,
+      fraseDaCandidata: FRASE_DA_CANDIDATA[r.leitura],
+      divergencia: r.podeAbsorver ? divergenciaDeDatas({ debito, nota: c.nota }) : null,
+    };
   };
   const linhas = casarLote(debitos, candidatas).map((l) => ({
     ...l,
-    sugestao: comLeitura(l.sugestao),
-    candidatos: (l.candidatos || []).map(comLeitura),
+    sugestao: comLeitura(l.debito)(l.sugestao),
+    candidatos: (l.candidatos || []).map(comLeitura(l.debito)),
   }));
 
   return { linhas, totalDebitos: debitos.length, totalNotas: candidatas.length };
@@ -792,83 +806,93 @@ export async function fundirPagamentoNaNota({
 }
 
 /**
- * ⚠⚠⚠ LIBERAR A DESPESA NO FLUXO — sem lançar nada. Decisão do dono, 01/09/2026.
+ * ⚠⚠ ABSORVER O DÉBITO NUMA NOTA **JÁ LANÇADA** — o quarto verbo, decisão do dono (01/09/2026).
  *
- * > *"temos um botão fluxo, que apenas libera no fluxo mas não lança"*, e sobre a data:
- * > **"na data da emissão mais o contador pode alterar"**.
+ * > *"eu posso ter feito os lançamentos através da nota, e depois importar o extrato (…) os
+ * > pagamentos das notas estarão contidos. Como não duplicar isso?"*
  *
- * ⚠⚠ **É O SEGUNDO VERBO DA MESMA LINHA, e a diferença entre os dois é a invariante do caixa:**
+ * ⚠⚠ **A DIFERENÇA PARA `fundirPagamentoNaNota` É O QUE ELE NÃO FAZ.** Lá o débito preenche o
+ * pagamento da nota; aqui a nota **não é tocada** — ela já está `CONTABILIZADO`, com data, conta e
+ * lançamento decididos por uma pessoa. O que este ato grava é UMA linha: o débito vira `FUNDIDO`
+ * apontando para a nota.
  *
- *   · **Lançar** → cria `AccountingEntry` (`D despesa / C caixa`) e AFIRMA que o dinheiro saiu.
- *     Exige `dataPagamento`, que é prova ou declaração.
- *   · **Fluxo**  → só diz *"esta despesa deve sair por volta de tal dia"*. Não toca no razão, e a
- *     linha entra no fluxo do cliente como **PREVISÃO**.
+ * ⚠⚠ **É UMA ESCRITA SÓ, e é por isso que não há `$transaction` aqui.** O argumento do cabeçalho
+ * deste arquivo — *"criar o lançamento e mudar o estado é UM ato"* — vale onde há duas escritas.
+ * Envolver uma escrita única numa transação daria a aparência de atomicidade sem acrescentá-la.
  *
- * A regra do dono, dita por ele: *"tudo que virar lançamento deve entrar no fluxo, mas nem tudo do
- * fluxo necessariamente deve ser um lançamento"*. Este verbo é a segunda metade dela.
+ * ⚠ A pré-condição viaja no `where` (`estado` + `parDeclaradoId: null`), a MESMA disciplina da
+ * fusão: a leitura acontece fora, e dois cliques concorrentes disputam o mesmo débito.
  *
- * ⚠ **PRESENÇA DA DATA = LIBERADA.** Não há estado novo — um estado a mais faria a fila ter duas
- * gramáticas para a mesma linha. `data: null` **tira** do fluxo.
+ * ⚠⚠ **NENHUMA GUARDA DE MÊS FECHADO**, e a ausência é deliberada: nada aqui chega ao razão. Exigir
+ * mês aberto impediria de reconhecer, num mês já fechado, um débito que o próprio fechamento
+ * conferiu — e o efeito de não reconhecer é o débito continuar oferecido ao lote como despesa sem
+ * nota, que é a contagem dupla.
  *
- * ⚠⚠ **NADA É INVENTADO QUANDO NÃO HÁ DATA.** Omitindo `data`, cai na **emissão da nota**, que foi a
- * escolha do dono e é um dado que existe. Sem `dataDocumento` a resposta é RECUSA nomeada, nunca
- * "hoje" nem o fim da competência: o fluxo é uma linha do tempo, e um dia chutado ali vira uma
- * afirmação sobre quando a empresa vai ficar sem dinheiro.
+ * @returns {{debito: object, nota: object, divergencia: object}} a divergência de datas VIAJA — ver
+ *   `divergenciaDeDatas`. Absorver não corrige a data do razão, e a decisão do dono foi avisar.
  */
-export async function liberarDeclaradoNoFluxo({
-  portalClientId, declaradoId, data, usuarioId, client = prisma,
+export async function absorverDebitoJaContabilizado({
+  portalClientId,
+  declaradoOfxId,
+  declaradoNotaId,
+  usuarioId,
+  agora,
+  client = prisma,
 }) {
-  const declarado = await client.lancamentoDeclarado.findFirst({
-    where: { id: String(declaradoId), portalClientId: String(portalClientId) },
-    select: { id: true, estado: true, dataDocumento: true, accountingEntryId: true },
-  });
-  if (!declarado) recusar(RECUSA_DO_SERVICO.NAO_ENCONTRADO);
+  const debito = await acharDeclarado(client, portalClientId, declaradoOfxId);
+  const nota = await acharDeclarado(client, portalClientId, declaradoNotaId);
 
-  // ⚠ Tirar do fluxo é sempre permitido: é desfazer uma previsão, e desfazer não afirma nada.
-  const tirando = data === null;
+  // ⚠⚠ OS DOIS LADOS TÊM DE SER DO TIPO CERTO — a mesma guarda da fusão, pelo mesmo motivo medido
+  // em 25/08/2026: sem ela uma NOTA podia ser absorvida dentro de outra, e uma despesa real
+  // desaparecia da fila sem nunca ter sido lançada.
+  if (debito?.origem !== ORIGEM.OFX_CLIENTE) recusar(RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE);
+  if (nota?.origem === ORIGEM.OFX_CLIENTE) recusar(RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE);
 
-  if (!tirando) {
-    /**
-     * ⚠⚠ JÁ LANÇADA NÃO SE LIBERA — e a recusa evita CONTAGEM DUPLA, não burocracia.
-     *
-     * O lançamento dela já é uma linha do fluxo por direito próprio (`FONTE.DESPESA_LANCADA`, como
-     * FATO). Uma previsão ao lado somaria o mesmo dinheiro duas vezes na tela do cliente.
-     */
-    if (declarado.accountingEntryId) recusar(RECUSA_DO_SERVICO.JA_LANCADO_NO_FLUXO);
-    // ⚠ Recusada é uma despesa que o contador disse não existir. Pô-la no fluxo do cliente diria o
-    // contrário do que ele acabou de decidir.
-    if (declarado.estado === ESTADO.RECUSADO) recusar(RECUSA_DO_SERVICO.RECUSADO_NAO_VAI_AO_FLUXO);
+  /**
+   * ⚠⚠ QUEM DIZ QUE ESTA NOTA SE ABSORVE É `lerCandidata`, NÃO UM `if` ESCRITO AQUI.
+   *
+   * A distinção é fina e cara: a nota lançada por REGRA também está `CONTABILIZADO`, e para ela o
+   * ato certo é o casamento, que **corrige a data presumida**. Absorvê-la jogaria fora a única
+   * prova que existe da data real, em silêncio. Uma segunda leitura desse critério, escrita neste
+   * arquivo, divergiria da primeira na primeira correção.
+   */
+  if (lerCandidata(nota).leitura !== LEITURA_DA_CANDIDATA.JA_CONTABILIZADA) {
+    recusar(RECUSA_DO_SERVICO.NOTA_NAO_ESTA_LANCADA);
   }
 
-  const escolhida = tirando
-    ? null
-    // ⚠ `undefined` = "não mandei data" ⇒ cai na emissão. `null` = "tire do fluxo". As duas não
-    // podem se confundir, e é por isso que a comparação é `=== undefined`, nunca `!data`.
-    : (data === undefined ? declarado.dataDocumento : lerDataDoFluxo(data));
+  // ⚠⚠ A REGRA É RECONFERIDA AQUI, e não só na tela — a sugestão que o contador viu pode ter
+  // envelhecido. Quem decide no instante do clique é o servidor.
+  if (!debitoPagaNota(debito, nota).casa) recusar(RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE);
 
-  if (!tirando && !escolhida) recusar(RECUSA_DO_SERVICO.SEM_DATA_PARA_O_FLUXO);
+  const noDebito = podeTransitar(debito, TRANSICAO.FUNDIR, { parDeclaradoId: nota.id });
+  if (!noDebito.ok) recusar(noDebito.motivo, noDebito.frase);
 
-  return client.lancamentoDeclarado.update({
-    where: { id: declarado.id },
-    data: {
-      previstoNoFluxoEm: escolhida,
-      // ⚠ Quem liberou fica registrado no mesmo campo que as outras decisões desta fila usam — a
-      // previsão que o cliente vê saiu de um ato de alguém, e a tela precisa poder dizer de quem.
-      decididoPor: String(usuarioId || "") || undefined,
+  const escrito = await client.lancamentoDeclarado.updateMany({
+    where: {
+      id: debito.id,
+      portalClientId: String(portalClientId),
+      estado: debito.estado,
+      // ⚠ Um débito já absorvido não se absorve de novo, nem que o estado tenha voltado por outro caminho.
+      parDeclaradoId: null,
     },
-    select: { id: true, previstoNoFluxoEm: true },
+    data: {
+      ...noDebito.campos,
+      estado: noDebito.estado,
+      decididoPor: String(usuarioId || ""),
+      decididoEm: agora,
+    },
   });
-}
+  if (escrito.count !== 1) recusar(RECUSA_DO_SERVICO.CASAMENTO_NAO_CONFERE);
 
-/**
- * ⚠ A data CIVIL vem como `AAAA-MM-DD` e é montada em UTC, por pedaço — nunca `new Date(texto)`.
- *
- * `new Date("2026-09-18")` já é UTC, mas `new Date("2026-09-18T00:00")` é local: as duas formas
- * chegam de clientes diferentes e uma delas desloca o dia. Montar por pedaço não tem esse ramo.
- */
-function lerDataDoFluxo(v) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v ?? "").trim());
-  if (!m) return null;
-  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  return Number.isNaN(d.getTime()) ? null : d;
+  const depois = await client.lancamentoDeclarado.findFirst({
+    where: { id: debito.id, portalClientId: String(portalClientId) },
+  });
+
+  // ⚠ A NOTA VOLTA COMO ESTAVA, relida do banco — é a prova, para quem chama e para o teste, de que
+  // este ato não a tocou.
+  const notaDepois = await client.lancamentoDeclarado.findFirst({
+    where: { id: nota.id, portalClientId: String(portalClientId) },
+  });
+
+  return { debito: depois, nota: notaDepois, divergencia: divergenciaDeDatas({ debito, nota }) };
 }

@@ -11,6 +11,7 @@ import {
   FRASE_DA_CANDIDATA,
   LEITURA_DA_CANDIDATA,
   ehProvaDePagamento,
+  divergenciaDeDatas,
   lerCandidata,
   FRASE_DA_RECUSA,
   ORIGEM,
@@ -326,12 +327,16 @@ describe("⚠⚠ PROVAR_PAGAMENTO — o extrato por cima do que foi declarado à
 describe("⚠⚠ lerCandidata — o que dá para fazer com a nota que o débito parece pagar", () => {
   it("sem data de pagamento: funde, é o caso de sempre", () => {
     const r = lerCandidata({ estado: ESTADO.AGUARDANDO_PAGAMENTO });
-    expect(r).toEqual({ leitura: LEITURA_DA_CANDIDATA.SEM_PAGAMENTO, podeFundir: true });
+    expect(r).toEqual({
+      leitura: LEITURA_DA_CANDIDATA.SEM_PAGAMENTO, podeFundir: true, podeAbsorver: false,
+    });
   });
 
   it("⚠⚠ data DECLARADA: funde, e é o caso novo — a prova entra por cima", () => {
     const r = lerCandidata({ estado: ESTADO.A_CONFERIR, origemPagamento: ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR });
-    expect(r).toEqual({ leitura: LEITURA_DA_CANDIDATA.PAGAMENTO_DECLARADO, podeFundir: true });
+    expect(r).toEqual({
+      leitura: LEITURA_DA_CANDIDATA.PAGAMENTO_DECLARADO, podeFundir: true, podeAbsorver: false,
+    });
     expect(FRASE_DA_CANDIDATA[r.leitura]).toMatch(/substitui a declaração/i);
   });
 
@@ -341,6 +346,103 @@ describe("⚠⚠ lerCandidata — o que dá para fazer com a nota que o débito 
     expect(r.leitura).toBe(LEITURA_DA_CANDIDATA.JA_CONTABILIZADA);
     expect(FRASE_DA_CANDIDATA[r.leitura]).toMatch(/mesma despesa duas vezes/i);
     expect(FRASE_DA_CANDIDATA[r.leitura]).toMatch(/desfaça o lançamento/i);
+  });
+
+  it("⚠⚠⚠ e ela é a ÚNICA que se ABSORVE — o quarto verbo (01/09/2026)", () => {
+    // ⚠⚠ ATÉ AQUI ESTE CASO NÃO TINHA SAÍDA: `podeFundir: false` e mais nada. O débito ficava na
+    // fila para sempre, com uma frase pedindo que ninguém o contabilizasse — e a única porta que
+    // existia de fato era a errada.
+    expect(lerCandidata({ estado: ESTADO.CONTABILIZADO }).podeAbsorver).toBe(true);
+    expect(FRASE_DA_CANDIDATA[LEITURA_DA_CANDIDATA.JA_CONTABILIZADA]).toMatch(/absorver/i);
+  });
+
+  it("⚠⚠⚠ a nota lançada POR REGRA não se absorve — ali o extrato CORRIGE a data", () => {
+    // ⚠⚠ As duas estão `CONTABILIZADO`, e é aqui que a distinção paga: absorver a nota de data
+    // PRESUMIDA jogaria fora a única prova que existe do dia real, em silêncio. Para ela o ato é o
+    // casamento (`CORRIGIR_DATA_PRESUMIDA`), que reescreve a data do lançamento que já existe.
+    const r = lerCandidata({
+      estado: ESTADO.CONTABILIZADO,
+      origemPagamento: ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA,
+    });
+    expect(r.leitura).toBe(LEITURA_DA_CANDIDATA.DATA_PRESUMIDA);
+    expect(r.podeAbsorver).toBe(false);
+    expect(r.podeFundir).toBe(true);
+  });
+
+  it("⚠⚠ os DOIS VERBOS NUNCA são verdade juntos — em nenhuma leitura", () => {
+    // Casar preenche/corrige a data da nota; absorver não toca nela. Oferecer os dois na mesma
+    // linha faria a tela perguntar ao contador uma coisa que o estado já responde.
+    const casos = [
+      { estado: ESTADO.AGUARDANDO_PAGAMENTO },
+      { estado: ESTADO.A_CONFERIR, origemPagamento: ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR },
+      { estado: ESTADO.A_CONFERIR, origemPagamento: ORIGEM_PAGAMENTO.OFX },
+      { estado: ESTADO.CONTABILIZADO },
+      { estado: ESTADO.CONTABILIZADO, origemPagamento: ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA },
+    ];
+    for (const c of casos) {
+      const r = lerCandidata(c);
+      expect(r.podeFundir && r.podeAbsorver).toBe(false);
+    }
+  });
+});
+
+describe("⚠⚠ divergenciaDeDatas — a única perda da absorção, e por isso ela é DITA", () => {
+  const dia = (iso) => new Date(`${iso}T00:00:00.000Z`);
+
+  it("⚠⚠ o extrato prova um dia e o lançamento afirma outro — diverge, com o número de dias", () => {
+    // O caso do dono: ele lançou pela nota, o extrato chegou depois. Absorver NÃO corrige o razão.
+    const r = divergenciaDeDatas({
+      debito: { dataPagamento: dia("2026-08-14") },
+      nota: { dataPagamento: dia("2026-08-10") },
+    });
+    expect(r.diverge).toBe(true);
+    expect(r.dias).toBe(4);
+    expect(r.dataDoLancamento).toEqual(dia("2026-08-10"));
+    expect(r.dataDoExtrato).toEqual(dia("2026-08-14"));
+  });
+
+  it("o sinal diz de que lado — o extrato ANTES do lançamento dá negativo", () => {
+    const r = divergenciaDeDatas({
+      debito: { dataPagamento: dia("2026-08-06") },
+      nota: { dataPagamento: dia("2026-08-10") },
+    });
+    expect(r.dias).toBe(-4);
+  });
+
+  it("mesmo dia: `diverge: false` com `dias: 0` — isso é uma RESPOSTA", () => {
+    const r = divergenciaDeDatas({
+      debito: { dataPagamento: dia("2026-08-10") },
+      nota: { dataPagamento: dia("2026-08-10") },
+    });
+    expect(r).toEqual({
+      diverge: false, dias: 0, dataDoLancamento: dia("2026-08-10"), dataDoExtrato: dia("2026-08-10"),
+    });
+  });
+
+  it("⚠⚠ data faltando é `diverge: null` — «não sei» NUNCA se disfarça de «está tudo certo»", () => {
+    // ⚠ É a mesma disciplina de `autoAtivadas: null` na varredura e de `aindaVale: null` no
+    // relatório: ausência e zero são desenhos diferentes nesta casa.
+    for (const caso of [
+      { debito: {}, nota: { dataPagamento: dia("2026-08-10") } },
+      { debito: { dataPagamento: dia("2026-08-10") }, nota: {} },
+      {},
+      { debito: { dataPagamento: "2026-08-10" }, nota: { dataPagamento: dia("2026-08-10") } },
+    ]) {
+      const r = divergenciaDeDatas(caso);
+      expect(r.diverge).toBeNull();
+      expect(r.dias).toBeNull();
+    }
+  });
+
+  it("⚠ a conta é em DIAS CIVIS — horas diferentes no mesmo dia não são divergência", () => {
+    // As duas colunas são `@db.Date`; comparar milissegundos faria a mesma data virar divergência
+    // conforme o fuso de quem gravou.
+    const r = divergenciaDeDatas({
+      debito: { dataPagamento: new Date("2026-08-10T23:59:00.000Z") },
+      nota: { dataPagamento: new Date("2026-08-10T00:00:00.000Z") },
+    });
+    expect(r.diverge).toBe(false);
+    expect(r.dias).toBe(0);
   });
 });
 
@@ -582,5 +684,65 @@ describe("⚠⚠ CORRIGIR_DATA_PRESUMIDA", () => {
     );
     expect(r.ok).toBe(false);
     expect(r.motivo).toBe(RECUSA.TRANSICAO_INVALIDA_NESTE_ESTADO);
+  });
+});
+
+
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠ A CONTA DE CRÉDITO NA TRANSIÇÃO (01/09/2026) — dono: *"aqueles que viram lançamento contábil
+// devem ter opção de colocar débito e crédito"*.
+//
+// ⚠⚠ ANTES DISTO A MÁQUINA DESCARTAVA O CAMPO EM SILÊNCIO. `lancarPorRegra` passava `contaCredito`
+// desde 29/08/2026 e `podeTransitar` não o lia: o contador escolhia o crédito na regra do
+// fornecedor e o razão continuava creditando o caixa cravado, sem erro nenhum e sem ninguém ver.
+//
+// ⚠ O experimento que expôs isso voltou ZERO vermelhos quando o campo foi desligado — a regra
+// existia e a LIGAÇÃO não tinha teste. É a mesma lição já escrita neste projeto.
+// -------------------------------------------------------------------------------------------------
+describe("⚠⚠ contaCredito na transição — «não mexer» ≠ «voltar ao caixa»", () => {
+  const contabilizavel = {
+    estado: ESTADO.A_CONFERIR,
+    dataPagamento: new Date("2026-07-15T00:00:00.000Z"),
+    origemPagamento: ORIGEM_PAGAMENTO.OFX,
+    contaSugerida: "411020008",
+  };
+
+  it("⚠⚠ a escolha É ESCRITA — é o campo que a forma do lançamento vai ler", () => {
+    const r = podeTransitar(contabilizavel, TRANSICAO.CONFIRMAR, { contaCredito: "111020001" });
+    expect(r.ok).toBe(true);
+    expect(r.campos.contaCredito).toBe("111020001");
+  });
+
+  it("⚠⚠⚠ AUSENTE é «não mexer» — o campo NEM APARECE nos campos escritos", () => {
+    // ⚠⚠ A distinção é o ato inteiro: se toda confirmação mandasse `contaCredito: null`, uma
+    // escolha já feita seria apagada por qualquer confirmação seguinte. E se ausência virasse
+    // `undefined` escrito, o Prisma receberia uma chave que não significa nada.
+    const r = podeTransitar(contabilizavel, TRANSICAO.CONFIRMAR, {});
+    expect(r.ok).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(r.campos, "contaCredito")).toBe(false);
+  });
+
+  it("⚠⚠ NULO (ou vazio) VOLTA AO CAIXA — é como se desfaz uma escolha errada", () => {
+    for (const v of [null, "", "   "]) {
+      const r = podeTransitar(contabilizavel, TRANSICAO.CONFIRMAR, { contaCredito: v });
+      expect(r.ok).toBe(true);
+      expect(r.campos.contaCredito).toBeNull();
+    }
+  });
+
+  it("⚠ vale para AJUSTAR também — os dois criam lançamento", () => {
+    const r = podeTransitar(contabilizavel, TRANSICAO.AJUSTAR, { contaCredito: "111020001", valorAjustado: 10 });
+    expect(r.ok).toBe(true);
+    expect(r.campos.contaCredito).toBe("111020001");
+  });
+
+  it("⚠ e NÃO vale para as transições que não lançam — informar pagamento não escolhe conta", () => {
+    const r = podeTransitar(
+      { estado: ESTADO.AGUARDANDO_PAGAMENTO },
+      TRANSICAO.INFORMAR_PAGAMENTO,
+      { dataPagamento: new Date("2026-07-15T00:00:00.000Z"), origemPagamento: ORIGEM_PAGAMENTO.OFX, contaCredito: "111020001" },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.campos.contaCredito).toBeUndefined();
   });
 });

@@ -36,15 +36,20 @@ function diaBr(iso) {
 
 export function PainelDeLancadosPorRegra({
   companyId, competencia, podeEscrever = true, aoDesfazer,
-  /**
-   * ⚠⚠ NUMA ABA PRÓPRIA, SUMIR DEIXARIA A TELA EM BRANCO — e tela em branco não distingue "não há
-   * lançamento automático" de "não carregou".
+  /*
+   * ⚠⚠ LÁPIDE — `recolhido` VIVEU UM DIA (01/09/2026), e o motivo dele foi cumprido por outro meio.
    *
-   * Dentro de "A lançar" ele é UM bloco entre vários e sumir é a resposta certa (com a automação
-   * desligada, que é o estado normal, um bloco permanente afirmaria o óbvio). Na aba
-   * **Lançamentos automáticos** ele é a tela inteira, e ali o vazio precisa DIZER que está vazio.
+   * Ele fazia este painel virar um `<details>` fechado dentro da seção «Regras». O argumento era o
+   * custo de rolagem: a tela já rola quase seis telas, e este bloco é CIÊNCIA (o que a automação já
+   * fez), não tarefa. O dono resolveu o mesmo problema melhor — *"os lançamentos automáticos
+   * podemos colocar um botão nesse a lançar que abre um menu lateral"* —, e numa GAVETA o extrato
+   * não ocupa rolagem nenhuma.
+   *
+   * ⚠ A prop saiu porque ficou sem chamador NO MESMO DIA em que nasceu, e um ramo `<details>` que
+   * ninguém renderiza convida a próxima pessoa a "restaurar" um layout que o dono já trocou.
+   * ⚠ `sumirQuandoVazio` morreu antes, pelo mesmo motivo: existiu para a aba própria, que durou
+   * horas.
    */
-  sumirQuandoVazio = true,
 }) {
   const [estado, setEstado] = useState({ carregando: true, dados: null, indisponivel: false, erro: null });
   const [marcados, setMarcados] = useState(() => new Set());
@@ -72,29 +77,10 @@ export function PainelDeLancadosPorRegra({
 
   const linhas = Array.isArray(estado.dados?.linhas) ? estado.dados.linhas : [];
 
-  // ⚠⚠ O PAINEL SOME QUANDO NÃO HÁ NADA — e sumir é a resposta certa DENTRO de "A lançar": com a
-  // automação desligada (que é o estado normal), um bloco permanente dizendo "nenhum lançamento
-  // automático" ocuparia a tela para afirmar o óbvio. Ele aparece exatamente quando há o que auditar.
-  // ⚠ Na ABA própria isso se inverte — ver `sumirQuandoVazio`.
-  if (sumirQuandoVazio && (estado.carregando || estado.indisponivel || !linhas.length)) return null;
-
-  if (!sumirQuandoVazio && (estado.carregando || estado.indisponivel || !linhas.length)) {
-    return (
-      <div style={{ ...card, color: "var(--text-muted)" }}>
-        {estado.carregando ? "Carregando…" : null}
-        {/* ⚠⚠ TRÊS AUSÊNCIAS, TRÊS FRASES. "A tabela não existe neste banco" (migration não
-            aplicada), "nada entrou sozinho neste mês" e "carregando" são respostas diferentes, e
-            desenhá-las iguais faria o contador concluir que a automação está quieta quando ela
-            simplesmente não pôde ser consultada. */}
-        {!estado.carregando && estado.indisponivel
-          ? "Não foi possível consultar os lançamentos automáticos desta empresa."
-          : null}
-        {!estado.carregando && !estado.indisponivel && !linhas.length
-          ? `Nenhum lançamento nasceu por regra em ${competencia}. Com a automação desligada, este é o estado normal.`
-          : null}
-      </div>
-    );
-  }
+  // ⚠⚠ O PAINEL SOME QUANDO NÃO HÁ NADA. Com a automação desligada — que é o estado normal — um
+  // bloco permanente dizendo "nenhum lançamento automático" ocuparia a tela para afirmar o óbvio.
+  // Ele aparece exatamente quando há o que auditar.
+  if (estado.carregando || estado.indisponivel || !linhas.length) return null;
 
   const alternar = (id) => setMarcados((s) => {
     const novo = new Set(s);
@@ -121,22 +107,34 @@ export function PainelDeLancadosPorRegra({
     }
   }
 
+  /**
+   * ⚠⚠ O RESUMO É O MESMO NOS DOIS ENVELOPES — contagem, valor e quantos estão sem nota.
+   *
+   * Recolhido, ele é a ÚNICA coisa visível: um "Lançados por regra" mudo não diria se vale a pena
+   * abrir, e o custo de abrir é justamente a rolagem que o recolhimento existe para poupar.
+   */
+  const resumo = (
+    <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
+      {linhas.length} {linhas.length === 1 ? "lançamento" : "lançamentos"} · {brl(estado.dados?.valor)}
+      {/* ⚠ O número vem do SERVIDOR (`semNota`), não recontado aqui: duas contagens da mesma
+          coisa divergem, e a que ninguém confere é a que erra. */}
+      {estado.dados?.semNota ? (
+        <span style={{ color: "var(--state-warn)" }}>
+          {" "}· {estado.dados.semNota} sem nota
+        </span>
+      ) : null}
+    </span>
+  );
+
   return (
     <div style={{ ...card, borderColor: "var(--state-warn)" }}>
+      {/* ⚠ O `h3` FICA, dentro da gaveta: ela tem título próprio (o `aria-label` do diálogo), e sem
+          este cabeçalho o conteúdo perderia a competência de que fala — que é o recorte inteiro. */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <strong style={{ flex: 1 }}>
+        <h3 style={{ flex: 1, margin: 0, font: "inherit", fontWeight: 700 }}>
           Lançados por regra · {estado.dados?.competencia || competencia}
-        </strong>
-        <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
-          {linhas.length} {linhas.length === 1 ? "lançamento" : "lançamentos"} · {brl(estado.dados?.valor)}
-          {/* ⚠ O número vem do SERVIDOR (`semNota`), não recontado aqui: duas contagens da mesma
-              coisa divergem, e a que ninguém confere é a que erra. */}
-          {estado.dados?.semNota ? (
-            <span style={{ color: "var(--state-warn)" }}>
-              {" "}· {estado.dados.semNota} sem nota
-            </span>
-          ) : null}
-        </span>
+        </h3>
+        {resumo}
       </div>
 
       {/* ⚠⚠ A FRASE DIZ O QUE ACONTECEU, não o que o sistema fez de bom. É a tela em que o contador

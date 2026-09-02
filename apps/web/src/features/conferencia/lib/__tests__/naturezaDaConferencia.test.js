@@ -11,7 +11,6 @@
 
 import {
   BLOCO,
-  BLOCO_QUE_MUDOU_DE_TELA,
   NATUREZA,
   SECAO,
   SECOES_NA_ORDEM,
@@ -51,13 +50,23 @@ describe("⚠⚠ o destino de cada bloco — é o que vira SEÇÃO", () => {
     expect(natureza(undefined)).toBeNull();
   });
 
-  it("⚠⚠ `LANCADOS_POR_REGRA` SAIU desta tela — e a lápide diz para onde", () => {
-    // Dono, 01/09/2026: *"vão para uma sub aba de lançamentos automáticos"*. Ele não foi duplicado.
-    // ⚠ Sem a lápide, o nome sumiria do vocabulário e a próxima pessoa o reintroduziria aqui
-    // achando que ficou esquecido — e a tela voltaria a mostrar o extrato em dois lugares.
-    expect(BLOCO.LANCADOS_POR_REGRA).toBeUndefined();
-    expect(natureza("LANCADOS_POR_REGRA")).toBeNull();
-    expect(BLOCO_QUE_MUDOU_DE_TELA.LANCADOS_POR_REGRA).toBe("lancamentosAutomaticos");
+  it("⚠⚠⚠ `LANCADOS_POR_REGRA` é o ÚNICO fora da seção da própria natureza — e é decisão do dono", () => {
+    // ⚠⚠ ELE FOI E VOLTOU NO MESMO DIA (01/09/2026): virou aba própria e o dono a devolveu —
+    // *"devolva a aba pras regras"*.
+    //
+    // As linhas dele SÃO lançamentos contábeis: pela régua do destino, ele cairia em
+    // «Vira lançamento contábil». Fica em «Regras» porque a pergunta que ele responde é sobre a
+    // AUTOMAÇÃO — *"o que a regra que eu liguei já fez?"* —, e a consequência ao lado da causa era
+    // o argumento da posição original dele.
+    expect(natureza(BLOCO.LANCADOS_POR_REGRA)).toBe(NATUREZA.REGRA);
+    expect(natureza(BLOCO.LANCADOS_POR_REGRA)).not.toBe(NATUREZA.VIRA_LANCAMENTO);
+  });
+
+  it("⚠⚠ e a frase da seção «Regras» DEIXOU de negar que ali há lançamento", () => {
+    // Ela dizia *"NÃO é lançamento nem fluxo"* — e com o extrato recolhido ali dentro isso passaria
+    // a ser falso: a tela negaria, no título, o conteúdo do próprio bloco.
+    expect(SECAO[NATUREZA.REGRA].frase).not.toMatch(/não é lançamento/i);
+    expect(SECAO[NATUREZA.REGRA].frase).toMatch(/o que ela já lançou/i);
   });
 
   it("os blocos declarados estão todos mapeados — a lista é fechada dos dois lados", () => {

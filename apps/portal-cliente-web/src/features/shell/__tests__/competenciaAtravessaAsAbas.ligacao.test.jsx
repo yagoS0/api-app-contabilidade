@@ -87,6 +87,26 @@ function competenciasPedidas() {
   return api.getInvoices.mock.calls.map(([, params]) => params?.competencia);
 }
 
+/**
+ * ⚠⚠ TETO DE TEMPO DESTE ARQUIVO — 20 s, e ele é DAQUI, nunca do `jest.config` (02/09/2026).
+ *
+ * ⚠⚠ **O PADRÃO DE 5 s NÃO SOBE NA CONFIGURAÇÃO**, e a razão é concreta: foi ele que expôs, em
+ * 01/09/2026, uma rota que PENDURAVA (a varredura de notas consultando o banco sem dublê). Um teto
+ * global maior teria transformado aquele defeito em *"a suíte está lenta hoje"* — que é exatamente
+ * como esta flutuação foi lida por semanas.
+ *
+ * ⚠⚠ **A MEDIÇÃO QUE JUSTIFICA O NÚMERO** (`jest --json`, 1.434 casos deste app): **17 casos** levam
+ * 3 s ou mais, e eles se concentram em **5 arquivos** — este é um deles. O mais pesado marcou
+ * 6,3 s. Ou seja: o corte de 5 s cai NO MEIO de uma população densa, e quem estoura não é o teste
+ * errado — é o que estava rodando quando a máquina engasgou. Subir teste a teste seria correr atrás
+ * de um alvo que muda a cada execução.
+ *
+ * ⚠ O custo é jsdom montando tabela de verdade (dezenas de células com estilo próprio, várias
+ * renderizações por caso). Não há espera, relógio nem rede aqui — em navegador isto é instantâneo.
+ * ⚠ Os outros ~1.417 casos deste app continuam com os 5 s de sempre.
+ */
+jest.setTimeout(20000);
+
 describe("a competência atravessa Início ⇄ Notas", () => {
   test("⚠ trocar o mês no Início muda o que NOTAS pede à API", async () => {
     await abrirApp();

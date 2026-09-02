@@ -26,14 +26,20 @@ import { PainelDeCasamentos } from "./PainelDeCasamentos";
 import { PainelDeRecorrencias } from "../../recorrencia/components/PainelDeRecorrencias";
 import { PainelDeSaidasDoCliente } from "./PainelDeSaidasDoCliente";
 import { PainelDeMexidasDoCliente } from "./PainelDeMexidasDoCliente";
+import { PainelDeLancadosPorRegra } from "./PainelDeLancadosPorRegra";
 import { PainelDeRegras } from "./PainelDeRegras";
-import { NATUREZA, SECAO, origemDaLinha } from "../lib/naturezaDaConferencia";
+import { NATUREZA, SECAO, origemDaLinha, veioDeExtrato } from "../lib/naturezaDaConferencia";
 // ⚠ Import entre features, deliberado: a URL da aba da empresa tem UMA fonte
 // (`companyTabPath`), e reconstruí-la aqui faria o link levar a um lugar e o clique a outro.
 import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
 import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
-import { debitosQueCasamComNota } from "../lib/contabilizacaoEmLote";
+import { debitosQueCasamComNota, FRASE_DO_FORA_DO_LOTE } from "../lib/contabilizacaoEmLote";
+// ⚠ REUSADA, não reescrita: é a MESMA lista que o seletor de crédito da regra do fornecedor
+// oferece, e ela filtra por PREFIXO do `codigoCompleto` (a cópia declarada da regra da api).
+import { contasDeCreditoOferecidas } from "../lib/regraDoFornecedor";
 import {
+  ESTADO_DA_AUTOMACAO,
+  leituraDaAutomacao,
   ACAO,
   COMPETENCIA_AUSENTE,
   ORIGEM_PAGAMENTO,
@@ -207,7 +213,21 @@ function DataComProcedencia({ item }) {
  *    verdade do ato: a tela só pergunta a data quando ninguém a provou, e o que a pessoa digita é
  *    declaração, não prova. Deixar o servidor adivinhar é o que produziu o defeito.
  */
-export function montarCorpo({ acao, item, data, motivo, valor, cfg, contaCompleta = null }) {
+export function montarCorpo({
+  acao, item, data, motivo, valor, cfg, contaCompleta = null,
+  /**
+   * ⚠⚠ O CRÉDITO ESCOLHIDO (01/09/2026) — dono: *"aqueles que viram lançamento contábil devem ter
+   * opção de colocar débito e crédito"*.
+   *
+   * ⚠⚠ SÃO DOIS PARÂMETROS, e não um, porque *"não escolhi"* e *"apaguei a escolha"* são atos
+   * OPOSTOS. Mandar `contaCredito: null` sempre que o campo estivesse vazio APAGARIA o crédito que
+   * a regra do fornecedor escolheu, a cada confirmação — inclusive as do botão «Lançar» da linha,
+   * que não tem campo de crédito nenhum. O servidor distingue ausente de nulo; a tela tem de
+   * respeitar a distinção do lado de cá.
+   */
+  creditoCompleto = null,
+  creditoTocado = false,
+}) {
   const corpo = {};
   if (acaoPedeData(acao, item) && data) {
     corpo.dataPagamento = data;
@@ -223,6 +243,11 @@ export function montarCorpo({ acao, item, data, motivo, valor, cfg, contaComplet
   if (cfg?.criaLancamento) {
     const conta = contaCompleta || item?.sugestao?.conta || null;
     if (conta) corpo.contaAplicada = conta;
+
+    // ⚠ Escolha nova ⇒ manda a conta. Campo LIMPO por quem tinha uma ⇒ manda `null`, que é o
+    // servidor voltando ao caixa cravado. Nada disso ⇒ a chave não viaja, e o que estava fica.
+    if (creditoCompleto) corpo.contaCredito = creditoCompleto;
+    else if (creditoTocado && item?.contaCredito) corpo.contaCredito = null;
   }
   return corpo;
 }
@@ -238,6 +263,13 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
   // ⚠ Sugestão ausente ⇒ campo VAZIO, nunca "a primeira conta do plano": eleger seria o sistema
   // decidindo em que conta a despesa entra, que é a decisão do contador.
   const [conta, setConta] = useState("");
+  /**
+   * ⚠⚠ O CRÉDITO — e ele NASCE VAZIO quando ninguém escolheu, com o rótulo dizendo que o padrão é
+   * o caixa. Preenchê-lo com "5" pareceria prestativo e apagaria a distinção que a coluna guarda:
+   * *"é caixa porque escolheram"* × *"é caixa por padrão"*.
+   */
+  const [credito, setCredito] = useState("");
+  const creditoTocado = useRef(false);
   // ⚠ Quem responde "por que o campo não veio preenchido?" — `FORA_DO_PLANO` e `COMPLETO_AMBIGUO`
   // eram TEXTO MORTO: o motivo de `reduzidoDoCompleto` era descartado com `.valor || ""` e o campo
   // ficava vazio e mudo. Achado por agente de verificação em 26/08/2026.
@@ -256,6 +288,15 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
     if (daSugestao.valor) setConta(daSugestao.valor);
   }, [daSugestao.valor]);
 
+  // ⚠ O MESMO efeito para o crédito JÁ ESCOLHIDO (pela regra do fornecedor, ou por uma confirmação
+  // anterior): ele chega em `codigoCompleto` e o contador lê o reduzido. Sem isto, reabrir a linha
+  // mostraria o campo vazio — que se lê como "não há crédito escolhido", o oposto da verdade.
+  const doCredito = useMemo(() => reduzidoDoCompleto(item?.contaCredito, contas), [item, contas]);
+  useEffect(() => {
+    if (creditoTocado.current) return;
+    if (doCredito.valor) setCredito(doCredito.valor);
+  }, [doCredito.valor]);
+
   const pedeConta = Boolean(cfg?.criaLancamento);
   const oferecidas = useMemo(() => contasOferecidas(contas), [contas]);
   const seletorVazio = useMemo(() => motivoDoSeletorVazio(contas, estadoDoPlano), [contas, estadoDoPlano]);
@@ -266,6 +307,19 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
   // ⚠ A tradução é a MESMA que vai ao POST — a tela não pode validar por um caminho e enviar por
   // outro. `traducao.motivo` é o que o campo mostra em vermelho.
   const traducao = useMemo(() => completoDoReduzido(conta, contas), [conta, contas]);
+  // ⚠ A tradução do crédito segue o mesmo caminho — e a lista dele é OUTRA: só disponibilidade.
+  const traducaoDoCredito = useMemo(() => completoDoReduzido(credito, contas), [credito, contas]);
+  const creditosOferecidos = useMemo(() => contasDeCreditoOferecidas(contas), [contas]);
+  /**
+   * ⚠⚠ A TELA RECUSA O QUE O SERVIDOR RECUSARIA: crédito que não é disponibilidade. Resposta do
+   * dono, 29/08/2026: *"continua sendo caixa/banco"* — o que muda numa compra de ativo é o DÉBITO.
+   * ⚠ A conferência é pelo PREFIXO do `codigoCompleto`, nunca pelo nome — cópia declarada da regra
+   * da api (`regraDoFornecedor.js`, que já a espelha).
+   */
+  const creditoNaoDisponivel = Boolean(
+    traducaoDoCredito.valor
+    && !creditosOferecidos.some((c) => c.codigoCompleto === traducaoDoCredito.valor),
+  );
 
   const pedeData = acaoPedeData(acao, item);
   // ⚠ A recusa exige motivo não-vazio (o servidor devolve `sem_motivo`). Ausência nunca é resposta.
@@ -279,7 +333,10 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
   const faltaValor = Boolean(cfg?.pedeValor) && !(Number.isFinite(valorNumero) && valorNumero > 0);
   // ⚠ O caixa é a contrapartida CRAVADA: torto, ele derruba a linha por mais certa que esteja a
   // conta escolhida.
-  const podeEnviar = !faltaData && !faltaMotivo && !faltaConta && !faltaValor && !caixaTorto;
+  // ⚠ Crédito ESCRITO e não traduzível (ou não disponível) trava o envio: vazio é legítimo — é o
+  // caixa padrão —, mas texto que não vira conta nenhuma seria a tela mandando o servidor recusar.
+  const creditoInvalido = Boolean(credito.trim()) && (!traducaoDoCredito.valor || creditoNaoDisponivel);
+  const podeEnviar = !faltaData && !faltaMotivo && !faltaConta && !faltaValor && !caixaTorto && !creditoInvalido;
 
   return (
     <Modal
@@ -304,9 +361,17 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
                   : caixaTorto ? caixaTorto
                     : faltaValor ? "Informe um valor maior que zero."
                       : faltaConta ? (traducao.motivo ? FRASE_DO_MOTIVO_DA_CONTA[traducao.motivo] : "Escolha a conta contábil da despesa.")
-                        : undefined
+                        : creditoInvalido ? (creditoNaoDisponivel
+                          ? "O crédito de uma despesa sai de caixa ou banco. Deixe vazio para usar o caixa."
+                          : "A conta de crédito escolhida não existe no plano desta empresa.")
+                          : undefined
             }
-            onClick={() => onConfirmar(montarCorpo({ acao, item, data, motivo, valor, cfg, contaCompleta: traducao.valor }))}
+            onClick={() => onConfirmar(montarCorpo({
+              acao, item, data, motivo, valor, cfg,
+              contaCompleta: traducao.valor,
+              creditoCompleto: traducaoDoCredito.valor,
+              creditoTocado: creditoTocado.current,
+            }))}
           >
             {ocupado ? "Enviando…" : cfg?.rotulo}
           </Button>
@@ -416,6 +481,63 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
           </label>
         ) : null}
 
+        {/* ─────────────────────────────────────────────────────────────────────────────────────────
+            ⚠⚠ A CONTA DE CRÉDITO — decisão do dono, 01/09/2026: *"aqueles que viram lançamento
+            contábil devem ter opção de colocar débito e crédito, por mais que sempre seja 5, pode
+            haver a possibilidade de ser compra de ativo, ou outra coisa"*.
+
+            ⚠⚠ ELE NASCE VAZIO, com o padrão DITO no rótulo. Preenchê-lo com o caixa pareceria
+            prestativo e apagaria a distinção que a coluna guarda: *"é caixa porque escolheram"* ×
+            *"é caixa por padrão"* — a mesma disciplina de `null` × `0` desta casa.
+
+            ⚠⚠ A LISTA SÓ TEM DISPONIBILIDADE (caixa, banco, aplicação), e não é um recorte estético:
+            o lançamento AFIRMA que o dinheiro saiu do caixa. Creditando "fornecedores a pagar" ele
+            seria válido no razão e mentiria no caixa — sumiria do fluxo (que só conta o que credita
+            disponibilidade) sem aparecer como obrigação em lugar nenhum. Quem muda numa compra de
+            ativo é o DÉBITO, o campo acima.
+            ───────────────────────────────────────────────────────────────────────────────────────── */}
+        {pedeConta ? (
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={{ fontWeight: 600 }}>
+              Conta de crédito — de onde o dinheiro saiu{" "}
+              <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>(vazio = caixa)</span>
+            </span>
+            <input
+              list="creditos-da-conferencia"
+              value={credito}
+              onChange={(e) => { creditoTocado.current = true; setCredito(e.target.value); }}
+              placeholder="Caixa (padrão) — ou o código do banco"
+              style={creditoInvalido ? { borderColor: "var(--state-danger)" } : undefined}
+            />
+            <datalist id="creditos-da-conferencia">
+              {creditosOferecidos.map((c) => (
+                <option key={c.codigo} value={c.codigo}>{c.nome}</option>
+              ))}
+            </datalist>
+
+            {creditoNaoDisponivel ? (
+              <span style={{ fontSize: "0.78rem", color: "var(--state-danger)" }}>
+                O crédito de uma despesa sai de caixa ou banco. Se o que muda é a natureza do gasto,
+                quem muda é a conta de <strong>débito</strong>, acima.
+              </span>
+            ) : creditoInvalido ? (
+              <span style={{ fontSize: "0.78rem", color: "var(--state-danger)" }}>
+                Esta conta não existe no plano desta empresa.
+              </span>
+            ) : traducaoDoCredito.conta ? (
+              <span style={{ fontSize: "0.78rem", color: "var(--text-faint)" }}>
+                {traducaoDoCredito.conta.nome}
+              </span>
+            ) : (
+              // ⚠ O padrão é DITO, não deduzido do campo vazio: sem esta linha, vazio se lê como
+              // "faltou preencher" — e faltou nada, é o caminho de sempre.
+              <span style={{ fontSize: "0.78rem", color: "var(--text-faint)" }}>
+                Sem escolha, o crédito vai para o caixa — como em toda despesa desta casa.
+              </span>
+            )}
+          </label>
+        ) : null}
+
         {pedeData ? (
           <label style={{ display: "grid", gap: 6 }}>
             <span style={{ fontWeight: 600 }}>Data do pagamento</span>
@@ -449,9 +571,15 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
           </label>
         ) : null}
 
+        {/* ⚠⚠ A FRASE ACOMPANHA A ESCOLHA — desde 01/09/2026 o crédito é escolhível, e uma frase
+            fixa dizendo *"crédito no caixa"* passaria a AFIRMAR o que o ato não vai fazer. Esta é a
+            última coisa que o contador lê antes de clicar; ela tem de descrever o clique dele. */}
         {cfg?.criaLancamento ? (
           <div style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
-            Isto cria um lançamento contábil: débito na conta da despesa, crédito no caixa.
+            Isto cria um lançamento contábil: débito na conta da despesa, crédito{" "}
+            {traducaoDoCredito.conta
+              ? <>em <strong>{traducaoDoCredito.conta.nome}</strong>.</>
+              : "no caixa."}
           </div>
         ) : null}
       </div>
@@ -513,7 +641,7 @@ function motivosDeBloqueioVisiveis(acoes, item, opcoes) {
   return vistas;
 }
 
-function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, contas = [], onLancar, onFluxo, ocupado }) {
+function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, contas = [], onLancar, ocupado, motivoDoCasamento }) {
   const estado = leituraDoEstado(item.estado);
   const doc = leituraDoDocumento(item);
   const acoes = acoesDaLinha(item);
@@ -553,12 +681,33 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
   // `AGUARDANDO_PAGAMENTO` exige a DATA junto — ali o caminho continua sendo o modal, porque a
   // data é a afirmação de quando o dinheiro saiu e não se digita de passagem.
   const podeLancarDaLinha = acoes.includes("confirmar") && !acaoPedeData("confirmar", item);
+  /**
+   * ⚠⚠⚠ A DESPESA EM DOBRO — a guarda que faltava na linha (01/09/2026).
+   *
+   * Um débito de extrato que é o PAGAMENTO de uma nota da fila não pode ser contabilizado à parte:
+   * a nota vira um lançamento e o débito vira outro, para o mesmo dinheiro que saiu uma vez. O lote
+   * já recusava abrir sem saber disto; a linha não sabia.
+   *
+   * ⚠⚠ NA DÚVIDA, BLOQUEIA — e só o que corre risco. Sem a resposta (`null`), o bloqueio vale
+   * apenas para as linhas que NASCERAM DE EXTRATO: são as únicas que podem ser o pagamento de uma
+   * nota. Bloquear a fila inteira por uma falha de rede pararia o trabalho que não corre risco
+   * nenhum; deixar o débito passar é o que erra dinheiro.
+   * ⚠ As DUAS frases já existem em `contabilizacaoEmLote` e são reusadas: uma manda casar no painel
+   * acima, a outra diz que não há o que casar (a nota já foi lançada) e o conserto é outro. Escrever
+   * uma terceira aqui faria a mesma tela dar dois conselhos para o mesmo caso.
+   */
+  const riscoDeDobro = motivoDoCasamento
+    ? FRASE_DO_FORA_DO_LOTE[motivoDoCasamento]
+    : (motivoDoCasamento === null && veioDeExtrato(item)
+      ? "Ainda não foi possível conferir se este débito já é o pagamento de uma nota da fila. "
+        + "Sem essa conferência, lançar aqui pode pôr a mesma despesa duas vezes."
+      : null);
+
   const bloqueioDoLancar = motivoDeBloqueio("confirmar", item, { podeEscrever, podeEscolherConta })
+    || riscoDeDobro
     || (!conta ? "Escolha a conta de despesa desta linha." : null)
     || (traducao.motivo ? FRASE_DO_MOTIVO_DA_CONTA[traducao.motivo] : null);
 
-  // ⚠ Presença da data = está no fluxo. `null` = fora dele — e é o que troca o rótulo do botão.
-  const noFluxo = Boolean(item.previstoNoFluxoEm);
   // ⚠⚠ É ISTO QUE RESPONDE "saídas do cliente" DENTRO da fila, sem duplicar a linha. A coluna
   // `origem` existe no model desde sempre, já viajava no serializador da rota, e **não aparecia em
   // lugar nenhum da tela**: a fila é homogênea por construção (toda linha é um `LancamentoDeclarado`),
@@ -668,31 +817,56 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
             </Button>
           ) : null}
           {/*
-            ⚠⚠ O BOTÃO FLUXO — *"apenas libera no fluxo mas não lança"* (dono, 01/09/2026).
-            É a segunda metade da regra dele: *"nem tudo do fluxo necessariamente deve ser um
-            lançamento"*. Ele NÃO toca no razão.
-            ⚠ NEUTRO, nunca accent: pôr no fluxo não é o ato principal desta tela, e duas ações
-            primárias lado a lado fazem as duas perderem o significado.
-            ⚠ O rótulo diz o que o clique FAZ, e a data em que ela está sai visível ao lado — não em
-            `title`, que não aparece no teclado nem no toque.
+            ⚠⚠ A PORTA DAS DUAS CONTAS (01/09/2026) — dono: *"aqueles que viram lançamento contábil
+            devem ter opção de colocar débito e crédito, por mais que sempre seja 5, pode haver a
+            possibilidade de ser compra de ativo, ou outra coisa"*.
+
+            ⚠⚠ **SEM ESTE BOTÃO A ESCOLHA DO CRÉDITO SERIA INALCANÇÁVEL NO CAMINHO NORMAL.** A linha
+            com data de pagamento lança direto (o «Lançar» ao lado) e o modal — o único lugar com os
+            dois seletores — só aparece quando a ação pede DATA. Ou seja: exatamente no caso mais
+            comum, o contador não teria como trocar o crédito.
+
+            ⚠ Ele NÃO vira uma coluna nova: a linha já tem nove, e o campo de crédito ao lado do de
+            débito seria a décima para uma escolha que é exceção. O que muda em quase toda linha é o
+            DÉBITO, e esse continua ali, digitável, sem abrir nada.
+            ⚠ Ele abre a MESMA ação (`confirmar`), no MESMO modal — não há um segundo formulário de
+            lançamento a divergir do primeiro.
           */}
-          {onFluxo && !item.accountingEntryId && item.estado !== "RECUSADO" ? (
+          {podeLancarDaLinha ? (
             <Button
               size="sm"
               variant="secondary"
               disabled={!podeEscrever || ocupado}
-              title={!podeEscrever ? "Você não tem permissão para mexer no fluxo desta empresa." : undefined}
-              onClick={() => onFluxo(item, noFluxo ? null : undefined)}
+              title={
+                podeEscrever
+                  ? "Escolher as duas contas (débito e crédito) antes de lançar."
+                  : "Seu perfil não pode alterar lançamentos desta empresa."
+              }
+              onClick={() => onAgir("confirmar", item)}
             >
-              {noFluxo ? "Tirar do fluxo" : "Pôr no fluxo"}
+              Contas…
             </Button>
           ) : null}
-          {/* ⚠ A data em que ela está no fluxo sai VISÍVEL, não em `title`: é o que distingue "no
-              fluxo" de "no fluxo em 25/09", e `title` não aparece no teclado nem no toque. */}
-          {noFluxo ? (
-            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", alignSelf: "center" }}>
-              no fluxo em {dataCivil(item.previstoNoFluxoEm)}
-            </span>
+          {/*
+            ⚠⚠ AQUI FICOU O BOTÃO «FLUXO», criado e removido em 01/09/2026 — as duas por decisão do
+            dono. Ele punha a despesa no fluxo do cliente SEM lançar.
+            ⚠ O QUE O DERRUBOU foi uma regra que veio depois, no mesmo dia: *"só entra no fluxo
+            aquilo que for lançado, ou seja as saídas do fluxo são as despesas lançadas"*. Com ela,
+            "liberar no fluxo sem lançar" deixa de existir como conceito — não é um botão que sumiu,
+            é a pergunta que ele respondia que deixou de ser feita.
+            ⚠ A coluna `previstoNoFluxoEm` foi APAGADA do banco em 02/09/2026, por decisão do dono —
+            depois de medida vazia (0 preenchidas em 38 linhas) e sem leitor nem escritor.
+          */}
+          {/* ⚠⚠ O RISCO DE DESPESA EM DOBRO SAI VISÍVEL, não só no `title` — `title` não aparece no
+              teclado nem no toque, e este é o único bloqueio desta tela que, ignorado, erra
+              DINHEIRO. Ele diz o que fazer (casar no painel acima), não só que não pode. */}
+          {riscoDeDobro && podeLancarDaLinha ? (
+            <div style={{
+              flexBasis: "100%", fontSize: "0.72rem", color: "var(--state-warn)",
+              textAlign: "right", maxWidth: 360, marginLeft: "auto",
+            }}>
+              {riscoDeDobro}
+            </div>
           ) : null}
           {/*
             ⚠⚠ `confirmar` SAI DO LAÇO quando a linha já lança sozinha — decisão do dono, 01/09/2026
@@ -750,7 +924,7 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
   );
 }
 
-export function ConferenciaTab({ companyId, competencia, podeEscrever = true, aoVoltar, aoAbrirAba }) {
+export function ConferenciaTab({ companyId, competencia, podeEscrever = true, aoVoltar }) {
   const [fila, setFila] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -764,6 +938,42 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState(null);
   const [varrendo, setVarrendo] = useState(false);
+  // ⚠ A gaveta do extrato das regras. Ver o bloco na seção «Regras».
+  const [vendoLancadosPorRegra, setVendoLancadosPorRegra] = useState(false);
+  /**
+   * ⚠⚠ O ESTADO DA VARREDURA AUTOMÁTICA — decisão do dono, 01/09/2026: *"elas devem ser trazidas
+   * automaticamente, como tem na aba de notas fiscais deve aparecer ali"*.
+   *
+   * ⚠ Ele é LIDO, nunca deduzido da fila: uma fila cheia não prova que a rotina rodou, e uma fila
+   * vazia não prova que ela está parada. A pergunta *"alguém está trazendo as notas?"* só tem uma
+   * fonte, e é o servidor.
+   */
+  const [automacao, setAutomacao] = useState(null);
+  /**
+   * ⚠⚠⚠ QUAIS DÉBITOS JÁ CASAM COM UMA NOTA — e é isto que impede a DESPESA EM DOBRO na linha.
+   *
+   * O lote já se protegia: `abrirLote` **recusa abrir** sem esta resposta, porque *"contabilizar à
+   * parte um débito que é o pagamento de uma nota duplica a despesa: a nota vira um lançamento e o
+   * débito vira outro, para o mesmo dinheiro que saiu uma vez"*.
+   *
+   * ⚠⚠ **A LINHA NÃO SE PROTEGIA — nem antes.** Achado por análise de UI/UX em 01/09/2026, e o
+   * relatório atribuiu o furo ao botão «Lançar» criado no mesmo dia. **Medido: o furo é ANTERIOR** —
+   * o «Confirmar» do modal nunca consultou isto, e `motivoDeBloqueio` não conhece casamento nenhum.
+   * O que o «Lançar» fez foi tirar o modal do caminho: de três cliques para um.
+   *
+   * ⚠ TRÊS ESTADOS, e o do meio é o que a maioria colapsa:
+   *   `Map`  → sei quais casam
+   *   `null` → **NÃO SEI** (a consulta falhou) ⇒ bloqueia os débitos de extrato, como o lote faz
+   *   ⚠ antes da primeira resposta ele também é `null`: "ainda não sei" e "não consegui saber" têm
+   *     a mesma resposta segura, e distingui-los só mudaria o TEXTO — não a decisão.
+   */
+  /**
+   * ⚠⚠ O AVISO DE DIVERGÊNCIA DE DATAS DA ABSORÇÃO — decisão do dono, 01/09/2026: *"absorve e
+   * AVISA"*. Ele vive AQUI, e não no painel, porque `key={versao}` remonta o painel a cada ato.
+   */
+  const [avisoDaDivergencia, setAvisoDaDivergencia] = useState(null);
+  const [quaisCasam, setQuaisCasam] = useState(null);
+
   // ⚠⚠ O LOTE (Fase C). `null` = fechado; `{ idsQueCasam }` = aberto.
   const [lote, setLote] = useState(null);
   const [abrindoLote, setAbrindoLote] = useState(false);
@@ -837,6 +1047,24 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
       .catch(() => { if (vivo) setFora(null); });
     return () => { vivo = false; };
   }, [companyId, competenciaDaConsulta, versao]);
+
+  /**
+   * ⚠ Consulta PRÓPRIA, e de propósito: a automação não muda quando a fila muda, e pendurá-la no
+   * `carregar` faria toda mudança de filtro bater numa rota que não tem nada a ver com o recorte.
+   * ⚠⚠ Falha vira `indisponivel`, nunca "desligada": a segunda é uma afirmação sobre a empresa.
+   */
+  const lerAutomacao = useCallback(async () => {
+    if (!companyId) return;
+    try {
+      setAutomacao(await conferenciaApi.getVarreduraAutomatica(companyId));
+    } catch {
+      setAutomacao({ ligada: false, indisponivel: true });
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    lerAutomacao();
+  }, [lerAutomacao]);
 
   const carregar = useCallback(async () => {
     if (!companyId) return;
@@ -983,41 +1211,18 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
   );
 
   /**
-   * ⚠⚠ PÔR/TIRAR DO FLUXO — *"apenas libera no fluxo mas não lança"*.
-   *
-   * ⚠ `data` chega `undefined` para PÔR (o servidor usa a emissão da nota, que foi a escolha do
-   * dono) e `null` para TIRAR. Colapsar os dois faria o botão de remover reinserir a linha.
+   * ⚠⚠ DESLIGAR NÃO DESFAZ NADA do que já entrou na fila — aquilo é fato consumado, e apagá-lo
+   * desfaria decisões que o contador já tomou sobre aquelas notas. O que para é a repetição.
    */
-  const mexerNoFluxo = useCallback(
-    async (item, data) => {
-      if (!item?.id) return;
-      setEnviando(true);
-      try {
-        await conferenciaApi.postConferenciaFluxo(companyId, item.id, data === null ? { data: null } : {});
-        setAviso(null);
-        await carregar();
-      } catch (e) {
-        setAviso(e?.message || "O servidor recusou esta mudança no fluxo.");
-      } finally {
-        setEnviando(false);
-      }
-    },
-    [companyId, carregar],
-  );
+  const desligarAutomacao = useCallback(async () => {
+    if (!companyId) return;
+    try {
+      await conferenciaApi.deleteVarreduraAutomatica(companyId);
+    } finally {
+      lerAutomacao();
+    }
+  }, [companyId, lerAutomacao]);
 
-  /**
-   * ⚠⚠ ABRIR O LOTE EXIGE SABER QUAIS DÉBITOS JÁ CASAM COM UMA NOTA — e sem essa resposta ele NÃO
-   * abre.
-   *
-   * Contabilizar à parte um débito de extrato que é o pagamento de uma nota da fila **duplica a
-   * despesa**: a nota vira um lançamento e o débito vira outro, para o mesmo dinheiro que saiu uma
-   * vez. É o erro mais caro desta aba, e é silencioso.
-   *
-   * ⚠ Por isso a falha aqui **fecha a porta** em vez de abrir sem o filtro. Em toda a outra
-   * consulta desta tela a falha é tolerada (a fila continua legível sem o plano de contas); nesta
-   * não dá: abrir sem a lista é abrir com a lista VAZIA, e a lista vazia autoriza justamente o que
-   * ela existe para impedir.
-   */
   const abrirLote = useCallback(async () => {
     setAviso(null);
     setAbrindoLote(true);
@@ -1099,7 +1304,9 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
             disabled={!podeEscrever}
             title={podeEscrever ? "Trazer notas recebidas para a fila." : "Seu perfil não pode alterar lançamentos desta empresa."}
           >
-            Trazer notas
+            {/* ⚠ O rótulo muda quando a rotina já está ligada: "Trazer notas" ali prometeria um ato
+                avulso, e o que o botão abre é a troca da data que vale daqui em diante. */}
+            {automacao?.ligada ? "Trazer notas · ajustar" : "Trazer notas"}
           </Button>
           {/* ⚠⚠ A PORTA DO LOTE — *"ai clicamos em importar e abre o modal para trabalharmos nele"*.
               O botão fica VISÍVEL e desabilitado com o motivo: botão que some esconde que a ação
@@ -1147,6 +1354,66 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
         </div>
       </div>
 
+      {/* ─────────────────────────────────────────────────────────────────────────────────────────
+          ⚠⚠ ESTÃO TRAZENDO AS NOTAS SOZINHO? — decisão do dono, 01/09/2026: *"elas devem ser
+          trazidas automaticamente, como tem na aba de notas fiscais deve aparecer ali"*.
+
+          ⚠⚠ ESTA LINHA É A METADE VISÍVEL DA ENTREGA, e ela existe pelo mesmo motivo do aviso
+          *"Última busca há 2h…"* da aba Notas Fiscais: **sem nota na tela, o contador precisa saber
+          se ninguém olhou, se olharam e não veio nada, ou se deu erro.** Uma fila vazia não
+          distingue as três, e a diferença entre elas é a diferença entre esperar e ir consertar.
+
+          ⚠ Discreta de propósito — ela é ciência, não tarefa. O ERRO é a exceção: esse não é para
+          ficar quieto, e sai em `--state-warn` (há uma decisão a tomar, nada está bloqueado).
+          ⚠⚠ E NÃO É `title`: `title` não aparece no teclado nem no toque. A regra desta casa.
+          ───────────────────────────────────────────────────────────────────────────────────────── */}
+      {automacao ? (() => {
+        const leitura = leituraDaAutomacao(automacao);
+        const alarma = leitura.estado === ESTADO_DA_AUTOMACAO.ERRO;
+        return (
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              flexWrap: "wrap",
+              fontSize: "0.78rem",
+              color: alarma ? "var(--state-warn)" : "var(--text-faint)",
+              ...(alarma
+                ? {
+                  background: "var(--state-warn-surface)",
+                  border: "1px solid var(--state-warn)",
+                  borderRadius: 8,
+                  padding: "6px 10px",
+                }
+                : {}),
+            }}
+          >
+            <span>{leitura.frase}</span>
+            {automacao.ligada && podeEscrever ? (
+              <button
+                type="button"
+                onClick={desligarAutomacao}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  color: "inherit",
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                  font: "inherit",
+                }}
+                /* ⚠ O que ele desfaz é a REPETIÇÃO, nunca a fila — e a frase diz isso, porque
+                   "parar de trazer" se lê facilmente como "tirar o que já veio". */
+                title="Para de trazer sozinho. As notas que já entraram na fila continuam lá."
+              >
+                parar de trazer sozinho
+              </button>
+            ) : null}
+          </div>
+        );
+      })() : null}
+
       <SecaoDaConferencia natureza={NATUREZA.VIRA_LANCAMENTO}>
         {/* ⚠ ACIMA DA FILA de propósito: um débito de extrato sem nota vinculada é o que pode virar
             despesa contada duas vezes, e é o que o contador precisa ver primeiro. O painel some
@@ -1154,7 +1421,16 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
         <PainelDeCasamentos
           key={versao}
           companyId={companyId}
+          /* ⚠ A MESMA resposta alimenta o painel e o bloqueio da fila. Uma segunda consulta daqui
+             divergiria da dele no instante em que uma recarregasse e a outra não. */
+          aoSaberQuaisCasam={setQuaisCasam}
           podeEscrever={podeEscrever}
+          /* ⚠⚠ O AVISO DA ABSORÇÃO MORA AQUI PORQUE O `key` ACIMA REMONTA O PAINEL — medido no
+             navegador em 01/09/2026: guardado lá dentro, ele nascia e morria no mesmo clique, e o
+             contador via o débito sumir sem nunca saber que o razão está com outra data. */
+          avisoDaDivergencia={avisoDaDivergencia}
+          aoAvisarDivergencia={setAvisoDaDivergencia}
+          aoDispensarAviso={() => setAvisoDaDivergencia(null)}
           aoCasar={() => {
             setVersao((v) => v + 1);
             carregar();
@@ -1319,9 +1595,12 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
                           podeEscrever={podeEscrever}
                           podeEscolherConta={podeEscolherConta}
                           onAgir={abrir}
+                          /* ⚠⚠ O VEREDITO DO CASAMENTO. `undefined` = esta linha não casa com nota
+                             nenhuma; uma string = casa, e a string É o motivo; `null` = não sabemos
+                             ainda (a consulta falhou ou não voltou). */
+                          motivoDoCasamento={quaisCasam === null ? null : quaisCasam.get(item.id)}
                           contas={contas}
                           onLancar={lancarDaLinha}
-                          onFluxo={mexerNoFluxo}
                           ocupado={enviando}
                         />
                       ))}
@@ -1374,34 +1653,75 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
           ⚠ `contas` é o plano JÁ CARREGADO desta tela: uma segunda busca daria dois planos possíveis
           para a mesma empresa, e o seletor da regra poderia oferecer conta que a fila recusa.
         */}
-        {/*
-          ⚠⚠ O CAMINHO PARA A CONSEQUÊNCIA, ao lado da causa. O extrato do que a automação lançou
-          saiu desta tela (ver o comentário na seção acima), e o argumento dele era justamente a
-          VIZINHANÇA com as regras — *"o contador ligaria mais uma regra sem ter olhado o que a
-          anterior fez"*. Perdida a adjacência, fica o link.
-          ⚠ `<a href>` de verdade, com `companyTabPath`: é a MESMA função que a navegação usa, e
-          Ctrl+clique abre em nova guia. Duas construções da mesma URL divergem na primeira correção.
-        */}
-        <a
-          href={companyTabPath(companyId, "lancamentosAutomaticos")}
-          onClick={(e) => oNavegadorAssumeOClique(e) || (e.preventDefault(), aoAbrirAba?.("lancamentosAutomaticos"))}
-          style={{ fontSize: "0.78rem", color: "var(--text-muted)", justifySelf: "start" }}
-        >
-          Ver o que estas regras já lançaram sozinhas →
-        </a>
+        {/* ⚠⚠ O EXTRATO DO QUE A REGRA JÁ LANÇOU MUDOU DE LUGAR PELA TERCEIRA VEZ EM DOIS DIAS —
+            e as três foram decisão do dono. Era um bloco aqui; virou aba própria; voltou recolhido
+            para cá (*"devolva a aba pras regras"*); e em 01/09/2026: *"os lançamentos automáticos
+            podemos colocar um botão nesse a lançar que abre um menu lateral"*.
+
+            ⚠ O ARGUMENTO DA VIZINHANÇA CONTINUA VALENDO e é o que decide ONDE fica o botão: ele
+            abre a gaveta de dentro da seção das REGRAS, ao lado da causa — *"o contador ligaria
+            mais uma regra sem ter olhado o que a anterior fez"*.
+            ⚠ O que mudou é o custo: recolhido, o extrato ainda ocupava uma linha e uma decisão
+            ("abro ou não?") numa tela que já rola quase seis telas. Na gaveta ele é ciência que se
+            consulta, não conteúdo que se rola por cima. */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <Button size="sm" variant="secondary" onClick={() => setVendoLancadosPorRegra(true)}>
+            Ver o que as regras já lançaram
+          </Button>
+          <span style={{ fontSize: "0.78rem", color: "var(--text-faint)" }}>
+            Abre ao lado, sem sair desta tela.
+          </span>
+        </div>
 
         <PainelDeRegras companyId={companyId} contas={contas} podeEscrever={podeEscrever} />
       </SecaoDaConferencia>
 
+      {/* ─────────────────────────────────────────────────────────────────────────────────────────
+          ⚠⚠ A GAVETA DOS LANÇAMENTOS AUTOMÁTICOS — dono, 01/09/2026: *"os lançamentos automáticos
+          podemos colocar um botão nesse a lançar que abre um menu lateral"*.
+
+          ⚠ É o `Modal lateral`, não um overlay novo: Esc, clique no fundo, foco preso e foco de
+          volta ao gatilho vêm do primitivo. Escrever o quarto-e-quarenta-e-quatro overlay à mão
+          para "só uma gaveta" é como os 43 anteriores nasceram.
+          ⚠⚠ O PAINEL VAI INTEIRO, com o desfazer dentro: ele é o único lugar do sistema onde se
+          desfaz um lançamento que ninguém mandou fazer, e uma gaveta "só de leitura" obrigaria a
+          fechá-la para agir sobre o que ela acabou de mostrar.
+          ───────────────────────────────────────────────────────────────────────────────────────── */}
+      {vendoLancadosPorRegra ? (
+        <Modal
+          titulo="Lançamentos automáticos — o que as regras já lançaram"
+          lateral
+          aoFechar={() => setVendoLancadosPorRegra(false)}
+        >
+          <PainelDeLancadosPorRegra
+            companyId={companyId}
+            competencia={competencia}
+            podeEscrever={podeEscrever}
+            aoDesfazer={() => {
+              // ⚠ A fila muda (as linhas voltam a esperar conferência) e o painel de casamentos
+              // também. Sem isto, o contador desfaz e vê a tela igual atrás da gaveta.
+              setVersao((v) => v + 1);
+              carregar();
+            }}
+          />
+        </Modal>
+      ) : null}
+
       {varrendo ? (
         <ModalDaVarredura
           companyId={companyId}
+          jaAutomatica={Boolean(automacao?.ligada)}
           aoFechar={() => setVarrendo(false)}
           aoConcluir={() => {
             // ⚠ A fila muda: as notas novas entram. Recarregar aqui evita o "varri e não apareceu
             // nada", que se lê como falha.
             carregar();
             setVersao((v) => v + 1);
+            // ⚠⚠ E O ESTADO DA AUTOMAÇÃO TAMBÉM — MEDIDO no navegador (01/09/2026): varrer com a
+            // caixa marcada LIGAVA a rotina no servidor e a linha continuava dizendo *"não estão
+            // sendo trazidas sozinhas"* até alguém recarregar a página. A tela negava, por escrito,
+            // o que o contador tinha acabado de fazer.
+            lerAutomacao();
           }}
         />
       ) : null}

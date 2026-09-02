@@ -140,9 +140,14 @@ describe("⚠⚠ O CASO QUE ESTE ARQUIVO FOI ESCRITO PARA PEGAR", () => {
     // ⚠ A prova é de CONTEÚDO, não de formatação: a asserção era o texto exato de uma linha e
     // quebrou quando a rota ganhou campos novos e foi reindentada. O que importa é que a rota
     // publique `pista` e `frase` — e que `palavra` continue fora.
-    expect(FONTE_DA_ROTA).toMatch(/pista:\s*l\.sugestao\.pista/);
-    expect(FONTE_DA_ROTA).toMatch(/frase:\s*l\.sugestao\.frase/);
-    expect(FONTE_DA_ROTA).not.toMatch(/palavra:\s*l?\.?sugestao/);
+    // ⚠⚠ A VARREDURA OLHA `serializarCandidata`, e não mais o corpo da rota: em 01/09/2026 as duas
+    // cópias do serializador (sugestão × candidatos) viraram uma função só — elas já divergiam,
+    // porque `leitura`/`podeFundir` tinham sido acrescentados nos dois lugares à mão.
+    // ⚠ A prova continua sendo de CONTEÚDO: o que importa é que a rota publique `pista` e `frase`,
+    // e que `palavra` fique fora.
+    expect(FONTE_DA_ROTA).toMatch(/pista:\s*c\.pista/);
+    expect(FONTE_DA_ROTA).toMatch(/frase:\s*c\.frase/);
+    expect(FONTE_DA_ROTA).not.toMatch(/palavra:\s*[lc]?\.?sugestao/);
   });
 
   // ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -161,8 +166,61 @@ describe("⚠⚠ O CASO QUE ESTE ARQUIVO FOI ESCRITO PARA PEGAR", () => {
       expect(typeof l.sugestao.podeFundir).toBe("boolean");
       expect(typeof l.sugestao.fraseDaCandidata).toBe("string");
     }
-    expect(FONTE_DA_ROTA).toMatch(/podeFundir:\s*l\.sugestao\.podeFundir/);
-    expect(FONTE_DA_ROTA).toMatch(/fraseDaCandidata:\s*l\.sugestao\.fraseDaCandidata/);
+    expect(FONTE_DA_ROTA).toMatch(/podeFundir:\s*c\.podeFundir/);
+    expect(FONTE_DA_ROTA).toMatch(/fraseDaCandidata:\s*c\.fraseDaCandidata/);
+    // ⚠ E as duas pontas usam o MESMO serializador — sugestão e candidatos não podem divergir de
+    // novo. Ele é chamado nos dois lugares, e é isso que este par de linhas prende.
+    expect(FONTE_DA_ROTA).toMatch(/sugestao:\s*l\.sugestao\s*\?\s*serializarCandidata\(l\.sugestao\)/);
+    expect(FONTE_DA_ROTA).toMatch(/candidatos:\s*l\.candidatos\.map\(serializarCandidata\)/);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  // ⚠⚠ O QUARTO VERBO — ABSORVER (dono, 01/09/2026).
+  //
+  // > *"eu posso ter feito os lançamentos através da nota, e depois importar o extrato (…) como não
+  // > duplicar isso?"*
+  //
+  // Sem `podeAbsorver` no serializador, o botão não aparece — e o caso volta a não ter saída
+  // nenhuma. Sem `divergencia`, ele aparece MUDO: o contador absorve e nunca fica sabendo que o
+  // razão está com outra data. É o mesmo defeito de campo-fora-do-serializador, agora no aviso.
+  // ───────────────────────────────────────────────────────────────────────────────────────────────
+  it("⚠⚠ `podeAbsorver` e `divergencia` VIAJAM — senão o verbo novo some, ou aparece mudo", async () => {
+    const { linhas } = await mock.getConferenciaCasamentos("emp-1");
+    const absorvivel = linhas.find((l) => l.sugestao?.podeAbsorver === true);
+    expect(absorvivel).toBeDefined();
+    expect(absorvivel.sugestao.leitura).toBe("ja_contabilizada");
+    expect(absorvivel.sugestao.divergencia).toEqual(
+      expect.objectContaining({ diverge: true, dias: expect.any(Number) }),
+    );
+    expect(FONTE_DA_ROTA).toMatch(/podeAbsorver:\s*c\.podeAbsorver/);
+    expect(FONTE_DA_ROTA).toMatch(/divergencia:\s*serializarDivergencia\(c\.divergencia\)/);
+  });
+
+  it("⚠⚠ os DOIS VERBOS nunca vêm juntos na mesma sugestão", async () => {
+    // Quem decide é `lerCandidata`, no servidor: a nota em aberto se CASA, a já lançada se ABSORVE.
+    // Os dois botões na mesma linha fariam a tela perguntar o que o estado da nota já responde.
+    const { linhas } = await mock.getConferenciaCasamentos("emp-1");
+    for (const l of linhas.filter((x) => x.sugestao)) {
+      expect(l.sugestao.podeFundir && l.sugestao.podeAbsorver).toBeFalsy();
+    }
+  });
+
+  it("⚠⚠ e o mock EXERCITA a absorção — senão o ramo nasce inalcançável offline (nona vez)", async () => {
+    // ⚠ A divergência do mock é DIFERENTE de zero de propósito: com as duas datas iguais, o aviso
+    // — que é a metade *"e AVISA"* da decisão do dono — nunca apareceria numa conferência offline.
+    const { linhas } = await mock.getConferenciaCasamentos("emp-1");
+    const absorvivel = linhas.find((l) => l.sugestao?.podeAbsorver === true);
+    expect(absorvivel.sugestao.divergencia.dias).not.toBe(0);
+    expect(typeof mock.postConferenciaAbsorver).toBe("function");
+    const r = await mock.postConferenciaAbsorver("emp-1", {
+      declaradoOfxId: absorvivel.debito.id,
+      declaradoNotaId: absorvivel.sugestao.nota.id,
+    });
+    // ⚠⚠ A NOTA VOLTA `CONTABILIZADO` — offline também: absorver não a toca. Devolvê-la
+    // `A_CONFERIR` aqui (o que a fusão faz) esconderia a diferença inteira entre os dois verbos.
+    expect(r.nota.estado).toBe("CONTABILIZADO");
+    expect(r.declarado.estado).toBe("FUNDIDO");
+    expect(r.divergencia.diverge).toBe(true);
   });
 
   it("⚠⚠ o mock exercita os DOIS desfechos — senão o ramo novo nasce inalcançável offline", async () => {

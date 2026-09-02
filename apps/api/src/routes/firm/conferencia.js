@@ -11,8 +11,10 @@
 //   POST /conferencia/:declaradoId/reabrir
 //   POST /conferencia/:declaradoId/desfazer
 //   POST /conferencia/varrer-notas?desde=AAAA-MM-DD   as notas recebidas viram fila
+//   GET/POST/DELETE /conferencia/varredura-automatica   trazer as notas sozinho, a partir de X
 //   GET  /conferencia/casamentos                 debito do extrato x nota (SO SUGERE)
 //   POST /conferencia/casamentos/fundir          o debito data a nota, e some absorvido
+//   POST /conferencia/casamentos/absorver        a nota JA foi lancada: o debito so some
 //
 // ⚠⚠ NENHUMA REGRA MORA AQUI. Quem decide se um ato pode acontecer é
 // `application/declarados/lib/estadosDeclarado.js`; quem monta o lançamento é
@@ -28,12 +30,12 @@ import {
   COMPETENCIA_AUSENTE,
   DeclaradoRecusado,
   RECUSA_DO_SERVICO,
+  absorverDebitoJaContabilizado,
   aplicarTransicao,
   fundirPagamentoNaNota,
   listarFila,
   sugestoesDePagamento,
   varrerInvariantes,
-  liberarDeclaradoNoFluxo,
 } from "../../application/declarados/DeclaradoService.js";
 import {
   RegraRecusada,
@@ -43,7 +45,12 @@ import {
   definirLancamentoAutomatico,
   listarRegras,
 } from "../../application/declarados/RegraService.js";
-import { varrerNotasDaEmpresa } from "../../application/declarados/VarreduraDeNotasService.js";
+import {
+  desligarVarreduraAutomatica,
+  lerVarreduraAutomatica,
+  ligarVarreduraAutomatica,
+  varrerNotasDaEmpresa,
+} from "../../application/declarados/VarreduraDeNotasService.js";
 import {
   desfazerLancadosPorRegra,
   extratoDeLancadosPorRegra,
@@ -93,6 +100,44 @@ function decimalParaTexto(v) {
 }
 
 /**
+ * ⚠⚠ A DIVERGÊNCIA DE DATAS DA ABSORÇÃO — a única perda daquele ato, e por isso ela SAI na resposta.
+ *
+ * ⚠ `diverge: null` é *"não sei"* (faltou uma das datas) e nunca vira `false`. As duas afirmações
+ * são diferentes: "conferi, é o mesmo dia" e "não consegui conferir".
+ * ⚠ As datas saem como DIA, pelo mesmo motivo de `serializar`.
+ */
+function serializarDivergencia(d) {
+  if (!d) return null;
+  return {
+    diverge: d.diverge,
+    dias: d.dias,
+    dataDoLancamento: d.dataDoLancamento ? dataCivilISO(d.dataDoLancamento) : null,
+    dataDoExtrato: d.dataDoExtrato ? dataCivilISO(d.dataDoExtrato) : null,
+  };
+}
+
+/**
+ * ⚠⚠ A CANDIDATA DO CASAMENTO — e cada campo daqui existe porque a tela decide com ele.
+ *
+ * `podeFundir` e `podeAbsorver` são DOIS VERBOS DIFERENTES e nunca são verdade juntos: a nota em
+ * aberto se casa, a nota já lançada se absorve. Campo fora do serializador some sem erro nenhum, e
+ * este projeto já foi mordido três vezes por isso — sem eles a tela ofereceria «Casar» numa nota
+ * contabilizada, e o clique voltaria recusado.
+ */
+function serializarCandidata(c) {
+  return {
+    nota: serializar(c.nota),
+    pista: c.pista,
+    frase: c.frase,
+    leitura: c.leitura,
+    podeFundir: c.podeFundir,
+    podeAbsorver: c.podeAbsorver,
+    fraseDaCandidata: c.fraseDaCandidata,
+    divergencia: serializarDivergencia(c.divergencia),
+  };
+}
+
+/**
  * ⚠ As datas saem como DIA (`AAAA-MM-DD`), nunca como ISO completa. Elas são datas civis, e mandar
  * o instante faz o navegador convertê-lo para o fuso do usuário — o deslize de um dia que este
  * projeto já pagou duas vezes (ver `utils/dataCivil.js`).
@@ -114,22 +159,17 @@ function serializar(d) {
     detalheServico: d.detalheServico,
 
     dataPagamento: d.dataPagamento ? dataCivilISO(d.dataPagamento) : null,
-    /**
-     * ⚠⚠ A DATA EM QUE ESTA DESPESA ENTRA NO FLUXO — decisão do dono, 01/09/2026 (*"temos um botão
-     * fluxo, que apenas libera no fluxo mas não lança"*).
-     *
-     * ⚠ Presença = liberada. `null` = fora do fluxo — e é o que faz a tela desenhar o botão como
-     * "Pôr no fluxo" em vez de "Tirar do fluxo".
-     * ⚠ Ela NÃO é `dataPagamento`: aquela é prova de que o dinheiro saiu e vira a data do
-     * lançamento; esta é previsão e nunca vai ao razão.
-     */
-    previstoNoFluxoEm: d.previstoNoFluxoEm ? dataCivilISO(d.previstoNoFluxoEm) : null,
     // ⚠ A PROCEDÊNCIA DA DATA VAI PARA A TELA. É ela que permite dizer "declarado" em vez de deixar
     // o contador achar que o banco confirmou o pagamento.
     origemPagamento: d.origemPagamento,
 
     contaSugerida: d.contaSugerida,
     contaAplicada: d.contaAplicada,
+    // ⚠⚠ A CONTA DE CRÉDITO ESCOLHIDA. `null` = ninguém escolheu, e vale o caixa cravado — a tela
+    // precisa da distinção para mostrar "Caixa (padrão)" em vez de um campo vazio, que se lê como
+    // "faltou preencher". ⚠ Campo fora do serializador some sem erro nenhum: este módulo já pagou
+    // isso três vezes.
+    contaCredito: d.contaCredito ?? null,
     accountingEntryId: d.accountingEntryId,
     regraId: d.regraId,
     motivoRecusa: d.motivoRecusa,
@@ -518,32 +558,6 @@ export function createConferenciaRouter({ log } = {}) {
    * rota. ⚠ A conta vem do CORPO porque é escolha de quem clica; o sistema não elege nenhuma.
    * ⚠ O `portalClientId` sai do PATH, nunca do corpo: é a guarda de multi-tenancy de sempre.
    */
-  /**
-   * ⚠⚠⚠ LIBERAR A DESPESA NO FLUXO — sem lançar. Decisão do dono, 01/09/2026.
-   *
-   * > *"temos um botão fluxo, que apenas libera no fluxo mas não lança"*.
-   *
-   * ⚠ `data` opcional: ausente cai na EMISSÃO da nota (*"na data da emissão mais o contador pode
-   * alterar"*); `null` TIRA do fluxo. As duas não podem se confundir — ver o serviço.
-   * ⚠ `minRole: "ACCOUNTANT"`: isto muda o que o CLIENTE vê no fluxo dele.
-   */
-  router.post("/conferencia/:declaradoId/fluxo", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
-    try {
-      const r = await liberarDeclaradoNoFluxo({
-        portalClientId: String(req.params.companyId),
-        declaradoId: String(req.params.declaradoId),
-        // ⚠ `hasOwnProperty`, nunca `req.body?.data || undefined`: com `||`, o `null` que TIRA do
-        // fluxo viraria `undefined`, que é "use a emissão" — o clique de remover passaria a
-        // reinserir a linha. É a regra `undefined` ≠ `null` que este projeto já registra.
-        ...(Object.prototype.hasOwnProperty.call(req.body || {}, "data") ? { data: req.body.data } : {}),
-        usuarioId: String(req.auth?.user?.id || ""),
-      });
-      return res.json({ ok: true, declarado: { id: r.id, previstoNoFluxoEm: r.previstoNoFluxoEm } });
-    } catch (e) {
-      return responderRecusa(res, e, log);
-    }
-  });
-
   router.post("/conferencia/saidas-do-cliente/:saidaId/lancar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     try {
       const saida = await lancarSaidaAvulsa({
@@ -713,14 +727,31 @@ export function createConferenciaRouter({ log } = {}) {
     dados: (b) => lerPagamentoDoCorpo(b),
   });
 
+  /**
+   * ⚠⚠ A CONTA DE CRÉDITO VIAJA SÓ QUANDO O CORPO A TRAZ (01/09/2026) — decisão do dono: *"aqueles
+   * que viram lançamento contábil devem ter opção de colocar débito e crédito"*.
+   *
+   * ⚠⚠ `hasOwnProperty`, NUNCA `b.contaCredito` cru: a máquina de estados distingue `undefined`
+   * ("não mexer") de `null` ("voltar ao caixa"), e mandar `undefined` em todo request apagaria a
+   * distinção — toda confirmação passaria a dizer "não mexer", e nunca haveria como desfazer uma
+   * escolha errada.
+   */
+  const credito = (b) => (
+    Object.prototype.hasOwnProperty.call(b || {}, "contaCredito")
+      ? { contaCredito: b.contaCredito }
+      : {}
+  );
+
   escrita("confirmar", {
     transicao: TRANSICAO.CONFIRMAR,
-    dados: (b) => ({ ...lerPagamentoDoCorpo(b), contaAplicada: b.contaAplicada }),
+    dados: (b) => ({ ...lerPagamentoDoCorpo(b), contaAplicada: b.contaAplicada, ...credito(b) }),
   });
 
   escrita("ajustar", {
     transicao: TRANSICAO.AJUSTAR,
-    dados: (b) => ({ ...lerPagamentoDoCorpo(b), contaAplicada: b.contaAplicada, valorAjustado: b.valorAjustado }),
+    dados: (b) => ({
+      ...lerPagamentoDoCorpo(b), contaAplicada: b.contaAplicada, valorAjustado: b.valorAjustado, ...credito(b),
+    }),
   });
 
   escrita("recusar", { transicao: TRANSICAO.RECUSAR, dados: (b) => ({ motivoRecusa: b.motivo ?? b.motivoRecusa }) });
@@ -744,24 +775,8 @@ export function createConferenciaRouter({ log } = {}) {
           // ⚠⚠ `podeFundir` e `fraseDaCandidata` VIAJAM — sem eles a tela ofereceria "Casar" numa
           // nota já contabilizada, e o clique voltaria recusado. Campo fora do serializador some
           // sem erro nenhum, e este projeto já foi mordido três vezes por isso.
-          sugestao: l.sugestao
-            ? {
-              nota: serializar(l.sugestao.nota),
-              pista: l.sugestao.pista,
-              frase: l.sugestao.frase,
-              leitura: l.sugestao.leitura,
-              podeFundir: l.sugestao.podeFundir,
-              fraseDaCandidata: l.sugestao.fraseDaCandidata,
-            }
-            : null,
-          candidatos: l.candidatos.map((c) => ({
-            nota: serializar(c.nota),
-            pista: c.pista,
-            frase: c.frase,
-            leitura: c.leitura,
-            podeFundir: c.podeFundir,
-            fraseDaCandidata: c.fraseDaCandidata,
-          })),
+          sugestao: l.sugestao ? serializarCandidata(l.sugestao) : null,
+          candidatos: l.candidatos.map(serializarCandidata),
           motivo: l.motivo,
           frase: l.frase,
         })),
@@ -792,6 +807,49 @@ export function createConferenciaRouter({ log } = {}) {
         agora: new Date(),
       });
       return res.json({ ok: true, declarado: serializar(nota) });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
+  /**
+   * ⚠⚠ ABSORVER — o quarto verbo, e o único que NÃO mexe no outro lado (decisão do dono, 01/09/2026).
+   *
+   * > *"eu posso ter feito os lançamentos através da nota, e depois importar o extrato (…) como não
+   * > duplicar isso?"*
+   *
+   * A nota já virou lançamento; o débito do extrato é o pagamento dela. Absorver tira o débito da
+   * fila **sem criar lançamento e sem tocar no que já está no razão**. Antes disto, esse caso não
+   * tinha saída nenhuma: o débito ficava para sempre, e a única porta aberta era a errada.
+   *
+   * ⚠ A resposta devolve a DIVERGÊNCIA DE DATAS. O lançamento continua com a data que o contador
+   * usou, e o extrato prova outra — absorver não corrige isso, e a decisão do dono foi AVISAR.
+   * ⚠ Piso de ESCRITA, e sem guarda de mês fechado: nada aqui chega ao razão.
+   */
+  router.post("/conferencia/casamentos/absorver", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const { declaradoOfxId, declaradoNotaId } = req.body || {};
+      if (!declaradoOfxId || !declaradoNotaId) {
+        return res.status(400).json({
+          ok: false,
+          error: "par_incompleto",
+          message: "Informe qual débito e qual nota já lançada devem ser absorvidos.",
+        });
+      }
+      const r = await absorverDebitoJaContabilizado({
+        portalClientId: String(req.params.companyId),
+        declaradoOfxId: String(declaradoOfxId),
+        declaradoNotaId: String(declaradoNotaId),
+        usuarioId: req.auth?.user?.id || null,
+        agora: new Date(),
+      });
+      return res.json({
+        ok: true,
+        declarado: serializar(r.debito),
+        // ⚠ A nota volta INTEIRA e inalterada: é a prova, na resposta, de que a absorção não a tocou.
+        nota: serializar(r.nota),
+        divergencia: serializarDivergencia(r.divergencia),
+      });
     } catch (e) {
       return responderRecusa(res, e, log);
     }
@@ -981,6 +1039,175 @@ export function createConferenciaRouter({ log } = {}) {
   //
   // ⚠ `POST` porque ESCREVE (cria declarados), mas ela NÃO cria lançamento nenhum: tudo nasce em
   // `AGUARDANDO_PAGAMENTO`.
+  /**
+   * ⚠⚠ A SEQUÊNCIA DA VARREDURA, NUM LUGAR SÓ — duas portas, um corpo (01/09/2026).
+   *
+   * As portas são o botão «Trazer notas» (varredura avulsa) e o «trazer sozinho daqui em diante»
+   * (que grava a escolha e varre na hora, senão o contador escolhe a data e não vê nada acontecer
+   * até o próximo ciclo do worker).
+   *
+   * ⚠ Duas cópias divergiriam na primeira correção, e aqui a divergência sairia como série
+   * auto-ativada por um caminho e não pelo outro — invisível até alguém comparar as duas telas.
+   */
+  async function varrerAgora(req, dataPiso) {
+    const r = await varrerNotasDaEmpresa({
+      portalClientId: String(req.params.companyId),
+      dataPiso,
+      criadoPor: req.auth?.user?.id || null,
+      agora: new Date(),
+    });
+
+    /**
+     * ⚠⚠ A AUTO-ATIVAÇÃO DAS SÉRIES ESTÁVEIS ENTRA AQUI — e o LUGAR foi escolhido, não sobrou.
+     *
+     * > Dono: *"se a variação for = ou menor que 10%, pode ser lançado no fluxo automaticamente."*
+     *
+     * ⚠⚠ **POR QUE NA VARREDURA, E NÃO NA LEITURA.** `listarSeries` é o detector, e o eixo escrito
+     * daquele módulo é *"observar NÃO GRAVA"* — uma escrita ali faria toda abertura de tela
+     * cadastrar série, e o contador não saberia o que disparou o quê. A varredura é o passo em que
+     * o contador já mandou o sistema **processar o que chegou**: é escrita explícita, com piso de
+     * papel (`ACCOUNTANT`) e resposta que diz o que aconteceu.
+     *
+     * ⚠ Do ponto de vista do dono continua sendo automático: ele não decide série a série — que é
+     * exatamente o que ele pediu para deixar de fazer.
+     *
+     * ⚠⚠ **ELA NÃO PODE DERRUBAR A VARREDURA.** As notas já viraram fila neste ponto; perder essa
+     * resposta por causa da recorrência faria o contador varrer de novo, e o relatório de "criei
+     * 12" some. Falhou ⇒ `autoAtivadas: null`, que é "não sei", e o resto responde.
+     */
+    let autoAtivadas = null;
+    try {
+      const detectadas = await listarSeries({
+        portalClientId: String(req.params.companyId),
+        cicloAtual: cicloDeHoje(),
+      });
+      const ativacao = await autoAtivarSeriesEstaveis({
+        portalClientId: String(req.params.companyId),
+        series: detectadas?.series || [],
+      });
+      autoAtivadas = ativacao.ativadas;
+    } catch (e) {
+      log?.warn?.({ err: e, companyId: req.params?.companyId }, "auto_ativacao_de_series_falhou");
+    }
+
+    /**
+     * ⚠⚠ O LANÇAMENTO AUTOMÁTICO ENTRA AQUI — e este é o CHAMADOR que faltava (29/08/2026).
+     *
+     * > Dono: *"todo mês que essa nota aparecer ela já é lançada em despesa."* A nota "aparece"
+     * na varredura; é aqui que ela pode virar despesa sem clique.
+     *
+     * ⚠⚠ **ELE CONTINUA COM AS TRÊS TRAVAS**, e nenhuma mora nesta rota: a FLAG do ambiente, a
+     * marca `lancaSozinha` daquele fornecedor e a FAIXA de valor da regra. Quem recusa é o
+     * SERVIDOR, dentro de `podeLancarSozinho` — um `curl` nesta rota bate na mesma decisão.
+     *
+     * ⚠⚠ **ELE NÃO PODE DERRUBAR A VARREDURA**, pelo mesmo motivo da auto-ativação: as notas já
+     * viraram fila neste ponto. Falhou ⇒ `lancadosPorRegra: null`, que é "não sei" — e "não
+     * lancei nada" não pode se disfarçar de zero.
+     */
+    let lancadosPorRegra = null;
+    try {
+      lancadosPorRegra = await lancarPorRegraNaEmpresa({
+        portalClientId: String(req.params.companyId),
+        agora: new Date(),
+      });
+    } catch (e) {
+      log?.warn?.({ err: e, companyId: req.params?.companyId }, "lancamento_por_regra_falhou");
+    }
+
+    // ⚠ O relatório INTEIRO volta — inclusive `fora` e `recusados`. Uma varredura que só dissesse
+    // "criei 12" faria as outras sumirem sem ninguém saber por quê, e "não veio nada" ficaria
+    // indistinguível de "deu erro".
+    // ⚠⚠ `autoAtivadas` viaja SEPARADO e pode ser `null`: "nenhuma série entrou sozinha" e "não
+    // consegui olhar as séries" são respostas diferentes, e a segunda não pode se disfarçar de
+    // zero.
+    return { ...r, autoAtivadas, lancadosPorRegra };
+  }
+
+  /**
+   * ⚠⚠ A VARREDURA AUTOMÁTICA — decisão do dono, 01/09/2026: *"elas devem ser trazidas
+   * automaticamente, como tem na aba de notas fiscais deve aparecer ali"*.
+   *
+   * ⚠⚠ **A LEITURA RESPONDE TRÊS COISAS DIFERENTES**, e amassá-las numa só seria o defeito:
+   * `ligada: false` (ninguém escolheu a data ainda) · `ligada: true` com `ultimaTentativaEm` (olhei)
+   * · `ultimoResultadoEm` (trouxe algo). "Olhei e não veio nada" e "ninguém olhou" foi exatamente a
+   * confusão que deixou a captura 29 dias parada em produção sem ninguém perceber.
+   */
+  router.get("/conferencia/varredura-automatica", requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      const r = await lerVarreduraAutomatica({ portalClientId: String(req.params.companyId) });
+      return res.json({
+        ok: true,
+        ligada: r.ligada,
+        // ⚠ `indisponivel` viaja: sem ele, "esta empresa não tem varredura automática" e "não sei
+        // olhar (banco sem a migration)" ficariam idênticos na tela — e o primeiro é uma AFIRMAÇÃO.
+        indisponivel: r.indisponivel,
+        desde: r.config?.dataPiso ? dataCivilISO(r.config.dataPiso) : null,
+        ligadaEm: r.config?.ligadaEm ?? null,
+        ultimaTentativaEm: r.config?.ultimaTentativaEm ?? null,
+        ultimoResultadoEm: r.config?.ultimoResultadoEm ?? null,
+        ultimoCriados: r.config?.ultimoCriados ?? null,
+        ultimoErro: r.config?.ultimoErro ?? null,
+      });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
+  /**
+   * ⚠⚠ LIGAR **E VARRER AGORA**, num ato só — e a segunda metade não é conveniência.
+   *
+   * Ligar sem varrer deixaria a fila vazia até o próximo ciclo do worker de captura (1h), e o
+   * contador que acabou de escolher a data veria... nada. Ele leria isso como "não funcionou".
+   *
+   * ⚠ Por isso este handler reusa `varrerAgora`, o MESMO corpo do botão manual: uma sequência só,
+   * com duas portas. Duas cópias divergiriam na primeira correção — e aqui a divergência sai como
+   * série auto-ativada num caminho e não no outro.
+   */
+  router.post("/conferencia/varredura-automatica", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const desde = req.body?.desde ?? req.query.desde;
+      if (!desde) {
+        return res.status(400).json({
+          ok: false,
+          error: "data_piso_obrigatoria",
+          message:
+            "Informe a partir de que data as notas devem entrar na fila (`desde=AAAA-MM-DD`). Sem esse corte, toda a base de notas recebidas entraria de uma vez.",
+        });
+      }
+      const dataPiso = dataCivilDe(desde);
+      if (!dataPiso) {
+        return res.status(400).json({ ok: false, error: "data_piso_invalida", message: "Use AAAA-MM-DD." });
+      }
+
+      await ligarVarreduraAutomatica({
+        portalClientId: String(req.params.companyId),
+        dataPiso,
+        usuarioId: req.auth?.user?.id || null,
+      });
+      const relatorio = await varrerAgora(req, dataPiso);
+      return res.json({ ok: true, ligada: true, desde, ...relatorio });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
+  /**
+   * ⚠⚠ DESLIGAR APAGA A LINHA — não existe coluna `ativa`, e é escolha.
+   *
+   * Uma linha desligada guardaria uma data-piso que ninguém aplica, e a próxima pessoa a religaria
+   * sem reescolher — herdando, sem saber, uma decisão tomada em outro contexto.
+   * ⚠ **Nada do que a varredura já criou é tocado**: a fila é fato consumado, e apagá-la desfaria
+   * decisões que o contador já tomou sobre aquelas notas.
+   */
+  router.delete("/conferencia/varredura-automatica", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const r = await desligarVarreduraAutomatica({ portalClientId: String(req.params.companyId) });
+      return res.json({ ok: true, ligada: false, desligadas: r.desligadas });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
   router.post("/conferencia/varrer-notas", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     try {
       const desde = req.query.desde ?? req.body?.desde;
@@ -997,77 +1224,8 @@ export function createConferenciaRouter({ log } = {}) {
         return res.status(400).json({ ok: false, error: "data_piso_invalida", message: "Use AAAA-MM-DD." });
       }
 
-      const r = await varrerNotasDaEmpresa({
-        portalClientId: String(req.params.companyId),
-        dataPiso,
-        criadoPor: req.auth?.user?.id || null,
-        agora: new Date(),
-      });
-
-      /**
-       * ⚠⚠ A AUTO-ATIVAÇÃO DAS SÉRIES ESTÁVEIS ENTRA AQUI — e o LUGAR foi escolhido, não sobrou.
-       *
-       * > Dono: *"se a variação for = ou menor que 10%, pode ser lançado no fluxo automaticamente."*
-       *
-       * ⚠⚠ **POR QUE NA VARREDURA, E NÃO NA LEITURA.** `listarSeries` é o detector, e o eixo escrito
-       * daquele módulo é *"observar NÃO GRAVA"* — uma escrita ali faria toda abertura de tela
-       * cadastrar série, e o contador não saberia o que disparou o quê. A varredura é o passo em que
-       * o contador já mandou o sistema **processar o que chegou**: é escrita explícita, com piso de
-       * papel (`ACCOUNTANT`) e resposta que diz o que aconteceu.
-       *
-       * ⚠ Do ponto de vista do dono continua sendo automático: ele não decide série a série — que é
-       * exatamente o que ele pediu para deixar de fazer.
-       *
-       * ⚠⚠ **ELA NÃO PODE DERRUBAR A VARREDURA.** As notas já viraram fila neste ponto; perder essa
-       * resposta por causa da recorrência faria o contador varrer de novo, e o relatório de "criei
-       * 12" some. Falhou ⇒ `autoAtivadas: null`, que é "não sei", e o resto responde.
-       */
-      let autoAtivadas = null;
-      try {
-        const detectadas = await listarSeries({
-          portalClientId: String(req.params.companyId),
-          cicloAtual: cicloDeHoje(),
-        });
-        const ativacao = await autoAtivarSeriesEstaveis({
-          portalClientId: String(req.params.companyId),
-          series: detectadas?.series || [],
-        });
-        autoAtivadas = ativacao.ativadas;
-      } catch (e) {
-        log?.warn?.({ err: e, companyId: req.params?.companyId }, "auto_ativacao_de_series_falhou");
-      }
-
-      /**
-       * ⚠⚠ O LANÇAMENTO AUTOMÁTICO ENTRA AQUI — e este é o CHAMADOR que faltava (29/08/2026).
-       *
-       * > Dono: *"todo mês que essa nota aparecer ela já é lançada em despesa."* A nota "aparece"
-       * na varredura; é aqui que ela pode virar despesa sem clique.
-       *
-       * ⚠⚠ **ELE CONTINUA COM AS TRÊS TRAVAS**, e nenhuma mora nesta rota: a FLAG do ambiente, a
-       * marca `lancaSozinha` daquele fornecedor e a FAIXA de valor da regra. Quem recusa é o
-       * SERVIDOR, dentro de `podeLancarSozinho` — um `curl` nesta rota bate na mesma decisão.
-       *
-       * ⚠⚠ **ELE NÃO PODE DERRUBAR A VARREDURA**, pelo mesmo motivo da auto-ativação: as notas já
-       * viraram fila neste ponto. Falhou ⇒ `lancadosPorRegra: null`, que é "não sei" — e "não
-       * lancei nada" não pode se disfarçar de zero.
-       */
-      let lancadosPorRegra = null;
-      try {
-        lancadosPorRegra = await lancarPorRegraNaEmpresa({
-          portalClientId: String(req.params.companyId),
-          agora: new Date(),
-        });
-      } catch (e) {
-        log?.warn?.({ err: e, companyId: req.params?.companyId }, "lancamento_por_regra_falhou");
-      }
-
-      // ⚠ O relatório INTEIRO volta — inclusive `fora` e `recusados`. Uma varredura que só dissesse
-      // "criei 12" faria as outras sumirem sem ninguém saber por quê, e "não veio nada" ficaria
-      // indistinguível de "deu erro".
-      // ⚠⚠ `autoAtivadas` viaja SEPARADO e pode ser `null`: "nenhuma série entrou sozinha" e "não
-      // consegui olhar as séries" são respostas diferentes, e a segunda não pode se disfarçar de
-      // zero.
-      return res.json({ ok: true, desde, ...r, autoAtivadas, lancadosPorRegra });
+      const relatorio = await varrerAgora(req, dataPiso);
+      return res.json({ ok: true, desde, ...relatorio });
     } catch (e) {
       return responderRecusa(res, e, log);
     }

@@ -47,6 +47,7 @@ import {
   hashDeSenhaInutilizavel,
   STATUS_DA_CONTA_NOVA,
 } from "../../application/companies/acessoDoResponsavel.js";
+import { normalizarEmail } from "@contabilidade/shared/email";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import { consumoDoMes } from "../../application/fiscal/serpro/SerproCallGuard.js";
 // Mesma definição de faturamento da apuração — a recusa de "marcar guia vazia" precisa concordar
@@ -1300,7 +1301,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                   // ⚠ O que a CONSULTA ao CNPJ trouxe nesta edicao, se trouxe. E texto de terceiro
                   //   (BrasilAPI), entao ele so ENTRA junto do codigo — nunca decide qual codigo a
                   //   empresa tem, que continua saindo de `cnaePrincipal`/`cnaesSecundarios`.
-                  { descritas: Array.isArray(body?.atividadesDescritas) ? body.atividadesDescritas : [] }
+                  {
+                    descritas: [
+                      // ⚠⚠ AS DESCRICOES QUE VINHAM GRUDADAS NO PROPRIO `cnaePrincipal`. Em 12 das
+                      //   34 empresas a coluna do CODIGO guardava "codigo - descricao"; o
+                      //   normalizador passou a separar os dois, e sem esta linha a descricao
+                      //   sumiria no primeiro salvamento que finalmente funciona.
+                      ...(normalizedCompany.descricoesEmbutidas || []),
+                      // O que a consulta ao CNPJ trouxe agora vence, por ser mais nova.
+                      ...(Array.isArray(body?.atividadesDescritas) ? body.atividadesDescritas : []),
+                    ],
+                  }
                 ),
                 tipoTributario: normalizedCompany.regimeTributario,
                 regimeTributario: normalizedCompany.regimeTributario,
@@ -1482,6 +1493,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                   vinculosDaConta,
                   confirmado: confirmarNovoAcessoInput,
                   contaDestinoExiste,
+                  // ⚠⚠ O E-MAIL MUDOU? — a pergunta que faltava (02/09/2026). A tela SEMPRE manda
+                  //   `ownerEmail` (semeia o campo com o valor gravado), então sem esta linha todo
+                  //   salvar de empresa cujo dono atende 2+ empresas caía em
+                  //   `owner_email_conta_compartilhada` com `emailAtual === emailNovo`, e a
+                  //   transação inteira voltava atrás — "não salva nada", medido no KLAUS NIGRO.
+                  //   Comparação NORMALIZADA (`normalizarEmail`), a mesma dos dois lados.
+                  emailMudou: normalizarEmail(ownerEmailInput) !== normalizarEmail(contaAtual?.email),
                 });
               }
 
@@ -1634,6 +1652,23 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                   // A tela aponta para a ação que JÁ existe (Credenciais → Acesso ao portal).
                   semSenha: true,
                 };
+              } else if (decisao === DECISAO.MANTER_CONTA) {
+                // ⚠⚠ O E-MAIL NÃO MUDOU (02/09/2026) — nada a fazer com o LOGIN, e o salvar SEGUE.
+                // Era aqui que o cadastro inteiro morria: com o mesmo e-mail e conta de 2+
+                // empresas, a decisão pedia confirmação de uma troca que não existia.
+                //
+                // ⚠⚠ O NOME É ATUALIZADO SEMPRE — e a primeira versão deste ramo (horas antes,
+                //   no mesmo dia) NÃO atualizava em conta compartilhada, "para não arrastar". Era
+                //   erro, relatado pelo dono na hora: *"quando eu escrevo e salvo ele volta com o
+                //   nome antigo"* — a tela aceitava o nome e o descartava em silêncio, o defeito
+                //   que esta casa mais condena. O arrasto de 19/08/2026 era do E-MAIL (o LOGIN,
+                //   que levava nove empresas para outra conta); o nome é da PESSOA, e a pessoa é a
+                //   mesma nas duas empresas — Julia é Julia na KLAUS e na LENTE. Renomeá-la numa é
+                //   renomeá-la, ponto. Quem quer OUTRA pessoa troca o e-mail, e aí cai nas
+                //   confirmações acima.
+                if (ownerNameInput) {
+                  await tx.user.update({ where: { id: ownerLink.userId }, data: { name: ownerNameInput } });
+                }
               } else if (decisao === DECISAO.RENOMEAR) {
                 // RENOMEAR — o caminho de sempre, intacto.
                 //
@@ -1662,7 +1697,33 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
               const companiesDoClient = await tx.company.count({
                 where: { clientId: updatedLegacy.clientId },
               });
-              if (companiesDoClient <= 1) {
+              // ⚠⚠ E ELE DERRUBAVA A TROCA DE RESPONSAVEL INTEIRA — defeito medido em producao,
+              // 02/09/2026, e relatado pelo dono como *"nao consigo alterar o responsavel das
+              // empresas"*.
+              //
+              // `Client.email` e `Client.login` sao os DOIS `@unique`. Este update roda na MESMA
+              // transacao, DEPOIS de o vinculo ja ter sido gravado: batendo no `@unique` ele
+              // estoura P2002 e a transacao INTEIRA volta atras. O contador confirma o vinculo,
+              // recebe um erro tecnico, e nada muda — inclusive o cadastro, que tambem e desfeito.
+              //
+              // ⚠ Nao e caso de borda: medido, 22 dos 24 e-mails de responsavel da carteira JA
+              // existem como `Client`, e 20 das 34 empresas entram neste `if`. Vincular a conta de
+              // alguem que ja e dono de outra empresa — que e exatamente o pedido do dono,
+              // *"damos o acesso da mesma pessoa a todas as suas empresas"* — batia SEMPRE.
+              //
+              // ⚠ A saida e PULAR, nao repontar `Company.clientId`: o `Client` legado carrega
+              // `invoices` e `serviceInvoices`, e mover a empresa de dono legado arrastaria nota
+              // fiscal junto. E ele NAO e login (o comentario acima ja mede isso: nada em
+              // `routes/auth.js` autentica contra `Client`), entao o dado ficar com o e-mail
+              // antigo e uma imprecisao — perder a troca do responsavel e o defeito.
+              const clientComEsseEmail = await tx.client.findFirst({
+                where: {
+                  OR: [{ email: ownerEmailInput }, { login: ownerEmailInput }],
+                  NOT: { id: updatedLegacy.clientId },
+                },
+                select: { id: true },
+              });
+              if (companiesDoClient <= 1 && !clientComEsseEmail) {
                 await tx.client.update({
                   where: { id: updatedLegacy.clientId },
                   data: { email: ownerEmailInput, login: ownerEmailInput },
@@ -1691,6 +1752,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             ownerEmail: ownerLinkAfter?.user?.email || null,
             ownerName: ownerLinkAfter?.user?.name || null,
           });
+        }, {
+          // ⚠ ESTA TRANSAÇÃO FAZ ~18 IDAS AO BANCO (portal, company, sócios, histórico, o bloco do
+          //   responsável com até 6 consultas, os dois `findFirst`, a releitura). O padrão do Prisma
+          //   é `timeout: 5000` / `maxWait: 2000` — contra o Postgres do Railway isso estoura como
+          //   P2028, que a rota devolve como `internal_error` SEM NOME: "não salva nada", de novo,
+          //   por outro caminho. Apontado na auditoria de 02/09/2026.
+          timeout: 20_000,
+          maxWait: 5_000,
         });
         const [comCompliance] = await attachGuideComplianceToCompaniesList([result]);
         const [company] = await anexarQuemLiberouEmissao([comCompliance]);
