@@ -137,6 +137,12 @@ export function cicloDeHoje(agora = new Date()) {
  * ⚠ Liberar continua significando alguma coisa, e é outra coisa: é o que o cliente pode BAIXAR e
  * pagar (`GET /client/.../fluxo` e o download seguem com o gate). O fluxo diz *quanto vai sair*;
  * a liberação diz *o documento está na sua mão*.
+ *
+ * ⚠⚠ **E EM 02/09/2026 ELA VOLTOU A PESAR AQUI — sem virar recorte.** O dono: *"só confirmada após
+ * a liberação"*, logo depois de dizer que *"no caso do fluxo a previsão permanece"*. Ou seja: o
+ * `where` continua sem `liberadaCliente` (a previsão conta tudo, como ele decidiu em 30/08), e o
+ * que muda é a PROCEDÊNCIA de cada linha — previsão enquanto o documento não saiu, compromisso
+ * depois. ⚠ Quem apagar essa distinção faz o cliente ser cobrado por um papel que não recebeu.
  */
 async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
   const guias = await client.guide.findMany({
@@ -148,6 +154,16 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
     select: {
       id: true, tipo: true, competencia: true, valor: true, vencimento: true,
       paymentStatus: true, numeroParcela: true, parcelamentoId: true,
+      /**
+       * ⚠⚠ A LIBERAÇÃO ENTROU NO `select` (02/09/2026) — dono: *"só confirmada após a liberação"*.
+       *
+       * ⚠ Ela NÃO é recorte aqui: o `where` continua sem `liberadaCliente`, porque *"no caso do
+       * fluxo a previsão permanece"* (dono, no mesmo dia). O que a coluna decide é a PROCEDÊNCIA
+       * da linha — previsão × compromisso —, não se a guia existe.
+       * ⚠ Coluna fora de um `select` explícito volta `undefined` **sem erro**: seria toda guia
+       * lida como não liberada, e o compromisso sumiria da tela inteira.
+       */
+      liberadaCliente: true,
       // ⚠ QUANDO foi pago. Sem esta coluna a guia paga não tem mês, e um fato sem data não se
       // coloca em lugar nenhum — viraria um chute de mês.
       paymentConfirmedAt: true,
@@ -258,11 +274,28 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
 
     const vence = isoDaData(dataDeVencimento);
     const atrasada = vence != null && hoje != null && vence < hoje;
+    /**
+     * ⚠⚠⚠ A GUIA SÓ VIRA COMPROMISSO DEPOIS DE LIBERADA — decisão do dono, 02/09/2026:
+     * *"as únicas guias que devem aparecer no portal do cliente são as liberadas pelo contador"*,
+     * e, no mesmo dia: *"no caso do fluxo a previsão permanece"* e **"só confirmada após a
+     * liberação"**.
+     *
+     * ⚠⚠ AS TRÊS FRASES JUNTAS DESENHAM ISTO, e nenhuma delas sozinha: o fluxo continua contando
+     * TODA guia (a previsão do imposto não depende de o contador ter enviado o documento — foi a
+     * decisão de 30/08, e ela fica de pé), mas o que a liberação muda é o PESO da linha. Enquanto
+     * o documento não está na mão do cliente, aquilo é uma previsão nossa; liberado, vira um
+     * compromisso dele.
+     *
+     * ⚠ A guia PAGA não passa por aqui — ela sai acima como `FATO`, e continua saindo mesmo sem
+     * liberação: o pagamento é fato consumado, e escondê-lo esvaziaria o passado do fluxo (o
+     * defeito que a Lei 1 consertou em 28/08).
+     */
     linhas.push(montarLinha({
       fonte: FONTE.GUIA,
       direcao: DIRECAO.SAIDA,
-      // ⚠⚠ COMPROMISSO, não FATO: o valor e a data são conhecidos, e o dinheiro **não saiu**.
-      procedencia: PROCEDENCIA.COMPROMISSO,
+      // ⚠⚠ Nem FATO nem sempre COMPROMISSO: o dinheiro não saiu, e o compromisso só existe depois
+      // que o documento chega ao cliente. Antes disso, é previsão.
+      procedencia: g.liberadaCliente ? PROCEDENCIA.COMPROMISSO : PROCEDENCIA.PREVISAO,
       // ⚠⚠ O MÊS CORRENTE, NÃO O DO VENCIMENTO — Lei 1. A guia de julho que ninguém pagou é
       // dinheiro que sai de AGOSTO, e mostrá-la em julho diria que julho já custou aquilo.
       competencia: cicloAtual,
@@ -273,8 +306,21 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
       valor,
       rotulo,
       base: {
+        /**
+         * ⚠⚠ A FRASE DIZ POR QUE A LINHA É PREVISÃO — e sem ela o rótulo mentiria por omissão.
+         *
+         * `PROCEDENCIA.PREVISAO` sai na tela do cliente como **"Previsto"**, e o próprio
+         * `leituraDoFluxo` avisa: *"chamá-lo de previsão diria que alguém estimou o número, e
+         * ninguém estimou"*. Aqui ninguém estimou mesmo — o valor está na guia, impresso. O que
+         * falta é o documento chegar às mãos do cliente.
+         *
+         * ⚠ Por isso a razão viaja no texto: a linha continua sendo previsão (o dono: *"só
+         * confirmada após a liberação"*), e o cliente lê POR QUE ela ainda não é um compromisso
+         * dele, em vez de achar que o número é chute nosso.
+         */
         frase: `${rotulo} gerada${g.competencia ? `, competência ${g.competencia}` : ""}`
-          + (vence ? ` · vence em ${vence}` : ""),
+          + (vence ? ` · vence em ${vence}` : "")
+          + (g.liberadaCliente ? "" : " · ainda não liberada pelo seu contador"),
         vencimento: vence,
         atrasada,
         // ⚠⚠ A MARCA QUE SEPARA O DIA IMPRESSO NA GUIA DO DIA DERIVADO POR NÓS. Sem ela, os dois
@@ -288,9 +334,19 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
       referencia,
     }));
 
-    // ⚠ A lista que alimenta o pop-up sai DAQUI, da mesma consulta — uma segunda query com outro
-    // recorte é como as duas telas passam a discordar sobre quantas guias estão em atraso.
-    emAberto.push({ id: g.id, rotulo, valor, vencimento: vence, atrasada, competencia: g.competencia });
+    /**
+     * ⚠ A lista que alimenta o pop-up sai DAQUI, da mesma consulta — uma segunda query com outro
+     * recorte é como as duas telas passam a discordar sobre quantas guias estão em atraso.
+     *
+     * ⚠⚠ **E SÓ A LIBERADA ENTRA NELA** (02/09/2026). O pop-up interrompe o cliente para dizer
+     * *"isto está vencido, veja suas guias"* — e ele leva para a aba Guias, que desde hoje mostra
+     * só as liberadas. Uma guia não liberada ali mandaria o cliente procurar um documento que a
+     * tela seguinte não tem, e que ele nem pode baixar (o gate do download nunca foi afrouxado).
+     * ⚠ Ela NÃO some do fluxo: continua na soma, como PREVISÃO. O que ela não faz é cobrar.
+     */
+    if (g.liberadaCliente) {
+      emAberto.push({ id: g.id, rotulo, valor, vencimento: vence, atrasada, competencia: g.competencia });
+    }
   }
 
   return { linhas, semMes, emAberto, diaDoUltimoPagamento: diaDaData(ultimoPagamento) };
