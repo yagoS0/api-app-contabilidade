@@ -107,7 +107,10 @@ describe("a empresa do Lucro Presumido CHEGA ao assistente pela aba Notas Fiscai
 
     const bloco = screen.getByText(/Esta empresa ainda não pode emitir nota de serviço/).closest("div");
     expect(bloco).toHaveTextContent("Carga tributária aproximada");
-    expect(bloco).toHaveTextContent("federal, estadual e municipal (iss)");
+    // ⚠⚠ ATÉ 02/09/2026 ERAM TRÊS. Mudou a REGRA, não o teste: o estadual deixou de ser exigido
+    // (dono — *"empresas de serviço não têm ICMS que é estadual"*), e a tela passou a DIZER isso.
+    expect(bloco).toHaveTextContent("falta federal e municipal (iss)");
+    expect(bloco).toHaveTextContent("O estadual NÃO é exigido");
     // ⚠ O CAMINHO MUDOU EM 19/08/2026 (dono): a configuração saiu do formulário e a entrada
     // virou a ENGRENAGEM da aba Notas Fiscais. O texto sai de `ONDE_CONFIGURA_EMISSAO`
     // (`lib/nfse/cadastroEmissaoNfse.js`) — apontar para "Editar cadastro" mandaria o

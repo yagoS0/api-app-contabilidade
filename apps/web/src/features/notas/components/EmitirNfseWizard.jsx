@@ -99,7 +99,7 @@ import {
   faltasParaEmitir,
   faltasDaCargaTributaria,
   ONDE_CARGA_TRIBUTARIA,
-  PORQUE_OS_TRES,
+  PORQUE_OS_EXIGIDOS,
 } from "../../../lib/nfse/cadastroEmissaoNfse";
 import { ServicoNacionalDaNota } from "./ServicoNacionalDaNota";
 import { BeneficioMunicipalDaNota } from "./BeneficioMunicipalDaNota";
@@ -807,7 +807,7 @@ export function EmitirNfseWizard({
                 </strong>{" "}
                 Esta empresa não é optante do Simples: a nota declara os percentuais de tributos
                 aproximados da Lei 12.741/2012, e o servidor recusa a emissão sem eles.{" "}
-                {PORQUE_OS_TRES}{" "}
+                {PORQUE_OS_EXIGIDOS}{" "}
                 <span style={{ opacity: 0.9 }}>Preencha em {ONDE_CARGA_TRIBUTARIA}.</span>
               </div>
             )}

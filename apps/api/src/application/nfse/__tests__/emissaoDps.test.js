@@ -283,7 +283,7 @@ describe("regime tributário — opSimpNac vem do dado", () => {
 // emissão — e o XML escrevia `?? 0` nos outros dois. O contador configurava só o municipal e a
 // nota saía AFIRMANDO ao tomador carga federal 0,00% e estadual 0,00%. Zero fabricado por
 // omissão, IMPRESSO no DANFSe por força da Lei da Transparência.
-describe("carga tributária do não optante — vem do CADASTRO, e os três são exigidos", () => {
+describe("carga tributária do não optante — vem do CADASTRO, e o ESTADUAL não é exigido", () => {
   const PRESUMIDO = { regime: "LUCRO_PRESUMIDO" };
   const CARGA = { pTotTribFed: 11.33, pTotTribEst: 0, pTotTribMun: 2.5 };
 
@@ -335,12 +335,46 @@ describe("carga tributária do não optante — vem do CADASTRO, e os três são
     expect(xml).toContain("<pTotTribMun>2.50</pTotTribMun>");
   });
 
-  it("a recusa NOMEIA quais faltam — 'falta a carga' mandaria conferir os três", async () => {
+  it("a recusa NOMEIA quais faltam — e o ESTADUAL NÃO está entre eles (02/09/2026)", async () => {
+    // ⚠⚠ ATÉ 02/09/2026 ESTE CASO EXIGIA OS TRÊS, e o que mudou foi a REGRA, não o teste:
+    // decisão do dono — *"o estadual pode ser nulo, não há problema com isso, empresas de serviço
+    // não têm ICMS que é estadual"*. Federal e municipal são do DADO da empresa; o estadual é da
+    // natureza da operação (NFS-e = serviço = ISS, e serviço não sofre ICMS).
     montarCenario({ empresa: { pTotTribFed: 11.33 }, cadastroFiscal: PRESUMIDO });
     const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
-    expect(r.message).toContain("pTotTribEst");
     expect(r.message).toContain("pTotTribMun");
+    expect(r.message).not.toContain("pTotTribEst");
     expect(r.message).not.toContain("pTotTribFed (");
+  });
+
+  it("⚠⚠ ESTADUAL AUSENTE EMITE, e sai 0,00 — o caso medido em produção em 02/09/2026", async () => {
+    // Produção: uma empresa do Lucro Presumido com `pTotTribFed 11.33 · pTotTribEst NULO ·
+    // pTotTribMun 5.00` não conseguia emitir. A irmã de mesmo regime emitia — e a única diferença
+    // entre as duas era ter `0.00` DIGITADO no estadual. Recusar por isso é exigir que alguém
+    // declare um tributo que a operação não tem.
+    montarCenario({
+      empresa: { pTotTribFed: 11.33, pTotTribEst: null, pTotTribMun: 5 },
+      cadastroFiscal: PRESUMIDO,
+    });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.status).toBe("issued");
+    const xml = xmlEnviado();
+    // ⚠ "Ausente" sai como ZERO DECLARADO, nunca como tag omitida: no XSD 1.01 os TRÊS filhos de
+    // `pTotTrib` são obrigatórios (nenhum tem `minOccurs="0"`). Quem quiser não informar NADA tem
+    // o irmão `indTotTrib=0` do mesmo `xs:choice`, que este gerador não monta.
+    expect(xml).toContain("<pTotTribFed>11.33</pTotTribFed>");
+    expect(xml).toContain("<pTotTribEst>0.00</pTotTribEst>");
+    expect(xml).toContain("<pTotTribMun>5.00</pTotTribMun>");
+  });
+
+  it("⚠ o FEDERAL ausente CONTINUA recusando — ele nunca é estruturalmente zero", async () => {
+    // É esta assimetria que impede o `?? 0` antigo de voltar pela porta dos fundos: lá, UM
+    // percentual configurado liberava a nota e os outros dois saíam zero — inclusive o federal.
+    montarCenario({ empresa: { pTotTribEst: 0, pTotTribMun: 5 }, cadastroFiscal: PRESUMIDO });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.codigo).toBe("MISSING_TOT_TRIB_NAO_SIMPLES");
+    expect(r.message).toContain("pTotTribFed");
+    expect(postMock).not.toHaveBeenCalled();
   });
 
   it("percentual fora de 0–100 recusa em vez de virar XML", async () => {

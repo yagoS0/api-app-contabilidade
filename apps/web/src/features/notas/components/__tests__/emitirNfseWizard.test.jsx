@@ -387,9 +387,15 @@ describe("empresa não optante sem a carga tributária não chega ao botão Emit
 
     const bloco = screen.getByText(/Esta empresa ainda não pode emitir nota de serviço/).closest("div");
     expect(bloco).toHaveTextContent("Carga tributária aproximada");
-    // Os três nomes, como a recusa do servidor os devolve — "falta a carga tributária" mandaria o
-    // contador conferir os três.
-    expect(bloco).toHaveTextContent("federal, estadual e municipal (iss)");
+    // Os nomes EXIGIDOS, como a recusa do servidor os devolve — "falta a carga tributária"
+    // mandaria o contador conferir tudo.
+    // ⚠⚠ ATÉ 02/09/2026 ERAM TRÊS ("federal, estadual e municipal"). Mudou a REGRA: o estadual
+    // deixou de ser exigido (dono — *"empresas de serviço não têm ICMS que é estadual"*).
+    expect(bloco).toHaveTextContent("falta federal e municipal (iss)");
+    // ⚠ A NEGAÇÃO MIRA A LISTA, NÃO A PALAVRA: o bloco DIZ "o estadual não é exigido", então um
+    // `not.toHaveTextContent("estadual")` acusaria a própria explicação que torna a mudança
+    // legível — guarda que acusa o texto certo é guarda que alguém desliga.
+    expect(bloco).toHaveTextContent("O estadual NÃO é exigido");
     // ⚠ O CAMINHO MUDOU EM 19/08/2026 (dono): a configuração saiu do formulário e a entrada
     // virou a ENGRENAGEM da aba Notas Fiscais. O texto sai de `ONDE_CONFIGURA_EMISSAO`
     // (`lib/nfse/cadastroEmissaoNfse.js`) — apontar para "Editar cadastro" mandaria o
@@ -411,9 +417,22 @@ describe("empresa não optante sem a carga tributária não chega ao botão Emit
     });
 
     const bloco = screen.getByText(/Esta empresa ainda não pode emitir nota de serviço/).closest("div");
-    expect(bloco).toHaveTextContent("federal e estadual");
+    expect(bloco).toHaveTextContent("falta federal.");
     expect(bloco).not.toHaveTextContent("municipal (iss).");
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+  });
+
+  it("⚠⚠ SÓ O ESTADUAL EM BRANCO NÃO BLOQUEIA — o caso medido em produção em 02/09/2026", () => {
+    // Uma empresa do Lucro Presumido com federal e municipal preenchidos e o estadual em branco
+    // não conseguia emitir. A irmã de mesmo regime emitia — e a única diferença entre as duas era
+    // ter `0,00` DIGITADO no estadual. Numa NFS-e a operação é de serviço (ISS) e não sofre ICMS.
+    abrir({
+      regime: "LUCRO_PRESUMIDO",
+      cadastroEmissao: { ...CADASTRO_COMPLETO, pTotTribFed: 11.33, pTotTribMun: 5 },
+    });
+    expect(
+      screen.queryByText(/Esta empresa ainda não pode emitir nota de serviço/)
+    ).not.toBeInTheDocument();
   });
 
   it("⚠ ZERO CONFIGURADO NÃO É AUSÊNCIA — a nota real declara 0,00 no estadual e no municipal", () => {
@@ -431,8 +450,12 @@ describe("empresa não optante sem a carga tributária não chega ao botão Emit
     // A versão curta, do mesmo jeito que os campos de `buildMissingFields` — e ela leva o lugar
     // junto, senão o contador lê o nome do campo e sai procurando.
     expect(screen.getByText(/cadastre a parcela federal da carga tributária aproximada/)).toBeInTheDocument();
-    expect(screen.getByText(/cadastre a parcela estadual da carga tributária aproximada/)).toBeInTheDocument();
     expect(screen.getByText(/cadastre a parcela municipal da carga tributária aproximada/)).toBeInTheDocument();
+    // ⚠ E o ESTADUAL NÃO vira linha de pendência (02/09/2026): pedir que alguém declare um
+    // tributo que a operação não tem é o defeito que esta mudança corrige.
+    expect(
+      screen.queryByText(/cadastre a parcela estadual da carga tributária aproximada/)
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Continuar/ })).toHaveAttribute(
       "title",
       expect.stringContaining("carga tributária aproximada"),

@@ -30,7 +30,7 @@ import {
   MOTIVO_CARGA_TRIBUTARIA,
   PORQUE_MUNICIPAL_DIGITADO,
   PORQUE_CARGA_DIGITADA,
-  PORQUE_OS_TRES,
+  PORQUE_OS_EXIGIDOS,
   TIPOS_REDUCAO_BM,
   MOTIVO_BENEFICIO_MUNICIPAL,
   PORQUE_BENEFICIO_DIGITADO,
@@ -116,8 +116,14 @@ export function CamposEmissaoNfse({
   const cargaFaltando = faltasDaCargaTributaria(cargaValores);
   // ⚠ TRÊS ESTADOS, não dois: nenhum preenchido (a empresa nem começou — e a optante do Simples
   // nunca precisa destes campos, então isto não é pendência para ela), ALGUNS preenchidos (o
-  // caso perigoso: é exatamente aqui que a nota saía afirmando 0,00 nos outros) e os três prontos.
-  const cargaParcial = cargaFaltando.length > 0 && cargaFaltando.length < CAMPOS_CARGA_TRIBUTARIA.length;
+  // caso perigoso: é exatamente aqui que a nota saía afirmando 0,00 nos outros) e os prontos.
+  //
+  // ⚠⚠ A COMPARAÇÃO É CONTRA OS EXIGIDOS, NÃO CONTRA O TAMANHO DA LISTA (02/09/2026). Desde que
+  // o estadual deixou de ser exigido, `faltasDaCargaTributaria` devolve no máximo DOIS — e
+  // comparar com os três da lista faria "nada configurado" (2 faltas de 3) se ler como
+  // "parcialmente configurado", que é justamente o estado de alerta. Os estados trocariam de nome.
+  const cargaExigidos = CAMPOS_CARGA_TRIBUTARIA.filter((c) => c.exigido).length;
+  const cargaParcial = cargaFaltando.length > 0 && cargaFaltando.length < cargaExigidos;
 
   const bmNumero = lerNumeroBeneficioMunicipal(beneficioMunicipalNumero);
   const bmPercentual = lerPercentualReducaoBM(beneficioMunicipalPRedBC);
@@ -248,6 +254,10 @@ export function CamposEmissaoNfse({
             campo === "pTotTribMun"
               ? "É a parcela MUNICIPAL da carga aproximada — a que varia de município para município. "
                 + "⚠ Não é a alíquota de ISS da nota: elas podem coincidir e não são o mesmo campo."
+              : campo === "pTotTribEst"
+              ? "⚠ NÃO é exigido para emitir: numa NFS-e a operação é de serviço (ISS) e não sofre "
+                + "ICMS, então em branco ele sai 0,00 na nota. Preencha só se esta empresa tiver "
+                + "parcela estadual a declarar."
               : `Parcela ${rotulo.toLowerCase()} da carga aproximada, em percentual do valor do serviço.`
           }
         />
@@ -264,7 +274,7 @@ export function CamposEmissaoNfse({
           <strong>
             Falta {cargaFaltando.map((c) => c.rotulo.toLowerCase()).join(", ").replace(/, ([^,]*)$/, " e $1")}.
           </strong>{" "}
-          {PORQUE_OS_TRES}
+          {PORQUE_OS_EXIGIDOS}
         </div>
       )}
 

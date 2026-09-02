@@ -187,10 +187,20 @@ export function lerRpsSerie(entrada) {
 // Aproximados de Tributos" na linha fixa de Informações Complementares. Não é preenchimento
 // técnico — é uma afirmação sobre quanto de tributo há no preço.
 
+// ⚠⚠ `exigido: false` NO ESTADUAL — decisão do dono, 02/09/2026: *"o estadual pode ser nulo, não
+// há problema com isso, empresas de serviço não têm ICMS que é estadual"*. O campo CONTINUA na
+// lista, e continua sendo renderizado e validável: o que ele deixou de fazer é BLOQUEAR a emissão
+// quando vazio. Tirá-lo da lista o faria sumir da tela, e quem quiser declarar um estadual (ou
+// conferir o que já declarou) perderia o campo.
+//
+// ⚠ A regra é do SERVIDOR (`NfseService.buildDpsXml`, `CAMPOS_TOT_TRIB`) e esta lista é ESPELHO.
+// Divergindo, a tela volta a acusar falta de um campo que o servidor aceita — que é exatamente o
+// defeito relatado em 02/09/2026 (KODA BEAR: federal e municipal preenchidos, estadual vazio, e a
+// emissão recusada por um percentual que a operação não tem).
 export const CAMPOS_CARGA_TRIBUTARIA = [
-  { campo: "pTotTribFed", rotulo: "Federal", curto: "federal" },
-  { campo: "pTotTribEst", rotulo: "Estadual", curto: "estadual" },
-  { campo: "pTotTribMun", rotulo: "Municipal (ISS)", curto: "municipal" },
+  { campo: "pTotTribFed", rotulo: "Federal", curto: "federal", exigido: true },
+  { campo: "pTotTribEst", rotulo: "Estadual", curto: "estadual", exigido: false },
+  { campo: "pTotTribMun", rotulo: "Municipal (ISS)", curto: "municipal", exigido: true },
 ];
 
 export const MOTIVO_CARGA_TRIBUTARIA =
@@ -206,10 +216,14 @@ export const PORQUE_CARGA_DIGITADA =
   + "são seus, e vão impressos na nota que o seu cliente entrega ao tomador.";
 
 // ⚠ O QUE A TELA PRECISA DIZER SOBRE O ZERO, e é o coração do conserto de 18/08/2026.
-export const PORQUE_OS_TRES =
-  "Os três são obrigatórios juntos, inclusive quando algum é 0,00 — e 0,00 é comum (serviço não tem "
-  + "ICMS, então o estadual costuma ser zero). Preencher só um faria a nota AFIRMAR carga zero nos "
-  + "outros dois, e o sistema não escreve esse zero por você: sem os três, a emissão é recusada.";
+// ⚠⚠ CHAMAVA-SE `PORQUE_OS_TRES` ATÉ 02/09/2026, e o nome virou mentira quando o estadual deixou
+// de ser exigido (decisão do dono: *"empresas de serviço não têm ICMS que é estadual"*). O texto
+// antigo JÁ dizia que "o estadual costuma ser zero" — a regra só alcançou o que a tela já sabia.
+export const PORQUE_OS_EXIGIDOS =
+  "O federal e o municipal são obrigatórios juntos, inclusive quando algum é 0,00: preencher só um "
+  + "faria a nota AFIRMAR carga zero no outro, e o sistema não escreve esse zero por você. "
+  + "⚠ O estadual NÃO é exigido — serviço não tem ICMS, então numa NFS-e ele é zero por natureza da "
+  + "operação, e em branco sai 0,00 na nota.";
 
 export const PROBLEMA_PERCENTUAL_CARGA =
   "informe um percentual entre 0 e 100, com até duas casas (ex.: 11,33)";
@@ -272,7 +286,7 @@ export const ONDE_CARGA_TRIBUTARIA = `${ONDE_CONFIGURA_EMISSAO} → Carga tribut
 export function faltasDaCargaTributaria(valores) {
   const dados = valores || {};
   return CAMPOS_CARGA_TRIBUTARIA
-    .filter((c) => !lerPercentualCarga(dados[c.campo]).preenchido)
+    .filter((c) => c.exigido && !lerPercentualCarga(dados[c.campo]).preenchido)
     .map((c) => ({
       ...c,
       onde: ONDE_CARGA_TRIBUTARIA,

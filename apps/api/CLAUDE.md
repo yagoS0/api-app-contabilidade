@@ -1249,11 +1249,39 @@ escreve e que mudaram entre as versões, dois deles inertes **por acidente feliz
    - ⚠⚠ **O DEFEITO QUE ELES SOMAVAM.** O portão usava `.some()` (UM percentual liberava) e o XML
      escrevia `?? 0` nos outros dois: o contador configurava só o municipal e a nota **afirmava ao
      tomador carga federal 0,00% e estadual 0,00%** — impresso, por força da Lei da Transparência.
-     Hoje **os TRÊS são exigidos** e a recusa nomeia quais faltam (`err.faltando`). O que decide o
-     desenho é a própria amostra: ela declara `0.00` em dois campos, ou seja **zero DECLARADO é
-     legítimo** — logo zero **por omissão** não pode produzir o mesmo XML. NULL = não configurado
-     (recusa), 0.00 = o contador afirmou. Valor fora de 0–100 recusa com
+     Hoje **o FEDERAL e o MUNICIPAL são exigidos** e a recusa nomeia quais faltam (`err.faltando`).
+     O que decide o desenho é a própria amostra: ela declara `0.00` em dois campos, ou seja **zero
+     DECLARADO é legítimo** — logo zero **por omissão** não pode produzir o mesmo XML. NULL = não
+     configurado (recusa), 0.00 = o contador afirmou. Valor fora de 0–100 recusa com
      `INVALID_TOT_TRIB_NAO_SIMPLES` (camada `NOSSA`).
+   - ⚠⚠ **O ESTADUAL DEIXOU DE SER EXIGIDO EM 02/09/2026 — e esta linha dizia "os TRÊS".** Decisão
+     do dono, com o defeito na tela: *"o estadual pode ser nulo, não há problema com isso, empresas
+     de serviço não têm ICMS que é estadual"*. O fundamento é **ESTRUTURAL**: a DPS documenta uma
+     operação de **serviço (ISS)**, e serviço não sofre ICMS — a parcela estadual de uma NFS-e é
+     zero pela natureza da operação, não por o contador não ter olhado. Ausente, ela sai **`0.00`**.
+     - **Medido em produção no dia**, e o par é a prova: uma empresa do Lucro Presumido com
+       `fed 11.33 · est NULO · mun 5.00` **não conseguia emitir**, enquanto a irmã de mesmo regime
+       (`fed 11.33 · est 0.00 · mun 5.00`) emitia — a única diferença era ter o zero **digitado**.
+       As outras 8 empresas não optantes têm os três vazios.
+     - ⚠⚠ **"Ausente" sai como ZERO DECLARADO, nunca como tag omitida**, e o XSD não deixa
+       escolher: em `TCTribTotalPercent` (1.01) os TRÊS filhos de `pTotTrib` são obrigatórios
+       (nenhum tem `minOccurs="0"`). Quem quiser não informar **nada** tem o irmão **`indTotTrib=0`**
+       do mesmo `xs:choice` (*"Não informar nenhum valor estimado para os Tributos"*, **Decreto
+       8.264/2014**) — que este gerador **não monta**, e ligar é decisão à parte, porque ele cala
+       também o federal e o municipal.
+     - ⚠⚠ **ISTO NÃO REABRE O `?? 0`.** No defeito antigo, UM percentual liberava a nota e os
+       **outros dois** saíam zero — inclusive o **federal**, que nunca é estruturalmente zero. Aqui
+       o zero é assumido para **um campo só**, e só porque a norma da operação o torna zero. Há
+       teste travando que o federal ausente **continua** recusando.
+     - **A tela acompanhou, e a amarra confere os DOIS lados**: `CAMPOS_CARGA_TRIBUTARIA`
+       (`apps/web/src/lib/nfse/cadastroEmissaoNfse.js`) ganhou `exigido`, o campo estadual
+       **continua na tela** (só deixou de bloquear) dizendo que não é exigido, e o teste que lê o
+       `NfseService.js` passou a comparar também o `true`/`false` de cada campo — antes ele
+       comparava só os nomes. ⚠ `PORQUE_OS_TRES` virou **`PORQUE_OS_EXIGIDOS`** (o nome virou
+       mentira). ⚠ `cargaParcial` passou a comparar com os **exigidos**, não com o tamanho da
+       lista — senão "nada configurado" (2 de 3) se leria como "parcial", que é o estado de alerta.
+     - ⚠ **Experimento executado:** revertendo só o backend para exigir o estadual, a amarra do
+       front fica **1 vermelho** nomeando a divergência.
    - **Precedência:** cada campo resolve sozinho, **payload → cadastro**. Payload parcial não
      apaga o resto (era assim que o zero nascia). ⚠ O **Simples não passa por este bloco**: ele
      declara `pTotTribSN`, e valor torto nestas colunas não derruba a nota dele.

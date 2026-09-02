@@ -248,10 +248,21 @@ describe("carga tributária aproximada — os três, e nenhum inventado", () => 
   });
 
   it("⚠⚠ SÓ O MUNICIPAL PREENCHIDO ACENDE O AVISO — era assim que a nota saía com 0,00", () => {
+    // ⚠⚠ ATÉ 02/09/2026 A FRASE ERA "Falta federal e estadual". Mudou a REGRA: o estadual deixou
+    // de ser exigido (dono — *"empresas de serviço não têm ICMS que é estadual"*).
     abrir({ pTotTribMun: "2,5" });
-    expect(screen.getByText(/Falta federal e estadual\./i)).toBeInTheDocument();
-    // A tela diz POR QUE os três andam juntos, e que zero se digita.
+    expect(screen.getByText(/Falta federal\./i)).toBeInTheDocument();
+    // A tela diz POR QUE os exigidos andam juntos, e que zero se digita.
     expect(screen.getByText(/inclusive quando algum é 0,00/i)).toBeInTheDocument();
+  });
+
+  it("⚠⚠ ESTADUAL VAZIO NÃO ACENDE AVISO — o caso medido em produção em 02/09/2026", () => {
+    // Federal e municipal preenchidos, estadual em branco: a tela acusava falta e o servidor
+    // recusava a emissão, por um tributo que a operação não tem.
+    // ⚠ A asserção mira o texto DA CAIXA DA CARGA, nunca um `/Falta /` solto: a caixa dos
+    // campos de emissão (código nacional/municipal/série) acende legitimamente aqui.
+    abrir({ pTotTribFed: "11,33", pTotTribMun: "5" });
+    expect(screen.queryByText(/inclusive quando algum é 0,00/i)).not.toBeInTheDocument();
   });
 
   it("com os três preenchidos o aviso some — e 0,00 conta como preenchido", () => {

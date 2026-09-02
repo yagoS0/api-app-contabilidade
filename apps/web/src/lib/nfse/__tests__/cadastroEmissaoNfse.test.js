@@ -218,16 +218,25 @@ describe("lerPercentualCarga — percentual, e nada mais", () => {
   });
 });
 
-describe("faltasDaCargaTributaria — o espelho do portão que exige os TRÊS", () => {
-  it("nenhum preenchido: faltam os três", () => {
-    expect(faltasDaCargaTributaria({}).map((c) => c.campo)).toEqual(
-      CAMPOS_CARGA_TRIBUTARIA.map((c) => c.campo)
-    );
+describe("faltasDaCargaTributaria — o espelho do portão: federal e municipal, NUNCA o estadual", () => {
+  it("nenhum preenchido: faltam os DOIS exigidos (02/09/2026)", () => {
+    // ⚠⚠ ATÉ 02/09/2026 ESTE CASO ESPERAVA OS TRÊS. Mudou a REGRA, não o teste: decisão do
+    // dono — *"o estadual pode ser nulo (…) empresas de serviço não têm ICMS que é estadual"*.
+    expect(faltasDaCargaTributaria({}).map((c) => c.campo)).toEqual([
+      "pTotTribFed",
+      "pTotTribMun",
+    ]);
   });
 
-  it("⚠⚠ só o municipal: faltam federal e estadual — era assim que a nota saía com 0,00", () => {
+  it("⚠⚠ só o municipal: falta o FEDERAL — era assim que a nota saía com 0,00", () => {
     const faltas = faltasDaCargaTributaria({ pTotTribMun: "2,5" });
-    expect(faltas.map((c) => c.campo)).toEqual(["pTotTribFed", "pTotTribEst"]);
+    expect(faltas.map((c) => c.campo)).toEqual(["pTotTribFed"]);
+  });
+
+  it("⚠⚠ ESTADUAL VAZIO NÃO É FALTA — o caso medido em produção em 02/09/2026", () => {
+    // Federal e municipal preenchidos, estadual em branco: a tela dizia que faltava, o servidor
+    // recusava a emissão, e o percentual em falta era de um tributo que a operação não tem.
+    expect(faltasDaCargaTributaria({ pTotTribFed: "11,33", pTotTribMun: "5" })).toHaveLength(0);
   });
 
   it("⚠ ZERO CONTA COMO PREENCHIDO — é a diferença entre declarado e esquecido", () => {
@@ -236,10 +245,10 @@ describe("faltasDaCargaTributaria — o espelho do portão que exige os TRÊS", 
   });
 
   it("objeto ausente não explode", () => {
-    expect(faltasDaCargaTributaria(null)).toHaveLength(3);
+    expect(faltasDaCargaTributaria(null)).toHaveLength(2);
   });
 
-  it("⚠ a ordem é a do XML: Fed · Est · Mun (a da NFS-e real versionada)", () => {
+  it("⚠ a lista mantém os TRÊS, na ordem do XML — o estadual só deixou de BLOQUEAR", () => {
     expect(CAMPOS_CARGA_TRIBUTARIA.map((c) => c.campo)).toEqual([
       "pTotTribFed",
       "pTotTribEst",
@@ -295,7 +304,19 @@ describe("⚠ o espelho da carga tributária está amarrado ao portão do backen
     expect(doBackend).toEqual(CAMPOS_CARGA_TRIBUTARIA.map((c) => c.campo));
   });
 
-  it("⚠ o portão exige os TRÊS — nenhum `.some()` sobrou nele", () => {
+  it("⚠⚠ e o MESMO conjunto de EXIGIDOS — o estadual é `false` nos DOIS lados", () => {
+    // Sem esta amarra, a decisão de 02/09/2026 poderia ser revertida em um lado só: a tela
+    // voltaria a acusar falta de um percentual que o servidor aceita — ou, pior, deixaria passar
+    // um que ele recusa, e aí a recusa aparece no meio de uma nota fiscal.
+    const doBackend = [
+      ...bloco.matchAll(/\["([A-Za-z0-9_]+)"\s*,\s*"[^"]*"\s*,\s*(true|false)\]/g),
+    ].map((m) => ({ campo: m[1], exigido: m[2] === "true" }));
+    expect(doBackend).toEqual(
+      CAMPOS_CARGA_TRIBUTARIA.map((c) => ({ campo: c.campo, exigido: c.exigido }))
+    );
+  });
+
+  it("⚠ nenhum `.some()` sobrou no portão — os exigidos valem EM CONJUNTO", () => {
     // Enquanto o portão usava `.some()`, UM percentual liberava a emissão e o XML escrevia `?? 0`
     // nos outros dois: a nota AFIRMAVA carga zero ao tomador. Se o `.some()` voltasse, a tela
     // continuaria exigindo os três e passaria a ser MAIS restritiva que o servidor.

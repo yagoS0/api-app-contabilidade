@@ -766,24 +766,50 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
   // faria a nota que corrige apenas o federal perder o municipal já cadastrado.
   const totTribInformado = data.totTrib || {};
   const informado = (v) => v !== undefined && v !== null && v !== "";
+  // ⚠⚠ O TERCEIRO ELEMENTO É "É EXIGIDO DO CONTADOR?", e o ESTADUAL é o único `false` —
+  // decisão do dono, 02/09/2026: *"o estadual pode ser nulo, não há problema com isso, empresas de
+  // serviço não têm ICMS que é estadual"*. O fundamento é ESTRUTURAL, não estatístico: a DPS
+  // documenta uma operação de SERVIÇO (ISS), e serviço não sofre ICMS — a parcela estadual de uma
+  // NFS-e é zero por natureza da operação, não por o contador não ter olhado. A NFS-e real
+  // versionada (`docs/leiaute-nfse/nfse-nacional-substituicao.xml`) declara `0.00` ali.
+  //
+  // ⚠⚠ ISTO NÃO REABRE O `?? 0` QUE FOI REMOVIDO DAQUI, e a diferença é o que impede o defeito
+  // antigo de voltar: aquele portão usava `.some()` (UM percentual liberava a nota) e escrevia zero
+  // nos OUTROS DOIS — inclusive no FEDERAL, que nunca é estruturalmente zero, e a nota afirmava ao
+  // tomador carga federal 0,00% porque ninguém havia preenchido o campo. Aqui o zero é assumido
+  // para UM campo só, e só porque a natureza da operação o torna zero.
+  //
+  // ⚠ `pTotTribEst` continua VALIDADO quando informado (faixa 0–100) — o que mudou é a AUSÊNCIA
+  // dele não recusar mais a nota. Federal e municipal seguem exigidos: os dois são do DADO da
+  // empresa, e o sistema não os calcula (não há de-para CNAE→presunção neste projeto).
   const CAMPOS_TOT_TRIB = [
-    ["pTotTribFed", "federal"],
-    ["pTotTribEst", "estadual"],
-    ["pTotTribMun", "municipal"],
+    ["pTotTribFed", "federal", true],
+    ["pTotTribEst", "estadual", false],
+    ["pTotTribMun", "municipal", true],
   ];
   const totTribNaoSimples = {};
   const totTribFaltando = [];
   // ⚠ SÓ O NÃO OPTANTE PASSA POR AQUI. Para o Simples este grupo não vai ao XML (ele declara
   // `pTotTribSN`), então recusar a nota por um valor torto nestas colunas seria bloquear uma
   // emissão legítima por causa de um campo que ela não usa.
-  for (const [campo, rotulo] of isSimples ? [] : CAMPOS_TOT_TRIB) {
+  for (const [campo, rotulo, exigido] of isSimples ? [] : CAMPOS_TOT_TRIB) {
     const doPayload = totTribInformado[campo];
     const doCadastro = company?.[campo];
     // `Number(Decimal)` funciona: o Prisma devolve `Decimal` (decimal.js), cujo `valueOf` é a
     // representação numérica. O cadastro guarda NULL quando não configurado — nunca 0 por default.
     const bruto = informado(doPayload) ? doPayload : informado(doCadastro) ? doCadastro : null;
     if (bruto === null) {
-      totTribFaltando.push({ campo, rotulo });
+      if (exigido) {
+        totTribFaltando.push({ campo, rotulo });
+        continue;
+      }
+      // ⚠ Ausente e NÃO exigido ⇒ zero, e o XSD não deixa escolher outra coisa: em
+      // `TCTribTotalPercent` (1.01) os TRÊS filhos de `pTotTrib` são obrigatórios — nenhum tem
+      // `minOccurs="0"` —, então "não informar o estadual" não existe como tag omitida. Quem não
+      // quiser informar NADA tem o irmão `indTotTrib=0` do mesmo `xs:choice` ("Não informar nenhum
+      // valor estimado para os Tributos", Decreto 8.264/2014) — que este gerador NÃO monta, e
+      // ligar isso é decisão à parte, porque cala também o federal e o municipal.
+      totTribNaoSimples[campo] = 0;
       continue;
     }
     const n = Number(bruto);
@@ -794,7 +820,7 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
       err.code = "INVALID_TOT_TRIB_NAO_SIMPLES";
       err.correcao =
         `Informe ${campo} como percentual entre 0 e 100 no cadastro da empresa ` +
-        "(Editar cadastro → Emissão de NFS-e → Carga tributária aproximada).";
+        "(Notas Fiscais → ⚙ Configuração de emissão → Carga tributária aproximada).";
       throw err;
     }
     totTribNaoSimples[campo] = n;
@@ -804,18 +830,18 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
     const err = new Error(
       "Empresa não optante do Simples: a carga tributária aproximada (Lei 12.741/2012) não está " +
         `completa — falta ${listados}. O código emitia 0,00 nos campos ausentes, ` +
-        "que AFIRMA carga zero ao tomador."
+        "que AFIRMA ao tomador uma carga que ninguém conferiu."
     );
     err.code = "MISSING_TOT_TRIB_NAO_SIMPLES";
     // ⚠ A LISTA VIAJA NOMEADA, no molde de `company_missing_fields`: a tela precisa dizer QUAL
     // percentual falta. "Falta a carga tributária" manda o contador conferir os três.
     err.faltando = totTribFaltando.map((f) => f.campo);
     err.correcao =
-      "Cadastre os TRÊS percentuais em Editar cadastro → Emissão de NFS-e → Carga tributária " +
-      "aproximada. ⚠ Os três são exigidos mesmo quando algum é 0,00: zero DECLARADO é legítimo " +
-      "(a NFS-e real de referência declara 0,00 no estadual), mas zero por omissão afirmaria ao " +
-      "tomador uma carga que ninguém conferiu. Estes percentuais são do contador — o sistema não " +
-      "os calcula.";
+      "Cadastre o percentual FEDERAL e o MUNICIPAL em Notas Fiscais → ⚙ Configuração de emissão " +
+      "→ Carga tributária aproximada. ⚠ Os dois são exigidos mesmo quando algum é 0,00: zero " +
+      "DECLARADO é legítimo, mas zero por omissão afirmaria ao tomador uma carga que ninguém " +
+      "conferiu. ⚠ O ESTADUAL NÃO é exigido: numa NFS-e a operação é de serviço (ISS) e não sofre " +
+      "ICMS, então ele sai 0,00. Estes percentuais são do contador — o sistema não os calcula.";
     throw err;
   }
 
