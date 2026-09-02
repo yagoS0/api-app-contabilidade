@@ -51,7 +51,22 @@ describe("⚠⚠ três estados, e o terceiro é sobre a RESPOSTA", () => {
   it("sem perfil, o painel mostra o comportamento de HOJE", () => {
     const p = lerPainelDaProximaDps(resposta());
     expect(p.estado).toBe(ESTADO.SEM_PERFIL);
-    expect(p.linhas).toHaveLength(6);
+    // ⚠ A contagem passou de 6 para 10 em 02/09/2026, com os quatro campos de NBS/IBS-CBS. Aqui a
+    // asserção é pelos IDs e não pelo número: um teste que só conta continua verde se alguém trocar
+    // um campo por outro, e o que o painel promete é mostrar CADA campo que a DPS vai levar.
+    expect(p.linhas.map((l) => l.id)).toEqual([
+      "codigoServicoNacional", "codigoServicoMunicipal", "cLocPrestacao",
+      "regEspTrib", "regApTribSN", "tribISSQN",
+      "codigoNbs", "ibscbsCIndOp", "ibscbsCst", "ibscbsCClassTrib",
+    ]);
+    // ⚠⚠ Os quatro novos saem `INDEFINIDO`, nunca `CRAVADO`: o gerador não escolhia um valor para
+    // eles — ele não escrevia a tag. São coisas diferentes, e a tela diz qual é.
+    for (const id of ["codigoNbs", "ibscbsCIndOp", "ibscbsCst", "ibscbsCClassTrib"]) {
+      const linha = p.linhas.find((l) => l.id === id);
+      expect({ id, fonte: linha.fonte, cravado: linha.cravadoHoje }).toEqual({
+        id, fonte: FONTE.INDEFINIDO, cravado: false,
+      });
+    }
   });
 
   it("com perfil, o estado muda", () => {

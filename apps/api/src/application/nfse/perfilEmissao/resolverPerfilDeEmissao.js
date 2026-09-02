@@ -63,6 +63,16 @@ function doCadastro(company) {
     },
     regApTribSN: { valor: "1", fonte: FONTE.CRAVADO },
     tribISSQN: { valor: "1", fonte: FONTE.CRAVADO },
+
+    // ⚠⚠ OS QUATRO DE NBS/IBS-CBS NÃO TÊM BASE NO CADASTRO, e isso é fato, não lacuna: a
+    // `Company` nunca teve onde guardá-los e o gerador nunca os escreveu. `INDEFINIDO` é a resposta
+    // certa — ninguém respondeu —, e é diferente de `CRAVADO` (o gerador decide por conta) e de
+    // `COMPANY` (o cadastro responde). Marcá-los `CRAVADO` com valor nulo diria que o gerador
+    // escolhe algo, quando ele simplesmente não escreve a tag.
+    codigoNbs: { valor: null, fonte: FONTE.INDEFINIDO },
+    ibscbsCIndOp: { valor: null, fonte: FONTE.INDEFINIDO },
+    ibscbsCst: { valor: null, fonte: FONTE.INDEFINIDO },
+    ibscbsCClassTrib: { valor: null, fonte: FONTE.INDEFINIDO },
   };
 }
 

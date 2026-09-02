@@ -78,6 +78,21 @@ const CODIGOS_NOSSOS = new Set([
   // `cTribNac`). Recusa NOSSA: nada saiu da máquina e o número continua intacto.
   "NFSE_CODIGO_SERVICO_FORA_DA_LISTA",
   "NFSE_CODIGO_SERVICO_INVALIDO",
+  // ── NBS e IBS/CBS (02/09/2026) ────────────────────────────────────────────────────────────
+  //
+  // ⚠⚠ ESQUECER DE REGISTRAR AQUI NÃO É DETALHE — É INVERTER A ORIENTAÇÃO DADA AO CONTADOR.
+  // Código nomeado que NÃO está neste conjunto cai no ramo do TRANSPORTE, e o texto de lá diz
+  // *"não se sabe se a DPS chegou a ser processada; NÃO reemita"* — mandando conferir no sistema
+  // nacional uma nota que nunca saiu da máquina —, além de marcar `numeroReutilizavel: false`.
+  // As quatro recusas abaixo acontecem no PRÉ-VOO, antes de qualquer I/O e antes de reservar
+  // numeração: o conserto é corrigir o perfil e emitir de novo. Achado por teste, ao ligar o
+  // `cNBS`: o `codigo` chegava certo e a `correcao` era a do transporte.
+  "NFSE_NBS_NAO_TERMINAL",
+  "NFSE_NBS_INVALIDO",
+  "NFSE_IBSCBS_SEM_NBS",
+  "NFSE_IBSCBS_INCOMPLETO",
+  "NFSE_IBSCBS_CST_INVALIDO",
+  "NFSE_IBSCBS_COMBINACAO_NAO_AUTORIZADA",
   "NFSE_ISS_RETIDO_SEM_ALIQUOTA",
   "NO_COMPANY_CERT",
   "CERT_CNPJ_MISMATCH",

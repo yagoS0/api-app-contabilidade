@@ -11,9 +11,10 @@
 
 const XML_ENVIADO = [];
 
-function montarMocks({ flagLigada, perfil }) {
+function montarMocks({ flagLigada, perfil, ibscbsLigada = false }) {
   jest.doMock("../../../config.js", () => ({
     INTEGRACAO_PERFIL_EMISSAO_NFSE: flagLigada,
+    INTEGRACAO_NFSE_IBSCBS: ibscbsLigada,
     NFSE_BASE_URL: "https://sefin.producaorestrita.nfse.gov.br/SefinNacional",
     NFSE_ENV: "homolog",
     NFSE_PATH: "/nfse",
@@ -137,15 +138,39 @@ const PERFIL_DERIVADO = {
 };
 
 /** Emite uma vez, num registry limpo, e devolve o XML que foi enviado. */
-async function emitirCom({ flagLigada, perfil }) {
+async function emitirCom({ flagLigada, perfil, ibscbsLigada = false }) {
+  const { xml } = await emitirDetalhado({ flagLigada, perfil, ibscbsLigada });
+  return xml;
+}
+
+/**
+ * Emite e devolve o XML **e** o desfecho.
+ *
+ * ⚠ As recusas de pré-voo NÃO lançam: `issue` devolve um objeto de falha. Medir a recusa pelo
+ * `serviceInvoice.create` **não ter sido chamado** é o que prova que ela aconteceu ANTES de
+ * reservar numeração — e não existe inutilização na NFS-e.
+ */
+async function emitirDetalhado({ flagLigada, perfil, ibscbsLigada = false }) {
   XML_ENVIADO.length = 0;
   jest.resetModules();
-  montarMocks({ flagLigada, perfil });
+  montarMocks({ flagLigada, perfil, ibscbsLigada });
   const { NfseService } = await import("../NfseService.js");
+  const { prisma } = await import("../../../infrastructure/db/prisma.js");
   const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
-  await NfseService.issue({ data: PAYLOAD, log });
-  return XML_ENVIADO[0] || "";
+  const r = await NfseService.issue({ data: PAYLOAD, log });
+  return { xml: XML_ENVIADO[0] || "", resultado: r, prisma };
 }
+
+/** O perfil derivado, mais o que o cenário quiser. */
+const comPerfil = (extra) => ({ ...PERFIL_DERIVADO, ...extra });
+
+/**
+ * A ÚNICA combinação que o ANEXO VIII autoriza para o item **17.19** — que é o item embutido no
+ * `cTribNac` 171901 desta suíte. ⚠ Não é valor inventado para o teste: sai da tabela gerada.
+ */
+const DO_ANEXO_VIII = { cIndOp: "100301", cClassTrib: "200052" };
+/** Um NBS TERMINAL de verdade (9 dígitos depois de tirar os pontos). */
+const NBS_TERMINAL = "1.1502.10.00";
 
 /** O XML sem o que muda a cada emissão por natureza (data/hora e assinatura). */
 function semOVolatil(xml) {
@@ -264,5 +289,241 @@ describe("⚠⚠ o cadastro continua sendo a AUTORIDADE do código de serviço",
     // ⚠ Nada saiu para a Receita, e nenhum número foi queimado — não existe inutilização na NFS-e.
     expect(XML_ENVIADO).toHaveLength(0);
     expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// O `cNBS` E O BLOCO `IBSCBS` (02/09/2026)
+//
+// ⚠⚠ AS DUAS METADES SE PROVAM DE MANEIRAS DIFERENTES, e é de propósito: o `cNBS` nasce desligado
+// pelo **DADO** (a coluna do perfil é nula em todo mundo), e o bloco IBS/CBS nasce desligado por
+// **FLAG** — porque ele é estrutural e traz a E0322 junto. Um perfil com os três campos de IBS/CBS
+// preenchidos e a flag OFF não produz bloco nenhum: é o SERVIDOR que não escreve, não a tela que
+// esconde. Há caso para isso abaixo.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+describe("⚠⚠ o `cNBS` — nasce desligado pelo DADO, não por flag", () => {
+  it("perfil SEM `codigoNbs` não escreve a tag — e é o estado de 100% dos perfis hoje", async () => {
+    const xml = await emitirCom({ flagLigada: true, perfil: PERFIL_DERIVADO });
+    expect(xml).toMatch(/<xDescServ>/);
+    expect(xml).not.toMatch(/cNBS/);
+  });
+
+  it("com `codigoNbs` terminal, sai com NOVE DÍGITOS e no lugar certo do `xs:sequence`", async () => {
+    const xml = await emitirCom({
+      flagLigada: true,
+      perfil: comPerfil({ codigoNbs: NBS_TERMINAL }),
+    });
+    // ⚠ A coluna guarda a forma PONTUADA; a DPS leva os dígitos. A conversão é o contrato.
+    expect(xml).toMatch(/<cNBS>115021000<\/cNBS>/);
+    expect(xml).not.toMatch(/1\.1502\.10\.00/);
+    // `TCCServ` é `cTribNac · cTribMun? · xDescServ · cNBS? · cIntContrib?` — ordem é contrato.
+    expect(xml.indexOf("<cNBS>")).toBeGreaterThan(xml.indexOf("</xDescServ>"));
+    expect(xml.indexOf("<cNBS>")).toBeLessThan(xml.indexOf("</cServ>"));
+  });
+
+  it("⚠⚠ código NÃO TERMINAL recusa ANTES de reservar numeração — e diz para onde ir", async () => {
+    const { xml, resultado, prisma } = await emitirDetalhado({
+      flagLigada: true,
+      perfil: comPerfil({ codigoNbs: "1.0101" }),
+    });
+    expect(resultado.codigo).toBe("NFSE_NBS_NAO_TERMINAL");
+    expect(xml).toBe("");
+    // A prova de que a recusa foi no PRÉ-VOO: nenhum número foi reservado. Não existe
+    // inutilização na NFS-e — número gasto à toa é buraco permanente na série.
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+    // ⚠ A recusa tem SAÍDA: ela nomeia os códigos mais específicos.
+    expect(resultado.correcao).toMatch(/1\.0101\.11\.00/);
+    // ⚠ E NÃO chama o código de "inválido" — ele é publicado, descrito e correto.
+    expect(resultado.message).not.toMatch(/inválido|invalido/i);
+  });
+});
+
+describe("⚠⚠ o bloco IBS/CBS — o SERVIDOR não escreve; não é a tela que esconde", () => {
+  const ibscbsDoPerfil = (extra = {}) => ({
+    ibscbsCIndOp: DO_ANEXO_VIII.cIndOp,
+    ibscbsCst: "200",
+    ibscbsCClassTrib: DO_ANEXO_VIII.cClassTrib,
+    ...extra,
+  });
+  const PERFIL_IBSCBS = comPerfil({ codigoNbs: NBS_TERMINAL, ...ibscbsDoPerfil() });
+
+  it("⚠⚠ flag DESLIGADA: perfil com os três campos preenchidos NÃO produz o bloco", async () => {
+    const xml = await emitirCom({ flagLigada: true, ibscbsLigada: false, perfil: PERFIL_IBSCBS });
+    expect(xml).toMatch(/<infDPS/);
+    expect(xml).not.toMatch(/IBSCBS/);
+    // ⚠ O `cNBS` continua saindo: ele é campo próprio, e não depende do IBS/CBS.
+    expect(xml).toMatch(/<cNBS>115021000<\/cNBS>/);
+  });
+
+  it("flag LIGADA: o bloco sai com os cinco campos, na ordem do `xs:sequence`", async () => {
+    const xml = await emitirCom({ flagLigada: true, ibscbsLigada: true, perfil: PERFIL_IBSCBS });
+    expect(xml).toMatch(/<IBSCBS>/);
+    expect(xml).toMatch(/<finNFSe>0<\/finNFSe>/);
+    expect(xml).toMatch(/<cIndOp>100301<\/cIndOp>/);
+    expect(xml).toMatch(/<indDest>0<\/indDest>/);
+    expect(xml).toMatch(/<CST>200<\/CST>/);
+    expect(xml).toMatch(/<cClassTrib>200052<\/cClassTrib>/);
+    const ordem = ["<finNFSe>", "<cIndOp>", "<indDest>", "<CST>", "<cClassTrib>"]
+      .map((t) => xml.indexOf(t));
+    expect(ordem).toEqual([...ordem].sort((a, b) => a - b));
+    // ⚠ `IBSCBS` é o ÚLTIMO filho de `TCInfDPS` — vem depois do grupo `valores`.
+    expect(xml.indexOf("<IBSCBS>")).toBeGreaterThan(xml.indexOf("</valores>"));
+    expect(xml.indexOf("<IBSCBS>")).toBeLessThan(xml.indexOf("</infDPS>"));
+  });
+
+  it("⚠⚠ `indDest` é 0 PORQUE o gerador nunca monta `dest` — e isso é varrido", async () => {
+    // E0910: "O destinatário só deve ser identificado quando indDest for 1." Nosso `indDest` é
+    // DERIVADO desse fato, não escolhido. Se alguém passar a montar `<dest>`, as duas coisas têm de
+    // mudar juntas — e este caso cai antes.
+    const xml = await emitirCom({ flagLigada: true, ibscbsLigada: true, perfil: PERFIL_IBSCBS });
+    expect(xml).not.toMatch(/<dest>/);
+    expect(xml).toMatch(/<indDest>0<\/indDest>/);
+  });
+
+  it("⚠⚠ E0322: IBS/CBS sem NBS recusa no pré-voo, citando a regra", async () => {
+    const { resultado, prisma } = await emitirDetalhado({
+      flagLigada: true,
+      ibscbsLigada: true,
+      perfil: comPerfil(ibscbsDoPerfil()), // sem `codigoNbs`
+    });
+    expect(resultado.codigo).toBe("NFSE_IBSCBS_SEM_NBS");
+    expect(resultado.message).toMatch(/E0322/);
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ combinação que o ANEXO VIII não autoriza recusa — e DIZ quais valem", async () => {
+    const { resultado } = await emitirDetalhado({
+      flagLigada: true,
+      ibscbsLigada: true,
+      perfil: comPerfil({
+        codigoNbs: NBS_TERMINAL,
+        ...ibscbsDoPerfil({ ibscbsCClassTrib: "000001" }),
+      }),
+    });
+    expect(resultado.codigo).toBe("NFSE_IBSCBS_COMBINACAO_NAO_AUTORIZADA");
+    // Recusa sem saída manda o contador adivinhar.
+    expect(resultado.correcao).toMatch(/100301\/200052/);
+  });
+
+  it("meio bloco recusa — os três são obrigatórios no XSD", async () => {
+    const { resultado } = await emitirDetalhado({
+      flagLigada: true,
+      ibscbsLigada: true,
+      perfil: comPerfil({ codigoNbs: NBS_TERMINAL, ibscbsCIndOp: DO_ANEXO_VIII.cIndOp }),
+    });
+    expect(resultado.codigo).toBe("NFSE_IBSCBS_INCOMPLETO");
+    expect(resultado.message).toMatch(/CST/);
+  });
+
+  it("⚠ perfil sem nenhum campo de IBS/CBS não recusa nada — só não escreve o bloco", async () => {
+    const xml = await emitirCom({ flagLigada: true, ibscbsLigada: true, perfil: PERFIL_DERIVADO });
+    expect(xml).toMatch(/<infDPS/);
+    expect(xml).not.toMatch(/IBSCBS/);
+  });
+});
+
+describe("⚠⚠ o bloco IBS/CBS conferido contra o XSD 1.01 — lido do arquivo", () => {
+  // ⚠ Por que a conferência mora AQUI e não em `dpsContraXsd.test.js`: aquele oráculo lê a flag no
+  // carregamento do módulo, e este arquivo é o único com o harness que a liga (registry resetado +
+  // `import()` novo por cenário). Mover o oráculo inteiro para um helper compartilhado é
+  // refatoração à parte — nomeada, não feita. O que se faz aqui é o recorte que importa: a ORDEM e
+  // a OBRIGATORIEDADE dos filhos dos dois `complexType` que o bloco novo usa, tiradas do arquivo
+  // oficial, nunca de memória.
+  const fs = require("node:fs");
+  const path = require("node:path");
+
+  function schema1_01() {
+    let dir = __dirname;
+    while (dir !== path.dirname(dir)) {
+      const t = path.join(dir, "docs/leiaute-nfse/documentacao-tecnica/esquemas-xsd/Schemas/1.01");
+      if (fs.existsSync(t)) return fs.readFileSync(path.join(t, "tiposComplexos_v1.01.xsd"), "utf-8");
+      dir = path.dirname(dir);
+    }
+    throw new Error("XSD 1.01 não encontrado");
+  }
+
+  /** Os filhos de um `complexType`, na ordem do `xs:sequence`, com a obrigatoriedade. */
+  function filhosDe(xsd, tipo) {
+    const bloco = new RegExp(`<xs:complexType name="${tipo}">[\\s\\S]*?\\n  </xs:complexType>`).exec(xsd);
+    return [...bloco[0].matchAll(/<xs:element name="(\w+)"([^>]*)/g)].map((m) => ({
+      nome: m[1],
+      obrigatorio: !/minOccurs="0"/.test(m[2]),
+    }));
+  }
+
+  it("os filhos que escrevemos existem, são obrigatórios e saem NA ORDEM do `xs:sequence`", async () => {
+    const xml = await emitirCom({
+      flagLigada: true,
+      ibscbsLigada: true,
+      perfil: comPerfil({
+        codigoNbs: NBS_TERMINAL,
+        ibscbsCIndOp: DO_ANEXO_VIII.cIndOp,
+        ibscbsCst: "200",
+        ibscbsCClassTrib: DO_ANEXO_VIII.cClassTrib,
+      }),
+    });
+    const xsd = schema1_01();
+
+    // ── `TCRTCInfoIBSCBS` — o grupo `IBSCBS` de `infDPS` ────────────────────────────────────
+    const doGrupo = filhosDe(xsd, "TCRTCInfoIBSCBS");
+    const obrigatorios = doGrupo.filter((f) => f.obrigatorio).map((f) => f.nome);
+    // ⚠ Se o leiaute passar a exigir um filho novo, este caso cai — e é assim que se descobre,
+    // em vez de por rejeição do sistema nacional.
+    expect(obrigatorios).toEqual(["finNFSe", "cIndOp", "indDest", "valores"]);
+    for (const nome of obrigatorios) {
+      if (nome === "valores") continue; // conferido pelo subtipo, abaixo
+      expect(xml).toMatch(new RegExp(`<${nome}>`));
+    }
+    // A ordem no documento tem de ser a mesma do `xs:sequence`.
+    const posGrupo = ["finNFSe", "cIndOp", "indDest"].map((n) => xml.indexOf(`<${n}>`));
+    expect(posGrupo).toEqual([...posGrupo].sort((a, b) => a - b));
+    // ⚠ E nada que o gerador não escreve pode ter aparecido: `dest` é o caso que sustenta
+    // `indDest = 0` (E0910).
+    expect(xml).not.toMatch(/<dest>/);
+
+    // ── `TCRTCInfoTributosSitClas` — o `gIBSCBS` ────────────────────────────────────────────
+    const doSitClas = filhosDe(xsd, "TCRTCInfoTributosSitClas");
+    expect(doSitClas.filter((f) => f.obrigatorio).map((f) => f.nome)).toEqual(["CST", "cClassTrib"]);
+    expect(xml.indexOf("<CST>")).toBeLessThan(xml.indexOf("<cClassTrib>"));
+
+    // ── O caminho completo, elo a elo ───────────────────────────────────────────────────────
+    // `IBSCBS > valores > trib > gIBSCBS > CST` — se algum elo faltar, o documento é recusado por
+    // schema, e um `toContain` de tag solta não perceberia.
+    expect(xml).toMatch(
+      /<IBSCBS>[\s\S]*<valores>[\s\S]*<trib>[\s\S]*<gIBSCBS>[\s\S]*<CST>[\s\S]*<cClassTrib>/,
+    );
+  });
+
+  it("⚠ `finNFSe` só tem UM valor no XSD, e é o que escrevemos", async () => {
+    // `TSRTCFinNFSe` enumera apenas "0" (NFS-e regular). Não é escolha nossa — e se a Receita
+    // acrescentar valores, este caso cai e alguém decide.
+    let dir = __dirname;
+    while (dir !== path.dirname(dir)) {
+      const t = path.join(dir, "docs/leiaute-nfse/documentacao-tecnica/esquemas-xsd/Schemas/1.01");
+      if (fs.existsSync(t)) { dir = t; break; }
+      dir = path.dirname(dir);
+    }
+    const simples = fs.readFileSync(path.join(dir, "tiposSimples_v1.01.xsd"), "utf-8");
+    const bloco = /<xs:simpleType name="TSRTCFinNFSe">[\s\S]*?<\/xs:simpleType>/.exec(simples)[0];
+    const valores = [...bloco.matchAll(/<xs:enumeration value="([^"]*)"/g)].map((m) => m[1]);
+    expect(valores).toEqual(["0"]);
+  });
+});
+
+describe("⚠⚠ as recusas novas são da camada NOSSA — e isso já esteve errado", () => {
+  it("recusa de NBS/IBS-CBS diz que o número é reutilizável, não que o desfecho é desconhecido", async () => {
+    // ⚠⚠ DEFEITO REAL, ACHADO POR ESTE TESTE: os códigos novos não estavam em `CODIGOS_NOSSOS`
+    // (`desfechoEmissao.js`), então caíam no ramo do TRANSPORTE. O `codigo` chegava certo e a
+    // `correcao` dizia *"não se sabe se a DPS chegou a ser processada; NÃO reemita"* — mandando o
+    // contador procurar no sistema nacional uma nota que nunca saiu da máquina, e marcando
+    // `numeroReutilizavel: false`. É a orientação exatamente invertida.
+    const { resultado } = await emitirDetalhado({
+      flagLigada: true,
+      perfil: comPerfil({ codigoNbs: "1.0101" }),
+    });
+    expect(resultado.camada).toBe("NOSSA");
+    expect(resultado.numeroReutilizavel).toBe(true);
+    expect(resultado.correcao).not.toMatch(/não se sabe|NÃO reemita/i);
   });
 });

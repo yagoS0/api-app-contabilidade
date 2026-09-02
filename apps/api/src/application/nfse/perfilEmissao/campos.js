@@ -26,7 +26,12 @@ export const LEITOR = Object.freeze({
 });
 
 /**
- * ⚠⚠ SÓ ENTRA CAMPO QUE `buildDpsXml` JÁ ESCREVE HOJE.
+ * ⚠⚠ SÓ ENTRA CAMPO COM ESCRITOR — e o escritor nasce NO MESMO COMMIT da coluna.
+ *
+ * ⚠ Esta frase dizia "só entra campo que `buildDpsXml` JÁ escreve hoje", o que era a formulação
+ * certa enquanto a fase 1 só lia campos existentes. Os quatro campos de NBS/IBS-CBS (02/09/2026)
+ * entraram junto com o código que os escreve, no mesmo commit — que é o que a regra protege. O que
+ * continua PROIBIDO é a coluna que espera um leitor futuro.
  *
  * É o critério que mantém a fase honesta: o resolvedor tem o que resolver, o painel tem contra o
  * que comparar ("hoje sai X, o perfil mandaria Y"), e nenhuma coluna nasce esperando um leitor
@@ -116,6 +121,64 @@ export const CAMPOS = Object.freeze([
     hojeSaiDe: 'CRAVADO em "1" no gerador',
     cravadoHoje: true,
     leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA],
+  }),
+
+  // ── NBS e IBS/CBS (02/09/2026) ─────────────────────────────────────────────────────────────
+  // ⚠ Estes QUATRO são os primeiros campos cujo escritor nasceu NO MESMO COMMIT da coluna — e
+  // não antes dele. É a regra da casa aplicada na direção certa: coluna sem leitor é o defeito
+  // que `perfilAtividades` tem; leitor sem coluna não compila.
+  Object.freeze({
+    id: "codigoNbs",
+    rotulo: "Item da NBS",
+    tag: "cNBS",
+    caminhoNoXml: "infDPS/serv/cServ/cNBS",
+    // ⚠ A COLUNA GUARDA A FORMA PONTUADA; a DPS leva `[0-9]{9}`. Quem converte — e quem RECUSA os
+    // 292 níveis intermediários, nomeando-os "não terminal" em vez de "inválido" — é `nbsParaDps`.
+    forma: /^[0-9]\.[0-9]{4}(\.[0-9]{1,2}){0,2}$/,
+    formaDescrita: "código NBS pontuado e TERMINAL (ex.: 1.1502.10.00)",
+    obrigatorio: false,
+    // ⚠⚠ Obrigatório na EXPORTAÇÃO (E0318) e sempre que houver IBS/CBS (E0322).
+    hojeSaiDe: "não era escrito",
+    leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
+  }),
+  Object.freeze({
+    id: "ibscbsCIndOp",
+    rotulo: "Código indicador da operação (IBS/CBS)",
+    tag: "cIndOp",
+    caminhoNoXml: "infDPS/IBSCBS/cIndOp",
+    forma: /^[0-9]{6}$/,
+    formaDescrita: "6 dígitos, do ANEXO VIII",
+    obrigatorio: false,
+    // ⚠⚠ A tabela OFICIAL é o ANEXO C (E0901), NÃO versionado aqui. Conferimos contra o ANEXO
+    // VIII, que é subconjunto — mais estrito que a norma, portanto falha FECHADA.
+    hojeSaiDe: "não era escrito",
+    leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
+  }),
+  Object.freeze({
+    id: "ibscbsCst",
+    rotulo: "Situação tributária do IBS/CBS (CST)",
+    tag: "CST",
+    caminhoNoXml: "infDPS/IBSCBS/valores/trib/gIBSCBS/CST",
+    forma: /^[0-9]{3}$/,
+    formaDescrita: "3 dígitos",
+    obrigatorio: false,
+    // ⚠⚠ **NÃO EXISTE LISTA VERSIONADA DISTO.** O XSD dá `[0-9]{3}` sem enumeração e o ANEXO_I
+    // não enumera. Só a FORMA é conferiível; o conteúdo é declaração do contador.
+    hojeSaiDe: "não era escrito",
+    leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
+  }),
+  Object.freeze({
+    id: "ibscbsCClassTrib",
+    rotulo: "Classificação tributária do IBS/CBS",
+    tag: "cClassTrib",
+    caminhoNoXml: "infDPS/IBSCBS/valores/trib/gIBSCBS/cClassTrib",
+    forma: /^[0-9]{6}$/,
+    formaDescrita: "6 dígitos, do ANEXO VIII",
+    obrigatorio: false,
+    // ⚠ Conferido em PAR com o `cIndOp`: em 7 itens o produto cartesiano das duas listas contém
+    // combinações que a fonte não autoriza.
+    hojeSaiDe: "não era escrito",
+    leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
   }),
 ]);
 

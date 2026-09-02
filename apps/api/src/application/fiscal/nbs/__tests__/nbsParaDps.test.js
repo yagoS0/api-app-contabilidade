@@ -11,6 +11,7 @@ import path from "node:path";
 import { ANEXO_VIII } from "../../ibscbs/anexoViii.data.js";
 import { NBS, RECUSA_NBS, descendentesTerminais, nbsParaDps } from "../index.js";
 
+const IMPORTA_NBS = /from\s+["'][^"']*fiscal\/nbs/;
 const digitos = (c) => c.replace(/\D/g, "");
 const TERMINAIS = NBS.filter((n) => digitos(n.codigo).length === 9);
 const INTERMEDIARIOS = NBS.filter((n) => digitos(n.codigo).length !== 9);
@@ -154,10 +155,15 @@ describe("⚠⚠ o cruzamento com o ANEXO VIII — duas tabelas geradas em separ
   });
 });
 
-describe("⚠ a tabela continua INERTE no caminho de emissão", () => {
-  it("nenhum arquivo de `application/nfse/` importa a NBS", () => {
-    // Ligar o `cNBS` MUDA o XML de nota fiscal em produção — ato do dono, não consequência de a
-    // conversão existir. Quem ligar faz este caso cair, e a decisão fica à vista.
+describe("⚠⚠ a porta para o caminho de emissão É UMA SÓ", () => {
+  it("só `ibscbsDaDps.js` importa a NBS dentro de `application/nfse/`", () => {
+    // ⚠⚠ ESTE CASO EXIGIA ZERO IMPORTADORES quando foi escrito (01/09/2026) — a tabela nascia
+    // inerte por decisão do dono. Ele caiu no commit que ligou o `cNBS`, que é exatamente o que
+    // uma guarda assim existe para fazer: pôr a decisão à vista em vez de deixá-la acontecer.
+    // A decisão mudou (IBS/CBS + E0322); a guarda mudou de FORMA, não foi apagada.
+  // ⚠ A pergunta é "quem IMPORTA", não "quem MENCIONA". A primeira versão varria o texto inteiro e
+  // acusou `campos.js`, que só cita o nome `nbsParaDps` num comentário explicando quem converte.
+  // Guarda que acusa documentação correta é guarda que alguém desliga.
     const raiz = path.resolve(__dirname, "../../../nfse");
     const achados = [];
     const varrer = (d) => {
@@ -165,10 +171,10 @@ describe("⚠ a tabela continua INERTE no caminho de emissão", () => {
         const p = path.join(d, e.name);
         if (e.isDirectory()) { if (e.name !== "__tests__") varrer(p); continue; }
         if (!e.name.endsWith(".js")) continue;
-        if (/fiscal\/nbs|nbsParaDps/.test(fs.readFileSync(p, "utf-8"))) achados.push(e.name);
+        if (IMPORTA_NBS.test(fs.readFileSync(p, "utf-8"))) achados.push(e.name);
       }
     };
     varrer(raiz);
-    expect(achados).toEqual([]);
+    expect(achados).toEqual(["ibscbsDaDps.js"]);
   });
 });

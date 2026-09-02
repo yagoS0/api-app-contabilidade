@@ -93,6 +93,47 @@ export const CAMPOS_PERFIL_EMISSAO = Object.freeze([
     obrigatorio: false,
     cravadoHoje: true,
   }),
+
+  // ── NBS e IBS/CBS (02/09/2026) ───────────────────────────────────────────────
+  // ⚠ Nenhum deles é `cravadoHoje`: o gerador simplesmente NÃO ESCREVIA a tag. Por isso a
+  // procedência deles, sem perfil, é `INDEFINIDO` e não `CRAVADO` — dizer "cravado" afirmaria que
+  // o gerador escolhe um valor, quando ele não escreve nada.
+  Object.freeze({
+    id: "codigoNbs",
+    rotulo: "Item da NBS",
+    tag: "cNBS",
+    caminhoNoXml: "infDPS/serv/cServ/cNBS",
+    formaDescrita: "código NBS pontuado e TERMINAL (ex.: 1.1502.10.00)",
+    obrigatorio: false,
+    cravadoHoje: false,
+  }),
+  Object.freeze({
+    id: "ibscbsCIndOp",
+    rotulo: "Código indicador da operação (IBS/CBS)",
+    tag: "cIndOp",
+    caminhoNoXml: "infDPS/IBSCBS/cIndOp",
+    formaDescrita: "6 dígitos, do ANEXO VIII",
+    obrigatorio: false,
+    cravadoHoje: false,
+  }),
+  Object.freeze({
+    id: "ibscbsCst",
+    rotulo: "Situação tributária do IBS/CBS (CST)",
+    tag: "CST",
+    caminhoNoXml: "infDPS/IBSCBS/valores/trib/gIBSCBS/CST",
+    formaDescrita: "3 dígitos",
+    obrigatorio: false,
+    cravadoHoje: false,
+  }),
+  Object.freeze({
+    id: "ibscbsCClassTrib",
+    rotulo: "Classificação tributária do IBS/CBS",
+    tag: "cClassTrib",
+    caminhoNoXml: "infDPS/IBSCBS/valores/trib/gIBSCBS/cClassTrib",
+    formaDescrita: "6 dígitos, do ANEXO VIII",
+    obrigatorio: false,
+    cravadoHoje: false,
+  }),
 ]);
 
 /** As descrições dos valores — para a tela não mostrar um "3" cru sobre tributação. */

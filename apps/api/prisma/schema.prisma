@@ -2953,6 +2953,30 @@ model PerfilEmissaoNfse {
   /// impossível de declarar, mesmo havendo empresa na carteira que presta para o exterior.
   tribISSQN String?
 
+  // ── NBS e IBS/CBS (reforma tributária) ─────────────────────────────────────────────────────
+  /// `cNBS` — guardado na forma PONTUADA (`1.1502.10.00`), que é como a fonte publica e como uma
+  /// pessoa lê. A DPS quer `[0-9]{9}`: quem converte é `nbsParaDps` (`fiscal/nbs/`), que também
+  /// RECUSA os 292 níveis intermediários da hierarquia, nomeando-os "não terminal" em vez de
+  /// "inválido". ⚠ NULO = não declarado, e é o estado de todo perfil hoje: enquanto ninguém
+  /// preencher, nenhuma nota ganha `<cNBS>`. ⚠⚠ É obrigatório na EXPORTAÇÃO (**E0318**) e sempre
+  /// que o bloco IBS/CBS for informado (**E0322**).
+  codigoNbs String?
+
+  /// `IBSCBS/cIndOp` — 6 dígitos. Sai das combinações que o ANEXO VIII autoriza para o item da
+  /// LC 116 embutido no `cTribNac`. ⚠⚠ A tabela OFICIAL de códigos é o **ANEXO C** (E0901), que
+  /// NÃO está versionado neste projeto; conferimos contra o ANEXO VIII, que é um subconjunto —
+  /// mais estrito que a regra exige, portanto na direção segura.
+  ibscbsCIndOp String?
+  /// `IBSCBS/valores/trib/gIBSCBS/CST` — 3 dígitos.
+  /// ⚠⚠ **NÃO EXISTE LISTA VERSIONADA DISTO.** O XSD diz só `[0-9]{3}` e o ANEXO_I não enumera.
+  /// Os prefixos dos 28 `cClassTrib` do ANEXO VIII (`000`, `011`, `200`, `400`, `820`) PARECEM
+  /// CSTs, e parecer não é fonte: o sistema SUGERE e nomeia a incerteza, o contador declara.
+  ibscbsCst String?
+  /// `IBSCBS/valores/trib/gIBSCBS/cClassTrib` — 6 dígitos, do ANEXO VIII.
+  /// ⚠ O par `(cIndOp, cClassTrib)` é conferido JUNTO: em 7 itens o produto cartesiano das duas
+  /// listas contém combinações que a fonte não autoriza.
+  ibscbsCClassTrib String?
+
   // ── o perfil HABILITA; o cliente informa o fato daquela nota ───────────────────────────────
   /// Faz aparecer, na tela do cliente, o campo do CNO/CIB da obra.
   habilitaObra       Boolean @default(false)

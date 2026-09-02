@@ -4,6 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { NBS, nbsPorCodigo, descricaoNbs, normalizarCodigoNbs } from "../index.js";
 
+const IMPORTA_NBS = /from\s+["'][^"']*fiscal\/nbs/;
+
 describe("⚠ a tabela veio inteira", () => {
   it("1.210 códigos, sem repetido", () => {
     expect(NBS).toHaveLength(1210);
@@ -44,11 +46,24 @@ describe("⚠ normalização tolerante, nunca inventiva", () => {
   });
 });
 
-describe("⚠⚠ ELA É INERTE, E ISSO ESTÁ TRAVADO", () => {
-  // Ligar o `cNBS` na emissão MUDA O XML de nota fiscal em produção. É ato do dono, não
-  // consequência de a tabela existir. Se alguém importar isto no caminho de emissão, este teste cai
-  // e a decisão fica à vista em vez de acontecer por acidente.
-  it("nenhum arquivo do caminho de emissão de NFS-e importa a NBS", () => {
+describe("⚠⚠ A TABELA DEIXOU DE SER INERTE EM 02/09/2026 — e a porta É UMA SÓ", () => {
+  // ⚠⚠ ESTE BLOCO SE CHAMAVA "ELA É INERTE, E ISSO ESTÁ TRAVADO" e exigia ZERO importadores em
+  // `application/nfse/`. Ele existia para que ligar o `cNBS` fosse ATO DO DONO, e não consequência
+  // de a tabela existir — e cumpriu o papel: caiu no commit que a ligou.
+  //
+  // A decisão mudou, com data e motivo. O dono escolheu **migrar para o leiaute 1.01 e construir
+  // IBS/CBS junto**, e a regra **E0322** do Padrão Nacional torna o `cNBS` OBRIGATÓRIO quando o
+  // bloco IBS/CBS é informado (ANEXO_I, aba `RN DPS_NFS-e`, linha 324). Ou seja: escolher IBS/CBS
+  // **é** escolher ligar a NBS. A decisão de 25/08/2026 não foi revogada por conveniência — ela
+  // foi superada por um requisito que a norma amarra.
+  //
+  // ⚠⚠ O QUE SUBSTITUI A INÉRCIA NÃO É NADA: é uma porta ÚNICA. Só `ibscbsDaDps.js` pode importar
+  // a NBS dentro de `application/nfse/`. `buildDpsXml` **não a importa** — ele recebe o valor já
+  // decidido —, e é isso que mantém um lugar só respondendo "este código pode ir à DPS?".
+  const importadoresEmNfse = () => {
+  // ⚠ A pergunta é "quem IMPORTA", não "quem MENCIONA". A primeira versão varria o texto inteiro e
+  // acusou `campos.js`, que só cita o nome `nbsParaDps` num comentário explicando quem converte.
+  // Guarda que acusa documentação correta é guarda que alguém desliga.
     const dir = path.resolve(__dirname, "../../../nfse");
     const arquivos = [];
     const varrer = (d) => {
@@ -60,7 +75,20 @@ describe("⚠⚠ ELA É INERTE, E ISSO ESTÁ TRAVADO", () => {
     };
     varrer(dir);
     expect(arquivos.length).toBeGreaterThan(5);
-    const importam = arquivos.filter((f) => /fiscal\/nbs|nbs\.data/.test(fs.readFileSync(f, "utf-8")));
-    expect(importam.map((f) => path.basename(f))).toEqual([]);
+    return arquivos
+      .filter((f) => IMPORTA_NBS.test(fs.readFileSync(f, "utf-8")))
+      .map((f) => path.basename(f));
+  };
+
+  it("⚠⚠ exatamente UM arquivo do caminho de emissão importa a NBS", () => {
+    expect(importadoresEmNfse()).toEqual(["ibscbsDaDps.js"]);
+  });
+
+  it("⚠⚠ `NfseService` NÃO importa a NBS — ele recebe a decisão pronta", () => {
+    // Se o gerador passar a consultar a tabela por conta própria, existem duas respostas para
+    // "este código pode ir à DPS?" — e elas divergem na primeira correção.
+    const fonte = fs.readFileSync(path.resolve(__dirname, "../../../nfse/NfseService.js"), "utf-8");
+    expect(fonte).not.toMatch(IMPORTA_NBS);
+    expect(fonte).toMatch(/ibscbsDaDps/);
   });
 });

@@ -16,6 +16,7 @@ import { motivoValido, motivosDoEvento, validarJustificativa } from "./motivosDe
 
 import { escolherCodigoServicoNacional } from "./codigoServicoDaNota.js";
 import { resolverPerfilDeEmissao } from "./perfilEmissao/resolverPerfilDeEmissao.js";
+import { ibscbsDaDps, nbsDaDps } from "./ibscbsDaDps.js";
 import { registrarTomadorEmitido } from "./tomadorEmitido.js";
 import {
   classificarFalha,
@@ -27,6 +28,7 @@ import {
 } from "./desfechoEmissao.js";
 import {
   INTEGRACAO_PERFIL_EMISSAO_NFSE,
+  INTEGRACAO_NFSE_IBSCBS,
   NFSE_BASE_URL,
   NFSE_ENV,
   NFSE_PATH,
@@ -866,6 +868,53 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
       <xBairro>${escapeXml(tomadorEndereco.xBairro)}</xBairro>
     </end>`;
 
+  // ── NBS E IBS/CBS (02/09/2026) ─────────────────────────────────────────────────────────────
+  //
+  // ⚠⚠ AS MESMAS FUNÇÕES PURAS SÃO CHAMADAS NO PRÉ-VOO DE `issue`, e é lá que a recusa acontece —
+  // ANTES de reservar numeração, porque não existe inutilização na NFS-e. Aqui elas são chamadas de
+  // novo com as MESMAS entradas: mesma função + mesmas entradas não divergem, que é o motivo de a
+  // decisão não ser passada por parâmetro.
+  //
+  // ⚠ Se mesmo assim chegar aqui recusado, LANÇA. É caminho que não deveria existir; falhar alto
+  // é melhor que emitir documento fiscal sem a tag que a regra exige.
+  const nbsDaNota = nbsDaDps(perfil);
+  if (!nbsDaNota.ok) {
+    const err = new Error(nbsDaNota.message);
+    err.code = nbsDaNota.codigo;
+    err.correcao = nbsDaNota.correcao;
+    throw err;
+  }
+  const ibsCbs = ibscbsDaDps({
+    cTribNac,
+    perfil,
+    ligado: INTEGRACAO_NFSE_IBSCBS,
+    cNBS: nbsDaNota.cNBS,
+  });
+  if (!ibsCbs.ok) {
+    const err = new Error(ibsCbs.message);
+    err.code = ibsCbs.codigo;
+    err.correcao = ibsCbs.correcao;
+    throw err;
+  }
+  // ⚠ A ORDEM DOS FILHOS É A DO `xs:sequence` de `TCRTCInfoIBSCBS` e de `TCRTCInfoTributosSitClas`
+  // (XSD 1.01). O oráculo `dpsContraXsd.test.js` confere isso contra o arquivo — e confere contra a
+  // versão que a constante `DPS_VERSAO` declara, que é o conserto de 01/09/2026.
+  const blocoIbsCbs = ibsCbs.informar
+    ? `<IBSCBS>
+      <finNFSe>${escapeXml(ibsCbs.bloco.finNFSe)}</finNFSe>
+      <cIndOp>${escapeXml(ibsCbs.bloco.cIndOp)}</cIndOp>
+      <indDest>${escapeXml(ibsCbs.bloco.indDest)}</indDest>
+      <valores>
+        <trib>
+          <gIBSCBS>
+            <CST>${escapeXml(ibsCbs.bloco.cst)}</CST>
+            <cClassTrib>${escapeXml(ibsCbs.bloco.cClassTrib)}</cClassTrib>
+          </gIBSCBS>
+        </trib>
+      </valores>
+    </IBSCBS>`
+    : "";
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="${DPS_VERSAO}">
   <infDPS Id="${infId}">
@@ -914,6 +963,7 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
         <cTribNac>${escapeXml(cTribNac)}</cTribNac>
         <cTribMun>${escapeXml(cTribMun)}</cTribMun>
         <xDescServ>${escapeXml(data.servico.descricao)}</xDescServ>
+        ${nbsDaNota.informar ? `<cNBS>${escapeXml(nbsDaNota.cNBS)}</cNBS>` : ""}
       </cServ>
     </serv>
 
@@ -1219,6 +1269,7 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
         }
       </trib>
     </valores>
+    ${blocoIbsCbs}
   </infDPS>
 </DPS>`;
 
@@ -1800,6 +1851,37 @@ export class NfseService {
         err.correcao =
           "Cadastre/confirme o regime tributário da empresa na aba Fiscal → Cadastro. O regime é " +
           "declarado na própria DPS (opSimpNac) — emitir com o regime errado é declaração falsa.";
+        throw err;
+      }
+
+      // ── NBS E IBS/CBS — A RECUSA ACONTECE AQUI, ANTES DA NUMERAÇÃO ──────────────────────
+      //
+      // ⚠⚠ É o mesmo motivo de a trava do código de serviço morar no pré-voo: **não existe
+      // inutilização na NFS-e**. Um número reservado para uma nota que a Receita vai recusar é
+      // buraco permanente na série. Recusar aqui custa zero.
+      //
+      // ⚠ As MESMAS funções puras são chamadas de novo dentro de `buildDpsXml`, com as mesmas
+      // entradas — e é por isso que o resultado não pode divergir. Não passe a decisão por
+      // parâmetro: seriam duas fontes para a mesma resposta.
+      const nbsPreVoo = nbsDaDps(perfilDeEmissao);
+      if (!nbsPreVoo.ok) {
+        const err = new Error(nbsPreVoo.message);
+        err.code = nbsPreVoo.codigo;
+        err.correcao = nbsPreVoo.correcao;
+        throw err;
+      }
+      // ⚠⚠ E0322: declarar IBS/CBS OBRIGA o `cNBS`. É a regra que está no nosso disco, e recusá-la
+      // aqui evita um round-trip ao sistema nacional para descobrir algo que já sabíamos.
+      const ibsCbsPreVoo = ibscbsDaDps({
+        cTribNac: codigoServicoDaNota,
+        perfil: perfilDeEmissao,
+        ligado: INTEGRACAO_NFSE_IBSCBS,
+        cNBS: nbsPreVoo.cNBS,
+      });
+      if (!ibsCbsPreVoo.ok) {
+        const err = new Error(ibsCbsPreVoo.message);
+        err.code = ibsCbsPreVoo.codigo;
+        err.correcao = ibsCbsPreVoo.correcao;
         throw err;
       }
     } catch (err) {

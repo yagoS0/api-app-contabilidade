@@ -531,6 +531,30 @@ export const INTEGRACAO_NFSE_LOTE = process.env.INTEGRACAO_NFSE_LOTE === "1";
 // consequência de "os testes passaram". Mesmo molde de `INTEGRACAO_NFSE_LOTE`.
 export const INTEGRACAO_PERFIL_EMISSAO_NFSE = process.env.INTEGRACAO_PERFIL_EMISSAO_NFSE === "1";
 
+// ⚠⚠ IBS/CBS NA DPS — o bloco da reforma tributária. NASCE DESLIGADA.
+//
+// Com ela OFF, `buildDpsXml` **não monta o grupo `IBSCBS`**, mesmo que o contador tenha preenchido
+// os três campos no perfil — e o painel DIZ que está desligada, em vez de o campo sumir sem
+// explicação. Não é a tela que esconde: é o gerador que não escreve.
+//
+// ⚠⚠ LIGAR MUDA O XML DE NOTA FISCAL REAL, e traz UMA REGRA JUNTO: pela **E0322**, declarar
+// IBS/CBS torna o `cNBS` OBRIGATÓRIO. Por isso a emissão RECUSA no pré-voo (antes de reservar
+// numeração) quando o perfil tem IBS/CBS e não tem NBS — a nota nem sai.
+//
+// ⚠ Ela exige `DPS_VERSAO = "1.01"`: o grupo `IBSCBS` **não existe** no leiaute 1.00. A 1.01 pode
+// subir sem IBS/CBS (e subiu, sozinha, em 01/09/2026); o contrário não.
+//
+// ⚠ Ligar é ato do DONO. Mesmo molde de `INTEGRACAO_NFSE_LOTE` e do perfil de emissão.
+export const INTEGRACAO_NFSE_IBSCBS = process.env.INTEGRACAO_NFSE_IBSCBS === "1";
+
+if (INTEGRACAO_NFSE_IBSCBS) {
+  log.warn(
+    "INTEGRACAO_NFSE_IBSCBS=1: o bloco IBS/CBS está LIGADO. Toda NFS-e de empresa com perfil que "
+      + "declare cIndOp/CST/cClassTrib passa a carregar o grupo da reforma tributária — e, pela "
+      + "E0322, o `cNBS` vira obrigatório nessas notas."
+  );
+}
+
 if (INTEGRACAO_PERFIL_EMISSAO_NFSE) {
   log.warn(
     "INTEGRACAO_PERFIL_EMISSAO_NFSE=1: o PERFIL DE EMISSÃO está LIGADO. A configuração do contador "

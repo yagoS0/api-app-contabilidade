@@ -1161,13 +1161,18 @@ exemplo real em `docs/leiaute-nfse/nfse-nacional-substituicao.xml`), e **o siste
 evento sozinho**. O `e105102` é o que se **lê depois**, não o que se **envia**. O caminho atual de
 `sendEvent` está **invertido**, não incompleto — e `buildDpsXml` ainda não monta `<subst>`.
 
-### Leiaute 1.00 → 1.01: **não migrado**, e é decisão de risco
+### ✅ Leiaute 1.00 → 1.01: **MIGRADO em 01/09/2026**
 
-O publicado como Documentação Atual é o **1.01** (XSD de 11/02/2026), e há regra de expiração de
-versão (**E0001**/**E1260**) — mas ⚠ **a data de corte não está publicada**, o acréscimo (`IBSCBS`,
-reforma tributária) é **facultativo**, e o projeto **não tem o XSD versionado** (nenhum `.xsd` na
-árvore). Subir sem schema para validar troca uma rejeição conhecida por uma desconhecida. Fica na
-constante `DPS_VERSAO`, num lugar só, para virar em uma linha.
+⚠⚠ **ESTA SEÇÃO SE CHAMAVA "não migrado, e é decisão de risco"** e dizia que *"o projeto não tem o
+XSD versionado (nenhum `.xsd` na árvore)"* — falso desde 19/08/2026. `DPS_VERSAO` é **`"1.01"`**.
+
+A migração foi decisão do dono, junto com a de construir IBS/CBS. A regra de expiração
+(**E0001**/**E1260**) continua sem data de corte publicada, e o acréscimo (`IBSCBS`) continua
+**facultativo** — ele é montado só com `INTEGRACAO_NFSE_IBSCBS` ligada, que nasce OFF.
+
+**A prova que autorizou:** o MESMO XML emitido passa pela checagem inteira contra os **dois**
+esquemas. Ver "SUBIDA PARA O LEIAUTE 1.01", abaixo — inclusive os **cinco** tipos que o gerador
+escreve e que mudaram entre as versões, dois deles inertes **por acidente feliz**.
 
 ### O que precisou do dono e NÃO foi inventado
 
@@ -3120,15 +3125,39 @@ teste que existe para impedi-la seria o que diria estar tudo bem.
 | `dpsContraXsd.test.js` | **sim** | conferir contra o esquema certo |
 | `emissaoDps.test.js` › *"versão do leiaute sai da constante única"* | **NÃO — literal `1.00` fixo** | **anunciar** a troca. Derivando da constante ele passaria sempre, e a versão do documento fiscal mudaria sem nada ficar vermelho |
 
-### ⚠⚠ MEDIÇÃO DE INÉRCIA DA MIGRAÇÃO 1.00 → 1.01 (executada, não estimada)
+### ⚠⚠ A MEDIÇÃO DE INÉRCIA — e a SUBIDA, que aconteceu em 01/09/2026
 
-Virando `DPS_VERSAO` para `"1.01"` e rodando `application/nfse` + `validators` + `routes/client` +
-`nfseLote`: **852 de 853 testes continuam passando**, e o **único** vermelho é o caso de anúncio
-acima. O oráculo trocou de esquema sozinho e continuou aprovando o XML.
+⚠⚠ **ESTE BLOCO DESCREVIA UM EXPERIMENTO ("virando `DPS_VERSAO` para 1.01…"). A versão SUBIU.**
+Ele fica porque o método continua valendo, e porque o achado dele foi corrigido logo depois.
 
-**Isso é a evidência que a fase da migração pede:** a subida de versão é **uma linha**, e é
-provadamente inerte para tudo que o gerador escreve hoje. ⚠ Continua sendo **decisão do dono** —
-o que deixou de existir é o impedimento técnico que estava escrito como justificativa.
+O experimento (01/09/2026, com a constante ainda em 1.00) devolveu **852 de 853 testes passando**,
+com o único vermelho sendo o caso de anúncio. Isso autorizou a troca — que foi feita **em commit
+próprio**, para que "a versão quebrou" e "o bloco novo quebrou" continuem distinguíveis em produção.
+
+⚠⚠ **MAS A LEITURA QUE ACOMPANHAVA ESTE BLOCO ESTAVA ERRADA, e foi corrigida no mesmo dia.** Ela
+dizia que *"os tipos que emitimos são idênticos nas duas versões"* e que só o `TCTribMunicipal`
+havia mudado. Medido depois, comparando os dois XSD inteiros: **DOZE tipos complexos mudaram, e
+CINCO deles o gerador escreve** — `TCInfDPS`, `TCServ`, `TCInfoCompl`, `TCLocPrest` e `TCEndereco`.
+O primeiro diff que produzi era por REGEX e não enxergava `xs:choice`; a fonte desmentiu.
+
+⚠⚠ **DOIS DELES SÃO INERTES POR ACIDENTE FELIZ, NÃO POR CONSTRUÇÃO:** em `TCLocPrest` e
+`TCEndereco` o grupo casava com o VAZIO no 1.00 e passou a exigir UMA opção no 1.01. Passamos
+porque `buildDpsXml` **sempre** escreve `<cLocPrestacao>` e `<endNac>`. Quem tornar qualquer um dos
+dois condicional precisa escrever o irmão (`cPaisPrestacao` / `endExt`) — deixar os dois de fora é
+DPS **recusada no 1.01 e ACEITA no 1.00**, ou seja, um defeito que não apareceria antes da troca.
+⚠ E o aperto está codificado de DUAS formas para o mesmo efeito: num sumiu o `minOccurs="0"` das
+OPÇÕES, no outro o do próprio `xs:choice`. Ler só um lugar dá a resposta errada sobre o outro.
+
+**A prova que ficou no lugar do experimento:** `dpsContraXsd.test.js` › *"o MESMO XML emitido cabe
+nas DUAS versões do esquema"* — a checagem inteira (existência, ordem do `xs:sequence`,
+obrigatórios, `xs:choice`, facetas) contra 1.00 **e** 1.01, em três cenários. Não é "gerar duas
+vezes e comparar": é o documento que sai hoje cabendo nas duas.
+
+⚠ **Limite declarado:** o oráculo é mais ESTRITO que o 1.00 no `xs:choice` — ele exige uma opção
+sempre que o grupo é obrigatório, sem olhar o `minOccurs` das opções. Desvio na direção segura
+(recusa o que o 1.00 aceitaria, nunca o contrário), mas quem for medir diferença entre versões
+precisa saber. ⚠ E ele **não confere as Regras de Negócio (`E####`)** — a expiração de versão é
+uma delas. **A primeira emissão real em 1.01 precisa ser acompanhada.**
 
 ### As duas frases falsas que foram corrigidas junto
 
@@ -3852,6 +3881,144 @@ arquivo a subir e entra pela rota da apuração.
   resolve o mês **do nosso lado**; a obrigação perante a Receita continua sendo outra pergunta — e é
   exatamente por isso que ela tem um bloco próprio, visível, na aba Apuração da empresa (não só
   dentro do modal).
+
+## ⚠⚠ SUBIDA PARA O LEIAUTE 1.01 + IBS/CBS — fase 3 (01–02/09/2026)
+
+Decisão do dono: *"migrar para 1.01 e construir IBS/CBS junto"*. Foram **dois commits dentro da
+mesma entrega** — a versão sozinha, depois o resto —, para que o diagnóstico continue possível se
+algo for recusado em produção.
+
+`DPS_VERSAO = "1.01"`. A inércia está medida (ver "A MEDIÇÃO DE INÉRCIA", acima), inclusive os
+**cinco** tipos que o gerador escreve e que mudaram entre as versões.
+
+### O ANEXO VIII — **um CATÁLOGO de opções, não um de-para**
+
+`docs/leiaute-nfse/documentacao-tecnica/anexoviii-…xlsx` → `scripts/gerar-anexo-viii.mjs` →
+`application/fiscal/ibscbs/`. Zero rede, SHA-256 conferido, gates de contagem **e** de conteúdo.
+
+⚠⚠ **O PLANO DESTA ENTREGA O DESCREVIA COMO `Item LC116 → NBS → cIndOp → cClassTrib`, E ISSO ESTÁ
+ERRADO.** Medido: **208 itens, 400 combinações**. Só **89** itens têm UMA combinação; nos outros
+**118** a norma oferece de duas a quatro, e escolher entre "situações tributadas integralmente" e
+"fornecimento à administração pública" depende de **quem é o tomador daquela nota**, não do serviço.
+**O módulo OFERECE e nunca ELEGE** — quem declara é o contador, no perfil.
+
+⚠⚠ **O REGISTRO É O PAR `(cIndOp, cClassTrib)`, NUNCA DUAS LISTAS.** Em **7 itens** o produto
+cartesiano contém combinações que a fonte não autoriza. O `10.05` traz só `(020301,200046)` e
+`(100301,000001)`; achatado, ofereceria `(020301,000001)`, que ninguém escreveu. Gate no gerador
+(`itensQueAchatarInventaria: 7`) e teste no módulo.
+
+⚠⚠ **A ARMADILHA SÃO AS 2.258 CÉLULAS MESCLADAS**, e o experimento é o argumento: **sem expandi-las,
+a leitura devolve 207 combinações em vez de 400 e 156 NBS em vez de 731 — e faz TODO item parecer ter
+uma resposta só.** É literalmente a ilusão de "de-para", com números plausíveis. `sheet_to_json` dá o
+valor só na âncora do bloco. ⚠ A expansão é **não destrutiva**; destrutiva, perde 3 combinações
+(medido) — sutil o bastante para passar sem gate.
+
+⚠ **`99.01.01`** vem sem NBS, sem `cIndOp` e sem `cClassTrib`: é o guarda-chuva "não classificado",
+a família do `990101` que a classificação de notas manda para a pendência.
+
+### `nbsParaDps` — 918 cabem na DPS, 292 **não são "inválidos"**
+
+`TSCodNBS` é `[0-9]{9}`; a tabela guarda a forma pontuada. Dos 1.210 códigos, **918 são terminais** e
+**292 são níveis intermediários** da hierarquia.
+
+⚠⚠ **"NÃO TERMINAL" NÃO É "INVÁLIDO".** `1.0101` é código publicado, descrito e correto — ele só
+identifica uma FAMÍLIA. Chamá-lo de inválido manda o contador procurar erro de digitação onde falta
+ESCOLHER. A recusa carrega os **descendentes terminais**, e está medido que **nenhum dos 292 fica sem
+saída**: se um dia um nível ficar sem folha, a frase "escolha um mais específico" vira mentira para
+aquele código e o teste cai.
+
+⚠ Nenhum `padStart`, em nenhuma direção. ⚠ A **tabela é a autoridade**: nove dígitos bem formados
+fora da lista são recusados — o `[0-9]{9}` do XSD é FORMA, a lista é CONTEÚDO. ⚠ Só STRING (guarda
+por TIPO ACEITO — número perderia o zero à esquerda em silêncio).
+
+⚠⚠ **CRUZAMENTO ENTRE DUAS TABELAS GERADAS EM SEPARADO:** os **731** NBS que o ANEXO VIII aponta
+existem TODOS na NBS 2.0 e convertem TODOS. Se a correlação apontasse um nível intermediário, o
+`cNBS` seria irrepresentável e o defeito só apareceria na emissão.
+
+⚠ **`9.9999.99.99` converte e NÃO tem descrição** — é o "não classificado". Não é bloqueado (código
+publicado; recusá-lo seria inventar regra), mas `descricao: null` viaja no sucesso para a tela poder
+dizê-lo.
+
+### O que o gerador passou a escrever
+
+| tag | onde | ligado por |
+|---|---|---|
+| `cNBS` | `infDPS/serv/cServ/cNBS` | **pelo DADO** — a coluna `codigoNbs` do perfil, nula em todos hoje |
+| `IBSCBS` (5 campos) | `infDPS/IBSCBS/…` | **por FLAG** — `INTEGRACAO_NFSE_IBSCBS`, que nasce OFF |
+
+⚠ A assimetria é deliberada: o `cNBS` é campo próprio e opcional; o bloco IBS/CBS é estrutural e
+**traz a E0322 junto**. Com a flag OFF, um perfil com os três campos preenchidos **não produz bloco
+nenhum** — é o SERVIDOR que não escreve, não a tela que esconde. Há teste.
+
+**As regras, lidas do ANEXO_I versionado (aba `RN DPS_NFS-e`):**
+
+- **E0322** (linha 324) — bloco IBS/CBS informado ⇒ `cNBS` **obrigatório**. A emissão RECUSA no
+  pré-voo, **antes de reservar numeração** (não existe inutilização na NFS-e).
+- **E0318** (linha 322) — `cNBS` obrigatório na **exportação**. ⚠ A exportação ainda não é montada;
+  quando for, esta guarda é o lugar.
+- **E0901** (linha 546) — a tabela de `cIndOp` é o **ANEXO C**, ⚠⚠ **NÃO versionado aqui**.
+  Conferimos contra o ANEXO VIII, que é SUBCONJUNTO: mais estrito que a norma exige, portanto
+  **falha FECHADA**. Um código legítimo do ANEXO C fora do ANEXO VIII é recusado por nós.
+- **E0910** (linha 554) — *"O destinatário só deve ser identificado quando `indDest` for 1."*
+
+⚠⚠ **`indDest = "0"` NÃO É PALPITE — é FATO sobre o documento que emitimos.** Pela E0910, `dest` só
+existe com `indDest = 1`, e `buildDpsXml` **nunca monta `dest`**. Há teste varrendo o XML atrás de
+`<dest>`: se alguém passar a montá-lo, as duas coisas mudam juntas. ⚠ `finNFSe = "0"` é o único valor
+de `TSRTCFinNFSe`.
+
+### ⚠⚠ O `CST` do IBS/CBS **não tem lista versionada** — declarado, não escondido
+
+O XSD define `TSRTCCodSitTrib` como `[0-9]{3}` e **não enumera**; o ANEXO_I descreve o campo e também
+não traz lista. As regras E1540+ referenciam ATRIBUTOS de uma tabela oficial de `cClassTrib`
+(redutores, exigência de grupo de tributação regular) que este projeto não tem.
+
+Medido: os 28 `cClassTrib` do ANEXO VIII têm cinco prefixos de três dígitos — `000`, `011`, `200`,
+`400`, `820` —, que **parecem** CSTs. **Parecer não é fonte.** `cstSugeridoPeloClassTrib` SUGERE com
+`verificadoNaFonte: false`; quem declara é o contador. É a mesma decisão da categoria de presunção do
+Lucro Presumido: *derivar* virou *sugerir*.
+
+### ⚠⚠ A NBS DEIXOU DE SER INERTE — e a guarda mudou de FORMA, não foi apagada
+
+A decisão de 25/08/2026 (*"ligar o `cNBS` é ato do dono"*) **cumpriu o papel**: o teste que exigia
+zero importadores em `application/nfse/` **caiu no commit que a ligou**. Ela não foi revogada por
+conveniência — foi superada por um requisito que a norma amarra (E0322: escolher IBS/CBS **é**
+escolher ligar a NBS).
+
+⚠ **O que substituiu a inércia não é nada: é uma porta ÚNICA.** Só `ibscbsDaDps.js` pode importar a
+NBS dentro de `application/nfse/`; **`NfseService` não a importa** — ele recebe o valor decidido. Dois
+testes travam isso. ⚠ E a varredura pergunta *"quem IMPORTA"*, não *"quem menciona"*: a primeira
+versão acusou `campos.js`, que só cita o nome num comentário. **Guarda que acusa documentação correta
+é guarda que alguém desliga.**
+
+### ⚠⚠ DEFEITO REAL ACHADO PELO TESTE: recusa NOSSA chegava como TRANSPORTE
+
+Os códigos novos não estavam em `CODIGOS_NOSSOS` (`desfechoEmissao.js`), então caíam no ramo do
+**TRANSPORTE**. O `codigo` chegava certo e a `correcao` dizia *"não se sabe se a DPS chegou a ser
+processada; NÃO reemita"* — **mandando o contador procurar no sistema nacional uma nota que nunca saiu
+da máquina**, e marcando `numeroReutilizavel: false`. É a orientação exatamente invertida.
+
+⚠ **Código nomeado novo tem de entrar naquele conjunto no mesmo commit.** Não é detalhe de
+classificação: é a diferença entre "corrija e emita de novo" e "não reemita, vá consultar".
+
+### As colunas, e a disciplina que elas seguiram
+
+`codigoNbs` · `ibscbsCIndOp` · `ibscbsCst` · `ibscbsCClassTrib` — migration
+`20260902120000_add_perfil_emissao_nbs_ibscbs`, **NÃO APLICADA**, aditiva e nullable, com CHECK de
+FORMA (do XSD) e sem `DEFAULT`: NULO = "o contador não declarou", nunca "não se aplica".
+
+⚠ **São os primeiros campos do perfil cujo ESCRITOR nasceu no mesmo commit da coluna** — e o
+cabeçalho de `campos.js` foi corrigido para dizer isso (ele exigia "campo que `buildDpsXml` JÁ
+escreve", formulação certa para a fase 1). O que continua proibido é a coluna que espera um leitor
+futuro. ⚠ O registro executável mordeu ao vê-las: ele lê o `schema.prisma` e nomeou as quatro.
+
+### Regressão
+
+`fiscal/ibscbs/__tests__/anexoViii.test.js` (18) · `fiscal/nbs/__tests__/nbsParaDps.test.js` (16) ·
+`nfse/__tests__/perfilNaEmissao.test.js` (24, com o bloco novo conferido contra o XSD lido do
+arquivo) · `fiscal/nbs/__tests__/nbs.test.js` (a porta única).
+
+⚠ **Não verificado no navegador**, e o motivo é o de sempre: não há banco alcançável nesta máquina e
+as duas flags nascem OFF. O que prova o comportamento são os testes e a leitura da fonte.
 
 ## Recuperação de senha ("esqueci minha senha") — 18/08/2026
 
