@@ -173,6 +173,12 @@ export function normalizeParcelaDTO(raw = {}) {
   const somaTrib = round2(tributos.reduce((s, t) => s + t.total, 0));
   return {
     numeroParcela: raw.numeroParcela != null ? Number(raw.numeroParcela) : null,
+    // ⚠ O NÚMERO DO DOCUMENTO SOBREVIVE À NORMALIZAÇÃO (02/09/2026). `mapearParcela` já o lia do
+    // envelope do DETPAGTOPARC165 (`dados.numeroDas`) e este normalizador montava um objeto FIXO
+    // que o descartava — o campo chegava e morria aqui. É ele que casa a parcela com o pagamento
+    // (`SerproPaymentConfirmationService` procura por `numeroDocumento`/`numeroDoc`/`numeroDas`),
+    // e sem ele a busca não acha nada, em silêncio. Ausente continua `null`, nunca string vazia.
+    numeroDas: raw.numeroDas != null ? String(raw.numeroDas) : null,
     quantidadeParcelas: raw.quantidadeParcelas != null ? Number(raw.quantidadeParcelas) : null,
     anoMesParcela: raw.anoMesParcela ? String(raw.anoMesParcela) : null, // YYYYMM
     vencimento: raw.vencimento || null,
