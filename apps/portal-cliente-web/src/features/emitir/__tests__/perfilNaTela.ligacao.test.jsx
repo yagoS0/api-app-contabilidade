@@ -88,6 +88,14 @@ async function preencherOMinimo() {
   set("emitir-bairro", "CENTRO");
   set("emitir-descricao", "Servico de teste");
   set("emitir-valor", "1.000,00");
+  // ⚠ A EMPRESA DESTA SUÍTE É DO SIMPLES, e desde 31/08/2026 a tela CONFERE o `pTotTribSN`
+  // antes de enviar (`conferirPTotTribSN`) — o servidor o exige (`MISSING_P_TOT_TRIB_SN`), e a
+  // guarda existe para o cliente não descobrir isso depois de preencher a nota inteira.
+  // Aqui o VALOR não importa: o assunto deste arquivo é o perfil. O que importa é o submit
+  // chegar à API — sem isto, as asserções sobre o CORPO comparam `undefined` com `undefined`
+  // e passariam por engano no dia em que a guarda saísse.
+  const aliquota = document.getElementById("emitir-ptottribsn");
+  if (aliquota) fireEvent.change(aliquota, { target: { value: "6" } });
   await act(async () => {});
 }
 
