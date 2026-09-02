@@ -496,6 +496,28 @@ export function podeTransitar(declarado, transicao, dados = {}) {
         contaAplicada: conta,
       };
 
+      /**
+       * ⚠⚠ A CONTA DE CRÉDITO, QUANDO ALGUÉM A ESCOLHE (01/09/2026) — decisão do dono: *"aqueles
+       * que viram lançamento contábil devem ter opção de colocar débito e crédito"*.
+       *
+       * ⚠⚠ **ISTO FECHA UM BURACO MEDIDO.** Desde 29/08/2026 `lancarPorRegra` já passava
+       * `contaCredito` para cá, e esta função a DESCARTAVA em silêncio — não havia campo nem
+       * coluna. O contador escolhia o crédito na regra do fornecedor e o razão continuava
+       * creditando o caixa cravado, sem erro nenhum e sem ninguém perceber.
+       *
+       * ⚠⚠ `undefined` = NÃO MEXER; `null` (ou vazio) = VOLTAR AO CAIXA cravado. É a mesma
+       * disciplina do `PATCH` da empresa, e aqui ela é o que permite corrigir uma escolha errada
+       * sem apagar a que está certa. Por isso `hasOwnProperty`, nunca `|| undefined`.
+       *
+       * ⚠ QUEM CONFERE SE A CONTA EXISTE, se é analítica e se é DISPONIBILIDADE é
+       * `montarLancamento` — ele é quem tem o plano de contas na mão. Aqui só se decide se o campo
+       * é escrito, e um segundo julgamento neste arquivo divergiria do de lá.
+       */
+      if (Object.prototype.hasOwnProperty.call(dados || {}, "contaCredito")) {
+        const credito = String(dados.contaCredito ?? "").trim();
+        campos.contaCredito = credito || null;
+      }
+
       if (transicao === TRANSICAO.AJUSTAR) {
         const v = Number(dados?.valorAjustado);
         if (!Number.isFinite(v) || v <= 0) return recusa(RECUSA.VALOR_AJUSTADO_INVALIDO);

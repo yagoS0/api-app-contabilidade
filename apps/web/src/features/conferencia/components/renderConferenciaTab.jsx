@@ -34,6 +34,9 @@ import { NATUREZA, SECAO, origemDaLinha, veioDeExtrato } from "../lib/naturezaDa
 import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
 import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
 import { debitosQueCasamComNota, FRASE_DO_FORA_DO_LOTE } from "../lib/contabilizacaoEmLote";
+// ⚠ REUSADA, não reescrita: é a MESMA lista que o seletor de crédito da regra do fornecedor
+// oferece, e ela filtra por PREFIXO do `codigoCompleto` (a cópia declarada da regra da api).
+import { contasDeCreditoOferecidas } from "../lib/regraDoFornecedor";
 import {
   ESTADO_DA_AUTOMACAO,
   leituraDaAutomacao,
@@ -210,7 +213,21 @@ function DataComProcedencia({ item }) {
  *    verdade do ato: a tela só pergunta a data quando ninguém a provou, e o que a pessoa digita é
  *    declaração, não prova. Deixar o servidor adivinhar é o que produziu o defeito.
  */
-export function montarCorpo({ acao, item, data, motivo, valor, cfg, contaCompleta = null }) {
+export function montarCorpo({
+  acao, item, data, motivo, valor, cfg, contaCompleta = null,
+  /**
+   * ⚠⚠ O CRÉDITO ESCOLHIDO (01/09/2026) — dono: *"aqueles que viram lançamento contábil devem ter
+   * opção de colocar débito e crédito"*.
+   *
+   * ⚠⚠ SÃO DOIS PARÂMETROS, e não um, porque *"não escolhi"* e *"apaguei a escolha"* são atos
+   * OPOSTOS. Mandar `contaCredito: null` sempre que o campo estivesse vazio APAGARIA o crédito que
+   * a regra do fornecedor escolheu, a cada confirmação — inclusive as do botão «Lançar» da linha,
+   * que não tem campo de crédito nenhum. O servidor distingue ausente de nulo; a tela tem de
+   * respeitar a distinção do lado de cá.
+   */
+  creditoCompleto = null,
+  creditoTocado = false,
+}) {
   const corpo = {};
   if (acaoPedeData(acao, item) && data) {
     corpo.dataPagamento = data;
@@ -226,6 +243,11 @@ export function montarCorpo({ acao, item, data, motivo, valor, cfg, contaComplet
   if (cfg?.criaLancamento) {
     const conta = contaCompleta || item?.sugestao?.conta || null;
     if (conta) corpo.contaAplicada = conta;
+
+    // ⚠ Escolha nova ⇒ manda a conta. Campo LIMPO por quem tinha uma ⇒ manda `null`, que é o
+    // servidor voltando ao caixa cravado. Nada disso ⇒ a chave não viaja, e o que estava fica.
+    if (creditoCompleto) corpo.contaCredito = creditoCompleto;
+    else if (creditoTocado && item?.contaCredito) corpo.contaCredito = null;
   }
   return corpo;
 }
@@ -241,6 +263,13 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
   // ⚠ Sugestão ausente ⇒ campo VAZIO, nunca "a primeira conta do plano": eleger seria o sistema
   // decidindo em que conta a despesa entra, que é a decisão do contador.
   const [conta, setConta] = useState("");
+  /**
+   * ⚠⚠ O CRÉDITO — e ele NASCE VAZIO quando ninguém escolheu, com o rótulo dizendo que o padrão é
+   * o caixa. Preenchê-lo com "5" pareceria prestativo e apagaria a distinção que a coluna guarda:
+   * *"é caixa porque escolheram"* × *"é caixa por padrão"*.
+   */
+  const [credito, setCredito] = useState("");
+  const creditoTocado = useRef(false);
   // ⚠ Quem responde "por que o campo não veio preenchido?" — `FORA_DO_PLANO` e `COMPLETO_AMBIGUO`
   // eram TEXTO MORTO: o motivo de `reduzidoDoCompleto` era descartado com `.valor || ""` e o campo
   // ficava vazio e mudo. Achado por agente de verificação em 26/08/2026.
@@ -259,6 +288,15 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
     if (daSugestao.valor) setConta(daSugestao.valor);
   }, [daSugestao.valor]);
 
+  // ⚠ O MESMO efeito para o crédito JÁ ESCOLHIDO (pela regra do fornecedor, ou por uma confirmação
+  // anterior): ele chega em `codigoCompleto` e o contador lê o reduzido. Sem isto, reabrir a linha
+  // mostraria o campo vazio — que se lê como "não há crédito escolhido", o oposto da verdade.
+  const doCredito = useMemo(() => reduzidoDoCompleto(item?.contaCredito, contas), [item, contas]);
+  useEffect(() => {
+    if (creditoTocado.current) return;
+    if (doCredito.valor) setCredito(doCredito.valor);
+  }, [doCredito.valor]);
+
   const pedeConta = Boolean(cfg?.criaLancamento);
   const oferecidas = useMemo(() => contasOferecidas(contas), [contas]);
   const seletorVazio = useMemo(() => motivoDoSeletorVazio(contas, estadoDoPlano), [contas, estadoDoPlano]);
@@ -269,6 +307,19 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
   // ⚠ A tradução é a MESMA que vai ao POST — a tela não pode validar por um caminho e enviar por
   // outro. `traducao.motivo` é o que o campo mostra em vermelho.
   const traducao = useMemo(() => completoDoReduzido(conta, contas), [conta, contas]);
+  // ⚠ A tradução do crédito segue o mesmo caminho — e a lista dele é OUTRA: só disponibilidade.
+  const traducaoDoCredito = useMemo(() => completoDoReduzido(credito, contas), [credito, contas]);
+  const creditosOferecidos = useMemo(() => contasDeCreditoOferecidas(contas), [contas]);
+  /**
+   * ⚠⚠ A TELA RECUSA O QUE O SERVIDOR RECUSARIA: crédito que não é disponibilidade. Resposta do
+   * dono, 29/08/2026: *"continua sendo caixa/banco"* — o que muda numa compra de ativo é o DÉBITO.
+   * ⚠ A conferência é pelo PREFIXO do `codigoCompleto`, nunca pelo nome — cópia declarada da regra
+   * da api (`regraDoFornecedor.js`, que já a espelha).
+   */
+  const creditoNaoDisponivel = Boolean(
+    traducaoDoCredito.valor
+    && !creditosOferecidos.some((c) => c.codigoCompleto === traducaoDoCredito.valor),
+  );
 
   const pedeData = acaoPedeData(acao, item);
   // ⚠ A recusa exige motivo não-vazio (o servidor devolve `sem_motivo`). Ausência nunca é resposta.
@@ -282,7 +333,10 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
   const faltaValor = Boolean(cfg?.pedeValor) && !(Number.isFinite(valorNumero) && valorNumero > 0);
   // ⚠ O caixa é a contrapartida CRAVADA: torto, ele derruba a linha por mais certa que esteja a
   // conta escolhida.
-  const podeEnviar = !faltaData && !faltaMotivo && !faltaConta && !faltaValor && !caixaTorto;
+  // ⚠ Crédito ESCRITO e não traduzível (ou não disponível) trava o envio: vazio é legítimo — é o
+  // caixa padrão —, mas texto que não vira conta nenhuma seria a tela mandando o servidor recusar.
+  const creditoInvalido = Boolean(credito.trim()) && (!traducaoDoCredito.valor || creditoNaoDisponivel);
+  const podeEnviar = !faltaData && !faltaMotivo && !faltaConta && !faltaValor && !caixaTorto && !creditoInvalido;
 
   return (
     <Modal
@@ -307,9 +361,17 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
                   : caixaTorto ? caixaTorto
                     : faltaValor ? "Informe um valor maior que zero."
                       : faltaConta ? (traducao.motivo ? FRASE_DO_MOTIVO_DA_CONTA[traducao.motivo] : "Escolha a conta contábil da despesa.")
-                        : undefined
+                        : creditoInvalido ? (creditoNaoDisponivel
+                          ? "O crédito de uma despesa sai de caixa ou banco. Deixe vazio para usar o caixa."
+                          : "A conta de crédito escolhida não existe no plano desta empresa.")
+                          : undefined
             }
-            onClick={() => onConfirmar(montarCorpo({ acao, item, data, motivo, valor, cfg, contaCompleta: traducao.valor }))}
+            onClick={() => onConfirmar(montarCorpo({
+              acao, item, data, motivo, valor, cfg,
+              contaCompleta: traducao.valor,
+              creditoCompleto: traducaoDoCredito.valor,
+              creditoTocado: creditoTocado.current,
+            }))}
           >
             {ocupado ? "Enviando…" : cfg?.rotulo}
           </Button>
@@ -419,6 +481,63 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
           </label>
         ) : null}
 
+        {/* ─────────────────────────────────────────────────────────────────────────────────────────
+            ⚠⚠ A CONTA DE CRÉDITO — decisão do dono, 01/09/2026: *"aqueles que viram lançamento
+            contábil devem ter opção de colocar débito e crédito, por mais que sempre seja 5, pode
+            haver a possibilidade de ser compra de ativo, ou outra coisa"*.
+
+            ⚠⚠ ELE NASCE VAZIO, com o padrão DITO no rótulo. Preenchê-lo com o caixa pareceria
+            prestativo e apagaria a distinção que a coluna guarda: *"é caixa porque escolheram"* ×
+            *"é caixa por padrão"* — a mesma disciplina de `null` × `0` desta casa.
+
+            ⚠⚠ A LISTA SÓ TEM DISPONIBILIDADE (caixa, banco, aplicação), e não é um recorte estético:
+            o lançamento AFIRMA que o dinheiro saiu do caixa. Creditando "fornecedores a pagar" ele
+            seria válido no razão e mentiria no caixa — sumiria do fluxo (que só conta o que credita
+            disponibilidade) sem aparecer como obrigação em lugar nenhum. Quem muda numa compra de
+            ativo é o DÉBITO, o campo acima.
+            ───────────────────────────────────────────────────────────────────────────────────────── */}
+        {pedeConta ? (
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={{ fontWeight: 600 }}>
+              Conta de crédito — de onde o dinheiro saiu{" "}
+              <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>(vazio = caixa)</span>
+            </span>
+            <input
+              list="creditos-da-conferencia"
+              value={credito}
+              onChange={(e) => { creditoTocado.current = true; setCredito(e.target.value); }}
+              placeholder="Caixa (padrão) — ou o código do banco"
+              style={creditoInvalido ? { borderColor: "var(--state-danger)" } : undefined}
+            />
+            <datalist id="creditos-da-conferencia">
+              {creditosOferecidos.map((c) => (
+                <option key={c.codigo} value={c.codigo}>{c.nome}</option>
+              ))}
+            </datalist>
+
+            {creditoNaoDisponivel ? (
+              <span style={{ fontSize: "0.78rem", color: "var(--state-danger)" }}>
+                O crédito de uma despesa sai de caixa ou banco. Se o que muda é a natureza do gasto,
+                quem muda é a conta de <strong>débito</strong>, acima.
+              </span>
+            ) : creditoInvalido ? (
+              <span style={{ fontSize: "0.78rem", color: "var(--state-danger)" }}>
+                Esta conta não existe no plano desta empresa.
+              </span>
+            ) : traducaoDoCredito.conta ? (
+              <span style={{ fontSize: "0.78rem", color: "var(--text-faint)" }}>
+                {traducaoDoCredito.conta.nome}
+              </span>
+            ) : (
+              // ⚠ O padrão é DITO, não deduzido do campo vazio: sem esta linha, vazio se lê como
+              // "faltou preencher" — e faltou nada, é o caminho de sempre.
+              <span style={{ fontSize: "0.78rem", color: "var(--text-faint)" }}>
+                Sem escolha, o crédito vai para o caixa — como em toda despesa desta casa.
+              </span>
+            )}
+          </label>
+        ) : null}
+
         {pedeData ? (
           <label style={{ display: "grid", gap: 6 }}>
             <span style={{ fontWeight: 600 }}>Data do pagamento</span>
@@ -452,9 +571,15 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
           </label>
         ) : null}
 
+        {/* ⚠⚠ A FRASE ACOMPANHA A ESCOLHA — desde 01/09/2026 o crédito é escolhível, e uma frase
+            fixa dizendo *"crédito no caixa"* passaria a AFIRMAR o que o ato não vai fazer. Esta é a
+            última coisa que o contador lê antes de clicar; ela tem de descrever o clique dele. */}
         {cfg?.criaLancamento ? (
           <div style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
-            Isto cria um lançamento contábil: débito na conta da despesa, crédito no caixa.
+            Isto cria um lançamento contábil: débito na conta da despesa, crédito{" "}
+            {traducaoDoCredito.conta
+              ? <>em <strong>{traducaoDoCredito.conta.nome}</strong>.</>
+              : "no caixa."}
           </div>
         ) : null}
       </div>
@@ -689,6 +814,37 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
               onClick={() => onLancar?.(item, traducao.valor)}
             >
               Lançar
+            </Button>
+          ) : null}
+          {/*
+            ⚠⚠ A PORTA DAS DUAS CONTAS (01/09/2026) — dono: *"aqueles que viram lançamento contábil
+            devem ter opção de colocar débito e crédito, por mais que sempre seja 5, pode haver a
+            possibilidade de ser compra de ativo, ou outra coisa"*.
+
+            ⚠⚠ **SEM ESTE BOTÃO A ESCOLHA DO CRÉDITO SERIA INALCANÇÁVEL NO CAMINHO NORMAL.** A linha
+            com data de pagamento lança direto (o «Lançar» ao lado) e o modal — o único lugar com os
+            dois seletores — só aparece quando a ação pede DATA. Ou seja: exatamente no caso mais
+            comum, o contador não teria como trocar o crédito.
+
+            ⚠ Ele NÃO vira uma coluna nova: a linha já tem nove, e o campo de crédito ao lado do de
+            débito seria a décima para uma escolha que é exceção. O que muda em quase toda linha é o
+            DÉBITO, e esse continua ali, digitável, sem abrir nada.
+            ⚠ Ele abre a MESMA ação (`confirmar`), no MESMO modal — não há um segundo formulário de
+            lançamento a divergir do primeiro.
+          */}
+          {podeLancarDaLinha ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!podeEscrever || ocupado}
+              title={
+                podeEscrever
+                  ? "Escolher as duas contas (débito e crédito) antes de lançar."
+                  : "Seu perfil não pode alterar lançamentos desta empresa."
+              }
+              onClick={() => onAgir("confirmar", item)}
+            >
+              Contas…
             </Button>
           ) : null}
           {/*

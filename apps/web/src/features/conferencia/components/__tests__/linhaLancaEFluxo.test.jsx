@@ -12,7 +12,7 @@
 //   3. a linha não voltar a ter dois botões para o mesmo ato;
 //   4. o botão «Fluxo» não voltar — a regra de 01/09/2026 o tornou sem sentido.
 
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 const mockGetFila = jest.fn();
@@ -291,5 +291,138 @@ describe("⚠⚠⚠ A DESPESA EM DOBRO — a guarda que faltava na LINHA (01/09/
     await montarComConta();
     await waitFor(() => expect(mockGetCasamentos).toHaveBeenCalled());
     expect(mockGetCasamentos).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠ A CONTA DE CRÉDITO NO MODAL (01/09/2026) — dono: *"aqueles que viram lançamento contábil devem
+// ter opção de colocar débito e crédito, por mais que sempre seja 5, pode haver a possibilidade de
+// ser compra de ativo, ou outra coisa"*.
+//
+// ⚠⚠ O QUE ESTE BLOCO PROTEGE É A DISTINÇÃO ENTRE «NÃO ESCOLHI» E «APAGUEI A ESCOLHA». Mandar
+// `contaCredito: null` sempre que o campo estivesse vazio APAGARIA, a cada confirmação, o crédito
+// que a regra do fornecedor escolheu — inclusive pelo botão «Lançar» da linha, que não tem campo de
+// crédito nenhum.
+// -------------------------------------------------------------------------------------------------
+
+
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠ O SELETOR DE CRÉDITO NO MODAL — a tela recusando o que o servidor recusaria.
+// -------------------------------------------------------------------------------------------------
+describe("⚠⚠ o seletor de CRÉDITO no modal da ação", () => {
+  const CONTAS = [
+    { codigo: "5", codigoCompleto: "111010001", nome: "CAIXA - MATRIZ", analitica: true },
+    { codigo: "12", codigoCompleto: "111020001", nome: "BANCO ITAU", analitica: true },
+    { codigo: "300", codigoCompleto: "211010001", nome: "FORNECEDORES A PAGAR", analitica: true },
+    { codigo: "464", codigoCompleto: "411020008", nome: "SERVICOS PJ", analitica: true },
+  ];
+
+  const abrir = async (item = {}) => {
+    mockGetFila.mockResolvedValue({
+      itens: [{
+        id: "d-1", estado: "A_CONFERIR", origem: "NOTA_RECEBIDA", valor: "1500.00",
+        descricaoOriginal: "GOOGLE CLOUD", competencia: "2026-07",
+        dataPagamento: "2026-07-15", origemPagamento: "OFX",
+        contaSugerida: "411020008", contaCredito: null, ...item,
+      }],
+      total: 1, resumo: {},
+    });
+    mockGetPlano.mockResolvedValue(CONTAS);
+    render(<ConferenciaTab companyId="emp-1" competencia="2026-07" podeEscrever />);
+    // ⚠ A linha com data lança DIRETO (o «Lançar» ao lado). A porta das duas contas é o «Contas…» —
+    // sem ele o crédito seria inalcançável exatamente no caminho mais comum.
+    fireEvent.click(await screen.findByRole("button", { name: /^Contas…$/ }));
+    return screen.findByRole("dialog");
+  };
+
+  it("⚠⚠ o campo existe, nasce VAZIO e DIZ que o padrão é o caixa", async () => {
+    // ⚠ Preenchê-lo com "5" apagaria a distinção que a coluna guarda: "é caixa porque escolheram" ×
+    // "é caixa por padrão".
+    const d = await abrir();
+    const campo = within(d).getByLabelText(/Conta de crédito/i);
+    expect(campo).toHaveValue("");
+    expect(within(d).getByText(/o crédito vai para o caixa/i)).toBeInTheDocument();
+  });
+
+  it("⚠⚠⚠ crédito que NÃO é disponibilidade trava o envio, com o motivo", async () => {
+    // ⚠⚠ A invariante do caixa: o lançamento AFIRMA que o dinheiro saiu. Creditando fornecedores
+    // ele seria válido no razão e mentiria no caixa.
+    const d = await abrir();
+    fireEvent.change(within(d).getByLabelText(/Conta de crédito/i), { target: { value: "300" } });
+    expect(await within(d).findByText(/sai de caixa ou banco/i)).toBeInTheDocument();
+    const botao = within(d).getByRole("button", { name: /^Confirmar$/ });
+    expect(botao).toBeDisabled();
+    expect(botao).toHaveAttribute("title", expect.stringMatching(/caixa ou banco/i));
+  });
+
+  it("⚠⚠ o banco é aceito, e a FRASE do ato passa a dizer a conta escolhida", async () => {
+    // ⚠ Uma frase fixa dizendo "crédito no caixa" passaria a AFIRMAR o que o clique não vai fazer —
+    // e ela é a última coisa que o contador lê antes de confirmar.
+    const d = await abrir();
+    fireEvent.change(within(d).getByLabelText(/Conta de crédito/i), { target: { value: "12" } });
+    // ⚠ Nada de `findByText(/BANCO ITAU/)`: o nome aparece na `<option>` da lista E na confirmação
+    // do campo. O que se mede aqui é a FRASE do ato.
+    const frase = [...d.querySelectorAll("div")].map((e) => e.textContent)
+      .find((t) => /Isto cria um lançamento contábil/.test(t));
+    expect(frase).toMatch(/BANCO ITAU/);
+    expect(within(d).getByRole("button", { name: /^Confirmar$/ })).toBeEnabled();
+  });
+
+  it("⚠⚠ a escolha JÁ FEITA volta no campo — em reduzido, que é o que o contador lê", async () => {
+    // Sem isto, reabrir a linha mostraria o campo vazio: "não há crédito escolhido", o oposto da
+    // verdade. É o caso da linha que a REGRA do fornecedor lançou com crédito próprio.
+    const d = await abrir({ contaCredito: "111020001" });
+    await waitFor(() => expect(within(d).getByLabelText(/Conta de crédito/i)).toHaveValue("12"));
+  });
+
+  it("⚠ a lista oferecida NÃO tem conta de despesa — só disponibilidade", async () => {
+    const d = await abrir();
+    const lista = d.querySelector("#creditos-da-conferencia");
+    const codigos = [...lista.querySelectorAll("option")].map((o) => o.value);
+    expect(codigos).toEqual(expect.arrayContaining(["5", "12"]));
+    expect(codigos).not.toContain("464");
+    expect(codigos).not.toContain("300");
+  });
+});
+
+describe("⚠⚠ o CRÉDITO no corpo do ato — `montarCorpo`", () => {
+  const { montarCorpo } = require("../renderConferenciaTab");
+  const { ACAO } = require("../../lib/conferenciaTela");
+
+  const cfg = ACAO.confirmar;
+  const item = { id: "d-1", valor: 1500, dataPagamento: "2026-07-15", origemPagamento: "OFX", sugestao: { conta: "411020008" } };
+  const base = { acao: "confirmar", item, data: "2026-07-15", motivo: "", valor: "", cfg, contaCompleta: "411020008" };
+
+  it("⚠⚠ com escolha, o crédito VIAJA", () => {
+    const corpo = montarCorpo({ ...base, creditoCompleto: "111020001", creditoTocado: true });
+    expect(corpo.contaCredito).toBe("111020001");
+  });
+
+  it("⚠⚠⚠ SEM ESCOLHA e sem toque, a chave NEM APARECE — o que estava fica", () => {
+    // ⚠⚠ É o caso do botão «Lançar» da linha, que não tem campo de crédito: mandar `null` ali
+    // apagaria em silêncio o crédito que a regra do fornecedor escolheu.
+    const corpo = montarCorpo({ ...base, item: { ...item, contaCredito: "111020001" } });
+    expect(Object.prototype.hasOwnProperty.call(corpo, "contaCredito")).toBe(false);
+  });
+
+  it("⚠⚠ campo LIMPO por quem tinha escolha manda `null` — é como se desfaz", () => {
+    const corpo = montarCorpo({
+      ...base, item: { ...item, contaCredito: "111020001" }, creditoCompleto: null, creditoTocado: true,
+    });
+    expect(corpo.contaCredito).toBeNull();
+  });
+
+  it("⚠ campo vazio em quem NUNCA teve escolha não manda nada — não há o que desfazer", () => {
+    const corpo = montarCorpo({ ...base, creditoCompleto: null, creditoTocado: true });
+    expect(Object.prototype.hasOwnProperty.call(corpo, "contaCredito")).toBe(false);
+  });
+
+  it("⚠ ação que NÃO cria lançamento nunca leva crédito", () => {
+    const corpo = montarCorpo({
+      ...base, acao: "recusar", cfg: ACAO.recusar, motivo: "nao e despesa",
+      creditoCompleto: "111020001", creditoTocado: true,
+    });
+    expect(corpo.contaCredito).toBeUndefined();
   });
 });

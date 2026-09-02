@@ -686,3 +686,63 @@ describe("⚠⚠ CORRIGIR_DATA_PRESUMIDA", () => {
     expect(r.motivo).toBe(RECUSA.TRANSICAO_INVALIDA_NESTE_ESTADO);
   });
 });
+
+
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠ A CONTA DE CRÉDITO NA TRANSIÇÃO (01/09/2026) — dono: *"aqueles que viram lançamento contábil
+// devem ter opção de colocar débito e crédito"*.
+//
+// ⚠⚠ ANTES DISTO A MÁQUINA DESCARTAVA O CAMPO EM SILÊNCIO. `lancarPorRegra` passava `contaCredito`
+// desde 29/08/2026 e `podeTransitar` não o lia: o contador escolhia o crédito na regra do
+// fornecedor e o razão continuava creditando o caixa cravado, sem erro nenhum e sem ninguém ver.
+//
+// ⚠ O experimento que expôs isso voltou ZERO vermelhos quando o campo foi desligado — a regra
+// existia e a LIGAÇÃO não tinha teste. É a mesma lição já escrita neste projeto.
+// -------------------------------------------------------------------------------------------------
+describe("⚠⚠ contaCredito na transição — «não mexer» ≠ «voltar ao caixa»", () => {
+  const contabilizavel = {
+    estado: ESTADO.A_CONFERIR,
+    dataPagamento: new Date("2026-07-15T00:00:00.000Z"),
+    origemPagamento: ORIGEM_PAGAMENTO.OFX,
+    contaSugerida: "411020008",
+  };
+
+  it("⚠⚠ a escolha É ESCRITA — é o campo que a forma do lançamento vai ler", () => {
+    const r = podeTransitar(contabilizavel, TRANSICAO.CONFIRMAR, { contaCredito: "111020001" });
+    expect(r.ok).toBe(true);
+    expect(r.campos.contaCredito).toBe("111020001");
+  });
+
+  it("⚠⚠⚠ AUSENTE é «não mexer» — o campo NEM APARECE nos campos escritos", () => {
+    // ⚠⚠ A distinção é o ato inteiro: se toda confirmação mandasse `contaCredito: null`, uma
+    // escolha já feita seria apagada por qualquer confirmação seguinte. E se ausência virasse
+    // `undefined` escrito, o Prisma receberia uma chave que não significa nada.
+    const r = podeTransitar(contabilizavel, TRANSICAO.CONFIRMAR, {});
+    expect(r.ok).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(r.campos, "contaCredito")).toBe(false);
+  });
+
+  it("⚠⚠ NULO (ou vazio) VOLTA AO CAIXA — é como se desfaz uma escolha errada", () => {
+    for (const v of [null, "", "   "]) {
+      const r = podeTransitar(contabilizavel, TRANSICAO.CONFIRMAR, { contaCredito: v });
+      expect(r.ok).toBe(true);
+      expect(r.campos.contaCredito).toBeNull();
+    }
+  });
+
+  it("⚠ vale para AJUSTAR também — os dois criam lançamento", () => {
+    const r = podeTransitar(contabilizavel, TRANSICAO.AJUSTAR, { contaCredito: "111020001", valorAjustado: 10 });
+    expect(r.ok).toBe(true);
+    expect(r.campos.contaCredito).toBe("111020001");
+  });
+
+  it("⚠ e NÃO vale para as transições que não lançam — informar pagamento não escolhe conta", () => {
+    const r = podeTransitar(
+      { estado: ESTADO.AGUARDANDO_PAGAMENTO },
+      TRANSICAO.INFORMAR_PAGAMENTO,
+      { dataPagamento: new Date("2026-07-15T00:00:00.000Z"), origemPagamento: ORIGEM_PAGAMENTO.OFX, contaCredito: "111020001" },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.campos.contaCredito).toBeUndefined();
+  });
+});

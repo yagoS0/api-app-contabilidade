@@ -7698,7 +7698,13 @@ export function createMockApi() {
         : base.filter((d) => d.competencia);
 
       const estados = estado ? String(estado).split(",") : ["AGUARDANDO_PAGAMENTO", "A_CONFERIR"];
-      const itens = doRecorte.filter((d) => estados.includes(d.estado));
+      const itens = doRecorte
+        .filter((d) => estados.includes(d.estado))
+        // ⚠⚠ `contaCredito` VIAJA NA LINHA (01/09/2026) — dono: *"devem ter opção de colocar débito
+        // e crédito"*. `null` = ninguém escolheu, e vale o caixa. Sem a chave no mock, o campo do
+        // modal nasceria vazio offline mesmo para uma linha que TEM crédito escolhido, e o defeito
+        // só apareceria em produção — que é o pior momento possível.
+        .map((d) => ({ contaCredito: null, ...d }));
 
       return {
         ok: true,

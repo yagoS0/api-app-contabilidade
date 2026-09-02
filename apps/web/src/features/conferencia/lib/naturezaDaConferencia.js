@@ -45,7 +45,11 @@ export const NATUREZA = Object.freeze({
 export const SECAO = Object.freeze({
   [NATUREZA.VIRA_LANCAMENTO]: {
     titulo: "Vira lançamento contábil",
-    frase: "O que for confirmado aqui cria um lançamento: débito na conta da despesa, crédito no caixa.",
+    // ⚠ *"por padrão"* entrou em 01/09/2026, quando o crédito virou escolhível (dono: *"devem ter
+    // opção de colocar débito e crédito"*). Sem essas duas palavras a seção AFIRMARIA o caixa, e a
+    // linha ao lado poderia estar creditando o banco — a tela negando o que ela mesma acabou de
+    // fazer. ⚠ O padrão continua dito, porque é ele que vale em quase toda linha.
+    frase: "O que for confirmado aqui cria um lançamento: débito na conta da despesa e, por padrão, crédito no caixa.",
   },
   [NATUREZA.SO_FLUXO]: {
     titulo: "Só entra no fluxo — não lança nada",

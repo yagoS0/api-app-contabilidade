@@ -406,3 +406,96 @@ describe("⚠⚠ o `select` que alimenta a trava", () => {
     expect(r.ok).toBe(true);
   });
 });
+
+
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠ A CONTA DE CRÉDITO ESCOLHIDA (01/09/2026) — decisão do dono: *"aqueles que viram lançamento
+// contábil devem ter opção de colocar débito e crédito, por mais que sempre seja 5, pode haver a
+// possibilidade de ser compra de ativo, ou outra coisa"*.
+//
+// ⚠⚠ ISTO FECHA UM BURACO MEDIDO: desde 29/08/2026 a REGRA do fornecedor guardava `contaCredito` e
+// `lancarPorRegra` a passava para `aplicarTransicao` — que a DESCARTAVA em silêncio (não havia
+// coluna nem tratamento). O contador escolhia o crédito e o razão continuava creditando o caixa
+// cravado, sem erro nenhum.
+//
+// ⚠ O que muda numa COMPRA DE ATIVO é o DÉBITO (`contaAplicada`), que sempre foi livre. O crédito
+// continua preso a disponibilidade — resposta do dono, 29/08: *"continua sendo caixa/banco"*.
+// -------------------------------------------------------------------------------------------------
+describe("⚠⚠ o CRÉDITO escolhido — e o caixa cravado como padrão", () => {
+  const BANCO = { portalClientId: null, codigo: "12", codigoCompleto: "111020001", nome: "BANCO ITAU", analitica: true };
+  const FORNECEDORES = { portalClientId: null, codigo: "300", codigoCompleto: "211010001", nome: "FORNECEDORES A PAGAR", analitica: true };
+  const ATIVO = { portalClientId: null, codigo: "700", codigoCompleto: "123010001", nome: "MAQUINAS E EQUIPAMENTOS", analitica: true };
+
+  const planoCom = (...extras) => planoDe(extras);
+
+  it("⚠ sem escolha, credita o CAIXA — o comportamento medido das 155 despesas", () => {
+    const r = montarLancamento(declarado(), planoCom());
+    expect(r.ok).toBe(true);
+    const credito = r.entry.lines.create.find((l) => l.tipo === "C");
+    expect(credito.conta).toBe("5");
+  });
+
+  it("⚠⚠ com a escolha, credita a conta ESCOLHIDA — e o débito não muda", () => {
+    const r = montarLancamento(declarado({ contaCredito: "111020001" }), planoCom(BANCO));
+    expect(r.ok).toBe(true);
+    const linhas = r.entry.lines.create;
+    expect(linhas.find((l) => l.tipo === "C").conta).toBe("12");
+    expect(linhas.find((l) => l.tipo === "D").conta).toBe("464");
+  });
+
+  it("⚠⚠⚠ COMPRA DE ATIVO: quem muda é o DÉBITO, e ele sempre foi livre", () => {
+    // ⚠ É o exemplo do dono. A partida continua fechando, e o crédito continua saindo do caixa —
+    // o dinheiro saiu; o que mudou é a natureza do que se comprou.
+    const r = montarLancamento(declarado({ contaAplicada: "123010001" }), planoCom(ATIVO));
+    expect(r.ok).toBe(true);
+    expect(r.entry.lines.create.find((l) => l.tipo === "D").conta).toBe("700");
+    expect(r.entry.lines.create.find((l) => l.tipo === "C").conta).toBe("5");
+  });
+
+  it("⚠⚠⚠ o crédito RECUSA conta que não é disponibilidade — a invariante do caixa", () => {
+    // ⚠⚠ Sem esta guarda, uma despesa creditando FORNECEDORES sairia daqui — e o lançamento AFIRMA
+    // que o dinheiro saiu do caixa. Ele seria válido no razão e mentiria no caixa: sumiria do fluxo
+    // (que só conta o que credita disponibilidade) sem aparecer como obrigação em lugar nenhum.
+    const r = montarLancamento(declarado({ contaCredito: "211010001" }), planoCom(FORNECEDORES));
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toBe(RECUSA_DA_FORMA.CREDITO_NAO_E_DISPONIBILIDADE);
+    // ⚠ E a frase manda para o conserto certo: o que muda numa compra de ativo é o DÉBITO.
+    expect(r.frase).toMatch(/DÉBITO/);
+  });
+
+  it("⚠⚠ as recusas do crédito ESCOLHIDO são separadas das do caixa cravado — o conserto é outro", () => {
+    // Caixa cravado ausente ⇒ "corrija o PLANO". Escolha ausente ⇒ "escolha outra".
+    const semCaixa = montarLancamento(
+      declarado(),
+      new Map([["464", { codigo: "464", codigoCompleto: "411020008", nome: "SERVICOS" }]]),
+    );
+    expect(semCaixa.motivo).toBe(RECUSA_DA_FORMA.CAIXA_FORA_DO_PLANO);
+    expect(semCaixa.frase).toMatch(/plano/i);
+
+    const escolhaFora = montarLancamento(declarado({ contaCredito: "999999999" }), planoCom());
+    expect(escolhaFora.motivo).toBe(RECUSA_DA_FORMA.CREDITO_FORA_DO_PLANO);
+    expect(escolhaFora.frase).toMatch(/escolha outra/i);
+  });
+
+  it("⚠ escolher o PRÓPRIO caixa é o caminho de sempre — não vira recusa de escolha", () => {
+    const r = montarLancamento(declarado({ contaCredito: "111010001" }), planoCom());
+    expect(r.ok).toBe(true);
+    expect(r.entry.lines.create.find((l) => l.tipo === "C").conta).toBe("5");
+  });
+
+  it("⚠ vazio e nulo são «ninguém escolheu», nunca uma escolha inválida", () => {
+    for (const v of [null, "", "   ", undefined]) {
+      const r = montarLancamento(declarado({ contaCredito: v }), planoCom());
+      expect(r.ok).toBe(true);
+      expect(r.entry.lines.create.find((l) => l.tipo === "C").conta).toBe("5");
+    }
+  });
+
+  it("⚠ a partida continua fechando com a conta escolhida", () => {
+    const r = montarLancamento(declarado({ contaCredito: "111020001" }), planoCom(BANCO));
+    const d = r.entry.lines.create.filter((l) => l.tipo === "D").reduce((a, l) => a + l.valor, 0);
+    const c = r.entry.lines.create.filter((l) => l.tipo === "C").reduce((a, l) => a + l.valor, 0);
+    expect(d).toBe(c);
+    expect(r.entry.lines.create).toHaveLength(2);
+  });
+});

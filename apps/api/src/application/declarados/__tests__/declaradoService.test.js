@@ -128,7 +128,9 @@ function fazerClient(declarado, opcoes = {}) {
           [...entriesVivos.keys()].filter((id) => where.id.in.includes(id)).map((id) => ({ id })),
         ),
       },
-      chartOfAccount: { findMany: jest.fn(async () => PLANO) },
+      // ⚠ `opcoes.plano` permite o caso do CRÉDITO ESCOLHIDO acrescentar contas (banco, fornecedor)
+      // sem tocar no PLANO medido em produção, que é a âncora dos outros casos.
+      chartOfAccount: { findMany: jest.fn(async () => opcoes.plano || PLANO) },
       $transaction: jest.fn(async (cb) => {
         chamadas.transacao += 1;
         return cb(tx);
@@ -1483,5 +1485,68 @@ describe("⚠⚠ ABSORVER o débito numa nota JÁ LANÇADA — sem criar e sem t
     const { client, mapa } = montar([debitoDoExtrato(), notaLancada()]);
     await absorver(client);
     expect(mapa.get("ofx-7")).toMatchObject({ decididoPor: "u-1", decididoEm: AGORA });
+  });
+});
+
+
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠ A CORRENTE INTEIRA DO CRÉDITO ESCOLHIDO (01/09/2026) — e é ELA que faltava.
+//
+// > Dono: *"aqueles que viram lançamento contábil devem ter opção de colocar débito e crédito, por
+// > mais que sempre seja 5, pode haver a possibilidade de ser compra de ativo, ou outra coisa."*
+//
+// ⚠⚠ O EXPERIMENTO QUE EXPÔS O BURACO: desligando o tratamento de `contaCredito` na máquina de
+// estados, a suíte inteira ficava **VERDE**. A regra pura tinha teste e a LIGAÇÃO não — que é como
+// `lancarPorRegra` passou dias mandando um `contaCredito` que ninguém escrevia.
+//
+// O que este bloco mede é a corrente: o ato → a coluna → a LINHA DE CRÉDITO do `AccountingEntry`.
+// -------------------------------------------------------------------------------------------------
+describe("⚠⚠ o crédito escolhido chega ao RAZÃO — a corrente inteira", () => {
+  const BANCO = { portalClientId: null, codigo: "12", codigoCompleto: "111020001", nome: "BANCO ITAU" };
+
+  const contabilizar = (client, dados) => aplicarTransicao({
+    portalClientId: "emp-1",
+    declaradoId: "d-1",
+    transicao: TRANSICAO.CONFIRMAR,
+    dados,
+    usuarioId: "u-1",
+    agora: AGORA,
+    client,
+  });
+
+  it("⚠⚠⚠ escolhido, a LINHA DE CRÉDITO do lançamento é a conta escolhida", async () => {
+    const { client, chamadas } = fazerClient(declaradoBase(), { plano: [...PLANO, BANCO] });
+    await contabilizar(client, { contaAplicada: "411020008", contaCredito: "111020001" });
+
+    const entry = chamadas.create[0];
+    const credito = entry.lines.create.find((l) => l.tipo === "C");
+    expect(credito.conta).toBe("12");
+    // ⚠ E o débito não se mexeu: o que muda numa compra de ativo é ELE, e ele é outro campo.
+    expect(entry.lines.create.find((l) => l.tipo === "D").conta).toBe("464");
+  });
+
+  it("⚠⚠ a coluna é GRAVADA no declarado — senão a escolha some ao reabrir a tela", async () => {
+    const { client, chamadas } = fazerClient(declaradoBase(), { plano: [...PLANO, BANCO] });
+    await contabilizar(client, { contaAplicada: "411020008", contaCredito: "111020001" });
+    const escrito = [...chamadas.update, ...chamadas.updateForaDaTransacao].map((c) => c.data);
+    expect(escrito.some((d) => d.contaCredito === "111020001")).toBe(true);
+  });
+
+  it("⚠ sem escolha, o razão continua creditando o CAIXA — as 155 despesas medidas", async () => {
+    const { client, chamadas } = fazerClient(declaradoBase());
+    await contabilizar(client, { contaAplicada: "411020008" });
+    expect(chamadas.create[0].lines.create.find((l) => l.tipo === "C").conta).toBe("5");
+  });
+
+  it("⚠⚠⚠ crédito que não é DISPONIBILIDADE recusa, e NADA é gravado", async () => {
+    // ⚠⚠ A invariante do caixa: o lançamento AFIRMA que o dinheiro saiu. Creditando
+    // "fornecedores a pagar" ele seria válido no razão e mentiria no caixa.
+    const FORNECEDORES = { portalClientId: null, codigo: "300", codigoCompleto: "211010001", nome: "FORNECEDORES" };
+    const { client, chamadas } = fazerClient(declaradoBase(), { plano: [...PLANO, FORNECEDORES] });
+    await expect(contabilizar(client, { contaAplicada: "411020008", contaCredito: "211010001" }))
+      .rejects.toMatchObject({ codigo: "credito_nao_e_disponibilidade" });
+    // ⚠ Nem lançamento, nem mudança de estado: a recusa acontece ANTES da transação.
+    expect(chamadas.create).toHaveLength(0);
+    expect(chamadas.update).toHaveLength(0);
   });
 });

@@ -4039,6 +4039,24 @@ model LancamentoDeclarado {
   /// ⚠⚠ SEMPRE `codigoCompleto`. O reduzido é mutável; o completo é a âncora desta casa.
   contaSugerida     String?
   contaAplicada     String?
+  /// ⚠⚠ A CONTA DE CRÉDITO, QUANDO O CONTADOR A ESCOLHE (01/09/2026) — decisão do dono:
+  /// *"aqueles que viram lançamento contábil devem ter opção de colocar débito e crédito, por mais
+  /// que sempre seja 5, pode haver a possibilidade de ser compra de ativo, ou outra coisa"*.
+  ///
+  /// ⚠⚠ **ELA FECHA UM BURACO MEDIDO.** Desde 29/08/2026 a REGRA do fornecedor já guardava
+  /// `contaCredito`, e `lancarPorRegra` já a passava para `aplicarTransicao` — que a **descartava
+  /// em silêncio**, porque não havia coluna nem tratamento na máquina de estados. O contador
+  /// escolhia o crédito na regra e o razão continuava creditando o caixa cravado, sem erro nenhum.
+  ///
+  /// ⚠ SEMPRE `codigoCompleto`, nunca o reduzido — o reduzido é mutável.
+  /// ⚠ `null` = *"ninguém escolheu"*, e aí vale o caixa cravado (`111010001`), que é o
+  /// comportamento medido das 155 despesas existentes. **Sem default e sem backfill**: preencher
+  /// todas com o caixa afirmaria uma escolha que ninguém fez.
+  /// ⚠⚠ A escolha é RECUSADA se não for conta de DISPONIBILIDADE — resposta do dono em 29/08/2026:
+  /// *"continua sendo caixa/banco"*. Quem decide é `accounting/lib/disponibilidades.js`, pelo
+  /// PREFIXO do `codigoCompleto`. O que muda de conta numa compra de ativo é o DÉBITO
+  /// (`contaAplicada`), que sempre foi livre.
+  contaCredito      String?
   valorAjustado     Decimal? @db.Decimal(18, 2)
   motivoRecusa      String?
 

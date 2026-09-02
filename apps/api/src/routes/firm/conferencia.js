@@ -165,6 +165,11 @@ function serializar(d) {
 
     contaSugerida: d.contaSugerida,
     contaAplicada: d.contaAplicada,
+    // ⚠⚠ A CONTA DE CRÉDITO ESCOLHIDA. `null` = ninguém escolheu, e vale o caixa cravado — a tela
+    // precisa da distinção para mostrar "Caixa (padrão)" em vez de um campo vazio, que se lê como
+    // "faltou preencher". ⚠ Campo fora do serializador some sem erro nenhum: este módulo já pagou
+    // isso três vezes.
+    contaCredito: d.contaCredito ?? null,
     accountingEntryId: d.accountingEntryId,
     regraId: d.regraId,
     motivoRecusa: d.motivoRecusa,
@@ -722,14 +727,31 @@ export function createConferenciaRouter({ log } = {}) {
     dados: (b) => lerPagamentoDoCorpo(b),
   });
 
+  /**
+   * ⚠⚠ A CONTA DE CRÉDITO VIAJA SÓ QUANDO O CORPO A TRAZ (01/09/2026) — decisão do dono: *"aqueles
+   * que viram lançamento contábil devem ter opção de colocar débito e crédito"*.
+   *
+   * ⚠⚠ `hasOwnProperty`, NUNCA `b.contaCredito` cru: a máquina de estados distingue `undefined`
+   * ("não mexer") de `null` ("voltar ao caixa"), e mandar `undefined` em todo request apagaria a
+   * distinção — toda confirmação passaria a dizer "não mexer", e nunca haveria como desfazer uma
+   * escolha errada.
+   */
+  const credito = (b) => (
+    Object.prototype.hasOwnProperty.call(b || {}, "contaCredito")
+      ? { contaCredito: b.contaCredito }
+      : {}
+  );
+
   escrita("confirmar", {
     transicao: TRANSICAO.CONFIRMAR,
-    dados: (b) => ({ ...lerPagamentoDoCorpo(b), contaAplicada: b.contaAplicada }),
+    dados: (b) => ({ ...lerPagamentoDoCorpo(b), contaAplicada: b.contaAplicada, ...credito(b) }),
   });
 
   escrita("ajustar", {
     transicao: TRANSICAO.AJUSTAR,
-    dados: (b) => ({ ...lerPagamentoDoCorpo(b), contaAplicada: b.contaAplicada, valorAjustado: b.valorAjustado }),
+    dados: (b) => ({
+      ...lerPagamentoDoCorpo(b), contaAplicada: b.contaAplicada, valorAjustado: b.valorAjustado, ...credito(b),
+    }),
   });
 
   escrita("recusar", { transicao: TRANSICAO.RECUSAR, dados: (b) => ({ motivoRecusa: b.motivo ?? b.motivoRecusa }) });
