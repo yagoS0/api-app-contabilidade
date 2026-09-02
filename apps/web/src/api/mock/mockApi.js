@@ -8137,6 +8137,98 @@ export function createMockApi() {
     // ⚠ E os DOIS estados de `temCadastro` são caminháveis de propósito: é a distinção que o dono
     // não tinha como ver (28 das 34 empresas em produção não têm linha em `cadastros_fiscais`, e a
     // tela desenhava o perfil DERIVADO com a mesma cara de um salvo).
+    // ── Perfis de emissão de NFS-e ────────────────────────────────────────────────────────────
+    //
+    // ⚠⚠ O MOCK EXERCITA OS DOIS RAMOS, e isto não é zelo: este projeto já foi mordido TRÊS vezes
+    // na mesma semana por ramo inalcançável offline (o RBT12 fixo em 480.000, os valores redondos
+    // que escondiam o parser ×100, e o faturamento zero em 6 de 6 empresas).
+    //   • empresa SEM perfil  → o painel mostra o comportamento de hoje, com os dois CRAVADOS;
+    //   • empresa COM perfil  → um campo que MUDARIA (`tribISSQN` 1 → 3, a exportação).
+    _perfisEmissao: {},
+
+    async getPerfisEmissao(companyId) {
+      await delay();
+      const perfis = this._perfisEmissao[companyId] || [];
+      const escolhido = perfis.find((p) => p.padrao && p.ativo) || (perfis.length === 1 ? perfis[0] : null);
+      const cravado = (id, valor) => ({ valor, fonte: "CRAVADO", valorHoje: valor, mudariaComPerfil: false, cravadoHoje: true });
+      const doCadastro = {
+        codigoServicoNacional: { valor: "171901", fonte: "COMPANY", valorHoje: "171901", mudariaComPerfil: false, cravadoHoje: false },
+        codigoServicoMunicipal: { valor: "001", fonte: "COMPANY", valorHoje: "001", mudariaComPerfil: false, cravadoHoje: false },
+        cLocPrestacao: { valor: null, fonte: "INDEFINIDO", valorHoje: null, mudariaComPerfil: false, cravadoHoje: false },
+        regEspTrib: { ...cravado("regEspTrib", "0"), cravadoHoje: false },
+        regApTribSN: cravado("regApTribSN", "1"),
+        tribISSQN: cravado("tribISSQN", "1"),
+      };
+      // ⚠ A metadata sai da MESMA lista que a tela usa — o mock não escreve rótulo nem caminho de
+      // XML por conta própria, senão ele e a tela diriam coisas diferentes sobre o mesmo campo.
+      const { CAMPOS_PERFIL_EMISSAO } = await import("../../lib/nfse/perfilEmissao.js");
+      const campos = {};
+      for (const def of CAMPOS_PERFIL_EMISSAO) {
+        const base = doCadastro[def.id];
+        const doPerfil = escolhido ? escolhido[def.id] : null;
+        campos[def.id] = doPerfil
+          ? { ...base, valor: doPerfil, fonte: "PERFIL", mudariaComPerfil: doPerfil !== base.valorHoje }
+          : { ...base };
+        campos[def.id].rotulo = def.rotulo;
+        campos[def.id].tag = def.tag;
+        campos[def.id].caminhoNoXml = def.caminhoNoXml;
+        campos[def.id].cravadoHoje = def.cravadoHoje;
+      }
+      return {
+        ok: true,
+        integracaoLigada: false,
+        perfis,
+        derivadoDoCadastro: {
+          origem: "DERIVADO_DO_CADASTRO",
+          codigoServicoNacional: "171901",
+          codigoServicoMunicipal: "001",
+          cLocPrestacao: null,
+          regEspTrib: "0",
+          regApTribSN: "1",
+          tribISSQN: "1",
+        },
+        proximaDps: { temPerfil: Boolean(escolhido), perfil: escolhido || null, perfisAtivos: perfis.length, campos, avisos: [] },
+        campos: CAMPOS_PERFIL_EMISSAO,
+      };
+    },
+
+    async criarPerfilEmissao(companyId, corpo) {
+      await delay();
+      const lista = this._perfisEmissao[companyId] || (this._perfisEmissao[companyId] = []);
+      if (lista.some((p) => p.nome === corpo.nome)) {
+        const err = new Error("perfil_nome_duplicado");
+        err.code = "perfil_nome_duplicado";
+        throw err;
+      }
+      if (corpo.padrao === true) lista.forEach((p) => { p.padrao = false; });
+      const novo = {
+        id: `pf-${lista.length + 1}`,
+        ativo: true,
+        padrao: false,
+        origem: "MANUAL",
+        codigoServicoMunicipal: null,
+        cLocPrestacao: null,
+        regEspTrib: null,
+        regApTribSN: null,
+        tribISSQN: null,
+        habilitaObra: false,
+        habilitaExportacao: false,
+        ...corpo,
+      };
+      lista.push(novo);
+      return { ok: true, perfil: novo };
+    },
+
+    async salvarPerfilEmissao(companyId, perfilId, corpo) {
+      await delay();
+      const lista = this._perfisEmissao[companyId] || [];
+      const alvo = lista.find((p) => p.id === perfilId);
+      if (!alvo) throw new Error("perfil_nao_encontrado");
+      if (corpo.padrao === true) lista.forEach((p) => { p.padrao = false; });
+      Object.assign(alvo, corpo, { origem: "MANUAL" });
+      return { ok: true, perfil: alvo };
+    },
+
     async getPerfilFiscal(companyId) {
       await delay(40);
       const idx = Math.max(0, mockCompanies.findIndex((c) => c.companyId === companyId));

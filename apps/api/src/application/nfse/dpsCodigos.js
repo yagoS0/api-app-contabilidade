@@ -9,12 +9,24 @@
 //
 // ─── REGRA 1 DO PROJETO: O QUE NÃO ESTÁ PROVADO NÃO É PREENCHIDO ─────────────────────────────
 //
-// ⚠ **O XSD do leiaute NÃO está versionado neste repositório** — não há um único `.xsd` na
-// árvore. Logo, NENHUMA linha destas tabelas pode se apoiar no schema oficial. Cada entrada traz
-// a evidência que a sustenta e um `verificadoNoLeiaute: false` explícito (princípio 3 do
-// CLAUDE.md: marcar o não-verificado). O que não tem evidência **não recebe valor** — recebe
-// `indefinido`, e a emissão é RECUSADA com o motivo. Chutar aqui é declarar regime tributário
-// errado à Receita.
+// ⚠⚠ **A FRASE "O XSD do leiaute NÃO está versionado neste repositório — não há um único `.xsd` na
+// árvore" MORAVA AQUI E É FALSA DESDE 19/08/2026.** Os 20 XSD (1.00 e 1.01) estão em
+// `docs/leiaute-nfse/documentacao-tecnica/esquemas-xsd/Schemas/`, e desde 01/09/2026
+// `__tests__/dpsContraXsd.test.js` os carrega em tempo de teste, na versão de `DPS_VERSAO`.
+// A mesma frase vivia em `NfseService.js`; as duas ficaram penduradas porque ninguém voltou aqui
+// depois de versionar o leiaute.
+//
+// ⚠ **MAS OS `verificadoNoLeiaute: false` ABAIXO CONTINUAM `false`, E ISSO É DELIBERADO.** O que a
+// frase antiga justificava era a AUSÊNCIA de fonte; o que os campos declaram é que **ninguém
+// conferiu estas entradas contra o schema** — são coisas diferentes, e a segunda continua
+// verdadeira. Promovê-los é conferência a fazer, entrada por entrada, com a decisão do dono junto
+// (o caso do MEI, logo abaixo, depende disso). Trocar o `false` por `true` só porque o arquivo
+// existe seria exatamente o que o princípio 3 proíbe: marcar como verificado o que não foi.
+//
+// Cada entrada traz a evidência que a sustenta e um `verificadoNoLeiaute: false` explícito
+// (princípio 3 do CLAUDE.md: marcar o não-verificado). O que não tem evidência **não recebe
+// valor** — recebe `indefinido`, e a emissão é RECUSADA com o motivo. Chutar aqui é declarar
+// regime tributário errado à Receita.
 //
 // Terceira resposta obrigatória (`indefinido`), na mesma forma de
 // `obrigatoriedadeDefis.js` / `obrigatoriedadeEfd.js`: ausência de regime cadastrado **não**

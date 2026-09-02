@@ -443,6 +443,18 @@ describe("numeração na emissão", () => {
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 
+  // ⚠⚠ ESTE LITERAL FICA FIXO DE PROPÓSITO — não o troque por `DPS_VERSAO`.
+  //
+  // Ele e o `dpsContraXsd.test.js` fazem perguntas OPOSTAS, e as duas precisam existir:
+  //
+  //   • o oráculo do XSD **segue** a constante (carrega `Schemas/${DPS_VERSAO}`), senão validaria o
+  //     documento contra o esquema de outra versão — o falso-verde consertado em 01/09/2026;
+  //   • este caso **não segue**, porque ele é o ANÚNCIO. Derivando da constante ele passaria sempre,
+  //     e a versão do documento fiscal poderia mudar sem nada ficar vermelho.
+  //
+  // Medido em 01/09/2026, virando a constante para `"1.01"`: **852 de 853 testes continuam
+  // passando**, e o único vermelho é este. Ou seja, ele é hoje a ÚNICA coisa entre uma troca de
+  // versão e a produção — e é assim que se pretende que seja.
   it("versão do leiaute sai da constante única (hoje 1.00)", async () => {
     montarCenario();
     await NfseService.issue({ data: PAYLOAD_BASE, log });

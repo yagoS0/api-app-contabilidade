@@ -1650,6 +1650,50 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
   // ⚠ `requireClientCompanyAccess()` **sem `minRole`**: listar para quem a empresa já emitiu é
   // LEITURA, e o piso deste arquivo é "membro ativo". O portão do ATO fiscal
   // (`ensureEmissaoNfseAutorizada`) é da emissão, logo abaixo.
+  // ── OS PERFIS DE EMISSÃO QUE O CONTADOR CONFIGUROU — só LEITURA ────────────────────────────
+    //
+    // ⚠⚠ O CLIENTE ESCOLHE O PERFIL PELO NOME, e não vê campo fiscal nenhum. É o pedido do dono:
+    // *"o contador deixa pré-configurado a maioria dos campos"*. Por isso esta rota devolve
+    // **id, nome e padrão** — e mais nada. Mandar `tribISSQN` ou `regApTribSN` para cá seria
+    // vocabulário de DPS numa tela cujo leitor é o dono da empresa.
+    //
+    // ⚠ NÃO EXISTE ROTA DE ESCRITA DE PERFIL DO LADO DO CLIENTE. Perfil é configuração do
+    // contador; uma porta de escrita aqui transformaria a decisão fiscal dele em campo do cliente.
+    //
+    // ⚠ O perfil é escopado por `PortalClient`, mas o `:companyId` do path pode ser qualquer um dos
+    // dois ids (é a confusão que este projeto já pagou cinco vezes). A volta é sempre pela
+    // `Company` legada — `resolveLegacyCompanyId` e depois `PortalClient.companyId`, que é `@unique`.
+  router.get(
+    "/companies/:companyId/nfse/perfis",
+      requireClientCompanyAccess(),
+      async (req, res) => {
+        const idDoPath = String(req.params.companyId);
+        try {
+          const legacyCompanyId = await resolveLegacyCompanyId(idDoPath);
+          // ⚠ Sem `Company` legada não é erro: é quem ainda não foi provisionada. Lista vazia, e a
+          // tela não oferece o seletor — o mesmo desenho dos tomadores.
+          if (!legacyCompanyId) return res.json({ data: [], total: 0 });
+
+          const portal = await prisma.portalClient
+            .findUnique({ where: { companyId: legacyCompanyId }, select: { id: true } })
+            .catch(() => null);
+          if (!portal?.id) return res.json({ data: [], total: 0 });
+
+          const perfis = await prisma.perfilEmissaoNfse.findMany({
+            where: { portalClientId: portal.id, ativo: true },
+            orderBy: [{ padrao: "desc" }, { nome: "asc" }],
+            select: { id: true, nome: true, padrao: true },
+          });
+          return res.json({ data: perfis, total: perfis.length });
+        } catch (err) {
+          // ⚠ Tabela ainda não criada (migration nasce NÃO APLICADA) não pode derrubar a tela de
+          // emissão. Lista vazia é a resposta honesta: "não há perfil para escolher".
+          log.warn({ companyId: idDoPath, err: err?.message }, "client perfis de emissão indisponíveis");
+          return res.json({ data: [], total: 0 });
+        }
+      }
+  );
+
   router.get(
     "/companies/:companyId/nfse/tomadores",
     requireClientCompanyAccess(),

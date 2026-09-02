@@ -3006,6 +3006,12 @@ v1.35, Cap. I, Seção 3). O PUT recusa com **409 `OBRIGACAO_NAO_DEVIDA`** — a
 fluxo, mas aba aberta antes de a empresa migrar ainda envia, e um "entregue" gravado numa empresa
 dispensada responde a pergunta errada com confiança.
 
+⚠⚠ **ATUALIZADO EM 01/09/2026 — `mapRegime` NÃO ASSUME MAIS NADA** (termina em `return null`; ver
+"O REGIME DEIXOU DE SER CHUTADO", abaixo). **Esta guarda não foi tocada e não muda de comportamento**,
+e o motivo é que ela **nunca chamou `mapRegime`**: `dispensadaPorRegime` (`obrigacoes.js`) tem cascata
+PRÓPRIA sobre `company.regimeTributario` e já terminava em `return null` — o parágrafo abaixo cita o
+`mapRegime` como analogia, não como dependência. O argumento dele continua valendo inteiro:
+
 ⚠ **Regime ausente ou desconhecido PASSA.** `mapRegime` (`apuracaoV2.js`) assume Simples por
 default porque lá o default é inofensivo; copiá-lo aqui bloquearia trabalho legítimo de toda
 empresa sem regime cadastrado. Nesta direção, bloquear por falta de dado é o erro caro — o oposto
@@ -3013,6 +3019,404 @@ da regra do front, onde ausência de regime vira o terceiro estado (`indefinida`
 
 A guarda vale **só para `EFD_CONTRIBUICOES`**: ECD e ECF têm outro rol de obrigados, e a dispensa
 do Simples é específica desta obrigação.
+
+## ⚠⚠ O REGIME DEIXOU DE SER CHUTADO — e o que fabricava o dado era o caminho de ESCRITA (01/09/2026)
+
+`mapRegime` (`routes/firm/apuracaoV2.js`) terminava em `return "SIMPLES_NACIONAL"`, com o comentário
+*"default (a maioria das empresas do app é SN)"*. Isso seria inofensivo se ele só alimentasse tela.
+**Ele alimentava um `create`:**
+
+```js
+const cadastro = await prisma.cadastroFiscal.create({
+  data: { portalClientId, regime: mapRegime(company), … },   // ← apuracaoV2.js:208
+});
+```
+
+⚠⚠ **A PARTIR DAÍ O CHUTE ERA INDISTINGUÍVEL DE UMA AFIRMAÇÃO DO CONTADOR.**
+`NfseService.carregarRegimeDaEmpresa` trata `CadastroFiscal` como **autoridade** e devolve Simples
+Nacional com confiança total — sem o `prefill: true` que fazia a tela pintar âmbar. E mais **seis**
+serviços leem a mesma linha como autoridade: `ClassificadorService`, `CnaesDaEmpresaService`,
+`DisparidadeService`, `FechamentoService`, `MotorApuracaoService`, `PerfilFiscalService`.
+
+⚠⚠ **O QUE TORNA ESTE CASO INSTRUTIVO: A VALIDAÇÃO EXISTIA E FOI ESCRITA DE PROPÓSITO.**
+`dpsCodigos.resolverOpSimpNac` recusa regime desconhecido (`NFSE_REGIME_INDEFINIDO`) e o cabeçalho
+dele registra que **NÃO reusa** o `mapRegime`, com o motivo: *"na apuração o default é inofensivo;
+numa DPS ele declararia o regime da empresa por suposição"*. O autor **viu** a função, **recusou-a**
+e **escreveu por quê** — e o `create` gravava o resultado dela assim mesmo.
+**Guarda nenhuma resiste a um caminho de escrita que fabrica exatamente o dado que a satisfaz.**
+Por isso o conserto é no ESCRITOR, não em mais uma validação.
+
+**O que mudou, em três peças:**
+
+| onde | antes | agora |
+|---|---|---|
+| `apuracaoV2.js` `mapRegime` | `return "SIMPLES_NACIONAL"` | **`return null`** |
+| `apuracaoV2.js` `PUT /perfil-fiscal` | `create({ regime: mapRegime(company) })` | **409 `regime_nao_confirmado`**, na forma do `cadastro_fiscal_required` que já estava três linhas acima |
+| `PerfilFiscalService.js:72-78` | cascata **duplicada** terminando em `"SIMPLES_NACIONAL"` | termina em `null` — e ganhou o `optanteSimples` que só a outra cópia tinha |
+
+⚠ **AS DUAS CÓPIAS JÁ DIVERGIAM.** `mapRegime` consultava `company.optanteSimples`; a de
+`PerfilFiscalService` não. A mesma empresa tinha duas respostas possíveis conforme o caminho que a
+alcançasse — e o defeito ficava escondido porque as duas terminavam no mesmo default.
+
+⚠ **RECUSAR É MAIS BARATO QUE UM ESTADO NOVO.** `CadastroFiscal.regime` é `String` NOT NULL, e
+torná-lo anulável só empurraria o problema: `carregarRegimeDaEmpresa` continuaria vendo uma linha e
+`temCadastro` continuaria `true`. **Sem regime, não há cadastro fiscal.**
+
+⚠ **`null` NÃO SOBREPÕE regime salvo.** No `GET /cadastro-fiscal` a ficha da empresa continua sendo
+a fonte *quando ela responde*; respondendo "não sei", o `regime` sai do spread (`delete
+doCompany.regime`). Sem isso, a tela diria "não cadastrado" sobre empresa cadastrada — trocar um
+defeito por outro.
+
+⚠ **A APURAÇÃO CONTINUA TOLERANTE.** `apps/api/CLAUDE.md` já registrava que ali *"bloquear por falta
+de dado é o erro caro"*, e isso não mudou: quem trata o `null` é cada chamador, e a tela já tinha o
+ramo (`perfilFiscalTela.estadoDoRegime` → `AUSENTE`, com a frase certa). **Só a ESCRITA recusa.**
+Tolerar em memória ≠ gravar.
+
+⚠ **A guarda da EFD (`obrigacoes.js`) não foi tocada** — ela tem cascata própria e nunca chamou o
+`mapRegime`.
+
+- **Medido antes de mexer:** 28 das 34 empresas ainda **não têm linha** em `cadastros_fiscais` — o
+  estrago em massa não aconteceu, mas cada salvamento de perfil fiscal o produzia. As 6 existentes
+  se auditam com `scripts/diag-cadastro-fiscal-vs-perfil.mjs` (só leitura); **decidir se aquele
+  `SIMPLES_NACIONAL` é verdade é do contador**, não de um backfill.
+- **Regressão:** `apuracao/v2/__tests__/regimeNaoSeChuta.test.js` (8) — os quatro regimes que
+  continuam sendo reconhecidos, os dois que viram `null`, o `optanteSimples` que voltou a contar, o
+  cadastro salvo vencendo a ficha, e **a varredura textual** que recusa o default de volta em
+  qualquer um dos dois arquivos (o `create` também não pode voltar a chamar `mapRegime` direto no
+  `data`). ⚠ Experimento executado: reintroduzindo o `return "SIMPLES_NACIONAL"`, **1 vermelho**.
+- ⚠ **Não verificado no navegador**, e o motivo é estrutural: `apps/web` em modo `mock` não alcança
+  esta rota, e **não há banco alcançável nesta máquina**. O que prova o comportamento são os testes
+  e a leitura; a conferência na tela é do dono, com o banco no ar.
+
+## ⚠⚠ O ORÁCULO DO XSD PASSOU A SEGUIR `DPS_VERSAO` — era um falso-verde vivo (01/09/2026)
+
+`dpsContraXsd.test.js` fixava `"1.01"` no caminho e nos nomes dos arquivos, enquanto
+`NfseService.js` emitia `versao="1.00"`. **O único teste escrito para impedir a classe do E1235
+validava o documento contra o esquema de OUTRA VERSÃO.**
+
+Hoje `DPS_VERSAO` é **exportado** e o teste deriva dele o diretório (`Schemas/${DPS_VERSAO}`) e os
+nomes (`tiposComplexos_v${DPS_VERSAO}.xsd`). Trocar a constante troca o esquema conferido, por
+construção.
+
+⚠⚠ **POR QUE ISSO IMPORTA, medido na fonte: `TCTribMunicipal` REORDENOU entre as versões.**
+
+```
+1.00: tribISSQN · cPaisResult? · BM? · exigSusp? · tpImunidade? · pAliq? · tpRetISSQN
+1.01: tribISSQN · cPaisResult? · tpImunidade? · exigSusp? · BM? · tpRetISSQN · pAliq?
+```
+
+`xs:sequence` faz a ordem ser contrato. O gerador escreve só `tribISSQN` + `tpRetISSQN`, e esse par
+mantém a ordem relativa nas duas — **por isso o desalinhamento não doía**. No instante em que
+`pAliq` ou `BM` entrarem, a ordem passa a depender da versão declarada, e um oráculo apontado para o
+esquema errado **aprovaria a ordem trocada**. É a classe exata do E1235, com o agravante de que o
+teste que existe para impedi-la seria o que diria estar tudo bem.
+
+⚠ **Consequência de ordem para quem for montar o `tribMun` completo: a subida de versão vem ANTES.**
+
+**Os dois testes fazem perguntas OPOSTAS, e as duas precisam existir:**
+
+| teste | segue `DPS_VERSAO`? | papel |
+|---|---|---|
+| `dpsContraXsd.test.js` | **sim** | conferir contra o esquema certo |
+| `emissaoDps.test.js` › *"versão do leiaute sai da constante única"* | **NÃO — literal `1.00` fixo** | **anunciar** a troca. Derivando da constante ele passaria sempre, e a versão do documento fiscal mudaria sem nada ficar vermelho |
+
+### ⚠⚠ MEDIÇÃO DE INÉRCIA DA MIGRAÇÃO 1.00 → 1.01 (executada, não estimada)
+
+Virando `DPS_VERSAO` para `"1.01"` e rodando `application/nfse` + `validators` + `routes/client` +
+`nfseLote`: **852 de 853 testes continuam passando**, e o **único** vermelho é o caso de anúncio
+acima. O oráculo trocou de esquema sozinho e continuou aprovando o XML.
+
+**Isso é a evidência que a fase da migração pede:** a subida de versão é **uma linha**, e é
+provadamente inerte para tudo que o gerador escreve hoje. ⚠ Continua sendo **decisão do dono** —
+o que deixou de existir é o impedimento técnico que estava escrito como justificativa.
+
+### As duas frases falsas que foram corrigidas junto
+
+*"O XSD do leiaute NÃO está versionado neste repositório — não há um único `.xsd` na árvore"* vivia
+em **`NfseService.js`** (como justificativa para não migrar) e em **`dpsCodigos.js`** (como
+justificativa para os `verificadoNoLeiaute: false`). É falsa desde 19/08/2026 — as duas ficaram
+penduradas porque ninguém voltou aos arquivos depois de versionar o leiaute.
+
+⚠ **Os `verificadoNoLeiaute: false` de `dpsCodigos.js` CONTINUAM `false`.** A frase antiga
+justificava a ausência de FONTE; os campos declaram que **ninguém conferiu aquelas entradas contra o
+schema**. São coisas diferentes, e a segunda segue verdadeira. Promovê-los é conferência a fazer,
+entrada por entrada — e o caso do **MEI** depende disso, com decisão do dono junto.
+
+- **Regressão:** o bloco `⚠⚠ o oráculo confere a versão que a gente EMITE` (5 casos) —
+  o esquema carregado bate com a constante · **varredura textual** proibindo versão fixada no
+  arquivo · os dois pacotes de esquema existem · o reordenamento do `TCTribMunicipal` medido nos
+  dois XSD · e a razão de o par atual sobreviver às duas ordens.
+- ⚠ **Experimento executado** (a regressão realista: alguém restaura os dois literais juntos):
+  **2 vermelhos**, e **os outros 12 continuam verdes** — que é precisamente a prova de que, sem esta
+  guarda, o defeito é silencioso.
+
+## ⚠⚠ RETENÇÃO NA FONTE — as normas versionadas, e o que NÃO foi provado (01/09/2026)
+
+`docs/retencao-fonte/` + `application/fiscal/retencao/`. Pré-requisito da fase que vai dar produtor
+ao grupo `tribFed` da DPS — hoje ele é `return ""` em 100% das emissões e retenção declarada é
+RECUSADA (`NFSE_PIS_COFINS_RETENCAO_NAO_SUPORTADA`).
+
+⚠ **Medido antes de começar: o repositório não tinha UMA LINHA sobre retenção na fonte.** Varredura
+por `4,65`, `10.833`, `459/2004`, `765/2007` e `13.137` em `apps/` e `docs/` devolvia **uma única
+ocorrência** — a COFINS **não cumulativa de 7,6%** do Lucro Real (`docs/fontes-fiscais.md:506`), que
+é **apuração, não retenção**. Terreno novo por inteiro.
+
+### O que ficou provado, com o dispositivo
+
+| regra | dispositivo |
+|---|---|
+| retenção de CSLL+COFINS+PIS sobre serviços | **Lei 10.833/2003, art. 30, caput** |
+| **4,65%** = 1% + 3% + 0,65% | **art. 31, caput** |
+| dispensa **≤ R$ 10,00**, exceto DARF eletrônico via Siafi | **art. 31, § 3º** (Lei 13.137/2015) |
+| a soma mensal para o antigo limite de R$ 5.000 foi **REVOGADA** | **art. 31, § 4º — "(Revogado)"** |
+| **optante do Simples NÃO sofre** essa retenção | **art. 32, III** + IN SRF 459/2004, art. 3º, II |
+| a optante **entrega declaração** ao tomador (Anexo I, 2 vias) | **IN SRF 459/2004, art. 11** |
+| **IRRF dispensado** para o Simples (exceto aplicações) | **IN RFB 765/2007, art. 1º e § único** |
+
+⚠⚠ **A DISPENSA DO SIMPLES ESTÁ NA LEI, NÃO SÓ NA IN.** Uma primeira pesquisa deste projeto
+atribuiu a regra apenas à IN 459 — está corrigido: é o **art. 32, III** da própria Lei 10.833.
+⚠ **Não confunda com o art. 30, § 2º:** aquele fala de quem **PAGA** (fonte pagadora optante não é
+obrigada a reter); o art. 32, III fala de quem **RECEBE**. Para a NFS-e vale o segundo — nosso
+cliente é o prestador.
+
+⚠⚠ **O ANTIGO LIMITE DE R$ 5.000 NÃO EXISTE MAIS**, e é o item que mais se reintroduz de memória
+(muita literatura de 2010 ainda o ensina). Sistema que ainda o aplique **deixa de reter o devido**.
+
+### ⚠⚠ O que NÃO virou dado — regra 1, nomeado em `NAO_VERSIONADO`
+
+**alíquota do IRRF sobre serviços** (não está na Lei 10.833 — vive na legislação do IR, não
+versionada) · **retenção previdenciária de 11%** (Lei 8.212/1991, art. 31, e a interação com o
+Anexo IV: `vRetCP` fica **sem produtor**) · **a lista fechada dos "serviços profissionais"** do art. 30
+(quem declara é o **contador, por perfil** — derivar do CNAE erraria nos dois sentidos) ·
+**IN RFB 1.234/2012** (órgãos públicos, outro regime) · **ISS retido no Simples** (LC 123, arts. 13
+§ 1º, 18 § 6º e 21 § 4º — retenção MUNICIPAL, e a LC 123 não está versionada aqui).
+
+### As quatro armadilhas das fontes — todas custaram uma tentativa
+
+1. **O Planalto recusa `curl` sem `User-Agent`** (já escrito em `docs/lc116/README.md`).
+2. ⚠⚠ **`normas.receita.fazenda.gov.br` é REDIRECIONADOR para uma SPA.** `link.action?idAto=N`
+   responde **200 com 2.639 bytes de JavaScript**; o fragmento `#` nunca chega ao servidor. Quem
+   serve o texto é a API da SPA — `…/api/consulta-externa/ato/<idAto>/visao/vigente` —, **e ela
+   exige `Referer`** (sem ele, 403). Descoberta lendo as requisições da página no navegador.
+3. ⚠⚠ **O JSON traz AS DUAS REDAÇÕES do mesmo dispositivo** — a mesma armadilha que a LC 116 paga no
+   HTML. O art. 3º, II da IN 459 aparece duas vezes, e a antiga tem `omitir: true`/`compilado: false`.
+   Lido cru, sai a **revogada**. Filtro: `compilado === true && omitir !== true` (70 de 76 segmentos).
+4. O Planalto mistura `&#150;` com hífen e é **ISO-8859-1 com CRLF**.
+
+⚠ `.gitattributes` já cobre `docs/** -text` desde 25/08/2026 — os hashes continuam conferindo.
+
+### O gerador e os gates
+
+`node apps/api/scripts/gerar-tabelas-retencao.mjs` → `fiscal/retencao/retencao.data.js`.
+**Zero rede.** Confere o SHA-256 dos três artefatos e exige, **literalmente**, a frase que institui
+cada valor. ⚠ Não há o que contar aqui (são poucos números), então o gate é de **conteúdo**, não de
+contagem.
+
+⚠ **Contraprova embutida:** o gerador **aborta** se o texto da IN 459 contiver a redação revogada —
+é o que prova que o filtro está de fato cortando, em vez de o gate passar sobre o documento inteiro.
+
+**Experimentos executados:** (1) um byte a mais num artefato ⇒ aborta pelo hash, nomeando esperado
+× obtido; (2) filtro `compilado && !omitir` desligado ⇒ aborta acusando a redação revogada.
+
+### ⚠⚠ ELA NASCE INERTE, no molde da NBS
+
+Nenhum arquivo de `application/nfse/` a importa, e **há teste varrendo o diretório para garantir**.
+Montar `tribFed` **muda o XML de nota fiscal em produção** — é ato do dono, não consequência de a
+tabela existir. Quem ligar faz o teste cair, e a decisão fica à vista.
+
+⚠ **`retencaoFederalPeloRegime` responde SÓ pela metade do regime.** `DEVIDA` significa *"o regime
+não dispensa"*, **não** *"retenha"*: faltam o serviço estar na lista do art. 30 (declarado pelo
+contador) e o tomador ser **PJ** (derivado do documento — CPF não retém). Três respostas, e o
+**MEI fica `INDEFINIDA`** de propósito, pelo mesmo motivo de `MEI_NAO_MAPEADO`.
+
+⚠⚠ **DEFEITO MEU, ACHADO PELO PRÓPRIO TESTE — vale mais que a tabela.** `dispensadaPeloPiso(null)`
+respondia **dispensada**: `Number(null)` é `0`, `0 <= 10`, e a função deixava de reter numa nota cujo
+valor ninguém informou. A primeira correção enumerava as ausências (`null`/`undefined`/`""`) e
+**`[]` passou** — `Number([])` também é `0`. A guarda final é por **TIPO ACEITO**, não por lista de
+recusas: enumerar o que se recusa deixa sempre um caso de fora. Mesma família de
+`folhaAusenteNaoEZero`, aqui com desfecho pior. ⚠ **Zero INFORMADO continua dispensando** — a
+distinção é `null` × `0`.
+
+- Regressão: `fiscal/retencao/__tests__/retencao.test.js` (21) — as alíquotas e **a soma que elas
+  têm de fechar**, o piso e a revogação do § 4º, as duas grafias do regime, o terceiro estado, a
+  inércia, e **a ausência do 1,5% e do 11%** (⚠ o primeiro regex usava `\b11\b` e acusava a citação
+  legítima do **art. 11** da IN 459 — teste que acusa a fonte certa é teste que alguém desliga).
+
+## ⚠⚠ PERFIL DE EMISSÃO DE NFS-e — fase 1: o painel, com a integração DESLIGADA (01/09/2026)
+
+O contador configura uma vez; o cliente deixa de responder por nota. Modelo `PerfilEmissaoNfse`
+(`perfis_emissao_nfse`, migration `20260901120000` — **NÃO APLICADA**), regra em
+`application/nfse/perfilEmissao/`, porta em `routes/firm/perfisEmissao.js`, tela em
+`apps/web/.../PainelProximaDps.jsx`.
+
+⚠⚠ **NADA MUDA NO XML NESTA FASE.** `INTEGRACAO_PERFIL_EMISSAO_NFSE` nasce OFF e `buildDpsXml` não
+consulta o perfil. Quem consulta é a TELA.
+
+### Por que ela vale sozinha assim
+
+Hoje `regApTribSN` (`NfseService.js:826`) e `tribISSQN` (`:887`) são **CONSTANTES dentro do
+gerador** — e constante em código é invisível até a nota sair. O contador nunca teve como ver o que
+a empresa dele emite **antes** de emitir. O painel mostra os seis campos com valor, **tag do XML** e
+**procedência** (`PERFIL` · `COMPANY` · `CRAVADO` · `INDEFINIDO`), e nomeia os cravados.
+
+⚠ E é assim que se descobre um defeito que já estava lá: `CadastroFiscal.sublimiteICMSISS` é
+literalmente o cadastro do caso `regApTribSN = 2`. **Empresa do Simples acima do sublimite declara
+hoje o regime de apuração errado**, com o dado que provaria isso já no banco.
+
+### ⚠⚠ SEIS CAMPOS, E NÃO OS TRINTA DO LEIAUTE — a regra que impede o campo morto
+
+`codigoServicoNacional` · `codigoServicoMunicipal` · `cLocPrestacao` · `regEspTrib` · `regApTribSN` ·
+`tribISSQN`. São exatamente os que **`buildDpsXml` já escreve**: o resolvedor tem o que resolver e o
+painel tem contra o que comparar.
+
+**Coluna só nasce com o código que a lê, no mesmo commit.** É o mecanismo que
+`CadastroFiscal.perfilAtividades` não teve — lá, **3 de 8 campos são write-only** e um nem input
+tem. `perfilEmissao/campos.js` é o registro executável: cada campo declara `leitores`, `tag` e
+`caminhoNoXml`, e **há teste que lê o `schema.prisma`** e cai se existir coluna fora da lista ou
+campo da lista sem leitor. ⚠ Experimento executado: coluna `campoFantasma` no model ⇒ **1 vermelho**,
+nomeando-a.
+
+O que ficou de fora está em `FORA_DESTA_FASE`, com o motivo — `pAliq`, `BM`, `exigSusp`,
+`tpImunidade`, `comExt`, `obra`, `tribFed`. ⚠ E `tpRetISSQN` **não é campo de perfil**: a retenção
+do ISS depende do TOMADOR daquela nota, e o cliente marca a caixa (decisão do dono, 01/09/2026).
+
+### A precedência é POR CAMPO, nunca por objeto
+
+`{...cadastro, ...perfil}` faria um perfil com campo em branco **APAGAR** o que a empresa já emite —
+o mesmo defeito do `{...cadastro, ...doCompany}` do `GET /cadastro-fiscal`, consertado no mesmo dia.
+Cada campo carrega `valor`, `fonte`, `valorHoje` e **`mudariaComPerfil`**, que é o que responde
+*"ligar a flag muda o quê?"*.
+
+⚠ **Com 2+ perfis ativos e nenhum padrão, NADA do perfil entra** e a tela diz por quê. Cair no
+primeiro faria a ordenação decidir a tributação.
+
+⚠ **Nada é gravado por leitura.** `perfilDerivadoDoCadastro` calcula o ponto de partida e **não
+grava**: materializar 34 perfis num backfill criaria configuração que ninguém afirmou.
+
+### A porta
+
+`GET/POST/PATCH /firm/companies/:companyId/perfis-emissao`, gate `ACCOUNTANT`. Lista fechada de
+campos com **recusa nomeando** (`campos_nao_aceitos`), `undefined` = não mexer / `null` = apagar,
+409 sem `Company` legada, 409 no nome duplicado, e **o escopo no `where`** — perfil de outra empresa
+não é alcançado pelo id (o furo que a F1 do WhatsApp pagou em `salvarContato`).
+
+⚠ A **autoridade do código de serviço continua sendo o cadastro**: o perfil não grava código fora de
+`Company.codigosServicoNacional`. Lista vazia não é "pode tudo" — é o estado de 33 de 33 empresas.
+
+### O que a fase 1 achou de defeito no caminho
+
+- ⚠⚠ **`REFERENCES "portal_clients"` na primeira versão da migration.** A tabela é `"PortalClient"`
+  (o model não tem `@@map`), e isso **já derrubou a produção** — está escrito em duas migrations
+  anteriores, e foi o aviso delas que pegou. `npm test`, `npm run build` e `prisma validate` **não
+  executam SQL de migration**.
+- ⚠⚠ **`company?.id` não existe na tela: a chave é `companyId`.** Com o id errado o painel não
+  estourava — ficava eternamente em "não recebida", porque a carga sai cedo com id nulo. A tela
+  funcionava e só não mostrava. Terceira família do `legacyCompanySelect`.
+- ⚠ **Não existe `src/api/index.js` em `apps/web`** — o `CLAUDE.md` de lá o descreve e ele nunca
+  existiu; o objeto sai de `createApiClient()`. O import errado derrubou a suíte inteira.
+- ⚠ **O tempo verbal do cabeçalho da tabela é parte do comportamento.** Com a flag OFF ele diz
+  *"De onde viria"*; ligada, *"De onde vem"*. "Vem" numa linha que diz "do perfil de emissão"
+  afirmaria que a próxima nota já sai assim — e não sai.
+
+### Regressão
+
+`nfse/perfilEmissao/__tests__/perfilEmissao.test.js` (30) · `routes/firm/__tests__/perfisEmissaoRota.test.js` (25)
+· web `lib/nfse/__tests__/perfilEmissao.test.js` (21, **com o amarre**: importa a lista do backend e
+exige mesmos ids, ordem, tags, caminhos e enumerações) · web
+`__tests__/painelProximaDpsNaTela.test.jsx` (15).
+
+⚠ **Verificado no navegador** (mock, porta própria): as seis linhas com a tag, os dois cravados em
+âmbar, criar o perfil derivado e a coluna virando "do perfil de emissão" — **com o rodapé mantendo
+"nada sairia diferente"**, que é a inércia esperada de um perfil derivado do próprio cadastro.
+
+## ⚠⚠ PERFIL DE EMISSÃO — fase 2: o perfil manda no XML, e a tela do cliente encolhe (01/09/2026)
+
+`INTEGRACAO_PERFIL_EMISSAO_NFSE` continua **OFF**. O que a fase 2 acrescenta é o CAMINHO: com ela
+ligada, `buildDpsXml` passa a ler o perfil nos seis campos; e a tela do cliente já deixou de
+perguntar o que o perfil responde.
+
+### ⚠⚠ A PROVA DE ACEITE — executada, não prometida
+
+**Perfil derivado do cadastro + flag LIGADA ⇒ XML byte-idêntico ao da flag desligada.**
+`nfse/__tests__/perfilNaEmissao.test.js` emite duas vezes, em registries isolados, e compara o
+**corpo real enviado** (gzip+base64 desempacotado). Também prova que a flag OFF **ignora** um perfil
+que mudaria tudo, e que a flag ON **sem perfil** não muda nada — o caso de 33 das 34 empresas no dia
+em que ela for ligada.
+
+⚠ Experimento: com o perfil derivado divergindo em um campo, o teste fica vermelho **mostrando a
+linha do XML** (`<regApTribSN>1</regApTribSN>` × `2`).
+
+### Dois campos deixaram de ser constante
+
+`regApTribSN` e `tribISSQN` saíam cravados de `buildDpsXml`. Agora vêm do perfil quando ele responde
+— e **sem perfil continuam "1"**. A mudança é de FONTE, não de valor padrão. É o que destrava a
+**exportação de serviço** (`tribISSQN = 3`) e o **sublimite** (`regApTribSN = 2`).
+
+⚠ **Precedência POR CAMPO, e o perfil vence o payload.** Campo nulo/vazio no perfil **não apaga** o
+cadastro — há dois casos travando exatamente isso, porque `{...cadastro, ...perfil}` sairia numa
+nota fiscal.
+
+⚠ **O cadastro continua sendo a autoridade do `cTribNac`**: o código do perfil passa pela MESMA
+trava (`escolherCodigoServicoNacional`) no pré-voo, **antes de reservar numeração**.
+
+⚠ **`carregarPerfilDeEmissao` nunca lança.** Tabela não criada, banco fora, empresa sem
+`PortalClient` — em todos, `null`, que é o comportamento de hoje.
+
+### O `perfilId` viaja; os VALORES não
+
+`validateNfsePayload` aceita `perfilId` (whitelist). É a mesma razão pela qual `pTotTribFed/Est/Mun`
+nunca viajam: valor no corpo faz um valor velho preso no formulário sobrescrever, em silêncio, a
+correção do contador. Com o id, quem lê a configuração é o servidor, sempre a atual.
+
+### A tela do cliente
+
+`GET /client/companies/:id/nfse/perfis` — **só leitura**, devolve **id, nome e padrão** e nada mais.
+Regra em `portal-cliente-web/.../lib/perfilDaNota.js`; a tela só liga.
+
+| | sem perfil | 1 perfil | 2+ perfis |
+|---|---|---|---|
+| seletor | não | não | **sim**, sem pré-seleção |
+| código de serviço | como era | **some** | **some** |
+| município da prestação | como era | **some** | **some** |
+| `perfilId` no corpo | — | **não viaja** | viaja |
+
+⚠⚠ **COM VÁRIOS E NENHUM ESCOLHIDO, A TELA RECUSA** — e não cai no `padrao`. Os perfis existem
+porque a empresa tem operações com tributação diferente; cair no padrão faria o padrão virar a
+resposta de quem não respondeu, numa nota irreversível.
+
+⚠ **Campo que sai da tela sai do CORPO** — teste varrendo o `JSON.stringify` do payload inteiro.
+
+### ⚠⚠ TRÊS CAMPOS NÃO SAÍRAM DA TELA, e um deles corrige o plano
+
+| campo | por quê |
+|---|---|
+| **Alíquota efetiva do Simples** | ⚠⚠ Ela é `DAS ÷ faturamento` **da competência** e muda TODO MÊS com o RBT12. Um perfil é estático: guardá-la ali congelaria uma alíquota variável e declararia ao tomador um percentual velho, **impresso na nota** (Lei 12.741/2012). **O plano dizia que ela viria do perfil — está errado, e por isso ela fica.** Ela já não é digitada: o portal a preenche da rota `/aliquotas`. |
+| **Alíquota do ISS** | `pAliq` ainda não existe no perfil (o gerador não monta `tribMun/pAliq`). Fica, e só aparece com a caixa marcada. |
+| **Caixa "ISS retido"** | Decisão do dono: depende do TOMADOR daquela nota. |
+
+⚠⚠ **PENDENTE E NOMEADO: a caixa de ISS retido ainda NÃO aparece no Simples.** A decisão do dono de
+01/09/2026 (*"o cliente na tela dele deve poder selecionar se é retido ou não"*) exige mexer em
+`impostosDaNota.js`, que hoje esconde o bloco de ISS inteiro no Simples por decisão de 18/08/2026 e
+tem suíte própria travando isso. **Não foi feito nesta fase** — é mudança de uma decisão registrada,
+e vale a pena fazê-la junto do `pAliq`, que é a outra metade da mesma regra (**E0621**).
+
+### Regressão
+
+`nfse/__tests__/perfilNaEmissao.test.js` (11) · client `lib/__tests__/perfilDaNota.test.js` (23) ·
+client `__tests__/perfilNaTela.ligacao.test.jsx` (11).
+
+⚠ **Verificado no navegador** (mock, `pc-001` com dois perfis): o seletor aparece com "Escolha…" e
+**sem pré-seleção**, o seletor de código de serviço e o município da prestação **sumiram**, e a
+alíquota efetiva do Simples **continua**, com o selo "preenchido pelo portal".
+
+⚠ **Duas armadilhas do harness de teste, para quem for escrever o próximo:** o certificado é
+`pfxBuffer`/`password` (não `pfx`/`passphrase`) e o cliente axios precisa de `defaults.baseURL` —
+com qualquer um errado a emissão morre ANTES do POST, o XML sai vazio, e **comparações
+"byte-idêntico" passam comparando `""` com `""`**. Foi um `expect(hoje).toBeTruthy()` que denunciou.
+
+⚠⚠ **E NUNCA escreva comentário XML (`<!-- -->`) dentro do template de `buildDpsXml`**: ele iria
+para dentro do documento fiscal assinado. A primeira versão desta fase fez isso — e só não passou
+porque o backtick de dentro do comentário fechou o template e derrubou seis suítes.
 
 ## Endpoints agregados do dashboard (Lote C)
 

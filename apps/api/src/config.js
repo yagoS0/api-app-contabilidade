@@ -498,6 +498,32 @@ export const INTEGRACAO_WHATSAPP = process.env.INTEGRACAO_WHATSAPP === "1";
 // consequência de "os testes passaram".
 export const INTEGRACAO_NFSE_LOTE = process.env.INTEGRACAO_NFSE_LOTE === "1";
 
+// === O PERFIL DE EMISSÃO PASSA A MANDAR NO XML — nasce DESLIGADO ===
+//
+// ⚠⚠ O QUE ESTA FLAG GOVERNA É SÓ A ÚLTIMA METADE: se `buildDpsXml` LÊ o perfil. Com ela desligada
+// o perfil é gravado, lido e MOSTRADO ao contador (a tela diz o que a próxima DPS vai levar e de
+// onde cada valor sai), e o XML continua exatamente como hoje — das colunas da `Company`.
+//
+// Ligar significa que a configuração do contador passa a decidir `cTribNac`, `cTribMun`,
+// `cLocPrestacao`, `regEspTrib`, `regApTribSN` e `tribISSQN` de **nota fiscal real e irreversível**.
+// Dois desses hoje estão CRAVADOS no gerador (`regApTribSN="1"` e `tribISSQN="1"`), então ligar
+// **muda o XML** de quem tiver perfil — inclusive para melhor, que é o ponto, mas muda.
+//
+// ⚠ A prova de que ligar não mexe em quem não configurou nada: um perfil derivado do cadastro atual
+// tem de produzir XML **byte-idêntico** ao da flag desligada. Está travado em teste.
+//
+// ⚠ Ligar é ato do DONO, acompanhando a primeira empresa. Não é decisão de agente, e não é
+// consequência de "os testes passaram". Mesmo molde de `INTEGRACAO_NFSE_LOTE`.
+export const INTEGRACAO_PERFIL_EMISSAO_NFSE = process.env.INTEGRACAO_PERFIL_EMISSAO_NFSE === "1";
+
+if (INTEGRACAO_PERFIL_EMISSAO_NFSE) {
+  log.warn(
+    "INTEGRACAO_PERFIL_EMISSAO_NFSE=1: o PERFIL DE EMISSÃO está LIGADO. A configuração do contador "
+      + "passa a decidir campos do XML da NFS-e — inclusive `regApTribSN` e `tribISSQN`, hoje "
+      + "cravados no gerador."
+  );
+}
+
 if (INTEGRACAO_NFSE_LOTE) {
   log.warn(
     "INTEGRACAO_NFSE_LOTE=1: a emissão de NFS-e EM LOTE está LIGADA. Cada linha de planilha vira "

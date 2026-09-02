@@ -81,7 +81,7 @@ import { XMLParser } from "fast-xml-parser";
 import axios from "axios";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { resolverCertificadosDaEmpresa } from "../nfseCertificado.js";
-import { NfseService } from "../NfseService.js";
+import { NfseService, DPS_VERSAO } from "../NfseService.js";
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // O XSD OFICIAL
@@ -90,26 +90,51 @@ import { NfseService } from "../NfseService.js";
 // ⚠ O caminho é PROCURADO subindo a árvore, não montado a partir do CWD: a suíte roda ora da
 // raiz do monorepo, ora de `apps/api`, e um caminho relativo ao CWD acharia o schema num caso e
 // não no outro — fazendo o teste "passar" por não ter o que conferir. Não achar é ERRO ALTO.
+// ⚠⚠ A VERSÃO SAI DE `DPS_VERSAO`, NUNCA DE UM LITERAL AQUI — e isto é o conserto de um
+// FALSO-VERDE que estava vivo.
+//
+// Até 01/09/2026 este arquivo fixava `"1.01"` no caminho e nos nomes dos arquivos, enquanto
+// `NfseService.js` emitia `versao="1.00"`. **O oráculo validava o documento contra o esquema de
+// outra versão.** Hoje isso é inofensivo — conferido: `TCInfoPrestador`, `TCInfoValores`,
+// `TCInfoPessoa`, `TCRegTrib`, `TCTribFederal`, `TCTribOutrosPisCofins`, `TCTotTrib`, `TCCServ` e
+// `TCEndereco` são idênticos nas duas versões, e o único acréscimo do 1.01 em `TCInfDPS` é o grupo
+// `IBSCBS` (`minOccurs=0`), que não emitimos.
+//
+// ⚠⚠ MAS `TCTribMunicipal` REORDENOU OS FILHOS ENTRE AS DUAS VERSÕES:
+//
+//   1.00: tribISSQN · cPaisResult? · BM? · exigSusp? · tpImunidade? · pAliq? · tpRetISSQN
+//   1.01: tribISSQN · cPaisResult? · tpImunidade? · exigSusp? · BM? · tpRetISSQN · pAliq?
+//
+// `xs:sequence` faz a ORDEM ser contrato. Hoje o gerador escreve só `tribISSQN` + `tpRetISSQN`, e
+// esse par mantém a ordem relativa nas duas — por isso o XML atual passa em ambas e o desalinhamento
+// não doía. **No instante em que `pAliq` ou `BM` entrarem, a ordem passa a depender da versão
+// declarada**, e um oráculo apontado para o esquema errado APROVARIA a ordem trocada. É a classe
+// exata do E1235 que recusou três notas reais em 21/08/2026 — com o agravante de que o único teste
+// escrito para impedir essa classe seria justamente o que diria que está tudo bem.
 const SUFIXO = path.join(
   "docs",
   "leiaute-nfse",
   "documentacao-tecnica",
   "esquemas-xsd",
   "Schemas",
-  "1.01"
+  DPS_VERSAO
 );
+const ARQUIVO_TIPOS_COMPLEXOS = `tiposComplexos_v${DPS_VERSAO}.xsd`;
+const ARQUIVO_TIPOS_SIMPLES = `tiposSimples_v${DPS_VERSAO}.xsd`;
 const SCHEMAS = (() => {
   let dir = process.cwd();
   for (let i = 0; i < 8; i += 1) {
     const tentativa = path.join(dir, SUFIXO);
-    if (fs.existsSync(path.join(tentativa, "tiposComplexos_v1.01.xsd"))) return tentativa;
+    if (fs.existsSync(path.join(tentativa, ARQUIVO_TIPOS_COMPLEXOS))) return tentativa;
     const pai = path.dirname(dir);
     if (pai === dir) break;
     dir = pai;
   }
   throw new Error(
-    `XSD oficial não encontrado a partir de ${process.cwd()} (esperado .../${SUFIXO}). ` +
-      "Sem o schema este teste não confere NADA — falhar aqui é melhor que passar vazio."
+    `XSD oficial da versão ${DPS_VERSAO} não encontrado a partir de ${process.cwd()} `
+      + `(esperado .../${SUFIXO}/${ARQUIVO_TIPOS_COMPLEXOS}). `
+      + "Sem o schema DA VERSÃO QUE EMITIMOS este teste não confere NADA — falhar aqui é melhor "
+      + "que passar vazio, e é melhor ainda que passar conferindo contra outra versão."
   );
 })();
 
@@ -121,8 +146,8 @@ const parser = new XMLParser({
   parseTagValue: false,
 });
 
-function lerXsd(arquivo) {
-  return parser.parse(fs.readFileSync(path.join(SCHEMAS, arquivo), "utf-8"));
+function lerXsd(arquivo, dir = SCHEMAS) {
+  return parser.parse(fs.readFileSync(path.join(dir, arquivo), "utf-8"));
 }
 
 /** Nós de um array `preserveOrder` cujo nome (sem prefixo `xs:`) seja `nome`. */
@@ -172,12 +197,13 @@ function lerParticulas(lista) {
   return out;
 }
 
-function carregarEsquema() {
+function carregarEsquema(versao = DPS_VERSAO) {
   const complexos = new Map();
   const simples = new Map();
+  const dir = path.join(path.dirname(SCHEMAS), versao);
 
-  for (const arquivo of ["tiposComplexos_v1.01.xsd", "tiposSimples_v1.01.xsd"]) {
-    const raiz = conteudo(lerXsd(arquivo).find((n) => conteudo(n, "schema")), "schema");
+  for (const arquivo of [`tiposComplexos_v${versao}.xsd`, `tiposSimples_v${versao}.xsd`]) {
+    const raiz = conteudo(lerXsd(arquivo, dir).find((n) => conteudo(n, "schema")), "schema");
 
     for (const ct of filhos(raiz, "complexType")) {
       const nome = attrs(ct)["@name"];
@@ -217,16 +243,17 @@ function carregarEsquema() {
   return { complexos, simples };
 }
 
-const { complexos, simples } = carregarEsquema();
+const ESQUEMA = carregarEsquema();
+const { complexos, simples } = ESQUEMA;
 
 /** Achata a cadeia de `base` de um tipo simples (TSCEP → xs:string, TSLogradouro → TSString → …). */
-function facetasDe(tipo) {
+function facetasDe(tipo, esq = ESQUEMA) {
   const acc = { padroes: [], enumeracoes: [], maxLength: undefined, minLength: undefined };
   let atual = tipo;
   const visto = new Set();
-  while (atual && simples.has(atual) && !visto.has(atual)) {
+  while (atual && esq.simples.has(atual) && !visto.has(atual)) {
     visto.add(atual);
-    const s = simples.get(atual);
+    const s = esq.simples.get(atual);
     acc.padroes.push(...s.padroes);
     if (s.enumeracoes.length) acc.enumeracoes.push(...s.enumeracoes);
     if (acc.maxLength === undefined) acc.maxLength = s.maxLength;
@@ -245,8 +272,8 @@ function facetasDe(tipo) {
 //   4. `xs:choice` recebe NO MÁXIMO uma opção (e ao menos uma, quando obrigatória);
 //   5. o texto das folhas casa com `pattern` / `enumeration` / `maxLength` / `minLength` do tipo.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-function conferir(nos, tipoComplexo, caminho, erros) {
-  const particulas = complexos.get(tipoComplexo);
+function conferir(nos, tipoComplexo, caminho, erros, esq = ESQUEMA) {
+  const particulas = esq.complexos.get(tipoComplexo);
   if (!particulas) {
     erros.push(`${caminho}: complexType '${tipoComplexo}' não existe no XSD`);
     return;
@@ -318,12 +345,12 @@ function conferir(nos, tipoComplexo, caminho, erros) {
     const info = permitido.get(nome);
     if (!info) continue;
     const tipo = info.p.xsdTipo;
-    if (complexos.has(tipo)) {
-      conferir(no[nome], tipo, `${caminho}/${nome}`, erros);
+    if (esq.complexos.has(tipo)) {
+      conferir(no[nome], tipo, `${caminho}/${nome}`, erros, esq);
       continue;
     }
     const texto = (no[nome] || []).map((c) => c["#text"] ?? "").join("");
-    const f = facetasDe(tipo);
+    const f = facetasDe(tipo, esq);
     if (f.enumeracoes.length && !f.enumeracoes.includes(texto)) {
       erros.push(
         `${caminho}/${nome}: '${texto}' não é valor de '${tipo}' (${f.enumeracoes.join("|")})`
@@ -346,12 +373,12 @@ function conferir(nos, tipoComplexo, caminho, erros) {
 }
 
 /** Devolve a lista de recusas do XSD para um XML de DPS. Vazia = o XML cabe no esquema. */
-function recusasDoXsd(xml) {
+function recusasDoXsd(xml, esq = ESQUEMA) {
   const arvore = parser.parse(xml);
   const dps = arvore.find((n) => Object.keys(n).includes("DPS"));
   if (!dps) return ["o XML não tem elemento raiz <DPS>"];
   const erros = [];
-  conferir(dps.DPS, "TCDPS", "DPS", erros);
+  conferir(dps.DPS, "TCDPS", "DPS", erros, esq);
   return erros;
 }
 
@@ -428,6 +455,91 @@ beforeEach(() => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
+
+describe("⚠⚠ o oráculo confere a versão que a gente EMITE — e nada mais", () => {
+  it("o esquema carregado é o de `DPS_VERSAO`", () => {
+    // A trava do falso-verde. Se alguém trocar `DPS_VERSAO` e não houver esquema daquela versão, o
+    // `SCHEMAS` já lança na carga do módulo; aqui se prende o par para que ninguém volte a fixar a
+    // versão neste arquivo.
+    expect(path.basename(SCHEMAS)).toBe(DPS_VERSAO);
+    expect(ARQUIVO_TIPOS_COMPLEXOS).toBe(`tiposComplexos_v${DPS_VERSAO}.xsd`);
+    expect(ARQUIVO_TIPOS_SIMPLES).toBe(`tiposSimples_v${DPS_VERSAO}.xsd`);
+    expect(fs.existsSync(path.join(SCHEMAS, ARQUIVO_TIPOS_COMPLEXOS))).toBe(true);
+    expect(fs.existsSync(path.join(SCHEMAS, ARQUIVO_TIPOS_SIMPLES))).toBe(true);
+  });
+
+  it("nenhuma versão de esquema fica FIXADA no texto deste arquivo", () => {
+    // ⚠ É a guarda de verdade: as asserções acima continuariam verdes se alguém reintroduzisse um
+    // literal em OUTRO ponto do arquivo. Aqui se varre o texto inteiro atrás de `_v1.NN.xsd` e de
+    // `Schemas/1.NN` escritos à mão. Comentários são o único lugar onde citar a versão é legítimo —
+    // e é exatamente onde a explicação do reordenamento precisa citá-las.
+    const fonte = fs.readFileSync(__filename, "utf-8");
+    const semComentarios = fonte
+      .split("\n")
+      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+      .join("\n");
+    expect(semComentarios).not.toMatch(/tipos(Complexos|Simples)_v\d\.\d\d\.xsd/);
+    expect(semComentarios).not.toMatch(/["']Schemas["']\s*,\s*["']\d\.\d\d["']/);
+  });
+
+  it("⚠⚠ as duas versões do esquema EXISTEM — o impedimento para migrar não é mais a falta do XSD", () => {
+    // A frase "o projeto não tem o XSD versionado" vivia em `NfseService.js` e em `dpsCodigos.js`
+    // como justificativa escrita para NÃO migrar. Ela é falsa desde 19/08/2026. Este caso a mantém
+    // falsa: se alguém apagar um dos pacotes, ele cai e a afirmação volta a ser verificável.
+    const raizSchemas = path.dirname(SCHEMAS);
+    for (const v of ["1.00", "1.01"]) {
+      expect(fs.existsSync(path.join(raizSchemas, v, `tiposComplexos_v${v}.xsd`))).toBe(true);
+    }
+  });
+
+  it("⚠⚠ `TCTribMunicipal` REORDENOU entre 1.00 e 1.01 — é por isso que a versão importa", () => {
+    // O motivo de existir desta seção inteira, medido na fonte em vez de argumentado. Se um dia as
+    // duas ordens coincidirem, este caso cai — e aí a amarração pode ser reavaliada com dado.
+    const ordemDe = (v) => {
+      const raiz = conteudo(
+        parser
+          .parse(
+            fs.readFileSync(
+              path.join(path.dirname(SCHEMAS), v, `tiposComplexos_v${v}.xsd`),
+              "utf-8",
+            ),
+          )
+          .find((n) => conteudo(n, "schema")),
+        "schema",
+      );
+      const ct = filhos(raiz, "complexType").find((n) => attrs(n)["@name"] === "TCTribMunicipal");
+      const seq = filhos(conteudo(ct, "complexType"), "sequence")[0];
+      return conteudo(seq, "sequence")
+        .map((n) => attrs(n)["@name"])
+        .filter(Boolean);
+    };
+
+    const a = ordemDe("1.00");
+    const b = ordemDe("1.01");
+
+    // Mesmos filhos, ordem diferente — a distinção que um `xs:sequence` transforma em contrato.
+    expect([...a].sort()).toEqual([...b].sort());
+    expect(a).not.toEqual(b);
+
+    // E as posições exatas, para o dia em que alguém for montar `pAliq`/`BM` e precisar do de-para.
+    expect(a).toEqual([
+      "tribISSQN", "cPaisResult", "BM", "exigSusp", "tpImunidade", "pAliq", "tpRetISSQN",
+    ]);
+    expect(b).toEqual([
+      "tribISSQN", "cPaisResult", "tpImunidade", "exigSusp", "BM", "tpRetISSQN", "pAliq",
+    ]);
+  });
+
+  it("⚠ o par que o gerador escreve HOJE mantém a ordem relativa nas DUAS — por isso ninguém sentiu", () => {
+    // É a explicação de por que o desalinhamento passou despercebido, e a medida de quanto tempo
+    // resta: enquanto `tribMun` tiver só estes dois filhos, as duas versões concordam.
+    const soOsDois = (ordem) => ordem.filter((n) => n === "tribISSQN" || n === "tpRetISSQN");
+    const em100 = ["tribISSQN", "cPaisResult", "BM", "exigSusp", "tpImunidade", "pAliq", "tpRetISSQN"];
+    const em101 = ["tribISSQN", "cPaisResult", "tpImunidade", "exigSusp", "BM", "tpRetISSQN", "pAliq"];
+    expect(soOsDois(em100)).toEqual(["tribISSQN", "tpRetISSQN"]);
+    expect(soOsDois(em100)).toEqual(soOsDois(em101));
+  });
+});
 
 describe("o verificador de XSD morde de verdade", () => {
   // ⚠ Sem esta contraprova, um bug no LEITOR do XSD faria toda a suíte passar em silêncio —
@@ -543,6 +655,145 @@ describe("a DPS que o gerador produz cabe no XSD oficial", () => {
     expect(recusasDoXsd(xmlEnviado())).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A INÉRCIA DA MIGRAÇÃO 1.00 → 1.01 — a evidência que AUTORIZA subir `DPS_VERSAO`
+//
+// A migração é UMA LINHA (`DPS_VERSAO`), e é por isso que ela precisa de prova, não de argumento:
+// uma linha é fácil de subir e o efeito dela é um documento fiscal com outra versão declarada.
+// A prova aqui é a mais forte que este oráculo consegue dar — **o MESMO XML emitido é validado
+// contra os DOIS pacotes de esquema**, com a checagem inteira (existência, ordem do `xs:sequence`,
+// obrigatórios, `xs:choice` e as facetas dos tipos simples). Não é "gerar duas vezes e comparar":
+// é o documento que sai hoje cabendo nas duas.
+//
+// ⚠⚠ DOZE TIPOS COMPLEXOS MUDARAM entre as versões, e CINCO deles o gerador escreve. Isto
+// contraria a leitura anterior deste projeto, que dizia que só o `TCTribMunicipal` havia mudado:
+//
+//   TCInfDPS         +IBSCBS? no fim                    → inerte (opcional, não escrevemos)
+//   TCServ           −lsadppu? −explRod?                → inerte (não escrevemos nenhum dos dois)
+//   TCLocPrest       o grupo podia casar com o VAZIO      → inerte SÓ porque sempre escrevemos
+//                    e passou a exigir UMA opção            `cLocPrestacao`; ver o caso próprio
+//   TCEndereco       idem, com outra codificação          → inerte SÓ porque sempre escrevemos
+//                                                           `endNac` no endereço do tomador
+//   TCTribMunicipal  reordenou os 7 filhos              → inerte SÓ porque escrevemos 2 deles,
+//                                                         e esse par mantém a ordem relativa
+//
+// ⚠ "Inerte por acidente feliz" é diferente de "inerte por construção", e os TRÊS últimos são do
+// primeiro tipo. É exatamente por isso que a inércia é MEDIDA a cada execução, e não anotada.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+describe("⚠⚠ o MESMO XML emitido cabe nas DUAS versões do esquema", () => {
+  const OUTRA_VERSAO = DPS_VERSAO === "1.00" ? "1.01" : "1.00";
+  const esquemaDaOutra = carregarEsquema(OUTRA_VERSAO);
+
+  const CENARIOS = [
+    ["Simples Nacional", { cadastroFiscal: { regime: "SIMPLES_NACIONAL" } }, PAYLOAD_BASE],
+    ["Lucro Presumido com carga tributária", { empresa: CARGA, cadastroFiscal: PRESUMIDO }, PAYLOAD_BASE],
+    [
+      "com ISS retido pelo tomador",
+      { empresa: CARGA, cadastroFiscal: PRESUMIDO },
+      { ...PAYLOAD_BASE, servico: { ...PAYLOAD_BASE.servico, issRetido: true } },
+    ],
+  ];
+
+  for (const [nome, cenario, payload] of CENARIOS) {
+    it(`${nome} — cabe em ${DPS_VERSAO} E em ${OUTRA_VERSAO}`, async () => {
+      montarCenario(cenario);
+      await NfseService.issue({ data: payload, log });
+      const xml = xmlEnviado();
+      // ⚠ A guarda que impede o falso-verde do falso-verde: comparar `[]` com `[]` passaria com um
+      // XML vazio, e este projeto já pagou por isso (ver `perfilNaEmissao.test.js`).
+      expect(xml).toMatch(/<infDPS/);
+      expect(recusasDoXsd(xml)).toEqual([]);
+      expect(recusasDoXsd(xml, esquemaDaOutra)).toEqual([]);
+    });
+  }
+
+  it("⚠⚠ DOIS grupos que podiam ficar VAZIOS na 1.00 passaram a exigir UMA opção na 1.01", () => {
+    // O achado mais perto de um bloqueio real que esta migração tem — e o que quase virou alarme
+    // falso, porque uma primeira leitura por regex não enxergou o `xs:choice` e reportou os filhos
+    // como "opcionais → obrigatórios".
+    //
+    // ⚠⚠ E O APERTO ESTÁ CODIFICADO DE DUAS FORMAS DIFERENTES, para a MESMA mudança de efeito:
+    //   TCLocPrest  → o `xs:choice` sempre foi obrigatório; o que mudou foi o `minOccurs="0"` das
+    //                 DUAS OPÇÕES sumir (choice obrigatório cujas opções são todas opcionais casa
+    //                 com o vazio — por isso 1.00 aceitava o grupo sem filho nenhum);
+    //   TCEndereco  → o `minOccurs="0"` estava no PRÓPRIO `xs:choice`, e sumiu.
+    // Ler só um dos dois lugares dá a resposta errada sobre o outro.
+    //
+    // Passamos nos dois porque `buildDpsXml` sempre escreve `<cLocPrestacao>` (ausente, cai para o
+    // `cLocEmi`) e sempre escreve `<endNac>` no endereço do tomador. ⚠ Quem tornar qualquer um dos
+    // dois condicional precisa escrever o IRMÃO (`cPaisPrestacao` / `endExt`): deixar os dois de
+    // fora é DPS recusada na 1.01 — e ACEITA na 1.00, então o defeito não apareceria antes da troca.
+    // ⚠ EXPERIMENTO EXECUTADO (tirando o `<cLocPrestacao>` do gerador): os TRÊS cenários ficam
+    // vermelhos, e nos DOIS esquemas — não só no 1.01. O motivo é que `conferir` exige uma opção
+    // sempre que o `xs:choice` é obrigatório, sem olhar o `minOccurs="0"` das opções; ou seja, o
+    // oráculo é mais ESTRITO que o 1.00 neste ponto. É desvio na direção segura (recusa o que o
+    // 1.00 aceitaria, nunca o contrário), e por isso não produz falso-verde — mas quem for medir a
+    // diferença entre as versões precisa saber que a separação limpa vem do caso abaixo, não do
+    // resultado da emissão.
+    const grupoDe = (esq, tipo) => {
+      const p = esq.complexos.get(tipo).find((x) => x.tipo === "escolha");
+      return {
+        grupoObrigatorio: p.obrigatorio,
+        opcoes: p.opcoes.map((o) => o.nome),
+        opcoesObrigatorias: p.opcoes.map((o) => o.obrigatorio),
+      };
+    };
+    const v100 = carregarEsquema("1.00");
+    const v101 = carregarEsquema("1.01");
+
+    // ── TCLocPrest: o aperto está nas OPÇÕES ──────────────────────────────────────────────────
+    const loc100 = grupoDe(v100, "TCLocPrest");
+    const loc101 = grupoDe(v101, "TCLocPrest");
+    expect(loc100.opcoes).toEqual(["cLocPrestacao", "cPaisPrestacao"]);
+    expect(loc101.opcoes).toEqual(loc100.opcoes);
+    expect(loc100.grupoObrigatorio).toBe(true);
+    expect(loc101.grupoObrigatorio).toBe(true);
+    expect(loc100.opcoesObrigatorias).toEqual([false, false]); // ⇒ casava com o vazio
+    expect(loc101.opcoesObrigatorias).toEqual([true, true]); // ⇒ exige exatamente uma
+
+    // ── TCEndereco: o aperto está no PRÓPRIO choice ───────────────────────────────────────────
+    const end100 = grupoDe(v100, "TCEndereco");
+    const end101 = grupoDe(v101, "TCEndereco");
+    expect(end100.opcoes).toEqual(["endNac", "endExt"]);
+    expect(end101.opcoes).toEqual(end100.opcoes);
+    expect(end100.grupoObrigatorio).toBe(false);
+    expect(end101.grupoObrigatorio).toBe(true);
+  });
+
+  it("⚠ os tipos que DIFEREM entre as versões — medição travada, não anotação", () => {
+    // Se o pacote de esquema for atualizado, esta lista muda e o caso cai. Ele existe para que a
+    // atualização passe por uma leitura humana em vez de escorregar para dentro da emissão.
+    const a = carregarEsquema("1.00").complexos;
+    const b = carregarEsquema("1.01").complexos;
+    const iguais = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+
+    const mudaram = [...a.keys()].filter((n) => b.has(n) && !iguais(a.get(n), b.get(n))).sort();
+    expect(mudaram).toEqual([
+      "TCAtvEvento",
+      "TCBeneficioMunicipal",
+      "TCEnderObraEvento",
+      "TCEndereco",
+      "TCInfDPS",
+      "TCInfNFSe",
+      "TCInfoCompl",
+      "TCInfoObra",
+      "TCLocPrest",
+      "TCServ",
+      "TCTribMunicipal",
+      "TCValoresNFSe",
+    ]);
+
+    // ⚠ Os dois que a 1.01 APAGOU. `TCServ` perdeu os elementos que os referenciavam, e é isso que
+    // torna a remoção inofensiva para nós: o gerador nunca escreveu `lsadppu` nem `explRod`.
+    expect([...a.keys()].filter((n) => !b.has(n)).sort()).toEqual([
+      "TCExploracaoRodoviaria",
+      "TCLocacaoSublocacao",
+    ]);
+  });
+});
+
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // ⚠⚠ DIVERGÊNCIAS AINDA ABERTAS — MEDIDAS AQUI, **NÃO CONSERTADAS**, PENDENTES DO DONO

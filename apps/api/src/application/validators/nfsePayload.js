@@ -166,6 +166,15 @@ export function validateNfsePayload(body) {
       },
       competencia,
       referencia: toNullableString(body.referencia),
+      // ⚠⚠ O PERFIL VIAJA COMO **ID**, NUNCA COMO VALORES. É a mesma razão pela qual
+      // `pTotTribFed/Est/Mun` nunca viajam: se o valor vem no corpo, um valor velho preso no
+      // formulário do cliente sobrescreve em silêncio a correção do contador. Com o id, quem lê a
+      // configuração é o servidor, sempre a atual.
+      //
+      // ⚠ Ele é só uma ESCOLHA ENTRE OS QUE EXISTEM. Um `perfilId` de outra empresa não alcança
+      // nada: `resolverPerfilDeEmissao` filtra por `portalClientId`, e o portal daquela emissão sai
+      // da `Company` já autorizada — não do corpo.
+      perfilId: toNullableString(body.perfilId),
     },
   };
 }

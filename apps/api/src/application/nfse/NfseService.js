@@ -15,6 +15,7 @@ import { normalizarSerie, reservarNumeracao } from "./nfseNumeracao.js";
 import { motivoValido, motivosDoEvento, validarJustificativa } from "./motivosDeEvento.js";
 
 import { escolherCodigoServicoNacional } from "./codigoServicoDaNota.js";
+import { resolverPerfilDeEmissao } from "./perfilEmissao/resolverPerfilDeEmissao.js";
 import { registrarTomadorEmitido } from "./tomadorEmitido.js";
 import {
   classificarFalha,
@@ -25,6 +26,7 @@ import {
   STATUS,
 } from "./desfechoEmissao.js";
 import {
+  INTEGRACAO_PERFIL_EMISSAO_NFSE,
   NFSE_BASE_URL,
   NFSE_ENV,
   NFSE_PATH,
@@ -47,7 +49,7 @@ import {
 //
 // Fica como CONSTANTE, num lugar só, para que a virada seja uma linha quando o dono decidir — e
 // não uma caçada por literais `"1.00"` espalhados. Ver o relatório da Fase 1.
-const DPS_VERSAO = "1.00";
+export const DPS_VERSAO = "1.00";
 
 const REQUIRED_COMPANY_FIELDS = [
   "cnpj",
@@ -526,7 +528,41 @@ function mapProviderItem(item) {
  * @param {string|null} p.regime regime tributário real da empresa (`CadastroFiscal.regime`, com
  *   `Company.regimeTributario` como segunda fonte). ⚠ NÃO tem default: ausente ⇒ recusa.
  */
-function buildDpsXml({ company, data, numeracao, regime }) {
+/**
+ * ⚠⚠ `perfil` É A CAMADA DE CIMA, E `null` É O CAMINHO DE HOJE.
+ *
+ * Ele só chega preenchido com `INTEGRACAO_PERFIL_EMISSAO_NFSE` ligada. `null` faz cada leitura
+ * abaixo cair exatamente no que ela era antes — e é isso que o teste de INÉRCIA prova, byte a byte.
+ *
+ * ⚠ A PRECEDÊNCIA É **POR CAMPO**, e o perfil vence o payload nos seis. O motivo está escrito no
+ * `pTotTrib`: *"um valor velho preso no formulário sobrescreveria em silêncio a correção do
+ * contador"*. Estes seis são configuração do CONTADOR — o cliente não os envia mais.
+ * ⚠ Perfil com campo NULO não apaga nada: cai para o cadastro. `{...cadastro, ...perfil}` seria o
+ * defeito, não a solução.
+ */
+function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
+  // ⚠⚠ DOIS CAMPOS DEIXAM DE SER CONSTANTE AQUI, e é o que a fase 2 destrava:
+  //
+  //   `regApTribSN` .. estava cravado em "1" para TODO optante, e `CadastroFiscal.sublimiteICMSISS`
+  //                    é literalmente o cadastro do caso 2 — empresa do Simples acima do sublimite
+  //                    declarava o regime de apuração ERRADO;
+  //   `tribISSQN` .... estava cravado em "1" — era por isso que exportação de serviço (valor 3) era
+  //                    impossível de declarar, havendo empresa na carteira que presta para o
+  //                    exterior.
+  //
+  // ⚠ Sem perfil, os dois continuam "1". A mudança é de FONTE, não de valor padrão.
+  //
+  // ⚠⚠ NUNCA escreva comentário XML (`<!-- -->`) dentro deste template: ele iria PARA DENTRO do
+  // documento fiscal assinado. A primeira versão desta mudança fez isso — e o backtick de dentro
+  // do comentário fechou o template literal antes da hora, o que derrubou seis suítes e foi o que
+  // denunciou o erro maior. Explicação de código fica em comentário de código, aqui em cima.
+  /** O valor do perfil, se ele respondeu este campo. Vazio conta como não respondido. */
+  const doPerfil = (campo) => {
+    const v = perfil?.[campo];
+    if (v === null || v === undefined) return null;
+    const t = String(v).trim();
+    return t === "" ? null : t;
+  };
   const competencia = formatDateOnly(data.competencia);
   const valorServicosNumber = Number(data.servico.valorServicos || 0);
   const valorServicos = valorServicosNumber.toFixed(2);
@@ -569,7 +605,11 @@ function buildDpsXml({ company, data, numeracao, regime }) {
     ""
   ).replace(/\D+/g, "");
   const cTribNac = cTribNacRaw ? cTribNacRaw.padStart(6, "0").slice(-6) : "";
-  const cTribMunRaw = (company.codigoServicoMunicipal || codigoServico || "")
+  // ⚠ O PERFIL VENCE O CADASTRO — e o `.slice(-3)` continua, porque ele descreve o XML, não o
+  // código que a prefeitura publica. A rota do perfil já grava só `[0-9]{3}`, então aqui o corte é
+  // no-op para valor vindo do perfil; ele segue existindo para o valor legado da `Company`, que
+  // nunca teve comprimento provado.
+  const cTribMunRaw = (doPerfil("codigoServicoMunicipal") || company.codigoServicoMunicipal || codigoServico || "")
     .replace(/\D+/g, "")
     .slice(-3); // padrão municipal usa sufixo de 3 dígitos
   const cTribMun = cTribMunRaw || "";
@@ -595,7 +635,12 @@ function buildDpsXml({ company, data, numeracao, regime }) {
   // Por isso: o local da prestação é **informado**, e a ausência dele cai no emissor (o `caput` da
   // lei, que é a regra geral) — mas de forma EXPLÍCITA, com a suposição registrada no retorno em
   // vez de escondida numa atribuição.
-  const cLocPrestacaoInformado = String(data.servico?.cLocPrestacao || "").replace(/\D+/g, "");
+  // ⚠ O perfil entra como fonte do LOCAL, antes da queda para o emissor. Ele não desfaz a regra
+  // geral do `caput`: ausente no perfil E no payload, a queda e o `localPrestacaoAssumido`
+  // continuam exatamente como eram.
+  const cLocPrestacaoInformado = String(
+    doPerfil("cLocPrestacao") || data.servico?.cLocPrestacao || ""
+  ).replace(/\D+/g, "");
   const cLocPrestacao = cLocPrestacaoInformado.length === 7 ? cLocPrestacaoInformado : cLocEmi;
   const localPrestacaoAssumido = cLocPrestacao === cLocEmi && cLocPrestacaoInformado.length !== 7;
 
@@ -807,9 +852,12 @@ function buildDpsXml({ company, data, numeracao, regime }) {
           // real de empresa não optante que temos versionada
           // (`docs/leiaute-nfse/nfse-nacional-substituicao.xml`) traz `<opSimpNac>1</opSimpNac>`
           // e `<regEspTrib>` **sem `regApTribSN` no meio** — é essa a forma do grupo.
-          isSimples ? `<regApTribSN>1</regApTribSN>` : ""
+          // ⚠⚠ ELE ESTAVA CRAVADO EM "1" PARA TODO OPTANTE, e `CadastroFiscal.sublimiteICMSISS` é
+          // literalmente o cadastro do caso **2** — empresa do Simples acima do sublimite declarava
+          // o regime de apuração ERRADO. Sem perfil, o "1" continua (o comportamento de hoje).
+          isSimples ? `<regApTribSN>${escapeXml(doPerfil("regApTribSN") || "1")}</regApTribSN>` : ""
         }
-        <regEspTrib>${escapeXml(company.regimeEspecialTributacao || "0")}</regEspTrib>
+        <regEspTrib>${escapeXml(doPerfil("regEspTrib") || company.regimeEspecialTributacao || "0")}</regEspTrib>
       </regTrib>
     </prest>
 
@@ -868,7 +916,7 @@ function buildDpsXml({ company, data, numeracao, regime }) {
       }
       <trib>
         <tribMun>
-          <tribISSQN>1</tribISSQN>
+          <tribISSQN>${escapeXml(doPerfil("tribISSQN") || "1")}</tribISSQN>
           <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
         </tribMun>
         ${(() => {
@@ -1139,8 +1187,8 @@ function buildDpsXml({ company, data, numeracao, regime }) {
   return { xml, infId, localPrestacaoAssumido, cLocEmi, cLocPrestacao, opSimpNac, tpRetISSQN };
 }
 
-function buildDpsPayload({ company, data, numeracao, regime, certificadoAssinatura }) {
-  const construido = buildDpsXml({ company, data, numeracao, regime });
+function buildDpsPayload({ company, data, numeracao, regime, certificadoAssinatura, perfil = null }) {
+  const construido = buildDpsXml({ company, data, numeracao, regime, perfil });
   // E0718: quem assina é o certificado do EMITENTE da DPS — resolvido por empresa, nunca o PFX
   // global que ficava em `NFSE_CERT_PFX_PATH`.
   const signedXml = signDpsXml(construido.xml, certificadoAssinatura);
@@ -1188,6 +1236,38 @@ async function carregarRegimeDaEmpresa(company) {
     if (cadastro?.regime) return cadastro.regime;
   }
   return company.regimeTributario || null;
+}
+
+/**
+ * O perfil de emissão que manda nesta nota — ou `null`.
+ *
+ * ⚠⚠ `null` É O CAMINHO DE HOJE, E É O DEFAULT. Com `INTEGRACAO_PERFIL_EMISSAO_NFSE` desligada esta
+ * função devolve `null` sem tocar no banco, e `buildDpsXml` monta o XML exatamente como sempre
+ * montou. A prova disso é um teste de INÉRCIA: perfil derivado do cadastro + flag ligada tem de
+ * produzir XML **byte-idêntico** ao da flag desligada.
+ *
+ * ⚠ Ela NUNCA lança. Tabela ainda não criada (a migration nasce não aplicada), banco indisponível,
+ * empresa sem `PortalClient` — em todos, o desfecho é `null`, que é o comportamento de hoje. Uma
+ * configuração que não pôde ser lida não pode transformar uma emissão legítima em erro.
+ *
+ * ⚠⚠ COM 2+ PERFIS ATIVOS E NENHUM ESCOLHIDO, O RESOLVEDOR JÁ DEVOLVE `temPerfil: false` e nada do
+ * perfil entra — cair no `padrao` faria o padrão virar a resposta de quem não respondeu. Quem
+ * RECUSA a emissão nesse caso é a rota do cliente, com código próprio; aqui o efeito é cair no
+ * cadastro, que é o comportamento anterior e nunca é pior que ele.
+ */
+async function carregarPerfilDeEmissao(company, perfilId) {
+  if (!INTEGRACAO_PERFIL_EMISSAO_NFSE) return null;
+  try {
+    const portal = await prisma.portalClient.findUnique({
+      where: { companyId: company.id },
+      select: { id: true },
+    });
+    if (!portal?.id) return null;
+    const r = await resolverPerfilDeEmissao({ portalClientId: portal.id, perfilId: perfilId || null });
+    return r.temPerfil ? r.perfil : null;
+  } catch {
+    return null;
+  }
 }
 
 function maskSensitive(value) {
@@ -1638,6 +1718,11 @@ export class NfseService {
     // tem default.
     const regime = await carregarRegimeDaEmpresa(company);
 
+    // ⚠⚠ O PERFIL DE EMISSÃO — `null` com a flag desligada, que é o caminho de hoje. Carregado
+    // ANTES da trava do código de serviço porque é ele quem pode fornecer o `cTribNac`, e essa
+    // trava é a autoridade que confere o valor CONTRA O CADASTRO, venha ele de onde vier.
+    const perfilDeEmissao = await carregarPerfilDeEmissao(company, data.perfilId);
+
     // ── 1.b PRÉ-VOO DO CADASTRO ───────────────────────────────────────────────────────────
     //
     // ⚠ TUDO O QUE DÁ PARA SABER SEM O CONTADOR É CONFERIDO ANTES DE ENCOSTAR NELE. Município
@@ -1656,7 +1741,10 @@ export class NfseService {
       resolverCLocEmi(company);
       normalizarSerie(company.rpsSerie);
       const escolha = escolherCodigoServicoNacional({
-        escolhido: data.servico?.codigoServicoNacional,
+        // ⚠ O perfil vence o payload, e mesmo assim PASSA PELA TRAVA: o cadastro continua sendo a
+        // autoridade. Um perfil com código fora da lista habilitada é recusado aqui, ANTES de
+        // reservar numeração — não existe inutilização na NFS-e.
+        escolhido: perfilDeEmissao?.codigoServicoNacional || data.servico?.codigoServicoNacional,
         lista: company.codigosServicoNacional,
         singular: company.codigoServicoNacional,
       });
@@ -1749,6 +1837,8 @@ export class NfseService {
         numeracao,
         regime,
         certificadoAssinatura: certificados.assinatura,
+        // ⚠ `null` com a flag desligada — o caminho de hoje, byte a byte.
+        perfil: perfilDeEmissao,
       });
       rawXml = construido.rawXml;
 

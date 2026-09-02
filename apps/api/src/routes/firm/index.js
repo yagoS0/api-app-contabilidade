@@ -30,6 +30,7 @@ import { createConferenciaRouter } from "./conferencia.js";
 import { createRecorrenciaRouter } from "./recorrencia.js";
 import { createNotasRouter } from "./notas.js";
 import { createApuracaoV2Router } from "./apuracaoV2.js";
+import { createPerfisEmissaoRouter } from "./perfisEmissao.js";
 import { createPlanejamentoRouter } from "./planejamento.js";
 import { createCompanyDocumentsRouter } from "./companyDocuments.js";
 import { createCompanyCredentialsRouter } from "./companyCredentials.js";
@@ -5093,6 +5094,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Q14.2.d: Apuração v2 — cadastro fiscal, produtos/serviços, pendências, classificar v2
   const apuracaoV2Router = createApuracaoV2Router({ log });
   router.use("/companies/:companyId", apuracaoV2Router);
+
+  // Perfis de emissão de NFS-e — a configuração que o contador faz uma vez pelo cliente.
+  // ⚠ Nasce com a integração DESLIGADA: o GET serve o painel; nada muda no XML.
+  router.use("/companies/:companyId", createPerfisEmissaoRouter({ log }));
 
   // Planejamento tributário — SÓ LEITURA. Monta os campos da empresa (com a procedência de cada
   // um) que a tela de simulação de regime pré-preenche. Não grava nada.

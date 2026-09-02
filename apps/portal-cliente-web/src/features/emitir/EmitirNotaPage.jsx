@@ -73,6 +73,15 @@ import {
   lerRegime,
   pTotTribSNParaOPayload,
 } from "./lib/impostosDaNota";
+// ⚠ A regra do PERFIL mora em `lib/perfilDaNota.js`, com teste próprio. Aqui é só LIGAÇÃO — é o
+// costume deste app, e é o que impede a tela e o servidor de discordarem sobre o mesmo campo.
+import {
+  camposDoPerfil,
+  conferirPerfilEscolhido,
+  lerPerfis,
+  perfilParaOPayload,
+  textoDoPerfil,
+} from "./lib/perfilDaNota";
 // ⚠ A MEMÓRIA DE TOMADORES (dono, 20/08/2026). ⚠ O cadastro NÃO nasce aqui: ele é
 // `apps/api/src/application/nfse/tomadorEmitido.js`, alimentado por cada emissão autorizada. Esta
 // tela só LÊ. Ver `lib/tomadoresEmitidos.js`.
@@ -255,7 +264,7 @@ function apenasDigitos(valor) {
  * ⚠ `regime` entra AQUI em vez de um punhado de booleanos porque a decisão é uma só. Dois
  * parâmetros que precisam concordar são dois parâmetros que um dia não vão concordar.
  */
-function montarPayload(form, { regime, codigoServicoEscolhido = null }) {
+function montarPayload(form, { regime, codigoServicoEscolhido = null, perfilId = null }) {
   const { issNoFormulario } = camposDeImposto({ regime, issRetido: form.issRetido });
   const payload = {
     tomador: {
@@ -321,6 +330,13 @@ function montarPayload(form, { regime, codigoServicoEscolhido = null }) {
   // instante da emissão — é `formatDateTimeWithOffset(new Date())` cravado no servidor, **não
   // existe no payload do validador**, e não foi inventado aqui. Ver o bloco do campo na tela.
   if (form.competencia) payload.competencia = form.competencia;
+
+  // ⚠⚠ O PERFIL VIAJA COMO **ID**, NUNCA COMO VALORES — mesma razão pela qual `pTotTribFed/Est/Mun`
+  // nunca viajam: valor no corpo faz um valor velho preso no formulário sobrescrever, em silêncio,
+  // a correção do contador. Com o id, quem lê a configuração é o servidor, sempre a atual.
+  // ⚠ `null` = **não mandar o campo**. Com UM perfil o servidor o resolve sozinho, que é o caminho
+  // de sempre — mandar o id ali criaria uma segunda fonte para a mesma decisão.
+  if (perfilId) payload.perfilId = perfilId;
 
   return payload;
 }
@@ -673,6 +689,30 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     [memoriaTomadores.dados]
   );
 
+  // ── OS PERFIS DE EMISSÃO QUE O CONTADOR CONFIGUROU ─────────────────────────────────────────
+  //
+  // ⚠ A regra é `lib/perfilDaNota.js`; aqui é a LIGAÇÃO. ⚠ Só é pedido a quem pode emitir, como a
+  // memória de tomadores — a tela nem chega a montar o formulário sem o portão.
+  //
+  // ⚠⚠ ROTA FORA DO AR OU CONTRATO ANTIGO NÃO ESTRAGAM A TELA: `lerPerfis` responde `NAO_RECEBIDA`
+  // e a tela fica **exatamente como era**. Perfil é melhoria, não pré-requisito — e esconder campo
+  // por causa de uma chamada que falhou produziria emissão recusada com o conserto fora da tela.
+  const perfisDeEmissao = useCarregamento(
+    () => api.getPerfisDeEmissao(companyId),
+    [companyId],
+    { habilitado: portao.podeEmitir }
+  );
+  const leituraDePerfis = useMemo(
+    () => lerPerfis(perfisDeEmissao.dados),
+    [perfisDeEmissao.dados]
+  );
+  const [perfilEscolhido, setPerfilEscolhido] = useState("");
+  const {
+    mostrarSeletor: seletorDePerfilNoFormulario,
+    codigoServicoNoFormulario,
+    municipioDaPrestacaoNoFormulario,
+  } = camposDoPerfil(leituraDePerfis);
+
   /**
    * ⚠⚠ A ESCOLHA NÃO APAGA O QUE A PESSOA DIGITOU — e o que foi preservado aparece, com um botão
    * para trocar. É a MESMA regra do `consultaTomador` (`aplicarNome`/`aplicarEndereco`).
@@ -783,6 +823,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     return () => { vivo = false; };
   }, [cadastroDeCodigos.oferecidos.length]);
 
+  const conferenciaPerfil = conferirPerfilEscolhido(leituraDePerfis, perfilEscolhido);
   const conferenciaCodigo = conferirCodigoEscolhido({
     situacao: cadastroDeCodigos.situacao,
     oferecidos: cadastroDeCodigos.oferecidos,
@@ -951,6 +992,17 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
       return;
     }
 
+    // ⚠⚠ COM VÁRIOS PERFIS E NENHUM ESCOLHIDO, NADA SAI DAQUI — e a tela NÃO cai no padrão.
+    //
+    // Os perfis existem porque a empresa tem operações com tributação diferente (obra, exportação,
+    // serviço interno). Cair no `padrao` faria o padrão virar a resposta de quem não respondeu, e
+    // o efeito sai numa nota fiscal irreversível. Mesma trava — e mesmo motivo — do código de
+    // serviço, logo acima.
+    if (!conferenciaPerfil.ok) {
+      document.getElementById("emitir-perfil")?.focus();
+      return;
+    }
+
     // ⚠⚠ COM O ISS RETIDO E SEM ALÍQUOTA (OU COM ZERO), NADA SAI DAQUI.
     //
     // `buildDpsXml` exige `aliquota > 0` quando `issRetido === true`
@@ -971,6 +1023,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
           situacao: cadastroDeCodigos.situacao,
           escolhido: codigoEscolhido,
         }),
+        perfilId: perfilParaOPayload(leituraDePerfis, perfilEscolhido),
       });
       const resposta = await api.emitirNfse(companyId, payload, { retryInvoiceId });
       const lido = lerResultado(resposta);
@@ -1612,10 +1665,50 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                     nunca esteve na tela para ser confundida — a frase respondia a uma pergunta que
                     o formulário não levanta. A distinção `dCompet` × `dhEmi` continua escrita no
                     comentário de `montarPayload`, que é onde ela é do programador. */}
+                {/* ═══ O TIPO DE SERVIÇO — o perfil que o CONTADOR configurou ═══════════════
+                    ⚠⚠ O CLIENTE ESCOLHE PELO NOME, e não vê campo fiscal nenhum. É o pedido do
+                    dono: *"o contador deixa pré-configurado a maioria dos campos"*. O que viaja é
+                    o **id**, nunca os valores — valor no corpo faria um valor velho preso no
+                    formulário sobrescrever, em silêncio, a correção do contador.
+                    ⚠ Só aparece com MAIS DE UM: com um só não há o que escolher, e a tela DIZ qual
+                    é (mesmo desenho do ramo `UNICO` do código de serviço). */}
+                {seletorDePerfilNoFormulario ? (
+                  <>
+                    <label htmlFor="emitir-perfil">
+                      Tipo de serviço desta nota
+                      <select
+                        id="emitir-perfil"
+                        value={perfilEscolhido}
+                        onChange={(e) => setPerfilEscolhido(e.target.value)}
+                      >
+                        {/* ⚠⚠ SEM PRÉ-SELEÇÃO, NEM PELO PADRÃO. Cair no `padrao` faria o padrão
+                            virar a resposta de quem não respondeu — e os perfis existem justamente
+                            porque a empresa tem operações com tributação diferente. */}
+                        <option value="">Escolha…</option>
+                        {leituraDePerfis.perfis.map((perfil) => (
+                          <option key={perfil.id} value={perfil.id}>{perfil.nome}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {conferenciaPerfil.ok ? null : (
+                      <span className="hint">{conferenciaPerfil.falta}</span>
+                    )}
+                  </>
+                ) : textoDoPerfil(leituraDePerfis) ? (
+                  // ⚠ Um perfil só não vira pergunta: a tela DIZ qual é, e de quem veio. Sem perfil
+                  // nenhum, `textoDoPerfil` devolve `null` e NADA é falado — ausência visível não
+                  // precisa de legenda (*"sem sugestão não precisa ser falado, pois já está sem"*).
+                  <p className="hint">{textoDoPerfil(leituraDePerfis)}</p>
+                ) : null}
+
                 {/* ═══ O CÓDIGO DE SERVIÇO DESTA NOTA ═══════════════════════════════════════
                     ⚠ TRÊS RAMOS, e o do meio é o que RENDERIZA HOJE: 0 de 33 empresas em produção
-                    têm lista plural. A regra é `lib/codigoServicoDaNota.js`, espelho do backend. */}
-                {cadastroDeCodigos.situacao === SITUACAO_CODIGO.VARIOS ? (
+                    têm lista plural. A regra é `lib/codigoServicoDaNota.js`, espelho do backend.
+                    ⚠⚠ COM PERFIL, O BLOCO INTEIRO SOME: o `cTribNac` passa a vir de lá, e perguntar
+                    o código ao cliente depois de o contador o ter configurado seria duas fontes
+                    para a mesma decisão. Sem perfil, nada muda. */}
+                {!codigoServicoNoFormulario ? null
+                  : cadastroDeCodigos.situacao === SITUACAO_CODIGO.VARIOS ? (
                   <>
                     <label htmlFor="emitir-codigo-servico">
                       Código de serviço desta nota
@@ -1884,15 +1977,21 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
 
                 {/* ⚠ TAMBÉM ERAM SETE DÍGITOS À MÃO. É o campo que decide para QUAL MUNICÍPIO o
                     ISSQN é devido — errar aqui é recolher para a prefeitura errada. */}
-                <SeletorMunicipio
-                  id="emitir-loc-prestacao"
-                  rotulo="Município da prestação (opcional)"
-                  valor={form.cLocPrestacao}
-                  onChange={(codigo) => setForm((a) => ({ ...a, cLocPrestacao: codigo }))}
-                  // ⚠ A CITAÇÃO DA LC 116 SAIU (é conversa de contador); a DECISÃO ficou inteira —
-                  // deixar em branco tem consequência, e a frase diz qual é e quando não deixar.
-                  ajuda="Em branco, o ISS é devido no município da sua empresa. Só preencha se este serviço for uma exceção."
-                />
+                {/* ⚠⚠ ELE SOME QUANDO HÁ PERFIL — o `cLocPrestacao` passa a vir de lá. E some do
+                    CORPO junto: `montarPayload` só o inclui se o campo tiver valor, e sem o campo
+                    ele não tem. "Campo escondido que continua viajando é o defeito pior."
+                    ⚠ Sem perfil, nada muda: é o estado de toda empresa até o contador configurar. */}
+                {municipioDaPrestacaoNoFormulario ? (
+                  <SeletorMunicipio
+                    id="emitir-loc-prestacao"
+                    rotulo="Município da prestação (opcional)"
+                    valor={form.cLocPrestacao}
+                    onChange={(codigo) => setForm((a) => ({ ...a, cLocPrestacao: codigo }))}
+                    // ⚠ A CITAÇÃO DA LC 116 SAIU (é conversa de contador); a DECISÃO ficou inteira —
+                    // deixar em branco tem consequência, e a frase diz qual é e quando não deixar.
+                    ajuda="Em branco, o ISS é devido no município da sua empresa. Só preencha se este serviço for uma exceção."
+                  />
+                ) : null}
               </fieldset>
 
               <div className="total">

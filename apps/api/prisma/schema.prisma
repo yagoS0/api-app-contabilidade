@@ -885,6 +885,7 @@ model PortalClient {
   // Q14 — refundação da apuração (cadastro como autoridade)
   cadastroFiscal          CadastroFiscal?
   produtosServicos        ProdutoServico[]
+  perfisEmissaoNfse       PerfilEmissaoNfse[]
   regrasClassificacao     RegraClassificacao[]
   filaPendencias          FilaPendencia[]
   apuracaoSnapshots       ApuracaoSnapshot[]
@@ -2868,6 +2869,90 @@ model CadastroFiscal {
   @@map("cadastros_fiscais")
 }
 
+// ⚠⚠ PERFIL DE EMISSÃO DE NFS-e — o que o contador configura UMA VEZ para o cliente não responder
+// a cada nota. Uma empresa tem 1..N perfis, nomeados por ele ("Consultoria RJ", "Exportação EUA").
+//
+// ⚠⚠ TODA COLUNA AQUI TEM LEITOR NO MESMO COMMIT QUE A CRIOU. É a regra que impede este modelo de
+// virar o `CadastroFiscal.perfilAtividades`, onde 3 dos 8 campos são **write-only** (medido:
+// `codigoServicoMunicipal`, `retencaoFonte` e `domicilioFiscal` não têm um único leitor, e o
+// terceiro nem input tem). Campo sem leitor não entra; entra na fase que o ler.
+//
+// Por isso a fase 1 tem SEIS campos fiscais, e não os trinta do leiaute: são exatamente os que
+// `buildDpsXml` **já escreve** hoje. `pAliq`, `BM`, `exigSusp`, `tpImunidade`, o grupo `comExt` e o
+// grupo `obra` entram quando o gerador passar a montá-los — e aí com o de-para da versão do
+// leiaute em mãos (`TCTribMunicipal` reordenou entre 1.00 e 1.01).
+//
+// ⚠ O QUE NÃO MORA AQUI, DE PROPÓSITO:
+//   • `tpRetISSQN` — a retenção do ISS depende do TOMADOR daquela nota, e o cliente marca a caixa
+//     (decisão do dono, 01/09/2026). O que vem do perfil é a ALÍQUOTA, na fase do `pAliq`.
+//   • `cObra`/`cCIB`, `cPaisResult`, `tpMoeda`/`vServMoeda` — são o FATO daquela nota. O perfil
+//     decide se o campo APARECE (`habilita*`); quem informa é o cliente.
+//   • `pTotTribFed/Est/Mun` e `rpsSerie` — continuam na `Company`. A carga aproximada é da EMPRESA
+//     (dois perfis com percentuais diferentes seriam duas respostas para a mesma pergunta legal), e
+//     a série é o eixo da numeração (`nfseNumeracao.js`): série por perfil mudaria a invariante da
+//     reserva transacional, que é decisão maior e à parte.
+//
+// ⚠ NENHUM DEFAULT SILENCIOSO NOS CAMPOS FISCAIS. `NULL` = "o contador não respondeu", nunca "não".
+// É a lição paga por `CadastroFiscal.usaFatorR` (`@default(false)`, que não distingue *"o contador
+// disse que não"* de *"ninguém nunca abriu essa tela"*). Só `ativo`, `padrao` e os dois `habilita*`
+// têm default — são de IDENTIDADE e de FORMA, não afirmam nada sobre tributo.
+model PerfilEmissaoNfse {
+  id             String @id @default(uuid())
+  portalClientId String
+
+  /// O nome que o CLIENTE vê no seletor quando há mais de um perfil ativo.
+  nome   String
+  ativo  Boolean @default(true)
+  padrao Boolean @default(false)
+
+  /// DERIVADO_DO_CADASTRO (materializado das colunas da Company) | MANUAL (o contador criou/editou).
+  /// ⚠ É o que permite distinguir "o sistema montou a partir do que já existia" de "alguém afirmou".
+  origem String @default("DERIVADO_DO_CADASTRO")
+
+  // ── serviço ────────────────────────────────────────────────────────────────────────────────
+  /// `cTribNac` — 6 dígitos. Tem de estar em `Company.codigosServicoNacional` quando ela não é vazia.
+  codigoServicoNacional  String
+  /// `cTribMun`. ⚠ Validado `[0-9]{3}` NA ESCRITA — o gerador faz `.slice(-3)`, que encurta o longo
+  /// e **não completa o curto**: um "12" gravado viraria `12` no XML e a nota seria recusada.
+  codigoServicoMunicipal String?
+  /// `cLocPrestacao` (IBGE, 7 dígitos). NULO = usa o município do emissor (LC 116, art. 3º, caput).
+  cLocPrestacao          String?
+
+  // ── regime na DPS (grupo `prest/regTrib`) ──────────────────────────────────────────────────
+  /// `TSRegEspTrib` 0..6, 9. Hoje sai de `Company.regimeEspecialTributacao || "0"`.
+  regEspTrib  String?
+  /// `TSRegimeApuracaoSimpNac` 1|2|3 — só quando `opSimpNac = 3`.
+  /// ⚠⚠ HOJE ESTÁ CRAVADO EM "1" NO GERADOR (`NfseService.js:826`), e `CadastroFiscal.sublimiteICMSISS`
+  /// é literalmente o cadastro do caso **2**: empresa do Simples acima do sublimite emite hoje
+  /// declarando o regime de apuração ERRADO, com o dado que provaria isso já no banco.
+  regApTribSN String?
+
+  // ── ISSQN (grupo `trib/tribMun`) ───────────────────────────────────────────────────────────
+  /// `TSTribISSQN` 1 tributável | 2 imunidade | 3 exportação | 4 não incidência.
+  /// ⚠⚠ HOJE ESTÁ CRAVADO EM "1" (`NfseService.js:887`) — é por isso que exportação de serviço é
+  /// impossível de declarar, mesmo havendo empresa na carteira que presta para o exterior.
+  tribISSQN String?
+
+  // ── o perfil HABILITA; o cliente informa o fato daquela nota ───────────────────────────────
+  /// Faz aparecer, na tela do cliente, o campo do CNO/CIB da obra.
+  habilitaObra       Boolean @default(false)
+  /// Faz aparecer país de resultado e moeda. ⚠ Ligar exportação de verdade é fase própria: o grupo
+  /// `TCComExterior` tem 7 filhos obrigatórios e a decisão passa por 112 cenários do ANEXO_I.
+  habilitaExportacao Boolean @default(false)
+
+  createdByUserId String?
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  /// ⚠ O nome é a identidade que o cliente vê — dois perfis homônimos na mesma empresa fariam o
+  /// seletor oferecer a mesma coisa duas vezes, com efeitos fiscais diferentes.
+  @@unique([portalClientId, nome])
+  @@index([portalClientId, ativo])
+  @@map("perfis_emissao_nfse")
+}
+
 // Catálogo de produtos/serviços da empresa amarrado a TipoReceita.
 // Itens podem ser cadastrados manualmente OU aprendidos (1ª vez que código X
 // aparece em nota, gera pendência → contador classifica → vira ProdutoServico).
@@ -4008,10 +4093,10 @@ model RegraContabilizacao {
   /// Âncora FRACA — é o que o histórico existente oferece.
   padraoDescricao String?
 
-  valorMin     Decimal @db.Decimal(18, 2)
-  valorMax     Decimal @db.Decimal(18, 2)
+  valorMin        Decimal @db.Decimal(18, 2)
+  valorMax        Decimal @db.Decimal(18, 2)
   /// ⚠⚠ SEMPRE `codigoCompleto`, nunca o reduzido.
-  contaDestino String
+  contaDestino    String
   /// ⚠⚠ O CRÉDITO, quando o contador o escolhe (29/08/2026) — decisão do dono:
   /// *"o contador deve poder colocar o código de débito e crédito nessa despesa"*.
   ///
@@ -4021,7 +4106,7 @@ model RegraContabilizacao {
   /// ⚠⚠ Ele é RECUSADO se não for conta de DISPONIBILIDADE (resposta do dono: *"continua sendo
   /// caixa/banco"*) — quem decide é `accounting/lib/disponibilidades.js`, pelo PREFIXO do
   /// `codigoCompleto`, nunca pelo nome.
-  contaCredito String?
+  contaCredito    String?
   /// ⚠⚠ ESTA REGRA LANÇA SOZINHA? (29/08/2026) — a segunda das DUAS chaves.
   ///
   /// Decisão do dono: *"todo mês que essa nota aparecer ela já é lançada em despesa"*. ⚠ Ela nasce
@@ -4037,7 +4122,7 @@ model RegraContabilizacao {
   /// e o extrato CORRIGE a data quando o débito real chegar.
   /// ⚠ `null` com `lancaSozinha: true` é recusado: a data não se arbitra.
   diaDoLancamento Int?
-  tipo         String
+  tipo            String
 
   /// MANUAL | APRENDIDA
   origemRegra     String

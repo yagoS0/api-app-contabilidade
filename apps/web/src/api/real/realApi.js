@@ -2051,6 +2051,23 @@ export function createRealApi() {
       });
     },
     // Módulo Fiscal (Aba Fiscal / Bloco A) — perfil de atividades permitidas.
+    // ── Perfis de emissão de NFS-e (fase 1: o painel; a integração nasce DESLIGADA) ──────────
+    async getPerfisEmissao(companyId) {
+      return request(`/firm/companies/${companyId}/perfis-emissao`);
+    },
+    async criarPerfilEmissao(companyId, corpo) {
+      return request(`/firm/companies/${companyId}/perfis-emissao`, {
+        method: "POST",
+        body: JSON.stringify(corpo),
+      });
+    },
+    async salvarPerfilEmissao(companyId, perfilId, corpo) {
+      return request(`/firm/companies/${companyId}/perfis-emissao/${perfilId}`, {
+        method: "PATCH",
+        body: JSON.stringify(corpo),
+      });
+    },
+
     async getPerfilFiscal(companyId) {
       return request(`/firm/companies/${companyId}/perfil-fiscal`);
     },

@@ -432,6 +432,22 @@ function criarEstado() {
   //
   // ⚠ Os documentos são os MESMOS que já aparecem nas notas e na `baseCnpj` — assim a memória, a
   // lista de notas e a consulta à Receita contam a mesma história offline.
+  // ── PERFIS DE EMISSÃO — os três ramos que a tela precisa exercitar offline ──────────────────
+  //
+  // ⚠⚠ `pc-001` fica com DOIS perfis de propósito: é o único ramo em que a tela RECUSA o submit
+  // (vários e nenhum escolhido), e ramo que não se alcança offline é ramo que ninguém testa. Este
+  // projeto já foi mordido três vezes por isso na mesma semana.
+  //   pc-001 → VARIOS   (seletor aparece; submit recusa sem escolha)
+  //   pc-003 → UNICO    (nada a escolher; a tela diz qual é)
+  //   pc-002 → SEM_PERFIL (o comportamento de hoje, intacto)
+  const perfisDeEmissao = new Map([
+    ["pc-001", [
+      { id: "pf-001", nome: "Consultoria", padrao: true },
+      { id: "pf-002", nome: "Exportação de serviço", padrao: false },
+    ]],
+    ["pc-003", [{ id: "pf-003", nome: "Serviços contábeis", padrao: true }]],
+  ]);
+
   const tomadoresEmitidos = new Map([
     [
       "pc-001",
@@ -1067,6 +1083,7 @@ function criarEstado() {
     numeracaoNfse,
     tentativasNfse,
     tomadoresEmitidos,
+    perfisDeEmissao,
     baseCnpj,
   };
 }
@@ -1831,6 +1848,16 @@ export function createMockApi() {
     //
     // ⚠ ORDEM: `ultimaEmissaoEm` DESC, a mesma da rota. Um mock com outra ordem faria a tela
     // parecer certa offline e trocar de comportamento no primeiro deploy.
+    // ⚠⚠ O MOCK EXERCITA OS TRÊS RAMOS. Este projeto foi mordido três vezes na mesma semana por
+    // ramo inalcançável offline — e aqui o ramo caro é o de VÁRIOS perfis, que é o único em que a
+    // tela precisa RECUSAR o submit.
+    async getPerfisDeEmissao(companyId) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const perfis = estado.perfisDeEmissao?.get(id) || [];
+      return { data: perfis, total: perfis.length };
+    },
+
     async getTomadoresEmitidos(companyId) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);

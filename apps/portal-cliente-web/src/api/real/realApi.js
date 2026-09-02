@@ -515,6 +515,13 @@ export function createRealApi() {
     // ⚠ O `:companyId` é o `PortalClient.id`, como em toda rota `/client` — quem traduz para o id
     // da `Company` legada (que é o escopo da tabela) é `resolveLegacyCompanyId`, no SERVIDOR. Não
     // resolva nada aqui: esta confusão de ids já mordeu quatro vezes, e sempre em silêncio.
+    // ⚠ Devolve a RESPOSTA INTEIRA, não só o array: `lerPerfis` distingue "não recebida" (rota
+    // fora do ar, contrato antigo) de "esta empresa não tem perfil", e um `|| []` aqui apagaria a
+    // distinção antes de ela chegar à regra.
+    async getPerfisDeEmissao(companyId) {
+      return pedir(`/client/companies/${encodeURIComponent(companyId)}/nfse/perfis`);
+    },
+
     async getTomadoresEmitidos(companyId) {
       const data = await pedir(
         `/client/companies/${encodeURIComponent(companyId)}/nfse/tomadores`

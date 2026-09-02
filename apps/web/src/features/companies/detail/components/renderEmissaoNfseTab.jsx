@@ -18,10 +18,18 @@
 // aba: no backend é rota própria, com gate `ACCOUNTANT`+ e auditoria de quem/quando. Um campo a
 // mais faria o ato fiscal viajar junto de troca de código de serviço.
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
+import { createApiClient } from "../../../../api/client";
+import { PainelProximaDps } from "./PainelProximaDps";
 import { CamposEmissaoNfse } from "../../form/components/CamposEmissaoNfse";
 import { mapCompanyToEmissaoNfseForm } from "../../form/hooks/useManageCompanyForm";
+
+// ⚠ Mesmo caminho de `renderCircularTab.jsx`: **não existe `src/api/index.js` neste app** — o
+// objeto da API sai de `createApiClient()`. O `CLAUDE.md` de `apps/web` ainda descreve um
+// `api/index.js` que nunca existiu, e foi por ele que a primeira versão deste import quebrou a
+// suíte inteira com "Cannot find module".
+const api = createApiClient();
 
 // Os campos que esta aba salva — e nada além deles. A lista é a mesma que a rota aceita
 // (`CAMPOS_EMISSAO_NFSE`, em `routes/firm/index.js`): campo fora dela é RECUSADO nomeando-o, e
@@ -97,6 +105,75 @@ export function EmissaoNfseTab({
     await onSalvar(campos);
   }
 
+  // ── O PAINEL DA PRÓXIMA DPS ────────────────────────────────────────────────────────────────
+  //
+  // ⚠ Carregado AQUI e não no componente: a regra da casa é que a página chama a API e o
+  // componente é apresentacional. O painel recebe os dados prontos e só os lê.
+  //
+  // ⚠⚠ ELE NÃO DERRUBA A ABA. A rota pode responder 409 (empresa sem `Company` legada) ou a tabela
+  // pode não existir ainda — a migration nasce NÃO APLICADA. Em qualquer desses casos o painel
+  // mostra o estado `NAO_RECEBIDA`, com a frase certa, e o formulário de configuração continua
+  // funcionando. Uma tela de cadastro não pode quebrar porque a fase seguinte não subiu.
+  // ⚠⚠ A CHAVE É `companyId`, NÃO `id` — e errar isso é SILENCIOSO. É o mesmo id que o
+  // `renderCompanyDetailPage` usa para montar a URL (`const companyId = selectedCompany?.companyId`)
+  // e que o salvar desta aba já manda em `PATCH /firm/companies/:companyId/emissao-nfse`.
+  // Com `company?.id` o painel não estourava: ele ficava eternamente no estado "não recebida",
+  // porque a carga sai cedo quando o id é nulo. A tela funcionava e só não mostrava — a família de
+  // defeito que o `legacyCompanySelect` já pagou três vezes.
+  const portalClientId = company?.companyId || null;
+  const [perfis, setPerfis] = useState(null);
+  const [carregandoPerfis, setCarregandoPerfis] = useState(false);
+  const [salvandoPerfil, setSalvandoPerfil] = useState(false);
+
+  const carregarPerfis = useCallback(async () => {
+    if (!portalClientId) return;
+    setCarregandoPerfis(true);
+    try {
+      setPerfis(await api.getPerfisEmissao(portalClientId));
+    } catch {
+      // ⚠ `null` é o estado "não recebida", que a lib distingue de "esta empresa não tem perfil".
+      setPerfis(null);
+    } finally {
+      setCarregandoPerfis(false);
+    }
+  }, [portalClientId]);
+
+  useEffect(() => { carregarPerfis(); }, [carregarPerfis]);
+
+  const criarDoCadastro = useCallback(async (nome) => {
+    if (!portalClientId || !nome) return;
+    setSalvandoPerfil(true);
+    try {
+      // ⚠ O ponto de partida é o que a empresa JÁ usa — `derivadoDoCadastro` vem calculado pela
+      // rota, nunca montado aqui. Criar um perfil não muda nada no XML: a integração nasce
+      // desligada, e mesmo ligada este perfil produz o que o cadastro já produzia.
+      const derivado = perfis?.derivadoDoCadastro || {};
+      await api.criarPerfilEmissao(portalClientId, {
+        nome,
+        codigoServicoNacional: derivado.codigoServicoNacional,
+        codigoServicoMunicipal: derivado.codigoServicoMunicipal ?? null,
+        cLocPrestacao: derivado.cLocPrestacao ?? null,
+        regEspTrib: derivado.regEspTrib ?? null,
+        regApTribSN: derivado.regApTribSN ?? null,
+        tribISSQN: derivado.tribISSQN ?? null,
+      });
+      await carregarPerfis();
+    } finally {
+      setSalvandoPerfil(false);
+    }
+  }, [portalClientId, perfis, carregarPerfis]);
+
+  const marcarPadrao = useCallback(async (perfilId) => {
+    if (!portalClientId || !perfilId) return;
+    setSalvandoPerfil(true);
+    try {
+      await api.salvarPerfilEmissao(portalClientId, perfilId, { padrao: true });
+      await carregarPerfis();
+    } finally {
+      setSalvandoPerfil(false);
+    }
+  }, [portalClientId, carregarPerfis]);
+
   return (
     <section className="company-form-page__panel">
       <div className="company-form-page__intro">
@@ -107,6 +184,15 @@ export function EmissaoNfseTab({
           emissão usa.
         </p>
       </div>
+
+      <PainelProximaDps
+        dados={perfis}
+        carregando={carregandoPerfis}
+        podeEditar={podeEditar}
+        salvando={salvandoPerfil}
+        onCriarDoCadastro={criarDoCadastro}
+        onMarcarPadrao={marcarPadrao}
+      />
 
       {!podeEditar ? (
         <p className="text-muted">Apenas admin ou contador pode alterar a configuração de emissão.</p>
