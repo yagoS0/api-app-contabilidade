@@ -69,6 +69,9 @@ function doCadastro(company) {
     // certa — ninguém respondeu —, e é diferente de `CRAVADO` (o gerador decide por conta) e de
     // `COMPANY` (o cadastro responde). Marcá-los `CRAVADO` com valor nulo diria que o gerador
     // escolhe algo, quando ele simplesmente não escreve a tag.
+    // ⚠ A alíquota do ISSQN nunca foi escrita pelo gerador — ela era coletada, validada e
+    // descartada. `INDEFINIDO`, nunca `CRAVADO`.
+    pAliq: { valor: null, fonte: FONTE.INDEFINIDO },
     codigoNbs: { valor: null, fonte: FONTE.INDEFINIDO },
     ibscbsCIndOp: { valor: null, fonte: FONTE.INDEFINIDO },
     ibscbsCst: { valor: null, fonte: FONTE.INDEFINIDO },

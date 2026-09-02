@@ -17,6 +17,7 @@ import { motivoValido, motivosDoEvento, validarJustificativa } from "./motivosDe
 import { escolherCodigoServicoNacional } from "./codigoServicoDaNota.js";
 import { resolverPerfilDeEmissao } from "./perfilEmissao/resolverPerfilDeEmissao.js";
 import { ibscbsDaDps, nbsDaDps } from "./ibscbsDaDps.js";
+import { pAliqDaDps } from "./pAliqDaDps.js";
 import { registrarTomadorEmitido } from "./tomadorEmitido.js";
 import {
   classificarFalha,
@@ -848,12 +849,20 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
   // Com retenção, o provedor exige alíquota > 0 — a observação que já estava no código (o erro
   // E0625). Recusar aqui é melhor que emitir retenção sem base: a rejeição do sistema nacional
   // viria de qualquer jeito, só que sem dizer o que corrigir.
-  if (retencao.exigeAliquota && !(aliquota > 0)) {
+  // ⚠⚠ A ALÍQUOTA PODE VIR DO PERFIL, e desde 02/09/2026 ela VEM de lá no Simples. A caixa "ISS
+  // retido" passou a existir na tela do cliente também no Simples (decisão do dono, 01/09/2026),
+  // e nesse regime o campo do NÚMERO **não** aparece para ele — quem declara a alíquota é o
+  // contador, no perfil. Lendo só o payload, esta guarda recusaria toda nota do Simples com ISS
+  // retido, e o conserto ficaria fora do alcance de quem recebeu a recusa.
+  const aliquotaEfetiva = doPerfil("pAliq") ?? aliquota;
+  if (retencao.exigeAliquota && !(Number(aliquotaEfetiva) > 0)) {
     const err = new Error(
       "ISS retido exige alíquota do ISSQN maior que zero, e nenhuma foi informada."
     );
     err.code = "NFSE_ISS_RETIDO_SEM_ALIQUOTA";
-    err.correcao = "Informe a alíquota de ISS da empresa no assistente de emissão.";
+    err.correcao =
+      "No Simples Nacional, quem declara a alíquota de ISS é o contador, no perfil de emissão da "
+      + "empresa. Fora do Simples, informe a alíquota no assistente de emissão.";
     throw err;
   }
 
@@ -877,6 +886,28 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
   //
   // ⚠ Se mesmo assim chegar aqui recusado, LANÇA. É caminho que não deveria existir; falhar alto
   // é melhor que emitir documento fiscal sem a tag que a regra exige.
+  // ⚠⚠ UMA VARIÁVEL SÓ para o `regApTribSN`: ela vai ao XML **e** decide o `pAliq`. Recalcular a
+  // expressão nos dois lugares é como as duas respostas divergem — e aqui a divergência sairia
+  // como nota rejeitada por E0621 (alíquota obrigatória e ausente) ou E0625 (proibida e presente).
+  const regApTribSN = doPerfil("regApTribSN") || "1";
+
+  // ⚠⚠ A ALÍQUOTA DO ISSQN: **o perfil vence o payload**. Decisão do dono — *"o contador declara a
+  // alíquota de ISS para reter, mas o cliente na tela dele deve poder selecionar se é retido ou
+  // não"*. A caixa é do cliente (depende do TOMADOR daquela nota); o número é do contador (depende
+  // da EMPRESA). Sem perfil, o caminho é o de hoje: o valor do payload.
+  const pAliqDaNota = pAliqDaDps({
+    opSimpNac,
+    regApTribSN: isSimples ? regApTribSN : null,
+    tpRetISSQN,
+    aliquota: aliquotaEfetiva,
+  });
+  if (!pAliqDaNota.ok) {
+    const err = new Error(pAliqDaNota.message);
+    err.code = pAliqDaNota.codigo;
+    err.correcao = pAliqDaNota.correcao;
+    throw err;
+  }
+
   const nbsDaNota = nbsDaDps(perfil);
   if (!nbsDaNota.ok) {
     const err = new Error(nbsDaNota.message);
@@ -942,7 +973,7 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
           // ⚠⚠ ELE ESTAVA CRAVADO EM "1" PARA TODO OPTANTE, e `CadastroFiscal.sublimiteICMSISS` é
           // literalmente o cadastro do caso **2** — empresa do Simples acima do sublimite declarava
           // o regime de apuração ERRADO. Sem perfil, o "1" continua (o comportamento de hoje).
-          isSimples ? `<regApTribSN>${escapeXml(doPerfil("regApTribSN") || "1")}</regApTribSN>` : ""
+          isSimples ? `<regApTribSN>${escapeXml(regApTribSN)}</regApTribSN>` : ""
         }
         <regEspTrib>${escapeXml(doPerfil("regEspTrib") || company.regimeEspecialTributacao || "0")}</regEspTrib>
       </regTrib>
@@ -1006,6 +1037,12 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
         <tribMun>
           <tribISSQN>${escapeXml(doPerfil("tribISSQN") || "1")}</tribISSQN>
           <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
+          ${
+            // ⚠ NO 1.01 O `pAliq` É O ÚLTIMO FILHO de `TCTribMunicipal`; no 1.00 ele vinha ANTES do
+            // `tpRetISSQN`. Foi por isso que a subida de versão teve de vir primeiro — escrever a
+            // ordem de uma versão num documento que declara a outra é a classe do E1235.
+            pAliqDaNota.informar ? `<pAliq>${escapeXml(pAliqDaNota.pAliq)}</pAliq>` : ""
+          }
         </tribMun>
         ${(() => {
           // ── PIS/COFINS (grupo `trib/tribFed/piscofins`) ──────────────────────────────────────
@@ -1882,6 +1919,26 @@ export class NfseService {
         const err = new Error(ibsCbsPreVoo.message);
         err.code = ibsCbsPreVoo.codigo;
         err.correcao = ibsCbsPreVoo.correcao;
+        throw err;
+      }
+
+      // ⚠⚠ A ALÍQUOTA DO ISSQN, pelo mesmo motivo: recusar aqui custa zero; recusar depois queima
+      // um número da série, e não existe inutilização na NFS-e.
+      //
+      // ⚠ As entradas são derivadas pelas MESMAS funções que o gerador usa (`resolverOpSimpNac`,
+      // `resolverTpRetIssqn`), com os mesmos dados — por isso as duas decisões não divergem.
+      const retencaoPreVoo = resolverTpRetIssqn(data.servico?.issRetido === true);
+      const pAliqPreVoo = pAliqDaDps({
+        opSimpNac: regTrib.opSimpNac,
+        regApTribSN:
+          regTrib.opSimpNac === "3" ? (perfilDeEmissao?.regApTribSN || "1") : null,
+        tpRetISSQN: retencaoPreVoo.tpRetISSQN,
+        aliquota: perfilDeEmissao?.pAliq ?? data.servico?.aliquota,
+      });
+      if (!pAliqPreVoo.ok) {
+        const err = new Error(pAliqPreVoo.message);
+        err.code = pAliqPreVoo.codigo;
+        err.correcao = pAliqPreVoo.correcao;
         throw err;
       }
     } catch (err) {

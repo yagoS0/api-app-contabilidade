@@ -45,7 +45,10 @@
 //    cabeçalho.
 //
 // ⚠ ISTO É SÓ PARA O NÃO OPTANTE. No Simples o bloco de ISS inteiro já saiu da tela; nada aqui o
-// reintroduz — `aliquotaNoFormulario` depende de `issNoFormulario`, não só da caixa.
+// reintroduz — `aliquotaNoFormulario` confere o REGIME, não só a caixa.
+// ⚠⚠ A frase acima dizia que ele "depende de `issNoFormulario`". Isso ficou falso em 02/09/2026:
+// a caixa passou a aparecer em todo regime, e a alíquota deixou de ser derivada dela — as duas
+// perguntas se separaram.
 
 export const REGIME = { SIMPLES: "simples", OUTRO: "outro", DESCONHECIDO: "desconhecido" };
 
@@ -88,12 +91,35 @@ export function lerRegime(empresa) {
  */
 export function camposDeImposto({ regime, issRetido = false }) {
   const ehSimples = regime === REGIME.SIMPLES;
-  const issNoFormulario = !ehSimples;
   return {
-    // O bloco de ISS (caixa de retenção). Regime indefinido MANTÉM.
-    issNoFormulario,
-    // A alíquota de ISS: dentro do bloco, e só com a caixa marcada.
-    aliquotaNoFormulario: issNoFormulario && issRetido === true,
+    // ⚠⚠ A CAIXA DE RETENÇÃO APARECE EM TODOS OS REGIMES — INCLUSIVE NO SIMPLES (02/09/2026).
+    //
+    // Isto REVERTE metade da decisão de 18/08/2026, que escondia o bloco de ISS inteiro no Simples
+    // com o argumento *"no Simples o ISS está dentro do DAS"*. A metade que CAI é só a da caixa; a
+    // da ALÍQUOTA continua valendo (ver abaixo). Decisão do dono, 01/09/2026: *"o contador declara
+    // a alíquota de ISS para reter, mas o cliente na tela dele deve poder selecionar se é retido ou
+    // não"*.
+    //
+    // O fundamento estava na lei e já estava no repositório: **ISS retido na fonte não é abrangido
+    // pelo DAS** (`docs/fontes-fiscais.md` §1.9, LC 123 art. 13 §1º), e o retido **abate a parcela
+    // correspondente do Simples** (art. 18 §6º c/c art. 21 §4º). Uma empresa do Simples cujo tomador
+    // retém ISS não tinha onde declarar isso — nem aqui, nem no contador.
+    //
+    // ⚠⚠ E é o que destrava a **E0621**: ela exige a alíquota quando há retenção para prestador
+    // ME/EPP. Enquanto a caixa não existia no Simples, aquele cenário era inalcançável pela tela.
+    //
+    // ⚠ Sempre `true`, e de propósito: a retenção depende do TOMADOR daquela nota, não do regime
+    // da empresa. O campo existe no retorno (em vez de a tela simplesmente renderizar sempre) para
+    // que a decisão tenha um lugar, e para que revertê-la seja uma linha visível.
+    issRetidoNoFormulario: true,
+
+    // ⚠⚠ A ALÍQUOTA CONTINUA FORA DO SIMPLES. Aqui a decisão de 18/08 fica de pé, agora por um
+    // motivo mais forte que "o ISS está dentro do DAS": no Simples quem declara o número é o
+    // CONTADOR, no perfil de emissão (`PerfilEmissaoNfse.pAliq`). O cliente marcar a caixa e digitar
+    // a alíquota seria duas fontes para o mesmo campo do XML.
+    // ⚠ `=== SIMPLES`, nunca `!== OUTRO`: o indefinido MANTÉM o campo — não se esconde por dúvida.
+    aliquotaNoFormulario: !ehSimples && issRetido === true,
+
     // ⚠ `=== SIMPLES`, nunca `!== OUTRO`: o indefinido não pode cair aqui por negação.
     pTotTribSNNoFormulario: ehSimples,
   };

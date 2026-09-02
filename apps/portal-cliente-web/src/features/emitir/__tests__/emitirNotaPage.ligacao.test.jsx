@@ -430,11 +430,13 @@ describe("⚠⚠ as legendas removidas a pedido do dono NÃO voltam", () => {
     // alíquota e sem retenção de ISS."
     expect(screen.queryByText(/já está dentro do DAS/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/sem alíquota e sem retenção de ISS/i)).not.toBeInTheDocument();
-    // ⚠⚠ A REGRA CONTINUA: a empresa do teste é do Simples, e no Simples os campos de ISS NÃO são
-    // renderizados. Se eles reaparecerem, este caso acende — e a legenda removida seria o menor dos
-    // problemas.
+    // ⚠⚠ A REGRA MUDOU PELA METADE EM 02/09/2026, e este caso passou a medir a metade certa.
+    // Ele exigia que NENHUM campo de ISS aparecesse no Simples. Hoje a CAIXA de retenção aparece
+    // (decisão do dono, 01/09/2026 — a retenção depende do TOMADOR daquela nota) e a ALÍQUOTA
+    // continua fora, porque quem declara o número é o contador, no perfil de emissão.
+    // ⚠ O que este caso guarda de verdade — que a LEGENDA removida não volta — está intacto acima.
     expect(document.getElementById("emitir-aliquota")).not.toBeInTheDocument();
-    expect(document.getElementById("emitir-iss-retido")).not.toBeInTheDocument();
+    expect(document.getElementById("emitir-iss-retido")).toBeInTheDocument();
     // E o campo que existe no lugar deles — a alíquota efetiva do Simples — segue de pé.
     expect(campoAliquota()).toBeInTheDocument();
   });

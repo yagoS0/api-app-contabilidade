@@ -111,9 +111,16 @@ describe("⚠⚠ nenhuma coluna sem leitor, nenhum leitor sem coluna", () => {
 
   it("⚠⚠ o que ficou de fora está NOMEADO, com o motivo", () => {
     // A diferença entre "não fizemos" e "esquecemos". Cada ausência é uma decisão registrada.
-    for (const k of ["pAliq", "BM", "exigSusp", "tpImunidade", "tpRetISSQN", "comExt", "obra"]) {
+    for (const k of ["BM", "exigSusp", "tpImunidade", "tpRetISSQN", "comExt", "obra"]) {
       expect({ k, tem: Boolean(FORA_DESTA_FASE[k]) }).toEqual({ k, tem: true });
     }
+    // ⚠⚠ `pAliq` SAIU desta lista em 02/09/2026 — ele foi CONSTRUÍDO. O motivo escrito aqui era
+    // que o discriminante é o status do município no Sistema Nacional, tabela que não temos. Isso
+    // continua verdade para `regApTribSN` 2|3 e para o não optante; **não** vale para o caso comum
+    // do Simples (`regApTribSN = 1`), em que E0621/E0628 e E0625/E0631 dizem a mesma coisa para os
+    // DOIS estados do convênio e o único discriminante é a retenção. Ver `pAliqDaDps.js`.
+    expect(FORA_DESTA_FASE.pAliq).toBeUndefined();
+    expect(campoPorId("pAliq")).toBeTruthy();
   });
 
   it("⚠ os dois campos CRAVADOS no gerador estão marcados como tal", () => {

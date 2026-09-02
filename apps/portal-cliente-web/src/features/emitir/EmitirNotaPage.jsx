@@ -267,7 +267,7 @@ function apenasDigitos(valor) {
  * parâmetros que precisam concordar são dois parâmetros que um dia não vão concordar.
  */
 function montarPayload(form, { regime, codigoServicoEscolhido = null, perfilId = null }) {
-  const { issNoFormulario } = camposDeImposto({ regime, issRetido: form.issRetido });
+  const { issRetidoNoFormulario } = camposDeImposto({ regime, issRetido: form.issRetido });
   const payload = {
     tomador: {
       cnpjCpf: apenasDigitos(form.tomadorDoc),
@@ -287,7 +287,11 @@ function montarPayload(form, { regime, codigoServicoEscolhido = null, perfilId =
       // numérico, e é ele que vira `<vServ>` no XML. A leitura é por centavos inteiros — o mesmo
       // número que o campo mostra e que a pré-visualização confirma.
       valorServicos: lerValorDoCampo(form.valorServicos),
-      issRetido: issNoFormulario ? form.issRetido === true : false,
+      // ⚠⚠ DESDE 02/09/2026 A MARCAÇÃO VIAJA EM TODO REGIME, inclusive no Simples. Antes o
+      // Simples forçava `false` aqui — correto enquanto a caixa não existia na tela dele, e
+      // ERRADO agora: seria a caixa marcada e a nota saindo sem retenção, que é o defeito oposto
+      // ao "campo escondido que continua viajando". A guarda continua sendo o `camposDeImposto`.
+      issRetido: issRetidoNoFormulario ? form.issRetido === true : false,
     },
   };
 
@@ -515,11 +519,15 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   // divergiram: o `pTotTribSN` aparecia (e viajava) para empresa do Presumido, defeito relatado em
   // produção pelo dono em 20/08/2026. A regra e os três motivos estão em `lib/impostosDaNota.js`.
   //
-  //   • `issNoFormulario`      — o bloco de ISS. Sai só no Simples; INDEFINIDO mantém.
-  //   • `aliquotaNoFormulario` — a alíquota de ISS. Só com a caixa de retenção MARCADA.
+  //   • `issRetidoNoFormulario` — a CAIXA de retenção. ⚠⚠ Desde 02/09/2026 ela aparece em TODOS os
+  //     regimes, inclusive no Simples (decisão do dono, 01/09/2026). O nome antigo era
+  //     `issNoFormulario` e dizia "o bloco de ISS" — o bloco se partiu em dois, com respostas
+  //     diferentes, e um nome que diz "o bloco" faria o próximo leitor concluir errado.
+  //   • `aliquotaNoFormulario` — a alíquota de ISS. Só com a caixa MARCADA **e fora do Simples**:
+  //     lá quem declara o número é o CONTADOR, no perfil de emissão.
   //   • `pTotTribSNNoFormulario` — a alíquota efetiva do Simples. SÓ no Simples: o não optante não
   //     declara esse campo, e o indefinido não pode afirmar que declara.
-  const { issNoFormulario, aliquotaNoFormulario, pTotTribSNNoFormulario } = camposDeImposto({
+  const { issRetidoNoFormulario, aliquotaNoFormulario, pTotTribSNNoFormulario } = camposDeImposto({
     regime,
     issRetido: form.issRetido,
   });
@@ -532,7 +540,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   //     logo abaixo. Mostrar os três ali faria a pessoa procurar um campo que a nota dela não leva.
   //   • **Regime INDEFINIDO também não vê**: ali não se sabe qual grupo a nota leva, e afirmar
   //     "não optante" é o default silencioso que este projeto proíbe. ⚠ Isto NÃO é esconder por
-  //     desconhecimento: nada some do formulário (o ISS continua lá, ver `issNoFormulario`) — o que
+  //     desconhecimento: nada some do formulário (o ISS continua lá, ver `issRetidoNoFormulario`) — o que
   //     não aparece é uma AFIRMAÇÃO sobre o cadastro de uma empresa cujo regime ninguém afirmou.
   //
   // ⚠ SÓ LEITURA. Não há campo, não há `onChange`, não entra em `form` e não vai no payload — quem
@@ -880,7 +888,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   // ⚠ A MESMA função que monta o corpo: a alíquota que a pré-visualização usa é, por construção, a
   // que vai (ou não vai) na nota. Fora do caso "não optante COM retenção" ela é `null` nos dois.
   const aliquota = aliquotaIssParaOPayload({ regime, issRetido: form.issRetido, aliquota: form.aliquota });
-  const issRetido = issNoFormulario && form.issRetido;
+  const issRetido = issRetidoNoFormulario && form.issRetido;
   const issRetidoValor =
     issRetido && valorServicos !== null && aliquota !== null
       ? Number(((valorServicos * aliquota) / 100).toFixed(2))
@@ -925,7 +933,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
       descricao: form.descricao.trim(),
       valorServicos,
       competencia: form.competencia,
-      issNoFormulario,
+      issRetidoNoFormulario,
       issRetido,
       aliquota,
       issRetidoValor,
@@ -947,7 +955,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
       valorServicos,
       aliquota,
       issRetido,
-      issNoFormulario,
+      issRetidoNoFormulario,
       issRetidoValor,
       liquido,
       pTotTribSN,
@@ -1946,7 +1954,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                     usa nessa guarda, e `NfseService` a grava em `ServiceInvoice.aliquota`. Não é
                     um valor declarado que se perde; é um campo do nosso registro.
                     ⚠ REGIME DESCONHECIDO MANTÉM O BLOCO (ver `lerRegime`). */}
-                {issNoFormulario ? (
+                {issRetidoNoFormulario ? (
                   <>
                     <label htmlFor="emitir-iss-retido" className="linha-checkbox">
                       <input
@@ -1975,7 +1983,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                         `null` com a caixa desmarcada, então o número que ficou preso no estado do
                         formulário não viaja. Esconder sem parar de mandar é o defeito pior.
                         ⚠ ISTO É SÓ PARA O NÃO OPTANTE — no Simples o bloco inteiro já saiu da tela
-                        (o `issNoFormulario` acima), e nada aqui o reintroduz. */}
+                        (o `issRetidoNoFormulario` acima), e nada aqui o reintroduz. */}
                     {aliquotaNoFormulario ? (
                       <>
                         <label htmlFor="emitir-aliquota">

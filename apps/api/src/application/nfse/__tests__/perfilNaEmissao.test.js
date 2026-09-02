@@ -527,3 +527,96 @@ describe("⚠⚠ as recusas novas são da camada NOSSA — e isso já esteve err
     expect(resultado.correcao).not.toMatch(/não se sabe|NÃO reemita/i);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// A ALÍQUOTA DO ISSQN (`tribMun/pAliq`) — 02/09/2026
+//
+// ⚠⚠ ELA ERA COLETADA, VALIDADA E JOGADA FORA. O serviço exigia alíquota quando havia retenção
+// (`NFSE_ISS_RETIDO_SEM_ALIQUOTA`), gravava em `ServiceInvoice.aliquota` — e `tribMun` escrevia só
+// `tribISSQN` e `tpRetISSQN`. O número nunca chegou à DPS.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+describe("⚠⚠ o `pAliq` — sai só onde a norma PROVA", () => {
+  const RETIDO = { ...PAYLOAD, servico: { ...PAYLOAD.servico, issRetido: true } };
+
+  async function emitirRetido({ perfil, ibscbsLigada = false }) {
+    XML_ENVIADO.length = 0;
+    jest.resetModules();
+    montarMocks({ flagLigada: true, perfil, ibscbsLigada });
+    const { NfseService } = await import("../NfseService.js");
+    const { prisma } = await import("../../../infrastructure/db/prisma.js");
+    const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    const r = await NfseService.issue({ data: RETIDO, log });
+    return { xml: XML_ENVIADO[0] || "", resultado: r, prisma };
+  }
+
+  it("Simples + apuração pelo SN + ISS retido ⇒ a alíquota do PERFIL vai ao XML", async () => {
+    const { xml } = await emitirRetido({ perfil: comPerfil({ pAliq: "3.5" }) });
+    expect(xml).toMatch(/<pAliq>3\.50<\/pAliq>/);
+    // ⚠ NO 1.01 O `pAliq` É O ÚLTIMO FILHO de `TCTribMunicipal` — no 1.00 ele vinha ANTES do
+    // `tpRetISSQN`. Escrever a ordem de uma versão num documento que declara a outra é a classe do
+    // E1235, e é por isso que a subida de versão teve de vir primeiro.
+    expect(xml.indexOf("<pAliq>")).toBeGreaterThan(xml.indexOf("<tpRetISSQN>"));
+    expect(xml.indexOf("<pAliq>")).toBeLessThan(xml.indexOf("</tribMun>"));
+  });
+
+  it("⚠⚠ SEM retenção o campo NÃO sai — mesmo com a alíquota declarada no perfil", async () => {
+    // E0625/E0631: informar a alíquota aqui é REJEIÇÃO. Ter a coluna preenchida não quer dizer que
+    // ela vai à nota — e é por isso que o perfil não decide sozinho.
+    const xml = await emitirCom({ flagLigada: true, perfil: comPerfil({ pAliq: "3.5" }) });
+    expect(xml).toMatch(/<tpRetISSQN>1<\/tpRetISSQN>/);
+    expect(xml).not.toMatch(/pAliq/);
+  });
+
+  it("⚠⚠ com retenção e SEM alíquota no perfil, recusa ANTES de reservar numeração", async () => {
+    const { xml, resultado, prisma } = await emitirRetido({ perfil: PERFIL_DERIVADO });
+    expect(resultado.codigo).toBe("NFSE_PALIQ_OBRIGATORIA_AUSENTE");
+    expect(resultado.camada).toBe("NOSSA");
+    expect(xml).toBe("");
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+    // ⚠ A correção nomeia QUEM declara — a alíquota é da empresa, não da nota.
+    expect(resultado.correcao).toMatch(/contador/i);
+  });
+
+  it("⚠ abaixo de 1,8% recusa, citando o mínimo da própria regra", async () => {
+    const { resultado } = await emitirRetido({ perfil: comPerfil({ pAliq: "1.5" }) });
+    expect(resultado.codigo).toBe("NFSE_PALIQ_ABAIXO_DO_MINIMO");
+  });
+
+  it("⚠⚠ o PERFIL vence o payload — o número é do contador, a caixa é do cliente", async () => {
+    // Decisão do dono, 01/09/2026. Se o payload vencesse, um valor preso no formulário do cliente
+    // sobrescreveria em silêncio a correção do contador — a mesma razão de `pTotTribFed/Est/Mun`
+    // nunca viajarem.
+    XML_ENVIADO.length = 0;
+    jest.resetModules();
+    montarMocks({ flagLigada: true, perfil: comPerfil({ pAliq: "4.00" }) });
+    const { NfseService } = await import("../NfseService.js");
+    const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    await NfseService.issue({
+      data: { ...RETIDO, servico: { ...RETIDO.servico, aliquota: 2 } },
+      log,
+    });
+    expect(XML_ENVIADO[0]).toMatch(/<pAliq>4\.00<\/pAliq>/);
+    expect(XML_ENVIADO[0]).not.toMatch(/<pAliq>2\.00<\/pAliq>/);
+  });
+
+  it("⚠⚠ com apuração FORA do Simples Nacional o campo NÃO sai — e não recusa", async () => {
+    // `regApTribSN` 2 ou 3: E0635 proíbe se o convênio do município estiver ativo e E0640 exige se
+    // não estiver. O status do convênio não está neste projeto, então o comportamento é o de hoje
+    // — sem alíquota — e o risco fica NOMEADO na regra, nunca resolvido por chute.
+    const { xml, resultado } = await emitirRetido({
+      perfil: comPerfil({ regApTribSN: "2", pAliq: "3.5" }),
+    });
+    expect(resultado.status).toBe("issued");
+    expect(xml).toMatch(/<regApTribSN>2<\/regApTribSN>/);
+    expect(xml).not.toMatch(/pAliq/);
+  });
+
+  it("⚠ sem perfil, nada muda — nem a recusa, nem a tag", async () => {
+    // O estado de 100% das empresas hoje. Sem perfil, a alíquota vem do payload e o caminho é o de
+    // sempre: o `pAliq` não sai (Simples sem perfil ⇒ `regApTribSN = 1`, e com retenção a regra
+    // exigiria o campo — por isso a recusa acontece, e é a MESMA do caso acima).
+    const { resultado } = await emitirRetido({ perfil: null });
+    expect(resultado.codigo).toBe("NFSE_PALIQ_OBRIGATORIA_AUSENTE");
+  });
+});

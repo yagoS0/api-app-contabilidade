@@ -4020,6 +4020,110 @@ arquivo) · `fiscal/nbs/__tests__/nbs.test.js` (a porta única).
 ⚠ **Não verificado no navegador**, e o motivo é o de sempre: não há banco alcançável nesta máquina e
 as duas flags nascem OFF. O que prova o comportamento são os testes e a leitura da fonte.
 
+## ⚠⚠ A ALÍQUOTA DO ISSQN CHEGA À DPS — fase 4 (02/09/2026)
+
+`tribMun/pAliq` era **coletado, validado e jogado fora**: o serviço exigia alíquota quando havia
+retenção (`NFSE_ISS_RETIDO_SEM_ALIQUOTA`), gravava em `ServiceInvoice.aliquota`, e `tribMun`
+escrevia só `tribISSQN` e `tpRetISSQN`. O número nunca chegou à nota.
+
+### ⚠⚠ O ACHADO QUE TORNOU ISTO CONSTRUÍVEL — e que CORRIGE o plano desta entrega
+
+O plano dizia que `pAliq` estava bloqueado pela lista de municípios "ATIVO no Sistema Nacional", que
+de fato não está no repositório. **Isso vale só para parte dos cenários.** A tabela-verdade lida do
+ANEXO_I (aba `RN DPS_NFS-e`, linhas 509-516), para o Simples ME/EPP:
+
+| `regApTribSN` | convênio | ISS retido | `pAliq` | regra |
+|---|---|---|---|---|
+| **1** | ativo | **sim** | **obrigatório**, mínimo 1,8% | E0621 |
+| **1** | ativo | não | **proibido** | E0625 |
+| **1** | não ativo | **sim** | **obrigatório**, mínimo 1,8% | E0628 |
+| **1** | não ativo | não | **proibido** | E0631 |
+| 2 ou 3 | ativo | — | proibido | E0635 |
+| 2 ou 3 | não ativo | — | obrigatório | E0640 |
+| (não optante) | ativo | — | proibido | E0617 |
+| (não optante) | não ativo, `regEspTrib=0` | — | obrigatório | E0619 |
+
+⚠⚠ **Com `regApTribSN = 1` — o que emitimos e o caso comum do Simples — o status do convênio NÃO
+IMPORTA:** E0621 e E0628 dizem a MESMA coisa para os dois estados, e E0625 e E0631 também. O único
+discriminante é a RETENÇÃO. É esse ramo que foi construído.
+
+⚠ Nos outros, a resposta é o **terceiro estado — `NAO_DECIDIVEL`**, e ele não vira nem sim nem não:
+o campo não sai (o comportamento de hoje, que funciona em produção) e o risco fica NOMEADO.
+**Recusar ali quebraria a emissão do Lucro Presumido, que sai sem `pAliq` e é aceita.**
+
+### ⚠⚠ A CAIXA DE ISS RETIDO PASSOU A EXISTIR NO SIMPLES — metade de uma decisão revertida
+
+Decisão do dono, 01/09/2026: *"o contador declara a alíquota de ISS para reter, mas o cliente na
+tela dele deve poder selecionar se é retido ou não"*.
+
+| | Simples | não optante / indefinido |
+|---|---|---|
+| **caixa** de retenção | **aparece** (mudou) | aparece |
+| **alíquota** | **não aparece** — vem do perfil | aparece, com a caixa marcada |
+
+⚠⚠ **AS DUAS METADES TÊM DONOS DIFERENTES:** a retenção depende do TOMADOR daquela nota; a alíquota
+depende da EMPRESA. Ter as duas na tela do cliente seriam duas fontes para o mesmo campo do XML.
+
+⚠ **Isto destrava a E0621**: enquanto a caixa não existia no Simples, aquele cenário era
+inalcançável pela tela — o defeito nº 7 que a validação do plano tinha nomeado.
+
+⚠ **`issNoFormulario` virou `issRetidoNoFormulario`** (portal do cliente). O nome antigo dizia "o
+bloco de ISS", e o bloco se partiu em dois com respostas diferentes. ⚠ E a marcação **passou a
+viajar no corpo também no Simples**: antes ele forçava `issRetido: false`, o que era certo enquanto
+a caixa não existia e seria o defeito ESPELHADO agora — caixa marcada, nota saindo sem retenção.
+
+### ⚠⚠ A FORMA: `TSDec1V2` é `0|[0-9]{1}(\.[0-9]{2})?`
+
+UM dígito inteiro e EXATAMENTE duas casas. Duas consequências que não são detalhe:
+
+- **`1.8` não casa com o pattern** — tem de ser `1.80`. Uma alíquota "bonita" para olho humano é
+  recusada por schema.
+- **10% ou mais é INEXPRIMÍVEL** no campo. Não é limite nosso: é o leiaute. O ISS tem teto de 5%
+  (LC 116, art. 8º-A), então na prática não morde — e quem não couber é **recusado nomeando**, nunca
+  truncado (12,5% viraria 2,50% em silêncio).
+
+⚠ **A ordem importa e é por isso que a versão subiu antes:** no **1.01** o `pAliq` é o **ÚLTIMO**
+filho de `TCTribMunicipal`; no 1.00 ele vinha **antes** do `tpRetISSQN`. Escrever a ordem de uma
+versão num documento que declara a outra é a classe do E1235.
+
+### Onde cada peça mora
+
+- regra pura: `application/nfse/pAliqDaDps.js` (a tabela-verdade, o mínimo de 1,8%, a formatação)
+- coluna: `PerfilEmissaoNfse.pAliq` `Decimal(4,2)`, migration `20260902130000` — **NÃO APLICADA**
+- gerador: `tribMun` ganhou o campo, na posição do 1.01
+- pré-voo: recusa ANTES de reservar numeração — não existe inutilização na NFS-e
+- tela do cliente: `impostosDaNota.js` (`issRetidoNoFormulario` × `aliquotaNoFormulario`)
+
+⚠ **Uma variável só para o `regApTribSN`**: ela vai ao XML **e** decide o `pAliq`. Recalcular a
+expressão nos dois lugares é como as duas respostas divergem — e aqui a divergência sairia como nota
+rejeitada por E0621 (obrigatória e ausente) ou E0625 (proibida e presente).
+
+### ⚠ A guarda antiga mudou de leitura, e deixou de ser a primeira a falar
+
+`NFSE_ISS_RETIDO_SEM_ALIQUOTA` continua no gerador, mas agora lê a alíquota **efetiva**
+(perfil → payload): lendo só o payload, ela recusaria toda nota do Simples com ISS retido, e o
+conserto ficaria fora do alcance de quem recebeu a recusa. E quem fala primeiro é o **pré-voo**, com
+`NFSE_PALIQ_OBRIGATORIA_AUSENTE` — mais cedo (antes da numeração) e mais preciso (cita E0621/E0628,
+o mínimo de 1,8% e diz que quem declara é o contador).
+⚠ Nenhuma tela mapeia o código antigo — varrido nos dois portais, só há comentários.
+
+### ⚠⚠ DEFEITO MEU, PEGO PELO PRÓPRIO TESTE — a terceira vez nesta entrega
+
+`formatarPAliq(null)` devolvia **`"0.00"`**: `Number("")` é 0, que é finito e cabe na faixa. Ou seja,
+alíquota que ninguém declarou virava **alíquota ZERO declarada** num campo de documento fiscal. A
+guarda é por **TIPO ACEITO**, nunca por lista de recusas — a mesma lição de `dispensadaPeloPiso`
+(`fiscal/retencao/`) e de `normalizarItemLc116` (`fiscal/ibscbs/`). Três vezes na mesma entrega.
+
+### Regressão
+
+`nfse/__tests__/pAliqDaDps.test.js` (14, a tabela-verdade inteira + a forma conferida contra o XSD)
+· `nfse/__tests__/perfilNaEmissao.test.js` (31, com o `pAliq` no XML e as recusas medidas por
+`serviceInvoice.create` **não** ter sido chamado) · client `emitir/lib/__tests__/impostosDaNota.test.js`
+(34) e `__tests__/impostosNaTela.ligacao.test.jsx` (28, com a prova do CORPO no Simples).
+
+⚠ **Não verificado no navegador** — não há banco alcançável nesta máquina e a flag do perfil nasce
+OFF. O que prova o comportamento são os testes e a leitura da fonte.
+
 ## Recuperação de senha ("esqueci minha senha") — 18/08/2026
 
 Antes desta entrega **não havia nada**: `grep -iE "forgot|reset|recuperar|esqueci" src/routes/auth.js`

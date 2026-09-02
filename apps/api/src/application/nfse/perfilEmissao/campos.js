@@ -123,6 +123,21 @@ export const CAMPOS = Object.freeze([
     leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA],
   }),
 
+  Object.freeze({
+    id: "pAliq",
+    rotulo: "Alíquota do ISSQN",
+    tag: "pAliq",
+    caminhoNoXml: "infDPS/valores/trib/tribMun/pAliq",
+    forma: /^\d(\.\d{1,2})?$/,
+    formaDescrita: "percentual, até 9,99 (`TSDec1V2`: um dígito inteiro e duas casas)",
+    obrigatorio: false,
+    // ⚠⚠ TER A COLUNA PREENCHIDA NÃO QUER DIZER QUE ELA VAI À NOTA. `pAliq` é PROIBIDO num cenário
+    // (E0625/E0631) e OBRIGATÓRIO em outro (E0621/E0628), e os dois são rejeição. Quem decide é
+    // `pAliqDaDps`, que só emite onde a norma PROVA — Simples com `regApTribSN = 1` e ISS retido.
+    hojeSaiDe: "não era escrito",
+    leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
+  }),
+
   // ── NBS e IBS/CBS (02/09/2026) ─────────────────────────────────────────────────────────────
   // ⚠ Estes QUATRO são os primeiros campos cujo escritor nasceu NO MESMO COMMIT da coluna — e
   // não antes dele. É a regra da casa aplicada na direção certa: coluna sem leitor é o defeito
@@ -200,9 +215,6 @@ export const COLUNAS_TECNICAS = Object.freeze([
  * três campos sem leitor.
  */
 export const FORA_DESTA_FASE = Object.freeze({
-  pAliq: "Alíquota do ISS. O gerador não monta `tribMun/pAliq`, e ela é PROIBIDA num cenário "
-    + "(E0617) e OBRIGATÓRIA em outro (E0619) — o discriminante é o status do município no Sistema "
-    + "Nacional, tabela que não está no repositório.",
   BM: "Benefício municipal. Já está cadastrado em 3 colunas da `Company` e NUNCA chegou ao XML.",
   exigSusp: "Exigibilidade suspensa. Sem escritor no gerador.",
   tpImunidade: "Tipo de imunidade — só faz sentido com `tribISSQN = 2`.",

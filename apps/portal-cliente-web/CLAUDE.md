@@ -1052,8 +1052,35 @@ fonte, por três caminhos independentes:
 `conferirCodigoEscolhido` já faz. ⚠ `required` do HTML **não basta**: um **zero** passa pelo
 navegador e morre no servidor. ⚠ Desmarcada, o campo some **e o valor não viaja** — ele fica preso
 no estado do formulário.
-⚠ **Isto é só para o NÃO OPTANTE.** No Simples o bloco de ISS inteiro já sai da tela; nada aqui o
-reintroduz (`aliquotaNoFormulario` depende de `issNoFormulario`, não só da caixa).
+⚠⚠ **ESTE PARÁGRAFO DIZIA "no Simples o bloco de ISS inteiro já sai da tela" E FICOU FALSO PELA
+METADE EM 02/09/2026.** O dono reverteu metade da decisão de 18/08 (01/09/2026): *"o contador
+declara a alíquota de ISS para reter, mas o cliente na tela dele deve poder selecionar se é retido
+ou não"*. Hoje:
+
+| | Simples | não optante / indefinido |
+|---|---|---|
+| **caixa** "o ISS desta nota é retido" | **aparece** | aparece |
+| **alíquota** de ISS | **NÃO aparece** — quem declara é o contador, no perfil de emissão | aparece, com a caixa marcada |
+
+⚠⚠ **AS DUAS METADES TÊM DONOS DIFERENTES, e é isso que sustenta a divisão:** a RETENÇÃO depende do
+TOMADOR daquela nota (muda a cada nota ⇒ cliente marca); a ALÍQUOTA depende da EMPRESA (não muda ⇒
+contador declara, em `PerfilEmissaoNfse.pAliq`). Ter as duas na tela do cliente seriam **duas fontes
+para o mesmo campo do XML**, e a do cliente venceria a correção do contador em silêncio — a mesma
+razão pela qual `pTotTribFed/Est/Mun` nunca viajam daqui.
+
+⚠ **O fundamento estava na lei e já estava no repositório:** ISS retido na fonte **não é abrangido
+pelo DAS** (`docs/fontes-fiscais.md` §1.9, LC 123 art. 13 §1º) e o retido **abate a parcela
+correspondente do Simples** (art. 18 §6º c/c art. 21 §4º). Uma empresa do Simples cujo tomador retinha
+o ISS não tinha onde declarar isso — nem aqui, nem no contador.
+
+⚠⚠ **E é o que destrava a E0621**, que exige a alíquota quando há retenção para prestador ME/EPP:
+enquanto a caixa não existia no Simples, aquele cenário era **inalcançável pela tela**.
+
+⚠ **`issNoFormulario` VIROU `issRetidoNoFormulario`.** O nome antigo dizia "o bloco de ISS", e o
+bloco se partiu em dois com respostas diferentes — um nome que continua dizendo "o bloco" faz o
+próximo leitor concluir a coisa errada. ⚠ E a marcação **passou a viajar no corpo também no
+Simples**: antes ele forçava `issRetido: false`, o que era certo enquanto a caixa não existia e
+seria o defeito ESPELHADO agora (caixa marcada, nota saindo sem retenção).
 
 ⚠ `REGIME` e `lerRegime` **mudaram-se para cá** vindos do `.jsx` — era lá que a guarda faltava.
 

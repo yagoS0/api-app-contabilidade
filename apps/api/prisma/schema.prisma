@@ -2952,6 +2952,15 @@ model PerfilEmissaoNfse {
   /// ⚠⚠ HOJE ESTÁ CRAVADO EM "1" (`NfseService.js:887`) — é por isso que exportação de serviço é
   /// impossível de declarar, mesmo havendo empresa na carteira que presta para o exterior.
   tribISSQN String?
+  /// `pAliq` — a alíquota do ISSQN, em percentual. **Quem declara é o contador** (decisão do dono,
+  /// 01/09/2026: *"o contador declara a alíquota de ISS para reter, mas o cliente na tela dele deve
+  /// poder selecionar se é retido ou não"*).
+  /// ⚠⚠ O campo é PROIBIDO num cenário e OBRIGATÓRIO em outro, e os dois são rejeição — ter a
+  /// coluna preenchida NÃO quer dizer que ela vai à nota. Quem decide é `pAliqDaDps`, e ele só
+  /// emite onde a norma PROVA (Simples com `regApTribSN = 1` e ISS retido; mínimo 1,8%).
+  /// ⚠ `Decimal(4,2)`: o leiaute (`TSDec1V2`) aceita UM dígito inteiro e duas casas — no máximo
+  /// 9,99%. O ISS tem teto de 5% (LC 116, art. 8º-A), então o CHECK de 0–10 é folgado de propósito.
+  pAliq Decimal? @db.Decimal(4, 2)
 
   // ── NBS e IBS/CBS (reforma tributária) ─────────────────────────────────────────────────────
   /// `cNBS` — guardado na forma PONTUADA (`1.1502.10.00`), que é como a fonte publica e como uma

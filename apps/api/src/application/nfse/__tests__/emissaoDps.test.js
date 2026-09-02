@@ -391,7 +391,19 @@ describe("retenção de ISSQN — chega ao XML", () => {
     expect(xmlEnviado()).toContain("<tpRetISSQN>2</tpRetISSQN>");
   });
 
-  it("retenção sem alíquota recusa (E0625) em vez de emitir retenção sem base", async () => {
+  it("⚠⚠ retenção sem alíquota recusa — e desde 02/09/2026 a recusa é mais CEDO e mais precisa", async () => {
+    // ⚠⚠ O CÓDIGO MUDOU, E É MELHORIA — não afrouxamento. A intenção deste caso ("retenção sem
+    // alíquota NÃO vira nota") está intacta; o que mudou é QUEM recusa e ONDE:
+    //
+    //   antes  `NFSE_ISS_RETIDO_SEM_ALIQUOTA`, dentro de `buildDpsXml` — ou seja, DEPOIS de a
+    //          numeração ter sido reservada;
+    //   agora  `NFSE_PALIQ_OBRIGATORIA_AUSENTE`, no PRÉ-VOO, citando E0621/E0628 e o mínimo de
+    //          1,8%, e dizendo que quem declara a alíquota é o CONTADOR, no perfil.
+    //
+    // ⚠ A guarda antiga NÃO foi removida: ela continua no gerador, agora lendo a alíquota EFETIVA
+    // (perfil → payload). O que ela deixou de ser é a PRIMEIRA a falar.
+    // ⚠ Nenhuma tela mapeia o código antigo — varrido nos dois portais, só há comentários —, e
+    // recusa que a tela não conhece mostra a mensagem do servidor em vez de inventar procedimento.
     montarCenario();
     const r = await NfseService.issue({
       data: {
@@ -400,7 +412,12 @@ describe("retenção de ISSQN — chega ao XML", () => {
       },
       log,
     });
-    expect(r.codigo).toBe("NFSE_ISS_RETIDO_SEM_ALIQUOTA");
+    expect(r.codigo).toBe("NFSE_PALIQ_OBRIGATORIA_AUSENTE");
+    expect(r.camada).toBe("NOSSA");
+    // A prova de que foi ANTES da numeração: nenhuma linha de nota foi criada.
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+    // E a correção aponta para quem pode consertar.
+    expect(r.correcao).toMatch(/contador|perfil de emissão|perfil/i);
   });
 });
 

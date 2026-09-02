@@ -20,7 +20,7 @@ export function PreviaNota({ empresa, valores }) {
     descricao,
     valorServicos,
     competencia,
-    issNoFormulario,
+    issRetidoNoFormulario,
     issRetido,
     aliquota,
     issRetidoValor,
@@ -97,13 +97,13 @@ export function PreviaNota({ empresa, valores }) {
                 emissão nem oferece o campo (decisão do dono, 18/08/2026). Escrever "ISSQN retido:
                 Não" aqui daria a entender que houve uma escolha de retenção; o que houve é que a
                 pergunta não se aplica. */}
-            {issNoFormulario ? (
+            {issRetidoNoFormulario ? (
               <tr className="linha-info">
                 <td>ISSQN retido pelo tomador</td>
                 <td>{issRetido ? "Sim" : "Não"}</td>
               </tr>
             ) : null}
-            {issNoFormulario && issRetido ? (
+            {issRetidoNoFormulario && issRetido ? (
               <tr className="linha-info">
                 <td>Alíquota do ISS</td>
                 <td>{aliquota === null ? TRACO : pct(aliquota)}</td>

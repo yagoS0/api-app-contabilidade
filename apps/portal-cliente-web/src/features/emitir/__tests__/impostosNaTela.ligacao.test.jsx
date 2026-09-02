@@ -233,9 +233,29 @@ describe("⚠⚠ A ALÍQUOTA DE ISS SÓ APARECE COM A RETENÇÃO MARCADA", () =>
     expect(document.getElementById("emitir-aliquota")).not.toBeInTheDocument();
   });
 
-  test("⚠ no SIMPLES nada disso é reintroduzido — nem a caixa, nem a alíquota", async () => {
+  test("⚠⚠ no SIMPLES a CAIXA aparece e a ALÍQUOTA não — mudou em 02/09/2026", async () => {
+    // ⚠⚠ ESTE CASO EXIGIA QUE NENHUM DOS DOIS APARECESSE. A decisão de 18/08/2026 escondia o
+    // bloco inteiro no Simples (*"o ISS está dentro do DAS"*); o dono reverteu METADE dela em
+    // 01/09/2026: *"o contador declara a alíquota de ISS para reter, mas o cliente na tela dele
+    // deve poder selecionar se é retido ou não"*.
+    //
+    // ⚠ As duas metades têm donos diferentes, e é isso que o caso trava agora:
+    //   a CAIXA depende do TOMADOR daquela nota  → cliente marca;
+    //   a ALÍQUOTA depende da EMPRESA            → contador declara, no perfil de emissão.
+    // Ter os dois na tela do cliente seriam duas fontes para o mesmo campo do XML.
+    //
+    // ⚠⚠ E é o que destrava a **E0621**, que exige a alíquota quando há retenção para prestador
+    // ME/EPP: enquanto a caixa não existia no Simples, aquele cenário era inalcançável pela tela.
     await renderizar(SIMPLES);
-    expect(document.getElementById("emitir-iss-retido")).not.toBeInTheDocument();
+    expect(document.getElementById("emitir-iss-retido")).toBeInTheDocument();
+    expect(document.getElementById("emitir-aliquota")).not.toBeInTheDocument();
+  });
+
+  test("⚠ e marcar a caixa no Simples NÃO faz a alíquota aparecer", async () => {
+    // A guarda contra a "correção" óbvia e errada: religar a alíquota à caixa. Ela depende do
+    // REGIME também — as duas perguntas se separaram.
+    await renderizar(SIMPLES);
+    fireEvent.click(document.getElementById("emitir-iss-retido"));
     expect(document.getElementById("emitir-aliquota")).not.toBeInTheDocument();
   });
 
@@ -422,5 +442,51 @@ describe("⚠⚠ o formulário SOBREVIVE à recusa em que nada saiu da máquina"
     });
 
     expect(document.querySelector("form.pane-form")).toBeNull();
+  });
+});
+
+describe("⚠⚠ A PROVA DO CORPO: no Simples a marcação de ISS retido AGORA VIAJA", () => {
+  // ⚠ A empresa destas provas é do Simples, e desde 31/08/2026 a tela CONFERE o `pTotTribSN`
+  // antes de enviar. Sem preencher, o submit nem chega à API — e as asserções sobre o CORPO
+  // passariam a medir um corpo que nunca existiu.
+  const preencherComAliquotaEfetiva = () => {
+    preencherOMinimo();
+    fireEvent.change(document.getElementById("emitir-ptottribsn"), { target: { value: "6" } });
+  };
+
+  // ⚠⚠ ATÉ 02/09/2026 O SIMPLES FORÇAVA `issRetido: false` NO CORPO — e estava certo enquanto a
+  // caixa não existia na tela dele: campo que não se pode responder não pode viajar respondido.
+  // Com a caixa na tela (decisão do dono, 01/09/2026), forçar `false` seria o defeito ESPELHADO
+  // daquele que a disciplina evita: a pessoa marca, a tela mostra marcado, e a nota sai dizendo
+  // que não há retenção. O ISS retido na fonte não é abrangido pelo DAS (LC 123, art. 13, §1º),
+  // então o recolhimento iria para o lado errado — que é exatamente o defeito que
+  // `resolverTpRetIssqn` já tinha consertado no XML.
+
+  test("marcada, `issRetido: true` chega ao corpo", async () => {
+    await renderizar(SIMPLES);
+    preencherComAliquotaEfetiva();
+    fireEvent.click(document.getElementById("emitir-iss-retido"));
+    const corpo = await submeterEPegarOCorpo();
+    expect(corpo.servico.issRetido).toBe(true);
+  });
+
+  test("desmarcada, `false` — e é a resposta, não a ausência", async () => {
+    await renderizar(SIMPLES);
+    preencherComAliquotaEfetiva();
+    const corpo = await submeterEPegarOCorpo();
+    expect(corpo.servico.issRetido).toBe(false);
+  });
+
+  test("⚠⚠ e a ALÍQUOTA continua não viajando no Simples — nem com a caixa marcada", async () => {
+    // A metade que NÃO mudou. No Simples quem declara o número é o contador, no perfil de emissão;
+    // se ele viajasse daqui, seriam duas fontes para o mesmo campo do XML — e a do cliente venceria
+    // a correção do contador em silêncio, que é o motivo pelo qual `pTotTribFed/Est/Mun` também
+    // nunca viajam.
+    await renderizar(SIMPLES);
+    preencherComAliquotaEfetiva();
+    fireEvent.click(document.getElementById("emitir-iss-retido"));
+    const corpo = await submeterEPegarOCorpo();
+    // ⚠ Varredura do JSON inteiro, não só de `servico.aliquota`.
+    expect(JSON.stringify(corpo)).not.toMatch(/"aliquota":\s*[0-9]/);
   });
 });

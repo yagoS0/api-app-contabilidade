@@ -81,14 +81,29 @@ describe("⚠⚠ `pTotTribSN` — SÓ no Simples, e a guarda vale nos DOIS lados
   });
 });
 
-describe("o bloco de ISS — sai só no Simples; o indefinido MANTÉM", () => {
-  test("Simples não tem bloco de ISS", () => {
-    expect(camposDeImposto({ regime: REGIME.SIMPLES }).issNoFormulario).toBe(false);
+describe("⚠⚠ a CAIXA de retenção aparece em TODOS os regimes — mudou em 02/09/2026", () => {
+  // ⚠⚠ ESTE BLOCO SE CHAMAVA "o bloco de ISS — sai só no Simples" e travava o oposto:
+  // `issNoFormulario` era `false` no Simples. Ele cumpriu o papel de guardar a decisão de
+  // 18/08/2026 (*"no Simples o ISS está dentro do DAS"*) e caiu quando ela foi revertida — pelo
+  // dono, em 01/09/2026: *"o contador declara a alíquota de ISS para reter, mas o cliente na tela
+  // dele deve poder selecionar se é retido ou não"*.
+  //
+  // O fundamento já estava no repositório: **ISS retido na fonte não é abrangido pelo DAS**
+  // (`docs/fontes-fiscais.md` §1.9, LC 123 art. 13 §1º) e o retido abate a parcela do Simples
+  // (art. 18 §6º c/c art. 21 §4º). ⚠ SÓ A CAIXA mudou de lado; a ALÍQUOTA continua fora do
+  // Simples — ver o bloco seguinte.
+  test("Simples, não optante e indefinido: todos têm a caixa", () => {
+    for (const regime of [REGIME.SIMPLES, REGIME.OUTRO, REGIME.DESCONHECIDO]) {
+      expect({ regime, caixa: camposDeImposto({ regime }).issRetidoNoFormulario })
+        .toEqual({ regime, caixa: true });
+    }
   });
 
-  test("não optante e regime indefinido têm", () => {
-    expect(camposDeImposto({ regime: REGIME.OUTRO }).issNoFormulario).toBe(true);
-    expect(camposDeImposto({ regime: REGIME.DESCONHECIDO }).issNoFormulario).toBe(true);
+  test("⚠ o nome antigo NÃO sobrevive — ele descrevia 'o bloco de ISS', que deixou de existir", () => {
+    // O bloco se partiu em dois (caixa e alíquota) e passou a ter respostas diferentes. Um nome
+    // que continua dizendo "o bloco" faria o próximo leitor concluir a coisa errada — e neste
+    // projeto a frase que descreve um comportamento é parte do comportamento.
+    expect(camposDeImposto({ regime: REGIME.SIMPLES }).issNoFormulario).toBeUndefined();
   });
 });
 
@@ -102,7 +117,12 @@ describe("⚠⚠ a alíquota de ISS SÓ EXISTE COM RETENÇÃO", () => {
     expect(camposDeImposto({ regime: REGIME.DESCONHECIDO, issRetido: true }).aliquotaNoFormulario).toBe(true);
   });
 
-  test("⚠ no SIMPLES a caixa não existe, então a alíquota também não — nada é reintroduzido lá", () => {
+  test("⚠⚠ no SIMPLES a alíquota NÃO aparece — mesmo com a caixa marcada", () => {
+    // ⚠ O motivo MUDOU, e por isso este caso continua verde por uma razão diferente. Antes: "a
+    // caixa não existe no Simples, então a alíquota também não". Agora a caixa EXISTE, e a alíquota
+    // continua fora porque **quem declara o número é o contador**, no perfil de emissão
+    // (`PerfilEmissaoNfse.pAliq`). Cliente marcando a caixa E digitando a alíquota seriam duas
+    // fontes para o mesmo campo do XML.
     expect(camposDeImposto({ regime: REGIME.SIMPLES, issRetido: true }).aliquotaNoFormulario).toBe(false);
     expect(aliquotaIssParaOPayload({ regime: REGIME.SIMPLES, issRetido: true, aliquota: "5" })).toBe(null);
   });

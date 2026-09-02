@@ -94,6 +94,19 @@ export const CAMPOS_PERFIL_EMISSAO = Object.freeze([
     cravadoHoje: true,
   }),
 
+  Object.freeze({
+    id: "pAliq",
+    rotulo: "Alíquota do ISSQN",
+    tag: "pAliq",
+    caminhoNoXml: "infDPS/valores/trib/tribMun/pAliq",
+    formaDescrita: "percentual, até 9,99 (`TSDec1V2`: um dígito inteiro e duas casas)",
+    obrigatorio: false,
+    // ⚠⚠ TER O CAMPO PREENCHIDO NÃO QUER DIZER QUE ELE VAI À NOTA. `pAliq` é PROIBIDO sem
+    // retenção (E0625/E0631) e OBRIGATÓRIO com ela (E0621/E0628, mínimo 1,8%) — e fora do caso do
+    // Simples com apuração pelo SN a decisão depende do convênio do município, que não temos.
+    cravadoHoje: false,
+  }),
+
   // ── NBS e IBS/CBS (02/09/2026) ───────────────────────────────────────────────
   // ⚠ Nenhum deles é `cravadoHoje`: o gerador simplesmente NÃO ESCREVIA a tag. Por isso a
   // procedência deles, sem perfil, é `INDEFINIDO` e não `CRAVADO` — dizer "cravado" afirmaria que

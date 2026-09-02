@@ -93,6 +93,11 @@ const CODIGOS_NOSSOS = new Set([
   "NFSE_IBSCBS_INCOMPLETO",
   "NFSE_IBSCBS_CST_INVALIDO",
   "NFSE_IBSCBS_COMBINACAO_NAO_AUTORIZADA",
+  // A alíquota do ISSQN: obrigatória com retenção no Simples (E0621/E0628), com mínimo de 1,8%.
+  // Recusa NOSSA — o conserto é no perfil de emissão, e nada saiu da máquina.
+  "NFSE_PALIQ_OBRIGATORIA_AUSENTE",
+  "NFSE_PALIQ_ABAIXO_DO_MINIMO",
+  "NFSE_PALIQ_FORA_DO_CAMPO",
   "NFSE_ISS_RETIDO_SEM_ALIQUOTA",
   "NO_COMPANY_CERT",
   "CERT_CNPJ_MISMATCH",
