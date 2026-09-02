@@ -70,9 +70,13 @@ export const FRASE_DO_FORA_DO_LOTE = Object.freeze({
   [FORA_DO_LOTE.CASA_COM_NOTA]:
     "Este débito do extrato parece ser o pagamento de uma nota que já está na fila. Contabilizá-lo "
     + "aqui lançaria a mesma despesa duas vezes — case-o com a nota no painel acima.",
+  // ⚠⚠ A SAÍDA MUDOU EM 01/09/2026: este caso deixou de ser um beco sem saída. O quarto verbo —
+  // ABSORVER, no painel de casamentos — tira o débito da fila sem criar lançamento nenhum e sem
+  // tocar no que já está no razão. Antes dele a frase só sabia dizer o que NÃO fazer.
   [FORA_DO_LOTE.PAGA_NOTA_JA_LANCADA]:
     "Este débito é o pagamento de uma nota que você JÁ contabilizou. Lançá-lo aqui poria a mesma "
-    + "despesa duas vezes — e não há o que casar: para corrigir a data do lançamento, desfaça e refaça.",
+    + "despesa duas vezes. Use «Absorver», no painel de débitos do extrato: ele tira este débito da "
+    + "fila sem criar lançamento. Para corrigir a data do lançamento, desfaça e refaça.",
   [FORA_DO_LOTE.BLOQUEADA]: "Esta linha está bloqueada — o motivo aparece na fila.",
   [FORA_DO_LOTE.ESTADO_NAO_CONFIRMA]: "Esta linha não está esperando confirmação.",
   [FORA_DO_LOTE.PRECISA_DE_DATA]:

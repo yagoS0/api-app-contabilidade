@@ -781,6 +781,52 @@ fornecedor, nunca a carteira inteira.
 identifica, e o que está em jogo é um lançamento sem clique) e **sem `diaDoLancamento`** (a data não
 se arbitra).
 
+### ⚠⚠⚠ O CRÉDITO DA REGRA FICOU TRÊS DIAS SEM CHEGAR AO RAZÃO — fechado em 01/09/2026
+
+⚠⚠ **A METADE DE BAIXO DESTA DECISÃO NUNCA ACONTECEU, e não havia sinal nenhum disso.**
+`lancarPorRegra` passava `contaCredito` para `aplicarTransicao` desde 29/08; `podeTransitar` **não
+lia o campo** e `LancamentoDeclarado` **não tinha a coluna**. O contador escolhia o crédito na regra
+do fornecedor, a regra o guardava, e o razão continuava creditando o caixa cravado — sem erro, sem
+log, sem nada na tela.
+
+⚠⚠ **O QUE ESCONDEU O DEFEITO FOI UM TESTE QUE MEDIA O ARGUMENTO, NÃO O EFEITO**:
+`lancamentoPorRegra.test.js` conferia que `dados.contaCredito` era PASSADO. Ninguém conferia que ele
+CHEGAVA. O experimento prova: desligando o tratamento do campo, a suíte inteira ficava **verde**.
+Hoje o mesmo experimento dá **6 vermelhos** — a corrente medida é *ato → coluna → linha de crédito
+do `AccountingEntry`*.
+
+⚠ Hoje o crédito é escolhível também **na Conferência** (decisão do dono, 01/09: *"aqueles que viram
+lançamento contábil devem ter opção de colocar débito e crédito"*), pela mesma coluna e com a mesma
+guarda de disponibilidade. ⚠ `undefined` = "não mexer", `null` = "voltar ao caixa" — sem a distinção,
+o «Lançar» da linha (que não tem campo de crédito) apagaria a escolha da regra a cada confirmação.
+
+### ⚠⚠ A VARREDURA AUTOMÁTICA — a data-piso vira decisão permanente (01/09/2026)
+
+> Dono: *"aquela parte onde diz «trazer notas» — elas devem ser trazidas automaticamente, como tem
+> na aba de notas fiscais deve aparecer ali."*
+
+⚠⚠ **MEDIDO ANTES**: `varrerNotasDaEmpresa` tinha **um** chamador, a rota. Nenhum worker. As notas
+chegavam sozinhas à base e paravam ali — virar FILA dependia de alguém clicar.
+
+⚠⚠ **A SAÍDA NÃO FOI AFROUXAR A DATA-PISO.** Ela é obrigatória porque, sem piso, a primeira
+varredura despeja a base inteira na fila (1.897 NFS-e recebidas) — não é fila, é muro; e um piso
+escolhido pelo SISTEMA faria o sistema decidir o tamanho do trabalho do contador. O que se guarda é
+a ESCOLHA dele (`varreduras_automaticas_de_notas`, uma linha por empresa), repetida a cada ciclo do
+`dfeNotasWorker`. A varredura é idempotente, então repetir o mesmo piso é seguro por construção —
+não há cursor a manter. ⚠ **Empresa sem linha não é varrida sozinha.**
+
+⚠⚠ **ELA ENFILEIRA E PARA AÍ**: `lancarPorRegraNaEmpresa` NÃO entra no caminho automático. Criar
+`AccountingEntry` a partir de um processo de fundo, sem ninguém presente, é mudar a forma como o
+lançamento acontece — pedido explícito do dono, não efeito colateral de "trazer as notas".
+
+⚠ *"Olhei"* e *"trouxe"* são gravados SEPARADOS (`ultimaTentativaEm` × `ultimoResultadoEm`), pela
+mesma lição que custou 29 dias de captura parada em produção.
+
+### ⚠⚠ ABSORVER — o quarto verbo (01/09/2026)
+
+Ver a seção **"FUNDIR NÃO É CONTABILIZAR"**, logo acima: o débito de um pagamento cuja nota **já
+virou lançamento** deixou de ser um beco sem saída.
+
 ### ⚠⚠ O CRÉDITO É RECUSADO SE NÃO FOR DISPONIBILIDADE
 
 Resposta do dono: *"continua sendo disponibilidade (caixa/banco)"*. Quem decide é

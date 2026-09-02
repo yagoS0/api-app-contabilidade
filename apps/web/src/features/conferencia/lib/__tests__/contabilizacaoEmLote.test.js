@@ -92,8 +92,14 @@ describe("⚠⚠ o débito que casa com nota NÃO entra no lote", () => {
     expect(ids.get("ofx-9")).toBe(FORA_DO_LOTE.PAGA_NOTA_JA_LANCADA);
     expect(FRASE_DO_FORA_DO_LOTE[FORA_DO_LOTE.PAGA_NOTA_JA_LANCADA]).toMatch(/JÁ contabilizou/i);
     expect(FRASE_DO_FORA_DO_LOTE[FORA_DO_LOTE.PAGA_NOTA_JA_LANCADA]).toMatch(/desfaça e refaça/i);
-    // ⚠ E ele NÃO manda casar no painel — que é o conselho que o painel desmente.
-    expect(FRASE_DO_FORA_DO_LOTE[FORA_DO_LOTE.PAGA_NOTA_JA_LANCADA]).not.toMatch(/painel/i);
+    // ⚠⚠ ELE NÃO MANDA **CASAR** — esse era o conselho que o painel desmentia (lá não há o que
+    // casar: a data da nota já é a data do lançamento). O que ele manda desde 01/09/2026 é
+    // ABSORVER, o quarto verbo, que o mesmo painel oferece: o débito sai da fila sem criar
+    // lançamento e sem tocar no razão. ⚠ A asserção antiga era `not.toMatch(/painel/i)` — ela
+    // proibia a PALAVRA quando o que estava errado era o VERBO, e com a saída nova ela recusaria
+    // justamente o conselho certo.
+    expect(FRASE_DO_FORA_DO_LOTE[FORA_DO_LOTE.PAGA_NOTA_JA_LANCADA]).toMatch(/Absorver/i);
+    expect(FRASE_DO_FORA_DO_LOTE[FORA_DO_LOTE.PAGA_NOTA_JA_LANCADA]).not.toMatch(/case-o|casar com a nota/i);
   });
 
   it("⚠ bastando UMA candidata fusível, o caminho do painel existe e o motivo é o de sempre", () => {

@@ -452,12 +452,69 @@ Os quatro defeitos, e o que cada um custava:
 - ⚠ **Três botões "Atualizar"** recarregando três consultas diferentes. Viraram *Atualizar a fila* ·
   *Atualizar os débitos* · *Atualizar as recorrências*.
 
-**O que NÃO foi mexido, porque é decisão do dono** — está no relatório da entrega; em resumo: a aba
-**Lançamentos automáticos** (a assimetria que ele apontou: a CONSEQUÊNCIA virou aba de topo e a
-CAUSA, a Conferência, continua um botão dentro de Lançamentos), o **empilhamento dos 7 blocos numa
-tela só**, e o **risco de despesa em dobro** — 6 das 11 linhas da fila apareciam **também** no painel
-de casamentos, e o botão «Lançar» da linha (novo) **não** consulta `debitosQueCasamComNota`, que é a
-guarda que o LOTE exige antes de abrir.
+**O que NÃO foi mexido na varredura de UI/UX, porque era decisão do dono** — o **empilhamento dos 7
+blocos numa tela só**.
+
+⚠⚠ **AS OUTRAS DUAS RESSALVAS DESTE PARÁGRAFO CAÍRAM NO MESMO DIA**, e ficam registradas porque a
+lista antiga passaria a NEGAR o que hoje existe:
+
+- a *"aba Lançamentos automáticos"* deixou de existir — o dono a devolveu para a seção «Regras» e
+  depois a transformou em GAVETA (ver o bloco seguinte);
+- o *"risco de despesa em dobro"* foi FECHADO: o «Lançar» da linha consulta `debitosQueCasamComNota`
+  (a MESMA resposta que o painel reporta, nunca uma segunda consulta) e o motivo sai VISÍVEL na
+  linha, não só no `title`.
+
+### ⚠⚠ E NO MESMO DIA A TELA GANHOU CINCO MUDANÇAS DE PRODUTO (01/09/2026)
+
+O dono trouxe, numa mensagem só, um problema e quatro ajustes. Cada um tem commit próprio; o que
+segue é o mapa e as armadilhas.
+
+**1 · O botão «Fluxo» da linha FOI REMOVIDO** — ele nasceu e morreu no mesmo dia, as duas por
+decisão do dono. Punha a despesa no fluxo do cliente SEM lançar; a regra que veio horas depois
+(*"só entra no fluxo aquilo que for lançado"*) o tornou sem sentido. ⚠ Saiu de TODAS as camadas
+(tela, `postConferenciaFluxo`, rota, serviço, o contribuinte `DESPESA_PREVISTA` do fluxo nos dois
+espelhos); a coluna `previstoNoFluxoEm` ficou no schema com lápide, sem escritor e sem leitor.
+
+**2 · «ABSORVER» — o quarto verbo do casamento.** O caso do dono: *"posso ter feito os lançamentos
+através da nota e depois importar o extrato"*. A nota já lançada volta `podeFundir: false`, e até
+aqui a tela só sabia PEDIR que ninguém contabilizasse o débito à parte — ele ficava na fila para
+sempre, e a única porta aberta era a errada. Absorver marca o débito como `FUNDIDO`, **não cria
+lançamento e não toca no que já está no razão**.
+- ⚠⚠ `podeFundir` e `podeAbsorver` **nunca são verdade juntos**, e quem decide é o servidor
+  (`lerCandidata`). A nota lançada **por regra** também está `CONTABILIZADO` e NÃO se absorve: ali o
+  extrato **corrige** a data presumida, e absorver jogaria fora a única prova do dia real.
+- ⚠⚠ **A DIVERGÊNCIA DE DATAS É DITA** (*"absorve e AVISA"*), e o aviso mora na ABA, não no painel:
+  a aba monta `PainelDeCasamentos` com `key={versao}` e o ato incrementa `versao` — guardado lá
+  dentro, o aviso nascia e morria no mesmo clique. **Medido no navegador.**
+
+**3 · As notas passam a ser TRAZIDAS SOZINHO.** Medido antes: `varrerNotasDaEmpresa` tinha um único
+chamador, a rota — nenhum worker. ⚠⚠ O problema era a **data-piso**, e a saída não foi afrouxá-la:
+o contador escolhe a data uma vez e ela vira decisão permanente (`varreduras_automaticas_de_notas`),
+repetida a cada ciclo do `dfeNotasWorker`. **Empresa sem escolha não é varrida.** ⚠ A linha de
+estado tem CINCO leituras (`leituraDaAutomacao`) e a que sempre some quando se conta mal é *"olhei e
+não veio nada"* — a confusão que deixou a captura 29 dias parada em produção.
+
+**4 · Os lançamentos automáticos viram GAVETA** (`Modal lateral`). Terceira mudança de lugar em dois
+dias, todas do dono. ⚠ A gaveta é VARIANTE do `Modal`, nunca um overlay novo — Esc, foco preso e
+foco de volta vêm do primitivo. A prop `recolhido` do painel morreu com lápide no mesmo dia em que
+nasceu.
+
+**5 · DÉBITO E CRÉDITO ESCOLHÍVEIS** — e isto fechou um buraco silencioso: desde 29/08 a REGRA
+guardava `contaCredito` e `lancarPorRegra` a passava para `aplicarTransicao`, que a **descartava**
+(não havia coluna nem tratamento). O contador escolhia e o razão continuava creditando o caixa.
+- ⚠⚠ O crédito continua preso a **disponibilidade** (*"continua sendo caixa/banco"*, 29/08). O que
+  muda numa compra de ativo é o **débito**, que sempre foi livre.
+- ⚠⚠ `undefined` ≠ `null`: ausente = "não mexer", nulo = "voltar ao caixa". Mandar `null` sempre que
+  o campo estivesse vazio apagaria, a cada confirmação, o crédito que a regra escolheu — inclusive
+  pelo «Lançar» da linha, que não tem campo de crédito.
+- ⚠ O botão **«Contas…»** na linha existe porque, sem ele, a escolha seria inalcançável no caminho
+  normal: a linha com data lança direto e o modal só aparecia quando a ação pedia DATA.
+- ⚠⚠ **AS FRASES ACOMPANHAM A ESCOLHA.** *"crédito no caixa"* fixo passaria a afirmar o que o ato
+  não vai fazer — e é a última coisa que o contador lê antes de clicar.
+
+⚠⚠ **UM EXPERIMENTO VOLTOU ZERO VERMELHOS**, e foi o achado do dia: desligando `contaCredito` na
+máquina de estados, a suíte inteira ficava verde. A regra pura tinha teste e a LIGAÇÃO não tinha
+nenhum — que é exatamente como o campo passou dias sendo enviado e descartado.
 
 ## ⚠⚠ A ABA FLUXO DE CAIXA FOI REMOVIDA (29/08/2026) — ela existiu por dois dias
 
