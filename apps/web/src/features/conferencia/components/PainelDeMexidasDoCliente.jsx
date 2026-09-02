@@ -121,13 +121,13 @@ export function PainelDeMexidasDoCliente({ companyId, podeEscrever = true }) {
     <section style={{ ...card, marginTop: 16 }} data-teste="mexidas-do-cliente">
       <header style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
         <h3 style={{ margin: 0, fontSize: 15 }}>O cliente mexeu</h3>
-        <span style={{ color: "var(--muted)", fontSize: 12 }}>
+        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
           {estado.mexidas.length} {estado.mexidas.length === 1 ? "saída" : "saídas"}
         </span>
       </header>
       {/* ⚠ A frase que impede a leitura errada: isto NÃO é uma fila de tarefas. Sem ela, o contador
           lê quatro painéis iguais e presume que este também espera uma decisão dele. */}
-      <p style={{ margin: "0 0 12px", color: "var(--muted)", fontSize: 13 }}>
+      <p style={{ margin: "0 0 12px", color: "var(--text-muted)", fontSize: 13 }}>
         Mudanças que o cliente fez no fluxo dele. Não é preciso decidir nada — é só para você saber.
       </p>
 
@@ -137,7 +137,7 @@ export function PainelDeMexidasDoCliente({ companyId, podeEscrever = true }) {
         </p>
       ) : null}
       {estado.indisponivel ? (
-        <p style={{ color: "var(--muted)", fontSize: 13 }}>
+        <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
           A tabela de recorrências ainda não existe neste banco — a migration não foi aplicada.
         </p>
       ) : null}
@@ -155,10 +155,10 @@ export function PainelDeMexidasDoCliente({ companyId, podeEscrever = true }) {
                 <strong style={{ fontSize: 14 }}>{m.rotulo}</strong>
                 {/* ⚠ A palavra ANTES de qualquer cor: quem lê com leitor de tela recebe a mesma
                     informação. É a mesma regra da tela do cliente. */}
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>{d.titulo}</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{d.titulo}</span>
               </div>
               <p style={{ margin: "6px 0", fontSize: 13 }}>{d.corpo}</p>
-              <p style={{ margin: 0, fontSize: 12, color: "var(--muted)" }}>Em {quando(d.em)}</p>
+              <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>Em {quando(d.em)}</p>
 
               {/* ⚠⚠ Desfazer SÓ na exclusão. O dia que o cliente definiu não se "desfaz" por aqui:
                   ele é a informação de quem paga, e sobrescrevê-la pelo escritório seria dizer que
