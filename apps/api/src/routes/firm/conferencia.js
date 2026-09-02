@@ -33,6 +33,7 @@ import {
   listarFila,
   sugestoesDePagamento,
   varrerInvariantes,
+  liberarDeclaradoNoFluxo,
 } from "../../application/declarados/DeclaradoService.js";
 import {
   RegraRecusada,
@@ -61,6 +62,7 @@ import {
   SaidaRecusada,
   RECUSA_DA_SAIDA,
   decidirSaidaAvulsa,
+  lancarSaidaAvulsa,
   listarSaidasPendentes,
 } from "../../application/fluxo/SaidaAvulsaService.js";
 
@@ -112,6 +114,16 @@ function serializar(d) {
     detalheServico: d.detalheServico,
 
     dataPagamento: d.dataPagamento ? dataCivilISO(d.dataPagamento) : null,
+    /**
+     * ⚠⚠ A DATA EM QUE ESTA DESPESA ENTRA NO FLUXO — decisão do dono, 01/09/2026 (*"temos um botão
+     * fluxo, que apenas libera no fluxo mas não lança"*).
+     *
+     * ⚠ Presença = liberada. `null` = fora do fluxo — e é o que faz a tela desenhar o botão como
+     * "Pôr no fluxo" em vez de "Tirar do fluxo".
+     * ⚠ Ela NÃO é `dataPagamento`: aquela é prova de que o dinheiro saiu e vira a data do
+     * lançamento; esta é previsão e nunca vai ao razão.
+     */
+    previstoNoFluxoEm: d.previstoNoFluxoEm ? dataCivilISO(d.previstoNoFluxoEm) : null,
     // ⚠ A PROCEDÊNCIA DA DATA VAI PARA A TELA. É ela que permite dizer "declarado" em vez de deixar
     // o contador achar que o banco confirmou o pagamento.
     origemPagamento: d.origemPagamento,
@@ -262,6 +274,30 @@ export function createConferenciaRouter({ log } = {}) {
     const portalClientId = String(req.params.companyId);
     const indisponiveis = [];
 
+    /**
+     * ⚠⚠ A COMPETÊNCIA É OPCIONAL, E É ELA QUE CONSERTA O "19 QUE NÃO APARECE" (01/09/2026).
+     *
+     * > Dono, sobre a ALBATROZ em produção: *"aparecem 19 a lançar mas ao abrir não aparece isso
+     * > tudo"*.
+     *
+     * O selo do botão **não filtra por competência, de propósito** — a fila é o que espera alguém
+     * em QUALQUER mês, e contar só o mês visível esconderia a nota de julho que ninguém conferiu.
+     * Já a TELA abre filtrada pela competência. Os dois estão certos e **descrevem populações
+     * diferentes**, e é essa diferença que se lia como número errado.
+     *
+     * Com `?competencia=`, esta rota devolve TAMBÉM o recorte — e é a tela que passa a dizer
+     * quantos ficaram fora do mês aberto. ⚠ O selo continua chamando SEM competência: o número
+     * dele não muda.
+     */
+    const competencia = req.query.competencia ? String(req.query.competencia) : null;
+    if (competencia && competencia !== COMPETENCIA_AUSENTE && !COMPETENCIA_RE.test(competencia)) {
+      return res.status(400).json({
+        ok: false,
+        error: "competencia_invalida",
+        message: `Use AAAA-MM, ou "${COMPETENCIA_AUSENTE}" para as que chegaram sem competência.`,
+      });
+    }
+
     // ⚠ `count`, nunca `findMany().length`: a barra pede este número a cada abertura da aba, e
     // trazer a fila inteira para medir o tamanho dela é o custo que esta rota existe para evitar.
     const declarados = await prisma.lancamentoDeclarado
@@ -297,9 +333,48 @@ export function createConferenciaRouter({ log } = {}) {
           return 0;
         });
 
+    /**
+     * ⚠⚠ QUANTOS DELES ESTÃO NO MÊS QUE A TELA ABRIU. `null` quando ninguém perguntou — e `null`
+     * não é zero: "não pedi o recorte" e "não há nenhum neste mês" são respostas diferentes, e
+     * desenhar as duas iguais faria a tela afirmar que o mês está limpo sem ter contado.
+     * ⚠ `sem-competencia` é RECORTE, não competência: `competencia = null` no banco. Sem este ramo
+     * a nota que chegou sem competência ficaria fora dos dois lados da conta.
+     */
+    const declaradosNaCompetencia = !competencia || indisponiveis.includes("declarados")
+      ? null
+      : await prisma.lancamentoDeclarado
+        .count({
+          where: {
+            portalClientId,
+            estado: { in: [ESTADO.AGUARDANDO_PAGAMENTO, ESTADO.A_CONFERIR] },
+            competencia: competencia === COMPETENCIA_AUSENTE ? null : competencia,
+          },
+        })
+        .catch((e) => {
+          if (!tabelaAusenteNaContagem(e)) throw e;
+          return null;
+        });
+
     return res.json({
       ok: true,
       total: declarados + series + saidas,
+      /**
+       * ⚠⚠ `aLancar` × `noFluxo` — a separação que o rótulo do botão exigia (01/09/2026).
+       *
+       * > Dono: *"tudo que virar lançamento deve entrar no fluxo, mas nem tudo do fluxo
+       * > necessariamente deve ser um lançamento"*.
+       *
+       * O botão se chama **"A lançar"** e mostrava `total`, que soma as TRÊS filas — sendo que
+       * recorrências e saídas do cliente **nunca viram lançamento** (o próprio serviço delas diz
+       * *"CONFIRMAR NÃO LANÇA NADA"*). O número prometia um trabalho que não existia.
+       * ⚠ `total` FICA, e não é sobra: ele é a resposta a *"quanto há para decidir nesta tela?"*.
+       * O que mudou é que quem desenha "A lançar" usa `aLancar`.
+       */
+      aLancar: declarados,
+      noFluxo: series + saidas,
+      declaradosNaCompetencia,
+      declaradosForaDaCompetencia:
+        declaradosNaCompetencia == null ? null : declarados - declaradosNaCompetencia,
       declarados,
       series,
       saidas,
@@ -433,6 +508,59 @@ export function createConferenciaRouter({ log } = {}) {
    * declarado. ⚠ **RECUSAR EXIGE MOTIVO** (o serviço recusa sem ele): ausência nunca é resposta, e o
    * cliente precisa saber por que a linha dele saiu.
    */
+  /**
+   * ⚠⚠⚠ A SAÍDA DO CLIENTE VIRA LANÇAMENTO CONTÁBIL — decisão do dono, 01/09/2026.
+   *
+   * > *"alguma coisa só aparecem para o fluxo, não me dando opção de colocar como lançamentos"*, e,
+   * > entre mandar para a fila ou lançar direto: **"vira lançamento contábil direto"**.
+   *
+   * ⚠ `minRole: "ACCOUNTANT"` como o decidir — isto ESCREVE NO RAZÃO, e é o ato mais pesado desta
+   * rota. ⚠ A conta vem do CORPO porque é escolha de quem clica; o sistema não elege nenhuma.
+   * ⚠ O `portalClientId` sai do PATH, nunca do corpo: é a guarda de multi-tenancy de sempre.
+   */
+  /**
+   * ⚠⚠⚠ LIBERAR A DESPESA NO FLUXO — sem lançar. Decisão do dono, 01/09/2026.
+   *
+   * > *"temos um botão fluxo, que apenas libera no fluxo mas não lança"*.
+   *
+   * ⚠ `data` opcional: ausente cai na EMISSÃO da nota (*"na data da emissão mais o contador pode
+   * alterar"*); `null` TIRA do fluxo. As duas não podem se confundir — ver o serviço.
+   * ⚠ `minRole: "ACCOUNTANT"`: isto muda o que o CLIENTE vê no fluxo dele.
+   */
+  router.post("/conferencia/:declaradoId/fluxo", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const r = await liberarDeclaradoNoFluxo({
+        portalClientId: String(req.params.companyId),
+        declaradoId: String(req.params.declaradoId),
+        // ⚠ `hasOwnProperty`, nunca `req.body?.data || undefined`: com `||`, o `null` que TIRA do
+        // fluxo viraria `undefined`, que é "use a emissão" — o clique de remover passaria a
+        // reinserir a linha. É a regra `undefined` ≠ `null` que este projeto já registra.
+        ...(Object.prototype.hasOwnProperty.call(req.body || {}, "data") ? { data: req.body.data } : {}),
+        usuarioId: String(req.auth?.user?.id || ""),
+      });
+      return res.json({ ok: true, declarado: { id: r.id, previstoNoFluxoEm: r.previstoNoFluxoEm } });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
+  router.post("/conferencia/saidas-do-cliente/:saidaId/lancar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const saida = await lancarSaidaAvulsa({
+        portalClientId: String(req.params.companyId),
+        saidaId: String(req.params.saidaId),
+        contaDespesa: req.body?.contaDespesa,
+        usuarioId: String(req.auth?.user?.id || ""),
+      });
+      return res.json({
+        ok: true,
+        saida: { id: saida.id, estado: saida.estado, accountingEntryId: saida.accountingEntryId },
+      });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
   router.post("/conferencia/saidas-do-cliente/:saidaId/decidir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     try {
       const saida = await decidirSaidaAvulsa({

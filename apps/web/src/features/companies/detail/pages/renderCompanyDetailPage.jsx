@@ -41,6 +41,12 @@ const CompanyForm = lazy(() =>
 const EmissaoNfseTab = lazy(() =>
   import("../components/renderEmissaoNfseTab").then((m) => ({ default: m.EmissaoNfseTab }))
 );
+// ⚠ A MESMA `PlanejamentoPage` da tela global — não uma segunda tela. Duas implementações do
+// mesmo comparativo divergiriam na primeira correção fiscal, e a que ninguém abre é a que erra.
+// O que muda é o MODO: aqui ela nasce presa à empresa e sem o seletor (`empresaFixa`).
+const PlanejamentoPage = lazy(() =>
+  import("../../../planejamento/pages/renderPlanejamentoPage.jsx").then((m) => ({ default: m.PlanejamentoPage })),
+);
 const AccountingEntriesTab = lazy(() =>
   import("../../../accounting/entries/components/renderAccountingEntriesTab").then((m) => ({ default: m.AccountingEntriesTab }))
 );
@@ -64,6 +70,12 @@ const NotasFiscaisTab = lazy(() =>
 // Auditoria pré-apuração das notas — SÓ LEITURA (autônoma: faz a própria chamada, como o SITFIS).
 const ConferenciaTab = lazy(() =>
   import("../../../conferencia/components/renderConferenciaTab").then((m) => ({ default: m.ConferenciaTab }))
+);
+
+// ⚠ `lazy` como as demais abas: o painel arrasta o cliente de API e a tabela, e a aba de entrada da
+// empresa é Anotações — carregar isto no bundle inicial custa a quem nunca abre a tela.
+const PainelDeLancadosPorRegra = lazy(() =>
+  import("../../../conferencia/components/PainelDeLancadosPorRegra").then((m) => ({ default: m.PainelDeLancadosPorRegra }))
 );
 const AuditoriaTab = lazy(() =>
   import("../../../notas/components/renderAuditoriaTab").then((m) => ({ default: m.AuditoriaTab }))
@@ -138,6 +150,13 @@ const companyDocsApi = createApiClient();
 // O CalendarioGrid chama a API por conta própria (mesmo padrão do SITFIS e do Apuração v2) —
 // a página de detalhe não tem `api` em escopo.
 const obrigacoesApi = createApiClient();
+// ⚠⚠ CLIENTE PRÓPRIO, e não `api` solto — foi assim que eu quebrei a aba na primeira tentativa.
+// `CompanyDetailPage` NÃO recebe `api` por prop (a assinatura dela é `{ company, guidesPanel, … }`),
+// e `<PlanejamentoPage api={api} …>` compilou, passou nos testes e explodiu **só no navegador**,
+// com `ReferenceError: api is not defined` e a página em branco.
+// ⚠ QUARTA VEZ que um identificador órfão atravessa o `npm run build` neste projeto: o build não o
+// pega, e os testes desta aba são varredura de TEXTO, que também não. Quem pegou foi abrir a tela.
+const planejamentoApi = createApiClient();
 const RelatoriosTab = lazy(() =>
   import("../../../relatorios/components/RelatoriosTab").then((m) => ({ default: m.RelatoriosTab })),
 );
@@ -694,6 +713,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 onConfirmarAcessoProprio={editPanel?.onConfirmarAcessoProprio}
                 onCancelarAcessoProprio={editPanel?.onCancelarAcessoProprio}
                 acessoProprioCriado={editPanel?.acessoProprioCriado}
+                vinculoCriado={editPanel?.vinculoCriado}
               />
               </Suspense>
             )}
@@ -941,6 +961,40 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     );
   }
 
+  // ⚠⚠ PLANEJAMENTO TRIBUTÁRIO DENTRO DA EMPRESA — a TERCEIRA das três peças (as outras são a
+  // entrada em `GROUPS` e o par em `SEGMENT_TO_TAB`/`TAB_TO_SEGMENT`). Faltando esta, o clique na
+  // aba abriria Anotações **sem erro nenhum**.
+  //
+  // ⚠⚠ É A MESMA TELA DA PÁGINA GLOBAL, presa à empresa por `empresaFixa`. Não é uma segunda
+  // implementação: duas telas do mesmo comparativo divergiriam na primeira correção fiscal, e a
+  // que ninguém abre é a que erra. O que muda é o MODO — aqui não há seletor de empresa e não há
+  // simulação livre; lá não há empresa e não há como guardar.
+  if (companyDetailTab === "planejamento") {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="planejamento"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+        <div style={{ flex: 1, padding: 24 }}>
+          <ErrorBoundary>
+            <Suspense fallback={<TabLoadingFallback />}>
+              {/* ⚠ `empresas` NÃO é passada: sem ela o seletor não renderiza, e a tela não oferece
+                  trocar de empresa de dentro da empresa. */}
+              <PlanejamentoPage api={planejamentoApi} empresa={{ id: companyId }} empresaFixa />
+            </Suspense>
+          </ErrorBoundary>
+          {/* ⚠ O `Feedback` é declarado à mão porque esta aba monta a moldura à mão — a mesma
+              lacuna estrutural que o comentário do Perfil fiscal, oito linhas acima, registra. */}
+          <Feedback message={feedback.message} error={feedback.error} />
+        </div>
+      </div>
+    );
+  }
+
   // Auditoria pré-apuração — autônoma (faz a própria chamada), e por competência.
   //
   // ⚠ Ela recebe a competência GLOBAL (`circularPanel.competencia`), a mesma que Lançamentos,
@@ -961,6 +1015,45 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
    * cabeçalho ficaria sem nenhuma aba marcada, e a pessoa não saberia onde está. E a migalha
    * *"‹ Voltar aos lançamentos"* é obrigatória — aba que some sem caminho de volta é tela sem saída.
    */
+  /**
+   * ⚠⚠ A CONTABILIDADE QUE O CONTADOR NÃO ESCREVEU — decisão do dono, 01/09/2026:
+   *
+   * > *"regras de lançamento recorrente, quando marcadas, vão para uma sub aba de lançamentos
+   * > automáticos, ali eles ficam sempre com a data do lançamento, descrição vinda da nota ou OFX,
+   * > descrição do lançamento, valor, assim podemos escolher tirar ela, ou deixar"*.
+   *
+   * ⚠⚠ **A TELA SAIU DE «A LANÇAR» E VEIO PARA CÁ** — ela não foi duplicada. Lá era um bloco entre
+   * seis; aqui é a tela inteira, com as colunas que o dono pediu e a pergunta que faltava:
+   * *tem nota comprovando a ocorrência?*
+   * ⚠ `sumirQuandoVazio={false}`: numa aba própria, sumir deixaria a tela em branco — e branco não
+   * distingue "nada entrou sozinho" de "não carregou".
+   *
+   * ⚠ `activeTab` é a PRÓPRIA aba (diferente da Conferência, que marca "lancamentos" porque saiu do
+   * cabeçalho): esta está em `GROUPS`, então o menu tem onde acender.
+   */
+  if (companyDetailTab === "lancamentosAutomaticos") {
+    return (
+      <CompanyTabLayout
+        company={selectedCompany}
+        activeTab="lancamentosAutomaticos"
+        onBack={onBack}
+        onTabChange={switchTab}
+        canEditCompany={canEditCompany}
+        competencia={circularPanel?.competencia}
+        onCompetenciaChange={circularPanel?.onCompetenciaChange}
+        largura="trabalho"
+        suspense
+      >
+        <PainelDeLancadosPorRegra
+          companyId={companyId}
+          competencia={circularPanel?.competencia}
+          podeEscrever={canEditCompany}
+          sumirQuandoVazio={false}
+        />
+      </CompanyTabLayout>
+    );
+  }
+
   if (companyDetailTab === "conferencia") {
     return (
       <CompanyTabLayout

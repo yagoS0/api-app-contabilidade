@@ -1,0 +1,12 @@
+-- ⚠⚠ ADITIVA. A coluna é nullable e sem default: nenhuma linha existente muda de significado.
+--
+-- Ela existe para o ato "lançar a saída do cliente" ser IDEMPOTENTE — sem ela, dois cliques criam
+-- dois lançamentos contábeis para a mesma despesa.
+--
+-- ⚠ SEM FOREIGN KEY, de propósito, exatamente como `LancamentoDeclarado.accountingEntryId`: o
+-- lançamento pode ser apagado por fora, e uma FK faria o apagamento cascatear (destruindo a saída
+-- do cliente) ou falhar. A leitura trata o id órfão como "não existe mais".
+--
+-- ⚠ O estado novo `LANCADA` NÃO precisa de DDL: `estado` é TEXT, sem enum e sem CHECK no banco —
+-- quem guarda o vocabulário é `ESTADO_DA_SAIDA`, na aplicação. Mesma forma da série declarada.
+ALTER TABLE "saidas_avulsas_cliente" ADD COLUMN "accountingEntryId" TEXT;

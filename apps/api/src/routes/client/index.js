@@ -303,11 +303,28 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
      * servidor recusaria — botão impossível, e no caminho que pratica ato fiscal.
      */
     const ehVisitaDoEscritorio = req.auth?.user?.podeAbrirPortalDoCliente === true;
+    /**
+     * ⚠⚠ O MESTRE — decisão do dono, 01/09/2026: *"o meu login e senha em ambos os portais é de
+     * mestre, eu posso executar o que eu quiser, emitir nota em qualquer empresa etc, apenas o meu
+     * deve fazer isso."*
+     *
+     * ⚠⚠ ISTO REVERTE, PARA O `admin` E SÓ PARA ELE, o piso FINANCEIRO de 30/08. A mecânica já
+     * existia inteira: `role === "admin"` é o bypass dos três middlewares — em
+     * `requireClientCompanyAccess` ele vira OWNER ANTES do ramo da visita, e no portão de emissão
+     * ele passa por `isAdminLike` sem nunca receber a marca `visitaDoEscritorio`. O que faltava era
+     * ESTA listagem dizer a verdade: ela mandava `FINANCEIRO`, e a tela escondia botões que o
+     * servidor aceitaria — o "botão impossível" ao contrário, igualmente ruim.
+     *
+     * ⚠ O papel serializado ESPELHA o que `requireClientCompanyAccess` vai conceder — nunca decide.
+     * ⚠ A visita SEM `admin` continua exatamente como era: FINANCEIRO, só para ver. É o "apenas o
+     * meu": mestre é o role, não a marca da porta.
+     */
+    const ehMestre = String(req.auth?.user?.role || "").toLowerCase() === "admin";
     const links = ehVisitaDoEscritorio
       ? (await prisma.companyFirmAccess.findMany({
           where: { userId, status: "ACTIVE" },
           include: { company: { select: LEGACY_COMPANY_DA_LISTA } },
-        })).map((l) => ({ ...l, role: "FINANCEIRO" }))
+        })).map((l) => ({ ...l, role: ehMestre ? "OWNER" : "FINANCEIRO" }))
       : await prisma.companyClientUser.findMany({
           where: { userId, status: "ACTIVE" },
           include: { company: { select: LEGACY_COMPANY_DA_LISTA } },
@@ -358,7 +375,10 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           // sendo `ensureEmissaoNfseAutorizada` (empresa liberada **e** papel ≥ CLIENT_ADMIN), no
           // servidor, a cada emissão. Aqui é só o que a tela precisa para não oferecer um botão que
           // vai ser recusado. `=== true` porque autorização não se abre por coerção de tipo.
-          emissaoNfseLiberada: link.company.emissaoClienteLiberada === true,
+          // ⚠ O MESTRE vê o botão de emitir em toda empresa: `ensureEmissaoNfseAutorizada` o
+          // aceita por `isAdminLike` SEM consultar a flag, e esconder o botão aqui seria a tela
+          // recusando o que o servidor aceita. Para todo mundo, a flag continua mandando.
+          emissaoNfseLiberada: (ehVisitaDoEscritorio && ehMestre) || link.company.emissaoClienteLiberada === true,
           guideNotificationEmail: link.company.guideNotificationEmail || null,
           email: legacyEmail,
           telefone: legacy?.telefone || null,

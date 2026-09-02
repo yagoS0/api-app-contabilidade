@@ -12,6 +12,7 @@ import {
   detalhesDaContaCompartilhada,
   fraseDeConfirmacao,
   outrasEmpresasDoEmail,
+  estadoDoResponsavel,
 } from "../responsavelCompartilhado";
 
 const EMPRESAS = [
@@ -165,5 +166,42 @@ describe("avisoDeAcessoNovo", () => {
   test("sem acesso novo, nada a mostrar", () => {
     expect(avisoDeAcessoNovo(null)).toBeNull();
     expect(avisoDeAcessoNovo({})).toBeNull();
+  });
+});
+
+// ⚠⚠ ESTE RAMO NAO E ALCANCAVEL NO MOCK — as 6 empresas dele TEM responsavel, e as 34 de producao
+// tambem (medido em 30/08/2026: 0 sem OWNER ativo). Sem teste, a tela so seria exercida no dia em
+// que o caso aparecesse de verdade. E a oitava vez que o mock esconde um ramo neste projeto.
+describe("estadoDoResponsavel — o branco que fala", () => {
+  test("com responsável, a tela não diz nada", () => {
+    expect(estadoDoResponsavel({ ownerEmail: "dono@empresa.com", edicao: true })).toBeNull();
+  });
+
+  test("⚠ na CRIAÇÃO o branco é normal — avisar ali seria ruído em toda empresa nova", () => {
+    expect(estadoDoResponsavel({ ownerEmail: "", edicao: false })).toBeNull();
+  });
+
+  test("⚠⚠ sem responsável, na EDIÇÃO, o branco tem motivo — e NOMEIA o e-mail da empresa", () => {
+    const e = estadoDoResponsavel({
+      ownerEmail: "",
+      emailDaEmpresa: "contato@empresa.com",
+      edicao: true,
+    });
+    expect(e).not.toBeNull();
+    expect(e.texto).toContain("contato@empresa.com");
+    // ⚠ Ele DIZ que aquele e-mail não é login — é a confusão que o fallback removido causava.
+    expect(e.texto).toMatch(/N[ÃA]O é login/i);
+    expect(e.ondeResolver).toBeTruthy();
+  });
+
+  test("⚠ sem e-mail da empresa também fala — só não inventa qual é", () => {
+    const e = estadoDoResponsavel({ ownerEmail: "", emailDaEmpresa: "", edicao: true });
+    expect(e).not.toBeNull();
+    expect(e.texto).not.toMatch(/@/);
+  });
+
+  test("⚠⚠ NUNCA sugere um e-mail — sugerir o da empresa é o defeito que isto substitui", () => {
+    const e = estadoDoResponsavel({ ownerEmail: "", emailDaEmpresa: "contato@empresa.com", edicao: true });
+    expect(JSON.stringify(e)).not.toMatch(/sugest|use o|preencha com/i);
   });
 });

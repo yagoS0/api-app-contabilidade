@@ -132,7 +132,7 @@ export function PainelDeMexidasDoCliente({ companyId, podeEscrever = true }) {
       </p>
 
       {estado.erro ? (
-        <p style={{ color: "var(--danger, #b91c1c)", fontSize: 13 }}>
+        <p style={{ color: "var(--state-danger)", fontSize: 13 }}>
           Não consegui ler o que o cliente mexeu. {String(estado.erro?.message || "")}
         </p>
       ) : null}

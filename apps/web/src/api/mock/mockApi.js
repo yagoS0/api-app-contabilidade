@@ -3253,6 +3253,15 @@ const MEXIDAS_DO_MOCK = Object.freeze([
 ]);
 
 const mexidasDesfeitas = new Set();
+/**
+ * ⚠ O que o contador liberou no FLUXO, offline. Chave = id do declarado.
+ * ⚠ Ele guarda também a EMISSÃO, porque é o padrão quando ninguém manda data — sem isso o ramo
+ * "cai na emissão" ficaria inalcançável no navegador.
+ */
+const declaradosNoFluxo = new Map();
+
+/** ⚠ Estado em memória das fotos de simulação, por empresa. Ver o par acima. */
+const mockSimulacoesPlanejamento = {};
 
 export function createMockApi() {
   let accessToken = "";
@@ -7424,6 +7433,34 @@ export function createMockApi() {
       return { ok: true };
     },
 
+    /**
+     * ⚠⚠ PÔR/TIRAR do fluxo, offline. O mock guarda a data para a tela poder alternar o rótulo do
+     * botão ("Pôr no fluxo" × "Tirar do fluxo") — sem estado, o clique não teria efeito visível e
+     * o ramo de remover nasceria inalcançável.
+     */
+    async postConferenciaFluxo(_companyId, declaradoId, { data } = {}) {
+      await delay(60);
+      // ⚠ `undefined` = "não mandei data" ⇒ cai na emissão (o mock usa a do item). `null` = tirar.
+      const alvo = declaradosNoFluxo.get(String(declaradoId));
+      const escolhida = data === null ? null : (data === undefined ? (alvo?.emissao || null) : data);
+      if (escolhida) declaradosNoFluxo.set(String(declaradoId), { ...(alvo || {}), previsto: escolhida });
+      else declaradosNoFluxo.delete(String(declaradoId));
+      return { ok: true, declarado: { id: declaradoId, previstoNoFluxoEm: escolhida } };
+    },
+
+    async postConferenciaSaidaLancar(_companyId, saidaId, { contaDespesa } = {}) {
+      await delay(60);
+      // ⚠ O mock exerce a recusa do SERVIDOR: sem conta não há lançamento, e o sistema não escolhe
+      // uma. Um mock permissivo deixaria a tela mandar o pedido incompleto.
+      if (!String(contaDespesa || "").trim()) {
+        const e = new Error("Escolha a conta de despesa: o sistema não escolhe uma por você.");
+        e.code = "saida_sem_conta";
+        e.status = 400;
+        throw e;
+      }
+      return { ok: true, saida: { id: saidaId, estado: "LANCADA", accountingEntryId: "ae-mock" } };
+    },
+
     async postConferenciaSaidaDecidir(_companyId, saidaId, { estado, motivoRecusa } = {}) {
       await delay(60);
       // ⚠ O mock exerce a recusa do SERVIDOR: recusar sem motivo não passa. Um mock permissivo
@@ -7437,9 +7474,25 @@ export function createMockApi() {
       return { ok: true, saida: { id: saidaId, estado } };
     },
 
-    async getConferenciaPendencias(_companyId) {
+    async getConferenciaPendencias(_companyId, { competencia } = {}) {
       await delay(40);
-      return { ok: true, total: 6, declarados: 3, series: 1, saidas: 2, indisponiveis: [] };
+      // ⚠⚠ O MOCK PRECISA EXERCITAR A DIVERGÊNCIA, senão o aviso "há N em outras competências"
+      // nasce inalcançável offline — e foi exatamente essa divergência que apareceu em produção
+      // como "aparecem 19 a lançar mas ao abrir não aparece isso tudo".
+      // ⚠ 3 declarados no total, 2 no mês pedido: sobra 1 fora. Números diferentes de propósito.
+      const naCompetencia = competencia ? 2 : null;
+      return {
+        ok: true,
+        total: 6,
+        aLancar: 3,
+        noFluxo: 3,
+        declarados: 3,
+        series: 1,
+        saidas: 2,
+        declaradosNaCompetencia: naCompetencia,
+        declaradosForaDaCompetencia: naCompetencia == null ? null : 3 - naCompetencia,
+        indisponiveis: [],
+      };
     },
 
     async getConferenciaFila(_companyId, { competencia, estado } = {}) {
@@ -7584,6 +7637,28 @@ export function createMockApi() {
           motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
         },
         {
+          // ⚠⚠ A QUARTA ORIGEM, e ela NASCERIA INALCANÇÁVEL OFFLINE sem esta linha (01/09/2026).
+          //
+          // A fila do mock só tinha `NOTA_RECEBIDA` e `OFX_CLIENTE` — ou seja, o chip de origem que
+          // responde *"veio da planilha que o cliente mandou"* não podia ser visto no navegador, e
+          // foi assim que `leituraDoDocumento` passou a dizer *"a nota de origem não está mais na
+          // base"* sobre uma linha que NUNCA teve nota, sem ninguém ver. É a quinta vez que este
+          // mock esconde um ramo.
+          // ⚠ A forma é COPIADA de `ImportExcelExtratoService`, que é quem grava esta origem de
+          // verdade: `A_CONFERIR` (o débito do extrato JÁ é o pagamento), `origemPagamento` próprio
+          // — `EXTRATO_EXCEL`, que prova, mas não com a mesma força do OFX —, sem nota e sem CNPJ.
+          // ⚠ `CLIENTE_MANUAL` continua fora, e é a resposta honesta: medido no backend, essa
+          // origem está no vocabulário e **não tem escritor nenhum**. Fabricá-la aqui inventaria uma
+          // linha que o sistema não produz.
+          id: "dec-14", origem: "EXTRATO_EXCEL_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",
+          valor: "417.90", valorAjustado: null, competencia: comp,
+          descricaoOriginal: "PAGTO ENERGIA DISTRIBUIDORA", cnpjFornecedor: null,
+          dataDocumento: null, detalheServico: null,
+          dataPagamento: comp + "-06", origemPagamento: "EXTRATO_EXCEL",
+          contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
+        },
+        {
           // ⚠ O AMBÍGUO: duas notas se parecem com ele e o sistema não escolhe. Ele também fica de
           // fora do lote — ambiguidade não autoriza contabilizar à parte.
           id: "dec-10", origem: "OFX_CLIENTE", estado: "A_CONFERIR", tipo: "SAIDA",
@@ -7627,7 +7702,15 @@ export function createMockApi() {
         : base.filter((d) => d.competencia);
 
       const estados = estado ? String(estado).split(",") : ["AGUARDANDO_PAGAMENTO", "A_CONFERIR"];
-      const itens = doRecorte.filter((d) => estados.includes(d.estado));
+      // ⚠⚠ O QUE O CONTADOR LIBEROU NO FLUXO viaja na linha, offline — sem isto o botão "Tirar do
+      // fluxo" e o rótulo com a data nasceriam INALCANÇÁVEIS no navegador, e é a quinta vez que
+      // este mock esconderia um ramo. A emissão é memorizada porque é o padrão do servidor quando
+      // ninguém manda data.
+      const itens = doRecorte.filter((d) => estados.includes(d.estado)).map((d) => {
+        const guardado = declaradosNoFluxo.get(d.id);
+        if (!guardado) declaradosNoFluxo.set(d.id, { emissao: d.dataDocumento || null });
+        return { ...d, previstoNoFluxoEm: guardado?.previsto || null };
+      });
 
       return {
         ok: true,
@@ -8066,18 +8149,58 @@ export function createMockApi() {
     async getLancadosPorRegra(_companyId, competencia) {
       await delay(70);
       const comp = competencia || "2026-08";
+      /**
+       * ⚠⚠ AS TRÊS RESPOSTAS DA PERGUNTA DO DONO precisam ser alcançáveis OFFLINE — *"no caso de não
+       * ter uma nota comprovando a ocorrência desse lançamento ela deve ser retirada"*:
+       *
+       *   1. TEM nota (o caso normal);
+       *   2. NUNCA teve — nasceu de um débito de extrato;
+       *   3. TEVE e a nota sumiu (a FK é `SetNull`).
+       *
+       * Com só o primeiro, os dois avisos âmbar da tela nasceriam inalcançáveis no navegador — é a
+       * sexta vez que este mock esconderia um ramo.
+       * ⚠ E a terceira linha traz `lancamentoNoRazao: false`: o lançamento apagado por fora, que é
+       * o que impede a tela de oferecer "tirar" o que já não existe.
+       */
       const linhas = [
         {
           id: "dec-r1", descricaoOriginal: "ALESSANDRO NIGRO", cnpjFornecedor: "12345678000190",
           valor: "1180.00", valorAjustado: null, competencia: comp,
           dataPagamento: `${comp}-15`, contaAplicada: "411030012",
           regraId: "reg-1", accountingEntryId: "ae-r1", decididoEm: `${comp}-15T03:00:00.000Z`,
+          origem: "NOTA_RECEBIDA",
+          notaRecebidaId: "nota-r1",
+          notaRecebida: { numero: "1042", serie: "1", type: "NFSE" },
+          historicoDoLancamento: "ALESSANDRO NIGRO",
+          dataDoLancamento: `${comp}-15`,
+          lancamentoNoRazao: true,
         },
         {
-          id: "dec-r2", descricaoOriginal: "ALESSANDRO NIGRO", cnpjFornecedor: "12345678000190",
+          // ⚠ Nasceu de um débito de EXTRATO: nunca houve documento. É o caso que o dono quer ver.
+          id: "dec-r2", descricaoOriginal: "PAGTO ALESSANDRO NIGRO", cnpjFornecedor: "12345678000190",
           valor: "1050.00", valorAjustado: null, competencia: comp,
           dataPagamento: `${comp}-15`, contaAplicada: "411030012",
           regraId: "reg-1", accountingEntryId: "ae-r2", decididoEm: `${comp}-15T03:00:00.000Z`,
+          origem: "OFX_CLIENTE",
+          notaRecebidaId: null,
+          notaRecebida: null,
+          historicoDoLancamento: "PAGTO ALESSANDRO NIGRO",
+          dataDoLancamento: `${comp}-15`,
+          lancamentoNoRazao: true,
+        },
+        {
+          // ⚠ Teve nota e ela sumiu, E o lançamento sumiu do razão — as duas ausências que a tela
+          // distingue de "nunca houve".
+          id: "dec-r3", descricaoOriginal: "COPIADORA SAO JORGE LTDA", cnpjFornecedor: "44555666000177",
+          valor: "312.40", valorAjustado: null, competencia: comp,
+          dataPagamento: `${comp}-08`, contaAplicada: "411020008",
+          regraId: "reg-2", accountingEntryId: "ae-r3", decididoEm: `${comp}-08T03:00:00.000Z`,
+          origem: "NOTA_RECEBIDA",
+          notaRecebidaId: "nota-apagada",
+          notaRecebida: null,
+          historicoDoLancamento: null,
+          dataDoLancamento: null,
+          lancamentoNoRazao: false,
         },
       ];
       return {
@@ -8085,7 +8208,10 @@ export function createMockApi() {
         indisponivel: false,
         competencia: comp,
         total: linhas.length,
-        valor: 2230,
+        valor: 2542.4,
+        // ⚠ O número vem do SERVIDOR, e a tela não o reconta: duas contagens da mesma coisa
+        // divergem, e a que ninguém confere é a que erra.
+        semNota: linhas.filter((l) => !l.notaRecebidaId).length,
         linhas,
       };
     },
@@ -8732,6 +8858,48 @@ export function createMockApi() {
     //
     // Os demais cenários existem porque cada FONTE de folha/RBT12 se lê diferente na tela: folha do
     // fechamento, folha digitada na circular, folha somada dos lançamentos, e o nada.
+    // ⚠⚠ O MOCK GUARDA ESTADO DE VERDADE, e não devolve resposta fixa: as regras que importam aqui
+    // (a foto sobreviver ao PDF falhar, a lista crescer a cada salvamento) só se conferem mexendo.
+    // Mock imutável passaria por elas sem testar nada — este projeto foi mordido por isso.
+    async listarSimulacoesPlanejamento(companyId) {
+      await delay(50);
+      return { ok: true, simulacoes: (mockSimulacoesPlanejamento[companyId] || []).slice().reverse() };
+    },
+    async salvarSimulacaoPlanejamento(companyId, payload) {
+      await delay(80);
+      const lista = mockSimulacoesPlanejamento[companyId] || (mockSimulacoesPlanejamento[companyId] = []);
+      const simulacao = {
+        id: `sim-${lista.length + 1}`,
+        portalClientId: companyId,
+        competencia: payload?.competencia || null,
+        entradas: payload?.entradas || {},
+        resultado: payload?.resultado || {},
+        procedencias: payload?.procedencias || null,
+        vigenciaTabelas: payload?.vigenciaTabelas || null,
+        documentoId: null,
+        geradoEm: new Date().toISOString(),
+      };
+      lista.push(simulacao);
+      return { ok: true, simulacao };
+    },
+    async gerarDocumentoDaSimulacao(companyId, simulacaoId) {
+      await delay(120);
+      const lista = mockSimulacoesPlanejamento[companyId] || [];
+      const simulacao = lista.find((s) => s.id === simulacaoId);
+      if (!simulacao) return { ok: false, error: "simulacao_nao_encontrada" };
+      // ⚠ A sentinela reproduz OFFLINE a falha de armazenamento — sem ela, o ramo em que "a foto
+      // sobrevive e o PDF não" só existiria em produção, que é onde este projeto já foi mordido
+      // quatro vezes por ramo inalcançável.
+      if (String(companyId).includes("sem-storage")) {
+        return {
+          ok: false,
+          error: "documento_nao_gerado",
+          message: "A simulação foi salva, mas o PDF não pôde ser guardado. Verifique o armazenamento de arquivos.",
+        };
+      }
+      simulacao.documentoId = `doc-${simulacaoId}`;
+      return { ok: true, simulacao, documento: { id: simulacao.documentoId, nome: "Planejamento tributário" } };
+    },
     async getDadosPlanejamento(companyId) {
       await delay(70);
       const idx = mockCompanies.findIndex((c) => c.companyId === companyId);

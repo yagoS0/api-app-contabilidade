@@ -8,6 +8,19 @@
 //   ● à direita   = apuração (verde = transmitida, cinza = não)
 //
 // Clicar na célula abre a empresa naquela competência.
+//
+// ⚠⚠ ELA VIVE DENTRO DO CALENDÁRIO DESDE 01/09/2026 (dono: *"colocar a visualização de Ano dentro
+// do Calendário"*). Era a terceira das quatro visões da carteira; hoje é a granularidade mais larga
+// do `CalendarioGrid`, e o ANO vem CONTROLADO de lá (prop `ano`) — quem navega são os ‹ › do
+// cabeçalho do calendário, os mesmos que andam mês e semana. Com `ano` presente a navegação interna
+// **não renderiza**: dois pares de setas para o mesmo valor é como as duas discordam.
+// ⚠ Sem a prop ela volta a se governar sozinha — o modo em que nasceu, hoje sem chamador. Isso não
+// é sobra: é o que mantém o componente testável fora do calendário, e é uma linha.
+//
+// ⚠⚠ AQUI O ESTADO BOM APARECE, e isso é uma diferença DELIBERADA em relação à grade de dias do
+// calendário. Lá, `piorEstadoDoDia` ignora `resolvida` de propósito — *"estado bom não grita"*.
+// Esta grade existe justamente para dizer *"fevereiro a maio estão fechados"*: sem o positivo
+// visível ela seria doze colunas vazias. O princípio de lá vale para a grade de dias, não para ela.
 
 import { useEffect, useState } from "react";
 
@@ -45,8 +58,11 @@ function Celula({ mes, razao, onOpen }) {
   );
 }
 
-export function AnnualGrid({ api, onOpenCompany }) {
-  const [ano, setAno] = useState(() => new Date().getFullYear());
+export function AnnualGrid({ api, onOpenCompany, ano: anoControlado = null }) {
+  const [anoProprio, setAnoProprio] = useState(() => new Date().getFullYear());
+  const controlada = Number.isFinite(Number(anoControlado));
+  const ano = controlada ? Number(anoControlado) : anoProprio;
+  const setAno = setAnoProprio;
   const [linhas, setLinhas] = useState([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState(null);
@@ -77,11 +93,16 @@ export function AnnualGrid({ api, onOpenCompany }) {
   return (
     <section aria-label="Visão anual" style={{ marginTop: 4 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <button type="button" style={navBtn} onClick={() => setAno((a) => a - 1)} title="Ano anterior">‹</button>
-          <strong style={{ color: "#F8F8F2", fontSize: "1.05rem", minWidth: 54, textAlign: "center" }}>{ano}</strong>
-          <button type="button" style={navBtn} onClick={() => setAno((a) => a + 1)} title="Próximo ano">›</button>
-        </div>
+        {/* ⚠ Controlada pelo calendário, a navegação some: o ano já está nos ‹ › e no rótulo do
+            cabeçalho, a dois centímetros daqui. Duas setas para o mesmo ano é o defeito dos "dois
+            seletores para um valor" que este projeto já registrou cinco vezes. */}
+        {!controlada && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button type="button" style={navBtn} onClick={() => setAno((a) => a - 1)} title="Ano anterior">‹</button>
+            <strong style={{ color: "#F8F8F2", fontSize: "1.05rem", minWidth: 54, textAlign: "center" }}>{ano}</strong>
+            <button type="button" style={navBtn} onClick={() => setAno((a) => a + 1)} title="Próximo ano">›</button>
+          </div>
+        )}
         {/* Legenda: sem ela os dois quadradinhos não significam nada pra quem abre a tela. */}
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#A7B0C0", fontSize: "0.78rem" }}>
           <span style={{ width: 9, height: 9, borderRadius: 2, background: COR_FECHADO }} /> fechamento contábil

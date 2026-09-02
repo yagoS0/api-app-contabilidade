@@ -944,6 +944,7 @@ model PortalClient {
   ofxImports              OfxImport[]
   mapeamentosExtrato      MapeamentoExtrato[]
   cienciasDeGuias         CienciaDeGuias[]
+  simulacoesPlanejamento  SimulacaoPlanejamento[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -3249,6 +3250,54 @@ model RelatorioFaturamento {
   @@map("relatorios_faturamento")
 }
 
+/// A FOTO DE UMA SIMULAÇÃO DE PLANEJAMENTO TRIBUTÁRIO — e ela se GRAVA porque NÃO É DERIVÁVEL.
+///
+/// ⚠⚠ É o oposto do DANFSe, que não se salva porque sai inteiro do `xmlRaw` imutável. Aqui o
+/// resultado depende (a) do que o contador DIGITOU POR CIMA do prefill, (b) do RBT12 e da folha
+/// **no instante da simulação** e (c) das tabelas fiscais vigentes naquela data. Recalcular amanhã
+/// devolve outro número, legitimamente — e o PDF que já foi ao cliente afirma o de ontem.
+///
+/// Molde: `RelatorioFaturamento` (mesma forma, mesmo `geradoEm`/`geradoPor`). O que muda é a chave:
+/// ⚠⚠ NÃO há `@@unique` por competência. Uma empresa tem VÁRIAS simulações legítimas do mesmo mês —
+/// é literalmente o produto ("e se o pró-labore subir?"). Um `@@unique([portalClientId,
+/// competencia])` faria a segunda apagar a primeira, e a primeira pode já ter sido impressa e
+/// entregue ao cliente.
+model SimulacaoPlanejamento {
+  id             String @id @default(uuid())
+  portalClientId String
+  /// A competência de REFERÊNCIA da simulação (a janela de dados que ela usou). YYYY-MM.
+  competencia    String
+
+  /// ⚠ O QUE FOI DIGITADO. Guardado à parte do resultado de propósito: é o que permite reabrir a
+  /// simulação e ver as premissas, e é o que distingue dois PDFs da mesma empresa com números
+  /// diferentes.
+  entradas Json
+  /// O resultado inteiro, na forma que o motor devolveu (regimes, vencedor, Fator R, comparativo).
+  resultado Json
+  /// ⚠⚠ A PROCEDÊNCIA DE CADA CAMPO — de onde veio cada número (da empresa, digitado por cima,
+  /// informado, ausente com motivo). Sem ela, dois PDFs da mesma empresa com números diferentes
+  /// não se distinguem NO PAPEL, que é onde eles circulam.
+  procedencias Json?
+  /// A vigência das tabelas usadas. ⚠ Uma simulação de 2026 relida em 2029 tem de dizer com QUE
+  /// tabela ela foi feita — senão ela se apresenta como se fosse a conta de hoje.
+  vigenciaTabelas Json?
+
+  /// ⚠ O `CompanyDocument` gerado a partir DESTA foto, quando houver. Nulo = a foto existe e o PDF
+  /// não foi gerado (ou foi apagado). Não é o mesmo que "a simulação não existe".
+  documentoId String?
+
+  geradoEm  DateTime @default(now())
+  /// `User.id` de quem mandou gerar. Nulo para geração feita fora de uma sessão.
+  geradoPor String?
+
+  createdAt DateTime @default(now())
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, geradoEm])
+  @@map("simulacoes_planejamento")
+}
+
 // Log auditável da decisão mensal do Fator R (III vs V).
 // 1 linha por (empresa, competência) quando há receita SERVICO_FATOR_R.
 model LogDecisaoFatorR {
@@ -4103,6 +4152,23 @@ model LancamentoDeclarado {
   /// ⚠ SEM FK, de propósito — mesmo desenho de `AccountingEntry.estornoDeEntryId`. Com `SetNull` um
   /// lançamento apagado por fora deixaria a linha em CONTABILIZADO apontando para nada, e o
   /// apagamento da evidência seria silencioso. Sem FK o id fica, e a varredura o denuncia.
+  /// ⚠⚠ A DATA EM QUE ESTA DESPESA ENTRA NO FLUXO DO CLIENTE — decisão do dono, 01/09/2026.
+  ///
+  /// > *"temos um botão fluxo, que apenas libera no fluxo mas não lança"* e, sobre a data:
+  /// > **"na data da emissão mais o contador pode alterar"**.
+  ///
+  /// ⚠ **PRESENÇA = LIBERADA.** Não há estado novo: nulo quer dizer *"não está no fluxo"*, e um
+  /// estado a mais faria a fila do contador ter duas gramáticas para a mesma linha.
+  ///
+  /// ⚠⚠ **ELA NÃO É `dataPagamento`, e confundi-las quebra a invariante do caixa.**
+  /// `dataPagamento` é PROVA (ou declaração) de que o dinheiro saiu, e é ela que vira a data do
+  /// lançamento contábil. Esta é uma PREVISÃO de quando vai sair: entra no fluxo como
+  /// `PROCEDENCIA.PREVISAO` e **nunca** alimenta o razão.
+  ///
+  /// ⚠ `@db.Date`: é data CIVIL, sem hora. Com `DateTime` cheio, às 22h de Brasília ela viraria o
+  /// dia seguinte na leitura em UTC — a mesma armadilha de `SaidaAvulsaCliente.data`.
+  previstoNoFluxoEm DateTime? @db.Date
+
   accountingEntryId String?
   regraId           String?
   /// ⚠⚠ SEMPRE `codigoCompleto`. O reduzido é mutável; o completo é a âncora desta casa.
@@ -4477,9 +4543,14 @@ model SaidaAvulsaCliente {
   valor     Decimal @db.Decimal(18, 2)
   descricao String
 
-  /// PENDENTE | CONFIRMADA | RECUSADA — ⚠ a MESMA forma da série declarada, de propósito: as duas
-  /// caem na mesma fila do contador e uma segunda gramática de estado faria a fila falar duas
-  /// línguas.
+  /// PENDENTE | CONFIRMADA | RECUSADA | LANCADA — ⚠ a MESMA forma da série declarada, de propósito:
+  /// as duas caem na mesma fila do contador e uma segunda gramática de estado faria a fila falar
+  /// duas línguas.
+  ///
+  /// ⚠⚠ `LANCADA` entrou em 01/09/2026 (dono: *"não me dando opção de colocar como lançamentos"*).
+  /// Ela NÃO substitui `CONFIRMADA`: confirmar põe a previsão no fluxo, lançar leva ao razão. Uma
+  /// saída lançada **continua contribuindo para o fluxo do cliente** — ver o comentário de
+  /// `accountingEntryId`.
   estado String @default("PENDENTE")
 
   /// ⚠ Ausência nunca é resposta: recusar exige dizer por quê, como em `LancamentoDeclarado`.
@@ -4490,6 +4561,22 @@ model SaidaAvulsaCliente {
 
   decididaPor String?
   decididaEm  DateTime?
+
+  /// ⚠⚠ O LANÇAMENTO QUE NASCEU DESTA SAÍDA — e é ele que torna o ato IDEMPOTENTE.
+  ///
+  /// Sem esta coluna, clicar duas vezes em "Lançar" criaria DOIS lançamentos contábeis para a mesma
+  /// despesa. É a mesma âncora que `LancamentoDeclarado.accountingEntryId` já usa.
+  ///
+  /// ⚠⚠ **SEM FK, de propósito** — igual ao declarado: o lançamento pode ser apagado por fora, e uma
+  /// FK faria o apagamento cascatear ou falhar. A leitura trata o id órfão como "não existe mais".
+  ///
+  /// ⚠⚠ E A SAÍDA LANÇADA **NÃO SAI DO FLUXO**. Medido em 01/09/2026: `FluxoDeCaixaService` lê
+  /// `accountingEntry` apenas com `tipo: "FOLHA"` — lançamento de DESPESA não alimenta o fluxo. Se
+  /// a linha parasse de contribuir ao ser lançada, ela **sumiria** do fluxo do cliente, que é o
+  /// oposto da regra do dono (*"tudo que virar lançamento deve entrar no fluxo"*).
+  /// ⚠ Quem um dia fizer a despesa alimentar o fluxo TEM de excluir as saídas `LANCADA` de lá, ou o
+  /// valor passa a ser contado duas vezes. Está escrito aqui porque é onde se olha.
+  accountingEntryId String?
 
   portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
 

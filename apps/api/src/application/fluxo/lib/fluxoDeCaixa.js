@@ -155,6 +155,34 @@ export const FONTE = Object.freeze({
    * aparece como *"Origem desconhecida"*.
    */
   RECEITA_PROJETADA: "RECEITA_PROJETADA",
+  /**
+   * ⚠⚠ A DESPESA QUE O CONTADOR LANÇOU — decisão do dono, 01/09/2026: *"ao lançar entra no fluxo"*.
+   *
+   * ⚠⚠ ANTES DELA A REGRA NÃO VALIA: o serviço lia `accountingEntry` só com `tipo: "FOLHA"`, e a
+   * despesa lançada na Conferência — o trabalho principal daquela tela — não aparecia no fluxo do
+   * cliente em lugar nenhum.
+   *
+   * ⚠ Ela NÃO é `SAIDA_DO_CLIENTE`: aquela é um plano que o cliente escreveu e que não é
+   * contabilidade. Esta é lançamento contábil, com partida dobrada, e por isso é sempre
+   * `PROCEDENCIA.FATO` — o lançamento AFIRMA que o dinheiro saiu.
+   * ⚠ E não é `SERIE_DESPESA`: aquela é previsão detectada por repetição, sem documento atrás.
+   *
+   * ⚠ Cai no balde **`saida`** — nem impostos, nem folha.
+   */
+  DESPESA_LANCADA: "DESPESA_LANCADA",
+  /**
+   * ⚠⚠ A DESPESA QUE O CONTADOR LIBEROU NO FLUXO SEM LANÇAR — decisão do dono, 01/09/2026:
+   * *"temos um botão fluxo, que apenas libera no fluxo mas não lança"*.
+   *
+   * ⚠ Ela é a irmã de `DESPESA_LANCADA` e a diferença é a PROCEDÊNCIA: aquela é FATO (a partida
+   * dobrada prova que o dinheiro saiu), esta é sempre PREVISÃO (ninguém provou nada — o contador
+   * disse por volta de quando deve sair).
+   * ⚠ A data padrão dela é a EMISSÃO da nota, e o contador pode alterar. Nunca "hoje" nem o fim da
+   * competência: um dia chutado no fluxo é uma afirmação sobre quando a empresa fica sem dinheiro.
+   * ⚠ Uma vez LANÇADA, a linha sai desta fonte e vira `DESPESA_LANCADA` — nunca as duas ao mesmo
+   * tempo, senão o mesmo dinheiro conta duas vezes.
+   */
+  DESPESA_PREVISTA: "DESPESA_PREVISTA",
 });
 
 /** Por que o DIA não é conhecido. ⚠ `dia: null` nunca vira "dia 20" — ele vem com o motivo. */

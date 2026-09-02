@@ -441,3 +441,116 @@ describe("⚠⚠ `lancarPorRegraNaEmpresa` — o laço da varredura", () => {
     expect(corpo).toMatch(/for \(const declarado of candidatos\)/);
   });
 });
+
+describe("⚠⚠⚠ O EXTRATO RESPONDE «TEM PAPEL ATRÁS DISTO?» — dono, 01/09/2026", () => {
+  // > *"ali eles ficam sempre com a data do lançamento, descrição vinda da nota ou OFX, descrição
+  // > do lançamento, valor (…) no caso de não ter uma nota comprovando a ocorrência desse
+  // > lançamento ela deve ser retirada da regra"*.
+  //
+  // A regra lança sozinha sobre o que chegou — e o que chegou pode ser uma NOTA ou um débito de
+  // EXTRATO. Sem estes campos a tela mostraria valor e data sem dizer se alguém emitiu alguma coisa.
+
+  const clienteCom = (linhas, entries = []) => ({
+    lancamentoDeclarado: { findMany: jest.fn(async () => linhas) },
+    accountingEntry: { findMany: jest.fn(async () => entries) },
+  });
+
+  const linhaDaRegra = (extra = {}) => ({
+    id: "d-1",
+    descricaoOriginal: "ALESSANDRO NIGRO",
+    valor: "1180.00",
+    valorAjustado: null,
+    accountingEntryId: "ae-1",
+    notaRecebidaId: "nota-1",
+    origem: "NOTA_RECEBIDA",
+    notaRecebida: { numero: "1042", serie: "1", type: "NFSE" },
+    ...extra,
+  });
+
+  const entry = (extra = {}) => ({
+    id: "ae-1",
+    historico: "ALESSANDRO NIGRO",
+    data: new Date("2026-08-15T00:00:00.000Z"),
+    ...extra,
+  });
+
+  it("⚠⚠ a DESCRIÇÃO DO LANÇAMENTO vem do razão, e é coluna à parte da descrição de origem", async () => {
+    // São duas de propósito: hoje coincidem, e é a DIVERGÊNCIA que denuncia lançamento editado por
+    // fora ou regra escrevendo outra coisa.
+    const client = clienteCom([linhaDaRegra()], [entry({ historico: "PAGTO ALESSANDRO — REGRA" })]);
+    const r = await extratoDeLancadosPorRegra({ portalClientId: "emp-1", competencia: "2026-08", client });
+    expect(r.linhas[0].descricaoOriginal).toBe("ALESSANDRO NIGRO");
+    expect(r.linhas[0].historicoDoLancamento).toBe("PAGTO ALESSANDRO — REGRA");
+  });
+
+  it("⚠ a DATA do lançamento vem do razão — é a que está lá, não a que presumimos", async () => {
+    const client = clienteCom([linhaDaRegra()], [entry()]);
+    const r = await extratoDeLancadosPorRegra({ portalClientId: "emp-1", competencia: "2026-08", client });
+    expect(r.linhas[0].dataDoLancamento).toEqual(new Date("2026-08-15T00:00:00.000Z"));
+  });
+
+  it("⚠⚠ O LANÇAMENTO QUE SUMIU DO RAZÃO é dito — `false`, não `null`", async () => {
+    // `accountingEntryId` não tem FK (de propósito): ele pode apontar para uma linha apagada por
+    // fora. Sem isto a tela ofereceria "tirar" um lançamento que já não existe, e a recusa só
+    // apareceria no clique.
+    const client = clienteCom([linhaDaRegra()], []);
+    const r = await extratoDeLancadosPorRegra({ portalClientId: "emp-1", competencia: "2026-08", client });
+    expect(r.linhas[0].lancamentoNoRazao).toBe(false);
+    expect(r.linhas[0].historicoDoLancamento).toBeNull();
+  });
+
+  it("⚠⚠ e «nunca teve id» é `null` — os dois não podem virar o mesmo desenho", async () => {
+    const client = clienteCom([linhaDaRegra({ accountingEntryId: null })], []);
+    const r = await extratoDeLancadosPorRegra({ portalClientId: "emp-1", competencia: "2026-08", client });
+    expect(r.linhas[0].lancamentoNoRazao).toBeNull();
+  });
+
+  it("⚠ a descrição do razão NÃO é substituída pela de origem quando falta", async () => {
+    // Uma coluna preenchida por substituição diria que o razão contém algo que ele não contém.
+    const client = clienteCom([linhaDaRegra()], []);
+    const r = await extratoDeLancadosPorRegra({ portalClientId: "emp-1", competencia: "2026-08", client });
+    expect(r.linhas[0].historicoDoLancamento).not.toBe("ALESSANDRO NIGRO");
+  });
+
+  it("⚠⚠ conta quantas NÃO têm nota comprovando — é a resposta direta ao pedido", async () => {
+    const client = clienteCom([
+      linhaDaRegra(),
+      linhaDaRegra({ id: "d-2", accountingEntryId: "ae-2", notaRecebidaId: null, origem: "OFX_CLIENTE", notaRecebida: null }),
+    ], [entry(), entry({ id: "ae-2" })]);
+    const r = await extratoDeLancadosPorRegra({ portalClientId: "emp-1", competencia: "2026-08", client });
+    expect(r.semNota).toBe(1);
+  });
+
+  it("⚠ nota APAGADA (FK SetNull) não é o mesmo que nunca ter havido nota", async () => {
+    // `origem: NOTA_RECEBIDA` com `notaRecebida: null` é documento que existiu e sumiu — a tela
+    // precisa poder dizer isso em vez de tratá-la como um débito de extrato.
+    const client = clienteCom([linhaDaRegra({ notaRecebida: null })], [entry()]);
+    const r = await extratoDeLancadosPorRegra({ portalClientId: "emp-1", competencia: "2026-08", client });
+    expect(r.linhas[0].origem).toBe("NOTA_RECEBIDA");
+    expect(r.linhas[0].notaRecebidaId).toBe("nota-1");
+    expect(r.linhas[0].notaRecebida).toBeNull();
+  });
+
+  it("⚠⚠ UMA query para o lote inteiro — nunca uma por linha", async () => {
+    const client = clienteCom([
+      linhaDaRegra(),
+      linhaDaRegra({ id: "d-2", accountingEntryId: "ae-2" }),
+      linhaDaRegra({ id: "d-3", accountingEntryId: "ae-3" }),
+    ], [entry()]);
+    await extratoDeLancadosPorRegra({ portalClientId: "emp-1", competencia: "2026-08", client });
+    expect(client.accountingEntry.findMany).toHaveBeenCalledTimes(1);
+    expect(client.accountingEntry.findMany.mock.calls[0][0].where.id.in).toHaveLength(3);
+  });
+
+  it("⚠⚠ a busca no razão é ESCOPADA pela empresa — multi-tenancy", async () => {
+    const client = clienteCom([linhaDaRegra()], [entry()]);
+    await extratoDeLancadosPorRegra({ portalClientId: "emp-1", competencia: "2026-08", client });
+    expect(client.accountingEntry.findMany.mock.calls[0][0].where.portalClientId).toBe("emp-1");
+  });
+
+  it("⚠ sem nenhuma linha com lançamento, o razão nem é consultado", async () => {
+    const client = clienteCom([linhaDaRegra({ accountingEntryId: null })], []);
+    await extratoDeLancadosPorRegra({ portalClientId: "emp-1", competencia: "2026-08", client });
+    expect(client.accountingEntry.findMany).not.toHaveBeenCalled();
+  });
+});

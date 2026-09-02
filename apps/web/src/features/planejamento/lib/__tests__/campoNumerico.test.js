@@ -1,7 +1,7 @@
 // AS DUAS METADES DO CAMPO NUMÉRICO — o contrato é a IDA E VOLTA, não cada metade sozinha.
 //
 // ⚠⚠ ESTE ARQUIVO EXISTE POR CAUSA DE UM DEFEITO DE PRODUÇÃO (25/08/2026). O motor fiscal tinha 95
-// testes, 24 deles casos dourados calculados à mão, e estava CERTO. Quebrado estava o pedaço que
+// testes, 32 deles casos dourados calculados à mão (medido em 01/09/2026), e estava CERTO. Quebrado estava o pedaço que
 // ninguém media: o número saindo do banco, virando texto de input, e voltando a número.
 //
 // Medido antes do conserto (`apps/api/scripts/diag-planejamento-prefill.mjs`, contra produção):

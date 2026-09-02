@@ -141,13 +141,13 @@ export function PainelDeCasamentos({ companyId, podeEscrever = true, aoCasar }) 
   return (
     <div style={{ ...card, display: "grid", gap: 12, borderColor: "var(--state-warn)" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <strong>Débitos do extrato sem nota vinculada</strong>
+        <h3 style={{ margin: 0, fontSize: "1rem" }}>Débitos do extrato sem nota vinculada</h3>
         <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
           {dados?.totalDebitos ?? 0} débito(s) · {dados?.totalNotas ?? 0} nota(s) em aberto
         </span>
         <span style={{ flex: 1 }} />
         <Button size="sm" variant="secondary" onClick={carregar} disabled={carregando}>
-          {carregando ? "Carregando…" : "Atualizar"}
+          {carregando ? "Carregando…" : "Atualizar os débitos"}
         </Button>
       </div>
 

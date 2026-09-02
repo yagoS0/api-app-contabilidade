@@ -90,7 +90,7 @@ export function PainelDeSaidasDoCliente({ companyId, podeEscrever = true, aoDeci
   if (estado.indisponivel) {
     return (
       <div style={{ ...card, display: "grid", gap: 6 }}>
-        <strong style={{ fontSize: "0.92rem" }}>Saídas que o cliente acrescentou</strong>
+        <h3 style={{ margin: 0, fontSize: "0.92rem" }}>Saídas que o cliente acrescentou</h3>
         <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
           Não foi possível ler esta fila neste ambiente — a tabela ainda não existe neste banco.
           Isto é uma limitação do sistema, não uma afirmação sobre esta empresa.
@@ -102,7 +102,7 @@ export function PainelDeSaidasDoCliente({ companyId, podeEscrever = true, aoDeci
   return (
     <div style={{ ...card, display: "grid", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-        <strong style={{ fontSize: "0.92rem" }}>Saídas que o cliente acrescentou</strong>
+        <h3 style={{ margin: 0, fontSize: "0.92rem" }}>Saídas que o cliente acrescentou</h3>
         <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
           {/* ⚠ A frase é obrigatória: sem ela, a lista se parece com uma fila de lançamento, e o
               contador procuraria a conta contábil que não existe aqui. */}
@@ -115,13 +115,13 @@ export function PainelDeSaidasDoCliente({ companyId, podeEscrever = true, aoDeci
       ) : null}
 
       {estado.erro ? (
-        <span style={{ fontSize: "0.82rem", color: "var(--state-danger, #FF5555)" }}>
+        <span style={{ fontSize: "0.82rem", color: "var(--state-danger)" }}>
           Não foi possível carregar esta fila.
         </span>
       ) : null}
 
       {aviso ? (
-        <span style={{ fontSize: "0.82rem", color: "var(--state-warn, #F1FA8C)" }}>{aviso}</span>
+        <span style={{ fontSize: "0.82rem", color: "var(--state-warn)" }}>{aviso}</span>
       ) : null}
 
       {!estado.carregando && !estado.erro && !estado.saidas.length ? (

@@ -338,6 +338,33 @@ defeito do `if` dentro do laço (CNAE que o contador DESATIVOU continuava força
 empresa inteira) e o `temCadastro`/`prefill` que a tela usa para distinguir cadastro SALVO de perfil
 DERIVADO — medido: **28 das 34 empresas não têm linha em `cadastros_fiscais`**.
 
+## ⚠⚠ O ESTADO DAS MIGRAÇÕES — medido em 01/09/2026, e o que a medição NÃO diz
+
+Durante muito tempo este arquivo repetiu *"migration escrita, NÃO APLICADA"* sem dizer **onde**, e
+as notas envelheceram caladas: medido contra o banco de desenvolvimento (Postgres em Docker,
+`localhost:5432/enviar`), **142 de 142 estão aplicadas**, incluindo quatro que este documento ainda
+dava como pendentes (`add_tomador_emitido`, `add_carga_tributaria_nao_simples`,
+`add_codigos_servico_nacional`, `add_password_reset_token`).
+
+⚠⚠ **"NÃO APLICADA" É UMA AFIRMAÇÃO SOBRE UM BANCO, NÃO SOBRE O REPOSITÓRIO.** Sem dizer qual, ela
+não se pode conferir — e uma nota que não se confere vira paisagem. Quem escrever uma nova diga
+**em qual banco**, e com a data.
+
+⚠ **PRODUÇÃO NÃO FOI MEDIDA e esta máquina não a alcança.** O `DATABASE_URL` local aponta para o
+Docker; o de produção vive no Railway. Nada aqui autoriza concluir que a produção está em dia — e
+aplicar migration em produção continua sendo ato do dono.
+
+**Como medir, em vez de acreditar:**
+
+```
+cd apps/api && npx prisma migrate status      # o que falta
+node scripts/diag-migracoes-01set.mjs         # se a COLUNA existe de verdade
+```
+
+⚠⚠ **As duas perguntas são diferentes, e a segunda é a que importa.** `migrate status` diz que o
+Prisma REGISTROU a aplicação; o diagnóstico lê o `information_schema` e diz que a coluna EXISTE.
+Uma migration com DDL torto consta como aplicada e deixa a coluna faltando.
+
 ## Situação Fiscal (SITFIS) + Confirmação de pagamento (Q40/Q41/Q43)
 
 **SITFIS — situação fiscal do contribuinte** (`application/fiscal/serpro/SerproSitfisService.js`).
@@ -1210,9 +1237,9 @@ escreve e que mudaram entre as versões, dois deles inertes **por acidente feliz
      > lado do contador, no portal do contador."*
 
      Três colunas em `Company` — `pTotTribFed` / `pTotTribEst` / `pTotTribMun`, `DECIMAL(5,2)`,
-     nullable, com CHECK 0–100 (migration **`20260818210000_add_carga_tributaria_nao_simples`,
-     escrita e NÃO APLICADA**; ⚠ o `schema.prisma` foi editado JUNTO, então **aplicar antes de
-     subir** — o cabeçalho da migration explica por que aqui a decisão é o oposto da da `Guide`).
+     nullable, com CHECK 0–100 (migration **`20260818210000_add_carga_tributaria_nao_simples`**;
+     ⚠ o `schema.prisma` foi editado JUNTO, então **aplicar antes de subir** — o cabeçalho da
+     migration explica por que aqui a decisão é o oposto da da `Guide`). ⚠⚠ **APLICADA no banco de DEV** — medido em 01/09/2026 (`_prisma_migrations`); **produção é outra pergunta**, e esta máquina não a responde. Ver *"O ESTADO DAS MIGRAÇÕES"*.
      Caminho completo: `validateAndNormalizeCompanyProfile` → `companySchemas.js` →
      `tx.company.update` (spread condicional) → `CompanyProvisioningService` → `legacyCompanySelect`.
    - ⚠ **A ESTRUTURA ESTÁ CONFIRMADA**, e a frase "carece de confirmação sem o XSD" **deixou de
@@ -1395,7 +1422,7 @@ bundle inicial).
   - Testes: `nfse/__tests__/codigoServicoDaNota.test.js` (a regra) + `emissaoDps.test.js` (o XML —
     o código dentro da lista **sai** no `<cTribNac>`; fora dela, `postMock` e
     `serviceInvoice.create` **não são chamados**).
-- **Migration `20260816120000_add_codigos_servico_nacional` — escrita, NÃO APLICADA.** Aditiva
+- **Migration `20260816120000_add_codigos_servico_nacional`.** ⚠⚠ **APLICADA no banco de DEV** — medido em 01/09/2026 (`_prisma_migrations`); **produção é outra pergunta**, e esta máquina não a responde. Ver *"O ESTADO DAS MIGRAÇÕES"*. Aditiva
   (`TEXT[] NOT NULL DEFAULT '{}'`, espelhando `cnaesSecundarios`), com backfill do valor singular
   quando ele já tiver a forma. ⚠ **Sem CHECK, de propósito**: conferir cada elemento de um array
   exige `unnest`, que é subquery — e o Postgres a proíbe em CHECK; a alternativa
@@ -4223,7 +4250,7 @@ Com `apps/portal-cliente-web` no ar, isso apareceria no primeiro usuário real.
   Regra pura + banco em **`application/auth/PasswordResetService.js`**.
   Testes: **`routes/__tests__/recuperacaoSenha.test.js`** (20).
 - **Model `PasswordResetToken`** → tabela **`password_reset_tokens`** (`@@map` explícito).
-  Migration **`20260818140000_add_password_reset_token` — escrita, NÃO APLICADA.**
+  Migration **`20260818140000_add_password_reset_token`**. ⚠⚠ **APLICADA no banco de DEV** — medido em 01/09/2026 (`_prisma_migrations`); **produção é outra pergunta**, e esta máquina não a responde. Ver *"O ESTADO DAS MIGRAÇÕES"*.
   A única FK é para **`"User"`** (sem `@@map`, conferido contra DDL real, não contra o `schema.prisma`).
 - **Forma copiada de `ClientSession`:** token opaco de `crypto.randomBytes(32)`, guardado só como
   **SHA-256** (`tokenHash`). O claro existe dentro da requisição, vai para o e-mail e morre ali.

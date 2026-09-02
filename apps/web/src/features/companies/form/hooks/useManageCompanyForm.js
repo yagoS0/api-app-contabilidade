@@ -15,6 +15,14 @@ export function getInitialCompanyFormState() {
     empresaZerada: false,
     telefone: "",
     regimeTributario: "SIMPLES",
+    // ⚠⚠ O ANEXO DO SIMPLES NAO TINHA CAMPO EM TELA NENHUMA, e mesmo assim a coluna existe, volta
+    //   no payload e era APAGADA a cada salvar (ver o spread condicional em `routes/firm`).
+    //   Parar de apagar sem dar por onde preencher deixaria a empresa nova nascendo sem anexo
+    //   para sempre — decisao do dono (30/08/2026): criar o campo.
+    simplesAnexo: "",
+    atividadesGravadas: [],
+    atividadesDescritas: [],
+    simplesDataOpcao: "",
     cnaePrincipal: "",
     cnaesSecundarios: "", // string separada por vírgula; o realApi normaliza pra array
     enderecoRua: "",
@@ -131,7 +139,17 @@ export function mapCompanyToEditForm(company) {
   const endereco = legacy?.enderecoJson && typeof legacy.enderecoJson === "object" ? legacy.enderecoJson : {};
   return {
     ownerName: String(company?.ownerName || "").trim(),
-    ownerEmail: String(company?.ownerEmail || company?.email || "").trim(),
+    // ⚠⚠ SEM FALLBACK PARA `company.email`. Ele fazia o campo "E-mail do responsável (login do
+    //   portal)" nascer com o e-mail da EMPRESA quando não havia vínculo OWNER — e são coisas
+    //   diferentes: `ownerEmail` vem do `CompanyClientUser` OWNER; `company.email` é
+    //   `Company.email`, que recebe guias e não abre portal nenhum.
+    //   Ao salvar, aquele valor viajava como `ownerEmail` e disparava o ramo de TROCA DE DONO sem
+    //   ninguém ter tocado no campo.
+    // ⚠ O branco não fica mudo: `estadoDoResponsavel` (lib/portal) diz na tela por que ele está
+    //   vazio — célula vazia é proibida nesta casa.
+    // ⚠ Medido em produção (30/08/2026): 0 de 34 empresas sem OWNER ativo, então isto é armadilha
+    //   latente, não a causa do defeito relatado. Ver o commit que a mediu.
+    ownerEmail: String(company?.ownerEmail || "").trim(),
     ownerPassword: "",
     razaoSocial: String(legacy?.razaoSocial || company?.razao || "").trim(),
     nomeFantasia: String(legacy?.nomeFantasia || "").trim(),
@@ -143,6 +161,16 @@ export function mapCompanyToEditForm(company) {
     empresaZerada: Boolean(company?.empresaZerada),
     telefone: String(legacy?.telefone || company?.telefone || "").trim(),
     regimeTributario: String(legacy?.regimeTributario || "SIMPLES"),
+    // ⚠ `simplesAnexo` e `anexoSimples` sao a MESMA coisa em duas colunas legadas; o backend grava
+    //   as duas juntas. Lemos a que estiver preenchida — nunca inventamos uma terceira.
+    simplesAnexo: String(legacy?.simplesAnexo || legacy?.anexoSimples || ""),
+    // ⚠ SO LEITURA — alimenta a legenda do CNAE na EDICAO, onde a consulta ao CNPJ nao roda.
+    //   `buildCompanyPayload` nao a envia; quem escreve `atividades` e o backend, mesclando.
+    atividadesGravadas: Array.isArray(legacy?.atividades) ? legacy.atividades : [],
+    // ⚠ Nasce VAZIA na edicao, de proposito: so a consulta ao CNPJ a preenche. Semea-la do que
+    //   ja esta gravado faria o payload reenviar o texto antigo como se fosse da Receita.
+    atividadesDescritas: [],
+    simplesDataOpcao: String(legacy?.simplesDataOpcao || "").slice(0, 10),
     cnaePrincipal: String(legacy?.cnaePrincipal || "").trim(),
     cnaesSecundarios: Array.isArray(legacy?.cnaesSecundarios) ? legacy.cnaesSecundarios.join(", ") : "",
     enderecoRua: String(endereco?.rua || "").trim(),

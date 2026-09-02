@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { detalhesDaContaCompartilhada } from "../../lib/portal/responsavelCompartilhado";
+import { detalhesDaConfirmacaoDoResponsavel } from "../../lib/portal/responsavelCompartilhado";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useCompanies } from "../../features/companies/list/hooks/useManageCompanies";
 import { useCompanyGuides } from "../../features/guides/list/hooks/useManageCompanyGuides";
@@ -606,6 +606,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   // Defeito que isto fecha: um login enxergando nove empresas (produção, 19/08/2026).
   const [confirmacaoAcessoProprio, setConfirmacaoAcessoProprio] = useState(null);
   const [acessoProprioCriado, setAcessoProprioCriado] = useState(null);
+  const [vinculoCriado, setVinculoCriado] = useState(null);
 
   async function salvarEdicaoDaEmpresa({ confirmarNovoAcesso } = {}) {
     if (!companiesState.selectedCompanyId) return;
@@ -620,14 +621,33 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       setConfirmacaoAcessoProprio(null);
       // ⚠ A conta nova nasce SEM SENHA. Sem este aviso o contador troca o e-mail, avisa o cliente,
       // e o cliente não consegue entrar — sem ninguém saber por quê.
+      // ⚠ Os DOIS desfechos, e eles dizem coisas diferentes: `acessoNovo` = conta CRIADA (nasce
+      //   sem senha, e o aviso é o que impede o cliente de ficar de fora); `acessoVinculado` =
+      //   esta empresa passou a pertencer a uma conta que JÁ EXISTIA (nada a definir).
       setAcessoProprioCriado(resposta?.acessoNovo || null);
-      feedback.setMessage("Cadastro da empresa atualizado com sucesso.");
+      setVinculoCriado(resposta?.acessoVinculado || null);
+      // ⚠⚠ O FORMULARIO ACEITA O QUE O SERVIDOR GRAVOU. Ele e um `useState` re-semeado SO quando
+      //   muda `companyId` (linha ~1030), entao depois de salvar ele continuava com o que foi
+      //   DIGITADO — e a ficha, lida do servidor, com o valor velho. As duas telas discordavam
+      //   sempre que a gravacao nao acontecia, e o formulario "ja alterado" PARECIA prova de que
+      //   tinha salvo. Era metade do relato do dono.
+      // ⚠ DO RETORNO DO PATCH, nunca de um `useEffect`: o comentario de `:1023-1027` explica por
+      //   que a dependencia e `companyId` — um efeito ligado a lista apagaria edicao nao salva a
+      //   cada refresh de fundo.
+      // ⚠⚠ E SO NO SUCESSO. No erro o valor digitado TEM de permanecer, senao o contador perde o
+      //   que escreveu justamente quando precisa corrigi-lo (ver o `catch`).
+      if (resposta?.company) editCompanyForm.replace(mapCompanyToEditForm(resposta.company));
       await loadCompanies();
+      // ⚠ A MENSAGEM VEM DEPOIS DA CARGA: `loadCompanies` abre com `feedback.clearFeedback()`
+      //   (linha ~152), entao setada antes ela era APAGADA antes de aparecer — o "salvou" que
+      //   ninguem via. Mesma ordem que `handleCreateCompany` ja usa.
+      feedback.setMessage("Cadastro da empresa atualizado com sucesso.");
       // ⚠ Com acesso novo criado a tela NÃO troca de aba: o aviso de "defina a senha" some junto,
       // e ele é a única coisa que impede o cliente de ficar de fora sem explicação.
-      if (!resposta?.acessoNovo) setCompanyDetailTab("lancamentos");
+      // ⚠ Com QUALQUER dos dois avisos a tela NÃO troca de aba — o aviso some junto com ela.
+      if (!resposta?.acessoNovo && !resposta?.acessoVinculado) setCompanyDetailTab("lancamentos");
     } catch (err) {
-      const detalhes = detalhesDaContaCompartilhada(err);
+      const detalhes = detalhesDaConfirmacaoDoResponsavel(err);
       if (detalhes) {
         // Não é erro do contador: é um ato de consequência esperando confirmação.
         setConfirmacaoAcessoProprio(detalhes);
@@ -643,6 +663,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   async function handleUpdateCompany(event) {
     event.preventDefault();
     setAcessoProprioCriado(null);
+    setVinculoCriado(null);
     // ⚠ O salvar normal NUNCA confirma. A confirmação vale para UM clique, o do painel — se ela
     // viajasse daqui, reabrir a tela e salvar de novo criaria acesso novo sem ninguém ter lido nada.
     await salvarEdicaoDaEmpresa({ confirmarNovoAcesso: false });
@@ -1284,6 +1305,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     confirmarAcessoProprio,
     cancelarAcessoProprio,
     acessoProprioCriado,
+    // ⚠ Sai ao lado do irmão porque são desfechos EXCLUSIVOS e com consequências opostas:
+    //   um cria conta sem senha (é preciso definir uma); o outro só muda de dono (nada a fazer).
+    vinculoCriado,
     handleResendGuide,
     handleConfirmGuidePayment,
     handleRecalculateGuide,

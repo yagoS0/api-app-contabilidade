@@ -59,7 +59,11 @@ describe("⚠⚠ ela monta sem ReferenceError", () => {
   it("⚠⚠ e o botão da Conferência aparece com o selo — o caso que quebrou", async () => {
     await montar({ onOpenConferencia: jest.fn() });
     const b = screen.getByRole("button", { name: /A lançar/ });
-    expect(b).toHaveAttribute("data-pendencias", "4");
+    // ⚠⚠ `2`, não `4`: desde 01/09/2026 o selo conta O QUE VIRA LANÇAMENTO (`declarados`), e não a
+    // soma das três filas. O dublê devolve `total: 4` = 2 declarados + 1 recorrência + 1 saída, e as
+    // duas últimas nunca viram lançamento — ver `botaoDaConferencia.test.jsx`.
+    expect(b).toHaveAttribute("data-pendencias", "2");
+    expect(b.textContent).toMatch(/no fluxo/i);
   });
 
   it("⚠ sem o handler, a barra monta igual — só sem o botão", async () => {

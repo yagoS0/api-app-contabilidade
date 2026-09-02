@@ -367,3 +367,48 @@ describe("⚠⚠ o visitante do escritório é recusado no portão de emissão",
     }
   });
 });
+
+// ⚠⚠ O MESTRE EMITE PELO PORTAL DO CLIENTE — decisão do dono, 01/09/2026.
+//
+// > *"o meu login e senha em ambos os portais é de mestre, eu posso executar o que eu quiser,
+// > emitir nota em qualquer empresa etc, apenas o meu deve fazer isso."*
+//
+// ⚠ A trava da visita NÃO foi afrouxada — o mestre não passa POR ela, ele nunca a recebe:
+// `requireClientCompanyAccess` resolve `admin` ANTES do ramo da visita, então `req.access` chega
+// aqui como OWNER **sem** a marca `visitaDoEscritorio`, e o bypass `isAdminLike` faz o resto.
+// Mexer aqui não foi preciso, e este teste existe para provar que continua não sendo.
+describe("⚠⚠ o MESTRE (role admin) emite pelo portal do cliente", () => {
+  function resFalso() {
+    return {
+      statusCode: null, corpo: null,
+      status(c) { this.statusCode = c; return this; },
+      json(b) { this.corpo = b; return this; },
+    };
+  }
+
+  it("⚠⚠ com o `req.access` que `requireClientCompanyAccess` REALMENTE monta para o admin, emite", async () => {
+    const req = {
+      auth: { user: { id: "u-dono", role: "admin", accountType: "FIRM", podeAbrirPortalDoCliente: true } },
+      // A forma exata do ramo admin: OWNER, SEM a marca de visita.
+      access: { role: "OWNER", status: "ACTIVE" },
+      params: {}, body: {}, query: {},
+    };
+    const res = resFalso();
+    const r = await ensureEmissaoNfseAutorizada(req, res, "company-legada-1", {});
+    expect(r.ok).toBe(true);
+    expect(r.via).toBe("ESCRITORIO");
+    expect(res.statusCode).toBeNull();
+  });
+
+  it("⚠⚠ e o CONTADOR COMUM em visita continua recusado — o 'apenas o meu' é o role, não a marca", async () => {
+    const req = {
+      auth: { user: { id: "u-outro", role: "contador", accountType: "FIRM", podeAbrirPortalDoCliente: true } },
+      access: { role: "FINANCEIRO", visitaDoEscritorio: true },
+      params: {}, body: {}, query: {},
+    };
+    const res = resFalso();
+    const r = await ensureEmissaoNfseAutorizada(req, res, "company-legada-1", {});
+    expect(r.ok).toBe(false);
+    expect(res.corpo.error).toBe("EMISSAO_VISITA_DO_ESCRITORIO");
+  });
+});

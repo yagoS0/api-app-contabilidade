@@ -1,0 +1,13 @@
+-- ⚠⚠ ADITIVA. Nullable e sem default: nenhuma linha existente muda de significado, e nenhuma
+-- despesa passa a aparecer no fluxo do cliente por causa desta migration.
+--
+-- Ela guarda a data em que a despesa da nota entra no FLUXO — decisão do dono, 01/09/2026:
+-- "temos um botão fluxo, que apenas libera no fluxo mas não lança", com a data vindo da emissão e
+-- podendo ser alterada pelo contador.
+--
+-- ⚠ `DATE`, não `TIMESTAMP`: é data civil, sem hora. Com timestamp, às 22h de Brasília ela viraria
+-- o dia seguinte na leitura em UTC — a mesma armadilha que `saidas_avulsas_cliente.data` já evita.
+--
+-- ⚠⚠ NÃO CONFUNDIR COM `dataPagamento`: aquela é prova (ou declaração) de que o dinheiro saiu e é
+-- a data do lançamento contábil. Esta é previsão, entra no fluxo como PREVISÃO e nunca vai ao razão.
+ALTER TABLE "lancamentos_declarados" ADD COLUMN "previstoNoFluxoEm" DATE;

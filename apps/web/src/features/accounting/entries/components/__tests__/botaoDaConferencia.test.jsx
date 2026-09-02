@@ -18,21 +18,45 @@ const cheio = { ok: true, total: 6, declarados: 3, series: 1, saidas: 2, indispo
 // esse botão"*). Mudou só o TEXTO: a chave de navegação, o handler e os `data-*` são os mesmos.
 const botao = () => screen.getByRole("button", { name: /A lançar/ });
 
-describe("⚠⚠ o número soma AS TRÊS filas", () => {
-  it("o selo mostra o TOTAL, não a fila dos declarados", () => {
+describe("⚠⚠ o selo conta O QUE VIRA LANÇAMENTO — não as três filas somadas", () => {
+  // ⚠⚠ ESTE BLOCO SE CHAMAVA "o número soma AS TRÊS filas" E TRAVAVA O DEFEITO.
+  //
+  // > Dono, sobre a ALBATROZ em produção (01/09/2026): *"aparecem 19 a lançar mas ao abrir não
+  // > aparece isso tudo"* … *"tudo que virar lançamento deve entrar no fluxo, mas nem tudo do
+  // > fluxo necessariamente deve ser um lançamento"*.
+  //
+  // O botão se chama **"A lançar"** e mostrava `declarados + recorrências + saídas`. As duas
+  // últimas nunca viram lançamento — o serviço das saídas diz de si *"CONFIRMAR NÃO LANÇA NADA"*.
+  // O selo prometia trabalho que não existia, e abrir a tela mostrava menos.
+  //
+  // ⚠ O QUE NÃO MUDOU, e é o que o bloco antigo protegia com razão: **o que vem do fluxo continua
+  // visível**. Ele saiu do selo e ganhou marca própria ao lado — sumir com ele faria o contador
+  // nunca ver o que o cliente digitou.
+  it("⚠⚠ o selo mostra os DECLARADOS, não o total das três filas", () => {
     render(<BotaoDaConferencia pendencias={cheio} onOpenConferencia={jest.fn()} />);
-    expect(botao()).toHaveAttribute("data-pendencias", "6");
-    expect(botao().textContent).toMatch(/6/);
-    // ⚠ 3 é a fila dos declarados. Se o selo mostrasse 3, as saídas do cliente estariam invisíveis.
-    expect(botao().textContent).not.toMatch(/\b3\b/);
+    expect(botao()).toHaveAttribute("data-pendencias", "3");
   });
 
-  it("⚠ e o `title` nomeia as três, porque elas pedem trabalhos diferentes", () => {
+  it("⚠⚠ e o que é SÓ FLUXO aparece à parte — não some, e não conta como «a lançar»", () => {
+    render(<BotaoDaConferencia pendencias={cheio} onOpenConferencia={jest.fn()} />);
+    expect(botao().textContent).toMatch(/no fluxo/i);
+  });
+
+  it("⚠ o `title` separa os dois trabalhos, e diz que um deles NÃO vira lançamento", () => {
     render(<BotaoDaConferencia pendencias={cheio} onOpenConferencia={jest.fn()} />);
     const t = botao().getAttribute("title");
-    expect(t).toMatch(/3 lançamento\(s\) declarado\(s\)/);
-    expect(t).toMatch(/1 recorrência\(s\)/);
-    expect(t).toMatch(/2 saída\(s\) do cliente/);
+    expect(t).toMatch(/para virar lançamento/i);
+    expect(t).toMatch(/não viram lançamento/i);
+  });
+
+  it("⚠ backend ANTIGO (sem `aLancar`/`noFluxo`) cai nas três contagens — nada quebra", () => {
+    // A rota nova é desta entrega; a tela pode subir antes dela.
+    render(<BotaoDaConferencia
+      pendencias={{ total: 6, declarados: 3, series: 1, saidas: 2 }}
+      onOpenConferencia={jest.fn()}
+    />);
+    expect(botao()).toHaveAttribute("data-pendencias", "3");
+    expect(botao().textContent).toMatch(/no fluxo/i);
   });
 
   it("⚠⚠ só as saídas do cliente pendentes já acendem o selo", () => {

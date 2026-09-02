@@ -1,3 +1,4 @@
+import { mensagemDoErroDeCadastro } from "@contabilidade/shared/erros-cadastro-empresa";
 function getApiBaseUrl() {
   return String(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 }
@@ -110,6 +111,21 @@ export function mapKnownError(payload, status) {
     return `Não foi possível salvar — ${detalhes}${resto}`;
   }
 
+  // ⚠⚠ O DICIONÁRIO DO CADASTRO DE EMPRESA — 48 códigos que chegavam à tela em `snake_case`.
+  // Foi o defeito relatado pelo dono ("avisos que não aparecem"): `mapKnownError` não tinha um
+  // único `company_*`, o fallback abaixo devolvia `payload.error` cru, e `Feedback.jsx` imprimia
+  // a string. Foi também por aqui que o 409 do responsável ficou ilegível.
+  //
+  // ⚠ A PRECEDÊNCIA É **dicionário > `message` do servidor > código**, e a ordem importa: o
+  // dicionário é texto escrito para o contador, com o que FAZER; o `message` do servidor é
+  // técnico e existe em poucos casos (`cnpj_imutavel`). Invertida, a frase pior venceria a melhor
+  // exatamente nos casos em que alguém se deu ao trabalho de escrever as duas.
+  //
+  // ⚠⚠ DELEGA, não copia. O texto mora em `packages/shared` porque espelhá-lo aqui divergiria na
+  // primeira correção — precedente medido na lista do IBGE.
+  const doCadastro = mensagemDoErroDeCadastro(payload?.error, payload);
+  if (doCadastro) return doCadastro;
+
   // Fallback: prefere a mensagem humana do backend ({error, message}) antes do código cru.
   return reason || String(payload?.message || "").trim() || payload?.error || `request_failed_${status}`;
 }
@@ -142,6 +158,11 @@ function buildCompanyPayload(input) {
     hasProlabore: Boolean(input.hasProlabore),
     temFolha: Boolean(input.temFolha),
     empresaZerada: Boolean(input.empresaZerada),
+    // ⚠⚠ FORA de `company`, e de proposito: a rota le `body.atividadesDescritas`, e `company`
+    //   passa pelo Zod (`companySchemas`) — campo desconhecido ali e descartado ou recusado.
+    //   Ele tambem NAO e campo do perfil: e o texto que a consulta ao CNPJ trouxe AGORA, usado so
+    //   para acrescentar descricao a codigos que `cnaePrincipal`/`cnaesSecundarios` ja escolheram.
+    atividadesDescritas: Array.isArray(input.atividadesDescritas) ? input.atividadesDescritas : [],
     company: {
       cnpj: String(input.cnpj || "").trim(),
       razaoSocial: String(input.razaoSocial || "").trim(),
@@ -150,6 +171,19 @@ function buildCompanyPayload(input) {
       guideNotificationEmail: String(input.guideNotificationEmail || "").trim().toLowerCase() || null,
       telefone: txt(input.telefone),
       regimeTributario: String(input.regimeTributario || "SIMPLES"),
+      // ⚠⚠ O BLOCO `simples` SO VIAJA QUANDO O REGIME E SIMPLES. Mandado sempre, ele apagaria o
+      //   anexo de toda empresa do Presumido a cada salvar — e o backend recusa
+      //   (`company_simples_not_allowed_for_regime`) se vier com anexo fora do Simples.
+      // ⚠ E quando viaja, viaja INTEIRO: e a presenca da chave `simples` que autoriza a rota a
+      //   escrever as tres colunas (spread condicional). Omitir = "nao mexer".
+      ...(String(input.regimeTributario || "SIMPLES") === "SIMPLES"
+        ? {
+            simples: {
+              anexo: String(input.simplesAnexo || "").trim() || null,
+              dataOpcao: String(input.simplesDataOpcao || "").trim() || null,
+            },
+          }
+        : {}),
       cnaePrincipal: String(input.cnaePrincipal || "").trim(),
       // Antes era `[]` fixo: os CNAEs secundários NUNCA eram enviados, mesmo vindo da
       // BrasilAPI. Aceita array ou string separada por vírgula (o form usa string).
@@ -1818,8 +1852,18 @@ export function createRealApi() {
       });
     },
 
-    async getConferenciaPendencias(companyId) {
-      return request(`/firm/companies/${companyId}/conferencia/pendencias`);
+    /**
+     * ⚠ `competencia` é OPCIONAL, e quem a passa é a TELA, não o botão.
+     *
+     * O selo da barra de Lançamentos chama SEM ela de propósito — a fila é o que espera alguém em
+     * qualquer mês. A tela abre filtrada, e passa a competência para poder dizer quantos ficaram
+     * fora do mês aberto. Sem isso os dois números divergem e se leem como defeito.
+     */
+    async getConferenciaPendencias(companyId, { competencia } = {}) {
+      const q = new URLSearchParams();
+      if (competencia) q.set("competencia", competencia);
+      const qs = q.toString();
+      return request(`/firm/companies/${companyId}/conferencia/pendencias${qs ? `?${qs}` : ""}`);
     },
     async getConferenciaFila(companyId, { competencia, estado, pagina, porPagina } = {}) {
       const q = new URLSearchParams();
@@ -1841,6 +1885,27 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/conferencia/${declaradoId}/${acao}`, {
         method: "POST",
         body: JSON.stringify(corpo || {}),
+      });
+    },
+    /**
+     * ⚠⚠ PÔR (ou TIRAR) a despesa no fluxo do cliente, SEM lançar — dono, 01/09/2026.
+     *
+     * ⚠ `data` ausente ⇒ o servidor usa a EMISSÃO da nota. `data: null` ⇒ TIRA do fluxo. As duas
+     * não podem se confundir, e é por isso que o corpo só carrega a chave quando ela foi passada:
+     * com `{ data: data || undefined }`, o clique de remover viraria "use a emissão".
+     */
+    async postConferenciaFluxo(companyId, declaradoId, { data } = {}) {
+      const corpo = data === undefined ? {} : { data };
+      return request(`/firm/companies/${companyId}/conferencia/${declaradoId}/fluxo`, {
+        method: "POST",
+        body: JSON.stringify(corpo),
+      });
+    },
+    /** ⚠ A saída do cliente virando lançamento contábil. A conta é escolha de quem clica. */
+    async postConferenciaSaidaLancar(companyId, saidaId, { contaDespesa } = {}) {
+      return request(`/firm/companies/${companyId}/conferencia/saidas-do-cliente/${saidaId}/lancar`, {
+        method: "POST",
+        body: JSON.stringify({ contaDespesa }),
       });
     },
     // As sugestões de casamento débito × nota. ⚠ DERIVADAS NA LEITURA — não há coluna de sugestão.
@@ -2189,6 +2254,21 @@ export function createRealApi() {
     // derruba o Fator R e troca o anexo (III → V) num PDF que vai ao cliente.
     async getDadosPlanejamento(companyId) {
       return request(`/firm/companies/${companyId}/planejamento`);
+    },
+    // ⚠ A FOTO da simulação. Salvar e gerar o PDF são DOIS atos, e a separação é deliberada: o
+    // segundo pode falhar (sem Volume no Railway, o storage recusa) sem desfazer o primeiro — e a
+    // tela precisa poder dizer "a simulação foi salva, o PDF não".
+    async listarSimulacoesPlanejamento(companyId) {
+      return request(`/firm/companies/${companyId}/planejamento/simulacoes`);
+    },
+    async salvarSimulacaoPlanejamento(companyId, payload) {
+      return request(`/firm/companies/${companyId}/planejamento/simulacoes`, { method: "POST", body: payload });
+    },
+    async gerarDocumentoDaSimulacao(companyId, simulacaoId) {
+      return request(
+        `/firm/companies/${companyId}/planejamento/simulacoes/${simulacaoId}/documento`,
+        { method: "POST" },
+      );
     },
     // Q15 — fechamento
     async getFechamento(companyId, competencia) {

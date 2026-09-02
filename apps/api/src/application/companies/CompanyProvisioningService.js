@@ -92,7 +92,12 @@ export async function provisionarEmpresa({ body, actorUserId, log = null } = {})
   if (!parsedCompany.ok) {
     throw new CompanyProvisioningError(parsedCompany.error, {
       status: 400,
-      body: { error: parsedCompany.error },
+      // ⚠ O `details` viaja tambem na CRIACAO — mesmo motivo do PATCH: ele nomeia os campos
+      //   do endereco que faltam, e sem ele a tela so pode dizer "endereco incompleto".
+      body: {
+        error: parsedCompany.error,
+        ...(parsedCompany.details ? { details: parsedCompany.details } : {}),
+      },
     });
   }
   const normalizedCompany = parsedCompany.data;

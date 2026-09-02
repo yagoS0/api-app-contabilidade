@@ -35,7 +35,9 @@ import { mostraApuracaoDoSimples } from "../../../apuracao-lp/lib/regimeDaAba";
 // já foram conferidas?". Sem o seletor, a aba mostraria sempre o mês default e não haveria como
 // conferir outro. ⚠ O recorte "sem competência" é um botão DENTRO da aba, não um valor do seletor —
 // ele não é um mês, e pô-lo aqui faria o seletor global mudar de significado.
-const TABS_COM_COMPETENCIA = new Set(["lancamentos", "conferencia", "circular", "cadastroFiscal", "guides", "notasFiscais", "auditoria"]);
+// ⚠ `lancamentosAutomaticos` ENTRA: o extrato é por COMPETÊNCIA (*"o que entrou sem eu clicar NESTE
+// mês"*), e sem o seletor no topo a aba mostraria um mês que ninguém escolheu.
+const TABS_COM_COMPETENCIA = new Set(["lancamentos", "lancamentosAutomaticos", "conferencia", "circular", "cadastroFiscal", "guides", "notasFiscais", "auditoria"]);
 
 // Navegação da empresa em 2 níveis: grupos grandes (Anotações, Contabilidade, Fiscal, Empresa)
 // e, abaixo, as sub-abas do grupo ativo. A aba ativa continua vindo do segmento da URL (activeTab);
@@ -57,6 +59,20 @@ const GROUPS = [
     // A rota /plano-contas segue válida — só não tem botão próprio aqui.
     tabs: [
       { key: "lancamentos", label: "Lançamentos" },
+      /**
+       * ⚠⚠ LOGO DEPOIS DE LANÇAMENTOS, e a vizinhança é o argumento — dono, 01/09/2026:
+       *
+       * > *"regras de lançamento recorrente, quando marcadas, vão para uma sub aba de lançamentos
+       * > automáticos"*.
+       *
+       * É a contabilidade que o contador **não escreveu**: nasceu de regra, sem ninguém clicar. Ela
+       * fica ao lado de Lançamentos porque é a mesma matéria — o razão do mês —, só que com uma
+       * pergunta a mais: *tem papel atrás disto?*
+       * ⚠ Ela NÃO entra em `TABS_COM_COMPETENCIA`? Entra: o extrato é por COMPETÊNCIA (o recorte é
+       * *"o que entrou sem eu clicar NESTE mês"*), e sem o seletor no topo a aba mostraria um mês
+       * que ninguém escolheu.
+       */
+      { key: "lancamentosAutomaticos", label: "Lançamentos automáticos" },
       /*
        * ⚠⚠ AQUI FICAVA "CONFERÊNCIA", E ELA SAIU DO CABEÇALHO EM 29/08/2026 — decisão do dono:
        * *"essas saídas que o cliente digitar aparecem para o contador na aba de conferência, aba
@@ -112,6 +128,13 @@ const GROUPS = [
       // ⚠ Esconder errava barato (some uma aba); despachar erra caro (mostra a apuração de outro
       // regime). Por isso a leitura virou regra com teste próprio, e não um `if` aqui.
       { key: "cadastroFiscal", label: "Apuração" },
+      // ⚠ PLANEJAMENTO VEM DEPOIS DE APURAÇÃO, e a ordem é o argumento: ele lê o MESMO RBT12 e a
+      // MESMA folha que a apuração acabou de apurar. Antes dela, o contador estaria simulando sobre
+      // número que ele ainda não conferiu.
+      // ⚠⚠ E ELE FICA FORA DE `TABS_COM_COMPETENCIA`: o planejamento usa o mês corrente e uma
+      // janela de 12 meses. Um seletor de mês no topo prometeria um filtro que a rota ignora — é o
+      // mesmo argumento já escrito para o Perfil fiscal.
+      { key: "planejamento", label: "Planejamento" },
       { key: "guides", label: "Guias" },
       { key: "sitfis", label: "Situação Fiscal" },
       // ⚠⚠ `emissaoNfse` NÃO ENTRA AQUI — e a ausência é decisão, não esquecimento (dono,

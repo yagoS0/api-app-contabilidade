@@ -12,6 +12,8 @@
 // fechamento · `--state-neutral` é o padrão. Usar um fora do significado recria o problema que o
 // redesign resolveu: quando quase tudo é vermelho, nada se destaca.
 
+import { veioDeExtrato } from "./naturezaDaConferencia";
+
 /** ⚠ Espelho do vocabulário do backend. Valor novo lá que não chegue aqui cai em `desconhecido`. */
 export const ESTADO = Object.freeze({
   AGUARDANDO_PAGAMENTO: "AGUARDANDO_PAGAMENTO",
@@ -25,6 +27,17 @@ export const ORIGEM_PAGAMENTO = Object.freeze({
   OFX: "OFX",
   DECLARADO_PELO_CONTADOR: "DECLARADO_PELO_CONTADOR",
   CLIENTE: "CLIENTE",
+  /**
+   * ⚠⚠ OS DOIS ABAIXO FALTAVAM ATÉ 01/09/2026, e o efeito era silencioso: o backend tem CINCO
+   * valores e esta tela espelhava TRÊS, então toda linha com um dos dois caía no fallback e o
+   * contador lia **"Procedência desconhecida"** — sobre uma data que o sistema sabe de onde veio.
+   *
+   * ⚠ O fallback não mentia (ele diz "não reconheço"), e é por isso que ninguém percebeu. O que se
+   * perdia era informação: numa a PROVA era rebaixada a desconhecida; na outra sumia justamente o
+   * aviso de que ninguém viu o pagamento acontecer.
+   */
+  EXTRATO_EXCEL: "EXTRATO_EXCEL",
+  PRESUMIDO_POR_REGRA: "PRESUMIDO_POR_REGRA",
 });
 
 /** ⚠ O recorte das que chegaram sem competência. É o MESMO literal que a rota aceita. */
@@ -115,6 +128,32 @@ const LEITURA_DA_ORIGEM = Object.freeze({
     rotulo: "Informado pelo cliente",
     ehProva: false,
     frase: "A data veio do cliente, sem comprovante. É declaração, não prova.",
+  },
+  /**
+   * ⚠⚠ É PROVA, e é valor SEPARADO do OFX — os dois textos saem da documentação do próprio enum do
+   * backend, não de redação nova. O que a data afirma ("o dinheiro saiu neste dia") quem afirma é o
+   * banco, nos dois formatos; o que muda é que a planilha passa por um mapeamento de colunas que
+   * uma pessoa definiu, num programa em que qualquer célula se altera. As duas provam, e não com a
+   * mesma força — e a tela do contador é exatamente onde essa diferença importa.
+   */
+  [ORIGEM_PAGAMENTO.EXTRATO_EXCEL]: {
+    rotulo: "Extrato em planilha",
+    ehProva: true,
+    frase: "A data veio do extrato do banco, lido de uma planilha — é prova, e as colunas foram mapeadas por alguém.",
+  },
+  /**
+   * ⚠⚠ DECLARAÇÃO, NUNCA PROVA — e é a linha mais delicada desta lista.
+   *
+   * Ninguém viu este pagamento acontecer: uma regra do fornecedor presumiu a data, e o lançamento
+   * que saiu dela afirma que o dinheiro saiu do caixa naquele dia. `ehProva: false` é o que impede a
+   * tela de tratá-la como um débito do extrato.
+   * ⚠ Ela NÃO é `DECLARADO_PELO_CONTADOR`: aquele diz "uma pessoa afirmou esta data" e atribuiria ao
+   * contador um ato que ele não praticou naquele mês. O conserto de cada um é diferente.
+   */
+  [ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA]: {
+    rotulo: "Presumida por regra",
+    ehProva: false,
+    frase: "Ninguém viu este pagamento: uma regra do fornecedor presumiu a data. É declaração, não prova — o extrato a corrige quando o débito chegar.",
   },
 });
 
@@ -355,7 +394,12 @@ export function contaQueSeraUsada(item) {
  * nunca teve documento; desabilitá-lo com o motivo é a resposta honesta.
  */
 export function leituraDoDocumento(item) {
-  if (item?.origem === "OFX_CLIENTE") {
+  // ⚠⚠ ATÉ 01/09/2026 ISTO COMPARAVA SÓ `"OFX_CLIENTE"`, e a linha vinda da PLANILHA de extrato caía
+  // no ramo de baixo — dizendo *"a nota de origem não está mais na base"* sobre uma linha que NUNCA
+  // teve nota. Afirmava um documento apagado que nunca existiu, e mandava o contador procurá-lo.
+  // ⚠ São DUAS origens de extrato (`OFX_CLIENTE` e `EXTRATO_EXCEL_CLIENTE`), e o backend as separa
+  // de propósito; quem sabe quais são é `lib/naturezaDaConferencia.js`, não uma string aqui.
+  if (veioDeExtrato(item)) {
     return { temDocumento: false, motivo: "Veio do extrato bancário — não há nota vinculada." };
   }
   if (!item?.nota) {
@@ -403,6 +447,42 @@ export function agruparPorFornecedor(itens) {
   // ⚠ Ordem por VOLUME, não alfabética: o fornecedor que concentra dinheiro é o que o contador
   // precisa conferir primeiro. Empate desempata pelo nome, para a ordem ser estável entre recargas.
   return [...grupos.values()].sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome));
+}
+
+/**
+ * ⚠⚠ O CABEÇALHO DO GRUPO SÓ EXISTE QUANDO ELE DIZ ALGO QUE A LINHA NÃO DIZ (01/09/2026).
+ *
+ * MEDIDO NO NAVEGADOR antes de mexer, na empresa de teste: a fila tinha **11 grupos para 11 linhas**
+ * — nenhum com mais de uma — e, em **11 de 11**, o título do grupo era, caractere por caractere, a
+ * DESCRIÇÃO da única linha dele ("PAGTO KODA BEAR" em cima de "PAGTO KODA BEAR"). Ao lado, o resumo
+ * dizia "1 lançamento(s) · R$ 890,00" — o mesmo valor da coluna Valor daquela linha. Mesma frase e
+ * mesmo número, duas vezes, onze vezes.
+ *
+ * ⚠ A CAUSA é `agruparPorFornecedor`, e ela não é defeito: sem CNPJ — o caso de **todo** débito de
+ * extrato — a chave vira a própria descrição, e o agrupamento degenera em um grupo por linha.
+ * Agrupar continua CERTO: o fornecedor com cinco notas é exatamente o caso que ele existe para
+ * servir. O que não se sustenta é o grupo de UM cobrar uma faixa de tela para repetir a linha.
+ *
+ * ⚠ Ele não some por "ser pequeno" — some por **não acrescentar nada**. Grupo com CNPJ continua
+ * aparecendo mesmo com uma linha só (a linha não mostra CNPJ nenhum), e grupo com duas ou mais
+ * linhas continua aparecendo sempre (o total do fornecedor não está em nenhuma linha).
+ *
+ * @returns `null` quando não há o que dizer, ou `{ nome, cnpj, resumo }`.
+ */
+export function cabecalhoDoGrupo(g) {
+  if (!g) return null;
+  const quantos = g.itens?.length ?? 0;
+  // ⚠ `<= 1` e não `=== 1`: um grupo vazio também não tem o que dizer, e a forma não pode depender
+  // de o chamador garantir que ele nunca chega.
+  if (!g.cnpj && quantos <= 1) return null;
+  return {
+    nome: g.nome,
+    cnpj: g.cnpj || null,
+    // ⚠ O RESUMO É SÓ DO GRUPO DE VERDADE. Com uma linha só, "1 lançamento(s) · R$ 1.500,00" repete
+    // a coluna Valor da linha logo abaixo — o mesmo número, duas vezes, na mesma faixa de tela. O
+    // total de um fornecedor é informação quando há mais de uma linha para somar; antes disso é eco.
+    resumo: quantos > 1 ? `${quantos} lançamento(s) · ${dinheiro(g.total)}` : null,
+  };
 }
 
 /**

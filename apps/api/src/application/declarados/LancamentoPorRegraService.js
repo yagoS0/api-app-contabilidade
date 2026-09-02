@@ -285,16 +285,79 @@ export async function extratoDeLancadosPorRegra({ portalClientId, competencia, c
       valor: true, valorAjustado: true, competencia: true,
       dataPagamento: true, contaAplicada: true, regraId: true,
       accountingEntryId: true, decididoEm: true,
+      /**
+       * ⚠⚠ A PROVA DOCUMENTAL DA OCORRÊNCIA — decisão do dono, 01/09/2026:
+       *
+       * > *"no caso de não ter uma nota comprovando a ocorrência desse lançamento ela deve ser
+       * > retirada da regra"*.
+       *
+       * A regra lança sozinha sobre o que chegou — e o que chegou pode ser uma NOTA (documento) ou
+       * um débito de EXTRATO. A pergunta que o contador faz nesta tela é *"tem papel atrás disto?"*,
+       * e sem estes dois campos ela não tem resposta: a tela mostraria valor e data sem dizer se
+       * alguém emitiu alguma coisa.
+       * ⚠ `notaRecebida` pode ser NULA mesmo com `origem: NOTA_RECEBIDA` — a FK é `SetNull`, e nota
+       * apagada não apaga a despesa. As duas ausências são diferentes e a tela as distingue.
+       */
+      origem: true,
+      notaRecebidaId: true,
+      notaRecebida: { select: { numero: true, serie: true, type: true } },
     },
     orderBy: { dataPagamento: "asc" },
   });
+
+  /**
+   * ⚠⚠ A DESCRIÇÃO DO LANÇAMENTO vem do RAZÃO, não do declarado — dono, 01/09/2026 (*"descrição
+   * vinda da nota ou OFX, descrição do lançamento"*): são DUAS colunas, de propósito.
+   *
+   * Hoje o histórico é o nome do fornecedor cru, igual à `descricaoOriginal`; mostrar as duas é o
+   * que permite ver quando elas DIVERGIREM — e é a divergência que denuncia lançamento editado por
+   * fora, ou regra escrevendo outra coisa.
+   *
+   * ⚠⚠ E ela responde uma segunda pergunta, mais cara: **o lançamento ainda existe?**
+   * `accountingEntryId` NÃO tem FK (de propósito — ver o schema), então ele pode apontar para uma
+   * linha apagada por fora. Sem esta leitura, a tela ofereceria "tirar" um lançamento que já não
+   * está no razão, e a recusa só apareceria no clique.
+   *
+   * ⚠ Uma query para o lote inteiro (`id: { in: … }`), nunca uma por linha.
+   */
+  const ids = linhas.map((l) => l.accountingEntryId).filter(Boolean);
+  const entries = ids.length
+    ? await client.accountingEntry.findMany({
+      where: { id: { in: ids }, portalClientId: String(portalClientId) },
+      select: { id: true, historico: true, data: true },
+    })
+    : [];
+  const doRazao = new Map(entries.map((e) => [e.id, e]));
+
+  const comRazao = linhas.map((l) => {
+    const e = l.accountingEntryId ? doRazao.get(l.accountingEntryId) : null;
+    return {
+      ...l,
+      // ⚠ `null` quando não há lançamento no razão — nunca a `descricaoOriginal` no lugar dele. Uma
+      // coluna preenchida por substituição diria que o razão contém algo que ele não contém.
+      historicoDoLancamento: e?.historico ?? null,
+      dataDoLancamento: e?.data ?? null,
+      /**
+       * ⚠⚠ TRÊS ESTADOS, e colapsá-los esconde o pior. `true` = está no razão · `false` = tinha id
+       * e a linha SUMIU (apagada por fora) · `null` = nunca teve id. O segundo é o que a tela
+       * precisa gritar: o extrato afirma um lançamento que não existe mais.
+       */
+      lancamentoNoRazao: l.accountingEntryId ? Boolean(e) : null,
+    };
+  });
+
   return {
     competencia: String(competencia),
-    total: linhas.length,
+    total: comRazao.length,
     // ⚠ A soma viaja porque é o número que o contador confere contra o razão. Ela é do que ESTE
     // extrato mostra — nunca "o total do mês", que seria outra coisa.
-    valor: linhas.reduce((s, l) => s + (numero(l.valorAjustado) ?? numero(l.valor) ?? 0), 0),
-    linhas,
+    valor: comRazao.reduce((s, l) => s + (numero(l.valorAjustado) ?? numero(l.valor) ?? 0), 0),
+    /**
+     * ⚠ QUANTOS NÃO TÊM DOCUMENTO ATRÁS. É a resposta direta ao pedido do dono, e ela viaja como
+     * NÚMERO para a tela não precisar recontar — duas contagens da mesma coisa divergem.
+     */
+    semNota: comRazao.filter((l) => !l.notaRecebidaId).length,
+    linhas: comRazao,
   };
 }
 

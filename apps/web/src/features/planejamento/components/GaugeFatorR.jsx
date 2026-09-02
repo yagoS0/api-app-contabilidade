@@ -46,8 +46,18 @@ export function GaugeFatorR({ fatorR, economiaSeMudar = null }) {
 
       {/* A barra com o limite MARCADO — sem a marca, 25% e 31% parecem a mesma coisa. */}
       <div style={{ position: "relative", height: 12, borderRadius: 999, background: "#1A1B26", border: `1px solid ${C.borda}`, overflow: "hidden" }}>
-        <div style={{ position: "absolute", inset: 0, width: `${posicao}%`, background: cor, opacity: 0.55 }} />
-        <div style={{ position: "absolute", top: -2, bottom: -2, left: `${marca}%`, width: 2, background: C.texto }} title="Limite de 28%" />
+        {/* ⚠⚠ `printColorAdjust: "exact"` — sem ele a barra sai VAZIA no papel. O navegador
+            descarta cor de fundo ao imprimir, e esta barra É um fundo: o PDF que vai ao cliente
+            mostrava a trilha e o marcador dos 28%, sem nada preenchido, como se o Fator R fosse
+            zero. É a mesma regra que a `LogoAltan tom="papel"` já carrega, pelo mesmo motivo. */}
+        <div style={{
+          position: "absolute", inset: 0, width: `${posicao}%`, background: cor, opacity: 0.55,
+          WebkitPrintColorAdjust: "exact", printColorAdjust: "exact",
+        }} />
+        <div style={{
+          position: "absolute", top: -2, bottom: -2, left: `${marca}%`, width: 2, background: C.texto,
+          WebkitPrintColorAdjust: "exact", printColorAdjust: "exact",
+        }} title="Limite de 28%" />
       </div>
       <div style={{ position: "relative", height: 16, fontSize: "0.66rem", color: C.muted }}>
         <span style={{ position: "absolute", left: `${marca}%`, transform: "translateX(-50%)" }}>28%</span>

@@ -12,6 +12,7 @@ import {
   acaoPedeData,
   acoesDaLinha,
   agruparPorFornecedor,
+  cabecalhoDoGrupo,
   cnpjFormatado,
   contagemParaTela,
   dataCivil,
@@ -108,9 +109,28 @@ describe("⚠⚠ A PROCEDÊNCIA DA DATA — prova × declaração", () => {
     expect(leituraDaOrigemDoPagamento("PIX_DIRETO_DO_BANCO").ehProva).toBe(false);
   });
 
-  it("⚠⚠ SÓ O OFX é prova — a lista é de INCLUSÃO", () => {
+  it("⚠⚠ A LISTA DE PROVA É DE INCLUSÃO, e são exatamente DUAS — as duas do BANCO", () => {
+    // ⚠⚠ ESTE TESTE DIZIA "SÓ O OFX" ATÉ 01/09/2026, e a lista envelheceu, não a invariante.
+    // `EXTRATO_EXCEL` sempre foi prova na FONTE (`application/declarados/lib/estadosDeclarado.js`,
+    // que a documenta com um "**Por que PROVA**" próprio): quem afirma que o dinheiro saiu é o
+    // banco, nos dois formatos. O que faltava era esta tela conhecer o valor — ela espelhava três
+    // dos cinco, e a linha da planilha lia "Procedência desconhecida".
+    // ⚠ O QUE NÃO MUDOU, e é o que este teste existe para guardar: a lista é de INCLUSÃO. Nada vira
+    // prova por default — nem ausência, nem valor novo, nem o que uma pessoa declarou.
     const provas = Object.values(ORIGEM_PAGAMENTO).filter((o) => leituraDaOrigemDoPagamento(o).ehProva);
-    expect(provas).toEqual([ORIGEM_PAGAMENTO.OFX]);
+    expect(provas.sort()).toEqual([ORIGEM_PAGAMENTO.EXTRATO_EXCEL, ORIGEM_PAGAMENTO.OFX].sort());
+  });
+
+  it("⚠⚠ e as TRÊS declarações continuam fora dela — inclusive a presumida por REGRA", () => {
+    // A presumida por regra é a mais delicada: o lançamento dela afirma uma saída de caixa que
+    // ninguém testemunhou. Tratá-la como prova apagaria exatamente esse aviso.
+    for (const o of [
+      ORIGEM_PAGAMENTO.DECLARADO_PELO_CONTADOR,
+      ORIGEM_PAGAMENTO.CLIENTE,
+      ORIGEM_PAGAMENTO.PRESUMIDO_POR_REGRA,
+    ]) {
+      expect(leituraDaOrigemDoPagamento(o).ehProva).toBe(false);
+    }
   });
 });
 
@@ -236,6 +256,23 @@ describe("⚠⚠ O DOCUMENTO — quando não dá para abrir, a tela DIZ POR QUÊ
     const r = leituraDoDocumento(linha({ origem: "OFX_CLIENTE", nota: null }));
     expect(r.temDocumento).toBe(false);
     expect(r.motivo).toMatch(/extrato/i);
+  });
+
+  it("⚠⚠ o extrato em PLANILHA diz o mesmo — ele também nunca teve nota", () => {
+    // Até 01/09/2026 a comparação era só `"OFX_CLIENTE"`, e a linha da planilha caía no ramo de
+    // cima, afirmando *"a nota de origem não está mais na base"* sobre uma linha que NUNCA teve
+    // nota. É afirmar um documento apagado que nunca existiu — e mandar o contador procurá-lo.
+    const r = leituraDoDocumento(linha({ origem: "EXTRATO_EXCEL_CLIENTE", nota: null }));
+    expect(r.temDocumento).toBe(false);
+    expect(r.motivo).toMatch(/extrato/i);
+    expect(r.motivo).not.toMatch(/não está mais na base/i);
+  });
+
+  it("⚠ origem que a tela NÃO conhece cai na leitura da NOTA, nunca em «veio do extrato»", () => {
+    // Na dúvida, o caminho de sempre. Dizer "veio do extrato" sobre origem desconhecida inventaria
+    // a procedência da despesa.
+    const r = leituraDoDocumento(linha({ origem: "ORIGEM_NOVA_DO_BACKEND", nota: null }));
+    expect(r.motivo).toMatch(/não está mais na base/i);
   });
 
   it("⚠ componente ausente vira traço, nunca string colada", () => {
@@ -671,5 +708,42 @@ describe("⚠⚠ podeEscolherConta — o seletor derruba o bloqueio, mas só qua
       .toMatch(/competência/i);
     expect(motivoDeBloqueio("confirmar", semConta, { podeEscrever: false, podeEscolherConta: true }))
       .toMatch(/perfil/i);
+  });
+});
+
+// ⚠⚠ O CABEÇALHO DO GRUPO — medido no navegador antes de existir esta regra (01/09/2026): a fila
+// mostrava **11 grupos para 11 linhas**, nenhum com mais de uma, e em 11 de 11 o título do grupo era
+// a descrição EXATA da única linha dele, com um resumo "1 lançamento(s) · R$ X" repetindo o valor da
+// coluna Valor logo abaixo. A regra não desliga o agrupamento: ela cala o grupo que não diz nada.
+describe("⚠⚠ cabecalhoDoGrupo — o grupo só fala quando tem o que dizer", () => {
+  const linha = (v) => ({ id: `d-${v}`, descricaoOriginal: "PAGTO KODA BEAR", valor: v });
+
+  it("grupo de UMA linha SEM CNPJ não desenha cabeçalho — ele repetiria a linha", () => {
+    const [g] = agruparPorFornecedor([linha(890)]);
+    expect(g.itens).toHaveLength(1);
+    expect(g.cnpj).toBeNull();
+    expect(cabecalhoDoGrupo(g)).toBeNull();
+  });
+
+  it("⚠ COM CNPJ ele aparece mesmo com uma linha só — o CNPJ não está em nenhuma linha", () => {
+    const [g] = agruparPorFornecedor([{ ...linha(890), cnpjFornecedor: "12345678000190" }]);
+    const cab = cabecalhoDoGrupo(g);
+    expect(cab).not.toBeNull();
+    expect(cab.cnpj).toBe("12345678000190");
+    // ⚠ E o RESUMO fica de fora: "1 lançamento(s) · R$ 890,00" repetiria a coluna Valor da linha.
+    expect(cab.resumo).toBeNull();
+  });
+
+  it("⚠⚠ com DUAS ou mais linhas ele aparece sempre — o total do fornecedor não está em linha nenhuma", () => {
+    const [g] = agruparPorFornecedor([linha(100), linha(50)]);
+    expect(g.itens).toHaveLength(2);
+    const cab = cabecalhoDoGrupo(g);
+    expect(cab).not.toBeNull();
+    expect(cab.resumo).toContain(dinheiro(150));
+  });
+
+  it("⚠ nulo/vazio não estoura e não inventa cabeçalho", () => {
+    expect(cabecalhoDoGrupo(null)).toBeNull();
+    expect(cabecalhoDoGrupo({ nome: "X", cnpj: null, itens: [], total: 0 })).toBeNull();
   });
 });

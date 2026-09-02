@@ -40,6 +40,7 @@ import { createObrigacoesRouter } from "./obrigacoes.js";
 import { createOnboardingsRouter } from "./onboardings.js";
 import { createWhatsappGuiasRouter } from "./whatsappGuias.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
+import { mesclarAtividades } from "../../application/company/atividadesDaEmpresa.js";
 import {
   DECISAO,
   decidirTrocaDeEmail,
@@ -1159,7 +1160,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
       const companyInput = body.company && typeof body.company === "object" ? body.company : body;
       const parsedCompany = validateAndNormalizeCompanyProfile(companyInput);
-      if (!parsedCompany.ok) return res.status(400).json({ error: parsedCompany.error });
+      if (!parsedCompany.ok) // ⚠⚠ O `details` VIAJA. `company_endereco_required_fields_missing` sempre carregou os campos
+        // exatos que faltam (`companyProfile.normalizeEndereco`), e a rota os DESCARTAVA — o front
+        // nao "ignorava" o detalhe, ele nunca recebia. Com ele, a tela diz "Faltam CEP e Numero"
+        // em vez de "o endereco esta incompleto", que manda procurar em seis campos.
+        return res.status(400).json({
+          error: parsedCompany.error,
+          ...(parsedCompany.details ? { details: parsedCompany.details } : {}),
+        });
       const normalizedCompany = parsedCompany.data;
       const ownerEmailInput = String(body.ownerEmail || "")
         .trim()
@@ -1202,6 +1210,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         // Uma transação que aborta LANÇA — então não há caminho em que este valor sobreviva a um
         // rollback e vá parar na resposta.
         let acessoNovo = null;
+        let acessoVinculado = null;
         const result = await prisma.$transaction(async (tx) => {
           const portal = await tx.portalClient.findUnique({
             where: { id: portalCompanyId },
@@ -1260,6 +1269,15 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           });
           let updatedLegacy = null;
           if (portal.companyId) {
+            // ⚠⚠ AS ATIVIDADES DE HOJE, LIDAS DENTRO DA TRANSACAO. Sem isto o `update` abaixo
+            // gravava `[cnaePrincipal, ...cnaesSecundarios]` — codigos NUS — e APAGAVA a descricao
+            // das linhas que a tinham. Medido em producao (30/08/2026): 12 de 34 empresas perdiam
+            // texto a cada "Salvar alteracoes", e esse texto e a unica fonte do `xDescServ` da DPS
+            // (`features/notas/lib/descricaoSugerida.js`, o unico consumidor).
+            const legacyAtual = await tx.company.findUnique({
+              where: { id: portal.companyId },
+              select: { atividades: true },
+            });
             updatedLegacy = await tx.company.update({
               where: { id: portal.companyId },
               data: {
@@ -1271,15 +1289,33 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                 telefone: normalizedCompany.telefone,
                 endereco: enderecoToSingleLine(normalizedCompany.endereco),
                 enderecoJson: normalizedCompany.endereco,
-                atividades: [
-                  normalizedCompany.cnaePrincipal,
-                  ...normalizedCompany.cnaesSecundarios,
-                ],
+                // ⚠ MESCLA, nao sobrescreve: `mesclarAtividades` preserva a linha inteira
+                // ("46.19-2-00 - Representantes comerciais…") do codigo que continua na lista, e
+                // deixa nu o codigo que nao tinha texto. ⚠⚠ NUNCA completa descricao que nao
+                // existe — `CnaeAnexo` cobre ~10% da CNAE 2.3, e inventar texto no cadastro poria
+                // uma descricao nao conferida na nota fiscal do cliente.
+                atividades: mesclarAtividades(
+                  legacyAtual?.atividades,
+                  [normalizedCompany.cnaePrincipal, ...normalizedCompany.cnaesSecundarios],
+                  // ⚠ O que a CONSULTA ao CNPJ trouxe nesta edicao, se trouxe. E texto de terceiro
+                  //   (BrasilAPI), entao ele so ENTRA junto do codigo — nunca decide qual codigo a
+                  //   empresa tem, que continua saindo de `cnaePrincipal`/`cnaesSecundarios`.
+                  { descritas: Array.isArray(body?.atividadesDescritas) ? body.atividadesDescritas : [] }
+                ),
                 tipoTributario: normalizedCompany.regimeTributario,
                 regimeTributario: normalizedCompany.regimeTributario,
-                anexoSimples: normalizedCompany.simples?.anexo || null,
-                simplesAnexo: normalizedCompany.simples?.anexo || null,
-                simplesDataOpcao: normalizedCompany.simples?.dataOpcao || null,
+                // ⚠⚠ SPREAD CONDICIONAL, e antes eram tres atribuicoes secas com `|| null`.
+                // O formulario NAO envia o bloco `simples`, entao TODO "Salvar alteracoes" gravava
+                // `null` nas tres colunas e APAGAVA o anexo do Simples da empresa, em silencio —
+                // tres linhas abaixo do comentario que explica exatamente por que isso apaga dado.
+                // Hoje `undefined` (payload sem a chave) nao entra no `data`; `null` explicito sim.
+                ...(normalizedCompany.simples !== undefined
+                  ? {
+                      anexoSimples: normalizedCompany.simples?.anexo || null,
+                      simplesAnexo: normalizedCompany.simples?.anexo || null,
+                      simplesDataOpcao: normalizedCompany.simples?.dataOpcao || null,
+                    }
+                  : {}),
                 cnaePrincipal: normalizedCompany.cnaePrincipal,
                 cnaesSecundarios: normalizedCompany.cnaesSecundarios,
                 // A rota já aceitava `inscricaoMunicipal` solto no body; agora o form também
@@ -1415,19 +1451,27 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
               let decisao = DECISAO.RENOMEAR;
               let vinculosDaConta = 1;
+              let contaDestino = null;
               if (ownerEmailInput) {
-                // ⚠ GUARDA PRESERVADA, e ela vem PRIMEIRO. E-mail que já é de OUTRO usuário
-                // continua sendo recusado — reaproveitar a conta alheia é como este problema
-                // começou. A confirmação abaixo autoriza CRIAR conta, nunca ASSUMIR a de outro.
-                const existingUser = await tx.user.findUnique({
+                // ⚠⚠ AQUI HAVIA UM `throw owner_email_already_in_use`, E ELE FOI REVOGADO pelo
+                // dono em 30/08/2026: *"podemos usar o mesmo email para mais de uma empresa,
+                // assim damos o acesso da mesma pessoa a todas as suas empresas"*.
+                //
+                // ⚠ A recusa virou um CAMINHO, não um sumiço. O motivo de 19/08 — *"reaproveitar
+                // a conta alheia é como este problema começou"* — continua valendo contra assumir
+                // conta de outro **em silêncio**, e é a confirmação que o repõe.
+                //
+                // ⚠ Medido em produção (30/08/2026): a assimetria era real e o dono batia nela
+                // toda vez. `CompanyProvisioningService` SEMPRE reusou o `User` ao CRIAR empresa;
+                // só a EDIÇÃO recusava. E a carteira já tem dono compartilhado legítimo:
+                // `vssouzaempreiteira@gmail.com` com 3 empresas e outro com 2.
+                contaDestino = await tx.user.findUnique({
                   where: { email: ownerEmailInput },
-                  select: { id: true },
+                  select: { id: true, email: true, name: true },
                 });
-                if (existingUser?.id && existingUser.id !== ownerLink.userId) {
-                  const err = new Error("owner_email_already_in_use");
-                  err.code = "OWNER_EMAIL_ALREADY_IN_USE";
-                  throw err;
-                }
+                const contaDestinoExiste = Boolean(
+                  contaDestino?.id && contaDestino.id !== ownerLink.userId
+                );
                 // ⚠ A CONTAGEM MORA DENTRO DA TRANSAÇÃO. Contá-la fora abriria a janela em que
                 // uma empresa é vinculada entre a contagem e o update — e o arrasto voltaria por
                 // essa fresta, com a tela tendo dito que a conta era de uma empresa só.
@@ -1437,7 +1481,84 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                 decisao = decidirTrocaDeEmail({
                   vinculosDaConta,
                   confirmado: confirmarNovoAcessoInput,
+                  contaDestinoExiste,
                 });
+              }
+
+              if (decisao === DECISAO.PEDIR_CONFIRMACAO_VINCULO) {
+                // ⚠ RECUSA ANTES DO ATO — o `throw` aborta a transação inteira, então nem o
+                // cadastro é salvo. Mesma disciplina do `PEDIR_CONFIRMACAO` logo abaixo.
+                const doDestino = await tx.companyClientUser.findMany({
+                  where: {
+                    userId: contaDestino.id,
+                    status: "ACTIVE",
+                    companyId: { not: portalCompanyId },
+                  },
+                  select: { companyId: true },
+                  take: 50,
+                });
+                const empresasDoDestino = doDestino.length
+                  ? await tx.portalClient.findMany({
+                      where: { id: { in: doDestino.map((o) => o.companyId) } },
+                      select: { id: true, razao: true, cnpj: true },
+                      orderBy: { razao: "asc" },
+                    })
+                  : [];
+                const err = new Error("owner_email_conta_existente");
+                err.code = "OWNER_EMAIL_CONTA_EXISTENTE";
+                // ⚠ A CONFIRMAÇÃO REPETE OS DADOS — de quem é a conta e o que ela já atende.
+                // *"Tem certeza?"* não é confirmação: aprende-se a clicar sem ler.
+                err.detalhes = {
+                  emailAtual: contaAtual?.email || null,
+                  nomeAtual: contaAtual?.name || null,
+                  emailNovo: ownerEmailInput,
+                  nomeDaContaDestino: contaDestino.name || null,
+                  empresasDoDestino: doDestino.length,
+                  outras: empresasDoDestino,
+                  // ⚠ A TELA PRECISA DIZER AS DUAS CONSEQUÊNCIAS, e elas são diferentes da
+                  // confirmação irmã: ninguém ganha senha nova (a conta destino já tem a dela),
+                  // e o acesso ANTIGO a esta empresa acaba.
+                  contaDestinoJaTemSenha: true,
+                  acessoAntigoPerdeEstaEmpresa: true,
+                };
+                throw err;
+              }
+
+              if (decisao === DECISAO.VINCULAR_CONTA_EXISTENTE) {
+                // ⚠ `upsert`, não `create`: a conta destino pode já ter tido um vínculo com esta
+                // empresa e estar `REMOVED`. `create` bateria no `@@unique([companyId, userId])`
+                // e devolveria `unique_constraint_violation` — erro técnico no lugar do ato.
+                await tx.companyClientUser.upsert({
+                  where: {
+                    companyId_userId: { companyId: portalCompanyId, userId: contaDestino.id },
+                  },
+                  create: {
+                    companyId: portalCompanyId,
+                    userId: contaDestino.id,
+                    role: "OWNER",
+                    status: "ACTIVE",
+                  },
+                  update: { role: "OWNER", status: "ACTIVE" },
+                });
+                // ⚠ SÓ O VÍNCULO DESTA EMPRESA SAI, e pelo `id` do vínculo — nunca por `userId`,
+                // que alcançaria as outras empresas da conta antiga. Mesmo cuidado do
+                // `CRIAR_ACESSO_PROPRIO`.
+                await tx.companyClientUser.update({
+                  where: { id: ownerLink.id },
+                  data: { status: "REMOVED" },
+                });
+                // ⚠⚠ O NOME DA CONTA DESTINO NÃO É TOCADO, nem com `ownerName` no payload.
+                // Renomear uma conta que atende OUTRAS empresas é exatamente o arrasto de
+                // 19/08/2026 — o defeito que `acessoDoResponsavel.js` existe para impedir, aqui
+                // por outra porta. Quem quiser corrigir o nome do responsável usa a tela da
+                // conta, não a edição de UMA empresa.
+                acessoVinculado = {
+                  userId: contaDestino.id,
+                  email: contaDestino.email,
+                  nome: contaDestino.name || null,
+                  // A conta já existe e já tem senha: nada a definir, e a tela não deve oferecer.
+                  semSenha: false,
+                };
               }
 
               if (decisao === DECISAO.PEDIR_CONFIRMACAO) {
@@ -1513,8 +1634,15 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                   // A tela aponta para a ação que JÁ existe (Credenciais → Acesso ao portal).
                   semSenha: true,
                 };
-              } else {
+              } else if (decisao === DECISAO.RENOMEAR) {
                 // RENOMEAR — o caminho de sempre, intacto.
+                //
+                // ⚠⚠ A CONDIÇÃO É EXPLÍCITA, e antes era um `else` solto. Com a saída nova
+                // (`VINCULAR_CONTA_EXISTENTE`) o `else` passaria a alcançá-la e faria
+                // `user.update({ email })` sobre a conta ANTIGA com o e-mail de uma conta que JÁ
+                // EXISTE — colisão no `@unique` de `User.email`, e a empresa recém-vinculada
+                // voltaria como `unique_constraint_violation`. Ramo novo tem de entrar bloqueado
+                // por construção, nunca herdar o `else` de quem veio antes.
                 const userData = {};
                 if (ownerEmailInput) userData.email = ownerEmailInput;
                 if (ownerNameInput) userData.name = ownerNameInput;
@@ -1569,13 +1697,32 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         // ⚠ `acessoNovo` só existe quando um acesso PRÓPRIO foi criado. A tela usa a presença dele
         // para mandar o contador definir a senha ANTES de avisar o cliente — a conta nasce sem
         // senha utilizável, e sem esse aviso o cliente descobre isso tentando entrar.
-        return res.json({ ok: true, company, ...(acessoNovo ? { acessoNovo } : {}) });
+        return res.json({
+          ok: true,
+          company,
+          ...(acessoNovo ? { acessoNovo } : {}),
+          // ⚠ `acessoVinculado` e `acessoNovo` sao MUTUAMENTE EXCLUSIVOS e dizem coisas
+          // diferentes: um acesso foi CRIADO (nasce sem senha) x esta empresa passou a pertencer
+          // a uma conta que JA EXISTIA (e ja tem a senha dela). Colapsar os dois faria a tela
+          // oferecer "definir senha" para quem nao precisa.
+          ...(acessoVinculado ? { acessoVinculado } : {}),
+        });
       } catch (err) {
         if (err?.code === "PORTAL_COMPANY_NOT_FOUND") {
           return res.status(404).json({ error: "portal_company_not_found" });
         }
-        if (err?.code === "OWNER_EMAIL_ALREADY_IN_USE") {
-          return res.status(409).json({ error: "owner_email_already_in_use" });
+        if (err?.code === "OWNER_EMAIL_CONTA_EXISTENTE") {
+          // ⚠⚠ SUBSTITUI o antigo `owner_email_already_in_use`, que era RECUSA FINAL.
+          // Hoje isto e PEDIDO DE CONFIRMACAO: o contador reenvia o mesmo formulario com
+          // `confirmarNovoAcesso: true` e a empresa e vinculada a conta que ja existe.
+          // Decisao do dono, 30/08/2026.
+          // ⚠ ESPALHADO no corpo, exatamente como o `owner_email_conta_compartilhada` acima:
+          // `detalhesDaContaCompartilhada` (front) le os campos NO TOPO do payload. Aninhar em
+          // `detalhes` faria a tela receber o 409 e nao achar nada — confirmacao que nunca abre.
+          return res.status(409).json({
+            error: "owner_email_conta_existente",
+            ...(err.detalhes || {}),
+          });
         }
         // ⚠ 409 com os DADOS DO ATO, não um erro seco: é este corpo que a tela repete ao contador
         // (quais empresas o e-mail atende, o que acontece com cada lado, e que a conta nova nasce

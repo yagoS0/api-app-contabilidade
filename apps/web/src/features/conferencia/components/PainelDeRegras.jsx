@@ -56,9 +56,9 @@ const cnpjBr = (v) => {
 /** ⚠ A cor segue o vocabulário da casa: âmbar é "atenção", nunca "erro". Lançar sozinha é atenção. */
 const TOKEN_DO_COMPORTAMENTO = {
   [COMPORTAMENTO.LANCA_SOZINHA]: "var(--state-warn)",
-  [COMPORTAMENTO.SO_SUGERE]: "var(--text-muted, var(--text))",
-  [COMPORTAMENTO.NAO_PODE_LANCAR]: "var(--text-muted, var(--text))",
-  [COMPORTAMENTO.DESLIGADA]: "var(--text-muted, var(--text))",
+  [COMPORTAMENTO.SO_SUGERE]: "var(--text-muted)",
+  [COMPORTAMENTO.NAO_PODE_LANCAR]: "var(--text-muted)",
+  [COMPORTAMENTO.DESLIGADA]: "var(--text-muted)",
 };
 
 const CAMPOS_VAZIOS = {
@@ -166,8 +166,8 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
   if (estado.carregando) return null;
   if (estado.indisponivel && !estado.regras.length) {
     return (
-      <div style={{ ...card, color: "var(--text-muted, var(--text))" }}>
-        <strong>Regras do fornecedor</strong>
+      <div style={{ ...card, color: "var(--text-muted)" }}>
+        <h3 style={{ margin: 0, fontSize: "1rem" }}>Regras do fornecedor</h3>
         <p style={{ margin: "8px 0 0" }}>
           A tabela de regras ainda não existe neste banco — a migration não foi aplicada. Nenhuma
           regra pode ser lida nem escrita até isso ser feito.
@@ -179,7 +179,7 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
   return (
     <div style={card}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <strong style={{ flex: 1 }}>Regras do fornecedor</strong>
+        <h3 style={{ margin: 0, flex: 1, fontSize: "1rem" }}>Regras do fornecedor</h3>
         {podeEscrever ? (
           <Button size="sm" variant="secondary" onClick={() => setAbrindo((v) => !v)}>
             {abrindo ? "Cancelar" : "Nova regra"}
@@ -187,7 +187,7 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
         ) : null}
       </div>
 
-      <p style={{ margin: "6px 0 0", color: "var(--text-muted, var(--text))", fontSize: 13 }}>
+      <p style={{ margin: "6px 0 0", color: "var(--text-muted)", fontSize: 13 }}>
         A regra diz em que conta a despesa deste fornecedor entra. Marcada para lançar sozinha, ela
         cria o lançamento sem ninguém clicar.
       </p>
@@ -336,11 +336,11 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
                 <div style={{ flex: 1, minWidth: 240 }}>
                   <div>
                     <strong>{r.cnpjFornecedor ? cnpjBr(r.cnpjFornecedor) : r.padraoDescricao}</strong>
-                    <span style={{ color: "var(--text-muted, var(--text))" }}>
+                    <span style={{ color: "var(--text-muted)" }}>
                       {" "}· {brl(r.valorMin)} a {brl(r.valorMax)}
                     </span>
                   </div>
-                  <div style={{ fontSize: 13, color: "var(--text-muted, var(--text))" }}>
+                  <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
                     D {r.contaDestino} / C {r.contaCredito || "caixa padrão"}
                     {typeof r.aplicacoes === "number" ? ` · ${r.aplicacoes} aplicações` : ""}
                   </div>
@@ -362,7 +362,7 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
           })}
         </ul>
       ) : (
-        <p style={{ margin: "16px 0 0", color: "var(--text-muted, var(--text))" }}>
+        <p style={{ margin: "16px 0 0", color: "var(--text-muted)" }}>
           Nenhuma regra nesta empresa. Cada despesa continua esperando o seu clique.
         </p>
       )}

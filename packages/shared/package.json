@@ -6,6 +6,8 @@
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./municipios-ibge": "./src/municipios/municipiosIbge.data.js"
+    "./municipios-ibge": "./src/municipios/municipiosIbge.data.js",
+    "./erros-cadastro-empresa": "./src/erros/errosDeCadastroDeEmpresa.js",
+    "./email": "./src/email/emailValido.js"
   }
 }

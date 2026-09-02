@@ -1,3 +1,4 @@
+import { emailValido } from "@contabilidade/shared/email";
 const REGIMES = new Set(["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL"]);
 const SIMPLES_ANEXOS = new Set(["I", "II", "III", "IV", "V"]);
 // Histórico aceita MEI também: é regime que a empresa já teve, não o que o portal opera hoje.
@@ -18,7 +19,10 @@ function normalizeOptionalNotificationEmail(value) {
   // direto → TypeError (500) ao cadastrar/editar empresa sem e-mail de notificação.
   // O campo é OPCIONAL: vazio agora vira {ok:true, data:null}, como o nome promete.
   if (!raw) return { ok: true, data: null };
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+  // ⚠ A REGRA E A COMPARTILHADA (`packages/shared/src/email`). Ela ERA esta regex, e virou funcao
+  //   para que Zod e front julguem igual — antes eram TRES regras discordando no mesmo campo, e o
+  //   contador via "e-mail invalido" num valor que o servidor aceitaria.
+  if (!emailValido(raw)) {
     return { ok: false, error: "company_guide_notification_email_invalid" };
   }
   return { ok: true, data: raw };
@@ -520,7 +524,17 @@ export function validateAndNormalizeCompanyProfile(input) {
   const enderecoResult = normalizeEndereco(company.endereco);
   if (!enderecoResult.ok) return enderecoResult;
 
-  let simples = null;
+  // ⚠⚠ `undefined` = NAO MEXER · `null`/objeto = ESCREVER. A distincao existe porque o formulario
+  // do cadastro NAO envia o bloco `simples`: com um `null` cru aqui, `routes/firm/index.js` gravava
+  // `anexoSimples: null` a CADA "Salvar alteracoes" e o anexo do Simples da empresa era APAGADO em
+  // silencio — sem ninguem ter tocado no campo. E o cuidado ja existia tres linhas ao lado, para
+  // `codigosServicoNacional`, `pTotTrib*` e `beneficioMunicipal*`; este bloco e que nao o seguia.
+  //
+  // ⚠ Medido em producao (30/08/2026): 0 de 34 empresas tem anexo preenchido HOJE, entao nao houve
+  // perda passada a recuperar — a guarda e preventiva, e passa a valer no instante em que o campo
+  // do formulario (que nasce nesta mesma entrega) comecar a preenche-lo.
+  const trouxeSimples = Object.prototype.hasOwnProperty.call(company || {}, "simples");
+  let simples = trouxeSimples ? null : undefined;
   if (regimeTributario === "SIMPLES") {
     const anexo = asString(company?.simples?.anexo).toUpperCase() || null;
     if (anexo && !SIMPLES_ANEXOS.has(anexo)) {
@@ -530,7 +544,10 @@ export function validateAndNormalizeCompanyProfile(input) {
     if (company?.simples?.dataOpcao && !dataOpcao) {
       return { ok: false, error: "company_simples_data_opcao_invalid" };
     }
-    simples = { anexo, dataOpcao };
+    // ⚠ SO escreve quando o payload TROUXE o bloco. Sem esta condicao a atribuicao aqui desfazia
+    //   o `undefined` de cima e o anexo voltava a ser apagado a cada salvar — a guarda existiria
+    //   no papel e nao no caminho.
+    if (trouxeSimples) simples = { anexo, dataOpcao };
   } else if (company?.simples?.anexo) {
     return { ok: false, error: "company_simples_not_allowed_for_regime" };
   }

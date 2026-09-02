@@ -566,6 +566,99 @@ na transição: Resolução CGSN 183/2025 (e LC 227/2026 sobre o Comitê Gestor 
 
 ---
 
+### ⚠⚠ 6.1 ADENDO DE 01/09/2026 — LIDO NO TEXTO OFICIAL, e ele CORRIGE o que está acima
+
+> **Fonte versionada:** `docs/reforma-consumo/` — `lcp214.htm` e `lcp227.htm` do Planalto, baixados
+> em 01/09/2026, com SHA-256 no README de lá. **Tudo abaixo é citação de dispositivo, não resumo.**
+
+**⚠⚠ Para o OPTANTE DO SIMPLES, IBS e CBS em 2026 são ZERO.** O parágrafo acima descreve a fase de
+teste (IBS 0,1%, art. 343; CBS 0,9%, art. 346) sem dizer a quem ela **não** se aplica:
+
+> **LC 214/2025, art. 348, III, "c":** as alíquotas dos arts. 343 e 346 *"não serão aplicadas em
+> relação às operações dos contribuintes optantes pelo Simples Nacional."*
+
+Mostrar qualquer outro número de IBS/CBS para um optante em 2026 é **inventar**. Vale para a tela e
+para o PDF do planejamento.
+
+**⚠⚠ Os Anexos I a V da LC 123 com colunas de CBS e IBS existem — e só valem a partir de 2027.**
+
+> **LC 214/2025, art. 519:** *"Os Anexos I a V da Lei Complementar nº 123 (…) passam a vigorar com a
+> redação dos Anexos XVIII a XXII desta Lei Complementar."*
+> **Art. 544, III** (redação da LC 227/2026): o art. 519 produz efeitos *"a partir de 1º de janeiro
+> de 2027"*.
+
+⚠ **Não foi a LC 227/2026 que reescreveu os Anexos** — ela não toca em Anexo nenhum da LC 123.
+⚠ **Em 2026 valem os Anexos ANTIGOS**, sem CBS e sem IBS na partilha.
+⚠⚠ **AS PARCELAS A DEDUZIR NÃO MUDARAM; AS ALÍQUOTAS NOMINAIS MUDARAM NA 6ª FAIXA.** Esta linha
+dizia *"as alíquotas nominais e as parcelas a deduzir NÃO mudaram"* e **listava 18,90%** como
+prova — contra os **19,00%** de hoje. O número estava lido certo e a frase estava errada; ela se
+propagou para o dado gerado, para a lib, para a tela e para um teste, virando *"o DAS não muda"*
+num PDF que vai ao cliente. Corrigida em 01/09/2026.
+
+O que a fonte diz (Anexos do art. 519, cada tabela com a **vigência escrita** no próprio texto):
+
+| anexo | 2026 | **1º/1/2027 a 31/12/2028** | a partir de 1º/1/2029 |
+|---|---|---|---|
+| I | 19,00% | **18,90%** | 19,00% |
+| II | 30,00% | **29,90%** | 30,00% |
+| III | 33,00% | **32,90%** | 33,00% |
+| IV | 33,00% | **32,90%** | 33,00% |
+| V | 30,50% | **30,40%** | 30,50% |
+
+⚠ **As faixas 1 a 5 são idênticas** (alíquota e parcela a deduzir), e é por isso que *"o DAS não
+muda"* vale para quase toda a carteira — mas **não para todo mundo**. Na 6ª faixa o DAS muda, para
+menos. ⚠ E a queda é **temporária**: a lei já traz a tabela de 2029, em que a 6ª faixa volta ao valor
+de hoje.
+
+O que mudou em TODAS as faixas foi a **repartição**: `COFINS` + `PIS` deram lugar a `CBS`, e uma
+fatia pequena virou `IBS` (Anexo I, 1ª faixa: CBS 15,33% + IBS 0,17% = os 15,50% que eram
+COFINS 12,74% + PIS 2,76%).
+⚠ **As tabelas ainda NÃO estão no código** — ver a ressalva de extração em `docs/reforma-consumo/`.
+
+**A conta do crédito "por dentro" — exata, sem estimar nada:**
+
+> **LC 123/2006, art. 23, § 1º-A:** o adquirente não optante tem crédito de IBS/CBS *"em montante
+> equivalente ao cobrado por meio desse regime único"*.
+> **§ 2º:** a alíquota do crédito *"corresponderá aos percentuais de ICMS, IBS e CBS previstos nos
+> Anexos I a V (…) para a faixa de receita bruta a que a (…) empresa estiver sujeita no mês de
+> operação"*. **§ 3º:** no mês de início de atividade, a **menor** alíquota dos Anexos.
+
+    crédito transferido = alíquota efetiva do Simples × (%CBS + %IBS do Anexo, na faixa)
+
+**A opção "por fora" — e a data que a tela pode anunciar:**
+
+> **LC 214/2025, art. 41, § 3º:** o optante *"poderá exercer a opção de apurar e recolher o IBS e a
+> CBS pelo regime regular"*. **§ 5º:** vedado sair do regime regular *"caso tenha recebido
+> ressarcimento de créditos desses tributos no ano-calendário corrente ou anterior"*.
+> **LC 123/2006, art. 13, § 9º** (incluído pela LC 227/2026): as parcelas de IBS/CBS *"não serão
+> cobradas pelo regime único"*. **§ 10** (redação da LC 227/2026): a opção vale para os semestres
+> iniciados em **janeiro e julho**, é **irretratável**, e é exercida nos meses de **setembro e
+> março** imediatamente anteriores, *"na forma regulamentada pelo CGSN"*.
+
+⚠⚠ A redação **original** da LC 214 dizia *"setembro e **abril**"* e usava outros parágrafos (§ 10 e
+§ 11). Quem ler a versão errada anuncia a data errada ao contador.
+⚠⚠ **A opção depende de regulamentação do CGSN, e não há prova neste repositório de que ela exista.**
+A tela pode dizer qual é a **janela legal**; não pode afirmar que o procedimento está **disponível**.
+
+**A alíquota de referência — quem, quando, e o que sobra para o contador digitar:**
+
+> **Art. 349, § 1º:** o **TCU** envia os cálculos ao **Senado** até **15 de setembro** do ano
+> anterior; o **Senado** fixa até **31 de outubro** do ano anterior.
+> **Art. 353, § 2º:** em 2026 esses dois prazos são *"prorrogados em 45 (quarenta e cinco) dias"*
+> ⇒ TCU até **30/10/2026**, Senado até **15/12/2026**.
+> **Art. 349, II:** a alíquota de referência do **IBS** só é fixada *"para os anos de 2029 a 2033"*.
+
+⚠⚠ **Daí sai o que o simulador precisa perguntar, e é UM número, não dois:** para **2027–2028** o
+IBS é **conhecido por lei** (0,05% estadual + 0,05% municipal, art. 344) e **só a CBS é
+desconhecida**. Um cenário 2027 pede a estimativa da **CBS**, e o PDF imprime que ela não está em
+lei.
+⚠ Os números que circulam (27,91% / 18,7% / 26,5%) **não estão nesta lei** e não entram no código.
+
+**Fica FORA, com motivo:** as frações de redução de ICMS/ISS de **2029 a 2032** (arts. 501 e 508)
+não foram transcritas — sem elas, 2029+ não é calculável, e não se estima.
+
+---
+
 ## 7. REFORMA DO IR — LEI 15.270/2025 (sancionada 26/11/2025, efeitos desde 01/01/2026)
 
 Impacta diretamente o núcleo do planejamento (pró-labore × dividendos):
