@@ -1196,70 +1196,47 @@ describe("⚠⚠⚠ e a saída LANCADA sai do fluxo — senão o mesmo dinheiro 
   });
 });
 
-describe("⚠⚠⚠ A DESPESA LIBERADA NO FLUXO, sem lançar — o «nem tudo» da regra do dono", () => {
-  // > *"temos um botão fluxo, que apenas libera no fluxo mas não lança"* … *"nem tudo do fluxo
-  // > necessariamente deve ser um lançamento"*.
-  const prevista = (extra = {}) => ({
-    id: "dec-1",
-    previstoNoFluxoEm: new Date("2026-09-25T00:00:00.000Z"),
-    valor: "1500.00",
-    valorAjustado: null,
-    descricaoOriginal: "GOOGLE CLOUD BRASIL",
-    ...extra,
-  });
-  const previstasDe = (r) => linhasDe(r, "DESPESA_PREVISTA");
+describe("⚠⚠⚠ SÓ O QUE FOI LANÇADO É SAÍDA DE DESPESA NO FLUXO — regra do dono, 01/09/2026", () => {
+  // > *"só entra no fluxo aquilo que for lançado, ou seja as saídas do fluxo são as despesas
+  // > lançadas, o resto do fluxo continua como está"*.
+  //
+  // ⚠⚠ ESTE BLOCO MEDIA A `DESPESA_PREVISTA` — o que o contador liberava no fluxo SEM lançar. Ela
+  // nasceu e morreu no mesmo dia: a regra acima a tornou sem sentido. Não é um contribuinte que
+  // sumiu, é a pergunta que ele respondia que deixou de ser feita.
+  //
+  // ⚠ O RESTO DO FLUXO NÃO FOI TOCADO: guias, notas, séries, imposto, folha e as saídas do cliente
+  // continuam entrando como sempre entraram.
 
-  it("⚠⚠ ela aparece no fluxo como PREVISÃO — ninguém provou que o dinheiro saiu", async () => {
-    const r = await montar(clientDe({ previstas: [prevista()] }));
-    expect(previstasDe(r)).toHaveLength(1);
-    expect(previstasDe(r)[0].procedencia).toBe("PREVISAO");
-  });
-
-  it("⚠ no dia que o contador informou, como SAÍDA", async () => {
-    const r = await montar(clientDe({ previstas: [prevista()] }));
-    const l = previstasDe(r)[0];
-    expect(l.competencia).toBe("2026-09");
-    expect(l.dia).toBe(25);
-    expect(l.direcao).toBe("SAIDA");
-    expect(l.valor).toBe(1500);
+  it("⚠⚠ não existe mais fonte de despesa PREVISTA — só a lançada", async () => {
+    const r = await montar(clientDe({ previstas: [{
+      id: "dec-1",
+      previstoNoFluxoEm: new Date("2026-09-25T00:00:00.000Z"),
+      valor: "1500.00",
+      valorAjustado: null,
+      descricaoOriginal: "GOOGLE CLOUD BRASIL",
+    }] }));
+    expect(linhasDe(r, "DESPESA_PREVISTA")).toHaveLength(0);
   });
 
-  it("⚠⚠ `valorAjustado` vence — é o contador dizendo que o documento não reflete o que vai sair", async () => {
-    const r = await montar(clientDe({ previstas: [prevista({ valorAjustado: "900.00" })] }));
-    expect(previstasDe(r)[0].valor).toBe(900);
-  });
-
-  it("⚠ valor zerado ou ilegível não vira linha — zero no fluxo é afirmação", async () => {
-    const r = await montar(clientDe({ previstas: [prevista({ valor: "0.00" })] }));
-    expect(previstasDe(r)).toHaveLength(0);
-  });
-
-  it("⚠⚠ e ela NÃO é FATO — é o que a separa da despesa lançada", async () => {
-    // A lançada tem partida dobrada atrás dela; esta tem a palavra do contador sobre uma data.
-    const r = await montar(clientDe({ previstas: [prevista()] }));
-    expect(previstasDe(r)[0].base.saidaDeCaixa).toBe(false);
-  });
-
-  it("⚠⚠ delegate AUSENTE não derruba o fluxo — é o estado real sem `prisma generate`", async () => {
-    // `undefined.findMany` derrubaria a tela INTEIRA do cliente por causa de uma coluna nova.
-    const r = await montar(clientDe({ previstas: null }));
-    expect(previstasDe(r)).toHaveLength(0);
-    expect(r.meses.length).toBeGreaterThan(0);
-  });
-
-  it("⚠⚠ e COLUNA ausente (migration não aplicada) também não — P2022 degrada", async () => {
+  it("⚠⚠ e a coluna morta no banco não vira linha nenhuma — não há leitor dela", async () => {
+    // `previstoNoFluxoEm` continua no schema com lápide. Se alguém religar um leitor por engano,
+    // este teste cai.
     const cliente = clientDe({ previstas: [] });
-    cliente.lancamentoDeclarado.findMany = jest.fn(async () => {
-      throw Object.assign(new Error("coluna"), { code: "P2022" });
-    });
     const r = await montar(cliente);
-    expect(previstasDe(r)).toHaveLength(0);
-    expect(r.meses.length).toBeGreaterThan(0);
+    expect(linhasDe(r, "DESPESA_PREVISTA")).toHaveLength(0);
+    expect(cliente.lancamentoDeclarado.findMany).not.toHaveBeenCalled();
   });
 
-  it("⚠ erro DESCONHECIDO continua estourando — só as duas ausências são toleradas", async () => {
-    const cliente = clientDe({ previstas: [] });
-    cliente.lancamentoDeclarado.findMany = jest.fn(async () => { throw new Error("banco fora"); });
-    await expect(montar(cliente)).rejects.toThrow(/banco fora/);
+  it("⚠ o resto do fluxo continua como está — a regra falou só das saídas de despesa", async () => {
+    const r = await montar(clientDe({
+      guias: [guia()],
+      notas: [nota()],
+      saidasDoCliente: [{
+        id: "sa-1", data: new Date("2026-09-18T00:00:00.000Z"), valor: "3500.00",
+        descricao: "Reforma da sala", estado: "PENDENTE",
+      }],
+    }));
+    expect(linhasDe(r, "GUIA").length + linhasDe(r, "NOTA_EMITIDA").length).toBeGreaterThan(0);
+    expect(linhasDe(r, "SAIDA_DO_CLIENTE")).toHaveLength(1);
   });
 });

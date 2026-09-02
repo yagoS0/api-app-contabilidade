@@ -7,10 +7,10 @@
 // e confirmar, uma por uma. E não havia como pôr uma despesa no fluxo sem levá-la ao razão.
 //
 // ⚠ O que este arquivo trava, em ordem de custo:
-//   1. o botão de TIRAR do fluxo não pode reinserir a linha (`undefined` ≠ `null`);
-//   2. lançar da linha usa a MESMA rota e a MESMA ação do modal — nunca um segundo verbo;
-//   3. a tela manda o `codigoCompleto`, nunca o reduzido que o contador digita;
-//   4. a linha não voltar a ter dois botões para o mesmo ato.
+//   1. lançar da linha usa a MESMA rota e a MESMA ação do modal — nunca um segundo verbo;
+//   2. a tela manda o `codigoCompleto`, nunca o reduzido que o contador digita;
+//   3. a linha não voltar a ter dois botões para o mesmo ato;
+//   4. o botão «Fluxo» não voltar — a regra de 01/09/2026 o tornou sem sentido.
 
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
@@ -18,7 +18,6 @@ import "@testing-library/jest-dom";
 const mockGetFila = jest.fn();
 const mockGetPlano = jest.fn();
 const mockPostAcao = jest.fn();
-const mockPostFluxo = jest.fn();
 const mockGetPendencias = jest.fn();
 const mockGetCasamentos = jest.fn();
 
@@ -26,7 +25,6 @@ jest.mock("../../../../api/client", () => ({
   createApiClient: () => ({
     getConferenciaFila: (...a) => mockGetFila(...a),
     postConferenciaAcao: (...a) => mockPostAcao(...a),
-    postConferenciaFluxo: (...a) => mockPostFluxo(...a),
     getChartOfAccounts: (...a) => mockGetPlano(...a),
     getConferenciaPendencias: (...a) => mockGetPendencias(...a),
     getConferenciaCasamentos: (...a) => mockGetCasamentos(...a),
@@ -70,7 +68,6 @@ beforeEach(() => {
   responder();
   mockGetPlano.mockResolvedValue(PLANO);
   mockPostAcao.mockResolvedValue({ ok: true });
-  mockPostFluxo.mockResolvedValue({ ok: true });
   mockGetPendencias.mockResolvedValue({ ok: true, declaradosForaDaCompetencia: 0 });
   // ⚠ Vazio por padrão: sem casamento nenhum, o bloqueio da despesa em dobro não morde.
   mockGetCasamentos.mockResolvedValue({ ok: true, linhas: [] });
@@ -148,49 +145,32 @@ describe("⚠⚠ «Lançar» da linha — mesma rota, mesma ação, sem modal", 
   });
 });
 
-describe("⚠⚠⚠ «Fluxo» — libera no fluxo e NÃO lança", () => {
-  it("⚠⚠ pôr no fluxo NÃO chama a rota de ação — não toca no razão", async () => {
-    await montar();
-    await clicar("Pôr no fluxo");
-    expect(mockPostFluxo).toHaveBeenCalledWith("emp-1", "dec-1", {});
-    expect(mockPostAcao).not.toHaveBeenCalled();
-  });
+describe("⚠⚠⚠ O BOTÃO «FLUXO» FOI REMOVIDO — a regra nova o tornou sem sentido", () => {
+  // ⚠⚠ ELE NASCEU E MORREU EM 01/09/2026, as duas por decisão do dono. Ele punha a despesa no fluxo
+  // do cliente SEM lançar; horas depois veio a regra que o matou: *"só entra no fluxo aquilo que
+  // for lançado, ou seja as saídas do fluxo são as despesas lançadas"*.
+  //
+  // ⚠ Não é um botão que sumiu — é a PERGUNTA que ele respondia que deixou de ser feita. Este bloco
+  // fica para ninguém o reintroduzir achando que foi esquecimento.
 
-  it("⚠⚠ e o corpo vai VAZIO — é isso que faz o servidor usar a EMISSÃO da nota", async () => {
-    // Escolha do dono: *"na data da emissão mais o contador pode alterar"*.
-    await montar();
-    await clicar("Pôr no fluxo");
-    expect(mockPostFluxo.mock.calls[0][2]).toEqual({});
-  });
-
-  it("⚠⚠ já no fluxo, o botão diz TIRAR e manda `data: null`", async () => {
-    // ⚠ É o caso que mais engana: com `{ data: data || undefined }` o `null` viraria `undefined`,
-    // que significa "use a emissão" — e o clique de REMOVER reinseriria a linha.
-    responder({ previstoNoFluxoEm: "2026-07-02" });
-    await montar();
-    await clicar("Tirar do fluxo");
-    expect(mockPostFluxo).toHaveBeenCalledWith("emp-1", "dec-1", { data: null });
-  });
-
-  it("⚠ a data em que ela está no fluxo sai VISÍVEL, não em `title`", async () => {
-    // `title` não aparece no teclado nem no toque — a regra escrita duas vezes no CLAUDE.md do app.
-    responder({ previstoNoFluxoEm: "2026-07-02" });
-    await montar();
-    expect(screen.getByText(/no fluxo em 02\/07\/2026/i)).toBeInTheDocument();
-  });
-
-  it("⚠ linha JÁ LANÇADA não oferece o botão — o lançamento dela já é linha do fluxo", async () => {
-    // Oferecê-lo poria o mesmo dinheiro duas vezes na tela do cliente: uma como fato, outra como
-    // previsão. O servidor recusa; a tela não propõe.
-    responder({ estado: "CONTABILIZADO", accountingEntryId: "ae-1" });
+  it("a linha não oferece mais pôr nem tirar do fluxo", async () => {
     await montar();
     expect(screen.queryByRole("button", { name: /no fluxo/i })).toBeNull();
   });
 
-  it("⚠ e a RECUSADA também não — diria o contrário do que o contador decidiu", async () => {
-    responder({ estado: "RECUSADO", motivoRecusa: "não é despesa da empresa" });
+  it("⚠ nem quando a linha traz a coluna morta preenchida — não há leitor dela", async () => {
+    // `previstoNoFluxoEm` continua no schema, com lápide, sem escritor e sem leitor.
+    responder({ previstoNoFluxoEm: "2026-07-02" });
     await montar();
     expect(screen.queryByRole("button", { name: /no fluxo/i })).toBeNull();
+    expect(screen.queryByText(/no fluxo em/i)).toBeNull();
+  });
+
+  it("⚠⚠ e o que entra no fluxo agora é o LANÇAMENTO — o «Lançar» continua inteiro", async () => {
+    // A regra nova não removeu caminho nenhum: ela disse que o fluxo é exatamente o que foi lançado.
+    await montar();
+    await waitFor(() => expect(campoDaConta()).toHaveValue("401"));
+    expect(botao("Lançar")).not.toBeDisabled();
   });
 });
 

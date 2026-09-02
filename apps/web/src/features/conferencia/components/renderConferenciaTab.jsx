@@ -514,7 +514,7 @@ function motivosDeBloqueioVisiveis(acoes, item, opcoes) {
   return vistas;
 }
 
-function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, contas = [], onLancar, onFluxo, ocupado, motivoDoCasamento }) {
+function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, contas = [], onLancar, ocupado, motivoDoCasamento }) {
   const estado = leituraDoEstado(item.estado);
   const doc = leituraDoDocumento(item);
   const acoes = acoesDaLinha(item);
@@ -581,8 +581,6 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
     || (!conta ? "Escolha a conta de despesa desta linha." : null)
     || (traducao.motivo ? FRASE_DO_MOTIVO_DA_CONTA[traducao.motivo] : null);
 
-  // ⚠ Presença da data = está no fluxo. `null` = fora dele — e é o que troca o rótulo do botão.
-  const noFluxo = Boolean(item.previstoNoFluxoEm);
   // ⚠⚠ É ISTO QUE RESPONDE "saídas do cliente" DENTRO da fila, sem duplicar a linha. A coluna
   // `origem` existe no model desde sempre, já viajava no serializador da rota, e **não aparecia em
   // lugar nenhum da tela**: a fila é homogênea por construção (toda linha é um `LancamentoDeclarado`),
@@ -692,25 +690,14 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
             </Button>
           ) : null}
           {/*
-            ⚠⚠ O BOTÃO FLUXO — *"apenas libera no fluxo mas não lança"* (dono, 01/09/2026).
-            É a segunda metade da regra dele: *"nem tudo do fluxo necessariamente deve ser um
-            lançamento"*. Ele NÃO toca no razão.
-            ⚠ NEUTRO, nunca accent: pôr no fluxo não é o ato principal desta tela, e duas ações
-            primárias lado a lado fazem as duas perderem o significado.
-            ⚠ O rótulo diz o que o clique FAZ, e a data em que ela está sai visível ao lado — não em
-            `title`, que não aparece no teclado nem no toque.
+            ⚠⚠ AQUI FICOU O BOTÃO «FLUXO», criado e removido em 01/09/2026 — as duas por decisão do
+            dono. Ele punha a despesa no fluxo do cliente SEM lançar.
+            ⚠ O QUE O DERRUBOU foi uma regra que veio depois, no mesmo dia: *"só entra no fluxo
+            aquilo que for lançado, ou seja as saídas do fluxo são as despesas lançadas"*. Com ela,
+            "liberar no fluxo sem lançar" deixa de existir como conceito — não é um botão que sumiu,
+            é a pergunta que ele respondia que deixou de ser feita.
+            ⚠ A coluna `previstoNoFluxoEm` continua no schema, sem escritor e sem leitor, com lápide.
           */}
-          {onFluxo && !item.accountingEntryId && item.estado !== "RECUSADO" ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={!podeEscrever || ocupado}
-              title={!podeEscrever ? "Você não tem permissão para mexer no fluxo desta empresa." : undefined}
-              onClick={() => onFluxo(item, noFluxo ? null : undefined)}
-            >
-              {noFluxo ? "Tirar do fluxo" : "Pôr no fluxo"}
-            </Button>
-          ) : null}
           {/* ⚠⚠ O RISCO DE DESPESA EM DOBRO SAI VISÍVEL, não só no `title` — `title` não aparece no
               teclado nem no toque, e este é o único bloqueio desta tela que, ignorado, erra
               DINHEIRO. Ele diz o que fazer (casar no painel acima), não só que não pode. */}
@@ -721,13 +708,6 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
             }}>
               {riscoDeDobro}
             </div>
-          ) : null}
-          {/* ⚠ A data em que ela está no fluxo sai VISÍVEL, não em `title`: é o que distingue "no
-              fluxo" de "no fluxo em 25/09", e `title` não aparece no teclado nem no toque. */}
-          {noFluxo ? (
-            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", alignSelf: "center" }}>
-              no fluxo em {dataCivil(item.previstoNoFluxoEm)}
-            </span>
           ) : null}
           {/*
             ⚠⚠ `confirmar` SAI DO LAÇO quando a linha já lança sozinha — decisão do dono, 01/09/2026
@@ -1037,42 +1017,6 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
     [companyId, carregar],
   );
 
-  /**
-   * ⚠⚠ PÔR/TIRAR DO FLUXO — *"apenas libera no fluxo mas não lança"*.
-   *
-   * ⚠ `data` chega `undefined` para PÔR (o servidor usa a emissão da nota, que foi a escolha do
-   * dono) e `null` para TIRAR. Colapsar os dois faria o botão de remover reinserir a linha.
-   */
-  const mexerNoFluxo = useCallback(
-    async (item, data) => {
-      if (!item?.id) return;
-      setEnviando(true);
-      try {
-        await conferenciaApi.postConferenciaFluxo(companyId, item.id, data === null ? { data: null } : {});
-        setAviso(null);
-        await carregar();
-      } catch (e) {
-        setAviso(e?.message || "O servidor recusou esta mudança no fluxo.");
-      } finally {
-        setEnviando(false);
-      }
-    },
-    [companyId, carregar],
-  );
-
-  /**
-   * ⚠⚠ ABRIR O LOTE EXIGE SABER QUAIS DÉBITOS JÁ CASAM COM UMA NOTA — e sem essa resposta ele NÃO
-   * abre.
-   *
-   * Contabilizar à parte um débito de extrato que é o pagamento de uma nota da fila **duplica a
-   * despesa**: a nota vira um lançamento e o débito vira outro, para o mesmo dinheiro que saiu uma
-   * vez. É o erro mais caro desta aba, e é silencioso.
-   *
-   * ⚠ Por isso a falha aqui **fecha a porta** em vez de abrir sem o filtro. Em toda a outra
-   * consulta desta tela a falha é tolerada (a fila continua legível sem o plano de contas); nesta
-   * não dá: abrir sem a lista é abrir com a lista VAZIA, e a lista vazia autoriza justamente o que
-   * ela existe para impedir.
-   */
   const abrirLote = useCallback(async () => {
     setAviso(null);
     setAbrindoLote(true);
@@ -1383,7 +1327,6 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
                           motivoDoCasamento={quaisCasam === null ? null : quaisCasam.get(item.id)}
                           contas={contas}
                           onLancar={lancarDaLinha}
-                          onFluxo={mexerNoFluxo}
                           ocupado={enviando}
                         />
                       ))}

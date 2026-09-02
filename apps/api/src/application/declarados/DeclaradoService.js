@@ -46,12 +46,6 @@ export const RECUSA_DO_SERVICO = Object.freeze({
   ORIGEM_INVALIDA: "origem_invalida",
   PAGAMENTO_SEM_PROCEDENCIA: "pagamento_sem_procedencia",
   CASAMENTO_NAO_CONFERE: "casamento_nao_confere",
-  /** ⚠ Já lançada: o lançamento dela JÁ é linha do fluxo. Uma previsão ao lado contaria em dobro. */
-  JA_LANCADO_NO_FLUXO: "ja_lancado_no_fluxo",
-  /** Despesa recusada não vai ao fluxo do cliente — diria o contrário da decisão do contador. */
-  RECUSADO_NAO_VAI_AO_FLUXO: "recusado_nao_vai_ao_fluxo",
-  /** ⚠ Sem data não há lugar na linha do tempo, e um dia chutado é uma afirmação sobre o caixa. */
-  SEM_DATA_PARA_O_FLUXO: "sem_data_para_o_fluxo",
 });
 
 export const FRASE_DO_SERVICO = Object.freeze({
@@ -789,86 +783,4 @@ export async function fundirPagamentoNaNota({
       where: { id: nota.id, portalClientId: String(portalClientId) },
     });
   });
-}
-
-/**
- * ⚠⚠⚠ LIBERAR A DESPESA NO FLUXO — sem lançar nada. Decisão do dono, 01/09/2026.
- *
- * > *"temos um botão fluxo, que apenas libera no fluxo mas não lança"*, e sobre a data:
- * > **"na data da emissão mais o contador pode alterar"**.
- *
- * ⚠⚠ **É O SEGUNDO VERBO DA MESMA LINHA, e a diferença entre os dois é a invariante do caixa:**
- *
- *   · **Lançar** → cria `AccountingEntry` (`D despesa / C caixa`) e AFIRMA que o dinheiro saiu.
- *     Exige `dataPagamento`, que é prova ou declaração.
- *   · **Fluxo**  → só diz *"esta despesa deve sair por volta de tal dia"*. Não toca no razão, e a
- *     linha entra no fluxo do cliente como **PREVISÃO**.
- *
- * A regra do dono, dita por ele: *"tudo que virar lançamento deve entrar no fluxo, mas nem tudo do
- * fluxo necessariamente deve ser um lançamento"*. Este verbo é a segunda metade dela.
- *
- * ⚠ **PRESENÇA DA DATA = LIBERADA.** Não há estado novo — um estado a mais faria a fila ter duas
- * gramáticas para a mesma linha. `data: null` **tira** do fluxo.
- *
- * ⚠⚠ **NADA É INVENTADO QUANDO NÃO HÁ DATA.** Omitindo `data`, cai na **emissão da nota**, que foi a
- * escolha do dono e é um dado que existe. Sem `dataDocumento` a resposta é RECUSA nomeada, nunca
- * "hoje" nem o fim da competência: o fluxo é uma linha do tempo, e um dia chutado ali vira uma
- * afirmação sobre quando a empresa vai ficar sem dinheiro.
- */
-export async function liberarDeclaradoNoFluxo({
-  portalClientId, declaradoId, data, usuarioId, client = prisma,
-}) {
-  const declarado = await client.lancamentoDeclarado.findFirst({
-    where: { id: String(declaradoId), portalClientId: String(portalClientId) },
-    select: { id: true, estado: true, dataDocumento: true, accountingEntryId: true },
-  });
-  if (!declarado) recusar(RECUSA_DO_SERVICO.NAO_ENCONTRADO);
-
-  // ⚠ Tirar do fluxo é sempre permitido: é desfazer uma previsão, e desfazer não afirma nada.
-  const tirando = data === null;
-
-  if (!tirando) {
-    /**
-     * ⚠⚠ JÁ LANÇADA NÃO SE LIBERA — e a recusa evita CONTAGEM DUPLA, não burocracia.
-     *
-     * O lançamento dela já é uma linha do fluxo por direito próprio (`FONTE.DESPESA_LANCADA`, como
-     * FATO). Uma previsão ao lado somaria o mesmo dinheiro duas vezes na tela do cliente.
-     */
-    if (declarado.accountingEntryId) recusar(RECUSA_DO_SERVICO.JA_LANCADO_NO_FLUXO);
-    // ⚠ Recusada é uma despesa que o contador disse não existir. Pô-la no fluxo do cliente diria o
-    // contrário do que ele acabou de decidir.
-    if (declarado.estado === ESTADO.RECUSADO) recusar(RECUSA_DO_SERVICO.RECUSADO_NAO_VAI_AO_FLUXO);
-  }
-
-  const escolhida = tirando
-    ? null
-    // ⚠ `undefined` = "não mandei data" ⇒ cai na emissão. `null` = "tire do fluxo". As duas não
-    // podem se confundir, e é por isso que a comparação é `=== undefined`, nunca `!data`.
-    : (data === undefined ? declarado.dataDocumento : lerDataDoFluxo(data));
-
-  if (!tirando && !escolhida) recusar(RECUSA_DO_SERVICO.SEM_DATA_PARA_O_FLUXO);
-
-  return client.lancamentoDeclarado.update({
-    where: { id: declarado.id },
-    data: {
-      previstoNoFluxoEm: escolhida,
-      // ⚠ Quem liberou fica registrado no mesmo campo que as outras decisões desta fila usam — a
-      // previsão que o cliente vê saiu de um ato de alguém, e a tela precisa poder dizer de quem.
-      decididoPor: String(usuarioId || "") || undefined,
-    },
-    select: { id: true, previstoNoFluxoEm: true },
-  });
-}
-
-/**
- * ⚠ A data CIVIL vem como `AAAA-MM-DD` e é montada em UTC, por pedaço — nunca `new Date(texto)`.
- *
- * `new Date("2026-09-18")` já é UTC, mas `new Date("2026-09-18T00:00")` é local: as duas formas
- * chegam de clientes diferentes e uma delas desloca o dia. Montar por pedaço não tem esse ramo.
- */
-function lerDataDoFluxo(v) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v ?? "").trim());
-  if (!m) return null;
-  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  return Number.isNaN(d.getTime()) ? null : d;
 }

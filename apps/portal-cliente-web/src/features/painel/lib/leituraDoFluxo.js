@@ -69,17 +69,11 @@ export const FONTE = Object.freeze({
    *
    * Sem esta entrada e sem o rótulo, a linha chegaria na tela como **"Origem desconhecida"** — e é
    * a linha do trabalho principal da Conferência. Mudou lá, muda aqui.
-   * ⚠ Ela cai no balde `saida` por `direcao`, e é sempre `FATO`: o lançamento é
-   * `D despesa / C caixa`, ou seja a partida dobrada afirma que o dinheiro saiu.
+   * ⚠ Ela é sempre `FATO`: o lançamento é `D despesa / C caixa`, ou seja a partida dobrada afirma
+   * que o dinheiro saiu. E desde 01/09/2026 é a ÚNICA saída de despesa do fluxo — *"só entra no
+   * fluxo aquilo que for lançado"*.
    */
   DESPESA_LANCADA: "DESPESA_LANCADA",
-  /**
-   * ⚠⚠ A DESPESA LIBERADA NO FLUXO SEM LANÇAR — espelho de `FONTE` no servidor (01/09/2026).
-   *
-   * ⚠ Diferença para `DESPESA_LANCADA`: esta é sempre PREVISÃO. Ninguém provou que o dinheiro vai
-   * sair naquele dia — o contador informou uma data (por padrão, a da emissão da nota).
-   */
-  DESPESA_PREVISTA: "DESPESA_PREVISTA",
   /**
    * ⚠⚠ A RECEITA QUE O HISTÓRICO PROJETA (30/08/2026) — espelho de `FONTE` no servidor.
    *
@@ -159,7 +153,6 @@ export const ROTULO_DA_FONTE = Object.freeze({
   // indistinguível do recebimento de uma nota que existe.
   [FONTE.RECEITA_PROJETADA]: "Receita prevista pelo histórico",
   [FONTE.DESPESA_LANCADA]: "Despesa lançada",
-  [FONTE.DESPESA_PREVISTA]: "Despesa prevista pelo contador",
 });
 
 export function rotuloDaFonte(f) {

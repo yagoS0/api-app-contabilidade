@@ -46,6 +46,20 @@ jest.mock("../../../application/fluxo/SerieRecorrenteService.js", () => ({
   autoAtivarSeriesEstaveis: jest.fn(async () => ({ ativadas: 0, series: [] })),
 }));
 
+/**
+ * ⚠⚠ E O LANÇAMENTO POR REGRA PRECISA DO MESMO DUBLÊ — pelo MESMO motivo, descoberto depois
+ * (01/09/2026). A varredura ganhou um terceiro passo em 29/08 (`lancarPorRegraNaEmpresa`), e ele
+ * entrou SEM dublê: os casos da data-piso voltaram a morrer em "Exceeded timeout of 5000 ms",
+ * medindo a conexão com o banco em vez da rota.
+ *
+ * ⚠ Os casos que espionam esta função (`jest.spyOn(porRegra, …)`, mais abaixo) continuam valendo:
+ * a fábrica devolve um objeto comum, e o `spyOn` deles sobrescreve o dublê caso a caso.
+ */
+jest.mock("../../../application/declarados/LancamentoPorRegraService.js", () => ({
+  ...jest.requireActual("../../../application/declarados/LancamentoPorRegraService.js"),
+  lancarPorRegraNaEmpresa: jest.fn(async () => ({ lancados: 0, linhas: [] })),
+}));
+
 jest.mock("../../../application/declarados/DeclaradoService.js", () => {
   const real = jest.requireActual("../../../application/declarados/DeclaradoService.js");
   return {

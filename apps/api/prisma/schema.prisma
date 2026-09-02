@@ -4019,21 +4019,17 @@ model LancamentoDeclarado {
   /// ⚠ SEM FK, de propósito — mesmo desenho de `AccountingEntry.estornoDeEntryId`. Com `SetNull` um
   /// lançamento apagado por fora deixaria a linha em CONTABILIZADO apontando para nada, e o
   /// apagamento da evidência seria silencioso. Sem FK o id fica, e a varredura o denuncia.
-  /// ⚠⚠ A DATA EM QUE ESTA DESPESA ENTRA NO FLUXO DO CLIENTE — decisão do dono, 01/09/2026.
+  /// ⚠⚠ LÁPIDE — COLUNA MORTA, criada e abandonada no MESMO DIA (01/09/2026).
   ///
-  /// > *"temos um botão fluxo, que apenas libera no fluxo mas não lança"* e, sobre a data:
-  /// > **"na data da emissão mais o contador pode alterar"**.
+  /// Ela guardava a data em que a despesa entrava no fluxo SEM ser lançada (o botão «Fluxo»). O
+  /// dono deu, horas depois, a regra que a matou: *"só entra no fluxo aquilo que for lançado"*.
   ///
-  /// ⚠ **PRESENÇA = LIBERADA.** Não há estado novo: nulo quer dizer *"não está no fluxo"*, e um
-  /// estado a mais faria a fila do contador ter duas gramáticas para a mesma linha.
-  ///
-  /// ⚠⚠ **ELA NÃO É `dataPagamento`, e confundi-las quebra a invariante do caixa.**
-  /// `dataPagamento` é PROVA (ou declaração) de que o dinheiro saiu, e é ela que vira a data do
-  /// lançamento contábil. Esta é uma PREVISÃO de quando vai sair: entra no fluxo como
-  /// `PROCEDENCIA.PREVISAO` e **nunca** alimenta o razão.
-  ///
-  /// ⚠ `@db.Date`: é data CIVIL, sem hora. Com `DateTime` cheio, às 22h de Brasília ela viraria o
-  /// dia seguinte na leitura em UTC — a mesma armadilha de `SaidaAvulsaCliente.data`.
+  /// ⚠ **NÃO TEM ESCRITOR NEM LEITOR** — a rota, o serviço e o contribuinte do fluxo foram
+  /// removidos, e nunca houve dado gravado nela: a funcionalidade viveu algumas horas e só no banco
+  /// de desenvolvimento.
+  /// ⚠ Ela FICA porque apagar coluna é migration destrutiva, e a `20260901190000` já está aplicada
+  /// no dev: derrubá-la exigiria uma segunda migration cancelando a primeira. Nula, sem leitor e sem
+  /// escritor, o custo de mantê-la é zero — removê-la é decisão do dono.
   previstoNoFluxoEm DateTime? @db.Date
 
   accountingEntryId String?
