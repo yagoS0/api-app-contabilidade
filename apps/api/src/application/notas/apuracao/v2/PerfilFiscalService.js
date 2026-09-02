@@ -69,12 +69,25 @@ async function coletarCnaesEConfig(portalClientId) {
     if (company?.cnaePrincipal) {
       cnaePrincipal = onlyDigits(company.cnaePrincipal);
       cnaesSecundarios = (company.cnaesSecundarios || []).map(onlyDigits).filter(Boolean);
+      // ⚠⚠ ESTA CASCATA TERMINAVA EM `: "SIMPLES_NACIONAL"` — a SEGUNDA cópia do default que
+      // `mapRegime` (`routes/firm/apuracaoV2.js`) também tinha. Duas cópias da mesma regra, e elas
+      // JÁ DIVERGIAM: `mapRegime` consulta `company.optanteSimples` na penúltima linha; esta não.
+      // A mesma empresa tinha duas respostas possíveis, conforme o caminho que a alcançasse.
+      //
+      // ⚠ Aqui o default nunca foi PERSISTIDO (este serviço só lê), mas era ele que produzia o
+      // `regime` que a tela imprime — e o `prefill: true` que pintava âmbar existia justamente
+      // porque o número embaixo era um palpite. Sem palpite, o âmbar passa a ser sobre o que
+      // realmente veio da ficha.
+      //
+      // Regime irreconhecível fica `null`, e quem o lê decide: `estadoDoRegime` (tela) já tem o
+      // ramo AUSENTE, com a frase certa.
       if (!regime) {
         const raw = String(company.regimeTributario || "").toUpperCase();
         regime = /PRESUMID/.test(raw) ? "LUCRO_PRESUMIDO"
           : /REAL/.test(raw) ? "LUCRO_REAL"
           : /MEI/.test(raw) ? "MEI"
-          : "SIMPLES_NACIONAL";
+          : /SIMPLES/.test(raw) || company.optanteSimples ? "SIMPLES_NACIONAL"
+          : null;
       }
     }
   }

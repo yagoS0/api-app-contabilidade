@@ -36,13 +36,40 @@ import { podeApurarPresumido } from "../../application/fiscal/lp/lib/regimeDoPre
 const REGIMES_VALIDOS = new Set(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI"]);
 
 // Q44: mapeia o regime do cadastro da empresa (Company, dados do CNPJ) → enum do CadastroFiscal.
+// ⚠⚠ ELE TERMINAVA EM `return "SIMPLES_NACIONAL"` — E O CHUTE VIRAVA DADO GRAVADO.
+//
+// O default era descrito como inofensivo ("a maioria das empresas do app é SN"), e seria, se ele
+// só alimentasse tela. Mas o `PUT /perfil-fiscal` (abaixo) fazia
+// `cadastroFiscal.create({ regime: mapRegime(company) })` — e a partir daí:
+//
+//   • `NfseService.carregarRegimeDaEmpresa` trata `CadastroFiscal` como AUTORIDADE e devolve
+//     Simples Nacional com confiança total, sem o `prefill: true` que fazia a tela pintar âmbar;
+//   • `dpsCodigos.resolverOpSimpNac` — escrito de propósito para RECUSAR regime desconhecido —
+//     passa a ver um dado, não uma ausência. Guarda nenhuma resiste a um caminho de escrita que
+//     fabrica exatamente o dado que a satisfaz;
+//   • mais seis serviços leem `CadastroFiscal` como autoridade (`ClassificadorService`,
+//     `CnaesDaEmpresaService`, `DisparidadeService`, `FechamentoService`, `MotorApuracaoService`,
+//     `PerfilFiscalService`) — o chute entra na classificação, na apuração e no fechamento.
+//
+// Nada distingue, no banco, um `SIMPLES_NACIONAL` que o contador afirmou de um que esta função
+// chutou. Medido em 14/08/2026: 28 das 34 empresas ainda não têm linha em `cadastros_fiscais` — o
+// estrago em massa não aconteceu, mas cada salvamento de perfil fiscal o produzia.
+//
+// ⚠ O autor de `dpsCodigos.js` VIU esta função, RECUSOU reusá-la e escreveu o motivo:
+// *"na apuração o default é inofensivo; numa DPS ele declararia o regime da empresa por
+// suposição"*. O mesmo argumento vale contra PERSISTIR.
+//
+// ⚠⚠ A APURAÇÃO CONTINUA TOLERANTE, e isso não mudou — `apps/api/CLAUDE.md:3009` registra que ali
+// *"bloquear por falta de dado é o erro caro"*. Quem trata o `null` é cada chamador: a tela o lê
+// como AUSENTE (`perfilFiscalTela.estadoDoRegime`, que já tinha o ramo), e só a ESCRITA recusa.
+// Tolerar em memória ≠ gravar.
 function mapRegime(company) {
   const raw = String(company?.regimeTributario || "").toUpperCase();
   if (/MEI/.test(raw)) return "MEI";
   if (/PRESUMID/.test(raw)) return "LUCRO_PRESUMIDO";
   if (/REAL/.test(raw)) return "LUCRO_REAL";
   if (/SIMPLES/.test(raw) || company?.optanteSimples) return "SIMPLES_NACIONAL";
-  return "SIMPLES_NACIONAL"; // default (a maioria das empresas do app é SN)
+  return null; // não sabemos — e "não sabemos" não é "Simples Nacional"
 }
 
 export function createApuracaoV2Router({ log } = {}) {
@@ -86,13 +113,19 @@ export function createApuracaoV2Router({ log } = {}) {
             }).catch(() => null)
           : null;
         if (company?.cnaePrincipal) {
+          const regimeDaFicha = mapRegime(company);
           const doCompany = {
-            regime: mapRegime(company),
+            regime: regimeDaFicha,
             cnaePrincipal: String(company.cnaePrincipal).replace(/\D+/g, ""),
             cnaesSecundarios: (company.cnaesSecundarios || []).map((c) => String(c).replace(/\D+/g, "")).filter(Boolean),
           };
           if (cadastro) {
-            cadastro = { ...cadastro, ...doCompany }; // sobrepõe regime/CNAE (empresa é a fonte)
+            // ⚠⚠ `null` NÃO SOBREPÕE. A ficha continua sendo a fonte quando ela RESPONDE — mas
+            // desde que `mapRegime` deixou de chutar, ela pode responder "não sei", e "não sei"
+            // apagando um regime que alguém salvou seria trocar um defeito por outro: a tela diria
+            // "não cadastrado" sobre uma empresa cadastrada. Só sobrepõe o que foi resolvido.
+            if (regimeDaFicha == null) delete doCompany.regime;
+            cadastro = { ...cadastro, ...doCompany }; // sobrepõe CNAE (e o regime, quando há)
           } else {
             cadastro = {
               ...doCompany,
@@ -202,10 +235,34 @@ export function createApuracaoV2Router({ log } = {}) {
         if (!company?.cnaePrincipal) {
           return bad(res, 409, "cadastro_fiscal_required", "Salve o Cadastro Fiscal (regime + CNAE) antes de configurar o perfil.");
         }
+
+        // ⚠⚠ AQUI ERA O CAMINHO QUE FABRICAVA O DADO. `regime: mapRegime(company)` gravava
+        // `SIMPLES_NACIONAL` para toda empresa cuja ficha não trouxesse regime reconhecível — e a
+        // linha criada aqui é tratada como AUTORIDADE por sete serviços, inclusive a emissão de
+        // NFS-e. Ver o cabeçalho de `mapRegime`.
+        //
+        // ⚠ RECUSAR É MAIS BARATO QUE UM ESTADO NOVO: `CadastroFiscal.regime` é `String` NOT NULL,
+        // e torná-lo anulável só empurraria o problema — `carregarRegimeDaEmpresa` continuaria
+        // vendo uma linha, e `temCadastro` continuaria `true`. Sem regime, não há cadastro fiscal.
+        //
+        // ⚠ A recusa segue a forma do `cadastro_fiscal_required` três linhas acima: 409, código
+        // próprio, e a frase diz ONDE se conserta.
+        const regime = mapRegime(company);
+        if (!regime) {
+          return bad(
+            res,
+            409,
+            "regime_nao_confirmado",
+            "Esta empresa não tem regime tributário reconhecível na ficha, e o perfil fiscal não "
+              + "pode ser salvo sobre um regime suposto. Informe o regime em Empresa → Cadastro e "
+              + "tente de novo.",
+          );
+        }
+
         const cadastro = await prisma.cadastroFiscal.create({
           data: {
             portalClientId,
-            regime: mapRegime(company),
+            regime,
             dataOpcaoSN: company.simplesDataOpcao || null,
             cnaePrincipal: String(company.cnaePrincipal).replace(/\D+/g, ""),
             cnaesSecundarios: (company.cnaesSecundarios || []).map((c) => String(c).replace(/\D+/g, "")).filter(Boolean),
