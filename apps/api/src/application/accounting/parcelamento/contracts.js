@@ -165,7 +165,30 @@ function agregarTributosPorCodigo(tributos) {
   return [...porCodigo.values(), ...semCodigo];
 }
 
-/** Normaliza um ParcelaDTO. `valorTotal` deriva da soma dos tributos quando ausente. */
+/**
+ * Normaliza um ParcelaDTO. `valorTotal` deriva da soma dos tributos quando ausente.
+ *
+ * ⚠⚠ **ELE ESTAVA DERRUBANDO OS DOIS IDENTIFICADORES DA PARCELA**, e isso ficou vermelho por dois
+ * meses sem ninguém olhar (02/09/2026).
+ *
+ * `mapearParcela` extrai `numeroDas` e `numeroParcelamento` do DETPAGTOPARC165 — dado oficial do
+ * SERPRO, presente na fixture do handoff —, e este normalizador montava um objeto NOVO sem essas
+ * duas chaves. Elas sumiam **sem erro nenhum**: é o mesmo defeito de "campo fora do serializador"
+ * que este projeto já pagou três vezes em outros módulos, aqui no meio de uma integração fiscal.
+ *
+ * ⚠⚠ **O CUSTO NÃO ERA SÓ O TESTE.** `serproParcelamentoContract.test.js` é um GATE — o cabeçalho
+ * dele diz *"enquanto este teste não passa verde, a flag fica OFF"*. Ou seja: o campo derrubado
+ * mantinha uma capability desligada desde **25/06/2026**, e quem lesse a suíte via "1 vermelha"
+ * como paisagem.
+ *
+ * ⚠ `numeroDas` é o número do DAS daquela parcela — é por ele que o pagamento é reconciliado
+ * (`SerproPaymentConfirmationService` lê `numeroDocumento ?? numeroDoc ?? numeroDas`). Perdê-lo na
+ * normalização é perder a âncora entre a parcela e a guia que a paga.
+ *
+ * ⚠ **Nada mais mudou**: acrescentar chave aqui é ADITIVO e foi medido — nenhum consumidor espalha
+ * este objeto num `create` do Prisma (`ParcelamentoV2Service` lê campo a campo), então não há
+ * "Unknown argument" a temer. O que o adaptador lê do SERPRO continua exatamente o mesmo.
+ */
 export function normalizeParcelaDTO(raw = {}) {
   const tributos = agregarTributosPorCodigo(
     Array.isArray(raw.tributos) ? raw.tributos.map(normalizeTributoDTO) : [],
@@ -177,6 +200,12 @@ export function normalizeParcelaDTO(raw = {}) {
     anoMesParcela: raw.anoMesParcela ? String(raw.anoMesParcela) : null, // YYYYMM
     vencimento: raw.vencimento || null,
     valorTotal: raw.valorTotal != null ? round2(raw.valorTotal) : somaTrib,
+    // ⚠ Identificadores: STRING ou `null`, nunca número. O DAS tem 17 dígitos com zeros à
+    // esquerda (`"07181817050461249"`) — `Number` comeria o zero e mudaria o documento.
+    numeroDas: raw.numeroDas != null && String(raw.numeroDas).trim() ? String(raw.numeroDas).trim() : null,
+    numeroParcelamento: raw.numeroParcelamento != null && String(raw.numeroParcelamento).trim()
+      ? String(raw.numeroParcelamento).trim()
+      : null,
     tributos,
   };
 }

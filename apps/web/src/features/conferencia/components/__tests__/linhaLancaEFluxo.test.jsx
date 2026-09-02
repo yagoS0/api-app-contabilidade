@@ -159,7 +159,8 @@ describe("⚠⚠⚠ O BOTÃO «FLUXO» FOI REMOVIDO — a regra nova o tornou se
   });
 
   it("⚠ nem quando a linha traz a coluna morta preenchida — não há leitor dela", async () => {
-    // `previstoNoFluxoEm` continua no schema, com lápide, sem escritor e sem leitor.
+    // ⚠ `previstoNoFluxoEm` foi APAGADA do banco em 02/09/2026. O caso FICA: ele prova que a TELA
+    // ignora o campo — e um payload antigo, de um cliente que não recarregou, ainda pode trazê-lo.
     responder({ previstoNoFluxoEm: "2026-07-02" });
     await montar();
     expect(screen.queryByRole("button", { name: /no fluxo/i })).toBeNull();

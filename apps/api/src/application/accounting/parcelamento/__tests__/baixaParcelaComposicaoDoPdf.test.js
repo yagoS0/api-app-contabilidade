@@ -257,6 +257,57 @@ describe("composição sem código de receita não conta como documento", () => 
 // consolida 12/2024 e 05/2025. `TributoParcela` tem `@@unique([guideId, codigoTributo])` e o
 // `upsert` roda em laço — sem agregar, a segunda linha de cada código SOBRESCREVIA a primeira em
 // silêncio e a composição persistida ficava menor que a parcela.
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠ O NORMALIZADOR NÃO PODE DERRUBAR OS IDENTIFICADORES DA PARCELA (02/09/2026).
+//
+// ⚠⚠ ELE DERRUBAVA, E POR DOIS MESES. `mapearParcela` extrai `numeroDas` e `numeroParcelamento` do
+// DETPAGTOPARC165 — dado oficial do SERPRO —, e `normalizeParcelaDTO` montava um objeto NOVO sem
+// essas duas chaves. Sumiam sem erro nenhum: o mesmo "campo fora do serializador" que este projeto
+// já pagou três vezes, agora dentro de uma integração fiscal.
+//
+// ⚠⚠ O CUSTO NÃO ERA SÓ A LINHA VERMELHA: `serproParcelamentoContract.test.js` é um GATE —
+// *"enquanto este teste não passa verde, a flag fica OFF"* —, e ele estava vermelho desde
+// 25/06/2026. A suíte reportava "1 failed" e todo mundo lia isso como paisagem.
+// -------------------------------------------------------------------------------------------------
+describe("⚠⚠ normalizeParcelaDTO PRESERVA os identificadores — eles sumiam em silêncio", () => {
+  const { normalizeParcelaDTO: normalizar } = require("../contracts.js");
+
+  it("⚠⚠ `numeroDas` sobrevive à normalização", () => {
+    const r = normalizar({ numeroDas: "07181817050461249", tributos: [] });
+    expect(r.numeroDas).toBe("07181817050461249");
+  });
+
+  it("⚠⚠⚠ e ele é STRING, nunca número — o DAS tem zero à esquerda", () => {
+    // `Number("07181817050461249")` come o zero E estoura a precisão de inteiro seguro: o documento
+    // sairia diferente do que o SERPRO mandou, e ninguém veria.
+    const r = normalizar({ numeroDas: "07181817050461249", tributos: [] });
+    expect(typeof r.numeroDas).toBe("string");
+    expect(r.numeroDas.startsWith("0")).toBe(true);
+  });
+
+  it("⚠ `numeroParcelamento` também sobrevive, e também como string", () => {
+    const r = normalizar({ numeroParcelamento: 9102, tributos: [] });
+    expect(r.numeroParcelamento).toBe("9102");
+  });
+
+  it("⚠ ausente é `null`, e vazio também — nunca `undefined` nem string em branco", () => {
+    // ⚠ `undefined` viajaria para um `update` do Prisma como "não mexer", que aqui seria a mentira
+    // conveniente: o campo não veio porque o SERPRO não mandou, e isso é uma informação.
+    for (const v of [undefined, null, "", "   "]) {
+      const r = normalizar({ numeroDas: v, numeroParcelamento: v, tributos: [] });
+      expect(r.numeroDas).toBeNull();
+      expect(r.numeroParcelamento).toBeNull();
+    }
+  });
+
+  it("⚠ o resto do DTO não mudou — acrescentar chave é aditivo", () => {
+    const r = normalizar({ numeroParcela: "01", anoMesParcela: 201806, tributos: [] });
+    expect(r.numeroParcela).toBe(1);
+    expect(r.anoMesParcela).toBe("201806");
+    expect(r.valorTotal).toBe(0);
+  });
+});
+
 describe("agregação por código (normalizeParcelaDTO)", () => {
   const COMPOSICAO_ERISANGELA = [
     { codigo: "1001", principal: 0.02, multa: 0, juros: 0, total: 0.02 },

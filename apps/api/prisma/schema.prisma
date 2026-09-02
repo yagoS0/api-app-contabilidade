@@ -4021,18 +4021,6 @@ model LancamentoDeclarado {
   /// ⚠ SEM FK, de propósito — mesmo desenho de `AccountingEntry.estornoDeEntryId`. Com `SetNull` um
   /// lançamento apagado por fora deixaria a linha em CONTABILIZADO apontando para nada, e o
   /// apagamento da evidência seria silencioso. Sem FK o id fica, e a varredura o denuncia.
-  /// ⚠⚠ LÁPIDE — COLUNA MORTA, criada e abandonada no MESMO DIA (01/09/2026).
-  ///
-  /// Ela guardava a data em que a despesa entrava no fluxo SEM ser lançada (o botão «Fluxo»). O
-  /// dono deu, horas depois, a regra que a matou: *"só entra no fluxo aquilo que for lançado"*.
-  ///
-  /// ⚠ **NÃO TEM ESCRITOR NEM LEITOR** — a rota, o serviço e o contribuinte do fluxo foram
-  /// removidos, e nunca houve dado gravado nela: a funcionalidade viveu algumas horas e só no banco
-  /// de desenvolvimento.
-  /// ⚠ Ela FICA porque apagar coluna é migration destrutiva, e a `20260901190000` já está aplicada
-  /// no dev: derrubá-la exigiria uma segunda migration cancelando a primeira. Nula, sem leitor e sem
-  /// escritor, o custo de mantê-la é zero — removê-la é decisão do dono.
-  previstoNoFluxoEm DateTime? @db.Date
 
   accountingEntryId String?
   regraId           String?

@@ -1218,9 +1218,11 @@ describe("⚠⚠⚠ SÓ O QUE FOI LANÇADO É SAÍDA DE DESPESA NO FLUXO — reg
     expect(linhasDe(r, "DESPESA_PREVISTA")).toHaveLength(0);
   });
 
-  it("⚠⚠ e a coluna morta no banco não vira linha nenhuma — não há leitor dela", async () => {
-    // `previstoNoFluxoEm` continua no schema com lápide. Se alguém religar um leitor por engano,
-    // este teste cai.
+  it("⚠⚠ e nem a coluna existe mais — ela foi APAGADA do banco em 02/09/2026", async () => {
+    // ⚠⚠ A lápide durou um dia: `previstoNoFluxoEm` saiu do schema por decisão do dono, depois de
+    // medido que estava VAZIA (0 preenchidas em 38 linhas) e sem leitor nem escritor.
+    // ⚠ O caso FICA mesmo sem a coluna: ele prova que o fluxo não tem fonte de despesa PREVISTA —
+    // e isso continua sendo verdade a ser defendida, com coluna ou sem ela.
     const cliente = clientDe({ previstas: [] });
     const r = await montar(cliente);
     expect(linhasDe(r, "DESPESA_PREVISTA")).toHaveLength(0);

@@ -83,6 +83,26 @@ afterEach(() => { jest.restoreAllMocks(); });
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // ⚠⚠ DOIS MESES LADO A LADO, EM DIAS — o estado inicial do v4.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * ⚠⚠ TETO DE TEMPO DESTE ARQUIVO — 20 s, e ele é DAQUI, nunca do `jest.config` (02/09/2026).
+ *
+ * ⚠⚠ **O PADRÃO DE 5 s NÃO SOBE NA CONFIGURAÇÃO**, e a razão é concreta: foi ele que expôs, em
+ * 01/09/2026, uma rota que PENDURAVA (a varredura de notas consultando o banco sem dublê). Um teto
+ * global maior teria transformado aquele defeito em *"a suíte está lenta hoje"* — que é exatamente
+ * como esta flutuação foi lida por semanas.
+ *
+ * ⚠⚠ **A MEDIÇÃO QUE JUSTIFICA O NÚMERO** (`jest --json`, 1.434 casos deste app): **17 casos** levam
+ * 3 s ou mais, e eles se concentram em **5 arquivos** — este é um deles. O mais pesado marcou
+ * 6,3 s. Ou seja: o corte de 5 s cai NO MEIO de uma população densa, e quem estoura não é o teste
+ * errado — é o que estava rodando quando a máquina engasgou. Subir teste a teste seria correr atrás
+ * de um alvo que muda a cada execução.
+ *
+ * ⚠ O custo é jsdom montando tabela de verdade (dezenas de células com estilo próprio, várias
+ * renderizações por caso). Não há espera, relógio nem rede aqui — em navegador isto é instantâneo.
+ * ⚠ Os outros ~1.417 casos deste app continuam com os 5 s de sempre.
+ */
+jest.setTimeout(20000);
+
 describe("⚠⚠ a visão de dias é o estado INICIAL", () => {
   it("⚠⚠ nasce em DIAS, não em meses — isto inverte o v3", async () => {
     await abrir(cheio());
@@ -217,6 +237,18 @@ describe("⚠⚠ as setas andam MÊS A MÊS na visão de dias", () => {
     expect(blocos().map((b) => b.getAttribute("data-mes"))).toEqual(["2026-07", "2026-08"]);
   });
 
+/**
+ * ⚠⚠ TETO DE TEMPO PRÓPRIO — e ele é DESTE caso, nunca da suíte (02/09/2026).
+ *
+ * ⚠⚠ **O PADRÃO DE 5 s NÃO PODE SUBIR NO `jest.config`**, e a razão é concreta: foi ele que expôs,
+ * em 01/09/2026, uma rota que PENDURAVA (a varredura de notas chamando o banco sem dublê). Um teto
+ * global maior teria transformado aquele defeito em "a suíte está lenta hoje".
+ *
+ * ⚠ O que este caso tem de diferente foi MEDIDO, não suposto: ele faz SEIS renderizações completas da grade (a inicial e cinco
+ * cliques na seta), e cada uma monta dois meses dia a dia — cerca de 60 células com estilo próprio. Não é espera, não é
+ * relógio, não é rede — é trabalho de renderização mesmo, em jsdom, que é ordens de grandeza mais
+ * lento que um navegador de verdade. Em produção este mesmo desenho é instantâneo.
+ */
   it("⚠⚠ na BORDA da janela ele pede outra — e NÃO mexe no ciclo, o ciano não escorrega", async () => {
     await abrir(cheio());
     // ⚠ A janela padrão do mock começa em 2026-04 e a esquerda em 2026-08: QUATRO passos chegam à

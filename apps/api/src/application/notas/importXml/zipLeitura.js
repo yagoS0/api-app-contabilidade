@@ -19,6 +19,7 @@
 
 import { createReadStream } from "node:fs";
 import { open as abrirArquivo } from "node:fs/promises";
+import { Readable } from "node:stream";
 import { createInflateRaw } from "node:zlib";
 import { pipeline } from "node:stream/promises";
 
@@ -185,11 +186,16 @@ export async function lerDiretorioCentral(caminho) {
  * Onde começam os bytes de dados da entrada. O cabeçalho local repete nome e extra com tamanhos
  * PRÓPRIOS (podem diferir dos do diretório central), então eles têm de ser lidos de lá.
  */
-async function resolverOffsetDados(caminho, entrada) {
-  const fh = await abrirArquivo(caminho, "r");
+/**
+ * ⚠ `fh` opcional: quando quem chama já tem o arquivo aberto, NÃO se abre de novo. Ver a medição em
+ * `percorrerZip` — abrir e fechar por entrada era o custo dominante da leitura de um lote.
+ */
+async function resolverOffsetDados(caminho, entrada, fh = null) {
+  const proprio = fh ? null : await abrirArquivo(caminho, "r");
+  const alvo = fh || proprio;
   try {
     const cab = Buffer.alloc(30);
-    await fh.read(cab, 0, 30, entrada.offsetLocal);
+    await alvo.read(cab, 0, 30, entrada.offsetLocal);
     if (cab.readUInt32LE(0) !== ASSINATURA_LOCAL) {
       throw new ZipError("zip_cabecalho_local_invalido", `Cabeçalho local inválido em ${entrada.nome}`);
     }
@@ -197,7 +203,7 @@ async function resolverOffsetDados(caminho, entrada) {
     const tamExtra = cab.readUInt16LE(28);
     return entrada.offsetLocal + 30 + tamNome + tamExtra;
   } finally {
-    await fh.close().catch(() => {});
+    if (proprio) await proprio.close().catch(() => {});
   }
 }
 
@@ -205,7 +211,7 @@ async function resolverOffsetDados(caminho, entrada) {
  * Descompacta UMA entrada e devolve o texto.
  * ⚠ A codificação sai do prólogo do próprio XML — ver `decodificarXml`.
  */
-export async function lerTextoDaEntrada(caminho, entrada, { maxBytes = MAX_BYTES_POR_ENTRADA } = {}) {
+export async function lerTextoDaEntrada(caminho, entrada, { maxBytes = MAX_BYTES_POR_ENTRADA, fh = null } = {}) {
   if (entrada.criptografada) throw new ZipError("zip_entrada_criptografada", `Entrada protegida por senha: ${entrada.nome}`);
   if (entrada.metodo !== METODO_ARMAZENADO && entrada.metodo !== METODO_DEFLATE) {
     throw new ZipError("zip_metodo_nao_suportado", `Método de compressão ${entrada.metodo} em ${entrada.nome}`);
@@ -213,9 +219,23 @@ export async function lerTextoDaEntrada(caminho, entrada, { maxBytes = MAX_BYTES
   if (entrada.tamanho > maxBytes) {
     throw new ZipError("zip_entrada_grande_demais", `${entrada.nome} tem ${entrada.tamanho} bytes`);
   }
+  /**
+   * ⚠⚠ O COMPRIMIDO TAMBÉM TEM TETO, e esta guarda é NOVA (02/09/2026).
+   *
+   * A de cima confia no tamanho DECLARADO pelo diretório central. Um ZIP hostil declara 1 KB e
+   * guarda 4 GB comprimidos: a guarda de cima passa, e quem lê os bytes come a memória inteira
+   * antes de inflar coisa nenhuma.
+   *
+   * ⚠ Ela não recusa arquivo legítimo: deflate praticamente nunca expande (o pior caso do formato é
+   * ~0,03% de acréscimo), então comprimido acima do teto significa inflado acima do teto — que a
+   * regra já recusa. O que ela pega é o cabeçalho MENTINDO, e o motivo é o mesmo.
+   */
+  if (entrada.tamanhoComprimido > maxBytes) {
+    throw new ZipError("zip_entrada_grande_demais", `${entrada.nome} tem ${entrada.tamanhoComprimido} bytes comprimidos`);
+  }
   if (entrada.tamanhoComprimido === 0) return "";
 
-  const inicio = await resolverOffsetDados(caminho, entrada);
+  const inicio = await resolverOffsetDados(caminho, entrada, fh);
   const partes = [];
   let total = 0;
   const coletar = async (origem) => {
@@ -226,14 +246,41 @@ export async function lerTextoDaEntrada(caminho, entrada, { maxBytes = MAX_BYTES
       partes.push(pedaco);
     }
   };
-  const leitura = createReadStream(caminho, {
-    start: inicio,
-    end: inicio + entrada.tamanhoComprimido - 1,
-  });
-  if (entrada.metodo === METODO_DEFLATE) {
-    await pipeline(leitura, createInflateRaw(), coletar);
+
+  /**
+   * ⚠⚠ A ORIGEM DOS BYTES DEPENDE DE QUEM CHAMOU, e a diferença foi MEDIDA (02/09/2026).
+   *
+   * Com `fh` (o caso do `percorrerZip`), os bytes comprimidos saem do handle que já está aberto —
+   * **zero abertura de arquivo por entrada**. Sem `fh`, continua o `createReadStream(start,end)` de
+   * sempre, para quem chama esta função solta não mudar de comportamento.
+   *
+   * ⚠ O bloco comprimido cabe na memória por causa da guarda acima; o INFLADO continua saindo por
+   * stream, com o teto contado pedaço a pedaço. A zip bomb morre nos dois lugares.
+   */
+  let origem;
+  if (fh) {
+    const bruto = Buffer.alloc(entrada.tamanhoComprimido);
+    let lidos = 0;
+    while (lidos < bruto.length) {
+      // eslint-disable-next-line no-await-in-loop
+      const { bytesRead } = await fh.read(bruto, lidos, bruto.length - lidos, inicio + lidos);
+      // ⚠ Fim de arquivo antes do tamanho declarado é ZIP truncado — e ele vira erro DA ENTRADA,
+      // como todo o resto: um arquivo cortado no meio do lote não derruba os vizinhos.
+      if (!bytesRead) throw new ZipError("zip_entrada_truncada", `${entrada.nome} acabou antes do tamanho declarado`);
+      lidos += bytesRead;
+    }
+    origem = Readable.from([bruto]);
   } else {
-    await pipeline(leitura, coletar);
+    origem = createReadStream(caminho, {
+      start: inicio,
+      end: inicio + entrada.tamanhoComprimido - 1,
+    });
+  }
+
+  if (entrada.metodo === METODO_DEFLATE) {
+    await pipeline(origem, createInflateRaw(), coletar);
+  } else {
+    await pipeline(origem, coletar);
   }
   return decodificarXml(Buffer.concat(partes));
 }
@@ -250,14 +297,33 @@ export async function lerTextoDaEntrada(caminho, entrada, { maxBytes = MAX_BYTES
  */
 export async function* percorrerZip(caminho, opcoes = {}) {
   const entradas = await lerDiretorioCentral(caminho);
-  for (const entrada of entradas) {
-    if (entrada.diretorio) continue;
-    try {
-      const texto = await lerTextoDaEntrada(caminho, entrada, opcoes);
-      yield { nome: entrada.nome, texto, tamanho: entrada.tamanho };
-    } catch (err) {
-      yield { nome: entrada.nome, texto: null, erro: err?.codigo || "zip_entrada_ilegivel", mensagem: err?.message || null };
+  /**
+   * ⚠⚠ UM HANDLE PARA O LOTE INTEIRO — e a diferença é grande o bastante para mudar o produto.
+   *
+   * MEDIDO em 02/09/2026, num ZIP de 500 notas: a leitura levava **37,6 s**, ou seja ~75 ms POR
+   * ENTRADA, e o tempo não era do `inflate` — eram DUAS aberturas de arquivo por entrada (uma para
+   * ler os 30 bytes do cabeçalho local, outra para o `createReadStream` dos dados). No Windows,
+   * com antivírus no caminho, abrir arquivo é o custo dominante.
+   *
+   * ⚠ O desenho de memória NÃO mudou: continua UM documento inflado por vez, por stream. O que
+   * deixou de acontecer foi abrir e fechar o mesmo arquivo mil vezes.
+   * ⚠ O handle é fechado no `finally` — o gerador pode ser abandonado no meio (um `break` no
+   * consumidor), e sem isso o descritor vazaria a cada lote interrompido.
+   */
+  const fh = await abrirArquivo(caminho, "r");
+  try {
+    for (const entrada of entradas) {
+      if (entrada.diretorio) continue;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const texto = await lerTextoDaEntrada(caminho, entrada, { ...opcoes, fh });
+        yield { nome: entrada.nome, texto, tamanho: entrada.tamanho };
+      } catch (err) {
+        yield { nome: entrada.nome, texto: null, erro: err?.codigo || "zip_entrada_ilegivel", mensagem: err?.message || null };
+      }
     }
+  } finally {
+    await fh.close().catch(() => {});
   }
 }
 

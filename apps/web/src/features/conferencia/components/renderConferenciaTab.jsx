@@ -854,7 +854,8 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
             aquilo que for lançado, ou seja as saídas do fluxo são as despesas lançadas"*. Com ela,
             "liberar no fluxo sem lançar" deixa de existir como conceito — não é um botão que sumiu,
             é a pergunta que ele respondia que deixou de ser feita.
-            ⚠ A coluna `previstoNoFluxoEm` continua no schema, sem escritor e sem leitor, com lápide.
+            ⚠ A coluna `previstoNoFluxoEm` foi APAGADA do banco em 02/09/2026, por decisão do dono —
+            depois de medida vazia (0 preenchidas em 38 linhas) e sem leitor nem escritor.
           */}
           {/* ⚠⚠ O RISCO DE DESPESA EM DOBRO SAI VISÍVEL, não só no `title` — `title` não aparece no
               teclado nem no toque, e este é o único bloqueio desta tela que, ignorado, erra

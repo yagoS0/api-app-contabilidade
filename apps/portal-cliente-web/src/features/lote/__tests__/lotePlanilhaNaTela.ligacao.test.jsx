@@ -121,6 +121,26 @@ async function subirPlanilha() {
   await waitFor(() => expect(screen.getAllByText(/Rio de Janeiro \/ RJ/).length).toBeGreaterThan(0));
 }
 
+/**
+ * ⚠⚠ TETO DE TEMPO DESTE ARQUIVO — 20 s, e ele é DAQUI, nunca do `jest.config` (02/09/2026).
+ *
+ * ⚠⚠ **O PADRÃO DE 5 s NÃO SOBE NA CONFIGURAÇÃO**, e a razão é concreta: foi ele que expôs, em
+ * 01/09/2026, uma rota que PENDURAVA (a varredura de notas consultando o banco sem dublê). Um teto
+ * global maior teria transformado aquele defeito em *"a suíte está lenta hoje"* — que é exatamente
+ * como esta flutuação foi lida por semanas.
+ *
+ * ⚠⚠ **A MEDIÇÃO QUE JUSTIFICA O NÚMERO** (`jest --json`, 1.434 casos deste app): **17 casos** levam
+ * 3 s ou mais, e eles se concentram em **5 arquivos** — este é um deles. O mais pesado marcou
+ * 6,3 s. Ou seja: o corte de 5 s cai NO MEIO de uma população densa, e quem estoura não é o teste
+ * errado — é o que estava rodando quando a máquina engasgou. Subir teste a teste seria correr atrás
+ * de um alvo que muda a cada execução.
+ *
+ * ⚠ O custo é jsdom montando tabela de verdade (dezenas de células com estilo próprio, várias
+ * renderizações por caso). Não há espera, relógio nem rede aqui — em navegador isto é instantâneo.
+ * ⚠ Os outros ~1.417 casos deste app continuam com os 5 s de sempre.
+ */
+jest.setTimeout(20000);
+
 describe("a corrente: da aba Notas à tela de conferência", () => {
   test("⚠ O BOTÃO EXISTE NA ABA NOTAS e abre a tela do lote", async () => {
     await abrirLote();
@@ -379,6 +399,17 @@ describe("⚠⚠ o botão de emitir — existe, e só depois de confirmar", () =
     expect(api.emitirLoteDeNotas).not.toHaveBeenCalled();
   });
 
+  /**
+   * ⚠⚠ TETO DE TEMPO PRÓPRIO — DESTE caso, nunca da suíte (02/09/2026).
+   *
+   * ⚠⚠ **O PADRÃO DE 5 s NÃO SOBE NO `jest.config`**: foi ele que expôs, em 01/09/2026, uma rota
+   * que PENDURAVA (a varredura de notas chamando o banco sem dublê). Um teto global maior teria
+   * transformado aquele defeito em "a suíte está lenta hoje".
+   *
+   * ⚠ MEDIDO: sozinho este caso PASSA — ele só estoura quando a suíte inteira roda antes dele. Ou
+   * seja, não há espera nem relógio aqui; é pressão acumulada de jsdom (dezenas de renderizações
+   * de tabela num processo só). Em produção este desenho é instantâneo.
+   */
   test("⚠⚠ confirmando, o que vai para a API é o ARQUIVO — nunca a lista de linhas", async () => {
     await abrirLote();
     await subirPlanilha();
