@@ -9,7 +9,13 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({ prisma: {} }));
 
 import { ESTADO } from "../lib/estadosDeclarado.js";
 import { NAO_VIRA } from "../lib/notaViraDeclarado.js";
-import { varrerNotasDaEmpresa } from "../VarreduraDeNotasService.js";
+import {
+  desligarVarreduraAutomatica,
+  lerVarreduraAutomatica,
+  ligarVarreduraAutomatica,
+  varrerEmpresasComVarreduraAutomatica,
+  varrerNotasDaEmpresa,
+} from "../VarreduraDeNotasService.js";
 
 const dia = (s) => new Date(`${s}T00:00:00.000Z`);
 
@@ -243,5 +249,189 @@ describe("⚠ a varredura é SEQUENCIAL", () => {
       .replace(/\/\*[\s\S]*?\*\//g, "");
     expect(fonte).not.toMatch(/Promise\.all/);
     expect(fonte).not.toMatch(/concorrencia|concurrency/i);
+  });
+});
+
+
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠ A VARREDURA AUTOMÁTICA (01/09/2026) — *"elas devem ser trazidas automaticamente"*.
+//
+// ⚠⚠ MEDIDO ANTES DE CONSTRUIR: `varrerNotasDaEmpresa` tinha UM chamador, a rota. Nenhum worker.
+// As notas chegavam sozinhas à base e paravam ali — virar FILA dependia de alguém clicar.
+//
+// O que este bloco prende é o que a automação NÃO pode fazer: escolher a data-piso por ninguém,
+// varrer empresa que não pediu, e falhar em silêncio.
+// -------------------------------------------------------------------------------------------------
+describe("⚠⚠ A VARREDURA AUTOMÁTICA — a escolha do contador virando decisão permanente", () => {
+  /** Um dublê que GUARDA ESTADO — dublê de constante esconderia o `upsert` e o `updateMany`. */
+  function fazerBanco(linhas = []) {
+    const mapa = new Map(linhas.map((l) => [l.portalClientId, { ...l }]));
+    const chamadas = { upsert: [], updateMany: [], deleteMany: [] };
+    return {
+      mapa,
+      chamadas,
+      client: {
+        varreduraAutomaticaDeNotas: {
+          findFirst: jest.fn(async ({ where }) => mapa.get(where.portalClientId) ?? null),
+          findMany: jest.fn(async ({ where } = {}) => {
+            const todas = [...mapa.values()];
+            return where?.portalClientId ? todas.filter((l) => l.portalClientId === where.portalClientId) : todas;
+          }),
+          upsert: jest.fn(async ({ where, create, update }) => {
+            chamadas.upsert.push({ where, create, update });
+            const atual = mapa.get(where.portalClientId);
+            const nova = atual ? { ...atual, ...update } : { ...create };
+            mapa.set(where.portalClientId, nova);
+            return nova;
+          }),
+          updateMany: jest.fn(async ({ where, data }) => {
+            chamadas.updateMany.push({ where, data });
+            const atual = mapa.get(where.portalClientId);
+            if (!atual) return { count: 0 };
+            mapa.set(where.portalClientId, { ...atual, ...data });
+            return { count: 1 };
+          }),
+          deleteMany: jest.fn(async ({ where }) => {
+            chamadas.deleteMany.push({ where });
+            return { count: mapa.delete(where.portalClientId) ? 1 : 0 };
+          }),
+        },
+      },
+    };
+  }
+
+  const config = (extra = {}) => ({
+    portalClientId: "emp-1", dataPiso: dia("2026-07-01"), ligadaEm: dia("2026-08-01"), ligadaPor: "u-1",
+    ultimaTentativaEm: null, ultimoResultadoEm: null, ultimoCriados: null, ultimoErro: null, ...extra,
+  });
+
+  it("⚠⚠ ligar GUARDA A DATA QUE O CONTADOR ESCOLHEU — é ela que a automação repete", async () => {
+    const { client, mapa } = fazerBanco();
+    await ligarVarreduraAutomatica({
+      portalClientId: "emp-1", dataPiso: dia("2026-07-01"), usuarioId: "u-1", client,
+    });
+    expect(mapa.get("emp-1")).toMatchObject({ dataPiso: dia("2026-07-01"), ligadaPor: "u-1" });
+  });
+
+  it("⚠⚠ religar com OUTRA data ZERA as marcas da decisão anterior", async () => {
+    // Mantê-las faria a tela dizer "trouxe 12 notas" sobre um piso que não vale mais.
+    const { client, mapa } = fazerBanco([config({ ultimoCriados: 12, ultimoResultadoEm: dia("2026-08-10") })]);
+    await ligarVarreduraAutomatica({ portalClientId: "emp-1", dataPiso: dia("2026-05-01"), client });
+    expect(mapa.get("emp-1")).toMatchObject({
+      dataPiso: dia("2026-05-01"), ultimoCriados: null, ultimoResultadoEm: null, ultimaTentativaEm: null,
+    });
+  });
+
+  it("⚠⚠ data inválida RECUSA — a automação nunca escolhe o piso", async () => {
+    const { client, mapa } = fazerBanco();
+    for (const ruim of [null, undefined, "2026-07-01", new Date("nada")]) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(ligarVarreduraAutomatica({ portalClientId: "emp-1", dataPiso: ruim, client }))
+        .rejects.toThrow(/data_piso_invalida/);
+    }
+    expect(mapa.size).toBe(0);
+  });
+
+  it("⚠⚠ desligar APAGA a linha — não há «ativa: false» a herdar", async () => {
+    // Uma linha desligada guardaria uma data que ninguém aplica, e a próxima pessoa religaria sem
+    // reescolher, herdando sem saber uma decisão tomada em outro contexto.
+    const { client, mapa } = fazerBanco([config()]);
+    const r = await desligarVarreduraAutomatica({ portalClientId: "emp-1", client });
+    expect(r.desligadas).toBe(1);
+    expect(mapa.size).toBe(0);
+  });
+
+  it("⚠⚠⚠ EMPRESA SEM ESCOLHA NÃO É VARRIDA — a data-piso é do contador, não do sistema", async () => {
+    // ⚠⚠ Este é o teste que impede a automação de virar o muro que a data-piso obrigatória existe
+    // para evitar: são 1.897 NFS-e recebidas, e um piso escolhido pelo sistema despejaria a base.
+    const { client } = fazerBanco([]);
+    const varrer = jest.fn();
+    const r = await varrerEmpresasComVarreduraAutomatica({ client, varrer });
+    expect(r.varridas).toBe(0);
+    expect(varrer).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ varre com a data GUARDADA, e a auditoria diz que quem criou foi o SISTEMA", async () => {
+    // ⚠ Carimbar o contador que ligou atribuiria a ele um ato que ele não praticou naquele instante
+    // — a mesma distinção de `PRESUMIDO_POR_REGRA` contra `DECLARADO_PELO_CONTADOR`.
+    const { client } = fazerBanco([config()]);
+    const varrer = jest.fn(async () => ({ criados: 3, varridas: 10, jaExistiam: 7, fora: [], recusados: [] }));
+    await varrerEmpresasComVarreduraAutomatica({ client, varrer, agora: dia("2026-09-02") });
+    expect(varrer).toHaveBeenCalledWith(expect.objectContaining({
+      portalClientId: "emp-1", dataPiso: dia("2026-07-01"), criadoPor: "sistema:varredura_automatica",
+    }));
+  });
+
+  it("⚠⚠⚠ «OLHEI» É DIFERENTE DE «TROUXE» — e as duas marcas são gravadas separadas", async () => {
+    // ⚠⚠ Confundir as duas custou 29 DIAS de captura parada nesta base sem ninguém perceber: uma
+    // empresa legitimamente quieta ficava idêntica a uma com a rotina quebrada.
+    const { client, mapa } = fazerBanco([config()]);
+    const nada = jest.fn(async () => ({ criados: 0 }));
+    await varrerEmpresasComVarreduraAutomatica({ client, varrer: nada, agora: dia("2026-09-02") });
+    expect(mapa.get("emp-1").ultimaTentativaEm).toEqual(dia("2026-09-02"));
+    // ⚠ Nenhuma nota virou fila: NÃO houve resultado, e a marca de resultado continua nula.
+    expect(mapa.get("emp-1").ultimoResultadoEm).toBeNull();
+
+    const algo = jest.fn(async () => ({ criados: 4 }));
+    await varrerEmpresasComVarreduraAutomatica({ client, varrer: algo, agora: dia("2026-09-03") });
+    expect(mapa.get("emp-1")).toMatchObject({
+      ultimaTentativaEm: dia("2026-09-03"), ultimoResultadoEm: dia("2026-09-03"), ultimoCriados: 4,
+    });
+  });
+
+  it("⚠⚠ falha de UMA empresa não derruba as outras — e o erro FICA gravado", async () => {
+    const { client, mapa } = fazerBanco([config(), config({ portalClientId: "emp-2" })]);
+    const varrer = jest.fn(async ({ portalClientId }) => {
+      if (portalClientId === "emp-1") throw new Error("cert vencido");
+      return { criados: 2 };
+    });
+    const r = await varrerEmpresasComVarreduraAutomatica({ client, varrer, agora: dia("2026-09-02") });
+    expect(r.varridas).toBe(2);
+    expect(mapa.get("emp-1").ultimoErro).toMatch(/cert vencido/);
+    expect(mapa.get("emp-2")).toMatchObject({ ultimoCriados: 2, ultimoErro: null });
+  });
+
+  it("⚠ o erro SOME quando a varredura seguinte dá certo — ele descreve a última tentativa", async () => {
+    const { client, mapa } = fazerBanco([config({ ultimoErro: "cert vencido" })]);
+    await varrerEmpresasComVarreduraAutomatica({
+      client, varrer: jest.fn(async () => ({ criados: 1 })), agora: dia("2026-09-02"),
+    });
+    expect(mapa.get("emp-1").ultimoErro).toBeNull();
+  });
+
+  it("⚠ o worker pode pedir UMA empresa — é o fim do ciclo de captura DELA", async () => {
+    const { client } = fazerBanco([config(), config({ portalClientId: "emp-2" })]);
+    const varrer = jest.fn(async () => ({ criados: 0 }));
+    const r = await varrerEmpresasComVarreduraAutomatica({ client, varrer, apenasPortalClientId: "emp-2" });
+    expect(r.varridas).toBe(1);
+    expect(varrer).toHaveBeenCalledWith(expect.objectContaining({ portalClientId: "emp-2" }));
+  });
+
+  it("⚠⚠ tabela ausente DEGRADA, e diz que não sabe — nunca afirma «não tem»", async () => {
+    // P2021/P2022 é o estado de um banco que ainda não recebeu a migration. `ligada: false` com
+    // `indisponivel: true` é *"não sei olhar"*; sem o segundo campo viraria uma AFIRMAÇÃO sobre a
+    // empresa.
+    const erro = Object.assign(new Error("tabela"), { code: "P2021" });
+    const client = { varreduraAutomaticaDeNotas: {
+      findFirst: jest.fn(async () => { throw erro; }),
+      findMany: jest.fn(async () => { throw erro; }),
+    } };
+    await expect(lerVarreduraAutomatica({ portalClientId: "emp-1", client }))
+      .resolves.toMatchObject({ ligada: false, indisponivel: true });
+    await expect(varrerEmpresasComVarreduraAutomatica({ client }))
+      .resolves.toMatchObject({ varridas: 0, indisponivel: true });
+  });
+
+  it("⚠⚠ e o erro DESCONHECIDO propaga — «o banco caiu» não pode virar «não tem varredura»", async () => {
+    const client = { varreduraAutomaticaDeNotas: {
+      findFirst: jest.fn(async () => { throw new Error("conexão perdida"); }),
+    } };
+    await expect(lerVarreduraAutomatica({ portalClientId: "emp-1", client })).rejects.toThrow(/conexão perdida/);
+  });
+
+  it("⚠ ler devolve `ligada: false` sem linha — e isso é uma RESPOSTA, não uma falha", async () => {
+    const { client } = fazerBanco([]);
+    await expect(lerVarreduraAutomatica({ portalClientId: "emp-1", client }))
+      .resolves.toMatchObject({ ligada: false, config: null, indisponivel: false });
   });
 });

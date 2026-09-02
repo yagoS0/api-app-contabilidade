@@ -942,6 +942,8 @@ model PortalClient {
   regrasContabilizacao    RegraContabilizacao[]
   ofxImports              OfxImport[]
   mapeamentosExtrato      MapeamentoExtrato[]
+  /// ⚠ A decisão de trazer as notas sozinho. Uma por empresa, ou nenhuma.
+  varreduraAutomaticaDeNotas VarreduraAutomaticaDeNotas?
   cienciasDeGuias         CienciaDeGuias[]
   simulacoesPlanejamento  SimulacaoPlanejamento[]
 
@@ -4218,6 +4220,54 @@ model OfxImport {
 ///
 /// ⚠ O ganho é O(1) POR BANCO, não por envio: confirmado uma vez, os próximos arquivos daquele
 /// formato entram sozinhos. É por isso que o mapeamento é uma TABELA e não um passo da tela.
+/// ⚠⚠ A DECISÃO DE TRAZER AS NOTAS SOZINHO — uma linha por empresa (01/09/2026).
+///
+/// > Dono: *"aquela parte onde diz «trazer notas» — elas devem ser trazidas automaticamente, como
+/// > tem na aba de notas fiscais deve aparecer ali."*
+///
+/// ⚠⚠ **POR QUE ISTO É UMA TABELA, E NÃO UMA FLAG DE AMBIENTE.** A varredura EXIGE data-piso, e a
+/// exigência não é burocracia: sem piso, a primeira varredura despeja a base inteira na fila (1.897
+/// NFS-e recebidas) — não é fila, é muro. Um piso escolhido pelo SISTEMA faria o sistema decidir o
+/// tamanho do trabalho que o contador vai encontrar na tela, que é exatamente o que a rota recusa
+/// com `data_piso_obrigatoria`.
+///
+/// ⚠ Daí o desenho: o contador escolhe a data **uma vez**, e essa escolha vira uma decisão
+/// PERMANENTE. A varredura é idempotente (nota que já virou declarado volta como `jaExistiam`, sem
+/// nada ser tocado), então repetir o mesmo piso é seguro por construção — não há cursor a manter.
+///
+/// ⚠⚠ **EMPRESA SEM LINHA AQUI NÃO É VARRIDA SOZINHA**, e isso é a regra, não uma lacuna: ninguém
+/// escolheu o piso dela ainda.
+model VarreduraAutomaticaDeNotas {
+  portalClientId String @id
+
+  /// ⚠ A data que o contador escolheu. É o `desde` da rota, guardado — a MESMA data, para sempre,
+  /// até ele mudá-la. `@db.Date` porque é data civil: a hora aqui viraria deslize de um dia.
+  dataPiso DateTime @db.Date
+
+  ligadaEm  DateTime @default(now())
+  ligadaPor String?
+
+  /// ⚠⚠ "OLHEI" É DIFERENTE DE "TROUXE", e confundir os dois custou 29 dias de captura parada nesta
+  /// base (ver `PortalSyncState`). `ultimaTentativaEm` é gravada SEMPRE que a varredura roda; a de
+  /// resultado, só quando alguma nota virou fila. Sem as duas, "não chegou nota nenhuma" e "ninguém
+  /// varreu" ficam idênticos na tela — e o primeiro é uma afirmação sobre a empresa.
+  ultimaTentativaEm DateTime?
+  ultimoResultadoEm DateTime?
+  /// Quantas viraram fila na última vez que ALGUMA virou. ⚠ `null` = nunca trouxe nada.
+  ultimoCriados     Int?
+  /// ⚠ O erro FICA à vista até a próxima varredura dar certo — falha silenciosa é como a captura
+  /// ficou 29 dias parada sem ninguém perceber.
+  ultimoErro        String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([ultimaTentativaEm])
+  @@map("varreduras_automaticas_de_notas")
+}
+
 model MapeamentoExtrato {
   id             String @id @default(uuid())
   portalClientId String

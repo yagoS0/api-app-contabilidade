@@ -1970,6 +1970,31 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/conferencia/varredura`);
     },
 
+    // ── A VARREDURA AUTOMÁTICA (01/09/2026) ───────────────────────────────────────────────────
+    //
+    // > Dono: *"aquela parte onde diz «trazer notas» — elas devem ser trazidas automaticamente,
+    // > como tem na aba de notas fiscais deve aparecer ali."*
+    //
+    // ⚠⚠ A DATA-PISO CONTINUA OBRIGATÓRIA, e é o ponto: o que a automação guarda é a escolha do
+    // CONTADOR, repetida a cada ciclo de captura. Um piso escolhido pelo sistema despejaria as
+    // 1.897 notas recebidas na fila de uma vez.
+    async getVarreduraAutomatica(companyId) {
+      return request(`/firm/companies/${companyId}/conferencia/varredura-automatica`);
+    },
+    // ⚠ Ligar GUARDA a escolha **e varre na hora** — senão o contador escolhe a data e não vê nada
+    // acontecer até o próximo ciclo do worker, o que se lê como "não funcionou".
+    async postVarreduraAutomatica(companyId, desde) {
+      return request(`/firm/companies/${companyId}/conferencia/varredura-automatica`, {
+        method: "POST",
+        body: JSON.stringify({ desde }),
+      });
+    },
+    // ⚠ Desligar NÃO desfaz nada do que já entrou na fila: aquilo é fato consumado, e apagá-lo
+    // desfaria decisões que o contador já tomou sobre aquelas notas.
+    async deleteVarreduraAutomatica(companyId) {
+      return request(`/firm/companies/${companyId}/conferencia/varredura-automatica`, { method: "DELETE" });
+    },
+
     // ── A REGRA DO FORNECEDOR, E O EXTRATO DO QUE ELA LANÇOU (29/08/2026) ─────────────────────
     //
     // > Dono: *"o contador deve poder colocar o código de débito e crédito nessa despesa, e todo

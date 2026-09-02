@@ -3257,6 +3257,23 @@ const mexidasDesfeitas = new Set();
 /** ⚠ Estado em memória das fotos de simulação, por empresa. Ver o par acima. */
 const mockSimulacoesPlanejamento = {};
 
+/**
+ * ⚠⚠ A VARREDURA AUTOMÁTICA DA CONFERÊNCIA, offline — estado de MÓDULO porque ligar e desligar
+ * precisam mudar a resposta seguinte. Um mock que respondesse sempre a mesma coisa esconderia o ato.
+ * ⚠ Nasce LIGADA: o estado interessante é o que tem data-piso e as duas marcas para desenhar.
+ */
+let varreduraAutomaticaDoMock = {
+  ligada: true,
+  desde: "2026-07-01",
+  ligadaEm: "2026-08-01T10:00:00.000Z",
+  // ⚠⚠ «OLHEI» É DEPOIS DE «TROUXE», e é o caso normal: varri hoje e não veio nada; a última que
+  // veio foi anteontem. É o único arranjo em que a distinção aparece na tela.
+  ultimaTentativaEm: "2026-09-02T08:00:00.000Z",
+  ultimoResultadoEm: "2026-08-31T08:00:00.000Z",
+  ultimoCriados: 12,
+  ultimoErro: null,
+};
+
 export function createMockApi() {
   let accessToken = "";
 
@@ -8006,6 +8023,50 @@ export function createMockApi() {
           { notaId: "nota-91", motivo: "cancelada", frase: "A nota foi cancelada." },
         ],
       };
+    },
+    /**
+     * ⚠⚠ A VARREDURA AUTOMÁTICA, offline — e ela nasce LIGADA no mock, de propósito.
+     *
+     * O estado interessante é o ligado: é ele que tem data-piso, «olhei» e «trouxe» para desenhar.
+     * Nascendo desligada, a linha de estado — que é a metade visível desta entrega — só apareceria
+     * para quem ligasse à mão, e o ramo ficaria inalcançável numa conferência offline.
+     *
+     * ⚠ `ultimaTentativaEm` é DEPOIS de `ultimoResultadoEm` de propósito: é o caso normal (olhei
+     * hoje, não veio nada; a última que veio foi anteontem) e o único em que a distinção aparece.
+     */
+    async getVarreduraAutomatica(_companyId) {
+      await delay(60);
+      if (!varreduraAutomaticaDoMock) {
+        return { ok: true, ligada: false, indisponivel: false, desde: null };
+      }
+      return { ok: true, indisponivel: false, ...varreduraAutomaticaDoMock };
+    },
+    async postVarreduraAutomatica(_companyId, desde) {
+      await delay(180);
+      varreduraAutomaticaDoMock = {
+        ligada: true,
+        desde,
+        ligadaEm: new Date().toISOString(),
+        ultimaTentativaEm: new Date().toISOString(),
+        ultimoResultadoEm: new Date().toISOString(),
+        ultimoCriados: 12,
+        ultimoErro: null,
+      };
+      // ⚠ O relatório volta com as MESMAS chaves do botão avulso — no servidor as duas portas
+      // compartilham o corpo (`varrerAgora`), e um mock que divergisse esconderia isso.
+      return {
+        ok: true, ligada: true, desde,
+        varridas: 18, criados: 12, jaExistiam: 4,
+        fora: [{ notaId: "nota-80", motivo: "anterior_ao_piso" }],
+        recusados: [
+          { notaId: "nota-90", motivo: "sem_valor", frase: "A nota não tem valor — não vira despesa." },
+        ],
+      };
+    },
+    async deleteVarreduraAutomatica(_companyId) {
+      await delay(80);
+      varreduraAutomaticaDoMock = null;
+      return { ok: true, ligada: false, desligadas: 1 };
     },
     async getConferenciaVarredura(_companyId) {
       await delay(60);

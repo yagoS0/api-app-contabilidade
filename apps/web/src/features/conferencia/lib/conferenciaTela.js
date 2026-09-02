@@ -656,6 +656,70 @@ export function fraseDaDivergencia(divergencia) {
   );
 }
 
+/**
+ * ⚠⚠ COMO A TELA CONTA O ESTADO DA VARREDURA AUTOMÁTICA — decisão do dono, 01/09/2026:
+ * *"elas devem ser trazidas automaticamente, como tem na aba de notas fiscais deve aparecer ali"*.
+ *
+ * ⚠⚠ SÃO QUATRO RESPOSTAS, e amassá-las em duas é o defeito que esta função existe para impedir:
+ *
+ *   `desligada`     ninguém escolheu a data-piso desta empresa. **Não é erro** — é o estado inicial.
+ *   `nunca_olhou`   ligada agora mesmo; o worker ainda não passou.
+ *   `sem_novidade`  **olhou e não veio nada**. Esta é a que some quando se conta mal.
+ *   `trouxe`        a última varredura pôs notas na fila.
+ *   `erro`          a última tentativa falhou — e isso fica à vista até uma dar certo.
+ *
+ * ⚠⚠ "OLHEI" É DIFERENTE DE "TROUXE", e confundir os dois deixou a captura de notas **29 dias
+ * parada em produção** sem ninguém perceber: uma empresa legitimamente quieta ficava idêntica a uma
+ * com a rotina quebrada.
+ * ⚠ `indisponivel` (banco sem a migration) NÃO vira "desligada": aquilo seria uma afirmação sobre a
+ * empresa, e a resposta certa é "não sei olhar".
+ */
+export const ESTADO_DA_AUTOMACAO = Object.freeze({
+  INDISPONIVEL: "indisponivel",
+  DESLIGADA: "desligada",
+  NUNCA_OLHOU: "nunca_olhou",
+  SEM_NOVIDADE: "sem_novidade",
+  TROUXE: "trouxe",
+  ERRO: "erro",
+});
+
+export function leituraDaAutomacao(r) {
+  if (!r || r.indisponivel) return { estado: ESTADO_DA_AUTOMACAO.INDISPONIVEL, frase: "Não foi possível saber se as notas estão sendo trazidas sozinhas." };
+  if (!r.ligada) {
+    return {
+      estado: ESTADO_DA_AUTOMACAO.DESLIGADA,
+      frase: "As notas recebidas não estão sendo trazidas sozinhas. Escolha a partir de que data elas devem entrar.",
+    };
+  }
+  const desde = dataCivil(r.desde);
+  if (r.ultimoErro) {
+    return {
+      estado: ESTADO_DA_AUTOMACAO.ERRO,
+      // ⚠ O erro FICA à vista até uma varredura dar certo — e vem com a data-piso junto, porque
+      // "falhou" sem dizer o que se tentava fazer não é conserto de ninguém.
+      frase: `A última tentativa de trazer as notas (desde ${desde}) falhou: ${r.ultimoErro}`,
+    };
+  }
+  if (!r.ultimaTentativaEm) {
+    return {
+      estado: ESTADO_DA_AUTOMACAO.NUNCA_OLHOU,
+      frase: `Trazendo as notas sozinho desde ${desde}. A próxima busca acontece no ciclo de captura.`,
+    };
+  }
+  if (!r.ultimoResultadoEm) {
+    return {
+      estado: ESTADO_DA_AUTOMACAO.SEM_NOVIDADE,
+      // ⚠⚠ A frase DIZ que olhou. Sem ela, "nenhuma nota nova" é indistinguível de "ninguém olhou".
+      frase: `Trazendo as notas sozinho desde ${desde}. A última busca não encontrou nota nova.`,
+    };
+  }
+  const n = Number(r.ultimoCriados || 0);
+  return {
+    estado: ESTADO_DA_AUTOMACAO.TROUXE,
+    frase: `Trazendo as notas sozinho desde ${desde}. A última que trouxe algo pôs ${n} nota(s) na fila.`,
+  };
+}
+
 /** ⚠ A ordem: o que tem decisão esperando primeiro; o que não tem nota, por último. */
 export function ordenarCasamentos(linhas) {
   const peso = (l) => (l?.sugestao ? 0 : l?.motivo === SEM_CASAMENTO.AMBIGUO ? 1 : 2);

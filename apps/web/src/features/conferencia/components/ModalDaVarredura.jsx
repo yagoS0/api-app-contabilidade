@@ -19,10 +19,19 @@ import { dataPisoEhValida, fraseDaRecusa, leituraDaVarredura } from "../lib/conf
 
 const varreduraApi = createApiClient();
 
-export function ModalDaVarredura({ companyId, aoFechar, aoConcluir }) {
+export function ModalDaVarredura({ companyId, aoFechar, aoConcluir, jaAutomatica = false }) {
   // ⚠⚠ NASCE VAZIO. Sugerir "o primeiro dia do mês" pareceria prestativo e seria a tela decidindo o
   // volume de trabalho — exatamente o que a obrigatoriedade da data existe para impedir.
   const [desde, setDesde] = useState("");
+  /**
+   * ⚠⚠ NASCE MARCADO — e isso é a decisão do dono, não uma preferência: *"elas devem ser trazidas
+   * automaticamente"*. O padrão é o que ele pediu; a caixa existe porque a varredura avulsa
+   * continua sendo legítima (alcançar um período antigo uma vez só, sem mudar a regra permanente).
+   *
+   * ⚠ Isto NÃO é a tela escolhendo a data-piso — aquela continua vazia e obrigatória. O que a caixa
+   * decide é se a data que O CONTADOR escolher vale uma vez ou daqui em diante.
+   */
+  const [automatica, setAutomatica] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState(null);
   const [relatorio, setRelatorio] = useState(null);
@@ -33,7 +42,11 @@ export function ModalDaVarredura({ companyId, aoFechar, aoConcluir }) {
     setEnviando(true);
     setErro(null);
     try {
-      const r = await varreduraApi.postVarrerNotas(companyId, desde);
+      // ⚠⚠ DUAS PORTAS, UM CORPO — no servidor as duas chamam `varrerAgora`, então o relatório
+      // volta com as mesmas chaves. A diferença é só se a escolha do contador fica guardada.
+      const r = automatica
+        ? await varreduraApi.postVarreduraAutomatica(companyId, desde)
+        : await varreduraApi.postVarrerNotas(companyId, desde);
       setRelatorio(leituraDaVarredura(r));
       aoConcluir?.();
     } catch (e) {
@@ -122,9 +135,33 @@ export function ModalDaVarredura({ companyId, aoFechar, aoConcluir }) {
               e uma fila com centenas de itens não é uma fila. Varrer de novo mais tarde <strong>não
               duplica</strong> o que já entrou.
             </div>
+            {/* ⚠⚠ A DECISÃO DE TRAZER SOZINHO — dono, 01/09/2026. Marcada por padrão porque é o
+                que ele pediu; a caixa existe porque a varredura avulsa continua legítima (alcançar
+                um período antigo uma vez, sem mudar a regra permanente). */}
+            <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.85rem" }}>
+              <input
+                type="checkbox"
+                checked={automatica}
+                onChange={(e) => setAutomatica(e.target.checked)}
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                <strong>Trazer as notas sozinho daqui em diante</strong>, usando esta mesma data de corte.
+                <span style={{ display: "block", color: "var(--text-muted)" }}>
+                  A cada busca de notas da empresa, as recebidas desde essa data entram na fila sem você
+                  precisar voltar aqui. {jaAutomatica ? "Já está ligado — confirmar troca a data." : null}
+                </span>
+              </span>
+            </label>
             <div style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
               As notas entram <strong>sem lançamento contábil</strong>: elas ficam esperando o pagamento,
               e quem contabiliza é você, linha a linha.
+              {automatica ? (
+                <>
+                  {" "}⚠ Isso vale para o que entrar sozinho também — <strong>a varredura automática
+                  não lança nada</strong>.
+                </>
+              ) : null}
             </div>
           </>
         )}

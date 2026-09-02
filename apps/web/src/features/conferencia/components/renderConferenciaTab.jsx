@@ -35,6 +35,8 @@ import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
 import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
 import { debitosQueCasamComNota, FRASE_DO_FORA_DO_LOTE } from "../lib/contabilizacaoEmLote";
 import {
+  ESTADO_DA_AUTOMACAO,
+  leituraDaAutomacao,
   ACAO,
   COMPETENCIA_AUSENTE,
   ORIGEM_PAGAMENTO,
@@ -780,6 +782,15 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
   const [aviso, setAviso] = useState(null);
   const [varrendo, setVarrendo] = useState(false);
   /**
+   * ⚠⚠ O ESTADO DA VARREDURA AUTOMÁTICA — decisão do dono, 01/09/2026: *"elas devem ser trazidas
+   * automaticamente, como tem na aba de notas fiscais deve aparecer ali"*.
+   *
+   * ⚠ Ele é LIDO, nunca deduzido da fila: uma fila cheia não prova que a rotina rodou, e uma fila
+   * vazia não prova que ela está parada. A pergunta *"alguém está trazendo as notas?"* só tem uma
+   * fonte, e é o servidor.
+   */
+  const [automacao, setAutomacao] = useState(null);
+  /**
    * ⚠⚠⚠ QUAIS DÉBITOS JÁ CASAM COM UMA NOTA — e é isto que impede a DESPESA EM DOBRO na linha.
    *
    * O lote já se protegia: `abrirLote` **recusa abrir** sem esta resposta, porque *"contabilizar à
@@ -877,6 +888,24 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
       .catch(() => { if (vivo) setFora(null); });
     return () => { vivo = false; };
   }, [companyId, competenciaDaConsulta, versao]);
+
+  /**
+   * ⚠ Consulta PRÓPRIA, e de propósito: a automação não muda quando a fila muda, e pendurá-la no
+   * `carregar` faria toda mudança de filtro bater numa rota que não tem nada a ver com o recorte.
+   * ⚠⚠ Falha vira `indisponivel`, nunca "desligada": a segunda é uma afirmação sobre a empresa.
+   */
+  const lerAutomacao = useCallback(async () => {
+    if (!companyId) return;
+    try {
+      setAutomacao(await conferenciaApi.getVarreduraAutomatica(companyId));
+    } catch {
+      setAutomacao({ ligada: false, indisponivel: true });
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    lerAutomacao();
+  }, [lerAutomacao]);
 
   const carregar = useCallback(async () => {
     if (!companyId) return;
@@ -1022,6 +1051,19 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
     [companyId, carregar],
   );
 
+  /**
+   * ⚠⚠ DESLIGAR NÃO DESFAZ NADA do que já entrou na fila — aquilo é fato consumado, e apagá-lo
+   * desfaria decisões que o contador já tomou sobre aquelas notas. O que para é a repetição.
+   */
+  const desligarAutomacao = useCallback(async () => {
+    if (!companyId) return;
+    try {
+      await conferenciaApi.deleteVarreduraAutomatica(companyId);
+    } finally {
+      lerAutomacao();
+    }
+  }, [companyId, lerAutomacao]);
+
   const abrirLote = useCallback(async () => {
     setAviso(null);
     setAbrindoLote(true);
@@ -1103,7 +1145,9 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
             disabled={!podeEscrever}
             title={podeEscrever ? "Trazer notas recebidas para a fila." : "Seu perfil não pode alterar lançamentos desta empresa."}
           >
-            Trazer notas
+            {/* ⚠ O rótulo muda quando a rotina já está ligada: "Trazer notas" ali prometeria um ato
+                avulso, e o que o botão abre é a troca da data que vale daqui em diante. */}
+            {automacao?.ligada ? "Trazer notas · ajustar" : "Trazer notas"}
           </Button>
           {/* ⚠⚠ A PORTA DO LOTE — *"ai clicamos em importar e abre o modal para trabalharmos nele"*.
               O botão fica VISÍVEL e desabilitado com o motivo: botão que some esconde que a ação
@@ -1150,6 +1194,66 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
           </Button>
         </div>
       </div>
+
+      {/* ─────────────────────────────────────────────────────────────────────────────────────────
+          ⚠⚠ ESTÃO TRAZENDO AS NOTAS SOZINHO? — decisão do dono, 01/09/2026: *"elas devem ser
+          trazidas automaticamente, como tem na aba de notas fiscais deve aparecer ali"*.
+
+          ⚠⚠ ESTA LINHA É A METADE VISÍVEL DA ENTREGA, e ela existe pelo mesmo motivo do aviso
+          *"Última busca há 2h…"* da aba Notas Fiscais: **sem nota na tela, o contador precisa saber
+          se ninguém olhou, se olharam e não veio nada, ou se deu erro.** Uma fila vazia não
+          distingue as três, e a diferença entre elas é a diferença entre esperar e ir consertar.
+
+          ⚠ Discreta de propósito — ela é ciência, não tarefa. O ERRO é a exceção: esse não é para
+          ficar quieto, e sai em `--state-warn` (há uma decisão a tomar, nada está bloqueado).
+          ⚠⚠ E NÃO É `title`: `title` não aparece no teclado nem no toque. A regra desta casa.
+          ───────────────────────────────────────────────────────────────────────────────────────── */}
+      {automacao ? (() => {
+        const leitura = leituraDaAutomacao(automacao);
+        const alarma = leitura.estado === ESTADO_DA_AUTOMACAO.ERRO;
+        return (
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              flexWrap: "wrap",
+              fontSize: "0.78rem",
+              color: alarma ? "var(--state-warn)" : "var(--text-faint)",
+              ...(alarma
+                ? {
+                  background: "var(--state-warn-surface)",
+                  border: "1px solid var(--state-warn)",
+                  borderRadius: 8,
+                  padding: "6px 10px",
+                }
+                : {}),
+            }}
+          >
+            <span>{leitura.frase}</span>
+            {automacao.ligada && podeEscrever ? (
+              <button
+                type="button"
+                onClick={desligarAutomacao}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  color: "inherit",
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                  font: "inherit",
+                }}
+                /* ⚠ O que ele desfaz é a REPETIÇÃO, nunca a fila — e a frase diz isso, porque
+                   "parar de trazer" se lê facilmente como "tirar o que já veio". */
+                title="Para de trazer sozinho. As notas que já entraram na fila continuam lá."
+              >
+                parar de trazer sozinho
+              </button>
+            ) : null}
+          </div>
+        );
+      })() : null}
 
       <SecaoDaConferencia natureza={NATUREZA.VIRA_LANCAMENTO}>
         {/* ⚠ ACIMA DA FILA de propósito: um débito de extrato sem nota vinculada é o que pode virar
@@ -1423,12 +1527,18 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
       {varrendo ? (
         <ModalDaVarredura
           companyId={companyId}
+          jaAutomatica={Boolean(automacao?.ligada)}
           aoFechar={() => setVarrendo(false)}
           aoConcluir={() => {
             // ⚠ A fila muda: as notas novas entram. Recarregar aqui evita o "varri e não apareceu
             // nada", que se lê como falha.
             carregar();
             setVersao((v) => v + 1);
+            // ⚠⚠ E O ESTADO DA AUTOMAÇÃO TAMBÉM — MEDIDO no navegador (01/09/2026): varrer com a
+            // caixa marcada LIGAVA a rotina no servidor e a linha continuava dizendo *"não estão
+            // sendo trazidas sozinhas"* até alguém recarregar a página. A tela negava, por escrito,
+            // o que o contador tinha acabado de fazer.
+            lerAutomacao();
           }}
         />
       ) : null}

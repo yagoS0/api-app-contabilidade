@@ -802,3 +802,82 @@ describe("⚠⚠ fraseDaDivergencia — a metade «e AVISA» da decisão do dono
     expect(fraseDaDivergencia(undefined)).toBeNull();
   });
 });
+
+
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠ O ESTADO DA VARREDURA AUTOMÁTICA — *"elas devem ser trazidas automaticamente, como tem na aba
+// de notas fiscais deve aparecer ali"* (dono, 01/09/2026).
+//
+// ⚠⚠ SÃO CINCO RESPOSTAS, e amassá-las em duas é o defeito que esta leitura existe para impedir. A
+// que sempre some é **"olhei e não veio nada"** — e confundi-la com "ninguém olhou" deixou a
+// captura de notas 29 dias parada em produção sem ninguém perceber.
+// -------------------------------------------------------------------------------------------------
+describe("⚠⚠ leituraDaAutomacao — «ninguém olhou» ≠ «olhei e não veio nada»", () => {
+  const { ESTADO_DA_AUTOMACAO, leituraDaAutomacao } = require("../conferenciaTela.js");
+
+  const ligada = (extra = {}) => ({
+    ligada: true, indisponivel: false, desde: "2026-07-01",
+    ultimaTentativaEm: null, ultimoResultadoEm: null, ultimoCriados: null, ultimoErro: null, ...extra,
+  });
+
+  it("⚠ desligada: diz o que fazer, e não trata isso como erro", () => {
+    const r = leituraDaAutomacao({ ligada: false, indisponivel: false });
+    expect(r.estado).toBe(ESTADO_DA_AUTOMACAO.DESLIGADA);
+    expect(r.frase).toMatch(/escolha a partir de que data/i);
+  });
+
+  it("⚠⚠ «não sei olhar» NÃO vira «desligada» — a segunda é uma afirmação sobre a empresa", () => {
+    for (const caso of [null, undefined, { indisponivel: true }, { ligada: true, indisponivel: true }]) {
+      expect(leituraDaAutomacao(caso).estado).toBe(ESTADO_DA_AUTOMACAO.INDISPONIVEL);
+    }
+  });
+
+  it("ligada e nunca varrida: diz que a próxima busca vem no ciclo", () => {
+    const r = leituraDaAutomacao(ligada());
+    expect(r.estado).toBe(ESTADO_DA_AUTOMACAO.NUNCA_OLHOU);
+    expect(r.frase).toMatch(/01\/07\/2026/);
+  });
+
+  it("⚠⚠⚠ OLHOU E NÃO VEIO NADA — e a frase DIZ que olhou", () => {
+    // ⚠⚠ Esta é a resposta que some quando se conta mal, e a diferença entre ela e «ninguém olhou»
+    // é a diferença entre esperar e ir consertar.
+    const r = leituraDaAutomacao(ligada({ ultimaTentativaEm: "2026-09-02T08:00:00.000Z" }));
+    expect(r.estado).toBe(ESTADO_DA_AUTOMACAO.SEM_NOVIDADE);
+    expect(r.frase).toMatch(/última busca não encontrou nota nova/i);
+  });
+
+  it("trouxe: diz quantas, e a data-piso continua à vista", () => {
+    const r = leituraDaAutomacao(ligada({
+      ultimaTentativaEm: "2026-09-02T08:00:00.000Z",
+      ultimoResultadoEm: "2026-08-31T08:00:00.000Z",
+      ultimoCriados: 12,
+    }));
+    expect(r.estado).toBe(ESTADO_DA_AUTOMACAO.TROUXE);
+    expect(r.frase).toMatch(/12 nota/);
+    expect(r.frase).toMatch(/01\/07\/2026/);
+  });
+
+  it("⚠⚠ o ERRO vence as outras leituras — ele fica à vista até uma varredura dar certo", () => {
+    // Falha silenciosa aqui é exatamente como a captura ficou 29 dias parada sem ninguém notar.
+    const r = leituraDaAutomacao(ligada({
+      ultimaTentativaEm: "2026-09-02T08:00:00.000Z",
+      ultimoResultadoEm: "2026-08-31T08:00:00.000Z",
+      ultimoCriados: 12,
+      ultimoErro: "certificado A1 vencido",
+    }));
+    expect(r.estado).toBe(ESTADO_DA_AUTOMACAO.ERRO);
+    expect(r.frase).toMatch(/certificado A1 vencido/);
+    // ⚠ E diz o que se tentava fazer: "falhou" sozinho não é conserto de ninguém.
+    expect(r.frase).toMatch(/01\/07\/2026/);
+  });
+
+  it("⚠ toda leitura tem frase — nenhuma volta muda", () => {
+    const casos = [
+      null, { indisponivel: true }, { ligada: false }, ligada(),
+      ligada({ ultimaTentativaEm: "2026-09-02T08:00:00.000Z" }),
+      ligada({ ultimaTentativaEm: "2026-09-02T08:00:00.000Z", ultimoResultadoEm: "2026-09-02T08:00:00.000Z", ultimoCriados: 1 }),
+      ligada({ ultimoErro: "x" }),
+    ];
+    for (const c of casos) expect(leituraDaAutomacao(c).frase.length).toBeGreaterThan(10);
+  });
+});

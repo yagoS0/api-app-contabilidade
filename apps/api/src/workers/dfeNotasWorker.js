@@ -23,6 +23,7 @@ import { tryAcquireGuideLock, releaseGuideLock } from "../application/guides/Gui
 import { syncDfeForCompany } from "../application/notas/dfe/DfeSyncService.js";
 import { syncAdnNotasForCompany } from "../application/notas/adn/AdnNotasService.js";
 import { processPendingForCompany as processManifestacoes } from "../application/notas/dfe/NfeManifestacaoService.js";
+import { varrerEmpresasComVarreduraAutomatica } from "../application/declarados/VarreduraDeNotasService.js";
 
 const LOCK_ID = "dfe_notas_capture_lock";
 const LOCK_TTL_MS = 30 * 60 * 1000; // 30 min
@@ -86,7 +87,9 @@ export async function runDfeNotasWorkerOnce(options = {}) {
   if (!locked) return { skipped: true, reason: "lock_active" };
 
   const startedAt = Date.now();
-  const results = { dfe: [], adn: [], manifest: [] };
+  // ⚠ `conferencia` nasce como lista, e não sob demanda: um campo que só existe quando houve
+  // resultado faz "não varreu" e "varreu e não veio nada" ficarem idênticos para quem lê o resumo.
+  const results = { dfe: [], adn: [], manifest: [], conferencia: [] };
   const inelegiveis = [];
   try {
     const empresas = await listCompaniesComElegibilidade();
@@ -226,6 +229,41 @@ export async function runDfeNotasWorkerOnce(options = {}) {
       } catch (err) {
         log.warn({ err: err?.message, portalClientId: portal.id }, "[dfeNotasWorker] erro Manifest");
         results.manifest.push({ portalClientId: portal.id, ok: false, error: err?.message });
+      }
+
+      /**
+       * ⚠⚠ AS NOTAS QUE ACABARAM DE CHEGAR VIRAM FILA — decisão do dono, 01/09/2026: *"aquela parte
+       * onde diz «trazer notas» — elas devem ser trazidas automaticamente, como tem na aba de notas
+       * fiscais deve aparecer ali."*
+       *
+       * ⚠⚠ **O LUGAR FOI ESCOLHIDO, NÃO SOBROU.** É aqui, no fim do ciclo de captura DESTA empresa,
+       * que as notas dela acabaram de entrar na base. Varrer noutro laço faria a nota esperar até o
+       * próximo ciclo para aparecer na Conferência — e "automático com um ciclo de atraso" é o tipo
+       * de coisa que ninguém consegue explicar depois.
+       *
+       * ⚠⚠ **SÓ VARRE QUEM ESCOLHEU A DATA-PISO.** Empresa sem linha em `varreduras_automaticas_de_notas`
+       * não é tocada: a data-piso é decisão do contador, e escolhê-la por ele faria o sistema decidir
+       * o tamanho do trabalho que ele vai encontrar na tela.
+       *
+       * ⚠⚠ **ELA ENFILEIRA E PARA AÍ — não lança nada.** O `lancarPorRegraNaEmpresa` que a varredura
+       * MANUAL dispara NÃO entra aqui: criar `AccountingEntry` a partir de um processo de fundo, sem
+       * ninguém presente, é mudar a forma como o lançamento acontece, e isso é pedido explícito do
+       * dono — não efeito colateral de "trazer as notas sozinho".
+       *
+       * ⚠ E não derruba a captura: falha vira `ultimoErro` gravado na linha da empresa.
+       */
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const v = await varrerEmpresasComVarreduraAutomatica({ apenasPortalClientId: portal.id });
+        const dela = v.empresas?.[0];
+        if (dela && (dela.criados > 0 || dela.erro)) {
+          results.conferencia.push({
+            portalClientId: portal.id, razao: portal.razao,
+            criados: dela.criados, erro: dela.erro || null,
+          });
+        }
+      } catch (err) {
+        log.warn({ err: err?.message, portalClientId: portal.id }, "[dfeNotasWorker] erro varredura da Conferencia");
       }
     }
 

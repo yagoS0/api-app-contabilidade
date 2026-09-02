@@ -16,6 +16,9 @@ jest.mock("../../../middlewares/requireFirmCompanyAccess.js", () => ({
 }));
 
 jest.mock("../../../application/declarados/VarreduraDeNotasService.js", () => ({
+  lerVarreduraAutomatica: jest.fn(async () => ({ ligada: false, config: null, indisponivel: false })),
+  ligarVarreduraAutomatica: jest.fn(async () => ({ portalClientId: "emp-1" })),
+  desligarVarreduraAutomatica: jest.fn(async () => ({ desligadas: 1 })),
   varrerNotasDaEmpresa: jest.fn(async () => ({
     varridas: 82, criados: 8, jaExistiam: 0,
     fora: [{ motivo: "cancelada", frase: "A nota está cancelada.", n: 31, exemplos: ["pi-9"] }],
@@ -1109,5 +1112,118 @@ describe("⚠⚠ o EXTRATO de lançados por regra", () => {
 
     const gates = requireFirmCompanyAccess.mock.calls.map(([o]) => o?.minRole ?? null);
     expect(gates).toContain("ACCOUNTANT");
+  });
+});
+
+
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠ A VARREDURA AUTOMÁTICA — as rotas (dono, 01/09/2026).
+//
+// > *"aquela parte onde diz «trazer notas» — elas devem ser trazidas automaticamente, como tem na
+// > aba de notas fiscais deve aparecer ali."*
+//
+// ⚠⚠ A DATA-PISO CONTINUA OBRIGATÓRIA, e é o ponto: o que a automação guarda é a escolha do
+// CONTADOR, repetida. Um piso escolhido pelo sistema despejaria a base inteira na fila.
+// -------------------------------------------------------------------------------------------------
+describe("⚠⚠ /conferencia/varredura-automatica", () => {
+  const {
+    lerVarreduraAutomatica,
+    ligarVarreduraAutomatica,
+    desligarVarreduraAutomatica,
+  } = require("../../../application/declarados/VarreduraDeNotasService.js");
+
+  const LER = () => request(makeApp()).get("/firm/companies/emp-1/conferencia/varredura-automatica");
+  const LIGAR = (body) => request(makeApp()).post("/firm/companies/emp-1/conferencia/varredura-automatica").send(body);
+  const DESLIGAR = () => request(makeApp()).delete("/firm/companies/emp-1/conferencia/varredura-automatica");
+
+  it("⚠ desligada: `ligada: false`, e nada mais é afirmado", async () => {
+    const r = await LER();
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, ligada: false, desde: null, indisponivel: false });
+  });
+
+  it("⚠⚠⚠ ligada: as TRÊS respostas viajam separadas — a data, «olhei» e «trouxe»", async () => {
+    // ⚠⚠ Amassar as duas últimas numa só foi o que deixou a captura 29 dias parada em produção:
+    // "olhei e não veio nada" ficava idêntico a "ninguém olhou".
+    lerVarreduraAutomatica.mockResolvedValueOnce({
+      ligada: true,
+      indisponivel: false,
+      config: {
+        dataPiso: new Date("2026-07-01T00:00:00.000Z"),
+        ligadaEm: new Date("2026-08-01T10:00:00.000Z"),
+        ultimaTentativaEm: new Date("2026-09-02T08:00:00.000Z"),
+        ultimoResultadoEm: new Date("2026-08-30T08:00:00.000Z"),
+        ultimoCriados: 12,
+        ultimoErro: null,
+      },
+    });
+    const r = await LER();
+    expect(r.body).toMatchObject({ ligada: true, desde: "2026-07-01", ultimoCriados: 12 });
+    expect(r.body.ultimaTentativaEm).not.toBe(r.body.ultimoResultadoEm);
+    // ⚠ A data-piso sai como DIA, nunca ISO completa — ela é data civil.
+    expect(r.body.desde).not.toMatch(/T/);
+  });
+
+  it("⚠⚠ `indisponivel` viaja — «não sei olhar» não pode virar «esta empresa não tem»", async () => {
+    lerVarreduraAutomatica.mockResolvedValueOnce({ ligada: false, config: null, indisponivel: true });
+    const r = await LER();
+    expect(r.body).toMatchObject({ ligada: false, indisponivel: true });
+  });
+
+  it("⚠⚠ ligar SEM data recusa — a mesma exigência da varredura avulsa", async () => {
+    const r = await LIGAR({});
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("data_piso_obrigatoria");
+    expect(r.body.message).toMatch(/toda a base/i);
+    expect(ligarVarreduraAutomatica).not.toHaveBeenCalled();
+  });
+
+  it("⚠ data mal formada recusa com código PRÓPRIO", async () => {
+    const r = await LIGAR({ desde: "07/2026" });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("data_piso_invalida");
+    expect(ligarVarreduraAutomatica).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠⚠ ligar GUARDA a escolha E VARRE AGORA — senão o contador escolhe e não vê nada", async () => {
+    // ⚠ Sem a varredura imediata, a fila só mudaria no próximo ciclo do worker (1h). Quem acabou de
+    // escolher a data leria isso como "não funcionou".
+    const r = await LIGAR({ desde: "2026-07-01" });
+    expect(r.status).toBe(200);
+    expect(ligarVarreduraAutomatica).toHaveBeenCalledWith(expect.objectContaining({
+      portalClientId: "emp-1", usuarioId: "u-1",
+    }));
+    expect(ligarVarreduraAutomatica.mock.calls[0][0].dataPiso.toISOString()).toBe("2026-07-01T00:00:00.000Z");
+    // ⚠⚠ O relatório INTEIRO volta, igual ao do botão avulso — é o MESMO corpo (`varrerAgora`).
+    expect(varrerNotasDaEmpresa).toHaveBeenCalled();
+    expect(r.body).toMatchObject({ ok: true, ligada: true, desde: "2026-07-01", varridas: 82, criados: 8 });
+  });
+
+  it("⚠⚠ as DUAS PORTAS usam o MESMO corpo — o relatório tem as mesmas chaves", async () => {
+    // Duas cópias divergiriam na primeira correção, e a divergência sairia como série auto-ativada
+    // por um caminho e não pelo outro — invisível até alguém comparar as duas telas.
+    const avulsa = await request(makeApp()).post("/firm/companies/emp-1/conferencia/varrer-notas?desde=2026-07-01");
+    const ligando = await LIGAR({ desde: "2026-07-01" });
+    const chaves = (b) => Object.keys(b).filter((k) => k !== "ligada").sort();
+    expect(chaves(ligando.body)).toEqual(chaves(avulsa.body));
+  });
+
+  it("⚠⚠ desligar APAGA e não toca na fila", async () => {
+    const r = await DESLIGAR();
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, ligada: false, desligadas: 1 });
+    expect(desligarVarreduraAutomatica).toHaveBeenCalledWith({ portalClientId: "emp-1" });
+  });
+
+  it("⚠⚠ LER não exige papel; LIGAR e DESLIGAR exigem ACCOUNTANT", async () => {
+    // ⚠ Ligar cria linhas na fila de despesa da empresa — é escrita, e o piso de papel é o mesmo da
+    // varredura avulsa. Ler é leitura.
+    jest.clearAllMocks();
+    await LER();
+    expect(requireFirmCompanyAccess.mock.calls.some(([o]) => !o?.minRole)).toBe(true);
+
+    jest.clearAllMocks();
+    await LIGAR({ desde: "2026-07-01" });
+    expect(requireFirmCompanyAccess.mock.calls.some(([o]) => o?.minRole === "ACCOUNTANT")).toBe(true);
   });
 });
