@@ -56,3 +56,34 @@ export function exigirContaDeCliente(loginResponse) {
 export function ehVisitaDoEscritorio(user) {
   return user?.accountType !== "CLIENT" && user?.podeAbrirPortalDoCliente === true;
 }
+
+/**
+ * ⚠⚠ ESTA SESSÃO É O MESTRE? — decisão do dono, 01/09/2026, reafirmada em 02/09/2026.
+ *
+ * > *"o meu login e senha em ambos os portais é de mestre, eu posso executar o que eu quiser,
+ * > emitir nota em qualquer empresa etc, apenas o meu deve fazer isso."*
+ * > *"esse meu usuario, no portal do cliente deve ter todos os poderes, inclusive de emitir notas"*
+ *
+ * ⚠⚠ **O SERVIDOR JÁ CONCEDIA ISSO, E ERA A TELA QUE RECUSAVA.** Medido em produção em
+ * 02/09/2026, com a conta `yago@altan.company` (`role: admin`, `FIRM`, marca ligada):
+ *
+ *   GET /client/companies      -> 200 · 34 empresas · myRole OWNER · emissaoNfseLiberada true (34/34)
+ *   POST .../notas/<inexistente>/cancelar -> 404 nota_nao_encontrada
+ *
+ * O 404 é a prova do portão: `ensureEmissaoNfseAutorizada` roda ANTES da busca da nota, então
+ * chegar ao "não encontrei a nota" quer dizer que a autorização de emitir/cancelar PASSOU — sem
+ * praticar ato fiscal nenhum. Do lado da tela, `AppShell` desabilitava "Emitir nota" e "Emissão em
+ * Lote" para TODA sessão com `ehVisitaDoEscritorio`, e o mestre é uma delas.
+ *
+ * ⚠ Esta função **não autoriza nada** — quem autoriza é `requireClientCompanyAccess` (ramo
+ * `role === "admin"`, que devolve OWNER) e o portão de emissão, no servidor, a cada requisição.
+ * Aqui ela só impede a tela de esconder o que o servidor aceita: o "botão impossível" ao contrário.
+ *
+ * ⚠ **É o `role`, não a marca da porta** — e a distinção é a mesma do backend: mestre é `admin`;
+ * `podeAbrirPortalDoCliente` abre a porta para qualquer usuário do escritório e continua dando
+ * `FINANCEIRO`, só para ver. Um segundo contador com a marca **não** ganha emissão por aqui.
+ * ⚠ Comparação em minúsculas porque o login devolve o `role` cru do banco.
+ */
+export function ehMestreDoEscritorio(user) {
+  return String(user?.role || "").toLowerCase() === "admin";
+}
