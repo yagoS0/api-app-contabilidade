@@ -172,12 +172,24 @@ describe("⚠⚠ o que NÃO está provado continua NÃO preenchido", () => {
   });
 });
 
-describe("⚠⚠ ELA É INERTE HOJE, E ISSO ESTÁ TRAVADO", () => {
-  // Mesmo desenho de `fiscal/nbs/__tests__/nbs.test.js`. A tabela existir NÃO é autorização para
-  // ligá-la: montar `tribFed` MUDA o XML de nota fiscal em produção, e hoje a emissão RECUSA
-  // retenção declarada (`NFSE_PIS_COFINS_RETENCAO_NAO_SUPORTADA`). Quem ligar isto faz este teste
-  // cair — e aí a decisão fica à vista, em vez de acontecer por acidente.
-  it("nenhum arquivo do caminho de emissão de NFS-e importa a tabela de retenção", () => {
+describe("⚠⚠ A TABELA DEIXOU DE SER INERTE EM 02/09/2026 — e a porta É UMA SÓ", () => {
+  // ⚠⚠ ESTE BLOCO SE CHAMAVA "ELA É INERTE HOJE, E ISSO ESTÁ TRAVADO" e exigia ZERO importadores
+  // em `application/nfse/`. Ele existia para que ligar a retenção fosse ATO DO DONO, e não
+  // consequência de a tabela existir — e cumpriu o papel: caiu no commit que a ligou.
+  //
+  // O que mudou: `tribFed` GANHOU PRODUTOR. Até aqui o grupo era `return ""` em 100% das emissões e
+  // toda retenção declarada era RECUSADA (`NFSE_PIS_COFINS_RETENCAO_NAO_SUPORTADA`), porque o
+  // gerador não montava o `vRetCSLL` que a RN E0724 exige. Agora monta.
+  //
+  // ⚠⚠ O QUE SUBSTITUI A INÉRCIA NÃO É NADA: é uma porta ÚNICA. Só `retencaoFederalDaDps.js` pode
+  // importar a tabela dentro de `application/nfse/`; `NfseService` **não a importa** — ele recebe o
+  // grupo já decidido. É isso que mantém UM lugar respondendo "esta nota sofre retenção?".
+  //
+  // ⚠ A pergunta é "quem IMPORTA", não "quem MENCIONA" — a lição da guarda irmã da NBS, que
+  // acusou um arquivo por citar o nome num comentário.
+  const IMPORTA_RETENCAO = /from\s+["'][^"']*fiscal\/retencao/;
+
+  const importadoresEmNfse = () => {
     const dir = path.resolve(__dirname, "../../../nfse");
     const arquivos = [];
     const varrer = (d) => {
@@ -189,8 +201,21 @@ describe("⚠⚠ ELA É INERTE HOJE, E ISSO ESTÁ TRAVADO", () => {
     };
     varrer(dir);
     expect(arquivos.length).toBeGreaterThan(5);
-    const importam = arquivos.filter((f) => /fiscal\/retencao|retencao\.data/.test(fs.readFileSync(f, "utf-8")));
-    expect(importam.map((f) => path.basename(f))).toEqual([]);
+    return arquivos
+      .filter((f) => IMPORTA_RETENCAO.test(fs.readFileSync(f, "utf-8")))
+      .map((f) => path.basename(f));
+  };
+
+  it("⚠⚠ exatamente UM arquivo do caminho de emissão importa a tabela", () => {
+    expect(importadoresEmNfse()).toEqual(["retencaoFederalDaDps.js"]);
+  });
+
+  it("⚠⚠ `NfseService` NÃO importa a tabela — ele recebe o grupo pronto", () => {
+    // Se o gerador consultar as alíquotas por conta própria, existem duas respostas para "quanto
+    // se retém?", e elas divergem na primeira correção — numa nota fiscal.
+    const fonte = fs.readFileSync(path.resolve(__dirname, "../../../nfse/NfseService.js"), "utf-8");
+    expect(fonte).not.toMatch(IMPORTA_RETENCAO);
+    expect(fonte).toMatch(/retencaoFederalDaDps/);
   });
 });
 

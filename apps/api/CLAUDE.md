@@ -4124,6 +4124,95 @@ guarda é por **TIPO ACEITO**, nunca por lista de recusas — a mesma lição de
 ⚠ **Não verificado no navegador** — não há banco alcançável nesta máquina e a flag do perfil nasce
 OFF. O que prova o comportamento são os testes e a leitura da fonte.
 
+## ⚠⚠ A RETENÇÃO FEDERAL GANHA PRODUTOR — fase 5 (02/09/2026)
+
+`trib/tribFed` era **`return ""` em 100% das emissões**, e toda retenção declarada era RECUSADA
+(`NFSE_PIS_COFINS_RETENCAO_NAO_SUPORTADA`) porque o gerador não montava o `vRetCSLL` que a RN
+**E0724** exige. As normas já estavam versionadas em `docs/retencao-fonte/` desde a fase 0c, e a
+tabela `application/fiscal/retencao/` nasceu **inerte**. Agora ela tem consumidor.
+
+### ⚠⚠ TRÊS COISAS DECIDEM A RETENÇÃO, E SÓ UMA É DO PERFIL
+
+| # | o quê | de onde vem |
+|---|---|---|
+| 1 | **o REGIME** — optante do Simples **não sofre** (Lei 10.833/2003, **art. 32, III**; IN SRF 459/2004, art. 3º, II) | cadastro |
+| 2 | **o SERVIÇO estar na lista do art. 30** | **declarado pelo contador**, no perfil |
+| 3 | **o TOMADOR ser PJ** — a retenção é obrigação da fonte pagadora, PJ → PJ | derivado do documento da nota |
+
+E uma quarta, que é dispensa e não condição: **o PISO de R$ 10,00** sobre o **valor retido**
+(art. 31, § 3º). ⚠⚠ **O antigo limite de R$ 5.000 NÃO EXISTE MAIS** — a Lei 13.137/2015 revogou o
+§ 4º, que era a regra de somar os pagamentos do mês. Sistema que ainda o aplique **deixa de reter**.
+
+⚠ **Não confundir o art. 30, § 2º com o art. 32, III:** o primeiro fala de quem **PAGA** (fonte
+pagadora optante não é obrigada a reter); o segundo fala de quem **RECEBE** — e nosso cliente é o
+prestador.
+
+⚠⚠ **O SISTEMA NÃO DERIVA A CONDIÇÃO 2 DO CNAE**, e a recusa é deliberada: errar aqui erra nos dois
+sentidos — declarar retenção indevida, ou omitir a devida. A lista fechada dos "serviços
+profissionais" do art. 30 remete ao rol do IRRF e **não está versionada** aqui.
+
+### O que sai, e o que **não** sai
+
+`piscofins`: CST (do perfil) · `vBCPisCofins` · `pAliqPis` **0,65** · `pAliqCofins` **3,00** ·
+`vPis` · `vCofins` · `tpRetPisCofins` = **3**. Mais `vRetCSLL` = **1%**.
+⚠ Os percentuais saem da tabela VERSIONADA, nunca de literal no gerador — há teste amarrando.
+
+⚠⚠ **SÓ `tpRetPisCofins = 3` OU NADA.** A enumeração tem dez posições, e as parciais (5 = só PIS,
+6 = só COFINS, 8 = só CSLL…) não têm fonte neste projeto. Os 4,65% do art. 31 são uma retenção
+**única** das três contribuições.
+
+⚠ **`vRetIRRF` e `vRetCP` continuam SEM PRODUTOR, de propósito:** a alíquota do IRRF vive na
+legislação do IR e os 11% da Lei 8.212/1991 não foram confirmados em fonte primária. Emitir
+percentual de memória é o que a regra 1 proíbe. Os dois estão em `FORA_DESTA_FASE`, nomeados.
+
+⚠ **O CST é do contador.** `TSTipoCST` tem 34 valores e não existe de-para serviço → CST em fonte
+versionada. Sem ele o grupo `piscofins` nem se monta (o XSD o exige) — a ausência é **recusa
+nomeada**, nunca um `01` fabricado.
+
+### As duas regras que são espelho uma da outra
+
+- **E0724** — `tpRetPisCofins` ≠ 0 e ≠ 2 ⇒ `vRetCSLL` **obrigatório**;
+- **E0720** — `tpRetPisCofins` = 0 ⇒ `vRetCSLL` **proibido**.
+
+⚠ A recusa antiga dizia *"o gerador não monta `vRetCSLL`"* — verdade até aqui. Ela **mudou de
+pergunta**, não sumiu: hoje recusa quem declara retenção **e não informa o valor da CSLL**, que é
+exatamente o que o sistema nacional recusaria. E a E0720 passou a ser implementada também: só uma
+das duas metades deixa a outra como rejeição do lado de lá.
+
+### ⚠⚠ TRÊS DEFEITOS MEUS, TODOS PEGOS POR TESTE
+
+1. ⚠⚠ **`if (dispensadaPeloPiso(x))` — a função devolve OBJETO, não booleano.** Objeto é truthy,
+   então **toda retenção estava sendo dispensada**. Falha total e silenciosa. O mesmo valia para
+   `retencaoFederalPeloRegime`, que devolve `{resposta, fonte, motivo}`.
+2. ⚠⚠ **Regime INDEFINIDO RETINHA.** A regra tratava só `DISPENSADA` e deixava o resto passar —
+   mas aquela função tem TRÊS respostas, e a terceira é *"não dá para afirmar"*. Reter sem saber o
+   regime declara ao fisco uma retenção que talvez seja vedada. Hoje só `DEVIDA` prossegue.
+3. ⚠ **O pré-voo lia `doc || cnpjCpf` e o gerador lê `doc`.** Duas leituras do documento fariam o
+   pré-voo dizer PJ e o gerador dizer PF — e a nota sairia sem a retenção que o pré-voo aprovou.
+
+### ⚠⚠ E DOIS DEFEITOS DE *TESTE*, que valem tanto quanto
+
+- **A varredura acusava a própria explicação.** O caso que impede a volta do limite de R$ 5.000
+  varria o texto por `5.000` — e a mensagem que EXPLICA que ele foi revogado contém "R$ 5.000".
+  **Segunda vez** que isto acontece na entrega (a primeira foi um `\b11\b` acusando a citação
+  legítima do art. 11 da IN 459). Hoje ela mira **código** (literal numérico, identificadores de
+  acumulação) e faz a prova ESTRUTURAL que nenhuma varredura dá: **a função não recebe histórico**.
+- ⚠⚠ **O removedor de comentários de `perfisEmissaoRota.test.js` quebrava em CRLF.** Em JS o `.`
+  não casa terminadores de linha e `\r` é um deles; com `$` sem a flag `m`, `replace(/\/\/.*$/, "")`
+  **não remove nada** num arquivo CRLF — e a varredura passa a acusar os próprios comentários. O
+  desvio é na direção segura (falso positivo), e ainda assim: **guarda cujo veredito depende do fim
+  de linha do checkout é guarda que alguém desliga.**
+
+### Regressão
+
+`nfse/__tests__/retencaoFederalDaDps.test.js` (19) · `nfse/__tests__/perfilNaEmissao.test.js` (37,
+com o grupo no XML e as recusas medidas por `serviceInvoice.create` **não** ter sido chamado) ·
+`nfse/perfilEmissao/__tests__/perfilEmissao.test.js` (33, incluindo as **enumerações transcritas
+conferidas contra o XSD** — a amarração que um comentário meu prometia e que não existia).
+
+Migration `20260902140000_add_perfil_emissao_retencao_federal` — **NÃO APLICADA**, aditiva,
+nullable, **sem DEFAULT** (a lição do `usaFatorR`).
+
 ## Recuperação de senha ("esqueci minha senha") — 18/08/2026
 
 Antes desta entrega **não havia nada**: `grep -iE "forgot|reset|recuperar|esqueci" src/routes/auth.js`

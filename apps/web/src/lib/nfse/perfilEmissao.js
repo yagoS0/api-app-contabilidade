@@ -107,6 +107,36 @@ export const CAMPOS_PERFIL_EMISSAO = Object.freeze([
     cravadoHoje: false,
   }),
 
+  Object.freeze({
+    id: "retencaoFederalArt30",
+    rotulo: "Serviço sujeito à retenção federal (art. 30)",
+    tag: "tpRetPisCofins",
+    caminhoNoXml: "infDPS/valores/trib/tribFed/piscofins/tpRetPisCofins",
+    valores: Object.freeze(["true", "false"]),
+    formaDescrita: "sim ou não — declarado pelo contador",
+    obrigatorio: false,
+    // ⚠⚠ Declarar "sim" NÃO basta: a retenção ainda depende do REGIME (vedada no Simples) e de o
+    // TOMADOR daquela nota ser PJ, mais o piso de R$ 10,00. O painel mostra o campo; quem decide
+    // por nota é `retencaoFederalDaDps`.
+    cravadoHoje: false,
+  }),
+  Object.freeze({
+    id: "cstPisCofins",
+    rotulo: "CST do PIS/COFINS",
+    tag: "CST",
+    caminhoNoXml: "infDPS/valores/trib/tribFed/piscofins/CST",
+    // ⚠ Os 34 valores de `TSTipoCST` — espelho da lista do backend, amarrado por teste.
+    valores: Object.freeze([
+      "00", "01", "02", "03", "04", "05", "06", "07", "08",
+      "09", "49", "50", "51", "52", "53", "54", "55", "56",
+      "60", "61", "62", "63", "64", "65", "66", "67", "70",
+      "71", "72", "73", "74", "75", "98", "99",
+    ]),
+    formaDescrita: "dois dígitos, da tabela do PIS/COFINS",
+    obrigatorio: false,
+    cravadoHoje: false,
+  }),
+
   // ── NBS e IBS/CBS (02/09/2026) ───────────────────────────────────────────────
   // ⚠ Nenhum deles é `cravadoHoje`: o gerador simplesmente NÃO ESCREVIA a tag. Por isso a
   // procedência deles, sem perfil, é `INDEFINIDO` e não `CRAVADO` — dizer "cravado" afirmaria que
@@ -151,6 +181,50 @@ export const CAMPOS_PERFIL_EMISSAO = Object.freeze([
 
 /** As descrições dos valores — para a tela não mostrar um "3" cru sobre tributação. */
 export const DESCRICAO_DO_VALOR = Object.freeze({
+  // ⚠ Sim/não do contador — o painel não mostra "true" cru sobre uma decisão fiscal.
+  retencaoFederalArt30: Object.freeze({
+    true: "Sim — serviço da lista do art. 30",
+    false: "Não",
+  }),
+  // ⚠⚠ OS 34 DO `TSTipoCST`, TRANSCRITOS DA `<xs:documentation>` do XSD 1.01 — não de memória.
+  // O painel não pode mostrar "01" cru sobre situação tributária: o contador precisa ler o que
+  // aquele código afirma. ⚠ Um "–" no meio de várias descrições é travessão do próprio arquivo.
+  cstPisCofins: Object.freeze({
+    "00": "Nenhum",
+    "01": "Operação Tributável com Alíquota Básica",
+    "02": "Operação Tributável com Alíquota Diferenciada",
+    "03": "Operação Tributável com Alíquota por Unidade de Medida de Produto",
+    "04": "Operação Tributável monofásica - Revenda a Alíquota Zero",
+    "05": "Operação Tributável por Substituição Tributária",
+    "06": "Operação Tributável a Alíquota Zero",
+    "07": "Operação Isenta da Contribuição",
+    "08": "Operação sem Incidência da Contribuição",
+    "09": "Operação com Suspensão da Contribuição",
+    "49": "Outras Operações de Saída",
+    "50": "Operação com Direito a Crédito – Vinculada Exclusivamente a Receita Tributada no Mercado Interno",
+    "51": "Operação com Direito a Crédito – Vinculada Exclusivamente a Receita Não-Tributada no Mercado Interno",
+    "52": "Operação com Direito a Crédito – Vinculada Exclusivamente a Receita de Exportação",
+    "53": "Operação com Direito a Crédito – Vinculada a Receitas Tributadas e Não-Tributadas no Mercado Interno",
+    "54": "Operação com Direito a Crédito – Vinculada a Receitas Tributadas no Mercado Interno e de Exportação",
+    "55": "Operação com Direito a Crédito – Vinculada a Receitas Não Tributadas no Mercado Interno e de Exportação",
+    "56": "Operação com Direito a Crédito – Vinculada a Receitas Tributadas e Não-Tributadas no Mercado Interno e de Exportação",
+    "60": "Crédito Presumido – Operação de Aquisição Vinculada Exclusivamente a Receita Tributada no Mercado Interno",
+    "61": "Crédito Presumido – Operação de Aquisição Vinculada Exclusivamente a Receita Não-Tributada no Mercado Interno",
+    "62": "Crédito Presumido – Operação de Aquisição Vinculada Exclusivamente a Receita de Exportação",
+    "63": "Crédito Presumido – Operação de Aquisição Vinculada a Receitas Tributadas e Não-Tributadas no Mercado Interno",
+    "64": "Crédito Presumido – Operação de Aquisição Vinculada a Receitas Tributadas no Mercado Interno e de Exportação",
+    "65": "Crédito Presumido – Operação de Aquisição Vinculada a Receitas Não-Tributadas no Mercado Interno e de Exportação",
+    "66": "Crédito Presumido – Operação de Aquisição Vinculada a Receitas Tributadas e Não-Tributadas no Mercado Interno e de Exportação",
+    "67": "Crédito Presumido – Outras Operações",
+    "70": "Operação de Aquisição sem Direito a Crédito",
+    "71": "Operação de Aquisição com Isenção",
+    "72": "Operação de Aquisição com Suspensão",
+    "73": "Operação de Aquisição a Alíquota Zero",
+    "74": "Operação de Aquisição sem Incidência da Contribuição",
+    "75": "Operação de Aquisição por Substituição Tributária",
+    "98": "Outras Operações de Entrada",
+    "99": "Outras Operações",
+  }),
   regEspTrib: Object.freeze({
     0: "Nenhum", 1: "Ato Cooperado", 2: "Estimativa", 3: "Microempresa Municipal",
     4: "Notário ou Registrador", 5: "Profissional Autônomo", 6: "—", 9: "—",

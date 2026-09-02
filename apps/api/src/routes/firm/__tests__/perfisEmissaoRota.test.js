@@ -317,7 +317,17 @@ describe("⚠⚠ esta fase NÃO emite e NÃO muda XML", () => {
     const fonte = fs.readFileSync(path.resolve(__dirname, "../perfisEmissao.js"), "utf-8");
     const semComentarios = fonte
       .split("\n")
-      .map((l) => l.replace(/\/\/.*$/, ""))
+      // ⚠⚠ O `` PRECISA CAIR ANTES, e isto é defeito medido em 02/09/2026, não zelo.
+      //
+      // Em JavaScript o `.` **não casa terminadores de linha**, e `` é um deles; o `$` sem a
+      // flag `m` ancora no fim da STRING. Num arquivo com CRLF, `l.replace(/\/\/.*$/, "")`
+      // portanto **não remove nada** — e a varredura passa a acusar os PRÓPRIOS COMENTÁRIOS deste
+      // arquivo, que são justamente os que explicam por que `buildDpsXml` não é chamado aqui.
+      //
+      // ⚠ O desvio é na direção segura (falso POSITIVO, nunca falso negativo) e mesmo assim é
+      // ruim: um guarda cujo veredito depende do fim de linha do checkout é um guarda que alguém
+      // desliga. Ele só apareceu quando uma edição gravou o arquivo em CRLF.
+      .map((l) => l.replace(/\r$/, "").replace(/\/\/.*$/, ""))
       .filter((l) => !/^\s*\*/.test(l))
       .join("\n");
 

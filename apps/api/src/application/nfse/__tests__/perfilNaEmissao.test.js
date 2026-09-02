@@ -11,7 +11,7 @@
 
 const XML_ENVIADO = [];
 
-function montarMocks({ flagLigada, perfil, ibscbsLigada = false }) {
+function montarMocks({ flagLigada, perfil, ibscbsLigada = false, regimeDoCadastro = "SIMPLES_NACIONAL" }) {
   jest.doMock("../../../config.js", () => ({
     INTEGRACAO_PERFIL_EMISSAO_NFSE: flagLigada,
     INTEGRACAO_NFSE_IBSCBS: ibscbsLigada,
@@ -90,7 +90,8 @@ function montarMocks({ flagLigada, perfil, ibscbsLigada = false }) {
       company: { findUnique: jest.fn(async () => COMPANY) },
       portalClient: { findUnique: jest.fn(async () => ({ id: "portal-1" })) },
       portalInvoice: { findMany: jest.fn(async () => []) },
-      cadastroFiscal: { findUnique: jest.fn(async () => ({ regime: "SIMPLES_NACIONAL" })) },
+        // ⚠ A retenção federal é VEDADA no Simples, então o cenário dela exige outro regime.
+      cadastroFiscal: { findUnique: jest.fn(async () => ({ regime: regimeDoCadastro })) },
       tomadorEmitido: { findUnique: jest.fn(async () => null), create: jest.fn(), update: jest.fn() },
       serviceInvoice,
       $transaction: jest.fn(async (cb) => cb(tx)),
@@ -618,5 +619,127 @@ describe("⚠⚠ o `pAliq` — sai só onde a norma PROVA", () => {
     // exigiria o campo — por isso a recusa acontece, e é a MESMA do caso acima).
     const { resultado } = await emitirRetido({ perfil: null });
     expect(resultado.codigo).toBe("NFSE_PALIQ_OBRIGATORIA_AUSENTE");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// A RETENÇÃO FEDERAL (`trib/tribFed`) — 02/09/2026
+//
+// ⚠⚠ ESTE GRUPO ERA `return ""` EM 100% DAS EMISSÕES, e toda retenção declarada era RECUSADA
+// (`NFSE_PIS_COFINS_RETENCAO_NAO_SUPORTADA`), porque o gerador não montava o `vRetCSLL` que a RN
+// E0724 exige. Agora ele monta — e a recusa passou a fazer a pergunta da própria regra.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+describe("⚠⚠ o `tribFed` — três condições, e só uma é do perfil", () => {
+  // ⚠ O tomador é PJ (a retenção do art. 30 só existe PJ → PJ) e a carga tributária dos TRÊS
+  // percentuais está preenchida: fora do Simples o gerador a EXIGE (`MISSING_TOT_TRIB_NAO_SIMPLES`),
+  // e sem ela a emissão morre antes do POST — o XML sairia vazio e as asserções sobre ele passariam
+  // comparando "" com "". Foi o que aconteceu na primeira versão destes casos.
+  const PJ = {
+    ...PAYLOAD,
+    // ⚠ `doc` é o campo do payload VALIDADO, que é o que `buildDpsXml` lê. O `cnpjCpf` é a
+    // forma de entrada, normalizada por `validateNfsePayload` — e esta suíte chama `issue`
+    // direto, sem passar pela porta.
+    tomador: { ...PAYLOAD.tomador, cnpjCpf: "39254243000191", doc: "39254243000191", nome: "TOMADOR LTDA" },
+    totTrib: { pTotTribSN: 6, pTotTribFed: 11.33, pTotTribEst: 0, pTotTribMun: 0 },
+    // ⚠⚠ R$ 1.000, e NÃO os R$ 100 do payload base: 4,65% de 100 é **R$ 4,65**, que a Lei
+    // 10.833/2003, art. 31, § 3º DISPENSA (piso de R$ 10,00). A primeira versão deste cenário caiu
+    // exatamente nisso — e a regra estava certa: era o teste que pedia retenção num valor
+    // dispensado. ⚠ O piso é sobre o VALOR RETIDO, não sobre o valor da nota.
+    servico: { ...PAYLOAD.servico, valorServicos: 1000 },
+  };
+  const COM_RETENCAO = { retencaoFederalArt30: true, cstPisCofins: "01" };
+
+  async function emitirPJ({ perfil, data = PJ }) {
+    XML_ENVIADO.length = 0;
+    jest.resetModules();
+    montarMocks({ flagLigada: true, perfil });
+    const { NfseService } = await import("../NfseService.js");
+    const { prisma } = await import("../../../infrastructure/db/prisma.js");
+    const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    const r = await NfseService.issue({ data, log });
+    return { xml: XML_ENVIADO[0] || "", resultado: r, prisma };
+  }
+
+  it("⚠ sem a declaração do contador, o grupo NÃO sai — é o estado de todo perfil hoje", async () => {
+    const { xml } = await emitirPJ({ perfil: PERFIL_DERIVADO });
+    expect(xml).toMatch(/<infDPS/);
+    expect(xml).not.toMatch(/tribFed/);
+  });
+
+  it("⚠⚠ no SIMPLES é VEDADA por lei — e a nota sai CERTA sem o grupo", async () => {
+    // A empresa desta suíte é do Simples (`cadastroFiscal` mocado). Declarar o serviço do art. 30
+    // no perfil não faz a retenção aparecer: Lei 10.833/2003, art. 32, III. ⚠ Não é recusa — a
+    // nota sem retenção é a nota correta, e o que seria errado é sair COM ela.
+    const { xml, resultado } = await emitirPJ({ perfil: comPerfil(COM_RETENCAO) });
+    expect(resultado.status).toBe("issued");
+    expect(xml).not.toMatch(/tribFed/);
+  });
+
+  it("⚠⚠ fora do Simples e com tomador PJ, o grupo sai com as alíquotas do art. 31", async () => {
+    XML_ENVIADO.length = 0;
+    jest.resetModules();
+    montarMocks({ flagLigada: true, perfil: comPerfil(COM_RETENCAO), regimeDoCadastro: "LUCRO_PRESUMIDO" });
+    const { NfseService } = await import("../NfseService.js");
+    const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    await NfseService.issue({ data: PJ, log });
+    const xml = XML_ENVIADO[0] || "";
+
+    expect(xml).toMatch(/<tribFed>/);
+    expect(xml).toMatch(/<CST>01<\/CST>/);
+    expect(xml).toMatch(/<pAliqPis>0\.65<\/pAliqPis>/);
+    expect(xml).toMatch(/<pAliqCofins>3\.00<\/pAliqCofins>/);
+    // ⚠⚠ `tpRetPisCofins = 3` (PIS/COFINS/CSLL Retidos) — a única posição que os 4,65% do art. 31
+    // são. As parciais (5 = só PIS, 6 = só COFINS…) não têm fonte neste projeto.
+    expect(xml).toMatch(/<tpRetPisCofins>3<\/tpRetPisCofins>/);
+    // ⚠⚠ E o `vRetCSLL`, que a RN E0724 torna OBRIGATÓRIO — era a AUSÊNCIA dele que fazia o
+    // gerador recusar toda retenção declarada.
+    expect(xml).toMatch(/<vRetCSLL>10\.00<\/vRetCSLL>/); // 1% de 1.000
+    expect(xml).toMatch(/<vPis>6\.50<\/vPis>/);
+    expect(xml).toMatch(/<vCofins>30\.00<\/vCofins>/);
+    expect(xml).toMatch(/<vBCPisCofins>1000\.00<\/vBCPisCofins>/);
+    // ⚠ A ordem de `TCTribFederal` é `piscofins? · vRetCP? · vRetIRRF? · vRetCSLL?`.
+    expect(xml.indexOf("<vRetCSLL>")).toBeGreaterThan(xml.indexOf("</piscofins>"));
+  });
+
+  it("⚠⚠ `vRetIRRF` e `vRetCP` NÃO saem — não há alíquota versionada para nenhum dos dois", async () => {
+    XML_ENVIADO.length = 0;
+    jest.resetModules();
+    montarMocks({ flagLigada: true, perfil: comPerfil(COM_RETENCAO), regimeDoCadastro: "LUCRO_PRESUMIDO" });
+    const { NfseService } = await import("../NfseService.js");
+    await NfseService.issue({ data: PJ, log: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } });
+    expect(XML_ENVIADO[0]).toMatch(/<tribFed>/);
+    expect(XML_ENVIADO[0]).not.toMatch(/vRetIRRF|vRetCP/);
+  });
+
+  it("⚠ tomador PESSOA FÍSICA não retém — nem fora do Simples", async () => {
+    XML_ENVIADO.length = 0;
+    jest.resetModules();
+    montarMocks({ flagLigada: true, perfil: comPerfil(COM_RETENCAO), regimeDoCadastro: "LUCRO_PRESUMIDO" });
+    const { NfseService } = await import("../NfseService.js");
+    await NfseService.issue({
+      data: { ...PJ, tomador: { ...PJ.tomador, cnpjCpf: "12219079724", doc: "12219079724", nome: "Fulano" } },
+      log: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    });
+    expect(XML_ENVIADO[0]).toMatch(/<infDPS/);
+    expect(XML_ENVIADO[0]).not.toMatch(/tribFed/);
+  });
+
+  it("⚠⚠ declarou retenção e não declarou CST: RECUSA antes de reservar numeração", async () => {
+    XML_ENVIADO.length = 0;
+    jest.resetModules();
+    montarMocks({
+      flagLigada: true,
+      perfil: comPerfil({ retencaoFederalArt30: true }),
+      regimeDoCadastro: "LUCRO_PRESUMIDO",
+    });
+    const { NfseService } = await import("../NfseService.js");
+    const { prisma } = await import("../../../infrastructure/db/prisma.js");
+    const r = await NfseService.issue({
+      data: PJ, log: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    });
+    expect(r.codigo).toBe("NFSE_RETENCAO_FEDERAL_SEM_CST");
+    expect(r.camada).toBe("NOSSA");
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
   });
 });

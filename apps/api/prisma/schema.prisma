@@ -2962,6 +2962,21 @@ model PerfilEmissaoNfse {
   /// 9,99%. O ISS tem teto de 5% (LC 116, art. 8º-A), então o CHECK de 0–10 é folgado de propósito.
   pAliq Decimal? @db.Decimal(4, 2)
 
+  // ── retenção federal (PIS/COFINS/CSLL — art. 30 da Lei 10.833/2003) ───────────────
+  /// O contador DECLARA que o serviço deste perfil está na lista do art. 30.
+  /// ⚠⚠ **O SISTEMA NÃO DERIVA ISSO DO CNAE**, e a recusa é deliberada: errar aqui erra nos dois
+  /// sentidos — declarar retenção indevida, ou omitir a devida. A lista fechada dos "serviços
+  /// profissionais" do art. 30 remete ao rol do IRRF e **não está versionada** neste projeto.
+  /// ⚠ NULO = "ninguém respondeu", nunca "não" — a lição de `CadastroFiscal.usaFatorR`.
+  /// ⚠ Declarar `true` **não basta**: a retenção ainda depende do REGIME (vedada no Simples) e de
+  /// o TOMADOR daquela nota ser PJ. Ver `application/nfse/retencaoFederalDaDps.js`.
+  retencaoFederalArt30 Boolean?
+  /// `piscofins/CST` — Código de Situação Tributária do PIS/COFINS (`TSTipoCST`, 34 valores).
+  /// ⚠ O XSD o torna OBRIGATÓRIO dentro do grupo `piscofins`, e **não existe, em fonte versionada
+  /// aqui, um de-para serviço → CST**. Sem ele o grupo não se monta, e a ausência é recusa
+  /// NOMEADA — nunca um `01` fabricado.
+  cstPisCofins String?
+
   // ── NBS e IBS/CBS (reforma tributária) ─────────────────────────────────────────────────────
   /// `cNBS` — guardado na forma PONTUADA (`1.1502.10.00`), que é como a fonte publica e como uma
   /// pessoa lê. A DPS quer `[0-9]{9}`: quem converte é `nbsParaDps` (`fiscal/nbs/`), que também

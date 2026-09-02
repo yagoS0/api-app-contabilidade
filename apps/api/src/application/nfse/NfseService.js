@@ -18,6 +18,7 @@ import { escolherCodigoServicoNacional } from "./codigoServicoDaNota.js";
 import { resolverPerfilDeEmissao } from "./perfilEmissao/resolverPerfilDeEmissao.js";
 import { ibscbsDaDps, nbsDaDps } from "./ibscbsDaDps.js";
 import { pAliqDaDps } from "./pAliqDaDps.js";
+import { retencaoFederalDaDps } from "./retencaoFederalDaDps.js";
 import { registrarTomadorEmitido } from "./tomadorEmitido.js";
 import {
   classificarFalha,
@@ -908,6 +909,23 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
     throw err;
   }
 
+  // ⚠⚠ A RETENÇÃO FEDERAL (`tribFed`) — o grupo que era `return ""` em 100% das emissões.
+  // Três coisas a decidem e só UMA é do perfil: o REGIME (vedada no Simples), o SERVIÇO estar
+  // na lista do art. 30 (declarado pelo contador) e o TOMADOR ser PJ (derivado do documento da
+  // nota). Mais a dispensa pelo piso de R$ 10,00. Ver `retencaoFederalDaDps.js`.
+  const retFed = retencaoFederalDaDps({
+    regime,
+    perfil,
+    valorServicos: Number(valorServicos),
+    documentoTomador: tomadorDoc,
+  });
+  if (!retFed.ok) {
+    const err = new Error(retFed.message);
+    err.code = retFed.codigo;
+    err.correcao = retFed.correcao;
+    throw err;
+  }
+
   const nbsDaNota = nbsDaDps(perfil);
   if (!nbsDaNota.ok) {
     const err = new Error(nbsDaNota.message);
@@ -1099,7 +1117,17 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
           // valores `0.00` não é preenchimento técnico — é AFIRMAR que a empresa não deve
           // PIS/COFINS, exatamente o defeito do `vTotTrib 0.00` e do `?? 0` da carga tributária
           // já consertados neste arquivo. **Ausência não é afirmação.**
-          const piscofins = data.tribFed?.piscofins || {};
+          // ⚠⚠ DUAS FONTES, E O PERFIL VENCE. O caminho do `data.tribFed` continua existindo e
+          // continua com todas as guardas abaixo — ele nunca teve produtor, e agora tem um: o
+          // perfil de emissão. O que vem do perfil já chega com as alíquotas da tabela
+          // VERSIONADA (`fiscal/retencao/`), com `tpRetPisCofins = 3` e com o `vRetCSLL`
+          // que a RN E0724 exige.
+          const piscofins = retFed.informar
+            ? retFed.grupo.piscofins
+            : (data.tribFed?.piscofins || {});
+          const vRetCSLL = retFed.informar
+            ? retFed.grupo.vRetCSLL
+            : (data.tribFed?.vRetCSLL ?? null);
           const infPC = (v) => v !== undefined && v !== null && v !== "";
 
           // ⚠ HOJE NADA CHEGA AQUI COM DADO. `application/validators/nfsePayload.js` não monta
@@ -1187,10 +1215,15 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
           // seria emitir uma DPS que a RN E0724 rejeita — ou, pior, que passa sem o valor. Por
           // isso RECUSA NOMEADA, e a decisão de construir `vRetCSLL` (com o rateio PIS × COFINS ×
           // CSLL, que é ato do contador) fica com o dono.
-          if (tpRet !== null && tpRet !== "0" && tpRet !== "2") {
+          // ⚠⚠ A RECUSA MUDOU DE PERGUNTA EM 02/09/2026. Ela era *"o gerador não monta
+          // `vRetCSLL`"* — verdade até então, e por isso TODA retenção declarada era
+          // recusada. Agora o gerador monta, e a pergunta passa a ser a da própria RN
+          // **E0724**: *"declarou retenção e NÃO informou o valor da CSLL?"*. O que continua
+          // recusado é exatamente o que o sistema nacional recusaria — nem mais, nem menos.
+          if (tpRet !== null && tpRet !== "0" && tpRet !== "2" && !infPC(vRetCSLL)) {
             const err = new Error(
-              `Retenção de PIS/COFINS/CSLL declarada (tpRetPisCofins=${tpRet}), e este gerador ` +
-                "ainda não monta `tribFed/vRetCSLL` — que a RN E0724 torna OBRIGATÓRIO para todo " +
+              `Retenção de PIS/COFINS/CSLL declarada (tpRetPisCofins=${tpRet}) sem o valor da ` +
+                "CSLL. A RN E0724 torna `tribFed/vRetCSLL` OBRIGATÓRIO para todo " +
                 "tpRetPisCofins diferente de 0 e de 2. Nada foi enviado."
             );
             err.code = "NFSE_PIS_COFINS_RETENCAO_NAO_SUPORTADA";
@@ -1206,6 +1239,21 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
           // ⚠ A ordem não é alfabética nem a de digitação: `xs:sequence` a torna parte do
           // contrato, e foi um filho fora de lugar/inexistente que gerou o E1235. Só entra o que
           // foi INFORMADO — os seis opcionais ausentes não viram `0.00`.
+          // ⚠⚠ **E0720**, o espelho da E0724: com `tpRetPisCofins = 0` ("PIS/COFINS/CSLL
+          // Não Retidos") **não é permitido** informar `vRetCSLL`. As duas regras são as duas
+          // metades da mesma pergunta, e implementar só uma deixa a outra como rejeição do
+          // lado de lá.
+          if (tpRet === "0" && infPC(vRetCSLL)) {
+            const err = new Error(
+              "Valor de CSLL retida informado com `tpRetPisCofins = 0` (PIS/COFINS/CSLL Não "
+              + "Retidos). A RN E0720 proíbe essa combinação. Nada foi enviado."
+            );
+            err.code = "NFSE_PIS_COFINS_CSLL_SEM_RETENCAO";
+            err.correcao =
+              "Ou informe o tipo de retenção correto, ou não informe o valor de CSLL retida.";
+            throw err;
+          }
+
           const linhas = [`<CST>${escapeXml(String(piscofins.CST).trim())}</CST>`];
           const monetario = (campo) => {
             if (!infPC(piscofins[campo])) return;
@@ -1274,10 +1322,16 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
           monetario("vCofins");
           if (tpRet !== null) linhas.push(`<tpRetPisCofins>${tpRet}</tpRetPisCofins>`);
 
+          // ⚠ A ordem de `TCTribFederal` é `piscofins? · vRetCP? · vRetIRRF? · vRetCSLL?`.
+          // O `vRetCSLL` vem por ÚLTIMO, e os dois do meio **não têm produtor de propósito**:
+          // a alíquota do IRRF e os 11% da Lei 8.212 não estão versionados neste projeto.
+          const csll = infPC(vRetCSLL)
+            ? `\n          <vRetCSLL>${escapeXml(String(vRetCSLL))}</vRetCSLL>`
+            : "";
           return `<tribFed>
           <piscofins>
             ${linhas.join("\n            ")}
-          </piscofins>
+          </piscofins>${csll}
         </tribFed>`;
         })()}
         ${
@@ -1939,6 +1993,26 @@ export class NfseService {
         const err = new Error(pAliqPreVoo.message);
         err.code = pAliqPreVoo.codigo;
         err.correcao = pAliqPreVoo.correcao;
+        throw err;
+      }
+
+      // ⚠⚠ A RETENÇÃO FEDERAL, pelo mesmo motivo de sempre: recusar aqui custa zero; recusar
+      // dentro do gerador queima um número da série, e não existe inutilização na NFS-e.
+      // ⚠ MESMA função pura, MESMAS entradas — as duas decisões não podem divergir.
+      const retFedPreVoo = retencaoFederalDaDps({
+        regime,
+        perfil: perfilDeEmissao,
+        valorServicos: Number(data.servico?.valorServicos),
+        // ⚠⚠ A MESMA LEITURA DO GERADOR (`data.tomador.doc`), e não um `|| cnpjCpf` "por
+        // segurança": duas leituras diferentes do documento fariam o pré-voo dizer PJ e o gerador
+        // dizer PF — e a nota sairia sem a retenção que o pré-voo aprovou. Quem normaliza
+        // `cnpjCpf` → `doc` é `validateNfsePayload`, na porta.
+        documentoTomador: data.tomador?.doc,
+      });
+      if (!retFedPreVoo.ok) {
+        const err = new Error(retFedPreVoo.message);
+        err.code = retFedPreVoo.codigo;
+        err.correcao = retFedPreVoo.correcao;
         throw err;
       }
     } catch (err) {

@@ -338,3 +338,41 @@ describe("⚠⚠ o resolvedor NÃO escreve e NÃO emite", () => {
     expect(fonte).not.toMatch(/NfseService|axios|fetch\(|\.issue\(/);
   });
 });
+
+describe("⚠⚠ as ENUMERAÇÕES transcritas são conferidas contra o XSD — lido do arquivo", () => {
+  // ⚠ Transcrição sem amarração é como as duas listas divergem: a nossa envelhece e a tela passa a
+  // oferecer um valor que o sistema nacional recusa. Aqui cada lista `valores` que corresponde a um
+  // tipo simples do leiaute é comparada, valor a valor, com o próprio arquivo.
+  const fs = require("node:fs");
+  const path = require("node:path");
+
+  function enumDoXsd(tipo) {
+    let dir = __dirname;
+    while (dir !== path.dirname(dir)) {
+      const t = path.join(dir, "docs/leiaute-nfse/documentacao-tecnica/esquemas-xsd/Schemas/1.01");
+      if (fs.existsSync(t)) { dir = t; break; }
+      dir = path.dirname(dir);
+    }
+    const xsd = fs.readFileSync(path.join(dir, "tiposSimples_v1.01.xsd"), "utf-8");
+    // ⚠ SEM regex construída de template: dentro de um template literal o `\s` é consumido como
+    // escape e o padrão vira `[sS]`, que casa só com as letras s e S — o `exec` devolve `null`.
+    // Recortar por índice não tem escape nenhum para errar.
+    const abre = `<xs:simpleType name="${tipo}">`;
+    const ini = xsd.indexOf(abre);
+    if (ini < 0) throw new Error(`tipo simples não encontrado no XSD: ${tipo}`);
+    const bloco = xsd.slice(ini, xsd.indexOf("</xs:simpleType>", ini));
+    return [...bloco.matchAll(/<xs:enumeration value="([^"]*)"/g)].map((m) => m[1]);
+  }
+
+  it("`cstPisCofins` traz os 34 valores de `TSTipoCST`, na ordem do arquivo", () => {
+    expect(campoPorId("cstPisCofins").valores).toEqual(enumDoXsd("TSTipoCST"));
+  });
+
+  it("`tribISSQN` traz os quatro de `TSTribISSQN`", () => {
+    expect(campoPorId("tribISSQN").valores).toEqual(enumDoXsd("TSTribISSQN"));
+  });
+
+  it("`regApTribSN` traz os três de `TSRegimeApuracaoSimpNac`", () => {
+    expect(campoPorId("regApTribSN").valores).toEqual(enumDoXsd("TSRegimeApuracaoSimpNac"));
+  });
+});

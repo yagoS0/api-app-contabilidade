@@ -78,7 +78,10 @@ export function createPerfisEmissaoRouter({ log } = {}) {
       else data.nome = nome;
     }
 
-    for (const b of ["ativo", "padrao", "habilitaObra", "habilitaExportacao"]) {
+    // ⚠ `retencaoFederalArt30` entra aqui apesar de ser campo FISCAL (está em `CAMPOS`, com leitor
+    // e tag): a lista abaixo é sobre o TIPO da coluna, não sobre a natureza do campo. Sem ela, o
+    // booleano chegaria ao Prisma como a string "false", que é truthy.
+    for (const b of ["ativo", "padrao", "habilitaObra", "habilitaExportacao", "retencaoFederalArt30"]) {
       if (!Object.prototype.hasOwnProperty.call(body, b)) continue;
       // ⚠ `Boolean("false")` é `true`. A comparação é com o literal, como em `portaoEmissao.js`.
       if (typeof body[b] !== "boolean") {

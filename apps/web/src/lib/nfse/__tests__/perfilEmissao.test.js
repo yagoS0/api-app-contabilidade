@@ -57,11 +57,15 @@ describe("⚠⚠ três estados, e o terceiro é sobre a RESPOSTA", () => {
     expect(p.linhas.map((l) => l.id)).toEqual([
       "codigoServicoNacional", "codigoServicoMunicipal", "cLocPrestacao",
       "regEspTrib", "regApTribSN", "tribISSQN", "pAliq",
+      "retencaoFederalArt30", "cstPisCofins",
       "codigoNbs", "ibscbsCIndOp", "ibscbsCst", "ibscbsCClassTrib",
     ]);
     // ⚠⚠ Os quatro novos saem `INDEFINIDO`, nunca `CRAVADO`: o gerador não escolhia um valor para
     // eles — ele não escrevia a tag. São coisas diferentes, e a tela diz qual é.
-    for (const id of ["pAliq", "codigoNbs", "ibscbsCIndOp", "ibscbsCst", "ibscbsCClassTrib"]) {
+    for (const id of [
+      "pAliq", "retencaoFederalArt30", "cstPisCofins",
+      "codigoNbs", "ibscbsCIndOp", "ibscbsCst", "ibscbsCClassTrib",
+    ]) {
       const linha = p.linhas.find((l) => l.id === id);
       expect({ id, fonte: linha.fonte, cravado: linha.cravadoHoje }).toEqual({
         id, fonte: FONTE.INDEFINIDO, cravado: false,

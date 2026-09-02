@@ -72,6 +72,9 @@ function doCadastro(company) {
     // ⚠ A alíquota do ISSQN nunca foi escrita pelo gerador — ela era coletada, validada e
     // descartada. `INDEFINIDO`, nunca `CRAVADO`.
     pAliq: { valor: null, fonte: FONTE.INDEFINIDO },
+    // ⚠ O grupo `tribFed` é `return ""` em 100% das emissões de hoje — ele nunca teve produtor.
+    retencaoFederalArt30: { valor: null, fonte: FONTE.INDEFINIDO },
+    cstPisCofins: { valor: null, fonte: FONTE.INDEFINIDO },
     codigoNbs: { valor: null, fonte: FONTE.INDEFINIDO },
     ibscbsCIndOp: { valor: null, fonte: FONTE.INDEFINIDO },
     ibscbsCst: { valor: null, fonte: FONTE.INDEFINIDO },

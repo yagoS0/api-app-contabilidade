@@ -138,6 +138,43 @@ export const CAMPOS = Object.freeze([
     leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
   }),
 
+  // ── retenção federal — art. 30 da Lei 10.833/2003 (02/09/2026) ────────────────────
+  Object.freeze({
+    id: "retencaoFederalArt30",
+    rotulo: "Serviço sujeito à retenção federal (art. 30)",
+    tag: "tpRetPisCofins",
+    caminhoNoXml: "infDPS/valores/trib/tribFed/piscofins/tpRetPisCofins",
+    valores: Object.freeze(["true", "false"]),
+    formaDescrita: "sim ou não — declarado pelo contador",
+    obrigatorio: false,
+    // ⚠⚠ DECLARAR `true` NÃO BASTA. Três coisas decidem a retenção e só esta é do perfil: o REGIME
+    // (vedada no Simples), o SERVIÇO estar no art. 30 (esta), e o TOMADOR ser PJ (derivado do
+    // documento da nota). Mais a dispensa pelo piso de R$ 10,00.
+    // ⚠⚠ O SISTEMA NÃO DERIVA ISSO DO CNAE — errar aqui erra nos DOIS sentidos.
+    hojeSaiDe: "não era escrito",
+    leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
+  }),
+  Object.freeze({
+    id: "cstPisCofins",
+    rotulo: "CST do PIS/COFINS",
+    tag: "CST",
+    caminhoNoXml: "infDPS/valores/trib/tribFed/piscofins/CST",
+    // ⚠ Os 34 valores de `TSTipoCST` (XSD 1.01), TRANSCRITOS — e há teste que os confere contra o
+    // arquivo, um a um. Transcrição sem amarração é como as duas listas divergem.
+    valores: Object.freeze([
+      "00", "01", "02", "03", "04", "05", "06", "07", "08",
+      "09", "49", "50", "51", "52", "53", "54", "55", "56",
+      "60", "61", "62", "63", "64", "65", "66", "67", "70",
+      "71", "72", "73", "74", "75", "98", "99",
+    ]),
+    formaDescrita: "dois dígitos, da tabela do PIS/COFINS",
+    obrigatorio: false,
+    // ⚠ O XSD o exige DENTRO do grupo `piscofins`, e não existe de-para serviço → CST em fonte
+    // versionada aqui. Sem ele o grupo não se monta — recusa NOMEADA, nunca um "01" fabricado.
+    hojeSaiDe: "não era escrito",
+    leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR],
+  }),
+
   // ── NBS e IBS/CBS (02/09/2026) ─────────────────────────────────────────────────────────────
   // ⚠ Estes QUATRO são os primeiros campos cujo escritor nasceu NO MESMO COMMIT da coluna — e
   // não antes dele. É a regra da casa aplicada na direção certa: coluna sem leitor é o defeito
@@ -224,8 +261,11 @@ export const FORA_DESTA_FASE = Object.freeze({
     + "pelos 112 cenários da aba EXPORTACAO_EMISSÃO do ANEXO_I, não extraída.",
   obra: "CNO/CIB. ⚠ O identificador é da OBRA, não da empresa — o perfil só HABILITA o campo "
     + "(`habilitaObra`); quem informa é o cliente, por nota.",
-  tribFed: "Retenções federais. As normas foram versionadas em `docs/retencao-fonte/`, mas o grupo "
-    + "não tem produtor e `vRetCP` continua sem norma confirmada.",
+  vRetIRRF: "⚠ A alíquota do IRRF vive na legislação do IR e NÃO está versionada aqui. O campo "
+    + "existe no leiaute e continua sem produtor — emitir percentual de memória é o que a regra 1 "
+    + "do projeto proíbe.",
+  vRetCP: "⚠ A retenção previdenciária de 11% (Lei 8.212/1991, art. 31) e sua interação com o "
+    + "Anexo IV do Simples não foram confirmadas em fonte primária. Sem produtor, de propósito.",
 });
 
 const POR_ID = new Map(CAMPOS.map((c) => [c.id, c]));
