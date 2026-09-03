@@ -937,6 +937,31 @@ export function createRealApi() {
     async getPortalAccessUsers(companyId) {
       return request(`/firm/companies/${companyId}/acesso-portal`);
     },
+    // ── CONTATOS DE WHATSAPP — quem recebe guia pelo canal, e o canal padrão da empresa ────────
+    // Contrato LIDO de `routes/firm/index.js` (`/companies/:id/contatos-whatsapp`, `/canal-envio`).
+    // ⚠ Nenhuma destas envia mensagem: são cadastro. Quem envia é `enviarGuiaWhatsapp` e o lote.
+    async listarContatosWhatsapp(companyId) {
+      return request(`/firm/companies/${companyId}/contatos-whatsapp`);
+    },
+    // Cria ou atualiza (com `id`). O servidor normaliza o telefone para E.164 e valida o `userId`
+    // contra os membros ATIVOS da empresa — o corpo nunca escolhe a empresa (o path vence).
+    async salvarContatoWhatsapp(companyId, input) {
+      return request(`/firm/companies/${companyId}/contatos-whatsapp`, {
+        method: "POST",
+        body: JSON.stringify(input || {}),
+      });
+    },
+    async removerContatoWhatsapp(companyId, contatoId) {
+      return request(`/firm/companies/${companyId}/contatos-whatsapp/${contatoId}`, { method: "DELETE" });
+    },
+    // EMAIL | WHATSAPP | PERGUNTAR — `ContatoWhatsappService.CANAL_PADRAO`; fora disso o servidor
+    // responde 400 `canal_invalido`.
+    async definirCanalEnvio(companyId, canalPadraoEnvio) {
+      return request(`/firm/companies/${companyId}/canal-envio`, {
+        method: "PATCH",
+        body: JSON.stringify({ canalPadraoEnvio }),
+      });
+    },
     // ⚠ A ÚNICA chamada deste par que devolve senha, e ela é uma senha NOVA — o servidor a GERA.
     // POST de propósito: escreve a linha de auditoria, revoga as sessões do usuário, e um verbo
     // repetível seria repetido de graça por refresh/"abrir em nova aba" — cada repetição sendo

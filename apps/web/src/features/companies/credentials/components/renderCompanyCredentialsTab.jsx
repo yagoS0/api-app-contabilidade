@@ -14,6 +14,7 @@ import {
   estadoDaCredencial, podeVerSenha, avisoDeProtecao, estadoDaCarga,
 } from "../lib/estadoCredencial";
 import { AcessoPortalCliente } from "./AcessoPortalCliente";
+import { ContatosWhatsapp } from "./ContatosWhatsapp";
 
 const btn = (cor = "var(--border)") => ({
   padding: "6px 10px", borderRadius: "var(--radius-sm)", border: `1px solid ${cor}`,
@@ -406,7 +407,7 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
   );
 }
 
-export function CompanyCredentialsTab({ vault, acesso, razaoSocial }) {
+export function CompanyCredentialsTab({ vault, acesso, whatsapp, razaoSocial }) {
   const {
     credenciais, cofre, podeRevelar, papelMinimoRevelar, carregando, erro,
     informacoes, carregandoInfos, erroInfos,
@@ -476,6 +477,13 @@ export function CompanyCredentialsTab({ vault, acesso, razaoSocial }) {
           Vem primeiro porque é a que o contador procura quando o cliente liga dizendo que não
           consegue entrar; e é a única que muda algo fora deste sistema. */}
       {acesso ? <AcessoPortalCliente acesso={acesso} razaoSocial={razaoSocial} /> : null}
+
+      {/* ⚠ QUARTA SEÇÃO (02/09/2026): os contatos de WhatsApp — quem recebe guia pelo canal, com o
+          opt-in que a Meta pode pedir para ver, e a PESSOA do portal por trás do número (de onde
+          sai o papel do RBAC). Fica logo abaixo do acesso ao portal porque é a mesma pergunta —
+          "quem é o cliente e por onde ele entra" — por outro canal. Nada aqui envia mensagem.
+          ⚠ Os usuários do portal vêm de `acesso`: é a MESMA lista, nunca uma segunda consulta. */}
+      {whatsapp ? <ContatosWhatsapp whatsapp={whatsapp} usuarios={acesso?.usuarios || []} /> : null}
 
       <LinhaDeProtecao nivel={aviso.nivel} texto={aviso.texto} />
 

@@ -2883,7 +2883,16 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   router.get("/companies/:companyId/contatos-whatsapp", requireFirmCompanyAccess(), async (req, res) => {
     try {
-      return res.json({ ok: true, contatos: await listarContatos(req.params.companyId) });
+      // O canal padrão viaja junto (02/09/2026): a tela de contatos é onde ele se escolhe, e uma
+      // segunda chamada só para lê-lo seria a mesma pergunta em duas idas.
+      const [contatos, portal] = await Promise.all([
+        listarContatos(req.params.companyId),
+        prisma.portalClient.findUnique({
+          where: { id: String(req.params.companyId) },
+          select: { canalPadraoEnvio: true },
+        }),
+      ]);
+      return res.json({ ok: true, contatos, canalPadraoEnvio: portal?.canalPadraoEnvio || "EMAIL" });
     } catch (err) {
       log.error({ err }, "Falha ao listar contatos de WhatsApp");
       return res.status(500).json({ ok: false, error: "contatos_list_failed", message: err?.message });

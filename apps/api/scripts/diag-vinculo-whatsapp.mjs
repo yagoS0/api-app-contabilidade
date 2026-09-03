@@ -23,7 +23,7 @@
 //   railway run --service Postgres bash -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" node apps/api/scripts/diag-vinculo-whatsapp.mjs'
 
 import { prisma } from "../src/infrastructure/db/prisma.js";
-import { resolverVinculoTelefone, SITUACOES, TOLERANCIAS } from "../src/application/whatsapp/vinculoTelefone.js";
+import { resolverVinculoTelefone, SITUACOES, LEITURAS } from "../src/application/whatsapp/vinculoTelefone.js";
 
 const num = (v) => Number(v || 0).toLocaleString("pt-BR");
 
@@ -103,8 +103,8 @@ console.log("\n═══ 3) AS DUAS LEITURAS DO NONO DÍGITO ═══");
 console.log("(ESTRITA = padrão, só dígito a dígito · NONO_DIGITO = casa também a outra forma)");
 console.log(`⚠ números em que as leituras DISCORDAM: ${num(divergentes.length)}`);
 for (const { n, r } of divergentes.slice(0, 20)) {
-  const e = r.leituras[TOLERANCIAS.ESTRITA];
-  const t = r.leituras[TOLERANCIAS.NONO_DIGITO];
+  const e = r.leituras[LEITURAS.ESTRITA];
+  const t = r.leituras[LEITURAS.NONO_DIGITO];
   console.log(`     ${n}: ESTRITA=${e.situacao}(${e.portalClientIds.length}) · NONO_DIGITO=${t.situacao}(${t.portalClientIds.length})`);
 }
 if (!divergentes.length) console.log("     nenhum — nesta base a tolerância não muda resposta nenhuma.");

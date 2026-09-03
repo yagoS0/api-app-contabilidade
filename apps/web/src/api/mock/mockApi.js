@@ -843,6 +843,29 @@ const mockCofre = {
 //
 // Os dois usuários existem para a tela exercitar o caso do SEGUNDO usuário — hoje raro (33 de 33
 // empresas têm um só), e exatamente por isso o ramo que nunca seria testado offline.
+// ── CONTATOS DE WHATSAPP (F1, 02/09/2026) ────────────────────────────────────────────────────
+// ⚠ DOIS RAMOS ALCANÇÁVEIS OFFLINE, de propósito: `mock-pc-1` tem DOIS contatos — um com opt-in
+// (recebe) e um SEM (não recebe, e a linha diz) — e as outras empresas NENHUM (o formulário nasce
+// aberto e a empresa "só sai por e-mail"). Este projeto foi mordido sete vezes por ramo que só
+// existia em produção. O segundo contato está no FORMATO ANTIGO (8 dígitos, celular) para o aviso
+// "corrija o cadastro" ser visível — o envio casa dígito a dígito, nunca tolera.
+let mockContatosWhatsapp = {
+  "mock-pc-1": [
+    {
+      id: "mock-ctt-1", portalClientId: "mock-pc-1", nome: "Maria do Cliente", papel: "sócia",
+      telefoneE164: "5521999998888", waId: null, optInEm: "2026-08-20T13:00:00.000Z",
+      optInOrigem: "contrato", ativo: true, userId: "mock-user-cli-1",
+      createdAt: "2026-08-20T13:00:00.000Z", updatedAt: "2026-08-20T13:00:00.000Z",
+    },
+    {
+      id: "mock-ctt-2", portalClientId: "mock-pc-1", nome: "Financeiro", papel: "financeiro",
+      telefoneE164: "552198887777", waId: null, optInEm: null, optInOrigem: null, ativo: true, userId: null,
+      createdAt: "2026-08-21T13:00:00.000Z", updatedAt: "2026-08-21T13:00:00.000Z",
+    },
+  ],
+};
+let mockCanalPadraoEnvio = { "mock-pc-1": "WHATSAPP" };
+
 let mockUsuariosPortal = [
   {
     userId: "mock-user-cli-1",
@@ -7058,6 +7081,81 @@ export function createMockApi() {
         podeDefinirSenha: true,
         papelMinimoDefinirSenha: "ACCOUNTANT",
       };
+    },
+    // ── CONTATOS DE WHATSAPP — o MESMO contrato de `realApi` ─────────────────────────────────
+    async listarContatosWhatsapp(companyId) {
+      await delay(60);
+      const id = String(companyId);
+      return {
+        ok: true,
+        contatos: (mockContatosWhatsapp[id] || []).map((c) => ({ ...c })),
+        canalPadraoEnvio: mockCanalPadraoEnvio[id] || "EMAIL",
+      };
+    },
+    // ⚠ O mock DECIDE como o servidor decide (`salvarContato`): telefone inválido e nome vazio
+    // são 400 nomeados; `userId` fora dos membros ativos é recusado. Um mock que aceitasse tudo
+    // treinaria a tela errada.
+    async salvarContatoWhatsapp(companyId, input) {
+      await delay(80);
+      const id = String(companyId);
+      const bruto = String(input?.telefone || "").trim();
+      const d = bruto.replace(/\D+/g, "");
+      let e164 = null;
+      if (bruto.startsWith("+")) e164 = d.length >= 8 && d.length <= 15 ? d : null;
+      else if (d.startsWith("55") && (d.length === 12 || d.length === 13)) e164 = d;
+      else if (d.length === 10 || d.length === 11) e164 = `55${d}`;
+      else if (d.length >= 12 && d.length <= 15) e164 = d;
+      if (!e164) {
+        const err = new Error("Telefone inválido. Use DDD + número (ex.: (21) 99999-8888) ou o formato internacional com +.");
+        err.status = 400; err.code = "TELEFONE_INVALIDO"; throw err;
+      }
+      if (!String(input?.nome || "").trim()) {
+        const err = new Error("Informe o nome de quem recebe as mensagens.");
+        err.status = 400; err.code = "NOME_OBRIGATORIO"; throw err;
+      }
+      if (input?.userId && !mockUsuariosPortal.some((u) => u.userId === String(input.userId) && u.situacaoUsuario === "active")) {
+        const err = new Error("Este usuário não é membro ativo desta empresa. Vincule-o à empresa antes de ligá-lo a um contato.");
+        err.status = 400; err.code = "USUARIO_SEM_VINCULO"; throw err;
+      }
+      const agora = new Date().toISOString();
+      const lista = mockContatosWhatsapp[id] || [];
+      const existente = lista.find((c) => (input?.id ? c.id === input.id : c.telefoneE164 === e164));
+      const dados = {
+        nome: String(input.nome).trim(),
+        papel: String(input.papel || "").trim() || null,
+        telefoneE164: e164,
+        ativo: input?.ativo === undefined ? true : Boolean(input.ativo),
+        ...(input?.optIn === true
+          ? { optInEm: agora, optInOrigem: String(input.optInOrigem || "").trim() || "nao_informado" }
+          : input?.optIn === false ? { optInEm: null, optInOrigem: null } : {}),
+        ...(input?.userId === null ? { userId: null } : input?.userId ? { userId: String(input.userId) } : {}),
+        updatedAt: agora,
+      };
+      let contato;
+      if (existente) {
+        Object.assign(existente, dados);
+        contato = existente;
+      } else {
+        contato = { id: `mock-ctt-${Date.now()}`, portalClientId: id, waId: null, optInEm: null, optInOrigem: null, userId: null, createdAt: agora, ...dados };
+        mockContatosWhatsapp[id] = [...lista, contato];
+      }
+      return { ok: true, contato: { ...contato } };
+    },
+    async removerContatoWhatsapp(companyId, contatoId) {
+      await delay(60);
+      const id = String(companyId);
+      mockContatosWhatsapp[id] = (mockContatosWhatsapp[id] || []).filter((c) => c.id !== String(contatoId));
+      return { ok: true };
+    },
+    async definirCanalEnvio(companyId, canalPadraoEnvio) {
+      await delay(60);
+      const canal = String(canalPadraoEnvio || "").toUpperCase();
+      if (!["EMAIL", "WHATSAPP", "PERGUNTAR"].includes(canal)) {
+        const err = new Error("Canal deve ser um de: EMAIL, WHATSAPP, PERGUNTAR");
+        err.status = 400; err.code = "canal_invalido"; throw err;
+      }
+      mockCanalPadraoEnvio[String(companyId)] = canal;
+      return { ok: true, canalPadraoEnvio: canal };
     },
     // ⚠ Recusa sem `confirmado`, igual ao servidor — mock permissivo faria a tela passar sem nunca
     // mandar o campo, e a recusa só apareceria em produção.

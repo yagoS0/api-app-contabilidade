@@ -26,6 +26,7 @@ import { obrigatoriedadeDefis } from "../../../obrigacoes/defis/lib/obrigatoried
 import { useCompanyDocuments, useCompanyNotes } from "../../documents/hooks/useCompanyDocuments";
 import { useCompanyCredentials } from "../../credentials/hooks/useCompanyCredentials";
 import { useAcessoPortalCliente } from "../../credentials/hooks/useAcessoPortalCliente";
+import { useContatosWhatsapp } from "../../credentials/hooks/useContatosWhatsapp";
 
 // Q8.C.3: lazy load das tabs pesadas. Bundle inicial cai (~30-40% segundo medições típicas),
 // e cada tab só carrega seu JS quando o contador clica nela pela 1ª vez.
@@ -136,7 +137,10 @@ function CompanyNotesTabWrapper({ companyId, feedback }) {
 function CompanyCredentialsTabWrapper({ companyId, feedback, razaoSocial }) {
   const vault = useCompanyCredentials({ api: companyDocsApi, companyId, feedback });
   const acesso = useAcessoPortalCliente({ api: companyDocsApi, companyId, feedback });
-  return <CompanyCredentialsTab vault={vault} acesso={acesso} razaoSocial={razaoSocial} />;
+  // Os contatos de WhatsApp (destinatários das guias + canal padrão). Terceiro hook, terceira
+  // natureza: cadastro com opt-in, sem segredo nenhum — mas com as mesmas rotas de papel.
+  const whatsapp = useContatosWhatsapp({ api: companyDocsApi, companyId, feedback });
+  return <CompanyCredentialsTab vault={vault} acesso={acesso} whatsapp={whatsapp} razaoSocial={razaoSocial} />;
 }
 
 // Q14.2: wrapper que instancia hook próprio da Apuração v2 (state da empresa atual)
