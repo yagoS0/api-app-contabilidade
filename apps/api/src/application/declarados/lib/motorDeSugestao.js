@@ -119,6 +119,9 @@ export function chaveDaDescricao(texto) {
 
 const naoSugere = (motivo, extra = {}) => ({
   conta: null,
+  // ⚠ `credito` nasce junto de `conta` (02/09/2026): sem sugestão de débito não há crédito a
+  // sugerir — e a chave existe sempre, para quem lê não distinguir "não veio" de "veio nulo".
+  credito: null,
   procedencia: null,
   motivo,
   frase: FRASE_DO_SEM_SUGESTAO[motivo],
@@ -285,8 +288,19 @@ export function sugerirConta(declarado, { regras = [], historico = [], plano = [
     if (doPlano.length > 1) return naoSugere(SEM_SUGESTAO.CONTA_AMBIGUA, trilha);
     if (ehContaSintetica(doPlano[0])) return naoSugere(SEM_SUGESTAO.CONTA_SINTETICA, trilha);
 
+    /**
+     * ⚠⚠ O CRÉDITO DA REGRA VIAJA JUNTO (02/09/2026) — dono: *"quando aparecem os a lançar as regras
+     * já devem habilitar"*, e a regra tem DUAS contas desde 29/08 (`contaCredito`). Até aqui o motor
+     * devolvia só o débito, e a linha pré-preenchia só ele: o crédito que o contador escolheu na
+     * regra ficava mudo na tela — e ele digitava de novo o que já tinha decidido.
+     *
+     * ⚠ `null` continua valendo: é *"esta regra não escolheu crédito"*, e o caixa padrão segue.
+     * ⚠ NÃO é conferido contra o plano aqui: a regra já foi conferida ao nascer (`RegraService`
+     * recusa crédito que não é disponibilidade), e quem recusa no clique é `montarLancamento`.
+     */
     return {
       conta: contaDaRegra,
+      credito: regra?.contaCredito ? String(regra.contaCredito) : null,
       procedencia,
       motivo: null,
       frase: FRASE_DA_PROCEDENCIA[procedencia],
@@ -319,8 +333,22 @@ export function sugerirConta(declarado, { regras = [], historico = [], plano = [
       if (doPlano.length > 1) return naoSugere(SEM_SUGESTAO.CONTA_AMBIGUA);
       if (ehContaSintetica(doPlano[0])) return naoSugere(SEM_SUGESTAO.CONTA_SINTETICA);
 
+      /**
+       * ⚠ O CRÉDITO DA MEMÓRIA, só quando é UM. `AccountingHistorico.contaCredito` guarda o
+       * REDUZIDO do que o contador creditou — se a mesma descrição foi creditada em contas
+       * diferentes, ninguém escolhe por ele (a mesma disciplina do `DIVIDIDO` do débito): fica
+       * `null`, e o caixa padrão segue. Traduzido para `codigoCompleto` como o débito; fora do
+       * plano vira `null` em vez de recusar a sugestão inteira — o débito continua valendo.
+       */
+      const creditosDaMemoria = new Set(
+        casam.map((h) => String(h?.contaCredito ?? "").trim()).filter(Boolean),
+      );
+      const creditoCompleto = creditosDaMemoria.size === 1
+        ? completoDoReduzido([...creditosDaMemoria][0], plano)
+        : null;
       return {
         conta: completo,
+        credito: creditoCompleto || null,
         procedencia: PROCEDENCIA.HISTORICO,
         motivo: null,
         frase: FRASE_DA_PROCEDENCIA[PROCEDENCIA.HISTORICO],

@@ -65,7 +65,9 @@ async function planoDaEmpresa(portalClientId, client) {
 async function memoriaDaEmpresa(portalClientId, client) {
   return client.accountingHistorico.findMany({
     where: { companyPortalClientId: portalClientId },
-    select: { text: true, contaDebito: true, usageCount: true },
+    // ⚠ `contaCredito` entrou em 02/09/2026: o motor passou a sugerir o crédito da memória quando
+    // ele é único. Coluna fora do `select` volta `undefined` sem erro — e o crédito ficaria mudo.
+    select: { text: true, contaDebito: true, contaCredito: true, usageCount: true },
   });
 }
 

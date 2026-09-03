@@ -7886,7 +7886,10 @@ export function createMockApi() {
           contaSugerida: "411020008", contaAplicada: null, accountingEntryId: null, regraId: null,
           // ⚠ A sugestão DERIVADA (Fase C), com a procedência. É o campo que o serializador
           // descartava até 25/08/2026 — o mock não o tinha porque ele nunca chegava.
-          sugestao: { conta: "411020008", procedencia: "REGRA_CNPJ", motivo: null, frase: "Uma regra deste fornecedor (pelo CNPJ) aponta esta conta.", regraId: "r-1" },
+          // ⚠ `credito` entrou em 02/09/2026: a regra tem DUAS contas, e a linha pré-preenche o
+          // crédito dela (*"as regras já devem habilitar"*). Sem esta chave o ramo nasceria
+          // inalcançável offline — a décima vez neste projeto.
+          sugestao: { conta: "411020008", credito: "111020001", procedencia: "REGRA_CNPJ", motivo: null, frase: "Uma regra deste fornecedor (pelo CNPJ) aponta esta conta.", regraId: "r-1" },
           motivoRecusa: null, mesFechado: false, notaRecebidaId: "nota-2",
           nota: { numero: "77", serie: "1", chaveAcesso: "4".repeat(50), tipo: "NFSE" },
         },

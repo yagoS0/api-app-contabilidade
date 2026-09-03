@@ -388,6 +388,69 @@ export function contaQueSeraUsada(item) {
 }
 
 /**
+ * ⚠⚠ O CRÉDITO QUE A LINHA VAI USAR SE NINGUÉM MEXER (02/09/2026) — a irmã de `contaQueSeraUsada`.
+ *
+ * > Dono: *"quando aparecem os a lançar as regras já devem habilitar"* — e a regra tem DUAS contas.
+ *
+ * A precedência é a MESMA do débito, e é o coração da decisão *"regra > IA"*:
+ *   1. o que já está GRAVADO na linha (`contaCredito` — escolha do contador ou da regra que lançou);
+ *   2. o que a SUGESTÃO derivada traz (`sugestao.credito` — regra do fornecedor ou memória);
+ *   3. o que a IA propôs (`creditoSugeridoIa`) — **só** quando 1 e 2 estão vazios;
+ *   4. `null` = o caixa padrão, que é o comportamento medido das 155 despesas.
+ *
+ * ⚠ A IA em ÚLTIMO, e por construção: ela só é consultada onde nem regra nem histórico responderam
+ * (`linhasParaIa`), então se a linha tem sugestão derivada a proposta da IA não existe — e se
+ * existir por algum descompasso, a derivada VENCE aqui.
+ */
+export function creditoQueSeraUsado(item) {
+  if (item?.contaCredito) return String(item.contaCredito);
+  if (item?.sugestao?.credito) return String(item.sugestao.credito);
+  if (item?.creditoSugeridoIa) return String(item.creditoSugeridoIa);
+  return null;
+}
+
+/**
+ * ⚠⚠ DE ONDE VEIO A CONTA QUE A LINHA MOSTRA — para o chip dizer a verdade (02/09/2026).
+ *
+ * `contaQueSeraUsada` responde QUAL; esta responde QUEM. Três fontes, e a IA é a terceira: quando a
+ * sugestão derivada existe, ela vence; a IA só aparece onde as duas primeiras calaram. O contador
+ * precisa ver a diferença entre *"sua regra escolheu"* e *"o modelo achou"* — confirmar as duas com
+ * o mesmo olho é exatamente o que o dono não quer (*"tendo o contador apenas que verificar"*).
+ */
+export const FONTE_DA_CONTA = Object.freeze({
+  REGRA_CNPJ: "REGRA_CNPJ",
+  REGRA_DESCRICAO: "REGRA_DESCRICAO",
+  HISTORICO: "HISTORICO",
+  IA: "IA",
+});
+
+export const ROTULO_DA_FONTE_DA_CONTA = Object.freeze({
+  [FONTE_DA_CONTA.REGRA_CNPJ]: "regra do fornecedor",
+  [FONTE_DA_CONTA.REGRA_DESCRICAO]: "regra da descrição",
+  [FONTE_DA_CONTA.HISTORICO]: "seu histórico",
+  // ⚠ "proposta da IA", não "IA sugere": a palavra PROPOSTA diz que falta alguém aceitar.
+  [FONTE_DA_CONTA.IA]: "proposta da IA",
+});
+
+export function fonteDaConta(item) {
+  const p = item?.sugestao?.procedencia;
+  if (p && FONTE_DA_CONTA[p]) return FONTE_DA_CONTA[p];
+  if (item?.sugestao?.conta || item?.contaSugerida) return null; // conta sem procedência declarada
+  if (item?.contaSugeridaIa) return FONTE_DA_CONTA.IA;
+  return null;
+}
+
+/**
+ * ⚠ A conta que a linha vai usar, considerando a IA — a versão de `contaQueSeraUsada` que enxerga a
+ * proposta do modelo, com a mesma precedência de `creditoQueSeraUsado`: derivada vence, IA fecha.
+ * ⚠ `contaQueSeraUsada` FICA como está (quem a chama espera só regra/histórico); esta é a leitura
+ * completa que a linha usa para pré-preencher.
+ */
+export function contaQueSeraUsadaComIa(item) {
+  return contaQueSeraUsada(item) || (item?.contaSugeridaIa ? String(item.contaSugeridaIa) : null);
+}
+
+/**
  * ⚠⚠ A LINHA DA NOTA ABRE O DOCUMENTO — e quando não pode, ela DIZ POR QUÊ.
  *
  * A FK é `SetNull`: a nota pode ter sido apagada. Esconder o link faria parecer que aquele declarado

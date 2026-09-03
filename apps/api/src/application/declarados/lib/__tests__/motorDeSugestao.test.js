@@ -327,7 +327,7 @@ describe("⚠⚠ ESTE MÓDULO NÃO CONTABILIZA NADA", () => {
       plano: PLANO,
     });
     // ⚠ Ele sugere uma CONTA e diz de onde veio. Quem leva ao razão é o contador, na fila.
-    expect(Object.keys(r).sort()).toEqual(["conta", "frase", "motivo", "procedencia", "regraId"]);
+    expect(Object.keys(r).sort()).toEqual(["conta", "credito", "frase", "motivo", "procedencia", "regraId"]);
     expect(r).not.toHaveProperty("lancar");
     expect(r).not.toHaveProperty("contabilizar");
   });
@@ -569,5 +569,36 @@ describe("⚠⚠ o `select` que alimenta o filtro", () => {
   it("⚠ contraprova: o padrão da varredura reconhece a ausência", () => {
     const semColuna = "select: { portalClientId: true, codigo: true, codigoCompleto: true, nome: true },";
     expect(semColuna).not.toMatch(/analitica:\s*true/);
+  });
+});
+
+
+// -------------------------------------------------------------------------------------------------
+// ⚠⚠ O CRÉDITO VIAJA COM A SUGESTÃO (02/09/2026) — dono: *"quando aparecem os a lançar as regras já
+// devem habilitar"*. A regra tem duas contas desde 29/08, e o motor devolvia só o débito: o crédito
+// escolhido ficava mudo na tela.
+// -------------------------------------------------------------------------------------------------
+describe("⚠⚠ o CRÉDITO da regra e da memória viajam com a sugestão", () => {
+  it("⚠⚠ a regra com crédito escolhido devolve os DOIS", () => {
+    const r = sugerirConta(declarado(), {
+      regras: [regra({ cnpjFornecedor: "12345678000190", contaCredito: "111020001" })],
+      plano: PLANO,
+    });
+    expect(r.conta).toBe("411030012");
+    expect(r.credito).toBe("111020001");
+  });
+
+  it("⚠ regra SEM crédito devolve `credito: null` — o caixa padrão segue", () => {
+    const r = sugerirConta(declarado(), {
+      regras: [regra({ cnpjFornecedor: "12345678000190", contaCredito: null })],
+      plano: PLANO,
+    });
+    expect(r.conta).toBe("411030012");
+    expect(r.credito).toBeNull();
+  });
+
+  it("⚠ e a recusa também carrega a chave, nula — quem lê não distingue «não veio» de «veio nulo»", () => {
+    const r = sugerirConta(declarado(), { regras: [], historico: [], plano: PLANO });
+    expect(r).toHaveProperty("credito", null);
   });
 });

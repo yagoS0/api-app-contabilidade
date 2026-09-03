@@ -28,6 +28,8 @@ import { PainelDeSaidasDoCliente } from "./PainelDeSaidasDoCliente";
 import { PainelDeMexidasDoCliente } from "./PainelDeMexidasDoCliente";
 import { PainelDeLancadosPorRegra } from "./PainelDeLancadosPorRegra";
 import { PainelDeRegras } from "./PainelDeRegras";
+// ⚠ O MESMO formulário do painel «Regras», aberto pela LINHA — um formulário, duas portas.
+import { FormularioDeRegra, iniciaisDaLinha } from "./FormularioDeRegra";
 import { NATUREZA, SECAO, origemDaLinha, veioDeExtrato } from "../lib/naturezaDaConferencia";
 // ⚠ Import entre features, deliberado: a URL da aba da empresa tem UMA fonte
 // (`companyTabPath`), e reconstruí-la aqui faria o link levar a um lugar e o clique a outro.
@@ -49,6 +51,11 @@ import {
   cabecalhoDoGrupo,
   cnpjFormatado,
   contaQueSeraUsada,
+  contaQueSeraUsadaComIa,
+  creditoQueSeraUsado,
+  fonteDaConta,
+  ROTULO_DA_FONTE_DA_CONTA,
+  FONTE_DA_CONTA,
   contagemParaTela,
   dataCivil,
   dataSugeridaParaPagamento,
@@ -427,11 +434,6 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
             {/* ⚠⚠ A lista OFERECE só o que o servidor aceitaria: fora as sintéticas (ele recusa com
                 `CONTA_SINTETICA`) e fora as sem `codigoCompleto` (viram `CONTA_FORA_DO_PLANO`).
                 Oferecer qualquer uma das duas é a tela propondo o que o clique nega. */}
-            <datalist id="contas-da-conferencia">
-              {oferecidas.map((c) => (
-                <option key={c.codigo} value={c.codigo}>{c.nome}</option>
-              ))}
-            </datalist>
 
             {/* ⚠⚠ POR QUE O CAMPO VEIO VAZIO — a sugestão existe e não traduziu. Sem isto,
                 `FORA_DO_PLANO` e `COMPLETO_AMBIGUO` eram texto morto: o campo ficava vazio e mudo, e
@@ -509,11 +511,6 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
               placeholder="Caixa (padrão) — ou o código do banco"
               style={creditoInvalido ? { borderColor: "var(--state-danger)" } : undefined}
             />
-            <datalist id="creditos-da-conferencia">
-              {creditosOferecidos.map((c) => (
-                <option key={c.codigo} value={c.codigo}>{c.nome}</option>
-              ))}
-            </datalist>
 
             {creditoNaoDisponivel ? (
               <span style={{ fontSize: "0.78rem", color: "var(--state-danger)" }}>
@@ -595,8 +592,10 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
  * caso que a faixa existe para pegar (fornecedor conhecido, valor 10× fora do normal).
  */
 function ContaSugerida({ item }) {
-  const conta = contaQueSeraUsada(item);
+  // ⚠ Com a IA: regra/histórico vencem; a proposta do modelo só aparece onde os dois calaram.
+  const conta = contaQueSeraUsadaComIa(item);
   const s = item?.sugestao;
+  const fonte = fonteDaConta(item);
 
   if (!conta) {
     return (
@@ -616,9 +615,26 @@ function ContaSugerida({ item }) {
   return (
     <span style={{ display: "inline-flex", flexDirection: "column", gap: 2 }} title={s?.frase || undefined}>
       <span>{conta}</span>
-      {s?.procedencia ? (
-        <span style={{ fontSize: "0.72rem", color: "var(--text-faint)" }}>
-          {s.procedencia === "REGRA_CNPJ" ? "regra do fornecedor" : s.procedencia === "REGRA_DESCRICAO" ? "regra da descrição" : "seu histórico"}
+      {/*
+        ⚠⚠ QUEM ESCOLHEU ESTA CONTA — e a IA tem cor própria (02/09/2026).
+        *"proposta da IA"* em âmbar, distinta de regra/histórico em cinza: o contador precisa ver a
+        diferença entre *"sua regra escolheu"* e *"o modelo achou"* ANTES de confirmar. Confirmar as
+        duas com o mesmo olho é exatamente o que o dono não quer (*"tendo o contador apenas que
+        verificar"*). ⚠ E a JUSTIFICATIVA sai visível — não em `title`: é ela que separa "verificar"
+        de "carimbar".
+      */}
+      {fonte ? (
+        <span style={{
+          fontSize: "0.72rem",
+          color: fonte === FONTE_DA_CONTA.IA ? "var(--state-warn)" : "var(--text-faint)",
+          fontWeight: fonte === FONTE_DA_CONTA.IA ? 600 : 400,
+        }}>
+          {ROTULO_DA_FONTE_DA_CONTA[fonte]}
+        </span>
+      ) : null}
+      {fonte === FONTE_DA_CONTA.IA && item?.justificativaIa ? (
+        <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", maxWidth: 260 }}>
+          {item.justificativaIa}
         </span>
       ) : null}
     </span>
@@ -641,7 +657,9 @@ function motivosDeBloqueioVisiveis(acoes, item, opcoes) {
   return vistas;
 }
 
-function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, contas = [], onLancar, ocupado, motivoDoCasamento }) {
+function LinhaDoDeclarado({
+  item, podeEscrever, podeEscolherConta, onAgir, contas = [], onLancar, onCriarRegra, ocupado, motivoDoCasamento,
+}) {
   const estado = leituraDoEstado(item.estado);
   const doc = leituraDoDocumento(item);
   const acoes = acoesDaLinha(item);
@@ -663,8 +681,10 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
   // ⚠⚠ `reduzidoDoCompleto` devolve `{ valor, motivo }`, NUNCA uma string: o motivo é quem responde
   // "por que o campo veio vazio?" (`FORA_DO_PLANO`, `COMPLETO_AMBIGUO`). Descartá-lo com
   // `.valor || ""` já foi defeito medido neste arquivo, em 26/08/2026.
+  // ⚠ Precedência: regra/histórico > proposta da IA > vazio. A IA só é consultada onde os dois
+  // primeiros calaram, então aqui ela é o ÚLTIMO recurso — nunca sobrescreve uma sugestão derivada.
   const daSugestaoNaLinha = useMemo(
-    () => reduzidoDoCompleto(item?.sugestao?.conta || item?.contaSugerida, contas),
+    () => reduzidoDoCompleto(contaQueSeraUsadaComIa(item), contas),
     [item, contas],
   );
   // ⚠ O plano chega DEPOIS do primeiro render (é carregado à parte). Sem este efeito o campo
@@ -677,10 +697,66 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
   }, [daSugestaoNaLinha.valor]);
 
   const traducao = useMemo(() => completoDoReduzido(conta, contas), [conta, contas]);
-  // ⚠⚠ Lançar da LINHA só vale quando a ação não pede mais nada. `confirmar` a partir de
-  // `AGUARDANDO_PAGAMENTO` exige a DATA junto — ali o caminho continua sendo o modal, porque a
-  // data é a afirmação de quando o dinheiro saiu e não se digita de passagem.
-  const podeLancarDaLinha = acoes.includes("confirmar") && !acaoPedeData("confirmar", item);
+
+  /**
+   * ⚠⚠ O CRÉDITO NA PRÓPRIA LINHA — dono, 02/09/2026: *"cada linha deve conter data, crédito e
+   * débito, todos modificáveis inline"*.
+   *
+   * Nasce com o que a linha já tem (`contaCredito` gravado), ou com o crédito que a REGRA/memória
+   * sugere (`sugestao.credito` — é o *"as regras já devem habilitar"*), ou com a proposta da IA, ou
+   * VAZIO — e vazio é o caixa padrão, dito no placeholder. Preenchê-lo com "5" apagaria a distinção
+   * *"é caixa porque escolheram"* × *"é caixa por padrão"*.
+   * ⚠ A lista é só de DISPONIBILIDADE, e é a MESMA do modal e da regra (`contasDeCreditoOferecidas`):
+   * o lançamento afirma de onde o dinheiro saiu.
+   */
+  const [credito, setCredito] = useState("");
+  const creditoTocado = useRef(false);
+  const doCreditoNaLinha = useMemo(() => reduzidoDoCompleto(creditoQueSeraUsado(item), contas), [item, contas]);
+  useEffect(() => {
+    if (creditoTocado.current) return;
+    if (doCreditoNaLinha.valor) setCredito(doCreditoNaLinha.valor);
+  }, [doCreditoNaLinha.valor]);
+  const traducaoDoCredito = useMemo(() => completoDoReduzido(credito, contas), [credito, contas]);
+  const creditosOferecidos = useMemo(() => contasDeCreditoOferecidas(contas), [contas]);
+  const creditoNaoDisponivel = Boolean(
+    traducaoDoCredito.valor && !creditosOferecidos.some((c) => c.codigoCompleto === traducaoDoCredito.valor),
+  );
+  const creditoInvalido = Boolean(credito.trim()) && (!traducaoDoCredito.valor || creditoNaoDisponivel);
+
+  /**
+   * ⚠⚠ A DATA NA PRÓPRIA LINHA — a terceira coisa que o dono pediu inline.
+   *
+   * ⚠⚠ **A PROVA NÃO SE EDITA.** Quando a data veio do EXTRATO (OFX/Excel), ela é evidência, e um
+   * campo editável a rebaixaria a declaração num descuido de clique. Ali a célula continua só
+   * leitura, com a procedência. O campo só existe quando a data é DECLARADA ou está AUSENTE — e nasce
+   * com a EMISSÃO da nota (`dataSugeridaParaPagamento`), nunca com hoje.
+   * ⚠ `montarCorpo` já sabe: manda `dataPagamento` + `DECLARADO_PELO_CONTADOR` **só** quando a ação
+   * pede data. Com a data provada, o corpo não a leva — a prova não é rebaixada.
+   */
+  const origemDaData = leituraDaOrigemDoPagamento(item.origemPagamento);
+  const dataEhProva = Boolean(item.dataPagamento) && origemDaData.ehProva;
+  const [data, setData] = useState(() => dataSugeridaParaPagamento(item));
+  const pedeData = acaoPedeData("confirmar", item);
+  const faltaData = pedeData && !data;
+
+  // ⚠⚠ A LINHA LANÇA SEMPRE QUE A AÇÃO EXISTE (02/09/2026) — a data deixou de mandar para o modal,
+  // porque agora ela se digita AQUI. O modal fica para `ajustar` (valor) e `recusar` (motivo).
+  const podeLancarDaLinha = acoes.includes("confirmar");
+
+  /**
+   * ⚠⚠ O CAIXA TORTO DERRUBA A LINHA TAMBÉM — a guarda que o modal tinha e a linha não (02/09/2026).
+   *
+   * O crédito padrão é o caixa CRAVADO (`111010001`); sem ele no plano, `montarLancamento` recusa
+   * com `CAIXA_FORA_DO_PLANO` por mais certa que esteja a conta escolhida. O modal já dizia isso
+   * antes do clique; a linha, que virou o caminho principal, ficava muda até o 400 do servidor.
+   * ⚠ Só quando o plano JÁ CHEGOU (`contas.length`): com o plano ainda em trânsito, "não tem
+   * caixa" seria uma afirmação sobre um plano que ninguém leu ainda.
+   * ⚠ E só quando o crédito é o PADRÃO: crédito escolhido não passa pelo caixa cravado.
+   */
+  const caixaTorto = useMemo(
+    () => (contas.length && !credito.trim() ? problemaDoCaixa(contas) : null),
+    [contas, credito],
+  );
   /**
    * ⚠⚠⚠ A DESPESA EM DOBRO — a guarda que faltava na linha (01/09/2026).
    *
@@ -705,8 +781,15 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
 
   const bloqueioDoLancar = motivoDeBloqueio("confirmar", item, { podeEscrever, podeEscolherConta })
     || riscoDeDobro
+    || (faltaData ? "Informe a data do pagamento." : null)
+    || caixaTorto
     || (!conta ? "Escolha a conta de despesa desta linha." : null)
-    || (traducao.motivo ? FRASE_DO_MOTIVO_DA_CONTA[traducao.motivo] : null);
+    || (traducao.motivo ? FRASE_DO_MOTIVO_DA_CONTA[traducao.motivo] : null)
+    || (creditoInvalido
+      ? (creditoNaoDisponivel
+        ? "O crédito de uma despesa sai de caixa ou banco. Deixe vazio para usar o caixa."
+        : "A conta de crédito não existe no plano desta empresa.")
+      : null);
 
   // ⚠⚠ É ISTO QUE RESPONDE "saídas do cliente" DENTRO da fila, sem duplicar a linha. A coluna
   // `origem` existe no model desde sempre, já viajava no serializador da rota, e **não aparecia em
@@ -753,7 +836,30 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
         )}
       </td>
       <td>{dataCivil(item.dataDocumento)}</td>
-      <td><DataComProcedencia item={item} /></td>
+      <td>
+        {/* ⚠⚠ DATA EDITÁVEL SÓ QUANDO NÃO É PROVA — ver `dataEhProva` acima. Numa linha que não
+            lança (já contabilizada, recusada), a célula continua só leitura: um campo ali prometeria
+            uma edição que não existe. */}
+        {podeLancarDaLinha && !dataEhProva ? (
+          <span style={{ display: "inline-flex", flexDirection: "column", gap: 2 }}>
+            <input
+              type="date"
+              value={data}
+              onChange={(e) => setData(e.target.value)}
+              aria-label={`Data do pagamento de ${item.descricaoOriginal || "esta despesa"}`}
+              style={{ fontSize: "0.78rem", ...(faltaData ? { borderColor: "var(--state-danger)" } : {}) }}
+            />
+            {/* ⚠ A frase diz que isto é DECLARAÇÃO, em âmbar — a mesma marca que a célula só leitura
+                usa para a data declarada. Sem ela, a data digitada pareceria tão sólida quanto a do
+                extrato. */}
+            <span style={{ fontSize: "0.72rem", color: "var(--state-warn)", fontWeight: 600 }}>
+              {data ? "declaração sua" : "sem data"}
+            </span>
+          </span>
+        ) : (
+          <DataComProcedencia item={item} />
+        )}
+      </td>
       <td>
         {/* ⚠⚠ A SUGESTÃO DE CONTA (Fase C) — ela era calculada a cada leitura e NUNCA chegava à
             tela: o serializador da rota a descartava, e a tela não a lia. Duas camadas de trabalho
@@ -779,6 +885,53 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
               ...(conta && traducao.motivo ? { borderColor: "var(--state-danger)" } : {}),
             }}
           />
+        ) : null}
+        {/* ⚠⚠ O MOTIVO DA RECUSA E O NOME DA CONTA SAEM VISÍVEIS (02/09/2026) — eram só do modal.
+            Com a linha virando o caminho principal, deixá-los só no `title` do «Lançar» seria a
+            forma que esta casa rejeita duas vezes: *"`title` não aparece no teclado nem no toque"*.
+            ⚠ Motivo NOMEADO, nunca "conta inválida": sintética, fora do plano e sem código completo
+            pedem consertos diferentes — e o texto mora em `lib/` (`FRASE_DO_MOTIVO_DA_CONTA`). */}
+        {podeLancarDaLinha && conta && traducao.motivo ? (
+          <span style={{ display: "block", fontSize: "0.72rem", color: "var(--state-danger)", maxWidth: 260 }}>
+            {FRASE_DO_MOTIVO_DA_CONTA[traducao.motivo]}
+          </span>
+        ) : null}
+        {podeLancarDaLinha && traducao.conta && traducao.conta.nome !== contaQueSeraUsadaComIa(item) ? (
+          <span style={{ display: "block", fontSize: "0.72rem", color: "var(--text-faint)" }}>
+            {traducao.conta.nome}
+          </span>
+        ) : null}
+        {podeLancarDaLinha && caixaTorto ? (
+          <span style={{ display: "block", fontSize: "0.72rem", color: "var(--state-danger)", maxWidth: 260 }}>
+            {caixaTorto}
+          </span>
+        ) : null}
+        {podeLancarDaLinha ? (
+          <span style={{ display: "grid", gap: 2, marginTop: 4 }}>
+            <input
+              list="creditos-da-conferencia"
+              value={credito}
+              onChange={(e) => { creditoTocado.current = true; setCredito(e.target.value); }}
+              placeholder="crédito — vazio = caixa"
+              aria-label={`Conta de crédito de ${item.descricaoOriginal || "esta despesa"}`}
+              style={{
+                width: "100%", maxWidth: 140, fontSize: "0.78rem",
+                ...(creditoInvalido ? { borderColor: "var(--state-danger)" } : {}),
+              }}
+            />
+            {/* ⚠ Diz QUAL crédito vale, pelo nome — código sozinho não se confere. E quando veio de
+                regra/memória/IA, a fonte já está no bloco de cima. */}
+            {traducaoDoCredito.conta ? (
+              <span style={{ fontSize: "0.72rem", color: "var(--text-faint)" }}>{traducaoDoCredito.conta.nome}</span>
+            ) : null}
+            {creditoInvalido ? (
+              <span style={{ fontSize: "0.72rem", color: "var(--state-danger)", maxWidth: 260 }}>
+                {creditoNaoDisponivel
+                  ? "O crédito de uma despesa sai de caixa ou banco. Deixe vazio para usar o caixa."
+                  : "A conta de crédito não existe no plano desta empresa."}
+              </span>
+            ) : null}
+          </span>
         ) : null}
       </td>
       <td className="tabela__num">
@@ -811,26 +964,23 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
               variant="primary"
               disabled={Boolean(bloqueioDoLancar) || ocupado}
               title={bloqueioDoLancar || undefined}
-              onClick={() => onLancar?.(item, traducao.valor)}
+              onClick={() => onLancar?.(item, {
+                contaCompleta: traducao.valor,
+                creditoCompleto: traducaoDoCredito.valor,
+                creditoTocado: creditoTocado.current,
+                // ⚠ A data só viaja quando a ação PEDE data — com prova, `montarCorpo` a ignora.
+                data: pedeData ? data : null,
+              })}
             >
               Lançar
             </Button>
           ) : null}
           {/*
-            ⚠⚠ A PORTA DAS DUAS CONTAS (01/09/2026) — dono: *"aqueles que viram lançamento contábil
-            devem ter opção de colocar débito e crédito, por mais que sempre seja 5, pode haver a
-            possibilidade de ser compra de ativo, ou outra coisa"*.
-
-            ⚠⚠ **SEM ESTE BOTÃO A ESCOLHA DO CRÉDITO SERIA INALCANÇÁVEL NO CAMINHO NORMAL.** A linha
-            com data de pagamento lança direto (o «Lançar» ao lado) e o modal — o único lugar com os
-            dois seletores — só aparece quando a ação pede DATA. Ou seja: exatamente no caso mais
-            comum, o contador não teria como trocar o crédito.
-
-            ⚠ Ele NÃO vira uma coluna nova: a linha já tem nove, e o campo de crédito ao lado do de
-            débito seria a décima para uma escolha que é exceção. O que muda em quase toda linha é o
-            DÉBITO, e esse continua ali, digitável, sem abrir nada.
-            ⚠ Ele abre a MESMA ação (`confirmar`), no MESMO modal — não há um segundo formulário de
-            lançamento a divergir do primeiro.
+            ⚠⚠ «CRIAR REGRA» NA LINHA — dono, 02/09/2026: *"cada linha deve mostrar as opções de
+            lançar, criar regra"*. Abre o MESMO formulário do painel «Regras», pré-preenchido com o
+            que a linha TEM (CNPJ, descrição, as contas digitadas, o valor) — nada inventado.
+            ⚠ AQUI FICOU O «CONTAS…», criado e removido em 01–02/09/2026: ele existia porque o
+            crédito só morava no modal; com o crédito inline, a porta não tem mais o que abrir.
           */}
           {podeLancarDaLinha ? (
             <Button
@@ -839,12 +989,12 @@ function LinhaDoDeclarado({ item, podeEscrever, podeEscolherConta, onAgir, conta
               disabled={!podeEscrever || ocupado}
               title={
                 podeEscrever
-                  ? "Escolher as duas contas (débito e crédito) antes de lançar."
+                  ? "Criar uma regra deste fornecedor a partir desta despesa."
                   : "Seu perfil não pode alterar lançamentos desta empresa."
               }
-              onClick={() => onAgir("confirmar", item)}
+              onClick={() => onCriarRegra?.(item, { contaDestino: traducao.valor, contaCredito: traducaoDoCredito.valor })}
             >
-              Contas…
+              Criar regra
             </Button>
           ) : null}
           {/*
@@ -935,6 +1085,8 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
   // telas: o contador vê o número, não acha a linha, e conclui que o sistema perdeu a despesa.
   const [estadoFiltrado, setEstadoFiltrado] = useState(null);
   const [acaoAberta, setAcaoAberta] = useState(null);
+  // ⚠ «Criar regra» a partir de uma linha: `{ item, iniciais }`. Ver `iniciaisDaLinha`.
+  const [criandoRegraDe, setCriandoRegraDe] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState(null);
   const [varrendo, setVarrendo] = useState(false);
@@ -1172,7 +1324,8 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
    * ⚠ O `codigoCompleto` já vem traduzido da linha — a tela nunca manda o reduzido.
    */
   const lancarDaLinha = useCallback(
-    async (item, contaCompleta) => {
+    async (item, escolha) => {
+      const { contaCompleta, creditoCompleto = null, creditoTocado = false, data = null } = escolha || {};
       if (!item?.id || !contaCompleta) return;
       setEnviando(true);
       try {
@@ -1194,6 +1347,10 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
           item,
           cfg: ACAO.confirmar,
           contaCompleta,
+          // ⚠ Desde 02/09/2026 a linha leva também o CRÉDITO e a DATA — a mesma montagem do modal.
+          creditoCompleto,
+          creditoTocado,
+          data,
         });
         await conferenciaApi.postConferenciaAcao(companyId, item.id, "confirmar", corpo);
         setAviso(null);
@@ -1414,6 +1571,23 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
         );
       })() : null}
 
+      {/* ⚠⚠ OS DOIS `datalist` MORAM NA ABA, não no modal (02/09/2026). Eles moravam dentro do
+          `ModalDaAcao`, e o modal só existe enquanto está aberto — a LINHA, que também os usa, ficava
+          sem autocompletar em 100% do tempo, sem erro nenhum (um `list` que aponta para um id
+          inexistente é simplesmente ignorado). Um só de cada, para a linha e o modal oferecerem
+          a MESMA lista: oferecer listas diferentes faria a mesma conta ser aceita num caminho e
+          recusada no outro. */}
+      <datalist id="contas-da-conferencia">
+        {contasOferecidas(contas).map((c) => (
+          <option key={c.codigo} value={c.codigo}>{c.nome}</option>
+        ))}
+      </datalist>
+      <datalist id="creditos-da-conferencia">
+        {contasDeCreditoOferecidas(contas).map((c) => (
+          <option key={c.codigo} value={c.codigo}>{c.nome}</option>
+        ))}
+      </datalist>
+
       <SecaoDaConferencia natureza={NATUREZA.VIRA_LANCAMENTO}>
         {/* ⚠ ACIMA DA FILA de propósito: um débito de extrato sem nota vinculada é o que pode virar
             despesa contada duas vezes, e é o que o contador precisa ver primeiro. O painel some
@@ -1601,6 +1775,10 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
                           motivoDoCasamento={quaisCasam === null ? null : quaisCasam.get(item.id)}
                           contas={contas}
                           onLancar={lancarDaLinha}
+                          onCriarRegra={(linha, escolhidas) => setCriandoRegraDe({
+                            item: linha,
+                            iniciais: iniciaisDaLinha(linha, escolhidas),
+                          })}
                           ocupado={enviando}
                         />
                       ))}
@@ -1702,6 +1880,32 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
               // também. Sem isto, o contador desfaz e vê a tela igual atrás da gaveta.
               setVersao((v) => v + 1);
               carregar();
+            }}
+          />
+        </Modal>
+      ) : null}
+
+      {criandoRegraDe ? (
+        <Modal
+          titulo={`Criar regra a partir de ${criandoRegraDe.item?.descricaoOriginal || "esta despesa"}`}
+          tamanho="lg"
+          aoFechar={() => setCriandoRegraDe(null)}
+        >
+          <FormularioDeRegra
+            companyId={companyId}
+            contas={contas}
+            iniciais={criandoRegraDe.iniciais}
+            notaDaFaixa={
+              `A faixa nasceu com o valor desta despesa (${dinheiro(criandoRegraDe.item?.valorAjustado ?? criandoRegraDe.item?.valor)}), `
+              + "mínimo e máximo iguais. Alargue-a à mão para a regra alcançar as próximas — nada foi inventado aqui."
+            }
+            aoCancelar={() => setCriandoRegraDe(null)}
+            aoSalvar={() => {
+              setCriandoRegraDe(null);
+              // ⚠ A regra nova pré-preenche as irmãs desta linha na próxima leitura da fila — e o
+              // painel «Regras» a lista. Sem recarregar, a tela negaria o que acabou de acontecer.
+              carregar();
+              setVersao((v) => v + 1);
             }}
           />
         </Modal>
