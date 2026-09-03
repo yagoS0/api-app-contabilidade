@@ -294,6 +294,9 @@ model User {
   clientSessions      ClientSession[]
   /// Contraparte de `contatos_whatsapp.userId`. NENHUMA coluna nova em `"User"` — a FK mora lá.
   contatosWhatsapp    ContatoWhatsapp[]
+  /// Os fios de WhatsApp que esta pessoa (do escritório) ASSUMIU — a IA pausa enquanto durar.
+  conversasAtendidas  ConversaWhatsapp[] @relation("ConversaAtendidaPor")
+  acoesPendentesWhatsapp AcaoPendenteWhatsapp[]
   /// Contraparte de `password_reset_tokens.userId`. NENHUMA coluna nova em `"User"` — a FK mora lá.
   passwordResetTokens PasswordResetToken[]
   /// Contraparte de `senhas_portal_trocas.userId`. NENHUMA coluna nova em `"User"` — a FK mora lá.
@@ -902,6 +905,8 @@ model PortalClient {
   /// existe com `portalClientId` nulo e não pertence a tenant nenhum — que é o correto: nulo nunca
   /// casa com um `where` de escopo, então a fila de não vinculados não pode vazar para uma empresa.
   conversasWhatsapp       ConversaWhatsapp[]
+  acoesPendentesWhatsapp  AcaoPendenteWhatsapp[]
+  chamadasIa              ChamadaIa[]
   // Q14 — refundação da apuração (cadastro como autoridade)
   cadastroFiscal          CadastroFiscal?
   produtosServicos        ProdutoServico[]
@@ -1215,11 +1220,19 @@ model ConversaWhatsapp {
   /// a tela zera) e diverge no primeiro evento perdido ou reentregue — e nada no banco denuncia. As
   /// não lidas são as mensagens recebidas depois deste instante: derivadas, sempre certas.
   lidaAteEm          DateTime?
+  /// QUEM DO ESCRITÓRIO ASSUMIU este fio (F5, 02/09/2026). Enquanto preenchido, o assistente
+  /// (IA) NÃO responde: quem fala é a pessoa. `null` = a IA pode responder (se ligada e a
+  /// empresa for piloto). `onDelete: SetNull` — a saída do usuário devolve o fio à IA.
+  atendidaPor        String?
+  atendidaDesde      DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
   portalClient PortalClient?      @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
+  atendente    User?              @relation("ConversaAtendidaPor", fields: [atendidaPor], references: [id], onDelete: SetNull)
   mensagens    MensagemWhatsapp[]
+  acoesPendentes AcaoPendenteWhatsapp[]
+  chamadasIa   ChamadaIa[]
 
   /// A fila "não vinculados" é uma CONSULTA (`portalClientId IS NULL`), não uma tabela: guardar o
   /// motivo (`DESCONHECIDO`/`AMBIGUO`) numa linha o faria envelhecer — cadastrado o contato às 10h,
@@ -1266,6 +1279,12 @@ model MensagemWhatsapp {
   /// (`instanteQueAbreAJanela`): vence o mais ANTIGO, para a nossa janela nunca fechar depois da
   /// janela da Meta.
   registradaEm       DateTime  @default(now())
+  /// QUEM ESCREVEU o balão de saída: `IA` | `HUMANO` | `SISTEMA` (mensagem fixa). Nulo nas linhas
+  /// anteriores a 02/09/2026 e nas de ENTRADA (o autor é o cliente). Travado por CHECK.
+  autor              String?
+  /// ⚠ A RESERVA ATÔMICA DA RESPOSTA DA IA: `updateMany({ where: { id, respondidaPelaIaEm: null } })`
+  /// lendo o `count` — duas entregas do mesmo webhook não geram duas respostas. Só mensagens `in`.
+  respondidaPelaIaEm DateTime?
 
   conversa  ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Cascade)
   envioGuia EnvioGuia?       @relation(fields: [envioGuiaId], references: [id], onDelete: SetNull)
@@ -1308,6 +1327,84 @@ model TemplateWhatsapp {
   updatedAt         DateTime  @updatedAt
 
   @@map("templates_whatsapp")
+}
+
+/// UMA AÇÃO QUE A IA PREPAROU E O CLIENTE AINDA NÃO CONFIRMOU (F4, 02/09/2026).
+///
+/// ⚠⚠ É O PROTOCOLO QUE SEPARA "A IA MONTOU" DE "A NOTA SAIU". A IA nunca emite, cancela ou
+/// recalcula: ela grava aqui o payload EXATAMENTE como a rota do cliente receberia, mais o texto de
+/// confirmação que repetiu ao cliente (a declaração inteira), e um CÓDIGO de 4 caracteres. Só a
+/// resposta "CONFIRMAR <código>" — reconhecida ANTES de chamar o modelo, por regex — executa, e a
+/// execução passa por `updateMany({ where: { id, status: "pendente", expiraEm: { gt: now } } })`
+/// lendo o `count`: dupla confirmação executa UMA vez.
+/// ⚠ Expira em 10 min, conferido na LEITURA (não há worker). "Sim" solto nunca confirma.
+model AcaoPendenteWhatsapp {
+  id                     String    @id @default(uuid())
+  conversaId             String
+  portalClientId         String
+  /// A PESSOA que pediu (contato.userId) — é o papel dela que autorizou preparar.
+  userId                 String?
+  /// EMITIR_NFSE | CANCELAR_NFSE | RECALCULAR_GUIA (CHECK no banco).
+  tipo                   String
+  /// O corpo como a rota do cliente receberia. Nada é reinterpretado na execução.
+  payload                Json
+  /// O que o cliente LEU antes de confirmar — a declaração inteira. Auditoria do ato.
+  textoDeConfirmacao     String
+  /// 4 caracteres (sem 0/O/1/I), único POR CONVERSA entre as pendentes.
+  codigo                 String
+  expiraEm               DateTime
+  /// pendente | confirmada | executada | expirada | cancelada (CHECK no banco).
+  status                 String    @default("pendente")
+  confirmadaEm           DateTime?
+  executadaEm            DateTime?
+  /// O desfecho da execução (o que a rota devolveria). `indeterminado: true` no TRANSPORTE.
+  resultado              Json?
+  mensagemConfirmacaoId  String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  conversa     ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  portalClient PortalClient     @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  user         User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([conversaId, status])
+  @@index([expiraEm])
+  @@map("acoes_pendentes_whatsapp")
+}
+
+/// UMA CHAMADA AO MODELO — registro e teto de custo, no molde de `serpro_chamadas`.
+///
+/// ⚠ FALHA FECHADO (ao contrário da guarda do SERPRO): a IA é conveniência, um laço fora de
+/// controle gasta dinheiro em silêncio, e o cliente tem outro caminho (o portal). Sem conseguir
+/// contar, não se chama. Custo em CENTAVOS DE DÓLAR, ESTIMADO pela tabela de `precosIa.js`.
+model ChamadaIa {
+  id                   String   @id @default(cuid())
+  conversaId           String?
+  portalClientId       String?
+  mensagemId           String?
+  modelo               String
+  inputTokens          Int      @default(0)
+  outputTokens         Int      @default(0)
+  cacheReadTokens      Int      @default(0)
+  cacheCreationTokens  Int      @default(0)
+  custoEstimadoCentavos Int     @default(0)
+  duracaoMs            Int?
+  iteracoes            Int      @default(0)
+  /// Nomes das ferramentas chamadas no turno, na ordem.
+  ferramentas          Json?
+  stopReason           String?
+  /// ok | erro | recusada_teto | recusada_config
+  status               String
+  erroCodigo           String?
+  erroMensagem         String?
+  createdAt            DateTime @default(now())
+
+  conversa     ConversaWhatsapp? @relation(fields: [conversaId], references: [id], onDelete: SetNull)
+  portalClient PortalClient?     @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
+
+  @@index([portalClientId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@map("chamadas_ia")
 }
 
 model Guide {

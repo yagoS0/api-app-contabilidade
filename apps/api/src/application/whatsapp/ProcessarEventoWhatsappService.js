@@ -37,8 +37,9 @@
 // tipo e o desfecho — o suficiente para investigar sem transcrever a conversa do cliente no log da
 // aplicação.
 
-import { log as logPadrao } from "../../config.js";
+import { log as logPadrao, INTEGRACAO_WHATSAPP_IA, IA_EMPRESAS_PILOTO } from "../../config.js";
 import { registrarMensagemRecebida } from "./ConversaWhatsappService.js";
+import { SITUACOES } from "./vinculoTelefone.js";
 import { aplicarStatusDoProvedor, aplicarFalhaDoProvedor } from "../guides/EnvioGuiaService.js";
 import { traduzirErroMeta } from "./errosMeta.js";
 import { mascararTelefone } from "./WhatsappCloudClient.js";
@@ -123,7 +124,29 @@ async function processarStatus(item, { logger }) {
   return { desfecho: DESFECHOS.STATUS_DESCONHECIDO, motivo: `status "${status}"` };
 }
 
-async function processarMensagem(item, { logger }) {
+/**
+ * O ASSISTENTE (IA) RESPONDE A ESTA MENSAGEM? — a decisão, pura, com as QUATRO chaves (02/09/2026).
+ *
+ *   1. `INTEGRACAO_WHATSAPP_IA` ligada — nasce OFF;
+ *   2. a empresa do fio está em `IA_EMPRESAS_PILOTO` — lista VAZIA = ninguém;
+ *   3. o vínculo é `VINCULADO` com UMA empresa (o fio está atribuído). DESCONHECIDO/AMBIGUO ficam
+ *      na fila humana — o assistente nunca escolhe empresa;
+ *   4. o fio NÃO está assumido por uma pessoa (`atendidaPor`) nem na fila do escritório
+ *      (`atendidaDesde`): quando o escritório fala, a IA cala.
+ *
+ * ⚠ Mensagem DUPLICADA (reentrega) nunca dispara: a reserva em `responderMensagem` também barra,
+ * mas aqui é mais barato. ⚠ Mídia (não-texto) DISPARA — a frase fixa "só leio texto" é do turno.
+ */
+export function decidirRespostaDaIa({ r, flag = INTEGRACAO_WHATSAPP_IA, piloto = IA_EMPRESAS_PILOTO } = {}) {
+  if (!flag) return { responde: false, motivo: "FLAG_OFF" };
+  if (r?.duplicada) return { responde: false, motivo: "DUPLICADA" };
+  if (r?.vinculo?.situacao !== SITUACOES.VINCULADO || !r?.conversa?.portalClientId) return { responde: false, motivo: "NAO_VINCULADA" };
+  if (!Array.isArray(piloto) || !piloto.includes(String(r.conversa.portalClientId))) return { responde: false, motivo: "FORA_DO_PILOTO" };
+  if (r.conversa.atendidaPor || r.conversa.atendidaDesde) return { responde: false, motivo: "ASSUMIDA_POR_HUMANO" };
+  return { responde: true, motivo: null };
+}
+
+async function processarMensagem(item, { logger, responder }) {
   const r = await registrarMensagemRecebida({
     telefone: item.telefone,
     providerMessageId: item.providerMessageId,
@@ -155,7 +178,21 @@ async function processarMensagem(item, { logger }) {
     // ⚠ O CORPO DA MENSAGEM NÃO ENTRA AQUI (LGPD).
     "WhatsApp: mensagem recebida registrada",
   );
-  return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao };
+
+  // ── O ASSISTENTE (IA) — o gancho, DEPOIS de a mensagem estar gravada ──────────────────────────
+  // `responder` é injetável (o teste mede que ele NÃO é chamado nos ramos fechados). Ele NUNCA
+  // lança e roda fora deste laço (`setImmediate`): a resposta ao webhook já saiu, e o turno do
+  // modelo pode levar segundos.
+  const decisao = decidirRespostaDaIa({ r });
+  if (decisao.responde && typeof responder === "function" && r?.mensagem?.id && r?.conversa?.id) {
+    const args = { conversaId: r.conversa.id, mensagemId: r.mensagem.id };
+    setImmediate(() => {
+      Promise.resolve()
+        .then(() => responder(args))
+        .catch((e) => logger?.error?.({ ...args, err: e?.message || String(e) }, "WhatsApp: o assistente lançou fora do turno"));
+    });
+  }
+  return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: decisao };
 }
 
 /**
@@ -171,7 +208,7 @@ async function processarMensagem(item, { logger }) {
  * @param {Date}   [opcoes.agora]   injetável (a leitura do timestamp não lê relógio escondido)
  * @param {object} [opcoes.logger]
  */
-export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao } = {}) {
+export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao } = {}) {
   const resumo = {
     mensagens: { total: 0, gravadas: 0, duplicadas: 0, recusadas: 0 },
     statuses: { total: 0, aplicados: 0, semEnvio: 0, desconhecidos: 0, contradicoes: 0, recusados: 0 },
@@ -225,7 +262,7 @@ export async function processarEventoWhatsapp(payload, { agora = new Date(), log
   resumo.mensagens.total = leitura.mensagens.length;
   for (const item of leitura.mensagens) {
     try {
-      const r = await processarMensagem(item, { logger });
+      const r = await processarMensagem(item, { logger, responder });
       if (r.desfecho === DESFECHOS.DUPLICADA) resumo.mensagens.duplicadas += 1;
       else resumo.mensagens.gravadas += 1;
     } catch (e) {
@@ -254,4 +291,13 @@ export async function processarEventoWhatsapp(payload, { agora = new Date(), log
   }
 
   return resumo;
+}
+
+/**
+ * O assistente de verdade, carregado SOB DEMANDA — o módulo do assistente puxa o SDK da Anthropic e
+ * meia aplicação; com a flag OFF (o estado de hoje) ninguém paga esse import no arranque.
+ */
+async function responderPadrao(args) {
+  const { responderMensagem } = await import("../assistente/AssistenteService.js");
+  return responderMensagem(args);
 }

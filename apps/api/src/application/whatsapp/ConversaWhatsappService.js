@@ -153,6 +153,9 @@ export async function registrarMensagemEnviada({
   corpo = null,
   providerMessageId = null,
   envioGuiaId = null,
+  // QUEM escreveu (02/09/2026): `IA` | `HUMANO` | `SISTEMA`. Nulo = o envio de guia por template,
+  // como sempre foi. Vocabulário travado por CHECK no banco.
+  autor = null,
 }) {
   const conversa = await garantirConversa({ telefone, portalClientId });
   try {
@@ -164,6 +167,7 @@ export async function registrarMensagemEnviada({
         tipo: String(tipo),
         corpo: corpo ?? null,
         envioGuiaId: envioGuiaId ? String(envioGuiaId) : null,
+        autor: autor ? String(autor) : null,
       },
     });
     return { mensagem, conversa, duplicada: false };

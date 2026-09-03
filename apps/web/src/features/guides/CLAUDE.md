@@ -253,3 +253,31 @@ semelhança — mesma disciplina de `list/lib/estadoVazioGuias.js`.
 > e ela é **deliberadamente diferente numa coisa**: o cliente NÃO vê os dois valores da divergência —
 > isso é material de trabalho do contador. Ele vê "em conferência com o contador" e que o PDF
 > continua servindo para pagar.
+
+
+## ⚠ O CANAL DE ENVIO (WhatsApp — Entrega 2, 02/09/2026)
+
+"Liberar ao cliente" e o envio em lote passaram a **respeitar `canalPadraoEnvio`** da empresa
+(`EMAIL · WHATSAPP · PERGUNTAR` — o vocabulário é o de `ContatoWhatsappService.CANAL_PADRAO`; o
+plano dizia `AMBOS` e o código venceu). A regra é pura em `lib/canalDeEnvio.js`
+(`decidirCanaisAoLiberar`, `resumirDesfechoDosCanais`, `ofertaDeRetentativa`, `agruparPrevia`,
+`conferenciaDaPrevia`, `podeAbrirLoteWhatsapp`) e a ligação em `lib/liberarComCanais.js` — as duas
+com teste, e o `handleLiberarGuia` do workspace só chama.
+
+- ⚠ **A PRÉVIA VEM ANTES DO LOTE, sempre.** `POST /guides/whatsapp/lote/previa` agrupa por motivo
+  (`elegibilidadeEnvioGuia.MOTIVOS`, rotulado em `ROTULO_MOTIVO`) e o `lote` só vai com a
+  `conferencia` que a rota exige — sem prévia não há POST (teste em `batch-email/`).
+- ⚠ **"Tentar de novo por WhatsApp"** só habilita com `envioPodeTentarDeNovo === true`; `null` é
+  "a Meta não diz se reenviar resolve — decida", **nunca vira `false`**. O chip lê `envioStatus`,
+  `envioErroCodigo` e `envioPodeTentarDeNovo` do `guideCompliance`.
+- ⚠ **O desfecho por canal aparece separado** — "WhatsApp: 1 de 1 enviada · e-mail: 2 de 2"; falha
+  de um canal não entra na caixa verde do outro.
+- **Contatos**: `companies/credentials/lib/contatoWhatsappTela.js` espelha `normalizarE164` da api
+  (amarrado por teste que importa a função da api). Nono dígito divergente é *"conserte o
+  cadastro"*, nunca tolerância.
+- **A página WhatsApp** (`features/whatsapp/`, rota `/whatsapp`, menu da gaveta) tem regra em
+  `lib/conversasTela.js`: a janela de 24h é dita **antes** de digitar; a fila (número sem cadastro)
+  vem primeiro em âmbar porque é pendência; quem escreveu cada balão (cliente · assistente (IA) ·
+  escritório · mensagem fixa) sai do `autor`.
+- ⚠ O mock tem os três fios (com a IA + pendência aberta · assumido com janela EXPIRADA · não
+  vinculado) e dois contatos (um sem opt-in) — cada ramo é alcançável offline.

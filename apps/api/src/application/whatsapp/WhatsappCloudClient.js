@@ -191,6 +191,33 @@ export function montarPayloadTemplate({ para, template, idioma, componentes = []
   };
 }
 
+/**
+ * Corpo de um DOCUMENTO fora de template (mensagem de serviço). [M1]
+ *
+ * Referência de Messages: `type: "document"` com o objeto de mídia `{ id | link, caption?, filename? }`
+ * — o MESMO objeto do header de template (`montarHeaderDocumento`), agora como mensagem própria.
+ * ⚠ SÓ VALE COM A JANELA DE 24H ABERTA (mensagem de serviço), e ⚠ `id`, nunca `link`, pelos dois
+ * motivos escritos em `enviarGuia`. Nasceu em 02/09/2026 para o assistente responder "manda a guia"
+ * com o PDF; até então só existia documento dentro de template.
+ */
+export function montarPayloadDocumento({ para, mediaId, nomeArquivo, legenda }) {
+  const documento = { id: String(mediaId || "").trim() };
+  if (!documento.id) {
+    throw recusaLocal(CODIGOS_LOCAIS.RECUSA_LOCAL, "O documento não foi informado: falta o arquivo enviado à Meta.");
+  }
+  const nome = String(nomeArquivo || "").trim();
+  if (nome) documento.filename = nome;
+  const caption = String(legenda || "").trim();
+  if (caption) documento.caption = caption;
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: para,
+    type: "document",
+    document: documento,
+  };
+}
+
 /** Corpo de um texto livre. [M1] */
 export function montarPayloadTexto({ para, texto, previewUrl = false }) {
   return {
@@ -429,6 +456,25 @@ export class WhatsappCloudClient {
       { para: mascararTelefone(para), caracteres: conteudo.length },
       "texto livre WhatsApp aceito pela Meta",
     );
+    return { wamid: WhatsappCloudClient.wamidDaResposta(json), resposta: json };
+  }
+
+  /**
+   * DOCUMENTO fora de template — a resposta "manda a guia" do assistente (Entrega 2).
+   *
+   * ⚠ SÓ DENTRO DA JANELA DE 24H: é mensagem de serviço, e a Meta recusa fora dela (`131047`,
+   * traduzido). Quem confere a janela é a camada de conversa (`janelaDaConversa`), ANTES de
+   * chamar; aqui só se sabe que a operação existe.
+   * O PDF sobe agora (`uploadDocumento`, `id`) — nunca `link`, nunca `media_id` guardado.
+   */
+  async enviarDocumento({ telefone, conteudo, nomeArquivo, legenda, mimeType = "application/pdf" }) {
+    const para = this.destino(telefone);
+    const mediaId = await this.uploadDocumento({ conteudo, nomeArquivo, mimeType });
+    const json = await this.chamar({
+      recurso: "messages",
+      corpo: montarPayloadDocumento({ para, mediaId, nomeArquivo, legenda }),
+    });
+    this.log?.info?.({ para: mascararTelefone(para), documento: true }, "documento WhatsApp aceito pela Meta");
     return { wamid: WhatsappCloudClient.wamidDaResposta(json), resposta: json };
   }
 

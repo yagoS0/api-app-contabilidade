@@ -12,6 +12,7 @@ import { PlanejamentoPage } from "./features/planejamento/pages/renderPlanejamen
 import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploadPage";
 import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
+import { WhatsappPage } from "./features/whatsapp/pages/renderWhatsappPage";
 import { BatchEmailPage } from "./features/guides/batch-email/pages/renderBatchEmailPage";
 import { useLoteWhatsapp } from "./features/guides/batch-email/hooks/useLoteWhatsapp";
 import { GlobalChartOfAccountsPage } from "./features/accounting/chart-of-accounts/pages/renderGlobalChartOfAccountsPage";
@@ -519,6 +520,18 @@ function App() {
     );
   }
 
+  if (session.page === "whatsapp") {
+    return (
+      <WhatsappPage
+        api={api}
+        companies={companiesWorkspace.companiesState.companies}
+        onBack={() => session.setPage("companies")}
+        message={feedback.message}
+        error={feedback.error}
+      />
+    );
+  }
+
   if (session.page === "pendingReport") {
     return (
       <PendingGuidesPage
@@ -572,6 +585,7 @@ function App() {
       onOpenRotinas={() => session.setPage("rotinas")}
       onOpenPlanejamento={() => session.setPage("planejamento")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
+      onOpenWhatsapp={() => session.setPage("whatsapp")}
       onOpenObrigacoes={() => session.setPage("obrigacoes")}
       onOpenOnboardings={() => session.setPage("onboardings")}
       backgroundJobs={backgroundJobs}

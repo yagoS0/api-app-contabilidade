@@ -209,3 +209,37 @@ describe("statuses", () => {
     expect(log.error).toHaveBeenCalled();
   });
 });
+
+// ── O GANCHO DO ASSISTENTE (F4, 02/09/2026): as QUATRO chaves, medidas por NÃO-chamada ──────────
+import { decidirRespostaDaIa } from "../ProcessarEventoWhatsappService.js";
+
+describe("decidirRespostaDaIa — a IA só responde com as quatro chaves", () => {
+  const r = (over = {}) => ({
+    duplicada: false,
+    vinculo: { situacao: "VINCULADO" },
+    conversa: { id: "cv1", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null },
+    mensagem: { id: "m1" },
+    ...over,
+  });
+  it("flag OFF → não responde (é o estado de hoje)", () => {
+    expect(decidirRespostaDaIa({ r: r(), flag: false, piloto: ["pc-1"] })).toEqual({ responde: false, motivo: "FLAG_OFF" });
+  });
+  it("⚠ piloto VAZIO → ninguém, mesmo com a flag ligada", () => {
+    expect(decidirRespostaDaIa({ r: r(), flag: true, piloto: [] }).motivo).toBe("FORA_DO_PILOTO");
+    expect(decidirRespostaDaIa({ r: r(), flag: true, piloto: ["outra"] }).motivo).toBe("FORA_DO_PILOTO");
+  });
+  it("DESCONHECIDO/AMBIGUO/sem empresa → fila humana, nunca a IA", () => {
+    expect(decidirRespostaDaIa({ r: r({ vinculo: { situacao: "DESCONHECIDO" }, conversa: { id: "cv1", portalClientId: null } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("NAO_VINCULADA");
+    expect(decidirRespostaDaIa({ r: r({ vinculo: { situacao: "AMBIGUO" } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("NAO_VINCULADA");
+  });
+  it("assumida por pessoa, ou na fila do escritório → a IA cala", () => {
+    expect(decidirRespostaDaIa({ r: r({ conversa: { id: "cv1", portalClientId: "pc-1", atendidaPor: "u9" } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("ASSUMIDA_POR_HUMANO");
+    expect(decidirRespostaDaIa({ r: r({ conversa: { id: "cv1", portalClientId: "pc-1", atendidaDesde: new Date() } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("ASSUMIDA_POR_HUMANO");
+  });
+  it("duplicada (reentrega) nunca dispara", () => {
+    expect(decidirRespostaDaIa({ r: r({ duplicada: true }), flag: true, piloto: ["pc-1"] }).motivo).toBe("DUPLICADA");
+  });
+  it("as quatro chaves ligadas → responde", () => {
+    expect(decidirRespostaDaIa({ r: r(), flag: true, piloto: ["pc-1"] })).toEqual({ responde: true, motivo: null });
+  });
+});

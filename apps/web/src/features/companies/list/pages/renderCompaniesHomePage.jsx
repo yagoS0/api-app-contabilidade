@@ -313,6 +313,8 @@ export function CompaniesHomePage({
   onOpenRotinas,
   onOpenPlanejamento,
   onOpenSerproFuncoes,
+  // As conversas de WhatsApp (F5, 02/09/2026): a fila de não vinculados, os fios, assumir/responder.
+  onOpenWhatsapp,
   onOpenObrigacoes,
   onOpenOnboardings,
   onLogout,
@@ -993,6 +995,7 @@ export function CompaniesHomePage({
                 { grupo: "Ferramentas", label: "Apuração", onClick: onOpenApuracao },
                 // C10: "Pendências" já tinha virado a aba "Situação Fiscal" dentro de Consultas.
                 { label: "Consultas", onClick: onOpenSerproFuncoes },
+                { label: "WhatsApp", onClick: onOpenWhatsapp },
                 // Planejamento é cenário de reunião com PROSPECT (por isso mora no dashboard e não
                 // dentro de uma empresa); Rotinas é configuração de recorrência. Nenhuma das duas é
                 // o trabalho do dia — são episódicas, e é isso que as põe aqui dentro.

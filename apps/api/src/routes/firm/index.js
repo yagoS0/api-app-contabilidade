@@ -38,6 +38,7 @@ import { createCalendarioRouter } from "./calendario.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
 import { createOnboardingsRouter } from "./onboardings.js";
 import { createWhatsappGuiasRouter } from "./whatsappGuias.js";
+import { createWhatsappConversasRouter } from "./whatsappConversas.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
 import { mesclarAtividades } from "../../application/company/atividadesDaEmpresa.js";
 import {
@@ -104,6 +105,8 @@ import { normalizeCompetencia, normalizeGuideType, colunaMatrizDaGuia, envioDeEm
 // (`envios_guia`): enviada = terminal em QUALQUER canal, e o WhatsApp que falhou aparece.
 import { enviosPorGuia, foiEnviadaComLegado, envioParaExibir } from "../../application/guides/EnvioGuiaService.js";
 import { podeTentarDeNovoPeloCodigo } from "../../application/whatsapp/errosMeta.js";
+// O consumo do assistente (IA) no mês — molde de `/serpro/consumo`, para a tela de conversas.
+import { consumoIaDoMes } from "../../application/assistente/GuardaIaService.js";
 // ⚠ As mensagens de "não foi enviado" moram no domínio, não aqui: era escrevendo-as no lugar de uso
 // que a promessa de uma fila inexistente ganhou quatro cópias. Ver `guideEmailCopy.js`.
 import {
@@ -5406,6 +5409,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // envio individual, que é por empresa, traz o próprio `requireFirmCompanyAccess` no caminho.
   // ⚠ Só a SAÍDA. O webhook é público e vive fora deste roteador (é o único sem `requireAuth`).
   router.use("/", createWhatsappGuiasRouter({ log }));
+  // A tela mínima de conversas (F5, 02/09/2026): lista, fio, assumir/devolver, responder, vincular.
+  router.use("/", createWhatsappConversasRouter({ log }));
 
   // Q12.C.2: Apuração global — todas as empresas em uma página
   // GET /firm/apuracao?competencia=YYYY-MM&search=...
@@ -5842,6 +5847,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Consumo do mês das chamadas PAGAS ao SERPRO + o teto vigente.
   // Existe para o teto ser VISTO chegando: um bloqueio que aparece de surpresa no fim do mês é o
   // mesmo que travar o app. Em erro devolve vazio — isto é informação, não pode derrubar tela.
+  /**
+   * O CONSUMO DO ASSISTENTE (IA) NO MÊS — estimativa, em centavos de dólar, com os dois tetos.
+   * ⚠ `null` quando a contagem falha: a tela diz que não sabe; nunca "zero".
+   */
+  router.get("/ia/consumo", async (req, res) => {
+    const portalClientId = String(req.query?.portalClientId || "").trim() || null;
+    const consumo = await consumoIaDoMes({ portalClientId });
+    if (!consumo) return res.status(503).json({ ok: false, error: "ia_consumo_indisponivel", message: "Não foi possível ler o consumo do assistente agora." });
+    return res.json({ ok: true, ...consumo });
+  });
+
   router.get("/serpro/consumo", async (_req, res) => {
     try {
       return res.json({ ok: true, ...(await consumoDoMes()) });

@@ -3527,6 +3527,110 @@ Com `apps/portal-cliente-web` no ar, isso apareceria no primeiro usuário real.
   qualquer token** — `token-valido` · `token-expirado` · `token-usado` exercem os três desfechos
   offline, e os dois últimos produzem a **mesma** recusa do válido-porém-recusado.
 
+## ⚠⚠ WHATSAPP — ENTREGA 2 (02–03/09/2026): canal ligável, guias na tela, assistente com IA, conversas
+
+> Dono, 02/09/2026: *"Meta liberou para aprovar a empresa, e estou com o template de envio de guia
+> aprovado também, vamos planejar como implementar o whatsapp, inclusive com uso de IA, resposta de
+> documentos, emissão de notas, recálculo, etc."* Plano aprovado em
+> `~/.claude/plans/avaliei-as-tr-s-telas-dapper-nest.md` (fases F0–F6). Decisões dele: **Anthropic/
+> Claude** (`@anthropic-ai/sdk`, `claude-opus-5`, custo registrado com teto) · **"IA monta, cliente
+> confirma"** com a declaração inteira · **CNPJ consultado no servidor** (BrasilAPI, ajuda nunca
+> portão; CPF nunca) · **tela mínima de conversas** nesta entrega.
+
+⚠⚠ **NADA DISTO FOI EXERCIDO CONTRA A META NEM CONTRA A ANTHROPIC.** Não há credencial nesta máquina
+e as duas flags nascem OFF. O que está provado é o que os testes provam (rede travada por
+construção); o que só se prova com a chave está nomeado em "Não verificado", abaixo.
+
+### Medido em produção ANTES de escrever (02/09/2026, só leitura)
+
+| | valor |
+|---|---|
+| `prisma migrate status` | **145/145 aplicadas** — inclusive `20260814160000` e `20260814180000`, que o doc da Entrega 1 dizia "não aplicadas" |
+| `templates_whatsapp` | 5 chaves, todas `DECLARADO`, `nomeMeta` **null** |
+| `contatos_whatsapp` · `conversas_whatsapp` · `mensagens_whatsapp` · `envios_guia` | **0 · 0 · 0 · 0** |
+| `Guide.emailStatus` | null 110 · SENT 83 · PENDING 62 |
+| tabela do `PortalClient` | **`"PortalClient"`** (PascalCase, sem `@@map`) — ⚠ FK escrita como `portal_clients` já rendeu um P3009 |
+
+### O que entrou, por fase
+
+**F0 — ligar o canal (sem código de produto).** `application/whatsapp/templateAprovado.js`
+(`conferirCorpoAprovado` compara o corpo aprovado com as **5 variáveis na ordem do código**;
+`decidirRegistroDeAprovacao` exige `conferidoPorPessoa`) + `scripts/registrar-template-whatsapp.mjs`
+(ensaio por padrão; `--chave --nome-meta --idioma --corpo-arquivo --conferido --aplicar`). ⚠ Se o
+corpo aprovado tem outra ordem/quantidade de `{{n}}`, **muda o código, não o template**.
+`scripts/diag-canal-whatsapp.mjs` (só leitura) mede flag + templates + tabelas.
+`scripts/diag-vinculo-whatsapp.mjs` consertado (importava `TOLERANCIAS`, que não existe; é `LEITURAS`).
+
+**F1/F2 — as telas** vivem em `apps/web` (ver `apps/web/src/features/guides/CLAUDE.md`). Do lado da
+api: `GET /companies/:id/contatos-whatsapp` passou a devolver `canalPadraoEnvio`;
+`errosMeta.podeTentarDeNovoPeloCodigo`; `guideCompliance` lê `envioStatus === "falhou"` e carimba
+`envioErroCodigo`/`envioPodeTentarDeNovo`; o relatório do lote lê `enviosPorGuia`.
+
+**F3 — CNPJ no servidor.** `application/tomador/consultaCnpj.js` (`fetch` injetável, timeout
+8 s, **nunca lança**, `MOTIVOS` nomeados, log só com CNPJ mascarado) + `consultaTomador.js`, o
+**terceiro** leitor da mesma regra dos dois portais — o teste importa as funções do `apps/web` e
+exige o mesmo veredito. ⚠ O `cMun` da consulta passa pela prova tripla do IBGE.
+
+**F4 — o assistente.** `application/assistente/`:
+
+| arquivo | o que decide |
+|---|---|
+| `precosIa.js` | preço por token, versionado com data e fonte; **estimativa** |
+| `sessaoDoContato.js` | `contato.userId` → `CompanyClientUser.role` → `{portalClientId, userId, papel}`. **Papel nunca é presumido**: sem vínculo ativo, papel nulo e nada de guia |
+| `confirmacaoPendente.js` | `^confirmar\s+([a-z0-9]{4})$` reconhecido **antes** do modelo; `EXECUTAR · CODIGO_ERRADO · EXPIRADA · CANCELAR · SEM_PENDENCIA · SEGUE_PARA_IA`; TTL 10 min |
+| `GuardaIaService.js` | `autorizarChamadaIa` **FALHA FECHADO** (o SERPRO falha aberto porque derrubar o fechamento seria pior que o gasto; a IA é conveniência e um laço gasta em silêncio); `concluirChamadaIa` grava `chamadas_ia`; `consumoIaDoMes` |
+| `promptDoAssistente.js` | `SYSTEM_ESTAVEL` cacheado (**sem data/empresa** — teste trava), `contextoDoTurno` depois do cache, `MENSAGENS_FIXAS` |
+| `AssistenteClient.js` | loop manual `stop_reason === "tool_use"`, máx. 6 iterações, `tool_result` de uma rodada numa única mensagem `user`, `is_error`, `refusal`, erros tipados → frase fixa |
+| `AcoesPendentesService.js` | `criarPendencia`, `confirmarEExecutar` com reserva atômica (`updateMany` + `count`); executores chamam **as mesmas funções das rotas**: `NfseService.issue`, `sendEvent` e101101, recálculo dentro de `comContextoSerpro({origem:"whatsapp:recalcular", forcar:false})` com `traduzirRecusaParaCliente` |
+| `ferramentas/index.js` | 12 ferramentas `strict`; toda query leva `ctx.sessao.portalClientId` no `where` |
+| `AssistenteService.js` | `responderMensagem`: reserva `respondidaPelaIaEm` → lock `ia:<conversaId>` → sessão → pendência (regex) → mídia fixa → guarda → modelo → registra `autor` |
+
+Entrada: `ProcessarEventoWhatsappService.decidirRespostaDaIa` — a IA só responde com flag ON **e**
+empresa no piloto **e** `VINCULADO` **e** não assumida por humano **e** texto; recusas nomeadas
+(`FLAG_OFF · DUPLICADA · NAO_VINCULADA · FORA_DO_PILOTO · ASSUMIDA_POR_HUMANO`).
+`WhatsappCloudClient.enviarDocumento` (`type: "document"`, `document.id`, nunca `link`).
+`packages/shared/src/nfse/declaracaoNfse.js` (`./declaracao-nfse`): as 11 linhas de
+`linhasDoEspelho` que o cliente confirma.
+
+**F5 — conversas.** `routes/firm/whatsappConversas.js` (admin|contador; escopo por
+`empresasVisiveis`; fio de fora da carteira é **404**): `GET /whatsapp/conversas?filtro=`,
+`GET .../:id/mensagens` (marca `lidaAteEm`), `POST .../assumir|devolver`, `POST .../responder`
+(**409 `FORA_DA_JANELA`** sem chamar a Meta; dentro, `autor: "HUMANO"`), `POST .../vincular`
+(o telefone é o **do fio** — o corpo não escolhe o número). `GET /ia/consumo`.
+⚠ `atendidaDesde` **sem** `atendidaPor` = "o assistente chamou o escritório" (a ferramenta
+`chamar_escritorio`); a IA cala nos dois casos.
+
+### Flags e variáveis (todas nascem OFF/vazias)
+
+`INTEGRACAO_WHATSAPP_IA` · `IA_EMPRESAS_PILOTO` (CSV de `portalClientId`; **vazio = ninguém**) ·
+`ANTHROPIC_API_KEY` · `IA_MODELO` (claude-opus-5) · `IA_ESFORCO` (medium) · `IA_MAX_TOKENS` 2000 ·
+`IA_MAX_ITERACOES` 6 · `IA_TETO_MENSAL_EMPRESA_CENTAVOS` **400** · `IA_TETO_MENSAL_ESCRITORIO_CENTAVOS`
+**6000** · `IA_ALERTA_FRACAO` 0.8 · `IA_HISTORICO_MENSAGENS` 20.
+⚠ **Os tetos são em CENTAVOS DE DÓLAR** (a Anthropic cobra em USD e a tabela de preço é em USD) —
+o plano dizia R$ 20 / R$ 300; os defaults são US$ 4 / US$ 60 e ficam como pergunta ao dono.
+
+### Migrations (escritas à mão, aditivas) — ⚠ NÃO APLICADAS em lugar nenhum
+
+`20260903100000_add_whatsapp_conversa_atendimento` (`atendidaPor`/`atendidaDesde`, `autor`,
+`respondidaPelaIaEm`) · `20260903100100_add_whatsapp_acao_pendente` (`acoes_pendentes_whatsapp`) ·
+`20260903100200_add_chamada_ia` (`chamadas_ia`, FK a `"PortalClient"`). O banco local está fora
+(docker parado); validadas com `prisma validate` + `generate`. Em produção entram pelo
+`start:prod` (`migrate deploy`) — **medir `migrate status` depois do deploy**.
+
+### Não verificado (só a chave prova)
+
+- nenhuma chamada real à Meta nem à Anthropic; `output_config.effort` e o payload de `document`
+  seguem a documentação, não uma resposta real; `strict: true` nas tools idem;
+- `usage.cache_read_input_tokens > 0` (o cache do prompt) só se mede com chamada real;
+- o corpo aprovado do template (o dono ainda não o passou) — a F0 não fecha sem ele.
+
+### Guardas que NÃO se afrouxam
+
+`liberadaCliente` em toda leitura de guia · o cliente nunca dispara SITFIS nem `forcar` · nenhum ato
+fiscal sem pendência + código · `confirmar` por "sim" solto não existe · fora das pendências o turno
+não escreve nada · `IA_EMPRESAS_PILOTO` vazio é ninguém, não todo mundo · **NUNCA rodar
+`scripts/backfill-envio-guia.mjs`**.
+
 ## Regras
 
 - Nunca hardcodar credenciais ou URLs — usar `config.js`

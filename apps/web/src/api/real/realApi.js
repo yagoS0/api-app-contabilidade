@@ -962,6 +962,30 @@ export function createRealApi() {
         body: JSON.stringify({ canalPadraoEnvio }),
       });
     },
+    // ── AS CONVERSAS DE WHATSAPP (F5) — contrato LIDO de `routes/firm/whatsappConversas.js` ──────
+    async listarConversasWhatsapp(filtro = "todas") {
+      return request(`/firm/whatsapp/conversas?filtro=${encodeURIComponent(filtro)}`);
+    },
+    async getMensagensWhatsapp(conversaId) {
+      return request(`/firm/whatsapp/conversas/${conversaId}/mensagens`);
+    },
+    async assumirConversaWhatsapp(conversaId) {
+      return request(`/firm/whatsapp/conversas/${conversaId}/assumir`, { method: "POST" });
+    },
+    async devolverConversaWhatsapp(conversaId) {
+      return request(`/firm/whatsapp/conversas/${conversaId}/devolver`, { method: "POST" });
+    },
+    // ⚠ Fora da janela de 24h o servidor responde 409 FORA_DA_JANELA — chega como erro com `code`
+    // e `payload.message`; a tela mostra o motivo, nunca "falhou".
+    async responderConversaWhatsapp(conversaId, texto) {
+      return request(`/firm/whatsapp/conversas/${conversaId}/responder`, { method: "POST", body: JSON.stringify({ texto }) });
+    },
+    async vincularConversaWhatsapp(conversaId, body) {
+      return request(`/firm/whatsapp/conversas/${conversaId}/vincular`, { method: "POST", body: JSON.stringify(body || {}) });
+    },
+    async getConsumoIa() {
+      return request(`/firm/ia/consumo`);
+    },
     // ⚠ A ÚNICA chamada deste par que devolve senha, e ela é uma senha NOVA — o servidor a GERA.
     // POST de propósito: escreve a linha de auditoria, revoga as sessões do usuário, e um verbo
     // repetível seria repetido de graça por refresh/"abrir em nova aba" — cada repetição sendo

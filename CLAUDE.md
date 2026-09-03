@@ -363,6 +363,25 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     NFS-e na lista (`ServiceInvoice` não tem o campo); chip anual da DEFIS na listagem principal
     (falta agregação no backend); Bloco 3 (Apuração do Lucro Presumido) segue travado no probe do
     `CONSDECCOMPLETA33`.
+- [~] **WhatsApp — Entrega 2: canal ligável, guias na tela, assistente com IA, conversas
+  (02–03/09/2026)** — a Meta aprovou a empresa e o template de guia; o dono pediu o canal
+  *"inclusive com uso de IA, resposta de documentos, emissão de notas, recálculo"*. Escrito na `dev`
+  em F0–F5, **tudo DESLIGADO por flag** (`INTEGRACAO_WHATSAPP` e `INTEGRACAO_WHATSAPP_IA` OFF,
+  `IA_EMPRESAS_PILOTO` vazio = ninguém). Detalhes, medições de produção e o que NÃO está verificado:
+  `apps/api/CLAUDE.md`, seção "WHATSAPP — ENTREGA 2".
+  - ⚠⚠ **A LINHA ABAIXO (Entrega 1) ENVELHECEU:** "F3–F6 não iniciadas" era falso já em 02/09 —
+    Cloud API, webhook, envio em lote e recebimento existiam, testados e inertes; e as migrations
+    `20260814160000`/`20260814180000` **estão aplicadas** em produção (145/145 medido).
+  - **Telas** (`apps/web`): contatos com opt-in na aba Credenciais; "Liberar ao cliente" e o lote
+    respeitam `canalPadraoEnvio` (EMAIL · WHATSAPP · PERGUNTAR) com prévia e motivos; página
+    **WhatsApp** (`/whatsapp`) com a fila de números sem cadastro, o fio com autor por balão,
+    Assumir/Devolver, responder só dentro da janela de 24h e Vincular.
+  - **IA** (Anthropic, `claude-opus-5`): o cliente pergunta, o assistente responde **só com o que as
+    ferramentas devolvem**; emitir/cancelar/recalcular viram **pendência com código de 4
+    caracteres** e a confirmação nem passa pelo modelo. Custo registrado em `chamadas_ia`, teto
+    **falha fechado**.
+  - ⚠ Três migrations novas (`20260903100000/100/200`) **escritas e não aplicadas**; a
+    `@anthropic-ai/sdk` entrou no `package.json` da api.
 - [~] **WhatsApp — Entrega 1: envio de guias pelo canal** — **F1 a F5 escritas na `dev`, o canal
   DESLIGADO** (flag `INTEGRACAO_WHATSAPP` OFF; cadastro na Meta em verificação). Roadmap e estado
   completo em **`docs/whatsapp-entrega-1.md`**.

@@ -881,6 +881,64 @@ mockContatosWhatsapp[SEGUNDA_EMPRESA_MOCK] = [
 // A última prévia do lote por WhatsApp — é contra ela que a conferência do `executar` é medida.
 let mockUltimaPreviaWhatsapp = null;
 
+// ── AS CONVERSAS (F5, 02/09/2026) — três fios, três ramos ─────────────────────────────────────
+const AGORA_MOCK = Date.now();
+const haMs = (ms) => new Date(AGORA_MOCK - ms).toISOString();
+const mockConversasWhatsapp = [
+  {
+    // 1) vinculado, COM A IA, pendência aberta, janela aberta
+    id: "mock-cv-1", telefoneE164: "5521999998888", nomePerfilProvedor: "Maria", portalClientId: PRIMEIRA_EMPRESA_MOCK,
+    empresa: { id: PRIMEIRA_EMPRESA_MOCK, razao: mockCompanies[0]?.razao || "Empresa 1", cnpj: mockCompanies[0]?.cnpj || "" },
+    atendidaPor: null, atendente: null, atendidaDesde: null, lidaAteEm: null, updatedAt: haMs(5 * 60_000),
+    janela: { situacao: "ABERTA", permite: "TEXTO_LIVRE", expiraEm: new Date(AGORA_MOCK + 23 * 3600_000).toISOString(), avisos: [] },
+    pendencia: { id: "mock-ap-1", tipo: "RECALCULAR_GUIA", codigo: "K9M3", expiraEm: new Date(AGORA_MOCK + 8 * 60_000).toISOString() },
+    mensagens: [
+      { id: "mock-m-1", direcao: "in", tipo: "text", corpo: "Bom dia, quanto devo esse mês?", autor: null, providerMessageId: "wamid.1", ocorridaEmProvedor: haMs(9 * 60_000), registradaEm: haMs(9 * 60_000) },
+      { id: "mock-m-2", direcao: "out", tipo: "text", corpo: "Bom dia! Há 1 guia liberada em aberto: DAS de 08/2026, R$ 1.441,25, vencida em 20/08. Quer que eu mande o PDF ou monte a guia atualizada?", autor: "IA", providerMessageId: "wamid.2", ocorridaEmProvedor: null, registradaEm: haMs(8 * 60_000) },
+      { id: "mock-m-3", direcao: "in", tipo: "text", corpo: "monta a atualizada", autor: null, providerMessageId: "wamid.3", ocorridaEmProvedor: haMs(6 * 60_000), registradaEm: haMs(6 * 60_000) },
+      { id: "mock-m-4", direcao: "out", tipo: "text", corpo: "Montei o pedido; ele só sai com a sua confirmação.", autor: "IA", providerMessageId: "wamid.4", ocorridaEmProvedor: null, registradaEm: haMs(5 * 60_000) },
+      { id: "mock-m-5", direcao: "out", tipo: "text", corpo: "Gerar a guia ATUALIZADA (com juros e multa)?\n\n• Guia: DAS · competência 2026-08\n• Valor atual: R$ 1.441,25 · vencimento 20/08/2026\n\nGera uma nova guia com juros e multa; pode demorar alguns segundos.\n\nPara confirmar, responda CONFIRMAR K9M3. Qualquer outra resposta cancela. Este pedido vale por 10 minutos.", autor: "SISTEMA", providerMessageId: "wamid.5", ocorridaEmProvedor: null, registradaEm: haMs(5 * 60_000) },
+    ],
+  },
+  {
+    // 2) vinculado, ASSUMIDO por mim, janela EXPIRADA
+    id: "mock-cv-2", telefoneE164: "5521988887777", nomePerfilProvedor: "Financeiro", portalClientId: mockCompanies[1]?.companyId || "mock-pc-2",
+    empresa: { id: mockCompanies[1]?.companyId || "mock-pc-2", razao: mockCompanies[1]?.razao || "Empresa 2", cnpj: mockCompanies[1]?.cnpj || "" },
+    atendidaPor: "mock-user-1", atendente: { id: "mock-user-1", nome: "Usuario Mock", email: null }, atendidaDesde: haMs(2 * 24 * 3600_000), lidaAteEm: haMs(2 * 24 * 3600_000), updatedAt: haMs(2 * 24 * 3600_000),
+    janela: { situacao: "EXPIRADA", permite: "SOMENTE_TEMPLATE", expiraEm: haMs(24 * 3600_000), avisos: ["chamada de voz do cliente também reabre a janela na Meta, e este sistema não registra chamadas: a janela calculada é um piso"] },
+    pendencia: null,
+    mensagens: [
+      { id: "mock-m-6", direcao: "out", tipo: "template", corpo: "Guia DAS · 07/2026 · R$ 980,00 · vencimento 20/07/2026", autor: null, providerMessageId: "wamid.6", ocorridaEmProvedor: null, registradaEm: haMs(3 * 24 * 3600_000) },
+      { id: "mock-m-7", direcao: "in", tipo: "text", corpo: "Recebi, obrigado. Posso pagar em duas vezes?", autor: null, providerMessageId: "wamid.7", ocorridaEmProvedor: haMs(2 * 24 * 3600_000 + 3600_000), registradaEm: haMs(2 * 24 * 3600_000 + 3600_000) },
+      { id: "mock-m-8", direcao: "out", tipo: "text", corpo: "Vou verificar com o contador e te respondo.", autor: "HUMANO", providerMessageId: "wamid.8", ocorridaEmProvedor: null, registradaEm: haMs(2 * 24 * 3600_000) },
+    ],
+  },
+  {
+    // 3) NÃO vinculado — a fila (número sem cadastro)
+    id: "mock-cv-3", telefoneE164: "5511977776666", nomePerfilProvedor: "Carlos", portalClientId: null, empresa: null,
+    atendidaPor: null, atendente: null, atendidaDesde: null, lidaAteEm: null, updatedAt: haMs(30 * 60_000),
+    janela: { situacao: "ABERTA", permite: "TEXTO_LIVRE", expiraEm: new Date(AGORA_MOCK + 23 * 3600_000).toISOString(), avisos: [] },
+    pendencia: null,
+    vinculo: { motivo: "DESCONHECIDO", empresasCandidatas: [], divergemPeloNonoDigito: false },
+    mensagens: [
+      { id: "mock-m-9", direcao: "in", tipo: "text", corpo: "Oi, é da contabilidade? Preciso da guia do mês", autor: null, providerMessageId: "wamid.9", ocorridaEmProvedor: haMs(31 * 60_000), registradaEm: haMs(31 * 60_000) },
+      { id: "mock-m-10", direcao: "out", tipo: "text", corpo: "Não reconheci este número em nenhuma empresa. O escritório vai conferir o cadastro e responder por aqui.", autor: "SISTEMA", providerMessageId: "wamid.10", ocorridaEmProvedor: null, registradaEm: haMs(30 * 60_000) },
+    ],
+  },
+];
+function resumoMockDaConversa(c) {
+  const ultima = c.mensagens[c.mensagens.length - 1] || null;
+  const naoLidas = c.mensagens.filter((m) => m.direcao === "in" && (!c.lidaAteEm || m.registradaEm > c.lidaAteEm)).length;
+  const d = String(c.telefoneE164);
+  return {
+    id: c.id, telefoneE164: c.telefoneE164, telefoneMascarado: `+${d.slice(0, 2)}…${d.slice(-4)}`, nomePerfilProvedor: c.nomePerfilProvedor,
+    portalClientId: c.portalClientId, empresa: c.empresa, atendidaPor: c.atendidaPor, atendente: c.atendente, atendidaDesde: c.atendidaDesde,
+    naFilaDoEscritorio: Boolean(c.atendidaDesde && !c.atendidaPor), lidaAteEm: c.lidaAteEm, updatedAt: c.updatedAt,
+    ultimaMensagem: ultima ? { direcao: ultima.direcao, tipo: ultima.tipo, corpo: ultima.corpo, registradaEm: ultima.registradaEm, autor: ultima.autor } : null,
+    naoLidas, janela: c.janela, pendencia: c.pendencia, vinculo: c.portalClientId ? null : (c.vinculo || null),
+  };
+}
+
 let mockUsuariosPortal = [
   {
     userId: "mock-user-cli-1",
@@ -7258,6 +7316,72 @@ export function createMockApi() {
       }
       mockCanalPadraoEnvio[String(companyId)] = canal;
       return { ok: true, canalPadraoEnvio: canal };
+    },
+    // ── AS CONVERSAS DE WHATSAPP (F5) — o MESMO contrato de `realApi` ─────────────────────────
+    // ⚠ TRÊS fios, os três ramos: vinculado COM a IA (pendência aberta, janela aberta), vinculado
+    // ASSUMIDO (janela EXPIRADA — responder é recusado ANTES de digitar), e NÃO vinculado (a fila).
+    async listarConversasWhatsapp(filtro = "todas") {
+      await delay(120);
+      const todas = mockConversasWhatsapp.map((c) => resumoMockDaConversa(c));
+      const lista = filtro === "nao-vinculadas" ? todas.filter((c) => !c.portalClientId)
+        : filtro === "atendidas-por-mim" ? todas.filter((c) => c.atendidaPor === "mock-user-1")
+          : todas;
+      return { ok: true, filtro, conversas: lista, consumoIa: { desde: "2026-09-01T03:00:00.000Z", moeda: "USD", estimativa: true, escritorio: { centavos: 137, chamadas: 12, teto: 6000, restantes: 5863, fracao: 0.02, alerta: false, estourado: false }, empresa: null } };
+    },
+    async getMensagensWhatsapp(conversaId) {
+      await delay(100);
+      const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
+      if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; e.code = "conversa_nao_encontrada"; throw e; }
+      c.lidaAteEm = new Date().toISOString();
+      return { ok: true, conversa: resumoMockDaConversa(c), mensagens: c.mensagens.map((m) => ({ ...m })) };
+    },
+    async assumirConversaWhatsapp(conversaId) {
+      await delay(80);
+      const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
+      if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      c.atendidaPor = "mock-user-1"; c.atendente = { id: "mock-user-1", nome: "Usuario Mock", email: null }; c.atendidaDesde = new Date().toISOString();
+      return { ok: true, conversa: resumoMockDaConversa(c) };
+    },
+    async devolverConversaWhatsapp(conversaId) {
+      await delay(80);
+      const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
+      if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      c.atendidaPor = null; c.atendente = null; c.atendidaDesde = null;
+      return { ok: true, conversa: resumoMockDaConversa(c) };
+    },
+    async responderConversaWhatsapp(conversaId, texto) {
+      await delay(200);
+      const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
+      if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      if (!String(texto || "").trim()) { const e = new Error("Escreva a mensagem."); e.status = 400; e.code = "texto_obrigatorio"; throw e; }
+      if (c.janela.situacao !== "ABERTA") {
+        const e = new Error(c.janela.situacao === "NUNCA_ABERTA"
+          ? "Este cliente nunca escreveu por aqui: a Meta só aceita texto livre nas 24h seguintes a uma mensagem DELE."
+          : "A janela de 24h desde a última mensagem do cliente fechou: a Meta só aceita modelo aprovado agora.");
+        e.status = 409; e.code = "FORA_DA_JANELA"; e.payload = { error: "FORA_DA_JANELA", message: e.message, reabrirConversa: { chave: "reabrir_conversa", statusAprovacao: "DECLARADO", disponivel: false } };
+        throw e;
+      }
+      const m = { id: `mock-msg-${Date.now()}`, direcao: "out", tipo: "text", corpo: String(texto).trim(), autor: "HUMANO", providerMessageId: `wamid.mock.${Date.now()}`, ocorridaEmProvedor: null, registradaEm: new Date().toISOString() };
+      c.mensagens.push(m);
+      c.updatedAt = m.registradaEm;
+      return { ok: true, mensagem: { id: m.id, providerMessageId: m.providerMessageId, autor: "HUMANO", corpo: m.corpo } };
+    },
+    async vincularConversaWhatsapp(conversaId, body) {
+      await delay(150);
+      const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
+      if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      const empresa = mockCompanies.find((x) => x.companyId === String(body?.portalClientId || ""));
+      if (!empresa) { const e = new Error("Escolha a empresa."); e.status = 404; e.code = "empresa_nao_encontrada"; throw e; }
+      if (!String(body?.contato?.nome || "").trim()) { const e = new Error("Informe o nome de quem recebe as mensagens."); e.status = 400; e.code = "NOME_OBRIGATORIO"; throw e; }
+      // O telefone é o do FIO — o corpo não escolhe o número.
+      const contato = { id: `mock-ctt-${Date.now()}`, portalClientId: empresa.companyId, nome: String(body.contato.nome).trim(), papel: body.contato.papel || null, telefoneE164: c.telefoneE164, waId: null, optInEm: body.contato.optIn ? new Date().toISOString() : null, optInOrigem: body.contato.optIn ? (body.contato.optInOrigem || "nao_informado") : null, ativo: true, userId: body.contato.userId || null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      mockContatosWhatsapp[empresa.companyId] = [...(mockContatosWhatsapp[empresa.companyId] || []), contato];
+      c.portalClientId = empresa.companyId; c.empresa = { id: empresa.companyId, razao: empresa.razao, cnpj: empresa.cnpj };
+      return { ok: true, contato, conversa: resumoMockDaConversa(c), vinculo: { situacao: "VINCULADO" } };
+    },
+    async getConsumoIa() {
+      await delay(50);
+      return { ok: true, desde: "2026-09-01T03:00:00.000Z", moeda: "USD", estimativa: true, escritorio: { centavos: 137, chamadas: 12, teto: 6000, restantes: 5863, fracao: 0.02, alerta: false, estourado: false }, empresa: null };
     },
     // ⚠ Recusa sem `confirmado`, igual ao servidor — mock permissivo faria a tela passar sem nunca
     // mandar o campo, e a recusa só apareceria em produção.
