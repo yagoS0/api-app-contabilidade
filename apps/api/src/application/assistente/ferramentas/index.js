@@ -5,7 +5,7 @@
 //
 // ── ⚠⚠ AS TRÊS REGRAS QUE ESTE ARQUIVO NÃO PODE QUEBRAR ─────────────────────────────────────────
 //   1. TODA consulta leva `sessao.portalClientId` no `where` (`portalClientId` / `clientId`). Nenhuma
-//      ferramenta alcança outra empresa — travado por varredura de fonte em `escopoDoFio.test.js`.
+//      ferramenta alcança outra empresa — travado por varredura de fonte em `promptEEscopo.test.js`.
 //   2. O PAPEL é conferido pela MESMA tabela das rotas (`papelAlcanca`): FINANCEIRO lê guias/notas;
 //      CLIENT_ADMIN+ vê a situação fiscal e prepara atos fiscais. Papel nulo não faz nada.
 //   3. NENHUMA ferramenta pratica ato fiscal ou gasta chamada paga. `preparar_*` só grava uma
@@ -52,6 +52,10 @@ const LIMITE_LISTA = 20;
 
 function recusa(motivo, mensagem, extra = {}) {
   return { ok: false, motivo, mensagem, ...extra };
+}
+
+function soDigitos(valor) {
+  return String(valor || "").replace(/\D/g, "");
 }
 
 function exigirPapel(ctx, minimo) {
@@ -308,7 +312,18 @@ const EXECUTORES = {
       if (nossa) nota = { id: nossa.id, chaveAcesso: nossa.chaveAcesso, numero: nossa.numeroNfse, status: nossa.status, statusEfetivo: nossa.status, papel: "EMIT", type: "NFSE", tomadorDoc: nossa.tomadorDoc, tomadorNome: null, emitenteDoc: null, total: null, issueDate: null };
     }
     if (!nota) return recusa("nota_nao_encontrada", "Não encontrei essa nota na empresa.");
-    if (nota.papel === "DEST") return recusa("nota_recebida", "Essa nota foi emitida PARA a empresa (recebida) — quem pode cancelá-la é quem a emitiu.");
+    // ⚠ DUAS FONTES para "recebida", como na rota (`client/index.js`, "nota_recebida"): a coluna
+    // `papel` E a comparação de CNPJ — a segunda existe porque a primeira pode faltar na captura.
+    // `papel: "EMIT"` ENCERRA a pergunta (a empresa que emite para si mesma tem tomador = ela).
+    const cnpjDaEmpresa = soDigitos((await ctx.prisma.portalClient.findUnique({ where: { id: sessao.portalClientId }, select: { cnpj: true } }))?.cnpj);
+    const docTomador = soDigitos(nota.tomadorDoc);
+    const docEmitente = soDigitos(nota.emitenteDoc);
+    const nossaEmissao = String(nota.papel || "").toUpperCase() === "EMIT";
+    const recebida = !nossaEmissao && (
+      String(nota.papel || "").toUpperCase() === "DEST"
+      || (Boolean(cnpjDaEmpresa) && docTomador === cnpjDaEmpresa && docEmitente !== cnpjDaEmpresa)
+    );
+    if (recebida) return recusa("nota_recebida", "Essa nota foi emitida PARA a empresa (recebida) — quem pode cancelá-la é quem a emitiu.");
     if (String(nota.type || "NFSE").toUpperCase() !== "NFSE") return recusa("nota_nao_e_nfse", "Essa não é uma NFS-e; o cancelamento por aqui só vale para notas de serviço.");
     if (!nota.chaveAcesso) return recusa("nota_sem_chave", "Essa nota ainda não tem chave de acesso; sem ela não há o que cancelar.");
     if (String(nota.statusEfetivo || nota.status || "").toLowerCase().includes("cancel")) return recusa("nota_ja_cancelada", "Essa nota já consta como cancelada.");

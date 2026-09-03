@@ -119,7 +119,9 @@ export async function responderMensagem({ conversaId, mensagemId, deps = {} } = 
         return { feito: true, motivo: "EXPIRADA" };
       }
       if (d.decisao === "EXECUTAR") {
-        const r = await confirmarEExecutar({ acaoId: pendente.id, agora, client, log, executores: deps.executores || null });
+        // ⚠ `conversaId` e `portalClientId` vão na reserva: a pendência de um fio nunca é
+        // confirmada por outro, nem executada depois de o fio mudar de empresa.
+        const r = await confirmarEExecutar({ acaoId: pendente.id, conversaId: conversa.id, portalClientId: conversa.portalClientId, agora, client, log, executores: deps.executores || null, ...(deps.acoesDeps ? { deps: deps.acoesDeps } : {}) });
         if (r.filaHumana) await client.conversaWhatsapp.update({ where: { id: conversa.id }, data: { atendidaDesde: agora } }).catch(() => {});
         await dizer(r.texto, { autor: AUTOR.SISTEMA });
         return { feito: true, motivo: "EXECUTADA", texto: r.texto };

@@ -63,18 +63,25 @@ describe("⚠ o ESCOPO DO FIO — varredura de fonte", () => {
     // Cada `ctx.prisma.<model>.find*({ where: {` deve carregar `portalClientId: ctx.sessao.portalClientId`,
     // `clientId: sessao.portalClientId` / `ctx.sessao.portalClientId`, ou `companyId: legacy` (o id
     // legado resolvido DA sessão). Nada consulta só por `id`.
-    const consultas = [...fonte.matchAll(/ctx\.prisma\.(\w+)\.(findFirst|findMany|findUnique)\(\{[\s\S]*?\}\)/g)];
+    // ⚠ A VARREDURA FOI ALARGADA EM 03/09/2026 (achado do agente "B · multi-tenancy"): ela só via
+    // `ctx.prisma.<model>.find*` e deixava passar `count`/`aggregate`/`groupBy` e o `prisma`
+    // importado direto no módulo (sem `ctx.`), que é o mesmo banco sem o escopo do fio.
+    const consultas = [...fonte.matchAll(/(?:ctx\.)?prisma\.(\w+)\.(findFirst|findFirstOrThrow|findMany|findUnique|count|aggregate|groupBy)\(\{[\s\S]*?\}\)/g)];
     expect(consultas.length).toBeGreaterThanOrEqual(5);
     for (const m of consultas) {
-      const trecho = m[0];
-      const escopado = /portalClientId: (ctx\.)?sessao\.portalClientId|clientId: (ctx\.)?sessao\.portalClientId|companyId: legacy/.test(trecho);
-      if (!escopado) throw new Error(`consulta sem escopo da empresa: ${trecho.slice(0, 160)}`);
+      const [trecho, model] = m;
+      // ⚠ `portalClient` É a raiz do tenant: nela a chave da empresa é o PRÓPRIO `id`. Qualquer
+      // outro modelo tem de trazer a coluna da empresa — `id` sozinho nunca basta.
+      const escopado = model === "portalClient"
+        ? /id: (ctx\.)?sessao\.portalClientId/.test(trecho)
+        : /portalClientId: (ctx\.)?sessao\.portalClientId|clientId: (ctx\.)?sessao\.portalClientId|companyId: legacy/.test(trecho);
+      if (!escopado) throw new Error(`consulta sem escopo da empresa (${model}): ${trecho.slice(0, 160)}`);
     }
   });
   it("nenhuma ferramenta importa o SERPRO nem chama `forcar`", () => {
     expect(fonte).not.toMatch(/SerproSitfis|comContextoSerpro|forcar: true/);
   });
   it("nenhuma ferramenta escreve fora da pendência (nenhum create/update/delete do prisma)", () => {
-    expect(fonte).not.toMatch(/ctx\.prisma\.\w+\.(create|update|updateMany|delete|deleteMany|upsert)\(/);
+    expect(fonte).not.toMatch(/(?:ctx\.)?prisma\.\w+\.(create|update|updateMany|delete|deleteMany|upsert)\(/);
   });
 });

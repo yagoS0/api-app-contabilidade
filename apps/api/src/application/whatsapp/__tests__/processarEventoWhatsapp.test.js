@@ -243,3 +243,59 @@ describe("decidirRespostaDaIa — a IA só responde com as quatro chaves", () =>
     expect(decidirRespostaDaIa({ r: r(), flag: true, piloto: ["pc-1"] })).toEqual({ responde: true, motivo: null });
   });
 });
+
+// ── O GANCHO, LIGADO: `responder` é chamado (ou não) conforme a decisão ──────────────────────────
+// ⚠ Isto existe desde 03/09/2026. Até então o comentário do gancho AFIRMAVA esta cobertura e ela
+// não existia: fazer o gancho ignorar `decidirRespostaDaIa` deixava a suíte inteira verde.
+describe("o gancho da IA — quem é chamado, e com o quê", () => {
+  const REGISTRO = (over = {}) => ({
+    duplicada: false,
+    vinculo: { situacao: "VINCULADO", divergemPeloNonoDigito: false },
+    conversa: { id: "cv1", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null },
+    mensagem: { id: "m1" },
+    ...over,
+  });
+  const proximoTick = () => new Promise((resolve) => setImmediate(resolve));
+
+  async function rodar({ registro, ia, responder }) {
+    registrarMensagemRecebida.mockResolvedValue(registro);
+    const resumo = await processarEventoWhatsapp(evento({ messages: [MENSAGEM] }), { agora: AGORA, logger: logSpy(), responder, ia });
+    await proximoTick();
+    return resumo;
+  }
+
+  it("as quatro chaves ligadas → chama com o id do fio e o da mensagem", async () => {
+    const responder = jest.fn(async () => ({ feito: true }));
+    const resumo = await rodar({ registro: REGISTRO(), ia: { flag: true, piloto: ["pc-1"] }, responder });
+    expect(responder).toHaveBeenCalledWith({ conversaId: "cv1", mensagemId: "m1" });
+    expect(resumo.mensagens.gravadas).toBe(1);
+  });
+
+  it("⚠ flag OFF, fora do piloto, duplicada, não vinculada e assumida → NÃO chama", async () => {
+    const casos = [
+      [REGISTRO(), { flag: false, piloto: ["pc-1"] }, "FLAG_OFF"],
+      [REGISTRO(), { flag: true, piloto: [] }, "FORA_DO_PILOTO"],
+      [REGISTRO({ duplicada: true }), { flag: true, piloto: ["pc-1"] }, "DUPLICADA"],
+      [REGISTRO({ vinculo: { situacao: "DESCONHECIDO" }, conversa: { id: "cv1", portalClientId: null } }), { flag: true, piloto: ["pc-1"] }, "NAO_VINCULADA"],
+      [REGISTRO({ conversa: { id: "cv1", portalClientId: "pc-1", atendidaPor: "u9" } }), { flag: true, piloto: ["pc-1"] }, "ASSUMIDA_POR_HUMANO"],
+    ];
+    for (const [registro, ia, motivo] of casos) {
+      const responder = jest.fn(async () => ({ feito: true }));
+      await rodar({ registro, ia, responder });
+      // O motivo da recusa é o de `decidirRespostaDaIa`; aqui o que se mede é a NÃO-CHAMADA.
+      expect([motivo, responder.mock.calls.length]).toEqual([motivo, 0]);
+    }
+  });
+
+  it("⚠ o assistente lançando NÃO derruba o webhook — o evento já foi processado", async () => {
+    const responder = jest.fn(async () => { throw new Error("modelo caiu"); });
+    const logger = logSpy();
+    registrarMensagemRecebida.mockResolvedValue(REGISTRO());
+    const resumo = await processarEventoWhatsapp(evento({ messages: [MENSAGEM] }), { agora: AGORA, logger, responder, ia: { flag: true, piloto: ["pc-1"] } });
+    await proximoTick();
+    await proximoTick();
+    expect(resumo.mensagens.gravadas).toBe(1);
+    expect(resumo.erros).toEqual([]);
+    expect(logger.error).toHaveBeenCalled();
+  });
+});

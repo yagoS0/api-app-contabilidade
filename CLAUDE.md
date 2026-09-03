@@ -382,6 +382,12 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     **falha fechado**.
   - ⚠ Três migrations novas (`20260903100000/100/200`) **escritas e não aplicadas**; a
     `@anthropic-ai/sdk` entrou no `package.json` da api.
+  - ⚠⚠ **VERIFICAÇÃO MULTI-AGENTE (03/09/2026): quatro furos achados e fechados** — "nota
+    recebida" lida por uma fonte só, **nada reconferido na confirmação** (até 10 min entre o pedido
+    e o `CONFIRMAR`), cancelamento sem marcar a nossa `ServiceInvoice`, e `GET /firm/ia/consumo`
+    sem escopo de carteira. ⚠ **Três experimentos por guarda voltaram VERDES** — e em dois deles o
+    comentário do código afirmava uma cobertura de teste que não existia. Detalhes e os números:
+    `apps/api/CLAUDE.md`, seção "A VERIFICAÇÃO MULTI-AGENTE".
 - [~] **WhatsApp — Entrega 1: envio de guias pelo canal** — **F1 a F5 escritas na `dev`, o canal
   DESLIGADO** (flag `INTEGRACAO_WHATSAPP` OFF; cadastro na Meta em verificação). Roadmap e estado
   completo em **`docs/whatsapp-entrega-1.md`**.

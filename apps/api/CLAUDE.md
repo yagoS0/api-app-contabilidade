@@ -3624,6 +3624,67 @@ o plano dizia R$ 20 / R$ 300; os defaults são US$ 4 / US$ 60 e ficam como pergu
 - `usage.cache_read_input_tokens > 0` (o cache do prompt) só se mede com chamada real;
 - o corpo aprovado do template (o dono ainda não o passou) — a F0 não fecha sem ele.
 
+### ⚠⚠ A VERIFICAÇÃO MULTI-AGENTE (03/09/2026) — quatro furos achados, quatro fechados
+
+Três agentes leram este código lado a lado com as rotas equivalentes de `routes/client/index.js`:
+**A · guardas** (toda ferramenta × a guarda da rota), **B · multi-tenancy** (toda query × o escopo)
+e **C · custo e idempotência** (experimentos por guarda, num worktree isolado). O veredito comum:
+**nenhuma ferramenta alcança leitura ou ato sem sessão, papel e empresa do fio**, e nenhum ato
+fiscal sai sem `CONFIRMAR <código>` fora do modelo. O que eles acharam foi o que segue.
+
+| # | furo | conserto |
+|---|---|---|
+| 1 | **"nota recebida" lia só a coluna `papel`** — a rota tem DUAS fontes (a coluna E a comparação de CNPJ), porque a captura nem sempre traz `papel`. Nota recebida com `papel` nulo virava pendência de cancelamento | as duas fontes, com `papel: "EMIT"` encerrando a pergunta (a empresa que emite para si mesma tem tomador = ela) |
+| 2 | ⚠⚠ **nada era reconferido na CONFIRMAÇÃO** — entre o pedido e o `CONFIRMAR` passam até 10 min, e a rota HTTP reconfere o portão a CADA POST. O escritório podia ter revogado `emissaoClienteLiberada`, a guia podia ter sido paga | `confirmarEExecutar` reconfere: EMITIR/CANCELAR passam de novo por `autorizarEmissaoDoCliente`, RECALCULAR refaz as **4 travas** da rota antes da chamada PAGA. Reconferência que LANÇA **recusa** |
+| 3 | **o cancelamento não marcava a NOSSA `ServiceInvoice`** como `cancelled` (a rota marca) | `NfseRepository.updateByChaveAcesso` no executor. ⚠ Nunca `PortalInvoice`: aquela é projeção do ADN |
+| 4 | **`GET /firm/ia/consumo?portalClientId=` sem carteira** — quem tem acesso restrito lia centavos, chamadas e `estourado` de QUALQUER empresa | `empresasVisiveis(req)`, 404 (nunca 403). O total do escritório continua aberto |
+
+⚠ **A pendência também ficou presa ao FIO e à EMPRESA**: a reserva leva `conversaId` e
+`portalClientId`. Sem isso, um fio re-vinculado a outra empresa dentro dos 10 min executaria o ato
+no CNPJ em que a pendência nasceu.
+
+#### Os experimentos, e os dois que voltaram VERDES
+
+| experimento | vermelhos |
+|---|---|
+| reserva da resposta sem `respondidaPelaIaEm` | 1 |
+| guarda de custo falhando ABERTO | 1 |
+| sem registrar a chamada no caminho de erro | 1 |
+| laço do modelo sem teto de iterações | 1 |
+| **reserva de `confirmarEExecutar` sem `status: "pendente"`** | ⚠⚠ **0 → hoje 2** |
+| **gancho do webhook ignorando `decidirRespostaDaIa`** | ⚠⚠ **0 → hoje 1** |
+| **"nota recebida" só pela coluna `papel`** | ⚠⚠ **0 → hoje (as duas fontes têm teste)** |
+| sem a reconferência do portão na confirmação | (novo) 2 |
+| recálculo sem as 3 travas reconferidas | (novo) 3 |
+
+⚠⚠ **OS TRÊS ZEROS SÃO O ACHADO, não os consertos.** Em dois deles o comentário do código
+**afirmava** a cobertura: o do gancho dizia *"o teste mede que ele NÃO é chamado nos ramos
+fechados"* e nenhum teste injetava `responder`; a reserva atômica era protegida por acidente
+(`pendenciaAberta` já filtra `pendente`, então a corrida — o único caso que a cláusula existe para
+pegar — não tinha teste). Hoje há `assistente/__tests__/acoesPendentes.test.js` (chamando
+`confirmarEExecutar` DIRETO, com dois turnos concorrentes) e o bloco "o gancho da IA" em
+`processarEventoWhatsapp.test.js`.
+
+⚠ **Para o ramo "a IA responde" ser alcançável no teste, `processarEventoWhatsapp` passou a aceitar
+`ia: {flag, piloto}` injetável** — a flag nasce OFF no ambiente de teste, e mock que esconde ramo é
+defeito conhecido desta casa. Produção não passa nada e os defaults do `config.js` mandam.
+
+⚠ **A varredura de escopo foi ALARGADA** (`promptEEscopo.test.js`): ela via só
+`ctx.prisma.<model>.find*` e deixava passar `count`/`aggregate`/`groupBy` e o `prisma` importado
+direto (sem `ctx.`), que é o mesmo banco sem o escopo do fio. `portalClient` é exceção nomeada — ela
+**é** a raiz do tenant, e ali a chave da empresa é o próprio `id`.
+
+#### O que os agentes NOMEARAM e não foi consertado
+
+- `listar_notas` diverge da lista do portal (não esconde canceladas, filtra direção por `papel` em
+  vez de CNPJ, não faz a união com as não confirmadas). É divergência de CONTEÚDO, não de escopo —
+  só dado da própria empresa. **Decisão de produto.**
+- O 404 de "fio fora da carteira" **não morde hoje**: o gate é `admin|contador`, e para esses dois
+  `empresasVisiveis` devolve a carteira inteira. A guarda vale se o gate for afrouxado para STAFF.
+- `registrar` engole falha de gravação de `chamadas_ia` com log — chamada feita e não contada. E a
+  contagem do teto é lida ANTES da gravação, então turnos concorrentes em conversas diferentes
+  passam todos pela mesma leitura. **Ordem de grandeza, e o cabeçalho do arquivo assume isso.**
+
 ### Guardas que NÃO se afrouxam
 
 `liberadaCliente` em toda leitura de guia · o cliente nunca dispara SITFIS nem `forcar` · nenhum ato

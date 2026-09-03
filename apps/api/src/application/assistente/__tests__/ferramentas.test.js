@@ -19,6 +19,7 @@ function prismaFalso(over = {}) {
     guide: { findMany: jest.fn(async () => [GUIA]), findFirst: jest.fn(async ({ where }) => (where.id === "g1" && where.portalClientId === "pc-1" ? GUIA : null)) },
     portalInvoice: { findMany: jest.fn(async () => []), findFirst: jest.fn(async () => null) },
     serviceInvoice: { findFirst: jest.fn(async () => null) },
+    portalClient: { findUnique: jest.fn(async () => ({ cnpj: "11222333000181" })) },
     companyFiscalStatus: { findUnique: jest.fn(async () => null) },
     ...over,
   };
@@ -194,6 +195,24 @@ describe("as três preparar_* — só PENDÊNCIA, nunca ato", () => {
       expect(r.motivo).toBe(motivo);
       expect(c.servicos.criarPendencia).not.toHaveBeenCalled();
     }
+  });
+  it("⚠ nota RECEBIDA pela 2ª fonte (o `papel` não veio da captura): o CNPJ do tomador é o da empresa → recusa", async () => {
+    // A rota do cliente tem DUAS fontes para "recebida"; ler só a coluna `papel` deixa passar a
+    // nota cuja captura não a trouxe. Experimento: com uma fonte só, este teste fica vermelho.
+    const nota = { id: "n1", chaveAcesso: "5".repeat(50), numero: "12", status: "EMITIDA", statusEfetivo: "autorizada", papel: null, type: "NFSE", tomadorDoc: "11.222.333/0001-81", tomadorNome: "A EMPRESA", emitenteDoc: "99887766000155", total: 100, issueDate: new Date("2026-08-01T00:00:00Z") };
+    const c = ctx({ prisma: prismaFalso({ portalInvoice: { findFirst: jest.fn(async () => nota), findMany: jest.fn(async () => []) } }) });
+    const r = await executarFerramenta("preparar_cancelamento", { notaId: "n1", cMotivo: "1", justificativa: "erro na descrição do serviço" }, c);
+    expect(r.motivo).toBe("nota_recebida");
+    expect(c.servicos.criarPendencia).not.toHaveBeenCalled();
+  });
+  it("⚠ mas emitir para SI MESMA não é receber: `papel: EMIT` encerra a pergunta", async () => {
+    // O tomador é a própria empresa e o `emitenteDoc` da nossa emissão vem vazio — pela comparação
+    // de CNPJ sozinha, a nota seria acusada de recebida e o cliente não poderia cancelá-la.
+    const nota = { id: "n1", chaveAcesso: "5".repeat(50), numero: "12", status: "EMITIDA", statusEfetivo: "autorizada", papel: "EMIT", type: "NFSE", tomadorDoc: "11222333000181", tomadorNome: "A EMPRESA", emitenteDoc: null, total: 100, issueDate: new Date("2026-08-01T00:00:00Z") };
+    const c = ctx({ prisma: prismaFalso({ portalInvoice: { findFirst: jest.fn(async () => nota), findMany: jest.fn(async () => []) } }) });
+    const r = await executarFerramenta("preparar_cancelamento", { notaId: "n1", cMotivo: "2", justificativa: "serviço não foi prestado ao cliente" }, c);
+    expect(r.ok).toBe(true);
+    expect(c.servicos.criarPendencia).toHaveBeenCalledTimes(1);
   });
   it("preparar_cancelamento OK: pendência com chave, número, motivo e a frase 'A nota cancelada não volta.'", async () => {
     const nota = { id: "n1", chaveAcesso: "5".repeat(50), numero: "12", status: "EMITIDA", statusEfetivo: "autorizada", papel: "EMIT", type: "NFSE", tomadorDoc: "12345678000190", tomadorNome: "ACME", emitenteDoc: null, total: 100, issueDate: new Date("2026-08-01T00:00:00Z") };

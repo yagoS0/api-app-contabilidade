@@ -5853,6 +5853,16 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
    */
   router.get("/ia/consumo", async (req, res) => {
     const portalClientId = String(req.query?.portalClientId || "").trim() || null;
+    // ⚠ O CONSUMO POR EMPRESA É ESCOPADO PELA CARTEIRA (03/09/2026, achado do agente
+    // "B · multi-tenancy"). Sem isto, um usuário do escritório com carteira restrita lia centavos,
+    // nº de chamadas e "estourado" de QUALQUER empresa — metadado de custo é dado da empresa.
+    // O total do ESCRITÓRIO (sem `portalClientId`) continua aberto a quem entra aqui: é o nosso.
+    if (portalClientId) {
+      const visiveis = await empresasVisiveis(req);
+      if (!visiveis.includes(portalClientId)) {
+        return res.status(404).json({ ok: false, error: "empresa_nao_encontrada" });
+      }
+    }
     const consumo = await consumoIaDoMes({ portalClientId });
     if (!consumo) return res.status(503).json({ ok: false, error: "ia_consumo_indisponivel", message: "Não foi possível ler o consumo do assistente agora." });
     return res.json({ ok: true, ...consumo });

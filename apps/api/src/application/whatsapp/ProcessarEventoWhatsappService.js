@@ -146,7 +146,10 @@ export function decidirRespostaDaIa({ r, flag = INTEGRACAO_WHATSAPP_IA, piloto =
   return { responde: true, motivo: null };
 }
 
-async function processarMensagem(item, { logger, responder }) {
+// ⚠ `ia` é a flag+piloto INJETÁVEIS ({flag, piloto}). Sem isso o ramo "a IA responde" seria
+// inalcançável no teste (a flag nasce OFF no ambiente de teste) — mock que esconde ramo é defeito
+// desta casa. Produção não passa nada e os defaults do `config.js` mandam.
+async function processarMensagem(item, { logger, responder, ia }) {
   const r = await registrarMensagemRecebida({
     telefone: item.telefone,
     providerMessageId: item.providerMessageId,
@@ -180,10 +183,13 @@ async function processarMensagem(item, { logger, responder }) {
   );
 
   // ── O ASSISTENTE (IA) — o gancho, DEPOIS de a mensagem estar gravada ──────────────────────────
-  // `responder` é injetável (o teste mede que ele NÃO é chamado nos ramos fechados). Ele NUNCA
-  // lança e roda fora deste laço (`setImmediate`): a resposta ao webhook já saiu, e o turno do
-  // modelo pode levar segundos.
-  const decisao = decidirRespostaDaIa({ r });
+  // `responder` é injetável e o teste mede que ele NÃO é chamado nos ramos fechados
+  // (`processarEventoWhatsapp.test.js`, "o gancho da IA"). ⚠ Essa cobertura só existe desde
+  // 03/09/2026: até então o comentário AFIRMAVA o teste e ele não existia — mexer no gancho para
+  // ignorar `decisao.responde` deixava a suíte inteira verde (achado do agente "C").
+  // Ele NUNCA lança e roda fora deste laço (`setImmediate`): a resposta ao webhook já saiu, e o
+  // turno do modelo pode levar segundos.
+  const decisao = decidirRespostaDaIa({ r, ...(ia || {}) });
   if (decisao.responde && typeof responder === "function" && r?.mensagem?.id && r?.conversa?.id) {
     const args = { conversaId: r.conversa.id, mensagemId: r.mensagem.id };
     setImmediate(() => {
@@ -208,7 +214,7 @@ async function processarMensagem(item, { logger, responder }) {
  * @param {Date}   [opcoes.agora]   injetável (a leitura do timestamp não lê relógio escondido)
  * @param {object} [opcoes.logger]
  */
-export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao } = {}) {
+export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao, ia = undefined } = {}) {
   const resumo = {
     mensagens: { total: 0, gravadas: 0, duplicadas: 0, recusadas: 0 },
     statuses: { total: 0, aplicados: 0, semEnvio: 0, desconhecidos: 0, contradicoes: 0, recusados: 0 },
@@ -262,7 +268,7 @@ export async function processarEventoWhatsapp(payload, { agora = new Date(), log
   resumo.mensagens.total = leitura.mensagens.length;
   for (const item of leitura.mensagens) {
     try {
-      const r = await processarMensagem(item, { logger, responder });
+      const r = await processarMensagem(item, { logger, responder, ia });
       if (r.desfecho === DESFECHOS.DUPLICADA) resumo.mensagens.duplicadas += 1;
       else resumo.mensagens.gravadas += 1;
     } catch (e) {
