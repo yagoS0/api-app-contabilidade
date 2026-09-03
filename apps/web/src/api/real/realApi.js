@@ -937,6 +937,55 @@ export function createRealApi() {
     async getPortalAccessUsers(companyId) {
       return request(`/firm/companies/${companyId}/acesso-portal`);
     },
+    // ── CONTATOS DE WHATSAPP — quem recebe guia pelo canal, e o canal padrão da empresa ────────
+    // Contrato LIDO de `routes/firm/index.js` (`/companies/:id/contatos-whatsapp`, `/canal-envio`).
+    // ⚠ Nenhuma destas envia mensagem: são cadastro. Quem envia é `enviarGuiaWhatsapp` e o lote.
+    async listarContatosWhatsapp(companyId) {
+      return request(`/firm/companies/${companyId}/contatos-whatsapp`);
+    },
+    // Cria ou atualiza (com `id`). O servidor normaliza o telefone para E.164 e valida o `userId`
+    // contra os membros ATIVOS da empresa — o corpo nunca escolhe a empresa (o path vence).
+    async salvarContatoWhatsapp(companyId, input) {
+      return request(`/firm/companies/${companyId}/contatos-whatsapp`, {
+        method: "POST",
+        body: JSON.stringify(input || {}),
+      });
+    },
+    async removerContatoWhatsapp(companyId, contatoId) {
+      return request(`/firm/companies/${companyId}/contatos-whatsapp/${contatoId}`, { method: "DELETE" });
+    },
+    // EMAIL | WHATSAPP | PERGUNTAR — `ContatoWhatsappService.CANAL_PADRAO`; fora disso o servidor
+    // responde 400 `canal_invalido`.
+    async definirCanalEnvio(companyId, canalPadraoEnvio) {
+      return request(`/firm/companies/${companyId}/canal-envio`, {
+        method: "PATCH",
+        body: JSON.stringify({ canalPadraoEnvio }),
+      });
+    },
+    // ── AS CONVERSAS DE WHATSAPP (F5) — contrato LIDO de `routes/firm/whatsappConversas.js` ──────
+    async listarConversasWhatsapp(filtro = "todas") {
+      return request(`/firm/whatsapp/conversas?filtro=${encodeURIComponent(filtro)}`);
+    },
+    async getMensagensWhatsapp(conversaId) {
+      return request(`/firm/whatsapp/conversas/${conversaId}/mensagens`);
+    },
+    async assumirConversaWhatsapp(conversaId) {
+      return request(`/firm/whatsapp/conversas/${conversaId}/assumir`, { method: "POST" });
+    },
+    async devolverConversaWhatsapp(conversaId) {
+      return request(`/firm/whatsapp/conversas/${conversaId}/devolver`, { method: "POST" });
+    },
+    // ⚠ Fora da janela de 24h o servidor responde 409 FORA_DA_JANELA — chega como erro com `code`
+    // e `payload.message`; a tela mostra o motivo, nunca "falhou".
+    async responderConversaWhatsapp(conversaId, texto) {
+      return request(`/firm/whatsapp/conversas/${conversaId}/responder`, { method: "POST", body: JSON.stringify({ texto }) });
+    },
+    async vincularConversaWhatsapp(conversaId, body) {
+      return request(`/firm/whatsapp/conversas/${conversaId}/vincular`, { method: "POST", body: JSON.stringify(body || {}) });
+    },
+    async getConsumoIa() {
+      return request(`/firm/ia/consumo`);
+    },
     // ⚠ A ÚNICA chamada deste par que devolve senha, e ela é uma senha NOVA — o servidor a GERA.
     // POST de propósito: escreve a linha de auditoria, revoga as sessões do usuário, e um verbo
     // repetível seria repetido de graça por refresh/"abrir em nova aba" — cada repetição sendo
@@ -1160,6 +1209,20 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/parcelamentos/ingestao`, {
         method: "POST",
         body: JSON.stringify(body),
+      });
+    },
+    /**
+     * Lê o "Recibo da negociação" da RFB e devolve o que está escrito nele.
+     *
+     * ⚠ **SÓ LEITURA** — a rota não grava parcelamento, lançamento nem parcela. O que volta
+     * PREENCHE o wizard, que continua editável campo a campo (pedido do dono, 01/09/2026).
+     */
+    async lerReciboParcelamento(companyId, file) {
+      const formData = new FormData();
+      formData.append("arquivo", file);
+      return request(`/firm/companies/${companyId}/parcelamentos/recibo/leitura`, {
+        method: "POST",
+        body: formData,
       });
     },
     // Q23: contas memorizadas das linhas-padrão da provisão (pré-preenche o modal).
@@ -1426,6 +1489,24 @@ export function createRealApi() {
         method: "POST",
         body: JSON.stringify({ items: Array.isArray(items) ? items : [] }),
       });
+    },
+    // ── ENVIO DE GUIAS POR WHATSAPP — contrato LIDO de `routes/firm/whatsappGuias.js` ────────────
+    // O estado do canal: flag ligada? template aprovado? A tela pergunta ANTES de oferecer o botão.
+    async getCanalWhatsapp() {
+      return request(`/firm/guides/whatsapp/canal`);
+    },
+    // UMA guia, por WhatsApp. 422 com motivo NOMEADO (SEM_CONTATO, SEM_OPT_IN, TEMPLATE_NAO_APROVADO,
+    // GUIA_JA_ENVIADA…) chega como erro com `code`; quem chama trata a recusa como desfecho.
+    async enviarGuiaWhatsapp(companyId, guideId) {
+      return request(`/firm/companies/${companyId}/guides/${guideId}/enviar-whatsapp`, { method: "POST" });
+    },
+    // A PRÉVIA do lote — não envia nada. Body: { competencia, portalClientIds?, guideIds? }.
+    async preverLoteWhatsapp(body) {
+      return request(`/firm/guides/whatsapp/lote/previa`, { method: "POST", body: JSON.stringify(body || {}) });
+    },
+    // O LOTE. Exige `conferencia` repetindo os números da prévia (409 CONFERENCIA_DIVERGENTE senão).
+    async executarLoteWhatsapp(body) {
+      return request(`/firm/guides/whatsapp/lote`, { method: "POST", body: JSON.stringify(body || {}) });
     },
     async getCircular(companyId, { year } = {}) {
       const q = year ? `?year=${year}` : "";
@@ -1968,6 +2049,16 @@ export function createRealApi() {
     },
     async getConferenciaVarredura(companyId) {
       return request(`/firm/companies/${companyId}/conferencia/varredura`);
+    },
+    /**
+     * ⚠⚠ O BOTÃO «Sugerir contas com IA» (02/09/2026). Grava PROPOSTAS nas colunas `*Ia` das linhas
+     * sem regra e sem histórico — nunca lança. Flag OFF no servidor ⇒ 503 `ia_classificacao_desligada`.
+     */
+    async postClassificarIa(companyId, { competencia } = {}) {
+      const q = new URLSearchParams();
+      if (competencia) q.set("competencia", String(competencia));
+      const sufixo = q.toString() ? `?${q.toString()}` : "";
+      return request(`/firm/companies/${companyId}/conferencia/classificar-ia${sufixo}`, { method: "POST" });
     },
 
     // ── A VARREDURA AUTOMÁTICA (01/09/2026) ───────────────────────────────────────────────────

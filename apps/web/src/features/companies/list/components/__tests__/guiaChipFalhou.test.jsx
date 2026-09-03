@@ -91,3 +91,55 @@ describe("chip de guia com envio falhado", () => {
     expect(screen.queryByText(/^Motivo:/)).not.toBeInTheDocument();
   });
 });
+
+// ── A SEGUNDA FONTE DO `falhou` (02/09/2026): o WhatsApp que a Meta recusou ─────────────────────
+describe("chip de guia com envio por WHATSAPP falhado", () => {
+  function tagZap(over = {}) {
+    return {
+      key: "das", label: "DAS", state: "falhou", ok: true, guideId: "g-das",
+      emailStatus: "PENDING", canalEnvio: "WHATSAPP", envioStatus: "falhou",
+      envioErro: "O contato não tem opt-in registrado — a Meta não entrega template sem ele.",
+      envioErroCodigo: "META_131047", envioPodeTentarDeNovo: null,
+      ...over,
+    };
+  }
+
+  test("o motivo TRADUZIDO aparece, e não o texto do e-mail", () => {
+    renderChip(tagZap());
+    fireEvent.click(screen.getByRole("button", { name: /DAS/ }));
+    expect(screen.getByTestId("falha-whatsapp")).toHaveTextContent(/WhatsApp falhou/);
+    expect(screen.getByText(/opt-in registrado/)).toBeInTheDocument();
+    expect(screen.queryByText(/Tentar enviar de novo/)).toBeNull();
+  });
+
+  test("⚠ `null` (a Meta não diz): o botão fica HABILITADO e a frase diz que a decisão é do contador", () => {
+    const onEnviarWhatsapp = jest.fn().mockResolvedValue({ ok: true });
+    renderChip(tagZap({ envioPodeTentarDeNovo: null }), { onEnviarWhatsapp });
+    fireEvent.click(screen.getByRole("button", { name: /DAS/ }));
+    expect(screen.getByText(/A Meta não diz se reenviar resolve/)).toBeInTheDocument();
+    const botao = screen.getByRole("button", { name: /Tentar de novo por WhatsApp/ });
+    expect(botao).toBeEnabled();
+    fireEvent.click(botao);
+    expect(onEnviarWhatsapp).toHaveBeenCalledWith("g-das", EMPRESA);
+  });
+
+  test("`false` (definitivo): botão DESABILITADO, com o conserto em outro lugar", () => {
+    renderChip(tagZap({ envioPodeTentarDeNovo: false }));
+    fireEvent.click(screen.getByRole("button", { name: /DAS/ }));
+    expect(screen.getByRole("button", { name: /Tentar de novo por WhatsApp/ })).toBeDisabled();
+    expect(screen.getByText(/Reenviar igual falha igual/)).toBeInTheDocument();
+  });
+
+  test("`true` (retentável): botão habilitado, 'reenviar é o caminho'", () => {
+    renderChip(tagZap({ envioPodeTentarDeNovo: true }));
+    fireEvent.click(screen.getByRole("button", { name: /DAS/ }));
+    expect(screen.getByRole("button", { name: /Tentar de novo por WhatsApp/ })).toBeEnabled();
+    expect(screen.getByText(/passageiro/)).toBeInTheDocument();
+  });
+
+  test("o e-mail continua sendo oferecido ao lado — a guia ainda pode sair por lá", () => {
+    renderChip(tagZap());
+    fireEvent.click(screen.getByRole("button", { name: /DAS/ }));
+    expect(screen.getByRole("button", { name: /Enviar e-mail/ })).toBeInTheDocument();
+  });
+});

@@ -393,3 +393,35 @@ describe("⚠ NENHUM TESTE TOCA A REDE", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
+
+// ── DOCUMENTO FORA DE TEMPLATE (Entrega 2, 02/09/2026) ─────────────────────────────────────────
+import { montarPayloadDocumento } from "../WhatsappCloudClient.js";
+
+describe("enviarDocumento — a resposta 'manda a guia' do assistente", () => {
+  it("o payload é type=document com id (nunca link), filename e caption", () => {
+    const p = montarPayloadDocumento({ para: "5521999998888", mediaId: "MID1", nomeArquivo: "DAS-2026-08.pdf", legenda: "Guia DAS" });
+    expect(p).toEqual({ messaging_product: "whatsapp", recipient_type: "individual", to: "5521999998888", type: "document", document: { id: "MID1", filename: "DAS-2026-08.pdf", caption: "Guia DAS" } });
+    expect(JSON.stringify(p)).not.toMatch(/link/);
+  });
+  it("sem mediaId recusa localmente", () => {
+    expect(() => montarPayloadDocumento({ para: "5521999998888", mediaId: "" })).toThrow(/documento não foi informado/);
+  });
+  it("enviarDocumento sobe o PDF (media) e depois manda a mensagem (messages), com o token só no header", async () => {
+    const chamadas = [];
+    const fetchImpl = jest.fn(async (url, opts) => {
+      chamadas.push({ url, opts });
+      const json = url.endsWith("/media") ? { id: "MID9" } : { messages: [{ id: "wamid.doc" }] };
+      return { ok: true, status: 200, json: async () => json };
+    });
+    const c = new WhatsappCloudClient({ fetchImpl, config: { habilitada: true, token: "T", phoneNumberId: "P", versao: "v21.0", log: null } });
+    const r = await c.enviarDocumento({ telefone: "(21) 99999-8888", conteudo: Buffer.from("%PDF"), nomeArquivo: "x.pdf", legenda: "leg" });
+    expect(r.wamid).toBe("wamid.doc");
+    expect(chamadas[0].url).toMatch(/\/media$/);
+    expect(chamadas[1].url).toMatch(/\/messages$/);
+    const corpo = JSON.parse(chamadas[1].opts.body);
+    expect(corpo.type).toBe("document");
+    expect(corpo.document).toEqual({ id: "MID9", filename: "x.pdf", caption: "leg" });
+    expect(chamadas[1].opts.headers.Authorization).toBe("Bearer T");
+    expect(chamadas[1].url).not.toMatch(/T/);
+  });
+});

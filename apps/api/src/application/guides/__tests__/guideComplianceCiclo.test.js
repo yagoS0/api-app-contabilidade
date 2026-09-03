@@ -142,3 +142,31 @@ describe("envio que FALHOU não pode se passar por 'gerada'", () => {
     expect(resolveNode(exigido, { guideId: "g1", enviada: false, emailStatus: "SENDING" }).state).toBe("gerada");
   });
 });
+
+// ── O SEGUNDO CANAL (02/09/2026): o WhatsApp que a Meta recusou também é `falhou` ─────────────────
+describe("falhou por WhatsApp — a segunda fonte do mesmo estado", () => {
+  test("⚠ WhatsApp `falhou` sem e-mail enviado → falhou (era âmbar 'gerada', igual a nunca tentada)", () => {
+    const r = resolveNode(exigido, {
+      guideId: "g1", enviada: false, emailStatus: "PENDING",
+      canalEnvio: "WHATSAPP", envioStatus: "falhou", envioErro: "contato sem opt-in", envioErroCodigo: "META_131047", envioPodeTentarDeNovo: null,
+    }, undefined);
+    expect(r.state).toBe("falhou");
+    expect(r.ok).toBe(true);
+    expect(r.envioErro).toBe("contato sem opt-in");
+    expect(r.envioErroCodigo).toBe("META_131047");
+  });
+
+  test("⚠ `envioPodeTentarDeNovo` viaja com as TRÊS respostas — null continua null, nunca vira false", () => {
+    for (const v of [true, false, null]) {
+      const r = resolveNode(exigido, { guideId: "g1", enviada: false, canalEnvio: "WHATSAPP", envioStatus: "falhou", envioPodeTentarDeNovo: v }, undefined);
+      expect(r.envioPodeTentarDeNovo).toBe(v);
+    }
+    // Ausente no carimbo (contrato antigo) → null, não undefined nem false.
+    expect(resolveNode(exigido, { guideId: "g1", enviada: false }, undefined).envioPodeTentarDeNovo).toBeNull();
+  });
+
+  test("enviada VENCE o WhatsApp falhado — se o e-mail saiu, ela chegou", () => {
+    const r = resolveNode(exigido, { guideId: "g1", enviada: true, canalEnvio: "EMAIL", envioStatus: "enviado" }, undefined);
+    expect(r.state).toBe("enviada");
+  });
+});

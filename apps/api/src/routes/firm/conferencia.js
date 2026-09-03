@@ -57,6 +57,8 @@ import {
   lancarPorRegraNaEmpresa,
 } from "../../application/declarados/LancamentoPorRegraService.js";
 import { listarMapeamentos, salvarMapeamento } from "../../application/declarados/MapeamentoExtratoService.js";
+import { RECUSA_CLASSIFICACAO, classificarFila } from "../../application/declarados/ClassificacaoPorIaService.js";
+import { INTEGRACAO_IA_CLASSIFICACAO } from "../../config.js";
 import { ESTADO, ORIGEM_PAGAMENTO, TRANSICAO } from "../../application/declarados/lib/estadosDeclarado.js";
 import {
   ESTADO_DA_SERIE,
@@ -170,6 +172,16 @@ function serializar(d) {
     // "faltou preencher". ⚠ Campo fora do serializador some sem erro nenhum: este módulo já pagou
     // isso três vezes.
     contaCredito: d.contaCredito ?? null,
+    // ⚠⚠ A PROPOSTA DA IA (02/09/2026) — colunas PRÓPRIAS, nunca `contaAplicada` (o ato) nem
+    // `contaSugerida` (a derivada). A tela desenha regra > histórico > IA; sem estes campos ela
+    // simplesmente não mostra a proposta, sem erro nenhum — a quarta vez que este módulo pagaria
+    // por campo fora do serializador. `justificativaIa` é o que o contador lê para conferir; não há
+    // "confiança" numérica, por decisão.
+    contaSugeridaIa: d.contaSugeridaIa ?? null,
+    creditoSugeridoIa: d.creditoSugeridoIa ?? null,
+    justificativaIa: d.justificativaIa ?? null,
+    sugeridaIaModelo: d.sugeridaIaModelo ?? null,
+    sugeridaIaEm: d.sugeridaIaEm ? new Date(d.sugeridaIaEm).toISOString() : null,
     accountingEntryId: d.accountingEntryId,
     regraId: d.regraId,
     motivoRecusa: d.motivoRecusa,
@@ -617,7 +629,10 @@ export function createConferenciaRouter({ log } = {}) {
         pagina: req.query.pagina,
         porPagina: req.query.porPagina,
       });
-      return res.json({ ok: true, ...r, itens: r.itens.map(serializar) });
+      // ⚠ `iaClassificacaoLigada` é o PRÉ-VOO do botão «Sugerir contas com IA»: a tela só o oferece
+      // quando o servidor vai aceitar. ⚠ Não é a guarda — quem recusa continua sendo a rota do POST
+      // (503 nomeado), e um `curl` bate nela, não neste booleano.
+      return res.json({ ok: true, ...r, itens: r.itens.map(serializar), iaClassificacaoLigada: INTEGRACAO_IA_CLASSIFICACAO });
     } catch (e) {
       return responderRecusa(res, e, log);
     }
@@ -1203,6 +1218,40 @@ export function createConferenciaRouter({ log } = {}) {
     try {
       const r = await desligarVarreduraAutomatica({ portalClientId: String(req.params.companyId) });
       return res.json({ ok: true, ligada: false, desligadas: r.desligadas });
+    } catch (e) {
+      return responderRecusa(res, e, log);
+    }
+  });
+
+  /**
+   * ⚠⚠ O BOTÃO «Sugerir contas com IA» (02/09/2026).
+   *
+   * > Dono: *"a IA é um botão em cima de tudo, ao clicar ela passa por todos os lançamentos
+   * > colocando os códigos que ela decide (…) apenas naqueles que não entraram a regra."*
+   *
+   * O que ela faz: para cada linha da fila SEM regra e SEM histórico, pede ao modelo débito e
+   * crédito e grava PROPOSTAS nas colunas `*Ia`. O que ela NÃO faz: lançar. `contaAplicada` e
+   * `estado` não são tocados — o contador confirma linha a linha, como sempre.
+   *
+   * ⚠⚠ A FLAG É DO SERVIDOR: `INTEGRACAO_IA_CLASSIFICACAO` OFF ⇒ 503 nomeado, mesmo molde de
+   * `INTEGRACAO_NFSE_LOTE` e do lançamento por regra. Um `curl` passaria por cima de um botão
+   * escondido na tela. ⚠ Piso ACCOUNTANT: é a mesma pessoa que pode lançar.
+   * ⚠ Cada lote é uma chamada PAGA, autorizada pela guarda (teto mensal, falha fechado); o
+   * relatório volta inteiro — propostas, recusadas COM motivo, o que a guarda recusou, custo.
+   * ⚠ `?competencia=` recorta como a fila; sem ele, a fila inteira da empresa.
+   */
+  router.post("/conferencia/classificar-ia", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const competencia = req.query.competencia ?? req.body?.competencia ?? null;
+      const relatorio = await classificarFila({ portalClientId: req.params.companyId, competencia: competencia ? String(competencia) : null });
+      if (!relatorio.ok && relatorio.recusa === RECUSA_CLASSIFICACAO.DESLIGADA) {
+        return res.status(503).json({
+          ok: false,
+          error: RECUSA_CLASSIFICACAO.DESLIGADA,
+          message: "A sugestão de contas por IA está desligada neste ambiente (INTEGRACAO_IA_CLASSIFICACAO). Ligar é decisão do escritório.",
+        });
+      }
+      return res.json(relatorio);
     } catch (e) {
       return responderRecusa(res, e, log);
     }

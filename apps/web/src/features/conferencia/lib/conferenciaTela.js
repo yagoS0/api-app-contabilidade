@@ -388,6 +388,69 @@ export function contaQueSeraUsada(item) {
 }
 
 /**
+ * ⚠⚠ O CRÉDITO QUE A LINHA VAI USAR SE NINGUÉM MEXER (02/09/2026) — a irmã de `contaQueSeraUsada`.
+ *
+ * > Dono: *"quando aparecem os a lançar as regras já devem habilitar"* — e a regra tem DUAS contas.
+ *
+ * A precedência é a MESMA do débito, e é o coração da decisão *"regra > IA"*:
+ *   1. o que já está GRAVADO na linha (`contaCredito` — escolha do contador ou da regra que lançou);
+ *   2. o que a SUGESTÃO derivada traz (`sugestao.credito` — regra do fornecedor ou memória);
+ *   3. o que a IA propôs (`creditoSugeridoIa`) — **só** quando 1 e 2 estão vazios;
+ *   4. `null` = o caixa padrão, que é o comportamento medido das 155 despesas.
+ *
+ * ⚠ A IA em ÚLTIMO, e por construção: ela só é consultada onde nem regra nem histórico responderam
+ * (`linhasParaIa`), então se a linha tem sugestão derivada a proposta da IA não existe — e se
+ * existir por algum descompasso, a derivada VENCE aqui.
+ */
+export function creditoQueSeraUsado(item) {
+  if (item?.contaCredito) return String(item.contaCredito);
+  if (item?.sugestao?.credito) return String(item.sugestao.credito);
+  if (item?.creditoSugeridoIa) return String(item.creditoSugeridoIa);
+  return null;
+}
+
+/**
+ * ⚠⚠ DE ONDE VEIO A CONTA QUE A LINHA MOSTRA — para o chip dizer a verdade (02/09/2026).
+ *
+ * `contaQueSeraUsada` responde QUAL; esta responde QUEM. Três fontes, e a IA é a terceira: quando a
+ * sugestão derivada existe, ela vence; a IA só aparece onde as duas primeiras calaram. O contador
+ * precisa ver a diferença entre *"sua regra escolheu"* e *"o modelo achou"* — confirmar as duas com
+ * o mesmo olho é exatamente o que o dono não quer (*"tendo o contador apenas que verificar"*).
+ */
+export const FONTE_DA_CONTA = Object.freeze({
+  REGRA_CNPJ: "REGRA_CNPJ",
+  REGRA_DESCRICAO: "REGRA_DESCRICAO",
+  HISTORICO: "HISTORICO",
+  IA: "IA",
+});
+
+export const ROTULO_DA_FONTE_DA_CONTA = Object.freeze({
+  [FONTE_DA_CONTA.REGRA_CNPJ]: "regra do fornecedor",
+  [FONTE_DA_CONTA.REGRA_DESCRICAO]: "regra da descrição",
+  [FONTE_DA_CONTA.HISTORICO]: "seu histórico",
+  // ⚠ "proposta da IA", não "IA sugere": a palavra PROPOSTA diz que falta alguém aceitar.
+  [FONTE_DA_CONTA.IA]: "proposta da IA",
+});
+
+export function fonteDaConta(item) {
+  const p = item?.sugestao?.procedencia;
+  if (p && FONTE_DA_CONTA[p]) return FONTE_DA_CONTA[p];
+  if (item?.sugestao?.conta || item?.contaSugerida) return null; // conta sem procedência declarada
+  if (item?.contaSugeridaIa) return FONTE_DA_CONTA.IA;
+  return null;
+}
+
+/**
+ * ⚠ A conta que a linha vai usar, considerando a IA — a versão de `contaQueSeraUsada` que enxerga a
+ * proposta do modelo, com a mesma precedência de `creditoQueSeraUsado`: derivada vence, IA fecha.
+ * ⚠ `contaQueSeraUsada` FICA como está (quem a chama espera só regra/histórico); esta é a leitura
+ * completa que a linha usa para pré-preencher.
+ */
+export function contaQueSeraUsadaComIa(item) {
+  return contaQueSeraUsada(item) || (item?.contaSugeridaIa ? String(item.contaSugeridaIa) : null);
+}
+
+/**
  * ⚠⚠ A LINHA DA NOTA ABRE O DOCUMENTO — e quando não pode, ela DIZ POR QUÊ.
  *
  * A FK é `SetNull`: a nota pode ter sido apagada. Esconder o link faria parecer que aquele declarado
@@ -768,6 +831,124 @@ export function leituraDaVarredura(r) {
     tudoJaExistia: criados === 0 && jaExistiam > 0,
     // ⚠ Nada varrido é diferente de nada criado: no primeiro, o piso não alcançou nota nenhuma.
     nadaVarrido: (Number(r.varridas) || 0) === 0,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O BOTÃO «SUGERIR CONTAS COM IA» (02/09/2026)
+//
+// > Dono: *"a IA é um botão em cima de tudo, ao clicar ela passa por todos os lançamentos colocando
+// > os códigos que ela decide (…) apenas naqueles que não entraram a regra."*
+//
+// A tela NÃO decide quem vai: `linhasParaIa` (api) decide, e o `where` do serviço reconfere. O que
+// mora aqui é o PRÉ-VOO do botão (para ele desabilitar COM o motivo) e a leitura do relatório.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+const ESTADOS_QUE_A_IA_ALCANCA = Object.freeze(["AGUARDANDO_PAGAMENTO", "A_CONFERIR"]);
+
+/**
+ * ⚠ ESPELHO de `linhasParaIa` (api, `lib/classificacaoPorIa.js`): só a linha lançável em que NEM
+ * regra NEM histórico responderam. É leitura para o botão dizer "não há o que sugerir" antes do
+ * clique — quem decide de verdade é o servidor.
+ */
+export function linhaSemNinguem(item) {
+  if (!item || !ESTADOS_QUE_A_IA_ALCANCA.includes(item.estado)) return false;
+  const s = item.sugestao;
+  if (s?.conta) return false;
+  const motivo = s?.motivo ?? "nada_conhecido";
+  return motivo === "nada_conhecido";
+}
+
+export const MOTIVO_SEM_IA = Object.freeze({
+  DESLIGADA: "desligada",
+  SEM_PAPEL: "sem_papel",
+  SEM_FILA: "sem_fila",
+  TODAS_TEM_CONTA: "todas_tem_conta",
+});
+
+const FRASE_DO_SEM_IA = Object.freeze({
+  [MOTIVO_SEM_IA.DESLIGADA]: "A sugestão por IA está desligada neste ambiente.",
+  [MOTIVO_SEM_IA.SEM_PAPEL]: "Seu perfil não pode alterar lançamentos desta empresa.",
+  [MOTIVO_SEM_IA.SEM_FILA]: "Não há linhas na fila.",
+  [MOTIVO_SEM_IA.TODAS_TEM_CONTA]: "Todas as linhas já têm conta por regra ou histórico — não há o que a IA sugerir.",
+});
+
+/**
+ * O pré-voo do botão. `{ visivel, pode, motivo, frase, candidatas }`.
+ * ⚠ `visivel` segue a FLAG que o servidor mandou na fila (`iaClassificacaoLigada`): botão de uma
+ * integração desligada não aparece (não é "ação que existe e está bloqueada" — é ação que não
+ * existe neste ambiente). Os outros motivos deixam o botão VISÍVEL e desabilitado, com a frase.
+ */
+export function podeSugerirComIa(fila, { podeEscrever = true } = {}) {
+  const ligada = fila?.iaClassificacaoLigada === true;
+  const itens = Array.isArray(fila?.itens) ? fila.itens : [];
+  const candidatas = itens.filter(linhaSemNinguem).length;
+  const resposta = (motivo) => ({ visivel: ligada, pode: false, motivo, frase: FRASE_DO_SEM_IA[motivo], candidatas });
+  if (!ligada) return resposta(MOTIVO_SEM_IA.DESLIGADA);
+  if (!podeEscrever) return resposta(MOTIVO_SEM_IA.SEM_PAPEL);
+  if (!itens.length) return resposta(MOTIVO_SEM_IA.SEM_FILA);
+  if (!candidatas) return resposta(MOTIVO_SEM_IA.TODAS_TEM_CONTA);
+  return { visivel: true, pode: true, motivo: null, frase: null, candidatas };
+}
+
+/** ⚠ Motivos de recusa da IA, em português — espelho de `FRASE_DA_RECUSA` da api. Desconhecido volta CRU. */
+const FRASE_DA_RECUSA_IA = Object.freeze({
+  linha_desconhecida: "A IA respondeu sobre uma linha que não estava no lote.",
+  sem_debito: "A IA não indicou a conta de débito.",
+  conta_fora_do_plano: "A IA indicou uma conta que não existe no plano desta empresa.",
+  conta_sintetica: "A IA indicou uma conta sintética (de agregação), que não recebe lançamento.",
+  conta_ambigua: "Duas contas do plano têm o mesmo código completo — o sistema não escolhe entre elas.",
+  credito_nao_e_disponibilidade: "A IA indicou como crédito uma conta que não é caixa nem banco.",
+});
+
+export function fraseDaRecusaIa(motivo) {
+  return FRASE_DA_RECUSA_IA[motivo] || String(motivo || "motivo desconhecido");
+}
+
+/** O que a GUARDA recusou, em português. Desconhecido volta CRU. */
+const FRASE_DA_GUARDA = Object.freeze({
+  sem_chave: "A chave da API do modelo não está configurada neste ambiente.",
+  contagem_falhou: "Não foi possível conferir o consumo do mês — por segurança, nada foi enviado.",
+  teto_empresa: "Esta empresa atingiu o teto mensal de IA.",
+  teto_escritorio: "O escritório atingiu o teto mensal de IA.",
+});
+
+export function fraseDaGuarda(motivo) {
+  return FRASE_DA_GUARDA[motivo] || String(motivo || "motivo desconhecido");
+}
+
+/**
+ * A leitura do relatório do clique. ⚠ Cinco desfechos que NÃO se parecem: nada a sugerir · a guarda
+ * recusou antes de qualquer lote · propostas gravadas · tudo recusado/ilegível · erro do modelo.
+ * Um "0 propostas" para todos eles seria indistinguível de "não funcionou".
+ */
+export function leituraDaClassificacaoIa(r) {
+  if (!r) return null;
+  const propostas = Number(r.propostas) || 0;
+  const gravadas = Number(r.gravadas) || 0;
+  const recusadas = Array.isArray(r.recusadas) ? r.recusadas : [];
+  const erros = Array.isArray(r.erros) ? r.erros : [];
+  const lotes = Number(r.lotes) || 0;
+  const guarda = r.recusadaPelaGuarda || null;
+  return {
+    semLinhas: r.semLinhas === true,
+    linhasOlhadas: Number(r.linhasOlhadas) || 0,
+    linhasEnviadas: Number(r.linhasEnviadas) || 0,
+    lotes,
+    propostas,
+    gravadas,
+    recusadas,
+    erros,
+    ilegiveis: Number(r.ilegiveis) || 0,
+    guarda,
+    // ⚠ a guarda recusou ANTES do primeiro lote: nada foi enviado, e o motivo é dela
+    guardaRecusouTudo: Boolean(guarda) && lotes === 0,
+    // ⚠ a guarda recusou no meio: o que entrou até ali vale, e o resto ficou para depois
+    guardaParouNoMeio: Boolean(guarda) && lotes > 0,
+    // ⚠ propostas que o banco não confirmou (a linha foi lançada/recusada no meio)
+    naoGravadas: Math.max(0, propostas - gravadas),
+    custoEstimadoCentavos: Number(r.custoEstimadoCentavos) || 0,
+    modelo: r.modelo || null,
   };
 }
 

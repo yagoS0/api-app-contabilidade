@@ -23,7 +23,9 @@ const soDigitos = (v) => String(v ?? "").replace(/\D+/g, "");
  * É o mesmo desenho de `formaDoLancamento`. Sem isso, o reduzido `557` de uma empresa poderia ser
  * traduzido pelo `codigoCompleto` de outra — e a despesa iria para a conta errada, em silêncio.
  */
-async function planoDaEmpresa(portalClientId, client) {
+// ⚠ EXPORTADA em 02/09/2026 para a classificação por IA ler o MESMO plano que o motor lê — uma
+// segunda consulta divergiria na primeira correção (a da empresa vence a global pelo reduzido).
+export async function planoDaEmpresa(portalClientId, client) {
   const contas = await client.chartOfAccount.findMany({
     where: { OR: [{ portalClientId: null }, { portalClientId }] },
     // ⚠⚠ `analitica` É LIDA — e tirá-la daqui faz o motor voltar a SUGERIR o que o servidor RECUSA.
@@ -62,10 +64,14 @@ async function planoDaEmpresa(portalClientId, client) {
  * para impedir. (Medido: hoje nenhum reduzido é ambíguo entre empresas — mas isso é um fato de
  * hoje, não uma garantia.)
  */
-async function memoriaDaEmpresa(portalClientId, client) {
+// ⚠ EXPORTADA em 02/09/2026: a memória é o "treino" que o dono citou para a IA — os pares que o
+// contador já lançou. Mesma consulta do motor, de propósito.
+export async function memoriaDaEmpresa(portalClientId, client) {
   return client.accountingHistorico.findMany({
     where: { companyPortalClientId: portalClientId },
-    select: { text: true, contaDebito: true, usageCount: true },
+    // ⚠ `contaCredito` entrou em 02/09/2026: o motor passou a sugerir o crédito da memória quando
+    // ele é único. Coluna fora do `select` volta `undefined` sem erro — e o crédito ficaria mudo.
+    select: { text: true, contaDebito: true, contaCredito: true, usageCount: true },
   });
 }
 

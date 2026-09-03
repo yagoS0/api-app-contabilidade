@@ -255,3 +255,34 @@ describe("⚠ falha de transporte não é 'não enviado' — é 'não se sabe'",
       .toMatch(/tempo de resposta/i);
   });
 });
+
+// ── A pergunta feita DEPOIS, a partir do código gravado (F2 da Entrega 2, 02/09/2026) ───────────
+import { podeTentarDeNovoPeloCodigo } from "../errosMeta.js";
+
+describe("podeTentarDeNovoPeloCodigo — as MESMAS três listas, lidas de `envios_guia.erroCodigo`", () => {
+  it("dá a mesma resposta que `podeTentarDeNovo` deu na hora, para todo código da tabela", () => {
+    for (const [codigo, linha] of Object.entries(ERROS_META)) {
+      expect(podeTentarDeNovoPeloCodigo(codigoNomeado(codigo))).toBe(podeTentarDeNovo(linha));
+    }
+  });
+  it("retentável → true; definitivo → false; sem classificação → null (nunca false disfarçado)", () => {
+    expect(podeTentarDeNovoPeloCodigo(codigoNomeado(CODIGOS_RETENTAVEIS[0]))).toBe(true);
+    expect(podeTentarDeNovoPeloCodigo(codigoNomeado(CODIGOS_DEFINITIVOS[0]))).toBe(false);
+    if (CODIGOS_SEM_CLASSIFICACAO.length) expect(podeTentarDeNovoPeloCodigo(codigoNomeado(CODIGOS_SEM_CLASSIFICACAO[0]))).toBeNull();
+  });
+  it("código da Meta que a tabela não conhece → null, nomeado e sem adivinhação", () => {
+    expect(podeTentarDeNovoPeloCodigo("META_999999")).toBeNull();
+  });
+  it("códigos locais seguem a retentativa da própria tradução", () => {
+    expect(podeTentarDeNovoPeloCodigo(CODIGOS_LOCAIS.RECUSA_LOCAL)).toBe(false);
+    expect(podeTentarDeNovoPeloCodigo(CODIGOS_LOCAIS.NAO_CONFIGURADO)).toBe(false);
+    // Transporte: não se sabe se chegou. A tradução declara NAO_DOCUMENTADA → null.
+    expect(podeTentarDeNovoPeloCodigo(CODIGOS_LOCAIS.FALHA_DE_TRANSPORTE)).toBeNull();
+    expect(podeTentarDeNovo(traduzirFalhaDeTransporte(new Error("x")))).toBeNull();
+    expect(podeTentarDeNovoPeloCodigo(CODIGOS_LOCAIS.RESPOSTA_NAO_RECONHECIDA)).toBeNull();
+  });
+  it("vazio/ausente → null", () => {
+    expect(podeTentarDeNovoPeloCodigo("")).toBeNull();
+    expect(podeTentarDeNovoPeloCodigo(null)).toBeNull();
+  });
+});

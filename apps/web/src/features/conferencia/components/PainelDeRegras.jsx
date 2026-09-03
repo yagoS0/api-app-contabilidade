@@ -11,17 +11,17 @@
 // ⚠ A REGRA NÃO MORA AQUI. Quem valida é `lib/regraDoFornecedor.js` (espelho declarado do servidor),
 // e quem decide de verdade é `application/declarados/RegraService.js` — um `curl` bate lá.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createApiClient } from "../../../api/client";
 import { Button } from "../../../components/ui/Button";
 import {
   comportamentoDaRegra,
-  contasDeCreditoOferecidas,
-  contasDeDebitoOferecidas,
   COMPORTAMENTO,
   fraseDaRegra,
-  validarRegra,
 } from "../lib/regraDoFornecedor";
+// ⚠⚠ O FORMULÁRIO SAIU DAQUI em 02/09/2026 — a linha da fila também cria regra («Criar regra»), e um
+// segundo formulário lá seria a cópia que diverge. UM formulário, duas portas. Ver o cabeçalho dele.
+import { FormularioDeRegra } from "./FormularioDeRegra";
 
 const regrasApi = createApiClient();
 
@@ -30,15 +30,6 @@ const card = {
   border: "1px solid var(--border)",
   borderRadius: 10,
   padding: 16,
-};
-
-const campo = {
-  background: "var(--surface-2, var(--surface))",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  color: "var(--text)",
-  padding: "6px 8px",
-  width: "100%",
 };
 
 const brl = (v) => {
@@ -61,17 +52,6 @@ const TOKEN_DO_COMPORTAMENTO = {
   [COMPORTAMENTO.DESLIGADA]: "var(--text-muted)",
 };
 
-const CAMPOS_VAZIOS = {
-  cnpjFornecedor: "",
-  padraoDescricao: "",
-  valorMin: "",
-  valorMax: "",
-  contaDestino: "",
-  contaCredito: "",
-  lancaSozinha: false,
-  diaDoLancamento: "",
-};
-
 function mensagemDoErro(e) {
   return e?.body?.message || e?.message || "Não foi possível concluir.";
 }
@@ -79,13 +59,10 @@ function mensagemDoErro(e) {
 export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) {
   const [estado, setEstado] = useState({ carregando: true, regras: [], indisponivel: false, erro: null });
   const [abrindo, setAbrindo] = useState(false);
-  const [campos, setCampos] = useState(CAMPOS_VAZIOS);
+  // ⚠ `enviando` FICOU no painel para o «Parar/Lançar sozinha» da lista — o formulário (que saiu
+  // para `FormularioDeRegra`) tem o dele. Dois atos, dois ocupados: um não pode travar o outro.
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState(null);
-
-  const debitos = useMemo(() => contasDeDebitoOferecidas(contas), [contas]);
-  const creditos = useMemo(() => contasDeCreditoOferecidas(contas), [contas]);
-  const veredito = useMemo(() => validarRegra(campos, contas), [campos, contas]);
 
   function carregar() {
     if (!companyId || typeof regrasApi.getConferenciaRegras !== "function") {
@@ -104,32 +81,6 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
   }
 
   useEffect(() => { carregar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [companyId]);
-
-  async function criar() {
-    setEnviando(true);
-    setAviso(null);
-    try {
-      await regrasApi.postConferenciaRegra(companyId, {
-        cnpjFornecedor: campos.cnpjFornecedor || null,
-        padraoDescricao: campos.padraoDescricao || null,
-        valorMin: Number(campos.valorMin),
-        valorMax: Number(campos.valorMax),
-        contaDestino: campos.contaDestino,
-        contaCredito: campos.contaCredito || null,
-        lancaSozinha: campos.lancaSozinha === true,
-        diaDoLancamento: campos.lancaSozinha === true ? Number(campos.diaDoLancamento) : null,
-      });
-      setCampos(CAMPOS_VAZIOS);
-      setAbrindo(false);
-      carregar();
-    } catch (e) {
-      // ⚠ A recusa do SERVIDOR aparece com a frase dele. A tela não a reescreve: ela pode recusar
-      // por algo que o espelho não sabe (conta ambígua, plano da empresa).
-      setAviso(mensagemDoErro(e));
-    } finally {
-      setEnviando(false);
-    }
-  }
 
   async function alternarAutomatico(regra) {
     const ligando = regra.lancaSozinha !== true;
@@ -197,120 +148,15 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
       ) : null}
 
       {abrindo ? (
-        <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 13 }}>CNPJ do fornecedor</span>
-              <input
-                style={campo}
-                value={campos.cnpjFornecedor}
-                inputMode="numeric"
-                placeholder="só dígitos"
-                onChange={(e) => setCampos((c) => ({ ...c, cnpjFornecedor: e.target.value }))}
-              />
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 13 }}>ou padrão da descrição</span>
-              <input
-                style={campo}
-                value={campos.padraoDescricao}
-                onChange={(e) => setCampos((c) => ({ ...c, padraoDescricao: e.target.value }))}
-              />
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 13 }}>Valor mínimo</span>
-              <input
-                style={campo}
-                inputMode="decimal"
-                value={campos.valorMin}
-                onChange={(e) => setCampos((c) => ({ ...c, valorMin: e.target.value }))}
-              />
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 13 }}>Valor máximo</span>
-              <input
-                style={campo}
-                inputMode="decimal"
-                value={campos.valorMax}
-                onChange={(e) => setCampos((c) => ({ ...c, valorMax: e.target.value }))}
-              />
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 13 }}>Débito (a despesa)</span>
-              <select
-                style={campo}
-                value={campos.contaDestino}
-                onChange={(e) => setCampos((c) => ({ ...c, contaDestino: e.target.value }))}
-              >
-                <option value="">Escolha…</option>
-                {debitos.map((c) => (
-                  <option key={c.codigoCompleto} value={c.codigoCompleto}>
-                    {c.codigoCompleto} · {c.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              {/* ⚠⚠ SÓ DISPONIBILIDADE. O seletor não oferece o plano inteiro: o lançamento afirma
-                  de ONDE o dinheiro saiu, e uma conta de despesa como crédito seria uma mentira. */}
-              <span style={{ fontSize: 13 }}>Crédito (caixa ou banco)</span>
-              <select
-                style={campo}
-                value={campos.contaCredito}
-                onChange={(e) => setCampos((c) => ({ ...c, contaCredito: e.target.value }))}
-              >
-                {/* ⚠ Vazio CONTINUA VALENDO: é "não escolhi", e o caixa de hoje segue. */}
-                <option value="">Manter o caixa padrão</option>
-                {creditos.map((c) => (
-                  <option key={c.codigoCompleto} value={c.codigoCompleto}>
-                    {c.codigoCompleto} · {c.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <input
-              type="checkbox"
-              checked={campos.lancaSozinha === true}
-              onChange={(e) => setCampos((c) => ({ ...c, lancaSozinha: e.target.checked === true }))}
-            />
-            <span style={{ fontSize: 13 }}>
-              <strong>Lançar sozinha</strong> — toda nota deste fornecedor dentro da faixa vira
-              lançamento contábil sem ninguém clicar.
-            </span>
-          </label>
-
-          {campos.lancaSozinha ? (
-            <label style={{ display: "grid", gap: 4, maxWidth: 220 }}>
-              <span style={{ fontSize: 13 }}>Dia do mês em que ela lança</span>
-              <input
-                style={campo}
-                inputMode="numeric"
-                value={campos.diaDoLancamento}
-                onChange={(e) => setCampos((c) => ({ ...c, diaDoLancamento: e.target.value }))}
-              />
-              {/* ⚠⚠ O CUSTO DA DATA FIXA VAI ESCRITO NA TELA, não num comentário: o lançamento
-                  AFIRMA que o dinheiro saiu naquele dia, e ninguém provou isso. */}
-              <span style={{ fontSize: 12, color: "var(--state-warn)" }}>
-                A data é presumida — ninguém provou que o dinheiro saiu nesse dia. Quando o débito
-                do extrato chegar, ele corrige a data do lançamento que já existe.
-              </span>
-            </label>
-          ) : null}
-
-          {/* ⚠ O botão desabilitado DIZ O QUE FALTA. Sem o motivo, a pessoa preenche tudo de novo
-              sem saber o que está errado. */}
-          {!veredito.pode ? (
-            <div style={{ color: "var(--state-warn)", fontSize: 13 }}>{veredito.frase}</div>
-          ) : null}
-
-          <div>
-            <Button size="sm" disabled={!veredito.pode || enviando} onClick={criar}>
-              {enviando ? "Salvando…" : "Criar regra"}
-            </Button>
-          </div>
+        <div style={{ marginTop: 16 }}>
+          <FormularioDeRegra
+            companyId={companyId}
+            contas={contas}
+            aoSalvar={() => {
+              setAbrindo(false);
+              carregar();
+            }}
+          />
         </div>
       ) : null}
 

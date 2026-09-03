@@ -62,15 +62,17 @@ const item = (extra = {}) => ({
 });
 
 /**
- * ⚠⚠ A LINHA QUE AINDA PASSA PELO MODAL — desde 01/09/2026 (dono: *"tira o Confirmar duplicado"*).
+ * ⚠⚠ A LINHA SEM DATA — e desde 02/09/2026 ela TAMBÉM lança pela própria linha.
  *
- * A linha em `A_CONFERIR` ganhou conta e botão **"Lançar"** na própria linha, e o `Confirmar` saiu
- * dela: dois botões para o mesmo ato faziam o contador descobrir por tentativa qual usava a conta
- * digitada ao lado.
+ * Histórico das portas: em 01/09 a linha em `A_CONFERIR` ganhou conta e «Lançar» inline, e o
+ * `Confirmar` saiu dela; a linha SEM data continuava indo ao modal, porque a data se perguntava lá.
+ * Em 02/09 o dono pediu *"data, crédito e débito, todos modificáveis inline"* — e a data desceu para
+ * a linha, nascida com a EMISSÃO da nota (nunca com hoje).
  *
- * ⚠ O MODAL NÃO MORREU — ele é o caminho quando a ação pede **DATA**, e a data é a afirmação de
- * quando o dinheiro saiu (não se digita de passagem). É por aqui que os casos abaixo o alcançam.
- * ⚠ Cada garantia que eles guardavam continua a mesma; só mudou a porta.
+ * ⚠ O MODAL NÃO MORREU — ele ficou para `ajustar` (pede valor) e `recusar` (pede motivo). Os casos
+ * que medem o MODAL em si o alcançam por «Ajustar valor»; os que medem a CONTA e a DATA medem a
+ * linha, que é onde essas duas coisas vivem agora.
+ * ⚠ Cada garantia que eles guardavam continua a mesma; só mudou a porta — pela segunda vez.
  */
 const itemNoModal = (extra = {}) =>
   item({ estado: "AGUARDANDO_PAGAMENTO", dataPagamento: null, origemPagamento: null, ...extra });
@@ -93,20 +95,37 @@ describe("⚠⚠ A PROCEDÊNCIA DA DATA CHEGA NA LINHA", () => {
     expect(screen.getByText("Extrato bancário")).toBeInTheDocument();
   });
 
-  it("⚠⚠ data DECLARADA pelo contador aparece marcada — e em ÂMBAR, não em silêncio", async () => {
-    // Sem isto, uma data provada pelo banco e uma data digitada ficam idênticas na tela.
+  it("⚠⚠ data DECLARADA pelo contador é EDITÁVEL na linha — e marcada em ÂMBAR como declaração", async () => {
+    // Sem a marca, uma data provada pelo banco e uma data digitada ficam idênticas na tela. Desde
+    // 02/09/2026 a data declarada é um CAMPO (o dono: *"data, crédito e débito, todos modificáveis
+    // inline"*), e a marca continua: em âmbar, dizendo que é declaração.
     responder([item({ origemPagamento: "DECLARADO_PELO_CONTADOR" })]);
     montar();
-    const selo = await screen.findByText("Declarado");
-    expect(selo).toBeInTheDocument();
+    const campo = await screen.findByLabelText(/Data do pagamento de GOOGLE CLOUD BRASIL/i);
+    expect(campo).toHaveValue("2026-07-15");
+    const selo = screen.getByText("declaração sua");
     expect(selo).toHaveStyle({ color: "var(--state-warn)" });
   });
 
-  it("⚠ sem data, a célula é um traço com o motivo — nunca uma data inventada", async () => {
+  it("⚠⚠ data PROVADA pelo extrato NÃO é editável — a prova não se rebaixa num clique", async () => {
+    // ⚠⚠ É a única célula de data que continua só leitura, e é a mais importante: um campo aqui
+    // permitiria trocar uma evidência do banco por uma declaração num descuido.
+    responder([item()]);
+    montar();
+    expect(await screen.findByText("15/07/2026")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Data do pagamento de GOOGLE CLOUD BRASIL/i)).toBeNull();
+  });
+
+  it("⚠ sem data, a linha OFERECE o campo — nascido com a EMISSÃO, nunca com hoje", async () => {
+    // ⚠ Antes de 02/09/2026 a célula era um traço e a data se perguntava no modal. O campo nasce
+    // com a única data que o documento oferece; "hoje" é a data do CLIQUE e afirmaria que a empresa
+    // pagou no instante em que alguém abriu a tela.
     responder([item({ dataPagamento: null, origemPagamento: null, estado: "AGUARDANDO_PAGAMENTO" })]);
     montar();
-    await screen.findAllByText("GOOGLE CLOUD BRASIL");
-    expect(screen.getByTitle(/Nenhuma data de pagamento/i)).toBeInTheDocument();
+    const campo = await screen.findByLabelText(/Data do pagamento de GOOGLE CLOUD BRASIL/i);
+    expect(campo).toHaveValue("2026-07-02");
+    expect(campo).not.toHaveValue(new Date().toISOString().slice(0, 10));
+    expect(screen.getByText("declaração sua")).toBeInTheDocument();
   });
 });
 
@@ -212,36 +231,32 @@ describe("⚠ o documento: quando não dá para abrir, a linha DIZ por quê", ()
   });
 });
 
-describe("⚠⚠ O MODAL PERGUNTA ANTES DE ENVIAR", () => {
-  it("confirmar sem data pede a data, e não envia enquanto ela faltar", async () => {
+describe("⚠⚠ A LINHA PERGUNTA ANTES DE ENVIAR — e o modal, onde ele ficou", () => {
+  it("⚠⚠ sem data (e sem emissão para sugerir), a linha NÃO envia — e diz o que falta", async () => {
+    // ⚠ Desde 02/09/2026 a data mora na linha. Sem `dataDocumento` o campo nasce VAZIO — vazio é
+    // honesto, um palpite não é — e o «Lançar» fica desabilitado dizendo por quê.
     responder([item({ estado: "AGUARDANDO_PAGAMENTO", dataPagamento: null, origemPagamento: null, dataDocumento: null })]);
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
-
-    const dialogo = await screen.findByRole("dialog");
-    const enviar = within(dialogo).getByRole("button", { name: /^Confirmar$/i });
-    expect(enviar).toBeDisabled();
-    expect(enviar).toHaveAttribute("title", expect.stringMatching(/data do pagamento/i));
+    const lancar = await screen.findByRole("button", { name: /^Lançar$/i });
+    await waitFor(() => expect(lancar).toBeDisabled());
+    expect(lancar).toHaveAttribute("title", expect.stringMatching(/data do pagamento/i));
+    fireEvent.click(lancar);
     expect(mockPostAcao).not.toHaveBeenCalled();
   });
 
-  it("⚠⚠ a data nasce sugerida com a EMISSÃO da nota, nunca com hoje", async () => {
+  it("⚠⚠ a data da linha nasce sugerida com a EMISSÃO da nota, nunca com hoje", async () => {
     responder([item({ estado: "AGUARDANDO_PAGAMENTO", dataPagamento: null, origemPagamento: null })]);
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
-
-    const dialogo = await screen.findByRole("dialog");
-    const campo = within(dialogo).getByLabelText(/Data do pagamento/i);
+    const campo = await screen.findByLabelText(/Data do pagamento de GOOGLE CLOUD BRASIL/i);
     expect(campo).toHaveValue("2026-07-02");
     expect(campo).not.toHaveValue(new Date().toISOString().slice(0, 10));
   });
 
-  it("⚠ o modal diz que data sem comprovante é DECLARAÇÃO", async () => {
+  it("⚠ a linha diz que data sem comprovante é DECLARAÇÃO", async () => {
     responder([item({ estado: "AGUARDANDO_PAGAMENTO", dataPagamento: null, origemPagamento: null })]);
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
-    const dialogo = await screen.findByRole("dialog");
-    expect(within(dialogo).getByText(/não é uma prova|declaração sua/i)).toBeInTheDocument();
+    await screen.findByLabelText(/Data do pagamento de GOOGLE CLOUD BRASIL/i);
+    expect(screen.getByText(/declaração sua/i)).toBeInTheDocument();
   });
 
   it("⚠ recusar exige motivo — ausência nunca é resposta", async () => {
@@ -254,24 +269,28 @@ describe("⚠⚠ O MODAL PERGUNTA ANTES DE ENVIAR", () => {
     expect(mockPostAcao).not.toHaveBeenCalled();
   });
 
-  it("⚠ a confirmação REPETE OS DADOS — 'tem certeza?' não é confirmação", async () => {
-    responder([itemNoModal()]);
+  it("⚠ a confirmação do MODAL repete os dados — 'tem certeza?' não é confirmação", async () => {
+    // ⚠ O modal é alcançado por «Ajustar valor» desde 02/09/2026 — `confirmar` lança pela linha.
+    responder([item()]);
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Ajustar valor$/i }));
     const dialogo = await screen.findByRole("dialog");
     expect(within(dialogo).getByText(/12\.345\.678\/0001-90/)).toBeInTheDocument();
     expect(within(dialogo).getByText(/competência 2026-07/)).toBeInTheDocument();
   });
 
-  it("com tudo preenchido, envia a ação com o segmento certo", async () => {
+  it("⚠⚠ com tudo preenchido, a LINHA sem data envia `confirmar` — com a data que nasceu da emissão", async () => {
+    // ⚠ É o caminho novo inteiro: linha em `AGUARDANDO_PAGAMENTO`, data sugerida (02/07), conta
+    // sugerida traduzida. Nada foi aberto; um clique.
     responder([itemNoModal()]);
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
-    const dialogo = await screen.findByRole("dialog");
-    fireEvent.click(within(dialogo).getByRole("button", { name: /^Confirmar$/i }));
+    const lancar = await screen.findByRole("button", { name: /^Lançar$/i });
+    await waitFor(() => expect(lancar).not.toBeDisabled());
+    fireEvent.click(lancar);
     await waitFor(() => expect(mockPostAcao).toHaveBeenCalled());
-    const [empresa, id, acao] = mockPostAcao.mock.calls[0];
+    const [empresa, id, acao, corpo] = mockPostAcao.mock.calls[0];
     expect([empresa, id, acao]).toEqual(["emp-1", "d-1", "confirmar"]);
+    expect(corpo).toMatchObject({ dataPagamento: "2026-07-02", origemPagamento: "DECLARADO_PELO_CONTADOR" });
   });
 });
 
@@ -282,13 +301,13 @@ describe("⚠ o erro do servidor APARECE — 'não veio nada' e 'deu erro' não 
     expect(await screen.findByText(/competencia_invalida/)).toBeInTheDocument();
   });
 
-  it("⚠ a recusa da AÇÃO chega ao contador com o texto dela", async () => {
+  it("⚠ a recusa da AÇÃO chega ao contador com o texto dela — pela linha também", async () => {
     responder([itemNoModal()]);
     mockPostAcao.mockRejectedValue(new Error("A competência está fechada."));
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
-    const dialogo = await screen.findByRole("dialog");
-    fireEvent.click(within(dialogo).getByRole("button", { name: /^Confirmar$/i }));
+    const lancar = await screen.findByRole("button", { name: /^Lançar$/i });
+    await waitFor(() => expect(lancar).not.toBeDisabled());
+    fireEvent.click(lancar);
     expect(await screen.findByText(/A competência está fechada\./)).toBeInTheDocument();
   });
 
@@ -351,24 +370,29 @@ describe("⚠⚠ A RECUSA DO SERVIDOR APARECE DENTRO DO MODAL (auditoria 25/08/2
   it("⚠⚠ o texto do erro fica DENTRO do diálogo, não atrás do overlay", async () => {
     // Era desenhado no corpo da aba — sob o scrim do `.modal-fundo` (z-index 1000). O contador via
     // o botão piscar "Enviando…", voltar, e nada mudar.
-    responder([itemNoModal()]);
+    // ⚠ Pelo modal que FICOU: «Ajustar valor» (a linha lança `confirmar` sem modal desde 02/09).
+    responder([item()]);
     mockPostAcao.mockRejectedValue(new Error("A competência está fechada."));
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Ajustar valor$/i }));
     const dialogo = await screen.findByRole("dialog");
-    fireEvent.click(within(dialogo).getByRole("button", { name: /^Confirmar$/i }));
+    const enviar = within(dialogo).getByRole("button", { name: /^Ajustar valor$/i });
+    await waitFor(() => expect(enviar).not.toBeDisabled());
+    fireEvent.click(enviar);
 
     const alerta = await within(await screen.findByRole("dialog")).findByRole("alert");
     expect(alerta).toHaveTextContent(/A competência está fechada\./);
   });
 
   it("⚠ e o corpo da aba NÃO mostra o mesmo texto ao mesmo tempo", async () => {
-    responder([itemNoModal()]);
+    responder([item()]);
     mockPostAcao.mockRejectedValue(new Error("recusa_do_servidor"));
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Ajustar valor$/i }));
     const dialogo = await screen.findByRole("dialog");
-    fireEvent.click(within(dialogo).getByRole("button", { name: /^Confirmar$/i }));
+    const enviar = within(dialogo).getByRole("button", { name: /^Ajustar valor$/i });
+    await waitFor(() => expect(enviar).not.toBeDisabled());
+    fireEvent.click(enviar);
     await screen.findByRole("alert");
     // ⚠ Uma ocorrência só — duplicar confundiria sobre qual é a atual.
     expect(screen.getAllByText(/recusa_do_servidor/)).toHaveLength(1);
@@ -485,28 +509,33 @@ describe("⚠⚠ O CORPO QUE VAI AO SERVIDOR (a lacuna que deixou o bug crítico
 // props continuaria verde lá e quebrada aqui.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ O SELETOR DE CONTA na Conferência", () => {
+  /**
+   * ⚠⚠ O SELETOR MORA NA LINHA desde 01/09/2026, e desde 02/09 a linha SEM data também lança por
+   * ele (a data desceu junto). Cada garantia abaixo é a mesma que o modal guardava; o que mudou é
+   * onde ela é medida. ⚠ Espera o PLANO chegar (o `datalist` ganha opções) antes de devolver — sem
+   * isso o campo ainda estaria vazio por atraso, e não por decisão.
+   */
   const abrirConfirmar = async (itemDado) => {
-    // ⚠⚠ O MODAL É ALCANÇADO PELA AÇÃO QUE PEDE DATA desde 01/09/2026 — na linha em `A_CONFERIR` o
-    // `Confirmar` saiu (o "Lançar" da própria linha o substituiu). O seletor de conta DENTRO do
-    // modal continua existindo e continua precisando de cada garantia abaixo.
     responder([{ ...itemDado, estado: "AGUARDANDO_PAGAMENTO", dataPagamento: null, origemPagamento: null }]);
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
-    return screen.findByRole("dialog");
+    await screen.findByLabelText(/Conta contábil de GOOGLE CLOUD BRASIL/i);
+    await waitFor(() => expect(document.querySelectorAll("#contas-da-conferencia option").length).toBeGreaterThan(0));
+    return document.body;
   };
-  const campoDaConta = (dialogo) => within(dialogo).getByLabelText(/Conta contábil da despesa/i);
-  const botaoConfirmar = (dialogo) => within(dialogo).getByRole("button", { name: /^Confirmar$/i });
+  const campoDaConta = () => screen.getByLabelText(/Conta contábil de GOOGLE CLOUD BRASIL/i);
+  const botaoConfirmar = () => screen.getByRole("button", { name: /^Lançar$/i });
   const corpoEnviado = () => mockPostAcao.mock.calls[0][3];
 
   it("⚠⚠ o campo nasce com a sugestão traduzida para o REDUZIDO, não com o codigoCompleto", async () => {
     const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
     // `557`, o número que o contador reconhece — nunca `411030012`, que é âncora interna.
-    expect(campoDaConta(d)).toHaveValue("557");
+    await waitFor(() => expect(campoDaConta(d)).toHaveValue("557"));
   });
 
   it("⚠⚠ trocar a conta manda a ESCOLHIDA, não a sugerida — é o ato do contador que vence", async () => {
     const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
     fireEvent.change(campoDaConta(d), { target: { value: "401" } });
+    await waitFor(() => expect(botaoConfirmar(d)).not.toBeDisabled());
     fireEvent.click(botaoConfirmar(d));
     await waitFor(() => expect(mockPostAcao).toHaveBeenCalled());
     // ⚠ o POST leva o `codigoCompleto` do 401, não o "401" digitado nem a sugestão antiga
@@ -517,7 +546,7 @@ describe("⚠⚠ O SELETOR DE CONTA na Conferência", () => {
     const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
     fireEvent.change(campoDaConta(d), { target: { value: "400" } });
     expect(botaoConfirmar(d)).toBeDisabled();
-    expect(within(d).getByText(/sintética \(de agregação\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/sintética \(de agregação\)/i)).toBeInTheDocument();
     fireEvent.click(botaoConfirmar(d));
     expect(mockPostAcao).not.toHaveBeenCalled();
   });
@@ -526,13 +555,13 @@ describe("⚠⚠ O SELETOR DE CONTA na Conferência", () => {
     const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
     fireEvent.change(campoDaConta(d), { target: { value: "464" } });
     expect(botaoConfirmar(d)).toBeDisabled();
-    expect(within(d).getByText(/reimportação do plano/i)).toBeInTheDocument();
+    expect(screen.getByText(/reimportação do plano/i)).toBeInTheDocument();
   });
 
   it("conta que não existe recusa nomeando, e NÃO envia", async () => {
     const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
     fireEvent.change(campoDaConta(d), { target: { value: "99999" } });
-    expect(within(d).getByText(/não existe no plano/i)).toBeInTheDocument();
+    expect(screen.getByText(/não existe no plano/i)).toBeInTheDocument();
     fireEvent.click(botaoConfirmar(d));
     expect(mockPostAcao).not.toHaveBeenCalled();
   });
@@ -546,14 +575,16 @@ describe("⚠⚠ O SELETOR DE CONTA na Conferência", () => {
   });
 
   it("⚠⚠ sugestão FORA do plano desta empresa deixa o campo vazio — o servidor recusaria", async () => {
-    const d = await abrirConfirmar(item({ sugestao: { conta: "999999999", procedencia: "REGRA_CNPJ" } }));
+    const d = await abrirConfirmar(item({ sugestao: { conta: "999999999", procedencia: "REGRA_CNPJ" }, contaSugerida: null }));
     expect(campoDaConta(d)).toHaveValue("");
     expect(botaoConfirmar(d)).toBeDisabled();
   });
 
   it("⚠⚠ a lista NÃO oferece sintética nem conta sem codigoCompleto", async () => {
     const d = await abrirConfirmar(item({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } }));
-    const opcoes = Array.from(d.querySelectorAll("datalist option")).map((o) => o.value);
+    // ⚠ O `datalist` mora na ABA desde 02/09/2026 (um só, para a linha e o modal oferecerem a
+    // MESMA lista) — por isso se lê pelo id, no documento.
+    const opcoes = Array.from(document.querySelectorAll("#contas-da-conferencia option")).map((o) => o.value);
     expect(opcoes).toContain("401");
     expect(opcoes).toContain("557");
     // `400` é sintética; `464` não tem codigoCompleto
@@ -566,7 +597,7 @@ describe("⚠⚠ O SELETOR DE CONTA na Conferência", () => {
     fireEvent.change(campoDaConta(d), { target: { value: "401" } });
     // ⚠ "Aluguel" também é o rótulo do <option> no datalist — o que se confere aqui é o texto de
     // AJUDA abaixo do campo, que é o que a pessoa lê sem abrir a lista.
-    const ajudas = within(d).getAllByText("Aluguel").filter((n) => n.tagName !== "OPTION");
+    const ajudas = screen.getAllByText("Aluguel").filter((n) => n.tagName !== "OPTION");
     expect(ajudas.length).toBeGreaterThan(0);
   });
 
@@ -613,10 +644,10 @@ describe("⚠⚠ O SELETOR DE CONTA na Conferência", () => {
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ quando o plano de contas NÃO vem", () => {
   const abrir = async () => {
-    // ⚠ Pelo caminho que ainda usa o modal (a ação que pede data) — ver `itemNoModal`.
-    responder([itemNoModal()]);
+    // ⚠ Pelo modal que FICOU — «Ajustar valor». A mensagem sobre o plano mora no seletor do modal.
+    responder([item()]);
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Ajustar valor$/i }));
     return screen.findByRole("dialog");
   };
 
@@ -648,16 +679,14 @@ describe("⚠⚠ quando o plano de contas NÃO vem", () => {
     expect((await screen.findAllByText("GOOGLE CLOUD BRASIL")).length).toBeGreaterThan(0);
   });
 
-  it("⚠⚠ o plano que chega DEPOIS do modal abrir ainda preenche o campo", async () => {
+  it("⚠⚠ o plano que chega DEPOIS da LINHA montar ainda preenche o campo", async () => {
     // ⚠ O `useState` inicializador roda UMA vez: sem o efeito de re-sync, a sugestão evaporava em
-    // silêncio e o contador tinha de digitar o código.
+    // silêncio e o contador tinha de digitar o código. A mesma garantia do modal, agora na linha.
     let liberar;
     mockGetPlano.mockImplementationOnce(() => new Promise((r) => { liberar = r; }));
     responder([itemNoModal({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } })]);
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
-    const d = await screen.findByRole("dialog");
-    const campo = within(d).getByLabelText(/Conta contábil da despesa/i);
+    const campo = await screen.findByLabelText(/Conta contábil de GOOGLE CLOUD BRASIL/i);
     expect(campo).toHaveValue("");
     await act(async () => { liberar(PLANO_DO_TESTE); });
     await waitFor(() => expect(campo).toHaveValue("557"));
@@ -667,14 +696,14 @@ describe("⚠⚠ quando o plano de contas NÃO vem", () => {
 describe("⚠⚠ o CAIXA torto derruba a linha — e a tela nunca dizia", () => {
   it("sem `111010001` no plano, o envio é bloqueado COM o motivo", async () => {
     mockGetPlano.mockResolvedValueOnce(PLANO_DO_TESTE.filter((c) => c.codigo !== "5"));
+    // ⚠ Na LINHA, desde 02/09/2026 — era só o modal que dizia isso, e a linha virou o caminho.
     responder([itemNoModal({ sugestao: { conta: "411030012", procedencia: "REGRA_CNPJ" } })]);
     montar();
-    fireEvent.click(await screen.findByRole("button", { name: /^Confirmar$/i }));
-    const d = await screen.findByRole("dialog");
+    const lancar = await screen.findByRole("button", { name: /^Lançar$/i });
     await waitFor(() => {
-      expect(within(d).getByText(/não tem a conta de caixa/i)).toBeInTheDocument();
+      expect(screen.getByText(/não tem a conta de caixa/i)).toBeInTheDocument();
     });
-    expect(within(d).getByRole("button", { name: /^Confirmar$/i })).toBeDisabled();
+    expect(lancar).toBeDisabled();
   });
 });
 

@@ -4,6 +4,8 @@ import { GUIDE_COMPLIANCE_COMPETENCIA } from "../../config.js";
 // fariam o chip da guia e o fechamento discordarem — com o contador no meio.
 import { faturamentoEmitPorEmpresa } from "../notas/apuracao/v2/FechamentoService.js";
 import { enviosPorGuia, foiEnviadaComLegado, envioParaExibir } from "./EnvioGuiaService.js";
+// A pergunta "posso tentar de novo?" refeita a partir do código GRAVADO no envio (três respostas).
+import { podeTentarDeNovoPeloCodigo } from "../whatsapp/errosMeta.js";
 // "Esta guia é de parcelamento?" tem UMA fonte — inclusive quando a pergunta é feita ao banco.
 import {
   SELECT_PARCELAMENTO_DA_GUIA,
@@ -46,9 +48,13 @@ export function resolveNode(node, presente, vazio, { semFaturamento = false, fat
     // (a guia existe) — mexer em `ok` mudaria o filtro de pendências e o agregado do fechamento,
     // que respondem outra pergunta. O que muda é o que a tela MOSTRA: âmbar "gerada, falta enviar"
     // sobre uma guia cujo envio falhou é o sistema dizendo que está tudo no rumo.
+    // ⚠ "Falhou" tem DUAS fontes desde 02/09/2026: o e-mail (`emailStatus: ERROR`, o de sempre) e o
+    // envio por WhatsApp (`envios_guia.status = "falhou"`). Sem a segunda, a guia cujo WhatsApp a
+    // Meta recusou ficava âmbar "gerada, falta enviar" — o mesmo estado de quem nunca foi tentado, o
+    // defeito que este `falhou` existe para impedir, agora pelo outro canal.
     const state = presente.enviada
       ? "enviada"
-      : (envioDeEmailFalhou(presente) ? "falhou" : "gerada");
+      : ((envioDeEmailFalhou(presente) || presente.envioStatus === "falhou") ? "falhou" : "gerada");
     return {
       ...node, ok: true, state,
       guideId: presente.guideId,
@@ -56,6 +62,10 @@ export function resolveNode(node, presente, vazio, { semFaturamento = false, fat
       envioStatus: presente.envioStatus,
       envioEm: presente.envioEm,
       envioErro: presente.envioErro,
+      envioErroCodigo: presente.envioErroCodigo ?? null,
+      // ⚠ TRÊS respostas (`true`/`false`/`null`): `null` é "a Meta não diz". A tela não o trata
+      // como `false` — ela oferece o botão com a frase de que a decisão é do contador.
+      envioPodeTentarDeNovo: presente.envioPodeTentarDeNovo ?? null,
       emailStatus: presente.emailStatus,
       emailSentAt: presente.emailSentAt,
       // O MOTIVO viaja junto do estado. "Falhou" sem o porquê manda o contador procurar em outro
@@ -222,6 +232,8 @@ export async function computeGuideComplianceMap(rows, competencia) {
         envioStatus: exibirParc?.status || null,
         envioEm: exibirParc?.lidoEm || exibirParc?.entregueEm || exibirParc?.enviadoEm || null,
         envioErro: exibirParc?.erroMensagemUsuario || null,
+        envioErroCodigo: exibirParc?.erroCodigo || null,
+        envioPodeTentarDeNovo: podeTentarDeNovoPeloCodigo(exibirParc?.erroCodigo),
         emailStatus: g.emailStatus || null,
         emailSentAt: g.emailSentAt || null,
         emailLastError: g.emailLastError || null,
@@ -389,6 +401,8 @@ export async function computeGuideComplianceMap(rows, competencia) {
       envioStatus: exibir?.status || null,
       envioEm: exibir?.lidoEm || exibir?.entregueEm || exibir?.enviadoEm || null,
       envioErro: exibir?.erroMensagemUsuario || null,
+      envioErroCodigo: exibir?.erroCodigo || null,
+      envioPodeTentarDeNovo: podeTentarDeNovoPeloCodigo(exibir?.erroCodigo),
       // ⚠ O destino vem DO ENVIO, não do cadastro. São coisas diferentes: o cadastro diz para onde
       // mandaríamos hoje, o envio diz para onde FOI. Sem isto o popover mostrava o e-mail da
       // empresa ao lado de "enviada por WhatsApp" — e o contador iria procurar a mensagem no lugar

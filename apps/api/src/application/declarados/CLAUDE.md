@@ -931,6 +931,73 @@ as duas passam por `automaticoOuNulo`, que exige o que o motor exige:
 Aceitar aqui o que o motor recusa depois produziria o pior desfecho desta tela: uma regra marcada
 *"lança sozinha"* que **nunca lança**, com o contador achando que a despesa dele está entrando.
 
+## ⚠⚠ A IA NA CONFERÊNCIA — o botão «Sugerir contas com IA» (02–03/09/2026)
+
+> Dono: *"a IA é um botão em cima de tudo, ao clicar ela passa por todos os lançamentos colocando
+> os códigos que ela decide, baseado nos históricos, no treino que ela tem, baseado no plano de
+> contas da empresa. As regras são superiores à IA (…) ela deve colocar os códigos apenas naqueles
+> que não entraram a regra."* Decisões dele na mesma conversa: **só onde nem regra nem histórico
+> respondem**; propõe **débito E crédito** (crédito preso a disponibilidade).
+
+⚠⚠ **NADA DISTO LANÇA.** A IA grava PROPOSTAS em colunas PRÓPRIAS de `LancamentoDeclarado`
+(`contaSugeridaIa` · `creditoSugeridoIa` · `justificativaIa` · `sugeridaIaModelo` · `sugeridaIaEm`)
+— **nunca `contaAplicada`** (o ato) **nem `contaSugerida`** (a derivada) **nem `estado`**. Quem leva
+ao razão continua sendo o contador, linha a linha, pelo mesmo «Lançar». Há teste medindo o `data`
+do `updateMany` chave a chave.
+
+| arquivo | o que decide |
+|---|---|
+| `lib/classificacaoPorIa.js` | **PURA.** `linhasParaIa` (quem vai) · `catalogoDeContas` (o que pode escolher) · `montarPedido` (o `system` estável + a mensagem) · `lerResposta` (cada conta CONFERIDA contra o plano). 42 testes |
+| `ClassificacaoPorIaService.js` | a ligação: fila inteira → lotes de 40 → guarda por lote → modelo → leitura → `updateMany` nas colunas `*Ia`. 16 testes |
+| `routes/firm/conferencia.js` | `POST /conferencia/classificar-ia` (ACCOUNTANT; flag OFF ⇒ **503 nomeado**); a fila serializa as cinco colunas e `iaClassificacaoLigada` |
+| `web: components/ModalDaClassificacaoIa.jsx` + `lib/conferenciaTela.js` | o diálogo (diz ANTES o que vai acontecer; o relatório sai inteiro) e o pré-voo do botão (`podeSugerirComIa`) |
+
+### ⚠⚠ AS QUATRO TRAVAS, e cada uma tem teste de recusa
+
+1. **Quem vai** — só a linha lançável em que `sugestao.conta` é nula E o motivo é `NADA_CONHECIDO`.
+   ⚠ `DIVIDIDO` e `FORA_DA_FAIXA` **ficam de fora**: ali alguém sabe e recusou por motivo; a IA
+   decidir por cima seria arbitrar um conflito humano. E `CONTA_SINTETICA`/`CONTA_AMBIGUA`/
+   `CONTA_FORA_DO_PLANO` também: o conserto é na REGRA, não uma segunda opinião.
+2. **O que ela pode escolher** — o catálogo que vai no pedido é só conta ANALÍTICA do plano DESTA
+   empresa (a MESMA `planoDaEmpresa` do motor, exportada para isso), e o crédito só DISPONIBILIDADE
+   (`entraNoFluxoDeCaixa`, reusada). Os exemplos da memória (`memoriaDaEmpresa`) são traduzidos
+   reduzido→completo; exemplo que não traduz fica de fora (ensinaria a inventar).
+3. **O que ela respondeu** — `lerResposta` confere cada proposta com as MESMAS guardas de
+   `montarLancamento`: existe no plano, é analítica (`ehContaSintetica`), não é ambígua (dois
+   reduzidos para um completo), e o crédito é caixa/banco. Conta inventada ⇒ `recusadas` com
+   `MOTIVO_RECUSA` nomeado, **nunca proposta**. Id fora do lote ou repetido ⇒ `LINHA_DESCONHECIDA`.
+   JSON ilegível ⇒ `ilegivel: true` — e isso é OUTRA resposta que "nenhuma linha".
+4. **O que sai é proposta** — e o `where` do `updateMany` reconfere `portalClientId` + estado
+   lançável no instante da escrita: a linha lançada/recusada enquanto o modelo respondia não é
+   tocada, e `gravadas` conta o que o banco confirmou (não o que foi proposto).
+
+⚠⚠ **SEM "CONFIANÇA" NUMÉRICA, por decisão.** O número que um modelo dá para a própria certeza não
+é calibrado; um "92%" na tela treinaria o contador a confirmar sem ler. O que viaja é a
+`justificativaIa` (frase, ≤300 chars), e ela sai VISÍVEL na linha — não em `title`.
+
+⚠ **A guarda é POR LOTE**, com `finalidade: classificacao_lancamentos` (coluna nova em
+`chamadas_ia`, para o teto do escritório saber para onde o dinheiro foi). Recusou antes do primeiro
+lote ⇒ nada enviado, relatório diz o motivo; recusou no meio ⇒ o que entrou vale e `apartirDoLote`
+diz onde parou. `concluirChamadaIa` roda SEMPRE, deu certo ou não.
+
+⚠ **Erro do modelo NÃO derruba a fila** — vira `erros[]` no relatório. Resposta ilegível idem.
+
+⚠ **O bloco estável do prompt não carrega data, empresa nem plano** (teste compara duas montagens
+byte a byte) — mesma disciplina de `promptDoAssistente.js`, para o cache do modelo valer.
+
+⚠⚠ **A TELA: regra > histórico > IA no desenho.** `contaQueSeraUsadaComIa` só cai na proposta da IA
+quando `sugestao.conta` é nula; o chip *"proposta da IA"* é âmbar (`--state-warn`) e distinto dos de
+regra/histórico. O botão só APARECE com `iaClassificacaoLigada` (a flag, vinda do servidor na fila) e
+fica VISÍVEL e desabilitado COM o motivo quando não há linha sem regra nem histórico.
+
+⚠ **Migration `20260903120000_add_sugestao_por_ia`** — aditiva. ⚠⚠ Ela nasceu como `20260902160000`
+e **falhou no `deploy`** (P3018, *"relation chamadas_ia does not exist"*): ela altera `chamadas_ia`,
+que só nasce em `20260903100200`. Timestamp anterior à tabela que altera é ordem errada de aplicação
+— renomeada para depois. **Aplicada no banco de DEV em 03/09/2026 (149/149)**; produção é ato do dono.
+
+⚠ **NÃO VERIFICADO:** nenhuma chamada real à Anthropic saiu desta máquina (sem chave). O que está
+provado é o que os testes provam com dublê; a qualidade das propostas do modelo só se mede ligando.
+
 ## O que ainda **não** existe
 
 | | |

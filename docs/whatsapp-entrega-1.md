@@ -1,5 +1,12 @@
 # WhatsApp — Entrega 1 (envio de guias pelo canal)
 
+> ⚠⚠ **ESTE DOCUMENTO ENVELHECEU (lido de novo em 02/09/2026).** Ele ainda diz "F3 a F6 não foram
+> iniciadas" e "migrations não aplicadas" — as duas frases estavam falsas em 02/09/2026: a Cloud
+> API, o webhook, o envio em lote e o recebimento existem, testados e inertes, e as migrations
+> `20260814160000`/`20260814180000` estão **aplicadas em produção** (145/145 medido). A continuação
+> é a **Entrega 2** (telas, assistente com IA, conversas): `apps/api/CLAUDE.md`, seção "WHATSAPP —
+> ENTREGA 2". O que segue abaixo vale como histórico e como argumento — não como estado.
+
 > **Estado: PAUSADO em 05/08/2026, aguardando número para o cadastro na Meta.**
 > F1 e F2 estão prontas e commitadas na `dev`. F3 a F6 não foram iniciadas — elas dependem de
 > credenciais reais, e escrever integração externa sem poder exercê-la é o que a regra 1 do projeto

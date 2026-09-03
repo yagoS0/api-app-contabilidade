@@ -654,6 +654,76 @@ export const WHATSAPP_TEMPLATE_IDIOMA = (process.env.WHATSAPP_TEMPLATE_IDIOMA ||
 // se promete o que não existe (ver `guideEmailCopy.SEM_REENVIO_AUTOMATICO`).
 export const WHATSAPP_ENVIO_DELAY_MS = Math.max(0, Number(process.env.WHATSAPP_ENVIO_DELAY_MS || 1500));
 
+// === O ASSISTENTE DO WHATSAPP (IA) — Entrega 2, F4 (02/09/2026). Nasce DESLIGADO ===
+//
+// ⚠⚠ ISTO RESPONDE AO CLIENTE SOZINHO, E PODE PREPARAR ATOS FISCAIS (emissão, cancelamento,
+// recálculo pago) — sempre atrás de uma confirmação do cliente com código, nunca direto. Decisão
+// do dono, 02/09/2026: Anthropic/Claude, "a IA monta, o cliente confirma", custo registrado e
+// com teto.
+//
+// ⚠ DUAS CHAVES, e as duas precisam estar ligadas: esta flag E a empresa constar em
+// `IA_EMPRESAS_PILOTO` (CSV de `PortalClient.id`; VAZIO = ninguém). A carteira só abre quando o
+// dono tirar a lista. Quem recusa é o SERVIDOR (o gancho no webhook não chama o modelo), não uma tela.
+export const INTEGRACAO_WHATSAPP_IA = process.env.INTEGRACAO_WHATSAPP_IA === "1";
+export const IA_EMPRESAS_PILOTO = Object.freeze(
+  String(process.env.IA_EMPRESAS_PILOTO || "").split(",").map((v) => v.trim()).filter(Boolean),
+);
+// ⚠ SEGREDO: nunca em log, mensagem de erro ou teste. O SDK lê `ANTHROPIC_API_KEY` sozinho; aqui
+// só se registra a AUSÊNCIA.
+export const ANTHROPIC_API_KEY = (process.env.ANTHROPIC_API_KEY || "").trim();
+// Modelo e esforço. `claude-opus-5` é o modelo da decisão; `effort` "medium" é o ponto de partida
+// para conversa curta (a skill `claude-api` documenta os valores).
+export const IA_MODELO = (process.env.IA_MODELO || "claude-opus-5").trim();
+export const IA_ESFORCO = (process.env.IA_ESFORCO || "medium").trim();
+export const IA_MAX_TOKENS = Math.max(256, Number(process.env.IA_MAX_TOKENS || 2000));
+export const IA_MAX_ITERACOES = Math.max(1, Number(process.env.IA_MAX_ITERACOES || 6));
+
+/**
+ * ⚠⚠ A CLASSIFICAÇÃO DE LANÇAMENTOS POR IA — o botão da aba "A lançar" (dono, 02/09/2026: *"a IA é
+ * um botão em cima de tudo, ao clicar ela passa por todos os lançamentos colocando os códigos que
+ * ela decide"*).
+ *
+ * ⚠ NASCE DESLIGADA, como toda integração desta casa. Ligar é decisão do dono, por env — e exige a
+ * `ANTHROPIC_API_KEY` (a guarda recusa sem ela, registrando o motivo).
+ * ⚠ Ela NÃO lança nada: grava PROPOSTAS (`contaSugeridaIa`/`creditoSugeridoIa`), que o contador
+ * confirma linha a linha. E só onde nem regra nem histórico responderam — regra > IA, sempre.
+ */
+export const INTEGRACAO_IA_CLASSIFICACAO = process.env.INTEGRACAO_IA_CLASSIFICACAO === "1";
+/**
+ * ⚠ Teto de tokens PRÓPRIO desta finalidade: um lote de até 40 linhas, cada uma com duas contas e
+ * uma justificativa curta, não cabe nos 2.000 do assistente conversacional. 6.000 é folga para o
+ * lote cheio; o custo continua contado pela guarda, contra os mesmos tetos mensais.
+ */
+export const IA_MAX_TOKENS_CLASSIFICACAO = Math.max(1000, Number(process.env.IA_MAX_TOKENS_CLASSIFICACAO || 6000));
+
+// ⚠ O aviso fica DEPOIS da declaração — `const` em módulo ESM tem TDZ, e um `if` antes dela derruba
+// o boot inteiro com "Cannot access before initialization" (aconteceu no primeiro teste, 02/09).
+if (INTEGRACAO_IA_CLASSIFICACAO) {
+  log.warn(
+    "INTEGRACAO_IA_CLASSIFICACAO=1: o botão «Sugerir contas com IA» está LIGADO na Conferência. Cada clique "
+    + "chama o modelo (custo contado pela guarda, contra os tetos mensais) e grava PROPOSTAS de conta — "
+    + "nunca lançamentos. Só as linhas sem regra e sem histórico são enviadas.",
+  );
+}
+// ⚠ Os tetos são em CENTAVOS DE DÓLAR (a API cobra em USD; o preço por token está em
+// `precosIa.js`, versionado). Defaults: US$ 4/empresa/mês e US$ 60/escritório/mês — é a ordem
+// dos R$ 20 e R$ 300 da decisão do dono; ajuste é ato dele, por env.
+export const IA_TETO_MENSAL_EMPRESA_CENTAVOS = Math.max(0, Number(process.env.IA_TETO_MENSAL_EMPRESA_CENTAVOS || 400));
+export const IA_TETO_MENSAL_ESCRITORIO_CENTAVOS = Math.max(0, Number(process.env.IA_TETO_MENSAL_ESCRITORIO_CENTAVOS || 6000));
+export const IA_ALERTA_FRACAO = Number(process.env.IA_ALERTA_FRACAO || 0.8);
+// Quantas mensagens do fio entram no contexto de cada turno.
+export const IA_HISTORICO_MENSAGENS = Math.max(2, Number(process.env.IA_HISTORICO_MENSAGENS || 20));
+
+if (INTEGRACAO_WHATSAPP_IA) {
+  log.warn(
+    "INTEGRACAO_WHATSAPP_IA=1: o assistente do WhatsApp está LIGADO para "
+      + IA_EMPRESAS_PILOTO.length
+      + " empresa(s) piloto. Toda mensagem de texto de contato VINCULADO dessas empresas vai ao modelo."
+  );
+  if (!IA_EMPRESAS_PILOTO.length) log.warn("IA_EMPRESAS_PILOTO vazio: o assistente não responde a NINGUÉM (é o desenho).");
+  if (!ANTHROPIC_API_KEY) log.warn("ANTHROPIC_API_KEY ausente: o assistente ficará recusando com motivo");
+}
+
 if (INTEGRACAO_WHATSAPP) {
   // Mesmo padrão do SERPRO: com a flag ligada e credencial faltando, a integração fica desabilitada
   // e o arranque DIZ isso. Ausência silenciosa é o que faz o contador descobrir no dia do envio.

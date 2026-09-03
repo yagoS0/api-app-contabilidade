@@ -39,6 +39,7 @@ import { createCalendarioRouter } from "./calendario.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
 import { createOnboardingsRouter } from "./onboardings.js";
 import { createWhatsappGuiasRouter } from "./whatsappGuias.js";
+import { createWhatsappConversasRouter } from "./whatsappConversas.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
 import { mesclarAtividades } from "../../application/company/atividadesDaEmpresa.js";
 import {
@@ -101,6 +102,12 @@ import {
   PUBLICO,
 } from "../../application/guides/GuideService.js";
 import { normalizeCompetencia, normalizeGuideType, colunaMatrizDaGuia, envioDeEmailFalhou } from "../../application/guides/guideContract.js";
+// A matriz do envio em lote le o estado de envio da MESMA fonte que o chip do dashboard
+// (`envios_guia`): enviada = terminal em QUALQUER canal, e o WhatsApp que falhou aparece.
+import { enviosPorGuia, foiEnviadaComLegado, envioParaExibir } from "../../application/guides/EnvioGuiaService.js";
+import { podeTentarDeNovoPeloCodigo } from "../../application/whatsapp/errosMeta.js";
+// O consumo do assistente (IA) no mês — molde de `/serpro/consumo`, para a tela de conversas.
+import { consumoIaDoMes } from "../../application/assistente/GuardaIaService.js";
 // ⚠ As mensagens de "não foi enviado" moram no domínio, não aqui: era escrevendo-as no lugar de uso
 // que a promessa de uma fila inexistente ganhou quatro cópias. Ver `guideEmailCopy.js`.
 import {
@@ -2884,7 +2891,16 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   router.get("/companies/:companyId/contatos-whatsapp", requireFirmCompanyAccess(), async (req, res) => {
     try {
-      return res.json({ ok: true, contatos: await listarContatos(req.params.companyId) });
+      // O canal padrão viaja junto (02/09/2026): a tela de contatos é onde ele se escolhe, e uma
+      // segunda chamada só para lê-lo seria a mesma pergunta em duas idas.
+      const [contatos, portal] = await Promise.all([
+        listarContatos(req.params.companyId),
+        prisma.portalClient.findUnique({
+          where: { id: String(req.params.companyId) },
+          select: { canalPadraoEnvio: true },
+        }),
+      ]);
+      return res.json({ ok: true, contatos, canalPadraoEnvio: portal?.canalPadraoEnvio || "EMAIL" });
     } catch (err) {
       log.error({ err }, "Falha ao listar contatos de WhatsApp");
       return res.status(500).json({ ok: false, error: "contatos_list_failed", message: err?.message });
@@ -3391,6 +3407,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       },
     });
 
+    // O estado de ENVIO por canal — a mesma fonte do chip (`guideCompliance`). Uma query para a
+    // matriz inteira. ⚠ Sem isto a guia enviada por WhatsApp aparecia como "📄 guia" e entrava de
+    // novo no lote de e-mail: enviada é terminal em qualquer canal.
+    const enviosPorGuiaId = await enviosPorGuia(guides.map((g) => g.id));
+
     // Q10.3: lista de competências presentes nas guides (pra dropdown no frontend).
     const competenciasPresentes = [
       ...new Set(guides.map((g) => g.competencia).filter(Boolean)),
@@ -3454,6 +3475,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // cópias fariam as duas telas discordarem sobre a mesma guia.
       const upper = colunaMatrizDaGuia(g);
       const isVazio = g.status === "VAZIO";
+      const envios = enviosPorGuiaId.get(g.id) || [];
+      const exibir = envioParaExibir(envios);
+      const enviada = foiEnviadaComLegado(envios, g);
       const stamp = {
         guideId: g.id,
         valor: g.valor != null ? Number(g.valor) : null,
@@ -3465,9 +3489,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         // A pergunta "a última tentativa falhou?" vem do `guideContract` — a MESMA que o chip do
         // dashboard usa. Duas leituras de `emailStatus` fariam as duas telas discordarem sobre a
         // mesma guia, que é exatamente como o `parcelamentoId` divergiu.
-        falhou: envioDeEmailFalhou(g),
+        // ⚠ E desde 02/09/2026 a segunda fonte: o WhatsApp que a Meta recusou, sem nada enviado.
+        falhou: envioDeEmailFalhou(g) || (!enviada && exibir?.status === "falhou"),
         emailLastError: g.emailLastError || null,
         emailAttempts: Number(g.emailAttempts || 0),
+        // Enviada = terminal em QUALQUER canal (a mesma leitura de `foiEnviadaComLegado`).
+        enviada,
+        canalEnvio: exibir?.canal || null,
+        envioStatus: exibir?.status || null,
+        envioEm: exibir?.lidoEm || exibir?.entregueEm || exibir?.enviadoEm || null,
+        envioErro: exibir?.erroMensagemUsuario || null,
+        envioPodeTentarDeNovo: podeTentarDeNovoPeloCodigo(exibir?.erroCodigo),
       };
 
       if (upper === "DARF") {
@@ -3485,7 +3517,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
       // Só guias REAIS ainda NÃO enviadas entram na seleção de envio em lote.
       // Marcadores VAZIO não são enviáveis (não têm PDF).
-      if (g.emailStatus !== "SENT" && !isVazio) row.pendingGuideIds.push(g.id);
+      // ⚠ "Não enviada" pela MESMA leitura do chip (qualquer canal) — antes era só `emailStatus`, e a
+      //   guia que já tinha ido por WhatsApp entrava de novo no lote de e-mail.
+      if (!enviada && !isVazio) row.pendingGuideIds.push(g.id);
     }
 
     // Parcelamentos só são exibidos se existe ao menos 1 linha pra (empresa, competência).
@@ -5380,6 +5414,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // envio individual, que é por empresa, traz o próprio `requireFirmCompanyAccess` no caminho.
   // ⚠ Só a SAÍDA. O webhook é público e vive fora deste roteador (é o único sem `requireAuth`).
   router.use("/", createWhatsappGuiasRouter({ log }));
+  // A tela mínima de conversas (F5, 02/09/2026): lista, fio, assumir/devolver, responder, vincular.
+  router.use("/", createWhatsappConversasRouter({ log }));
 
   // Q12.C.2: Apuração global — todas as empresas em uma página
   // GET /firm/apuracao?competencia=YYYY-MM&search=...
@@ -5816,6 +5852,27 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Consumo do mês das chamadas PAGAS ao SERPRO + o teto vigente.
   // Existe para o teto ser VISTO chegando: um bloqueio que aparece de surpresa no fim do mês é o
   // mesmo que travar o app. Em erro devolve vazio — isto é informação, não pode derrubar tela.
+  /**
+   * O CONSUMO DO ASSISTENTE (IA) NO MÊS — estimativa, em centavos de dólar, com os dois tetos.
+   * ⚠ `null` quando a contagem falha: a tela diz que não sabe; nunca "zero".
+   */
+  router.get("/ia/consumo", async (req, res) => {
+    const portalClientId = String(req.query?.portalClientId || "").trim() || null;
+    // ⚠ O CONSUMO POR EMPRESA É ESCOPADO PELA CARTEIRA (03/09/2026, achado do agente
+    // "B · multi-tenancy"). Sem isto, um usuário do escritório com carteira restrita lia centavos,
+    // nº de chamadas e "estourado" de QUALQUER empresa — metadado de custo é dado da empresa.
+    // O total do ESCRITÓRIO (sem `portalClientId`) continua aberto a quem entra aqui: é o nosso.
+    if (portalClientId) {
+      const visiveis = await empresasVisiveis(req);
+      if (!visiveis.includes(portalClientId)) {
+        return res.status(404).json({ ok: false, error: "empresa_nao_encontrada" });
+      }
+    }
+    const consumo = await consumoIaDoMes({ portalClientId });
+    if (!consumo) return res.status(503).json({ ok: false, error: "ia_consumo_indisponivel", message: "Não foi possível ler o consumo do assistente agora." });
+    return res.json({ ok: true, ...consumo });
+  });
+
   router.get("/serpro/consumo", async (_req, res) => {
     try {
       return res.json({ ok: true, ...(await consumoDoMes()) });

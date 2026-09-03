@@ -12,7 +12,9 @@ import { PlanejamentoPage } from "./features/planejamento/pages/renderPlanejamen
 import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploadPage";
 import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
+import { WhatsappPage } from "./features/whatsapp/pages/renderWhatsappPage";
 import { BatchEmailPage } from "./features/guides/batch-email/pages/renderBatchEmailPage";
+import { useLoteWhatsapp } from "./features/guides/batch-email/hooks/useLoteWhatsapp";
 import { GlobalChartOfAccountsPage } from "./features/accounting/chart-of-accounts/pages/renderGlobalChartOfAccountsPage";
 import { ObrigacoesPage } from "./features/obrigacoes/components/renderObrigacoesPage";
 import { OnboardingsPage } from "./features/onboarding/pages/renderOnboardingsPage";
@@ -37,6 +39,9 @@ const TOKEN_STORAGE_KEY = "portal_firm_access_token";
 function App() {
   const feedback = useManageAppFeedback();
   const session = useManageAuthSession({ api, tokenStorageKey: TOKEN_STORAGE_KEY, feedback });
+  // O lote por WhatsApp na página de envio em lote (prévia → conferência → envio). Hook próprio,
+  // fora do `companiesWorkspace`: ele já carrega 40 estados, e este é de uma página só.
+  const loteWhatsapp = useLoteWhatsapp({ api, feedback });
   const companiesWorkspace = useManageCompaniesWorkspace({
     api,
     page: session.page,
@@ -515,6 +520,18 @@ function App() {
     );
   }
 
+  if (session.page === "whatsapp") {
+    return (
+      <WhatsappPage
+        api={api}
+        companies={companiesWorkspace.companiesState.companies}
+        onBack={() => session.setPage("companies")}
+        message={feedback.message}
+        error={feedback.error}
+      />
+    );
+  }
+
   if (session.page === "pendingReport") {
     return (
       <PendingGuidesPage
@@ -542,6 +559,7 @@ function App() {
         onBack={() => session.setPage("companies")}
         onLoad={companiesWorkspace.handleLoadBatchEmailReport}
         onSend={companiesWorkspace.handleSendBatchEmails}
+        whatsapp={loteWhatsapp}
         message={feedback.message}
         error={feedback.error}
       />
@@ -567,6 +585,7 @@ function App() {
       onOpenRotinas={() => session.setPage("rotinas")}
       onOpenPlanejamento={() => session.setPage("planejamento")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
+      onOpenWhatsapp={() => session.setPage("whatsapp")}
       onOpenObrigacoes={() => session.setPage("obrigacoes")}
       onOpenOnboardings={() => session.setPage("onboardings")}
       backgroundJobs={backgroundJobs}

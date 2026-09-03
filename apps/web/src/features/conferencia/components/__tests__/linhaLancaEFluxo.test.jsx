@@ -128,13 +128,26 @@ describe("⚠⚠ «Lançar» da linha — mesma rota, mesma ação, sem modal", 
     expect(screen.queryByRole("button", { name: "Confirmar" })).toBeNull();
   });
 
-  it("⚠⚠ quando a ação pede DATA, o caminho volta a ser o modal", async () => {
-    // Em `AGUARDANDO_PAGAMENTO` não há data, e ela é a afirmação de quando o dinheiro saiu — não se
-    // digita de passagem. Ali o botão da linha some e o «Confirmar» do modal volta.
+  it("⚠⚠ quando a ação pede DATA, a data se digita NA LINHA — o modal deixou de ser o caminho (02/09/2026)", async () => {
+    // ⚠⚠ ESTE TESTE AFIRMAVA O CONTRÁRIO ("o caminho volta a ser o modal") até 02/09/2026, e o
+    // argumento era que a data *"não se digita de passagem"*. O dono decidiu: *"cada linha deve
+    // conter data, crédito e débito, todos modificáveis inline"*. O que ficou do argumento antigo
+    // é a MARCA: a data digitada sai em âmbar como "declaração sua", nunca parecendo prova.
     responder({ estado: "AGUARDANDO_PAGAMENTO", dataPagamento: null, origemPagamento: null });
     await montar();
-    expect(screen.queryByRole("button", { name: "Lançar" })).toBeNull();
-    expect(botao("Confirmar")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lançar" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirmar" })).toBeNull();
+    const data = screen.getByLabelText(/Data do pagamento de GOOGLE CLOUD BRASIL/i);
+    // nasce com a EMISSÃO (`dataDocumento`), nunca com hoje
+    expect(data).toHaveValue("2026-07-02");
+    expect(screen.getByText("declaração sua")).toBeInTheDocument();
+  });
+
+  it("⚠⚠ data PROVADA pelo extrato NÃO vira campo — a prova não se rebaixa num clique", async () => {
+    // A linha padrão deste arquivo tem `origemPagamento: "OFX"`: evidência do banco.
+    await montar();
+    expect(screen.queryByLabelText(/Data do pagamento de GOOGLE CLOUD BRASIL/i)).toBeNull();
+    expect(screen.getByText("15/07/2026")).toBeInTheDocument();
   });
 
   it("⚠ sem conta o botão fica VISÍVEL e desabilitado, com o motivo — nunca some", async () => {
@@ -311,7 +324,7 @@ describe("⚠⚠⚠ A DESPESA EM DOBRO — a guarda que faltava na LINHA (01/09/
 // -------------------------------------------------------------------------------------------------
 // ⚠⚠ O SELETOR DE CRÉDITO NO MODAL — a tela recusando o que o servidor recusaria.
 // -------------------------------------------------------------------------------------------------
-describe("⚠⚠ o seletor de CRÉDITO no modal da ação", () => {
+describe("⚠⚠ o CRÉDITO na própria linha — o «Contas…» saiu, o campo desceu (02/09/2026)", () => {
   const CONTAS = [
     { codigo: "5", codigoCompleto: "111010001", nome: "CAIXA - MATRIZ", analitica: true },
     { codigo: "12", codigoCompleto: "111020001", nome: "BANCO ITAU", analitica: true },
@@ -331,55 +344,73 @@ describe("⚠⚠ o seletor de CRÉDITO no modal da ação", () => {
     });
     mockGetPlano.mockResolvedValue(CONTAS);
     render(<ConferenciaTab companyId="emp-1" competencia="2026-07" podeEscrever />);
-    // ⚠ A linha com data lança DIRETO (o «Lançar» ao lado). A porta das duas contas é o «Contas…» —
-    // sem ele o crédito seria inalcançável exatamente no caminho mais comum.
-    fireEvent.click(await screen.findByRole("button", { name: /^Contas…$/ }));
-    return screen.findByRole("dialog");
+    // ⚠ O «Contas…» de 01/09 SAIU: o crédito virou campo da linha (dono, 02/09: *"data, crédito e
+    // débito, todos modificáveis inline"*). Espera o plano chegar antes de medir.
+    await screen.findByLabelText(/Conta de crédito de GOOGLE CLOUD/i);
+    await waitFor(() => expect(document.querySelectorAll("#creditos-da-conferencia option").length).toBeGreaterThan(0));
+    expect(screen.queryByRole("button", { name: /^Contas…$/ })).toBeNull();
+    return document.body;
   };
+  const campoDoCredito = () => screen.getByLabelText(/Conta de crédito de GOOGLE CLOUD/i);
+  const lancar = () => screen.getByRole("button", { name: /^Lançar$/i });
 
   it("⚠⚠ o campo existe, nasce VAZIO e DIZ que o padrão é o caixa", async () => {
     // ⚠ Preenchê-lo com "5" apagaria a distinção que a coluna guarda: "é caixa porque escolheram" ×
     // "é caixa por padrão".
-    const d = await abrir();
-    const campo = within(d).getByLabelText(/Conta de crédito/i);
-    expect(campo).toHaveValue("");
-    expect(within(d).getByText(/o crédito vai para o caixa/i)).toBeInTheDocument();
+    await abrir();
+    expect(campoDoCredito()).toHaveValue("");
+    expect(campoDoCredito()).toHaveAttribute("placeholder", expect.stringMatching(/vazio = caixa/i));
   });
 
-  it("⚠⚠⚠ crédito que NÃO é disponibilidade trava o envio, com o motivo", async () => {
+  it("⚠⚠⚠ crédito que NÃO é disponibilidade trava o envio, com o motivo VISÍVEL", async () => {
     // ⚠⚠ A invariante do caixa: o lançamento AFIRMA que o dinheiro saiu. Creditando fornecedores
-    // ele seria válido no razão e mentiria no caixa.
-    const d = await abrir();
-    fireEvent.change(within(d).getByLabelText(/Conta de crédito/i), { target: { value: "300" } });
-    expect(await within(d).findByText(/sai de caixa ou banco/i)).toBeInTheDocument();
-    const botao = within(d).getByRole("button", { name: /^Confirmar$/ });
-    expect(botao).toBeDisabled();
-    expect(botao).toHaveAttribute("title", expect.stringMatching(/caixa ou banco/i));
+    // ele seria válido no razão e mentiria no caixa. ⚠ E o motivo sai em TEXTO na linha, não só no
+    // `title` — `title` não aparece no teclado nem no toque.
+    await abrir();
+    fireEvent.change(campoDoCredito(), { target: { value: "300" } });
+    expect(await screen.findByText(/sai de caixa ou banco/i)).toBeInTheDocument();
+    expect(lancar()).toBeDisabled();
+    expect(lancar()).toHaveAttribute("title", expect.stringMatching(/caixa ou banco/i));
   });
 
-  it("⚠⚠ o banco é aceito, e a FRASE do ato passa a dizer a conta escolhida", async () => {
-    // ⚠ Uma frase fixa dizendo "crédito no caixa" passaria a AFIRMAR o que o clique não vai fazer —
-    // e ela é a última coisa que o contador lê antes de confirmar.
-    const d = await abrir();
-    fireEvent.change(within(d).getByLabelText(/Conta de crédito/i), { target: { value: "12" } });
-    // ⚠ Nada de `findByText(/BANCO ITAU/)`: o nome aparece na `<option>` da lista E na confirmação
-    // do campo. O que se mede aqui é a FRASE do ato.
-    const frase = [...d.querySelectorAll("div")].map((e) => e.textContent)
-      .find((t) => /Isto cria um lançamento contábil/.test(t));
-    expect(frase).toMatch(/BANCO ITAU/);
-    expect(within(d).getByRole("button", { name: /^Confirmar$/ })).toBeEnabled();
+  it("⚠⚠ o banco é aceito, e a linha DIZ o nome da conta escolhida", async () => {
+    // ⚠ Código sozinho não se confere: o nome sai sob o campo. E o «Lançar» fica habilitado — o
+    // crédito escolhido é disponibilidade, e o débito já veio da sugestão.
+    await abrir();
+    fireEvent.change(campoDoCredito(), { target: { value: "12" } });
+    // ⚠ `getAllByText` filtrando `<option>`: o nome também está na lista do `datalist`.
+    const nomes = (await screen.findAllByText("BANCO ITAU")).filter((n) => n.tagName !== "OPTION");
+    expect(nomes.length).toBeGreaterThan(0);
+    await waitFor(() => expect(lancar()).toBeEnabled());
+  });
+
+  it("⚠⚠ e o crédito escolhido VIAJA no clique — como `codigoCompleto`", async () => {
+    await abrir();
+    fireEvent.change(campoDoCredito(), { target: { value: "12" } });
+    await waitFor(() => expect(lancar()).toBeEnabled());
+    fireEvent.click(lancar());
+    await waitFor(() => expect(mockPostAcao).toHaveBeenCalled());
+    expect(mockPostAcao.mock.calls[0][3]).toMatchObject({ contaCredito: "111020001" });
   });
 
   it("⚠⚠ a escolha JÁ FEITA volta no campo — em reduzido, que é o que o contador lê", async () => {
     // Sem isto, reabrir a linha mostraria o campo vazio: "não há crédito escolhido", o oposto da
     // verdade. É o caso da linha que a REGRA do fornecedor lançou com crédito próprio.
-    const d = await abrir({ contaCredito: "111020001" });
-    await waitFor(() => expect(within(d).getByLabelText(/Conta de crédito/i)).toHaveValue("12"));
+    await abrir({ contaCredito: "111020001" });
+    await waitFor(() => expect(campoDoCredito()).toHaveValue("12"));
+  });
+
+  it("⚠⚠ o crédito que a REGRA sugere já vem preenchido — «as regras já devem habilitar»", async () => {
+    // ⚠ É a metade do pedido do dono que faltava: a regra tem DUAS contas desde 29/08, e a linha só
+    // pré-preenchia o débito. Agora `sugestao.credito` chega e o campo nasce com ele.
+    await abrir({ sugestao: { conta: "411020008", credito: "111020001", procedencia: "REGRA_CNPJ" } });
+    await waitFor(() => expect(campoDoCredito()).toHaveValue("12"));
   });
 
   it("⚠ a lista oferecida NÃO tem conta de despesa — só disponibilidade", async () => {
-    const d = await abrir();
-    const lista = d.querySelector("#creditos-da-conferencia");
+    await abrir();
+    // ⚠ O `datalist` mora na ABA (um só, para linha e modal oferecerem a MESMA lista).
+    const lista = document.querySelector("#creditos-da-conferencia");
     const codigos = [...lista.querySelectorAll("option")].map((o) => o.value);
     expect(codigos).toEqual(expect.arrayContaining(["5", "12"]));
     expect(codigos).not.toContain("464");

@@ -81,6 +81,19 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
 - [x] **Parcelamento real (Q16)** — 1 provisão (abertura) + linhas leves de parcela +
   baixa por pagamento; contas D/C em branco com memória por linha (igual Simples);
   envio em lote com 3 estados; selo de e-mail no dashboard.
+- [x] **Parcelamento do LUCRO PRESUMIDO — provisão POR TRIBUTO (01/09/2026)** — modalidade
+  `LUCRO_PRESUMIDO` (`kind: "DARF"`), com uma linha de principal **por tributo**
+  (PIS 8109 · COFINS 2172 · IRPJ 2089 · CSLL 2372), cada uma com conta própria via
+  `MapaContaTributo` — o `codigoTributo` **deixou de ser cravado em `null`** no override do modal.
+  A **descrição que o contador escreve vira o histórico** do lançamento — a da provisão e a do
+  **pagamento** (esta guardada na config do contrato, ao lado da conta) —, inteira e sem prefixo;
+  sem descrição, o texto é exatamente o de antes. ⚠ A marca `(declarado)` / `(composição declarada)`
+  saiu de dentro do histórico derivado para um parâmetro próprio: a frase do contador substitui o
+  histórico inteiro e a **apagava**, fazendo a baixa por declaração se ler como uma baixa provada. O **recibo da negociação (PDF do e-CAC)** preenche o
+  formulário por `POST .../parcelamentos/recibo/leitura` — leitura pura, **não grava nada**, e todo
+  campo continua editável antes de criar. ⚠ A **forma** do lançamento não mudou
+  (`D principal · D juros · D multa / C soma`). Detalhes e as armadilhas do PDF:
+  `apps/api/src/application/accounting/CLAUDE.md`.
 - [~] **Fluxo mensal do contador (Q17)** — cron busca **extrato** (gera lançamentos) além
   das guias; guia **"Vazio"** (ausência confirmada → amarelo); **circular com trimestre/anual**
   por linha; **fechamento contábil do mês** (bloqueia se houver lançamento em branco/D≠C);
@@ -363,6 +376,31 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     NFS-e na lista (`ServiceInvoice` não tem o campo); chip anual da DEFIS na listagem principal
     (falta agregação no backend); Bloco 3 (Apuração do Lucro Presumido) segue travado no probe do
     `CONSDECCOMPLETA33`.
+- [~] **WhatsApp — Entrega 2: canal ligável, guias na tela, assistente com IA, conversas
+  (02–03/09/2026)** — a Meta aprovou a empresa e o template de guia; o dono pediu o canal
+  *"inclusive com uso de IA, resposta de documentos, emissão de notas, recálculo"*. Escrito na `dev`
+  em F0–F5, **tudo DESLIGADO por flag** (`INTEGRACAO_WHATSAPP` e `INTEGRACAO_WHATSAPP_IA` OFF,
+  `IA_EMPRESAS_PILOTO` vazio = ninguém). Detalhes, medições de produção e o que NÃO está verificado:
+  `apps/api/CLAUDE.md`, seção "WHATSAPP — ENTREGA 2".
+  - ⚠⚠ **A LINHA ABAIXO (Entrega 1) ENVELHECEU:** "F3–F6 não iniciadas" era falso já em 02/09 —
+    Cloud API, webhook, envio em lote e recebimento existiam, testados e inertes; e as migrations
+    `20260814160000`/`20260814180000` **estão aplicadas** em produção (145/145 medido).
+  - **Telas** (`apps/web`): contatos com opt-in na aba Credenciais; "Liberar ao cliente" e o lote
+    respeitam `canalPadraoEnvio` (EMAIL · WHATSAPP · PERGUNTAR) com prévia e motivos; página
+    **WhatsApp** (`/whatsapp`) com a fila de números sem cadastro, o fio com autor por balão,
+    Assumir/Devolver, responder só dentro da janela de 24h e Vincular.
+  - **IA** (Anthropic, `claude-opus-5`): o cliente pergunta, o assistente responde **só com o que as
+    ferramentas devolvem**; emitir/cancelar/recalcular viram **pendência com código de 4
+    caracteres** e a confirmação nem passa pelo modelo. Custo registrado em `chamadas_ia`, teto
+    **falha fechado**.
+  - ⚠ Três migrations novas (`20260903100000/100/200`) **escritas e não aplicadas**; a
+    `@anthropic-ai/sdk` entrou no `package.json` da api.
+  - ⚠⚠ **VERIFICAÇÃO MULTI-AGENTE (03/09/2026): quatro furos achados e fechados** — "nota
+    recebida" lida por uma fonte só, **nada reconferido na confirmação** (até 10 min entre o pedido
+    e o `CONFIRMAR`), cancelamento sem marcar a nossa `ServiceInvoice`, e `GET /firm/ia/consumo`
+    sem escopo de carteira. ⚠ **Três experimentos por guarda voltaram VERDES** — e em dois deles o
+    comentário do código afirmava uma cobertura de teste que não existia. Detalhes e os números:
+    `apps/api/CLAUDE.md`, seção "A VERIFICAÇÃO MULTI-AGENTE".
 - [~] **WhatsApp — Entrega 1: envio de guias pelo canal** — **F1 a F5 escritas na `dev`, o canal
   DESLIGADO** (flag `INTEGRACAO_WHATSAPP` OFF; cadastro na Meta em verificação). Roadmap e estado
   completo em **`docs/whatsapp-entrega-1.md`**.
@@ -643,6 +681,14 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     nunca eram alcançáveis offline; (3) **terceira vez** que um identificador órfão passa pelo
     `npm run build` — só teste ou `no-undef` pega.
 
+- [~] **Conferência — a linha inline e o botão de IA (02–03/09/2026)** — dono: *"cada linha deve
+  conter data, crédito e débito, todos modificáveis inline (…) a IA é um botão em cima de tudo (…)
+  apenas naqueles que não entraram a regra"*. **Bloco A** (linha: data · débito · crédito ·
+  «Lançar» · «Criar regra»; a regra passou a habilitar o crédito na entrada) e **Bloco B** (o botão
+  «Sugerir contas com IA»: propostas em colunas PRÓPRIAS, regra > histórico > IA, guarda de custo
+  por lote, flag `INTEGRACAO_IA_CLASSIFICACAO` nasce OFF com o SERVIDOR recusando). ⚠ Nada disto
+  lança — o contador confirma linha a linha. ⚠ Nenhuma chamada real à Anthropic saiu desta máquina.
+  Ver `apps/api/src/application/declarados/CLAUDE.md`, seção "A IA NA CONFERÊNCIA".
 - [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
   envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 

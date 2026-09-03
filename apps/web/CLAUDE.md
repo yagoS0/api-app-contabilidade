@@ -516,6 +516,33 @@ guardava `contaCredito` e `lancarPorRegra` a passava para `aplicarTransicao`, qu
 máquina de estados, a suíte inteira ficava verde. A regra pura tinha teste e a LIGAÇÃO não tinha
 nenhum — que é exatamente como o campo passou dias sendo enviado e descartado.
 
+### ⚠⚠ A LINHA VIROU O CAMINHO, e a IA ENTROU COMO BOTÃO (02–03/09/2026)
+
+> Dono: *"cada linha deve conter data, crédito e débito, todos modificáveis inline, e deve mostrar
+> as opções de lançar, criar regra. A IA é um botão em cima de tudo (…) apenas naqueles que não
+> entraram a regra."*
+
+- **Bloco A (`b069f60e`)**: data (`<input type="date">` só quando DECLARADA/AUSENTE — a PROVA de
+  OFX/Excel continua só leitura), débito e crédito inline (os dois `datalist` MUDARAM DE CASA: do
+  `ModalDaAcao` para a aba, senão a linha ficava sem autocompletar 100% do tempo), «Lançar» e
+  «Criar regra» (o MESMO `FormularioDeRegra` do painel «Regras», pré-preenchido pela linha, faixa
+  `min = max = valor` DITA na tela — nada inventado). O «Contas…» de 01/09 saiu.
+- **Bloco B**: o botão **«Sugerir contas com IA»** na barra da aba. Só aparece com
+  `fila.iaClassificacaoLigada === true` (a flag vem do SERVIDOR; integração desligada não é "ação
+  bloqueada", é ação que não existe); com ela, fica VISÍVEL e desabilitado COM o motivo quando não há
+  linha sem regra nem histórico (`podeSugerirComIa`, `lib/conferenciaTela.js`). O diálogo
+  (`ModalDaClassificacaoIa`) diz ANTES do clique o que vai acontecer — quantas linhas, que a regra
+  vence, que nada é lançado, que tem custo — e o relatório sai INTEIRO: gravadas, recusadas COM o
+  motivo, o que a guarda recusou (teto/chave), lotes que o modelo não respondeu.
+- ⚠⚠ **REGRA > HISTÓRICO > IA NO DESENHO** (`contaQueSeraUsadaComIa`): a proposta do modelo só
+  preenche o campo quando `sugestao.conta` é nula. Chip *"proposta da IA"* em âmbar e negrito,
+  distinto dos de regra/histórico; a `justificativaIa` sai em TEXTO na linha, nunca em `title`.
+- ⚠ O mock liga a flag e traz a linha `dec-4` com proposta preenchida + uma recusada no relatório —
+  senão o chip, a justificativa e o bloco "recusadas" nasceriam inalcançáveis offline.
+- Travas: `lib/__tests__/classificacaoIaNaTela.test.js` (21) · `components/__tests__/botaoDeIaNaTela.test.jsx` (11)
+  · `contratoDaConferencia.test.js` (as cinco colunas `*Ia` nos dois lados, e o relatório com a forma
+  do serviço).
+
 ## ⚠⚠ A ABA FLUXO DE CAIXA FOI REMOVIDA (29/08/2026) — ela existiu por dois dias
 
 Construída em 27/08 (`features/fluxo/`, regra pura com 40 testes, conferida no navegador) e

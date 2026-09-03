@@ -63,6 +63,19 @@ export function useParcelamentos({ api, companyId, status = null }) {
     }
   }
 
+  /**
+   * Lê o recibo da negociação (PDF) e devolve o que está escrito nele.
+   *
+   * ⚠ **NÃO ENGOLE O ERRO**, ao contrário de `getContasProvisao` acima — e a diferença é o que a
+   * falha significa em cada uma: lá, sem memória de contas, o wizard segue com os campos em branco
+   * (é o primeiro parcelamento da modalidade). Aqui, o contador ESCOLHEU um arquivo e espera vê-lo
+   * preenchido; devolver `{}` calado faria a tela não fazer nada e ele repetir o clique.
+   */
+  async function lerRecibo(file) {
+    if (!api.lerReciboParcelamento) throw new Error("A leitura do recibo não está disponível neste modo de API.");
+    return api.lerReciboParcelamento(companyId, file);
+  }
+
   // Q28 Fase 2: ver/editar config de lançamento do parcelamento.
   async function getConfig(parcId) {
     const res = await api.getParcelamentoConfig(companyId, parcId);
@@ -190,7 +203,7 @@ export function useParcelamentos({ api, companyId, status = null }) {
   // e estourava `TypeError: listConferencia is not a function` — a fila de conferência nunca
   // apareceu na aba Parcelamento. Rotas e mock sempre estiveram de pé; era só o repasse.
   return {
-    parcelamentos, loading, error, saving, load, create, ingest, getContasProvisao, consultarSerpro,
+    parcelamentos, loading, error, saving, load, create, ingest, getContasProvisao, consultarSerpro, lerRecibo,
     getConfig, saveConfig, rescindir, vincularEntry,
     listConferencia, aprovarConferencia,
     // Os atos do contrato. ⚠ Repassados AQUI — foi esquecer este retorno que deixou a fila de

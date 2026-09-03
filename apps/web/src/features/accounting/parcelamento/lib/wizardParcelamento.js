@@ -31,6 +31,10 @@ export const MODALIDADES = Object.freeze([
   ["PERT_MEI", "PERT-MEI"],
   ["RELP_MEI", "RELP-MEI"],
   ["INSS", "INSS / Previdenciário"],
+  // ⚠ LUCRO PRESUMIDO (01/09/2026) — dono: *"parcelamento do lucro presumido está completamente
+  // incorreto, nele devemos provisionar cada tipo de imposto separado"*. Até aqui ele caía em
+  // "Outro", o balde, e a provisão nascia com UMA linha de principal.
+  ["LUCRO_PRESUMIDO", "Lucro Presumido (DARF)"],
   ["OUTRO", "Outro"],
 ]);
 
@@ -398,6 +402,125 @@ export function formatarMoeda(v) {
  * ⚠ `valorPrincipal`/`valorTotal` saem das LINHAS da provisão, não do saldo declarado — é o valor
  * que de fato vira lançamento que precisa bater com o cabeçalho do contrato.
  */
+/**
+ * ⚠⚠ O RECIBO DA NEGOCIAÇÃO PREENCHE O WIZARD — e o contador corrige qualquer campo (01/09/2026).
+ *
+ * > Dono: *"o pdf preenche o layout mas o contador pode modificar qualquer campo, como faz hoje"*.
+ *
+ * Função **PURA**: recebe o que a rota de leitura devolveu e diz como os campos e as linhas ficam.
+ * Ela **não decide nada e não grava nada** — o que sai daqui é sugestão, e a tela é editável do
+ * mesmo jeito que era antes.
+ *
+ * ⚠ **UMA LINHA POR TRIBUTO**, agrupada e somada pelo parser (o CSLL de três trimestres é UMA
+ * linha, com os três períodos na descrição) — é assim que o contador escreve, e é o que faz a
+ * conta de cada tributo ser memorizada em separado.
+ * ⚠ **A CONTA FICA VAZIA.** O PDF não sabe o plano de contas desta empresa; quem preenche é a
+ * memória (`MapaContaTributo`) ou o contador. Chutar conta aqui seria o oposto do pedido.
+ * ⚠ **Componente zerado NÃO vira linha** — a mesma regra da provisão e da baixa. Recibo sem multa
+ * (o primeiro exemplo do dono) fecha em `principal + juros`.
+ * ⚠ **O crédito é a SOMA DOS DÉBITOS**, nunca `consolidado.total` cru: se o recibo divergir, o
+ * lançamento tem de FECHAR — a divergência aparece como aviso, não como um lote desbalanceado.
+ */
+export function linhasDoRecibo(recibo) {
+  const grupos = Array.isArray(recibo?.porTributo) ? recibo.porTributo : [];
+  const parcelas = Number(recibo?.quantidadeParcelas) || null;
+  const sufixo = parcelas ? ` PARC EM ${parcelas} PARCELAS` : "";
+
+  const debitos = grupos
+    .filter((g) => round2(numero(g.principal)) > 0)
+    .map((g) => ({
+      tipoLinha: "PRINCIPAL",
+      codigoTributo: g.codigo || "",
+      // ⚠ A descrição no padrão que o contador usa, com os PERÍODOS de apuração de cada débito —
+      // é o dado que só o recibo tem, e o motivo de a leitura existir.
+      label: `VR REF PARC ${g.tributo || g.codigo || "TRIBUTO"} ${(g.periodos || []).join(", ")}${sufixo}`.replace(/\s+/g, " ").trim(),
+      tipo: "D",
+      conta: "",
+      valor: round2(numero(g.principal)),
+    }));
+
+  const nomes = grupos.map((g) => g.tributo).filter(Boolean).join(", ");
+  const juros = round2(numero(recibo?.consolidado?.juros));
+  const multa = round2(numero(recibo?.consolidado?.multa));
+  if (juros > 0) {
+    debitos.push({ tipoLinha: "JUROS", codigoTributo: "", label: `VR REF JUROS S/ PARC ${nomes}`.trim(), tipo: "D", conta: "", valor: juros });
+  }
+  if (multa > 0) {
+    debitos.push({ tipoLinha: "MULTA", codigoTributo: "", label: `VR REF MULTA S/ PARC ${nomes}`.trim(), tipo: "D", conta: "", valor: multa });
+  }
+
+  const soma = round2(debitos.reduce((s, l) => s + l.valor, 0));
+  return [
+    ...debitos,
+    { tipoLinha: "PARC", codigoTributo: "", label: `VR REF PARC ${nomes}`.trim(), tipo: "C", conta: "", valor: soma },
+  ];
+}
+
+/**
+ * Os campos do cabeçalho que o recibo preenche. ⚠ Só o que está ESCRITO nele — nada derivado.
+ *
+ * ⚠ `valorParcela` é o "Valor das parcelas (BRL)" do documento, e é ele que vai descontar do
+ * passivo todo mês (decisão do dono: *"o valor da parcela é que desconta do 588"*). **Nunca**
+ * `total ÷ parcelas`: a RFB arredonda cada prestação, e o número derivado seria plausível e errado.
+ */
+export function camposDoRecibo(recibo) {
+  const grupos = Array.isArray(recibo?.porTributo) ? recibo.porTributo : [];
+  const principal = round2(grupos.reduce((s, g) => s + numero(g.principal), 0));
+  const campos = {
+    tipo: "LUCRO_PRESUMIDO",
+    modeloContas: "LUCRO_PRESUMIDO",
+    provisaoLines: linhasDoRecibo(recibo),
+  };
+  if (recibo?.numeroParcelamento) campos.numeroParcelamento = recibo.numeroParcelamento;
+  if (recibo?.dataConsolidacao) campos.dataAdesao = dataBrParaIso(recibo.dataConsolidacao);
+  if (recibo?.quantidadeParcelas) campos.totalParcelas = String(recibo.quantidadeParcelas);
+  if (recibo?.valorParcela != null) campos.valorParcela = String(recibo.valorParcela);
+  if (recibo?.consolidado?.total != null) campos.saldoConsolidado = String(recibo.consolidado.total);
+  if (principal > 0) campos.descricao = `Parcelamento de ${grupos.map((g) => g.tributo || g.codigo).filter(Boolean).join(", ")}`;
+  return campos;
+}
+
+/** "17/08/2026" → "2026-08-17". ⚠ Aritmética de string: `new Date` desloca o dia por fuso. */
+function dataBrParaIso(br) {
+  const m = String(br || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
+}
+
+/**
+ * ⚠⚠ A DESCRIÇÃO QUE O CONTADOR ESCREVEU VIRA O HISTÓRICO DO LANÇAMENTO (01/09/2026).
+ *
+ * > Dono: *"as descrições devem ser a descrição que o contador escreveu, descrição da provisão e
+ * > descrição do pagamento, devemos poder modificar qualquer campo"*.
+ *
+ * ⚠⚠ MAS SÓ QUANDO ELA FOR DELE. A coluna "Descrição" já nasce preenchida com o RÓTULO DO PAPEL
+ * (`PROVISAO_PADRAO`: "Principal a provisionar", "Juros", …). Mandar o texto sempre faria todo
+ * parcelamento passar a ter histórico `"Juros"` no lugar de `"PROVISÃO PARCSN Nº 123 — Juros"` —
+ * uma regressão silenciosa em TODAS as modalidades, não só na que motivou a mudança.
+ *
+ * Então a pergunta é: **este texto é diferente do rótulo?** Se é, foi escrito (ou preenchido a
+ * partir do recibo, que é o que o contador confere) e vira o histórico inteiro; se não é, a linha
+ * segue sem `historico` e o backend monta o derivado de sempre.
+ *
+ * ⚠ A comparação ignora caixa e espaço em excesso — quem só ajeitou o espaçamento do rótulo não
+ * queria escrever um histórico novo.
+ */
+export function historicoDaLinha(linha) {
+  const texto = String(linha?.label || "").trim();
+  if (!texto) return null;
+  const papel = String(linha?.tipoLinha || "").trim();
+  const rotulos = [ROLE_LABEL[papel], (PROVISAO_PADRAO.find((l) => l.tipoLinha === papel) || {}).label,
+    (PAGAMENTO_PADRAO.find((l) => l.tipoLinha === papel) || {}).label];
+  const igual = (a, b) => String(a || "").trim().toLowerCase().replace(/\s+/g, " ")
+    === String(b || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return rotulos.some((r) => igual(r, texto)) ? null : texto;
+}
+
+/** O código de receita de uma linha: 4 dígitos exatos, ou `null`. ⚠ Nunca fabricado por padding. */
+export function codigoTributoDaLinha(linha) {
+  const digitos = String(linha?.codigoTributo || "").replace(/\D+/g, "").slice(0, 4);
+  return digitos.length === 4 ? digitos : null;
+}
+
 export function montarPayloadIngestao(dados) {
   // ⚠ SÓ AS LINHAS COM VALOR — componente zerado não vira linha (ver `linhasQueViramLancamento`).
   const lancaveis = linhasQueViramLancamento(dados?.provisaoLines);
@@ -421,6 +544,11 @@ export function montarPayloadIngestao(dados) {
     tipo: l.tipo === "C" ? "C" : "D",
     conta: String(l.conta || "").trim(),
     valor: round2(numero(l.valor)),
+    // ⚠ O código de receita é o que dá conta PRÓPRIA a cada tributo no parcelamento do Lucro
+    // Presumido (`MapaContaTributo` indexa por `(tipoLinha, codigoTributo)`). `null` fora dele.
+    codigoTributo: codigoTributoDaLinha(l),
+    // ⚠ A descrição do contador, quando ela for dele — ver `historicoDaLinha`.
+    historico: historicoDaLinha(l),
   }));
 
   const pagamento = (Array.isArray(dados?.pagamentoLines) ? dados.pagamentoLines : [])
@@ -429,6 +557,9 @@ export function montarPayloadIngestao(dados) {
       tipoLinha: l.tipoLinha || (l.tipo === "C" ? "CAIXA" : "PARC"),
       tipo: l.tipo === "C" ? "C" : "D",
       conta: String(l.conta || "").trim(),
+      // ⚠ "descrição do pagamento" é metade do pedido do dono — a baixa mensal também leva a frase
+      // que ele escreve ("PAGO PARC PIS,COFINS,CSLL E IRPJ 02/45 12/2025").
+      historico: historicoDaLinha(l),
     }));
 
   const somaPorPapel = (papel) => round2(

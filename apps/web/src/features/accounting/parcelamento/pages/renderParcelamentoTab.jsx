@@ -1362,6 +1362,7 @@ export function ParcelamentoTab({
           onIngest={(body) => parcelamentos.ingest(body)}
           onConsultSerpro={parcelamentos.consultarSerpro}
           getContasProvisao={parcelamentos.getContasProvisao}
+          onLerRecibo={parcelamentos.lerRecibo}
           accounts={accounts}
           onSearchHistoricos={onSearchHistoricos}
           onGetHistoricosByCode={onGetHistoricosByCode}

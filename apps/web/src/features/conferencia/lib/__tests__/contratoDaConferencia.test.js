@@ -281,3 +281,75 @@ describe("⚠⚠ A DATA-PISO DA VARREDURA É OBRIGATÓRIA no servidor", () => {
     expect(trecho).not.toMatch(/desde\s*(\|\||\?\?)\s*[^;]*Date/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ A PROPOSTA DA IA (02/09/2026) — as colunas `*Ia` e o relatório do botão
+//
+// Duas pontas, como sempre: o MOCK produz e a FONTE do servidor escreve. O relatório do botão sai do
+// SERVIÇO (a rota espalha `relatorio` inteiro), então a segunda ponta é lida lá.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ A PROPOSTA DA IA viaja na fila e o relatório do botão tem a forma do serviço", () => {
+  const FONTE_DO_SERVICO = fs.readFileSync(
+    path.join(RAIZ, "apps", "api", "src", "application", "declarados", "ClassificacaoPorIaService.js"),
+    "utf8",
+  );
+  const CHAVES_IA_DA_LINHA = ["contaSugeridaIa", "creditoSugeridoIa", "justificativaIa", "sugeridaIaModelo", "sugeridaIaEm"];
+
+  it("⚠ toda linha do mock carrega as cinco colunas `*Ia` (nulas por padrão), e a rota as serializa", async () => {
+    const fila = await mock.getConferenciaFila("emp-1", { competencia: "2026-07" });
+    for (const item of fila.itens) {
+      for (const chave of CHAVES_IA_DA_LINHA) expect(Object.prototype.hasOwnProperty.call(item, chave)).toBe(true);
+    }
+    for (const chave of CHAVES_IA_DA_LINHA) expect(new RegExp(`\\b${chave}:\\s*d\\.${chave}`).test(FONTE_DA_ROTA)).toBe(true);
+  });
+
+  it("⚠⚠ o mock EXERCITA a proposta — uma linha SEM regra nem histórico vem com débito, crédito e justificativa da IA", async () => {
+    const fila = await mock.getConferenciaFila("emp-1", { competencia: "2026-07" });
+    const comIa = fila.itens.filter((i) => i.contaSugeridaIa);
+    expect(comIa.length).toBeGreaterThan(0);
+    for (const i of comIa) {
+      // ⚠ regra > histórico > IA: a linha com proposta da IA no mock NÃO pode ter sugestão de regra —
+      // senão o chip "proposta da IA" seria inalcançável offline (a tela dá precedência à regra).
+      expect(i.sugestao?.conta ?? null).toBeNull();
+      expect(typeof i.justificativaIa).toBe("string");
+      expect(i.creditoSugeridoIa).toBeTruthy();
+    }
+  });
+
+  it("⚠ o pré-voo do botão (`iaClassificacaoLigada`) vem do servidor — e o mock o liga", async () => {
+    const fila = await mock.getConferenciaFila("emp-1", { competencia: "2026-07" });
+    expect(fila.iaClassificacaoLigada).toBe(true);
+    expect(FONTE_DA_ROTA).toMatch(/iaClassificacaoLigada:\s*INTEGRACAO_IA_CLASSIFICACAO/);
+  });
+
+  it("o relatório do mock tem exatamente as chaves que o SERVIÇO monta", async () => {
+    const r = await mock.postClassificarIa("emp-1", { competencia: "2026-07" });
+    const chaves = ["ok", "recusa", "semLinhas", "linhasOlhadas", "linhasEnviadas", "lotes", "propostas", "gravadas", "recusadas", "ilegiveis", "erros", "recusadaPelaGuarda", "custoEstimadoCentavos", "modelo"];
+    for (const chave of chaves) {
+      expect(Object.prototype.hasOwnProperty.call(r, chave)).toBe(true);
+      expect(new RegExp(`\\b${chave}\\b`).test(FONTE_DO_SERVICO)).toBe(true);
+    }
+  });
+
+  it("⚠⚠ e o mock exercita uma RECUSADA com motivo — senão o bloco 'recusadas pelo sistema' nasce inalcançável offline", async () => {
+    const r = await mock.postClassificarIa("emp-1", {});
+    expect(r.recusadas.length).toBeGreaterThan(0);
+    expect(r.recusadas[0]).toMatchObject({ id: expect.any(String), motivo: expect.any(String) });
+    // o motivo é do vocabulário FECHADO da api
+    const FONTE_DA_LIB = fs.readFileSync(path.join(RAIZ, "apps", "api", "src", "application", "declarados", "lib", "classificacaoPorIa.js"), "utf8");
+    expect(FONTE_DA_LIB).toContain(`"${r.recusadas[0].motivo}"`);
+  });
+
+  it("⚠⚠ a rota do botão recusa com 503 NOMEADO quando a flag está OFF — quem recusa é o servidor", () => {
+    expect(FONTE_DA_ROTA).toMatch(/classificar-ia/);
+    expect(FONTE_DA_ROTA).toMatch(/status\(503\)/);
+    expect(FONTE_DO_SERVICO).toMatch(/DESLIGADA:\s*"ia_classificacao_desligada"/);
+  });
+
+  it("⚠⚠ o serviço NUNCA escreve `contaAplicada` nem `estado` — a IA propõe, o contador lança", () => {
+    const trecho = FONTE_DO_SERVICO.slice(FONTE_DO_SERVICO.indexOf("async function gravarPropostas"));
+    const dataBloco = trecho.slice(trecho.indexOf("data: {"), trecho.indexOf("},", trecho.indexOf("data: {")));
+    expect(dataBloco).not.toMatch(/contaAplicada|contaCredito:|estado:/);
+    expect(dataBloco).toMatch(/contaSugeridaIa/);
+  });
+});
