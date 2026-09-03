@@ -251,12 +251,15 @@ describe("⚠⚠ A ALÍQUOTA DE ISS SÓ APARECE COM A RETENÇÃO MARCADA", () =>
     expect(document.getElementById("emitir-aliquota")).not.toBeInTheDocument();
   });
 
-  test("⚠ e marcar a caixa no Simples NÃO faz a alíquota aparecer", async () => {
-    // A guarda contra a "correção" óbvia e errada: religar a alíquota à caixa. Ela depende do
-    // REGIME também — as duas perguntas se separaram.
+  test("⚠⚠ marcar a caixa no Simples FAZ a alíquota aparecer (02/09/2026)", async () => {
+    // ⚠⚠ ESTE CASO GUARDAVA O CONTRÁRIO — e era ele que selava a armadilha: sem o campo, marcar a
+    // retenção no Simples levava a uma recusa GARANTIDA do servidor. A alíquota segue a CAIXA, não
+    // o regime: E0621/E0628 a exigem COM retenção e E0625/E0631 a proíbem SEM — que é exatamente o
+    // que `pAliqDaDps` já implementava do lado de lá.
     await renderizar(SIMPLES);
-    fireEvent.click(document.getElementById("emitir-iss-retido"));
     expect(document.getElementById("emitir-aliquota")).not.toBeInTheDocument();
+    fireEvent.click(document.getElementById("emitir-iss-retido"));
+    expect(document.getElementById("emitir-aliquota")).toBeInTheDocument();
   });
 
   test("⚠ marcada, a tela DIZ que a alíquota é obrigatória — antes do clique em Emitir", async () => {
@@ -466,6 +469,9 @@ describe("⚠⚠ A PROVA DO CORPO: no Simples a marcação de ISS retido AGORA V
     await renderizar(SIMPLES);
     preencherComAliquotaEfetiva();
     fireEvent.click(document.getElementById("emitir-iss-retido"));
+    // ⚠ Desde 02/09/2026 a alíquota aparece junto com a caixa e a tela BLOQUEIA sem ela — por
+    // isso este caso precisa preenchê-la para chegar ao envio.
+    fireEvent.change(document.getElementById("emitir-aliquota"), { target: { value: "5" } });
     const corpo = await submeterEPegarOCorpo();
     expect(corpo.servico.issRetido).toBe(true);
   });
@@ -477,13 +483,26 @@ describe("⚠⚠ A PROVA DO CORPO: no Simples a marcação de ISS retido AGORA V
     expect(corpo.servico.issRetido).toBe(false);
   });
 
-  test("⚠⚠ e a ALÍQUOTA continua não viajando no Simples — nem com a caixa marcada", async () => {
-    // A metade que NÃO mudou. No Simples quem declara o número é o contador, no perfil de emissão;
-    // se ele viajasse daqui, seriam duas fontes para o mesmo campo do XML — e a do cliente venceria
-    // a correção do contador em silêncio, que é o motivo pelo qual `pTotTribFed/Est/Mun` também
-    // nunca viajam.
+  test("⚠⚠ e a ALÍQUOTA VIAJA no Simples quando a caixa está marcada (02/09/2026)", async () => {
+    // ⚠⚠ ESTE CASO AFIRMAVA O CONTRÁRIO. Ela viaja porque, COM retenção, a DPS a EXIGE
+    // (E0621/E0628) — e enquanto o perfil de emissão está desligado não existe outra fonte.
+    // ⚠ Não são duas fontes para o mesmo campo: ligado o perfil, ele VENCE
+    // (`buildDpsXml`: `doPerfil("pAliq") ?? aliquota`).
     await renderizar(SIMPLES);
     preencherComAliquotaEfetiva();
+    fireEvent.click(document.getElementById("emitir-iss-retido"));
+    fireEvent.change(document.getElementById("emitir-aliquota"), { target: { value: "5" } });
+    const corpo = await submeterEPegarOCorpo();
+    expect(corpo.servico.aliquota).toBe(5);
+  });
+
+  test("⚠ DESMARCADA, a alíquota não viaja no Simples — nem presa no estado do formulário", async () => {
+    // O princípio do cabeçalho: campo escondido que continua viajando é o defeito pior. E aqui ele
+    // não é só sujeira — sem retenção a alíquota é PROIBIDA na DPS (E0625/E0631).
+    await renderizar(SIMPLES);
+    preencherComAliquotaEfetiva();
+    fireEvent.click(document.getElementById("emitir-iss-retido"));
+    fireEvent.change(document.getElementById("emitir-aliquota"), { target: { value: "5" } });
     fireEvent.click(document.getElementById("emitir-iss-retido"));
     const corpo = await submeterEPegarOCorpo();
     // ⚠ Varredura do JSON inteiro, não só de `servico.aliquota`.

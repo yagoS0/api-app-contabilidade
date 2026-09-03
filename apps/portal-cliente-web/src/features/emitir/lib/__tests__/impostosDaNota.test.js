@@ -117,14 +117,22 @@ describe("⚠⚠ a alíquota de ISS SÓ EXISTE COM RETENÇÃO", () => {
     expect(camposDeImposto({ regime: REGIME.DESCONHECIDO, issRetido: true }).aliquotaNoFormulario).toBe(true);
   });
 
-  test("⚠⚠ no SIMPLES a alíquota NÃO aparece — mesmo com a caixa marcada", () => {
-    // ⚠ O motivo MUDOU, e por isso este caso continua verde por uma razão diferente. Antes: "a
-    // caixa não existe no Simples, então a alíquota também não". Agora a caixa EXISTE, e a alíquota
-    // continua fora porque **quem declara o número é o contador**, no perfil de emissão
-    // (`PerfilEmissaoNfse.pAliq`). Cliente marcando a caixa E digitando a alíquota seriam duas
-    // fontes para o mesmo campo do XML.
-    expect(camposDeImposto({ regime: REGIME.SIMPLES, issRetido: true }).aliquotaNoFormulario).toBe(false);
-    expect(aliquotaIssParaOPayload({ regime: REGIME.SIMPLES, issRetido: true, aliquota: "5" })).toBe(null);
+  test("⚠⚠ no SIMPLES a alíquota APARECE com a caixa marcada (02/09/2026)", () => {
+    // ⚠⚠ ESTE CASO AFIRMAVA O CONTRÁRIO, e a regra mudou por um DEFEITO MEDIDO: com a caixa
+    // existindo no Simples e a alíquota fora da tela, marcar a retenção produzia uma recusa
+    // GARANTIDA no servidor (`NFSE_PALIQ_OBRIGATORIA_AUSENTE`) — e a correção que a mensagem
+    // sugeria ("o contador declara no perfil de emissão") era IMPOSSÍVEL de executar, porque a
+    // flag `INTEGRACAO_PERFIL_EMISSAO_NFSE` nasce OFF.
+    // Dono: *"ISS retido não tem alíquota obrigatória, pois ele pode nem reter (…) ISS retido
+    // deve ser caixa de seleção, se selecionado preenche"*.
+    expect(camposDeImposto({ regime: REGIME.SIMPLES, issRetido: true }).aliquotaNoFormulario).toBe(true);
+    expect(aliquotaIssParaOPayload({ regime: REGIME.SIMPLES, issRetido: true, aliquota: "5" })).toBe(5);
+  });
+
+  test("⚠ e SEM a caixa ela continua fora, no Simples também — E0625/E0631 a PROÍBEM", () => {
+    // A alíquota segue a CAIXA, e a caixa desmarcada a proíbe: mandá-la ali é nota rejeitada.
+    expect(camposDeImposto({ regime: REGIME.SIMPLES, issRetido: false }).aliquotaNoFormulario).toBe(false);
+    expect(aliquotaIssParaOPayload({ regime: REGIME.SIMPLES, issRetido: false, aliquota: "5" })).toBe(null);
   });
 
   test("⚠⚠ desmarcou ⇒ o valor NÃO VIAJA, mesmo preso no estado do formulário", () => {
@@ -162,8 +170,12 @@ describe("⚠ com retenção a alíquota é OBRIGATÓRIA — e a tela diz ANTES"
     });
   });
 
-  test("⚠ no Simples a conferência nunca bloqueia — o bloco inteiro saiu da tela", () => {
-    expect(conferirAliquotaIss({ regime: REGIME.SIMPLES, issRetido: true, aliquota: "" }).ok).toBe(true);
+  test("⚠⚠ no Simples a conferência BLOQUEIA com a caixa marcada e sem alíquota (02/09/2026)", () => {
+    // Este caso dizia "nunca bloqueia". Bloquear AQUI é o ponto: a alternativa é o cliente
+    // descobrir a recusa no clique de um ato fiscal irreversível.
+    expect(conferirAliquotaIss({ regime: REGIME.SIMPLES, issRetido: true, aliquota: "" }).ok).toBe(false);
+    // ⚠ E sem retenção continua sem bloquear — ali a alíquota é PROIBIDA, não exigida.
+    expect(conferirAliquotaIss({ regime: REGIME.SIMPLES, issRetido: false, aliquota: "" }).ok).toBe(true);
   });
 });
 

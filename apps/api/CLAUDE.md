@@ -4114,10 +4114,30 @@ tela dele deve poder selecionar se é retido ou não"*.
 | | Simples | não optante / indefinido |
 |---|---|---|
 | **caixa** de retenção | **aparece** (mudou) | aparece |
-| **alíquota** | **não aparece** — vem do perfil | aparece, com a caixa marcada |
+| **alíquota** | **aparece com a caixa marcada** (02/09/2026) | aparece, com a caixa marcada |
 
-⚠⚠ **AS DUAS METADES TÊM DONOS DIFERENTES:** a retenção depende do TOMADOR daquela nota; a alíquota
-depende da EMPRESA. Ter as duas na tela do cliente seriam duas fontes para o mesmo campo do XML.
+⚠⚠ **A LINHA DA ALÍQUOTA DIZIA "não aparece no Simples — vem do perfil" ATÉ 02/09/2026, E ISSO
+ERA UMA ARMADILHA QUE NÓS MESMOS CRIAMOS.** Com a caixa existindo no Simples (01/09) e a alíquota
+fora da tela, marcar a retenção produzia uma recusa **GARANTIDA** no servidor
+(`NFSE_PALIQ_OBRIGATORIA_AUSENTE`) — e a correção que a mensagem sugeria (*"o contador declara no
+perfil de emissão"*) era **impossível de executar**, porque `INTEGRACAO_PERFIL_EMISSAO_NFSE` nasce
+OFF e o perfil não tem efeito nenhum com ela desligada. **Controle que só sabe falhar é pior que
+controle ausente** — o mesmo argumento da janela de NF-e vazia, registrado no `CLAUDE.md` da raiz.
+
+Dono, 02/09/2026: *"ISS retido não tem alíquota obrigatória, pois ele pode nem reter (…) ISS retido
+deve ser caixa de seleção, se selecionado preenche"*.
+
+⚠ **A ALÍQUOTA SEGUE A CAIXA, NÃO O REGIME**, e é o que a norma diz: E0621/E0628 a **exigem** com
+retenção; E0625/E0631 a **proíbem** sem. `pAliqDaDps` já decidia exatamente assim — quem discordava
+era a TELA. `aliquotaNoFormulario` deixou de conferir o regime (`!ehSimples && issRetido`) e passou
+a ser `issRetido === true`.
+
+⚠ **E NÃO SÃO DUAS FONTES para o mesmo campo do XML:** ligado o perfil, ele **VENCE**
+(`buildDpsXml`: `doPerfil("pAliq") ?? aliquota`). O que a tela oferece é o **fallback** enquanto o
+perfil está desligado — e ele some sozinho com a caixa desmarcada, sem viajar no corpo.
+
+⚠ **O portal do CONTADOR nunca teve essa armadilha**: o assistente oferece a alíquota sempre,
+independente do regime.
 
 ⚠ **Isto destrava a E0621**: enquanto a caixa não existia no Simples, aquele cenário era
 inalcançável pela tela — o defeito nº 7 que a validação do plano tinha nomeado.

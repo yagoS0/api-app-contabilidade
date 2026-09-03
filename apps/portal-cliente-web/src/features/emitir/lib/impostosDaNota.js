@@ -44,8 +44,10 @@
 //    ⚠ Desmarcada, o campo some **e o valor não viaja** — pelo item 3 acima, e pelo princípio do
 //    cabeçalho.
 //
-// ⚠ ISTO É SÓ PARA O NÃO OPTANTE. No Simples o bloco de ISS inteiro já saiu da tela; nada aqui o
-// reintroduz — `aliquotaNoFormulario` confere o REGIME, não só a caixa.
+// ⚠⚠ ISTO VALE EM TODO REGIME desde 02/09/2026 — e esta frase dizia "é só para o não optante".
+// A alíquota segue a CAIXA, não o regime: dono, no mesmo dia — *"ISS retido não tem alíquota
+// obrigatória, pois ele pode nem reter (…) ISS retido deve ser caixa de seleção, se selecionado
+// preenche"*.
 // ⚠⚠ A frase acima dizia que ele "depende de `issNoFormulario`". Isso ficou falso em 02/09/2026:
 // a caixa passou a aparecer em todo regime, e a alíquota deixou de ser derivada dela — as duas
 // perguntas se separaram.
@@ -113,12 +115,23 @@ export function camposDeImposto({ regime, issRetido = false }) {
     // que a decisão tenha um lugar, e para que revertê-la seja uma linha visível.
     issRetidoNoFormulario: true,
 
-    // ⚠⚠ A ALÍQUOTA CONTINUA FORA DO SIMPLES. Aqui a decisão de 18/08 fica de pé, agora por um
-    // motivo mais forte que "o ISS está dentro do DAS": no Simples quem declara o número é o
-    // CONTADOR, no perfil de emissão (`PerfilEmissaoNfse.pAliq`). O cliente marcar a caixa e digitar
-    // a alíquota seria duas fontes para o mesmo campo do XML.
-    // ⚠ `=== SIMPLES`, nunca `!== OUTRO`: o indefinido MANTÉM o campo — não se esconde por dúvida.
-    aliquotaNoFormulario: !ehSimples && issRetido === true,
+    // ⚠⚠ A ALÍQUOTA SEGUE A CAIXA, EM TODO REGIME — esta linha era `!ehSimples && issRetido`.
+    //
+    // A regra fiscal é CONDICIONAL, e `pAliqDaDps` (no servidor) já a implementa assim: com
+    // retenção a alíquota é **obrigatória** (E0621/E0628); sem retenção ela é **proibida**
+    // (E0625/E0631). Ou seja, ela nunca dependeu do regime — depende de haver retenção.
+    //
+    // ⚠⚠ O DEFEITO QUE ISTO CONSERTA É UMA ARMADILHA QUE NÓS MESMOS CRIAMOS. Com a caixa
+    // aparecendo no Simples (01/09) e a alíquota fora da tela, marcar a retenção produzia uma
+    // recusa GARANTIDA (`NFSE_PALIQ_OBRIGATORIA_AUSENTE`) — e a correção que a mensagem sugeria
+    // ("o contador declara no perfil de emissão") era **impossível de executar**, porque a flag
+    // `INTEGRACAO_PERFIL_EMISSAO_NFSE` nasce OFF e o perfil não tem efeito nenhum com ela desligada.
+    // Controle que só sabe falhar é pior que controle ausente.
+    //
+    // ⚠ E NÃO SÃO DUAS FONTES para o mesmo campo do XML: quando o perfil for ligado, ele VENCE
+    // (`buildDpsXml`: `doPerfil("pAliq") ?? aliquota`). O que a tela oferece é o fallback — e ele
+    // some da tela sozinho, porque desmarcada a caixa o campo não existe e o valor não viaja.
+    aliquotaNoFormulario: issRetido === true,
 
     // ⚠ `=== SIMPLES`, nunca `!== OUTRO`: o indefinido não pode cair aqui por negação.
     pTotTribSNNoFormulario: ehSimples,

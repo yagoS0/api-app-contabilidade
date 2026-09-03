@@ -1060,13 +1060,30 @@ ou não"*. Hoje:
 | | Simples | não optante / indefinido |
 |---|---|---|
 | **caixa** "o ISS desta nota é retido" | **aparece** | aparece |
-| **alíquota** de ISS | **NÃO aparece** — quem declara é o contador, no perfil de emissão | aparece, com a caixa marcada |
+| **alíquota** de ISS | **aparece com a caixa marcada** (02/09/2026) | aparece, com a caixa marcada |
 
-⚠⚠ **AS DUAS METADES TÊM DONOS DIFERENTES, e é isso que sustenta a divisão:** a RETENÇÃO depende do
-TOMADOR daquela nota (muda a cada nota ⇒ cliente marca); a ALÍQUOTA depende da EMPRESA (não muda ⇒
-contador declara, em `PerfilEmissaoNfse.pAliq`). Ter as duas na tela do cliente seriam **duas fontes
-para o mesmo campo do XML**, e a do cliente venceria a correção do contador em silêncio — a mesma
-razão pela qual `pTotTribFed/Est/Mun` nunca viajam daqui.
+⚠⚠ **A LINHA DA ALÍQUOTA DIZIA "NÃO aparece no Simples" POR UM DIA, E ERA UMA ARMADILHA NOSSA.**
+Com a caixa existindo no Simples (01/09) e a alíquota fora da tela, marcar a retenção produzia uma
+recusa **GARANTIDA** do servidor (`NFSE_PALIQ_OBRIGATORIA_AUSENTE`), e a correção que a mensagem
+sugeria — *"o contador declara no perfil de emissão"* — era **impossível de executar**, porque
+`INTEGRACAO_PERFIL_EMISSAO_NFSE` nasce OFF e o perfil não tem efeito nenhum desligado.
+**Controle que só sabe falhar é pior que controle ausente.**
+
+Dono, 02/09/2026: *"ISS retido não tem alíquota obrigatória, pois ele pode nem reter (…) ISS retido
+deve ser caixa de seleção, se selecionado preenche"*.
+
+⚠ **A ALÍQUOTA SEGUE A CAIXA, NÃO O REGIME** — e é o que a norma diz: **E0621/E0628** a exigem COM
+retenção, **E0625/E0631** a proíbem SEM. `pAliqDaDps` (no servidor) já decidia assim; quem discordava
+era a tela. `aliquotaNoFormulario` deixou de conferir o regime e passou a ser `issRetido === true`.
+
+⚠ **E NÃO SÃO DUAS FONTES para o mesmo campo do XML:** ligado o perfil, **ele vence**
+(`buildDpsXml`: `doPerfil("pAliq") ?? aliquota`). A tela oferece o **fallback** enquanto o perfil
+está desligado, e ele some sozinho com a caixa desmarcada — sem viajar no corpo, que é o que
+distingue este caso de `pTotTribFed/Est/Mun` (esses nunca têm campo aqui, em nenhum estado).
+
+⚠ A RETENÇÃO continua dependendo do TOMADOR daquela nota (muda a cada nota ⇒ cliente marca) e a
+ALÍQUOTA continua sendo da EMPRESA (não muda ⇒ contador declara, em `PerfilEmissaoNfse.pAliq`).
+O que mudou não é de quem é cada metade — é que, sem a segunda disponível, a primeira não funciona.
 
 ⚠ **O fundamento estava na lei e já estava no repositório:** ISS retido na fonte **não é abrangido
 pelo DAS** (`docs/fontes-fiscais.md` §1.9, LC 123 art. 13 §1º) e o retido **abate a parcela
