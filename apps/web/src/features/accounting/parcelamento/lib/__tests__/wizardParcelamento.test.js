@@ -10,6 +10,10 @@ import {
   oQueSePerdeAoFechar, somasProvisao, somarMeses, vencimentoDaCompetencia,
   tipoGuiaSugeridoNaoExisteAqui, estadoInicial, numero,
   PROVISAO_PADRAO, PAPEIS_PROVISAO, linhaComPapel, papelDivergeDoLado, linhasQueViramLancamento,
+  linhasDoRecibo,
+  camposDoRecibo,
+  historicoDaLinha,
+  codigoTributoDaLinha
 } from "../wizardParcelamento";
 
 /** O contrato do aceite: migrado, 23ª de 60, débito automático, sem documento nenhum. */
@@ -387,3 +391,110 @@ describe("leitura de número — reusa a gramática estrita da célula de lança
 it("o módulo não exporta nada que não exista (guarda contra import morto)", () => {
   expect(tipoGuiaSugeridoNaoExisteAqui).toBeUndefined();
 });
+
+// ⚠⚠ O RECIBO DA NEGOCIAÇÃO PREENCHE O WIZARD — Lucro Presumido (01/09/2026)
+//
+// > Dono: *"o pdf preenche o layout mas o contador pode modificar qualquer campo, como faz hoje"*
+// > · *"as descrições devem ser a descrição que o contador escreveu"*.
+//
+// Os números são os do recibo REAL anexado por ele (SINTROPIA, 60 × 4.714,17), com o número do
+// parcelamento anonimizado. Valores e códigos de receita intactos: é deles que a soma depende.
+describe("⚠⚠ o recibo vira campos e linhas do wizard", () => {
+  const RECIBO = {
+    numeroParcelamento: "0211.00012.0104884128.26-54",
+    dataConsolidacao: "17/08/2026",
+    quantidadeParcelas: 60,
+    valorParcela: 4714.17,
+    consolidado: { principal: 232466.4, multa: 46493.25, juros: 3890.64, total: 282850.29 },
+    porTributo: [
+      { tributo: "IRPJ", codigo: "2089", principal: 135952.51, periodos: ["1º Trimestre/2026", "2º Trimestre/2026"] },
+      { tributo: "COFINS", codigo: "2172", principal: 36425.3, periodos: ["maio/2026", "junho/2026"] },
+      { tributo: "CSLL", codigo: "2372", principal: 52196.45, periodos: ["1º Trimestre/2026", "2º Trimestre/2026"] },
+      { tributo: "PIS", codigo: "8109", principal: 7892.14, periodos: ["maio/2026", "junho/2026"] },
+    ],
+    divergencias: [],
+  };
+
+  it("⚠⚠ UMA LINHA POR TRIBUTO, com o código de receita e os PERÍODOS na descrição", () => {
+    const linhas = linhasDoRecibo(RECIBO);
+    const principais = linhas.filter((l) => l.tipoLinha === "PRINCIPAL");
+    expect(principais).toHaveLength(4);
+    expect(principais.map((l) => l.codigoTributo)).toEqual(["2089", "2172", "2372", "8109"]);
+    // O CSLL de dois trimestres é UMA linha, com os dois períodos — é como o contador escreve.
+    const csll = principais.find((l) => l.codigoTributo === "2372");
+    expect(csll.label).toBe("VR REF PARC CSLL 1º Trimestre/2026, 2º Trimestre/2026 PARC EM 60 PARCELAS");
+    expect(csll.valor).toBe(52196.45);
+  });
+
+  it("⚠⚠ A CONTA FICA VAZIA — o PDF não conhece o plano de contas desta empresa", () => {
+    // Chutar conta aqui seria o oposto do pedido: quem preenche é a memória ou o contador.
+    for (const l of linhasDoRecibo(RECIBO)) expect(l.conta).toBe("");
+  });
+
+  it("⚠⚠ o crédito é a SOMA DOS DÉBITOS — o lançamento FECHA, sempre", () => {
+    const linhas = linhasDoRecibo(RECIBO);
+    const debitos = round2Teste(linhas.filter((l) => l.tipo === "D").reduce((s, l) => s + l.valor, 0));
+    const credito = linhas.find((l) => l.tipo === "C");
+    expect(credito.tipoLinha).toBe("PARC");
+    expect(credito.valor).toBe(debitos);
+    // ⚠ E ele NÃO é o `consolidado.total` cru: se o recibo divergir, o lote continua balanceado e a
+    // divergência aparece como AVISO, nunca como um lançamento que não fecha.
+    expect(credito.valor).toBe(round2Teste(232466.4 + 3890.64 + 46493.25));
+  });
+
+  it("⚠ componente ZERADO não vira linha — recibo sem multa fecha em principal + juros", () => {
+    const semMulta = { ...RECIBO, consolidado: { ...RECIBO.consolidado, multa: 0 } };
+    const papeis = linhasDoRecibo(semMulta).map((l) => l.tipoLinha);
+    expect(papeis).not.toContain("MULTA");
+    expect(papeis).toContain("JUROS");
+  });
+
+  it("⚠⚠ `valorParcela` vem do DOCUMENTO — nunca `total ÷ parcelas`", () => {
+    // É ele que desconta do passivo todo mês (decisão do dono). A RFB arredonda cada prestação:
+    // 282.850,29 ÷ 60 = 4.714,17150, e o documento diz 4.714,17.
+    const campos = camposDoRecibo(RECIBO);
+    expect(campos.valorParcela).toBe("4714.17");
+    expect(campos.totalParcelas).toBe("60");
+    expect(campos.tipo).toBe("LUCRO_PRESUMIDO");
+    // ⚠ Data em aritmética de string: `new Date("17/08/2026")` desloca o dia por fuso.
+    expect(campos.dataAdesao).toBe("2026-08-17");
+  });
+});
+
+describe("⚠⚠ a descrição do contador vira o histórico — mas SÓ quando é dele", () => {
+  it("texto diferente do rótulo é histórico", () => {
+    expect(historicoDaLinha({ tipoLinha: "PRINCIPAL", label: "VR REF PARC PIS 01/10/2025" }))
+      .toBe("VR REF PARC PIS 01/10/2025");
+  });
+
+  it("⚠⚠ o RÓTULO PADRÃO não vira histórico — senão toda modalidade perderia o prefixo", () => {
+    // A coluna "Descrição" já nasce preenchida com o rótulo do papel. Mandá-lo como histórico faria
+    // `PROVISÃO PARCSN Nº 123 — Juros` virar só `Juros`, em TODOS os parcelamentos.
+    expect(historicoDaLinha({ tipoLinha: "JUROS", label: "Juros" })).toBeNull();
+    expect(historicoDaLinha({ tipoLinha: "PRINCIPAL", label: "Principal a provisionar" })).toBeNull();
+    expect(historicoDaLinha({ tipoLinha: "PARC", label: "Parcelamento a pagar (passivo)" })).toBeNull();
+    // ⚠ E o rótulo do PAGAMENTO também não — a baixa tem os seus.
+    expect(historicoDaLinha({ tipoLinha: "PARC", label: "Parcelamento a pagar (baixa do principal)" })).toBeNull();
+  });
+
+  it("⚠ caixa e espaço a mais não fazem virar histórico — quem só ajeitou não escreveu nada", () => {
+    expect(historicoDaLinha({ tipoLinha: "JUROS", label: "  juros " })).toBeNull();
+  });
+
+  it("⚠ descrição vazia é `null`, nunca string vazia", () => {
+    expect(historicoDaLinha({ tipoLinha: "JUROS", label: "   " })).toBeNull();
+    expect(historicoDaLinha({ tipoLinha: "JUROS" })).toBeNull();
+  });
+});
+
+describe("⚠ o código de receita não é fabricado", () => {
+  it("4 dígitos exatos, ou nulo", () => {
+    expect(codigoTributoDaLinha({ codigoTributo: "8109" })).toBe("8109");
+    expect(codigoTributoDaLinha({ codigoTributo: "2089-01" })).toBe("2089");
+    // ⚠ Nenhum `padStart`: código curto virando código plausível é a classe do `cLocEmi="0000000"`.
+    expect(codigoTributoDaLinha({ codigoTributo: "81" })).toBeNull();
+    expect(codigoTributoDaLinha({})).toBeNull();
+  });
+});
+
+function round2Teste(v) { return Math.round(v * 100) / 100; }

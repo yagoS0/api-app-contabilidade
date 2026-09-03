@@ -81,6 +81,19 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
 - [x] **Parcelamento real (Q16)** — 1 provisão (abertura) + linhas leves de parcela +
   baixa por pagamento; contas D/C em branco com memória por linha (igual Simples);
   envio em lote com 3 estados; selo de e-mail no dashboard.
+- [x] **Parcelamento do LUCRO PRESUMIDO — provisão POR TRIBUTO (01/09/2026)** — modalidade
+  `LUCRO_PRESUMIDO` (`kind: "DARF"`), com uma linha de principal **por tributo**
+  (PIS 8109 · COFINS 2172 · IRPJ 2089 · CSLL 2372), cada uma com conta própria via
+  `MapaContaTributo` — o `codigoTributo` **deixou de ser cravado em `null`** no override do modal.
+  A **descrição que o contador escreve vira o histórico** do lançamento — a da provisão e a do
+  **pagamento** (esta guardada na config do contrato, ao lado da conta) —, inteira e sem prefixo;
+  sem descrição, o texto é exatamente o de antes. ⚠ A marca `(declarado)` / `(composição declarada)`
+  saiu de dentro do histórico derivado para um parâmetro próprio: a frase do contador substitui o
+  histórico inteiro e a **apagava**, fazendo a baixa por declaração se ler como uma baixa provada. O **recibo da negociação (PDF do e-CAC)** preenche o
+  formulário por `POST .../parcelamentos/recibo/leitura` — leitura pura, **não grava nada**, e todo
+  campo continua editável antes de criar. ⚠ A **forma** do lançamento não mudou
+  (`D principal · D juros · D multa / C soma`). Detalhes e as armadilhas do PDF:
+  `apps/api/src/application/accounting/CLAUDE.md`.
 - [~] **Fluxo mensal do contador (Q17)** — cron busca **extrato** (gera lançamentos) além
   das guias; guia **"Vazio"** (ausência confirmada → amarelo); **circular com trimestre/anual**
   por linha; **fechamento contábil do mês** (bloqueia se houver lançamento em branco/D≠C);

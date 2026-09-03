@@ -12,6 +12,12 @@ export const TIPOS_PARCELAMENTO = [
   "PARCSN", "PARCSN_ESPECIAL", "PERT_SN", "RELP_SN",
   "PARCMEI", "PARCMEI_ESPECIAL", "PERT_MEI", "RELP_MEI",
   "INSS", // Q61: parcelamento previdenciário/INSS (manual — sem auto-search SERPRO)
+  // ⚠⚠ LUCRO PRESUMIDO (01/09/2026) — dono: *"parcelamento do lucro presumido está completamente
+  // incorreto, nele devemos provisionar cada tipo de imposto separado, e não temos suporte a isso"*.
+  // Até aqui ele caía em `OUTRO`, o balde do PGFN/estadual/municipal — e com isso a provisão nascia
+  // com UMA linha de principal, quando o acordo tem QUATRO tributos (PIS/COFINS/IRPJ/CSLL) que vão
+  // para contas diferentes. A modalidade existe para a provisão POR TRIBUTO ter onde morar.
+  "LUCRO_PRESUMIDO",
   "OUTRO",
 ];
 
@@ -49,7 +55,10 @@ export const FAMILIAS_PARCELAMENTO = Object.freeze({
 /** Conhecidas e SEM família — não colapsam, e isso é o desenho, não uma lacuna.
  *  INSS é parcelamento previdenciário (manual, sem auto-search); OUTRO é o balde do
  *  PGFN/estadual/municipal. Chamar qualquer um dos dois de "Simples" seria inventar natureza. */
-export const MODALIDADES_SEM_FAMILIA = Object.freeze(["INSS", "OUTRO"]);
+// ⚠ `LUCRO_PRESUMIDO` entra aqui: ele NÃO colapsa para `PARCSN`/`PARCMEI`. As contas do LP são
+// outras (a memória é por `(tipoLinha, codigoTributo)`, e os códigos são 8109/2172/2089/2372),
+// e mandá-lo para a chave do Simples orfanaria o padrão dele no primeiro parcelamento.
+export const MODALIDADES_SEM_FAMILIA = Object.freeze(["INSS", "OUTRO", "LUCRO_PRESUMIDO"]);
 
 const FAMILIA_DA_MODALIDADE = new Map(
   Object.entries(FAMILIAS_PARCELAMENTO).flatMap(([familia, { modalidades }]) =>

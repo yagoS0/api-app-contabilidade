@@ -73,6 +73,125 @@ faz `parc.tipo || parc.kind` (e `tipo` sempre vence), e mudá-la alteraria dado 
 escopo que a ingestão já gravava. Corrigir a conta num parcelamento muda o padrão para os próximos de
 **qualquer** empresa (o override por cliente existe na tabela e hoje não é escrito por ninguém).
 
+### ⚠⚠ LUCRO PRESUMIDO — a provisão é POR TRIBUTO, e a descrição é a que o contador escreveu (01/09/2026)
+
+> Dono: *"parcelamento do lucro presumido está completamente incorreto, nele devemos provisionar
+> cada tipo de imposto separado, e não temos suporte a isso"* · *"as descrições devem ser a
+> descrição que o contador escreveu, descrição da provisão e descrição do pagamento, devemos poder
+> modificar qualquer campo, use o layout que temos hoje — o PDF preenche o layout, mas o contador
+> pode modificar qualquer campo, como faz hoje"*.
+
+**O acordo do LP tem QUATRO tributos** (PIS `8109` · COFINS `2172` · IRPJ `2089` · CSLL `2372`), que
+vão para contas **diferentes**. Ele caía em `OUTRO`, o balde do PGFN/estadual/municipal, e a
+provisão nascia com **uma** linha de principal.
+
+⚠⚠ **A memória de conta por tributo JÁ EXISTIA — o que faltava era o código chegar até ela.**
+`MapaContaTributo` indexa por `(cliente|global, tipoParcelamento, tipoLinha, codigoTributo)` desde a
+Q21, e `linhasProvisaoFromOverride` cravava **`codigoTributo: null`**. Uma linha. Com ela, as quatro
+linhas do LP eram indistinguíveis (`PRINCIPAL` + nada) e as quatro contas colidiam numa só.
+
+⚠ **O papel continua `PRINCIPAL`, e não quatro papéis novos** — é o que este módulo já prescreve
+para o TJLP (*"dá para dar conta própria ao TJLP sem inventar papel"*), e mantém a coluna "Papel" da
+tela falando de **natureza contábil**, não de nome de tributo.
+
+⚠ **4 dígitos exatos, sem `padStart`** (`codigoTributoDaLinha`): o recibo escreve `2089-01` e
+`8109-02` (código + sufixo) e o resto do projeto indexa pelos quatro primeiros. Fabricar dígito a
+partir de código curto é a classe do `cLocEmi="0000000"`. Fora da forma ⇒ `null` — o de antes.
+
+**A forma do lançamento NÃO mudou** — continua `D principal · D juros · D multa / C soma`
+(`linhasProvisao`), com o que era uma linha de principal virando N. Nada de conta nova, nada junto,
+nada separado [[nao-mudar-forma-lancamentos]].
+
+#### A descrição do contador vira o HISTÓRICO — inteira, sem prefixo
+
+O histórico era **sempre** derivado (`PROVISÃO OUTRO Nº 123 — principal`). O razão do dono é escrito
+assim: *"VR REF PARC CSLL 1.TRIM.03/2025, 2.TRIM.06/2025 E 3.TRIM.09/2025 PARC EM 60 PARCELAS"* —
+texto que carrega os **períodos de apuração** de cada débito, que nenhum derivado saberia montar.
+
+- ⚠ **`ln.historico`, NUNCA `ln.label`.** `label` é o rótulo do papel e alimenta o derivado;
+  `PROVISAO_PADRAO` **já traz `label`**, então mandar `historico` sempre apagaria o prefixo de TODO
+  parcelamento existente. Quem decide é `historicoDaLinha` no front, que só devolve texto quando ele
+  **difere do rótulo do papel**.
+- ⚠ **Sem `historico`, o texto é EXATAMENTE o de antes** — nenhuma modalidade existente muda. O
+  teste do wizard prova isso pelo par `codigoTributo: null` + `historico: null` nas outras dez.
+
+#### E a descrição do PAGAMENTO — que é CONFIG do contrato, como a conta
+
+A outra metade do pedido (*"descrição da provisão **e descrição do pagamento**"*). O wizard já
+coletava e já mandava a frase da baixa; **`configFromLines` a descartava** — a provisão saía com o
+texto do contador e a baixa, todo mês, com o derivado.
+
+Ela mora em `Parcelamento.configPagamento`, ao lado da conta, **pela mesma razão da conta**: vale
+para toda prestação do contrato (*"PAGO PARC PIS,COFINS,CSLL E IRPJ 02/45 12/2025"*), não é dado de
+uma baixa. ⚠ A chave é **omitida** quando não há texto — `undefined` some do JSON, e config antiga
+continua legível **sem migração**: sem a chave, o histórico é o derivado de sempre.
+
+⚠ **Os dois laços que liam `configPagamento` viraram um** (`mapasDaConfigPagamento`) — eles estavam
+escritos duas vezes (baixa por guia e baixa por declaração), e era por aí que o histórico chegaria a
+só uma das duas: a que ninguém testa é a que diverge.
+
+#### ⚠⚠ A MARCA DE PROCEDÊNCIA SAIU DE DENTRO DO `historicoBase` — e é ela que a mudança quase matou
+
+`"(declarado)"` e `"(composição declarada)"` são o **sinal em texto, no razão**, para quem nunca vai
+abrir a coluna `origemBaixa`: distinguem *"o contador afirmou"* de *"a Receita provou"*. Elas viviam
+**grudadas** no `historicoBase` — e a frase do contador substitui o histórico **inteiro**, então ela
+as apagava, e a baixa por DECLARAÇÃO passava a se ler como uma baixa PROVADA.
+
+Hoje viajam no parâmetro **`marcaProcedencia`** de `criarLancamentosIndividuais`, e são anexadas nos
+**dois** caminhos. ⚠ O texto derivado é **byte a byte** o de antes (`base` + ` ` + `marca` + ` — ` +
+`label` monta exatamente a frase que os chamadores concatenavam), e há teste prendendo a string
+literal.
+
+#### `kind` — campo legado que não pode mentir
+
+`Parcelamento.kind` declara `SIMPLES | INSS | DARF | OUTRO`, e o LP é acordo de **DARF**. Chamá-lo de
+`SIMPLES` seria a mesma classe de colapso que o prefixo `/^PARC(SN|MEI)/` já custou uma vez.
+⚠ Medido antes de gravar: todo leitor de `kind` no V2 é fallback de `tipo` (`parc.tipo || parc.kind`)
+e o LP sempre tem `tipo`; o único consumidor real é `parcLineEventType` do V1.
+
+⚠ **`LUCRO_PRESUMIDO` entra em `MODALIDADES_SEM_FAMILIA`** (nos dois lados —
+`parcelamento/contracts.js` e `apps/web/src/lib/vocabulario.js`): ele **não colapsa** para
+`PARCSN`/`PARCMEI`, pelo mesmo motivo do INSS. Mandá-lo para a chave do Simples orfanaria o padrão
+de contas dele no primeiro acordo.
+
+#### O recibo da negociação — `POST .../parcelamentos/recibo/leitura`, e ele SÓ LÊ
+
+`application/fiscal/serpro/parseReciboParcelamento.js` (puro) lê o PDF que o contador baixa do
+e-CAC. A rota (`routes/firm/accountingEntries.js`, multer + `pdf-parse` por `import()` dinâmico,
+registrada **antes** de `/parcelamentos/ingestao`) **não grava nada**: devolve campos e linhas para
+o wizard preencher, e o contador confere e corrige tudo antes de criar.
+
+⚠ **As três armadilhas do texto, todas medidas contra o PDF real** — o `pdf-parse` põe **uma célula
+por linha**, como no SITFIS:
+
+| # | armadilha | efeito |
+|---|---|---|
+| 1 | rótulos **COLADOS**: `"Nome empresarial:Data da consolidação:"` | `startsWith` não acha — é `includes` |
+| 2 | o bloco "Forma de pagamento" tem os **rótulos ENTRE os valores** | lido pela "linha seguinte", o saldo devolvia o valor da **parcela** (4.714,17 no lugar de 282.850,29) |
+| 3 | o código vem `2089-01`, com sufixo | comparar cru não casa com o mapa de 4 dígitos |
+
+⚠ **A CONTAGEM NÃO É PROVA** — um débito perdido e outro duplicado dão a mesma quantidade de linhas.
+O que se confere é **valor**: a soma dos débitos contra o bloco "Dívida consolidada", e
+`parcelas × valor` contra o consolidado. Divergência volta **NOMEADA e com o dado junto** — recusar o
+recibo deixaria o contador sem caminho; ele lê o aviso e decide.
+⚠ O arredondamento de centavo por parcela **não** vira divergência (`60 × 4.714,17 = 282.850,20`
+contra `282.850,29` no recibo real).
+
+⚠ **Código FORA do mapa não vira tributo por palpite** — vira pendência nomeada, e a dívida
+**continua na tela** pedindo nome. Inventar o tributo aqui seria inventar em qual conta a dívida
+entra.
+
+⚠ Os 4 códigos de receita saem de **`tributoDaDescricao`** (`parseDctfwebDeclaracao.js`), reusado —
+uma segunda tabela divergiria na primeira correção.
+
+Testes: `fiscal/serpro/__tests__/parseReciboParcelamento.test.js` (14, fixture com identificadores
+**anonimizados** e valores/códigos intactos) + `parcelamento/__tests__/parcelamentoLucroPresumido.test.js`
+(18, as seis linhas do dono somando `80.948,65`) + o bloco novo em
+`parcelamento/__tests__/baixaParcelaSemGuia.test.js` (3). Experimentos executados: recravando
+`codigoTributo: null`, **2 vermelhos**; mandando o derivado por cima do `historico`, **1**;
+descartando o histórico na config, **1**; deixando de lê-lo na baixa, **1**; regrudando a marca de
+procedência no `historicoBase`, **1**.
+
 ## Arquivos principais
 
 | Arquivo | Papel |

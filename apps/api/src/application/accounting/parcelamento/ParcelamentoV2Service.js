@@ -204,10 +204,43 @@ async function criarLancamentosIndividuais(tx, {
   // o par `(parcelamentoId, numeroParcela)` é a única coisa em `accounting_entries` que identifica
   // a prestação. Ver o SQL proposto em `gerarPagamentoParcelaManual`.
   numeroParcela = null,
+  /**
+   * ⚠⚠ A MARCA DE PROCEDÊNCIA, SEPARADA DO `historicoBase` — e a separação é o que a preserva.
+   *
+   * "(declarado)" e "(composição declarada)" são o **sinal em TEXTO, no razão**, para quem nunca
+   * vai abrir a coluna `origemBaixa`: eles distinguem *"o contador afirmou"* de *"a Receita
+   * provou"*. Enquanto viviam grudados no `historicoBase`, a descrição escrita pelo contador —
+   * que substitui o histórico inteiro — os APAGAVA, e a baixa por declaração passava a se ler
+   * como uma baixa provada.
+   *
+   * ⚠ O texto derivado é BYTE A BYTE o de antes: `base` + ` ` + `marca` + ` — ` + `label` monta
+   * exatamente a mesma frase que os chamadores montavam concatenando a marca no fim da base.
+   */
+  marcaProcedencia = null,
 }) {
+  const marca = String(marcaProcedencia || "").trim();
   const created = [];
   for (const ln of linhas) {
     const label = ln.label || LINHA_LABEL[ln.tipoLinha] || (ln.tipo === "C" ? "crédito" : "débito");
+    /**
+     * ⚠⚠ A DESCRIÇÃO QUE O CONTADOR ESCREVEU É O HISTÓRICO — inteira, sem prefixo (01/09/2026).
+     *
+     * > Dono: *"as descrições devem ser a descrição que o contador escreveu, descrição da provisão
+     * > e descrição do pagamento, devemos poder modificar qualquer campo"*.
+     *
+     * O histórico era SEMPRE derivado (`PROVISÃO OUTRO Nº 123 — principal`). O razão dele é escrito
+     * assim: *"VR REF PARC CSLL 1.TRIM.03/2025, 2.TRIM.06/2025 E 3.TRIM.09/2025 PARC EM 60
+     * PARCELAS"* — texto que carrega os PERÍODOS de apuração de cada débito, que nenhum derivado
+     * saberia montar.
+     *
+     * ⚠ `ln.historico`, e NÃO `ln.label`: `label` é o rótulo do papel e alimenta o derivado.
+     * Colapsar os dois faria a linha de quem não digitou nada perder o rótulo.
+     * ⚠ Sem `historico` o texto é EXATAMENTE o de antes — nenhum parcelamento existente muda.
+     */
+    const proprio = String(ln.historico || "").trim();
+    const historico = proprio
+      ? `${proprio}${marca ? ` ${marca}` : ""}`
+      : `${historicoBase}${marca ? ` ${marca}` : ""} — ${label}`;
     // eslint-disable-next-line no-await-in-loop
     const e = await tx.accountingEntry.create({
       data: {
@@ -224,7 +257,7 @@ async function criarLancamentosIndividuais(tx, {
         tipoLinha: ln.tipoLinha || tipoLinhaDaBaixa(tipo),
         codigoTributo: ln.codigoTributo || null,
         data, competencia,
-        historico: `${historicoBase} — ${label}`,
+        historico,
         tipo, subtipo, origem,
         loteImportacao: lote,
         status: "RASCUNHO", statusPagamento,
@@ -277,8 +310,29 @@ function exigirPapel(linhas, onde) {
   throw err;
 }
 
-// Q23: normaliza as linhas de provisão vindas do modal (provisaoLinesOverride) para o formato de
-// AccountingEntryLine. Cada linha: { tipoLinha, tipo (D|C), conta?, valor }. Ignora linhas sem valor.
+/**
+ * Normaliza as linhas de provisão vindas do modal (`provisaoLines`) para `AccountingEntryLine`.
+ * Cada linha: `{ tipoLinha, tipo (D|C), conta?, valor, codigoTributo?, historico? }`.
+ * Ignora linhas sem valor.
+ *
+ * ⚠⚠ `codigoTributo` PASSOU A SOBREVIVER (01/09/2026) — ele era cravado em `null`, e essa linha
+ * sozinha impedia o parcelamento do LUCRO PRESUMIDO de existir.
+ *
+ * > Dono: *"nele devemos provisionar cada tipo de imposto separado, e não temos suporte a isso"*.
+ *
+ * O acordo do LP tem QUATRO tributos (PIS 8109 · COFINS 2172 · IRPJ 2089 · CSLL 2372) que vão para
+ * contas DIFERENTES. `MapaContaTributo` indexa por `(tipoLinha, codigoTributo)` — ou seja, a memória
+ * de conta por tributo **já existia**; o que faltava era o código chegar até ela. Com `null`, as
+ * quatro linhas eram indistinguíveis (`PRINCIPAL` + nada) e as quatro contas colidiam numa só.
+ *
+ * ⚠ Por isso o papel continua sendo `PRINCIPAL`, e NÃO quatro papéis novos: é o que o próprio
+ * módulo já prescreve para o TJLP (*"dá para dar conta própria ao TJLP sem inventar papel"*), e
+ * mantém a coluna "Papel" da tela falando de natureza contábil, não de nome de tributo.
+ *
+ * ⚠ 4 DÍGITOS, sem `padStart`: o recibo escreve `2089-01` e `8109-02` (código + sufixo), e o resto
+ * do projeto indexa pelos quatro primeiros. Fabricar dígito a partir de um código curto é a classe
+ * do `cLocEmi="0000000"`. Fora da forma ⇒ `null`, que é o comportamento de antes.
+ */
 function linhasProvisaoFromOverride(provisaoLines) {
   const candidatas = (Array.isArray(provisaoLines) ? provisaoLines : [])
     .filter((ln) => Number.isFinite(round2(ln?.valor)));
@@ -290,8 +344,24 @@ function linhasProvisaoFromOverride(provisaoLines) {
     valor: round2(ln.valor),
     ordem,
     tipoLinha: String(ln.tipoLinha).trim(),
-    codigoTributo: null,
+    codigoTributo: codigoTributoDaLinha(ln),
+    // ⚠ A descrição que o CONTADOR escreveu — ver `criarLancamentosIndividuais`.
+    historico: historicoDaLinha(ln),
   }));
+}
+
+/** O código de receita de uma linha: 4 dígitos exatos, ou `null`. Nunca fabricado. */
+function codigoTributoDaLinha(ln) {
+  const cru = String(ln?.codigoTributo || "").trim();
+  if (!cru) return null;
+  const digitos = cru.replace(/\D+/g, "").slice(0, 4);
+  return digitos.length === 4 ? digitos : null;
+}
+
+/** A descrição escrita pelo contador, ou `null` (e aí o histórico é o derivado de sempre). */
+function historicoDaLinha(ln) {
+  const texto = String(ln?.historico || "").trim();
+  return texto || null;
 }
 
 // Q28 Fase 1: normaliza linhas (provisão/pagamento) p/ guardar como CONFIG do parcelamento —
@@ -308,11 +378,45 @@ function configFromLines(lines, { exigirPapelDeclarado = false, onde = "Config" 
     tipoLinha: l.tipoLinha ? String(l.tipoLinha).trim() : (String(l.tipo).toUpperCase() === "C" ? "PARC" : "PRINCIPAL"),
     tipo: String(l.tipo).toUpperCase() === "C" ? "C" : "D",
     conta: String(l.conta || "").trim(),
+    /**
+     * ⚠⚠ A DESCRIÇÃO DO PAGAMENTO — a outra metade do pedido do dono (01/09/2026).
+     *
+     * > *"as descrições devem ser a descrição que o contador escreveu, descrição da provisão **e
+     * > descrição do pagamento**"*.
+     *
+     * A config guardava só papel + lado + conta, e o texto que o contador escrevia na aba de
+     * contabilização do wizard era **descartado aqui** — a provisão saía com a frase dele e a
+     * baixa, todo mês, com o derivado. Ele é CONFIG, e não valor, exatamente como a conta: vale
+     * para toda prestação do contrato (*"PAGO PARC PIS,COFINS,CSLL E IRPJ 02/45 12/2025"*).
+     *
+     * ⚠ Chave OMITIDA quando não há texto — `undefined` some do JSON, e config antiga continua
+     * lida sem nenhuma migração: sem a chave, o histórico é o derivado de sempre.
+     */
+    ...(String(l.historico || "").trim() ? { historico: String(l.historico).trim() } : {}),
   }));
   return out.length ? out : null;
 }
 
-async function linhasPagamento(tx, { portalClientId, tipoParcelamento, parcela, contaPorPapel = {} }) {
+/**
+ * Os dois mapas que a CONFIG do parcelamento entrega ao lançamento da baixa: a conta e o histórico
+ * de cada papel.
+ *
+ * ⚠ Um lugar só. Este laço estava escrito DUAS vezes (baixa por guia e baixa por declaração), e
+ * era exatamente por isso que acrescentar o histórico corria o risco de chegar a uma das duas —
+ * a que ninguém testa é a que diverge.
+ */
+function mapasDaConfigPagamento(configPagamento) {
+  const contaPorPapel = {};
+  const historicoPorPapel = {};
+  for (const l of Array.isArray(configPagamento) ? configPagamento : []) {
+    if (!l?.tipoLinha) continue;
+    if (String(l.conta || "").trim()) contaPorPapel[l.tipoLinha] = String(l.conta).trim();
+    if (String(l.historico || "").trim()) historicoPorPapel[l.tipoLinha] = String(l.historico).trim();
+  }
+  return { contaPorPapel, historicoPorPapel };
+}
+
+async function linhasPagamento(tx, { portalClientId, tipoParcelamento, parcela, contaPorPapel = {}, historicoPorPapel = {} }) {
   // Q28 Fase 0/1: PAGAMENTO = D parcelamento-a-pagar (principal, amortiza o passivo) + D juros + D multa
   // (LIDOS da composição, por tributo) / C caixa (total pago). Direção correta — debita o passivo
   // (mesmo papel PARC creditado na provisão) e credita o caixa só no pagamento.
@@ -327,11 +431,11 @@ async function linhasPagamento(tx, { portalClientId, tipoParcelamento, parcela, 
       const [tipoLinha, valor] = comp;
       if (!valor || round2(valor) <= 0) continue;
       const conta = await resolver(tipoLinha, t.codigoTributo);
-      lines.push({ conta, tipo: "D", valor: round2(valor), ordem: ordem++, tipoLinha, codigoTributo: t.codigoTributo });
+      lines.push({ conta, tipo: "D", valor: round2(valor), ordem: ordem++, tipoLinha, codigoTributo: t.codigoTributo, historico: historicoPorPapel[tipoLinha] || null });
     }
   }
   const contaCaixa = await resolver("CAIXA", null);
-  lines.push({ conta: contaCaixa, tipo: "C", valor: round2(parcela.valorTotal), ordem: ordem++, tipoLinha: "CAIXA", codigoTributo: null });
+  lines.push({ conta: contaCaixa, tipo: "C", valor: round2(parcela.valorTotal), ordem: ordem++, tipoLinha: "CAIXA", codigoTributo: null, historico: historicoPorPapel.CAIXA || null });
   return lines;
 }
 
@@ -359,7 +463,7 @@ async function linhasPagamento(tx, { portalClientId, tipoParcelamento, parcela, 
  * (que já indexa por `tipoLinha` + `codigoTributo`) permite mandar o TJLP 0380 para uma conta
  * diferente da dos juros comuns, sem papel novo.
  */
-async function linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamento, classificacao, contaPorPapel = {} }) {
+async function linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamento, classificacao, contaPorPapel = {}, historicoPorPapel = {} }) {
   const lines = [];
   let ordem = 0;
   const resolver = async (tipoLinha, codigoTributo) =>
@@ -385,7 +489,7 @@ async function linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamen
     for (const [tipoLinha, valor] of [["PARC", item.principal], ["MULTA", item.multa], ["JUROS", item.juros]]) {
       if (!valor || round2(valor) <= 0) continue;
       const conta = await resolver(tipoLinha, item.codigo);
-      lines.push({ conta, tipo: "D", valor: round2(valor), ordem: ordem++, tipoLinha, codigoTributo: item.codigo });
+      lines.push({ conta, tipo: "D", valor: round2(valor), ordem: ordem++, tipoLinha, codigoTributo: item.codigo, historico: historicoPorPapel[tipoLinha] || null });
     }
   }
 
@@ -400,14 +504,14 @@ async function linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamen
     const valor = round2(item.total);
     if (valor <= 0) continue;
     const conta = await resolver("JUROS", item.codigo);
-    lines.push({ conta, tipo: "D", valor, ordem: ordem++, tipoLinha: "JUROS", codigoTributo: item.codigo });
+    lines.push({ conta, tipo: "D", valor, ordem: ordem++, tipoLinha: "JUROS", codigoTributo: item.codigo, historico: historicoPorPapel.JUROS || null });
   }
 
   // ⚠ O crédito sai da soma das duas naturezas, não de um total recebido de fora: é essa
   // identidade que faz o lote fechar, e ela é conferida logo abaixo.
   const totalDebitos = round2(lines.reduce((s, l) => s + l.valor, 0));
   const contaCaixa = await resolver("CAIXA", null);
-  lines.push({ conta: contaCaixa, tipo: "C", valor: totalDebitos, ordem: ordem++, tipoLinha: "CAIXA", codigoTributo: null });
+  lines.push({ conta: contaCaixa, tipo: "C", valor: totalDebitos, ordem: ordem++, tipoLinha: "CAIXA", codigoTributo: null, historico: historicoPorPapel.CAIXA || null });
   return lines;
 }
 
@@ -463,7 +567,16 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
         data: {
           portalClientId,
           label: `PARCELAMENTO ${dto.tipo}${dto.numeroParcelamento ? ` Nº ${dto.numeroParcelamento}` : ""}`,
-          kind: (dto.tipo === "INSS" || dto.tipo.startsWith("PARCMEI")) ? "INSS" : "SIMPLES", // compat com campo legado
+          // ⚠ Campo LEGADO, e por isso mesmo ele não pode mentir. O schema declara
+          // `SIMPLES | INSS | DARF | OUTRO`, e o LUCRO PRESUMIDO é acordo de **DARF**
+          // (PIS/COFINS/IRPJ/CSLL) — chamá-lo de "SIMPLES" seria a mesma classe de colapso que o
+          // prefixo `/^PARC(SN|MEI)/` custou uma vez: natureza errada gravada em silêncio.
+          // ⚠ Medido antes de gravar: todo leitor de `kind` no V2 é fallback de `tipo`
+          // (`parc.tipo || parc.kind`), e o LP sempre tem `tipo` — o único consumidor real é
+          // `parcLineEventType` do V1, que produz uma chave de memória própria por `kind`.
+          kind: dto.tipo === "LUCRO_PRESUMIDO"
+            ? "DARF"
+            : (dto.tipo === "INSS" || dto.tipo.startsWith("PARCMEI")) ? "INSS" : "SIMPLES",
           tipo: dto.tipo,
           numeroParcelamento: dto.numeroParcelamento,
           origem: dto.origem,
@@ -971,10 +1084,7 @@ export async function gerarPagamentoParcelaFromGuide({
     };
 
   // Q28: contas por papel vindas da config do parcelamento (definida no modal de entrada).
-  const contaPorPapel = {};
-  for (const l of Array.isArray(parcelamento.configPagamento) ? parcelamento.configPagamento : []) {
-    if (l?.tipoLinha && String(l.conta || "").trim()) contaPorPapel[l.tipoLinha] = String(l.conta).trim();
-  }
+  const { contaPorPapel, historicoPorPapel } = mapasDaConfigPagamento(parcelamento.configPagamento);
 
   return prisma.$transaction(async (tx) => {
     // ⚠ A GUIA É RESERVADA ANTES DE QUALQUER LANÇAMENTO — e é isto que impede a baixa DUPLICADA.
@@ -1002,8 +1112,8 @@ export async function gerarPagamentoParcelaFromGuide({
     // Com comprovante, o CÓDIGO DE RECEITA separa amortização de encargo corrente; sem ele, o
     // caminho antigo, que não tem como fazer essa distinção.
     const pagLines = usaComprovante
-      ? await linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamento, classificacao: classificacaoComprovante, contaPorPapel })
-      : await linhasPagamento(tx, { portalClientId, tipoParcelamento, parcela, contaPorPapel });
+      ? await linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamento, classificacao: classificacaoComprovante, contaPorPapel, historicoPorPapel })
+      : await linhasPagamento(tx, { portalClientId, tipoParcelamento, parcela, contaPorPapel, historicoPorPapel });
     // Q24: cada componente vira um lançamento individual (1 perna). Balanço fecha no conjunto.
     const entries = await criarLancamentosIndividuais(tx, {
       portalClientId, parcelamentoId: parcelamento.id, linhas: pagLines,
@@ -1016,8 +1126,9 @@ export async function gerarPagamentoParcelaFromGuide({
       // está PAID e o documento existe); o que foi declarado é só a decomposição. Usar a frase da
       // F2.2 afirmaria menos evidência do que existe, e é justamente a distinção que precisa
       // sobreviver a quem for auditar.
-      historicoBase: `PAGAMENTO ${tipoParcelamento} PARC ${guide.numeroParcela || "?"}/${parcelamento.numParcelas || "?"} - ${competencia}`
-        + (declarada ? " (composição declarada)" : ""),
+      historicoBase: `PAGAMENTO ${tipoParcelamento} PARC ${guide.numeroParcela || "?"}/${parcelamento.numParcelas || "?"} - ${competencia}`,
+      // ⚠ Vai SEPARADA para sobreviver à descrição que o contador escreve — ver o parâmetro.
+      marcaProcedencia: declarada ? "(composição declarada)" : null,
       statusPagamento: "PAGO",
       openEntryId: parcelamento.aberturaEntryId,
       sourceGuideId: guide.id,
@@ -1186,10 +1297,7 @@ export async function gerarPagamentoParcelaManual({
   const tipoParcelamento = parcelamento.tipo || parcelamento.kind || "OUTRO";
 
   // Contas por papel vindas da CONFIG do parcelamento — a MESMA leitura da baixa por guia.
-  const contaPorPapel = {};
-  for (const l of Array.isArray(parcelamento.configPagamento) ? parcelamento.configPagamento : []) {
-    if (l?.tipoLinha && String(l.conta || "").trim()) contaPorPapel[l.tipoLinha] = String(l.conta).trim();
-  }
+  const { contaPorPapel, historicoPorPapel } = mapasDaConfigPagamento(parcelamento.configPagamento);
 
   // ⚠ A COMPOSIÇÃO SINTÉTICA, com `codigoTributo: null` — e o nulo é honesto. `TributoParcela` é
   // chaveado por `guideId`; sem guia não há composição por tributo, e inventar um código de receita
@@ -1239,7 +1347,7 @@ export async function gerarPagamentoParcelaManual({
     // as contas por papel (config → MapaContaTributo → em branco) e emite
     // `D PARC / D JUROS / D MULTA / C CAIXA`, pulando componente zerado.
     const pagLines = await linhasPagamento(tx, {
-      portalClientId, tipoParcelamento, parcela: parcelaParaLinhas, contaPorPapel,
+      portalClientId, tipoParcelamento, parcela: parcelaParaLinhas, contaPorPapel, historicoPorPapel,
     });
 
     const entries = await criarLancamentosIndividuais(tx, {
@@ -1251,7 +1359,9 @@ export async function gerarPagamentoParcelaManual({
       lote: `PARCV2-${parcelamento.id.slice(0, 8)}-PAGM-${parcela.numeroParcela || "x"}`,
       // Nível 3: em texto, no razão, para quem nunca vai abrir a coluna `origemBaixa`.
       historicoBase: `PAGAMENTO ${tipoParcelamento} PARC ${parcela.numeroParcela || "?"}/`
-        + `${parcelamento.numParcelas || "?"} - ${competencia} (declarado)`,
+        + `${parcelamento.numParcelas || "?"} - ${competencia}`,
+      // ⚠ Vai SEPARADA para sobreviver à descrição que o contador escreve — ver o parâmetro.
+      marcaProcedencia: "(declarado)",
       statusPagamento: "PAGO",
       openEntryId: parcelamento.aberturaEntryId,
       // ⚠ SEM GUIA — e é justamente este nulo que tira o lote do alcance de `uq_baixa_guia_linha`.

@@ -9833,6 +9833,50 @@ export function createMockApi() {
       return { ok: true, data: { parcelamentoId: novo.id, criouParcelamento: true, marcadasHistorico: jaPagas } };
     },
 
+    /**
+     * ⚠⚠ O RECIBO DA NEGOCIAÇÃO, OFFLINE — e ele traz os números do documento REAL (01/09/2026).
+     *
+     * Sem isto o caminho inteiro do parcelamento do Lucro Presumido (o botão, o preenchimento por
+     * tributo, a divergência) só existiria em produção — a sétima vez que um mock esconderia um
+     * ramo nesta base.
+     *
+     * ⚠ Os valores são os do recibo anexado pelo dono (SINTROPIA, 60 × 4.714,17), com **CNPJ e
+     * número do parcelamento ANONIMIZADOS** — mesmo formato, dígitos fabricados, como as fixtures
+     * do SITFIS. Os VALORES e os CÓDIGOS DE RECEITA não foram tocados: são estrutura, e é deles
+     * que a conferência da soma depende.
+     */
+    async lerReciboParcelamento(companyId, file) {
+      await delay(120);
+      // ⚠ O nome do arquivo é a sentinela do caso de falha, como no lote de NFS-e — sem ela, o
+      // ramo "este PDF não é um recibo" só existiria em produção.
+      if (/#ilegivel/i.test(String(file?.name || ""))) {
+        const err = new Error("Não encontramos a lista de débitos neste PDF.");
+        err.status = 422;
+        err.code = "recibo_sem_debitos";
+        throw err;
+      }
+      return {
+        ok: true,
+        recibo: {
+          numeroParcelamento: "0211.00012.0104884128.26-54",
+          modalidade: "Parcelamento Simplificado",
+          dataConsolidacao: "17/08/2026",
+          quantidadeParcelas: 60,
+          valorParcela: 4714.17,
+          saldoAParcelar: 282850.29,
+          consolidado: { principal: 232466.4, multa: 46493.25, juros: 3890.64, total: 282850.29 },
+          debitos: [],
+          porTributo: [
+            { tributo: "IRPJ", codigo: "2089", principal: 135952.51, multa: 27190.5, juros: 2310.03, total: 165453.04, periodos: ["1º Trimestre/2026", "2º Trimestre/2026"] },
+            { tributo: "COFINS", codigo: "2172", principal: 36425.3, multa: 7285.05, juros: 568.71, total: 44279.06, periodos: ["maio/2026", "junho/2026"] },
+            { tributo: "CSLL", codigo: "2372", principal: 52196.45, multa: 10439.28, juros: 888.69, total: 63524.42, periodos: ["1º Trimestre/2026", "2º Trimestre/2026"] },
+            { tributo: "PIS", codigo: "8109", principal: 7892.14, multa: 1578.42, juros: 123.21, total: 9593.77, periodos: ["maio/2026", "junho/2026"] },
+          ],
+          divergencias: [],
+        },
+      };
+    },
+
     // ⚠ A MEMÓRIA DE CONTAS É DO ESCRITÓRIO E NASCE VAZIA numa modalidade nova. É essa distinção
     // que o passo 3 do wizard usa para abrir em modo edição na PRIMEIRA VEZ de uma modalidade —
     // um mock que sempre devolvesse contas esconderia esse caminho inteiro.

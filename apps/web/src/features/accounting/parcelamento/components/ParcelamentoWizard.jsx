@@ -15,7 +15,7 @@ import { AccountCodeInput } from "../../entries/components/renderAccountingEntri
 import {
   MODALIDADES, FORMAS_PAGAMENTO, SITUACOES, PASSOS, ROLE_LABEL,
   PAPEIS_PROVISAO, linhaComPapel, papelDivergeDoLado,
-  estadoInicial, validarPasso, montarPayloadIngestao, oQueSePerdeAoFechar,
+  estadoInicial, validarPasso, montarPayloadIngestao, oQueSePerdeAoFechar, camposDoRecibo,
   textoDoRodapePasso2, somasProvisao, competenciaProximaParcela, proximaParcela,
   parcelasRestantes, vencimentoDaCompetencia, formatarMoeda, numero, inteiro, rotuloModalidade,
 } from "../lib/wizardParcelamento";
@@ -80,7 +80,7 @@ function Progresso({ passo }) {
 }
 
 export function ParcelamentoWizard({
-  onIngest, onClose, onConsultSerpro, getContasProvisao,
+  onIngest, onClose, onConsultSerpro, getContasProvisao, onLerRecibo,
   accounts = [], onSearchHistoricos, onGetHistoricosByCode,
   saving = false,
 }) {
@@ -94,6 +94,10 @@ export function ParcelamentoWizard({
   // Passo 1 — atalho SERPRO (opcional, NUNCA obrigatório).
   const [serproBusy, setSerproBusy] = useState(false);
   const [serproDesfecho, setSerproDesfecho] = useState(null); // { tom, titulo, detalhe }
+
+  // Passo 1 — o recibo da negociação (opcional, e só do Lucro Presumido).
+  const [reciboBusy, setReciboBusy] = useState(false);
+  const [reciboDesfecho, setReciboDesfecho] = useState(null); // { tom, titulo, detalhe }
 
   // Passo 3 — modo edição das linhas + composição por tributo colapsada.
   const [editando, setEditando] = useState(false);
@@ -219,6 +223,49 @@ export function ParcelamentoWizard({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  /**
+   * ⚠⚠ O RECIBO PREENCHE, O CONTADOR MANDA (01/09/2026).
+   *
+   * > Dono: *"o pdf preenche o layout mas o contador pode modificar qualquer campo, como faz hoje"*.
+   *
+   * A rota **só lê** — não grava parcelamento, lançamento nem parcela. O que volta preenche os
+   * campos e as linhas, que continuam editáveis exatamente como antes. Nada aqui avança passo,
+   * nada aqui envia: o contador confere e segue.
+   *
+   * ⚠ **As DIVERGÊNCIAS do recibo aparecem**, e não bloqueiam: o documento é a fonte, e recusá-lo
+   * deixaria o contador sem caminho. Ele lê o aviso e corrige o campo.
+   */
+  async function lerRecibo(arquivo) {
+    if (!arquivo || !onLerRecibo) return;
+    setReciboBusy(true);
+    setReciboDesfecho(null);
+    try {
+      const r = await onLerRecibo(arquivo);
+      const recibo = r?.recibo || r;
+      const campos = camposDoRecibo(recibo);
+      setDados((atual) => ({ ...atual, ...campos }));
+      // ⚠ Sem template de contas para a modalidade nova, o passo 3 tem de abrir EDITÁVEL — senão o
+      // contador vê uma tabela com as contas em branco e nenhum caminho para preenchê-las.
+      setEditando(true);
+      const divergencias = Array.isArray(recibo?.divergencias) ? recibo.divergencias : [];
+      setReciboDesfecho(divergencias.length
+        ? { tom: "atencao", titulo: "Lemos o recibo — confira estes pontos", detalhe: divergencias.join(" ") }
+        : {
+          tom: "ok",
+          titulo: `Recibo lido: ${(recibo?.porTributo || []).length} tributo(s), ${recibo?.quantidadeParcelas || "?"} parcelas`,
+          detalhe: "Os campos e as linhas foram preenchidos. Confira tudo antes de criar — você pode mudar qualquer campo.",
+        });
+    } catch (err) {
+      setReciboDesfecho({
+        tom: "erro",
+        titulo: "Não deu para ler este PDF",
+        detalhe: err?.message || "Confira se é o \"Recibo da negociação\" do e-CAC.",
+      });
+    } finally {
+      setReciboBusy(false);
+    }
+  }
 
   async function consultarSerpro() {
     setSerproDesfecho(null);
@@ -376,6 +423,41 @@ export function ParcelamentoWizard({
               <textarea rows={2} value={dados.descricao} onChange={(e) => set({ descricao: e.target.value })}
                 placeholder="Ex.: DAS de SET/OUT/NOV/2024 e MAR..NOV/2025" style={{ ...FIELD, resize: "vertical" }} />
             </Campo>
+
+            {/* ⚠⚠ O RECIBO DA NEGOCIAÇÃO — só no Lucro Presumido, e sempre OPCIONAL.
+                Dono: *"o pdf preenche o layout mas o contador pode modificar qualquer campo"*.
+                ⚠ Ele aparece só nesta modalidade porque é o documento dela; nas outras não há
+                recibo com lista de débitos por código de receita para ler. Botão que aparece sem
+                servir treina a ignorar a caixa inteira. */}
+            {dados.tipo === "LUCRO_PRESUMIDO" && (
+              <div style={{ border: `1px dashed ${PANEL.border}`, borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontSize: "0.8rem", fontWeight: 700 }}>Recibo da negociação (PDF, opcional)</div>
+                    <div style={{ fontSize: "0.68rem", color: PANEL.muted }}>
+                      Preenche os valores por tributo, os juros, a multa e o valor da parcela. Você confere e corrige tudo.
+                    </div>
+                  </div>
+                  <label
+                    className="btn btn-sm btn-secondary"
+                    style={{ cursor: onLerRecibo && !reciboBusy ? "pointer" : "not-allowed", opacity: onLerRecibo ? 1 : 0.6 }}
+                    title={!onLerRecibo ? "A leitura não está disponível neste modo de API." : "Lê o PDF e preenche os campos — não grava nada."}
+                  >
+                    {reciboBusy ? "Lendo…" : "Escolher o PDF"}
+                    <input
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      style={{ display: "none" }}
+                      disabled={reciboBusy || !onLerRecibo}
+                      onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; lerRecibo(f); }}
+                    />
+                  </label>
+                </div>
+                {reciboDesfecho && (
+                  <Aviso tom={reciboDesfecho.tom} titulo={reciboDesfecho.titulo}>{reciboDesfecho.detalhe}</Aviso>
+                )}
+              </div>
+            )}
 
             {/* Atalho OPCIONAL. Nunca é caminho obrigatório e nunca bloqueia o wizard. */}
             <div style={{ border: `1px dashed ${PANEL.border}`, borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>

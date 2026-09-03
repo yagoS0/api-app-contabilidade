@@ -148,6 +148,49 @@ describe("o caminho normal: parcela sem guia nenhuma vira lançamento", () => {
   });
 });
 
+describe("⚠⚠ a DESCRIÇÃO DO PAGAMENTO que o contador escreveu (01/09/2026)", () => {
+  // > Dono: *"as descrições devem ser a descrição que o contador escreveu, descrição da provisão
+  // > **e descrição do pagamento**, devemos poder modificar qualquer campo"*.
+  //
+  // ⚠⚠ ELA É CONFIG DO CONTRATO, COMO A CONTA — vale para toda prestação, e é por isso que mora em
+  // `configPagamento` e não num campo por baixa: a frase do razão dele é sempre a mesma forma
+  // ("PAGO PARC PIS,COFINS,CSLL E IRPJ 02/45 12/2025"), mês após mês.
+  const CONFIG_COM_TEXTO = [
+    { tipoLinha: "PARC", tipo: "D", conta: "588", historico: "PAGO PARC PIS,COFINS,CSLL E IRPJ" },
+    { tipoLinha: "JUROS", tipo: "D", conta: "501", historico: "PAGO JUROS S/ PARC" },
+    { tipoLinha: "CAIXA", tipo: "C", conta: "5" },
+  ];
+
+  it("cada papel leva a frase DELE — e o papel sem frase segue com o derivado", async () => {
+    prisma.parcelamento.findFirst.mockResolvedValue({ ...PARCELAMENTO, configPagamento: CONFIG_COM_TEXTO });
+    await baixar();
+    const porPapel = Object.fromEntries(__criados.map((e) => [e.tipoLinha, e.historico]));
+    expect(porPapel.PARC).toContain("PAGO PARC PIS,COFINS,CSLL E IRPJ");
+    expect(porPapel.JUROS).toContain("PAGO JUROS S/ PARC");
+    // MULTA não tem frase na config: histórico derivado, exatamente como antes desta entrega.
+    expect(porPapel.MULTA).toContain("PAGAMENTO PARCSN PARC 7/60");
+    expect(porPapel.MULTA).not.toContain("PAGO ");
+  });
+
+  it("⚠⚠ a frase do contador NÃO APAGA o \"(declarado)\" — o sinal de procedência sobrevive", async () => {
+    // Este é o ponto delicado da mudança. A marca vivia GRUDADA no `historicoBase`; substituir o
+    // histórico inteiro pela frase do contador a levaria junto, e a baixa por DECLARAÇÃO passaria
+    // a se ler, no razão, como uma baixa PROVADA. Por isso ela viaja separada.
+    prisma.parcelamento.findFirst.mockResolvedValue({ ...PARCELAMENTO, configPagamento: CONFIG_COM_TEXTO });
+    await baixar();
+    for (const e of __criados) expect(e.historico).toContain("(declarado)");
+  });
+
+  it("⚠ config SEM histórico produz o texto EXATO de antes — nenhum contrato existente muda", async () => {
+    prisma.parcelamento.findFirst.mockResolvedValue({
+      ...PARCELAMENTO,
+      configPagamento: [{ tipoLinha: "PARC", tipo: "D", conta: "588" }],
+    });
+    await baixar();
+    expect(__criados[0].historico).toBe("PAGAMENTO PARCSN PARC 7/60 - 2026-07 (declarado) — parcelamento a pagar");
+  });
+});
+
 describe("⚠ o cinto do banco NÃO alcança este caminho — daí a reserva na parcela", () => {
   it("os lançamentos nascem com `sourceGuideId` NULL, fora de `uq_baixa_guia_linha`", async () => {
     await baixar();

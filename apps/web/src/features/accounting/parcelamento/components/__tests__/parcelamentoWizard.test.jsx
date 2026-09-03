@@ -174,11 +174,15 @@ describe("passo 3", () => {
     await act(async () => { clicar(/Criar parcelamento/); });
     const body = onIngest.mock.calls[0][0];
 
+    // ⚠ `codigoTributo` e `historico` entraram em 01/09/2026 (parcelamento do Lucro Presumido), e
+    // aqui os dois são NULOS de propósito: esta é a modalidade sem código de receita por linha, e
+    // as descrições continuam sendo os RÓTULOS dos papéis — não algo que o contador escreveu.
+    // É o lado que prova que a mudança não mexeu em nenhuma modalidade existente.
     expect(body.provisaoLines).toEqual([
-      { tipoLinha: "PRINCIPAL", tipo: "D", conta: "265", valor: 10000 },
-      { tipoLinha: "JUROS", tipo: "D", conta: "501", valor: 2500 },
-      { tipoLinha: "MULTA", tipo: "D", conta: "", valor: 500 },
-      { tipoLinha: "PARC", tipo: "C", conta: "553", valor: 13000 },
+      { tipoLinha: "PRINCIPAL", tipo: "D", conta: "265", valor: 10000, codigoTributo: null, historico: null },
+      { tipoLinha: "JUROS", tipo: "D", conta: "501", valor: 2500, codigoTributo: null, historico: null },
+      { tipoLinha: "MULTA", tipo: "D", conta: "", valor: 500, codigoTributo: null, historico: null },
+      { tipoLinha: "PARC", tipo: "C", conta: "553", valor: 13000, codigoTributo: null, historico: null },
     ]);
     expect(body.header.valorPrincipal).toBe(10000);
     expect(body.header.valorJuros).toBe(2500);

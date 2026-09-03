@@ -128,8 +128,8 @@ export function situacaoFiscalComSimbolo(chave) {
 //      que o põe no `title` da linha).
 //
 // ⚠ AS MODALIDADES SÃO DUAS FAMÍLIAS, NÃO UMA. `TIPOS_PARCELAMENTO`
-// (`apps/api/src/application/accounting/parcelamento/contracts.js`) tem DEZ valores: 4 do Simples
-// Nacional + 4 do MEI (os 8 da documentação oficial), mais `INSS` e `OUTRO`.
+// (`apps/api/src/application/accounting/parcelamento/contracts.js`) tem ONZE valores: 4 do Simples
+// Nacional + 4 do MEI (os 8 da documentação oficial), mais `INSS`, `LUCRO_PRESUMIDO` e `OUTRO`.
 //
 // ⚠ `INSS` E `OUTRO` NUNCA COLAPSAM. INSS é parcelamento previdenciário, não do Simples: chamá-lo
 // de "PARC SN" seria trocar um erro por outro — é literalmente o erro que `rotuloGuia` já existe
@@ -161,8 +161,11 @@ export const FAMILIAS_PARCELAMENTO = Object.freeze({
   }),
 });
 
-/** Conhecidas e SEM família — não colapsam, e isso é o desenho, não uma lacuna. */
-export const MODALIDADES_SEM_FAMILIA = Object.freeze(["INSS", "OUTRO"]);
+/** Conhecidas e SEM família — não colapsam, e isso é o desenho, não uma lacuna.
+ *  ⚠ `LUCRO_PRESUMIDO` (01/09/2026) entra aqui pelo mesmo motivo do INSS: as contas dele são
+ *  outras (a memória é por `(papel, código de receita)`, com 8109/2172/2089/2372), e mandá-lo para
+ *  a chave do Simples orfanaria o padrão dele no primeiro acordo. */
+export const MODALIDADES_SEM_FAMILIA = Object.freeze(["INSS", "OUTRO", "LUCRO_PRESUMIDO"]);
 
 /** Quando nem modalidade existe (parcelamento do caminho V1, que não grava `tipo`). */
 const ROTULO_SEM_MODALIDADE = "Parcelamento";

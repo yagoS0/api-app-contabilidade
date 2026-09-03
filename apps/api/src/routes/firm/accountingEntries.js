@@ -4272,6 +4272,59 @@ export function createAccountingEntriesRouter({ log }) {
     }
   });
 
+  /**
+   * POST /firm/companies/:companyId/parcelamentos/recibo/leitura — LÊ o recibo da negociação da RFB.
+   *
+   * > Dono (01/09/2026): *"o pdf preenche o layout mas o contador pode modificar qualquer campo,
+   * > como faz hoje"*.
+   *
+   * ⚠⚠ **ELA NÃO GRAVA NADA.** Nenhum parcelamento, nenhum lançamento, nenhuma parcela — só lê o
+   * PDF e devolve o que está escrito nele, para o wizard PREENCHER os campos que o contador vai
+   * conferir e corrigir. Quem grava continua sendo `POST /parcelamentos/ingestao`, com o que a
+   * TELA enviar. É o mesmo desenho de `POST .../nfse/lote/leitura`.
+   *
+   * ⚠ **Rota LITERAL, e ela vem ANTES de qualquer curinga de `/parcelamentos/:algo`** — engolida
+   * por um, ela responderia 404 falando de um parcelamento inexistente. A mesma disciplina de
+   * `parcelas-pendentes-baixa` e `parcelas-sem-guia-pendentes`.
+   *
+   * ⚠ **O `pdf-parse` é carregado por `import()` DINÂMICO**, como no SITFIS: ele lê um arquivo de
+   * teste na carga do módulo em algumas versões, e prendê-lo no topo da fábrica de rotas faria o
+   * boot da API depender disso.
+   */
+  router.post(
+    "/parcelamentos/recibo/leitura",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    upload.single("arquivo"),
+    async (req, res) => {
+      const buf = req.file?.buffer;
+      if (!buf?.length) return res.status(400).json({ ok: false, error: "arquivo_obrigatorio" });
+      try {
+        const { default: pdfParse } = await import("pdf-parse");
+        const { text } = await pdfParse(buf);
+        const { parseReciboParcelamento } = await import(
+          "../../application/fiscal/serpro/parseReciboParcelamento.js"
+        );
+        const recibo = parseReciboParcelamento(text);
+        // ⚠ Recibo sem NENHUM débito não é sucesso vazio: ou não é um recibo de negociação, ou a
+        // leitura falhou. Devolver `{debitos: []}` faria o wizard abrir em branco parecendo que o
+        // documento não tinha nada — e o contador lançaria a partir de um formulário mudo.
+        if (!recibo.debitos.length) {
+          return res.status(422).json({
+            ok: false,
+            error: "recibo_sem_debitos",
+            message:
+              "Não encontramos a lista de débitos neste PDF. Confira se é o \"Recibo da negociação\" "
+              + "do e-CAC (Pagamentos e Parcelamentos) — e não o extrato ou o DARF da parcela.",
+          });
+        }
+        return res.json({ ok: true, recibo });
+      } catch (err) {
+        log?.error?.({ err }, "falha ao ler o recibo de parcelamento");
+        return res.status(422).json({ ok: false, error: "recibo_ilegivel", message: err?.message || null });
+      }
+    },
+  );
+
   // Q21 (spec v2) / F2.3 — POST /firm/companies/:companyId/parcelamentos/ingestao
   //
   // ⚠ ESTA É A PORTA DO "PARCELAMENTO-FIRST". O parcelamento é um CONTRATO de dívida que vive até

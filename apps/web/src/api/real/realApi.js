@@ -1211,6 +1211,20 @@ export function createRealApi() {
         body: JSON.stringify(body),
       });
     },
+    /**
+     * Lê o "Recibo da negociação" da RFB e devolve o que está escrito nele.
+     *
+     * ⚠ **SÓ LEITURA** — a rota não grava parcelamento, lançamento nem parcela. O que volta
+     * PREENCHE o wizard, que continua editável campo a campo (pedido do dono, 01/09/2026).
+     */
+    async lerReciboParcelamento(companyId, file) {
+      const formData = new FormData();
+      formData.append("arquivo", file);
+      return request(`/firm/companies/${companyId}/parcelamentos/recibo/leitura`, {
+        method: "POST",
+        body: formData,
+      });
+    },
     // Q23: contas memorizadas das linhas-padrão da provisão (pré-preenche o modal).
     async getContasProvisao(companyId, tipo) {
       return request(`/firm/companies/${companyId}/parcelamentos/contas-provisao?tipo=${encodeURIComponent(tipo)}`);
