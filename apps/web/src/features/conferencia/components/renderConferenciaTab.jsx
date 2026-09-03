@@ -17,6 +17,7 @@ import { createApiClient } from "../../../api/client";
 import { Button } from "../../../components/ui/Button";
 import { Modal } from "../../../components/ui/Modal";
 import { ModalDaVarredura } from "./ModalDaVarredura";
+import { ModalDaClassificacaoIa } from "./ModalDaClassificacaoIa";
 import { ModalDeContabilizacao } from "./ModalDeContabilizacao";
 import { PainelDeCasamentos } from "./PainelDeCasamentos";
 // ⚠⚠ A RECORRÊNCIA NÃO É ABA — decisão do dono (*"muitas abas"*, 24/08/2026). O plano manda a
@@ -42,6 +43,7 @@ import { contasDeCreditoOferecidas } from "../lib/regraDoFornecedor";
 import {
   ESTADO_DA_AUTOMACAO,
   leituraDaAutomacao,
+  podeSugerirComIa,
   ACAO,
   COMPETENCIA_AUSENTE,
   ORIGEM_PAGAMENTO,
@@ -1090,6 +1092,8 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState(null);
   const [varrendo, setVarrendo] = useState(false);
+  // ⚠ O diálogo do botão «Sugerir contas com IA» (02/09/2026). Ver `podeSugerirComIa`.
+  const [sugerindoIa, setSugerindoIa] = useState(false);
   // ⚠ A gaveta do extrato das regras. Ver o bloco na seção «Regras».
   const [vendoLancadosPorRegra, setVendoLancadosPorRegra] = useState(false);
   /**
@@ -1465,6 +1469,27 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
                 avulso, e o que o botão abre é a troca da data que vale daqui em diante. */}
             {automacao?.ligada ? "Trazer notas · ajustar" : "Trazer notas"}
           </Button>
+          {/* ⚠⚠ «SUGERIR CONTAS COM IA» — dono, 02/09/2026: *"a IA é um botão em cima de tudo"*.
+              Só aparece quando o SERVIDOR diz que a integração está ligada (`iaClassificacaoLigada`
+              na fila) — integração desligada não é "ação bloqueada", é ação que não existe neste
+              ambiente. Com ela ligada, o botão fica VISÍVEL e desabilitado COM o motivo quando não
+              há linha sem regra nem histórico: regra > histórico > IA, e a IA só entra onde
+              ninguém sabe. ⚠ Ela grava PROPOSTAS — nada é lançado por este botão. */}
+          {(() => {
+            const ia = podeSugerirComIa(fila, { podeEscrever });
+            if (!ia.visivel) return null;
+            return (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setSugerindoIa(true)}
+                disabled={!ia.pode}
+                title={ia.pode ? `Pedir ao modelo débito e crédito para ${ia.candidatas} linha(s) sem regra nem histórico.` : ia.frase}
+              >
+                Sugerir contas com IA
+              </Button>
+            );
+          })()}
           {/* ⚠⚠ A PORTA DO LOTE — *"ai clicamos em importar e abre o modal para trabalharmos nele"*.
               O botão fica VISÍVEL e desabilitado com o motivo: botão que some esconde que a ação
               existe. ⚠ Ele NÃO checa `podeEscolherConta` para aparecer — quem separa o que entra é
@@ -1926,6 +1951,21 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
             // sendo trazidas sozinhas"* até alguém recarregar a página. A tela negava, por escrito,
             // o que o contador tinha acabado de fazer.
             lerAutomacao();
+          }}
+        />
+      ) : null}
+
+      {sugerindoIa ? (
+        <ModalDaClassificacaoIa
+          companyId={companyId}
+          competencia={recorte === "competencia" ? competencia : COMPETENCIA_AUSENTE}
+          candidatas={podeSugerirComIa(fila, { podeEscrever }).candidatas}
+          aoFechar={() => setSugerindoIa(false)}
+          aoConcluir={() => {
+            // ⚠ As propostas moram na LINHA (colunas `*Ia`): sem recarregar, a tela negaria o que o
+            // relatório acabou de dizer.
+            carregar();
+            setVersao((v) => v + 1);
           }}
         />
       ) : null}

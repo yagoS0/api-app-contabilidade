@@ -627,6 +627,34 @@ export const IA_MODELO = (process.env.IA_MODELO || "claude-opus-5").trim();
 export const IA_ESFORCO = (process.env.IA_ESFORCO || "medium").trim();
 export const IA_MAX_TOKENS = Math.max(256, Number(process.env.IA_MAX_TOKENS || 2000));
 export const IA_MAX_ITERACOES = Math.max(1, Number(process.env.IA_MAX_ITERACOES || 6));
+
+/**
+ * ⚠⚠ A CLASSIFICAÇÃO DE LANÇAMENTOS POR IA — o botão da aba "A lançar" (dono, 02/09/2026: *"a IA é
+ * um botão em cima de tudo, ao clicar ela passa por todos os lançamentos colocando os códigos que
+ * ela decide"*).
+ *
+ * ⚠ NASCE DESLIGADA, como toda integração desta casa. Ligar é decisão do dono, por env — e exige a
+ * `ANTHROPIC_API_KEY` (a guarda recusa sem ela, registrando o motivo).
+ * ⚠ Ela NÃO lança nada: grava PROPOSTAS (`contaSugeridaIa`/`creditoSugeridoIa`), que o contador
+ * confirma linha a linha. E só onde nem regra nem histórico responderam — regra > IA, sempre.
+ */
+export const INTEGRACAO_IA_CLASSIFICACAO = process.env.INTEGRACAO_IA_CLASSIFICACAO === "1";
+/**
+ * ⚠ Teto de tokens PRÓPRIO desta finalidade: um lote de até 40 linhas, cada uma com duas contas e
+ * uma justificativa curta, não cabe nos 2.000 do assistente conversacional. 6.000 é folga para o
+ * lote cheio; o custo continua contado pela guarda, contra os mesmos tetos mensais.
+ */
+export const IA_MAX_TOKENS_CLASSIFICACAO = Math.max(1000, Number(process.env.IA_MAX_TOKENS_CLASSIFICACAO || 6000));
+
+// ⚠ O aviso fica DEPOIS da declaração — `const` em módulo ESM tem TDZ, e um `if` antes dela derruba
+// o boot inteiro com "Cannot access before initialization" (aconteceu no primeiro teste, 02/09).
+if (INTEGRACAO_IA_CLASSIFICACAO) {
+  log.warn(
+    "INTEGRACAO_IA_CLASSIFICACAO=1: o botão «Sugerir contas com IA» está LIGADO na Conferência. Cada clique "
+    + "chama o modelo (custo contado pela guarda, contra os tetos mensais) e grava PROPOSTAS de conta — "
+    + "nunca lançamentos. Só as linhas sem regra e sem histórico são enviadas.",
+  );
+}
 // ⚠ Os tetos são em CENTAVOS DE DÓLAR (a API cobra em USD; o preço por token está em
 // `precosIa.js`, versionado). Defaults: US$ 4/empresa/mês e US$ 60/escritório/mês — é a ordem
 // dos R$ 20 e R$ 300 da decisão do dono; ajuste é ato dele, por env.

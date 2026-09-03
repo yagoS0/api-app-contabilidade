@@ -668,6 +668,14 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     nunca eram alcançáveis offline; (3) **terceira vez** que um identificador órfão passa pelo
     `npm run build` — só teste ou `no-undef` pega.
 
+- [~] **Conferência — a linha inline e o botão de IA (02–03/09/2026)** — dono: *"cada linha deve
+  conter data, crédito e débito, todos modificáveis inline (…) a IA é um botão em cima de tudo (…)
+  apenas naqueles que não entraram a regra"*. **Bloco A** (linha: data · débito · crédito ·
+  «Lançar» · «Criar regra»; a regra passou a habilitar o crédito na entrada) e **Bloco B** (o botão
+  «Sugerir contas com IA»: propostas em colunas PRÓPRIAS, regra > histórico > IA, guarda de custo
+  por lote, flag `INTEGRACAO_IA_CLASSIFICACAO` nasce OFF com o SERVIDOR recusando). ⚠ Nada disto
+  lança — o contador confirma linha a linha. ⚠ Nenhuma chamada real à Anthropic saiu desta máquina.
+  Ver `apps/api/src/application/declarados/CLAUDE.md`, seção "A IA NA CONFERÊNCIA".
 - [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
   envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 

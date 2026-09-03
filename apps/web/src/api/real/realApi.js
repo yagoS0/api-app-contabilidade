@@ -2036,6 +2036,16 @@ export function createRealApi() {
     async getConferenciaVarredura(companyId) {
       return request(`/firm/companies/${companyId}/conferencia/varredura`);
     },
+    /**
+     * ⚠⚠ O BOTÃO «Sugerir contas com IA» (02/09/2026). Grava PROPOSTAS nas colunas `*Ia` das linhas
+     * sem regra e sem histórico — nunca lança. Flag OFF no servidor ⇒ 503 `ia_classificacao_desligada`.
+     */
+    async postClassificarIa(companyId, { competencia } = {}) {
+      const q = new URLSearchParams();
+      if (competencia) q.set("competencia", String(competencia));
+      const sufixo = q.toString() ? `?${q.toString()}` : "";
+      return request(`/firm/companies/${companyId}/conferencia/classificar-ia${sufixo}`, { method: "POST" });
+    },
 
     // ── A VARREDURA AUTOMÁTICA (01/09/2026) ───────────────────────────────────────────────────
     //

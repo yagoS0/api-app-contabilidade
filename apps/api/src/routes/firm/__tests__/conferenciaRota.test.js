@@ -63,6 +63,16 @@ jest.mock("../../../application/declarados/LancamentoPorRegraService.js", () => 
   lancarPorRegraNaEmpresa: jest.fn(async () => ({ lancados: 0, linhas: [] })),
 }));
 
+/**
+ * ⚠ A classificação por IA (02/09/2026) também precisa de dublê: o serviço real importa o SDK da
+ * Anthropic e lê a fila no banco. O que se mede aqui é a CAMADA HTTP — a flag virando 503 nomeado,
+ * o relatório voltando inteiro, a competência saindo do query e o piso de papel.
+ */
+jest.mock("../../../application/declarados/ClassificacaoPorIaService.js", () => ({
+  RECUSA_CLASSIFICACAO: { DESLIGADA: "ia_classificacao_desligada" },
+  classificarFila: jest.fn(async () => ({ ok: false, recusa: "ia_classificacao_desligada" })),
+}));
+
 jest.mock("../../../application/declarados/DeclaradoService.js", () => {
   const real = jest.requireActual("../../../application/declarados/DeclaradoService.js");
   return {
@@ -1225,5 +1235,96 @@ describe("⚠⚠ /conferencia/varredura-automatica", () => {
     jest.clearAllMocks();
     await LIGAR({ desde: "2026-07-01" });
     expect(requireFirmCompanyAccess.mock.calls.some(([o]) => o?.minRole === "ACCOUNTANT")).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠⚠ O BOTÃO «Sugerir contas com IA» — `POST /conferencia/classificar-ia` (02/09/2026)
+//
+// A regra (quem vai, catálogo, leitura conferida) está em `lib/__tests__/classificacaoPorIa.test.js`;
+// a ligação (nunca `contaAplicada`, guarda, lotes) em `__tests__/classificacaoPorIa.service.test.js`.
+// O que se prende AQUI: a flag OFF vira 503 NOMEADO (quem recusa é o servidor), o relatório volta
+// inteiro, a competência sai do query, e o piso é ACCOUNTANT — a mesma pessoa que pode lançar.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠⚠ POST /conferencia/classificar-ia — o botão de IA", () => {
+  const { classificarFila } = jest.requireMock("../../../application/declarados/ClassificacaoPorIaService.js");
+  const CLASSIFICAR = (qs = "") => request(makeApp()).post(`/firm/companies/emp-1/conferencia/classificar-ia${qs}`);
+
+  const relatorioBom = {
+    ok: true, recusa: null, semLinhas: false, linhasOlhadas: 12, linhasEnviadas: 3, lotes: 1,
+    propostas: 2, gravadas: 2,
+    recusadas: [{ id: "d-7", motivo: "conta_fora_do_plano", frase: "A IA indicou uma conta que não existe no plano desta empresa." }],
+    ilegiveis: 0, erros: [], recusadaPelaGuarda: null, custoEstimadoCentavos: 3, modelo: "claude-opus-5",
+  };
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("⚠⚠ flag OFF ⇒ 503 NOMEADO — o servidor recusa, não a tela", async () => {
+    classificarFila.mockResolvedValueOnce({ ok: false, recusa: "ia_classificacao_desligada" });
+    const r = await CLASSIFICAR();
+    expect(r.status).toBe(503);
+    expect(r.body).toMatchObject({ ok: false, error: "ia_classificacao_desligada" });
+    expect(r.body.message).toMatch(/INTEGRACAO_IA_CLASSIFICACAO/);
+  });
+
+  it("o relatório volta INTEIRO — propostas, recusadas com motivo, custo, modelo", async () => {
+    classificarFila.mockResolvedValueOnce(relatorioBom);
+    const r = await CLASSIFICAR("?competencia=2026-07");
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual(relatorioBom);
+  });
+
+  it("⚠ a empresa vem do PATH e a competência do QUERY — o corpo não escolhe a empresa", async () => {
+    classificarFila.mockResolvedValueOnce(relatorioBom);
+    await request(makeApp()).post("/firm/companies/emp-1/conferencia/classificar-ia?competencia=2026-07").send({ portalClientId: "emp-INVASORA" });
+    expect(classificarFila).toHaveBeenCalledWith({ portalClientId: "emp-1", competencia: "2026-07" });
+  });
+
+  it("sem competência, a fila inteira (null) — nunca um mês inventado", async () => {
+    classificarFila.mockResolvedValueOnce(relatorioBom);
+    await CLASSIFICAR();
+    expect(classificarFila).toHaveBeenCalledWith({ portalClientId: "emp-1", competencia: null });
+  });
+
+  it("⚠ a guarda recusando NÃO é 503 — a fila não caiu, e o relatório diz o motivo", async () => {
+    classificarFila.mockResolvedValueOnce({ ...relatorioBom, lotes: 0, propostas: 0, gravadas: 0, recusadas: [], recusadaPelaGuarda: { motivo: "teto_empresa", mensagem: "teto", apartirDoLote: 1 } });
+    const r = await CLASSIFICAR();
+    expect(r.status).toBe(200);
+    expect(r.body.recusadaPelaGuarda).toMatchObject({ motivo: "teto_empresa" });
+  });
+
+  it("⚠⚠ o piso é ACCOUNTANT — grava proposta na fila da empresa", async () => {
+    classificarFila.mockResolvedValueOnce(relatorioBom);
+    await CLASSIFICAR();
+    expect(requireFirmCompanyAccess.mock.calls.some(([o]) => o?.minRole === "ACCOUNTANT")).toBe(true);
+  });
+
+  it("⚠⚠ a rota NÃO chama `aplicarTransicao` — a IA propõe, nunca lança", async () => {
+    classificarFila.mockResolvedValueOnce(relatorioBom);
+    await CLASSIFICAR();
+    expect(aplicarTransicao).not.toHaveBeenCalled();
+  });
+
+  it("⚠ a fila serializa as colunas da PROPOSTA — campo fora do serializador some sem erro", async () => {
+    listarFila.mockResolvedValueOnce({
+      itens: [{
+        id: "d-1", origem: "NOTA_RECEBIDA", estado: "AGUARDANDO_PAGAMENTO", tipo: "SAIDA", valor: 890, valorAjustado: null,
+        competencia: "2026-07", dataDocumento: new Date("2026-07-02T00:00:00.000Z"), anexos: [], notaRecebida: null,
+        contaSugeridaIa: "411030012", creditoSugeridoIa: "111020001", justificativaIa: "nuvem = software",
+        sugeridaIaModelo: "claude-opus-5", sugeridaIaEm: new Date("2026-09-02T15:00:00.000Z"),
+      }],
+      total: 1, porEstado: {}, pagina: 1, porPagina: 50,
+    });
+    const r = await GET("?competencia=2026-07");
+    expect(r.status).toBe(200);
+    expect(r.body.itens[0]).toMatchObject({
+      contaSugeridaIa: "411030012",
+      creditoSugeridoIa: "111020001",
+      justificativaIa: "nuvem = software",
+      sugeridaIaModelo: "claude-opus-5",
+      sugeridaIaEm: "2026-09-02T15:00:00.000Z",
+    });
+    // linha sem proposta: `null`, nunca `undefined` (a tela distingue "não há" de "não veio")
+    expect(Object.prototype.hasOwnProperty.call(r.body.itens[0], "contaSugeridaIa")).toBe(true);
   });
 });

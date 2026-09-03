@@ -3085,6 +3085,16 @@ presunção, não prova), o extrato mensal *"lançados por regra"* com desfazer 
 OFX que **corrige** a data presumida sem criar um segundo lançamento. Ver
 `src/application/declarados/CLAUDE.md`, seção "FASE 6".
 
+⚠⚠ **`INTEGRACAO_IA_CLASSIFICACAO`** (02/09/2026) — o botão **«Sugerir contas com IA»** da
+Conferência. Nasce OFF, e com ela desligada o SERVIDOR recusa (`POST .../conferencia/classificar-ia`
+→ 503 `ia_classificacao_desligada`), não só a tela. Ligada, cada clique chama o modelo (Anthropic,
+`IA_MODELO`) em lotes de até 40 linhas, cada lote autorizado pela guarda de custo (`GuardaIaService`,
+falha fechado, `finalidade: classificacao_lancamentos`), e grava **PROPOSTAS** nas colunas
+`contaSugeridaIa`/`creditoSugeridoIa`/`justificativaIa` — **nunca `contaAplicada`, nunca `estado`**.
+Só as linhas **sem regra e sem histórico** são enviadas (regra > histórico > IA). Exige
+`ANTHROPIC_API_KEY`; `IA_MAX_TOKENS_CLASSIFICACAO` (6000) é o teto próprio do lote. Ver
+`src/application/declarados/CLAUDE.md`, seção "A IA NA CONFERÊNCIA".
+
 ⚠⚠ **`INTEGRACAO_NFSE_LOTE`** — a emissão de NFS-e **em lote**. Nasce OFF, e com ela desligada o
 SERVIDOR recusa (503 `emissao_lote_desligada`), não só a tela. Ligar é ato do dono, acompanhando o
 primeiro lote real: cada linha de planilha vira nota fiscal real e irreversível.

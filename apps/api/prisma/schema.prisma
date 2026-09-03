@@ -1382,6 +1382,11 @@ model ChamadaIa {
   conversaId           String?
   portalClientId       String?
   mensagemId           String?
+  /// ⚠⚠ PARA QUE a chamada foi feita (02/09/2026). Sem isto o teto mensal do escritório mistura o
+  /// assistente do WhatsApp com a classificação de lançamentos, e ninguém consegue dizer para onde
+  /// o dinheiro foi — nem desligar uma das duas sem desligar a outra.
+  /// ⚠ `null` = chamada anterior a esta coluna (as do assistente), e não se inventa origem para ela.
+  finalidade           String?
   modelo               String
   inputTokens          Int      @default(0)
   outputTokens         Int      @default(0)
@@ -4142,6 +4147,36 @@ model LancamentoDeclarado {
   /// PREFIXO do `codigoCompleto`. O que muda de conta numa compra de ativo é o DÉBITO
   /// (`contaAplicada`), que sempre foi livre.
   contaCredito      String?
+
+  /// ⚠⚠⚠ A PROPOSTA DA IA — e ela é PROPOSTA, nunca ato (02/09/2026). Dono: *"um botão que ao
+  /// clicar vai analisar os lançamentos e colocar as devidas contas, tendo o contador apenas que
+  /// verificar"*.
+  ///
+  /// ⚠⚠ **POR QUE COLUNAS PRÓPRIAS, E NÃO `contaAplicada`:** `contaAplicada` é o ATO do contador —
+  /// é o que `montarLancamento` lê para creditar o caixa. Escrever ali seria a IA praticando um
+  /// lançamento contábil, e o pedido é o oposto: ela propõe, ele verifica.
+  /// ⚠⚠ **E NÃO `contaSugerida`:** aquela é a sugestão DERIVADA (regra + histórico), calculada a
+  /// cada leitura e nunca gravada. Misturar as duas faria a tela dizer "sua regra escolheu" sobre
+  /// um palpite de modelo — e o contador confirmaria sem olhar.
+  ///
+  /// ⚠ Sempre `codigoCompleto`, como todo o resto do módulo. `null` = a IA não opinou nesta linha.
+  contaSugeridaIa   String?
+  /// ⚠ O crédito proposto. Vale a MESMA trava do escolhido à mão: só conta de DISPONIBILIDADE
+  /// (caixa/banco) — quem valida é `montarLancamento`, e a proposta é conferida antes de gravada.
+  creditoSugeridoIa String?
+  /// ⚠⚠ POR QUE a IA propôs isso — em texto, para o contador LER antes de confirmar. É o que separa
+  /// "verificar" de "clicar em tudo": sem o motivo à vista, a conferência vira carimbo.
+  justificativaIa   String?
+  /// ⚠⚠ QUAL MODELO propôs, e QUANDO. O modelo muda com o tempo; sem o rastro, uma classificação
+  /// feita há seis meses fica indistinguível de uma feita hoje, e não há como auditar uma safra
+  /// inteira se um modelo se mostrar ruim numa família de despesa.
+  sugeridaIaModelo  String?
+  sugeridaIaEm      DateTime?
+  ///
+  /// ⚠⚠ **NÃO EXISTE COLUNA DE "CONFIANÇA", e a ausência é decisão.** O número que um modelo dá
+  /// para a própria certeza não é calibrado — ele soa preciso e não é. Um "92%" na tela treinaria o
+  /// contador a confirmar sem ler, que é exatamente o contrário do que o dono pediu. O que fica é a
+  /// JUSTIFICATIVA, que ele consegue conferir.
   valorAjustado     Decimal? @db.Decimal(18, 2)
   motivoRecusa      String?
 

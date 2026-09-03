@@ -7943,6 +7943,12 @@ export function createMockApi() {
           dataDocumento: null, detalheServico: null,
           dataPagamento: comp + "-01", origemPagamento: "OFX",
           contaSugerida: null, contaAplicada: null, accountingEntryId: null, regraId: null,
+          // ⚠⚠ A PROPOSTA DA IA (02/09/2026): esta linha não tem regra nem histórico, e é o caso que
+          // o botão «Sugerir contas com IA» alcança. Ela vem PREENCHIDA para o chip "proposta da IA"
+          // e a justificativa aparecerem offline. ⚠ Contas do plano do mock, nunca inventadas.
+          contaSugeridaIa: "411020008", creditoSugeridoIa: "111020001",
+          justificativaIa: "Tarifa de pacote de serviços bancários: despesa com serviços, paga pelo banco.",
+          sugeridaIaModelo: "claude-opus-5", sugeridaIaEm: "2026-09-02T15:00:00.000Z",
           motivoRecusa: null, mesFechado: false, notaRecebidaId: null, nota: null,
         },
         {
@@ -8075,10 +8081,16 @@ export function createMockApi() {
         // e crédito"*. `null` = ninguém escolheu, e vale o caixa. Sem a chave no mock, o campo do
         // modal nasceria vazio offline mesmo para uma linha que TEM crédito escolhido, e o defeito
         // só apareceria em produção — que é o pior momento possível.
-        .map((d) => ({ contaCredito: null, ...d }));
+        // ⚠ As colunas da PROPOSTA DA IA (02/09/2026) viajam em toda linha, `null` por padrão —
+        // a linha `dec-4` vem com elas preenchidas, para o chip "proposta da IA" e a justificativa
+        // não nascerem inalcançáveis offline (sexta vez que o mock esconderia um ramo).
+        .map((d) => ({ contaCredito: null, contaSugeridaIa: null, creditoSugeridoIa: null, justificativaIa: null, sugeridaIaModelo: null, sugeridaIaEm: null, ...d }));
 
       return {
         ok: true,
+        // ⚠ O pré-voo do botão «Sugerir contas com IA»: o servidor diz se a integração está ligada.
+        // No mock ela está, para o botão e o diálogo serem alcançáveis offline.
+        iaClassificacaoLigada: true,
         itens,
         // ⚠⚠ O TOTAL VEM DO SERVIDOR, NUNCA DE `itens.length` — e aqui ele IGNORA o filtro de
         // estado de propósito (senão contaria a própria página filtrada) mas respeita o recorte.
@@ -8383,6 +8395,24 @@ export function createMockApi() {
         declarado: { id: declaradoOfxId, estado: "FUNDIDO", parDeclaradoId: declaradoNotaId },
         nota: { id: declaradoNotaId, estado: "CONTABILIZADO" },
         divergencia: { diverge: true, dias: 5, dataDoLancamento: "2026-07-15", dataDoExtrato: "2026-07-20" },
+      };
+    },
+    /**
+     * ⚠⚠ O BOTÃO «Sugerir contas com IA» (02/09/2026). O relatório volta INTEIRO, com a MESMA forma
+     * de `ClassificacaoPorIaService.classificarFila` — e exercita os dois lados: propostas gravadas
+     * E uma recusada com motivo (a IA apontando conta sintética). Sem a recusada, o bloco "recusadas
+     * pelo sistema, e por quê" nasceria inalcançável offline.
+     */
+    async postClassificarIa(_companyId, { competencia } = {}) {
+      await delay(400);
+      return {
+        ok: true, recusa: null, semLinhas: false,
+        linhasOlhadas: 9, linhasEnviadas: 2, lotes: 1,
+        propostas: 1, gravadas: 1,
+        recusadas: [{ id: "dec-1", motivo: "conta_sintetica", frase: "A IA indicou uma conta sintética (de agregação), que não recebe lançamento." }],
+        ilegiveis: 0, erros: [], recusadaPelaGuarda: null,
+        custoEstimadoCentavos: 3, modelo: "claude-opus-5",
+        competencia: competencia ?? null,
       };
     },
     async postVarrerNotas(_companyId, desde) {

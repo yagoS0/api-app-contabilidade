@@ -114,11 +114,24 @@ async function registrar(dados, client, log) {
  *
  * @returns {Promise<{ok:true, contexto:object}|{ok:false, motivo:string, mensagem:string}>}
  */
-export async function autorizarChamadaIa({ portalClientId, conversaId, mensagemId, agora = new Date(), client = prisma, log = logPadrao, chave = ANTHROPIC_API_KEY } = {}) {
+/**
+ * ⚠⚠ `finalidade` ENTROU EM 02/09/2026, quando a IA passou a ter DUAS finalidades (o assistente do
+ * WhatsApp e a classificação de lançamentos). Sem ela o teto mensal do escritório mistura as duas, e
+ * ninguém consegue dizer para onde o dinheiro foi — nem desligar uma sem desligar a outra.
+ * ⚠ `null` = chamada anterior à coluna, ou o assistente (que ainda não a informa). Não se inventa
+ * finalidade para o que já está gravado.
+ */
+export const FINALIDADE_IA = Object.freeze({
+  ASSISTENTE_WHATSAPP: "assistente_whatsapp",
+  CLASSIFICACAO_LANCAMENTOS: "classificacao_lancamentos",
+});
+
+export async function autorizarChamadaIa({ portalClientId, conversaId, mensagemId, finalidade = null, agora = new Date(), client = prisma, log = logPadrao, chave = ANTHROPIC_API_KEY } = {}) {
   const base = {
     conversaId: conversaId ? String(conversaId) : null,
     portalClientId: portalClientId ? String(portalClientId) : null,
     mensagemId: mensagemId ? String(mensagemId) : null,
+    finalidade: finalidade ? String(finalidade) : null,
     modelo: IA_MODELO,
   };
 
