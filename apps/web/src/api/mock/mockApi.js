@@ -849,22 +849,37 @@ const mockCofre = {
 // aberto e a empresa "só sai por e-mail"). Este projeto foi mordido sete vezes por ramo que só
 // existia em produção. O segundo contato está no FORMATO ANTIGO (8 dígitos, celular) para o aviso
 // "corrija o cadastro" ser visível — o envio casa dígito a dígito, nunca tolera.
+// ⚠ A chave é a PRIMEIRA empresa do mock (id gerado), e não uma string fixa: `mock-pc-1` não é o id
+// de nenhuma empresa da listagem, e um ramo plantado numa chave que ninguém abre é ramo que ninguém
+// vê no navegador — a lição da faixa de visita.
+const PRIMEIRA_EMPRESA_MOCK = mockCompanies[0]?.companyId || "mock-pc-1";
 let mockContatosWhatsapp = {
-  "mock-pc-1": [
+  [PRIMEIRA_EMPRESA_MOCK]: [
     {
-      id: "mock-ctt-1", portalClientId: "mock-pc-1", nome: "Maria do Cliente", papel: "sócia",
+      id: "mock-ctt-1", portalClientId: PRIMEIRA_EMPRESA_MOCK, nome: "Maria do Cliente", papel: "sócia",
       telefoneE164: "5521999998888", waId: null, optInEm: "2026-08-20T13:00:00.000Z",
       optInOrigem: "contrato", ativo: true, userId: "mock-user-cli-1",
       createdAt: "2026-08-20T13:00:00.000Z", updatedAt: "2026-08-20T13:00:00.000Z",
     },
     {
-      id: "mock-ctt-2", portalClientId: "mock-pc-1", nome: "Financeiro", papel: "financeiro",
+      id: "mock-ctt-2", portalClientId: PRIMEIRA_EMPRESA_MOCK, nome: "Financeiro", papel: "financeiro",
       telefoneE164: "552198887777", waId: null, optInEm: null, optInOrigem: null, ativo: true, userId: null,
       createdAt: "2026-08-21T13:00:00.000Z", updatedAt: "2026-08-21T13:00:00.000Z",
     },
   ],
 };
-let mockCanalPadraoEnvio = { "mock-pc-1": "WHATSAPP" };
+let mockCanalPadraoEnvio = { [PRIMEIRA_EMPRESA_MOCK]: "WHATSAPP" };
+// A 2ª empresa tem contato SEM opt-in: é o ramo "cai para e-mail — SEM_OPT_IN" da prévia do lote.
+const SEGUNDA_EMPRESA_MOCK = mockCompanies[1]?.companyId || "mock-pc-2";
+mockContatosWhatsapp[SEGUNDA_EMPRESA_MOCK] = [
+  {
+    id: "mock-ctt-3", portalClientId: SEGUNDA_EMPRESA_MOCK, nome: "Contato sem autorização", papel: null,
+    telefoneE164: "5521977776666", waId: null, optInEm: null, optInOrigem: null, ativo: true, userId: null,
+    createdAt: "2026-08-22T13:00:00.000Z", updatedAt: "2026-08-22T13:00:00.000Z",
+  },
+];
+// A última prévia do lote por WhatsApp — é contra ela que a conferência do `executar` é medida.
+let mockUltimaPreviaWhatsapp = null;
 
 let mockUsuariosPortal = [
   {
@@ -5671,7 +5686,10 @@ export function createMockApi() {
           .map((cell) => cell.guideId)
           .filter(Boolean);
       });
-      return { competencia: ref, simples, presumidos, outros: [] };
+      // ⚠ `competenciasPresentes` faz parte do contrato real (é o dropdown da página). Sem ele o
+      //   mock só oferecia "Todas pendentes" — e o lote por WhatsApp, que exige UMA competência,
+      //   ficava inalcançável offline (oitava vez que o mock esconde um ramo nesta base).
+      return { competencia: ref, competenciasPresentes: [ref], simples, presumidos, outros: [] };
     },
     async sendBatchEmails(items) {
       await delay(800);
@@ -5683,6 +5701,90 @@ export function createMockApi() {
           portalClientId: it.portalClientId, competencia: it.competencia,
           ok: true, status: "sent", sentNow: 2, attachmentsCount: 2,
         })),
+      };
+    },
+    // ── ENVIO DE GUIAS POR WHATSAPP — o MESMO contrato de `realApi` ──────────────────────────────
+    // ⚠ O mock DECIDE como o servidor decide (`elegibilidadeEnvioGuia`): a 1ª empresa tem contato
+    // com opt-in (vai por WhatsApp); a 2ª tem contato SEM opt-in (cai para e-mail, SEM_OPT_IN); a 3ª
+    // já foi enviada (GUIA_JA_ENVIADA); as demais não têm contato (SEM_CONTATO). Cada motivo da prévia
+    // precisa ser alcançável offline — este projeto foi mordido sete vezes por ramo só em produção.
+    async getCanalWhatsapp() {
+      await delay(60);
+      return { ok: true, canal: { disponivel: true, motivo: null, mensagem: null, nomeMeta: "guia_disponivel" } };
+    },
+    async enviarGuiaWhatsapp(companyId, guideId) {
+      await delay(300);
+      const contatos = mockContatosWhatsapp[String(companyId)] || [];
+      const recebe = contatos.find((c) => c.ativo !== false && c.optInEm);
+      const recusa = (code, message) => { const e = new Error(message); e.status = 422; e.code = code; return e; };
+      if (!contatos.length) throw recusa("SEM_CONTATO", "Esta empresa não tem contato de WhatsApp cadastrado. A guia pode ir por e-mail.");
+      if (!recebe) throw recusa("SEM_OPT_IN", "O contato de WhatsApp desta empresa não tem opt-in registrado. Registre a autorização no cadastro; até lá a guia vai por e-mail.");
+      return { ok: true, guideId, enviada: true, canal: "WHATSAPP", destino: recebe.telefoneE164, providerMessageId: `wamid.mock.${Date.now()}` };
+    },
+    async preverLoteWhatsapp({ competencia, portalClientIds } = {}) {
+      await delay(250);
+      if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
+        const e = new Error("Informe a competência no formato AAAA-MM."); e.status = 400; e.code = "COMPETENCIA_INVALIDA"; throw e;
+      }
+      const ids = Array.isArray(portalClientIds) && portalClientIds.length ? portalClientIds.map(String) : mockCompanies.map((c) => c.companyId);
+      const linhas = [];
+      mockCompanies.forEach((c, idx) => {
+        if (!ids.includes(String(c.companyId))) return;
+        const contatos = mockContatosWhatsapp[String(c.companyId)] || [];
+        const recebe = contatos.find((k) => k.ativo !== false && k.optInEm);
+        const jaEnviada = idx === 2;
+        let motivo = null;
+        if (jaEnviada) motivo = "GUIA_JA_ENVIADA";
+        else if (!contatos.length) motivo = "SEM_CONTATO";
+        else if (!recebe) motivo = "SEM_OPT_IN";
+        linhas.push({
+          guideId: `mock-guia-das-${c.companyId}`, portalClientId: c.companyId, empresa: c.razao, cnpj: c.cnpj,
+          tipo: "SIMPLES", tipoLabel: "DAS", competencia, valor: 500 + idx * 37.5, vencimento: `${competencia}-20`,
+          jaEnviada, canalSugerido: motivo ? "EMAIL" : "WHATSAPP",
+          destino: recebe?.telefoneE164 || null, contatoNome: recebe?.nome || null,
+          motivo, aviso: motivo ? `Cai para e-mail: ${motivo}` : null,
+        });
+      });
+      const previa = {
+        competencia,
+        canal: { disponivel: true, motivo: null, mensagem: null },
+        linhas,
+        resumo: {
+          total: linhas.length,
+          porWhatsapp: linhas.filter((l) => l.canalSugerido === "WHATSAPP").length,
+          porEmail: linhas.filter((l) => l.canalSugerido === "EMAIL").length,
+          jaEnviadas: linhas.filter((l) => l.jaEnviada).length,
+        },
+      };
+      mockUltimaPreviaWhatsapp = previa;
+      return { ok: true, ...previa };
+    },
+    async executarLoteWhatsapp({ competencia, portalClientIds, conferencia } = {}) {
+      await delay(600);
+      // ⚠ Sem `this`: no modo `real_with_mock_fallback` a função é chamada solta, e `this` seria
+      //   `undefined`. A prévia é pré-requisito aqui como no servidor (que a recalcula por dentro).
+      const previa = mockUltimaPreviaWhatsapp && mockUltimaPreviaWhatsapp.competencia === competencia ? mockUltimaPreviaWhatsapp : null;
+      if (!previa) { const e = new Error("Gere a prévia do lote antes de enviar."); e.status = 400; e.code = "CONFERENCIA_OBRIGATORIA"; throw e; }
+      if (!conferencia) { const e = new Error("Confira os números da prévia antes de enviar."); e.status = 400; e.code = "CONFERENCIA_OBRIGATORIA"; throw e; }
+      const r = previa.resumo;
+      if (Number(conferencia.total) !== r.total || Number(conferencia.porWhatsapp) !== r.porWhatsapp || Number(conferencia.porEmail) !== r.porEmail) {
+        const e = new Error("Os números conferidos não batem com a prévia atual. Recarregue a prévia e confira de novo."); e.status = 409; e.code = "CONFERENCIA_DIVERGENTE"; throw e;
+      }
+      const porWhatsapp = previa.linhas.filter((l) => l.canalSugerido === "WHATSAPP");
+      const porEmail = previa.linhas.filter((l) => l.canalSugerido === "EMAIL");
+      return {
+        ok: true,
+        competencia,
+        canal: previa.canal,
+        resumo: r,
+        whatsapp: {
+          total: porWhatsapp.length,
+          enviadas: porWhatsapp.length,
+          jaEnviadas: 0,
+          falhas: [],
+          resultados: porWhatsapp.map((l) => ({ ...l, ok: true, enviada: true, providerMessageId: `wamid.mock.${l.guideId}` })),
+        },
+        email: { total: porEmail.length, guideIds: porEmail.map((l) => l.guideId), linhas: porEmail, executado: true, enviadas: porEmail.length, erros: 0 },
       };
     },
     async getCircular(companyId, { year } = {}) {

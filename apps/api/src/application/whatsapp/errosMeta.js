@@ -792,6 +792,33 @@ export function podeTentarDeNovo(traducao) {
   return null;
 }
 
+/**
+ * A MESMA pergunta, feita DEPOIS — a partir do código GRAVADO em `envios_guia.erroCodigo`.
+ *
+ * `podeTentarDeNovo` responde na hora do envio, com a tradução inteira em mãos. A tela do contador
+ * pergunta dias depois, olhando a linha do envio — e a linha guarda só o código nomeado
+ * (`META_131047`, `WHATSAPP_FALHA_DE_TRANSPORTE`…). Esta função refaz a resposta a partir dele, com
+ * as MESMAS três listas: `true` / `false` / **`null`** ("a fonte não diz").
+ *
+ * ⚠ Os códigos LOCAIS seguem a retentativa que a própria tradução deles declara: recusa local e
+ * "não configurado" são `NAO` (o conserto é no cadastro/na configuração, reenviar igual falha
+ * igual); falha de transporte e resposta não reconhecida são `NAO_DOCUMENTADA` (não se sabe se a
+ * mensagem chegou — reenviar às cegas pode mandar a guia duas vezes).
+ */
+export function podeTentarDeNovoPeloCodigo(codigo) {
+  const c = String(codigo || "").trim();
+  if (!c) return null;
+  const meta = /^META_(\d+)$/.exec(c);
+  if (meta) {
+    const n = Number(meta[1]);
+    if (CODIGOS_RETENTAVEIS.includes(n)) return true;
+    if (CODIGOS_DEFINITIVOS.includes(n)) return false;
+    return null;
+  }
+  if (c === CODIGOS_LOCAIS.RECUSA_LOCAL || c === CODIGOS_LOCAIS.NAO_CONFIGURADO) return false;
+  return null;
+}
+
 /** Códigos que ESTE módulo emite (não vêm da Meta). Prefixo próprio para não colidir com os dela. */
 export const CODIGOS_LOCAIS = Object.freeze({
   /** Falhou antes de chegar na Meta: DNS, TLS, timeout, conexão cortada. */

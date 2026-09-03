@@ -20,6 +20,7 @@ import {
   ABA_PADRAO, abasVisiveis, contarPorAba, empresasDaAba, normalizarAba, rotuloAba,
 } from "../lib/abaRegime";
 import { LogoAltan } from "../../../../components/ui/LogoAltan";
+import { liberarComCanais } from "../../../guides/lib/liberarComCanais";
 
 // Q17: dropdown — abre um seletor (não navega para um hub).
 //
@@ -433,17 +434,29 @@ export function CompaniesHomePage({
       await onRefreshCompanies?.();
       return out;
     },
-    onEnviar: async (guideId) => {
-      const out = await api.liberarGuiaCliente(guideId);
-      if (out?.ok === false) return out;
-      // `sent:false` com ok:true acontece quando a liberação passou mas o e-mail falhou — o chip
-      // precisa dizer isso em vez de pintar de verde.
-      if (out && out.sent === false) {
-        onRefreshCompanies?.();
-        return { ok: false, message: out.message || "Guia liberada, mas o e-mail não saiu. Tente de novo." };
-      }
+    onEnviar: async (guideId, empresa) => {
+      // ⚠ DOIS CANAIS, UMA LIGAÇÃO (02/09/2026): o e-mail sai como sempre; o WhatsApp é o terceiro
+      // passo, conforme `canalPadraoEnvio` da empresa. A sequência é a MESMA do botão "Liberar ao
+      // cliente" da aba Guias (`liberarComCanais`) — duas cópias divergiriam na primeira correção.
+      // `sent:false` com ok:true (a liberação passou, o e-mail falhou) continua sendo ERRO no chip.
+      const out = await liberarComCanais({ api, companyId: empresa?.companyId, guideId });
       onRefreshCompanies?.();
-      return out;
+      return out.ok ? { ok: true, message: out.texto } : { ok: false, message: out.texto };
+    },
+    /**
+     * Só o WhatsApp, de novo — o botão do chip quando a tentativa por WhatsApp FALHOU.
+     * ⚠ A recusa nomeada do servidor (422: sem opt-in, template não aprovado, já enviada) é DESFECHO
+     * com o motivo, não exceção.
+     */
+    onEnviarWhatsapp: async (guideId, empresa) => {
+      try {
+        const out = await api.enviarGuiaWhatsapp(empresa?.companyId, guideId);
+        onRefreshCompanies?.();
+        return out?.ok === false ? { ok: false, message: out.message || out.motivo || "O WhatsApp não saiu." } : out;
+      } catch (err) {
+        onRefreshCompanies?.();
+        return { ok: false, message: err?.message || "O WhatsApp não saiu." };
+      }
     },
     onMarcarVazio: async (companyId, tipo, competencia, motivo) => {
       const out = await api.markGuideVazio(companyId, tipo, competencia || dashboardCompetencia, motivo);

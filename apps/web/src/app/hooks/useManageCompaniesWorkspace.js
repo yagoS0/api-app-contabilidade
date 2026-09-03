@@ -9,6 +9,8 @@ import { useCompanyGuides } from "../../features/guides/list/hooks/useManageComp
 // duas construções da mesma URL divergem na primeira correção, e aí o link leva a um lugar e o
 // clique a outro. Os nomes e o conteúdo não mudaram; só o endereço.
 import { SEGMENT_TO_TAB, TAB_TO_SEGMENT, companyTabPath } from "../../features/companies/detail/lib/rotasDaEmpresa";
+// "Liberar ao cliente" com os dois canais (e-mail sempre; WhatsApp conforme o canal padrão da empresa).
+import { liberarComCanais } from "../../features/guides/lib/liberarComCanais";
 import {
   getInitialCompanyFormState,
   mapCompanyToEditForm,
@@ -853,7 +855,11 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     setLiberarGuiasBusy(true);
     feedback.clearFeedback();
     try {
-      const r = await api.liberarGuiaCliente(guideId);
+      // ⚠ DOIS CANAIS, UMA LIGAÇÃO (02/09/2026): o e-mail sai como sempre saiu, e o WhatsApp é o
+      // terceiro passo, decidido por `PortalClient.canalPadraoEnvio` (WHATSAPP manda, PERGUNTAR
+      // pergunta, EMAIL não tenta). A sequência mora em `liberarComCanais` porque o chip do
+      // dashboard faz a MESMA coisa — duas cópias divergiriam na primeira correção.
+      const r = await liberarComCanais({ api, companyId, guideId });
       // ⚠ `sent: false` NÃO É SUCESSO. A liberação ao app do cliente deu certo, o e-mail não — e a
       // mensagem do backend ("o e-mail NÃO foi enviado…") aparecia em VERDE, na caixa de sucesso,
       // logo abaixo de um botão que o contador acabou de clicar. Verde é a cor de "pode ir embora";
@@ -863,10 +869,10 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       // era setada ANTES dele, o clique em "Liberar ao cliente" não devolvia NADA à tela — nem o
       // sucesso, nem a falha, nem a (falsa) promessa de fila. O contador via só o selo 📤 aparecer.
       await loadGuides(companyId);
-      if (r?.sent) {
-        feedback.setMessage("Guia liberada ao cliente e enviada por e-mail.");
+      if (r.ok) {
+        feedback.setMessage(r.texto);
       } else {
-        feedback.setError(r?.message || "Guia liberada, mas o e-mail não saiu. Tente enviar de novo.");
+        feedback.setError(r.texto);
       }
     } catch (err) {
       feedback.setError(err?.message || "Falha ao liberar a guia ao cliente.");

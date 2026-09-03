@@ -100,6 +100,10 @@ import {
   PUBLICO,
 } from "../../application/guides/GuideService.js";
 import { normalizeCompetencia, normalizeGuideType, colunaMatrizDaGuia, envioDeEmailFalhou } from "../../application/guides/guideContract.js";
+// A matriz do envio em lote le o estado de envio da MESMA fonte que o chip do dashboard
+// (`envios_guia`): enviada = terminal em QUALQUER canal, e o WhatsApp que falhou aparece.
+import { enviosPorGuia, foiEnviadaComLegado, envioParaExibir } from "../../application/guides/EnvioGuiaService.js";
+import { podeTentarDeNovoPeloCodigo } from "../../application/whatsapp/errosMeta.js";
 // ⚠ As mensagens de "não foi enviado" moram no domínio, não aqui: era escrevendo-as no lugar de uso
 // que a promessa de uma fila inexistente ganhou quatro cópias. Ver `guideEmailCopy.js`.
 import {
@@ -3399,6 +3403,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       },
     });
 
+    // O estado de ENVIO por canal — a mesma fonte do chip (`guideCompliance`). Uma query para a
+    // matriz inteira. ⚠ Sem isto a guia enviada por WhatsApp aparecia como "📄 guia" e entrava de
+    // novo no lote de e-mail: enviada é terminal em qualquer canal.
+    const enviosPorGuiaId = await enviosPorGuia(guides.map((g) => g.id));
+
     // Q10.3: lista de competências presentes nas guides (pra dropdown no frontend).
     const competenciasPresentes = [
       ...new Set(guides.map((g) => g.competencia).filter(Boolean)),
@@ -3462,6 +3471,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // cópias fariam as duas telas discordarem sobre a mesma guia.
       const upper = colunaMatrizDaGuia(g);
       const isVazio = g.status === "VAZIO";
+      const envios = enviosPorGuiaId.get(g.id) || [];
+      const exibir = envioParaExibir(envios);
+      const enviada = foiEnviadaComLegado(envios, g);
       const stamp = {
         guideId: g.id,
         valor: g.valor != null ? Number(g.valor) : null,
@@ -3473,9 +3485,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         // A pergunta "a última tentativa falhou?" vem do `guideContract` — a MESMA que o chip do
         // dashboard usa. Duas leituras de `emailStatus` fariam as duas telas discordarem sobre a
         // mesma guia, que é exatamente como o `parcelamentoId` divergiu.
-        falhou: envioDeEmailFalhou(g),
+        // ⚠ E desde 02/09/2026 a segunda fonte: o WhatsApp que a Meta recusou, sem nada enviado.
+        falhou: envioDeEmailFalhou(g) || (!enviada && exibir?.status === "falhou"),
         emailLastError: g.emailLastError || null,
         emailAttempts: Number(g.emailAttempts || 0),
+        // Enviada = terminal em QUALQUER canal (a mesma leitura de `foiEnviadaComLegado`).
+        enviada,
+        canalEnvio: exibir?.canal || null,
+        envioStatus: exibir?.status || null,
+        envioEm: exibir?.lidoEm || exibir?.entregueEm || exibir?.enviadoEm || null,
+        envioErro: exibir?.erroMensagemUsuario || null,
+        envioPodeTentarDeNovo: podeTentarDeNovoPeloCodigo(exibir?.erroCodigo),
       };
 
       if (upper === "DARF") {
@@ -3493,7 +3513,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
       // Só guias REAIS ainda NÃO enviadas entram na seleção de envio em lote.
       // Marcadores VAZIO não são enviáveis (não têm PDF).
-      if (g.emailStatus !== "SENT" && !isVazio) row.pendingGuideIds.push(g.id);
+      // ⚠ "Não enviada" pela MESMA leitura do chip (qualquer canal) — antes era só `emailStatus`, e a
+      //   guia que já tinha ido por WhatsApp entrava de novo no lote de e-mail.
+      if (!enviada && !isVazio) row.pendingGuideIds.push(g.id);
     }
 
     // Parcelamentos só são exibidos se existe ao menos 1 linha pra (empresa, competência).

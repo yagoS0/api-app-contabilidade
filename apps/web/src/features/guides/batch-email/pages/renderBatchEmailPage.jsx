@@ -3,6 +3,10 @@ import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { Button } from "../../../../components/ui/Button";
 import { Feedback } from "../../../../components/ui/Feedback";
+// O lote por WhatsApp: quem pode abrir, como a prévia se agrupa, o que a confirmação repete.
+import { agruparPrevia, podeAbrirLoteWhatsapp } from "../../lib/canalDeEnvio";
+
+const CANAL_ROTULO = { EMAIL: "e-mail", WHATSAPP: "WhatsApp" };
 
 const PANEL = {
   surface: "#24253A",
@@ -66,11 +70,26 @@ function GuideStatusCell({ value }) {
     );
   }
   const valorTitle = value.valor != null ? `R$ ${Number(value.valor).toFixed(2)}` : "";
-  if (value.emailStatus === "SENT") {
-    const quando = value.emailSentAt ? new Date(value.emailSentAt).toLocaleDateString("pt-BR") : "";
+  // ⚠ Enviada = terminal em QUALQUER canal (`enviada` vem de `envios_guia`, a mesma fonte do chip do
+  // dashboard). `emailStatus === "SENT"` continua valendo para a guia anterior à tabela de envios.
+  if (value.enviada || value.emailStatus === "SENT") {
+    const quandoIso = value.envioEm || value.emailSentAt;
+    const quando = quandoIso ? new Date(quandoIso).toLocaleDateString("pt-BR") : "";
+    const canal = CANAL_ROTULO[value.canalEnvio] || (value.emailStatus === "SENT" ? "e-mail" : null);
     return (
-      <td style={{ ...cellBaseStyle, color: PANEL.success, fontWeight: 600 }} title={`Enviado${quando ? ` em ${quando}` : ""}. ${valorTitle}`}>
-        ✓ enviado
+      <td style={{ ...cellBaseStyle, color: PANEL.success, fontWeight: 600 }} title={`Enviado${canal ? ` por ${canal}` : ""}${quando ? ` em ${quando}` : ""}. ${valorTitle}`}>
+        ✓ enviado{value.canalEnvio === "WHATSAPP" ? " (WhatsApp)" : ""}
+      </td>
+    );
+  }
+  // A tentativa por WHATSAPP que a Meta recusou — motivo já traduzido (`envioErro`).
+  if (value.envioStatus === "falhou" && value.canalEnvio === "WHATSAPP" && value.emailStatus !== "ERROR") {
+    return (
+      <td
+        style={{ ...cellBaseStyle, color: PANEL.danger, fontWeight: 600 }}
+        title={`O ENVIO POR WHATSAPP FALHOU e nada tentará de novo sozinho.${value.envioErro ? ` Motivo: ${value.envioErro}.` : ""} Selecione a linha e envie por e-mail, ou tente o WhatsApp de novo pelo chip da empresa. ${valorTitle}`}
+      >
+        ✖ falhou (WhatsApp)
       </td>
     );
   }
@@ -115,8 +134,9 @@ function CompanySection({ title, rows, columns, selectedKeys, onToggle, onToggle
   // Q16: só é "enviável" se tem guia NÃO enviada (SENT = display-only, não re-seleciona).
   const rowHasSendable = (row) => columns.some((c) => {
     const cell = row.tiposGuias?.[c.key];
-    // VAZIO não é enviável (sem PDF); rastreio de parcelamento idem; SENT é display-only.
-    return cell && !cell.vazio && !cell.isParcelamento && cell.emailStatus !== "SENT";
+    // VAZIO não é enviável (sem PDF); rastreio de parcelamento idem; SENT é display-only —
+    // e "enviada" por QUALQUER canal também (a mesma leitura de `pendingGuideIds` no servidor).
+    return cell && !cell.vazio && !cell.isParcelamento && cell.emailStatus !== "SENT" && !cell.enviada;
   });
   const visibleRows = onlyPending ? rows.filter(rowHasSendable) : rows;
 
@@ -223,6 +243,121 @@ function CompanySection({ title, rows, columns, selectedKeys, onToggle, onToggle
  * por empresa com TODAS as guias da competência anexadas. Após envio, linhas saem da matriz
  * (porque emailStatus passa a SENT, não aparecem mais).
  */
+/**
+ * A PRÉVIA DO LOTE POR WHATSAPP — e a confirmação que repete os números dela.
+ *
+ * ⚠ NADA SAI NA PRÉVIA. O servidor devolve quem vai por WhatsApp e quem cai para e-mail, POR
+ * MOTIVO (sem contato, sem opt-in, já enviada, template não aprovado…), e só o botão de confirmar
+ * envia — com `conferencia` = os números que esta tela acabou de mostrar. Nada some da lista: a
+ * empresa que não pode receber por WhatsApp continua aqui, com o motivo, e vai por e-mail.
+ */
+function PreviaWhatsapp({ whatsapp, onEnviado }) {
+  const { previa, executando, executar, limpar, erro } = whatsapp;
+  if (!previa) return null;
+  const g = agruparPrevia(previa);
+  const r = g.resumo;
+  async function confirmar() {
+    const out = await executar();
+    if (out) onEnviado?.(out);
+  }
+  return (
+    <div
+      data-testid="previa-whatsapp"
+      style={{
+        marginBottom: 18, padding: "12px 14px", borderRadius: 8,
+        background: PANEL.surface, border: `1px solid ${PANEL.accent}`, color: PANEL.text, fontSize: "0.85rem",
+      }}
+    >
+      <div style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap", marginBottom: 8 }}>
+        <strong>Prévia do envio por WhatsApp · {previa.competencia}</strong>
+        <span style={{ color: PANEL.muted }}>
+          {r.total} guia{r.total === 1 ? "" : "s"}: <strong style={{ color: PANEL.text }}>{r.porWhatsapp}</strong> por WhatsApp ·{" "}
+          <strong style={{ color: PANEL.text }}>{r.porEmail}</strong> por e-mail
+          {r.jaEnviadas ? ` · ${r.jaEnviadas} já enviada${r.jaEnviadas === 1 ? "" : "s"} (não reenvia)` : ""}
+        </span>
+      </div>
+
+      {g.porWhatsapp.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ color: PANEL.muted, fontSize: "0.78rem", marginBottom: 4 }}>Vão por WhatsApp:</div>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {g.porWhatsapp.map((l) => (
+              <li key={l.guideId} data-testid={`previa-zap-${l.guideId}`}>
+                {l.empresa} — {l.tipoLabel || l.tipo}{l.contatoNome ? ` → ${l.contatoNome}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {g.caemParaEmail.map((grupo) => (
+        <div key={grupo.motivo} style={{ marginBottom: 8 }} data-testid={`previa-email-${grupo.motivo}`}>
+          <div style={{ color: PANEL.warning, fontSize: "0.78rem", marginBottom: 4 }}>
+            Caem para e-mail — {grupo.rotulo} ({grupo.linhas.length}):
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {grupo.linhas.map((l) => <li key={l.guideId}>{l.empresa} — {l.tipoLabel || l.tipo}</li>)}
+          </ul>
+        </div>
+      ))}
+
+      {erro ? <div style={{ color: PANEL.danger, marginBottom: 8 }}>{erro.mensagem}</div> : null}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <Button
+          variant="primary"
+          onClick={confirmar}
+          disabled={executando || (r.porWhatsapp === 0 && r.porEmail === 0)}
+          title="Confirma exatamente os números acima. O que não puder ir por WhatsApp vai por e-mail."
+        >
+          {executando ? "Enviando…" : `Confirmar: ${r.porWhatsapp} por WhatsApp · ${r.porEmail} por e-mail`}
+        </Button>
+        <Button variant="secondary" onClick={limpar} disabled={executando}>Cancelar</Button>
+      </div>
+    </div>
+  );
+}
+
+function ResultadoWhatsapp({ resultado, onFechar }) {
+  if (!resultado) return null;
+  const z = resultado.whatsapp || {};
+  const e = resultado.email || {};
+  const falhas = Array.isArray(z.falhas) ? z.falhas : [];
+  return (
+    <div
+      data-testid="resultado-whatsapp"
+      style={{
+        marginBottom: 18, padding: "12px 14px", borderRadius: 8,
+        background: PANEL.surface, border: `1px solid ${falhas.length ? PANEL.danger : PANEL.border}`, color: PANEL.text, fontSize: "0.85rem",
+      }}
+    >
+      <div style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap", marginBottom: falhas.length ? 8 : 0 }}>
+        <strong>Lote por WhatsApp · {resultado.competencia}</strong>
+        <span style={{ color: PANEL.muted }}>
+          WhatsApp: <strong style={{ color: PANEL.text }}>{Number(z.enviadas || 0)}</strong> de {Number(z.total || 0)} enviada{Number(z.total) === 1 ? "" : "s"}
+          {z.jaEnviadas ? ` (${z.jaEnviadas} já estava${z.jaEnviadas === 1 ? "" : "m"})` : ""} · e-mail:{" "}
+          {e.executado === false
+            ? <strong style={{ color: PANEL.danger }}>não enviado{e.motivo ? ` (${e.motivo})` : ""}</strong>
+            : <strong style={{ color: PANEL.text }}>{Number(e.enviadas || 0)} de {Number(e.total || 0)}</strong>}
+        </span>
+        <Button variant="secondary" onClick={onFechar} style={{ marginLeft: "auto" }}>Fechar</Button>
+      </div>
+      {falhas.length > 0 && (
+        <div>
+          <div style={{ color: PANEL.danger, marginBottom: 4 }}>
+            <strong>{falhas.length}</strong> não sa{falhas.length === 1 ? "iu" : "íram"} por WhatsApp — e <strong>nada tentará de novo sozinho</strong>:
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {falhas.map((f) => (
+              <li key={f.guideId}>{f.empresa} — {f.tipoLabel || f.tipo}: {f.mensagem || f.motivo || "motivo não informado"}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function BatchEmailPage({
   report,
   loading,
@@ -230,6 +365,8 @@ export function BatchEmailPage({
   onBack,
   onLoad,
   onSend,
+  // O lote por WhatsApp (`useLoteWhatsapp`). Opcional: sem ele a página é a de sempre.
+  whatsapp = null,
   message,
   error,
 }) {
@@ -268,6 +405,17 @@ export function BatchEmailPage({
 
   const totalSelected = selectedKeys.size;
   const canSend = totalSelected > 0 && !sending;
+
+  // ⚠ O lote por WhatsApp é por UMA competência (a rota exige AAAA-MM): com "Todas pendentes" o
+  // botão fica DESABILITADO com o motivo — nunca some. E canal indisponível (flag, template) idem.
+  const aberturaZap = podeAbrirLoteWhatsapp({ competencia, selecionadas: totalSelected, canal: whatsapp?.canal });
+  const canZap = Boolean(whatsapp) && aberturaZap.pode && !whatsapp.prevendo && !whatsapp.executando && !sending;
+
+  async function handlePreverWhatsapp() {
+    if (!canZap) return;
+    const portalClientIds = [...new Set([...selectedKeys].map((key) => String(key).split("::")[0]))];
+    await whatsapp.prever({ competencia, portalClientIds });
+  }
 
   async function handleSend() {
     if (!canSend) return;
@@ -317,6 +465,16 @@ export function BatchEmailPage({
           <Button variant="primary" onClick={handleSend} disabled={!canSend}>
             {sending ? "Enviando..." : `Enviar e-mails (${totalSelected})`}
           </Button>
+          {whatsapp ? (
+            <Button
+              variant="secondary"
+              onClick={handlePreverWhatsapp}
+              disabled={!canZap}
+              title={aberturaZap.pode ? "Mostra a prévia: quem vai por WhatsApp e quem cai para e-mail, antes de enviar." : aberturaZap.motivo}
+            >
+              {whatsapp.prevendo ? "Montando prévia…" : `Enviar por WhatsApp (${totalSelected})`}
+            </Button>
+          ) : null}
         </>
       }
     >
@@ -358,6 +516,25 @@ export function BatchEmailPage({
             </div>
           )}
         </div>
+
+        {/* O canal WhatsApp indisponível é dito UMA vez, aqui — o motivo nomeado (flag desligada,
+            template ainda não aprovado). O botão continua visível, desabilitado com o mesmo motivo. */}
+        {whatsapp?.canal && whatsapp.canal.disponivel === false && (
+          <p data-testid="canal-whatsapp-indisponivel" style={{ margin: "0 0 12px", fontSize: "0.8rem", color: PANEL.muted }}>
+            <strong style={{ color: PANEL.text }}>WhatsApp indisponível:</strong> {whatsapp.canal.mensagem || whatsapp.canal.motivo}
+          </p>
+        )}
+
+        {whatsapp ? (
+          <PreviaWhatsapp
+            whatsapp={whatsapp}
+            onEnviado={() => { setSelectedKeys(new Set()); onLoad?.(competencia || null); }}
+          />
+        ) : null}
+        {whatsapp ? <ResultadoWhatsapp resultado={whatsapp.resultado} onFechar={whatsapp.limpar} /> : null}
+        {whatsapp?.erro && !whatsapp.previa ? (
+          <p style={{ margin: "0 0 12px", fontSize: "0.85rem", color: PANEL.danger }}>{whatsapp.erro.mensagem}</p>
+        ) : null}
 
         {/* ⚠ AUSÊNCIA NÃO É RESPOSTA: sem esta faixa, "nenhum aviso" é o que a tela mostra tanto
             quando está tudo certo quanto quando três clientes não receberam a guia. Ela só aparece
@@ -416,7 +593,7 @@ export function BatchEmailPage({
             }}>
               <span><strong style={{ color: PANEL.accent }}>📄 guia</strong> Contendo guia — não enviada (será anexada)</span>
               <span><strong style={{ color: PANEL.danger }}>✖ falhou</strong> Tentou e não saiu — passe o mouse para o motivo</span>
-              <span><strong style={{ color: PANEL.success }}>✓ enviado</strong> E-mail já enviado</span>
+              <span><strong style={{ color: PANEL.success }}>✓ enviado</strong> Já enviada — por e-mail ou por WhatsApp (o canal vai no título)</span>
               <span><strong style={{ color: PANEL.danger }}>✗</strong> Sem guia</span>
               <span><strong style={{ color: PANEL.warning }}>●</strong> Parcelamento ativo (info, sem anexo de PDF)</span>
             </div>

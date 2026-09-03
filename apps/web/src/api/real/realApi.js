@@ -1452,6 +1452,24 @@ export function createRealApi() {
         body: JSON.stringify({ items: Array.isArray(items) ? items : [] }),
       });
     },
+    // ── ENVIO DE GUIAS POR WHATSAPP — contrato LIDO de `routes/firm/whatsappGuias.js` ────────────
+    // O estado do canal: flag ligada? template aprovado? A tela pergunta ANTES de oferecer o botão.
+    async getCanalWhatsapp() {
+      return request(`/firm/guides/whatsapp/canal`);
+    },
+    // UMA guia, por WhatsApp. 422 com motivo NOMEADO (SEM_CONTATO, SEM_OPT_IN, TEMPLATE_NAO_APROVADO,
+    // GUIA_JA_ENVIADA…) chega como erro com `code`; quem chama trata a recusa como desfecho.
+    async enviarGuiaWhatsapp(companyId, guideId) {
+      return request(`/firm/companies/${companyId}/guides/${guideId}/enviar-whatsapp`, { method: "POST" });
+    },
+    // A PRÉVIA do lote — não envia nada. Body: { competencia, portalClientIds?, guideIds? }.
+    async preverLoteWhatsapp(body) {
+      return request(`/firm/guides/whatsapp/lote/previa`, { method: "POST", body: JSON.stringify(body || {}) });
+    },
+    // O LOTE. Exige `conferencia` repetindo os números da prévia (409 CONFERENCIA_DIVERGENTE senão).
+    async executarLoteWhatsapp(body) {
+      return request(`/firm/guides/whatsapp/lote`, { method: "POST", body: JSON.stringify(body || {}) });
+    },
     async getCircular(companyId, { year } = {}) {
       const q = year ? `?year=${year}` : "";
       return request(`/firm/companies/${companyId}/entries/circular${q}`);

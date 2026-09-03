@@ -13,6 +13,7 @@ import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploa
 import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
 import { BatchEmailPage } from "./features/guides/batch-email/pages/renderBatchEmailPage";
+import { useLoteWhatsapp } from "./features/guides/batch-email/hooks/useLoteWhatsapp";
 import { GlobalChartOfAccountsPage } from "./features/accounting/chart-of-accounts/pages/renderGlobalChartOfAccountsPage";
 import { ObrigacoesPage } from "./features/obrigacoes/components/renderObrigacoesPage";
 import { OnboardingsPage } from "./features/onboarding/pages/renderOnboardingsPage";
@@ -37,6 +38,9 @@ const TOKEN_STORAGE_KEY = "portal_firm_access_token";
 function App() {
   const feedback = useManageAppFeedback();
   const session = useManageAuthSession({ api, tokenStorageKey: TOKEN_STORAGE_KEY, feedback });
+  // O lote por WhatsApp na página de envio em lote (prévia → conferência → envio). Hook próprio,
+  // fora do `companiesWorkspace`: ele já carrega 40 estados, e este é de uma página só.
+  const loteWhatsapp = useLoteWhatsapp({ api, feedback });
   const companiesWorkspace = useManageCompaniesWorkspace({
     api,
     page: session.page,
@@ -542,6 +546,7 @@ function App() {
         onBack={() => session.setPage("companies")}
         onLoad={companiesWorkspace.handleLoadBatchEmailReport}
         onSend={companiesWorkspace.handleSendBatchEmails}
+        whatsapp={loteWhatsapp}
         message={feedback.message}
         error={feedback.error}
       />

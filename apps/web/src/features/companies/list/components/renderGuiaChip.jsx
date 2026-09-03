@@ -18,6 +18,8 @@
 // que um screenshot dessaturado continue legível).
 
 import { useEffect, useRef, useState } from "react";
+// O envio por WhatsApp que FALHOU: três respostas para "posso tentar de novo?", três desenhos.
+import { ofertaDeRetentativa } from "../../../guides/lib/canalDeEnvio";
 
 // Chave do compliance → tipo de Guide. Mesmo de-para do backend; PIS representa o grupo PIS/COFINS.
 export const TRIBUTO_TIPO = {
@@ -112,6 +114,9 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
 
   const meta = ESTADO[tag.state] || ESTADO.missing;
   const destinatario = empresa?.guideNotificationEmail || empresa?.ownerEmail || null;
+  // O envio que se exibe é o de WhatsApp e ele falhou — sem nada enviado por canal nenhum.
+  const falhaWhatsapp = tag.state === "falhou" && tag.canalEnvio === "WHATSAPP" && tag.envioStatus === "falhou";
+  const ofertaZap = ofertaDeRetentativa(tag);
   // ⚠ Parcela de parcelamento NÃO aceita "marcar sem movimento": ausência de parcela não se declara
   // — ou o acordo tem parcela no mês, ou não tem. Marcar vazio ali seria afirmar algo que o
   // parcelamento já responde sozinho.
@@ -250,7 +255,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
               e-mail), mas ninguém sabe que existem. O texto do erro vem cru do provedor de e-mail
               (`emailLastError`), e é isso mesmo que se quer: traduzi-lo aqui seria inventar
               categoria em cima de mensagem de terceiro. */}
-          {tag.state === "falhou" && (
+          {tag.state === "falhou" && !falhaWhatsapp && (
             <div style={{ marginBottom: 8 }}>
               <div style={{ color: "var(--state-danger)", marginBottom: 4 }}>
                 A última tentativa de envio <strong>falhou</strong>
@@ -262,6 +267,32 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
                   Motivo: <code style={{ fontSize: "0.72rem" }}>{tag.emailLastError}</code>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ⚠ A SEGUNDA FONTE DO `falhou` (02/09/2026): o WhatsApp que a Meta recusou. O motivo já
+              chega TRADUZIDO (`envioErro` = `erroMensagemUsuario`, escrito por `errosMeta`), e a
+              pergunta "posso tentar de novo?" tem TRÊS respostas — `null` é "a Meta não diz", e a
+              tela não o disfarça de `false`: oferece o botão com a frase de que a decisão é do
+              contador. Falha de transporte é o caso em que a guia PODE ter chegado. */}
+          {falhaWhatsapp && (
+            <div style={{ marginBottom: 8 }} data-testid="falha-whatsapp">
+              <div style={{ color: "var(--state-danger)", marginBottom: 4 }}>
+                A última tentativa por <strong>WhatsApp falhou</strong> e{" "}
+                <strong>nada vai tentar de novo sozinho</strong>.
+              </div>
+              {tag.envioErro && (
+                <div style={{ color: "var(--text-muted)", wordBreak: "break-word", marginBottom: 4 }}>
+                  Motivo: {tag.envioErro}
+                </div>
+              )}
+              <div style={{ color: "var(--text-muted)", marginBottom: 6 }}>{ofertaZap.frase}</div>
+              <BotaoAcao
+                disabled={ocupado || !tag.guideId || !ofertaZap.habilitado}
+                onClick={() => executar(() => acoes.onEnviarWhatsapp?.(tag.guideId, empresa))}
+              >
+                {ocupado ? "Enviando…" : ofertaZap.rotulo}
+              </BotaoAcao>
             </div>
           )}
 
@@ -281,7 +312,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
                 tom="ok" disabled={ocupado || !tag.guideId}
                 onClick={() => executar(() => acoes.onEnviar?.(tag.guideId, empresa))}
               >
-                {ocupado ? "Enviando…" : (tag.state === "falhou" ? "✈ Tentar enviar de novo" : "✈ Enviar e-mail")}
+                {ocupado ? "Enviando…" : (tag.state === "falhou" && !falhaWhatsapp ? "✈ Tentar enviar de novo" : "✈ Enviar e-mail")}
               </BotaoAcao>
             </>
           )}
