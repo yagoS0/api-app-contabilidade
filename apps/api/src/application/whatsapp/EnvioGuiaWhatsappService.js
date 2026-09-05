@@ -275,7 +275,22 @@ export async function enviarGuiaPorWhatsapp({
   guide,
   contato,
   canal,
-  cliente,
+  /**
+   * ⚠⚠ ELE PRECISA DE DEFAULT, e a falta dele era um defeito de PRODUÇÃO (05/09/2026).
+   *
+   * A rota (`whatsappGuias.js`) nunca passou `cliente` — nem antes nem depois da mudança de hoje —,
+   * e sem default isto chegava `undefined` em `cliente.enviarGuia`, estourando
+   * `TypeError: Cannot read properties of undefined`. O envio de guia POR GUIA nunca funcionou.
+   *
+   * ⚠ Ficou escondido porque a recusa `GUIA_SEM_PDF` abortava ANTES desta linha, e ela também era
+   * defeito (o `select` não trazia os bytes). Dois defeitos na MESMA execução: consertar o primeiro
+   * só descobriu o segundo. Aqui é o segundo.
+   *
+   * ⚠ `executarLote` já fazia certo (`cliente || new WhatsappCloudClient()`), e é essa assimetria
+   * que enganava: o lote construía o cliente, o individual esperava recebê-lo de alguém.
+   * ⚠ Continua INJETÁVEL — é o que trava a rede nos testes.
+   */
+  cliente = new WhatsappCloudClient(),
   carregarPdf = carregarPdfDaGuia,
   log = logPadrao,
   reenviar = false,

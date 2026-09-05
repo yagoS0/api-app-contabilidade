@@ -501,3 +501,26 @@ describe("⚠⚠ o PDF é buscado por id — o `select` do envio não o traz", (
     expect(cliente.enviarGuia).not.toHaveBeenCalled();
   });
 });
+
+// ── ⚠⚠ O CLIENTE PRECISA TER DEFAULT (05/09/2026) ───────────────────────────────────────────────
+//
+// Defeito de PRODUÇÃO, achado pelo log depois de duas rodadas: a rota nunca passou `cliente`, e sem
+// default a linha `cliente.enviarGuia(...)` estourava
+// `TypeError: Cannot read properties of undefined`. O envio de guia POR GUIA nunca funcionou.
+//
+// ⚠ Ficou escondido atrás de OUTRO defeito: `GUIA_SEM_PDF` abortava antes desta linha. Consertar o
+// primeiro só descobriu o segundo — e nenhum teste pegava nenhum dos dois, porque TODOS injetavam
+// as duas costuras (`carregarPdf` e `cliente`). Costura injetada em todo teste é costura sem prova.
+describe("⚠⚠ chamar SEM injetar o cliente não pode estourar TypeError", () => {
+  it("sem `cliente`, a falha é RECUSA NOMEADA — nunca erro de programação", async () => {
+    cenarioLimpo();
+    // Sem `cliente` e sem `carregarPdf`: exatamente a forma que a rota usa.
+    const r = await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: TEMPLATE_APROVADO });
+
+    expect(r.ok).toBe(false);
+    // ⚠ O que se prende aqui é a AUSÊNCIA do defeito: `FALHA_INESPERADA` é o balde das exceções
+    // nossas, e um TypeError cairia nele.
+    expect(r.motivo).not.toBe(MOTIVOS_SERVICO.FALHA_INESPERADA);
+    expect(String(r.mensagem || "")).not.toMatch(/undefined|TypeError/i);
+  });
+});

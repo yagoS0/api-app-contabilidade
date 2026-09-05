@@ -158,6 +158,18 @@ describe("canal AUSENTE não é canal que falhou", () => {
     expect(r.texto).toMatch(/Configuração de envio/);
   });
 
+  it("⚠⚠ com o WhatsApp CADASTRADO e falhando, NÃO se manda cadastrar destinatário", () => {
+    // Medido na tela do dono: a frase mandava cadastrar um WhatsApp que já existia, escondendo a
+    // falha real. "Cadastre" só vale quando não havia canal nenhum para tentar.
+    const r = resumirDesfechoDosCanais({
+      email: { feito: false, naoSeAplica: true },
+      whatsapp: { tentado: true, ok: false, motivo: "FALHA_INESPERADA" },
+    });
+    expect(r.tom).toBe("erro");
+    expect(r.texto).not.toContain(SEM_NINGUEM_PARA_RECEBER);
+    expect(r.texto).toMatch(/WhatsApp não saiu/);
+  });
+
   it("⚠ a ausência do e-mail NÃO perdoa o WhatsApp que falhou — o erro continua visível", () => {
     const r = resumirDesfechoDosCanais({
       email: { feito: false, naoSeAplica: true },

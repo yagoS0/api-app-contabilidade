@@ -88,10 +88,15 @@ export function resumirDesfechoDosCanais({ email, whatsapp } = {}) {
 
   const entregou = emailOk || zapOk;
   const algoFalhou = (!emailOk && !emailAusente) || zapFalhou;
+  // ⚠⚠ "CADASTRE UM DESTINATÁRIO" SÓ QUANDO NÃO HAVIA O QUE TENTAR — medido na tela do dono
+  // (05/09/2026): com o WhatsApp CADASTRADO e o envio falhando, a frase mandava cadastrar um
+  // WhatsApp que já existia. Conselho errado é pior que conselho nenhum: ele manda a pessoa
+  // consertar o que não está quebrado, e esconde o que está.
+  const nadaATentar = !entregou && !algoFalhou;
   const texto = `Guia liberada ao cliente: ${partes.join(" · ")}.`;
   return {
     tom: entregou && !algoFalhou ? "ok" : "erro",
-    texto: entregou ? texto : `${texto} ${SEM_NINGUEM_PARA_RECEBER}`,
+    texto: nadaATentar ? `${texto} ${SEM_NINGUEM_PARA_RECEBER}` : texto,
   };
 }
 
