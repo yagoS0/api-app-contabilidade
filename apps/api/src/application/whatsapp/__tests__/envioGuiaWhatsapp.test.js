@@ -22,7 +22,7 @@ jest.mock("../../../config.js", () => ({
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
     templateWhatsapp: { findUnique: jest.fn() },
-    guide: { findMany: jest.fn() },
+    guide: { findMany: jest.fn(), findUnique: jest.fn() },
     envioGuia: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
     contatoWhatsapp: { findMany: jest.fn() },
     conversaWhatsapp: { upsert: jest.fn() },
@@ -38,6 +38,8 @@ import {
   carregarCanal,
   competenciaPorExtenso,
   conferirLote,
+  SELECT_GUIA_PARA_ENVIO,
+  carregarPdfDaGuia,
   enviarGuiaPorWhatsapp,
   executarLote,
   preverLote,
@@ -78,6 +80,8 @@ function cenarioLimpo({ guias = [GUIA], contatos = [CONTATO], template = TEMPLAT
     args?.select?.portalClient ? guias : guias.map(({ portalClient, ...g }) => g)
   ));
   prisma.envioGuia.findMany.mockResolvedValue(envios);
+  // ⚠ O PDF é buscado POR ID no instante do envio — ver `carregarPdfDaGuia`.
+  prisma.guide.findUnique.mockResolvedValue({ pdfBytes: pdf(), storageKey: null });
   prisma.contatoWhatsapp.findMany.mockResolvedValue(contatos);
   prisma.envioGuia.findUnique.mockResolvedValue(null);
   // ⚠ A chave passou a incluir o DESTINO (05/09/2026): quem procura o envio existente é o
@@ -424,5 +428,52 @@ describe("o lote", () => {
     expect(progresso).toEqual([1, 2]);
     expect(r.whatsapp).toMatchObject({ total: 2, enviadas: 2 });
     expect(r.whatsapp.falhas).toHaveLength(0);
+  });
+});
+
+// ── ⚠⚠ O PDF QUE O `select` NÃO TRAZIA (05/09/2026) ─────────────────────────────────────────────
+//
+// Defeito medido em PRODUÇÃO: toda guia recusava com `GUIA_SEM_PDF` tendo o PDF gravado no banco
+// (160.184 bytes na guia que recusou), e o e-mail da MESMA guia saiu com o anexo no mesmo instante.
+// `getGuidePdfBuffer` lê `pdfBytes`/`storageKey`; nenhum dos dois está no `SELECT_GUIA_PARA_ENVIO`,
+// e coluna fora de `select` volta `undefined` sem erro nenhum.
+//
+// ⚠ NENHUM TESTE PEGOU porque `carregarPdf` é injetável e todos injetavam um dublê: o loader REAL
+// nunca rodou ao lado do `select` REAL. Os três casos abaixo prendem o par, não as peças.
+
+describe("⚠⚠ o PDF é buscado por id — o `select` do envio não o traz", () => {
+  it("o `select` do envio NÃO pede os bytes, e é por isso que o loader precisa reler", () => {
+    // A metade que documenta a armadilha: quem depender do `select` recebe undefined nos dois campos.
+    expect(SELECT_GUIA_PARA_ENVIO.pdfBytes).toBeUndefined();
+    expect(SELECT_GUIA_PARA_ENVIO.storageKey).toBeUndefined();
+    // ⚠ E ele NÃO pode passar a pedir: o mesmo select alimenta o LOTE, que lê N guias de uma vez.
+  });
+
+  it("`carregarPdfDaGuia` acha os bytes que o `select` deixou de fora", async () => {
+    const client = { guide: { findUnique: jest.fn(async () => ({ pdfBytes: pdf(), storageKey: null })) } };
+    const buffer = await carregarPdfDaGuia({ id: "g1" }, client);
+    expect(buffer?.length).toBeGreaterThan(0);
+    expect(client.guide.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "g1" }, select: { pdfBytes: true, storageKey: true } }),
+    );
+  });
+
+  it("⚠ o envio SEM `carregarPdf` injetado manda a guia — é o caminho de produção", async () => {
+    cenarioLimpo();
+    const cliente = clienteFalso();
+    // Nada de `carregarPdf` aqui: quem carrega é o default, como na rota.
+    const r = await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: TEMPLATE_APROVADO, cliente });
+    expect(r.ok).toBe(true);
+    expect(cliente.enviarGuia).toHaveBeenCalledTimes(1);
+    expect(cliente.enviarGuia.mock.calls[0][0].conteudoPdf?.length).toBeGreaterThan(0);
+  });
+
+  it("PDF ausente DE VERDADE continua recusando nomeado — a guarda não foi removida", async () => {
+    cenarioLimpo();
+    prisma.guide.findUnique.mockResolvedValue({ pdfBytes: null, storageKey: null });
+    const cliente = clienteFalso();
+    const r = await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: TEMPLATE_APROVADO, cliente });
+    expect(r).toMatchObject({ ok: false, motivo: MOTIVOS_SERVICO.GUIA_SEM_PDF, podeTentarDeNovo: false });
+    expect(cliente.enviarGuia).not.toHaveBeenCalled();
   });
 });

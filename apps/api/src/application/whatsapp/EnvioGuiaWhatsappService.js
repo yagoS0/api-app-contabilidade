@@ -85,6 +85,35 @@ export const SELECT_GUIA_PARA_ENVIO = Object.freeze({
   emailAttempts: true,
 });
 
+/**
+ * O PDF DA GUIA — buscado POR ID, na hora de enviar.
+ *
+ * ⚠⚠ ELE NÃO VEM NO `SELECT_GUIA_PARA_ENVIO`, E ISSO É DELIBERADO NOS DOIS SENTIDOS.
+ *
+ * `getGuidePdfBuffer` lê `guide.pdfBytes` e `guide.storageKey`. Nenhum dos dois está naquele
+ * `select` — e coluna fora de `select` explícito volta `undefined`, **sem erro nenhum**. O
+ * resultado, medido em produção em 05/09/2026: `GUIA_SEM_PDF` em TODA guia, sempre, com o PDF
+ * gravado no banco (160.184 bytes na guia que recusou). O e-mail da MESMA guia saiu com o anexo no
+ * mesmo instante — ele carrega a guia inteira, sem `select`.
+ *
+ * ⚠ A saída NÃO é pôr `pdfBytes` no `select`: ele também alimenta o LOTE (`executarLote`), que lê
+ * N guias de uma vez. Um `Bytes` por linha ali carrega a carteira inteira de PDFs na memória para
+ * enviar um por um. O byte é buscado onde é usado — uma guia, no instante do envio.
+ *
+ * ⚠ Quinta vez que esta família de defeito morde este projeto (`legacyCompanySelect`,
+ * `codigosServicoNacional`, carga tributária, `codigoMunicipioIbge`). O teste não pegou porque
+ * `carregarPdf` é INJETÁVEL e todo teste injetava um dublê: o loader real nunca rodou ao lado do
+ * `select` real. Seam que esconde defeito é seam sem teste de ligação.
+ */
+export async function carregarPdfDaGuia(guide, client = prisma) {
+  if (!guide?.id) return null;
+  const completo = await client.guide.findUnique({
+    where: { id: String(guide.id) },
+    select: { pdfBytes: true, storageKey: true },
+  });
+  return getGuidePdfBuffer(completo);
+}
+
 // ⚠ Cópia local e deliberada: `competenciaPorExtenso` de `RelatorioFaturamentoService` é privada, e
 // importar um serviço de apuração dentro do módulo de WhatsApp para pegar doze strings acoplaria os
 // dois por nada. Formatação de apresentação, não regra.
@@ -235,7 +264,7 @@ export async function enviarGuiaPorWhatsapp({
   contato,
   canal,
   cliente,
-  carregarPdf = getGuidePdfBuffer,
+  carregarPdf = carregarPdfDaGuia,
   log = logPadrao,
   reenviar = false,
 }) {
@@ -412,7 +441,7 @@ export async function executarLote({
   conferencia = null,
   chaveTemplate = WHATSAPP_TEMPLATE_GUIA,
   cliente = null,
-  carregarPdf = getGuidePdfBuffer,
+  carregarPdf = carregarPdfDaGuia,
   delayMs = WHATSAPP_ENVIO_DELAY_MS,
   log = logPadrao,
   aoProgredir = null,
