@@ -31,6 +31,7 @@ import { avaliarLinha } from "../../application/whatsapp/elegibilidadeEnvioGuia.
 import { destinatarioWhatsapp } from "../../application/whatsapp/ContatoWhatsappService.js";
 import { enviosPorGuia, foiEnviadaComLegado } from "../../application/guides/EnvioGuiaService.js";
 import { runGuideEmailWorkerSelected } from "../../workers/guideEmailWorker.js";
+import { destinatariosDeEnvio } from "../../application/whatsapp/ContatoWhatsappService.js";
 
 export function createWhatsappGuiasRouter({ log } = {}) {
   const router = Router({ mergeParams: true });
@@ -93,8 +94,13 @@ export function createWhatsappGuiasRouter({ log } = {}) {
         const canal = await carregarCanal();
         const envios = (await enviosPorGuia([guide.id])).get(guide.id) || [];
         const jaEnviada = foiEnviadaComLegado(envios, guide);
+        // ⚠ REENVIAR É PEDIDO EXPLÍCITO (decisão do dono, 05/09/2026): a tela avisa que a guia já foi
+        // enviada, e só com o `reenviar` no corpo é que a recusa `GUIA_JA_ENVIADA` deixa de valer.
+        // ⚠ O LOTE NÃO TEM ESTA PORTA — lá a recusa continua sendo o primeiro corte, e é o que
+        // impede a carteira inteira de sair duas vezes num clique.
+        const reenviar = req.body?.reenviar === true;
         const destinatario = await destinatarioWhatsapp(companyId);
-        const avaliacao = avaliarLinha({ canal, guide, destinatario, envios, jaEnviada });
+        const avaliacao = avaliarLinha({ canal, guide, destinatario, envios, jaEnviada: jaEnviada && !reenviar });
 
         if (!avaliacao.pode) {
           return res.status(422).json({
@@ -106,13 +112,20 @@ export function createWhatsappGuiasRouter({ log } = {}) {
           });
         }
 
-        const resultado = await enviarGuiaPorWhatsapp({
-          guide,
-          contato: avaliacao.contato,
-          canal,
-          log,
-        });
-        return res.status(resultado.ok ? 200 : 422).json({ ...resultado, error: resultado.ok ? undefined : resultado.motivo });
+        // ⚠ TODOS OS TELEFONES CADASTRADOS, um envio por destinatário (decisão do dono). Sem
+        // destinatário com opt-in, cai no contato que a avaliação escolheu — o caminho de antes.
+        const { telefones } = await destinatariosDeEnvio(companyId);
+        const alvos = telefones.length ? telefones : [avaliacao.contato];
+        const resultados = [];
+        for (const contato of alvos) {
+          // Sequencial de propósito: cada mensagem é uma chamada à Meta, e o espaçamento importa.
+          // eslint-disable-next-line no-await-in-loop
+          resultados.push(await enviarGuiaPorWhatsapp({ guide, contato, canal, log, reenviar }));
+        }
+        const enviadas = resultados.filter((r) => r.ok && r.enviada !== false).length;
+        const algumOk = resultados.some((r) => r.ok);
+        const resultado = { ...resultados[0], destinatarios: resultados.length, enviadas, resultados };
+        return res.status(algumOk ? 200 : 422).json({ ...resultado, error: algumOk ? undefined : resultados[0]?.motivo });
       } catch (err) {
         return falhar(res, err, { companyId, guideId });
       }

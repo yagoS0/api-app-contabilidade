@@ -63,19 +63,31 @@ export function envioParaExibir(envios) {
  * Devolve `{ envio, jaEnviado }`: quem chama precisa saber que não deve mandar de novo, e o painel
  * de revisão do lote precisa mostrar "já enviada" em vez de fingir que vai enviar.
  */
-export async function registrarEnvio({ guideId, canal, destino, tx = prisma }) {
-  const existente = await tx.envioGuia.findUnique({
-    where: { guideId_canal: { guideId: String(guideId), canal } },
+export async function registrarEnvio({ guideId, canal, destino, reenviar = false, tx = prisma }) {
+  // ⚠ A CHAVE INCLUI O DESTINO desde 05/09/2026: mandar a mesma guia para OUTRO telefone não é
+  // repetir, é outro destinatário. `destino` nulo é a linha LEGADA (ver `linhaLegadoDoEmail`).
+  const alvo = destino || null;
+  const existente = await tx.envioGuia.findFirst({
+    where: { guideId: String(guideId), canal, destino: alvo },
   });
   if (existente && STATUS_TERMINAL.includes(existente.status)) {
-    return { envio: existente, jaEnviado: true };
+    // ⚠ REENVIAR É DECISÃO DO CONTADOR, e ele a toma depois de a tela dizer que a guia já foi
+    // (decisão do dono, 05/09/2026). Sem o pedido explícito, o comportamento é o de antes: recusa.
+    // ⚠ O LOTE NUNCA passa `reenviar` — é o que impede a carteira inteira de sair duas vezes num
+    // clique. Quem passa é o envio POR GUIA.
+    if (!reenviar) return { envio: existente, jaEnviado: true };
   }
-  const envio = await tx.envioGuia.upsert({
-    where: { guideId_canal: { guideId: String(guideId), canal } },
-    create: { guideId: String(guideId), canal, destino: destino || null, status: "pendente" },
+  if (existente) {
     // Retentativa limpa o erro anterior: erro velho ao lado de uma tentativa nova confunde mais que
     // ajuda, e o histórico do que falhou vive no log.
-    update: { destino: destino || null, status: "pendente", erroCodigo: null, erroMensagemUsuario: null },
+    const envio = await tx.envioGuia.update({
+      where: { id: existente.id },
+      data: { status: "pendente", erroCodigo: null, erroMensagemUsuario: null },
+    });
+    return { envio, jaEnviado: false, reenvio: STATUS_TERMINAL.includes(existente.status) };
+  }
+  const envio = await tx.envioGuia.create({
+    data: { guideId: String(guideId), canal, destino: alvo, status: "pendente" },
   });
   return { envio, jaEnviado: false };
 }
@@ -158,8 +170,11 @@ export function linhaLegadoDoEmail(guide) {
 export async function materializarEnvioDeEmailLegado(guide, tx = prisma) {
   const linha = linhaLegadoDoEmail(guide);
   if (!linha) return { materializou: false };
-  const existente = await tx.envioGuia.findUnique({
-    where: { guideId_canal: { guideId: linha.guideId, canal: linha.canal } },
+  // ⚠ `findFirst` com `destino: null`, não `findUnique`: a chave passou a incluir o destino, e a
+  // linha legada é justamente a que não tem um. Quem garante que ela é única é o índice PARCIAL da
+  // migration `20260905150000` — este `if` é a leitura, o índice é a garantia.
+  const existente = await tx.envioGuia.findFirst({
+    where: { guideId: linha.guideId, canal: linha.canal, destino: null },
   });
   if (existente) return { materializou: false };
   await tx.envioGuia.create({ data: linha });

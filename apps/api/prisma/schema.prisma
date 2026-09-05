@@ -1172,7 +1172,16 @@ model EnvioGuia {
 
   /// ⚠ É esta constraint que torna reexecutar o lote inofensivo: a segunda passada encontra o
   /// registro e não redispara.
-  @@unique([guideId, canal])
+  ///
+  /// ⚠⚠ O DESTINO ENTROU NA CHAVE EM 05/09/2026 (o envio passou a ir para TODOS os destinatários
+  /// cadastrados). Ela NÃO afrouxou: continua sendo um envio por (guia, canal, destino) — mandar
+  /// para outro telefone não é repetir, é outro destinatário.
+  ///
+  /// ⚠ A linha LEGADA do e-mail tem `destino` NULO (o envio antigo não registrava para quem foi), e
+  /// no Postgres NULL não colide com NULL. Quem garante uma legada por (guia, canal) é um índice
+  /// PARCIAL (`envios_guia_legado_sem_destino_key`), que o Prisma não sabe declarar e vive na
+  /// migration `20260905150000`.
+  @@unique([guideId, canal, destino])
   @@index([status, proximaTentativaEm])
   @@index([providerMessageId])
   @@map("envios_guia")

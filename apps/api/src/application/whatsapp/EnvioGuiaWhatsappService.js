@@ -237,6 +237,7 @@ export async function enviarGuiaPorWhatsapp({
   cliente,
   carregarPdf = getGuidePdfBuffer,
   log = logPadrao,
+  reenviar = false,
 }) {
   const { materializou } = await materializarEnvioDeEmailLegado(guide);
 
@@ -244,6 +245,8 @@ export async function enviarGuiaPorWhatsapp({
     guideId: guide.id,
     canal: CANAL.WHATSAPP,
     destino: contato.telefoneE164,
+    // ⚠ Só com o pedido explícito do contador — ver `registrarEnvio`.
+    reenviar,
   });
   if (jaEnviado) {
     return { ok: true, enviada: false, jaEnviada: true, guideId: guide.id, envioId: envio.id, legadoMaterializado: materializou };

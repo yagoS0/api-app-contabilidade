@@ -5,7 +5,7 @@
 // dizer "enviada por WhatsApp e ainda não por e-mail".
 
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
-  prisma: { envioGuia: { findUnique: jest.fn(), upsert: jest.fn(), findFirst: jest.fn(), update: jest.fn(), findMany: jest.fn() } },
+  prisma: { envioGuia: { findUnique: jest.fn(), upsert: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn() } },
 }));
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
@@ -64,22 +64,52 @@ describe("envioParaExibir — o popover mostra o mais adiantado", () => {
 });
 
 describe("registrarEnvio — idempotência é o que torna o lote seguro", () => {
-  it("guia JÁ enviada naquele canal não é redisparada", async () => {
+  it("guia JÁ enviada naquele DESTINO não é redisparada", async () => {
     // É esta guarda que faz reexecutar o lote não mandar a mesma guia duas vezes ao cliente.
-    prisma.envioGuia.findUnique.mockResolvedValue({ id: "e1", status: "entregue" });
-    const r = await registrarEnvio({ guideId: "g1", canal: "WHATSAPP" });
+    prisma.envioGuia.findFirst.mockResolvedValue({ id: "e1", status: "entregue" });
+    const r = await registrarEnvio({ guideId: "g1", canal: "WHATSAPP", destino: "5521999998888" });
     expect(r.jaEnviado).toBe(true);
-    expect(prisma.envioGuia.upsert).not.toHaveBeenCalled();
+    expect(prisma.envioGuia.create).not.toHaveBeenCalled();
+    expect(prisma.envioGuia.update).not.toHaveBeenCalled();
+  });
+
+  it("⚠ OUTRO destino no MESMO canal não é repetição — é outro destinatário (05/09/2026)", async () => {
+    // A chave passou a incluir o destino porque a guia vai para TODOS os cadastrados. Sem isto, o
+    // segundo telefone da empresa nunca receberia: a linha do primeiro diria "já enviada".
+    prisma.envioGuia.findFirst.mockResolvedValue(null);
+    prisma.envioGuia.create.mockResolvedValue({ id: "e2", status: "pendente" });
+    const r = await registrarEnvio({ guideId: "g1", canal: "WHATSAPP", destino: "5521988887777" });
+    expect(r.jaEnviado).toBe(false);
+    expect(prisma.envioGuia.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ destino: "5521988887777" }) }),
+    );
+  });
+
+  it("⚠ REENVIAR só com o pedido explícito — sem ele, enviada continua sendo recusa", async () => {
+    // Decisão do dono (05/09/2026): a tela avisa que já foi enviada e o contador decide. O LOTE
+    // nunca passa `reenviar` — é o que impede a carteira inteira de sair duas vezes num clique.
+    prisma.envioGuia.findFirst.mockResolvedValue({ id: "e1", status: "entregue" });
+    prisma.envioGuia.update.mockResolvedValue({ id: "e1", status: "pendente" });
+    const semPedido = await registrarEnvio({ guideId: "g1", canal: "WHATSAPP", destino: "5521999998888" });
+    expect(semPedido.jaEnviado).toBe(true);
+    const comPedido = await registrarEnvio({ guideId: "g1", canal: "WHATSAPP", destino: "5521999998888", reenviar: true });
+    expect(comPedido.jaEnviado).toBe(false);
+    expect(comPedido.reenvio).toBe(true);
+    expect(prisma.envioGuia.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "e1" }, data: expect.objectContaining({ status: "pendente" }) }),
+    );
   });
 
   it("envio que falhou PODE ser retentado, e o erro antigo é limpo", async () => {
-    prisma.envioGuia.findUnique.mockResolvedValue({ id: "e1", status: "falhou" });
-    prisma.envioGuia.upsert.mockResolvedValue({ id: "e1", status: "pendente" });
+    prisma.envioGuia.findFirst.mockResolvedValue({ id: "e1", status: "falhou" });
+    prisma.envioGuia.update.mockResolvedValue({ id: "e1", status: "pendente" });
     const r = await registrarEnvio({ guideId: "g1", canal: "WHATSAPP", destino: "5521999998888" });
     expect(r.jaEnviado).toBe(false);
-    expect(prisma.envioGuia.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ update: expect.objectContaining({ erroCodigo: null, erroMensagemUsuario: null }) }),
+    // ⚠ A MESMA linha volta a `pendente` — nunca uma segunda para o mesmo destino.
+    expect(prisma.envioGuia.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "e1" }, data: expect.objectContaining({ erroCodigo: null, erroMensagemUsuario: null }) }),
     );
+    expect(prisma.envioGuia.create).not.toHaveBeenCalled();
   });
 });
 

@@ -23,7 +23,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
     templateWhatsapp: { findUnique: jest.fn() },
     guide: { findMany: jest.fn() },
-    envioGuia: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), upsert: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
+    envioGuia: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
     contatoWhatsapp: { findMany: jest.fn() },
     conversaWhatsapp: { upsert: jest.fn() },
     mensagemWhatsapp: { create: jest.fn() },
@@ -80,10 +80,13 @@ function cenarioLimpo({ guias = [GUIA], contatos = [CONTATO], template = TEMPLAT
   prisma.envioGuia.findMany.mockResolvedValue(envios);
   prisma.contatoWhatsapp.findMany.mockResolvedValue(contatos);
   prisma.envioGuia.findUnique.mockResolvedValue(null);
+  // ⚠ A chave passou a incluir o DESTINO (05/09/2026): quem procura o envio existente é o
+  // `findFirst`, e a linha legada do e-mail é procurada por `destino: null`.
+  prisma.envioGuia.findFirst.mockResolvedValue(null);
   prisma.envioGuia.upsert.mockResolvedValue({ id: "e1", status: "pendente" });
   prisma.envioGuia.updateMany.mockResolvedValue({ count: 1 });
   prisma.envioGuia.update.mockResolvedValue({ id: "e1" });
-  prisma.envioGuia.create.mockResolvedValue({ id: "eLegado" });
+  prisma.envioGuia.create.mockImplementation(async ({ data }) => ({ id: data?.destino ? "e1" : "eLegado", ...data }));
   prisma.conversaWhatsapp.upsert.mockResolvedValue({ id: "conv1" });
   prisma.mensagemWhatsapp.create.mockResolvedValue({ id: "m1" });
 }
@@ -238,8 +241,8 @@ describe("o envio de uma guia", () => {
 describe("a mesma guia não vai duas vezes ao cliente", () => {
   it("envio TERMINAL naquele canal: não redispara (reexecutar o lote é inofensivo)", async () => {
     cenarioLimpo();
-    prisma.envioGuia.findUnique.mockImplementation(async ({ where }) => (
-      where.guideId_canal.canal === "WHATSAPP" ? { id: "e1", status: "entregue" } : null
+    prisma.envioGuia.findFirst.mockImplementation(async ({ where }) => (
+      where.canal === "WHATSAPP" && where.destino ? { id: "e1", status: "entregue" } : null
     ));
     const cliente = clienteFalso();
     const r = await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: {}, cliente, carregarPdf: pdf });
@@ -260,14 +263,19 @@ describe("a mesma guia não vai duas vezes ao cliente", () => {
 
   it("envio que FALHOU é reenviável — a linha volta a `pendente`, sem segunda linha", async () => {
     cenarioLimpo();
-    prisma.envioGuia.findUnique.mockImplementation(async ({ where }) => (
-      where.guideId_canal.canal === "WHATSAPP" ? { id: "e1", status: "falhou" } : null
+    prisma.envioGuia.findFirst.mockImplementation(async ({ where }) => (
+      where.canal === "WHATSAPP" && where.destino ? { id: "e1", status: "falhou" } : null
     ));
     const cliente = clienteFalso();
     const r = await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: {}, cliente, carregarPdf: pdf });
     expect(r.ok).toBe(true);
-    expect(prisma.envioGuia.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      update: expect.objectContaining({ status: "pendente", erroCodigo: null }),
+    // ⚠ A MESMA LINHA volta a `pendente` — nunca uma segunda linha para o mesmo destino.
+    expect(prisma.envioGuia.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "e1" },
+      data: expect.objectContaining({ status: "pendente", erroCodigo: null }),
+    }));
+    expect(prisma.envioGuia.create).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ canal: "WHATSAPP" }),
     }));
   });
 });
@@ -338,17 +346,21 @@ describe("⚠ tocar a guia traz o legado do e-mail junto", () => {
       cenarioLimpo();
       // eslint-disable-next-line no-await-in-loop
       await enviarGuiaPorWhatsapp({ guide: { ...GUIA, emailStatus }, contato: CONTATO, canal: {}, cliente: clienteFalso(), carregarPdf: pdf });
-      expect(prisma.envioGuia.create).not.toHaveBeenCalled();
+      // ⚠ A linha do WHATSAPP é criada normalmente (a chave passou a incluir o destino, então
+      // `registrarEnvio` cria em vez de dar upsert). O que NÃO pode nascer é a linha do e-mail.
+      const criouLegado = prisma.envioGuia.create.mock.calls.some(([arg]) => arg?.data?.canal === "EMAIL");
+      expect(criouLegado).toBe(false);
     }
   });
 
   it("legado já materializado não vira segunda linha", async () => {
     cenarioLimpo();
-    prisma.envioGuia.findUnique.mockImplementation(async ({ where }) => (
-      where.guideId_canal.canal === "EMAIL" ? { id: "eLegado", status: "enviado" } : null
+    prisma.envioGuia.findFirst.mockImplementation(async ({ where }) => (
+      where.canal === "EMAIL" ? { id: "eLegado", status: "enviado" } : null
     ));
     await enviarGuiaPorWhatsapp({ guide: { ...GUIA, emailStatus: "SENT" }, contato: CONTATO, canal: {}, cliente: clienteFalso(), carregarPdf: pdf });
-    expect(prisma.envioGuia.create).not.toHaveBeenCalled();
+    const criouLegado = prisma.envioGuia.create.mock.calls.some(([arg]) => arg?.data?.canal === "EMAIL");
+    expect(criouLegado).toBe(false);
   });
 });
 
