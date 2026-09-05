@@ -281,3 +281,34 @@ com teste, e o `handleLiberarGuia` do workspace só chama.
   escritório · mensagem fixa) sai do `autor`.
 - ⚠ O mock tem os três fios (com a IA + pendência aberta · assumido com janela EXPIRADA · não
   vinculado) e dois contatos (um sem opt-in) — cada ramo é alcançável offline.
+
+## ⚠⚠ A CONFIGURAÇÃO DE ENVIO MORA AQUI (05/09/2026)
+
+> Dono: *"a tela de configuração de envio dentro de guias, lá deve ser o cadastro de emails e
+> telefones para envio, e não em senha e acesso"*.
+
+Gaveta (`Modal`) aberta pelo botão **"Configuração de envio"** no topo da aba Guias
+(`renderCompanyDetailPage.jsx` → `ConfiguracaoDeEnvioWrapper`). É a MESMA lista e o MESMO hook que
+viviam na aba de credenciais — o que mudou foi o LUGAR: aquela aba guarda **segredo e acesso**, e
+quem recebe a guia é assunto do **envio**.
+
+- **O destinatário tem os dois canais.** Telefone deixou de ser obrigatório; **um dos dois basta**
+  (espelho de `salvarContato`). A linha nomeia a ausência — *"sem WhatsApp"*, *"sem e-mail"* —
+  porque campo que some se lê como defeito.
+- ⚠⚠ **O OPT-IN VALE SÓ PARA O WHATSAPP.** `situacaoDoContato` ganhou o quarto estado `SO_EMAIL`
+  (*"recebe por e-mail · sem opt-in para WhatsApp"*), em tinta **neutra**. Antes dele, o
+  destinatário só de e-mail saía como *"não recebe até registrar a autorização"* — **falso**, e
+  mandava o contador atrás de uma autorização que o e-mail não exige. ⚠ Defeito visto no NAVEGADOR,
+  não no teste: o mock exigia telefone, então esse destinatário era **inalcançável offline**.
+- ⚠ **O `+55` não se digita.** `normalizarE164` já o prefixava desde agosto; o rótulo é que pedia o
+  `+`. Ele continua aceito — é o único desambiguador de DDI para número estrangeiro.
+- ⚠ **O terceiro e-mail saiu do cadastro da empresa** (ficaram o da empresa e o de acesso). A coluna
+  `guideNotificationEmail` **não foi apagada** e o valor salvo continua viajando no formulário: ela é
+  a rede da cascata para a empresa sem destinatário cadastrado.
+
+### Reenviar guia já enviada
+
+`GUIA_JA_ENVIADA` deixou de ser o fim do caminho (`liberarComCanais` + `perguntaDeReenvio`): a tela
+**avisa com o motivo que o servidor deu** e, só com o sim, repete o pedido com `reenviar: true`.
+⚠ **Vale no envio POR GUIA.** O lote continua pulando as já enviadas — é o que impede a carteira
+inteira de sair duas vezes num clique.

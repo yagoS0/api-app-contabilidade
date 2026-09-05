@@ -4514,6 +4514,71 @@ fiscal sem pendência + código · `confirmar` por "sim" solto não existe · fo
 não escreve nada · `IA_EMPRESAS_PILOTO` vazio é ninguém, não todo mundo · **NUNCA rodar
 `scripts/backfill-envio-guia.mjs`**.
 
+
+## ⚠⚠ O DESTINATÁRIO DE ENVIO — e-mail e WhatsApp na mesma linha (05/09/2026)
+
+> Dono, com a tela na frente: *"a tela de configuração de envio dentro de guias, lá deve ser o
+> cadastro de emails e telefones para envio, e não em senha e acesso (…) o cadastro padrão da empresa
+> digitamos o email 3 vezes, devemos digitar apenas duas (…) quando enviarmos, enviar para todos os
+> canais cadastrados"*.
+
+**`contatos_whatsapp` virou o cadastro de DESTINATÁRIOS**: ganhou `email`, e `telefoneE164` passou a
+ser nulo. Um destinatário tem só e-mail, só WhatsApp, ou os dois. ⚠ **A tabela NÃO mudou de nome** —
+renomeá-la arrastaria o módulo de conversas inteiro (vínculo por telefone, webhook, fila de não
+vinculados) por causa de uma mudança de escopo da TELA.
+
+| onde | o quê |
+|---|---|
+| `salvarContato` | aceita `email`, valida a forma, e exige **ao menos um canal** (`SEM_CANAL`) |
+| `destinatariosDeEnvio` | `{emails, telefones, semOptIn}` — a lista por canal |
+| `resolveCompanyNotificationEmails` | TODOS os e-mails, vírgula no `To:`; **a cascata antiga é a rede** |
+| `POST .../enviar-whatsapp` | manda para TODOS os telefones com opt-in, um envio por destinatário |
+
+⚠⚠ **O OPT-IN VALE SÓ PARA O WHATSAPP.** É exigência de política da Meta e é o que protege o número
+contra denúncia; **e-mail nunca dependeu dele**. Foi por ignorar isso que a tela nasceu dizendo
+*"sem opt-in — não recebe até registrar a autorização"* sobre um destinatário só de e-mail, que
+recebe normalmente — mandando o contador procurar uma autorização que não faz falta. Hoje há um
+quarto estado (`SO_EMAIL`), em tinta **neutra**: âmbar ali treinaria o olho a ignorar a cor da
+pendência de verdade.
+
+⚠⚠ **A CASCATA ANTIGA CONTINUA, e é o que impede a mudança de calar a carteira.** Sem NENHUM
+destinatário cadastrado, o envio cai em `guideNotificationEmail` → `Company.email` → e-mail do sócio,
+como sempre fez. A migration `20260905140000` faz o **backfill**: o e-mail que cada empresa já tinha
+vira o primeiro destinatário da lista nova (decisão do dono). ⚠ O `nome` do backfill não é inventado
+— *"E-mail cadastrado para guias"*: não sabemos de quem é o endereço, só que foi cadastrado para
+receber guia.
+
+### ⚠⚠ `envios_guia`: a chave passou a incluir o DESTINO
+
+`@@unique(guideId, canal)` → **`@@unique(guideId, canal, destino)`** (migration `20260905150000`).
+A idempotência do lote **não afrouxou**: continua um envio por (guia, canal, destino) — mandar para
+OUTRO telefone não é repetir, é outro destinatário. Sem isso, o segundo telefone da empresa nunca
+receberia: a linha do primeiro diria "já enviada".
+
+⚠⚠ **SÃO DOIS ÍNDICES.** No Postgres NULL não colide com NULL, e a linha LEGADA do e-mail tem
+`destino` nulo (o envio antigo não registrava para quem foi) — sem um índice **PARCIAL**
+(`… WHERE destino IS NULL`) ela poderia ser materializada duas vezes, e `foiEnviadaComLegado`
+passaria a ver duas linhas onde havia uma. O parcial **não é declarável no Prisma** e vive na
+migration; o comentário do schema diz onde ele está. ⚠ Medido: `envios_guia` tem **zero** linhas em
+produção — é por isso que a troca de chave é barata AGORA e não seria depois.
+
+⚠ `registrarEnvio` deixou de usar `upsert` (chave composta com nulo não casa) e virou
+`findFirst` + `create`/`update` por id: a MESMA linha volta a `pendente` na retentativa, nunca uma
+segunda para o mesmo destino.
+
+### Reenviar é decisão do contador
+
+`registrarEnvio` ganhou `reenviar`; sem ele, guia enviada continua sendo recusa. A rota **por guia**
+aceita `{reenviar: true}`; **o lote não tem essa porta**, e é o que impede a carteira inteira de sair
+duas vezes num clique. Na tela, a recusa `GUIA_JA_ENVIADA` virou o AVISO: a frase carrega o motivo
+que o servidor deu, e só com o sim o pedido é repetido.
+
+### O `+55` já era opcional
+
+`normalizarE164` aceita `21 99999-8888` e prefixa o 55 sozinha — no servidor e no espelho da tela,
+desde agosto. O que mudou foi o **rótulo**: ele mandava digitar o `+`. O `+` continua aceito e
+continua sendo o único desambiguador de DDI para número estrangeiro.
+
 ## Regras
 
 - Nunca hardcodar credenciais ou URLs — usar `config.js`

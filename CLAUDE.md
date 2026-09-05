@@ -689,6 +689,16 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   por lote, flag `INTEGRACAO_IA_CLASSIFICACAO` nasce OFF com o SERVIDOR recusando). ⚠ Nada disto
   lança — o contador confirma linha a linha. ⚠ Nenhuma chamada real à Anthropic saiu desta máquina.
   Ver `apps/api/src/application/declarados/CLAUDE.md`, seção "A IA NA CONFERÊNCIA".
+- [~] **Envio de guias: destinatários com e-mail e WhatsApp (05/09/2026)** — pedido do dono com a
+  tela na frente. `contatos_whatsapp` virou o cadastro de **destinatários** (ganhou `email`, telefone
+  opcional), o cadastro saiu da aba de senha e acesso e virou **gaveta dentro de Guias**, o
+  **terceiro e-mail saiu** do formulário da empresa, e o envio passa a ir para **todos os canais
+  cadastrados**. ⚠⚠ **O opt-in vale só para o WhatsApp** (exigência da Meta) — e-mail nunca dependeu
+  dele; foi por ignorar isso que a tela nasceu dizendo "não recebe" sobre quem recebe. ⚠ A chave de
+  `envios_guia` passou a incluir o **destino** (dois índices: o composto e um PARCIAL para a linha
+  legada de e-mail, que tem destino nulo) e **reenviar virou pedido explícito**, só no envio por
+  guia. ⚠ Duas migrations novas (`20260905140000` com backfill, `20260905150000`) **não aplicadas**.
+  Detalhes: `apps/api/CLAUDE.md`, seção "O DESTINATÁRIO DE ENVIO".
 - [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
   envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 
