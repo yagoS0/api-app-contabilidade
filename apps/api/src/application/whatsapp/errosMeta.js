@@ -829,6 +829,19 @@ export const CODIGOS_LOCAIS = Object.freeze({
   NAO_CONFIGURADO: "WHATSAPP_NAO_CONFIGURADO",
   /** Recusa nossa, antes de gastar chamada (telefone inválido, documento sem origem, etc). */
   RECUSA_LOCAL: "WHATSAPP_RECUSA_LOCAL",
+  /**
+   * ⚠⚠ A META RESPONDEU 200 E NÃO DEVOLVEU O ID DA MENSAGEM (05/09/2026).
+   *
+   * O `wamid` é a ÚNICA chave de correlação com o webhook de status: sem ele, nenhum
+   * `sent`/`delivered`/`read`/`failed` daquela mensagem encontra a linha de `envios_guia` — ela fica
+   * cega para sempre. Antes desta constante o envio gravava `enviado` com `providerMessageId: null`
+   * e a guia era dada por entregue sem que nada pudesse confirmá-la.
+   *
+   * ⚠ A RETENTATIVA É `null`, não `false`: 200 sem id **pode** significar mensagem entregue. Quem
+   * decide reenviar é o contador, olhando — reenviar às cegas manda a guia duas vezes.
+   * (`podeTentarDeNovoPeloCodigo` já devolve `null` para código local desconhecido.)
+   */
+  SEM_WAMID: "WHATSAPP_SEM_WAMID",
 });
 
 /** `131047` → `"META_131047"`. Código sempre NOMEADO, traduzido ou não. */

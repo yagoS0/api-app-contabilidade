@@ -218,22 +218,34 @@ export async function marcarFalhou({ envioId, codigo, mensagemUsuario, proximaTe
  * ⚠ NUNCA REBAIXA. A Meta entrega eventos fora de ordem: um `delivered` atrasado chegando depois do
  * `read` faria a mensagem "desler". A comparação por peso é o que impede isso.
  */
-export async function aplicarStatusDoProvedor({ providerMessageId, status }, tx = prisma) {
+export async function aplicarStatusDoProvedor({ providerMessageId, status, ocorridaEmProvedor = null }, tx = prisma) {
   const envio = await tx.envioGuia.findFirst({ where: { providerMessageId: String(providerMessageId) } });
   if (!envio) return null;
 
   const peso = { pendente: 0, enviando: 1, enviado: 2, entregue: 3, lido: 4 };
   const novo = status === "read" ? "lido" : status === "delivered" ? "entregue" : "enviado";
-  if ((peso[novo] ?? 0) <= (peso[envio.status] ?? 0)) return envio;
+  // ⚠ Mesmo peso ou menor: nada muda. Devolve o envio com `mudou: false` — antes devolvia o envio
+  // cru, e `processarStatus` contava como APLICADO. O `sent` da Meta (que sempre empata com o nosso
+  // `enviado`) inflava o resumo do webhook: "1 status aplicado" sobre zero mudança de estado.
+  if ((peso[novo] ?? 0) <= (peso[envio.status] ?? 0)) return { envio, mudou: false, anterior: envio.status };
 
-  return tx.envioGuia.update({
+  // ⚠⚠ O INSTANTE É O DA META, NÃO O NOSSO. `ocorridaEmProvedor` chega no `statuses[]` e era
+  // DESCARTADO: gravávamos `new Date()`, ou seja, a hora em que NÓS processamos o webhook. Numa
+  // reentrega da Meta (que pode vir horas depois) isso registra uma entrega que não aconteceu
+  // naquele instante. Sem o dado dela, o nosso relógio continua sendo a rede.
+  const quando = ocorridaEmProvedor instanceof Date && !Number.isNaN(ocorridaEmProvedor.getTime())
+    ? ocorridaEmProvedor
+    : new Date();
+
+  const atualizado = await tx.envioGuia.update({
     where: { id: envio.id },
     data: {
       status: novo,
-      ...(novo === "entregue" ? { entregueEm: new Date() } : {}),
-      ...(novo === "lido" ? { lidoEm: new Date(), entregueEm: envio.entregueEm || new Date() } : {}),
+      ...(novo === "entregue" ? { entregueEm: quando } : {}),
+      ...(novo === "lido" ? { lidoEm: quando, entregueEm: envio.entregueEm || quando } : {}),
     },
   });
+  return { envio: atualizado, mudou: true, anterior: envio.status };
 }
 
 /**

@@ -214,6 +214,36 @@ export async function acharContatoPorWaId(waIdOuTelefone) {
 }
 
 /**
+ * GRAVA O `waId` QUE A META DEVOLVEU — o único escritor desta coluna (05/09/2026).
+ *
+ * ⚠⚠ ATÉ HOJE `contatos_whatsapp.waId` NÃO TINHA ESCRITOR NENHUM. O `schema.prisma` afirmava que
+ * ela era *"descoberta no primeiro contato"*, `vinculoTelefone.js` afirmava que o `waId` é
+ * *"o identificador que a PRÓPRIA Meta já devolveu"*, e o ramo `casouPor: "WA_ID"` era **código
+ * morto**: a coluna era sempre nula. Duas afirmações do código sobre um mecanismo inexistente.
+ *
+ * O `wa_id` vem em `contacts[0]` da resposta de envio e é o número que a META usa — que pode
+ * diferir do cadastrado justamente pelo **nono dígito**. É ele que volta no webhook quando o
+ * cliente responde; sem gravá-lo, a resposta cai na fila de "não vinculados" com o cadastro certo.
+ *
+ * ⚠ NÃO SOBRESCREVE valor já gravado e NÃO toca em `telefoneE164`: o número de comunicação continua
+ * sendo o do CADASTRO (decisão do dono, 14/08/2026). Isto acrescenta um apelido conhecido, não
+ * corrige o cadastro por conta própria.
+ *
+ * @returns {Promise<boolean>} gravou?
+ */
+export async function gravarWaIdDoContato({ contatoId, waId, client = prisma }) {
+  const id = String(contatoId || "").trim();
+  const valor = String(waId || "").trim();
+  if (!id || !valor) return false;
+  // ⚠ `waId: null` no `where` é a trava: quem já tem apelido conhecido não é reescrito por um envio.
+  const r = await client.contatoWhatsapp.updateMany({
+    where: { id, waId: null },
+    data: { waId: valor },
+  });
+  return r.count === 1;
+}
+
+/**
  * O contato que RECEBE — e o motivo, quando não há nenhum.
  *
  * ⚠ Devolve o motivo em vez de só `null`. Quem chama precisa dizer ao contador POR QUE aquela

@@ -425,3 +425,81 @@ describe("enviarDocumento — a resposta 'manda a guia' do assistente", () => {
     expect(chamadas[1].url).not.toMatch(/T/);
   });
 });
+
+// ── ⚠⚠ 200 SEM `wamid`, E O CONTATO QUE A META DEVOLVE (05/09/2026) ─────────────────────────────
+//
+// Os dois lados do mesmo defeito, medidos depois de o envio finalmente falar com a Meta em
+// produção: a resposta de sucesso traz `messages[0].id` (a chave que o webhook usa) e `contacts[0]`
+// (o número como a META o conhece). O projeto lia só o primeiro, e não exigia nem ele.
+
+describe("⚠⚠ 200 sem identificador de mensagem é FALHA, não sucesso", () => {
+  it("lança com código próprio, e a retentativa é `null` — pode ter saído", async () => {
+    // A Meta respondeu 200, com contacts, e SEM `messages` — 200 é 200, e antes disto o envio
+    // gravava `enviado` com `providerMessageId: null`: cego para todo status futuro.
+    const cliente = clienteCom([ok({ id: "MEDIA-42" }), ok({ messaging_product: "whatsapp", contacts: [{ wa_id: "5521999998888" }] })]);
+    await expect(cliente.enviarGuia({
+      telefone: "(21) 99999-8888",
+      conteudoPdf: Buffer.from("%PDF-1.4"),
+      nomeArquivo: "g.pdf",
+      variaveis: ["a", "b", "c", "d", "e"],
+    })).rejects.toMatchObject({ codigo: "WHATSAPP_SEM_WAMID" });
+  });
+
+  it("⚠ a mensagem ao contador NÃO manda reenviar — ela diz que a mensagem pode ter saído", async () => {
+    const cliente = clienteCom([ok({ messaging_product: "whatsapp" })]);
+    await expect(cliente.enviarTemplate({ telefone: "5521999998888", template: "t", variaveis: ["x"] }))
+      .rejects.toMatchObject({
+        codigo: "WHATSAPP_SEM_WAMID",
+        // ⚠ A TERCEIRA RESPOSTA. `null` não é `false` disfarçado: a mensagem PODE ter saído, então
+        // nem se promete reenvio (`true`) nem se desabilita o botão (`false`) — quem decide é o
+        // contador, olhando. É a mesma disciplina de `ofertaDeRetentativa` na tela.
+        podeTentarDeNovo: null,
+      });
+  });
+
+  it("⚠ e o upload continua com a MESMA guarda que já tinha — ela é o precedente", async () => {
+    const cliente = clienteCom([ok({ messaging_product: "whatsapp" })]);
+    await expect(cliente.uploadDocumento({ conteudo: Buffer.from("%PDF"), nomeArquivo: "g.pdf" }))
+      .rejects.toBeTruthy();
+  });
+});
+
+describe("⚠⚠ `contacts[0]` — a prova de que o número existe", () => {
+  it("o `wa_id` e o `input` sobem no retorno do envio", async () => {
+    const cliente = clienteCom([ok({ id: "MEDIA-42" }), ok(RESPOSTA_ENVIO)]);
+    const r = await cliente.enviarGuia({
+      telefone: "(21) 99999-8888",
+      conteudoPdf: Buffer.from("%PDF-1.4"),
+      nomeArquivo: "g.pdf",
+      variaveis: ["a", "b", "c", "d", "e"],
+    });
+    expect(r.wamid).toBe("wamid.HBgNNTUyMTk5OTk5ODg4OA==");
+    expect(r.waId).toBe("5521999998888");
+    expect(r.input).toBe("5521999998888");
+  });
+
+  it("⚠⚠ o NONO DÍGITO aparece aqui, e a divergência não é erro — é informação", async () => {
+    // A Meta aceita `5521999998888` e responde `wa_id: "552199998888"` (sem o 9). É o único lugar do
+    // sistema onde esse número aparece, e é ELE que volta no webhook quando o cliente responde.
+    const resposta = {
+      messaging_product: "whatsapp",
+      contacts: [{ input: "5521999998888", wa_id: "552199998888" }],
+      messages: [{ id: "wamid.X" }],
+    };
+    const cliente = clienteCom([ok({ id: "MEDIA-1" }), ok(resposta)]);
+    const r = await cliente.enviarGuia({
+      telefone: "5521999998888",
+      conteudoPdf: Buffer.from("%PDF"),
+      nomeArquivo: "g.pdf",
+      variaveis: ["a", "b", "c", "d", "e"],
+    });
+    expect(r.waId).toBe("552199998888");
+    expect(r.input).toBe("5521999998888");
+    expect(r.wamid).toBeTruthy(); // ⚠ divergir NÃO derruba o envio
+  });
+
+  it("resposta sem `contacts` não inventa nada", () => {
+    expect(WhatsappCloudClient.contatoDaResposta({ messages: [{ id: "w" }] })).toEqual({ waId: null, input: null });
+    expect(WhatsappCloudClient.contatoDaResposta(null)).toEqual({ waId: null, input: null });
+  });
+});

@@ -120,7 +120,36 @@ describe("aplicarStatusDoProvedor — NUNCA rebaixa", () => {
     prisma.envioGuia.findFirst.mockResolvedValue({ id: "e1", status: "lido", entregueEm: new Date() });
     const r = await aplicarStatusDoProvedor({ providerMessageId: "wamid.X", status: "delivered" });
     expect(prisma.envioGuia.update).not.toHaveBeenCalled();
-    expect(r.status).toBe("lido");
+    expect(r.envio.status).toBe("lido");
+    // ⚠ `mudou: false` é o campo novo (05/09/2026), e ele existe por causa do `sent`: ele empata
+    // com o nosso `enviado`, não promove nada, e mesmo assim era contado como status APLICADO.
+    expect(r.mudou).toBe(false);
+  });
+
+  it("⚠⚠ o `sent` da Meta não muda estado — e diz que não mudou", async () => {
+    prisma.envioGuia.findFirst.mockResolvedValue({ id: "e1", status: "enviado", entregueEm: null });
+    const r = await aplicarStatusDoProvedor({ providerMessageId: "wamid.X", status: "sent" });
+    expect(prisma.envioGuia.update).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ mudou: false, anterior: "enviado" });
+  });
+
+  it("⚠⚠ o instante gravado é o da META, não o nosso", async () => {
+    // Ele chega no `statuses[]` e era DESCARTADO: gravávamos a hora em que processamos o webhook.
+    const daMeta = new Date("2026-08-12T12:00:00.000Z");
+    prisma.envioGuia.findFirst.mockResolvedValue({ id: "e1", status: "enviado", entregueEm: null });
+    prisma.envioGuia.update.mockResolvedValue({ id: "e1", status: "entregue" });
+    await aplicarStatusDoProvedor({ providerMessageId: "wamid.X", status: "delivered", ocorridaEmProvedor: daMeta });
+    expect(prisma.envioGuia.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ entregueEm: daMeta }) }),
+    );
+  });
+
+  it("⚠ sem o instante da Meta, o nosso relógio é a rede — nunca fica nulo", async () => {
+    prisma.envioGuia.findFirst.mockResolvedValue({ id: "e1", status: "enviado", entregueEm: null });
+    prisma.envioGuia.update.mockResolvedValue({ id: "e1", status: "entregue" });
+    await aplicarStatusDoProvedor({ providerMessageId: "wamid.X", status: "delivered" });
+    const { data } = prisma.envioGuia.update.mock.calls.at(-1)[0];
+    expect(data.entregueEm).toBeInstanceOf(Date);
   });
 
   it("read depois de entregue promove", async () => {

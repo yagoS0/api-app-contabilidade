@@ -33,8 +33,14 @@ import {
   WHATSAPP_ENVIO_DELAY_MS,
   log as logPadrao,
 } from "../../config.js";
-import { WhatsappCloudClient, WhatsappError, variaveisDaGuia, nomeArquivoDaGuia } from "./WhatsappCloudClient.js";
-import { destinatarioWhatsapp } from "./ContatoWhatsappService.js";
+import {
+  WhatsappCloudClient,
+  WhatsappError,
+  variaveisDaGuia,
+  nomeArquivoDaGuia,
+  mascararTelefone,
+} from "./WhatsappCloudClient.js";
+import { destinatarioWhatsapp, gravarWaIdDoContato } from "./ContatoWhatsappService.js";
 import { registrarMensagemEnviada } from "./ConversaWhatsappService.js";
 import { avaliarCanal, avaliarLinha, CANAIS, MOTIVOS } from "./elegibilidadeEnvioGuia.js";
 import { getGuidePdfBuffer } from "../guides/GuideService.js";
@@ -345,7 +351,8 @@ export async function enviarGuiaPorWhatsapp({
       };
     }
 
-    const { wamid } = await cliente.enviarGuia({
+    const comecouEm = Date.now();
+    const { wamid, waId, input } = await cliente.enviarGuia({
       telefone: contato.telefoneE164,
       conteudoPdf,
       nomeArquivo: nomeArquivoDaGuia({ tipoGuia: tipoLabel, competencia: guide.competencia }),
@@ -363,6 +370,46 @@ export async function enviarGuiaPorWhatsapp({
     });
 
     await marcarEnviado({ envioId: envio.id, providerMessageId: wamid });
+
+    // ⚠⚠ O LOG DE SUCESSO — ele NÃO EXISTIA, e a falta dele custou três rodadas de investigação em
+    // 05/09/2026. Uma guia que "saiu" e não chegou não deixava uma linha sequer ligando guia,
+    // envio, destino e `wamid`; a única evidência era a linha do banco, que não diz quando nem quem.
+    //
+    // ⚠ SEM SEGREDO E SEM DADO PESSOAL INTEIRO: telefone e `wa_id` mascarados, e **nenhuma variável
+    // do template** (a 1ª é o nome do cliente e a 4ª é o valor da guia) — só a contagem delas.
+    log?.info?.(
+      {
+        evento: "whatsapp.envio.aceito",
+        guideId: guide.id,
+        envioId: envio.id,
+        portalClientId: guide.portalClientId,
+        competencia: guide.competencia,
+        tipoGuia: tipoLabel,
+        canal: CANAL.WHATSAPP,
+        destino: mascararTelefone(contato.telefoneE164),
+        waId: mascararTelefone(waId),
+        // ⚠ A Meta reescreveu o número? É o nono dígito aparecendo — e é o que o webhook vai usar.
+        destinoReescritoPelaMeta: Boolean(waId) && waId !== contato.telefoneE164,
+        wamid,
+        template: canal.nomeMeta,
+        variaveisContagem: 5,
+        bytesPdf: conteudoPdf.length,
+        duracaoMs: Date.now() - comecouEm,
+        reenvio: reenviar === true,
+      },
+      "guia enviada por WhatsApp",
+    );
+
+    // ⚠ A COLUNA `waId` DO CONTATO NUNCA TEVE ESCRITOR — o schema afirmava que ela era "descoberta
+    // no primeiro contato" e nada a descobria; o ramo `casouPor: "WA_ID"` de `vinculoTelefone` era
+    // código morto. Este é o único momento em que a Meta diz qual número ELA usa, e é ele que volta
+    // no webhook: sem gravá-lo, a resposta do cliente com o nono dígito diferente cai na fila de
+    // "não vinculados". ⚠ BEST-EFFORT pelo mesmo motivo do balão: a mensagem já saiu.
+    try {
+      await gravarWaIdDoContato({ contatoId: contato.id, waId });
+    } catch (e) {
+      log?.warn?.({ err: e?.message || e, envioId: envio.id }, "guia enviada, mas o waId do contato não foi gravado");
+    }
 
     // O balão no fio. ⚠ BEST-EFFORT: a mensagem JÁ saiu para o cliente; falha ao registrar histórico
     // não pode virar "falhou" e mandar o contador reenviar.
@@ -415,6 +462,15 @@ export async function enviarGuiaPorWhatsapp({
         podeTentarDeNovo,
         err: err?.message || String(err),
         tipo: err?.name || typeof err,
+        // ⚠ Sem o `fbtrace_id` não se abre chamado com a Meta — e ele só existia no log do cliente.
+        ...(traduzido
+          ? {
+            codigoMeta: err.codigoMeta ?? null,
+            httpStatus: err.httpStatus ?? null,
+            fbtraceId: err.fbtraceId ?? null,
+            onde: err.onde ?? null,
+          }
+          : {}),
         ...(traduzido ? {} : { pilha: String(err?.stack || "").slice(0, 300) }),
       },
       "envio de guia por WhatsApp falhou",

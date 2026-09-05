@@ -383,6 +383,65 @@ export class WhatsappCloudClient {
   }
 
   /**
+   * O CONTATO que a Meta devolve junto do `wamid` — e que este projeto descartava. [M1]
+   *
+   * A resposta de sucesso traz `contacts[0]` com `input` (o que MANDAMOS) e `wa_id` (o número como
+   * a META o conhece). É a **única prova síncrona** de que o destino existe, e é o lugar onde o
+   * nono dígito brasileiro aparece: a Meta aceita `5521999998888` e responde `wa_id:
+   * "552199998888"`. Sem ler isto, o número que ela usa nunca é conhecido — e é exatamente ele que
+   * volta no webhook, fazendo a resposta do cliente cair na fila de "não vinculados".
+   *
+   * ⚠ Divergência NÃO é erro: é informação. Quem grava é `EnvioGuiaWhatsappService`
+   * (em `contatos_whatsapp.waId`, coluna que existe desde agosto e nunca teve escritor).
+   */
+  static contatoDaResposta(json) {
+    const c = json?.contacts?.[0];
+    if (!c) return { waId: null, input: null };
+    return {
+      waId: c.wa_id ? String(c.wa_id) : null,
+      input: c.input ? String(c.input) : null,
+    };
+  }
+
+  /**
+   * ⚠⚠ 200 SEM `wamid` É FALHA, e virou exceção em 05/09/2026.
+   *
+   * `uploadDocumento` já recusava 200 sem `id` (a mesma classe de defeito, uma linha acima); a
+   * MENSAGEM não recusava — devolvia `{wamid: null}` em silêncio, e o envio gravava `enviado` com
+   * `providerMessageId` nulo. Daí em diante nenhum status do webhook casava com aquela linha:
+   * `entregue`, `lido` e até `failed` caíam em `SEM_ENVIO_DE_GUIA`, sem log.
+   */
+  static exigirWamid(json, { template }) {
+    const wamid = WhatsappCloudClient.wamidDaResposta(json);
+    if (wamid) return wamid;
+    throw new WhatsappError({
+      codigo: CODIGOS_LOCAIS.SEM_WAMID,
+      codigoMeta: null,
+      traduzido: false,
+      titulo: null,
+      onde: null,
+      solucaoDocumentada: null,
+      detalheDaMeta: "",
+      mensagemUsuario:
+        "A Meta aceitou a chamada mas não devolveu o identificador da mensagem"
+        + `${template ? ` (template ${template})` : ""}. Sem ele não há como confirmar a entrega —`
+        + " a mensagem PODE ter saído. Confira com o cliente antes de enviar de novo.",
+      // ⚠ NAO_DOCUMENTADA, não NAO: o desfecho é desconhecido, e `null` é a terceira resposta.
+      // ⚠ A base é SEM_FONTE — a Meta não documenta 200 sem `messages[]`, então não há frase a citar.
+      retentativa: RETENTATIVA.NAO_DOCUMENTADA,
+      baseDaRetentativa: BASE_DA_RETENTATIVA.SEM_FONTE,
+      httpStatus: 200,
+      httpStatusDocumentado: null,
+      fbtraceId: null,
+      subcodigoMeta: null,
+      fonte: FONTE,
+      procedencia: null,
+      noEsqueletoDoDono: false,
+      divergeDoEsqueleto: null,
+    });
+  }
+
+  /**
    * Normaliza o destino com a MESMA função do cadastro (`telefone.js`).
    *
    * ⚠ Segunda normalização seria segunda verdade sobre "qual é o número" — o defeito que
@@ -414,11 +473,21 @@ export class WhatsappCloudClient {
       recurso: "messages",
       corpo: montarPayloadTemplate({ para, template, idioma, componentes }),
     });
+    const wamid = WhatsappCloudClient.exigirWamid(json, { template });
+    const contato = WhatsappCloudClient.contatoDaResposta(json);
     this.log?.info?.(
-      { template, para: mascararTelefone(para), comDocumento: true },
+      {
+        template,
+        para: mascararTelefone(para),
+        comDocumento: true,
+        wamid,
+        waId: mascararTelefone(contato.waId),
+        // ⚠ O número que a Meta usou é DIFERENTE do que mandamos? É o nono dígito aparecendo.
+        destinoReescritoPelaMeta: Boolean(contato.waId) && contato.waId !== para,
+      },
       "mensagem WhatsApp aceita pela Meta",
     );
-    return { wamid: WhatsappCloudClient.wamidDaResposta(json), resposta: json };
+    return { wamid, waId: contato.waId, input: contato.input, resposta: json };
   }
 
   /** Template só de corpo (`solicitar_documentos`, `lembrete_vencimento`, `sem_movimento`…). [M1] */
@@ -429,8 +498,13 @@ export class WhatsappCloudClient {
       recurso: "messages",
       corpo: montarPayloadTemplate({ para, template, idioma, componentes: corpo ? [corpo] : [] }),
     });
-    this.log?.info?.({ template, para: mascararTelefone(para) }, "mensagem WhatsApp aceita pela Meta");
-    return { wamid: WhatsappCloudClient.wamidDaResposta(json), resposta: json };
+    const wamid = WhatsappCloudClient.exigirWamid(json, { template });
+    const contato = WhatsappCloudClient.contatoDaResposta(json);
+    this.log?.info?.(
+      { template, para: mascararTelefone(para), wamid, waId: mascararTelefone(contato.waId) },
+      "mensagem WhatsApp aceita pela Meta",
+    );
+    return { wamid, waId: contato.waId, input: contato.input, resposta: json };
   }
 
   /**

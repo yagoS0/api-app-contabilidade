@@ -55,6 +55,15 @@ export const DESFECHOS = Object.freeze({
   /** O status foi aplicado ao envio da guia. */
   APLICADO: "APLICADO",
   /**
+   * ⚠⚠ O status chegou, casou com o envio e NÃO MUDOU NADA (05/09/2026).
+   *
+   * É o caso do `sent` da Meta: ele empata com o nosso `enviado` e a comparação por peso não
+   * promove. Antes ele era contado como `APLICADO`, e o resumo do webhook dizia "1 aplicado" sobre
+   * zero mudança — não havia como distinguir *"a Meta nunca confirmou nada"* de *"a Meta confirmou
+   * `sent` e a mensagem nunca foi entregue"*. São perguntas diferentes.
+   */
+  SEM_MUDANCA: "SEM_MUDANCA",
+  /**
    * Não há envio de guia com esse `wamid`. ⚠ CASO NORMAL, não erro: o status pode ser de uma
    * mensagem de conversa (texto livre), que não é envio de guia nenhum.
    */
@@ -89,8 +98,30 @@ async function processarStatus(item, { logger }) {
   }
 
   if (STATUS_DOCUMENTADOS.includes(status)) {
-    const envio = await aplicarStatusDoProvedor({ providerMessageId, status });
-    return { desfecho: envio ? DESFECHOS.APLICADO : DESFECHOS.SEM_ENVIO_DE_GUIA, motivo: null };
+    const r = await aplicarStatusDoProvedor({
+      providerMessageId,
+      status,
+      // ⚠ O instante da META, que era descartado aqui. Ver `aplicarStatusDoProvedor`.
+      ocorridaEmProvedor: item.ocorridaEmProvedor || null,
+    });
+    if (!r) return { desfecho: DESFECHOS.SEM_ENVIO_DE_GUIA, motivo: null };
+    // ⚠ O log de status NÃO EXISTIA. Sem ele, "a guia chegou?" só se responde lendo o banco — e a
+    // linha do banco não diz quando a Meta disse, nem quanto tempo levou.
+    logger?.info?.(
+      {
+        evento: "whatsapp.status.webhook",
+        providerMessageId,
+        envioId: r.envio?.id || null,
+        guideId: r.envio?.guideId || null,
+        statusMeta: status,
+        statusAnterior: r.anterior,
+        statusNovo: r.envio?.status || null,
+        mudou: r.mudou,
+        ocorridaEmProvedor: item.ocorridaEmProvedor ? item.ocorridaEmProvedor.toISOString?.() || String(item.ocorridaEmProvedor) : null,
+      },
+      "WhatsApp: status do provedor",
+    );
+    return { desfecho: r.mudou ? DESFECHOS.APLICADO : DESFECHOS.SEM_MUDANCA, motivo: null };
   }
 
   if (status === STATUS_FALHA) {
@@ -100,7 +131,17 @@ async function processarStatus(item, { logger }) {
       codigo: traducao.codigo,
       mensagemUsuario: traducao.mensagemUsuario,
     });
-    if (!r) return { desfecho: DESFECHOS.SEM_ENVIO_DE_GUIA, motivo: null, codigo: traducao.codigo };
+    if (!r) {
+      // ⚠⚠ ISTO ERA SILÊNCIO ABSOLUTO. Um `failed` cujo `wamid` não casa com envio nenhum é uma de
+      // duas coisas MUITO diferentes: uma mensagem de conversa (normal, não é guia) ou um envio
+      // nosso gravado SEM `wamid` — o defeito que `exigirWamid` fechou hoje. Sem log, as duas eram
+      // indistinguíveis e nenhuma aparecia em lugar nenhum.
+      logger?.warn?.(
+        { evento: "whatsapp.status.orfao", providerMessageId, codigo: traducao.codigo, statusMeta: status },
+        "WhatsApp: falha reportada para uma mensagem que não é envio de guia conhecido",
+      );
+      return { desfecho: DESFECHOS.SEM_ENVIO_DE_GUIA, motivo: null, codigo: traducao.codigo };
+    }
     if (!r.aplicada) {
       // ⚠ Sobe em `warn` porque é contradição de fato: a Meta confirmou a chegada e depois disse que
       // falhou. Não se apaga a entrega comprovada; registra-se a discordância.
@@ -217,7 +258,7 @@ async function processarMensagem(item, { logger, responder, ia }) {
 export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao, ia = undefined } = {}) {
   const resumo = {
     mensagens: { total: 0, gravadas: 0, duplicadas: 0, recusadas: 0 },
-    statuses: { total: 0, aplicados: 0, semEnvio: 0, desconhecidos: 0, contradicoes: 0, recusados: 0 },
+    statuses: { total: 0, aplicados: 0, semMudanca: 0, semEnvio: 0, desconhecidos: 0, contradicoes: 0, recusados: 0 },
     erros: [],
     avisos: [],
   };
@@ -247,6 +288,7 @@ export async function processarEventoWhatsapp(payload, { agora = new Date(), log
     try {
       const r = await processarStatus(item, { logger });
       if (r.desfecho === DESFECHOS.APLICADO) resumo.statuses.aplicados += 1;
+      else if (r.desfecho === DESFECHOS.SEM_MUDANCA) resumo.statuses.semMudanca += 1;
       else if (r.desfecho === DESFECHOS.SEM_ENVIO_DE_GUIA) resumo.statuses.semEnvio += 1;
       else if (r.desfecho === DESFECHOS.STATUS_DESCONHECIDO) resumo.statuses.desconhecidos += 1;
       else if (r.desfecho === DESFECHOS.CHEGADA_JA_CONFIRMADA) resumo.statuses.contradicoes += 1;

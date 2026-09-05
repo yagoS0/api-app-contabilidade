@@ -125,14 +125,19 @@ describe("mensagens recebidas", () => {
 
 describe("statuses", () => {
   test("sent/delivered/read vão para aplicarStatusDoProvedor, como vieram", async () => {
-    aplicarStatusDoProvedor.mockResolvedValue({ id: "envio-1", status: "entregue" });
+    // ⚠ O retorno virou `{envio, mudou, anterior}` (05/09/2026) — `mudou` é o que separa
+    // "a Meta confirmou entrega" de "a Meta mandou `sent`, que não muda nada".
+    aplicarStatusDoProvedor.mockResolvedValue({ envio: { id: "envio-1", guideId: "g1", status: "entregue" }, mudou: true, anterior: "enviado" });
     for (const status of ["sent", "delivered", "read"]) {
       aplicarStatusDoProvedor.mockClear();
       const resumo = await processarEventoWhatsapp(
         evento({ statuses: [{ id: "wamid.OUT", status, timestamp: "1755000000" }] }),
         { agora: AGORA, logger: logSpy() },
       );
-      expect(aplicarStatusDoProvedor).toHaveBeenCalledWith({ providerMessageId: "wamid.OUT", status });
+      // ⚠ O INSTANTE DA META VIAJA JUNTO. Ele era lido do evento e descartado aqui.
+      expect(aplicarStatusDoProvedor).toHaveBeenCalledWith(
+        expect.objectContaining({ providerMessageId: "wamid.OUT", status, ocorridaEmProvedor: expect.any(Date) }),
+      );
       expect(resumo.statuses.aplicados).toBe(1);
     }
   });

@@ -24,7 +24,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
     templateWhatsapp: { findUnique: jest.fn() },
     guide: { findMany: jest.fn(), findUnique: jest.fn() },
     envioGuia: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
-    contatoWhatsapp: { findMany: jest.fn() },
+    contatoWhatsapp: { findMany: jest.fn(), updateMany: jest.fn() },
     conversaWhatsapp: { upsert: jest.fn() },
     mensagemWhatsapp: { create: jest.fn() },
   },
@@ -83,6 +83,7 @@ function cenarioLimpo({ guias = [GUIA], contatos = [CONTATO], template = TEMPLAT
   // ⚠ O PDF é buscado POR ID no instante do envio — ver `carregarPdfDaGuia`.
   prisma.guide.findUnique.mockResolvedValue({ pdfBytes: pdf(), storageKey: null });
   prisma.contatoWhatsapp.findMany.mockResolvedValue(contatos);
+  prisma.contatoWhatsapp.updateMany.mockResolvedValue({ count: 1 });
   prisma.envioGuia.findUnique.mockResolvedValue(null);
   // ⚠ A chave passou a incluir o DESTINO (05/09/2026): quem procura o envio existente é o
   // `findFirst`, e a linha legada do e-mail é procurada por `destino: null`.
@@ -522,5 +523,102 @@ describe("⚠⚠ chamar SEM injetar o cliente não pode estourar TypeError", () 
     // nossas, e um TypeError cairia nele.
     expect(r.motivo).not.toBe(MOTIVOS_SERVICO.FALHA_INESPERADA);
     expect(String(r.mensagem || "")).not.toMatch(/undefined|TypeError/i);
+  });
+});
+
+// ── ⚠⚠ O LOG DE ENVIO E O `waId` DA META (05/09/2026) ───────────────────────────────────────────
+//
+// Em 05/09/2026 uma guia "saiu" e não chegou, e a investigação custou TRÊS rodadas porque não havia
+// uma linha de log ligando guia, envio, destino e `wamid` — a única evidência era a linha do banco,
+// que não diz quando nem por qual template. E o `wa_id` que a Meta devolve (o número como ELA o
+// conhece) era descartado, deixando `contatos_whatsapp.waId` sem escritor nenhum.
+
+describe("o registro do que saiu", () => {
+  function clienteQueDevolve(extra) {
+    return { enviarGuia: jest.fn(async () => ({ wamid: "wamid.OK", ...extra })) };
+  }
+
+  it("o envio aceito vira UMA linha de log com guia, envio, wamid e template", async () => {
+    cenarioLimpo();
+    const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    await enviarGuiaPorWhatsapp({
+      guide: GUIA, contato: CONTATO, canal: TEMPLATE_APROVADO,
+      cliente: clienteQueDevolve({ waId: "5521999998888" }), carregarPdf: pdf, log,
+    });
+
+    const [campos, frase] = log.info.mock.calls.at(-1);
+    expect(frase).toMatch(/enviada por WhatsApp/);
+    expect(campos).toMatchObject({
+      evento: "whatsapp.envio.aceito",
+      guideId: "g1",
+      wamid: "wamid.OK",
+      template: "guia_disponivel",
+      canal: "WHATSAPP",
+      competencia: "2026-07",
+    });
+    expect(campos.duracaoMs).toEqual(expect.any(Number));
+    expect(campos.bytesPdf).toBeGreaterThan(0);
+  });
+
+  it("⚠⚠ o log NÃO leva telefone inteiro nem o conteúdo das variáveis", async () => {
+    cenarioLimpo();
+    const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    await enviarGuiaPorWhatsapp({
+      guide: GUIA, contato: CONTATO, canal: TEMPLATE_APROVADO,
+      cliente: clienteQueDevolve({ waId: "5521999998888" }), carregarPdf: pdf, log,
+    });
+    const texto = JSON.stringify(log.info.mock.calls.at(-1)[0]);
+    // A 1ª variável é o NOME do cliente e a 4ª é o VALOR da guia — dado do cliente do cliente.
+    expect(texto).not.toContain("5521999998888");
+    expect(texto).not.toContain("Maria");
+    expect(texto).not.toContain("1.243,80");
+    // O que sobe é a CONTAGEM, que responde "o template recebeu as 5?" sem expor nenhuma.
+    expect(log.info.mock.calls.at(-1)[0].variaveisContagem).toBe(5);
+  });
+
+  it("⚠ a divergência do NONO DÍGITO é registrada, e não derruba o envio", async () => {
+    cenarioLimpo();
+    const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    const r = await enviarGuiaPorWhatsapp({
+      guide: GUIA, contato: CONTATO, canal: TEMPLATE_APROVADO,
+      // Cadastro com 9, a Meta responde sem o 9.
+      cliente: clienteQueDevolve({ waId: "552199998888" }), carregarPdf: pdf, log,
+    });
+    expect(r.ok).toBe(true);
+    expect(log.info.mock.calls.at(-1)[0].destinoReescritoPelaMeta).toBe(true);
+  });
+
+  it("⚠⚠ o `waId` da Meta é GRAVADO no contato — a coluna nunca teve escritor", async () => {
+    cenarioLimpo();
+    await enviarGuiaPorWhatsapp({
+      guide: GUIA, contato: CONTATO, canal: TEMPLATE_APROVADO,
+      cliente: clienteQueDevolve({ waId: "552199998888" }), carregarPdf: pdf,
+    });
+    expect(prisma.contatoWhatsapp.updateMany).toHaveBeenCalledWith(
+      // ⚠ `waId: null` no where: quem já tem apelido conhecido não é reescrito por um envio.
+      expect.objectContaining({ where: { id: "c1", waId: null }, data: { waId: "552199998888" } }),
+    );
+  });
+
+  it("⚠ falha ao gravar o waId NÃO derruba o envio — a mensagem já saiu", async () => {
+    cenarioLimpo();
+    prisma.contatoWhatsapp.updateMany.mockRejectedValue(new Error("banco caiu"));
+    const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    const r = await enviarGuiaPorWhatsapp({
+      guide: GUIA, contato: CONTATO, canal: TEMPLATE_APROVADO,
+      cliente: clienteQueDevolve({ waId: "552199998888" }), carregarPdf: pdf, log,
+    });
+    expect(r.ok).toBe(true);
+    expect(log.warn).toHaveBeenCalled();
+  });
+
+  it("sem `wa_id` na resposta, nada é gravado e nada quebra", async () => {
+    cenarioLimpo();
+    const r = await enviarGuiaPorWhatsapp({
+      guide: GUIA, contato: CONTATO, canal: TEMPLATE_APROVADO,
+      cliente: clienteQueDevolve({}), carregarPdf: pdf,
+    });
+    expect(r.ok).toBe(true);
+    expect(prisma.contatoWhatsapp.updateMany).not.toHaveBeenCalled();
   });
 });
