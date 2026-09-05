@@ -73,18 +73,32 @@ export function rotuloDoCanal(valor) {
 /** A situação de UM contato — o que a linha diz dele. */
 export const SITUACAO_CONTATO = Object.freeze({
   RECEBE: "RECEBE",
+  SO_EMAIL: "SO_EMAIL",
   SEM_OPT_IN: "SEM_OPT_IN",
   INATIVO: "INATIVO",
 });
 
+/**
+ * ⚠⚠ O OPT-IN VALE SÓ PARA O WHATSAPP (05/09/2026) — é exigência de política da Meta e é o que
+ * protege o número contra denúncia. **E-mail nunca dependeu dele.**
+ *
+ * O defeito que isto conserta foi visto no navegador: o destinatário cadastrado só com e-mail saía
+ * dizendo *"sem opt-in — não recebe até registrar a autorização"*, sobre alguém que RECEBE por
+ * e-mail normalmente. A frase mandava o contador procurar uma autorização que não faz falta.
+ */
 export function situacaoDoContato(contato) {
   if (!contato) return SITUACAO_CONTATO.INATIVO;
   if (contato.ativo === false) return SITUACAO_CONTATO.INATIVO;
-  return contato.optInEm ? SITUACAO_CONTATO.RECEBE : SITUACAO_CONTATO.SEM_OPT_IN;
+  if (contato.optInEm) return SITUACAO_CONTATO.RECEBE;
+  // Sem opt-in: quem tem e-mail continua recebendo por ele; quem só tem telefone é que fica parado.
+  if (String(contato.email || "").trim()) return SITUACAO_CONTATO.SO_EMAIL;
+  return SITUACAO_CONTATO.SEM_OPT_IN;
 }
 
 export const FRASE_SITUACAO = Object.freeze({
   [SITUACAO_CONTATO.RECEBE]: "recebe guias",
+  // ⚠ Diz o que ACONTECE (recebe por e-mail) e o que FALTA para o outro canal — nunca "não recebe".
+  [SITUACAO_CONTATO.SO_EMAIL]: "recebe por e-mail · sem opt-in para WhatsApp",
   // ⚠ Opt-in é BLOQUEIO, não aviso (política da Meta): sem ele este contato não recebe template.
   [SITUACAO_CONTATO.SEM_OPT_IN]: "sem opt-in — não recebe até registrar a autorização",
   [SITUACAO_CONTATO.INATIVO]: "desativado",
@@ -100,6 +114,8 @@ export function situacaoDaEmpresa(contatos) {
   if (!lista.length) return "sem_contato";
   const recebe = lista.some((c) => c.ativo !== false && c.optInEm);
   return recebe ? "ok" : "sem_optin";
+  // ⚠ A pergunta desta função é sobre o WHATSAPP (é o espelho do `situacao` da rota da carteira), e
+  // por isso o e-mail NÃO a satisfaz: a frase de `sem_optin` já diz que as guias saem por e-mail.
 }
 
 export const FRASE_EMPRESA = Object.freeze({
@@ -112,14 +128,36 @@ export const FRASE_EMPRESA = Object.freeze({
  * O FORMULÁRIO. Confere o que o servidor conferiria (`salvarContato`): nome e telefone válido.
  * @returns {{ok:boolean, erros:{nome?:string, telefone?:string}, telefoneE164:string|null}}
  */
-export function validarFormulario({ nome, telefone } = {}) {
+/** ESPELHO da forma de e-mail do servidor (`ContatoWhatsappService.normalizarEmail`). */
+export function normalizarEmail(valor) {
+  const v = String(valor ?? "").trim().toLowerCase();
+  if (!v) return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v : null;
+}
+
+/**
+ * ⚠ UM DOS DOIS CANAIS BASTA (05/09/2026) — o destinatário pode receber só por e-mail, só por
+ * WhatsApp, ou pelos dois. É o espelho de `salvarContato`: exigir telefone aqui faria a tela recusar
+ * o financeiro que só recebe e-mail, que é a maioria da carteira.
+ *
+ * ⚠ O `+55` NÃO SE DIGITA. `normalizarE164` o prefixa sozinha — o texto do erro diz isso, para
+ * ninguém "consertar" o número acrescentando o DDI à mão.
+ */
+export function validarFormulario({ nome, telefone, email } = {}) {
   const erros = {};
   if (!String(nome || "").trim()) erros.nome = "Informe o nome de quem recebe as mensagens.";
-  const e164 = normalizarE164(telefone);
-  if (!e164) {
-    erros.telefone = "Telefone inválido. Use DDD + número (ex.: (21) 99999-8888) ou o formato internacional com +.";
+  const temTelefone = Boolean(String(telefone || "").trim());
+  const e164 = temTelefone ? normalizarE164(telefone) : null;
+  if (temTelefone && !e164) {
+    erros.telefone = "Telefone inválido. Digite DDD + número (ex.: 21 99999-8888) — o +55 entra sozinho.";
   }
-  return { ok: Object.keys(erros).length === 0, erros, telefoneE164: e164 };
+  const temEmail = Boolean(String(email || "").trim());
+  const emailLimpo = temEmail ? normalizarEmail(email) : null;
+  if (temEmail && !emailLimpo) erros.email = "E-mail inválido. Confira o endereço.";
+  if (!e164 && !emailLimpo && !erros.telefone && !erros.email) {
+    erros.canal = "Informe ao menos um canal: e-mail, telefone, ou os dois.";
+  }
+  return { ok: Object.keys(erros).length === 0, erros, telefoneE164: e164, email: emailLimpo };
 }
 
 /**
@@ -127,11 +165,14 @@ export function validarFormulario({ nome, telefone } = {}) {
  * ESCOLHEU "nenhuma", e como `undefined` (ausente) quando o campo não foi tocado.
  * ⚠ `undefined` = não mexer · `null` = apagar — a regra do projeto para PATCH, aplicada aqui.
  */
-export function montarPayload({ id, nome, papel, telefone, optIn, optInOrigem, userId, ativo } = {}) {
+export function montarPayload({ id, nome, papel, telefone, email, optIn, optInOrigem, userId, ativo } = {}) {
   const payload = {
     nome: String(nome || "").trim(),
     papel: String(papel || "").trim(),
     telefone: String(telefone || "").trim(),
+    // ⚠ String vazia viaja de propósito: no servidor ela é "sem e-mail", e é assim que se APAGA o
+    // endereço de um destinatário que passou a receber só por WhatsApp.
+    email: String(email || "").trim(),
     optIn: optIn === true,
   };
   if (id) payload.id = id;
@@ -150,8 +191,18 @@ export function montarPayload({ id, nome, papel, telefone, optIn, optInOrigem, u
 export function fraseDeConfirmacaoRemocao(contato) {
   const nome = String(contato?.nome || "").trim() || "(sem nome)";
   const fone = formatarTelefone(contato?.telefoneE164) || "(sem telefone)";
-  return `Remover o contato de WhatsApp "${nome}"?\n\nTelefone: ${fone}\n\nEle deixa de receber guias por WhatsApp. O histórico de conversas não é apagado.`;
+  // ⚠ O E-MAIL ENTRA NA FRASE desde 05/09/2026: há destinatário SEM telefone, e uma confirmação que
+  // só diz "(sem telefone)" descreveria a linha errada quando há duas do mesmo nome.
+  const email = String(contato?.email || "").trim() || "(sem e-mail)";
+  return `Remover o destinatário "${nome}"?
+
+Telefone: ${fone}
+E-mail: ${email}
+
+Ele deixa de receber guias por este cadastro. O histórico de conversas não é apagado.`;
 }
+
+
 
 /** Os três estados da lista — a mesma distinção de `estadoDaCarga`: vazio ≠ falhou ≠ carregando. */
 export const CARGA = Object.freeze({ CARREGANDO: "carregando", FALHOU: "falhou", VAZIA: "vazia", OK: "ok" });

@@ -1497,8 +1497,13 @@ export function createRealApi() {
     },
     // UMA guia, por WhatsApp. 422 com motivo NOMEADO (SEM_CONTATO, SEM_OPT_IN, TEMPLATE_NAO_APROVADO,
     // GUIA_JA_ENVIADA…) chega como erro com `code`; quem chama trata a recusa como desfecho.
-    async enviarGuiaWhatsapp(companyId, guideId) {
-      return request(`/firm/companies/${companyId}/guides/${guideId}/enviar-whatsapp`, { method: "POST" });
+    // ⚠ `reenviar` é PEDIDO EXPLÍCITO (05/09/2026): sem ele, guia já enviada é recusada com
+    // `GUIA_JA_ENVIADA`. Quem decide é o contador, depois de a tela dizer que ela já foi.
+    async enviarGuiaWhatsapp(companyId, guideId, { reenviar = false } = {}) {
+      return request(`/firm/companies/${companyId}/guides/${guideId}/enviar-whatsapp`, {
+        method: "POST",
+        body: JSON.stringify({ reenviar: reenviar === true }),
+      });
     },
     // A PRÉVIA do lote — não envia nada. Body: { competencia, portalClientIds?, guideIds? }.
     async preverLoteWhatsapp(body) {

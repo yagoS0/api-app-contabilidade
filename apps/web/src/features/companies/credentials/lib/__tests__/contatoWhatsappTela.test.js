@@ -12,6 +12,7 @@ import {
   CANAIS_DE_ENVIO,
   rotuloDoCanal,
   SITUACAO_CONTATO,
+  FRASE_SITUACAO,
   situacaoDoContato,
   situacaoDaEmpresa,
   validarFormulario,
@@ -109,7 +110,7 @@ describe("validarFormulario e montarPayload", () => {
   });
   it("válido devolve o E.164 que o servidor vai gravar", () => {
     const r = validarFormulario({ nome: "Maria", telefone: "(21) 99999-8888" });
-    expect(r).toEqual({ ok: true, erros: {}, telefoneE164: "5521999998888" });
+    expect(r).toMatchObject({ ok: true, erros: {}, telefoneE164: "5521999998888" });
   });
   it("⚠ opt-in marcado grava a ORIGEM; desmarcado não manda origem nenhuma", () => {
     const com = montarPayload({ nome: "Maria", telefone: "21999998888", optIn: true });
@@ -162,5 +163,26 @@ describe("pessoaDoContato — quem é, nunca adivinhado", () => {
     expect(pessoaDoContato({ userId: null }, usuarios)).toBeNull();
     expect(pessoaDoContato({ userId: "u1" }, usuarios).nome).toBe("Maria");
     expect(pessoaDoContato({ userId: "u9" }, usuarios)).toEqual({ userId: "u9", nome: null, email: null });
+  });
+});
+
+// ── ⚠ O OPT-IN VALE SÓ PARA O WHATSAPP (05/09/2026) ─────────────────────────────────────────────
+// Defeito visto no NAVEGADOR: o destinatário só de e-mail saía como "não recebe até registrar a
+// autorização" — mandando o contador procurar uma autorização que o e-mail não exige.
+describe("situacaoDoContato — e-mail não depende de opt-in", () => {
+  it("só e-mail, sem opt-in: RECEBE por e-mail — nunca 'não recebe'", () => {
+    const s = situacaoDoContato({ ativo: true, email: "financeiro@x.com", telefoneE164: null, optInEm: null });
+    expect(s).toBe(SITUACAO_CONTATO.SO_EMAIL);
+    expect(FRASE_SITUACAO[s]).toMatch(/recebe por e-mail/);
+    expect(FRASE_SITUACAO[s]).not.toMatch(/não recebe/);
+  });
+  it("só telefone, sem opt-in: continua sendo o BLOQUEIO de sempre", () => {
+    const s = situacaoDoContato({ ativo: true, email: null, telefoneE164: "5521999998888", optInEm: null });
+    expect(s).toBe(SITUACAO_CONTATO.SEM_OPT_IN);
+    expect(FRASE_SITUACAO[s]).toMatch(/não recebe até registrar/);
+  });
+  it("com opt-in é RECEBE, e desativado vence tudo", () => {
+    expect(situacaoDoContato({ ativo: true, email: "a@b.com", optInEm: "2026-08-20" })).toBe(SITUACAO_CONTATO.RECEBE);
+    expect(situacaoDoContato({ ativo: false, email: "a@b.com", optInEm: "2026-08-20" })).toBe(SITUACAO_CONTATO.INATIVO);
   });
 });

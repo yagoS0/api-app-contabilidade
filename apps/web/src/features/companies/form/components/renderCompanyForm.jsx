@@ -626,23 +626,15 @@ export function CompanyForm({
       {/* ⚠ Aqui o onChange e o `handleChange`, nao o cru: e ele que dispara o `trigger` do
           schema. Com o cru, o unico aviso era o balao NATIVO do navegador — fora do vocabulario
           do app e em posicao que depende da rolagem de um formulario de dez secoes. */}
-      <label className="full">
-        E-mail para recebimento das guias
-        <input
-          // ⚠⚠ `text` + `inputMode`, NAO `type="email"`: a validacao NATIVA do navegador era a
-          //   TERCEIRA regra discordante — ela recusa `joao@…` com acento, que o servidor aceita,
-          //   e o unico aviso dela e um balao fora do vocabulario do app. O `inputMode` mantem o
-          //   teclado de e-mail no celular sem trazer a validacao junto.
-          type="text"
-          inputMode="email"
-          value={form.guideNotificationEmail}
-          onChange={(event) => handleChange("guideNotificationEmail", event.target.value)}
-          placeholder="pode ser o mesmo para várias empresas"
-        />
-        {errors.guideNotificationEmail && (
-          <span style={ERROR_TEXT_STYLE}>{errors.guideNotificationEmail.message}</span>
-        )}
-      </label>
+      {/* ⚠⚠ O TERCEIRO E-MAIL SAIU DAQUI EM 05/09/2026 (decisão do dono: *"o cadastro padrão da
+          empresa digitamos o email 3 vezes, devemos digitar apenas duas — email da empresa e email
+          de acesso, e o email para envio de guias deve sair de lá"*). Quem recebe a guia passou a
+          ser cadastrado na **Configuração de envio**, dentro da aba Guias, onde cabem VÁRIOS
+          destinatários — e o envio vai para todos.
+          ⚠ A COLUNA `guideNotificationEmail` NÃO FOI APAGADA e o valor salvo continua viajando no
+          formulário: ela é a rede da cascata (`resolveCompanyNotificationEmails`) para a empresa que
+          ainda não tem destinatário cadastrado. Tirar o CAMPO é decisão de tela; apagar o DADO
+          deixaria essas empresas sem receber. */}
       <label>
         Telefone
         <input value={form.telefone} onChange={(event) => onChange("telefone", event.target.value)} />

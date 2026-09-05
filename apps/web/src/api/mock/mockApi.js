@@ -878,6 +878,9 @@ mockContatosWhatsapp[SEGUNDA_EMPRESA_MOCK] = [
     createdAt: "2026-08-22T13:00:00.000Z", updatedAt: "2026-08-22T13:00:00.000Z",
   },
 ];
+// As guias que já saíram por WhatsApp neste mock — é o que torna o REENVIO alcançável offline.
+const mockGuiasEnviadasWhatsapp = new Set();
+
 // A última prévia do lote por WhatsApp — é contra ela que a conferência do `executar` é medida.
 let mockUltimaPreviaWhatsapp = null;
 
@@ -5770,14 +5773,26 @@ export function createMockApi() {
       await delay(60);
       return { ok: true, canal: { disponivel: true, motivo: null, mensagem: null, nomeMeta: "guia_disponivel" } };
     },
-    async enviarGuiaWhatsapp(companyId, guideId) {
+    async enviarGuiaWhatsapp(companyId, guideId, { reenviar = false } = {}) {
       await delay(300);
       const contatos = mockContatosWhatsapp[String(companyId)] || [];
-      const recebe = contatos.find((c) => c.ativo !== false && c.optInEm);
+      // ⚠ TODOS os que têm opt-in (05/09/2026) — o envio deixou de ser para um contato só.
+      const recebem = contatos.filter((c) => c.ativo !== false && c.optInEm && c.telefoneE164);
       const recusa = (code, message) => { const e = new Error(message); e.status = 422; e.code = code; return e; };
       if (!contatos.length) throw recusa("SEM_CONTATO", "Esta empresa não tem contato de WhatsApp cadastrado. A guia pode ir por e-mail.");
-      if (!recebe) throw recusa("SEM_OPT_IN", "O contato de WhatsApp desta empresa não tem opt-in registrado. Registre a autorização no cadastro; até lá a guia vai por e-mail.");
-      return { ok: true, guideId, enviada: true, canal: "WHATSAPP", destino: recebe.telefoneE164, providerMessageId: `wamid.mock.${Date.now()}` };
+      if (!recebem.length) throw recusa("SEM_OPT_IN", "O contato de WhatsApp desta empresa não tem opt-in registrado. Registre a autorização no cadastro; até lá a guia vai por e-mail.");
+      // ⚠ O RAMO "JÁ ENVIADA" É ALCANÇÁVEL OFFLINE de propósito: sem ele, a confirmação de reenvio
+      // — a decisão do dono de 05/09/2026 — só apareceria em produção. Mock que esconde ramo é
+      // defeito conhecido desta casa.
+      if (mockGuiasEnviadasWhatsapp.has(String(guideId)) && reenviar !== true) {
+        throw recusa("GUIA_JA_ENVIADA", "Esta guia já foi enviada ao cliente por WhatsApp.");
+      }
+      mockGuiasEnviadasWhatsapp.add(String(guideId));
+      return {
+        ok: true, guideId, enviada: true, canal: "WHATSAPP",
+        destino: recebem[0].telefoneE164, destinatarios: recebem.length, enviadas: recebem.length,
+        providerMessageId: `wamid.mock.${Date.now()}`,
+      };
     },
     async preverLoteWhatsapp({ competencia, portalClientIds } = {}) {
       await delay(250);
@@ -7258,16 +7273,31 @@ export function createMockApi() {
     async salvarContatoWhatsapp(companyId, input) {
       await delay(80);
       const id = String(companyId);
+      // ⚠ ESPELHO de `salvarContato` (api): UM DOS DOIS CANAIS BASTA desde 05/09/2026. O mock exigia
+      // telefone e, com ele, o destinatário só de e-mail — o caso mais comum da carteira — era
+      // INALCANÇÁVEL offline. Mock que esconde ramo é defeito conhecido desta casa.
       const bruto = String(input?.telefone || "").trim();
       const d = bruto.replace(/\D+/g, "");
       let e164 = null;
-      if (bruto.startsWith("+")) e164 = d.length >= 8 && d.length <= 15 ? d : null;
-      else if (d.startsWith("55") && (d.length === 12 || d.length === 13)) e164 = d;
-      else if (d.length === 10 || d.length === 11) e164 = `55${d}`;
-      else if (d.length >= 12 && d.length <= 15) e164 = d;
-      if (!e164) {
-        const err = new Error("Telefone inválido. Use DDD + número (ex.: (21) 99999-8888) ou o formato internacional com +.");
-        err.status = 400; err.code = "TELEFONE_INVALIDO"; throw err;
+      if (bruto) {
+        if (bruto.startsWith("+")) e164 = d.length >= 8 && d.length <= 15 ? d : null;
+        else if (d.startsWith("55") && (d.length === 12 || d.length === 13)) e164 = d;
+        else if (d.length === 10 || d.length === 11) e164 = `55${d}`;
+        else if (d.length >= 12 && d.length <= 15) e164 = d;
+        if (!e164) {
+          const err = new Error("Telefone inválido. Digite DDD + número (ex.: 21 99999-8888) — o +55 entra sozinho.");
+          err.status = 400; err.code = "TELEFONE_INVALIDO"; throw err;
+        }
+      }
+      const emailBruto = String(input?.email || "").trim().toLowerCase();
+      const email = emailBruto && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailBruto) ? emailBruto : null;
+      if (emailBruto && !email) {
+        const err = new Error("E-mail inválido. Confira o endereço.");
+        err.status = 400; err.code = "EMAIL_INVALIDO"; throw err;
+      }
+      if (!e164 && !email) {
+        const err = new Error("Informe ao menos um canal: e-mail, telefone, ou os dois.");
+        err.status = 400; err.code = "SEM_CANAL"; throw err;
       }
       if (!String(input?.nome || "").trim()) {
         const err = new Error("Informe o nome de quem recebe as mensagens.");
@@ -7279,11 +7309,14 @@ export function createMockApi() {
       }
       const agora = new Date().toISOString();
       const lista = mockContatosWhatsapp[id] || [];
-      const existente = lista.find((c) => (input?.id ? c.id === input.id : c.telefoneE164 === e164));
+      // ⚠ Sem telefone não há chave de upsert (é a mesma regra do servidor): destinatário só de
+      // e-mail é sempre CRIADO, e editar o dele exige o `id`.
+      const existente = lista.find((c) => (input?.id ? c.id === input.id : (e164 && c.telefoneE164 === e164)));
       const dados = {
         nome: String(input.nome).trim(),
         papel: String(input.papel || "").trim() || null,
         telefoneE164: e164,
+        email,
         ativo: input?.ativo === undefined ? true : Boolean(input.ativo),
         ...(input?.optIn === true
           ? { optInEm: agora, optInOrigem: String(input.optInOrigem || "").trim() || "nao_informado" }

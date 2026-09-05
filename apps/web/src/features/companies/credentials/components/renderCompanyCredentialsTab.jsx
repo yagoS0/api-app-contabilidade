@@ -14,7 +14,6 @@ import {
   estadoDaCredencial, podeVerSenha, avisoDeProtecao, estadoDaCarga,
 } from "../lib/estadoCredencial";
 import { AcessoPortalCliente } from "./AcessoPortalCliente";
-import { ContatosWhatsapp } from "./ContatosWhatsapp";
 
 const btn = (cor = "var(--border)") => ({
   padding: "6px 10px", borderRadius: "var(--radius-sm)", border: `1px solid ${cor}`,
@@ -407,7 +406,7 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
   );
 }
 
-export function CompanyCredentialsTab({ vault, acesso, whatsapp, razaoSocial }) {
+export function CompanyCredentialsTab({ vault, acesso, razaoSocial }) {
   const {
     credenciais, cofre, podeRevelar, papelMinimoRevelar, carregando, erro,
     informacoes, carregandoInfos, erroInfos,
@@ -483,7 +482,6 @@ export function CompanyCredentialsTab({ vault, acesso, whatsapp, razaoSocial }) 
           sai o papel do RBAC). Fica logo abaixo do acesso ao portal porque é a mesma pergunta —
           "quem é o cliente e por onde ele entra" — por outro canal. Nada aqui envia mensagem.
           ⚠ Os usuários do portal vêm de `acesso`: é a MESMA lista, nunca uma segunda consulta. */}
-      {whatsapp ? <ContatosWhatsapp whatsapp={whatsapp} usuarios={acesso?.usuarios || []} /> : null}
 
       <LinhaDeProtecao nivel={aviso.nivel} texto={aviso.texto} />
 

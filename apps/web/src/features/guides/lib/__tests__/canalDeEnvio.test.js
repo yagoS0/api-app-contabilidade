@@ -10,6 +10,7 @@ import {
   agruparPrevia,
   conferenciaDaPrevia,
   podeAbrirLoteWhatsapp,
+  perguntaDeReenvio,
 } from "../canalDeEnvio";
 import { MOTIVOS } from "../../../../../../api/src/application/whatsapp/elegibilidadeEnvioGuia.js";
 import { CANAL_PADRAO } from "../../../../../../api/src/application/whatsapp/ContatoWhatsappService.js";
@@ -116,5 +117,18 @@ describe("podeAbrirLoteWhatsapp — o botão desabilita com o motivo, nunca some
   });
   it("competência + seleção + canal disponível: pode", () => {
     expect(podeAbrirLoteWhatsapp({ competencia: "2026-08", selecionadas: 2, canal: { disponivel: true } })).toEqual({ pode: true, motivo: null });
+  });
+});
+
+// ── O REENVIO (05/09/2026) ──────────────────────────────────────────────────────────────────────
+describe("perguntaDeReenvio — a tela AVISA que já foi, e o contador decide", () => {
+  it("carrega o motivo do servidor e termina perguntando", () => {
+    const f = perguntaDeReenvio("Esta guia já foi enviada ao cliente por WhatsApp.");
+    expect(f).toMatch(/já foi enviada ao cliente por WhatsApp/);
+    expect(f).toMatch(/Enviar de novo mesmo assim\?/);
+  });
+  it("⚠ sem motivo do servidor NÃO inventa história — diz o mínimo verdadeiro", () => {
+    expect(perguntaDeReenvio(null)).toMatch(/já foi enviada ao cliente/);
+    expect(perguntaDeReenvio("")).toMatch(/Enviar de novo mesmo assim\?/);
   });
 });

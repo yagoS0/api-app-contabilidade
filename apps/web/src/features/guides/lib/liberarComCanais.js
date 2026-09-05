@@ -12,7 +12,7 @@
 // recusa dele (422 com motivo: sem opt-in, template não aprovado, já enviada) vira frase no
 // desfecho — nunca um erro que esconda que o e-mail saiu.
 
-import { decidirCanaisAoLiberar, resumirDesfechoDosCanais, PERGUNTA_WHATSAPP } from "./canalDeEnvio";
+import { decidirCanaisAoLiberar, resumirDesfechoDosCanais, PERGUNTA_WHATSAPP, perguntaDeReenvio } from "./canalDeEnvio";
 
 /**
  * @param {object} p
@@ -37,8 +37,9 @@ export async function liberarComCanais({ api, companyId, guideId, perguntar }) {
       canalPadraoEnvio = "EMAIL";
     }
   }
+  const perguntarAoContador = perguntar || ((p) => window.confirm(p));
   const decisao = decidirCanaisAoLiberar({ canalPadraoEnvio });
-  const quer = decisao.whatsapp || (decisao.perguntar && (perguntar || ((p) => window.confirm(p)))(PERGUNTA_WHATSAPP));
+  const quer = decisao.whatsapp || (decisao.perguntar && perguntarAoContador(PERGUNTA_WHATSAPP));
 
   if (quer && companyId && typeof api.enviarGuiaWhatsapp === "function") {
     try {
@@ -47,6 +48,16 @@ export async function liberarComCanais({ api, companyId, guideId, perguntar }) {
     } catch (err) {
       // ⚠ A recusa nomeada do servidor (422) chega como erro do `request`; ela é DESFECHO, não exceção.
       whatsapp = { tentado: true, ok: false, message: err?.message || null, motivo: err?.code || null };
+      // ⚠ JÁ ENVIADA NÃO É MAIS O FIM (05/09/2026): a tela AVISA, com o motivo que o servidor deu, e
+      // o contador decide. Só então o pedido volta com `reenviar` — nunca por conta própria.
+      if (err?.code === "GUIA_JA_ENVIADA" && perguntarAoContador(perguntaDeReenvio(err?.message))) {
+        try {
+          const r2 = await api.enviarGuiaWhatsapp(companyId, guideId, { reenviar: true });
+          whatsapp = { tentado: true, ok: r2?.ok !== false, reenvio: true, message: r2?.message || null, motivo: r2?.error || r2?.motivo || null };
+        } catch (err2) {
+          whatsapp = { tentado: true, ok: false, reenvio: true, message: err2?.message || null, motivo: err2?.code || null };
+        }
+      }
     }
   }
 

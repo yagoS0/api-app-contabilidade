@@ -58,6 +58,8 @@ function fmtData(iso) {
 const COR_SITUACAO = {
   // Verde só para quem de fato RECEBE — é o estado concluído do cadastro.
   [SITUACAO_CONTATO.RECEBE]: "var(--state-closed)",
+  // Recebe por e-mail: é estado NORMAL, não pendência — âmbar aqui treinaria o olho a ignorar a cor.
+  [SITUACAO_CONTATO.SO_EMAIL]: "var(--text-muted)",
   [SITUACAO_CONTATO.SEM_OPT_IN]: "var(--state-warn)",
   [SITUACAO_CONTATO.INATIVO]: "var(--state-neutral)",
 };
@@ -80,9 +82,20 @@ function LinhaContato({ contato, usuarios, onRemover }) {
       <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "baseline", flexWrap: "wrap" }}>
         <span style={{ fontSize: "0.9rem", color: "var(--text)", fontWeight: 600 }}>{contato.nome}</span>
         {contato.papel ? <span style={{ fontSize: "0.76rem", color: "var(--text-muted)" }}>{contato.papel}</span> : null}
-        <code style={{ fontFamily: "ui-monospace, monospace", fontSize: "0.84rem", color: "var(--text)" }}>
-          {formatarTelefone(contato.telefoneE164)}
-        </code>
+        {/* ⚠ OS DOIS CANAIS, e a ausência de um deles NÃO some: destinatário só de e-mail é caso
+            normal desde 05/09/2026, e uma linha sem nada onde havia o telefone se lê como defeito. */}
+        {contato.telefoneE164 ? (
+          <code style={{ fontFamily: "ui-monospace, monospace", fontSize: "0.84rem", color: "var(--text)" }}>
+            {formatarTelefone(contato.telefoneE164)}
+          </code>
+        ) : (
+          <span style={{ fontSize: "0.76rem", color: "var(--text-faint)" }}>sem WhatsApp</span>
+        )}
+        {contato.email ? (
+          <span style={{ fontSize: "0.8rem", color: "var(--text)" }}>{contato.email}</span>
+        ) : (
+          <span style={{ fontSize: "0.76rem", color: "var(--text-faint)" }}>sem e-mail</span>
+        )}
         <span style={{ marginLeft: "auto", fontSize: "0.74rem", color: COR_SITUACAO[situacao], fontWeight: 600 }}>
           {FRASE_SITUACAO[situacao]}
           {situacao === SITUACAO_CONTATO.RECEBE && optIn ? ` · opt-in em ${optIn}` : ""}
@@ -122,20 +135,21 @@ function FormContato({ usuarios, salvando, onSalvar, onFechar }) {
   const [nome, setNome] = useState("");
   const [papel, setPapel] = useState("");
   const [telefone, setTelefone] = useState("");
+  const [email, setEmail] = useState("");
   const [optIn, setOptIn] = useState(false);
   const [optInOrigem, setOptInOrigem] = useState("");
   const [userId, setUserId] = useState("");
   const [erros, setErros] = useState({});
 
-  const validacao = validarFormulario({ nome, telefone });
+  const validacao = validarFormulario({ nome, telefone, email });
 
   async function salvar() {
-    const v = validarFormulario({ nome, telefone });
+    const v = validarFormulario({ nome, telefone, email });
     setErros(v.erros);
     if (!v.ok) return;
-    const ok = await onSalvar(montarPayload({ nome, papel, telefone, optIn, optInOrigem, userId: userId || undefined }));
+    const ok = await onSalvar(montarPayload({ nome, papel, telefone, email, optIn, optInOrigem, userId: userId || undefined }));
     if (ok) {
-      setNome(""); setPapel(""); setTelefone(""); setOptIn(false); setOptInOrigem(""); setUserId(""); setErros({});
+      setNome(""); setPapel(""); setTelefone(""); setEmail(""); setOptIn(false); setOptInOrigem(""); setUserId(""); setErros({});
       onFechar?.();
     }
   }
@@ -161,20 +175,33 @@ function FormContato({ usuarios, salvando, onSalvar, onFechar }) {
           <input style={{ ...campo, marginTop: 4 }} value={papel} onChange={(e) => setPapel(e.target.value)} placeholder="financeiro, sócio…" />
         </label>
         <label style={rotulo}>
-          Telefone <span style={{ color: "var(--danger)" }}>*</span>
-          {/* ⚠ O `+` é o ÚNICO desambiguador de DDI: "14155552671" sem `+` é lido como celular
-              brasileiro sem DDI. O placeholder mostra as duas formas. */}
+          Telefone (WhatsApp)
+          {/* ⚠ NÃO SE DIGITA O +55 — `normalizarE164` o prefixa sozinha (decisão do dono,
+              05/09/2026: "só devemos digitar o número da pessoa"). O `+` continua aceito e é o
+              único desambiguador de DDI para número estrangeiro. */}
           <input
             style={{ ...campo, marginTop: 4 }}
             value={telefone}
             onChange={(e) => setTelefone(e.target.value)}
-            placeholder="(21) 99999-8888 ou +55 21 99999-8888"
+            placeholder="(21) 99999-8888"
             inputMode="tel"
           />
           {erros.telefone ? <span role="alert" style={{ color: "var(--danger)" }}>{erros.telefone}</span> : null}
           {!erros.telefone && validacao.telefoneE164 ? (
             <span style={{ color: "var(--text-faint)" }}>será gravado como {formatarTelefone(validacao.telefoneE164)}</span>
           ) : null}
+        </label>
+        <label style={rotulo}>
+          E-mail
+          <input
+            style={{ ...campo, marginTop: 4 }}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="financeiro@empresa.com.br"
+            inputMode="email"
+            type="text"
+          />
+          {erros.email ? <span role="alert" style={{ color: "var(--danger)" }}>{erros.email}</span> : null}
         </label>
         <label style={rotulo}>
           Pessoa do portal
@@ -208,7 +235,7 @@ function FormContato({ usuarios, salvando, onSalvar, onFechar }) {
           style={validacao.ok && !salvando ? btn("var(--accent-purple)") : btnDesabilitado}
           disabled={!validacao.ok || salvando}
           onClick={salvar}
-          title={validacao.ok ? "Salvar o contato" : (validacao.erros.nome || validacao.erros.telefone)}
+          title={validacao.ok ? "Salvar o destinatário" : (validacao.erros.nome || validacao.erros.canal || validacao.erros.telefone || validacao.erros.email)}
         >
           {salvando ? "Salvando…" : "Salvar contato"}
         </button>

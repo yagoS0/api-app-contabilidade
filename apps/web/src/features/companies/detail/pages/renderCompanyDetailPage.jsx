@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
+import { Modal } from "../../../../components/ui/Modal";
 import { CompanySectionHeader } from "../components/renderCompanyDetailHeader";
 import { CompanyTabLayout, CompanyTabLoading } from "../components/CompanyTabLayout";
 // A URL das abas da empresa — a MESMA fonte que a navegação por clique usa. Ver `rotasDaEmpresa`.
@@ -27,6 +28,7 @@ import { useCompanyDocuments, useCompanyNotes } from "../../documents/hooks/useC
 import { useCompanyCredentials } from "../../credentials/hooks/useCompanyCredentials";
 import { useAcessoPortalCliente } from "../../credentials/hooks/useAcessoPortalCliente";
 import { useContatosWhatsapp } from "../../credentials/hooks/useContatosWhatsapp";
+import { ContatosWhatsapp } from "../../credentials/components/ContatosWhatsapp";
 
 // Q8.C.3: lazy load das tabs pesadas. Bundle inicial cai (~30-40% segundo medições típicas),
 // e cada tab só carrega seu JS quando o contador clica nela pela 1ª vez.
@@ -137,10 +139,24 @@ function CompanyNotesTabWrapper({ companyId, feedback }) {
 function CompanyCredentialsTabWrapper({ companyId, feedback, razaoSocial }) {
   const vault = useCompanyCredentials({ api: companyDocsApi, companyId, feedback });
   const acesso = useAcessoPortalCliente({ api: companyDocsApi, companyId, feedback });
-  // Os contatos de WhatsApp (destinatários das guias + canal padrão). Terceiro hook, terceira
-  // natureza: cadastro com opt-in, sem segredo nenhum — mas com as mesmas rotas de papel.
+  // ⚠ OS DESTINATÁRIOS SAÍRAM DAQUI EM 05/09/2026 (decisão do dono: *"a tela de configuração de
+  // envio deve ser dentro de guias, e não em senha e acesso"*). Esta aba guarda SEGREDO e ACESSO;
+  // quem recebe a guia é assunto do envio, e mora na aba Guias.
+  return <CompanyCredentialsTab vault={vault} acesso={acesso} razaoSocial={razaoSocial} />;
+}
+
+/**
+ * A CONFIGURAÇÃO DE ENVIO — dentro da aba Guias (05/09/2026).
+ *
+ * ⚠ É a MESMA lista e o MESMO hook de antes; o que mudou foi o lugar. Duplicar o cadastro em duas
+ * abas faria as duas discordarem sobre quem recebe a guia, com o cliente no meio.
+ * ⚠ Os usuários do portal chegam por `useAcessoPortalCliente` porque o vínculo com a PESSOA é o que
+ * dá o papel RBAC — sem eles o seletor "Pessoa do portal" nasceria vazio.
+ */
+function ConfiguracaoDeEnvioWrapper({ companyId, feedback }) {
   const whatsapp = useContatosWhatsapp({ api: companyDocsApi, companyId, feedback });
-  return <CompanyCredentialsTab vault={vault} acesso={acesso} whatsapp={whatsapp} razaoSocial={razaoSocial} />;
+  const acesso = useAcessoPortalCliente({ api: companyDocsApi, companyId, feedback });
+  return <ContatosWhatsapp whatsapp={whatsapp} usuarios={acesso?.usuarios || []} />;
 }
 
 // Q14.2: wrapper que instancia hook próprio da Apuração v2 (state da empresa atual)
@@ -341,6 +357,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     || null;
   // Q11.1: state do modal de exclusão (zona de risco)
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  // A gaveta da configuração de envio, dentro da aba Guias (05/09/2026).
+  const [abrirEnvio, setAbrirEnvio] = useState(false);
   // ⚠ QUAIS EMPRESAS O E-MAIL DIGITADO JÁ ATENDE — só leitura, e só para AVISAR embaixo do campo.
   // ⚠ Reusa `companyDocsApi` (a mesma instância do cofre e do acesso ao portal); um cliente novo
   // por tela é o começo de dois contratos para a mesma rota.
@@ -455,6 +473,20 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
         />
 
         <AppShell className="guides-page-shell">
+          {/* ⚠ A CONFIGURAÇÃO DE ENVIO MORA AQUI desde 05/09/2026 (decisão do dono) — é onde se
+              decide quem recebe a guia, ao lado da guia. Ela sai da aba de senha e acesso, que
+              guarda segredo. Gaveta, e não seção fixa: a tabela de guias é o assunto da aba. */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "var(--space-2)" }}>
+            <Button variant="secondary" type="button" onClick={() => setAbrirEnvio(true)}>
+              Configuração de envio
+            </Button>
+          </div>
+          {abrirEnvio ? (
+            <Modal titulo="Configuração de envio" tamanho="lg" aoFechar={() => setAbrirEnvio(false)}>
+              <ConfiguracaoDeEnvioWrapper companyId={companyId} feedback={feedback} />
+            </Modal>
+          ) : null}
+
           <Suspense fallback={<TabLoadingFallback />}>
           <CompanyGuidesTable
             companyId={companyId}

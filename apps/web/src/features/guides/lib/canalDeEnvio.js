@@ -31,6 +31,23 @@ export function decidirCanaisAoLiberar({ canalPadraoEnvio } = {}) {
   };
 }
 
+/**
+ * A pergunta do REENVIO (05/09/2026).
+ *
+ * Decisão do dono: *"deve ser enviada se o contador decidir enviar novamente, avisando na tela de
+ * que já foi enviado"*. A recusa do servidor (`GUIA_JA_ENVIADA`) deixou de ser o fim do caminho e
+ * virou o AVISO — e a frase carrega o motivo que o servidor deu, nunca um texto genérico.
+ *
+ * ⚠ Isto vale SÓ no envio por guia. O lote continua pulando as já enviadas: é o que impede a
+ * carteira inteira de sair duas vezes num clique.
+ */
+export function perguntaDeReenvio(mensagemDoServidor) {
+  const motivo = String(mensagemDoServidor || "").trim() || "Esta guia já foi enviada ao cliente.";
+  return `${motivo}
+
+Enviar de novo mesmo assim?`;
+}
+
 export const PERGUNTA_WHATSAPP = "Enviar esta guia também por WhatsApp?\n\nO e-mail já sai de qualquer forma. O WhatsApp só vai se a empresa tiver contato com opt-in e o canal estiver disponível.";
 
 /**

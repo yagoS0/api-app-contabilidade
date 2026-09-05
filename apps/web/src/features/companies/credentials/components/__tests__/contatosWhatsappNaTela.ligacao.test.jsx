@@ -1,6 +1,8 @@
 // A LIGAÇÃO — a seção de WhatsApp existe na aba e chama a API certa, de baixo para cima:
 //
-//   `CompanyCredentialsTab`  monta  `ContatosWhatsapp`  quando recebe `whatsapp`
+//   a aba GUIAS               monta  `ContatosWhatsapp` (⚠ mudou de lugar em 05/09/2026 — antes era
+//                                     a aba de senha e acesso; decisão do dono: a configuração de
+//                                     envio fica junto das guias)
 //   `ContatosWhatsapp`       chama  `whatsapp.salvar(payload)` / `whatsapp.remover(id)` / `definirCanal`
 //   `useContatosWhatsapp`    chama  `api.listarContatosWhatsapp` / `salvarContatoWhatsapp` /
 //                                    `removerContatoWhatsapp` / `definirCanalEnvio`
@@ -14,7 +16,7 @@
 
 import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { CompanyCredentialsTab } from "../renderCompanyCredentialsTab";
+import { ContatosWhatsapp } from "../ContatosWhatsapp";
 import { useContatosWhatsapp } from "../../hooks/useContatosWhatsapp";
 
 const MARIA_PORTAL = { userId: "u1", nome: "Maria do Cliente", email: "maria@empresa.com.br", papel: "OWNER", situacaoUsuario: "active", ultimaTroca: null };
@@ -59,7 +61,7 @@ function apiFalso(over = {}) {
 
 function Ponte({ api, companyId = "pc-1", feedback }) {
   const whatsapp = useContatosWhatsapp({ api, companyId, feedback });
-  return <CompanyCredentialsTab vault={vaultFalso()} acesso={acessoFalso()} whatsapp={whatsapp} razaoSocial="EMPRESA TESTE LTDA" />;
+  return <ContatosWhatsapp whatsapp={whatsapp} usuarios={acessoFalso().usuarios} />;
 }
 
 async function montar({ api = apiFalso() } = {}) {
@@ -132,6 +134,9 @@ describe("o formulário grava o que a rota espera", () => {
     expect(companyId).toBe("pc-1");
     expect(payload).toEqual({
       nome: "João Sócio", papel: "", telefone: "(21) 97777-6666",
+      // ⚠ `email` VIAJA VAZIO de propósito (05/09/2026): no servidor a string vazia é "sem e-mail",
+      // e é assim que se APAGA o endereço de quem passou a receber só por WhatsApp.
+      email: "",
       optIn: true, optInOrigem: "contrato de prestação", userId: "u1",
     });
     // Salvou → recarregou a lista.
