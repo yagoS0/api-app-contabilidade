@@ -6,7 +6,7 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { EmailService } from "../../infrastructure/mail/EmailService.js";
 import { getGuidePdfBuffer } from "./GuideService.js";
 import { guideTypeEmailLabel } from "./guideEmailCopy.js";
-import { resolveCompanyNotificationEmail } from "./GuideScheduledEmailService.js";
+import { resolveCompanyNotificationEmail, resolveCompanyNotificationEmails } from "./GuideScheduledEmailService.js";
 import { whereGuiaPendenteDeEnvio } from "./guideContract.js";
 
 function safeTempName(name) {
@@ -257,7 +257,10 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia }) {
     throw err;
   }
 
-  const to = await resolveCompanyNotificationEmail(portal.id);
+  // ⚠ TODOS os destinatários cadastrados (05/09/2026), não mais um só. A vírgula é o separador do
+  // cabeçalho `To:` (RFC 5322) e vale nos dois transportes (Gmail API e SMTP).
+  const destinos = await resolveCompanyNotificationEmails(portal.id);
+  const to = destinos.join(", ");
   if (!to) {
     const err = new Error("company_email_not_found");
     err.code = "COMPANY_EMAIL_NOT_FOUND";

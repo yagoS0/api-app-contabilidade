@@ -1088,7 +1088,13 @@ model ContatoWhatsapp {
   papel          String? // "financeiro", "sócio"… — texto livre, é rótulo de tela
   /// SEMPRE E.164 (`5521999998888`), normalizado no cadastro. Guardar com máscara faria a
   /// comparação com o `waId` que a Meta devolve falhar em silêncio no webhook.
-  telefoneE164   String
+  ///
+  /// ⚠ NULO desde 05/09/2026: este registro virou CONTATO DE ENVIO e um destinatário pode ter só
+  /// e-mail. O `@@unique` com `portalClientId` continua — vários NULL não colidem no Postgres.
+  telefoneE164   String?
+  /// O e-mail deste destinatário. ⚠ O OPT-IN (abaixo) vale SÓ para o WhatsApp: é exigência da Meta,
+  /// e-mail nunca dependeu dele. Um destinatário só com e-mail recebe sem opt-in.
+  email          String?
   /// ID do usuário na Meta, descoberto no primeiro contato. É por ele que o webhook encontra o
   /// contato — o número que a Meta devolve nem sempre bate dígito a dígito com o cadastrado
   /// (no Brasil, o 9 do celular).

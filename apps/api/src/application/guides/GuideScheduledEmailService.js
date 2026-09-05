@@ -1,6 +1,7 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { sendLatestGuidesEmailByCompany } from "./GuideCompanyEmailService.js";
 import { releaseGuideLock, tryAcquireGuideLock } from "./GuideLockService.js";
+import { destinatariosDeEnvio } from "../whatsapp/ContatoWhatsappService.js";
 
 const SCHEDULE_LOCK_ID = "guides_email_schedule_lock";
 const SCHEDULE_LOCK_TTL_MS = 45 * 60 * 1000;
@@ -49,6 +50,28 @@ export async function setCompanyGuideEmailSchedule({ portalCompanyId, days, upda
     update: { value: payload },
   });
   return payload;
+}
+
+/**
+ * TODOS os e-mails de envio da empresa (05/09/2026).
+ *
+ * Decisão do dono: *"quando enviarmos, enviar para todos os canais cadastrados"*. Quem cadastra é a
+ * aba **Configuração de envio**, dentro de Guias (`contatos_whatsapp.email`).
+ *
+ * ⚠ A CASCATA ANTIGA CONTINUA, e é ela que impede a mudança de calar a carteira: sem NENHUM
+ * destinatário cadastrado, cai em `guideNotificationEmail` → `Company.email` → e-mail do sócio,
+ * exatamente como sempre fez. A lista nova é o caminho normal; a cascata é a rede.
+ *
+ * ⚠ O OPT-IN NÃO ENTRA AQUI. Ele é exigência da Meta para o WhatsApp; e-mail nunca dependeu dele, e
+ * exigi-lo faria a carteira inteira parar de receber no dia seguinte à mudança.
+ *
+ * @returns {Promise<string[]>} sem repetição, minúsculas. Vazio = ninguém (o chamador recusa).
+ */
+export async function resolveCompanyNotificationEmails(portalCompanyId) {
+  const { emails } = await destinatariosDeEnvio(portalCompanyId);
+  if (emails.length) return emails;
+  const unico = await resolveCompanyNotificationEmail(portalCompanyId);
+  return unico ? [unico] : [];
 }
 
 export async function resolveCompanyNotificationEmail(portalCompanyId) {

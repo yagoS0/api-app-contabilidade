@@ -17,6 +17,19 @@ export class ContatoWhatsappError extends Error {
   }
 }
 
+/**
+ * E-mail em minúsculas e sem espaços, ou `null`.
+ *
+ * ⚠ A FORMA É A MESMA do resto do projeto (`emailValido`, `companySchemas.js`): um `@`, algo antes,
+ * algo com ponto depois. Uma segunda definição de "e-mail válido" faria a tela aceitar o que o
+ * cadastro da empresa recusa, no mesmo endereço.
+ */
+export function normalizarEmail(valor) {
+  const v = String(valor ?? "").trim().toLowerCase();
+  if (!v) return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v : null;
+}
+
 export async function listarContatos(portalClientId) {
   return prisma.contatoWhatsapp.findMany({
     where: { portalClientId: String(portalClientId) },
@@ -32,12 +45,26 @@ export async function listarContatos(portalClientId) {
  * descobre pelo painel de falhas. Validar cedo é o que transforma isso num campo vermelho na tela
  * de cadastro.
  */
-export async function salvarContato({ portalClientId, id, nome, papel, telefone, optIn, optInOrigem, ativo, userId }) {
-  const e164 = normalizarE164(telefone);
-  if (!e164) {
+export async function salvarContato({ portalClientId, id, nome, papel, telefone, email, optIn, optInOrigem, ativo, userId }) {
+  // ⚠ UM DOS DOIS BASTA, e nenhum dos dois é obrigatório sozinho (05/09/2026). O destinatário virou
+  // "por onde esta pessoa recebe": só e-mail, só WhatsApp, ou os dois. Exigir telefone deixaria de
+  // fora o financeiro que só recebe por e-mail — que é a maioria da carteira hoje.
+  const temTelefone = Boolean(String(telefone || "").trim());
+  const e164 = temTelefone ? normalizarE164(telefone) : null;
+  if (temTelefone && !e164) {
     throw new ContatoWhatsappError(
       "TELEFONE_INVALIDO",
-      "Telefone inválido. Use DDD + número (ex.: (21) 99999-8888) ou o formato internacional com +.",
+      "Telefone inválido. Digite DDD + número (ex.: 21 99999-8888) — o +55 entra sozinho.",
+    );
+  }
+  const emailLimpo = normalizarEmail(email);
+  if (email !== undefined && email !== null && String(email).trim() && !emailLimpo) {
+    throw new ContatoWhatsappError("EMAIL_INVALIDO", "E-mail inválido. Confira o endereço.");
+  }
+  if (!e164 && !emailLimpo) {
+    throw new ContatoWhatsappError(
+      "SEM_CANAL",
+      "Informe ao menos um canal: e-mail, telefone, ou os dois.",
     );
   }
   if (!String(nome || "").trim()) {
@@ -48,6 +75,7 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
     nome: String(nome).trim(),
     papel: String(papel || "").trim() || null,
     telefoneE164: e164,
+    email: emailLimpo,
     ativo: ativo === undefined ? true : Boolean(ativo),
   };
 
@@ -98,11 +126,58 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
       data: dados,
     });
   }
+  // ⚠ O UPSERT SÓ EXISTE COM TELEFONE: a chave única é `(portalClientId, telefoneE164)`, e com
+  // `telefoneE164` nulo não há chave para casar — o Prisma recusaria. Destinatário só de e-mail é
+  // sempre CRIADO; editar o dele exige o `id`, que a tela manda.
+  if (!e164) {
+    return prisma.contatoWhatsapp.create({ data: { portalClientId: String(portalClientId), ...dados } });
+  }
   return prisma.contatoWhatsapp.upsert({
     where: { portalClientId_telefoneE164: { portalClientId: String(portalClientId), telefoneE164: e164 } },
     create: { portalClientId: String(portalClientId), ...dados },
     update: dados,
   });
+}
+
+/**
+ * OS DESTINATÁRIOS DE UMA EMPRESA, por canal (05/09/2026).
+ *
+ * Decisão do dono: *"quando enviarmos, enviar para todos os canais cadastrados"*. Então aqui não se
+ * escolhe UM destino — devolve-se a lista de cada canal, e quem envia manda para todos.
+ *
+ * ⚠ O OPT-IN VALE SÓ PARA O WHATSAPP. É exigência de política da Meta e é o que protege o número
+ * contra denúncia; e-mail nunca dependeu dele. Um destinatário sem opt-in aparece em `emails` e não
+ * aparece em `telefones` — e o motivo sobe em `semOptIn`, para a tela poder dizer por quê.
+ *
+ * ⚠ A CASCATA ANTIGA CONTINUA, e é o que impede a mudança de calar a carteira: sem NENHUM e-mail
+ * cadastrado, o envio cai em `guideNotificationEmail` → `Company.email` → e-mail do sócio, como
+ * sempre fez (`resolveCompanyNotificationEmail`). Ela é a rede, não o caminho normal.
+ *
+ * @returns {Promise<{emails: string[], telefones: Array<{id, nome, telefoneE164}>, semOptIn: Array<{nome, telefoneE164}>}>}
+ */
+export async function destinatariosDeEnvio(portalClientId) {
+  const contatos = await prisma.contatoWhatsapp.findMany({
+    where: { portalClientId: String(portalClientId), ativo: true },
+    select: { id: true, nome: true, email: true, telefoneE164: true, optInEm: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const emails = [];
+  const vistos = new Set();
+  const telefones = [];
+  const semOptIn = [];
+  for (const c of contatos) {
+    const e = normalizarEmail(c.email);
+    if (e && !vistos.has(e)) {
+      vistos.add(e);
+      emails.push(e);
+    }
+    if (c.telefoneE164) {
+      if (c.optInEm) telefones.push({ id: c.id, nome: c.nome, telefoneE164: c.telefoneE164 });
+      else semOptIn.push({ nome: c.nome, telefoneE164: c.telefoneE164 });
+    }
+  }
+  return { emails, telefones, semOptIn };
 }
 
 /** ⚠ `portalClientId` é OBRIGATÓRIO — ver a nota do `update` acima. */
