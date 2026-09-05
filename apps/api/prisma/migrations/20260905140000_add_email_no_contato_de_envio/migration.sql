@@ -28,7 +28,7 @@ ALTER TABLE "contatos_whatsapp" ALTER COLUMN "telefoneE164" DROP NOT NULL;
 -- receber guias. O rótulo diz isso, e o contador renomeia quando souber.
 INSERT INTO "contatos_whatsapp" ("id", "portalClientId", "nome", "papel", "email", "ativo", "createdAt", "updatedAt")
 SELECT
-  gen_random_uuid(),
+  gen_random_uuid()::text,
   p."id",
   'E-mail cadastrado para guias',
   'envio de guias',
