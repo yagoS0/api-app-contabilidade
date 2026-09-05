@@ -303,8 +303,14 @@ quem recebe a guia é assunto do **envio**.
 - ⚠ **O `+55` não se digita.** `normalizarE164` já o prefixava desde agosto; o rótulo é que pedia o
   `+`. Ele continua aceito — é o único desambiguador de DDI para número estrangeiro.
 - ⚠ **O terceiro e-mail saiu do cadastro da empresa** (ficaram o da empresa e o de acesso). A coluna
-  `guideNotificationEmail` **não foi apagada** e o valor salvo continua viajando no formulário: ela é
-  a rede da cascata para a empresa sem destinatário cadastrado.
+  `guideNotificationEmail` **não foi apagada** e o valor salvo continua viajando no formulário —
+  ⚠⚠ mas ela **deixou de ser a rede**: no mesmo dia o dono tirou a cascata do caminho da guia
+  (*"fora isso não sai e mostra por que não foi"*). O que salvou a carteira foi o **backfill**, não
+  a cascata.
+- ⚠⚠ **UM CANAL BASTA.** Empresa que só tem WhatsApp não tem e-mail para falhar:
+  `resumirDesfechoDosCanais` diz *"sem e-mail cadastrado · WhatsApp enviado"* em **verde**. Ele
+  separa **entregou?** de **algo falhou?** — canal ausente não é canal que falhou. ⚠ Nenhum canal
+  ⇒ vermelho, com o lugar do conserto na frase.
 
 ### Reenviar guia já enviada
 

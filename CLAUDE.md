@@ -694,7 +694,9 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   opcional), o cadastro saiu da aba de senha e acesso e virou **gaveta dentro de Guias**, o
   **terceiro e-mail saiu** do formulário da empresa, e o envio passa a ir para **todos os canais
   cadastrados**. ⚠⚠ **O opt-in vale só para o WhatsApp** (exigência da Meta) — e-mail nunca dependeu
-  dele; foi por ignorar isso que a tela nasceu dizendo "não recebe" sobre quem recebe. ⚠ A chave de
+  dele; foi por ignorar isso que a tela nasceu dizendo "não recebe" sobre quem recebe. ⚠⚠ **A guia só
+  vai para destinatário CADASTRADO** (a cascata saiu do caminho da guia na mesma tarde, por decisão
+  do dono), e **um canal basta**: ausência de canal é dita, não pintada de erro. ⚠ A chave de
   `envios_guia` passou a incluir o **destino** (dois índices: o composto e um PARCIAL para a linha
   legada de e-mail, que tem destino nulo) e **reenviar virou pedido explícito**, só no envio por
   guia. ⚠ Duas migrations novas (`20260905140000` com backfill, `20260905150000`) **não aplicadas**.

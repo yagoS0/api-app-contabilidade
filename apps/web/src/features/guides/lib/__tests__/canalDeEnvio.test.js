@@ -11,6 +11,7 @@ import {
   conferenciaDaPrevia,
   podeAbrirLoteWhatsapp,
   perguntaDeReenvio,
+  SEM_NINGUEM_PARA_RECEBER,
 } from "../canalDeEnvio";
 import { MOTIVOS } from "../../../../../../api/src/application/whatsapp/elegibilidadeEnvioGuia.js";
 import { CANAL_PADRAO } from "../../../../../../api/src/application/whatsapp/ContatoWhatsappService.js";
@@ -130,5 +131,48 @@ describe("perguntaDeReenvio — a tela AVISA que já foi, e o contador decide", 
   it("⚠ sem motivo do servidor NÃO inventa história — diz o mínimo verdadeiro", () => {
     expect(perguntaDeReenvio(null)).toMatch(/já foi enviada ao cliente/);
     expect(perguntaDeReenvio("")).toMatch(/Enviar de novo mesmo assim\?/);
+  });
+});
+
+// ── ⚠⚠ UM CANAL BASTA (05/09/2026) ──────────────────────────────────────────────────────────────
+//
+// Dono: *"o envio deve ser feito mesmo sem o e-mail, se já tiver o número; se tiver apenas um tipo
+// de contato ela pode e deve ser enviada"*. Antes disto, empresa sem e-mail cadastrado via a guia
+// sair pelo WhatsApp e a tela dizer VERMELHO — porque "e-mail não saiu" era lido como falha.
+describe("canal AUSENTE não é canal que falhou", () => {
+  it("sem e-mail cadastrado + WhatsApp enviado ⇒ OK, e a ausência é DITA", () => {
+    const r = resumirDesfechoDosCanais({
+      email: { feito: false, naoSeAplica: true },
+      whatsapp: { tentado: true, ok: true },
+    });
+    expect(r.tom).toBe("ok");
+    expect(r.texto).toMatch(/sem e-mail cadastrado · WhatsApp enviado/);
+    // ⚠ Nada de "não saiu": a empresa não tem esse canal, e não há defeito a procurar.
+    expect(r.texto).not.toMatch(/não saiu/);
+  });
+
+  it("⚠ sem e-mail e sem WhatsApp tentado ⇒ ERRO, dizendo onde se cadastra", () => {
+    const r = resumirDesfechoDosCanais({ email: { feito: false, naoSeAplica: true } });
+    expect(r.tom).toBe("erro");
+    expect(r.texto).toContain(SEM_NINGUEM_PARA_RECEBER);
+    expect(r.texto).toMatch(/Configuração de envio/);
+  });
+
+  it("⚠ a ausência do e-mail NÃO perdoa o WhatsApp que falhou — o erro continua visível", () => {
+    const r = resumirDesfechoDosCanais({
+      email: { feito: false, naoSeAplica: true },
+      whatsapp: { tentado: true, ok: false, message: "contato sem opt-in" },
+    });
+    expect(r.tom).toBe("erro");
+    expect(r.texto).toMatch(/WhatsApp não saiu \(contato sem opt-in\)/);
+  });
+
+  it("⚠ e-mail que FALHOU de verdade continua vermelho — `naoSeAplica` não é o default", () => {
+    const r = resumirDesfechoDosCanais({
+      email: { feito: false, message: "o e-mail NÃO foi enviado: lock" },
+      whatsapp: { tentado: true, ok: true },
+    });
+    expect(r.tom).toBe("erro");
+    expect(r.texto).toMatch(/lock/);
   });
 });

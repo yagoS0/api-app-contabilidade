@@ -4541,12 +4541,44 @@ recebe normalmente — mandando o contador procurar uma autorização que não f
 quarto estado (`SO_EMAIL`), em tinta **neutra**: âmbar ali treinaria o olho a ignorar a cor da
 pendência de verdade.
 
-⚠⚠ **A CASCATA ANTIGA CONTINUA, e é o que impede a mudança de calar a carteira.** Sem NENHUM
-destinatário cadastrado, o envio cai em `guideNotificationEmail` → `Company.email` → e-mail do sócio,
-como sempre fez. A migration `20260905140000` faz o **backfill**: o e-mail que cada empresa já tinha
-vira o primeiro destinatário da lista nova (decisão do dono). ⚠ O `nome` do backfill não é inventado
-— *"E-mail cadastrado para guias"*: não sabemos de quem é o endereço, só que foi cadastrado para
-receber guia.
+⚠⚠ **A CASCATA FOI REMOVIDA DO CAMINHO DA GUIA no mesmo dia, e o parágrafo que estava aqui dizia o
+CONTRÁRIO.** Eu a mantive de manhã como "rede para não calar a carteira"; à tarde o dono viu o que
+ela produzia e decidiu: *"a guia só vai para e-mail ou número cadastrado na aba de guias, fora isso
+não sai e mostra por que não foi"*. O que ela produzia era pior que silêncio — a guia da KLAUS NIGRO
+saiu para o **login do portal do cliente**, endereço que não aparece em tela nenhuma, e a interface
+afirmou *"e-mail enviado"*. ⚠ **Envio sem destinatário visível não é entrega: é uma afirmação que
+ninguém pode auditar.**
+
+- O que substituiu a rede foi o **backfill** (migration `20260905140000`): o e-mail que cada empresa
+  já tinha virou destinatário cadastrado. ⚠ O `nome` não é inventado — *"E-mail cadastrado para
+  guias"*: não sabemos de quem é o endereço, só que foi cadastrado para receber guia.
+- ⚠ **MEDIDO ANTES DE APERTAR:** 32 das 34 empresas já tinham e-mail cadastrado, 2 não, e **zero**
+  guias pendentes ficariam paradas. Apertar antes do backfill teria calado a carteira.
+- ⚠⚠ **A CASCATA CONTINUA VIVA FORA DA GUIA** (`resolveCompanyNotificationEmail`), e apertá-la junto
+  seria um estrago silencioso: além do envio de DOCUMENTOS, ela é o **filtro de elegibilidade dos
+  workers do SERPRO** (`if (!email) continue`) — quem decide é **CAPTURADO**. Apertada lá, as duas
+  empresas sem e-mail parariam de ter guia capturada. Há teste varrendo os arquivos que enviam guia
+  para ela não voltar, e a varredura é por **token**: o plural contém o singular como substring, e
+  guarda que acusa o import certo é guarda que alguém desliga.
+
+### ⚠⚠ UM CANAL BASTA — ausência de canal NÃO é falha
+
+> Dono, no mesmo dia: *"o envio deve ser feito mesmo sem o e-mail, se já tiver o número; se tiver
+> apenas um tipo de contato ela pode e deve ser enviada"*.
+
+Empresa que recebe só por WhatsApp **não tem e-mail para falhar**. O worker resolve o destinatário
+**antes de tocar na guia** e devolve `SKIPPED` + `naoSeAplica`; a guia sai de lá **intocada** — nem
+`SENDING`, nem tentativa contada, nem `emailLastError`.
+
+⚠⚠ **`ERROR` ali seria estrago PERMANENTE**, e é o motivo de o desfecho ter nome próprio: `ERROR`
+pinta o chip de vermelho e mantém a guia como pendência de envio **para sempre**, em toda guia de
+toda competência daquela empresa. Quem responde *"a guia chegou ao cliente?"* é `envios_guia`, que
+registra o canal que DE FATO entregou.
+
+⚠ Na tela, `resumirDesfechoDosCanais` separa duas perguntas — **entregou?** (algum canal saiu) e
+**algo falhou?** (um canal que EXISTIA não saiu). Verde só com entrega e sem falha; canal ausente é
+DITO (*"sem e-mail cadastrado"*) e não conta como falha. ⚠ Nenhum canal disponível ⇒ **erro**, com o
+lugar do conserto na frase: guia que não foi para ninguém não pode se parecer com guia entregue.
 
 ### ⚠⚠ `envios_guia`: a chave passou a incluir o DESTINO
 

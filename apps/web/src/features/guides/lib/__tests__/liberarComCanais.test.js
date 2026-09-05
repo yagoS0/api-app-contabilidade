@@ -75,3 +75,40 @@ describe("liberarComCanais", () => {
     expect(r.texto).toMatch(/WhatsApp enviado/);
   });
 });
+
+// ── ⚠⚠ EMPRESA SEM E-MAIL CADASTRADO (05/09/2026) ───────────────────────────────────────────────
+//
+// Dono: *"o envio deve ser feito mesmo sem o e-mail, se já tiver o número; se tiver apenas um tipo
+// de contato ela pode e deve ser enviada"*. Este bloco é a LIGAÇÃO: da resposta do servidor
+// (`envio.naoSeAplica`) até a frase e o tom que a tela pinta. A regra pura tem teste próprio em
+// `canalDeEnvio.test.js`; o que se mede aqui é o campo NÃO se perder no caminho.
+describe("um canal basta — a empresa que só tem WhatsApp", () => {
+  function apiSemEmail({ zap = { ok: true } } = {}) {
+    return {
+      liberarGuiaCliente: jest.fn(async () => ({
+        ok: true,
+        sent: false,
+        // ⚠ É esta forma que a rota devolve: `naoSeAplica` vive DENTRO de `envio`.
+        envio: { feito: false, naoSeAplica: true, motivo: "sem_email_cadastrado", podeTentarNovamente: false },
+        message: "Sem e-mail cadastrado nesta empresa — a guia não foi enviada por e-mail.",
+      })),
+      listarContatosWhatsapp: jest.fn(async () => ({ ok: true, contatos: [], canalPadraoEnvio: "WHATSAPP" })),
+      enviarGuiaWhatsapp: jest.fn(async () => zap),
+    };
+  }
+
+  it("sem e-mail cadastrado + WhatsApp enviado ⇒ OK (verde), e a ausência é dita", async () => {
+    const api = apiSemEmail();
+    const r = await liberarComCanais({ api, companyId: "pc-1", guideId: "g1" });
+    expect(r.ok).toBe(true);
+    expect(r.texto).toMatch(/sem e-mail cadastrado · WhatsApp enviado/);
+    expect(r.texto).not.toMatch(/não saiu/);
+  });
+
+  it("⚠ e o WhatsApp que falha continua ERRO — a ausência do e-mail não perdoa nada", async () => {
+    const api = apiSemEmail({ zap: { ok: false, message: "contato sem opt-in" } });
+    const r = await liberarComCanais({ api, companyId: "pc-1", guideId: "g1" });
+    expect(r.ok).toBe(false);
+    expect(r.texto).toMatch(/WhatsApp não saiu \(contato sem opt-in\)/);
+  });
+});

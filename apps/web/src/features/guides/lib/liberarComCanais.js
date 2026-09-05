@@ -24,7 +24,14 @@ import { decidirCanaisAoLiberar, resumirDesfechoDosCanais, PERGUNTA_WHATSAPP, pe
  */
 export async function liberarComCanais({ api, companyId, guideId, perguntar }) {
   const email = await api.liberarGuiaCliente(guideId);
-  const emailDesfecho = { feito: Boolean(email?.sent), message: email?.message || null };
+  // ⚠ `naoSeAplica` vem do servidor quando a empresa não tem e-mail CADASTRADO (05/09/2026). Ele é
+  // o que separa "não saiu porque falhou" de "não existe este canal aqui" — sem ele, a empresa que
+  // recebe só por WhatsApp veria vermelho em toda guia, para sempre.
+  const emailDesfecho = {
+    feito: Boolean(email?.sent),
+    naoSeAplica: email?.envio?.naoSeAplica === true,
+    message: email?.message || null,
+  };
 
   let whatsapp = null;
   let canalPadraoEnvio = "EMAIL";

@@ -874,6 +874,10 @@ const SEGUNDA_EMPRESA_MOCK = mockCompanies[1]?.companyId || "mock-pc-2";
 mockContatosWhatsapp[SEGUNDA_EMPRESA_MOCK] = [
   {
     id: "mock-ctt-3", portalClientId: SEGUNDA_EMPRESA_MOCK, nome: "Contato sem autorização", papel: null,
+    // ⚠ COM e-mail e SEM opt-in: é o estado `SO_EMAIL` (recebe por e-mail, não recebe por WhatsApp).
+    // A 1ª empresa é o espelho dele — telefone com opt-in e NENHUM e-mail —, e é ela que torna
+    // alcançável offline o "sem e-mail cadastrado" do liberar. Um canal basta, nos dois sentidos.
+    email: "contato@empresa2.com.br",
     telefoneE164: "5521977776666", waId: null, optInEm: null, optInOrigem: null, ativo: true, userId: null,
     createdAt: "2026-08-22T13:00:00.000Z", updatedAt: "2026-08-22T13:00:00.000Z",
   },
@@ -3748,7 +3752,7 @@ export function createMockApi() {
     // Libera SÓ esta guia ao cliente e "envia" só ela (página da empresa).
     async liberarGuiaCliente(guideId) {
       await delay();
-      for (const guides of mockGuidesByCompany.values()) {
+      for (const [companyId, guides] of mockGuidesByCompany.entries()) {
         const target = guides.find((item) => item.id === guideId);
         if (target) {
           target.liberadaCliente = true;
@@ -3772,6 +3776,20 @@ export function createMockApi() {
               message: "Guia liberada ao cliente, mas o e-mail NÃO foi enviado: há outro envio em "
                 + "andamento (ou um envio anterior que travou). Não há reenvio automático: se você "
                 + "não clicar de novo, esta guia não sai. Tente novamente em até 5 minutos.",
+            };
+          }
+          // ⚠⚠ EMPRESA SEM E-MAIL CADASTRADO — o ramo que nasceu em 05/09/2026 e que o mock precisa
+          // ter para alguém vê-lo sem produção. Sem ele, "sem e-mail cadastrado" só apareceria numa
+          // empresa real, e foi exatamente assim que a tela chegou a dizer "sem opt-in" para quem
+          // recebia por e-mail. O `emailStatus` NÃO muda: nada foi tentado.
+          const temEmail = (mockContatosWhatsapp[String(companyId)] || [])
+            .some((c) => c.ativo !== false && String(c.email || "").trim());
+          if (!temEmail) {
+            return {
+              ok: true, guideId, liberadas: 1, emailStatus: target.emailStatus || null, sent: false,
+              envio: { feito: false, naoSeAplica: true, motivo: "sem_email_cadastrado", podeTentarNovamente: false },
+              message: "Sem e-mail cadastrado nesta empresa — a guia não foi enviada por e-mail. "
+                + "Para enviar também por e-mail, cadastre o endereço em Configuração de envio (aba Guias).",
             };
           }
           target.emailStatus = "SENT";

@@ -60,6 +60,33 @@ function escapeHtml(text) {
 }
 
 async function processOneGuide({ guide, emailService }) {
+  // ⚠⚠ O DESTINATÁRIO É RESOLVIDO ANTES DE TOCAR NA GUIA (05/09/2026).
+  //
+  // > Dono: *"o envio deve ser feito mesmo sem o e-mail, se já tiver o número; se tiver apenas um
+  // > tipo de contato ela pode e deve ser enviada"*.
+  //
+  // Empresa que recebe só por WhatsApp **não tem e-mail para falhar**. Marcar `ERROR` ali seria
+  // afirmar que um envio deu errado quando ele nem se aplica — e o estrago é permanente: `ERROR`
+  // pinta o chip de VERMELHO e mantém a guia como pendência de envio para sempre, em toda guia de
+  // toda competência daquela empresa.
+  //
+  // Por isso a ausência é `SKIPPED`, e a guia sai daqui **intocada** — nem `SENDING`, nem tentativa
+  // contada, nem `emailLastError`. Quem responde "a guia chegou ao cliente?" é `envios_guia`, que
+  // registra o canal que DE FATO entregou.
+  //
+  // ⚠ Isto NÃO afrouxa a regra do destinatário cadastrado: sem cadastro o e-mail continua não
+  // saindo. O que mudou é o NOME do desfecho — ausência, não falha.
+  const destinatario = await resolveRecipientEmail(guide);
+  if (!destinatario) {
+    return {
+      guideId: guide.id,
+      status: "SKIPPED",
+      code: SEM_DESTINATARIO_DE_GUIA.codigo,
+      reason: SEM_DESTINATARIO_DE_GUIA.motivo,
+      naoSeAplica: true,
+    };
+  }
+
   const attempts = Number(guide.emailAttempts || 0) + 1;
   const source = await prisma.guide.update({
     where: { id: guide.id },
@@ -71,13 +98,7 @@ async function processOneGuide({ guide, emailService }) {
     },
   });
   try {
-    const to = await resolveRecipientEmail(source);
-    if (!to) {
-      // ⚠ A frase é a MESMA das outras portas de envio — ela chega à tela como `emailLastError`.
-      const err = new Error(SEM_DESTINATARIO_DE_GUIA.motivo);
-      err.code = SEM_DESTINATARIO_DE_GUIA.codigo;
-      throw err;
-    }
+    const to = destinatario;
     const fileBuffer = await getGuidePdfBuffer(source);
     if (!fileBuffer?.length) {
       const err = new Error("guide_file_not_available");

@@ -64,3 +64,18 @@ export function mensagemEnvioFalhou(motivo, prefixo = "") {
  */
 export const GUIA_AGUARDA_ENVIO_MANUAL =
   "Guia processada. O envio de e-mail é manual: use 'Envio de e-mails em lote' ou 'Liberar ao cliente'.";
+
+/**
+ * ⚠⚠ AUSÊNCIA DE CANAL NÃO É FALHA (05/09/2026).
+ *
+ * > Dono: *"o envio deve ser feito mesmo sem o e-mail, se já tiver o número; se tiver apenas um
+ * > tipo de contato ela pode e deve ser enviada"*.
+ *
+ * Empresa que recebe só por WhatsApp não tem e-mail para falhar. `mensagemEnvioFalhou` diria "o
+ * e-mail NÃO foi enviado" com o tom de erro e mandaria o contador procurar defeito onde só há uma
+ * escolha de cadastro. Esta frase NOMEIA a ausência e diz onde se muda de ideia.
+ */
+export function mensagemSemEmailCadastrado(prefixo = "") {
+  return `${prefixo}Sem e-mail cadastrado nesta empresa — a guia não foi enviada por e-mail. `
+    + "Para enviar também por e-mail, cadastre o endereço em Configuração de envio (aba Guias).";
+}

@@ -113,6 +113,7 @@ import { consumoIaDoMes } from "../../application/assistente/GuardaIaService.js"
 import {
   GUIA_AGUARDA_ENVIO_MANUAL,
   mensagemEnvioFalhou,
+  mensagemSemEmailCadastrado,
   mensagemEnvioNaoFeitoPorLock,
 } from "../../application/guides/guideEmailCopy.js";
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
@@ -4218,15 +4219,26 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         // por outro caminho: o contador fica sem saber se saiu.
         const item = Array.isArray(result?.results) ? result.results[0] : null;
         const sent = item?.status === "SENT";
+        // ⚠ SEM E-MAIL CADASTRADO NÃO É FALHA — é ausência de canal, e a guia pode ter ido por
+        // WhatsApp. `naoSeAplica` é o que impede a tela de pintar isto de vermelho.
+        const semEmail = item?.status === "SKIPPED" && item?.naoSeAplica === true;
         return res.json({
           ok: true,
           guideId: updated.id,
-          emailStatus: item?.status || null,
+          // ⚠ Em SKIPPED a guia não foi tocada: devolver o estado ANTERIOR, nunca "SKIPPED", que
+          // não é valor de `emailStatus` e viraria estado inventado na tela.
+          emailStatus: semEmail ? (updated.emailStatus || null) : (item?.status || null),
           sent,
-          envio: sent ? { feito: true } : { feito: false, motivo: item?.code || "envio_falhou", podeTentarNovamente: true },
+          envio: sent
+            ? { feito: true }
+            : semEmail
+              ? { feito: false, naoSeAplica: true, motivo: "sem_email_cadastrado", podeTentarNovamente: false }
+              : { feito: false, motivo: item?.code || "envio_falhou", podeTentarNovamente: true },
           message: sent
             ? "Guia reenviada com sucesso."
-            : mensagemEnvioFalhou(item?.reason || "o envio não foi confirmado"),
+            : semEmail
+              ? mensagemSemEmailCadastrado()
+              : mensagemEnvioFalhou(item?.reason || "o envio não foi confirmado"),
         });
       } catch (err) {
         log.warn({ err: err?.message || err, guideId: updated.id }, "Falha no reenvio síncrono");
@@ -4298,19 +4310,25 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         }
         const item = Array.isArray(result?.results) ? result.results[0] : null;
         const sent = item?.status === "SENT";
+        // ⚠ Ver a nota do reenvio: ausência de e-mail cadastrado é AUSÊNCIA, não falha.
+        const semEmail = item?.status === "SKIPPED" && item?.naoSeAplica === true;
         return res.json({
           ok: true,
           guideId: guide.id,
           liberadas: lib.liberadas,
-          emailStatus: item?.status || null,
+          emailStatus: semEmail ? (guide.emailStatus || null) : (item?.status || null),
           sent,
           envio: sent
             ? { feito: true }
-            : { feito: false, motivo: item?.code || "envio_falhou", podeTentarNovamente: true },
+            : semEmail
+              ? { feito: false, naoSeAplica: true, motivo: "sem_email_cadastrado", podeTentarNovamente: false }
+              : { feito: false, motivo: item?.code || "envio_falhou", podeTentarNovamente: true },
           message: sent
             ? "Guia liberada e enviada ao cliente."
-            // Sem item não há como afirmar "em processamento": nada processa em segundo plano.
-            : mensagemEnvioFalhou(item?.reason || "o envio não foi confirmado", prefixo),
+            : semEmail
+              ? mensagemSemEmailCadastrado(prefixo)
+              // Sem item não há como afirmar "em processamento": nada processa em segundo plano.
+              : mensagemEnvioFalhou(item?.reason || "o envio não foi confirmado", prefixo),
         });
       } catch (err) {
         log.warn({ err: err?.message || err, guideId: guide.id }, "Falha no envio síncrono ao liberar guia");
