@@ -622,3 +622,53 @@ describe("o registro do que saiu", () => {
     expect(prisma.contatoWhatsapp.updateMany).not.toHaveBeenCalled();
   });
 });
+
+// ── ⚠⚠ AUSÊNCIA DE VALOR NÃO VIRA R$ 0,00 (05/09/2026) ──────────────────────────────────────────
+//
+// `Number(null)` é `0`, que é finito — e a guia sem valor gravado saía para o cliente afirmando
+// **R$ 0,00**, dentro de uma mensagem sobre imposto a pagar. Terceira vez que este padrão morde o
+// projeto (as outras: o piso da retenção federal e a alíquota do ISS), e a guarda é a mesma:
+// **tipo aceito**, nunca lista de recusas — enumerar null/undefined/"" deixa `[]` passar.
+
+describe("⚠⚠ guia sem valor não vira R$ 0,00", () => {
+  it("a formatação recusa ausência, em todas as formas dela", () => {
+    expect(valorFormatado(null)).toBe("");
+    expect(valorFormatado(undefined)).toBe("");
+    expect(valorFormatado("")).toBe("");
+    expect(valorFormatado("   ")).toBe("");
+    // ⚠ O caso que uma lista de recusas deixaria passar: `Number([])` também é 0.
+    expect(valorFormatado([])).toBe("");
+    expect(valorFormatado({})).toBe("");
+  });
+
+  it("⚠ zero DE VERDADE continua sendo zero — o contador pode ter uma guia zerada", () => {
+    expect(valorFormatado(0)).toBe("0,00");
+    expect(valorFormatado("0")).toBe("0,00");
+  });
+
+  it("número e texto numérico passam, com a formatação de sempre", () => {
+    expect(valorFormatado(1243.8)).toBe("1.243,80");
+    expect(valorFormatado("1243.8")).toBe("1.243,80");
+  });
+
+  it("⚠⚠ e o ENVIO recusa antes de gastar upload — nada é chamado na Meta", async () => {
+    cenarioLimpo();
+    const cliente = clienteFalso();
+    const r = await enviarGuiaPorWhatsapp({
+      guide: { ...GUIA, valor: null }, contato: CONTATO, canal: TEMPLATE_APROVADO, cliente, carregarPdf: pdf,
+    });
+    expect(r).toMatchObject({ ok: false, motivo: MOTIVOS_SERVICO.GUIA_SEM_VALOR, podeTentarDeNovo: false });
+    expect(r.mensagem).toMatch(/sem valor gravado/);
+    expect(cliente.enviarGuia).not.toHaveBeenCalled();
+  });
+
+  it("⚠ guia COM valor zero declarado sai normalmente", async () => {
+    cenarioLimpo();
+    const cliente = clienteFalso();
+    const r = await enviarGuiaPorWhatsapp({
+      guide: { ...GUIA, valor: 0 }, contato: CONTATO, canal: TEMPLATE_APROVADO, cliente, carregarPdf: pdf,
+    });
+    expect(r.ok).toBe(true);
+    expect(cliente.enviarGuia).toHaveBeenCalled();
+  });
+});

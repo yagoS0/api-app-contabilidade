@@ -23,15 +23,17 @@ import {
   EnvioGuiaWhatsappError,
   SELECT_GUIA_PARA_ENVIO,
   carregarCanal,
-  enviarGuiaPorWhatsapp,
+  enviarParaTodosOsDestinatarios,
   executarLote,
   preverLote,
 } from "../../application/whatsapp/EnvioGuiaWhatsappService.js";
 import { avaliarLinha } from "../../application/whatsapp/elegibilidadeEnvioGuia.js";
-import { destinatarioWhatsapp } from "../../application/whatsapp/ContatoWhatsappService.js";
 import { enviosPorGuia, foiEnviadaComLegado } from "../../application/guides/EnvioGuiaService.js";
 import { runGuideEmailWorkerSelected } from "../../workers/guideEmailWorker.js";
-import { destinatariosDeEnvio } from "../../application/whatsapp/ContatoWhatsappService.js";
+import {
+  destinatarioWhatsapp,
+  destinatariosDeEnvio,
+} from "../../application/whatsapp/ContatoWhatsappService.js";
 
 export function createWhatsappGuiasRouter({ log } = {}) {
   const router = Router({ mergeParams: true });
@@ -112,20 +114,29 @@ export function createWhatsappGuiasRouter({ log } = {}) {
           });
         }
 
-        // ⚠ TODOS OS TELEFONES CADASTRADOS, um envio por destinatário (decisão do dono). Sem
-        // destinatário com opt-in, cai no contato que a avaliação escolheu — o caminho de antes.
+        // ⚠⚠ O MESMO CAMINHO DO LOTE (05/09/2026). Este laço vivia aqui, e o lote tinha o dele —
+        // a MESMA guia saía para gente diferente conforme o botão. Agora quem sabe "para quem esta
+        // guia vai" é `enviarParaTodosOsDestinatarios`, num lugar só.
         const { telefones } = await destinatariosDeEnvio(companyId);
-        const alvos = telefones.length ? telefones : [avaliacao.contato];
-        const resultados = [];
-        for (const contato of alvos) {
-          // Sequencial de propósito: cada mensagem é uma chamada à Meta, e o espaçamento importa.
-          // eslint-disable-next-line no-await-in-loop
-          resultados.push(await enviarGuiaPorWhatsapp({ guide, contato, canal, log, reenviar }));
-        }
-        const enviadas = resultados.filter((r) => r.ok && r.enviada !== false).length;
-        const algumOk = resultados.some((r) => r.ok);
-        const resultado = { ...resultados[0], destinatarios: resultados.length, enviadas, resultados };
-        return res.status(algumOk ? 200 : 422).json({ ...resultado, error: algumOk ? undefined : resultados[0]?.motivo });
+        const resultado = await enviarParaTodosOsDestinatarios({
+          guide,
+          linha: { destino: avaliacao.contato?.telefoneE164 || null, contatoNome: avaliacao.contato?.nome || null },
+          destinatarios: telefones,
+          canal,
+          log,
+          reenviar,
+        });
+
+        // ⚠⚠ A FALHA PARCIAL PARA DE SUMIR. A resposta era o spread de `resultados[0]`: com dois
+        // destinatários, o primeiro falhando e o segundo indo, saía HTTP 200 com um corpo que dizia
+        // `ok: false` — e o motivo era o de UM deles, sem dizer qual. Agora o desfecho parcial é
+        // dito com todas as letras, e `enviarParaTodosOsDestinatarios` já traz o motivo de quem
+        // falhou (não o de quem deu certo).
+        const status = resultado.ok ? 200 : 422;
+        return res.status(status).json({
+          ...resultado,
+          error: resultado.ok ? undefined : resultado.motivo,
+        });
       } catch (err) {
         return falhar(res, err, { companyId, guideId });
       }

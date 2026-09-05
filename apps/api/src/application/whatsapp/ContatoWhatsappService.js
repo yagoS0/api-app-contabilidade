@@ -61,7 +61,37 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
   if (email !== undefined && email !== null && String(email).trim() && !emailLimpo) {
     throw new ContatoWhatsappError("EMAIL_INVALIDO", "E-mail inválido. Confira o endereço.");
   }
-  if (!e164 && !emailLimpo) {
+  // ⚠ A TRAVA "UM CANAL BASTA" PASSOU A SER SOBRE O RESULTADO, não sobre o payload (05/09/2026).
+  //
+  // Com a atualização parcial (abaixo), quem salva só o NOME não manda telefone nem e-mail — e a
+  // checagem antiga (`!e164 && !emailLimpo`) recusaria isso como "sem canal", sobre um contato que
+  // tem os dois gravados. O que precisa continuar impossível é o contato **terminar** sem canal
+  // nenhum; e quem não toca nos canais não pode deixá-lo assim.
+  const mexeuEmCanal = telefone !== undefined || email !== undefined;
+  if (mexeuEmCanal && !e164 && !emailLimpo) {
+    // Os dois campos vieram (ou o único que veio veio vazio) e nenhum sobrou: aí é sem canal mesmo.
+    const zeraOsDois = telefone !== undefined && email !== undefined;
+    if (zeraOsDois || !id) {
+      throw new ContatoWhatsappError(
+        "SEM_CANAL",
+        "Informe ao menos um canal: e-mail, telefone, ou os dois.",
+      );
+    }
+    // Só um dos dois veio, vazio, num contato existente: o outro canal precisa existir no banco.
+    const atual = await prisma.contatoWhatsapp.findFirst({
+      where: { id: String(id), portalClientId: String(portalClientId) },
+      select: { telefoneE164: true, email: true },
+    });
+    const restaTelefone = telefone === undefined ? Boolean(atual?.telefoneE164) : Boolean(e164);
+    const restaEmail = email === undefined ? Boolean(atual?.email) : Boolean(emailLimpo);
+    if (!restaTelefone && !restaEmail) {
+      throw new ContatoWhatsappError(
+        "SEM_CANAL",
+        "Este destinatário ficaria sem nenhum canal. Informe e-mail ou telefone, ou remova-o.",
+      );
+    }
+  } else if (!mexeuEmCanal && !id) {
+    // Criação sem nenhum canal informado.
     throw new ContatoWhatsappError(
       "SEM_CANAL",
       "Informe ao menos um canal: e-mail, telefone, ou os dois.",
@@ -71,23 +101,40 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
     throw new ContatoWhatsappError("NOME_OBRIGATORIO", "Informe o nome de quem recebe as mensagens.");
   }
 
-  const dados = {
-    nome: String(nome).trim(),
-    papel: String(papel || "").trim() || null,
-    telefoneE164: e164,
-    email: emailLimpo,
-    ativo: ativo === undefined ? true : Boolean(ativo),
-  };
+  // ⚠⚠ O QUE NÃO VEIO NÃO SE TOCA (05/09/2026) — antes, TUDO era reescrito a cada salvamento.
+  //
+  // `dados` era montado com os cinco campos SEMPRE, e o mesmo objeto ia para o `update` e para o
+  // `upsert.update`. Três estragos, todos silenciosos:
+  //   · salvar sem telefone gravava `telefoneE164: null` e APAGAVA o WhatsApp do destinatário;
+  //   · salvar sem e-mail APAGAVA o e-mail;
+  //   · `ativo === undefined ? true` REATIVAVA um contato desativado — desativar não sobrevivia ao
+  //     salvamento seguinte, e contato inativo é justamente o que o vínculo descarta.
+  //
+  // É a disciplina que `PATCH /emissao-nfse` já segue e que este arquivo não seguia: **`undefined`
+  // = não mexer · `null` (ou string vazia) = apagar**.
+  const veio = (v) => v !== undefined;
+  const dados = { nome: String(nome).trim() };
+  if (veio(papel)) dados.papel = String(papel || "").trim() || null;
+  if (veio(telefone)) dados.telefoneE164 = e164;
+  if (veio(email)) dados.email = emailLimpo;
+  if (veio(ativo)) dados.ativo = Boolean(ativo);
 
   // O opt-in é gravado com DATA e ORIGEM porque ele é o que se apresenta se a Meta questionar o
   // envio. "Marcamos a caixinha" não é registro de consentimento; quando e de onde, é.
   if (optIn === true) {
     dados.optInEm = new Date();
     dados.optInOrigem = String(optInOrigem || "").trim() || "nao_informado";
-  } else if (optIn === false) {
-    dados.optInEm = null;
-    dados.optInOrigem = null;
   }
+  // ⚠⚠ `optIn === false` NÃO APAGA MAIS O CONSENTIMENTO EXISTENTE, e este é o estrago mais caro dos
+  // quatro. A tela manda `optIn: optIn === true` SEMPRE — ou seja, `false` quando a caixa está
+  // desmarcada — e ela não tem edição: todo salvamento é um upsert pelo telefone. Resultado
+  // medido: recadastrar o mesmo número (para corrigir um nome, por exemplo) apagava `optInEm` e
+  // `optInOrigem`, e a empresa saía do lote de WhatsApp sem que ninguém tocasse no consentimento.
+  //
+  // ⚠ Isto NÃO afrouxa o opt-in: gravar continua exigindo data e origem, e o contato que nunca o
+  // teve continua sem ele. O que muda é que TIRAR consentimento deixou de ser efeito colateral de
+  // um salvamento que não falava do assunto. Para revogar, remove-se o destinatário — que é o
+  // caminho que a tela oferece, e que deixa rastro.
 
   // ── QUEM É A PESSOA, quando se sabe ──────────────────────────────────────────────────────────
   //
@@ -259,7 +306,18 @@ export async function destinatarioWhatsapp(portalClientId) {
   if (!contatos.length) {
     return { contato: null, motivo: "sem contato de WhatsApp cadastrado" };
   }
-  const comOptIn = contatos.find((c) => c.optInEm);
+  // ⚠⚠ TELEFONE É EXIGIDO AQUI, e a falta disso era um defeito de produção (05/09/2026).
+  //
+  // Isto era `contatos.find((c) => c.optInEm)` — sem olhar telefone. Desde que o destinatário passou
+  // a poder ter só e-mail (05/09), um contato SÓ DE E-MAIL com a caixa de opt-in marcada fazia a
+  // empresa parecer apta ao WhatsApp: a prévia do lote a listava como "vai por WhatsApp", o envio
+  // montava o destino com `telefoneE164: null`, e a guia falhava — sem ter ido também por e-mail,
+  // porque a prévia já a tinha classificado como WhatsApp. Guia que não sai por canal nenhum.
+  const comTelefone = contatos.filter((c) => String(c.telefoneE164 || "").trim());
+  if (!comTelefone.length) {
+    return { contato: null, motivo: "sem telefone de WhatsApp cadastrado" };
+  }
+  const comOptIn = comTelefone.find((c) => c.optInEm);
   if (!comOptIn) {
     // ⚠ NÃO É FORMALIDADE. Sem opt-in, o cliente pode denunciar a mensagem como spam; denúncia
     // derruba a qualidade do número, e número derrubado tira o canal de TODOS os clientes de uma

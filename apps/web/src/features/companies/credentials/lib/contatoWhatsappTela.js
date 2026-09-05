@@ -19,17 +19,52 @@
 const DDI_BR = "55";
 const digitos = (v) => String(v || "").replace(/\D+/g, "");
 
-/** ESPELHO de `telefone.normalizarE164` (api). Devolve `null` quando não dá para afirmar que é telefone. */
-export function normalizarE164(entrada) {
+/**
+ * ESPELHO de `telefone.lerTelefone` (api) — amarrado por teste que importa a função de lá.
+ *
+ * ⚠ O zero de operadora (`021 99999-8888`) era ACEITO como número estrangeiro, e a tela confirmava
+ * *"será gravado como +021999998888"*. Ver o cabeçalho da função na api.
+ */
+export const RECUSA_TELEFONE = Object.freeze({
+  VAZIO: "VAZIO",
+  ZERO_DE_OPERADORA: "ZERO_DE_OPERADORA",
+  CURTO: "CURTO",
+  LONGO_SEM_MAIS: "LONGO_SEM_MAIS",
+  FORA_DE_FORMA: "FORA_DE_FORMA",
+});
+
+export const FRASE_RECUSA_TELEFONE = Object.freeze({
+  [RECUSA_TELEFONE.VAZIO]: "Informe o telefone com DDD.",
+  [RECUSA_TELEFONE.ZERO_DE_OPERADORA]:
+    "Tire o zero da frente do DDD: digite 21 99999-8888, não 021 99999-8888.",
+  [RECUSA_TELEFONE.CURTO]: "Faltam dígitos: informe DDD + número (10 ou 11 dígitos).",
+  [RECUSA_TELEFONE.LONGO_SEM_MAIS]:
+    "Número com dígitos demais para um telefone brasileiro. Se for de outro país, comece com + e o "
+    + "código do país; se for do Brasil, confira se não sobrou um dígito.",
+  [RECUSA_TELEFONE.FORA_DE_FORMA]: "Este número não está numa forma reconhecida.",
+});
+
+export function lerTelefone(entrada) {
   const bruto = String(entrada || "").trim();
   const d = digitos(bruto);
-  if (!d) return null;
+  if (!d) return { e164: null, motivo: RECUSA_TELEFONE.VAZIO };
   const temMaisExplicito = bruto.startsWith("+");
-  if (temMaisExplicito) return d.length >= 8 && d.length <= 15 ? d : null;
-  if (d.startsWith(DDI_BR) && (d.length === 12 || d.length === 13)) return d;
-  if (d.length === 10 || d.length === 11) return `${DDI_BR}${d}`;
-  if (d.length >= 12 && d.length <= 15) return d;
-  return null;
+  if (temMaisExplicito) {
+    if (d.startsWith("0")) return { e164: null, motivo: RECUSA_TELEFONE.ZERO_DE_OPERADORA };
+    if (d.length < 8) return { e164: null, motivo: RECUSA_TELEFONE.CURTO };
+    if (d.length > 15) return { e164: null, motivo: RECUSA_TELEFONE.FORA_DE_FORMA };
+    return { e164: d, motivo: null };
+  }
+  if (d.startsWith("0")) return { e164: null, motivo: RECUSA_TELEFONE.ZERO_DE_OPERADORA };
+  if (d.startsWith(DDI_BR) && (d.length === 12 || d.length === 13)) return { e164: d, motivo: null };
+  if (d.length === 10 || d.length === 11) return { e164: DDI_BR + d, motivo: null };
+  if (d.length < 10) return { e164: null, motivo: RECUSA_TELEFONE.CURTO };
+  return { e164: null, motivo: RECUSA_TELEFONE.LONGO_SEM_MAIS };
+}
+
+/** ESPELHO de `telefone.normalizarE164` (api). Devolve `null` quando não dá para afirmar que é telefone. */
+export function normalizarE164(entrada) {
+  return lerTelefone(entrada).e164;
 }
 
 /** ESPELHO de `telefone.formatarTelefone` (api): `5521999998888` → `+55 (21) 99999-8888`. */
@@ -42,7 +77,9 @@ export function formatarTelefone(e164) {
     const fim = resto.length === 9 ? resto.slice(5) : resto.slice(4);
     return `+55 (${ddd}) ${meio}-${fim}`;
   }
-  return d ? `+${d}` : "";
+  // ⚠⚠ Não legitimar lixo com um `+` — ver a api. Era isto que exibia `+021999998888`.
+  if (!d || d.startsWith("0") || d.length < 8 || d.length > 15) return "";
+  return "+" + d;
 }
 
 /**

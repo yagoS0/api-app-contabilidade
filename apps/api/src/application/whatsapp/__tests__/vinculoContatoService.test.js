@@ -6,7 +6,7 @@
 
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
-    contatoWhatsapp: { findMany: jest.fn(), update: jest.fn(), upsert: jest.fn(), delete: jest.fn() },
+    contatoWhatsapp: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), upsert: jest.fn(), delete: jest.fn() },
     companyClientUser: { findMany: jest.fn(), findUnique: jest.fn() },
   },
 }));
@@ -157,5 +157,91 @@ describe("⚠ multi-tenancy: o alvo NUNCA é escolhido só pelo id", () => {
     prisma.contatoWhatsapp.delete.mockResolvedValue({ id: "c1" });
     await removerContato("p1", "c1");
     expect(prisma.contatoWhatsapp.delete.mock.calls[0][0].where).toEqual({ id: "c1", portalClientId: "p1" });
+  });
+});
+
+// ── ⚠⚠ O QUE NÃO VEIO NÃO SE TOCA (05/09/2026) ──────────────────────────────────────────────────
+//
+// `salvarContato` montava `dados` com os cinco campos SEMPRE e mandava o mesmo objeto para o
+// `update` e para o `upsert.update`. Salvar sem telefone APAGAVA o telefone; sem e-mail, o e-mail;
+// sem `ativo`, o contato era REATIVADO. E o pior: a tela manda `optIn: optIn === true` sempre, e
+// ela não tem edição — todo salvamento é upsert pelo telefone —, então recadastrar o mesmo número
+// para corrigir um nome APAGAVA o consentimento e tirava a empresa do lote de WhatsApp.
+
+describe("⚠⚠ atualização parcial: undefined = não mexer", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("salvar só o nome NÃO apaga telefone nem e-mail", async () => {
+    prisma.contatoWhatsapp.update.mockResolvedValue({ id: "c1" });
+    await salvarContato({ portalClientId: "emp1", id: "c1", nome: "Maria Silva" });
+
+    const { data } = prisma.contatoWhatsapp.update.mock.calls.at(-1)[0];
+    expect(data.nome).toBe("Maria Silva");
+    expect(data).not.toHaveProperty("telefoneE164");
+    expect(data).not.toHaveProperty("email");
+    expect(data).not.toHaveProperty("ativo");
+  });
+
+  it("⚠ e NÃO reativa um contato desativado", async () => {
+    prisma.contatoWhatsapp.update.mockResolvedValue({ id: "c1" });
+    await salvarContato({ portalClientId: "emp1", id: "c1", nome: "Maria" });
+    const { data } = prisma.contatoWhatsapp.update.mock.calls.at(-1)[0];
+    // `ativo: true` aqui é o que fazia "desativar" não sobreviver ao salvamento seguinte.
+    expect(data.ativo).toBeUndefined();
+  });
+
+  it("⚠ apagar continua possível — string vazia é ato explícito", async () => {
+    prisma.contatoWhatsapp.findFirst.mockResolvedValue({ telefoneE164: "5521999998888", email: "a@b.com" });
+    prisma.contatoWhatsapp.update.mockResolvedValue({ id: "c1" });
+    await salvarContato({ portalClientId: "emp1", id: "c1", nome: "Maria", email: "" });
+    const { data } = prisma.contatoWhatsapp.update.mock.calls.at(-1)[0];
+    expect(data.email).toBeNull();
+  });
+
+  it("⚠⚠ mas não dá para ficar SEM canal nenhum", async () => {
+    prisma.contatoWhatsapp.findFirst.mockResolvedValue({ telefoneE164: null, email: "a@b.com" });
+    await expect(
+      salvarContato({ portalClientId: "emp1", id: "c1", nome: "Maria", email: "" }),
+    ).rejects.toMatchObject({ code: "SEM_CANAL" });
+  });
+
+  it("criar sem canal nenhum continua recusado", async () => {
+    await expect(
+      salvarContato({ portalClientId: "emp1", nome: "Maria" }),
+    ).rejects.toMatchObject({ code: "SEM_CANAL" });
+  });
+});
+
+describe("⚠⚠ o opt-in não se apaga sozinho", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("`optIn: false` NÃO zera o consentimento já registrado", async () => {
+    prisma.contatoWhatsapp.upsert.mockResolvedValue({ id: "c1" });
+    await salvarContato({
+      portalClientId: "emp1", nome: "Maria", telefone: "21999998888", optIn: false,
+    });
+    const { update } = prisma.contatoWhatsapp.upsert.mock.calls.at(-1)[0];
+    // Era `optInEm: null` + `optInOrigem: null` — o recadastro tirava a empresa do lote.
+    expect(update).not.toHaveProperty("optInEm");
+    expect(update).not.toHaveProperty("optInOrigem");
+  });
+
+  it("⚠ e `optIn: true` continua gravando DATA e ORIGEM — o registro do consentimento não afrouxou", async () => {
+    prisma.contatoWhatsapp.upsert.mockResolvedValue({ id: "c1" });
+    await salvarContato({
+      portalClientId: "emp1", nome: "Maria", telefone: "21999998888",
+      optIn: true, optInOrigem: "contrato",
+    });
+    const { update } = prisma.contatoWhatsapp.upsert.mock.calls.at(-1)[0];
+    expect(update.optInEm).toBeInstanceOf(Date);
+    expect(update.optInOrigem).toBe("contrato");
+  });
+});
+
+describe("⚠ o zero de operadora não entra no cadastro", () => {
+  it("`021 99999-8888` é recusado com TELEFONE_INVALIDO", async () => {
+    await expect(
+      salvarContato({ portalClientId: "emp1", nome: "Maria", telefone: "021 99999-8888" }),
+    ).rejects.toMatchObject({ code: "TELEFONE_INVALIDO" });
   });
 });

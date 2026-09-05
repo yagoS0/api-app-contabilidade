@@ -46,9 +46,11 @@ describe("destinatarioWhatsapp", () => {
   });
 
   it("entre vários, escolhe o que TEM opt-in — não o primeiro", async () => {
+    // ⚠ Os dois com TELEFONE: desde 05/09/2026 o destinatário de WhatsApp precisa ter um. A fixture
+    // antiga não tinha, e era essa a suposição que deixava passar um contato só de e-mail.
     prisma.contatoWhatsapp.findMany.mockResolvedValue([
-      { id: "sem", nome: "Sócio", optInEm: null },
-      { id: "com", nome: "Financeiro", optInEm: new Date() },
+      { id: "sem", nome: "Sócio", telefoneE164: "5521988887777", optInEm: null },
+      { id: "com", nome: "Financeiro", telefoneE164: "5521999998888", optInEm: new Date() },
     ]);
     expect((await destinatarioWhatsapp("p1")).contato.id).toBe("com");
   });
@@ -77,5 +79,43 @@ describe("canaisParaEnvio", () => {
   it("empresa sem cadastro de canal cai em EMAIL — ninguém migra à revelia", async () => {
     prisma.portalClient.findUnique.mockResolvedValue(null);
     expect((await canaisParaEnvio("p1")).escolha).toBe("EMAIL");
+  });
+});
+
+// ── ⚠⚠ CONTATO SÓ DE E-MAIL NÃO É DESTINATÁRIO DE WHATSAPP (05/09/2026) ─────────────────────────
+//
+// Desde que o destinatário passou a poder ter só e-mail, `contatos.find(c => c.optInEm)` — sem
+// olhar telefone — fazia a empresa parecer apta ao WhatsApp. A cadeia media inteira: a prévia do
+// lote listava a guia como "vai por WhatsApp", o envio montava o destino com `telefoneE164: null`,
+// o cliente da Meta recusava, e a guia **não ia por e-mail tampouco** — porque a prévia já a tinha
+// classificado como WhatsApp. Guia que não sai por canal nenhum.
+
+describe("⚠⚠ opt-in sem telefone não habilita o WhatsApp", () => {
+  it("contato só de e-mail, mesmo com opt-in, NÃO vira destinatário", async () => {
+    prisma.contatoWhatsapp.findMany.mockResolvedValue([
+      { id: "so-email", nome: "Financeiro", telefoneE164: null, email: "fin@empresa.com", optInEm: new Date() },
+    ]);
+    const r = await destinatarioWhatsapp("p1");
+    expect(r.contato).toBeNull();
+    // ⚠ E o motivo é PRÓPRIO: "sem telefone" manda cadastrar o número; "sem contato" mandaria
+    // cadastrar uma pessoa que já existe, e "sem opt-in" mandaria pedir uma autorização que não
+    // resolve. Três consertos diferentes.
+    expect(r.motivo).toMatch(/sem telefone/);
+  });
+
+  it("⚠ com telefone e sem opt-in, o motivo continua sendo o opt-in", async () => {
+    prisma.contatoWhatsapp.findMany.mockResolvedValue([
+      { id: "c1", nome: "Maria", telefoneE164: "5521999998888", optInEm: null },
+    ]);
+    expect((await destinatarioWhatsapp("p1")).motivo).toMatch(/opt-in/);
+  });
+
+  it("⚠ o contato só de e-mail não atrapalha quem TEM telefone na mesma empresa", async () => {
+    prisma.contatoWhatsapp.findMany.mockResolvedValue([
+      { id: "so-email", nome: "Financeiro", telefoneE164: null, optInEm: new Date() },
+      { id: "com-tel", nome: "Maria", telefoneE164: "5521999998888", optInEm: new Date() },
+    ]);
+    const r = await destinatarioWhatsapp("p1");
+    expect(r.contato.id).toBe("com-tel");
   });
 });

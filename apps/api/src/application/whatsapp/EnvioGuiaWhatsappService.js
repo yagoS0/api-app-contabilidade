@@ -40,7 +40,11 @@ import {
   nomeArquivoDaGuia,
   mascararTelefone,
 } from "./WhatsappCloudClient.js";
-import { destinatarioWhatsapp, gravarWaIdDoContato } from "./ContatoWhatsappService.js";
+import {
+  destinatarioWhatsapp,
+  destinatariosDeEnvio,
+  gravarWaIdDoContato,
+} from "./ContatoWhatsappService.js";
 import { registrarMensagemEnviada } from "./ConversaWhatsappService.js";
 import { avaliarCanal, avaliarLinha, CANAIS, MOTIVOS } from "./elegibilidadeEnvioGuia.js";
 import { getGuidePdfBuffer } from "../guides/GuideService.js";
@@ -70,6 +74,11 @@ export class EnvioGuiaWhatsappError extends Error {
 export const MOTIVOS_SERVICO = Object.freeze({
   ENVIO_EM_ANDAMENTO: "ENVIO_EM_ANDAMENTO",
   GUIA_SEM_PDF: "GUIA_SEM_PDF",
+  /**
+   * ⚠ A guia não tem valor gravado. A 4ª variável do template é o valor — mandá-la vazia produz
+   * "Valor: R$ " no celular do cliente, e o zero por omissão afirmaria uma dívida de R$ 0,00.
+   */
+  GUIA_SEM_VALOR: "GUIA_SEM_VALOR",
   RECUSADA_PELA_META: "RECUSADA_PELA_META",
   /**
    * ⚠⚠ ERRO NOSSO, NÃO DA META (05/09/2026).
@@ -148,8 +157,25 @@ export function competenciaPorExtenso(competencia) {
   return `${MESES_PT[i]}/${ano}`;
 }
 
-/** `1243.8` → `"1.243,80"`. Valor entra no template JÁ FORMATADO (ver `variaveisDaGuia`). */
+/**
+ * `1243.8` → `"1.243,80"`. Valor entra no template JÁ FORMATADO (ver `variaveisDaGuia`).
+ *
+ * ⚠⚠ AUSÊNCIA NÃO VIRA ZERO (05/09/2026). `Number(null)` é `0`, que é finito — então guia sem valor
+ * gravado saía para o cliente afirmando **R$ 0,00**, dentro de uma mensagem sobre imposto a pagar.
+ * A guarda é por **TIPO ACEITO**, nunca por lista de recusas: enumerar `null`/`undefined`/`""`
+ * deixaria `[]` passar (`Number([])` também é `0`). É a mesma lição de `dispensadaPeloPiso`
+ * (retenção federal) e de `formatarPAliq` (alíquota do ISS) — a terceira vez neste projeto.
+ *
+ * Sem valor, devolve `""` — e quem chama RECUSA o envio (`GUIA_SEM_VALOR`), porque a 4ª variável do
+ * template é o valor e mandá-la vazia produz "Valor: R$ " no celular do cliente.
+ */
 export function valorFormatado(valor) {
+  const ehNumero = typeof valor === "number";
+  const ehTextoNumerico = typeof valor === "string" && valor.trim() !== "";
+  // Decimal do Prisma chega como objeto com `toNumber`/`toString` — é dado de verdade, não ausência.
+  const ehDecimal = valor !== null && typeof valor === "object" && typeof valor.toString === "function"
+    && String(valor).trim() !== "" && Number.isFinite(Number(valor));
+  if (!ehNumero && !ehTextoNumerico && !ehDecimal) return "";
   const n = Number(valor);
   if (!Number.isFinite(n)) return "";
   return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -209,9 +235,16 @@ export async function preverLote({ portalClientIds, competencia, guideIds = null
   // vez só, e o motivo da falta é o mesmo para as cinco.
   const empresasDoLote = [...new Set(guias.map((g) => g.portalClientId).filter(Boolean))];
   const destinatarios = new Map();
+  // ⚠⚠ TODOS OS TELEFONES, como no envio por guia (05/09/2026). O lote mandava para UM contato (o
+  // primeiro com opt-in) enquanto a rota individual mandava para TODOS — a MESMA guia saía para
+  // gente diferente conforme o botão que o contador clicasse, e a prévia mostrava um telefone só.
+  const telefonesPorEmpresa = new Map();
   for (const portalClientId of empresasDoLote) {
     // eslint-disable-next-line no-await-in-loop
     destinatarios.set(portalClientId, await destinatarioWhatsapp(portalClientId));
+    // eslint-disable-next-line no-await-in-loop
+    const { telefones } = await destinatariosDeEnvio(portalClientId);
+    telefonesPorEmpresa.set(portalClientId, telefones);
   }
 
   const linhas = guias.map((g) => {
@@ -236,6 +269,11 @@ export async function preverLote({ portalClientIds, competencia, guideIds = null
       // popover mostrar "enviada por WhatsApp para fulano@email.com".
       destino: avaliacao.contato?.telefoneE164 || null,
       contatoNome: avaliacao.contato?.nome || null,
+      // ⚠⚠ TODOS os telefones cadastrados desta empresa (05/09/2026). `destino` continua sendo o
+      // primeiro, para a tela e para o contrato antigo; quem ENVIA percorre esta lista. Sem ela, o
+      // lote mandava para um só, e a decisão do dono — *"enviar para todos os canais cadastrados"* —
+      // valia no botão da guia e não valia no lote.
+      destinatarios: avaliacao.contato ? (telefonesPorEmpresa.get(g.portalClientId) || []) : [],
       motivo: avaliacao.motivo,
       aviso: avaliacao.mensagem,
     };
@@ -333,6 +371,26 @@ export async function enviarGuiaPorWhatsapp({
   const competenciaLabel = competenciaPorExtenso(guide.competencia);
 
   try {
+    // ⚠⚠ SEM VALOR, NÃO SAI. A 4ª variável do template é o valor; vazia, o cliente lê "Valor: R$ "
+    // — e o zero por omissão seria pior ainda ("Valor: R$ 0,00" sobre uma guia a pagar). A recusa é
+    // NOSSA e vem antes do upload: nada é gasto, e o conserto (o valor da guia) é nomeado.
+    const valorDaGuia = valorFormatado(guide.valor);
+    if (!valorDaGuia) {
+      const mensagem = "Esta guia está sem valor gravado — sem ele a mensagem sairia dizendo um valor "
+        + "que não existe. Reprocesse a guia antes de enviar.";
+      await marcarFalhou({
+        envioId: envio.id,
+        codigo: MOTIVOS_SERVICO.GUIA_SEM_VALOR,
+        mensagemUsuario: mensagem,
+        proximaTentativaEm: null,
+      });
+      return {
+        ok: false, guideId: guide.id, envioId: envio.id,
+        motivo: MOTIVOS_SERVICO.GUIA_SEM_VALOR, mensagem, podeTentarDeNovo: false,
+        legadoMaterializado: materializou,
+      };
+    }
+
     const conteudoPdf = await carregarPdf(guide);
     if (!conteudoPdf?.length) {
       // ⚠ "Registro existe, arquivo não" é caso REAL neste projeto (o volume do Railway é efêmero).
@@ -362,7 +420,7 @@ export async function enviarGuiaPorWhatsapp({
         nomeContato: String(contato.nome || "").trim().split(/\s+/)[0] || "",
         tipoGuia: tipoLabel,
         competencia: competenciaLabel,
-        valorFormatado: valorFormatado(guide.valor),
+        valorFormatado: valorDaGuia,
         // ⚠ `dataCivilBR`, nunca `toLocaleDateString` sem fuso: `Guide.vencimento` é DATA CIVIL em
         // meia-noite UTC, e o e-mail já anunciou vencimento um dia antes por causa disso.
         vencimentoFormatado: guide.vencimento ? dataCivilBR(guide.vencimento) : "",
@@ -519,6 +577,63 @@ export function conferirLote(resumoAtual, conferencia) {
 }
 
 /**
+ * ENVIA A MESMA GUIA PARA TODOS OS DESTINATÁRIOS DA EMPRESA — uma definição só (05/09/2026).
+ *
+ * ⚠⚠ ELA EXISTE PORQUE HAVIA DUAS. A rota individual percorria `destinatariosDeEnvio(...).telefones`
+ * (todos) e o lote mandava para `destinatarioWhatsapp(...)` (o primeiro com opt-in): a MESMA guia
+ * saía para gente diferente conforme o botão que o contador clicasse, e a prévia do lote mostrava
+ * um telefone só. Duas regras para "quem recebe" divergem na primeira correção — e esta já tinha
+ * divergido.
+ *
+ * ⚠ SEQUENCIAL, sem parâmetro de concorrência: cada destinatário é uma chamada à Meta, e o
+ * espaçamento protege a qualidade do número, que é o canal de TODOS os clientes de uma vez.
+ *
+ * ⚠⚠ O RESUMO NÃO ESCONDE FALHA. Com dois destinatários, um entregue e um falhado, o retorno diz
+ * `parcial: true` e carrega o motivo de QUEM FALHOU — antes, o chamador espalhava `resultados[0]` e
+ * a falha do segundo simplesmente não existia para a tela.
+ */
+export async function enviarParaTodosOsDestinatarios({
+  guide,
+  linha,
+  canal,
+  cliente,
+  carregarPdf,
+  log,
+  reenviar = false,
+  destinatarios = null,
+}) {
+  const lista = (destinatarios || linha?.destinatarios || []).filter((c) => String(c?.telefoneE164 || "").trim());
+  // ⚠ Sem lista, o comportamento é o de antes: o contato único que a prévia escolheu. É o que
+  // mantém funcionando quem chama esta função sem passar destinatários.
+  const alvos = lista.length ? lista : [{ telefoneE164: linha?.destino, nome: linha?.contatoNome }];
+
+  const resultados = [];
+  for (const contato of alvos) {
+    // eslint-disable-next-line no-await-in-loop
+    resultados.push(await enviarGuiaPorWhatsapp({ guide, contato, canal, cliente, carregarPdf, log, reenviar }));
+  }
+
+  const enviadas = resultados.filter((r) => r.ok && r.enviada !== false).length;
+  const falhou = resultados.find((r) => !r.ok) || null;
+  const algumOk = resultados.some((r) => r.ok);
+  // O corpo base é o do primeiro resultado (contrato antigo), MAS o motivo e a mensagem vêm de quem
+  // falhou, quando alguém falhou — é o que impede a falha de sumir atrás de um sucesso.
+  const base = resultados[0] || {};
+  return {
+    ...base,
+    ok: algumOk,
+    destinatarios: resultados.length,
+    enviadas,
+    falhas: resultados.length - resultados.filter((r) => r.ok).length,
+    parcial: Boolean(falhou) && algumOk,
+    ...(falhou
+      ? { motivo: falhou.motivo, mensagem: falhou.mensagem, podeTentarDeNovo: falhou.podeTentarDeNovo }
+      : {}),
+    resultados,
+  };
+}
+
+/**
  * O LOTE. Prévia → conferência → envio em série, com espaçamento.
  *
  * ⚠ EM SÉRIE E ESPAÇADO, e não é preciosismo: número novo na Meta tem teto de conversas iniciadas
@@ -578,9 +693,9 @@ export async function executarLote({
       };
     } else {
       // eslint-disable-next-line no-await-in-loop
-      resultado = await enviarGuiaPorWhatsapp({
+      resultado = await enviarParaTodosOsDestinatarios({
         guide,
-        contato: { telefoneE164: linha.destino, nome: linha.contatoNome },
+        linha,
         canal: previa.canal,
         cliente: clienteUsado,
         carregarPdf,
