@@ -149,9 +149,11 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
  * contra denúncia; e-mail nunca dependeu dele. Um destinatário sem opt-in aparece em `emails` e não
  * aparece em `telefones` — e o motivo sobe em `semOptIn`, para a tela poder dizer por quê.
  *
- * ⚠ A CASCATA ANTIGA CONTINUA, e é o que impede a mudança de calar a carteira: sem NENHUM e-mail
- * cadastrado, o envio cai em `guideNotificationEmail` → `Company.email` → e-mail do sócio, como
- * sempre fez (`resolveCompanyNotificationEmail`). Ela é a rede, não o caminho normal.
+ * ⚠⚠ ESTA LISTA É A ÚNICA FONTE DO DESTINATÁRIO DA GUIA desde 05/09/2026, e este parágrafo dizia o
+ * CONTRÁRIO no mesmo dia: a cascata (`guideNotificationEmail` → `Company.email` → e-mail do sócio)
+ * foi removida do caminho da guia por decisão do dono — *"a guia só vai para e-mail ou número
+ * cadastrado na aba de guias, fora isso não sai e mostra por que não foi"*. Vazio aqui é guia que
+ * não sai, com a recusa nomeada. Ver `resolveCompanyNotificationEmails`.
  *
  * @returns {Promise<{emails: string[], telefones: Array<{id, nome, telefoneE164}>, semOptIn: Array<{nome, telefoneE164}>}>}
  */

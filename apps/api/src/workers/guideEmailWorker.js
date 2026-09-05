@@ -3,7 +3,7 @@ import { prisma } from "../infrastructure/db/prisma.js";
 import { getGuidePdfBuffer } from "../application/guides/GuideService.js";
 import { EmailService } from "../infrastructure/mail/EmailService.js";
 import { releaseGuideLock, tryAcquireGuideLock } from "../application/guides/GuideLockService.js";
-import { resolveCompanyNotificationEmail } from "../application/guides/GuideScheduledEmailService.js";
+import { SEM_DESTINATARIO_DE_GUIA, resolveCompanyNotificationEmails } from "../application/guides/GuideScheduledEmailService.js";
 import { guideTypeEmailLabel } from "../application/guides/guideEmailCopy.js";
 import { whereGuiaPendenteDeEnvio } from "../application/guides/guideContract.js";
 import os from "node:os";
@@ -36,10 +36,19 @@ async function releaseLock() {
   await releaseGuideLock(LOCK_ID);
 }
 
+/**
+ * ⚠⚠ SÓ QUEM ESTÁ CADASTRADO EM CONFIGURAÇÃO DE ENVIO (05/09/2026) — a cascata saiu do caminho da
+ * guia. Sem destinatário, isto devolve vazio e `processOneGuide` RECUSA nomeando; a guia fica
+ * `ERROR` com o motivo, que é o estado que a tela pinta de vermelho e que o contador consegue
+ * consertar. Ver `resolveCompanyNotificationEmails`.
+ *
+ * ⚠ TODOS os cadastrados, vírgula no `To:` — "enviar para todos os canais cadastrados" é decisão do
+ * dono do mesmo dia, e o envio por empresa já fazia assim.
+ */
 async function resolveRecipientEmail(guide) {
   if (!guide?.portalClientId) return null;
-  const email = await resolveCompanyNotificationEmail(guide.portalClientId);
-  return email ? String(email).trim() : null;
+  const emails = await resolveCompanyNotificationEmails(guide.portalClientId);
+  return emails.length ? emails.join(", ") : null;
 }
 
 function escapeHtml(text) {
@@ -64,8 +73,9 @@ async function processOneGuide({ guide, emailService }) {
   try {
     const to = await resolveRecipientEmail(source);
     if (!to) {
-      const err = new Error("guide_email_recipient_not_found");
-      err.code = "GUIDE_EMAIL_RECIPIENT_NOT_FOUND";
+      // ⚠ A frase é a MESMA das outras portas de envio — ela chega à tela como `emailLastError`.
+      const err = new Error(SEM_DESTINATARIO_DE_GUIA.motivo);
+      err.code = SEM_DESTINATARIO_DE_GUIA.codigo;
       throw err;
     }
     const fileBuffer = await getGuidePdfBuffer(source);

@@ -6,7 +6,7 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { EmailService } from "../../infrastructure/mail/EmailService.js";
 import { getGuidePdfBuffer } from "./GuideService.js";
 import { guideTypeEmailLabel } from "./guideEmailCopy.js";
-import { resolveCompanyNotificationEmail, resolveCompanyNotificationEmails } from "./GuideScheduledEmailService.js";
+import { SEM_DESTINATARIO_DE_GUIA, resolveCompanyNotificationEmails } from "./GuideScheduledEmailService.js";
 import { whereGuiaPendenteDeEnvio } from "./guideContract.js";
 
 function safeTempName(name) {
@@ -226,7 +226,8 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
  * (em vez de inferir a "última"). Usado pela página "Envio de e-mails em lote".
  *
  * - Busca todas as guides PROCESSED dessa competência com emailStatus PENDING ou ERROR.
- * - Resolve destinatário via `resolveCompanyNotificationEmail` (cascata configurada).
+ * - Resolve destinatários via `resolveCompanyNotificationEmails` — ⚠ SÓ os cadastrados em
+ *   Configuração de envio (05/09/2026). Sem nenhum, a guia NÃO sai e a recusa é nomeada.
  * - Anexa cada PDF como anexo separado.
  * - Após envio bem-sucedido, marca todas como SENT.
  * - Em falha, marca como ERROR + emailLastError.
@@ -262,7 +263,8 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia }) {
   const destinos = await resolveCompanyNotificationEmails(portal.id);
   const to = destinos.join(", ");
   if (!to) {
-    const err = new Error("company_email_not_found");
+    // ⚠ Só destinatário CADASTRADO envia guia (05/09/2026) — a frase é a mesma das outras portas.
+    const err = new Error(SEM_DESTINATARIO_DE_GUIA.motivo);
     err.code = "COMPANY_EMAIL_NOT_FOUND";
     throw err;
   }

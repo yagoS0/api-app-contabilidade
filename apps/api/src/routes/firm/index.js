@@ -130,7 +130,8 @@ import {
   getCompanyGuideEmailSchedule,
   isAdminLikeUser,
   listEligiblePortalCompaniesForUser,
-  resolveCompanyNotificationEmail,
+  SEM_DESTINATARIO_DE_GUIA,
+  resolveCompanyNotificationEmails,
   runScheduledGuideEmailDispatch,
   setCompanyGuideEmailSchedule,
 } from "../../application/guides/GuideScheduledEmailService.js";
@@ -4347,12 +4348,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         return res.status(403).json({ error: "forbidden" });
       }
 
-      const to = await resolveCompanyNotificationEmail(portalCompanyId);
+      // ⚠ Só destinatário CADASTRADO (05/09/2026) — a cascata saiu do caminho da guia.
+      const destinos = await resolveCompanyNotificationEmails(portalCompanyId);
+      const to = destinos.join(", ");
       if (!to) {
         return res.status(400).json({
-          error: "company_email_not_found",
-          reason:
-            "Empresa sem e-mail para envio de guias (configure o e-mail das guias no cadastro, ou use Company.email legado, ou e-mail do responsável).",
+          error: SEM_DESTINATARIO_DE_GUIA.erro,
+          reason: SEM_DESTINATARIO_DE_GUIA.motivo,
         });
       }
 

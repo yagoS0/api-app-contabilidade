@@ -53,27 +53,56 @@ export async function setCompanyGuideEmailSchedule({ portalCompanyId, days, upda
 }
 
 /**
- * TODOS os e-mails de envio da empresa (05/09/2026).
+ * OS DESTINATÁRIOS DA GUIA — e não existe outro lugar de onde eles saiam (05/09/2026).
  *
- * Decisão do dono: *"quando enviarmos, enviar para todos os canais cadastrados"*. Quem cadastra é a
- * aba **Configuração de envio**, dentro de Guias (`contatos_whatsapp.email`).
+ * > Dono, depois de ver uma guia sair para um endereço que ninguém escolheu: *"a guia só vai para
+ * > e-mail ou número cadastrado na aba de guias, fora isso não sai e mostra por que não foi"*.
  *
- * ⚠ A CASCATA ANTIGA CONTINUA, e é ela que impede a mudança de calar a carteira: sem NENHUM
- * destinatário cadastrado, cai em `guideNotificationEmail` → `Company.email` → e-mail do sócio,
- * exatamente como sempre fez. A lista nova é o caminho normal; a cascata é a rede.
+ * Quem cadastra é a gaveta **Configuração de envio**, dentro de Guias (`contatos_whatsapp.email`).
+ * Lista vazia devolve VAZIO, e o chamador **recusa nomeando** — a guia não sai.
  *
- * ⚠ O OPT-IN NÃO ENTRA AQUI. Ele é exigência da Meta para o WhatsApp; e-mail nunca dependeu dele, e
- * exigi-lo faria a carteira inteira parar de receber no dia seguinte à mudança.
+ * ⚠⚠ A CASCATA (`guideNotificationEmail` → `Company.email` → e-mail do sócio) FOI REMOVIDA DAQUI, e
+ * esta é a reversão de uma decisão anterior MINHA, tomada no mesmo dia. Eu a mantive como "rede
+ * para não calar a carteira"; o que ela produziu foi pior que o silêncio: a guia da KLAUS NIGRO
+ * saiu para o login do portal do cliente — endereço que não aparece em tela nenhuma —, e a
+ * interface disse **"e-mail enviado"** sobre um destino que o contador não podia conferir.
+ * ⚠ Envio sem destinatário visível não é entrega: é uma afirmação que ninguém pode auditar.
  *
- * @returns {Promise<string[]>} sem repetição, minúsculas. Vazio = ninguém (o chamador recusa).
+ * ⚠ MEDIDO ANTES DE APERTAR (05/09/2026, produção): 32 das 34 empresas já têm e-mail cadastrado (o
+ * backfill do mesmo dia), 2 não têm, e **zero** guias pendentes ficariam paradas. A guarda nasce
+ * quase inerte — de propósito. Apertar antes do backfill teria calado a carteira.
+ *
+ * ⚠ A CASCATA CONTINUA VIVA FORA DA GUIA (`resolveCompanyNotificationEmail`, abaixo): ela é o
+ * endereço de contato da empresa, e dois caminhos dependem dela por motivos que NÃO são "para quem
+ * mando a guia" — o envio de DOCUMENTOS e, mais delicado, o filtro de elegibilidade dos workers do
+ * SERPRO (`if (!email) continue`), que decide quem é CAPTURADO. Apertar lá pararia a captura de
+ * guia das duas empresas sem e-mail — o oposto do pedido.
+ *
+ * ⚠ O OPT-IN NÃO ENTRA AQUI. Ele é exigência da Meta para o WhatsApp; e-mail nunca dependeu dele.
+ *
+ * @returns {Promise<string[]>} sem repetição, minúsculas. Vazio = ninguém, e a guia NÃO sai.
  */
 export async function resolveCompanyNotificationEmails(portalCompanyId) {
   const { emails } = await destinatariosDeEnvio(portalCompanyId);
-  if (emails.length) return emails;
-  const unico = await resolveCompanyNotificationEmail(portalCompanyId);
-  return unico ? [unico] : [];
+  return emails;
 }
 
+/** A frase da recusa — uma só, para as três portas que enviam guia dizerem a MESMA coisa. */
+export const SEM_DESTINATARIO_DE_GUIA = Object.freeze({
+  codigo: "GUIDE_EMAIL_RECIPIENT_NOT_FOUND",
+  erro: "company_email_not_found",
+  motivo:
+    "Esta empresa não tem e-mail cadastrado em Configuração de envio (aba Guias). "
+    + "Cadastre o destinatário e envie de novo — a guia não sai para endereço não cadastrado.",
+});
+
+/**
+ * O e-mail de CONTATO da empresa — a cascata antiga.
+ *
+ * ⚠⚠ NÃO É O DESTINATÁRIO DA GUIA desde 05/09/2026 (ver acima). Quem envia guia usa
+ * `resolveCompanyNotificationEmails`, e há teste varrendo os arquivos de envio de guia para que
+ * esta função não volte a ser importada por eles.
+ */
 export async function resolveCompanyNotificationEmail(portalCompanyId) {
   const portal = await prisma.portalClient.findUnique({
     where: { id: String(portalCompanyId) },
@@ -161,7 +190,8 @@ export async function runScheduledGuideEmailDispatch({
       }
 
       // eslint-disable-next-line no-await-in-loop
-      const to = await resolveCompanyNotificationEmail(company.id);
+      const destinos = await resolveCompanyNotificationEmails(company.id);
+      const to = destinos.join(", ");
       if (!to) {
         results.push({
           companyId: company.id,
@@ -170,8 +200,8 @@ export async function runScheduledGuideEmailDispatch({
           scheduleDays: schedule.days,
           eligible: true,
           status: "error",
-          error: "company_email_not_found",
-          reason: "Empresa sem e-mail de envio de guias (guideNotificationEmail, Company.email ou OWNER).",
+          error: SEM_DESTINATARIO_DE_GUIA.erro,
+          reason: SEM_DESTINATARIO_DE_GUIA.motivo,
         });
         continue;
       }
