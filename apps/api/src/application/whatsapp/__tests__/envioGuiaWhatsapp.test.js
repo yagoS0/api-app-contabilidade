@@ -323,12 +323,36 @@ describe("quando a Meta recusa", () => {
     expect(r.podeTentarDeNovo).toBeNull();
   });
 
-  it("erro NÃO traduzido não vira 'erro desconhecido' mudo — tem código próprio", async () => {
+  // ⚠⚠ ESTE CASO EXIGIA `RECUSADA_PELA_META` PARA UM ERRO NOSSO — e a exigência estava errada.
+  //
+  // Medido em produção (05/09/2026): um envio quebrou com `codigo=null` (ou seja, NÃO era um
+  // `WhatsappError`) e ficou gravado como recusa da Meta. O contador leu "a Meta recusou" sobre um
+  // defeito nosso — e foi procurar no painel da Meta um erro que não existe lá.
+  //
+  // ⚠ Toda falha de TRANSPORTE e toda recusa da META já viram `WhatsappError` dentro do cliente
+  // (há casos acima provando isso). O que sobra neste ramo é exceção inesperada: bug nosso ou
+  // banco. Chamá-la pelo nome é o que manda a pessoa procurar no lugar certo.
+  it("erro NÃO traduzido é FALHA NOSSA, não recusa da Meta — e o log carrega a mensagem", async () => {
     cenarioLimpo();
-    const cliente = clienteFalso(new Error("timeout do socket"));
-    const r = await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: {}, cliente, carregarPdf: pdf });
-    expect(r.motivo).toBe(MOTIVOS_SERVICO.RECUSADA_PELA_META);
+    const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    const cliente = clienteFalso(new Error("cannot read properties of undefined"));
+    const r = await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: {}, cliente, carregarPdf: pdf, log });
+
+    expect(r.motivo).toBe(MOTIVOS_SERVICO.FALHA_INESPERADA);
+    expect(r.motivo).not.toBe(MOTIVOS_SERVICO.RECUSADA_PELA_META);
     expect(r.podeTentarDeNovo).toBeNull();
+    // ⚠ A mensagem ao contador NÃO pode atribuir a falha à Meta.
+    expect(r.mensagem).toMatch(/falha inesperada/i);
+    expect(r.mensagem).toMatch(/Não é recusa da Meta/i);
+
+    // ⚠⚠ O BURACO DE DIAGNÓSTICO: a linha de log saía sem a mensagem do erro, e uma falha
+    // inesperada ficava indistinguível de qualquer outra — sem outro deploy, não havia como saber
+    // O QUE quebrou. Sem isto, a próxima investigação recomeça do zero.
+    const [campos, frase] = log.warn.mock.calls.at(-1);
+    expect(frase).toMatch(/falhou/);
+    expect(campos.err).toBe("cannot read properties of undefined");
+    expect(campos.codigo).toBe(MOTIVOS_SERVICO.FALHA_INESPERADA);
+    expect(String(campos.pilha || "")).toContain("Error");
   });
 });
 

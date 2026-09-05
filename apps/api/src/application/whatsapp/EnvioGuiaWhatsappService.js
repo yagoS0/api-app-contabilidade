@@ -65,6 +65,18 @@ export const MOTIVOS_SERVICO = Object.freeze({
   ENVIO_EM_ANDAMENTO: "ENVIO_EM_ANDAMENTO",
   GUIA_SEM_PDF: "GUIA_SEM_PDF",
   RECUSADA_PELA_META: "RECUSADA_PELA_META",
+  /**
+   * ⚠⚠ ERRO NOSSO, NÃO DA META (05/09/2026).
+   *
+   * O `catch` do envio marcava TODA exceção como `RECUSADA_PELA_META` — inclusive as que nunca
+   * chegaram à Meta. Medido em produção: uma falha com `codigo=null` (ou seja, NÃO era um
+   * `WhatsappError`) foi gravada como recusa da Meta, e o contador leu que "a Meta recusou" sobre um
+   * defeito nosso. ⚠ Afirmar a origem errada de uma falha manda a pessoa consertar no lugar errado.
+   *
+   * Toda falha de transporte e toda recusa da Meta JÁ viram `WhatsappError` (o cliente as traduz).
+   * Sobrar daqui significa exceção inesperada: bug nosso, ou banco.
+   */
+  FALHA_INESPERADA: "FALHA_INESPERADA",
 });
 
 /** Os campos da guia que o envio precisa — um `select` só, para os dois caminhos. */
@@ -359,14 +371,15 @@ export async function enviarGuiaPorWhatsapp({
     const traduzido = err instanceof WhatsappError;
     const mensagem = traduzido
       ? err.mensagemUsuario
-      : "Não foi possível enviar a guia por WhatsApp agora.";
+      : "Não foi possível enviar a guia por WhatsApp agora — houve uma falha inesperada no servidor, "
+        + "e ela ficou registrada no log. Não é recusa da Meta.";
     // ⚠ TRÊS RESPOSTAS, NÃO DUAS. `podeTentarDeNovo` vem de `errosMeta` e vale `true`/`false`/`null`
     // — e `null` NÃO é `false` disfarçado: significa que a documentação da Meta descreve o erro sem
     // dizer se reenviar resolve. Ele sobe para a tela como está, para o contador decidir.
     const podeTentarDeNovo = traduzido ? err.podeTentarDeNovo : null;
     await marcarFalhou({
       envioId: envio.id,
-      codigo: traduzido ? err.codigo : MOTIVOS_SERVICO.RECUSADA_PELA_META,
+      codigo: traduzido ? err.codigo : MOTIVOS_SERVICO.FALHA_INESPERADA,
       mensagemUsuario: mensagem,
       // ⚠ `proximaTentativaEm` FICA NULO, DE PROPÓSITO — inclusive quando a fonte diz que dá para
       // reenviar. NADA drena esse campo hoje (é o defeito já documentado de `emailNextRetryAt`:
@@ -375,13 +388,25 @@ export async function enviarGuiaPorWhatsapp({
       // `podeTentarDeNovo` na resposta habilita.
       proximaTentativaEm: null,
     });
+    // ⚠⚠ A MENSAGEM DO ERRO ENTRA NO LOG, e a ausência dela era um buraco de diagnóstico medido em
+    // produção: a linha saía `codigo=null` e mais nada, então uma falha inesperada era
+    // indistinguível de qualquer outra — não havia como saber O QUE quebrou sem outro deploy.
+    // ⚠ Nada aqui carrega segredo: `WhatsappCloudClient` garante que token e headers não saem em
+    // erro nenhum, e o que sobra é mensagem da nossa própria pilha.
     log?.warn?.(
-      { guideId: guide.id, codigo: traduzido ? err.codigo : null, podeTentarDeNovo },
+      {
+        guideId: guide.id,
+        codigo: traduzido ? err.codigo : MOTIVOS_SERVICO.FALHA_INESPERADA,
+        podeTentarDeNovo,
+        err: err?.message || String(err),
+        tipo: err?.name || typeof err,
+        ...(traduzido ? {} : { pilha: String(err?.stack || "").slice(0, 300) }),
+      },
       "envio de guia por WhatsApp falhou",
     );
     return {
       ok: false, guideId: guide.id, envioId: envio.id,
-      motivo: traduzido ? err.codigo : MOTIVOS_SERVICO.RECUSADA_PELA_META,
+      motivo: traduzido ? err.codigo : MOTIVOS_SERVICO.FALHA_INESPERADA,
       mensagem, podeTentarDeNovo, legadoMaterializado: materializou,
     };
   }
