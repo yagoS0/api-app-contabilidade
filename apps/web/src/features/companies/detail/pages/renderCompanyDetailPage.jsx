@@ -487,6 +487,10 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             </Modal>
           ) : null}
 
+          {/* ⚠ `onRefresh` alimenta a espera da coluna "Envio": a confirmação de entrega do WhatsApp
+              chega pelo webhook SEGUNDOS depois do envio, e sem recarregar a célula congela em
+              "aceita, sem confirmação" até alguém apertar F5 — que foi o que aconteceu em
+              05/09/2026. A tabela pede a recarga sozinha, e para sozinha. */}
           <Suspense fallback={<TabLoadingFallback />}>
           <CompanyGuidesTable
             companyId={companyId}
@@ -505,6 +509,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             resendingGuideId={guidesPanel.resendingGuideId}
             confirmingGuideId={guidesPanel.confirmingGuideId}
             recalculatingGuideId={guidesPanel.recalculatingGuideId}
+            onRefresh={guidesPanel.onRefresh}
             onUploadGuide={guidesPanel.onUploadGuide}
             uploadingGuide={guidesPanel.uploadingGuide}
             onIdentifyGuide={guidesPanel.onIdentifyGuide}

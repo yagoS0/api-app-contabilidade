@@ -1,5 +1,11 @@
 import crypto from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
+import {
+  enviosPorGuia,
+  foiEnviadaComLegado,
+  STATUS_TERMINAL,
+} from "./EnvioGuiaService.js";
+import { podeTentarDeNovoPeloCodigo } from "../whatsapp/errosMeta.js";
 import { GuideStorageService } from "./GuideStorageService.js";
 import {
   fileNameForGuide,
@@ -240,7 +246,18 @@ export async function listGuidesByCompany({
     };
   });
 
-  return { items, total, page: pageNum, limit: take };
+  // ⚠⚠ O ESTADO DE ENVIO PASSA A VIAJAR (05/09/2026) — a aba Guias não recebia NADA dele.
+  //
+  // `envios_guia` é a fonte da verdade de "esta guia chegou ao cliente?" desde a Entrega 1, e o
+  // `guideCompliance` (o chip do dashboard) e o relatório do lote já a publicavam. A rota da ABA
+  // não: ela mandava só `emailStatus`, e por isso a tela dizia "Pendente" sobre uma guia entregue
+  // por WhatsApp — e "Enviado" sobre uma que a Meta descartou.
+  //
+  // ⚠ UMA query para a página inteira (`enviosPorGuia` recebe a lista de ids), não uma por guia.
+  const enviosPorId = paraOEscritorio ? await enviosPorGuia(items.map((g) => g.id)) : new Map();
+  const itensComEnvio = items.map((g) => ({ ...g, envios: enviosPorId.get(g.id) || [] }));
+
+  return { items: itensComEnvio, total, page: pageNum, limit: take };
 }
 
 export async function listPendingGuidesReport({
@@ -410,6 +427,54 @@ export function toGuideResponse(item, { publico = PUBLICO.CLIENTE } = {}) {
     vazioMotivo: item.vazioMotivo || null,
     createdAt: item.createdAt?.toISOString?.() || null,
     updatedAt: item.updatedAt?.toISOString?.() || null,
+    // ⚠⚠ SÓ PARA O ESCRITÓRIO. `destino` é o telefone ou o e-mail de OUTRO destinatário (o sócio, o
+    // financeiro) e `erroCodigo` é material de diagnóstico — nada disso é dado do cliente que abre o
+    // portal dele. Mesmo argumento que já mantém `valorRecalculado` fora do lado do cliente.
+    ...(publico === PUBLICO.ESCRITORIO ? { envio: envioDaGuia(item) } : {}),
+  };
+}
+
+/**
+ * O ESTADO DE ENVIO DE UMA GUIA, para a tela do escritório (05/09/2026).
+ *
+ * ⚠⚠ A PERGUNTA É "CHEGOU?", E ELA TEM DUAS RESPOSTAS DIFERENTES POR CANAL. `enviado` significa
+ * apenas *"a Meta aceitou a chamada"* — e foi exatamente isso que a tela mostrou como sucesso no
+ * dia em que a Meta aceitou e descartou a mensagem (limite de template de marketing por pessoa). No
+ * WhatsApp, quem prova chegada é `entregue`/`lido`, que vêm do webhook segundos depois. No e-mail
+ * não existe confirmação de entrega, então `enviado` é o terminal dele — inventar uma seria a
+ * mentira invertida.
+ *
+ * ⚠ `jaEnviada` continua sendo a leitura ANTIGA (`foiEnviadaComLegado`, terminal em qualquer canal),
+ * porque é ela que o resto do sistema usa para decidir reenvio e para fechar o card. O que nasce
+ * aqui é a SEGUNDA pergunta, ao lado — não uma troca da primeira.
+ */
+function envioDaGuia(item) {
+  const envios = Array.isArray(item.envios) ? item.envios : [];
+  const canais = envios.map((e) => ({
+    canal: e.canal,
+    status: e.status,
+    destino: e.destino || null,
+    em: e.enviadoEm?.toISOString?.() || null,
+    entregueEm: e.entregueEm?.toISOString?.() || null,
+    lidoEm: e.lidoEm?.toISOString?.() || null,
+    erroCodigo: e.erroCodigo || null,
+    erroMensagem: e.erroMensagemUsuario || null,
+    // ⚠ `null` é a TERCEIRA resposta ("a Meta não diz se reenviar resolve"), e não `false`.
+    podeTentarDeNovo: e.erroCodigo ? podeTentarDeNovoPeloCodigo(e.erroCodigo) : null,
+    tentativas: Number(e.tentativas || 0),
+  }));
+  const chegou = envios.some(
+    (e) => (e.canal === "EMAIL" ? STATUS_TERMINAL.includes(e.status) : ["entregue", "lido"].includes(e.status)),
+  );
+  return {
+    // A leitura de sempre: terminal em qualquer canal, com a tolerância do legado.
+    jaEnviada: foiEnviadaComLegado(envios, item),
+    // ⚠ A pergunta nova: alguém CONFIRMOU a chegada?
+    chegouAoCliente: chegou,
+    // WhatsApp aceito pela Meta e ainda sem confirmação — o estado que a tela pintava de verde.
+    aguardandoConfirmacao: envios.some((e) => e.canal !== "EMAIL" && e.status === "enviado"),
+    algumFalhou: envios.some((e) => e.status === "falhou"),
+    canais,
   };
 }
 

@@ -19,6 +19,9 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
   const db = {
     guide: { findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
     companyMonthlyCircular: { findMany: jest.fn(async () => []) },
+    // ⚠ A listagem passou a carregar o estado de ENVIO (05/09/2026) — uma query para a página
+    // inteira. Sem o dublê, o teste morre num `findMany` de um model que ele não conhecia.
+    envioGuia: { findMany: jest.fn(async () => []) },
   };
   return { __db: db, prisma: { ...db, $transaction: (ops) => Promise.all(ops) } };
 });

@@ -11,6 +11,7 @@ import { GuiaDeParcelamentoModal } from "./GuiaDeParcelamentoModal";
 import { ehGuiaDeParcelamento, rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
 import { estadoVazioDasGuias } from "../lib/estadoVazioGuias";
 import { BotaoCopiar } from "../../../../components/ui/BotaoCopiar";
+import { lerEnvioDaGuia, rotuloDoCanal, devePolir } from "../../lib/envioNaTela";
 import { linhaDigitavelDaGuia } from "../../lib/linhaDigitavelTela";
 import { MOTIVOS_GUIA_VAZIA, TEM_LISTA_DE_MOTIVOS, motivoParaGravar, motivoSuficiente } from "../lib/motivoGuiaVazia";
 import { fraseDoLote, relatorioDoLote, DESFECHO } from "../lib/loteDoTrimestre";
@@ -434,12 +435,20 @@ function formatGuideStatus(status) {
   return { label: status || "-", tone: "default" };
 }
 
-function formatEmailStatus(status) {
-  const n = normalizeValue(status);
-  if (n === "PENDING") return { label: "Pendente", tone: "accent" };
-  if (n === "SENT") return { label: "Enviado", tone: "success" };
-  if (n === "ERROR") return { label: "Erro", tone: "danger" };
-  return { label: status || "-", tone: "default" };
+
+/**
+ * Os canais por onde a guia JÁ SAIU, para o aviso de reenvio.
+ *
+ * ⚠ Sem envio conhecido, devolve string vazia e a frase não nomeia canal — melhor uma frase curta
+ * que uma frase errada. Era exatamente por afirmar "por e-mail" sempre que o aviso mentia sobre
+ * uma guia entregue por WhatsApp.
+ */
+function canaisJaEnviados(guide) {
+  const canais = guide?.envio?.canais || [];
+  const nomes = [...new Set(
+    canais.filter((c) => ["enviado", "entregue", "lido"].includes(c.status)).map((c) => rotuloDoCanal(c.canal)),
+  )];
+  return nomes.join(" e ");
 }
 
 function formatPaymentStatus(status) {
@@ -588,6 +597,28 @@ export function CompanyGuidesTable({
   const [deleting, setDeleting] = useState(false);
   // Guia já enviada aguardando confirmação de reenvio (modal do "Liberar ao cliente").
   const [resendConfirm, setResendConfirm] = useState(null);
+
+  // ⚠⚠ A TELA REOLHA ENQUANTO A RESPOSTA PODE MUDAR (05/09/2026).
+  //
+  // O desfecho verdadeiro de um envio por WhatsApp chega pelo WEBHOOK, segundos depois: a Meta
+  // aceita a chamada na hora e diz `entregue` (ou `failed`) logo em seguida. No dia do defeito, a
+  // tela disse "enviado" e nunca mais olhou — o `failed` chegou ao banco 5 segundos depois e o
+  // contador só saberia recarregando a página.
+  //
+  // ⚠ Ele PARA SOZINHO: só enquanto alguma guia está aguardando confirmação, e com teto de
+  // tentativas (`devePolir`). Polling sem fim transforma uma aba aberta o dia inteiro numa fonte
+  // constante de carga — e o precedente desta casa (a captura de notas, a apuração em lote) é
+  // exatamente este: intervalo de 2,5 s enquanto o estado pode mudar.
+  const [ciclosDeEspera, setCiclosDeEspera] = useState(0);
+  useEffect(() => {
+    if (!onRefresh || !devePolir(guides, ciclosDeEspera)) return undefined;
+    const t = setTimeout(async () => {
+      setCiclosDeEspera((n) => n + 1);
+      try { await onRefresh(); } catch { /* falha de rede não encerra a espera nem quebra a tela */ }
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [guides, ciclosDeEspera, onRefresh]);
+
   const [recalcConfirm, setRecalcConfirm] = useState(null); // { guideId, aviso }
 
   // Upload flow (modal split): tipo escolhido no dropdown + arquivo + estado de salvamento
@@ -729,7 +760,14 @@ export function CompanyGuidesTable({
     recalcTitle = "Recalcula a guia do DAS no PGDAS-D.";
   }
   // "Liberar ao cliente" substitui o Reenviar: se a guia já foi enviada, confirma reenvio no modal.
-  const alreadySent = String(selectedGuide?.emailStatus || "").toUpperCase() === "SENT";
+  // ⚠⚠ "JÁ FOI ENVIADA" É POR QUALQUER CANAL (05/09/2026). Isto lia só `emailStatus === "SENT"`:
+  // guia enviada SÓ por WhatsApp passava direto pelo aviso de reenvio, e o contador mandava a
+  // segunda cópia sem que nada perguntasse. `envio.jaEnviada` é a MESMA leitura que o servidor usa
+  // para recusar o reenvio — ler outra coisa aqui é a tela e o servidor discordando.
+  // ⚠ O `emailStatus` fica como rede para o contrato antigo (guia anterior a `envios_guia`).
+  const alreadySent = selectedGuide?.envio
+    ? Boolean(selectedGuide.envio.jaEnviada)
+    : String(selectedGuide?.emailStatus || "").toUpperCase() === "SENT";
 
   // ⚠⚠ RECALCULAR GUIA VENCIDA GERA OUTRA GUIA, COM JUROS E MULTA — e até 27/08/2026 a tela não
   // sabia o que era "vencida" (medido: zero ocorrências de `isGuideOverdue` no front, e `OVERDUE` só
@@ -983,8 +1021,12 @@ export function CompanyGuidesTable({
           <div style={S.modal}>
             <h3 style={S.title}>Guia já enviada</h3>
             <p style={{ fontSize: 13, color: "var(--text-faint)", margin: "0 0 16px" }}>
-              Esta guia ({rotuloTipoGuia(resendConfirm)} · {resendConfirm.competencia}) já foi enviada ao cliente por
-              e-mail. Deseja reenviar?
+              {/* ⚠ ERA "já foi enviada ao cliente por e-mail" (05/09/2026) — e a guia pode ter ido
+                  por WhatsApp, ou pelos dois. Afirmar o canal errado no aviso que precede um
+                  reenvio é mandar o contador decidir com a informação trocada. O canal sai do
+                  ENVIO, e sem ele a frase não nomeia canal nenhum. */}
+              Esta guia ({rotuloTipoGuia(resendConfirm)} · {resendConfirm.competencia}) já foi enviada ao cliente
+              {canaisJaEnviados(resendConfirm) ? ` por ${canaisJaEnviados(resendConfirm)}` : ""}. Deseja reenviar?
             </p>
             <div style={S.btnRow}>
               <Button
@@ -1135,7 +1177,7 @@ export function CompanyGuidesTable({
                   variant="secondary" size="sm"
                   disabled={selectedGuide?.status !== "PROCESSED" || !!liberarGuiasBusy}
                   onClick={handleLiberarClick}
-                  title="Libera esta guia ao cliente e envia só ela por e-mail."
+                  title="Libera esta guia ao cliente e envia só ela — por e-mail e por WhatsApp, conforme os destinatários cadastrados em Configuração de envio."
                 >
                   {liberarGuiasBusy ? "Liberando..." : "Liberar ao cliente"}
                 </Button>
@@ -1253,7 +1295,11 @@ export function CompanyGuidesTable({
                 <span className="guides-grid__cell guides-grid__cell--competencia" role="columnheader">Vencimento</span>
                 <span className="guides-grid__cell guides-grid__cell--status" role="columnheader">Status</span>
                 <span className="guides-grid__cell guides-grid__cell--status" role="columnheader">Situação</span>
-                <span className="guides-grid__cell guides-grid__cell--email" role="columnheader">E-mail</span>
+                {/* ⚠⚠ ERA "E-mail" (05/09/2026). A pergunta da coluna é "esta guia CHEGOU ao
+                    cliente?", e ela tem dois canais — dizer só do e-mail fazia a tela mostrar
+                    "Pendente" sobre guia entregue por WhatsApp. Continuam NOVE colunas: esta
+                    substitui a antiga (a grade tem as faixas cravadas em `App.css`). */}
+                <span className="guides-grid__cell guides-grid__cell--email" role="columnheader">Envio</span>
                 <span className="guides-grid__cell guides-grid__cell--linha" role="columnheader">Linha digitável</span>
               </div>
             </div>
@@ -1264,7 +1310,11 @@ export function CompanyGuidesTable({
                 const isSelected = selectedIds.has(guideId);
                 const status = formatGuideStatus(guide.status);
                 const paymentStatus = formatPaymentStatus(guide.paymentStatus);
-                const emailStatus = formatEmailStatus(guide.emailStatus);
+                // ⚠ O estado de ENVIO (os dois canais), não só o do e-mail. Ver `envioNaTela.js`.
+                const envio = lerEnvioDaGuia(guide);
+                const detalheDoEnvio = envio.canais.length || guide.emailLastError
+                  ? [envio.titulo, guide.emailLastError].filter(Boolean).join("\n")
+                  : null;
 
                 return (
                   <div
@@ -1324,16 +1374,20 @@ export function CompanyGuidesTable({
                       ) : paymentStatus.label}
                     </span>
                     <span
-                      className={`guides-grid__cell guides-grid__cell--email guides-grid__tone guides-grid__tone--${emailStatus.tone}`}
+                      className="guides-grid__cell guides-grid__cell--email"
                       role="cell"
-                      onClick={guide.emailLastError ? () => {
+                      title={envio.titulo}
+                      onClick={detalheDoEnvio ? () => {
                         // eslint-disable-next-line no-alert
-                        window.prompt("Erro no envio do e-mail (Ctrl+C para copiar):", guide.emailLastError);
+                        window.prompt("Envio desta guia (Ctrl+C para copiar):", detalheDoEnvio);
                       } : undefined}
-                      style={guide.emailLastError ? { cursor: "pointer", textDecoration: "underline" } : undefined}
+                      style={detalheDoEnvio ? { cursor: "pointer" } : undefined}
                     >
-                      {emailStatus.label}
-                      {guide.emailLastError ? " ⓘ" : ""}
+                      {/* ⚠ Ícone + rótulo: a cor é reforço, não a informação. Um screenshot
+                          dessaturado precisa continuar legível (✓✓ ≠ ✓ ≠ ✖ ≠ ✈). */}
+                      <span style={{ color: envio.tom, fontWeight: 600 }}>{envio.icone}</span>
+                      <span style={{ marginLeft: 6, color: envio.tom }}>{envio.resumo}</span>
+                      {detalheDoEnvio ? <span style={{ marginLeft: 4 }}>ⓘ</span> : null}
                       {/* Portal Cliente (#3.1): selo de guia liberada ao app do cliente. */}
                       {guide.liberadaCliente && (
                         <span

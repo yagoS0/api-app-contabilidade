@@ -85,3 +85,104 @@ describe("⚠⚠ NENHUMA ROTA USA `.map(toGuideResponse)` CRU", () => {
     expect(codigo).not.toMatch(/PUBLICO\.ESCRITORIO/);
   });
 });
+
+// ── ⚠⚠ O ESTADO DE ENVIO É DO ESCRITÓRIO (05/09/2026) ───────────────────────────────────────────
+//
+// A aba Guias passou a receber `envio` — canal, destino, erro da Meta, se chegou. Nada disso é do
+// cliente que abre o portal dele: `destino` é o telefone ou o e-mail de OUTRO destinatário (o
+// sócio, o financeiro) e `erroCodigo` é material de diagnóstico. Mesmo argumento que já mantém
+// `valorRecalculado` fora do lado do cliente.
+
+describe("⚠⚠ o bloco `envio` não atravessa para o cliente", () => {
+  const guiaComEnvio = {
+    id: "g1",
+    portalClientId: "emp1",
+    competencia: "2026-07",
+    tipo: "SIMPLES",
+    valor: 100,
+    status: "PROCESSED",
+    emailStatus: "SENT",
+    envios: [
+      {
+        canal: "WHATSAPP",
+        status: "entregue",
+        destino: "5521999998888",
+        enviadoEm: new Date(),
+        entregueEm: new Date(),
+        erroCodigo: null,
+        erroMensagemUsuario: null,
+        tentativas: 1,
+      },
+    ],
+  };
+
+  it("o ESCRITÓRIO recebe o bloco, com o canal e o destino", () => {
+    const r = toGuideResponse(guiaComEnvio, { publico: PUBLICO.ESCRITORIO });
+    expect(r.envio).toBeTruthy();
+    expect(r.envio.canais[0]).toMatchObject({ canal: "WHATSAPP", status: "entregue", destino: "5521999998888" });
+    expect(r.envio.chegouAoCliente).toBe(true);
+  });
+
+  it("⚠⚠ o CLIENTE não recebe NADA disso", () => {
+    const r = toGuideResponse(guiaComEnvio, { publico: PUBLICO.CLIENTE });
+    expect(r.envio).toBeUndefined();
+    // ⚠ Nem por acidente noutro campo: o telefone de outro destinatário não pode estar no JSON.
+    expect(JSON.stringify(r)).not.toContain("5521999998888");
+  });
+
+  it("⚠ e o default é o público mais ESTREITO — chamador que esquecer o parâmetro não vaza", () => {
+    expect(toGuideResponse(guiaComEnvio).envio).toBeUndefined();
+  });
+});
+
+// ── ⚠⚠ "ACEITO PELA META" NÃO É "CHEGOU" ───────────────────────────────────────────────────────
+//
+// `enviado` significa apenas que a Meta aceitou a chamada — e foi exatamente isso que a tela
+// mostrou como sucesso no dia em que a Meta aceitou e DESCARTOU a mensagem (limite de template de
+// marketing por pessoa, `META_131049`, cinco segundos depois, pelo webhook).
+
+describe("⚠⚠ chegouAoCliente é por CANAL", () => {
+  const comEnvio = (envios) => toGuideResponse(
+    { id: "g1", portalClientId: "e1", status: "PROCESSED", envios },
+    { publico: PUBLICO.ESCRITORIO },
+  ).envio;
+
+  it("WhatsApp `enviado` NÃO é chegada — é espera", () => {
+    const e = comEnvio([{ canal: "WHATSAPP", status: "enviado", tentativas: 1 }]);
+    expect(e.chegouAoCliente).toBe(false);
+    expect(e.aguardandoConfirmacao).toBe(true);
+    // ⚠ Mas continua contando como enviada para o resto do sistema (reenvio, card, compliance).
+    expect(e.jaEnviada).toBe(true);
+  });
+
+  it("WhatsApp `entregue` e `lido` são chegada", () => {
+    expect(comEnvio([{ canal: "WHATSAPP", status: "entregue" }]).chegouAoCliente).toBe(true);
+    expect(comEnvio([{ canal: "WHATSAPP", status: "lido" }]).chegouAoCliente).toBe(true);
+  });
+
+  it("⚠ e-mail `enviado` É chegada — não existe confirmação de entrega em e-mail", () => {
+    // Inventar uma seria a mentira invertida: o e-mail não tem ✓✓, e exigir um deixaria toda guia
+    // enviada por e-mail eternamente "aguardando".
+    const e = comEnvio([{ canal: "EMAIL", status: "enviado" }]);
+    expect(e.chegouAoCliente).toBe(true);
+    expect(e.aguardandoConfirmacao).toBe(false);
+  });
+
+  it("falha aparece mesmo ao lado de um sucesso — ela não some atrás do melhor", () => {
+    const e = comEnvio([
+      { canal: "WHATSAPP", status: "entregue", destino: "5521999998888" },
+      { canal: "WHATSAPP", status: "falhou", destino: "5521988887777", erroCodigo: "META_131049" },
+    ]);
+    expect(e.chegouAoCliente).toBe(true);
+    expect(e.algumFalhou).toBe(true);
+    expect(e.canais).toHaveLength(2);
+  });
+
+  it("⚠ `podeTentarDeNovo` sobe com as TRÊS respostas, e `null` não vira `false`", () => {
+    const e = comEnvio([{ canal: "WHATSAPP", status: "falhou", erroCodigo: "META_131049" }]);
+    // 131049 é retentável segundo a documentação (esperar 24h).
+    expect(e.canais[0].podeTentarDeNovo).toBe(true);
+    const desconhecido = comEnvio([{ canal: "WHATSAPP", status: "falhou", erroCodigo: "META_999999" }]);
+    expect(desconhecido.canais[0].podeTentarDeNovo).toBeNull();
+  });
+});

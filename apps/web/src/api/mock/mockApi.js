@@ -468,9 +468,68 @@ function recalculoDoMock(guia) {
   return { especieRecalculo: especie, canRecalculate: true, vencida, vencimentoEstimado: estimado, avisoDeRecalculo: aviso };
 }
 
+/**
+ * ⚠⚠ OS ESTADOS DE ENVIO DA COLUNA "Envio" — um por guia fixa, para TODOS serem alcançáveis offline.
+ *
+ * Este projeto já foi mordido cinco vezes por ramo escondido no mock, e duas delas em 05/09/2026:
+ * a tela dizia "sem opt-in" para quem recebia por e-mail (o mock exigia telefone) e ninguém via o
+ * ramo "sem e-mail cadastrado" (o mock sempre tinha um). A coluna nova tem NOVE situações; sem
+ * plantá-las aqui, oito só apareceriam numa empresa real, com uma guia real.
+ *
+ * ⚠ A ORDEM importa menos que a COBERTURA: cada entrada existe para um ramo de `lerEnvioDaGuia`.
+ */
+const ENVIOS_DO_MOCK = [
+  // não enviada: bloco presente, sem canal nenhum
+  { jaEnviada: false, canais: [] },
+  // e-mail enviado (o terminal possível daquele canal)
+  {
+    jaEnviada: true,
+    canais: [{ canal: "EMAIL", status: "enviado", destino: "financeiro@empresa.com.br", em: new Date().toISOString(), podeTentarDeNovo: null, tentativas: 1 }],
+  },
+  // ⚠ aceita pela Meta e SEM confirmação — o estado que a tela pintava de verde
+  {
+    jaEnviada: true,
+    canais: [{ canal: "WHATSAPP", status: "enviado", destino: "5521999998888", em: new Date().toISOString(), podeTentarDeNovo: null, tentativas: 1 }],
+  },
+  // entregue (✓✓)
+  {
+    jaEnviada: true,
+    canais: [{ canal: "WHATSAPP", status: "entregue", destino: "5521999998888", em: new Date().toISOString(), entregueEm: new Date().toISOString(), podeTentarDeNovo: null, tentativas: 1 }],
+  },
+  // lida
+  {
+    jaEnviada: true,
+    canais: [{ canal: "WHATSAPP", status: "lido", destino: "5521999998888", em: new Date().toISOString(), entregueEm: new Date().toISOString(), lidoEm: new Date().toISOString(), podeTentarDeNovo: null, tentativas: 1 }],
+  },
+  // falhou, com o motivo REAL que a Meta deu em produção (limite de marketing por pessoa)
+  {
+    jaEnviada: false,
+    canais: [{ canal: "WHATSAPP", status: "falhou", destino: "5521999998888", erroCodigo: "META_131049", erroMensagem: "A Meta limitou quantos templates deste tipo este cliente recebe por dia.", podeTentarDeNovo: true, tentativas: 1 }],
+  },
+  // ⚠ PARCIAL: um entregue, um falhado. Sem este caso, a falha some atrás do sucesso.
+  {
+    jaEnviada: true,
+    canais: [
+      { canal: "WHATSAPP", status: "entregue", destino: "5521999998888", entregueEm: new Date().toISOString(), podeTentarDeNovo: null, tentativas: 1 },
+      { canal: "WHATSAPP", status: "falhou", destino: "5521988887777", erroCodigo: "META_131026", erroMensagem: "Este número não tem WhatsApp ou não pode receber mensagens.", podeTentarDeNovo: false, tentativas: 1 },
+    ],
+  },
+  // os dois canais, os dois bem
+  {
+    jaEnviada: true,
+    canais: [
+      { canal: "EMAIL", status: "enviado", destino: "financeiro@empresa.com.br", em: new Date().toISOString(), podeTentarDeNovo: null, tentativas: 1 },
+      { canal: "WHATSAPP", status: "entregue", destino: "5521999998888", entregueEm: new Date().toISOString(), podeTentarDeNovo: null, tentativas: 1 },
+    ],
+  },
+  // ⚠ a tolerância do LEGADO: guia anterior a `envios_guia` — sem linha, valendo pelo `emailStatus`
+  { jaEnviada: true, canais: [] },
+];
+
 function makeGuidesByCompany(companies) {
   const guidesByCompany = new Map();
   let seqLinha = 0;
+  let seqEnvio = 0;
   for (const company of companies) {
     const guides = Array.from({ length: faker.number.int({ min: 3, max: 12 }) }).map(() => {
       const status = faker.helpers.arrayElement(["PROCESSED", "PROCESSED", "PROCESSED", "ERROR"]);
@@ -495,6 +554,9 @@ function makeGuidesByCompany(companies) {
         serproLastCheckResult: paymentStatus === "PAID" ? "NOT_FOUND" : "FOUND",
         serproService: "GERARDAS12",
         canConfirmPayment: paymentStatus !== "PAID",
+        // ⚠ Rodízio pelo catálogo: cada guia do mock cai num estado diferente da coluna "Envio", e
+        // as nove situações ficam visíveis sem produção. Ver `ENVIOS_DO_MOCK`.
+        envio: ENVIOS_DO_MOCK[seqEnvio++ % ENVIOS_DO_MOCK.length],
         // ⚠ Depois de `valor`, de propósito: no caso DISPONIVEL este bloco o sobrescreve para o
         // valor que a linha realmente codifica.
         ...linhaDigitavelDoMock(seqLinha++),
@@ -531,6 +593,16 @@ function makeGuidesByCompany(companies) {
       competencia: competenciaAnteriorMock(),
       status: "PROCESSED",
       emailStatus: "SENT",
+      // ⚠⚠ A GUIA FIXA CARREGA O ESTADO DO DEFEITO DE 05/09/2026: a Meta aceitou e não confirmou
+      // nada. É o caso que a tela pintava de VERDE dizendo "enviado", e é o primeiro que aparece
+      // ao abrir a aba — quem for mexer nesta coluna esbarra nele antes de qualquer outro.
+      envio: {
+        jaEnviada: true,
+        canais: [{
+          canal: "WHATSAPP", status: "enviado", destino: "5521999998888",
+          em: new Date().toISOString(), podeTentarDeNovo: null, tentativas: 1,
+        }],
+      },
       paymentStatus: "OPEN",
       paymentStatusSource: "SERPRO",
       paymentConfirmedAt: null,
@@ -564,6 +636,15 @@ function makeGuidesByCompany(companies) {
         vencimento: null,
         status: "PROCESSED",
         emailStatus: "PENDING",
+        // ⚠ PARCIAL: um destinatário recebeu, o outro não. Sem este caso no mock, a falha
+        // continuaria sumindo atrás do sucesso — que é o defeito `envioParaExibir` documentado.
+        envio: {
+          jaEnviada: true,
+          canais: [
+            { canal: "WHATSAPP", status: "entregue", destino: "5521999998888", entregueEm: new Date().toISOString(), podeTentarDeNovo: null, tentativas: 1 },
+            { canal: "WHATSAPP", status: "falhou", destino: "5521988887777", erroCodigo: "META_131026", erroMensagem: "Este número não tem WhatsApp ou não pode receber mensagens.", podeTentarDeNovo: false, tentativas: 1 },
+          ],
+        },
         paymentStatus: "OPEN",
         paymentStatusSource: "SERPRO",
         source: "SERPRO",
