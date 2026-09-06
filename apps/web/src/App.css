@@ -1965,3 +1965,40 @@ th.tabela__num {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── ANOTAÇÕES + CHAT, LADO A LADO (F2, 06/09/2026) ────────────────────────────────────────────
+   Dono: *"em cada cliente tenha um chat, no mesmo lugar de anotações"*. Irmã de
+   `.emitir-nfse-corpo`: mesma grade de duas colunas, mesma quebra por MEDIA QUERY.
+
+   ⚠⚠ A LARGURA VEM DAQUI, NUNCA DE `window.innerWidth`. Ler a largura em JS erra na primeira
+   rotação de tela, no zoom e na abertura da gaveta do navegador — e erra em SILÊNCIO.
+
+   ⚠⚠ ABAIXO DE 1000px O CHAT DESCE, NÃO SOME. Escondê-lo faria a aba responder "esta empresa não
+   fala por WhatsApp" para quem só estreitou a janela. Ele é o segundo na ORDEM DO DOCUMENTO, então
+   a única coluna já o põe embaixo — sem `order`, que separaria o que se lê do que se navega. */
+.anotacoes-com-chat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 460px);
+  gap: 20px;
+  align-items: start;
+}
+
+/* ⚠ O chat ROLA POR DENTRO: sem teto, uma conversa longa empurraria as anotações para fora da
+   tela, e o lado a lado deixaria de ser lado a lado. */
+.anotacoes-com-chat__chat {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  min-width: 0;
+}
+
+@media (max-width: 1000px) {
+  .anotacoes-com-chat {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .anotacoes-com-chat__chat {
+    position: static;
+    max-height: 70vh;
+  }
+}

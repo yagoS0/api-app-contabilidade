@@ -325,6 +325,53 @@ componente.
 sempre `CADASTRO` ⇒ **2**; tirar a linha da empresa da lista ⇒ **2**; desligar o aviso de paginação e
 a frase da mídia ⇒ **3**.
 
+### ⚠⚠ O CHAT DENTRO DA EMPRESA, AO LADO DAS ANOTAÇÕES (06/09/2026)
+
+> Dono: *"em cada cliente tenha um chat, no mesmo lugar de anotações, assim podemos falar com o
+> cliente e usar as anotações para algo importante"*.
+
+`whatsapp/components/ChatDaEmpresa.jsx`, montado por `CompanyNotesTabWrapper`
+(`companies/detail/pages/renderCompanyDetailPage.jsx`). **Anotações à esquerda** (é a aba dela),
+**chat à direita**.
+
+- ⚠⚠ **ZERO ROTA NOVA.** É a MESMA listagem, com `?empresa`. Uma rota em
+  `/firm/companies/:id/whatsapp/*` herdaria o middleware **por posição**, e
+  `somenteAdminOuContador` × `requireFirmCompanyAccess` são dois eixos de autorização diferentes.
+  Quem responde "esta empresa é minha?" é a interseção com `empresasVisiveis`, no servidor.
+- ⚠⚠ **ANOTAÇÕES SAIU DO RAMO COMPARTILHADO COM DOCUMENTOS**, e a largura foi junto: de `leitura`
+  para **`trabalho`**. O argumento do `leitura` era não haver **salto** entre sub-abas irmãs do
+  grupo "Empresa" — e ele **não alcança este caso**: Anotações é grupo próprio, com uma aba só, e
+  não tem irmã. Documentos **não mudou**.
+- ⚠⚠ **ABAIXO DE 1000px O CHAT DESCE, NÃO SOME** (`.anotacoes-com-chat`, no `App.css`). Escondê-lo
+  faria a aba responder *"esta empresa não fala por WhatsApp"* para quem só estreitou a janela. Ele é
+  o segundo na **ordem do documento**, então a única coluna já o põe embaixo — sem `order`, que
+  separaria o que se lê do que se navega. ⚠ A largura vem de **media query**, nunca de uma leitura
+  em JavaScript: essa erra na rotação, no zoom e na gaveta do navegador, e erra **em silêncio**.
+- ⚠ **O chat rola por dentro** (`max-height` + `overflow-y`): sem teto, uma conversa longa empurraria
+  as anotações para fora da tela e o lado a lado deixaria de ser lado a lado.
+- ⚠ **O fio abre SOZINHO** — é uma aba de conversa, não uma caixa de entrada. A tentativa fica num
+  `ref`: se `abrir` falhar, `aberta` não muda e o efeito rodaria para sempre; o mesmo id não é
+  tentado duas vezes.
+- **O seletor de contato** (`lib/fiosDaEmpresa.js`, `escolhaDoFio` → `VAZIO | UNICO | ESCOLHER`) só
+  aparece com **dois ou mais** fios, e lista a **pessoa + papel** — nunca a empresa, que aqui é a
+  mesma em todo fio. ⚠ Escolha que sumiu cai no **primeiro**, nunca deixa a tela vazia.
+- ⚠⚠ **AUSÊNCIA E FALHA NÃO SE PARECEM.** Empresa sem fio nenhum diz *de quem é a vez* (*"quem abre a
+  conversa é o cliente"*), e não "não encontrado"; falha de carga diz *"não dá para afirmar que não há
+  nenhuma"*. Um zero que quer dizer "não perguntei" é o defeito que `falhaDeCarga.js` existe para
+  matar.
+- ⚠ **O hook monta com `companyDocsApi`** — o cliente de MÓDULO —, nunca com uma prop `api`:
+  `CompanyDetailPage` não recebe `api`, e esse erro já *compilou, passou nos testes e explodiu só no
+  navegador*. Guarda: `companies/detail/components/__tests__/anotacoesComChat.test.js`.
+- ⚠ **`renderCompanyNotesTab.jsx` saiu do hex literal** — não é faxina: encostar uma coluna de tokens
+  numa de hex põe dois cinzas diferentes na mesma linha. **Nenhuma cor mudou de fato**: borda, tinta,
+  âmbar e ciano eram exatamente os valores dos tokens; só o fundo do campo não tinha nome, e virou
+  `--bg-subtle`.
+
+**Experimentos executados:** desmontar o chat do wrapper ⇒ **3 vermelhos**; escondê-lo abaixo de
+1000px ⇒ **1**; `escolhaDoFio` cravado em `ESCOLHER` ⇒ **2**. Conferido no navegador (mock) em
+1440×900 e em 900px: duas colunas viram uma, o chat desce e continua visível, e a empresa sem fio diz
+o motivo.
+
 ## ⚠⚠ A CONFIGURAÇÃO DE ENVIO MORA AQUI (05/09/2026)
 
 > Dono: *"a tela de configuração de envio dentro de guias, lá deve ser o cadastro de emails e

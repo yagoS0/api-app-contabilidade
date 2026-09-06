@@ -5,11 +5,16 @@
 
 import { useState } from "react";
 
+// ⚠ HEX LITERAL SAIU DAQUI (06/09/2026), e não foi faxina: esta aba passou a dividir a linha com o
+// chat, e encostar uma coluna de tokens numa de hex põe dois cinzas diferentes lado a lado.
+// ⚠ NENHUMA COR MUDOU DE FATO: borda, tinta, âmbar e ciano eram exatamente os valores de
+// `--border`, `--text`, `--state-warn` e `--accent-cyan` — trocou-se o valor pelo nome dele. O
+// único sem token era o fundo do campo, que virou `--bg-subtle`, o mesmo fundo de todo campo do app.
 const PANEL = {
-  border: "#44475A", text: "#F8F8F2", muted: "var(--text-muted)", field: "#1F2029",
+  border: "var(--border)", text: "var(--text)", muted: "var(--text-muted)", field: "var(--bg-subtle)",
 };
 
-const CORES_IMPORTANCIA = { ALTA: "var(--danger)", MEDIA: "#FFB347", BAIXA: "#8BE9FD" };
+const CORES_IMPORTANCIA = { ALTA: "var(--state-danger)", MEDIA: "var(--state-warn)", BAIXA: "var(--accent-cyan)" };
 const ROTULO_IMPORTANCIA = { ALTA: "Alta", MEDIA: "Média", BAIXA: "Baixa" };
 
 const btn = (cor = PANEL.border) => ({
@@ -28,12 +33,12 @@ function Cartao({ nota, destaque, onFixar, onDesfixar, onExcluir, onMudarImporta
   return (
     <article style={{
       padding: "12px 14px", borderRadius: 10, marginBottom: 10,
-      background: destaque ? "rgba(255,255,255,0.06)" : PANEL.field,
-      border: `1px solid ${destaque ? "#FFB347" : PANEL.border}`,
+      background: destaque ? "var(--state-neutral-surface)" : PANEL.field,
+      border: `1px solid ${destaque ? "var(--state-warn)" : PANEL.border}`,
       borderLeft: `3px solid ${cor}`,
     }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
-        {destaque && <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#FFB347" }}>📌 FIXADA</span>}
+        {destaque && <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--state-warn)" }}>📌 FIXADA</span>}
         <span style={{ fontSize: "0.72rem", fontWeight: 700, color: cor }}>
           {ROTULO_IMPORTANCIA[nota.importancia] || nota.importancia}
         </span>
@@ -51,8 +56,8 @@ function Cartao({ nota, destaque, onFixar, onDesfixar, onExcluir, onMudarImporta
           </select>
           {destaque
             ? <button type="button" style={btn()} onClick={onDesfixar}>Desafixar</button>
-            : <button type="button" style={btn("#FFB347")} onClick={onFixar}>Fixar</button>}
-          <button type="button" style={btn("var(--danger)")} onClick={onExcluir}>Excluir</button>
+            : <button type="button" style={btn("var(--state-warn)")} onClick={onFixar}>Fixar</button>}
+          <button type="button" style={btn("var(--state-danger)")} onClick={onExcluir}>Excluir</button>
         </div>
       </div>
       <p style={{ margin: 0, fontSize: "0.86rem", whiteSpace: "pre-wrap" }}>{nota.texto}</p>

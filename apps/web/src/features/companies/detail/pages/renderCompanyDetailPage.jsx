@@ -33,6 +33,11 @@ import { ContatosWhatsapp } from "../../credentials/components/ContatosWhatsapp"
 // Q8.C.3: lazy load das tabs pesadas. Bundle inicial cai (~30-40% segundo medições típicas),
 // e cada tab só carrega seu JS quando o contador clica nela pela 1ª vez.
 // Vantagem extra: erro em uma tab (parse error, missing prop) NÃO derruba as outras.
+// ⚠ O chat entra LAZY como as outras abas pesadas: ele arrasta o hook de conversas e o fio. Erro
+// dentro dele não derruba as Anotações, que são a aba DEFAULT da empresa.
+const ChatDaEmpresa = lazy(() =>
+  import("../../../whatsapp/components/ChatDaEmpresa").then((m) => ({ default: m.ChatDaEmpresa }))
+);
 const CompanyGuidesTable = lazy(() =>
   import("../../../guides/list/components/renderCompanyGuidesTable").then((m) => ({ default: m.CompanyGuidesTable }))
 );
@@ -124,9 +129,32 @@ function CompanyDocumentsTabWrapper({ companyId, feedback }) {
   return <CompanyDocumentsTab docs={docs} />;
 }
 
+// ⚠⚠ ANOTAÇÕES E CHAT LADO A LADO (F2, 06/09/2026) — decisão do dono: *"em cada cliente tenha um
+// chat, no mesmo lugar de anotações, assim podemos falar com o cliente e usar as anotações para algo
+// importante"*. Anotações à ESQUERDA (é a aba dela), chat à direita.
+//
+// ⚠ A largura vem de MEDIA QUERY (`.anotacoes-com-chat`, no `App.css`), nunca de uma leitura de
+// largura em JavaScript — essa erra na rotação da tela, no zoom e na gaveta do navegador, e erra em
+// silêncio. Abaixo de 1000px o chat DESCE — nunca some: escondê-lo faria a aba responder "esta
+// empresa não fala por WhatsApp" para quem só estreitou a janela.
+//
+// ⚠ O hook do chat monta com `companyDocsApi` — o cliente de MÓDULO —, nunca com uma prop `api`:
+// `CompanyDetailPage` não recebe `api`, e esse erro já compilou, passou nos testes e explodiu só no
+// navegador.
 function CompanyNotesTabWrapper({ companyId, feedback }) {
   const notes = useCompanyNotes({ api: companyDocsApi, companyId, feedback });
-  return <CompanyNotesTab notes={notes} />;
+  return (
+    <div className="anotacoes-com-chat">
+      <div style={{ minWidth: 0 }}>
+        <CompanyNotesTab notes={notes} />
+      </div>
+      <div className="anotacoes-com-chat__chat">
+        <Suspense fallback={<CompanyTabLoading />}>
+          <ChatDaEmpresa api={companyDocsApi} companyId={companyId} feedback={feedback} />
+        </Suspense>
+      </div>
+    </div>
+  );
 }
 
 // ⚠ `feedback` INTEIRO, nunca `{ message, error }`. O hook do cofre chama `notifyError` — com a
@@ -586,18 +614,44 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     );
   }
 
-  if (companyDetailTab === "documentos" || companyDetailTab === "anotacoes") {
-    const ehDocumentos = companyDetailTab === "documentos";
+  // ⚠⚠ ANOTAÇÕES SAIU DO RAMO COMPARTILHADO COM DOCUMENTOS (06/09/2026), e a largura mudou junto.
+  //
+  // O argumento do `leitura` era não haver SALTO entre sub-abas irmãs do grupo "Empresa" — e ele não
+  // alcança este caso: Anotações é grupo PRÓPRIO, com uma aba só, e não tem irmã de onde saltar.
+  // Com o chat ao lado, `leitura` (1200px) espremeria as duas colunas contra a mesma dobra.
+  if (companyDetailTab === "anotacoes") {
     return (
       <CompanyTabLayout
         company={selectedCompany}
-        activeTab={companyDetailTab}
+        activeTab="anotacoes"
         onBack={onBack}
         onTabChange={switchTab}
         canEditCompany={canEditCompany}
         competencia={circularPanel?.competencia}
         onCompetenciaChange={circularPanel?.onCompetenciaChange}
-        /* ⚠ O GRUPO "EMPRESA" INTEIRO É `leitura` — Cadastro, Documentos e Senhas. Documentos TEM
+        largura="trabalho"
+        feedback={feedback}
+        suspense
+      >
+        <CompanyNotesTabWrapper companyId={companyId} feedback={feedback} />
+      </CompanyTabLayout>
+    );
+  }
+
+  if (companyDetailTab === "documentos") {
+    return (
+      <CompanyTabLayout
+        company={selectedCompany}
+        activeTab="documentos"
+        onBack={onBack}
+        onTabChange={switchTab}
+        canEditCompany={canEditCompany}
+        competencia={circularPanel?.competencia}
+        onCompetenciaChange={circularPanel?.onCompetenciaChange}
+        /* ⚠ O GRUPO "EMPRESA" É `leitura` — Cadastro, Documentos e Senhas. ⚠⚠ Esta linha dizia "o
+           grupo INTEIRO", e Anotações era o quarto membro dela até 06/09/2026: ela saiu para
+           `trabalho` quando ganhou o chat ao lado, e é grupo próprio, sem irmã de onde saltar.
+           Documentos TEM
            uma tabela, mas ela tem seis colunas curtas e cabe folgada em `--content-max`; e o que o
            dono viu na tela foi exatamente o salto de largura ao passar de uma sub-aba para a
            vizinha. `trabalho` fica para quem precisa: Lançamentos (7 colunas + histórico),
@@ -607,9 +661,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
         feedback={feedback}
         suspense
       >
-        {ehDocumentos
-          ? <CompanyDocumentsTabWrapper companyId={companyId} feedback={feedback} />
-          : <CompanyNotesTabWrapper companyId={companyId} feedback={feedback} />}
+        <CompanyDocumentsTabWrapper companyId={companyId} feedback={feedback} />
       </CompanyTabLayout>
     );
   }
