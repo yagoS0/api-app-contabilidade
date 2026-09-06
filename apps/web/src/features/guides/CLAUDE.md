@@ -279,8 +279,51 @@ com teste, e o `handleLiberarGuia` do workspace só chama.
   `lib/conversasTela.js`: a janela de 24h é dita **antes** de digitar; a fila (número sem cadastro)
   vem primeiro em âmbar porque é pendência; quem escreveu cada balão (cliente · assistente (IA) ·
   escritório · mensagem fixa) sai do `autor`.
-- ⚠ O mock tem os três fios (com a IA + pendência aberta · assumido com janela EXPIRADA · não
-  vinculado) e dois contatos (um sem opt-in) — cada ramo é alcançável offline.
+- ⚠ O mock tem **quatro** fios (com a IA + pendência aberta · assumido com janela EXPIRADA · não
+  vinculado · **um segundo fio da MESMA empresa, com mensagem de mídia**) e três contatos (um sem
+  opt-in) — cada ramo é alcançável offline.
+
+### ⚠⚠ QUEM está falando E de QUAL empresa (06/09/2026)
+
+> Dono: *"inclua um identificador da empresa, além do nome da pessoa precisamos saber de qual empresa
+> ela é, isso quando estivermos no chat geral"*.
+
+A linha da lista fazia `c.empresa?.razao || c.nomePerfilProvedor || c.telefoneMascarado` — um `||`
+escolhendo entre coisas que **não se substituem**. Numa conversa de cliente aparecia a **empresa** e
+o contador **nunca sabia quem estava falando**; numa da fila aparecia a pessoa e não havia empresa.
+São duas perguntas — *quem* e *de quem* — e a linha respondia só uma.
+
+Hoje `identidadeDaConversa(c)` (`whatsapp/lib/conversasTela.js`) responde as duas, e a montagem é
+**pessoa em cima, empresa embaixo**, na lista **e** no cabeçalho do fio aberto.
+
+- ⚠⚠ **A AUTORIDADE SOBRE O NOME É O CADASTRO** (`contato.nome`), como já é para o vínculo. O
+  `nomePerfilProvedor` é o nome que **a própria pessoa** escreveu no aparelho dela — pode ser
+  "Financeiro", pode ser qualquer coisa —, e por isso ele nunca casa contato. Aqui ele **exibe** e sai
+  **marcado**: `origemDoNome` (`CADASTRO` · `PERFIL` · `TELEFONE`) viaja junto e a tela diz *"nome do
+  perfil do WhatsApp, não do cadastro"*.
+- ⚠ **O balão de entrada segue a MESMA autoridade.** `rotuloDoAutor` recebia só o nome de perfil: o
+  cabeçalho dizia "Financeiro" (cadastro) e o balão logo abaixo dizia "Fin. Empresa 1" (perfil) —
+  **duas respostas para "quem escreveu isto", na mesma tela**. Sem nome nenhum ele continua caindo em
+  "cliente", nunca no telefone.
+- ⚠ **Sem empresa não se inventa:** *"sem empresa — número novo"* em **âmbar**, que já é o estado da
+  fila. Linha em branco se lê como "não tem nada a dizer".
+- ⚠ **`descricaoDaMidia(m)`** troca `[image]` por *"📎 imagem — este sistema ainda não baixa arquivos
+  do WhatsApp"*. A lista de tipos é **FECHADA**: tipo que a Meta inventar amanhã aparece **como veio**
+  (*"mensagem de tipo X — não sei exibir"*), nunca vira o nome do vizinho mais parecido.
+- ⚠⚠ **`frasePaginacao(temMais)` tem TRÊS respostas, e a terceira é "não sei"**: `true` avisa que há
+  mensagens mais antigas, `false` cala, e **ausente** (servidor antigo) vira *"não dá para afirmar que
+  esta é a conversa inteira"* — nunca "não há mais".
+
+⚠ **O FIO SAIU DA PÁGINA** para `whatsapp/components/FioDaConversa.jsx`, porque ganhou um **segundo
+consumidor concreto**: a mesma conversa dentro da empresa, ao lado das Anotações. `LinhaConversa` e
+`FormVincular` **ficaram** — lá dentro a empresa é a mesma em toda linha (seria ruído) e o vínculo não
+existe (`portalClientId` nunca é nulo ali). Por isso o vínculo entra por **`slotVincular`**: quem tem
+a fila passa o formulário, a aba da empresa não passa nada — em vez de uma prop que desliga metade do
+componente.
+
+**Experimentos executados:** devolver a identidade ao `||` de hoje ⇒ **1 vermelho**; `origemDoNome`
+sempre `CADASTRO` ⇒ **2**; tirar a linha da empresa da lista ⇒ **2**; desligar o aviso de paginação e
+a frase da mídia ⇒ **3**.
 
 ## ⚠⚠ A CONFIGURAÇÃO DE ENVIO MORA AQUI (05/09/2026)
 

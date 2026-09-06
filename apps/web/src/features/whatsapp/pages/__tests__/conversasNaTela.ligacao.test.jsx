@@ -13,10 +13,11 @@ const COM_IA = {
   id: "cv1", telefoneE164: "5521999998888", telefoneMascarado: "+55…8888", nomePerfilProvedor: "Maria", portalClientId: "pc-1", empresa: { id: "pc-1", razao: "ACME LTDA" },
   atendidaPor: null, atendente: null, atendidaDesde: null, naFilaDoEscritorio: false, updatedAt: "2026-09-02T12:00:00Z", naoLidas: 1,
   janela: { situacao: "ABERTA" }, pendencia: { id: "ap1", tipo: "RECALCULAR_GUIA", codigo: "K9M3", expiraEm: "2026-09-02T12:10:00Z" },
+  contato: { id: "ctt1", nome: "Maria Silva", papel: "sócia" },
   ultimaMensagem: { corpo: "monta a atualizada", registradaEm: "2026-09-02T12:00:00Z" },
 };
-const ASSUMIDA = { ...COM_IA, id: "cv2", telefoneMascarado: "+55…7777", empresa: { id: "pc-2", razao: "BETA LTDA" }, portalClientId: "pc-2", atendidaPor: "u1", atendente: { nome: "Ana" }, janela: { situacao: "EXPIRADA" }, pendencia: null, naoLidas: 0, updatedAt: "2026-08-30T12:00:00Z" };
-const FILA = { ...COM_IA, id: "cv3", telefoneMascarado: "+55…6666", nomePerfilProvedor: "Carlos", portalClientId: null, empresa: null, pendencia: null, naoLidas: 1, vinculo: { motivo: "DESCONHECIDO" }, updatedAt: "2026-09-02T11:00:00Z" };
+const ASSUMIDA = { ...COM_IA, id: "cv2", contato: null, telefoneMascarado: "+55…7777", empresa: { id: "pc-2", razao: "BETA LTDA" }, portalClientId: "pc-2", atendidaPor: "u1", atendente: { nome: "Ana" }, janela: { situacao: "EXPIRADA" }, pendencia: null, naoLidas: 0, updatedAt: "2026-08-30T12:00:00Z" };
+const FILA = { ...COM_IA, id: "cv3", contato: null, telefoneMascarado: "+55…6666", nomePerfilProvedor: "Carlos", portalClientId: null, empresa: null, pendencia: null, naoLidas: 1, vinculo: { motivo: "DESCONHECIDO" }, updatedAt: "2026-09-02T11:00:00Z" };
 
 const MENSAGENS = {
   cv1: [
@@ -143,5 +144,120 @@ describe("vincular — a fila esvazia por aqui", () => {
     fireEvent.click(screen.getByTestId("conversa-cv1"));
     await screen.findByTestId("fio");
     expect(screen.queryByTestId("form-vincular")).toBeNull();
+  });
+});
+
+// ── ⚠⚠ QUEM está falando E de QUAL empresa (06/09/2026) ────────────────────────────────────────
+//
+// A regra pura tem teste próprio; isto prende a LIGAÇÃO — o defeito favorito deste projeto é o
+// bloco certo que ninguém chama. Antes, a linha fazia `empresa?.razao || nomePerfilProvedor || tel`
+// e numa conversa de cliente o contador via a EMPRESA e nunca sabia quem estava falando.
+
+describe("⚠⚠ a linha diz QUEM e de QUAL empresa — as duas", () => {
+  it("com contato cadastrado: a pessoa em cima, a empresa embaixo, e o papel junto", async () => {
+    await montar();
+    const linha = screen.getByTestId("conversa-cv1");
+    const pessoa = within(linha).getByTestId("pessoa-da-conversa");
+    expect(pessoa).toHaveTextContent("Maria Silva");
+    expect(pessoa).toHaveAttribute("data-origem", "CADASTRO");
+    expect(linha).toHaveTextContent("sócia");
+    // ⚠ A empresa NÃO sumiu — ela desceu para a própria linha.
+    expect(within(linha).getByTestId("empresa-da-conversa")).toHaveTextContent("ACME LTDA");
+    // Nome do cadastro não leva ressalva.
+    expect(within(linha).queryByTestId("aviso-do-nome")).toBeNull();
+  });
+
+  it("⚠ sem cadastro, o nome do PERFIL aparece MARCADO — é o que a pessoa escreveu no aparelho dela", async () => {
+    await montar();
+    const linha = screen.getByTestId("conversa-cv2");
+    expect(within(linha).getByTestId("pessoa-da-conversa")).toHaveAttribute("data-origem", "PERFIL");
+    expect(within(linha).getByTestId("aviso-do-nome")).toHaveTextContent(/não do cadastro/);
+  });
+
+  it("⚠ na fila a ausência de empresa é DITA, não deixada em branco", async () => {
+    await montar();
+    const linha = screen.getByTestId("conversa-cv3");
+    const empresa = within(linha).getByTestId("empresa-da-conversa");
+    expect(empresa).toHaveAttribute("data-sem-empresa", "sim");
+    expect(empresa).toHaveTextContent(/sem empresa/);
+  });
+
+  it("o cabeçalho do fio aberto responde as MESMAS duas perguntas", async () => {
+    await montar();
+    fireEvent.click(screen.getByTestId("conversa-cv1"));
+    const fio = await screen.findByTestId("fio");
+    expect(within(fio).getByTestId("pessoa-da-conversa")).toHaveTextContent("Maria Silva");
+    expect(within(fio).getByTestId("empresa-da-conversa")).toHaveTextContent("ACME LTDA");
+  });
+});
+
+describe("⚠ a mídia recebida vira frase, e o corte deixa de ser silencioso", () => {
+  const comMidia = {
+    getMensagensWhatsapp: jest.fn(async () => ({
+      ok: true,
+      conversa: COM_IA,
+      temMais: true,
+      mensagens: [{ id: "m9", direcao: "in", tipo: "image", corpo: null, autor: null, temMidia: true, registradaEm: "2026-09-02T11:00:00Z" }],
+    })),
+  };
+
+  it("balão de imagem diz o que chegou E que não dá para abrir ainda — nunca '[image]'", async () => {
+    await montar(apiFalso(comMidia));
+    fireEvent.click(screen.getByTestId("conversa-cv1"));
+    const fio = await screen.findByTestId("fio");
+    const balao = within(fio).getByTestId("balao-m9");
+    expect(balao).toHaveTextContent(/imagem/);
+    expect(balao).toHaveTextContent(/ainda não baixa/);
+    expect(balao).not.toHaveTextContent("[image]");
+  });
+
+  it("⚠⚠ com `temMais`, o fio AVISA que há mensagens mais antigas", async () => {
+    await montar(apiFalso(comMidia));
+    fireEvent.click(screen.getByTestId("conversa-cv1"));
+    const fio = await screen.findByTestId("fio");
+    expect(within(fio).getByTestId("aviso-paginacao")).toHaveTextContent(/mais antigas/);
+  });
+
+  it("⚠ `temMais: false` cala — a tela não avisa o que não existe", async () => {
+    const api = apiFalso({ getMensagensWhatsapp: jest.fn(async (id) => ({ ok: true, conversa: COM_IA, temMais: false, mensagens: MENSAGENS[id] || [] })) });
+    await montar(api);
+    fireEvent.click(screen.getByTestId("conversa-cv1"));
+    const fio = await screen.findByTestId("fio");
+    expect(within(fio).queryByTestId("aviso-paginacao")).toBeNull();
+  });
+
+  it("⚠⚠ servidor SEM o campo não vira 'não há mais' — vira 'não sei'", async () => {
+    // O dublê padrão não manda `temMais`: é exatamente o servidor antigo.
+    await montar();
+    fireEvent.click(screen.getByTestId("conversa-cv1"));
+    const fio = await screen.findByTestId("fio");
+    expect(within(fio).getByTestId("aviso-paginacao")).toHaveTextContent(/Não dá para afirmar/);
+  });
+});
+
+describe("⚠ a listagem carrega a empresa quando há uma escolhida", () => {
+  it("sem empresa, a chamada não inventa filtro nenhum", async () => {
+    const api = await montar();
+    expect(api.listarConversasWhatsapp).toHaveBeenCalledWith("todas", { empresa: null });
+  });
+});
+
+describe("⚠ o balão e o cabeçalho não discordam sobre quem escreveu", () => {
+  it("o autor do balão de entrada é o nome do CADASTRO, o mesmo do cabeçalho", async () => {
+    await montar();
+    fireEvent.click(screen.getByTestId("conversa-cv1"));
+    const fio = await screen.findByTestId("fio");
+    // Cabeçalho e balão saem da mesma autoridade — o perfil ("Maria") não vence o cadastro.
+    expect(within(fio).getByTestId("pessoa-da-conversa")).toHaveTextContent("Maria Silva");
+    expect(within(fio).getByTestId("balao-m1")).toHaveTextContent("Maria Silva");
+  });
+
+  it("⚠ sem nome nenhum o balão continua dizendo 'cliente' — não vira o telefone", async () => {
+    const semNome = { ...COM_IA, contato: null, nomePerfilProvedor: null };
+    const api = apiFalso({ getMensagensWhatsapp: jest.fn(async (id) => ({ ok: true, conversa: semNome, mensagens: MENSAGENS[id] || [] })) });
+    await montar(api);
+    fireEvent.click(screen.getByTestId("conversa-cv1"));
+    const fio = await screen.findByTestId("fio");
+    expect(within(fio).getByTestId("balao-m1")).toHaveTextContent(/^cliente ·/);
   });
 });

@@ -55,12 +55,37 @@ async function conversaNoEscopo(req, conversaId, { client = prisma } = {}) {
   return visiveis.includes(conversa.portalClientId) ? conversa : null;
 }
 
-function resumoDaConversa(c, { ultima = null, janela = null, pendencia = null, naoLidas = 0 } = {}) {
+/**
+ * ⚠⚠ OS LIMITES PARAM DE TRUNCAR EM SILÊNCIO (06/09/2026).
+ *
+ * Antes eram `take: 200` nos dois lugares, e mais nada: um fio com 300 mensagens mostrava 200 **sem
+ * avisar**, e o contador lia como se fosse a conversa inteira. Ausência virando afirmação — a mesma
+ * família do "0 achados" × "não dá para conferir" que a auditoria de notas já documenta.
+ *
+ * O conserto barato é pedir UM a mais do que se mostra: sobrou o extra, há mais. `temMais` sobe na
+ * resposta e a tela DIZ. ⚠ Cursor de verdade fica para quando existir conversa longa — o que não se
+ * pode é continuar cortando calado.
+ */
+const LIMITE_CONVERSAS = 200;
+const LIMITE_MENSAGENS = 200;
+
+function resumoDaConversa(c, { ultima = null, janela = null, pendencia = null, naoLidas = 0, contato = null } = {}) {
   return {
     id: c.id,
     telefoneE164: c.telefoneE164,
     telefoneMascarado: mascararTelefone(c.telefoneE164),
     nomePerfilProvedor: c.nomePerfilProvedor || null,
+    // ⚠⚠ O NOME DO CADASTRO, e ele NÃO existia neste payload (06/09/2026).
+    //
+    // Sem ele a tela só tinha `nomePerfilProvedor` — que é o nome que a PRÓPRIA PESSOA escreveu no
+    // aparelho dela, e pode ser qualquer coisa. A linha da lista então escolhia entre a empresa e o
+    // nome do perfil com um `||`, e numa conversa de cliente o contador via a empresa e **nunca
+    // sabia quem estava falando**. São duas perguntas — *quem* e *de quem* —, e uma não substitui a
+    // outra.
+    //
+    // ⚠ A autoridade sobre o nome é o CADASTRO (`contatos_whatsapp`), como já é para o vínculo: o
+    // nome de perfil nunca casa contato, e aqui ele também não manda.
+    contato: contato ? { id: contato.id, nome: contato.nome, papel: contato.papel || null } : null,
     portalClientId: c.portalClientId || null,
     empresa: c.portalClient ? { id: c.portalClient.id, razao: c.portalClient.razao, cnpj: c.portalClient.cnpj } : null,
     atendidaPor: c.atendidaPor || null,
@@ -99,19 +124,58 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   router.get("/whatsapp/conversas", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;
     const filtro = String(req.query?.filtro || "todas");
+    const empresa = String(req.query?.empresa || "").trim() || null;
     try {
       const visiveis = await empresasVisiveis(req);
+
+      // ⚠⚠ `?empresa` é INTERSECTADO com a carteira, nunca somado (06/09/2026). Empresa fora do
+      // escopo não devolve 403 nem lista vazia por acaso: ela simplesmente não está no `in`, e o
+      // resultado é vazio pela MESMA regra que já protege o resto. Somar seria a forma de um
+      // parâmetro de query ampliar o que o usuário enxerga.
+      // ⚠ E `?empresa` com `filtro=nao-vinculadas` é contradição: aquele filtro é, por definição, o
+      // que NÃO tem empresa. Recusa nomeada, em vez de ignorar um dos dois em silêncio.
+      if (empresa && filtro === "nao-vinculadas") {
+        return res.status(400).json({
+          ok: false,
+          error: "filtro_incompativel",
+          message: "A fila de não vinculadas é, por definição, sem empresa — não dá para filtrá-la por empresa.",
+        });
+      }
+      const daEmpresa = empresa && visiveis.includes(empresa) ? [empresa] : (empresa ? [] : visiveis);
+
       const where = filtro === "nao-vinculadas"
         ? { portalClientId: null }
         : filtro === "atendidas-por-mim"
-          ? { portalClientId: { in: visiveis }, atendidaPor: String(req.auth.user.id) }
-          : { OR: [{ portalClientId: { in: visiveis } }, { portalClientId: null }] };
-      const conversas = await client.conversaWhatsapp.findMany({
+          ? { portalClientId: { in: daEmpresa }, atendidaPor: String(req.auth.user.id) }
+          : empresa
+            // Com empresa escolhida, a fila (sem empresa) não entra: ela não é daquela empresa.
+            ? { portalClientId: { in: daEmpresa } }
+            : { OR: [{ portalClientId: { in: daEmpresa } }, { portalClientId: null }] };
+
+      // ⚠ `take: LIMITE + 1` — ver `LIMITE_CONVERSAS`.
+      const achadas = await client.conversaWhatsapp.findMany({
         where,
         include: { portalClient: { select: { id: true, razao: true, cnpj: true } }, atendente: { select: { id: true, name: true, email: true } } },
         orderBy: { updatedAt: "desc" },
-        take: 200,
+        take: LIMITE_CONVERSAS + 1,
       });
+      const temMais = achadas.length > LIMITE_CONVERSAS;
+      const conversas = temMais ? achadas.slice(0, LIMITE_CONVERSAS) : achadas;
+
+      // ⚠ UMA consulta de contatos para a página inteira, no molde de `enviosPorGuia` — nunca uma
+      // por conversa. O casamento é `(portalClientId, telefoneE164)`, a mesma chave única do
+      // cadastro; conversa sem empresa não tem contato por construção.
+      const chavesComEmpresa = conversas.filter((c) => c.portalClientId);
+      const contatos = chavesComEmpresa.length
+        ? await client.contatoWhatsapp.findMany({
+          where: {
+            portalClientId: { in: [...new Set(chavesComEmpresa.map((c) => c.portalClientId))] },
+            telefoneE164: { in: [...new Set(chavesComEmpresa.map((c) => c.telefoneE164))] },
+          },
+          select: { id: true, nome: true, papel: true, portalClientId: true, telefoneE164: true },
+        })
+        : [];
+      const contatoPorChave = new Map(contatos.map((k) => [`${k.portalClientId}|${k.telefoneE164}`, k]));
       const itens = await Promise.all(conversas.map(async (c) => {
         const [ultima, naoLidas, janela, pendencia] = await Promise.all([
           client.mensagemWhatsapp.findFirst({ where: { conversaId: c.id }, orderBy: { registradaEm: "desc" } }),
@@ -119,7 +183,13 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
           janelaDaConversa(c.id),
           pendenciaAberta(c.id, { client }),
         ]);
-        return resumoDaConversa(c, { ultima, naoLidas, janela, pendencia });
+        return resumoDaConversa(c, {
+          ultima,
+          naoLidas,
+          janela,
+          pendencia,
+          contato: c.portalClientId ? contatoPorChave.get(`${c.portalClientId}|${c.telefoneE164}`) || null : null,
+        });
       }));
       // O motivo de cada não vinculada (DESCONHECIDO/AMBIGUO + candidatas) vem do vínculo, na leitura.
       const fila = filtro === "atendidas-por-mim" ? [] : await conversasNaoVinculadas({ limite: 50 });
@@ -127,11 +197,14 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       return res.json({
         ok: true,
         filtro,
+        empresa,
         conversas: itens.map((i) => ({ ...i, vinculo: motivoPorId.get(i.id) || null })),
+        // ⚠ Ver `LIMITE_CONVERSAS`: a tela precisa poder dizer que há mais do que ela mostra.
+        temMais,
         consumoIa: await consumoIaDoMes(),
       });
     } catch (err) {
-      return falhar(res, err, { filtro });
+      return falhar(res, err, { filtro, empresa });
     }
   });
 
@@ -144,18 +217,35 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
       // ⚠ Fio NÃO vinculado não passa por `listarMensagens` (que exige escopo de empresa): ele é a
       // fila do escritório, e o escritório inteiro o lê — só admin|contador chegam aqui.
-      const mensagens = conversa.portalClientId
-        ? await listarMensagens({ portalClientId: conversa.portalClientId, conversaId: conversa.id, limite: 200 })
-        : await client.mensagemWhatsapp.findMany({ where: { conversaId: conversa.id }, orderBy: { registradaEm: "desc" }, take: 200 });
+      // ⚠ UM a mais do que se mostra — ver `LIMITE_MENSAGENS`. Um fio com 300 mensagens mostrava 200
+      // sem avisar, e o contador lia como se fosse a conversa inteira.
+      const achadas = conversa.portalClientId
+        ? await listarMensagens({ portalClientId: conversa.portalClientId, conversaId: conversa.id, limite: LIMITE_MENSAGENS + 1 })
+        : await client.mensagemWhatsapp.findMany({ where: { conversaId: conversa.id }, orderBy: { registradaEm: "desc" }, take: LIMITE_MENSAGENS + 1 });
+      const temMais = achadas.length > LIMITE_MENSAGENS;
+      const mensagens = temMais ? achadas.slice(0, LIMITE_MENSAGENS) : achadas;
       const [janela, pendencia] = await Promise.all([janelaDaConversa(conversa.id), pendenciaAberta(conversa.id, { client })]);
       await client.conversaWhatsapp.update({ where: { id: conversa.id }, data: { lidaAteEm: new Date() } }).catch(() => {});
+      // ⚠ O contato também aqui: abrir a conversa precisa dizer QUEM está falando, não só de qual
+      // empresa. Uma consulta, e só quando há empresa (fio da fila não tem cadastro por construção).
+      const contato = conversa.portalClientId
+        ? await client.contatoWhatsapp.findFirst({
+          where: { portalClientId: conversa.portalClientId, telefoneE164: conversa.telefoneE164 },
+          select: { id: true, nome: true, papel: true },
+        })
+        : null;
       return res.json({
         ok: true,
-        conversa: resumoDaConversa(conversa, { janela, pendencia }),
+        conversa: resumoDaConversa(conversa, { janela, pendencia, contato }),
+        // ⚠ `temMais` diz que existe conversa ANTES da primeira mensagem mostrada.
+        temMais,
         mensagens: [...mensagens].reverse().map((m) => ({
           id: m.id, direcao: m.direcao, tipo: m.tipo, corpo: m.corpo, autor: m.autor || null,
           providerMessageId: m.providerMessageId || null, envioGuiaId: m.envioGuiaId || null,
           ocorridaEmProvedor: m.ocorridaEmProvedor || null, registradaEm: m.registradaEm,
+          // ⚠ Só o PONTEIRO (o id na Meta), nunca uma URL: a da Meta expira, e este sistema ainda
+          // não baixa arquivo. A tela usa isto para dizer "veio um áudio" em vez de "[audio]".
+          temMidia: Boolean(m.midiaProvedorId),
         })),
       });
     } catch (err) {

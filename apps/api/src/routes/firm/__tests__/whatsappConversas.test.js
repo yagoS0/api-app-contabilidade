@@ -21,10 +21,29 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     companyFirmAccess: { findMany: jest.fn(async () => []) },
     conversaWhatsapp: {
       findUnique: jest.fn(async ({ where }) => mockConversas.get(where.id) || null),
-      findMany: jest.fn(async () => [...mockConversas.values()]),
+      // ⚠ O dublê passa a HONRAR o `where` (06/09/2026): sem isso o filtro por empresa "passaria"
+      // no teste devolvendo tudo, e a guarda de isolamento não teria prova nenhuma.
+      findMany: jest.fn(async ({ where = {}, take } = {}) => {
+        const todas = [...mockConversas.values()];
+        const casa = (c) => {
+          if (where.OR) return where.OR.some((w) => casaUm(c, w));
+          return casaUm(c, where);
+        };
+        const casaUm = (c, w) => {
+          if (w.portalClientId === null) return c.portalClientId === null;
+          if (w.portalClientId?.in) return w.portalClientId.in.includes(c.portalClientId);
+          if (w.atendidaPor && c.atendidaPor !== w.atendidaPor) return false;
+          return true;
+        };
+        const achadas = todas.filter(casa);
+        return take ? achadas.slice(0, take) : achadas;
+      }),
       update: jest.fn(async ({ where, data }) => Object.assign(mockConversas.get(where.id), data)),
     },
     mensagemWhatsapp: { findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
+    // ⚠ O nome do CADASTRO passou a viajar no payload (06/09/2026): a linha da lista precisa dizer
+    // QUEM está falando, não só de qual empresa. Ver `resumoDaConversa`.
+    contatoWhatsapp: { findMany: jest.fn(async () => []), findFirst: jest.fn(async () => null) },
     templateWhatsapp: { findUnique: jest.fn(async () => ({ chave: "reabrir_conversa", statusAprovacao: "DECLARADO", nomeMeta: null })) },
     acaoPendenteWhatsapp: { findFirst: jest.fn(async () => null) },
     chamadaIa: { aggregate: jest.fn(async () => ({ _sum: { custoEstimadoCentavos: 0 }, _count: { _all: 0 } })) },
@@ -52,6 +71,8 @@ jest.mock("../../../application/whatsapp/ContatoWhatsappService.js", () => ({
 import { createWhatsappConversasRouter } from "../whatsappConversas.js";
 import { registrarMensagemEnviada } from "../../../application/whatsapp/ConversaWhatsappService.js";
 import { salvarContato } from "../../../application/whatsapp/ContatoWhatsappService.js";
+import { listarMensagens } from "../../../application/whatsapp/ConversaWhatsappService.js";
+import { prisma } from "../../../infrastructure/db/prisma.js";
 
 const cloud = { enviarTexto: jest.fn(async () => ({ wamid: "wamid.h" })) };
 
@@ -157,5 +178,86 @@ describe("vincular — a fila esvazia por aqui", () => {
     expect(r.status).toBe(200);
     expect(salvarContato).toHaveBeenCalledWith(expect.objectContaining({ portalClientId: "pc-1", telefone: "+5521999998888", nome: "Maria", optIn: true }));
     expect(r.body.vinculo.situacao).toBe("VINCULADO");
+  });
+});
+
+// ── ⚠⚠ QUEM está falando E de QUAL empresa (06/09/2026) ────────────────────────────────────────
+//
+// A linha da lista fazia `empresa?.razao || nomePerfilProvedor || telefone` — um `||` decidindo
+// entre coisas que não se substituem. Numa conversa de cliente o contador via a EMPRESA e nunca
+// sabia QUEM estava falando. O nome do cadastro nem chegava no payload.
+
+describe("o contato do cadastro viaja no payload", () => {
+  it("conversa de empresa traz `contato` com o nome cadastrado", async () => {
+    prisma.contatoWhatsapp.findMany.mockResolvedValueOnce([
+      { id: "ctt1", nome: "Maria Silva", papel: "sócia", portalClientId: "pc-1", telefoneE164: "5521999998888" },
+    ]);
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas");
+    const cv1 = r.body.conversas.find((c) => c.id === "cv1");
+    expect(cv1.contato).toMatchObject({ nome: "Maria Silva", papel: "sócia" });
+    // ⚠ E a empresa continua vindo ao lado — as duas, nunca uma OU outra.
+    expect(cv1.empresa).toMatchObject({ razao: "ACME" });
+  });
+
+  it("⚠ fio da fila não tem contato — e isso é `null`, não um nome inventado", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas");
+    const cv3 = r.body.conversas.find((c) => c.id === "cv3");
+    expect(cv3.contato).toBeNull();
+    expect(cv3.empresa).toBeNull();
+  });
+
+  it("⚠ o casamento é (empresa, telefone) — contato de OUTRA empresa não cola no fio", async () => {
+    prisma.contatoWhatsapp.findMany.mockResolvedValueOnce([
+      { id: "ctt9", nome: "Alguém de outra empresa", papel: null, portalClientId: "pc-9", telefoneE164: "5521999998888" },
+    ]);
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas");
+    expect(r.body.conversas.find((c) => c.id === "cv1").contato).toBeNull();
+  });
+});
+
+describe("⚠ filtro por empresa", () => {
+  it("traz só os fios daquela empresa — e a fila NÃO entra", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas?empresa=pc-1");
+    expect(r.status).toBe(200);
+    expect(r.body.conversas.map((c) => c.id)).toEqual(["cv1"]);
+  });
+
+  it("⚠⚠ empresa FORA da carteira não vaza — resultado vazio, pela mesma regra que já protege", async () => {
+    // `pc-9` existe e não está em `empresasVisiveis` deste usuário.
+    const r = await request(montarApp({ id: "u-staff-ish", role: "contador", accountType: "FIRM" }))
+      .get("/firm/whatsapp/conversas?empresa=pc-9");
+    expect(r.status).toBe(200);
+    expect(r.body.conversas).toEqual([]);
+  });
+
+  it("⚠ empresa + fila é contradição, e a recusa é NOMEADA", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas?empresa=pc-1&filtro=nao-vinculadas");
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("filtro_incompativel");
+  });
+});
+
+describe("⚠⚠ o limite para de truncar em silêncio", () => {
+  it("com mais conversas do que o limite, `temMais` é true e a lista fica no limite", async () => {
+    const muitas = Array.from({ length: 201 }, (_, i) => ({ ...FIO_DA_CARTEIRA, id: `x${i}` }));
+    prisma.conversaWhatsapp.findMany.mockResolvedValueOnce(muitas);
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas");
+    expect(r.body.temMais).toBe(true);
+    expect(r.body.conversas).toHaveLength(200);
+  });
+
+  it("cabendo tudo, `temMais` é false — a tela não avisa o que não existe", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas");
+    expect(r.body.temMais).toBe(false);
+  });
+
+  it("⚠ o fio também: 201 mensagens ⇒ `temMais` e 200 na tela", async () => {
+    const muitas = Array.from({ length: 201 }, (_, i) => ({
+      id: `m${i}`, direcao: "in", tipo: "text", corpo: "oi", autor: null, registradaEm: new Date(),
+    }));
+    listarMensagens.mockResolvedValueOnce(muitas);
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas/cv1/mensagens");
+    expect(r.body.temMais).toBe(true);
+    expect(r.body.mensagens).toHaveLength(200);
   });
 });

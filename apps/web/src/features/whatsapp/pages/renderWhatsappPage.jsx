@@ -7,23 +7,32 @@
 // resumido: empresa + nome + opt-in + pessoa do portal).
 //
 // A regra mora em `../lib/conversasTela.js`. Cores por token; âmbar é pendência, nunca decoração.
+//
+// ⚠ O FIO saiu daqui em 06/09/2026 (`../components/FioDaConversa.jsx`): ele ganhou um segundo
+// consumidor — a mesma conversa dentro da empresa, ao lado das Anotações. `LinhaConversa` e
+// `FormVincular` FICARAM, e por motivo: lá dentro a empresa é a mesma em toda linha (seria ruído)
+// e o vínculo não existe (`portalClientId` nunca é nulo ali).
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
 import { Feedback } from "../../../components/ui/Feedback";
 import { useConversasWhatsapp } from "../hooks/useConversasWhatsapp";
-import { FILTROS, SITUACAO_FIO, situacaoDoFio, rotuloDaSituacao, rotuloDoAutor, estadoDaResposta, fmtDataHora, fraseDoConsumo, ordenarConversas } from "../lib/conversasTela";
+import { FioDaConversa, LinhaDaEmpresa, NomeDaPessoa, campo } from "../components/FioDaConversa";
+import { FILTROS, SITUACAO_FIO, situacaoDoFio, rotuloDaSituacao, fmtDataHora, fraseDoConsumo, ordenarConversas, identidadeDaConversa, frasePaginacao } from "../lib/conversasTela";
 
-const campo = {
-  background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--text)",
-  padding: "8px 10px", fontSize: "0.86rem", fontFamily: "inherit", boxSizing: "border-box", width: "100%",
-};
 const COR_TOM = { aviso: "var(--state-warn)", neutro: "var(--text-muted)" };
 
+// ⚠⚠ QUEM está falando E de QUAL empresa — as duas, nunca uma OU outra.
+//
+// Esta linha fazia `c.empresa?.razao || c.nomePerfilProvedor || c.telefoneMascarado`: um `||`
+// escolhendo entre coisas que não se substituem. Numa conversa de cliente aparecia a EMPRESA e o
+// contador nunca sabia QUEM estava falando; numa da fila aparecia a pessoa e não havia empresa.
+// Hoje são duas linhas: a pessoa em cima (com a origem do nome dita), a empresa embaixo.
 function LinhaConversa({ c, ativa, onAbrir }) {
   const r = rotuloDaSituacao(c);
+  const identidade = identidadeDaConversa(c);
   return (
     <button
       type="button"
@@ -37,11 +46,12 @@ function LinhaConversa({ c, ativa, onAbrir }) {
         background: r.tom === "aviso" ? "var(--state-warn-surface)" : "var(--bg-subtle)", color: "var(--text)",
       }}
     >
-      <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-        <strong style={{ fontSize: "0.88rem" }}>{c.empresa?.razao || c.nomePerfilProvedor || c.telefoneMascarado}</strong>
+      <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+        <NomeDaPessoa identidade={identidade} />
         {c.naoLidas > 0 ? <span style={{ fontSize: "0.7rem", color: "var(--accent-purple)", fontWeight: 700 }}>{c.naoLidas} nova{c.naoLidas === 1 ? "" : "s"}</span> : null}
         <span style={{ marginLeft: "auto", fontSize: "0.7rem", color: "var(--text-faint)" }}>{fmtDataHora(c.ultimaMensagem?.registradaEm || c.updatedAt)}</span>
       </div>
+      <div><LinhaDaEmpresa identidade={identidade} /></div>
       <div style={{ fontSize: "0.74rem", color: COR_TOM[r.tom] }}>{c.telefoneMascarado} · {r.texto}{c.pendencia ? ` · pedido ${c.pendencia.codigo} aguardando confirmação` : ""}</div>
       {c.ultimaMensagem?.corpo ? <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.ultimaMensagem.corpo}</div> : null}
     </button>
@@ -96,84 +106,11 @@ function FormVincular({ companies, api, conversaId, onVincular, ocupado }) {
   );
 }
 
-function Fio({ fio, api, companies, hook }) {
-  const { conversa, mensagens } = fio;
-  const [texto, setTexto] = useState("");
-  const [recusa, setRecusa] = useState(null);
-  const situacao = situacaoDoFio(conversa);
-  const resposta = estadoDaResposta(conversa);
-  const nomeDoCliente = conversa?.nomePerfilProvedor || null;
-
-  async function enviar() {
-    const t = texto.trim();
-    if (!t) return;
-    setRecusa(null);
-    const r = await hook.responder(conversa.id, t);
-    if (r?.ok === false) setRecusa(r.erro?.payload?.message || r.erro?.message || "Não foi possível responder.");
-    else setTexto("");
-  }
-
-  return (
-    <div data-testid="fio" style={{ display: "flex", flexDirection: "column", minHeight: 400 }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", marginBottom: 8 }}>
-        <strong style={{ fontSize: "0.95rem" }}>{conversa.empresa?.razao || nomeDoCliente || conversa.telefoneMascarado}</strong>
-        <span style={{ fontSize: "0.76rem", color: COR_TOM[rotuloDaSituacao(conversa).tom] }}>{conversa.telefoneMascarado} · {rotuloDaSituacao(conversa).texto}</span>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          {situacao === SITUACAO_FIO.ASSUMIDA ? (
-            <Button variant="secondary" disabled={hook.ocupado} onClick={() => hook.devolver(conversa.id)} title="O assistente volta a responder neste fio">Devolver à IA</Button>
-          ) : situacao !== SITUACAO_FIO.FILA_SEM_EMPRESA ? (
-            <Button variant="secondary" disabled={hook.ocupado} onClick={() => hook.assumir(conversa.id)} title="Você responde; o assistente fica em silêncio">Assumir</Button>
-          ) : null}
-        </div>
-      </div>
-
-      {conversa.pendencia ? (
-        <div data-testid="pendencia-aberta" style={{ fontSize: "0.78rem", padding: "6px 10px", border: "1px solid var(--state-warn)", background: "var(--state-warn-surface)", borderRadius: "var(--radius-sm)", marginBottom: 8 }}>
-          Pedido aguardando confirmação do cliente: <strong>{conversa.pendencia.tipo}</strong> · código <strong>{conversa.pendencia.codigo}</strong> · expira {fmtDataHora(conversa.pendencia.expiraEm)}.
-        </div>
-      ) : null}
-
-      {situacao === SITUACAO_FIO.FILA_SEM_EMPRESA ? <FormVincular companies={companies} api={api} conversaId={conversa.id} onVincular={hook.vincular} ocupado={hook.ocupado} /> : null}
-
-      <div style={{ flex: 1, overflowY: "auto", padding: "8px 4px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--bg-page)", marginBottom: 8 }}>
-        {mensagens.length === 0 ? <p style={{ color: "var(--text-muted)", fontSize: "0.82rem", margin: 8 }}>Nenhuma mensagem neste fio.</p> : null}
-        {mensagens.map((m) => {
-          const entrada = m.direcao === "in";
-          return (
-            <div key={m.id} data-testid={`balao-${m.id}`} data-autor={m.autor || (entrada ? "cliente" : "sem-autor")} style={{ display: "flex", justifyContent: entrada ? "flex-start" : "flex-end", marginBottom: 6 }}>
-              <div style={{ maxWidth: "78%", padding: "6px 10px", borderRadius: 10, fontSize: "0.82rem", background: entrada ? "var(--bg-subtle)" : "var(--accent-purple-surface)", border: `1px solid ${entrada ? "var(--border)" : "var(--accent-purple-border)"}`, color: "var(--text)" }}>
-                <div style={{ fontSize: "0.68rem", color: "var(--text-faint)", marginBottom: 2 }}>{rotuloDoAutor(m, { nomeDoCliente })} · {fmtDataHora(m.ocorridaEmProvedor || m.registradaEm)}{m.tipo && m.tipo !== "text" ? ` · ${m.tipo}` : ""}</div>
-                <div style={{ whiteSpace: "pre-wrap" }}>{m.corpo || `[${m.tipo || "mensagem"}]`}</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ⚠ A JANELA É DITA ANTES DE DIGITAR: campo desabilitado com o motivo, nunca campo que recusa depois. */}
-      <div>
-        {!resposta.pode ? <p data-testid="resposta-bloqueada" style={{ fontSize: "0.76rem", color: "var(--state-warn)", margin: "0 0 6px" }}>{resposta.motivo}</p> : null}
-        <div style={{ display: "flex", gap: 8 }}>
-          <textarea
-            aria-label="Responder ao cliente"
-            style={{ ...campo, minHeight: 56, resize: "vertical" }}
-            value={texto}
-            onChange={(e) => setTexto(e.target.value)}
-            disabled={!resposta.pode || hook.ocupado}
-            placeholder={resposta.pode ? "Escreva a resposta — sai como mensagem do escritório" : "Fora da janela de 24h"}
-          />
-          <Button variant="primary" disabled={!resposta.pode || !texto.trim() || hook.ocupado} onClick={enviar}>Responder</Button>
-        </div>
-        {recusa ? <p role="alert" style={{ fontSize: "0.76rem", color: "var(--state-danger)", margin: "6px 0 0" }}>{recusa}</p> : null}
-      </div>
-    </div>
-  );
-}
-
 export function WhatsappPage({ api, companies = [], onBack, message, error }) {
   const hook = useConversasWhatsapp({ api, feedback: null });
   const lista = useMemo(() => ordenarConversas(hook.conversas), [hook.conversas]);
   const fila = lista.filter((c) => situacaoDoFio(c) === SITUACAO_FIO.FILA_SEM_EMPRESA).length;
+  const avisoDaLista = frasePaginacao(hook.temMais);
 
   return (
     <PageShell
@@ -202,10 +139,21 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
           <div>
             {!hook.carregando && !hook.erro && lista.length === 0 ? <p style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Nenhuma conversa neste filtro.</p> : null}
             {lista.map((c) => <LinhaConversa key={c.id} c={c} ativa={hook.aberta?.conversa?.id === c.id} onAbrir={hook.abrir} />)}
+            {/* ⚠ A lista também pode estar cortada, e o corte é DITO — não se conclui do silêncio. */}
+            {lista.length > 0 && avisoDaLista ? (
+              <p data-testid="aviso-paginacao-lista" style={{ fontSize: "0.72rem", color: "var(--text-faint)", margin: "8px 2px 0" }}>{avisoDaLista}</p>
+            ) : null}
           </div>
           <div>
             {hook.carregandoFio ? <p style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Abrindo o fio…</p> : null}
-            {hook.aberta ? <Fio fio={hook.aberta} api={api} companies={companies} hook={hook} /> : (
+            {hook.aberta ? (
+              <FioDaConversa
+                fio={hook.aberta}
+                hook={hook}
+                temMais={hook.temMaisNoFio}
+                slotVincular={<FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa?.id} onVincular={hook.vincular} ocupado={hook.ocupado} />}
+              />
+            ) : (
               <p style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Escolha uma conversa à esquerda.</p>
             )}
           </div>

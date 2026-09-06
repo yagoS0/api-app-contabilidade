@@ -15,6 +15,60 @@ export const FILTROS = Object.freeze([
   { valor: "atendidas-por-mim", rotulo: "Assumidas por mim" },
 ]);
 
+/**
+ * ⚠⚠ QUEM ESTÁ FALANDO, E DE QUAL EMPRESA — as duas, nunca uma OU outra (06/09/2026).
+ *
+ * A linha da lista fazia isto:
+ *
+ *     {c.empresa?.razao || c.nomePerfilProvedor || c.telefoneMascarado}
+ *
+ * Um `||` escolhendo entre coisas que **não se substituem**. Numa conversa de cliente aparecia a
+ * EMPRESA e o contador **nunca sabia quem estava falando**; numa da fila aparecia a pessoa e não
+ * havia empresa. São duas perguntas — *quem* e *de quem* — e a linha respondia só uma.
+ *
+ * ⚠ A ORDEM DO NOME TEM AUTORIDADE: o do CADASTRO primeiro. `nomePerfilProvedor` é o nome que a
+ * **própria pessoa** escreveu no aparelho dela — pode ser "Financeiro", pode ser qualquer coisa — e
+ * é por isso que ele nunca casa contato no vínculo. Aqui ele serve para exibir, e sai **marcado**
+ * em `origemDoNome`, para a tela poder dizer que aquele não é o nome que o escritório cadastrou.
+ *
+ * ⚠ Sem empresa não se inventa nada: `semEmpresa: true` é o estado da fila, e ele é dito.
+ */
+export const ORIGEM_DO_NOME = Object.freeze({
+  CADASTRO: "CADASTRO",
+  PERFIL: "PERFIL",
+  TELEFONE: "TELEFONE",
+});
+
+export const FRASE_ORIGEM_DO_NOME = Object.freeze({
+  [ORIGEM_DO_NOME.CADASTRO]: null,
+  [ORIGEM_DO_NOME.PERFIL]: "nome do perfil do WhatsApp, não do cadastro",
+  [ORIGEM_DO_NOME.TELEFONE]: "sem nome — nem cadastrado, nem no perfil",
+});
+
+export function identidadeDaConversa(c) {
+  const doCadastro = String(c?.contato?.nome || "").trim();
+  const doPerfil = String(c?.nomePerfilProvedor || "").trim();
+  const telefone = c?.telefoneMascarado || "número desconhecido";
+
+  const pessoa = doCadastro || doPerfil || telefone;
+  const origemDoNome = doCadastro
+    ? ORIGEM_DO_NOME.CADASTRO
+    : (doPerfil ? ORIGEM_DO_NOME.PERFIL : ORIGEM_DO_NOME.TELEFONE);
+
+  const razao = String(c?.empresa?.razao || "").trim();
+  return {
+    pessoa,
+    origemDoNome,
+    avisoDoNome: FRASE_ORIGEM_DO_NOME[origemDoNome],
+    papel: String(c?.contato?.papel || "").trim() || null,
+    empresa: razao || null,
+    cnpj: c?.empresa?.cnpj || null,
+    semEmpresa: !razao,
+    // A frase da segunda linha: a empresa, ou o estado da fila dito com todas as letras.
+    linhaDaEmpresa: razao || "sem empresa — número novo",
+  };
+}
+
 export const SITUACAO_FIO = Object.freeze({
   FILA_SEM_EMPRESA: "FILA_SEM_EMPRESA",
   FILA_DO_ESCRITORIO: "FILA_DO_ESCRITORIO",
@@ -85,4 +139,44 @@ export function fraseDoConsumo(consumo) {
 export function ordenarConversas(lista) {
   const peso = (c) => (situacaoDoFio(c) === SITUACAO_FIO.FILA_SEM_EMPRESA || situacaoDoFio(c) === SITUACAO_FIO.FILA_DO_ESCRITORIO ? 0 : 1);
   return [...(lista || [])].sort((a, b) => peso(a) - peso(b) || new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+}
+
+
+/**
+ * ⚠ O QUE VEIO, quando não é texto.
+ *
+ * O webhook grava **todo** tipo de mensagem com o `tipo` cru da Meta e o ponteiro da mídia — mas
+ * este sistema **ainda não baixa arquivo**, então o balão mostrava `[image]`, que não é frase nem
+ * explicação. Aqui ele vira uma frase que diz o que chegou **e** que não dá para abrir ainda.
+ *
+ * ⚠ Lista FECHADA: tipo que a Meta inventar amanhã aparece **como veio**, nunca vira o nome do
+ * vizinho mais parecido.
+ */
+const MIDIA = Object.freeze({
+  image: "imagem",
+  audio: "áudio",
+  video: "vídeo",
+  document: "documento",
+  sticker: "figurinha",
+  location: "localização",
+  contacts: "contato",
+});
+
+export function descricaoDaMidia(m) {
+  const tipo = String(m?.tipo || "").toLowerCase();
+  if (tipo === "text" || tipo === "template") return null;
+  const nome = MIDIA[tipo];
+  if (!nome) return `mensagem de tipo "${tipo || "desconhecido"}" — não sei exibir`;
+  return `📎 ${nome} — este sistema ainda não baixa arquivos do WhatsApp`;
+}
+
+/**
+ * ⚠⚠ A CONVERSA PODE SER MAIOR DO QUE A TELA MOSTRA, e isso precisa ser DITO.
+ *
+ * `temMais` ausente é servidor antigo — e aí a resposta honesta não é "não há mais", é "não sei".
+ */
+export function frasePaginacao(temMais) {
+  if (temMais === true) return "Há mensagens mais antigas que não foram carregadas.";
+  if (temMais === false) return null;
+  return "Não dá para afirmar que esta é a conversa inteira.";
 }

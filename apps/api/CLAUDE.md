@@ -4422,6 +4422,39 @@ empresa no piloto **e** `VINCULADO` **e** não assumida por humano **e** texto; 
 ⚠ `atendidaDesde` **sem** `atendidaPor` = "o assistente chamou o escritório" (a ferramenta
 `chamar_escritorio`); a IA cala nos dois casos.
 
+#### ⚠⚠ A LISTAGEM DE CONVERSAS MUDOU EM 06/09/2026 (F1 do plano de comunicação)
+
+Três acréscimos, e nenhuma rota nova — a mesma listagem serve a caixa geral e a conversa **dentro da
+empresa** (é o pedido do dono: chat ao lado das anotações). Rota nova em
+`/firm/companies/:id/whatsapp/*` foi **recusada**: montada ali ela herdaria o middleware por posição,
+e `somenteAdminOuContador` × `requireFirmCompanyAccess` são **dois eixos de autorização diferentes**.
+
+- **`?empresa=<portalClientId>`**, ortogonal ao `?filtro=`. ⚠⚠ Ele é **INTERSECTADO** com
+  `empresasVisiveis(req)`, nunca somado: empresa fora da carteira devolve **lista vazia pela mesma
+  regra que já protege o resto**, não por um `if` novo. Somar seria a forma de um parâmetro de query
+  ampliar o que o usuário enxerga. ⚠ Com empresa escolhida a **fila** (sem empresa) não entra, e
+  `?empresa` + `filtro=nao-vinculadas` é contradição — **400 `filtro_incompativel`**, recusa nomeada
+  em vez de ignorar um dos dois em silêncio.
+- **`contato: { id, nome, papel } | null`** por conversa. ⚠⚠ Sem ele o **nome do cadastro não existia
+  no payload** e a tela ficava presa ao `nomePerfilProvedor` — que é o nome que a PRÓPRIA PESSOA
+  escreveu no aparelho dela. O casamento é `(portalClientId, telefoneE164)`, a mesma chave única do
+  cadastro, dígito a dígito; **uma** `contatoWhatsapp.findMany` para a página inteira, no molde de
+  `enviosPorGuia`. ⚠ Fio sem empresa é `null` por construção — nunca um nome deduzido.
+- ⚠⚠ **`take: 200` PAROU DE MENTIR.** Um fio com 300 mensagens mostrava 200 **sem avisar**, e o
+  contador lia como se fosse a conversa inteira — ausência virando afirmação. Hoje é
+  `take: LIMITE + 1` (`LIMITE_CONVERSAS` / `LIMITE_MENSAGENS`) + **`temMais`** na lista **e** no fio,
+  e a tela diz. ⚠ Cursor de verdade fica **nomeado** para quando existir conversa longa; o que não se
+  podia era continuar cortando calado. ⚠ E `temMais` **ausente** (servidor antigo) não vira "não há
+  mais": a tela responde *"não dá para afirmar que esta é a conversa inteira"*.
+- **`temMidia`** por mensagem — só o **ponteiro** (`midiaProvedorId`), nunca uma URL: a da Meta expira
+  e este sistema ainda não baixa arquivo. É o que permite ao balão dizer *"veio uma imagem"* em vez
+  de `[image]`.
+
+⚠ **Experimentos executados**: tirar a interseção de `?empresa` com a carteira ⇒ **1 vermelho**;
+cravar `temMais = false` ⇒ **1**. ⚠ O dublê do Prisma passou a **honrar o `where`** de
+`conversaWhatsapp.findMany` — sem isso o filtro por empresa "passaria" no teste devolvendo tudo, e a
+guarda de isolamento não teria prova nenhuma. **19 testes** na rota.
+
 ### Flags e variáveis (todas nascem OFF/vazias)
 
 `INTEGRACAO_WHATSAPP_IA` · `IA_EMPRESAS_PILOTO` (CSV de `portalClientId`; **vazio = ninguém**) ·

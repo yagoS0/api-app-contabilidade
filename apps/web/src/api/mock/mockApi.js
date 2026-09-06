@@ -1013,7 +1013,34 @@ const mockConversasWhatsapp = [
       { id: "mock-m-10", direcao: "out", tipo: "text", corpo: "Não reconheci este número em nenhuma empresa. O escritório vai conferir o cadastro e responder por aqui.", autor: "SISTEMA", providerMessageId: "wamid.10", ocorridaEmProvedor: null, registradaEm: haMs(30 * 60_000) },
     ],
   },
+  {
+    // 4) ⚠ SEGUNDO fio da MESMA empresa do fio 1 — sem ele, "uma empresa com dois contatos falando"
+    // é inalcançavel offline, e o seletor de contato da aba (F2) nasceria sem ramo para exercer.
+    // O telefone casa com `mock-ctt-2` ("Financeiro"), então aqui o nome vem do CADASTRO e o do
+    // perfil ("Fin. Empresa 1") DIVERGE dele — que e exatamente o par que a tela precisa distinguir.
+    id: "mock-cv-4", telefoneE164: "552198887777", nomePerfilProvedor: "Fin. Empresa 1", portalClientId: PRIMEIRA_EMPRESA_MOCK,
+    empresa: { id: PRIMEIRA_EMPRESA_MOCK, razao: mockCompanies[0]?.razao || "Empresa 1", cnpj: mockCompanies[0]?.cnpj || "" },
+    atendidaPor: null, atendente: null, atendidaDesde: null, lidaAteEm: null, updatedAt: haMs(45 * 60_000),
+    janela: { situacao: "ABERTA", permite: "TEXTO_LIVRE", expiraEm: new Date(AGORA_MOCK + 22 * 3600_000).toISOString(), avisos: [] },
+    pendencia: null,
+    mensagens: [
+      // ⚠ A MENSAGEM DE MÍDIA — o uso mais comum num escritorio (o cliente fotografa um documento).
+      // Ela so tem o PONTEIRO (`midiaProvedorId`): este sistema ainda nao baixa arquivo, e o balao
+      // dizia `[image]`. Sem esta linha o ramo de `descricaoDaMidia` nao existe offline.
+      { id: "mock-m-11", direcao: "in", tipo: "image", corpo: null, autor: null, providerMessageId: "wamid.11", midiaProvedorId: "media-mock-1", ocorridaEmProvedor: haMs(50 * 60_000), registradaEm: haMs(50 * 60_000) },
+      { id: "mock-m-12", direcao: "in", tipo: "text", corpo: "mandei a foto do boleto que chegou aqui", autor: null, providerMessageId: "wamid.12", ocorridaEmProvedor: haMs(45 * 60_000), registradaEm: haMs(45 * 60_000) },
+    ],
+  },
 ];
+
+// ⚠ O NOME DO CADASTRO, casado como no servidor: `(portalClientId, telefoneE164)`, digito a digito.
+// Fio sem empresa nao tem contato por construcao — e isso e `null`, nunca um nome deduzido.
+function contatoDoMock(c) {
+  if (!c.portalClientId) return null;
+  const k = (mockContatosWhatsapp[c.portalClientId] || []).find((x) => x.telefoneE164 === c.telefoneE164);
+  return k ? { id: k.id, nome: k.nome, papel: k.papel || null } : null;
+}
+
 function resumoMockDaConversa(c) {
   const ultima = c.mensagens[c.mensagens.length - 1] || null;
   const naoLidas = c.mensagens.filter((m) => m.direcao === "in" && (!c.lidaAteEm || m.registradaEm > c.lidaAteEm)).length;
@@ -1024,6 +1051,7 @@ function resumoMockDaConversa(c) {
     naFilaDoEscritorio: Boolean(c.atendidaDesde && !c.atendidaPor), lidaAteEm: c.lidaAteEm, updatedAt: c.updatedAt,
     ultimaMensagem: ultima ? { direcao: ultima.direcao, tipo: ultima.tipo, corpo: ultima.corpo, registradaEm: ultima.registradaEm, autor: ultima.autor } : null,
     naoLidas, janela: c.janela, pendencia: c.pendencia, vinculo: c.portalClientId ? null : (c.vinculo || null),
+    contato: contatoDoMock(c),
   };
 }
 
@@ -7452,20 +7480,29 @@ export function createMockApi() {
     // ── AS CONVERSAS DE WHATSAPP (F5) — o MESMO contrato de `realApi` ─────────────────────────
     // ⚠ TRÊS fios, os três ramos: vinculado COM a IA (pendência aberta, janela aberta), vinculado
     // ASSUMIDO (janela EXPIRADA — responder é recusado ANTES de digitar), e NÃO vinculado (a fila).
-    async listarConversasWhatsapp(filtro = "todas") {
+    async listarConversasWhatsapp(filtro = "todas", { empresa = null } = {}) {
       await delay(120);
+      // ⚠ `empresa` + `nao-vinculadas` e contradicao (aquele filtro E, por definicao, o sem
+      // empresa): o servidor recusa NOMEADO, e o mock recusa igual — mock permissivo esconde ramo.
+      if (empresa && filtro === "nao-vinculadas") {
+        const e = new Error("A fila de não vinculadas é, por definição, sem empresa — não dá para filtrá-la por empresa.");
+        e.status = 400; e.code = "filtro_incompativel"; throw e;
+      }
       const todas = mockConversasWhatsapp.map((c) => resumoMockDaConversa(c));
-      const lista = filtro === "nao-vinculadas" ? todas.filter((c) => !c.portalClientId)
+      const doFiltro = filtro === "nao-vinculadas" ? todas.filter((c) => !c.portalClientId)
         : filtro === "atendidas-por-mim" ? todas.filter((c) => c.atendidaPor === "mock-user-1")
           : todas;
-      return { ok: true, filtro, conversas: lista, consumoIa: { desde: "2026-09-01T03:00:00.000Z", moeda: "USD", estimativa: true, escritorio: { centavos: 137, chamadas: 12, teto: 6000, restantes: 5863, fracao: 0.02, alerta: false, estourado: false }, empresa: null } };
+      // Com empresa escolhida a fila (sem empresa) nao entra: ela nao e daquela empresa.
+      const lista = empresa ? doFiltro.filter((c) => c.portalClientId === String(empresa)) : doFiltro;
+      return { ok: true, filtro, empresa, conversas: lista, temMais: false, consumoIa: { desde: "2026-09-01T03:00:00.000Z", moeda: "USD", estimativa: true, escritorio: { centavos: 137, chamadas: 12, teto: 6000, restantes: 5863, fracao: 0.02, alerta: false, estourado: false }, empresa: null } };
     },
     async getMensagensWhatsapp(conversaId) {
       await delay(100);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; e.code = "conversa_nao_encontrada"; throw e; }
       c.lidaAteEm = new Date().toISOString();
-      return { ok: true, conversa: resumoMockDaConversa(c), mensagens: c.mensagens.map((m) => ({ ...m })) };
+      // ⚠ `temMidia` e o PONTEIRO, nunca uma URL — a da Meta expira e nao baixamos arquivo ainda.
+      return { ok: true, conversa: resumoMockDaConversa(c), temMais: false, mensagens: c.mensagens.map((m) => ({ ...m, temMidia: Boolean(m.midiaProvedorId) })) };
     },
     async assumirConversaWhatsapp(conversaId) {
       await delay(80);
