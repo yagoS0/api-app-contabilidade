@@ -68,3 +68,21 @@ Após a liberação do ambiente, `npm run build -w @contabilidade/web` também p
 6. A leitura das métricas de produção previstas no plano só cabe depois de um deploy. Não foi realizada nesta sessão. O agregado F5 cobre conversas e mensagens não lidas; a medição semanal de mídia não foi adicionada.
 
 Para demonstrar falha do resumo no mock, abrir `/companies?mockWhatsappResumo=falha` ou definir `localStorage['mock:whatsapp:falhaResumo'] = '1'`. Rascunhos de demonstração usam a chave `mock:onboardings:v1` de sessionStorage.
+
+## Desbloqueio de CI na integração
+
+A revisão independente confirmou dois erros anteriores a F4/F5: Prisma validate falhava
+por DATABASE_URL ausente, e o workflow de deploy usava secrets diretamente em `if`.
+A validação estática recebe agora uma URL fictícia local somente naquele passo; ela não
+conecta ao banco. O deploy testa um booleano em env e continua usando o secret real no
+passo de migration status. Nenhuma credencial ou configuração remota foi criada.
+
+A auditoria de migrations reconhece agora o caminho exato de
+`20260902140000_drop_declarado_previsto_no_fluxo`, cuja remoção já tinha decisão do dono
+registrada no SQL e no histórico. O arquivo SQL e as regras gerais da auditoria não
+foram alterados. Experimento com DROP COLUMN em caminho não autorizado continuou
+falhando. Prisma validate, auditoria e actionlint dos dois workflows passaram localmente.
+
+O gate de migration status continua opcional quando DATABASE_URL não está configurado,
+conforme o contrato anterior do workflow. Aprovação do CI não comprova a disponibilidade
+de secrets DigitalOcean nem a conclusão do deploy; esses resultados são conferidos à parte.

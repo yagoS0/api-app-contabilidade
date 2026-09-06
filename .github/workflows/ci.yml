@@ -23,6 +23,9 @@ jobs:
         run: npm ci
 
       - name: Prisma schema validate
+        env:
+          # validate only reads the schema; it does not connect to a database.
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/schema_validation
         run: npx prisma validate --schema apps/api/prisma/schema.prisma
 
       - name: Audit migrations for destructive SQL
