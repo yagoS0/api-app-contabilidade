@@ -7480,6 +7480,19 @@ export function createMockApi() {
     // ── AS CONVERSAS DE WHATSAPP (F5) — o MESMO contrato de `realApi` ─────────────────────────
     // ⚠ TRÊS fios, os três ramos: vinculado COM a IA (pendência aberta, janela aberta), vinculado
     // ASSUMIDO (janela EXPIRADA — responder é recusado ANTES de digitar), e NÃO vinculado (a fila).
+    async getResumoWhatsapp() {
+      await delay(100);
+      if ((typeof localStorage !== "undefined" && localStorage.getItem("mock:whatsapp:falhaResumo") === "1") || (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mockWhatsappResumo") === "falha")) {
+        throw new Error("Não foi possível ler o resumo do WhatsApp.");
+      }
+      const itens = mockConversasWhatsapp.map((c) => resumoMockDaConversa(c));
+      return { ok: true, resumo: {
+        conversas: itens.length,
+        naoVinculadas: itens.filter((c) => !c.portalClientId).length,
+        conversasNaoLidas: itens.filter((c) => c.naoLidas > 0).length,
+        mensagensNaoLidas: itens.reduce((s, c) => s + c.naoLidas, 0),
+      } };
+    },
     async listarConversasWhatsapp(filtro = "todas", { empresa = null } = {}) {
       await delay(120);
       // ⚠ `empresa` + `nao-vinculadas` e contradicao (aquele filtro E, por definicao, o sem

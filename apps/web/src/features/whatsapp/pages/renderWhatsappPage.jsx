@@ -133,7 +133,7 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
           <span data-testid="consumo-ia" style={{ marginLeft: "auto" }}>{fraseDoConsumo(hook.consumoIa)}</span>
         </div>
 
-        {hook.erro && !hook.conversas.length ? (
+        {hook.erro ? (
           <p role="status" style={{ color: "var(--state-warn)", fontSize: "0.82rem" }}>Não foi possível ler as conversas{hook.erro.mensagem ? `: ${hook.erro.mensagem}` : ""}. A lista pode existir e não ter sido carregada.</p>
         ) : null}
 
@@ -147,9 +147,11 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
             ) : null}
           </div>
           <div>
+            {hook.erroFio ? <p role="alert">Não foi possível atualizar a conversa: {hook.erroFio}</p> : null}
             {hook.carregandoFio ? <p style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Abrindo o fio…</p> : null}
             {hook.aberta ? (
               <FioDaConversa
+                key={hook.aberta.conversa.id}
                 fio={hook.aberta}
                 hook={hook}
                 temMais={hook.temMaisNoFio}

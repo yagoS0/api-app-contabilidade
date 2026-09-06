@@ -34,6 +34,7 @@ import { WhatsappCloudClient, WhatsappError, mascararTelefone } from "../../appl
 import { baixarBuffer, CompanyDocumentError } from "../../application/companies/CompanyDocumentsService.js";
 import { pendenciaAberta } from "../../application/assistente/AcoesPendentesService.js";
 import { consumoIaDoMes } from "../../application/assistente/GuardaIaService.js";
+import { resumoWhatsapp } from "../../application/whatsapp/resumoWhatsapp.js";
 
 export const AUTOR_HUMANO = "HUMANO";
 
@@ -105,6 +106,16 @@ function resumoDaConversa(c, { ultima = null, janela = null, pendencia = null, n
 
 export function createWhatsappConversasRouter({ log, client = prisma, cloud = null } = {}) {
   const router = Router({ mergeParams: true });
+
+  router.get("/whatsapp/resumo", async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return undefined;
+    try {
+      const resumo = await resumoWhatsapp(await empresasVisiveis(req), { client });
+      return res.json({ ok: true, resumo });
+    } catch (err) {
+      return falhar(res, err, { operacao: "resumo" });
+    }
+  });
 
   function falhar(res, err, contexto) {
     if (err instanceof ConversaWhatsappError || err instanceof ContatoWhatsappError) {
@@ -225,13 +236,19 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       // fila do escritório, e o escritório inteiro o lê — só admin|contador chegam aqui.
       // ⚠ UM a mais do que se mostra — ver `LIMITE_MENSAGENS`. Um fio com 300 mensagens mostrava 200
       // sem avisar, e o contador lia como se fosse a conversa inteira.
+      const lidaAteEm = new Date();
       const achadas = conversa.portalClientId
         ? await listarMensagens({ portalClientId: conversa.portalClientId, conversaId: conversa.id, limite: LIMITE_MENSAGENS + 1 })
         : await client.mensagemWhatsapp.findMany({ where: { conversaId: conversa.id }, orderBy: { registradaEm: "desc" }, take: LIMITE_MENSAGENS + 1 });
       const temMais = achadas.length > LIMITE_MENSAGENS;
       const mensagens = temMais ? achadas.slice(0, LIMITE_MENSAGENS) : achadas;
       const [janela, pendencia] = await Promise.all([janelaDaConversa(conversa.id), pendenciaAberta(conversa.id, { client })]);
-      await client.conversaWhatsapp.update({ where: { id: conversa.id }, data: { lidaAteEm: new Date() } }).catch(() => {});
+      // Mensagens que chegarem durante a leitura continuam não lidas; erro de gravação é dito.
+      // Uma leitura lenta não pode recuar a marca gravada por outra aba ou atendente.
+      await client.conversaWhatsapp.updateMany({
+        where: { id: conversa.id, OR: [{ lidaAteEm: null }, { lidaAteEm: { lt: lidaAteEm } }] },
+        data: { lidaAteEm },
+      });
       // ⚠ O contato também aqui: abrir a conversa precisa dizer QUEM está falando, não só de qual
       // empresa. Uma consulta, e só quando há empresa (fio da fila não tem cadastro por construção).
       const contato = conversa.portalClientId

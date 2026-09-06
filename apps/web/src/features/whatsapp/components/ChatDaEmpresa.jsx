@@ -34,11 +34,14 @@ export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao
   // `aberta` não muda e o efeito rodaria de novo para sempre — o mesmo id não é tentado duas vezes.
   const tentado = useRef(null);
   const abrir = hook.abrir;
+  useEffect(() => { setEscolhido(null); tentado.current = null; }, [api, companyId]);
   useEffect(() => {
+    // A lista pode mudar de ordem sem trocar o destinatário ou descartar o rascunho.
+    if (fio?.id && escolhido !== fio.id) setEscolhido(fio.id);
     if (!fio?.id || aberto || tentado.current === fio.id) return;
     tentado.current = fio.id;
     abrir(fio.id);
-  }, [fio?.id, aberto, abrir]);
+  }, [fio?.id, escolhido, aberto, abrir]);
 
   return (
     <section data-testid="chat-da-empresa" style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
@@ -68,7 +71,7 @@ export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao
       ) : null}
 
       {/* ⚠ Falha de carga NÃO é "não há conversa": a lista pode existir e não ter sido lida. */}
-      {hook.erro && !fios.length ? (
+      {hook.erro ? (
         <p role="status" data-testid="chat-falha" style={{ color: "var(--state-warn)", fontSize: "0.82rem" }}>
           Não foi possível ler as conversas desta empresa{hook.erro.mensagem ? `: ${hook.erro.mensagem}` : ""}. Não dá para afirmar que não há nenhuma.
         </p>
@@ -84,12 +87,17 @@ export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao
           <div style={{ display: "flex", gap: 6, alignItems: "baseline", flexWrap: "wrap", marginBottom: 6 }}>
             <NomeDaPessoa identidade={identidadeDaConversa(fio)} />
           </div>
-          <p data-testid="chat-abrindo" style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Abrindo a conversa…</p>
+          {hook.carregandoFio ? <p data-testid="chat-abrindo" style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Abrindo a conversa…</p> : null}
         </div>
       ) : null}
 
+      {hook.erroFio ? <div role="alert">
+        <p>Não foi possível atualizar a conversa: {hook.erroFio}</p>
+        {fio ? <button type="button" disabled={hook.carregandoFio} onClick={() => hook.abrir(fio.id)}>Tentar abrir novamente</button> : null}
+      </div> : null}
       {aberto ? (
         <FioDaConversa
+          key={aberto.conversa.id}
           fio={aberto}
           hook={hook}
           temMais={hook.temMaisNoFio}

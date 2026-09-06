@@ -1507,3 +1507,6 @@ que já é dona da **KLAUS NIGRO**. Ele fazia o que descreveu, e a edição recu
 ⚠ **O ramo "empresa sem responsável" NÃO é alcançável no mock** (as 6 têm dono) — oitava vez que o
 mock esconde um ramo neste projeto. Ele é coberto por teste em
 `lib/portal/__tests__/responsavelCompartilhado.test.js`, não pelo navegador.
+
+## WhatsApp na home (F5, 06/09/2026)
+Resumo agregado com selo de não lidas na gaveta e ponto no botão. Falha é null, sem selo; nunca zero. Polling para com a aba oculta. Detalhes e verificação: docs/whatsapp-central-retomada.md na raiz.

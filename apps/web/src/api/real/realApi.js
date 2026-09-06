@@ -965,6 +965,9 @@ export function createRealApi() {
     // ── AS CONVERSAS DE WHATSAPP (F5) — contrato LIDO de `routes/firm/whatsappConversas.js` ──────
     // ⚠ `empresa` e ORTOGONAL ao `filtro`, e o servidor o INTERSECTA com a carteira (nunca soma):
     // empresa fora do escopo devolve lista vazia pela MESMA regra que ja protege o resto.
+    async getResumoWhatsapp() {
+      return request("/firm/whatsapp/resumo");
+    },
     async listarConversasWhatsapp(filtro = "todas", { empresa = null } = {}) {
       const qs = new URLSearchParams({ filtro: String(filtro) });
       if (empresa) qs.set("empresa", String(empresa));

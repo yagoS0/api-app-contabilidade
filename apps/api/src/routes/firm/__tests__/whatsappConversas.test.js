@@ -39,6 +39,14 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
         return take ? achadas.slice(0, take) : achadas;
       }),
       update: jest.fn(async ({ where, data }) => Object.assign(mockConversas.get(where.id), data)),
+      updateMany: jest.fn(async ({ where, data }) => {
+        const conversa = mockConversas.get(where.id);
+        if (!conversa || !where.OR.some((condicao) => condicao.lidaAteEm === null
+          ? conversa.lidaAteEm === null
+          : conversa.lidaAteEm !== null && conversa.lidaAteEm < condicao.lidaAteEm.lt)) return { count: 0 };
+        Object.assign(conversa, data);
+        return { count: 1 };
+      }),
     },
     mensagemWhatsapp: { findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
     // ⚠ O nome do CADASTRO passou a viajar no payload (06/09/2026): a linha da lista precisa dizer
@@ -113,7 +121,7 @@ beforeEach(() => {
   registrarMensagemEnviada.mockClear();
   salvarContato.mockClear();
   mockCenario.janela = { situacao: "ABERTA", permite: "TEXTO_LIVRE", expiraEm: null, avisos: [] };
-  Object.assign(mockConversas.get("cv1"), { atendidaPor: null, atendidaDesde: null });
+  Object.assign(mockConversas.get("cv1"), { atendidaPor: null, atendidaDesde: null, lidaAteEm: null });
 });
 
 describe("papel", () => {
@@ -146,6 +154,51 @@ describe("a lista e o fio", () => {
     expect(r.status).toBe(200);
     expect(r.body.mensagens[0]).toMatchObject({ id: "m1", direcao: "in", corpo: "oi" });
     expect(mockConversas.get("cv1").lidaAteEm).toBeInstanceOf(Date);
+  });
+});
+
+describe("marca de leitura", () => {
+  afterEach(() => jest.useRealTimers());
+
+  it("uma leitura lenta não recua a marca de outra leitura que terminou antes", async () => {
+    jest.useFakeTimers({ doNotFake: ["nextTick", "setImmediate", "setTimeout", "clearTimeout", "hrtime", "performance"] });
+    const inicioAntigo = new Date("2026-09-06T12:00:00Z");
+    const inicioNovo = new Date("2026-09-06T12:00:10Z");
+    jest.setSystemTime(inicioAntigo);
+    let avisarInicio;
+    let liberarAntiga;
+    const iniciou = new Promise((resolve) => { avisarInicio = resolve; });
+    const bloqueio = new Promise((resolve) => { liberarAntiga = resolve; });
+    listarMensagens.mockImplementationOnce(async () => { avisarInicio(); return bloqueio; });
+    const app = montarApp();
+    const antiga = request(app).get("/firm/whatsapp/conversas/cv1/mensagens").then((r) => r);
+    await iniciou;
+    jest.setSystemTime(inicioNovo);
+    const nova = await request(app).get("/firm/whatsapp/conversas/cv1/mensagens");
+    expect(nova.status).toBe(200);
+    expect(mockConversas.get("cv1").lidaAteEm).toEqual(inicioNovo);
+    liberarAntiga([]);
+    expect((await antiga).status).toBe(200);
+    expect(mockConversas.get("cv1").lidaAteEm).toEqual(inicioNovo);
+  });
+
+  it("mantém não lida a mensagem que chega durante a consulta e propaga erro ao gravar", async () => {
+    jest.useFakeTimers({ doNotFake: ["nextTick", "setImmediate", "setTimeout", "clearTimeout", "hrtime", "performance"] });
+    const inicio = new Date("2026-09-06T12:00:00Z");
+    const chegada = new Date("2026-09-06T12:00:10Z");
+    jest.setSystemTime(inicio);
+    listarMensagens.mockImplementationOnce(async () => {
+      jest.setSystemTime(chegada);
+      return [];
+    });
+    const app = montarApp();
+    expect((await request(app).get("/firm/whatsapp/conversas/cv1/mensagens")).status).toBe(200);
+    expect(mockConversas.get("cv1").lidaAteEm).toEqual(inicio);
+    expect(chegada > mockConversas.get("cv1").lidaAteEm).toBe(true);
+    prisma.conversaWhatsapp.updateMany.mockRejectedValueOnce(new Error("falha de gravação"));
+    const falha = await request(app).get("/firm/whatsapp/conversas/cv1/mensagens");
+    expect(falha.status).toBe(500);
+    expect(falha.body.error).toBe("erro_interno");
   });
 });
 
@@ -389,5 +442,22 @@ describe("⚠⚠ a empresa do documento vem do FIO, e o corpo não a escolhe", (
     expect(baixarBuffer).toHaveBeenCalledWith({ portalClientId: "pc-1", documentId: "doc-9" });
     expect(r.status).toBe(404);
     expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+});
+
+describe("resumo do WhatsApp", () => {
+  it("recusa staff antes de agregar", async () => {
+    const r = await request(montarApp({ id: "s", role: "staff" })).get("/firm/whatsapp/resumo");
+    expect(r.status).toBe(403);
+  });
+  it("devolve contagem do banco e falha nunca vira zero", async () => {
+    const resumo = { conversas: 301, naoVinculadas: 2, conversasNaoLidas: 4, mensagensNaoLidas: 8 };
+    prisma.$queryRaw = jest.fn().mockResolvedValue([resumo]);
+    const r = await request(montarApp()).get("/firm/whatsapp/resumo");
+    expect(r.body).toEqual({ ok: true, resumo });
+    expect(prisma.$queryRaw.mock.calls[0][0].values).toEqual(["pc-1"]);
+    prisma.$queryRaw.mockRejectedValueOnce(new Error("offline"));
+    const falha = await request(montarApp()).get("/firm/whatsapp/resumo");
+    expect(falha.status).toBe(500); expect(falha.body.resumo).toBeUndefined();
   });
 });

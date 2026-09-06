@@ -21,6 +21,7 @@ import {
 } from "../lib/abaRegime";
 import { LogoAltan } from "../../../../components/ui/LogoAltan";
 import { liberarComCanais } from "../../../guides/lib/liberarComCanais";
+import { useResumoWhatsapp } from "../../../whatsapp/hooks/useResumoWhatsapp";
 
 // Q17: dropdown — abre um seletor (não navega para um hub).
 //
@@ -121,7 +122,7 @@ function SettingsMenu({ items, label = "Configurações ▾" }) {
  * retorno, quem usa teclado é largado no fim do documento e precisa tabular a página inteira de
  * volta. Fecha por Esc, por clique no fundo e pelo próprio botão.
  */
-function GavetaFerramentas({ items }) {
+export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
   const [aberta, setAberta] = useState(false);
   const botaoRef = useRef(null);
   const gavetaRef = useRef(null);
@@ -167,6 +168,7 @@ function GavetaFerramentas({ items }) {
            navegador nem do popover de uma linha da tabela. */
         aria-label={aberta ? "Fechar o menu de ferramentas e configurações" : "Abrir o menu de ferramentas e configurações"}
         title="Ferramentas e configurações"
+        aria-describedby={resumoWhatsapp?.selo ? "whatsapp-aviso-menu" : undefined}
       >
         {/* Os três traços, desenhados — o caractere ☰ some em fonte sem o glifo e não escala com
             a cor do botão. `aria-hidden`: quem anuncia é o `aria-label` acima. */}
@@ -177,6 +179,7 @@ function GavetaFerramentas({ items }) {
             <rect x="0" y="10" width="16" height="2" rx="1" />
           </g>
         </svg>
+        {resumoWhatsapp?.selo ? <span id="whatsapp-aviso-menu" data-testid="whatsapp-ponto" style={{ color: "var(--state-warn)", marginLeft: 6 }} aria-label={`${resumoWhatsapp.selo} mensagens não lidas no WhatsApp`}>●</span> : null}
       </Button>
 
       {/* ⚠ A GAVETA SAI PARA O `body` (portal). O hambúrguer mora dentro do `<nav aria-label=
@@ -242,6 +245,10 @@ function GavetaFerramentas({ items }) {
                     onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                   >
                     {it.label}
+                    {it.label === "WhatsApp" && resumoWhatsapp ? <span style={{ display: "block", fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                      {resumoWhatsapp.selo ? <strong data-testid="whatsapp-selo" style={{ color: "var(--state-warn)", marginRight: 6 }}>{resumoWhatsapp.selo}</strong> : null}
+                      {resumoWhatsapp.carregando ? "Lendo mensagens…" : resumoWhatsapp.selo ? resumoWhatsapp.frase.replace(/^\d+ /, "") : resumoWhatsapp.frase}
+                    </span> : null}
                   </button>
                 </div>
               ))}
@@ -348,6 +355,7 @@ export function CompaniesHomePage({
   // órfã de quem já usou o app é ignorada por construção — não há migração a escrever. E a
   // heurística de largura saiu junto: ela só existia para escolher entre Tabela e Cards.
   const [modoVisao, setModoVisao] = useState("calendario");
+  const resumoWhatsapp = useResumoWhatsapp({ api, enabled: typeof onOpenWhatsapp === "function" });
   const trocarVisao = setModoVisao;
 
   // ─── IMPRESSÃO ───────────────────────────────────────────────────────────────────────────────
@@ -988,6 +996,7 @@ export function CompaniesHomePage({
                 abrindo painel à esquerda faz o olho atravessar a tela atrás do que acabou de
                 clicar. */}
             <GavetaFerramentas
+              resumoWhatsapp={resumoWhatsapp}
               items={[
                 // ⚠ APURAÇÃO E CONSULTAS MUDARAM DE LUGAR, NÃO SAÍRAM (dono, 18/08/2026: *"coloque
                 // o de apuração e de consulta dentro de mais, em ferramentas"*). Mesmo rótulo,
