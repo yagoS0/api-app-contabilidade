@@ -31,6 +31,7 @@ import { salvarContato, ContatoWhatsappError } from "../../application/whatsapp/
 import { resolverVinculoPorTelefone } from "../../application/whatsapp/ContatoWhatsappService.js";
 import { SITUACOES_JANELA } from "../../application/whatsapp/janela24h.js";
 import { WhatsappCloudClient, WhatsappError, mascararTelefone } from "../../application/whatsapp/WhatsappCloudClient.js";
+import { baixarBuffer, CompanyDocumentError } from "../../application/companies/CompanyDocumentsService.js";
 import { pendenciaAberta } from "../../application/assistente/AcoesPendentesService.js";
 import { consumoIaDoMes } from "../../application/assistente/GuardaIaService.js";
 
@@ -111,6 +112,11 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     }
     if (err instanceof WhatsappError) {
       return res.status(422).json({ ok: false, error: err.codigo, message: err.mensagemUsuario, podeTentarDeNovo: err.podeTentarDeNovo });
+    }
+    // O documento que nao esta nesta empresa e 404 NOMEADO, nunca 500: sem isto a recusa de escopo
+    // sairia como "erro interno" e a tela mandaria o contador tentar de novo.
+    if (err instanceof CompanyDocumentError) {
+      return res.status(err.status || 400).json({ ok: false, error: err.code, message: err.message });
     }
     log?.error?.({ err: err?.message || err, ...contexto }, "Falha nas conversas de WhatsApp");
     return res.status(500).json({ ok: false, error: "erro_interno", message: "Erro interno." });
@@ -290,6 +296,32 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   });
 
   /**
+   * ⚠⚠ A RECUSA FORA DA JANELA É UMA SÓ, e por isso ela é função (06/09/2026).
+   *
+   * `responder` e `enviar-documento` são as duas MENSAGENS DE SERVIÇO deste sistema — a Meta recusa
+   * as duas fora das 24h (131047). Duas redações do mesmo 409 divergiriam na primeira correção, e a
+   * divergência apareceria como a tela explicando a janela de um jeito num botão e de outro no
+   * vizinho. ⚠ O corpo é o contrato que a tela já lê (`payload.message` + `reabrirConversa`).
+   */
+  async function recusarForaDaJanela(res, janela) {
+    const template = await client.templateWhatsapp.findUnique({ where: { chave: "reabrir_conversa" } }).catch(() => null);
+    return res.status(409).json({
+      ok: false,
+      error: "FORA_DA_JANELA",
+      situacao: janela.situacao,
+      message: janela.situacao === SITUACOES_JANELA.NUNCA_ABERTA
+        ? "Este cliente nunca escreveu por aqui: a Meta só aceita texto livre nas 24h seguintes a uma mensagem DELE. Para iniciar, é preciso um modelo aprovado."
+        : "A janela de 24h desde a última mensagem do cliente fechou: a Meta só aceita modelo aprovado agora.",
+      reabrirConversa: {
+        chave: "reabrir_conversa",
+        statusAprovacao: template?.statusAprovacao || null,
+        disponivel: String(template?.statusAprovacao || "").toUpperCase() === "APROVADO" && Boolean(template?.nomeMeta),
+      },
+      avisos: janela.avisos,
+    });
+  }
+
+  /**
    * RESPONDER À MÃO. Texto livre — SÓ dentro da janela de 24h. Fora dela: 409 `FORA_DA_JANELA`
    * com a situação e o que existe (o template `reabrir_conversa`, quando aprovado).
    * ⚠ Não assume o fio sozinho: responder não é assumir. Quem quer calar a IA clica em Assumir.
@@ -303,23 +335,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       const conversa = await conversaNoEscopo(req, conversaId, { client });
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
       const janela = await janelaDaConversa(conversa.id);
-      if (janela.situacao !== SITUACOES_JANELA.ABERTA) {
-        const template = await client.templateWhatsapp.findUnique({ where: { chave: "reabrir_conversa" } }).catch(() => null);
-        return res.status(409).json({
-          ok: false,
-          error: "FORA_DA_JANELA",
-          situacao: janela.situacao,
-          message: janela.situacao === SITUACOES_JANELA.NUNCA_ABERTA
-            ? "Este cliente nunca escreveu por aqui: a Meta só aceita texto livre nas 24h seguintes a uma mensagem DELE. Para iniciar, é preciso um modelo aprovado."
-            : "A janela de 24h desde a última mensagem do cliente fechou: a Meta só aceita modelo aprovado agora.",
-          reabrirConversa: {
-            chave: "reabrir_conversa",
-            statusAprovacao: template?.statusAprovacao || null,
-            disponivel: String(template?.statusAprovacao || "").toUpperCase() === "APROVADO" && Boolean(template?.nomeMeta),
-          },
-          avisos: janela.avisos,
-        });
-      }
+      if (janela.situacao !== SITUACOES_JANELA.ABERTA) return recusarForaDaJanela(res, janela);
       const cliente = cloud || new WhatsappCloudClient({ log });
       const r = await cliente.enviarTexto({ telefone: conversa.telefoneE164, texto });
       const { mensagem } = await registrarMensagemEnviada({
@@ -357,6 +373,74 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       return res.json({ ok: true, contato: salvo, conversa: resumoDaConversa({ ...atualizada, portalClient: null }), vinculo: { situacao: vinculo.situacao } });
     } catch (err) {
       return falhar(res, err, { conversaId, portalClientId });
+    }
+  });
+
+  /**
+   * ⚠⚠ ENVIAR UM DOCUMENTO DA EMPRESA PELO FIO (F3, 06/09/2026).
+   *
+   * > Dono: as ações rápidas do chat são *"enviar guia · enviar documento · virar anotação"*.
+   *
+   * ⚠⚠ O DOCUMENTO É BUSCADO COM O `portalClientId` DO FIO, e isso é o desenho, não um `if`: um
+   * documento da empresa A **não tem como** sair pelo fio da empresa B, porque a consulta que o
+   * encontra já é escopada pela empresa do fio. Uma checagem `companyId === conversa.portalClientId`
+   * seria uma guarda a mais para alguém esquecer.
+   *
+   * ⚠ O plano pedia esta rota em `/companies/:id/documentos/:id/enviar-whatsapp`, espelho de
+   * `whatsappGuias.js`. Ela mora AQUI porque o sujeito é o FIO — é ele que tem telefone, janela e
+   * histórico — e porque assim herda `conversaNoEscopo`, o mesmo isolamento que os testes desta
+   * rota já provam. A GUIA continua saindo pela rota dela, que já tem as guardas de envio de guia
+   * (opt-in, template aprovado, reenvio, todos os destinatários).
+   *
+   * ⚠⚠ É MENSAGEM DE SERVIÇO: só dentro da janela de 24h, com a MESMA recusa do `responder`.
+   * ⚠ NÃO cria `EnvioGuia`: não é guia, não há entrega a rastrear — o histórico é o balão.
+   */
+  router.post("/whatsapp/conversas/:conversaId/enviar-documento", async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return undefined;
+    const { conversaId } = req.params || {};
+    const documentId = String(req.body?.documentId || "").trim();
+    if (!documentId) return res.status(400).json({ ok: false, error: "documento_obrigatorio", message: "Escolha o documento." });
+    try {
+      const conversa = await conversaNoEscopo(req, conversaId, { client });
+      if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
+      // ⚠ Fio da FILA não tem empresa, logo não há documento DELA para enviar — e não se escolhe uma.
+      if (!conversa.portalClientId) {
+        return res.status(422).json({
+          ok: false,
+          error: "FIO_SEM_EMPRESA",
+          message: "Este número ainda não está vinculado a uma empresa: não há documento dela para enviar. Vincule o fio primeiro.",
+        });
+      }
+
+      const janela = await janelaDaConversa(conversa.id);
+      if (janela.situacao !== SITUACOES_JANELA.ABERTA) return recusarForaDaJanela(res, janela);
+
+      const { doc, buffer } = await baixarBuffer({ portalClientId: conversa.portalClientId, documentId });
+
+      const cliente = cloud || new WhatsappCloudClient({ log });
+      const r = await cliente.enviarDocumento({
+        telefone: conversa.telefoneE164,
+        conteudo: buffer,
+        nomeArquivo: doc.nome,
+        mimeType: doc.mimeType || "application/pdf",
+        legenda: String(req.body?.legenda || "").trim() || undefined,
+      });
+
+      // ⚠ O balão diz O QUE saiu — o nome do arquivo. Sem isso o histórico teria "um documento", e o
+      // contador não saberia qual dos alvarás da empresa foi mandado.
+      const corpo = String(req.body?.legenda || "").trim() || doc.nome;
+      const { mensagem } = await registrarMensagemEnviada({
+        telefone: conversa.telefoneE164, portalClientId: conversa.portalClientId, tipo: "document", corpo,
+        providerMessageId: r?.wamid || null, autor: AUTOR_HUMANO,
+      });
+      log?.info?.({ conversaId: conversa.id, documentId: doc.id, wamid: r?.wamid || null }, "whatsapp.documento.enviado");
+      return res.json({
+        ok: true,
+        documento: { id: doc.id, nome: doc.nome, tipo: doc.tipo },
+        mensagem: { id: mensagem?.id || null, providerMessageId: r?.wamid || null, autor: AUTOR_HUMANO, corpo },
+      });
+    } catch (err) {
+      return falhar(res, err, { conversaId, documentId });
     }
   });
 

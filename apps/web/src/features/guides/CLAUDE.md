@@ -197,8 +197,10 @@ Ligação coberta em `list/components/__tests__/renderCompanyGuidesTable.test.js
   existe mais** (ver a seção de subpastas).
 - `tipo="SIMPLES"` é a guia do DAS; a UI rotula como "DAS". `status="VAZIO"` = ausência
   confirmada (amarelo) — não é guia com PDF.
-- **Lucro Presumido = 1 DARF consolidada `tipo="OUTRA"`** (não pode ser split). `tipoGuiaLabel`
-  (`list/renderCompanyGuidesTable.jsx`) troca "OUTRA" pelos impostos contidos ("PIS · COFINS"),
+- **Lucro Presumido = 1 DARF consolidada `tipo="OUTRA"`** (não pode ser split). ⚠⚠ Esta linha citava
+  um `tipoGuiaLabel` em `list/renderCompanyGuidesTable.jsx` até 06/09/2026 — **essa função não existe
+  mais** (varredura: zero ocorrências do nome em todo o `src`). Quem faz isso hoje é
+  **`rotuloTipoGuia`** (`lib/rotuloGuia.js`), que troca "OUTRA" pelos impostos contidos ("PIS · COFINS"),
   lendo `guide.extracted.composicao` — que **o backend precisa enviar** (`toGuideResponse`).
   Se voltar a aparecer "OUTRA" na tela, o suspeito nº 1 é a composição não estar vindo na resposta.
 - ⚠ **A coluna PARC do envio em lote carrega DOIS conteúdos** e só um é enviável: a **guia da
@@ -371,6 +373,48 @@ a frase da mídia ⇒ **3**.
 1000px ⇒ **1**; `escolhaDoFio` cravado em `ESCOLHER` ⇒ **2**. Conferido no navegador (mock) em
 1440×900 e em 900px: duas colunas viram uma, o chat desce e continua visível, e a empresa sem fio diz
 o motivo.
+
+### ⚠⚠ AS TRÊS AÇÕES RÁPIDAS (F3, 06/09/2026)
+
+> Dono: *"podendo ter funções rápidas, como enviar guias, enviar algum documento (…) e acessar a
+> empresa em questão"*. Na escolha das ações da v1 ele trocou *recalcular* por **virar anotação**.
+
+Tira de botões acima do compositor (`whatsapp/components/AcoesRapidas.jsx`), montada por regra pura
+(`whatsapp/lib/acoesRapidas.js`). ⚠ O motivo do bloqueio sai em **TEXTO na tela, antes do clique** —
+`title` não aparece no teclado nem no toque.
+
+⚠⚠ **AS TRÊS NÃO TÊM A MESMA GUARDA, e é isso que a regra existe para não deixar confundir:**
+
+| ação | guarda | por quê |
+|---|---|---|
+| **Enviar guia** | funciona **fora** da janela de 24 h | é **template aprovado** — o único caminho que funciona fora dela. Zero rota nova: reusa `enviarGuiaWhatsapp`, que já tem opt-in, reenvio e todos os destinatários |
+| **Enviar documento** | **só dentro** da janela | é **mensagem de serviço**: a Meta recusa (131047), e o servidor recusa antes com 409 `FORA_DA_JANELA` |
+| **Virar anotação** | a janela **não a alcança** | não fala com a Meta. O que ela exige é um **destino** — o campo de anotação ao lado |
+
+- ⚠⚠ **JANELA DESCONHECIDA NÃO VIRA ABERTA — nem expirada.** Sem o estado, o documento é bloqueado
+  dizendo *"não dá para afirmar que a janela está aberta"*: oferecer o botão seria prometer o que o
+  servidor recusa, e chamá-la de expirada seria afirmar um estado que ninguém viu.
+- ⚠⚠ **"VIRAR ANOTAÇÃO" NÃO GRAVA NADA.** Ela compõe `«06/09, 11:00 · Maria Silva no WhatsApp: "…"»`
+  e joga no `<textarea>` **ao lado**; o contador edita, escolhe a importância e salva pelo
+  `POST /anotacoes` **inalterado**. Zero rota, zero coluna, zero migration — anotação é **juízo, não
+  cópia**, e a mensagem já está guardada para sempre no fio. ⚠ O rascunho **SOMA** ao que já está
+  escrito, nunca substitui: perder o parágrafo de quem estava digitando é dano que não se recupera.
+  ⚠ E **qual** mensagem vira anotação é escolha do contador, nunca "a última" — adivinhar qual fala
+  importa é o mesmo erro de adivinhar o que ela quer dizer.
+- ⚠ **Isso torna o lado a lado a CONDIÇÃO DE EXISTÊNCIA da ação, não estética:** no `/whatsapp` não há
+  campo de destino, então a ação **não é oferecida** (não é "bloqueada") — lá o caminho é o link
+  **"Abrir a empresa →"**, que é `<a href>` de verdade, com o caminho vindo de `companyTabPath`.
+- ⚠ **O rótulo da guia é o de `rotuloTipoGuia`**, o MESMO da aba Guias: uma segunda tradução faria a
+  parcela de parcelamento aparecer com outro nome só neste botão.
+- ⚠ **A recusa do SERVIDOR aparece com a frase dele** (409 `FORA_DA_JANELA`, 422 sem opt-in…), nunca
+  "falhou": os consertos são diferentes e a tela precisa dizer qual é.
+- ⚠⚠ **DEFEITO VISTO SÓ NO NAVEGADOR:** o balão do documento que **nós** enviamos dizia *"este
+  sistema ainda não baixa arquivos do WhatsApp"*. A ressalva é sobre o que **chega**; no que sai ela é
+  falsa — o arquivo saiu daqui. `descricaoDaMidia` passou a olhar a direção.
+
+**Experimentos executados:** `acoesDisponiveis` sempre `pode: true` ⇒ **5 vermelhos**; o rascunho
+substituindo o texto em vez de somar ⇒ **1**. ⚠ E um experimento no backend voltou **zero** — ver
+`apps/api/CLAUDE.md`, "enviar um documento pelo fio": o teste que faltava foi escrito.
 
 ## ⚠⚠ A CONFIGURAÇÃO DE ENVIO MORA AQUI (05/09/2026)
 

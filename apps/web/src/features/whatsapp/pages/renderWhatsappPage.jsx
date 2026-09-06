@@ -20,6 +20,8 @@ import { Button } from "../../../components/ui/Button";
 import { Feedback } from "../../../components/ui/Feedback";
 import { useConversasWhatsapp } from "../hooks/useConversasWhatsapp";
 import { FioDaConversa, LinhaDaEmpresa, NomeDaPessoa, campo } from "../components/FioDaConversa";
+// ⚠ A MESMA fonte da URL que a navegação por clique usa — nunca uma segunda construção do caminho.
+import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
 import { FILTROS, SITUACAO_FIO, situacaoDoFio, rotuloDaSituacao, fmtDataHora, fraseDoConsumo, ordenarConversas, identidadeDaConversa, frasePaginacao } from "../lib/conversasTela";
 
 const COR_TOM = { aviso: "var(--state-warn)", neutro: "var(--text-muted)" };
@@ -151,6 +153,7 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
                 fio={hook.aberta}
                 hook={hook}
                 temMais={hook.temMaisNoFio}
+                hrefDaEmpresa={(id) => companyTabPath(id, "anotacoes")}
                 slotVincular={<FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa?.id} onVincular={hook.vincular} ocupado={hook.ocupado} />}
               />
             ) : (

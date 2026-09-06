@@ -167,6 +167,11 @@ export function descricaoDaMidia(m) {
   if (tipo === "text" || tipo === "template") return null;
   const nome = MIDIA[tipo];
   if (!nome) return `mensagem de tipo "${tipo || "desconhecido"}" — não sei exibir`;
+  // ⚠⚠ A RESSALVA É SOBRE O QUE CHEGA, NUNCA SOBRE O QUE SAI (defeito visto no navegador em
+  // 06/09/2026). Num documento que o ESCRITÓRIO acabou de mandar, "este sistema ainda não baixa
+  // arquivos" é falso e confunde: o arquivo saiu daqui, não há nada a baixar — e o balão já traz o
+  // nome dele no corpo. A limitação é a de LER a mídia do cliente.
+  if (m?.direcao === "out") return `📎 ${nome} enviado pelo escritório`;
   return `📎 ${nome} — este sistema ainda não baixa arquivos do WhatsApp`;
 }
 

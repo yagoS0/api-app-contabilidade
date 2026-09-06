@@ -7504,6 +7504,31 @@ export function createMockApi() {
       // ⚠ `temMidia` e o PONTEIRO, nunca uma URL — a da Meta expira e nao baixamos arquivo ainda.
       return { ok: true, conversa: resumoMockDaConversa(c), temMais: false, mensagens: c.mensagens.map((m) => ({ ...m, temMidia: Boolean(m.midiaProvedorId) })) };
     },
+    // ⚠ O MESMO contrato do real, recusas incluídas — mock permissivo esconde ramo, e este projeto
+    // já pagou por isso oito vezes. Fora da janela: 409 FORA_DA_JANELA. Fio sem empresa: 422.
+    async enviarDocumentoWhatsapp(conversaId, documentId, { legenda = null } = {}) {
+      await delay(200);
+      const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
+      if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      if (!c.portalClientId) {
+        const e = new Error("Este número ainda não está vinculado a uma empresa: não há documento dela para enviar. Vincule o fio primeiro.");
+        e.status = 422; e.code = "FIO_SEM_EMPRESA"; e.payload = { error: "FIO_SEM_EMPRESA", message: e.message };
+        throw e;
+      }
+      if (c.janela.situacao !== "ABERTA") {
+        const e = new Error("A janela de 24h desde a última mensagem do cliente fechou: a Meta só aceita modelo aprovado agora.");
+        e.status = 409; e.code = "FORA_DA_JANELA";
+        e.payload = { error: "FORA_DA_JANELA", message: e.message, reabrirConversa: { chave: "reabrir_conversa", statusAprovacao: "DECLARADO", disponivel: false } };
+        throw e;
+      }
+      const doc = mockDocumentos.find((d) => d.id === String(documentId));
+      if (!doc) { const e = new Error("Documento não encontrado."); e.status = 404; e.code = "documento_nao_encontrado"; throw e; }
+      const corpo = String(legenda || "").trim() || doc.nome;
+      const m = { id: `mock-msg-${Date.now()}`, direcao: "out", tipo: "document", corpo, autor: "HUMANO", providerMessageId: `wamid.mock.${Date.now()}`, ocorridaEmProvedor: null, registradaEm: new Date().toISOString() };
+      c.mensagens.push(m);
+      c.updatedAt = m.registradaEm;
+      return { ok: true, documento: { id: doc.id, nome: doc.nome, tipo: doc.tipo }, mensagem: { id: m.id, providerMessageId: m.providerMessageId, autor: "HUMANO", corpo } };
+    },
     async assumirConversaWhatsapp(conversaId) {
       await delay(80);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));

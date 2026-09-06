@@ -3,7 +3,7 @@
 // A anotação FIXADA fica destacada acima da lista e não se mistura com as demais, em qualquer
 // ordenação. Fixar é exclusivo: fixar uma nova desafixa a anterior (o backend garante).
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // ⚠ HEX LITERAL SAIU DAQUI (06/09/2026), e não foi faxina: esta aba passou a dividir a linha com o
 // chat, e encostar uma coluna de tokens numa de hex põe dois cinzas diferentes lado a lado.
@@ -65,11 +65,26 @@ function Cartao({ nota, destaque, onFixar, onDesfixar, onExcluir, onMudarImporta
   );
 }
 
-export function CompanyNotesTab({ notes }) {
+export function CompanyNotesTab({ notes, rascunho = null, aoUsarRascunho = null }) {
   const { fixada, demais, ordenarPor, setOrdenarPor, carregando, criar, atualizar, excluir } = notes;
   const [texto, setTexto] = useState("");
   const [importancia, setImportancia] = useState("MEDIA");
   const [salvando, setSalvando] = useState(false);
+  const campoRef = useRef(null);
+
+  // ⚠⚠ "VIRAR ANOTAÇÃO" NÃO GRAVA NADA (F3, 06/09/2026): o chat ao lado compõe o texto, ele cai
+  // AQUI para o contador editar, escolher a importância e salvar pelo caminho de sempre. Anotação é
+  // JUÍZO, não cópia — a mensagem já está guardada para sempre no fio.
+  //
+  // ⚠ O rascunho é ACRESCENTADO ao que já está escrito, nunca substitui: perder um parágrafo que a
+  // pessoa estava digitando é o tipo de dano que ela não recupera.
+  useEffect(() => {
+    const t = String(rascunho || "").trim();
+    if (!t) return;
+    setTexto((atual) => (atual.trim() ? `${atual.trimEnd()}\n${t}` : t));
+    campoRef.current?.focus?.();
+    aoUsarRascunho?.();
+  }, [rascunho, aoUsarRascunho]);
 
   async function aoCriar() {
     if (!texto.trim()) return;
@@ -119,6 +134,8 @@ export function CompanyNotesTab({ notes }) {
 
       <div style={{ marginBottom: 20, padding: "12px 14px", borderRadius: 10, border: `1px solid ${PANEL.border}`, background: PANEL.field }}>
         <textarea
+          ref={campoRef}
+          aria-label="Nova anotação sobre esta empresa"
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
           placeholder="Nova anotação sobre esta empresa…"

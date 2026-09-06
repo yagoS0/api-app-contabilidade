@@ -62,6 +62,25 @@ jest.mock("../../../application/whatsapp/ConversaWhatsappService.js", () => {
     registrarMensagemEnviada: jest.fn(async (args) => ({ mensagem: { id: "out1", ...args }, duplicada: false })),
   };
 });
+// ⚠ O documento é buscado com o `portalClientId` DO FIO — o dublê honra isso, senão a guarda de
+// isolamento (documento da empresa A pelo fio da empresa B) não teria prova nenhuma.
+jest.mock("../../../application/companies/CompanyDocumentsService.js", () => {
+  class CompanyDocumentError extends Error {
+    constructor(code, message, status = 400) { super(message); this.code = code; this.status = status; }
+  }
+  const DOCS = [
+    { id: "doc-1", portalClientId: "pc-1", nome: "Contrato social.pdf", tipo: "CONTRATO_SOCIAL", mimeType: "application/pdf" },
+    { id: "doc-9", portalClientId: "pc-9", nome: "Alvara de outra.pdf", tipo: "ALVARA", mimeType: "application/pdf" },
+  ];
+  return {
+    CompanyDocumentError,
+    baixarBuffer: jest.fn(async ({ portalClientId, documentId }) => {
+      const doc = DOCS.find((d) => d.id === documentId && d.portalClientId === portalClientId);
+      if (!doc) throw new CompanyDocumentError("documento_nao_encontrado", "Documento não encontrado.", 404);
+      return { doc, buffer: Buffer.from("%PDF-1.4 fake") };
+    }),
+  };
+});
 jest.mock("../../../application/whatsapp/ContatoWhatsappService.js", () => ({
   ContatoWhatsappError: class extends Error { constructor(code, m) { super(m); this.code = code; } },
   salvarContato: jest.fn(async (args) => ({ id: "ctt1", ...args })),
@@ -74,7 +93,12 @@ import { salvarContato } from "../../../application/whatsapp/ContatoWhatsappServ
 import { listarMensagens } from "../../../application/whatsapp/ConversaWhatsappService.js";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 
-const cloud = { enviarTexto: jest.fn(async () => ({ wamid: "wamid.h" })) };
+import { baixarBuffer } from "../../../application/companies/CompanyDocumentsService.js";
+
+const cloud = {
+  enviarTexto: jest.fn(async () => ({ wamid: "wamid.h" })),
+  enviarDocumento: jest.fn(async () => ({ wamid: "wamid.doc" })),
+};
 
 function montarApp(user = { id: "u-contador", role: "contador", accountType: "FIRM" }) {
   const app = express();
@@ -259,5 +283,111 @@ describe("⚠⚠ o limite para de truncar em silêncio", () => {
     const r = await request(montarApp()).get("/firm/whatsapp/conversas/cv1/mensagens");
     expect(r.body.temMais).toBe(true);
     expect(r.body.mensagens).toHaveLength(200);
+  });
+});
+
+
+// ── ⚠⚠ ENVIAR UM DOCUMENTO PELO FIO (F3, 06/09/2026) ───────────────────────────────────────────
+//
+// A ação rápida do chat. É MENSAGEM DE SERVIÇO — a Meta recusa fora das 24h —, e o documento é
+// buscado com o `portalClientId` do FIO, o que torna o vazamento entre empresas impossível por
+// construção, não por um `if` que alguém pode apagar.
+
+describe("⚠⚠ enviar documento pelo fio", () => {
+  beforeEach(() => {
+    mockCenario.janela = { situacao: "ABERTA", permite: "TEXTO_LIVRE", expiraEm: null, avisos: [] };
+    cloud.enviarDocumento.mockClear();
+    baixarBuffer.mockClear();
+    registrarMensagemEnviada.mockClear();
+  });
+
+  it("dentro da janela: sobe o arquivo e grava o balão com o NOME do documento", async () => {
+    const r = await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv1/enviar-documento")
+      .send({ documentId: "doc-1" });
+    expect(r.status).toBe(200);
+    expect(cloud.enviarDocumento).toHaveBeenCalledWith(expect.objectContaining({
+      telefone: "5521999998888", nomeArquivo: "Contrato social.pdf",
+    }));
+    // ⚠ O histórico diz O QUE saiu: sem o nome, o contador não sabe qual documento foi mandado.
+    expect(registrarMensagemEnviada).toHaveBeenCalledWith(expect.objectContaining({
+      tipo: "document", corpo: "Contrato social.pdf", autor: "HUMANO", providerMessageId: "wamid.doc",
+    }));
+  });
+
+  it("a legenda, quando escrita, vira o corpo do balão", async () => {
+    await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv1/enviar-documento")
+      .send({ documentId: "doc-1", legenda: "segue o contrato atualizado" });
+    expect(registrarMensagemEnviada).toHaveBeenCalledWith(expect.objectContaining({ corpo: "segue o contrato atualizado" }));
+  });
+
+  it("⚠⚠ documento de OUTRA empresa não sai por este fio — e a Meta nem é chamada", async () => {
+    const r = await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv1/enviar-documento")
+      .send({ documentId: "doc-9" });
+    expect(r.status).toBe(404);
+    expect(r.body.error).toBe("documento_nao_encontrado");
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+    // A busca foi feita com a empresa DO FIO, nunca com uma empresa vinda do corpo.
+    expect(baixarBuffer).toHaveBeenCalledWith({ portalClientId: "pc-1", documentId: "doc-9" });
+  });
+
+  it("⚠⚠ FORA da janela: 409 com a MESMA recusa do responder, e nada é enviado", async () => {
+    mockCenario.janela = { situacao: "EXPIRADA", permite: "SOMENTE_TEMPLATE", expiraEm: null, avisos: [] };
+    const r = await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv1/enviar-documento")
+      .send({ documentId: "doc-1" });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe("FORA_DA_JANELA");
+    expect(r.body.message).toMatch(/janela de 24h/);
+    expect(r.body.reabrirConversa).toMatchObject({ chave: "reabrir_conversa", disponivel: false });
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+    expect(registrarMensagemEnviada).not.toHaveBeenCalled();
+  });
+
+  it("⚠ fio da FILA não tem empresa, logo não tem documento dela — recusa NOMEADA", async () => {
+    const r = await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv3/enviar-documento")
+      .send({ documentId: "doc-1" });
+    expect(r.status).toBe(422);
+    expect(r.body.error).toBe("FIO_SEM_EMPRESA");
+    expect(r.body.message).toMatch(/Vincule o fio/);
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+
+  it("⚠ fio de FORA da carteira é 404 — a mesma regra das outras rotas", async () => {
+    const r = await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv2/enviar-documento")
+      .send({ documentId: "doc-9" });
+    expect(r.status).toBe(404);
+    expect(r.body.error).toBe("conversa_nao_encontrada");
+    expect(baixarBuffer).not.toHaveBeenCalled();
+  });
+
+  it("sem documento escolhido, recusa antes de qualquer consulta", async () => {
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/enviar-documento").send({});
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe("documento_obrigatorio");
+  });
+});
+
+// ⚠⚠ ACHADO DE EXPERIMENTO (06/09/2026). Fazendo a rota ler a empresa do CORPO — o defeito clássico
+// desta base, "corpo sobrescrevendo o path", que a F1 do WhatsApp já pagou duas vezes — a suíte
+// ficava INTEIRA VERDE: nenhum teste mandava empresa no corpo, então a guarda não tinha prova.
+describe("⚠⚠ a empresa do documento vem do FIO, e o corpo não a escolhe", () => {
+  beforeEach(() => {
+    mockCenario.janela = { situacao: "ABERTA", permite: "TEXTO_LIVRE", expiraEm: null, avisos: [] };
+    cloud.enviarDocumento.mockClear();
+    baixarBuffer.mockClear();
+  });
+
+  it("corpo pedindo OUTRA empresa não muda a consulta — e o documento dela continua fora de alcance", async () => {
+    const r = await request(montarApp())
+      .post("/firm/whatsapp/conversas/cv1/enviar-documento")
+      .send({ documentId: "doc-9", companyId: "pc-9", portalClientId: "pc-9" });
+    expect(baixarBuffer).toHaveBeenCalledWith({ portalClientId: "pc-1", documentId: "doc-9" });
+    expect(r.status).toBe(404);
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
   });
 });

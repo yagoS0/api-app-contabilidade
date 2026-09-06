@@ -4455,6 +4455,36 @@ cravar `temMais = false` ⇒ **1**. ⚠ O dublê do Prisma passou a **honrar o `
 `conversaWhatsapp.findMany` — sem isso o filtro por empresa "passaria" no teste devolvendo tudo, e a
 guarda de isolamento não teria prova nenhuma. **19 testes** na rota.
 
+#### ⚠⚠ ENVIAR UM DOCUMENTO DA EMPRESA PELO FIO (F3, 06/09/2026)
+
+`POST /firm/whatsapp/conversas/:conversaId/enviar-documento`, body `{ documentId, legenda? }`.
+Reusa `CompanyDocumentsService.baixarBuffer` + `WhatsappCloudClient.enviarDocumento` — **nenhum
+serviço novo**.
+
+- ⚠⚠ **O DOCUMENTO É BUSCADO COM O `portalClientId` DO FIO**, e isso é o desenho, não um `if`: um
+  documento da empresa A **não tem como** sair pelo fio da empresa B, porque a consulta que o
+  encontra já é escopada pela empresa do fio. Uma checagem `companyId === conversa.portalClientId`
+  seria uma guarda a mais para alguém esquecer.
+- ⚠ **A rota mora no roteador das CONVERSAS**, não em `/companies/:id/documentos/...` como o plano
+  pedia: o sujeito é o FIO — é ele que tem telefone, janela e histórico — e assim ela herda
+  `conversaNoEscopo`, o mesmo isolamento que os testes desta rota já provam. A **guia** continua
+  saindo pela rota dela, que já tem as guardas de envio de guia (opt-in, template aprovado, reenvio,
+  todos os destinatários).
+- ⚠⚠ **É MENSAGEM DE SERVIÇO: só dentro da janela de 24 h.** A recusa virou **função**
+  (`recusarForaDaJanela`) e é a MESMA do `responder` — duas redações do mesmo 409 divergiriam na
+  primeira correção, e a divergência apareceria como a tela explicando a janela de um jeito num botão
+  e de outro no vizinho. ⚠ **A guia NÃO tem essa guarda**: template aprovado é justamente o que
+  funciona fora da janela.
+- ⚠ **NÃO cria `EnvioGuia`**: não é guia, não há entrega a rastrear — o histórico é o balão. O balão
+  guarda o **nome do arquivo**, senão o contador não saberia qual dos alvarás da empresa foi mandado.
+- ⚠ Fio da **fila** (sem empresa) ⇒ **422 `FIO_SEM_EMPRESA`**, com o conserto na frase.
+
+⚠⚠ **UM EXPERIMENTO VOLTOU ZERO VERMELHOS, e é o achado da fase:** fazendo a rota ler a empresa do
+**corpo** — o defeito clássico desta base, *"corpo sobrescrevendo o path"*, que a F1 do WhatsApp já
+pagou duas vezes — a suíte ficava **inteira verde**: nenhum teste mandava empresa no corpo, então a
+guarda não tinha prova nenhuma. O teste que faltava foi escrito, e agora o experimento dá **1
+vermelho**. Outro experimento: liberar o documento fora da janela ⇒ **1**. **27 testes** na rota.
+
 ### Flags e variáveis (todas nascem OFF/vazias)
 
 `INTEGRACAO_WHATSAPP_IA` · `IA_EMPRESAS_PILOTO` (CSV de `portalClientId`; **vazio = ninguém**) ·

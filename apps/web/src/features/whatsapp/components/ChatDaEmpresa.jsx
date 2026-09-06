@@ -14,10 +14,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useConversasWhatsapp } from "../hooks/useConversasWhatsapp";
 import { FioDaConversa, NomeDaPessoa, campo } from "./FioDaConversa";
+import { AcoesRapidas } from "./AcoesRapidas";
 import { identidadeDaConversa, ordenarConversas } from "../lib/conversasTela";
 import { ESCOLHA_DO_FIO, FRASE_SEM_FIO, escolhaDoFio, fioAberto } from "../lib/fiosDaEmpresa";
 
-export function ChatDaEmpresa({ api, companyId, feedback = null }) {
+export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao = null, canalLigado = null }) {
   const hook = useConversasWhatsapp({ api, feedback, empresa: companyId });
   const [escolhido, setEscolhido] = useState(null);
 
@@ -87,7 +88,25 @@ export function ChatDaEmpresa({ api, companyId, feedback = null }) {
         </div>
       ) : null}
 
-      {aberto ? <FioDaConversa fio={aberto} hook={hook} temMais={hook.temMaisNoFio} /> : null}
+      {aberto ? (
+        <FioDaConversa
+          fio={aberto}
+          hook={hook}
+          temMais={hook.temMaisNoFio}
+          slotAcoes={(
+            <AcoesRapidas
+              conversa={aberto.conversa}
+              mensagens={aberto.mensagens}
+              janela={aberto.conversa?.janela || null}
+              canalLigado={canalLigado}
+              api={api}
+              companyId={companyId}
+              onVirarAnotacao={onVirarAnotacao}
+              onEnviado={() => hook.abrir(aberto.conversa.id)}
+            />
+          )}
+        />
+      ) : null}
     </section>
   );
 }

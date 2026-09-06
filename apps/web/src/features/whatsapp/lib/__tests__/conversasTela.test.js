@@ -130,6 +130,14 @@ describe("descricaoDaMidia", () => {
     expect(descricaoDaMidia({ tipo: "audio" })).toMatch(/áudio/);
   });
 
+  it("⚠⚠ o que SAI daqui não leva a ressalva de leitura — nós mandamos o arquivo", () => {
+    // Defeito visto no navegador: o documento que o escritório enviou dizia "este sistema ainda não
+    // baixa arquivos do WhatsApp". A limitação é ler a mídia do CLIENTE, não a nossa.
+    const saida = descricaoDaMidia({ tipo: "document", direcao: "out" });
+    expect(saida).toMatch(/enviado pelo escritório/);
+    expect(saida).not.toMatch(/não baixa/);
+  });
+
   it("⚠ tipo desconhecido aparece COMO VEIO — não vira o nome do vizinho", () => {
     expect(descricaoDaMidia({ tipo: "poll" })).toMatch(/"poll"/);
     expect(descricaoDaMidia({ tipo: "poll" })).toMatch(/não sei exibir/);

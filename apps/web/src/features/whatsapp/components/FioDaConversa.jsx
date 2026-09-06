@@ -68,7 +68,7 @@ export function NomeDaPessoa({ identidade, tamanho = "0.88rem" }) {
   );
 }
 
-export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null }) {
+export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, slotAcoes = null, hrefDaEmpresa = null }) {
   const { conversa, mensagens } = fio;
   const [texto, setTexto] = useState("");
   const [recusa, setRecusa] = useState(null);
@@ -103,7 +103,22 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null }
             {conversa.telefoneMascarado} · {rotuloDaSituacao(conversa).texto}
           </span>
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+          {/* ⚠⚠ "acessar a empresa em questão" — pedido do dono. É `<a href>` DE VERDADE (Ctrl+clique
+              abre em nova guia, o botão do meio funciona, o endereço é copiável), com o caminho
+              vindo de `companyTabPath` — a MESMA fonte que a navegação por clique usa. Duas
+              construções da mesma URL divergem na primeira correção.
+              ⚠ Dentro da empresa quem monta não passa `hrefDaEmpresa`: um link para a própria tela
+              não leva a lugar nenhum. */}
+          {hrefDaEmpresa && conversa.portalClientId ? (
+            <a
+              data-testid="ir-para-a-empresa"
+              href={hrefDaEmpresa(conversa.portalClientId)}
+              style={{ fontSize: "0.76rem", color: "var(--accent-purple)" }}
+            >
+              Abrir a empresa →
+            </a>
+          ) : null}
           {situacao === SITUACAO_FIO.ASSUMIDA ? (
             <Button variant="secondary" disabled={hook.ocupado} onClick={() => hook.devolver(conversa.id)} title="O assistente volta a responder neste fio">Devolver à IA</Button>
           ) : situacao !== SITUACAO_FIO.FILA_SEM_EMPRESA ? (
@@ -141,6 +156,10 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null }
           );
         })}
       </div>
+
+      {/* ⚠ As ações rápidas ficam ACIMA do compositor, e só existem onde há o que fazer: no
+          `/whatsapp` não há campo de anotação ao lado, então lá a tira não é montada. */}
+      {slotAcoes}
 
       {/* ⚠ A JANELA É DITA ANTES DE DIGITAR: campo desabilitado com o motivo, nunca campo que recusa depois. */}
       <div>

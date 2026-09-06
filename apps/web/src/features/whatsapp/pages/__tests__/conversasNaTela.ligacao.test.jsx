@@ -261,3 +261,23 @@ describe("⚠ o balão e o cabeçalho não discordam sobre quem escreveu", () =>
     expect(within(fio).getByTestId("balao-m1")).toHaveTextContent(/^cliente ·/);
   });
 });
+
+// ⚠⚠ "e acessar a empresa em questão" — pedido do dono, no mesmo parágrafo do chat geral.
+describe("⚠ da caixa geral se chega à empresa", () => {
+  it("o fio de cliente traz um LINK de verdade para a aba Anotações dela", async () => {
+    await montar();
+    fireEvent.click(screen.getByTestId("conversa-cv1"));
+    const fio = await screen.findByTestId("fio");
+    const link = within(fio).getByTestId("ir-para-a-empresa");
+    // ⚠ `<a href>` de verdade: Ctrl+clique, botão do meio e "copiar endereço" funcionam de graça.
+    expect(link.tagName).toBe("A");
+    expect(link).toHaveAttribute("href", "/companies/pc-1/anotacoes");
+  });
+
+  it("⚠ o fio da FILA não tem empresa — e não se inventa um link para lugar nenhum", async () => {
+    await montar();
+    fireEvent.click(screen.getByTestId("conversa-cv3"));
+    const fio = await screen.findByTestId("fio");
+    expect(within(fio).queryByTestId("ir-para-a-empresa")).toBeNull();
+  });
+});

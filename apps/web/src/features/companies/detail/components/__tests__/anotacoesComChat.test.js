@@ -47,18 +47,18 @@ describe("⚠⚠ o chat está MONTADO ao lado das anotações", () => {
 
   it("as duas colunas saem da MESMA grade, e a classe é a do CSS", () => {
     expect(wrapper).toMatch(/className="anotacoes-com-chat"/);
-    expect(wrapper).toMatch(/<CompanyNotesTab notes={notes} \/>/);
+    expect(wrapper).toMatch(/<CompanyNotesTab notes={notes}/);
     expect(wrapper).toMatch(/<ChatDaEmpresa/);
   });
 
   it("⚠⚠ o hook monta com `companyDocsApi` — `CompanyDetailPage` NÃO recebe uma prop `api`", () => {
     // Este erro já compilou, passou nos testes e explodiu só no navegador.
-    expect(wrapper).toMatch(/<ChatDaEmpresa api={companyDocsApi}/);
-    expect(wrapper).not.toMatch(/<ChatDaEmpresa api={api}/);
+    expect(wrapper).toMatch(/<ChatDaEmpresa\s+api={companyDocsApi}/);
+    expect(wrapper).not.toMatch(/<ChatDaEmpresa\s+api={api}/);
   });
 
   it("⚠ ANOTAÇÕES vem PRIMEIRO no documento — é a aba dela, e é o que põe o chat embaixo no estreito", () => {
-    expect(wrapper.indexOf("CompanyNotesTab")).toBeLessThan(wrapper.indexOf("ChatDaEmpresa api"));
+    expect(wrapper.indexOf("CompanyNotesTab")).toBeLessThan(wrapper.indexOf("<ChatDaEmpresa"));
   });
 });
 

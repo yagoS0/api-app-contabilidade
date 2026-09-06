@@ -973,6 +973,14 @@ export function createRealApi() {
     async getMensagensWhatsapp(conversaId) {
       return request(`/firm/whatsapp/conversas/${conversaId}/mensagens`);
     },
+    // ⚠ É MENSAGEM DE SERVIÇO: fora da janela de 24h o servidor responde 409 FORA_DA_JANELA, com o
+    // MESMO corpo do `responder`. A empresa do documento vem do FIO, nunca do corpo.
+    async enviarDocumentoWhatsapp(conversaId, documentId, { legenda = null } = {}) {
+      return request(`/firm/whatsapp/conversas/${conversaId}/enviar-documento`, {
+        method: "POST",
+        body: JSON.stringify({ documentId, ...(legenda ? { legenda } : {}) }),
+      });
+    },
     async assumirConversaWhatsapp(conversaId) {
       return request(`/firm/whatsapp/conversas/${conversaId}/assumir`, { method: "POST" });
     },

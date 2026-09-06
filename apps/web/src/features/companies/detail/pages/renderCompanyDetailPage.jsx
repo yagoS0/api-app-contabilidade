@@ -143,14 +143,22 @@ function CompanyDocumentsTabWrapper({ companyId, feedback }) {
 // navegador.
 function CompanyNotesTabWrapper({ companyId, feedback }) {
   const notes = useCompanyNotes({ api: companyDocsApi, companyId, feedback });
+  // ⚠ O rascunho é o que faz "virar anotação" existir, e é o que torna o LADO A LADO condição da
+  // ação, não estética: sem o campo ao lado não há destino, e no `/whatsapp` o botão nem aparece.
+  const [rascunho, setRascunho] = useState(null);
   return (
     <div className="anotacoes-com-chat">
       <div style={{ minWidth: 0 }}>
-        <CompanyNotesTab notes={notes} />
+        <CompanyNotesTab notes={notes} rascunho={rascunho} aoUsarRascunho={() => setRascunho(null)} />
       </div>
       <div className="anotacoes-com-chat__chat">
         <Suspense fallback={<CompanyTabLoading />}>
-          <ChatDaEmpresa api={companyDocsApi} companyId={companyId} feedback={feedback} />
+          <ChatDaEmpresa
+            api={companyDocsApi}
+            companyId={companyId}
+            feedback={feedback}
+            onVirarAnotacao={setRascunho}
+          />
         </Suspense>
       </div>
     </div>
