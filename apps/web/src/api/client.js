@@ -23,6 +23,9 @@ export function createApiClient() {
           if (prop in target) return target[prop];
           const realFn = real[prop];
           const mockFn = mock[prop];
+          // Contadores, histórico e fichas precisam da mesma fonte das mutações.
+          // Uma recusa real não pode virar envio/criação simulados nem lista vazia.
+          if (typeof prop === "string" && /Whatsapp|Onboarding/.test(prop)) return realFn;
           if (typeof realFn === "function" && typeof mockFn === "function") {
             return async (...args) => {
               try {

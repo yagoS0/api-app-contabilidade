@@ -1446,6 +1446,23 @@ const mockOnboardings = new Map();
 const mockOnboardingEtapas = new Map(); // onboardingId -> etapa[]
 let mockOnboardingSeq = 0;
 
+// O fluxo WhatsApp abre a ficha por href. A demonstração precisa sobreviver à
+// navegação/reload, como o banco real; armazena somente dados do modo mock na aba.
+const CHAVE_ONBOARDING_MOCK = "mock:onboardings:v1";
+try {
+  const salvo = typeof sessionStorage !== "undefined" ? JSON.parse(sessionStorage.getItem(CHAVE_ONBOARDING_MOCK) || "null") : null;
+  if (salvo && Array.isArray(salvo.fichas) && Array.isArray(salvo.etapas)) {
+    for (const [id, ficha] of salvo.fichas) mockOnboardings.set(id, ficha);
+    for (const [id, etapas] of salvo.etapas) mockOnboardingEtapas.set(id, etapas);
+    mockOnboardingSeq = Number.isSafeInteger(salvo.seq) ? salvo.seq : 0;
+  }
+} catch { /* Navegador sem storage mantém a demonstração em memória. */ }
+function persistirOnboardingsMock() {
+  try {
+    if (typeof sessionStorage !== "undefined") sessionStorage.setItem(CHAVE_ONBOARDING_MOCK, JSON.stringify({ fichas: [...mockOnboardings], etapas: [...mockOnboardingEtapas], seq: mockOnboardingSeq }));
+  } catch { /* A indisponibilidade do storage não interfere na API real. */ }
+}
+
 // ⚠ STAND-IN do catálogo do servidor (`application/onboarding/etapasTemplate.js`), que é a
 // AUTORIDADE — a trilha real mora só lá, para que quem preenche o formulário não escolha o que o
 // escritório tem de conferir. O que precisa ser fiel aqui é o COMPORTAMENTO (materializar no
@@ -10316,6 +10333,7 @@ export function createMockApi() {
       };
       mockOnboardings.set(registro.id, registro);
       mockOnboardingEtapas.set(registro.id, []);
+      persistirOnboardingsMock();
       return { ok: true, onboarding: { ...registro, etapas: [] } };
     },
 
@@ -10388,6 +10406,7 @@ export function createMockApi() {
 
       atual.updatedAt = new Date().toISOString();
       mockOnboardings.set(atual.id, atual);
+      persistirOnboardingsMock();
       return { ok: true, onboarding: mockOnboardingComEtapas(atual.id) };
     },
 
@@ -10405,6 +10424,7 @@ export function createMockApi() {
       // A primeira etapa concluída promove sozinha.
       if (patch.concluida === true && registro.status === "RECEBIDO") registro.status = "EM_TRILHA";
       registro.updatedAt = new Date().toISOString();
+      persistirOnboardingsMock();
       return { ok: true, etapa, onboarding: mockOnboardingComEtapas(id) };
     },
 
@@ -10419,6 +10439,7 @@ export function createMockApi() {
       registro.portalClientId = portalClientId;
       registro.status = "CONVERTIDO";
       registro.convertidoEm = new Date().toISOString();
+      persistirOnboardingsMock();
       registro.updatedAt = new Date().toISOString();
       return {
         ok: true,
@@ -10437,6 +10458,7 @@ export function createMockApi() {
       registro.desistiuEm = new Date().toISOString();
       registro.motivoDesistencia = motivo || null;
       registro.updatedAt = new Date().toISOString();
+      persistirOnboardingsMock();
       return { ok: true, onboarding: mockOnboardingComEtapas(id) };
     },
 
@@ -10450,6 +10472,7 @@ export function createMockApi() {
       }
       mockOnboardings.delete(id);
       mockOnboardingEtapas.delete(id);
+      persistirOnboardingsMock();
       return { ok: true };
     },
 

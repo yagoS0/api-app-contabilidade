@@ -35,6 +35,8 @@ describe("funil no modo mock — ponta a ponta, sem backend", () => {
   // entre telas), então quem se adapta é o teste — recarregar o módulo é o que dá isolamento sem
   // pedir ao mock que esqueça o que o app precisa que ele lembre.
   beforeEach(async () => {
+    // F4: o mock também sobrevive ao href/reload; cada caso começa em uma aba limpa.
+    sessionStorage.removeItem("mock:onboardings:v1");
     jest.resetModules();
     const { createMockApi } = await import("../../../../api/mock/mockApi");
     api = createMockApi();

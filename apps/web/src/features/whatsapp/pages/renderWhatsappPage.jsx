@@ -19,6 +19,8 @@ import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
 import { Feedback } from "../../../components/ui/Feedback";
 import { useConversasWhatsapp } from "../hooks/useConversasWhatsapp";
+import { FormOnboarding } from "../components/FormOnboarding";
+import { onboardingDaConversa, fraseDoOnboarding } from "../lib/onboardingDaConversa";
 import { FioDaConversa, LinhaDaEmpresa, NomeDaPessoa, campo } from "../components/FioDaConversa";
 // ⚠ A MESMA fonte da URL que a navegação por clique usa — nunca uma segunda construção do caminho.
 import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
@@ -32,7 +34,7 @@ const COR_TOM = { aviso: "var(--state-warn)", neutro: "var(--text-muted)" };
 // escolhendo entre coisas que não se substituem. Numa conversa de cliente aparecia a EMPRESA e o
 // contador nunca sabia QUEM estava falando; numa da fila aparecia a pessoa e não havia empresa.
 // Hoje são duas linhas: a pessoa em cima (com a origem do nome dita), a empresa embaixo.
-function LinhaConversa({ c, ativa, onAbrir }) {
+function LinhaConversa({ c, ativa, onAbrir, onboarding }) {
   const r = rotuloDaSituacao(c);
   const identidade = identidadeDaConversa(c);
   return (
@@ -54,6 +56,7 @@ function LinhaConversa({ c, ativa, onAbrir }) {
         <span style={{ marginLeft: "auto", fontSize: "0.7rem", color: "var(--text-faint)" }}>{fmtDataHora(c.ultimaMensagem?.registradaEm || c.updatedAt)}</span>
       </div>
       <div><LinhaDaEmpresa identidade={identidade} /></div>
+      {fraseDoOnboarding(onboarding) ? <div data-testid="onboarding-da-conversa" style={{ fontSize: "0.74rem", color: "var(--state-warn)" }}>{fraseDoOnboarding(onboarding)}</div> : null}
       <div style={{ fontSize: "0.74rem", color: COR_TOM[r.tom] }}>{c.telefoneMascarado} · {r.texto}{c.pendencia ? ` · pedido ${c.pendencia.codigo} aguardando confirmação` : ""}</div>
       {c.ultimaMensagem?.corpo ? <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.ultimaMensagem.corpo}</div> : null}
     </button>
@@ -113,6 +116,21 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
   const lista = useMemo(() => ordenarConversas(hook.conversas), [hook.conversas]);
   const fila = lista.filter((c) => situacaoDoFio(c) === SITUACAO_FIO.FILA_SEM_EMPRESA).length;
   const avisoDaLista = frasePaginacao(hook.temMais);
+  const [onboardings, setOnboardings] = useState(null);
+  const [carregandoOnboarding, setCarregandoOnboarding] = useState(true);
+  const [revisaoOnboarding, setRevisaoOnboarding] = useState(0);
+  useEffect(() => {
+    let vivo = true;
+    if (!hook.conversas.some((c) => !c.portalClientId) || typeof api?.listarOnboardings !== "function") return undefined;
+    setCarregandoOnboarding(true);
+    api.listarOnboardings({ incluirRascunhos: true }).then((r) => {
+      if (vivo) setOnboardings(Array.isArray(r?.itens) ? r.itens : null);
+    }).catch(() => { if (vivo) setOnboardings(null); })
+      .finally(() => { if (vivo) setCarregandoOnboarding(false); });
+    return () => { vivo = false; };
+  }, [api, hook.conversas, revisaoOnboarding]);
+  const leituraOnboarding = (c) => !c.portalClientId && carregandoOnboarding && onboardings === null
+    ? { situacao: "CARREGANDO", candidatos: [] } : onboardingDaConversa(c, onboardings);
 
   return (
     <PageShell
@@ -140,7 +158,7 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
         <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1fr) minmax(0, 2fr)", gap: 16 }}>
           <div>
             {!hook.carregando && !hook.erro && lista.length === 0 ? <p style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Nenhuma conversa neste filtro.</p> : null}
-            {lista.map((c) => <LinhaConversa key={c.id} c={c} ativa={hook.aberta?.conversa?.id === c.id} onAbrir={hook.abrir} />)}
+            {lista.map((c) => <LinhaConversa key={c.id} c={c} ativa={hook.aberta?.conversa?.id === c.id} onAbrir={hook.abrir} onboarding={leituraOnboarding(c)} />)}
             {/* ⚠ A lista também pode estar cortada, e o corte é DITO — não se conclui do silêncio. */}
             {lista.length > 0 && avisoDaLista ? (
               <p data-testid="aviso-paginacao-lista" style={{ fontSize: "0.72rem", color: "var(--text-faint)", margin: "8px 2px 0" }}>{avisoDaLista}</p>
@@ -156,7 +174,10 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
                 hook={hook}
                 temMais={hook.temMaisNoFio}
                 hrefDaEmpresa={(id) => companyTabPath(id, "anotacoes")}
-                slotVincular={<FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa?.id} onVincular={hook.vincular} ocupado={hook.ocupado} />}
+                slotVincular={<>
+                  <FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa?.id} onVincular={hook.vincular} ocupado={hook.ocupado} />
+                  <FormOnboarding key={hook.aberta.conversa.id} api={api} conversa={hook.aberta.conversa} mensagens={hook.aberta.mensagens} leitura={leituraOnboarding(hook.aberta.conversa)} onCriado={() => setRevisaoOnboarding((v) => v + 1)} />
+                </>}
               />
             ) : (
               <p style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Escolha uma conversa à esquerda.</p>

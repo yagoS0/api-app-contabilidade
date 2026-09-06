@@ -145,3 +145,14 @@ apps/web/src/features/onboarding/lib/onboardingZod.js              schema deriva
 apps/web/src/features/onboarding/lib/onboardingStatus.js           status → token/ícone
 apps/web/src/features/onboarding/lib/brasilApi.js                  consulta de CNPJ + 2 mapeamentos
 ```
+
+## Entrada pela conversa WhatsApp (F4, 06/09/2026)
+
+`features/whatsapp/components/FormOnboarding.jsx` cria RASCUNHO com origem explícita,
+preenche responsável/telefone da conversa pelo PATCH existente e abre o wizard. Exige
+mensagem recebida e confere fichas existentes. Falha no PATCH reaproveita o mesmo id,
+com releitura antes de repetir para não apagar ficha preenchida; resposta perdida do
+POST impede repetição automática. Não garante unicidade entre atendentes simultâneos.
+O mock preserva rascunhos em sessionStorage (`mock:onboardings:v1`); testes que resetam
+módulos para iniciar outra base precisam limpar essa chave. WhatsApp/onboarding não
+caem no mock quando a API real falha. Evidências: `docs/whatsapp-central-retomada.md`.
