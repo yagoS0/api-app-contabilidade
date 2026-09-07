@@ -78,6 +78,7 @@ import {
 // ⚠ A regra do PERFIL mora em `lib/perfilDaNota.js`, com teste próprio. Aqui é só LIGAÇÃO — é o
 // costume deste app, e é o que impede a tela e o servidor de discordarem sobre o mesmo campo.
 import {
+  SITUACAO as SITUACAO_PERFIL,
   camposDoPerfil,
   conferirPerfilEscolhido,
   lerPerfis,
@@ -98,6 +99,8 @@ import {
 import { SeletorMunicipio } from "./SeletorMunicipio";
 import { SeletorTomador } from "./SeletorTomador";
 import { DesfechoEmissao } from "./DesfechoEmissao";
+import { OPERACAO_VAZIA, conferirDadosDaOperacao } from "./lib/dadosDaOperacao";
+import { DadosDaOperacao } from "./DadosDaOperacao";
 import { PreviaNota } from "./PreviaNota";
 
 /**
@@ -154,6 +157,7 @@ import { PreviaNota } from "./PreviaNota";
  */
 
 const CAMPOS_VAZIOS = {
+  ...OPERACAO_VAZIA,
   tomadorDoc: "",
   tomadorNome: "",
   tomadorEmail: "",
@@ -344,7 +348,9 @@ function montarPayload(form, { regime, codigoServicoEscolhido = null, perfilId =
   // de sempre — mandar o id ali criaria uma segunda fonte para a mesma decisão.
   if (perfilId) payload.perfilId = perfilId;
 
-  return payload;
+  const operacao = conferirDadosDaOperacao(form, payload.servico.valorServicos);
+  if (!operacao.ok) throw new Error(operacao.erros.join(" "));
+  return { ...payload, ...operacao.payload };
 }
 
 /**
@@ -467,7 +473,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     // ponto de partida inteiro, e restos de uma digitação anterior misturados a ele produziriam uma
     // nota que ninguém montou. `formVazio()` traz a competência de HOJE — a da nota de origem é
     // dela, e não é copiada.
-    setForm({ ...formVazio(), ...modelo.campos });
+    setForm({ ...formVazio(), ...modelo.campos, ...OPERACAO_VAZIA });
     // ⚠ Descrição VAZIA não conta como digitada: assim o pré-preenchimento pela atividade do
     // cadastro continua valendo (é o caminho de verdade neste portal, ver `reaproveitarNota.js`).
     marcarDescricaoDigitada(Boolean(modelo.campos.descricao));
@@ -710,17 +716,15 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   // ⚠ A regra é `lib/perfilDaNota.js`; aqui é a LIGAÇÃO. ⚠ Só é pedido a quem pode emitir, como a
   // memória de tomadores — a tela nem chega a montar o formulário sem o portão.
   //
-  // ⚠⚠ ROTA FORA DO AR OU CONTRATO ANTIGO NÃO ESTRAGAM A TELA: `lerPerfis` responde `NAO_RECEBIDA`
-  // e a tela fica **exatamente como era**. Perfil é melhoria, não pré-requisito — e esconder campo
-  // por causa de uma chamada que falhou produziria emissão recusada com o conserto fora da tela.
+  // Falha/carregamento não comprovam ausência de perfis: emissão permanece bloqueada.
   const perfisDeEmissao = useCarregamento(
-    () => api.getPerfisDeEmissao(companyId),
+    async () => ({ companyId, resposta: await api.getPerfisDeEmissao(companyId) }),
     [companyId],
     { habilitado: portao.podeEmitir }
   );
   const leituraDePerfis = useMemo(
-    () => lerPerfis(perfisDeEmissao.dados),
-    [perfisDeEmissao.dados]
+    () => lerPerfis(!perfisDeEmissao.carregando && !perfisDeEmissao.erro && perfisDeEmissao.dados?.companyId === companyId ? perfisDeEmissao.dados.resposta : null),
+    [perfisDeEmissao.dados, perfisDeEmissao.carregando, perfisDeEmissao.erro, companyId]
   );
   const [perfilEscolhido, setPerfilEscolhido] = useState("");
   const {
@@ -893,7 +897,8 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     issRetido && valorServicos !== null && aliquota !== null
       ? Number(((valorServicos * aliquota) / 100).toFixed(2))
       : null;
-  const liquido =
+  const conferenciaOperacao = conferirDadosDaOperacao(form, valorServicos);
+  const liquidoAntesDasRetencoes =
     valorServicos === null
       ? null
       : issRetido
@@ -901,6 +906,8 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
           ? null
           : Number((valorServicos - issRetidoValor).toFixed(2))
         : valorServicos;
+  const liquido = liquidoAntesDasRetencoes === null || !conferenciaOperacao.ok
+    ? null : Number((liquidoAntesDasRetencoes - conferenciaOperacao.totalRetido).toFixed(2));
 
   // ⚠⚠ IDEM PARA O `pTotTribSN`: a prévia mostra o que VAI SER DECLARADO. Fora do Simples ela
   // recebe `null` e o espelho da nota não exibe a linha — mostrar ali um percentual que o corpo não
@@ -919,6 +926,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
 
   const valoresDaPrevia = useMemo(
     () => ({
+      dadosDaOperacao: conferirDadosDaOperacao(form, valorServicos),
       tomadorNome: form.tomadorNome.trim(),
       tomadorDoc: apenasDigitos(form.tomadorDoc),
       tomadorEmail: form.tomadorEmail.trim(),
@@ -1026,7 +1034,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     // o efeito sai numa nota fiscal irreversível. Mesma trava — e mesmo motivo — do código de
     // serviço, logo acima.
     if (!conferenciaPerfil.ok) {
-      document.getElementById("emitir-perfil")?.focus();
+      (document.getElementById("emitir-perfil") || document.getElementById("emitir-perfil-indisponivel"))?.focus();
       return;
     }
 
@@ -1049,6 +1057,11 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     // possível. ⚠ O critério é o DELE: ZERO passa, negativo não (ver `conferirPTotTribSN`).
     if (!conferenciaPTotTribSN.ok) {
       document.getElementById("emitir-ptottribsn")?.focus();
+      return;
+    }
+
+    if (!conferenciaOperacao.ok) {
+      document.getElementById("emitir-operacao-erro")?.focus();
       return;
     }
 
@@ -1727,6 +1740,10 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                     formulário sobrescrever, em silêncio, a correção do contador.
                     ⚠ Só aparece com MAIS DE UM: com um só não há o que escolher, e a tela DIZ qual
                     é (mesmo desenho do ramo `UNICO` do código de serviço). */}
+                {!conferenciaPerfil.ok && !seletorDePerfilNoFormulario && <div id="emitir-perfil-indisponivel" tabIndex={-1} role="alert">
+                  <p>{perfisDeEmissao.carregando ? "Verificando os tipos de serviço…" : conferenciaPerfil.falta}</p>
+                  {!perfisDeEmissao.carregando && <button type="button" className="btn" onClick={perfisDeEmissao.recarregar}>Recarregar tipos de serviço</button>}
+                </div>}
                 {seletorDePerfilNoFormulario ? (
                   <>
                     <label htmlFor="emitir-perfil">
@@ -2059,8 +2076,10 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                 ) : null}
               </fieldset>
 
+              <DadosDaOperacao form={form} campo={campo} conferencia={conferenciaOperacao} disabled={enviando} />
+              {!conferenciaOperacao.ok && <p id="emitir-operacao-erro" tabIndex={-1} role="alert">Revise os dados da operação antes de emitir: {conferenciaOperacao.erros.join(" ")}</p>}
               <div className="total">
-                <span>{issRetido ? "A receber do tomador" : "Valor da nota"}</span>
+                <span>{issRetido || conferenciaOperacao.totalRetido ? "A receber do tomador" : "Valor da nota"}</span>
                 <strong>{liquido === null ? TRACO : brl(liquido)}</strong>
               </div>
               {issRetido ? (
@@ -2072,7 +2091,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
               ) : null}
 
               <div className="form-actions">
-                <button type="submit" className="btn btn-primary" disabled={enviando}>
+                <button type="submit" className="btn btn-primary" disabled={enviando || !conferenciaPerfil.ok}>
                   {enviando ? "Emitindo…" : "Emitir nota"}
                 </button>
               </div>
@@ -2082,7 +2101,9 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
             </form>
 
             <aside className="pane pane-preview" aria-label="Pré-visualização da nota">
-              <PreviaNota empresa={empresa} valores={valoresDaPrevia} />
+              {leituraDePerfis.situacao === SITUACAO_PERFIL.NAO_RECEBIDA
+                ? <p>Prévia disponível após verificar os tipos de serviço.</p>
+                : <PreviaNota empresa={empresa} valores={valoresDaPrevia} />}
             </aside>
           </div>
         </>

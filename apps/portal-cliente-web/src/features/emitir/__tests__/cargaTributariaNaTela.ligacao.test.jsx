@@ -56,6 +56,7 @@ let fetchOriginal;
 let corposEnviados;
 
 beforeEach(() => {
+  jest.spyOn(api, "getPerfisDeEmissao").mockResolvedValue({ habilitado: false, data: [], total: 0 });
   window.localStorage.clear();
   corposEnviados = [];
   fetchOriginal = global.fetch;

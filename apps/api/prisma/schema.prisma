@@ -3188,6 +3188,11 @@ model PerfilEmissaoNfse {
   /// ⚠⚠ HOJE ESTÁ CRAVADO EM "1" (`NfseService.js:887`) — é por isso que exportação de serviço é
   /// impossível de declarar, mesmo havendo empresa na carteira que presta para o exterior.
   tribISSQN String?
+  /// NFS-e 1.01: E0592; obrigatório somente quando tribISSQN = 2.
+  tpImunidade String?
+  /// E0585: suspensão só em operação tributável; processo com 30 dígitos.
+  exigSuspTipo String?
+  exigSuspProcesso String?
   /// `pAliq` — a alíquota do ISSQN, em percentual. **Quem declara é o contador** (decisão do dono,
   /// 01/09/2026: *"o contador declara a alíquota de ISS para reter, mas o cliente na tela dele deve
   /// poder selecionar se é retido ou não"*).

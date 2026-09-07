@@ -236,13 +236,17 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
   // com `max=10`). A tela do planejamento trabalha em FRAÇÃO. A conversão é feita aqui, uma vez —
   // fosse feita na tela, o mesmo campo teria duas leituras e um ISS de 5% viraria 500%.
   const perfil = Array.isArray(cadastro?.perfilAtividades) ? cadastro.perfilAtividades : [];
-  const escolhida = perfil.find((c) => c && c.padrao && c.ativo !== false && c.aliquotaIss != null)
-    || perfil.find((c) => c && c.ativo !== false && c.aliquotaIss != null)
-    || null;
+  const comIss = perfil.filter((c) => c && c.ativo !== false && c.aliquotaIss != null);
+  const padroes = comIss.filter((c) => c.padrao);
+  const candidatas = padroes.length ? padroes : comIss;
+  const ambiguo = new Set(candidatas.map((c) => Number(c.aliquotaIss))).size > 1;
+  const escolhida = ambiguo ? null : candidatas[0] || null;
   const issPercentual = escolhida ? Number(escolhida.aliquotaIss) : null;
   const aliquotaIss = escolhida && Number.isFinite(issPercentual) && issPercentual > 0
     ? apurado(issPercentual / 100, `perfil de atividades — CNAE ${escolhida.cnae} (${String(issPercentual).replace(".", ",")}%)`)
-    : ausente("Alíquota de ISS não informada no perfil de atividades da empresa.");
+    : ausente(ambiguo
+      ? "Há alíquotas de ISS diferentes nas atividades da empresa. Confirme a alíquota aplicável ao cenário do planejamento."
+      : "Alíquota de ISS não informada no perfil de atividades da empresa.");
 
   // ── ATIVIDADE NO LUCRO PRESUMIDO ──────────────────────────────────────────────────────────────
   // ⚠⚠ O QUE ESTAVA ESCRITO AQUI CONTINUA VERDADEIRO, E VALE RELER:

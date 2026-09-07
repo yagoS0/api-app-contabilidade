@@ -18,10 +18,11 @@
 // aba: no backend é rota própria, com gate `ACCOUNTANT`+ e auditoria de quem/quando. Um campo a
 // mais faria o ato fiscal viajar junto de troca de código de serviço.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { createApiClient } from "../../../../api/client";
 import { PainelProximaDps } from "./PainelProximaDps";
+import { EditorPerfilEmissao } from "./EditorPerfilEmissao";
 import { CamposEmissaoNfse } from "../../form/components/CamposEmissaoNfse";
 import { mapCompanyToEmissaoNfseForm } from "../../form/hooks/useManageCompanyForm";
 
@@ -124,17 +125,23 @@ export function EmissaoNfseTab({
   const [perfis, setPerfis] = useState(null);
   const [carregandoPerfis, setCarregandoPerfis] = useState(false);
   const [salvandoPerfil, setSalvandoPerfil] = useState(false);
+  const empresaAtual = useRef(portalClientId);
+  empresaAtual.current = portalClientId;
+  const [empresaDosPerfis, setEmpresaDosPerfis] = useState(null);
 
   const carregarPerfis = useCallback(async () => {
     if (!portalClientId) return;
     setCarregandoPerfis(true);
     try {
-      setPerfis(await api.getPerfisEmissao(portalClientId));
+      const resposta = await api.getPerfisEmissao(portalClientId);
+      if (empresaAtual.current !== portalClientId) return;
+      setPerfis(resposta);
+      setEmpresaDosPerfis(portalClientId);
     } catch {
       // ⚠ `null` é o estado "não recebida", que a lib distingue de "esta empresa não tem perfil".
-      setPerfis(null);
+      if (empresaAtual.current === portalClientId) setPerfis(null);
     } finally {
-      setCarregandoPerfis(false);
+      if (empresaAtual.current === portalClientId) setCarregandoPerfis(false);
     }
   }, [portalClientId]);
 
@@ -174,6 +181,15 @@ export function EmissaoNfseTab({
     }
   }, [portalClientId, carregarPerfis]);
 
+  async function salvarPerfil(perfilId, corpo) {
+    setSalvandoPerfil(true);
+    try {
+      if (perfilId) await api.salvarPerfilEmissao(portalClientId, perfilId, corpo);
+      else await api.criarPerfilEmissao(portalClientId, corpo);
+      await carregarPerfis();
+    } finally { setSalvandoPerfil(false); }
+  }
+
   return (
     <section className="company-form-page__panel">
       <div className="company-form-page__intro">
@@ -186,12 +202,20 @@ export function EmissaoNfseTab({
       </div>
 
       <PainelProximaDps
-        dados={perfis}
+        dados={empresaDosPerfis === portalClientId ? perfis : null}
         carregando={carregandoPerfis}
         podeEditar={podeEditar}
         salvando={salvandoPerfil}
         onCriarDoCadastro={criarDoCadastro}
         onMarcarPadrao={marcarPadrao}
+      />
+
+      <EditorPerfilEmissao
+        key={portalClientId}
+        dados={empresaDosPerfis === portalClientId ? perfis : null}
+        podeEditar={podeEditar}
+        salvando={salvandoPerfil}
+        onSalvar={salvarPerfil}
       />
 
       {!podeEditar ? (

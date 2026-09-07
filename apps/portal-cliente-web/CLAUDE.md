@@ -2311,3 +2311,10 @@ serviço**, não ao do repositório.
 ⚠ **Variáveis `VITE_*` são de BUILD**, embutidas no bundle; precisam existir como variáveis do
 serviço no painel (o Railway as passa como build args). Dev local: `npm run dev`, porta **5210**
 (escolhida para não brigar com o portal do escritório).
+
+
+## Dados específicos da emissão — 07/09/2026
+
+O cliente pode informar por nota IRRF e contribuição previdenciária retidos (valores monetários explícitos), CNO/CEI ou CIB da obra com inscrição imobiliária opcional, e CPF/CNPJ/nome do destinatário diferente do tomador. As regras ficam em emitir/lib/dadosDaOperacao.js; o backend continua sendo a autoridade fiscal, inclusive para exigir IBS/CBS no destinatário separado. Nenhuma alíquota é inferida. Os grupos opcionais vazios não viajam. A prévia mostra os mesmos dados do payload e desconta as retenções explícitas do líquido. Troca de empresa, nova nota e uso de modelo limpam esses campos. Testes de regra e ligação em dadosDaOperacao; nenhum teste emite nota real.
+
+A leitura dos perfis agora bloqueia a emissão durante carregamento, erro HTTP ou resposta inválida. A prévia e os campos de código/local não apresentam defaults até confirmar a resposta da empresa atual. O botão Recarregar tipos de serviço refaz a consulta. Somente resposta válida vazia ou habilitado:false permite seguir sem perfil; o backend também deve devolver erro de consulta, nunca lista vazia em falha.

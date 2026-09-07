@@ -96,6 +96,22 @@ beforeEach(() => {
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 describe("GET — o painel do que a próxima DPS vai levar", () => {
+  it("oferece NBS e combinações sem eleger uma classificação", async () => {
+    const r = await request(app).get(URL);
+    expect(r.body.sugestoes.porServico[0]).toMatchObject({ codigo: "171901" });
+    expect(r.body.sugestoes.porServico[0].nbs.length).toBeGreaterThan(0);
+    expect(prismaMock.perfilEmissaoNfse.create).not.toHaveBeenCalled();
+  });
+  it("recusa NBS intermediário antes de gravar", async () => {
+    const r = await request(app).post(URL).send({ nome: "Teste", codigoServicoNacional: "171901", codigoNbs: "1.0101" });
+    expect(r.status).toBe(400);
+    expect(prismaMock.perfilEmissaoNfse.create).not.toHaveBeenCalled();
+  });
+  it("permite limpar retenção federal para não configurado", async () => {
+    const r = await request(app).post(URL).send({ nome: "Teste", codigoServicoNacional: "171901", retencaoFederalArt30: null });
+    expect(r.status).toBe(201);
+    expect(r.body.perfil.retencaoFederalArt30).toBeNull();
+  });
   it("devolve os seis campos com valor e PROCEDÊNCIA", async () => {
     const r = await request(app).get(URL);
     expect(r.status).toBe(200);

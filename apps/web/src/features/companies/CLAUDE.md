@@ -331,6 +331,12 @@ buscadas em runtime; o arquivo diz no cabeçalho como atualizar).
 
 ## Emissão de NFS-e — N códigos ESCOLHIDOS, e o municipal ainda digitado
 
+### Editor de perfis e sugestões (07/09/2026)
+
+Continuação: tipo de imunidade, tipo de suspensão e processo estão no perfil, com E0592/E0585. Os valores de IRRF/CP, identificador da obra e destinatário diferente são dados por operação no assistente do escritório; passam pelo validador e aparecem na confirmação. Migração `20260907193000_add_perfil_imunidade_suspensao` precisa preceder a ativação. O backend recusa indisponibilidade na leitura de perfil para emissão (a leitura do painel continua tolerante).
+
+`EditorPerfilEmissao` permite editar os campos fiscais de `GET /perfis-emissao`, usando a metadata retornada e as sugestões por serviço habilitado. NBS só é preenchido por seleção; cIndOp/cClassTrib são selecionados juntos; CST continua confirmado separadamente. Erros nomeados do backend preservam a edição. A configuração reinicia o editor ao mudar de empresa. O complemento municipal continua manual, pois não existe catálogo municipal versionado. Escopo e limitações: `docs/validacao-emissao-planejamento-2026-09-07.md`.
+
 ### ⚠⚠ VIROU ABA PRÓPRIA, COM SALVAR PRÓPRIO (dono, 19/08/2026)
 
 > *"configuração de notas na aba do contador está ficando muito grande, vamos separar ela em uma

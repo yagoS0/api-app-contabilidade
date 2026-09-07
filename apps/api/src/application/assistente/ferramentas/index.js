@@ -41,6 +41,7 @@ import { TIPOS } from "../confirmacaoPendente.js";
 import { criarPendencia } from "../AcoesPendentesService.js";
 import { PERMISSOES_ASSISTENTE, temPermissaoAssistente } from "../../whatsapp/permissoesAssistente.js";
 import { expedienteDoEscritorio } from "../expediente.js";
+import { INTEGRACAO_PERFIL_EMISSAO_NFSE } from "../../../config.js";
 
 /** As funções de fora, INJETÁVEIS. Produção usa os defaults; o teste passa dublês. */
 export const SERVICOS_PADRAO = Object.freeze({
@@ -48,6 +49,9 @@ export const SERVICOS_PADRAO = Object.freeze({
   consultarCnpj, municipiosIbgeOuNulo, validateNfsePayload, autorizarEmissaoDoCliente, resolveLegacyCompanyId,
   canGuideRecalculate, isGuideOverdue, avisoDeRecalculo, motivoValido, validarJustificativa, parseSitfisRelatorio,
   criarPendencia, baixarDocumentoDaEmpresa,
+  listarPerfisEmissao: async ({ sessao }) => INTEGRACAO_PERFIL_EMISSAO_NFSE
+    ? prisma.perfilEmissaoNfse.findMany({ where: { portalClientId: sessao.portalClientId, ativo: true }, select: { id: true, nome: true, codigoServicoNacional: true }, orderBy: { nome: "asc" } })
+    : [],
 });
 
 const EVENTO_CANCELAMENTO = "e101101";
@@ -115,7 +119,15 @@ export const DEFINICOES = Object.freeze([
   { name: "preparar_emissao", description: "MONTA um pedido de emissão de NFS-e e devolve o texto de confirmação. NÃO emite: o cliente precisa responder CONFIRMAR <código>. Exige papel CLIENT_ADMIN e empresa liberada pelo escritório.", strict: true, input_schema: S({
     tomadorDoc: str("CNPJ ou CPF do tomador, só dígitos ou com pontuação"),
     tomadorNome: strOuNulo("Nome/razão social do tomador"),
+    perfilId: strOuNulo("Perfil de serviço escolhido pelo cliente entre as opções devolvidas por preparar_emissao; null para consultar as opções. Nunca invente um id."),
     tomadorEmail: strOuNulo("E-mail do tomador"),
+    valorRetidoIRRF: numOuNulo("Valor em reais de IRRF retido informado pelo cliente; nunca calcule ou presuma; null quando ausente"),
+    valorRetidoPrevidencia: numOuNulo("Valor em reais de previdência retida informado pelo cliente; nunca calcule ou presuma; null quando ausente"),
+    obraCnoCei: strOuNulo("CNO/CEI da obra informado pelo cliente; null quando ausente"),
+    obraCib: strOuNulo("CIB da obra com 8 caracteres, alternativa ao CNO/CEI; null quando ausente"),
+    obraInscricaoImobiliaria: strOuNulo("Inscrição imobiliária da obra; null quando ausente"),
+    destinatarioDoc: strOuNulo("CPF/CNPJ do destinatário diferente do tomador, somente se explicitamente informado; null quando igual ao tomador"),
+    destinatarioNome: strOuNulo("Nome do destinatário diferente do tomador; null quando igual ao tomador"),
     descricao: str("Descrição do serviço prestado"),
     valor: { type: "number", description: "Valor dos serviços em reais (ex.: 1500.5)" },
     competencia: strOuNulo("Competência da nota AAAA-MM; null = a atual"),
@@ -363,8 +375,19 @@ const EXECUTORES = {
     const autorizacao = await servicos.autorizarEmissaoDoCliente({ portalClientId: sessao.portalClientId, userId: sessao.userId });
     if (!autorizacao.ok) return recusa(autorizacao.codigo || "EMISSAO_NAO_AUTORIZADA", `${autorizacao.message || "A emissão pelo cliente não está autorizada."} ${autorizacao.correcao || ""}`.trim());
 
+    const perfis = await servicos.listarPerfisEmissao({ sessao });
+    const perfil = input.perfilId ? perfis.find((p) => p.id === input.perfilId) : perfis.length === 1 ? perfis[0] : null;
+    if ((perfis.length > 1 || input.perfilId) && !perfil) {
+      return recusa("ESCOLHER_PERFIL_EMISSAO", "Peça ao cliente que escolha o tipo de serviço entre os perfis configurados pelo contador e repita o pedido com o perfilId escolhido.", { perfis });
+    }
+    const retencoes = Object.fromEntries(Object.entries({ vRetIRRF: input.valorRetidoIRRF, vRetCP: input.valorRetidoPrevidencia }).filter(([, v]) => v != null));
+    const obra = Object.fromEntries(Object.entries({ cObra: input.obraCnoCei, cCIB: input.obraCib, inscImobFisc: input.obraInscricaoImobiliaria }).filter(([, v]) => v != null));
     const corpo = {
+      ...(Object.keys(retencoes).length ? { retencoesComplementares: retencoes } : {}),
+      ...(Object.keys(obra).length ? { obra } : {}),
+      ...(input.destinatarioDoc != null || input.destinatarioNome != null ? { destinatario: { cnpjCpf: input.destinatarioDoc || "", nome: input.destinatarioNome || "" } } : {}),
       companyId: sessao.portalClientId,
+      ...(perfil ? { perfilId: perfil.id } : {}),
       tomador: { cnpjCpf: input.tomadorDoc, nome: input.tomadorNome || undefined, email: input.tomadorEmail || undefined, endereco: input.endereco || undefined },
       servico: { descricao: input.descricao, valor: input.valor, aliquota: input.aliquota ?? undefined, issRetido: input.issRetido === true },
       competencia: input.competencia || undefined,
@@ -374,7 +397,13 @@ const EXECUTORES = {
     if (!validacao.ok) return recusa(validacao.error, `A nota não pode ser montada assim: ${validacao.error}. Peça ao cliente o que falta.`);
 
     const dados = validacao.data;
-    const declaracao = textoDeConfirmacao({
+    const extras = [
+      dados.retencoesComplementares?.vRetIRRF != null ? "IRRF retido: " + fmtBRL(dados.retencoesComplementares.vRetIRRF) : null,
+      dados.retencoesComplementares?.vRetCP != null ? "Previdência retida: " + fmtBRL(dados.retencoesComplementares.vRetCP) : null,
+      dados.obra ? "Obra: " + (dados.obra.cObra ? "CNO/CEI " + dados.obra.cObra : "CIB " + dados.obra.cCIB) + (dados.obra.inscImobFisc ? " · Inscrição imobiliária: " + dados.obra.inscImobFisc : "") : null,
+      dados.destinatario ? "Destinatário: " + dados.destinatario.nome + " · " + formatarDoc(dados.destinatario.cnpjCpf) : null,
+    ].filter(Boolean).join("\n");
+    const declaracao = (extras ? extras + "\n\n" : "") + (perfil ? `Perfil de serviço: ${perfil.nome} (${perfil.codigoServicoNacional})\n\n` : "") + textoDeConfirmacao({
       tomador: { nome: dados?.tomador?.nome || input.tomadorNome, doc: dados?.tomador?.cnpjCpf || input.tomadorDoc, email: dados?.tomador?.email || input.tomadorEmail || null },
       endereco: dados?.tomador?.endereco?.cMun ? dados.tomador.endereco : null,
       servico: { descricao: dados?.servico?.descricao || input.descricao, valor: dados?.servico?.valorServicos ?? input.valor, aliquota: dados?.servico?.aliquota ?? input.aliquota ?? null, issRetido: Boolean(dados?.servico?.issRetido) },

@@ -36,8 +36,8 @@ describe("⚠ quatro situações, e a primeira é sobre a RESPOSTA", () => {
 
   it("⚠ perfil sem nome não vira opção — opção sem rótulo não se escolhe", () => {
     const r = lerPerfis({ data: [P("a", "Consultoria"), P("b", "  "), { id: "c" }] });
-    expect(r.perfis.map((p) => p.id)).toEqual(["a"]);
-    expect(r.situacao).toBe(SITUACAO.UNICO);
+    expect(r.perfis).toEqual([]);
+    expect(r.situacao).toBe(SITUACAO.NAO_RECEBIDA);
   });
 });
 
@@ -64,12 +64,12 @@ describe("⚠⚠ o que SOME da tela — e só o que o perfil de fato responde", 
     expect(camposDoPerfil(lerPerfis({ data: [P("a", "A"), P("b", "B")] })).mostrarSeletor).toBe(true);
   });
 
-  it("resposta não recebida se comporta como 'sem perfil' na TELA", () => {
+  it("resposta não recebida esconde os defaults ainda não confirmados", () => {
     // A distinção existe para o TEXTO (não afirmar coisa sobre o cadastro quando o problema é a
     // chamada); para os campos, o desfecho seguro é o mesmo: mostrar tudo.
     const c = camposDoPerfil(lerPerfis(null));
-    expect(c.codigoServicoNoFormulario).toBe(true);
-    expect(c.municipioDaPrestacaoNoFormulario).toBe(true);
+    expect(c.codigoServicoNoFormulario).toBe(false);
+    expect(c.municipioDaPrestacaoNoFormulario).toBe(false);
   });
 });
 
@@ -124,7 +124,7 @@ describe("⚠⚠ com vários e nenhum escolhido, a tela RECUSA — não cai no p
   });
 
   it("nas outras situações não há o que conferir", () => {
-    for (const s of [lerPerfis(null), lerPerfis({ data: [] }), lerPerfis({ data: [P("a", "A")] })]) {
+    for (const s of [lerPerfis({ data: [] }), lerPerfis({ data: [P("a", "A")] })]) {
       expect(conferirPerfilEscolhido(s, "")).toEqual({ ok: true });
     }
   });
@@ -180,4 +180,9 @@ describe("⚠ o texto nomeia o CONTADOR — o cliente precisa saber a quem recor
     ].join(" ");
     expect(textos).not.toMatch(/cTribNac|tribISSQN|regApTribSN|cLocPrestacao|DPS/);
   });
+});
+
+test("ausência de resposta bloqueia emissão; flag desligada explicitamente permite legado", () => {
+ expect(conferirPerfilEscolhido(lerPerfis(null), "").ok).toBe(false);
+ expect(conferirPerfilEscolhido(lerPerfis({habilitado:false,data:[]}), "").ok).toBe(true);
 });

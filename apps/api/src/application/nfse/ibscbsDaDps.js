@@ -24,7 +24,10 @@
 //   E0910 (linha 554) — "O destinatário só deve ser identificado quando indDest for 1."
 //
 // ⚠⚠ **`indDest = "0"` NÃO É PALPITE — É FATO SOBRE O DOCUMENTO QUE NÓS EMITIMOS.** Pela E0910, o
-// grupo `dest` só existe com `indDest = 1`; `buildDpsXml` **nunca monta `dest`**, logo o
+  // grupo `dest` só existe com `indDest = 1`. O padrão deste resolvedor é o tomador;
+  // desde 07/09/2026 `dadosEspeciaisDaNota` valida o destinatário informado na operação,
+  // e `buildDpsXml` substitui o indicador junto com a escrita do grupo `dest`.
+  // No cenário padrão, o
 // destinatário É o tomador identificado na nota. Se um dia o gerador passar a montar `dest`, esta
 // constante deixa de valer e as duas coisas mudam JUNTAS. Há teste varrendo o gerador atrás de
 // `<dest>` exatamente para que essa mudança não passe calada.

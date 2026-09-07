@@ -61,6 +61,7 @@ function abrir({
   codigoMunicipioIbge = "3304557",
   cadastroEmissao = CADASTRO_COMPLETO,
   fetchCnpj = FETCH_QUE_NUNCA_RESPONDE,
+  apiPerfis = null,
 } = {}) {
   render(
     <EmitirNfseWizard
@@ -69,6 +70,7 @@ function abrir({
       codigoMunicipioIbge={codigoMunicipioIbge}
       cadastroEmissao={cadastroEmissao}
       fetchCnpj={fetchCnpj}
+      apiPerfis={apiPerfis}
       onEmitir={onEmitir}
       onClose={noop}
     />
@@ -110,6 +112,44 @@ function ateOsValores() {
 }
 
 describe("o campo que faltava — pTotTribSN", () => {
+  it("retencoes, obra e destinatário seguem no payload e na confirmação", async () => {
+    const onEmitir = jest.fn(async () => ({ status: "issued", nfse: {} }));
+    jest.spyOn(window, "confirm").mockReturnValue(true);
+    abrir({ onEmitir });
+    ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84");
+    digitar("IRRF retido (R$)", "15,00");
+    digitar("Previdência retida (R$)", "110");
+    digitar("Identificador da obra", "123456789012");
+    digitar("CPF/CNPJ do destinatário", "12345678000199");
+    digitar("Nome do destinatário", "Cliente final");
+    continuar();
+    fireEvent.click(screen.getByRole("button", { name: /Emitir nota/ }));
+    await screen.findByText(/Nota autorizada|Nota registrada/);
+    expect(onEmitir).toHaveBeenCalledWith(expect.objectContaining({
+      retencoesComplementares: { vRetIRRF: 15, vRetCP: 110 }, obra: { cObra: "123456789012" }, destinatario: { cnpjCpf: "12345678000199", nome: "Cliente final" },
+    }));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("IRRF retido: R$ 15,00"));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("Destinatário IBS/CBS: Cliente final"));
+    window.confirm.mockRestore();
+  });
+  it("com vários perfis exige seleção e inclui o id na emissão e nome na confirmação", async () => {
+    const onEmitir = jest.fn(async () => ({ status: "issued", nfse: {} }));
+    jest.spyOn(window, "confirm").mockReturnValue(true);
+    abrir({ onEmitir, apiPerfis: { getPerfisEmissao: jest.fn(async () => ({ integracaoLigada: true, perfis: [
+      { id: "p1", nome: "Contabilidade", codigoServicoNacional: "171901", ativo: true },
+      { id: "p2", nome: "Consultoria", codigoServicoNacional: "170101", ativo: true },
+    ] })) } });
+    await screen.findByLabelText("Perfil de serviço desta nota");
+    ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84");
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Perfil de serviço desta nota"), { target: { value: "p2" } });
+    continuar();
+    fireEvent.click(screen.getByRole("button", { name: /Emitir nota/ }));
+    await screen.findByText(/Nota autorizada|Nota registrada/);
+    expect(onEmitir).toHaveBeenCalledWith(expect.objectContaining({ perfilId: "p2" }));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("Perfil de serviço: Consultoria"));
+    window.confirm.mockRestore();
+  });
   it("sem o percentual o assistente NÃO deixa avançar, e o botão diz por quê", () => {
     abrir();
     ateOsValores();

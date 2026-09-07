@@ -9172,9 +9172,9 @@ export function createMockApi() {
       const { CAMPOS_PERFIL_EMISSAO } = await import("../../lib/nfse/perfilEmissao.js");
       const campos = {};
       for (const def of CAMPOS_PERFIL_EMISSAO) {
-        const base = doCadastro[def.id];
+        const base = doCadastro[def.id] || { valor: null, valorHoje: null, fonte: "INDEFINIDO", mudariaComPerfil: false };
         const doPerfil = escolhido ? escolhido[def.id] : null;
-        campos[def.id] = doPerfil
+        campos[def.id] = doPerfil != null
           ? { ...base, valor: doPerfil, fonte: "PERFIL", mudariaComPerfil: doPerfil !== base.valorHoje }
           : { ...base };
         campos[def.id].rotulo = def.rotulo;
@@ -9185,6 +9185,7 @@ export function createMockApi() {
       return {
         ok: true,
         integracaoLigada: false,
+        sugestoes: { fonte: "Modo de demonstração — consulte o catálogo no ambiente real", url: "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica", porServico: [{ codigo: "171901", descricao: "Contabilidade", nbs: [], combinacoes: [] }] },
         perfis,
         derivadoDoCadastro: {
           origem: "DERIVADO_DO_CADASTRO",

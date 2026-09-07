@@ -4,6 +4,7 @@
 // usam. Nenhuma rede, nenhum banco.
 
 import { definicoes, executarFerramenta } from "../ferramentas/index.js";
+import { validateNfsePayload } from "../../validators/nfsePayload.js";
 import { TIPOS } from "../confirmacaoPendente.js";
 import { TODAS_PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente.js";
 
@@ -188,6 +189,36 @@ describe("documentos — só dentro da janela, e sempre pelo escopo", () => {
 
 describe("as três preparar_* — só PENDÊNCIA, nunca ato", () => {
   const emissao = { tomadorDoc: "12.345.678/0001-90", tomadorNome: "ACME", tomadorEmail: null, descricao: "Consultoria", valor: 1500.5, competencia: "2026-09", aliquota: null, issRetido: null, pTotTribSN: null, endereco: null };
+  it("exige escolha entre perfis e leva o escolhido à confirmação", async () => {
+    const perfis = [{ id: "p1", nome: "Contabilidade", codigoServicoNacional: "171901" }, { id: "p2", nome: "Consultoria", codigoServicoNacional: "170101" }];
+    const c = ctx({ servicos: servicosFalsos({ listarPerfisEmissao: jest.fn(async () => perfis) }) });
+    expect((await executarFerramenta("preparar_emissao", emissao, c)).motivo).toBe("ESCOLHER_PERFIL_EMISSAO");
+    expect(c.servicos.criarPendencia).not.toHaveBeenCalled();
+    expect((await executarFerramenta("preparar_emissao", { ...emissao, perfilId: "outra-empresa" }, c)).ok).toBe(false);
+    await executarFerramenta("preparar_emissao", { ...emissao, perfilId: "p2" }, c);
+    expect(c.servicos.validateNfsePayload).toHaveBeenCalledWith(expect.objectContaining({ perfilId: "p2" }));
+    expect(c.servicos.criarPendencia).toHaveBeenCalledWith(expect.objectContaining({ corpo: expect.stringContaining("Perfil de serviço: Consultoria") }));
+  });
+
+  it("campos por operação usam validador real e aparecem na confirmação e na pendência", async () => {
+    const c = ctx({ servicos: servicosFalsos({ validateNfsePayload: jest.fn(validateNfsePayload), listarPerfisEmissao: jest.fn(async () => []) }) });
+    const r = await executarFerramenta("preparar_emissao", { ...emissao, valorRetidoIRRF: 15.25, valorRetidoPrevidencia: 10, obraCnoCei: "123456789012", destinatarioDoc: "11222333000181", destinatarioNome: "Destinatário informado" }, c);
+    expect(r.ok).toBe(true);
+    const chamada = c.servicos.criarPendencia.mock.calls[0][0];
+    expect(chamada.payload.retencoesComplementares).toEqual({ vRetIRRF: 15.25, vRetCP: 10 });
+    expect(chamada.payload.obra).toEqual({ cObra: "123456789012" });
+    expect(chamada.payload.destinatario.nome).toBe("Destinatário informado");
+    expect(chamada.corpo).toContain("15,25");
+    expect(chamada.corpo).toContain("CNO/CEI 123456789012");
+    expect(chamada.corpo).toContain("Destinatário informado");
+  });
+  it("retenção maior que serviço e obra ambígua não criam pendência", async () => {
+    const c = ctx({ servicos: servicosFalsos({ validateNfsePayload: jest.fn(validateNfsePayload), listarPerfisEmissao: jest.fn(async () => []) }) });
+    for (const extra of [{ valorRetidoIRRF: 2000 }, { obraCnoCei: "123", obraCib: "12345678" }, { destinatarioNome: "Sem documento" }]) {
+      expect((await executarFerramenta("preparar_emissao", { ...emissao, ...extra }, c)).ok).toBe(false);
+    }
+    expect(c.servicos.criarPendencia).not.toHaveBeenCalled();
+  });
 
   it("preparar_emissao: portão recusa → nenhuma pendência", async () => {
     const c = ctx({ servicos: servicosFalsos({ autorizarEmissaoDoCliente: jest.fn(async () => ({ ok: false, codigo: "EMISSAO_CLIENTE_NAO_LIBERADA", message: "não liberada", correcao: "peça ao contador" })) }) });

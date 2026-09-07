@@ -80,8 +80,9 @@ describe("⚠⚠ A TABELA DEIXOU DE SER INERTE EM 02/09/2026 — e a porta É UM
       .map((f) => path.basename(f));
   };
 
-  it("⚠⚠ exatamente UM arquivo do caminho de emissão importa a NBS", () => {
-    expect(importadoresEmNfse()).toEqual(["ibscbsDaDps.js"]);
+  it("⚠⚠ somente gerador IBS/CBS e catálogo de configuração importam a NBS", () => {
+    // Sugestões solicitadas pelo contador reutilizam a mesma validação nbsParaDps.
+    expect(importadoresEmNfse()).toEqual(["ibscbsDaDps.js", "catalogoPerfil.js"]);
   });
 
   it("⚠⚠ `NfseService` NÃO importa a NBS — ele recebe a decisão pronta", () => {

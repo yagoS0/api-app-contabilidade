@@ -41,7 +41,7 @@ describe("as treze linhas, com a TAG do XML à vista", () => {
     expect(within(linha).getByText("tribISSQN")).toBeInTheDocument();
     expect(within(linha).getByText(/Tributação do ISSQN/)).toBeInTheDocument();
     // ⚠ Eram SEIS linhas até 02/09/2026; os quatro campos de NBS/IBS-CBS acrescentaram as outras.
-    expect(document.querySelectorAll("[data-campo]")).toHaveLength(13);
+    expect(document.querySelectorAll("[data-campo]")).toHaveLength(16);
 
     // ⚠⚠ OS QUATRO NOVOS DIZEM "não configurado", NUNCA "fixo no sistema". A distinção é o
     // produto: `CRAVADO` afirma que o gerador escolhe um valor por conta própria (é o caso de

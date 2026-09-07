@@ -65,6 +65,7 @@ const YAGO = {
 let fetchOriginal;
 
 beforeEach(() => {
+  jest.spyOn(api, "getPerfisDeEmissao").mockResolvedValue({ habilitado: false, data: [], total: 0 });
   window.localStorage.clear();
   fetchOriginal = global.fetch;
   global.fetch = jest.fn(() => {
@@ -103,7 +104,7 @@ const valorDe = (id) => document.getElementById(id).value;
 function abrirLista(termo = "") {
   fireEvent.focus(campoBusca());
   if (termo) fireEvent.change(campoBusca(), { target: { value: termo } });
-  return screen.queryAllByRole("option");
+  return screen.queryAllByRole("option").filter((el) => el.hasAttribute("data-documento"));
 }
 
 describe("⚠ o seletor está LIGADO — e pede a lista à empresa certa", () => {
@@ -198,7 +199,7 @@ describe("⚠ ESCOLHER PREENCHE O TOMADOR INTEIRO — com a origem à vista", ()
     await renderizar();
     abrirLista("aurora");
     await act(async () => {
-      fireEvent.click(screen.getAllByRole("option")[0]);
+      fireEvent.click(screen.getAllByRole("option").find((el) => el.hasAttribute("data-documento")));
     });
   }
 
@@ -232,7 +233,7 @@ describe("⚠ ESCOLHER PREENCHE O TOMADOR INTEIRO — com a origem à vista", ()
     await renderizar();
     abrirLista("yago");
     await act(async () => {
-      fireEvent.click(screen.getAllByRole("option")[0]);
+      fireEvent.click(screen.getAllByRole("option").find((el) => el.hasAttribute("data-documento")));
     });
 
     expect(valorDe("emitir-doc")).toBe("12219079724");
@@ -249,7 +250,7 @@ describe("⚠ ESCOLHER PREENCHE O TOMADOR INTEIRO — com a origem à vista", ()
     await renderizar();
     abrirLista("yago");
     await act(async () => {
-      fireEvent.click(screen.getAllByRole("option")[0]);
+      fireEvent.click(screen.getAllByRole("option").find((el) => el.hasAttribute("data-documento")));
     });
     expect(api.consultarCnpj).not.toHaveBeenCalled();
   });
@@ -291,7 +292,7 @@ describe("⚠⚠ O DIGITADO VENCE — e escolher não apaga sem a pessoa ver", (
     fireEvent.change(document.getElementById("emitir-logradouro"), { target: { value: "RUA NOVA" } });
     abrirLista("aurora");
     await act(async () => {
-      fireEvent.click(screen.getAllByRole("option")[0]);
+      fireEvent.click(screen.getAllByRole("option").find((el) => el.hasAttribute("data-documento")));
     });
   }
 
@@ -329,7 +330,7 @@ describe("⚠⚠ O DIGITADO VENCE — e escolher não apaga sem a pessoa ver", (
     await renderizar();
     abrirLista("aurora");
     await act(async () => {
-      fireEvent.click(screen.getAllByRole("option")[0]);
+      fireEvent.click(screen.getAllByRole("option").find((el) => el.hasAttribute("data-documento")));
     });
     expect(screen.getAllByText("de uma nota já emitida").length).toBe(2);
 

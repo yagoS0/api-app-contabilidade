@@ -55,6 +55,7 @@ describe("⚠⚠ três estados, e o terceiro é sobre a RESPOSTA", () => {
     // asserção é pelos IDs e não pelo número: um teste que só conta continua verde se alguém trocar
     // um campo por outro, e o que o painel promete é mostrar CADA campo que a DPS vai levar.
     expect(p.linhas.map((l) => l.id)).toEqual([
+      "tpImunidade", "exigSuspTipo", "exigSuspProcesso",
       "codigoServicoNacional", "codigoServicoMunicipal", "cLocPrestacao",
       "regEspTrib", "regApTribSN", "tribISSQN", "pAliq",
       "retencaoFederalArt30", "cstPisCofins",

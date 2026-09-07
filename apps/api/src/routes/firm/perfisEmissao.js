@@ -26,6 +26,7 @@ import {
   perfilDerivadoDoCadastro,
 } from "../../application/nfse/perfilEmissao/resolverPerfilDeEmissao.js";
 import { INTEGRACAO_PERFIL_EMISSAO_NFSE } from "../../config.js";
+import { sugestoesDoPerfil, validarCatalogoPerfil } from "../../application/nfse/perfilEmissao/catalogoPerfil.js";
 
 /** O que a rota aceita — os seis campos fiscais mais os de identidade/forma. */
 const CAMPOS_DE_IDENTIDADE = ["nome", "ativo", "padrao", "habilitaObra", "habilitaExportacao"];
@@ -83,6 +84,10 @@ export function createPerfisEmissaoRouter({ log } = {}) {
     // booleano chegaria ao Prisma como a string "false", que é truthy.
     for (const b of ["ativo", "padrao", "habilitaObra", "habilitaExportacao", "retencaoFederalArt30"]) {
       if (!Object.prototype.hasOwnProperty.call(body, b)) continue;
+      if (b === "retencaoFederalArt30" && (body[b] === null || body[b] === "")) {
+        data[b] = null;
+        continue;
+      }
       // ⚠ `Boolean("false")` é `true`. A comparação é com o literal, como em `portaoEmissao.js`.
       if (typeof body[b] !== "boolean") {
         erros.push({ campo: b, motivo: `${b} precisa ser true ou false.` });
@@ -133,8 +138,8 @@ export function createPerfisEmissaoRouter({ log } = {}) {
    * cadastro. Recusar tudo aqui pararia a carteira inteira.
    */
   function conferirCodigoContraCadastro(codigo, company) {
-    const lista = Array.isArray(company?.codigosServicoNacional) ? company.codigosServicoNacional : [];
-    if (!codigo || !lista.length || lista.includes(codigo)) return null;
+    const lista = company?.codigosServicoNacional?.length ? company.codigosServicoNacional : [company?.codigoServicoNacional].filter(Boolean);
+    if (!codigo || lista.includes(codigo)) return null;
     return {
       campo: "codigoServicoNacional",
       motivo:
@@ -184,6 +189,7 @@ export function createPerfisEmissaoRouter({ log } = {}) {
           // ela desligada o painel é informativo: diz o que MUDARIA, não o que muda.
           integracaoLigada: INTEGRACAO_PERFIL_EMISSAO_NFSE,
           perfis,
+          sugestoes: sugestoesDoPerfil(ctx.company),
           // O ponto de partida que a tela oferece — calculado, nunca gravado.
           derivadoDoCadastro: perfilDerivadoDoCadastro(ctx.company),
           // O de-para campo a campo: rótulo, tag, caminho no XML, valor, procedência.
@@ -222,6 +228,7 @@ export function createPerfisEmissaoRouter({ log } = {}) {
 
         const conflito = conferirCodigoContraCadastro(data.codigoServicoNacional, ctx.company);
         if (conflito) erros.push(conflito);
+        erros.push(...validarCatalogoPerfil(data));
         if (erros.length) {
           return bad(res, 400, "perfil_invalido",
             "O perfil não pôde ser salvo — confira os campos apontados.", { erros });
@@ -296,6 +303,7 @@ export function createPerfisEmissaoRouter({ log } = {}) {
         }
         const conflito = conferirCodigoContraCadastro(codigoFinal, ctx.company);
         if (conflito) erros.push(conflito);
+        erros.push(...validarCatalogoPerfil({ ...atual, ...data }));
         if (erros.length) {
           return bad(res, 400, "perfil_invalido",
             "O perfil não pôde ser salvo — confira os campos apontados.", { erros });

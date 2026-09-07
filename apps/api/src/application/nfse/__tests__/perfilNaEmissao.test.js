@@ -151,14 +151,14 @@ async function emitirCom({ flagLigada, perfil, ibscbsLigada = false }) {
  * `serviceInvoice.create` **não ter sido chamado** é o que prova que ela aconteceu ANTES de
  * reservar numeração — e não existe inutilização na NFS-e.
  */
-async function emitirDetalhado({ flagLigada, perfil, ibscbsLigada = false }) {
+async function emitirDetalhado({ flagLigada, perfil, ibscbsLigada = false, perfilId = null, dadosExtras = {} }) {
   XML_ENVIADO.length = 0;
   jest.resetModules();
   montarMocks({ flagLigada, perfil, ibscbsLigada });
   const { NfseService } = await import("../NfseService.js");
   const { prisma } = await import("../../../infrastructure/db/prisma.js");
   const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
-  const r = await NfseService.issue({ data: PAYLOAD, log });
+  const r = await NfseService.issue({ data: { ...PAYLOAD, ...dadosExtras, ...(perfilId ? { perfilId } : {}) }, log });
   return { xml: XML_ENVIADO[0] || "", resultado: r, prisma };
 }
 
@@ -183,6 +183,31 @@ afterEach(() => jest.resetModules());
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 describe("⚠⚠ A PROVA DE ACEITE DA FASE: ligar a flag não mexe em quem não mudou nada", () => {
+  it("imunidade e suspensão entram na posição do XSD 1.01", async () => {
+    const imune = await emitirDetalhado({ flagLigada: true, perfil: comPerfil({ tribISSQN: "2", tpImunidade: "2" }) });
+    expect(imune.xml).toMatch(/<tribISSQN>2<\/tribISSQN>\s*<tpImunidade>2<\/tpImunidade>\s*<tpRetISSQN>/);
+    const susp = await emitirDetalhado({ flagLigada: true, perfil: comPerfil({ exigSuspTipo: "1", exigSuspProcesso: "123456789012345678901234567890" }) });
+    expect(susp.xml).toMatch(/<exigSusp><tpSusp>1<\/tpSusp><nProcesso>\d{30}<\/nProcesso><\/exigSusp>\s*<tpRetISSQN>/);
+  });
+  it("valores complementares geram tribFed sem fabricar PIS/COFINS", async () => {
+    const r = await emitirDetalhado({ flagLigada: true, perfil: comPerfil({}), dadosExtras: { retencoesComplementares: { vRetCP: 11, vRetIRRF: 1.5 } } });
+    expect(r.xml).toContain("<tribFed><vRetCP>11.00</vRetCP><vRetIRRF>1.50</vRetIRRF></tribFed>");
+    expect(r.xml).not.toContain("<piscofins>");
+  });
+  it("identificador da obra e destinatário IBS/CBS chegam ao XML", async () => {
+    const r = await emitirDetalhado({ flagLigada: true, ibscbsLigada: true,
+      perfil: comPerfil({ codigoNbs: NBS_TERMINAL, ibscbsCIndOp: DO_ANEXO_VIII.cIndOp, ibscbsCClassTrib: DO_ANEXO_VIII.cClassTrib, ibscbsCst: "200" }),
+      dadosExtras: { obra: { cObra: "123456789012" }, destinatario: { cnpjCpf: "12345678000199", nome: "Destinatário" } },
+    });
+    expect(r.xml).toContain("<obra><cObra>123456789012</cObra></obra>");
+    expect(r.xml).toMatch(/<indDest>1<\/indDest>\s*<dest><CNPJ>12345678000199<\/CNPJ><xNome>Destinatário<\/xNome><\/dest>/);
+  });
+  it("perfil escolhido indisponível recusa antes de reservar número ou enviar XML", async () => {
+    const r = await emitirDetalhado({ flagLigada: true, perfil: null, perfilId: "desativado" });
+    expect(r.xml).toBe("");
+    expect(r.prisma.serviceInvoice.create).not.toHaveBeenCalled();
+    expect(JSON.stringify(r.resultado)).toContain("NFSE_PERFIL_INDISPONIVEL");
+  });
   it("perfil DERIVADO do cadastro + flag ligada ⇒ XML byte-idêntico ao de hoje", async () => {
     const hoje = await emitirCom({ flagLigada: false, perfil: null });
     const comPerfil = await emitirCom({ flagLigada: true, perfil: PERFIL_DERIVADO });
@@ -212,10 +237,11 @@ describe("⚠⚠ A PROVA DE ACEITE DA FASE: ligar a flag não mexe em quem não 
 });
 
 describe("⚠ e com a flag ligada, o perfil MANDA — nos dois campos que eram constante", () => {
-  it("`tribISSQN` deixa de ser cravado — a exportação passa a ser declarável", async () => {
-    const xml = await emitirCom({ flagLigada: true, perfil: { ...PERFIL_DERIVADO, tribISSQN: "3" } });
-    expect(xml).toContain("<tribISSQN>3</tribISSQN>");
-    expect(xml).not.toContain("<tribISSQN>1</tribISSQN>");
+  it("exportação recusa antes da numeração enquanto comExt não está disponível", async () => {
+    const r = await emitirDetalhado({ flagLigada: true, perfil: { ...PERFIL_DERIVADO, tribISSQN: "3" } });
+    expect(r.xml).toBe("");
+    expect(r.prisma.serviceInvoice.create).not.toHaveBeenCalled();
+    expect(JSON.stringify(r.resultado)).toContain("NFSE_EXPORTACAO_NAO_SUPORTADA");
   });
 
   it("⚠⚠ `regApTribSN` deixa de ser cravado — o caso do sublimite passa a ser declarável", async () => {

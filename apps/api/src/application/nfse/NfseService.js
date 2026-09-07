@@ -18,6 +18,9 @@ import { escolherCodigoServicoNacional } from "./codigoServicoDaNota.js";
 import { resolverPerfilDeEmissao } from "./perfilEmissao/resolverPerfilDeEmissao.js";
 import { ibscbsDaDps, nbsDaDps } from "./ibscbsDaDps.js";
 import { pAliqDaDps } from "./pAliqDaDps.js";
+import { tributacaoMunicipalDoPerfil } from "./tributacaoMunicipalDoPerfil.js";
+import { xmlRetencoesComplementares } from "./retencoesComplementares.js";
+import { xmlDadosEspeciais } from "./dadosEspeciaisDaNota.js";
 import { retencaoFederalDaDps } from "./retencaoFederalDaDps.js";
 import { registrarTomadorEmitido } from "./tomadorEmitido.js";
 import {
@@ -974,11 +977,13 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
   // ⚠ A ORDEM DOS FILHOS É A DO `xs:sequence` de `TCRTCInfoIBSCBS` e de `TCRTCInfoTributosSitClas`
   // (XSD 1.01). O oráculo `dpsContraXsd.test.js` confere isso contra o arquivo — e confere contra a
   // versão que a constante `DPS_VERSAO` declara, que é o conserto de 01/09/2026.
+  const dadosEspeciais = xmlDadosEspeciais(data, { cTribNac, ibscbsInformado: ibsCbs.informar });
   const blocoIbsCbs = ibsCbs.informar
     ? `<IBSCBS>
       <finNFSe>${escapeXml(ibsCbs.bloco.finNFSe)}</finNFSe>
       <cIndOp>${escapeXml(ibsCbs.bloco.cIndOp)}</cIndOp>
-      <indDest>${escapeXml(ibsCbs.bloco.indDest)}</indDest>
+      <indDest>${dadosEspeciais.indDest}</indDest>
+      ${dadosEspeciais.destinatario}
       <valores>
         <trib>
           <gIBSCBS>
@@ -1040,6 +1045,7 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
         <xDescServ>${escapeXml(data.servico.descricao)}</xDescServ>
         ${nbsDaNota.informar ? `<cNBS>${escapeXml(nbsDaNota.cNBS)}</cNBS>` : ""}
       </cServ>
+      ${dadosEspeciais.obra}
     </serv>
 
     <valores>
@@ -1080,6 +1086,7 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
       <trib>
         <tribMun>
           <tribISSQN>${escapeXml(doPerfil("tribISSQN") || "1")}</tribISSQN>
+          ${tributacaoMunicipalDoPerfil(perfil)}
           <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
           ${
             // ⚠ NO 1.01 O `pAliq` É O ÚLTIMO FILHO de `TCTribMunicipal`; no 1.00 ele vinha ANTES do
@@ -1161,7 +1168,8 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
           // de 100% das emissões, para Simples E para não optante. O que vem abaixo é a porta
           // para quando alguém passar a informar PIS/COFINS: ela nasce montando o que o leiaute
           // comporta e RECUSANDO NOMEADAMENTE o que ele não comporta.
-          if (!Object.values(piscofins).some(infPC)) return "";
+          const complementares = xmlRetencoesComplementares(data.retencoesComplementares, Number(data.servico.valorServicos));
+          if (!Object.values(piscofins).some(infPC)) return complementares ? `<tribFed>${complementares}</tribFed>` : "";
 
           // ⚠⚠ OS DOIS NOMES INVENTADOS NÃO VOLTAM POR OUTRA PORTA — e não são descartados em
           // silêncio. Descartar um valor de retenção sem dizer nada é o pior desfecho possível
@@ -1357,7 +1365,7 @@ function buildDpsXml({ company, data, numeracao, regime, perfil = null }) {
           return `<tribFed>
           <piscofins>
             ${linhas.join("\n            ")}
-          </piscofins>${csll}
+          </piscofins>${complementares}${csll}
         </tribFed>`;
         })()}
         ${
@@ -1461,18 +1469,25 @@ async function carregarRegimeDaEmpresa(company) {
  * RECUSA a emissão nesse caso é a rota do cliente, com código próprio; aqui o efeito é cair no
  * cadastro, que é o comportamento anterior e nunca é pior que ele.
  */
-async function carregarPerfilDeEmissao(company, perfilId) {
-  if (!INTEGRACAO_PERFIL_EMISSAO_NFSE) return null;
+export async function carregarPerfilDeEmissao(company, perfilId) {
+  if (!INTEGRACAO_PERFIL_EMISSAO_NFSE) {
+    if (perfilId) throw Object.assign(new Error("A integração de perfis está desligada. Revise a configuração antes de emitir com este perfil."), { code: "NFSE_PERFIL_INDISPONIVEL" });
+    return null;
+  }
   try {
     const portal = await prisma.portalClient.findUnique({
       where: { companyId: company.id },
       select: { id: true },
     });
-    if (!portal?.id) return null;
-    const r = await resolverPerfilDeEmissao({ portalClientId: portal.id, perfilId: perfilId || null });
+    if (!portal?.id) {
+      if (perfilId) throw new Error("Empresa do perfil não encontrada.");
+      return null;
+    }
+    const r = await resolverPerfilDeEmissao({ portalClientId: portal.id, perfilId: perfilId || null, exigirDisponibilidade: true });
+    if (perfilId && (!r.temPerfil || r.perfil?.id !== perfilId)) throw new Error("O perfil selecionado não está mais ativo nesta empresa. Escolha novamente.");
     return r.temPerfil ? r.perfil : null;
-  } catch {
-    return null;
+  } catch (err) {
+    throw Object.assign(new Error(err.message || "Não foi possível carregar o perfil de emissão."), { code: "NFSE_PERFIL_INDISPONIVEL" });
   }
 }
 
@@ -1927,7 +1942,9 @@ export class NfseService {
     // ⚠⚠ O PERFIL DE EMISSÃO — `null` com a flag desligada, que é o caminho de hoje. Carregado
     // ANTES da trava do código de serviço porque é ele quem pode fornecer o `cTribNac`, e essa
     // trava é a autoridade que confere o valor CONTRA O CADASTRO, venha ele de onde vier.
-    const perfilDeEmissao = await carregarPerfilDeEmissao(company, data.perfilId);
+    let perfilDeEmissao;
+    try { perfilDeEmissao = await carregarPerfilDeEmissao(company, data.perfilId); }
+    catch (err) { return recusaAntesDeEscrever(err, "perfil de emissão"); }
 
     // ── 1.b PRÉ-VOO DO CADASTRO ───────────────────────────────────────────────────────────
     //
@@ -1944,6 +1961,7 @@ export class NfseService {
     // código não cadastrado chegue a virar `<cTribNac>`. Há teste sobre as duas coisas.
     let codigoServicoDaNota = null;
     try {
+      tributacaoMunicipalDoPerfil(perfilDeEmissao);
       resolverCLocEmi(company);
       normalizarSerie(company.rpsSerie);
       const escolha = escolherCodigoServicoNacional({

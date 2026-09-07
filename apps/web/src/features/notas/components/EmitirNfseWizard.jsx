@@ -264,6 +264,7 @@ export function EmitirNfseWizard({
   // chamada nenhuma e é uma página filtrada — ver `lib/tomadoresRecentes.js`. Ausente = sem
   // sugestões, e o campo funciona exatamente como antes.
   notasDaEmpresa = null,
+  apiPerfis = null,
   // ⚠ O `fetch` da CONSULTA DE CNPJ, injetável. Em produção fica `null` e vale o do browser; nos
   // testes entra um dublê — nenhum teste deste projeto pode tocar a rede. Não confundir com a
   // emissão, que vai por `onEmitir`.
@@ -288,6 +289,25 @@ export function EmitirNfseWizard({
   const [enviando, setEnviando] = useState(false);
   const [rejeicao, setRejeicao] = useState(null);
   const [resultado, setResultado] = useState(null);
+  const [perfisDaEmpresa, setPerfisDaEmpresa] = useState([]);
+  const [perfilId, setPerfilId] = useState("");
+  const [retencoesComplementares, setRetencoesComplementares] = useState({ vRetIRRF: "", vRetCP: "" });
+  const [obra, setObra] = useState({ tipo: "cObra", codigo: "", inscImobFisc: "" });
+  const [destinatario, setDestinatario] = useState({ cnpjCpf: "", nome: "" });
+  const [problemaPerfil, setProblemaPerfil] = useState(apiPerfis ? "Carregando os perfis de emissão…" : null);
+  useEffect(() => {
+    if (!apiPerfis) return undefined;
+    let cancelado = false;
+    setPerfisDaEmpresa([]); setPerfilId("");
+    setProblemaPerfil("Carregando os perfis de emissão…");
+    apiPerfis.getPerfisEmissao(companyId).then((r) => {
+      if (cancelado) return;
+      setPerfisDaEmpresa(r.integracaoLigada ? (r.perfis || []).filter((p) => p.ativo !== false) : []);
+      setProblemaPerfil(null);
+    }).catch(() => { if (!cancelado) setProblemaPerfil("Não foi possível consultar os perfis de emissão. Feche e reabra o assistente para tentar novamente."); });
+    return () => { cancelado = true; };
+  }, [apiPerfis, companyId]);
+  const perfilEscolhido = perfisDaEmpresa.find((p) => p.id === perfilId) || (perfisDaEmpresa.length === 1 ? perfisDaEmpresa[0] : null);
 
   // ⚠ Inicializadores preguiçosos, não `useEffect`: o assistente é montado do zero a cada abertura,
   // então isto é o estado de partida. Um efeito que "aplicasse" os valores depois sobrescreveria o
@@ -557,6 +577,12 @@ export function EmitirNfseWizard({
     const problemaAliquota = problemaAliquotaComRetencao({ issRetido: servico.issRetido, aliquota: servico.aliquota });
     const valorEmBranco = !String(servico.valorServicos).trim();
     return [
+      problemaPerfil && { texto: problemaPerfil, campo: null, grave: true },
+      (obra.codigo || obra.inscImobFisc) && (!obra.codigo || (obra.tipo === "cCIB" ? obra.codigo.length !== 8 : obra.codigo.length > 30) || obra.inscImobFisc.length > 30) && { texto: "Confira o identificador da obra: CNO/CEI até 30 caracteres ou CIB com 8 caracteres.", campo: null, grave: true },
+      (destinatario.cnpjCpf || destinatario.nome) && (!/^(\d{11}|\d{14})$/.test(destinatario.cnpjCpf.replace(/\D/g, "")) || !destinatario.nome.trim() || destinatario.nome.length > 150) && { texto: "Informe o documento e o nome do destinatário diferente do tomador.", campo: null, grave: true },
+      Object.entries(retencoesComplementares).some(([, v]) => v !== "" && (!/^\d+(\.\d{1,2})?$/.test(v) || Number(v) <= 0 || Number(v) >= valor)) && { texto: "IRRF e previdência: informe valores positivos, com até duas casas, menores que o serviço; deixe vazio quando não houver retenção.", campo: null, grave: true },
+      Object.values(retencoesComplementares).reduce((s, v) => s + Number(v || 0), 0) >= valor && valor > 0 && { texto: "A soma de IRRF e previdência deve ser menor que o valor do serviço.", campo: null, grave: true },
+      perfisDaEmpresa.length > 1 && !perfilEscolhido && { texto: "Escolha o perfil de serviço desta nota.", campo: null, grave: false },
       municipio.bloqueia && { texto: municipio.motivoCurto, campo: null, grave: true },
       // Os campos de `buildMissingFields`, na mesma posição e pelo mesmo motivo do município: são
       // impedimentos da EMPRESA, que não se resolvem nesta tela.
@@ -597,7 +623,7 @@ export function EmitirNfseWizard({
     ].filter(Boolean);
   }, [municipio, faltas, faltasDaCarga, docValido, docLimpo, tomador.nome, emailValido, enderecoParcial,
     servico.descricao, servico.valorServicos, valor, servico.issRetido, servico.aliquota,
-    leituraPTot.problema, leituraPTot.preenchido, regime]);
+    leituraPTot.problema, leituraPTot.preenchido, regime, problemaPerfil, perfisDaEmpresa, perfilEscolhido, retencoesComplementares, obra, destinatario]);
 
   const prontoParaEmitir = problemasDaNota.length === 0;
   const textoDosProblemas = problemasDaNota.map((p) => p.texto).join(" · ");
@@ -643,6 +669,10 @@ export function EmitirNfseWizard({
   function montarPayload() {
     return {
       companyId,
+      ...(perfilEscolhido ? { perfilId: perfilEscolhido.id } : {}),
+      ...(obra.codigo || obra.inscImobFisc ? { obra: { [obra.tipo]: obra.codigo, ...(obra.inscImobFisc ? { inscImobFisc: obra.inscImobFisc } : {}) } } : {}),
+      ...(destinatario.cnpjCpf || destinatario.nome ? { destinatario } : {}),
+      ...(Object.values(retencoesComplementares).some((v) => v !== "") ? { retencoesComplementares: Object.fromEntries(Object.entries(retencoesComplementares).filter(([, v]) => v !== "").map(([k, v]) => [k, Number(v)])) } : {}),
       tomador: {
         cnpjCpf: docLimpo,
         nome: String(tomador.nome).trim(),
@@ -667,7 +697,10 @@ export function EmitirNfseWizard({
 
   async function emitir() {
     setRejeicao(null);
-    if (!window.confirm(textoDeConfirmacao(dadosDaDeclaracao))) return;
+    const perfilNaConfirmacao = perfilEscolhido ? `Perfil de serviço: ${perfilEscolhido.nome} (${perfilEscolhido.codigoServicoNacional})\n\n` : "";
+    const retencoesNaConfirmacao = Object.entries(retencoesComplementares).filter(([, v]) => v !== "").map(([k, v]) => `${k === "vRetIRRF" ? "IRRF retido" : "Previdência retida"}: R$ ${Number(v).toFixed(2).replace(".", ",")}`).join("\n");
+    const especiaisNaConfirmacao = [obra.codigo ? `Obra (${obra.tipo === "cCIB" ? "CIB" : "CNO/CEI"}): ${obra.codigo}${obra.inscImobFisc ? `; inscrição imobiliária: ${obra.inscImobFisc}` : ""}` : "", destinatario.cnpjCpf ? `Destinatário IBS/CBS: ${destinatario.nome} — ${destinatario.cnpjCpf}` : ""].filter(Boolean).join("\n");
+    if (!window.confirm(perfilNaConfirmacao + textoDeConfirmacao(dadosDaDeclaracao) + (retencoesNaConfirmacao ? `\n\n${retencoesNaConfirmacao}` : "") + (especiaisNaConfirmacao ? `\n\n${especiaisNaConfirmacao}` : ""))) return;
     setEnviando(true);
     try {
       const r = await onEmitir(montarPayload());
@@ -768,6 +801,38 @@ export function EmitirNfseWizard({
           <h3 style={{ margin: 0, fontSize: "1.05rem" }}>Emitir nota de serviço</h3>
           <button onClick={onClose} style={{ background: "none", border: "none", color: PANEL.muted, fontSize: 20, cursor: "pointer" }}>✕</button>
         </div>
+
+        {perfisDaEmpresa.length > 0 && <div style={{ marginBottom: 16 }}>
+          <label htmlFor="nfse-perfil">Perfil de serviço desta nota</label>
+          <select id="nfse-perfil" disabled={passo !== 0 || enviando} value={perfilEscolhido?.id || ""} onChange={(e) => setPerfilId(e.target.value)}>
+            <option value="">Escolha o perfil configurado pelo contador</option>
+            {perfisDaEmpresa.map((p) => <option key={p.id} value={p.id}>{p.nome} — {p.codigoServicoNacional}</option>)}
+          </select>
+        </div>}
+
+        <details style={{ marginBottom: 16 }}>
+          <summary>Obra e destinatário IBS/CBS {obra.codigo || destinatario.cnpjCpf ? "— dados informados" : "— quando aplicáveis"}</summary>
+          <fieldset disabled={passo !== 0 || enviando}>
+            <legend>Obra desta prestação</legend>
+            <label>Tipo de identificador<select value={obra.tipo} onChange={(e) => setObra((o) => ({ ...o, tipo: e.target.value, codigo: "" }))}><option value="cObra">CNO / CEI</option><option value="cCIB">CIB</option></select></label>
+            <label>Identificador da obra<input value={obra.codigo} onChange={(e) => setObra((o) => ({ ...o, codigo: e.target.value }))} /></label>
+            <label>Inscrição imobiliária fiscal (opcional)<input value={obra.inscImobFisc} onChange={(e) => setObra((o) => ({ ...o, inscImobFisc: e.target.value }))} /></label>
+          </fieldset>
+          <fieldset disabled={passo !== 0 || enviando}>
+            <legend>Destinatário diferente do tomador — IBS/CBS</legend>
+            <p>Deixe vazio se o destinatário for o próprio tomador. Requer IBS/CBS configurado no perfil.</p>
+            <label>CPF/CNPJ do destinatário<input value={destinatario.cnpjCpf} onChange={(e) => setDestinatario((d) => ({ ...d, cnpjCpf: e.target.value }))} /></label>
+            <label>Nome do destinatário<input value={destinatario.nome} onChange={(e) => setDestinatario((d) => ({ ...d, nome: e.target.value }))} /></label>
+          </fieldset>
+        </details>
+
+        <details style={{ marginBottom: 16 }}>
+          <summary>IRRF e retenção previdenciária {Object.values(retencoesComplementares).some((v) => v !== "") ? "— valores informados" : "— quando aplicáveis"}</summary>
+          <p>Informe os valores conferidos pelo contador para esta operação. Deixe em branco quando não houver retenção.</p>
+          {[["vRetIRRF", "IRRF retido (R$)"], ["vRetCP", "Previdência retida (R$)"]].map(([k, rotulo]) => <label key={k} style={{ display: "block" }}>
+            {rotulo}<input inputMode="decimal" disabled={passo !== 0 || enviando} value={retencoesComplementares[k]} onChange={(e) => setRetencoesComplementares((r) => ({ ...r, [k]: e.target.value.replace(",", ".") }))} />
+          </label>)}
+        </details>
 
         {/* ⚠ IMPEDIMENTO DA EMPRESA — fica ACIMA da trilha, visível em todos os passos, porque não
             é um campo que falta: é a empresa que ainda não emite. A lista de problemas repete a
