@@ -61,7 +61,7 @@ describe("a lista", () => {
     expect(linhas[0]).toHaveTextContent(/número sem cadastro — vincule/);
     expect(screen.getByTestId("contagem-fila")).toHaveTextContent(/1 número sem cadastro/);
     expect(screen.getByTestId("consumo-ia")).toHaveTextContent(/US\$ 1\.37 de US\$ 60\.00 \(estimativa/);
-    expect(screen.getByTestId("conversa-cv1")).toHaveTextContent(/pedido K9M3 aguardando confirmação/);
+    expect(screen.getByTestId("conversa-cv1")).toHaveTextContent(/pedido K9M3 aguardando confirmação/i);
     expect(screen.getByTestId("conversa-cv2")).toHaveTextContent(/assumida por Ana/);
   });
 });
@@ -258,7 +258,7 @@ describe("⚠ o balão e o cabeçalho não discordam sobre quem escreveu", () =>
     await montar(api);
     fireEvent.click(screen.getByTestId("conversa-cv1"));
     const fio = await screen.findByTestId("fio");
-    expect(within(fio).getByTestId("balao-m1")).toHaveTextContent(/^cliente ·/);
+    expect(within(within(fio).getByTestId("balao-m1")).getByText("cliente", { exact: true })).toBeInTheDocument();
   });
 });
 

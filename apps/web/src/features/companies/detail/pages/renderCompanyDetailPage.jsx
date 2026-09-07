@@ -146,9 +146,12 @@ function CompanyNotesTabWrapper({ companyId, feedback }) {
   // ⚠ O rascunho é o que faz "virar anotação" existir, e é o que torna o LADO A LADO condição da
   // ação, não estética: sem o campo ao lado não há destino, e no `/whatsapp` o botão nem aparece.
   const [rascunho, setRascunho] = useState(null);
+  const [mostrarNotas, setMostrarNotas] = useState(true);
   return (
-    <div className="anotacoes-com-chat">
-      <div style={{ minWidth: 0 }}>
+    <>
+    <div className="wa-notes-toolbar"><Button variant="secondary" size="sm" aria-expanded={mostrarNotas} onClick={() => setMostrarNotas(v => !v)}>{mostrarNotas ? "Ocultar anotações e ampliar conversa" : "Mostrar anotações"}</Button></div>
+    <div className="anotacoes-com-chat" data-notas={mostrarNotas ? "visiveis" : "ocultas"}>
+      <div hidden={!mostrarNotas} style={{ minWidth: 0 }}>
         <CompanyNotesTab notes={notes} rascunho={rascunho} aoUsarRascunho={() => setRascunho(null)} />
       </div>
       <div className="anotacoes-com-chat__chat">
@@ -157,11 +160,12 @@ function CompanyNotesTabWrapper({ companyId, feedback }) {
             api={companyDocsApi}
             companyId={companyId}
             feedback={feedback}
-            onVirarAnotacao={setRascunho}
+            onVirarAnotacao={texto => { setMostrarNotas(true); setRascunho(texto); }}
           />
         </Suspense>
       </div>
     </div>
+    </>
   );
 }
 

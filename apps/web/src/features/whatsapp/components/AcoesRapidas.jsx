@@ -150,7 +150,7 @@ export function AcoesRapidas({
   }
 
   return (
-    <div data-testid="acoes-rapidas" style={{ marginBottom: 8 }}>
+    <div data-testid="acoes-rapidas" className="wa-quick-actions" style={{ marginBottom: 8 }}>
       <div style={linha}>
         {acoes.map((a) => (
           <Button

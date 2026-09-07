@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useConversasWhatsapp } from "../hooks/useConversasWhatsapp";
 import { FioDaConversa, NomeDaPessoa, campo } from "./FioDaConversa";
 import { AcoesRapidas } from "./AcoesRapidas";
+import { WhatsappIcon } from "./ConversaVisual";
 import { identidadeDaConversa, ordenarConversas } from "../lib/conversasTela";
 import { ESCOLHA_DO_FIO, FRASE_SEM_FIO, escolhaDoFio, fioAberto } from "../lib/fiosDaEmpresa";
 
@@ -44,9 +45,9 @@ export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao
   }, [fio?.id, escolhido, aberto, abrir]);
 
   return (
-    <section data-testid="chat-da-empresa" style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
-        <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700 }}>WhatsApp</h2>
+    <section data-testid="chat-da-empresa" className="wa-company-chat">
+      <div className="wa-section-heading" style={{ flexWrap: "wrap" }}>
+        <h2 className="wa-inline"><WhatsappIcon size={19} />WhatsApp</h2>
         {escolha.situacao === ESCOLHA_DO_FIO.ESCOLHER ? (
           <label style={{ fontSize: "0.76rem", color: "var(--text-muted)", display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
             Falando com

@@ -23,6 +23,7 @@ import { LogoAltan } from "../../../../components/ui/LogoAltan";
 import { desfechoWhatsapp, resumirWhatsapp } from "../../../guides/lib/canalDeEnvio";
 import { liberarComCanais } from "../../../guides/lib/liberarComCanais";
 import { useResumoWhatsapp } from "../../../whatsapp/hooks/useResumoWhatsapp";
+import { WhatsappIcon } from "../../../whatsapp/components/ConversaVisual";
 
 // Q17: dropdown — abre um seletor (não navega para um hub).
 //
@@ -1034,6 +1035,13 @@ export function CompaniesHomePage({
                 { label: "Guias não identificadas", onClick: onOpenGuideUpload },
               ]}
             />
+            {typeof onOpenWhatsapp === "function" ? <Button
+              variant="secondary"
+              className="dashboard-home__action dashboard-home__action--outline"
+              onClick={onOpenWhatsapp}
+              title={resumoWhatsapp.frase}
+              aria-label="Abrir central do WhatsApp"
+            ><span className="wa-inline"><WhatsappIcon size={17} />WhatsApp{resumoWhatsapp.selo ? <span className="wa-unread">{resumoWhatsapp.selo}</span> : null}</span></Button> : null}
             <Button
               variant="secondary"
               className="dashboard-home__action dashboard-home__action--accent"
