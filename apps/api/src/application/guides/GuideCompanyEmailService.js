@@ -6,7 +6,7 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { EmailService } from "../../infrastructure/mail/EmailService.js";
 import { getGuidePdfBuffer } from "./GuideService.js";
 import { guideTypeEmailLabel } from "./guideEmailCopy.js";
-import { SEM_DESTINATARIO_DE_GUIA, resolveCompanyNotificationEmails } from "./GuideScheduledEmailService.js";
+import { SEM_DESTINATARIO_DE_GUIA, resolveCompanyNotificationEmails, validarDestinatariosAtuais } from "./GuideScheduledEmailService.js";
 import { whereGuiaPendenteDeEnvio } from "./guideContract.js";
 
 function safeTempName(name) {
@@ -74,11 +74,7 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
     err.code = "PORTAL_COMPANY_NOT_FOUND";
     throw err;
   }
-  if (!to) {
-    const err = new Error("company_email_not_found");
-    err.code = "COMPANY_EMAIL_NOT_FOUND";
-    throw err;
-  }
+  to = await validarDestinatariosAtuais(portal.id, to);
 
   const pendingAll = await prisma.guide.findMany({
     where: {
@@ -154,6 +150,8 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
       competencia: latestCompetencia || "—",
       typeLabels,
     });
+    // Os anexos podem demorar a carregar. Um contato removido nesse intervalo não recebe.
+    to = await validarDestinatariosAtuais(portal.id, to);
     await email.send({ to, subject, html, attachments });
 
     const sentAt = new Date();
@@ -332,6 +330,7 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia }) {
       ? `Sua guia de ${uniqueLabels[0]} — ${competencia}`
       : `Suas guias — ${competencia}`;
     const html = buildEmailHtml({ razao: portal.razao, competencia, typeLabels });
+    await validarDestinatariosAtuais(portal.id, to);
     await email.send({ to, subject, html, attachments });
 
     const sentAt = new Date();

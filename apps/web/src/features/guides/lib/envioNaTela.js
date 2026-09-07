@@ -90,17 +90,21 @@ const chegou = (c) => (String(c.canal).toUpperCase() === "EMAIL"
 export function frasePorCanal(c) {
   const canal = rotuloDoCanal(c?.canal);
   const para = c?.destino ? ` para ${c.destino}` : "";
-  if (c?.status === "lido") return `${canal}: lida${para}`;
-  if (c?.status === "entregue") return `${canal}: entregue${para}`;
+  const registro = c?.status === "lido" ? c.lidoEm : c?.status === "entregue" ? c.entregueEm : c?.status === "enviado" ? c.em : null;
+  const data = registro ? new Date(registro) : null;
+  const quando = data && Number.isFinite(data.getTime())
+    ? ` em ${data.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} (Brasília)` : "";
+  if (c?.status === "lido") return `${canal}: lida${para}${quando}`;
+  if (c?.status === "entregue") return `${canal}: entregue${para}${quando}`;
   if (c?.status === "falhou") return `${canal}: não saiu${para}${c.erroMensagem ? ` — ${c.erroMensagem}` : ""}`;
   if (c?.status === "enviado") {
     return String(c.canal).toUpperCase() === "EMAIL"
-      ? `${canal}: enviada${para}`
-      : `${canal}: aceita pela Meta${para} — sem confirmação de entrega`;
+      ? `${canal}: enviada${para}${quando}${!c.destino ? " — destinatário não registrado no histórico" : ""}`
+      : `${canal}: aceita pela Meta${para}${quando} — sem confirmação de entrega`;
   }
   if (c?.status === "indeterminado") return `${canal}: resultado indeterminado${para} — confira o histórico antes de repetir`;
   if (c?.status === "enviando") return `${canal}: enviando${para}`;
-  if (c?.status === "pendente") return `${canal}: na fila deste clique${para}`;
+  if (c?.status === "pendente") return `${canal}: envio pendente${para}`;
   return `${canal}: ${c?.status || "estado desconhecido"}${para}`;
 }
 
@@ -163,7 +167,8 @@ export function lerEnvioDaGuia(guide) {
   }
 
   const d = DESENHO_ENVIO[situacao];
-  const frases = canais.map(frasePorCanal);
+  const frases = canais.length ? canais.map(frasePorCanal)
+    : envio.jaEnviada ? [frasePorCanal({ canal: "EMAIL", status: "enviado", em: guide.emailSentAt })] : [];
   return {
     situacao,
     ...d,

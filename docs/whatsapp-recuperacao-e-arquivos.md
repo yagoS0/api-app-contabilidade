@@ -16,6 +16,14 @@ DigitalOcean foi removido; produção utiliza Railway.
 
 ## Entrega e tentativas
 
+E-mails de guias usam somente contatos ativos da Configuração de envio da própria
+empresa. Endereço de login, cadastro geral e destinatário de outro cliente não
+autorizam envio. A lista é conferida no servidor; o envio em lote também valida
+os destinatários recebidos e os confere novamente após carregar os anexos.
+Sem e-mail cadastrado, o canal é ignorado com motivo explícito, sem apagar o
+histórico anterior. A coluna Envio mostra registros históricos por canal com suas
+datas; um registro antigo não confirma um novo reenvio.
+
 Um identificador `wamid` confirma aceitação da Meta. A prova de entrega vem do
 webhook `delivered` ou `read`. Cada tentativa tem identificador próprio; callbacks
 antigos não alteram uma nova tentativa. Reenvio seletivo tenta somente destinatários

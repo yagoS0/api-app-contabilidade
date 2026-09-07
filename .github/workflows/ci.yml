@@ -59,7 +59,7 @@ jobs:
         run: npm run prisma:generate -w @contabilidade/api
       - name: WhatsApp, guides and AI backend regression
         working-directory: apps/api
-        run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='[Ww]hatsapp|assistente|envioGuia|envioTentativas|classificacaoPorIa|corrigirValorGuia'
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='[Ww]hatsapp|assistente|envioGuia|envioTentativas|classificacaoPorIa|corrigirValorGuia|guiaEmailDestinatarios|destinatarioDaGuia|envioSemFila|envioPendenteNull'
       - name: WhatsApp and AI frontend regression
         working-directory: apps/web
         run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='[Ww]hatsapp|liberarComCanais|canalDeEnvio|envioNaTela|colunaEnvio|reenviarGuia|classificacaoIa|botaoDeIa|clientFallbackAtendimento|pollingEntrega|[Cc]orrigirValor|conferenciaNaTela|ofxImport'

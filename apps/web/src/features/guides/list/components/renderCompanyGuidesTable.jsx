@@ -1310,8 +1310,8 @@ export function CompanyGuidesTable({
                 const paymentStatus = formatPaymentStatus(guide.paymentStatus);
                 // ⚠ O estado de ENVIO (os dois canais), não só o do e-mail. Ver `envioNaTela.js`.
                 const envio = lerEnvioDaGuia(guide);
-                const detalheDoEnvio = envio.canais.length || guide.emailLastError
-                  ? [envio.titulo, guide.emailLastError].filter(Boolean).join("\n")
+                const detalheDoEnvio = envio.canais.length || guide.emailLastError || guide.envio?.jaEnviada
+                  ? ["Histórico de envio por canal. Um envio anterior não confirma um novo reenvio.", envio.titulo, guide.emailLastError].filter(Boolean).join("\n")
                   : null;
 
                 return (
@@ -1377,7 +1377,7 @@ export function CompanyGuidesTable({
                       title={envio.titulo}
                       onClick={detalheDoEnvio ? () => {
                         // eslint-disable-next-line no-alert
-                        window.prompt("Envio desta guia (Ctrl+C para copiar):", detalheDoEnvio);
+                        window.prompt("Histórico de envio desta guia (Ctrl+C para copiar):", detalheDoEnvio);
                       } : undefined}
                       style={detalheDoEnvio ? { cursor: "pointer" } : undefined}
                     >

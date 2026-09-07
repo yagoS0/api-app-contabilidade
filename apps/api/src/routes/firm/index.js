@@ -4189,16 +4189,22 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         return res.status(400).json({ error: "guide_has_no_company", reason: "Guia sem empresa vinculada" });
       }
 
-      const updated = await prisma.guide.update({
-        where: { id: guide.id },
-        data: {
-          emailStatus: "PENDING",
-          emailAttempts: 0,
-          emailLastError: null,
-          emailSentAt: null,
-          emailNextRetryAt: null,
-        },
+      // Ausência de canal não inicia tentativa nem apaga o histórico do último envio.
+      let destinatarios;
+      try { destinatarios = await resolveCompanyNotificationEmails(guide.portalClientId); }
+      catch (err) {
+        log.warn({ guideId: guide.id, err: err?.message }, "Falha ao conferir destinatários antes do reenvio");
+        return res.status(503).json({ ok: false, sent: false, error: "guide_email_recipient_check_failed", message: "Não foi possível conferir a Configuração de envio. Nenhum e-mail foi enviado; tente novamente." });
+      }
+      if (!destinatarios.length) return res.json({
+        ok: true, guideId: guide.id, emailStatus: guide.emailStatus || null, sent: false,
+        envio: { feito: false, naoSeAplica: true, motivo: "sem_email_cadastrado", podeTentarNovamente: false },
+        message: mensagemSemEmailCadastrado(),
       });
+
+      // O worker selecionado aceita guias já enviadas e inicia a nova tentativa.
+      // Não zerar o histórico se houver lock ou se o contato mudar antes dessa tentativa.
+      const updated = guide;
 
       // Q10.2: reenvio é SÍNCRONO — não depende do worker rodar em background.
       // Permite ao contador clicar "Reenviar" e ter feedback imediato (SENT ou ERROR).
@@ -5125,14 +5131,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         totalProcessed: 0,
         sent: 0,
         failed: 0,
+        skipped: 0,
+        skippedItems: [],
         batches: 0,
         failedItems: [],
         batchResults: [],
       };
+      const ignoradas = new Set();
 
       for (let i = 0; i < maxBatches; i += 1) {
         // eslint-disable-next-line no-await-in-loop
-        const batch = await runGuideEmailWorkerOnce({ batchSize });
+        const batch = await runGuideEmailWorkerOnce({ batchSize, ignorarGuideIds: [...ignoradas] });
         if (batch?.skipped && batch?.reason === "lock_active") {
           return res.status(409).json({
             ok: false,
@@ -5149,6 +5158,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         aggregated.totalProcessed += total;
         aggregated.sent += sent;
         aggregated.failed += errors;
+        const skippedItems = results.filter((item) => item.status === "SKIPPED");
+        for (const item of skippedItems) ignoradas.add(String(item.guideId));
+        aggregated.skipped += skippedItems.length;
+        aggregated.skippedItems.push(...skippedItems);
         aggregated.batchResults.push({
           batch: aggregated.batches,
           total,
@@ -5181,7 +5194,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
       return res.json({
         ok: true,
-        message: "Todos os e-mails pendentes elegíveis foram processados com sucesso.",
+        message: aggregated.skipped > 0
+          ? `${aggregated.sent > 0 ? `${aggregated.sent} e-mail(s) enviado(s)` : "Nenhum e-mail foi enviado"}; ${aggregated.skipped} guia(s) sem e-mail cadastrado na Configuração de envio não foram enviadas.`
+          : aggregated.sent > 0 ? `${aggregated.sent} e-mail(s) enviado(s).` : "Nenhum e-mail foi enviado: não há guias elegíveis para envio neste momento.",
         result: aggregated,
       });
     }

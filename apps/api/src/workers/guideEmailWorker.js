@@ -3,7 +3,7 @@ import { prisma } from "../infrastructure/db/prisma.js";
 import { getGuidePdfBuffer } from "../application/guides/GuideService.js";
 import { EmailService } from "../infrastructure/mail/EmailService.js";
 import { releaseGuideLock, tryAcquireGuideLock } from "../application/guides/GuideLockService.js";
-import { SEM_DESTINATARIO_DE_GUIA, resolveCompanyNotificationEmails } from "../application/guides/GuideScheduledEmailService.js";
+import { SEM_DESTINATARIO_DE_GUIA, resolveCompanyNotificationEmails, validarDestinatariosAtuais } from "../application/guides/GuideScheduledEmailService.js";
 import { guideTypeEmailLabel } from "../application/guides/guideEmailCopy.js";
 import { whereGuiaPendenteDeEnvio } from "../application/guides/guideContract.js";
 import os from "node:os";
@@ -133,6 +133,7 @@ async function processOneGuide({ guide, emailService }) {
       </body></html>
     `;
     try {
+      await validarDestinatariosAtuais(source.portalClientId, to);
       await emailService.send({
         to,
         subject,
@@ -180,6 +181,7 @@ async function processOneGuide({ guide, emailService }) {
 }
 
 export async function runGuideEmailWorkerOnce(options = {}) {
+  const ignoradas = Array.isArray(options.ignorarGuideIds) ? options.ignorarGuideIds.map(String) : [];
   const batchSize = Math.min(
     MAX_BATCH_SIZE,
     Math.max(1, Number(options.batchSize) || DEFAULT_BATCH_SIZE)
@@ -194,6 +196,7 @@ export async function runGuideEmailWorkerOnce(options = {}) {
       where: {
         status: "PROCESSED",
         ...whereGuiaPendenteDeEnvio(now),
+        ...(ignoradas.length ? { id: { notIn: ignoradas } } : {}),
       },
       orderBy: { updatedAt: "asc" },
       take: batchSize,
@@ -307,4 +310,3 @@ if (process.argv[1] && process.argv[1].endsWith("guideEmailWorker.js")) {
     });
   }
 }
-
