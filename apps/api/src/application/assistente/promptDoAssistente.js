@@ -14,6 +14,8 @@
 // Ausência nunca é resposta: sem guia LIBERADA não é "não há guia"; situação fiscal nula não é
 // "em dia".
 
+import { expedienteDoEscritorio } from "./expediente.js";
+
 export const NOME_DO_ESCRITORIO = "Altan Contabilidade";
 
 export const SYSTEM_ESTAVEL = `Você é o assistente do escritório ${NOME_DO_ESCRITORIO} no WhatsApp, atendendo UMA empresa cliente (a que vem no contexto). Você fala em português do Brasil, em mensagens curtas de WhatsApp: sem markdown pesado, sem títulos, no máximo alguns parágrafos curtos. Valores em reais no formato R$ 1.234,56; datas no formato DD/MM/AAAA.
@@ -55,6 +57,7 @@ export function contextoDoTurno({ empresa, sessao, pendencia = null, janela = nu
     `EMPRESA ATENDIDA: ${empresa?.razao || "(sem razão social)"} · CNPJ ${empresa?.cnpj || "(sem CNPJ)"}.`,
     `QUEM FALA: ${sessao?.contatoNome || "contato cadastrado"} · papel no portal: ${sessao?.papel || "sem papel"}.`,
     `HOJE: ${hoje.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}.`,
+    `ATENDIMENTO HUMANO: ${expedienteDoEscritorio(hoje).mensagem} Informe esse horário quando o cliente perguntar ou precisar de uma pessoa; não prometa prazo de resolução.`,
   ];
   if (janela && janela.aberta === false) {
     linhas.push("A janela de 24h do WhatsApp está fechada: não dá para enviar documento agora — diga que o escritório envia pelo modelo aprovado.");

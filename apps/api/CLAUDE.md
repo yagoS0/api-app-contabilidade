@@ -2,6 +2,21 @@
 
 Backend Node.js 20 + Express.js + Prisma + PostgreSQL.
 
+## Expediente humano no WhatsApp (07/09/2026)
+
+Decisão do dono: segunda a sexta, 09:00 inclusive até 17:00 exclusive, America/Sao_Paulo;
+feriados nacionais, estaduais RJ e municipais da cidade do Rio de Janeiro. `assistente/expediente.js`
+calcula feriados fixos e móveis e a próxima abertura, inclusive na virada do ano. Pontos facultativos
+não entram automaticamente nesta regra. Este calendário é do atendimento humano, separado do
+calendário de vencimentos fiscais e de suas exceções históricas. A IA continua disponível sob
+as guardas existentes; o contexto dinâmico do prompt e `chamar_escritorio` informam o expediente
+sem garantir prazo de resposta. Não há alteração de banco nem novas variáveis.
+
+Fontes verificadas: calendário nacional 2026 do MGI; Lei RJ 5.243/2008 (terça de Carnaval);
+calendário oficial TRF2 para São Sebastião; ALERJ confirma Corpus Christi estadual em 2026:
+https://palaciotiradentes.rj.gov.br/noticias/corpus-christi-tradicao-de-fe-e-cultura-passa-a-integrar-calendario-de-feriados-do-estado
+Feriados excepcionais e futuras mudanças legais exigem atualização deste calendário.
+
 ## Estrutura
 
 ```

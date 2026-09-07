@@ -40,6 +40,7 @@ import { papelAlcanca, PAPEL_MINIMO_LEITURA, PAPEL_MINIMO_SITUACAO_FISCAL, PAPEL
 import { TIPOS } from "../confirmacaoPendente.js";
 import { criarPendencia } from "../AcoesPendentesService.js";
 import { PERMISSOES_ASSISTENTE, temPermissaoAssistente } from "../../whatsapp/permissoesAssistente.js";
+import { expedienteDoEscritorio } from "../expediente.js";
 
 /** As funções de fora, INJETÁVEIS. Produção usa os defaults; o teste passa dublês. */
 export const SERVICOS_PADRAO = Object.freeze({
@@ -477,7 +478,7 @@ const EXECUTORES = {
 
   async chamar_escritorio(input, ctx) {
     ctx.registrarChamadaAoEscritorio?.({ motivo: String(input.motivo || "").slice(0, 300) });
-    return { ok: true, encaminhado: true, instrucao: "Diga que o escritório vai responder por aqui, e não prometa prazo." };
+    return { ok: true, encaminhado: true, instrucao: `Diga que a mensagem foi encaminhada ao escritório. ${expedienteDoEscritorio(ctx.agora || new Date()).mensagem} Não prometa prazo de resolução.` };
   },
 };
 
