@@ -21,3 +21,13 @@ test("carteira vazia permite somente fila, falha é propagada", async () => {
 });
 
 test("histórico de empresa excluída não entra na fila global",async()=>{const client={$queryRaw:jest.fn(async()=>[{}])};await resumoWhatsapp([],{client});const sql=client.$queryRaw.mock.calls[0][0].sql;expect(sql).toContain('"chaveEscopo" LIKE \'sem-empresa:%\'');expect(sql).toContain('"chaveEscopo" LIKE \'legado:sem-empresa:%\'');});
+
+test("contadores separam operacional, histórico e lixeira sem remover o escopo", async () => {
+  const client = { $queryRaw: jest.fn(async () => [{}]) };
+  await resumoWhatsapp(["pc-permitida"], { client });
+  const query = client.$queryRaw.mock.calls[0][0];
+  expect(query.values).toEqual(["pc-permitida"]);
+  expect(query.sql).toContain('c."excluidaEm" IS NULL AND NOT (c."portalClientId" IS NOT NULL AND c."chaveEscopo" LIKE \'legado:%\')');
+  for (const campo of ["historicoConversas", "historicoConversasNaoLidas", "historicoMensagensNaoLidas", "lixeiraConversas", "lixeiraConversasNaoLidas", "lixeiraMensagensNaoLidas"]) expect(query.sql).toContain(`AS "${campo}"`);
+  expect(query.sql).toContain('WHERE (c."portalClientId" IN (?) OR (c."portalClientId" IS NULL');
+});

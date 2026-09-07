@@ -13,6 +13,7 @@
 import { useState, useRef, useLayoutEffect, useEffect } from "react";
 import { AvatarConversa, SituacaoConversa, WhatsappIcon } from "./ConversaVisual";
 import { Button } from "../../../components/ui/Button";
+import { Modal } from "../../../components/ui/Modal";
 import { formatarCnpj } from "../../onboarding/lib/brasilApi";
 import {
   SITUACAO_FIO,
@@ -71,7 +72,11 @@ export function NomeDaPessoa({ identidade, tamanho = "0.88rem" }) {
 
 export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, slotAcoes = null, hrefDaEmpresa = null, onVoltar = null, onDetalhes = null, detalhesAbertos = false }) {
   const { conversa, mensagens } = fio;
-  const [texto, setTexto] = useState("");
+  const [texto, setTexto] = useState(() => hook.rascunhosRef?.current.get(conversa.id) || "");
+  const textoRef = useRef(texto);
+  const [confirmarExclusao, setConfirmarExclusao] = useState(false);
+  const [movendo, setMovendo] = useState(false);
+  const movendoRef = useRef(false);
   const [recusa, setRecusa] = useState(null);
   const [novas, setNovas] = useState(false);
   const historicoRef = useRef(null);
@@ -80,6 +85,9 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
   const pertoDoFim = useRef(true);
   const enviandoRef = useRef(false);
   const situacao = situacaoDoFio(conversa);
+  const naLixeira = situacao === SITUACAO_FIO.LIXEIRA;
+  const historico = situacao === SITUACAO_FIO.HISTORICO;
+  const somenteLeitura = naLixeira || historico;
   const resposta = estadoDaResposta(conversa);
   const identidade = identidadeDaConversa(conversa);
   const nomeDoCliente = conversa?.contato?.nome || conversa?.nomePerfilProvedor || null;
@@ -122,15 +130,29 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
     if (pertoDoFim.current) setNovas(false);
   }
 
+  function mudarTexto(valor) {
+    textoRef.current = valor;
+    hook.rascunhosRef?.current.set(conversa.id, valor);
+    setTexto(valor);
+  }
+  async function mover(restaurar = false) {
+    if (movendoRef.current || hook.ocupado) return;
+    movendoRef.current = true;
+    setMovendo(true);
+    try {
+      const r = await (restaurar ? hook.restaurar(conversa.id) : hook.excluir(conversa.id));
+      if (r && r.ok !== false) setConfirmarExclusao(false);
+    } finally { movendoRef.current = false; setMovendo(false); }
+  }
   async function enviar() {
     const t = texto.trim();
-    if (!t || !resposta.pode || hook.ocupado || enviandoRef.current) return;
+    if (!t || somenteLeitura || !resposta.pode || hook.ocupado || enviandoRef.current) return;
     enviandoRef.current = true;
     setRecusa(null);
     try {
       const r = await hook.responder(conversa.id, t);
       if (!r || r.ok === false) setRecusa(r?.erro?.payload?.message || r?.erro?.message || "Não foi possível responder.");
-      else { setTexto(atual => atual.trim() === t ? "" : atual); pertoDoFim.current = true; }
+      else { if (textoRef.current.trim() === t) mudarTexto(""); pertoDoFim.current = true; }
     } catch (err) { setRecusa(err?.message || "Não foi possível responder."); }
     finally { enviandoRef.current = false; }
   }
@@ -147,17 +169,21 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
         </div>
         <div className="wa-thread-actions">
           {hrefDaEmpresa && conversa.portalClientId ? <a data-testid="ir-para-a-empresa" href={hrefDaEmpresa(conversa.portalClientId)}>Abrir a empresa →</a> : null}
-          {situacao === SITUACAO_FIO.ASSUMIDA ? (
+          {!somenteLeitura && situacao === SITUACAO_FIO.ASSUMIDA ? (
             <Button variant="secondary" disabled={hook.ocupado || conversa.escopoVerificado === false} onClick={() => hook.devolver(conversa.id)} title="O assistente volta a responder neste fio">Devolver à IA</Button>
-          ) : situacao !== SITUACAO_FIO.FILA_SEM_EMPRESA ? (
+          ) : !somenteLeitura && situacao !== SITUACAO_FIO.FILA_SEM_EMPRESA ? (
             <Button variant="primary" disabled={hook.ocupado} onClick={() => hook.assumir(conversa.id)} title="Você responde; o assistente fica em silêncio">Assumir</Button>
           ) : null}
+          {naLixeira ? <Button variant="secondary" disabled={hook.ocupado || movendo} onClick={() => mover(true)}>Restaurar chat</Button>
+            : typeof hook.excluir === "function" ? <Button variant="secondary" disabled={hook.ocupado || movendo} onClick={() => setConfirmarExclusao(true)}>Excluir chat</Button> : null}
           {onDetalhes ? <Button variant="secondary" size="sm" onClick={onDetalhes} aria-label="Detalhes da conversa" aria-expanded={detalhesAbertos}><WhatsappIcon nome="painel" size={18} /></Button> : null}
         </div>
       </div>
-      {conversa.legadoNaoVerificado || conversa.escopoVerificado === false ? <p role="status" className="wa-notice">Histórico legado sem vínculo verificado. O assistente e a importação de arquivos estão bloqueados neste segmento. Vincule o contato para iniciar um segmento verificado; o histórico anterior será preservado.</p> : null}
+      {naLixeira ? <p role="status" className="wa-notice">Conversa na lixeira. O histórico está preservado para consulta. Restaure para voltar à lista; uma nova mensagem recebida também reabre a conversa.</p>
+        : historico ? <p role="status" className="wa-notice">Histórico legado sem vínculo verificado, preservado somente para consulta. As mensagens anteriores não foram apagadas nem misturadas à conversa atual. Para atender este contato, volte a Conversas atuais.</p> : null}
       {conversa.pendencia ? <div data-testid="pendencia-aberta" className="wa-notice">Pedido aguardando confirmação do cliente: <strong>{conversa.pendencia.tipo}</strong> · código <strong>{conversa.pendencia.codigo}</strong> · expira {fmtDataHora(conversa.pendencia.expiraEm)}.</div> : null}
-      {situacao === SITUACAO_FIO.FILA_SEM_EMPRESA || conversa.escopoVerificado === false ? <div className="wa-thread-setup">{slotVincular || <a href="/whatsapp">Conferir vínculo na caixa de WhatsApp</a>}</div> : null}
+      {!somenteLeitura && (situacao === SITUACAO_FIO.FILA_SEM_EMPRESA || conversa.escopoVerificado === false) ? <div className="wa-thread-setup">{slotVincular || <a href="/whatsapp">Conferir vínculo na caixa de WhatsApp</a>}</div> : null}
+      {historico ? <details className="wa-thread-setup"><summary>Verificar vínculo e iniciar conversa atual</summary><p>O vínculo abre um segmento verificado e preserva este histórico anterior.</p>{slotVincular || <a href="/whatsapp">Verificar vínculo na central de WhatsApp, em Histórico anterior</a>}</details> : null}
       <div className="wa-messages" ref={historicoRef} onScroll={acompanharLeitura} aria-label="Histórico de mensagens" tabIndex={0}>
         {avisoDePaginacao ? <p data-testid="aviso-paginacao" className="wa-list-note" style={{ textAlign: "center" }}>{avisoDePaginacao}</p> : null}
         {hook.cursorFio ? <Button variant="secondary" size="sm" disabled={hook.carregandoAnteriores} onClick={hook.carregarAnteriores}>{hook.carregandoAnteriores ? "Carregando…" : "Carregar mensagens anteriores"}</Button> : null}
@@ -185,18 +211,25 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
         })}
       </div>
       {novas ? <Button variant="secondary" size="sm" onClick={() => { historicoRef.current.scrollTop = historicoRef.current.scrollHeight; pertoDoFim.current = true; setNovas(false); }}>Ir para mensagens recentes ↓</Button> : null}
-      <div className="wa-composer">
+      {!somenteLeitura ? <div className="wa-composer">
         {slotAcoes}
         {!resposta.pode ? <p data-testid="resposta-bloqueada" className="wa-list-note" style={{ color: "var(--state-warn)", padding: "0 0 8px" }}>{resposta.motivo}</p> : null}
         <div className="wa-composer-row">
-          <textarea aria-label="Responder ao cliente" style={campo} value={texto} onChange={(e) => setTexto(e.target.value)}
+          <textarea aria-label="Responder ao cliente" style={campo} value={texto} onChange={(e) => mudarTexto(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) { e.preventDefault(); enviar(); } }}
             disabled={!resposta.pode || hook.ocupado} placeholder={resposta.pode ? "Escreva uma mensagem para este contato…" : "Resposta indisponível — confira o motivo acima"} />
           <Button variant="primary" disabled={!resposta.pode || !texto.trim() || hook.ocupado} onClick={enviar}><WhatsappIcon nome="enviar" size={17} />Responder</Button>
         </div>
         <div className="wa-composer-hint">Mensagem do escritório · Ctrl + Enter para enviar</div>
         {recusa && !hook.erroAcao ? <p role="alert" className="wa-list-note" style={{ color: "var(--state-danger)" }}>{recusa}</p> : null}
-      </div>
+      </div> : null}
+      {confirmarExclusao ? <Modal titulo="Mover conversa para lixeira?" tamanho="sm" ocupado={movendo || hook.ocupado} aoFechar={() => setConfirmarExclusao(false)}
+        rodape={<><Button variant="secondary" disabled={movendo || hook.ocupado} onClick={() => setConfirmarExclusao(false)}>Cancelar</Button><Button variant="danger" disabled={movendo || hook.ocupado} onClick={() => mover(false)}>Mover para lixeira</Button></>}>
+        <p><strong>{identidade.pessoa}</strong> · {conversa.telefoneMascarado}</p>
+        <p>{identidade.linhaDaEmpresa}</p>
+        <p>O histórico será preservado e poderá ser restaurado. Uma nova mensagem recebida reabre a conversa.</p>
+        {hook.erroAcao ? <p role="alert">{hook.erroAcao}</p> : null}
+      </Modal> : null}
     </div>
   );
 }

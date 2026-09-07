@@ -20,6 +20,7 @@ import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
 import { Feedback } from "../../../components/ui/Feedback";
 import { useConversasWhatsapp } from "../hooks/useConversasWhatsapp";
+import { useResumoWhatsapp } from "../hooks/useResumoWhatsapp";
 import { FormOnboarding } from "../components/FormOnboarding";
 import { onboardingDaConversa, fraseDoOnboarding } from "../lib/onboardingDaConversa";
 import { FioDaConversa, LinhaDaEmpresa, NomeDaPessoa, campo } from "../components/FioDaConversa";
@@ -98,6 +99,7 @@ function FormVincular({ companies, api, conversaId, onVincular, ocupado, legado 
 
 export function WhatsappPage({ api, companies = [], onBack, message, error }) {
   const hook = useConversasWhatsapp({ api, feedback: null });
+  const resumo = useResumoWhatsapp({ api });
   const [busca, setBusca] = useState("");
   const [soNaoLidas, setSoNaoLidas] = useState(false);
   const [detalhes, setDetalhes] = useState(false);
@@ -140,10 +142,12 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
               <div className="wa-section-heading"><h2>Caixa de entrada</h2><span className="wa-count" title="Conversas carregadas neste filtro">{lista.length}</span></div>
               <label className="wa-search"><WhatsappIcon nome="busca" size={17} /><input aria-label="Buscar nas conversas carregadas" placeholder="Buscar contato ou empresa" value={busca} onChange={e => setBusca(e.target.value)} /></label>
               <div className="wa-filters">
-                <select aria-label="Filtro das conversas" style={{ ...campo, fontSize: ".75rem" }} value={hook.filtro} onChange={e => hook.setFiltro(e.target.value)}>{FILTROS.map(f => <option key={f.valor} value={f.valor}>{f.rotulo}</option>)}</select>
+                <select aria-label="Filtro das conversas" style={{ ...campo, fontSize: ".75rem" }} value={hook.filtro} disabled={hook.ocupado} onChange={e => { setVerChat(false); setDetalhes(false); hook.setFiltro(e.target.value); }}>{FILTROS.map(f => <option key={f.valor} value={f.valor}>{f.rotulo}</option>)}</select>
                 <Button variant="secondary" size="sm" className="wa-filter-unread" aria-pressed={soNaoLidas} onClick={() => setSoNaoLidas(v => !v)}>Não lidas</Button>
               </div>
               {fila > 0 ? <p data-testid="contagem-fila" className="wa-list-note" style={{ color: "var(--state-warn)", padding: "8px 0 0" }}>{fila} número{fila === 1 ? "" : "s"} sem cadastro aguardando vínculo</p> : null}
+              {resumo.avisoHistorico ? <p role="status" className="wa-list-note">{resumo.avisoHistorico}. Consulte o filtro Histórico anterior.</p> : null}
+              {hook.filtro === "historico" ? <p className="wa-list-note">Mensagens anteriores preservadas para consulta, separadas das conversas atuais.</p> : hook.filtro === "lixeira" ? <p className="wa-list-note">Conversas excluídas da lista. O histórico está preservado e pode ser restaurado.</p> : null}
             </div>
             <div className="wa-conversation-list">
               {hook.erro ? <p role="status" className="wa-list-note" style={{ color: "var(--state-warn)" }}>Não foi possível ler as conversas{hook.erro.mensagem ? `: ${hook.erro.mensagem}` : ""}. A lista pode existir e não ter sido carregada.</p> : null}

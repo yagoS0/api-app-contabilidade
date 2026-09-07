@@ -1,4 +1,15 @@
 import { createRealApi } from "../realApi";
+test("lixeira e restauração usam POST no segmento indicado; histórico mantém filtro e empresa", async () => {
+ const api = createRealApi();
+ await api.excluirConversaWhatsapp("cv/legado");
+ expect(fetch.mock.calls[0][0]).toMatch(/conversas\/cv%2Flegado\/excluir$/);
+ expect(fetch.mock.calls[0][1].method).toBe("POST");
+ await api.restaurarConversaWhatsapp("cv/legado");
+ expect(fetch.mock.calls[1][0]).toMatch(/conversas\/cv%2Flegado\/restaurar$/);
+ expect(fetch.mock.calls[1][1].method).toBe("POST");
+ await api.listarConversasWhatsapp("historico", { empresa: "pc1", cursor: "cv-antigo" });
+ expect(Object.fromEntries(new URL(fetch.mock.calls[2][0]).searchParams)).toEqual({ filtro: "historico", empresa: "pc1", cursor: "cv-antigo" });
+});
 beforeEach(() => { global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })); });
 afterEach(() => { delete global.fetch; });
 test("cursor e limite são enviados na lista e no histórico, preservando empresa", async () => {

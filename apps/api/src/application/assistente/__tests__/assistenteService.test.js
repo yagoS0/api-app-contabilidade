@@ -48,6 +48,7 @@ function bancoEmMemoria({ contato = { id: "c1", nome: "Maria", userId: "u1" }, v
     conversaWhatsapp: {
       findUnique: jest.fn(async () => conversa),
       update: jest.fn(async ({ data }) => Object.assign(conversa, data)),
+      updateMany: jest.fn(async ({data}) => { if(conversa.excluidaEm) return {count:0}; Object.assign(conversa,data);return {count:1}; }),
     },
     contatoWhatsapp: { findMany: jest.fn(async () => contato ? [contato] : []) },
     companyClientUser: { findUnique: jest.fn(async () => vinculo) },
@@ -292,4 +293,37 @@ it("timeout não marca resposta e reentrega não repete o envio incerto",async()
 it("histórico não afirma envio que falhou ou ficou ambíguo",()=>{
  const base={tipo:"text",registradaEm:new Date()};
  expect(montarHistorico([{...base,direcao:"in",corpo:"oi"},{...base,direcao:"out",corpo:"falso",statusEnvio:"indeterminado"}])).toEqual([{role:"user",content:"oi"}]);
+});
+it("chat excluído barra modelo e não produz resposta",async()=>{
+ const client=bancoEmMemoria();client._conversa.excluidaEm=new Date();const cloud=cloudFalso();const assistente=modeloFalso();
+ const r=await responderMensagem({conversaId:"cv1",mensagemId:"m1",deps:deps({client,cloud,assistente})});
+ expect(r.motivo).toBe("CHAT_EXCLUIDO");expect(assistente.responder).not.toHaveBeenCalled();expect(cloud.enviarTexto).not.toHaveBeenCalled();
+});
+it("excluir e restaurar durante geração não permite resposta antiga",async()=>{
+ const client=bancoEmMemoria();const cloud=cloudFalso();const assistente=modeloFalso();
+ assistente.responder.mockImplementationOnce(async()=>{client._conversa.excluidaEm=null;client._conversa.automacaoInvalidadaEm=new Date("2026-09-02T12:01:00Z");return {texto:"antiga",usage:{input_tokens:100,output_tokens:10}};});
+ const r=await responderMensagem({conversaId:"cv1",mensagemId:"m1",deps:deps({client,cloud,assistente})});
+ expect(r.motivo).toBe("AUTOMACAO_INVALIDADA");expect(cloud.enviarTexto).not.toHaveBeenCalled();expect(client._mensagens.get("m1").respondidaPelaIaEm).toBeNull();
+});
+it("job criado tarde para entrada antiga não reinicia após restauração",async()=>{
+ const client=bancoEmMemoria();client._conversa.automacaoInvalidadaEm=new Date("2026-09-02T12:01:00Z");const assistente=modeloFalso();
+ const r=await responderMensagem({conversaId:"cv1",mensagemId:"m1",deps:deps({client,cloud:cloudFalso(),assistente})});
+ expect(r.motivo).toBe("AUTOMACAO_INVALIDADA");expect(assistente.responder).not.toHaveBeenCalled();
+});
+it("entrada nova após corte permite IA, respeitando o mesmo vínculo",async()=>{
+ const client=bancoEmMemoria();client._conversa.automacaoInvalidadaEm=new Date("2026-09-02T11:59:00Z");const assistente=modeloFalso();
+ const r=await responderMensagem({conversaId:"cv1",mensagemId:"m1",deps:deps({client,cloud:cloudFalso(),assistente})});
+ expect(r.motivo).toBe("RESPONDIDA");expect(assistente.responder).toHaveBeenCalledTimes(1);
+});
+it("exclusão durante leitura do histórico barra chamada ao modelo e libera reserva sem custo",async()=>{
+ const client=bancoEmMemoria();client.mensagemWhatsapp.findMany.mockImplementationOnce(async()=>{client._conversa.excluidaEm=new Date();return [...client._mensagens.values()];});const assistente=modeloFalso();
+ const r=await responderMensagem({conversaId:"cv1",mensagemId:"m1",deps:deps({client,cloud:cloudFalso(),assistente})});
+ expect(r.motivo).toBe("CHAT_EXCLUIDO");expect(assistente.responder).not.toHaveBeenCalled();expect(client._chamadas[0].reservaCentavos).toBe(0);
+});
+it("exclusão enquanto ferramenta consulta guia impede pendência fiscal tardia",async()=>{
+ const client=bancoEmMemoria();const criarPendencia=jest.fn();const cloud=cloudFalso();
+ client.guide.findFirst.mockImplementationOnce(async()=>{client._conversa.excluidaEm=null;client._conversa.automacaoInvalidadaEm=new Date("2026-09-02T12:01:00Z");return {id:"g1",status:"PROCESSED",tipo:"SIMPLES",competencia:"2026-07",valor:300,vencimento:new Date("2026-07-20")};});
+ const assistente={responder:async({executar})=>{await executar("preparar_recalculo",{guideId:"g1"});return {texto:"ok",usage:{input_tokens:1,output_tokens:1}};}};
+ const r=await responderMensagem({conversaId:"cv1",mensagemId:"m1",deps:deps({client,cloud,assistente,servicos:{criarPendencia,canGuideRecalculate:()=>true,isGuideOverdue:()=>true,avisoDeRecalculo:()=>({texto:"x"})}})});
+ expect(r.motivo).toBe("AUTOMACAO_INVALIDADA");expect(criarPendencia).not.toHaveBeenCalled();expect(cloud.enviarTexto).not.toHaveBeenCalled();
 });

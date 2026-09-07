@@ -44,6 +44,11 @@ export async function processarTurnosIaUmaVez({ client = prisma, agora = new Dat
         }
       }
       const conferirLease = async () => {
+        const posse = await client.turnoIaWhatsapp.updateMany({ where: { id: job.id, reservaToken: token, status: "processando" }, data: { leaseAte: new Date(Date.now() + 90000) } });
+        if (!posse.count) {
+          leaseValido = false;
+          throw Object.assign(new Error("O turno foi cancelado ou substituído."), { codigo: "TURNO_CANCELADO" });
+        }
         if (!leaseValido || !await renovarLease(lease, { client })) {
           leaseValido = false;
           throw Object.assign(new Error("A reserva do turno expirou."), { codigo: "LEASE_PERDIDA" });
@@ -54,7 +59,6 @@ export async function processarTurnosIaUmaVez({ client = prisma, agora = new Dat
         renovando = true;
         try {
           await conferirLease();
-          await client.turnoIaWhatsapp.updateMany({ where: { id: job.id, reservaToken: token }, data: { leaseAte: new Date(Date.now() + 90000) } });
         } catch { leaseValido = false; }
         finally { renovando = false; }
       }, 20000);
@@ -63,7 +67,7 @@ export async function processarTurnosIaUmaVez({ client = prisma, agora = new Dat
         client, log, turnoIaId: job.id, leaseExterno: true, conferirLease,
       } });
       const status = r?.feito ? "respondido" : r?.indeterminado ? "indeterminado"
-        : ["SEM_ESCOPO_VERIFICADO", "ASSUMIDA_POR_HUMANO", "FORA_DO_PILOTO", "FORA_DA_JANELA", "JA_RESPONDIDA"].includes(r?.motivo) ? "ignorado" : "falhou";
+        : ["CHAT_EXCLUIDO", "AUTOMACAO_INVALIDADA", "TURNO_CANCELADO", "SEM_ESCOPO_VERIFICADO", "ASSUMIDA_POR_HUMANO", "FORA_DO_PILOTO", "FORA_DA_JANELA", "JA_RESPONDIDA"].includes(r?.motivo) ? "ignorado" : "falhou";
       await client.turnoIaWhatsapp.updateMany({ where: { id: job.id, reservaToken: token }, data: {
         status, motivo: r?.motivo || "ERRO", leaseAte: null,
         concluidoEm: ["respondido", "ignorado"].includes(status) ? new Date() : null,

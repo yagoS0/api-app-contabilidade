@@ -1247,6 +1247,10 @@ model ConversaWhatsapp {
   /// empresa for piloto). `onDelete: SetNull` — a saída do usuário devolve o fio à IA.
   atendidaPor        String?
   atendidaDesde      DateTime?
+  /// Exclusão reversível da caixa de atendimento; mensagens e atribuição permanecem intactas.
+  excluidaEm         DateTime?
+  /// Corte persistente: restaurar não autoriza turnos de mensagens anteriores à exclusão.
+  automacaoInvalidadaEm DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

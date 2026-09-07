@@ -20,7 +20,7 @@ export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo =
     const salva = await client.mensagemWhatsapp.update({ where: { id: mensagem.id }, data: {
       providerMessageId: wamid, statusEnvio: "enviado", enviadoEm: new Date(),
     } });
-    await client.conversaWhatsapp.update({ where: { id: conversa.id }, data: { updatedAt: new Date() } });
+    await client.conversaWhatsapp.update({ where: { id: conversa.id }, data: { updatedAt: new Date(), excluidaEm: null } });
     return { ...r, mensagem: salva };
   } catch (err) {
     const httpStatus = err?.httpStatus ?? err?.traducao?.httpStatus;

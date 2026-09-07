@@ -11,7 +11,7 @@ import { autorizarChamadaIa, concluirChamadaIa } from "./GuardaIaService.js";
 import { montarSystem, MENSAGENS_FIXAS } from "./promptDoAssistente.js";
 import { sessaoDoContato, fraseSemSessao } from "./sessaoDoContato.js";
 import { decidirResposta, FRASES } from "./confirmacaoPendente.js";
-import { pendenciaAberta, confirmarEExecutar, cancelarPendencia, marcarExpirada } from "./AcoesPendentesService.js";
+import { criarPendencia, pendenciaAberta, confirmarEExecutar, cancelarPendencia, marcarExpirada } from "./AcoesPendentesService.js";
 import { definicoes, executarFerramenta } from "./ferramentas/index.js";
 
 export const AUTOR = Object.freeze({ IA: "IA", HUMANO: "HUMANO", SISTEMA: "SISTEMA" });
@@ -90,7 +90,11 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       await deps.conferirLease?.();
       if (!leaseValido) throw Object.assign(new Error("Reserva do turno expirada."), { codigo: "LEASE_PERDIDA" });
       const atual = await client.conversaWhatsapp.findUnique({ where: { id: conversa.id } });
-      const codigo = !atual?.escopoVerificado || atual.portalClientId !== conversa.portalClientId ? "SEM_ESCOPO_VERIFICADO"
+      const corte = atual?.automacaoInvalidadaEm ? new Date(atual.automacaoInvalidadaEm).getTime() : null;
+      const recebidaEm = new Date(mensagem.registradaEm).getTime();
+      const codigo = atual?.excluidaEm ? "CHAT_EXCLUIDO"
+        : corte != null && (!Number.isFinite(recebidaEm) || recebidaEm <= corte) ? "AUTOMACAO_INVALIDADA"
+        : !atual?.escopoVerificado || atual.portalClientId !== conversa.portalClientId ? "SEM_ESCOPO_VERIFICADO"
         : atual.atendidaPor || atual.atendidaDesde ? "ASSUMIDA_POR_HUMANO"
           : !(deps.flag ?? INTEGRACAO_WHATSAPP_IA) || !(deps.piloto ?? IA_EMPRESAS_PILOTO).includes(conversa.portalClientId) ? "FORA_DO_PILOTO" : null;
       if (codigo) throw Object.assign(new Error("O assistente foi suspenso nesta conversa."), { codigo });
@@ -172,7 +176,22 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     let chamouEscritorio = null;
     const documentosTentados = new Map();
     const ctx = {
-      sessao, conversa, prisma: client, servicos: deps.servicos || {}, janela: { aberta: janela.situacao === SITUACOES_JANELA.ABERTA }, agora, log,
+      sessao, conversa, prisma: client, servicos: {
+        ...(deps.servicos || {}),
+        criarPendencia: async (args) => {
+          await conferirPortao();
+          return client.$transaction(async (tx) => {
+            // Lock da conversa serializa criação da pendência com sua exclusão e cancelamento.
+            const ativa = await tx.conversaWhatsapp.updateMany({ where: {
+              id: conversa.id, portalClientId: conversa.portalClientId, escopoVerificado: true,
+              excluidaEm: null, atendidaPor: null, atendidaDesde: null,
+              OR: [{ automacaoInvalidadaEm: null }, { automacaoInvalidadaEm: { lt: mensagem.registradaEm } }],
+            }, data: { updatedAt: new Date() } });
+            if (!ativa.count) throw Object.assign(new Error("A conversa mudou antes de preparar o pedido."), { codigo: "AUTOMACAO_INVALIDADA" });
+            return (deps.servicos?.criarPendencia || criarPendencia)({ ...args, client: tx });
+          });
+        },
+      }, janela: { aberta: janela.situacao === SITUACOES_JANELA.ABERTA }, agora, log,
       enviarDocumento: async ({ conteudo, nomeArquivo, legenda, guideId, notaId }) => {
         const chaveDocumento = `${guideId || ""}:${notaId || ""}:${nomeArquivo || ""}`;
         if (documentosTentados.has(chaveDocumento)) return documentosTentados.get(chaveDocumento);
@@ -194,10 +213,14 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
 
     const assistente = deps.assistente || new AssistenteClient({ log });
     let resposta;
+    let iniciouModelo = false;
     try {
+      await conferirPortao();
+      iniciouModelo = true;
       resposta = await assistente.responder({ system, messages, ferramentas: definicoes(), executar: async (nome, input) => { await conferirPortao(); return executarFerramenta(nome, input, ctx); } });
     } catch (err) {
-      await concluirChamadaIa(guarda.contexto, { usage: err?.usage, iteracoes: err?.iteracoes, ferramentas: err?.ferramentasChamadas, erroCodigo: err?.codigo || "IA_ERRO", erroMensagem: err?.message }, { client, log });
+      await concluirChamadaIa(guarda.contexto, { usage: iniciouModelo ? err?.usage : { input_tokens: 0, output_tokens: 0 }, usageCompleto: !iniciouModelo, iteracoes: err?.iteracoes, ferramentas: err?.ferramentasChamadas, erroCodigo: err?.codigo || "IA_ERRO", erroMensagem: err?.message }, { client, log });
+      if (!iniciouModelo) throw err;
       log?.error?.({ conversaId: conversa.id, codigo: err?.codigo, err: err?.message }, "assistente: o modelo não respondeu");
       await dizer(MENSAGENS_FIXAS.ERRO_MODELO, { autor: AUTOR.SISTEMA });
       return { feito: true, motivo: err?.codigo || "IA_ERRO" };
@@ -209,6 +232,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     if (texto) await dizer(texto, { autor: AUTOR.IA });
     for (const p of pendenciasDoTurno) await dizer(p.texto, { autor: AUTOR.SISTEMA });
     if (chamouEscritorio) {
+      await conferirPortao();
       await client.conversaWhatsapp.update({ where: { id: conversa.id }, data: { atendidaDesde: agora } }).catch(() => {});
       await registrarMensagemEnviada({ telefone: conversa.telefoneE164, portalClientId: conversa.portalClientId, tipo: "text", corpo: `[pedido de atendimento humano] ${chamouEscritorio.motivo}`, autor: AUTOR.SISTEMA }).catch(() => {});
     }

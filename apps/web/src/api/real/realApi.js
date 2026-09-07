@@ -1013,6 +1013,12 @@ export function createRealApi() {
     async assumirConversaWhatsapp(conversaId) {
       return request(`/firm/whatsapp/conversas/${conversaId}/assumir`, { method: "POST" });
     },
+    async excluirConversaWhatsapp(conversaId) {
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/excluir`, { method: "POST" });
+    },
+    async restaurarConversaWhatsapp(conversaId) {
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/restaurar`, { method: "POST" });
+    },
     async devolverConversaWhatsapp(conversaId) {
       return request(`/firm/whatsapp/conversas/${conversaId}/devolver`, { method: "POST" });
     },

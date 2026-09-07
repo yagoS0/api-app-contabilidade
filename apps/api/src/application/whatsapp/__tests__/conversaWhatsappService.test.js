@@ -11,6 +11,7 @@
 
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
+    $transaction: jest.fn(),
     contatoWhatsapp: { findMany: jest.fn() },
     companyClientUser: { findMany: jest.fn() },
     conversaWhatsapp: { upsert: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
@@ -35,6 +36,8 @@ import { SITUACOES_JANELA, PERMISSOES } from "../janela24h.js";
 
 beforeEach(() => {
   jest.resetAllMocks();
+  prisma.$transaction.mockImplementation(async (fn) => fn(prisma));
+  prisma.conversaWhatsapp.update.mockImplementation(async ({ where, data }) => ({ id: where.id, ...data }));
   prisma.mensagemWhatsapp.findUnique.mockResolvedValue(null);
   prisma.conversaWhatsapp.findUnique.mockResolvedValue({id:"conv1",telefoneE164:"5521999998888"});
   prisma.contatoWhatsapp.findMany.mockResolvedValue([]);
@@ -214,7 +217,7 @@ describe("⚠ A FILA DE NÃO VINCULADOS É UMA CONSULTA, e o motivo vem do VÍNC
   it("a consulta pede exatamente os fios sem empresa", async () => {
     prisma.conversaWhatsapp.findMany.mockResolvedValue([]);
     await conversasNaoVinculadas();
-    expect(prisma.conversaWhatsapp.findMany.mock.calls[0][0].where).toEqual(FILTRO_FILA_WHATSAPP);
+    expect(prisma.conversaWhatsapp.findMany.mock.calls[0][0].where).toEqual({ ...FILTRO_FILA_WHATSAPP, excluidaEm: null });
   });
 });
 

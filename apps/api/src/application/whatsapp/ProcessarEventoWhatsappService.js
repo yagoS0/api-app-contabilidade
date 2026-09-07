@@ -150,6 +150,11 @@ async function processarStatus(item, { logger }) {
 export function decidirRespostaDaIa({ r, flag = INTEGRACAO_WHATSAPP_IA, piloto = IA_EMPRESAS_PILOTO } = {}) {
   if (!flag) return { responde: false, motivo: "FLAG_OFF" };
   if (r?.duplicada) return { responde: false, motivo: "DUPLICADA" };
+  if (r?.conversa?.excluidaEm) return { responde: false, motivo: "CHAT_EXCLUIDO" };
+  if (r?.conversa?.automacaoInvalidadaEm) {
+    const recebidaEm = new Date(r?.mensagem?.registradaEm).getTime();
+    if (!Number.isFinite(recebidaEm) || recebidaEm <= new Date(r.conversa.automacaoInvalidadaEm).getTime()) return { responde: false, motivo: "AUTOMACAO_INVALIDADA" };
+  }
   if (r?.vinculo?.situacao !== SITUACOES.VINCULADO || !r?.conversa?.portalClientId) return { responde: false, motivo: "NAO_VINCULADA" };
   if (r.conversa.escopoVerificado !== true) return { responde: false, motivo: "SEM_ESCOPO_VERIFICADO" };
   if (!Array.isArray(piloto) || !piloto.includes(String(r.conversa.portalClientId))) return { responde: false, motivo: "FORA_DO_PILOTO" };

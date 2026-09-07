@@ -306,3 +306,10 @@ describe("o gancho da IA — quem é chamado, e com o quê", () => {
     expect(logger.error).toHaveBeenCalled();
   });
 });
+it("decisão de IA distingue chat na lixeira, entrada antiga e nova entrada após restaurar",()=>{
+ const base={vinculo:{situacao:"VINCULADO"},conversa:{id:"cv",portalClientId:"pc",escopoVerificado:true},mensagem:{registradaEm:new Date("2026-09-07T12:00:00Z")}};
+ const args={flag:true,piloto:["pc"]};
+ expect(decidirRespostaDaIa({...args,r:{...base,conversa:{...base.conversa,excluidaEm:new Date()}}}).motivo).toBe("CHAT_EXCLUIDO");
+ expect(decidirRespostaDaIa({...args,r:{...base,conversa:{...base.conversa,automacaoInvalidadaEm:new Date("2026-09-07T12:01:00Z")}}}).motivo).toBe("AUTOMACAO_INVALIDADA");
+ expect(decidirRespostaDaIa({...args,r:{...base,conversa:{...base.conversa,excluidaEm:null,automacaoInvalidadaEm:new Date("2026-09-07T11:59:00Z")}}}).responde).toBe(true);
+});

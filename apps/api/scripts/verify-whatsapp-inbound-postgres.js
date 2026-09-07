@@ -10,13 +10,14 @@ process.env.DATABASE_URL = url.toString();
 process.env.INTEGRACAO_WHATSAPP_IA = "0";
 globalThis.fetch = async () => { throw new Error("PROVEDORES EXTERNOS PROIBIDOS NESTE TESTE"); };
 const { prisma } = await import("../src/infrastructure/db/prisma.js");
-const { garantirConversa, registrarMensagemRecebida, registrarMensagemEnviada, listarMensagens, pertenceAFilaWhatsapp } = await import("../src/application/whatsapp/ConversaWhatsappService.js");
+const { garantirConversa, registrarMensagemRecebida, registrarMensagemEnviada, listarMensagens, pertenceAFilaWhatsapp, alterarExclusaoConversa } = await import("../src/application/whatsapp/ConversaWhatsappService.js");
 const { persistirWebhookWhatsapp, processarInboxWhatsappUmaVez } = await import("../src/application/whatsapp/WhatsappInboxService.js");
 const { adquirirLease, renovarLease, liberarLease } = await import("../src/application/whatsapp/WhatsappLeaseService.js");
 const { enfileirarTurnoIa, processarTurnosIaUmaVez } = await import("../src/application/assistente/TurnoIaWhatsappService.js");
 const { autorizarChamadaIa, concluirChamadaIa } = await import("../src/application/assistente/GuardaIaService.js");
 const { responderMensagem } = await import("../src/application/assistente/AssistenteService.js");
 const { enviarMensagemRastreada, aplicarStatusMensagem } = await import("../src/application/whatsapp/SaidaWhatsappService.js");
+const { resumoWhatsapp } = await import("../src/application/whatsapp/resumoWhatsapp.js");
 const log = { info() {}, warn() {}, error() {} };
 const checks = [];
 const prefix = randomUUID();
@@ -145,6 +146,62 @@ try {
   assert.equal(recusada.motivo, "SEM_ESCOPO_VERIFICADO");
   assert.equal(modeloChamado, 1);
   resultados("waId identifica pessoa corretamente; legado não entra no modelo");
+
+  // A lixeira preserva dados e o responsável. Reentrega antiga não deve reabrir atendimento.
+  await prisma.conversaWhatsapp.update({ where: { id: recebida.conversa.id }, data: { atendidaPor: u.id, atendidaDesde: new Date() } });
+  const jobExcluido = await enfileirarTurnoIa({ conversaId: recebida.conversa.id, mensagemId: recebida.mensagem.id, portalClientId: a.id });
+  const naLixeira = await alterarExclusaoConversa({ conversaId: recebida.conversa.id, excluir: true });
+  assert.ok(naLixeira.excluidaEm);
+  assert.ok(naLixeira.automacaoInvalidadaEm);
+  assert.equal((await prisma.turnoIaWhatsapp.findUnique({ where: { id: jobExcluido.id } })).status, "ignorado");
+  const resumoNaLixeira = await resumoWhatsapp([a.id]);
+  assert.equal(resumoNaLixeira.lixeiraConversas, 1);
+  assert.equal(resumoNaLixeira.historicoConversas, 1);
+  // Sem empresa só entra pela fila; o mesmo telefone na empresa B não entra na carteira A.
+  const resumosEmpresaB = await resumoWhatsapp([b.id]);
+  assert.equal(resumosEmpresaB.lixeiraConversas, 0);
+  assert.equal(resumosEmpresaB.historicoConversas, 0);
+  const restaurada = await alterarExclusaoConversa({ conversaId: recebida.conversa.id, excluir: false });
+  assert.equal(restaurada.excluidaEm, null);
+  assert.equal(restaurada.automacaoInvalidadaEm.getTime(), naLixeira.automacaoInvalidadaEm.getTime());
+  const excluidaNovamente = await alterarExclusaoConversa({ conversaId: recebida.conversa.id, excluir: true });
+  const excluidaEm = excluidaNovamente.excluidaEm;
+  const repetida = await registrarMensagemRecebida({ telefone: alias, providerMessageId: wamid("alias"), tipo: "text", corpo: "oi" });
+  assert.equal(repetida.duplicada, true);
+  assert.equal(repetida.conversa.excluidaEm.getTime(), excluidaEm.getTime());
+  assert.equal(await prisma.mensagemWhatsapp.count({ where: { id: recebida.mensagem.id } }), 1);
+  const proxima = await registrarMensagemRecebida({ telefone: alias, providerMessageId: wamid("reabrir"), tipo: "text", corpo: "nova mensagem", ocorridaEmProvedor: new Date() });
+  assert.equal(proxima.duplicada, false);
+  assert.equal(proxima.conversa.id, recebida.conversa.id);
+  assert.equal(proxima.conversa.excluidaEm, null);
+  assert.equal(proxima.conversa.atendidaPor, u.id);
+  assert.equal((await prisma.conversaWhatsapp.findUnique({ where: { id: recebida.conversa.id } })).excluidaEm, null);
+  const preservadas = await listarMensagens({ portalClientId: a.id, conversaId: recebida.conversa.id });
+  assert.ok(preservadas.some((m) => m.id === recebida.mensagem.id));
+  assert.ok(preservadas.some((m) => m.id === proxima.mensagem.id));
+  const atuais = await prisma.conversaWhatsapp.findMany({ where: { portalClientId: a.id, telefoneE164: alias, excluidaEm: null, NOT: { chaveEscopo: { startsWith: "legado:" } } } });
+  assert.deepEqual(atuais.map((c) => c.id), [recebida.conversa.id]);
+  assert.equal((await prisma.conversaWhatsapp.findUnique({ where: { id: legado.id } })).escopoVerificado, false);
+  resultados("lixeira preserva histórico, reentrega não reabre e mensagem nova reabre o mesmo chat sem liberar a IA");
+
+  await prisma.conversaWhatsapp.update({ where: { id: proxima.conversa.id }, data: { atendidaPor: null, atendidaDesde: null } });
+  const duranteModelo = await registrarMensagemRecebida({ telefone: alias, providerMessageId: wamid("excluir-durante-modelo"), tipo: "text", corpo: "consulta de teste", ocorridaEmProvedor: new Date() });
+  let enviosAposExclusao = 0;
+  let geracoesEmDisputa = 0;
+  const interrompida = await responderMensagem({ conversaId: duranteModelo.conversa.id, mensagemId: duranteModelo.mensagem.id, deps: {
+    ...deps,
+    assistente: { responder: async () => {
+      geracoesEmDisputa += 1;
+      await alterarExclusaoConversa({ conversaId: duranteModelo.conversa.id, excluir: true });
+      await alterarExclusaoConversa({ conversaId: duranteModelo.conversa.id, excluir: false });
+      return { texto: "Esta resposta antiga não pode sair", usage: { input_tokens: 1, output_tokens: 1 }, iteracoes: 1 };
+    } },
+    cloud: { enviarTexto: async () => { enviosAposExclusao += 1; return { wamid: wamid("nao-pode-enviar") }; } },
+  } });
+  assert.equal(geracoesEmDisputa, 1);
+  assert.equal(interrompida.motivo, "AUTOMACAO_INVALIDADA");
+  assert.equal(enviosAposExclusao, 0);
+  resultados("excluir e restaurar durante geração não libera resposta antiga no PostgreSQL real");
 
   console.log(JSON.stringify({ ok: true, checks: checks.length, banco: url.pathname.slice(1), chamadasProvedoresReais: 0 }));
 } finally {

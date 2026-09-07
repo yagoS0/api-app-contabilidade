@@ -10,9 +10,11 @@
 // que o servidor daria.
 
 export const FILTROS = Object.freeze([
-  { valor: "todas", rotulo: "Todas" },
+  { valor: "todas", rotulo: "Conversas atuais" },
   { valor: "nao-vinculadas", rotulo: "Não vinculadas (fila)" },
   { valor: "atendidas-por-mim", rotulo: "Assumidas por mim" },
+  { valor: "historico", rotulo: "Histórico anterior" },
+  { valor: "lixeira", rotulo: "Lixeira" },
 ]);
 
 /**
@@ -74,9 +76,13 @@ export const SITUACAO_FIO = Object.freeze({
   FILA_DO_ESCRITORIO: "FILA_DO_ESCRITORIO",
   ASSUMIDA: "ASSUMIDA",
   COM_A_IA: "COM_A_IA",
+  HISTORICO: "HISTORICO",
+  LIXEIRA: "LIXEIRA",
 });
 
 export function situacaoDoFio(c) {
+  if (c?.excluidaEm) return SITUACAO_FIO.LIXEIRA;
+  if (c?.portalClientId && (c.escopoVerificado === false || c.legadoNaoVerificado)) return SITUACAO_FIO.HISTORICO;
   if (!c?.portalClientId) return SITUACAO_FIO.FILA_SEM_EMPRESA;
   if (c.atendidaPor) return SITUACAO_FIO.ASSUMIDA;
   if (c.atendidaDesde || c.naFilaDoEscritorio) return SITUACAO_FIO.FILA_DO_ESCRITORIO;
@@ -86,6 +92,8 @@ export function situacaoDoFio(c) {
 /** O rótulo curto da linha — e o tom (âmbar = pendência do escritório; neutro = o resto). */
 export function rotuloDaSituacao(c) {
   const s = situacaoDoFio(c);
+  if (s === SITUACAO_FIO.LIXEIRA) return { situacao: s, texto: "Na lixeira", tom: "aviso" };
+  if (s === SITUACAO_FIO.HISTORICO) return { situacao: s, texto: "Histórico anterior", tom: "neutro" };
   if (s === SITUACAO_FIO.FILA_SEM_EMPRESA) {
     const motivo = c?.vinculo?.motivo;
     return { situacao: s, texto: motivo === "AMBIGUO" ? "número em mais de uma empresa — escolha" : "número sem cadastro — vincule", tom: "aviso" };

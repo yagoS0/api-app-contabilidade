@@ -249,7 +249,7 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
                     {it.label}
                     {it.label === "WhatsApp" && resumoWhatsapp ? <span style={{ display: "block", fontSize: "0.72rem", color: "var(--text-muted)" }}>
                       {resumoWhatsapp.selo ? <strong data-testid="whatsapp-selo" style={{ color: "var(--state-warn)", marginRight: 6 }}>{resumoWhatsapp.selo}</strong> : null}
-                      {resumoWhatsapp.carregando ? "Lendo mensagens…" : resumoWhatsapp.selo ? resumoWhatsapp.frase.replace(/^\d+ /, "") : resumoWhatsapp.frase}
+                      {resumoWhatsapp.carregando ? "Lendo mensagens…" : resumoWhatsapp.frase}
                     </span> : null}
                   </button>
                 </div>

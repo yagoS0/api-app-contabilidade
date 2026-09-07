@@ -26,6 +26,31 @@ export class ConversaWhatsappError extends Error {
 
 const ehConflitoDeUnique = (e) => e?.code === "P2002";
 
+/** O chamador confere a carteira antes. Nenhum conteúdo nem atribuição é apagado. */
+export async function alterarExclusaoConversa({ conversaId, excluir, client = prisma }) {
+  return client.$transaction(async (tx) => {
+    const conversa = await tx.conversaWhatsapp.findUnique({ where: { id: String(conversaId) } });
+    if (!conversa) throw new ConversaWhatsappError("CONVERSA_NAO_ENCONTRADA", "Conversa não encontrada.");
+    const agora = new Date();
+    if (excluir && !conversa.excluidaEm) {
+      const mudou = await tx.conversaWhatsapp.updateMany({
+        where: { id: conversa.id, excluidaEm: null },
+        data: { excluidaEm: agora, automacaoInvalidadaEm: agora },
+      });
+      if (mudou.count) {
+        await tx.turnoIaWhatsapp.updateMany({
+          where: { conversaId: conversa.id, status: { in: ["pendente", "falhou", "processando"] } },
+          data: { status: "ignorado", motivo: "CHAT_EXCLUIDO", leaseAte: null, reservaToken: null, concluidoEm: agora },
+        });
+        await tx.acaoPendenteWhatsapp.updateMany({ where: { conversaId: conversa.id, status: "pendente" }, data: { status: "cancelada" } });
+      }
+    } else if (!excluir && conversa.excluidaEm) {
+      await tx.conversaWhatsapp.updateMany({ where: { id: conversa.id, excluidaEm: conversa.excluidaEm }, data: { excluidaEm: null } });
+    }
+    return tx.conversaWhatsapp.findUnique({ where: { id: conversa.id } });
+  });
+}
+
 /**
  * O fio de um número. Cria se não existir.
  *
@@ -106,7 +131,8 @@ export async function registrarMensagemRecebida({
   const conversa = await garantirConversa({ telefone: vinculo.e164, portalClientId, nomePerfilProvedor });
 
   try {
-    const mensagem = await prisma.mensagemWhatsapp.create({
+    const resultado = await prisma.$transaction(async (tx) => {
+    const mensagem = await tx.mensagemWhatsapp.create({
       data: {
         conversaId: conversa.id,
         direcao: DIRECAO.ENTRADA,
@@ -117,8 +143,10 @@ export async function registrarMensagemRecebida({
         ocorridaEmProvedor: ocorridaEmProvedor ?? null,
       },
     });
-    await prisma.conversaWhatsapp.update({ where: { id: conversa.id }, data: { updatedAt: new Date() } });
-    return { mensagem, conversa, duplicada: false, vinculo };
+    const atualizada = await tx.conversaWhatsapp.update({ where: { id: conversa.id }, data: { updatedAt: new Date(), excluidaEm: null } });
+    return { mensagem, conversa: atualizada, duplicada: false, vinculo };
+    });
+    return resultado;
   } catch (e) {
     if (!ehConflitoDeUnique(e)) throw e;
     const mensagem = await prisma.mensagemWhatsapp.findUnique({ where: { providerMessageId: String(providerMessageId) } });
@@ -177,7 +205,11 @@ export async function registrarMensagemEnviada({
         autor: autor ? String(autor) : null,
       },
     });
-    return { mensagem, conversa, duplicada: false };
+    // Só uma saída efetivamente aceita reabre; reentrega do recibo não muda a lixeira.
+    const atualizada = providerMessageId
+      ? await client.conversaWhatsapp.update({ where: { id: conversa.id }, data: { excluidaEm: null, updatedAt: new Date() } })
+      : conversa;
+    return { mensagem, conversa: atualizada, duplicada: false };
   } catch (e) {
     if (!ehConflitoDeUnique(e) || !providerMessageId) throw e;
     const mensagem = await client.mensagemWhatsapp.findUnique({
@@ -255,7 +287,7 @@ export async function listarMensagens({ portalClientId, conversaId, limite = 50,
  */
 export async function conversasNaoVinculadas({ limite = 50 } = {}) {
   const conversas = await prisma.conversaWhatsapp.findMany({
-    where: FILTRO_FILA_WHATSAPP,
+    where: { ...FILTRO_FILA_WHATSAPP, excluidaEm: null },
     orderBy: { updatedAt: "desc" },
     take: limite,
   });

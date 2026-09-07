@@ -64,8 +64,8 @@ describe("fraseDoConsumo e ordenação", () => {
     ]);
     expect(l.map((x) => x.id)).toEqual(["b", "c", "a"]);
   });
-  it("os três filtros são os do servidor", () => {
-    expect(FILTROS.map((f) => f.valor)).toEqual(["todas", "nao-vinculadas", "atendidas-por-mim"]);
+  it("os filtros separam conversas atuais, histórico e lixeira no servidor", () => {
+    expect(FILTROS.map((f) => f.valor)).toEqual(["todas", "nao-vinculadas", "atendidas-por-mim", "historico", "lixeira"]);
   });
 });
 

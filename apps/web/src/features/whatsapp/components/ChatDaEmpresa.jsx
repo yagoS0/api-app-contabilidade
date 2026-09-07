@@ -48,9 +48,12 @@ export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao
     <section data-testid="chat-da-empresa" className="wa-company-chat">
       <div className="wa-section-heading" style={{ flexWrap: "wrap" }}>
         <h2 className="wa-inline"><WhatsappIcon size={19} />WhatsApp</h2>
+        <select aria-label="Visualização das conversas da empresa" style={{ ...campo, width: "auto" }} value={hook.filtro} disabled={hook.ocupado} onChange={e => { setEscolhido(null); tentado.current = null; hook.setFiltro(e.target.value); }}>
+          <option value="todas">Conversas atuais</option><option value="historico">Histórico anterior</option><option value="lixeira">Lixeira</option>
+        </select>
         {escolha.situacao === ESCOLHA_DO_FIO.ESCOLHER ? (
           <label style={{ fontSize: "0.76rem", color: "var(--text-muted)", display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
-            Falando com
+            {hook.filtro === "todas" ? "Falando com" : "Consultar histórico de"}
             <select
               aria-label="Contato da conversa"
               data-testid="seletor-de-contato"
@@ -79,7 +82,7 @@ export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao
       ) : null}
 
       {!hook.carregando && !hook.erro && escolha.situacao === ESCOLHA_DO_FIO.VAZIO ? (
-        <p data-testid="chat-sem-fio" style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>{FRASE_SEM_FIO}</p>
+          <p data-testid="chat-sem-fio" style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>{hook.filtro === "historico" ? "Nenhum histórico anterior desta empresa." : hook.filtro === "lixeira" ? "Nenhuma conversa desta empresa na lixeira." : FRASE_SEM_FIO}</p>
       ) : null}
 
       {fio && !aberto ? (

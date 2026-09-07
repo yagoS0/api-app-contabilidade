@@ -9,7 +9,7 @@ import request from "supertest";
 import express from "express";
 
 const mockSaidas = [];
-const FIO_DA_CARTEIRA = { escopoVerificado: true, id: "cv1", telefoneE164: "5521999998888", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null, lidaAteEm: null, updatedAt: new Date(), portalClient: { id: "pc-1", razao: "ACME", cnpj: "1" }, atendente: null };
+const FIO_DA_CARTEIRA = { excluidaEm: null, automacaoInvalidadaEm: null, chaveEscopo: "empresa:pc-1:5521999998888", escopoVerificado: true, id: "cv1", telefoneE164: "5521999998888", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null, lidaAteEm: null, updatedAt: new Date(), portalClient: { id: "pc-1", razao: "ACME", cnpj: "1" }, atendente: null };
 const FIO_DE_FORA = { ...FIO_DA_CARTEIRA, id: "cv2", portalClientId: "pc-9", portalClient: { id: "pc-9", razao: "OUTRA", cnpj: "2" } };
 const FIO_NA_FILA = { ...FIO_DA_CARTEIRA, id: "cv3", chaveEscopo:"sem-empresa:5521999998888", portalClientId: null, portalClient: null };
 
@@ -21,28 +21,39 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     portalClient: { findMany: jest.fn(async () => [{ id: "pc-1" }]) },
     companyFirmAccess: { findMany: jest.fn(async () => []) },
     conversaWhatsapp: {
-      findUnique: jest.fn(async ({ where }) => mockConversas.get(where.id) || null),
+      findUnique: jest.fn(async ({ where }) => mockConversas.has(where.id) ? { ...mockConversas.get(where.id) } : null),
       // ⚠ O dublê passa a HONRAR o `where` (06/09/2026): sem isso o filtro por empresa "passaria"
       // no teste devolvendo tudo, e a guarda de isolamento não teria prova nenhuma.
-      findMany: jest.fn(async ({ where = {}, take } = {}) => {
+      findMany: jest.fn(async ({ where = {}, take, cursor, skip = 0 } = {}) => {
         const todas = [...mockConversas.values()];
-        const casa = (c) => {
-          if (where.OR) return where.OR.some((w) => casaUm(c, w));
-          return casaUm(c, where);
-        };
         const casaUm = (c, w) => {
-          if (w.portalClientId === null) return c.portalClientId === null;
-          if (w.portalClientId?.in) return w.portalClientId.in.includes(c.portalClientId);
+          if (w.OR && !w.OR.some((parte) => casaUm(c, parte))) return false;
+          if (w.AND && !(Array.isArray(w.AND) ? w.AND : [w.AND]).every((parte) => casaUm(c, parte))) return false;
+          if (w.NOT && (Array.isArray(w.NOT) ? w.NOT : [w.NOT]).some((parte) => casaUm(c, parte))) return false;
+          if (w.portalClientId === null && c.portalClientId !== null) return false;
+          if (w.portalClientId?.in && !w.portalClientId.in.includes(c.portalClientId)) return false;
+          if (w.chaveEscopo?.startsWith && !String(c.chaveEscopo || "").startsWith(w.chaveEscopo.startsWith)) return false;
+          if (w.excluidaEm === null && c.excluidaEm != null) return false;
+          if (w.excluidaEm?.not === null && c.excluidaEm == null) return false;
           if (w.atendidaPor && c.atendidaPor !== w.atendidaPor) return false;
           return true;
         };
-        const achadas = todas.filter(casa);
+        let achadas = todas.filter((c) => casaUm(c, where));
+        if (cursor) achadas = achadas.slice(achadas.findIndex((c) => c.id === cursor.id) + skip);
         return take ? achadas.slice(0, take) : achadas;
       }),
       update: jest.fn(async ({ where, data }) => Object.assign(mockConversas.get(where.id), data)),
       updateMany: jest.fn(async ({ where, data }) => {
         const conversa = mockConversas.get(where.id);
-        if (!conversa || !where.OR.some((condicao) => condicao.lidaAteEm === null
+        if (!conversa) return { count: 0 };
+        if (where.excluidaEm !== undefined) {
+          const instante = (v) => v == null ? null : new Date(v).getTime();
+          if (instante(conversa.excluidaEm) !== instante(where.excluidaEm)) return { count: 0 };
+          if (where.automacaoInvalidadaEm !== undefined && instante(conversa.automacaoInvalidadaEm) !== instante(where.automacaoInvalidadaEm)) return { count: 0 };
+          Object.assign(conversa, data);
+          return { count: 1 };
+        }
+        if (!where.OR.some((condicao) => condicao.lidaAteEm === null
           ? conversa.lidaAteEm === null
           : conversa.lidaAteEm !== null && conversa.lidaAteEm < condicao.lidaAteEm.lt)) return { count: 0 };
         Object.assign(conversa, data);
@@ -54,9 +65,11 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     // QUEM está falando, não só de qual empresa. Ver `resumoDaConversa`.
     contatoWhatsapp: { findMany: jest.fn(async () => []), findFirst: jest.fn(async () => null) },
     templateWhatsapp: { findUnique: jest.fn(async () => ({ chave: "reabrir_conversa", statusAprovacao: "DECLARADO", nomeMeta: null })) },
-    acaoPendenteWhatsapp: { findFirst: jest.fn(async () => null) },
+    acaoPendenteWhatsapp: { findFirst: jest.fn(async () => null), updateMany: jest.fn(async () => ({count: 1})) },
+    turnoIaWhatsapp: { updateMany: jest.fn(async () => ({count: 1})) },
     chamadaIa: { aggregate: jest.fn(async () => ({ _sum: { custoEstimadoCentavos: 0 }, _count: { _all: 0 } })) },
   };
+  prisma.$transaction = jest.fn(async (fn) => fn(prisma));
   return { prisma };
 });
 
@@ -462,5 +475,139 @@ describe("resumo do WhatsApp", () => {
     prisma.$queryRaw.mockRejectedValueOnce(new Error("offline"));
     const falha = await request(montarApp()).get("/firm/whatsapp/resumo");
     expect(falha.status).toBe(500); expect(falha.body.resumo).toBeUndefined();
+  });
+});
+
+describe("segmentos históricos e exclusão reversível", () => {
+  let anteriores;
+  beforeEach(() => {
+    anteriores = new Map([...mockConversas].map(([id, c]) => [id, { ...c }]));
+    const legados = [
+      { ...FIO_DA_CARTEIRA, id: "legado1", chaveEscopo: "legado:pc-1:old", escopoVerificado: false, atendidaPor: "u-contador" },
+      { ...FIO_DE_FORA, id: "legado9", chaveEscopo: "legado:pc-9:old", escopoVerificado: false },
+      { ...FIO_NA_FILA, id: "legadoFila", chaveEscopo: "legado:sem-empresa:old", escopoVerificado: false },
+      { ...FIO_NA_FILA, id: "empresaApagada", chaveEscopo: "legado:pc-apagada:old", escopoVerificado: false },
+    ];
+    mockConversas.clear();
+    // Legado primeiro simula página que antes consumia o limite antes dos fios atuais.
+    for (const c of [...legados, ...anteriores.values()]) mockConversas.set(c.id, { ...c });
+    mockConversas.get("cv1").atendidaPor = "u-contador";
+    prisma.conversaWhatsapp.update.mockClear();
+    prisma.conversaWhatsapp.updateMany.mockClear();
+    prisma.turnoIaWhatsapp.updateMany.mockClear();
+    prisma.acaoPendenteWhatsapp.updateMany.mockClear();
+    cloud.enviarDocumento.mockClear();
+  });
+  afterEach(() => {
+    mockConversas.clear();
+    for (const [id, c] of anteriores) mockConversas.set(id, c);
+  });
+
+  it.each(["", "?filtro=todas", "?empresa=pc-1", "?filtro=atendidas-por-mim"])("lista operacional exclui legado de empresa: %s", async (query) => {
+    const r = await request(montarApp()).get(`/firm/whatsapp/conversas${query}`);
+    expect(r.status).toBe(200);
+    const ids = r.body.conversas.map(c => c.id);
+    expect(ids).toContain("cv1");
+    expect(ids).not.toContain("legado1");
+    expect(ids).not.toContain("legado9");
+    expect(ids).not.toContain("empresaApagada");
+  });
+  it("histórico expõe somente legado da carteira, sem apagar mensagens", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas?filtro=historico");
+    expect(r.body.conversas.map(c => c.id)).toEqual(["legado1"]);
+    expect(r.body.conversas[0].legadoNaoVerificado).toBe(true);
+    const fio = await request(montarApp()).get("/firm/whatsapp/conversas/legado1/mensagens");
+    expect(fio.status).toBe(200);
+    expect(fio.body.mensagens[0].id).toBe("m1");
+  });
+  it("histórico de empresa de fora é vazio mesmo pedido expressamente", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas?filtro=historico&empresa=pc-9");
+    expect(r.body.conversas).toEqual([]);
+  });
+  it("fila preserva legado sem empresa e não absorve empresa apagada", async () => {
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas?filtro=nao-vinculadas");
+    expect(r.body.conversas.map(c => c.id).sort()).toEqual(["cv3", "legadoFila"]);
+  });
+  it("segmentação acontece antes de take e cursor", async () => {
+    const app = montarApp();
+    const r = await request(app).get("/firm/whatsapp/conversas?limite=1");
+    expect(r.body.conversas.map(c => c.id)).toEqual(["legadoFila"]);
+    expect(r.body.temMais).toBe(true);
+    const segunda = await request(app).get(`/firm/whatsapp/conversas?limite=1&cursor=${r.body.proximoCursor}`);
+    expect(segunda.body.conversas.map(c => c.id)).toEqual(["cv1"]);
+    expect(segunda.body.temMais).toBe(true);
+  });
+  it("excluir/restaurar é idempotente e preserva atribuição, leitura e conteúdo", async () => {
+    const app = montarApp();
+    const antes = { ...mockConversas.get("cv1"), atendidaDesde: new Date("2026-09-06T12:00:00Z"), lidaAteEm: new Date("2026-09-06T13:00:00Z") };
+    mockConversas.set("cv1", antes);
+    const excluida = await request(app).post("/firm/whatsapp/conversas/cv1/excluir");
+    expect(excluida.status).toBe(200);
+    expect(excluida.body.conversa.excluidaEm).toBeTruthy();
+    const corte = mockConversas.get("cv1").automacaoInvalidadaEm;
+    await request(app).post("/firm/whatsapp/conversas/cv1/excluir");
+    expect(prisma.turnoIaWhatsapp.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.acaoPendenteWhatsapp.updateMany).toHaveBeenCalledWith({ where: { conversaId: "cv1", status: "pendente" }, data: { status: "cancelada" } });
+    expect((await request(app).get("/firm/whatsapp/conversas?empresa=pc-1")).body.conversas).toEqual([]);
+    const lixo = await request(app).get("/firm/whatsapp/conversas?filtro=lixeira");
+    expect(lixo.body.conversas.map(c => c.id)).toEqual(["cv1"]);
+    const restaurada = await request(app).post("/firm/whatsapp/conversas/cv1/restaurar");
+    expect(restaurada.status).toBe(200);
+    expect(restaurada.body.conversa.excluidaEm).toBeNull();
+    await request(app).post("/firm/whatsapp/conversas/cv1/restaurar");
+    expect(mockConversas.get("cv1")).toMatchObject({ atendidaPor: "u-contador", atendidaDesde: antes.atendidaDesde, lidaAteEm: antes.lidaAteEm, automacaoInvalidadaEm: corte });
+    expect(prisma.mensagemWhatsapp.create).not.toHaveBeenCalled();
+  });
+  it.each(["assumir", "devolver", "responder", "enviar-documento", "vincular"])("chat excluído recusa ação stale %s", async (acao) => {
+    mockConversas.get("cv1").excluidaEm = new Date();
+    const r = await request(montarApp()).post(`/firm/whatsapp/conversas/cv1/${acao}`).send({ texto: "oi", documentId: "doc-1", portalClientId: "pc-1", contato: { nome: "teste" } });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe("CHAT_EXCLUIDO");
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+    expect(salvarContato).not.toHaveBeenCalled();
+    expect(prisma.conversaWhatsapp.update).not.toHaveBeenCalled();
+  });
+  it("não permite excluir/restaurar fora da carteira, empresa apagada ou por staff", async () => {
+    for (const acao of ["excluir", "restaurar"]) {
+      for (const id of ["cv2", "empresaApagada"]) expect((await request(montarApp()).post(`/firm/whatsapp/conversas/${id}/${acao}`)).status).toBe(404);
+      expect((await request(montarApp({ id: "u", role: "staff" })).post(`/firm/whatsapp/conversas/cv1/${acao}`)).status).toBe(403);
+    }
+    expect(prisma.conversaWhatsapp.updateMany).not.toHaveBeenCalled();
+  });
+  it("lixeira aplica carteira e empresa e não aparece no histórico", async () => {
+    for (const c of mockConversas.values()) c.excluidaEm = new Date();
+    const r = await request(montarApp()).get("/firm/whatsapp/conversas?filtro=lixeira&empresa=pc-1");
+    expect(r.body.conversas.map(c => c.id)).toEqual(["legado1", "cv1"]);
+    expect((await request(montarApp()).get("/firm/whatsapp/conversas?filtro=historico")).body.conversas).toEqual([]);
+    expect((await request(montarApp()).get("/firm/whatsapp/conversas?filtro=lixeira&empresa=pc-9")).body.conversas).toEqual([]);
+  });
+  it.each(["assumir", "devolver", "responder", "enviar-documento"])("histórico é somente leitura para %s", async (acao) => {
+    const r = await request(montarApp()).post(`/firm/whatsapp/conversas/legado1/${acao}`).send({ texto: "oi", documentId: "doc-1" });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe("HISTORICO_LEGADO");
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("exclusão seguida de restauração durante download não autoriza envio antigo", async () => {
+    baixarBuffer.mockImplementationOnce(async () => {
+      mockConversas.get("cv1").automacaoInvalidadaEm = new Date();
+      return { doc: { id: "doc-1", nome: "Contrato.pdf", mimeType: "application/pdf" }, buffer: Buffer.from("%PDF") };
+    });
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/enviar-documento").send({ documentId: "doc-1" });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe("CHAT_EXCLUIDO");
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("dois cortes no mesmo segundo preservam precisão de milissegundos", async () => {
+    mockConversas.get("cv1").automacaoInvalidadaEm = new Date("2026-09-07T12:00:00.100Z");
+    baixarBuffer.mockImplementationOnce(async () => {
+      mockConversas.get("cv1").automacaoInvalidadaEm = new Date("2026-09-07T12:00:00.900Z");
+      return { doc: { id: "doc-1", nome: "Contrato.pdf", mimeType: "application/pdf" }, buffer: Buffer.from("%PDF") };
+    });
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/enviar-documento").send({ documentId: "doc-1" });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe("CHAT_EXCLUIDO");
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
   });
 });

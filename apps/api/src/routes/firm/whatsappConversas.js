@@ -28,6 +28,7 @@ import {
   registrarMensagemEnviada,
   FILTRO_FILA_WHATSAPP,
   pertenceAFilaWhatsapp,
+  alterarExclusaoConversa,
 } from "../../application/whatsapp/ConversaWhatsappService.js";
 import { salvarContato, ContatoWhatsappError } from "../../application/whatsapp/ContatoWhatsappService.js";
 import { resolverVinculoPorTelefone } from "../../application/whatsapp/ContatoWhatsappService.js";
@@ -101,6 +102,7 @@ function resumoDaConversa(c, { ultima = null, janela = null, pendencia = null, n
     /** `atendidaDesde` sem `atendidaPor` = o assistente chamou o escritório (a fila humana). */
     naFilaDoEscritorio: Boolean(c.atendidaDesde && !c.atendidaPor),
     lidaAteEm: c.lidaAteEm || null,
+    excluidaEm: c.excluidaEm || null,
     updatedAt: c.updatedAt,
     ultimaMensagem: ultima ? { direcao: ultima.direcao, tipo: ultima.tipo, corpo: ultima.corpo, registradaEm: ultima.registradaEm, autor: ultima.autor || null } : null,
     naoLidas,
@@ -123,6 +125,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   });
 
   function falhar(res, err, contexto) {
+    if (err?.code === "CHAT_EXCLUIDO") return res.status(409).json({ ok: false, error: err.code, message: err.message });
     if (err instanceof ConversaWhatsappError || err instanceof ContatoWhatsappError) {
       return res.status(400).json({ ok: false, error: err.code, message: err.message });
     }
@@ -138,9 +141,18 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     return res.status(500).json({ ok: false, error: "erro_interno", message: "Erro interno." });
   }
 
+  async function conferirConversaAtiva(conversa) {
+    const atual = await client.conversaWhatsapp.findUnique({ where: { id: conversa.id } });
+    const instante = (valor) => valor == null ? null : new Date(valor).getTime();
+    if (!atual || atual.excluidaEm || instante(atual.automacaoInvalidadaEm) !== instante(conversa.automacaoInvalidadaEm)) {
+      throw new ConversaWhatsappError("CHAT_EXCLUIDO", "A conversa foi excluída durante esta ação. Atualize o atendimento antes de continuar.");
+    }
+  }
+
   /**
-   * A LISTA. `?filtro=nao-vinculadas | atendidas-por-mim | todas` (default: todas as da carteira +
-   * a fila). Cada fio vem com a última mensagem, as não lidas (derivadas de `lidaAteEm`), a janela e
+   * A LISTA. `?filtro=nao-vinculadas | atendidas-por-mim | todas | historico`.
+   * O histórico legado de empresa tem acesso separado; a lista padrão traz os fios atuais e
+   * a fila. Cada fio vem com a última mensagem, as não lidas (derivadas de `lidaAteEm`), a janela e
    * a pendência aberta — o que a tela precisa para decidir o que oferecer ANTES do clique.
    */
   router.get("/whatsapp/conversas", async (req, res) => {
@@ -164,15 +176,25 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
         });
       }
       const daEmpresa = empresa && visiveis.includes(empresa) ? [empresa] : (empresa ? [] : visiveis);
+      // Filtrar no banco, antes do cursor/take: segmentos antigos não consomem a página atual.
+      const atuaisDaEmpresa = {
+        portalClientId: { in: daEmpresa },
+        NOT: { chaveEscopo: { startsWith: "legado:" } },
+      };
 
-      const where = filtro === "nao-vinculadas"
+      const segmento = filtro === "lixeira"
+        ? empresa ? { portalClientId: { in: daEmpresa } } : { OR: [{ portalClientId: { in: daEmpresa } }, FILTRO_FILA_WHATSAPP] }
+        : filtro === "nao-vinculadas"
         ? FILTRO_FILA_WHATSAPP
-        : filtro === "atendidas-por-mim"
-          ? { portalClientId: { in: daEmpresa }, atendidaPor: String(req.auth.user.id) }
+        : filtro === "historico"
+          ? { portalClientId: { in: daEmpresa }, chaveEscopo: { startsWith: "legado:" } }
+          : filtro === "atendidas-por-mim"
+          ? { ...atuaisDaEmpresa, atendidaPor: String(req.auth.user.id) }
           : empresa
             // Com empresa escolhida, a fila (sem empresa) não entra: ela não é daquela empresa.
-            ? { portalClientId: { in: daEmpresa } }
-            : { OR: [{ portalClientId: { in: daEmpresa } }, FILTRO_FILA_WHATSAPP] };
+            ? atuaisDaEmpresa
+            : { OR: [atuaisDaEmpresa, FILTRO_FILA_WHATSAPP] };
+      const where = { ...segmento, excluidaEm: filtro === "lixeira" ? { not: null } : null };
 
       // ⚠ `take: LIMITE + 1` — ver `LIMITE_CONVERSAS`.
       const achadas = await client.conversaWhatsapp.findMany({
@@ -216,7 +238,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
         });
       }));
       // O motivo de cada não vinculada (DESCONHECIDO/AMBIGUO + candidatas) vem do vínculo, na leitura.
-      const fila = filtro === "atendidas-por-mim" ? [] : await conversasNaoVinculadas({ limite: 50 });
+      const fila = ["atendidas-por-mim", "historico", "lixeira"].includes(filtro) || empresa ? [] : await conversasNaoVinculadas({ limite: 50 });
       const motivoPorId = new Map(fila.map((f) => [f.conversa.id, { motivo: f.motivo, empresasCandidatas: f.empresasCandidatas, divergemPeloNonoDigito: f.divergemPeloNonoDigito }]));
       return res.json({
         ok: true,
@@ -294,6 +316,34 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     }
   });
 
+  for (const acao of ["excluir", "restaurar"]) {
+    router.post(`/whatsapp/conversas/:conversaId/${acao}`, async (req, res) => {
+      if (!somenteAdminOuContador(req, res)) return undefined;
+      const { conversaId } = req.params;
+      try {
+        const conversa = await conversaNoEscopo(req, conversaId, { client });
+        if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
+        const atualizada = await alterarExclusaoConversa({ conversaId: conversa.id, excluir: acao === "excluir", client });
+        return res.json({ ok: true, conversa: resumoDaConversa({ ...conversa, ...atualizada }) });
+      } catch (err) { return falhar(res, err, { conversaId, acao }); }
+    });
+  }
+
+  // Uma aba antiga não pode agir sobre um chat que já foi para a lixeira.
+  router.post("/whatsapp/conversas/:conversaId/:acao", async (req, res, next) => {
+    if (!["assumir", "devolver", "responder", "enviar-documento", "vincular"].includes(req.params.acao)) return next();
+    if (!somenteAdminOuContador(req, res)) return undefined;
+    try {
+      const conversa = await conversaNoEscopo(req, req.params.conversaId, { client });
+      if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
+      if (conversa.excluidaEm) return res.status(409).json({ ok: false, error: "CHAT_EXCLUIDO", message: "Esta conversa está na lixeira. Restaure-a antes de continuar." });
+      if (req.params.acao !== "vincular" && conversa.portalClientId && String(conversa.chaveEscopo || "").startsWith("legado:")) {
+        return res.status(409).json({ ok: false, error: "HISTORICO_LEGADO", message: "Este é um segmento histórico. Abra a conversa atual para continuar o atendimento." });
+      }
+      return next();
+    } catch (err) { return falhar(res, err, { conversaId: req.params.conversaId }); }
+  });
+
   /** ASSUMIR: a pessoa passa a responder; a IA cala (`atendidaPor` preenchido). */
   router.post("/whatsapp/conversas/:conversaId/assumir", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;
@@ -301,11 +351,12 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     try {
       const conversa = await conversaNoEscopo(req, conversaId, { client });
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
-      const atualizada = await client.conversaWhatsapp.update({
-        where: { id: conversa.id },
+      const mudou = await client.conversaWhatsapp.updateMany({
+        where: { id: conversa.id, excluidaEm: null, automacaoInvalidadaEm: conversa.automacaoInvalidadaEm || null },
         data: { atendidaPor: String(req.auth.user.id), atendidaDesde: new Date() },
-        include: { portalClient: { select: { id: true, razao: true, cnpj: true } }, atendente: { select: { id: true, name: true, email: true } } },
       });
+      if (!mudou.count) throw new ConversaWhatsappError("CHAT_EXCLUIDO", "A conversa mudou durante esta ação. Atualize o atendimento.");
+      const atualizada = await conversaNoEscopo(req, conversa.id, { client });
       return res.json({ ok: true, conversa: resumoDaConversa(atualizada) });
     } catch (err) {
       return falhar(res, err, { conversaId });
@@ -319,11 +370,12 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     try {
       const conversa = await conversaNoEscopo(req, conversaId, { client });
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
-      const atualizada = await client.conversaWhatsapp.update({
-        where: { id: conversa.id },
+      const mudou = await client.conversaWhatsapp.updateMany({
+        where: { id: conversa.id, excluidaEm: null, automacaoInvalidadaEm: conversa.automacaoInvalidadaEm || null },
         data: { atendidaPor: null, atendidaDesde: null },
-        include: { portalClient: { select: { id: true, razao: true, cnpj: true } }, atendente: { select: { id: true, name: true, email: true } } },
       });
+      if (!mudou.count) throw new ConversaWhatsappError("CHAT_EXCLUIDO", "A conversa mudou durante esta ação. Atualize o atendimento.");
+      const atualizada = await conversaNoEscopo(req, conversa.id, { client });
       return res.json({ ok: true, conversa: resumoDaConversa(atualizada) });
     } catch (err) {
       return falhar(res, err, { conversaId });
@@ -373,6 +425,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       if (janela.situacao !== SITUACOES_JANELA.ABERTA) return recusarForaDaJanela(res, janela);
       const cliente = cloud || new WhatsappCloudClient({ log });
       const r = await enviarMensagemRastreada({ conversa, tipo: "text", corpo: texto, autor: AUTOR_HUMANO, client,
+        antesDeEnviar: () => conferirConversaAtiva(conversa),
         enviar: () => cliente.enviarTexto({ telefone: conversa.telefoneE164, texto }),
       });
       return res.json({ ok: true, mensagem: { id: r.mensagem.id, providerMessageId: r.wamid, autor: AUTOR_HUMANO, corpo: texto, statusEnvio: r.mensagem.statusEnvio } });
@@ -453,7 +506,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
 
       const cliente = cloud || new WhatsappCloudClient({ log });
       const corpo = String(req.body?.legenda || "").trim() || doc.nome;
-      const r = await enviarMensagemRastreada({ conversa, tipo: "document", corpo, autor: AUTOR_HUMANO, client, enviar: () => cliente.enviarDocumento({
+      const r = await enviarMensagemRastreada({ conversa, tipo: "document", corpo, autor: AUTOR_HUMANO, client, antesDeEnviar: () => conferirConversaAtiva(conversa), enviar: () => cliente.enviarDocumento({
         telefone: conversa.telefoneE164,
         conteudo: buffer,
         nomeArquivo: doc.nome,

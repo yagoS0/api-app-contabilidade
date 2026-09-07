@@ -1051,6 +1051,13 @@ function paginaWhatsappMock(lista, cursor, limite) {
   return { itens, temMais, proximoCursor: temMais ? itens[itens.length - 1].id : null };
 }
 
+function recusarChatExcluidoMock(c) {
+  if (c.excluidaEm) {
+    const message = "Esta conversa está na lixeira. Restaure antes de continuar.";
+    throw Object.assign(new Error(message), { status: 409, code: "CHAT_EXCLUIDO", payload: { error: "CHAT_EXCLUIDO", message } });
+  }
+}
+
 function resumoMockDaConversa(c) {
   const ultima = c.mensagens[c.mensagens.length - 1] || null;
   const naoLidas = c.mensagens.filter((m) => m.direcao === "in" && (!c.lidaAteEm || m.registradaEm > c.lidaAteEm)).length;
@@ -1061,7 +1068,7 @@ function resumoMockDaConversa(c) {
     naFilaDoEscritorio: Boolean(c.atendidaDesde && !c.atendidaPor), lidaAteEm: c.lidaAteEm, updatedAt: c.updatedAt,
     ultimaMensagem: ultima ? { direcao: ultima.direcao, tipo: ultima.tipo, corpo: ultima.corpo, registradaEm: ultima.registradaEm, autor: ultima.autor } : null,
     naoLidas, janela: c.janela, pendencia: c.pendencia, vinculo: c.portalClientId ? null : (c.vinculo || null),
-    contato: contatoDoMock(c), escopoVerificado: c.escopoVerificado !== false, legadoNaoVerificado: c.escopoVerificado === false,
+    contato: contatoDoMock(c), escopoVerificado: c.escopoVerificado !== false, legadoNaoVerificado: Boolean(c.portalClientId && c.escopoVerificado === false), excluidaEm: c.excluidaEm || null,
   };
 }
 
@@ -7541,12 +7548,17 @@ export function createMockApi() {
       if ((typeof localStorage !== "undefined" && localStorage.getItem("mock:whatsapp:falhaResumo") === "1") || (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mockWhatsappResumo") === "falha")) {
         throw new Error("Não foi possível ler o resumo do WhatsApp.");
       }
-      const itens = mockConversasWhatsapp.map((c) => resumoMockDaConversa(c));
+      const todos = mockConversasWhatsapp.map((c) => resumoMockDaConversa(c));
+      const itens = todos.filter(c => !c.excluidaEm && !c.legadoNaoVerificado);
+      const historico = todos.filter(c => !c.excluidaEm && c.legadoNaoVerificado);
+      const lixeira = todos.filter(c => c.excluidaEm);
       return { ok: true, resumo: {
         conversas: itens.length,
         naoVinculadas: itens.filter((c) => !c.portalClientId).length,
         conversasNaoLidas: itens.filter((c) => c.naoLidas > 0).length,
         mensagensNaoLidas: itens.reduce((s, c) => s + c.naoLidas, 0),
+        historicoConversas: historico.length, historicoConversasNaoLidas: historico.filter(c => c.naoLidas > 0).length, historicoMensagensNaoLidas: historico.reduce((s,c) => s+c.naoLidas,0),
+        lixeiraConversas: lixeira.length, lixeiraConversasNaoLidas: lixeira.filter(c => c.naoLidas > 0).length, lixeiraMensagensNaoLidas: lixeira.reduce((s,c) => s+c.naoLidas,0),
       } };
     },
     async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = 50 } = {}) {
@@ -7557,7 +7569,7 @@ export function createMockApi() {
         const e = new Error("A fila de não vinculadas é, por definição, sem empresa — não dá para filtrá-la por empresa.");
         e.status = 400; e.code = "filtro_incompativel"; throw e;
       }
-      const todas = mockConversasWhatsapp.map((c) => resumoMockDaConversa(c));
+      const todas = mockConversasWhatsapp.map((c) => resumoMockDaConversa(c)).filter(c => filtro === "lixeira" ? Boolean(c.excluidaEm) : !c.excluidaEm && (filtro === "historico" ? c.legadoNaoVerificado : !c.legadoNaoVerificado));
       const doFiltro = filtro === "nao-vinculadas" ? todas.filter((c) => !c.portalClientId)
         : filtro === "atendidas-por-mim" ? todas.filter((c) => c.atendidaPor === "mock-user-1")
           : todas;
@@ -7581,6 +7593,7 @@ export function createMockApi() {
       await delay(200);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      recusarChatExcluidoMock(c);
       if (!c.portalClientId) {
         const e = new Error("Este número ainda não está vinculado a uma empresa: não há documento dela para enviar. Vincule o fio primeiro.");
         e.status = 422; e.code = "FIO_SEM_EMPRESA"; e.payload = { error: "FIO_SEM_EMPRESA", message: e.message };
@@ -7604,13 +7617,29 @@ export function createMockApi() {
       await delay(80);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      recusarChatExcluidoMock(c);
       c.atendidaPor = "mock-user-1"; c.atendente = { id: "mock-user-1", nome: "Usuario Mock", email: null }; c.atendidaDesde = new Date().toISOString();
+      return { ok: true, conversa: resumoMockDaConversa(c) };
+    },
+    async excluirConversaWhatsapp(conversaId) {
+      await delay(80);
+      const c = mockConversasWhatsapp.find(x => x.id === String(conversaId));
+      if (!c) throw Object.assign(new Error("Conversa não encontrada."), { status: 404 });
+      c.excluidaEm = c.excluidaEm || new Date().toISOString();
+      return { ok: true, conversa: resumoMockDaConversa(c) };
+    },
+    async restaurarConversaWhatsapp(conversaId) {
+      await delay(80);
+      const c = mockConversasWhatsapp.find(x => x.id === String(conversaId));
+      if (!c) throw Object.assign(new Error("Conversa não encontrada."), { status: 404 });
+      c.excluidaEm = null;
       return { ok: true, conversa: resumoMockDaConversa(c) };
     },
     async devolverConversaWhatsapp(conversaId) {
       await delay(80);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      recusarChatExcluidoMock(c);
       c.atendidaPor = null; c.atendente = null; c.atendidaDesde = null;
       return { ok: true, conversa: resumoMockDaConversa(c) };
     },
@@ -7618,6 +7647,7 @@ export function createMockApi() {
       await delay(200);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      recusarChatExcluidoMock(c);
       if (!String(texto || "").trim()) { const e = new Error("Escreva a mensagem."); e.status = 400; e.code = "texto_obrigatorio"; throw e; }
       if (c.janela.situacao !== "ABERTA") {
         const e = new Error(c.janela.situacao === "NUNCA_ABERTA"
@@ -7635,6 +7665,7 @@ export function createMockApi() {
       await delay(150);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      recusarChatExcluidoMock(c);
       const empresa = mockCompanies.find((x) => x.companyId === String(body?.portalClientId || ""));
       if (!empresa) { const e = new Error("Escolha a empresa."); e.status = 404; e.code = "empresa_nao_encontrada"; throw e; }
       if (!String(body?.contato?.nome || "").trim()) { const e = new Error("Informe o nome de quem recebe as mensagens."); e.status = 400; e.code = "NOME_OBRIGATORIO"; throw e; }

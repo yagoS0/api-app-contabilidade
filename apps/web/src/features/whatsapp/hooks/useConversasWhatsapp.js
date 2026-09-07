@@ -17,6 +17,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
   const [carregandoMais, setCarregandoMais] = useState(false);
   const [carregandoAnteriores, setCarregandoAnteriores] = useState(false);
   const paginas = useRef({ lista: false, fio: false, filtro: null });
+  const rascunhosRef = useRef(new Map());
   const [aberta, setAberta] = useState(null);
   const [carregandoFio, setCarregandoFio] = useState(false);
   const [ocupado, setOcupado] = useState(false);
@@ -30,6 +31,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
   const contextoVigente = useCallback(() => montado.current && contextoAtual.current === contexto, [contexto]);
   useEffect(() => {
     montado.current = true;
+    rascunhosRef.current.clear();
     setAberta(null); setConversas([]); setErro(null); setErroFio(null); setErroAcao(null); selecionada.current = null;
     setCursorLista(null); setCursorFio(null); setCarregandoMais(false); setCarregandoAnteriores(false);
     paginas.current = { lista: false, fio: false, filtro: null };
@@ -168,10 +170,29 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     return r;
   }, [acao, api, recarregarTudo, contextoVigente]);
   const fechar = () => { versaoFio.current++; selecionada.current = null; setAberta(null); setErroFio(null); setErroAcao(null); setCursorFio(null); setCarregandoFio(false); };
-  return { cursorLista, cursorFio, carregandoMais, carregandoAnteriores, erroAcao,
+  const trocarFiltro = (novo) => {
+    if (novo === filtro) return;
+    fechar();
+    versaoLista.current++;
+    paginas.current = { lista: false, fio: false, filtro: null };
+    setConversas([]); setCursorLista(null); setTemMais(null); setErro(null);
+    setFiltro(novo);
+  };
+  const moverConversa = async (id, metodo) => {
+    const r = await acao(() => api[metodo](id));
+    if (r?.ok !== false && r && contextoVigente()) {
+      setConversas(atuais => atuais.filter(c => c.id !== id));
+      if (selecionada.current === id) fechar();
+      await polling.current.carregar(polling.current.filtro);
+    }
+    return r;
+  };
+  return { cursorLista, cursorFio, carregandoMais, carregandoAnteriores, erroAcao, rascunhosRef,
+    excluir: id => moverConversa(id, "excluirConversaWhatsapp"),
+    restaurar: id => moverConversa(id, "restaurarConversaWhatsapp"),
     carregarMais: () => cursorLista && !carregandoMais && carregar(filtro, false, cursorLista),
     carregarAnteriores: () => cursorFio && !carregandoAnteriores && abrir(selecionada.current, false, cursorFio),
-    filtro, setFiltro, conversas, temMais, temMaisNoFio, consumoIa, carregando, erro, erroFio, aberta, carregandoFio, ocupado, carregar, abrir, assumir, devolver, responder, vincular, fechar };
+    filtro, setFiltro: trocarFiltro, conversas, temMais, temMaisNoFio, consumoIa, carregando, erro, erroFio, aberta, carregandoFio, ocupado, carregar, abrir, assumir, devolver, responder, vincular, fechar };
 }
 
 function unirPorId(atuais = [], novas = []) {
