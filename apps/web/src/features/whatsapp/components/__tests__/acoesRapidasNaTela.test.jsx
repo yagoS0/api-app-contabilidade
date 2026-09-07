@@ -32,6 +32,7 @@ function apiFalso(over = {}, fio = FIO) {
       { guideId: "g2", tipo: "INSS", competencia: "2026-08" },
     ]),
     listCompanyDocuments: jest.fn(async () => ({ ok: true, documentos: [{ id: "doc-1", nome: "Contrato social.pdf" }] })),
+    listarContatosWhatsapp: jest.fn(async () => ({ contatos: [{ id: "ct1", nome: "Maria", telefoneE164: "5521999998888", optInEm: "2026-09-06" }] })),
     enviarGuiaWhatsapp: jest.fn(async () => ({ ok: true })),
     enviarDocumentoWhatsapp: jest.fn(async () => ({ ok: true })),
     ...over,
@@ -148,4 +149,20 @@ describe("⚠⚠ virar anotação NÃO grava nada — devolve texto para o conta
     expect(api.enviarGuiaWhatsapp).not.toHaveBeenCalled();
     expect(api.responderConversaWhatsapp).not.toHaveBeenCalled();
   });
+});
+
+
+test("prévia mostra todos os destinatários autorizados e exige nova escolha se mudarem", async () => {
+  const contato = {id:"ct1",nome:"Maria",telefoneE164:"5521999998888",optInEm:"2026-09-06"};
+  const segundo = {id:"ct2",nome:"João",telefoneE164:"5521988887777",optInEm:"2026-09-06"};
+  const api = apiFalso({listarContatosWhatsapp: jest.fn().mockResolvedValueOnce({contatos:[contato,segundo,{id:"sem-optin",nome:"Não autorizado",telefoneE164:"5521977776666"}]}).mockResolvedValue({contatos:[contato]})});
+  render(<ChatDaEmpresa companyId="pc-1" api={api} />);
+  fireEvent.click(await screen.findByTestId("acao-ENVIAR_GUIA"));
+  const seletor = await screen.findByLabelText("Guia a enviar");
+  expect(screen.getByTestId("destinatarios-guia")).toHaveTextContent("João");
+  expect(screen.getByTestId("destinatarios-guia")).not.toHaveTextContent("Não autorizado");
+  fireEvent.change(seletor,{target:{value:"g1"}});
+  fireEvent.click(within(screen.getByTestId("escolha-do-envio")).getByRole("button",{name:"Enviar"}));
+  await screen.findByText(/Os destinatários mudaram/);
+  expect(api.enviarGuiaWhatsapp).not.toHaveBeenCalled();expect(seletor).toHaveValue("");
 });

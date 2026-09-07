@@ -8,9 +8,10 @@
 import request from "supertest";
 import express from "express";
 
-const FIO_DA_CARTEIRA = { id: "cv1", telefoneE164: "5521999998888", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null, lidaAteEm: null, updatedAt: new Date(), portalClient: { id: "pc-1", razao: "ACME", cnpj: "1" }, atendente: null };
+const mockSaidas = [];
+const FIO_DA_CARTEIRA = { escopoVerificado: true, id: "cv1", telefoneE164: "5521999998888", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null, lidaAteEm: null, updatedAt: new Date(), portalClient: { id: "pc-1", razao: "ACME", cnpj: "1" }, atendente: null };
 const FIO_DE_FORA = { ...FIO_DA_CARTEIRA, id: "cv2", portalClientId: "pc-9", portalClient: { id: "pc-9", razao: "OUTRA", cnpj: "2" } };
-const FIO_NA_FILA = { ...FIO_DA_CARTEIRA, id: "cv3", portalClientId: null, portalClient: null };
+const FIO_NA_FILA = { ...FIO_DA_CARTEIRA, id: "cv3", chaveEscopo:"sem-empresa:5521999998888", portalClientId: null, portalClient: null };
 
 const mockConversas = new Map([["cv1", { ...FIO_DA_CARTEIRA }], ["cv2", { ...FIO_DE_FORA }], ["cv3", { ...FIO_NA_FILA }]]);
 const mockCenario = { janela: { situacao: "ABERTA", permite: "TEXTO_LIVRE", expiraEm: null, avisos: [] } };
@@ -48,7 +49,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
         return { count: 1 };
       }),
     },
-    mensagemWhatsapp: { findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
+    mensagemWhatsapp: { create: jest.fn(async ({data}) => { const m={id:`out${mockSaidas.length+1}`,...data}; mockSaidas.push(m); return m; }), update: jest.fn(async ({where,data}) => Object.assign(mockSaidas.find(m=>m.id===where.id),data)), updateMany: jest.fn(async()=>({count:1})), findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
     // ⚠ O nome do CADASTRO passou a viajar no payload (06/09/2026): a linha da lista precisa dizer
     // QUEM está falando, não só de qual empresa. Ver `resumoDaConversa`.
     contatoWhatsapp: { findMany: jest.fn(async () => []), findFirst: jest.fn(async () => null) },
@@ -118,6 +119,9 @@ function montarApp(user = { id: "u-contador", role: "contador", accountType: "FI
 
 beforeEach(() => {
   cloud.enviarTexto.mockClear();
+  mockSaidas.length=0;
+  prisma.mensagemWhatsapp.create.mockClear();
+  prisma.mensagemWhatsapp.update.mockClear();
   registrarMensagemEnviada.mockClear();
   salvarContato.mockClear();
   mockCenario.janela = { situacao: "ABERTA", permite: "TEXTO_LIVRE", expiraEm: null, avisos: [] };
@@ -235,7 +239,7 @@ describe("responder — só dentro da janela", () => {
     const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "Bom dia, já vi aqui." });
     expect(r.status).toBe(200);
     expect(cloud.enviarTexto).toHaveBeenCalledWith({ telefone: "5521999998888", texto: "Bom dia, já vi aqui." });
-    expect(registrarMensagemEnviada).toHaveBeenCalledWith(expect.objectContaining({ autor: "HUMANO", corpo: "Bom dia, já vi aqui.", providerMessageId: "wamid.h" }));
+    expect(prisma.mensagemWhatsapp.create).toHaveBeenCalledWith({data: expect.objectContaining({ autor: "HUMANO", corpo: "Bom dia, já vi aqui.", })});
     expect(mockConversas.get("cv1").atendidaPor).toBeNull();
   });
   it("texto vazio: 400, sem chamada", async () => {
@@ -363,16 +367,15 @@ describe("⚠⚠ enviar documento pelo fio", () => {
       telefone: "5521999998888", nomeArquivo: "Contrato social.pdf",
     }));
     // ⚠ O histórico diz O QUE saiu: sem o nome, o contador não sabe qual documento foi mandado.
-    expect(registrarMensagemEnviada).toHaveBeenCalledWith(expect.objectContaining({
-      tipo: "document", corpo: "Contrato social.pdf", autor: "HUMANO", providerMessageId: "wamid.doc",
-    }));
+    expect(prisma.mensagemWhatsapp.create).toHaveBeenCalledWith({data: expect.objectContaining({
+      tipo: "document", corpo: "Contrato social.pdf", autor: "HUMANO", })});
   });
 
   it("a legenda, quando escrita, vira o corpo do balão", async () => {
     await request(montarApp())
       .post("/firm/whatsapp/conversas/cv1/enviar-documento")
       .send({ documentId: "doc-1", legenda: "segue o contrato atualizado" });
-    expect(registrarMensagemEnviada).toHaveBeenCalledWith(expect.objectContaining({ corpo: "segue o contrato atualizado" }));
+    expect(prisma.mensagemWhatsapp.create).toHaveBeenCalledWith({data: expect.objectContaining({ corpo: "segue o contrato atualizado" })});
   });
 
   it("⚠⚠ documento de OUTRA empresa não sai por este fio — e a Meta nem é chamada", async () => {

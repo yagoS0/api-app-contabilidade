@@ -7,11 +7,13 @@ import { Button } from "../../../../components/ui/Button";
 // deve mesmo sair no fuso de quem lê.
 import { fmtDataCivil, fmtDate, fmtMoney } from "../../../../lib/format";
 import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureModal";
+import { ModalCorrigirValorGuia } from "./ModalCorrigirValorGuia";
 import { GuiaDeParcelamentoModal } from "./GuiaDeParcelamentoModal";
 import { ehGuiaDeParcelamento, rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
 import { estadoVazioDasGuias } from "../lib/estadoVazioGuias";
 import { BotaoCopiar } from "../../../../components/ui/BotaoCopiar";
-import { lerEnvioDaGuia, rotuloDoCanal, devePolir } from "../../lib/envioNaTela";
+import { lerEnvioDaGuia, rotuloDoCanal } from "../../lib/envioNaTela";
+import { usePollingEntrega } from "../../lib/usePollingEntrega";
 import { linhaDigitavelDaGuia } from "../../lib/linhaDigitavelTela";
 import { MOTIVOS_GUIA_VAZIA, TEM_LISTA_DE_MOTIVOS, motivoParaGravar, motivoSuficiente } from "../lib/motivoGuiaVazia";
 import { fraseDoLote, relatorioDoLote, DESFECHO } from "../lib/loteDoTrimestre";
@@ -609,15 +611,7 @@ export function CompanyGuidesTable({
   // tentativas (`devePolir`). Polling sem fim transforma uma aba aberta o dia inteiro numa fonte
   // constante de carga — e o precedente desta casa (a captura de notas, a apuração em lote) é
   // exatamente este: intervalo de 2,5 s enquanto o estado pode mudar.
-  const [ciclosDeEspera, setCiclosDeEspera] = useState(0);
-  useEffect(() => {
-    if (!onRefresh || !devePolir(guides, ciclosDeEspera)) return undefined;
-    const t = setTimeout(async () => {
-      setCiclosDeEspera((n) => n + 1);
-      try { await onRefresh(); } catch { /* falha de rede não encerra a espera nem quebra a tela */ }
-    }, 2500);
-    return () => clearTimeout(t);
-  }, [guides, ciclosDeEspera, onRefresh]);
+  const { esgotou: entregaPendente } = usePollingEntrega(guides, onRefresh, companyId);
 
   const [recalcConfirm, setRecalcConfirm] = useState(null); // { guideId, aviso }
 
@@ -629,6 +623,7 @@ export function CompanyGuidesTable({
   const uploadMenuRef = useRef(null);
 
   // Completar flow (modal split p/ guia já existente)
+  const [corrigindoValor, setCorrigindoValor] = useState(null);
   const [completingGuide, setCompletingGuide] = useState(null);
   const [completingSaving, setCompletingSaving] = useState(false);
 
@@ -964,6 +959,8 @@ export function CompanyGuidesTable({
 
   return (
     <section className="guides-page">
+      {corrigindoValor ? <ModalCorrigirValorGuia api={expectedGuidesApi} companyId={companyId} guia={corrigindoValor} aoFechar={() => setCorrigindoValor(null)} aoCorrigir={onRefresh} /> : null}
+      {entregaPendente ? <p role="status">A entrega ainda não foi confirmada. <button type="button" onClick={onRefresh}>Atualizar situação do envio</button></p> : null}
       {/* Modal split de upload: PDF lado-a-lado do form. Abre quando tipo + arquivo estão prontos. */}
       {uploadTipo && uploadFile && (
         <GuideCaptureModal
@@ -1184,6 +1181,7 @@ export function CompanyGuidesTable({
               )}
               {/* Completar: aparece quando a guia selecionada está em ERROR ou faltando tipo/competência.
                   Abre o modal split com o PDF lado-a-lado pra editar metadados. */}
+              {companyId && selectedGuide.tipo === "OUTRA" && selectedGuide.status === "PROCESSED" && selectedGuide.linhaDigitavelSituacao === "DIVERGENTE" && Number(selectedGuide.linhaDigitavelValorLidoCentavos) > 0 ? <Button variant="secondary" size="sm" disabled={actionsBusy} onClick={() => setCorrigindoValor(selectedGuide)}>Conferir valor do PDF</Button> : null}
               {onIdentifyGuide && (selectedGuide.status === "ERROR" || !selectedGuide.tipo || !selectedGuide.competencia) && (
                 <Button
                   variant="secondary" size="sm"

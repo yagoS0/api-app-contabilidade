@@ -21,21 +21,9 @@ export function createApiClient() {
       {
         get(target, prop) {
           if (prop in target) return target[prop];
-          const realFn = real[prop];
-          const mockFn = mock[prop];
-          // Contadores, histórico e fichas precisam da mesma fonte das mutações.
-          // Uma recusa real não pode virar envio/criação simulados nem lista vazia.
-          if (typeof prop === "string" && /Whatsapp|Onboarding/.test(prop)) return realFn;
-          if (typeof realFn === "function" && typeof mockFn === "function") {
-            return async (...args) => {
-              try {
-                return await realFn(...args);
-              } catch {
-                return mockFn(...args);
-              }
-            };
-          }
-          return realFn ?? mockFn;
+          // Recusa real nunca fabrica gravação, relatório de IA ou lista simulada.
+          // Demonstração só no modo mock explicitamente identificado.
+          return real[prop];
         },
       }
     );

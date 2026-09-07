@@ -110,6 +110,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
   const [aberto, setAberto] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState(null);
+  const [resultado, setResultado] = useState(null);
   const [motivo, setMotivo] = useState("");
 
   const meta = ESTADO[tag.state] || ESTADO.missing;
@@ -124,13 +125,15 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
 
   async function executar(fn) {
     if (ocupado) return;
-    setOcupado(true); setErro(null);
+    setOcupado(true); setErro(null); setResultado(null);
     try {
       const out = await fn();
       // A recusa vem do servidor com o motivo (ex.: faturamento na competência). Mostrar o número
       // é o que faz o contador entender que não é capricho da tela.
       if (out && out.ok === false) { setErro(out.message || out.error || "Não foi possível."); return; }
-      setAberto(false); setMotivo("");
+      if (out?.message) setResultado(out);
+      else setAberto(false);
+      setMotivo("");
     } catch (e) {
       setErro(e?.message || "Não foi possível.");
     } finally { setOcupado(false); }
@@ -329,6 +332,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
             </div>
           )}
 
+          {resultado ? <p role="status" style={{ color: resultado.tom === "pendente" ? "var(--text-muted)" : "var(--state-ok)", fontSize: "0.74rem" }}>{resultado.message}</p> : null}
           {erro && (
             <div style={{ marginTop: 8, color: "var(--state-danger)", fontSize: "0.74rem" }}>{erro}</div>
           )}

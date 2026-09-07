@@ -119,6 +119,21 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
   if (veio(email)) dados.email = emailLimpo;
   if (veio(ativo)) dados.ativo = Boolean(ativo);
 
+  let telefoneAnterior;
+  if (id && veio(telefone)) {
+    const anterior = await prisma.contatoWhatsapp.findFirst({
+      where: { id: String(id), portalClientId: String(portalClientId) },
+      select: { telefoneE164: true },
+    });
+    telefoneAnterior = anterior?.telefoneE164 || null;
+    if (anterior && anterior.telefoneE164 !== e164) {
+      // A identidade e o consentimento pertencem ao destino anterior, não ao nome do contato.
+      dados.waId = null;
+      dados.optInEm = null;
+      dados.optInOrigem = null;
+    }
+  }
+
   // O opt-in é gravado com DATA e ORIGEM porque ele é o que se apresenta se a Meta questionar o
   // envio. "Marcamos a caixinha" não é registro de consentimento; quando e de onde, é.
   if (optIn === true) {
@@ -168,10 +183,15 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
     // um id de contato de OUTRA empresa era atualizado sem que nada conferisse a quem ele pertence.
     // O mesmo vale para a exclusão, abaixo. Multi-tenancy por `portalClientId` é inegociável, e no
     // vínculo ela é o próprio assunto.
-    return prisma.contatoWhatsapp.update({
-      where: { id: String(id), portalClientId: String(portalClientId) },
-      data: dados,
-    });
+    try {
+      return await prisma.contatoWhatsapp.update({
+        where: { id: String(id), portalClientId: String(portalClientId), ...(veio(telefone) ? { telefoneE164: telefoneAnterior } : {}) },
+        data: dados,
+      });
+    } catch (err) {
+      if (err?.code === "P2025" && veio(telefone)) throw new ContatoWhatsappError("CONTATO_ALTERADO", "Este contato foi alterado durante o salvamento. Atualize o cadastro e confira o telefone antes de salvar novamente.");
+      throw err;
+    }
   }
   // ⚠ O UPSERT SÓ EXISTE COM TELEFONE: a chave única é `(portalClientId, telefoneE164)`, e com
   // `telefoneE164` nulo não há chave para casar — o Prisma recusaria. Destinatário só de e-mail é
@@ -207,7 +227,7 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
 export async function destinatariosDeEnvio(portalClientId) {
   const contatos = await prisma.contatoWhatsapp.findMany({
     where: { portalClientId: String(portalClientId), ativo: true },
-    select: { id: true, nome: true, email: true, telefoneE164: true, optInEm: true },
+    select: { id: true, nome: true, email: true, telefoneE164: true, waId: true, optInEm: true },
     orderBy: { createdAt: "asc" },
   });
 
@@ -222,7 +242,7 @@ export async function destinatariosDeEnvio(portalClientId) {
       emails.push(e);
     }
     if (c.telefoneE164) {
-      if (c.optInEm) telefones.push({ id: c.id, nome: c.nome, telefoneE164: c.telefoneE164 });
+      if (c.optInEm) telefones.push({ id: c.id, nome: c.nome, telefoneE164: c.telefoneE164, waId: c.waId || null });
       else semOptIn.push({ nome: c.nome, telefoneE164: c.telefoneE164 });
     }
   }
@@ -278,13 +298,15 @@ export async function acharContatoPorWaId(waIdOuTelefone) {
  *
  * @returns {Promise<boolean>} gravou?
  */
-export async function gravarWaIdDoContato({ contatoId, waId, client = prisma }) {
+export async function gravarWaIdDoContato({ contatoId, telefoneEnviado, waId, client = prisma }) {
   const id = String(contatoId || "").trim();
   const valor = String(waId || "").trim();
-  if (!id || !valor) return false;
+  const telefone = normalizarE164(telefoneEnviado);
+  if (!id || !valor || !telefone) return false;
   // ⚠ `waId: null` no `where` é a trava: quem já tem apelido conhecido não é reescrito por um envio.
   const r = await client.contatoWhatsapp.updateMany({
-    where: { id, waId: null },
+    // Uma resposta atrasada do número antigo não pode atribuir sua identidade ao novo cadastro.
+    where: { id, telefoneE164: telefone, waId: null },
     data: { waId: valor },
   });
   return r.count === 1;

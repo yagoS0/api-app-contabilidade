@@ -453,6 +453,7 @@ function envioDaGuia(item) {
   const canais = envios.map((e) => ({
     canal: e.canal,
     status: e.status,
+    tentativaId: e.tentativaAtualId || null,
     destino: e.destino || null,
     em: e.enviadoEm?.toISOString?.() || null,
     entregueEm: e.entregueEm?.toISOString?.() || null,
@@ -460,7 +461,7 @@ function envioDaGuia(item) {
     erroCodigo: e.erroCodigo || null,
     erroMensagem: e.erroMensagemUsuario || null,
     // ⚠ `null` é a TERCEIRA resposta ("a Meta não diz se reenviar resolve"), e não `false`.
-    podeTentarDeNovo: e.erroCodigo ? podeTentarDeNovoPeloCodigo(e.erroCodigo) : null,
+    podeTentarDeNovo: ["indeterminado", "enviando"].includes(e.status) ? false : e.erroCodigo ? podeTentarDeNovoPeloCodigo(e.erroCodigo) : null,
     tentativas: Number(e.tentativas || 0),
   }));
   const chegou = envios.some(

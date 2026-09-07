@@ -1,23 +1,8 @@
-// O TURNO DO ASSISTENTE — de uma mensagem recebida a uma resposta enviada. NUNCA lança.
-//
-// A ordem, e por que cada passo existe:
-//   1. RESERVA a mensagem (`respondidaPelaIaEm`, `updateMany` lendo `count`): duas entregas do
-//      mesmo webhook não geram duas respostas.
-//   2. LOCK por conversa (`tryAcquireGuideLock("ia:<conversaId>")`): um turno por fio de cada vez.
-//   3. Carrega o fio, o contato, a pessoa (sessão) e a empresa. Sem sessão ⇒ frase fixa.
-//   4. Se há PENDÊNCIA aberta, a resposta é lida pela REGEX (`decidirResposta`) ANTES de qualquer
-//      modelo: CONFIRMAR <código> executa (`confirmarEExecutar`); o resto cancela — e segue.
-//   5. Mídia (não-texto) ⇒ frase fixa. Texto ⇒ guarda de custo (falha fechado) ⇒ modelo ⇒ texto.
-//   6. ENVIA a resposta (`enviarTexto`, e documentos pelas ferramentas), REGISTRA os balões
-//      (`autor: IA`) e FECHA a chamada em `chamadas_ia`.
-//
-// ⚠ Quem decide se este serviço é chamado é o gancho em `ProcessarEventoWhatsappService`
-// (flag + piloto + VINCULADO + não assumido). Aqui se assume que a decisão de chamar já foi tomada,
-// mas as guardas de sessão e de custo são refeitas — dupla checagem é barata.
-
+// Turnos duráveis, lease com posse, escopo verificado e guardas refeitas antes de cada efeito.
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { IA_HISTORICO_MENSAGENS, log as logPadrao } from "../../config.js";
-import { tryAcquireGuideLock, releaseGuideLock } from "../guides/GuideLockService.js";
+import { IA_HISTORICO_MENSAGENS, INTEGRACAO_WHATSAPP_IA, IA_EMPRESAS_PILOTO, log as logPadrao } from "../../config.js";
+import { adquirirLease, renovarLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
+import { enviarMensagemRastreada } from "../whatsapp/SaidaWhatsappService.js";
 import { WhatsappCloudClient } from "../whatsapp/WhatsappCloudClient.js";
 import { registrarMensagemEnviada, janelaDaConversa, DIRECAO } from "../whatsapp/ConversaWhatsappService.js";
 import { SITUACOES_JANELA } from "../whatsapp/janela24h.js";
@@ -44,7 +29,7 @@ function paraTurno(m) {
 
 /** Turnos consecutivos do mesmo papel são fundidos (a API exige alternância), e o primeiro é `user`. */
 export function montarHistorico(mensagens) {
-  const ordenadas = [...(mensagens || [])].sort((a, b) => new Date(a.registradaEm) - new Date(b.registradaEm));
+  const ordenadas = [...(mensagens || [])].filter(m => m.direcao !== DIRECAO.SAIDA || !["enviando", "falhou", "indeterminado"].includes(m.statusEnvio)).sort((a, b) => new Date(a.registradaEm) - new Date(b.registradaEm));
   const turnos = [];
   for (const m of ordenadas) {
     const t = paraTurno(m);
@@ -64,41 +49,70 @@ export function montarHistorico(mensagens) {
  * @returns {Promise<{feito:boolean, motivo?:string, texto?:string}>}
  */
 export async function responderMensagem({ conversaId, mensagemId, deps = {} } = {}) {
+  const r = await executarMensagem({ conversaId, mensagemId, deps });
+  if (r.feito) {
+    await (deps.client || prisma).mensagemWhatsapp.updateMany({
+      where: { id: String(mensagemId), conversaId: String(conversaId), direcao: DIRECAO.ENTRADA, respondidaPelaIaEm: null },
+      data: { respondidaPelaIaEm: new Date() },
+    });
+  }
+  return r;
+}
+
+async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
   const client = deps.client || prisma;
   const log = deps.log || logPadrao;
   const agora = deps.agora || new Date();
   const lockId = `ia:${conversaId}`;
-  let lock = false;
+  const turnoIaId = deps.turnoIaId || `mensagem:${mensagemId}`;
+  let lock = null;
+  let timer = null;
+  let leaseValido = true;
+  let houveSaida = false;
   try {
-    // 1. A reserva.
-    const reserva = await client.mensagemWhatsapp.updateMany({
-      where: { id: String(mensagemId), conversaId: String(conversaId), direcao: DIRECAO.ENTRADA, respondidaPelaIaEm: null },
-      data: { respondidaPelaIaEm: agora },
-    });
-    if (!reserva.count) return { feito: false, motivo: "JA_RESPONDIDA" };
-
-    // 2. O lock por fio.
-    lock = await (deps.tryLock || tryAcquireGuideLock)(lockId, LOCK_TTL_MS);
-    if (!lock) {
-      // Outro turno está correndo neste fio; a mensagem será lida no histórico dele.
-      await client.mensagemWhatsapp.updateMany({ where: { id: String(mensagemId) }, data: { respondidaPelaIaEm: null } });
-      return { feito: false, motivo: "FIO_OCUPADO" };
+    if (!deps.leaseExterno) {
+      lock = deps.tryLock ? await deps.tryLock(lockId, LOCK_TTL_MS) : await adquirirLease(lockId, { client, ttlMs: LOCK_TTL_MS });
+      if (!lock) return { feito: false, motivo: "FIO_OCUPADO" };
+      if (!deps.tryLock) {
+        timer = setInterval(() => renovarLease(lock, { client }).then((ok) => { leaseValido = ok; }).catch(() => { leaseValido = false; }), 20000);
+        timer.unref?.();
+      }
     }
 
     // 3. O fio, a pessoa, a empresa.
     const conversa = await client.conversaWhatsapp.findUnique({ where: { id: String(conversaId) }, include: { portalClient: { select: { id: true, razao: true, cnpj: true } } } });
     const mensagem = await client.mensagemWhatsapp.findUnique({ where: { id: String(mensagemId) } });
-    if (!conversa || !mensagem) return { feito: false, motivo: "NAO_ENCONTRADA" };
+    if (!conversa || !mensagem || mensagem.conversaId !== conversa.id || mensagem.direcao !== DIRECAO.ENTRADA) return { feito: false, motivo: "NAO_ENCONTRADA" };
+    if (mensagem.respondidaPelaIaEm) return { feito: false, motivo: "JA_RESPONDIDA" };
+    const saidaAnterior = await client.mensagemWhatsapp.findFirst({ where: { turnoIaId, direcao: DIRECAO.SAIDA } });
+    if (saidaAnterior) return { feito: false, motivo: "SAIDA_ANTERIOR", indeterminado: true };
+    const conferirPortao = async () => {
+      await deps.conferirLease?.();
+      if (!leaseValido) throw Object.assign(new Error("Reserva do turno expirada."), { codigo: "LEASE_PERDIDA" });
+      const atual = await client.conversaWhatsapp.findUnique({ where: { id: conversa.id } });
+      const codigo = !atual?.escopoVerificado || atual.portalClientId !== conversa.portalClientId ? "SEM_ESCOPO_VERIFICADO"
+        : atual.atendidaPor || atual.atendidaDesde ? "ASSUMIDA_POR_HUMANO"
+          : !(deps.flag ?? INTEGRACAO_WHATSAPP_IA) || !(deps.piloto ?? IA_EMPRESAS_PILOTO).includes(conversa.portalClientId) ? "FORA_DO_PILOTO" : null;
+      if (codigo) throw Object.assign(new Error("O assistente foi suspenso nesta conversa."), { codigo });
+    };
+    await conferirPortao();
     const cloud = deps.cloud || new WhatsappCloudClient({ log });
     const dizer = async (texto, { autor = AUTOR.IA, tipo = "text" } = {}) => {
-      const r = await cloud.enviarTexto({ telefone: conversa.telefoneE164, texto });
-      await registrarMensagemEnviada({ telefone: conversa.telefoneE164, portalClientId: conversa.portalClientId, tipo, corpo: texto, providerMessageId: r?.wamid || null, autor }).catch((e) => log?.warn?.({ err: e?.message }, "assistente: falha ao registrar balão"));
+      const r = await enviarMensagemRastreada({ conversa, tipo, corpo: texto, autor, turnoIaId, client,
+        antesDeEnviar: async () => {
+          await conferirPortao();
+          const atual = await janelaDaConversa(conversa.id, new Date());
+          if (atual.situacao !== SITUACOES_JANELA.ABERTA) throw Object.assign(new Error("A janela de atendimento fechou."), { codigo: "FORA_DA_JANELA" });
+        }, enviar: () => cloud.enviarTexto({ telefone: conversa.telefoneE164, texto }),
+      });
+      houveSaida = true;
       return r;
     };
 
-    const contato = conversa.portalClientId
-      ? await client.contatoWhatsapp.findFirst({ where: { portalClientId: conversa.portalClientId, telefoneE164: conversa.telefoneE164, ativo: true }, select: { id: true, nome: true, userId: true } })
-      : null;
+    const contatos = conversa.portalClientId
+      ? await client.contatoWhatsapp.findMany({ where: { portalClientId: conversa.portalClientId, ativo: true, OR: [{ telefoneE164: conversa.telefoneE164 }, { waId: conversa.telefoneE164 }] }, take: 2, select: { id: true, nome: true, userId: true } })
+      : [];
+    const contato = contatos.length === 1 ? contatos[0] : null;
     const vinculoRbac = contato?.userId && conversa.portalClientId
       ? await client.companyClientUser.findUnique({ where: { companyId_userId: { companyId: conversa.portalClientId, userId: contato.userId } }, select: { role: true, status: true } })
       : null;
@@ -119,6 +133,7 @@ export async function responderMensagem({ conversaId, mensagemId, deps = {} } = 
         return { feito: true, motivo: "EXPIRADA" };
       }
       if (d.decisao === "EXECUTAR") {
+        await conferirPortao();
         // ⚠ `conversaId` e `portalClientId` vão na reserva: a pendência de um fio nunca é
         // confirmada por outro, nem executada depois de o fio mudar de empresa.
         const r = await confirmarEExecutar({ acaoId: pendente.id, conversaId: conversa.id, portalClientId: conversa.portalClientId, agora, client, log, executores: deps.executores || null, ...(deps.acoesDeps ? { deps: deps.acoesDeps } : {}) });
@@ -142,7 +157,7 @@ export async function responderMensagem({ conversaId, mensagemId, deps = {} } = 
       return { feito: true, motivo: "SO_TEXTO" };
     }
 
-    const guarda = await autorizarChamadaIa({ portalClientId: conversa.portalClientId, conversaId: conversa.id, mensagemId: mensagem.id, agora, client, log, ...(deps.chaveIa !== undefined ? { chave: deps.chaveIa } : {}) });
+    const guarda = await autorizarChamadaIa({ portalClientId: conversa.portalClientId, conversaId: conversa.id, mensagemId: mensagem.id, finalidade: "assistente_whatsapp", agora, client, log, ...(deps.chaveIa !== undefined ? { chave: deps.chaveIa } : {}) });
     if (!guarda.ok) {
       await dizer(guarda.mensagem, { autor: AUTOR.SISTEMA });
       return { feito: true, motivo: guarda.motivo };
@@ -155,11 +170,22 @@ export async function responderMensagem({ conversaId, mensagemId, deps = {} } = 
 
     const pendenciasDoTurno = [];
     let chamouEscritorio = null;
+    const documentosTentados = new Map();
     const ctx = {
       sessao, conversa, prisma: client, servicos: deps.servicos || {}, janela: { aberta: janela.situacao === SITUACOES_JANELA.ABERTA }, agora, log,
       enviarDocumento: async ({ conteudo, nomeArquivo, legenda, guideId, notaId }) => {
-        const r = await cloud.enviarDocumento({ telefone: conversa.telefoneE164, conteudo, nomeArquivo, legenda });
-        await registrarMensagemEnviada({ telefone: conversa.telefoneE164, portalClientId: conversa.portalClientId, tipo: "document", corpo: `${legenda || nomeArquivo}${guideId ? ` [guia ${guideId}]` : notaId ? ` [nota ${notaId}]` : ""}`, providerMessageId: r?.wamid || null, autor: AUTOR.IA }).catch(() => {});
+        const chaveDocumento = `${guideId || ""}:${notaId || ""}:${nomeArquivo || ""}`;
+        if (documentosTentados.has(chaveDocumento)) return documentosTentados.get(chaveDocumento);
+        const tentativa = enviarMensagemRastreada({ conversa, tipo: "document", corpo: legenda || nomeArquivo, autor: AUTOR.IA, turnoIaId, client,
+          antesDeEnviar: async () => {
+            await conferirPortao();
+            const janelaAtual = await janelaDaConversa(conversa.id, new Date());
+            if (janelaAtual.situacao !== SITUACOES_JANELA.ABERTA) throw Object.assign(new Error("Janela fechada."), { codigo: "FORA_DA_JANELA" });
+          }, enviar: () => cloud.enviarDocumento({ telefone: conversa.telefoneE164, conteudo, nomeArquivo, legenda }),
+        });
+        documentosTentados.set(chaveDocumento, tentativa);
+        const r = await tentativa;
+        houveSaida = true;
         return r;
       },
       registrarPendencia: (p) => pendenciasDoTurno.push(p),
@@ -169,9 +195,9 @@ export async function responderMensagem({ conversaId, mensagemId, deps = {} } = 
     const assistente = deps.assistente || new AssistenteClient({ log });
     let resposta;
     try {
-      resposta = await assistente.responder({ system, messages, ferramentas: definicoes(), executar: (nome, input) => executarFerramenta(nome, input, ctx) });
+      resposta = await assistente.responder({ system, messages, ferramentas: definicoes(), executar: async (nome, input) => { await conferirPortao(); return executarFerramenta(nome, input, ctx); } });
     } catch (err) {
-      await concluirChamadaIa(guarda.contexto, { erroCodigo: err?.codigo || "IA_ERRO", erroMensagem: err?.message }, { client, log });
+      await concluirChamadaIa(guarda.contexto, { usage: err?.usage, iteracoes: err?.iteracoes, ferramentas: err?.ferramentasChamadas, erroCodigo: err?.codigo || "IA_ERRO", erroMensagem: err?.message }, { client, log });
       log?.error?.({ conversaId: conversa.id, codigo: err?.codigo, err: err?.message }, "assistente: o modelo não respondeu");
       await dizer(MENSAGENS_FIXAS.ERRO_MODELO, { autor: AUTOR.SISTEMA });
       return { feito: true, motivo: err?.codigo || "IA_ERRO" };
@@ -189,9 +215,13 @@ export async function responderMensagem({ conversaId, mensagemId, deps = {} } = 
     return { feito: true, motivo: "RESPONDIDA", texto };
   } catch (err) {
     log?.error?.({ conversaId, mensagemId, err: err?.message }, "assistente: TURNO FALHOU");
-    return { feito: false, motivo: "ERRO", erro: err?.message };
+    return { feito: false, motivo: err?.codigo || "ERRO", erro: err?.message, indeterminado: Boolean(err?.indeterminado || houveSaida) };
   } finally {
-    if (lock) await (deps.releaseLock || releaseGuideLock)(lockId);
+    clearInterval(timer);
+    if (lock) {
+      if (deps.releaseLock) await deps.releaseLock(lockId);
+      else await liberarLease(lock, { client });
+    }
   }
 }
 

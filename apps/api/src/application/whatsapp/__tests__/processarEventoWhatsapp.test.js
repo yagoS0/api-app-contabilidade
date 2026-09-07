@@ -3,6 +3,8 @@
 //
 // ⚠ Zero rede e zero banco, por construção: os dois módulos que tocariam o Prisma são mockados.
 
+jest.mock("../SaidaWhatsappService.js", () => ({ aplicarStatusMensagem: jest.fn(async () => null) }));
+jest.mock("../ArquivoWhatsappService.js", () => ({ enqueueArquivoWhatsapp: jest.fn(async () => null) }));
 jest.mock("../ConversaWhatsappService.js", () => ({ registrarMensagemRecebida: jest.fn() }));
 jest.mock("../../guides/EnvioGuiaService.js", () => ({
   aplicarStatusDoProvedor: jest.fn(),
@@ -222,7 +224,7 @@ describe("decidirRespostaDaIa — a IA só responde com as quatro chaves", () =>
   const r = (over = {}) => ({
     duplicada: false,
     vinculo: { situacao: "VINCULADO" },
-    conversa: { id: "cv1", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null },
+    conversa: { id: "cv1", escopoVerificado: true, portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null },
     mensagem: { id: "m1" },
     ...over,
   });
@@ -238,8 +240,8 @@ describe("decidirRespostaDaIa — a IA só responde com as quatro chaves", () =>
     expect(decidirRespostaDaIa({ r: r({ vinculo: { situacao: "AMBIGUO" } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("NAO_VINCULADA");
   });
   it("assumida por pessoa, ou na fila do escritório → a IA cala", () => {
-    expect(decidirRespostaDaIa({ r: r({ conversa: { id: "cv1", portalClientId: "pc-1", atendidaPor: "u9" } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("ASSUMIDA_POR_HUMANO");
-    expect(decidirRespostaDaIa({ r: r({ conversa: { id: "cv1", portalClientId: "pc-1", atendidaDesde: new Date() } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("ASSUMIDA_POR_HUMANO");
+    expect(decidirRespostaDaIa({ r: r({ conversa: { id: "cv1", escopoVerificado: true, portalClientId: "pc-1", atendidaPor: "u9" } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("ASSUMIDA_POR_HUMANO");
+    expect(decidirRespostaDaIa({ r: r({ conversa: { id: "cv1", escopoVerificado: true, portalClientId: "pc-1", atendidaDesde: new Date() } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("ASSUMIDA_POR_HUMANO");
   });
   it("duplicada (reentrega) nunca dispara", () => {
     expect(decidirRespostaDaIa({ r: r({ duplicada: true }), flag: true, piloto: ["pc-1"] }).motivo).toBe("DUPLICADA");
@@ -256,7 +258,7 @@ describe("o gancho da IA — quem é chamado, e com o quê", () => {
   const REGISTRO = (over = {}) => ({
     duplicada: false,
     vinculo: { situacao: "VINCULADO", divergemPeloNonoDigito: false },
-    conversa: { id: "cv1", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null },
+    conversa: { id: "cv1", escopoVerificado: true, portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null },
     mensagem: { id: "m1" },
     ...over,
   });
@@ -272,7 +274,7 @@ describe("o gancho da IA — quem é chamado, e com o quê", () => {
   it("as quatro chaves ligadas → chama com o id do fio e o da mensagem", async () => {
     const responder = jest.fn(async () => ({ feito: true }));
     const resumo = await rodar({ registro: REGISTRO(), ia: { flag: true, piloto: ["pc-1"] }, responder });
-    expect(responder).toHaveBeenCalledWith({ conversaId: "cv1", mensagemId: "m1" });
+    expect(responder).toHaveBeenCalledWith({ conversaId: "cv1", mensagemId: "m1", portalClientId: "pc-1" });
     expect(resumo.mensagens.gravadas).toBe(1);
   });
 
@@ -280,9 +282,9 @@ describe("o gancho da IA — quem é chamado, e com o quê", () => {
     const casos = [
       [REGISTRO(), { flag: false, piloto: ["pc-1"] }, "FLAG_OFF"],
       [REGISTRO(), { flag: true, piloto: [] }, "FORA_DO_PILOTO"],
-      [REGISTRO({ duplicada: true }), { flag: true, piloto: ["pc-1"] }, "DUPLICADA"],
+      [REGISTRO({ duplicada: true, mensagem: { id: "m1", respondidaPelaIaEm: new Date() } }), { flag: true, piloto: ["pc-1"] }, "DUPLICADA"],
       [REGISTRO({ vinculo: { situacao: "DESCONHECIDO" }, conversa: { id: "cv1", portalClientId: null } }), { flag: true, piloto: ["pc-1"] }, "NAO_VINCULADA"],
-      [REGISTRO({ conversa: { id: "cv1", portalClientId: "pc-1", atendidaPor: "u9" } }), { flag: true, piloto: ["pc-1"] }, "ASSUMIDA_POR_HUMANO"],
+      [REGISTRO({ conversa: { id: "cv1", escopoVerificado: true, portalClientId: "pc-1", atendidaPor: "u9" } }), { flag: true, piloto: ["pc-1"] }, "ASSUMIDA_POR_HUMANO"],
     ];
     for (const [registro, ia, motivo] of casos) {
       const responder = jest.fn(async () => ({ feito: true }));
@@ -292,15 +294,15 @@ describe("o gancho da IA — quem é chamado, e com o quê", () => {
     }
   });
 
-  it("⚠ o assistente lançando NÃO derruba o webhook — o evento já foi processado", async () => {
+  it("falha ao enfileirar é registrada no resumo para retry do inbox", async () => {
     const responder = jest.fn(async () => { throw new Error("modelo caiu"); });
     const logger = logSpy();
     registrarMensagemRecebida.mockResolvedValue(REGISTRO());
     const resumo = await processarEventoWhatsapp(evento({ messages: [MENSAGEM] }), { agora: AGORA, logger, responder, ia: { flag: true, piloto: ["pc-1"] } });
     await proximoTick();
     await proximoTick();
-    expect(resumo.mensagens.gravadas).toBe(1);
-    expect(resumo.erros).toEqual([]);
+    expect(resumo.mensagens.recusadas).toBe(1);
+    expect(resumo.erros).toHaveLength(1);
     expect(logger.error).toHaveBeenCalled();
   });
 });

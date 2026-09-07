@@ -45,7 +45,7 @@ export function useLoteWhatsapp({ api, feedback } = {}) {
     setResultado(null);
     try {
       const r = await api.preverLoteWhatsapp({ competencia, portalClientIds, ...(guideIds ? { guideIds } : {}) });
-      const p = r ? { competencia: r.competencia, canal: r.canal, linhas: r.linhas || [], resumo: r.resumo, portalClientIds } : null;
+      const p = r ? { competencia: r.competencia, canal: r.canal, linhas: r.linhas || [], resumo: r.resumo, portalClientIds, guideIds } : null;
       setPrevia(p);
       if (r?.canal) setCanal(r.canal);
       return p;
@@ -67,6 +67,7 @@ export function useLoteWhatsapp({ api, feedback } = {}) {
       const r = await api.executarLoteWhatsapp({
         competencia: previa.competencia,
         portalClientIds: previa.portalClientIds,
+        ...(previa.guideIds ? { guideIds: previa.guideIds } : {}),
         conferencia: conferenciaDaPrevia(previa),
         enviarPorEmail,
       });

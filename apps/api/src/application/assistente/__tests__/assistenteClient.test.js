@@ -102,3 +102,8 @@ describe("o laço", () => {
     expect(textoDaResposta(null)).toBe("");
   });
 });
+it("contabiliza uso parcial quando a segunda rodada retorna 429", async () => {
+ const {client}=clienteFalso([respostaFerramentas([{name:"quanto_devo",input:{}}],{input_tokens:120,output_tokens:30}),()=>{throw {status:429};}]);
+ const a=new AssistenteClient({client,log:silencio});
+ await expect(a.responder({system:[],messages:[{role:"user",content:"oi"}],executar:async()=>({ok:true})})).rejects.toMatchObject({codigo:"IA_RATE_LIMIT",usage:{input_tokens:120,output_tokens:30},iteracoes:2,ferramentasChamadas:["quanto_devo"]});
+});

@@ -91,6 +91,8 @@ export function ChatDaEmpresa({ api, companyId, feedback = null, onVirarAnotacao
         </div>
       ) : null}
 
+      {hook.erroAcao ? <p role="alert">{hook.erroAcao}</p> : null}
+      {hook.cursorLista ? <button type="button" disabled={hook.carregandoMais} onClick={hook.carregarMais}>Carregar mais contatos</button> : null}
       {hook.erroFio ? <div role="alert">
         <p>Não foi possível atualizar a conversa: {hook.erroFio}</p>
         {fio ? <button type="button" disabled={hook.carregandoFio} onClick={() => hook.abrir(fio.id)}>Tentar abrir novamente</button> : null}

@@ -458,3 +458,13 @@ somente `resendGuideEmail`, deixando empresas sem e-mail sem tentativa por Whats
 **avisa com o motivo que o servidor deu** e, só com o sim, repete o pedido com `reenviar: true`.
 ⚠ **Vale no envio POR GUIA.** O lote continua pulando as já enviadas — é o que impede a carteira
 inteira de sair duas vezes num clique.
+
+
+## Auditoria WhatsApp e IA — 07/09/2026
+
+- `liberarComCanais` lê configuração e pergunta antes de qualquer envio. Erro de configuração interrompe a ação; falha de transporte do e-mail não é repetida e não impede que o endpoint WhatsApp valide sua própria autorização. Recusa HTTP 4xx interrompe a liberação.
+- `desfechoWhatsapp` conserva resultados por contato, parcial e indeterminado. Aceite da Meta aparece neutro, aguardando entrega; nunca é prova de recebimento. Retentativa seletiva usa `apenasFalhos`; reenvio amplo exige confirmação explícita.
+- `usePollingEntrega` acompanha a tentativa, com orçamento de 24 consultas renovado por nova tentativa e ação manual após esgotar.
+- `ModalCorrigirValorGuia` oferece prévia para OUTRA processada com valor divergente no PDF. Aplicação exige revisão válida e confirmação, chama a operação contábil transacional e não envia a guia.
+- A aba A lançar recebe `PainelArquivosWhatsapp`: abertura manual, OFX com prévia e confirmação, retenção do original por 90 dias. O commit leva `arquivoWhatsappId` para idempotência e marcação atômicas no servidor. Arquivos sem empresa exigem vínculo explícito antes de abrir.
+- Em modo real não se usa resultado simulado como recuperação de erro, inclusive nas operações de IA.

@@ -23,6 +23,7 @@ import {
   identidadeDaConversa,
   descricaoDaMidia,
   frasePaginacao,
+  estadoDaMensagem,
 } from "../lib/conversasTela";
 
 export const campo = {
@@ -120,30 +121,33 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
             </a>
           ) : null}
           {situacao === SITUACAO_FIO.ASSUMIDA ? (
-            <Button variant="secondary" disabled={hook.ocupado} onClick={() => hook.devolver(conversa.id)} title="O assistente volta a responder neste fio">Devolver à IA</Button>
+            <Button variant="secondary" disabled={hook.ocupado || conversa.escopoVerificado === false} onClick={() => hook.devolver(conversa.id)} title="O assistente volta a responder neste fio">Devolver à IA</Button>
           ) : situacao !== SITUACAO_FIO.FILA_SEM_EMPRESA ? (
             <Button variant="secondary" disabled={hook.ocupado} onClick={() => hook.assumir(conversa.id)} title="Você responde; o assistente fica em silêncio">Assumir</Button>
           ) : null}
         </div>
       </div>
 
+      {conversa.legadoNaoVerificado || conversa.escopoVerificado === false ? <p role="status" style={{ color: "var(--state-warn)" }}>Histórico legado sem vínculo verificado. O assistente e a importação de arquivos estão bloqueados neste segmento. Vincule o contato para iniciar um segmento verificado; o histórico anterior será preservado.</p> : null}
       {conversa.pendencia ? (
         <div data-testid="pendencia-aberta" style={{ fontSize: "0.78rem", padding: "6px 10px", border: "1px solid var(--state-warn)", background: "var(--state-warn-surface)", borderRadius: "var(--radius-sm)", marginBottom: 8 }}>
           Pedido aguardando confirmação do cliente: <strong>{conversa.pendencia.tipo}</strong> · código <strong>{conversa.pendencia.codigo}</strong> · expira {fmtDataHora(conversa.pendencia.expiraEm)}.
         </div>
       ) : null}
 
-      {situacao === SITUACAO_FIO.FILA_SEM_EMPRESA ? slotVincular : null}
+      {situacao === SITUACAO_FIO.FILA_SEM_EMPRESA || conversa.escopoVerificado === false ? (slotVincular || <a href="/whatsapp">Conferir vínculo na caixa de WhatsApp</a>) : null}
 
       <div style={{ flex: 1, overflowY: "auto", padding: "8px 4px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--bg-page)", marginBottom: 8 }}>
         {/* ⚠ O corte deixou de ser silencioso: a tela DIZ que há conversa antes do primeiro balão. */}
         {avisoDePaginacao ? (
           <p data-testid="aviso-paginacao" style={{ fontSize: "0.72rem", color: "var(--text-faint)", margin: "0 8px 8px", textAlign: "center" }}>{avisoDePaginacao}</p>
         ) : null}
+        {hook.cursorFio ? <Button disabled={hook.carregandoAnteriores} onClick={hook.carregarAnteriores}>{hook.carregandoAnteriores ? "Carregando…" : "Carregar mensagens anteriores"}</Button> : null}
         {mensagens.length === 0 ? <p style={{ color: "var(--text-muted)", fontSize: "0.82rem", margin: 8 }}>Nenhuma mensagem neste fio.</p> : null}
         {mensagens.map((m) => {
           const entrada = m.direcao === "in";
           const midia = descricaoDaMidia(m);
+          const estado = estadoDaMensagem(m);
           return (
             <div key={m.id} data-testid={`balao-${m.id}`} data-autor={m.autor || (entrada ? "cliente" : "sem-autor")} style={{ display: "flex", justifyContent: entrada ? "flex-start" : "flex-end", marginBottom: 6 }}>
               <div style={{ maxWidth: "78%", padding: "6px 10px", borderRadius: 10, fontSize: "0.82rem", background: entrada ? "var(--bg-subtle)" : "var(--accent-purple-surface)", border: `1px solid ${entrada ? "var(--border)" : "var(--accent-purple-border)"}`, color: "var(--text)" }}>
@@ -151,6 +155,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
                 {/* ⚠ `[image]` não é frase: a mídia vira o que CHEGOU, dizendo que não dá para abrir ainda. */}
                 {midia ? <div data-testid="midia-do-balao" style={{ color: "var(--text-muted)", fontStyle: "italic" }}>{midia}</div> : null}
                 {m.corpo ? <div style={{ whiteSpace: "pre-wrap" }}>{m.corpo}</div> : null}
+                {estado ? <div data-testid="estado-mensagem" style={{ fontSize: "0.7rem", marginTop: 4, color: estado.tom === "erro" ? "var(--state-danger)" : estado.tom === "ok" ? "var(--state-ok)" : "var(--text-muted)" }}>{estado.texto}</div> : null}
               </div>
             </div>
           );
@@ -175,7 +180,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
           />
           <Button variant="primary" disabled={!resposta.pode || !texto.trim() || hook.ocupado} onClick={enviar}>Responder</Button>
         </div>
-        {recusa ? <p role="alert" style={{ fontSize: "0.76rem", color: "var(--state-danger)", margin: "6px 0 0" }}>{recusa}</p> : null}
+        {recusa && !hook.erroAcao ? <p role="alert" style={{ fontSize: "0.76rem", color: "var(--state-danger)", margin: "6px 0 0" }}>{recusa}</p> : null}
       </div>
     </div>
   );

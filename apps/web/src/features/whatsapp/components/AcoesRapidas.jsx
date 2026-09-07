@@ -6,11 +6,12 @@
 // ⚠ A REGRA de quem pode agora mora em `../lib/acoesRapidas.js`; aqui é a ligação. O motivo do
 // bloqueio sai em TEXTO na tela, nunca em `title` — `title` não aparece no teclado nem no toque.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { campo } from "./FioDaConversa";
 import { ACAO, acoesDisponiveis, rascunhoDeAnotacao } from "../lib/acoesRapidas";
 import { fmtDataHora, identidadeDaConversa } from "../lib/conversasTela";
+import { desfechoWhatsapp, resumirWhatsapp } from "../../guides/lib/canalDeEnvio";
 import { rotuloTipoGuia } from "../../guides/lib/rotuloGuia";
 
 const linha = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
@@ -37,6 +38,16 @@ export function AcoesRapidas({
   const [escolhido, setEscolhido] = useState("");
   const [recusa, setRecusa] = useState(null);
   const [ocupado, setOcupado] = useState(false);
+  const [destinatarios, setDestinatarios] = useState([]);
+  const [resultado, setResultado] = useState(null);
+  const [reenvio, setReenvio] = useState(false);
+  const versao = useRef(0);
+  useEffect(() => () => { versao.current++; }, [companyId, conversa.id]);
+  const recebem = r => {
+    if (!Array.isArray(r?.contatos)) throw new Error("Não foi possível conferir os destinatários.");
+    return r.contatos.filter(c => c.ativo !== false && c.optInEm && c.telefoneE164);
+  };
+  const assinatura = lista => lista.map(c => `${c.id}:${c.telefoneE164}`).sort().join("|");
 
   const acoes = acoesDisponiveis({
     conversa,
@@ -46,7 +57,8 @@ export function AcoesRapidas({
   });
 
   async function abrir(acao) {
-    setRecusa(null);
+    const v = ++versao.current;
+    setRecusa(null); setResultado(null); setReenvio(false);
     if (aberta === acao) { setAberta(null); return; }
     setAberta(acao);
     setEscolhido("");
@@ -54,7 +66,11 @@ export function AcoesRapidas({
     setCarregando(true);
     try {
       if (acao === ACAO.ENVIAR_GUIA) {
-        const guias = await api.getCompanyGuides(companyId);
+        const [guias, cadastro] = await Promise.all([api.getCompanyGuides(companyId), api.listarContatosWhatsapp(companyId)]);
+        if (v !== versao.current) return;
+        const alvos = recebem(cadastro);
+        setDestinatarios(alvos);
+        if (!alvos.length) throw new Error("Não há destinatário ativo de WhatsApp com autorização registrada.");
         setItens((Array.isArray(guias) ? guias : []).map((g) => ({
           id: g.guideId || g.id,
           // ⚠ O nome da guia sai de `rotuloTipoGuia` — a MESMA leitura da aba Guias. Uma segunda
@@ -63,6 +79,7 @@ export function AcoesRapidas({
         })));
       } else if (acao === ACAO.ENVIAR_DOCUMENTO) {
         const r = await api.listCompanyDocuments(companyId);
+        if (v !== versao.current) return;
         setItens((Array.isArray(r?.documentos) ? r.documentos : []).map((d) => ({ id: d.id, rotulo: d.nome })));
       } else {
         // ⚠⚠ QUAL mensagem vira anotação é ESCOLHA do contador, nunca "a última" — anotação é juízo,
@@ -77,14 +94,15 @@ export function AcoesRapidas({
         );
       }
     } catch (err) {
-      setRecusa(err?.message || "Não foi possível carregar a lista.");
+      if (v === versao.current) setRecusa(err?.message || "Não foi possível carregar a lista.");
     } finally {
-      setCarregando(false);
+      if (v === versao.current) setCarregando(false);
     }
   }
 
-  async function confirmar() {
-    if (!escolhido) return;
+  async function confirmar(confirmouReenvio = false) {
+    if (!escolhido || ocupado) return;
+    const v = versao.current;
     setOcupado(true);
     setRecusa(null);
     try {
@@ -98,19 +116,36 @@ export function AcoesRapidas({
         });
         onVirarAnotacao?.(texto);
       } else if (aberta === ACAO.ENVIAR_GUIA) {
-        await api.enviarGuiaWhatsapp(companyId, escolhido);
+        const alvos = recebem(await api.listarContatosWhatsapp(companyId));
+        if (v !== versao.current) return;
+        if (assinatura(alvos) !== assinatura(destinatarios)) {
+          setDestinatarios(alvos); setEscolhido(""); setReenvio(false);
+          throw new Error("Os destinatários mudaram. Confira a lista atualizada e escolha a guia novamente.");
+        }
+        if (!alvos.length) throw new Error("Não há destinatário ativo de WhatsApp com autorização registrada.");
+        const r = confirmouReenvio
+          ? await api.enviarGuiaWhatsapp(companyId, escolhido, { reenviar: true })
+          : await api.enviarGuiaWhatsapp(companyId, escolhido);
+        if (v !== versao.current) return;
+        setResultado(resumirWhatsapp(desfechoWhatsapp(r)));
       } else {
-        await api.enviarDocumentoWhatsapp(conversa.id, escolhido);
+        const r = await api.enviarDocumentoWhatsapp(conversa.id, escolhido);
+        if (v !== versao.current) return;
+        if (r?.ok === false) throw new Error(r.message || r.mensagem || "O envio não foi confirmado.");
+        setResultado({ tom: "pendente", texto: "Documento aceito pela Meta; aguarde a confirmação de entrega no fio." });
       }
+      if (v !== versao.current) return;
       setAberta(null);
       setEscolhido("");
       if (aberta !== ACAO.VIRAR_ANOTACAO) await onEnviado?.();
     } catch (err) {
       // ⚠ A recusa do SERVIDOR aparece com a frase dele (409 FORA_DA_JANELA, 422 sem opt-in…),
       // nunca "falhou": os consertos são diferentes e a tela precisa dizer qual é.
-      setRecusa(err?.payload?.message || err?.message || "Não foi possível enviar.");
+      if (v !== versao.current) return;
+      setRecusa(err?.payload?.message || err?.payload?.mensagem || err?.message || "Não foi possível enviar.");
+      setReenvio(err?.code === "GUIA_JA_ENVIADA");
     } finally {
-      setOcupado(false);
+      if (v === versao.current) setOcupado(false);
     }
   }
 
@@ -149,6 +184,10 @@ export function AcoesRapidas({
                   : "Nenhuma mensagem com texto neste fio — só há mídia, que este sistema ainda não abre."}
             </p>
           ) : null}
+          {!carregando && aberta === ACAO.ENVIAR_GUIA && destinatarios.length ? <div data-testid="destinatarios-guia" style={{ fontSize: "0.78rem", marginBottom: 8 }}>
+            Esta guia vai para todos os destinatários abaixo, incluindo contatos de outros fios:
+            <ul>{destinatarios.map(c => <li key={c.id}>{c.nome || "Contato"} · {c.telefoneE164}</li>)}</ul>
+          </div> : null}
           {!carregando && itens.length ? (
             <div style={linha}>
               <select
@@ -164,7 +203,7 @@ export function AcoesRapidas({
                 <option value="">— escolha —</option>
                 {itens.map((i) => <option key={i.id} value={i.id}>{i.rotulo}</option>)}
               </select>
-              <Button variant="primary" disabled={!escolhido || ocupado} onClick={confirmar}>
+              <Button variant="primary" disabled={!escolhido || ocupado || reenvio || (aberta === ACAO.ENVIAR_GUIA && !destinatarios.length)} onClick={() => confirmar(false)}>
                 {ocupado ? "Enviando…" : aberta === ACAO.VIRAR_ANOTACAO ? "Levar para a anotação" : "Enviar"}
               </Button>
               <Button variant="secondary" disabled={ocupado} onClick={() => setAberta(null)}>Cancelar</Button>
@@ -173,6 +212,8 @@ export function AcoesRapidas({
         </div>
       ) : null}
 
+      {resultado ? <p role={resultado.tom === "erro" ? "alert" : "status"} style={{ color: resultado.tom === "erro" ? "var(--state-danger)" : "var(--text-muted)" }}>{resultado.texto}</p> : null}
+      {reenvio && escolhido ? <Button disabled={ocupado} onClick={() => confirmar(true)}>Confirmar reenvio aos destinatários acima</Button> : null}
       {recusa ? <p role="alert" style={{ fontSize: "0.76rem", color: "var(--state-danger)", margin: "6px 0 0" }}>{recusa}</p> : null}
     </div>
   );

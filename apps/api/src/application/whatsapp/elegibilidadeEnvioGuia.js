@@ -119,7 +119,7 @@ export function avaliarCanal({ integracaoLigada, template, chaveTemplate = "guia
         + "registrado. Sem esse nome não há como pedir o modelo certo — preencha `nomeMeta`.",
     };
   }
-  return { disponivel: true, motivo: null, mensagem: null, nomeMeta: String(template.nomeMeta).trim() };
+  return { disponivel: true, motivo: null, mensagem: null, nomeMeta: String(template.nomeMeta).trim(), idioma: String(template.idioma || "").trim() || undefined };
 }
 
 /**

@@ -1,42 +1,4 @@
-// ⚠⚠ A ÚNICA ROTA PÚBLICA DO SISTEMA. Leia isto antes de mexer.
-//
-// Todo o resto do projeto autentica no ROUTER (`ensureAuthorized` em `firm/index.js`,
-// `client/index.js`, `admin.js`…). Aqui não há usuário: quem chama é a Meta. O que faz o papel da
-// autenticação é a **assinatura HMAC do corpo** com o `WHATSAPP_APP_SECRET`. As consequências disso
-// estão tratadas uma a uma, e nenhuma delas pode ser "afrouxada por conveniência":
-//
-//   · **sem `WHATSAPP_APP_SECRET` → 503, NUNCA "aceita tudo"** (o erro clássico é `if (!secret)
-//     next()`). Nada é processado e o log diz o que falta.
-//   · **assinatura conferida em tempo constante** (`assinaturaWebhook.js`).
-//   · **corpo que não casa não é processado** — nem parseado, nem logado.
-//   · **`WHATSAPP_VERIFY_TOKEN` vazio → 503 no handshake**: com ele vazio, uma chamada sem token
-//     seria "igual" ao esperado e qualquer app registraria este endereço.
-//
-// ── ⚠⚠ O CORPO RAW — POR QUE ESTE ROUTER É MONTADO ANTES DE TUDO ────────────────────────────────
-// `server.js` faz `app.use(express.json())` na linha 37, **antes de todos os routers**. Um webhook
-// montado depois dele receberia `req.body` já como OBJETO, e o HMAC seria calculado sobre um
-// `JSON.stringify` nosso — que não é o mesmo texto que a Meta assinou. A assinatura **nunca**
-// conferiria, e o sintoma (403 em tudo) não parece com a causa.
-// Pior ainda: a Meta "generate[s] the signature using an *escaped unicode* version of the payload,
-// with lowercase hex digits" e avisa que "If you just calculate against the decoded bytes, you will
-// end up with a different signature" (Webhooks — Validating Payloads, consultado 2026-08-15). Ou
-// seja, o único texto que confere é **o que chegou**, byte a byte.
-// Por isso o `express.raw` está DENTRO deste router (não no `server.js`): quem montar a rota não
-// tem como esquecê-lo.
-//
-// ── RESPONDER RÁPIDO, PROCESSAR DEPOIS — E O QUE ISSO CUSTA ─────────────────────────────────────
-// "Your endpoint should respond to all Event Notifications with `200 OK HTTPS`" e, não respondendo,
-// "we will retry immediately, then try a few more times with decreasing frequency over the next 36
-// hours" (Webhooks, Getting Started); na página do WhatsApp, "for up to 7 days" e "These retries can
-// result in duplicate webhook notifications" (Set up Webhooks). Ambas consultadas em 2026-08-15.
-// Daí o desenho: **200 primeiro, processamento em `setImmediate`**.
-// ⚠ E o preço, declarado: entre o 200 e o processamento há uma janela em que uma queda do processo
-// perde o evento — a Meta já considerou entregue. Mitigações reais, não promessas: cada item tem o
-// seu `try/catch`, toda falha sai em log `error` com o `wamid` (que é o que permite reprocessar), e
-// nada aqui responde erro por evento duplicado — responder erro faria a Meta reentregar
-// indefinidamente. Fila durável (BullMQ/Redis, sugerida pelo esqueleto do dono) exigiria dependência
-// nova e infraestrutura que este projeto não tem.
-
+// Webhook público: HMAC no corpo raw, persistência durável antes do 200 e retry com 503.
 import { Router } from "express";
 import express from "express";
 import {
@@ -52,7 +14,7 @@ import {
   conferirAssinatura,
   conferirHandshake,
 } from "../../application/whatsapp/assinaturaWebhook.js";
-import { processarEventoWhatsapp } from "../../application/whatsapp/ProcessarEventoWhatsappService.js";
+import { persistirWebhookWhatsapp } from "../../application/whatsapp/WhatsappInboxService.js";
 
 /** Onde ele é montado. Um lugar só — é este endereço que vai no painel da Meta. */
 export const CAMINHO_WEBHOOK_WHATSAPP = "/webhooks/whatsapp";
@@ -76,7 +38,7 @@ export function createWhatsappWebhookRouter(opcoes = {}) {
   const appSecret = opcoes.appSecret ?? WHATSAPP_APP_SECRET;
   const verifyToken = opcoes.verifyToken ?? WHATSAPP_VERIFY_TOKEN;
   const log = opcoes.log ?? logPadrao;
-  const processar = opcoes.processar ?? processarEventoWhatsapp;
+  const persistir = opcoes.persistir ?? persistirWebhookWhatsapp;
 
   const router = Router();
 
@@ -128,7 +90,7 @@ export function createWhatsappWebhookRouter(opcoes = {}) {
   });
 
   // ── POST: os eventos ───────────────────────────────────────────────────────────────────────────
-  router.post("/", (req, res) => {
+  router.post("/", async (req, res) => {
     if (recusarSeDesligada(res)) return;
 
     const assinatura = conferirAssinatura({
@@ -173,29 +135,14 @@ export function createWhatsappWebhookRouter(opcoes = {}) {
       return res.status(400).json({ error: "whatsapp_webhook_corpo_invalido" });
     }
 
-    // 200 PRIMEIRO. Tudo o que vem depois é assunto nosso — ver o cabeçalho.
-    res.sendStatus(200);
-
-    setImmediate(() => {
-      // `processarEventoWhatsapp` não lança por contrato; o `.catch` existe para o caso de o
-      // contrato ser quebrado no futuro — sem ele, viraria `unhandledRejection` e derrubaria o
-      // processo depois de a resposta já ter saído.
-      Promise.resolve()
-        .then(() => processar(payload, { logger: log }))
-        .then((resumo) => {
-          if (!resumo) return;
-          log?.info?.(
-            { mensagens: resumo.mensagens, statuses: resumo.statuses, erros: resumo.erros?.length || 0 },
-            "WhatsApp: evento do webhook processado",
-          );
-        })
-        .catch((e) => {
-          log?.error?.(
-            { err: e?.message || String(e) },
-            "WhatsApp: processamento do evento do webhook falhou por inteiro",
-          );
-        });
-    });
+    try {
+      // O evento já está durável quando a Meta recebe o ACK. Worker processa/reconcilia depois.
+      await persistir(payload, { corpoRaw: req.body });
+      return res.sendStatus(200);
+    } catch (e) {
+      log?.error?.({ codigo: e?.code }, "WhatsApp: evento não persistido; provedor deve reentregar");
+      return res.status(503).json({ error: "whatsapp_webhook_persistencia_indisponivel" });
+    }
   });
 
   return router;

@@ -36,12 +36,12 @@ describe("decidirCanaisAoLiberar — o e-mail nunca muda; o WhatsApp é o tercei
 
 describe("resumirDesfechoDosCanais — verde só quando tudo que se tentou saiu", () => {
   it("e-mail ok, WhatsApp não tentado → ok", () => {
-    expect(resumirDesfechoDosCanais({ email: { feito: true } })).toEqual({ tom: "ok", texto: "Guia liberada ao cliente: e-mail enviado." });
+    expect(resumirDesfechoDosCanais({ email: { feito: true } })).toEqual({ tom: "ok", texto: "Resultado do envio: e-mail enviado." });
   });
   it("e-mail ok + WhatsApp ok → ok, os dois nomeados", () => {
     const r = resumirDesfechoDosCanais({ email: { feito: true }, whatsapp: { tentado: true, ok: true } });
-    expect(r.tom).toBe("ok");
-    expect(r.texto).toMatch(/e-mail enviado · WhatsApp enviado/);
+    expect(r.tom).toBe("pendente");
+    expect(r.texto).toMatch(/e-mail enviado · WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
   });
   it("⚠ e-mail ok + WhatsApp falhou → ERRO, com o motivo do WhatsApp", () => {
     const r = resumirDesfechoDosCanais({ email: { feito: true }, whatsapp: { tentado: true, ok: false, message: "contato sem opt-in" } });
@@ -140,13 +140,13 @@ describe("perguntaDeReenvio — a tela AVISA que já foi, e o contador decide", 
 // de contato ela pode e deve ser enviada"*. Antes disto, empresa sem e-mail cadastrado via a guia
 // sair pelo WhatsApp e a tela dizer VERMELHO — porque "e-mail não saiu" era lido como falha.
 describe("canal AUSENTE não é canal que falhou", () => {
-  it("sem e-mail cadastrado + WhatsApp enviado ⇒ OK, e a ausência é DITA", () => {
+  it("sem e-mail cadastrado + WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega ⇒ OK, e a ausência é DITA", () => {
     const r = resumirDesfechoDosCanais({
       email: { feito: false, naoSeAplica: true },
       whatsapp: { tentado: true, ok: true },
     });
-    expect(r.tom).toBe("ok");
-    expect(r.texto).toMatch(/sem e-mail cadastrado · WhatsApp enviado/);
+    expect(r.tom).toBe("pendente");
+    expect(r.texto).toMatch(/sem e-mail cadastrado · WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
     // ⚠ Nada de "não saiu": a empresa não tem esse canal, e não há defeito a procurar.
     expect(r.texto).not.toMatch(/não saiu/);
   });

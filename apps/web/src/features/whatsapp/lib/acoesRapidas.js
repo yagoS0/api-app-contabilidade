@@ -30,6 +30,7 @@ export const ROTULO_ACAO = Object.freeze({
 
 export const MOTIVO = Object.freeze({
   SEM_EMPRESA: "SEM_EMPRESA",
+  ESCOPO_NAO_VERIFICADO: "ESCOPO_NAO_VERIFICADO",
   FORA_DA_JANELA: "FORA_DA_JANELA",
   JANELA_DESCONHECIDA: "JANELA_DESCONHECIDA",
   CANAL_DESLIGADO: "CANAL_DESLIGADO",
@@ -37,6 +38,7 @@ export const MOTIVO = Object.freeze({
 });
 
 export const FRASE_MOTIVO = Object.freeze({
+  [MOTIVO.ESCOPO_NAO_VERIFICADO]: "Histórico legado sem vínculo verificado: confira o vínculo na caixa de WhatsApp antes de enviar arquivos ou guias.",
   [MOTIVO.SEM_EMPRESA]: "Este número ainda não está vinculado a uma empresa — vincule o fio primeiro.",
   [MOTIVO.FORA_DA_JANELA]: "Fora da janela de 24h: a Meta só aceita modelo aprovado agora, e documento não é modelo.",
   [MOTIVO.JANELA_DESCONHECIDA]: "Não dá para afirmar que a janela de 24h está aberta — esta tela não recebeu o estado dela.",
@@ -65,12 +67,14 @@ export function acoesDisponiveis({ conversa, janela = null, canalLigado = null, 
   // GUIA — template: a janela não a alcança.
   acoes.push(montar(ACAO.ENVIAR_GUIA, [
     semEmpresa ? MOTIVO.SEM_EMPRESA : null,
+    conversa?.escopoVerificado === false ? MOTIVO.ESCOPO_NAO_VERIFICADO : null,
     canalDesligado ? MOTIVO.CANAL_DESLIGADO : null,
   ]));
 
   // DOCUMENTO — mensagem de serviço: exige a janela ABERTA, e "não sei" também bloqueia.
   acoes.push(montar(ACAO.ENVIAR_DOCUMENTO, [
     semEmpresa ? MOTIVO.SEM_EMPRESA : null,
+    conversa?.escopoVerificado === false ? MOTIVO.ESCOPO_NAO_VERIFICADO : null,
     canalDesligado ? MOTIVO.CANAL_DESLIGADO : null,
     janelaAberta === false ? MOTIVO.FORA_DA_JANELA : null,
     janelaAberta === null ? MOTIVO.JANELA_DESCONHECIDA : null,

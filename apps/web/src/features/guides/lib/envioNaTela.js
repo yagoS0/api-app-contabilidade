@@ -39,6 +39,7 @@ export const SITUACAO_ENVIO = Object.freeze({
   PARCIAL: "PARCIAL",
   /** Contrato antigo ou estado fora da lista: não se afirma nada. */
   DESCONHECIDA: "DESCONHECIDA",
+  INDETERMINADA: "INDETERMINADA",
 });
 
 const NEUTRO = "var(--state-neutral)";
@@ -64,6 +65,7 @@ export const DESENHO_ENVIO = Object.freeze({
   [SITUACAO_ENVIO.LIDA]: { icone: "✓✓", tom: "var(--accent-cyan)", rotulo: "lida" },
   [SITUACAO_ENVIO.FALHOU]: { icone: "✖", tom: "var(--state-danger)", rotulo: "não saiu" },
   [SITUACAO_ENVIO.PARCIAL]: { icone: "✖", tom: "var(--state-danger)", rotulo: "só uma parte saiu" },
+  [SITUACAO_ENVIO.INDETERMINADA]: { icone: "?", tom: NEUTRO, rotulo: "resultado indeterminado" },
   [SITUACAO_ENVIO.DESCONHECIDA]: { icone: "–", tom: NEUTRO, rotulo: "sem informação de envio" },
 });
 
@@ -96,6 +98,7 @@ export function frasePorCanal(c) {
       ? `${canal}: enviada${para}`
       : `${canal}: aceita pela Meta${para} — sem confirmação de entrega`;
   }
+  if (c?.status === "indeterminado") return `${canal}: resultado indeterminado${para} — confira o histórico antes de repetir`;
   if (c?.status === "enviando") return `${canal}: enviando${para}`;
   if (c?.status === "pendente") return `${canal}: na fila deste clique${para}`;
   return `${canal}: ${c?.status || "estado desconhecido"}${para}`;
@@ -131,7 +134,7 @@ export function lerEnvioDaGuia(guide) {
 
   const entregues = canais.filter(chegou);
   const falhados = canais.filter((c) => c.status === "falhou");
-  const aguardando = canais.filter((c) => String(c.canal).toUpperCase() !== "EMAIL" && c.status === "enviado");
+  const aguardando = canais.filter((c) => String(c.canal).toUpperCase() !== "EMAIL" && ["enviado", "enviando", "indeterminado"].includes(c.status));
   const tentados = canais.filter((c) => c.status !== "pendente");
 
   let situacao;
@@ -139,10 +142,12 @@ export function lerEnvioDaGuia(guide) {
     // ⚠ `jaEnviada` sem NENHUMA linha é a tolerância do legado (guias anteriores a `envios_guia`,
     // que valem pelo `emailStatus`). Ela é e-mail enviado — não um estado desconhecido.
     situacao = envio.jaEnviada ? SITUACAO_ENVIO.ENVIADA_EMAIL : SITUACAO_ENVIO.NAO_ENVIADA;
-  } else if (entregues.length && falhados.length) {
+  } else if ((entregues.length || aguardando.length) && falhados.length) {
     situacao = SITUACAO_ENVIO.PARCIAL;
   } else if (falhados.length && !entregues.length && !aguardando.length) {
     situacao = SITUACAO_ENVIO.FALHOU;
+  } else if (canais.some(c => c.status === "indeterminado")) {
+    situacao = SITUACAO_ENVIO.INDETERMINADA;
   } else if (entregues.some((c) => c.status === "lido")) {
     situacao = SITUACAO_ENVIO.LIDA;
   } else if (entregues.some((c) => c.status === "entregue")) {

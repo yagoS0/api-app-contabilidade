@@ -42,11 +42,38 @@ import { CODIGOS_LOCAIS } from "../errosMeta.js";
 const ok = (corpo) => ({ ok: true, status: 200, json: async () => corpo });
 const falha = (status, corpo) => ({ ok: false, status, json: async () => corpo });
 
+it("upload HTTP502 sem JSON não representa mensagem possivelmente aceita", async () => {
+  const cliente = clienteCom([{ ok: false, status: 502, json: async () => { throw new SyntaxError("invalid JSON"); } }]);
+  await expect(cliente.uploadDocumento({ conteudo: Buffer.from("%PDF"), nomeArquivo: "g.pdf" })).rejects.toMatchObject({ desfechoIndeterminado: false });
+});
+
 const RESPOSTA_ENVIO = {
   messaging_product: "whatsapp",
   contacts: [{ input: "5521999998888", wa_id: "5521999998888" }],
   messages: [{ id: "wamid.HBgNNTUyMTk5OTk5ODg4OA==" }],
 };
+
+describe("contrato de aceite e prazo em todo o corpo", () => {
+  it.each(["texto", "documento"])("%s recusa HTTP200 sem wamid", async (tipo) => {
+    const cliente = clienteCom(tipo === "documento" ? [ok({ id: "media-teste" }), ok({})] : [ok({})]);
+    const operacao = tipo === "texto"
+      ? cliente.enviarTexto({ telefone: "5521999998888", texto: "Teste local" })
+      : cliente.enviarDocumento({ telefone: "5521999998888", conteudo: Buffer.from("pdf-teste") });
+    await expect(operacao).rejects.toMatchObject({ codigo: CODIGOS_LOCAIS.SEM_WAMID });
+  });
+
+  it("aborta corpo que não termina mesmo depois de receber headers", async () => {
+    jest.useFakeTimers();
+    try {
+      const cliente = clienteCom([{ ok: true, status: 200, json: () => new Promise(() => {}) }], { timeoutMs: 10 });
+      const resultado = expect(cliente.enviarTexto({ telefone: "5521999998888", texto: "Teste" }))
+        .rejects.toMatchObject({ codigo: CODIGOS_LOCAIS.FALHA_DE_TRANSPORTE, desfechoIndeterminado: true });
+      await jest.advanceTimersByTimeAsync(11);
+      await resultado;
+      expect(fetchFalso.mock.calls[0][1].signal.aborted).toBe(true);
+    } finally { jest.useRealTimers(); }
+  });
+});
 
 let fetchFalso;
 let fetchNativoOriginal;
@@ -294,7 +321,7 @@ describe("erros da Meta viram WhatsappError com codigo + mensagemUsuario", () =>
     const cliente = clienteCom([{
       ok: false,
       status: 502,
-      json: async () => { throw new Error("Unexpected token < in JSON"); },
+      json: async () => { throw new SyntaxError("Unexpected token < in JSON"); },
     }]);
     const erro = await cliente.enviarTexto({ telefone: "5521999998888", texto: "oi" }).catch((e) => e);
     expect(erro.codigo).toBe(CODIGOS_LOCAIS.RESPOSTA_NAO_RECONHECIDA);
@@ -460,7 +487,7 @@ describe("⚠⚠ 200 sem identificador de mensagem é FALHA, não sucesso", () =
   it("⚠ e o upload continua com a MESMA guarda que já tinha — ela é o precedente", async () => {
     const cliente = clienteCom([ok({ messaging_product: "whatsapp" })]);
     await expect(cliente.uploadDocumento({ conteudo: Buffer.from("%PDF"), nomeArquivo: "g.pdf" }))
-      .rejects.toBeTruthy();
+      .rejects.toMatchObject({ desfechoIndeterminado: false });
   });
 });
 

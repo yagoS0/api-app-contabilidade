@@ -11,10 +11,13 @@
 // nele, e o backfill garante que nada nasce sem histórico).
 
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { randomUUID } from "node:crypto";
+
+const transacao = (client, executar) => typeof client.$transaction === "function" ? client.$transaction(executar) : executar(client);
 
 export const CANAL = Object.freeze({ EMAIL: "EMAIL", WHATSAPP: "WHATSAPP" });
 
-/** Estados em que não há mais nada a fazer — a guia chegou. */
+/** Estados que bloqueiam repetição automática; WhatsApp enviado significa aceite, não entrega. */
 export const STATUS_TERMINAL = Object.freeze(["enviado", "entregue", "lido"]);
 
 /**
@@ -67,9 +70,11 @@ export async function registrarEnvio({ guideId, canal, destino, reenviar = false
   // ⚠ A CHAVE INCLUI O DESTINO desde 05/09/2026: mandar a mesma guia para OUTRO telefone não é
   // repetir, é outro destinatário. `destino` nulo é a linha LEGADA (ver `linhaLegadoDoEmail`).
   const alvo = destino || null;
-  const existente = await tx.envioGuia.findFirst({
-    where: { guideId: String(guideId), canal, destino: alvo },
-  });
+  const chave = { guideId: String(guideId), canal, destino: alvo };
+  const existente = await tx.envioGuia.findFirst({ where: chave });
+  if (existente && ["enviando", "indeterminado", "pendente"].includes(existente.status)) {
+    return { envio: existente, jaEnviado: false, emAndamento: existente.status !== "pendente" };
+  }
   if (existente && STATUS_TERMINAL.includes(existente.status)) {
     // ⚠ REENVIAR É DECISÃO DO CONTADOR, e ele a toma depois de a tela dizer que a guia já foi
     // (decisão do dono, 05/09/2026). Sem o pedido explícito, o comportamento é o de antes: recusa.
@@ -78,18 +83,23 @@ export async function registrarEnvio({ guideId, canal, destino, reenviar = false
     if (!reenviar) return { envio: existente, jaEnviado: true };
   }
   if (existente) {
-    // Retentativa limpa o erro anterior: erro velho ao lado de uma tentativa nova confunde mais que
-    // ajuda, e o histórico do que falhou vive no log.
-    const envio = await tx.envioGuia.update({
-      where: { id: existente.id },
+    // A linha mostra a tentativa atual; erros anteriores permanecem no histórico de tentativas.
+    const r = await tx.envioGuia.updateMany({
+      where: { id: existente.id, status: existente.status, updatedAt: existente.updatedAt },
       data: { status: "pendente", erroCodigo: null, erroMensagemUsuario: null },
     });
-    return { envio, jaEnviado: false, reenvio: STATUS_TERMINAL.includes(existente.status) };
+    const envio = await tx.envioGuia.findFirst({ where: chave });
+    return { envio, jaEnviado: false, emAndamento: r.count !== 1 && envio?.status !== "pendente", reenvio: r.count === 1 && STATUS_TERMINAL.includes(existente.status) };
   }
-  const envio = await tx.envioGuia.create({
-    data: { guideId: String(guideId), canal, destino: alvo, status: "pendente" },
-  });
-  return { envio, jaEnviado: false };
+  try {
+    const envio = await tx.envioGuia.create({ data: { ...chave, status: "pendente" } });
+    return { envio, jaEnviado: false };
+  } catch (err) {
+    if (err?.code !== "P2002") throw err;
+    const envio = await tx.envioGuia.findFirst({ where: chave });
+    if (!envio) throw err;
+    return { envio, jaEnviado: STATUS_TERMINAL.includes(envio.status), emAndamento: envio.status !== "pendente" };
+  }
 }
 
 /**
@@ -108,11 +118,20 @@ export async function registrarEnvio({ guideId, canal, destino, reenviar = false
  * `enviando` não autoriza (há um envio em curso), e os terminais já foram barrados lá em cima.
  */
 export async function marcarEnviando(envioId, tx = prisma) {
-  const r = await tx.envioGuia.updateMany({
-    where: { id: String(envioId), status: "pendente" },
-    data: { status: "enviando", tentativas: { increment: 1 } },
+  return transacao(tx, async (client) => {
+    const tentativaId = randomUUID();
+    const r = await client.envioGuia.updateMany({
+      where: { id: String(envioId), status: "pendente" },
+      data: {
+        status: "enviando", tentativas: { increment: 1 }, tentativaAtualId: tentativaId,
+        providerMessageId: null, enviadoEm: null, entregueEm: null, lidoEm: null,
+        erroCodigo: null, erroMensagemUsuario: null, proximaTentativaEm: null,
+      },
+    });
+    if (r.count !== 1) return { reservado: false, tentativaId: null };
+    await client.envioGuiaTentativa.create({ data: { id: tentativaId, envioGuiaId: String(envioId), status: "enviando" } });
+    return { reservado: true, tentativaId };
   });
-  return { reservado: r.count === 1 };
 }
 
 /**
@@ -162,7 +181,7 @@ export function linhaLegadoDoEmail(guide) {
 }
 
 /**
- * Grava a linha acima, se houver e se ainda não existir. Idempotente pela unique `(guideId, canal)`.
+ * Grava a linha acima se ainda não existir, protegida pelo índice parcial de legado sem destino.
  *
  * Devolve `{ materializou }` — o chamador registra isso no log/resposta, porque é uma escrita que
  * ninguém pediu explicitamente e que muda o que a tela responde sobre aquela guia.
@@ -177,11 +196,19 @@ export async function materializarEnvioDeEmailLegado(guide, tx = prisma) {
     where: { guideId: linha.guideId, canal: linha.canal, destino: null },
   });
   if (existente) return { materializou: false };
-  await tx.envioGuia.create({ data: linha });
-  return { materializou: true };
+  try {
+    await tx.envioGuia.create({ data: linha });
+    return { materializou: true };
+  } catch (err) {
+    if (err?.code !== "P2002") throw err;
+    return { materializou: false };
+  }
 }
 
-export async function marcarEnviado({ envioId, providerMessageId }, tx = prisma) {
+export async function marcarEnviado({ envioId, providerMessageId, tentativaId }, tx = prisma) {
+  if (tentativaId) {
+    return finalizarTentativa({ envioId, tentativaId, status: "enviado", providerMessageId, aceitoEm: new Date() }, tx);
+  }
   return tx.envioGuia.update({
     where: { id: String(envioId) },
     data: {
@@ -200,7 +227,8 @@ export async function marcarEnviado({ envioId, providerMessageId }, tx = prisma)
  * o contador tem que fazer, não um número. Mesma lição do `validation_failed`, que exibia o código
  * e escondia o campo.
  */
-export async function marcarFalhou({ envioId, codigo, mensagemUsuario, proximaTentativaEm }, tx = prisma) {
+export async function marcarFalhou({ envioId, codigo, mensagemUsuario, proximaTentativaEm, tentativaId }, tx = prisma) {
+  if (tentativaId) return finalizarTentativa({ envioId, tentativaId, status: "falhou", erroCodigo: codigo, erroMensagemUsuario: mensagemUsuario }, tx);
   return tx.envioGuia.update({
     where: { id: String(envioId) },
     data: {
@@ -212,40 +240,75 @@ export async function marcarFalhou({ envioId, codigo, mensagemUsuario, proximaTe
   });
 }
 
+export async function marcarIndeterminado({ envioId, tentativaId, providerMessageId, mensagemUsuario }, tx = prisma) {
+  return finalizarTentativa({ envioId, tentativaId, status: "indeterminado", providerMessageId,
+    erroCodigo: "ENVIO_INDETERMINADO", erroMensagemUsuario: mensagemUsuario }, tx);
+}
+
+async function finalizarTentativa({ envioId, tentativaId, status, providerMessageId, aceitoEm, erroCodigo = null, erroMensagemUsuario = null }, tx) {
+  return transacao(tx, async (client) => {
+    const dados = { status, erroCodigo, erroMensagemUsuario,
+      ...(providerMessageId ? { providerMessageId } : {}), ...(aceitoEm ? { aceitoEm } : {}) };
+    // Um webhook pode ter confirmado a entrega antes do término do request original.
+    const r = await client.envioGuiaTentativa.updateMany({
+      where: { id: tentativaId, envioGuiaId: String(envioId), status: { in: ["enviando", "indeterminado"] } }, data: dados,
+    });
+    if (r.count === 1) {
+      await client.envioGuia.updateMany({
+        where: { id: String(envioId), tentativaAtualId: tentativaId, status: { in: ["enviando", "indeterminado"] } },
+        data: { status, erroCodigo, erroMensagemUsuario, proximaTentativaEm: null,
+          ...(providerMessageId ? { providerMessageId } : {}), ...(aceitoEm ? { enviadoEm: aceitoEm } : {}) },
+      });
+    }
+    return client.envioGuia.findFirst({ where: { id: String(envioId) } });
+  });
+}
+
 /**
  * Status vindo do webhook (`delivered` / `read`).
  *
  * ⚠ NUNCA REBAIXA. A Meta entrega eventos fora de ordem: um `delivered` atrasado chegando depois do
- * `read` faria a mensagem "desler". A comparação por peso é o que impede isso.
+ * `read` faria a mensagem "desler". A escrita condicional no estado anterior impede isso.
  */
 export async function aplicarStatusDoProvedor({ providerMessageId, status, ocorridaEmProvedor = null }, tx = prisma) {
-  const envio = await tx.envioGuia.findFirst({ where: { providerMessageId: String(providerMessageId) } });
-  if (!envio) return null;
-
-  const peso = { pendente: 0, enviando: 1, enviado: 2, entregue: 3, lido: 4 };
-  const novo = status === "read" ? "lido" : status === "delivered" ? "entregue" : "enviado";
-  // ⚠ Mesmo peso ou menor: nada muda. Devolve o envio com `mudou: false` — antes devolvia o envio
-  // cru, e `processarStatus` contava como APLICADO. O `sent` da Meta (que sempre empata com o nosso
-  // `enviado`) inflava o resumo do webhook: "1 status aplicado" sobre zero mudança de estado.
-  if ((peso[novo] ?? 0) <= (peso[envio.status] ?? 0)) return { envio, mudou: false, anterior: envio.status };
-
-  // ⚠⚠ O INSTANTE É O DA META, NÃO O NOSSO. `ocorridaEmProvedor` chega no `statuses[]` e era
-  // DESCARTADO: gravávamos `new Date()`, ou seja, a hora em que NÓS processamos o webhook. Numa
-  // reentrega da Meta (que pode vir horas depois) isso registra uma entrega que não aconteceu
-  // naquele instante. Sem o dado dela, o nosso relógio continua sendo a rede.
+  const novo = status === "read" ? "lido" : status === "delivered" ? "entregue" : status === "sent" ? "enviado" : null;
+  if (!novo || !providerMessageId) return null;
   const quando = ocorridaEmProvedor instanceof Date && !Number.isNaN(ocorridaEmProvedor.getTime())
     ? ocorridaEmProvedor
     : new Date();
+  return aplicarEvento({ providerMessageId, novo, quando }, tx);
+}
 
-  const atualizado = await tx.envioGuia.update({
-    where: { id: envio.id },
-    data: {
-      status: novo,
+async function aplicarEvento({ providerMessageId, novo, quando, codigo, mensagemUsuario }, tx) {
+  return transacao(tx, async (client) => {
+    const tentativa = await client.envioGuiaTentativa.findUnique({ where: { providerMessageId: String(providerMessageId) } });
+    const envio = await client.envioGuia.findFirst({ where: tentativa ? { id: tentativa.envioGuiaId } : { providerMessageId: String(providerMessageId) } });
+    if (!envio) return null;
+    const anterior = tentativa?.status || envio.status;
+    // `sent` atrasado nunca apaga falha. Entrega/leitura são evidência mais forte.
+    const permitidos = novo === "lido" ? ["pendente", "enviando", "indeterminado", "enviado", "falhou", "entregue"]
+      : novo === "entregue" ? ["pendente", "enviando", "indeterminado", "enviado", "falhou"]
+        : novo === "enviado" ? ["pendente", "enviando", "indeterminado"]
+          : ["pendente", "enviando", "indeterminado", "enviado"];
+    if (!permitidos.includes(anterior)) return { envio, mudou: false, aplicada: false, anterior,
+      motivo: novo === "falhou" && ["entregue", "lido"].includes(anterior) ? "CHEGADA_JA_CONFIRMADA" : null };
+    const dados = { status: novo,
+      erroCodigo: novo === "falhou" ? codigo || null : null,
+      erroMensagemUsuario: novo === "falhou" ? mensagemUsuario || null : null,
       ...(novo === "entregue" ? { entregueEm: quando } : {}),
-      ...(novo === "lido" ? { lidoEm: quando, entregueEm: envio.entregueEm || quando } : {}),
-    },
+      ...(novo === "lido" ? { lidoEm: quando, entregueEm: (tentativa ? tentativa.entregueEm : envio.entregueEm) || quando } : {}),
+    };
+    let mudou = false;
+    if (tentativa) {
+      const r = await client.envioGuiaTentativa.updateMany({ where: { id: tentativa.id, providerMessageId: String(providerMessageId), status: { in: permitidos } }, data: dados });
+      mudou = r.count === 1;
+      if (mudou) await client.envioGuia.updateMany({ where: { id: envio.id, tentativaAtualId: tentativa.id, status: { in: permitidos } }, data: { ...dados, proximaTentativaEm: null } });
+    } else {
+      const r = await client.envioGuia.updateMany({ where: { id: envio.id, providerMessageId: String(providerMessageId), status: { in: permitidos } }, data: { ...dados, proximaTentativaEm: null } });
+      mudou = r.count === 1;
+    }
+    return { envio: await client.envioGuia.findFirst({ where: { id: envio.id } }), mudou, aplicada: mudou, anterior, motivo: null };
   });
-  return { envio: atualizado, mudou: true, anterior: envio.status };
 }
 
 /**
@@ -277,16 +340,8 @@ export async function aplicarStatusDoProvedor({ providerMessageId, status, ocorr
  *   envio de guia nenhum).
  */
 export async function aplicarFalhaDoProvedor({ providerMessageId, codigo, mensagemUsuario }, tx = prisma) {
-  const envio = await tx.envioGuia.findFirst({ where: { providerMessageId: String(providerMessageId) } });
-  if (!envio) return null;
-  if (envio.status === "entregue" || envio.status === "lido") {
-    return { envio, aplicada: false, motivo: "CHEGADA_JA_CONFIRMADA" };
-  }
-  const atualizado = await marcarFalhou(
-    { envioId: envio.id, codigo, mensagemUsuario, proximaTentativaEm: null },
-    tx,
-  );
-  return { envio: atualizado, aplicada: true, motivo: null };
+  if (!providerMessageId) return null;
+  return aplicarEvento({ providerMessageId, novo: "falhou", codigo, mensagemUsuario }, tx);
 }
 
 /** Envios de um conjunto de guias, agrupados — uma query para a listagem inteira. */

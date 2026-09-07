@@ -116,7 +116,7 @@ export function estadoDaResposta(conversa) {
   if (!j) return { pode: false, motivo: "Ainda não sei se a janela de 24h está aberta.", situacao: null };
   if (j.situacao === "ABERTA") return { pode: true, motivo: null, situacao: j.situacao };
   if (j.situacao === "NUNCA_ABERTA") return { pode: false, motivo: "Este cliente nunca escreveu por aqui: a Meta só aceita texto livre nas 24h seguintes a uma mensagem dele. Iniciar exige um modelo aprovado.", situacao: j.situacao };
-  if (j.situacao === "EXPIRADA") return { pode: false, motivo: "A janela de 24h desde a última mensagem do cliente fechou: só modelo aprovado agora (o modelo reabrir_conversa ainda não foi aprovado na Meta).", situacao: j.situacao };
+  if (j.situacao === "EXPIRADA") return { pode: false, motivo: "A janela de 24h desde a última mensagem do cliente fechou: só modelo aprovado agora — confira a disponibilidade do modelo de reabertura.", situacao: j.situacao };
   return { pode: false, motivo: "A janela de 24h não pôde ser calculada — confira antes de responder.", situacao: j.situacao };
 }
 
@@ -145,9 +145,8 @@ export function ordenarConversas(lista) {
 /**
  * ⚠ O QUE VEIO, quando não é texto.
  *
- * O webhook grava **todo** tipo de mensagem com o `tipo` cru da Meta e o ponteiro da mídia — mas
- * este sistema **ainda não baixa arquivo**, então o balão mostrava `[image]`, que não é frase nem
- * explicação. Aqui ele vira uma frase que diz o que chegou **e** que não dá para abrir ainda.
+ * Imagens e documentos recebidos são conferidos em Lançamentos > A lançar.
+ * O balão não promete que o download já terminou; a fila apresenta o estado real.
  *
  * ⚠ Lista FECHADA: tipo que a Meta inventar amanhã aparece **como veio**, nunca vira o nome do
  * vizinho mais parecido.
@@ -167,12 +166,9 @@ export function descricaoDaMidia(m) {
   if (tipo === "text" || tipo === "template") return null;
   const nome = MIDIA[tipo];
   if (!nome) return `mensagem de tipo "${tipo || "desconhecido"}" — não sei exibir`;
-  // ⚠⚠ A RESSALVA É SOBRE O QUE CHEGA, NUNCA SOBRE O QUE SAI (defeito visto no navegador em
-  // 06/09/2026). Num documento que o ESCRITÓRIO acabou de mandar, "este sistema ainda não baixa
-  // arquivos" é falso e confunde: o arquivo saiu daqui, não há nada a baixar — e o balão já traz o
-  // nome dele no corpo. A limitação é a de LER a mídia do cliente.
-  if (m?.direcao === "out") return `📎 ${nome} enviado pelo escritório`;
-  return `📎 ${nome} — este sistema ainda não baixa arquivos do WhatsApp`;
+  if (m?.direcao === "out") return `📎 ${nome} do escritório`;
+  if (["document", "image"].includes(tipo)) return `📎 ${nome} — confira o arquivo em Lançamentos > A lançar`;
+  return `📎 ${nome} — este tipo de mídia não pode ser aberto neste chat`;
 }
 
 /**
@@ -184,4 +180,16 @@ export function frasePaginacao(temMais) {
   if (temMais === true) return "Há mensagens mais antigas que não foram carregadas.";
   if (temMais === false) return null;
   return "Não dá para afirmar que esta é a conversa inteira.";
+}
+
+export function estadoDaMensagem(m) {
+  if (m?.direcao !== "out") return null;
+  const estados = {
+    pendente: "Pedido registrado, aguardando envio", enviando: "Envio em andamento",
+    enviado: "Aceita pela Meta · aguardando entrega", entregue: "Entregue", lido: "Lida",
+    falhou: "Não entregue", indeterminado: "Resultado indeterminado · confira antes de reenviar",
+  };
+  const texto = estados[m.statusEnvio] || "Entrega não confirmada";
+  return { texto: m.erroEnvio?.mensagem ? `${texto}: ${m.erroEnvio.mensagem}` : texto,
+    tom: m.statusEnvio === "falhou" ? "erro" : ["entregue", "lido"].includes(m.statusEnvio) ? "ok" : "pendente" };
 }

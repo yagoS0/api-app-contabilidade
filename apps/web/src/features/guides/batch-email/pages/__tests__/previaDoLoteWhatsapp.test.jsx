@@ -135,7 +135,7 @@ describe("a prévia vem antes, e a confirmação repete os números", () => {
       enviarPorEmail: true,
     });
     const resultado = await screen.findByTestId("resultado-whatsapp");
-    expect(resultado).toHaveTextContent(/1.*de 1 enviada/);
+    expect(resultado).toHaveTextContent(/1.*de 1 pedido/);
     expect(screen.queryByTestId("previa-whatsapp")).toBeNull();
   });
 

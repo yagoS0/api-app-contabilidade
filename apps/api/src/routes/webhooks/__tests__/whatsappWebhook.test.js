@@ -46,13 +46,13 @@ function log() {
  * O app do teste é montado como o `server.js`: o webhook ANTES do `express.json()` global.
  * `jsonPrimeiro` inverte a ordem de propósito — é a armadilha que a montagem existe para evitar.
  */
-function montarApp({ processar, jsonPrimeiro = false, logger = log(), ...cfg } = {}) {
+function montarApp({ persistir = jest.fn(async () => ({id:"inbox-1"})), jsonPrimeiro = false, logger = log(), ...cfg } = {}) {
   const app = express();
   const router = createWhatsappWebhookRouter({
     habilitada: true,
     appSecret: APP_SECRET,
     verifyToken: VERIFY_TOKEN,
-    processar,
+    persistir,
     log: logger,
     ...cfg,
   });
@@ -108,8 +108,8 @@ describe("GET — o handshake da tela \"Verificar e salvar\" da Meta", () => {
 
 describe("POST — a assinatura é a autenticação", () => {
   test("assinatura correta: 200 e o evento é processado, com o payload já parseado", async () => {
-    const processar = jest.fn().mockResolvedValue({ mensagens: {}, statuses: {}, erros: [] });
-    const { app } = montarApp({ processar });
+    const persistir = jest.fn().mockResolvedValue({ mensagens: {}, statuses: {}, erros: [] });
+    const { app } = montarApp({ persistir });
 
     const r = await request(app)
       .post(CAMINHO_WEBHOOK_WHATSAPP)
@@ -119,13 +119,13 @@ describe("POST — a assinatura é a autenticação", () => {
 
     expect(r.status).toBe(200);
     await proximoTick();
-    expect(processar).toHaveBeenCalledTimes(1);
-    expect(processar.mock.calls[0][0]).toEqual(EVENTO);
+    expect(persistir).toHaveBeenCalledTimes(1);
+    expect(persistir.mock.calls[0][0]).toEqual(EVENTO);
   });
 
   test("⚠ UM BYTE alterado no corpo é recusado, e nada é processado", async () => {
-    const processar = jest.fn();
-    const { app } = montarApp({ processar });
+    const persistir = jest.fn();
+    const { app } = montarApp({ persistir });
     const adulterado = CORPO.replace("wamid.IN1", "wamid.IN2");
 
     const r = await request(app)
@@ -136,12 +136,12 @@ describe("POST — a assinatura é a autenticação", () => {
 
     expect(r.status).toBe(403);
     await proximoTick();
-    expect(processar).not.toHaveBeenCalled();
+    expect(persistir).not.toHaveBeenCalled();
   });
 
   test("assinatura de outro segredo é recusada", async () => {
-    const processar = jest.fn();
-    const { app } = montarApp({ processar });
+    const persistir = jest.fn();
+    const { app } = montarApp({ persistir });
     const r = await request(app)
       .post(CAMINHO_WEBHOOK_WHATSAPP)
       .set("Content-Type", "application/json")
@@ -149,12 +149,12 @@ describe("POST — a assinatura é a autenticação", () => {
       .send(CORPO);
 
     expect(r.status).toBe(403);
-    expect(processar).not.toHaveBeenCalled();
+    expect(persistir).not.toHaveBeenCalled();
   });
 
   test("header ausente é recusado", async () => {
-    const processar = jest.fn();
-    const { app } = montarApp({ processar });
+    const persistir = jest.fn();
+    const { app } = montarApp({ persistir });
     const r = await request(app)
       .post(CAMINHO_WEBHOOK_WHATSAPP)
       .set("Content-Type", "application/json")
@@ -162,12 +162,12 @@ describe("POST — a assinatura é a autenticação", () => {
 
     expect(r.status).toBe(403);
     expect(r.body.error).toBe("whatsapp_webhook_assinatura_invalida");
-    expect(processar).not.toHaveBeenCalled();
+    expect(persistir).not.toHaveBeenCalled();
   });
 
   test("⚠ SEM APP SECRET NÃO VIRA 'ACEITA TUDO': 503, nada processado, log de erro", async () => {
-    const processar = jest.fn();
-    const { app, logger } = montarApp({ processar, appSecret: "" });
+    const persistir = jest.fn();
+    const { app, logger } = montarApp({ persistir, appSecret: "" });
 
     const r = await request(app)
       .post(CAMINHO_WEBHOOK_WHATSAPP)
@@ -178,13 +178,13 @@ describe("POST — a assinatura é a autenticação", () => {
     expect(r.status).toBe(503);
     expect(r.body.error).toBe("whatsapp_webhook_nao_configurado");
     await proximoTick();
-    expect(processar).not.toHaveBeenCalled();
+    expect(persistir).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalled();
   });
 
   test("⚠ MONTADO DEPOIS DO express.json(): a assinatura não confere, e o motivo aponta a montagem", async () => {
-    const processar = jest.fn();
-    const { app, logger } = montarApp({ processar, jsonPrimeiro: true });
+    const persistir = jest.fn();
+    const { app, logger } = montarApp({ persistir, jsonPrimeiro: true });
 
     const r = await request(app)
       .post(CAMINHO_WEBHOOK_WHATSAPP)
@@ -194,13 +194,13 @@ describe("POST — a assinatura é a autenticação", () => {
 
     expect(r.status).toBe(503);
     expect(r.body.reason).toMatch(/express\.raw/);
-    expect(processar).not.toHaveBeenCalled();
+    expect(persistir).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalled();
   });
 
   test("corpo assinado que não é JSON responde 400 (a Meta reentrega) e não é processado", async () => {
-    const processar = jest.fn();
-    const { app, logger } = montarApp({ processar });
+    const persistir = jest.fn();
+    const { app, logger } = montarApp({ persistir });
     const lixo = "isto não é json";
 
     const r = await request(app)
@@ -211,13 +211,13 @@ describe("POST — a assinatura é a autenticação", () => {
 
     expect(r.status).toBe(400);
     await proximoTick();
-    expect(processar).not.toHaveBeenCalled();
+    expect(persistir).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalled();
   });
 
   test("Content-Type inesperado NÃO derruba a conferência — a assinatura é sobre os bytes", async () => {
-    const processar = jest.fn().mockResolvedValue({});
-    const { app } = montarApp({ processar });
+    const persistir = jest.fn().mockResolvedValue({});
+    const { app } = montarApp({ persistir });
 
     const r = await request(app)
       .post(CAMINHO_WEBHOOK_WHATSAPP)
@@ -227,37 +227,24 @@ describe("POST — a assinatura é a autenticação", () => {
 
     expect(r.status).toBe(200);
     await proximoTick();
-    expect(processar).toHaveBeenCalledTimes(1);
+    expect(persistir).toHaveBeenCalledTimes(1);
   });
 
-  test("⚠ a resposta 200 NÃO espera o processamento — e o erro dele não vira erro de resposta", async () => {
-    let liberar;
-    const processar = jest.fn(() => new Promise((_, rejeitar) => { liberar = () => rejeitar(new Error("caiu")); }));
-    const { app, logger } = montarApp({ processar });
-
-    const r = await request(app)
-      .post(CAMINHO_WEBHOOK_WHATSAPP)
-      .set("Content-Type", "application/json")
-      .set("X-Hub-Signature-256", assinar(CORPO))
-      .send(CORPO);
-
-    expect(r.status).toBe(200); // já respondeu, com o processamento ainda pendurado
-    await proximoTick();
-    liberar();
-    await proximoTick();
-    await proximoTick();
-    // ⚠ Processar "depois" não pode virar processar "nunca" em silêncio: a queda aparece em log.
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ err: "caiu" }),
-      "WhatsApp: processamento do evento do webhook falhou por inteiro",
-    );
+  test("o ACK espera a persistência durável; falha de banco devolve503", async () => {
+    const persistir = jest.fn(async () => { throw Object.assign(new Error("banco indisponível"), {code:"P1001"}); });
+    const {app,logger}=montarApp({persistir});
+    const r=await request(app).post(CAMINHO_WEBHOOK_WHATSAPP).set("Content-Type","application/json").set("X-Hub-Signature-256",assinar(CORPO)).send(CORPO);
+    expect(r.status).toBe(503);
+    expect(r.body.error).toBe("whatsapp_webhook_persistencia_indisponivel");
+    expect(persistir).toHaveBeenCalledWith(EVENTO,{corpoRaw:Buffer.from(CORPO)});
+    expect(logger.error).toHaveBeenCalled();
   });
 
   test("evento REENTREGUE (mesmo corpo, mesma assinatura) responde 200 as duas vezes", async () => {
     // ⚠ Responder erro na reentrega faria a Meta reentregar indefinidamente. A idempotência é do
     // banco (UNIQUE do wamid); do fluxo é só não transformar duplicata em erro.
-    const processar = jest.fn().mockResolvedValue({});
-    const { app } = montarApp({ processar });
+    const persistir = jest.fn().mockResolvedValue({});
+    const { app } = montarApp({ persistir });
     const enviar = () =>
       request(app)
         .post(CAMINHO_WEBHOOK_WHATSAPP)
@@ -268,7 +255,7 @@ describe("POST — a assinatura é a autenticação", () => {
     expect((await enviar()).status).toBe(200);
     expect((await enviar()).status).toBe(200);
     await proximoTick();
-    expect(processar).toHaveBeenCalledTimes(2);
+    expect(persistir).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -286,8 +273,8 @@ describe("a flag nasce OFF — e desligado responde de forma DECLARADA", () => {
   });
 
   test("POST desligado: 503, mesmo com assinatura VÁLIDA, e nada é processado", async () => {
-    const processar = jest.fn();
-    const { app } = montarApp({ habilitada: false, processar });
+    const persistir = jest.fn();
+    const { app } = montarApp({ habilitada: false, persistir });
 
     const r = await request(app)
       .post(CAMINHO_WEBHOOK_WHATSAPP)
@@ -298,6 +285,6 @@ describe("a flag nasce OFF — e desligado responde de forma DECLARADA", () => {
     expect(r.status).toBe(503);
     expect(r.body.error).toBe("whatsapp_webhook_desligado");
     await proximoTick();
-    expect(processar).not.toHaveBeenCalled();
+    expect(persistir).not.toHaveBeenCalled();
   });
 });

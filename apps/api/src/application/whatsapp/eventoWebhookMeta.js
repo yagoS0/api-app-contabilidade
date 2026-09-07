@@ -231,6 +231,8 @@ export function lerEventoWebhook(payload, agora = new Date()) {
           tipo: typeof msg?.type === "string" ? msg.type : null,
           corpo: extrairCorpo(msg),
           midiaProvedorId: extrairMidiaProvedorId(msg),
+          nomeArquivo: typeof msg?.document?.filename === "string" ? msg.document.filename : null,
+          mimeType: typeof msg?.[msg?.type]?.mime_type === "string" ? msg[msg.type].mime_type : null,
           ocorridaEmProvedor: instante,
           nomePerfilProvedor: nomeDePerfil(value, msg?.from),
           avisos: proprios,

@@ -106,6 +106,7 @@ describe("⚠⚠ o bloco `envio` não atravessa para o cliente", () => {
       {
         canal: "WHATSAPP",
         status: "entregue",
+        tentativaAtualId: "tentativa-publica-escritorio",
         destino: "5521999998888",
         enviadoEm: new Date(),
         entregueEm: new Date(),
@@ -121,6 +122,7 @@ describe("⚠⚠ o bloco `envio` não atravessa para o cliente", () => {
     expect(r.envio).toBeTruthy();
     expect(r.envio.canais[0]).toMatchObject({ canal: "WHATSAPP", status: "entregue", destino: "5521999998888" });
     expect(r.envio.chegouAoCliente).toBe(true);
+    expect(r.envio.canais[0].tentativaId).toBe("tentativa-publica-escritorio");
   });
 
   it("⚠⚠ o CLIENTE não recebe NADA disso", () => {
@@ -128,6 +130,7 @@ describe("⚠⚠ o bloco `envio` não atravessa para o cliente", () => {
     expect(r.envio).toBeUndefined();
     // ⚠ Nem por acidente noutro campo: o telefone de outro destinatário não pode estar no JSON.
     expect(JSON.stringify(r)).not.toContain("5521999998888");
+    expect(JSON.stringify(r)).not.toContain("tentativa-publica-escritorio");
   });
 
   it("⚠ e o default é o público mais ESTREITO — chamador que esquecer o parâmetro não vaza", () => {

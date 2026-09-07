@@ -24,7 +24,7 @@ import { AssistenteClient, traduzirErro } from "../assistente/AssistenteClient.j
 import { FINALIDADE_IA, autorizarChamadaIa, concluirChamadaIa } from "../assistente/GuardaIaService.js";
 import { custoEstimadoCentavos } from "../assistente/precosIa.js";
 import { listarFila } from "./DeclaradoService.js";
-import { memoriaDaEmpresa, planoDaEmpresa } from "./RegraService.js";
+import { memoriaDaEmpresa, planoDaEmpresa, sugerirContaParaLote } from "./RegraService.js";
 import { ESTADO } from "./lib/estadosDeclarado.js";
 import { LOTE_MAXIMO, emLotes, lerResposta, linhasParaIa, montarPedido } from "./lib/classificacaoPorIa.js";
 
@@ -62,9 +62,18 @@ async function filaInteira({ portalClientId, competencia, client }) {
  * recusada entre a leitura e a escrita — aí não há mais o que propor).
  */
 async function gravarPropostas({ propostas, portalClientId, modelo, agora, client }) {
+  return client.$transaction(async (tx) => {
+  const atuais = await tx.lancamentoDeclarado.findMany({ where: { portalClientId: String(portalClientId), id: { in: propostas.map((p) => p.id) }, estado: { in: ESTADOS_LANCAVEIS } } });
+  // Não use listarFila aqui: ele engole falha do motor. Na escrita a regra deve ser conferida.
+  const sugestoes = await sugerirContaParaLote({ portalClientId, declarados: atuais, client: tx });
+  const porId = new Map(sugestoes.map((s) => [s.id, s]));
+  const elegiveis = new Set(linhasParaIa(atuais.map((d) => ({ ...d, sugestao: porId.get(d.id) || null }))).map((d) => d.id));
+  const planoAtual = await planoDaEmpresa(portalClientId, tx);
+  const validadas = lerResposta(JSON.stringify({ propostas }), { plano: planoAtual, idsEsperados: propostas.map((p) => p.id) }).propostas;
   let gravadas = 0;
-  for (const p of propostas) {
-    const r = await client.lancamentoDeclarado.updateMany({
+  for (const p of validadas) {
+    if (!elegiveis.has(p.id)) continue;
+    const r = await tx.lancamentoDeclarado.updateMany({
       where: { id: p.id, portalClientId: String(portalClientId), estado: { in: ESTADOS_LANCAVEIS } },
       data: {
         contaSugeridaIa: p.debito,
@@ -77,6 +86,7 @@ async function gravarPropostas({ propostas, portalClientId, modelo, agora, clien
     gravadas += Number(r?.count || 0);
   }
   return gravadas;
+  }, { isolationLevel: "Serializable" });
 }
 
 /**
@@ -184,7 +194,12 @@ export async function classificarFila({
 
     relatorio.propostas += leitura.propostas.length;
     relatorio.recusadas.push(...leitura.recusadas);
-    relatorio.gravadas += await gravarPropostas({ propostas: leitura.propostas, portalClientId, modelo: IA_MODELO, agora, client });
+    try {
+      relatorio.gravadas += await gravarPropostas({ propostas: leitura.propostas, portalClientId, modelo: IA_MODELO, agora, client });
+    } catch (e) {
+      relatorio.erros.push({ lote: i + 1, codigo: "CONFERENCIA_ALTERADA", mensagem: "A fila ou suas regras mudaram durante a sugestão; nenhuma proposta deste lote foi aplicada." });
+      log?.warn?.({ portalClientId, lote: i + 1, codigo: e?.code }, "IA: reconferência do lote recusou a escrita");
+    }
   }
 
   return relatorio;

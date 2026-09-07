@@ -3,6 +3,7 @@ import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
 import { parseOfx } from "../../application/accounting/lib/ofx.js";
+import { importarOfxWhatsapp, ImportarOfxWhatsappError } from "../../application/accounting/ImportarOfxWhatsappService.js";
 import { generateEntriesFromCircular, resolveRule, applyTemplate, formatCompetenciaLabel, lookupAccountsFromHistorico } from "../../application/accounting/AccountingEntryGeneratorService.js";
 import { syncPgdasByCompetencia } from "../../application/fiscal/serpro/SerproPgdasDeclaracaoService.js";
 import { resolvePayrollTemplate } from "../../application/accounting/payrollTemplate.js";
@@ -3611,8 +3612,10 @@ export function createAccountingEntriesRouter({ log }) {
       if (!transactions.length) return res.status(400).json({ error: "transactions_required" });
 
       const loteImportacao = `OFX-${Date.now()}`;
+      const arquivoWhatsappId = String(body.arquivoWhatsappId || "").trim();
       const created = [];
       const failed = [];
+      let resultadoImportacao;
 
       // Mesma guarda do Excel, pelo mesmo motivo: o import é uma porta de lançamento como outra
       // qualquer, e conta de agregação é recusada pela ECD venha ela de onde vier.
@@ -3622,7 +3625,7 @@ export function createAccountingEntriesRouter({ log }) {
       ]);
 
       try {
-        await prisma.$transaction(async (tx) => {
+        const persistir = async (tx) => {
           for (const t of transactions) {
             const contaDebito = String(t.contaDebito || "").trim();
             const contaCredito = String(t.contaCredito || "").trim();
@@ -3671,15 +3674,20 @@ export function createAccountingEntriesRouter({ log }) {
             });
             created.push({ rowIndex: t.rowIndex, entryId: entry.id });
           }
-        });
+          return { ok: true, created: created.length, failed: failed.length, loteImportacao, details: { created, failed } };
+        };
+        resultadoImportacao = arquivoWhatsappId
+          ? await importarOfxWhatsapp({ arquivoWhatsappId, portalClientId, executar: persistir })
+          : await prisma.$transaction(persistir);
       } catch (err) {
+        if (err instanceof ImportarOfxWhatsappError) return res.status(err.status).json({ ok: false, error: err.codigo, message: err.message, details: err.details });
         log.error({ err }, "Erro ao importar OFX (commit)");
         return res.status(500).json({ error: "internal_error", message: err?.message });
       }
 
       // Auto-save de histórico (fora da transaction principal — falha por linha não derruba o batch).
       // text = descrição OFX (chave de match) | historicoSugerido = histórico contábil digitado pelo contador.
-      if (userId) {
+      if (userId && !resultadoImportacao.repetido) {
         for (const t of transactions) {
           const contaDebito = String(t.contaDebito || "").trim();
           const contaCredito = String(t.contaCredito || "").trim();
@@ -3697,13 +3705,7 @@ export function createAccountingEntriesRouter({ log }) {
         }
       }
 
-      return res.status(201).json({
-        ok: true,
-        created: created.length,
-        failed: failed.length,
-        loteImportacao,
-        details: { created, failed },
-      });
+      return res.status(resultadoImportacao.repetido ? 200 : 201).json(resultadoImportacao);
     }
   );
 

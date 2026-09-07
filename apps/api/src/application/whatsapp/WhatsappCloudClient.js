@@ -308,30 +308,39 @@ export class WhatsappCloudClient {
 
     // Timeout sem dependência nova: AbortController é global no Node 20.
     const abortador = new AbortController();
-    const relogio = setTimeout(() => abortador.abort(), this.timeoutMs);
+    let relogio;
+    const prazo = new Promise((_, reject) => {
+      relogio = setTimeout(() => {
+        abortador.abort();
+        reject(new Error("whatsapp_request_timeout"));
+      }, this.timeoutMs);
+    });
 
     let resposta;
+    let json = null;
     try {
-      resposta = await this.fetchImpl(url, {
+      resposta = await Promise.race([this.fetchImpl(url, {
         method: "POST",
         headers: cabecalhos,
         body: formulario || JSON.stringify(corpo),
         signal: abortador.signal,
-      });
+      }), prazo]);
+      try {
+        json = await Promise.race([resposta.json(), prazo]);
+      } catch (causa) {
+        // JSON inválido continua sendo resposta desconhecida; corpo interrompido é transporte.
+        if (abortador.signal.aborted || !(causa instanceof SyntaxError)) throw causa;
+      }
     } catch (causa) {
       // ⚠ NÃO SE SABE SE CHEGOU. Ver `traduzirFalhaDeTransporte`.
-      throw new WhatsappError(traduzirFalhaDeTransporte(causa, { timeout: abortador.signal.aborted }));
+      const erro = new WhatsappError(traduzirFalhaDeTransporte(causa, { timeout: abortador.signal.aborted }));
+      erro.desfechoIndeterminado = recurso === "messages";
+      throw erro;
     } finally {
       clearTimeout(relogio);
     }
 
     const status = Number(resposta?.status ?? 0) || null;
-    let json = null;
-    try {
-      json = await resposta.json();
-    } catch {
-      json = null; // corpo vazio ou não-JSON: a tradução trata como "resposta não reconhecida".
-    }
 
     if (!resposta?.ok) {
       const traducao = traduzirErroMeta(json, { httpStatus: status });
@@ -340,7 +349,9 @@ export class WhatsappCloudClient {
         { codigo: traducao.codigo, httpStatus: status, fbtraceId: traducao.fbtraceId, recurso },
         "envio WhatsApp recusado pela Meta",
       );
-      throw new WhatsappError(traducao);
+      const erro = new WhatsappError(traducao);
+      if (recurso !== "messages") erro.desfechoIndeterminado = false;
+      throw erro;
     }
 
     return json;
@@ -370,9 +381,9 @@ export class WhatsappCloudClient {
     const json = await this.chamar({ recurso: "media", formulario });
     const mediaId = json?.id ? String(json.id) : null;
     if (!mediaId) {
-      throw new WhatsappError(
-        traduzirErroMeta(json, { httpStatus: 200 }),
-      );
+      const erro = new WhatsappError(traduzirErroMeta(json, { httpStatus: 200 }));
+      erro.desfechoIndeterminado = false; // Só houve upload; nenhuma mensagem foi solicitada.
+      throw erro;
     }
     return mediaId;
   }
@@ -530,7 +541,7 @@ export class WhatsappCloudClient {
       { para: mascararTelefone(para), caracteres: conteudo.length },
       "texto livre WhatsApp aceito pela Meta",
     );
-    return { wamid: WhatsappCloudClient.wamidDaResposta(json), resposta: json };
+    return { wamid: WhatsappCloudClient.exigirWamid(json, {}), resposta: json };
   }
 
   /**
@@ -549,7 +560,7 @@ export class WhatsappCloudClient {
       corpo: montarPayloadDocumento({ para, mediaId, nomeArquivo, legenda }),
     });
     this.log?.info?.({ para: mascararTelefone(para), documento: true }, "documento WhatsApp aceito pela Meta");
-    return { wamid: WhatsappCloudClient.wamidDaResposta(json), resposta: json };
+    return { wamid: WhatsappCloudClient.exigirWamid(json, {}), resposta: json };
   }
 
   /**

@@ -25,6 +25,7 @@ import { PainelDeCasamentos } from "./PainelDeCasamentos";
 // Conferência; enquanto o fluxo (Fase E) não existe, o painel vive aqui, que é a mesma fila de
 // "coisas para o contador confirmar". ⚠ A feature é PRÓPRIA para o fluxo importá-la depois.
 import { PainelDeRecorrencias } from "../../recorrencia/components/PainelDeRecorrencias";
+import { PainelArquivosWhatsapp } from "./PainelArquivosWhatsapp";
 import { PainelDeSaidasDoCliente } from "./PainelDeSaidasDoCliente";
 import { PainelDeMexidasDoCliente } from "./PainelDeMexidasDoCliente";
 import { PainelDeLancadosPorRegra } from "./PainelDeLancadosPorRegra";
@@ -1439,6 +1440,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
           ‹ Voltar aos lançamentos
         </button>
       ) : null}
+      <PainelArquivosWhatsapp key={companyId} api={conferenciaApi} companyId={companyId} contas={contas} podeEscrever={podeEscrever} aoImportar={carregar} />
       <div style={{ ...card, display: "grid", gap: 12 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           {contagem.map((c) => (

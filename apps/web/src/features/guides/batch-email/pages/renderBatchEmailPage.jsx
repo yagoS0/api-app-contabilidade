@@ -322,7 +322,9 @@ function ResultadoWhatsapp({ resultado, onFechar }) {
   if (!resultado) return null;
   const z = resultado.whatsapp || {};
   const e = resultado.email || {};
-  const falhas = Array.isArray(z.falhas) ? z.falhas : [];
+  const falhas = Array.isArray(z.resultados)
+    ? z.resultados.filter(r => r.ok === false || r.parcial || r.indeterminadas)
+    : (Array.isArray(z.falhas) ? z.falhas : []);
   return (
     <div
       data-testid="resultado-whatsapp"
@@ -334,7 +336,7 @@ function ResultadoWhatsapp({ resultado, onFechar }) {
       <div style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap", marginBottom: falhas.length ? 8 : 0 }}>
         <strong>Lote por WhatsApp · {resultado.competencia}</strong>
         <span style={{ color: PANEL.muted }}>
-          WhatsApp: <strong style={{ color: PANEL.text }}>{Number(z.enviadas || 0)}</strong> de {Number(z.total || 0)} enviada{Number(z.total) === 1 ? "" : "s"}
+          WhatsApp: <strong style={{ color: PANEL.text }}>{Number(z.enviadas || 0)}</strong> de {Number(z.total || 0)} pedido(s) aceito(s) · entrega depende de confirmação
           {z.jaEnviadas ? ` (${z.jaEnviadas} já estava${z.jaEnviadas === 1 ? "" : "m"})` : ""} · e-mail:{" "}
           {e.executado === false
             ? <strong style={{ color: PANEL.danger }}>não enviado{e.motivo ? ` (${e.motivo})` : ""}</strong>
@@ -349,7 +351,8 @@ function ResultadoWhatsapp({ resultado, onFechar }) {
           </div>
           <ul style={{ margin: 0, paddingLeft: 18 }}>
             {falhas.map((f) => (
-              <li key={f.guideId}>{f.empresa} — {f.tipoLabel || f.tipo}: {f.mensagem || f.motivo || "motivo não informado"}</li>
+              <li key={f.guideId}>{f.empresa} — {f.tipoLabel || f.tipo}: {f.message || f.mensagem || f.motivo || "motivo não informado"}
+                {(f.resultados || []).filter(r => r.ok === false || r.estado === "indeterminado").map((r, i) => <div key={r.destino || i}>{r.destino || "Destinatário"}: {r.message || r.mensagem || r.motivo || "resultado não confirmado"}</div>)}</li>
             ))}
           </ul>
         </div>

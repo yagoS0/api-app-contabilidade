@@ -58,12 +58,12 @@ export class AssistenteClient {
     this.modelo = modelo;
     this.maxTokens = maxTokens;
     this.esforco = esforco;
-    this.maxIteracoes = Math.max(1, Number(maxIteracoes) || 6);
+    this.maxIteracoes = Math.min(8, Math.max(1, Number(maxIteracoes) || 6));
     this.log = log;
   }
 
   cliente() {
-    if (!this.client) this.client = new Anthropic();
+    if (!this.client) this.client = new Anthropic({ timeout: 45000, maxRetries: 0 });
     return this.client;
   }
 
@@ -97,7 +97,11 @@ export class AssistenteClient {
           ...(ferramentas.length ? { tools: ferramentas } : {}),
         });
       } catch (err) {
-        throw traduzirErro(err);
+        const traduzido = traduzirErro(err);
+        traduzido.usage = somarUsage(usages);
+        traduzido.iteracoes = iteracoes;
+        traduzido.ferramentasChamadas = [...ferramentasChamadas];
+        throw traduzido;
       }
       usages.push(resposta?.usage || null);
       ultimo = resposta;

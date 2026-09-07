@@ -10,6 +10,7 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 test.each([
+  "postClassificarIa", "getConsumoIa", "definirCanalEnvio", "resendGuideEmail",
   "getResumoWhatsapp", "listarConversasWhatsapp", "getMensagensWhatsapp", "getCanalWhatsapp",
   "responderConversaWhatsapp", "vincularConversaWhatsapp", "enviarDocumentoWhatsapp", "enviarGuiaWhatsapp",
   "listarOnboardings", "criarOnboarding", "salvarOnboarding", "getOnboarding", "converterOnboarding",
@@ -29,9 +30,9 @@ test("modo mock explícito continua exercitando o fluxo offline", async () => {
   createRealApi.mockReturnValue({}); createMockApi.mockReturnValue({ listarOnboardings: mock });
   await expect(createApiClient().listarOnboardings()).resolves.toEqual({ itens: [] });
 });
-test("fallback de módulos alheios ao atendimento permanece disponível", async () => {
+test("nenhuma operação real cai silenciosamente no mock", async () => {
   process.env.VITE_API_MODE = "real_with_mock_fallback";
   createRealApi.mockReturnValue({ outraLeitura: jest.fn().mockRejectedValue(new Error("offline")) });
   createMockApi.mockReturnValue({ outraLeitura: jest.fn().mockResolvedValue({ ok: true }) });
-  await expect(createApiClient().outraLeitura()).resolves.toEqual({ ok: true });
+  await expect(createApiClient().outraLeitura()).rejects.toThrow("offline");
 });

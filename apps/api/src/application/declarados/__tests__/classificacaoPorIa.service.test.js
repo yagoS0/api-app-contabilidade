@@ -14,9 +14,11 @@ jest.mock("../DeclaradoService.js", () => ({
 }));
 
 const mockPlano = jest.fn();
+const mockSugestoesAtuais = jest.fn(async () => []);
 const mockMemoria = jest.fn();
 jest.mock("../RegraService.js", () => ({
   planoDaEmpresa: (...a) => mockPlano(...a),
+  sugerirContaParaLote: (...a) => mockSugestoesAtuais(...a),
   memoriaDaEmpresa: (...a) => mockMemoria(...a),
 }));
 
@@ -60,12 +62,15 @@ const linha = (extra = {}) => ({
 
 function prismaFalso() {
   const chamadas = [];
-  return {
+  const db = {
     chamadas,
     lancamentoDeclarado: {
       updateMany: jest.fn(async (args) => { chamadas.push(args); return { count: 1 }; }),
+      findMany: jest.fn(async ({where}) => where.id.in.map(id => linha({id}))),
     },
   };
+  db.$transaction = async fn => fn(db);
+  return db;
 }
 
 function guardaFalsa({ ok = true } = {}) {
@@ -91,6 +96,7 @@ function clienteFalso(respostas) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockPlano.mockResolvedValue(PLANO);
+  mockSugestoesAtuais.mockResolvedValue([]);
   mockMemoria.mockResolvedValue([{ text: "GOOGLE CLOUD", contaDebito: "410", contaCredito: "12", usageCount: 2 }]);
 });
 
@@ -320,4 +326,16 @@ describe("os lotes", () => {
     expect(r.linhasOlhadas).toBe(210);
     expect(r.lotes).toBe(Math.ceil(210 / LOTE_MAXIMO));
   });
+});
+it("regra criada enquanto modelo responde vence a proposta IA",async()=>{
+ fila([linha()]);const client=prismaFalso();const cliente=clienteFalso([respostaBoa([{id:"d-1",debito:"411030012",credito:"111020001"}])]);
+ mockSugestoesAtuais.mockResolvedValue([{id:"d-1",conta:"411020008",procedencia:PROCEDENCIA.REGRA_CNPJ}]);
+ const r=await classificarFila({portalClientId:"emp-1",ligado:true,client,cliente,guarda:guardaFalsa(),agora:AGORA});
+ expect(cliente.responder).toHaveBeenCalledTimes(1);expect(r.gravadas).toBe(0);expect(client.lancamentoDeclarado.updateMany).not.toHaveBeenCalled();
+});
+it("falha na conferência de regras impede gravar proposta IA",async()=>{
+ fila([linha()]);const client=prismaFalso();const cliente=clienteFalso([respostaBoa([{id:"d-1",debito:"411030012",credito:"111020001"}])]);
+ mockSugestoesAtuais.mockRejectedValueOnce(new Error("banco falhou"));
+ const r=await classificarFila({portalClientId:"emp-1",ligado:true,client,cliente,guarda:guardaFalsa(),agora:AGORA});
+ expect(r.gravadas).toBe(0);expect(r.erros).toHaveLength(1);expect(client.lancamentoDeclarado.updateMany).not.toHaveBeenCalled();
 });

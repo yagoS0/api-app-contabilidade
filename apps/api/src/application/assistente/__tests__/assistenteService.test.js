@@ -27,7 +27,7 @@ const silencio = { warn: jest.fn(), error: jest.fn(), info: jest.fn() };
 
 function bancoEmMemoria({ contato = { id: "c1", nome: "Maria", userId: "u1" }, vinculo = { role: "CLIENT_ADMIN", status: "ACTIVE" }, pendente = null, chamadas = [] } = {}) {
   const mensagens = new Map([["m1", { id: "m1", conversaId: "cv1", direcao: "in", tipo: "text", corpo: "quanto devo?", registradaEm: new Date("2026-09-02T12:00:00Z"), respondidaPelaIaEm: null }]]);
-  const conversa = { id: "cv1", telefoneE164: "5521999998888", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null, portalClient: { id: "pc-1", razao: "ACME LTDA", cnpj: "11222333000181" } };
+  const conversa = { id: "cv1", escopoVerificado: true, telefoneE164: "5521999998888", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null, portalClient: { id: "pc-1", razao: "ACME LTDA", cnpj: "11222333000181" } };
   const acoes = new Map(pendente ? [[pendente.id, { ...pendente }]] : []);
   const db = {
     _mensagens: mensagens, _acoes: acoes, _conversa: conversa, _chamadas: chamadas,
@@ -40,13 +40,16 @@ function bancoEmMemoria({ contato = { id: "c1", nome: "Maria", userId: "u1" }, v
         return { count };
       }),
       findUnique: jest.fn(async ({ where }) => mensagens.get(where.id) || null),
+      findFirst: jest.fn(async ({where}) => [...mensagens.values()].find(m=>m.turnoIaId===where.turnoIaId && m.direcao===where.direcao) || null),
       findMany: jest.fn(async () => [...mensagens.values()]),
+      create: jest.fn(async ({data}) => { const m={id:`out-${mensagens.size}`, registradaEm:new Date(), ...data}; mensagens.set(m.id,m); return m; }),
+      update: jest.fn(async ({where,data}) => Object.assign(mensagens.get(where.id),data)),
     },
     conversaWhatsapp: {
       findUnique: jest.fn(async () => conversa),
       update: jest.fn(async ({ data }) => Object.assign(conversa, data)),
     },
-    contatoWhatsapp: { findFirst: jest.fn(async () => contato) },
+    contatoWhatsapp: { findMany: jest.fn(async () => contato ? [contato] : []) },
     companyClientUser: { findUnique: jest.fn(async () => vinculo) },
     acaoPendenteWhatsapp: {
       findFirst: jest.fn(async ({ where }) => [...acoes.values()].find((a) => a.conversaId === where.conversaId && a.status === where.status) || null),
@@ -65,10 +68,12 @@ function bancoEmMemoria({ contato = { id: "c1", nome: "Maria", userId: "u1" }, v
     },
     chamadaIa: {
       aggregate: jest.fn(async () => ({ _sum: { custoEstimadoCentavos: 0 }, _count: { _all: 0 } })),
-      create: jest.fn(async ({ data }) => { chamadas.push(data); return data; }),
+      create: jest.fn(async ({ data }) => { const c={ id:`ch-${chamadas.length}`, ...data }; chamadas.push(c); return c; }),
+      update: jest.fn(async ({where,data}) => Object.assign(chamadas.find(c=>c.id===where.id),data)),
     },
     guide: { findMany: jest.fn(async () => []), findFirst: jest.fn(async () => null) },
   };
+  db.$transaction = async (fn) => fn(db);
   return db;
 }
 
@@ -80,7 +85,7 @@ function modeloFalso(texto = "Você não tem guia liberada em aberto.") {
   return { responder: jest.fn(async () => ({ texto, usage: { input_tokens: 100, output_tokens: 20 }, iteracoes: 1, ferramentasChamadas: ["quanto_devo"], stopReason: "end_turn", recusou: false })) };
 }
 
-const deps = (over = {}) => ({ log: silencio, agora: new Date("2026-09-02T12:00:00Z"), tryLock: async () => true, releaseLock: async () => {}, chaveIa: "chave-de-teste", ...over });
+const deps = (over = {}) => ({ flag: true, piloto: ["pc-1"], log: silencio, agora: new Date("2026-09-02T12:00:00Z"), tryLock: async () => true, releaseLock: async () => {}, chaveIa: "chave-de-teste", ...over });
 
 beforeEach(() => { registrarMensagemEnviada.mockClear(); });
 
@@ -93,7 +98,7 @@ describe("o turno", () => {
     expect(r).toMatchObject({ feito: true, motivo: "RESPONDIDA" });
     expect(assistente.responder).toHaveBeenCalledTimes(1);
     expect(cloud.enviarTexto).toHaveBeenCalledWith({ telefone: "5521999998888", texto: "Você não tem guia liberada em aberto." });
-    expect(registrarMensagemEnviada).toHaveBeenCalledWith(expect.objectContaining({ autor: AUTOR.IA, corpo: "Você não tem guia liberada em aberto." }));
+    expect(client.mensagemWhatsapp.create).toHaveBeenCalledWith({ data: expect.objectContaining({ autor: AUTOR.IA, corpo: "Você não tem guia liberada em aberto.", statusEnvio: "enviando" }) });
     expect(client._chamadas).toHaveLength(1);
     expect(client._chamadas[0]).toMatchObject({ status: "ok", inputTokens: 100, outputTokens: 20, portalClientId: "pc-1" });
     expect(client._chamadas[0].custoEstimadoCentavos).toBeGreaterThan(0);
@@ -239,7 +244,7 @@ describe("a pendência — a confirmação NÃO passa pelo modelo", () => {
     expect(cloud.enviarTexto.mock.calls[0][0].texto).toBe("Montei o pedido; confirme com o código.");
     expect(cloud.enviarTexto.mock.calls[1][0].texto).toMatch(/CONFIRMAR K9M3/);
     expect(cloud.enviarTexto.mock.calls[1][0].texto).toMatch(/juros e multa/);
-    const autores = registrarMensagemEnviada.mock.calls.map((c) => c[0].autor);
+    const autores = client.mensagemWhatsapp.create.mock.calls.map((c) => c[0].data.autor);
     expect(autores).toEqual([AUTOR.IA, AUTOR.SISTEMA]);
   });
 
@@ -268,4 +273,23 @@ describe("montarHistorico", () => {
       { role: "assistant", content: "olá" },
     ]);
   });
+});
+it("humano assumindo durante modelo impede envio",async()=>{
+ const client=bancoEmMemoria(); const cloud=cloudFalso(); const assistente=modeloFalso();
+ assistente.responder.mockImplementationOnce(async()=>{client._conversa.atendidaPor="operador";return {texto:"texto",usage:{input_tokens:100,output_tokens:10}};});
+ const r=await responderMensagem({conversaId:"cv1",mensagemId:"m1",deps:deps({client,cloud,assistente})});
+ expect(r).toMatchObject({feito:false,motivo:"ASSUMIDA_POR_HUMANO"}); expect(cloud.enviarTexto).not.toHaveBeenCalled();
+ expect(client._mensagens.get("m1").respondidaPelaIaEm).toBeNull();
+});
+it("timeout não marca resposta e reentrega não repete o envio incerto",async()=>{
+ const client=bancoEmMemoria();const cloud=cloudFalso();const assistente=modeloFalso();cloud.enviarTexto.mockRejectedValueOnce(new Error("timeout"));
+ const args={conversaId:"cv1",mensagemId:"m1",deps:deps({client,cloud,assistente})};
+ expect(await responderMensagem(args)).toMatchObject({feito:false,indeterminado:true});
+ expect(client._mensagens.get("m1").respondidaPelaIaEm).toBeNull();
+ expect(await responderMensagem(args)).toMatchObject({feito:false,motivo:"SAIDA_ANTERIOR"});
+ expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);expect(assistente.responder).toHaveBeenCalledTimes(1);
+});
+it("histórico não afirma envio que falhou ou ficou ambíguo",()=>{
+ const base={tipo:"text",registradaEm:new Date()};
+ expect(montarHistorico([{...base,direcao:"in",corpo:"oi"},{...base,direcao:"out",corpo:"falso",statusEnvio:"indeterminado"}])).toEqual([{role:"user",content:"oi"}]);
 });

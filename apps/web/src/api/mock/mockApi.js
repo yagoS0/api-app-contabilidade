@@ -1041,6 +1041,16 @@ function contatoDoMock(c) {
   return k ? { id: k.id, nome: k.nome, papel: k.papel || null } : null;
 }
 
+function paginaWhatsappMock(lista, cursor, limite) {
+  const n = Math.min(200, Math.max(1, Number(limite) || 50));
+  const indice = cursor ? lista.findIndex(x => x.id === cursor) : -1;
+  if (cursor && indice < 0) { const e = new Error("Cursor inválido para esta consulta."); e.status = 400; e.code = "cursor_invalido"; throw e; }
+  const restantes = lista.slice(indice + 1);
+  const itens = restantes.slice(0, n);
+  const temMais = restantes.length > n;
+  return { itens, temMais, proximoCursor: temMais ? itens[itens.length - 1].id : null };
+}
+
 function resumoMockDaConversa(c) {
   const ultima = c.mensagens[c.mensagens.length - 1] || null;
   const naoLidas = c.mensagens.filter((m) => m.direcao === "in" && (!c.lidaAteEm || m.registradaEm > c.lidaAteEm)).length;
@@ -1051,7 +1061,7 @@ function resumoMockDaConversa(c) {
     naFilaDoEscritorio: Boolean(c.atendidaDesde && !c.atendidaPor), lidaAteEm: c.lidaAteEm, updatedAt: c.updatedAt,
     ultimaMensagem: ultima ? { direcao: ultima.direcao, tipo: ultima.tipo, corpo: ultima.corpo, registradaEm: ultima.registradaEm, autor: ultima.autor } : null,
     naoLidas, janela: c.janela, pendencia: c.pendencia, vinculo: c.portalClientId ? null : (c.vinculo || null),
-    contato: contatoDoMock(c),
+    contato: contatoDoMock(c), escopoVerificado: c.escopoVerificado !== false, legadoNaoVerificado: c.escopoVerificado === false,
   };
 }
 
@@ -5943,7 +5953,8 @@ export function createMockApi() {
       mockGuiasEnviadasWhatsapp.add(String(guideId));
       return {
         ok: true, guideId, enviada: true, canal: "WHATSAPP",
-        destino: recebem[0].telefoneE164, destinatarios: recebem.length, enviadas: recebem.length,
+        destino: recebem[0].telefoneE164, destinatarios: recebem.length, enviadas: recebem.length, aceitas: recebem.length, falhas: 0, parcial: false, estado: "aceito",
+        resultados: recebem.map(c => ({ ok: true, estado: "aceito", destino: c.telefoneE164, providerMessageId: `wamid.mock.${c.id}.${Date.now()}` })),
         providerMessageId: `wamid.mock.${Date.now()}`,
       };
     },
@@ -7506,6 +7517,25 @@ export function createMockApi() {
     // ── AS CONVERSAS DE WHATSAPP (F5) — o MESMO contrato de `realApi` ─────────────────────────
     // ⚠ TRÊS fios, os três ramos: vinculado COM a IA (pendência aberta, janela aberta), vinculado
     // ASSUMIDO (janela EXPIRADA — responder é recusado ANTES de digitar), e NÃO vinculado (a fila).
+    async preverCorrecaoValorGuia() {
+      throw new Error("A conferência do PDF original para correção de valor exige o servidor real. Nenhum valor foi alterado.");
+    },
+    async corrigirValorGuia() {
+      throw new Error("A correção do valor não é simulada no ambiente de demonstração.");
+    },
+    async listarArquivosWhatsappNaoVinculados() { return { arquivos: [], temMais: false }; },
+    async vincularArquivoWhatsapp() { throw new Error("Vincular um arquivo recebido exige o serviço real de WhatsApp."); },
+    async listarArquivosWhatsapp(_companyId) {
+      await delay(80);
+      // Nenhum recebimento real é inferido no demo; os componentes têm fixtures próprias de OFX/PDF.
+      return { arquivos: [], proximoCursor: null };
+    },
+    async getConteudoArquivoWhatsapp() {
+      const e = new Error("Arquivo não encontrado no ambiente de demonstração."); e.status = 404; throw e;
+    },
+    async marcarArquivoWhatsappImportado() {
+      const e = new Error("Arquivo não encontrado no ambiente de demonstração."); e.status = 404; throw e;
+    },
     async getResumoWhatsapp() {
       await delay(100);
       if ((typeof localStorage !== "undefined" && localStorage.getItem("mock:whatsapp:falhaResumo") === "1") || (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mockWhatsappResumo") === "falha")) {
@@ -7519,7 +7549,7 @@ export function createMockApi() {
         mensagensNaoLidas: itens.reduce((s, c) => s + c.naoLidas, 0),
       } };
     },
-    async listarConversasWhatsapp(filtro = "todas", { empresa = null } = {}) {
+    async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = 50 } = {}) {
       await delay(120);
       // ⚠ `empresa` + `nao-vinculadas` e contradicao (aquele filtro E, por definicao, o sem
       // empresa): o servidor recusa NOMEADO, e o mock recusa igual — mock permissivo esconde ramo.
@@ -7533,15 +7563,17 @@ export function createMockApi() {
           : todas;
       // Com empresa escolhida a fila (sem empresa) nao entra: ela nao e daquela empresa.
       const lista = empresa ? doFiltro.filter((c) => c.portalClientId === String(empresa)) : doFiltro;
-      return { ok: true, filtro, empresa, conversas: lista, temMais: false, consumoIa: { desde: "2026-09-01T03:00:00.000Z", moeda: "USD", estimativa: true, escritorio: { centavos: 137, chamadas: 12, teto: 6000, restantes: 5863, fracao: 0.02, alerta: false, estourado: false }, empresa: null } };
+      const pagina = paginaWhatsappMock(lista.sort((a,b) => String(b.updatedAt).localeCompare(String(a.updatedAt)) || String(b.id).localeCompare(String(a.id))), cursor, limite);
+      return { ok: true, filtro, empresa, conversas: pagina.itens, temMais: pagina.temMais, proximoCursor: pagina.proximoCursor, consumoIa: { desde: "2026-09-01T03:00:00.000Z", moeda: "USD", estimativa: true, escritorio: { centavos: 137, chamadas: 12, teto: 6000, restantes: 5863, fracao: 0.02, alerta: false, estourado: false }, empresa: null } };
     },
-    async getMensagensWhatsapp(conversaId) {
+    async getMensagensWhatsapp(conversaId, { cursor = null, limite = 50 } = {}) {
       await delay(100);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; e.code = "conversa_nao_encontrada"; throw e; }
       c.lidaAteEm = new Date().toISOString();
       // ⚠ `temMidia` e o PONTEIRO, nunca uma URL — a da Meta expira e nao baixamos arquivo ainda.
-      return { ok: true, conversa: resumoMockDaConversa(c), temMais: false, mensagens: c.mensagens.map((m) => ({ ...m, temMidia: Boolean(m.midiaProvedorId) })) };
+      const pagina = paginaWhatsappMock([...c.mensagens].reverse(), cursor, limite);
+      return { ok: true, conversa: resumoMockDaConversa(c), temMais: pagina.temMais, proximoCursor: pagina.proximoCursor, mensagens: pagina.itens.reverse().map((m) => ({ ...m, statusEnvio: m.statusEnvio || (m.direcao === "out" && m.providerMessageId ? "enviado" : null), erroEnvio: m.erroEnvio || null, temMidia: Boolean(m.midiaProvedorId) })) };
     },
     // ⚠ O MESMO contrato do real, recusas incluídas — mock permissivo esconde ramo, e este projeto
     // já pagou por isso oito vezes. Fora da janela: 409 FORA_DA_JANELA. Fio sem empresa: 422.

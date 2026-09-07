@@ -15,10 +15,56 @@ import { prisma } from "../../../infrastructure/db/prisma.js";
 import {
   resolverVinculoPorTelefone,
   salvarContato,
+  gravarWaIdDoContato,
   removerContato,
   ContatoWhatsappError,
 } from "../ContatoWhatsappService.js";
 import { SITUACOES, LEITURAS } from "../vinculoTelefone.js";
+
+describe("alteração do destino não transporta identidade ou consentimento", () => {
+  it("salvamento concorrente não restaura telefone antigo com consentimento do novo", async () => {
+    const atual = { telefoneE164: "5521888887777", waId: "552188888777", optInOrigem: "consentimento novo" };
+    prisma.contatoWhatsapp.findFirst.mockResolvedValueOnce({ telefoneE164: "5521999998888" });
+    prisma.contatoWhatsapp.update.mockImplementationOnce(async ({ where, data }) => {
+      if (where.telefoneE164 !== atual.telefoneE164) throw Object.assign(new Error("CAS"), { code: "P2025" });
+      Object.assign(atual, data);
+      return atual;
+    });
+    await expect(salvarContato({ portalClientId: "p1", id: "c1", nome: "Teste", telefone: "5521999998888" })).rejects.toMatchObject({ code: "CONTATO_ALTERADO" });
+    expect(atual).toEqual({ telefoneE164: "5521888887777", waId: "552188888777", optInOrigem: "consentimento novo" });
+  });
+  it("resposta atrasada da Meta não cola a identidade antiga no telefone novo", async () => {
+    const cadastro = { id: "c1", telefoneE164: "5521888887777", waId: null };
+    const client = { contatoWhatsapp: { updateMany: jest.fn(async ({ where, data }) => {
+      if (Object.entries(where).every(([k, v]) => cadastro[k] === v)) { Object.assign(cadastro, data); return { count: 1 }; }
+      return { count: 0 };
+    }) } };
+    expect(await gravarWaIdDoContato({ contatoId: "c1", telefoneEnviado: "5521999998888", waId: "552199998888", client })).toBe(false);
+    expect(cadastro.waId).toBeNull();
+  });
+  it("novo telefone invalida waId e opt-in do anterior", async () => {
+    prisma.contatoWhatsapp.findFirst.mockResolvedValue({ telefoneE164: "5521999998888" });
+    await salvarContato({ portalClientId: "p1", id: "c1", nome: "Teste", telefone: "+5521888887777" });
+    expect(prisma.contatoWhatsapp.update).toHaveBeenLastCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ telefoneE164: "5521888887777", waId: null, optInEm: null, optInOrigem: null }),
+    }));
+  });
+  it("mesmo telefone em outra formatação preserva identidade e opt-in", async () => {
+    prisma.contatoWhatsapp.findFirst.mockResolvedValue({ telefoneE164: "5521999998888" });
+    await salvarContato({ portalClientId: "p1", id: "c1", nome: "Teste", telefone: "+55 (21) 99999-8888" });
+    const { data } = prisma.contatoWhatsapp.update.mock.calls.at(-1)[0];
+    expect(data).not.toHaveProperty("waId");
+    expect(data).not.toHaveProperty("optInEm");
+  });
+  it("novo consentimento explícito vale para o novo número", async () => {
+    prisma.contatoWhatsapp.findFirst.mockResolvedValue({ telefoneE164: "5521999998888" });
+    await salvarContato({ portalClientId: "p1", id: "c1", nome: "Teste", telefone: "+5521888887777", optIn: true, optInOrigem: "confirmado para novo destino" });
+    const { data } = prisma.contatoWhatsapp.update.mock.calls.at(-1)[0];
+    expect(data.waId).toBeNull();
+    expect(data.optInEm).toBeInstanceOf(Date);
+    expect(data.optInOrigem).toBe("confirmado para novo destino");
+  });
+});
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -150,7 +196,7 @@ describe("⚠ multi-tenancy: o alvo NUNCA é escolhido só pelo id", () => {
     // empresa era atualizado sem que nada conferisse a quem ele pertence.
     prisma.contatoWhatsapp.update.mockResolvedValue({ id: "c1" });
     await salvarContato({ portalClientId: "p1", id: "c1", nome: "Maria", telefone: "21999998888" });
-    expect(prisma.contatoWhatsapp.update.mock.calls[0][0].where).toEqual({ id: "c1", portalClientId: "p1" });
+    expect(prisma.contatoWhatsapp.update.mock.calls[0][0].where).toMatchObject({ id: "c1", portalClientId: "p1" });
   });
 
   it("remover carrega a empresa no `where`", async () => {

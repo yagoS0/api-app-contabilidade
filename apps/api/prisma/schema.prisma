@@ -907,6 +907,7 @@ model PortalClient {
   conversasWhatsapp       ConversaWhatsapp[]
   acoesPendentesWhatsapp  AcaoPendenteWhatsapp[]
   chamadasIa              ChamadaIa[]
+  arquivosWhatsapp        ArquivoWhatsapp[]
   // Q14 — refundação da apuração (cadastro como autoridade)
   cadastroFiscal          CadastroFiscal?
   produtosServicos        ProdutoServico[]
@@ -1151,6 +1152,7 @@ model EnvioGuia {
   destino             String?
   /// `wamid` no WhatsApp. Chave de correlação dos eventos de status do webhook e de idempotência.
   providerMessageId   String?
+  tentativaAtualId    String?
   erroCodigo          String?
   /// Mensagem JÁ TRADUZIDA para o contador. Código cru da Meta não chega na tela — mesma lição do
   /// `validation_failed`, que mostrava o código e escondia o motivo.
@@ -1169,6 +1171,7 @@ model EnvioGuia {
   /// a mensagem só aponta para cá. Uma cópia do estado no fio seria a segunda resposta para
   /// "esta guia foi enviada?".
   mensagens MensagemWhatsapp[]
+  historicoTentativas EnvioGuiaTentativa[]
 
   /// ⚠ É esta constraint que torna reexecutar o lote inofensivo: a segunda passada encontra o
   /// registro e não redispara.
@@ -1213,7 +1216,10 @@ model EnvioGuia {
 model ConversaWhatsapp {
   id                 String    @id @default(uuid())
   /// O número do cliente, E.164 sem `+`, como `contatos_whatsapp.telefoneE164`.
-  telefoneE164       String    @unique
+  telefoneE164       String
+  /// Segmento imutável. Legado conserva empresa observada, mas não autoriza IA/importação.
+  chaveEscopo        String    @unique
+  escopoVerificado   Boolean   @default(false)
   /// ⚠ A EMPRESA A QUE ESTE FIO FOI ATRIBUÍDO — e NULO é resposta, não falta de dado.
   ///
   /// Nulo = "não vinculado": ou o número não está em cadastro nenhum (`DESCONHECIDO`), ou fala por
@@ -1254,6 +1260,7 @@ model ConversaWhatsapp {
   /// motivo (`DESCONHECIDO`/`AMBIGUO`) numa linha o faria envelhecer — cadastrado o contato às 10h,
   /// a linha continuaria dizendo "desconhecido". O motivo se pergunta ao vínculo, na leitura.
   @@index([portalClientId])
+  @@index([telefoneE164])
   @@map("conversas_whatsapp")
 }
 
@@ -1287,6 +1294,15 @@ model MensagemWhatsapp {
   /// Quando este balão carregou uma guia, o ESTADO daquele envio (enviado/entregue/lido/falhou,
   /// retry, erro traduzido) mora lá, com um escritor só. Aqui fica o ponteiro.
   envioGuiaId        String?
+  envioGuiaTentativaId String?
+  /// Estado da própria saída; guia consulta tentativa específica em vez de copiar estado.
+  statusEnvio        String?
+  erroEnvioCodigo    String?
+  erroEnvioMensagem  String?
+  enviadoEm          DateTime?
+  entregueEm         DateTime?
+  lidoEm             DateTime?
+  turnoIaId          String?
   /// O instante que a Meta reportou no evento (campo `timestamp`), já convertido.
   /// ⚠ Nulável: a ausência é dito, não presumido — ver `janela24h.js`.
   ocorridaEmProvedor DateTime?
@@ -1304,6 +1320,8 @@ model MensagemWhatsapp {
 
   conversa  ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Cascade)
   envioGuia EnvioGuia?       @relation(fields: [envioGuiaId], references: [id], onDelete: SetNull)
+  envioGuiaTentativa EnvioGuiaTentativa? @relation(fields: [envioGuiaTentativaId], references: [id], onDelete: SetNull)
+  arquivoWhatsapp ArquivoWhatsapp?
 
   /// ⚠ NENHUM `portalClientId` DENORMALIZADO AQUI, e a razão é a segurança, não a economia. A
   /// atribuição do fio MUDA (o ambíguo que o contador resolve; a empresa apagada que vira nulo) —
@@ -1313,6 +1331,7 @@ model MensagemWhatsapp {
   /// `ConversaWhatsappService`, que escopa por ele.
   @@index([conversaId, direcao, registradaEm])
   @@index([envioGuiaId])
+  @@index([turnoIaId])
   @@map("mensagens_whatsapp")
 }
 
@@ -1324,6 +1343,95 @@ model MensagemWhatsapp {
 /// submissão que ninguém fez: o cadastro na Meta está parado à espera do número.
 /// ⚠ Por isso `nomeMeta` NASCE NULO: o nome exato só existe depois da aprovação. Copiar a chave
 /// para lá seria transformar a nossa intenção em cadastro do provedor.
+model EnvioGuiaTentativa {
+  id String @id @default(uuid())
+  envioGuiaId String
+  status String @default("enviando")
+  providerMessageId String? @unique
+  erroCodigo String?
+  erroMensagemUsuario String?
+  criadoEm DateTime @default(now())
+  aceitoEm DateTime?
+  entregueEm DateTime?
+  lidoEm DateTime?
+  envioGuia EnvioGuia @relation(fields: [envioGuiaId], references: [id], onDelete: Cascade)
+  mensagens MensagemWhatsapp[]
+  @@index([envioGuiaId, criadoEm])
+  @@map("envios_guia_tentativas")
+}
+
+model InboxWebhookWhatsapp {
+  id String @id @default(uuid())
+  hash String @unique
+  payload Json
+  status String @default("pendente")
+  tentativas Int @default(0)
+  proximaTentativaEm DateTime @default(now())
+  reservaToken String?
+  leaseAte DateTime?
+  erroCodigo String?
+  recebidoEm DateTime @default(now())
+  concluidoEm DateTime?
+  @@index([status, proximaTentativaEm])
+  @@map("inbox_webhook_whatsapp")
+}
+
+model TurnoIaWhatsapp {
+  id String @id @default(uuid())
+  mensagemId String @unique
+  conversaId String
+  portalClientId String?
+  status String @default("pendente")
+  tentativas Int @default(0)
+  proximaTentativaEm DateTime @default(now())
+  reservaToken String?
+  leaseAte DateTime?
+  motivo String?
+  criadoEm DateTime @default(now())
+  concluidoEm DateTime?
+  @@index([status, proximaTentativaEm])
+  @@index([conversaId, criadoEm])
+  @@map("turnos_ia_whatsapp")
+}
+
+model WhatsappLease {
+  id String @id
+  token String
+  expiraEm DateTime
+  @@map("whatsapp_leases")
+}
+
+model ArquivoWhatsapp {
+  id String @id @default(uuid())
+  mensagemId String @unique
+  portalClientId String?
+  midiaProvedorId String
+  nomeArquivo String?
+  mimeType String?
+  tamanho Int?
+  sha256 String?
+  conteudo Bytes?
+  estado String @default("PENDENTE")
+  tentativas Int @default(0)
+  proximaTentativaEm DateTime?
+  reservadoEm DateTime?
+  reservaToken String?
+  erroCodigo String?
+  recebidoEm DateTime @default(now())
+  expiraEm DateTime
+  importadoEm DateTime?
+  vinculadoEm DateTime?
+  vinculadoPorUserId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  mensagem MensagemWhatsapp @relation(fields: [mensagemId], references: [id], onDelete: Restrict)
+  portalClient PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Restrict)
+  @@index([portalClientId, recebidoEm, id])
+  @@index([estado, proximaTentativaEm])
+  @@index([expiraEm])
+  @@map("arquivos_whatsapp")
+}
+
 model TemplateWhatsapp {
   /// Chave interna (`guia_disponivel`, …) — é por ela que o código pede o template.
   chave             String    @id
@@ -1409,6 +1517,7 @@ model ChamadaIa {
   cacheReadTokens      Int      @default(0)
   cacheCreationTokens  Int      @default(0)
   custoEstimadoCentavos Int     @default(0)
+  reservaCentavos       Int     @default(0)
   duracaoMs            Int?
   iteracoes            Int      @default(0)
   /// Nomes das ferramentas chamadas no turno, na ordem.

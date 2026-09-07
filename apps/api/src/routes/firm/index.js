@@ -39,6 +39,8 @@ import { createCalendarioRouter } from "./calendario.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
 import { createOnboardingsRouter } from "./onboardings.js";
 import { createWhatsappGuiasRouter } from "./whatsappGuias.js";
+import { createWhatsappArquivosRouter } from "./whatsappArquivos.js";
+import { createCorrigirValorGuiaRouter } from "./corrigirValorGuia.js";
 import { createWhatsappConversasRouter } from "./whatsappConversas.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
 import { mesclarAtividades } from "../../application/company/atividadesDaEmpresa.js";
@@ -5434,6 +5436,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // envio individual, que é por empresa, traz o próprio `requireFirmCompanyAccess` no caminho.
   // ⚠ Só a SAÍDA. O webhook é público e vive fora deste roteador (é o único sem `requireAuth`).
   router.use("/", createWhatsappGuiasRouter({ log }));
+  router.use("/", createWhatsappArquivosRouter({ log }));
+  router.use("/", createCorrigirValorGuiaRouter({ log }));
   // A tela mínima de conversas (F5, 02/09/2026): lista, fio, assumir/devolver, responder, vincular.
   router.use("/", createWhatsappConversasRouter({ log }));
 

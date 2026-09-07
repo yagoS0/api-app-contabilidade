@@ -61,7 +61,7 @@ describe("reenvio confirmado pela aba Guias", () => {
 
     await act(async () => { terminarRecarga(guias); await envio; });
     expect(api.getCompanyGuides).toHaveBeenLastCalledWith("pc-klaus");
-    expect(visivel.mensagem).toMatch(/sem e-mail cadastrado · WhatsApp enviado/);
+    expect(visivel.mensagem.texto).toMatch(/sem e-mail cadastrado · WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
     expect(visivel.erro).toBe("");
     expect(feedback.setError).not.toHaveBeenCalled();
     expect(result.current.guidesState.resendingGuideId).toBe("");

@@ -31,6 +31,8 @@ const mockPostAcao = jest.fn();
 // alguma coisa, que é depois. Referenciá-los direto aqui estoura no TDZ.
 jest.mock("../../../../api/client", () => ({
   createApiClient: () => ({
+    listarArquivosWhatsapp: async () => ({ arquivos: [], proximoCursor: null }),
+    getRecorrencias: async () => ({ recorrencias: [], pendentes: [] }),
     getConferenciaFila: (...a) => mockGetFila(...a),
     postConferenciaAcao: (...a) => mockPostAcao(...a),
     // ⚠ O PLANO DE CONTAS — o seletor de conta o consome. Delega como os outros dois, pelo

@@ -101,8 +101,9 @@ export function createWhatsappGuiasRouter({ log } = {}) {
         // ⚠ O LOTE NÃO TEM ESTA PORTA — lá a recusa continua sendo o primeiro corte, e é o que
         // impede a carteira inteira de sair duas vezes num clique.
         const reenviar = req.body?.reenviar === true;
+        const apenasFalhos = req.body?.apenasFalhos === true;
         const destinatario = await destinatarioWhatsapp(companyId);
-        const avaliacao = avaliarLinha({ canal, guide, destinatario, envios, jaEnviada: jaEnviada && !reenviar });
+        const avaliacao = avaliarLinha({ canal, guide, destinatario, envios, jaEnviada: jaEnviada && !reenviar && !apenasFalhos });
 
         if (!avaliacao.pode) {
           return res.status(422).json({
@@ -118,13 +119,15 @@ export function createWhatsappGuiasRouter({ log } = {}) {
         // a MESMA guia saía para gente diferente conforme o botão. Agora quem sabe "para quem esta
         // guia vai" é `enviarParaTodosOsDestinatarios`, num lugar só.
         const { telefones } = await destinatariosDeEnvio(companyId);
+        const alvos = apenasFalhos ? telefones.filter((c) => envios.some((e) => e.canal === "WHATSAPP" && e.destino === c.telefoneE164 && e.status === "falhou")) : telefones;
+        if (!alvos.length) return res.status(422).json({ ok: false, error: "SEM_DESTINATARIOS_PARA_TENTAR", message: "Nenhum destinatário com falha confirmada está disponível para esta tentativa." });
         const resultado = await enviarParaTodosOsDestinatarios({
           guide,
           linha: { destino: avaliacao.contato?.telefoneE164 || null, contatoNome: avaliacao.contato?.nome || null },
-          destinatarios: telefones,
+          destinatarios: alvos,
           canal,
           log,
-          reenviar,
+          reenviar: reenviar && !apenasFalhos,
         });
 
         // ⚠⚠ A FALHA PARCIAL PARA DE SUMIR. A resposta era o spread de `resultados[0]`: com dois

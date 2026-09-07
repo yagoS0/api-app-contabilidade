@@ -677,6 +677,7 @@ export const IA_MODELO = (process.env.IA_MODELO || "claude-opus-5").trim();
 export const IA_ESFORCO = (process.env.IA_ESFORCO || "medium").trim();
 export const IA_MAX_TOKENS = Math.max(256, Number(process.env.IA_MAX_TOKENS || 2000));
 export const IA_MAX_ITERACOES = Math.max(1, Number(process.env.IA_MAX_ITERACOES || 6));
+export const IA_RESERVA_CHAMADA_CENTAVOS = Math.max(1, Number(process.env.IA_RESERVA_CHAMADA_CENTAVOS || 100));
 
 /**
  * ⚠⚠ A CLASSIFICAÇÃO DE LANÇAMENTOS POR IA — o botão da aba "A lançar" (dono, 02/09/2026: *"a IA é

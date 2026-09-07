@@ -700,7 +700,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       if (!r.ok) {
         feedback.setError(r.texto);
       } else {
-        feedback.setMessage(r.texto);
+        feedback.setMessage(r.tom === "pendente" ? { texto: r.texto, tom: r.tom } : r.texto);
       }
     } catch (err) {
       feedback.setError(err?.message || "Falha ao reenviar guia");
@@ -872,7 +872,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       // sucesso, nem a falha, nem a (falsa) promessa de fila. O contador via só o selo 📤 aparecer.
       await loadGuides(companyId);
       if (r.ok) {
-        feedback.setMessage(r.texto);
+        feedback.setMessage(r.tom === "pendente" ? { texto: r.texto, tom: r.tom } : r.texto);
       } else {
         feedback.setError(r.texto);
       }

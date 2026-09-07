@@ -201,13 +201,13 @@ describe("⚠ a mídia recebida vira frase, e o corte deixa de ser silencioso", 
     })),
   };
 
-  it("balão de imagem diz o que chegou E que não dá para abrir ainda — nunca '[image]'", async () => {
+  it("balão de imagem diz o que chegou e onde conferir o arquivo — nunca '[image]'", async () => {
     await montar(apiFalso(comMidia));
     fireEvent.click(screen.getByTestId("conversa-cv1"));
     const fio = await screen.findByTestId("fio");
     const balao = within(fio).getByTestId("balao-m9");
     expect(balao).toHaveTextContent(/imagem/);
-    expect(balao).toHaveTextContent(/ainda não baixa/);
+    expect(balao).toHaveTextContent(/Lançamentos > A lançar/);
     expect(balao).not.toHaveTextContent("[image]");
   });
 

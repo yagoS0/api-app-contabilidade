@@ -63,8 +63,8 @@ function LinhaConversa({ c, ativa, onAbrir, onboarding }) {
   );
 }
 
-function FormVincular({ companies, api, conversaId, onVincular, ocupado }) {
-  const [portalClientId, setPortalClientId] = useState("");
+function FormVincular({ companies, api, conversaId, onVincular, ocupado, legado = false, empresaInicial = "" }) {
+  const [portalClientId, setPortalClientId] = useState(empresaInicial);
   const [nome, setNome] = useState("");
   const [optIn, setOptIn] = useState(false);
   const [userId, setUserId] = useState("");
@@ -80,7 +80,7 @@ function FormVincular({ companies, api, conversaId, onVincular, ocupado }) {
   return (
     <div data-testid="form-vincular" style={{ padding: "10px 12px", border: "1px solid var(--state-warn)", background: "var(--state-warn-surface)", borderRadius: "var(--radius-sm)", marginBottom: 12 }}>
       <div style={{ fontSize: "0.8rem", color: "var(--text)", marginBottom: 8 }}>
-        <strong>Este número não está em nenhum cadastro.</strong> Vincule-o a uma empresa: o contato é criado com este telefone (dígito a dígito) e o fio passa para a empresa.
+        <strong>{legado ? "Este histórico precisa de um vínculo verificado." : "Este número não está em nenhum cadastro."}</strong> Confirme a empresa e o contato. Um novo segmento será aberto com o vínculo verificado, preservando o histórico anterior.
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
         <label style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>Empresa
@@ -159,6 +159,7 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
           <div>
             {!hook.carregando && !hook.erro && lista.length === 0 ? <p style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Nenhuma conversa neste filtro.</p> : null}
             {lista.map((c) => <LinhaConversa key={c.id} c={c} ativa={hook.aberta?.conversa?.id === c.id} onAbrir={hook.abrir} onboarding={leituraOnboarding(c)} />)}
+            {hook.cursorLista ? <Button disabled={hook.carregandoMais} onClick={hook.carregarMais}>{hook.carregandoMais ? "Carregando…" : "Carregar mais conversas"}</Button> : null}
             {/* ⚠ A lista também pode estar cortada, e o corte é DITO — não se conclui do silêncio. */}
             {lista.length > 0 && avisoDaLista ? (
               <p data-testid="aviso-paginacao-lista" style={{ fontSize: "0.72rem", color: "var(--text-faint)", margin: "8px 2px 0" }}>{avisoDaLista}</p>
@@ -175,7 +176,7 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
                 temMais={hook.temMaisNoFio}
                 hrefDaEmpresa={(id) => companyTabPath(id, "anotacoes")}
                 slotVincular={<>
-                  <FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa?.id} onVincular={hook.vincular} ocupado={hook.ocupado} />
+                  <FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa?.id} legado={hook.aberta.conversa?.escopoVerificado === false} empresaInicial={hook.aberta.conversa?.portalClientId || ""} onVincular={hook.vincular} ocupado={hook.ocupado} />
                   <FormOnboarding key={hook.aberta.conversa.id} api={api} conversa={hook.aberta.conversa} mensagens={hook.aberta.mensagens} leitura={leituraOnboarding(hook.aberta.conversa)} onCriado={() => setRevisaoOnboarding((v) => v + 1)} />
                 </>}
               />
@@ -185,7 +186,7 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
           </div>
         </div>
 
-        <Feedback message={message} error={error} />
+        <Feedback message={message} error={hook.erroAcao || error} />
       </AppShell>
     </PageShell>
   );

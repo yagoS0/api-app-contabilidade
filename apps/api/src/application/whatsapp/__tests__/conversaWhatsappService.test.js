@@ -21,6 +21,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import {
   DIRECAO,
+  FILTRO_FILA_WHATSAPP,
   ConversaWhatsappError,
   garantirConversa,
   registrarMensagemRecebida,
@@ -33,7 +34,9 @@ import { SITUACOES } from "../vinculoTelefone.js";
 import { SITUACOES_JANELA, PERMISSOES } from "../janela24h.js";
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  jest.resetAllMocks();
+  prisma.mensagemWhatsapp.findUnique.mockResolvedValue(null);
+  prisma.conversaWhatsapp.findUnique.mockResolvedValue({id:"conv1",telefoneE164:"5521999998888"});
   prisma.contatoWhatsapp.findMany.mockResolvedValue([]);
   prisma.companyClientUser.findMany.mockResolvedValue([]);
   prisma.conversaWhatsapp.upsert.mockImplementation(({ create }) => Promise.resolve({ id: "conv1", ...create }));
@@ -211,7 +214,7 @@ describe("⚠ A FILA DE NÃO VINCULADOS É UMA CONSULTA, e o motivo vem do VÍNC
   it("a consulta pede exatamente os fios sem empresa", async () => {
     prisma.conversaWhatsapp.findMany.mockResolvedValue([]);
     await conversasNaoVinculadas();
-    expect(prisma.conversaWhatsapp.findMany.mock.calls[0][0].where).toEqual({ portalClientId: null });
+    expect(prisma.conversaWhatsapp.findMany.mock.calls[0][0].where).toEqual(FILTRO_FILA_WHATSAPP);
   });
 });
 
@@ -241,10 +244,24 @@ describe("⚠ ATRIBUIR NÃO É ESCOLHER LIVREMENTE", () => {
 describe("garantirConversa", () => {
   it("normaliza o número antes de abrir o fio — o mesmo E.164 do cadastro", async () => {
     await garantirConversa({ telefone: "(21) 99999-8888" });
-    expect(prisma.conversaWhatsapp.upsert.mock.calls[0][0].where).toEqual({ telefoneE164: "5521999998888" });
+    expect(prisma.conversaWhatsapp.upsert.mock.calls[0][0].where).toEqual({ chaveEscopo: "sem-empresa:5521999998888" });
   });
 
   it("telefone inválido não abre fio nenhum", async () => {
     await expect(garantirConversa({ telefone: "xyz" })).rejects.toMatchObject({ code: "TELEFONE_INVALIDO" });
   });
+});
+it("janela após novo vínculo usa apenas horários do destinatário, sem copiar histórico",async()=>{
+ prisma.mensagemWhatsapp.findFirst.mockResolvedValue({registradaEm:new Date(),ocorridaEmProvedor:new Date()});
+ expect((await janelaDaConversa("conv1")).situacao).toBe(SITUACOES_JANELA.ABERTA);
+ expect(prisma.mensagemWhatsapp.findFirst).toHaveBeenCalledWith({where:{conversa:{telefoneE164:"5521999998888"},direcao:"in"},orderBy:{registradaEm:"desc"},select:{registradaEm:true,ocorridaEmProvedor:true}});
+});
+it("conflito de wamid após troca de vínculo preserva conversa vencedora e tenant da mídia",async()=>{
+ prisma.contatoWhatsapp.findMany.mockResolvedValue([contato({portalClientId:"p2",portalClient:{id:"p2",razao:"BETA",cnpj:"22222222000122"}})]);
+ prisma.mensagemWhatsapp.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({id:"m-original",conversaId:"conv-original",midiaProvedorId:"123",providerMessageId:"wamid.AAA"});
+ prisma.mensagemWhatsapp.create.mockRejectedValueOnce(Object.assign(new Error("corrida"),{code:"P2002"}));
+ prisma.conversaWhatsapp.findUnique.mockResolvedValueOnce({id:"conv-original",portalClientId:"p1",escopoVerificado:true});
+ const r=await registrarMensagemRecebida(evento({tipo:"document",midiaProvedorId:"123"}));
+ expect(prisma.conversaWhatsapp.upsert.mock.calls[0][0].create.portalClientId).toBe("p2");
+ expect(r).toMatchObject({duplicada:true,mensagem:{conversaId:"conv-original"},conversa:{id:"conv-original",portalClientId:"p1"}});
 });

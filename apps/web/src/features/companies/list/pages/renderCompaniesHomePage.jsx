@@ -20,6 +20,7 @@ import {
   ABA_PADRAO, abasVisiveis, contarPorAba, empresasDaAba, normalizarAba, rotuloAba,
 } from "../lib/abaRegime";
 import { LogoAltan } from "../../../../components/ui/LogoAltan";
+import { desfechoWhatsapp, resumirWhatsapp } from "../../../guides/lib/canalDeEnvio";
 import { liberarComCanais } from "../../../guides/lib/liberarComCanais";
 import { useResumoWhatsapp } from "../../../whatsapp/hooks/useResumoWhatsapp";
 
@@ -451,7 +452,7 @@ export function CompaniesHomePage({
       // `sent:false` com ok:true (a liberação passou, o e-mail falhou) continua sendo ERRO no chip.
       const out = await liberarComCanais({ api, companyId: empresa?.companyId, guideId });
       onRefreshCompanies?.();
-      return out.ok ? { ok: true, message: out.texto } : { ok: false, message: out.texto };
+      return { ok: out.ok, tom: out.tom, message: out.texto };
     },
     /**
      * Só o WhatsApp, de novo — o botão do chip quando a tentativa por WhatsApp FALHOU.
@@ -460,9 +461,10 @@ export function CompaniesHomePage({
      */
     onEnviarWhatsapp: async (guideId, empresa) => {
       try {
-        const out = await api.enviarGuiaWhatsapp(empresa?.companyId, guideId);
+        const out = await api.enviarGuiaWhatsapp(empresa?.companyId, guideId, { apenasFalhos: true });
         onRefreshCompanies?.();
-        return out?.ok === false ? { ok: false, message: out.message || out.motivo || "O WhatsApp não saiu." } : out;
+        const resumo = resumirWhatsapp(desfechoWhatsapp(out));
+        return { ok: resumo.tom !== "erro", tom: resumo.tom, message: resumo.texto };
       } catch (err) {
         onRefreshCompanies?.();
         return { ok: false, message: err?.message || "O WhatsApp não saiu." };

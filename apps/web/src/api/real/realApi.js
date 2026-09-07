@@ -127,7 +127,7 @@ export function mapKnownError(payload, status) {
   if (doCadastro) return doCadastro;
 
   // Fallback: prefere a mensagem humana do backend ({error, message}) antes do código cru.
-  return reason || String(payload?.message || "").trim() || payload?.error || `request_failed_${status}`;
+  return reason || String(payload?.message || payload?.mensagem || "").trim() || payload?.error || `request_failed_${status}`;
 }
 
 function normalizeError(payload, status) {
@@ -965,16 +965,42 @@ export function createRealApi() {
     // ── AS CONVERSAS DE WHATSAPP (F5) — contrato LIDO de `routes/firm/whatsappConversas.js` ──────
     // ⚠ `empresa` e ORTOGONAL ao `filtro`, e o servidor o INTERSECTA com a carteira (nunca soma):
     // empresa fora do escopo devolve lista vazia pela MESMA regra que ja protege o resto.
+    async preverCorrecaoValorGuia(companyId, guideId, valor) {
+      return request(`/firm/companies/${companyId}/guides/${guideId}/corrigir-valor?valor=${encodeURIComponent(valor)}`);
+    },
+    async corrigirValorGuia(companyId, guideId, { valor, revisao }) {
+      return request(`/firm/companies/${companyId}/guides/${guideId}/corrigir-valor`, { method: "POST", body: JSON.stringify({ valor, revisao }) });
+    },
+    async listarArquivosWhatsapp(companyId, { cursor = null } = {}) {
+      return request(`/firm/companies/${companyId}/whatsapp/arquivos${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+    },
+    async listarArquivosWhatsappNaoVinculados(companyId, { cursor = null } = {}) {
+      return request(`/firm/companies/${companyId}/whatsapp/arquivos/nao-vinculados${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+    },
+    async vincularArquivoWhatsapp(companyId, arquivoId) {
+      return request(`/firm/companies/${companyId}/whatsapp/arquivos/${arquivoId}/vincular`, { method: "POST", body: JSON.stringify({ confirmarCompanyId: companyId }) });
+    },
+    async getConteudoArquivoWhatsapp(companyId, arquivoId) {
+      return request(`/firm/companies/${companyId}/whatsapp/arquivos/${arquivoId}/conteudo`);
+    },
+    async marcarArquivoWhatsappImportado(companyId, arquivoId) {
+      return request(`/firm/companies/${companyId}/whatsapp/arquivos/${arquivoId}/importado`, { method: "POST" });
+    },
     async getResumoWhatsapp() {
       return request("/firm/whatsapp/resumo");
     },
-    async listarConversasWhatsapp(filtro = "todas", { empresa = null } = {}) {
+    async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = null } = {}) {
       const qs = new URLSearchParams({ filtro: String(filtro) });
       if (empresa) qs.set("empresa", String(empresa));
+      if (cursor) qs.set("cursor", String(cursor));
+      if (limite) qs.set("limite", String(limite));
       return request(`/firm/whatsapp/conversas?${qs.toString()}`);
     },
-    async getMensagensWhatsapp(conversaId) {
-      return request(`/firm/whatsapp/conversas/${conversaId}/mensagens`);
+    async getMensagensWhatsapp(conversaId, { cursor = null, limite = null } = {}) {
+      const qs = new URLSearchParams();
+      if (cursor) qs.set("cursor", String(cursor));
+      if (limite) qs.set("limite", String(limite));
+      return request(`/firm/whatsapp/conversas/${conversaId}/mensagens${qs.size ? `?${qs}` : ""}`);
     },
     // ⚠ É MENSAGEM DE SERVIÇO: fora da janela de 24h o servidor responde 409 FORA_DA_JANELA, com o
     // MESMO corpo do `responder`. A empresa do documento vem do FIO, nunca do corpo.
@@ -1514,10 +1540,10 @@ export function createRealApi() {
     // GUIA_JA_ENVIADA…) chega como erro com `code`; quem chama trata a recusa como desfecho.
     // ⚠ `reenviar` é PEDIDO EXPLÍCITO (05/09/2026): sem ele, guia já enviada é recusada com
     // `GUIA_JA_ENVIADA`. Quem decide é o contador, depois de a tela dizer que ela já foi.
-    async enviarGuiaWhatsapp(companyId, guideId, { reenviar = false } = {}) {
+    async enviarGuiaWhatsapp(companyId, guideId, { reenviar = false, apenasFalhos = false } = {}) {
       return request(`/firm/companies/${companyId}/guides/${guideId}/enviar-whatsapp`, {
         method: "POST",
-        body: JSON.stringify({ reenviar: reenviar === true }),
+        body: JSON.stringify({ reenviar: reenviar === true, ...(apenasFalhos ? { apenasFalhos: true } : {}) }),
       });
     },
     // A PRÉVIA do lote — não envia nada. Body: { competencia, portalClientIds?, guideIds? }.
@@ -1560,10 +1586,10 @@ export function createRealApi() {
         body: formData,
       });
     },
-    async importOFX(companyId, { transactions }) {
+    async importOFX(companyId, { transactions, arquivoWhatsappId }) {
       return request(`/firm/companies/${companyId}/entries/import/ofx`, {
         method: "POST",
-        body: JSON.stringify({ transactions }),
+        body: JSON.stringify({ transactions, ...(arquivoWhatsappId ? { arquivoWhatsappId } : {}) }),
       });
     },
     async previewExcelImport(companyId, file) {
