@@ -2,8 +2,7 @@ name: Deploy DigitalOcean
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
+# Legacy deployment is manual only. Production deploys from main through Railway.
 
 jobs:
   deploy:

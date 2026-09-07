@@ -45,3 +45,22 @@ jobs:
       - name: Build workspaces
         run: npm run build
 
+  whatsapp-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Generate Prisma client
+        run: npm run prisma:generate -w @contabilidade/api
+      - name: WhatsApp, guides and AI backend regression
+        working-directory: apps/api
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='[Ww]hatsapp|assistente|envioGuia|classificacaoPorIa|corrigirValorGuia'
+      - name: WhatsApp and AI frontend regression
+        working-directory: apps/web
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='[Ww]hatsapp|liberarComCanais|canalDeEnvio|envioNaTela|colunaEnvio|reenviarGuia|classificacaoIa|botaoDeIa|clientFallbackAtendimento'
+
