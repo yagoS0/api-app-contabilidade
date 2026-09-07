@@ -681,6 +681,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   async function handleResendGuide(guideId) {
+    const companyId = companiesState.selectedCompanyId;
+    if (!companyId) { feedback.setError("Selecione uma empresa."); return; }
     if (!guideId) {
       feedback.setError("guide_id_not_found");
       return;
@@ -688,17 +690,17 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     guidesState.setResendingGuideId(guideId);
     feedback.clearFeedback();
     try {
-      const r = await api.resendGuideEmail(guideId);
+      const r = await liberarComCanais({ api, companyId, guideId, reenviarConfirmado: true });
       // ⚠ A ORDEM IMPORTA: `loadGuides` começa com `feedback.clearFeedback()`. Setar a mensagem
       // antes dele APAGA a mensagem — o clique não devolvia retorno nenhum à tela, nem de sucesso
       // nem de falha. "O sistema diz que fez" tem uma variante pior: o sistema não diz nada.
-      await loadGuides();
+      await loadGuides(companyId);
       // ⚠ Dizia "Guia colocada na fila de reenvio". Não existe fila: o laço automático saiu na Q55
       // e nada drena `emailNextRetryAt`. O reenvio é SÍNCRONO — ou saiu agora, ou não saiu.
-      if (r?.sent === false) {
-        feedback.setError(r?.message || "O e-mail NÃO foi enviado. Nada tenta de novo sozinho — clique novamente.");
+      if (!r.ok) {
+        feedback.setError(r.texto);
       } else {
-        feedback.setMessage("Guia reenviada.");
+        feedback.setMessage(r.texto);
       }
     } catch (err) {
       feedback.setError(err?.message || "Falha ao reenviar guia");

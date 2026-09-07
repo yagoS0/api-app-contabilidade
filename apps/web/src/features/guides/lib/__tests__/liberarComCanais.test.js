@@ -5,6 +5,7 @@ import { liberarComCanais } from "../liberarComCanais";
 function apiFalso({ canal = "EMAIL", sent = true, zap = { ok: true } } = {}) {
   return {
     liberarGuiaCliente: jest.fn(async () => ({ ok: true, sent, message: sent ? "Guia liberada e enviada ao cliente." : "Guia liberada ao cliente, mas o e-mail NÃO foi enviado." })),
+    resendGuideEmail: jest.fn(async () => ({ ok: true, sent })),
     listarContatosWhatsapp: jest.fn(async () => ({ ok: true, contatos: [], canalPadraoEnvio: canal })),
     enviarGuiaWhatsapp: jest.fn(async () => {
       if (zap instanceof Error) throw zap;
@@ -73,6 +74,52 @@ describe("liberarComCanais", () => {
     expect(r.ok).toBe(false);
     expect(r.texto).toMatch(/o e-mail NÃO foi enviado/);
     expect(r.texto).toMatch(/WhatsApp enviado/);
+  });
+});
+
+describe("reenvio confirmado no modal da guia", () => {
+  const pedido = { companyId: "pc-1", guideId: "g1", reenviarConfirmado: true };
+
+  it("envia por WhatsApp mesmo sem e-mail e não pede confirmação duplicada", async () => {
+    const api = apiFalso({ canal: "WHATSAPP" });
+    api.resendGuideEmail.mockResolvedValue({ sent: false, envio: { naoSeAplica: true } });
+    const perguntar = jest.fn();
+    const r = await liberarComCanais({ api, ...pedido, perguntar });
+    expect(api.resendGuideEmail).toHaveBeenCalledWith("g1");
+    expect(api.liberarGuiaCliente).not.toHaveBeenCalled();
+    expect(api.enviarGuiaWhatsapp).toHaveBeenCalledTimes(1);
+    expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith("pc-1", "g1", { reenviar: true });
+    expect(perguntar).not.toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+    expect(r.texto).toMatch(/sem e-mail cadastrado · WhatsApp enviado/);
+  });
+
+  it("EMAIL continua reenviando somente por e-mail", async () => {
+    const api = apiFalso();
+    const r = await liberarComCanais({ api, ...pedido });
+    expect(api.resendGuideEmail).toHaveBeenCalledWith("g1");
+    expect(api.enviarGuiaWhatsapp).not.toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+  });
+
+  it.each([false, true])("PERGUNTAR respeita a escolha %s no reenvio", async (escolha) => {
+    const api = apiFalso({ canal: "PERGUNTAR" });
+    const perguntar = jest.fn(() => escolha);
+    await liberarComCanais({ api, ...pedido, perguntar });
+    expect(perguntar).toHaveBeenCalledTimes(1);
+    expect(api.enviarGuiaWhatsapp).toHaveBeenCalledTimes(escolha ? 1 : 0);
+    if (escolha) expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith("pc-1", "g1", { reenviar: true });
+  });
+
+  it("recusa do WhatsApp permanece visível e não dispara outra tentativa", async () => {
+    const recusa = Object.assign(new Error("Reenvio recusado"), { code: "GUIA_JA_ENVIADA" });
+    const api = apiFalso({ canal: "WHATSAPP", zap: recusa });
+    const perguntar = jest.fn(() => true);
+    const r = await liberarComCanais({ api, ...pedido, perguntar });
+    expect(r.ok).toBe(false);
+    expect(r.texto).toMatch(/WhatsApp não saiu \(Reenvio recusado\)/);
+    expect(api.enviarGuiaWhatsapp).toHaveBeenCalledTimes(1);
+    expect(perguntar).not.toHaveBeenCalled();
   });
 });
 

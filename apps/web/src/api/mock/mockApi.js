@@ -3866,11 +3866,20 @@ export function createMockApi() {
     },
     async resendGuideEmail(guideId) {
       await delay();
-      for (const guides of mockGuidesByCompany.values()) {
+      for (const [companyId, guides] of mockGuidesByCompany.entries()) {
         const target = guides.find((item) => item.id === guideId);
         if (target) {
-          target.emailStatus = "PENDING";
-          return { ok: true, guideId, emailStatus: "PENDING" };
+          const temEmail = (mockContatosWhatsapp[String(companyId)] || [])
+            .some((c) => c.ativo !== false && String(c.email || "").trim());
+          if (!temEmail) {
+            return {
+              ok: true, guideId, emailStatus: target.emailStatus || null, sent: false,
+              envio: { feito: false, naoSeAplica: true, motivo: "sem_email_cadastrado", podeTentarNovamente: false },
+              message: "Sem e-mail cadastrado nesta empresa — a guia não foi enviada por e-mail.",
+            };
+          }
+          target.emailStatus = "SENT";
+          return { ok: true, guideId, emailStatus: "SENT", sent: true, envio: { feito: true } };
         }
       }
       throw new Error("not_found");

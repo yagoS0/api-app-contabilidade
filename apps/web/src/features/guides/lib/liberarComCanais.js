@@ -19,11 +19,16 @@ import { decidirCanaisAoLiberar, resumirDesfechoDosCanais, PERGUNTA_WHATSAPP, pe
  * @param {object} p.api
  * @param {string} p.companyId  o `PortalClient.id`
  * @param {string} p.guideId
+ * @param {boolean} [p.reenviarConfirmado] O contador confirmou o reenvio no modal da guia.
  * @param {(pergunta:string)=>boolean} [p.perguntar]  como perguntar ao contador (default: `window.confirm`)
  * @returns {Promise<{ok:boolean, tom:"ok"|"erro", texto:string, email:object, whatsapp:object|null}>}
  */
-export async function liberarComCanais({ api, companyId, guideId, perguntar }) {
-  const email = await api.liberarGuiaCliente(guideId);
+export async function liberarComCanais({ api, companyId, guideId, perguntar, reenviarConfirmado = false }) {
+  // O modal de reenvio usa os mesmos canais da liberação. A rota de e-mail própria
+  // continua necessária para reenviar uma guia cujo e-mail já foi enviado.
+  const email = reenviarConfirmado
+    ? await api.resendGuideEmail(guideId)
+    : await api.liberarGuiaCliente(guideId);
   // ⚠ `naoSeAplica` vem do servidor quando a empresa não tem e-mail CADASTRADO (05/09/2026). Ele é
   // o que separa "não saiu porque falhou" de "não existe este canal aqui" — sem ele, a empresa que
   // recebe só por WhatsApp veria vermelho em toda guia, para sempre.
@@ -50,14 +55,16 @@ export async function liberarComCanais({ api, companyId, guideId, perguntar }) {
 
   if (quer && companyId && typeof api.enviarGuiaWhatsapp === "function") {
     try {
-      const r = await api.enviarGuiaWhatsapp(companyId, guideId);
+      const r = reenviarConfirmado
+        ? await api.enviarGuiaWhatsapp(companyId, guideId, { reenviar: true })
+        : await api.enviarGuiaWhatsapp(companyId, guideId);
       whatsapp = { tentado: true, ok: r?.ok !== false, message: r?.message || null, motivo: r?.error || r?.motivo || null };
     } catch (err) {
       // ⚠ A recusa nomeada do servidor (422) chega como erro do `request`; ela é DESFECHO, não exceção.
       whatsapp = { tentado: true, ok: false, message: err?.message || null, motivo: err?.code || null };
       // ⚠ JÁ ENVIADA NÃO É MAIS O FIM (05/09/2026): a tela AVISA, com o motivo que o servidor deu, e
       // o contador decide. Só então o pedido volta com `reenviar` — nunca por conta própria.
-      if (err?.code === "GUIA_JA_ENVIADA" && perguntarAoContador(perguntaDeReenvio(err?.message))) {
+      if (!reenviarConfirmado && err?.code === "GUIA_JA_ENVIADA" && perguntarAoContador(perguntaDeReenvio(err?.message))) {
         try {
           const r2 = await api.enviarGuiaWhatsapp(companyId, guideId, { reenviar: true });
           whatsapp = { tentado: true, ok: r2?.ok !== false, reenvio: true, message: r2?.message || null, motivo: r2?.error || r2?.motivo || null };

@@ -448,6 +448,12 @@ quem recebe a guia é assunto do **envio**.
 
 ### Reenviar guia já enviada
 
+O modal da aba Guias também usa `liberarComCanais`, com `reenviarConfirmado: true`.
+Ele chama a rota própria de reenvio de e-mail e respeita o canal configurado para WhatsApp.
+A confirmação do modal autoriza `reenviar: true` na primeira tentativa de WhatsApp;
+PERGUNTAR ainda pede a escolha de canal. Antes de 07/09/2026, esse modal chamava
+somente `resendGuideEmail`, deixando empresas sem e-mail sem tentativa por WhatsApp.
+
 `GUIA_JA_ENVIADA` deixou de ser o fim do caminho (`liberarComCanais` + `perguntaDeReenvio`): a tela
 **avisa com o motivo que o servidor deu** e, só com o sim, repete o pedido com `reenviar: true`.
 ⚠ **Vale no envio POR GUIA.** O lote continua pulando as já enviadas — é o que impede a carteira
