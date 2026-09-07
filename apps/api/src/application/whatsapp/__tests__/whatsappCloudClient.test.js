@@ -422,7 +422,7 @@ describe("⚠ NENHUM TESTE TOCA A REDE", () => {
 });
 
 // ── DOCUMENTO FORA DE TEMPLATE (Entrega 2, 02/09/2026) ─────────────────────────────────────────
-import { montarPayloadDocumento } from "../WhatsappCloudClient.js";
+import { montarPayloadDocumento, montarPayloadImagem } from "../WhatsappCloudClient.js";
 
 describe("enviarDocumento — a resposta 'manda a guia' do assistente", () => {
   it("o payload é type=document com id (nunca link), filename e caption", () => {
@@ -450,6 +450,22 @@ describe("enviarDocumento — a resposta 'manda a guia' do assistente", () => {
     expect(corpo.document).toEqual({ id: "MID9", filename: "x.pdf", caption: "leg" });
     expect(chamadas[1].opts.headers.Authorization).toBe("Bearer T");
     expect(chamadas[1].url).not.toMatch(/T/);
+  });
+});
+
+describe("enviarImagem — documento digitalizado", () => {
+  it("usa type=image, preserva o MIME no upload e envia a legenda", async () => {
+    const chamadas = [];
+    const fetchImpl = jest.fn(async (url, opts) => {
+      chamadas.push({ url, opts });
+      return { ok: true, status: 200, json: async () => url.endsWith("/media") ? { id: "IMG1" } : { messages: [{ id: "wamid.img" }] } };
+    });
+    expect(montarPayloadImagem({ para: "5521999998888", mediaId: "IMG1", legenda: "Cartão CNPJ" }))
+      .toMatchObject({ type: "image", image: { id: "IMG1", caption: "Cartão CNPJ" } });
+    const c = new WhatsappCloudClient({ fetchImpl, config: { habilitada: true, token: "T", phoneNumberId: "P", versao: "v21.0", log: null } });
+    const r = await c.enviarImagem({ telefone: "5521999998888", conteudo: Buffer.from("png"), nomeArquivo: "cnpj.png", legenda: "Cartão CNPJ", mimeType: "image/png" });
+    expect(r.wamid).toBe("wamid.img");
+    expect(JSON.parse(chamadas[1].opts.body)).toMatchObject({ type: "image", image: { id: "IMG1", caption: "Cartão CNPJ" } });
   });
 });
 

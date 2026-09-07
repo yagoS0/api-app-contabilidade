@@ -4674,6 +4674,33 @@ que o servidor deu, e só com o sim o pedido é repetido.
 desde agosto. O que mudou foi o **rótulo**: ele mandava digitar o `+`. O `+` continua aceito e
 continua sendo o único desambiguador de DDI para número estrangeiro.
 
+## ⚠⚠ PERMISSÕES DO ASSISTENTE POR NÚMERO (07/09/2026)
+
+`ContatoWhatsapp.permissoesAssistente` é uma lista explícita e nasce vazia. Ela complementa o RBAC
+de `CompanyClientUser`: uma ferramenta só é oferecida e executada quando a função foi liberada para
+aquele número **e** a pessoa ligada ao contato tem o papel mínimo. Sem `userId`, nenhuma função de
+dados é liberada, mesmo com caixas marcadas.
+
+As funções configuráveis são `GUIAS`, `NOTAS_DANFSE`, `DOCUMENTOS_EMPRESA`, `SITUACAO_FISCAL`,
+`RECALCULO_GUIA`, `EMISSAO_NFSE` e `CANCELAMENTO_NFSE`. `chamar_escritorio` continua sempre
+disponível. `definicoes(sessao)` esconde ferramentas não liberadas do modelo e
+`executarFerramenta` repete o bloqueio no servidor; não depender só da lista enviada à Anthropic.
+O contato, o vínculo RBAC e as permissões são relidos antes de cada ferramenta e novamente antes de
+enviar um arquivo à Meta; uma revogação durante a resposta corta o acesso. Número que passe a casar
+com dois contatos também falha fechado.
+
+`RECALCULO_GUIA` inclui `GUIAS`, pois a ação precisa localizar a guia. `CANCELAMENTO_NFSE` inclui
+`NOTAS_DANFSE`, pois precisa localizar a nota. A normalização é feita no servidor, além da tela.
+
+Emissão, cancelamento e recálculo reconferem a permissão do contato quando chega `CONFIRMAR XXXX`.
+Retirar a permissão durante os dez minutos cancela a pendência sem praticar o ato. Documentos da
+empresa usam `CompanyDocumentsService.baixarBuffer`, sempre com o `portalClientId` da sessão, exigem
+`CLIENT_ADMIN` e só saem dentro da janela de 24 horas. PDF sai como documento; cadastro digitalizado
+PNG/JPEG/WebP sai como imagem, com o MIME preservado. Situação fiscal continua sendo a última
+consulta salva; o WhatsApp nunca chama o SERPRO para atualizá-la.
+
+Migration aditiva: `20260907190000_whatsapp_contact_permissions`.
+
 ## Regras
 
 - Nunca hardcodar credenciais ou URLs — usar `config.js`

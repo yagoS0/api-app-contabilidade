@@ -21,6 +21,7 @@ import {
   estadoDaLista,
   CARGA,
   pessoaDoContato,
+  normalizarFuncoesDoAssistente,
 } from "../contatoWhatsappTela";
 import {
   normalizarE164 as normalizarNoServidor,
@@ -102,6 +103,10 @@ describe("a situação do contato e da empresa", () => {
 });
 
 describe("validarFormulario e montarPayload", () => {
+  it("inclui as permissões de consulta exigidas por recálculo e cancelamento", () => {
+    expect(normalizarFuncoesDoAssistente(["RECALCULO_GUIA"])).toEqual(["RECALCULO_GUIA", "GUIAS"]);
+    expect(normalizarFuncoesDoAssistente(["CANCELAMENTO_NFSE"])).toEqual(["CANCELAMENTO_NFSE", "NOTAS_DANFSE"]);
+  });
   it("nome vazio e telefone inválido são DOIS erros, nomeados", () => {
     const r = validarFormulario({ nome: " ", telefone: "12" });
     expect(r.ok).toBe(false);

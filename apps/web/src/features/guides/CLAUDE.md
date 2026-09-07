@@ -468,3 +468,17 @@ inteira de sair duas vezes num clique.
 - `ModalCorrigirValorGuia` oferece prévia para OUTRA processada com valor divergente no PDF. Aplicação exige revisão válida e confirmação, chama a operação contábil transacional e não envia a guia.
 - A aba A lançar recebe `PainelArquivosWhatsapp`: abertura manual, OFX com prévia e confirmação, retenção do original por 90 dias. O commit leva `arquivoWhatsappId` para idempotência e marcação atômicas no servidor. Arquivos sem empresa exigem vínculo explícito antes de abrir.
 - Em modo real não se usa resultado simulado como recuperação de erro, inclusive nas operações de IA.
+
+## Permissões da IA por número — 07/09/2026
+
+Cada destinatário com telefone mostra **Acessos da IA** na Configuração de envio. A seleção é por
+número e começa vazia: guias, notas/DANFSe, documentos da empresa, situação fiscal, recálculo,
+emissão e cancelamento são liberados separadamente. O formulário de contato também permite escolher
+essas funções na criação.
+Contatos antigos têm a ação **Vincular pessoa** na própria linha. Recálculo seleciona também guias;
+cancelamento seleciona também notas/DANFSe, porque essas consultas localizam o alvo da ação.
+
+As caixas não substituem a **Pessoa do portal** nem o papel dela. A tela diz isso antes de salvar;
+o servidor é o portão e exige os dois. A gravação usa a rota própria
+`PATCH /firm/companies/:companyId/contatos-whatsapp/:contatoId/permissoes-assistente`, para não tocar
+em telefone, e-mail, opt-in ou usuário ao alterar somente os acessos.

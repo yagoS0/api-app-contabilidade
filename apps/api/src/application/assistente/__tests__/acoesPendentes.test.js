@@ -16,6 +16,7 @@
 
 import { confirmarEExecutar, criarPendencia, DEPS_PADRAO } from "../AcoesPendentesService.js";
 import { TIPOS, STATUS } from "../confirmacaoPendente.js";
+import { TODAS_PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente.js";
 
 const AGORA = new Date("2026-09-03T12:00:00.000Z");
 const silencio = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -52,6 +53,15 @@ function clienteFalso({ acoes = [], guide = GUIA } = {}) {
     guide: {
       findFirst: jest.fn(async ({ where }) => (guide && where.id === guide.id && where.portalClientId === guide.portalClientId && (!where.liberadaCliente || guide.liberadaCliente) ? guide : null)),
       findUnique: jest.fn(async () => ({ ...guide, valor: 1502.9, vencimento: new Date("2026-09-05T00:00:00Z") })),
+    },
+    conversaWhatsapp: {
+      findFirst: jest.fn(async ({ where }) => (where.id === "cv1" && where.portalClientId === "pc-1" ? { telefoneE164: "5521999998888" } : null)),
+    },
+    contatoWhatsapp: {
+      findMany: jest.fn(async () => [{ userId: "u1", permissoesAssistente: [...TODAS_PERMISSOES_ASSISTENTE] }]),
+    },
+    companyClientUser: {
+      findUnique: jest.fn(async () => ({ role: "CLIENT_ADMIN", status: "ACTIVE" })),
     },
   };
 }
@@ -120,6 +130,34 @@ describe("a reserva — uma execução, e só uma", () => {
 });
 
 describe("a reconferência do portão — o que mudou nos 10 minutos", () => {
+  it("permissão retirada do número entre o pedido e o CONFIRMAR cancela sem executar", async () => {
+    const client = clienteFalso({ acoes: [pendencia()] });
+    client.contatoWhatsapp.findMany.mockResolvedValueOnce([{ userId: "u1", permissoesAssistente: [] }]);
+    const executor = jest.fn();
+    const r = await confirmarEExecutar({
+      acaoId: "ap1", conversaId: "cv1", portalClientId: "pc-1", agora: AGORA, client, log: silencio,
+      executores: { [TIPOS.RECALCULAR_GUIA]: executor },
+    });
+    expect(executor).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ executou: false, filaHumana: true, resultado: { erro: "RECONFERENCIA_CONTATO", codigo: "FUNCAO_NAO_LIBERADA" } });
+    expect(client._tabela.get("ap1").status).toBe(STATUS.CANCELADA);
+  });
+
+  it("novo contato ambíguo com o mesmo número cancela sem executar", async () => {
+    const client = clienteFalso({ acoes: [pendencia()] });
+    client.contatoWhatsapp.findMany.mockResolvedValueOnce([
+      { userId: "u1", permissoesAssistente: [...TODAS_PERMISSOES_ASSISTENTE] },
+      { userId: "u2", permissoesAssistente: [...TODAS_PERMISSOES_ASSISTENTE] },
+    ]);
+    const executor = jest.fn();
+    const r = await confirmarEExecutar({
+      acaoId: "ap1", conversaId: "cv1", portalClientId: "pc-1", agora: AGORA, client, log: silencio,
+      executores: { [TIPOS.RECALCULAR_GUIA]: executor },
+    });
+    expect(executor).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ executou: false, resultado: { erro: "RECONFERENCIA_CONTATO", codigo: "CONTATO_NAO_IDENTIFICADO" } });
+  });
+
   it("⚠ autorização REVOGADA entre o pedido e o CONFIRMAR: a nota NÃO é emitida", async () => {
     const client = clienteFalso({ acoes: [pendencia({ tipo: TIPOS.EMITIR_NFSE, payload: { tomador: {} } })] });
     const deps = depsFalsos({ autorizarEmissaoDoCliente: jest.fn(async () => ({ ok: false, codigo: "EMISSAO_NAO_LIBERADA" })) });

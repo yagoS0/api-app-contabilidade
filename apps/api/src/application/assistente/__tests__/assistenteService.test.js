@@ -11,6 +11,7 @@
 
 import { responderMensagem, montarHistorico, AUTOR } from "../AssistenteService.js";
 import { TIPOS, STATUS } from "../confirmacaoPendente.js";
+import { TODAS_PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente.js";
 
 jest.mock("../../whatsapp/ConversaWhatsappService.js", () => {
   const real = jest.requireActual("../../whatsapp/ConversaWhatsappService.js");
@@ -25,12 +26,12 @@ import { registrarMensagemEnviada } from "../../whatsapp/ConversaWhatsappService
 
 const silencio = { warn: jest.fn(), error: jest.fn(), info: jest.fn() };
 
-function bancoEmMemoria({ contato = { id: "c1", nome: "Maria", userId: "u1" }, vinculo = { role: "CLIENT_ADMIN", status: "ACTIVE" }, pendente = null, chamadas = [] } = {}) {
+function bancoEmMemoria({ contato = { id: "c1", nome: "Maria", userId: "u1", permissoesAssistente: [...TODAS_PERMISSOES_ASSISTENTE] }, vinculo = { role: "CLIENT_ADMIN", status: "ACTIVE" }, pendente = null, chamadas = [] } = {}) {
   const mensagens = new Map([["m1", { id: "m1", conversaId: "cv1", direcao: "in", tipo: "text", corpo: "quanto devo?", registradaEm: new Date("2026-09-02T12:00:00Z"), respondidaPelaIaEm: null }]]);
   const conversa = { id: "cv1", escopoVerificado: true, telefoneE164: "5521999998888", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null, portalClient: { id: "pc-1", razao: "ACME LTDA", cnpj: "11222333000181" } };
   const acoes = new Map(pendente ? [[pendente.id, { ...pendente }]] : []);
   const db = {
-    _mensagens: mensagens, _acoes: acoes, _conversa: conversa, _chamadas: chamadas,
+    _mensagens: mensagens, _acoes: acoes, _conversa: conversa, _contato: contato, _chamadas: chamadas,
     mensagemWhatsapp: {
       updateMany: jest.fn(async ({ where, data }) => {
         let count = 0;
@@ -47,6 +48,11 @@ function bancoEmMemoria({ contato = { id: "c1", nome: "Maria", userId: "u1" }, v
     },
     conversaWhatsapp: {
       findUnique: jest.fn(async () => conversa),
+      findFirst: jest.fn(async ({ where }) => (
+        conversa.id === where.id && conversa.portalClientId === where.portalClientId && conversa.escopoVerificado === where.escopoVerificado && !conversa.excluidaEm
+          ? conversa
+          : null
+      )),
       update: jest.fn(async ({ data }) => Object.assign(conversa, data)),
       updateMany: jest.fn(async ({data}) => { if(conversa.excluidaEm) return {count:0}; Object.assign(conversa,data);return {count:1}; }),
     },
@@ -103,6 +109,35 @@ describe("o turno", () => {
     expect(client._chamadas).toHaveLength(1);
     expect(client._chamadas[0]).toMatchObject({ status: "ok", inputTokens: 100, outputTokens: 20, portalClientId: "pc-1" });
     expect(client._chamadas[0].custoEstimadoCentavos).toBeGreaterThan(0);
+  });
+
+  it("revogação durante a chamada impede a ferramenta de consultar dados", async () => {
+    const client = bancoEmMemoria();
+    const cloud = cloudFalso();
+    const assistente = { responder: jest.fn(async ({ executar }) => {
+      client._contato.permissoesAssistente = [];
+      const resultado = await executar("quanto_devo", {});
+      expect(resultado).toMatchObject({ ok: false, motivo: "FUNCAO_NAO_LIBERADA" });
+      return { texto: "O acesso foi retirado.", usage: { input_tokens: 1, output_tokens: 1 }, iteracoes: 1, ferramentasChamadas: ["quanto_devo"], stopReason: "end_turn", recusou: false };
+    }) };
+    const r = await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente }) });
+    expect(r).toMatchObject({ feito: false, motivo: "ACESSO_REVOGADO" });
+    expect(client.guide.findMany).not.toHaveBeenCalled();
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+
+  it("revogação depois da consulta impede o texto final com dados", async () => {
+    const client = bancoEmMemoria();
+    const cloud = cloudFalso();
+    const assistente = { responder: jest.fn(async ({ executar }) => {
+      await executar("quanto_devo", {});
+      client._contato.permissoesAssistente = [];
+      return { texto: "A guia custa R$ 500,00.", usage: { input_tokens: 1, output_tokens: 1 }, iteracoes: 1, ferramentasChamadas: ["quanto_devo"], stopReason: "end_turn", recusou: false };
+    }) };
+    const r = await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente }) });
+    expect(r).toMatchObject({ feito: false, motivo: "ACESSO_REVOGADO" });
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    expect(client._mensagens.get("m1").respondidaPelaIaEm).toBeNull();
   });
 
   it("⚠ a RESERVA: a mesma mensagem de novo (reentrega) NÃO responde de novo", async () => {
@@ -247,6 +282,28 @@ describe("a pendência — a confirmação NÃO passa pelo modelo", () => {
     expect(cloud.enviarTexto.mock.calls[1][0].texto).toMatch(/juros e multa/);
     const autores = client.mensagemWhatsapp.create.mock.calls.map((c) => c[0].data.autor);
     expect(autores).toEqual([AUTOR.IA, AUTOR.SISTEMA]);
+  });
+
+  it("revogação após preparar ato bloqueia o código mesmo quando o modelo não devolve texto", async () => {
+    const client = bancoEmMemoria();
+    const cloud = cloudFalso();
+    const guia = { id: "g1", portalClientId: "pc-1", tipo: "SIMPLES", competencia: "2026-07", valor: 300, vencimento: new Date("2026-07-20T00:00:00Z"), status: "PROCESSED", liberadaCliente: true };
+    client.guide.findFirst = jest.fn(async () => guia);
+    const servicos = {
+      canGuideRecalculate: () => true, isGuideOverdue: () => true, avisoDeRecalculo: () => ({ texto: "Gera uma nova guia com juros e multa." }),
+      criarPendencia: jest.fn(async ({ corpo }) => ({ acao: { id: "apX" }, codigo: "K9M3", texto: `${corpo}\n\nPara confirmar, responda CONFIRMAR K9M3.` })),
+    };
+    const assistente = { responder: jest.fn(async ({ executar }) => {
+      await executar("preparar_recalculo", { guideId: "g1" });
+      client._contato.permissoesAssistente = [];
+      return { texto: "", usage: { input_tokens: 1, output_tokens: 1 }, iteracoes: 2, ferramentasChamadas: ["preparar_recalculo"], stopReason: "end_turn", recusou: false };
+    }) };
+
+    const r = await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente, servicos }) });
+
+    expect(r).toMatchObject({ feito: false, motivo: "ACESSO_REVOGADO" });
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    expect(client._mensagens.get("m1").respondidaPelaIaEm).toBeNull();
   });
 
   it("⚠ a mensagem-INJEÇÃO não emite nada: o executor de emissão NUNCA é chamado num turno sem confirmação", async () => {

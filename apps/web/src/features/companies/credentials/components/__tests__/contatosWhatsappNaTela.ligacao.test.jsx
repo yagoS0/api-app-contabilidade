@@ -23,7 +23,7 @@ const MARIA_PORTAL = { userId: "u1", nome: "Maria do Cliente", email: "maria@emp
 
 const COM_OPT_IN = {
   id: "c1", portalClientId: "pc-1", nome: "Maria do Cliente", papel: "sócia", telefoneE164: "5521999998888",
-  optInEm: "2026-08-20T13:00:00.000Z", optInOrigem: "contrato", ativo: true, userId: "u1",
+  optInEm: "2026-08-20T13:00:00.000Z", optInOrigem: "contrato", ativo: true, userId: "u1", permissoesAssistente: ["GUIAS"],
 };
 const SEM_OPT_IN = {
   id: "c2", portalClientId: "pc-1", nome: "Financeiro", papel: "financeiro", telefoneE164: "552198887777",
@@ -53,6 +53,7 @@ function apiFalso(over = {}) {
   return {
     listarContatosWhatsapp: jest.fn(async () => ({ ok: true, contatos: [COM_OPT_IN, SEM_OPT_IN], canalPadraoEnvio: "WHATSAPP" })),
     salvarContatoWhatsapp: jest.fn(async (_c, input) => ({ ok: true, contato: { id: "c3", ...input } })),
+    salvarPermissoesAssistenteWhatsapp: jest.fn(async (_c, contatoId, permissoesAssistente) => ({ ok: true, contato: { id: contatoId, permissoesAssistente } })),
     removerContatoWhatsapp: jest.fn(async () => ({ ok: true })),
     definirCanalEnvio: jest.fn(async (_c, canal) => ({ ok: true, canalPadraoEnvio: String(canal).toUpperCase() })),
     ...over,
@@ -125,7 +126,7 @@ describe("o formulário grava o que a rota espera", () => {
     // A tela diz como o número será gravado ANTES de salvar.
     expect(form).toHaveTextContent(/será gravado como \+55 \(21\) 97777-6666/);
     fireEvent.change(within(form).getByRole("combobox"), { target: { value: "u1" } });
-    fireEvent.click(within(form).getByRole("checkbox"));
+    fireEvent.click(within(form).getByRole("checkbox", { name: /Opt-in registrado/ }));
     fireEvent.change(within(form).getByPlaceholderText(/contrato, formulário/), { target: { value: "contrato de prestação" } });
     fireEvent.click(within(form).getByRole("button", { name: /Salvar contato/ }));
 
@@ -137,7 +138,7 @@ describe("o formulário grava o que a rota espera", () => {
       // ⚠ `email` VIAJA VAZIO de propósito (05/09/2026): no servidor a string vazia é "sem e-mail",
       // e é assim que se APAGA o endereço de quem passou a receber só por WhatsApp.
       email: "",
-      optIn: true, optInOrigem: "contrato de prestação", userId: "u1",
+      optIn: true, optInOrigem: "contrato de prestação", userId: "u1", permissoesAssistente: [],
     });
     // Salvou → recarregou a lista.
     await waitFor(() => expect(api.listarContatosWhatsapp).toHaveBeenCalledTimes(2));
@@ -185,6 +186,32 @@ describe("remover confirma repetindo os dados", () => {
     confirm.mockReturnValue(true);
     fireEvent.click(within(screen.getByTestId("contato-whatsapp-c2")).getByRole("button", { name: /Remover/ }));
     await waitFor(() => expect(api.removerContatoWhatsapp).toHaveBeenCalledWith("pc-1", "c2"));
+  });
+});
+
+describe("acessos da IA por número", () => {
+  it("mostra o acesso atual e salva a nova seleção pela rota própria", async () => {
+    const { api } = await montar();
+    const maria = screen.getByTestId("contato-whatsapp-c1");
+    expect(maria).toHaveTextContent(/IA liberada para: Guias e valores/);
+    fireEvent.click(within(maria).getByRole("button", { name: /Acessos da IA/ }));
+    const painel = screen.getByTestId("permissoes-assistente-c1");
+    fireEvent.click(within(painel).getByRole("checkbox", { name: /Situação fiscal/ }));
+    fireEvent.click(within(painel).getByRole("button", { name: /Salvar acessos deste número/ }));
+    await waitFor(() => expect(api.salvarPermissoesAssistenteWhatsapp).toHaveBeenCalledWith("pc-1", "c1", ["GUIAS", "SITUACAO_FISCAL"]));
+  });
+
+  it("permite vincular um contato antigo sem regravar telefone, e-mail ou opt-in", async () => {
+    const { api, feedback } = await montar();
+    const financeiro = screen.getByTestId("contato-whatsapp-c2");
+    fireEvent.click(within(financeiro).getByRole("button", { name: /Vincular pessoa/ }));
+    fireEvent.change(within(financeiro).getByRole("combobox"), { target: { value: "u1" } });
+    fireEvent.click(within(financeiro).getByRole("button", { name: /Salvar vínculo/ }));
+    await waitFor(() => expect(api.salvarContatoWhatsapp).toHaveBeenCalledWith("pc-1", {
+      id: "c2", nome: "Financeiro", userId: "u1",
+    }));
+    expect(feedback.notifySuccess).toHaveBeenCalledWith("Contato atualizado.");
+    expect(feedback.notifySuccess).not.toHaveBeenCalledWith(expect.stringMatching(/sem opt-in/));
   });
 });
 

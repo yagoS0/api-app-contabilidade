@@ -9,10 +9,11 @@ import { SITUACOES_JANELA } from "../whatsapp/janela24h.js";
 import { AssistenteClient } from "./AssistenteClient.js";
 import { autorizarChamadaIa, concluirChamadaIa } from "./GuardaIaService.js";
 import { montarSystem, MENSAGENS_FIXAS } from "./promptDoAssistente.js";
-import { sessaoDoContato, fraseSemSessao } from "./sessaoDoContato.js";
+import { sessaoDoContato, fraseSemSessao, papelAlcanca, PAPEL_MINIMO_LEITURA, PAPEL_MINIMO_SITUACAO_FISCAL } from "./sessaoDoContato.js";
+import { PERMISSOES_ASSISTENTE, temPermissaoAssistente } from "../whatsapp/permissoesAssistente.js";
 import { decidirResposta, FRASES } from "./confirmacaoPendente.js";
 import { criarPendencia, pendenciaAberta, confirmarEExecutar, cancelarPendencia, marcarExpirada } from "./AcoesPendentesService.js";
-import { definicoes, executarFerramenta } from "./ferramentas/index.js";
+import { definicoes, executarFerramenta, PERMISSAO_POR_FERRAMENTA } from "./ferramentas/index.js";
 
 export const AUTOR = Object.freeze({ IA: "IA", HUMANO: "HUMANO", SISTEMA: "SISTEMA" });
 const LOCK_TTL_MS = 90_000;
@@ -113,18 +114,35 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       return r;
     };
 
-    const contatos = conversa.portalClientId
-      ? await client.contatoWhatsapp.findMany({ where: { portalClientId: conversa.portalClientId, ativo: true, OR: [{ telefoneE164: conversa.telefoneE164 }, { waId: conversa.telefoneE164 }] }, take: 2, select: { id: true, nome: true, userId: true } })
-      : [];
-    const contato = contatos.length === 1 ? contatos[0] : null;
-    const vinculoRbac = contato?.userId && conversa.portalClientId
-      ? await client.companyClientUser.findUnique({ where: { companyId_userId: { companyId: conversa.portalClientId, userId: contato.userId } }, select: { role: true, status: true } })
-      : null;
-    const sessao = sessaoDoContato({ portalClientId: conversa.portalClientId, contato, vinculoRbac });
+    const carregarSessaoAtual = async () => {
+      const contatos = conversa.portalClientId
+        ? await client.contatoWhatsapp.findMany({ where: { portalClientId: conversa.portalClientId, ativo: true, OR: [{ telefoneE164: conversa.telefoneE164 }, { waId: conversa.telefoneE164 }] }, take: 2, select: { id: true, nome: true, userId: true, permissoesAssistente: true } })
+        : [];
+      const contato = contatos.length === 1 ? contatos[0] : null;
+      const vinculoRbac = contato?.userId && conversa.portalClientId
+        ? await client.companyClientUser.findUnique({ where: { companyId_userId: { companyId: conversa.portalClientId, userId: contato.userId } }, select: { role: true, status: true } })
+        : null;
+      return sessaoDoContato({ portalClientId: conversa.portalClientId, contato, vinculoRbac });
+    };
+    const sessao = await carregarSessaoAtual();
     if (!sessao.ok) {
       await dizer(fraseSemSessao(sessao.motivo), { autor: AUTOR.SISTEMA });
       return { feito: true, motivo: sessao.motivo };
     }
+    const assinaturaDaSessao = (s) => JSON.stringify({
+      ok: Boolean(s?.ok),
+      userId: s?.userId || null,
+      papel: s?.papel || null,
+      permissoes: [...(s?.permissoesAssistente || [])].sort(),
+    });
+    const conferirSessaoNaoAlterada = async () => {
+      await conferirPortao();
+      const atual = await carregarSessaoAtual();
+      if (assinaturaDaSessao(atual) !== assinaturaDaSessao(sessao)) {
+        throw Object.assign(new Error("O acesso deste número mudou antes da resposta."), { codigo: "ACESSO_REVOGADO" });
+      }
+      return atual;
+    };
 
     // 4. A pendência — lida pela regex, ANTES do modelo.
     const pendente = await pendenciaAberta(conversa.id, { client });
@@ -192,15 +210,26 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
           });
         },
       }, janela: { aberta: janela.situacao === SITUACOES_JANELA.ABERTA }, agora, log,
-      enviarDocumento: async ({ conteudo, nomeArquivo, legenda, guideId, notaId }) => {
-        const chaveDocumento = `${guideId || ""}:${notaId || ""}:${nomeArquivo || ""}`;
+      enviarDocumento: async ({ conteudo, nomeArquivo, legenda, mimeType, guideId, notaId, documentId }) => {
+        const chaveDocumento = `${guideId || ""}:${notaId || ""}:${documentId || ""}:${nomeArquivo || ""}`;
         if (documentosTentados.has(chaveDocumento)) return documentosTentados.get(chaveDocumento);
-        const tentativa = enviarMensagemRastreada({ conversa, tipo: "document", corpo: legenda || nomeArquivo, autor: AUTOR.IA, turnoIaId, client,
+        const ehImagem = String(mimeType || "").toLowerCase().startsWith("image/");
+        const tentativa = enviarMensagemRastreada({ conversa, tipo: ehImagem ? "image" : "document", corpo: legenda || nomeArquivo, autor: AUTOR.IA, turnoIaId, client,
           antesDeEnviar: async () => {
             await conferirPortao();
+            const atual = await carregarSessaoAtual();
+            const permissao = guideId ? PERMISSOES_ASSISTENTE.GUIAS
+              : notaId ? PERMISSOES_ASSISTENTE.NOTAS_DANFSE
+                : PERMISSOES_ASSISTENTE.DOCUMENTOS_EMPRESA;
+            const papelMinimo = documentId ? PAPEL_MINIMO_SITUACAO_FISCAL : PAPEL_MINIMO_LEITURA;
+            if (!atual.ok || atual.userId !== sessao.userId || !temPermissaoAssistente(atual, permissao) || !papelAlcanca(atual.papel, papelMinimo)) {
+              throw Object.assign(new Error("O acesso deste número mudou antes do envio."), { codigo: "ACESSO_REVOGADO" });
+            }
             const janelaAtual = await janelaDaConversa(conversa.id, new Date());
             if (janelaAtual.situacao !== SITUACOES_JANELA.ABERTA) throw Object.assign(new Error("Janela fechada."), { codigo: "FORA_DA_JANELA" });
-          }, enviar: () => cloud.enviarDocumento({ telefone: conversa.telefoneE164, conteudo, nomeArquivo, legenda }),
+          }, enviar: () => ehImagem
+            ? cloud.enviarImagem({ telefone: conversa.telefoneE164, conteudo, nomeArquivo, legenda, mimeType })
+            : cloud.enviarDocumento({ telefone: conversa.telefoneE164, conteudo, nomeArquivo, legenda, mimeType }),
         });
         documentosTentados.set(chaveDocumento, tentativa);
         const r = await tentativa;
@@ -217,7 +246,12 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     try {
       await conferirPortao();
       iniciouModelo = true;
-      resposta = await assistente.responder({ system, messages, ferramentas: definicoes(), executar: async (nome, input) => { await conferirPortao(); return executarFerramenta(nome, input, ctx); } });
+      resposta = await assistente.responder({ system, messages, ferramentas: definicoes(sessao), executar: async (nome, input) => {
+        await conferirPortao();
+        const atual = await carregarSessaoAtual();
+        const sessaoDaFerramenta = atual.userId === sessao.userId ? atual : { ...atual, ok: false };
+        return executarFerramenta(nome, input, { ...ctx, sessao: sessaoDaFerramenta });
+      } });
     } catch (err) {
       await concluirChamadaIa(guarda.contexto, { usage: iniciouModelo ? err?.usage : { input_tokens: 0, output_tokens: 0 }, usageCompleto: !iniciouModelo, iteracoes: err?.iteracoes, ferramentas: err?.ferramentasChamadas, erroCodigo: err?.codigo || "IA_ERRO", erroMensagem: err?.message }, { client, log });
       if (!iniciouModelo) throw err;
@@ -229,8 +263,22 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
 
     // 6. A resposta — e, se houve pendência, o texto de confirmação EXATO como segunda mensagem.
     const texto = resposta.recusou ? MENSAGENS_FIXAS.RECUSA_MODELO : (resposta.texto || "").trim();
-    if (texto) await dizer(texto, { autor: AUTOR.IA });
-    for (const p of pendenciasDoTurno) await dizer(p.texto, { autor: AUTOR.SISTEMA });
+    if (texto) {
+      // A ferramenta pode ter lido dados e a autorização ser retirada enquanto o modelo redige a
+      // frase final. Reconfere o mesmo usuário, papel e conjunto de permissões antes de liberar o
+      // texto; em caso de mudança, uma reentrega inicia um turno novo com o acesso atual.
+      const usouDados = (resposta.ferramentasChamadas || []).some((nome) => PERMISSAO_POR_FERRAMENTA[nome]);
+      if (usouDados) {
+        await conferirSessaoNaoAlterada();
+      }
+      await dizer(texto, { autor: AUTOR.IA });
+    }
+    for (const p of pendenciasDoTurno) {
+      // O código confirma um ato fiscal real. A autorização é conferida novamente imediatamente
+      // antes de cada envio, inclusive quando o modelo devolve texto vazio.
+      await conferirSessaoNaoAlterada();
+      await dizer(p.texto, { autor: AUTOR.SISTEMA });
+    }
     if (chamouEscritorio) {
       await conferirPortao();
       await client.conversaWhatsapp.update({ where: { id: conversa.id }, data: { atendidaDesde: agora } }).catch(() => {});

@@ -4,6 +4,10 @@
 // protege o número do escritório.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
+import {
+  normalizarPermissoesAssistente,
+  permissoesAssistenteInvalidas,
+} from "./permissoesAssistente.js";
 import { normalizarE164, variantesE164 } from "./telefone.js";
 import { resolverVinculoTelefone } from "./vinculoTelefone.js";
 
@@ -45,7 +49,7 @@ export async function listarContatos(portalClientId) {
  * descobre pelo painel de falhas. Validar cedo é o que transforma isso num campo vermelho na tela
  * de cadastro.
  */
-export async function salvarContato({ portalClientId, id, nome, papel, telefone, email, optIn, optInOrigem, ativo, userId }) {
+export async function salvarContato({ portalClientId, id, nome, papel, telefone, email, optIn, optInOrigem, ativo, userId, permissoesAssistente }) {
   // ⚠ UM DOS DOIS BASTA, e nenhum dos dois é obrigatório sozinho (05/09/2026). O destinatário virou
   // "por onde esta pessoa recebe": só e-mail, só WhatsApp, ou os dois. Exigir telefone deixaria de
   // fora o financeiro que só recebe por e-mail — que é a maioria da carteira hoje.
@@ -118,6 +122,18 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
   if (veio(telefone)) dados.telefoneE164 = e164;
   if (veio(email)) dados.email = emailLimpo;
   if (veio(ativo)) dados.ativo = Boolean(ativo);
+  if (veio(permissoesAssistente)) {
+    const invalidas = permissoesAssistenteInvalidas(permissoesAssistente);
+    if (invalidas.length) {
+      throw new ContatoWhatsappError(
+        "PERMISSOES_ASSISTENTE_INVALIDAS",
+        invalidas[0] === "FORMATO_INVALIDO"
+          ? "As funções do assistente devem ser enviadas como uma lista."
+          : `Função do assistente inválida: ${invalidas.join(", ")}.`,
+      );
+    }
+    dados.permissoesAssistente = normalizarPermissoesAssistente(permissoesAssistente);
+  }
 
   let telefoneAnterior;
   if (id && veio(telefone)) {
@@ -204,6 +220,30 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
     create: { portalClientId: String(portalClientId), ...dados },
     update: dados,
   });
+}
+
+/** Atualiza somente as funções do assistente, sem tocar em telefone, canais, opt-in ou usuário. */
+export async function salvarPermissoesAssistente({ portalClientId, contatoId, permissoesAssistente }) {
+  const invalidas = permissoesAssistenteInvalidas(permissoesAssistente);
+  if (invalidas.length) {
+    throw new ContatoWhatsappError(
+      "PERMISSOES_ASSISTENTE_INVALIDAS",
+      invalidas[0] === "FORMATO_INVALIDO"
+        ? "As funções do assistente devem ser enviadas como uma lista."
+        : `Função do assistente inválida: ${invalidas.join(", ")}.`,
+    );
+  }
+  try {
+    return await prisma.contatoWhatsapp.update({
+      where: { id: String(contatoId), portalClientId: String(portalClientId) },
+      data: { permissoesAssistente: normalizarPermissoesAssistente(permissoesAssistente) },
+    });
+  } catch (err) {
+    if (err?.code === "P2025") {
+      throw new ContatoWhatsappError("CONTATO_NAO_ENCONTRADO", "Contato não encontrado nesta empresa.");
+    }
+    throw err;
+  }
 }
 
 /**
@@ -376,6 +416,7 @@ export const SELECT_CONTATO_PARA_VINCULO = Object.freeze({
   optInEm: true,
   ativo: true,
   userId: true,
+  permissoesAssistente: true,
   portalClient: { select: { id: true, razao: true, cnpj: true } },
 });
 

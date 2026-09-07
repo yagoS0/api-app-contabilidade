@@ -37,6 +37,8 @@ import { SERPRO_PGDASD_SERVICE_COBRANCA } from "../fiscal/serpro/SerproPgdasdSer
 import { markGuideOpenBySerpro } from "../guides/GuidePaymentStatusService.js";
 import { ESPECIE_RECALCULO, especieDoRecalculo, leituraDosAcrescimos, traduzirRecusaParaCliente, canGuideRecalculate, isGuideOverdue } from "../guides/lib/recalculoDaGuia.js";
 import { fmtBRL } from "@contabilidade/shared/declaracao-nfse";
+import { PERMISSOES_ASSISTENTE, temPermissaoAssistente } from "../whatsapp/permissoesAssistente.js";
+import { papelAlcanca, PAPEL_MINIMO_LEITURA, PAPEL_MINIMO_EMISSAO } from "./sessaoDoContato.js";
 
 export const ORIGENS = Object.freeze({
   EMITIR: "whatsapp:emitir",
@@ -48,10 +50,57 @@ export const ORIGENS = Object.freeze({
 export const DEPS_PADRAO = Object.freeze({
   NfseService, NfseRepository, resolveLegacyCompanyId, autorizarEmissaoDoCliente,
   comContextoSerpro, capturePgdasGuideForCompany, reemitirDarfLp, markGuideOpenBySerpro,
-  canGuideRecalculate, isGuideOverdue,
+  canGuideRecalculate, isGuideOverdue, autorizarPermissaoDaAcao,
 });
 
 const TEXTO_RECONFERENCIA = "Desde o seu pedido a autorização para este ato mudou, então NÃO executei. O escritório vai conferir e responder por aqui.";
+
+const PERMISSAO_POR_ACAO = Object.freeze({
+  [TIPOS.EMITIR_NFSE]: PERMISSOES_ASSISTENTE.EMISSAO_NFSE,
+  [TIPOS.CANCELAR_NFSE]: PERMISSOES_ASSISTENTE.CANCELAMENTO_NFSE,
+  [TIPOS.RECALCULAR_GUIA]: PERMISSOES_ASSISTENTE.RECALCULO_GUIA,
+});
+
+const PAPEL_POR_ACAO = Object.freeze({
+  [TIPOS.EMITIR_NFSE]: PAPEL_MINIMO_EMISSAO,
+  [TIPOS.CANCELAR_NFSE]: PAPEL_MINIMO_EMISSAO,
+  [TIPOS.RECALCULAR_GUIA]: PAPEL_MINIMO_LEITURA,
+});
+
+/** Reconfere o contato e a permissão do número na hora do CONFIRMAR. */
+export async function autorizarPermissaoDaAcao({ acao, client = prisma }) {
+  const permissao = PERMISSAO_POR_ACAO[acao?.tipo];
+  if (!permissao) return { ok: false, codigo: "FUNCAO_DESCONHECIDA" };
+  const conversa = await client.conversaWhatsapp.findFirst({
+    where: { id: String(acao.conversaId), portalClientId: String(acao.portalClientId), escopoVerificado: true, excluidaEm: null },
+    select: { telefoneE164: true },
+  });
+  if (!conversa?.telefoneE164 || !acao?.userId) return { ok: false, codigo: "CONTATO_NAO_IDENTIFICADO" };
+  const contatos = await client.contatoWhatsapp.findMany({
+    where: {
+      portalClientId: String(acao.portalClientId),
+      ativo: true,
+      OR: [{ telefoneE164: conversa.telefoneE164 }, { waId: conversa.telefoneE164 }],
+    },
+    select: { userId: true, permissoesAssistente: true },
+    take: 2,
+  });
+  if (contatos.length !== 1) return { ok: false, codigo: "CONTATO_NAO_IDENTIFICADO" };
+  if (String(contatos[0].userId || "") !== String(acao.userId)) {
+    return { ok: false, codigo: "CONTATO_REATRIBUIDO" };
+  }
+  if (!temPermissaoAssistente(contatos[0], permissao)) {
+    return { ok: false, codigo: "FUNCAO_NAO_LIBERADA", permissao };
+  }
+  const vinculo = await client.companyClientUser.findUnique({
+    where: { companyId_userId: { companyId: String(acao.portalClientId), userId: String(acao.userId) } },
+    select: { role: true, status: true },
+  });
+  if (!vinculo || vinculo.status !== "ACTIVE" || !papelAlcanca(vinculo.role, PAPEL_POR_ACAO[acao.tipo])) {
+    return { ok: false, codigo: "PAPEL_INSUFICIENTE", permissao };
+  }
+  return { ok: true, permissao };
+}
 
 /** A pendência ABERTA do fio (a mais recente, `pendente`), ou null. Expiração é conferida por quem lê. */
 export async function pendenciaAberta(conversaId, { client = prisma } = {}) {
@@ -120,6 +169,18 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
   const acao = await client.acaoPendenteWhatsapp.findUnique({ where: { id: String(acaoId) } });
 
   // ⚠ A RECONFERÊNCIA DO PORTÃO, fechada: recusa E erro interno terminam sem executar.
+  let permissaoAtual;
+  try {
+    permissaoAtual = await deps.autorizarPermissaoDaAcao({ acao, client });
+  } catch (err) {
+    log?.error?.({ err: err?.message, acaoId: acao.id }, "assistente: reconferência da permissão do contato lançou — recusando");
+    permissaoAtual = { ok: false, codigo: "RECONFERENCIA_FALHOU" };
+  }
+  if (!permissaoAtual?.ok) {
+    await client.acaoPendenteWhatsapp.update({ where: { id: acao.id }, data: { status: STATUS.CANCELADA, resultado: { erro: "RECONFERENCIA_CONTATO", codigo: permissaoAtual?.codigo || null } } });
+    return { executou: false, texto: TEXTO_RECONFERENCIA, filaHumana: true, resultado: { erro: "RECONFERENCIA_CONTATO", codigo: permissaoAtual?.codigo || null } };
+  }
+
   if (acao.tipo === TIPOS.EMITIR_NFSE || acao.tipo === TIPOS.CANCELAR_NFSE) {
     let autorizacao;
     try {

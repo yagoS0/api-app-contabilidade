@@ -73,7 +73,8 @@ import {
   listNotasCapturaJobs,
 } from "../../application/notas/captura/NotasCapturaService.js";
 import {
-  listarContatos, salvarContato, removerContato, ContatoWhatsappError, CANAL_PADRAO,
+  listarContatos, salvarContato, salvarPermissoesAssistente, removerContato,
+  ContatoWhatsappError, CANAL_PADRAO,
 } from "../../application/whatsapp/ContatoWhatsappService.js";
 import { capturaParadaPorEmpresa } from "../../application/notas/capturaParada.js";
 import {
@@ -2917,6 +2918,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // `portalClientId` no CORPO sobrescrevia o do path — o corpo escolhendo o tenant que a
       // autorização já havia decidido.
       const contato = await salvarContato({ ...(req.body || {}), portalClientId: req.params.companyId });
+      if (Array.isArray(req.body?.permissoesAssistente)) {
+        log.info({
+          portalClientId: String(req.params.companyId),
+          contatoId: contato.id,
+          actorUserId: req.auth?.user?.id || null,
+          permissoesDepois: contato.permissoesAssistente || [],
+        }, "Acessos do assistente por WhatsApp definidos no cadastro do contato");
+      }
       return res.json({ ok: true, contato });
     } catch (err) {
       // Erro de validação é do USUÁRIO e tem conserto na tela — 400 com a mensagem pronta, não 500.
@@ -2925,6 +2934,35 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
       log.error({ err }, "Falha ao salvar contato de WhatsApp");
       return res.status(500).json({ ok: false, error: "contato_save_failed", message: err?.message });
+    }
+  });
+
+  router.patch("/companies/:companyId/contatos-whatsapp/:contatoId/permissoes-assistente", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const anterior = await prisma.contatoWhatsapp.findFirst({
+        where: { id: String(req.params.contatoId), portalClientId: String(req.params.companyId) },
+        select: { permissoesAssistente: true },
+      });
+      const contato = await salvarPermissoesAssistente({
+        portalClientId: req.params.companyId,
+        contatoId: req.params.contatoId,
+        permissoesAssistente: req.body?.permissoesAssistente,
+      });
+      log.info({
+        portalClientId: String(req.params.companyId),
+        contatoId: String(req.params.contatoId),
+        actorUserId: req.auth?.user?.id || null,
+        permissoesAntes: anterior?.permissoesAssistente || [],
+        permissoesDepois: contato.permissoesAssistente || [],
+      }, "Acessos do assistente por WhatsApp alterados");
+      return res.json({ ok: true, contato });
+    } catch (err) {
+      if (err instanceof ContatoWhatsappError) {
+        return res.status(err.code === "CONTATO_NAO_ENCONTRADO" ? 404 : 400)
+          .json({ ok: false, error: err.code, message: err.message });
+      }
+      log.error({ err }, "Falha ao salvar permissões do assistente para o contato");
+      return res.status(500).json({ ok: false, error: "permissoes_assistente_save_failed", message: "Não foi possível salvar os acessos deste número." });
     }
   });
 

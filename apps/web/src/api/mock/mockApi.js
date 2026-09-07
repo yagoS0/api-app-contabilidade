@@ -7434,7 +7434,7 @@ export function createMockApi() {
       const id = String(companyId);
       return {
         ok: true,
-        contatos: (mockContatosWhatsapp[id] || []).map((c) => ({ ...c })),
+        contatos: (mockContatosWhatsapp[id] || []).map((c) => ({ ...c, permissoesAssistente: Array.isArray(c.permissoesAssistente) ? [...c.permissoesAssistente] : [] })),
         canalPadraoEnvio: mockCanalPadraoEnvio[id] || "EMAIL",
       };
     },
@@ -7444,6 +7444,9 @@ export function createMockApi() {
     async salvarContatoWhatsapp(companyId, input) {
       await delay(80);
       const id = String(companyId);
+      const lista = mockContatosWhatsapp[id] || [];
+      const telefoneVeio = input?.telefone !== undefined;
+      const emailVeio = input?.email !== undefined;
       // ⚠ ESPELHO de `salvarContato` (api): UM DOS DOIS CANAIS BASTA desde 05/09/2026. O mock exigia
       // telefone e, com ele, o destinatário só de e-mail — o caso mais comum da carteira — era
       // INALCANÇÁVEL offline. Mock que esconde ramo é defeito conhecido desta casa.
@@ -7466,10 +7469,6 @@ export function createMockApi() {
         const err = new Error("E-mail inválido. Confira o endereço.");
         err.status = 400; err.code = "EMAIL_INVALIDO"; throw err;
       }
-      if (!e164 && !email) {
-        const err = new Error("Informe ao menos um canal: e-mail, telefone, ou os dois.");
-        err.status = 400; err.code = "SEM_CANAL"; throw err;
-      }
       if (!String(input?.nome || "").trim()) {
         const err = new Error("Informe o nome de quem recebe as mensagens.");
         err.status = 400; err.code = "NOME_OBRIGATORIO"; throw err;
@@ -7479,20 +7478,28 @@ export function createMockApi() {
         err.status = 400; err.code = "USUARIO_SEM_VINCULO"; throw err;
       }
       const agora = new Date().toISOString();
-      const lista = mockContatosWhatsapp[id] || [];
       // ⚠ Sem telefone não há chave de upsert (é a mesma regra do servidor): destinatário só de
       // e-mail é sempre CRIADO, e editar o dele exige o `id`.
       const existente = lista.find((c) => (input?.id ? c.id === input.id : (e164 && c.telefoneE164 === e164)));
+      const telefoneFinal = telefoneVeio ? e164 : existente?.telefoneE164;
+      const emailFinal = emailVeio ? email : existente?.email;
+      if (!telefoneFinal && !emailFinal) {
+        const err = new Error("Informe ao menos um canal: e-mail, telefone, ou os dois.");
+        err.status = 400; err.code = "SEM_CANAL"; throw err;
+      }
       const dados = {
         nome: String(input.nome).trim(),
-        papel: String(input.papel || "").trim() || null,
-        telefoneE164: e164,
-        email,
-        ativo: input?.ativo === undefined ? true : Boolean(input.ativo),
+        ...(input?.papel !== undefined ? { papel: String(input.papel || "").trim() || null } : {}),
+        ...(telefoneVeio ? { telefoneE164: e164 } : {}),
+        ...(emailVeio ? { email } : {}),
+        ...(input?.ativo !== undefined ? { ativo: Boolean(input.ativo) } : (!existente ? { ativo: true } : {})),
         ...(input?.optIn === true
           ? { optInEm: agora, optInOrigem: String(input.optInOrigem || "").trim() || "nao_informado" }
           : input?.optIn === false ? { optInEm: null, optInOrigem: null } : {}),
         ...(input?.userId === null ? { userId: null } : input?.userId ? { userId: String(input.userId) } : {}),
+        ...(Array.isArray(input?.permissoesAssistente)
+          ? { permissoesAssistente: [...new Set(input.permissoesAssistente.map((v) => String(v || "").toUpperCase()))] }
+          : {}),
         updatedAt: agora,
       };
       let contato;
@@ -7503,6 +7510,25 @@ export function createMockApi() {
         contato = { id: `mock-ctt-${Date.now()}`, portalClientId: id, waId: null, optInEm: null, optInOrigem: null, userId: null, createdAt: agora, ...dados };
         mockContatosWhatsapp[id] = [...lista, contato];
       }
+      return { ok: true, contato: { ...contato } };
+    },
+    async salvarPermissoesAssistenteWhatsapp(companyId, contatoId, permissoesAssistente) {
+      await delay(60);
+      const id = String(companyId);
+      const contato = (mockContatosWhatsapp[id] || []).find((c) => c.id === String(contatoId));
+      if (!contato) {
+        const err = new Error("Contato não encontrado nesta empresa.");
+        err.status = 404; err.code = "CONTATO_NAO_ENCONTRADO"; throw err;
+      }
+      const conhecidas = new Set(["GUIAS", "NOTAS_DANFSE", "DOCUMENTOS_EMPRESA", "SITUACAO_FISCAL", "RECALCULO_GUIA", "EMISSAO_NFSE", "CANCELAMENTO_NFSE"]);
+      if (!Array.isArray(permissoesAssistente) || permissoesAssistente.some((v) => !conhecidas.has(String(v || "").trim().toUpperCase()))) {
+        const err = new Error("Função do assistente inválida.");
+        err.status = 400; err.code = "PERMISSOES_ASSISTENTE_INVALIDAS"; throw err;
+      }
+      contato.permissoesAssistente = [...new Set(permissoesAssistente.map((v) => String(v).trim().toUpperCase()))];
+      if (contato.permissoesAssistente.includes("RECALCULO_GUIA") && !contato.permissoesAssistente.includes("GUIAS")) contato.permissoesAssistente.push("GUIAS");
+      if (contato.permissoesAssistente.includes("CANCELAMENTO_NFSE") && !contato.permissoesAssistente.includes("NOTAS_DANFSE")) contato.permissoesAssistente.push("NOTAS_DANFSE");
+      contato.updatedAt = new Date().toISOString();
       return { ok: true, contato: { ...contato } };
     },
     async removerContatoWhatsapp(companyId, contatoId) {

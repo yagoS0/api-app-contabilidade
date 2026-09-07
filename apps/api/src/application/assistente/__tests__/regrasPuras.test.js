@@ -4,6 +4,14 @@ import { custoEstimadoCentavos, somarUsage, precoDoModelo, MODELO_MAIS_CARO, PRE
 import { sessaoDoContato, papelAlcanca, MOTIVOS_SEM_SESSAO, fraseSemSessao, PAPEL_MINIMO_SITUACAO_FISCAL, PAPEL_MINIMO_EMISSAO } from "../sessaoDoContato.js";
 import { gerarCodigo, lerConfirmacao, decidirResposta, expirada, rodapeDeConfirmacao, ALFABETO, TTL_MS, FRASES } from "../confirmacaoPendente.js";
 import { pesoDoPapelCliente } from "../../nfse/emissaoClienteAutorizacao.js";
+import { normalizarPermissoesAssistente } from "../../whatsapp/permissoesAssistente.js";
+
+describe("permissões do assistente — dependências", () => {
+  it("recálculo inclui guias e cancelamento inclui notas", () => {
+    expect(normalizarPermissoesAssistente(["RECALCULO_GUIA"])).toEqual(["RECALCULO_GUIA", "GUIAS"]);
+    expect(normalizarPermissoesAssistente(["CANCELAMENTO_NFSE"])).toEqual(["CANCELAMENTO_NFSE", "NOTAS_DANFSE"]);
+  });
+});
 
 describe("precosIa — a estimativa", () => {
   it("modelo desconhecido cai no MAIS CARO — superestimar protege o teto", () => {
@@ -45,7 +53,7 @@ describe("sessaoDoContato — vínculo não é autorização", () => {
   });
   it("vínculo ativo → sessão com papel em caixa alta", () => {
     const s = sessaoDoContato({ portalClientId: "pc-1", contato, vinculoRbac: { role: "client_admin", status: "ACTIVE" } });
-    expect(s).toEqual({ ok: true, portalClientId: "pc-1", userId: "u1", papel: "CLIENT_ADMIN", motivo: null, contatoNome: "Maria" });
+    expect(s).toEqual({ ok: true, portalClientId: "pc-1", userId: "u1", papel: "CLIENT_ADMIN", motivo: null, contatoNome: "Maria", permissoesAssistente: [] });
   });
   it("⚠ papelAlcanca usa a MESMA tabela de pesos da emissão", () => {
     expect(papelAlcanca("FINANCEIRO", PAPEL_MINIMO_SITUACAO_FISCAL)).toBe(false);

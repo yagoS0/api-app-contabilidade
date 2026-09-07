@@ -16,17 +16,19 @@
 // A regra mora em `../lib/contatoWhatsappTela.js`, com teste próprio. Aqui só se liga e se pinta.
 // Cores por `var(--…)`; verde é CONCLUÍDO, nunca ação; botão desabilitado NOMEIA o motivo.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CANAIS_DE_ENVIO,
   CARGA,
   FRASE_EMPRESA,
   FRASE_SITUACAO,
+  FUNCOES_DO_ASSISTENTE,
   SITUACAO_CONTATO,
   estadoDaLista,
   formatarTelefone,
   fraseDeConfirmacaoRemocao,
   montarPayload,
+  normalizarFuncoesDoAssistente,
   pareceFormatoAntigo,
   pessoaDoContato,
   situacaoDaEmpresa,
@@ -49,6 +51,15 @@ const campo = {
 };
 const rotulo = { fontSize: "0.74rem", color: "var(--text-muted)", display: "block" };
 
+function alternarFuncao(atuais, valor) {
+  if (atuais.includes(valor)) {
+    return atuais.filter((v) => v !== valor
+      && !(valor === "GUIAS" && v === "RECALCULO_GUIA")
+      && !(valor === "NOTAS_DANFSE" && v === "CANCELAMENTO_NFSE"));
+  }
+  return normalizarFuncoesDoAssistente([...atuais, valor]);
+}
+
 function fmtData(iso) {
   if (!iso) return null;
   const d = new Date(iso);
@@ -64,11 +75,36 @@ const COR_SITUACAO = {
   [SITUACAO_CONTATO.INATIVO]: "var(--state-neutral)",
 };
 
-function LinhaContato({ contato, usuarios, onRemover }) {
+function LinhaContato({ contato, usuarios, salvando, onRemover, onSalvarContato, onSalvarPermissoes }) {
   const situacao = situacaoDoContato(contato);
   const pessoa = pessoaDoContato(contato, usuarios);
   const antigo = pareceFormatoAntigo(contato.telefoneE164);
   const optIn = fmtData(contato.optInEm);
+  const persistidas = normalizarFuncoesDoAssistente(contato.permissoesAssistente);
+  const [configurando, setConfigurando] = useState(false);
+  const [selecionadas, setSelecionadas] = useState(() => persistidas);
+  const [vinculando, setVinculando] = useState(false);
+  const [userId, setUserId] = useState(contato.userId || "");
+
+  useEffect(() => {
+    setSelecionadas(normalizarFuncoesDoAssistente(contato.permissoesAssistente));
+    setUserId(contato.userId || "");
+  }, [contato.permissoesAssistente, contato.userId]);
+
+  function alternar(valor) {
+    setSelecionadas((atuais) => alternarFuncao(atuais, valor));
+  }
+
+  async function salvarAcessos() {
+    const ok = await onSalvarPermissoes(contato.id, selecionadas);
+    if (ok) setConfigurando(false);
+  }
+
+  async function salvarVinculo() {
+    // Atualização parcial: não mande telefone/e-mail/opt-in, para não tocar nos canais existentes.
+    const ok = await onSalvarContato({ id: contato.id, nome: contato.nome, userId: userId || null });
+    if (ok) setVinculando(false);
+  }
 
   return (
     <div
@@ -102,6 +138,24 @@ function LinhaContato({ contato, usuarios, onRemover }) {
         </span>
         <button
           type="button"
+          style={contato.telefoneE164 ? btn("var(--accent-purple)") : btnDesabilitado}
+          disabled={!contato.telefoneE164}
+          aria-expanded={configurando}
+          onClick={() => setConfigurando((v) => { if (v) setSelecionadas(persistidas); return !v; })}
+          title={contato.telefoneE164 ? "Escolher o que este número pode pedir ao assistente" : "Cadastre um telefone para configurar o assistente"}
+        >
+          {configurando ? "Fechar acessos" : "Acessos da IA"}
+        </button>
+        <button
+          type="button"
+          style={btn()}
+          aria-expanded={vinculando}
+          onClick={() => { setUserId(contato.userId || ""); setVinculando((v) => !v); }}
+        >
+          {pessoa ? "Trocar pessoa" : "Vincular pessoa"}
+        </button>
+        <button
+          type="button"
           style={btn("var(--danger)")}
           onClick={() => onRemover(contato)}
           title={`Remover o contato "${contato.nome}"`}
@@ -127,6 +181,54 @@ function LinhaContato({ contato, usuarios, onRemover }) {
           </span>
         ) : null}
       </div>
+      {vinculando ? (
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
+          <label style={{ ...rotulo, flex: "1 1 280px" }}>
+            Pessoa do portal que usa este número
+            <select style={{ ...campo, marginTop: 4 }} value={userId} onChange={(e) => setUserId(e.target.value)}>
+              <option value="">— nenhuma —</option>
+              {(Array.isArray(usuarios) ? usuarios : []).map((u) => (
+                <option key={u.userId} value={u.userId}>{u.nome || u.email || u.userId}{u.papel ? ` · ${nomeDoPapel(u.papel)}` : ""}</option>
+              ))}
+            </select>
+          </label>
+          <button type="button" style={!salvando ? btn("var(--accent-purple)") : btnDesabilitado} disabled={salvando} onClick={salvarVinculo}>{salvando ? "Salvando…" : "Salvar vínculo"}</button>
+          <button type="button" style={btn()} disabled={salvando} onClick={() => { setUserId(contato.userId || ""); setVinculando(false); }}>Cancelar</button>
+        </div>
+      ) : null}
+      {contato.telefoneE164 ? (
+        <div style={{ marginTop: 6, fontSize: "0.73rem", color: "var(--text-muted)" }}>
+          {persistidas.length && !contato.ativo
+            ? `Funções selecionadas, mas o contato está inativo: ${FUNCOES_DO_ASSISTENTE.filter((f) => persistidas.includes(f.valor)).map((f) => f.rotulo).join(" · ")}`
+            : persistidas.length && !pessoa
+              ? `Funções selecionadas, aguardando vínculo com uma pessoa do portal: ${FUNCOES_DO_ASSISTENTE.filter((f) => persistidas.includes(f.valor)).map((f) => f.rotulo).join(" · ")}`
+              : persistidas.length
+                ? `IA liberada para: ${FUNCOES_DO_ASSISTENTE.filter((f) => persistidas.includes(f.valor)).map((f) => f.rotulo).join(" · ")}`
+            : "IA sem acesso a dados ou ações neste número — apenas conversa e encaminhamento ao escritório."}
+        </div>
+      ) : null}
+      {configurando ? (
+        <fieldset data-testid={`permissoes-assistente-${contato.id}`} style={{ marginTop: 10, paddingTop: 10, border: 0, borderTop: "1px solid var(--border)" }}>
+          <legend style={{ padding: "0 5px", fontSize: "0.78rem", color: "var(--text)", fontWeight: 700 }}>Acessos da IA deste número</legend>
+          <p style={{ margin: "0 0 8px", fontSize: "0.76rem", color: "var(--text-muted)", lineHeight: 1.45 }}>
+            Marque somente o que este número pode solicitar. O papel da pessoa no portal continua sendo exigido; sem pessoa ligada, nenhuma função acessa dados.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 7 }}>
+            {FUNCOES_DO_ASSISTENTE.map((funcao) => (
+              <label key={funcao.valor} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.76rem", color: "var(--text)" }}>
+                <input type="checkbox" checked={selecionadas.includes(funcao.valor)} onChange={() => alternar(funcao.valor)} />
+                <span><strong>{funcao.rotulo}</strong><br /><span style={{ color: "var(--text-muted)" }}>{funcao.descricao}</span></span>
+              </label>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button type="button" style={!salvando ? btn("var(--accent-purple)") : btnDesabilitado} disabled={salvando} onClick={salvarAcessos}>
+              {salvando ? "Salvando…" : "Salvar acessos deste número"}
+            </button>
+            <button type="button" style={btn()} disabled={salvando} onClick={() => { setSelecionadas(normalizarFuncoesDoAssistente(contato.permissoesAssistente)); setConfigurando(false); }}>Cancelar</button>
+          </div>
+        </fieldset>
+      ) : null}
     </div>
   );
 }
@@ -139,6 +241,7 @@ function FormContato({ usuarios, salvando, onSalvar, onFechar }) {
   const [optIn, setOptIn] = useState(false);
   const [optInOrigem, setOptInOrigem] = useState("");
   const [userId, setUserId] = useState("");
+  const [permissoesAssistente, setPermissoesAssistente] = useState([]);
   const [erros, setErros] = useState({});
 
   const validacao = validarFormulario({ nome, telefone, email });
@@ -147,9 +250,9 @@ function FormContato({ usuarios, salvando, onSalvar, onFechar }) {
     const v = validarFormulario({ nome, telefone, email });
     setErros(v.erros);
     if (!v.ok) return;
-    const ok = await onSalvar(montarPayload({ nome, papel, telefone, email, optIn, optInOrigem, userId: userId || undefined }));
+    const ok = await onSalvar(montarPayload({ nome, papel, telefone, email, optIn, optInOrigem, userId: userId || undefined, permissoesAssistente: telefone.trim() ? permissoesAssistente : [] }));
     if (ok) {
-      setNome(""); setPapel(""); setTelefone(""); setEmail(""); setOptIn(false); setOptInOrigem(""); setUserId(""); setErros({});
+      setNome(""); setPapel(""); setTelefone(""); setEmail(""); setOptIn(false); setOptInOrigem(""); setUserId(""); setPermissoesAssistente([]); setErros({});
       onFechar?.();
     }
   }
@@ -182,7 +285,7 @@ function FormContato({ usuarios, salvando, onSalvar, onFechar }) {
           <input
             style={{ ...campo, marginTop: 4 }}
             value={telefone}
-            onChange={(e) => setTelefone(e.target.value)}
+            onChange={(e) => { setTelefone(e.target.value); if (!e.target.value.trim()) setPermissoesAssistente([]); }}
             placeholder="(21) 99999-8888"
             inputMode="tel"
           />
@@ -241,6 +344,24 @@ function FormContato({ usuarios, salvando, onSalvar, onFechar }) {
         </button>
         {onFechar ? <button type="button" style={btn()} disabled={salvando} onClick={onFechar}>Fechar</button> : null}
       </div>
+      {telefone.trim() ? (
+        <fieldset style={{ margin: "var(--space-3) 0 0", padding: "10px 12px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)" }}>
+          <legend style={{ padding: "0 5px", fontSize: "0.78rem", color: "var(--text)", fontWeight: 700 }}>O que este número pode pedir à IA</legend>
+          <p style={{ margin: "0 0 8px", fontSize: "0.73rem", color: "var(--text-muted)" }}>Tudo começa desmarcado. A pessoa do portal e o papel dela também serão conferidos.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 7 }}>
+            {FUNCOES_DO_ASSISTENTE.map((funcao) => (
+              <label key={funcao.valor} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.76rem", color: "var(--text)" }}>
+                <input
+                  type="checkbox"
+                  checked={permissoesAssistente.includes(funcao.valor)}
+                  onChange={() => setPermissoesAssistente((atuais) => alternarFuncao(atuais, funcao.valor))}
+                />
+                <span><strong>{funcao.rotulo}</strong><br /><span style={{ color: "var(--text-muted)" }}>{funcao.descricao}</span></span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ) : null}
     </div>
   );
 }
@@ -251,7 +372,7 @@ function FormContato({ usuarios, salvando, onSalvar, onFechar }) {
  * @param {Array}  p.usuarios  os usuários do portal desta empresa (`useAcessoPortalCliente().usuarios`)
  */
 export function ContatosWhatsapp({ whatsapp, usuarios }) {
-  const { contatos, canalPadraoEnvio, carregando, salvando, erro, salvar, remover, definirCanal, recarregar } = whatsapp;
+  const { contatos, canalPadraoEnvio, carregando, salvando, erro, salvar, salvarPermissoes, remover, definirCanal, recarregar } = whatsapp;
   const [adicionando, setAdicionando] = useState(false);
   const carga = estadoDaLista({ carregando, erro, quantidade: contatos.length });
   const situacao = situacaoDaEmpresa(contatos);
@@ -306,7 +427,7 @@ export function ContatosWhatsapp({ whatsapp, usuarios }) {
       )}
 
       {contatos.map((c) => (
-        <LinhaContato key={c.id} contato={c} usuarios={usuarios} onRemover={aoRemover} />
+        <LinhaContato key={c.id} contato={c} usuarios={usuarios} salvando={salvando} onRemover={aoRemover} onSalvarContato={salvar} onSalvarPermissoes={salvarPermissoes} />
       ))}
 
       {carga.estado === CARGA.CARREGANDO ? (

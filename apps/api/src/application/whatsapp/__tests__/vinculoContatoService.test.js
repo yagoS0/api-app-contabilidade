@@ -15,6 +15,7 @@ import { prisma } from "../../../infrastructure/db/prisma.js";
 import {
   resolverVinculoPorTelefone,
   salvarContato,
+  salvarPermissoesAssistente,
   gravarWaIdDoContato,
   removerContato,
   ContatoWhatsappError,
@@ -289,5 +290,28 @@ describe("⚠ o zero de operadora não entra no cadastro", () => {
     await expect(
       salvarContato({ portalClientId: "emp1", nome: "Maria", telefone: "021 99999-8888" }),
     ).rejects.toMatchObject({ code: "TELEFONE_INVALIDO" });
+  });
+});
+
+describe("funções do assistente por contato", () => {
+  it("grava uma lista normalizada sem tocar nos outros dados do contato", async () => {
+    prisma.contatoWhatsapp.update.mockResolvedValue({ id: "c1", permissoesAssistente: ["GUIAS", "EMISSAO_NFSE"] });
+    await salvarPermissoesAssistente({
+      portalClientId: "emp1",
+      contatoId: "c1",
+      permissoesAssistente: ["guias", "EMISSAO_NFSE", "GUIAS"],
+    });
+    expect(prisma.contatoWhatsapp.update).toHaveBeenCalledWith({
+      where: { id: "c1", portalClientId: "emp1" },
+      data: { permissoesAssistente: ["GUIAS", "EMISSAO_NFSE"] },
+    });
+  });
+
+  it("recusa formato e função desconhecida antes de escrever", async () => {
+    await expect(salvarPermissoesAssistente({ portalClientId: "emp1", contatoId: "c1", permissoesAssistente: "GUIAS" }))
+      .rejects.toMatchObject({ code: "PERMISSOES_ASSISTENTE_INVALIDAS" });
+    await expect(salvarPermissoesAssistente({ portalClientId: "emp1", contatoId: "c1", permissoesAssistente: ["APAGAR_EMPRESA"] }))
+      .rejects.toMatchObject({ code: "PERMISSOES_ASSISTENTE_INVALIDAS" });
+    expect(prisma.contatoWhatsapp.update).not.toHaveBeenCalled();
   });
 });

@@ -951,6 +951,12 @@ export function createRealApi() {
         body: JSON.stringify(input || {}),
       });
     },
+    async salvarPermissoesAssistenteWhatsapp(companyId, contatoId, permissoesAssistente) {
+      return request(`/firm/companies/${companyId}/contatos-whatsapp/${contatoId}/permissoes-assistente`, {
+        method: "PATCH",
+        body: JSON.stringify({ permissoesAssistente }),
+      });
+    },
     async removerContatoWhatsapp(companyId, contatoId) {
       return request(`/firm/companies/${companyId}/contatos-whatsapp/${contatoId}`, { method: "DELETE" });
     },

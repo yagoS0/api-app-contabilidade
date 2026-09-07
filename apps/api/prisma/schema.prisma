@@ -1121,6 +1121,9 @@ model ContatoWhatsapp {
   /// `requireClientCompanyAccess(minRole)`. `onDelete: SetNull` porque apagar o usuário apaga a
   /// identificação da pessoa, nunca o contato da empresa.
   userId         String?
+  /// Funções que ESTE NÚMERO pode solicitar ao assistente. Complementa o RBAC do usuário ligado:
+  /// os dois portões precisam permitir. Vazio = conversa e encaminhamento, sem acessar dados.
+  permissoesAssistente String[] @default([])
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

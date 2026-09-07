@@ -218,6 +218,17 @@ export function montarPayloadDocumento({ para, mediaId, nomeArquivo, legenda }) 
   };
 }
 
+/** Imagem fora de template; documentos digitalizados usam este tipo porque a Meta não os aceita como `document`. */
+export function montarPayloadImagem({ para, mediaId, legenda }) {
+  const imagem = { id: String(mediaId || "").trim() };
+  if (!imagem.id) {
+    throw recusaLocal(CODIGOS_LOCAIS.RECUSA_LOCAL, "A imagem não foi informada: falta o arquivo enviado à Meta.");
+  }
+  const caption = String(legenda || "").trim();
+  if (caption) imagem.caption = caption;
+  return { messaging_product: "whatsapp", recipient_type: "individual", to: para, type: "image", image: imagem };
+}
+
 /** Corpo de um texto livre. [M1] */
 export function montarPayloadTexto({ para, texto, previewUrl = false }) {
   return {
@@ -560,6 +571,15 @@ export class WhatsappCloudClient {
       corpo: montarPayloadDocumento({ para, mediaId, nomeArquivo, legenda }),
     });
     this.log?.info?.({ para: mascararTelefone(para), documento: true }, "documento WhatsApp aceito pela Meta");
+    return { wamid: WhatsappCloudClient.exigirWamid(json, {}), resposta: json };
+  }
+
+  /** Imagem de serviço dentro da janela de 24h (ex.: documento societário digitalizado). */
+  async enviarImagem({ telefone, conteudo, nomeArquivo, legenda, mimeType = "image/jpeg" }) {
+    const para = this.destino(telefone);
+    const mediaId = await this.uploadDocumento({ conteudo, nomeArquivo, mimeType });
+    const json = await this.chamar({ recurso: "messages", corpo: montarPayloadImagem({ para, mediaId, legenda }) });
+    this.log?.info?.({ para: mascararTelefone(para), imagem: true }, "imagem WhatsApp aceita pela Meta");
     return { wamid: WhatsappCloudClient.exigirWamid(json, {}), resposta: json };
   }
 

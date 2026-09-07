@@ -3,13 +3,14 @@
 // Os `servicos` são dublês injetados; o `prisma` é um objeto com os poucos métodos que as ferramentas
 // usam. Nenhuma rede, nenhum banco.
 
-import { executarFerramenta } from "../ferramentas/index.js";
+import { definicoes, executarFerramenta } from "../ferramentas/index.js";
 import { TIPOS } from "../confirmacaoPendente.js";
+import { TODAS_PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente.js";
 
 const silencio = { warn: jest.fn(), error: jest.fn(), info: jest.fn() };
 
 function sessao(over = {}) {
-  return { ok: true, portalClientId: "pc-1", userId: "u1", papel: "CLIENT_ADMIN", contatoNome: "Maria", motivo: null, ...over };
+  return { ok: true, portalClientId: "pc-1", userId: "u1", papel: "CLIENT_ADMIN", contatoNome: "Maria", permissoesAssistente: [...TODAS_PERMISSOES_ASSISTENTE], motivo: null, ...over };
 }
 
 const GUIA = { id: "g1", portalClientId: "pc-1", tipo: "SIMPLES", competencia: "2026-08", valor: 500, vencimento: new Date("2026-08-20T00:00:00Z"), paymentStatus: "OVERDUE", status: "PROCESSED", liberadaCliente: true, parcelamentoId: null };
@@ -21,6 +22,7 @@ function prismaFalso(over = {}) {
     serviceInvoice: { findFirst: jest.fn(async () => null) },
     portalClient: { findUnique: jest.fn(async () => ({ cnpj: "11222333000181" })) },
     companyFiscalStatus: { findUnique: jest.fn(async () => null) },
+    companyDocument: { findMany: jest.fn(async () => []) },
     ...over,
   };
 }
@@ -44,6 +46,7 @@ function servicosFalsos(over = {}) {
     validarJustificativa: jest.fn((t) => (String(t || "").length >= 15 ? { ok: true } : { ok: false, motivo: "curta" })),
     parseSitfisRelatorio: jest.fn(() => ({ diagnosticos: [] })),
     criarPendencia: jest.fn(async ({ tipo, corpo }) => ({ acao: { id: "ap1" }, codigo: "A7K2", texto: `${corpo}\n\nPara confirmar, responda CONFIRMAR A7K2.` })),
+    baixarDocumentoDaEmpresa: jest.fn(async () => ({ doc: { id: "d1", tipo: "CONTRATO_SOCIAL", nome: "contrato.png", mimeType: "image/png" }, buffer: Buffer.from("png") })),
     ...over,
   };
 }
@@ -80,6 +83,26 @@ describe("papel e sessão — a recusa vem ANTES de qualquer serviço", () => {
   });
   it("ferramenta desconhecida recusa nomeando", async () => {
     expect((await executarFerramenta("emitir_nfse", {}, ctx())).motivo).toBe("FERRAMENTA_DESCONHECIDA");
+  });
+});
+
+describe("permissões explícitas do número", () => {
+  it("lista vazia esconde ferramentas de dados e o executor também recusa chamada forjada", async () => {
+    const c = ctx({ sessao: sessao({ permissoesAssistente: [] }) });
+    expect(definicoes(c.sessao).map((d) => d.name)).toEqual(["chamar_escritorio"]);
+    const r = await executarFerramenta("listar_guias", { competencia: null, status: null }, c);
+    expect(r).toMatchObject({ ok: false, motivo: "FUNCAO_NAO_LIBERADA", permissao: "GUIAS" });
+    expect(c.servicos.listGuidesByCompany).not.toHaveBeenCalled();
+  });
+
+  it("liberação parcial só expõe o grupo correspondente e o encaminhamento", () => {
+    const nomes = definicoes(sessao({ permissoesAssistente: ["SITUACAO_FISCAL"] })).map((d) => d.name);
+    expect(nomes).toEqual(["situacao_fiscal", "chamar_escritorio"]);
+  });
+
+  it("não expõe ferramentas de emissão quando o papel do portal é somente financeiro", () => {
+    const nomes = definicoes(sessao({ papel: "FINANCEIRO", permissoesAssistente: ["EMISSAO_NFSE"] })).map((d) => d.name);
+    expect(nomes).toEqual(["chamar_escritorio"]);
   });
 });
 
@@ -145,6 +168,21 @@ describe("documentos — só dentro da janela, e sempre pelo escopo", () => {
     expect(r.motivo).toBe("DANFSE_SEM_QRCODE");
     expect(r.mensagem).toMatch(/sem o QR Code/);
     expect(c.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("documento da empresa: lista sem fileKey e envia usando a empresa da sessão", async () => {
+    const companyDocument = {
+      findMany: jest.fn(async () => [{ id: "d1", tipo: "CONTRATO_SOCIAL", nome: "contrato.pdf", mimeType: "application/pdf", bytes: 20, validade: null, createdAt: new Date("2026-09-01") }]),
+    };
+    const c = ctx({ prisma: prismaFalso({ companyDocument }) });
+    const lista = await executarFerramenta("listar_documentos", {}, c);
+    expect(lista.documentos[0]).toMatchObject({ documentId: "d1", tipoDescricao: "Contrato social" });
+    expect(lista.documentos[0]).not.toHaveProperty("fileKey");
+    expect(companyDocument.findMany.mock.calls[0][0].where).toEqual({ portalClientId: "pc-1" });
+
+    const envio = await executarFerramenta("enviar_documento_da_empresa", { documentId: "d1" }, c);
+    expect(envio).toMatchObject({ ok: true, enviado: true, documentId: "d1" });
+    expect(c.servicos.baixarDocumentoDaEmpresa).toHaveBeenCalledWith({ portalClientId: "pc-1", documentId: "d1" });
+    expect(c.enviarDocumento).toHaveBeenCalledWith(expect.objectContaining({ documentId: "d1", nomeArquivo: "contrato.png", mimeType: "image/png" }));
   });
 });
 

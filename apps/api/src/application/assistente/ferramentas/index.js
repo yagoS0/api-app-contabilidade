@@ -33,18 +33,20 @@ import { autorizarEmissaoDoCliente } from "../../nfse/autorizacaoEmissaoDoClient
 import { canGuideRecalculate, isGuideOverdue, avisoDeRecalculo } from "../../guides/lib/recalculoDaGuia.js";
 import { motivoValido, validarJustificativa, motivosDoEvento, JUSTIFICATIVA } from "../../nfse/motivosDeEvento.js";
 import { parseSitfisRelatorio } from "../../fiscal/serpro/parseSitfisRelatorio.js";
+import { baixarBuffer as baixarDocumentoDaEmpresa, TIPO_DOCUMENTO_LABELS } from "../../companies/CompanyDocumentsService.js";
 import { resolveLegacyCompanyId } from "../../../routes/middlewares/portalAccess.js";
 import { textoDeConfirmacao, fmtBRL, formatarDoc } from "@contabilidade/shared/declaracao-nfse";
 import { papelAlcanca, PAPEL_MINIMO_LEITURA, PAPEL_MINIMO_SITUACAO_FISCAL, PAPEL_MINIMO_EMISSAO } from "../sessaoDoContato.js";
 import { TIPOS } from "../confirmacaoPendente.js";
 import { criarPendencia } from "../AcoesPendentesService.js";
+import { PERMISSOES_ASSISTENTE, temPermissaoAssistente } from "../../whatsapp/permissoesAssistente.js";
 
 /** As funções de fora, INJETÁVEIS. Produção usa os defaults; o teste passa dublês. */
 export const SERVICOS_PADRAO = Object.freeze({
   listGuidesByCompany, toGuideResponse, getGuidePdfBuffer, gerarDanfseDaNota, listarTomadoresEmitidos,
   consultarCnpj, municipiosIbgeOuNulo, validateNfsePayload, autorizarEmissaoDoCliente, resolveLegacyCompanyId,
   canGuideRecalculate, isGuideOverdue, avisoDeRecalculo, motivoValido, validarJustificativa, parseSitfisRelatorio,
-  criarPendencia,
+  criarPendencia, baixarDocumentoDaEmpresa,
 });
 
 const EVENTO_CANCELAMENTO = "e101101";
@@ -104,6 +106,8 @@ export const DEFINICOES = Object.freeze([
   { name: "enviar_pdf_da_guia", description: "Envia por WhatsApp o PDF de UMA guia liberada (pelo guideId de listar_guias/quanto_devo). Só funciona com a janela de 24h aberta.", strict: true, input_schema: S({ guideId: str("O id da guia") }) },
   { name: "listar_notas", description: "Lista notas fiscais de serviço da empresa (emitidas por ela ou recebidas), por competência.", strict: true, input_schema: S({ competencia: strOuNulo("Competência AAAA-MM; null = as mais recentes"), direcao: strOuNulo("'emitidas' (padrão) ou 'recebidas'") }) },
   { name: "danfse_da_nota", description: "Envia por WhatsApp o DANFSe (PDF) de uma nota, pelo notaId de listar_notas.", strict: true, input_schema: S({ notaId: str("O id da nota") }) },
+  { name: "listar_documentos", description: "Lista os documentos cadastrais e societários guardados para a empresa, sem revelar o arquivo. Exige papel CLIENT_ADMIN e liberação explícita deste número.", strict: true, input_schema: S({}) },
+  { name: "enviar_documento_da_empresa", description: "Envia por WhatsApp UM documento cadastral ou societário, pelo documentId retornado por listar_documentos. Só funciona com a janela de 24h aberta.", strict: true, input_schema: S({ documentId: str("O id do documento") }) },
   { name: "situacao_fiscal", description: "A situação fiscal da empresa perante a Receita, como o escritório a consultou por último (nunca consulta agora). Exige papel CLIENT_ADMIN.", strict: true, input_schema: S({}) },
   { name: "tomadores_conhecidos", description: "Os tomadores para quem a empresa já emitiu nota (nome, documento) — para reaproveitar num pedido de emissão.", strict: true, input_schema: S({}) },
   { name: "consultar_cnpj", description: "Consulta um CNPJ na Receita (BrasilAPI) para completar nome e endereço do tomador. Nunca CPF.", strict: true, input_schema: S({ cnpj: str("CNPJ com 14 dígitos (pontuação opcional)") }) },
@@ -124,8 +128,43 @@ export const DEFINICOES = Object.freeze([
   { name: "chamar_escritorio", description: "Passa a conversa para uma pessoa do escritório (dúvida fiscal, reclamação, algo fora do que as ferramentas alcançam). Use sempre que não souber.", strict: true, input_schema: S({ motivo: str("Resumo em uma frase do que a pessoa precisa") }) },
 ]);
 
-export function definicoes() {
-  return DEFINICOES.map((d) => ({ ...d }));
+export const PERMISSAO_POR_FERRAMENTA = Object.freeze({
+  listar_guias: PERMISSOES_ASSISTENTE.GUIAS,
+  quanto_devo: PERMISSOES_ASSISTENTE.GUIAS,
+  enviar_pdf_da_guia: PERMISSOES_ASSISTENTE.GUIAS,
+  listar_notas: PERMISSOES_ASSISTENTE.NOTAS_DANFSE,
+  danfse_da_nota: PERMISSOES_ASSISTENTE.NOTAS_DANFSE,
+  listar_documentos: PERMISSOES_ASSISTENTE.DOCUMENTOS_EMPRESA,
+  enviar_documento_da_empresa: PERMISSOES_ASSISTENTE.DOCUMENTOS_EMPRESA,
+  situacao_fiscal: PERMISSOES_ASSISTENTE.SITUACAO_FISCAL,
+  tomadores_conhecidos: PERMISSOES_ASSISTENTE.EMISSAO_NFSE,
+  consultar_cnpj: PERMISSOES_ASSISTENTE.EMISSAO_NFSE,
+  preparar_emissao: PERMISSOES_ASSISTENTE.EMISSAO_NFSE,
+  preparar_cancelamento: PERMISSOES_ASSISTENTE.CANCELAMENTO_NFSE,
+  preparar_recalculo: PERMISSOES_ASSISTENTE.RECALCULO_GUIA,
+});
+
+const PAPEL_POR_FERRAMENTA = Object.freeze({
+  listar_guias: PAPEL_MINIMO_LEITURA,
+  quanto_devo: PAPEL_MINIMO_LEITURA,
+  enviar_pdf_da_guia: PAPEL_MINIMO_LEITURA,
+  listar_notas: PAPEL_MINIMO_LEITURA,
+  danfse_da_nota: PAPEL_MINIMO_LEITURA,
+  listar_documentos: PAPEL_MINIMO_SITUACAO_FISCAL,
+  enviar_documento_da_empresa: PAPEL_MINIMO_SITUACAO_FISCAL,
+  situacao_fiscal: PAPEL_MINIMO_SITUACAO_FISCAL,
+  tomadores_conhecidos: PAPEL_MINIMO_EMISSAO,
+  consultar_cnpj: PAPEL_MINIMO_EMISSAO,
+  preparar_emissao: PAPEL_MINIMO_EMISSAO,
+  preparar_cancelamento: PAPEL_MINIMO_EMISSAO,
+  preparar_recalculo: PAPEL_MINIMO_LEITURA,
+});
+
+export function definicoes(sessao = null) {
+  return DEFINICOES
+    .filter((d) => !sessao || !PERMISSAO_POR_FERRAMENTA[d.name] || temPermissaoAssistente(sessao, PERMISSAO_POR_FERRAMENTA[d.name]))
+    .filter((d) => !sessao || !PAPEL_POR_FERRAMENTA[d.name] || papelAlcanca(sessao.papel, PAPEL_POR_FERRAMENTA[d.name]))
+    .map((d) => ({ ...d }));
 }
 
 // ── OS EXECUTORES ────────────────────────────────────────────────────────────────────────────────
@@ -223,6 +262,62 @@ const EXECUTORES = {
     return { ok: true, enviado: true, notaId: String(input.notaId), nomeArquivo: resultado.nomeArquivo, marcaDagua: resultado.marcaDagua || null, providerMessageId: envio?.wamid || null };
   },
 
+  async listar_documentos(_input, ctx) {
+    const r = exigirPapel(ctx, PAPEL_MINIMO_SITUACAO_FISCAL);
+    if (r) return r;
+    const documentos = await ctx.prisma.companyDocument.findMany({
+      where: { portalClientId: ctx.sessao.portalClientId },
+      select: { id: true, tipo: true, nome: true, mimeType: true, bytes: true, validade: true, createdAt: true },
+      orderBy: [{ tipo: "asc" }, { createdAt: "desc" }],
+      take: 30,
+    });
+    return {
+      ok: true,
+      quantidade: documentos.length,
+      documentos: documentos.map((d) => ({
+        documentId: d.id,
+        tipo: d.tipo,
+        tipoDescricao: TIPO_DOCUMENTO_LABELS[d.tipo] || "Documento",
+        nome: d.nome,
+        formato: d.mimeType,
+        bytes: d.bytes,
+        validade: dataBR(d.validade),
+        cadastradoEm: dataBR(d.createdAt),
+      })),
+      observacao: documentos.length ? null : "O escritório ainda não cadastrou documentos para esta empresa.",
+    };
+  },
+
+  async enviar_documento_da_empresa(input, ctx) {
+    const r = exigirPapel(ctx, PAPEL_MINIMO_SITUACAO_FISCAL);
+    if (r) return r;
+    if (ctx.janela && ctx.janela.aberta === false) {
+      return recusa("FORA_DA_JANELA", "A janela de 24h do WhatsApp está fechada; não dá para mandar documento agora.");
+    }
+    let arquivo;
+    try {
+      arquivo = await ctx.servicos.baixarDocumentoDaEmpresa({
+        portalClientId: ctx.sessao.portalClientId,
+        documentId: String(input.documentId || ""),
+      });
+    } catch (err) {
+      if (err?.code === "documento_nao_encontrado") {
+        return recusa("DOCUMENTO_NAO_ENCONTRADO", "Não encontrei esse documento nesta empresa.");
+      }
+      return recusa("DOCUMENTO_INDISPONIVEL", "O arquivo deste documento não está disponível agora. O escritório vai conferir.");
+    }
+    const nomeArquivo = String(arquivo?.doc?.nome || "documento").slice(0, 200);
+    const tipo = TIPO_DOCUMENTO_LABELS[arquivo?.doc?.tipo] || "Documento";
+    const envio = await ctx.enviarDocumento({
+      conteudo: arquivo.buffer,
+      nomeArquivo,
+      legenda: `${tipo} · ${nomeArquivo}`,
+      mimeType: arquivo?.doc?.mimeType || "application/pdf",
+      documentId: String(input.documentId),
+    });
+    return { ok: true, enviado: true, documentId: String(input.documentId), nomeArquivo, providerMessageId: envio?.wamid || null };
+  },
+
   async situacao_fiscal(_input, ctx) {
     const r = exigirPapel(ctx, PAPEL_MINIMO_SITUACAO_FISCAL);
     if (r) return r;
@@ -242,7 +337,7 @@ const EXECUTORES = {
   },
 
   async tomadores_conhecidos(_input, ctx) {
-    const r = exigirPapel(ctx, PAPEL_MINIMO_LEITURA);
+    const r = exigirPapel(ctx, PAPEL_MINIMO_EMISSAO);
     if (r) return r;
     const legacy = await ctx.servicos.resolveLegacyCompanyId(ctx.sessao.portalClientId);
     if (!legacy) return { ok: true, tomadores: [] };
@@ -395,6 +490,14 @@ const EXECUTORES = {
 export async function executarFerramenta(nome, input, ctx) {
   const fn = EXECUTORES[nome];
   if (!fn) return recusa("FERRAMENTA_DESCONHECIDA", `Não existe a ferramenta ${nome}.`);
+  const permissao = PERMISSAO_POR_FERRAMENTA[nome];
+  if (ctx?.sessao?.ok && permissao && !temPermissaoAssistente(ctx.sessao, permissao)) {
+    return recusa(
+      "FUNCAO_NAO_LIBERADA",
+      "Este número não está autorizado a usar essa função pelo WhatsApp. O escritório pode liberar o acesso no cadastro do contato.",
+      { permissao },
+    );
+  }
   const contexto = { ...ctx, prisma: ctx.prisma || prisma, servicos: { ...SERVICOS_PADRAO, ...(ctx.servicos || {}) }, agora: ctx.agora || new Date() };
   return fn(input || {}, contexto);
 }
