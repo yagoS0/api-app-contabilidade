@@ -51,7 +51,7 @@ test("falha de leitura do A1 permite repetir e não afirma ausência", async () 
   const api = { getCompanyCert: jest.fn().mockRejectedValueOnce(new Error("Sem rede")).mockResolvedValue({ hasCertificate: false }) };
   render(<CompanyCertificatePanel api={api} companyId="1" />);
   await screen.findByRole("alert");
-  expect(screen.queryByText(/Nenhum certificado cadastrado/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Nenhum A1 próprio cadastrado/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
-  await screen.findByText(/Nenhum certificado cadastrado/);
+  await screen.findByText(/Nenhum A1 próprio cadastrado/);
 });

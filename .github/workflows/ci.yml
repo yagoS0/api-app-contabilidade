@@ -45,6 +45,27 @@ jobs:
       - name: Build workspaces
         run: npm run build
 
+  usability-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate -w @contabilidade/api
+      - name: Calendar rules and exceptions
+        working-directory: apps/api
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='obrigacoes'
+      - name: Accountant frontend regression
+        working-directory: apps/web
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent
+      - name: Shared invoice operation validation in client portal
+        working-directory: apps/portal-cliente-web
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='dadosDaOperacao'
+
   whatsapp-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 20

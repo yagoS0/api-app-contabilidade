@@ -1,3 +1,4 @@
+import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 // F2.6 — INFORMAR A COMPOSIÇÃO DE UMA PARCELA QUE **TEM GUIA** E NÃO TRAZ A DECOMPOSIÇÃO.
 //
 // ⚠ O VÃO QUE ESTA TELA FECHA. A fila "Parcelas pagas aguardando lançamento" tem um botão só —
@@ -64,6 +65,7 @@ const inputStyle = {
 const labelStyle = { display: "block", fontSize: "0.7rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 3 };
 
 export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) {
+  const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [textoPrincipal, setTextoPrincipal] = useState("");
   const [textoJuros, setTextoJuros] = useState("");
   const [textoMulta, setTextoMulta] = useState("");
@@ -89,7 +91,7 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
     // ⚠ ATO DE CONSEQUÊNCIA CONFIRMA REPETINDO OS DADOS — os três valores, o total, o valor da guia,
     // a data, e o aviso de que a composição é declaração (ver `textoDaConfirmacaoDaComposicao`).
     // eslint-disable-next-line no-alert
-    if (!window.confirm(textoDaConfirmacaoDaComposicao({ linha, decomposicao, dataPagamento }))) return;
+    if (!await pedir({ titulo: "Confirmar composição e baixa", acao: "Confirmar baixa declarada", texto: textoDaConfirmacaoDaComposicao({ linha, decomposicao, dataPagamento }) })) return;
     setRecusa(null);
     setEnviando(true);
     try {
@@ -340,6 +342,7 @@ export function DeclararComposicaoParcelaModal({ linha, onConfirmar, onClose }) 
           </button>
         </div>
       </div>
+      {confirmacao}
     </div>
   );
 }

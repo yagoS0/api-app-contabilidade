@@ -100,3 +100,54 @@ test("alterar descrição da recorrência não apaga janela personalizada nem du
   expect(mesma).toHaveLength(1);
   expect(mesma[0]).toMatchObject({ ocorrenciaId: oc.ocorrenciaId, dataInicio: inicio, dataFim: fim, dataVencimento: fim });
 });
+
+
+test('frequência futura pode mudar e voltar sem perder exceções nem ressuscitar exclusão', async () => {
+  const criado = await api.createObrigacao(companyId, { nome: 'EFD frequência', tipo: 'OBRIGACAO', periodicidade: 'MENSAL', diaVencimento: 20, ajusteDiaUtil: 'MANTER', janelaTrabalho: { modo: 'DIAS_DO_CICLO', diaInicio: 10, diaFim: 15, deslocamentoFim: 0 } });
+  const rows = criado.obrigacao.ocorrencias;
+  const ids = rows.map(o => o.ocorrenciaId);
+  await api.concluirOcorrencia(ids[2]);
+  await api.excluirOcorrencia(ids[5], { alcance: 'ESTA' });
+  const regra = { periodicidade: 'TRIMESTRAL', mesReferencia: Number(rows[1].cicloChave.slice(5)), diaVencimento: 25, ajusteDiaUtil: 'MANTER', defasagemMeses: 1, diasPreparacao: 4 };
+  await api.updateOcorrencia(ids[1], { alcance: 'ESTA_E_PROXIMAS', regra, janelaTrabalho: null });
+  const lista = async () => (await api.listObrigacoes({ companyId })).obrigacoes.find(o => o.obrigacaoId === criado.obrigacao.obrigacaoId);
+  const trimestre = await lista();
+  expect(trimestre.ocorrencias.some(o => o.ocorrenciaId === ids[6])).toBe(false);
+  expect(trimestre.ocorrencias.find(o => o.ocorrenciaId === ids[2]).status).toBe('CONCLUIDA');
+  await api.updateOcorrencia(ids[1], { alcance: 'ESTA_E_PROXIMAS', regra: { ...regra, periodicidade: 'MENSAL' }, janelaTrabalho: null });
+  const mensal = await lista();
+  expect(mensal.ocorrencias.find(o => o.ocorrenciaId === ids[6]).dataInicio.slice(-2)).toBe('21');
+  expect(mensal.ocorrencias.some(o => o.ocorrenciaId === ids[5])).toBe(false);
+  expect(mensal.ocorrencias.find(o => o.ocorrenciaId === ids[0]).dataVencimento.slice(-2)).toBe('20');
+});
+
+
+test('pausar e reativar não descarta janela individual e não mostra inativa no calendário', async () => {
+  const criado = await api.createObrigacao(companyId, { nome: 'Rotina pausada', tipo: 'TAREFA', periodicidade: 'MENSAL', diaVencimento: 20, ajusteDiaUtil: 'MANTER' });
+  const oc = criado.obrigacao.ocorrencias[0];
+  await api.updateOcorrencia(oc.ocorrenciaId, { dataInicio: oc.cicloChave + '-10', dataFim: oc.cicloChave + '-22' });
+  const antes = { ...oc };
+  await api.updateObrigacao(criado.obrigacao.obrigacaoId, { ativa: false });
+  expect(ocorrencias(await api.getCalendario(oc.cicloChave, companyId), oc.ocorrenciaId)).toHaveLength(0);
+  await api.updateObrigacao(criado.obrigacao.obrigacaoId, { ativa: true });
+  const salvo = (await api.listObrigacoes({ companyId })).obrigacoes.find(o => o.obrigacaoId === criado.obrigacao.obrigacaoId);
+  expect(salvo.ocorrencias.find(o => o.ocorrenciaId === oc.ocorrenciaId)).toMatchObject(antes);
+});
+
+
+test('maio personalizado sobrevive à trimestral sem maio e pausa/reativação', async () => {
+  const criado = await api.createObrigacao(companyId, { nome: 'Maio excepcional', tipo: 'TAREFA', periodicidade: 'MENSAL', diaVencimento: 20, ajusteDiaUtil: 'MANTER' });
+  const rows = criado.obrigacao.ocorrencias;
+  const maio = rows.find(o => o.cicloChave.endsWith('-05'));
+  await api.updateOcorrencia(maio.ocorrenciaId, { dataInicio: maio.cicloChave + '-10', dataFim: maio.cicloChave + '-22' });
+  const personalizado = { ...maio };
+  await api.updateOcorrencia(rows[0].ocorrenciaId, { alcance: 'ESTA_E_PROXIMAS', janelaTrabalho: null,
+    regra: { periodicidade: 'TRIMESTRAL', mesReferencia: 6, diaVencimento: 25, ajusteDiaUtil: 'MANTER', defasagemMeses: 1, diasPreparacao: 0 } });
+  const listar = async () => (await api.listObrigacoes({ companyId })).obrigacoes.find(o => o.obrigacaoId === criado.obrigacao.obrigacaoId);
+  expect((await listar()).ocorrencias.find(o => o.ocorrenciaId === maio.ocorrenciaId)).toMatchObject(personalizado);
+  await api.updateObrigacao(criado.obrigacao.obrigacaoId, { ativa: false });
+  await api.updateObrigacao(criado.obrigacao.obrigacaoId, { ativa: true });
+  expect((await listar()).ocorrencias.find(o => o.ocorrenciaId === maio.ocorrenciaId)).toMatchObject(personalizado);
+  await api.updateObrigacao(criado.obrigacao.obrigacaoId, { descricao: 'Conferir orientação' });
+  expect((await listar()).ocorrencias.find(o => o.ocorrenciaId === maio.ocorrenciaId)).toMatchObject(personalizado);
+});

@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
+import { useConfirmacao } from "../../../components/ui/useConfirmacao";
 import { CampoOnboarding } from "../components/CampoOnboarding";
 import { CartaoEmpresaBrasilApi } from "../components/CartaoEmpresaBrasilApi";
 import { PassoOrigem } from "../components/PassoOrigem";
@@ -31,6 +32,7 @@ const ROTULO_SALVAMENTO = {
 };
 
 export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetalhe }) {
+  const { pedir: confirmar, dialogo: confirmacao } = useConfirmacao();
   const rascunho = useOnboardingRascunho({ api, onboardingId });
   const { onboarding, dados, estadoSalvamento } = rascunho;
   const origem = onboarding?.origem || null;
@@ -114,11 +116,7 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
     ).length;
     const nomeNova = ONBOARDING_ORIGENS.find((o) => o.chave === nova)?.titulo || nova;
     if (preenchidos > 0) {
-      const ok = window.confirm(
-        `Trocar para "${nomeNova}" apaga o que já foi preenchido nesta ficha `
-        + `(${preenchidos} ${preenchidos === 1 ? "campo preenchido" : "campos preenchidos"}), `
-        + "porque cada origem faz perguntas diferentes.\n\nTrocar mesmo assim?"
-      );
+      const ok = await confirmar({ titulo: "Trocar origem do onboarding", texto: `Trocar para “${nomeNova}” apaga ${preenchidos} campo(s) preenchido(s) nesta ficha, porque cada origem faz perguntas diferentes.`, acao: "Trocar e limpar ficha", perigo: true });
       if (!ok) return;
     }
     await rascunho.trocarOrigem(nova);
@@ -253,22 +251,23 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
         <Button
           type="button"
           variant="secondary"
-          disabled={indice <= 0}
+          disabled={indice <= 0 || navegando || finalizando}
           onClick={() => irPara(passos[Math.max(indice - 1, 0)].chave)}
         >
           Voltar
         </Button>
 
         {ehUltimo ? (
-          <Button type="button" onClick={finalizar} disabled={finalizando || !origem}>
+          <Button type="button" onClick={finalizar} disabled={finalizando || navegando || !origem}>
             {finalizando ? "finalizando…" : "Finalizar e abrir a trilha"}
           </Button>
         ) : (
-          <Button type="button" onClick={avancar} disabled={!origem}>
+          <Button type="button" onClick={avancar} disabled={!origem || navegando || finalizando}>
             Avançar
           </Button>
         )}
       </div>
+      {confirmacao}
     </PageShell>
   );
 }

@@ -111,6 +111,53 @@ function ateOsValores() {
   digitar("Alíquota de ISS", "2");
 }
 
+it("leva à operação excepcional inválida e preserva a nota preenchida", () => {
+  abrir(); ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84");
+  digitar("CPF/CNPJ do destinatário", "11111111111"); digitar("Nome do destinatário", "Pessoa");
+  expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+  const operacao = screen.getByRole("region", { name: "Dados específicos da operação" });
+  const problema = screen.getByText(/Destinatário: informe CPF válido/).closest("li");
+  fireEvent.click(within(problema).getByRole("button"));
+  expect(operacao).toHaveFocus();
+  expect(operacao.querySelector("details").open).toBe(true);
+  expect(screen.getByLabelText(/Descrição do serviço/)).toHaveValue("Consultoria contábil");
+  digitar("CPF/CNPJ do destinatário", "529.982.247-25");
+  expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
+});
+
+it("coloca dados excepcionais após tomador, serviço e valores", () => {
+  abrir();
+  const valor = screen.getByLabelText(/Valor dos serviços/);
+  const operacao = screen.getByRole("region", { name: "Dados específicos da operação" });
+  expect(valor.compareDocumentPosition(operacao) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("resume cadastro incompleto com requisitos e orientação visíveis, mantendo ajuda acessível", () => {
+  abrir({ cadastroEmissao: {}, codigoMunicipioIbge: "" });
+  const bloco = document.getElementById("nfse-impedimento-empresa");
+  expect(within(bloco).getByText("Falta configurar:").parentElement).toHaveTextContent(/município emissor.*Inscrição municipal/i);
+  expect(within(bloco).getByText("Onde corrigir:").parentElement).toHaveTextContent("Editar cadastro → Inscrições");
+  const ajuda = within(bloco).getByText("Por que estes dados são necessários").closest("details");
+  expect(ajuda.open).toBe(false);
+  expect(ajuda.textContent).toContain("servidor recusa");
+  expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+  const item = screen.getByText("Complete as configurações da empresa indicadas no início do formulário.").closest("li");
+  fireEvent.click(within(item).getByRole("button"));
+  expect(bloco).toHaveFocus();
+});
+
+it("normaliza destinatário e mantém retenção numérica somente após conferência", async () => {
+  const confirmar = jest.spyOn(window, "confirm").mockReturnValue(true);
+  const { onEmitir } = abrir(); ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84");
+  digitar("CPF/CNPJ do destinatário", "529.982.247-25"); digitar("Nome do destinatário", " Pessoa ");
+  digitar("IRRF retido (R$)", "15,50");
+  expect(onEmitir).not.toHaveBeenCalled(); continuar();
+  fireEvent.click(screen.getByRole("button", { name: /^Emitir nota$/ }));
+  await waitFor(() => expect(onEmitir).toHaveBeenCalledTimes(1));
+  expect(onEmitir).toHaveBeenCalledWith(expect.objectContaining({ companyId: "c-1", destinatario: { cnpjCpf: "52998224725", nome: "Pessoa" }, retencoesComplementares: { vRetIRRF: 15.5 } }));
+  confirmar.mockRestore();
+});
+
 it("mantém todas as saídas do diálogo indisponíveis durante a emissão", async () => {
   const emitir = jest.fn(() => new Promise(() => {}));
   const confirmar = jest.spyOn(window, "confirm").mockReturnValue(true);
@@ -506,8 +553,10 @@ describe("empresa não optante sem a carga tributária não chega ao botão Emit
     ateOsValores();
     // A versão curta, do mesmo jeito que os campos de `buildMissingFields` — e ela leva o lugar
     // junto, senão o contador lê o nome do campo e sai procurando.
-    expect(screen.getByText(/cadastre a parcela federal da carga tributária aproximada/)).toBeInTheDocument();
-    expect(screen.getByText(/cadastre a parcela municipal da carga tributária aproximada/)).toBeInTheDocument();
+    const resumo = screen.getByText("Falta configurar:").parentElement;
+    expect(resumo).toHaveTextContent(/federal/i);
+    expect(resumo).toHaveTextContent(/municipal/i);
+    expect(screen.getByText("Complete as configurações da empresa indicadas no início do formulário.")).toBeInTheDocument();
     // ⚠ E o ESTADUAL NÃO vira linha de pendência (02/09/2026): pedir que alguém declare um
     // tributo que a operação não tem é o defeito que esta mudança corrige.
     expect(

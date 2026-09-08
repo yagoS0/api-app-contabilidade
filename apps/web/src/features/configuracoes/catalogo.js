@@ -10,7 +10,7 @@ export const CONFIG_EMPRESA = [
 export const CONFIG_GERAIS = [
   { id: 'integracoes', grupo: 'Integrações', titulo: 'SERPRO e certificados', descricao: 'Conexão, certificado do escritório e parâmetros da integração.', href: '/firm-settings/guides', termos: 'api receita procuração certificado a1' },
   { id: 'contabilidade', grupo: 'Contabilidade', titulo: 'Plano de contas global', descricao: 'Estrutura e contas padrão do escritório.', href: '/firm-settings/chart', termos: 'contabil debito credito' },
-  { id: 'obrigacoes', grupo: 'Rotinas', titulo: 'Obrigações do escritório', descricao: 'Modelos de obrigações e regras de recorrência.', href: '/obrigacoes', termos: 'calendario prazos tarefas' },
+  { id: 'obrigacoes', grupo: 'Rotinas', titulo: 'Calendário e recorrências', descricao: 'Abre o calendário para organizar tarefas, obrigações e repetições por modal.', href: '/obrigacoes', termos: 'calendario prazos tarefas obrigacoes modelos regras' },
   { id: 'rotinas', grupo: 'Rotinas', titulo: 'Rotinas fiscais', descricao: 'Configuração e acompanhamento das rotinas automáticas.', href: '/rotinas', termos: 'automacao recorrencia' },
   { id: 'atendimento', grupo: 'Atendimento', titulo: 'WhatsApp e IA', descricao: 'Política de atendimento, atalhos e expediente.', href: '/configuracoes/atendimento', termos: 'horario feriados templates menu ia' },
 ];

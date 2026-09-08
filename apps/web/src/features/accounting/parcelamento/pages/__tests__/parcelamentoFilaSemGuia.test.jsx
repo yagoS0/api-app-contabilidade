@@ -191,9 +191,11 @@ describe("o ato de consequência", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Declarar e lançar a baixa/ }));
     });
+    const confirmacao = screen.getByRole("dialog", { name: "Confirmar declaração de pagamento" }).textContent;
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirmar pagamento declarado" })); });
 
-    expect(confirmSpy).toHaveBeenCalled();
-    expect(confirmSpy.mock.calls[0][0]).toMatch(/DECLARAÇÃO sua, não um comprovante/);
+
+    expect(confirmacao).toMatch(/DECLARAÇÃO sua, não um comprovante/);
     expect(mockBaixaManual).toHaveBeenCalledWith("c1", "parc-migrado-60-p1", expect.objectContaining({
       valorJuros: 12.94, valorMulta: 0, totalConferido: 646.9,
     }));
@@ -221,6 +223,8 @@ describe("o ato de consequência", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Declarar e lançar a baixa/ }));
     });
+    const confirmacao = screen.getByRole("dialog", { name: "Confirmar declaração de pagamento" }).textContent;
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirmar pagamento declarado" })); });
 
     expect(screen.getByText(/Nada foi lançado/)).toBeTruthy();
     expect(screen.getByText(/competência da data do pagamento está FECHADA/i)).toBeTruthy();

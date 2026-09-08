@@ -1,0 +1,5 @@
+import {fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {useConfirmacao} from '../useConfirmacao';
+function Tela({acao}){const {pedir,dialogo}=useConfirmacao();return <><button onClick={async()=>{if(await pedir({titulo:'Confirmar operação',texto:'Conta 123',acao:'Executar'}))acao();}}>Abrir</button>{dialogo}</>;}
+test('Esc cancela e confirmação explícita executa uma vez',async()=>{const acao=jest.fn();render(<Tela acao={acao}/>);fireEvent.click(screen.getByText('Abrir'));fireEvent.keyDown(document,{key:'Escape'});await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());expect(acao).not.toHaveBeenCalled();fireEvent.click(screen.getByText('Abrir'));fireEvent.click(screen.getByText('Executar'));await waitFor(()=>expect(acao).toHaveBeenCalledTimes(1));});
+test('desmontar cancela promessa pendente sem escrita posterior',async()=>{const acao=jest.fn();const {unmount}=render(<Tela acao={acao}/>);fireEvent.click(screen.getByText('Abrir'));unmount();await Promise.resolve();expect(acao).not.toHaveBeenCalled();});

@@ -2,6 +2,8 @@
 
 ## Recuperação do rascunho — 08/09/2026
 
+Etapa 2: trocar origem com campos preenchidos usa Modal compartilhado (`useConfirmacao`), identifica a nova origem e quantos campos serão apagados. Cancelar não troca. Botões de avançar/voltar/finalizar ficam desabilitados durante navegação/gravação explícita, evitando duplo acionamento. A regra de poda/reset permanece a mesma.
+
 Voltar à lista e trocar de passo aguardam salvar; falha mantém campos e passo com aviso persistente. Debounce e salvamento explícito entram na mesma fila, evitando resposta/escrita antiga depois da saída. Fechar/recarregar com alterações pendentes usa `beforeunload`; não prometer que F5 antes do debounce salva automaticamente. Teste de regressão em `components/__tests__/telasOnboarding.test.jsx` confirma recusa e repetição do Voltar.
 
 O que acontece **antes** de a empresa existir na carteira.

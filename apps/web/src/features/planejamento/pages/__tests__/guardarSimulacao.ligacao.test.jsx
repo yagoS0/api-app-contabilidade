@@ -211,3 +211,28 @@ describe("⚠⚠ `empresaFixa` — as duas telas não são a mesma porta", () =>
       expect(screen.getByText(/Não foi possível carregar os dados desta empresa/i)).toBeInTheDocument());
   });
 });
+
+it("preserva a confirmação de cenário salvo quando o transporte do PDF falha", async () => {
+  montar({ gerarDocumentoDaSimulacao: jest.fn(async () => { throw new Error("Conexão interrompida"); }) });
+  await esperarCalculo();
+  fireEvent.click(botao());
+  await waitFor(() => expect(screen.getByText(/A simulação foi salva, mas o PDF não pôde ser guardado\. Conexão interrompida/)).toBeInTheDocument());
+  expect(screen.getByText("Cenário salvo")).toBeInTheDocument();
+});
+
+it("não mostra sucesso do PDF de outra empresa após trocar o contexto", async () => {
+  let resolverPdf;
+  const api = {
+    getDadosPlanejamento: jest.fn(async () => payload()),
+    salvarSimulacaoPlanejamento: jest.fn(async () => ({ ok: true, simulacao: { id: "sim-1" } })),
+    gerarDocumentoDaSimulacao: jest.fn(() => new Promise(resolve => { resolverPdf = resolve; })),
+  };
+  const { rerender } = render(<PlanejamentoPage api={api} empresa={{ id: "e1" }} empresaFixa />);
+  await esperarCalculo();
+  fireEvent.click(botao());
+  await waitFor(() => expect(api.gerarDocumentoDaSimulacao).toHaveBeenCalledTimes(1));
+  await act(async () => { rerender(<PlanejamentoPage api={api} empresa={{ id: "e2" }} empresaFixa />); });
+  await waitFor(() => expect(api.getDadosPlanejamento).toHaveBeenCalledWith("e2"));
+  await act(async () => resolverPdf({ ok: true }));
+  expect(screen.queryByText("Guardado em Documentos da empresa.")).not.toBeInTheDocument();
+});

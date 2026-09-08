@@ -85,9 +85,9 @@ const ROTULO_REGIME = {
 function OrigemDoCampo({ campo, id }) {
   if (!campo) return null;
   if (campo.apurado) {
-    return <span id={id} style={{ fontSize: "0.68rem", color: C.muted, lineHeight: 1.35 }}>da empresa · {campo.origem}</span>;
+    return <span id={id} style={{ fontSize: "0.8rem", color: C.muted, lineHeight: 1.45 }}>da empresa · {campo.origem}</span>;
   }
-  return <span id={id} style={{ fontSize: "0.68rem", color: C.alerta, lineHeight: 1.35 }}>⚠ {campo.motivoAusencia}</span>;
+  return <span id={id} style={{ fontSize: "0.8rem", color: C.alerta, lineHeight: 1.45 }}>⚠ {campo.motivoAusencia}</span>;
 }
 
 /**
@@ -240,6 +240,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     setReceita("");
     setCenariosSalvos(null);
     setCenarioSalvo(null);
+    setDesfechoDoGuardar(null);
     setProcedenciasSalvas(null);
     setCarregandoCenarios(false);
     setRbt12("");
@@ -559,6 +560,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   async function guardarSimulacao(somenteCenario = false) {
     if (!empresaId || guardando) return;
     const empresaDoSalvar = empresaId;
+    let cenarioFoiSalvo = false;
     setGuardando(true);
     setDesfechoDoGuardar(null);
     try {
@@ -577,12 +579,14 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
         return;
       }
       setCenarioSalvo(assinaturaCenario);
+      cenarioFoiSalvo = true;
       if (somenteCenario === true) {
         setDesfechoDoGuardar({ tom: "ok", texto: "Cenário salvo. Use Abrir cenário para continuar depois." });
         setCenariosSalvos(null);
         return;
       }
       const doc = await api.gerarDocumentoDaSimulacao(empresaId, salvo.simulacao.id);
+      if (empresaAtualCenario.current !== empresaDoSalvar) return;
       if (!doc?.ok) {
         // ⚠⚠ A FOTO SOBREVIVEU. Dizer só "falhou" mandaria o contador refazer a simulação inteira
         // à toa — e o defeito nem é dele: sem o Volume no Railway o storage recusa.
@@ -595,7 +599,9 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
       }
       setDesfechoDoGuardar({ tom: "ok", texto: "Guardado em Documentos da empresa." });
     } catch (err) {
-      setDesfechoDoGuardar({ tom: "erro", texto: err?.message || "Não foi possível guardar." });
+      if (empresaAtualCenario.current === empresaDoSalvar) setDesfechoDoGuardar({ tom: "erro", texto: cenarioFoiSalvo
+        ? `A simulação foi salva, mas o PDF não pôde ser guardado. ${err?.message || "Tente gerar o documento novamente."}`
+        : err?.message || "Não foi possível guardar." });
     } finally {
       setGuardando(false);
     }
@@ -630,7 +636,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   }, [imprimindo]);
 
   return (
-    <div style={{ background: C.page, minHeight: empresaFixa ? undefined : "100vh", color: C.texto, padding: empresaFixa ? 0 : "20px 0" }}>
+    <div className="planejamento-page" style={{ background: C.page, minHeight: empresaFixa ? undefined : "100vh", color: C.texto, padding: empresaFixa ? 0 : "20px 0" }}>
       <div style={{ width: empresaFixa ? "100%" : "var(--content-wide)", margin: "0 auto", display: "grid", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           {onVoltar && (
@@ -641,6 +647,23 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
             {prefill.empresa?.razao || "Simulação livre — sem empresa vinculada"}
           </span>
         </div>
+        <nav aria-label="Etapas do planejamento" data-print-hide className="planejamento-etapas" onClick={(event) => {
+          const link = event.target.closest("a[href^='#']");
+          if (!link) return;
+          const destino = document.getElementById(link.getAttribute("href").slice(1));
+          if (!destino) return;
+          event.preventDefault();
+          const cabecalhos = [...document.querySelectorAll(".workspace-brandbar, .company-section-header, .page-shell__header")];
+          const alturaFixa = cabecalhos.filter((el) => getComputedStyle(el).position === "sticky")
+            .reduce((altura, el) => altura + el.getBoundingClientRect().height, 16);
+          destino.style.scrollMarginTop = `${alturaFixa}px`;
+          destino.focus({ preventScroll: true });
+          destino.scrollIntoView({ block: "start" });
+        }}>
+          <a href="#premissas-cenario">1. Premissas</a>
+          {resultado && <a href="#comparacao-cenario">2. Comparação</a>}
+          {resultado && <a href="#detalhes-cenario">3. Detalhes</a>}
+        </nav>
         <section aria-label="Cenários salvos" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <span role="status">{cenarioSalvo === assinaturaCenario ? "Cenário salvo" : "Premissas não salvas"}</span>
           <button type="button" className="btn" disabled={!empresaId || !resultado || guardando || carregando} onClick={() => guardarSimulacao(true)}>Salvar cenário</button>
@@ -694,25 +717,15 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
               <span style={{ fontSize: "0.72rem", color: C.muted, lineHeight: 1.45 }}>
                 Campos apurados sobre os 12 meses de <strong>{prefill.referencia.janelaRotulo}</strong>.
                 Tudo abaixo é <strong>editável</strong> — isto é um cenário, não o cadastro da empresa,
-                e nada aqui grava nada. O que for digitado por cima sai marcado no PDF.
+                e só é guardado ao usar Salvar cenário. O que for digitado por cima sai marcado no PDF.
               </span>
             )}
           </div>
         )}
 
-        {/* ⚠⚠⚠ A RESPOSTA VEM ANTES DO FORMULÁRIO — reordenação de 01/09/2026, e o motivo é
-            MEDIDO, não estético. Antes: a página tinha 2.806px, o formulário terminava aos
-            1.025px e o PRIMEIRO RESULTADO só aparecia aos 1.055px. O contador preenchia mil
-            pixels de campos para descobrir, rolando, qual regime era mais barato — e o dono
-            resumiu a tela como *"bem podre"*.
-
-            ⚠ O formulário NÃO encolheu e NENHUM campo sumiu: ele apenas desceu. Quem chega para
-            conferir premissas rola uma vez; quem chega para ver a resposta não rola nenhuma.
-
-            ⚠ Com o formulário vazio não há `resultado` e este bloco não renderiza — a tela abre
-            no formulário, que é o certo: ali a pergunta ainda não foi feita. */}
+        {/* Premissas precedem a comparação; atalhos permitem consultar o resultado sem perder contexto. */}
         {/* ── ENTRADAS ─────────────────────────────────────────────────────── */}
-        <div id="premissas-cenario" style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, display: "grid", gap: 12 }}>
+        <div id="premissas-cenario" tabIndex={-1} style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, display: "grid", gap: 12 }}>
           <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Premissas do cenário</h2>
           <p style={{ margin: 0 }}>Revise receita e histórico, folha e atividade. As escolhas abaixo alteram somente este cenário, sem mudar o cadastro fiscal da empresa.</p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: 16 }}>
@@ -933,7 +946,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
           {prefill.temEmpresa && <div style={{ marginTop: -4 }}><OrigemDoCampo campo={prefill.campos.sujeitoFatorR} /></div>}
 
           {/* O Lucro Real só entra com estes dois — e o card diz isso enquanto faltarem. */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, paddingTop: 8, borderTop: `1px solid ${C.borda}` }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: 16, paddingTop: 8, borderTop: `1px solid ${C.borda}` }}>
             <Campo
               id="pl-margem"
               rotuloTexto="Margem de lucro real (%) — só para comparar com o Lucro Real"
@@ -1037,6 +1050,8 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
               )}
             </div>
           )}
+          {((num(mesesAtividade) != null && !mesesInicioAtividade) || issForaDaFaixa || avisoTrava) && <section aria-label="Conferências das premissas" className="planejamento-conferencias">
+          <strong>Confira antes de usar a comparação</strong>
           {num(mesesAtividade) != null && !mesesInicioAtividade && (
             <div style={{ fontSize: "0.78rem", color: C.alerta }}>
               Informe de 1 a 12 meses. Do 13º mês em diante a empresa já tem os 12 meses de histórico:
@@ -1049,11 +1064,13 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
             </div>
           )}
           {avisoTrava && <div style={{ fontSize: "0.78rem", color: C.alerta }}>⚠ {avisoTrava}</div>}
+          </section>}
         </div>
 
         {/* ── RESULTADO ────────────────────────────────────────────────────── */}
         {resultado && (
-          <div data-print-area style={{ display: "grid", gap: 14 }}>
+          <div id="comparacao-cenario" tabIndex={-1} data-print-area style={{ display: "grid", gap: 14 }}>
+            <h2 data-print-hide style={{ margin: 0, fontSize: "1.1rem" }}>Comparação dos regimes</h2>
             {/* ⚠ CABEÇALHO SÓ-NO-PAPEL. O PDF vai para o cliente do contador sem esta tela por
                 perto: sem isto, ele circula como um número sem data, sem escopo e sem ressalva. */}
             <div data-print-only style={{ display: "none" }}>
@@ -1135,6 +1152,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
                 ela é a resposta à pergunta "por que este total?". Os cards dão o número; ela dá a
                 composição, e é a composição que sustenta (ou derruba) a conclusão — inclusive a de
                 que "o Presumido compensa acima de X", que não vale para quem tem folha. */}
+            <h2 id="detalhes-cenario" tabIndex={-1} style={{ margin: 0, fontSize: "1.1rem" }}>Detalhes do cálculo</h2>
             {comparativo && <TabelaComparativa comparativo={comparativo} />}
 
             {/* ⚠⚠ IBS/CBS — só para quem É (ou seria) optante pelo Simples. Este bloco responde a
@@ -1212,7 +1230,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
               {(empresaFixa || empresas.length > 0) && (
                 <button
                   type="button"
-                  onClick={guardarSimulacao}
+                  onClick={() => guardarSimulacao(false)}
                   disabled={!empresaId || guardando}
                   title={empresaId
                     ? "Salva esta simulação e gera o PDF em Documentos da empresa."

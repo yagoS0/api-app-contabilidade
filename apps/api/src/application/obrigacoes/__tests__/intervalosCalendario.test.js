@@ -184,3 +184,14 @@ describe("preparação recorrente", () => {
     expect(prisma.ocorrenciaObrigacao.createMany.mock.calls[0][0].data.some((x) => x.competenciaRef === "2026-08")).toBe(false);
   });
 });
+
+
+test('inativar é pausa e não apaga ocorrências nem exceções', async () => {
+  prisma.obrigacao.findUnique.mockResolvedValue({ id: 'ob1', ativa: false });
+  expect(await sincronizarOcorrencias('ob1')).toEqual({ criadas: 0, removidas: 0 });
+  expect(prisma.ocorrenciaObrigacao.deleteMany).not.toHaveBeenCalled();
+  expect(prisma.ocorrenciaObrigacao.update).not.toHaveBeenCalled();
+  expect(prisma.ocorrenciaObrigacao.createMany).not.toHaveBeenCalled();
+  await ocorrenciasDoPeriodo({ portalIds: ['p1'], inicio: date('2026-09-01'), fim: date('2026-10-01') });
+  expect(prisma.ocorrenciaObrigacao.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ obrigacao: expect.objectContaining({ ativa: true }) }) }));
+});
