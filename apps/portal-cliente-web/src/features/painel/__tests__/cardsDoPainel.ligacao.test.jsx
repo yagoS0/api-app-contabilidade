@@ -1,264 +1,98 @@
-// ⚠⚠ OS TRÊS CARDS DO INÍCIO — Receita · Imposto líquido · Resultado (29/08/2026).
-//
-// Este arquivo existe por causa de um defeito RELATADO, com a tela na frente do dono:
-//
-// > *"o painel principal de receita, imposto líquido e resultado tem um bug: a receita está se
-// > tratando do mês seguinte e o resultado usando o mês corrente, o que gera confusão. Ele deve
-// > sempre usar o mês seguinte para as duas formas."*
-//
-// **O que acontecia:** a receita das notas emitidas em AGOSTO entra no fluxo em SETEMBRO
-// (competência + 1, dia 1 — decisão do dono na mesma rodada). O card "Receita · agosto" mostrava
-// as notas de agosto; os cards "Imposto" e "Resultado · agosto" liam a linha do mês CORRENTE, cuja
-// Entrada é a receita de JULHO. Três cards lado a lado, com o mesmo rótulo de mês, falando de duas
-// receitas diferentes.
-//
-// ⚠⚠ **OS DOIS NÚMEROS ESTAVAM CERTOS CADA UM POR SI.** O que estava errado era apresentá-los como
-// se fossem do mesmo mês — a mesma família do "dois seletores para um valor" que a competência
-// única já consertou neste app. Por isso o conserto tem DUAS metades, e as duas estão travadas
-// aqui: o VALOR passa a vir do mês seguinte, e o RÓTULO passa a dizer que mês é.
-//
-// ⚠⚠ **O CARD DE RECEITA NÃO MUDOU DE FONTE, e não pode mudar:** Lei 5 da
-// `CONSTITUICAO-do-produto.md` — *Receita é nota emitida no mês (competência), e nunca dinheiro
-// recebido*. Ele continua sendo o `summary` de `GET /invoices` da competência ESCOLHIDA. Um teste
-// abaixo prende isso pelo lado contrário: o valor da receita é diferente de tudo que está no fluxo,
-// então ele cairia se alguém "alinhasse" os três lendo a mesma linha.
-
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { api } from "../../../api";
 import { PainelPage } from "../PainelPage";
-
+jest.mock("../BlocoDeDemonstracao", () => ({ BlocoDeDemonstracao: ({ aoAtualizarFluxo }) => <button onClick={aoAtualizarFluxo}>Atualizar após edição</button> }));
 const COMPETENCIA = "2026-08";
-const SEGUINTE = "2026-09";
-
-test("salvar no fluxo atualiza também os cards do painel", async () => {
-  const p = await abrir();
-  const antes = api.getFluxoCaixa.mock.calls.length;
-  jest.spyOn(api, "salvarSaldoInicial").mockImplementation(async () => {
-    p.meses[1].linhas[0].valor = 50000;
-    return { ok: true, saldoInicial: { dataReferencia: "2026-08-01", valor: 1000 } };
-  });
-  fireEvent.click(screen.getByText("Informar saldo inicial"));
-  fireEvent.change(screen.getByLabelText("Valor inicial (R$)"), { target: { value: "1000" } });
-  fireEvent.click(screen.getByText("Salvar saldo inicial"));
-  await waitFor(() => expect(api.getFluxoCaixa.mock.calls.length).toBeGreaterThanOrEqual(antes + 2));
-  await waitFor(() => expect(card("Resultado").numero).toMatch(/47.000/));
-});
-
-test("falha do fluxo aparece no resumo e tentar novamente também recarrega os cards", async () => {
-  await abrir();
-  api.getFluxoCaixa.mockRejectedValue(new Error("Fluxo indisponível"));
-  // Falha posterior à edição força as duas leituras e deve permanecer visível.
-  jest.spyOn(api, "salvarSaldoInicial").mockResolvedValue({ ok: true });
-  fireEvent.click(screen.getByText("Informar saldo inicial"));
-  fireEvent.change(screen.getByLabelText("Valor inicial (R$)"), { target: { value: "0" } });
-  fireEvent.click(screen.getByText("Salvar saldo inicial"));
-  await waitFor(() => expect(screen.getByText(/Não foi possível carregar o resumo do mês/)).toBeInTheDocument());
-  api.getFluxoCaixa.mockResolvedValue(payload());
-  const botoes = screen.getAllByRole("button", { name: /Tentar de novo/i });
-  fireEvent.click(botoes[0]);
-  await waitFor(() => expect(card("Resultado").numero).toMatch(/17.000/));
-});
-
-/** Uma linha do payload, na forma que o servidor manda. */
-const linha = (fonte, direcao, procedencia, valor, competencia) => ({
-  fonte, direcao, procedencia, competencia, dia: 1, diaDesconhecido: null, valor,
-  rotulo: `${fonte} de ${competencia}`,
-  base: { frase: "de teste" },
-});
-
-/**
- * ⚠ Os números dos dois meses são DELIBERADAMENTE distantes — 1.111,11 contra 20.000,00. Números
- * próximos deixariam o teste passar com o mês errado sempre que o formato coincidisse.
- */
-function payload() {
-  return {
-    demonstracao: false,
-    cicloAtual: COMPETENCIA,
-    janela: { inicio: "2026-04", podeVoltar: true, podeAvancar: true, padrao: "2026-04", horizonte: 12 },
-    semMes: [],
-    vencidas: [],
-    emAberto: [],
-    meses: [
-      {
-        competencia: COMPETENCIA,
-        linhas: [
-          linha("NOTA_EMITIDA", "ENTRADA", "PREVISAO", 1111.11, COMPETENCIA),
-          linha("GUIA", "SAIDA", "COMPROMISSO", 100.5, COMPETENCIA),
-        ],
-      },
-      {
-        competencia: SEGUINTE,
-        linhas: [
-          linha("NOTA_EMITIDA", "ENTRADA", "PREVISAO", 20000, SEGUINTE),
-          linha("GUIA", "SAIDA", "COMPROMISSO", 3000, SEGUINTE),
-        ],
-      },
-    ],
-  };
-}
-
-async function abrir({ meses } = {}) {
-  const p = payload();
-  if (meses) p.meses = meses;
-  jest.spyOn(api, "getFluxoCaixa").mockResolvedValue(p);
-  jest.spyOn(api, "getInvoices").mockResolvedValue({
-    // ⚠ Um valor que NÃO existe em mês nenhum do fluxo — ver o cabeçalho.
-    summary: { totalAmount: 77777, totalInvoices: 4 },
-    invoices: [],
-  });
-  jest.spyOn(api, "getAliquotas").mockResolvedValue([]);
-  render(
-    <PainelPage
-      empresa={{ companyId: "pc-001", nome: "Empresa de teste" }}
-      competencia={COMPETENCIA}
-      aoTrocarCompetencia={() => {}}
-      aoNavegar={() => {}}
-    />,
-  );
+const lancamento = (competencia = COMPETENCIA, extras = {}) => ({ competencia, deLancamentos: { situacao: "CALCULADA", base: 20000, impostos: 3000, aliquota: 15, ...extras } });
+const props = { empresa: { companyId: "pc-001" }, competencia: COMPETENCIA, aoTrocarCompetencia: jest.fn(), aoNavegar: jest.fn() };
+async function abrir({ linhas = [lancamento()], receita = 20000 } = {}) {
+  jest.spyOn(api, "getFluxoCaixa").mockRejectedValue(new Error("O resumo não deve consultar o fluxo"));
+  jest.spyOn(api, "getInvoices").mockResolvedValue({ summary: { totalAmount: receita, totalInvoices: 4 } });
+  jest.spyOn(api, "getAliquotas").mockResolvedValue(linhas);
+  const vista = render(<PainelPage {...props} />);
   await act(async () => {});
-  return p;
+  return vista;
 }
-
-/** O card cujo rótulo começa com `prefixo` — devolve as três partes que ele desenha. */
 function card(prefixo) {
-  const achado = [...document.querySelectorAll(".card")].find((c) =>
-    c.querySelector(".rotulo")?.textContent.startsWith(prefixo),
-  );
-  if (!achado) throw new Error(`nenhum card com rótulo começando em "${prefixo}"`);
-  return {
-    rotulo: achado.querySelector(".rotulo").textContent,
-    numero: achado.querySelector(".numero").textContent,
-    apoio: achado.querySelector(".apoio")?.textContent || "",
-    status: achado.querySelector(".numero").getAttribute("data-status"),
-  };
+  const e = [...document.querySelectorAll(".card")].find((c) => c.querySelector(".rotulo")?.textContent.startsWith(prefixo));
+  return { rotulo: e.querySelector(".rotulo").textContent, numero: e.querySelector(".numero").textContent, apoio: e.querySelector(".apoio")?.textContent || "" };
 }
-
-afterEach(() => { jest.restoreAllMocks(); });
-
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠⚠ Imposto e Resultado leem o mês SEGUINTE — o defeito relatado", () => {
-  it("o Imposto líquido mostra a guia de SETEMBRO, não a de agosto", async () => {
-    await abrir();
-    expect(card("Imposto líquido").numero).toMatch(/3\.000,00/);
-    expect(card("Imposto líquido").numero).not.toMatch(/100,50/);
-  });
-
-  it("o Resultado é o do mês SEGUINTE (20.000 − 3.000), não o do corrente (1.111,11 − 100,50)", async () => {
-    await abrir();
-    expect(card("Resultado").numero).toMatch(/17\.000,00/);
-    expect(card("Resultado").numero).not.toMatch(/1\.010,61/);
-  });
-
-  it("⚠⚠ e os RÓTULOS dizem qual mês é — sem isso o conserto vira uma confusão nova", async () => {
-    await abrir();
-    expect(card("Imposto líquido").rotulo).toBe("Imposto líquido · 09/2026");
-    expect(card("Resultado").rotulo).toBe("Resultado · 09/2026");
-  });
-
-  it("⚠ o apoio do Resultado NOMEIA a ligação entre os dois meses", async () => {
-    await abrir();
-    // "Receita · 08/2026" ao lado de "Resultado · 09/2026" parece erro de tela sem esta frase.
-    expect(card("Resultado").apoio).toMatch(/receita de 08\/2026 entra aqui/);
-  });
-
-  it("⚠ o status continua vindo da célula — previsto não vira fato ao mudar de mês", async () => {
-    await abrir();
-    expect(card("Resultado").status).toBe("forecast");
-    expect(card("Imposto líquido").status).toBe("forecast");
-  });
+afterEach(() => jest.restoreAllMocks());
+test("três cards na competência selecionada: resultado é faturamento menos imposto", async () => {
+  await abrir();
+  expect(card("Receita").numero).toMatch(/20\.000,00/);
+  expect(card("Imposto líquido").numero).toMatch(/3\.000,00/);
+  expect(card("Resultado").numero).toMatch(/17\.000,00/);
+  for (const nome of ["Receita", "Imposto líquido", "Resultado"]) expect(card(nome).rotulo).toBe(`${nome} · 08/2026`);
+  expect(card("Resultado").apoio).toBe("Receita − impostos lançados na competência");
+  expect(api.getInvoices).toHaveBeenCalledWith("pc-001", { competencia: COMPETENCIA, page: 1, limit: 1 });
+  expect(api.getAliquotas).toHaveBeenCalledWith("pc-001", { from: COMPETENCIA, to: COMPETENCIA });
+  expect(api.getFluxoCaixa).not.toHaveBeenCalled();
+});
+test("inclui INSS tributário sem subtrair folha salarial ou despesas", async () => {
+  await abrir({ linhas: [lancamento(COMPETENCIA, { impostosComFolha: 3500, aliquotaComFolha: 17.5, impostoSobreFolha: 500, folha: 50000, despesas: 70000 })] });
+  expect(card("Imposto líquido").numero).toMatch(/3\.500,00/);
+  expect(card("Imposto líquido").apoio).toMatch(/INSS incluído/);
+  expect(card("Resultado").numero).toMatch(/16\.500,00/);
+});
+test.each(["SEM_IMPOSTO_LANCADO", "SEM_LANCAMENTO", "SEM_RECEITA_LANCADA"])("ausência %s mantém traço", async (situacao) => {
+  await abrir({ linhas: [lancamento(COMPETENCIA, { situacao, impostos: 0 })] });
+  expect(card("Imposto líquido").numero).toBe("—"); expect(card("Resultado").numero).toBe("—");
+  expect(card("Resultado").apoio).not.toBe("");
+});
+test.each([null, undefined, ""])("total ausente %s não fabrica zero", async (impostos) => {
+  await abrir({ linhas: [lancamento(COMPETENCIA, { impostos })] });
+  expect(card("Imposto líquido").numero).toBe("—"); expect(card("Resultado").numero).toBe("—");
+});
+test("zero explicitamente calculado é preservado", async () => {
+  await abrir({ linhas: [lancamento(COMPETENCIA, { impostos: 0, aliquota: 0 })] });
+  expect(card("Imposto líquido").numero).toMatch(/0,00/); expect(card("Resultado").numero).toMatch(/20\.000,00/);
+});
+test("outro mês não substitui imposto ausente", async () => {
+  await abrir({ linhas: [lancamento("2026-09")] });
+  expect(card("Resultado").numero).toBe("—"); expect(card("Imposto líquido").apoio).toBe("Sem dados para 08/2026");
+});
+test("seleciona a linha correta fora da primeira posição", async () => {
+  await abrir({ linhas: [lancamento("2026-09", { impostos: 9000 }), lancamento()] });
+  expect(card("Resultado").numero).toMatch(/17\.000,00/);
+});
+test("receita ausente não fabrica resultado negativo", async () => {
+  await abrir({ receita: null }); expect(card("Receita").numero).toBe("—"); expect(card("Resultado").numero).toBe("—");
+});
+test("preserva centavos e resultado negativo real", async () => {
+  await abrir({ receita: 100.1, linhas: [lancamento(COMPETENCIA, { impostos: 200.2 })] });
+  expect(card("Resultado").numero).toMatch(/-.*100,10/);
+});
+test("troca competência recarrega ambas as fontes inclusive dezembro", async () => {
+  const vista = await abrir();
+  api.getInvoices.mockResolvedValue({ summary: { totalAmount: 5000, totalInvoices: 1 } });
+  api.getAliquotas.mockResolvedValue([lancamento("2026-12", { impostos: 1000 })]);
+  vista.rerender(<PainelPage {...props} competencia="2026-12" />);
+  await waitFor(() => expect(card("Resultado").numero).toMatch(/4\.000,00/));
+  expect(card("Resultado").rotulo).toBe("Resultado · 12/2026");
+  expect(api.getAliquotas).toHaveBeenLastCalledWith("pc-001", { from: "2026-12", to: "2026-12" });
+});
+test("edição atualiza notas e impostos sem caixa duplicado", async () => {
+  await abrir();
+  api.getInvoices.mockResolvedValue({ summary: { totalAmount: 30000, totalInvoices: 5 } });
+  api.getAliquotas.mockResolvedValue([lancamento(COMPETENCIA, { impostos: 4000 })]);
+  fireEvent.click(screen.getByRole("button", { name: "Atualizar após edição" }));
+  await waitFor(() => expect(card("Resultado").numero).toMatch(/26\.000,00/));
+  expect(api.getInvoices).toHaveBeenCalledTimes(2); expect(api.getAliquotas).toHaveBeenCalledTimes(2);
+  expect(api.getFluxoCaixa).not.toHaveBeenCalled();
+});
+test("erro de impostos visível com retentativa sem número antigo", async () => {
+  await abrir(); api.getAliquotas.mockRejectedValue(new Error("Indisponível"));
+  fireEvent.click(screen.getByRole("button", { name: "Atualizar após edição" }));
+  await waitFor(() => expect(screen.getByText(/Não foi possível carregar o resumo do mês/)).toBeInTheDocument());
+  expect(card("Resultado").numero).toBe("—");
+  api.getAliquotas.mockResolvedValue([lancamento()]);
+  fireEvent.click(screen.getByRole("button", { name: /Tentar de novo/i }));
+  await waitFor(() => expect(card("Resultado").numero).toMatch(/17\.000,00/));
 });
 
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠⚠ a RECEITA não mudou de fonte — Lei 5", () => {
-  it("continua sendo o `summary` das notas da competência ESCOLHIDA", async () => {
-    await abrir();
-    expect(card("Receita").numero).toMatch(/77\.777,00/);
-    expect(card("Receita").rotulo).toBe("Receita · 08/2026");
-    expect(card("Receita").apoio).toMatch(/4 nota\(s\) emitida\(s\)/);
-  });
-
-  it("⚠ e ela NÃO sai do fluxo: o valor da receita não existe em mês nenhum do payload", async () => {
-    const p = await abrir();
-    const valores = p.meses.flatMap((m) => m.linhas.map((l) => l.valor));
-    expect(valores).not.toContain(77777);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠⚠ o mês seguinte AUSENTE vira traço, nunca zero", () => {
-  it("sem a linha de setembro no payload, Imposto e Resultado saem em traço", async () => {
-    // ⚠ Este é o caso do fim do horizonte, e ele é real: a janela tem 12 meses e o cliente pode
-    // estar olhando o último. Zero ali AFIRMARIA que o mês que vem não tem imposto nem resultado —
-    // a mesma distinção que `celula()` guarda em `tabelaDoFluxo.js` (`null` ≠ `{valor: 0}`).
-    await abrir({ meses: [payload().meses[0]] });
-    expect(card("Imposto líquido").numero).toBe("—");
-    expect(card("Resultado").numero).toBe("—");
-    // ⚠ E a receita, que não depende do fluxo, continua lá.
-    expect(card("Receita").numero).toMatch(/77\.777,00/);
-  });
-
-  it("⚠ o rótulo continua nomeando o mês que ele NÃO tem — o traço é do mês, não da tela", async () => {
-    await abrir({ meses: [payload().meses[0]] });
-    expect(card("Resultado").rotulo).toBe("Resultado · 09/2026");
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠ a virada do ano", () => {
-  it("dezembro aponta para janeiro do ano seguinte", async () => {
-    jest.spyOn(api, "getFluxoCaixa").mockResolvedValue({
-      demonstracao: false, cicloAtual: "2026-12", janela: {}, semMes: [], vencidas: [], emAberto: [],
-      meses: [{ competencia: "2027-01", linhas: [linha("GUIA", "SAIDA", "COMPROMISSO", 4242, "2027-01")] }],
-    });
-    jest.spyOn(api, "getInvoices").mockResolvedValue({ summary: { totalAmount: 1, totalInvoices: 1 }, invoices: [] });
-    jest.spyOn(api, "getAliquotas").mockResolvedValue([]);
-    render(
-      <PainelPage
-        empresa={{ companyId: "pc-001", nome: "Empresa de teste" }}
-        competencia="2026-12"
-        aoTrocarCompetencia={() => {}}
-        aoNavegar={() => {}}
-      />,
-    );
-    await act(async () => {});
-    expect(card("Imposto líquido").rotulo).toBe("Imposto líquido · 01/2027");
-    expect(card("Imposto líquido").numero).toMatch(/4\.242,00/);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-// ⚠ A varredura: a fonte do card não pode voltar a ser a competência escolhida.
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠ a leitura mora numa função só", () => {
-  it("`somarCompetencia` é IMPORTADA da lib, nunca redeclarada na página", async () => {
-    const fs = require("fs");
-    const path = require("path");
-    const fonte = fs.readFileSync(
-      path.join(__dirname, "..", "PainelPage.jsx"), "utf8",
-    );
-    // ⚠ Ela nasceu como cópia local dentro de `BlocoDeDemonstracao.jsx`, e uma segunda cópia aqui
-    // faria a página e o bloco discordarem sobre qual é "o mês seguinte" — em dezembro, primeiro.
-    expect(fonte).toMatch(/import \{[^}]*somarCompetencia[^}]*\} from "\.\/lib\/leituraDoFluxo"/);
-    expect(fonte).not.toMatch(/function somarCompetencia/);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-// ⚠⚠ ACHADO NO NAVEGADOR, no mock, DEPOIS de os testes acima ficarem verdes.
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe('⚠⚠ o apoio do Imposto não diz "esta competência"', () => {
-  // A tela mostrava *"Imposto líquido · 09/2026"* com *"nenhuma guia paga nesta competência ainda"*,
-  // e a guia de que a frase fala é a de AGOSTO — a alíquota é da competência ESCOLHIDA. Sob um
-  // rótulo que passou a nomear outro mês, "esta" virou ambíguo. A frase é parte do comportamento.
-  it("ele NOMEIA o mês da alíquota, que é o escolhido — não o do rótulo", async () => {
-    await abrir();
-    const apoio = card("Imposto líquido").apoio;
-    expect(apoio).toMatch(/08\/2026/);
-    expect(apoio).not.toMatch(/esta competência/);
-  });
-
-  it("⚠ e o rótulo continua sendo o do mês da ENTRADA — os dois meses convivem, nomeados", async () => {
-    await abrir();
-    expect(card("Imposto líquido").rotulo).toBe("Imposto líquido · 09/2026");
-  });
+test("lançamentos não classificados deixam ressalva e resultado provisório", async () => {
+  await abrir({ linhas: [lancamento(COMPETENCIA, { naoClassificadas: 2 })] });
+  expect(card("Imposto líquido").apoio).toMatch(/2 lançamento\(s\) sem conta contábil ficaram de fora/);
+  expect(card("Resultado").apoio).toMatch(/Resultado provisório/);
 });

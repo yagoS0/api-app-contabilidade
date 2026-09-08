@@ -48,7 +48,7 @@ export const COLUNAS = Object.freeze([
   { chave: "impostos", rotulo: "Impostos" },
   { chave: "folha", rotulo: "Folha" },
   { chave: "resultado", rotulo: "Resultado mensal" },
-  { chave: "saldo", rotulo: "Saldo projetado" },
+  { chave: "saldo", rotulo: "Acumulado projetado" },
 ]);
 
 /** ⚠ As três que viram percentual no modo `%`. Entrada e Resultado seguem em R$ (spec §3.6). */

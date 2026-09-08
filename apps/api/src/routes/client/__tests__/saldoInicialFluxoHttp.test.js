@@ -55,3 +55,10 @@ test('remover registra evento e não apaga histórico',async()=>{
   expect(r.body).toEqual({ok:true,saldoInicial:null});
   expect(client.saldoInicialFluxo.create.mock.calls[0][0].data.valor).toBeNull();
 });
+
+test('router público não monta escrita de saldo inicial manual', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const codigo = fs.readFileSync(path.join(__dirname,'../index.js'),'utf8');
+  expect(codigo).not.toMatch(/saldoInicialFluxoRouter|\/saldo-inicial/);
+});

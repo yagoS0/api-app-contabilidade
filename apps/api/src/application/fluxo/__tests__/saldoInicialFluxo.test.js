@@ -9,23 +9,20 @@ const linhas = [
   { competencia:'2026-12', valor:200.20, direcao:'SAIDA', procedencia:'PREVISAO' },
   { competencia:'2027-02', valor:300, direcao:'SAIDA', procedencia:'COMPROMISSO' },
 ];
-test('âncora não incorpora histórico anterior; virada de ano e mês vazio preservam saldo', () => {
-  const r = aplicarSaldosProjetados({meses,linhas,saldoInicial});
-  expect(r.map(m => m.saldo)).toEqual([
-    {inicial:null,final:null,projetado:true},
-    {inicial:5000,final:5799.90,projetado:true},
-    {inicial:5799.90,final:5799.90,projetado:true},
-    {inicial:5799.90,final:5499.90,projetado:true},
-  ]);
+test('histórico automático atravessa virada de ano e ignora saldo manual', () => {
+ const r=aplicarSaldosProjetados({meses,linhas,saldoInicial});
+ expect(r.map(m=>m.saldo)).toEqual([
+ {inicial:0,final:10000,projetado:true},
+ {inicial:10000,final:10799.90,projetado:true},
+ {inicial:10799.90,final:10799.90,projetado:true},
+ {inicial:10799.90,final:10499.90,projetado:true},
+ ]);
 });
-test('mudar janela visual não perde valores acumulados antes dela', () => {
-  const r = aplicarSaldosProjetados({meses:[meses[3]],linhas,saldoInicial});
-  expect(r[0].saldo).toEqual({inicial:5799.90,final:5499.90,projetado:true});
+test('janela não limita o histórico e ausência de linhas é desconhecida', () => {
+ expect(aplicarSaldosProjetados({meses:[meses[3]],linhas})[0].saldo.inicial).toBe(10799.9);
+ expect(aplicarSaldosProjetados({meses,linhas:[],saldoInicial})[0].saldo.inicial).toBeNull();
 });
-test('ausência de âncora não assume zero; zero explicitamente informado é válido', () => {
-  expect(aplicarSaldosProjetados({meses,linhas})[2].saldo.inicial).toBeNull();
-  expect(aplicarSaldosProjetados({meses,linhas,saldoInicial:{...saldoInicial,valor:0}})[2].saldo.inicial).toBe(799.9);
-});
+
 test.each([null, '', [], {}, true, 'NaN', '1.234', '1,50', '1000000000000', Infinity])('recusa saldo inválido %p', valor => {
   expect(() => validarSaldoInicial({dataReferencia:'2026-09-01',valor})).toThrow();
 });

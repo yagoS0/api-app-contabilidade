@@ -1,12 +1,10 @@
-# Fluxo de caixa e saldo inicial — 08/09/2026
 
-- O pedido atual autoriza saldo transportado entre meses e substitui comentários antigos que o proibiam. A âncora é um saldo gerencial DECLARADO no primeiro dia do mês, antes das movimentações. Não é lançamento contábil nem atestado bancário.
-- `SaldoInicialFluxo` guarda versões append-only por empresa, ordenadas por id. PUT cria versão; DELETE cria evento com valor/data nulos. Nenhum deles apaga versões anteriores. Autor vem da sessão, empresa da rota; membros financeiros ativos podem escrever, visita do escritório é somente leitura (admin mestre continua com sua autorização existente).
-- Migration aditiva `20260908230000_cashflow_opening_balance`: tabela com FK, Decimal(18,2), data civil e CHECK do primeiro dia. Aplicar e gerar Prisma antes da API. Não existe preenchimento automático de saldos reais; zero somente quando informado explicitamente.
-- GET adiciona `saldoInicial` e `mes.saldo:{inicial,final,projetado:true}`. Sem âncora, ambos nulos. Meses anteriores à âncora também nulos. Soma desde a referência, mesmo quando a janela começa anos depois; mês vazio conserva saldo e virada de ano não zera. A leitura das fontes usa o início da âncora quando anterior à janela visual.
-- O saldo é sempre PROJETADO nesta versão: inclui convenções de recebimento, compromissos e estimativas. Nunca promover a saldo bancário confirmado pela apuração. Resultado mensal e DRE são grandezas separadas.
-- `montarLinha` normaliza centavos com arredondamento simétrico antes dos totais, transporte e resposta. Não arredondar saldo por linha em um consumidor e sobre o total em outro.
-- Preservar a regra integrada da main: saídas avulsas planejadas só entram no fluxo após contabilização; previsões recorrentes de despesas exigem pelo menos três observações consecutivas. O saldo transportado usa essas mesmas fontes, sem somar avulsas novamente.
-- Relógio de produção é definido pelo servidor uma vez na borda HTTP. `janelaInicio` navega; `cicloAtual` legado é somente fallback de navegação, nunca relógio fornecido pelo navegador. Chamadas internas de testes podem injetar hoje/ciclo no serviço puro.
-- Guias futuras em aberto ficam no vencimento; atrasadas não pagas no mês atual; pagas na data de pagamento. DAS pago leva tipo/competência/parcelamento para substituir somente a projeção correspondente. Competência desconhecida não prova substituição; parcelamento e imposto atrasado de outro ciclo não apagam projeção atual.
-- CI executa suites fluxo/DRE e os ensaios `verify-cashflow-balance-postgres.js` e `verify-dre-postgres.js` em banco descartável local. Não acessar produção nem provedores para rodar testes. Prisma em dependências compartilhadas não deve ser regenerado localmente; usar diretório isolado.
+## Acumulado automático — 08/09/2026
+
+Decisão nova substitui saldo inicial manual. O GET de fluxo não consulta nem usa saldos_iniciais_fluxo. Migração e registros legados permanecem preservados; PUT/DELETE saldo-inicial estão desmontados do router cliente.
+
+- `acumulado: { origem: HISTORICO, calculoInicio: AAAA-MM|null }` informa a primeira linha financeira disponível. `saldoInicial:null` permanece por compatibilidade.
+- Cada `mes.saldo` mantém inicial/final/projetado. O acumulado começa em zero apenas no primeiro mês com movimento e transporta meses; antes desse mês ou sem qualquer linha, valores são null. É resultado gerencial acumulado incluindo previsões, nunca saldo bancário conciliado.
+- Fontes admitidas e sua procedência não mudam: notas com convenção mês+1, guias no pagamento/vencimento/atraso, folha/despesa com crédito de caixa e séries de despesa com pelo menos três observações consecutivas. Saída avulsa só entra após contabilizada.
+- Leitores de notas, folha e despesas incluem histórico completo; janela visual não limita o acumulado e a primeira nota não exclui despesas anteriores. Valores de cada linha são centavos, normalizados antes de totalização/transporte.
+- Testes de serviço verificam legado ignorado, histórico antes da janela, mudança de janela, mês vazio e precisão. `verify-cashflow-balance-postgres.js` usa apenas PostgreSQL local descartável `_check`, com registro manual legado que não pode alterar o resultado automático; banco real não foi exercitado por esta alteração.

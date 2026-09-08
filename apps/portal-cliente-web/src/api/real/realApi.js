@@ -413,12 +413,6 @@ export function createRealApi() {
      * ⚠ NÃO CONFUNDIR com `confirmarPagamentoDaGuia`: aquela afirma *"eu paguei"* e move
      * `paymentStatus`; esta só silencia o pop-up até surgir guia nova. Lei 5 da Constituição.
      */
-    async salvarSaldoInicial(companyId, dados) {
-      return pedir(`/client/companies/${encodeURIComponent(companyId)}/fluxo-de-caixa/saldo-inicial`, { method: "PUT", body: dados });
-    },
-    async excluirSaldoInicial(companyId) {
-      return pedir(`/client/companies/${encodeURIComponent(companyId)}/fluxo-de-caixa/saldo-inicial`, { method: "DELETE" });
-    },
     async registrarCienciaDeGuias(companyId, { guiaIds } = {}) {
       return pedir(`/client/companies/${encodeURIComponent(companyId)}/guias/ciencia`, {
         method: "POST",

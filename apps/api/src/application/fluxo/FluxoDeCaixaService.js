@@ -1,4 +1,4 @@
-import { lerSaldoInicialFluxo, aplicarSaldosProjetados } from "./SaldoInicialFluxoService.js";
+import { inicioDoHistoricoFluxo, aplicarSaldosProjetados } from "./SaldoInicialFluxoService.js";
 // O FLUXO DE CAIXA — a ligação com o banco.
 //
 // ⚠⚠ ESTE SERVIÇO É **SÓ LEITURA**. Ele não grava nada, não marca nada, não cria lançamento nenhum.
@@ -494,7 +494,7 @@ async function competenciasApuradas({ portalClientId, client }) {
  *
  * ⚠⚠ NOTA SEM COMPETÊNCIA vai para DESCONHECIDO, jamais para um mês escolhido pelo sistema.
  */
-async function linhasDasNotas({ portalClientId, cicloAtual, janelaInicio, client }) {
+async function linhasDasNotas({ portalClientId, cicloAtual, janelaInicio, incluirHistorico = false, client }) {
   // ⚠ A prova da apuração é lida UMA vez, para a empresa inteira — não uma consulta por nota.
   const apuradas = await competenciasApuradas({ portalClientId, client });
   const notas = await client.portalInvoice.findMany({
@@ -513,7 +513,7 @@ async function linhasDasNotas({ portalClientId, cicloAtual, janelaInicio, client
     orderBy: { competencia: "asc" },
   });
 
-  const base = mesesDaCompetencia(janelaInicio || cicloAtual);
+  const base = incluirHistorico ? Number.NEGATIVE_INFINITY : mesesDaCompetencia(janelaInicio || cicloAtual);
   const agora = mesesDaCompetencia(cicloAtual);
   const linhas = [];
   const semMes = [];
@@ -952,35 +952,14 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
   const ciclo = texto(cicloAtual) || cicloDeHoje();
   const dia = texto(hoje) || dataDeHoje();
 
-  const [empresa, primeiraNota] = await Promise.all([
-    client.portalClient.findUnique({
-      where: { id: String(portalClientId) },
-      // ⚠⚠ A COLUNA PRECISA ESTAR NO `select` EXPLÍCITO. Fora dele ela volta `undefined` **sem erro**,
-      // a rota responde 200, e a tela "só não mostra" — este projeto já foi mordido TRÊS vezes por
-      // isso (`legacyCompanySelect`, carga tributária, `codigoMunicipioIbge`).
-      select: { id: true },
-    }),
-    // ⚠⚠ O LIMITE DA NAVEGAÇÃO PARA TRÁS (v3 §3.1) — a nota mais antiga da empresa.
-    // ⚠ Não é "12 meses atrás": empresa aberta em março não tem janeiro, e oferecer janeiro faria
-    // a tela afirmar que ela faturou zero num mês em que ela não existia.
-    client.portalInvoice.findFirst({
-      where: { clientId: String(portalClientId), ...whereFaturamentoEmit(), competencia: { not: null } },
-      select: { competencia: true },
-      orderBy: { competencia: "asc" },
-    }),
-  ]);
+  const empresa = await client.portalClient.findUnique({where:{id:String(portalClientId)},select:{id:true}});
 
-  const saldoInicial = await lerSaldoInicialFluxo(portalClientId, client);
-  const mesDaAncora = saldoInicial?.dataReferencia?.slice(0, 7);
-  const mesDaPrimeiraNota = competenciaDaData(primeiraNota?.competencia);
-  const limiteInicial = mesDaAncora && (!mesDaPrimeiraNota || mesDaAncora < mesDaPrimeiraNota) ? mesDaAncora : mesDaPrimeiraNota;
   const janela = janelaDoFluxo({
     cicloAtual: ciclo,
     janelaInicio: texto(janelaInicio) || null,
-    companyStart: limiteInicial,
+    companyStart: null,
   });
   const inicio = janela?.inicio || ciclo;
-  const inicioDados = mesDaAncora && mesDaAncora < inicio ? mesDaAncora : inicio;
   // ⚠ Quantos meses da janela ainda estão à frente — é até onde a projeção recorrente vai.
   const mesesFuturosDaJanela = Math.max(
     0,
@@ -989,19 +968,19 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
 
   const [guias, notas, series, snapshot, folha, saidasDoCliente, despesas] = await Promise.all([
     linhasDasGuias({ portalClientId, cicloAtual: ciclo, hoje: dia, client }),
-    linhasDasNotas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicioDados, client }),
+    linhasDasNotas({ portalClientId, cicloAtual: ciclo, incluirHistorico: true, client }),
     linhasDasSeries({ portalClientId, cicloAtual: ciclo, mesesAProjetar: mesesFuturosDaJanela, client }),
     ultimaApuracao({ portalClientId, client }),
     // ⚠⚠ A FOLHA PASSOU A SAIR DO PAGAMENTO (a saída de caixa), não da provisão bruta — ver o
     // cabeçalho de `linhasDaFolhaPelaSaidaDeCaixa`. `linhasDaFolha` (a leitura por provisão) fica
     // no arquivo, SEM CHAMADOR e com lápide: ela é a leitura que o Fator R usa, e apagá-la aqui
     // convidaria alguém a "consertar" a conferência do Fator R junto.
-    linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual: ciclo, janelaInicio: inicioDados, client }),
+    linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual: ciclo, incluirHistorico: true, client }),
     // As saídas avulsas passam ao fluxo quando contabilizadas, pela despesa abaixo.
     Promise.resolve({ linhas: [], indisponivel: false }),
     // ⚠⚠ A DESPESA LANÇADA — o que faz valer a regra do dono (*"ao lançar entra no fluxo"*). Até
     // 01/09/2026 ela não estava aqui, e o trabalho principal da Conferência não chegava ao cliente.
-    linhasDasDespesasLancadas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicioDados, client }),
+    linhasDasDespesasLancadas({ portalClientId, cicloAtual: ciclo, incluirHistorico: true, client }),
   ]);
 
   const aliquota = aliquotaEfetiva(snapshot);
@@ -1108,8 +1087,9 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     demonstracao: false,
     cicloAtual: ciclo,
     horizonte: HORIZONTE_MESES,
-    meses: aplicarSaldosProjetados({ meses, linhas: semDuplicata, saldoInicial }),
-    saldoInicial,
+    meses: aplicarSaldosProjetados({ meses, linhas: semDuplicata }),
+    saldoInicial: null,
+    acumulado: { origem: "HISTORICO", calculoInicio: inicioDoHistoricoFluxo(semDuplicata) },
     // ⚠⚠ NADA SOME EM SILÊNCIO: o que não pôde ser posto em mês nenhum sai NOMEADO, com o conserto.
     semMes: [...guias.semMes, ...notas.semMes, ...series.semMes],
     /**
@@ -1240,7 +1220,7 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
  * inverte despesa com imposto sem erro nenhum. Por isso o reduzido é traduzido pelo plano e a
  * pergunta é feita a `entraNoFluxoDeCaixa` (`accounting/lib/disponibilidades.js`), REUSADA.
  */
-async function linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual, janelaInicio, client }) {
+async function linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual, janelaInicio, incluirHistorico = false, client }) {
   const [entries, plano] = await Promise.all([
     client.accountingEntry.findMany({
       where: { portalClientId: String(portalClientId), tipo: "FOLHA" },
@@ -1269,7 +1249,7 @@ async function linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual, janel
     return c ? entraNoFluxoDeCaixa(c) : false;
   };
 
-  const base = mesesDaCompetencia(janelaInicio || cicloAtual);
+  const base = incluirHistorico ? Number.NEGATIVE_INFINITY : mesesDaCompetencia(janelaInicio || cicloAtual);
   const linhas = [];
   const pagamentos = [];
 
@@ -1339,7 +1319,7 @@ async function linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual, janel
  * `D despesa / C caixa` — ele AFIRMA que o dinheiro saiu, e a data dele é a data em que saiu. É a
  * invariante que `application/declarados/CLAUDE.md` documenta em 155/155 lançamentos medidos.
  */
-async function linhasDasDespesasLancadas({ portalClientId, cicloAtual, janelaInicio, client }) {
+async function linhasDasDespesasLancadas({ portalClientId, cicloAtual, janelaInicio, incluirHistorico = false, client }) {
   const [entries, plano] = await Promise.all([
     client.accountingEntry.findMany({
       where: { portalClientId: String(portalClientId), tipo: "DESPESA" },
@@ -1368,7 +1348,7 @@ async function linhasDasDespesasLancadas({ portalClientId, cicloAtual, janelaIni
     return c ? entraNoFluxoDeCaixa(c) : false;
   };
 
-  const base = mesesDaCompetencia(janelaInicio || cicloAtual);
+  const base = incluirHistorico ? Number.NEGATIVE_INFINITY : mesesDaCompetencia(janelaInicio || cicloAtual);
   const linhas = [];
 
   for (const e of entries) {

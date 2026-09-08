@@ -1,5 +1,11 @@
 # CLAUDE.md — API (apps/api)
 
+## Correção de entendimento: painel e acumulado automático — 08/09/2026
+
+O usuário rejeitou exigir saldo inicial manual para cada empresa. Esta instrução substitui a implementação anterior de âncora declarada: não mostrar formulário nem exigir configuração. O fluxo transporta automaticamente as movimentações desde o histórico disponível, com origem HISTORICO e identificação como Acumulado projetado, sem afirmar saldo bancário. Registros de âncora antigos e migration ficam preservados, mas não alimentam o cálculo nem aceitam novas escritas pela rota pública.
+
+O resumo principal é Faturamento menos impostos da MESMA competência selecionada. Não usa resultado do fluxo, despesas operacionais, folha salarial ou mês seguinte. Impostos vêm dos lançamentos da competência; ausência de dados não significa imposto zero. A DRE mantém seu cálculo próprio. Não confundir o resumo principal com o acumulado da tabela.
+
 ## Correção do fluxo e DRE — 08/09/2026
 
 Esta decisão substitui orientações antigas que proibiam transportar saldo entre meses. O fluxo agora aceita saldo inicial informado pelo cliente, com mês de referência e histórico append-only. Meses sem movimento transportam o valor anterior. Resultado mensal permanece separado de Saldo projetado; nenhum deles certifica saldo bancário conciliado. Sem âncora não assumir zero. Aplicar migration 20260908230000_cashflow_opening_balance e gerar Prisma antes da API. Ver apps/api/src/application/fluxo/CLAUDE.md.
