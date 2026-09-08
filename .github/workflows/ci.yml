@@ -48,6 +48,10 @@ jobs:
   usability-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # Set before Jest starts: changing process.env.TZ inside jsdom does not
+      # change the worker's native timezone. Date regressions expect UTC-3.
+      TZ: America/Sao_Paulo
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
