@@ -1,4 +1,5 @@
 import { responderMenuWhatsapp, botoesDoCliente, linhasDoCliente, IDS_MENU_WHATSAPP, acaoDoTextoLivre } from "../MenuWhatsappService.js";
+import { executarFerramenta } from "../../assistente/ferramentas/index.js";
 
 const AGORA = new Date("2026-09-08T15:00:00.000Z");
 const janelaAberta = jest.fn(async () => ({ situacao: "ABERTA" }));
@@ -41,6 +42,7 @@ function nuvem() {
     enviarTexto: jest.fn(async () => ({ wamid: "wamid.text" })),
     enviarBotoes: jest.fn(async () => ({ wamid: "wamid.buttons" })),
     enviarLista: jest.fn(async () => ({ wamid: "wamid.list" })),
+    enviarDocumento: jest.fn(async () => ({ wamid: "wamid.document" })),
   };
 }
 
@@ -80,7 +82,8 @@ describe("roteamento sem modelo", () => {
     });
     expect(r).toMatchObject({ tratado: true, acao: "SITUACAO_FISCAL" });
     expect(executar).toHaveBeenCalledWith("situacao_fiscal", {}, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: "pc1", userId: "u1" }) }));
-    expect(cloud.enviarTexto.mock.calls[0][0].texto).toMatch(/Última situação fiscal salva: REGULAR/);
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).toMatch(/Na consulta salva de 08\/09\/2026, não foram indicadas pendências/);
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).not.toContain("REGULAR");
   });
 
   it("id forjado sem permissão não executa ferramenta", async () => {
@@ -193,6 +196,14 @@ describe("roteamento sem modelo", () => {
     expect(cloud.enviarTexto).toHaveBeenCalledWith(expect.objectContaining({ texto: expect.stringMatching(/menu continua/) }));
   });
 
+  it("saudação de cliente com menu recente recebe resposta breve sem seguir ao modelo", async () => {
+    const client = banco({ cliente: true, permissoes: ["GUIAS"], menuRecente: true }), cloud = nuvem();
+    const r = await responderMenuWhatsapp({ registro: registro({ cliente: true }), texto: "Olá", agora: AGORA, client, cloud, conferirJanela: janelaAberta, resolverVinculo: resolverCliente, logger: log });
+    expect(r).toMatchObject({ tratado: true, acao: "MENU" });
+    expect(cloud.enviarBotoes).not.toHaveBeenCalled();
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).toBe("Olá! Como posso ajudar? Pode escrever seu pedido por aqui.");
+  });
+
   it("pedido explícito reabre o menu mesmo dentro do cooldown", async () => {
     const client = banco({ cliente: true, permissoes: ["GUIAS"], menuRecente: true });
     const cloud = nuvem();
@@ -201,5 +212,46 @@ describe("roteamento sem modelo", () => {
       client, cloud, conferirJanela: janelaAberta, resolverVinculo: resolverCliente, logger: log,
     });
     expect(cloud.enviarBotoes).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("situação fiscal por texto e botão usa o mesmo envio de PDF", () => {
+  function cenario() {
+    const client = banco({ cliente: true, permissoes: ["SITUACAO_FISCAL"] }), cloud = nuvem();
+    client.companyFiscalStatus = { findUnique: jest.fn(async () => ({ situacao: "EM_PARCELAMENTO", texto: "relatório salvo", checkedAt: new Date("2026-07-24T12:00:00Z"), ultimoRelatorioEm: new Date("2026-07-24T12:00:00Z") })) };
+    client.portalClient = { findUnique: jest.fn(async () => ({ razao: "Empresa teste", cnpj: "11222333000181" })) };
+    const servicos = { parseSitfisRelatorio: jest.fn(() => ({ diagnosticos: [] })), gerarPdfSitfisTabela: jest.fn(async () => Buffer.from("PDF de teste")) };
+    const executar = (nome, input, ctx) => executarFerramenta(nome, input, { ...ctx, servicos });
+    return { client, cloud, servicos, executar };
+  }
+  it.each(["Quero saber a situação fiscal da minha empresa", "Situação fiscal", "botao"])("%s entrega anexo e confirma somente depois da Meta", async (texto) => {
+    const { client, cloud, executar } = cenario();
+    await responderMenuWhatsapp({ registro: registro({ cliente: true, texto }), texto,
+      ...(texto === "botao" ? { interacao: { id: IDS_MENU_WHATSAPP.CLIENTE_SITUACAO_FISCAL } } : {}),
+      agora: AGORA, client, cloud, executar, conferirJanela: janelaAberta, resolverVinculo: resolverCliente, logger: log });
+    expect(cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+    expect(cloud.enviarDocumento).toHaveBeenCalledWith(expect.objectContaining({ mimeType: "application/pdf", nomeArquivo: "situacao-fiscal-11222333000181.pdf" }));
+    const resposta = cloud.enviarTexto.mock.calls[0][0].texto;
+    expect(resposta).toContain("Enviei o relatório fiscal salvo, de 24/07/2026, em PDF");
+    expect(resposta).not.toContain("EM_PARCELAMENTO");
+    expect(cloud.enviarDocumento.mock.invocationCallOrder[0]).toBeLessThan(cloud.enviarTexto.mock.invocationCallOrder[0]);
+  });
+  it("falha no transporte não confirma o anexo", async () => {
+    const { client, cloud, executar } = cenario();
+    cloud.enviarDocumento.mockRejectedValue(Object.assign(new Error("timeout"), { codigo: "ENVIO_INDETERMINADO" }));
+    await responderMenuWhatsapp({ registro: registro({ cliente: true }), texto: "situação fiscal", agora: AGORA, client, cloud, executar, conferirJanela: janelaAberta, resolverVinculo: resolverCliente, logger: log });
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).not.toMatch(/Enviei|foi enviado/);
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).toMatch(/envio não está confirmado/);
+  });
+  it("revogar o acesso durante geração barra anexo e texto", async () => {
+    const { client, cloud, servicos, executar } = cenario();
+    servicos.gerarPdfSitfisTabela.mockImplementation(async () => { client.contatoWhatsapp.findMany.mockResolvedValue([]); return Buffer.from("PDF"); });
+    await expect(responderMenuWhatsapp({ registro: registro({ cliente: true }), texto: "situação fiscal", agora: AGORA, client, cloud, executar, conferirJanela: janelaAberta, resolverVinculo: resolverCliente, logger: log })).rejects.toMatchObject({ codigo: "ACESSO_REVOGADO" });
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+  it("pergunta com outro pedido ou período continua na IA", () => {
+    expect(acaoDoTextoLivre("Quero saber a situação fiscal da empresa e minhas guias", { cliente: true })).toBeNull();
+    expect(acaoDoTextoLivre("Quero a situação fiscal de janeiro", { cliente: true })).toBeNull();
   });
 });

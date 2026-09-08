@@ -85,6 +85,7 @@ describe("o laço", () => {
     expect(create).toHaveBeenCalledTimes(3);
     expect(r.stopReason).toBe(STOP_LOCAL.MAX_ITERACOES);
     expect(r.iteracoes).toBe(3);
+    expect(r.texto).toBe("");
   });
 
   it("erro da API sobe traduzido, sem chave", async () => {
@@ -101,6 +102,30 @@ describe("o laço", () => {
     expect(textoDaResposta([{ type: "text", text: "a" }, { type: "tool_use" }, { type: "text", text: "b" }])).toBe("a\nb");
     expect(textoDaResposta(null)).toBe("");
   });
+});
+
+it("recusa histórico terminado em assistant antes da rede, sem cobrar outra tentativa", async () => {
+  const { client, create } = clienteFalso([]);
+  await expect(new AssistenteClient({ client }).responder({ system: [], messages: [{ role: "assistant", content: "resposta de outro turno" }] }))
+    .rejects.toMatchObject({ codigo: "IA_HISTORICO_INVALIDO", iteracoes: 0 });
+  expect(create).not.toHaveBeenCalled();
+});
+
+it("max_tokens não entrega texto cortado nem executa ferramenta incompleta", async () => {
+  const { client } = clienteFalso([{ stop_reason: "max_tokens", content: [{ type: "text", text: "Sua empresa está" }, { type: "tool_use", name: "preparar_emissao", input: {} }], usage: { input_tokens: 10, output_tokens: 2000 } }]);
+  const executar = jest.fn();
+  const r = await new AssistenteClient({ client }).responder({ system: [], messages: [{ role: "user", content: "x" }], executar });
+  expect(r).toMatchObject({ texto: "", stopReason: "max_tokens", usage: { output_tokens: 2000 } });
+  expect(executar).not.toHaveBeenCalled();
+});
+
+it("400 preserva categoria e request-id sem copiar mensagens nem credenciais", () => {
+  const erro = { status: 400, requestID: "req_teste123", error: { error: { type: "invalid_request_error", message: "This model does not support assistant message prefill. CONTEUDO_PRIVADO sk-ant-SECRETO" } } };
+  const r = traduzirErro(erro);
+  expect(r.diagnostico).toEqual({ categoria: "HISTORICO_ASSISTANT_FINAL", tipo: "invalid_request_error", requestId: "req_teste123" });
+  expect(r.message).toContain("req_teste123");
+  expect(JSON.stringify(r)).not.toMatch(/CONTEUDO_PRIVADO|SECRETO/);
+  expect(traduzirErro(new Error("CONTEUDO_PRIVADO")).message).not.toContain("CONTEUDO_PRIVADO");
 });
 it("contabiliza uso parcial quando a segunda rodada retorna 429", async () => {
  const {client}=clienteFalso([respostaFerramentas([{name:"quanto_devo",input:{}}],{input_tokens:120,output_tokens:30}),()=>{throw {status:429};}]);

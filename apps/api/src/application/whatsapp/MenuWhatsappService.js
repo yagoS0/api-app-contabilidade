@@ -67,7 +67,7 @@ export function acaoDoTextoLivre(texto, { cliente = false } = {}) {
   if (/^(oi|ola|bom dia|boa tarde|boa noite|menu|ajuda|comecar|inicio)$/.test(t)) return "MENU";
   if (cliente) {
     if (/^(guias? do mes|ver guias? do mes)$/.test(t)) return "GUIAS_MES";
-    if (/^(situacao fiscal|ver situacao fiscal)$/.test(t)) return "SITUACAO_FISCAL";
+    if (/^(?:(?:quero(?: saber| ver| consultar)?|gostaria de (?:saber|ver|consultar)|ver|consultar) (?:a )?)?(?:minha )?situacao fiscal(?: da (?:minha )?empresa)?$/.test(t)) return "SITUACAO_FISCAL";
     if (/^(mais opcoes|outras opcoes)$/.test(t)) return "MAIS";
     return null;
   }
@@ -139,7 +139,7 @@ function textoGuias(resultado, mesVencimento) {
   });
   const rotuloMes = mesVencimento.split("-").reverse().join("/");
   if (!doMes.length) {
-    return `Não há guia liberada pelo escritório com vencimento em ${rotuloMes}. Isso não significa que não exista obrigação ainda aguardando liberação.`;
+    return `Ainda não encontrei guias liberadas com vencimento em ${rotuloMes}. Pode haver guias aguardando liberação pela equipe.`;
   }
   const linhas = doMes.slice(0, 10).map((g) => `• ${g.tipo} · competência ${g.competencia || "não informada"} · ${g.valorFormatado} · vence ${g.vencimento}`);
   return [`Guias liberadas com vencimento em ${rotuloMes}:`, ...linhas, doMes.length > linhas.length ? `Mais ${doMes.length - linhas.length} guia(s) aparecem no portal.` : null, "Para receber o PDF, escreva o tipo e a competência da guia."].filter(Boolean).join("\n");
@@ -147,10 +147,12 @@ function textoGuias(resultado, mesVencimento) {
 
 function textoSituacao(resultado) {
   if (!resultado?.ok) return resultado?.mensagem || "Não consegui consultar a situação fiscal agora.";
-  if (!resultado.situacao) return resultado.observacao;
   const data = resultado.relatorioDe || resultado.consultadaEm || "data não informada";
-  const orgaos = (resultado.diagnosticos || []).map((d) => `${d.orgao}: ${d.semPendencia ? "sem pendência indicada" : "com apontamentos"}`);
-  return [`Última situação fiscal salva: ${resultado.situacao}.`, `Relatório de ${data}.`, ...orgaos, resultado.observacao].filter(Boolean).join("\n");
+  if (resultado.enviado === true) return `Enviei o relatório fiscal salvo, de ${data}, em PDF. Ele mostra a situação naquela data; para atualizar, a equipe precisa fazer uma nova consulta.`;
+  if (!resultado.situacao) return "Ainda não há um relatório fiscal disponível por aqui. A equipe precisa conferir a situação da empresa.";
+  const situacoes = { EM_PARCELAMENTO: "há registro de parcelamento", REGULAR: "não foram indicadas pendências", IRREGULAR: "foram indicadas pendências" };
+  const resumo = situacoes[resultado.situacao];
+  return `Na consulta salva de ${data}${resumo ? `, ${resumo}` : ", há informações para a equipe conferir"}. Para saber a situação atual, a equipe precisa fazer uma nova consulta.`;
 }
 
 function textoQuantoDevo(resultado) {
@@ -290,8 +292,7 @@ export async function responderMenuWhatsapp({ registro, interacao = null, texto 
       select: { id: true },
     });
     if (recente && !menuExplicito) {
-      if (cliente) return { tratado: false, motivo: "MENU_JA_EXIBIDO" };
-      const corpo = "O menu continua disponível acima. Toque em uma opção ou escreva o que precisa.";
+      const corpo = cliente ? "Olá! Como posso ajudar? Pode escrever seu pedido por aqui." : "O menu continua disponível acima. Toque em uma opção ou escreva o que precisa.";
       await enviar({ corpo, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
     } else if (cliente) {
       const botoes = botoesDoCliente(sessao);
@@ -335,7 +336,13 @@ export async function responderMenuWhatsapp({ registro, interacao = null, texto 
       const input = acao === "NOTAS" ? { competencia, direcao: "emitidas" } : {};
       // Revalida imediatamente antes da leitura, além da revalidação feita antes da resposta.
       await antesDeEnviar(ferramenta, assinatura);
-      const resultado = await executar(ferramenta, input, { sessao, conversa, prisma: client, agora, janela: { aberta: true }, log: logger });
+      const resultado = await executar(ferramenta, input, {
+        sessao, conversa, prisma: client, agora, janela: { aberta: true }, log: logger,
+        ...(acao === "SITUACAO_FISCAL" ? { enviarDocumento: async ({ conteudo, nomeArquivo, legenda, mimeType }) => enviar({
+          tipo: "document", corpo: legenda || nomeArquivo, ferramenta,
+          chamada: () => whatsapp.enviarDocumento({ telefone: conversa.telefoneE164, conteudo, nomeArquivo, legenda, mimeType }),
+        }) } : {}),
+      });
       const corpo = acao === "GUIAS_MES" ? textoGuias(resultado, competencia)
         : acao === "SITUACAO_FISCAL" ? textoSituacao(resultado)
           : acao === "QUANTO_DEVO" ? textoQuantoDevo(resultado)
