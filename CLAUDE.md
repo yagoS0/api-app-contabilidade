@@ -1,5 +1,11 @@
 # CLAUDE.md — Portal Contábil
 
+## Previsão do mês aberto e imposto pago — 08/09/2026
+
+A previsão de receita usa exatamente os três meses de calendário completos imediatamente anteriores ao relógio do servidor. O mês aberto não entra na mediana. Para o recebimento previsto (competência da nota +1), somar somente o complemento positivo entre mediana e notas já emitidas dessa competência. Nota parcial não cancela a previsão; nota acima da mediana não recebe complemento. Meses encerrados não são preenchidos retroativamente. A evidência identifica meses-base, mediana, emitido e complemento. Esta decisão substitui a mediana de toda a série e a regra de começar após a última nota.
+
+No painel, um imposto conhecido não depende de uma alíquota calculável para aparecer. Resultado permanece faturamento menos imposto, com indicação de parcialidade quando faltam tributos/classificações. Mostrar a porcentagem de imposto PAGO de forma explícita e separada da alíquota lançada ou prevista. Ausência de imposto não vira zero calculado nem previsão tributária sem origem.
+
 ## Correção de entendimento: painel e acumulado automático — 08/09/2026
 
 O usuário rejeitou exigir saldo inicial manual para cada empresa. Esta instrução substitui a implementação anterior de âncora declarada: não mostrar formulário nem exigir configuração. O fluxo transporta automaticamente as movimentações desde o histórico disponível, com origem HISTORICO e identificação como Acumulado projetado, sem afirmar saldo bancário. Registros de âncora antigos e migration ficam preservados, mas não alimentam o cálculo nem aceitam novas escritas pela rota pública.

@@ -50,7 +50,7 @@ test("zero explicitamente calculado é preservado", async () => {
 });
 test("outro mês não substitui imposto ausente", async () => {
   await abrir({ linhas: [lancamento("2026-09")] });
-  expect(card("Resultado").numero).toBe("—"); expect(card("Imposto líquido").apoio).toBe("Sem dados para 08/2026");
+  expect(card("Resultado").numero).toBe("—"); expect(card("Imposto líquido").apoio).toContain("Sem dados para 08/2026");
 });
 test("seleciona a linha correta fora da primeira posição", async () => {
   await abrir({ linhas: [lancamento("2026-09", { impostos: 9000 }), lancamento()] });
@@ -95,4 +95,40 @@ test("lançamentos não classificados deixam ressalva e resultado provisório", 
   await abrir({ linhas: [lancamento(COMPETENCIA, { naoClassificadas: 2 })] });
   expect(card("Imposto líquido").apoio).toMatch(/2 lançamento\(s\) sem conta contábil ficaram de fora/);
   expect(card("Resultado").apoio).toMatch(/Resultado provisório/);
+});
+
+test.each([[1000, 20000, "5,00%"], [0, 20000, "0,00%"]])("percentual pago usa pagamentos %s sobre receita %s", async (impostosPagos, faturamento, percentual) => {
+  await abrir({ linhas: [{ ...lancamento(), impostosPagos, faturamento, efetiva: 99 }] });
+  expect(card("Imposto líquido").apoio).toContain(`Imposto pago: ${percentual} da receita de 08/2026`);
+  expect(card("Imposto líquido").apoio).toContain("Alíquota lançada em 08/2026: 15,00%");
+  expect(card("Resultado").numero).toMatch(/17\.000,00/);
+});
+test.each([[null, 20000], [1000, null], [1000, 0], [undefined, undefined]])("pago indisponível não inventa percentual (%s/%s)", async (impostosPagos, faturamento) => {
+  await abrir({ receita: faturamento, linhas: [{ ...lancamento(), impostosPagos, faturamento: 20000 }] });
+  expect(card("Imposto líquido").apoio).toContain("Imposto pago: percentual indisponível para 08/2026");
+});
+test("valor do imposto aparece mesmo sem receita contábil para calcular alíquota", async () => {
+  await abrir({ linhas: [lancamento(COMPETENCIA, { situacao: "SEM_RECEITA_LANCADA", base: 0, aliquota: null, impostos: 60, impostosComFolha: 60, aliquotaComFolha: null })] });
+  expect(card("Imposto líquido").numero).toMatch(/60,00/);
+  expect(card("Resultado").numero).toMatch(/19\.940,00/);
+  expect(card("Imposto líquido").apoio).toContain("ainda não foi lançada");
+});
+test("INSS conhecido aparece mesmo sem imposto sobre receita", async () => {
+  await abrir({ linhas: [lancamento(COMPETENCIA, { situacao: "SEM_IMPOSTO_LANCADO", aliquota: null, impostos: 0, impostosComFolha: 20, impostoSobreFolha: 20, aliquotaComFolha: null })] });
+  expect(card("Imposto líquido").numero).toMatch(/20,00/);
+  expect(card("Resultado").numero).toMatch(/19\.980,00/);
+  expect(card("Imposto líquido").apoio).toContain("INSS incluído");
+  expect(card("Resultado").apoio).toContain("Resultado provisório: tributos sobre receita ainda não lançados");
+});
+test("contas tributárias com total líquido zero provam valor conhecido", async () => {
+  await abrir({ linhas: [lancamento(COMPETENCIA, { situacao: "SEM_IMPOSTO_LANCADO", aliquota: null, impostos: 0, impostosPorConta: [{ conta: "DAS", valor: 0 }] })] });
+  expect(card("Imposto líquido").numero).toMatch(/0,00/);
+  expect(card("Resultado").numero).toMatch(/20\.000,00/);
+});
+
+test("percentual pago usa a receita visível quando os agregados divergem", async () => {
+  await abrir({ receita: 10000, linhas: [{ ...lancamento(), impostosPagos: 1000, faturamento: 20000 }] });
+  expect(card("Receita").numero).toMatch(/10\.000,00/);
+  expect(card("Imposto líquido").apoio).toContain("Imposto pago: 10,00% da receita de 08/2026");
+  expect(card("Resultado").numero).toMatch(/7\.000,00/);
 });

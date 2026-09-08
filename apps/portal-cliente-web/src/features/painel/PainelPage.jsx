@@ -15,6 +15,8 @@ import {
 } from "../../lib/format";
 
 const OPCOES_COMPETENCIA = competenciasRecentes(12);
+const valorPresente = (valor) => (typeof valor === "number" || typeof valor === "string")
+  && String(valor).trim() !== "" && Number.isFinite(Number(valor));
 
 function fraseDaAliquota(l, competencia) {
   const mes = fmtCompetencia(l.competencia || competencia);
@@ -61,22 +63,37 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
   const resumo = notasQuery.dados?.summary || null;
   const aliquota = aliquotaQuery.dados?.find((linha) => linha.competencia === competencia) || null;
   const leituraAliquota = aliquotaDoPainel({ empresa, linha: aliquota });
-  const impostoBruto = leituraAliquota.comFolha
-    ? aliquota?.deLancamentos?.impostosComFolha
-    : aliquota?.deLancamentos?.impostos;
-  const impostoDisponivel = leituraAliquota.valor != null
-    && impostoBruto != null && impostoBruto !== "" && Number.isFinite(Number(impostoBruto));
-  const impostos = impostoDisponivel ? leituraAliquota.impostos : null;
+  const lancamentos = aliquota?.deLancamentos;
+  // A falta de base para a alíquota não apaga um tributo já lançado, inclusive INSS.
+  const incluiFolha = valorPresente(lancamentos?.impostosComFolha);
+  const impostoBruto = incluiFolha ? lancamentos.impostosComFolha : lancamentos?.impostos;
+  const evidenciaDeImposto = Number(impostoBruto) !== 0
+    || lancamentos?.situacao === "CALCULADA"
+    || lancamentos?.impostosPorConta?.length > 0;
+  const impostoDisponivel = valorPresente(impostoBruto) && evidenciaDeImposto;
+  const impostos = impostoDisponivel ? Number(impostoBruto) : null;
   const receita = resumo?.totalAmount;
   const receitaDisponivel = receita != null && receita !== "" && Number.isFinite(Number(receita));
   const resultado = receitaDisponivel && impostoDisponivel
     ? (Math.round(Number(receita) * 100) - Math.round(impostos * 100)) / 100
     : null;
-  const apoioImposto = impostoDisponivel
+  const apoioImposto = impostoDisponivel && leituraAliquota.valor != null
     ? fraseDaAliquota(leituraAliquota, competencia)
-    : leituraAliquota.valor != null
+    : impostoDisponivel
+      ? `Impostos lançados${incluiFolha && Number(lancamentos.impostoSobreFolha) > 0 ? " · INSS incluído" : ""} · ${textoDaAliquota(leituraAliquota, competencia)}`
+      : leituraAliquota.valor != null
       ? `O valor dos impostos de ${fmtCompetencia(competencia)} não está disponível`
       : textoDaAliquota(leituraAliquota, competencia);
+  const cargaPagaDisponivel = valorPresente(receita) && Number(receita) > 0
+    && valorPresente(aliquota?.impostosPagos) && Number(aliquota.impostosPagos) >= 0;
+  const apoioPago = cargaPagaDisponivel
+    ? `Imposto pago: ${pct(Number(aliquota.impostosPagos) / Number(receita) * 100)} da receita de ${fmtCompetencia(competencia)} (${brl(aliquota.impostosPagos)})`
+    : `Imposto pago: percentual indisponível para ${fmtCompetencia(competencia)}`;
+  const ressalvaResultado = leituraAliquota.naoClassificadas > 0
+    ? " · Resultado provisório: há lançamentos sem conta contábil"
+    : ["SEM_IMPOSTO_LANCADO", "SEM_LANCAMENTO"].includes(lancamentos?.situacao)
+      ? " · Resultado provisório: tributos sobre receita ainda não lançados"
+      : "";
   const atualizarResumo = () => {
     notasQuery.recarregar();
     aliquotaQuery.recarregar();
@@ -145,13 +162,13 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
           <CardNumero
             rotulo={`Imposto líquido · ${fmtCompetencia(competencia)}`}
             valor={impostoDisponivel ? brl(impostos) : TRACO}
-            apoio={apoioImposto}
+            apoio={<><div>{apoioImposto}</div><div>{apoioPago}</div></>}
           />
           <CardNumero
             rotulo={`Resultado · ${fmtCompetencia(competencia)}`}
             valor={resultado != null ? brl(resultado) : TRACO}
             apoio={resultado != null
-              ? `Receita − impostos lançados na competência${leituraAliquota.naoClassificadas > 0 ? " · Resultado provisório: há lançamentos sem conta contábil" : ""}`
+              ? `Receita − impostos lançados na competência${ressalvaResultado}`
               : !receitaDisponivel
                 ? "A receita desta competência não está disponível"
                 : apoioImposto}
