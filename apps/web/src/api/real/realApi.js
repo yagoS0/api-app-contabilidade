@@ -815,6 +815,9 @@ export function createRealApi() {
     async concluirOcorrencia(ocorrenciaId) {
       return request(`/firm/ocorrencias/${ocorrenciaId}/concluir`, { method: "POST" });
     },
+    async updateOcorrencia(ocorrenciaId, patch) {
+      return request(`/firm/ocorrencias/${ocorrenciaId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    },
     async reabrirOcorrencia(ocorrenciaId) {
       return request(`/firm/ocorrencias/${ocorrenciaId}/reabrir`, { method: "POST" });
     },

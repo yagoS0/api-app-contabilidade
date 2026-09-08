@@ -243,7 +243,7 @@ const setaEfd = {
   padding: "2px 9px", font: "inherit", fontSize: "0.85rem", cursor: "pointer", lineHeight: 1.2,
 };
 
-function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
+function ObrigacoesDaEmpresa({ companyId, companyRegime, onOpenObligations, calendarioContext, onCalendarioContextChange }) {
   const [abrirDefis, setAbrirDefis] = useState(false);
   const [anoDefis, setAnoDefis] = useState(() => new Date().getFullYear() - 1);
   const [espelhoSalvo, setEspelhoSalvo] = useState(null);
@@ -331,7 +331,8 @@ function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
         </div>
       )}
 
-      <CalendarioGrid api={obrigacoesApi} companyIdFixo={companyId} />
+      <CalendarioGrid api={obrigacoesApi} companyIdFixo={companyId}
+        onOpenObligations={onOpenObligations} initialContext={calendarioContext} onContextChange={onCalendarioContextChange} />
 
       {abrirDefis && (
         <Suspense fallback={<TabLoadingFallback />}>
@@ -1292,7 +1293,9 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
             <Suspense fallback={<TabLoadingFallback />}>
               {/* Sem companyId ainda, o calendário buscaria a carteira INTEIRA dentro da página de
                   uma empresa — espera a empresa carregar antes de montar. */}
-              {companyId ? <ObrigacoesDaEmpresa companyId={companyId} companyRegime={companyRegime} /> : <TabLoadingFallback />}
+              {companyId ? <ObrigacoesDaEmpresa companyId={companyId} companyRegime={companyRegime}
+                onOpenObligations={company.onOpenObligations} calendarioContext={company.calendarioContext}
+                onCalendarioContextChange={company.onCalendarioContextChange} /> : <TabLoadingFallback />}
             </Suspense>
           </ErrorBoundary>
         </div>

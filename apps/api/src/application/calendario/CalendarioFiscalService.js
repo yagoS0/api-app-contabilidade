@@ -151,7 +151,15 @@ export async function montarCalendarioDoMes({ portalIds, competencia, companyId 
     });
   }
 
-  for (const o of obrigacoes) adicionar(o.data, o);
+  for (const o of obrigacoes) {
+    const inicio = new Date(`${o.dataInicio || o.data}T00:00:00Z`);
+    const fim = new Date(`${o.dataFim || o.data}T00:00:00Z`);
+    const dia = new Date(Math.max(inicio.getTime(), limites.inicio.getTime()));
+    for (; dia <= fim && dia < limites.fim; dia.setUTCDate(dia.getUTCDate() + 1)) {
+      // Cada segmento leva o MESMO id e o prazo original; totais contam a ocorrência uma vez.
+      adicionar(diaISO(dia), o);
+    }
+  }
 
   // Apuração e fechamento não têm dia próprio: são estado do MÊS. Entram como pendências do mês,
   // fora da grade de dias — pendurá-los num dia arbitrário seria inventar um prazo que não existe.

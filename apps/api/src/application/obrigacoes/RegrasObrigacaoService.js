@@ -20,7 +20,12 @@ const asTexto = (v) => String(v ?? "").trim();
 function normalizarRegra(dados = {}) {
   // Reusa a validação da obrigação: os campos de configuração são os MESMOS, e ter duas validações
   // é ter duas que divergem — a regra aceitaria o que a obrigação recusa.
-  const base = normalizarEntrada(dados);
+  const normalizada = normalizarEntrada(dados);
+  if (normalizada.periodicidade === "AVULSA" || normalizada.tipo === "TAREFA") {
+    throw new ObrigacaoError("regra_incompativel", "Cadastre tarefas e itens sem repetição diretamente na empresa.");
+  }
+  // O cadastro da regra tem somente os campos recorrentes existentes.
+  const { tipo, descricao, dataInicio, dataFim, dataVencimento, ...base } = normalizada;
 
   const escopo = asTexto(dados.escopo).toUpperCase();
   if (!ESCOPOS.includes(escopo)) {
@@ -123,7 +128,7 @@ export async function preverEscopo({ portalIds, escopo, filtros }) {
  * sobrescrever apagaria essa escolha sem avisar. É o mesmo princípio da exceção, só que declarado
  * pelo ato de editar em vez de por um botão.
  */
-export async function propagar({ regraId, portalIds }) {
+export async function propagar({ regraId, portalIds, atualizarJanelas = false }) {
   const regra = await prisma.regraObrigacao.findUnique({
     where: { id: regraId },
     include: { excecoes: { select: { portalClientId: true } } },
@@ -149,6 +154,7 @@ export async function propagar({ regraId, portalIds }) {
     diaVencimento: regra.diaVencimento,
     mesReferencia: regra.mesReferencia,
     defasagemMeses: regra.defasagemMeses,
+    diasPreparacao: regra.diasPreparacao || 0,
     antecedenciaLembreteDias: regra.antecedenciaLembreteDias,
     ajusteDiaUtil: regra.ajusteDiaUtil,
     cor: regra.cor,
@@ -218,7 +224,7 @@ export async function propagar({ regraId, portalIds }) {
   }
 
   // Ocorrências só depois que todas as obrigações existem: cada uma consulta feriado e empresa.
-  for (const id of tocadas) await sincronizarOcorrencias(id);
+  for (const id of tocadas) await sincronizarOcorrencias(id, prisma, { atualizarJanelas });
 
   return { criadas, atualizadas, puladas, removidas, desvinculadas, empresasNoEscopo: alvo.length };
 }
@@ -243,7 +249,7 @@ export async function atualizarRegra({ portalIds, regraId, dados }) {
     filtros: dados.filtros === undefined ? atual.filtros : dados.filtros,
   });
   const regra = await prisma.regraObrigacao.update({ where: { id: regraId }, data: limpo });
-  const efeito = await propagar({ regraId, portalIds });
+  const efeito = await propagar({ regraId, portalIds, atualizarJanelas: true });
   return { regra, ...efeito };
 }
 
@@ -366,6 +372,7 @@ export async function listarRegras({ portalIds }) {
       diaVencimento: r.diaVencimento,
       mesReferencia: r.mesReferencia,
       defasagemMeses: r.defasagemMeses,
+      diasPreparacao: r.diasPreparacao || 0,
       antecedenciaLembreteDias: r.antecedenciaLembreteDias,
       ajusteDiaUtil: r.ajusteDiaUtil,
       cor: r.cor,

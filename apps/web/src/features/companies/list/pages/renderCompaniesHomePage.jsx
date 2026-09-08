@@ -326,6 +326,8 @@ export function CompaniesHomePage({
   // As conversas de WhatsApp (F5, 02/09/2026): a fila de não vinculados, os fios, assumir/responder.
   onOpenWhatsapp,
   onOpenObrigacoes,
+  calendarioContext,
+  onCalendarioContextChange,
   onOpenOnboardings,
   onOpenConfiguracoes,
   onLogout,
@@ -1553,7 +1555,9 @@ export function CompaniesHomePage({
             </div>
             </>
           ) : (
-            <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany} />
+            <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany}
+              onOpenObligations={onOpenObrigacoes}
+              initialContext={calendarioContext} onContextChange={onCalendarioContextChange} />
           )}
 
           {/* ⚠⚠ A FRASE "Nenhuma empresa encontrada para os filtros atuais" SAIU DAQUI, e ela já

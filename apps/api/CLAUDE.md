@@ -1,5 +1,14 @@
 # CLAUDE.md — API (apps/api)
 
+## Calendário: tarefas e janelas de trabalho (07/09/2026)
+
+`Obrigacao.tipo` distingue TAREFA/OBRIGACAO; AVULSA usa datas civis `dataInicio`/`dataFim` e uma única ocorrência. Recorrências e regras usam `diasPreparacao` (dias corridos antes do vencimento ajustado). `OcorrenciaObrigacao.dataVencimento` continua sendo o prazo: janela de preparação não muda prazo fiscal. Em tarefa, o fim é seu prazo.
+
+`PATCH /firm/ocorrencias/:id` ajusta somente a janela da ocorrência e preserva o ID. A marca `janelaPersonalizada` impede o worker de apagar ajustes ou recriar o ciclo original de uma tarefa movida. Editar a série refaz janelas futuras pendentes; concluídas e ciclos concluídos não renascem. AVULSA não pode ser convertida em recorrente no mesmo cadastro. CRUD individual grava cadastro e geração em transação.
+
+O calendário consulta sobreposição, repete o mesmo ID em cada dia coberto e mantém `data` como vencimento em todos os segmentos; totais contam ocorrências únicas. Campos legados nulos equivalem a um evento no vencimento. Listagem expõe o histórico concluído. Migration nova: `20260907180000_add_calendar_task_intervals`; aplicar antes da nova API e gerar Prisma no ambiente de deploy. Testes: `obrigacoes/__tests__/intervalosCalendario.test.js` e suítes legadas; validação adicional feita em PostgreSQL temporário isolado, sem banco real.
+
+
 Backend Node.js 20 + Express.js + Prisma + PostgreSQL.
 
 ## Expediente humano no WhatsApp (07/09/2026)
