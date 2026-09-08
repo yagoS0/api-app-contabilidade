@@ -36,13 +36,31 @@ describe("o prompt", () => {
 });
 
 describe("as definições das ferramentas", () => {
-  it("todas estritas, sem propriedade extra, todo campo em required", () => {
+  it("o catálogo completo respeita os limites Anthropic de 16 unions e 24 opcionais", () => {
+    let unions = 0, opcionais = 0;
+    const visitar = (schema) => {
+      if (Array.isArray(schema?.type) || schema?.anyOf) unions += 1;
+      for (const [nome, propriedade] of Object.entries(schema?.properties || {})) {
+        if (!(schema.required || []).includes(nome)) opcionais += 1;
+        visitar(propriedade);
+      }
+      for (const alternativa of schema?.anyOf || []) visitar(alternativa);
+      if (schema?.items) visitar(schema.items);
+    };
+    for (const d of DEFINICOES.filter((definicao) => definicao.strict)) visitar(d.input_schema);
+    expect(unions).toBeLessThanOrEqual(16);
+    expect(opcionais).toBeLessThanOrEqual(24);
+  });
+  it("strict em todas exceto emissão validada localmente; nenhuma aceita campo extra", () => {
     for (const d of DEFINICOES) {
-      expect(d.strict).toBe(true);
+      expect(d.strict).toBe(d.name !== "preparar_emissao");
       expect(d.input_schema.additionalProperties).toBe(false);
-      expect(d.input_schema.required).toEqual(Object.keys(d.input_schema.properties));
+      for (const nome of d.input_schema.required) expect(d.input_schema.properties).toHaveProperty(nome);
       expect(d.description).toMatch(/[a-zçã]/);
     }
+    const emissao = DEFINICOES.find((d) => d.name === "preparar_emissao").input_schema;
+    expect(emissao.required).toEqual(expect.arrayContaining(["tomadorDoc", "descricao", "valor"]));
+    expect(emissao.properties.valorRetidoIRRF.type).toEqual(["number", "null"]);
   });
   it("⚠ NÃO existe ferramenta de SITFIS, de forçar o SERPRO, de liberar/revogar, nem de emitir/cancelar/recalcular DIRETO", () => {
     const nomes = NOMES.join(" ");

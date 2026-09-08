@@ -229,6 +229,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, ia, m
   // Cliques usam o id estável do payload bruto e são resolvidos antes do modelo. O inbox conserva
   // esse payload para retry; nenhuma coluna nova é necessária para tornar o roteamento durável.
   const decisaoMenu = decidirRespostaDoMenu({ r, ...(menu || {}) });
+  const decisao = decidirRespostaDaIa({ r: { ...r, duplicada: Boolean(r?.duplicada && r?.mensagem?.respondidaPelaIaEm) }, ...(ia || {}) });
   if (decisaoMenu.responde && typeof responderMenu === "function") {
     const menu = await responderMenu({
       registro: r,
@@ -236,6 +237,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, ia, m
       texto: item.tipo === "text" ? item.corpo : null,
       agora,
       logger,
+      textoLivreDisponivel: decisao.responde,
     });
     if (menu?.tratado) {
       return {
@@ -255,7 +257,6 @@ async function processarMensagem(item, { logger, responder, responderMenu, ia, m
   // ignorar `decisao.responde` deixava a suíte inteira verde (achado do agente "C").
   // Enfileirar é aguardado: se falhar, o inbox tenta novamente. O modelo roda em outro worker.
   // Reentrega também repara a janela entre mensagem persistida e criação do job (unique por id).
-  const decisao = decidirRespostaDaIa({ r: { ...r, duplicada: Boolean(r?.duplicada && r?.mensagem?.respondidaPelaIaEm) }, ...(ia || {}) });
   if (decisao.responde && typeof responder === "function" && r?.mensagem?.id && r?.conversa?.id) {
     const args = { conversaId: r.conversa.id, mensagemId: r.mensagem.id, portalClientId: r.conversa.portalClientId };
     await responder(args);

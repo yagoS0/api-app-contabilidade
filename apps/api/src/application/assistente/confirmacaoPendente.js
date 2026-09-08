@@ -35,7 +35,7 @@ export function gerarCodigo(rand = Math.random) {
 
 /** A regex: "confirmar" + espaço(s) + 4 caracteres do alfabeto. Caixa e acento não importam. */
 export const RE_CONFIRMACAO = /^\s*confirmar\s+([a-z0-9]{4})\s*[.!]?\s*$/i;
-const RE_CANCELAR = /^\s*(cancelar|cancela|nao|não|desist\w*)\b/i;
+const RE_CANCELAR = /^\s*(?:nao[, ]+)?(?:(?:cancelar|cancela|cancele)(?: (?:(?:esse|este|o|meu) )?pedido)?|desisti|desisto|nao|nao quero(?: mais)?(?: (?:esse|este|o) pedido)?)\s*[.!]?\s*$/i;
 
 /**
  * Lê a mensagem do cliente: é uma confirmação? de qual código?
@@ -60,7 +60,7 @@ export function expirada(acao, agora = new Date()) {
  * @param {string} p.texto  a mensagem do cliente
  * @param {object|null} p.pendente  a ação pendente aberta no fio (status `pendente`), ou null
  * @param {Date} [p.agora]
- * @returns {{decisao: "EXECUTAR"|"CODIGO_ERRADO"|"EXPIRADA"|"CANCELAR"|"SEM_PENDENCIA"|"SEGUE_PARA_IA", acao: object|null}}
+ * @returns {{decisao: "EXECUTAR"|"CODIGO_ERRADO"|"EXPIRADA"|"CANCELAR"|"SEM_PENDENCIA"|"SEGUE_PARA_IA"|"LEMBRAR_CONFIRMACAO", acao: object|null}}
  */
 export function decidirResposta({ texto, pendente, agora = new Date() } = {}) {
   const leitura = lerConfirmacao(texto);
@@ -75,18 +75,22 @@ export function decidirResposta({ texto, pendente, agora = new Date() } = {}) {
       : { decisao: "CODIGO_ERRADO", acao: pendente };
   }
   if (leitura.ehCancelamento) return { decisao: "CANCELAR", acao: pendente };
-  // Qualquer outra resposta com pendência aberta: ela é CANCELADA (é o que o texto prometeu —
-  // "qualquer outra resposta cancela"), e a mensagem segue para a IA como conversa normal.
-  return { decisao: "CANCELAR", acao: pendente };
+  if (/^\s*(sim|ok|isso|pode|pode seguir|confirmo|confirmar)\s*[.!]?\s*$/i.test(String(texto || ""))) {
+    return { decisao: "LEMBRAR_CONFIRMACAO", acao: pendente };
+  }
+  // Dúvidas não apagam um pedido revisado. Somente o código exato o executa; um novo
+  // pedido preparado substitui a pendência anterior com outro resumo e outro código.
+  return { decisao: "SEGUE_PARA_IA", acao: pendente };
 }
 
 /** O rodapé que toda pendência carrega. */
 export function rodapeDeConfirmacao(codigo) {
-  return `Para confirmar, responda CONFIRMAR ${codigo}. Qualquer outra resposta cancela. Este pedido vale por 10 minutos.`;
+  return `Confira os dados. Para confirmar, responda CONFIRMAR ${codigo}; para desistir, escreva CANCELAR PEDIDO. Você pode tirar dúvidas antes. Este pedido vale por 10 minutos.`;
 }
 
 export const FRASES = Object.freeze({
-  CODIGO_ERRADO: (codigo) => `O código não bate com o pedido em aberto. Se quiser seguir, responda CONFIRMAR ${codigo}; qualquer outra resposta cancela.`,
+  CODIGO_ERRADO: (codigo) => `O código não corresponde ao pedido em aberto. Confira o resumo e, se estiver certo, responda CONFIRMAR ${codigo}.`,
+  LEMBRAR_CONFIRMACAO: (codigo) => `Seu pedido continua aguardando confirmação. Confira o resumo e responda CONFIRMAR ${codigo} para executar. Se precisar mudar algo, pode me dizer.`,
   EXPIRADA: "Esse pedido expirou (valia por 10 minutos). Se ainda quiser, peça de novo que eu monto outra vez.",
   CANCELADA: "Certo, cancelei esse pedido. Nada foi feito.",
   SEM_PENDENCIA: "Não há nenhum pedido aguardando confirmação neste momento.",

@@ -130,6 +130,8 @@ export async function listGuidesByCompany({
   portalClientId,
   competencia,
   status,
+  paymentStatus,
+  vencimento,
   page = 1,
   limit = 25,
   // Portal Cliente (#3.1): quando true, retorna SÓ guias liberadas ao cliente (usado pelo /client).
@@ -150,6 +152,9 @@ export async function listGuidesByCompany({
     portalClientId: String(portalClientId),
     ...(competencia ? { competencia: normalizeCompetencia(competencia) } : {}),
     ...(status ? { status: String(status).toUpperCase() } : {}),
+    // Processamento e pagamento são estados distintos; o WhatsApp consulta o segundo.
+    ...(paymentStatus ? { paymentStatus: String(paymentStatus).toUpperCase() } : {}),
+    ...(vencimento ? { vencimento } : {}),
     ...(apenasLiberadas ? { liberadaCliente: true } : {}),
   };
   const [rawItems, total] = await prisma.$transaction([

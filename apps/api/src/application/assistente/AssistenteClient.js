@@ -175,7 +175,8 @@ function diagnosticoSeguro(err) {
   const mensagem = String(err?.error?.error?.message || err?.error?.message || err?.message || "");
   const categoria = /prefill|last.*assistant|final.*assistant/i.test(mensagem) ? "HISTORICO_ASSISTANT_FINAL"
     : /output_config|\beffort\b/i.test(mensagem) ? "CONFIGURACAO_ESFORCO"
-      : /input_schema|json.schema|schema.*tool/i.test(mensagem) ? "SCHEMA_FERRAMENTA"
+      : /too many parameters|schema.*complex|compilation (cost|timeout)|parameters with union/i.test(mensagem) ? "COMPLEXIDADE_SCHEMA"
+        : /input_schema|json.schema|schema.*tool/i.test(mensagem) ? "SCHEMA_FERRAMENTA"
         : /tool_result|tool_use_id/i.test(mensagem) ? "SEQUENCIA_FERRAMENTAS"
           : /credit balance|billing/i.test(mensagem) ? "CREDITO_PROVEDOR"
             : /context.window|prompt.*too long|max_tokens/i.test(mensagem) ? "LIMITE_CONTEXTO_OU_TOKENS" : null;

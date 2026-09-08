@@ -96,9 +96,9 @@ describe("confirmacaoPendente — o código e a leitura", () => {
       expect(decidirResposta({ texto: "confirmar ZZZZ", pendente, agora }).decisao).toBe("CODIGO_ERRADO");
       expect(decidirResposta({ texto: "confirmar A7K2", pendente: { ...pendente, expiraEm: new Date(0) }, agora }).decisao).toBe("EXPIRADA");
     });
-    it("⚠ 'sim' com pendência aberta CANCELA — nunca executa", () => {
-      expect(decidirResposta({ texto: "sim", pendente, agora }).decisao).toBe("CANCELAR");
-      expect(decidirResposta({ texto: "manda a guia do inss", pendente, agora }).decisao).toBe("CANCELAR");
+    it("'sim' pede o código e uma pergunta preserva o pedido — nunca executam", () => {
+      expect(decidirResposta({ texto: "sim", pendente, agora }).decisao).toBe("LEMBRAR_CONFIRMACAO");
+      expect(decidirResposta({ texto: "manda a guia do inss", pendente, agora }).decisao).toBe("SEGUE_PARA_IA");
     });
     it("sem pendência: 'confirmar' → SEM_PENDENCIA; qualquer outra → SEGUE_PARA_IA", () => {
       expect(decidirResposta({ texto: "confirmar A7K2", pendente: null, agora }).decisao).toBe("SEM_PENDENCIA");

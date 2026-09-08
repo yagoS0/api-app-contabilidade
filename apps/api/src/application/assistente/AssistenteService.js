@@ -11,12 +11,13 @@ import { autorizarChamadaIa, concluirChamadaIa } from "./GuardaIaService.js";
 import { montarSystem, MENSAGENS_FIXAS } from "./promptDoAssistente.js";
 import { sessaoDoContato, fraseSemSessao, papelAlcanca, PAPEL_MINIMO_LEITURA, PAPEL_MINIMO_SITUACAO_FISCAL } from "./sessaoDoContato.js";
 import { PERMISSOES_ASSISTENTE, temPermissaoAssistente } from "../whatsapp/permissoesAssistente.js";
-import { decidirResposta, FRASES } from "./confirmacaoPendente.js";
+import { decidirResposta, lerConfirmacao, FRASES } from "./confirmacaoPendente.js";
 import { criarPendencia, pendenciaAberta, confirmarEExecutar, cancelarPendencia, marcarExpirada } from "./AcoesPendentesService.js";
 import { definicoes, executarFerramenta, PERMISSAO_POR_FERRAMENTA } from "./ferramentas/index.js";
 
 export const AUTOR = Object.freeze({ IA: "IA", HUMANO: "HUMANO", SISTEMA: "SISTEMA" });
 const LOCK_TTL_MS = 90_000;
+const compararMensagens = (a, b) => new Date(a.registradaEm) - new Date(b.registradaEm) || String(a.id || "").localeCompare(String(b.id || ""));
 
 /** A mensagem `in` → um turno da API. Mídia vira uma frase entre colchetes (o modelo não a lê). */
 function paraTurno(m) {
@@ -33,9 +34,9 @@ export function montarHistorico(mensagens, mensagemAtual = null) {
   // O worker pode começar depois de outras entradas/saídas. O pedido que disparou este turno
   // sempre termina o histórico; uma resposta posterior nunca vira prefixo de assistant.
   const anteriores = mensagemAtual
-    ? (mensagens || []).filter(m => m.id !== mensagemAtual.id && new Date(m.registradaEm) < new Date(mensagemAtual.registradaEm))
+    ? (mensagens || []).filter(m => m.id !== mensagemAtual.id && compararMensagens(m, mensagemAtual) < 0)
     : (mensagens || []);
-  const ordenadas = [...anteriores, ...(mensagemAtual ? [mensagemAtual] : [])].filter(m => m.direcao !== DIRECAO.SAIDA || !["enviando", "falhou", "indeterminado"].includes(m.statusEnvio)).sort((a, b) => new Date(a.registradaEm) - new Date(b.registradaEm));
+  const ordenadas = [...anteriores, ...(mensagemAtual ? [mensagemAtual] : [])].filter(m => m.direcao !== DIRECAO.SAIDA || !["enviando", "falhou", "indeterminado"].includes(m.statusEnvio)).sort(compararMensagens);
   const turnos = [];
   for (const m of ordenadas) {
     const t = paraTurno(m);
@@ -61,10 +62,12 @@ export function montarHistorico(mensagens, mensagemAtual = null) {
 export async function responderMensagem({ conversaId, mensagemId, deps = {} } = {}) {
   const r = await executarMensagem({ conversaId, mensagemId, deps });
   if (r.feito) {
-    await (deps.client || prisma).mensagemWhatsapp.updateMany({
-      where: { id: String(mensagemId), conversaId: String(conversaId), direcao: DIRECAO.ENTRADA, respondidaPelaIaEm: null },
-      data: { respondidaPelaIaEm: new Date() },
-    });
+    for (const id of r.mensagensRespondidas || [mensagemId]) {
+      await (deps.client || prisma).mensagemWhatsapp.updateMany({
+        where: { id: String(id), conversaId: String(conversaId), direcao: DIRECAO.ENTRADA, respondidaPelaIaEm: null },
+        data: { respondidaPelaIaEm: new Date() },
+      });
+    }
   }
   return r;
 }
@@ -79,7 +82,10 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
   let timer = null;
   let leaseValido = true;
   let houveSaida = false;
+  let arquivosEnviados = 0;
   let encaminhamentoDoTurno = null;
+  let mensagensRespondidas = [mensagemId];
+  const concluir = (r) => ({ ...r, mensagensRespondidas });
   try {
     if (!deps.leaseExterno) {
       lock = deps.tryLock ? await deps.tryLock(lockId, LOCK_TTL_MS) : await adquirirLease(lockId, { client, ttlMs: LOCK_TTL_MS });
@@ -167,54 +173,99 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     const encaminharFalha = async () => {
       await encaminharParaEquipe();
       // O encaminhamento fica persistido mesmo se o aviso pela Meta falhar.
-      await dizer(MENSAGENS_FIXAS.ERRO_MODELO, { autor: AUTOR.SISTEMA });
+      await dizer(arquivosEnviados
+        ? "O envio do arquivo já foi concluído. Não consegui finalizar o restante da resposta e encaminhei a conversa para a equipe continuar por aqui."
+        : MENSAGENS_FIXAS.ERRO_MODELO, { autor: AUTOR.SISTEMA });
     };
 
+    // Bolhas já recebidas pertencem ao mesmo pedido até a primeira resposta ou interação.
+    // O limite impede que uma conversa contínua adie o atendimento indefinidamente.
+    const seguintes = mensagem.tipo === "text" ? await client.mensagemWhatsapp.findMany({
+      where: { conversaId: conversa.id, registradaEm: { gte: mensagem.registradaEm, lte: new Date(new Date(mensagem.registradaEm).getTime() + 8000) } },
+      orderBy: [{ registradaEm: "asc" }, { id: "asc" }], take: 12,
+    }) : [];
+    const bolhas = [mensagem];
+    for (const m of seguintes.filter(m => m.id !== mensagem.id && m.conversaId === conversa.id && new Date(m.registradaEm) >= new Date(mensagem.registradaEm) && new Date(m.registradaEm).getTime() <= new Date(mensagem.registradaEm).getTime() + 8000).sort(compararMensagens)) {
+      if (m.direcao === DIRECAO.SAIDA && m.turnoIaId === `menu-inicio:${mensagem.id}`) continue;
+      if (m.direcao !== DIRECAO.ENTRADA || m.tipo !== "text" || m.respondidaPelaIaEm) break;
+      bolhas.push(m);
+    }
+    bolhas.sort(compararMensagens);
+    mensagensRespondidas = bolhas.map(m => m.id);
+    const confirmacoes = bolhas.map(m => lerConfirmacao(m.corpo));
+    const somenteMesmaConfirmacao = confirmacoes.every(c => c.ehConfirmacao && c.codigo === confirmacoes[0].codigo);
+    const confirmacaoComComplemento = bolhas.length > 1 && confirmacoes.some(c => c.ehConfirmacao) && !somenteMesmaConfirmacao;
+    const pedidoAtual = { ...bolhas.at(-1), corpo: bolhas.map(m => m.corpo || "").join("\n") };
+    await conferirPortao();
+
     // 4. A pendência — lida pela regex, ANTES do modelo.
-    const pendente = await pendenciaAberta(conversa.id, { client });
+    let pendente = await pendenciaAberta(conversa.id, { client });
     const ehTexto = mensagem.tipo === "text";
+    if (confirmacaoComComplemento) {
+      // Uma confirmação seguida de correção já recebida não autoriza executar o resumo antigo.
+      await dizer("Recebi outras mensagens junto com a confirmação e não executei o pedido. Vamos conferir as alterações antes de confirmar novamente.", { autor: AUTOR.SISTEMA });
+      if (pendente) await cancelarPendencia(pendente.id, { client });
+      pendente = null;
+    }
     if (pendente) {
-      const d = decidirResposta({ texto: ehTexto ? mensagem.corpo : "", pendente, agora });
+      const d = decidirResposta({ texto: ehTexto ? (somenteMesmaConfirmacao ? mensagem.corpo : pedidoAtual.corpo) : "", pendente, agora });
       if (d.decisao === "EXPIRADA") {
         await marcarExpirada(pendente.id, { client });
         await dizer(FRASES.EXPIRADA, { autor: AUTOR.SISTEMA });
-        return { feito: true, motivo: "EXPIRADA" };
+        return concluir({ feito: true, motivo: "EXPIRADA" });
       }
       if (d.decisao === "EXECUTAR") {
         await conferirPortao();
+        const posterior = await client.mensagemWhatsapp.findFirst({ where: { conversaId: conversa.id, direcao: DIRECAO.ENTRADA, respondidaPelaIaEm: null, registradaEm: { gt: pedidoAtual.registradaEm } }, orderBy: { registradaEm: "asc" } });
+        if (posterior && (!lerConfirmacao(posterior.corpo).ehConfirmacao || lerConfirmacao(posterior.corpo).codigo !== pendente.codigo)) {
+          await cancelarPendencia(pendente.id, { client });
+          await dizer("Recebi uma nova mensagem depois da confirmação e não executei o pedido. Vou conferir essa mensagem antes de preparar uma nova confirmação.", { autor: AUTOR.SISTEMA });
+          return concluir({ feito: true, motivo: "CONFIRMACAO_SUPERADA" });
+        }
         // ⚠ `conversaId` e `portalClientId` vão na reserva: a pendência de um fio nunca é
         // confirmada por outro, nem executada depois de o fio mudar de empresa.
         const r = await confirmarEExecutar({ acaoId: pendente.id, conversaId: conversa.id, portalClientId: conversa.portalClientId, agora, client, log, executores: deps.executores || null, ...(deps.acoesDeps ? { deps: deps.acoesDeps } : {}) });
-        if (r.filaHumana) await client.conversaWhatsapp.update({ where: { id: conversa.id }, data: { atendidaDesde: agora } }).catch(() => {});
+        if (r.filaHumana) await encaminharParaEquipe();
         await dizer(r.texto, { autor: AUTOR.SISTEMA });
-        return { feito: true, motivo: "EXECUTADA", texto: r.texto };
+        return concluir({ feito: true, motivo: "EXECUTADA", texto: r.texto });
       }
       if (d.decisao === "CODIGO_ERRADO") {
         await dizer(FRASES.CODIGO_ERRADO(pendente.codigo), { autor: AUTOR.SISTEMA });
-        return { feito: true, motivo: "CODIGO_ERRADO" };
+        return concluir({ feito: true, motivo: "CODIGO_ERRADO" });
       }
-      // CANCELAR: a pendência morre e a mensagem segue como conversa normal.
-      await cancelarPendencia(pendente.id, { client });
-      await dizer(FRASES.CANCELADA, { autor: AUTOR.SISTEMA });
-      if (!ehTexto || lerÉSoCancelamento(mensagem.corpo)) return { feito: true, motivo: "CANCELADA" };
+      if (d.decisao === "LEMBRAR_CONFIRMACAO") {
+        await dizer(FRASES.LEMBRAR_CONFIRMACAO(pendente.codigo), { autor: AUTOR.SISTEMA });
+        return concluir({ feito: true, motivo: "LEMBRAR_CONFIRMACAO" });
+      }
+      if (d.decisao === "CANCELAR") {
+        await cancelarPendencia(pendente.id, { client });
+        await dizer(FRASES.CANCELADA, { autor: AUTOR.SISTEMA });
+        return concluir({ feito: true, motivo: "CANCELADA" });
+      }
+    } else if (!confirmacaoComComplemento && lerConfirmacao(pedidoAtual.corpo).ehConfirmacao) {
+      await dizer(FRASES.SEM_PENDENCIA, { autor: AUTOR.SISTEMA });
+      return concluir({ feito: true, motivo: "SEM_PENDENCIA" });
     }
 
     // 5. Mídia ⇒ frase fixa. Texto ⇒ modelo.
     if (!ehTexto) {
       await dizer(MENSAGENS_FIXAS.SO_TEXTO, { autor: AUTOR.SISTEMA });
-      return { feito: true, motivo: "SO_TEXTO" };
+      return concluir({ feito: true, motivo: "SO_TEXTO" });
     }
 
     const guarda = await autorizarChamadaIa({ portalClientId: conversa.portalClientId, conversaId: conversa.id, mensagemId: mensagem.id, finalidade: "assistente_whatsapp", agora, client, log, ...(deps.chaveIa !== undefined ? { chave: deps.chaveIa } : {}) });
     if (!guarda.ok) {
       await encaminharFalha();
-      return { feito: true, motivo: guarda.motivo };
+      return concluir({ feito: true, motivo: guarda.motivo });
     }
 
     const janela = await janelaDaConversa(conversa.id, agora);
-    const historico = await client.mensagemWhatsapp.findMany({ where: { conversaId: conversa.id, registradaEm: { lt: mensagem.registradaEm } }, orderBy: { registradaEm: "desc" }, take: IA_HISTORICO_MENSAGENS });
-    const messages = montarHistorico(historico, mensagem);
-    const system = montarSystem({ empresa: conversa.portalClient, sessao, pendencia: null, janela: { aberta: janela.situacao === SITUACOES_JANELA.ABERTA }, hoje: agora });
+    const inicioPedido = bolhas[0];
+    const historico = await client.mensagemWhatsapp.findMany({ where: { conversaId: conversa.id, OR: [
+      { registradaEm: { lt: inicioPedido.registradaEm } }, { registradaEm: inicioPedido.registradaEm, id: { lt: inicioPedido.id } },
+    ] }, orderBy: [{ registradaEm: "desc" }, { id: "desc" }], take: IA_HISTORICO_MENSAGENS });
+    const messages = montarHistorico(historico.filter(m => !mensagensRespondidas.includes(m.id)), pedidoAtual);
+    const system = montarSystem({ empresa: conversa.portalClient, sessao, pendencia: pendente, confirmacaoComComplemento, janela: { aberta: janela.situacao === SITUACOES_JANELA.ABERTA }, hoje: agora });
 
     const pendenciasDoTurno = [];
     let chamouEscritorio = null;
@@ -260,6 +311,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
         documentosTentados.set(chaveDocumento, tentativa);
         const r = await tentativa;
         houveSaida = true;
+        arquivosEnviados += 1;
         return r;
       },
       registrarPendencia: (p) => pendenciasDoTurno.push(p),
@@ -283,13 +335,13 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       if (!iniciouModelo) throw err;
       log?.error?.({ conversaId: conversa.id, mensagemId: mensagem.id, codigo: err?.codigo, err: err?.message, diagnostico: err?.diagnostico, modelo: assistente.modelo, iteracoes: err?.iteracoes, ferramentas: err?.ferramentasChamadas }, "assistente: o modelo não respondeu");
       await encaminharFalha();
-      return { feito: true, motivo: err?.codigo || "IA_ERRO" };
+      return concluir({ feito: true, motivo: err?.codigo || "IA_ERRO" });
     }
     await concluirChamadaIa(guarda.contexto, { usage: resposta.usage, iteracoes: resposta.iteracoes, ferramentas: resposta.ferramentasChamadas, stopReason: resposta.stopReason }, { client, log });
 
     if (resposta.recusou || ["max_tokens", "max_iteracoes"].includes(resposta.stopReason) || (!resposta.texto?.trim() && !houveSaida && !pendenciasDoTurno.length)) {
       await encaminharFalha();
-      return { feito: true, motivo: "RESPOSTA_INCOMPLETA" };
+      return concluir({ feito: true, motivo: "RESPOSTA_INCOMPLETA" });
     }
 
     // 6. A resposta — e, se houve pendência, o texto de confirmação EXATO como segunda mensagem.
@@ -315,7 +367,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       await conferirPortao();
       await registrarMensagemEnviada({ telefone: conversa.telefoneE164, portalClientId: conversa.portalClientId, tipo: "text", corpo: `[pedido de atendimento humano] ${chamouEscritorio.motivo}`, autor: AUTOR.SISTEMA }).catch(() => {});
     }
-    return { feito: true, motivo: "RESPONDIDA", texto };
+    return concluir({ feito: true, motivo: "RESPONDIDA", texto });
   } catch (err) {
     log?.error?.({ conversaId, mensagemId, err: err?.message }, "assistente: TURNO FALHOU");
     return { feito: false, motivo: err?.codigo || "ERRO", erro: err?.message, indeterminado: Boolean(err?.indeterminado || houveSaida) };
@@ -326,9 +378,4 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       else await liberarLease(lock, { client });
     }
   }
-}
-
-/** Resposta CURTA à pendência ("sim", "não", "cancela", "ok"): o cancelamento já foi dito; não há o que o modelo responder. */
-function lerÉSoCancelamento(texto) {
-  return /^\s*(sim|ok|nao|não|cancelar|cancela|desist\w*|isso)\s*[.!]?\s*$/i.test(String(texto || ""));
 }

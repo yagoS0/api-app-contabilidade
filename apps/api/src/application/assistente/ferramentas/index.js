@@ -44,13 +44,14 @@ import { criarPendencia } from "../AcoesPendentesService.js";
 import { PERMISSOES_ASSISTENTE, temPermissaoAssistente } from "../../whatsapp/permissoesAssistente.js";
 import { expedienteDoEscritorio } from "../expediente.js";
 import { INTEGRACAO_PERFIL_EMISSAO_NFSE } from "../../../config.js";
+import { lerEmitidasNaoConfirmadas } from "../../notas/notasEmitidasNaoConfirmadas.js";
 
 /** As funções de fora, INJETÁVEIS. Produção usa os defaults; o teste passa dublês. */
 export const SERVICOS_PADRAO = Object.freeze({
   listGuidesByCompany, toGuideResponse, getGuidePdfBuffer, gerarDanfseDaNota, listarTomadoresEmitidos,
   consultarCnpj, municipiosIbgeOuNulo, validateNfsePayload, autorizarEmissaoDoCliente, resolveLegacyCompanyId,
   canGuideRecalculate, isGuideOverdue, avisoDeRecalculo, motivoValido, validarJustificativa, parseSitfisRelatorio, gerarPdfSitfisTabela,
-  criarPendencia, baixarDocumentoDaEmpresa,
+  criarPendencia, baixarDocumentoDaEmpresa, lerEmitidasNaoConfirmadas,
   listarPerfisEmissao: async ({ sessao }) => INTEGRACAO_PERFIL_EMISSAO_NFSE
     ? prisma.perfilEmissaoNfse.findMany({ where: { portalClientId: sessao.portalClientId, ativo: true }, select: { id: true, nome: true, codigoServicoNacional: true }, orderBy: { nome: "asc" } })
     : [],
@@ -76,6 +77,23 @@ function exigirPapel(ctx, minimo) {
 }
 
 const dataBR = (d) => (d ? new Date(d).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : null);
+const mesValido = (valor) => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(valor || ""));
+const paginaDaLista = (valor) => Math.max(1, Math.min(1000, Math.trunc(Number(valor)) || 1));
+const competenciaDaData = (valor) => {
+  if (!valor) return null;
+  const data = new Date(valor);
+  return Number.isNaN(data.getTime()) ? null : data.toISOString().slice(0, 7);
+};
+function intervaloDoMes(valor) {
+  const [ano, mes] = valor.split("-").map(Number);
+  return { gte: new Date(Date.UTC(ano, mes - 1, 1)), lt: new Date(Date.UTC(ano, mes, 1)) };
+}
+
+function centavosInformados(valor) {
+  if (valor == null || String(valor).trim() === "") return null;
+  const numero = Number(valor);
+  return Number.isFinite(numero) && numero >= 0 ? Math.round(numero * 100) : null;
+}
 
 /** O nome da guia na frase: o rótulo do e-mail (a MESMA função do envio), e "parcela" quando é parcela. */
 function rotuloDaGuia(g) {
@@ -86,7 +104,7 @@ function rotuloDaGuia(g) {
 
 function guiaCurta(g) {
   return {
-    guideId: g.id,
+    guideId: g.guideId || g.id,
     tipo: rotuloDaGuia(g),
     competencia: g.competencia || null,
     valor: g.valor != null ? Number(g.valor) : null,
@@ -98,8 +116,10 @@ function guiaCurta(g) {
 }
 
 // ── AS DEFINIÇÕES ────────────────────────────────────────────────────────────────────────────────
-// ⚠ `strict: true` + `additionalProperties: false` + todo campo em `required` (os opcionais
-// aceitam `null`): o modelo não inventa campo, e o executor não adivinha o que faltou.
+// A preparação de emissão tem 16 unions e ultrapassa a complexidade de compilação Anthropic
+// junto ao catálogo. Probes reais recusaram também variantes opcionais (HTTP 400). Ela usa
+// validação de entrada LOCAL + validateNfsePayload + confirmação por código. As outras ferramentas
+// continuam strict. Nunca trocar campos numéricos ausentes por zero para simplificar um schema.
 
 const S = (properties) => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
 const str = (description) => ({ type: "string", description });
@@ -108,17 +128,17 @@ const numOuNulo = (description) => ({ type: ["number", "null"], description });
 const boolOuNulo = (description) => ({ type: ["boolean", "null"], description });
 
 export const DEFINICOES = Object.freeze([
-  { name: "listar_guias", description: "Lista as guias de imposto LIBERADAS pelo escritório para a empresa (DAS, INSS, DARF, parcelas). Use para 'quais guias', 'guia de tal mês'.", strict: true, input_schema: S({ competencia: strOuNulo("Competência AAAA-MM; null = todas"), status: strOuNulo("Filtro de situação de pagamento: OPEN, OVERDUE, PAID ou null") }) },
+  { name: "listar_guias", description: "Lista as guias de imposto LIBERADAS pelo escritório para a empresa (DAS, INSS, DARF, parcelas). 'Guias do mês' usa mesVencimento; competência só quando o cliente pedir a competência. Retorna ids utilizáveis para envio/recálculo. Continue por proximaPagina se necessário.", strict: true, input_schema: S({ competencia: strOuNulo("Competência AAAA-MM; null = todas"), mesVencimento: strOuNulo("Mês em que vence, AAAA-MM. Use o mês atual para 'guias do mês'; null = sem filtro de vencimento"), status: { type: ["string", "null"], enum: ["OPEN", "OVERDUE", "PAID", null], description: "Situação de pagamento; null = todas" }, pagina: numOuNulo("Página, começa em 1; use proximaPagina para continuar") }) },
   { name: "quanto_devo", description: "Soma das guias liberadas ainda EM ABERTO (a pagar), com a lista e o que já venceu. Use para 'quanto devo', 'o que falta pagar'.", strict: true, input_schema: S({}) },
   { name: "enviar_pdf_da_guia", description: "Envia por WhatsApp o PDF de UMA guia liberada (pelo guideId de listar_guias/quanto_devo). Só funciona com a janela de 24h aberta.", strict: true, input_schema: S({ guideId: str("O id da guia") }) },
-  { name: "listar_notas", description: "Lista notas fiscais de serviço da empresa (emitidas por ela ou recebidas), por competência.", strict: true, input_schema: S({ competencia: strOuNulo("Competência AAAA-MM; null = as mais recentes"), direcao: strOuNulo("'emitidas' (padrão) ou 'recebidas'") }) },
+  { name: "listar_notas", description: "Lista notas fiscais de serviço da empresa, incluindo as recém emitidas pelo portal. Use para achar a última nota, uma nota pelo número ou pelo tomador antes de enviar DANFSe ou preparar cancelamento. Continue por proximaPagina quando necessário.", strict: true, input_schema: S({ competencia: strOuNulo("Competência AAAA-MM; null = as mais recentes"), direcao: { type: ["string", "null"], enum: ["emitidas", "recebidas", null], description: "Emitidas pela empresa (padrão) ou recebidas" }, busca: strOuNulo("Número exato da nota, nome ou documento da outra parte; null = sem busca"), pagina: numOuNulo("Página, começa em 1; use proximaPagina para continuar") }) },
   { name: "danfse_da_nota", description: "Envia por WhatsApp o DANFSe (PDF) de uma nota, pelo notaId de listar_notas.", strict: true, input_schema: S({ notaId: str("O id da nota") }) },
-  { name: "listar_documentos", description: "Lista os documentos cadastrais e societários guardados para a empresa, sem revelar o arquivo. Exige papel CLIENT_ADMIN e liberação explícita deste número.", strict: true, input_schema: S({}) },
+  { name: "listar_documentos", description: "Lista e busca documentos cadastrais e societários guardados para a empresa. Use busca para achar pelo nome/tipo e proximaPagina para continuar. Exige papel CLIENT_ADMIN e liberação explícita deste número.", strict: true, input_schema: S({ busca: strOuNulo("Nome ou tipo do documento, por exemplo alvará ou contrato social; null = todos"), pagina: numOuNulo("Página, começa em 1; use proximaPagina para continuar") }) },
   { name: "enviar_documento_da_empresa", description: "Envia por WhatsApp UM documento cadastral ou societário, pelo documentId retornado por listar_documentos. Só funciona com a janela de 24h aberta.", strict: true, input_schema: S({ documentId: str("O id do documento") }) },
   { name: "situacao_fiscal", description: "Envia PDF das tabelas completas da última situação fiscal salva pelo escritório, sem nova consulta à Receita. Exige CLIENT_ADMIN e janela de envio aberta.", strict: true, input_schema: S({}) },
   { name: "tomadores_conhecidos", description: "Os tomadores para quem a empresa já emitiu nota (nome, documento) — para reaproveitar num pedido de emissão.", strict: true, input_schema: S({}) },
   { name: "consultar_cnpj", description: "Consulta um CNPJ na Receita (BrasilAPI) para completar nome e endereço do tomador. Nunca CPF.", strict: true, input_schema: S({ cnpj: str("CNPJ com 14 dígitos (pontuação opcional)") }) },
-  { name: "preparar_emissao", description: "MONTA um pedido de emissão de NFS-e e devolve o texto de confirmação. NÃO emite: o cliente precisa responder CONFIRMAR <código>. Exige papel CLIENT_ADMIN e empresa liberada pelo escritório.", strict: true, input_schema: S({
+  { name: "preparar_emissao", description: "MONTA um pedido de emissão de NFS-e e devolve o texto de confirmação. NÃO emite: o cliente precisa responder CONFIRMAR <código>. Exige papel CLIENT_ADMIN e empresa liberada pelo escritório. Informe números como números, booleanos como booleanos; campos ausentes podem ser omitidos ou null. A entrada é validada no servidor.", strict: false, input_schema: S({
     tomadorDoc: str("CNPJ ou CPF do tomador, só dígitos ou com pontuação"),
     tomadorNome: strOuNulo("Nome/razão social do tomador"),
     perfilId: strOuNulo("Perfil de serviço escolhido pelo cliente entre as opções devolvidas por preparar_emissao; null para consultar as opções. Nunca invente um id."),
@@ -182,6 +202,27 @@ export function definicoes(sessao = null) {
     .map((d) => ({ ...d }));
 }
 
+/** Valida o subconjunto JSON Schema utilizado na emissão ANTES de consultar ou preparar algo.
+ * O modelo sem strict pode omitir campos anuláveis; campos obrigatórios reais continuam exigidos.
+ * A validação fiscal/semântica permanece no validador compartilhado da rota de emissão.
+ */
+function validarEntradaEmissao(input) {
+  const schema = DEFINICOES.find((d) => d.name === "preparar_emissao").input_schema;
+  const erros = [];
+  const visitar = (valor, regra, caminho) => {
+    const tipos = Array.isArray(regra.type) ? regra.type : [regra.type];
+    if (valor === undefined && tipos.includes("null")) return;
+    const tipo = valor === null ? "null" : Array.isArray(valor) ? "array" : typeof valor;
+    if (!tipos.includes(tipo) || (tipo === "number" && !Number.isFinite(valor))) { erros.push(caminho || "dados"); return; }
+    if (regra.enum && !regra.enum.includes(valor)) { erros.push(caminho); return; }
+    if (tipo !== "object") return;
+    for (const chave of Object.keys(valor)) if (!Object.hasOwn(regra.properties || {}, chave)) erros.push(caminho ? `${caminho}.${chave}` : chave);
+    for (const [chave, propriedade] of Object.entries(regra.properties || {})) visitar(valor[chave], propriedade, caminho ? `${caminho}.${chave}` : chave);
+  };
+  visitar(input, schema, "");
+  return erros.length ? recusa("DADOS_EMISSAO_INVALIDOS", "Confira os dados informados para montar a nota. Use valores numéricos para valores e percentuais; não acrescente campos que não foram solicitados.", { campos: erros.slice(0, 10) }) : null;
+}
+
 // ── OS EXECUTORES ────────────────────────────────────────────────────────────────────────────────
 
 const EXECUTORES = {
@@ -189,32 +230,42 @@ const EXECUTORES = {
     const r = exigirPapel(ctx, PAPEL_MINIMO_LEITURA);
     if (r) return r;
     const { sessao, servicos } = ctx;
+    if ((input.competencia && !mesValido(input.competencia)) || (input.mesVencimento && !mesValido(input.mesVencimento))) return recusa("MES_INVALIDO", "Informe o mês e o ano que deseja consultar.");
+    if (input.status && !["OPEN", "OVERDUE", "PAID"].includes(input.status)) return recusa("STATUS_INVALIDO", "Informe se procura guias em aberto, vencidas ou pagas.");
+    const pagina = paginaDaLista(input.pagina);
     const result = await servicos.listGuidesByCompany({
       portalClientId: sessao.portalClientId,
       competencia: input.competencia || undefined,
-      status: input.status || undefined,
+      paymentStatus: input.status || undefined,
+      ...(input.mesVencimento ? { vencimento: intervaloDoMes(input.mesVencimento) } : {}),
+      page: pagina,
       limit: LIMITE_LISTA,
       apenasLiberadas: true,
       publico: PUBLICO.CLIENTE,
     });
     const itens = (result?.items || []).map((g) => guiaCurta(servicos.toGuideResponse(g, { publico: PUBLICO.CLIENTE })));
-    return { ok: true, total: Number(result?.total || itens.length), guias: itens, observacao: itens.length ? null : "Nenhuma guia LIBERADA pelo escritório neste recorte. Isso não é o mesmo que nada a pagar: o escritório pode ainda não ter liberado a guia." };
+    const total = Number(result?.total ?? itens.length);
+    const temMais = pagina * LIMITE_LISTA < total;
+    return { ok: true, total, pagina, temMais, proximaPagina: temMais ? pagina + 1 : null, guias: itens, observacao: itens.length ? null : "Nenhuma guia LIBERADA pelo escritório neste recorte. Isso não é o mesmo que nada a pagar: o escritório pode ainda não ter liberado a guia." };
   },
 
   async quanto_devo(_input, ctx) {
     const r = exigirPapel(ctx, PAPEL_MINIMO_LEITURA);
     if (r) return r;
-    // ⚠ A MESMA query de `GET /client/companies/:id/fluxo`: guias liberadas, em aberto, com vencimento.
+    // Guia sem vencimento continua sendo uma obrigação conhecida; só não permite afirmar atraso.
     const guias = await ctx.prisma.guide.findMany({
-      where: { portalClientId: ctx.sessao.portalClientId, liberadaCliente: true, vencimento: { not: null }, paymentStatus: { in: ["OPEN", "OVERDUE"] } },
+      where: { portalClientId: ctx.sessao.portalClientId, liberadaCliente: true, paymentStatus: { in: ["OPEN", "OVERDUE"] } },
       select: { id: true, tipo: true, competencia: true, valor: true, vencimento: true, paymentStatus: true, numeroParcela: true, parcelamentoId: true },
       orderBy: { vencimento: "asc" },
     });
     const hoje = new Date(ctx.agora || Date.now());
     hoje.setHours(0, 0, 0, 0);
     const itens = guias.map((g) => guiaCurta({ ...g, vencida: g.vencimento ? new Date(g.vencimento) < hoje : false }));
-    const total = guias.reduce((s, g) => s + Number(g.valor || 0), 0);
-    return { ok: true, total, totalFormatado: fmtBRL(total), quantidade: itens.length, vencidas: itens.filter((i) => i.vencida).length, guias: itens, observacao: itens.length ? null : "Nenhuma guia liberada em aberto. Guias que o escritório ainda não liberou não entram aqui." };
+    const valores = guias.map((g) => centavosInformados(g.valor));
+    const semValor = valores.filter((v) => v === null).length;
+    const subtotalConhecido = valores.reduce((s, v) => s + (v ?? 0), 0) / 100;
+    const total = semValor ? null : subtotalConhecido;
+    return { ok: true, total, totalFormatado: total == null ? null : fmtBRL(total), totalParcial: semValor > 0, semValor, subtotalConhecido, subtotalConhecidoFormatado: fmtBRL(subtotalConhecido), quantidade: itens.length, vencidas: itens.filter((i) => i.vencida).length, guias: itens, observacao: semValor ? "Há guias com valor não informado. O subtotal soma apenas valores conhecidos e não representa o total a pagar." : itens.length ? null : "Nenhuma guia liberada em aberto. Guias que o escritório ainda não liberou não entram aqui." };
   },
 
   async enviar_pdf_da_guia(input, ctx) {
@@ -233,27 +284,52 @@ const EXECUTORES = {
   async listar_notas(input, ctx) {
     const r = exigirPapel(ctx, PAPEL_MINIMO_LEITURA);
     if (r) return r;
+    if (input.competencia && !mesValido(input.competencia)) return recusa("MES_INVALIDO", "Informe o mês e o ano das notas que procura.");
+    if (input.direcao && !["emitidas", "recebidas"].includes(input.direcao)) return recusa("DIRECAO_INVALIDA", "Informe se procura notas emitidas pela empresa ou recebidas de fornecedores.");
     const direcao = String(input.direcao || "emitidas").toLowerCase() === "recebidas" ? "DEST" : "EMIT";
-    let filtroCompetencia = {};
-    if (/^\d{4}-\d{2}$/.test(String(input.competencia || ""))) {
-      const [a, m] = input.competencia.split("-").map(Number);
-      filtroCompetencia = { competencia: { gte: new Date(Date.UTC(a, m - 1, 1)), lt: new Date(Date.UTC(a, m, 1)) } };
-    }
-    const notas = await ctx.prisma.portalInvoice.findMany({
+    const pagina = paginaDaLista(input.pagina);
+    const busca = String(input.busca || "").trim().slice(0, 120);
+    const filtroCompetencia = input.competencia ? { competencia: intervaloDoMes(input.competencia) } : {};
+    const empresa = await ctx.prisma.portalClient.findUnique({ where: { id: ctx.sessao.portalClientId }, select: { cnpj: true, companyId: true } });
+    const docEmpresa = soDigitos(empresa?.cnpj);
+    // Papel explícito prevalece; registros antigos sem papel usam o documento da empresa.
+    const filtroDirecao = { OR: [{ papel: direcao }, ...(docEmpresa ? [{ papel: null, [direcao === "EMIT" ? "emitenteDoc" : "tomadorDoc"]: docEmpresa }] : [])] };
+    const campoNome = direcao === "EMIT" ? "tomadorNome" : "emitenteNome";
+    const campoDoc = direcao === "EMIT" ? "tomadorDoc" : "emitenteDoc";
+    const filtroBusca = !busca ? {} : /^\d+$/.test(busca) && busca.length < 11 ? { numero: busca } : { OR: [
+      { [campoNome]: { contains: busca, mode: "insensitive" } },
+      ...(soDigitos(busca) ? [{ [campoDoc]: { contains: soDigitos(busca) } }] : []),
+    ] };
+    const limitePrefixo = pagina * LIMITE_LISTA + 1;
+    const notasDoAdn = await ctx.prisma.portalInvoice.findMany({
       // ⚠ O escopo INLINE, no `where` — é o que a varredura de fonte confere.
-      where: { clientId: ctx.sessao.portalClientId, type: "NFSE", papel: direcao, ...filtroCompetencia },
-      select: { id: true, numero: true, competencia: true, issueDate: true, total: true, status: true, statusEfetivo: true, papel: true, tomadorNome: true, tomadorDoc: true, emitenteNome: true, xDescServ: true, chaveAcesso: true },
-      orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
-      take: LIMITE_LISTA,
+      where: { clientId: ctx.sessao.portalClientId, type: "NFSE", AND: [filtroDirecao, filtroCompetencia, filtroBusca] },
+      select: { id: true, numero: true, competencia: true, issueDate: true, createdAt: true, total: true, status: true, statusEfetivo: true, papel: true, tomadorNome: true, tomadorDoc: true, emitenteNome: true, emitenteDoc: true, xDescServ: true, chaveAcesso: true },
+      orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+      take: limitePrefixo,
     });
+    // A mesma união e deduplicação do portal: emitir NÃO grava PortalInvoice. O DANFSe e
+    // cancelamento já aceitam os dois ids; a lista precisa tornar a emissão nova alcançável.
+    const novas = direcao === "EMIT" && empresa?.companyId ? await ctx.servicos.lerEmitidasNaoConfirmadas({ legacyCompanyId: empresa.companyId, portalClientId: ctx.sessao.portalClientId, client: ctx.prisma }) : [];
+    const notasNovas = novas.filter((n) => (!input.competencia || competenciaDaData(n.competencia) === input.competencia)
+      && (!busca || (/^\d+$/.test(busca) && busca.length < 11 ? String(n.numeroNfse || "") === busca
+        : String(n.tomadorNome || "").toLocaleLowerCase("pt-BR").includes(busca.toLocaleLowerCase("pt-BR")) || Boolean(soDigitos(busca) && soDigitos(n.tomadorDoc).includes(soDigitos(busca))))))
+      .map((n) => ({ ...n, numero: n.numeroNfse, total: n.valorServicos, issueDate: n.createdAt, statusEfetivo: n.status === "cancelled" ? "CANCELAMENTO_ENVIADO" : "EMITIDA", confirmadaPeloAdn: false }));
+    const unidas = [...notasDoAdn.map((n) => ({ ...n, confirmadaPeloAdn: true })), ...notasNovas]
+      .sort((a, b) => new Date(b.issueDate || b.createdAt).getTime() - new Date(a.issueDate || a.createdAt).getTime()
+        || String(b.id).localeCompare(String(a.id)));
+    const inicio = (pagina - 1) * LIMITE_LISTA;
+    const notas = unidas.slice(inicio, inicio + LIMITE_LISTA);
+    const temMais = unidas.length > inicio + LIMITE_LISTA;
     return {
       ok: true,
       direcao: direcao === "EMIT" ? "emitidas" : "recebidas",
+      pagina, temMais, proximaPagina: temMais ? pagina + 1 : null,
       quantidade: notas.length,
       notas: notas.map((n) => ({
-        notaId: n.id, numero: n.numero, emissao: dataBR(n.issueDate), competencia: n.competencia ? String(n.competencia).slice(0, 7) : null,
+        notaId: n.id, numero: n.numero, emissao: dataBR(n.issueDate), competencia: competenciaDaData(n.competencia), confirmadaPeloAdn: n.confirmadaPeloAdn,
         valor: n.total != null ? Number(n.total) : null, valorFormatado: n.total != null ? fmtBRL(n.total) : "não informado",
-        situacao: n.statusEfetivo || n.status || null, outraParte: direcao === "EMIT" ? n.tomadorNome : n.emitenteNome, outraParteDoc: direcao === "EMIT" ? formatarDoc(n.tomadorDoc) : null,
+        situacao: n.statusEfetivo || n.status || null, outraParte: direcao === "EMIT" ? n.tomadorNome : n.emitenteNome, outraParteDoc: formatarDoc(direcao === "EMIT" ? n.tomadorDoc : n.emitenteDoc),
         descricao: n.xDescServ ? String(n.xDescServ).slice(0, 120) : null, temChave: Boolean(n.chaveAcesso),
       })),
     };
@@ -277,17 +353,25 @@ const EXECUTORES = {
     return { ok: true, enviado: true, notaId: String(input.notaId), nomeArquivo: resultado.nomeArquivo, marcaDagua: resultado.marcaDagua || null, providerMessageId: envio?.wamid || null };
   },
 
-  async listar_documentos(_input, ctx) {
+  async listar_documentos(input, ctx) {
     const r = exigirPapel(ctx, PAPEL_MINIMO_SITUACAO_FISCAL);
     if (r) return r;
-    const documentos = await ctx.prisma.companyDocument.findMany({
-      where: { portalClientId: ctx.sessao.portalClientId },
+    const pagina = paginaDaLista(input.pagina);
+    const busca = String(input.busca || "").trim().slice(0, 120);
+    const comparar = (s) => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+    const tipos = busca ? Object.entries(TIPO_DOCUMENTO_LABELS).filter(([, label]) => comparar(label).includes(comparar(busca))).map(([tipo]) => tipo) : [];
+    const encontrados = await ctx.prisma.companyDocument.findMany({
+      where: { portalClientId: ctx.sessao.portalClientId, ...(busca ? { OR: [{ nome: { contains: busca, mode: "insensitive" } }, ...(tipos.length ? [{ tipo: { in: tipos } }] : [])] } : {}) },
       select: { id: true, tipo: true, nome: true, mimeType: true, bytes: true, validade: true, createdAt: true },
-      orderBy: [{ tipo: "asc" }, { createdAt: "desc" }],
-      take: 30,
+      orderBy: [{ tipo: "asc" }, { createdAt: "desc" }, { id: "desc" }],
+      skip: (pagina - 1) * 30,
+      take: 31,
     });
+    const temMais = encontrados.length > 30;
+    const documentos = encontrados.slice(0, 30);
     return {
       ok: true,
+      pagina, temMais, proximaPagina: temMais ? pagina + 1 : null,
       quantidade: documentos.length,
       documentos: documentos.map((d) => ({
         documentId: d.id,
@@ -299,7 +383,7 @@ const EXECUTORES = {
         validade: dataBR(d.validade),
         cadastradoEm: dataBR(d.createdAt),
       })),
-      observacao: documentos.length ? null : "O escritório ainda não cadastrou documentos para esta empresa.",
+      observacao: documentos.length ? null : busca || pagina > 1 ? "Nenhum documento encontrado neste recorte." : "O escritório ainda não cadastrou documentos para esta empresa.",
     };
   },
 
@@ -383,6 +467,8 @@ const EXECUTORES = {
   async preparar_emissao(input, ctx) {
     const r = exigirPapel(ctx, PAPEL_MINIMO_EMISSAO);
     if (r) return r;
+    const erroEntrada = validarEntradaEmissao(input);
+    if (erroEntrada) return erroEntrada;
     const { sessao, servicos } = ctx;
     const autorizacao = await servicos.autorizarEmissaoDoCliente({ portalClientId: sessao.portalClientId, userId: sessao.userId });
     if (!autorizacao.ok) return recusa(autorizacao.codigo || "EMISSAO_NAO_AUTORIZADA", `${autorizacao.message || "A emissão pelo cliente não está autorizada."} ${autorizacao.correcao || ""}`.trim());
@@ -445,8 +531,8 @@ const EXECUTORES = {
     });
     if (!nota) {
       const legacy = await servicos.resolveLegacyCompanyId(sessao.portalClientId);
-      const nossa = legacy ? await ctx.prisma.serviceInvoice.findFirst({ where: { id: String(input.notaId || ""), companyId: legacy }, select: { id: true, chaveAcesso: true, numeroNfse: true, status: true, tomadorDoc: true } }) : null;
-      if (nossa) nota = { id: nossa.id, chaveAcesso: nossa.chaveAcesso, numero: nossa.numeroNfse, status: nossa.status, statusEfetivo: nossa.status, papel: "EMIT", type: "NFSE", tomadorDoc: nossa.tomadorDoc, tomadorNome: null, emitenteDoc: null, total: null, issueDate: null };
+      const nossa = legacy ? await ctx.prisma.serviceInvoice.findFirst({ where: { id: String(input.notaId || ""), companyId: legacy }, select: { id: true, chaveAcesso: true, numeroNfse: true, status: true, tomadorDoc: true, tomadorNome: true, valorServicos: true, createdAt: true } }) : null;
+      if (nossa) nota = { id: nossa.id, chaveAcesso: nossa.chaveAcesso, numero: nossa.numeroNfse, status: nossa.status, statusEfetivo: nossa.status, papel: "EMIT", type: "NFSE", tomadorDoc: nossa.tomadorDoc, tomadorNome: nossa.tomadorNome, emitenteDoc: null, total: nossa.valorServicos, issueDate: nossa.createdAt };
     }
     if (!nota) return recusa("nota_nao_encontrada", "Não encontrei essa nota na empresa.");
     // ⚠ DUAS FONTES para "recebida", como na rota (`client/index.js`, "nota_recebida"): a coluna
@@ -465,10 +551,10 @@ const EXECUTORES = {
     if (!nota.chaveAcesso) return recusa("nota_sem_chave", "Essa nota ainda não tem chave de acesso; sem ela não há o que cancelar.");
     if (String(nota.statusEfetivo || nota.status || "").toLowerCase().includes("cancel")) return recusa("nota_ja_cancelada", "Essa nota já consta como cancelada.");
     if (!servicos.motivoValido(EVENTO_CANCELAMENTO, input.cMotivo)) {
-      return recusa("c_motivo_invalido", `Motivo inválido. Os aceitos são: ${motivosDoEvento(EVENTO_CANCELAMENTO).map((m) => `${m.codigo} (${m.descricao})`).join(", ")}.`);
+      return recusa("c_motivo_invalido", `Motivo inválido. Os aceitos são: ${motivosDoEvento(EVENTO_CANCELAMENTO).map((m) => `${m.codigo} (${m.rotulo})`).join(", ")}.`);
     }
     const just = servicos.validarJustificativa(input.justificativa);
-    if (!just.ok) return recusa("justificativa_invalida", `Justificativa inválida: ${just.motivo || `entre ${JUSTIFICATIVA.MIN} e ${JUSTIFICATIVA.MAX} caracteres`}.`);
+    if (!just.ok) return recusa("justificativa_invalida", just.mensagem || `Justificativa inválida: ${just.motivo || `entre ${JUSTIFICATIVA.MIN} e ${JUSTIFICATIVA.MAX} caracteres`}.`);
 
     const motivo = motivosDoEvento(EVENTO_CANCELAMENTO).find((m) => String(m.codigo) === String(input.cMotivo));
     const corpo = [
@@ -478,7 +564,7 @@ const EXECUTORES = {
       `• Tomador: ${nota.tomadorNome || "(não informado)"}${nota.tomadorDoc ? ` · ${formatarDoc(nota.tomadorDoc)}` : ""}`,
       `• Valor: ${nota.total != null ? fmtBRL(nota.total) : "não informado"}`,
       `• Emissão: ${dataBR(nota.issueDate) || "não informada"}`,
-      `• Motivo: ${input.cMotivo} — ${motivo?.descricao || ""}`,
+      `• Motivo: ${input.cMotivo} — ${motivo?.rotulo || ""}`,
       `• Justificativa: ${String(input.justificativa).trim()}`,
       "",
       "A nota cancelada não volta.",

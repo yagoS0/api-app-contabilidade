@@ -4,7 +4,8 @@ import { INTEGRACAO_WHATSAPP_IA, IA_EMPRESAS_PILOTO } from "../../config.js";
 import { adquirirLease, renovarLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
 
 export async function enfileirarTurnoIa({ conversaId, mensagemId, portalClientId = null, client = prisma }) {
-  try { return await client.turnoIaWhatsapp.create({ data: { conversaId, mensagemId, portalClientId } }); }
+  // Uma pequena pausa permite receber as bolhas que compõem o mesmo pedido.
+  try { return await client.turnoIaWhatsapp.create({ data: { conversaId, mensagemId, portalClientId, proximaTentativaEm: new Date(Date.now() + 1500) } }); }
   catch (e) {
     if (e?.code !== "P2002") throw e;
     return client.turnoIaWhatsapp.findUnique({ where: { mensagemId } });
