@@ -1,4 +1,31 @@
-// Espelho da agregação do portal cliente, reintroduzido por pedido de 08/09/2026. Teste de paridade obrigatório.
+// A TABELA DO FLUXO — as seis colunas do `SPEC-fluxo-de-caixa-v3.md` §3.2.
+//
+// `Mês | Entrada | Saída | Impostos | Folha | Resultado`
+//
+// ⚠⚠ ISTO NÃO MORA EM `leituraDoFluxo.js`, E A SEPARAÇÃO CONTINUA SENDO O PONTO — mas o ARGUMENTO
+// mudou em 29/08/2026. Este parágrafo dizia que aquele arquivo era ESPELHO de
+// `apps/web/src/features/fluxo/lib/leituraDoFluxo.js` ("mudou lá, muda aqui"), e isso ficou FALSO: o
+// dono removeu o fluxo de caixa do portal do contador (*"para o contador não vai existir fluxo de
+// caixa"*) e aquela pasta foi apagada inteira. **Não há mais cópia a sincronizar.**
+//
+// ⚠ O que sustenta a separação hoje: `leituraDoFluxo.js` LÊ o vocabulário do servidor (procedência,
+// fonte, cor, evidência) e este arquivo AGREGA para a tabela desta tela. Misturá-los faria a
+// agregação de UMA tela virar parte do vocabulário que o servidor manda. Aqui só se lê o que aquele
+// arquivo já expõe.
+//
+// ⚠ Ela substituiu `planilhaDoFluxo.js` (a grade de Entrada/Saída/Recorrência/Diário de 27/08/2026).
+// Aquele arquivo ficou sem consumidor — está anotado, não apagado, que é a regra desta casa.
+//
+// ⚠⚠ **O `status` DE UMA CÉLULA É O DO ELO MAIS FRACO** — `SPEC` §3.3: *"Resultado herda `previsto`
+// se qualquer parcela for prevista."* Vale para toda célula, não só o Resultado: uma célula que soma
+// uma guia paga com uma guia em aberto **não é um fato**, e pintá-la de preto afirmaria que o
+// dinheiro já saiu.
+//
+// ⚠⚠ **A AUTORIDADE DESTA DERIVAÇÃO É O BACKEND** (`statusDoConjunto`, em
+// `apps/api/src/application/fluxo/lib/fluxoDeCaixa.js`). Este módulo é ESPELHO, e o teste importa a
+// função de lá e exige o mesmo veredito nos mesmos casos — sem isso "espelho" é intenção, e a
+// divergência apareceria como a tela pintando de preto o que o servidor chama de previsto.
+
 import { DIRECAO, FONTE, PROCEDENCIA, somarCompetencia } from "./vocabularioFluxo";
 
 /** ⚠ O que o usuário VÊ: duas cores. O dado guarda três níveis (`PROCEDENCIA`). Constituição §1. */
@@ -20,7 +47,8 @@ export const COLUNAS = Object.freeze([
   { chave: "saida", rotulo: "Saída" },
   { chave: "impostos", rotulo: "Impostos" },
   { chave: "folha", rotulo: "Folha" },
-  { chave: "resultado", rotulo: "Resultado" },
+  { chave: "resultado", rotulo: "Resultado mensal" },
+  { chave: "saldo", rotulo: "Saldo projetado" },
 ]);
 
 /** ⚠ As três que viram percentual no modo `%`. Entrada e Resultado seguem em R$ (spec §3.6). */
@@ -91,7 +119,7 @@ export function linhaDoMes(mes) {
     };
   }
 
-  return { competencia: mes?.competencia || null, entrada, saida, impostos, folha, resultado };
+  return { competencia: mes?.competencia || null, entrada, saida, impostos, folha, resultado, saldo: Number.isFinite(mes?.saldo?.final) ? { valor: mes.saldo.final, status: STATUS.PREVISTO } : null };
 }
 
 /**
@@ -128,7 +156,7 @@ export function linhasDosDias(mes, quantosDias) {
   return {
     // ⚠ Vem PRIMEIRO na tela: é a maioria do dinheiro, e escondê-la faria o mês parecer menor.
     semDia: linhaSemDia,
-    dias: acumularResultado(linhaSemDia, dias),
+    dias: acumularResultado(linhaSemDia, dias).map(d => ({ ...d, saldo: Number.isFinite(mes?.saldo?.inicial) ? { valor: Math.round((mes.saldo.inicial + (d.resultado?.valor || 0)) * 100) / 100, status: STATUS.PREVISTO } : null })),
   };
 }
 

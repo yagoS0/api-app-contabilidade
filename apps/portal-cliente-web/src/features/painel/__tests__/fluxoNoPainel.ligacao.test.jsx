@@ -127,7 +127,7 @@ describe("⚠⚠ a visão de dias é o estado INICIAL", () => {
     await abrir(cheio());
     for (const b of blocos()) {
       expect([...b.querySelectorAll("thead th")].map((h) => h.textContent))
-        .toEqual(["Dia", "Entrada", "Saída", "Impostos", "Folha", "Resultado"]);
+        .toEqual(["Dia", "Entrada", "Saída", "Impostos", "Folha", "Resultado mensal", "Saldo projetado"]);
     }
   });
 
@@ -290,7 +290,7 @@ describe("⚠⚠ o Horizonte transpõe a grade", () => {
     await abrir(cheio());
     await irAoHorizonte();
     const linhas = [...horizonte().querySelectorAll("tbody tr th")].map((h) => h.textContent);
-    expect(linhas).toEqual(["Entrada", "Saída", "Impostos", "Folha", "Resultado"]);
+    expect(linhas).toEqual(["Entrada", "Saída", "Impostos", "Folha", "Resultado mensal", "Saldo projetado"]);
   });
 
   it("⚠⚠ o nome do mês fica EMBAIXO, e é `<th scope=\"col\">` num `<tfoot>` — nunca um `<td>`", async () => {
@@ -315,7 +315,7 @@ describe("⚠⚠ o Horizonte transpõe a grade", () => {
     expect(horizonte().querySelectorAll("thead")).toHaveLength(0);
     // ⚠ E a tabela continua íntegra: caption + th de linha + th de coluna no rodapé.
     expect(horizonte().querySelector("caption")).not.toBeNull();
-    expect(horizonte().querySelectorAll("tbody tr th[scope=\"row\"]").length).toBe(5);
+    expect(horizonte().querySelectorAll("tbody tr th[scope=\"row\"]").length).toBe(6);
   });
 
   it("⚠ o mês corrente é marcado no rodapé", async () => {
@@ -449,7 +449,7 @@ describe("⚠ a coluna Folha", () => {
     await abrir({ ...cheio(), folha: { disponivel: false, contasConsideradas: [] } });
     await irAoHorizonte();
     expect([...horizonte().querySelectorAll("tbody tr th")].map((h) => h.textContent))
-      .toEqual(["Entrada", "Saída", "Impostos", "Resultado"]);
+      .toEqual(["Entrada", "Saída", "Impostos", "Resultado mensal", "Saldo projetado"]);
   });
 });
 
@@ -598,12 +598,14 @@ describe("⚠⚠ nada aqui lança, edita ou apaga", () => {
     expect(screen.getByRole("button", { name: "DRE" })).toBeInTheDocument();
   });
 
-  it("⚠⚠ NÃO existe coluna de SALDO — sem âncora não há acumulado (Lei 3)", async () => {
+  it("saldo projetado sem âncora explica a configuração sem assumir zero", async () => {
     // Ela é Fase 3, e depende de conciliação no fechamento do contador. Um acumulado sem âncora
     // erra composto, mês após mês.
     await abrir(cheio());
     expect(cabecalhosDoFluxo()).not.toContain("Saldo");
-    expect(document.body.textContent).not.toMatch(/Saldo/i);
+    expect(document.body.textContent).toMatch(/Saldo projetado/);
+    expect(document.body.textContent).toMatch(/Configure um saldo inicial/);
+    expect([...document.querySelectorAll('tbody td[data-coluna="saldo"]')].every(c => !c.textContent.includes("0,00"))).toBe(true);
   });
 
   it("⚠⚠ e NÃO existe linha nem coluna de TOTAL, nos dois modos", async () => {

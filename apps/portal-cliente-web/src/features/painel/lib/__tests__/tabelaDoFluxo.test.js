@@ -21,7 +21,7 @@ const mes = (linhas, competencia = "2026-08") => ({ competencia, linhas });
 
 describe("as seis colunas", () => {
   it("⚠ a ordem é a do spec, e o Mês não é coluna de valor", () => {
-    expect(COLUNAS.map((c) => c.chave)).toEqual(["entrada", "saida", "impostos", "folha", "resultado"]);
+    expect(COLUNAS.map((c) => c.chave)).toEqual(["entrada", "saida", "impostos", "folha", "resultado", "saldo"]);
   });
 
   it("⚠⚠ Impostos e Folha saem de dentro da SAÍDA, pela FONTE — não são dado novo", () => {
@@ -301,7 +301,7 @@ describe("⚠⚠ gradeTransposta — o horizonte", () => {
   it("categoria vira LINHA e mês vira COLUNA", () => {
     const g = gradeTransposta(tres);
     expect(g.competencias).toEqual(["2026-08", "2026-09", "2026-10"]);
-    expect(g.linhas.map((l) => l.chave)).toEqual(["entrada", "saida", "impostos", "folha", "resultado"]);
+    expect(g.linhas.map((l) => l.chave)).toEqual(["entrada", "saida", "impostos", "folha", "resultado", "saldo"]);
     expect(g.linhas[0].celulas.map((c) => c && c.valor)).toEqual([1000, 2000, 3000]);
   });
 
@@ -315,7 +315,7 @@ describe("⚠⚠ gradeTransposta — o horizonte", () => {
 
   it("⚠ sem folha lançada a LINHA da folha não existe — quem decide é o servidor", () => {
     expect(gradeTransposta(tres, { comFolha: false }).linhas.map((l) => l.chave))
-      .toEqual(["entrada", "saida", "impostos", "resultado"]);
+      .toEqual(["entrada", "saida", "impostos", "resultado", "saldo"]);
   });
 
   it("⚠⚠ a entrada de cada coluna viaja junto — a base do modo % é POR MÊS", () => {
@@ -332,7 +332,7 @@ describe("⚠⚠ gradeTransposta — o horizonte", () => {
   it("lista vazia devolve as categorias sem coluna nenhuma", () => {
     const g = gradeTransposta([]);
     expect(g.competencias).toEqual([]);
-    expect(g.linhas).toHaveLength(5);
+    expect(g.linhas).toHaveLength(6);
     expect(g.linhas[0].celulas).toEqual([]);
   });
 });

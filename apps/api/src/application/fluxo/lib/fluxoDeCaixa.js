@@ -507,6 +507,18 @@ export function diaDaData(d) {
  * contador faz olhando uma projeção, e uma linha sem resposta a ela é um número mágico. Na previsão
  * a base carrega o `n`, a janela e o CV; no fato, ela nomeia a origem ("DAS gerado, vence 20/08").
  */
+// Cada linha exibida é uma unidade monetária em centavos. Deslocar pela notação
+// decimal evita 1.005 * 100 = 100.499999...; o módulo preserva arredondamento
+// simétrico para estornos negativos, inclusive o meio centavo (-0.005 → -0.01).
+export function arredondarMoedaDoFluxo(valor) {
+  const n = numero(valor);
+  if (n == null) return null;
+  const [coeficiente, expoente = "0"] = String(Math.abs(n)).split("e");
+  const centavos = Math.round(Number(coeficiente + "e" + (Number(expoente) + 2)));
+  const resultado = Math.sign(n) * centavos / 100;
+  return resultado === 0 ? 0 : resultado;
+}
+
 export function montarLinha({
   fonte, direcao, procedencia, competencia = null, dia = null,
   diaDesconhecido = null, valor = null, rotulo, base = null, referencia = null,
@@ -522,7 +534,7 @@ export function montarLinha({
       ? { motivo: diaDesconhecido, frase: FRASE_DO_DIA_DESCONHECIDO[diaDesconhecido] }
       : null,
     // ⚠⚠ `DESCONHECIDO` não carrega valor: ele é CONTAGEM. Um valor aqui seria somado por alguém.
-    valor: procedencia === PROCEDENCIA.DESCONHECIDO ? null : numero(valor),
+    valor: procedencia === PROCEDENCIA.DESCONHECIDO ? null : arredondarMoedaDoFluxo(valor),
     rotulo: texto(rotulo),
     base,
     // ⚠ O id da origem, para a tela poder levar o contador até ela. Nunca a linha inteira.
@@ -574,6 +586,9 @@ export function projecaoSubstituidaPelaGuia(linhas) {
         // ⚠ Igualdade EXATA com o tipo, nunca "qualquer guia": ver o cabeçalho.
         && texto(l.base?.tipoDaGuia) === TIPO_DA_GUIA_QUE_SUBSTITUI
         && l.base?.ehParcelamento !== true
+        // A guia atrasada de outra competência não quita o imposto previsto deste mês.
+        && /^\d{4}-(0[1-9]|1[0-2])$/.test(texto(l.base?.competenciaDaGuia))
+        && somarMeses(l.base.competenciaDaGuia, 1) === l.competencia
       ))
       .map((l) => l.competencia),
   );

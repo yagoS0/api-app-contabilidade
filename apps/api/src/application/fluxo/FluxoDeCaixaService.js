@@ -1,3 +1,4 @@
+import { lerSaldoInicialFluxo, aplicarSaldosProjetados } from "./SaldoInicialFluxoService.js";
 // O FLUXO DE CAIXA — a ligação com o banco.
 //
 // ⚠⚠ ESTE SERVIÇO É **SÓ LEITURA**. Ele não grava nada, não marca nada, não cria lançamento nenhum.
@@ -114,7 +115,7 @@ export function cicloDeHoje(agora = new Date()) {
  * | | antes | agora |
  * |---|---|---|
  * | guia paga | **não existia** (`paymentStatus` filtrava `OPEN`/`OVERDUE`) | `FATO`, no mês do PAGAMENTO |
- * | guia em aberto | `FATO`, no mês do VENCIMENTO | `COMPROMISSO`, no mês CORRENTE |
+ * | guia em aberto | `FATO`, no mês do VENCIMENTO | previsão/compromisso no vencimento futuro; atraso no mês corrente |
  *
  * ⚠⚠ **A GUIA PAGA SUMIA DO PAYLOAD INTEIRO** — nem em `linhas`, nem em `semMes`, nem em
  * `vencidas`. Era isso que fazia um mês passado aparecer sem imposto nenhum: tudo que foi pago
@@ -248,7 +249,7 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
         dia: diaDaData(g.paymentConfirmedAt),
         valor,
         rotulo,
-        base: { frase: `${rotulo} paga`, pagaEm: competencia },
+        base: { frase: `${rotulo} paga`, pagaEm: competencia, tipoDaGuia: texto(g.tipo) || "OUTRA", ehParcelamento: Boolean(g.parcelamentoId), competenciaDaGuia: texto(g.competencia) || null },
         referencia,
       }));
       continue;
@@ -274,6 +275,9 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
 
     const vence = isoDaData(dataDeVencimento);
     const atrasada = vence != null && hoje != null && vence < hoje;
+    // Só a dívida já vencida migra para o presente; vencimentos futuros mantêm seu mês.
+    const mesDeVencimento = competenciaDaData(dataDeVencimento);
+    const mesDaSaida = atrasada ? cicloAtual : mesDeVencimento;
     /**
      * ⚠⚠⚠ A GUIA SÓ VIRA COMPROMISSO DEPOIS DE LIBERADA — decisão do dono, 02/09/2026:
      * *"as únicas guias que devem aparecer no portal do cliente são as liberadas pelo contador"*,
@@ -296,12 +300,9 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
       // ⚠⚠ Nem FATO nem sempre COMPROMISSO: o dinheiro não saiu, e o compromisso só existe depois
       // que o documento chega ao cliente. Antes disso, é previsão.
       procedencia: g.liberadaCliente ? PROCEDENCIA.COMPROMISSO : PROCEDENCIA.PREVISAO,
-      // ⚠⚠ O MÊS CORRENTE, NÃO O DO VENCIMENTO — Lei 1. A guia de julho que ninguém pagou é
-      // dinheiro que sai de AGOSTO, e mostrá-la em julho diria que julho já custou aquilo.
-      competencia: cicloAtual,
-      // ⚠ O dia do vencimento continua sendo o dia da linha quando ele cai no mês corrente. Fora
-      // dele o dia não vale: ele é de outro mês, e usá-lo aqui apontaria para uma data que passou.
-      dia: competenciaDaData(dataDeVencimento) === cicloAtual ? diaDaData(dataDeVencimento) : null,
+      competencia: mesDaSaida,
+      // Vencimento futuro conserva seu dia; atraso de outro mês permanece sem data prometida.
+      dia: mesDeVencimento === mesDaSaida ? diaDaData(dataDeVencimento) : null,
       diaDesconhecido: DIA_DESCONHECIDO.COMPROMISSO_EM_ATRASO,
       valor,
       rotulo,
@@ -328,6 +329,7 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
         vencimentoPresumido,
         // ⚠⚠ O TIPO E A MARCA DE PARCELAMENTO VIAJAM — e é delas que `projecaoSubstituidaPelaGuia`
         // precisa para não deixar uma PARCELA apagar a projeção do DAS do mês. Ver aquela função.
+        competenciaDaGuia: texto(g.competencia) || null,
         tipoDaGuia: texto(g.tipo) || "OUTRA",
         ehParcelamento: Boolean(g.parcelamentoId),
       },
@@ -966,12 +968,17 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     }),
   ]);
 
+  const saldoInicial = await lerSaldoInicialFluxo(portalClientId, client);
+  const mesDaAncora = saldoInicial?.dataReferencia?.slice(0, 7);
+  const mesDaPrimeiraNota = competenciaDaData(primeiraNota?.competencia);
+  const limiteInicial = mesDaAncora && (!mesDaPrimeiraNota || mesDaAncora < mesDaPrimeiraNota) ? mesDaAncora : mesDaPrimeiraNota;
   const janela = janelaDoFluxo({
     cicloAtual: ciclo,
     janelaInicio: texto(janelaInicio) || null,
-    companyStart: competenciaDaData(primeiraNota?.competencia),
+    companyStart: limiteInicial,
   });
   const inicio = janela?.inicio || ciclo;
+  const inicioDados = mesDaAncora && mesDaAncora < inicio ? mesDaAncora : inicio;
   // ⚠ Quantos meses da janela ainda estão à frente — é até onde a projeção recorrente vai.
   const mesesFuturosDaJanela = Math.max(
     0,
@@ -980,18 +987,18 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
 
   const [guias, notas, series, snapshot, folha, saidasDoCliente, despesas] = await Promise.all([
     linhasDasGuias({ portalClientId, cicloAtual: ciclo, hoje: dia, client }),
-    linhasDasNotas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
+    linhasDasNotas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicioDados, client }),
     linhasDasSeries({ portalClientId, cicloAtual: ciclo, mesesAProjetar: mesesFuturosDaJanela, client }),
     ultimaApuracao({ portalClientId, client }),
     // ⚠⚠ A FOLHA PASSOU A SAIR DO PAGAMENTO (a saída de caixa), não da provisão bruta — ver o
     // cabeçalho de `linhasDaFolhaPelaSaidaDeCaixa`. `linhasDaFolha` (a leitura por provisão) fica
     // no arquivo, SEM CHAMADOR e com lápide: ela é a leitura que o Fator R usa, e apagá-la aqui
     // convidaria alguém a "consertar" a conferência do Fator R junto.
-    linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
-    linhasDasSaidasDoCliente({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
+    linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual: ciclo, janelaInicio: inicioDados, client }),
+    linhasDasSaidasDoCliente({ portalClientId, cicloAtual: ciclo, janelaInicio: inicioDados, client }),
     // ⚠⚠ A DESPESA LANÇADA — o que faz valer a regra do dono (*"ao lançar entra no fluxo"*). Até
     // 01/09/2026 ela não estava aqui, e o trabalho principal da Conferência não chegava ao cliente.
-    linhasDasDespesasLancadas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
+    linhasDasDespesasLancadas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicioDados, client }),
   ]);
 
   const aliquota = aliquotaEfetiva(snapshot);
@@ -1098,7 +1105,8 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     demonstracao: false,
     cicloAtual: ciclo,
     horizonte: HORIZONTE_MESES,
-    meses,
+    meses: aplicarSaldosProjetados({ meses, linhas: semDuplicata, saldoInicial }),
+    saldoInicial,
     // ⚠⚠ NADA SOME EM SILÊNCIO: o que não pôde ser posto em mês nenhum sai NOMEADO, com o conserto.
     semMes: [...guias.semMes, ...notas.semMes, ...series.semMes],
     /**

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { saldoInicialFluxoRouter } from "./saldoInicialFluxo.js";
 import { INTEGRACAO_PERFIL_EMISSAO_NFSE } from "../../config.js";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
@@ -911,6 +912,7 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
    */
   router.get("/companies/:companyId/fluxo-de-caixa", requireClientCompanyAccess(), (req, res) =>
     responderFluxoDeCaixa(req, res, { log }));
+  router.use(saldoInicialFluxoRouter({ log }));
 
   /**
    * ⚠⚠ A TRADUÇÃO PARA HTTP — e ela NÃO decide nada, só traduz.

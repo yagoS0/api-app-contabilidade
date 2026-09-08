@@ -1306,6 +1306,7 @@ function criarEstado() {
      * modo offline — em produção quem guarda é `saidas_avulsas_cliente` e `series_recorrentes`.
      */
     saidasDoCliente: new Map(),
+    saldosIniciais: new Map(),
     // ⚠⚠ O que o cliente MEXEU nas séries do fluxo (31/08/2026): `empresa -> { serieId: dia }` e
     // `empresa -> [serieId]`. Sem eles, mudar o dia e excluir não mudariam nada na tela offline.
     diasDasSeries: new Map(),
@@ -2224,14 +2225,28 @@ export function createMockApi() {
      * são função (`api/index.js`): função que exista só no mock **nunca é alcançada** no modo
      * `real_with_mock_fallback` — ela some do objeto e vira `api.getFluxoCaixa is not a function`.
      */
+    async salvarSaldoInicial(companyId, dados) {
+      const id = exigirAcessoEmpresa(companyId);
+      const valor = String(dados?.valor ?? "");
+      const ano = Number(String(dados?.dataReferencia || "").slice(0, 4));
+      if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(dados?.dataReferencia || "") || ano < 1900 || ano > 2199 || !/^-?\d+(\.\d{1,2})?$/.test(valor) || Math.abs(Number(valor)) > 999999999999.99) throw new Error("Saldo inicial inválido.");
+      const saldoInicial = { dataReferencia: dados.dataReferencia, valor: Number(valor), origem: "DECLARADO" };
+      estado.saldosIniciais.set(id, saldoInicial);
+      return { ok: true, saldoInicial };
+    },
+    async excluirSaldoInicial(companyId) {
+      const id = exigirAcessoEmpresa(companyId); estado.saldosIniciais.delete(id);
+      return { ok: true, saldoInicial: null };
+    },
     async getFluxoCaixa(companyId, { competencia, janelaInicio } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
-      const ciclo = competencia || competenciaPadrao();
+      const ciclo = competenciaPadrao();
       // ⚠⚠ `janelaInicio` é OUTRA pergunta que `competencia`: uma diz onde a tabela começa, a outra
       // diz que mês é "hoje". Passar a mesma nos dois faria a seta ‹ mover o mês pintado de ciano.
       return fluxoDeCaixaDoMock(id, ciclo, {
-        janelaInicio,
+        saldoInicial: estado.saldosIniciais.get(id) || null,
+        janelaInicio: janelaInicio || competencia,
         cientes: estado.cienciasDeGuias.get(id) || [],
         // ⚠⚠ SEM ISTO, criar uma saída não mudaria NADA na tela offline — e um mock que aceita a
         // escrita e não a mostra treina a tela a parecer quebrada. É a quinta vez que este mock

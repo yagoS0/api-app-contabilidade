@@ -62,13 +62,13 @@ jobs:
       - run: npm run prisma:generate -w @contabilidade/api
       - name: Calendar rules and exceptions
         working-directory: apps/api
-        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='obrigacoes'
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='obrigacoes|dre|fluxo|Fluxo'
       - name: Accountant frontend regression
         working-directory: apps/web
         run: node ../../node_modules/jest/bin/jest.js --runInBand --silent
-      - name: Shared invoice operation validation in client portal
+      - name: Client portal regression
         working-directory: apps/portal-cliente-web
-        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='dadosDaOperacao'
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent
 
   whatsapp-regression:
     runs-on: ubuntu-latest
@@ -121,6 +121,8 @@ jobs:
         run: |
           node scripts/verify-serpro-reservations-postgres.js --url "$DATABASE_URL"
           node scripts/verify-calendar-series-postgres.js --url "$DATABASE_URL"
+          node scripts/verify-cashflow-balance-postgres.js --url "$DATABASE_URL"
+          node scripts/verify-dre-postgres.js --url "$DATABASE_URL"
       - name: Verify concurrent delivery and delayed callbacks
         working-directory: apps/api
         run: node scripts/verify-whatsapp-delivery-postgres.js --url "$DATABASE_URL"

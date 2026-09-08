@@ -23,12 +23,41 @@
 // abaixo prende isso pelo lado contrário: o valor da receita é diferente de tudo que está no fluxo,
 // então ele cairia se alguém "alinhasse" os três lendo a mesma linha.
 
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { api } from "../../../api";
 import { PainelPage } from "../PainelPage";
 
 const COMPETENCIA = "2026-08";
 const SEGUINTE = "2026-09";
+
+test("salvar no fluxo atualiza também os cards do painel", async () => {
+  const p = await abrir();
+  const antes = api.getFluxoCaixa.mock.calls.length;
+  jest.spyOn(api, "salvarSaldoInicial").mockImplementation(async () => {
+    p.meses[1].linhas[0].valor = 50000;
+    return { ok: true, saldoInicial: { dataReferencia: "2026-08-01", valor: 1000 } };
+  });
+  fireEvent.click(screen.getByText("Informar saldo inicial"));
+  fireEvent.change(screen.getByLabelText("Valor inicial (R$)"), { target: { value: "1000" } });
+  fireEvent.click(screen.getByText("Salvar saldo inicial"));
+  await waitFor(() => expect(api.getFluxoCaixa.mock.calls.length).toBeGreaterThanOrEqual(antes + 2));
+  await waitFor(() => expect(card("Resultado").numero).toMatch(/47.000/));
+});
+
+test("falha do fluxo aparece no resumo e tentar novamente também recarrega os cards", async () => {
+  await abrir();
+  api.getFluxoCaixa.mockRejectedValue(new Error("Fluxo indisponível"));
+  // Falha posterior à edição força as duas leituras e deve permanecer visível.
+  jest.spyOn(api, "salvarSaldoInicial").mockResolvedValue({ ok: true });
+  fireEvent.click(screen.getByText("Informar saldo inicial"));
+  fireEvent.change(screen.getByLabelText("Valor inicial (R$)"), { target: { value: "0" } });
+  fireEvent.click(screen.getByText("Salvar saldo inicial"));
+  await waitFor(() => expect(screen.getByText(/Não foi possível carregar o resumo do mês/)).toBeInTheDocument());
+  api.getFluxoCaixa.mockResolvedValue(payload());
+  const botoes = screen.getAllByRole("button", { name: /Tentar de novo/i });
+  fireEvent.click(botoes[0]);
+  await waitFor(() => expect(card("Resultado").numero).toMatch(/17.000/));
+});
 
 /** Uma linha do payload, na forma que o servidor manda. */
 const linha = (fonte, direcao, procedencia, valor, competencia) => ({

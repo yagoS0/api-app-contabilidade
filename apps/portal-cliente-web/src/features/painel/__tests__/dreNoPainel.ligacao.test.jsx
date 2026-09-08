@@ -35,6 +35,19 @@ const real = (over = {}) => ({
 
 afterEach(() => { jest.restoreAllMocks(); });
 
+test("DRE provisória expõe motivos e inconsistências sem ocultar linhas", async () => {
+  await abrirDre(real({ qualidade: { provisorio: true, motivos: ["Contas sem classificação"] }, inconsistencias: [{ causa: "VALOR_INVALIDO", frase: "Existe lançamento com valor inválido." }] }));
+  expect(screen.getByText("DRE provisória")).toBeInTheDocument();
+  expect(screen.getByText("Contas sem classificação")).toBeInTheDocument();
+  expect(screen.getByText("Existe lançamento com valor inválido.")).toBeInTheDocument();
+  expect(document.querySelectorAll(".table--dre tbody tr")).toHaveLength(LINHAS_DO_DRE.length);
+});
+test("códigos de qualidade não aparecem como texto técnico para o cliente", async () => {
+  await abrirDre(real({ qualidade: { provisorio: true, motivos: ["sem_codigo_completo", "resultado_sem_mapeamento", "lancamento_rascunho"] } }));
+  expect(screen.getByText(/Existem lançamentos em rascunho/)).toBeInTheDocument();
+  expect(document.body.textContent).not.toMatch(/sem_codigo_completo|resultado_sem_mapeamento|lancamento_rascunho/);
+});
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 describe("⚠⚠ o DRE real apaga o selo — e quem decide é o DADO", () => {
   it("com `demonstracao: false` o selo some", async () => {

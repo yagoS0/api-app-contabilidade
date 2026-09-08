@@ -941,6 +941,7 @@ model PortalClient {
   relatoriosFaturamento   RelatorioFaturamento[]
   seriesRecorrentes       SerieRecorrente[]
   saidasAvulsasCliente    SaidaAvulsaCliente[]
+  saldosIniciaisFluxo     SaldoInicialFluxo[]
   /// Trocas de senha do usuário do portal feitas PELO ESCRITÓRIO nesta empresa. NENHUMA coluna
   /// nova aqui — a FK mora em `senhas_portal_trocas.portalClientId`, e ela é NULA nos caminhos do
   /// cliente (perfil e recuperação), que não passam por empresa nenhuma.
@@ -970,6 +971,20 @@ model PortalClient {
 ///   das | inss | extrato | presumido | parcelamento | pagamento
 /// PIS/COFINS/CSLL/IRPJ NÃO são rotinas: vêm juntos numa única consulta, a do `presumido`,
 /// e são separados aqui por código de receita (ver parseDctfwebDeclaracao.js).
+/// Histórico append-only da âncora gerencial. Valor nulo registra remoção, sem apagar histórico.
+model SaldoInicialFluxo {
+  id             Int       @id @default(autoincrement())
+  portalClientId String
+  dataReferencia DateTime? @db.Date
+  valor          Decimal?  @db.Decimal(18, 2)
+  criadoPor      String
+  criadoEm       DateTime  @default(now())
+  portalClient   PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, id])
+  @@map("saldos_iniciais_fluxo")
+}
+
 model CompanyRotina {
   id             String   @id @default(uuid())
   portalClientId String

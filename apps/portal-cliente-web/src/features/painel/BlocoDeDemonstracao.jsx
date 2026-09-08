@@ -55,6 +55,7 @@ import { PopUpDeGuias } from "./PopUpDeGuias";
 import { SuasSaidas } from "./SuasSaidas";
 import { GavetaDoDia } from "./GavetaDoDia";
 import { GuiasVencidas } from "./GuiasVencidas";
+import { SaldoInicial } from "./SaldoInicial";
 
 /**
  * ⚠⚠ A FOLGA que a tela pede ao servidor quando a seta chega na BORDA da janela carregada.
@@ -175,7 +176,7 @@ function Celula({ celula, coluna, unidade, entradaDoPeriodo, aoAbrir, rotuloDoPe
    * uma gaveta ali teria de inventar o que listar. Quem responde "de onde veio" são as outras
    * quatro colunas.
    */
-  const abre = typeof aoAbrir === "function" && coluna !== "resultado";
+  const abre = typeof aoAbrir === "function" && !["resultado", "saldo"].includes(coluna);
 
   if (!celula) {
     /**
@@ -591,6 +592,8 @@ function Dre({ dados }) {
 
   return (
     <>
+      {dados.qualidade?.provisorio && <div className="alerta alerta-aviso" role="status"><strong>DRE provisória</strong><p>Há lançamentos ou contas que precisam de revisão pelo contador.</p>{[...new Set((dados.qualidade.motivos || []).map(m => m === "lancamento_rascunho" ? "Existem lançamentos em rascunho; os valores podem mudar após a revisão." : typeof m === "string" && !/^[a-z0-9_]+$/i.test(m) ? m : null).filter(Boolean))].map(m => <p key={m}>{m}</p>)}</div>}
+      {(dados.inconsistencias || []).length > 0 && <div className="alerta alerta-aviso" role="alert"><strong>Inconsistências nos lançamentos</strong>{dados.inconsistencias.map((i,n) => <p key={i.causa || n}>{i.frase}</p>)}</div>}
       <div className="table-wrap">
         <table className="table table--dre">
           <tbody>
@@ -604,7 +607,7 @@ function Dre({ dados }) {
               return (
                 <tr key={l.chave} data-linha-dre={l.tipo}>
                   <td>{forte ? <strong>{l.rotulo}</strong> : l.rotulo}</td>
-                  <td className="num" data-negativo={alerta ? "sim" : undefined}>
+                  <td className="num" style={{whiteSpace: "nowrap"}} data-negativo={alerta ? "sim" : undefined}>
                     {forte ? <strong>{brl(l.valor)}</strong> : brl(l.valor)}
                   </td>
                 </tr>
@@ -646,7 +649,8 @@ function Dre({ dados }) {
   );
 }
 
-export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, hoje: hojeInjetado = null }) {
+export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtualizarFluxo, somenteLeitura = false, hoje: hojeInjetado = null }) {
+  const notificarMudanca = () => { fluxoQuery.recarregar(); aoAtualizarFluxo?.(); };
   const [visao, setVisao] = useState("fluxo");
   /** ⚠ `rs` × `pct` — v3 §3.6. Ele combina livremente com Fluxo/DRE e sobrevive à troca de modo. */
   const [unidade, setUnidade] = useState("rs");
@@ -678,6 +682,11 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, hoje: 
    * célula daquela coluna.
    */
   const [gaveta, setGaveta] = useState(null);
+  useEffect(() => {
+    setJanelaInicio(null);
+    setMesEsquerda(null);
+    setGaveta(null);
+  }, [companyId, competencia]);
 
   /**
    * ⚠ O RELÓGIO É LIDO AQUI, na borda, e desce INJETADO — a regra pura (`janelaDeDias`) continua
@@ -716,7 +725,7 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, hoje: 
   const meses = Array.isArray(dados?.meses) ? dados.meses : [];
   const janela = dados?.janela || null;
   /** ⚠ O ciclo do servidor manda no bloco da esquerda enquanto ninguém tiver andado. */
-  const esquerda = mesEsquerda || dados?.cicloAtual || competencia;
+  const esquerda = mesEsquerda || competencia || dados?.cicloAtual;
   const par = parDeMeses(meses, esquerda);
   const nav = navegacaoDoPar({ meses, esquerda, janela });
   /**
@@ -866,6 +875,8 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, hoje: 
       </div>
 
       {demonstracao ? <Selo /> : null}
+      <div hidden={visao !== "fluxo"}><SaldoInicial key={companyId} companyId={companyId} competencia={competencia} saldo={fluxoQuery.dados?.saldoInicial} api={api} aoMudar={notificarMudanca} somenteLeitura={somenteLeitura} disponivel={visao === "fluxo" && !fluxoQuery.carregando && !fluxoQuery.erro && Boolean(fluxoQuery.dados)} /></div>
+      {visao === "fluxo" && <p className="hint">Resultado mensal soma as movimentações do mês. Saldo projetado inclui o saldo inicial informado e transporta os meses; não é saldo bancário conciliado.</p>}
 
       {atual.carregando ? <Carregando /> : null}
 
@@ -968,7 +979,7 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, hoje: 
         aoFechar={() => setGaveta(null)}
         /* ⚠ Criada a saída, quem recarrega é o BLOCO — com a MESMA consulta que desenha a tabela.
            Acrescentar a linha na mão faria a gaveta e a tabela discordarem até a próxima leitura. */
-        aoMudar={() => { setGaveta(null); atual.recarregar(); }}
+        aoMudar={() => { setGaveta(null); notificarMudanca(); }}
       />
 
       {mostraPopUp ? (

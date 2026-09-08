@@ -497,12 +497,24 @@ export function fluxoDeCaixaDoMock(companyId, competencia, opcoes = {}) {
     },
   ];
 
+  const saldoInicial = opcoes.saldoInicial || null;
+  const ancora = saldoInicial?.dataReferencia?.slice(0, 7);
+  const movimento = (comp) => linhas.filter(l => l.competencia === comp && l.procedencia !== "DESCONHECIDO")
+    .reduce((s,l) => s + (l.direcao === "ENTRADA" ? 1 : -1) * Number(l.valor || 0), 0);
+  for (const mes of meses) {
+    if (!ancora || mes.competencia < ancora) { mes.saldo = { inicial: null, final: null, projetado: true }; continue; }
+    const anterior = linhas.filter(l => l.competencia >= ancora && l.competencia < mes.competencia && l.procedencia !== "DESCONHECIDO")
+      .reduce((s,l) => s + (l.direcao === "ENTRADA" ? 1 : -1) * Number(l.valor || 0), 0);
+    const inicial = Math.round((saldoInicial.valor + anterior) * 100) / 100;
+    mes.saldo = { inicial, final: Math.round((inicial + movimento(mes.competencia)) * 100) / 100, projetado: true };
+  }
   const cientes = new Set(opcoes.cientes || []);
   const itens = emAberto;
 
   return {
     // ⚠⚠ É ESTE CAMPO que apaga o selo, e ele espelha o do servidor.
     demonstracao: false,
+    saldoInicial,
     cicloAtual: ciclo,
     horizonte: HORIZONTE,
     meses,
