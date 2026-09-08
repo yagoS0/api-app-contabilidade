@@ -21,7 +21,7 @@ const LOCK_TTL_MS = 90_000;
 /** A mensagem `in` → um turno da API. Mídia vira uma frase entre colchetes (o modelo não a lê). */
 function paraTurno(m) {
   if (m.direcao === DIRECAO.ENTRADA) {
-    const texto = m.tipo === "text" ? String(m.corpo || "") : `[${m.tipo || "mídia"} recebida — sem texto]`;
+    const texto = ["text", "interactive"].includes(m.tipo) ? String(m.corpo || "") : `[${m.tipo || "mídia"} recebida — sem texto]`;
     return { role: "user", content: texto || "[mensagem vazia]" };
   }
   const texto = String(m.corpo || "").trim();
@@ -29,11 +29,20 @@ function paraTurno(m) {
 }
 
 /** Turnos consecutivos do mesmo papel são fundidos (a API exige alternância), e o primeiro é `user`. */
-export function montarHistorico(mensagens) {
-  const ordenadas = [...(mensagens || [])].filter(m => m.direcao !== DIRECAO.SAIDA || !["enviando", "falhou", "indeterminado"].includes(m.statusEnvio)).sort((a, b) => new Date(a.registradaEm) - new Date(b.registradaEm));
+export function montarHistorico(mensagens, mensagemAtual = null) {
+  // O worker pode começar depois de outras entradas/saídas. O pedido que disparou este turno
+  // sempre termina o histórico; uma resposta posterior nunca vira prefixo de assistant.
+  const anteriores = mensagemAtual
+    ? (mensagens || []).filter(m => m.id !== mensagemAtual.id && new Date(m.registradaEm) < new Date(mensagemAtual.registradaEm))
+    : (mensagens || []);
+  const ordenadas = [...anteriores, ...(mensagemAtual ? [mensagemAtual] : [])].filter(m => m.direcao !== DIRECAO.SAIDA || !["enviando", "falhou", "indeterminado"].includes(m.statusEnvio)).sort((a, b) => new Date(a.registradaEm) - new Date(b.registradaEm));
   const turnos = [];
   for (const m of ordenadas) {
     const t = paraTurno(m);
+    if (mensagemAtual) {
+      const data = new Date(m.registradaEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+      t.content = `[${m.id === mensagemAtual.id ? "Mensagem atual" : "Histórico"} · ${data}]\n${t.content}`;
+    }
     const ultimo = turnos[turnos.length - 1];
     if (ultimo && ultimo.role === t.role) ultimo.content = `${ultimo.content}\n${t.content}`;
     else turnos.push(t);
@@ -70,6 +79,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
   let timer = null;
   let leaseValido = true;
   let houveSaida = false;
+  let encaminhamentoDoTurno = null;
   try {
     if (!deps.leaseExterno) {
       lock = deps.tryLock ? await deps.tryLock(lockId, LOCK_TTL_MS) : await adquirirLease(lockId, { client, ttlMs: LOCK_TTL_MS });
@@ -96,7 +106,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       const codigo = atual?.excluidaEm ? "CHAT_EXCLUIDO"
         : corte != null && (!Number.isFinite(recebidaEm) || recebidaEm <= corte) ? "AUTOMACAO_INVALIDADA"
         : !atual?.escopoVerificado || atual.portalClientId !== conversa.portalClientId ? "SEM_ESCOPO_VERIFICADO"
-        : atual.atendidaPor || atual.atendidaDesde ? "ASSUMIDA_POR_HUMANO"
+        : atual.atendidaPor || (atual.atendidaDesde && (!encaminhamentoDoTurno || new Date(atual.atendidaDesde).getTime() !== encaminhamentoDoTurno.getTime())) ? "ASSUMIDA_POR_HUMANO"
           : !(deps.flag ?? INTEGRACAO_WHATSAPP_IA) || !(deps.piloto ?? IA_EMPRESAS_PILOTO).includes(conversa.portalClientId) ? "FORA_DO_PILOTO" : null;
       if (codigo) throw Object.assign(new Error("O assistente foi suspenso nesta conversa."), { codigo });
     };
@@ -143,6 +153,22 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       }
       return atual;
     };
+    const encaminharParaEquipe = async () => {
+      await conferirPortao();
+      const quando = new Date();
+      const r = await client.conversaWhatsapp.updateMany({ where: {
+        id: conversa.id, portalClientId: conversa.portalClientId, escopoVerificado: true,
+        excluidaEm: null, atendidaPor: null, atendidaDesde: null,
+        OR: [{ automacaoInvalidadaEm: null }, { automacaoInvalidadaEm: { lt: mensagem.registradaEm } }],
+      }, data: { atendidaDesde: quando } });
+      if (!r.count) throw Object.assign(new Error("A conversa mudou antes do encaminhamento."), { codigo: "AUTOMACAO_INVALIDADA" });
+      encaminhamentoDoTurno = quando;
+    };
+    const encaminharFalha = async () => {
+      await encaminharParaEquipe();
+      // O encaminhamento fica persistido mesmo se o aviso pela Meta falhar.
+      await dizer(MENSAGENS_FIXAS.ERRO_MODELO, { autor: AUTOR.SISTEMA });
+    };
 
     // 4. A pendência — lida pela regex, ANTES do modelo.
     const pendente = await pendenciaAberta(conversa.id, { client });
@@ -181,13 +207,13 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
 
     const guarda = await autorizarChamadaIa({ portalClientId: conversa.portalClientId, conversaId: conversa.id, mensagemId: mensagem.id, finalidade: "assistente_whatsapp", agora, client, log, ...(deps.chaveIa !== undefined ? { chave: deps.chaveIa } : {}) });
     if (!guarda.ok) {
-      await dizer(guarda.mensagem, { autor: AUTOR.SISTEMA });
+      await encaminharFalha();
       return { feito: true, motivo: guarda.motivo };
     }
 
     const janela = await janelaDaConversa(conversa.id, agora);
-    const historico = await client.mensagemWhatsapp.findMany({ where: { conversaId: conversa.id }, orderBy: { registradaEm: "desc" }, take: IA_HISTORICO_MENSAGENS });
-    const messages = montarHistorico(historico);
+    const historico = await client.mensagemWhatsapp.findMany({ where: { conversaId: conversa.id, registradaEm: { lt: mensagem.registradaEm } }, orderBy: { registradaEm: "desc" }, take: IA_HISTORICO_MENSAGENS });
+    const messages = montarHistorico(historico, mensagem);
     const system = montarSystem({ empresa: conversa.portalClient, sessao, pendencia: null, janela: { aberta: janela.situacao === SITUACOES_JANELA.ABERTA }, hoje: agora });
 
     const pendenciasDoTurno = [];
@@ -255,14 +281,20 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     } catch (err) {
       await concluirChamadaIa(guarda.contexto, { usage: iniciouModelo ? err?.usage : { input_tokens: 0, output_tokens: 0 }, usageCompleto: !iniciouModelo, iteracoes: err?.iteracoes, ferramentas: err?.ferramentasChamadas, erroCodigo: err?.codigo || "IA_ERRO", erroMensagem: err?.message }, { client, log });
       if (!iniciouModelo) throw err;
-      log?.error?.({ conversaId: conversa.id, codigo: err?.codigo, err: err?.message }, "assistente: o modelo não respondeu");
-      await dizer(MENSAGENS_FIXAS.ERRO_MODELO, { autor: AUTOR.SISTEMA });
+      log?.error?.({ conversaId: conversa.id, mensagemId: mensagem.id, codigo: err?.codigo, err: err?.message, diagnostico: err?.diagnostico, modelo: assistente.modelo, iteracoes: err?.iteracoes, ferramentas: err?.ferramentasChamadas }, "assistente: o modelo não respondeu");
+      await encaminharFalha();
       return { feito: true, motivo: err?.codigo || "IA_ERRO" };
     }
     await concluirChamadaIa(guarda.contexto, { usage: resposta.usage, iteracoes: resposta.iteracoes, ferramentas: resposta.ferramentasChamadas, stopReason: resposta.stopReason }, { client, log });
 
+    if (resposta.recusou || ["max_tokens", "max_iteracoes"].includes(resposta.stopReason) || (!resposta.texto?.trim() && !houveSaida && !pendenciasDoTurno.length)) {
+      await encaminharFalha();
+      return { feito: true, motivo: "RESPOSTA_INCOMPLETA" };
+    }
+
     // 6. A resposta — e, se houve pendência, o texto de confirmação EXATO como segunda mensagem.
-    const texto = resposta.recusou ? MENSAGENS_FIXAS.RECUSA_MODELO : (resposta.texto || "").trim();
+    if (chamouEscritorio) await encaminharParaEquipe();
+    const texto = (resposta.texto || "").trim();
     if (texto) {
       // A ferramenta pode ter lido dados e a autorização ser retirada enquanto o modelo redige a
       // frase final. Reconfere o mesmo usuário, papel e conjunto de permissões antes de liberar o
@@ -281,7 +313,6 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     }
     if (chamouEscritorio) {
       await conferirPortao();
-      await client.conversaWhatsapp.update({ where: { id: conversa.id }, data: { atendidaDesde: agora } }).catch(() => {});
       await registrarMensagemEnviada({ telefone: conversa.telefoneE164, portalClientId: conversa.portalClientId, tipo: "text", corpo: `[pedido de atendimento humano] ${chamouEscritorio.motivo}`, autor: AUTOR.SISTEMA }).catch(() => {});
     }
     return { feito: true, motivo: "RESPONDIDA", texto };

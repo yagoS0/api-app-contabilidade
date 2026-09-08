@@ -12,7 +12,7 @@
 // recebe `executar(nome, input)` e devolve texto + uso. Toda decisão de negócio mora nas ferramentas.
 //
 // ⚠ Máximo de iterações (default 6): sem teto, um modelo que insiste numa ferramenta que recusa
-// gasta dinheiro em laço. Estourou ⇒ a resposta é o texto que houver + `stopReason: "max_iteracoes"`.
+// gasta dinheiro em laço. Estourou ⇒ texto vazio + `stopReason: "max_iteracoes"`, para handoff.
 
 import Anthropic from "@anthropic-ai/sdk";
 import { IA_MODELO, IA_MAX_TOKENS, IA_ESFORCO, IA_MAX_ITERACOES, log as logPadrao } from "../../config.js";
@@ -82,7 +82,12 @@ export class AssistenteClient {
     const usages = [];
     const ferramentasChamadas = [];
     let iteracoes = 0;
-    let ultimo = null;
+
+    if (conversa.at(-1)?.role !== "user") {
+      throw Object.assign(new AssistenteClientError("IA_HISTORICO_INVALIDO", "o histórico não termina no pedido atual do cliente"), {
+        usage: somarUsage([]), iteracoes: 0, ferramentasChamadas: [],
+      });
+    }
 
     while (iteracoes < this.maxIteracoes) {
       iteracoes += 1;
@@ -104,13 +109,15 @@ export class AssistenteClient {
         throw traduzido;
       }
       usages.push(resposta?.usage || null);
-      ultimo = resposta;
 
       if (resposta?.stop_reason === "refusal") {
         return { texto: "", usage: somarUsage(usages), iteracoes, ferramentasChamadas, stopReason: "refusal", recusou: true };
       }
 
       const usos = (resposta?.content || []).filter((b) => b?.type === "tool_use");
+      if (resposta?.stop_reason === "max_tokens") {
+        return { texto: "", usage: somarUsage(usages), iteracoes, ferramentasChamadas, stopReason: "max_tokens", recusou: false };
+      }
       if (resposta?.stop_reason !== "tool_use" || !usos.length) {
         return { texto: textoDaResposta(resposta?.content), usage: somarUsage(usages), iteracoes, ferramentasChamadas, stopReason: resposta?.stop_reason || "end_turn", recusou: false };
       }
@@ -139,7 +146,7 @@ export class AssistenteClient {
     }
 
     this.log?.warn?.({ iteracoes }, "assistente: teto de iterações atingido");
-    return { texto: textoDaResposta(ultimo?.content), usage: somarUsage(usages), iteracoes, ferramentasChamadas, stopReason: STOP_LOCAL.MAX_ITERACOES, recusou: false };
+    return { texto: "", usage: somarUsage(usages), iteracoes, ferramentasChamadas, stopReason: STOP_LOCAL.MAX_ITERACOES, recusou: false };
   }
 }
 
@@ -156,7 +163,27 @@ export function traduzirErro(err) {
     return new AssistenteClientError("IA_CONEXAO", "não foi possível falar com a API do modelo", { retentavel: true });
   }
   if (err instanceof Anthropic.APIError || status) {
-    return new AssistenteClientError("IA_API", `a API do modelo respondeu ${status || "erro"}`, { status, retentavel: Boolean(status && status >= 500) });
+    const diagnostico = diagnosticoSeguro(err);
+    const detalhe = [diagnostico.categoria, diagnostico.tipo, diagnostico.requestId].filter(Boolean).join("; ");
+    return Object.assign(new AssistenteClientError("IA_API", `a API do modelo respondeu ${status || "erro"}${detalhe ? ` (${detalhe})` : ""}`, { status, retentavel: Boolean(status && status >= 500) }), { diagnostico });
   }
-  return new AssistenteClientError("IA_DESCONHECIDO", String(err?.message || err || "erro"), {});
+  return new AssistenteClientError("IA_DESCONHECIDO", "falha inesperada ao chamar o modelo", {});
+}
+
+/** Mensagens do provedor podem repetir o payload: registra categoria e request-id, nunca o corpo. */
+function diagnosticoSeguro(err) {
+  const mensagem = String(err?.error?.error?.message || err?.error?.message || err?.message || "");
+  const categoria = /prefill|last.*assistant|final.*assistant/i.test(mensagem) ? "HISTORICO_ASSISTANT_FINAL"
+    : /output_config|\beffort\b/i.test(mensagem) ? "CONFIGURACAO_ESFORCO"
+      : /input_schema|json.schema|schema.*tool/i.test(mensagem) ? "SCHEMA_FERRAMENTA"
+        : /tool_result|tool_use_id/i.test(mensagem) ? "SEQUENCIA_FERRAMENTAS"
+          : /credit balance|billing/i.test(mensagem) ? "CREDITO_PROVEDOR"
+            : /context.window|prompt.*too long|max_tokens/i.test(mensagem) ? "LIMITE_CONTEXTO_OU_TOKENS" : null;
+  const tipo = err?.type || err?.error?.error?.type;
+  const requestId = err?.requestID || err?.error?.request_id;
+  return {
+    categoria,
+    tipo: ["invalid_request_error", "permission_error", "not_found_error", "request_too_large", "api_error", "overloaded_error"].includes(tipo) ? tipo : null,
+    requestId: /^req_[a-zA-Z0-9_-]{1,120}$/.test(String(requestId || "")) ? requestId : null,
+  };
 }

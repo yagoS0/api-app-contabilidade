@@ -213,7 +213,8 @@ describe("o turno", () => {
     const r = await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente }) });
     expect(assistente.responder).not.toHaveBeenCalled();
     expect(["CONTAGEM_FALHOU", "SEM_CHAVE"]).toContain(r.motivo);
-    expect(cloud.enviarTexto.mock.calls[0][0].texto).toMatch(/escritório responde/);
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).toMatch(/Encaminhei a conversa para a equipe/);
+    expect(client._conversa.atendidaDesde).toBeInstanceOf(Date);
   });
 
   it("mídia (áudio) → frase fixa, sem modelo", async () => {
@@ -235,7 +236,8 @@ describe("o turno", () => {
     const r = await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente }) });
     expect(r.motivo).toBe("IA_RATE_LIMIT");
     expect(client._chamadas[0]).toMatchObject({ status: "erro", erroCodigo: "IA_RATE_LIMIT" });
-    expect(cloud.enviarTexto.mock.calls[0][0].texto).toMatch(/Não estou conseguindo responder agora/);
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).toMatch(/Encaminhei a conversa para a equipe/);
+    expect(client._conversa.atendidaDesde).toBeInstanceOf(Date);
   });
 });
 
@@ -360,6 +362,18 @@ describe("a pendência — a confirmação NÃO passa pelo modelo", () => {
 });
 
 describe("montarHistorico", () => {
+  it("preserva título da opção e termina no pedido atual, mesmo com respostas posteriores na fila", () => {
+    const atual = { id: "atual", direcao: "in", tipo: "text", corpo: "Quero minha última nota emitida", registradaEm: new Date("2026-09-08T17:36:00Z") };
+    const h = montarHistorico([
+      { id: "menu", direcao: "in", tipo: "interactive", corpo: "Situação fiscal", registradaEm: new Date("2026-09-08T14:08:00Z") },
+      { id: "out", direcao: "out", tipo: "text", corpo: "resposta FUTURA", registradaEm: new Date("2026-09-08T17:37:00Z") },
+      { id: "in", direcao: "in", tipo: "text", corpo: "pedido FUTURO", registradaEm: new Date("2026-09-08T17:38:00Z") },
+    ], atual);
+    expect(h.at(-1).role).toBe("user");
+    expect(h.at(-1).content).toMatch(/Mensagem atual.*\nQuero minha última nota emitida/);
+    expect(JSON.stringify(h)).toContain("Situação fiscal");
+    expect(JSON.stringify(h)).not.toContain("FUTUR");
+  });
   it("ordena, funde papéis consecutivos e começa em user; mídia vira colchetes", () => {
     const h = montarHistorico([
       { direcao: "out", tipo: "template", corpo: "guia", registradaEm: new Date("2026-09-01T10:00:00Z") },
@@ -372,6 +386,73 @@ describe("montarHistorico", () => {
       { role: "assistant", content: "olá" },
     ]);
   });
+});
+
+it("uma falha encaminha antes do aviso e impede repetir erro na próxima mensagem", async () => {
+  const client = bancoEmMemoria(), cloud = cloudFalso();
+  const assistente = { responder: jest.fn(async () => { throw Object.assign(new Error("400"), { codigo: "IA_API" }); }) };
+  cloud.enviarTexto.mockImplementation(async () => {
+    expect(client._conversa.atendidaDesde).toBeInstanceOf(Date);
+    return { wamid: "wamid.aviso" };
+  });
+  await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente }) });
+  client._mensagens.set("m2", { ...client._mensagens.get("m1"), id: "m2", respondidaPelaIaEm: null, corpo: "Olá?" });
+  const r = await responderMensagem({ conversaId: "cv1", mensagemId: "m2", deps: deps({ client, cloud, assistente }) });
+  expect(r.motivo).toBe("ASSUMIDA_POR_HUMANO");
+  expect(assistente.responder).toHaveBeenCalledTimes(1);
+  expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);
+});
+
+it("falha no aviso mantém a conversa na fila humana", async () => {
+  const client = bancoEmMemoria(), cloud = cloudFalso();
+  cloud.enviarTexto.mockRejectedValue(new Error("timeout"));
+  const assistente = { responder: jest.fn(async () => { throw Object.assign(new Error("400"), { codigo: "IA_API" }); }) };
+  const r = await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente }) });
+  expect(r).toMatchObject({ feito: false, indeterminado: true });
+  expect(client._conversa.atendidaDesde).toBeInstanceOf(Date);
+});
+
+it("pedido de contador é persistido antes de a IA confirmar o encaminhamento", async () => {
+  const client = bancoEmMemoria(), cloud = cloudFalso();
+  const assistente = { responder: async ({ executar }) => {
+    await executar("chamar_escritorio", { motivo: "Conferir cobrança" });
+    return { texto: "Encaminhei seu pedido para a equipe conferir.", usage: { input_tokens: 10, output_tokens: 10 }, ferramentasChamadas: ["chamar_escritorio"], stopReason: "end_turn" };
+  } };
+  cloud.enviarTexto.mockImplementation(async () => {
+    expect(client._conversa.atendidaDesde).toBeInstanceOf(Date);
+    return { wamid: "wamid.aviso" };
+  });
+  expect(await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente }) })).toMatchObject({ feito: true });
+  expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);
+});
+
+it("erro de modelo depois que humano assume não envia aviso nem sobrescreve responsável", async () => {
+  const client = bancoEmMemoria(), cloud = cloudFalso();
+  const assistente = { responder: async () => {
+    client._conversa.atendidaPor = "contador";
+    throw Object.assign(new Error("400"), { codigo: "IA_API" });
+  } };
+  expect(await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente }) })).toMatchObject({ feito: false, motivo: "ASSUMIDA_POR_HUMANO" });
+  expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  expect(client.conversaWhatsapp.updateMany).not.toHaveBeenCalled();
+});
+
+it("não anuncia encaminhamento se a gravação da fila falhar", async () => {
+  const client = bancoEmMemoria(), cloud = cloudFalso();
+  client.conversaWhatsapp.updateMany.mockResolvedValue({ count: 0 });
+  const assistente = { responder: jest.fn(async () => { throw Object.assign(new Error("400"), { codigo: "IA_API" }); }) };
+  const r = await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente }) });
+  expect(r.motivo).toBe("AUTOMACAO_INVALIDADA");
+  expect(cloud.enviarTexto).not.toHaveBeenCalled();
+});
+
+it.each(["max_tokens", "max_iteracoes"])("resposta %s vai para equipe sem enviar frase pela metade", async (stopReason) => {
+  const client = bancoEmMemoria(), cloud = cloudFalso(), assistente = modeloFalso();
+  assistente.responder.mockResolvedValue({ texto: "Sua empresa está", usage: { input_tokens: 10, output_tokens: 2000 }, stopReason });
+  const r = await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente }) });
+  expect(r.motivo).toBe("RESPOSTA_INCOMPLETA");
+  expect(cloud.enviarTexto.mock.calls[0][0].texto).not.toContain("Sua empresa está");
+  expect(client._conversa.atendidaDesde).toBeInstanceOf(Date);
 });
 it("humano assumindo durante modelo impede envio",async()=>{
  const client=bancoEmMemoria(); const cloud=cloudFalso(); const assistente=modeloFalso();
