@@ -1,6 +1,9 @@
 // Consome o inbox durável: grava mensagens, enfileira mídias/turnos e correlaciona recibos.
 // Falhas retornam no resumo para retry idempotente, sem registrar conteúdo ou credenciais.
-import { log as logPadrao, INTEGRACAO_WHATSAPP_IA, IA_EMPRESAS_PILOTO } from "../../config.js";
+import {
+  log as logPadrao, INTEGRACAO_WHATSAPP_IA, INTEGRACAO_WHATSAPP_MENU, IA_EMPRESAS_PILOTO,
+  WHATSAPP_MENU_TELEFONES_PILOTO, WHATSAPP_MENU_LEADS,
+} from "../../config.js";
 import { registrarMensagemRecebida } from "./ConversaWhatsappService.js";
 import { SITUACOES } from "./vinculoTelefone.js";
 import { aplicarStatusDoProvedor, aplicarFalhaDoProvedor } from "../guides/EnvioGuiaService.js";
@@ -155,9 +158,30 @@ export function decidirRespostaDaIa({ r, flag = INTEGRACAO_WHATSAPP_IA, piloto =
     const recebidaEm = new Date(r?.mensagem?.registradaEm).getTime();
     if (!Number.isFinite(recebidaEm) || recebidaEm <= new Date(r.conversa.automacaoInvalidadaEm).getTime()) return { responde: false, motivo: "AUTOMACAO_INVALIDADA" };
   }
+  if (r?.conversa?.atendidaPor || r?.conversa?.atendidaDesde) return { responde: false, motivo: "ASSUMIDA_POR_HUMANO" };
   if (r?.vinculo?.situacao !== SITUACOES.VINCULADO || !r?.conversa?.portalClientId) return { responde: false, motivo: "NAO_VINCULADA" };
   if (r.conversa.escopoVerificado !== true) return { responde: false, motivo: "SEM_ESCOPO_VERIFICADO" };
   if (!Array.isArray(piloto) || !piloto.includes(String(r.conversa.portalClientId))) return { responde: false, motivo: "FORA_DO_PILOTO" };
+  return { responde: true, motivo: null };
+}
+
+/** Rollout independente do modelo: nasce OFF e continua limitado às empresas piloto. */
+export function decidirRespostaDoMenu({ r, flag = INTEGRACAO_WHATSAPP_MENU, piloto = IA_EMPRESAS_PILOTO, telefonesPiloto = WHATSAPP_MENU_TELEFONES_PILOTO, leads = WHATSAPP_MENU_LEADS } = {}) {
+  if (!flag) return { responde: false, motivo: "FLAG_OFF" };
+  if (r?.conversa?.excluidaEm) return { responde: false, motivo: "CHAT_EXCLUIDO" };
+  if (r?.conversa?.automacaoInvalidadaEm) {
+    const recebidaEm = new Date(r?.mensagem?.registradaEm).getTime();
+    if (!Number.isFinite(recebidaEm) || recebidaEm <= new Date(r.conversa.automacaoInvalidadaEm).getTime()) return { responde: false, motivo: "AUTOMACAO_INVALIDADA" };
+  }
+  const telefone = String(r?.conversa?.telefoneE164 || "").replace(/\D+/g, "");
+  const telefoneNoPiloto = Array.isArray(telefonesPiloto) && telefonesPiloto.includes(telefone);
+  if (!r?.conversa?.portalClientId) {
+    const leadSeguro = [SITUACOES.DESCONHECIDO, SITUACOES.AMBIGUO].includes(r?.vinculo?.situacao);
+    if (!leadSeguro) return { responde: false, motivo: "NAO_VINCULADA" };
+    return telefoneNoPiloto || leads ? { responde: true, motivo: null } : { responde: false, motivo: "FORA_DO_PILOTO" };
+  }
+  if (r?.vinculo?.situacao !== SITUACOES.VINCULADO || r.conversa.escopoVerificado !== true) return { responde: false, motivo: "NAO_VINCULADA" };
+  if (!telefoneNoPiloto && (!Array.isArray(piloto) || !piloto.includes(String(r.conversa.portalClientId)))) return { responde: false, motivo: "FORA_DO_PILOTO" };
   if (r.conversa.atendidaPor || r.conversa.atendidaDesde) return { responde: false, motivo: "ASSUMIDA_POR_HUMANO" };
   return { responde: true, motivo: null };
 }
@@ -165,7 +189,7 @@ export function decidirRespostaDaIa({ r, flag = INTEGRACAO_WHATSAPP_IA, piloto =
 // ⚠ `ia` é a flag+piloto INJETÁVEIS ({flag, piloto}). Sem isso o ramo "a IA responde" seria
 // inalcançável no teste (a flag nasce OFF no ambiente de teste) — mock que esconde ramo é defeito
 // desta casa. Produção não passa nada e os defaults do `config.js` mandam.
-async function processarMensagem(item, { logger, responder, ia }) {
+async function processarMensagem(item, { logger, responder, responderMenu, ia, menu, agora }) {
   const r = await registrarMensagemRecebida({
     telefone: item.telefone,
     providerMessageId: item.providerMessageId,
@@ -202,6 +226,28 @@ async function processarMensagem(item, { logger, responder, ia }) {
     "WhatsApp: mensagem recebida registrada",
   );
 
+  // Cliques usam o id estável do payload bruto e são resolvidos antes do modelo. O inbox conserva
+  // esse payload para retry; nenhuma coluna nova é necessária para tornar o roteamento durável.
+  const decisaoMenu = decidirRespostaDoMenu({ r, ...(menu || {}) });
+  if (decisaoMenu.responde && typeof responderMenu === "function") {
+    const menu = await responderMenu({
+      registro: r,
+      interacao: item.interacao || null,
+      texto: item.tipo === "text" ? item.corpo : null,
+      agora,
+      logger,
+    });
+    if (menu?.tratado) {
+      return {
+        desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA,
+        motivo: null,
+        vinculo: situacao,
+        ia: { responde: false, motivo: menu.motivo || "MENU_DETERMINISTICO" },
+        menu,
+      };
+    }
+  }
+
   // ── O ASSISTENTE (IA) — o gancho, DEPOIS de a mensagem estar gravada ──────────────────────────
   // `responder` é injetável e o teste mede que ele NÃO é chamado nos ramos fechados
   // (`processarEventoWhatsapp.test.js`, "o gancho da IA"). ⚠ Essa cobertura só existe desde
@@ -230,7 +276,7 @@ async function processarMensagem(item, { logger, responder, ia }) {
  * @param {Date}   [opcoes.agora]   injetável (a leitura do timestamp não lê relógio escondido)
  * @param {object} [opcoes.logger]
  */
-export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao, ia = undefined } = {}) {
+export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao, responderMenu = undefined, ia = undefined, menu = undefined } = {}) {
   const resumo = {
     mensagens: { total: 0, gravadas: 0, duplicadas: 0, recusadas: 0 },
     statuses: { total: 0, aplicados: 0, semMudanca: 0, semEnvio: 0, desconhecidos: 0, contradicoes: 0, recusados: 0 },
@@ -283,9 +329,14 @@ export async function processarEventoWhatsapp(payload, { agora = new Date(), log
   }
 
   resumo.mensagens.total = leitura.mensagens.length;
+  // Testes e consumidores que injetam seu próprio `responder` continuam isolados. Em produção,
+  // onde se usa o enfileirador padrão, o menu determinístico é carregado sob demanda.
+  const atenderMenu = responderMenu === undefined
+    ? (responder === responderPadrao ? responderMenuPadrao : null)
+    : responderMenu;
   for (const item of leitura.mensagens) {
     try {
-      const r = await processarMensagem(item, { logger, responder, ia });
+      const r = await processarMensagem(item, { logger, responder, responderMenu: atenderMenu, ia, menu, agora });
       if (r.desfecho === DESFECHOS.DUPLICADA) resumo.mensagens.duplicadas += 1;
       else resumo.mensagens.gravadas += 1;
     } catch (e) {
@@ -323,4 +374,9 @@ export async function processarEventoWhatsapp(payload, { agora = new Date(), log
 async function responderPadrao(args) {
   const { enfileirarTurnoIa } = await import("../assistente/TurnoIaWhatsappService.js");
   return enfileirarTurnoIa(args);
+}
+
+async function responderMenuPadrao(args) {
+  const { responderMenuWhatsapp } = await import("./MenuWhatsappService.js");
+  return responderMenuWhatsapp(args);
 }

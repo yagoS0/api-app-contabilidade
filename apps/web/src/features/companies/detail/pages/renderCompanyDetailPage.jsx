@@ -1,3 +1,8 @@
+import { AcessoPortalCliente } from "../../credentials/components/AcessoPortalCliente";
+import { mostraApuracaoDoSimples } from "../../../apuracao-lp/lib/regimeDaAba";
+import { ConfiguracoesLayout } from "../../../configuracoes/Configuracoes";
+import { ProtecaoEdicao, useConfirmarSaida } from '../../../configuracoes/ProtecaoEdicao';
+import { CONFIG_EMPRESA, secaoEmpresa } from "../../../configuracoes/catalogo";
 import { lazy, Suspense, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
@@ -178,11 +183,10 @@ function CompanyNotesTabWrapper({ companyId, feedback }) {
 // ⚠ `razaoSocial` viaja para a CONFIRMAÇÃO nomear a empresa junto do usuário.
 function CompanyCredentialsTabWrapper({ companyId, feedback, razaoSocial }) {
   const vault = useCompanyCredentials({ api: companyDocsApi, companyId, feedback });
-  const acesso = useAcessoPortalCliente({ api: companyDocsApi, companyId, feedback });
   // ⚠ OS DESTINATÁRIOS SAÍRAM DAQUI EM 05/09/2026 (decisão do dono: *"a tela de configuração de
   // envio deve ser dentro de guias, e não em senha e acesso"*). Esta aba guarda SEGREDO e ACESSO;
   // quem recebe a guia é assunto do envio, e mora na aba Guias.
-  return <CompanyCredentialsTab vault={vault} acesso={acesso} razaoSocial={razaoSocial} />;
+  return <CompanyCredentialsTab vault={vault} razaoSocial={razaoSocial} />;
 }
 
 /**
@@ -193,10 +197,10 @@ function CompanyCredentialsTabWrapper({ companyId, feedback, razaoSocial }) {
  * ⚠ Os usuários do portal chegam por `useAcessoPortalCliente` porque o vínculo com a PESSOA é o que
  * dá o papel RBAC — sem eles o seletor "Pessoa do portal" nasceria vazio.
  */
-function ConfiguracaoDeEnvioWrapper({ companyId, feedback }) {
+function ConfiguracaoDeEnvioWrapper({ companyId, feedback, razaoSocial }) {
   const whatsapp = useContatosWhatsapp({ api: companyDocsApi, companyId, feedback });
   const acesso = useAcessoPortalCliente({ api: companyDocsApi, companyId, feedback });
-  return <ContatosWhatsapp whatsapp={whatsapp} usuarios={acesso?.usuarios || []} />;
+  return <><AcessoPortalCliente acesso={acesso} razaoSocial={razaoSocial} /><ContatosWhatsapp whatsapp={whatsapp} usuarios={acesso?.usuarios || []} /></>;
 }
 
 // Q14.2: wrapper que instancia hook próprio da Apuração v2 (state da empresa atual)
@@ -382,7 +386,7 @@ function SitfisTabWrapper({ companyId }) {
 
 import { useEmpresasDoResponsavel } from "../../form/hooks/useEmpresasDoResponsavel";
 
-export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, certPanel, feedback, dangerActions }) {
+function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, certPanel, feedback, dangerActions }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
   const companyId = selectedCompany?.companyId;
   // ⚠ O regime mora em `legacyCompany` (é do cadastro legado) e NUNCA no topo do payload — o
@@ -398,7 +402,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   // Q11.1: state do modal de exclusão (zona de risco)
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   // A gaveta da configuração de envio, dentro da aba Guias (05/09/2026).
-  const [abrirEnvio, setAbrirEnvio] = useState(false);
+
   // ⚠ QUAIS EMPRESAS O E-MAIL DIGITADO JÁ ATENDE — só leitura, e só para AVISAR embaixo do campo.
   // ⚠ Reusa `companyDocsApi` (a mesma instância do cofre e do acesso ao portal); um cliente novo
   // por tela é o começo de dois contratos para a mesma rota.
@@ -421,7 +425,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     // `useManageAccountingWorkspace`, no mesmo molde da aba Lançamentos — e ele cobre os três
     // caminhos (troca de aba, recarga da página e mudança de ano/competência). Chamar aqui também
     // faria duas requisições por clique.
-    if (tab === "planoContas") { accountingPanel.onLoadAccounts(); }
+    // Plano de contas carrega pelo hook também em acesso direto e troca de empresa.
     // Guias precisa do plano de contas: o modal de ingestão de parcelamento sugere as contas D/C.
     if (tab === "guides") { accountingPanel.onLoadAccounts(); }
     // Parcelamento: o modal de config de contas usa o plano de contas.
@@ -517,15 +521,11 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
               decide quem recebe a guia, ao lado da guia. Ela sai da aba de senha e acesso, que
               guarda segredo. Gaveta, e não seção fixa: a tabela de guias é o assunto da aba. */}
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "var(--space-2)" }}>
-            <Button variant="secondary" type="button" onClick={() => setAbrirEnvio(true)}>
+            <Button variant="secondary" type="button" onClick={() => switchTab("comunicacao")}>
               Configuração de envio
             </Button>
           </div>
-          {abrirEnvio ? (
-            <Modal titulo="Configuração de envio" tamanho="lg" aoFechar={() => setAbrirEnvio(false)}>
-              <ConfiguracaoDeEnvioWrapper companyId={companyId} feedback={feedback} />
-            </Modal>
-          ) : null}
+
 
           {/* ⚠ `onRefresh` alimenta a espera da coluna "Envio": a confirmação de entrega do WhatsApp
               chega pelo webhook SEGUNDOS depois do envio, e sem recarregar a célula congela em
@@ -818,16 +818,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
               </Suspense>
             )}
 
-            {/* Q12.B+++: cert A1 da empresa, abaixo do form e acima do feedback */}
-            {canEditCompany && certPanel?.api && (
-              <Suspense fallback={<TabLoadingFallback />}>
-                <CompanyCertificatePanel
-                  api={certPanel.api}
-                  companyId={selectedCompany?.companyId}
-                  feedback={certPanel.feedback}
-                />
-              </Suspense>
-            )}
+            <a href={companyTabPath(companyId,'certificado')}>Gerenciar certificado A1 →</a>
 
             <Feedback message={feedback.message} error={feedback.error} />
           </section>
@@ -1396,4 +1387,28 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
       <Feedback message={feedback.message} error={feedback.error} />
     </AppShell>
   );
+}
+
+// Todas as seções reutilizam seus formulários e APIs; links antigos continuam válidos.
+export function CompanyDetailPage(props) {
+ return <ProtecaoEdicao><CompanyDetailComConfiguracoes {...props}/></ProtecaoEdicao>;
+}
+
+function CompanyDetailComConfiguracoes(props) {
+ const confirmarSaida = useConfirmarSaida();
+ const c=props.company; const atual=c.companyDetailTab; const secao=secaoEmpresa(atual);
+ if(atual!=='configuracoesEmpresa' && !secao && atual!=='comunicacao') return <CompanyDetailContent {...props}/>;
+ const id=c.selectedCompany?.companyId;
+ if (!id) return <TabLoadingFallback/>;
+ const navegar = (tab) => {
+   c.setCompanyDetailTab(tab);
+   if (['lancamentos', 'guides', 'parcelamento'].includes(tab)) props.accountingPanel?.onLoadAccounts?.();
+   if (tab === 'lancamentos') props.accountingPanel?.onLoadEntries?.();
+   if (tab === 'notasFiscais') props.notasPanel?.reload?.();
+ };
+ const itens=CONFIG_EMPRESA.filter(i=>i.id!=='perfilFiscal' || mostraApuracaoDoSimples(c.selectedCompany)).map(i=>({...i,href:companyTabPath(id,i.tab)}));
+ return <div style={{minHeight:'100vh',background:'var(--bg-page)'}}><CompanySectionHeader company={c.selectedCompany} activeTab="configuracoesEmpresa" onBack={()=>confirmarSaida(c.onBack)} onTabChange={navegar} canEditCompany={c.canEditCompany}/>
+ <ConfiguracoesLayout titulo="Configurações da empresa" subtitulo={c.selectedCompany.razao+' · '+c.selectedCompany.cnpj} itens={itens} atual={secao?.id} onNavigate={i=>navegar(i.tab)} voltar={companyTabPath(id,'anotacoes')}>
+ {atual==='certificado' ? <><h2>Certificado A1 da empresa</h2>{c.canEditCompany && props.certPanel?.api ? <Suspense fallback={<TabLoadingFallback/>}><CompanyCertificatePanel api={props.certPanel.api} companyId={id} feedback={props.certPanel.feedback}/></Suspense> : <p>Apenas admin ou contador pode gerenciar certificados.</p>}</> : atual==='comunicacao' ? <><h2>Contatos, acessos e envios</h2><p>Destinatários autorizados, canais de envio e permissões de cada número.</p>{c.canEditCompany ? <ConfiguracaoDeEnvioWrapper key={id} companyId={id} feedback={props.feedback} razaoSocial={c.selectedCompany.razao}/> : <p>Apenas admin ou contador pode gerenciar contatos, acessos e permissões de envio.</p>}<Feedback message={props.feedback?.message} error={props.feedback?.error}/></> : secao ? <div className="config-embedded"><CompanyDetailContent {...props}/></div> : null}
+ </ConfiguracoesLayout></div>;
 }

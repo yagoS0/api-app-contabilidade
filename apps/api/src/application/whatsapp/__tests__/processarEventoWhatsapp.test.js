@@ -218,7 +218,32 @@ describe("statuses", () => {
 });
 
 // ── O GANCHO DO ASSISTENTE (F4, 02/09/2026): as QUATRO chaves, medidas por NÃO-chamada ──────────
-import { decidirRespostaDaIa } from "../ProcessarEventoWhatsappService.js";
+import { decidirRespostaDaIa, decidirRespostaDoMenu } from "../ProcessarEventoWhatsappService.js";
+
+describe("decidirRespostaDoMenu — rollout separado e sem modelo", () => {
+  const r = { vinculo: { situacao: "VINCULADO" }, conversa: { portalClientId: "pc-1", telefoneE164: "5521999998888", escopoVerificado: true }, mensagem: { registradaEm: AGORA } };
+  it("nasce desligado", () => {
+    expect(decidirRespostaDoMenu({ r, flag: false, piloto: ["pc-1"] })).toEqual({ responde: false, motivo: "FLAG_OFF" });
+  });
+  it("não responde fora da empresa piloto", () => {
+    expect(decidirRespostaDoMenu({ r, flag: true, piloto: [] }).motivo).toBe("FORA_DO_PILOTO");
+    expect(decidirRespostaDoMenu({ r, flag: true, piloto: ["outra"] }).motivo).toBe("FORA_DO_PILOTO");
+  });
+  it("responde no piloto sem depender da flag da IA", () => {
+    expect(decidirRespostaDoMenu({ r, flag: true, piloto: ["pc-1"] })).toEqual({ responde: true, motivo: null });
+  });
+  it("telefone E.164 piloto libera somente aquele contato", () => {
+    expect(decidirRespostaDoMenu({ r, flag: true, piloto: [], telefonesPiloto: ["5521999998888"] })).toEqual({ responde: true, motivo: null });
+    expect(decidirRespostaDoMenu({ r, flag: true, piloto: [], telefonesPiloto: ["5511888887777"] }).motivo).toBe("FORA_DO_PILOTO");
+  });
+  it("lead não listado fica fora e WHATSAPP_MENU_LEADS só abre o menu público", () => {
+    const lead = { vinculo: { situacao: "DESCONHECIDO" }, conversa: { portalClientId: null, telefoneE164: "5511888887777" }, mensagem: { registradaEm: AGORA } };
+    expect(decidirRespostaDoMenu({ r: lead, flag: true, telefonesPiloto: [], leads: false }).motivo).toBe("FORA_DO_PILOTO");
+    expect(decidirRespostaDoMenu({ r: lead, flag: true, telefonesPiloto: ["5511888887777"], leads: false })).toEqual({ responde: true, motivo: null });
+    expect(decidirRespostaDoMenu({ r: lead, flag: true, telefonesPiloto: [], leads: true })).toEqual({ responde: true, motivo: null });
+    expect(decidirRespostaDoMenu({ r, flag: true, piloto: [], telefonesPiloto: [], leads: true }).motivo).toBe("FORA_DO_PILOTO");
+  });
+});
 
 describe("decidirRespostaDaIa — a IA só responde com as quatro chaves", () => {
   const r = (over = {}) => ({
@@ -276,6 +301,16 @@ describe("o gancho da IA — quem é chamado, e com o quê", () => {
     const resumo = await rodar({ registro: REGISTRO(), ia: { flag: true, piloto: ["pc-1"] }, responder });
     expect(responder).toHaveBeenCalledWith({ conversaId: "cv1", mensagemId: "m1", portalClientId: "pc-1" });
     expect(resumo.mensagens.gravadas).toBe(1);
+  });
+
+  it("menu tratado por id é determinístico e não enfileira a IA", async () => {
+    const responder = jest.fn(async () => ({ feito: true }));
+    const responderMenu = jest.fn(async ({ interacao }) => ({ tratado: true, motivo: "MENU_INTERATIVO", acao: interacao.id }));
+    registrarMensagemRecebida.mockResolvedValue(REGISTRO());
+    const payload = evento({ messages: [{ ...MENSAGEM, type: "interactive", interactive: { button_reply: { id: "altan.client.more.v1", title: "Qualquer título" } } }] });
+    await processarEventoWhatsapp(payload, { agora: AGORA, logger: logSpy(), responder, responderMenu, menu: { flag: true, piloto: ["pc-1"] }, ia: { flag: true, piloto: ["pc-1"] } });
+    expect(responderMenu).toHaveBeenCalledWith(expect.objectContaining({ interacao: { tipo: "button_reply", id: "altan.client.more.v1", titulo: "Qualquer título" } }));
+    expect(responder).not.toHaveBeenCalled();
   });
 
   it("⚠ flag OFF, fora do piloto, duplicada, não vinculada e assumida → NÃO chama", async () => {

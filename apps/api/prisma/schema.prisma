@@ -4168,8 +4168,15 @@ model Onboarding {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  versao Int @default(0)
+  faseComercial String @default("LEAD")
+  proposta Json?
+  analises OnboardingAnalise[]
+  eventos OnboardingEvento[]
+  links OnboardingLink[]
   etapas OnboardingEtapa[]
 
+  @@index([criadoPorId])
   @@index([status, origem])
   @@index([cnpj])
   @@index([responsavelEmail])
@@ -4904,4 +4911,44 @@ model SaidaAvulsaCliente {
   /// ⚠ A leitura do fluxo varre por empresa + janela de datas; sem este índice ela vira scan.
   @@index([portalClientId, data])
   @@map("saidas_avulsas_cliente")
+}
+
+model OnboardingAnalise {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  tipo String
+  status String
+  cnpj String
+  resultado Json @default("{}")
+  documentoCifrado String?
+  criadoPorId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([onboardingId, createdAt])
+  @@map("onboarding_analises")
+}
+model OnboardingEvento {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  tipo String
+  dados Json @default("{}")
+  atorId String?
+  createdAt DateTime @default(now())
+  @@index([onboardingId, createdAt])
+  @@map("onboarding_eventos")
+}
+model OnboardingLink {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  tokenHash String @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  submittedAt DateTime?
+  criadoPorId String
+  createdAt DateTime @default(now())
+  @@index([onboardingId])
+  @@map("onboarding_links")
 }

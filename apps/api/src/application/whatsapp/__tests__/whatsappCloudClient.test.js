@@ -33,6 +33,8 @@ import {
   montarHeaderDocumento,
   montarPayloadTemplate,
   montarPayloadTexto,
+  montarPayloadBotoes,
+  montarPayloadLista,
   nomeArquivoDaGuia,
   variaveisDaGuia,
 } from "../WhatsappCloudClient.js";
@@ -100,6 +102,28 @@ afterEach(() => {
 // ── Os payloads, que só falhariam em produção ────────────────────────────────────────────────────
 
 describe("o payload que sai para a Meta", () => {
+  it("menus interativos preservam ids e respeitam a forma da Cloud API", () => {
+    expect(montarPayloadBotoes({
+      para: "5521999998888", texto: "Como ajudar?", rodape: "Escreva se preferir.",
+      botoes: [{ id: "altan.client.guides.current.v1", titulo: "Guias do mês" }],
+    })).toEqual({
+      messaging_product: "whatsapp", recipient_type: "individual", to: "5521999998888", type: "interactive",
+      interactive: {
+        type: "button", body: { text: "Como ajudar?" }, footer: { text: "Escreva se preferir." },
+        action: { buttons: [{ type: "reply", reply: { id: "altan.client.guides.current.v1", title: "Guias do mês" } }] },
+      },
+    });
+    expect(montarPayloadLista({
+      para: "5521999998888", texto: "Mais opções", tituloBotao: "Ver opções", tituloSecao: "Atendimento",
+      linhas: [{ id: "altan.client.documents.v1", titulo: "Documentos", descricao: "Contrato e inscrições" }],
+    }).interactive.action.sections[0].rows[0]).toEqual({ id: "altan.client.documents.v1", title: "Documentos", description: "Contrato e inscrições" });
+  });
+
+  it("recusa mais de três botões e títulos acima do limite", () => {
+    expect(() => montarPayloadBotoes({ para: "55", texto: "x", botoes: [1, 2, 3, 4].map((n) => ({ id: String(n), titulo: String(n) })) })).toThrow(/1 a 3/);
+    expect(() => montarPayloadLista({ para: "55", texto: "x", tituloBotao: "Ver", linhas: [{ id: "1", titulo: "x".repeat(25) }] })).toThrow(/24/);
+  });
+
   it("template com documento: a forma exata da referência de Messages", () => {
     const corpo = montarPayloadTemplate({
       para: "5521999998888",

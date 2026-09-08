@@ -321,6 +321,16 @@ function writeStored(key, value) {
 }
 function readStoredToken() { return readStored(TOKEN_STORAGE_KEY); }
 
+async function formularioPublicoRequest(token, patch) {
+  const response = await fetch(getApiBaseUrl() + "/public/onboarding", {
+    method: patch ? "PATCH" : "GET", credentials: "omit", cache: "no-store",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    ...(patch ? { body: JSON.stringify(patch) } : {}),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(payload.message || "Não foi possível acessar o formulário. Confira a validade do link com o escritório."), { status: response.status, payload });
+  return payload;
+}
 export function createRealApi() {
   let accessToken = String(import.meta.env.VITE_API_TOKEN || "").trim();
   let unauthorizedHandler = null;
@@ -1667,6 +1677,20 @@ export function createRealApi() {
     // ── Onboarding (funil pré-cadastro) ───────────────────────────────────
     // ⚠ Estas rotas NÃO ficam sob `/firm/companies/:id` — a ficha existe justamente porque a
     // empresa ainda não existe.
+    async baixarAnaliseOnboarding(id, analiseId) {
+      const baseUrl = getApiBaseUrl();
+      const tok = accessToken || readStoredToken();
+      const res = await fetch(baseUrl + "/firm/onboardings/" + encodeURIComponent(id) + "/analises/" + encodeURIComponent(analiseId) + "/pdf", { headers: { Authorization: "Bearer " + tok }, cache: "no-store" });
+      if (!res.ok) throw new Error("Não foi possível abrir o relatório. Recarregue o atendimento.");
+      return res.blob();
+    },
+    async getOnboardingComercial(id) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/comercial"); },
+    async salvarOnboardingComercial(id, patch) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/comercial", { method: "PATCH", body: JSON.stringify(patch) }); },
+    async criarAnaliseOnboarding(id, payload) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/analises", { method: "POST", body: JSON.stringify(payload) }); },
+    async criarLinkOnboarding(id, payload) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/links", { method: "POST", body: JSON.stringify(payload) }); },
+    async revogarLinkOnboarding(id, linkId) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/links/" + encodeURIComponent(linkId), { method: "DELETE" }); },
+    async consultarFormularioOnboarding(token) { return formularioPublicoRequest(token); },
+    async salvarFormularioOnboarding(token, patch) { return formularioPublicoRequest(token, patch); },
     async criarOnboarding(origem) {
       return request("/firm/onboardings", { method: "POST", body: JSON.stringify({ origem }) });
     },

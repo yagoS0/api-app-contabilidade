@@ -25,6 +25,7 @@ import { PainelProximaDps } from "./PainelProximaDps";
 import { EditorPerfilEmissao } from "./EditorPerfilEmissao";
 import { CamposEmissaoNfse } from "../../form/components/CamposEmissaoNfse";
 import { mapCompanyToEmissaoNfseForm } from "../../form/hooks/useManageCompanyForm";
+import { useEdicaoPendente } from '../../../configuracoes/ProtecaoEdicao';
 
 // ⚠ Mesmo caminho de `renderCircularTab.jsx`: **não existe `src/api/index.js` neste app** — o
 // objeto da API sai de `createApiClient()`. O `CLAUDE.md` de `apps/web` ainda descreve um
@@ -86,6 +87,7 @@ export function EmissaoNfseTab({
   }
 
   const alterado = CAMPOS.some((c) => !mesmoValor(form[c], gravado[c]));
+  useEdicaoPendente(alterado);
 
   function onChange(campo, valor) {
     // ⚠ Só os campos desta aba entram no estado. O `CamposEmissaoNfse` chama `onChange(campo, v)`

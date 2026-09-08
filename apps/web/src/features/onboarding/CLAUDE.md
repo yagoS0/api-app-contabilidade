@@ -156,3 +156,12 @@ POST impede repetição automática. Não garante unicidade entre atendentes sim
 O mock preserva rascunhos em sessionStorage (`mock:onboardings:v1`); testes que resetam
 módulos para iniciar outra base precisam limpar essa chave. WhatsApp/onboarding não
 caem no mock quando a API real falha. Evidências: `docs/whatsapp-central-retomada.md`.
+
+
+## Atendimento comercial e formulário público — 08/09/2026
+
+A ficha existente ganhou PainelComercial no detalhe e acesso pelo wizard: fase comercial, proposta, consultas públicas/autorizadas com resultados datados, procuração verificada pelo serviço, relatório PDF autenticado, links pessoais com validade e revogação. Não cria empresa automaticamente nem envia mensagens. Conversão continua no provisionamento existente.
+
+App usa wrapper para /onboarding/publico antes de montar hooks autenticados. FormularioPublico lê token apenas do fragmento e envia Authorization próprio, sem cookie, sem sessão do escritório e sem refresh/fallback. Salva progressivamente com versao; envio final exige conferência e remove token do endereço. Não pede senha/certificado; dados declarados são revistos pelo contador. Links mock são apenas demonstrativos e ficam na memória da sessão. A rota real é autoridade de uso único, prazo, revogação, conflitos e limites.
+
+Proteção de saída do formulário público compara JSON dos campos visíveis com o último carregamento/salvamento bem-sucedido. beforeunload só existe enquanto há diferença; reverter o campo, salvar, concluir ou desmontar remove o aviso. Painel comercial preserva proposta digitada em consultas/revogação e refaz metadados de links após gerar um novo, preservando seu token em memória.

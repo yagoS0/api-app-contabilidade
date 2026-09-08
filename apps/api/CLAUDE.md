@@ -4723,3 +4723,18 @@ Migration aditiva: `20260907190000_whatsapp_contact_permissions`.
 - Isolamento multi-tenant é inegociável: sempre filtrar por `firmId`/`companyId`
 - Não adicionar `console.log` de debug em produção — usar o logger existente
 - Migrations novas devem ter nome descritivo em inglês (snake_case)
+
+
+## Comercial pré-cadastro e link público (08/09/2026)
+
+ComercialService mantém análises datadas por onboarding, sem PortalClient provisório. PUBLICA usa BrasilAPI; SITFIS revalida procuração por CNPJ pelo mesmo SerproProcurationService, exigindo ATIVA, validade futura e sistema SITFIS explícito. Ausência/ambiguidade bloqueia consulta; nenhuma declaração manual autoriza. Consultas passam pelo contexto/custo SERPRO, concluídas reutilizam 4h e retomam protocolo pendente. PDFs são cifrados e lidos apenas por gestão autenticada.
+
+Escopo: admin/contador gerenciam todas fichas (mesma política da carteira, não existe organização/firmId no modelo); demais FIRM somente criadoPorId próprio. Links persistem apenas SHA-256 de token aleatório de 256 bits; expiram em 1–30 dias, revogam antecessores e são consumidos ao finalizar. Formulário público GET/PATCH /public/onboarding usa Authorization Bearer, nunca query/path. Resposta só dados declarados; não expõe análise, proposta, eventos ou ids internos. PATCH tem versão otimista e transação com trava do link; finalização materializa checklist. Nunca envia mensagem/email. Front transporta token em fragmento /onboarding/publico#token=.
+
+Migração 20260908090000_onboarding_comercial aditiva: versão/fase/proposta e tabelas análises/eventos/links. Requer prisma generate e migrate deploy. Conversão permanece no provisionamento existente e escreve evento junto ao vínculo.
+
+## Menus determinísticos do WhatsApp (08/09/2026)
+
+`INTEGRACAO_WHATSAPP_MENU` nasce desligada. Clientes entram por `IA_EMPRESAS_PILOTO` ou pelo E.164 exato em `WHATSAPP_MENU_TELEFONES_PILOTO`; listas vazias autorizam ninguém. Leads entram apenas pelo telefone piloto, ou futuramente por `WHATSAPP_MENU_LEADS=1`. Esta última flag só libera o menu público do segmento sem `PortalClient` e nunca dá acesso financeiro. O menu não depende de Anthropic. Cliques são dirigidos pelo id estável de `button_reply`/`list_reply`, nunca pelo título e nunca pelo modelo. Antes de ler e antes de enviar, o servidor recompõe vínculo, empresa, contato, RBAC e permissões; ambiguidade, revogação, exclusão ou corte de automação fecham o fluxo.
+
+“Guias do mês” significa mês do vencimento e usa somente guias liberadas OPEN/OVERDUE; a resposta sempre mostra a competência separadamente. Situação fiscal lê apenas a última foto salva. Emissão, cancelamento e recálculo apenas coletam dados e seguem para a confirmação já existente. Texto livre claro continua no assistente. Lead recebe coleta mínima e handoff; a equipe cria o rascunho no onboarding com a origem correta, sem `PortalClient` provisório e sem consulta automática.

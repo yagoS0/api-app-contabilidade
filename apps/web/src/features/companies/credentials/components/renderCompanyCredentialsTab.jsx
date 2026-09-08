@@ -13,7 +13,7 @@ import {
   ESTADOS, MASCARA, CARGA,
   estadoDaCredencial, podeVerSenha, avisoDeProtecao, estadoDaCarga,
 } from "../lib/estadoCredencial";
-import { AcessoPortalCliente } from "./AcessoPortalCliente";
+
 
 const btn = (cor = "var(--border)") => ({
   padding: "6px 10px", borderRadius: "var(--radius-sm)", border: `1px solid ${cor}`,
@@ -406,7 +406,7 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
   );
 }
 
-export function CompanyCredentialsTab({ vault, acesso, razaoSocial }) {
+export function CompanyCredentialsTab({ vault, razaoSocial }) {
   const {
     credenciais, cofre, podeRevelar, papelMinimoRevelar, carregando, erro,
     informacoes, carregandoInfos, erroInfos,
@@ -459,7 +459,7 @@ export function CompanyCredentialsTab({ vault, acesso, razaoSocial }) {
        larguras diferentes e o conteúdo saltava a cada troca de sub-aba. */
     <div style={{ color: "var(--text)" }}>
       <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "baseline", marginBottom: "var(--space-3)", flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700 }}>Senhas e acessos</h2>
+        <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700 }}>Senhas e acessos externos</h2>
         {/* ⚠ A CONTAGEM NÃO É DITA QUANDO A LEITURA FALHOU. "0 credencial(is)" é uma afirmação
             sobre a empresa; depois de uma chamada que não voltou, o que se tem é a ausência da
             resposta, não a ausência de credencial. */}
@@ -470,19 +470,7 @@ export function CompanyCredentialsTab({ vault, acesso, razaoSocial }) {
         </span>
       </div>
 
-      {/* ⚠ TRÊS SEÇÕES AGORA, e a de cima é de outra natureza que as duas de baixo. Ela trata da
-          senha do CLIENTE no portal dele — bcrypt, irreversível, com três caminhos de troca —,
-          enquanto o cofre trata de senha de TERCEIRO, cifrada de forma recuperável de propósito.
-          Vem primeiro porque é a que o contador procura quando o cliente liga dizendo que não
-          consegue entrar; e é a única que muda algo fora deste sistema. */}
-      {acesso ? <AcessoPortalCliente acesso={acesso} razaoSocial={razaoSocial} /> : null}
-
-      {/* ⚠ QUARTA SEÇÃO (02/09/2026): os contatos de WhatsApp — quem recebe guia pelo canal, com o
-          opt-in que a Meta pode pedir para ver, e a PESSOA do portal por trás do número (de onde
-          sai o papel do RBAC). Fica logo abaixo do acesso ao portal porque é a mesma pergunta —
-          "quem é o cliente e por onde ele entra" — por outro canal. Nada aqui envia mensagem.
-          ⚠ Os usuários do portal vêm de `acesso`: é a MESMA lista, nunca uma segunda consulta. */}
-
+      {/* Acesso ao portal e destinatários ficam em Contatos, acessos e envios. */}
       <LinhaDeProtecao nivel={aviso.nivel} texto={aviso.texto} />
 
       {/* ⚠ O FORMULÁRIO SÓ FICA ABERTO QUANDO HÁ MOTIVO. Ele era permanente, acima da lista: numa

@@ -1,10 +1,7 @@
 // ONBOARDING — regras do funil pré-cadastro.
 //
-// ⚠ ESCOPO MULTI-TENANT (Fase 1): NÃO HÁ ISOLAMENTO. Todo usuário FIRM enxerga todos os
-// onboardings. Está escrito aqui e no cabeçalho da rota para ninguém supor um isolamento que não
-// existe. As demais listagens de escritório passam por `empresasVisiveis(req)`, que se apoia em
-// `CompanyFirmAccess` — vínculo que, por definição, ainda não existe para uma empresa que não foi
-// criada. Fase 2 (link público) é o momento de decidir a chave de escopo, e ela não é `companyId`.
+// ESCOPO: admin/contador gerenciam o escritório; demais usuários FIRM veem somente fichas
+// cujo criadoPorId é o próprio usuário. A rota aplica o escopo antes de todo acesso por id.
 //
 // ⚠ `dados` é SUBSTITUÍDO, nunca mesclado. Merge raso não deixa limpar uma lista; merge profundo
 // não deixa remover um sócio. Substituição é a única semântica sem caso ambíguo — e o front já
@@ -127,7 +124,7 @@ export async function atualizar(id, patch = {}, { atorId = null } = {}) {
   const atual = await carregar(id);
   recusarSeConvertido(atual);
 
-  const data = {};
+  const data = { versao: { increment: 1 }, eventos: { create: { tipo: "FICHA_ATUALIZADA", atorId, dados: { campos: Object.keys(patch) } } } };
 
   // ⚠ TROCAR DE ORIGEM ZERA `dados` AQUI, no servidor, ignorando o que veio no body. Se só a UI
   // resetasse, um PATCH atrasado ou um retry do rascunho antigo regravaria campos da origem
@@ -279,6 +276,9 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
   // ── Variante de recuperação ──────────────────────────────────────────────────
   const vincular = String(payload?.vincularPortalClientId || "").trim();
   if (vincular) {
+    if (!Array.isArray(portalIds) || !portalIds.includes(vincular)) {
+      throw new OnboardingError("portal_client_nao_encontrado", "Empresa não encontrada.", 404);
+    }
     const existente = await prisma.portalClient.findUnique({
       where: { id: vincular },
       select: { id: true, cnpj: true, razao: true },
@@ -305,6 +305,7 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
         status: "CONVERTIDO",
         convertidoEm: new Date(),
         convertidoPorId: atorId ? String(atorId) : null,
+        eventos: { create: { tipo: "CONVERTIDO", atorId, dados: { portalClientId: existente.id } } },
       },
     });
     return {
@@ -359,6 +360,7 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
       status: "CONVERTIDO",
       convertidoEm: new Date(),
       convertidoPorId: atorId ? String(atorId) : null,
+      eventos: { create: { tipo: "CONVERTIDO", atorId, dados: { portalClientId: criada.portalId } } },
       emailJaCadastrado: await emailTemConta(registro.responsavelEmail),
     },
   });
@@ -393,8 +395,8 @@ export async function desistir(id, { motivo = null, atorId = null } = {}) {
  * a ficha no primeiro clique), e um quadro em que a maioria dos cartões nunca foi preenchida deixa
  * de ser lido. A bandeja de rascunhos fica atrás de um toggle, com um DELETE ao lado.
  */
-export async function listar({ origem = null, status = null, q = null, incluirRascunhos = false } = {}) {
-  const where = {};
+export async function listar({ origem = null, status = null, q = null, incluirRascunhos = false, escopo = {} } = {}) {
+  const where = { ...escopo };
 
   if (origem) where.origem = normalizarOrigem(origem);
 

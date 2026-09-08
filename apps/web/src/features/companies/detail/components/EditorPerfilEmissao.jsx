@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { CAMPOS_PERFIL_EMISSAO } from "../../../../lib/nfse/perfilEmissao";
+import { useEdicaoPendente } from '../../../configuracoes/ProtecaoEdicao';
 
 const GRUPOS = [
   ["Serviço e local", ["codigoServicoNacional", "codigoServicoMunicipal", "cLocPrestacao", "codigoNbs"]],
@@ -31,6 +32,8 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
   const campos = dados?.campos || CAMPOS_PERFIL_EMISSAO;
+  const original = form?.id ? dados?.perfis?.find((p) => p.id === form.id) : { ...dados?.derivadoDoCadastro, nome: '', ativo: true, padrao: false };
+  useEdicaoPendente(Boolean(form && JSON.stringify(corpoDoPerfil(form, campos)) !== JSON.stringify(corpoDoPerfil(original || {}, campos))));
   const servico = dados?.sugestoes?.porServico?.find((s) => s.codigo === form?.codigoServicoNacional);
   const mudar = (id, valor) => setForm((anterior) => ({ ...anterior, [id]: valor }));
   async function salvar(e) {

@@ -171,6 +171,7 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
       }
       contentStyle={{ maxWidth: "var(--content-max)", margin: "0 auto", width: "100%" }}
     >
+      <Button variant="secondary" onClick={async () => { try { await rascunho.salvarAgora(); onAbrirDetalhe?.(onboardingId); } catch { /* o rascunho mostra a falha de salvamento */ } }}>Abrir atendimento comercial</Button>
       <TrilhaPassos
         passos={passos}
         passoAtual={passo}

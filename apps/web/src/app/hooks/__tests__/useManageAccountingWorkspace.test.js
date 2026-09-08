@@ -204,3 +204,10 @@ describe("loadAccountingEntries", () => {
     expect(ultimoSetEntries()).toEqual([]);
   });
 });
+
+test("deep link no plano de contas carrega empresa e acompanha mudança de empresa",async()=>{
+ const api=montarApi([]);const props={api,page:"companyDetail",selectedCompanyId:"empresa-a",companyDetailTab:"planoContas",feedback:{}};
+ const r=renderHook((p)=>useManageAccountingWorkspace(p),{initialProps:props});await act(async()=>{});
+ expect(api.getChartOfAccounts).toHaveBeenCalledWith("empresa-a");expect(api.getAccountingEntries).not.toHaveBeenCalled();
+ r.rerender({...props,selectedCompanyId:"empresa-b"});await act(async()=>{});expect(api.getChartOfAccounts).toHaveBeenLastCalledWith("empresa-b");
+});

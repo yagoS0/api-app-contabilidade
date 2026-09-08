@@ -30,6 +30,11 @@ function searchValueDeep(input, matcher) {
 function parsePossibleDate(value) {
   const raw = String(value || "").trim();
   if (!raw) return null;
+  if (/^\d{8}$/.test(raw)) {
+    const iso = `${raw.slice(0,4)}-${raw.slice(4,6)}-${raw.slice(6,8)}`;
+    const date = new Date(`${iso}T23:59:59.999-03:00`);
+    return Number.isNaN(date.getTime()) || new Date(`${iso}T00:00:00Z`).toISOString().slice(0,10) !== iso ? null : date;
+  }
   if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return new Date(raw);
   const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (br) return new Date(`${br[3]}-${br[2]}-${br[1]}T00:00:00.000Z`);
@@ -51,47 +56,29 @@ function keyForPortalClient(portalClientId) {
   return `${PROCURATION_PREFIX}${String(portalClientId)}`;
 }
 
-function summarizeProcurationResponse(response) {
-  const parsedDados = parseJsonString(response?.dados);
-  const procuracoes = Array.isArray(parsedDados) ? parsedDados : [];
-  const firstProcuracao = procuracoes[0] || null;
-  const explicitSystems = Array.isArray(firstProcuracao?.sistemas) ? firstProcuracao.sistemas : [];
-  const explicitExpiry = parsePossibleDate(firstProcuracao?.dtexpiracao);
-
-  if (procuracoes.length > 0) {
-    return {
-      status: "ATIVA",
-      validUntil: explicitExpiry ? explicitExpiry.toISOString() : null,
-      systems: explicitSystems.filter(Boolean),
-      rawPayload: response,
-    };
+// Contrato oficial OBTERPROCURACAO41: dados é array de {dtexpiracao: aaaammdd, nrsistemas, sistemas}.
+// https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/pt/solucoes/integra-procuracoes/procuracoes/servicos/obter_procuracao/
+export function summarizeProcurationResponse(response) {
+  const negado = (v) => v === false || ["REVOGADA", "REVOGADO", "INATIVA", "INATIVO", "CANCELADA", "CANCELADO", "AUSENTE", "EXPIRADA"].includes(String(v).toUpperCase());
+  const positivo = (v) => v === true || ["ATIVA", "ATIVO", "ACTIVE", "VIGENTE"].includes(String(v).toUpperCase());
+  const statusDe = (p) => p?.situacao ?? p?.ativo ?? (typeof p?.status === "string" || typeof p?.status === "boolean" ? p.status : undefined);
+  const base = { status: "AUSENTE", validUntil: null, systems: [], rawPayload: response };
+  if (negado(statusDe(response)) || (typeof response?.status === "number" && response.status !== 200)) return base;
+  const parsed = typeof response?.dados === "string" ? parseJsonString(response.dados) : response?.dados;
+  if (Array.isArray(parsed)) {
+    const validas = parsed.filter((p) => {
+      const expira = parsePossibleDate(p?.dtexpiracao);
+      return !negado(statusDe(p)) && (statusDe(p) === undefined || positivo(statusDe(p))) && expira && expira.getTime() > Date.now() && Array.isArray(p.sistemas) && p.sistemas.every((v) => typeof v === "string");
+    });
+    if (!validas.length) return base;
+    return { ...base, status: "ATIVA", validUntil: new Date(Math.min(...validas.map((p) => parsePossibleDate(p.dtexpiracao).getTime()))).toISOString(), systems: [...new Set(validas.flatMap((p) => p.sistemas))] };
   }
-
-  const expiresAt = parsePossibleDate(
-    searchValueDeep(response, (key, value) => /expir|validade|vigencia.*fim|datafim/.test(String(key || "").toLowerCase()) && typeof value === "string")
-  );
-  const systems = searchValueDeep(response, (key, value) => /sistemas|servicos/.test(String(key || "").toLowerCase()) && Array.isArray(value));
-  const activeFlag = searchValueDeep(response, (key, value) => /situacao|status|ativo/.test(String(key || "").toLowerCase()) && (typeof value === "string" || typeof value === "boolean"));
-  const normalizedStatus = String(activeFlag || "").trim().toUpperCase();
-  const isActive =
-    activeFlag === true ||
-    ["ATIVA", "ATIVO", "ACTIVE", "VIGENTE"].includes(normalizedStatus) ||
-    Boolean(expiresAt && expiresAt.getTime() >= Date.now());
-
-  return {
-    status: isActive ? "ATIVA" : "AUSENTE",
-    validUntil: expiresAt ? expiresAt.toISOString() : null,
-    systems: Array.isArray(systems)
-      ? systems
-          .map((item) => {
-            if (typeof item === "string") return item;
-            if (item && typeof item === "object") return String(item.nome || item.idSistema || item.codigo || "").trim();
-            return "";
-          })
-          .filter(Boolean)
-      : [],
-    rawPayload: response,
-  };
+  // Formato não canônico só autoriza mediante status explícito; validade isolada nunca autoriza.
+  const alvo = parsed && typeof parsed === "object" ? parsed : response;
+  const ativo = statusDe(alvo);
+  const expira = parsePossibleDate(alvo?.validUntil || alvo?.validade || alvo?.dtexpiracao);
+  if (!positivo(ativo) || !expira || expira.getTime() <= Date.now()) return base;
+  return { ...base, status: "ATIVA", validUntil: expira.toISOString(), systems: Array.isArray(alvo.sistemas) ? alvo.sistemas.filter((s) => typeof s === "string") : [] };
 }
 
 export async function getStoredProcurationStatus(portalClientId) {
@@ -112,17 +99,7 @@ export class SerproProcurationService {
     this.client = options.client || new SerproHttpClient();
   }
 
-  async checkCompanyProcuration({ portalClientId, contratanteCnpj }) {
-    const company = await prisma.portalClient.findUnique({
-      where: { id: String(portalClientId) },
-      select: { id: true, cnpj: true, razao: true },
-    });
-    if (!company) {
-      const err = new Error("portal_company_not_found");
-      err.code = "PORTAL_COMPANY_NOT_FOUND";
-      throw err;
-    }
-
+  async checkCnpjProcuration({ cnpj, contratanteCnpj }) {
     const runtime = await getResolvedSerproCredentials();
     const procuradorCnpj = onlyDigits(contratanteCnpj || runtime.certificate.document);
     if (!procuradorCnpj || procuradorCnpj.length !== 14) {
@@ -131,7 +108,8 @@ export class SerproProcurationService {
       throw err;
     }
 
-    const contribuinteCnpj = onlyDigits(company.cnpj);
+    const contribuinteCnpj = onlyDigits(cnpj);
+    if (contribuinteCnpj.length !== 14) throw Object.assign(new Error("CNPJ inválido"), { code: "CNPJ_INVALIDO" });
     const payload = {
       contratante: { numero: procuradorCnpj, tipo: 2 },
       autorPedidoDados: { numero: procuradorCnpj, tipo: 2 },
@@ -152,6 +130,23 @@ export class SerproProcurationService {
     const response = await this.client.post("/Consultar", payload);
     const summary = summarizeProcurationResponse(response);
     const checkedAt = new Date().toISOString();
+
+    return { ...summary, procuradorCnpj, cnpj: contribuinteCnpj, checkedAt };
+  }
+
+  async checkCompanyProcuration({ portalClientId, contratanteCnpj }) {
+    const company = await prisma.portalClient.findUnique({
+      where: { id: String(portalClientId) },
+      select: { id: true, cnpj: true, razao: true },
+    });
+    if (!company) {
+      const err = new Error("portal_company_not_found");
+      err.code = "PORTAL_COMPANY_NOT_FOUND";
+      throw err;
+    }
+
+    const summary = await this.checkCnpjProcuration({ cnpj: company.cnpj, contratanteCnpj });
+    const { procuradorCnpj, checkedAt } = summary;
 
     await prisma.appSetting.upsert({
       where: { key: keyForPortalClient(company.id) },

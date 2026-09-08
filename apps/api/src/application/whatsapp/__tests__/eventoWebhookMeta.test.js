@@ -8,6 +8,7 @@ import {
   STATUS_DOCUMENTADOS,
   STATUS_FALHA,
   extrairCorpo,
+  extrairInteracao,
   extrairMidiaProvedorId,
   instanteDoProvedor,
   lerEventoWebhook,
@@ -201,6 +202,14 @@ describe("extratores", () => {
     expect(extrairCorpo({ interactive: { button_reply: { title: "c" } } })).toBe("c");
     expect(extrairCorpo({ document: { caption: "d" } })).toBe("d");
     expect(extrairCorpo({ location: { latitude: 1 } })).toBeNull();
+  });
+
+  test("preserva ids de button_reply/list_reply; o título não dirige a ação", () => {
+    expect(extrairInteracao({ interactive: { button_reply: { id: "altan.client.more.v1", title: "Texto alterado" } } }))
+      .toEqual({ tipo: "button_reply", id: "altan.client.more.v1", titulo: "Texto alterado" });
+    expect(extrairInteracao({ interactive: { list_reply: { id: "altan.client.documents.v1", title: "Documentos" } } }))
+      .toEqual({ tipo: "list_reply", id: "altan.client.documents.v1", titulo: "Documentos" });
+    expect(extrairInteracao({ interactive: { button_reply: { title: "sem id" } } })).toBeNull();
   });
 
   test("extrairMidiaProvedorId ignora id que não seja texto", () => {

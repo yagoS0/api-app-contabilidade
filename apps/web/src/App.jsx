@@ -1,3 +1,5 @@
+import { ConfiguracoesGeraisPage, ConfiguracoesGeraisLayout } from "./features/configuracoes/Configuracoes";
+import { FormularioPublico } from "./features/onboarding/pages/FormularioPublico";
 import { useEffect, useMemo } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { createApiClient } from "./api/client";
@@ -37,6 +39,11 @@ const api = createApiClient();
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
 
 function App() {
+  const location = useLocation();
+  return location.pathname === "/onboarding/publico" ? <FormularioPublico api={api} /> : <AppInterno />;
+}
+
+function AppInterno() {
   const feedback = useManageAppFeedback();
   const session = useManageAuthSession({ api, tokenStorageKey: TOKEN_STORAGE_KEY, feedback });
   // O lote por WhatsApp na página de envio em lote (prévia → conferência → envio). Hook próprio,
@@ -189,8 +196,11 @@ function App() {
     );
   }
 
+  if (session.page === "configuracoesGerais") return <ConfiguracoesGeraisPage />;
+
   if (session.page === "guideSettings") {
     return (
+      <ConfiguracoesGeraisLayout atual="integracoes">
       <SerproSettingsPage
         settings={companiesWorkspace.guideSettings}
         companies={companiesWorkspace.companiesState.companies}
@@ -217,19 +227,22 @@ function App() {
         onRunCron={companiesWorkspace.handleRunSerproCron}
         runningCron={companiesWorkspace.runningSerproCron}
         cronRunResult={companiesWorkspace.serproCronRunResult}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.setPage("configuracoesGerais")}
         message={feedback.message}
         error={feedback.error}
       />
+      </ConfiguracoesGeraisLayout>
     );
   }
 
   if (session.page === "chartOfAccountsGlobal") {
     return (
+      <ConfiguracoesGeraisLayout atual="contabilidade">
       <GlobalChartOfAccountsPage
         api={api}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.setPage("configuracoesGerais")}
       />
+      </ConfiguracoesGeraisLayout>
     );
   }
 
@@ -587,6 +600,7 @@ function App() {
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
       onOpenWhatsapp={() => session.setPage("whatsapp")}
       onOpenObrigacoes={() => session.setPage("obrigacoes")}
+      onOpenConfiguracoes={() => session.setPage("configuracoesGerais")}
       onOpenOnboardings={() => session.setPage("onboardings")}
       backgroundJobs={backgroundJobs}
       api={api}

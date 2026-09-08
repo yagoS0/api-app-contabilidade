@@ -65,6 +65,13 @@ beforeEach(() => {
   prisma.onboardingEtapa.createMany.mockResolvedValue({ count: 0 });
 });
 
+test("recuperação da conversão não consulta nem vincula empresa fora do escopo", async () => {
+  prisma.onboarding.findUnique.mockResolvedValue(fichaSalva());
+  await expect(converter("onb-1", { vincularPortalClientId: "portal-fora" }, { atorId: "u1", portalIds: ["portal-permitido"] })).rejects.toMatchObject({ code: "portal_client_nao_encontrado", status: 404 });
+  expect(prisma.portalClient.findUnique).not.toHaveBeenCalled();
+  expect(prisma.onboarding.update).not.toHaveBeenCalled();
+});
+
 describe("extrairColunas — uma fonte só para coluna e JSON", () => {
   test("promove os cinco campos e normaliza CNPJ e e-mail", () => {
     const colunas = extrairColunas("TRANSFERENCIA", {
@@ -310,7 +317,7 @@ describe("converter — pré-check de CNPJ e recuperação por vínculo", () => 
     prisma.portalClient.findUnique.mockResolvedValue({ id: "portal-7", cnpj: "1", razao: "R" });
     prisma.onboarding.update.mockResolvedValue({});
 
-    const out = await converter("onb-1", { vincularPortalClientId: "portal-7" }, { atorId: "u1" });
+    const out = await converter("onb-1", { vincularPortalClientId: "portal-7" }, { atorId: "u1", portalIds: ["portal-7"] });
 
     expect(out.vinculado).toBe(true);
     expect(out.portalClientId).toBe("portal-7");
@@ -327,7 +334,7 @@ describe("converter — pré-check de CNPJ e recuperação por vínculo", () => 
     prisma.portalClient.findUnique.mockResolvedValue({ id: "portal-7", cnpj: "1", razao: "R" });
 
     await expect(
-      converter("onb-1", { vincularPortalClientId: "portal-7" }, { atorId: "u1" })
+      converter("onb-1", { vincularPortalClientId: "portal-7" }, { atorId: "u1", portalIds: ["portal-7"] })
     ).rejects.toMatchObject({ code: "portal_client_ja_vinculado", status: 409 });
     expect(prisma.onboarding.update).not.toHaveBeenCalled();
   });

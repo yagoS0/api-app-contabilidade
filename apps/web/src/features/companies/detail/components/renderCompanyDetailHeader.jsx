@@ -1,3 +1,4 @@
+import { Engrenagem } from "../../../configuracoes/Configuracoes";
 import { formatCompetencia, deslocarCompetencia, competenciaAtual } from "../../../../lib/competencia";
 import { BackButton } from "../../../../components/ui/BackButton";
 import { Tabs } from "../../../../components/ui/Tabs";
@@ -257,6 +258,7 @@ export function CompanySectionHeader({
     || groups.find((g) => g.key === TAB_TO_GROUP[activeTab])
     || groups[0];
   const subTabs = activeGroup.tabs;
+  const emConfiguracoes = activeTab === 'configuracoesEmpresa';
 
   return (
     <header className="company-section-header">
@@ -286,7 +288,7 @@ export function CompanySectionHeader({
                num grupo abriria uma aba e o clique normal outra. */
             href: companyTabPath(companyId, group.tabs[0]?.key),
           }))}
-          active={activeGroup.key}
+          active={emConfiguracoes ? undefined : activeGroup.key}
           onChange={(key) => {
             const grupo = groups.find((g) => g.key === key);
             if (grupo) onTabChange(grupo.tabs[0].key);
@@ -301,14 +303,14 @@ export function CompanySectionHeader({
             sem ser empurrado pelo nome da empresa; um quarto filho entre marca e menu jogaria o
             menu para a coluna da folga e descentralizaria o header em TODAS as abas. A folga da
             direita já existia vazia, e o controle global fica no mesmo nível hierárquico do menu. */}
-        {mostraCompetencia && (
+        <div className="config-topbar-actions">{mostraCompetencia && (
           <CompetenciaSwitcher competencia={competencia} onChange={onCompetenciaChange} />
-        )}
+        )}{companyId && <Engrenagem href={companyTabPath(companyId, 'configuracoesEmpresa')} onClick={()=>onTabChange('configuracoesEmpresa')} label="Configurações da empresa" />}</div>
       </div>
 
       {/* Nível 2 — sub-abas do grupo ativo, em formato de aba (Chrome). Oculto quando o grupo
           tem só 1 (ex.: Cadastro → abre direto a ficha). */}
-      {subTabs.length > 1 && (
+      {!emConfiguracoes && subTabs.length > 1 && (
         <div className="company-section-header__subtabs">
           <Tabs
             /* Cada sub-aba leva a URL da SUA rota — é o que faz o Ctrl+clique abrir aquela aba

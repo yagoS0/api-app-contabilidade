@@ -596,6 +596,12 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, selectedCompanyId, companyDetailTab, accountingEntriesState.filters]);
 
+  // Deep link/F5 no plano de contas também deve carregar, sem depender do clique no menu.
+  useEffect(() => {
+    if (page === "companyDetail" && selectedCompanyId && companyDetailTab === "planoContas") loadChartOfAccounts(selectedCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, selectedCompanyId, companyDetailTab]);
+
   // ⚠ O IRMÃO DO EFFECT ACIMA — a Circular estava sem ele.
   //
   // O único disparo de `loadCircular` era a TROCA DE ABA (`switchTab`, em

@@ -1,3 +1,4 @@
+import { Engrenagem } from "../../../configuracoes/Configuracoes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { situacaoFiscalComSimbolo } from "../../../../lib/vocabulario";
@@ -168,8 +169,8 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
         aria-controls="dashboard-gaveta"
         /* ⚠ O rótulo acessível DIZ O QUE ABRE. "Menu" sozinho não distingue esta gaveta do menu do
            navegador nem do popover de uma linha da tabela. */
-        aria-label={aberta ? "Fechar o menu de ferramentas e configurações" : "Abrir o menu de ferramentas e configurações"}
-        title="Ferramentas e configurações"
+        aria-label={aberta ? "Fechar o menu de ferramentas" : "Abrir o menu de ferramentas"}
+        title="Ferramentas"
         aria-describedby={resumoWhatsapp?.selo ? "whatsapp-aviso-menu" : undefined}
       >
         {/* Os três traços, desenhados — o caractere ☰ some em fonte sem o glifo e não escala com
@@ -200,7 +201,7 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
             className="dashboard-gaveta"
             role="dialog"
             aria-modal="true"
-            aria-label="Ferramentas e configurações"
+            aria-label="Ferramentas"
           >
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -221,7 +222,7 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
                 ✕
               </button>
             </div>
-            <nav aria-label="Ferramentas e configurações" style={{ padding: "6px 0" }}>
+            <nav aria-label="Ferramentas" style={{ padding: "6px 0" }}>
               {usable.map((it, i) => (
                 <div key={it.label}>
                   {/* O grupo desenha uma régua com título — sem ela "Rotinas" e "Configuração
@@ -326,6 +327,7 @@ export function CompaniesHomePage({
   onOpenWhatsapp,
   onOpenObrigacoes,
   onOpenOnboardings,
+  onOpenConfiguracoes,
   onLogout,
   onOpenCompany,
   globalChartStatus, // { isConfigured, tiposFaltantes, ... } — pré-requisito para criar empresa
@@ -1016,9 +1018,9 @@ export function CompaniesHomePage({
                 // Cadastrar obrigação é CONFIGURAÇÃO do escritório (define o que passa a ser
                 // cobrado de todo mundo), não uma forma de olhar a carteira — por isso saiu do
                 // seletor de visões e entrou aqui.
-                { grupo: "Configurações", label: "Obrigações do escritório", onClick: onOpenObrigacoes },
-                { label: "Configuração SERPRO", onClick: onOpenGuideSettings },
-                { label: "Plano de Contas Global", onClick: onOpenChartGlobal },
+
+
+
                 // ⚠ Chamava-se "Pendências (debug)". É a ÚNICA tela que lista guia por guia o
                 // status do e-mail, as tentativas e o `emailLastError` — e o rótulo "(debug)"
                 // dizia ao contador que aquilo não era assunto dele. Ferramenta de diagnóstico
@@ -1074,6 +1076,7 @@ export function CompaniesHomePage({
             {/* Onboardings fica ao LADO de "Nova empresa", e as duas portas continuam existindo:
                 "Nova empresa" serve a quem já tem tudo em mãos; o funil serve ao que acontece
                 ANTES disso (empresa que ainda vai abrir, papelada chegando em partes). */}
+            <Engrenagem href="/configuracoes" onClick={onOpenConfiguracoes} label="Configurações gerais do escritório" />
             {onOpenOnboardings && (
               <Button variant="secondary" className="dashboard-home__action dashboard-home__action--outline" onClick={onOpenOnboardings}>
                 Onboardings

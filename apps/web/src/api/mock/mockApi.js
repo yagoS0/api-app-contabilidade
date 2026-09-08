@@ -1460,6 +1460,7 @@ function mockNotaDeLista(n) {
 // `Map` no topo do módulo, com a chave espelhando a PK do Prisma — assim o rascunho sobrevive à
 // navegação e ao F5 dentro da mesma sessão do app.
 const mockOnboardings = new Map();
+const mockLinksComerciais = new Map();
 const mockOnboardingEtapas = new Map(); // onboardingId -> etapa[]
 let mockOnboardingSeq = 0;
 
@@ -10415,6 +10416,27 @@ export function createMockApi() {
     async vincularEntryParcelamento() { await delay(40); return { ok: true }; },
 
     // ── Onboarding (funil pré-cadastro) ─────────────────────────────────
+    async getOnboardingComercial(id) {
+      const o = mockOnboardings.get(id); if (!o) throw new Error("Ficha não encontrada.");
+      return { ok: true, faseComercial: o.faseComercial || "LEAD", proposta: o.proposta || null, analises: o.analises || [], eventos: o.eventos || [], links: [...mockLinksComerciais.values()].filter(l=>l.onboardingId===id).map(({token,...l})=>l) };
+    },
+    async salvarOnboardingComercial(id, patch) {
+      const o=mockOnboardings.get(id);if(!o||o.status==="CONVERTIDO")throw new Error("Ficha indisponível para edição.");
+      Object.assign(o,patch);o.eventos=[...(o.eventos||[]),{id:crypto.randomUUID(),tipo:"ATENDIMENTO_ATUALIZADO",createdAt:new Date().toISOString()}];persistirOnboardingsMock();return {ok:true};
+    },
+    async criarAnaliseOnboarding(id,{tipo}) {
+      const o=mockOnboardings.get(id);if(!o)throw new Error("Ficha não encontrada.");
+      const analise={id:crypto.randomUUID(),tipo,status:tipo==="SITFIS"?"BLOQUEADA":"CONCLUIDA",cnpj:o.cnpj,createdAt:new Date().toISOString(),resultado:{fonte:"Demonstração",mensagem:tipo==="SITFIS"?"Demonstração: configure procuração no serviço real. Nenhuma consulta fiscal foi executada.":"Dados simulados; nenhuma consulta externa foi executada."}};
+      o.analises=[analise,...(o.analises||[])];persistirOnboardingsMock();return {ok:true,analise};
+    },
+    async criarLinkOnboarding(id,{diasValidade=7}={}) {
+      if(!mockOnboardings.has(id))throw new Error("Ficha não encontrada.");
+      const token=crypto.randomUUID()+crypto.randomUUID(),link={id:crypto.randomUUID(),onboardingId:id,expiresAt:new Date(Date.now()+diasValidade*86400000).toISOString(),revokedAt:null,submittedAt:null,versao:0};
+      mockLinksComerciais.set(token,{...link,token});return {ok:true,link,token};
+    },
+    async revogarLinkOnboarding(id,linkId){const l=[...mockLinksComerciais.values()].find(l=>l.id===linkId&&l.onboardingId===id);if(!l)throw new Error("Link não encontrado.");l.revokedAt=new Date().toISOString();return {ok:true};},
+    async consultarFormularioOnboarding(token){const l=mockLinksComerciais.get(token);if(!l||l.revokedAt||l.submittedAt||new Date(l.expiresAt)<new Date())throw new Error("Link expirado, revogado ou já utilizado.");const o=mockOnboardings.get(l.onboardingId);return {ok:true,onboarding:{origem:o.origem,dados:o.dados,ultimoPasso:o.ultimoPasso,status:o.status,versao:l.versao}};},
+    async salvarFormularioOnboarding(token,patch){const l=mockLinksComerciais.get(token);if(!l||l.revokedAt||l.submittedAt||new Date(l.expiresAt)<new Date())throw new Error("Link expirado, revogado ou já utilizado.");if(patch.versao!==l.versao)throw new Error("O formulário foi alterado em outra janela. Reabra o link antes de salvar.");const o=mockOnboardings.get(l.onboardingId);o.dados=patch.dados;o.ultimoPasso=patch.ultimoPasso;o.origemPreenchimento="CLIENTE";l.versao++;if(patch.finalizar){l.submittedAt=new Date().toISOString();o.status="RECEBIDO";}persistirOnboardingsMock();return {ok:true,onboarding:{origem:o.origem,dados:o.dados,ultimoPasso:o.ultimoPasso,status:o.status,versao:l.versao}};},
     async criarOnboarding(origem) {
       await delay(180);
       const registro = {

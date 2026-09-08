@@ -1,3 +1,4 @@
+import { PainelComercial } from "../components/PainelComercial";
 // DETALHE — duas colunas.
 //
 // Esquerda: a ficha declarada, SOMENTE LEITURA, percorrendo A MESMA SPEC do wizard. O escritório vê
@@ -197,6 +198,7 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
       }
       contentStyle={{ maxWidth: "var(--content-max)", margin: "0 auto", width: "100%" }}
     >
+      {typeof api.getOnboardingComercial === "function" && <PainelComercial key={onboarding.id} api={api} onboardingId={onboarding.id} convertido={convertido} />}
       {aviso && (
         <div style={{ padding: "var(--space-2) var(--space-3)", marginBottom: "var(--space-3)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: 13, color: "var(--text-muted)" }}>
           {aviso}

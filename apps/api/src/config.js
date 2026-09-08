@@ -668,6 +668,16 @@ export const INTEGRACAO_WHATSAPP_IA = process.env.INTEGRACAO_WHATSAPP_IA === "1"
 export const IA_EMPRESAS_PILOTO = Object.freeze(
   String(process.env.IA_EMPRESAS_PILOTO || "").split(",").map((v) => v.trim()).filter(Boolean),
 );
+// Menus automáticos não chamam o modelo, mas também respondem ao cliente sozinhos. Têm uma chave
+// própria, desligada por padrão, e reutilizam a mesma lista de empresas piloto da IA. Assim o menu
+// pode ser validado sem habilitar Anthropic e sem abrir o atendimento para toda a carteira.
+export const INTEGRACAO_WHATSAPP_MENU = process.env.INTEGRACAO_WHATSAPP_MENU === "1";
+export const WHATSAPP_MENU_TELEFONES_PILOTO = Object.freeze(
+  String(process.env.WHATSAPP_MENU_TELEFONES_PILOTO || "").split(",")
+    .map((v) => v.replace(/\D+/g, "")).filter((v) => /^[1-9]\d{9,14}$/.test(v)),
+);
+// Liberação pública futura do menu comercial. No piloto, prefira a lista E.164 acima.
+export const WHATSAPP_MENU_LEADS = process.env.WHATSAPP_MENU_LEADS === "1";
 // ⚠ SEGREDO: nunca em log, mensagem de erro ou teste. O SDK lê `ANTHROPIC_API_KEY` sozinho; aqui
 // só se registra a AUSÊNCIA.
 export const ANTHROPIC_API_KEY = (process.env.ANTHROPIC_API_KEY || "").trim();
@@ -723,6 +733,18 @@ if (INTEGRACAO_WHATSAPP_IA) {
   );
   if (!IA_EMPRESAS_PILOTO.length) log.warn("IA_EMPRESAS_PILOTO vazio: o assistente não responde a NINGUÉM (é o desenho).");
   if (!ANTHROPIC_API_KEY) log.warn("ANTHROPIC_API_KEY ausente: o assistente ficará recusando com motivo");
+}
+
+if (INTEGRACAO_WHATSAPP_MENU) {
+  log.warn(
+    "INTEGRACAO_WHATSAPP_MENU=1: os menus automáticos estão LIGADOS para "
+      + IA_EMPRESAS_PILOTO.length
+      + " empresa(s), " + WHATSAPP_MENU_TELEFONES_PILOTO.length + " telefone(s) piloto"
+      + (WHATSAPP_MENU_LEADS ? " e leads não vinculados" : "") + ". O menu não chama o modelo Anthropic."
+  );
+  if (!IA_EMPRESAS_PILOTO.length && !WHATSAPP_MENU_TELEFONES_PILOTO.length && !WHATSAPP_MENU_LEADS) {
+    log.warn("Nenhum piloto de menu configurado: os menus não respondem a NINGUÉM (é o desenho).");
+  }
 }
 
 if (INTEGRACAO_WHATSAPP) {

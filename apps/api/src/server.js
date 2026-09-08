@@ -1,3 +1,4 @@
+import { createPublicOnboardingRouter } from "./routes/publicOnboarding.js";
 // src/server.js
 import express from "express";
 import { iniciarWorkerWhatsappDuravel, pararWorkerWhatsappDuravel } from "./workers/whatsappDurableWorker.js";
@@ -44,11 +45,10 @@ const app = express();
 // `JSON.stringify` NOSSO — que não é o mesmo texto — e a assinatura **nunca** conferiria: 403 em
 // todo evento, com um sintoma que não parece com a causa. O router traz o próprio `express.raw`,
 // então a ordem aqui é a única coisa que precisa ser respeitada.
-// ⚠ Esta é a ÚNICA rota pública do sistema (sem `ensureAuthorized`): a assinatura é a autenticação.
+// Nesta rota pública, a assinatura é a autenticação. O formulário público usa token próprio.
 // Ver `routes/webhooks/whatsapp.js`.
 app.use(CAMINHO_WEBHOOK_WHATSAPP, createWhatsappWebhookRouter());
 
-app.use(express.json());
 
 // Q8.A.2: CORS — em produção exige whitelist via env CORS_ALLOWED_ORIGINS (CSV).
 // Em dev (NODE_ENV !== "production") aceita qualquer origem (vite + ferramentas).
@@ -80,6 +80,11 @@ app.use(
     credentials: true,
   })
 );
+
+// O formulário público precisa do limitador antes de ler o corpo e do seu próprio teto de 64kb.
+// Montar após express.json() faria prevalecer o parser global de 100kb. CORS já foi aplicado.
+app.use("/public", createPublicOnboardingRouter());
+app.use(express.json());
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
