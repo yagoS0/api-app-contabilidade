@@ -36,13 +36,14 @@ export function CalendarioObrigacoesModal({ api, empresas = [], contexto = {}, o
   function abrirEdicao(o, oc) {
     const ciclo = cicloRecorrente(oc, o);
     const versoes = (o.agendaVersoes || []).filter(v => v.aPartirDe <= ciclo);
-    setEditar({ ...o, ...oc, janelaTrabalho: versoes.length ? versoes[versoes.length - 1].janela : o.janelaTrabalho, ...(o.periodicidade === 'AVULSA' ? { ocorrenciaId: undefined } : {}) });
+    const regras = versoes.filter(v => v.regra);
+    setEditar({ ...o, ...oc, ...(regras.length ? regras[regras.length - 1].regra : {}), janelaTrabalho: versoes.length ? versoes[versoes.length - 1].janela : o.janelaTrabalho, ...(o.periodicidade === 'AVULSA' ? { ocorrenciaId: undefined } : {}) });
   }
   async function salvar(form) {
     const corpo = { ...form, verificador: form.verificador || null };
     const out = await acao(() => editar.ocorrenciaId
       ? api.updateOcorrencia(editar.ocorrenciaId, form.alcance === 'ESTA_E_PROXIMAS'
-        ? { alcance: form.alcance, janelaTrabalho: form.janelaTrabalho }
+        ? { alcance: form.alcance, janelaTrabalho: form.janelaTrabalho, regra: form.regra }
         : { dataInicio: form.dataInicio, dataFim: form.dataFim })
       : editar.obrigacaoId ? api.updateObrigacao(editar.obrigacaoId, corpo) : api.createObrigacao(form.companyId, corpo));
     if (out) { setEditar(null); setDetalheId(null); setTodoPeriodo(true); setAviso('Salvo no calendário. Mostrando todos os períodos para incluir o item salvo.'); }
@@ -74,7 +75,7 @@ export function CalendarioObrigacoesModal({ api, empresas = [], contexto = {}, o
     {!dados && !erro && <p role="status">Carregando tarefas e obrigações…</p>}
     {dados && !lista.length && <p>Nenhuma tarefa ou obrigação neste filtro.</p>}
     {lista.map(o => <section key={o.obrigacaoId} style={{ marginTop: 18, padding: 14, border: '1px solid var(--border)', borderRadius: 8 }}>
-      <h3 style={{ margin: 0 }}>{o.nome}</h3><p>{o.empresa} · {o.periodicidade === 'AVULSA' ? 'Sem repetição' : o.periodicidade.toLowerCase()}</p>
+      <h3 style={{ margin: 0 }}>{o.nome}</h3><p>{o.empresa} · {o.periodicidade === 'AVULSA' ? 'Sem repetição' : o.agendaVersoes?.some(v => v.regra) ? 'Recorrência com alterações por ciclo' : o.periodicidade.toLowerCase()}</p>
       {o.descricao && <p>{o.descricao}</p>}
       {(expandidas[o.obrigacaoId] ? visiveis(o) : visiveis(o).slice(0, 3)).map(oc => <div key={oc.ocorrenciaId} style={{ padding: '12px 0', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', background: contexto.ocorrenciaId === oc.ocorrenciaId ? 'var(--bg-page)' : undefined }}>
         <div style={{ flex: '1 1 230px' }}><strong>{fmt(oc.dataInicio)} até {fmt(oc.dataFim)}</strong><br />{o.tipo === 'TAREFA' ? 'Prazo' : 'Vencimento fiscal'}: {fmt(oc.dataVencimento)} · {oc.situacao === 'CONCLUIDA' ? 'Concluída' : oc.situacao === 'VENCIDA' ? 'Vencida' : 'Pendente'}</div>

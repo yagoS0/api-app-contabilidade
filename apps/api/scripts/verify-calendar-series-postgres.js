@@ -15,7 +15,7 @@ url.searchParams.set('connection_limit', '12');
 process.env.DATABASE_URL = url.href;
 globalThis.fetch = async () => { throw new Error('Provedores externos proibidos neste ensaio.'); };
 const { prisma } = await import('../src/infrastructure/db/prisma.js');
-const { sincronizarOcorrencias, excluirOcorrencia, atualizarOcorrencia, concluir } = await import('../src/application/obrigacoes/ObrigacoesService.js');
+const { sincronizarOcorrencias, excluirOcorrencia, atualizarOcorrencia, concluir, ocorrenciasDoPeriodo } = await import('../src/application/obrigacoes/ObrigacoesService.js');
 const prefix = `calendar-check-${randomUUID()}`;
 const companyId = `${prefix}-empresa`;
 const janela = { modo: 'DIAS_DO_CICLO', diaInicio: 10, diaFim: 15, deslocamentoFim: 0 };
@@ -103,6 +103,60 @@ try {
   assert.equal(repetida.canceladas, 0);
   assert.equal(repetida.concluidasPreservadas, 1);
   ok('esta e próximas concorrente deixa corte durável, não recria ciclos e conserva concluída futura integralmente');
+
+  const frequencia = await criar('frequencia');
+  await sync(frequencia.id);
+  const base = await listar(frequencia.id);
+  await concluir({ portalIds: [companyId], ocorrenciaId: base[2].id });
+  await atualizarOcorrencia({ portalIds: [companyId], ocorrenciaId: base[3].id, dados: { dataInicio: iso(base[3].dataInicio), dataFim: iso(base[3].dataFim) } });
+  await excluirOcorrencia({ portalIds: [companyId], ocorrenciaId: base[5].id });
+  const preservadas = await listar(frequencia.id);
+  const regra = { periodicidade: 'TRIMESTRAL', mesReferencia: Number(base[1].cicloChave.slice(5)), diaVencimento: 25, ajusteDiaUtil: 'MANTER', defasagemMeses: 1, diasPreparacao: 0 };
+  await Promise.all([
+    atualizarOcorrencia({ portalIds: [companyId], ocorrenciaId: base[1].id, dados: { alcance: 'ESTA_E_PROXIMAS', janelaTrabalho: janela, regra } }),
+    ...Array.from({ length: 4 }, () => sync(frequencia.id)),
+  ]);
+  const trimestrais = await listar(frequencia.id);
+  assert.equal(trimestrais.find(o => o.id === base[6].id).foraDaRecorrencia, true);
+  assert.equal(iso(trimestrais.find(o => o.id === base[1].id).dataVencimento).slice(-2), '25');
+  for (const i of [0, 2, 3, 5]) assert.deepEqual(trimestrais.find(o => o.id === base[i].id), preservadas[i]);
+  await atualizarOcorrencia({ portalIds: [companyId], ocorrenciaId: base[1].id, dados: { alcance: 'ESTA_E_PROXIMAS', janelaTrabalho: null, regra: { ...regra, periodicidade: 'MENSAL', diasPreparacao: 4 } } });
+  await sync(frequencia.id);
+  const mensais = await listar(frequencia.id);
+  assert.equal(mensais.find(o => o.id === base[6].id).foraDaRecorrencia, false);
+  assert.equal(iso(mensais.find(o => o.id === base[6].id).dataInicio).slice(-2), '21');
+  for (const i of [0, 2, 3, 5]) assert.deepEqual(mensais.find(o => o.id === base[i].id), preservadas[i]);
+  assert.equal(new Set(mensais.map(o => o.cicloChave)).size, mensais.length);
+  ok('frequência e prazo versionados concorrem com worker; retorno mensal reativa IDs sem ressuscitar exclusões');
+
+  const conflito = await criar('conflito-versionamento');
+  await prisma.obrigacao.update({ where: { id: conflito.id }, data: { tipo: 'TAREFA' } });
+  await sync(conflito.id);
+  const conflitantes = await listar(conflito.id);
+  await atualizarOcorrencia({ portalIds: [companyId], ocorrenciaId: conflitantes[1].id,
+    dados: { dataInicio: conflitantes[0].cicloChave + '-10', dataFim: conflitantes[0].cicloChave + '-25' } });
+  const antesDoConflito = await listar(conflito.id);
+  await assert.rejects(atualizarOcorrencia({ portalIds: [companyId], ocorrenciaId: conflitantes[0].id,
+    dados: { alcance: 'ESTA_E_PROXIMAS', janelaTrabalho: janela, regra: { ...regra, periodicidade: 'MENSAL' } } }), e => e.status === 409);
+  assert.deepEqual(await listar(conflito.id), antesDoConflito);
+  assert.deepEqual((await prisma.obrigacao.findUnique({ where: { id: conflito.id } })).agendaVersoes, []);
+  ok('conflito com exceção preservada desfaz também a versão em transação');
+
+  // Reutiliza série com concluída, personalizada, cancelada e meses retirados por frequência.
+  await atualizarOcorrencia({ portalIds: [companyId], ocorrenciaId: base[1].id,
+    dados: { alcance: 'ESTA_E_PROXIMAS', janelaTrabalho: janela, regra } });
+  const antesDaPausa = await listar(frequencia.id);
+  assert.ok(antesDaPausa.some(o => o.foraDaRecorrencia));
+  await prisma.obrigacao.update({ where: { id: frequencia.id }, data: { ativa: false } });
+  await sync(frequencia.id);
+  assert.deepEqual(await listar(frequencia.id), antesDaPausa);
+  const periodo = { portalIds: [companyId], inicio: new Date(base[0].cicloChave + '-01T00:00:00Z'), fim: new Date(base[11].cicloChave + '-28T00:00:00Z') };
+  const inativasNoCalendario = await ocorrenciasDoPeriodo(periodo);
+  assert.ok(!inativasNoCalendario.some(o => o.obrigacaoId === frequencia.id));
+  await prisma.obrigacao.update({ where: { id: frequencia.id }, data: { ativa: true } });
+  await sync(frequencia.id);
+  assert.deepEqual(await listar(frequencia.id), antesDaPausa);
+  ok('inativar/reativar conserva integralmente IDs e exceções, sem vazar série inativa no calendário');
 
   console.log(`PASS: ${checks} cenários sobre PostgreSQL real com migrations aplicadas.`);
 } finally {

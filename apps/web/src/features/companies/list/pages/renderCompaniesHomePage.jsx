@@ -347,6 +347,7 @@ export function CompaniesHomePage({
   // A preferência vive na sessão: voltar preserva; autenticar de novo abre Calendário.
   const navigation = useWorkspaceNavigation();
   const [visaoLocal, setVisaoLocal] = useState("calendario");
+  const avisoPlanoGlobal = useRef(null);
   const trocarVisao = navigation?.setModoVisao || setVisaoLocal;
   const resumoWhatsapp = useResumoWhatsapp({ api, enabled: typeof onOpenWhatsapp === "function" });
 
@@ -932,6 +933,8 @@ export function CompaniesHomePage({
 
           {globalChartStatus && !globalChartStatus.isConfigured && (
             <div
+              ref={avisoPlanoGlobal}
+              tabIndex={-1}
               role="alert"
               style={{
                 margin: "12px 0",
@@ -1038,12 +1041,8 @@ export function CompaniesHomePage({
               className="dashboard-home__action dashboard-home__action--accent"
               onClick={() => {
                 if (globalChartStatus && !globalChartStatus.isConfigured) {
-                  const faltantes = (globalChartStatus.tiposFaltantes || []).join(", ");
-                  window.alert(
-                    "Configure o plano de contas global antes de criar empresas.\n\n"
-                    + `Faltam contas dos tipos: ${faltantes}.\n\n`
-                    + "Acesse: Configurações da Firma → Plano de Contas Global."
-                  );
+                  avisoPlanoGlobal.current?.focus();
+                  avisoPlanoGlobal.current?.scrollIntoView?.({ block: "center" });
                   return;
                 }
                 onCreateCompany();

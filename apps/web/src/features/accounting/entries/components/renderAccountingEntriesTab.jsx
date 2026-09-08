@@ -1,3 +1,4 @@
+import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createApiClient } from "../../../../api/client";
 import { Button } from "../../../../components/ui/Button";
@@ -215,6 +216,7 @@ export function DivergenciaDeFonte({ divergencias }) {
 // só teste de regra — e regra verde com fio solto é exatamente como `hasAccountingDivergence`
 // passou meses sendo gravado sem ninguém ver.
 export function FechamentoCadeado({ companyId, competencia, entries, onState, onFechamentoData, filtroAtivo }) {
+  const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [fechado, setFechado] = useState(false);
   const [fechadoEm, setFechadoEm] = useState(null);
   const [fechadoPorNome, setFechadoPorNome] = useState(null);
@@ -313,7 +315,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
       // as buscas do SERPRO e o "+ Adicionar" respondem a este estado — e não tinha nem um "tem
       // certeza?", enquanto EXCLUIR um lançamento tinha. O peso estava invertido.
       const quando = fechadoEm ? ` (fechado em ${fmtDataCurta(fechadoEm)})` : "";
-      if (!window.confirm(`Reabrir ${competencia}${quando}?\n\nO mês volta a aceitar lançamentos e buscas no SERPRO.`)) return;
+      if (!await pedir({ titulo: "Reabrir competência", acao: "Reabrir mês", texto: `Reabrir ${competencia}${quando}?\n\nO mês volta a aceitar lançamentos e buscas no SERPRO.` })) return;
       setBusy(true);
       try {
         await fechamentoApi.reabrirFechamentoContabil(companyId, competencia);
@@ -555,6 +557,7 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
             item leva até a linha da tabela. É informação que só existe aqui. */}
         {!fechado && <FaltaParaFechar problemas={problemas} filtroAtivo={filtroAtivo} />}
       </div>
+      {confirmacao}
     </div>
   );
 }
@@ -821,6 +824,7 @@ export function AccountingEntriesTab({
   // Q9: Parcelamentos
   parcelamentos,        // { parcelamentos, loading, saving, create, ingest, rescindir } do hook useParcelamentos
 }) {
+  const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [showOFX, setShowOFX] = useState(false);
   const [showHistoricos, setShowHistoricos] = useState(false);
   const [showPayroll, setShowPayroll] = useState(false);
@@ -938,11 +942,11 @@ export function AccountingEntriesTab({
     if (jaBuscado?.buscado) {
       const oQue = qual === "extrato" ? "Este extrato" : "Estes tributos";
       // eslint-disable-next-line no-alert
-      const seguir = window.confirm(
+      const seguir = await pedir({ titulo: "Repetir consulta no SERPRO", acao: "Consultar novamente", texto:
         `${oQue} já ${qual === "extrato" ? "foi buscado" : "foram buscados"} em ${fmtDataHora(jaBuscado.em)}.\n\n`
         + "Buscar de novo consome uma nova consulta paga no SERPRO e sobrescreve os valores da "
         + "competência.\n\nBuscar mesmo assim?",
-      );
+      });
       if (!seguir) return;
     }
     setBuscandoSerpro(qual);
@@ -1568,7 +1572,7 @@ export function AccountingEntriesTab({
           onEdit={(f) => { setShowFunctionsList(false); setEditingFunction(f); }}
           onDelete={async (f) => {
             // eslint-disable-next-line no-alert
-            if (!window.confirm(`Excluir a função "${f.name}"?`)) return;
+            if (!await pedir({ titulo: "Excluir função de lançamento", acao: "Excluir função", perigo: true, texto: `Excluir a função "${f.name}"?` })) return;
             // O `try` existe só para a rejeição não virar unhandled — quem REGISTRA a falha é o
             // `setError` do hook, e quem a MOSTRA é o banner do modal (prop `error` acima).
             try { await accountingFunctions.remove(f.id); } catch { /* exibido em `error` */ }
@@ -1635,6 +1639,7 @@ export function AccountingEntriesTab({
           onClose={() => setShowCreateParcelamento(false)}
         />
       )}
+      {confirmacao}
     </div>
   );
 }

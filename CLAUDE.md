@@ -3,7 +3,7 @@
 ## Ajustes aprovados e implementados — 08/09/2026
 
 Esta decisão substitui orientações anteriores incompatíveis sobre calendário, retorno e Relatórios.
-- Calendário concentra tarefas/obrigações em modal; /obrigacoes antigo redireciona para o calendário. A seção da empresa chama Calendário. Janela mensal fixa 10–15 é inclusiva e independente do vencimento/competência. Exclusão por ocorrência ou seguintes mantém histórico e cancelamentos persistentes. Edição das seguintes altera a janela; frequência/prazo exigem configuração da série. Ver features/calendario/CLAUDE.md no web.
+- Calendário concentra tarefas/obrigações em modal; /obrigacoes antigo redireciona para o calendário. A seção da empresa chama Calendário. Janela mensal fixa 10–15 é inclusiva e independente do vencimento/competência. Exclusão por ocorrência ou seguintes mantém histórico e cancelamentos persistentes. Edição desta e seguintes versiona janela, frequência, vencimento, ajuste de dia útil e competência; meses fora da nova frequência conservam IDs e cancelamentos, sem apagar concluídas. Migration adicional 20260908210000_calendar_frequency_versions. Ver features/calendario/CLAUDE.md no web.
 - WorkspaceNavigationProvider mantém histórico interno e Tabela/Calendário durante a sessão. Novo login reseta para Calendário; voltar/logo preservam escolha; impressão não a altera. Marca à esquerda leva à carteira. Configurações navegam sem recarregar o aplicativo.
 - Relatórios do escritório voltaram a mostrar o fluxo diário do cliente, com dois meses e somente leitura. A rota GET usa responderFluxoDeCaixa. Não reintroduzir botões de lançamento/edição nas células.
 - Exportação em lote é de LANÇAMENTOS para ERP: ZIP, CSV por empresa, cinco colunas sem cabeçalho e manifesto parcial. Mesmo preflight e autorização individuais; hash da prévia invalida alertas que mudaram. Download não confirma importação no ERP.
@@ -13,7 +13,7 @@ Esta decisão substitui orientações anteriores incompatíveis sobre calendári
 - Planejamento salva e retoma cenários sem depender do PDF, separando premissas do cadastro da empresa. Emissor bloqueia fechamento durante envio; notas abrem a partir da auditoria preservando contexto; Apuração mostra carga calculada distinta de pagamento.
 - Documentos distinguem falha de ausência, preservam upload falho e resultado parcial; onboarding aguarda salvar antes de voltar/trocar etapa.
 
-Implantação: aplicar migration aditiva 20260908190000_calendar_series_exceptions e gerar Prisma antes da nova API. Schema, geração isolada e auditoria de migrations validados localmente; PostgreSQL real, integrações e implantação não foram exercitados nesta execução. Não tratar testes com mocks como homologação de banco/serviços externos.
+Implantação: aplicar migration aditiva 20260908190000_calendar_series_exceptions e gerar Prisma antes da nova API. Schema, geração isolada e auditoria de migrations validados localmente; PostgreSQL real da etapa 1 aprovado no CI 34248812325; Railway reportou sucesso para a integração 9ab263de. Alterações da etapa 2 exigem novo CI; integrações fiscais reais não foram exercitadas. Não tratar testes com mocks como homologação de banco/serviços externos.
 
 
 ## Calendário e obrigações — implementação de 07/09/2026

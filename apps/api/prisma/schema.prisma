@@ -3936,6 +3936,8 @@ model OcorrenciaObrigacao {
   dataFim        DateTime? @db.Date
   janelaPersonalizada Boolean @default(false)
   cicloChave String?
+  /// Retirada por mudança de frequência; reversível por nova versão, diferente de exclusão manual.
+  foraDaRecorrencia Boolean @default(false)
   canceladaEm DateTime?
   canceladaPorId String?
   /// "YYYY-MM" — a competência a que o SERVIÇO se refere, já com a defasagem aplicada. Guardada

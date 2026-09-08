@@ -1,4 +1,4 @@
-import { aplicarJanela, normalizarJanela, janelaDoCiclo, cicloDaOcorrencia, cicloPermitido } from '../agendaSerie.js';
+import { aplicarJanela, normalizarJanela, janelaDoCiclo, cicloDaOcorrencia, cicloPermitido, regraDoCiclo, normalizarRegraRecorrente } from '../agendaSerie.js';
 import { sincronizarAgenda } from '../sincronizarAgenda.js';
 const date = s => new Date(`${s}T00:00:00Z`);
 const janela = { modo: 'DIAS_DO_CICLO', diaInicio: 10, diaFim: 15, deslocamentoFim: 0 };
@@ -33,4 +33,47 @@ test('geração repetida não ressuscita cancelada, concluída ou exceção, nem
   await sincronizarAgenda(db, serie, { hoje: date('2026-09-01'), ehFeriado: () => false });
   expect(db.ocorrenciaObrigacao.createMany).not.toHaveBeenCalled();
   expect(db.ocorrenciaObrigacao.update).not.toHaveBeenCalled();
+});
+
+
+test('mensal para trimestral e de volta preserva IDs, passado, concluídas, exceções e canceladas', async () => {
+  const rows = [];
+  const db = { ocorrenciaObrigacao: {
+    findMany: async () => rows,
+    update: async ({ where, data }) => Object.assign(rows.find(o => o.id === where.id), data),
+    createMany: async ({ data }) => { rows.push(...data.map((o, i) => ({ ...o, id: 'id-' + (rows.length + i) }))); return { count: data.length }; },
+  } };
+  const serie = { id: 's', periodicidade: 'MENSAL', diaVencimento: 20, ajusteDiaUtil: 'MANTER', defasagemMeses: 1, janelaTrabalho: janela, agendaVersoes: [] };
+  const sync = () => sincronizarAgenda(db, serie, { hoje: date('2026-09-01'), ehFeriado: () => false, incluirVencidoDoMes: true });
+  await sync();
+  const por = ciclo => rows.find(o => o.cicloChave === ciclo);
+  por('2026-11').status = 'CONCLUIDA';
+  por('2026-12').janelaPersonalizada = true;
+  por('2027-02').canceladaEm = date('2026-09-01');
+  const preservadas = ['2026-09', '2026-11', '2026-12', '2027-02'].map(c => ({ ...por(c) }));
+  const idMaio = por('2027-05').id;
+  const trimestral = normalizarRegraRecorrente({ periodicidade: 'TRIMESTRAL', mesReferencia: 10, diaVencimento: 25 }, serie);
+  serie.agendaVersoes.push({ aPartirDe: '2026-10', janela, regra: trimestral });
+  await sync();
+  expect(por('2027-05').foraDaRecorrencia).toBe(true);
+  expect(por('2026-10').dataVencimento).toEqual(date('2026-10-25'));
+  for (const p of preservadas) expect(por(p.cicloChave)).toEqual(p);
+  serie.agendaVersoes.push({ aPartirDe: '2026-10', janela: null, regra: { ...trimestral, periodicidade: 'MENSAL', diasPreparacao: 4 } });
+  await sync(); await sync();
+  expect(por('2027-05')).toMatchObject({ id: idMaio, foraDaRecorrencia: false, dataInicio: date('2027-05-21'), dataVencimento: date('2027-05-25') });
+  for (const p of preservadas) expect(por(p.cicloChave)).toEqual(p);
+  expect(new Set(rows.map(o => o.cicloChave)).size).toBe(rows.length);
+});
+
+test('último snapshot aplicável vence mesmo havendo agendamento posterior antigo', () => {
+  const serie = { periodicidade: 'MENSAL', agendaVersoes: [
+    { aPartirDe: '2027-01', regra: { periodicidade: 'ANUAL' } },
+    { aPartirDe: '2026-10', regra: { periodicidade: 'TRIMESTRAL' } },
+  ] };
+  expect(regraDoCiclo(serie, '2026-09').periodicidade).toBe('MENSAL');
+  expect(regraDoCiclo(serie, '2027-01').periodicidade).toBe('TRIMESTRAL');
+});
+
+test.each([{ periodicidade: 'AVULSA' }, { periodicidade: 'ANUAL', mesReferencia: 0 }, { diaVencimento: 32 }, { defasagemMeses: -1 }, { ajusteDiaUtil: 'QUALQUER' }])('recusa configuração futura inválida %j', patch => {
+  expect(() => normalizarRegraRecorrente(patch, { periodicidade: 'MENSAL', diaVencimento: 20, ajusteDiaUtil: 'MANTER' })).toThrow();
 });

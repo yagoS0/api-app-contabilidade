@@ -1,3 +1,4 @@
+import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
@@ -1487,6 +1488,7 @@ function mensagemDeFalhaDoTemplate(err) {
 }
 
 export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate, onSave, saving, onClose }) {
+  const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [kind, setKind] = useState("PROLABORE");
   const [competencia, setCompetencia] = useState(defaultCompetencia || "");
   const [template, setTemplate] = useState(null);
@@ -1685,10 +1687,10 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
     if (repeatN > 0) {
       const totalEntries = repeatN + 1;
       // eslint-disable-next-line no-alert
-      const ok = window.confirm(
+      const ok = await pedir({ titulo: "Confirmar repetição da folha", acao: "Criar lançamentos", texto:
         `Isso vai criar ${totalEntries} lançamentos (este mês + ${repeatN} mês${repeatN === 1 ? "" : "es"} seguintes), `
         + `replicando valores e contas. Continuar?`,
-      );
+      });
       if (!ok) return;
     }
 
@@ -1996,6 +1998,7 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
           </div>
         )}
       </div>
+      {confirmacao}
     </div>
   );
 }
@@ -2035,6 +2038,7 @@ function ItemConferencia({ item, cor, rotulo, onIr }) {
 }
 
 export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPreflight, onIrAteLancamento, onReabrir }) {
+  const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [inicio, setInicio] = useState(defaultCompetencia || "");
   const [fim, setFim] = useState(defaultCompetencia || "");
   const [error, setError] = useState("");
@@ -2086,7 +2090,7 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPrefli
     // Alerta CONFIRMA. A frase repete o que está em jogo em vez de perguntar "tem certeza?".
     if (temAlertas) {
       const lista = preflight.alertas.map((a) => `• ${a.motivo}`).join("\n");
-      if (!window.confirm(`Exportar mesmo assim?\n\n${lista}\n\nO arquivo será gerado com estes alertas.`)) return;
+      if (!await pedir({ titulo: "Conferir alertas da exportação", acao: "Exportar com alertas", texto: `${lista}\n\nO arquivo será gerado com estes alertas.` })) return;
     }
     setExporting(true);
     try {
@@ -2203,7 +2207,7 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPrefli
                   <button
                     type="button"
                     onClick={async () => {
-                      if (!window.confirm(`Reabrir ${preflight.jaExportados} lançamento(s) de ${inicio}?\n\nEles voltam a ser editáveis e deixam de constar como enviados à contabilidade.`)) return;
+                      if (!await pedir({ titulo: "Reabrir lançamentos exportados", acao: "Reabrir lançamentos", texto: `Reabrir ${preflight.jaExportados} lançamento(s) de ${inicio}?\n\nEles voltam a ser editáveis e deixam de constar como enviados à contabilidade.` })) return;
                       await onReabrir(inicio);
                       await conferir();
                     }}
@@ -2224,6 +2228,7 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPrefli
           </Button>
         </div>
       </div>
+      {confirmacao}
     </div>
   );
 }

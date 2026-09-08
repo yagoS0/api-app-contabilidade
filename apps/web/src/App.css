@@ -2007,9 +2007,10 @@ th.tabela__num {
 }
 
 /* Navegação comum — mantém a marca e a identidade da empresa em telas estreitas. */
-.workspace-brandbar { padding: 10px clamp(12px, 2vw, 28px) 0; }
+.workspace-brandbar { position: sticky; top: 0; z-index: 40; padding: 6px clamp(12px, 2vw, 28px); background: var(--bg, #1A1B26); border-bottom: 1px solid var(--border, #44475A); }
 .workspace-home { display: inline-flex; align-items: center; min-height: 44px; border-radius: 8px; }
-.workspace-home:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.workspace-home:focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 4px; }
+.workspace-brandbar ~ * .company-section-header, .workspace-brandbar ~ * .page-shell__header { top: 57px; }
 .dashboard-tool-description { display: block; margin-top: 4px; color: var(--text-muted); font-size: .8rem; line-height: 1.45; }
 .accounting-fechamento-panel { flex: 0 0 152px; }
 @media (max-width: 1100px) {
@@ -2040,3 +2041,17 @@ th.tabela__num {
 .planejamento-campo > input, .planejamento-campo > select { min-height: 40px; width: 100%; min-width: 0; box-sizing: border-box; }
 
 @media (max-width:600px) { .company-section-header { display: grid; grid-template-columns: minmax(0,1fr); gap: 10px; } .company-section-header > .btn-back { justify-self: start; } .company-topbar { width: 100%; box-sizing: border-box; } .company-section-header__subtabs { min-width: 0; width: 100%; } }
+
+/* Planejamento: seções reconhecíveis, campos legíveis e ações acessíveis no toque. */
+.planejamento-etapas { display: flex; flex-wrap: wrap; gap: 8px; }
+.planejamento-etapas a { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 12px; border: 1px solid var(--border, #44475A); border-radius: 8px; color: var(--text, #F8F8F2); text-decoration: none; }
+.planejamento-etapas a:focus-visible { outline: 2px solid #BD93F9; outline-offset: 3px; }
+.planejamento-page [id] { scroll-margin-top: 72px; }
+.planejamento-page .planejamento-campo { font-size: .875rem; }
+.planejamento-page, .planejamento-page div, .planejamento-page section, .planejamento-page nav { min-width: 0; }
+.planejamento-conferencias { display: grid; gap: 8px; border-left: 3px solid var(--state-warn, #FFB347); padding: 12px; background: #1A1B26; border-radius: 8px; }
+@media (max-width: 600px) {
+  .company-section-header, .page-shell__header { position: static; }
+  .planejamento-page button, .planejamento-etapas a { min-height: 44px; }
+  .planejamento-page .planejamento-campo > label { min-height: 0; }
+}

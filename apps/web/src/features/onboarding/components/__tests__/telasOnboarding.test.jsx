@@ -44,6 +44,18 @@ test("voltar aguarda salvar e permanece no wizard quando o servidor recusa", asy
   await waitFor(() => expect(voltar).toHaveBeenCalledTimes(1));
 });
 
+test("trocar origem mostra perda de campos e cancelar preserva o rascunho", async () => {
+  const api = apiFalsa({ getOnboarding: jest.fn(async () => ({ onboarding: { id: "onb-1", origem: "TRANSFERENCIA", dados: { razaoSocial: "Empresa existente" }, ultimoPasso: "origem" } })) });
+  render(<OnboardingWizardPage api={api} onboardingId="onb-1" onVoltar={jest.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Vai abrir a empresa/ }));
+  const dialogo = screen.getByRole("dialog");
+  expect(dialogo).toHaveTextContent("Vai abrir a empresa");
+  expect(dialogo).toHaveTextContent(/apaga .* campo\(s\) preenchido\(s\)/);
+  fireEvent.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
+  expect(api.salvarOnboarding).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: /Está trocando de contador/ })).toHaveAttribute("aria-pressed", "true");
+});
+
 describe("SeloDeclarado — o texto NÃO pode mentir sobre quem declarou", () => {
   test("Fase 1 (escritório) lê 'declarado no atendimento'", () => {
     expect(textoDoSelo("ESCRITORIO")).toBe("declarado no atendimento");

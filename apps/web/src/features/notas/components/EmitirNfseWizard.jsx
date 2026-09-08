@@ -143,6 +143,8 @@ import {
   rotuloOrigem,
 } from "../lib/consultaTomador";
 
+import { conferirDadosDaOperacao } from "../lib/dadosDaOperacao";
+
 const PASSOS = ["Preencher a nota", "Conferir e emitir"];
 const PASSO_CONFERIR = 1;
 
@@ -580,23 +582,21 @@ export function EmitirNfseWizard({
   // vermelho fica para o que está preenchido e não serve — e-mail sem arroba, endereço pela
   // metade, percentual fora de 0–100, retenção sem alíquota — e para o que a EMPRESA não tem.
   // Os dois desabilitam o Continuar igualmente: a cor fala do que fazer, não do que vale.
+  const conferenciaOperacao = conferirDadosDaOperacao({ ...retencoesComplementares, obraTipo: obra.tipo, obraCodigo: obra.codigo, obraInscricao: obra.inscImobFisc, destinatarioDoc: destinatario.cnpjCpf, destinatarioNome: destinatario.nome }, valor);
   const problemasDaNota = useMemo(() => {
     const problemaAliquota = problemaAliquotaComRetencao({ issRetido: servico.issRetido, aliquota: servico.aliquota });
     const valorEmBranco = !String(servico.valorServicos).trim();
     return [
       problemaPerfil && { texto: problemaPerfil, campo: null, grave: true },
-      (obra.codigo || obra.inscImobFisc) && (!obra.codigo || (obra.tipo === "cCIB" ? obra.codigo.length !== 8 : obra.codigo.length > 30) || obra.inscImobFisc.length > 30) && { texto: "Confira o identificador da obra: CNO/CEI até 30 caracteres ou CIB com 8 caracteres.", campo: null, grave: true },
-      (destinatario.cnpjCpf || destinatario.nome) && (!/^(\d{11}|\d{14})$/.test(destinatario.cnpjCpf.replace(/\D/g, "")) || !destinatario.nome.trim() || destinatario.nome.length > 150) && { texto: "Informe o documento e o nome do destinatário diferente do tomador.", campo: null, grave: true },
-      Object.entries(retencoesComplementares).some(([, v]) => v !== "" && (!/^\d+(\.\d{1,2})?$/.test(v) || Number(v) <= 0 || Number(v) >= valor)) && { texto: "IRRF e previdência: informe valores positivos, com até duas casas, menores que o serviço; deixe vazio quando não houver retenção.", campo: null, grave: true },
-      Object.values(retencoesComplementares).reduce((s, v) => s + Number(v || 0), 0) >= valor && valor > 0 && { texto: "A soma de IRRF e previdência deve ser menor que o valor do serviço.", campo: null, grave: true },
+      ...conferenciaOperacao.erros.map((texto) => ({ texto, campo: "nfse-operacao", grave: true })),
       perfisDaEmpresa.length > 1 && !perfilEscolhido && { texto: "Escolha o perfil de serviço desta nota.", campo: null, grave: false },
-      municipio.bloqueia && { texto: municipio.motivoCurto, campo: null, grave: true },
+      municipio.bloqueia && { texto: municipio.motivoCurto, campo: null, grave: true, cadastro: true },
       // Os campos de `buildMissingFields`, na mesma posição e pelo mesmo motivo do município: são
       // impedimentos da EMPRESA, que não se resolvem nesta tela.
-      ...faltas.map((f) => ({ texto: f.motivoCurto, campo: null, grave: true })),
+      ...faltas.map((f) => ({ texto: f.motivoCurto, campo: null, grave: true, cadastro: true })),
       // Mesma posição e mesmo motivo: é a EMPRESA que não está configurada, e isso não se resolve
       // nesta tela. Uma linha POR PERCENTUAL — "falta a carga tributária" mandaria conferir os três.
-      ...faltasDaCarga.map((f) => ({ texto: f.motivoCurto, campo: null, grave: true })),
+      ...faltasDaCarga.map((f) => ({ texto: f.motivoCurto, campo: null, grave: true, cadastro: true })),
       !docValido && {
         texto: "informe um CNPJ (14 dígitos) ou CPF (11 dígitos) válido",
         campo: CAMPO.DOC,
@@ -643,6 +643,7 @@ export function EmitirNfseWizard({
   function irParaCampo(id) {
     if (!id) return;
     setPasso(0);
+    if (id === "nfse-operacao") document.getElementById(id)?.querySelectorAll("details").forEach((el) => { el.open = true; });
     if (CAMPOS_DO_ENDERECO.has(id)) setEnderecoAberto(true);
     setCampoAlvo(id);
   }
@@ -677,9 +678,8 @@ export function EmitirNfseWizard({
     return {
       companyId,
       ...(perfilEscolhido ? { perfilId: perfilEscolhido.id } : {}),
-      ...(obra.codigo || obra.inscImobFisc ? { obra: { [obra.tipo]: obra.codigo, ...(obra.inscImobFisc ? { inscImobFisc: obra.inscImobFisc } : {}) } } : {}),
-      ...(destinatario.cnpjCpf || destinatario.nome ? { destinatario } : {}),
-      ...(Object.values(retencoesComplementares).some((v) => v !== "") ? { retencoesComplementares: Object.fromEntries(Object.entries(retencoesComplementares).filter(([, v]) => v !== "").map(([k, v]) => [k, Number(v)])) } : {}),
+      ...conferenciaOperacao.payload,
+      ...(conferenciaOperacao.payload.retencoesComplementares ? { retencoesComplementares: Object.fromEntries(Object.entries(conferenciaOperacao.payload.retencoesComplementares).map(([k, v]) => [k, Number(v)])) } : {}),
       tomador: {
         cnpjCpf: docLimpo,
         nome: String(tomador.nome).trim(),
@@ -803,6 +803,17 @@ export function EmitirNfseWizard({
 
   return (
     <Modal titulo="Emitir nota de serviço" tamanho="lg" aoFechar={onClose} ocupado={enviando}>
+      <div className="emissor-contador">
+      <style>{`
+        .emissor-contador { min-width: 0; overflow-wrap: anywhere; }
+        .emissor-contador fieldset { min-width: 0; margin: 12px 0; border: 1px solid var(--border); border-radius: 8px; display: grid; gap: 12px; }
+        .emissor-contador label { min-width: 0; }
+        .emissor-contador #nfse-operacao label { display: grid; gap: 6px; font-size: .875rem; }
+        .emissor-contador #nfse-operacao input, .emissor-contador select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 40px; padding: 8px; }
+        .emissor-contador summary { min-height: 40px; padding: 8px 0; cursor: pointer; }
+        .emissor-contador .emissor-campos { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+        @media(max-width: 600px) { .emissor-contador .emissor-campos { grid-template-columns: minmax(0,1fr); } .emissor-contador .emissor-campos > * { grid-column: auto !important; } }
+      `}</style>
 
         {perfisDaEmpresa.length > 0 && <div style={{ marginBottom: 16 }}>
           <label htmlFor="nfse-perfil">Perfil de serviço desta nota</label>
@@ -812,35 +823,11 @@ export function EmitirNfseWizard({
           </select>
         </div>}
 
-        <details style={{ marginBottom: 16 }}>
-          <summary>Obra e destinatário IBS/CBS {obra.codigo || destinatario.cnpjCpf ? "— dados informados" : "— quando aplicáveis"}</summary>
-          <fieldset disabled={passo !== 0 || enviando}>
-            <legend>Obra desta prestação</legend>
-            <label>Tipo de identificador<select value={obra.tipo} onChange={(e) => setObra((o) => ({ ...o, tipo: e.target.value, codigo: "" }))}><option value="cObra">CNO / CEI</option><option value="cCIB">CIB</option></select></label>
-            <label>Identificador da obra<input value={obra.codigo} onChange={(e) => setObra((o) => ({ ...o, codigo: e.target.value }))} /></label>
-            <label>Inscrição imobiliária fiscal (opcional)<input value={obra.inscImobFisc} onChange={(e) => setObra((o) => ({ ...o, inscImobFisc: e.target.value }))} /></label>
-          </fieldset>
-          <fieldset disabled={passo !== 0 || enviando}>
-            <legend>Destinatário diferente do tomador — IBS/CBS</legend>
-            <p>Deixe vazio se o destinatário for o próprio tomador. Requer IBS/CBS configurado no perfil.</p>
-            <label>CPF/CNPJ do destinatário<input value={destinatario.cnpjCpf} onChange={(e) => setDestinatario((d) => ({ ...d, cnpjCpf: e.target.value }))} /></label>
-            <label>Nome do destinatário<input value={destinatario.nome} onChange={(e) => setDestinatario((d) => ({ ...d, nome: e.target.value }))} /></label>
-          </fieldset>
-        </details>
-
-        <details style={{ marginBottom: 16 }}>
-          <summary>IRRF e retenção previdenciária {Object.values(retencoesComplementares).some((v) => v !== "") ? "— valores informados" : "— quando aplicáveis"}</summary>
-          <p>Informe os valores conferidos pelo contador para esta operação. Deixe em branco quando não houver retenção.</p>
-          {[["vRetIRRF", "IRRF retido (R$)"], ["vRetCP", "Previdência retida (R$)"]].map(([k, rotulo]) => <label key={k} style={{ display: "block" }}>
-            {rotulo}<input inputMode="decimal" disabled={passo !== 0 || enviando} value={retencoesComplementares[k]} onChange={(e) => setRetencoesComplementares((r) => ({ ...r, [k]: e.target.value.replace(",", ".") }))} />
-          </label>)}
-        </details>
-
         {/* ⚠ IMPEDIMENTO DA EMPRESA — fica ACIMA da trilha, visível em todos os passos, porque não
             é um campo que falta: é a empresa que ainda não emite. A lista de problemas repete a
             versão curta; aqui vai o motivo inteiro e onde se resolve. */}
         {(municipio.bloqueia || faltas.length > 0 || faltasDaCarga.length > 0) && (
-          <div style={{
+          <div id="nfse-impedimento-empresa" tabIndex={-1} style={{
             marginBottom: 14, padding: 10, borderRadius: 6, fontSize: "0.82rem",
             background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
             color: "var(--state-danger)",
@@ -848,6 +835,16 @@ export function EmitirNfseWizard({
             <strong style={{ display: "block", marginBottom: 4 }}>
               Esta empresa ainda não pode emitir nota de serviço.
             </strong>
+            <p style={{ margin: "6px 0" }}>
+              <strong>Falta configurar:</strong>{" "}
+              {[municipio.bloqueia && "município emissor", ...faltas.map((f) => f.rotulo), ...faltasDaCarga.map((f) => f.rotulo)].filter(Boolean).join(" · ")}.
+            </p>
+            <p style={{ margin: "6px 0" }}>
+              <strong>Onde corrigir:</strong>{" "}
+              {[...new Set([municipio.bloqueia && "Editar cadastro → Inscrições", ...faltas.map((f) => f.onde), faltasDaCarga.length > 0 && ONDE_CARGA_TRIBUTARIA].filter(Boolean))].join("; ")}.
+            </p>
+            <details>
+              <summary>Por que estes dados são necessários</summary>
             {municipio.bloqueia && <div>{municipio.motivo}</div>}
             {/* ⚠ CADA CAMPO COM SEU NOME E O SEU LUGAR. A recusa do servidor devolve
                 `{ missing: ["codigoServicoNacional", …] }` — nome de coluna, que não diz a ninguém o
@@ -878,6 +875,7 @@ export function EmitirNfseWizard({
                 <span style={{ opacity: 0.9 }}>Preencha em {ONDE_CARGA_TRIBUTARIA}.</span>
               </div>
             )}
+            </details>
           </div>
         )}
 
@@ -1048,7 +1046,7 @@ export function EmitirNfseWizard({
                       Endereço do tomador (opcional — mas só vale completo)
                       {rotuloOrigem(origemEndereco) && <span style={{ marginLeft: 6 }}>({rotuloOrigem(origemEndereco)})</span>}
                     </summary>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                    <div className="emissor-campos" style={{ marginTop: 8 }}>
                       {/* ⚠ O CÓDIGO DO MUNICÍPIO ERA SETE DÍGITOS DIGITADOS À MÃO — e errar um deles
                           emite a nota com o município do tomador errado, descoberto depois. Agora se
                           BUSCA na mesma lista oficial versionada do IBGE que o cadastro usa. A busca
@@ -1163,7 +1161,7 @@ export function EmitirNfseWizard({
                       ))}
                     </div>
                   )}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div className="emissor-campos">
                     <label htmlFor={CAMPO.COMPETENCIA} style={rotulo}>Competência (opcional)
                       <input id={CAMPO.COMPETENCIA} type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} style={{ ...campo, colorScheme: "dark" }} />
                     </label>
@@ -1175,7 +1173,7 @@ export function EmitirNfseWizard({
 
                 {/* ── Quanto ────────────────────────────────────────────── */}
                 <Bloco titulo="Quanto">
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div className="emissor-campos">
                     {/* ⚠⚠ O CAMPO DE VALOR É MASCARADO, e não é enfeite: ele só consegue conter
                         `1.234,56`. Antes era texto livre lido com um `replace(",", ".")`, e as três
                         grafias que um contador escreve davam três desfechos — "1.500" virava 1,5.
@@ -1301,6 +1299,33 @@ export function EmitirNfseWizard({
           <PainelDaNota dados={dadosDaDeclaracao} pTotTribSN={leituraPTot.valor} destaque={passo === PASSO_CONFERIR} />
         </div>
 
+        <section id="nfse-operacao" tabIndex={-1} aria-label="Dados específicos da operação" style={{ marginTop: 16 }}>
+        <details style={{ marginBottom: 16 }}>
+          <summary>Obra e destinatário IBS/CBS {obra.codigo || destinatario.cnpjCpf ? "— dados informados" : "— quando aplicáveis"}</summary>
+          <fieldset disabled={passo !== 0 || enviando}>
+            <legend>Obra desta prestação</legend>
+            <label>Tipo de identificador<select value={obra.tipo} onChange={(e) => setObra((o) => ({ ...o, tipo: e.target.value, codigo: "" }))}><option value="cObra">CNO / CEI</option><option value="cCIB">CIB</option></select></label>
+            <label>Identificador da obra<input value={obra.codigo} onChange={(e) => setObra((o) => ({ ...o, codigo: e.target.value }))} /></label>
+            <label>Inscrição imobiliária fiscal (opcional)<input value={obra.inscImobFisc} onChange={(e) => setObra((o) => ({ ...o, inscImobFisc: e.target.value }))} /></label>
+          </fieldset>
+          <fieldset disabled={passo !== 0 || enviando}>
+            <legend>Destinatário diferente do tomador — IBS/CBS</legend>
+            <p>Deixe vazio se o destinatário for o próprio tomador. Requer IBS/CBS configurado no perfil.</p>
+            <label>CPF/CNPJ do destinatário<input value={destinatario.cnpjCpf} onChange={(e) => setDestinatario((d) => ({ ...d, cnpjCpf: e.target.value }))} /></label>
+            <label>Nome do destinatário<input value={destinatario.nome} onChange={(e) => setDestinatario((d) => ({ ...d, nome: e.target.value }))} /></label>
+          </fieldset>
+        </details>
+
+        <details style={{ marginBottom: 16 }}>
+          <summary>IRRF e retenção previdenciária {Object.values(retencoesComplementares).some((v) => v !== "") ? "— valores informados" : "— quando aplicáveis"}</summary>
+          <p>Informe os valores conferidos pelo contador para esta operação. Deixe em branco quando não houver retenção.</p>
+          {[["vRetIRRF", "IRRF retido (R$)"], ["vRetCP", "Previdência retida (R$)"]].map(([k, rotulo]) => <label key={k} style={{ display: "block" }}>
+            {rotulo}<input inputMode="decimal" disabled={passo !== 0 || enviando} value={retencoesComplementares[k]} onChange={(e) => setRetencoesComplementares((r) => ({ ...r, [k]: e.target.value.replace(",", ".") }))} />
+          </label>)}
+        </details>
+
+        </section>
+
         {/* Opção desabilitada NUNCA fica sem explicação — e agora cada motivo LEVA ao campo. */}
         {problemasDaNota.length > 0 && (
           <div style={{ marginTop: 14 }}>
@@ -1308,7 +1333,7 @@ export function EmitirNfseWizard({
               {temProblemaGrave ? "Antes de emitir, corrija:" : "Falta preencher:"}
             </div>
             <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: "0.78rem", display: "grid", gap: 4 }}>
-              {problemasDaNota.map((p) => (
+              {[...(problemasDaNota.some((p) => p.cadastro) ? [{ texto: "Complete as configurações da empresa indicadas no início do formulário.", campo: "nfse-impedimento-empresa", grave: true }] : []), ...problemasDaNota.filter((p) => !p.cadastro)].map((p) => (
                 <li key={p.texto} style={{ color: p.grave ? "var(--state-danger)" : "var(--state-neutral)" }}>
                   {p.texto}
                   {p.campo && (
@@ -1382,7 +1407,7 @@ export function EmitirNfseWizard({
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 8, justifyContent: "space-between", marginTop: 16 }}>
+        <div style={{ display: "flex", gap: 8, justifyContent: "space-between", flexWrap: "wrap", marginTop: 16 }}>
           {/* Voltar de PASSO, não de tela — por isso é `Button variant="secondary"` e não o
               `BackButton`, que é a saída da página. Os outros assistentes (OFX, Excel, regras de
               obrigação) já escreviam exatamente isto. */}
@@ -1438,6 +1463,7 @@ export function EmitirNfseWizard({
             </Button>
           )}
         </div>
+      </div>
     </Modal>
   );
 }

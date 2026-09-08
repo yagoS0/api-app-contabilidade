@@ -702,7 +702,7 @@ function mockCriarObrigacao(companyId, empresa, dados) {
   const defasagem = dados.defasagemMeses == null ? 1 : Number(dados.defasagemMeses);
   const mesRef = dados.mesReferencia == null ? null : Number(dados.mesReferencia);
 
-  const hoje = new Date();
+  const hoje = dados._inicioCiclo ? new Date(dados._inicioCiclo + "-01T00:00:00Z") : new Date();
   const ocorrencias = [];
   if (periodicidade === "AVULSA") {
     ocorrencias.push({
@@ -711,10 +711,17 @@ function mockCriarObrigacao(companyId, empresa, dados) {
       status: "PENDENTE", concluidaEm: null, fonteConclusao: null,
     });
   }
-  for (let i = 0; periodicidade !== "AVULSA" && i < 12; i += 1) {
+  for (let i = 0; periodicidade !== "AVULSA" && i < 24 && ocorrencias.length < 12; i += 1) {
     const bruto = hoje.getUTCMonth() + i;
     const ano = hoje.getUTCFullYear() + Math.floor(bruto / 12);
     const mes = (bruto % 12) + 1;
+    const cicloChave = String(ano) + '-' + String(mes).padStart(2, '0');
+    const versoes = (dados.agendaVersoes || []).filter(v => v.aPartirDe <= cicloChave);
+    const regras = versoes.filter(v => v.regra);
+    const efetiva = { ...dados, ...(regras.length ? regras[regras.length - 1].regra : {}) };
+    const periodicidade = efetiva.periodicidade;
+    const mesRef = Number(efetiva.mesReferencia), diaPedido = Number(efetiva.diaVencimento);
+    const ajuste = efetiva.ajusteDiaUtil, defasagem = Number(efetiva.defasagemMeses ?? 1), diasPreparacao = Number(efetiva.diasPreparacao || 0);
     if (periodicidade === "ANUAL" && mes !== mesRef) continue;
     if (periodicidade === "TRIMESTRAL" && (((mes - mesRef) % 3) + 3) % 3 !== 0) continue;
 
@@ -724,9 +731,7 @@ function mockCriarObrigacao(companyId, empresa, dados) {
       const passo = ajuste === "ANTECIPAR" ? -1 : 1;
       while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + passo);
     }
-    const cicloChave = String(ano) + '-' + String(mes).padStart(2, '0');
     if (dados.encerradaAPartirDe && cicloChave >= dados.encerradaAPartirDe) continue;
-    const versoes = (dados.agendaVersoes || []).filter(v => v.aPartirDe <= cicloChave);
     const janela = versoes.length ? versoes[versoes.length - 1].janela : dados.janelaTrabalho;
     const periodo = janelaRecorrente(cicloChave, janela);
     const compBruta = ano * 12 + (mes - 1) - Math.max(0, defasagem);
@@ -7045,7 +7050,7 @@ export function createMockApi() {
         if (!o.ativa) continue;
         if (companyId && o.companyId !== companyId) continue;
         for (const oc of o.ocorrencias) {
-          if (oc.canceladaEm) continue;
+          if (oc.canceladaEm || oc.foraDaRecorrencia) continue;
           const inicio = oc.dataInicio || oc.dataVencimento;
           const fim = oc.dataFim || oc.dataVencimento;
           if (inicio > iso(diasNoMes) || fim < iso(1)) continue;
@@ -7113,7 +7118,7 @@ export function createMockApi() {
         .filter((o) => (companyId ? o.companyId === companyId : true))
         .filter((o) => (incluirInativas ? true : o.ativa))
         .map((o) => {
-          const ocorrencias = o.ocorrencias.filter(oc => !oc.canceladaEm).map((oc) => {
+          const ocorrencias = o.ocorrencias.filter(oc => !oc.canceladaEm && !oc.foraDaRecorrencia).map((oc) => {
             const situacao =
               oc.status === "CONCLUIDA" ? "CONCLUIDA" : oc.dataVencimento < hoje ? "VENCIDA" : "PENDENTE";
             return { ...oc, situacao };
@@ -7161,6 +7166,10 @@ export function createMockApi() {
       const i = mockObrigacoes.findIndex((o) => o.obrigacaoId === obrigacaoId);
       if (i < 0) return { ok: false, error: "nao_encontrada", message: "Obrigação não encontrada." };
       const antes = mockObrigacoes[i];
+      if (Object.keys(patch).length === 1 && typeof patch.ativa === 'boolean') {
+        antes.ativa = patch.ativa;
+        return { ok: true, obrigacao: antes, ocorrenciasCriadas: 0, ocorrenciasRemovidas: 0 };
+      }
       if (antes.periodicidade === "AVULSA" && antes.ocorrencias.some((oc) => oc.status === "CONCLUIDA")
         && ["dataInicio", "dataFim", "dataVencimento"].some((campo) => patch[campo] !== undefined && patch[campo] !== antes[campo])) {
         return { ok: false, error: "ocorrencia_concluida", message: "Reabra a ocorrência antes de editar seu período." };
@@ -7169,7 +7178,7 @@ export function createMockApi() {
         return { ok: false, error: "periodicidade_incompativel", message: "Crie outro item para mudar entre avulsa e recorrente." };
       }
       // Concluída é histórico: sobrevive à regeração, igual ao backend.
-      const concluidas = antes.ocorrencias.filter((oc) => oc.status === "CONCLUIDA" || oc.canceladaEm);
+      const concluidas = antes.ocorrencias.filter((oc) => oc.status === "CONCLUIDA" || oc.canceladaEm || oc.foraDaRecorrencia || oc.janelaPersonalizada);
       const nova = mockCriarObrigacao(antes.companyId, antes.empresa, { ...antes, ...patch });
       nova.obrigacaoId = antes.obrigacaoId;
       nova.sobrescritaLocal = antes.sobrescritaLocal || Boolean(antes.regraId);
@@ -7183,7 +7192,7 @@ export function createMockApi() {
         return anterior ? { ...oc, ocorrenciaId: anterior.ocorrenciaId, janelaPersonalizada: false } : oc;
       })]
         .sort((a, b) => a.dataVencimento.localeCompare(b.dataVencimento));
-      if (nova.ativa === false) nova.ocorrencias = concluidas;
+      if (nova.ativa === false) nova.ocorrencias = antes.ocorrencias;
       mockObrigacoes[i] = nova;
       return { ok: true, obrigacao: nova, ocorrenciasCriadas: 0, ocorrenciasRemovidas: 0 };
     },
@@ -7200,7 +7209,7 @@ export function createMockApi() {
       await delay(60);
       for (const o of mockObrigacoes) {
         const oc = o.ocorrencias.find((x) => x.ocorrenciaId === ocorrenciaId);
-        if (!oc || oc.canceladaEm) continue;
+        if (!oc || oc.canceladaEm || oc.foraDaRecorrencia) continue;
         // Mesma recusa do backend: o que se conclui sozinho não aceita clique.
         if (o.verificador) {
           return {
@@ -7239,15 +7248,27 @@ export function createMockApi() {
       await delay(60);
       for (const o of mockObrigacoes) {
         const oc = o.ocorrencias.find((x) => x.ocorrenciaId === ocorrenciaId);
-        if (!oc || oc.canceladaEm) continue;
+        if (!oc || oc.canceladaEm || oc.foraDaRecorrencia) continue;
         if (patch.alcance === 'ESTA_E_PROXIMAS') {
           if (o.periodicidade === 'AVULSA') return { ok: false, message: 'Este item não se repete.' };
-          if (!patch.janelaTrabalho) return { ok: false, message: 'Informe a nova janela.' };
           const ciclo = cicloRecorrente(oc, o);
-          janelaRecorrente(ciclo, patch.janelaTrabalho);
-          o.agendaVersoes = [...(o.agendaVersoes || []), { aPartirDe: ciclo, janela: patch.janelaTrabalho, alteradaEm: new Date().toISOString() }];
+          if (patch.janelaTrabalho) janelaRecorrente(ciclo, patch.janelaTrabalho);
+          const vigentes = (o.agendaVersoes || []).filter(v => v.aPartirDe <= ciclo && v.regra);
+          const regra = { ...o, ...(vigentes.length ? vigentes[vigentes.length - 1].regra : {}), ...(patch.regra || {}) };
+          const snapshot = Object.fromEntries(['periodicidade', 'mesReferencia', 'diaVencimento', 'ajusteDiaUtil', 'defasagemMeses', 'diasPreparacao'].map(k => [k, regra[k]]));
+          if (!['MENSAL', 'TRIMESTRAL', 'ANUAL'].includes(snapshot.periodicidade) || !Number.isInteger(Number(snapshot.diaVencimento)) || !(Number(snapshot.diaVencimento) >= 1 && Number(snapshot.diaVencimento) <= 31) || (snapshot.periodicidade !== 'MENSAL' && !(Number(snapshot.mesReferencia) >= 1 && Number(snapshot.mesReferencia) <= 12)) || !['MANTER', 'ANTECIPAR', 'POSTERGAR'].includes(snapshot.ajusteDiaUtil)) return { ok: false, message: 'Frequência ou vencimento inválido.' };
+          o.agendaVersoes = [...(o.agendaVersoes || []), { aPartirDe: ciclo, janela: patch.janelaTrabalho || null, regra: snapshot, alteradaEm: new Date().toISOString() }];
           o.sobrescritaLocal = true;
-          for (const futura of o.ocorrencias) if (cicloRecorrente(futura, o) >= ciclo && futura.status !== 'CONCLUIDA' && !futura.canceladaEm && !futura.janelaPersonalizada) Object.assign(futura, janelaRecorrente(cicloRecorrente(futura, o), patch.janelaTrabalho));
+          const previstas = mockCriarObrigacao(o.companyId, o.empresa, { ...o, _inicioCiclo: ciclo }).ocorrencias;
+          const mapa = new Map(previstas.map(p => [p.cicloChave, p]));
+          for (const futura of o.ocorrencias) {
+            const chave = cicloRecorrente(futura, o);
+            const prevista = mapa.get(chave) || mockCriarObrigacao(o.companyId, o.empresa, { ...o, _inicioCiclo: chave }).ocorrencias.find(p => p.cicloChave === chave); mapa.delete(chave);
+            if (chave < ciclo || futura.status === 'CONCLUIDA' || futura.canceladaEm || futura.janelaPersonalizada) continue;
+            if (prevista) Object.assign(futura, prevista, { ocorrenciaId: futura.ocorrenciaId, foraDaRecorrencia: false });
+            else futura.foraDaRecorrencia = true;
+          }
+          o.ocorrencias.push(...mapa.values());
           return { ok: true, ocorrencia: { ...oc } };
         }
         if (oc.status === "CONCLUIDA") return { ok: false, error: "ocorrencia_concluida", message: "Reabra a ocorrência antes de editar seu período." };
@@ -7272,7 +7293,7 @@ export function createMockApi() {
       await delay(60);
       for (const o of mockObrigacoes) {
         const oc = o.ocorrencias.find((x) => x.ocorrenciaId === ocorrenciaId);
-        if (!oc || oc.canceladaEm) continue;
+        if (!oc || oc.canceladaEm || oc.foraDaRecorrencia) continue;
         oc.status = "PENDENTE";
         oc.concluidaEm = null;
         oc.fonteConclusao = null;

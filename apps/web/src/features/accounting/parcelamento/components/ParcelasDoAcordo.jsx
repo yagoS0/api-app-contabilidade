@@ -1,3 +1,4 @@
+import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 // As PRESTAÇÕES do acordo, com o botão de busca do pagamento na LINHA de cada uma.
 //
 // ⚠ POR QUE NA LINHA, E NÃO NUM BOTÃO GLOBAL DO ACORDO. Pedido do dono, textual: *"posso confirmar
@@ -72,6 +73,7 @@ function Desfecho({ resumo }) {
  * @param {function} [onAlternar]
  */
 export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou, aberto, onAlternar }) {
+  const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [abertoLocal, setAbertoLocal] = useState(false);
   const controlado = typeof aberto === "boolean";
   const estaAberto = controlado ? aberto : abertoLocal;
@@ -101,7 +103,7 @@ export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou, aberto, onA
     // ⚠ O CLIQUE NÃO É GRATUITO. A confirmação repete o documento, o valor e a competência sobre os
     // quais a chamada paga vai sair — e avisa se esta guia já foi consultada antes.
     // eslint-disable-next-line no-alert
-    if (!window.confirm(textoDaConfirmacao(linha, parcelamento?.label))) return;
+    if (!await pedir({ titulo: "Confirmar consulta de pagamento", acao: "Consultar pagamento", texto: textoDaConfirmacao(linha, parcelamento?.label) })) return;
 
     setBuscando(linha.guideId);
     setDesfechos((d) => ({ ...d, [linha.guideId]: null }));
@@ -270,6 +272,7 @@ export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou, aberto, onA
           </div>
         </div>
       )}
+      {confirmacao}
     </div>
   );
 }
