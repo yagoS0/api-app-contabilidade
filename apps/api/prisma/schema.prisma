@@ -3874,6 +3874,10 @@ model Obrigacao {
   dataFim        DateTime? @db.Date
   dataVencimento DateTime? @db.Date
   diasPreparacao Int @default(0)
+  janelaTrabalho Json?
+  /// Versões da janela por ciclo, com autor e data.
+  agendaVersoes Json @default("[]")
+  encerradaAPartirDe String?
   /// Campo LIVRE (fiscal, trabalhista, própria da empresa…). A UI sugere o que o escritório já
   /// usou; não é vocabulário fechado que precise ser mantido por nós. Só alimenta cor e filtro.
   categoria      String?
@@ -3931,6 +3935,9 @@ model OcorrenciaObrigacao {
   dataInicio     DateTime? @db.Date
   dataFim        DateTime? @db.Date
   janelaPersonalizada Boolean @default(false)
+  cicloChave String?
+  canceladaEm DateTime?
+  canceladaPorId String?
   /// "YYYY-MM" — a competência a que o SERVIÇO se refere, já com a defasagem aplicada. Guardada
   /// e não recalculada na leitura porque mudar a defasagem depois não pode reescrever o passado.
   competenciaRef String?
@@ -3954,6 +3961,7 @@ model OcorrenciaObrigacao {
   @@unique([obrigacaoId, dataVencimento])
   @@index([dataVencimento, status])
   @@index([dataInicio, dataFim])
+  @@unique([obrigacaoId, cicloChave])
   @@map("ocorrencias_obrigacao")
 }
 

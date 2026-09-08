@@ -460,7 +460,7 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
   );
 }
 
-export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
+export function RegrasObrigacao({ api, empresas = [], onVoltar, emModal = false }) {
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -511,7 +511,7 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
     if (!desvincular) {
       const remover = window.confirm(
         `Remover TAMBÉM as ${regra.totalEmpresas} obrigações das empresas?\n\n` +
-        `Isso apaga os vencimentos já concluídos junto. Não dá para desfazer.`,
+        `As pendentes saem da agenda. As concluídas são preservadas no histórico.`,
       );
       if (!remover) return;
       modo = "remover";
@@ -581,8 +581,8 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
   }
 
   const regras = dados?.regras || [];
-
-  return (
+  if (emModal && wizard) return <Wizard api={api} opcoes={opcoes} inicial={wizard.inicial} onFechar={() => setWizard(null)} onSalvo={async () => { setWizard(null); setAviso('Regra salva.'); await carregar(); }} />;
+  const conteudo = (
     <section aria-label="Regras do escritório">
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <BackButton onClick={onVoltar} label="Tarefas e obrigações" />
@@ -735,4 +735,5 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
       )}
     </section>
   );
+  return emModal ? <Modal titulo="Regras e recorrências" aoFechar={onVoltar} tamanho="lg">{conteudo}</Modal> : conteudo;
 }

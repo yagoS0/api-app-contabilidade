@@ -32,6 +32,8 @@ import { validateNfsePayload } from "../../validators/nfsePayload.js";
 import { autorizarEmissaoDoCliente } from "../../nfse/autorizacaoEmissaoDoCliente.js";
 import { canGuideRecalculate, isGuideOverdue, avisoDeRecalculo } from "../../guides/lib/recalculoDaGuia.js";
 import { motivoValido, validarJustificativa, motivosDoEvento, JUSTIFICATIVA } from "../../nfse/motivosDeEvento.js";
+import { montarRelatorioSitfis, lerLeituraPosicionalGravada } from "../../fiscal/serpro/lerRelatorioSitfis.js";
+import { gerarPdfSitfisTabela } from "../../fiscal/serpro/gerarPdfSitfisTabela.js";
 import { parseSitfisRelatorio } from "../../fiscal/serpro/parseSitfisRelatorio.js";
 import { baixarBuffer as baixarDocumentoDaEmpresa, TIPO_DOCUMENTO_LABELS } from "../../companies/CompanyDocumentsService.js";
 import { resolveLegacyCompanyId } from "../../../routes/middlewares/portalAccess.js";
@@ -47,7 +49,7 @@ import { INTEGRACAO_PERFIL_EMISSAO_NFSE } from "../../../config.js";
 export const SERVICOS_PADRAO = Object.freeze({
   listGuidesByCompany, toGuideResponse, getGuidePdfBuffer, gerarDanfseDaNota, listarTomadoresEmitidos,
   consultarCnpj, municipiosIbgeOuNulo, validateNfsePayload, autorizarEmissaoDoCliente, resolveLegacyCompanyId,
-  canGuideRecalculate, isGuideOverdue, avisoDeRecalculo, motivoValido, validarJustificativa, parseSitfisRelatorio,
+  canGuideRecalculate, isGuideOverdue, avisoDeRecalculo, motivoValido, validarJustificativa, parseSitfisRelatorio, gerarPdfSitfisTabela,
   criarPendencia, baixarDocumentoDaEmpresa,
   listarPerfisEmissao: async ({ sessao }) => INTEGRACAO_PERFIL_EMISSAO_NFSE
     ? prisma.perfilEmissaoNfse.findMany({ where: { portalClientId: sessao.portalClientId, ativo: true }, select: { id: true, nome: true, codigoServicoNacional: true }, orderBy: { nome: "asc" } })
@@ -113,7 +115,7 @@ export const DEFINICOES = Object.freeze([
   { name: "danfse_da_nota", description: "Envia por WhatsApp o DANFSe (PDF) de uma nota, pelo notaId de listar_notas.", strict: true, input_schema: S({ notaId: str("O id da nota") }) },
   { name: "listar_documentos", description: "Lista os documentos cadastrais e societários guardados para a empresa, sem revelar o arquivo. Exige papel CLIENT_ADMIN e liberação explícita deste número.", strict: true, input_schema: S({}) },
   { name: "enviar_documento_da_empresa", description: "Envia por WhatsApp UM documento cadastral ou societário, pelo documentId retornado por listar_documentos. Só funciona com a janela de 24h aberta.", strict: true, input_schema: S({ documentId: str("O id do documento") }) },
-  { name: "situacao_fiscal", description: "A situação fiscal da empresa perante a Receita, como o escritório a consultou por último (nunca consulta agora). Exige papel CLIENT_ADMIN.", strict: true, input_schema: S({}) },
+  { name: "situacao_fiscal", description: "Envia PDF das tabelas completas da última situação fiscal salva pelo escritório, sem nova consulta à Receita. Exige CLIENT_ADMIN e janela de envio aberta.", strict: true, input_schema: S({}) },
   { name: "tomadores_conhecidos", description: "Os tomadores para quem a empresa já emitiu nota (nome, documento) — para reaproveitar num pedido de emissão.", strict: true, input_schema: S({}) },
   { name: "consultar_cnpj", description: "Consulta um CNPJ na Receita (BrasilAPI) para completar nome e endereço do tomador. Nunca CPF.", strict: true, input_schema: S({ cnpj: str("CNPJ com 14 dígitos (pontuação opcional)") }) },
   { name: "preparar_emissao", description: "MONTA um pedido de emissão de NFS-e e devolve o texto de confirmação. NÃO emite: o cliente precisa responder CONFIRMAR <código>. Exige papel CLIENT_ADMIN e empresa liberada pelo escritório.", strict: true, input_schema: S({
@@ -337,16 +339,26 @@ const EXECUTORES = {
     // ⚠ O MESMO select de 4 campos da rota do cliente. NUNCA se consulta o SERPRO aqui (é pago).
     const status = await ctx.prisma.companyFiscalStatus.findUnique({
       where: { portalClientId: ctx.sessao.portalClientId },
-      select: { situacao: true, texto: true, checkedAt: true, ultimoRelatorioEm: true },
+      select: { situacao: true, texto: true, rawPayload: true, checkedAt: true, ultimoRelatorioEm: true },
     });
     if (!status) return { ok: true, situacao: null, consultadaEm: null, observacao: "O escritório ainda NÃO consultou a situação fiscal desta empresa — não há como afirmar regularidade nem pendência." };
-    const relatorio = status.texto ? ctx.servicos.parseSitfisRelatorio(status.texto) : null;
-    const diagnosticos = (relatorio?.diagnosticos || []).map((d) => ({
-      orgao: d.orgao,
-      semPendencia: Boolean(d.semPendencia),
-      blocos: (d.blocos || []).map((b) => ({ titulo: b.titulo, registros: Array.isArray(b.registros) ? b.registros.length : undefined })),
-    }));
-    return { ok: true, situacao: status.situacao || null, consultadaEm: dataBR(status.checkedAt), relatorioDe: dataBR(status.ultimoRelatorioEm), diagnosticos, observacao: "É a foto da última consulta do escritório; para atualizar, o escritório consulta de novo." };
+    if (!ctx.janela?.aberta) return recusa("FORA_DA_JANELA", "Para receber a tabela fiscal, envie uma nova mensagem para abrir a janela de atendimento.");
+    const posicional = lerLeituraPosicionalGravada(status.rawPayload);
+    if (!status.texto?.trim() && !posicional) return recusa("RELATORIO_INDISPONIVEL", "Existe uma consulta registrada, mas a tabela salva não está disponível. O escritório precisa verificar o relatório.");
+    try {
+      const relatorio = posicional ? montarRelatorioSitfis({ texto: status.texto, posicional }).relatorio : ctx.servicos.parseSitfisRelatorio(status.texto);
+      const empresa = await ctx.prisma.portalClient.findUnique({ where: { id: ctx.sessao.portalClientId }, select: { razao: true, cnpj: true } });
+      const consultadaEm = dataBR(status.checkedAt), relatorioDe = dataBR(status.ultimoRelatorioEm);
+      const conteudo = await ctx.servicos.gerarPdfSitfisTabela({ relatorio, empresa, consultadaEm, relatorioDe });
+      const nomeArquivo = "situacao-fiscal-" + String(empresa?.cnpj || ctx.sessao.portalClientId).replace(/[^a-zA-Z0-9-]/g, "") + ".pdf";
+      const envio = await ctx.enviarDocumento({ conteudo, nomeArquivo, mimeType: "application/pdf", situacaoFiscal: true,
+        legenda: "Situação fiscal — tabela da última consulta. Relatório de " + (relatorioDe || consultadaEm || "data não informada") + "." });
+      return { ok: true, enviado: true, nomeArquivo, consultadaEm, relatorioDe, providerMessageId: envio?.wamid || null,
+        instrucao: "A tabela completa foi enviada em PDF. Confirme o envio brevemente, sem substituir a tabela por códigos de situação ou afirmar regularidade." };
+    } catch (error) {
+      ctx.log?.error?.({ codigo: error?.codigo || "SITFIS_ANEXO_ERRO" }, "Falha ao preparar ou enviar tabela fiscal salva");
+      return recusa(error?.codigo || "SITFIS_ANEXO_ERRO", "Não foi possível entregar a tabela fiscal. O envio não está confirmado; tente novamente ou fale com o escritório.");
+    }
   },
 
   async tomadores_conhecidos(_input, ctx) {

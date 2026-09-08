@@ -15,6 +15,7 @@
 // mover na tela não muda o prazo e daria a impressão de que mudou. Só o marco (a data que o
 // contador criou) pode ser arrastado para outro dia.
 
+import { CalendarioObrigacoesModal } from '../../obrigacoes/components/CalendarioObrigacoesModal';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // O ciclo da obrigação (aguardando → aberta → urgente → transmitida) mora numa lib própria porque
 // o calendário, a aba da empresa e o chip da listagem principal precisam da MESMA leitura.
@@ -355,6 +356,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
   //   trinta empresas, a grade continua sendo o padrão certo — ali a densidade é a informação.
   //
   // Continua sendo só o DEFAULT: Mês/Semana/Dia seguem disponíveis nos dois casos.
+  const [obrigacoesModal, setObrigacoesModal] = useState(initialContext?.obrigacoesModal || null);
   const [visao, setVisao] = useState(() => initialContext?.visao || (ehTelaEstreita() || companyIdFixo ? "agenda" : "mes"));
   const [referencia, setReferencia] = useState(() => initialContext?.referencia || hojeISO());
   const [companyId, setCompanyId] = useState(companyIdFixo || initialContext?.empresaFiltro || "");
@@ -734,14 +736,14 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
         dataFim = dias[6].data;
       }
     }
-    onOpenObligations?.({ companyId: item?.companyId || companyId || undefined, dataInicio, dataFim, criar, ...(item ? { ocorrenciaId: item.id, item } : {}) });
+    setDetalhe(null); setDiaAberto(null);
+    setObrigacoesModal({ companyId: item?.companyId || companyId || undefined, dataInicio, dataFim, criar, ...(item ? { ocorrenciaId: item.id, item } : {}) });
   }
 
   function criarNoDia(data) {
     setDetalhe(null);
     setDiaAberto(null);
-    if (onOpenObligations) abrirCentral(true, data);
-    else setCriando({ data });
+    abrirCentral(true, data);
   }
 
   /** Chip de grupo abre o painel lateral; guia e marco seguem no modal de detalhe de sempre. */
@@ -829,9 +831,9 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
        Agenda é uma lista. A grade anual rola DENTRO do contêiner dela, como sempre rolou.
        ⚠⚠ E ISTO NÃO TEM COMO SER TRAVADO POR TESTE AQUI: o jsdom não faz layout — `scrollWidth` é
        sempre 0. Foi achado e conferido no navegador, e é o motivo de este comentário existir. */
-    <section aria-label="Calendário fiscal" style={{ width: "var(--content-wide)", maxWidth: "100%", margin: "0 auto" }}>
+    <section aria-label="Calendário fiscal" style={{ width: "100%", maxWidth: "100%", margin: "0 auto" }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
-        {onOpenObligations && <>
+        {<>
           <button type="button" style={btn(false)} onClick={() => abrirCentral(false)}>Tarefas e obrigações</button>
           <button type="button" style={btn(true)} onClick={() => abrirCentral(true)}>+ Nova tarefa ou obrigação</button>
         </>}
@@ -1330,7 +1332,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
               <div style={{ fontSize: "0.78rem", color: COR.suave, marginBottom: 4 }}>Vale para todas as empresas</div>
             )}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-              {onOpenObligations && (detalhe.tipo === "obrigacao" || ehTarefa(detalhe)) && <button type="button" disabled={salvando} style={btn(false)} onClick={() => abrirCentral(false, referencia, detalhe)}>Editar tarefa ou obrigação</button>}
+              {(detalhe.tipo === "obrigacao" || ehTarefa(detalhe)) && <button type="button" disabled={salvando} style={btn(false)} onClick={() => abrirCentral(false, referencia, detalhe)}>Editar tarefa ou obrigação</button>}
               {/* Só obrigação MANUAL e ainda aberta ganha o botão: na automática o backend recusaria
                   o clique, e oferecer é pior que não oferecer. */}
               {(detalhe.tipo === "obrigacao" || ehTarefa(detalhe)) && !detalhe.resolvido && !detalhe.conclusaoAutomatica && (
@@ -1367,6 +1369,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
           </div>
         </Modal>
       )}
+      {obrigacoesModal && <CalendarioObrigacoesModal api={api} empresas={empresas} contexto={obrigacoesModal} onClose={() => setObrigacoesModal(null)} onChanged={carregar} />}
     </section>
   );
 }

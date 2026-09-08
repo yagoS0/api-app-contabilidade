@@ -57,9 +57,16 @@ jest.mock("../adn-nacional/AdnNacionalClient.js", () => ({
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { fetchDfeNFSe } from "../adn-nacional/AdnNacionalClient.js";
+import { resolveCertForCompany } from "../CertResolver.js";
 import { syncAdnNotasForCompany } from "../adn/AdnNotasService.js";
 
 beforeEach(() => jest.clearAllMocks());
+
+test.each(["procuracao_escritorio", "none"])("ADN sem A1 próprio (%s) não consulta notas de outro certificado", async (source) => {
+  resolveCertForCompany.mockResolvedValueOnce({ source, procuracaoId: "proc-teste" });
+  expect(await syncAdnNotasForCompany({ portalClientId: "p1" })).toMatchObject({ ok: false, reason: "NO_COMPANY_CERT" });
+  expect(fetchDfeNFSe).not.toHaveBeenCalled();
+});
 
 /** Só as escritas que apagam o erro — a marcação de tentativa também usa `upsert`. */
 function limpezasDeErro() {

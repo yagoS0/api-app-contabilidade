@@ -98,7 +98,7 @@ const GROUPS = [
       // Obrigações fica em Contabilidade e NÃO em Fiscal de propósito: obrigação é o serviço que o
       // escritório entrega até uma data, não tributo a pagar. O cabeçalho do CalendarioFiscalService
       // argumenta isso — guia é do cliente, obrigação é do contador.
-      { key: "obrigacoes", label: "Obrigações" },
+      { key: "obrigacoes", label: "Calendário" },
       // Relatórios fica em Contabilidade porque relata o que foi LANÇADO. É a única aba com
       // intervalo próprio — ver o comentário em TABS_COM_COMPETENCIA logo acima.
       { key: "relatorios", label: "Relatórios" },

@@ -317,3 +317,31 @@ describe("as três preparar_* — só PENDÊNCIA, nunca ato", () => {
     expect(c.registrarChamadaAoEscritorio).toHaveBeenCalledWith({ motivo: "quer saber se pode deduzir" });
   });
 });
+
+
+describe("tabela SITFIS salva em PDF", () => {
+  function fiscalContext(over = {}) {
+    return ctx({ prisma: prismaFalso({ companyFiscalStatus: { findUnique: jest.fn(async () => ({ texto: "relatório salvo", situacao: "EM_PARCELAMENTO", checkedAt: new Date("2026-07-24"), ultimoRelatorioEm: new Date("2026-07-24") })) } }),
+      servicos: servicosFalsos({ gerarPdfSitfisTabela: jest.fn(async () => Buffer.from("%PDF")) }), ...over });
+  }
+  it("envia anexo com parser completo e escopo da sessão", async () => {
+    const c = fiscalContext(); const r = await executarFerramenta("situacao_fiscal", {}, c);
+    expect(c.prisma.companyFiscalStatus.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { portalClientId: "pc-1" } }));
+    expect(c.servicos.gerarPdfSitfisTabela).toHaveBeenCalledWith(expect.objectContaining({ relatorio: { diagnosticos: [] } }));
+    expect(c.enviarDocumento).toHaveBeenCalledWith(expect.objectContaining({ situacaoFiscal: true, mimeType: "application/pdf", conteudo: expect.any(Buffer) }));
+    expect(r).toMatchObject({ ok: true, enviado: true }); expect(r).not.toHaveProperty("diagnosticos");
+  });
+  it("janela fechada não gera ou envia PDF", async () => {
+    const c = fiscalContext({ janela: { aberta: false } });
+    expect((await executarFerramenta("situacao_fiscal", {}, c)).motivo).toBe("FORA_DA_JANELA");
+    expect(c.servicos.gerarPdfSitfisTabela).not.toHaveBeenCalled(); expect(c.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("falha de envio nunca confirma entrega", async () => {
+    const c = fiscalContext({ enviarDocumento: jest.fn(async () => { throw new Error("offline"); }) });
+    expect(await executarFerramenta("situacao_fiscal", {}, c)).toMatchObject({ ok: false, motivo: "SITFIS_ANEXO_ERRO" });
+  });
+  it("falha de geração não envia arquivo", async () => {
+    const c = fiscalContext({ servicos: servicosFalsos({ gerarPdfSitfisTabela: jest.fn(async () => { throw new Error("PDF"); }) }) });
+    expect((await executarFerramenta("situacao_fiscal", {}, c)).ok).toBe(false); expect(c.enviarDocumento).not.toHaveBeenCalled();
+  });
+});

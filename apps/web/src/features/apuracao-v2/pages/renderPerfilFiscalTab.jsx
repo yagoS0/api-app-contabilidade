@@ -11,6 +11,7 @@
 
 import { PANEL } from "../../notas/components/notasStyles";
 import { AbaFiscalPanel } from "../components/AbaFiscalPanel";
+import { ServicosTributacao } from "../components/ServicosTributacao";
 import { estadoDoRegime, ESTADO_DO_REGIME } from "../lib/perfilFiscalTela";
 
 /**
@@ -50,7 +51,7 @@ function RegimeDaEmpresa({ regime, prefill }) {
   );
 }
 
-export function PerfilFiscalTab({ panel }) {
+export function PerfilFiscalTab({ panel, companyId, podeEditar = false }) {
   return (
     <div
       style={{
@@ -60,6 +61,7 @@ export function PerfilFiscalTab({ panel }) {
     >
       <RegimeDaEmpresa regime={panel?.cadastro?.regime} prefill={panel?.cadastroPrefill} />
       <AbaFiscalPanel panel={panel} />
+      <ServicosTributacao companyId={companyId} podeEditar={podeEditar} />
     </div>
   );
 }

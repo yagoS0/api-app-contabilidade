@@ -1,4 +1,4 @@
-// Consumo das chamadas PAGAS ao SERPRO — SOMENTE LEITURA.
+// Tentativas e reservas locais do SERPRO (não é extrato de faturamento) — SOMENTE LEITURA.
 //
 // É com este número que os tetos de `config.js` devem ser ajustados. Enquanto ninguém olhar o
 // consumo real, qualquer teto é chute: alto demais não protege, baixo demais trava fechamento.
@@ -9,7 +9,7 @@
 
 import { prisma } from "../src/infrastructure/db/prisma.js";
 import { SERPRO_COOLDOWN_SEGUNDOS, SERPRO_TETO_DIARIO_EMPRESA, SERPRO_GUARDA_ATIVA } from "../src/config.js";
-import { consumoDoMes } from "../src/application/fiscal/serpro/SerproCallGuard.js";
+import { consumoDoMes, STATUS_ORCAMENTO_SERPRO } from "../src/application/fiscal/serpro/SerproCallGuard.js";
 
 const dias = Number(process.argv[2]) || 7;
 const desde = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
@@ -41,20 +41,22 @@ if (!chamadas.length) {
   process.exit(0);
 }
 
-// Só "ok" e "erro" foram COBRADAS; as recusadas são economia, não gasto.
-const cobradas = chamadas.filter((c) => c.status === "ok" || c.status === "erro");
+// Reserva/incerta consome orçamento preventivamente. Cobrança exige conciliação externa.
+const tentativas = chamadas.filter((c) => STATUS_ORCAMENTO_SERPRO.includes(c.status));
 const recusadas = chamadas.filter((c) => String(c.status).startsWith("recusada"));
 
 const razaoPorId = new Map();
-const ids = [...new Set(cobradas.map((c) => c.portalClientId).filter(Boolean))];
+const ids = [...new Set(tentativas.map((c) => c.portalClientId).filter(Boolean))];
 if (ids.length) {
   const empresas = await prisma.portalClient.findMany({ where: { id: { in: ids } }, select: { id: true, razao: true } });
   for (const e of empresas) razaoPorId.set(e.id, e.razao);
 }
 
-console.log(`COBRADAS: ${cobradas.length}   (ok ${cobradas.filter((c) => c.status === "ok").length} · erro ${cobradas.filter((c) => c.status === "erro").length})`);
+console.log(`TENTATIVAS/RESERVAS: ${tentativas.length}   (ok ${tentativas.filter((c) => c.status === "ok").length} · erro ${tentativas.filter((c) => c.status === "erro").length})`);
+console.log(`RESERVADAS: ${tentativas.filter((c) => c.status === "reservada").length} · INCERTAS: ${tentativas.filter((c) => c.status === "incerta").length} · ABORTADAS ANTES DO ENVIO: ${chamadas.filter((c) => c.status === "abortada_auth").length}`);
+console.log(mes.criterio);
 console.log(`EVITADAS PELA GUARDA: ${recusadas.length}   (cooldown ${recusadas.filter((c) => c.status === "recusada_cooldown").length} · teto ${recusadas.filter((c) => c.status === "recusada_teto").length})`);
-const forcadas = cobradas.filter((c) => c.forcado).length;
+const forcadas = tentativas.filter((c) => c.forcado).length;
 if (forcadas) console.log(`FORÇADAS POR ADMIN: ${forcadas}`);
 console.log("");
 
@@ -68,33 +70,30 @@ function agrupar(lista, chave) {
 }
 
 console.log("POR SERVIÇO");
-for (const [servico, n] of agrupar(cobradas, (c) => c.idServico)) console.log(`  ${String(n).padStart(5)}  ${servico}`);
+for (const [servico, n] of agrupar(tentativas, (c) => c.idServico)) console.log(`  ${String(n).padStart(5)}  ${servico}`);
 
-// ⚠ ERRO COBRADO É DINHEIRO SEM ENTREGA, e é onde o desperdício se esconde. Num mês real, 75 de
-// 214 chamadas (35%) eram rejeições do laço de convergência do PGDAS-D — todas gravadas com o
-// mesmo código genérico. Agrupar por MENSAGEM é o que separa "a RFB recusou o período" de "o
-// certificado expirou": problemas diferentes, consertos diferentes.
-const comErro = cobradas.filter((c) => c.status === "erro");
+// Erros locais precisam ser cruzados com o extrato antes de atribuir cobrança.
+const comErro = tentativas.filter((c) => c.status === "erro");
 if (comErro.length) {
-  console.log(`\nERROS COBRADOS (${comErro.length}) — por serviço e motivo`);
+  console.log(`\nRESPOSTAS COM ERRO (${comErro.length}) — por serviço e motivo`);
   for (const [chave, n] of agrupar(comErro, (c) => `${c.idServico} · ${c.erroCodigo || "(sem código)"} · ${(c.erroMensagem || "(sem mensagem — chamada anterior ao registro)").slice(0, 90)}`)) {
     console.log(`  ${String(n).padStart(5)}  ${chave}`);
   }
 }
 
 console.log("\nPOR ORIGEM (quem disparou)");
-for (const [origem, n] of agrupar(cobradas, (c) => c.origem)) console.log(`  ${String(n).padStart(5)}  ${origem}`);
+for (const [origem, n] of agrupar(tentativas, (c) => c.origem)) console.log(`  ${String(n).padStart(5)}  ${origem}`);
 
 console.log("\nPOR EMPRESA (top 15)");
-for (const [cnpj, n] of agrupar(cobradas, (c) => c.cnpj).slice(0, 15)) {
-  const linha = cobradas.find((c) => c.cnpj === cnpj);
+for (const [cnpj, n] of agrupar(tentativas, (c) => c.cnpj).slice(0, 15)) {
+  const linha = tentativas.find((c) => c.cnpj === cnpj);
   const razao = razaoPorId.get(linha?.portalClientId) || "(não cadastrada)";
   console.log(`  ${String(n).padStart(5)}  ${cnpj || "(sem contribuinte)"}  ${razao}`);
 }
 
 // Pico por empresa/dia: é este número que diz se o teto está apertado ou folgado.
 const porEmpresaDia = new Map();
-for (const c of cobradas) {
+for (const c of tentativas) {
   const dia = c.createdAt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
   const k = `${c.cnpj}|${dia}`;
   porEmpresaDia.set(k, (porEmpresaDia.get(k) || 0) + 1);

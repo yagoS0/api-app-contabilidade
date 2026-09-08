@@ -11,7 +11,7 @@
 // ⚠ A CONTA é do backend e a LEITURA é de `lib/apuracaoLpTela.js` (46 testes). Este arquivo é
 // ligação: ele não calcula nem decide cor por conta própria.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createApiClient } from "../../../api/client";
 import { Painel } from "../../../components/ui/Painel";
 import { Aviso } from "../../../components/ui/Aviso";
@@ -48,25 +48,30 @@ export function ApuracaoLpTab({ companyId, competencia, razao }) {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
   const [servicos16, setServicos16] = useState(null);
+  const pedidoAtual = useRef(0);
 
   const carregar = useCallback(async () => {
+    const pedido = ++pedidoAtual.current;
     if (!companyId || !competencia) return;
     setCarregando(true);
+    setDados(null);
     setErro(null);
     try {
       const r = await api.getApuracaoLp(companyId, competencia, { servicos16 });
+      if (pedido !== pedidoAtual.current) return;
       setDados(r);
     } catch (e) {
+      if (pedido !== pedidoAtual.current) return;
       // ⚠ A recusa por regime (409) chega aqui com a mensagem do servidor, que já diz PARA ONDE IR.
       // Reescrevê-la aqui daria duas frases para a mesma recusa.
       setErro(e?.message || e?.reason || "Não foi possível calcular a apuração.");
       setDados(null);
     } finally {
-      setCarregando(false);
+      if (pedido === pedidoAtual.current) setCarregando(false);
     }
   }, [companyId, competencia, servicos16]);
 
-  useEffect(() => { carregar(); }, [carregar]);
+  useEffect(() => { carregar(); return () => { pedidoAtual.current += 1; }; }, [carregar]);
 
   if (erro) {
     return (

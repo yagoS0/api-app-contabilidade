@@ -27,7 +27,7 @@ function formatDateTime(value) {
 }
 
 function SituacaoBadge({ situacao }) {
-  const meta = SITUACAO_META[situacao] || { label: "Sem consulta", color: "#A7B0C0", bg: "rgba(167,176,192,0.10)" };
+  const meta = SITUACAO_META[situacao] || { label: situacao ? `Situação não reconhecida: ${situacao}` : "Situação não informada", color: "var(--text-muted)", bg: "var(--state-neutral-surface)" };
   return (
     <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: "0.85rem", fontWeight: 700, color: meta.color, background: meta.bg, border: `1px solid ${meta.color}` }}>
       {meta.label}
@@ -41,7 +41,7 @@ export function SitfisTab({ sitfisPanel }) {
   const [verPdf, setVerPdf] = useState(false);
   const {
     status, loading, consulting, error, notice, pdfUrl, consultar,
-    pdfIndisponivel, podeConsultar = true, proximaConsultaEm,
+    pdfIndisponivel, podeConsultar = true, proximaConsultaEm, reload, recarregarPdf,
   } = sitfisPanel || {};
 
 
@@ -76,6 +76,7 @@ export function SitfisTab({ sitfisPanel }) {
       {error && (
         <div style={{ marginTop: 16, padding: "10px 12px", borderRadius: 6, background: "rgba(255,71,87,0.12)", border: "1px solid var(--danger)", color: "var(--danger)", fontSize: "0.9rem" }}>
           {error}
+          <Button variant="secondary" onClick={reload}>Tentar ler o relatório salvo novamente</Button>
         </div>
       )}
       {notice && !error && (
@@ -87,7 +88,7 @@ export function SitfisTab({ sitfisPanel }) {
       <div style={{ marginTop: 20, padding: 20, borderRadius: 12, background: "#21222C", border: "1px solid #44475A" }}>
         {loading ? (
           <p style={{ color: "#A7B0C0", textAlign: "center", margin: 0 }}>Carregando…</p>
-        ) : !status ? (
+        ) : !status && error ? null : !status ? (
           <p style={{ color: "#A7B0C0", margin: 0 }}>
             Nenhuma consulta de situação fiscal foi feita ainda. Clique em “Consultar situação fiscal agora”.
           </p>
@@ -150,13 +151,13 @@ export function SitfisTab({ sitfisPanel }) {
                     <iframe
                       title="Relatório de situação fiscal (SITFIS)"
                       src={pdfUrl}
-                      style={{ width: "100%", height: 700, border: "1px solid #44475A", borderRadius: 8, background: "#fff", marginTop: 12 }}
+                      style={{ width: "100%", height: "70vh", minHeight: 300, border: "1px solid var(--border)", borderRadius: 8, background: "#fff", marginTop: 12 }}
                     />
                   ) : pdfIndisponivel ? (
                     <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 8, background: "rgba(255,179,71,0.12)", border: "1px solid #FFB347", color: "#FFB347", fontSize: "0.85rem", lineHeight: 1.5 }}>
-                      O PDF deste relatório não está mais no servidor (foi gravado antes do
-                      armazenamento persistente).{status.relatorio ? " A tabela acima veio do texto salvo e segue válida" : " A situação e a data acima seguem válidas"} — clique em{" "}
-                      <strong>“Consultar situação fiscal agora”</strong> para gerar o PDF novamente.
+                      Não foi possível carregar o PDF salvo. Isso pode ser uma falha temporária; os dados exibidos acima continuam sendo os do relatório salvo.
+                      <Button variant="secondary" onClick={recarregarPdf}>Tentar carregar PDF novamente</Button>
+                      <p style={{ marginBottom: 0 }}>Esta tentativa lê o arquivo salvo e não faz uma nova consulta ao SERPRO.</p>
                     </div>
                   ) : (
                     <p style={{ color: "#A7B0C0", marginTop: 12, fontSize: "0.85rem" }}>Carregando o PDF…</p>

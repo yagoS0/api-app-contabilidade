@@ -17,14 +17,16 @@ export function useApuracaoV2({ api, companyId, feedback }) {
   const [pendenciasCounts, setPendenciasCounts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [perfilError, setPerfilError] = useState(null);
 
   const loadAll = useCallback(async () => {
     if (!api || !companyId) return;
     setLoading(true);
+    setPerfilError(null);
     try {
       const [cad, perf, prods, pends] = await Promise.all([
         api.getCadastroFiscal(companyId).catch(() => ({ cadastro: null })),
-        api.getPerfilFiscal?.(companyId).catch(() => null) ?? null,
+        api.getPerfilFiscal?.(companyId).catch((e) => { setPerfilError(e?.message || "Falha ao carregar atividades fiscais."); return null; }) ?? null,
         api.listProdutosServicos(companyId).catch(() => ({ items: [] })),
         api.listPendencias(companyId, { resolvida: false }).catch(() => ({ items: [], counts: [] })),
       ]);
@@ -190,7 +192,7 @@ export function useApuracaoV2({ api, companyId, feedback }) {
     getSugestao,
     produtos,
     pendencias, pendenciasCounts,
-    loading, saving,
+    loading, saving, perfilError,
     reload: loadAll,
     saveCadastro,
     createProduto, updateProduto, deleteProduto,

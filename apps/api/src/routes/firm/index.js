@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { createExportacaoLoteRouter } from "./exportacaoLote.js";
+import { responderFluxoDeCaixa } from "../fluxoDeCaixaHttp.js";
 import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
@@ -547,6 +549,9 @@ function sanitizeFirmRole(role) {
 export function createFirmPortalRouter({ ensureAuthorized, log }) {
   const router = Router();
   router.use(requireAuth(), requireAccountType("FIRM"));
+  router.use(createExportacaoLoteRouter());
+  // 08/09/2026: retorno solicitado em Relatórios, exclusivamente leitura.
+  router.get("/companies/:companyId/fluxo-de-caixa", requireFirmCompanyAccess(), (req, res) => responderFluxoDeCaixa(req, res, { log }));
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 },

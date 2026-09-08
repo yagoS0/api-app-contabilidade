@@ -11,7 +11,7 @@
 //   4. a tela de resultado prometia que a nota apareceria "na lista assim que houver resposta" —
 //      impossível: a lista vem de `PortalInvoice` (captura do ADN) e a nota vai para `ServiceInvoice`.
 
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { EmitirNfseWizard } from "../EmitirNfseWizard";
 import { ONDE_CONFIGURA_EMISSAO, ONDE_CARGA_TRIBUTARIA } from "../../../../lib/nfse/cadastroEmissaoNfse";
@@ -110,6 +110,23 @@ function ateOsValores() {
   digitar("Valor dos serviços", "150000");
   digitar("Alíquota de ISS", "2");
 }
+
+it("mantém todas as saídas do diálogo indisponíveis durante a emissão", async () => {
+  const emitir = jest.fn(() => new Promise(() => {}));
+  const confirmar = jest.spyOn(window, "confirm").mockReturnValue(true);
+  abrir({ onEmitir: emitir });
+  ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84"); continuar();
+  fireEvent.click(screen.getByRole("button", { name: /^Emitir nota$/ }));
+  await waitFor(() => expect(emitir).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole("dialog", { name: "Emitir nota de serviço" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Fechar/ })).not.toBeInTheDocument();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.getByRole("dialog", { name: "Emitir nota de serviço" })).toBeInTheDocument();
+  const descarregar = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(descarregar);
+  expect(descarregar.defaultPrevented).toBe(true);
+  confirmar.mockRestore();
+});
 
 describe("o campo que faltava — pTotTribSN", () => {
   it("retencoes, obra e destinatário seguem no payload e na confirmação", async () => {

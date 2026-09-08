@@ -387,6 +387,7 @@ export function createRealApi() {
       ...options,
       headers,
     });
+    if (response.ok && options.responseType === "blob") return response.blob();
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       // Q27.D: 401 → tenta renovar UMA vez e repete a requisição original. Não tenta no /auth/*.
@@ -440,6 +441,16 @@ export function createRealApi() {
     },
     async me() {
       return request("/auth/me");
+    },
+    async getFluxoCaixa(companyId, { janelaInicio } = {}) {
+      const query = janelaInicio ? '?janelaInicio=' + encodeURIComponent(janelaInicio) : '';
+      return request('/firm/companies/' + encodeURIComponent(companyId) + '/fluxo-de-caixa' + query);
+    },
+    async preflightEntriesBatch(dados) {
+      return request('/firm/entries/export/batch/preflight', { method: 'POST', body: JSON.stringify(dados) });
+    },
+    async exportEntriesBatch(dados) {
+      return request('/firm/entries/export/batch/zip', { method: 'POST', body: JSON.stringify(dados), responseType: 'blob' });
     },
     async listCompanies(competencia) {
       const suffix = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
@@ -814,6 +825,9 @@ export function createRealApi() {
     },
     async concluirOcorrencia(ocorrenciaId) {
       return request(`/firm/ocorrencias/${ocorrenciaId}/concluir`, { method: "POST" });
+    },
+    async excluirOcorrencia(ocorrenciaId, dados) {
+      return request(`/firm/ocorrencias/${ocorrenciaId}`, { method: "DELETE", body: JSON.stringify(dados) });
     },
     async updateOcorrencia(ocorrenciaId, patch) {
       return request(`/firm/ocorrencias/${ocorrenciaId}`, { method: "PATCH", body: JSON.stringify(patch) });

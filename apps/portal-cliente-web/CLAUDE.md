@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal do Cliente na web (apps/portal-cliente-web)
 
+## Decisão atual — 08/09/2026
+
+O escritório voltou a apresentar o fluxo diário do cliente em Relatórios, apenas leitura. Ambos usam responderFluxoDeCaixa; os componentes do escritório não recebem ações de células do cliente. A orientação antiga de proibir esse fluxo no escritório foi substituída pelo pedido atual. Nenhum fluxo operacional do cliente foi alterado nesta entrega.
+
 React 19 + Vite, **sem router e sem biblioteca de estado**. Nasceu em 18/08/2026 e recebeu nove
 commits em dois dias (`git log --oneline -- apps/portal-cliente-web`). Este documento existe porque
 quase toda decisão aqui foi tomada **com a tela na frente do dono**, e a razão dela não cabe no

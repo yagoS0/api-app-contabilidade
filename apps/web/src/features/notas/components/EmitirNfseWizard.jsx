@@ -75,6 +75,7 @@
 // recusa não pode ser a primeira vez que alguém descobre que a empresa não emite.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Modal } from "../../../components/ui/Modal";
 import { PANEL } from "./notasStyles";
 import { Button } from "../../../components/ui/Button";
 import {
@@ -287,6 +288,12 @@ export function EmitirNfseWizard({
 }) {
   const [passo, setPasso] = useState(0);
   const [enviando, setEnviando] = useState(false);
+  useEffect(() => {
+    if (!enviando) return undefined;
+    const protegerEmissao = (event) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", protegerEmissao);
+    return () => window.removeEventListener("beforeunload", protegerEmissao);
+  }, [enviando]);
   const [rejeicao, setRejeicao] = useState(null);
   const [resultado, setResultado] = useState(null);
   const [perfisDaEmpresa, setPerfisDaEmpresa] = useState([]);
@@ -795,12 +802,7 @@ export function EmitirNfseWizard({
   const travadoPelaRejeicao = Boolean(rejeicao?.desfechoDesconhecido);
 
   return (
-    <div style={overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={caixa}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <h3 style={{ margin: 0, fontSize: "1.05rem" }}>Emitir nota de serviço</h3>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: PANEL.muted, fontSize: 20, cursor: "pointer" }}>✕</button>
-        </div>
+    <Modal titulo="Emitir nota de serviço" tamanho="lg" aoFechar={onClose} ocupado={enviando}>
 
         {perfisDaEmpresa.length > 0 && <div style={{ marginBottom: 16 }}>
           <label htmlFor="nfse-perfil">Perfil de serviço desta nota</label>
@@ -1436,7 +1438,6 @@ export function EmitirNfseWizard({
             </Button>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

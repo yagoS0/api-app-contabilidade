@@ -83,7 +83,7 @@ function Badge({ cor, fundo, children, title }) {
       title={title}
       style={{
         display: "inline-block", padding: "1px 7px", borderRadius: 999, whiteSpace: "nowrap",
-        fontSize: "0.62rem", fontWeight: 700, color: cor, background: fundo, border: `1px solid ${cor}`,
+        fontSize: "0.8125rem", fontWeight: 700, color: cor, background: fundo, border: `1px solid ${cor}`,
       }}
     >
       {children}
@@ -937,7 +937,7 @@ function ParcelasSemGuiaPendentes({
                 {g.texto}
               </div>
               {g.quantidade !== parcelas.length && g.listaDeNumeros && (
-                <div style={{ color: PANEL.muted, fontSize: "0.66rem", marginTop: 2 }}>
+                <div style={{ color: PANEL.muted, fontSize: "0.8125rem", marginTop: 2 }}>
                   Prestações: {g.listaDeNumeros}
                 </div>
               )}

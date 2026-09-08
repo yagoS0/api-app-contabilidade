@@ -1,3 +1,4 @@
+import { comContextoSerpro, contextoSerproAtual } from "../application/fiscal/serpro/serproCallContext.js";
 import { log } from "../config.js";
 import { tryAcquireGuideLock, releaseGuideLock } from "../application/guides/GuideLockService.js";
 import { getSerproRuntimeSettings } from "../application/fiscal/serpro/SerproRuntimeSettings.js";
@@ -11,6 +12,10 @@ const LOCK_TTL_MS = 30 * 60 * 1000;
 const LOOP_INTERVAL_MS = 60 * 1000;
 
 export async function runSerproPaymentConfirmationWorkerOnce(options = {}) {
+  const ctx = contextoSerproAtual();
+  return comContextoSerpro({ ...ctx, origem: ctx.origem || "worker:serpro_pagamento" }, () => executarPagamento(options));
+}
+async function executarPagamento(options = {}) {
   const locked = await tryAcquireGuideLock(LOCK_ID, LOCK_TTL_MS);
   if (!locked) return { skipped: true, reason: "lock_active" };
   try {

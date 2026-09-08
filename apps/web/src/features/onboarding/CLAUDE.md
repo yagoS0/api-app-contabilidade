@@ -1,5 +1,9 @@
 # CLAUDE.md — Onboarding (funil pré-cadastro)
 
+## Recuperação do rascunho — 08/09/2026
+
+Voltar à lista e trocar de passo aguardam salvar; falha mantém campos e passo com aviso persistente. Debounce e salvamento explícito entram na mesma fila, evitando resposta/escrita antiga depois da saída. Fechar/recarregar com alterações pendentes usa `beforeunload`; não prometer que F5 antes do debounce salva automaticamente. Teste de regressão em `components/__tests__/telasOnboarding.test.jsx` confirma recusa e repetição do Voltar.
+
 O que acontece **antes** de a empresa existir na carteira.
 
 ## Por que existe

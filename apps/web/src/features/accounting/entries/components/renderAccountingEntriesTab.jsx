@@ -1442,7 +1442,7 @@ export function AccountingEntriesTab({
             rótulos curtos e um botão, e cada pixel a mais aqui é um pixel a menos de coluna de
             lançamento. O painel é referência de canto de olho; a tabela é onde se trabalha.
             152px é o piso: abaixo disso "Folha/Pró-labore" quebra em duas linhas. */}
-        <div style={{ flex: "0 0 152px", maxWidth: "100%" }}>
+        <div className="accounting-fechamento-panel" style={{ maxWidth: "100%" }}>
           <FechamentoCadeado
             companyId={companyId}
             competencia={activeComp}

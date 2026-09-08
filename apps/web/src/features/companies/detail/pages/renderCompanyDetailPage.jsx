@@ -373,9 +373,9 @@ function ApuracaoV2TabWrapper({ companyId, feedback, razao, myRole, competencia,
 // abas são rotas distintas e nunca renderizam ao mesmo tempo, então cada uma instancia o seu — o
 // que NÃO se duplica é o cliente HTTP (`apuracaoV2Api`, de módulo) nem a leitura das atividades,
 // que continua sendo a do mesmo hook.
-function PerfilFiscalTabWrapper({ companyId, feedback }) {
+function PerfilFiscalTabWrapper({ companyId, feedback, podeEditar }) {
   const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
-  return <PerfilFiscalTab panel={panel} />;
+  return <PerfilFiscalTab panel={panel} companyId={companyId} podeEditar={podeEditar} />;
 }
 
 // Q41: wrapper que instancia o hook da Situação Fiscal (SITFIS) — companyId = portalClient id.
@@ -595,7 +595,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
             onUpdateAccount={accountingPanel.onUpdateAccount}
             onDeleteAccount={accountingPanel.onDeleteAccount}
             onImportFile={accountingPanel.onImportAccountsFile}
-            onBack={() => switchTab("lancamentos")}
+            onBack={onBack}
           />
           </Suspense>
         </div>
@@ -1034,7 +1034,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
         <div style={{ flex: 1, padding: 24 }}>
           <ErrorBoundary>
             <Suspense fallback={<TabLoadingFallback />}>
-              <PerfilFiscalTabWrapper companyId={companyId} feedback={feedback} />
+              <PerfilFiscalTabWrapper companyId={companyId} feedback={feedback} podeEditar={canEditCompany} />
             </Suspense>
           </ErrorBoundary>
           {/* ⚠⚠ ESTA LINHA FALTAVA ATÉ 27/08/2026, e a aba era MUDA: "Salvar perfil" gravava, o hook

@@ -1,7 +1,7 @@
 import { ConfiguracoesGeraisPage, ConfiguracoesGeraisLayout } from "./features/configuracoes/Configuracoes";
 import { FormularioPublico } from "./features/onboarding/pages/FormularioPublico";
 import { useEffect, useMemo } from "react";
-import { useLocation, useParams } from "react-router-dom";
+import { Navigate, useLocation, useParams } from "react-router-dom";
 import { createApiClient } from "./api/client";
 import "./App.css";
 import { CompaniesHomePage } from "./features/companies/list/pages/renderCompaniesHomePage";
@@ -24,6 +24,7 @@ import { OnboardingWizardPage } from "./features/onboarding/pages/renderOnboardi
 import { OnboardingDetailPage } from "./features/onboarding/pages/renderOnboardingDetailPage";
 import { useManageAppFeedback } from "./app/hooks/useManageAppFeedback";
 import { useManageAuthSession } from "./app/hooks/useManageAuthSession";
+import { WorkspaceNavigationProvider } from "./app/navigation/WorkspaceNavigation";
 import { useCalendarioNavigation } from "./app/hooks/useCalendarioNavigation";
 import { useManageCompaniesWorkspace } from "./app/hooks/useManageCompaniesWorkspace";
 import { useManageAccountingWorkspace } from "./app/hooks/useManageAccountingWorkspace";
@@ -41,7 +42,7 @@ const TOKEN_STORAGE_KEY = "portal_firm_access_token";
 
 function App() {
   const location = useLocation();
-  return location.pathname === "/onboarding/publico" ? <FormularioPublico api={api} /> : <AppInterno />;
+  return location.pathname === "/onboarding/publico" ? <FormularioPublico api={api} /> : <WorkspaceNavigationProvider><AppInterno /></WorkspaceNavigationProvider>;
 }
 
 function AppInterno() {
@@ -192,7 +193,7 @@ function AppInterno() {
         onChange={companiesWorkspace.createCompanyForm.setField}
         onSubmit={companiesWorkspace.handleCreateCompany}
         submitting={companiesWorkspace.submittingCompany}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         error={feedback.error}
       />
     );
@@ -229,7 +230,7 @@ function AppInterno() {
         onRunCron={companiesWorkspace.handleRunSerproCron}
         runningCron={companiesWorkspace.runningSerproCron}
         cronRunResult={companiesWorkspace.serproCronRunResult}
-        onBack={() => session.setPage("configuracoesGerais")}
+        onBack={() => session.goBack("/configuracoes")}
         message={feedback.message}
         error={feedback.error}
       />
@@ -242,7 +243,7 @@ function AppInterno() {
       <ConfiguracoesGeraisLayout atual="contabilidade">
       <GlobalChartOfAccountsPage
         api={api}
-        onBack={() => session.setPage("configuracoesGerais")}
+        onBack={() => session.goBack("/configuracoes")}
       />
       </ConfiguracoesGeraisLayout>
     );
@@ -254,7 +255,7 @@ function AppInterno() {
         apuracaoPanel={apuracao}
         apuracaoApi={api}
         feedback={feedback}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         /* Era uma sequência de três passos que se atropelavam: `setSelectedCompanyId` (assíncrono),
            `setPage("companyDetail")` sem id (que caía no fallback e ia pra lista) e
            `setCompanyDetailTab` lendo o id VELHO do estado — o último navigate vencia e abria a
@@ -272,7 +273,7 @@ function AppInterno() {
         settings={companiesWorkspace.guideSettings}
         companies={companiesWorkspace.companiesState.companies}
         onRunOp={companiesWorkspace.runSerproOp}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         message={feedback.message}
         error={feedback.error}
         pendenciasPanel={pendenciasFiscais}
@@ -280,22 +281,15 @@ function AppInterno() {
     );
   }
 
-  // A central abre diretamente pelo calendário e devolve o mesmo período/filtro ao retornar.
+  // Links antigos abrem o calendário e seu modal, nunca uma segunda central.
   if (session.page === "obrigacoes") {
-    return (
-      <ObrigacoesPage
-        api={api}
-        empresas={companiesWorkspace.companiesState.companies}
-        onBack={() => calendarioNavigation.voltar()}
-        onBackLabel="Voltar ao calendário"
-        initialCompanyId={calendarioNavigation.contexto.companyId || ""}
-        initialCreate={calendarioNavigation.contexto.criacao}
-        initialOccurrenceId={calendarioNavigation.contexto.ocorrenciaId}
-        initialPeriod={calendarioNavigation.contexto.periodo}
-        onCreated={calendarioNavigation.criado}
-        onViewDate={(data, companyId) => calendarioNavigation.voltar(data, companyId)}
-      />
-    );
+    const context = calendarioNavigation.contexto;
+    return <Navigate to="/companies" replace state={{ calendarContext: {
+      ...(context.calendario || {}), obrigacoesModal: {
+        companyId: context.companyId || "", ...(context.periodo || {}),
+        ...(context.criacao || {}), criar: Boolean(context.criacao), ocorrenciaId: context.ocorrenciaId,
+      },
+    } }} />;
   }
 
   // ⚠ NÃO exige empresa selecionada — de propósito. A simulação livre é o cenário de reunião com
@@ -317,7 +311,7 @@ function AppInterno() {
       <PlanejamentoPage
         api={api}
         empresas={companiesWorkspace.companiesState.companies}
-        onVoltar={() => session.setPage("companies")}
+        onVoltar={() => session.goBack()}
       />
     );
   }
@@ -329,7 +323,7 @@ function AppInterno() {
     return (
       <OnboardingsPage
         api={api}
-        onVoltar={() => session.setPage("companies")}
+        onVoltar={() => session.goBack()}
         onNovo={async () => {
           // A ficha nasce no primeiro clique — é o que permite salvar rascunho desde a 1ª tela.
           // (E é por isso que a lista esconde rascunho por padrão: eles acumulam.)
@@ -381,7 +375,7 @@ function AppInterno() {
         runningCron={companiesWorkspace.runningSerproCron}
         onRefreshWorkerStatus={companiesWorkspace.loadSerproWorkerStatus}
         onRunPaymentConfirmation={() => api.runSerproPaymentConfirmation({})}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         message={feedback.message}
         error={feedback.error}
       />
@@ -391,7 +385,7 @@ function AppInterno() {
   if (session.page === "guideUpload") {
     return (
       <GuideUploadPage
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         onUpload={companiesWorkspace.handleGuideUpload}
         uploading={companiesWorkspace.uploadingGuides}
         uploadResults={companiesWorkspace.uploadResults}
@@ -409,7 +403,7 @@ function AppInterno() {
       <CompanyDetailPage
         company={{
           selectedCompany: companiesWorkspace.selectedCompany,
-          onBack: () => session.setPage("companies"),
+          onBack: () => session.goBack(),
           companyDetailTab: companiesWorkspace.companyDetailTab,
           setCompanyDetailTab: companiesWorkspace.setCompanyDetailTab,
           canEditCompany,
@@ -549,7 +543,7 @@ function AppInterno() {
       <WhatsappPage
         api={api}
         companies={companiesWorkspace.companiesState.companies}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         message={feedback.message}
         error={feedback.error}
       />
@@ -567,7 +561,7 @@ function AppInterno() {
         onSendSelected={companiesWorkspace.handleSendSelectedPending}
         sending={companiesWorkspace.sendingSelectedPending}
         onRefresh={companiesWorkspace.loadPendingGuidesReport}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         message={feedback.message}
         error={feedback.error}
       />
@@ -580,7 +574,7 @@ function AppInterno() {
         report={companiesWorkspace.batchEmailReport}
         loading={companiesWorkspace.loadingBatchEmailReport}
         sending={companiesWorkspace.sendingBatchEmails}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         onLoad={companiesWorkspace.handleLoadBatchEmailReport}
         onSend={companiesWorkspace.handleSendBatchEmails}
         whatsapp={loteWhatsapp}

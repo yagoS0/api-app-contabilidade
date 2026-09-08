@@ -210,7 +210,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
           });
         },
       }, janela: { aberta: janela.situacao === SITUACOES_JANELA.ABERTA }, agora, log,
-      enviarDocumento: async ({ conteudo, nomeArquivo, legenda, mimeType, guideId, notaId, documentId }) => {
+      enviarDocumento: async ({ conteudo, nomeArquivo, legenda, mimeType, guideId, notaId, documentId, situacaoFiscal = false }) => {
         const chaveDocumento = `${guideId || ""}:${notaId || ""}:${documentId || ""}:${nomeArquivo || ""}`;
         if (documentosTentados.has(chaveDocumento)) return documentosTentados.get(chaveDocumento);
         const ehImagem = String(mimeType || "").toLowerCase().startsWith("image/");
@@ -218,10 +218,10 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
           antesDeEnviar: async () => {
             await conferirPortao();
             const atual = await carregarSessaoAtual();
-            const permissao = guideId ? PERMISSOES_ASSISTENTE.GUIAS
+            const permissao = situacaoFiscal ? PERMISSOES_ASSISTENTE.SITUACAO_FISCAL : guideId ? PERMISSOES_ASSISTENTE.GUIAS
               : notaId ? PERMISSOES_ASSISTENTE.NOTAS_DANFSE
                 : PERMISSOES_ASSISTENTE.DOCUMENTOS_EMPRESA;
-            const papelMinimo = documentId ? PAPEL_MINIMO_SITUACAO_FISCAL : PAPEL_MINIMO_LEITURA;
+            const papelMinimo = (documentId || situacaoFiscal) ? PAPEL_MINIMO_SITUACAO_FISCAL : PAPEL_MINIMO_LEITURA;
             if (!atual.ok || atual.userId !== sessao.userId || !temPermissaoAssistente(atual, permissao) || !papelAlcanca(atual.papel, papelMinimo)) {
               throw Object.assign(new Error("O acesso deste número mudou antes do envio."), { codigo: "ACESSO_REVOGADO" });
             }

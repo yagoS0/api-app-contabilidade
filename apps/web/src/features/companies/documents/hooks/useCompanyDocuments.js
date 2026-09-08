@@ -108,13 +108,15 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
   }, [documentos, selecionados, baixar]);
 
   const excluir = useCallback(async (doc) => {
-    if (!api || !companyId) return;
+    if (!api || !companyId) return false;
     try {
       await api.deleteCompanyDocument(companyId, doc.id);
       feedbackRef.current?.notifySuccess?.("Documento excluído.");
       await carregar();
+      return true;
     } catch (err) {
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao excluir o documento.");
+      return false;
     }
   }, [api, companyId, carregar]);
 
@@ -147,14 +149,17 @@ export function useCompanyNotes({ api, companyId, feedback }) {
   const [anotacoes, setAnotacoes] = useState([]);
   const [ordenarPor, setOrdenarPor] = useState("data");
   const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState(null);
 
   const carregar = useCallback(async () => {
     if (!api || !companyId) return;
     setCarregando(true);
+    setErro(null);
     try {
       const r = await api.listCompanyNotes(companyId, ordenarPor);
       setAnotacoes(r?.anotacoes || []);
     } catch (err) {
+      setErro(err?.message || "Falha ao carregar as anotações.");
       feedbackRef.current?.notifyError?.(err?.message || "Falha ao carregar as anotações.");
     } finally {
       setCarregando(false);
@@ -202,5 +207,5 @@ export function useCompanyNotes({ api, companyId, feedback }) {
     demais: anotacoes.filter((n) => !n.fixada),
   }), [anotacoes]);
 
-  return { anotacoes, fixada, demais, ordenarPor, setOrdenarPor, carregando, criar, atualizar, excluir, recarregar: carregar };
+  return { anotacoes, fixada, demais, ordenarPor, setOrdenarPor, carregando, erro, criar, atualizar, excluir, recarregar: carregar };
 }

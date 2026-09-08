@@ -1,5 +1,9 @@
 # CLAUDE.md — Contabilidade (apps/web/src/features/accounting)
 
+## Legibilidade — 08/09/2026
+
+O painel de fechamento usa `accounting-fechamento-panel`, com largura lateral no desktop e largura integral quando empilhado; o breakpoint vive no App.css. Criação de conta usa `chart-account-create-grid` responsivo e filtros usam auto-fit. Estados/erros que tinham 0,62/0,66rem em Circular e Parcelamentos passam a 0,8125rem. Não alterar contratos contábeis para resolver falta de espaço.
+
 Feature de lançamentos contábeis no frontend: aba Lançamentos, Circular, parcelamentos,
 plano de contas, funções/templates, importações (OFX/Excel).
 

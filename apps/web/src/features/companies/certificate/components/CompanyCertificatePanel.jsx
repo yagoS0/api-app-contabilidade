@@ -1,7 +1,7 @@
 // Q12.B+++.1: painel de status + ações do cert A1 da empresa.
 // Mountado na aba "Editar Cadastro" embaixo do CompanyForm.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { CompanyCertificateUploadModal } from "./CompanyCertificateUploadModal";
 
@@ -19,6 +19,9 @@ function daysUntil(iso) {
 }
 
 export function CompanyCertificatePanel({ api, companyId, feedback }) {
+  const feedbackRef = useRef(feedback);
+  feedbackRef.current = feedback;
+  const [erroCarga, setErroCarga] = useState(null);
   const [cert, setCert] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -28,13 +31,15 @@ export function CompanyCertificatePanel({ api, companyId, feedback }) {
   const load = useCallback(async () => {
     if (!companyId || !api?.getCompanyCert) return;
     setLoading(true);
+    setErroCarga(null);
     try {
       const out = await api.getCompanyCert(companyId);
       setCert(out);
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao carregar cert");
+      setErroCarga(err?.message || "Falha ao ler o certificado.");
+      feedbackRef.current?.notifyError?.(err?.message || "Falha ao ler o certificado.");
     } finally { setLoading(false); }
-  }, [api, companyId, feedback]);
+  }, [api, companyId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -90,10 +95,11 @@ export function CompanyCertificatePanel({ api, companyId, feedback }) {
 
       {loading && <div style={{ color: PANEL.muted, fontSize: "0.85rem" }}>Carregando…</div>}
 
-      {!loading && !hasCert && (
+      {erroCarga && <div role="alert"><p>Não foi possível ler o certificado. {erroCarga}</p><Button onClick={load}>Tentar novamente</Button></div>}
+      {!loading && !erroCarga && !hasCert && (
         <div style={{ padding: 12, background: PANEL.field, borderRadius: 6, fontSize: "0.85rem", color: PANEL.muted }}>
-          Nenhum certificado cadastrado. Necessário para consultar NFS-e via ADN Nacional
-          (gov.br/nfse). Use o botão <strong>"+ Cadastrar"</strong> para enviar o arquivo
+          Nenhum A1 próprio cadastrado. Ele é necessário para emitir NFS-e e capturar notas via ADN e DFe. Integra Contador utiliza a procuração específica do escritório.
+          Use o botão <strong>"+ Cadastrar"</strong> para enviar o arquivo
           <code style={{ marginLeft: 4 }}>.pfx</code> e a senha.
         </div>
       )}

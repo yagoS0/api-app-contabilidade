@@ -18,8 +18,9 @@ function montar() {
 const comReceita = () =>
   fireEvent.change(screen.getByLabelText(/Receita anual/i), { target: { value: "30000000" } });
 
-describe("⚠⚠ A RESPOSTA VEM ANTES DO FORMULÁRIO", () => {
-  it("com resultado na tela, o comparativo aparece ANTES do primeiro campo", async () => {
+// Revisão de 08/09: o contador primeiro identifica e edita as premissas, depois compara.
+describe("Premissas antes da comparação", () => {
+  it("com resultado na tela, o comparativo aparece depois do primeiro campo", async () => {
     // ⚠ O jsdom não faz layout, então não dá para medir pixel. O que se mede é a ORDEM NO
     // DOCUMENTO, que é o que produz a ordem na tela — e é ela que uma refatoração desfaz sem
     // querer.
@@ -32,10 +33,10 @@ describe("⚠⚠ A RESPOSTA VEM ANTES DO FORMULÁRIO", () => {
     const primeiroCampo = html.indexOf('id="pl-receita"');
     expect(resultado).toBeGreaterThan(-1);
     expect(primeiroCampo).toBeGreaterThan(-1);
-    expect(resultado).toBeLessThan(primeiroCampo);
+    expect(resultado).toBeGreaterThan(primeiroCampo);
   });
 
-  it("⚠ e NENHUM campo sumiu — o formulário desceu, não encolheu", async () => {
+  it("nenhum campo some ao reorganizar o formulário", async () => {
     montar();
     comReceita();
     // Os nove campos continuam todos lá. "Resposta primeiro" não pode virar "esconder premissa".

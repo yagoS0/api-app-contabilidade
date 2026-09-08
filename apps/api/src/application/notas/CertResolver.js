@@ -1,7 +1,8 @@
 // Q12.A.3: resolve qual certificado usar para acessar um serviço externo
 // (NFS-e/ADN, DFe/SEFAZ, eSocial, Integra-SN).
 //
-// Estratégia (Q12.A — só leitura da tabela Procuracao, sem trocar de cert ainda):
+// NFSE/ADN e DFE exigem A1 próprio. Para SN/eSocial, mantém a resolução delegável abaixo.
+// Estratégia dos serviços delegáveis (sem carregar o certificado global aqui):
 //   1) Procura Procuracao ATIVA e dentro da validade pra (portalClient, servico).
 //      Se existir → indica que o ESCRITÓRIO atua via e-CAC com o cert do escritório.
 //      (A resolução real do cert do escritório fica em Q12.B/.C, quando os clients DFe
@@ -128,7 +129,9 @@ export async function resolveCertForCompany({ portalClientId, servico }) {
     throw new CertResolutionError("INVALID_SERVICO", `Serviço inválido: ${servico}. Esperado um de ${Object.values(SERVICOS).join("|")}`);
   }
 
-  const proc = await findActiveProcuracao({ portalClientId, servico });
+  // NFSe/ADN e DFe identificam a empresa pelo A1 próprio. Uma procuração e-CAC não muda esse contrato.
+  const exigeA1Proprio = servico === SERVICOS.NFSE || servico === SERVICOS.DFE;
+  const proc = exigeA1Proprio ? null : await findActiveProcuracao({ portalClientId, servico });
   if (proc) {
     // Q12.A: marca origem. Caller decide se carrega cert global (Q12.B+) ou cai pro fallback.
     return {
@@ -142,7 +145,7 @@ export async function resolveCertForCompany({ portalClientId, servico }) {
   if (!companyCert) {
     throw new CertResolutionError("NO_CERT_AVAILABLE",
       `Sem certificado pra empresa ${portalClientId} no serviço ${servico}. ` +
-      `Cadastre uma procuração ativa OU faça upload do A1 da empresa.`,
+      (exigeA1Proprio ? "Faça upload do A1 da própria empresa; procuração não substitui o certificado nesta operação." : "Cadastre uma procuração ativa OU faça upload do A1 da empresa."),
       { portalClientId, servico });
   }
 
