@@ -18,16 +18,13 @@ import { Button } from "../../../components/ui/Button";
 import { Modal } from "../../../components/ui/Modal";
 import { ModalDaVarredura } from "./ModalDaVarredura";
 import { ModalDaClassificacaoIa } from "./ModalDaClassificacaoIa";
-import { ModalDeContabilizacao } from "./ModalDeContabilizacao";
+import { ModalLancarSelecionados } from "./ModalLancarSelecionados";
 import { PainelDeCasamentos } from "./PainelDeCasamentos";
 // ⚠⚠ A RECORRÊNCIA NÃO É ABA — decisão do dono (*"muitas abas"*, 24/08/2026). O plano manda a
 // marcação morar na LINHA DO FLUXO e as declarações pendentes do cliente entrarem na fila da
 // Conferência; enquanto o fluxo (Fase E) não existe, o painel vive aqui, que é a mesma fila de
 // "coisas para o contador confirmar". ⚠ A feature é PRÓPRIA para o fluxo importá-la depois.
-import { PainelDeRecorrencias } from "../../recorrencia/components/PainelDeRecorrencias";
 import { PainelArquivosWhatsapp } from "./PainelArquivosWhatsapp";
-import { PainelDeSaidasDoCliente } from "./PainelDeSaidasDoCliente";
-import { PainelDeMexidasDoCliente } from "./PainelDeMexidasDoCliente";
 import { PainelDeLancadosPorRegra } from "./PainelDeLancadosPorRegra";
 import { PainelDeRegras } from "./PainelDeRegras";
 // ⚠ O MESMO formulário do painel «Regras», aberto pela LINHA — um formulário, duas portas.
@@ -115,7 +112,7 @@ function SecaoDaConferencia({ natureza, children }) {
     // em região, e a separação que o dono pediu tem de existir também para quem não a vê.
     <section
       aria-label={titulo}
-      style={{ display: "grid", gap: 16, borderLeft: "2px solid var(--border)", paddingLeft: 16 }}
+      style={{ display: "grid", gap: 12 }}
     >
       <div style={{ display: "grid", gap: 2 }}>
         {/* ⚠⚠ `<h2>` E NÃO `<strong>` — medido no navegador em 01/09/2026: a tela toda, **6.302px**
@@ -661,7 +658,7 @@ function motivosDeBloqueioVisiveis(acoes, item, opcoes) {
 }
 
 function LinhaDoDeclarado({
-  item, podeEscrever, podeEscolherConta, onAgir, contas = [], onLancar, onCriarRegra, ocupado, motivoDoCasamento,
+  item, podeEscrever, podeEscolherConta, onAgir, contas = [], onLancar, onCriarRegra, ocupado, motivoDoCasamento, selecionada, onSelecionar, onPreparar,
 }) {
   const estado = leituraDoEstado(item.estado);
   const doc = leituraDoDocumento(item);
@@ -798,10 +795,24 @@ function LinhaDoDeclarado({
   // `origem` existe no model desde sempre, já viajava no serializador da rota, e **não aparecia em
   // lugar nenhum da tela**: a fila é homogênea por construção (toda linha é um `LancamentoDeclarado`),
   // então a heterogeneidade que o dono quer ver não está na tabela — está neste campo.
+  useEffect(() => {
+    onPreparar?.(item.id, {
+      pronta: podeLancarDaLinha && !bloqueioDoLancar,
+      id: item.id, descricao: item.descricaoOriginal,
+      valor: item.valorAjustado ?? item.valor,
+      data: pedeData ? data : item.dataPagamento,
+      debito: conta, credito,
+      corpo: montarCorpo({ acao: "confirmar", item, cfg: ACAO.confirmar,
+        contaCompleta: traducao.valor, creditoCompleto: traducaoDoCredito.valor,
+        creditoTocado: creditoTocado.current, data: pedeData ? data : null }),
+    });
+  }, [item, podeLancarDaLinha, bloqueioDoLancar, conta, credito, data, pedeData, traducao.valor, traducaoDoCredito.valor, onPreparar]);
+
   const origem = origemDaLinha(item);
 
   return (
-    <tr>
+    <tr style={selecionada ? { background: "var(--surface-raised, rgba(189,147,249,0.12))" } : undefined}>
+      <td><input type="checkbox" aria-label={`Selecionar ${item.descricaoOriginal}`} checked={Boolean(selecionada)} disabled={!podeLancarDaLinha || Boolean(bloqueioDoLancar) || ocupado} title={bloqueioDoLancar || undefined} onChange={e => onSelecionar?.(item.id, e.target.checked)} /></td>
       <td>
         <div style={{ display: "grid", gap: 2 }}>
           <span>{item.descricaoOriginal}</span>
@@ -1133,6 +1144,18 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
 
   // ⚠⚠ O LOTE (Fase C). `null` = fechado; `{ idsQueCasam }` = aberto.
   const [lote, setLote] = useState(null);
+  const contextoDoLote = `${companyId}|${competencia}|${recorte}|${estadoFiltrado}`;
+  const contextoAtual = useRef(contextoDoLote);
+  contextoAtual.current = contextoDoLote;
+  const [selecionados, setSelecionados] = useState([]);
+  const [preparadas, setPreparadas] = useState({});
+  const prepararLinha = useCallback((id, linha) => setPreparadas(atuais =>
+    JSON.stringify(atuais[id]) === JSON.stringify(linha) ? atuais : { ...atuais, [id]: linha }), []);
+  const selecionarLinha = useCallback((id, marcada) => setSelecionados(atuais =>
+    marcada ? [...new Set([...atuais, id])] : atuais.filter(x => x !== id)), []);
+  useEffect(() => { setSelecionados([]); setPreparadas({}); }, [companyId, competencia, recorte, estadoFiltrado]);
+  const visiveisProntas = (fila?.itens || []).filter(i => preparadas[i.id]?.pronta).map(i => i.id);
+  const idsSelecionados = selecionados.filter(id => visiveisProntas.includes(id));
   const [abrindoLote, setAbrindoLote] = useState(false);
   // ⚠ Casar muda a FILA (a nota ganha data e passa a A_CONFERIR) e muda o PAINEL (o débito some).
   // Este contador força o remonte do painel para os dois ficarem coerentes — sem ele, o contador vê
@@ -1390,6 +1413,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
     setAbrindoLote(true);
     try {
       const r = await conferenciaApi.getConferenciaCasamentos(companyId);
+      if (contextoAtual.current !== contextoDoLote) return;
       // ⚠⚠ A PORTA FECHA PARA **FORMA**, NÃO SÓ PARA FALHA — achado por agente adversarial em
       // 27/08/2026. O `catch` abaixo só pega REJEIÇÃO; uma resposta 200 sem a chave `linhas`
       // (renome no backend, envelope novo) produzia `Set` vazio em silêncio, e lista vazia autoriza
@@ -1398,7 +1422,13 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
       if (!Array.isArray(r?.linhas)) {
         throw new Error("a resposta não veio na forma esperada (sem a lista `linhas`)");
       }
-      setLote({ idsQueCasam: debitosQueCasamComNota(r) });
+      const casamentos = debitosQueCasamComNota(r);
+      const linhas = idsSelecionados.filter(id => !casamentos.has(id)).map(id => preparadas[id]);
+      if (linhas.length !== idsSelecionados.length) {
+        setAviso("Há débitos selecionados que correspondem a notas. Confira os vínculos antes de lançar.");
+        return;
+      }
+      if (linhas.length) setLote({ linhas, companyId, contexto: contextoDoLote });
     } catch (e) {
       setAviso(
         "Não foi possível conferir quais débitos do extrato já casam com uma nota, e sem isso o lote "
@@ -1408,7 +1438,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
     } finally {
       setAbrindoLote(false);
     }
-  }, [companyId]);
+  }, [companyId, idsSelecionados, preparadas, contextoDoLote]);
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -1440,7 +1470,11 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
           ‹ Voltar aos lançamentos
         </button>
       ) : null}
-      <PainelArquivosWhatsapp key={companyId} api={conferenciaApi} companyId={companyId} contas={contas} podeEscrever={podeEscrever} aoImportar={carregar} />
+      <div><h1 style={{ margin: 0, fontSize: "1.3rem" }}>A lançar</h1>
+        <p style={{ margin: "6px 0 0", color: "var(--text-muted)" }}>Confira as contas e o pagamento. Selecione as despesas prontas para lançar juntas.</p></div>
+      <details style={card}><summary style={{ cursor: "pointer", fontWeight: 600 }}>Arquivos recebidos pelo WhatsApp</summary>
+        <PainelArquivosWhatsapp key={companyId} api={conferenciaApi} companyId={companyId} contas={contas} podeEscrever={podeEscrever} aoImportar={carregar} />
+      </details>
       <div style={{ ...card, display: "grid", gap: 12 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           {contagem.map((c) => (
@@ -1501,14 +1535,14 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
             size="sm"
             variant="secondary"
             onClick={abrirLote}
-            disabled={!podeEscrever || abrindoLote || !(fila?.itens?.length)}
+            disabled={!podeEscrever || abrindoLote || enviando || !idsSelecionados.length}
             title={
               !podeEscrever ? "Seu perfil não pode alterar lançamentos desta empresa."
-                : !(fila?.itens?.length) ? "Não há linhas na fila para contabilizar."
+                : !idsSelecionados.length ? "Selecione as linhas com contas e data conferidas."
                   : "Contabilizar várias linhas de uma vez."
             }
           >
-            {abrindoLote ? "Abrindo…" : "Contabilizar em lote"}
+            {abrindoLote ? "Conferindo…" : `Lançar selecionados (${idsSelecionados.length})`}
           </Button>
           <Button size="sm" variant="secondary" onClick={carregar} disabled={carregando}>
             {carregando ? "Carregando…" : "Atualizar a fila"}
@@ -1734,6 +1768,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
               <table className="tabela--densa">
                 <thead>
                   <tr>
+                    <th><input type="checkbox" aria-label="Selecionar todas as linhas prontas desta página" checked={visiveisProntas.length > 0 && idsSelecionados.length === visiveisProntas.length} disabled={!visiveisProntas.length || enviando} onChange={e => setSelecionados(e.target.checked ? visiveisProntas : [])} /></th>
                     <th>Descrição</th>
                     <th>Documento</th>
                     <th>Emissão</th>
@@ -1755,7 +1790,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
                               de tela precisa que o fornecedor seja cabeçalho das linhas dele. */}
                           <th
                             scope="colgroup"
-                            colSpan={9}
+                            colSpan={10}
                             style={{
                               textAlign: "left",
                               // ⚠⚠ O `App.css` põe `text-transform: uppercase` e `letter-spacing`
@@ -1793,6 +1828,9 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
                         <LinhaDoDeclarado
                           key={item.id}
                           item={item}
+                          selecionada={idsSelecionados.includes(item.id)}
+                          onSelecionar={selecionarLinha}
+                          onPreparar={prepararLinha}
                           podeEscrever={podeEscrever}
                           podeEscolherConta={podeEscolherConta}
                           onAgir={abrir}
@@ -1818,34 +1856,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
         ) : null}
       </SecaoDaConferencia>
 
-      <SecaoDaConferencia natureza={NATUREZA.SO_FLUXO}>
-        {/*
-          ⚠⚠ ESTA POSIÇÃO MUDOU EM 01/09/2026, e a frase anterior ("ABAIXO do painel de casamentos e
-          ACIMA da fila") virou falsa: a recorrência desceu para DEPOIS da fila, junto com o resto do
-          fluxo. O argumento antigo — *"casar um débito evita a despesa em dobro AGORA; a recorrência
-          olha para a frente"* — continua valendo e é o que a mantém no fim: ela é a mais distante do
-          que a contabilidade precisa hoje. O que mudou foi a régua: a tela passou a agrupar por
-          DESTINO, e recorrência não vira lançamento.
-          ⚠ Ela some sozinha quando não há decisão esperando — mesmo desenho do painel de casamentos.
-        */}
-        <PainelDeRecorrencias companyId={companyId} podeEscrever={podeEscrever} />
-
-        {/*
-          ⚠⚠ A TERCEIRA FILA DESTA TELA (29/08/2026) — o que o CLIENTE escreveu no fluxo dele.
-
-          Ela fica ao lado das recorrências, com a MESMA forma (confirmar · recusar com motivo): duas
-          filas na mesma tela com desenhos diferentes fariam a pessoa reaprender a decisão em cada uma.
-          ⚠ E ela é o que faz o pedido do dono fechar: *"essas saídas que o cliente digitar aparecem
-          para o contador na aba de conferência"*.
-        */}
-        <PainelDeSaidasDoCliente companyId={companyId} podeEscrever={podeEscrever} />
-
-        {/* ⚠⚠ DEPOIS das três filas de decisão, e não entre elas: esta é CIÊNCIA, não tarefa. Posta
-            no meio, ela seria lida como mais uma coisa a resolver — e ela não espera nada de você.
-            ⚠ Ela não desenha nada quando não há mexida nenhuma; ver o cabeçalho do painel. */}
-        <PainelDeMexidasDoCliente companyId={companyId} podeEscrever={podeEscrever} />
-      </SecaoDaConferencia>
-
+      <details style={card}><summary style={{ cursor: "pointer", fontWeight: 600 }}>Regras e lançamentos automáticos</summary>
       <SecaoDaConferencia natureza={NATUREZA.REGRA}>
         {/*
           ⚠⚠ AS REGRAS FICAM POR ÚLTIMO, e é a tela mais perigosa desta aba: marcar uma regra aqui faz
@@ -1879,7 +1890,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
         </div>
 
         <PainelDeRegras companyId={companyId} contas={contas} podeEscrever={podeEscrever} />
-      </SecaoDaConferencia>
+      </SecaoDaConferencia></details>
 
       {/* ─────────────────────────────────────────────────────────────────────────────────────────
           ⚠⚠ A GAVETA DOS LANÇAMENTOS AUTOMÁTICOS — dono, 01/09/2026: *"os lançamentos automáticos
@@ -1972,45 +1983,13 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
         />
       ) : null}
 
-      {lote ? (
-        <ModalDeContabilizacao
-          itens={fila?.itens || []}
-          contas={contas}
-          idsQueCasam={lote.idsQueCasam}
-          podeEscrever={podeEscrever}
-          podeEscolherConta={podeEscolherConta}
-          // ⚠ Sem ele o modal não distingue "esta empresa não tem plano" de "a consulta falhou", e
-          // não antecipa o caixa torto — que derruba TODA linha da empresa.
-          estadoDoPlano={estadoDoPlano}
-          // ⚠ A fila é paginada (50 por página) e o modal só vê a página. Sem isto ele diria
-          // "Contabilizar em lote — 50 lançamento(s)" com 137 na fila, sem explicação.
-          totalDaFila={fila?.total}
-          // ⚠ O modal não conhece a api: ele recebe a função de enviar UMA linha. É o que faz o
-          // dublê ser o caminho natural no teste, não o cuidadoso — mesma disciplina de
-          // `emissaoLote.js`, que também não importa quem emite.
-          aoEnviarLinha={(id, corpo) => conferenciaApi.postConferenciaAcao(companyId, id, "confirmar", corpo)}
-          // ⚠⚠ A FILA **NÃO** RECARREGA DEBAIXO DO MODAL ABERTO — e recarregar era um defeito com
-          // três caras, achado por agente adversarial em 27/08/2026:
-          //
-          //   1. `idsQueCasam` é um INSTANTÂNEO, tirado ao abrir. Com a fila trocando por baixo,
-          //      uma linha nova podia entrar sem nunca ter sido conferida contra os casamentos —
-          //      exatamente a despesa em dobro que o filtro existe para impedir;
-          //   2. `contasPorLinha` nasce das linhas do mount; linha nova entrava SEM CHAVE, e o
-          //      botão "Aplicar nas 2 em branco" ficava habilitado e inerte;
-          //   3. o rodapé contava desfechos de linhas que não estavam mais na tabela.
-          //
-          // ⚠ Recarregar ao FECHAR resolve os três na raiz: enquanto o modal está aberto, o
-          // conjunto é estável, e é sobre ele que todas as contagens falam.
-          aoConcluir={() => setLote((l) => (l ? { ...l, mexeuNaFila: true } : l))}
-          aoFechar={() => {
-            const mexeu = lote.mexeuNaFila;
+      {lote && lote.contexto === contextoDoLote ? (
+        <ModalLancarSelecionados linhas={lote.linhas}
+          aoEnviar={(id, corpo) => conferenciaApi.postConferenciaAcao(lote.companyId, id, "confirmar", corpo)}
+          aoFechar={async (enviado) => {
             setLote(null);
-            if (!mexeu) return;
-            // ⚠ A fila muda (as linhas viram CONTABILIZADO) e o painel também (débitos absorvidos).
-            carregar();
-            setVersao((v) => v + 1);
-          }}
-        />
+            if (enviado) { setSelecionados([]); await carregar(); setVersao(v => v + 1); }
+          }} />
       ) : null}
 
       {acaoAberta ? (

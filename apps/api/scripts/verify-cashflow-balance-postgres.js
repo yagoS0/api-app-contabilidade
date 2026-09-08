@@ -16,7 +16,14 @@ try {
   await salvarSaldoInicialFluxo({portalClientId:company,usuarioId:prefix,dataReferencia:'2025-12-01',valor:'5000.25'});
   assert.equal((await lerSaldoInicialFluxo(company)).valor,5000.25);
   assert.equal(await lerSaldoInicialFluxo(outra),null);
-  await prisma.saidaAvulsaCliente.create({data:{portalClientId:company,data:new Date('2025-12-10T00:00:00Z'),valor:'200.10',descricao:'Saída teste âncora',criadaPor:prefix}});
+  await prisma.chartOfAccount.createMany({data:[
+    {portalClientId:company,codigo:`${prefix}-despesa`,codigoCompleto:'411020001',tipo:'DESPESA',nome:'Despesa ensaio',analitica:true},
+    {portalClientId:company,codigo:`${prefix}-caixa`,codigoCompleto:'111010001',tipo:'ATIVO',nome:'Caixa ensaio',analitica:true},
+  ]});
+  await prisma.accountingEntry.create({data:{portalClientId:company,tipo:'DESPESA',status:'CONFIRMADO',competencia:'2025-12',data:new Date('2025-12-10T00:00:00Z'),historico:'Saída teste âncora',lines:{create:[
+    {tipo:'D',conta:`${prefix}-despesa`,valor:'200.10'},
+    {tipo:'C',conta:`${prefix}-caixa`,valor:'200.10'},
+  ]}}});
   const fluxo = await montarFluxoDeCaixa({portalClientId:company,cicloAtual:'2026-09',hoje:'2026-09-08',janelaInicio:'2026-01'});
   const jan = fluxo.meses.find(m=>m.competencia==='2026-01');
   assert.deepEqual(jan.saldo,{inicial:4800.15,final:4800.15,projetado:true});
@@ -34,7 +41,8 @@ try {
   assert.equal((await montarFluxoDeCaixa({portalClientId:company,cicloAtual:'2026-09',hoje:'2026-09-08'})).meses[0].saldo.final,null);
   console.log('PASS: versões concorrentes mantidas e remoção sem apagar histórico.');
 } finally {
-  await prisma.saidaAvulsaCliente.deleteMany({where:{portalClientId:{in:[company,outra]}}});
+  await prisma.accountingEntry.deleteMany({where:{portalClientId:{in:[company,outra]}}});
+  await prisma.chartOfAccount.deleteMany({where:{portalClientId:{in:[company,outra]}}});
   await prisma.portalClient.deleteMany({where:{id:{in:[company,outra]}}});
   await prisma.$disconnect();
 }

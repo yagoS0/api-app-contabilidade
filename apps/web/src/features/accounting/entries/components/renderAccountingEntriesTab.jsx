@@ -215,7 +215,7 @@ export function DivergenciaDeFonte({ divergencias }) {
 // Exportado para o teste da LIGAÇÃO (o campo do payload chegando à tela). Sem isso o detector teria
 // só teste de regra — e regra verde com fio solto é exatamente como `hasAccountingDivergence`
 // passou meses sendo gravado sem ninguém ver.
-export function FechamentoCadeado({ companyId, competencia, entries, onState, onFechamentoData, filtroAtivo }) {
+export function FechamentoCadeado({ companyId, competencia, entries, onState, onFechamentoData, filtroAtivo, onVerificacao }) {
   const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [fechado, setFechado] = useState(false);
   const [fechadoEm, setFechadoEm] = useState(null);
@@ -266,6 +266,8 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
 
   useEffect(() => {
     let alive = true;
+    setVerificacao(null);
+    onVerificacao?.(null);
     if (!companyId || !competencia) return undefined;
     fechamentoApi.getFechamentoContabil(companyId, competencia)
       .then((r) => {
@@ -303,10 +305,10 @@ export function FechamentoCadeado({ companyId, competencia, entries, onState, on
     // e o painel simplesmente não desenha.
     if (typeof fechamentoApi.getVerificacaoLancamentos !== "function") return undefined;
     fechamentoApi.getVerificacaoLancamentos(companyId, competencia)
-      .then((r) => { if (alive) setVerificacao(r || null); })
-      .catch(() => { if (alive) setVerificacao(null); });
+      .then((r) => { if (alive) { setVerificacao(r || null); onVerificacao?.(r || null); } })
+      .catch(() => { if (alive) { setVerificacao(null); onVerificacao?.(null); } });
     return () => { alive = false; };
-  }, [companyId, competencia]);
+  }, [companyId, competencia, entries, onVerificacao]);
 
   async function toggle() {
     if (busy) return;
@@ -697,43 +699,22 @@ export function BotaoDaConferencia({ pendencias, onOpenConferencia }) {
   // ⚠ Sem handler ele NÃO renderiza: um botão em que a pessoa clica e nada acontece é pior que a
   // ausência dele — a mesma regra do seletor de competência do portal do cliente.
   if (!onOpenConferencia) return null;
-  /**
-   * ⚠⚠ O SELO MOSTRAVA `total`, QUE SOMA TRÊS FILAS — e o botão se chama "A lançar".
-   *
-   * > Dono, sobre a ALBATROZ em produção (01/09/2026): *"aparecem 19 a lançar mas ao abrir não
-   * > aparece isso tudo"* … *"tudo que virar lançamento deve entrar no fluxo, mas nem tudo do fluxo
-   * > necessariamente deve ser um lançamento"*.
-   *
-   * `total` = declarados + recorrências + saídas do cliente. As duas últimas **nunca viram
-   * lançamento** — o serviço das saídas diz de si mesmo *"CONFIRMAR NÃO LANÇA NADA"*. O número
-   * prometia um trabalho que não existia, e abrir a tela mostrava menos do que o selo dizia.
-   *
-   * ⚠ **O QUE VEM DO FLUXO NÃO SOME — ele ganha marca PRÓPRIA**, ao lado. Tirá-lo do selo e não o
-   * mostrar em lugar nenhum faria o contador nunca ver o que o cliente digitou, que é exatamente o
-   * que a contagem das três filas existia para resolver.
-   * ⚠ Backend antigo não manda `aLancar`: cai em `declarados`, e só depois em ausência. Ausência
-   * continua não sendo zero — as duas dão "sem selo", por caminhos diferentes.
-   */
+  // A lançar conta somente despesas aguardando lançamento (08/09/2026).
   const num = (v) => (typeof v === "number" ? v : null);
   // ⚠ A cadeia termina em `total` de propósito: a rota real SEMPRE manda `declarados`, então este
   // último degrau só é alcançado por payload mínimo — e é ele que preserva a distinção entre
   // **zero conhecido** e **contagem ausente**, que o `data-pendencias` publica no DOM.
   const aLancar = num(pendencias?.aLancar) ?? num(pendencias?.declarados) ?? num(pendencias?.total);
-  const noFluxo = num(pendencias?.noFluxo)
-    ?? (num(pendencias?.series) != null && num(pendencias?.saidas) != null
-      ? pendencias.series + pendencias.saidas
-      : null);
   const total = aLancar;
   const temFila = total !== null && total > 0;
-  const temFluxo = noFluxo !== null && noFluxo > 0;
 
   return (
     <button
       type="button"
       onClick={onOpenConferencia}
       title={
-        temFila || temFluxo
-          ? `${aLancar ?? 0} para virar lançamento; ${noFluxo ?? 0} que entram só no fluxo de caixa (recorrências e saídas do cliente) e não viram lançamento`
+        temFila
+          ? `${aLancar} para virar lançamento`
           : "O que o cliente e o extrato trouxeram, esperando lançamento"
       }
       data-pendencias={total ?? undefined}
@@ -758,19 +739,7 @@ export function BotaoDaConferencia({ pendencias, onOpenConferencia }) {
           {total}
         </span>
       ) : null}
-      {/* ⚠ NEUTRO, nunca âmbar: âmbar significa "falta fazer", e o que está aqui não pede
-          lançamento nenhum. Ele existe para o que o cliente digitou não sumir do olhar do
-          contador — e para o número do lado esquerdo parar de prometer o que não é. */}
-      {temFluxo ? (
-        <span
-          style={{
-            fontSize: "0.72rem", fontWeight: 500,
-            color: "var(--text-muted)",
-          }}
-        >
-          · {noFluxo} no fluxo
-        </span>
-      ) : null}
+
     </button>
   );
 }
@@ -826,6 +795,7 @@ export function AccountingEntriesTab({
 }) {
   const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [showOFX, setShowOFX] = useState(false);
+  const [verificacaoDasLinhas, setVerificacaoDasLinhas] = useState(null);
   const [showHistoricos, setShowHistoricos] = useState(false);
   const [showPayroll, setShowPayroll] = useState(false);
   const [showCsvExport, setShowCsvExport] = useState(false);
@@ -1398,6 +1368,7 @@ export function AccountingEntriesTab({
                     <AccountRow
                       key={entry.id}
                       entry={entry}
+                      achados={verificacaoDasLinhas?.porLancamento?.find(l => l.id === entry.id)?.achados || []}
                       accounts={accounts}
                       onUpdate={onUpdateEntry}
                       onDelete={onDeleteEntry}
@@ -1453,6 +1424,7 @@ export function AccountingEntriesTab({
             entries={entries}
             onState={(closed) => { setMonthClosed(closed); if (closed) setAdding(false); }}
             onFechamentoData={(dados) => setBuscasSerpro(dados?.serpro || null)}
+            onVerificacao={setVerificacaoDasLinhas}
             filtroAtivo={Boolean(filters.tipo || filters.origem || filters.status)}
           />
         </div>
