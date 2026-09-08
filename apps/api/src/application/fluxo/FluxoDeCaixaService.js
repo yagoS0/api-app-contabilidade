@@ -985,25 +985,12 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
 
   const aliquota = aliquotaEfetiva(snapshot);
 
-  /**
-   * ⚠⚠ A RECEITA PROJETADA PELO HISTÓRICO (30/08/2026) — decisão do dono:
-   *
-   * > *"o último mês é base para todos os meses à frente, e depois vão se ajustando (…) se em 3
-   * > meses seguidos aparece a mesma receita, pode colocar ela para frente até o final da amostra,
-   * > e ir ajustando se aparecer faturamento diferente. **Sempre a mediana.**"*
-   *
-   * ⚠⚠ **ELA COMEÇA DEPOIS DO ÚLTIMO MÊS QUE JÁ TEM RECEITA REAL**, e é isso que faz o *"ir
-   * ajustando"* acontecer sozinho: chegando nota nova, aquele mês deixa de ser projetado na leitura
-   * seguinte, sem ninguém apagar nada. A projeção nunca sobrescreve o que existe.
-   *
-   * ⚠ A conversão de competência da NOTA para o mês do RECEBIMENTO é feita aqui, uma vez
-   * (`MESES_ATE_A_RECEITA`) — a regra pura fala de meses de FATURAMENTO, e misturar as duas
-   * unidades dentro dela faria o "+1" ser aplicado duas vezes em alguma correção futura.
+    /**
+   * A competência aberta entra no caixa no mês seguinte. Sua emissão parcial não
+   * encerra a previsão: a regra acrescenta apenas o complemento da mediana de três
+   * meses completos, sem substituir ou duplicar notas já existentes.
    */
-  const ultimoMesComReceita = notas.ultimaCompetenciaComNota
-    ? somarMeses(notas.ultimaCompetenciaComNota, MESES_ATE_A_RECEITA)
-    : null;
-  const primeiroProjetado = ultimoMesComReceita ? somarMeses(ultimoMesComReceita, 1) : null;
+  const primeiroProjetado = somarMeses(ciclo, MESES_ATE_A_RECEITA);
   const quantosProjetar = primeiroProjetado
     ? Math.max(0, (mesesDaCompetencia(inicio) ?? 0) + (janela?.horizonte ?? HORIZONTE_MESES)
       - (mesesDaCompetencia(primeiroProjetado) ?? 0))
@@ -1011,6 +998,7 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
   const receitaProjetada = primeiroProjetado
     ? receitaProjetadaPeloHistorico({
       faturamentoPorMes: notas.faturamentoPorMes,
+      cicloAtual: ciclo,
       primeiroMesAProjetar: primeiroProjetado,
       quantosMeses: quantosProjetar,
     })

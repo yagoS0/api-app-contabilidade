@@ -431,9 +431,8 @@ describe("⚠⚠ o módulo é PURO", () => {
      * ⚠⚠ A PROIBIÇÃO DEIXOU DE SER "NENHUM IMPORT" EM 30/08/2026, e a distinção é o ponto.
      *
      * O que este teste protege é a PUREZA — sem banco, sem rede, sem relógio —, não o isolamento.
-     * `receitaProjetadaPeloHistorico` reusa `mediana` e `PISO_DE_OBSERVACOES` de `./recorrencia.js`,
-     * outro módulo puro DESTA MESMA PASTA e a autoridade desta casa sobre *"o que se repete"* (o
-     * dono fixou os dois números lá: *"contra a MEDIANA observada"* e o piso de 3 do detector).
+     * `receitaProjetadaPeloHistorico` reusa `mediana` de `./recorrencia.js`, outro módulo puro
+     * desta mesma pasta. A previsão usa exatamente três meses de calendário completos.
      *
      * ⚠ Proibir isso empurraria a próxima pessoa a COPIAR a mediana para cá — e duas medianas sobre
      * o mesmo dinheiro divergem na primeira correção, que é exatamente o defeito que o reuso existe
@@ -472,15 +471,18 @@ describe("⚠⚠ a receita projetada pelo histórico", () => {
   ]);
 
   const projetar = (mapa, extra = {}) => receitaProjetadaPeloHistorico({
-    faturamentoPorMes: mapa, primeiroMesAProjetar: "2026-10", quantosMeses: 3, ...extra,
+    cicloAtual: "2026-09", faturamentoPorMes: mapa, primeiroMesAProjetar: "2026-10", quantosMeses: 3, ...extra,
   });
 
-  it("com 4 meses seguidos, projeta a MEDIANA para a frente", () => {
+  it("com histórico de 4 meses, projeta a mediana dos últimos 3 completos", () => {
     const r = projetar(REAL);
     expect(r.linhas).toHaveLength(3);
-    // mediana de [23040.26, 23076.26, 23076.26, 23112.26] = (23076.26 + 23076.26) / 2
+    // Junho, julho e agosto: mediana de [23040.26, 23076.26, 23112.26].
     expect(r.linhas[0].valor).toBeCloseTo(23076.26, 2);
     expect(r.linhas.map((l) => l.competencia)).toEqual(["2026-10", "2026-11", "2026-12"]);
+    expect(r.linhas[0].base.frase).toContain("06/2026, 07/2026, 08/2026");
+    expect(r.linhas[0].base.frase).toContain("R$ 23.076,26");
+    expect(r.linhas[0].base.frase).toContain("Competência 09/2026: R$ 0,00 emitidos");
   });
 
   it("⚠⚠ é MEDIANA, nunca média — um mês atípico não arrasta a projeção", () => {
@@ -489,7 +491,7 @@ describe("⚠⚠ a receita projetada pelo histórico", () => {
     const media = [...comPico.values()].reduce((a, b) => a + b, 0) / comPico.size;
     const r = projetar(comPico);
     expect(r.linhas[0].valor).toBeLessThan(media);
-    expect(r.linhas[0].valor).toBeCloseTo(23094.26, 2);
+    expect(r.linhas[0].valor).toBeCloseTo(23112.26, 2);
   });
 
   it("⚠⚠ com MENOS de 3 meses seguidos NÃO projeta, e diz por quê", () => {
@@ -532,8 +534,8 @@ describe("⚠⚠ a receita projetada pelo histórico", () => {
     // ⚠ O dia 1 é a MESMA convenção da receita da nota emitida — duas convenções fariam a coluna
     // Entrada ter dois significados.
     expect(l.dia).toBe(1);
-    expect(l.base.n).toBe(4);
-    expect(l.base.frase).toMatch(/mediana dos últimos 4 meses/i);
+    expect(l.base.n).toBe(3);
+    expect(l.base.frase).toMatch(/mediana dos últimos 3 meses/i);
     // ⚠ A frase diz que ela se ajusta — é o que impede o número de ser lido como contratado.
     expect(l.base.frase).toMatch(/ajusta/i);
   });
@@ -561,4 +563,12 @@ describe("a unidade de cada linha do fluxo é o centavo", () => {
   it.each([[0.005,0.01],[-0.005,-0.01],[1.005,1.01],[-1.005,-1.01],[1.275,1.28],[1e-7,0]])("normaliza %s para %s, inclusive estornos", (valor, esperado) => {
     expect(montarLinha({ fonte: FONTE.SERIE_RECEITA, direcao: DIRECAO.ENTRADA, procedencia: PROCEDENCIA.PREVISAO, competencia: "2026-08", valor }).valor).toBe(esperado);
   });
+});
+
+it('mês atual não treina nem cobre mês faltante, e mês futuro parcial recebe somente complemento', () => {
+  const {receitaProjetadaPeloHistorico}=require('../fluxoDeCaixa.js');
+  const dados={cicloAtual:'2026-09',primeiroMesAProjetar:'2026-10',quantosMeses:2};
+  expect(receitaProjetadaPeloHistorico({...dados,faturamentoPorMes:new Map([['2026-05',120000],['2026-06',110000],['2026-08',130000],['2026-09',120000]])}).linhas).toEqual([]);
+  const r=receitaProjetadaPeloHistorico({...dados,faturamentoPorMes:new Map([['2026-06',110000],['2026-07',120000],['2026-08',130000],['2026-09',26650],['2026-10',50000]])});
+  expect(r.linhas.map(l=>[l.competencia,l.valor])).toEqual([['2026-10',93350],['2026-11',70000]]);
 });

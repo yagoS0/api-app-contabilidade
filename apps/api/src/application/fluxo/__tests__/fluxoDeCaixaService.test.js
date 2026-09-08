@@ -1374,3 +1374,25 @@ describe("piso de recorrência futura", () => {
     expect(linhasDe(r,FONTE.SERIE_DESPESA).length > 0).toBe(consecutivos>=3);
   });
 });
+
+describe('previsão completa mês aberto sem duplicar notas', () => {
+  const comNotas = valorSetembro => clientDe({notas:[
+    nota({id:'maio',competencia:new Date('2026-05-01T00:00:00Z'),total:1000}),
+    nota({id:'junho',competencia:new Date('2026-06-01T00:00:00Z'),total:110000}),
+    nota({id:'julho',competencia:new Date('2026-07-01T00:00:00Z'),total:120000}),
+    nota({id:'agosto',competencia:new Date('2026-08-01T00:00:00Z'),total:130000}),
+    nota({id:'setembro',competencia:new Date('2026-09-01T00:00:00Z'),total:valorSetembro}),
+  ]});
+  it.each([[26650,93350,120000],[60000,60000,120000],[120000,0,120000],[140000,0,140000]])('setembro emitido %s complementa %s para outubro total %s', async (emitido,complemento,total) => {
+    const r=await montar(comNotas(emitido),{cicloAtual:'2026-09',hoje:'2026-09-08'});
+    const outubro=doMes(r,'2026-10');
+    const entradas=outubro.linhas.filter(l=>l.direcao===DIRECAO.ENTRADA);
+    expect(entradas.reduce((s,l)=>s+l.valor,0)).toBe(total);
+    expect(entradas.filter(l=>l.fonte===FONTE.NOTA_EMITIDA)).toHaveLength(1);
+    const previstas=entradas.filter(l=>l.fonte===FONTE.RECEITA_PROJETADA);
+    expect(previstas).toHaveLength(complemento?1:0);
+    if(complemento) expect(previstas[0]).toMatchObject({valor:complemento,procedencia:PROCEDENCIA.PREVISAO,base:{emitido,complemento,mediana:120000,mesesBase:['2026-06','2026-07','2026-08']}});
+    expect(doMes(r,'2026-09').linhas.filter(l=>l.fonte===FONTE.RECEITA_PROJETADA)).toHaveLength(0);
+    expect(doMes(r,'2026-11').linhas.find(l=>l.fonte===FONTE.RECEITA_PROJETADA).valor).toBe(120000);
+  });
+});
