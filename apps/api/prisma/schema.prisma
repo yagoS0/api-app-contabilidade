@@ -3867,6 +3867,13 @@ model Obrigacao {
   id             String  @id @default(uuid())
   portalClientId String
   nome           String
+  tipo           String @default("OBRIGACAO")
+  descricao      String?
+  /// Datas civis de um cadastro AVULSA; preparação não altera vencimento fiscal.
+  dataInicio     DateTime? @db.Date
+  dataFim        DateTime? @db.Date
+  dataVencimento DateTime? @db.Date
+  diasPreparacao Int @default(0)
   /// Campo LIVRE (fiscal, trabalhista, própria da empresa…). A UI sugere o que o escritório já
   /// usou; não é vocabulário fechado que precise ser mantido por nós. Só alimenta cor e filtro.
   categoria      String?
@@ -3920,6 +3927,10 @@ model OcorrenciaObrigacao {
   id             String    @id @default(uuid())
   obrigacaoId    String
   dataVencimento DateTime  @db.Date
+  /// Legado nulo é um evento de um dia no vencimento.
+  dataInicio     DateTime? @db.Date
+  dataFim        DateTime? @db.Date
+  janelaPersonalizada Boolean @default(false)
   /// "YYYY-MM" — a competência a que o SERVIÇO se refere, já com a defasagem aplicada. Guardada
   /// e não recalculada na leitura porque mudar a defasagem depois não pode reescrever o passado.
   competenciaRef String?
@@ -3942,6 +3953,7 @@ model OcorrenciaObrigacao {
   /// reexecutar não duplica, e o worker mensal pode ser chamado quantas vezes for.
   @@unique([obrigacaoId, dataVencimento])
   @@index([dataVencimento, status])
+  @@index([dataInicio, dataFim])
   @@map("ocorrencias_obrigacao")
 }
 
@@ -3951,6 +3963,7 @@ model RegraObrigacao {
   categoria String?
 
   periodicidade            String
+  diasPreparacao           Int @default(0)
   diaVencimento            Int
   mesReferencia            Int?
   defasagemMeses           Int     @default(1)

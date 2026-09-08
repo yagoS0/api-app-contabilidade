@@ -22,6 +22,7 @@ import { OnboardingWizardPage } from "./features/onboarding/pages/renderOnboardi
 import { OnboardingDetailPage } from "./features/onboarding/pages/renderOnboardingDetailPage";
 import { useManageAppFeedback } from "./app/hooks/useManageAppFeedback";
 import { useManageAuthSession } from "./app/hooks/useManageAuthSession";
+import { useCalendarioNavigation } from "./app/hooks/useCalendarioNavigation";
 import { useManageCompaniesWorkspace } from "./app/hooks/useManageCompaniesWorkspace";
 import { useManageAccountingWorkspace } from "./app/hooks/useManageAccountingWorkspace";
 import { useAccountingFunctions } from "./features/accounting/functions/hooks/useAccountingFunctions";
@@ -37,6 +38,7 @@ const api = createApiClient();
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
 
 function App() {
+  const calendarioNavigation = useCalendarioNavigation();
   const feedback = useManageAppFeedback();
   const session = useManageAuthSession({ api, tokenStorageKey: TOKEN_STORAGE_KEY, feedback });
   // O lote por WhatsApp na página de envio em lote (prévia → conferência → envio). Hook próprio,
@@ -265,14 +267,20 @@ function App() {
     );
   }
 
-  // Cadastro de obrigações do escritório: página própria, alcançada por Configurações ▾. Saiu do
-  // seletor de visões do dashboard — lá se OLHA a carteira; aqui se define o que ela deve entregar.
+  // A central abre diretamente pelo calendário e devolve o mesmo período/filtro ao retornar.
   if (session.page === "obrigacoes") {
     return (
       <ObrigacoesPage
         api={api}
         empresas={companiesWorkspace.companiesState.companies}
-        onBack={() => session.setPage("companies")}
+        onBack={() => calendarioNavigation.voltar()}
+        onBackLabel="Voltar ao calendário"
+        initialCompanyId={calendarioNavigation.contexto.companyId || ""}
+        initialCreate={calendarioNavigation.contexto.criacao}
+        initialOccurrenceId={calendarioNavigation.contexto.ocorrenciaId}
+        initialPeriod={calendarioNavigation.contexto.periodo}
+        onCreated={calendarioNavigation.criado}
+        onViewDate={(data, companyId) => calendarioNavigation.voltar(data, companyId)}
       />
     );
   }
@@ -392,6 +400,9 @@ function App() {
           companyDetailTab: companiesWorkspace.companyDetailTab,
           setCompanyDetailTab: companiesWorkspace.setCompanyDetailTab,
           canEditCompany,
+          onOpenObligations: calendarioNavigation.abrir,
+          calendarioContext: calendarioNavigation.initialContext,
+          onCalendarioContextChange: calendarioNavigation.onContextChange,
         }}
         guidesPanel={{
           guides: companiesWorkspace.guidesState.guides,
@@ -586,7 +597,9 @@ function App() {
       onOpenPlanejamento={() => session.setPage("planejamento")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
       onOpenWhatsapp={() => session.setPage("whatsapp")}
-      onOpenObrigacoes={() => session.setPage("obrigacoes")}
+      onOpenObrigacoes={calendarioNavigation.abrir}
+      calendarioContext={calendarioNavigation.initialContext}
+      onCalendarioContextChange={calendarioNavigation.onContextChange}
       onOpenOnboardings={() => session.setPage("onboardings")}
       backgroundJobs={backgroundJobs}
       api={api}

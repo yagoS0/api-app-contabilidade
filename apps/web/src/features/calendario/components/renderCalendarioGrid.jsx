@@ -6,8 +6,8 @@
 //  • O mês SEMPRE ocupa 6 linhas, mesmo quando cabe em 5. Sem isso a grade muda de altura ao
 //    navegar e a página "pula" — é o detalhe que mais faz um calendário caseiro parecer caseiro.
 //  • Dias das semanas vizinhas aparecem apagados, não em branco: a semana não fica truncada.
-//  • Evento é um chip compacto. Passando de 3 no dia, o excedente vira "+N" — dia com 8 guias não
-//    pode esticar a linha inteira.
+//  • Intervalos são faixas contínuas por semana; Agenda conta cada ocorrência uma vez.
+//  • Eventos excedentes têm um botão que abre a lista completa do dia.
 //  • Clique em dia vazio abre criação; clique no evento abre o detalhe. Dois gestos, dois destinos.
 //
 // ── ARRASTE: só MARCO se move ──
@@ -20,20 +20,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // o calendário, a aba da empresa e o chip da listagem principal precisam da MESMA leitura.
 import { cicloDaOcorrencia, aparenciaDaOcorrencia, CICLO } from "../../obrigacoes/lib/cicloObrigacao";
 import { Tabs } from "../../../components/ui/Tabs";
+import { Modal } from "../../../components/ui/Modal";
+import { agendaDoMes, chaveDoEvento, deslocarMes, ehTarefa, eventosUnicos, fimDoEvento, inicioDoEvento, periodoDoEvento, segmentosDaSemana, temIntervalo } from "../lib/periodosCalendario";
 // ⚠ Import entre features, e é deliberado: a grade anual continua morando na feature da CARTEIRA,
 // que é de quem ela fala (empresa × mês). Mover o arquivo para cá renomearia o dono do assunto por
 // causa de onde ele é renderizado. Não há ciclo — `renderAnnualGrid` só importa o React.
 import { AnnualGrid } from "../../companies/list/components/renderAnnualGrid";
 
 const COR = {
-  fundo: "#21222C", fundoFora: "#1B1C24", borda: "#44475A", texto: "#F8F8F2", suave: "#A7B0C0",
-  marco: "#BD93F9", hoje: "#8BE9FD",
+  fundo: "var(--bg-surface)", fundoFora: "var(--bg-page)", borda: "var(--border)", texto: "var(--text)", suave: "var(--text-muted)",
+  marco: "var(--accent-purple)", hoje: "var(--accent-cyan)",
   // Cores de ESTADO — as mesmas quatro do resto do app.
-  vencida: "#FF5555",   // passou do prazo e não foi feito
-  aFazer: "#FFB347",    // vence hoje: ação rápida pendente
-  resolvida: "#50FA7B", // feito
-  futura: "#6272A4",    // ainda não é trabalho de hoje
-  alta: "#FF5555", media: "#BD93F9", baixa: "#6272A4",
+  vencida: "var(--state-danger)",
+  aFazer: "var(--state-warn)",
+  resolvida: "var(--state-ok)",
+  futura: "var(--state-neutral)",
+  alta: "var(--state-danger)", media: "var(--accent-purple)", baixa: "var(--state-neutral)",
 };
 
 // ⚠ COR = ESTADO. CATEGORIA = FORMA.
@@ -51,6 +53,7 @@ const COR = {
 const CATEGORIAS = [
   { chave: "guia", rotulo: "Guias (cliente paga)", forma: "▮", cor: COR.suave },
   { chave: "obrigacao", rotulo: "Obrigações (eu entrego)", forma: "▤", cor: COR.suave },
+  { chave: "tarefa", rotulo: "Tarefas", forma: "☑", cor: COR.suave },
   { chave: "marco", rotulo: "Marcos", forma: "◆", cor: COR.marco },
 ];
 
@@ -121,7 +124,7 @@ function corDoItem(item, hoje = hojeISO()) {
   // dias e uma a 2 dias ficavam idênticas na tela. Agora o corte sai de `antecedenciaLembreteDias` — a
   // janela que o próprio escritório declarou naquela obrigação — em vez de um número fixo que numa
   // mensal acenderia o mês inteiro. Ver `features/obrigacoes/lib/cicloObrigacao.js`.
-  if (ehObrigacao(item) && item.data) {
+  if (ehObrigacao(item) && !ehTarefa(item) && item.data) {
     const estado = cicloDaOcorrencia(
       { dataVencimento: item.data, status: item.resolvido ? "CONCLUIDA" : "PENDENTE" },
       item.antecedenciaLembreteDias,
@@ -148,6 +151,7 @@ function corDoItem(item, hoje = hojeISO()) {
  */
 function estaVencida(item, hoje = hojeISO()) {
   if (item.resolvido) return false;
+  if (ehTarefa(item)) return Boolean(fimDoEvento(item)) && fimDoEvento(item) < hoje;
   if (ehObrigacao(item) && item.situacao === "VENCIDA") return true;
   return Boolean(item.data) && item.data < hoje;
 }
@@ -172,6 +176,7 @@ function piorEstadoDoDia(itens, hoje = hojeISO()) {
 
 /** A FORMA é a categoria — e é o que sobrevive ao screenshot dessaturado. */
 function simboloDoItem(item) {
+  if (ehTarefa(item)) return "☑";
   if (item.tipo === "marco") return "◆";      // losango: marco
   if (ehObrigacao(item)) return "▤";          // documento: eu entrego
   return "▮";                                  // boleto: o cliente paga
@@ -190,18 +195,23 @@ function rotuloDoItem(item) {
   return `${item.titulo}${item.empresa ? ` · ${item.empresa}` : ""}`;
 }
 
-function Chip({ item, onAbrir, arrastavel }) {
+function Chip({ item, onAbrir, arrastavel, faixa, mostrarPeriodo = false }) {
+  const cor = corDoItem(item);
+  const fundo = cor === COR.vencida ? "var(--state-danger-surface)"
+    : cor === COR.aFazer ? "var(--state-warn-surface)"
+      : cor === COR.resolvida ? "var(--state-ok-surface)"
+        : item.tipo === "marco" ? "var(--accent-purple-surface)" : "var(--state-neutral-surface)";
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <button
+      type="button"
+      data-event-id={item.id}
+      data-intervalo={faixa ? "true" : undefined}
       draggable={arrastavel}
       onDragStart={(e) => {
         e.dataTransfer.setData("text/plain", item.id);
         e.dataTransfer.effectAllowed = "move";
       }}
       onClick={(e) => { e.stopPropagation(); onAbrir(item); }}
-      onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onAbrir(item); } }}
       title={
         item.tipo === "obrigacaoGrupo"
           /* A contagem de dias entra AQUI também: no calendário da carteira o chip que se vê é o
@@ -223,26 +233,33 @@ function Chip({ item, onAbrir, arrastavel }) {
           }${arrastavel ? " · arraste para mudar o dia" : ""}`
       }
       style={{
-        display: "flex", alignItems: "center", gap: 4, padding: "1px 5px", borderRadius: 4,
-        background: `${corDoItem(item)}22`, borderLeft: `2px solid ${corDoItem(item)}`,
+        display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: "var(--radius-sm)",
+        width: "100%", minHeight: 32, textAlign: "left", fontFamily: "inherit",
+        background: fundo, border: `1px solid ${cor}`, borderLeft: `3px solid ${cor}`,
         // Atraso fala mais alto que categoria: a borda vermelha aparece por cima da cor do tipo.
         ...(estaVencida(item) ? { boxShadow: `inset 0 0 0 1px ${COR.vencida}` } : null),
-        color: COR.texto, fontSize: "0.68rem", lineHeight: 1.5, cursor: arrastavel ? "grab" : "pointer",
-        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        color: COR.texto, fontSize: "0.82rem", lineHeight: 1.45, cursor: arrastavel ? "grab" : "pointer",
+        whiteSpace: mostrarPeriodo ? "normal" : "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         textDecoration: item.resolvido ? "line-through" : "none",
         marginBottom: 2,
       }}
     >
-      {simboloDoItem(item)} {rotuloDoItem(item)}
-    </div>
+      {faixa?.continuaAntes && <span aria-label="Continua da semana anterior">←</span>}
+      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+        {simboloDoItem(item)} {rotuloDoItem(item)}
+        {(mostrarPeriodo || faixa) && <span style={{ color: COR.suave }}> · {periodoDoEvento(item)}</span>}
+      </span>
+      {faixa?.continuaDepois && <span aria-label="Continua na próxima semana" style={{ marginLeft: "auto" }}>→</span>}
+    </button>
   );
 }
 
-function Celula({ dia, itens, ehHoje, altura, onCriar, onAbrir, onMover, compacta, feriado }) {
+function Celula({ dia, itens, ehHoje, altura, onCriar, onAbrir, onMover, onVerMais, compacta, feriado, faixasVisiveis = [], diaCompleto = false, semCabecalho = false }) {
   const [sobre, setSobre] = useState(false);
-  const MAX = compacta ? 8 : 3;
-  const visiveis = itens.slice(0, MAX);
-  const excedente = itens.length - visiveis.length;
+  const MAX = diaCompleto ? Infinity : compacta ? 8 : 3;
+  const restantes = itens.filter((item) => !faixasVisiveis.includes(chaveDoEvento(item)));
+  const visiveis = restantes.slice(0, MAX);
+  const excedente = restantes.length - visiveis.length;
   // ⚠ O DIA HERDA A PIOR COR ENTRE SEUS EVENTOS.
   // Com `MAX` de 3 (ou 8 na compacta), o evento vencido pode estar justamente entre os que ficaram
   // fora, atrás de um "+4". A borda do dia é o único sinal que não depende de o item caber: um dia
@@ -260,13 +277,13 @@ function Celula({ dia, itens, ehHoje, altura, onCriar, onAbrir, onMover, compact
         const id = e.dataTransfer.getData("text/plain");
         if (id) onMover(id, dia.data);
       }}
-      title={feriado ? `${feriado} — feriado. Clique para marcar uma data` : "Clique para marcar uma data"}
+      title={feriado ? `${feriado} — feriado. Clique para criar tarefa ou obrigação` : "Clique para criar tarefa ou obrigação"}
       style={{
-        minHeight: altura, padding: 4, cursor: "pointer", overflow: "hidden",
+        minHeight: altura, padding: 6, cursor: "pointer", overflow: "hidden",
         // Feriado tinge o FUNDO do dia. Não vira chip: um feriado não se clica nem se conclui, e
         // ocuparia a linha de um evento de verdade. Ele explica por que a obrigação foi antecipada.
-        background: sobre ? "rgba(189,147,249,0.14)"
-          : feriado ? "rgba(255,121,198,0.10)"
+        background: sobre ? "var(--accent-purple-surface)"
+          : feriado ? "var(--bg-subtle)"
           : dia.doMes ? COR.fundo : COR.fundoFora,
         borderTop: `1px solid ${COR.borda}`,
         borderLeft: `1px solid ${COR.borda}`,
@@ -275,11 +292,11 @@ function Celula({ dia, itens, ehHoje, altura, onCriar, onAbrir, onMover, compact
         ...(pior ? { boxShadow: `inset 3px 0 0 0 ${pior}` } : null),
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+      {!semCabecalho && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
         <span
           style={{
-            fontSize: "0.7rem", fontWeight: ehHoje ? 700 : 500,
-            color: ehHoje ? "#1A1B26" : dia.doMes ? COR.suave : "#4a4d63",
+            fontSize: "0.9rem", fontWeight: ehHoje ? 700 : 500,
+            color: ehHoje ? "var(--bg-page)" : dia.doMes ? COR.suave : "var(--text-faint)",
             background: ehHoje ? COR.hoje : "transparent",
             borderRadius: 999, minWidth: 18, height: 18, display: "inline-flex",
             alignItems: "center", justifyContent: "center", padding: "0 5px",
@@ -290,20 +307,21 @@ function Celula({ dia, itens, ehHoje, altura, onCriar, onAbrir, onMover, compact
         {feriado && !compacta && (
           <span
             style={{
-              fontSize: "0.6rem", color: "#FF79C6", whiteSpace: "nowrap", overflow: "hidden",
+              fontSize: "0.8rem", color: "var(--accent-pink)", whiteSpace: "nowrap", overflow: "hidden",
               textOverflow: "ellipsis", maxWidth: "70%", textAlign: "right",
             }}
           >
             {feriado}
           </span>
         )}
-      </div>
+      </div>}
       {visiveis.map((it, i) => (
-        <Chip key={`${it.tipo}-${it.id || i}`} item={it} onAbrir={onAbrir} arrastavel={it.tipo === "marco"} />
+        <Chip key={`${it.tipo}-${it.id || i}`} item={it} onAbrir={onAbrir} arrastavel={it.tipo === "marco"} mostrarPeriodo={diaCompleto} />
       ))}
       {excedente > 0 && (
-        <div style={{ fontSize: "0.66rem", color: COR.suave, paddingLeft: 5 }}>+{excedente}</div>
+        <button type="button" onClick={(e) => { e.stopPropagation(); onVerMais(dia.data); }} style={{ font: "inherit", fontSize: "0.82rem", color: COR.marco, padding: "6px 4px", border: 0, background: "none", cursor: "pointer" }}>Ver mais {excedente} eventos</button>
       )}
+      <button type="button" aria-label={`Criar tarefa ou obrigação em ${dia.data}`} onClick={(e) => { e.stopPropagation(); onCriar(dia.data); }} style={{ font: "inherit", fontSize: "0.8rem", color: COR.suave, padding: "5px", border: 0, background: "none", cursor: "pointer" }}>+ Criar</button>
     </div>
   );
 }
@@ -327,7 +345,7 @@ function ehTelaEstreita() {
  *   seletor — não há o que escolher — e os atalhos de teclado são desligados: eles são globais
  *   (`window`), e dentro da empresa apertar "d" trocaria a visão de qualquer lugar da tela.
  */
-export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFixo = null }) {
+export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFixo = null, onOpenObligations, initialContext, onContextChange }) {
   // DEFAULT DA VISÃO — duas razões diferentes levam ao mesmo lugar:
   //
   // • No celular a grade de mês vira 42 células de 40px onde nada é legível.
@@ -337,11 +355,13 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
   //   trinta empresas, a grade continua sendo o padrão certo — ali a densidade é a informação.
   //
   // Continua sendo só o DEFAULT: Mês/Semana/Dia seguem disponíveis nos dois casos.
-  const [visao, setVisao] = useState(() => (ehTelaEstreita() || companyIdFixo ? "agenda" : "mes"));
-  const [referencia, setReferencia] = useState(hojeISO); // dia âncora da navegação
-  const [companyId, setCompanyId] = useState(companyIdFixo || "");
-  const [categorias, setCategorias] = useState(() => new Set(CATEGORIAS.map((c) => c.chave)));
-  const [sidebarAberta, setSidebarAberta] = useState(() => !ehTelaEstreita());
+  const [visao, setVisao] = useState(() => initialContext?.visao || (ehTelaEstreita() || companyIdFixo ? "agenda" : "mes"));
+  const [referencia, setReferencia] = useState(() => initialContext?.referencia || hojeISO());
+  const [companyId, setCompanyId] = useState(companyIdFixo || initialContext?.empresaFiltro || "");
+  const [categorias, setCategorias] = useState(() => new Set(initialContext?.categorias || CATEGORIAS.map((c) => c.chave)));
+  const [sidebarAberta, setSidebarAberta] = useState(() => initialContext?.painelAberto ?? false);
+  const [mostrarConcluidas, setMostrarConcluidas] = useState(() => initialContext?.mostrarConcluidas ?? true);
+  const [diaAberto, setDiaAberto] = useState(null);
   const [estreita, setEstreita] = useState(ehTelaEstreita);
 
   // ⚠ DENTRO DE UMA EMPRESA NÃO HÁ PAINEL LATERAL.
@@ -366,6 +386,12 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
   const [detalhe, setDetalhe] = useState(null);   // item clicado
   const [salvando, setSalvando] = useState(false);
   const tituloRef = useRef(null);
+  const consultaRef = useRef(0);
+  const contextoCallback = useRef(onContextChange);
+  contextoCallback.current = onContextChange;
+  useEffect(() => {
+    contextoCallback.current?.({ referencia, visao, empresaFiltro: companyId, categorias: [...categorias], painelAberto: sidebarAberta, mostrarConcluidas });
+  }, [referencia, visao, companyId, categorias, sidebarAberta, mostrarConcluidas]);
 
   // Trocar de empresa sem desmontar o componente (mudar o id na URL com a aba já aberta) deixaria
   // o filtro na empresa anterior — o cabeçalho diria uma coisa e a grade mostraria outra.
@@ -377,6 +403,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
 
   const carregar = useCallback(async () => {
     if (!api) return;
+    const consulta = ++consultaRef.current;
     // ⚠⚠ O MODO ANO NÃO PASSA POR AQUI. `GET /firm/calendario` valida `^\d{4}-\d{2}$` e responderia
     // 400 para um ano; a grade anual tem porta própria (`GET /firm/companies/annual?ano=`) e busca
     // sozinha. Buscar o mês corrente para desenhar doze não é só desperdício — é uma requisição
@@ -385,26 +412,31 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
     if (visao === "ano") { setCarregando(false); return; }
     setCarregando(true);
     setErro(null);
+    setPorDia({});
+    setPendencias([]);
     try {
       // A semana pode atravessar dois meses, então a visão semanal busca os dois. Uma requisição
       // por mês envolvido é mais simples do que um endpoint por intervalo — e o mês é a unidade
       // que o backend já entende.
       const meses = new Set([competencia]);
       if (visao === "semana") for (const d of diasDaSemana(referencia)) meses.add(d.data.slice(0, 7));
+      if (visao === "mes") for (const d of semanasDoMes(competencia).flat()) meses.add(d.data.slice(0, 7));
       const respostas = await Promise.all([...meses].map((m) => api.getCalendario(m, companyId || undefined)));
+      if (consulta !== consultaRef.current) return;
       const mapa = {};
       const feriados = {};
       // A semana que cruza dois meses traz duas listas de pendência, e a mesma empresa costuma
       // aparecer nas duas (apuração de junho E de julho em aberto). São pendências DIFERENTES, mas
       // a chave impede que uma resposta repetida vire linha duplicada.
       const vistas = new Map();
-      for (const out of respostas) {
+      for (const [indiceResposta, out] of respostas.entries()) {
         if (out?.ok === false) { setErro(out?.message || "Não foi possível carregar."); continue; }
         for (const d of out?.dias || []) {
-          mapa[d.data] = [...(mapa[d.data] || []), ...(d.itens || [])];
+          mapa[d.data] = eventosUnicos([...(mapa[d.data] || []), ...(d.itens || [])]);
           if (d.feriado) feriados[d.data] = d.feriado;
         }
         for (const p of out?.pendenciasDoMes || []) {
+          if (visao === "mes" && indiceResposta > 0) continue;
           vistas.set(`${p.tipo}|${p.companyId}|${p.competencia}`, p);
         }
       }
@@ -412,13 +444,14 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
       setFeriadosPorDia(feriados);
       setPendencias([...vistas.values()]);
     } catch (err) {
+      if (consulta !== consultaRef.current) return;
       setErro(err?.message || "Não foi possível carregar o calendário.");
     } finally {
-      setCarregando(false);
+      if (consulta === consultaRef.current) setCarregando(false);
     }
   }, [api, competencia, referencia, visao, companyId]);
 
-  useEffect(() => { carregar(); }, [carregar]);
+  useEffect(() => { carregar(); return () => { consultaRef.current += 1; }; }, [carregar]);
   useEffect(() => { if (criando) tituloRef.current?.focus(); }, [criando]);
 
   // A largura precisa ser REATIVA, não lida uma vez: girar o celular ou arrastar a janela muda o
@@ -451,7 +484,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
       const alvo = e.target;
       const digitando =
         alvo?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(alvo?.tagName || "");
-      if (digitando) return;
+      if (digitando || alvo?.closest?.('[role="dialog"]')) return;
       const tecla = String(e.key || "").toLowerCase();
       // ⚠ Pelo `trocarVisao`, nunca pelo `setVisao` cru: é ele que limpa o dia selecionado ao
       // entrar no Ano. Um atalho que pulasse essa limpeza deixaria o detalhe de um dia aberto por
@@ -469,16 +502,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
     return () => window.removeEventListener("keydown", aoTeclar);
   }, []);
 
-  // ESC fecha o que estiver aberto — reflexo esperado em qualquer calendário.
-  useEffect(() => {
-    function aoTeclar(e) {
-      if (e.key !== "Escape") return;
-      if (detalhe) setDetalhe(null);
-      else if (criando) setCriando(null);
-    }
-    window.addEventListener("keydown", aoTeclar);
-    return () => window.removeEventListener("keydown", aoTeclar);
-  }, [criando, detalhe]);
+  // Modal compartilha Esc, foco e proteção enquanto salva com o restante do aplicativo.
 
   // ⚠⚠ TROCAR DE VISÃO LIMPA O QUE É DE UM DIA. `grupoSelecionado`, `detalhe` e `criando`
   // referenciam todos uma DATA (`{grupoChave, data}`, o item clicado, o dia do formulário). No modo
@@ -504,7 +528,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
     // › mudava a referência sem mudar o mês, então a lista continuava idêntica: a seta parecia não
     // funcionar, e só depois de ~30 cliques o mês virava. Ficou escondido enquanto a agenda era só
     // o default do celular; virando o padrão dentro da empresa, é o primeiro gesto de todo mundo.
-    if (visao === "mes" || visao === "agenda") base.setUTCMonth(base.getUTCMonth() + passo);
+    if (visao === "mes" || visao === "agenda") { setReferencia(deslocarMes(referencia, passo)); return; }
     else if (visao === "semana") base.setUTCDate(base.getUTCDate() + 7 * passo);
     else base.setUTCDate(base.getUTCDate() + passo);
     setReferencia(iso(base));
@@ -532,19 +556,18 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
   }, [visao, competencia, referencia]);
 
   const hoje = hojeISO();
-  const alturaCelula = visao === "mes" ? 96 : visao === "semana" ? 260 : 420;
+  const alturaCelula = visao === "mes" ? 150 : visao === "semana" ? 300 : 420;
 
   // Filtro por categoria age na EXIBIÇÃO, não na busca: desmarcar "guias" não deve disparar outra
   // requisição, e remarcar tem que ser instantâneo.
   const porDiaVisivel = useMemo(() => {
-    if (categorias.size === CATEGORIAS.length) return porDia;
     const saida = {};
     for (const [data, itens] of Object.entries(porDia)) {
-      const filtrados = itens.filter((i) => categorias.has(i.tipo));
+      const filtrados = itens.filter((i) => categorias.has(ehTarefa(i) ? "tarefa" : i.tipo) && (mostrarConcluidas || !i.resolvido));
       if (filtrados.length) saida[data] = filtrados;
     }
     return saida;
-  }, [porDia, categorias]);
+  }, [porDia, categorias, mostrarConcluidas]);
 
   /**
    * Agrupa as OBRIGAÇÕES do dia por `grupoChave`. Guia e marco passam intactos.
@@ -563,7 +586,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
       const grupos = new Map();
       const outros = [];
       for (const it of itens) {
-        if (it.tipo !== "obrigacao") { outros.push(it); continue; }
+        if (it.tipo !== "obrigacao" || ehTarefa(it) || temIntervalo(it) || companyIdFixo) { outros.push(it); continue; }
         const chave = it.grupoChave || `id:${it.id}`;
         if (!grupos.has(chave)) {
           grupos.set(chave, {
@@ -593,10 +616,10 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
         g.resolvido = g.pendentes === 0 && g.vencidas === 0;
         g.situacao = g.vencidas > 0 ? "VENCIDA" : g.resolvido ? "CONCLUIDA" : "PENDENTE";
       }
-      saida[data] = [...outros, ...grupos.values()];
+      saida[data] = [...outros, ...[...grupos.values()].flatMap((grupo) => grupo.total === 1 ? grupo.ocorrencias : [grupo])];
     }
     return saida;
-  }, [porDiaVisivel]);
+  }, [porDiaVisivel, companyIdFixo]);
 
   // Guarda a CHAVE, não o objeto. Guardando o objeto, depois de concluir uma empresa o painel
   // seguiria mostrando a lista de antes da conclusão até alguém re-clicar no chip.
@@ -618,9 +641,13 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
    */
   const obrigacoesPorEmpresa = useMemo(() => {
     const mapa = new Map();
-    for (const itens of Object.values(porDiaVisivel)) {
+    const vistos = new Set();
+    for (const [data, itens] of Object.entries(porDiaVisivel)) {
+      if (!data.startsWith(competencia)) continue;
       for (const it of itens) {
         if (it.tipo !== "obrigacao" || !it.companyId) continue;
+        if (vistos.has(chaveDoEvento(it))) continue;
+        vistos.add(chaveDoEvento(it));
         const atual = mapa.get(it.companyId) || { abertas: 0, vencidas: 0, total: 0 };
         atual.total += 1;
         if (it.situacao === "VENCIDA") { atual.vencidas += 1; atual.abertas += 1; }
@@ -629,7 +656,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
       }
     }
     return mapa;
-  }, [porDiaVisivel]);
+  }, [porDiaVisivel, competencia]);
 
   // A ocorrência traz só a razão; o CNPJ vem da carteira. Sem este de-para, a lista filtrada
   // perderia o CNPJ que a lista completa mostra — a mesma empresa apareceria de dois jeitos.
@@ -670,16 +697,8 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
   // ao contrário da grade, onde o vazio é a própria informação ("nada vence aqui").
   const diasDaAgenda = useMemo(() => {
     if (visao !== "agenda") return [];
-    const [ano, mes] = competencia.split("-").map(Number);
-    const total = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
-    const saida = [];
-    for (let d = 1; d <= total; d += 1) {
-      const data = `${ano}-${pad2(mes)}-${pad2(d)}`;
-      const itens = porDiaAgrupado[data] || [];
-      if (itens.length) saida.push({ data, dia: d, itens });
-    }
-    return saida;
-  }, [visao, competencia, porDiaAgrupado]);
+    return agendaDoMes(competencia, porDiaVisivel);
+  }, [visao, competencia, porDiaVisivel]);
 
   function alternarCategoria(chave) {
     setCategorias((atual) => {
@@ -690,12 +709,39 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
   }
 
   async function concluirOcorrencia(item, { fecharDetalhe = true } = {}) {
+    if (salvando) return;
+    setSalvando(true);
     try {
       const out = await api.concluirOcorrencia(item.id);
       if (out?.ok === false) { setErro(out.message || "Não foi possível concluir."); return; }
       if (fecharDetalhe) setDetalhe(null);
       await carregar();
     } catch (err) { setErro(err?.message || "Não foi possível concluir."); }
+    finally { setSalvando(false); }
+  }
+
+  function abrirCentral(criar, data = referencia, item) {
+    let dataInicio = item ? inicioDoEvento(item) : data;
+    let dataFim = item ? fimDoEvento(item) : data;
+    if (!criar && !item) {
+      if (visao === "mes" || visao === "agenda" || visao === "ano") {
+        const [ano, mes] = referencia.split("-").map(Number);
+        dataInicio = `${competencia}-01`;
+        dataFim = iso(new Date(Date.UTC(ano, mes, 0)));
+      } else if (visao === "semana") {
+        const dias = diasDaSemana(referencia);
+        dataInicio = dias[0].data;
+        dataFim = dias[6].data;
+      }
+    }
+    onOpenObligations?.({ companyId: item?.companyId || companyId || undefined, dataInicio, dataFim, criar, ...(item ? { ocorrenciaId: item.id, item } : {}) });
+  }
+
+  function criarNoDia(data) {
+    setDetalhe(null);
+    setDiaAberto(null);
+    if (onOpenObligations) abrirCentral(true, data);
+    else setCriando({ data });
   }
 
   /** Chip de grupo abre o painel lateral; guia e marco seguem no modal de detalhe de sempre. */
@@ -762,9 +808,9 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
   }
 
   const btn = (ativo) => ({
-    padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontSize: "0.8rem", fontWeight: 600,
-    border: `1px solid ${ativo ? "#BD93F9" : COR.borda}`,
-    background: ativo ? "rgba(189,147,249,0.16)" : "transparent",
+    padding: "8px 12px", minHeight: 38, borderRadius: "var(--radius-sm)", cursor: "pointer", fontSize: "0.88rem", fontWeight: 600,
+    border: `1px solid ${ativo ? COR.marco : COR.borda}`,
+    background: ativo ? "var(--accent-purple-surface)" : "transparent",
     color: ativo ? COR.texto : COR.suave,
   });
 
@@ -784,6 +830,13 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
        ⚠⚠ E ISTO NÃO TEM COMO SER TRAVADO POR TESTE AQUI: o jsdom não faz layout — `scrollWidth` é
        sempre 0. Foi achado e conferido no navegador, e é o motivo de este comentário existir. */
     <section aria-label="Calendário fiscal" style={{ width: "var(--content-wide)", maxWidth: "100%", margin: "0 auto" }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
+        {onOpenObligations && <>
+          <button type="button" style={btn(false)} onClick={() => abrirCentral(false)}>Tarefas e obrigações</button>
+          <button type="button" style={btn(true)} onClick={() => abrirCentral(true)}>+ Nova tarefa ou obrigação</button>
+        </>}
+        {visao !== "ano" && <button type="button" style={btn(false)} onClick={() => setCriando({ data: referencia })}>+ Marco / lembrete</button>}
+      </div>
       {/* Cabeçalho: navegação à esquerda, granularidade à direita — como no Google Calendar. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         {temSidebar && (
@@ -791,7 +844,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
             type="button" onClick={() => setSidebarAberta((v) => !v)} style={btn(false)}
             title={sidebarAberta ? "Esconder painel" : "Mostrar painel"} aria-expanded={sidebarAberta}
           >
-            ☰
+            ☰ Empresas
           </button>
         )}
         <button type="button" onClick={() => navegar(-1)} style={btn(false)} title="Anterior">‹</button>
@@ -811,6 +864,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                que promete — o "filtro fantasma" que este projeto já nomeou várias vezes. Some da
                tela e ninguém saberia que a filtragem existe nas outras visões. */
             <select
+              aria-label="Filtrar por empresa"
               value={visao === "ano" ? "" : companyId}
               disabled={visao === "ano"}
               title={visao === "ano" ? "A visão de Ano mostra a carteira inteira — ela não filtra por empresa. Escolha Mês, Semana, Dia ou Agenda para filtrar." : undefined}
@@ -867,11 +921,14 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
             {c.rotulo}
           </label>
         ))}
+        <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: "0.85rem", color: COR.suave }}>
+          <input type="checkbox" checked={mostrarConcluidas} onChange={(e) => setMostrarConcluidas(e.target.checked)} /> Mostrar concluídas
+        </label>
         {/* Sem esta segunda metade, a legenda explicaria só metade do desenho e a cor ficaria por
             adivinhação — que é o que acontecia antes, quando ela significava outra coisa. */}
         <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 12, fontSize: "0.74rem", color: COR.suave, flexWrap: "wrap" }}>
           <span style={{ color: COR.suave }}>cor = estado:</span>
-          {[["vencida", "vencido"], ["aFazer", "vence hoje"], ["futura", "a vencer"], ["resolvida", "resolvido"]].map(([k, r]) => (
+          {[["vencida", "atraso / urgência"], ["aFazer", "em aberto"], ["futura", "a vencer"], ["resolvida", "concluído"]].map(([k, r]) => (
             <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
               <span style={{ width: 8, height: 8, borderRadius: 999, background: COR[k], flex: "0 0 auto" }} />
               {r}
@@ -915,7 +972,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
               (`hoje`, ciano) e não uma cor semântica, que seria lida como "este grupo está bem". */}
           {!companyIdFixo && (
             <div style={{ border: `1px solid ${grupoAberto ? COR.hoje : COR.borda}`, borderRadius: 10, overflow: "hidden" }}>
-              <div style={{ padding: "10px 12px", borderBottom: `1px solid ${COR.borda}`, background: "#20222E" }}>
+              <div style={{ padding: "10px 12px", borderBottom: `1px solid ${COR.borda}`, background: "var(--bg-subtle)" }}>
                 {grupoAberto ? (
                   <>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -1065,47 +1122,60 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
               </button>
               {companyIdFixo && (
                 <span style={{ fontSize: "0.75rem" }}>
-                  Obrigações desta empresa se configuram no Calendário, na página principal.
+                  Use “Nova tarefa ou obrigação” para organizar o trabalho desta empresa.
                 </span>
               )}
             </div>
           )}
           {diasDaAgenda.map((d) => (
-            <div key={d.data} style={{ display: "flex", gap: 12, padding: "8px 10px", borderBottom: `1px solid ${COR.borda}`, background: d.data === hoje ? "rgba(139,233,253,0.06)" : COR.fundo }}>
+            <div key={d.data} style={{ display: "flex", gap: 12, padding: "12px 10px", borderBottom: `1px solid ${COR.borda}`, background: d.data === hoje ? "var(--state-neutral-surface)" : COR.fundo }}>
               <div style={{ flex: "0 0 62px", textAlign: "center" }}>
                 <div style={{ fontSize: "1.25rem", fontWeight: 700, color: d.data === hoje ? COR.hoje : COR.texto, lineHeight: 1.1 }}>
                   {d.dia}
                 </div>
-                <div style={{ fontSize: "0.66rem", color: COR.suave, textTransform: "uppercase" }}>
+                <div style={{ fontSize: "0.8rem", color: COR.suave, textTransform: "uppercase" }}>
                   {DIAS_SEMANA[new Date(`${d.data}T00:00:00Z`).getUTCDay()]}
                 </div>
                 {feriadosPorDia[d.data] && (
-                  <div style={{ fontSize: "0.58rem", color: "#FF79C6", lineHeight: 1.2, marginTop: 2 }}>
+                  <div style={{ fontSize: "0.8rem", color: "var(--accent-pink)", lineHeight: 1.3, marginTop: 2 }}>
                     {feriadosPorDia[d.data]}
                   </div>
                 )}
               </div>
               <div style={{ flex: "1 1 auto", minWidth: 0 }}>
                 {d.itens.map((it, i) => (
-                  <Chip key={`${it.tipo}-${it.id || i}`} item={it} onAbrir={abrirItem} arrastavel={false} />
+                  <Chip key={`${it.tipo}-${it.id || i}`} item={it} onAbrir={abrirItem} arrastavel={false} mostrarPeriodo />
                 ))}
               </div>
             </div>
           ))}
         </div>
       ) : (
-      <div style={{ border: `1px solid ${COR.borda}`, borderRadius: 8, overflow: "hidden", borderRight: "none", borderBottom: "none" }}>
+      <div style={{ overflowX: "auto", border: `1px solid ${COR.borda}`, borderRadius: "var(--radius-sm)" }}>
+      <div style={{ minWidth: visao === "dia" ? 0 : 840 }}>
         {visao !== "dia" && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", background: COR.fundoFora }}>
             {DIAS_SEMANA.map((d) => (
-              <div key={d} style={{ padding: "6px 4px", textAlign: "center", color: COR.suave, fontSize: "0.68rem", textTransform: "uppercase", borderLeft: `1px solid ${COR.borda}` }}>
+              <div key={d} style={{ padding: "10px 6px", textAlign: "center", color: COR.suave, fontSize: "0.85rem", textTransform: "uppercase", borderLeft: `1px solid ${COR.borda}` }}>
                 {d}
               </div>
             ))}
           </div>
         )}
-        {linhas.map((semana, si) => (
-          <div key={si} style={{ display: "grid", gridTemplateColumns: `repeat(${semana.length},minmax(0,1fr))` }}>
+        {linhas.map((semana, si) => {
+          const faixas = visao === "dia" ? [] : segmentosDaSemana(semana, porDiaAgrupado).filter((faixa) => faixa.linha < 3);
+          return <div key={si} style={{ borderTop: `1px solid ${COR.borda}` }}>
+            {visao !== "dia" && <div style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))" }}>
+              {semana.map((dia) => <button key={dia.data} type="button" aria-label={`Ver eventos de ${dia.data}`} onClick={() => setDiaAberto(dia.data)} style={{ padding: "8px", minHeight: 38, font: "inherit", fontSize: "0.9rem", textAlign: "left", border: 0, borderLeft: `1px solid ${COR.borda}`, color: dia.data === hoje ? COR.hoje : dia.doMes ? COR.texto : COR.suave, background: dia.doMes ? COR.fundo : COR.fundoFora, cursor: "pointer" }}>
+                <strong>{dia.dia}</strong>{feriadosPorDia[dia.data] && <span style={{ display: "block", fontSize: "0.75rem", color: "var(--accent-pink)" }}>{feriadosPorDia[dia.data]}</span>}
+              </button>)}
+            </div>}
+            {faixas.length > 0 && <div aria-label="Tarefas e obrigações por período" style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", gap: "3px 0", padding: "3px 0", background: COR.fundo }}>
+              {faixas.map((faixa) => <div key={chaveDoEvento(faixa.item)} style={{ gridColumn: `${faixa.colunaInicio + 1} / ${faixa.colunaFim + 2}`, gridRow: faixa.linha + 1, minWidth: 0, padding: "0 3px" }}>
+                <Chip item={faixa.item} onAbrir={abrirItem} arrastavel={false} faixa={faixa} />
+              </div>)}
+            </div>}
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${semana.length},minmax(0,1fr))` }}>
             {semana.map((dia) => (
               <Celula
                 key={dia.data}
@@ -1114,14 +1184,20 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                 ehHoje={dia.data === hoje}
                 altura={alturaCelula}
                 compacta={visao !== "mes"}
+                diaCompleto={visao === "dia"}
+                semCabecalho={visao !== "dia"}
+                faixasVisiveis={faixas.filter((faixa) => inicioDoEvento(faixa.item) <= dia.data && fimDoEvento(faixa.item) >= dia.data).map((faixa) => chaveDoEvento(faixa.item))}
                 feriado={feriadosPorDia[dia.data] || null}
-                onCriar={(data) => { setDetalhe(null); setCriando({ data }); }}
+                onCriar={criarNoDia}
+                onVerMais={setDiaAberto}
                 onAbrir={abrirItem}
                 onMover={moverMarco}
               />
             ))}
           </div>
-        ))}
+          </div>;
+        })}
+      </div>
       </div>
       )}
       </div>
@@ -1173,25 +1249,30 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
       )}
 
       {/* Criação: campo único em foco + "mais opções" logo abaixo, no espírito do quick-add. */}
+      {diaAberto && !detalhe && (
+        <Modal titulo={`Eventos de ${diaAberto.split("-").reverse().join("/")}`} aoFechar={() => setDiaAberto(null)} tamanho="md"
+          rodape={<button type="button" style={btn(true)} onClick={() => criarNoDia(diaAberto)}>+ Nova tarefa ou obrigação</button>}>
+          <div style={{ display: "grid", gap: 8 }}>
+            {eventosUnicos(porDiaVisivel[diaAberto] || []).map((item) => <Chip key={chaveDoEvento(item)} item={item} onAbrir={abrirItem} mostrarPeriodo arrastavel={false} />)}
+            {!porDiaVisivel[diaAberto]?.length && <p>Nenhum evento para este dia com os filtros atuais.</p>}
+          </div>
+        </Modal>
+      )}
       {criando && (
-        <div
-          role="dialog" aria-modal="true" aria-label="Marcar uma data"
-          onClick={(e) => { if (e.target === e.currentTarget) setCriando(null); }}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 }}
-        >
-          <form onSubmit={salvarMarco} style={{ width: "100%", maxWidth: 420, background: "#282A36", border: `1px solid ${COR.borda}`, borderRadius: 12, padding: 18, color: COR.texto }}>
+        <Modal titulo="Marcar uma data" aoFechar={() => setCriando(null)} ocupado={salvando} tamanho="sm">
+          <form onSubmit={salvarMarco} style={{ color: COR.texto }}>
             <input
               ref={tituloRef} name="titulo" required placeholder="Adicionar título"
-              style={{ width: "100%", boxSizing: "border-box", marginBottom: 10, background: "transparent", border: "none", borderBottom: `2px solid #BD93F9`, color: COR.texto, padding: "6px 2px", fontSize: "1.05rem", outline: "none" }}
+              style={{ width: "100%", boxSizing: "border-box", marginBottom: 10, background: "transparent", border: "none", borderBottom: `2px solid ${COR.marco}`, color: COR.texto, padding: "6px 2px", fontSize: "1.05rem" }}
             />
             <div style={{ fontSize: "0.8rem", color: COR.suave, marginBottom: 12 }}>
               {criando.data.split("-").reverse().join("/")}
               {companyId ? " · só para a empresa filtrada" : " · todas as empresas"}
             </div>
             <input name="descricao" placeholder="Descrição (opcional)"
-              style={{ width: "100%", boxSizing: "border-box", marginBottom: 8, background: "#1F2029", border: `1px solid ${COR.borda}`, borderRadius: 6, color: COR.texto, padding: "7px 10px", fontSize: "0.85rem" }} />
+              style={{ width: "100%", boxSizing: "border-box", marginBottom: 8, background: "var(--bg-page)", border: `1px solid ${COR.borda}`, borderRadius: "var(--radius-sm)", color: COR.texto, padding: "9px 10px", fontSize: "0.9rem" }} />
             <select name="importancia" defaultValue="MEDIA"
-              style={{ width: "100%", boxSizing: "border-box", marginBottom: 14, background: "#1F2029", border: `1px solid ${COR.borda}`, borderRadius: 6, color: COR.texto, padding: "7px 10px", fontSize: "0.85rem" }}>
+              style={{ width: "100%", boxSizing: "border-box", marginBottom: 14, background: "var(--bg-page)", border: `1px solid ${COR.borda}`, borderRadius: "var(--radius-sm)", color: COR.texto, padding: "9px 10px", fontSize: "0.9rem" }}>
               <option value="ALTA">Alta</option>
               <option value="MEDIA">Média</option>
               <option value="BAIXA">Baixa</option>
@@ -1203,30 +1284,30 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
               </button>
             </div>
           </form>
-        </div>
+        </Modal>
       )}
 
       {/* Detalhe do evento. Guia leva à empresa; marco pode ser excluído. */}
       {detalhe && (
-        <div
-          role="dialog" aria-modal="true" aria-label="Detalhe"
-          onClick={(e) => { if (e.target === e.currentTarget) setDetalhe(null); }}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 }}
-        >
-          <div style={{ width: "100%", maxWidth: 400, background: "#282A36", border: `1px solid ${COR.borda}`, borderRadius: 12, padding: 18, color: COR.texto }}>
+        <Modal titulo="Detalhe" aoFechar={() => setDetalhe(null)} ocupado={salvando} tamanho="md">
+          <div style={{ color: COR.texto }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <span style={{ width: 10, height: 10, borderRadius: 2, background: corDoItem(detalhe) }} />
               <strong style={{ fontSize: "1rem" }}>{detalhe.titulo}</strong>
             </div>
             {detalhe.descricao && <p style={{ margin: "0 0 8px", fontSize: "0.85rem", color: COR.suave }}>{detalhe.descricao}</p>}
             {detalhe.empresa && <div style={{ fontSize: "0.82rem", marginBottom: 4 }}>{detalhe.empresa}</div>}
+            <p style={{ fontSize: "0.9rem", lineHeight: 1.6 }}>
+              {ehTarefa(detalhe) ? "Tarefa" : detalhe.tipo === "obrigacao" ? "Obrigação" : "Data"} · {periodoDoEvento(detalhe)}
+              {detalhe.tipo === "obrigacao" && !ehTarefa(detalhe) && <><br />Vencimento fiscal: {(detalhe.dataVencimento || detalhe.data || "").slice(0, 10).split("-").reverse().join("/")}</>}
+            </p>
             {detalhe.tipo === "guia" && (
               <div style={{ fontSize: "0.82rem", color: COR.suave, marginBottom: 4 }}>
                 Competência {detalhe.competencia} · {fmtMoney(detalhe.valor)}
                 {detalhe.resolvido ? " · pago" : ""}
               </div>
             )}
-            {detalhe.tipo === "obrigacao" && (
+            {(detalhe.tipo === "obrigacao" || ehTarefa(detalhe)) && (
               <div style={{ fontSize: "0.82rem", color: COR.suave, marginBottom: 4 }}>
                 {detalhe.competencia && <>Competência {detalhe.competencia} · </>}
                 {detalhe.resolvido
@@ -1234,7 +1315,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                     ? "concluída pelo sistema"
                     : "concluída"
                   /* Mesma leitura do chip e da cor — com os dias, que é o que se quer saber aqui. */
-                  : aparenciaDaOcorrencia(
+                  : ehTarefa(detalhe) ? estaVencida(detalhe) ? "Atrasada" : "Em aberto" : aparenciaDaOcorrencia(
                     { dataVencimento: detalhe.data, status: "PENDENTE" },
                     detalhe.antecedenciaLembreteDias,
                   ).rotulo}
@@ -1248,12 +1329,14 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
             {detalhe.tipo === "marco" && detalhe.doEscritorio && (
               <div style={{ fontSize: "0.78rem", color: COR.suave, marginBottom: 4 }}>Vale para todas as empresas</div>
             )}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
+              {onOpenObligations && (detalhe.tipo === "obrigacao" || ehTarefa(detalhe)) && <button type="button" disabled={salvando} style={btn(false)} onClick={() => abrirCentral(false, referencia, detalhe)}>Editar tarefa ou obrigação</button>}
               {/* Só obrigação MANUAL e ainda aberta ganha o botão: na automática o backend recusaria
                   o clique, e oferecer é pior que não oferecer. */}
-              {detalhe.tipo === "obrigacao" && !detalhe.resolvido && !detalhe.conclusaoAutomatica && (
+              {(detalhe.tipo === "obrigacao" || ehTarefa(detalhe)) && !detalhe.resolvido && !detalhe.conclusaoAutomatica && (
                 <button
                   type="button"
+                  disabled={salvando}
                   onClick={() => concluirOcorrencia(detalhe)}
                   style={btn(true)}
                 >
@@ -1274,7 +1357,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                 <button
                   type="button"
                   onClick={() => { if (window.confirm(`Excluir "${detalhe.titulo}"?`)) excluirMarco(detalhe.id); }}
-                  style={{ ...btn(false), borderColor: "#FF5555", color: "#FF5555" }}
+                  style={{ ...btn(false), borderColor: COR.vencida, color: COR.vencida }}
                 >
                   Excluir
                 </button>
@@ -1282,7 +1365,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
               <button type="button" onClick={() => setDetalhe(null)} style={btn(false)}>Fechar</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </section>
   );

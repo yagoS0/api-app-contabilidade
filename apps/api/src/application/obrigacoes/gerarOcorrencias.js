@@ -7,6 +7,7 @@
 import { ajustarParaDiaUtil, paraISO } from "./diaUtil.js";
 
 export const PERIODICIDADES = ["MENSAL", "TRIMESTRAL", "ANUAL"];
+export const PERIODICIDADES_COM_AVULSA = ["AVULSA", ...PERIODICIDADES];
 export const AJUSTES_DIA_UTIL = ["ANTECIPAR", "POSTERGAR", "MANTER"];
 
 /** Último dia do mês (UTC). Fevereiro devolve 28 ou 29 conforme o ano. */
@@ -84,6 +85,8 @@ export function calcularVencimentos(obrigacao, janela, ehFeriado = () => false) 
       mesVencimento: `${ano}-${String(mes).padStart(2, "0")}`,
       competenciaRef: competenciaComDefasagem(ano, mes, obrigacao.defasagemMeses ?? 1),
       data,
+      dataInicio: dataDoLembrete(data, obrigacao.diasPreparacao || 0),
+      dataFim: data,
       iso: paraISO(data),
     };
   });

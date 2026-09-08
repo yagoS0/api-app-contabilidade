@@ -1,5 +1,12 @@
 # CLAUDE.md — Portal Contábil
 
+## Calendário e obrigações — implementação de 07/09/2026
+
+Acesso a **Tarefas e obrigações** e criação agora ficam junto ao calendário. Tarefas/obrigações avulsas têm início e fim inclusivos e uma única ocorrência, exibida em todos os dias do período. O calendário ganhou faixas por semana, agenda sem duplicação e retorno preservando empresa, data, visão e filtros.
+
+Contratos e manutenção: `apps/api/CLAUDE.md` e `apps/web/CLAUDE.md`. A migration `20260907180000_add_calendar_task_intervals` deve ser aplicada antes da nova API, com geração do Prisma. A execução desta etapa não significa que todos os itens da auditoria de planejamento, apuração e design estejam concluídos; implantação e migração no banco real continuam pendentes.
+
+
 Instruções e contexto para o Claude Code neste projeto.
 
 ## Visão Geral

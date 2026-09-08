@@ -677,6 +677,23 @@ const mockUnidentifiedGuides = [];
 // bonitas esconderia justamente o que precisa ser visto na tela.
 function mockCriarObrigacao(companyId, empresa, dados) {
   const periodicidade = String(dados.periodicidade || "MENSAL").toUpperCase();
+  const tipo = String(dados.tipo || "OBRIGACAO").toUpperCase();
+  const diasPreparacao = Number(dados.diasPreparacao ?? 0);
+  if (!["TAREFA", "OBRIGACAO"].includes(tipo) || !["AVULSA", "MENSAL", "TRIMESTRAL", "ANUAL"].includes(periodicidade)) {
+    throw new Error("Tipo ou periodicidade inválidos.");
+  }
+  if (!Number.isInteger(diasPreparacao) || diasPreparacao < 0 || diasPreparacao > 365) throw new Error("Informe de 0 a 365 dias de preparação.");
+  if (dados.verificador && (tipo === "TAREFA" || periodicidade === "AVULSA")) throw new Error("Tarefas e itens avulsos são concluídos manualmente.");
+  const dataCivil = (valor) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(valor || ""))) throw new Error("Informe uma data válida.");
+    const d = new Date(`${valor}T00:00:00.000Z`);
+    if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== valor) throw new Error("Informe uma data válida.");
+    return valor;
+  };
+  const dataInicio = periodicidade === "AVULSA" ? dataCivil(dados.dataInicio) : null;
+  const dataFim = periodicidade === "AVULSA" ? dataCivil(dados.dataFim) : null;
+  const dataVencimento = periodicidade === "AVULSA" ? dataCivil(tipo === "TAREFA" ? dataFim : dados.dataVencimento || dataFim) : null;
+  if (dataInicio && dataFim < dataInicio) throw new Error("O fim não pode ser anterior ao início.");
   const diaPedido = Number(dados.diaVencimento) || 20;
   const ajuste = String(dados.ajusteDiaUtil || "ANTECIPAR").toUpperCase();
   const defasagem = dados.defasagemMeses == null ? 1 : Number(dados.defasagemMeses);
@@ -684,7 +701,14 @@ function mockCriarObrigacao(companyId, empresa, dados) {
 
   const hoje = new Date();
   const ocorrencias = [];
-  for (let i = 0; i < 12; i += 1) {
+  if (periodicidade === "AVULSA") {
+    ocorrencias.push({
+      ocorrenciaId: `mock-oc-${companyId}-${Math.random().toString(36).slice(2, 9)}`,
+      dataInicio, dataFim, dataVencimento, competenciaRef: dataVencimento.slice(0, 7),
+      status: "PENDENTE", concluidaEm: null, fonteConclusao: null,
+    });
+  }
+  for (let i = 0; periodicidade !== "AVULSA" && i < 12; i += 1) {
     const bruto = hoje.getUTCMonth() + i;
     const ano = hoje.getUTCFullYear() + Math.floor(bruto / 12);
     const mes = (bruto % 12) + 1;
@@ -698,9 +722,13 @@ function mockCriarObrigacao(companyId, empresa, dados) {
       while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + passo);
     }
     const compBruta = ano * 12 + (mes - 1) - Math.max(0, defasagem);
+    const inicio = new Date(d);
+    inicio.setUTCDate(inicio.getUTCDate() - diasPreparacao);
     ocorrencias.push({
       ocorrenciaId: `mock-oc-${companyId}-${ano}${String(mes).padStart(2, "0")}-${Math.random().toString(36).slice(2, 7)}`,
       dataVencimento: d.toISOString().slice(0, 10),
+      dataInicio: inicio.toISOString().slice(0, 10),
+      dataFim: d.toISOString().slice(0, 10),
       competenciaRef: `${Math.floor(compBruta / 12)}-${String((compBruta % 12) + 1).padStart(2, "0")}`,
       status: "PENDENTE",
       concluidaEm: null,
@@ -714,6 +742,8 @@ function mockCriarObrigacao(companyId, empresa, dados) {
     empresa,
     nome: String(dados.nome || "").trim() || "Obrigação sem nome",
     categoria: String(dados.categoria || "").trim() || null,
+    descricao: String(dados.descricao || "").trim() || null,
+    tipo, dataInicio, dataFim, dataVencimento, diasPreparacao,
     periodicidade,
     diaVencimento: diaPedido,
     mesReferencia: periodicidade === "MENSAL" ? null : mesRef,
@@ -835,7 +865,11 @@ function mockPropagarRegra(regra) {
       const concluidas = atual.ocorrencias.filter((oc) => oc.status === "CONCLUIDA");
       const jaTem = new Set(concluidas.map((oc) => oc.dataVencimento));
       nova.obrigacaoId = atual.obrigacaoId;
-      nova.ocorrencias = [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento))]
+      const mudouJanela = ["diasPreparacao", "diaVencimento", "mesReferencia", "ajusteDiaUtil", "periodicidade"].some((campo) => String(nova[campo]) !== String(atual[campo]));
+      nova.ocorrencias = [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento)).map((oc) => {
+        const anterior = atual.ocorrencias.find((item) => item.dataVencimento === oc.dataVencimento);
+        return anterior ? (mudouJanela ? { ...oc, ocorrenciaId: anterior.ocorrenciaId, janelaPersonalizada: false } : anterior) : oc;
+      })]
         .sort((a, b) => a.dataVencimento.localeCompare(b.dataVencimento));
       mockObrigacoes[mockObrigacoes.indexOf(atual)] = nova;
       atualizadas += 1;
@@ -7000,12 +7034,14 @@ export function createMockApi() {
         if (!o.ativa) continue;
         if (companyId && o.companyId !== companyId) continue;
         for (const oc of o.ocorrencias) {
-          if (!oc.dataVencimento.startsWith(mes)) continue;
-          const dia = Number(oc.dataVencimento.slice(8));
+          const inicio = oc.dataInicio || oc.dataVencimento;
+          const fim = oc.dataFim || oc.dataVencimento;
+          if (inicio > iso(diasNoMes) || fim < iso(1)) continue;
           const situacao = oc.status === "CONCLUIDA" ? "CONCLUIDA"
             : oc.dataVencimento < hojeStr ? "VENCIDA" : "PENDENTE";
-          porDia[dia] = [...(porDia[dia] || []), {
+          const item = {
             tipo: "obrigacao", id: oc.ocorrenciaId, obrigacaoId: o.obrigacaoId,
+            natureza: o.tipo || "OBRIGACAO", dataInicio: inicio, dataFim: fim, dataVencimento: oc.dataVencimento,
             // Mesma chave do backend: regra quando vem de regra, senão o nome normalizado.
             grupoChave: o.regraId || `nome:${String(o.nome || "").trim().toLowerCase()}`,
             titulo: o.nome, categoria: o.categoria,
@@ -7018,7 +7054,10 @@ export function createMockApi() {
             competencia: oc.competenciaRef, data: oc.dataVencimento, situacao,
             resolvido: oc.status === "CONCLUIDA",
             conclusaoAutomatica: Boolean(o.verificador), fonteConclusao: oc.fonteConclusao,
-          }];
+          };
+          for (let dia = 1; dia <= diasNoMes; dia += 1) {
+            if (iso(dia) >= inicio && iso(dia) <= fim) porDia[dia] = [...(porDia[dia] || []), item];
+          }
         }
       }
 
@@ -7034,7 +7073,7 @@ export function createMockApi() {
         dias: Array.from({ length: diasNoMes }, (_, i) => ({
           dia: i + 1,
           data: iso(i + 1),
-          itens: porDia[i + 1] || [],
+          itens: (porDia[i + 1] || []).map((item) => ({ ...item, data: item.data || iso(i + 1) })),
           // Feriado é propriedade do DIA, não item: não se clica nem se conclui.
           feriado: MOCK_FERIADOS[iso(i + 1)] || null,
         })),
@@ -7088,7 +7127,7 @@ export function createMockApi() {
         obrigacoes: lista,
         resumo: { pendentes, vencendoEm7Dias, vencidas },
         opcoes: {
-          periodicidades: ["MENSAL", "TRIMESTRAL", "ANUAL"],
+          periodicidades: ["AVULSA", "MENSAL", "TRIMESTRAL", "ANUAL"],
           ajustesDiaUtil: ["ANTECIPAR", "POSTERGAR", "MANTER"],
           verificadores: [
             { chave: "APURACAO_TRANSMITIDA", rotulo: "Quando a apuração da competência for transmitida" },
@@ -7100,6 +7139,7 @@ export function createMockApi() {
     async createObrigacao(companyId, dados) {
       await delay(90);
       const empresa = mockCompanies.find((c) => c.companyId === companyId);
+      if (!empresa) return { ok: false, error: "empresa_nao_encontrada", message: "Escolha uma empresa da carteira." };
       const obrigacao = mockCriarObrigacao(companyId, empresa?.razao || null, dados);
       mockObrigacoes.push(obrigacao);
       return { ok: true, obrigacao, ocorrenciasCriadas: obrigacao.ocorrencias.length };
@@ -7109,12 +7149,26 @@ export function createMockApi() {
       const i = mockObrigacoes.findIndex((o) => o.obrigacaoId === obrigacaoId);
       if (i < 0) return { ok: false, error: "nao_encontrada", message: "Obrigação não encontrada." };
       const antes = mockObrigacoes[i];
+      if (antes.periodicidade === "AVULSA" && antes.ocorrencias.some((oc) => oc.status === "CONCLUIDA")
+        && ["dataInicio", "dataFim", "dataVencimento"].some((campo) => patch[campo] !== undefined && patch[campo] !== antes[campo])) {
+        return { ok: false, error: "ocorrencia_concluida", message: "Reabra a ocorrência antes de editar seu período." };
+      }
+      if (patch.periodicidade && (patch.periodicidade === "AVULSA") !== (antes.periodicidade === "AVULSA")) {
+        return { ok: false, error: "periodicidade_incompativel", message: "Crie outro item para mudar entre avulsa e recorrente." };
+      }
       // Concluída é histórico: sobrevive à regeração, igual ao backend.
       const concluidas = antes.ocorrencias.filter((oc) => oc.status === "CONCLUIDA");
       const nova = mockCriarObrigacao(antes.companyId, antes.empresa, { ...antes, ...patch });
       nova.obrigacaoId = antes.obrigacaoId;
+      const camposJanela = ["dataInicio", "dataFim", "dataVencimento", "diasPreparacao", "diaVencimento", "mesReferencia", "ajusteDiaUtil", "periodicidade"];
+      const mudouJanela = camposJanela.some((campo) => patch[campo] !== undefined && String(nova[campo]) !== String(antes[campo]));
       const jaTem = new Set(concluidas.map((oc) => oc.dataVencimento));
-      nova.ocorrencias = [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento))]
+      const ciclosConcluidos = new Set(concluidas.map((oc) => oc.competenciaRef));
+      nova.ocorrencias = [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento) && !ciclosConcluidos.has(oc.competenciaRef)).map((oc) => {
+        const anterior = antes.periodicidade === "AVULSA" ? antes.ocorrencias[0] : antes.ocorrencias.find((x) => x.dataVencimento === oc.dataVencimento || (x.janelaPersonalizada && x.competenciaRef === oc.competenciaRef));
+        if (anterior && !mudouJanela) return anterior;
+        return anterior ? { ...oc, ocorrenciaId: anterior.ocorrenciaId, janelaPersonalizada: false } : oc;
+      })]
         .sort((a, b) => a.dataVencimento.localeCompare(b.dataVencimento));
       if (nova.ativa === false) nova.ocorrencias = concluidas;
       mockObrigacoes[i] = nova;
@@ -7144,6 +7198,29 @@ export function createMockApi() {
         oc.concluidaEm = new Date().toISOString();
         oc.fonteConclusao = "MANUAL";
         return { ok: true, ocorrencia: oc };
+      }
+      return { ok: false, error: "nao_encontrada" };
+    },
+    async updateOcorrencia(ocorrenciaId, patch) {
+      await delay(60);
+      for (const o of mockObrigacoes) {
+        const oc = o.ocorrencias.find((x) => x.ocorrenciaId === ocorrenciaId);
+        if (!oc) continue;
+        if (oc.status === "CONCLUIDA") return { ok: false, error: "ocorrencia_concluida", message: "Reabra a ocorrência antes de editar seu período." };
+        if (patch.dataVencimento !== undefined) return { ok: false, error: "vencimento_nao_editavel", message: "Editar o período não altera o vencimento." };
+        const datas = [patch.dataInicio, patch.dataFim];
+        const validas = datas.every((v) => {
+          const d = new Date(`${v}T00:00:00.000Z`);
+          return /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) && !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+        });
+        if (!validas || patch.dataFim < patch.dataInicio) return { ok: false, error: "periodo_invalido", message: "Informe início e fim válidos, nesta ordem." };
+        if (o.tipo === "TAREFA" && o.ocorrencias.some((outra) => outra.ocorrenciaId !== ocorrenciaId && outra.dataVencimento === patch.dataFim)) return { ok: false, status: 409, error: "prazo_em_uso", message: "Já existe outro ciclo desta tarefa com esse prazo. Escolha uma data diferente." };
+        oc.dataInicio = patch.dataInicio;
+        oc.dataFim = patch.dataFim;
+        oc.janelaPersonalizada = true;
+        if (o.tipo === "TAREFA") oc.dataVencimento = patch.dataFim;
+        if (o.periodicidade === "AVULSA") { o.dataInicio = oc.dataInicio; o.dataFim = oc.dataFim; o.dataVencimento = oc.dataVencimento; }
+        return { ok: true, ocorrencia: { ...oc } };
       }
       return { ok: false, error: "nao_encontrada" };
     },

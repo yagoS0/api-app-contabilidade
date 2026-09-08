@@ -11,30 +11,27 @@
 // Visão do escritório por padrão, com filtro de empresa opcional — a pergunta é "o que eu preciso
 // entregar", não "o que falta nesta empresa".
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { Button } from "../../../components/ui/Button";
 import { BackButton } from "../../../components/ui/BackButton";
 import { lerFalhaDeCarga, SEM_RESPOSTA } from "../../../lib/falhaDeCarga";
-import { calcularPreviaVencimentos } from "../lib/previaVencimentos";
+import { ModalObrigacao } from "./ModalObrigacao";
 import { RegrasObrigacao } from "./renderRegrasObrigacao";
 
 const COR = {
-  fundo: "#21222C", borda: "#44475A", texto: "#F8F8F2", suave: "#A7B0C0",
+  fundo: "var(--bg-surface)", borda: "var(--border)", texto: "var(--text)", suave: "var(--text-muted)",
   pendente: "#8BE9FD", vencida: "#FF5757", concluida: "#50FA7B", alerta: "#FFB347",
   automatica: "#BD93F9",
 };
 
-const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-
-const ROTULO_PERIODICIDADE = { MENSAL: "Mensal", TRIMESTRAL: "Trimestral", ANUAL: "Anual" };
-const ROTULO_AJUSTE = {
-  ANTECIPAR: "Antecipa para o dia útil anterior",
-  POSTERGAR: "Adia para o próximo dia útil",
-  MANTER: "Mantém a data, mesmo sem ser dia útil",
-};
+const ROTULO_PERIODICIDADE = { AVULSA: "Uma vez", MENSAL: "Mensal", TRIMESTRAL: "Trimestral", ANUAL: "Anual" };
 
 const fmtData = (iso) => (iso ? iso.split("-").reverse().join("/") : "—");
+const ocorrenciasDoFiltro = (o, inicio, fim, situacao) => (o.ocorrencias || []).filter((oc) =>
+  (!fim || (oc.dataInicio || oc.dataVencimento) <= fim)
+  && (!inicio || (oc.dataFim || oc.dataVencimento) >= inicio)
+  && (!situacao || oc.situacao === situacao));
 
 function Selo({ cor, children, title }) {
   return (
@@ -70,7 +67,7 @@ function CartaoResumo({ rotulo, valor, cor, indisponivel, legenda, motivo }) {
       <div style={{ fontSize: "1.5rem", fontWeight: 700, color: indisponivel ? COR.suave : cor, lineHeight: 1.1 }}>
         {indisponivel ? SEM_RESPOSTA : valor}
       </div>
-      <div style={{ fontSize: "0.75rem", color: COR.suave }}>{rotulo}</div>
+      <div style={{ fontSize: "0.875rem", color: COR.suave }}>{rotulo}</div>
       {indisponivel && legenda && (
         // Vermelho só quando é FALHA — "carregando" não é bloqueio, e gastar a cor nele a esvazia.
         <div style={{ fontSize: "0.72rem", color: legenda.falhou ? COR.vencida : COR.suave, marginTop: 2 }}>
@@ -82,11 +79,11 @@ function CartaoResumo({ rotulo, valor, cor, indisponivel, legenda, motivo }) {
 }
 
 const campo = {
-  background: "#1F2029", border: `1px solid ${COR.borda}`, borderRadius: 6,
-  color: COR.texto, padding: "7px 10px", fontSize: "0.85rem", width: "100%", boxSizing: "border-box",
+  background: "var(--bg-page)", border: `1px solid ${COR.borda}`, borderRadius: 6,
+  color: COR.texto, padding: "9px 10px", minHeight: 40, fontSize: "0.95rem", width: "100%", boxSizing: "border-box",
   colorScheme: "dark",
 };
-const rotuloTexto = { display: "block", fontSize: "0.75rem", color: COR.suave, marginBottom: 3 };
+const rotuloTexto = { display: "block", fontSize: "0.875rem", color: COR.suave, marginBottom: 3 };
 
 /**
  * Campo com o input DENTRO do label. Antes o label era irmão do input, e aí clicar no rótulo não
@@ -102,224 +99,57 @@ function Campo({ label, children, largura }) {
   );
 }
 
-/** Um passo só: sem catálogo, não há o que escolher antes de configurar. */
-function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, salvando, erro }) {
-  const editando = Boolean(inicial?.obrigacaoId);
-  const [form, setForm] = useState(() => ({
-    companyId: inicial?.companyId || empresas[0]?.companyId || "",
-    nome: inicial?.nome || "",
-    categoria: inicial?.categoria || "",
-    periodicidade: inicial?.periodicidade || "MENSAL",
-    diaVencimento: inicial?.diaVencimento || 20,
-    mesReferencia: inicial?.mesReferencia || 1,
-    defasagemMeses: inicial?.defasagemMeses ?? 1,
-    antecedenciaLembreteDias: inicial?.antecedenciaLembreteDias ?? 5,
-    ajusteDiaUtil: inicial?.ajusteDiaUtil || "ANTECIPAR",
-    verificador: inicial?.verificador || "",
-    // Só existe no cadastro NOVO, e só quando o vencimento deste mês já passou — ver a caixa lá
-    // embaixo. Não é campo da obrigação: não é salvo, não é editável depois.
-    incluirVencidoDoMes: false,
-  }));
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-
-  // Preview em tempo real: o contador confere a regra vendo as datas, não lendo a configuração.
-  //
-  // ⚠ DATA QUE JÁ PASSOU NÃO É "PRÓXIMO VENCIMENTO". A prévia partia do mês corrente e anunciava o
-  // vencimento deste mês mesmo depois de vencido — e o backend o criava, deixando a obrigação
-  // VENCIDA em vermelho no instante em que foi cadastrada. O passado sai da lista e vira uma
-  // ESCOLHA declarada (a caixa abaixo), porque só o contador sabe se aquela entrega de fato
-  // atrasou naquela empresa.
-  const previa = useMemo(
-    () => calcularPreviaVencimentos(form, new Date()),
-    [form.periodicidade, form.mesReferencia, form.diaVencimento, form.ajusteDiaUtil],
-  );
-
-  // Marcar "já venceu" numa obrigação que passa a existir agora só faz sentido no cadastro novo.
-  const podeMarcarVencido = !editando && Boolean(previa.jaVencida);
-
-  return (
-    <div
-      role="dialog" aria-modal="true" aria-label={editando ? "Editar obrigação" : "Nova obrigação"}
-      onClick={(e) => { if (e.target === e.currentTarget) onFechar(); }}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16, overflowY: "auto" }}
-    >
-      <form
-        // A caixa só vale enquanto a data passada existe: mudar o dia depois de marcá-la não pode
-        // deixar a escolha "pegada" num vencimento que não é mais retroativo.
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSalvar({ ...form, incluirVencidoDoMes: podeMarcarVencido && form.incluirVencidoDoMes });
-        }}
-        style={{ width: "100%", maxWidth: 560, background: "#282A36", border: `1px solid ${COR.borda}`, borderRadius: 12, padding: 20, color: COR.texto }}
-      >
-        <h3 style={{ margin: "0 0 14px", fontSize: "1.05rem" }}>
-          {editando ? "Editar obrigação" : "Nova obrigação"}
-        </h3>
-
-        {erro && (
-          <div style={{ padding: "8px 10px", borderRadius: 6, background: "rgba(255,71,87,0.12)", border: "1px solid var(--danger)", color: "var(--danger)", marginBottom: 12, fontSize: "0.8rem" }}>
-            {erro}
-          </div>
-        )}
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <Campo label="Nome" largura="1 / -1">
-            <input
-              autoFocus required value={form.nome} onChange={(e) => set("nome", e.target.value)}
-              placeholder="Ex.: Transmitir apuração do Simples" style={campo}
-            />
-          </Campo>
-
-          {!editando && (
-            <Campo label="Empresa">
-              <select value={form.companyId} onChange={(e) => set("companyId", e.target.value)} style={campo}>
-                {empresas.map((e) => <option key={e.companyId} value={e.companyId}>{e.razao}</option>)}
-              </select>
-            </Campo>
-          )}
-
-          <Campo label="Categoria">
-            <input
-              value={form.categoria} onChange={(e) => set("categoria", e.target.value)}
-              placeholder="fiscal, trabalhista…" list="categorias-obrigacao" style={campo}
-            />
-          </Campo>
-
-          <Campo label="Periodicidade">
-            <select value={form.periodicidade} onChange={(e) => set("periodicidade", e.target.value)} style={campo}>
-              {(opcoes?.periodicidades || []).map((p) => (
-                <option key={p} value={p}>{ROTULO_PERIODICIDADE[p] || p}</option>
-              ))}
-            </select>
-          </Campo>
-
-          <Campo label="Dia do vencimento">
-            <input
-              type="number" min="1" max="31" value={form.diaVencimento}
-              onChange={(e) => set("diaVencimento", e.target.value)} style={campo}
-            />
-          </Campo>
-
-          {form.periodicidade !== "MENSAL" && (
-            <Campo label={form.periodicidade === "ANUAL" ? "Mês" : "Primeiro mês do ciclo"}>
-              <select value={form.mesReferencia} onChange={(e) => set("mesReferencia", e.target.value)} style={campo}>
-                {MESES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-              </select>
-            </Campo>
-          )}
-
-          <Campo label="Se cair em fim de semana ou feriado" largura="1 / -1">
-            <select value={form.ajusteDiaUtil} onChange={(e) => set("ajusteDiaUtil", e.target.value)} style={campo}>
-              {(opcoes?.ajustesDiaUtil || []).map((a) => (
-                <option key={a} value={a}>{ROTULO_AJUSTE[a] || a}</option>
-              ))}
-            </select>
-          </Campo>
-
-          <Campo label="Refere-se à competência de">
-            <select value={form.defasagemMeses} onChange={(e) => set("defasagemMeses", e.target.value)} style={campo}>
-              <option value={0}>Mesmo mês do vencimento</option>
-              <option value={1}>1 mês antes</option>
-              <option value={2}>2 meses antes</option>
-              <option value={3}>3 meses antes</option>
-              <option value={5}>5 meses antes</option>
-              <option value={12}>12 meses antes</option>
-            </select>
-          </Campo>
-
-          <Campo label="Avisar com antecedência de">
-            <input
-              type="number" min="0" max="90" value={form.antecedenciaLembreteDias}
-              onChange={(e) => set("antecedenciaLembreteDias", e.target.value)} style={campo}
-            />
-          </Campo>
-
-          <Campo label="Concluir sozinha" largura="1 / -1">
-            <select value={form.verificador} onChange={(e) => set("verificador", e.target.value)} style={campo}>
-              <option value="">Eu marco quando concluir</option>
-              {(opcoes?.verificadores || []).map((v) => (
-                <option key={v.chave} value={v.chave}>{v.rotulo}</option>
-              ))}
-            </select>
-          </Campo>
-        </div>
-
-        <div style={{ marginTop: 12, padding: "8px 10px", background: COR.fundo, borderRadius: 6, border: `1px solid ${COR.borda}`, fontSize: "0.78rem", color: COR.suave }}>
-          Próximos vencimentos: <strong style={{ color: COR.texto }}>{previa.proximas.map(fmtData).join(" · ") || "—"}</strong>
-          {previa.jaVencida && (
-            <div style={{ marginTop: 6, color: COR.alerta }}>
-              O vencimento deste mês ({fmtData(previa.jaVencida)}) já passou.
-              {podeMarcarVencido ? (
-                <label style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 4, color: COR.texto }}>
-                  <input
-                    type="checkbox"
-                    checked={form.incluirVencidoDoMes}
-                    onChange={(e) => set("incluirVencidoDoMes", e.target.checked)}
-                  />
-                  <span>
-                    Registrar {fmtData(previa.jaVencida)} como pendência em atraso — marque só se esta
-                    entrega realmente não foi feita.
-                  </span>
-                </label>
-              ) : (
-                <> Ele não vira pendência: a obrigação começa no próximo.</>
-              )}
-            </div>
-          )}
-          {/* ⚠ O rótulo do campo fala em feriado; esta conta, que roda no navegador, só conhece
-              sábado e domingo. Os feriados vivem na tabela `Feriado` do servidor (semeada por
-              `apps/api/scripts/semear-feriados.mjs`), e os municipais dependem do município da
-              empresa — quem os aplica é o servidor, ao gerar os vencimentos. Inventar um calendário
-              aqui seria pior que declarar o alcance da estimativa. */}
-          <div style={{ marginTop: 4, fontSize: "0.72rem" }}>
-            estimativa: considera só fim de semana. Os feriados cadastrados entram quando o servidor
-            gera os vencimentos.
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
-          <Button type="button" variant="secondary" onClick={onFechar} disabled={salvando}>Cancelar</Button>
-          <Button type="submit" variant="primary" disabled={salvando}>
-            {salvando ? "Salvando…" : editando ? "Salvar" : "Criar obrigação"}
-          </Button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-export function ObrigacoesPage({ api, empresas = [], onBack }) {
+export function ObrigacoesPage({ api, empresas = [], onBack, onBackLabel = "Voltar ao calendário", initialCompanyId = "", initialCreate = null, initialPeriod = null, initialOccurrenceId = null, onCreated, onViewDate }) {
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);       // falha de AÇÃO (concluir, excluir)
   const [falha, setFalha] = useState(null);     // falha de CARGA — some com a lista, não com a ação
   const [aviso, setAviso] = useState(null);
-  const [companyId, setCompanyId] = useState("");
+  const [companyId, setCompanyId] = useState(initialCompanyId || initialCreate?.companyId || "");
   const [busca, setBusca] = useState("");
   const [filtroSituacao, setFiltroSituacao] = useState("");
-  const [modal, setModal] = useState(null); // { inicial }
+  const [modal, setModal] = useState(() => initialCreate ? { inicial: initialCreate } : null); // { inicial }
   const [salvando, setSalvando] = useState(false);
   const [erroModal, setErroModal] = useState(null);
   const [verRegras, setVerRegras] = useState(false);
+  const [salvoEm, setSalvoEm] = useState(null);
+  const [periodoInicio, setPeriodoInicio] = useState(initialPeriod?.dataInicio || "");
+  const [periodoFim, setPeriodoFim] = useState(initialPeriod?.dataFim || "");
+  const [expandidas, setExpandidas] = useState({});
+  const ocorrenciaAberta = useRef(null);
+  const cargaId = useRef(0);
 
   const carregar = useCallback(async () => {
     if (!api) return;
+    const id = ++cargaId.current;
     setCarregando(true);
+    setDados(null);
     setErro(null);
     setFalha(null);
     try {
       const out = await api.listObrigacoes({ companyId: companyId || undefined });
+      if (id !== cargaId.current) return;
       if (out?.ok === false) {
         setFalha(lerFalhaDeCarga(out, { assunto: "as obrigações" }));
         setDados(null);
       } else setDados(out);
     } catch (err) {
+      if (id !== cargaId.current) return;
       setFalha(lerFalhaDeCarga(err, { assunto: "as obrigações" }));
       setDados(null);
-    } finally { setCarregando(false); }
+    } finally { if (id === cargaId.current) setCarregando(false); }
   }, [api, companyId]);
 
   useEffect(() => { carregar(); }, [carregar]);
+  useEffect(() => {
+    if (!initialOccurrenceId || ocorrenciaAberta.current === initialOccurrenceId || !dados) return;
+    const item = dados.obrigacoes?.find((o) => o.ocorrencias?.some((oc) => oc.ocorrenciaId === initialOccurrenceId));
+    if (!item) return;
+    ocorrenciaAberta.current = initialOccurrenceId;
+    const oc = item.ocorrencias.find((entry) => entry.ocorrenciaId === initialOccurrenceId);
+    if (oc.situacao === "CONCLUIDA") { setBusca(item.nome); return; }
+    setModal({ inicial: item.periodicidade === "AVULSA" ? { ...item, dataInicio: oc.dataInicio, dataFim: oc.dataFim, dataVencimento: oc.dataVencimento } : { ...item, ...oc } });
+  }, [dados, initialOccurrenceId]);
 
   useEffect(() => {
     if (!aviso) return undefined;
@@ -332,15 +162,10 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
     const termo = busca.trim().toLowerCase();
     return lista.filter((o) => {
       if (termo && !`${o.nome} ${o.categoria || ""} ${o.empresa || ""}`.toLowerCase().includes(termo)) return false;
-      if (filtroSituacao) {
-        const proxima = o.ocorrencias?.find((oc) => oc.situacao !== "CONCLUIDA");
-        const temVencida = o.ocorrencias?.some((oc) => oc.situacao === "VENCIDA");
-        if (filtroSituacao === "VENCIDA" && !temVencida) return false;
-        if (filtroSituacao === "PENDENTE" && (!proxima || temVencida)) return false;
-      }
+      if ((periodoInicio || periodoFim || filtroSituacao) && !ocorrenciasDoFiltro(o, periodoInicio, periodoFim, filtroSituacao).length) return false;
       return true;
     });
-  }, [dados, busca, filtroSituacao]);
+  }, [dados, busca, filtroSituacao, periodoInicio, periodoFim]);
 
   const categorias = useMemo(
     () => [...new Set((dados?.obrigacoes || []).map((o) => o.categoria).filter(Boolean))],
@@ -353,6 +178,8 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
     try {
       const corpo = {
         nome: form.nome,
+        tipo: form.tipo, descricao: form.descricao || null, diasPreparacao: Number(form.diasPreparacao),
+        ...(form.periodicidade === "AVULSA" ? { dataInicio: form.dataInicio, dataFim: form.dataFim, dataVencimento: form.tipo === "TAREFA" ? form.dataFim : form.dataVencimento } : {}),
         categoria: form.categoria || null,
         periodicidade: form.periodicidade,
         diaVencimento: Number(form.diaVencimento),
@@ -362,21 +189,34 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
         ajusteDiaUtil: form.ajusteDiaUtil,
         verificador: form.verificador || null,
       };
-      const out = modal?.inicial?.obrigacaoId
+      const out = modal?.inicial?.ocorrenciaId
+        ? await api.updateOcorrencia(modal.inicial.ocorrenciaId, { dataInicio: form.dataInicio, dataFim: form.dataFim })
+        : modal?.inicial?.obrigacaoId
         ? await api.updateObrigacao(modal.inicial.obrigacaoId, corpo)
         // ⚠ Só no CADASTRO. `incluirVencidoDoMes` é a declaração de que o vencimento já passado
         // desta empresa é atraso de verdade; editar depois não pode fabricar pendência retroativa.
         : await api.createObrigacao(form.companyId, { ...corpo, incluirVencidoDoMes: form.incluirVencidoDoMes === true });
       if (out?.ok === false) { setErroModal(out.message || "Não foi possível salvar."); return; }
       setModal(null);
+      const dataInicio = form.periodicidade === "AVULSA" || modal?.inicial?.ocorrenciaId ? form.dataInicio : out?.obrigacao?.ocorrencias?.[0]?.dataInicio;
+      const dataFim = form.periodicidade === "AVULSA" || modal?.inicial?.ocorrenciaId ? form.dataFim : out?.obrigacao?.ocorrencias?.[0]?.dataFim;
+      setSalvoEm(dataInicio ? { data: dataInicio, companyId: form.companyId } : null);
+      onCreated?.({ out, companyId: form.companyId, dataInicio, dataFim });
+      const ampliarInicio = dataInicio && periodoInicio && dataInicio < periodoInicio;
+      const ampliarFim = dataFim && periodoFim && dataFim > periodoFim;
+      if (ampliarInicio) setPeriodoInicio(dataInicio);
+      if (ampliarFim) setPeriodoFim(dataFim);
+      const limparFiltros = Boolean(filtroSituacao || busca.trim());
+      if (limparFiltros) { setFiltroSituacao(""); setBusca(""); }
       // Diz o que aconteceu de fato, não um "salvo" liso: o número é a prova de que entrou no
       // calendário.
       setAviso(
-        out.ocorrenciasCriadas
-          ? `Obrigação salva — ${out.ocorrenciasCriadas} vencimento(s) no calendário.`
-          : "Obrigação salva.",
+        (out.ocorrenciasCriadas
+          ? `Item salvo — ${out.ocorrenciasCriadas} ocorrência(s) no calendário.`
+          : "Item salvo.") + (ampliarInicio || ampliarFim ? " O filtro de período foi ampliado para mostrar o item salvo." : "") + (limparFiltros ? " Busca e situação foram limpas para mostrar o item salvo." : ""),
       );
-      await carregar();
+      if (form.companyId && form.companyId !== companyId) setCompanyId(form.companyId);
+      else await carregar();
     } catch (err) {
       setErroModal(err?.message || "Não foi possível salvar.");
     } finally { setSalvando(false); }
@@ -430,18 +270,18 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
   // dashboard — daí o AppShell aqui dentro, como nas outras páginas de topo.
   return (
     <AppShell>
-    <section aria-label="Obrigações">
+    <section aria-label="Tarefas e obrigações">
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-        {onBack && <BackButton onClick={onBack} />}
-        <h1 style={{ margin: 0, color: COR.texto, fontSize: "1.25rem" }}>Obrigações</h1>
-        <span style={{ color: COR.suave, fontSize: "0.78rem" }}>
-          o que o escritório precisa entregar
+        {onBack && <BackButton onClick={onBack} label={onBackLabel} />}
+        <h1 style={{ margin: 0, color: COR.texto, fontSize: "1.25rem" }}>Tarefas e obrigações</h1>
+        <span style={{ color: COR.suave, fontSize: "0.875rem" }}>
+          organize o trabalho e acompanhe os prazos
         </span>
-        {carregando && <span style={{ color: COR.suave, fontSize: "0.75rem" }}>carregando…</span>}
+        {carregando && <span style={{ color: COR.suave, fontSize: "0.875rem" }}>carregando…</span>}
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant="secondary" onClick={() => setVerRegras(true)}>Regras do escritório</Button>
-          <Button variant="primary" onClick={() => { setErroModal(null); setModal({ inicial: null }); }}>
-            + Nova obrigação
+          <Button variant="secondary" onClick={() => setVerRegras(true)}>Regras e recorrências</Button>
+          <Button variant="primary" onClick={() => { setErroModal(null); setModal({ inicial: { companyId } }); }}>
+            + Nova tarefa ou obrigação
           </Button>
         </div>
       </div>
@@ -457,6 +297,7 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
         </div>
       )}
 
+      {salvoEm && onViewDate && <div style={{ marginBottom: 14 }}><Button variant="secondary" onClick={() => onViewDate(salvoEm.data, salvoEm.companyId)}>Ver no calendário · {fmtData(salvoEm.data)}</Button></div>}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <CartaoResumo
           rotulo="Pendentes" valor={resumo?.pendentes} cor={COR.pendente}
@@ -474,21 +315,27 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <input
-          type="search" value={busca} onChange={(e) => setBusca(e.target.value)}
+          aria-label="Buscar tarefas e obrigações" type="search" value={busca} onChange={(e) => setBusca(e.target.value)}
           placeholder="Buscar por nome, categoria ou empresa"
           style={{ ...campo, width: "auto", minWidth: 260, flex: "1 1 260px" }}
         />
-        <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} style={{ ...campo, width: "auto" }}>
+        <select aria-label="Filtrar empresa" value={companyId} onChange={(e) => setCompanyId(e.target.value)} style={{ ...campo, width: "auto" }}>
           <option value="">Todas as empresas</option>
           {empresas.map((e) => <option key={e.companyId} value={e.companyId}>{e.razao}</option>)}
         </select>
-        <select value={filtroSituacao} onChange={(e) => setFiltroSituacao(e.target.value)} style={{ ...campo, width: "auto" }}>
+        <select aria-label="Filtrar situação" value={filtroSituacao} onChange={(e) => setFiltroSituacao(e.target.value)} style={{ ...campo, width: "auto" }}>
           <option value="">Toda situação</option>
           <option value="PENDENTE">Só pendentes</option>
           <option value="VENCIDA">Só vencidas</option>
+          <option value="CONCLUIDA">Com ocorrências concluídas</option>
         </select>
       </div>
 
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        <Campo label="Período a partir de"><input type="date" value={periodoInicio} onChange={(e) => setPeriodoInicio(e.target.value)} style={campo} /></Campo>
+        <Campo label="Período até"><input type="date" value={periodoFim} onChange={(e) => setPeriodoFim(e.target.value)} style={campo} /></Campo>
+        {(periodoInicio || periodoFim) && <Button variant="secondary" onClick={() => { setPeriodoInicio(""); setPeriodoFim(""); }}>Limpar período</Button>}
+      </div>
       <datalist id="categorias-obrigacao">
         {categorias.map((c) => <option key={c} value={c} />)}
       </datalist>
@@ -504,7 +351,7 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
             {falha.titulo}
           </div>
           <div style={{ color: COR.texto, fontSize: "0.8rem", marginBottom: 4 }}>{falha.motivo}</div>
-          <div style={{ color: COR.suave, fontSize: "0.78rem", marginBottom: 10 }}>
+          <div style={{ color: COR.suave, fontSize: "0.875rem", marginBottom: 10 }}>
             Isto não quer dizer que não há obrigações — quer dizer que esta tela não conseguiu vê-las.
           </div>
           <Button variant="secondary" onClick={carregar}>Tentar de novo</Button>
@@ -514,7 +361,7 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
       {!carregando && !falha && !obrigacoes.length && (
         <div style={{ padding: "28px 16px", textAlign: "center", background: COR.fundo, border: `1px dashed ${COR.borda}`, borderRadius: 8 }}>
           <div style={{ color: COR.texto, fontWeight: 600, marginBottom: 4 }}>
-            {dados?.obrigacoes?.length ? "Nada com esses filtros." : "Nenhuma obrigação cadastrada."}
+            {dados?.obrigacoes?.length ? "Nada com esses filtros." : "Nenhuma tarefa ou obrigação cadastrada."}
           </div>
           <div style={{ color: COR.suave, fontSize: "0.8rem" }}>
             {dados?.obrigacoes?.length
@@ -526,7 +373,10 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {obrigacoes.map((o) => {
-          const proxima = o.ocorrencias?.find((oc) => oc.situacao !== "CONCLUIDA") || null;
+          const ocorrencias = ocorrenciasDoFiltro(o, periodoInicio, periodoFim, filtroSituacao);
+          if (!ocorrencias.length && (periodoInicio || periodoFim || filtroSituacao)) return null;
+          const proxima = ocorrencias.find((oc) => oc.situacao !== "CONCLUIDA") || null;
+          const exibidas = expandidas[o.obrigacaoId] ? ocorrencias : [proxima || ocorrencias[0]].filter(Boolean);
           const situacao = proxima?.situacao || "CONCLUIDA";
           const corSituacao =
             situacao === "VENCIDA" ? COR.vencida : situacao === "CONCLUIDA" ? COR.concluida : COR.pendente;
@@ -538,10 +388,11 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ width: 8, height: 8, borderRadius: 999, background: o.cor || corSituacao, flex: "0 0 auto" }} />
                 <strong style={{ color: COR.texto, fontSize: "0.92rem" }}>{o.nome}</strong>
+                <Selo cor={COR.suave}>{o.tipo === "TAREFA" ? "Tarefa" : "Obrigação"}</Selo>
                 <Selo cor={COR.suave}>{ROTULO_PERIODICIDADE[o.periodicidade] || o.periodicidade}</Selo>
                 {o.categoria && <Selo cor={COR.suave}>{o.categoria}</Selo>}
                 {!companyId && o.empresa && (
-                  <span style={{ color: COR.suave, fontSize: "0.78rem" }}>· {o.empresa}</span>
+                  <span style={{ color: COR.suave, fontSize: "0.875rem" }}>· {o.empresa}</span>
                 )}
                 {o.conclusaoAutomatica && (
                   <Selo cor={COR.automatica} title="O sistema conclui sozinho ao observar o serviço feito">
@@ -567,12 +418,22 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
                   {proxima && !o.conclusaoAutomatica && (
                     <Button variant="secondary" onClick={() => concluir(proxima.ocorrenciaId)}>✓ Concluir</Button>
                   )}
-                  <Button variant="secondary" onClick={() => { setErroModal(null); setModal({ inicial: o }); }}>Editar</Button>
+                  {!(o.periodicidade === "AVULSA" && o.ocorrencias?.some((oc) => oc.situacao === "CONCLUIDA")) && <Button variant="secondary" onClick={() => { setErroModal(null); const oc = o.ocorrencias?.[0]; setModal({ inicial: o.periodicidade === "AVULSA" && oc ? { ...o, dataInicio: oc.dataInicio || o.dataInicio, dataFim: oc.dataFim || o.dataFim, dataVencimento: oc.dataVencimento || o.dataVencimento } : o }); }}>{o.periodicidade === "AVULSA" ? "Editar" : "Editar recorrência"}</Button>}
                   <Button variant="secondary" onClick={() => excluir(o)}>Excluir</Button>
                 </div>
               </div>
 
-              <div style={{ marginTop: 4, fontSize: "0.75rem", color: COR.suave }}>
+              {o.descricao && <p style={{ color: COR.suave, margin: "8px 0" }}>{o.descricao}</p>}
+              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                {exibidas.map((oc) => <div key={oc.ocorrenciaId} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", padding: "8px 0", borderTop: `1px solid ${COR.borda}` }}>
+                  <div style={{ flex: "1 1 260px", fontSize: "0.875rem" }}>Trabalho: {fmtData(oc.dataInicio || oc.dataVencimento)} até {fmtData(oc.dataFim || oc.dataVencimento)}<br /><span style={{ color: COR.suave }}>{o.tipo === "TAREFA" ? "Prazo da tarefa" : "Vencimento fiscal"}: {fmtData(oc.dataVencimento)} · {oc.situacao === "CONCLUIDA" ? "Concluída" : oc.situacao === "VENCIDA" ? "Vencida" : "Pendente"}</span></div>
+                  {onViewDate && <Button variant="secondary" onClick={() => onViewDate(oc.dataInicio || oc.dataVencimento, o.companyId)}>Ver no calendário</Button>}
+                  {oc.situacao !== "CONCLUIDA" && o.periodicidade !== "AVULSA" && <Button variant="secondary" onClick={() => { setErroModal(null); setModal({ inicial: { ...o, ...oc } }); }}>Editar ocorrência</Button>}
+                  {oc.situacao !== "CONCLUIDA" && !o.conclusaoAutomatica && oc !== proxima && <Button variant="secondary" onClick={() => concluir(oc.ocorrenciaId)}>Concluir ocorrência</Button>}
+                </div>)}
+                {ocorrencias.length > 1 && <div><Button variant="secondary" aria-expanded={Boolean(expandidas[o.obrigacaoId])} onClick={() => setExpandidas((atual) => ({ ...atual, [o.obrigacaoId]: !atual[o.obrigacaoId] }))}>{expandidas[o.obrigacaoId] ? "Recolher ocorrências" : `Ver todas as ${ocorrencias.length} ocorrências`}</Button></div>}
+              </div>
+              <div style={{ marginTop: 4, fontSize: "0.875rem", color: COR.suave }}>
                 {proxima?.competenciaRef && <>competência {proxima.competenciaRef} · </>}
                 {o.conclusaoAutomatica
                   ? "conclui sozinha quando o serviço for observado pelo sistema"

@@ -30,8 +30,9 @@ afterEach(() => { jest.useRealTimers(); });
 /** Abre "Nova obrigação" e põe o vencimento no dia 15 — que, em 16/08, já passou. */
 async function abrirModalComDia15(api) {
   render(<ObrigacoesPage api={api} empresas={EMPRESAS} />);
-  await screen.findByText("Nenhuma obrigação cadastrada.");
-  fireEvent.click(screen.getByRole("button", { name: "+ Nova obrigação" }));
+  await screen.findByText("Nenhuma tarefa ou obrigação cadastrada.");
+  fireEvent.click(screen.getByRole("button", { name: "+ Nova tarefa ou obrigação" }));
+  fireEvent.change(screen.getByLabelText("Repetição"), { target: { value: "MENSAL" } });
   fireEvent.change(screen.getByPlaceholderText("Ex.: Transmitir apuração do Simples"), {
     target: { value: "EFD-Contribuições" },
   });
@@ -43,7 +44,7 @@ describe("ObrigacoesPage — o modal de cadastro", () => {
     const api = { listObrigacoes: jest.fn().mockResolvedValue(LISTA), createObrigacao: jest.fn() };
     await abrirModalComDia15(api);
 
-    expect(screen.getByText(/15\/09\/2026/)).toBeInTheDocument();
+    expect(screen.getByText(/15\/09\/2026/, { selector: "strong" })).toBeInTheDocument();
     expect(screen.queryByText(/Próximos vencimentos:.*14\/08\/2026/)).not.toBeInTheDocument();
   });
 
@@ -97,8 +98,9 @@ describe("ObrigacoesPage — o modal de cadastro", () => {
   it("sem data passada não há caixa nenhuma — a escolha só existe quando faz sentido", async () => {
     const api = { listObrigacoes: jest.fn().mockResolvedValue(LISTA), createObrigacao: jest.fn() };
     render(<ObrigacoesPage api={api} empresas={EMPRESAS} />);
-    await screen.findByText("Nenhuma obrigação cadastrada.");
-    fireEvent.click(screen.getByRole("button", { name: "+ Nova obrigação" }));
+    await screen.findByText("Nenhuma tarefa ou obrigação cadastrada.");
+    fireEvent.click(screen.getByRole("button", { name: "+ Nova tarefa ou obrigação" }));
+  fireEvent.change(screen.getByLabelText("Repetição"), { target: { value: "MENSAL" } });
 
     expect(screen.queryByText(/já passou/)).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
@@ -138,7 +140,7 @@ describe("RegrasObrigacao — o wizard do escritório", () => {
   it("⚠ a prévia da regra não anuncia 14/08/2026 como próximo vencimento", async () => {
     await abrirPassoQuando();
     // O campo já nasce no dia 15 — foi a configuração do caso reproduzido.
-    expect(screen.getByText(/15\/09\/2026/)).toBeInTheDocument();
+    expect(screen.getByText(/15\/09\/2026/, { selector: "strong" })).toBeInTheDocument();
     expect(screen.queryByText(/Próximos vencimentos:.*14\/08\/2026/)).not.toBeInTheDocument();
   });
 

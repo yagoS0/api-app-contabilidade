@@ -1,6 +1,17 @@
 # CLAUDE.md — Web (apps/web)
 
-Frontend React 19 + Vite + TailwindCSS.
+## Calendário, tarefas e obrigações — 07/09/2026
+
+- A central e a criação ficam visíveis junto ao calendário da carteira e da empresa. `ModalObrigacao` usa o `Modal` compartilhado; preservar tokens existentes e não criar CSS por componente.
+- `app/hooks/useCalendarioNavigation.js` mantém o contexto da ida e volta: empresa, referência, visão, categorias e painéis. O retorno usa a origem da navegação; acesso direto à central tem fallback para `/companies`. A intenção de criação é consumida após salvar, evitando reabrir o formulário ao voltar.
+- Intervalos são inclusivos e usam datas civis. `data` continua representando vencimento; `dataInicio` e `dataFim` representam a janela. Eventos legados sem janela continuam no vencimento. O mesmo ID pode aparecer em vários dias: agenda, contadores e ações devem deduplicar por ocorrência.
+- A grade mostra faixas contínuas quebradas por semana e abre excedentes em modal. Painel lateral começa recolhido; telas estreitas começam em Agenda e a grade tem rolagem horizontal local. Não comprimir sete colunas para caber a qualquer custo.
+- TAREFA e AVULSA têm conclusão manual. Obrigações fiscais mantêm vencimento separado do trabalho; tarefa usa o fim como prazo. Editar uma avulsa preserva ID e histórico. Converter avulsa em recorrente exige outro cadastro.
+- `realApi.updateOcorrencia` e o mock mantêm o mesmo contrato de atualização de janela. Concluída exige reabertura; colisão de prazo com outro ciclo de tarefa recebe 409. O worker deve preservar janelas personalizadas.
+- Testes de comportamento: `calendarioIntervalos.test.js`, `calendarioNavigation.test.jsx`, `tarefasPorPeriodo.test.jsx` e suítes de calendário/obrigações. A nova API depende da migration documentada em `apps/api/CLAUDE.md`.
+
+
+Frontend React 19 + Vite, tokens CSS e estilos inline. Sem Tailwind.
 
 ## Estrutura
 
