@@ -2,6 +2,8 @@
 
 Esta revisão combina regressões de fluxo e contratos com conversas do modelo real. As fixtures são fictícias; não devem ser substituídas por históricos de clientes em um repositório público.
 
+**Estado em 08/09/2026:** alterações locais verificadas, homologação de conversação ainda pendente. A API do modelo interrompeu a segunda rodada com HTTP 400 e categoria `CREDITO_PROVEDOR`. Os últimos ajustes de perfis, prévia de ISS e limites dos encargos passaram nos testes locais, mas ainda precisam da repetição com o modelo real. Não houve publicação desta branch nem atualização da API.
+
 ## Falha de compatibilidade reproduzida
 
 Em 08/09/2026, uma saudação com o catálogo completo, Opus 5 e esforço medium falhou com HTTP 400: 19 parâmetros com unions, acima do limite combinado de 16. Converter campos em opcionais ou strings obrigatórias continuou falhando no limite interno de compilação. O mesmo catálogo foi aceito ao reservar a validação do schema de `preparar_emissao` ao servidor e manter as demais ferramentas strict.
@@ -9,6 +11,10 @@ Em 08/09/2026, uma saudação com o catálogo completo, Opus 5 e esforço medium
 Por isso apenas `preparar_emissao` usa `strict: false`. Sua entrada passa por validação de tipos, campos e objetos aninhados antes das consultas; depois passa pelo validador fiscal compartilhado. Campos ausentes não viram zero. A função apenas cria uma pendência: a emissão continua dependente da confirmação por código, das permissões e da autorização verificadas pelo servidor.
 
 A Anthropic descreve tanto limites agregados quanto limites internos e recomenda strict seletivo quando necessário: [structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs#schema-complexity-limits).
+
+Uma segunda prova com o catálogo ampliado de `fac7050` identificou outro HTTP 400: `Invalid schema: Enum value 'OPEN' does not match declared type '['string', 'null']'`. Os campos `listar_guias.status` e `listar_notas.direcao` combinavam enum e tipo anulável. A API real aceitou o catálogo completo ao representar somente esses dois campos como `anyOf: [{type: "string", enum: [...]}, {type: "null"}]`, respondendo HTTP 200 e `end_turn`. Os valores aceitos, o significado de null e as permissões continuam iguais; a preparação da emissão preserva sua validação local. A aceitação do schema anterior não era prova de compatibilidade do catálogo ampliado.
+
+Antes desse ajuste, os dois novos testes de contrato falharam e os outros 11 testes de `promptEEscopo` passaram. Após o helper localizado, a mesma regressão e as suítes `ferramentas`, `ferramentasContratos` e `revisaoCruzadaFerramentas` passaram **98 testes em quatro suítes**, sem chamadas externas. O probe real comprova que o catálogo compila; a qualidade das conversas continua sendo avaliada separadamente.
 
 ## Comportamento esperado
 
@@ -33,7 +39,23 @@ A execução iniciada às 19:30:40, horário de Brasília, passou **361 testes e
 
 O relatório bruto do Jest está no artefato privado `outputs/validacao-conversacao-integrada-final.json`, fora do repositório. Esta bateria usou modelo, transportes e banco isolados; o teste dos contratos chama os executores e serializers reais com dependências em memória. Não houve mensagem real, consulta fiscal externa, emissão ou cancelamento de nota.
 
-**A avaliação das conversas com o modelo real continua em andamento.** Este resultado local não encerra a homologação do chat nem substitui a verificação de persistência e concorrência em PostgreSQL, registrada separadamente. `git diff --check` passou; os avisos locais de conversão LF/CRLF não indicaram erros de whitespace.
+A rodada seguinte passou **375 testes em 22 suítes**, em 20,82 segundos, incluindo os schemas anuláveis, o diagnóstico de erro do provedor e onze casos de histórico de anexos. O runner passou seus **9 testes**. Esses resultados não substituem a avaliação das conversas nem a prova de persistência e concorrência em PostgreSQL, registrada separadamente. `git diff --check` passou; os avisos locais de conversão LF/CRLF não indicaram erros de whitespace.
+
+## Conversas do modelo e revisão independente
+
+A primeira comparação executou 15 cenários e 41 turnos em cada versão. Os checks automáticos aprovaram 13 cenários no baseline e 14 no candidato, mas a leitura independente dos 82 turnos encontrou falhas que esses checks não mediam: reenvio de documento sem pedido, narrativa falsa de falha anterior, regra de pagamento/encargos não retornada pelas ferramentas e orientação de confirmação sem a palavra `CONFIRMAR`. Portanto essas contagens não foram usadas como aprovação da conversa.
+
+Também foram corrigidas duas limitações do simulador: prestador e tomador tinham o mesmo CNPJ sintético em um cenário, e anexos bem-sucedidos não apareciam no histórico do turno seguinte. O cenário CNPJ original foi excluído da comparação qualitativa. O runner agora compartilha o formatador puro `evidenciaDoAnexo` com o serviço real. O formatador preserva identificação e eventos persistidos, distingue aceite de entrega/leitura e não inventa confirmação para registros legados ou indeterminados. O teste de histórico do runner falhou antes do ajuste e passou depois; no serviço, sete regressões falharam antes e os onze casos passaram depois.
+
+A orientação do modelo passou a preservar envios anteriores, atender reenvio explícito, reconhecer limites dos dados fiscais e citar a instrução completa de confirmação quando necessário. O catálogo esclarece que alíquota ausente não foi consultada nem conferida durante a preparação. A nova comparação utiliza os mesmos dados corrigidos e evidência de anexos nas duas versões. Cenários reservados repetem as situações de envio, reenvio, resultado parcial, encargos desconhecidos e confirmação exata. A revisão qualitativa continua obrigatória, mesmo quando os verificadores de estado aprovam.
+
+Na segunda rodada, os três conjuntos candidatos observaram chamadas às **14 ferramentas**. Isso comprova cobertura de escolha e chamada no simulador; não comprova integrações externas reais. O complemento executou o corpo real de preparação de emissão, com validação e declaração compartilhadas e dependências em memória. Preservou CPF, endereço, retenções e alíquota zero após correção, e distinguiu dois tomadores com nomes parecidos. A seleção de perfil revelou um desvio: depois de receber duas opções, o modelo voltou a preparar no mesmo turno. O serviço agora conserva essa exigência durante a resposta e só permite preparar em outro turno, com portão e sessão novamente verificados. A escolha explícita no turno seguinte continua funcionando.
+
+Nos cenários reservados, **oito conversas de documentos passaram na revisão independente**: três sequências contrato/cartão, dois reenvios explícitos e três pedidos com sucesso parcial. Foram 15 envios sintéticos, sem repetição não solicitada nem falsa entrega da nota que falhou. Dois cenários de encargos ainda extrapolaram a evidência: um inventou cálculo até o pagamento e ambos prometeram uma informação no PDF futuro. A preparação agora retorna valor atualizado e data final de cálculo como não apurados, conserva esse limite no resumo pendente e o prompt inclui um exemplo de resposta para a dúvida. A eficácia desta última correção ainda não foi medida no provedor por falta de créditos. As duas repetições reservadas de confirmação também não foram concluídas.
+
+O resumo de ISS compartilhado passou a mostrar “não informada; depende da configuração de emissão” quando a alíquota não foi informada. A seleção de um perfil não é apresentada como consulta ou aplicação de uma taxa ainda não resolvida; zero e outros valores explícitos são preservados. O teste usa o fonte deste checkout para evitar que um `node_modules` compartilhado com outro worktree avalie uma revisão antiga.
+
+A revisão local final passou **390 testes em 23 suítes**, em 6,749 segundos, mais **9 testes do runner**. Inclui a guarda de escolha de perfil, revogação de acesso antes de reutilizar opções, retomada no próximo turno, declaração da alíquota ausente e dados ainda não apurados no recálculo. Esses resultados são posteriores aos ajustes finais; as transcrições da segunda rodada são anteriores a eles e não devem ser apresentadas como homologação da versão final.
 
 ## Confirmação em PostgreSQL real — 08/09/2026
 

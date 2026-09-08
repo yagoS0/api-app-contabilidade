@@ -1,6 +1,6 @@
 // Dados integralmente sintéticos. Este módulo não importa banco, transporte nem serviços fiscais.
 export const NOW = new Date("2026-09-08T14:00:00.000Z");
-export const COMPANY = { razao: "Aurora Serviços de Teste Ltda.", cnpj: "11.222.333/0001-81" };
+export const COMPANY = { razao: "Aurora Serviços de Teste Ltda.", cnpj: "12.345.678/0001-95" };
 export const CUSTOMER_DOCUMENT = "11222333000181";
 export const ADDRESS = { cMun: "3304557", CEP: "20040002", xLgr: "Rua de Teste", nro: "10", xCpl: null, xBairro: "Centro" };
 const money = (n) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -44,10 +44,11 @@ function pendingResult(state, tipo, payload) {
   if (state.pending) state.oldPending.push({ ...state.pending, status: "substituida" });
   const codigo = ["A7K2", "B8L3", "C9M4", "D6N5"][state.nextCode++ % 4];
   const resumo = tipo === "EMITIR_NFSE" ? `Tomador: ${payload.tomadorNome}. Valor: ${money(payload.valor)}. Serviço: ${payload.descricao}. Competência: ${payload.competencia || "2026-09"}.`
-    : tipo === "CANCELAR_NFSE" ? `Cancelar a nota ${payload.notaId}. Motivo: ${payload.justificativa}.` : `Atualizar a guia ${payload.guideId}, com juros e multa conforme a apuração.`;
+    : tipo === "CANCELAR_NFSE" ? `Cancelar a nota ${payload.notaId}. Motivo: ${payload.justificativa}.` : `Atualizar a guia ${payload.guideId}, com juros e multa conforme a apuração. O valor atualizado e a data final de cálculo dos encargos ainda não foram apurados.`;
   const texto = `${resumo}\nPara confirmar, responda CONFIRMAR ${codigo}. Este pedido vale por 10 minutos. Nada foi executado.`;
   state.pending = { tipo, codigo, payload: tipo === "EMITIR_NFSE" ? emissionPayload(payload) : copy(payload), textoDeConfirmacao: texto, texto, status: "pendente" };
   return { ok: true, pendenciaCriada: true, codigo, textoDeConfirmacao: texto,
+    ...(tipo === "RECALCULAR_GUIA" ? { calculo: { apurado: false, valorAtualizado: null, dataFinalDosEncargos: null } } : {}),
     instrucao: "O sistema enviará o texto de confirmação exatamente como está. Diga apenas que o pedido foi preparado; nada foi executado." };
 }
 

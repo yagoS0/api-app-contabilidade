@@ -36,6 +36,25 @@ describe("o prompt", () => {
 });
 
 describe("as definições das ferramentas", () => {
+  it.each([
+    ["listar_guias", "status", ["OPEN", "OVERDUE", "PAID"]],
+    ["listar_notas", "direcao", ["emitidas", "recebidas"]],
+  ])("%s.%s preserva enum anulável sem o type array recusado pela API Anthropic", (ferramenta, campo, valores) => {
+    const schema = DEFINICOES.find(d => d.name === ferramenta).input_schema.properties[campo];
+    const alternativas = schema.anyOf || [schema];
+    // Regressão do probe real: enum + type:[string,null] recebia HTTP400 mesmo sendo JSON Schema.
+    // Cada enum enviado ao compilador tem um único tipo e todos os valores correspondem a ele.
+    for (const regra of alternativas.filter(r => r.enum)) {
+      expect(Array.isArray(regra.type)).toBe(false);
+      for (const valor of regra.enum) expect(valor === null ? "null" : typeof valor).toBe(regra.type);
+    }
+    const aceita = (regra, valor) => regra.anyOf
+      ? regra.anyOf.some(r => aceita(r, valor))
+      : (Array.isArray(regra.type) ? regra.type : [regra.type]).includes(valor === null ? "null" : typeof valor)
+        && (!regra.enum || regra.enum.includes(valor));
+    for (const valor of [...valores, null]) expect(aceita(schema, valor)).toBe(true);
+    for (const valor of ["INVALIDO", 0, false, {}, []]) expect(aceita(schema, valor)).toBe(false);
+  });
   it("o catálogo completo respeita os limites Anthropic de 16 unions e 24 opcionais", () => {
     let unions = 0, opcionais = 0;
     const visitar = (schema) => {

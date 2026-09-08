@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseArgs, createBudgetClient, runConversationCase, safeError } from "./eval-whatsapp-conversacao.mjs";
-import { CASES, makeState, executeFixture } from "./eval-whatsapp-fixtures.mjs";
+import { CASES, COMPANY, CUSTOMER_DOCUMENT, makeState, executeFixture } from "./eval-whatsapp-fixtures.mjs";
+
+test("emissão sintética distingue o prestador do tomador", () => {
+  assert.notEqual(COMPANY.cnpj.replace(/\D/g, ""), CUSTOMER_DOCUMENT);
+});
 
 test("não aceita opções desconhecidas nem limites maiores que o teto", () => {
   assert.throws(() => parseArgs(["--api-key", "secret"]));
@@ -73,4 +77,20 @@ test("runner mede ferramenta efetiva e estado, não rótulo inventado pelo model
   assert.equal(result.turns[0].tools[0].name, "danfse_da_nota");
   assert.equal(result.turns[1].tools.length, 0);
   assert.equal(JSON.stringify(result).includes("inventada"), false);
+});
+
+test("runner preserva no próximo turno o anexo aceito sem inventar entrega", async () => {
+  const seen = [];
+  const createAssistant = () => ({ responder: async ({ messages, executar }) => {
+    seen.push(structuredClone(messages));
+    if (messages.at(-1).content === "o contrato") await executar("enviar_documento_da_empresa", { documentId: "d-social" });
+    return { texto: "Certo.", stopReason: "end_turn" };
+  } });
+  await runConversationCase({ id: "attachment-history", turns: ["o contrato", "e o cartão"] }, { createAssistant, montarSystem: () => [], definitions: [] });
+  const previous = seen[1].filter(m => m.role === "assistant").map(m => m.content).join("\n");
+  assert.match(previous, /Anexo de saída: documento/);
+  assert.match(previous, /teste-d-social\.pdf/);
+  assert.match(previous, /envio aceito pelo WhatsApp/);
+  assert.doesNotMatch(previous, /entrega confirmada|leitura confirmada/);
+  assert.equal(seen[1].at(-1).content, "e o cartão");
 });

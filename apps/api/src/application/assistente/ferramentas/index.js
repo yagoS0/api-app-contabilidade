@@ -126,12 +126,15 @@ const str = (description) => ({ type: "string", description });
 const strOuNulo = (description) => ({ type: ["string", "null"], description });
 const numOuNulo = (description) => ({ type: ["number", "null"], description });
 const boolOuNulo = (description) => ({ type: ["boolean", "null"], description });
+// O compilador Anthropic recusou enum junto de type:[string,null] (HTTP400). O catálogo
+// completo foi aceito com os mesmos valores divididos em anyOf; o contrato do executor é igual.
+const enumOuNulo = (valores, description) => ({ anyOf: [{ type: "string", enum: valores }, { type: "null" }], description });
 
 export const DEFINICOES = Object.freeze([
-  { name: "listar_guias", description: "Lista as guias de imposto LIBERADAS pelo escritório para a empresa (DAS, INSS, DARF, parcelas). 'Guias do mês' usa mesVencimento; competência só quando o cliente pedir a competência. Retorna ids utilizáveis para envio/recálculo. Continue por proximaPagina se necessário.", strict: true, input_schema: S({ competencia: strOuNulo("Competência AAAA-MM; null = todas"), mesVencimento: strOuNulo("Mês em que vence, AAAA-MM. Use o mês atual para 'guias do mês'; null = sem filtro de vencimento"), status: { type: ["string", "null"], enum: ["OPEN", "OVERDUE", "PAID", null], description: "Situação de pagamento; null = todas" }, pagina: numOuNulo("Página, começa em 1; use proximaPagina para continuar") }) },
+  { name: "listar_guias", description: "Lista as guias de imposto LIBERADAS pelo escritório para a empresa (DAS, INSS, DARF, parcelas). 'Guias do mês' usa mesVencimento; competência só quando o cliente pedir a competência. Retorna ids utilizáveis para envio/recálculo. Continue por proximaPagina se necessário.", strict: true, input_schema: S({ competencia: strOuNulo("Competência AAAA-MM; null = todas"), mesVencimento: strOuNulo("Mês em que vence, AAAA-MM. Use o mês atual para 'guias do mês'; null = sem filtro de vencimento"), status: enumOuNulo(["OPEN", "OVERDUE", "PAID"], "Situação de pagamento; null = todas"), pagina: numOuNulo("Página, começa em 1; use proximaPagina para continuar") }) },
   { name: "quanto_devo", description: "Soma das guias liberadas ainda EM ABERTO (a pagar), com a lista e o que já venceu. Use para 'quanto devo', 'o que falta pagar'.", strict: true, input_schema: S({}) },
   { name: "enviar_pdf_da_guia", description: "Envia por WhatsApp o PDF de UMA guia liberada (pelo guideId de listar_guias/quanto_devo). Só funciona com a janela de 24h aberta.", strict: true, input_schema: S({ guideId: str("O id da guia") }) },
-  { name: "listar_notas", description: "Lista notas fiscais de serviço da empresa, incluindo as recém emitidas pelo portal. Use para achar a última nota, uma nota pelo número ou pelo tomador antes de enviar DANFSe ou preparar cancelamento. Continue por proximaPagina quando necessário.", strict: true, input_schema: S({ competencia: strOuNulo("Competência AAAA-MM; null = as mais recentes"), direcao: { type: ["string", "null"], enum: ["emitidas", "recebidas", null], description: "Emitidas pela empresa (padrão) ou recebidas" }, busca: strOuNulo("Número exato da nota, nome ou documento da outra parte; null = sem busca"), pagina: numOuNulo("Página, começa em 1; use proximaPagina para continuar") }) },
+  { name: "listar_notas", description: "Lista notas fiscais de serviço da empresa, incluindo as recém emitidas pelo portal. Use para achar a última nota, uma nota pelo número ou pelo tomador antes de enviar DANFSe ou preparar cancelamento. Continue por proximaPagina quando necessário.", strict: true, input_schema: S({ competencia: strOuNulo("Competência AAAA-MM; null = as mais recentes"), direcao: enumOuNulo(["emitidas", "recebidas"], "Emitidas pela empresa (padrão) ou recebidas"), busca: strOuNulo("Número exato da nota, nome ou documento da outra parte; null = sem busca"), pagina: numOuNulo("Página, começa em 1; use proximaPagina para continuar") }) },
   { name: "danfse_da_nota", description: "Envia por WhatsApp o DANFSe (PDF) de uma nota, pelo notaId de listar_notas.", strict: true, input_schema: S({ notaId: str("O id da nota") }) },
   { name: "listar_documentos", description: "Lista e busca documentos cadastrais e societários guardados para a empresa. Use busca para achar pelo nome/tipo e proximaPagina para continuar. Exige papel CLIENT_ADMIN e liberação explícita deste número.", strict: true, input_schema: S({ busca: strOuNulo("Nome ou tipo do documento, por exemplo alvará ou contrato social; null = todos"), pagina: numOuNulo("Página, começa em 1; use proximaPagina para continuar") }) },
   { name: "enviar_documento_da_empresa", description: "Envia por WhatsApp UM documento cadastral ou societário, pelo documentId retornado por listar_documentos. Só funciona com a janela de 24h aberta.", strict: true, input_schema: S({ documentId: str("O id do documento") }) },
@@ -153,7 +156,7 @@ export const DEFINICOES = Object.freeze([
     descricao: str("Descrição do serviço prestado"),
     valor: { type: "number", description: "Valor dos serviços em reais (ex.: 1500.5)" },
     competencia: strOuNulo("Competência da nota AAAA-MM; null = a atual"),
-    aliquota: numOuNulo("Alíquota de ISS em %, só quando o cliente informar; null = a da prefeitura"),
+    aliquota: numOuNulo("Alíquota de ISS em %, só quando o cliente informar; null = não informada. O emissor resolve conforme a configuração aplicável; a preparação não consulta nem confere a alíquota."),
     issRetido: boolOuNulo("ISS retido pelo tomador? null = não"),
     pTotTribSN: numOuNulo("Percentual total de tributos do Simples, quando a empresa for do Simples e o cliente informar; null = não informado"),
     endereco: { type: ["object", "null"], description: "Endereço do tomador COMPLETO (o de consultar_cnpj) ou null", properties: { cMun: str("código IBGE 7 dígitos"), CEP: str("CEP só dígitos"), xLgr: str("logradouro"), nro: str("número"), xCpl: strOuNulo("complemento"), xBairro: str("bairro") }, required: ["cMun", "CEP", "xLgr", "nro", "xCpl", "xBairro"], additionalProperties: false },
@@ -485,7 +488,7 @@ const EXECUTORES = {
     const perfis = await servicos.listarPerfisEmissao({ sessao });
     const perfil = input.perfilId ? perfis.find((p) => p.id === input.perfilId) : perfis.length === 1 ? perfis[0] : null;
     if ((perfis.length > 1 || input.perfilId) && !perfil) {
-      return recusa("ESCOLHER_PERFIL_EMISSAO", "Peça ao cliente que escolha o tipo de serviço entre os perfis configurados pelo contador e repita o pedido com o perfilId escolhido.", { perfis });
+      return recusa("ESCOLHER_PERFIL_EMISSAO", "Apresente os perfis configurados pelo contador e aguarde a próxima mensagem do cliente com a escolha. Não prepare novamente nesta rodada nem escolha pela semelhança com a descrição do serviço. Depois da resposta, use o perfilId escolhido.", { perfis });
     }
     const retencoes = Object.fromEntries(Object.entries({ vRetIRRF: input.valorRetidoIRRF, vRetCP: input.valorRetidoPrevidencia }).filter(([, v]) => v != null));
     const obra = Object.fromEntries(Object.entries({ cObra: input.obraCnoCei, cCIB: input.obraCib, inscImobFisc: input.obraInscricaoImobiliaria }).filter(([, v]) => v != null));
@@ -603,13 +606,16 @@ const EXECUTORES = {
       `• Valor atual: ${fmtBRL(guide.valor)} · vencimento ${dataBR(guide.vencimento) || "não informado"}`,
       "",
       aviso?.texto || aviso?.mensagem || "Gera uma nova guia com juros e multa; pode demorar alguns segundos.",
+      "O valor atualizado e a data final de cálculo dos encargos ainda não foram apurados.",
     ].join("\n");
     const { texto, codigo } = await servicos.criarPendencia({
       conversaId: ctx.conversa.id, portalClientId: sessao.portalClientId, userId: sessao.userId,
       tipo: TIPOS.RECALCULAR_GUIA, payload: { guideId: guide.id }, corpo, agora: ctx.agora,
     });
     ctx.registrarPendencia?.({ tipo: TIPOS.RECALCULAR_GUIA, codigo, texto });
-    return { ok: true, pendenciaCriada: true, codigo, textoDeConfirmacao: texto, instrucao: "O texto de confirmação será enviado ao cliente exatamente como está." };
+    return { ok: true, pendenciaCriada: true, codigo, textoDeConfirmacao: texto,
+      calculo: { apurado: false, valorAtualizado: null, dataFinalDosEncargos: null },
+      instrucao: "O texto de confirmação será enviado ao cliente exatamente como está. O cálculo ainda não foi feito. Não afirme que os encargos vão até hoje ou até o pagamento. Não prometa que o PDF futuro trará uma data ou informação que ainda não foi consultada." };
   },
 
   async chamar_escritorio(input, ctx) {

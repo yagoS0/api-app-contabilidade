@@ -96,6 +96,89 @@ const deps = (over = {}) => ({ flag: true, piloto: ["pc-1"], log: silencio, agor
 
 beforeEach(() => { registrarMensagemEnviada.mockClear(); });
 
+describe("a escolha do perfil de emissão exige uma nova mensagem do cliente", () => {
+  const dados = { tomadorDoc: "12345678000190", tomadorNome: "Tomador sintético", descricao: "Consultoria", valor: 100, competencia: "2026-09" };
+  const perfis = [{ id: "consultoria", nome: "Consultoria", codigoServicoNacional: "170101" }, { id: "suporte", nome: "Suporte", codigoServicoNacional: "170102" }];
+  const servicosDoTeste = () => ({
+    autorizarEmissaoDoCliente: jest.fn(async () => ({ ok: true })),
+    listarPerfisEmissao: jest.fn(async () => perfis),
+    criarPendencia: jest.fn(async ({ corpo }) => ({ codigo: "A7K2", texto: corpo + "\nCONFIRMAR A7K2" })),
+    listGuias: jest.fn(async () => []),
+  });
+  const resposta = (ferramentasChamadas = ["preparar_emissao"]) => ({ texto: "Qual perfil você quer usar: Consultoria ou Suporte?", usage: { input_tokens: 1, output_tokens: 1 }, iteracoes: 2, ferramentasChamadas, stopReason: "end_turn", recusou: false });
+
+  it("repetir preparação na mesma rodada preserva opções, sem criar pedido, e permite leitura", async () => {
+    const client = bancoEmMemoria(), servicos = servicosDoTeste(), resultados = [];
+    const assistente = { responder: jest.fn(async ({ executar }) => {
+      resultados.push(await executar("preparar_emissao", dados));
+      resultados.push(await executar("quanto_devo", {}));
+      resultados.push(await executar("preparar_emissao", { ...dados, perfilId: "consultoria" }));
+      return resposta(["preparar_emissao", "quanto_devo", "preparar_emissao"]);
+    }) };
+    const r = await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud: cloudFalso(), assistente, servicos }) });
+    expect(r.motivo).toBe("RESPONDIDA");
+    expect(resultados[0]).toMatchObject({ motivo: "ESCOLHER_PERFIL_EMISSAO", perfis });
+    expect(resultados[1].ok).toBe(true);
+    expect(resultados[2]).toEqual(resultados[0]);
+    expect(servicos.listarPerfisEmissao).toHaveBeenCalledTimes(1);
+    expect(servicos.criarPendencia).not.toHaveBeenCalled();
+  });
+
+  it("a escolha recebida em turno posterior permite preparar o perfil informado", async () => {
+    const client = bancoEmMemoria(), servicos = servicosDoTeste(), cloud = cloudFalso(), resultados = [];
+    const assistente = { responder: jest.fn(async ({ executar }) => {
+      resultados.push(await executar("preparar_emissao", dados));
+      resultados.push(await executar("preparar_emissao", { ...dados, perfilId: "suporte" }));
+      return resposta();
+    }) };
+    await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente, servicos }) });
+    expect(servicos.criarPendencia).not.toHaveBeenCalled();
+    client._mensagens.set("m2", { id: "m2", conversaId: "cv1", direcao: "in", tipo: "text", corpo: "Pode usar Suporte", registradaEm: new Date("2026-09-02T12:01:00Z"), respondidaPelaIaEm: null });
+    assistente.responder.mockImplementation(async ({ executar }) => {
+      resultados.push(await executar("preparar_emissao", { ...dados, perfilId: "suporte" }));
+      return resposta();
+    });
+    const r = await responderMensagem({ conversaId: "cv1", mensagemId: "m2", deps: deps({ client, cloud, assistente, servicos, agora: new Date("2026-09-02T12:01:00Z") }) });
+    expect(r.motivo).toBe("RESPONDIDA");
+    expect(resultados.at(-1)).toMatchObject({ ok: true, pendenciaCriada: true });
+    expect(servicos.criarPendencia).toHaveBeenCalledTimes(1);
+    expect(servicos.criarPendencia.mock.calls[0][0].payload.perfilId).toBe("suporte");
+  });
+
+  it.each(["permissao", "usuario", "papel", "humano"])("opções guardadas não escapam após mudança de %s", async (mudanca) => {
+    const client = bancoEmMemoria(), servicos = servicosDoTeste();
+    let repeticao;
+    const assistente = { responder: jest.fn(async ({ executar }) => {
+      await executar("preparar_emissao", dados);
+      if (mudanca === "permissao") client._contato.permissoesAssistente = [];
+      if (mudanca === "usuario") client._contato.userId = "u-outra";
+      if (mudanca === "papel") client.companyClientUser.findUnique.mockResolvedValue({ role: "FINANCEIRO", status: "ACTIVE" });
+      if (mudanca === "humano") client._conversa.atendidaPor = "contador";
+      try { repeticao = await executar("preparar_emissao", { ...dados, perfilId: "consultoria" }); }
+      catch (err) { repeticao = { ok: false, codigo: err.codigo }; }
+      return resposta();
+    }) };
+    await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud: cloudFalso(), assistente, servicos }) });
+    expect(repeticao).toMatchObject({ ok: false });
+    expect(repeticao.motivo).not.toBe("ESCOLHER_PERFIL_EMISSAO");
+    expect(repeticao.perfis).toBeUndefined();
+    expect(servicos.listarPerfisEmissao).toHaveBeenCalledTimes(1);
+    expect(servicos.criarPendencia).not.toHaveBeenCalled();
+  });
+
+  it("perfil já informado pelo cliente prepara normalmente na primeira tentativa", async () => {
+    const client = bancoEmMemoria(), servicos = servicosDoTeste();
+    client._mensagens.get("m1").corpo = "Use Consultoria para a nota";
+    const assistente = { responder: jest.fn(async ({ executar }) => {
+      const r = await executar("preparar_emissao", { ...dados, perfilId: "consultoria" });
+      expect(r).toMatchObject({ ok: true, pendenciaCriada: true });
+      return resposta();
+    }) };
+    await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud: cloudFalso(), assistente, servicos }) });
+    expect(servicos.criarPendencia).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("regressões de conversa natural", () => {
   const pedido = () => ({ id: "ap1", conversaId: "cv1", portalClientId: "pc-1", userId: "u1", tipo: TIPOS.RECALCULAR_GUIA, payload: { guideId: "g1" }, textoDeConfirmacao: "Guia de agosto: R$ 100,00", codigo: "A7K2", expiraEm: new Date("2026-09-02T12:09:00Z"), status: STATUS.PENDENTE });
   it("pergunta sobre o pedido preserva a pendência e entrega seu resumo ao modelo", async () => {

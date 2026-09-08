@@ -6,6 +6,7 @@ import { dirname, resolve, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { CASES, COMPANY, NOW, makeState, executeFixture, evaluateCase } from "./eval-whatsapp-fixtures.mjs";
+import { evidenciaDoAnexo } from "../src/application/assistente/evidenciaDoAnexo.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const NO_LOG = { warn() {}, info() {}, error() {}, debug() {} };
@@ -158,6 +159,12 @@ export async function runConversationCase(scenario, { createAssistant, montarSys
       stopReason: response?.stopReason || null, usage: response?.usage || null, iterations: response?.iteracoes || 0,
       latencyMs: Date.now() - start, error };
     turns.push(turn);
+    // Production persists an attachment before the final text. Reuse its pure formatter so
+    // later turns see the accepted send, without pretending the recipient confirmed delivery.
+    for (const delivery of turn.deliveries) {
+      history.push({ role: "assistant", content: evidenciaDoAnexo({ direcao: "out", tipo: "document",
+        corpo: delivery.nomeArquivo, statusEnvio: "enviado", enviadoEm: NOW, registradaEm: NOW }) });
+    }
     if (text) history.push({ role: "assistant", content: text });
     // Production sends this declaration outside the model. Reproduce the visible transcript only.
     if (state.pending && state.pending.codigo !== pendingBefore) {

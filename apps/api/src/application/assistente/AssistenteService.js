@@ -14,6 +14,7 @@ import { PERMISSOES_ASSISTENTE, temPermissaoAssistente } from "../whatsapp/permi
 import { decidirResposta, lerConfirmacao, FRASES } from "./confirmacaoPendente.js";
 import { criarPendencia, pendenciaAberta, confirmarEExecutar, cancelarPendencia, marcarExpirada } from "./AcoesPendentesService.js";
 import { definicoes, executarFerramenta, PERMISSAO_POR_FERRAMENTA } from "./ferramentas/index.js";
+import { evidenciaDoAnexo } from "./evidenciaDoAnexo.js";
 
 export const AUTOR = Object.freeze({ IA: "IA", HUMANO: "HUMANO", SISTEMA: "SISTEMA" });
 const LOCK_TTL_MS = 90_000;
@@ -26,6 +27,8 @@ function paraTurno(m) {
     const texto = ["text", "interactive"].includes(m.tipo) ? String(m.corpo || "") : `[${m.tipo || "mídia"} recebida — sem texto]`;
     return { role: "user", content: texto || "[mensagem vazia]" };
   }
+  const anexo = evidenciaDoAnexo(m);
+  if (anexo) return { role: "assistant", content: anexo };
   const texto = String(m.corpo || "").trim();
   return { role: "assistant", content: texto || `[${m.tipo || "mensagem"} enviada]` };
 }
@@ -337,6 +340,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     const assistente = deps.assistente || new AssistenteClient({ log });
     let resposta;
     let iniciouModelo = false;
+    let escolhaDePerfilDoTurno = null;
     try {
       await conferirPortao();
       iniciouModelo = true;
@@ -344,7 +348,16 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
         await conferirPortao();
         const atual = await carregarSessaoAtual();
         const sessaoDaFerramenta = atual.userId === sessao.userId ? atual : { ...atual, ok: false };
-        return executarFerramenta(nome, input, { ...ctx, sessao: sessaoDaFerramenta });
+        if (nome === "preparar_emissao" && escolhaDePerfilDoTurno) {
+          // Uma nova chamada do modelo não representa uma escolha do cliente. A trava vive
+          // somente nesta resposta; o próximo turno pode trazer o perfil escolhido.
+          // Revalidar a sessão também impede devolver opções guardadas após revogação.
+          await conferirSessaoNaoAlterada();
+          return escolhaDePerfilDoTurno;
+        }
+        const resultado = await executarFerramenta(nome, input, { ...ctx, sessao: sessaoDaFerramenta });
+        if (nome === "preparar_emissao" && resultado?.motivo === "ESCOLHER_PERFIL_EMISSAO") escolhaDePerfilDoTurno = resultado;
+        return resultado;
       } });
     } catch (err) {
       await concluirChamadaIa(guarda.contexto, { usage: iniciouModelo ? err?.usage : { input_tokens: 0, output_tokens: 0 }, usageCompleto: !iniciouModelo, iteracoes: err?.iteracoes, ferramentas: err?.ferramentasChamadas, erroCodigo: err?.codigo || "IA_ERRO", erroMensagem: err?.message }, { client, log });
