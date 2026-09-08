@@ -430,16 +430,16 @@ export function fluxoDeCaixaDoMock(companyId, competencia, opcoes = {}) {
     },
   ];
 
-  const saldoInicial = opcoes.saldoInicial || null;
-  const ancora = saldoInicial?.dataReferencia?.slice(0, 7);
-  const movimento = (comp) => linhas.filter(l => l.competencia === comp && l.procedencia !== "DESCONHECIDO")
-    .reduce((s,l) => s + (l.direcao === "ENTRADA" ? 1 : -1) * Number(l.valor || 0), 0);
+  // Acumulado automático de todas as linhas financeiras, inclusive anteriores à janela.
+  const financeiras = linhas.filter(l => l.competencia && l.procedencia !== 'DESCONHECIDO'
+    && ['ENTRADA', 'SAIDA'].includes(l.direcao) && l.valor != null && Number.isFinite(Number(l.valor)));
+  const calculoInicio = financeiras.map(l => l.competencia).sort()[0] || null;
+  const centavos = l => (l.direcao === 'ENTRADA' ? 1 : -1) * Math.round(Number(l.valor) * 100);
   for (const mes of meses) {
-    if (!ancora || mes.competencia < ancora) { mes.saldo = { inicial: null, final: null, projetado: true }; continue; }
-    const anterior = linhas.filter(l => l.competencia >= ancora && l.competencia < mes.competencia && l.procedencia !== "DESCONHECIDO")
-      .reduce((s,l) => s + (l.direcao === "ENTRADA" ? 1 : -1) * Number(l.valor || 0), 0);
-    const inicial = Math.round((saldoInicial.valor + anterior) * 100) / 100;
-    mes.saldo = { inicial, final: Math.round((inicial + movimento(mes.competencia)) * 100) / 100, projetado: true };
+    if (!calculoInicio || mes.competencia < calculoInicio) { mes.saldo = { inicial: null, final: null, projetado: true }; continue; }
+    const anterior = financeiras.filter(l => l.competencia < mes.competencia).reduce((s, l) => s + centavos(l), 0);
+    const movimento = financeiras.filter(l => l.competencia === mes.competencia).reduce((s, l) => s + centavos(l), 0);
+    mes.saldo = { inicial: anterior / 100, final: (anterior + movimento) / 100, projetado: true };
   }
   const cientes = new Set(opcoes.cientes || []);
   const itens = emAberto;
@@ -447,7 +447,8 @@ export function fluxoDeCaixaDoMock(companyId, competencia, opcoes = {}) {
   return {
     // ⚠⚠ É ESTE CAMPO que apaga o selo, e ele espelha o do servidor.
     demonstracao: false,
-    saldoInicial,
+    saldoInicial: null,
+    acumulado: { origem: "HISTORICO", calculoInicio },
     cicloAtual: ciclo,
     horizonte: HORIZONTE,
     meses,

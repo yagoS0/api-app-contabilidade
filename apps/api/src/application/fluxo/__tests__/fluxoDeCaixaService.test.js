@@ -154,7 +154,8 @@ describe("⚠⚠ não existe `total`, nem saldo acumulado", () => {
   it("⚠⚠ e não há saldo acumulado — sem saldo inicial não há o que acumular", async () => {
     const r = await montar(clientDe({ guias: [guia()] }));
     expect(r.saldoInicial).toBeNull();
-    expect(r.meses.every(m => m.saldo.inicial === null && m.saldo.final === null)).toBe(true);
+    expect(r.meses.filter(m => m.competencia < "2026-08").every(m => m.saldo.inicial === null && m.saldo.final === null)).toBe(true);
+    expect(doMes(r,"2026-08").saldo.final).toBe(-1200);
   });
 
   it("⚠ cada mês totaliza por PROCEDÊNCIA, e só", async () => {
@@ -942,15 +943,16 @@ describe("⚠ o horizonte e o ciclo", () => {
     expect(r.cicloAtual).toBe(CICLO);
   });
 
-  it("⚠⚠ a janela NÃO recua antes da primeira nota da empresa", async () => {
+  it("a primeira nota não esconde histórico financeiro anterior", async () => {
     // Oferecer janeiro a uma empresa aberta em março afirmaria que ela faturou zero num mês em que
     // ela não existia. O limite é dado, não invenção.
     const r = await montar(
       clientDe({ guias: [guia()], primeiraNota: { competencia: new Date("2026-03-01T00:00:00.000Z") } }),
       { janelaInicio: "2025-01" },
     );
-    expect(r.meses[0].competencia).toBe("2026-03");
-    expect(r.janela.podeVoltar).toBe(false);
+    expect(r.meses[0].competencia).toBe("2025-01");
+    expect(r.janela.podeVoltar).toBe(true);
+    expect(r.meses[0].saldo.inicial).toBeNull();
   });
 
   it("⚠ para a FRENTE a janela trava na posição padrão — não existe futuro além de corrente+7", async () => {
@@ -1338,17 +1340,20 @@ it("saldo inicial inclui movimentos anteriores à janela visual, sem corte de 12
   client.saldoInicialFluxo = { findFirst: jest.fn().mockResolvedValue({ id: "saldo-1", dataReferencia: new Date("2025-01-01T00:00:00Z"), valor: 1000 }) };
   const r = await montar(client, { janelaInicio: "2026-04" });
   expect(r.meses[0].competencia).toBe("2026-04");
-  expect(r.meses[0].saldo.inicial).toBe(1010);
+  expect(r.meses[0].saldo.inicial).toBe(10);
+  expect(client.saldoInicialFluxo.findFirst).not.toHaveBeenCalled();
   expect(client.saidaAvulsaCliente.findMany).not.toHaveBeenCalled();
-  expect(r.saldoInicial.valor).toBe(1000);
+  expect(r.saldoInicial).toBeNull();
+  expect(r.acumulado).toEqual({origem:"HISTORICO",calculoInicio:"2025-02"});
 });
 
-it("a âncora permite navegar antes da primeira nota", async () => {
+it("navegação antes da primeira nota não lê âncora manual legada", async () => {
   const client = clientDe({ primeiraNota: { competencia: new Date("2026-07-01T00:00:00Z") } });
   client.saldoInicialFluxo = { findFirst: jest.fn().mockResolvedValue({ id: "saldo-1", dataReferencia: new Date("2026-01-01T00:00:00Z"), valor: 1000 }) };
   const r = await montar(client, { janelaInicio: "2026-01" });
   expect(r.meses[0].competencia).toBe("2026-01");
-  expect(r.meses[0].saldo.inicial).toBe(1000);
+  expect(r.meses[0].saldo.inicial).toBeNull();
+  expect(client.saldoInicialFluxo.findFirst).not.toHaveBeenCalled();
 });
 
 it("duas projeções de meio centavo têm linhas, totais e saldo coerentes em 0,02", async () => {

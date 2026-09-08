@@ -55,7 +55,6 @@ import { PopUpDeGuias } from "./PopUpDeGuias";
 import { SuasSaidas } from "./SuasSaidas";
 import { GavetaDoDia } from "./GavetaDoDia";
 import { GuiasVencidas } from "./GuiasVencidas";
-import { SaldoInicial } from "./SaldoInicial";
 
 /**
  * ⚠⚠ A FOLGA que a tela pede ao servidor quando a seta chega na BORDA da janela carregada.
@@ -878,8 +877,7 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
 
       {demonstracao ? <Selo /> : null}
       {mensagemDoFluxo && <p role="status">{mensagemDoFluxo}</p>}
-      <div hidden={visao !== "fluxo"}><SaldoInicial key={companyId} companyId={companyId} competencia={competencia} saldo={fluxoQuery.dados?.saldoInicial} api={api} aoMudar={notificarMudanca} somenteLeitura={somenteLeitura} disponivel={visao === "fluxo" && !fluxoQuery.carregando && !fluxoQuery.erro && Boolean(fluxoQuery.dados)} /></div>
-      {visao === "fluxo" && <p className="hint">Resultado mensal soma as movimentações do mês. Saldo projetado inclui o saldo inicial informado e transporta os meses; não é saldo bancário conciliado.</p>}
+      {visao === "fluxo" && <p className="hint">Resultado mensal soma as movimentações do mês. O acumulado é calculado automaticamente desde o histórico disponível e transporta os meses, incluindo previsões. Não representa saldo bancário conciliado.</p>}
 
       {atual.carregando ? <Carregando /> : null}
 

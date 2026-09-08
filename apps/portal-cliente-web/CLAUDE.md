@@ -1,5 +1,11 @@
 # CLAUDE.md — Portal do Cliente na web (apps/portal-cliente-web)
 
+## Correção de entendimento: painel e acumulado automático — 08/09/2026
+
+O usuário rejeitou exigir saldo inicial manual para cada empresa. Esta instrução substitui a implementação anterior de âncora declarada: não mostrar formulário nem exigir configuração. O fluxo transporta automaticamente as movimentações desde o histórico disponível, com origem HISTORICO e identificação como Acumulado projetado, sem afirmar saldo bancário. Registros de âncora antigos e migration ficam preservados, mas não alimentam o cálculo nem aceitam novas escritas pela rota pública.
+
+O resumo principal é Faturamento menos impostos da MESMA competência selecionada. Não usa resultado do fluxo, despesas operacionais, folha salarial ou mês seguinte. Impostos vêm dos lançamentos da competência; ausência de dados não significa imposto zero. A DRE mantém seu cálculo próprio. Não confundir o resumo principal com o acumulado da tabela.
+
 ## Fluxo e DRE — saldo informado (08/09/2026)
 
 Regra preservada após integração da main: declaração avulsa do cliente fica pendente para conferência e só entra no fluxo após contabilização, pela fonte de despesa lançada. Salvar não altera saldo imediatamente. Projeções de séries são somente DESPESA com ao menos três observações consecutivas; declarar recorrência não satisfaz esse histórico. Mock mantém cadastro/remover, mas não cria caixa fictício a partir dessas declarações. Gaveta informa a etapa de conferência antes/depois de salvar.

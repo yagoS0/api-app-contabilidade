@@ -53,25 +53,26 @@ export async function salvarSaldoInicialFluxo({ portalClientId, dataReferencia, 
   return paraTela(registro);
 }
 
-// A âncora é no começo do mês. Soma desde ela, mesmo quando a janela visual começa depois.
-// Não promove as convenções do fluxo a saldo bancário conciliado: todos os saldos são projetados.
-export function aplicarSaldosProjetados({ meses, linhas, saldoInicial }) {
-  const ancora = saldoInicial?.dataReferencia?.slice(0, 7);
-  const inicial = numero(saldoInicial?.valor);
+// Acumulado gerencial automático; os registros manuais antigos não participam.
+export function inicioDoHistoricoFluxo(linhas) {
+  const meses = (linhas || []).filter(l => /^\d{4}-(0[1-9]|1[0-2])$/.test(l?.competencia || '') && l.procedencia !== PROCEDENCIA.DESCONHECIDO && numero(l.valor) != null && [DIRECAO.ENTRADA,DIRECAO.SAIDA].includes(l.direcao)).map(l => l.competencia);
+  return meses.length ? meses.sort()[0] : null;
+}
+
+export function aplicarSaldosProjetados({ meses, linhas }) {
+  const ancora = inicioDoHistoricoFluxo(linhas);
   const porMes = new Map();
   for (const linha of linhas || []) {
-    if (!ancora || linha.competencia < ancora || linha.procedencia === PROCEDENCIA.DESCONHECIDO) continue;
+    if (!ancora || !/^\d{4}-(0[1-9]|1[0-2])$/.test(linha.competencia || '') || linha.procedencia === PROCEDENCIA.DESCONHECIDO) continue;
     const valor = numero(linha.valor);
-    if (valor == null || ![DIRECAO.ENTRADA, DIRECAO.SAIDA].includes(linha.direcao)) continue;
+    if (valor == null || ![DIRECAO.ENTRADA,DIRECAO.SAIDA].includes(linha.direcao)) continue;
     const centavos = Math.round(valor * 100) * (linha.direcao === DIRECAO.SAIDA ? -1 : 1);
-    porMes.set(linha.competencia, (porMes.get(linha.competencia) || 0) + centavos);
+    porMes.set(linha.competencia,(porMes.get(linha.competencia) || 0) + centavos);
   }
   return (meses || []).map(mes => {
-    if (!ancora || inicial == null || mes.competencia < ancora) {
-      return { ...mes, saldo: { inicial: null, final: null, projetado: true } };
-    }
-    let saldo = Math.round(inicial * 100);
-    for (const [competencia, movimento] of porMes) if (competencia < mes.competencia) saldo += movimento;
-    return { ...mes, saldo: { inicial: saldo / 100, final: (saldo + (porMes.get(mes.competencia) || 0)) / 100, projetado: true } };
+    if (!ancora || mes.competencia < ancora) return { ...mes, saldo:{inicial:null,final:null,projetado:true} };
+    let saldo = 0;
+    for (const [competencia,movimento] of porMes) if (competencia < mes.competencia) saldo += movimento;
+    return { ...mes, saldo:{inicial:saldo/100,final:(saldo+(porMes.get(mes.competencia)||0))/100,projetado:true} };
   });
 }
