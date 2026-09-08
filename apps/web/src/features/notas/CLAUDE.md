@@ -1,5 +1,11 @@
 # Notas — revisão de uso (08/09/2026)
 
+## Revisão aprovada de navegação
+
+Emissão no contador tem três etapas: Tomador → Serviço e valores → Conferência. O primeiro avanço valida tomador/endereço e impedimentos cadastrais; o segundo exige a nota completa. Voltar preserva os dados. Erros direcionam à etapa correspondente. Emitir permanece exclusivo da conferência, com validação integral, confirmação e trava de desfecho desconhecido.
+
+Lista apresenta busca identificada, direção e inclusão de canceladas. Filtros externos são a fonte de verdade para direção, situação e competência; o rascunho local é apenas de busca. A coluna de status local se chama “Ajustes na base”, distinguindo-a de cancelamento fiscal.
+
 NF-e e NFS-e continuam separadas. Lista mantém linha acessível por teclado; nomes podem quebrar e ações de linha precisam de área legível. Auditoria abre a íntegra em `NotaDetailModal`, sem trocar empresa/competência nem gravar um veredito; fechar retorna ao mesmo conjunto de achados. Resposta de detalhe antiga é descartada.
 
 Emissor usa `Modal` compartilhado com `ocupado={enviando}`. Durante emissão, fundo, X, Esc e Cancelar não devem ocultar o resultado; beforeunload alerta ao sair/recarregar. Não remover bloqueio após resposta de desfecho desconhecido. Formulário e prévia permanecem ligados à mesma declaração; permissões e certificado não foram flexibilizados. Dados excepcionais de obra/destinatário e retenções não devem desaparecer durante mudanças de layout.

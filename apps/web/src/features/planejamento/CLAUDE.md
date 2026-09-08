@@ -1,5 +1,7 @@
 # Planejamento — continuidade do cenário (08/09/2026)
 
+Complemento: a abertura na empresa recupera o cenário salvo mais recente após o prefill. Não sobrescrever edições iniciadas durante a busca, nem aplicar resposta de outra empresa. O histórico só expande ao clicar Abrir cenário. Salvar cenário continua sendo explícito; não anunciar salvamento automático de campos. IBS/CBS mostra explicações dos modelos e diferencia imposto próprio de crédito transferido. Comunicado RFB atualizado em 02/09/2026 confirma o procedimento para 2027 e cancelamento até 30/11/2026; substitui a antiga ausência de prova da regulamentação. Consulta documentada em docs/fontes-fiscais.md.
+
 Premissas ficam antes da comparação. Dentro da empresa, o conteúdo usa a moldura do pai; modo livre mantém sua própria largura. Editar cenário não altera cadastro fiscal.
 
 Salvar cenário e Guardar em Documentos reutilizam `salvarSimulacaoPlanejamento`. O JSON de entradas contém `formularioCenario`, com textos dos campos, confirmações, meses, série mensal e cenário IBS/CBS. Não remover esse bloco: entradas numéricas do motor não preservam todas as escolhas de edição. Abrir cenário usa `listarSimulacoesPlanejamento`, sempre por empresa; cenários legados restauram as premissas disponíveis e avisam o que precisa ser reconferido. A comparação reaberta usa as tabelas atuais; o snapshot/PDF original não é sobrescrito. Procedências salvas são preservadas enquanto o cenário reaberto não é alterado.

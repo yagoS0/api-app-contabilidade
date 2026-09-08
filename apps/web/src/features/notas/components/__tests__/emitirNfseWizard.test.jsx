@@ -105,11 +105,35 @@ function noFormulario(matcher, opcoes) {
 function ateOsValores() {
   digitar("CNPJ ou CPF do tomador", "12345678000199");
   digitar("Nome ou razão social", "ACME LTDA");
+  continuar();
   digitar("Descrição do serviço", "Consultoria contábil");
   digitar("Competência", "2026-08");
   digitar("Valor dos serviços", "150000");
   digitar("Alíquota de ISS", "2");
 }
+
+it("valida por etapa, preserva os dados ao voltar e só oferece emissão na conferência", () => {
+  const { onEmitir } = abrir();
+  expect(screen.getByLabelText(/CNPJ ou CPF do tomador/)).toBeVisible();
+  expect(screen.getByLabelText(/Valor dos serviços/)).not.toBeVisible();
+  expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+  digitar("CNPJ ou CPF do tomador", "12345678000199");
+  digitar("Nome ou razão social", "ACME LTDA");
+  continuar();
+  expect(screen.getByLabelText(/Valor dos serviços/)).toBeVisible();
+  expect(screen.getByLabelText(/CNPJ ou CPF do tomador/)).not.toBeVisible();
+  expect(screen.queryByRole("button", { name: /^Emitir nota$/ })).not.toBeInTheDocument();
+  digitar("Descrição do serviço", "Consultoria contábil");
+  digitar("Valor dos serviços", "82666");
+  digitar("Total de tributos do Simples Nacional", "6");
+  fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
+  expect(screen.getByLabelText(/Nome ou razão social/)).toHaveValue("ACME LTDA");
+  continuar();
+  expect(screen.getByLabelText(/Valor dos serviços/)).toHaveValue("826,66");
+  continuar();
+  expect(screen.getByRole("button", { name: /^Emitir nota$/ })).toBeEnabled();
+  expect(onEmitir).not.toHaveBeenCalled();
+});
 
 it("leva à operação excepcional inválida e preserva a nota preenchida", () => {
   abrir(); ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84");
@@ -126,7 +150,7 @@ it("leva à operação excepcional inválida e preserva a nota preenchida", () =
 });
 
 it("coloca dados excepcionais após tomador, serviço e valores", () => {
-  abrir();
+  abrir(); ateOsValores();
   const valor = screen.getByLabelText(/Valor dos serviços/);
   const operacao = screen.getByRole("region", { name: "Dados específicos da operação" });
   expect(valor.compareDocumentPosition(operacao) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -301,6 +325,7 @@ describe("as recusas do servidor aparecem ANTES do clique", () => {
     abrir();
     digitar("CNPJ ou CPF do tomador", "12345678000199");
     digitar("Nome ou razão social", "ACME LTDA");
+    continuar();
     digitar("Descrição do serviço", "Consultoria");
     digitar("Valor dos serviços", "150000");
     digitar("Total de tributos do Simples Nacional", "6");

@@ -159,6 +159,8 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   const [carregando, setCarregando] = useState(false);
   const [erroCarga, setErroCarga] = useState(null);
   const [cenariosSalvos, setCenariosSalvos] = useState(null);
+  const [mostrarCenarios, setMostrarCenarios] = useState(false);
+  const edicoesDoCenario = useRef(0);
   const [cenarioSalvo, setCenarioSalvo] = useState(null);
   const [carregandoCenarios, setCarregandoCenarios] = useState(false);
   const empresaAtualCenario = useRef(empresaId);
@@ -239,6 +241,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   useEffect(() => {
     setReceita("");
     setCenariosSalvos(null);
+    setMostrarCenarios(false);
     setCenarioSalvo(null);
     setDesfechoDoGuardar(null);
     setProcedenciasSalvas(null);
@@ -407,7 +410,25 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   const formularioCenario = { receita, rbt12, folha, anexo, sujeitoFatorR, atividade, iss, margem, creditos,
     mesesAtividade, serieMensal, servicos16, categoriaConfirmada, cenarioIbsCbs, cbsEstimada, detalharMeses };
   const assinaturaCenario = JSON.stringify(formularioCenario);
+  // Retoma somente após o prefill, sem sobrescrever quem começou a digitar durante a busca.
+  useEffect(() => {
+    if (!empresaId || dadosEmpresa?.empresa?.id !== empresaId || !api?.listarSimulacoesPlanejamento) return;
+    let cancelado = false;
+    const edicaoInicial = edicoesDoCenario.current;
+    setCarregandoCenarios(true);
+    Promise.resolve(api.listarSimulacoesPlanejamento(empresaId)).then(r => {
+      if (cancelado) return;
+      if (r?.ok === false) throw new Error(r.message || "Não foi possível retomar o cenário.");
+      const lista = (r?.simulacoes || []).filter(Boolean).slice().sort((a, b) => new Date(b.geradoEm) - new Date(a.geradoEm));
+      setCenariosSalvos(lista);
+      if (lista[0] && edicoesDoCenario.current === edicaoInicial) abrirCenario(lista[0]);
+    }).catch(() => {
+      if (!cancelado) setDesfechoDoGuardar({ tom: "erro", texto: "Não foi possível recuperar o preenchimento anterior. Use Abrir cenário para tentar novamente." });
+    }).finally(() => { if (!cancelado) setCarregandoCenarios(false); });
+    return () => { cancelado = true; };
+  }, [api, empresaId, dadosEmpresa]);
   async function listarCenarios() {
+    setMostrarCenarios(true);
     if (!empresaId || !api?.listarSimulacoesPlanejamento || carregandoCenarios) return;
     const empresaDaBusca = empresaId;
     setCarregandoCenarios(true);
@@ -636,7 +657,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   }, [imprimindo]);
 
   return (
-    <div className="planejamento-page" style={{ background: C.page, minHeight: empresaFixa ? undefined : "100vh", color: C.texto, padding: empresaFixa ? 0 : "20px 0" }}>
+    <div className="planejamento-page" onClickCapture={(event) => { if (event.target.closest("button")) edicoesDoCenario.current += 1; }} onChangeCapture={() => { edicoesDoCenario.current += 1; }} style={{ background: C.page, minHeight: empresaFixa ? undefined : "100vh", color: C.texto, padding: empresaFixa ? 0 : "20px 0" }}>
       <div style={{ width: empresaFixa ? "100%" : "var(--content-wide)", margin: "0 auto", display: "grid", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           {onVoltar && (
@@ -665,11 +686,13 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
           {resultado && <a href="#detalhes-cenario">3. Detalhes</a>}
         </nav>
         <section aria-label="Cenários salvos" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <p style={{ flexBasis: "100%", margin: 0, lineHeight: 1.5 }}>1. Confira os dados da empresa. 2. Ajuste as premissas. 3. Compare os regimes e salve o cenário para continuar depois.</p>
           <span role="status">{cenarioSalvo === assinaturaCenario ? "Cenário salvo" : "Premissas não salvas"}</span>
           <button type="button" className="btn" disabled={!empresaId || !resultado || guardando || carregando} onClick={() => guardarSimulacao(true)}>Salvar cenário</button>
           <button type="button" className="btn btn-secondary" disabled={!empresaId || carregando || carregandoCenarios} onClick={listarCenarios}>{carregandoCenarios ? "Lendo cenários…" : "Abrir cenário"}</button>
           {!empresaId && <span>Vincule uma empresa para guardar e retomar cenários.</span>}
-          {cenariosSalvos && <div style={{ flexBasis: "100%" }}>
+          {empresaId && <small style={{ flexBasis: "100%", fontSize: 13 }}>O último cenário salvo desta empresa será retomado na próxima visita. Clique em Salvar cenário para guardar suas alterações; isso não altera o cadastro fiscal.</small>}
+          {mostrarCenarios && cenariosSalvos && <div style={{ flexBasis: "100%" }}>
             {cenariosSalvos.length ? cenariosSalvos.map((c) => <button key={c.id} type="button" className="btn btn-secondary" disabled={carregando} onClick={() => abrirCenario(c)}>
               Abrir {c.competencia || "simulação"} · {new Date(c.geradoEm).toLocaleString("pt-BR")}
             </button>) : <p>Nenhum cenário salvo para esta empresa.</p>}

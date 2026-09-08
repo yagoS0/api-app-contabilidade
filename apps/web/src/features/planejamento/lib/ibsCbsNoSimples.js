@@ -80,7 +80,8 @@ export const OPCAO_POR_FORA = Object.freeze({
   semestres: ["janeiro", "julho"],
   irretratavel: true,
   fundamento: "LC 123/2006, art. 13, §§ 9º e 10 (redação da LC 227/2026); LC 214/2025, art. 41, § 3º",
-  dependeDeRegulamentacao: true,
+  // RFB, comunicado de 01/09/2026 atualizado em 02/09/2026; ver fontes-fiscais.md.
+  dependeDeRegulamentacao: false,
   // ⚠ "corrente ou ANTERIOR" é o texto do art. 41, § 5º, e ele fala de quando o ressarcimento foi
   // RECEBIDO — não de quanto tempo a trava dura. Parafrasear isso como "no ano seguinte" muda o
   // que a frase afirma.

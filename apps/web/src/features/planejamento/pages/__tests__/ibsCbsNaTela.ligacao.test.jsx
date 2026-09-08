@@ -97,7 +97,7 @@ describe("⚠⚠ 2027–2028 na TELA: por dentro × por fora", () => {
     comReceita();
     irPara("2027–2028");
     expect(within(bloco()).getByText(/setembro e março/i)).toBeInTheDocument();
-    expect(within(bloco()).getByText(/não confirma que o procedimento já está disponível/i))
+    expect(within(bloco()).getByRole("link", { name: /Consultar orientação oficial/ }))
       .toBeInTheDocument();
   });
 

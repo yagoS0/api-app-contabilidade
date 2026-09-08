@@ -2480,7 +2480,7 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/planejamento/simulacoes`);
     },
     async salvarSimulacaoPlanejamento(companyId, payload) {
-      return request(`/firm/companies/${companyId}/planejamento/simulacoes`, { method: "POST", body: payload });
+      return request(`/firm/companies/${companyId}/planejamento/simulacoes`, { method: "POST", body: JSON.stringify(payload) });
     },
     async gerarDocumentoDaSimulacao(companyId, simulacaoId) {
       return request(

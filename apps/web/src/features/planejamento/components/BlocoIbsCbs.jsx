@@ -51,10 +51,15 @@ export function BlocoIbsCbs({
     padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface,
     display: "grid", gap: 12,
   };
-  const nota = { fontSize: "0.72rem", color: C.muted, lineHeight: 1.5, margin: 0 };
+  const nota = { fontSize: "0.875rem", color: C.muted, lineHeight: 1.6, margin: 0 };
 
   return (
     <section style={caixa} aria-label="IBS e CBS no Simples Nacional">
+      <p style={nota}><strong>O que comparar aqui:</strong> primeiro, o imposto estimado da empresa; depois, o crédito que ela permite ao comprador aproveitar. Crédito do comprador não é desconto no imposto desta empresa.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 12 }}>
+        <div style={{ ...caixa, fontSize: 14 }}><strong>Dentro do Simples (por dentro)</strong><span>IBS e CBS compõem o recolhimento unificado, respeitadas as regras da faixa e do sublimite.</span></div>
+        <div style={{ ...caixa, fontSize: 14 }}><strong>Regime regular (por fora)</strong><span>A empresa permanece no Simples para os demais tributos e apura IBS e CBS separadamente. A estimativa depende também dos créditos das compras.</span></div>
+      </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <strong style={{ color: C.texto, fontSize: "0.95rem" }}>IBS e CBS no Simples Nacional</strong>
         {/* ⚠ `mode="view"` seria a barra de abas do app, mas aqui são dois botões dentro de um
@@ -77,7 +82,7 @@ export function BlocoIbsCbs({
                    fundo com `${cor}22` quebra em silêncio assim que a cor vira `var(--…)`. */
                 style={{
                   padding: "4px 12px", borderRadius: 999, cursor: "pointer",
-                  fontSize: "0.78rem", fontWeight: ativo ? 700 : 600,
+                  fontSize: "0.875rem", fontWeight: ativo ? 700 : 600,
                   border: `${ativo ? 2 : 1}px solid ${ativo ? C.accent : C.borda}`,
                   background: "transparent",
                   color: ativo ? C.accent : C.muted,
@@ -126,7 +131,7 @@ export function BlocoIbsCbs({
               style={campo}
             />
             {cbsLida.fora && (
-              <span style={{ display: "block", marginTop: 4, fontSize: "0.72rem", color: "var(--state-warn)" }}>
+              <span style={{ display: "block", marginTop: 4, fontSize: "0.8125rem", color: "var(--state-warn)" }}>
                 {textoDoPercentualForaDaFaixa("A alíquota da CBS")}
               </span>
             )}
@@ -159,17 +164,17 @@ export function BlocoIbsCbs({
                 simulação não recebe. Ela diz o que muda, o sentido, e que o número não foi calculado.
               */}
               {r.imposto.porDentro.mudaEmRelacaoAHoje ? (
-                <div style={{ fontSize: "0.78rem", color: C.texto, lineHeight: 1.5 }}>
+                <div style={{ fontSize: "0.875rem", color: C.texto, lineHeight: 1.5 }}>
                   <strong>Ficando por dentro: nesta faixa o DAS muda — para menos.</strong> Hoje ele é{" "}
                   {brl(r.imposto.porDentro.dasAnual)} por ano; o valor de 2027-2028 não é calculado aqui.
                 </div>
               ) : (
-                <div style={{ fontSize: "0.78rem", color: C.texto, lineHeight: 1.5 }}>
+                <div style={{ fontSize: "0.875rem", color: C.texto, lineHeight: 1.5 }}>
                   <strong>Ficando por dentro: o DAS não muda</strong> — {brl(r.imposto.porDentro.dasAnual)} por ano,
                   o mesmo de hoje.
                 </div>
               )}
-              <div style={{ fontSize: "0.72rem", color: C.muted, lineHeight: 1.5 }}>
+              <div style={{ fontSize: "0.8125rem", color: C.muted, lineHeight: 1.5 }}>
                 {r.imposto.porDentro.explicacao} Dentro dele,{" "}
                 <strong>{brl(r.imposto.porDentro.cbsDentroDoDas)}</strong> é CBS
                 {r.imposto.porDentro.ibsDentroDoDas != null ? (
@@ -181,7 +186,7 @@ export function BlocoIbsCbs({
 
               {r.imposto.porFora ? (
                 <>
-                  <div style={{ fontSize: "0.78rem", color: C.texto, lineHeight: 1.5, marginTop: 4 }}>
+                  <div style={{ fontSize: "0.875rem", color: C.texto, lineHeight: 1.5, marginTop: 4 }}>
                     <strong>Saindo por fora:</strong> saem{" "}
                     {brl(r.imposto.porFora.parcelaQueSaiDoDas)} do DAS por ano, e entra um débito de{" "}
                     {brl(r.imposto.porFora.debitoSobreAReceita)} de IBS/CBS no regime regular —{" "}
@@ -189,7 +194,7 @@ export function BlocoIbsCbs({
                   </div>
                   {/* ⚠⚠ DIZER QUE A CONTA NÃO FECHA É O PRODUTO. Um "total por fora" cravado aqui
                       seria número inventado num documento que vai ao cliente. */}
-                  <div style={{ fontSize: "0.72rem", color: "var(--state-warn)", lineHeight: 1.5 }}>
+                  <div style={{ fontSize: "0.8125rem", color: "var(--state-warn)", lineHeight: 1.5 }}>
                     ⚠ <strong>Não dá para fechar esse total aqui</strong>, e por dois motivos:
                     <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
                       {r.imposto.porFora.porQueNaoFecha.map((m) => (
@@ -199,26 +204,26 @@ export function BlocoIbsCbs({
                   </div>
                 </>
               ) : (
-                <div style={{ fontSize: "0.72rem", color: C.muted, lineHeight: 1.5 }}>
+                <div style={{ fontSize: "0.8125rem", color: C.muted, lineHeight: 1.5 }}>
                   Informe a alíquota da CBS acima para ver o lado “por fora”.
                 </div>
               )}
             </div>
           ) : null}
 
-          <div style={{ fontSize: "0.78rem", fontWeight: 700, color: C.texto, marginTop: 2 }}>
+          <div style={{ fontSize: "0.875rem", fontWeight: 700, color: C.texto, marginTop: 2 }}>
             E quanto de crédito ela transfere a quem compra dela
           </div>
 
-          <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>
+          <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))" }}>
             <div style={{ padding: 10, borderRadius: 8, border: `1px solid ${C.borda}` }}>
-              <div style={{ fontSize: "0.78rem", fontWeight: 700, color: C.texto }}>
+              <div style={{ fontSize: "0.875rem", fontWeight: 700, color: C.texto }}>
                 Por dentro <span style={{ fontWeight: 400, color: C.muted }}>(o padrão)</span>
               </div>
               <div style={{ fontSize: "1.25rem", fontWeight: 700, color: C.texto, marginTop: 4 }}>
                 {r.porDentro ? pct(r.porDentro.creditoPct) : "—"}
               </div>
-              <div style={{ fontSize: "0.72rem", color: C.muted, lineHeight: 1.5, marginTop: 4 }}>
+              <div style={{ fontSize: "0.8125rem", color: C.muted, lineHeight: 1.5, marginTop: 4 }}>
                 {r.porDentro ? (
                   <>
                     do valor da operação vira crédito para quem compra desta empresa.
@@ -245,13 +250,13 @@ export function BlocoIbsCbs({
             </div>
 
             <div style={{ padding: 10, borderRadius: 8, border: `1px solid ${C.borda}` }}>
-              <div style={{ fontSize: "0.78rem", fontWeight: 700, color: C.texto }}>
+              <div style={{ fontSize: "0.875rem", fontWeight: 700, color: C.texto }}>
                 Por fora <span style={{ fontWeight: 400, color: C.muted }}>(a opção)</span>
               </div>
               <div style={{ fontSize: "1.25rem", fontWeight: 700, color: C.texto, marginTop: 4 }}>
                 {r.porFora ? pct(r.porFora.totalPct) : "—"}
               </div>
-              <div style={{ fontSize: "0.72rem", color: C.muted, lineHeight: 1.5, marginTop: 4 }}>
+              <div style={{ fontSize: "0.8125rem", color: C.muted, lineHeight: 1.5, marginTop: 4 }}>
                 {r.porFora ? (
                   <>
                     do valor da operação vira crédito para quem compra — o destaque é cheio.
@@ -278,7 +283,7 @@ export function BlocoIbsCbs({
           ) : null}
 
           <p style={nota}>
-            <strong>A janela é irretratável e semestral.</strong> A opção vale para os semestres
+            <strong>A opção tem efeitos semestrais.</strong> A opção vale para os semestres
             iniciados em {OPCAO_POR_FORA.semestres.join(" e ")}, e é exercida nos meses de{" "}
             {OPCAO_POR_FORA.meses.join(" e ")} imediatamente anteriores
             (<strong>{OPCAO_POR_FORA.fundamento}</strong>).
@@ -292,7 +297,7 @@ export function BlocoIbsCbs({
               janela <strong>legal</strong> — ela não confirma que o procedimento já está disponível.
               Confirme no portal do Simples Nacional antes de orientar o cliente.
             </p>
-          ) : null}
+          ) : <p style={nota}>Para janeiro a junho de 2027, a Receita informa opção de 1º a 30/09/2026 e possibilidade de cancelamento até 30/11/2026. <a href="https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/setembro/receita-federal-alerta-comeca-hoje-o-prazo-para-opcao-pelo-simples-nacional-e-para-a-escolha-do-modelo-de-recolhimento-do-ibs-e-da-cbs-em-2027/" target="_blank" rel="noreferrer">Consultar orientação oficial</a>. Esta simulação não efetua a opção.</p>}
           <p style={nota}>⚠ {OPCAO_POR_FORA.travaDeSaida}</p>
           <p style={nota}>
             Tabelas do Anexo com vigência de {r.vigencia.inicio.slice(0, 4)} a{" "}

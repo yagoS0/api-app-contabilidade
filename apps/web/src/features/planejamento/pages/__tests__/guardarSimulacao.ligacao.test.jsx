@@ -49,6 +49,23 @@ const botao = () => screen.getByRole("button", { name: /Guardar em Documentos/i 
 const esperarCalculo = () =>
   waitFor(() => expect(screen.getAllByDisplayValue("300.000,00").length).toBeGreaterThan(0));
 
+it("retoma o cenário salvo mais recente da empresa ao abrir a aba", async () => {
+  montar({ listarSimulacoesPlanejamento: jest.fn(async () => ({ simulacoes: [
+    { geradoEm: "2026-08-01", entradas: { formularioCenario: { receita: "400.000,00", rbt12: "400.000,00", folha: "60.000,00" } } },
+    { geradoEm: "2026-09-01", entradas: { formularioCenario: { receita: "500.000,00", rbt12: "500.000,00", folha: "60.000,00" } } },
+  ] })) });
+  await waitFor(() => expect(screen.getByLabelText(/Receita anual/i)).toHaveValue("500.000,00"));
+});
+
+it("resposta tardia do cenário não apaga uma edição iniciada pelo contador", async () => {
+  let resolver;
+  montar({ listarSimulacoesPlanejamento: jest.fn(() => new Promise(r => { resolver = r; })) });
+  await esperarCalculo();
+  fireEvent.change(screen.getByLabelText(/Receita anual/i), { target: { value: "45000000" } });
+  await act(async () => resolver({ simulacoes: [{ geradoEm: "2026-09-01", entradas: { formularioCenario: { receita: "500.000,00" } } }] }));
+  expect(screen.getByLabelText(/Receita anual/i)).toHaveValue("450.000,00");
+});
+
 it("salva e reabre as premissas sem gerar PDF nem alterar cadastro", async () => {
   let salvo;
   const api = montar({

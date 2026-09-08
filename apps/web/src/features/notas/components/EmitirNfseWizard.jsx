@@ -12,12 +12,8 @@
 // (`notas/lib/declaracaoNfse.js`). Antes eram duas listas: o espelho tinha sete linhas e o confirm
 // tinha duas (valor e tomador) — e é o confirm que se lê no instante do clique.
 //
-// ⚠ DOIS PASSOS, NÃO QUATRO — e nenhuma garantia caiu junto.
-// Tomador, serviço e valores eram três telas que só se podiam ver uma de cada vez; o contador
-// clicava "Continuar" três vezes e só via a nota inteira no fim. Hoje são três BLOCOS da mesma
-// página, com o espelho ao lado reagindo a cada tecla, e um único "Continuar" até a conferência.
-// O que continua valendo, e é o que importa: os impedimentos aparecem ANTES (ver abaixo), o botão
-// Emitir só existe na conferência, e o `confirm` repete a declaração inteira.
+// Tomador → Serviço e valores → Conferência. Cada etapa valida seus campos;
+// a emissão continua condicionada à validação completa e à conferência.
 //
 // ⚠ OS CAMPOS SÃO OS DO BACKEND, não uma invenção da tela.
 // Tudo aqui espelha `application/validators/nfsePayload.js`:
@@ -145,8 +141,8 @@ import {
 
 import { conferirDadosDaOperacao } from "../lib/dadosDaOperacao";
 
-const PASSOS = ["Preencher a nota", "Conferir e emitir"];
-const PASSO_CONFERIR = 1;
+const PASSOS = ["Tomador", "Serviço e valores", "Conferência"];
+const PASSO_CONFERIR = 2;
 
 const soDigitos = (v) => String(v || "").replace(/\D/g, "");
 
@@ -239,9 +235,9 @@ function AvisoDeReaproveitamento({ modelo }) {
 
 // Cabeçalho de bloco do formulário. As três perguntas em ordem de trabalho — "para quem", "o quê",
 // "quanto" —, o mesmo vocabulário do protótipo aprovado.
-function Bloco({ titulo, children }) {
+function Bloco({ titulo, children, oculto = false }) {
   return (
-    <section style={{ display: "grid", gap: 10 }}>
+    <section hidden={oculto} style={{ display: oculto ? "none" : "grid", gap: 10 }}>
       <h4 style={{
         margin: 0, fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.04em",
         textTransform: "uppercase", color: PANEL.muted,
@@ -633,6 +629,8 @@ export function EmitirNfseWizard({
     leituraPTot.problema, leituraPTot.preenchido, regime, problemaPerfil, perfisDaEmpresa, perfilEscolhido, retencoesComplementares, obra, destinatario]);
 
   const prontoParaEmitir = problemasDaNota.length === 0;
+  const camposDoTomador = new Set([CAMPO.DOC, CAMPO.NOME, CAMPO.EMAIL, ...CAMPOS_DO_ENDERECO]);
+  const problemasDoPasso = passo === 0 ? problemasDaNota.filter((p) => p.cadastro || camposDoTomador.has(p.campo)) : problemasDaNota;
   const textoDosProblemas = problemasDaNota.map((p) => p.texto).join(" · ");
   const temProblemaGrave = problemasDaNota.some((p) => p.grave);
 
@@ -642,7 +640,7 @@ export function EmitirNfseWizard({
   const [campoAlvo, setCampoAlvo] = useState(null);
   function irParaCampo(id) {
     if (!id) return;
-    setPasso(0);
+    setPasso(camposDoTomador.has(id) || id === "nfse-impedimento-empresa" ? 0 : 1);
     if (id === "nfse-operacao") document.getElementById(id)?.querySelectorAll("details").forEach((el) => { el.open = true; });
     if (CAMPOS_DO_ENDERECO.has(id)) setEnderecoAberto(true);
     setCampoAlvo(id);
@@ -817,7 +815,7 @@ export function EmitirNfseWizard({
 
         {perfisDaEmpresa.length > 0 && <div style={{ marginBottom: 16 }}>
           <label htmlFor="nfse-perfil">Perfil de serviço desta nota</label>
-          <select id="nfse-perfil" disabled={passo !== 0 || enviando} value={perfilEscolhido?.id || ""} onChange={(e) => setPerfilId(e.target.value)}>
+          <select id="nfse-perfil" disabled={passo === PASSO_CONFERIR || enviando} value={perfilEscolhido?.id || ""} onChange={(e) => setPerfilId(e.target.value)}>
             <option value="">Escolha o perfil configurado pelo contador</option>
             {perfisDaEmpresa.map((p) => <option key={p.id} value={p.id}>{p.nome} — {p.codigoServicoNacional}</option>)}
           </select>
@@ -916,11 +914,11 @@ export function EmitirNfseWizard({
         {/* O formulário e o espelho lado a lado. Abaixo de 900px a grade vira uma coluna e o
             espelho fica embaixo — ver `.emitir-nfse-corpo` no `App.css`. */}
         <div className={passo === PASSO_CONFERIR ? "emitir-nfse-corpo emitir-nfse-corpo--conferir" : "emitir-nfse-corpo"}>
-          {passo === 0 && (
+          {passo < PASSO_CONFERIR && (
             <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
               <>
                 {/* ── Para quem ─────────────────────────────────────────── */}
-                <Bloco titulo="Para quem">
+                <Bloco titulo="Para quem" oculto={passo !== 0}>
                   <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                     <label htmlFor={CAMPO.DOC} style={{ ...rotulo, flex: 1 }}>CNPJ ou CPF do tomador
                       <input
@@ -1084,7 +1082,7 @@ export function EmitirNfseWizard({
                 </Bloco>
 
                 {/* ── O que ─────────────────────────────────────────────── */}
-                <Bloco titulo="O que">
+                <Bloco titulo="O que" oculto={passo !== 1}>
                   {/* ⚠ O CÓDIGO DE SERVIÇO É O QUE SE DECLARA AO FISCO, e ele vinha invisível: a nota
                       saía com o `cTribNac` do cadastro e o contador não via qual, nem com que descrição.
                       Fica ANTES da descrição livre de propósito — a descrição do serviço se escreve
@@ -1172,7 +1170,7 @@ export function EmitirNfseWizard({
                 </Bloco>
 
                 {/* ── Quanto ────────────────────────────────────────────── */}
-                <Bloco titulo="Quanto">
+                <Bloco titulo="Quanto" oculto={passo !== 1}>
                   <div className="emissor-campos">
                     {/* ⚠⚠ O CAMPO DE VALOR É MASCARADO, e não é enfeite: ele só consegue conter
                         `1.234,56`. Antes era texto livre lido com um `replace(",", ".")`, e as três
@@ -1299,16 +1297,16 @@ export function EmitirNfseWizard({
           <PainelDaNota dados={dadosDaDeclaracao} pTotTribSN={leituraPTot.valor} destaque={passo === PASSO_CONFERIR} />
         </div>
 
-        <section id="nfse-operacao" tabIndex={-1} aria-label="Dados específicos da operação" style={{ marginTop: 16 }}>
+        <section id="nfse-operacao" tabIndex={-1} aria-label="Dados específicos da operação" style={{ marginTop: 16, display: passo === 0 ? "none" : undefined }}>
         <details style={{ marginBottom: 16 }}>
           <summary>Obra e destinatário IBS/CBS {obra.codigo || destinatario.cnpjCpf ? "— dados informados" : "— quando aplicáveis"}</summary>
-          <fieldset disabled={passo !== 0 || enviando}>
+          <fieldset disabled={passo === PASSO_CONFERIR || enviando}>
             <legend>Obra desta prestação</legend>
             <label>Tipo de identificador<select value={obra.tipo} onChange={(e) => setObra((o) => ({ ...o, tipo: e.target.value, codigo: "" }))}><option value="cObra">CNO / CEI</option><option value="cCIB">CIB</option></select></label>
             <label>Identificador da obra<input value={obra.codigo} onChange={(e) => setObra((o) => ({ ...o, codigo: e.target.value }))} /></label>
             <label>Inscrição imobiliária fiscal (opcional)<input value={obra.inscImobFisc} onChange={(e) => setObra((o) => ({ ...o, inscImobFisc: e.target.value }))} /></label>
           </fieldset>
-          <fieldset disabled={passo !== 0 || enviando}>
+          <fieldset disabled={passo === PASSO_CONFERIR || enviando}>
             <legend>Destinatário diferente do tomador — IBS/CBS</legend>
             <p>Deixe vazio se o destinatário for o próprio tomador. Requer IBS/CBS configurado no perfil.</p>
             <label>CPF/CNPJ do destinatário<input value={destinatario.cnpjCpf} onChange={(e) => setDestinatario((d) => ({ ...d, cnpjCpf: e.target.value }))} /></label>
@@ -1320,20 +1318,20 @@ export function EmitirNfseWizard({
           <summary>IRRF e retenção previdenciária {Object.values(retencoesComplementares).some((v) => v !== "") ? "— valores informados" : "— quando aplicáveis"}</summary>
           <p>Informe os valores conferidos pelo contador para esta operação. Deixe em branco quando não houver retenção.</p>
           {[["vRetIRRF", "IRRF retido (R$)"], ["vRetCP", "Previdência retida (R$)"]].map(([k, rotulo]) => <label key={k} style={{ display: "block" }}>
-            {rotulo}<input inputMode="decimal" disabled={passo !== 0 || enviando} value={retencoesComplementares[k]} onChange={(e) => setRetencoesComplementares((r) => ({ ...r, [k]: e.target.value.replace(",", ".") }))} />
+            {rotulo}<input inputMode="decimal" disabled={passo === PASSO_CONFERIR || enviando} value={retencoesComplementares[k]} onChange={(e) => setRetencoesComplementares((r) => ({ ...r, [k]: e.target.value.replace(",", ".") }))} />
           </label>)}
         </details>
 
         </section>
 
         {/* Opção desabilitada NUNCA fica sem explicação — e agora cada motivo LEVA ao campo. */}
-        {problemasDaNota.length > 0 && (
+        {problemasDoPasso.length > 0 && (
           <div style={{ marginTop: 14 }}>
             <div style={{ fontSize: "0.78rem", color: temProblemaGrave ? "var(--state-danger)" : "var(--state-neutral)", fontWeight: 700 }}>
               {temProblemaGrave ? "Antes de emitir, corrija:" : "Falta preencher:"}
             </div>
             <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: "0.78rem", display: "grid", gap: 4 }}>
-              {[...(problemasDaNota.some((p) => p.cadastro) ? [{ texto: "Complete as configurações da empresa indicadas no início do formulário.", campo: "nfse-impedimento-empresa", grave: true }] : []), ...problemasDaNota.filter((p) => !p.cadastro)].map((p) => (
+              {[...(problemasDoPasso.some((p) => p.cadastro) ? [{ texto: "Complete as configurações da empresa indicadas no início do formulário.", campo: "nfse-impedimento-empresa", grave: true }] : []), ...problemasDoPasso.filter((p) => !p.cadastro)].map((p) => (
                 <li key={p.texto} style={{ color: p.grave ? "var(--state-danger)" : "var(--state-neutral)" }}>
                   {p.texto}
                   {p.campo && (
@@ -1435,13 +1433,13 @@ export function EmitirNfseWizard({
             <Button
               type="button"
               onClick={() => setPasso(passo + 1)}
-              disabled={!prontoParaEmitir}
-              title={prontoParaEmitir ? undefined : textoDosProblemas}
+              disabled={problemasDoPasso.length > 0}
+              title={problemasDoPasso.length === 0 ? undefined : problemasDoPasso.map((p) => p.texto).join(" · ")}
             >
               Continuar →
-              {problemasDaNota.length > 0 ? (
+              {problemasDoPasso.length > 0 ? (
                 <span style={{ opacity: 0.75, fontWeight: 400 }}>
-                  {" "}· {problemasDaNota.length} {problemasDaNota.length === 1 ? "pendência" : "pendências"}
+                  {" "}· {problemasDoPasso.length} {problemasDoPasso.length === 1 ? "pendência" : "pendências"}
                 </span>
               ) : null}
             </Button>

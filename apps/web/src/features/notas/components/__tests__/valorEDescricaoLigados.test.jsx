@@ -53,6 +53,11 @@ function abrir({ cadastroEmissao = CADASTRO_BASE, onEmitir = jest.fn(async () =>
       onClose={noop}
     />
   );
+  if (cadastroEmissao) {
+    fireEvent.change(screen.getByLabelText(/CNPJ ou CPF do tomador/), { target: { value: "12345678000199" } });
+    fireEvent.change(screen.getByLabelText(/Nome ou razão social/), { target: { value: "ACME LTDA" } });
+    fireEvent.click(screen.getByRole("button", { name: /Continuar/ }));
+  }
   return { onEmitir };
 }
 
