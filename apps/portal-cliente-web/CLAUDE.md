@@ -2,6 +2,8 @@
 
 ## Fluxo e DRE — saldo informado (08/09/2026)
 
+Regra preservada após integração da main: declaração avulsa do cliente fica pendente para conferência e só entra no fluxo após contabilização, pela fonte de despesa lançada. Salvar não altera saldo imediatamente. Projeções de séries são somente DESPESA com ao menos três observações consecutivas; declarar recorrência não satisfaz esse histórico. Mock mantém cadastro/remover, mas não cria caixa fictício a partir dessas declarações. Gaveta informa a etapa de conferência antes/depois de salvar.
+
 Esta decisão substitui a proibição anterior de saldo entre meses: existe âncora explícita informada pelo cliente, no primeiro dia do mês, via PUT/DELETE `/client/companies/:id/fluxo-de-caixa/saldo-inicial`. Ausência de âncora nunca é zero; valores negativos e zero declarados são válidos. Mostrar “Saldo inicial informado” e “Saldo projetado”, sempre previsto, separado de “Resultado mensal”. Não chamar de saldo bancário conciliado. O backend transporta saldo entre meses (`mes.saldo.inicial/final`); a tabela diária soma somente o inicial daquele mês ao resultado acumulado diário. Mês sem movimento mantém saldo; mês anterior à âncora mostra traço.
 
 Competência selecionada é navegação/consulta; nunca enviar como `cicloAtual` para simular hoje. GET usa `janelaInicio`, e o relógio efetivo vem do servidor. Mudar competência/empresa reposiciona a tabela. Mutação no fluxo recarrega tabela e cards juntos; falha do fluxo aparece no resumo com retentativa. Formulário do saldo preserva rascunho durante navegação/recarregamento da mesma empresa e desabilita gravação enquanto a leitura não está disponível. Visita do escritório recebe `somenteLeitura`, sem controles de saldo; backend continua autoridade de autorização.

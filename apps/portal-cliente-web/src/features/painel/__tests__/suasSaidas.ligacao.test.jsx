@@ -49,8 +49,8 @@ afterEach(() => { jest.restoreAllMocks(); });
 describe("⚠⚠ a fronteira: isto NÃO é contabilidade", () => {
   it("⚠⚠ a tela DIZ que não lança nada — sem a frase, o cliente cobraria um lançamento que não existe", () => {
     abrir();
-    expect(screen.getByText(/não lança nada na contabilidade/i)).toBeInTheDocument();
-    expect(screen.getByText(/entra no seu fluxo como/i)).toBeInTheDocument();
+    expect(screen.getByText(/avulsas entram no fluxo após contabilização/i)).toBeInTheDocument();
+    expect(screen.getByText(/Salvar não confirma pagamento/i)).toBeInTheDocument();
   });
 
   it("⚠⚠ o botão tem RÓTULO — `+` mudo é o vocabulário de quem edita a contabilidade na grade", () => {

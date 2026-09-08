@@ -13,6 +13,8 @@ Implementação autorizada em 08/09/2026, a partir da auditoria que identificou 
 
 ## Validação antes do CI
 
+A integração preservou a atualização concorrente da main: saídas avulsas entram no fluxo após contabilização e recorrências de despesas exigem três observações consecutivas. As quatro suítes de fluxo/saldo passaram com 236 testes após essa integração.
+
 - API integrada fluxo/DRE/HTTP: 15 suítes, 525 testes aprovados. DRE com Decimal real e contrato de serviço; saldo com zero/negativo, centavos, virada de ano, histórico anterior à janela e autorização.
 - Frontend: 40 testes finais de cards/saldo/DRE e 12 de API/saldo passaram; 315 de rodada ampla anterior passaram e uma expectativa de texto foi corrigida na rodada final (contagens sobrepostas). Relatórios do contador: quatro testes com paridade do saldo final/diário.
 - Schema validado e Prisma gerado em diretório isolado, sem alterar dependências compartilhadas. Auditoria de migrations aprovada.

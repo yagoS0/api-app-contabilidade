@@ -191,7 +191,7 @@ describe("⚠⚠ acrescentar a saída dali mesmo", () => {
     });
     expect(typeof criar.mock.calls[0][1].valor).toBe("number");
     // ⚠ Quem recarrega é quem TEM as linhas — a gaveta não busca nada por conta própria.
-    expect(aoMudar).toHaveBeenCalled();
+    expect(aoMudar).toHaveBeenCalledWith({ mensagem: expect.stringContaining("após ser contabilizada") });
   });
 
   it("⚠⚠ ZERO é recusado, COM O MOTIVO — e nada é enviado", async () => {

@@ -650,6 +650,7 @@ function Dre({ dados }) {
 }
 
 export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtualizarFluxo, somenteLeitura = false, hoje: hojeInjetado = null }) {
+  const [mensagemDoFluxo, setMensagemDoFluxo] = useState("");
   const notificarMudanca = () => { fluxoQuery.recarregar(); aoAtualizarFluxo?.(); };
   const [visao, setVisao] = useState("fluxo");
   /** ⚠ `rs` × `pct` — v3 §3.6. Ele combina livremente com Fluxo/DRE e sobrevive à troca de modo. */
@@ -686,6 +687,7 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
     setJanelaInicio(null);
     setMesEsquerda(null);
     setGaveta(null);
+    setMensagemDoFluxo("");
   }, [companyId, competencia]);
 
   /**
@@ -875,6 +877,7 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
       </div>
 
       {demonstracao ? <Selo /> : null}
+      {mensagemDoFluxo && <p role="status">{mensagemDoFluxo}</p>}
       <div hidden={visao !== "fluxo"}><SaldoInicial key={companyId} companyId={companyId} competencia={competencia} saldo={fluxoQuery.dados?.saldoInicial} api={api} aoMudar={notificarMudanca} somenteLeitura={somenteLeitura} disponivel={visao === "fluxo" && !fluxoQuery.carregando && !fluxoQuery.erro && Boolean(fluxoQuery.dados)} /></div>
       {visao === "fluxo" && <p className="hint">Resultado mensal soma as movimentações do mês. Saldo projetado inclui o saldo inicial informado e transporta os meses; não é saldo bancário conciliado.</p>}
 
@@ -979,7 +982,7 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
         aoFechar={() => setGaveta(null)}
         /* ⚠ Criada a saída, quem recarrega é o BLOCO — com a MESMA consulta que desenha a tabela.
            Acrescentar a linha na mão faria a gaveta e a tabela discordarem até a próxima leitura. */
-        aoMudar={() => { setGaveta(null); notificarMudanca(); }}
+        aoMudar={(resposta) => { setMensagemDoFluxo(resposta?.mensagem || ""); setGaveta(null); notificarMudanca(); }}
       />
 
       {mostraPopUp ? (
