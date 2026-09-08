@@ -151,7 +151,14 @@ export async function marcarExpirada(acaoId, { client = prisma } = {}) {
  * CONFIRMA (reserva atômica) E EXECUTA. Devolve o que dizer ao cliente e se o fio vai à fila humana.
  * @returns {Promise<{executou:boolean, texto:string, filaHumana:boolean, resultado:object|null}>}
  */
-export async function confirmarEExecutar({ acaoId, conversaId = null, portalClientId = null, agora = new Date(), client = prisma, log = logPadrao, executores = null, deps = DEPS_PADRAO } = {}) {
+export async function confirmarEExecutar({ acaoId, conversaId = null, portalClientId = null, confirmacao = null, agora = new Date(), client = prisma, log = logPadrao, executores = null, deps = DEPS_PADRAO } = {}) {
+  // O conjunto visto pelo turno é conferido no MESMO comando que reserva o ato. Uma leitura
+  // anterior separada deixa uma correção entrar entre o SELECT e o UPDATE. Sem exclusão por
+  // respondidaPelaIaEm: outro consumidor da caixa não pode tornar uma correção invisível.
+  const entradasNovas = confirmacao ? {
+    direcao: "in", registradaEm: { gte: new Date(confirmacao.registradaEm) },
+    id: { notIn: [...new Set(confirmacao.mensagensConhecidas)] },
+  } : null;
   const reserva = await client.acaoPendenteWhatsapp.updateMany({
     where: {
       id: String(acaoId), status: STATUS.PENDENTE, expiraEm: { gt: agora },
@@ -159,10 +166,27 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
       // ⚠ A EMPRESA TAMBÉM ENTRA: o escritório pode ter RE-VINCULADO o fio a outra empresa nos 10
       // minutos da pendência, e aí o ato sairia no CNPJ em que ela nasceu, não no do fio de agora.
       ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+      ...(entradasNovas ? { conversa: { is: {
+        escopoVerificado: true, excluidaEm: null, atendidaPor: null, atendidaDesde: null,
+        ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+        OR: [{ automacaoInvalidadaEm: null }, { automacaoInvalidadaEm: { lt: new Date(confirmacao.registradaEm) } }],
+        mensagens: { none: entradasNovas },
+      } } } : {}),
     },
-    data: { status: STATUS.CONFIRMADA, confirmadaEm: agora },
+    data: { status: STATUS.CONFIRMADA, confirmadaEm: agora, ...(confirmacao ? { mensagemConfirmacaoId: String(confirmacao.mensagemId) } : {}) },
   });
   if (!reserva.count) {
+    if (entradasNovas) {
+      // Só afirmar que a correção impediu o ato se ainda era pendente. Se outro consumidor já
+      // reservou/executou, não inventar que nada ocorreu nem permitir uma nova execução.
+      const cancelada = await client.acaoPendenteWhatsapp.updateMany({ where: {
+        id: String(acaoId), status: STATUS.PENDENTE,
+        ...(conversaId ? { conversaId: String(conversaId) } : {}),
+        ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+        conversa: { is: { mensagens: { some: entradasNovas } } },
+      }, data: { status: STATUS.CANCELADA } });
+      if (cancelada.count) return { executou: false, codigo: "CONFIRMACAO_SUPERADA", texto: "Recebi uma nova mensagem depois da confirmação e não executei o pedido. Vamos conferir as alterações antes de confirmar novamente.", filaHumana: false, resultado: null };
+    }
     // Já confirmada por outra entrega, cancelada, expirou entre a leitura e a reserva — ou é de outro fio.
     return { executou: false, texto: "Esse pedido já foi tratado ou expirou. Se ainda quiser, peça de novo.", filaHumana: false, resultado: null };
   }

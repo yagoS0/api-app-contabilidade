@@ -190,42 +190,81 @@ export function mesmaNota(idEmissao, idProjecao) {
  * @param {string} params.legacyCompanyId  `Company.id` — o mundo em que `ServiceInvoice` vive
  * @param {string} params.portalClientId   `PortalClient.id` — o mundo de `PortalInvoice`
  * @param {Object} [params.client=prisma]
+ * @param {string} [params.competencia] mês AAAA-MM, filtrado antes do limite
+ * @param {string} [params.busca] número exato ou nome/documento do tomador
+ * @param {string} [params.cnpjEmitente] CNPJ do cadastro, para projeções antigas sem papel
+ * @param {Date} [params.criadaDesde] corte do prefixo já lido no ADN, quando ele preenche a página
+ * @param {number} [params.limite] prefixo de notas SEM PAR necessário para a página; ausente
+ *   preserva a janela legada de 200 emissões. Com limite, continua em lotes após deduplicar.
  * @returns {Promise<Array>} linhas de `ServiceInvoice` sem par, mais recentes primeiro
  */
 export async function lerEmitidasNaoConfirmadas({
   legacyCompanyId,
   portalClientId,
   client = prisma,
+  competencia = null,
+  busca = "",
+  cnpjEmitente = null,
+  limite = null,
+  criadaDesde = null,
 } = {}) {
   if (!legacyCompanyId || !portalClientId) return [];
+  const limiteSolicitado = limite == null ? null : Math.max(1, Math.min(20_001, Math.trunc(Number(limite)) || 1));
+  const termo = String(busca || "").trim().slice(0, 120);
+  const digitos = termo.replace(/\D/g, "");
+  const filtroBusca = !termo ? {} : /^\d+$/.test(termo) && termo.length < 11 ? { numeroNfse: termo } : { OR: [
+    { tomadorNome: { contains: termo, mode: "insensitive" } },
+    ...(digitos ? [{ tomadorDoc: { contains: digitos } }] : []),
+  ] };
+  if (competencia != null && !/^\d{4}-(0[1-9]|1[0-2])$/.test(String(competencia))) throw new Error("competencia_invalida");
+  const [ano, mes] = competencia ? competencia.split("-").map(Number) : [];
+  const filtroCompetencia = competencia ? { competencia: { gte: new Date(Date.UTC(ano, mes - 1, 1)), lt: new Date(Date.UTC(ano, mes, 1)) } } : {};
+  const filtroCriacao = criadaDesde ? { createdAt: { gte: criadaDesde } } : {};
+  const docEmitente = String(cnpjEmitente || "").replace(/\D/g, "");
+  const filtroDirecao = docEmitente.length === 14 ? { OR: [{ papel: "EMIT" }, { papel: null, emitenteDoc: docEmitente }] } : { papel: "EMIT" };
+  const selectEmissao = {
+    id: true, chaveAcesso: true, numeroNfse: true, rpsSerie: true, rpsNumero: true,
+    tomadorDoc: true, tomadorNome: true, valorServicos: true, competencia: true,
+    status: true, createdAt: true, updatedAt: true,
+  };
+  const selectProjecao = { id: true, chaveAcesso: true, numero: true, xmlRaw: true };
+  const semPar = [];
+  let cursor = null;
+  do {
+    const emitidas = await client.serviceInvoice.findMany({
+      where: { companyId: String(legacyCompanyId), status: { notIn: [...STATUS_SEM_NOTA] }, ...filtroCompetencia, ...filtroBusca, ...filtroCriacao },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      take: TETO_EMITIDAS,
+      select: selectEmissao,
+    });
+    if (!emitidas.length) break;
 
-  const emitidas = await client.serviceInvoice.findMany({
-    where: { companyId: String(legacyCompanyId), status: { notIn: [...STATUS_SEM_NOTA] } },
-    orderBy: { createdAt: "desc" },
-    take: TETO_EMITIDAS,
-    select: {
-      id: true, chaveAcesso: true, numeroNfse: true, rpsSerie: true, rpsNumero: true,
-      tomadorDoc: true, tomadorNome: true, valorServicos: true, competencia: true,
-      status: true, createdAt: true, updatedAt: true,
-    },
-  });
-  if (!emitidas.length) return [];
-
-  // ⚠ A JANELA DO OUTRO LADO. Só interessam as notas que a empresa EMITIU (`papel: "EMIT"`): a
-  // numeração de uma nota recebida é do prestador dela, e compará-las faria a tupla do E0014
-  // atravessar CNPJs. `xmlRaw` entra no `select` porque é de onde sai a série/nDPS — e ele já é
-  // carregado pela listagem de qualquer forma.
-  const projecao = await client.portalInvoice.findMany({
-    where: { clientId: String(portalClientId), type: "NFSE", papel: "EMIT" },
-    orderBy: { createdAt: "desc" },
-    take: TETO_EMITIDAS * 4,
-    select: { id: true, chaveAcesso: true, numero: true, xmlRaw: true },
-  });
-
-  const identidadesDoAdn = projecao.map(identidadeDaProjecao);
-
-  return emitidas.filter((si) => {
-    const id = identidadeDaEmissao(si);
-    return !identidadesDoAdn.some((idAdn) => mesmaNota(id, idAdn));
-  });
+    // A janela mantém a prova por série/nDPS do XML. Na leitura paginada, buscamos também
+    // chaves/números do lote diretamente: uma captura antiga fora da janela não pode duplicar.
+    const projecao = await client.portalInvoice.findMany({
+      where: { clientId: String(portalClientId), type: "NFSE", ...filtroDirecao },
+      orderBy: { createdAt: "desc" },
+      take: TETO_EMITIDAS * 4,
+      select: selectProjecao,
+    });
+    const identidades = emitidas.map(identidadeDaEmissao);
+    const chaves = [...new Set(identidades.map((id) => id.chave).filter(Boolean))];
+    const numeros = [...new Set(identidades.map((id) => id.numero).filter(Boolean))];
+    if (limiteSolicitado && (chaves.length || numeros.length)) {
+      const correspondentes = await client.portalInvoice.findMany({
+        where: { clientId: String(portalClientId), type: "NFSE", AND: [filtroDirecao, { OR: [
+          ...(chaves.length ? [{ chaveAcesso: { in: chaves } }] : []),
+          ...(numeros.length ? [{ numero: { in: numeros } }] : []),
+        ] }] },
+        select: selectProjecao,
+      });
+      projecao.push(...correspondentes);
+    }
+    const identidadesDoAdn = projecao.map(identidadeDaProjecao);
+    semPar.push(...emitidas.filter((si) => !identidadesDoAdn.some((idAdn) => mesmaNota(identidadeDaEmissao(si), idAdn))));
+    if (!limiteSolicitado || semPar.length >= limiteSolicitado || emitidas.length < TETO_EMITIDAS) break;
+    cursor = emitidas[emitidas.length - 1].id;
+  } while (cursor);
+  return limiteSolicitado ? semPar.slice(0, limiteSolicitado) : semPar;
 }

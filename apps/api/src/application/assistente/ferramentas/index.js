@@ -220,6 +220,7 @@ function validarEntradaEmissao(input) {
     for (const [chave, propriedade] of Object.entries(regra.properties || {})) visitar(valor[chave], propriedade, caminho ? `${caminho}.${chave}` : chave);
   };
   visitar(input, schema, "");
+  if (input?.competencia != null && !mesValido(input.competencia)) erros.push("competencia");
   return erros.length ? recusa("DADOS_EMISSAO_INVALIDOS", "Confira os dados informados para montar a nota. Use valores numéricos para valores e percentuais; não acrescente campos que não foram solicitados.", { campos: erros.slice(0, 10) }) : null;
 }
 
@@ -310,7 +311,15 @@ const EXECUTORES = {
     });
     // A mesma união e deduplicação do portal: emitir NÃO grava PortalInvoice. O DANFSe e
     // cancelamento já aceitam os dois ids; a lista precisa tornar a emissão nova alcançável.
-    const novas = direcao === "EMIT" && empresa?.companyId ? await ctx.servicos.lerEmitidasNaoConfirmadas({ legacyCompanyId: empresa.companyId, portalClientId: ctx.sessao.portalClientId, client: ctx.prisma }) : [];
+    // Havendo um prefixo completo do ADN, emissões anteriores ao menor instante dele não
+    // podem entrar nesta página nem mudar temMais. Evita varrer todo o histórico capturado.
+    const menorInstanteDoAdn = notasDoAdn.length >= limitePrefixo
+      ? Math.min(...notasDoAdn.map((n) => new Date(n.issueDate || n.createdAt).getTime())) : NaN;
+    const novas = direcao === "EMIT" && empresa?.companyId ? await ctx.servicos.lerEmitidasNaoConfirmadas({
+      legacyCompanyId: empresa.companyId, portalClientId: ctx.sessao.portalClientId, client: ctx.prisma,
+      competencia: input.competencia || null, busca, cnpjEmitente: docEmpresa, limite: limitePrefixo,
+      criadaDesde: Number.isFinite(menorInstanteDoAdn) ? new Date(menorInstanteDoAdn) : null,
+    }) : [];
     const notasNovas = novas.filter((n) => (!input.competencia || competenciaDaData(n.competencia) === input.competencia)
       && (!busca || (/^\d+$/.test(busca) && busca.length < 11 ? String(n.numeroNfse || "") === busca
         : String(n.tomadorNome || "").toLocaleLowerCase("pt-BR").includes(busca.toLocaleLowerCase("pt-BR")) || Boolean(soDigitos(busca) && soDigitos(n.tomadorDoc).includes(soDigitos(busca))))))

@@ -1,0 +1,45 @@
+name: WhatsApp confirmation PostgreSQL
+
+on:
+  pull_request:
+    paths:
+      - 'apps/api/src/application/assistente/**'
+      - 'apps/api/src/application/whatsapp/**'
+      - 'apps/api/prisma/**'
+      - 'apps/api/scripts/verify-whatsapp-confirmacao-postgres.js'
+      - '.github/workflows/whatsapp-confirmacao-postgres.yml'
+      - 'package-lock.json'
+  push:
+    branches: [main, dev]
+
+jobs:
+  confirmation-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: altan_test
+          POSTGRES_PASSWORD: fixture_only_ci
+          POSTGRES_DB: altan_whatsapp_test
+        ports:
+          - 55443:5432
+        options: >-
+          --health-cmd "pg_isready -U altan_test -d altan_whatsapp_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://altan_test:fixture_only_ci@127.0.0.1:55443/altan_whatsapp_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate -w @contabilidade/api
+      - name: Apply complete migration history
+        run: npm run prisma:migrate:deploy -w @contabilidade/api
+      - name: Validate fiscal confirmation reservation and concurrent corrections
+        working-directory: apps/api
+        run: node scripts/verify-whatsapp-confirmacao-postgres.js --url "$DATABASE_URL"

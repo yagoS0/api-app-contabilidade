@@ -17,6 +17,7 @@ import { definicoes, executarFerramenta, PERMISSAO_POR_FERRAMENTA } from "./ferr
 
 export const AUTOR = Object.freeze({ IA: "IA", HUMANO: "HUMANO", SISTEMA: "SISTEMA" });
 const LOCK_TTL_MS = 90_000;
+const LIMITE_ENTRADAS_CONFIRMADAS = 100;
 const compararMensagens = (a, b) => new Date(a.registradaEm) - new Date(b.registradaEm) || String(a.id || "").localeCompare(String(b.id || ""));
 
 /** A mensagem `in` → um turno da API. Mídia vira uma frase entre colchetes (o modelo não a lê). */
@@ -216,18 +217,33 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       }
       if (d.decisao === "EXECUTAR") {
         await conferirPortao();
-        const posterior = await client.mensagemWhatsapp.findFirst({ where: { conversaId: conversa.id, direcao: DIRECAO.ENTRADA, respondidaPelaIaEm: null, registradaEm: { gt: pedidoAtual.registradaEm } }, orderBy: { registradaEm: "asc" } });
-        if (posterior && (!lerConfirmacao(posterior.corpo).ehConfirmacao || lerConfirmacao(posterior.corpo).codigo !== pendente.codigo)) {
+        // Todas as entradas posteriores contam, inclusive mesmo instante e além das 12 bolhas.
+        // Ler só a primeira deixava uma duplicata esconder a correção seguinte. Excesso recusa:
+        // truncar a fila nunca pode transformar contexto desconhecido em autorização fiscal.
+        const posteriores = (await client.mensagemWhatsapp.findMany({ where: {
+          conversaId: conversa.id, direcao: DIRECAO.ENTRADA,
+          registradaEm: { gte: mensagem.registradaEm }, id: { notIn: mensagensRespondidas },
+        }, orderBy: [{ registradaEm: "asc" }, { id: "asc" }], take: LIMITE_ENTRADAS_CONFIRMADAS + 1,
+        select: { id: true, conversaId: true, direcao: true, tipo: true, corpo: true, registradaEm: true },
+        })).filter(m => m.conversaId === conversa.id && m.direcao === DIRECAO.ENTRADA && !mensagensRespondidas.includes(m.id) && new Date(m.registradaEm) >= new Date(mensagem.registradaEm));
+        const houveAlteracao = posteriores.length > LIMITE_ENTRADAS_CONFIRMADAS || posteriores.some(m => {
+          const leitura = lerConfirmacao(m.corpo);
+          return m.tipo !== "text" || !leitura.ehConfirmacao || leitura.codigo !== String(pendente.codigo).toUpperCase();
+        });
+        if (houveAlteracao) {
           await cancelarPendencia(pendente.id, { client });
           await dizer("Recebi uma nova mensagem depois da confirmação e não executei o pedido. Vou conferir essa mensagem antes de preparar uma nova confirmação.", { autor: AUTOR.SISTEMA });
           return concluir({ feito: true, motivo: "CONFIRMACAO_SUPERADA" });
         }
+        const confirmacao = { mensagemId: mensagem.id, registradaEm: mensagem.registradaEm, mensagensConhecidas: [...mensagensRespondidas, ...posteriores.map(m => m.id)] };
+        await conferirPortao();
         // ⚠ `conversaId` e `portalClientId` vão na reserva: a pendência de um fio nunca é
-        // confirmada por outro, nem executada depois de o fio mudar de empresa.
-        const r = await confirmarEExecutar({ acaoId: pendente.id, conversaId: conversa.id, portalClientId: conversa.portalClientId, agora, client, log, executores: deps.executores || null, ...(deps.acoesDeps ? { deps: deps.acoesDeps } : {}) });
+        // confirmada por outro, nem executada depois de o fio mudar de empresa. A reserva também
+        // recusa qualquer entrada que tenha chegado entre a leitura acima e o UPDATE atômico.
+        const r = await confirmarEExecutar({ acaoId: pendente.id, conversaId: conversa.id, portalClientId: conversa.portalClientId, confirmacao, agora, client, log, executores: deps.executores || null, ...(deps.acoesDeps ? { deps: deps.acoesDeps } : {}) });
         if (r.filaHumana) await encaminharParaEquipe();
         await dizer(r.texto, { autor: AUTOR.SISTEMA });
-        return concluir({ feito: true, motivo: "EXECUTADA", texto: r.texto });
+        return concluir({ feito: true, motivo: r.codigo || "EXECUTADA", texto: r.texto });
       }
       if (d.decisao === "CODIGO_ERRADO") {
         await dizer(FRASES.CODIGO_ERRADO(pendente.codigo), { autor: AUTOR.SISTEMA });

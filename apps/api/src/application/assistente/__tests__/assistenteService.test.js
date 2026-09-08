@@ -158,8 +158,7 @@ describe("regressões de conversa natural", () => {
   it("correção posterior fora do limite de agrupamento também impede a execução antiga", async () => {
     const client = bancoEmMemoria({ pendente: pedido() }), cloud = cloudFalso(), assistente = modeloFalso(), executor = jest.fn();
     client._mensagens.get("m1").corpo = "CONFIRMAR A7K2";
-    const original = client.mensagemWhatsapp.findFirst.getMockImplementation();
-    client.mensagemWhatsapp.findFirst.mockImplementation(async (args) => args.where.registradaEm?.gt ? { id: "m2", corpo: "corrija o valor", registradaEm: new Date("2026-09-02T12:00:09Z") } : original(args));
+    client._mensagens.set("m2", { ...client._mensagens.get("m1"), id: "m2", corpo: "corrija o valor", registradaEm: new Date("2026-09-02T12:00:09Z") });
     const r = await responderMensagem({ conversaId: "cv1", mensagemId: "m1", deps: deps({ client, cloud, assistente, executores: { [TIPOS.RECALCULAR_GUIA]: executor } }) });
     expect(r.motivo).toBe("CONFIRMACAO_SUPERADA");
     expect(executor).not.toHaveBeenCalled();
