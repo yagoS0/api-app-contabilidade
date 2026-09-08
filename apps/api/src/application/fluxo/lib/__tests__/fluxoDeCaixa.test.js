@@ -121,7 +121,7 @@ describe("⚠⚠ as duas nunca coexistem", () => {
   // Sem `tipoDaGuia`/`ehParcelamento` a linha não substitui nada — e é essa a nova regra.
   const guia = linha({
     fonte: FONTE.GUIA, competencia: "2026-08", valor: 1200,
-    base: { tipoDaGuia: "SIMPLES", ehParcelamento: false },
+    base: { tipoDaGuia: "SIMPLES", ehParcelamento: false, competenciaDaGuia: "2026-07" },
   });
   const projetado = linha({
     fonte: FONTE.IMPOSTO_PROJETADO, procedencia: PROCEDENCIA.PREVISAO,
@@ -547,5 +547,18 @@ describe("⚠⚠ a receita projetada pelo histórico", () => {
     const l = projetar(REAL).linhas[0];
     expect(l.fonte).toBe(FONTE.RECEITA_PROJETADA);
     expect(l.direcao).toBe(DIRECAO.ENTRADA);
+  });
+});
+
+
+it.each(["2026-06", null, "2026-13"])("DAS de competência %s não apaga projeção de agosto", (competenciaDaGuia) => {
+ const guia = { fonte: FONTE.GUIA, competencia: "2026-08", base: { tipoDaGuia: "SIMPLES", ehParcelamento: false, competenciaDaGuia } };
+ const previsao = { fonte: FONTE.IMPOSTO_PROJETADO, competencia: "2026-08" };
+ expect(projecaoSubstituidaPelaGuia([guia, previsao])).toEqual([guia, previsao]);
+});
+
+describe("a unidade de cada linha do fluxo é o centavo", () => {
+  it.each([[0.005,0.01],[-0.005,-0.01],[1.005,1.01],[-1.005,-1.01],[1.275,1.28],[1e-7,0]])("normaliza %s para %s, inclusive estornos", (valor, esperado) => {
+    expect(montarLinha({ fonte: FONTE.SERIE_RECEITA, direcao: DIRECAO.ENTRADA, procedencia: PROCEDENCIA.PREVISAO, competencia: "2026-08", valor }).valor).toBe(esperado);
   });
 });

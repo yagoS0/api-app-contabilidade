@@ -417,6 +417,7 @@ export function AppShell({ user }) {
             />
           ) : (
             <PainelPage
+              somenteLeitura={ehVisitaDoEscritorio(user) && !ehMestreDoEscritorio(user)}
               empresa={empresaAtiva}
               competencia={competencia}
               aoTrocarCompetencia={setCompetencia}

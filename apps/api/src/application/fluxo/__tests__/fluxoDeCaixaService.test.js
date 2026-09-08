@@ -153,7 +153,8 @@ describe("⚠⚠ não existe `total`, nem saldo acumulado", () => {
 
   it("⚠⚠ e não há saldo acumulado — sem saldo inicial não há o que acumular", async () => {
     const r = await montar(clientDe({ guias: [guia()] }));
-    expect(JSON.stringify(r)).not.toMatch(/saldoAcumulado|saldoInicial/i);
+    expect(r.saldoInicial).toBeNull();
+    expect(r.meses.every(m => m.saldo.inicial === null && m.saldo.final === null)).toBe(true);
   });
 
   it("⚠ cada mês totaliza por PROCEDÊNCIA, e só", async () => {
@@ -1294,6 +1295,74 @@ describe("⚠⚠⚠ a liberação decide a PROCEDÊNCIA da guia — nunca se ela
   });
 });
 
+describe("datas das guias independem da navegação", () => {
+  it("guia futura permanece no vencimento; vencida anterior fica no presente; paga usa pagamento", async () => {
+    const r = await montar(clientDe({ guias: [
+      guia({ id: "futura", vencimento: new Date("2026-10-20T00:00:00Z") }),
+      guia({ id: "atrasada", vencimento: new Date("2026-07-20T00:00:00Z") }),
+      guia({ id: "paga", paymentStatus: "PAID", paymentConfirmedAt: new Date("2026-06-15T00:00:00Z") }),
+    ] }), { janelaInicio: "2026-04" });
+    const linhas = linhasDe(r, FONTE.GUIA);
+    expect(linhas.find(l => l.referencia.id === "futura")).toMatchObject({ competencia: "2026-10", dia: 20 });
+    expect(linhas.find(l => l.referencia.id === "atrasada")).toMatchObject({ competencia: "2026-08", dia: null });
+    expect(linhas.find(l => l.referencia.id === "paga")).toMatchObject({ competencia: "2026-06", dia: 15, procedencia: PROCEDENCIA.FATO });
+  });
+
+  it("navegar a janela para trás não desloca guias para o passado", async () => {
+    const base = { guias: [guia({ vencimento: new Date("2026-10-20T00:00:00Z") })] };
+    const a = await montar(clientDe(base), { janelaInicio: "2026-04" });
+    const b = await montar(clientDe(base), { janelaInicio: "2026-02" });
+    expect(linhasDe(a, FONTE.GUIA)).toEqual(linhasDe(b, FONTE.GUIA));
+  });
+});
+
+it("DAS pago carrega identidade e substitui a projeção do mesmo mês sem apagar INSS/parcelas", async () => {
+  const r = await montar(clientDe({
+    notas: [nota({ competencia: new Date("2026-07-01T00:00:00Z") })], snapshot: apuracao(),
+    guias: [guia({ competencia: "2026-07", paymentStatus: "PAID", paymentConfirmedAt: new Date("2026-08-20T00:00:00Z") })],
+  }));
+  const mes = doMes(r, "2026-08");
+  expect(mes.linhas.some(l => l.fonte === FONTE.IMPOSTO_PROJETADO)).toBe(false);
+  expect(mes.linhas.find(l => l.fonte === FONTE.GUIA).base).toMatchObject({ tipoDaGuia: "SIMPLES", ehParcelamento: false, competenciaDaGuia: "2026-07" });
+});
+
+it("saldo inicial inclui movimentos anteriores à janela visual, sem corte de 12 meses", async () => {
+  const pagamento = (data, valor) => ({ data: new Date(`${data}T00:00:00Z`), competencia: data.slice(0,7), lines: [{ tipo: "C", conta: "5", valor }] });
+  const client = clientDe({
+    notas: [nota({ competencia: new Date("2025-01-01T00:00:00Z"), total: 100 })],
+    guias: [guia({ paymentStatus: "PAID", paymentConfirmedAt: new Date("2025-03-15T00:00:00Z"), valor: 20 })],
+    folhas: [pagamento("2025-04-05", 30)], despesas: [pagamento("2025-05-10", 40)],
+    contasDeFolha: [{ codigo: "5", codigoCompleto: "111010001", portalClientId: null }],
+    saidasDoCliente: [{ id: "s-antiga", data: new Date("2025-06-10T00:00:00Z"), estado: "PENDENTE", valor: 50 }],
+  });
+  client.saldoInicialFluxo = { findFirst: jest.fn().mockResolvedValue({ id: "saldo-1", dataReferencia: new Date("2025-01-01T00:00:00Z"), valor: 1000 }) };
+  const r = await montar(client, { janelaInicio: "2026-04" });
+  expect(r.meses[0].competencia).toBe("2026-04");
+  expect(r.meses[0].saldo.inicial).toBe(1010);
+  expect(client.saidaAvulsaCliente.findMany).not.toHaveBeenCalled();
+  expect(r.saldoInicial.valor).toBe(1000);
+});
+
+it("a âncora permite navegar antes da primeira nota", async () => {
+  const client = clientDe({ primeiraNota: { competencia: new Date("2026-07-01T00:00:00Z") } });
+  client.saldoInicialFluxo = { findFirst: jest.fn().mockResolvedValue({ id: "saldo-1", dataReferencia: new Date("2026-01-01T00:00:00Z"), valor: 1000 }) };
+  const r = await montar(client, { janelaInicio: "2026-01" });
+  expect(r.meses[0].competencia).toBe("2026-01");
+  expect(r.meses[0].saldo.inicial).toBe(1000);
+});
+
+it("duas projeções de meio centavo têm linhas, totais e saldo coerentes em 0,02", async () => {
+  const client = clientDe({ series: [
+    serie({ id: "s-centavo1", lado: LADO.DESPESA, baseDaObservacao: { n: 3, consecutivos: 3, mediana: 0.005 } }),
+    serie({ id: "s-centavo2", lado: LADO.DESPESA, baseDaObservacao: { n: 3, consecutivos: 3, mediana: 0.005 } }),
+  ] });
+  client.saldoInicialFluxo = { findFirst: jest.fn().mockResolvedValue({ id: "saldo-centavos", dataReferencia: new Date("2026-08-01T00:00:00Z"), valor: 0 }) };
+  const r = await montar(client);
+  const mes = doMes(r, "2026-08");
+  expect(mes.linhas.filter(l => l.direcao === DIRECAO.SAIDA).map(l => l.valor)).toEqual([0.01,0.01]);
+  expect(mes.totais.previsao.saida).toBe(0.02);
+  expect(mes.saldo.final).toBe(-0.02);
+});
 describe("piso de recorrência futura", () => {
   it.each([0,1,2,3,4])("%s meses consecutivos", async consecutivos => {
     const r=await montar(clientDe({series:[serie({baseDaObservacao:{n:4,consecutivos,mediana:130}})]}));

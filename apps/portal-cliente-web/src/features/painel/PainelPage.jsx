@@ -103,7 +103,7 @@ function textoDaAliquota(l, competencia) {
     : base;
 }
 
-export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar, aoEnviarExtrato }) {
+export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar, aoEnviarExtrato, somenteLeitura = false }) {
   // ⚠⚠ A COMPETÊNCIA VEM DA CASCA — ver o comentário longo em `AppShell.jsx`. Era um
   // `useState(competenciaPadrao)` daqui, gêmeo do de `NotasPage`, e as duas abas discordavam.
   // O default não mudou: `competenciaPadrao` é o mês CORRENTE (dono, 18/08/2026).
@@ -217,7 +217,7 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
   };
 
   const carregando = notasQuery.carregando || aliquotaQuery.carregando;
-  const erro = notasQuery.erro || aliquotaQuery.erro;
+  const erro = notasQuery.erro || aliquotaQuery.erro || caixaQuery.erro;
 
   return (
     <>
@@ -260,6 +260,7 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
         aoTentarNovamente={() => {
           notasQuery.recarregar();
           aliquotaQuery.recarregar();
+          caixaQuery.recarregar();
         }}
       />
 
@@ -348,7 +349,7 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
         desta tela.
       */}
 
-      <BlocoDeDemonstracao companyId={companyId} competencia={competencia} aoVerGuias={verTodasAsGuias} />
+      <BlocoDeDemonstracao companyId={companyId} competencia={competencia} aoVerGuias={verTodasAsGuias} aoAtualizarFluxo={caixaQuery.recarregar} somenteLeitura={somenteLeitura} />
     </>
   );
 }

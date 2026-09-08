@@ -11,16 +11,16 @@
 // ⚠ Mesmo desenho de `nfseEmissaoHttp.js` e `danfseHttp.js`: eles não validam nem decidem nada, só
 // traduzem para HTTP.
 
-import { montarFluxoDeCaixa, cicloDeHoje } from "../application/fluxo/FluxoDeCaixaService.js";
+import { montarFluxoDeCaixa, cicloDeHoje, dataDeHoje } from "../application/fluxo/FluxoDeCaixaService.js";
 import { avaliarCiencia, lerGuiasComCiencia } from "../application/guides/cienciaDeGuias.js";
 
-const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
+const COMPETENCIA_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /**
  * Responde o fluxo de caixa de uma empresa.
  *
- * ⚠ `cicloAtual` malformado RECUSA, em vez de cair no mês corrente em silêncio: os 12 meses, o
- * "quantos ciclos desde a última observação" e o corte do que é passado se apoiam nele.
+ * O relógio vem do servidor. `cicloAtual` do cliente é compatibilidade de navegação:
+ * quando não há janelaInicio, ele escolhe somente onde a janela começa. Ambos são validados.
  */
 export async function responderFluxoDeCaixa(req, res, { log } = {}) {
   const bruto = String(req.query?.cicloAtual || "").trim();
@@ -44,10 +44,13 @@ export async function responderFluxoDeCaixa(req, res, { log } = {}) {
     return res.status(400).json({ ok: false, error: "janela_invalida", message: "O início da janela precisa ser AAAA-MM." });
   }
   try {
+    // O relógio pertence ao servidor. A competência escolhida só navega a janela.
+    const agora = new Date();
     const r = await montarFluxoDeCaixa({
       portalClientId: String(req.params.companyId),
-      cicloAtual: bruto || cicloDeHoje(),
-      janelaInicio: janela || null,
+      cicloAtual: cicloDeHoje(agora),
+      hoje: dataDeHoje(agora),
+      janelaInicio: janela || bruto || null,
     });
     /**
      * ⚠⚠ O "JÁ AVISAMOS?" É OUTRA PERGUNTA, COM OUTRO DONO — por isso ela é respondida AQUI, e não

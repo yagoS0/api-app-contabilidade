@@ -35,6 +35,8 @@
  * das filhas de `411` no plano, e quem conferir contra o razão vai bater nessa diferença.
  * ⚠ Por isso `41102` (gerais) exclui explicitamente o que foi remanejado — ver `EXCLUSOES`.
  */
+import { Prisma } from "@prisma/client";
+
 export const LINHAS_DO_DRE = Object.freeze([
   { chave: "receitaBruta", rotulo: "Receita bruta", tipo: "linha", grupo: 3, prefixos: ["311"] },
   { chave: "deducoes", rotulo: "(-) Deduções", tipo: "linha", grupo: 3, prefixos: ["33"] },
@@ -80,9 +82,12 @@ export const CAUSA_NAO_CLASSIFICADO = Object.freeze({
   CONTA_EM_BRANCO: "conta_em_branco",
   FORA_DO_PLANO: "fora_do_plano",
   SEM_CODIGO_COMPLETO: "sem_codigo_completo",
+  RESULTADO_SEM_MAPEAMENTO: "resultado_sem_mapeamento",
 });
 
 export const FRASE_DA_CAUSA = Object.freeze({
+  [CAUSA_NAO_CLASSIFICADO.RESULTADO_SEM_MAPEAMENTO]:
+    "Estas contas de resultado não têm uma linha gerencial correspondente. Seus valores não estão incluídos nos subtotais; o contador deve revisar o mapeamento.",
   [CAUSA_NAO_CLASSIFICADO.CONTA_EM_BRANCO]:
     "Estas linhas ainda não têm conta contábil. É um estado normal — a provisão de guia nasce assim —, e o seu contador ainda vai classificá-las.",
   [CAUSA_NAO_CLASSIFICADO.FORA_DO_PLANO]:
@@ -103,11 +108,18 @@ export const FRASE_DA_CAUSA = Object.freeze({
 const EXCLUSOES = Object.freeze({});
 
 const numero = (v) => {
-  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-  if (typeof v !== "string" || !v.trim()) return 0;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+  // Prisma entrega Decimal antes da serialização HTTP. Inválido é desconhecido, nunca zero.
+  const entrada = Prisma.Decimal.isDecimal(v) ? v.toString() : v;
+  if (typeof entrada !== "number" && typeof entrada !== "string") return null;
+  if (typeof entrada === "string" && !entrada.trim()) return null;
+  const n = Number(entrada);
+  return Number.isFinite(n) ? n : null;
 };
+
+const FRASE_DA_INCONSISTENCIA = Object.freeze({
+  valor_invalido: "Há linhas com valor inválido. Elas não foram somadas; o contador deve conferir os lançamentos.",
+  tipo_invalido: "Há linhas sem indicação válida de débito ou crédito. Elas não foram somadas; o contador deve conferir os lançamentos.",
+});
 
 const texto = (v) => (typeof v === "string" ? v.trim() : "");
 
@@ -180,6 +192,15 @@ export function montarDreGerencial({ lancamentos, planoPorCodigo, competencia } 
   for (const l of LINHAS_DO_DRE) if (l.tipo === "linha") porLinha.set(l.chave, { valor: 0, contas: new Map() });
 
   const naoClassificado = new Map();
+  const inconsistencias = new Map();
+  const registrarInconsistencia = (causa, codigo) => {
+    if (!inconsistencias.has(causa)) inconsistencias.set(causa, { causa, frase: FRASE_DA_INCONSISTENCIA[causa], linhas: 0, contas: new Map() });
+    const grupo = inconsistencias.get(causa), chave = codigo || "(sem conta)";
+    grupo.linhas++;
+    const conta = grupo.contas.get(chave) || { codigo: chave, nome: planoPorCodigo?.get?.(codigo)?.nome || null, linhas: 0 };
+    conta.linhas++;
+    grupo.contas.set(chave, conta);
+  };
   const registrarNaoClassificado = (causa, codigo, valor, nome) => {
     if (!naoClassificado.has(causa)) naoClassificado.set(causa, { causa, valor: 0, contas: new Map() });
     const bloco = naoClassificado.get(causa);
@@ -192,11 +213,16 @@ export function montarDreGerencial({ lancamentos, planoPorCodigo, competencia } 
   };
 
   let temLancamento = false;
+  let lancamentosRascunho = 0;
   for (const lanc of Array.isArray(lancamentos) ? lancamentos : []) {
+    // Rascunho classificado participa da soma; seu estado torna o resultado provisório.
+    if (lanc?.status === "RASCUNHO" && lanc.lines?.length) lancamentosRascunho++;
     for (const linha of Array.isArray(lanc?.lines) ? lanc.lines : []) {
       temLancamento = true;
       const codigo = texto(linha?.conta);
       const valor = numero(linha?.valor);
+      if (valor === null) { registrarInconsistencia("valor_invalido", codigo); continue; }
+      if (!["D", "C"].includes(texto(linha?.tipo).toUpperCase())) { registrarInconsistencia("tipo_invalido", codigo); continue; }
 
       // ⚠ Conta EM BRANCO: 76 linhas e R$ 687 mil na base. NÃO é erro — é estado legítimo.
       if (!codigo) {
@@ -215,9 +241,8 @@ export function montarDreGerencial({ lancamentos, planoPorCodigo, competencia } 
       }
       const chave = linhaDoCodigo(completo);
       if (!chave) {
-        // ⚠ Conta que EXISTE no plano e cujo grupo não é do DRE (ativo, passivo, patrimônio). Ela
-        // não é "não classificada": ela simplesmente não é do resultado. Sair em silêncio aqui é o
-        // certo — o DRE não é o balancete.
+        // Patrimoniais ficam fora do resultado. Ramo de resultado desconhecido exige aviso.
+        if (/^[345]/.test(completo)) registrarNaoClassificado(CAUSA_NAO_CLASSIFICADO.RESULTADO_SEM_MAPEAMENTO, codigo, valor, conta.nome);
         continue;
       }
 
@@ -259,6 +284,9 @@ export function montarDreGerencial({ lancamentos, planoPorCodigo, competencia } 
     linhas.push({ chave: def.chave, rotulo: def.rotulo, tipo: def.tipo, valor, contas: [] });
   }
 
+  const linhasNaoClassificadas = [...naoClassificado.values()].reduce((s, b) => s + [...b.contas.values()].reduce((n, c) => n + c.linhas, 0), 0);
+  const linhasInvalidas = [...inconsistencias.values()].reduce((s, b) => s + b.linhas, 0);
+  const provisorio = linhasNaoClassificadas > 0 || linhasInvalidas > 0 || lancamentosRascunho > 0;
   return {
     competencia: competencia || null,
     /**
@@ -267,6 +295,12 @@ export function montarDreGerencial({ lancamentos, planoPorCodigo, competencia } 
      * selo de ficção; com ele `true` por engano, o contrário.
      */
     demonstracao: false,
+    qualidade: {
+      status: !temLancamento ? "SEM_LANCAMENTOS" : provisorio ? "PROVISORIO" : "SEM_PENDENCIAS_IDENTIFICADAS",
+      provisorio, linhasNaoClassificadas, linhasInvalidas, lancamentosRascunho,
+      motivos: [...naoClassificado.keys(), ...inconsistencias.keys(), ...(lancamentosRascunho ? ["lancamento_rascunho"] : [])],
+    },
+    inconsistencias: [...inconsistencias.values()].map(b => ({ ...b, contas: [...b.contas.values()] })),
     linhas,
     /**
      * ⚠⚠ **VAZIO É RESPOSTA, E ELE TEM NOME.** Medido: 12 das 34 empresas não têm lançamento nenhum.

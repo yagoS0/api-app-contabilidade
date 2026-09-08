@@ -1,5 +1,12 @@
 # CLAUDE.md — API (apps/api)
 
+## Correção do fluxo e DRE — 08/09/2026
+
+Esta decisão substitui orientações antigas que proibiam transportar saldo entre meses. O fluxo agora aceita saldo inicial informado pelo cliente, com mês de referência e histórico append-only. Meses sem movimento transportam o valor anterior. Resultado mensal permanece separado de Saldo projetado; nenhum deles certifica saldo bancário conciliado. Sem âncora não assumir zero. Aplicar migration 20260908230000_cashflow_opening_balance e gerar Prisma antes da API. Ver apps/api/src/application/fluxo/CLAUDE.md.
+
+A DRE aceita Decimal real do Prisma e sinaliza valores inválidos, contas de resultado sem mapeamento e rascunhos; não esconder esses estados zerando valores. Ela continua por competência. Ver apps/api/src/application/dre/CLAUDE.md. Painel e tabela atualizam juntos; competência escolhida não redefine hoje no servidor. Guias futuras ficam no vencimento, atrasadas em aberto no mês atual, pagas na data do pagamento. Valores monetários do fluxo são normalizados por linha em centavos antes dos totais e saldos.
+
+
 ## Ajustes aprovados e implementados — 08/09/2026
 
 Esta decisão substitui orientações anteriores incompatíveis sobre calendário, retorno e Relatórios.

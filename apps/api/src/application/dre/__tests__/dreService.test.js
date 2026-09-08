@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 // A LIGAÇÃO do DRE com o banco.
 //
 // ⚠⚠ A REGRA tem teste em `lib/__tests__/dreGerencial.test.js`. O que se prende AQUI é o que a regra
@@ -80,7 +81,7 @@ describe("⚠⚠ a leitura", () => {
     const client = clientDe();
     await montarDre({ portalClientId: "emp-1", competencia: "2026-08", client });
     expect(client.accountingEntry.findMany.mock.calls[0][0].select)
-      .toEqual({ lines: { select: { tipo: true, valor: true, conta: true } } });
+      .toEqual({ status: true, lines: { select: { tipo: true, valor: true, conta: true } } });
   });
 
   it("⚠⚠ o plano traz a EMPRESA e as GLOBAIS — e a da empresa vence", async () => {
@@ -149,4 +150,29 @@ describe("⚠⚠ o DRE NÃO ESCREVE", () => {
     // ⚠ E nada externo: o DRE não chama ADN, SEFAZ nem SERPRO.
     expect(fonte).not.toMatch(/axios|fetch\(/);
   });
+});
+
+
+test('contrato do serviço recebe Decimal do Prisma e serializa resultado real e parcialidade', async () => {
+  const client = clientDe({ contas: [conta('r', '311020001'), conta('d', '411020001'), conta('x', '413010001')], lancamentos: [{ lines: [
+    { conta: 'r', tipo: 'C', valor: new Prisma.Decimal('1000') },
+    { conta: 'd', tipo: 'D', valor: new Prisma.Decimal('200') },
+    { conta: 'x', tipo: 'D', valor: new Prisma.Decimal('17.35') },
+  ] }] });
+  const dto = JSON.parse(JSON.stringify(await montarDre({ portalClientId: 'emp-1', competencia: '2026-09', client })));
+  expect(valorDe(dto, 'resultadoDoPeriodo')).toBe(800);
+  expect(dto).toMatchObject({ competencia: '2026-09', demonstracao: false, semLancamento: false, qualidade: { status: 'PROVISORIO', provisorio: true, linhasNaoClassificadas: 1, linhasInvalidas: 0 }, inconsistencias: [] });
+  expect(dto.naoClassificado[0]).toMatchObject({ causa: 'resultado_sem_mapeamento', valor: 17.35 });
+  expect(client.accountingEntry.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { portalClientId: 'emp-1', competencia: '2026-09' } }));
+});
+
+
+test('rascunho válido não é excluído da DRE e torna o resultado provisório', async () => {
+  const client = clientDe({ contas: [conta('r', '311020001')], lancamentos: [
+    { status: 'CONFIRMADO', lines: [{ conta: 'r', tipo: 'C', valor: new Prisma.Decimal('80') }] },
+    { status: 'RASCUNHO', lines: [{ conta: 'r', tipo: 'C', valor: new Prisma.Decimal('20') }] },
+  ] });
+  const dre = await montarDre({ portalClientId: 'emp-1', competencia: '2026-09', client });
+  expect(valorDe(dre, 'receitaBruta')).toBe(100);
+  expect(dre.qualidade).toMatchObject({ provisorio: true, lancamentosRascunho: 1, motivos: ['lancamento_rascunho'] });
 });

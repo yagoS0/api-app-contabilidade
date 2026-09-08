@@ -101,6 +101,15 @@ export function dreDoMock(_companyId, competencia) {
     demonstracao: false,
     linhas,
     semLancamento: false,
+    qualidade: {
+      status: "PROVISORIO", provisorio: true, linhasNaoClassificadas: 4, lancamentosRascunho: 1,
+      linhasInvalidas: _companyId === "pc-003" ? 1 : 0,
+      motivos: ["sem_codigo_completo", "resultado_sem_mapeamento", "lancamento_rascunho", ...(_companyId === "pc-003" ? ["valor_invalido"] : [])],
+    },
+    inconsistencias: _companyId === "pc-003" ? [{
+      causa: "valor_invalido", frase: "Há linhas com valor inválido. Elas não foram somadas; o contador deve conferir os lançamentos.",
+      linhas: 1, contas: [{ codigo: "401", nome: "RECEITA DE SERVIÇOS", linhas: 1 }],
+    }] : [],
     /**
      * ⚠⚠ "FORA DO DRE" É OBRIGATÓRIO, e o mock TEM DE CARREGÁ-LO. Medido em produção: essa linha
      * carrega R$ 321.822,26 de receita e R$ 20.274,56 de DAS — some com ela e a empresa some do
@@ -109,10 +118,16 @@ export function dreDoMock(_companyId, competencia) {
      */
     naoClassificado: [
       {
-        causa: "SEM_CODIGO_COMPLETO",
+        causa: "sem_codigo_completo",
         frase: "Estas contas não têm código completo no plano, e por isso não entram em nenhuma linha acima.",
         valor: 1284.90,
         contas: [{ codigo: "557", nome: "DESPESAS DIVERSAS", valor: 1284.90, linhas: 3 }],
+      },
+      {
+        causa: "resultado_sem_mapeamento",
+        frase: "Estas contas de resultado não têm uma linha gerencial correspondente. Seus valores não estão incluídos nos subtotais; o contador deve revisar o mapeamento.",
+        valor: 237.42,
+        contas: [{ codigo: "990", nome: "DESPESA DO PLANO PRÓPRIO", valor: 237.42, linhas: 1 }],
       },
     ],
   };
@@ -130,6 +145,8 @@ export function dreVazioDoMock(_companyId, competencia) {
     demonstracao: false,
     linhas: LINHAS.map((def) => ({ ...def, valor: 0, contas: [] })),
     semLancamento: true,
+    qualidade: { status: "SEM_LANCAMENTOS", provisorio: false, linhasNaoClassificadas: 0, linhasInvalidas: 0, lancamentosRascunho: 0, motivos: [] },
+    inconsistencias: [],
     naoClassificado: [],
   };
 }

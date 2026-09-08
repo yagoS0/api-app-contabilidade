@@ -162,8 +162,7 @@ export function SuasSaidas({ companyId, meses, aoMudar }) {
           como contabilidade. Sem ela, o cliente pode achar que o que escreveu aqui virou despesa
           lançada — e cobrar do contador um lançamento que ninguém fez. */}
       <p className="fluxo-v4-saidas-nota">
-        O que você escrever aqui entra no seu fluxo como <strong>previsão</strong> e aparece para o
-        seu contador conferir. Isto não lança nada na contabilidade.
+        O cadastro será enviado para conferência. Saídas avulsas entram no fluxo após contabilização; recorrências de despesa precisam de pelo menos três observações consecutivas. Salvar não confirma pagamento.
       </p>
 
       {aberto ? (

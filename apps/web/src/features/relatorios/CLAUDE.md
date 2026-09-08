@@ -9,3 +9,7 @@ Dois meses diários, mês completo no DOM com rolagem e totais no rodapé. `tabe
 Resumo de lançamentos anterior preservado no export explícito `RelatorioLancamentosTab`, sem entrada na aba atual. Seus testes permanecem separados dos testes do fluxo.
 
 Mock usa fixture do cliente copiado em `api/mock/fluxoRelatoriosFixture.js`; não representa identidade de lançamentos entre os dois mocks independentes. O ambiente real compartilha o serviço.
+
+## Saldo projetado — 08/09/2026
+
+Relatórios espelha Resultado mensal e Saldo projetado do cliente, sem ações de escrita. mes.saldo vem do backend; nunca reiniciar esse saldo por mês nem calculá-lo apenas com meses visíveis. Sem saldoInicial o acumulado fica indisponível. Paridade de tabelaFluxoLeitura com tabelaDoFluxo inclui saldo diário e final.

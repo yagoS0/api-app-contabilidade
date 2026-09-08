@@ -310,73 +310,8 @@ function linhasDoPresenteEDoFuturo(ciclo) {
   ];
 }
 
-/**
- * ⚠⚠ AS LINHAS DAS SAÍDAS QUE O CLIENTE ACRESCENTOU — na MESMA forma que o servidor manda.
- *
- * ⚠ **A avulsa e a recorrente NÃO usam a mesma fonte, e a distinção é do servidor, não do mock:**
- * só a AVULSA é `SAIDA_DO_CLIENTE`; a que ele disse que se repete vira `SERIE_DESPESA` com
- * `base.origem: "DECLARADA"` — porque é a mesma série que o detector produz, e duas fontes para ela
- * fariam a evidência da recorrência (n, faixa, confronto) parar de aparecer.
- *
- * ⚠⚠ **AS DUAS SÃO `PREVISAO`.** O cliente disse que PRETENDE pagar; ninguém pagou nada. Marcá-las
- * como fato pintaria de preto uma intenção — e o que a coluna promete é *"o dinheiro saiu"*.
- *
- * ⚠ A recorrente aparece em TODOS os meses do horizonte a partir do corrente (é o que "todo mês"
- * quer dizer), e **sem dia**: a periodicidade diz o ciclo, não a data. Inventar o dia 5 é o que
- * `diaDesconhecido` existe para impedir.
- */
-function linhasDasSaidasDoCliente(saidas, ciclo) {
-  const lista = Array.isArray(saidas) ? saidas : [];
-  const out = [];
-  for (const s of lista) {
-    if (s?.estado !== "PENDENTE") continue;
-    if (s.tipo === "AVULSA") {
-      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s.data || ""));
-      if (!m) continue;
-      out.push({
-        fonte: "SAIDA_DO_CLIENTE", direcao: "SAIDA", procedencia: "PREVISAO",
-        competencia: `${m[1]}-${m[2]}`, dia: Number(m[3]), diaDesconhecido: null,
-        valor: Number(s.valor) || 0, rotulo: s.descricao,
-        base: {
-          frase: "você acrescentou esta saída — ela ainda não foi conferida pelo seu contador",
-          // ⚠⚠ `doCliente` E `referencia` SÃO O QUE O SERVIDOR MANDA, e a primeira versão deste mock
-          // mandava `origem: "CLIENTE"` + `base.saidaId` — nomes que o servidor não usa. Efeito
-          // medido NO NAVEGADOR: a saída entrava no fluxo (dia 18, −3.500,00) e **não aparecia na
-          // lista "Suas saídas"**, porque a leitura procura `base.doCliente`. Mock que inventa o
-          // nome do campo é a divergência mock × real que este projeto já pagou várias vezes.
-          doCliente: true, estadoDaSaida: "PENDENTE",
-        },
-        referencia: { tipo: "saidaAvulsa", id: s.id },
-      });
-      continue;
-    }
-    // ⚠ Mensal cobre 12/12; trimestral, de 3 em 3; anual, uma vez. O passo sai da periodicidade,
-    // nunca de uma média — "todo mês" e "todo ano" não são o mesmo compromisso.
-    const passo = s.periodicidade === "ANUAL" ? 12 : (s.periodicidade === "TRIMESTRAL" ? 3 : 1);
-    for (let k = 0; k < HORIZONTE; k += passo) {
-      out.push({
-        fonte: "SERIE_DESPESA", direcao: "SAIDA", procedencia: "PREVISAO",
-        competencia: somarMeses(ciclo, k), dia: null,
-        diaDesconhecido: {
-          motivo: "recorrencia_sem_dia",
-          frase: "A recorrência diz de quanto em quanto tempo, não em que dia do mês.",
-        },
-        valor: Number(s.valorDeclarado) || 0, rotulo: s.rotulo,
-        base: {
-          frase: "Você declarou que esta despesa se repete — ela ainda não foi conferida pelo seu contador.",
-          origem: "DECLARADA", valorDeclarado: Number(s.valorDeclarado) || 0,
-          // ⚠ `estadoDaSerie` (não `estadoDaSaida`): são dois vocabulários, um por tabela. O que
-          // eles têm em comum é o "PENDENTE", e é ele que a tela lê para oferecer o Remover.
-          estadoDaSerie: "PENDENTE", periodicidade: s.periodicidade || null,
-        },
-        // ⚠ A referência é o que a tela usa para saber O QUE remover — e ela é do servidor, não uma
-        // chave inventada dentro da `base`.
-        referencia: { tipo: "serie", id: s.id },
-      });
-    }
-  }
-  return out;
-}
+// Declarações pendentes permanecem no cadastro para conferência; não são movimento.
+// O mock não executa contabilização: despesas contabilizadas têm fixtures DESPESA_LANCADA.
 
 /**
  * @param {string} companyId
@@ -388,11 +323,9 @@ export function fluxoDeCaixaDoMock(companyId, competencia, opcoes = {}) {
   const magro = companyId === EMPRESA_SEM_APURACAO;
   const linhas = [
     ...(magro ? [] : [...linhasDoPassado(ciclo), ...linhasDoPresenteEDoFuturo(ciclo)]),
-    // ⚠⚠ AS SAÍDAS DO CLIENTE ENTRAM MESMO NA EMPRESA MAGRA: o que o cliente escreveu é dele, e
-    // não depende de a empresa ter apuração. Deixá-las de fora dali esconderia offline justamente
-    // o caso em que a linha do cliente é a ÚNICA da tela.
-    ...linhasDasSaidasDoCliente(opcoes.saidasDoCliente, ciclo),
   ]
+    // Fixtures de série elegíveis representam pelo menos três observações consecutivas.
+    .filter(l => l.fonte !== "SERIE_RECEITA" && (l.fonte !== "SERIE_DESPESA" || Number(l.base?.n) >= 3))
     /**
      * ⚠⚠ O QUE O CLIENTE MEXEU NAS SÉRIES — aplicado SOBRE o fixture (31/08/2026).
      *
@@ -497,12 +430,24 @@ export function fluxoDeCaixaDoMock(companyId, competencia, opcoes = {}) {
     },
   ];
 
+  const saldoInicial = opcoes.saldoInicial || null;
+  const ancora = saldoInicial?.dataReferencia?.slice(0, 7);
+  const movimento = (comp) => linhas.filter(l => l.competencia === comp && l.procedencia !== "DESCONHECIDO")
+    .reduce((s,l) => s + (l.direcao === "ENTRADA" ? 1 : -1) * Number(l.valor || 0), 0);
+  for (const mes of meses) {
+    if (!ancora || mes.competencia < ancora) { mes.saldo = { inicial: null, final: null, projetado: true }; continue; }
+    const anterior = linhas.filter(l => l.competencia >= ancora && l.competencia < mes.competencia && l.procedencia !== "DESCONHECIDO")
+      .reduce((s,l) => s + (l.direcao === "ENTRADA" ? 1 : -1) * Number(l.valor || 0), 0);
+    const inicial = Math.round((saldoInicial.valor + anterior) * 100) / 100;
+    mes.saldo = { inicial, final: Math.round((inicial + movimento(mes.competencia)) * 100) / 100, projetado: true };
+  }
   const cientes = new Set(opcoes.cientes || []);
   const itens = emAberto;
 
   return {
     // ⚠⚠ É ESTE CAMPO que apaga o selo, e ele espelha o do servidor.
     demonstracao: false,
+    saldoInicial,
     cicloAtual: ciclo,
     horizonte: HORIZONTE,
     meses,
