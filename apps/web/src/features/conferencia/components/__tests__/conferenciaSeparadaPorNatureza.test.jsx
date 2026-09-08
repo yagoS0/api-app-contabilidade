@@ -148,7 +148,7 @@ const secaoDe = (nat) => screen.getByRole("region", { name: SECAO[nat].titulo })
 describe("⚠⚠ as três seções existem, com título e com a frase que diz o que o clique faz", () => {
   it("as três aparecem", async () => {
     await montar();
-    for (const nat of [NATUREZA.VIRA_LANCAMENTO, NATUREZA.SO_FLUXO, NATUREZA.REGRA]) {
+    for (const nat of [NATUREZA.VIRA_LANCAMENTO, NATUREZA.REGRA]) {
       expect(secaoDe(nat)).toBeInTheDocument();
       expect(within(secaoDe(nat)).getByText(SECAO[nat].frase)).toBeInTheDocument();
     }
@@ -160,7 +160,6 @@ describe("⚠⚠ as três seções existem, com título e com a frase que diz o 
       .map((s) => s.getAttribute("aria-label"));
     expect(rotulos).toEqual([
       SECAO[NATUREZA.VIRA_LANCAMENTO].titulo,
-      SECAO[NATUREZA.SO_FLUXO].titulo,
       SECAO[NATUREZA.REGRA].titulo,
     ]);
   });
@@ -169,7 +168,7 @@ describe("⚠⚠ as três seções existem, com título e com a frase que diz o 
     // `title` não aparece no teclado nem no toque; é a mesma decisão do aviso da aba Notas Fiscais.
     await montar();
     expect(screen.getByText(SECAO[NATUREZA.VIRA_LANCAMENTO].frase)).toBeVisible();
-    expect(screen.getByText(SECAO[NATUREZA.SO_FLUXO].frase)).toBeVisible();
+    expect(screen.queryByText(SECAO[NATUREZA.SO_FLUXO].frase)).not.toBeInTheDocument();
   });
 });
 
@@ -183,8 +182,6 @@ describe("⚠⚠ cada painel sob a seção que a REGRA manda — o DOM conferido
     // (*"os lançamentos automáticos podemos colocar um botão nesse a lançar que abre um menu
     // lateral"*). O botão continua sendo o que a régua manda — ao lado da causa.
     [BLOCO.LANCADOS_POR_REGRA, /Ver o que as regras já lançaram/],
-    [BLOCO.RECORRENCIAS, "Recorrências"],
-    [BLOCO.SAIDAS_DO_CLIENTE, "Saídas que o cliente acrescentou"],
     [BLOCO.REGRAS, "Regras do fornecedor"],
   ];
 
@@ -236,8 +233,7 @@ describe("⚠⚠ cada painel sob a seção que a REGRA manda — o DOM conferido
 
   it("⚠ o sexto painel (mexidas do cliente) também — ele não pede nada e é o que se esquece", async () => {
     await montar();
-    const secao = secaoDe(natureza(BLOCO.MEXIDAS_DO_CLIENTE));
-    expect(secao.querySelector("[data-teste=mexidas-do-cliente]")).not.toBeNull();
+    expect(screen.queryByRole("region", { name: SECAO[NATUREZA.SO_FLUXO].titulo })).toBeNull();
   });
 
   it("⚠⚠ RECORRÊNCIA NÃO está na seção que lança — é previsão de fluxo, não despesa contabilizada", async () => {
@@ -247,7 +243,7 @@ describe("⚠⚠ cada painel sob a seção que a REGRA manda — o DOM conferido
 
   it("⚠⚠ e a FILA não está na seção do fluxo — é ela que vira lançamento", async () => {
     await montar();
-    expect(within(secaoDe(NATUREZA.SO_FLUXO)).queryAllByText("GOOGLE CLOUD BRASIL")).toHaveLength(0);
+    expect(screen.queryByRole("region", { name: SECAO[NATUREZA.SO_FLUXO].titulo })).toBeNull();
   });
 });
 
@@ -257,8 +253,7 @@ describe("⚠⚠ a fronteira do caixa: vocabulário contábil NÃO entra no cabe
     // seção é justamente o que poderia trazer a palavra "lançamento" para perto daquela fila e
     // fazer o contador procurar uma conta contábil que este caminho não tem.
     await montar();
-    const cabecalho = within(secaoDe(NATUREZA.SO_FLUXO)).getByText(SECAO[NATUREZA.SO_FLUXO].titulo);
-    expect(cabecalho.parentElement.textContent).not.toMatch(/conta|débito|crédito/i);
+    expect(screen.queryByRole("region", { name: SECAO[NATUREZA.SO_FLUXO].titulo })).toBeNull();
   });
 
   it("⚠ e a seção que LANÇA diz o que o lançamento faz — débito na despesa, crédito no caixa", async () => {

@@ -1301,7 +1301,7 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
   );
 }
 
-export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCreateBaixa, savingBaixa, onSearchHistoricos, onGetHistoricosByCode = null, isSelected = false, onToggleSelect = null, onLoadBaixaTemplate = null }) {
+export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCreateBaixa, savingBaixa, onSearchHistoricos, onGetHistoricosByCode = null, isSelected = false, onToggleSelect = null, onLoadBaixaTemplate = null, achados = [] }) {
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [showBaixa, setShowBaixa] = useState(false);
@@ -1403,6 +1403,10 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
         </td>
         {isSimple && <td style={{ ...TDv, textAlign: "center" }} title={cA ? `${cLine?.conta} — ${cA.nome}` : undefined}><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem", cursor: cA ? "help" : undefined }}>{cLine?.conta ? cLine.conta :<span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 400 }}>—</span>}</span></td>}
         <td style={{ ...TDv, fontSize: "0.9375rem" }} title={entry.historico}>
+          {achados.length > 0 && <details style={{ borderLeft: "3px solid #FFB347", paddingLeft: 8, marginBottom: 6, color: "#FFB347", fontSize: 13 }}>
+            <summary style={{ cursor: "pointer", fontWeight: 700 }}>⚠ Conferir lançamento · {achados.length} aviso(s)</summary>
+            {achados.map((a, i) => <p key={a.hash || i} style={{ margin: "6px 0", whiteSpace: "normal" }}>{a.mensagem || a.regraId}</p>)}
+          </details>}
           <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.historico || "—"}</div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }}>
             {isTemplate

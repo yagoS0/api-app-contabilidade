@@ -57,6 +57,12 @@ function mensagemDoErro(e) {
 }
 
 export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) {
+  const rotuloConta = codigo => {
+    if (!codigo) return "Caixa padrão";
+    const normalizar = v => String(v || "").replace(/\D/g, "");
+    const conta = contas.find(c => normalizar(c.codigoCompleto) === normalizar(codigo) || String(c.codigo) === String(codigo));
+    return conta ? `${conta.codigo} — ${conta.nome}` : `${codigo} — conta não localizada no plano`;
+  };
   const [estado, setEstado] = useState({ carregando: true, regras: [], indisponivel: false, erro: null });
   const [abrindo, setAbrindo] = useState(false);
   // ⚠ `enviando` FICOU no painel para o «Parar/Lançar sozinha» da lista — o formulário (que saiu
@@ -181,13 +187,15 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
               >
                 <div style={{ flex: 1, minWidth: 240 }}>
                   <div>
-                    <strong>{r.cnpjFornecedor ? cnpjBr(r.cnpjFornecedor) : r.padraoDescricao}</strong>
+                    <strong>{r.nomeFornecedor || r.padraoDescricao || "Fornecedor sem nome nas notas da empresa"}</strong>
+                    {r.cnpjFornecedor && <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{cnpjBr(r.cnpjFornecedor)}</div>}
                     <span style={{ color: "var(--text-muted)" }}>
                       {" "}· {brl(r.valorMin)} a {brl(r.valorMax)}
                     </span>
                   </div>
                   <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                    D {r.contaDestino} / C {r.contaCredito || "caixa padrão"}
+                    <div title={r.contaDestino}>Débito: {rotuloConta(r.contaDestino)}</div>
+                    <div title={r.contaCredito || undefined}>Crédito: {rotuloConta(r.contaCredito)}</div>
                     {typeof r.aplicacoes === "number" ? ` · ${r.aplicacoes} aplicações` : ""}
                   </div>
                   <div style={{ fontSize: 13, color: TOKEN_DO_COMPORTAMENTO[comportamento] }}>

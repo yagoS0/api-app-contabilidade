@@ -29,6 +29,15 @@ jest.mock("../../../../api/client", () => {
 
 const api = createApiClient();
 
+it("identifica fornecedor e código reduzido com nome das contas", async () => {
+  api.getConferenciaRegras.mockResolvedValueOnce({ regras: [{ ...REGRAS.regras[0], nomeFornecedor: "Fornecedor Teste" }] });
+  render(<PainelDeRegras companyId="emp-1" contas={CONTAS} />);
+  expect(await screen.findByText("Fornecedor Teste")).toBeInTheDocument();
+  expect(screen.getByText("12.345.678/0001-90")).toBeInTheDocument();
+  expect(screen.getByText("Débito: 557 — SOFTWARE")).toHaveAttribute("title", "411030012");
+  expect(screen.getByText("Crédito: 1 — CAIXA MATRIZ")).toBeInTheDocument();
+});
+
 const CONTAS = [
   { codigo: "557", codigoCompleto: "411030012", nome: "SOFTWARE", analitica: true },
   { codigo: "1", codigoCompleto: "111010001", nome: "CAIXA MATRIZ", analitica: true },

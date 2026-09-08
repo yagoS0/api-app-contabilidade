@@ -658,6 +658,8 @@ async function linhasDasSeries({ portalClientId, cicloAtual, mesesAProjetar = HO
   const semMes = [];
 
   for (const s of marcadas) {
+    // Previsão recorrente exige histórico observado; uma declaração isolada não basta.
+    if (s.lado !== LADO.DESPESA || Number(s.baseDaObservacao?.consecutivos || 0) < 3) continue;
     // ⚠ O valor projetado da série marcada: o DECLARADO quando existe (é o que a pessoa afirmou), e
     // a mediana observada quando não. ⚠⚠ Quando os DOIS existem, o OBSERVADO VENCE — decisão do
     // dono. Quem calcula a mediana é o detector; aqui só se escolhe entre os dois.
@@ -988,7 +990,8 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     // no arquivo, SEM CHAMADOR e com lápide: ela é a leitura que o Fator R usa, e apagá-la aqui
     // convidaria alguém a "consertar" a conferência do Fator R junto.
     linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
-    linhasDasSaidasDoCliente({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
+    // As saídas avulsas passam ao fluxo quando contabilizadas, pela despesa abaixo.
+    Promise.resolve({ linhas: [], indisponivel: false }),
     // ⚠⚠ A DESPESA LANÇADA — o que faz valer a regra do dono (*"ao lançar entra no fluxo"*). Até
     // 01/09/2026 ela não estava aqui, e o trabalho principal da Conferência não chegava ao cliente.
     linhasDasDespesasLancadas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
