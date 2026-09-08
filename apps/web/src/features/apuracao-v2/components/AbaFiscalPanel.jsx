@@ -55,6 +55,9 @@ export function AbaFiscalPanel({ panel }) {
 
   const inputStyle = { background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 5, color: PANEL.text, padding: "4px 6px", fontSize: "0.78rem", width: "100%" };
 
+  if (panel?.loading) return <p role="status">Carregando atividades fiscais…</p>;
+  if (panel?.perfilError) return <p role="alert">Não foi possível ler o perfil fiscal. {panel.perfilError}</p>;
+
   if (!rows.length) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12, color: PANEL.text }}>
@@ -119,19 +122,19 @@ export function AbaFiscalPanel({ panel }) {
                   ⚠ A marca é VISÍVEL, não só `title`: `title` não aparece no teclado nem no toque. */}
               <th style={{ padding: 8 }}>
                 Alíq. ISS %
-                <div style={{ fontWeight: 400, fontSize: "0.66rem", color: PANEL.muted }} title={COLUNAS_COM_LEITOR.aliquotaIss}>
+                <div style={{ fontWeight: 400, fontSize: "0.8rem", color: PANEL.muted }} title={COLUNAS_COM_LEITOR.aliquotaIss}>
                   usada no Planejamento
                 </div>
               </th>
               <th style={{ padding: 8 }}>
                 Cód. serv. munic.
-                <div style={{ fontWeight: 400, fontSize: "0.66rem", color: "#FFB347" }} title={COLUNAS_SEM_LEITOR.codigoServicoMunicipal}>
+                <div style={{ fontWeight: 400, fontSize: "0.8rem", color: "#FFB347" }} title={COLUNAS_SEM_LEITOR.codigoServicoMunicipal}>
                   ⚠ ainda sem uso
                 </div>
               </th>
               <th style={{ padding: 8, textAlign: "center" }}>
                 Ret. fonte
-                <div style={{ fontWeight: 400, fontSize: "0.66rem", color: "#FFB347" }} title={COLUNAS_SEM_LEITOR.retencaoFonte}>
+                <div style={{ fontWeight: 400, fontSize: "0.8rem", color: "#FFB347" }} title={COLUNAS_SEM_LEITOR.retencaoFonte}>
                   ⚠ ainda sem uso
                 </div>
               </th>
@@ -141,7 +144,7 @@ export function AbaFiscalPanel({ panel }) {
             {rows.map((r) => (
               <tr key={r.cnae} style={{ borderTop: `1px solid ${PANEL.border}`, opacity: r.ativo ? 1 : 0.5 }}>
                 <td style={{ padding: 8 }}>
-                  <input type="checkbox" checked={Boolean(r.ativo)} onChange={(e) => setRow(r.cnae, { ativo: e.target.checked })} />
+                  <input type="checkbox" aria-label={`Ativar CNAE ${r.cnae}`} checked={Boolean(r.ativo)} onChange={(e) => setRow(r.cnae, { ativo: e.target.checked })} />
                 </td>
                 <td style={{ padding: 8, fontFamily: "monospace" }}>
                   {r.cnae}{r.isPrincipal && <span title="CNAE principal" style={{ marginLeft: 4, color: "#BD93F9" }}>★</span>}
@@ -156,20 +159,20 @@ export function AbaFiscalPanel({ panel }) {
                 </td>
                 <td style={{ padding: 8 }}>{r.sujeitoFatorR ? "sim" : "—"}</td>
                 <td style={{ padding: 8, textAlign: "center" }}>
-                  <input type="checkbox" checked={Boolean(r.padrao)} disabled={!r.ativo}
+                  <input type="checkbox" aria-label={`Usar CNAE ${r.cnae} como padrão`} checked={Boolean(r.padrao)} disabled={!r.ativo}
                     onChange={(e) => (e.target.checked ? marcarPadrao(r.cnae, r.tipoReceita) : setRow(r.cnae, { padrao: false }))} />
                 </td>
                 <td style={{ padding: 8, width: 90 }}>
-                  <input type="number" step="0.01" min="0" max="10" value={r.aliquotaIss ?? ""}
+                  <input aria-label={`Alíquota ISS do CNAE ${r.cnae}`} type="number" step="0.01" min="0" max="10" value={r.aliquotaIss ?? ""}
                     onChange={(e) => setRow(r.cnae, { aliquotaIss: e.target.value === "" ? null : Number(e.target.value) })}
                     style={inputStyle} placeholder="—" />
                 </td>
                 <td style={{ padding: 8, width: 130 }}>
-                  <input value={r.codigoServicoMunicipal ?? ""} onChange={(e) => setRow(r.cnae, { codigoServicoMunicipal: e.target.value || null })}
+                  <input aria-label={`Código municipal do CNAE ${r.cnae}`} value={r.codigoServicoMunicipal ?? ""} onChange={(e) => setRow(r.cnae, { codigoServicoMunicipal: e.target.value || null })}
                     style={inputStyle} placeholder="—" />
                 </td>
                 <td style={{ padding: 8, textAlign: "center" }}>
-                  <input type="checkbox" checked={Boolean(r.retencaoFonte)} onChange={(e) => setRow(r.cnae, { retencaoFonte: e.target.checked })} />
+                  <input type="checkbox" aria-label={`Retenção na fonte do CNAE ${r.cnae}`} checked={Boolean(r.retencaoFonte)} onChange={(e) => setRow(r.cnae, { retencaoFonte: e.target.checked })} />
                 </td>
               </tr>
             ))}

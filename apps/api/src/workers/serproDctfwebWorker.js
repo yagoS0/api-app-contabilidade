@@ -1,3 +1,4 @@
+import { comContextoSerpro, contextoSerproAtual } from "../application/fiscal/serpro/serproCallContext.js";
 import { log } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
 import { tryAcquireGuideLock, releaseGuideLock } from "../application/guides/GuideLockService.js";
@@ -50,6 +51,10 @@ async function listEligiblePortalCompanies() {
 }
 
 export async function runSerproDctfwebWorkerOnce(options = {}) {
+  const ctx = contextoSerproAtual();
+  return comContextoSerpro({ ...ctx, origem: ctx.origem || "worker:serpro_dctfweb" }, () => executarDctfweb(options));
+}
+async function executarDctfweb(options = {}) {
   const locked = await tryAcquireGuideLock(LOCK_ID, LOCK_TTL_MS);
   if (!locked) return { skipped: true, reason: "lock_active" };
 

@@ -368,7 +368,7 @@ export function ChartOfAccountsPage({
       {/* Adicionar conta */}
       <form onSubmit={handleCreate} style={sectionStyle}>
         <h3 style={{ margin: "0 0 12px", fontSize: "1rem", fontWeight: 700 }}>Adicionar conta</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "7rem 1fr 10rem 8rem 8rem auto", gap: 10, alignItems: "end" }}>
+        <div className="chart-account-create-grid" style={{ display: "grid", gap: 10, alignItems: "end" }}>
           <label style={LABEL}>
             Código
             <input type="text" value={form.codigo} onChange={(e) => handleField("codigo", e.target.value)} placeholder="ex: 464" style={FIELD} />
@@ -415,7 +415,7 @@ export function ChartOfAccountsPage({
 
       {/* Filtros */}
       <div style={sectionStyle}>
-        <div style={{ display: "grid", gridTemplateColumns: isGlobal ? "1fr 12rem 12rem" : "1fr 12rem 12rem 12rem", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 12 }}>
           <label style={LABEL}>
             Buscar (código ou nome)
             <input type="search" value={filterText} onChange={(e) => setFilterText(e.target.value)} placeholder="Digite para filtrar..." style={FIELD} />

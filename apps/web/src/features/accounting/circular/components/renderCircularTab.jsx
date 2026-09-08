@@ -832,11 +832,11 @@ function ExtratoDoMes({ comp, info, companyId }) {
           exatamente o assunto desta coluna. */}
       {info.semFaturamento && (
         <span title="Declaração do PGDAS-D transmitida sem valor — o mês foi marcado como sem faturamento"
-          style={{ fontSize: "0.66rem", color: "#A7B0C0", whiteSpace: "nowrap" }}>
+          style={{ fontSize: "0.8125rem", color: "#A7B0C0", whiteSpace: "nowrap" }}>
           ◌ zerado
         </span>
       )}
-      {erro && <span style={{ fontSize: "0.62rem", color: "#FF5757", lineHeight: 1.25 }}>{erro}</span>}
+      {erro && <span style={{ fontSize: "0.8125rem", color: "#FF5757", lineHeight: 1.25 }}>{erro}</span>}
     </span>
   );
 }
@@ -1293,19 +1293,19 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                         <div style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "center" }}>
                           {aberto.vencido > 0 && (
                             <span style={{ color: "var(--danger)", fontWeight: 700, whiteSpace: "nowrap" }} title="Guias que já passaram do vencimento.">
-                              R$ {fmtValor(aberto.vencido)} <span style={{ fontSize: "0.62rem", fontWeight: 600 }}>vencido</span>
+                              R$ {fmtValor(aberto.vencido)} <span style={{ fontSize: "0.8125rem", fontWeight: 600 }}>vencido</span>
                             </span>
                           )}
                           {aberto.aVencer > 0 && (
                             <span style={{ color: "#FFB347", fontWeight: 700, whiteSpace: "nowrap" }} title="Guias em aberto ainda dentro do prazo.">
-                              R$ {fmtValor(aberto.aVencer)} <span style={{ fontSize: "0.62rem", fontWeight: 600 }}>a vencer</span>
+                              R$ {fmtValor(aberto.aVencer)} <span style={{ fontSize: "0.8125rem", fontWeight: 600 }}>a vencer</span>
                             </span>
                           )}
                           {/* Rótulo próprio: chamar isto de "a vencer" seria afirmar um prazo que
                               a célula acima se recusa a afirmar. */}
                           {aberto.semData > 0 && (
                             <span style={{ color: "#FFB347", fontWeight: 700, whiteSpace: "nowrap" }} title="Em aberto — o vencimento destas guias não é conhecido, então não dá para dizer se já venceram.">
-                              R$ {fmtValor(aberto.semData)} <span style={{ fontSize: "0.62rem", fontWeight: 600 }}>em aberto</span>
+                              R$ {fmtValor(aberto.semData)} <span style={{ fontSize: "0.8125rem", fontWeight: 600 }}>em aberto</span>
                             </span>
                           )}
                         </div>

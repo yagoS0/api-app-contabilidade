@@ -5,6 +5,30 @@ let companyId;
 beforeAll(async () => { [ { companyId } ] = await api.listCompanies(); });
 const ocorrencias = (calendario, id) => calendario.dias.flatMap((dia) => dia.itens.filter((it) => it.id === id).map((it) => ({ ...it, dia: dia.data })));
 
+test("mensal fixa mantém seis dias e exclusão de ciclo sobrevive à atualização da série", async () => {
+  const criado = await api.createObrigacao(companyId, { nome: "EFD janela fixa", tipo: "OBRIGACAO", periodicidade: "MENSAL", diaVencimento: 25, ajusteDiaUtil: "MANTER", janelaTrabalho: { modo: "DIAS_DO_CICLO", diaInicio: 10, diaFim: 15, deslocamentoFim: 0 } });
+  const [primeira, segunda] = criado.obrigacao.ocorrencias;
+  expect(primeira.dataInicio.slice(-2)).toBe("10"); expect(primeira.dataFim.slice(-2)).toBe("15"); expect(primeira.dataVencimento.slice(-2)).toBe("25");
+  expect(ocorrencias(await api.getCalendario(primeira.dataInicio.slice(0, 7), companyId), primeira.ocorrenciaId)).toHaveLength(6);
+  await api.excluirOcorrencia(primeira.ocorrenciaId, { alcance: "ESTA" });
+  await api.updateObrigacao(criado.obrigacao.obrigacaoId, { nome: "EFD renomeada" });
+  const lista = await api.listObrigacoes({ companyId });
+  const serie = lista.obrigacoes.find(o => o.obrigacaoId === criado.obrigacao.obrigacaoId);
+  expect(serie.ocorrencias.some(o => o.ocorrenciaId === primeira.ocorrenciaId)).toBe(false);
+  expect(serie.ocorrencias.some(o => o.ocorrenciaId === segunda.ocorrenciaId)).toBe(true);
+});
+
+test("edição e exclusão futura preservam concluída, janela anterior e prazo fiscal", async () => {
+  const criado = await api.createObrigacao(companyId, { nome: "EFD versões", tipo: "OBRIGACAO", periodicidade: "MENSAL", diaVencimento: 25, ajusteDiaUtil: "MANTER", janelaTrabalho: { modo: "DIAS_DO_CICLO", diaInicio: 10, diaFim: 15, deslocamentoFim: 0 } });
+  const [primeira, segunda, terceira] = criado.obrigacao.ocorrencias;
+  await api.concluirOcorrencia(terceira.ocorrenciaId);
+  await api.updateOcorrencia(segunda.ocorrenciaId, { alcance: "ESTA_E_PROXIMAS", janelaTrabalho: { modo: "DIAS_DO_CICLO", diaInicio: 11, diaFim: 17, deslocamentoFim: 0 } });
+  expect(primeira.dataInicio.slice(-2)).toBe("10"); expect(segunda.dataInicio.slice(-2)).toBe("11"); expect(segunda.dataVencimento.slice(-2)).toBe("25"); expect(terceira.dataInicio.slice(-2)).toBe("10");
+  await api.excluirOcorrencia(segunda.ocorrenciaId, { alcance: "ESTA_E_PROXIMAS" });
+  const serie = (await api.listObrigacoes({ companyId })).obrigacoes.find(o => o.obrigacaoId === criado.obrigacao.obrigacaoId);
+  expect(serie.ocorrencias.map(o => o.ocorrenciaId)).toEqual([primeira.ocorrenciaId, terceira.ocorrenciaId]);
+});
+
 test("intervalo inclusivo cruza meses, mantém ID e conclui uma única ocorrência", async () => {
   const criado = await api.createObrigacao(companyId, { nome: "Preparar folha intervalo", tipo: "TAREFA", periodicidade: "AVULSA", dataInicio: "2026-09-29", dataFim: "2026-10-03" });
   expect(criado.ocorrenciasCriadas).toBe(1);

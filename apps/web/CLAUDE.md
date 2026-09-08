@@ -1,5 +1,21 @@
 # CLAUDE.md — Web (apps/web)
 
+## Ajustes aprovados e implementados — 08/09/2026
+
+Esta decisão substitui orientações anteriores incompatíveis sobre calendário, retorno e Relatórios.
+- Calendário concentra tarefas/obrigações em modal; /obrigacoes antigo redireciona para o calendário. A seção da empresa chama Calendário. Janela mensal fixa 10–15 é inclusiva e independente do vencimento/competência. Exclusão por ocorrência ou seguintes mantém histórico e cancelamentos persistentes. Edição das seguintes altera a janela; frequência/prazo exigem configuração da série. Ver features/calendario/CLAUDE.md no web.
+- WorkspaceNavigationProvider mantém histórico interno e Tabela/Calendário durante a sessão. Novo login reseta para Calendário; voltar/logo preservam escolha; impressão não a altera. Marca à esquerda leva à carteira. Configurações navegam sem recarregar o aplicativo.
+- Relatórios do escritório voltaram a mostrar o fluxo diário do cliente, com dois meses e somente leitura. A rota GET usa responderFluxoDeCaixa. Não reintroduzir botões de lançamento/edição nas células.
+- Exportação em lote é de LANÇAMENTOS para ERP: ZIP, CSV por empresa, cinco colunas sem cabeçalho e manifesto parcial. Mesmo preflight e autorização individuais; hash da prévia invalida alertas que mudaram. Download não confirma importação no ERP.
+- WhatsApp envia PDF determinístico da tabela SITFIS salva, sem chamada paga: inclui colunas, anotações, avisos e texto não interpretado; permissão fiscal e janela são rechecadas antes do transporte. Reservas/erros de envio não podem virar entrega confirmada.
+- CertResolver exige A1 próprio para NFSE/ADN/DFE, sem priorizar procurador nessas operações. Integra/serviços delegáveis mantêm procuração autorizada.
+- SERPRO reserva tentativa em transação antes do envio; falha de medição bloqueia visivelmente. Reservas sem desfecho e incertas não expiram automaticamente. Autenticação abortada não é operação enviada. Ledger não é fatura. As 2.555 chamadas informadas não foram reconciliadas.
+- Planejamento salva e retoma cenários sem depender do PDF, separando premissas do cadastro da empresa. Emissor bloqueia fechamento durante envio; notas abrem a partir da auditoria preservando contexto; Apuração mostra carga calculada distinta de pagamento.
+- Documentos distinguem falha de ausência, preservam upload falho e resultado parcial; onboarding aguarda salvar antes de voltar/trocar etapa.
+
+Implantação: aplicar migration aditiva 20260908190000_calendar_series_exceptions e gerar Prisma antes da nova API. Schema, geração isolada e auditoria de migrations validados localmente; PostgreSQL real, integrações e implantação não foram exercitados nesta execução. Não tratar testes com mocks como homologação de banco/serviços externos.
+
+
 ## Calendário, tarefas e obrigações — 07/09/2026
 
 - A central e a criação ficam visíveis junto ao calendário da carteira e da empresa. `ModalObrigacao` usa o `Modal` compartilhado; preservar tokens existentes e não criar CSS por componente.

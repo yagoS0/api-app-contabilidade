@@ -31,7 +31,9 @@
 // (`application/notas/auditoria/auditoriaNotas.js`, puro); o que é de tela — motivo em português,
 // cor, ordem — vive em `notas/lib/auditoriaTela.js`, com teste próprio. O componente só liga os dois.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { NotaDetailModal } from "./NotaDetailModal";
+import { Button } from "../../../components/ui/Button";
 import { createApiClient } from "../../../api/client";
 import { PANEL } from "./notasStyles";
 import { PendenciasList } from "./PendenciasList";
@@ -73,7 +75,7 @@ function Selo({ token, icone, children }) {
   );
 }
 
-function BlocoDaPergunta({ pergunta }) {
+function BlocoDaPergunta({ pergunta, onAbrirNota }) {
   const leitura = leituraDaPergunta(pergunta);
   const achados = pergunta.achados || [];
   const naoAvaliadas = pergunta.naoAvaliadas || [];
@@ -126,6 +128,7 @@ function BlocoDaPergunta({ pergunta }) {
                     borderRadius: 8, padding: "8px 10px",
                   }}>
                     <div style={{ color: PANEL.text, fontSize: "0.83rem", fontWeight: 600 }}>{f.titulo}</div>
+                    {a.notaId && <Button size="sm" variant="secondary" onClick={() => onAbrirNota(a.notaId)}>Abrir nota</Button>}
                     <div style={{ color: PANEL.muted, fontSize: "0.8rem", marginTop: 2 }}>{f.texto}</div>
                     {a.emissao ? (
                       <div style={{ color: PANEL.muted, fontSize: "0.75rem", marginTop: 2 }}>
@@ -171,6 +174,21 @@ function BlocoDaPergunta({ pergunta }) {
 }
 
 export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
+  const [detalhe, setDetalhe] = useState(null);
+  const pedidoNota = useRef(0);
+  const fecharNota = () => { pedidoNota.current += 1; setDetalhe(null); };
+  useEffect(() => { fecharNota(); return () => { pedidoNota.current += 1; }; }, [companyId, competencia]);
+  async function abrirNota(id) {
+    const pedido = ++pedidoNota.current;
+    setDetalhe({ loading: true });
+    try {
+      const r = await api.getNota(companyId, id);
+      if (!r?.nota) throw new Error("A API respondeu sem os dados da nota.");
+      if (pedido === pedidoNota.current) setDetalhe({ nota: r.nota, loading: false });
+    } catch (e) {
+      if (pedido === pedidoNota.current) setDetalhe({ error: e?.message || "Não foi possível ler a nota.", loading: false });
+    }
+  }
   const [auditoria, setAuditoria] = useState(null);
   const [pendencias, setPendencias] = useState([]);
   const [carregando, setCarregando] = useState(false);
@@ -309,9 +327,10 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
       ) : null}
 
       {auditoria
-        ? ordenarPerguntas(auditoria.perguntas).map((p) => <BlocoDaPergunta key={p.id} pergunta={p} />)
+        ? ordenarPerguntas(auditoria.perguntas).map((p) => <BlocoDaPergunta key={p.id} pergunta={p} onAbrirNota={abrirNota} />)
         : null}
 
+      {detalhe && <NotaDetailModal {...detalhe} onClose={fecharNota} onAbrirNota={abrirNota} />}
       {auditoria ? (
         <div style={{ color: PANEL.muted, fontSize: "0.75rem" }}>
           {auditoria.totalNotas} nota(s) emitida(s) na competência ({auditoria.totalNotasApuradas} entram na apuração).

@@ -91,6 +91,11 @@ jobs:
       - run: npm run prisma:generate -w @contabilidade/api
       - name: Apply complete migration history to disposable PostgreSQL
         run: npm run prisma:migrate:deploy -w @contabilidade/api
+      - name: Verify SERPRO reservations and calendar exceptions in PostgreSQL
+        working-directory: apps/api
+        run: |
+          node scripts/verify-serpro-reservations-postgres.js --url "$DATABASE_URL"
+          node scripts/verify-calendar-series-postgres.js --url "$DATABASE_URL"
       - name: Verify concurrent delivery and delayed callbacks
         working-directory: apps/api
         run: node scripts/verify-whatsapp-delivery-postgres.js --url "$DATABASE_URL"

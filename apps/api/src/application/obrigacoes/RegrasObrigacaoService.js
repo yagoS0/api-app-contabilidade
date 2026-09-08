@@ -10,7 +10,7 @@
 // saber que a regra existe.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { ObrigacaoError, normalizarEntrada, sincronizarOcorrencias } from "./ObrigacoesService.js";
+import { ObrigacaoError, normalizarEntrada, sincronizarOcorrencias, remover } from "./ObrigacoesService.js";
 
 export const ESCOPOS = ["TODAS", "POR_FILTRO", "SELECAO_MANUAL"];
 export const REGIMES = ["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL"];
@@ -25,7 +25,7 @@ function normalizarRegra(dados = {}) {
     throw new ObrigacaoError("regra_incompativel", "Cadastre tarefas e itens sem repetição diretamente na empresa.");
   }
   // O cadastro da regra tem somente os campos recorrentes existentes.
-  const { tipo, descricao, dataInicio, dataFim, dataVencimento, ...base } = normalizada;
+  const { tipo, descricao, dataInicio, dataFim, dataVencimento, janelaTrabalho, ...base } = normalizada;
 
   const escopo = asTexto(dados.escopo).toUpperCase();
   if (!ESCOPOS.includes(escopo)) {
@@ -270,9 +270,10 @@ export async function removerRegra({ regraId, modo = "remover" }) {
     return { nome: regra.nome, desvinculadas: r.count, removidas: 0 };
   }
 
-  const r = await prisma.obrigacao.deleteMany({ where: { regraId } });
+  const series = await prisma.obrigacao.findMany({ where: { regraId }, select: { id: true, portalClientId: true } });
+  for (const serie of series) await remover({ portalIds: [serie.portalClientId], obrigacaoId: serie.id });
   await prisma.regraObrigacao.delete({ where: { id: regraId } });
-  return { nome: regra.nome, desvinculadas: 0, removidas: r.count };
+  return { nome: regra.nome, desvinculadas: 0, removidas: series.length };
 }
 
 // ── Exceções ─────────────────────────────────────────────────────────────────────────────────

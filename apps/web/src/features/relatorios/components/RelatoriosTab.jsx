@@ -18,6 +18,7 @@ import {
   intervalosDisponiveis, periodoAnterior, variacao, somaPorTipo, somaTotal,
 } from "../lib/periodoRelatorio";
 import { LogoAltan } from "../../../components/ui/LogoAltan";
+import { FluxoLeitura } from "./FluxoLeitura";
 
 const relatoriosApi = createApiClient();
 
@@ -33,7 +34,12 @@ const DESTAQUES = [
   { tipo: "FOLHA", rotulo: "Folha", cor: "#BD93F9" },
 ];
 
-export function RelatoriosTab({ companyId, competenciaReferencia, razaoSocial }) {
+export function RelatoriosTab({ api = relatoriosApi, ...props }) {
+  return <FluxoLeitura api={api} {...props} />;
+}
+
+// Resumo legado preservado para consumidores explícitos; Relatórios agora abre fluxo de leitura.
+export function RelatorioLancamentosTab({ companyId, competenciaReferencia, razaoSocial }) {
   const [intervalo, setIntervalo] = useState("doze");
   const [dados, setDados] = useState(null);
   const [anterior, setAnterior] = useState(null);

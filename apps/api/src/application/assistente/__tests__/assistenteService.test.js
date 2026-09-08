@@ -11,7 +11,7 @@
 
 import { responderMensagem, montarHistorico, AUTOR } from "../AssistenteService.js";
 import { TIPOS, STATUS } from "../confirmacaoPendente.js";
-import { TODAS_PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente.js";
+import { TODAS_PERMISSOES_ASSISTENTE, PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente.js";
 
 jest.mock("../../whatsapp/ConversaWhatsappService.js", () => {
   const real = jest.requireActual("../../whatsapp/ConversaWhatsappService.js");
@@ -95,6 +95,47 @@ function modeloFalso(texto = "Você não tem guia liberada em aberto.") {
 const deps = (over = {}) => ({ flag: true, piloto: ["pc-1"], log: silencio, agora: new Date("2026-09-02T12:00:00Z"), tryLock: async () => true, releaseLock: async () => {}, chaveIa: "chave-de-teste", ...over });
 
 beforeEach(() => { registrarMensagemEnviada.mockClear(); });
+
+describe("PDF da situação fiscal — autorização na última etapa do envio", () => {
+  function fiscal() {
+    const client=bancoEmMemoria();
+    client._contato.permissoesAssistente=[PERMISSOES_ASSISTENTE.SITUACAO_FISCAL];
+    client.companyFiscalStatus={findUnique:jest.fn(async()=>({situacao:'EM_PARCELAMENTO',texto:'relatório salvo',checkedAt:new Date('2026-09-01'),ultimoRelatorioEm:new Date('2026-09-01')}))};
+    client.portalClient={findUnique:jest.fn(async()=>({razao:'Empresa teste',cnpj:'11222333000181'}))};
+    const servicos={parseSitfisRelatorio:jest.fn(()=>({diagnosticos:[]})),gerarPdfSitfisTabela:jest.fn(async()=>Buffer.from('PDF dublê'))};
+    return {client,servicos};
+  }
+  const retorno={texto:'',usage:{input_tokens:1,output_tokens:1},iteracoes:1,ferramentasChamadas:['situacao_fiscal'],stopReason:'end_turn',recusou:false};
+  it("permissão fiscal basta; não exige liberação de documentos societários e deduplica no turno", async()=>{
+    const {client,servicos}=fiscal(),cloud=cloudFalso();
+    const assistente={responder:jest.fn(async({executar})=>{
+      expect(await executar('situacao_fiscal',{})).toMatchObject({ok:true,enviado:true});
+      expect(await executar('situacao_fiscal',{})).toMatchObject({ok:true,enviado:true});
+      return retorno;
+    })};
+    await responderMensagem({conversaId:'cv1',mensagemId:'m1',deps:deps({client,servicos,cloud,assistente})});
+    expect(cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+    expect(cloud.enviarDocumento).toHaveBeenCalledWith(expect.objectContaining({mimeType:'application/pdf',nomeArquivo:'situacao-fiscal-11222333000181.pdf'}));
+  });
+  it("revogar só permissão fiscal durante geração impede saída, mesmo mantendo documentos liberados", async()=>{
+    const {client,servicos}=fiscal(),cloud=cloudFalso();
+    servicos.gerarPdfSitfisTabela.mockImplementation(async()=>{client._contato.permissoesAssistente=[PERMISSOES_ASSISTENTE.DOCUMENTOS_EMPRESA];return Buffer.from('PDF dublê');});
+    const assistente={responder:jest.fn(async({executar})=>{
+      expect(await executar('situacao_fiscal',{})).toMatchObject({ok:false,motivo:'ACESSO_REVOGADO'});
+      return retorno;
+    })};
+    await responderMensagem({conversaId:'cv1',mensagemId:'m1',deps:deps({client,servicos,cloud,assistente})});
+    expect(servicos.gerarPdfSitfisTabela).toHaveBeenCalled();
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("reduzir papel durante geração impede envio mesmo com permissão fiscal",async()=>{
+    const {client,servicos}=fiscal(),cloud=cloudFalso();
+    servicos.gerarPdfSitfisTabela.mockImplementation(async()=>{client.companyClientUser.findUnique.mockResolvedValue({role:'FINANCEIRO',status:'ACTIVE'});return Buffer.from('PDF dublê');});
+    const assistente={responder:jest.fn(async({executar})=>{expect(await executar('situacao_fiscal',{})).toMatchObject({ok:false,motivo:'ACESSO_REVOGADO'});return retorno;})};
+    await responderMensagem({conversaId:'cv1',mensagemId:'m1',deps:deps({client,servicos,cloud,assistente})});
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+});
 
 describe("o turno", () => {
   it("texto → modelo → resposta enviada, registrada como autor IA, e a chamada fechada em chamadas_ia", async () => {

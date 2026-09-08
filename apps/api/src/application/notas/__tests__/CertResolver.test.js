@@ -41,7 +41,7 @@ describe("resolveCertForCompany — procuração", () => {
     prisma.procuracao.findUnique.mockResolvedValue({
       id: "proc-1", status: "ATIVA", validade: new Date(Date.now() + 86400000 * 30),
     });
-    const out = await resolveCertForCompany({ portalClientId: "pc-1", servico: SERVICOS.DFE });
+    const out = await resolveCertForCompany({ portalClientId: "pc-1", servico: SERVICOS.SN });
     expect(out.source).toBe("procuracao_escritorio");
     expect(out.procuracaoId).toBe("proc-1");
     expect(prisma.company.findUnique).not.toHaveBeenCalled();
@@ -135,7 +135,7 @@ describe("resolveCertForCompany — cert empresa", () => {
 describe("checkCertAvailability (soft)", () => {
   it("retorna { ok: true } quando resolve sucesso", async () => {
     prisma.procuracao.findUnique.mockResolvedValue({ id: "p", status: "ATIVA", validade: null });
-    const out = await checkCertAvailability({ portalClientId: "pc-1", servico: SERVICOS.DFE });
+    const out = await checkCertAvailability({ portalClientId: "pc-1", servico: SERVICOS.SN });
     expect(out).toEqual({ ok: true, source: "procuracao_escritorio" });
   });
 
@@ -146,5 +146,29 @@ describe("checkCertAvailability (soft)", () => {
     const out = await checkCertAvailability({ portalClientId: "pc-1", servico: SERVICOS.DFE });
     expect(out.ok).toBe(false);
     expect(out.code).toBe("NO_CERT_AVAILABLE");
+  });
+});
+
+describe.each([SERVICOS.NFSE, SERVICOS.DFE])("A1 próprio por operação: %s", (servico) => {
+  beforeEach(() => {
+    prisma.procuracao.findUnique.mockResolvedValue({ id: "proc-ativa", status: "ATIVA", validade: null });
+    prisma.portalClient.findUnique.mockResolvedValue({ companyId: "co-1" });
+    prisma.company.findUnique.mockResolvedValue({ certStorageKey: null, certPfxBytes: null, certPasswordEnc: null });
+  });
+
+  it("sem A1 não usa procuração nem anuncia disponibilidade", async () => {
+    readStoredCompanyPfx.mockReturnValue(null);
+    await expect(resolveCertForCompany({ portalClientId: "pc-1", servico })).rejects.toMatchObject({ code: "NO_CERT_AVAILABLE" });
+    expect(prisma.procuracao.findUnique).not.toHaveBeenCalled();
+    expect(await checkCertAvailability({ portalClientId: "pc-1", servico })).toMatchObject({ ok: false, code: "NO_CERT_AVAILABLE" });
+    await expect(resolveCertForCompany({ portalClientId: "pc-1", servico })).rejects.toThrow(/procuração não substitui/);
+  });
+
+  it("procuração cadastrada não impede usar o A1 próprio disponível", async () => {
+    readStoredCompanyPfx.mockReturnValue(Buffer.from("certificado-proprio-de-teste"));
+    const out = await resolveCertForCompany({ portalClientId: "pc-1", servico });
+    expect(out.source).toBe("company_a1");
+    expect(out.pfxBuffer.toString()).toBe("certificado-proprio-de-teste");
+    expect(prisma.procuracao.findUnique).not.toHaveBeenCalled();
   });
 });

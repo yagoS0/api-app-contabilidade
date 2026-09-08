@@ -209,7 +209,7 @@ describe("5) sugestão de tomador — encontra, não escolhe", () => {
     const input = screen.getByLabelText(/Nome ou razão social/);
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "BETA" } });
-    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(within(screen.getByRole("listbox")).getAllByRole("option")).toHaveLength(1);
 
     fireEvent.keyDown(input, { key: "Enter" });
     expect(input).toHaveValue("BETA");

@@ -49,6 +49,31 @@ const botao = () => screen.getByRole("button", { name: /Guardar em Documentos/i 
 const esperarCalculo = () =>
   waitFor(() => expect(screen.getAllByDisplayValue("300.000,00").length).toBeGreaterThan(0));
 
+it("salva e reabre as premissas sem gerar PDF nem alterar cadastro", async () => {
+  let salvo;
+  const api = montar({
+    salvarSimulacaoPlanejamento: jest.fn(async (_id, p) => { salvo = { id: "c1", geradoEm: "2026-09-08T12:00:00Z", ...p }; return { ok: true, simulacao: salvo }; }),
+    listarSimulacoesPlanejamento: jest.fn(async () => ({ ok: true, simulacoes: [salvo] })),
+  });
+  await esperarCalculo();
+  fireEvent.click(screen.getByRole("button", { name: /^Salvar cenário$/ }));
+  await waitFor(() => expect(api.salvarSimulacaoPlanejamento).toHaveBeenCalledTimes(1));
+  expect(api.gerarDocumentoDaSimulacao).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText(/Receita anual/i), { target: { value: "45000000" } });
+  fireEvent.click(screen.getByRole("button", { name: /^Abrir cenário$/ }));
+  await waitFor(() => expect(screen.getByRole("button", { name: /Abrir 2026-08/ })).toBeInTheDocument());
+  fireEvent.click(screen.getByRole("button", { name: /Abrir 2026-08/ }));
+  expect(screen.getByLabelText(/Receita anual/i)).toHaveValue("300.000,00");
+  expect(screen.getByText(/^Cenário salvo$/)).toBeInTheDocument();
+});
+
+it("mostra premissas antes da comparação mesmo com empresa preenchida", async () => {
+  montar(); await esperarCalculo();
+  const entrada = screen.getByLabelText(/Receita anual/i);
+  const resultado = document.querySelector('[data-print-area]');
+  expect(entrada.compareDocumentPosition(resultado) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 describe("⚠⚠ o botão só existe onde há onde guardar", () => {
   it("com empresa escolhida, ele está habilitado", async () => {
     montar();

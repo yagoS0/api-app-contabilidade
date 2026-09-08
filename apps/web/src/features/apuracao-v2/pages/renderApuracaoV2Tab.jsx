@@ -274,6 +274,9 @@ export function ApuracaoV2Tab({
   // O estado "procedência ambígua" continua existindo — para os snapshots gravados ANTES da
   // separação, cuja procedência não pôde ser provada pela própria linha.
   const das = kpiDasApurado(snap);
+  const baseCarga = Number(fat.interno) + Number(fat.externo);
+  const cargaCalculada = das.valor != null && Number.isFinite(baseCarga) && baseCarga > 0
+    ? `${(Number(das.valor) / baseCarga * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—";
   const extDados = extrato?.dados || extrato?.circular || null;
   const classificacao = estadoDaClassificacao({ pendencias, relatorio });
 
@@ -338,6 +341,8 @@ export function ApuracaoV2Tab({
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
             <Kpi label="Fat. interno" value={`${fmtMoney(fat.interno)}`} />
             <Kpi label="Fat. externo" value={`${fmtMoney(fat.externo)}`} />
+            <Kpi label="Carga efetiva calculada" value={cargaCalculada}
+              title={`${das.label} dividido pelo faturamento interno e externo desta competência. Não indica pagamento.${baseCarga > 0 ? "" : " Receita ausente ou zero: percentual indisponível."}`} />
             <Kpi label="Receita 12 meses" title={`${RBT12_NOME} (RBT12)`} value={`${fmtMoney(fechDados?.rbt12)}`} />
             <Kpi
               label={das.label}
@@ -351,6 +356,10 @@ export function ApuracaoV2Tab({
 
           {/* ⚠ ERRO ≠ AUSÊNCIA. Sem esta caixa, uma falha de backend deixava os KPIs em "—" com a
               tela inteira parecendo uma empresa sem faturamento. */}
+          <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", margin: "4px 0" }}>
+            Carga calculada em {competencia}: {das.label} ÷ receita interna e externa
+            {Number.isFinite(baseCarga) && baseCarga > 0 ? ` (${fmtMoney(baseCarga)}).` : ". Receita ausente ou zero: percentual indisponível."} Não indica imposto pago.
+          </p>
           {fechErro && !fechLoading && (
             <div style={{ padding: 10, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: 8, color: "var(--state-danger)", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <span style={{ flex: 1, minWidth: 240 }}>

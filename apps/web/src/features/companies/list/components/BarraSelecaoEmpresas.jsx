@@ -1,3 +1,4 @@
+import { ExportarLancamentosLoteModal } from "./ExportarLancamentosLoteModal";
 // A BARRA QUE APARECE QUANDO HÁ EMPRESAS SELECIONADAS NA TABELA.
 //
 // POR QUE ELA EXISTE (pedido do dono)
@@ -243,6 +244,7 @@ export function BarraSelecaoEmpresas({
   /** ⚠ Mensagem de "a seleção encolheu porque o filtro mudou" — ver a decisão na página. */
   avisoDeRecorte = null,
 }) {
+  const [csvAberto, setCsvAberto] = useState(false);
   const [aberta, setAberta] = useState(null);   // chave da ação com o modal aberto
   const [executando, setExecutando] = useState(false);
   const [resultado, setResultado] = useState(null);
@@ -341,6 +343,7 @@ export function BarraSelecaoEmpresas({
 
   return (
     <>
+      {csvAberto && <ExportarLancamentosLoteModal api={api} companies={empresasSelecionadas.map(c => ({ ...c, id: c.id || c.companyId }))} competencia={competencia} onClose={() => setCsvAberto(false)} />}
       <div role="region" aria-label="Ações sobre as empresas selecionadas" style={CAIXA}>
         <strong style={{ fontSize: "0.86rem" }}>
           {plano.total} empresa{plano.total === 1 ? "" : "s"} selecionada{plano.total === 1 ? "" : "s"}
@@ -351,6 +354,7 @@ export function BarraSelecaoEmpresas({
         </span>
 
         <span style={{ display: "flex", gap: 6, flexWrap: "wrap", marginLeft: "auto" }}>
+          <Button type="button" size="sm" variant="secondary" disabled={executando} onClick={() => setCsvAberto(true)}>Exportar lançamentos CSV</Button>
           {ORDEM_ACOES.map((chave) => {
             const a = acaoDoPlano(plano, chave);
             if (!a) return null;

@@ -29,7 +29,7 @@ function StatusBadge({ nota }) {
 
   return (
     <span
-      style={{ color: c.cor, fontSize: "0.7rem", fontWeight: 600, fontStyle: c.conhecida ? "normal" : "italic" }}
+      style={{ color: c.cor, fontSize: "0.82rem", fontWeight: 600, fontStyle: c.conhecida ? "normal" : "italic" }}
       title={c.tituloAjuda}
     >
       {c.rotulo}
@@ -222,20 +222,20 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                   >
                     <td style={td}>{fmtDate(n.issueDate)}</td>
                     <td style={td}>
-                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: "0.7rem", fontWeight: 600,
+                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: "0.82rem", fontWeight: 600,
                                      background: pap.bg, color: pap.color, border: `1px solid ${pap.color}` }}>
                         {pap.label}
                       </span>
                     </td>
                     <td style={td}>{n.numero || "—"}{n.serie ? `/${n.serie}` : ""}</td>
-                    <td style={{ ...td, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    <td style={{ ...td, minWidth: 140, maxWidth: 280, whiteSpace: "normal", overflowWrap: "anywhere" }}
                         title={n.emitenteNome}>
                       {n.emitenteNome || "—"}
-                      <div style={{ fontSize: "0.7rem", color: PANEL.muted, fontFamily: "monospace" }}>
+                      <div style={{ fontSize: "0.82rem", color: PANEL.muted, fontFamily: "monospace" }}>
                         {n.emitenteDoc || ""}
                       </div>
                     </td>
-                    <td style={{ ...td, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    <td style={{ ...td, minWidth: 140, maxWidth: 280, whiteSpace: "normal", overflowWrap: "anywhere" }}
                         title={n.tomadorNome}>
                       {n.tomadorNome || "—"}
                     </td>
@@ -251,7 +251,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                         falso faria colar a chave ANTERIOR numa consulta fiscal.
                         ⚠ O `stopPropagation` do próprio botão é o que impede o clique de copiar
                         de abrir o detalhe da nota por baixo. */}
-                    <td style={{ ...td, fontSize: "0.7rem", fontFamily: "monospace", color: PANEL.muted, maxWidth: 220, whiteSpace: "nowrap" }}
+                    <td style={{ ...td, fontSize: "0.82rem", fontFamily: "monospace", color: PANEL.muted, maxWidth: 220, whiteSpace: "nowrap" }}
                         title={n.chaveAcesso}>
                       {n.chaveAcesso ? (
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -270,7 +270,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                       <td style={td} onClick={(e) => e.stopPropagation()}>
                         {String(n.statusEfetivo || "").toLowerCase() === "cancelada" ? (
                           <button onClick={() => onMarcarStatus(n.id, "autorizada")} title="Reativar (volta a contar no faturamento)"
-                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: "var(--state-ok)", borderRadius: 6, padding: "3px 8px", fontSize: "0.7rem", cursor: "pointer", whiteSpace: "nowrap" }}>
+                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: "var(--state-ok)", borderRadius: 6, padding: "8px 10px", minHeight: 36, fontSize: "0.82rem", cursor: "pointer", whiteSpace: "nowrap" }}>
                             Reativar
                           </button>
                         ) : (
@@ -299,7 +299,7 @@ Ela sai do faturamento e da apuração.
 
 ⚠ NADA é enviado à prefeitura nem ao sistema nacional — o cancelamento perante o fisco continua sendo feito por você, fora daqui. Esta marcação é reversível pelo botão Reativar.`)) onMarcarStatus(n.id, "cancelada"); }}
                             title="Marca como cancelada NA NOSSA BASE (sai do faturamento/apuração). Não envia cancelamento à prefeitura."
-                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.muted, borderRadius: 6, padding: "3px 8px", fontSize: "0.7rem", cursor: "pointer", whiteSpace: "nowrap" }}>
+                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.muted, borderRadius: 6, padding: "8px 10px", minHeight: 36, fontSize: "0.82rem", cursor: "pointer", whiteSpace: "nowrap" }}>
                             Marcar como cancelada
                           </button>
                         )}

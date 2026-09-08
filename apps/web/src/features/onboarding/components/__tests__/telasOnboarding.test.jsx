@@ -32,6 +32,18 @@ function apiFalsa(overrides = {}) {
   };
 }
 
+test("voltar aguarda salvar e permanece no wizard quando o servidor recusa", async () => {
+  const api = apiFalsa({ salvarOnboarding: jest.fn().mockRejectedValueOnce(new Error("Sem rede")).mockResolvedValue({ onboarding: { id: "onb-1", origem: "TRANSFERENCIA", dados: {} } }) });
+  const voltar = jest.fn();
+  render(<OnboardingWizardPage api={api} onboardingId="onb-1" onVoltar={voltar} />);
+  await screen.findByRole("button", { name: "Onboardings" });
+  fireEvent.click(screen.getByRole("button", { name: "Onboardings" }));
+  await screen.findByRole("alert");
+  expect(voltar).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Onboardings" }));
+  await waitFor(() => expect(voltar).toHaveBeenCalledTimes(1));
+});
+
 describe("SeloDeclarado — o texto NÃO pode mentir sobre quem declarou", () => {
   test("Fase 1 (escritório) lê 'declarado no atendimento'", () => {
     expect(textoDoSelo("ESCRITORIO")).toBe("declarado no atendimento");

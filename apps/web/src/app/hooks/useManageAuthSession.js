@@ -1,3 +1,4 @@
+import { useWorkspaceNavigation } from "../navigation/WorkspaceNavigation";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
@@ -78,6 +79,7 @@ export function pathToPageName(pathname) {
 }
 
 export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
+  const workspaceNavigation = useWorkspaceNavigation();
   const location = useLocation();
   const navigate = useNavigate();
   const params = useParams();
@@ -156,10 +158,11 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
       if (token) localStorage.setItem(tokenStorageKey, token);
       const me = await api.me();
       setUser(me);
+      workspaceNavigation?.resetSession();
       // Honra ?redirect= se vier do RequireAuth
       const search = new URLSearchParams(location.search);
       const redirect = search.get("redirect");
-      navigate(redirect && redirect.startsWith("/") ? redirect : "/companies");
+      navigate(redirect && redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/companies");
       setLoginPassword("");
     } catch (err) {
       feedback.setError(err?.message || "Falha ao autenticar");
@@ -169,6 +172,7 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
   }
 
   function clearSession() {
+    workspaceNavigation?.resetSession();
     api.clearSession();
     localStorage.removeItem(tokenStorageKey);
     setUser(null);
@@ -183,6 +187,7 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
   return {
     page,
     setPage,
+    goBack: (fallback = "/companies") => workspaceNavigation ? workspaceNavigation.goBack(fallback) : navigate(fallback),
     user,
     setUser,
     loginIdentifier,

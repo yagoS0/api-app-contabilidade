@@ -1,3 +1,4 @@
+import { useWorkspaceNavigation } from "../../../../app/navigation/WorkspaceNavigation";
 import { Engrenagem } from "../../../configuracoes/Configuracoes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -208,7 +209,7 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
               padding: "12px 14px", borderBottom: "1px solid var(--border)",
             }}>
               <strong style={{ fontSize: "0.82rem", letterSpacing: "0.03em", textTransform: "uppercase", color: "var(--text-muted)" }}>
-                Mais
+                Ferramentas
               </strong>
               <button
                 type="button"
@@ -240,6 +241,8 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
                   <button
                     type="button"
                     onClick={() => { fechar(); it.onClick(); }}
+                    aria-label={it.label}
+                    aria-describedby={it.descricao ? `ferramenta-descricao-${i}` : undefined}
                     style={{
                       display: "block", width: "100%", textAlign: "left", padding: "10px 14px",
                       background: "transparent", border: "none", color: "var(--text)", cursor: "pointer", fontSize: "0.88rem",
@@ -248,6 +251,7 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
                     onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                   >
                     {it.label}
+                    {it.descricao && <span id={`ferramenta-descricao-${i}`} className="dashboard-tool-description">{it.descricao}</span>}
                     {it.label === "WhatsApp" && resumoWhatsapp ? <span style={{ display: "block", fontSize: "0.72rem", color: "var(--text-muted)" }}>
                       {resumoWhatsapp.selo ? <strong data-testid="whatsapp-selo" style={{ color: "var(--state-warn)", marginRight: 6 }}>{resumoWhatsapp.selo}</strong> : null}
                       {resumoWhatsapp.carregando ? "Lendo mensagens…" : resumoWhatsapp.frase}
@@ -340,29 +344,11 @@ export function CompaniesHomePage({
   message,
   error,
 }) {
-  // ⚠⚠ DUAS FORMAS DE VER A MESMA CARTEIRA — eram QUATRO até 01/09/2026.
-  //
-  // > Dono: *"retirar totalmente a visualização em Cards, colocar a visualização de Ano dentro do
-  // > Calendário, e sempre que abrir abre no Calendário, sendo o modo Tabela selecionável."*
-  //
-  // **Cards** foi removido inteiro (o componente, o CSS e os três gates). **Ano** não morreu: virou
-  // a granularidade mais larga DENTRO do Calendário, ao lado de Mês/Semana/Dia/Agenda — mesmo dado,
-  // mesma rota, mesmo clique, agora com uma navegação só.
-  //
-  // ⚠⚠ E A ESCOLHA DEIXOU DE PERSISTIR. Ela morava em `localStorage: dashboard:modoVisao`, e havia
-  // DOIS defeitos ali que a remoção do Cards transformaria em tela quebrada:
-  //   1. o leitor não validava nada (`if (salvo) return salvo`) — qualquer string passava, e a
-  //      cadeia de render terminava num `else` que era o CARDS. Removida a visão, quem tivesse
-  //      `"cards"` gravado ficaria com o conteúdo de uma visão e NENHUMA aba acesa (o `Tabs`
-  //      compara `item.key === active`);
-  //   2. a heurística de largura GRAVAVA `"cards"` sozinha em qualquer tela <1024px — ou seja, há
-  //      contador com essa string salva sem nunca ter escolhido nada.
-  // A cura é a que o dono pediu: **abre SEMPRE no Calendário**, sem memória. Sem leitura, a chave
-  // órfã de quem já usou o app é ignorada por construção — não há migração a escrever. E a
-  // heurística de largura saiu junto: ela só existia para escolher entre Tabela e Cards.
-  const [modoVisao, setModoVisao] = useState("calendario");
+  // A preferência vive na sessão: voltar preserva; autenticar de novo abre Calendário.
+  const navigation = useWorkspaceNavigation();
+  const [visaoLocal, setVisaoLocal] = useState("calendario");
+  const trocarVisao = navigation?.setModoVisao || setVisaoLocal;
   const resumoWhatsapp = useResumoWhatsapp({ api, enabled: typeof onOpenWhatsapp === "function" });
-  const trocarVisao = setModoVisao;
 
   // ─── IMPRESSÃO ───────────────────────────────────────────────────────────────────────────────
   // Duas coisas precisam acontecer ANTES do diálogo do navegador abrir: a visão vira tabela (cards
@@ -370,6 +356,7 @@ export function CompaniesHomePage({
   // no clique — o React ainda não renderizou. O clique só liga a flag; o efeito imprime depois do
   // render, que é o único momento em que o DOM já está do jeito que vai para o papel.
   const [imprimindo, setImprimindo] = useState(false);
+  const modoVisao = imprimindo ? "tabela" : (navigation?.modoVisao || visaoLocal);
   useEffect(() => {
     if (!imprimindo) return undefined;
     document.body.classList.add("imprimindo");
@@ -385,7 +372,7 @@ export function CompaniesHomePage({
   }, [imprimindo]);
 
   function imprimirListagem() {
-    if (modoVisao !== "tabela") trocarVisao("tabela");
+
     setImprimindo(true);
   }
   const [search, setSearch] = useState("");
@@ -897,7 +884,7 @@ export function CompaniesHomePage({
                   <span aria-hidden="true" style={{ color: "var(--text-faint)", fontWeight: 400 }}>·</span>
                   {/* ⚠ `role="group"` com nome: sem ele os três controles ficam soltos na leitura
                       linear, e o mês que eles comandam vira um texto qualquer ao lado. */}
-                  <span role="group" aria-label="Competência da carteira" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <span hidden={modoVisao !== "tabela"} role="group" aria-label="Competência da carteira" style={{ display: modoVisao === "tabela" ? "inline-flex" : "none", alignItems: "center", gap: 4 }}>
                     <button
                       type="button"
                       onClick={() => onChangeCompetencia(shiftCompetencia(dashboardCompetencia, -1))}
@@ -1008,15 +995,15 @@ export function CompaniesHomePage({
                 // ⚠ APURAÇÃO E CONSULTAS MUDARAM DE LUGAR, NÃO SAÍRAM (dono, 18/08/2026: *"coloque
                 // o de apuração e de consulta dentro de mais, em ferramentas"*). Mesmo rótulo,
                 // mesmo handler, um clique a mais.
-                { grupo: "Ferramentas", label: "Apuração", onClick: onOpenApuracao },
+                { grupo: "Fiscal", label: "Apuração", descricao: "Calcular tributos e acompanhar competências da carteira.", onClick: onOpenApuracao },
                 // C10: "Pendências" já tinha virado a aba "Situação Fiscal" dentro de Consultas.
-                { label: "Consultas", onClick: onOpenSerproFuncoes },
-                { label: "WhatsApp", onClick: onOpenWhatsapp },
+                { label: "Consultas", descricao: "Situação fiscal e consultas em lote por empresa.", onClick: onOpenSerproFuncoes },
+                { grupo: "Comunicação", label: "WhatsApp", descricao: "Conversas e atendimento aos clientes.", onClick: onOpenWhatsapp },
                 // Planejamento é cenário de reunião com PROSPECT (por isso mora no dashboard e não
                 // dentro de uma empresa); Rotinas é configuração de recorrência. Nenhuma das duas é
                 // o trabalho do dia — são episódicas, e é isso que as põe aqui dentro.
-                { label: "Rotinas", onClick: onOpenRotinas },
-                { label: "Planejamento", onClick: onOpenPlanejamento },
+                { grupo: "Organização e análise", label: "Rotinas", descricao: "Acompanhar execuções e configurar rotinas automáticas.", onClick: onOpenRotinas },
+                { label: "Planejamento", descricao: "Salvar cenários e comparar regimes tributários.", onClick: onOpenPlanejamento },
                 // Cadastrar obrigação é CONFIGURAÇÃO do escritório (define o que passa a ser
                 // cobrado de todo mundo), não uma forma de olhar a carteira — por isso saiu do
                 // seletor de visões e entrou aqui.
@@ -1027,7 +1014,7 @@ export function CompaniesHomePage({
                 // status do e-mail, as tentativas e o `emailLastError` — e o rótulo "(debug)"
                 // dizia ao contador que aquilo não era assunto dele. Ferramenta de diagnóstico
                 // escondida atrás de um aviso de "não mexa" é o mesmo que não existir.
-                { label: "Pendências de e-mail", onClick: onOpenPendingReport },
+                { grupo: "Conferência de envios", label: "Pendências de e-mail", descricao: "Ver guias não enviadas e corrigir falhas de entrega.", onClick: onOpenPendingReport },
                 // ⚠⚠ ESTA TELA EXISTIA E NÃO TINHA NENHUM LINK — de sempre até 27/08/2026.
                 // `onOpenGuideUpload` era desestruturada nas props (`:297`) e **nunca referenciada**
                 // no arquivo; `/guides/upload` só se alcançava digitando a URL.
@@ -1036,7 +1023,7 @@ export function CompaniesHomePage({
                 // dashboard (não pertencem a empresa nenhuma) e ninguém as vê aqui.
                 // ⚠ Fica junto de "Pendências de e-mail" porque as duas respondem à mesma pergunta —
                 // *o que ficou pelo caminho?* — e nenhuma das duas é rotina diária.
-                { label: "Guias não identificadas", onClick: onOpenGuideUpload },
+                { label: "Guias não identificadas", descricao: "Importar guias e associar PDFs à empresa correta.", onClick: onOpenGuideUpload },
               ]}
             />
             {typeof onOpenWhatsapp === "function" ? <Button

@@ -8,6 +8,8 @@
 // que muda por ato normativo, e uma lista embutida colocaria prazo desatualizado na tela de todas
 // as empresas de uma vez. Repetição entre empresas se resolve pela regra do escritório.
 
+import { normalizarJanela, cicloDaOcorrencia, aplicarJanela } from './agendaSerie.js';
+import { sincronizarAgenda } from './sincronizarAgenda.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { criarConsultorDeFeriados, paraISO } from "./diaUtil.js";
 import {
@@ -18,6 +20,40 @@ import {
 
 /** Janela rolante. 12 meses cobre o ano inteiro de qualquer periodicidade sem inchar a tabela. */
 export const MESES_DA_JANELA = 12;
+
+async function bloquearSerie(db, id) {
+  // PostgreSQL lock transacional, compartilhado por worker e mudanças de alcance.
+  if (db.$queryRaw) await db.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${id}))`;
+}
+
+export async function excluirOcorrencia({ portalIds, ocorrenciaId, alcance = "ESTA", userId = null }, db = prisma) {
+  if (!["ESTA", "ESTA_E_PROXIMAS"].includes(alcance)) throw new ObrigacaoError("alcance_invalido", "Escolha somente esta ocorrência ou esta e as próximas.");
+  return db.$transaction(async tx => {
+    let alvo = await tx.ocorrenciaObrigacao.findFirst({ where: { id: ocorrenciaId, obrigacao: { portalClientId: { in: portalIds } } }, include: { obrigacao: true } });
+    if (!alvo) throw new ObrigacaoError("nao_encontrada", "Ocorrência não encontrada.", 404);
+    await bloquearSerie(tx, alvo.obrigacaoId);
+    alvo = await tx.ocorrenciaObrigacao.findUnique({ where: { id: ocorrenciaId }, include: { obrigacao: true } });
+    const serie = await tx.obrigacao.findUnique({ where: { id: alvo.obrigacaoId } });
+    const ciclo = cicloDaOcorrencia(alvo, serie);
+    const futuras = alcance === "ESTA_E_PROXIMAS";
+    // Tombstones nunca são apagados; ativar uma regra de escritório não reintroduz o ciclo.
+    await tx.obrigacao.update({ where: { id: serie.id }, data: {
+      sobrescritaLocal: true,
+      agendaVersoes: serie.agendaVersoes?.length ? serie.agendaVersoes : [{ aPartirDe: "0000-01", janela: serie.janelaTrabalho || null }],
+      ...(futuras ? { encerradaAPartirDe: serie.encerradaAPartirDe && serie.encerradaAPartirDe < ciclo ? serie.encerradaAPartirDe : ciclo } : {}),
+    } });
+    const ocorrencias = futuras ? await tx.ocorrenciaObrigacao.findMany({ where: { obrigacaoId: serie.id } }) : [alvo];
+    let canceladas = 0, concluidasPreservadas = 0;
+    for (const oc of ocorrencias) {
+      if (futuras && cicloDaOcorrencia(oc, serie) < ciclo) continue;
+      if (oc.status === "CONCLUIDA") { concluidasPreservadas++; continue; }
+      if (oc.canceladaEm) continue;
+      await tx.ocorrenciaObrigacao.update({ where: { id: oc.id }, data: { canceladaEm: new Date(), canceladaPorId: userId } });
+      canceladas++;
+    }
+    return { canceladas, concluidasPreservadas, alcance };
+  });
+}
 
 /**
  * Conjunto FECHADO. Cada chave precisa de um observador escrito à mão aqui embaixo — não é
@@ -65,6 +101,8 @@ function intervaloCivil(inicio, fim) {
 }
 
 export function normalizarEntrada(dados = {}) {
+  let janelaTrabalho;
+  try { janelaTrabalho = normalizarJanela(dados.janelaTrabalho); } catch (e) { throw new ObrigacaoError('janela_invalida', e.message); }
   const nome = asTexto(dados.nome);
   if (!nome) throw new ObrigacaoError("nome_obrigatorio", "Dê um nome à obrigação.");
 
@@ -131,6 +169,7 @@ export function normalizarEntrada(dados = {}) {
     ...intervalo,
     dataVencimento,
     diasPreparacao,
+    ...(janelaTrabalho ? { janelaTrabalho } : {}),
     categoria: asTexto(dados.categoria) || null,
     periodicidade,
     diaVencimento,
@@ -175,7 +214,9 @@ async function carregarConsultorDeFeriados(portalClientId, db = prisma) {
  *   cadastro daquela empresa, que o vencimento já passado é uma pendência de verdade. Não há
  *   default silencioso e a regra do escritório não oferece a opção — ver `criar`.
  */
-export async function sincronizarOcorrencias(obrigacaoId, db = prisma, { incluirVencidoDoMes = false, atualizarJanelas = false } = {}) {
+export async function sincronizarOcorrencias(obrigacaoId, db = prisma, { incluirVencidoDoMes = false, atualizarJanelas = false, transacionada = false } = {}) {
+  if (db === prisma && !transacionada && prisma.$transaction) return prisma.$transaction(tx => sincronizarOcorrencias(obrigacaoId, tx, { incluirVencidoDoMes, atualizarJanelas, transacionada: true }));
+  await bloquearSerie(db, obrigacaoId);
   const obrigacao = await db.obrigacao.findUnique({ where: { id: obrigacaoId } });
   if (!obrigacao) throw new ObrigacaoError("nao_encontrada", "Obrigação não encontrada.", 404);
 
@@ -184,7 +225,7 @@ export async function sincronizarOcorrencias(obrigacaoId, db = prisma, { incluir
   if (!obrigacao.ativa) {
     // Inativar não apaga histórico: remove só o que ainda não venceu e não foi feito.
     const removidas = await db.ocorrenciaObrigacao.deleteMany({
-      where: { obrigacaoId, status: "PENDENTE", dataVencimento: { gte: hoje } },
+      where: { obrigacaoId, status: "PENDENTE", canceladaEm: null, dataVencimento: { gte: hoje } },
     });
     return { criadas: 0, removidas: removidas.count };
   }
@@ -205,6 +246,9 @@ export async function sincronizarOcorrencias(obrigacaoId, db = prisma, { incluir
   }
 
   const ehFeriado = await carregarConsultorDeFeriados(obrigacao.portalClientId, db);
+  if (obrigacao.janelaTrabalho || obrigacao.agendaVersoes?.length || obrigacao.encerradaAPartirDe) {
+    return sincronizarAgenda(db, obrigacao, { hoje, ehFeriado, incluirVencidoDoMes });
+  }
   const inicio = { ano: hoje.getUTCFullYear(), mes: hoje.getUTCMonth() + 1 };
   const naJanela = (quantidadeMeses) =>
     calcularVencimentos(obrigacao, { inicio, quantidadeMeses }, ehFeriado)
@@ -286,13 +330,14 @@ export async function criar({ portalClientId, dados, criadoPorId = null }) {
     const obrigacao = await db.obrigacao.create({
       data: { ...limpo, portalClientId, criadoPorId },
     });
-    const geradas = await sincronizarOcorrencias(obrigacao.id, db, { incluirVencidoDoMes });
+    const geradas = await sincronizarOcorrencias(obrigacao.id, db, { incluirVencidoDoMes, transacionada: true });
     return { obrigacao, ...geradas };
   });
 }
 
 export async function atualizar({ portalIds, obrigacaoId, dados }) {
   return prisma.$transaction(async (db) => {
+  await bloquearSerie(db, obrigacaoId);
   // Escopo por LISTA de empresas visíveis, igual a `concluir`: a rota não precisa descobrir a
   // empresa antes de chamar, e uma obrigação de fora do escopo some como 404 em vez de 403 —
   // não confirmamos a existência de dado que o usuário não pode ver.
@@ -321,7 +366,7 @@ export async function atualizar({ portalIds, obrigacaoId, dados }) {
       ...(atual.regraId ? { sobrescritaLocal: true } : {}),
     },
   });
-  const geradas = await sincronizarOcorrencias(obrigacao.id, db, { atualizarJanelas });
+  const geradas = await sincronizarOcorrencias(obrigacao.id, db, { atualizarJanelas, transacionada: true });
   return { obrigacao, ...geradas };
   });
 }
@@ -333,7 +378,11 @@ export async function remover({ portalIds, obrigacaoId }) {
   if (!atual) throw new ObrigacaoError("nao_encontrada", "Obrigação não encontrada.", 404);
   // Cascade leva as ocorrências junto — inclusive as concluídas. É exclusão de verdade, pedida
   // explicitamente; quem só quer parar de gerar usa `ativa: false`.
-  await prisma.obrigacao.delete({ where: { id: obrigacaoId } });
+  await prisma.$transaction(async tx => {
+    await bloquearSerie(tx, obrigacaoId);
+    await tx.obrigacao.update({ where: { id: obrigacaoId }, data: { encerradaAPartirDe: '0000-01', sobrescritaLocal: true } });
+    await tx.ocorrenciaObrigacao.updateMany({ where: { obrigacaoId, status: 'PENDENTE', canceladaEm: null }, data: { canceladaEm: new Date() } });
+  });
   return { id: obrigacaoId, nome: atual.nome };
 }
 
@@ -359,6 +408,7 @@ export async function listar({ portalIds, companyId = null, incluirInativas = fa
       portalClient: { select: { id: true, razao: true } },
       // A central oferece histórico/concluídas, inclusive depois do prazo final.
       ocorrencias: {
+        where: { canceladaEm: null },
         orderBy: { dataVencimento: "asc" },
       },
     },
@@ -404,6 +454,9 @@ export async function listar({ portalIds, companyId = null, incluirInativas = fa
       dataFim: o.dataFim ? paraISO(o.dataFim) : null,
       dataVencimento: o.dataVencimento ? paraISO(o.dataVencimento) : null,
       diasPreparacao: o.diasPreparacao || 0,
+    janelaTrabalho: o.janelaTrabalho || null,
+    agendaVersoes: o.agendaVersoes || [],
+    encerradaAPartirDe: o.encerradaAPartirDe || null,
       categoria: o.categoria,
       periodicidade: o.periodicidade,
       diaVencimento: o.diaVencimento,
@@ -428,13 +481,36 @@ export async function listar({ portalIds, companyId = null, incluirInativas = fa
 
 // ── Conclusão ────────────────────────────────────────────────────────────────────────────────
 
-export async function atualizarOcorrencia({ portalIds, ocorrenciaId, dados }, db = prisma) {
+export async function atualizarOcorrencia({ portalIds, ocorrenciaId, dados, userId = null }, db = prisma) {
+  if (dados.alcance && !['ESTA', 'ESTA_E_PROXIMAS'].includes(dados.alcance)) throw new ObrigacaoError('alcance_invalido', 'Escolha um alcance válido.');
   const executar = async (tx) => {
-  const oc = await tx.ocorrenciaObrigacao.findFirst({
+  let oc = await tx.ocorrenciaObrigacao.findFirst({
     where: { id: ocorrenciaId, obrigacao: { portalClientId: { in: portalIds } } },
-    include: { obrigacao: { select: { id: true, tipo: true, periodicidade: true } } },
+    include: { obrigacao: true },
   });
   if (!oc) throw new ObrigacaoError("nao_encontrada", "Ocorrência não encontrada.", 404);
+  await bloquearSerie(tx, oc.obrigacaoId);
+  oc = await tx.ocorrenciaObrigacao.findFirst({ where: { id: ocorrenciaId, obrigacao: { portalClientId: { in: portalIds } } }, include: { obrigacao: true } });
+  if (!oc) throw new ObrigacaoError("nao_encontrada", "Ocorrência não encontrada.", 404);
+  if (oc.canceladaEm) throw new ObrigacaoError('ocorrencia_cancelada', 'Esta ocorrência foi excluída da agenda.', 409);
+  if (dados.alcance === 'ESTA_E_PROXIMAS') {
+    if (oc.obrigacao.periodicidade === 'AVULSA') throw new ObrigacaoError('sem_recorrencia', 'Este item não se repete.');
+    let janela; try { janela = normalizarJanela(dados.janelaTrabalho); } catch (e) { throw new ObrigacaoError('janela_invalida', e.message); }
+    if (!janela) throw new ObrigacaoError('janela_obrigatoria', 'Informe a nova janela da recorrência.');
+    const ciclo = cicloDaOcorrencia(oc, oc.obrigacao);
+    const serie = await tx.obrigacao.findUnique({ where: { id: oc.obrigacaoId } });
+    const versoes = [...(serie.agendaVersoes || []), { aPartirDe: ciclo, janela, alteradaPorId: userId, alteradaEm: new Date().toISOString() }];
+    await tx.obrigacao.update({ where: { id: oc.obrigacaoId }, data: { agendaVersoes: versoes, sobrescritaLocal: true } });
+    const futuras = await tx.ocorrenciaObrigacao.findMany({ where: { obrigacaoId: oc.obrigacaoId, status: 'PENDENTE', canceladaEm: null, janelaPersonalizada: false } });
+    for (const futura of futuras) {
+      const chave = cicloDaOcorrencia(futura, serie);
+      if (chave < ciclo) continue;
+      const periodo = aplicarJanela({ mesVencimento: chave }, janela);
+      await tx.ocorrenciaObrigacao.update({ where: { id: futura.id }, data: { dataInicio: periodo.dataInicio, dataFim: periodo.dataFim } });
+    }
+    await sincronizarOcorrencias(oc.obrigacaoId, tx, { incluirVencidoDoMes: true, transacionada: true });
+    return tx.ocorrenciaObrigacao.findUnique({ where: { id: ocorrenciaId } });
+  }
   if (oc.status === "CONCLUIDA") throw new ObrigacaoError("ocorrencia_concluida", "Reabra a ocorrência antes de alterar seu período.", 409);
   if (dados.dataVencimento !== undefined) throw new ObrigacaoError("vencimento_preservado", "Edite o cadastro para alterar o prazo; este ajuste altera somente a janela de trabalho.");
   const data = intervaloCivil(dados.dataInicio ?? oc.dataInicio ?? oc.dataVencimento, dados.dataFim ?? oc.dataFim ?? oc.dataVencimento);
@@ -463,11 +539,16 @@ export async function atualizarOcorrencia({ portalIds, ocorrenciaId, dados }, db
 }
 
 export async function concluir({ portalIds, ocorrenciaId, userId = null }) {
-  const oc = await prisma.ocorrenciaObrigacao.findUnique({
+  return prisma.$transaction(async tx => {
+  let oc = await tx.ocorrenciaObrigacao.findUnique({
     where: { id: ocorrenciaId },
     include: { obrigacao: { select: { portalClientId: true, verificador: true } } },
   });
-  if (!oc || !portalIds.includes(oc.obrigacao.portalClientId)) {
+  if (oc) {
+    await bloquearSerie(tx, oc.obrigacaoId);
+    oc = await tx.ocorrenciaObrigacao.findUnique({ where: { id: ocorrenciaId }, include: { obrigacao: { select: { portalClientId: true, verificador: true } } } });
+  }
+  if (!oc || oc.canceladaEm || !portalIds.includes(oc.obrigacao.portalClientId)) {
     throw new ObrigacaoError("nao_encontrada", "Ocorrência não encontrada.", 404);
   }
   if (oc.obrigacao.verificador) {
@@ -477,24 +558,31 @@ export async function concluir({ portalIds, ocorrenciaId, userId = null }) {
       409,
     );
   }
-  const atualizada = await prisma.ocorrenciaObrigacao.update({
+  const atualizada = await tx.ocorrenciaObrigacao.update({
     where: { id: ocorrenciaId },
     data: { status: "CONCLUIDA", concluidaEm: new Date(), concluidaPorId: userId, fonteConclusao: "MANUAL" },
   });
   return atualizada;
+  });
 }
 
 export async function reabrir({ portalIds, ocorrenciaId }) {
-  const oc = await prisma.ocorrenciaObrigacao.findUnique({
+  return prisma.$transaction(async tx => {
+  let oc = await tx.ocorrenciaObrigacao.findUnique({
     where: { id: ocorrenciaId },
     include: { obrigacao: { select: { portalClientId: true } } },
   });
-  if (!oc || !portalIds.includes(oc.obrigacao.portalClientId)) {
+  if (oc) {
+    await bloquearSerie(tx, oc.obrigacaoId);
+    oc = await tx.ocorrenciaObrigacao.findUnique({ where: { id: ocorrenciaId }, include: { obrigacao: { select: { portalClientId: true, verificador: true } } } });
+  }
+  if (!oc || oc.canceladaEm || !portalIds.includes(oc.obrigacao.portalClientId)) {
     throw new ObrigacaoError("nao_encontrada", "Ocorrência não encontrada.", 404);
   }
-  return prisma.ocorrenciaObrigacao.update({
+  return tx.ocorrenciaObrigacao.update({
     where: { id: ocorrenciaId },
     data: { status: "PENDENTE", concluidaEm: null, concluidaPorId: null, fonteConclusao: null },
+  });
   });
 }
 
@@ -512,6 +600,7 @@ export async function aplicarVerificadores({ portalIds = null } = {}) {
   const pendentes = await prisma.ocorrenciaObrigacao.findMany({
     where: {
       status: "PENDENTE",
+      canceladaEm: null,
       competenciaRef: { not: null },
       obrigacao: {
         ativa: true,
@@ -567,7 +656,7 @@ export async function aplicarVerificadores({ portalIds = null } = {}) {
   if (!aConcluir.length) return { concluidas: 0 };
 
   await prisma.ocorrenciaObrigacao.updateMany({
-    where: { id: { in: aConcluir } },
+    where: { id: { in: aConcluir }, canceladaEm: null },
     data: { status: "CONCLUIDA", concluidaEm: new Date(), fonteConclusao: "AUTOMATICA" },
   });
   return { concluidas: aConcluir.length };
@@ -581,6 +670,7 @@ export async function ocorrenciasDoPeriodo({ portalIds, inicio, fim, companyId =
 
   const ocorrencias = await db.ocorrenciaObrigacao.findMany({
     where: {
+      canceladaEm: null,
       OR: [
         { dataInicio: { lt: fim }, dataFim: { gte: inicio } },
         { dataInicio: null, dataVencimento: { gte: inicio, lt: fim } },

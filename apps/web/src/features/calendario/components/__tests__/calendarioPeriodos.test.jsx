@@ -1,3 +1,5 @@
+jest.mock('../../../obrigacoes/components/CalendarioObrigacoesModal', () => ({ CalendarioObrigacoesModal: jest.fn(() => null) }));
+import { CalendarioObrigacoesModal } from '../../../obrigacoes/components/CalendarioObrigacoesModal';
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { CalendarioGrid } from "../renderCalendarioGrid";
 
@@ -54,11 +56,11 @@ test("atalhos de lista, criação e dia vazio carregam empresa e datas", async (
   const onContextChange = jest.fn();
   montar({ dias: [], contexto: { empresaFiltro: "c1" }, onOpenObligations, onContextChange });
   fireEvent.click(screen.getByRole("button", { name: "Tarefas e obrigações" }));
-  expect(onOpenObligations).toHaveBeenLastCalledWith({ companyId: "c1", dataInicio: "2026-09-01", dataFim: "2026-09-30", criar: false });
+  expect(CalendarioObrigacoesModal.mock.calls.at(-1)[0].contexto).toEqual({ companyId: "c1", dataInicio: "2026-09-01", dataFim: "2026-09-30", criar: false });
   fireEvent.click(screen.getByRole("button", { name: "+ Nova tarefa ou obrigação" }));
-  expect(onOpenObligations).toHaveBeenLastCalledWith({ companyId: "c1", dataInicio: "2026-09-10", dataFim: "2026-09-10", criar: true });
+  expect(CalendarioObrigacoesModal.mock.calls.at(-1)[0].contexto).toEqual({ companyId: "c1", dataInicio: "2026-09-10", dataFim: "2026-09-10", criar: true });
   fireEvent.click(screen.getByRole("button", { name: "Criar tarefa ou obrigação em 2026-09-22" }));
-  expect(onOpenObligations).toHaveBeenLastCalledWith({ companyId: "c1", dataInicio: "2026-09-22", dataFim: "2026-09-22", criar: true });
+  expect(CalendarioObrigacoesModal.mock.calls.at(-1)[0].contexto).toEqual({ companyId: "c1", dataInicio: "2026-09-22", dataFim: "2026-09-22", criar: true });
   visao("Agenda");
   await waitFor(() => expect(onContextChange).toHaveBeenLastCalledWith(expect.objectContaining({ referencia: "2026-09-10", empresaFiltro: "c1", visao: "agenda" })));
 });
@@ -84,7 +86,7 @@ test("período da obrigação não substitui o vencimento fiscal no detalhe", as
   fireEvent.click((await screen.findAllByRole("button", { name: /Preparar folha/ }))[0]);
   expect(screen.getByText(/Vencimento fiscal: 20\/09\/2026/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Editar tarefa ou obrigação" }));
-  expect(onOpenObligations).toHaveBeenCalledWith(expect.objectContaining({ ocorrenciaId: "oc-1", dataInicio: "2026-09-10", dataFim: "2026-09-15", criar: false }));
+  expect(CalendarioObrigacoesModal.mock.calls.at(-1)[0].contexto).toEqual(expect.objectContaining({ ocorrenciaId: "oc-1", dataInicio: "2026-09-10", dataFim: "2026-09-15", criar: false }));
 });
 
 test("resposta atrasada de setembro não substitui os eventos de outubro", async () => {

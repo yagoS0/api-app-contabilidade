@@ -16,6 +16,7 @@ import {
   aplicarVerificadores,
   atualizar,
   atualizarOcorrencia,
+  excluirOcorrencia,
   concluir,
   criar,
   listar,
@@ -128,11 +129,17 @@ export function createObrigacoesRouter({ log } = {}) {
   });
 
   // ── Ocorrências ────────────────────────────────────────────────────────────────────────────
+  router.delete('/ocorrencias/:ocorrenciaId', async (req, res) => {
+    try {
+      const out = await excluirOcorrencia({ portalIds: await empresasVisiveis(req), ocorrenciaId: String(req.params.ocorrenciaId), alcance: req.body?.alcance || 'ESTA', userId: req.auth?.user?.id || null });
+      return res.json({ ok: true, ...out });
+    } catch (err) { return falhar(res, err, { ocorrenciaId: req.params.ocorrenciaId }); }
+  });
   router.patch("/ocorrencias/:ocorrenciaId", async (req, res) => {
     const ocorrenciaId = String(req.params.ocorrenciaId);
     try {
       const portalIds = await empresasVisiveis(req);
-      const ocorrencia = await atualizarOcorrencia({ portalIds, ocorrenciaId, dados: req.body || {} });
+      const ocorrencia = await atualizarOcorrencia({ portalIds, ocorrenciaId, dados: req.body || {}, userId: req.auth?.user?.id || null });
       return res.json({ ok: true, ocorrencia });
     } catch (err) { return falhar(res, err, { ocorrenciaId }); }
   });

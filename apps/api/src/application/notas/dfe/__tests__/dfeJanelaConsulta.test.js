@@ -74,7 +74,14 @@ jest.mock("../DfeParser.js", () => ({
 
 import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { fetchDistNSU } from "../DfeClient.js";
+import { resolveCertForCompany } from "../../CertResolver.js";
 import { syncDfeForCompany, avaliarJanelaDfe, explicar656, DFE_INTERVALO_MIN } from "../DfeSyncService.js";
+
+test.each(["procuracao_escritorio", "none"])("DFe sem A1 próprio (%s) não faz chamada à SEFAZ", async (source) => {
+  resolveCertForCompany.mockResolvedValueOnce({ source, procuracaoId: "proc-teste" });
+  expect(await syncDfeForCompany({ portalClientId: "p1" })).toMatchObject({ ok: false, reason: "NO_COMPANY_CERT" });
+  expect(fetchDistNSU).not.toHaveBeenCalled();
+});
 
 beforeEach(() => {
   jest.clearAllMocks();

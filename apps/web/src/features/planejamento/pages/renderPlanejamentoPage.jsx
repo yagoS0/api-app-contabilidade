@@ -23,7 +23,7 @@
 // empresa não tem chega `null`, o input fica VAZIO e a linha de origem diz que não foi possível
 // apurar. Ver `lib/prefillDaEmpresa.js` e a recusa do Fator R em `lib/comparador.js`.
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { compararRegimes, pontoDeEquilibrio } from "../lib/comparador";
 import { custoAnualSimples } from "../lib/simplesNacional";
 import { ATIVIDADES_PRESUMIDO, avisoTravaServicos16 } from "../lib/lucroPresumido";
@@ -102,7 +102,7 @@ function OrigemDoCampo({ campo, id }) {
 function Campo({ id, rotuloTexto, children, abaixo = null, estilo = null }) {
   const idDaDescricao = abaixo ? `${id}-desc` : undefined;
   return (
-    <div style={estilo || rotulo}>
+    <div className="planejamento-campo" style={estilo || rotulo}>
       <label htmlFor={id}>{rotuloTexto}</label>
       {typeof children === "function" ? children({ id, "aria-describedby": idDaDescricao }) : children}
       {abaixo ? <div id={idDaDescricao} style={{ display: "grid", gap: 2 }}>{abaixo}</div> : null}
@@ -158,6 +158,12 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   const [dadosEmpresa, setDadosEmpresa] = useState(empresa || null);
   const [carregando, setCarregando] = useState(false);
   const [erroCarga, setErroCarga] = useState(null);
+  const [cenariosSalvos, setCenariosSalvos] = useState(null);
+  const [cenarioSalvo, setCenarioSalvo] = useState(null);
+  const [carregandoCenarios, setCarregandoCenarios] = useState(false);
+  const empresaAtualCenario = useRef(empresaId);
+  empresaAtualCenario.current = empresaId;
+  const [procedenciasSalvas, setProcedenciasSalvas] = useState(null);
 
   // ⚠⚠ A EMPRESA PODE CHEGAR DEPOIS DA MONTAGEM, e `useState` só lê o valor inicial UMA VEZ.
   // Defeito medido no navegador ao ligar a aba dentro da empresa (01/09/2026): a página de detalhe
@@ -232,6 +238,10 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   // Inverter a ordem faria a limpeza apagar o que o prefill acabou de escrever.
   useEffect(() => {
     setReceita("");
+    setCenariosSalvos(null);
+    setCenarioSalvo(null);
+    setProcedenciasSalvas(null);
+    setCarregandoCenarios(false);
     setRbt12("");
     setMesesAtividade("");
     setSerieMensal([]);
@@ -393,6 +403,43 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     servicosAte120kConfirmado: servicos16,
   }), [receita, rbt12, folha, anexo, sujeitoFatorR, atividade, issLido.valor, margemLida.valor, creditos, mesesInicioAtividade, receitasMensais, servicos16]);
 
+  const formularioCenario = { receita, rbt12, folha, anexo, sujeitoFatorR, atividade, iss, margem, creditos,
+    mesesAtividade, serieMensal, servicos16, categoriaConfirmada, cenarioIbsCbs, cbsEstimada, detalharMeses };
+  const assinaturaCenario = JSON.stringify(formularioCenario);
+  async function listarCenarios() {
+    if (!empresaId || !api?.listarSimulacoesPlanejamento || carregandoCenarios) return;
+    const empresaDaBusca = empresaId;
+    setCarregandoCenarios(true);
+    try {
+      const r = await api.listarSimulacoesPlanejamento(empresaDaBusca);
+      if (empresaAtualCenario.current !== empresaDaBusca) return;
+      if (r?.ok === false) throw new Error(r.message || "Não foi possível ler os cenários.");
+      setCenariosSalvos(r?.simulacoes || []);
+    } catch (e) { if (empresaAtualCenario.current === empresaDaBusca) setDesfechoDoGuardar({ tom: "erro", texto: e.message || "Não foi possível ler os cenários salvos." }); }
+    finally { if (empresaAtualCenario.current === empresaDaBusca) setCarregandoCenarios(false); }
+  }
+  function abrirCenario(cenario) {
+    const e = cenario.entradas || {};
+    const f = e.formularioCenario || {
+      receita: dinheiroParaCampo(e.receitaAnual), rbt12: dinheiroParaCampo(e.rbt12), folha: dinheiroParaCampo(e.folhaAnual),
+      anexo: e.anexoSimples || "III", sujeitoFatorR: Boolean(e.sujeitoAoFatorR), atividade: e.atividadePresumido || "servicos",
+      iss: e.aliquotaIss == null ? "" : paraCampo(e.aliquotaIss * 100), margem: e.margemLucro == null ? "" : paraCampo(e.margemLucro * 100),
+      creditos: dinheiroParaCampo(e.creditosPisCofins), mesesAtividade: e.mesesDeAtividade == null ? "" : paraCampo(e.mesesDeAtividade),
+      serieMensal: (e.receitasMensais || []).map(dinheiroParaCampo), servicos16: e.servicosAte120kConfirmado ?? null,
+      categoriaConfirmada: false, cenarioIbsCbs: CENARIO.EM_2026, cbsEstimada: "", detalharMeses: Boolean(e.receitasMensais),
+    };
+    setReceita(f.receita ?? ""); setRbt12(f.rbt12 ?? ""); setFolha(f.folha ?? "");
+    setAnexo(f.anexo || "III"); setSujeitoFatorR(Boolean(f.sujeitoFatorR)); setAtividade(f.atividade || "servicos");
+    setIss(f.iss ?? ""); setMargem(f.margem ?? ""); setCreditos(f.creditos ?? "");
+    setMesesAtividade(f.mesesAtividade ?? ""); setSerieMensal(f.serieMensal || []);
+    setDetalharMeses(Boolean(f.detalharMeses));
+    setServicos16(f.servicos16 ?? null); setCategoriaConfirmada(Boolean(f.categoriaConfirmada));
+    setCenarioIbsCbs(f.cenarioIbsCbs || CENARIO.EM_2026); setCbsEstimada(f.cbsEstimada ?? "");
+    setCenarioSalvo(JSON.stringify(f));
+    setProcedenciasSalvas(cenario.procedencias || null);
+    setDesfechoDoGuardar({ tom: "ok", texto: `Cenário reaberto. A comparação é recalculada com as tabelas atuais; o documento original preserva o resultado salvo.${e.formularioCenario ? "" : " Cenário legado: confira IBS/CBS e a confirmação da atividade, que não eram guardados como campos de edição."}` });
+  }
+
   const temReceita = entradas.receitaAnual > 0;
   const resultado = useMemo(() => (temReceita ? compararRegimes(entradas) : null), [entradas, temReceita]);
   // ⚠ DERIVADO do resultado do motor, nunca recalculado aqui — a tabela REARRANJA o que já foi
@@ -451,7 +498,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   // com números diferentes têm de se distinguir NELE, senão a diferença parece erro de cálculo.
   // Cada linha diz se o valor veio da empresa (e de onde), se foi digitado por cima, se foi
   // informado nesta simulação, ou se não foi possível apurar.
-  const procedencias = useMemo(() => procedenciaDosCampos(prefill, {
+  const procedenciasAtuais = useMemo(() => procedenciaDosCampos(prefill, {
     receitaAnual: lerDinheiro(receita),
     rbt12: lerDinheiro(rbt12),
     folhaAnual: lerDinheiro(folha),
@@ -465,6 +512,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     aliquotaIss: issLido.valor == null ? null : issLido.valor / 100,
     atividadePresumido: atividade,
   }), [prefill, receita, rbt12, folha, anexo, sujeitoFatorR, issLido.valor, atividade]);
+  const procedencias = cenarioSalvo === assinaturaCenario && procedenciasSalvas ? procedenciasSalvas : procedenciasAtuais;
 
   const valorImpresso = (linha) => {
     if (linha.valor === null || linha.valor === undefined || linha.valor === "") return "—";
@@ -508,22 +556,30 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
    * de guardar exatamente o que o contador viu — recalcular no servidor devolveria outro número
    * assim que o RBT12 ou as tabelas mudassem, e o PDF deixaria de descrever o que foi entregue.
    */
-  async function guardarSimulacao() {
+  async function guardarSimulacao(somenteCenario = false) {
     if (!empresaId || guardando) return;
+    const empresaDoSalvar = empresaId;
     setGuardando(true);
     setDesfechoDoGuardar(null);
     try {
       const salvo = await api.salvarSimulacaoPlanejamento(empresaId, {
         competencia: prefill.referencia?.competencia || null,
-        entradas,
+        entradas: { ...entradas, formularioCenario },
         resultado,
         // ⚠ A procedência viaja junto: é ela que distingue DOIS PDFs da mesma empresa com números
         // diferentes. Sem ela, a diferença parece erro de cálculo no papel.
         procedencias,
         vigenciaTabelas: resultado?.ibsCbs?.vigencia || null,
       });
+      if (empresaAtualCenario.current !== empresaDoSalvar) return;
       if (!salvo?.ok) {
         setDesfechoDoGuardar({ tom: "erro", texto: salvo?.message || "Não foi possível salvar a simulação." });
+        return;
+      }
+      setCenarioSalvo(assinaturaCenario);
+      if (somenteCenario === true) {
+        setDesfechoDoGuardar({ tom: "ok", texto: "Cenário salvo. Use Abrir cenário para continuar depois." });
+        setCenariosSalvos(null);
         return;
       }
       const doc = await api.gerarDocumentoDaSimulacao(empresaId, salvo.simulacao.id);
@@ -574,8 +630,8 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   }, [imprimindo]);
 
   return (
-    <div style={{ background: C.page, minHeight: "100vh", color: C.texto, padding: "20px 0" }}>
-      <div style={{ width: "var(--content-wide)", margin: "0 auto", display: "grid", gap: 16 }}>
+    <div style={{ background: C.page, minHeight: empresaFixa ? undefined : "100vh", color: C.texto, padding: empresaFixa ? 0 : "20px 0" }}>
+      <div style={{ width: empresaFixa ? "100%" : "var(--content-wide)", margin: "0 auto", display: "grid", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           {onVoltar && (
             <BackButton onClick={onVoltar} />
@@ -585,6 +641,18 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
             {prefill.empresa?.razao || "Simulação livre — sem empresa vinculada"}
           </span>
         </div>
+        <section aria-label="Cenários salvos" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <span role="status">{cenarioSalvo === assinaturaCenario ? "Cenário salvo" : "Premissas não salvas"}</span>
+          <button type="button" className="btn" disabled={!empresaId || !resultado || guardando || carregando} onClick={() => guardarSimulacao(true)}>Salvar cenário</button>
+          <button type="button" className="btn btn-secondary" disabled={!empresaId || carregando || carregandoCenarios} onClick={listarCenarios}>{carregandoCenarios ? "Lendo cenários…" : "Abrir cenário"}</button>
+          {!empresaId && <span>Vincule uma empresa para guardar e retomar cenários.</span>}
+          {cenariosSalvos && <div style={{ flexBasis: "100%" }}>
+            {cenariosSalvos.length ? cenariosSalvos.map((c) => <button key={c.id} type="button" className="btn btn-secondary" disabled={carregando} onClick={() => abrirCenario(c)}>
+              Abrir {c.competencia || "simulação"} · {new Date(c.geradoEm).toLocaleString("pt-BR")}
+            </button>) : <p>Nenhum cenário salvo para esta empresa.</p>}
+          </div>}
+        </section>
+        {desfechoDoGuardar && <p role="status" style={{ margin: 0, fontSize: "0.875rem", color: desfechoDoGuardar.tom === "erro" ? "var(--state-warn)" : C.muted }}>{desfechoDoGuardar.texto}</p>}
 
         {/* ── SELETOR DE EMPRESA ─────────────────────────────────────────────
             A porta de entrada do modo carteira. Nasce em "Simulação livre" de propósito: a tela
@@ -643,205 +711,11 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
 
             ⚠ Com o formulário vazio não há `resultado` e este bloco não renderiza — a tela abre
             no formulário, que é o certo: ali a pergunta ainda não foi feita. */}
-        {/* ── RESULTADO ────────────────────────────────────────────────────── */}
-        {resultado && (
-          <div data-print-area style={{ display: "grid", gap: 14 }}>
-            {/* ⚠ CABEÇALHO SÓ-NO-PAPEL. O PDF vai para o cliente do contador sem esta tela por
-                perto: sem isto, ele circula como um número sem data, sem escopo e sem ressalva. */}
-            <div data-print-only style={{ display: "none" }}>
-        {/* ⚠ `tom="papel"` NÃO É DETALHE: este portal é escuro, e a tinta dele (`--logo-tinta`,
-            `#F8F8F2`) sairia INVISÍVEL no branco da folha. A variante crava o par de fundo claro e
-            liga `print-color-adjust: exact`, senão o navegador descarta a cor da cúpula.
-            ⚠ E ela precisa estar DENTRO do `[data-print-area]`: a regra do `@media print` é
-            `body.imprimindo > * { visibility: hidden }`, e só os descendentes da área voltam. */}
-        <LogoAltan tom="papel" altura={22} />
-              <h2 style={{ margin: "0 0 2px" }}>Simulação de regime tributário</h2>
-              <p style={{ margin: "0 0 4px", fontSize: "0.85rem" }}>
-                {prefill.empresa?.razao || "Simulação livre"}
-                {prefill.empresa?.cnpj ? ` · CNPJ ${prefill.empresa.cnpj}` : ""} · ano-base {resultado.anoBase} ·
-                emitida em {new Date().toLocaleDateString("pt-BR")}
-              </p>
-              <p style={{ margin: "0 0 10px", fontSize: "0.8rem" }}>
-                <strong>Tabelas fiscais verificadas em {resultado.fontesVerificadasEm}.</strong> {resultado.aviso}
-              </p>
-              {/* A premissa vai IMPRESSA: o PDF circula sem esta tela por perto, e um RBT12
-                  proporcionalizado sem a ressalva vira faturamento real aos olhos de quem receber. */}
-              {premissaInicio && (
-                <p style={{ margin: "0 0 10px", fontSize: "0.8rem" }}><strong>⚠ {premissaInicio}</strong></p>
-              )}
-
-              {/* ⚠⚠ DE ONDE VEIO CADA NÚMERO — IMPRESSO, e não só na tela.
-                  Dois PDFs da mesma empresa com números diferentes têm de se distinguir no PAPEL:
-                  sem esta tabela, quem recebe não tem como saber se o RBT12 saiu da apuração
-                  transmitida, da soma dos lançamentos ou da mão do contador — e a diferença entre
-                  os dois documentos parece erro de cálculo. Vale também para a simulação livre,
-                  onde a resposta é "informado nesta simulação", que é uma informação, não um vazio. */}
-              {prefill.temEmpresa && (
-                <table data-print-tabela style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.72rem", margin: "0 0 10px" }}>
-                  <caption style={{ textAlign: "left", fontWeight: 700, padding: "0 0 3px" }}>
-                    Procedência dos dados usados nesta simulação
-                    {prefill.referencia ? ` · apuração sobre ${prefill.referencia.janelaRotulo}` : ""}
-                  </caption>
-                  <tbody>
-                    {procedencias.map((l) => (
-                      <tr key={l.chave}>
-                        <td style={{ padding: "2px 6px 2px 0", whiteSpace: "nowrap" }}>{l.rotulo}</td>
-                        <td style={{ padding: "2px 6px", whiteSpace: "nowrap", fontWeight: 700 }}>{valorImpresso(l)}</td>
-                        <td style={{ padding: "2px 0" }}>
-                          {l.estado === "ausente" ? "não foi possível apurar — " : ""}{l.texto}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            {premissaInicio && (
-              <div data-print-hide style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.alerta}`, fontSize: "0.82rem", lineHeight: 1.5, color: C.alerta }}>
-                ⚠ {premissaInicio}
-              </div>
-            )}
-
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              {resultado.regimes.map((r) => (
-                <CardRegime
-                  key={r.regime}
-                  resultado={r}
-                  vencedor={resultado.vencedor?.regime === r.regime}
-                  aberto={Boolean(abertos[r.regime])}
-                  onToggle={() => setAbertos((a) => ({ ...a, [r.regime]: !a[r.regime] }))}
-                />
-              ))}
-            </div>
-
-            {resultado.economiaAnual > 0 && (
-              <div style={{ fontSize: "0.9rem" }}>
-                O <strong>{resultado.vencedor.regime}</strong> sai{" "}
-                <strong style={{ color: "#50FA7B" }}>{brl(resultado.economiaAnual)}</strong> mais barato por ano
-                que a segunda opção.
-              </div>
-            )}
-
-            {/* ⚠⚠ A TABELA VEM ANTES DO GAUGE E DO PONTO DE EQUILÍBRIO, e a ordem é o argumento:
-                ela é a resposta à pergunta "por que este total?". Os cards dão o número; ela dá a
-                composição, e é a composição que sustenta (ou derruba) a conclusão — inclusive a de
-                que "o Presumido compensa acima de X", que não vale para quem tem folha. */}
-            {comparativo && <TabelaComparativa comparativo={comparativo} />}
-
-            {/* ⚠⚠ IBS/CBS — só para quem É (ou seria) optante pelo Simples. Este bloco responde a
-                decisão da janela de setembro, e a opção do art. 41, § 3º da LC 214 é do OPTANTE:
-                para uma empresa do Presumido ele não faz pergunta nenhuma, e mostrá-lo ali seria
-                oferecer uma decisão que ela não tem para tomar.
-                ⚠ A condição é o Simples ter sido CALCULADO — `indisponivel` (folha ausente numa
-                atividade de Fator R) significa que nem anexo nem faixa existem, e sem eles o
-                crédito não sai. */}
-            {(() => {
-              const simples = (resultado?.regimes || []).find(
-                (x) => /Simples/i.test(x.regime) && x.faixa != null && x.aliquotaEfetiva != null,
-              );
-              if (!simples) return null;
-              return (
-                <BlocoIbsCbs
-                  cenario={cenarioIbsCbs}
-                  aoTrocarCenario={setCenarioIbsCbs}
-                  cbsEstimada={cbsEstimada}
-                  aoMudarCbs={setCbsEstimada}
-                  anexo={resultado.anexoResolvido}
-                  faixa={simples.faixa}
-                  /* ⚠ `aliquotaEfetiva` é FRAÇÃO no motor (`das = aliquotaEfetiva × receita`) e o
-                     módulo trabalha em PONTOS PERCENTUAIS. A conversão é aqui, uma vez — passar a
-                     fração adiante daria um crédito cem vezes menor, e plausível. */
-                  aliquotaEfetivaPct={simples.aliquotaEfetiva * 100}
-                  /* ⚠ O DAS anual e a receita são o que responde "quanto ela PAGA" — sem eles o
-                     bloco só saberia dizer quanto de crédito ela transfere, que foi exatamente o
-                     defeito relatado. */
-                  dasAnual={simples.das}
-                  receitaAnual={entradas.receitaAnual}
-                  cores={C}
-                  rotulo={rotulo}
-                  campo={campo}
-                />
-              );
-            })()}
-
-            {resultado.fatorR && <GaugeFatorR fatorR={resultado.fatorR} economiaSeMudar={economiaAnexo} />}
-
-            {/* ⚠ Logo DEPOIS do gauge: ele mostra ONDE o Fator R está, este responde O QUE FAZER. */}
-            <PainelProLabore simulacao={proLabore} />
-
-            {equilibrio && (
-              <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, fontSize: "0.88rem" }}>
-                <strong style={{ display: "block", marginBottom: 4, fontSize: "0.8rem", color: C.muted }}>Ponto de equilíbrio</strong>
-                {equilibrio.frase}
-              </div>
-            )}
-
-            {/* Na TELA o aviso aparece aqui; no PAPEL ele já saiu no cabeçalho — os dois porque o
-                PDF e a tela são lidos em situações diferentes. */}
-            <div style={{ fontSize: "0.76rem", color: C.muted, lineHeight: 1.5 }}>
-              Tabelas fiscais verificadas em <strong>{resultado.fontesVerificadasEm}</strong> · ano-base {resultado.anoBase}.
-              {" "}{resultado.aviso}
-            </div>
-
-            <div data-print-hide style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <button
-                type="button"
-                onClick={() => setImprimindo(true)}
-                style={{ background: "transparent", border: `1px solid ${C.borda}`, color: C.texto, borderRadius: 6, padding: "6px 12px", font: "inherit", fontSize: "0.8rem", cursor: "pointer" }}
-              >
-                🖨 Imprimir / salvar em PDF
-              </button>
-
-              {/* ⚠⚠ GUARDAR SÓ EXISTE COM EMPRESA ESCOLHIDA. Em simulação livre não há onde
-                  guardar — a foto pertence a uma empresa, e os Documentos são dela. O botão fica
-                  DESABILITADO com o motivo, nunca escondido: sumir esconderia que a ação existe.
-                  ⚠ Ele é `<button>` e não link: abre um ato, não uma rota. */}
-              {/* ⚠⚠ A CONDIÇÃO É `empresaFixa || empresas.length`, e não só a segunda — defeito meu,
-                  pego ao ligar a aba: dentro da empresa a lista `empresas` NÃO é passada (é ela que
-                  faz o seletor sumir), então `empresas.length > 0` escondia o botão exatamente onde
-                  ele mais serve. O que decide se dá para guardar é haver EMPRESA, não haver LISTA. */}
-              {(empresaFixa || empresas.length > 0) && (
-                <button
-                  type="button"
-                  onClick={guardarSimulacao}
-                  disabled={!empresaId || guardando}
-                  title={empresaId
-                    ? "Salva esta simulação e gera o PDF em Documentos da empresa."
-                    : "Escolha uma empresa acima: a simulação livre não tem onde ser guardada."}
-                  style={{
-                    background: "transparent", border: `1px solid ${empresaId ? C.accent : C.borda}`,
-                    color: empresaId ? C.accent : C.muted, borderRadius: 6, padding: "6px 12px",
-                    font: "inherit", fontSize: "0.8rem",
-                    cursor: !empresaId || guardando ? "not-allowed" : "pointer",
-                    opacity: empresaId ? 1 : 0.6,
-                  }}
-                >
-                  {guardando ? "Guardando…" : "💾 Guardar em Documentos"}
-                </button>
-              )}
-
-              {/* ⚠⚠ OS DOIS ATOS TÊM DESFECHOS DIFERENTES, e a frase tem de distinguir: a foto pode
-                  ter sido salva e o PDF não (sem o Volume no Railway, o storage recusa). Dizer só
-                  "falhou" faria o contador simular tudo de novo à toa. */}
-              {desfechoDoGuardar ? (
-                <span
-                  role="status"
-                  style={{
-                    fontSize: "0.76rem", lineHeight: 1.5,
-                    color: desfechoDoGuardar.tom === "erro" ? "var(--state-warn)" : C.muted,
-                  }}
-                >
-                  {desfechoDoGuardar.texto}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        )}
-
         {/* ── ENTRADAS ─────────────────────────────────────────────────────── */}
-        <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, display: "grid", gap: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
+        <div id="premissas-cenario" style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, display: "grid", gap: 12 }}>
+          <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Premissas do cenário</h2>
+          <p style={{ margin: 0 }}>Revise receita e histórico, folha e atividade. As escolhas abaixo alteram somente este cenário, sem mudar o cadastro fiscal da empresa.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: 16 }}>
             <Campo
               id="pl-receita"
               rotuloTexto="Receita anual (R$)"
@@ -1176,6 +1050,191 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
           )}
           {avisoTrava && <div style={{ fontSize: "0.78rem", color: C.alerta }}>⚠ {avisoTrava}</div>}
         </div>
+
+        {/* ── RESULTADO ────────────────────────────────────────────────────── */}
+        {resultado && (
+          <div data-print-area style={{ display: "grid", gap: 14 }}>
+            {/* ⚠ CABEÇALHO SÓ-NO-PAPEL. O PDF vai para o cliente do contador sem esta tela por
+                perto: sem isto, ele circula como um número sem data, sem escopo e sem ressalva. */}
+            <div data-print-only style={{ display: "none" }}>
+        {/* ⚠ `tom="papel"` NÃO É DETALHE: este portal é escuro, e a tinta dele (`--logo-tinta`,
+            `#F8F8F2`) sairia INVISÍVEL no branco da folha. A variante crava o par de fundo claro e
+            liga `print-color-adjust: exact`, senão o navegador descarta a cor da cúpula.
+            ⚠ E ela precisa estar DENTRO do `[data-print-area]`: a regra do `@media print` é
+            `body.imprimindo > * { visibility: hidden }`, e só os descendentes da área voltam. */}
+        <LogoAltan tom="papel" altura={22} />
+              <h2 style={{ margin: "0 0 2px" }}>Simulação de regime tributário</h2>
+              <p style={{ margin: "0 0 4px", fontSize: "0.85rem" }}>
+                {prefill.empresa?.razao || "Simulação livre"}
+                {prefill.empresa?.cnpj ? ` · CNPJ ${prefill.empresa.cnpj}` : ""} · ano-base {resultado.anoBase} ·
+                emitida em {new Date().toLocaleDateString("pt-BR")}
+              </p>
+              <p style={{ margin: "0 0 10px", fontSize: "0.8rem" }}>
+                <strong>Tabelas fiscais verificadas em {resultado.fontesVerificadasEm}.</strong> {resultado.aviso}
+              </p>
+              {/* A premissa vai IMPRESSA: o PDF circula sem esta tela por perto, e um RBT12
+                  proporcionalizado sem a ressalva vira faturamento real aos olhos de quem receber. */}
+              {premissaInicio && (
+                <p style={{ margin: "0 0 10px", fontSize: "0.8rem" }}><strong>⚠ {premissaInicio}</strong></p>
+              )}
+
+              {/* ⚠⚠ DE ONDE VEIO CADA NÚMERO — IMPRESSO, e não só na tela.
+                  Dois PDFs da mesma empresa com números diferentes têm de se distinguir no PAPEL:
+                  sem esta tabela, quem recebe não tem como saber se o RBT12 saiu da apuração
+                  transmitida, da soma dos lançamentos ou da mão do contador — e a diferença entre
+                  os dois documentos parece erro de cálculo. Vale também para a simulação livre,
+                  onde a resposta é "informado nesta simulação", que é uma informação, não um vazio. */}
+              {prefill.temEmpresa && (
+                <table data-print-tabela style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.72rem", margin: "0 0 10px" }}>
+                  <caption style={{ textAlign: "left", fontWeight: 700, padding: "0 0 3px" }}>
+                    Procedência dos dados usados nesta simulação
+                    {prefill.referencia ? ` · apuração sobre ${prefill.referencia.janelaRotulo}` : ""}
+                  </caption>
+                  <tbody>
+                    {procedencias.map((l) => (
+                      <tr key={l.chave}>
+                        <td style={{ padding: "2px 6px 2px 0", whiteSpace: "nowrap" }}>{l.rotulo}</td>
+                        <td style={{ padding: "2px 6px", whiteSpace: "nowrap", fontWeight: 700 }}>{valorImpresso(l)}</td>
+                        <td style={{ padding: "2px 0" }}>
+                          {l.estado === "ausente" ? "não foi possível apurar — " : ""}{l.texto}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {premissaInicio && (
+              <div data-print-hide style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.alerta}`, fontSize: "0.82rem", lineHeight: 1.5, color: C.alerta }}>
+                ⚠ {premissaInicio}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {resultado.regimes.map((r) => (
+                <CardRegime
+                  key={r.regime}
+                  resultado={r}
+                  vencedor={resultado.vencedor?.regime === r.regime}
+                  aberto={Boolean(abertos[r.regime])}
+                  onToggle={() => setAbertos((a) => ({ ...a, [r.regime]: !a[r.regime] }))}
+                />
+              ))}
+            </div>
+
+            {resultado.economiaAnual > 0 && (
+              <div style={{ fontSize: "0.9rem" }}>
+                O <strong>{resultado.vencedor.regime}</strong> sai{" "}
+                <strong style={{ color: "#50FA7B" }}>{brl(resultado.economiaAnual)}</strong> mais barato por ano
+                que a segunda opção.
+              </div>
+            )}
+
+            {/* ⚠⚠ A TABELA VEM ANTES DO GAUGE E DO PONTO DE EQUILÍBRIO, e a ordem é o argumento:
+                ela é a resposta à pergunta "por que este total?". Os cards dão o número; ela dá a
+                composição, e é a composição que sustenta (ou derruba) a conclusão — inclusive a de
+                que "o Presumido compensa acima de X", que não vale para quem tem folha. */}
+            {comparativo && <TabelaComparativa comparativo={comparativo} />}
+
+            {/* ⚠⚠ IBS/CBS — só para quem É (ou seria) optante pelo Simples. Este bloco responde a
+                decisão da janela de setembro, e a opção do art. 41, § 3º da LC 214 é do OPTANTE:
+                para uma empresa do Presumido ele não faz pergunta nenhuma, e mostrá-lo ali seria
+                oferecer uma decisão que ela não tem para tomar.
+                ⚠ A condição é o Simples ter sido CALCULADO — `indisponivel` (folha ausente numa
+                atividade de Fator R) significa que nem anexo nem faixa existem, e sem eles o
+                crédito não sai. */}
+            {(() => {
+              const simples = (resultado?.regimes || []).find(
+                (x) => /Simples/i.test(x.regime) && x.faixa != null && x.aliquotaEfetiva != null,
+              );
+              if (!simples) return null;
+              return (
+                <BlocoIbsCbs
+                  cenario={cenarioIbsCbs}
+                  aoTrocarCenario={setCenarioIbsCbs}
+                  cbsEstimada={cbsEstimada}
+                  aoMudarCbs={setCbsEstimada}
+                  anexo={resultado.anexoResolvido}
+                  faixa={simples.faixa}
+                  /* ⚠ `aliquotaEfetiva` é FRAÇÃO no motor (`das = aliquotaEfetiva × receita`) e o
+                     módulo trabalha em PONTOS PERCENTUAIS. A conversão é aqui, uma vez — passar a
+                     fração adiante daria um crédito cem vezes menor, e plausível. */
+                  aliquotaEfetivaPct={simples.aliquotaEfetiva * 100}
+                  /* ⚠ O DAS anual e a receita são o que responde "quanto ela PAGA" — sem eles o
+                     bloco só saberia dizer quanto de crédito ela transfere, que foi exatamente o
+                     defeito relatado. */
+                  dasAnual={simples.das}
+                  receitaAnual={entradas.receitaAnual}
+                  cores={C}
+                  rotulo={rotulo}
+                  campo={campo}
+                />
+              );
+            })()}
+
+            {resultado.fatorR && <GaugeFatorR fatorR={resultado.fatorR} economiaSeMudar={economiaAnexo} />}
+
+            {/* ⚠ Logo DEPOIS do gauge: ele mostra ONDE o Fator R está, este responde O QUE FAZER. */}
+            <PainelProLabore simulacao={proLabore} />
+
+            {equilibrio && (
+              <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, fontSize: "0.88rem" }}>
+                <strong style={{ display: "block", marginBottom: 4, fontSize: "0.8rem", color: C.muted }}>Ponto de equilíbrio</strong>
+                {equilibrio.frase}
+              </div>
+            )}
+
+            {/* Na TELA o aviso aparece aqui; no PAPEL ele já saiu no cabeçalho — os dois porque o
+                PDF e a tela são lidos em situações diferentes. */}
+            <div style={{ fontSize: "0.76rem", color: C.muted, lineHeight: 1.5 }}>
+              Tabelas fiscais verificadas em <strong>{resultado.fontesVerificadasEm}</strong> · ano-base {resultado.anoBase}.
+              {" "}{resultado.aviso}
+            </div>
+
+            <div data-print-hide style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <button
+                type="button"
+                onClick={() => setImprimindo(true)}
+                style={{ background: "transparent", border: `1px solid ${C.borda}`, color: C.texto, borderRadius: 6, padding: "6px 12px", font: "inherit", fontSize: "0.8rem", cursor: "pointer" }}
+              >
+                🖨 Imprimir / salvar em PDF
+              </button>
+
+              {/* ⚠⚠ GUARDAR SÓ EXISTE COM EMPRESA ESCOLHIDA. Em simulação livre não há onde
+                  guardar — a foto pertence a uma empresa, e os Documentos são dela. O botão fica
+                  DESABILITADO com o motivo, nunca escondido: sumir esconderia que a ação existe.
+                  ⚠ Ele é `<button>` e não link: abre um ato, não uma rota. */}
+              {/* ⚠⚠ A CONDIÇÃO É `empresaFixa || empresas.length`, e não só a segunda — defeito meu,
+                  pego ao ligar a aba: dentro da empresa a lista `empresas` NÃO é passada (é ela que
+                  faz o seletor sumir), então `empresas.length > 0` escondia o botão exatamente onde
+                  ele mais serve. O que decide se dá para guardar é haver EMPRESA, não haver LISTA. */}
+              {(empresaFixa || empresas.length > 0) && (
+                <button
+                  type="button"
+                  onClick={guardarSimulacao}
+                  disabled={!empresaId || guardando}
+                  title={empresaId
+                    ? "Salva esta simulação e gera o PDF em Documentos da empresa."
+                    : "Escolha uma empresa acima: a simulação livre não tem onde ser guardada."}
+                  style={{
+                    background: "transparent", border: `1px solid ${empresaId ? C.accent : C.borda}`,
+                    color: empresaId ? C.accent : C.muted, borderRadius: 6, padding: "6px 12px",
+                    font: "inherit", fontSize: "0.8rem",
+                    cursor: !empresaId || guardando ? "not-allowed" : "pointer",
+                    opacity: empresaId ? 1 : 0.6,
+                  }}
+                >
+                  {guardando ? "Guardando…" : "💾 Guardar em Documentos"}
+                </button>
+              )}
+
+              {/* ⚠⚠ OS DOIS ATOS TÊM DESFECHOS DIFERENTES, e a frase tem de distinguir: a foto pode
+                  ter sido salva e o PDF não (sem o Volume no Railway, o storage recusa). Dizer só
+                  "falhou" faria o contador simular tudo de novo à toa. */}
+            </div>
+          </div>
+        )}
 
         {!temReceita && (
           <div style={{ padding: 24, textAlign: "center", color: C.muted, fontSize: "0.86rem" }}>
