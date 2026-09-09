@@ -12,14 +12,22 @@ export async function enfileirarTurnoIa({ conversaId, mensagemId, portalClientId
   }
 }
 
-export async function processarTurnosIaUmaVez({ client = prisma, agora = new Date(), responder = null, flag = INTEGRACAO_WHATSAPP_IA, piloto = IA_EMPRESAS_PILOTO, log = console, limite = 10, comercialFlag = INTEGRACAO_IA_COMERCIAL, comercialPiloto = IA_COMERCIAL_TELEFONES_PILOTO } = {}) {
+export async function processarTurnosIaUmaVez({ client = prisma, agora = new Date(), responder = null, responderComercial = null, flag = INTEGRACAO_WHATSAPP_IA, piloto = IA_EMPRESAS_PILOTO, log = console, limite = 10, comercialFlag = INTEGRACAO_IA_COMERCIAL, comercialPiloto = IA_COMERCIAL_TELEFONES_PILOTO } = {}) {
   if ((!flag || !piloto.length) && (!comercialFlag || !comercialPiloto.length)) return { processados: 0 };
   const inicioCiclo = Date.now();
+  const escopos = flag && piloto.length ? [{ perfil: "CLIENTE", portalClientId: { in: piloto } }] : [];
+  if (comercialFlag && comercialPiloto.length) {
+    // TurnoIaWhatsapp armazena conversaId, sem uma relação Prisma chamada conversa.
+    // Resolver o piloto antes de ler a fila evita invalidar também a seleção dos clientes.
+    const conversasLead = await client.conversaWhatsapp.findMany({
+      where: { telefoneE164: { in: comercialPiloto }, portalClientId: null },
+      select: { id: true },
+    });
+    if (conversasLead.length) escopos.push({ perfil: "LEAD", portalClientId: null, conversaId: { in: conversasLead.map(c => c.id) } });
+  }
+  if (!escopos.length) return { processados: 0 };
   const jobs = await client.turnoIaWhatsapp.findMany({ where: {
-    AND: [{ OR: [
-      ...(flag && piloto.length ? [{ perfil: "CLIENTE", portalClientId: { in: piloto } }] : []),
-      ...(comercialFlag && comercialPiloto.length ? [{ perfil: "LEAD", portalClientId: null, conversa: { telefoneE164: { in: comercialPiloto }, portalClientId: null } }] : []),
-    ] }], OR: [
+    AND: [{ OR: escopos }], OR: [
       { status: { in: ["pendente", "falhou"] }, tentativas: { lt: 5 }, proximaTentativaEm: { lte: agora } },
       { status: "processando", leaseAte: { lte: agora } },
     ],
@@ -67,7 +75,7 @@ export async function processarTurnosIaUmaVez({ client = prisma, agora = new Dat
         finally { renovando = false; }
       }, 20000);
       timer.unref?.();
-      const responderJob = job.perfil === "LEAD" ? (await import("./AssistenteComercialService.js")).responderLead : executar;
+      const responderJob = job.perfil === "LEAD" ? responderComercial || (await import("./AssistenteComercialService.js")).responderLead : executar;
       const r = await responderJob({ conversaId: job.conversaId, mensagemId: job.mensagemId, deps: {
         client, log, turnoIaId: job.id, leaseExterno: true, conferirLease,
       } });
