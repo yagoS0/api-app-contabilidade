@@ -546,7 +546,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
           return { ok: false, message: `Operação desconhecida: ${op}` };
       }
     } catch (err) {
-      return { ok: false, message: err?.message || "Falha na operação SERPRO." };
+      return { ok: false, code: err?.code || err?.payload?.error, message: err?.message || "Falha na operação SERPRO." };
     }
   }
 
@@ -837,7 +837,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     setRecalcInssBusy(true);
     feedback.clearFeedback();
     try {
-      await api.syncSerproInss(companyId, { competencia });
+      await api.syncSerproInss(companyId, { competencia, atualizar: true });
       // ⚠ DEPOIS do reload — `loadGuides` limpa o feedback (mesmo defeito dos vizinhos).
       await loadGuides(companyId);
       feedback.setMessage(`INSS de ${competencia} recalculado/atualizado.`);

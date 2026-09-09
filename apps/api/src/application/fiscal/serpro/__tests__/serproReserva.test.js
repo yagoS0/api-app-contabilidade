@@ -23,6 +23,26 @@ function banco() {
 }
 const reservar = (client, body = payload) => autorizarChamada({ payload: body, rota: "/Emitir" }, client);
 
+test("índice após transmissão pode atualizar, mas pendência continua bloqueando", async () => {
+  const client = banco();
+  const indice = { ...payload, pedidoDados: { ...payload.pedidoDados, idServico: "CONSDECLARACAO13" } };
+  const primeira = await reservar(client, indice);
+  await concluirChamada(primeira, { httpStatus: 200 }, client);
+  await expect(reservar(client, indice)).rejects.toMatchObject({ code: "SERPRO_CHAMADA_REPETIDA" });
+  await comContextoSerpro({ reconsultarAposTransmissao: true }, async () => {
+    await reservar(client, indice);
+    await expect(reservar(client, indice)).rejects.toMatchObject({ code: "SERPRO_CHAMADA_EM_ANDAMENTO" });
+  });
+});
+
+test("atualização de índice não libera cooldown de emissão de DAS", async () => {
+  const client = banco();
+  const primeira = await reservar(client);
+  await concluirChamada(primeira, { httpStatus: 200 }, client);
+  await expect(comContextoSerpro({ reconsultarAposTransmissao: true }, () => reservar(client)))
+    .rejects.toMatchObject({ code: "SERPRO_CHAMADA_REPETIDA" });
+});
+
 test("duas tentativas concorrentes idênticas reservam somente uma operação", async () => {
   const client = banco();
   const resultados = await Promise.allSettled([reservar(client), reservar(client)]);

@@ -11,6 +11,7 @@
 // usuário nem override — e continua sendo registrada e travada normalmente, que é o padrão seguro.
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 
 const store = new AsyncLocalStorage();
 
@@ -19,7 +20,7 @@ const store = new AsyncLocalStorage();
  * @param {{origem?: string, userId?: string, forcar?: boolean}} contexto
  */
 export function comContextoSerpro(contexto, fn) {
-  return store.run({ ...contexto }, fn);
+  return store.run({ ...store.getStore(), ...contexto, acaoId: contexto?.acaoId || store.getStore()?.acaoId || randomUUID() }, fn);
 }
 
 /** Contexto atual, ou objeto vazio fora de um `comContextoSerpro`. */

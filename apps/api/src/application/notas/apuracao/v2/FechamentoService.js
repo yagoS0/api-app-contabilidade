@@ -1,3 +1,4 @@
+import { comContextoSerpro, contextoSerproAtual } from "../../../fiscal/serpro/serproCallContext.js";
 // Q15.5 — Orquestrador do fechamento de apuração (motor do FechamentoModal).
 //
 // 4 operações:
@@ -597,9 +598,8 @@ export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnte
   let receitas = [...(receitasBrutasAnteriores || [])];
   let folhas = [...(folhasSalario || [])];
   const removidos = { receitas: [], folhas: [] };
-  // Teto: as duas listas têm 12 meses cada, então 24 remoções + margem. Antes era 13, dimensionado
-  // só para as receitas — com as duas listas ele podia estourar antes de convergir.
-  for (let tentativa = 0; tentativa <= 26; tentativa += 1) {
+  // No máximo três chamadas por ação. Novas recusas exigem revisar os períodos antes de repetir.
+  for (let tentativa = 0; tentativa < 3; tentativa += 1) {
     try {
       // eslint-disable-next-line no-await-in-loop
       const resultado = await executar({ ...params, receitasBrutasAnteriores: receitas, folhasSalario: folhas });
@@ -623,7 +623,7 @@ export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnte
   }
   throw new FechamentoError(
     "RECEITAS_ANTERIORES_NAO_CONVERGIU",
-    "A RFB rejeitou os períodos anteriores (receita bruta / folha) repetidamente.",
+    "Interrompido após três tentativas. Revise os períodos anteriores de receita e folha antes de tentar novamente.",
   );
 }
 
@@ -916,13 +916,16 @@ export async function salvarFechamento({ portalClientId, competencia, atividades
  * @param {boolean} liberarReenvio  só na RETIFICAÇÃO: zera os flags de e-mail da guia DAS para
  *   ela poder ser reenviada ao cliente (numa transmissão normal a guia já nasce PENDING).
  */
-async function sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio = false }) {
+async function sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio = false, indiceExistente = null, atualizar = false }) {
+  if (atualizar && !contextoSerproAtual().reconsultarAposTransmissao) return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true, reconsultarAposTransmissao: true }, () => sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio, indiceExistente, atualizar }));
   const out = { extrato: null, guia: null };
+  let guiaSincronizada = null;
 
   // (a) extrato: reescreve a circular (receitas/DAS) e re-roda os lançamentos RECEITA_*/DAS.
   try {
     const { syncPgdasByCompetencia } = await import("../../../fiscal/serpro/SerproPgdasDeclaracaoService.js");
-    const r = await syncPgdasByCompetencia({ portalClientId, competencia });
+    const r = await syncPgdasByCompetencia({ portalClientId, competencia, indiceExistente, atualizar });
+    guiaSincronizada = r?.guide;
     out.extrato = {
       ok: true,
       receitaStatus: r?.circular?.receitaStatus ?? null,
@@ -937,11 +940,14 @@ async function sincronizarExtratoEGuia({ portalClientId, competencia, liberarRee
   try {
     try {
       const { capturePgdasGuideForCompany } = await import("../../../fiscal/serpro/CaptureSerproGuidesService.js");
-      await capturePgdasGuideForCompany({ portalClientId, competencia });
-    } catch { /* PDF é bônus; se falhar ainda devolvemos a guia que já existir */ }
+      if (!guiaSincronizada) await capturePgdasGuideForCompany({ portalClientId, competencia, atualizar });
+    } catch (error) {
+      // Nunca liberar uma guia antiga para reenvio como se a retificação tivesse atualizado o PDF.
+      if (atualizar) throw error;
+    }
 
     const dasGuide = await prisma.guide.findFirst({
-      where: { portalClientId, competencia, tipo: "SIMPLES", source: "SERPRO" },
+      where: { portalClientId, competencia, tipo: "SIMPLES", source: "SERPRO", parcelamentoId: null },
       orderBy: { updatedAt: "desc" },
       select: { id: true, status: true, valor: true, vencimento: true, emailStatus: true },
     });
@@ -1011,7 +1017,7 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
     });
     // C12: mesmo sem retransmitir, traz extrato + guia — é justamente o caso em que o contador
     // mais precisava rodar a busca na mão (a declaração existe, mas a guia podia não estar aqui).
-    const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia });
+    const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, indiceExistente: indice });
     return {
       ok: true, jaDeclarado: true, snapshot: updated, posTransmissao,
       mensagem: "PA já declarado — não retransmitido (evita retificadora acidental).",
@@ -1050,7 +1056,7 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
         where: { id: snapshot.id },
         data: { estado: "transmitida", erroMensagem: null, transmitidoEm: snapshot.transmitidoEm || new Date() },
       });
-      const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia });
+      const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, atualizar: true });
       return {
         ok: true, jaDeclarado: true, snapshot: updated, posTransmissao,
         mensagem: "PA já declarado na Receita — não retransmitido (para alterar, seria necessária uma retificadora).",
@@ -1071,7 +1077,7 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
   });
   // C12: toda transmissão (não só a retificação) já devolve extrato + guia — o contador não
   // precisa mais rodar uma busca depois. Só a retificação libera a guia pra reenvio.
-  const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio: retificar });
+  const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio: retificar, atualizar: true });
 
   return {
     ok: true,

@@ -4460,12 +4460,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
 
       try {
-        const result = await capturePgdasGuideForCompany({
+        const result = await comContextoSerpro({ origem: "firm_captura_das", userId: req.auth?.user?.id }, () => capturePgdasGuideForCompany({
           portalClientId: portalCompanyId,
           competencia,
           contratanteCnpj: contratanteCnpj || undefined,
           serviceId,
-        });
+        }));
 
         // Auto-send REMOVIDO. Guia capturada do SERPRO fica em emailStatus=PENDING
         // aguardando envio em lote via página `Envio de e-mails em lote`.
@@ -4536,11 +4536,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           });
         }
 
-        const result = await syncSerproInssForCompany({
+        const result = await comContextoSerpro({ origem: "firm_captura_inss", userId: req.auth?.user?.id }, () => syncSerproInssForCompany({
           portalClientId: portalCompanyId,
           competencia,
+          atualizar: req.body?.atualizar === true,
           contratanteCnpj: contratanteCnpj || undefined,
-        });
+        }));
 
         // Auto-send REMOVIDO. Guia INSS fica em emailStatus=PENDING aguardando
         // envio em lote via página `Envio de e-mails em lote`.

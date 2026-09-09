@@ -2910,7 +2910,17 @@ model FiscalExecutionLog {
 /// pelo chamador: assim nenhuma chamada nova escapa do registro por esquecimento.
 /// `assinatura` é o hash do payload — é o que distingue "clicou de novo na mesma coisa" de "mudou
 /// algo e recalculou", e sustenta o cooldown sem atrapalhar quem corrigiu um valor.
+model SerproRespostaCache {
+  chave String @id
+  resposta Json
+  expiraEm DateTime
+  @@index([expiraEm])
+  @@map("serpro_respostas_cache")
+}
+
 model SerproChamada {
+  competencia    String?
+  acaoId         String?
   id             String   @id @default(cuid())
   cnpj           String // contribuinte, só dígitos; "" quando a chamada não tem contribuinte
   portalClientId String? // resolvido pelo CNPJ quando existe empresa cadastrada
