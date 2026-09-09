@@ -40,7 +40,17 @@ export async function processarEmissaoGuiada({ conversa, mensagem, sessao, texto
   let versao = (anterior?.versao || 0) + 1;
   let pendenciaParaSalvar = null;
   let cancelarAnterior = !vigente && Boolean(anterior);
+  let idPendenciaAnterior = null;
   let resultado;
+  const invalidarObservada = async () => {
+    if (!idPendenciaAnterior) return;
+    // Vincula a invalidação à mesma versão da coleta que o turno leu. O ID por si só
+    // não basta: um leitor atrasado pode observar a pendência criada pelo vencedor.
+    await client.acaoPendenteWhatsapp.updateMany({ where: {
+      id: idPendenciaAnterior, ...escopo, status: "pendente",
+      conversa: { is: { rascunhoEmissao: anterior ? { is: { id: anterior.id, versao: anterior.versao } } : { is: null } } },
+    }, data: { status: "cancelada" } });
+  };
 
   // Cliques de perguntas antigas não selecionam uma opção de outra revisão/tomador.
   if (interacao?.id?.startsWith("altan.issue.")) {
@@ -51,6 +61,7 @@ export async function processarEmissaoGuiada({ conversa, mensagem, sessao, texto
   if (!pausar) {
     const confirmacao = await confirmar({ conversa, mensagem, sessao, texto, agora, client, conferirAcesso, log,
       ...(servicos.executores ? { executores: servicos.executores } : {}), ...(servicos.acoesDeps ? { acoesDeps: servicos.acoesDeps } : {}) });
+    idPendenciaAnterior = confirmacao.acaoId || null;
     if (confirmacao.tratado) {
       estado ||= mesmoEscopo ? limpar(anterior.estado) : iniciarColeta({ agora }).estado;
       const revisarNovamente = ["CONFIRMACAO_SUPERADA", "EXPIRADA"].includes(confirmacao.codigo);
@@ -73,7 +84,7 @@ export async function processarEmissaoGuiada({ conversa, mensagem, sessao, texto
       if (!estado) {
         await conferirAcesso();
         cancelarAnterior = true;
-        await client.acaoPendenteWhatsapp.updateMany({ where: { conversaId: conversa.id, status: "pendente" }, data: { status: "cancelada" } });
+        await invalidarObservada();
         const lista = await executar("tomadores_conhecidos", {}, contexto);
         passo = iniciarColeta({ agora, tomadores: lista?.ok ? lista.tomadores : [] });
         if (texto.trim() && !retomar) passo = interpretarResposta({ estado: passo.estado, texto, agora });
@@ -89,7 +100,9 @@ export async function processarEmissaoGuiada({ conversa, mensagem, sessao, texto
       if (cancelarAnterior) {
         // A correção recebida invalida o código mesmo se a consulta seguinte falhar ou reiniciar.
         await conferirAcesso();
-        await client.acaoPendenteWhatsapp.updateMany({ where: { conversaId: conversa.id, status: "pendente" }, data: { status: "cancelada" } });
+        // Fora da transação só invalida o pedido que este turno realmente leu. Um turno
+        // concorrente não pode cancelar um resumo novo e depois falhar no CAS do rascunho.
+        await invalidarObservada();
       }
       // Cada iteração é uma função determinística. Coleta nunca chama emitir diretamente.
       for (let i = 0; i < 4; i += 1) {

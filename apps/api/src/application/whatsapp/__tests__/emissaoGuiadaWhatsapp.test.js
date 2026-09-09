@@ -289,4 +289,12 @@ describe("conversação guiada persistente sem IA", () => {
     expect(f.tabelas.acaoPendenteWhatsapp.at(-1).payload.servico.valor).toBe(1500);
     expect(f.emitir).not.toHaveBeenCalled();
   });
+
+  test("cancelamento recebido antes do resumo novo não cancela esse pedido", async () => {
+    const f = fixture(); await revisar(f);
+    const cancelar = f.novaMensagem("CANCELAR PEDIDO");
+    f.tabelas.acaoPendenteWhatsapp[0].createdAt = new Date(cancelar.registradaEm.getTime() + 1000);
+    expect((await processarEmissaoGuiada({ ...f.args, mensagem: cancelar, texto: cancelar.corpo })).codigo).toBe("CANCELAMENTO_ANTERIOR_RESUMO");
+    expect(f.tabelas.acaoPendenteWhatsapp[0].status).toBe("pendente");
+  });
 });

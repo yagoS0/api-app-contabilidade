@@ -51,6 +51,9 @@ export async function processarConfirmacaoGuiada({ conversa, mensagem, sessao, t
   if (decisao === "SEGUE_PARA_IA") return { tratado: false, acaoId: pendente.id };
   if (decisao === "CODIGO_ERRADO") return resposta(FRASES.CODIGO_ERRADO(pendente.codigo), "CODIGO_ERRADO", pendente.id);
   if (decisao === "LEMBRAR_CONFIRMACAO") return resposta(FRASES.LEMBRAR_CONFIRMACAO(pendente.codigo), "LEMBRAR_CONFIRMACAO", pendente.id);
+  if (decisao === "CANCELAR" && new Date(mensagem.registradaEm) < new Date(pendente.createdAt)) {
+    return resposta("Essa mensagem de cancelamento foi recebida antes do resumo atual. Confira o último pedido; para desistir dele, envie CANCELAR PEDIDO novamente.", "CANCELAMENTO_ANTERIOR_RESUMO", pendente.id);
+  }
 
   await conferirAcesso();
   if (decisao === "CANCELAR" || decisao === "EXPIRADA") {

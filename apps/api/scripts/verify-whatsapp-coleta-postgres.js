@@ -154,6 +154,44 @@ if (posRetomar >= 0) {
     assert.equal(await prisma.acaoPendenteWhatsapp.count({ where: { conversaId: corrida.conversa.id, status: "pendente" } }), 1);
     ok("duas transições sobre a mesma versão: uma vence e a outra reverte resumo e recibo");
 
+    // Uma segunda janela: A já leu o rascunho, mas só lê a pendência depois que B terminou.
+    // Cancelar apenas pelo id OBSERVADO não basta: esse id já pode ser o resumo vencedor de B.
+    const tardia = await caso("pendencia-apos-snapshot");
+    await tardia.ateCompetencia();
+    const snapshot = await checkpoint(tardia.conversa.id);
+    const mensagemA = await tardia.entrada("09/2026");
+    const mensagemB = await tardia.entrada("08/2026");
+    let avisarSnapshot;
+    let liberarLeitor;
+    const snapshotCapturado = new Promise(resolve => { avisarSnapshot = resolve; });
+    const leitorLiberado = new Promise(resolve => { liberarLeitor = resolve; });
+    let reteve = false;
+    const leitorAntigo = prisma.$extends({ query: { rascunhoEmissaoWhatsapp: { async findUnique({ args, query }) {
+      const r = await query(args);
+      if (args.where.conversaId === tardia.conversa.id && !reteve) {
+        reteve = true;
+        avisarSnapshot();
+        await leitorLiberado;
+      }
+      return r;
+    } } } });
+    // Instala handlers já ao iniciar: uma falha antecipada nunca fica como unhandled rejection.
+    const leitor = tardia.processar(mensagemA, leitorAntigo).then(value => ({ value }), error => ({ error }));
+    await snapshotCapturado;
+    let vencedora;
+    try {
+      assert.equal((await tardia.processar(mensagemB)).motivo, "EMISSAO_REVISAR");
+      vencedora = await prisma.acaoPendenteWhatsapp.findFirstOrThrow({ where: { conversaId: tardia.conversa.id, status: "pendente" } });
+    } finally { liberarLeitor(); }
+    const atrasada = await leitor;
+    assert.equal(atrasada.error?.codigo, "COLETA_CONCORRENTE");
+    assert.equal((await checkpoint(tardia.conversa.id)).versao, snapshot.versao + 1);
+    assert.equal(await prisma.etapaEmissaoWhatsapp.count({ where: { mensagemId: mensagemA.id } }), 0);
+    assert.equal(await prisma.etapaEmissaoWhatsapp.count({ where: { mensagemId: mensagemB.id } }), 1);
+    assert.equal(await prisma.acaoPendenteWhatsapp.count({ where: { conversaId: tardia.conversa.id } }), 1);
+    assert.equal((await prisma.acaoPendenteWhatsapp.findUniqueOrThrow({ where: { id: vencedora.id } })).status, "pendente");
+    ok("leitor antigo que observa a pendência nova não cancela o resumo vencedor antes de falhar no CAS");
+
     const acao = await prisma.acaoPendenteWhatsapp.findFirstOrThrow({ where: { conversaId: atomica.conversa.id, status: "pendente" } });
     const msgConfirmar = await atomica.entrada(`CONFIRMAR ${acao.codigo}`);
     await assert.rejects(atomica.processar(msgConfirmar, falhaRecibo), /FALHA_RECIBO_CONTROLADA/);

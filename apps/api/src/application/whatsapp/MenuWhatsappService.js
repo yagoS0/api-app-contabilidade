@@ -325,7 +325,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     if (guiada.tratado) {
       if (guiada.filaHumana) await encaminhar();
       const corpo = guiada.texto;
-      const opcoes = corpo.length <= 1024 ? (guiada.opcoes || []).slice(0, 10) : [];
+      const opcoes = corpo.length <= 1024 ? (guiada.opcoes || []).slice(0, 10).map((o, i) => ({ ...o, titulo: `${i + 1}. ${o.titulo}` })) : [];
       await enviar({ corpo, ferramenta: "preparar_emissao", tipo: opcoes.length ? "interactive" : "text", chamada: () => opcoes.length > 3
         ? whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: corpo, tituloBotao: "Escolher", tituloSecao: "Emissão", linhas: opcoes.map(o => ({ ...o, titulo: o.titulo.slice(0, 24) })) })
         : opcoes.length ? whatsapp.enviarBotoes({ telefone: conversa.telefoneE164, texto: corpo, botoes: opcoes.map(o => ({ ...o, titulo: o.titulo.slice(0, 20) })) })
