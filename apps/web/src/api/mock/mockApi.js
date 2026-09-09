@@ -1,3 +1,4 @@
+import { criarMockComercial } from './comercialMock';
 import { mockRelatorios } from './mockRelatorios';
 import { janelaRecorrente, cicloRecorrente } from '../../features/obrigacoes/lib/janelaRecorrente';
 import { faker } from "@faker-js/faker";
@@ -3574,6 +3575,7 @@ export function createMockApi() {
   let accessToken = "";
 
   return {
+    ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock }),
     setUnauthorizedHandler() {},
     setAccessToken(token) {
       accessToken = String(token || "").trim();

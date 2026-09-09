@@ -10,6 +10,7 @@
 // ⚠⚠ A IDENTIDADE SÃO DUAS PERGUNTAS — *quem* está falando e *de qual empresa* —, e uma não
 // substitui a outra. Ver `identidadeDaConversa` em `../lib/conversasTela.js`.
 
+import { OrientacoesRapidas } from "./AtendimentoComercial";
 import { useState, useRef, useLayoutEffect, useEffect } from "react";
 import { AvatarConversa, SituacaoConversa, WhatsappIcon } from "./ConversaVisual";
 import { Button } from "../../../components/ui/Button";
@@ -169,9 +170,9 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
         </div>
         <div className="wa-thread-actions">
           {hrefDaEmpresa && conversa.portalClientId ? <a data-testid="ir-para-a-empresa" href={hrefDaEmpresa(conversa.portalClientId)}>Abrir a empresa →</a> : null}
-          {!somenteLeitura && situacao === SITUACAO_FIO.ASSUMIDA ? (
-            <Button variant="secondary" disabled={hook.ocupado || conversa.escopoVerificado === false} onClick={() => hook.devolver(conversa.id)} title="O assistente volta a responder neste fio">Devolver à IA</Button>
-          ) : !somenteLeitura && situacao !== SITUACAO_FIO.FILA_SEM_EMPRESA ? (
+          {!somenteLeitura && Boolean(conversa.atendidaPor || conversa.atendidaDesde) ? (
+            <Button variant="secondary" disabled={hook.ocupado || (Boolean(conversa.portalClientId) && conversa.escopoVerificado === false)} onClick={() => hook.devolver(conversa.id)} title="O assistente volta a responder neste fio">Devolver à IA</Button>
+          ) : !somenteLeitura ? (
             <Button variant="primary" disabled={hook.ocupado} onClick={() => hook.assumir(conversa.id)} title="Você responde; o assistente fica em silêncio">Assumir</Button>
           ) : null}
           {naLixeira ? <Button variant="secondary" disabled={hook.ocupado || movendo} onClick={() => mover(true)}>Restaurar chat</Button>
@@ -213,6 +214,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
       {novas ? <Button variant="secondary" size="sm" onClick={() => { historicoRef.current.scrollTop = historicoRef.current.scrollHeight; pertoDoFim.current = true; setNovas(false); }}>Ir para mensagens recentes ↓</Button> : null}
       {!somenteLeitura ? <div className="wa-composer">
         {slotAcoes}
+        {hook.api?.comercial && <OrientacoesRapidas key={conversa.id} api={hook.api} conversa={conversa} disabled={!resposta.pode || hook.ocupado} onEnviado={() => hook.abrir(conversa.id)} />}
         {!resposta.pode ? <p data-testid="resposta-bloqueada" className="wa-list-note" style={{ color: "var(--state-warn)", padding: "0 0 8px" }}>{resposta.motivo}</p> : null}
         <div className="wa-composer-row">
           <textarea aria-label="Responder ao cliente" style={campo} value={texto} onChange={(e) => mudarTexto(e.target.value)}

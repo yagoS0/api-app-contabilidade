@@ -10,6 +10,7 @@
 // `router.use(requireAuth(), requireAccountType("FIRM"))` do router pai; o que exige mais usa o
 // helper local `somenteAdminOuContador`, no molde do `PATCH /companies`.
 
+import { createFluxoComercialRouter } from "./fluxoComercial.js";
 import { Router } from "express";
 import { criarServicoComercial, exigirEscopo, escopoComercial } from "../../application/onboarding/ComercialService.js";
 import {
@@ -37,6 +38,7 @@ import { empresasVisiveis } from "./empresasVisiveis.js";
 
 export function createOnboardingsRouter({ log } = {}) {
   const router = Router({ mergeParams: true });
+  router.use("/comercial", createFluxoComercialRouter());
 
   // Erro de domínio traz `status`/`code` próprios; o resto vira 500 sem vazar stack.
   // Molde do `falhar` de `routes/firm/obrigacoes.js`.

@@ -1,3 +1,4 @@
+import { decidirRespostaComercial } from "../assistente/politicaComercialWhatsapp.js";
 // Consome o inbox durável: grava mensagens, enfileira mídias/turnos e correlaciona recibos.
 // Falhas retornam no resumo para retry idempotente, sem registrar conteúdo ou credenciais.
 import {
@@ -169,6 +170,7 @@ export function decidirRespostaDaIa({ r, flag = INTEGRACAO_WHATSAPP_IA, piloto =
 export function decidirRespostaDoMenu({ r, flag = INTEGRACAO_WHATSAPP_MENU, piloto = IA_EMPRESAS_PILOTO, telefonesPiloto = WHATSAPP_MENU_TELEFONES_PILOTO, leads = WHATSAPP_MENU_LEADS } = {}) {
   if (!flag) return { responde: false, motivo: "FLAG_OFF" };
   if (r?.conversa?.excluidaEm) return { responde: false, motivo: "CHAT_EXCLUIDO" };
+  if (r?.conversa?.atendidaPor || r?.conversa?.atendidaDesde) return { responde: false, motivo: "ASSUMIDA_POR_HUMANO" };
   if (r?.conversa?.automacaoInvalidadaEm) {
     const recebidaEm = new Date(r?.mensagem?.registradaEm).getTime();
     if (!Number.isFinite(recebidaEm) || recebidaEm <= new Date(r.conversa.automacaoInvalidadaEm).getTime()) return { responde: false, motivo: "AUTOMACAO_INVALIDADA" };
@@ -182,7 +184,6 @@ export function decidirRespostaDoMenu({ r, flag = INTEGRACAO_WHATSAPP_MENU, pilo
   }
   if (r?.vinculo?.situacao !== SITUACOES.VINCULADO || r.conversa.escopoVerificado !== true) return { responde: false, motivo: "NAO_VINCULADA" };
   if (!telefoneNoPiloto && (!Array.isArray(piloto) || !piloto.includes(String(r.conversa.portalClientId)))) return { responde: false, motivo: "FORA_DO_PILOTO" };
-  if (r.conversa.atendidaPor || r.conversa.atendidaDesde) return { responde: false, motivo: "ASSUMIDA_POR_HUMANO" };
   return { responde: true, motivo: null };
 }
 
@@ -228,9 +229,16 @@ async function processarMensagem(item, { logger, responder, responderMenu, ia, m
 
   // Cliques usam o id estável do payload bruto e são resolvidos antes do modelo. O inbox conserva
   // esse payload para retry; nenhuma coluna nova é necessária para tornar o roteamento durável.
+  if (r?.mensagem?.respondidaPelaIaEm) {
+    // Uma reentrega já concluída não pode cair no menu e virar um novo encaminhamento.
+    return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: "JA_RESPONDIDA" } };
+  }
+  const decisaoComercial = decidirRespostaComercial({ r });
   const decisaoMenu = decidirRespostaDoMenu({ r, ...(menu || {}) });
-  const decisao = decidirRespostaDaIa({ r: { ...r, duplicada: Boolean(r?.duplicada && r?.mensagem?.respondidaPelaIaEm) }, ...(ia || {}) });
-  if (decisaoMenu.responde && typeof responderMenu === "function") {
+  const decisao = decisaoComercial.responde ? decisaoComercial : decidirRespostaDaIa({ r: { ...r, duplicada: Boolean(r?.duplicada && r?.mensagem?.respondidaPelaIaEm) }, ...(ia || {}) });
+  // O menu público legado encaminha texto livre à equipe. Leads do piloto comercial seguem a
+  // coleta por conversa; cliques continuam determinísticos. Clientes conservam o menu inicial.
+  if (decisaoMenu.responde && (!decisaoComercial.responde || item.interacao) && typeof responderMenu === "function") {
     const menu = await responderMenu({
       registro: r,
       interacao: item.interacao || null,
@@ -258,7 +266,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, ia, m
   // Enfileirar é aguardado: se falhar, o inbox tenta novamente. O modelo roda em outro worker.
   // Reentrega também repara a janela entre mensagem persistida e criação do job (unique por id).
   if (decisao.responde && typeof responder === "function" && r?.mensagem?.id && r?.conversa?.id) {
-    const args = { conversaId: r.conversa.id, mensagemId: r.mensagem.id, portalClientId: r.conversa.portalClientId };
+    const args = { conversaId: r.conversa.id, mensagemId: r.mensagem.id, portalClientId: r.conversa.portalClientId, ...(decisao.perfil ? { perfil: decisao.perfil } : {}) };
     await responder(args);
   }
   return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: decisao };

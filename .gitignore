@@ -58,6 +58,9 @@ storage/
 # Build artifacts
 apps/web/dist/
 apps/api/node_modules/
+test-evidence/
+**/comercial-config-privada*.json
+**/commercial-resources.private.json
 
 # Jest coverage (gerado em test:coverage)
 coverage/

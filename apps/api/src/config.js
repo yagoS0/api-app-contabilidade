@@ -664,6 +664,12 @@ export const WHATSAPP_ENVIO_DELAY_MS = Math.max(0, Number(process.env.WHATSAPP_E
 // ⚠ DUAS CHAVES, e as duas precisam estar ligadas: esta flag E a empresa constar em
 // `IA_EMPRESAS_PILOTO` (CSV de `PortalClient.id`; VAZIO = ninguém). A carteira só abre quando o
 // dono tirar a lista. Quem recusa é o SERVIDOR (o gancho no webhook não chama o modelo), não uma tela.
+export const COMERCIAL_WEB_URL = String(process.env.COMERCIAL_WEB_URL || "").replace(/\/+$/, "");
+export const INTEGRACAO_IA_COMERCIAL = process.env.INTEGRACAO_IA_COMERCIAL === "1";
+export const INTEGRACAO_FISCAL_LEADS = process.env.INTEGRACAO_FISCAL_LEADS === "1";
+export const IA_COMERCIAL_TELEFONES_PILOTO = Object.freeze(String(process.env.IA_COMERCIAL_TELEFONES_PILOTO || "").split(",").map(v => v.replace(/\D/g, "")).filter(Boolean));
+export const IA_COMERCIAL_TETO_CONVERSA_CENTAVOS = Math.max(1, Number(process.env.IA_COMERCIAL_TETO_CONVERSA_CENTAVOS) || 500);
+export const IA_COMERCIAL_MAX_CHAMADAS_DIA = Math.max(1, Number(process.env.IA_COMERCIAL_MAX_CHAMADAS_DIA) || 25);
 export const INTEGRACAO_WHATSAPP_IA = process.env.INTEGRACAO_WHATSAPP_IA === "1";
 export const IA_EMPRESAS_PILOTO = Object.freeze(
   String(process.env.IA_EMPRESAS_PILOTO || "").split(",").map((v) => v.trim()).filter(Boolean),

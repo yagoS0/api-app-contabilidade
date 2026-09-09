@@ -25,6 +25,7 @@ export function useOnboardingRascunho({ api, onboardingId }) {
   const pendenteRef = useRef(null);
   const montadoRef = useRef(true);
   const filaRef = useRef(Promise.resolve());
+  const versaoRef = useRef(null);
 
   useEffect(() => {
     montadoRef.current = true;
@@ -47,6 +48,7 @@ export function useOnboardingRascunho({ api, onboardingId }) {
     try {
       const r = await api.getOnboarding(onboardingId);
       const registro = r?.onboarding || r;
+      versaoRef.current = registro?.versao ?? 0;
       setOnboarding(registro);
       setDados({ ...rascunhoVazio(registro?.origem), ...(registro?.dados || {}) });
       setErro(null);
@@ -63,8 +65,9 @@ export function useOnboardingRascunho({ api, onboardingId }) {
     const executar = async () => {
     setEstadoSalvamento("salvando");
     try {
-      const r = await api.salvarOnboarding(onboardingId, patch);
+      const r = await api.salvarOnboarding(onboardingId, { ...patch, versao: versaoRef.current });
       const registro = r?.onboarding || r;
+      versaoRef.current = registro?.versao ?? versaoRef.current + 1;
       if (!montadoRef.current) return registro;
       setOnboarding(registro);
       // ⚠ Depois de trocar a origem o servidor devolve `dados: {}`. A tela precisa ACEITAR essa

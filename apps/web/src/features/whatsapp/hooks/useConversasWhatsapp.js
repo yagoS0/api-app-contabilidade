@@ -187,7 +187,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     }
     return r;
   };
-  return { cursorLista, cursorFio, carregandoMais, carregandoAnteriores, erroAcao, rascunhosRef,
+  return { api, cursorLista, cursorFio, carregandoMais, carregandoAnteriores, erroAcao, rascunhosRef,
     excluir: id => moverConversa(id, "excluirConversaWhatsapp"),
     restaurar: id => moverConversa(id, "restaurarConversaWhatsapp"),
     carregarMais: () => cursorLista && !carregandoMais && carregar(filtro, false, cursorLista),

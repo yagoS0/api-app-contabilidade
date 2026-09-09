@@ -670,3 +670,7 @@ Resolvido na raiz: `babel.config.js` reescreve `import.meta.env` → `process.en
 - Manter `CompanyDetailPage` como página central de detalhes da empresa cliente
 - Não introduzir dependências novas sem necessidade clara
 - Testar o caminho feliz no browser antes de marcar como concluído
+
+## Atendimento comercial de leads — setembro/2026
+
+WhatsApp usa `AtendimentoComercial` e `OrientacoesRapidas`; o detalhe do onboarding usa `FluxoComercial` e a biblioteca versionada `RecursosComerciais`. `/proposta/publica` é renderizada antes da autenticação do escritório. Rede passa pela API; `mock/comercialMock.js` tem dados fictícios e recusa integrações externas. Links comerciais mock dependem da sessão em memória. Ver `docs/fluxo-comercial-leads.md`.

@@ -1232,6 +1232,7 @@ model EnvioGuia {
 /// histórico de cada empresa candidata — a mensagem do cliente aparecendo no fio do CNPJ errado é
 /// exatamente o vazamento que a multi-tenancy existe para impedir. Um número, um fio, uma linha.
 model ConversaWhatsapp {
+  atendimentosLead AtendimentoLead[]
   id                 String    @id @default(uuid())
   /// O número do cliente, E.164 sem `+`, como `contatos_whatsapp.telefoneE164`.
   telefoneE164       String
@@ -1288,6 +1289,7 @@ model ConversaWhatsapp {
 
 /// UMA MENSAGEM DO FIO. Imutável: por isso não tem `updatedAt` — mensagem não se edita.
 model MensagemWhatsapp {
+  referenciaComercial Json?
   id                 String    @id @default(uuid())
   conversaId         String
   /// `in` (do cliente) | `out` (nossa). Vocabulário do plano do dono; travado por CHECK no banco.
@@ -1399,6 +1401,7 @@ model InboxWebhookWhatsapp {
 }
 
 model TurnoIaWhatsapp {
+  perfil String @default("CLIENTE")
   id String @id @default(uuid())
   mensagemId String @unique
   conversaId String
@@ -4153,6 +4156,12 @@ model EntregaObrigacaoArquivo {
 /// ⚠ `status` e `origem` são String, não enum do Prisma — é a convenção deste schema
 /// (`PortalClient.status`, `Obrigacao.periodicidade`). Enum transforma cada valor novo em migração.
 model Onboarding {
+  fontesDados Json @default("{}")
+  atendimentosLead AtendimentoLead[]
+  propostasComerciais PropostaComercial[]
+  contratosComerciais ContratoComercial[]
+  documentosLead DocumentoOnboarding[]
+  trabalhosFiscais TrabalhoFiscalLead[]
   id String @id @default(uuid())
 
   /// ABERTURA | TRANSFERENCIA | INATIVA — a única variável que muda a trilha do funil.
@@ -4949,6 +4958,116 @@ model SaidaAvulsaCliente {
   /// ⚠ A leitura do fluxo varre por empresa + janela de datas; sem este índice ela vira scan.
   @@index([portalClientId, data])
   @@map("saidas_avulsas_cliente")
+}
+
+model AtendimentoLead {
+  id String @id @default(uuid())
+  conversaId String
+  conversa ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Restrict)
+  onboardingId String?
+  onboarding Onboarding? @relation(fields: [onboardingId], references: [id], onDelete: Restrict)
+  triagem Json @default("{}")
+  representanteVerificadoEm DateTime?
+  representanteVerificadoPor String?
+  evidenciaRepresentante String?
+  autorizacao Json @default("{}")
+  encerradoEm DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([conversaId, encerradoEm])
+  @@index([onboardingId])
+  @@map("atendimentos_lead")
+}
+
+// Versões publicadas são imutáveis; correções criam uma nova versão.
+model RecursoComercial {
+  id String @id @default(uuid())
+  tipo String
+  chave String
+  versao Int
+  titulo String
+  texto String @default("")
+  dados Json @default("{}")
+  aprovadoEm DateTime?
+  aprovadoPor String?
+  createdAt DateTime @default(now())
+  @@unique([tipo, chave, versao])
+  @@map("recursos_comerciais")
+}
+
+model PropostaComercial {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Restrict)
+  versao Int
+  fichaVersao Int
+  snapshot Json
+  status String @default("RASCUNHO")
+  aprovadaEm DateTime?
+  aprovadaPor String?
+  enviadaEm DateTime?
+  aceitaEm DateTime?
+  opcaoAceita String?
+  aceiteEvidencia String?
+  tokenHash String? @unique
+  expiraEm DateTime
+  revogadaEm DateTime?
+  createdAt DateTime @default(now())
+  contratos ContratoComercial[]
+  @@unique([onboardingId, versao])
+  @@map("propostas_comerciais")
+}
+
+model ContratoComercial {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Restrict)
+  propostaId String @unique
+  proposta PropostaComercial @relation(fields: [propostaId], references: [id], onDelete: Restrict)
+  modeloId String
+  texto String
+  dados Json
+  status String @default("MINUTA")
+  aprovadoPor String?
+  aprovadoEm DateTime?
+  documentoAssinadoId String? @unique
+  assinaturaConferidaPor String?
+  assinaturaConferidaEm DateTime?
+  createdAt DateTime @default(now())
+  @@map("contratos_comerciais")
+}
+
+model DocumentoOnboarding {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Restrict)
+  nome String
+  mime String
+  conteudoCifrado String
+  sha256 String
+  criadoPor String
+  createdAt DateTime @default(now())
+  @@index([onboardingId])
+  @@map("documentos_onboarding")
+}
+
+model TrabalhoFiscalLead {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Restrict)
+  cnpj String
+  tipo String
+  status String @default("PENDENTE")
+  tentativas Int @default(0)
+  proximaTentativaEm DateTime @default(now())
+  leaseAte DateTime?
+  reservaToken String?
+  resultado Json @default("{}")
+  criadoPor String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status, proximaTentativaEm])
+  @@map("trabalhos_fiscais_lead")
 }
 
 model OnboardingAnalise {
