@@ -10,6 +10,8 @@ import { parseArrecadacaoComposicao } from "./parseArrecadacao.js";
 import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
 import { normalizeCompetencia, WHERE_GUIA_SEM_PARCELAMENTO } from "../../guides/guideContract.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
+import { reutilizarGuia } from "./reutilizarGuia.js";
+import { comContextoSerpro, contextoSerproAtual } from "./serproCallContext.js";
 import {
   SerproPgdasdService,
   SERPRO_PGDASD_SERVICE_COBRANCA,
@@ -377,7 +379,11 @@ export async function capturePgdasGuideForCompany({
   serviceId = null,
   dataConsolidacao,
   emailStatusOverride, // "PRESERVE" | "PENDING" | undefined (default = comportamento legado)
+  atualizar = false,
 }) {
+  if ((atualizar || existingGuideId || dataConsolidacao) && !contextoSerproAtual().atualizar) {
+    return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true }, () => capturePgdasGuideForCompany({ portalClientId, competencia, contratanteCnpj, existingGuideId, serviceId, dataConsolidacao, emailStatusOverride, atualizar }));
+  }
   const normalizedCompanyId = String(portalClientId || "").trim();
   const normalizedCompetencia = normalizeCompetencia(competencia);
   if (!normalizedCompanyId) {
@@ -401,6 +407,10 @@ export async function capturePgdasGuideForCompany({
     throw err;
   }
 
+  if (!contextoSerproAtual().atualizar) {
+    const salva = await reutilizarGuia({ portalClientId: normalizedCompanyId, competencia: normalizedCompetencia, tipo: "SIMPLES" });
+    if (salva) return { ...salva, company: portalClient };
+  }
   const runtime = await getResolvedSerproCredentials();
   const procuradorCnpj = onlyDigits(contratanteCnpj || runtime.certificate.document);
   if (!procuradorCnpj || procuradorCnpj.length !== 14) {

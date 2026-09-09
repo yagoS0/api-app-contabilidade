@@ -15,6 +15,14 @@ const receitas = ["2025-06", "2025-07", "2025-08"].map((pa) => ({ pa, valorInter
 const folhas = ["2025-07", "2025-08"].map((pa) => ({ pa, valor: 5000 }));
 
 describe("executarComAjusteDePeriodos", () => {
+  test("interrompe em três chamadas mesmo se ainda houver meses para remover", async () => {
+    const executar = jest.fn(async p => {
+      const [ano, mes] = p.receitasBrutasAnteriores[0].pa.split("-");
+      throw new Error(`SN-Entregar: Foi enviada receita bruta de um período desnecessário: ${mes}/${ano}. Remova este período e tente novamente.`);
+    });
+    await expect(executarComAjusteDePeriodos(executar, { receitasBrutasAnteriores: [...receitas, { pa: "2025-09", valorInterno: 100 }] })).rejects.toThrow("três tentativas");
+    expect(executar).toHaveBeenCalledTimes(3);
+  });
   test("queixa de FOLHA remove da folha e NÃO toca nas receitas", async () => {
     let chamadas = 0;
     const executar = jest.fn(async (p) => {

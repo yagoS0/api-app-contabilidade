@@ -1,3 +1,5 @@
+import { reutilizarGuia } from "./reutilizarGuia.js";
+import { comContextoSerpro, contextoSerproAtual } from "./serproCallContext.js";
 import { Buffer } from "node:buffer";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../../guides/GuideStorageService.js";
@@ -445,7 +447,8 @@ async function parsePdfResponse(response) {
   };
 }
 
-export async function syncSerproInssForCompany({ portalClientId, competencia, contratanteCnpj, emailStatusOverride }) {
+export async function syncSerproInssForCompany({ portalClientId, competencia, contratanteCnpj, emailStatusOverride, atualizar = false }) {
+  if (atualizar && !contextoSerproAtual().atualizar) return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true }, () => syncSerproInssForCompany({ portalClientId, competencia, contratanteCnpj, emailStatusOverride, atualizar }));
   const normalizedCompanyId = String(portalClientId || "").trim();
   const normalizedCompetencia = normalizeCompetencia(competencia);
   if (!normalizedCompanyId) {
@@ -469,6 +472,10 @@ export async function syncSerproInssForCompany({ portalClientId, competencia, co
     throw err;
   }
 
+  if (!contextoSerproAtual().atualizar) {
+    const salva = await reutilizarGuia({ portalClientId: normalizedCompanyId, competencia: normalizedCompetencia, tipo: "INSS" });
+    if (salva) return { ...salva, company: portalClient, inss: { status: "REUSED", competencia: normalizedCompetencia } };
+  }
   const runtime = await getResolvedSerproCredentials();
   const procuradorCnpj = onlyDigits(contratanteCnpj || runtime.certificate.document);
   if (!procuradorCnpj || procuradorCnpj.length !== 14) {

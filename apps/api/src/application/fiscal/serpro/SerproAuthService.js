@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+const tokensCompartilhados = new Map();
 import fs from "node:fs";
 import https from "node:https";
 import { Buffer } from "node:buffer";
@@ -98,14 +100,20 @@ export class SerproAuthService {
   async authenticate() {
     const runtime = await getResolvedSerproCredentials();
 
-    if (this.isTokenValid()) {
-      return {
-        accessToken: this.cachedToken,
-        jwtToken: this.cachedJwtToken,
-        expiresAt: this.cachedTokenExpiresAt,
-      };
-    }
+    const chave = crypto.createHash("sha256").update(JSON.stringify([runtime.authUrl, runtime.consumerKey, runtime.consumerSecret, runtime.scope, runtime.certificate])).digest("hex");
+    const atual = tokensCompartilhados.get(chave);
+    if (atual?.promise) return atual.promise;
+    if (atual?.token && Date.now() < atual.token.expiresAt - 30000) return atual.token;
+    // Cache limitado; material e segredos nunca são usados como chave em claro.
+    for (const [key, item] of tokensCompartilhados) if (!item.promise && (!item.token || item.token.expiresAt <= Date.now())) tokensCompartilhados.delete(key);
+    if (tokensCompartilhados.size >= 64) tokensCompartilhados.delete(tokensCompartilhados.keys().next().value);
+    const promise = this.autenticarRuntime(runtime);
+    tokensCompartilhados.set(chave, { promise });
+    try { const token = await promise; tokensCompartilhados.set(chave, { token }); return token; }
+    catch (error) { tokensCompartilhados.delete(chave); throw error; }
+  }
 
+  async autenticarRuntime(runtime) {
     const httpsAgent = await this.buildHttpsAgent();
     const payload = new URLSearchParams();
     payload.set("grant_type", "client_credentials");

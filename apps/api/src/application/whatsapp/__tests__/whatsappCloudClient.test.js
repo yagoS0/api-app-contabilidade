@@ -187,6 +187,18 @@ describe("o payload que sai para a Meta", () => {
     expect(corpo.template.components).toEqual([]);
   });
 
+  it.each(["", "   ", null, undefined, { nome: "cliente", valor: " " }])("recusa parâmetro obrigatório vazio (%j) antes do upload da guia", async (vazio) => {
+    const cliente = clienteCom([ok({ id: "media-local" }), ok(RESPOSTA_ENVIO)]);
+    await expect(cliente.enviarGuia({ telefone: "5521999998888", conteudoPdf: Buffer.from("pdf-local"), nomeArquivo: "guia.pdf", variaveis: ["valor preenchido", vazio] }))
+      .rejects.toMatchObject({ codigo: CODIGOS_LOCAIS.RECUSA_LOCAL });
+    expect(fetchFalso).not.toHaveBeenCalled();
+  });
+
+  it("aceita zero como texto de parâmetro preenchido", () => {
+    expect(montarCorpoTemplate([0, { nome: "valor", valor: 0 }]).parameters)
+      .toEqual([{ type: "text", text: "0" }, { type: "text", parameter_name: "valor", text: "0" }]);
+  });
+
   it("⚠ a ORDEM das cinco variáveis da guia vive num lugar só", () => {
     expect(variaveisDaGuia({
       nomeContato: "Maria",

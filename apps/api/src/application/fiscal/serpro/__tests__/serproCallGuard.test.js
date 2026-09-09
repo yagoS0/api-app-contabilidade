@@ -58,7 +58,7 @@ describe("contexto da chamada", () => {
       await Promise.resolve();
       return contextoSerproAtual();
     });
-    expect(visto).toEqual({ origem: "teste", userId: "u1", forcar: true });
+    expect(visto).toEqual({ origem: "teste", userId: "u1", forcar: true, acaoId: expect.any(String) });
   });
 
   test("fora do contexto devolve vazio — worker e script não herdam override de ninguém", () => {
