@@ -10,6 +10,7 @@
 // ⚠⚠ A IDENTIDADE SÃO DUAS PERGUNTAS — *quem* está falando e *de qual empresa* —, e uma não
 // substitui a outra. Ver `identidadeDaConversa` em `../lib/conversasTela.js`.
 
+import { PainelAtendimento } from "./PainelAtendimento";
 import { OrientacoesRapidas } from "./AtendimentoComercial";
 import { useState, useRef, useLayoutEffect, useEffect } from "react";
 import { AvatarConversa, SituacaoConversa, WhatsappIcon } from "./ConversaVisual";
@@ -60,7 +61,7 @@ export function LinhaDaEmpresa({ identidade, tamanho = "0.74rem" }) {
 export function NomeDaPessoa({ identidade, tamanho = "0.88rem" }) {
   return (
     <>
-      <strong data-testid="pessoa-da-conversa" data-origem={identidade.origemDoNome} style={{ fontSize: tamanho }}>
+      <strong data-testid="pessoa-da-conversa" title={identidade.avisoDoNome || undefined} data-origem={identidade.origemDoNome} style={{ fontSize: tamanho }}>
         {identidade.pessoa}
       </strong>
       {identidade.papel ? <span style={{ fontSize: "0.7rem", color: "var(--text-faint)" }}>{identidade.papel}</span> : null}
@@ -176,14 +177,14 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
             <Button variant="primary" disabled={hook.ocupado} onClick={() => hook.assumir(conversa.id)} title="Você responde; o assistente fica em silêncio">Assumir</Button>
           ) : null}
           {naLixeira ? <Button variant="secondary" disabled={hook.ocupado || movendo} onClick={() => mover(true)}>Restaurar chat</Button>
-            : typeof hook.excluir === "function" ? <Button variant="secondary" disabled={hook.ocupado || movendo} onClick={() => setConfirmarExclusao(true)}>Excluir chat</Button> : null}
+            : typeof hook.excluir === "function" ? <details className="wa-more-actions"><summary aria-label="Mais ações da conversa">•••</summary><Button variant="secondary" disabled={hook.ocupado || movendo} onClick={() => setConfirmarExclusao(true)}>Excluir chat</Button></details> : null}
           {onDetalhes ? <Button variant="secondary" size="sm" onClick={onDetalhes} aria-label="Detalhes da conversa" aria-expanded={detalhesAbertos}><WhatsappIcon nome="painel" size={18} /></Button> : null}
         </div>
       </div>
       {naLixeira ? <p role="status" className="wa-notice">Conversa na lixeira. O histórico está preservado para consulta. Restaure para voltar à lista; uma nova mensagem recebida também reabre a conversa.</p>
         : historico ? <p role="status" className="wa-notice">Histórico legado sem vínculo verificado, preservado somente para consulta. As mensagens anteriores não foram apagadas nem misturadas à conversa atual. Para atender este contato, volte a Conversas atuais.</p> : null}
       {conversa.pendencia ? <div data-testid="pendencia-aberta" className="wa-notice">Pedido aguardando confirmação do cliente: <strong>{conversa.pendencia.tipo}</strong> · código <strong>{conversa.pendencia.codigo}</strong> · expira {fmtDataHora(conversa.pendencia.expiraEm)}.</div> : null}
-      {!somenteLeitura && (situacao === SITUACAO_FIO.FILA_SEM_EMPRESA || conversa.escopoVerificado === false) ? <div className="wa-thread-setup">{slotVincular || <a href="/whatsapp">Conferir vínculo na caixa de WhatsApp</a>}</div> : null}
+      {!somenteLeitura && (situacao === SITUACAO_FIO.FILA_SEM_EMPRESA || conversa.escopoVerificado === false) ? <PainelAtendimento>{slotVincular || <a href="/whatsapp">Conferir vínculo na caixa de WhatsApp</a>}</PainelAtendimento> : null}
       {historico ? <details className="wa-thread-setup"><summary>Verificar vínculo e iniciar conversa atual</summary><p>O vínculo abre um segmento verificado e preserva este histórico anterior.</p>{slotVincular || <a href="/whatsapp">Verificar vínculo na central de WhatsApp, em Histórico anterior</a>}</details> : null}
       <div className="wa-messages" ref={historicoRef} onScroll={acompanharLeitura} aria-label="Histórico de mensagens" tabIndex={0}>
         {avisoDePaginacao ? <p data-testid="aviso-paginacao" className="wa-list-note" style={{ textAlign: "center" }}>{avisoDePaginacao}</p> : null}

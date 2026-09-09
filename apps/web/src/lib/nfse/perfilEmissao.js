@@ -234,7 +234,7 @@ export const DESCRICAO_DO_VALOR = Object.freeze({
   }),
   regEspTrib: Object.freeze({
     0: "Nenhum", 1: "Ato Cooperado", 2: "Estimativa", 3: "Microempresa Municipal",
-    4: "Notário ou Registrador", 5: "Profissional Autônomo", 6: "—", 9: "—",
+    4: "Notário ou Registrador", 5: "Profissional Autônomo", 6: "Sociedade de Profissionais", 9: "Outros",
   }),
   regApTribSN: Object.freeze({
     1: "Tributos federais e municipal pelo Simples Nacional",

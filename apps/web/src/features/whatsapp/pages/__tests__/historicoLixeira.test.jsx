@@ -28,6 +28,7 @@ test("empresa mostra Julia atual uma vez e consulta legado sem misturar mensagen
   const filtro = screen.getByLabelText("Visualização das conversas da empresa");
   fireEvent.change(filtro, { target: { value: "historico" } });
   await screen.findByTestId("balao-m-antigo");
+  fireEvent.click(screen.getByLabelText("Mais ações da conversa"));
   expect(api.listarConversasWhatsapp).toHaveBeenLastCalledWith("historico", { empresa: "empresa" });
   expect(screen.queryByTestId("balao-m-atual")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Responder ao cliente")).not.toBeInTheDocument();
@@ -84,6 +85,7 @@ test("exclusão pendente não duplica; falha preserva fio e permite tentar novam
   fireEvent.click(await screen.findByTestId("conversa-atual"));
   await screen.findByTestId("fio");
   fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Texto preservado" } });
+  fireEvent.click(screen.getByLabelText("Mais ações da conversa"));
   fireEvent.click(screen.getByRole("button", { name: "Excluir chat" }));
   const dialogo = screen.getByRole("dialog");
   const confirmar = within(dialogo).getByRole("button", { name: "Mover para lixeira" });

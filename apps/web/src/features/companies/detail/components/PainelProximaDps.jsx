@@ -68,6 +68,7 @@ export function PainelProximaDps({
   salvando = false,
   onCriarDoCadastro,
   onMarcarPadrao,
+  mostrarPerfis = true,
 }) {
   const painel = useMemo(() => lerPainelDaProximaDps(dados), [dados]);
   const [criando, setCriando] = useState(false);
@@ -140,7 +141,7 @@ export function PainelProximaDps({
       </p>
 
       {/* ── os perfis ──────────────────────────────────────────────────────────────────────── */}
-      <h3 style={{ fontSize: 13, marginBottom: 4 }}>Perfis de emissão</h3>
+      {mostrarPerfis && <><h3 style={{ fontSize: 13, marginBottom: 4 }}>Perfis de emissão</h3>
       {perfis.length === 0 ? (
         <p className="text-muted" style={{ marginTop: 0 }}>
           Esta empresa ainda não tem perfil. Sem perfil, a emissão sai do cadastro — que é o
@@ -226,6 +227,7 @@ export function PainelProximaDps({
       ) : (
         <p className="text-muted">Apenas admin ou contador pode configurar perfis de emissão.</p>
       )}
+    </>}
     </Painel>
   );
 }
