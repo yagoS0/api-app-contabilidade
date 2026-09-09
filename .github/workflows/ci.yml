@@ -82,6 +82,8 @@ jobs:
       - run: npm ci
       - name: Generate Prisma client
         run: npm run prisma:generate -w @contabilidade/api
+      - name: Conversation evaluation isolation and budget guards
+        run: node --test apps/api/scripts/eval-whatsapp-conversacao.test.mjs
       - name: WhatsApp, guides and AI backend regression
         working-directory: apps/api
         run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='[Ww]hatsapp|assistente|envioGuia|envioTentativas|classificacaoPorIa|corrigirValorGuia|guiaEmailDestinatarios|destinatarioDaGuia|envioSemFila|envioPendenteNull'

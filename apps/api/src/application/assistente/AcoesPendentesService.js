@@ -111,8 +111,8 @@ export async function pendenciaAberta(conversaId, { client = prisma } = {}) {
 }
 
 /**
- * CRIA a pendência. Uma por fio: a anterior `pendente` é CANCELADA (o texto prometeu que qualquer
- * outra resposta cancela, e um pedido novo é outra resposta).
+ * CRIA a pendência. Uma por fio: montar explicitamente um pedido novo CANCELA o anterior.
+ * Conversa livre por si só não cancela nem confirma; a decisão pertence ao fluxo de confirmação.
  * @returns {{acao, texto}} `texto` = o corpo que o cliente LÊ + o rodapé com o código
  */
 export async function criarPendencia({ conversaId, portalClientId, userId, tipo, payload, corpo, agora = new Date(), rand = Math.random, client = prisma } = {}) {
@@ -151,7 +151,14 @@ export async function marcarExpirada(acaoId, { client = prisma } = {}) {
  * CONFIRMA (reserva atômica) E EXECUTA. Devolve o que dizer ao cliente e se o fio vai à fila humana.
  * @returns {Promise<{executou:boolean, texto:string, filaHumana:boolean, resultado:object|null}>}
  */
-export async function confirmarEExecutar({ acaoId, conversaId = null, portalClientId = null, agora = new Date(), client = prisma, log = logPadrao, executores = null, deps = DEPS_PADRAO } = {}) {
+export async function confirmarEExecutar({ acaoId, conversaId = null, portalClientId = null, confirmacao = null, agora = new Date(), client = prisma, log = logPadrao, executores = null, deps = DEPS_PADRAO } = {}) {
+  // O conjunto visto pelo turno é conferido no MESMO comando que reserva o ato. Uma leitura
+  // anterior separada deixa uma correção entrar entre o SELECT e o UPDATE. Sem exclusão por
+  // respondidaPelaIaEm: outro consumidor da caixa não pode tornar uma correção invisível.
+  const entradasNovas = confirmacao ? {
+    direcao: "in", registradaEm: { gte: new Date(confirmacao.registradaEm) },
+    id: { notIn: [...new Set(confirmacao.mensagensConhecidas)] },
+  } : null;
   const reserva = await client.acaoPendenteWhatsapp.updateMany({
     where: {
       id: String(acaoId), status: STATUS.PENDENTE, expiraEm: { gt: agora },
@@ -159,10 +166,27 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
       // ⚠ A EMPRESA TAMBÉM ENTRA: o escritório pode ter RE-VINCULADO o fio a outra empresa nos 10
       // minutos da pendência, e aí o ato sairia no CNPJ em que ela nasceu, não no do fio de agora.
       ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+      ...(entradasNovas ? { conversa: { is: {
+        escopoVerificado: true, excluidaEm: null, atendidaPor: null, atendidaDesde: null,
+        ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+        OR: [{ automacaoInvalidadaEm: null }, { automacaoInvalidadaEm: { lt: new Date(confirmacao.registradaEm) } }],
+        mensagens: { none: entradasNovas },
+      } } } : {}),
     },
-    data: { status: STATUS.CONFIRMADA, confirmadaEm: agora },
+    data: { status: STATUS.CONFIRMADA, confirmadaEm: agora, ...(confirmacao ? { mensagemConfirmacaoId: String(confirmacao.mensagemId) } : {}) },
   });
   if (!reserva.count) {
+    if (entradasNovas) {
+      // Só afirmar que a correção impediu o ato se ainda era pendente. Se outro consumidor já
+      // reservou/executou, não inventar que nada ocorreu nem permitir uma nova execução.
+      const cancelada = await client.acaoPendenteWhatsapp.updateMany({ where: {
+        id: String(acaoId), status: STATUS.PENDENTE,
+        ...(conversaId ? { conversaId: String(conversaId) } : {}),
+        ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+        conversa: { is: { mensagens: { some: entradasNovas } } },
+      }, data: { status: STATUS.CANCELADA } });
+      if (cancelada.count) return { executou: false, codigo: "CONFIRMACAO_SUPERADA", texto: "Recebi uma nova mensagem depois da confirmação e não executei o pedido. Vamos conferir as alterações antes de confirmar novamente.", filaHumana: false, resultado: null };
+    }
     // Já confirmada por outra entrega, cancelada, expirou entre a leitura e a reserva — ou é de outro fio.
     return { executou: false, texto: "Esse pedido já foi tratado ou expirou. Se ainda quiser, peça de novo.", filaHumana: false, resultado: null };
   }
@@ -225,7 +249,9 @@ async function executarEmissao({ acao, log, deps = DEPS_PADRAO }) {
     if (codigo === "COMPANY_MISSING_FIELDS") {
       return { texto: `A empresa está com o cadastro de emissão incompleto (${(err.missing || []).join(", ")}). O escritório precisa completar antes de emitir.`, filaHumana: true, resultado: { erro: codigo, missing: err.missing || [] } };
     }
-    return { texto: "A emissão foi recusada antes de sair. O escritório vai conferir o motivo e responder por aqui.", filaHumana: true, resultado: { erro: codigo || String(err?.message || "erro") } };
+    // Uma exceção não classificada pode ocorrer ao persistir um resultado já aceito. Sem prova
+    // da etapa alcançada, não afirmar recusa anterior ao envio nem recomendar uma nova emissão.
+    return { texto: "Não consegui confirmar o resultado da emissão. A equipe vai conferir antes de tentar novamente; não envie outro pedido desta nota por enquanto.", filaHumana: true, resultado: { erro: codigo || "EMISSAO_DESFECHO_DESCONHECIDO", indeterminado: true } };
   }
   if (result?.status === "issued") {
     const numero = result?.nfse?.numeroNfse || result?.nfse?.numero || result?.numeroNfse || null;
@@ -272,7 +298,13 @@ async function executarCancelamento({ acao, log, deps = DEPS_PADRAO }) {
     // ⚠ O NOSSO registro da emissão acompanha — a mesma linha da rota `POST /client/.../cancelar`.
     // É `ServiceInvoice` (nossa tabela), NUNCA `PortalInvoice` (projeção do ADN, que a captura
     // atualiza). `updateByChaveAcesso` devolve null quando a nota não é nossa — não é erro.
-    await deps.NfseRepository.updateByChaveAcesso(p.chaveAcesso, { status: "cancelled" });
+    try {
+      await deps.NfseRepository.updateByChaveAcesso(p.chaveAcesso, { status: "cancelled" });
+    } catch (err) {
+      // O provedor já aceitou. Falha na nossa projeção não desfaz o ato fiscal nem autoriza retry.
+      log?.error?.({ codigo: err?.code || "SINCRONIZACAO_CANCELAMENTO", notaId: p.notaId }, "assistente: cancelamento aceito, atualização local pendente");
+      return { texto: `O sistema nacional aceitou o cancelamento da nota ${p.numero || ""}. Não consegui atualizar o registro no portal; a equipe vai conferir. Não é preciso pedir o cancelamento novamente.`, filaHumana: true, resultado: { status: "accepted", sincronizacaoPendente: true } };
+    }
     return { texto: `Pedido de cancelamento da nota ${p.numero || ""} enviado e aceito. A nota passa a constar como cancelada assim que o sistema nacional processar.`, filaHumana: false, resultado: { status: r?.status || "accepted" } };
   } catch (err) {
     const camada = err?.camada || null;
@@ -312,9 +344,11 @@ async function executarRecalculo({ acao, log, client, deps = DEPS_PADRAO, agora 
       await deps.markGuideOpenBySerpro({ guideId: result.guide.guideId });
       atualizada = await client.guide.findUnique({ where: { id: result.guide.guideId } });
     }
-    const venc = atualizada?.vencimento ? new Date(atualizada.vencimento).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "não informado";
+    if (!atualizada) return { texto: "O pedido de recálculo foi processado, mas não consegui recuperar a guia para conferir valor e vencimento. Encaminhei para a equipe verificar antes de uma nova tentativa.", filaHumana: true, resultado: { guideId: guide.id, erro: "GUIA_ATUALIZADA_NAO_ENCONTRADA", conferenciaPendente: true } };
+    const venc = atualizada.vencimento ? new Date(atualizada.vencimento).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "não informado";
+    const valor = atualizada.valor == null || !Number.isFinite(Number(atualizada.valor)) ? "valor não informado" : fmtBRL(atualizada.valor);
     return {
-      texto: `Guia atualizada: ${fmtBRL(atualizada?.valor)}, vencimento ${venc}.${acrescimos?.texto ? ` ${acrescimos.texto}` : ""} Posso mandar o PDF por aqui.`,
+      texto: `Guia atualizada: ${valor}, vencimento ${venc}.${acrescimos?.texto ? ` ${acrescimos.texto}` : ""} Posso mandar o PDF por aqui.`,
       filaHumana: false,
       resultado: { guideId: atualizada?.id || guide.id, valor: atualizada?.valor != null ? Number(atualizada.valor) : null, vencimento: atualizada?.vencimento || null },
     };

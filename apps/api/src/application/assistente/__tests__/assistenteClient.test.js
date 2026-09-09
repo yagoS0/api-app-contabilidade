@@ -104,6 +104,19 @@ describe("o laço", () => {
   });
 });
 
+it("identifica o limite agregado de schema observado na API sem guardar o payload", () => {
+  const e = Object.assign(new Error("Schemas contains too many parameters with union types (19 parameters with type arrays or anyOf). Limit: 16 parameters with unions. DADO_PRIVADO"), { status: 400 });
+  const r = traduzirErro(e);
+  expect(r.diagnostico.categoria).toBe("COMPLEXIDADE_SCHEMA");
+  expect(r.message).not.toContain("DADO_PRIVADO");
+});
+
+it("identifica enum recusado pelo provedor sem registrar o conteúdo da requisição", () => {
+  const r = traduzirErro({ status: 400, error: { error: { type: "invalid_request_error", message: "tools.0.custom: Invalid schema: Enum value 'OPEN' does not match declared type '['string', 'null']'. CONTEUDO_PRIVADO" } } });
+  expect(r.diagnostico.categoria).toBe("SCHEMA_FERRAMENTA");
+  expect(JSON.stringify(r)).not.toContain("CONTEUDO_PRIVADO");
+});
+
 it("recusa histórico terminado em assistant antes da rede, sem cobrar outra tentativa", async () => {
   const { client, create } = clienteFalso([]);
   await expect(new AssistenteClient({ client }).responder({ system: [], messages: [{ role: "assistant", content: "resposta de outro turno" }] }))

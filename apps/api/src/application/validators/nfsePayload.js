@@ -70,7 +70,7 @@ export function validateNfsePayload(body) {
   if (!valorServicos || valorServicos <= 0) {
     return { ok: false, error: "servico_valor_invalido" };
   }
-  const aliquota = parseNumber(servico.aliquota || servico.pAliq || servico.pIss);
+  const aliquota = parseNumber(servico.aliquota ?? servico.pAliq ?? servico.pIss);
   const issRetido = toBoolean(servico.issRetido);
   let obra, destinatario;
   try { obra = normalizarObra(body.obra); destinatario = normalizarDestinatario(body.destinatario); }

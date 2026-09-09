@@ -310,6 +310,13 @@ describe("as três preparar_* — só PENDÊNCIA, nunca ato", () => {
     expect(chamada.payload).toEqual({ guideId: "g1" });
     expect(chamada.corpo).toMatch(/juros e multa/);
   });
+  it("preparação não inventa valor atualizado nem data final de cálculo e preserva esse limite no resumo", async () => {
+    const c = ctx();
+    const r = await executarFerramenta("preparar_recalculo", { guideId: "g1" }, c);
+    expect(r.calculo).toEqual({ apurado: false, valorAtualizado: null, dataFinalDosEncargos: null });
+    expect(c.servicos.criarPendencia.mock.calls[0][0].corpo).toContain("O valor atualizado e a data final de cálculo dos encargos ainda não foram apurados.");
+    expect(r.instrucao).toContain("Não prometa");
+  });
   it("chamar_escritorio registra o pedido", async () => {
     const c = ctx();
     const r = await executarFerramenta("chamar_escritorio", { motivo: "quer saber se pode deduzir" }, c);

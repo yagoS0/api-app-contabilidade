@@ -67,20 +67,29 @@ try {
   resultados("lease tem um dono, não renova vencido e antigo não libera novo");
 
   const mj = await prisma.mensagemWhatsapp.create({ data: { conversaId: ca.id, direcao: "in", providerMessageId: wamid("turno-a"), tipo: "text", corpo: "primeira", ocorridaEmProvedor: new Date() } });
-  await enfileirarTurnoIa({ conversaId: ca.id, mensagemId: mj.id, portalClientId: a.id });
-  const bloqueio = await adquirirLease(`ia:${ca.id}`);
+  const primeiroTurno = await enfileirarTurnoIa({ conversaId: ca.id, mensagemId: mj.id, portalClientId: a.id });
   let chamadas = 0;
   const responder = async () => { chamadas += 1; return { feito: true, motivo: "RESPONDIDA" }; };
-  await processarTurnosIaUmaVez({ flag: true, piloto: [a.id], log, responder });
+  // Avança o relógio injetado, sem sleeps: o worker respeita a pausa para agrupar bolhas.
+  await processarTurnosIaUmaVez({ flag: true, piloto: [a.id], log, responder, agora: new Date(primeiroTurno.proximaTentativaEm.getTime() - 1) });
   assert.equal(chamadas, 0);
+  assert.equal((await prisma.turnoIaWhatsapp.findUnique({ where: { id: primeiroTurno.id } })).tentativas, 0);
+  const bloqueio = await adquirirLease(`ia:${ca.id}`);
+  assert.ok(bloqueio);
+  await processarTurnosIaUmaVez({ flag: true, piloto: [a.id], log, responder, agora: primeiroTurno.proximaTentativaEm });
+  assert.equal(chamadas, 0);
+  assert.equal((await prisma.turnoIaWhatsapp.findUnique({ where: { id: primeiroTurno.id } })).status, "pendente");
   await liberarLease(bloqueio);
-  await processarTurnosIaUmaVez({ flag: true, piloto: [a.id], log, responder: async () => {
+  let segundoTurno;
+  await processarTurnosIaUmaVez({ flag: true, piloto: [a.id], log, agora: primeiroTurno.proximaTentativaEm, responder: async () => {
     chamadas += 1;
     const mb = await prisma.mensagemWhatsapp.create({ data: { conversaId: ca.id, direcao: "in", providerMessageId: wamid("turno-b"), tipo: "text", corpo: "cheguei durante o modelo" } });
-    await enfileirarTurnoIa({ conversaId: ca.id, mensagemId: mb.id, portalClientId: a.id });
+    segundoTurno = await enfileirarTurnoIa({ conversaId: ca.id, mensagemId: mb.id, portalClientId: a.id });
     return { feito: true };
   } });
-  await processarTurnosIaUmaVez({ flag: true, piloto: [a.id], log, responder });
+  assert.equal(chamadas, 1);
+  assert.ok(segundoTurno);
+  await processarTurnosIaUmaVez({ flag: true, piloto: [a.id], log, responder, agora: segundoTurno.proximaTentativaEm });
   assert.equal(chamadas, 2);
   assert.equal(await prisma.turnoIaWhatsapp.count({ where: { portalClientId: a.id, status: "respondido" } }), 2);
   resultados("mensagem recebida com fio ocupado permanece e é processada no ciclo seguinte");
@@ -89,7 +98,7 @@ try {
   const job = await enfileirarTurnoIa({ conversaId: ca.id, mensagemId: falhaMsg.id, portalClientId: a.id });
   await assert.rejects(enviarMensagemRastreada({ conversa: ca, turnoIaId: job.id, corpo: "tentativa", enviar: async () => { throw new Error("timeout"); } }));
   await prisma.turnoIaWhatsapp.update({ where: { id: job.id }, data: { status: "falhou" } });
-  await processarTurnosIaUmaVez({ flag: true, piloto: [a.id], log, responder });
+  await processarTurnosIaUmaVez({ flag: true, piloto: [a.id], log, responder, agora: job.proximaTentativaEm });
   assert.equal((await prisma.turnoIaWhatsapp.findUnique({ where: { id: job.id } })).status, "indeterminado");
   assert.equal(chamadas, 2);
   resultados("timeout de saída não provoca reenvio automático após falha do turno");
