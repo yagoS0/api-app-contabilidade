@@ -9,16 +9,43 @@ jest.mock("../AssistenteComercialService.js", () => ({ responderLead: jest.fn(as
 import { enfileirarTurnoIa, processarTurnosIaUmaVez } from "../TurnoIaWhatsappService.js";
 import { responderLead } from "../AssistenteComercialService.js";
 import { adquirirLease, liberarLease } from "../../whatsapp/WhatsappLeaseService.js";
+import { Prisma } from "@prisma/client";
 
 const agora = new Date("2026-09-09T12:00:00Z");
 const logger = { error: jest.fn() };
 const opcoes = { flag: true, piloto: ["pc-1"], comercialFlag: true, comercialPiloto: ["5511999999999"], agora, log: logger };
-const job = (perfil = "LEAD") => ({ id: `job-${perfil}`, mensagemId: `msg-${perfil}`, conversaId: `cv-${perfil}`, portalClientId: perfil === "LEAD" ? null : "pc-1", perfil, status: "pendente", reservaToken: null, tentativas: 0 });
+const job = (perfil = "LEAD") => ({ id: `job-${perfil}`, mensagemId: `msg-${perfil}`, conversaId: `cv-${perfil}`, portalClientId: perfil === "LEAD" ? null : "pc-1", perfil, status: "pendente", reservaToken: null, tentativas: 0, proximaTentativaEm: agora, criadoEm: agora });
+const camposTurno = new Set(Prisma.dmmf.datamodel.models.find(m => m.name === "TurnoIaWhatsapp").fields.map(f => f.name));
+function validarWhereTurno(where) {
+  for (const [campo, valor] of Object.entries(where)) {
+    if (["AND", "OR", "NOT"].includes(campo)) for (const sub of Array.isArray(valor) ? valor : [valor]) validarWhereTurno(sub);
+    else if (!camposTurno.has(campo)) throw new Error(`Filtro não existe no Prisma gerado: TurnoIaWhatsapp.${campo}`);
+  }
+}
+function corresponde(linha, where = {}) {
+  return Object.entries(where).every(([campo, valor]) => {
+    if (campo === "AND") return valor.every(v => corresponde(linha, v));
+    if (campo === "OR") return valor.some(v => corresponde(linha, v));
+    if (valor === null) return linha[campo] == null;
+    if (valor && typeof valor === "object" && !(valor instanceof Date)) return Object.entries(valor).every(([op, esperado]) => {
+      if (op === "in") return esperado.includes(linha[campo]);
+      if (op === "lt") return linha[campo] < esperado;
+      if (op === "lte") return linha[campo] <= esperado;
+      throw new Error(`Operador de teste não implementado: ${op}`);
+    });
+    return linha[campo] === valor;
+  });
+}
 function banco(jobs = [job()]) {
+  const conversas = jobs.map(j => ({ id: j.conversaId, telefoneE164: "5511999999999", portalClientId: j.portalClientId }));
   return {
-    jobs,
+    jobs, conversas,
+    conversaWhatsapp: { findMany: jest.fn(async ({ where }) => conversas.filter(c => corresponde(c, where)).map(c => ({ id: c.id }))) },
     turnoIaWhatsapp: {
-      findMany: jest.fn(async () => jobs.map(j => ({ ...j }))),
+      findMany: jest.fn(async ({ where, take }) => {
+        validarWhereTurno(where);
+        return jobs.filter(j => corresponde(j, where)).slice(0, take).map(j => ({ ...j }));
+      }),
       updateMany: jest.fn(async ({ where, data }) => {
         const atual = jobs.find(j => j.id === where.id && (!where.status || j.status === where.status) && j.reservaToken === where.reservaToken);
         if (!atual) return { count: 0 };
@@ -71,10 +98,8 @@ test("fila mista mantém filtros independentes, o mesmo lease e os assistentes s
   expect(adquirirLease.mock.calls.map(([id]) => id)).toEqual(["ia:cv-CLIENTE", "ia:cv-LEAD"]);
   expect(liberarLease).toHaveBeenCalledTimes(2);
   const filtro = client.turnoIaWhatsapp.findMany.mock.calls[0][0].where;
-  expect(filtro.AND[0].OR).toEqual([
-    { perfil: "CLIENTE", portalClientId: { in: ["pc-1"] } },
-    { perfil: "LEAD", portalClientId: null, conversa: { telefoneE164: { in: ["5511999999999"] }, portalClientId: null } },
-  ]);
+  // Não codificar aqui uma relation que o schema real não tem: a fixture consulta o DMMF.
+  expect(() => validarWhereTurno(filtro)).not.toThrow();
   expect(filtro.OR[0].proximaTentativaEm).toEqual({ lte: agora });
 });
 
@@ -118,4 +143,36 @@ test("lead que perdeu escopo comercial encerra job sem repetir o modelo", async 
   responderLead.mockResolvedValueOnce({ feito: false, motivo: "SEM_ESCOPO_COMERCIAL" });
   await processarTurnosIaUmaVez({ ...opcoes, client, responder: jest.fn() });
   expect(client.jobs[0].status).toBe("ignorado");
+});
+
+test("jobs antigos fora do piloto não ocultam cliente e lead elegíveis no limite", async () => {
+  const fora = Array.from({ length: 4 }, (_, n) => ({ ...job(), id: `fora-${n}`, conversaId: `fora-${n}`, mensagemId: `m-fora-${n}` }));
+  const client = banco([...fora, job("CLIENTE"), job("LEAD")]);
+  client.conversas.filter(c => c.id.startsWith("fora-")).forEach(c => { c.telefoneE164 = "5511888888888"; });
+  const responder = jest.fn(async () => ({ feito: true }));
+  expect((await processarTurnosIaUmaVez({ ...opcoes, client, responder, limite: 2 })).processados).toBe(2);
+  expect(responder).toHaveBeenCalledTimes(1);
+  expect(responderLead).toHaveBeenCalledTimes(1);
+  expect(fora.every(j => j.status === "pendente" && j.tentativas === 0)).toBe(true);
+});
+
+test("lead em conversa vinculada a cliente não é autorizado pelo telefone piloto", async () => {
+  const client = banco(); client.conversas[0].portalClientId = "pc-1";
+  expect((await processarTurnosIaUmaVez({ ...opcoes, client, responder: jest.fn() })).processados).toBe(0);
+  expect(responderLead).not.toHaveBeenCalled();
+  expect(client.jobs[0].tentativas).toBe(0);
+});
+
+test("piloto comercial sem conversa elegível não impede atendimento de cliente", async () => {
+  const client = banco([job("CLIENTE")]);
+  const responder = jest.fn(async () => ({ feito: true }));
+  expect((await processarTurnosIaUmaVez({ ...opcoes, client, responder })).processados).toBe(1);
+  expect(responder).toHaveBeenCalledTimes(1);
+  expect(responderLead).not.toHaveBeenCalled();
+});
+
+test("nenhuma conversa de lead elegível com clientes desligados encerra ciclo sem consulta inválida", async () => {
+  const client = banco(); client.conversas[0].telefoneE164 = "5511888888888";
+  expect(await processarTurnosIaUmaVez({ ...opcoes, client, flag: false, responder: jest.fn() })).toEqual({ processados: 0 });
+  expect(client.turnoIaWhatsapp.findMany).not.toHaveBeenCalled();
 });

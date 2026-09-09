@@ -16,6 +16,62 @@ const { atualizar, converter } = await import("../src/application/onboarding/Onb
 const checks = [];
 const ok = title => checks.push(title);
 try {
+  // Regressão da fila INTEIRA: o schema de TurnoIaWhatsapp não declara uma relation `conversa`.
+  // Só Prisma/PostgreSQL reais detectam esse filtro inválido antes de qualquer executor.
+  const { enfileirarTurnoIa, processarTurnosIaUmaVez } = await import("../src/application/assistente/TurnoIaWhatsappService.js");
+  const clienteFila = await db.portalClient.create({ data: { razao: "Cliente sintético da fila", cnpj: "12345678000195" } });
+  const conversasFila = [], mensagensFila = [], jobsFila = [];
+  let chamadasCliente = 0, chamadasLead = 0;
+  const telefonePiloto = "5511955555555";
+  const conversaFila = async (nome, telefoneE164, portalClientId = null) => {
+    const c = await db.conversaWhatsapp.create({ data: { telefoneE164, portalClientId, chaveEscopo: `teste-fila:${nome}`, escopoVerificado: Boolean(portalClientId) } });
+    conversasFila.push(c.id); return c;
+  };
+  const jobFila = async (c, perfil, portalClientId = null) => {
+    const m = await db.mensagemWhatsapp.create({ data: { conversaId: c.id, providerMessageId: `wamid.FILA.${c.id}`, direcao: "in", tipo: "text", corpo: "Mensagem sintética sem envio" } });
+    mensagensFila.push(m.id);
+    const j = await enfileirarTurnoIa({ conversaId: c.id, mensagemId: m.id, perfil, portalClientId, client: db });
+    jobsFila.push(j.id); return j;
+  };
+  try {
+    const fora = [];
+    // Mais jobs antigos fora do piloto que o limite do worker: não podem ocultar os elegíveis.
+    for (let n = 0; n < 4; n++) fora.push(await jobFila(await conversaFila(`fora-${n}`, `551194444444${n}`), "LEAD"));
+    const vinculada = await conversaFila("vinculada", telefonePiloto, clienteFila.id);
+    const leadVinculado = await jobFila(vinculada, "LEAD");
+    const cliente = await conversaFila("cliente", "5511933333333", clienteFila.id);
+    const lead = await conversaFila("lead", telefonePiloto);
+    const jCliente = await jobFila(cliente, "CLIENTE", clienteFila.id);
+    const jLead = await jobFila(lead, "LEAD");
+    const responder = async ({ conversaId, deps }) => {
+      assert.equal(conversaId, cliente.id); assert.equal(deps.leaseExterno, true);
+      await deps.conferirLease(); chamadasCliente++; return { feito: true, motivo: "RESPONDIDA" };
+    };
+    const responderComercial = async ({ conversaId, deps }) => {
+      assert.equal(conversaId, lead.id); assert.equal(deps.leaseExterno, true);
+      await deps.conferirLease(); chamadasLead++; return { feito: true, motivo: "RESPONDIDA" };
+    };
+    const opcoes = { client: db, flag: true, piloto: [clienteFila.id], comercialFlag: true, comercialPiloto: [telefonePiloto], limite: 2, responder, responderComercial, log: { error() {} } };
+    const antes = new Date(Math.min(jCliente.proximaTentativaEm.getTime(), jLead.proximaTentativaEm.getTime()) - 1);
+    assert.equal((await processarTurnosIaUmaVez({ ...opcoes, agora: antes })).processados, 0);
+    assert.equal(chamadasCliente + chamadasLead, 0);
+    ok("Fila mista aceita filtros Prisma reais e respeita o debounce antes do prazo");
+    const noPrazo = new Date(Math.max(jCliente.proximaTentativaEm.getTime(), jLead.proximaTentativaEm.getTime()));
+    assert.equal((await processarTurnosIaUmaVez({ ...opcoes, agora: noPrazo })).processados, 2);
+    assert.equal(chamadasCliente, 1); assert.equal(chamadasLead, 1);
+    assert.equal(await db.turnoIaWhatsapp.count({ where: { id: { in: [jCliente.id, jLead.id] }, status: "respondido" } }), 2);
+    assert.equal(await db.turnoIaWhatsapp.count({ where: { id: { in: [...fora.map(j => j.id), leadVinculado.id] }, status: "pendente", tentativas: 0 } }), 5);
+    ok("Clientes e leads autorizados são processados juntos; fora do piloto e conversa vinculada não ocupam o limite");
+    assert.equal((await processarTurnosIaUmaVez({ ...opcoes, agora: noPrazo })).processados, 0);
+    assert.equal((await enfileirarTurnoIa({ conversaId: lead.id, mensagemId: jLead.mensagemId, perfil: "LEAD", client: db })).id, jLead.id);
+    assert.equal(chamadasCliente, 1); assert.equal(chamadasLead, 1);
+    ok("Reentrega e próximo ciclo não repetem os jobs concluídos nem liberam leads fora do piloto");
+  } finally {
+    await db.turnoIaWhatsapp.deleteMany({ where: { id: { in: jobsFila } } });
+    await db.mensagemWhatsapp.deleteMany({ where: { id: { in: mensagensFila } } });
+    await db.conversaWhatsapp.deleteMany({ where: { id: { in: conversasFila } } });
+    await db.portalClient.delete({ where: { id: clienteFila.id } });
+  }
   const user = await db.user.create({ data: { name: "Contador de teste", email: "lead-test@example.invalid", passwordHash: "inutilizavel", role: "contador", accountType: "FIRM", status: "active" } });
   const c = await db.conversaWhatsapp.create({ data: { telefoneE164: "5511999999999", chaveEscopo: "fila:5511999999999" } });
   const msg = await db.mensagemWhatsapp.create({ data: { conversaId: c.id, providerMessageId: "wamid.LOCAL_TEST_1", ocorridaEmProvedor: new Date(), direcao: "in", tipo: "text", corpo: "Quero abrir uma empresa" } });
