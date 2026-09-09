@@ -40,7 +40,7 @@ import { etapasDaOrigem, ETAPAS_POR_ORIGEM } from "../etapasTemplate.js";
 
 function fichaSalva(over = {}) {
   return {
-    id: "onb-1",
+    id: "onb-1", versao: 0,
     origem: "TRANSFERENCIA",
     status: "RASCUNHO",
     origemPreenchimento: "ESCRITORIO",
@@ -113,7 +113,7 @@ describe("atualizar — troca de origem zera `dados` no SERVIDOR", () => {
     prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ origem: "ABERTURA", dados: { socios: [{ nome: "A" }] } }));
     prisma.onboarding.update.mockResolvedValue(fichaSalva({ origem: "TRANSFERENCIA", dados: {} }));
 
-    await atualizar("onb-1", {
+    await atualizar("onb-1", { versao: 0,
       origem: "TRANSFERENCIA",
       // Um PATCH atrasado da origem antiga: os sócios NÃO podem sobreviver à troca.
       dados: { socios: [{ nome: "A" }, { nome: "B" }], razaoSocial: "DA ORIGEM ANTIGA" },
@@ -136,7 +136,7 @@ describe("atualizar — troca de origem zera `dados` no SERVIDOR", () => {
     );
     prisma.onboarding.update.mockResolvedValue(fichaSalva());
 
-    await atualizar("onb-1", { origem: "TRANSFERENCIA", dados: { razaoSocial: "NOVA" } });
+    await atualizar("onb-1", { versao: 0, origem: "TRANSFERENCIA", dados: { razaoSocial: "NOVA" } });
 
     const { data } = prisma.onboarding.update.mock.calls[0][0];
     // substituição, não merge: `responsavelNome` desapareceu porque não veio no payload
@@ -147,7 +147,7 @@ describe("atualizar — troca de origem zera `dados` no SERVIDOR", () => {
 
   test("origem inválida é recusada antes de qualquer escrita", async () => {
     prisma.onboarding.findUnique.mockResolvedValue(fichaSalva());
-    await expect(atualizar("onb-1", { origem: "QUALQUER" })).rejects.toMatchObject({
+    await expect(atualizar("onb-1", { versao: 0, origem: "QUALQUER" })).rejects.toMatchObject({
       code: "origem_invalida",
       status: 400,
     });
@@ -159,7 +159,7 @@ describe("atualizar — troca de origem zera `dados` no SERVIDOR", () => {
     prisma.onboarding.update.mockResolvedValue(fichaSalva());
     prisma.user.findUnique.mockResolvedValue({ id: "user-ja-existe" });
 
-    await atualizar("onb-1", { dados: { responsavelEmail: "dono@empresa.com" } });
+    await atualizar("onb-1", { versao: 0, dados: { responsavelEmail: "dono@empresa.com" } });
 
     const { data } = prisma.onboarding.update.mock.calls[0][0];
     expect(data.emailJaCadastrado).toBe(true);
@@ -171,7 +171,7 @@ describe("finalizar — idempotente", () => {
     prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ status: "RASCUNHO" }));
     prisma.onboarding.update.mockResolvedValue(fichaSalva({ id: "onb-1", status: "RECEBIDO" }));
 
-    await atualizar("onb-1", { finalizar: true });
+    await atualizar("onb-1", { versao: 0, finalizar: true });
 
     const { data } = prisma.onboarding.update.mock.calls[0][0];
     expect(data.status).toBe("RECEBIDO");
@@ -191,7 +191,7 @@ describe("finalizar — idempotente", () => {
     );
     prisma.onboarding.update.mockResolvedValue(fichaSalva({ status: "EM_TRILHA" }));
 
-    await atualizar("onb-1", { finalizar: true });
+    await atualizar("onb-1", { versao: 0, finalizar: true });
 
     const { data } = prisma.onboarding.update.mock.calls[0][0];
     expect(data.status).toBeUndefined();
@@ -269,7 +269,7 @@ describe("concluirEtapa", () => {
 describe("convertido é SOMENTE LEITURA", () => {
   test("atualizar → 409 onboarding_convertido", async () => {
     prisma.onboarding.findUnique.mockResolvedValue(fichaSalva({ status: "CONVERTIDO" }));
-    await expect(atualizar("onb-1", { dados: { razaoSocial: "X" } })).rejects.toMatchObject({
+    await expect(atualizar("onb-1", { versao: 0, dados: { razaoSocial: "X" } })).rejects.toMatchObject({
       code: "onboarding_convertido",
       status: 409,
     });

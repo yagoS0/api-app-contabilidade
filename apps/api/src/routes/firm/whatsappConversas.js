@@ -16,6 +16,7 @@
 // motivo, e diz o caminho: o template `reabrir_conversa` — que hoje está `DECLARADO` (não
 // aprovado), então a resposta nomeia isso em vez de fingir que existe um botão.
 
+import { criarRecursosComerciais } from "../../application/onboarding/RecursosComerciaisService.js";
 import { Router } from "express";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
@@ -416,7 +417,12 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   router.post("/whatsapp/conversas/:conversaId/responder", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;
     const { conversaId } = req.params || {};
-    const texto = String(req.body?.texto || "").trim();
+    let texto = String(req.body?.texto || "").trim();
+    let referenciaComercial;
+    if (req.body?.orientacaoId) {
+      try { const p = await criarRecursosComerciais({ db: client }).prepararOrientacao(req.body.orientacaoId, req.body.variaveis || {}); texto = p.texto; referenciaComercial = p.referencia; }
+      catch (e) { return res.status(e.status || 500).json({ ok: false, message: e.status ? e.message : "Orientação indisponível." }); }
+    }
     if (!texto) return res.status(400).json({ ok: false, error: "texto_obrigatorio", message: "Escreva a mensagem." });
     try {
       const conversa = await conversaNoEscopo(req, conversaId, { client });
@@ -424,10 +430,15 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       const janela = await janelaDaConversa(conversa.id);
       if (janela.situacao !== SITUACOES_JANELA.ABERTA) return recusarForaDaJanela(res, janela);
       const cliente = cloud || new WhatsappCloudClient({ log });
-      const r = await enviarMensagemRastreada({ conversa, tipo: "text", corpo: texto, autor: AUTOR_HUMANO, client,
+      if (req.body?.assumir === true) await client.conversaWhatsapp.updateMany({ where: { id: conversa.id, excluidaEm: null }, data: { atendidaPor: String(req.auth.user.id), atendidaDesde: new Date() } });
+      const r = await enviarMensagemRastreada({ conversa, tipo: "text", corpo: texto, autor: AUTOR_HUMANO, referenciaComercial, client,
         antesDeEnviar: () => conferirConversaAtiva(conversa),
         enviar: () => cliente.enviarTexto({ telefone: conversa.telefoneE164, texto }),
       });
+      if (referenciaComercial?.chave === "autorizacao") {
+        const lead = await client.atendimentoLead.findFirst({ where: { conversaId, encerradoEm: null }, include: { onboarding: true } });
+        if (lead) await client.atendimentoLead.update({ where: { id: lead.id }, data: { autorizacao: { ...(lead.autorizacao || {}), estado: "INSTRUCAO_ENVIADA", cnpj: lead.onboarding?.cnpj || null, mensagemId: r.mensagem.id, recursoId: referenciaComercial.recursoId } } });
+      }
       return res.json({ ok: true, mensagem: { id: r.mensagem.id, providerMessageId: r.wamid, autor: AUTOR_HUMANO, corpo: texto, statusEnvio: r.mensagem.statusEnvio } });
     } catch (err) {
       return falhar(res, err, { conversaId });

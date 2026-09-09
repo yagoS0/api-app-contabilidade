@@ -9,6 +9,7 @@
     "./municipios-ibge": "./src/municipios/municipiosIbge.data.js",
     "./erros-cadastro-empresa": "./src/erros/errosDeCadastroDeEmpresa.js",
     "./email": "./src/email/emailValido.js",
-    "./declaracao-nfse": "./src/nfse/declaracaoNfse.js"
+    "./declaracao-nfse": "./src/nfse/declaracaoNfse.js",
+    "./onboarding": "./src/onboarding/onboardingSpec.js"
   }
 }

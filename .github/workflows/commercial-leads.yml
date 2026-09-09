@@ -1,0 +1,45 @@
+name: Commercial leads
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+jobs:
+  lead-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: lead_test
+          POSTGRES_PASSWORD: ci_test_only
+          POSTGRES_DB: lead_flow_check
+        ports:
+          - 55440:5432
+        options: >-
+          --health-cmd "pg_isready -U lead_test -d lead_flow_check"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://lead_test:ci_test_only@127.0.0.1:55440/lead_flow_check
+      NODE_ENV: test
+      INTEGRACAO_IA_COMERCIAL: "0"
+      INTEGRACAO_FISCAL_LEADS: "0"
+      INTEGRACAO_WHATSAPP: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate -w @contabilidade/api
+      - run: npm run prisma:migrate:deploy -w @contabilidade/api
+      - name: Private import CLI validation
+        run: node --test apps/api/scripts/import-commercial-resources.test.mjs
+      - name: Lead, onboarding and commercial API regression
+        working-directory: apps/api
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='onboarding|[Cc]omercial|[Cc]ommercial|origemDasBolhas'
+      - name: Verify lead, proposal and contract transactions without external services
+        run: node apps/api/scripts/verify-commercial-lead-postgres.js "$DATABASE_URL"

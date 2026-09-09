@@ -17,6 +17,8 @@
 
 import { prisma } from "../../infrastructure/db/prisma.js";
 import {
+  IA_COMERCIAL_TETO_CONVERSA_CENTAVOS,
+  IA_COMERCIAL_MAX_CHAMADAS_DIA,
   ANTHROPIC_API_KEY,
   IA_MODELO,
   IA_TETO_MENSAL_EMPRESA_CENTAVOS,
@@ -151,7 +153,10 @@ export async function autorizarChamadaIa({ portalClientId, conversaId, mensagemI
         return await client.$transaction(async (tx) => {
           const empresa = base.portalClientId ? await somaDoMes({ portalClientId: base.portalClientId, createdAt: { gte: desde } }, tx) : { centavos: 0 };
           const escritorio = await somaDoMes({ createdAt: { gte: desde } }, tx);
-          const motivo = IA_TETO_MENSAL_EMPRESA_CENTAVOS > 0 && empresa.centavos + reservaCentavos > IA_TETO_MENSAL_EMPRESA_CENTAVOS ? MOTIVOS_RECUSA.TETO_EMPRESA
+          const lead = base.finalidade === "comercial_whatsapp" ? await somaDoMes({ conversaId: base.conversaId, finalidade: base.finalidade, createdAt: { gte: desde } }, tx) : null;
+          const diario = lead ? await somaDoMes({ conversaId: base.conversaId, finalidade: base.finalidade, createdAt: { gte: new Date(agora.getTime() - 86400000) } }, tx) : null;
+          const motivo = lead && (lead.centavos + reservaCentavos > IA_COMERCIAL_TETO_CONVERSA_CENTAVOS || diario.chamadas >= IA_COMERCIAL_MAX_CHAMADAS_DIA) ? "TETO_LEAD"
+            : IA_TETO_MENSAL_EMPRESA_CENTAVOS > 0 && empresa.centavos + reservaCentavos > IA_TETO_MENSAL_EMPRESA_CENTAVOS ? MOTIVOS_RECUSA.TETO_EMPRESA
             : IA_TETO_MENSAL_ESCRITORIO_CENTAVOS > 0 && escritorio.centavos + reservaCentavos > IA_TETO_MENSAL_ESCRITORIO_CENTAVOS ? MOTIVOS_RECUSA.TETO_ESCRITORIO : null;
           if (motivo) {
             await tx.chamadaIa.create({ data: { ...base, status: STATUS_CHAMADA.RECUSADA_TETO, erroCodigo: motivo } });

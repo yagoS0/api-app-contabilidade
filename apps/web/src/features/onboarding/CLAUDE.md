@@ -49,12 +49,9 @@ o que foi perguntado.
 `lib/onboardingZod.js` **deriva** o schema da spec. `obrigatorio` está escrito uma vez, no
 descritor.
 
-### ⚠ Mora em `apps/web`, não em `packages/shared`
+### Spec compartilhada — setembro/2026
 
-O `Dockerfile` da raiz **não copia `packages/`** e o `railway.toml` não observa `packages/**`. Um
-import de `@contabilidade/shared` no backend passa em dev, passa nos testes e **morre no boot em
-produção**. O arquivo é escrito sem nenhuma dependência além de `zod` (mesma versão nos dois
-workspaces): migrar na Fase 2 custa um `git mv` mais o commit do Dockerfile.
+A fonte canônica está em `packages/shared/src/onboarding/onboardingSpec.js`, exportada por `@contabilidade/shared/onboarding`. O arquivo em `lib` apenas reexporta. API e interface usam a mesma poda e os mesmos descritores. Docker e Railway já incluem o pacote compartilhado.
 
 ## Armadilhas (todas custaram um ciclo em algum lugar do projeto)
 
@@ -171,3 +168,7 @@ A ficha existente ganhou PainelComercial no detalhe e acesso pelo wizard: fase c
 App usa wrapper para /onboarding/publico antes de montar hooks autenticados. FormularioPublico lê token apenas do fragmento e envia Authorization próprio, sem cookie, sem sessão do escritório e sem refresh/fallback. Salva progressivamente com versao; envio final exige conferência e remove token do endereço. Não pede senha/certificado; dados declarados são revistos pelo contador. Links mock são apenas demonstrativos e ficam na memória da sessão. A rota real é autoridade de uso único, prazo, revogação, conflitos e limites.
 
 Proteção de saída do formulário público compara JSON dos campos visíveis com o último carregamento/salvamento bem-sucedido. beforeunload só existe enquanto há diferença; reverter o campo, salvar, concluir ou desmontar remove o aviso. Painel comercial preserva proposta digitada em consultas/revogação e refaz metadados de links após gerar um novo, preservando seu token em memória.
+
+## Fluxo comercial versionado — setembro/2026
+
+A ficha é preenchida também pela conversa, com origem de cada campo e controle de versão. `FluxoComercial` adiciona propostas com avulso/recorrente, aceite público, preenchimento determinístico de modelo aprovado, PDF e conferência de assinatura. A conversão de novas propostas recorrentes exige contrato assinado conferido; o avulso conclui sem criar carteira. A biblioteca inicial contém somente orientações genéricas e dados institucionais incompletos, todos como rascunho. Catálogo e minuta privados são importados separadamente e revisados na biblioteca; o código não contém esses documentos. Trechos acima sobre fora do escopo da Fase 1 são históricos; o fluxo atual está descrito em `docs/fluxo-comercial-leads.md`.

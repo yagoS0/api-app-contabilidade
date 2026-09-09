@@ -1,22 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { INTEGRACAO_WHATSAPP_IA, IA_EMPRESAS_PILOTO } from "../../config.js";
+import { INTEGRACAO_WHATSAPP_IA, IA_EMPRESAS_PILOTO, INTEGRACAO_IA_COMERCIAL, IA_COMERCIAL_TELEFONES_PILOTO } from "../../config.js";
 import { adquirirLease, renovarLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
 
-export async function enfileirarTurnoIa({ conversaId, mensagemId, portalClientId = null, client = prisma }) {
+export async function enfileirarTurnoIa({ conversaId, mensagemId, portalClientId = null, perfil = "CLIENTE", client = prisma }) {
   // Uma pequena pausa permite receber as bolhas que compõem o mesmo pedido.
-  try { return await client.turnoIaWhatsapp.create({ data: { conversaId, mensagemId, portalClientId, proximaTentativaEm: new Date(Date.now() + 1500) } }); }
+  try { return await client.turnoIaWhatsapp.create({ data: { conversaId, mensagemId, portalClientId, perfil, proximaTentativaEm: new Date(Date.now() + 1500) } }); }
   catch (e) {
     if (e?.code !== "P2002") throw e;
     return client.turnoIaWhatsapp.findUnique({ where: { mensagemId } });
   }
 }
 
-export async function processarTurnosIaUmaVez({ client = prisma, agora = new Date(), responder = null, flag = INTEGRACAO_WHATSAPP_IA, piloto = IA_EMPRESAS_PILOTO, log = console, limite = 10 } = {}) {
-  if (!flag || !piloto.length) return { processados: 0 };
+export async function processarTurnosIaUmaVez({ client = prisma, agora = new Date(), responder = null, flag = INTEGRACAO_WHATSAPP_IA, piloto = IA_EMPRESAS_PILOTO, log = console, limite = 10, comercialFlag = INTEGRACAO_IA_COMERCIAL, comercialPiloto = IA_COMERCIAL_TELEFONES_PILOTO } = {}) {
+  if ((!flag || !piloto.length) && (!comercialFlag || !comercialPiloto.length)) return { processados: 0 };
   const inicioCiclo = Date.now();
   const jobs = await client.turnoIaWhatsapp.findMany({ where: {
-    portalClientId: { in: piloto }, OR: [
+    AND: [{ OR: [
+      ...(flag && piloto.length ? [{ perfil: "CLIENTE", portalClientId: { in: piloto } }] : []),
+      ...(comercialFlag && comercialPiloto.length ? [{ perfil: "LEAD", portalClientId: null, conversa: { telefoneE164: { in: comercialPiloto }, portalClientId: null } }] : []),
+    ] }], OR: [
       { status: { in: ["pendente", "falhou"] }, tentativas: { lt: 5 }, proximaTentativaEm: { lte: agora } },
       { status: "processando", leaseAte: { lte: agora } },
     ],
@@ -64,11 +67,12 @@ export async function processarTurnosIaUmaVez({ client = prisma, agora = new Dat
         finally { renovando = false; }
       }, 20000);
       timer.unref?.();
-      const r = await executar({ conversaId: job.conversaId, mensagemId: job.mensagemId, deps: {
+      const responderJob = job.perfil === "LEAD" ? (await import("./AssistenteComercialService.js")).responderLead : executar;
+      const r = await responderJob({ conversaId: job.conversaId, mensagemId: job.mensagemId, deps: {
         client, log, turnoIaId: job.id, leaseExterno: true, conferirLease,
       } });
       const status = r?.feito ? "respondido" : r?.indeterminado ? "indeterminado"
-        : ["CHAT_EXCLUIDO", "AUTOMACAO_INVALIDADA", "TURNO_CANCELADO", "SEM_ESCOPO_VERIFICADO", "ASSUMIDA_POR_HUMANO", "FORA_DO_PILOTO", "FORA_DA_JANELA", "JA_RESPONDIDA"].includes(r?.motivo) ? "ignorado" : "falhou";
+        : ["CHAT_EXCLUIDO", "AUTOMACAO_INVALIDADA", "TURNO_CANCELADO", "SEM_ESCOPO_VERIFICADO", "SEM_ESCOPO_COMERCIAL", "ASSUMIDA_POR_HUMANO", "FORA_DO_PILOTO", "FORA_DA_JANELA", "JA_RESPONDIDA"].includes(r?.motivo) ? "ignorado" : "falhou";
       await client.turnoIaWhatsapp.updateMany({ where: { id: job.id, reservaToken: token }, data: {
         status, motivo: r?.motivo || "ERRO", leaseAte: null,
         concluidoEm: ["respondido", "ignorado"].includes(status) ? new Date() : null,

@@ -40,6 +40,7 @@ export const ONBOARDING_STATUS = Object.freeze({
     ordem: 2,
     noQuadro: true,
   }),
+  CONCLUIDO_AVULSO: Object.freeze({ chave: "CONCLUIDO_AVULSO", rotulo: "Serviço avulso concluído", token: "--state-ok", surface: "--state-ok-surface", icone: "✓", ordem: 3, noQuadro: true }),
   CONVERTIDO: Object.freeze({
     chave: "CONVERTIDO",
     rotulo: "Convertido",

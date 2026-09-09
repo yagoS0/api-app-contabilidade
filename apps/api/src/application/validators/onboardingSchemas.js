@@ -19,6 +19,7 @@ export const onboardingCreateSchema = z.object({
 });
 
 export const onboardingPatchSchema = z.object({
+  versao: z.number().int().nonnegative().optional(),
   origem: z.enum(ORIGENS).optional(),
   // `z.record(z.unknown())` e não um shape: a forma de `dados` é a spec do front
   // (`onboardingSpec.js`), e duplicá-la aqui criaria duas definições do formulário. O servidor

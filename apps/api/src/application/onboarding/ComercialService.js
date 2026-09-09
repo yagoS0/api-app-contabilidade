@@ -1,3 +1,5 @@
+import { podarInvisiveis } from "@contabilidade/shared/onboarding";
+import { lerSitfisPosicional } from "../fiscal/serpro/lerRelatorioSitfis.js";
 import crypto from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { OnboardingError, extrairColunas } from "./OnboardingService.js";
@@ -10,7 +12,7 @@ import { encryptSecret, decryptSecret } from "../../utils/crypto.js";
 
 export const escopoComercial = (user) => ["admin", "contador"].includes(String(user?.role).toLowerCase()) ? {} : { criadoPorId: String(user?.id || "SEM_ACESSO") };
 const erro = (code, message, status = 400) => new OnboardingError(code, message, status);
-const fechado = (r) => ["CONVERTIDO", "DESISTIU"].includes(r.status);
+const fechado = (r) => ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"].includes(r.status);
 const hash = (token) => crypto.createHash("sha256").update(token).digest("hex");
 export async function exigirEscopo(id, user, db = prisma) {
   if (!user?.id) throw erro("unauthorized", "Autenticação obrigatória.", 401);
@@ -91,7 +93,11 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
           resultado.protocolo = out.protocolo || null;
           resultado.relatorioDisponivel = Boolean(out.relatorioPdfBuffer);
           resultado.mensagem = out.processando ? "Relatório em processamento. Consulte novamente para acompanhar." : "Relatório consultado; o contador deve revisar o documento antes da proposta.";
-          if (out.relatorioPdfBuffer) documentoCifrado = await cifrar(out.relatorioPdfBuffer.toString("base64"));
+          if (out.relatorioPdfBuffer) {
+            documentoCifrado = await cifrar(out.relatorioPdfBuffer.toString("base64"));
+            const leitura = await lerSitfisPosicional({ pdfBuffer: out.relatorioPdfBuffer });
+            resultado.leitura = { relatorio: leitura.relatorio, aviso: leitura.erro, revisaoContador: "PENDENTE" };
+          }
         });
       }
     } catch (e) { status = "FALHOU"; resultado.mensagem = e instanceof OnboardingError ? e.message : "Consulta indisponível. Tente novamente mais tarde."; resultado.codigo = e.code || "consulta_falhou"; }
@@ -137,9 +143,11 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
     let r = link.onboarding;
     if (patch) {
       if (!Number.isInteger(patch.versao) || patch.versao < 0 || Object.keys(patch).some((k) => !["dados", "ultimoPasso", "finalizar", "versao"].includes(k)) || (patch.finalizar !== undefined && typeof patch.finalizar !== "boolean") || (patch.ultimoPasso != null && (typeof patch.ultimoPasso !== "string" || patch.ultimoPasso.length > 60)) || !patch.dados || typeof patch.dados !== "object" || Array.isArray(patch.dados) || JSON.stringify(patch.dados).length > 60000) throw erro("dados_invalidos", "Confira os dados do formulário.");
+      patch = { ...patch, dados: podarInvisiveis(r.origem, patch.dados) };
       r = await db.$transaction(async (tx) => {
-        const atualizado = await tx.onboarding.updateMany({ where: { id: r.id, versao: patch.versao, status: r.status, links: { some: ativo } }, data: { dados: patch.dados, ...extrairColunas(r.origem, patch.dados), ultimoPasso: patch.ultimoPasso || null, origemPreenchimento: "CLIENTE", versao: { increment: 1 }, ...(patch.finalizar && r.status === "RASCUNHO" ? { status: "RECEBIDO", enviadoEm: instante } : {}) } });
+        const atualizado = await tx.onboarding.updateMany({ where: { id: r.id, versao: patch.versao, status: r.status, links: { some: ativo } }, data: { dados: patch.dados, fontesDados: { ...(r.fontesDados || {}), ...Object.fromEntries(Object.keys(patch.dados).filter(k => JSON.stringify(r.dados?.[k]) !== JSON.stringify(patch.dados[k])).map(k => [k, { fonte: "FORMULARIO_PUBLICO", conferido: false, em: instante.toISOString() }])) }, ...extrairColunas(r.origem, patch.dados), ultimoPasso: patch.ultimoPasso || null, origemPreenchimento: "CLIENTE", versao: { increment: 1 }, ...(patch.finalizar && r.status === "RASCUNHO" ? { status: "RECEBIDO", enviadoEm: instante } : {}) } });
         if (atualizado.count !== 1) throw erro("formulario_alterado", "O formulário foi alterado ou o link expirou. Recarregue antes de salvar.", 409);
+        if (extrairColunas(r.origem, patch.dados).cnpj !== r.cnpj) await tx.atendimentoLead.updateMany({ where: { onboardingId: r.id }, data: { autorizacao: {}, representanteVerificadoEm: null, representanteVerificadoPor: null, evidenciaRepresentante: null } });
         // Ordem de locks igual à geração: ficha primeiro, link depois. Revogação concorrente
         // vencendo este lock provoca rollback completo do rascunho.
         const trava = await tx.onboardingLink.updateMany({ where: { id: link.id, ...ativo }, data: { expiresAt: link.expiresAt } });

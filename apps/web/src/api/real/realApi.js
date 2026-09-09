@@ -1701,6 +1701,27 @@ export function createRealApi() {
       if (!res.ok) throw new Error("Não foi possível abrir o relatório. Recarregue o atendimento.");
       return res.blob();
     },
+    async comercial(path, body = undefined, method = "POST") {
+      return request("/firm/comercial" + path, body === undefined ? {} : { method: path.endsWith("/campos") ? "PATCH" : method, body: JSON.stringify(body) });
+    },
+    async enviarOrientacaoWhatsapp(id, body) { return request(`/firm/whatsapp/conversas/${encodeURIComponent(id)}/responder`, { method: "POST", body: JSON.stringify(body) }); },
+    async documentoComercial(id, file) {
+      const form = new FormData(); form.append("arquivo", file);
+      const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/documentos`, { method: "POST", headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, body: form });
+      const out = await res.json(); if (!res.ok) throw new Error(out.message || "Falha no envio do documento."); return out;
+    },
+    async baixarContratoComercial(id, contratoId) {
+      const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/contratos/${encodeURIComponent(contratoId)}/pdf`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
+      if (!res.ok) throw new Error("Não foi possível gerar o contrato PDF."); return res.blob();
+    },
+    async baixarDocumentoComercial(id, doc) {
+      const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/documentos/${encodeURIComponent(doc)}`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
+      if (!res.ok) throw new Error("Não foi possível abrir o documento."); return res.blob();
+    },
+    async propostaPublica(token, aceite = null) {
+      const res = await fetch(getApiBaseUrl() + "/public/proposta" + (aceite ? "/aceitar" : ""), { method: aceite ? "POST" : "GET", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, credentials: "omit", cache: "no-store", ...(aceite ? { body: JSON.stringify(aceite) } : {}) });
+      const out = await res.json(); if (!res.ok) throw new Error(out.message || "Proposta indisponível."); return out;
+    },
     async getOnboardingComercial(id) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/comercial"); },
     async salvarOnboardingComercial(id, patch) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/comercial", { method: "PATCH", body: JSON.stringify(patch) }); },
     async criarAnaliseOnboarding(id, payload) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/analises", { method: "POST", body: JSON.stringify(payload) }); },

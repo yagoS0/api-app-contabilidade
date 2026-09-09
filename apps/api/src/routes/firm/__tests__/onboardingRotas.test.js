@@ -32,7 +32,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     create: jest.fn(async ({ data }) => {
       const registro = {
         id: novoId("onb"),
-        origem: null, status: "RASCUNHO", origemPreenchimento: "ESCRITORIO",
+        versao: 0, fontesDados: {}, origem: null, status: "RASCUNHO", origemPreenchimento: "ESCRITORIO",
         cnpj: null, razaoSocial: null, responsavelNome: null, responsavelEmail: null,
         responsavelTelefone: null, emailJaCadastrado: false, dados: {}, ultimoPasso: null,
         enviadoEm: null, criadoPorId: null, portalClientId: null, convertidoEm: null,
@@ -77,7 +77,9 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     update: jest.fn(async ({ where, data }) => {
       const atual = onboardings.get(where.id);
       if (!atual) throw new Error("registro nao encontrado");
-      Object.assign(atual, data, { updatedAt: new Date() });
+      if (where.versao !== undefined && where.versao !== atual.versao) throw Object.assign(new Error("Versão alterada"), { code: "P2025" });
+      const versao = data.versao?.increment ? atual.versao + data.versao.increment : atual.versao;
+      Object.assign(atual, data, { versao, updatedAt: new Date() });
       return clone(atual);
     }),
     delete: jest.fn(async ({ where }) => {
@@ -146,6 +148,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     findFirst: jest.fn(async () => null),
     create: jest.fn(async ({ data }) => ({ id: novoId("x"), ...data })),
     createMany: jest.fn(async () => ({ count: 0 })),
+    updateMany: jest.fn(async () => ({ count: 0 })),
     update: jest.fn(async ({ data }) => ({ ...data })),
     upsert: jest.fn(async ({ create }) => ({ ...create })),
     delete: jest.fn(async () => ({})),
@@ -214,6 +217,10 @@ const EMPRESA_VALIDA = {
   },
 };
 
+async function patchFicha(id, patch) {
+  const { body } = await request(app).get(`/firm/onboardings/${id}`);
+  return request(app).patch(`/firm/onboardings/${id}`).send({ versao: body.onboarding?.versao ?? 0, ...patch });
+}
 let app;
 beforeEach(() => {
   prisma.__limpar();
@@ -234,7 +241,7 @@ describe("percurso completo: criar → PATCH → finalizar → etapa → convert
     const id = criada.body.onboarding.id;
 
     // 2) três PATCH, um por tela do wizard — o rascunho é salvo a cada passo
-    const p1 = await request(app).patch(`/firm/onboardings/${id}`).send({
+    const p1 = await patchFicha(id, {
       dados: { razaoSocial: "EMPRESA QUE VEM DO OUTRO CONTADOR LTDA", cnpj: "11.222.333/0001-81" },
       ultimoPasso: "identificacao",
     });
@@ -242,7 +249,7 @@ describe("percurso completo: criar → PATCH → finalizar → etapa → convert
     expect(p1.body.onboarding.razaoSocial).toBe("EMPRESA QUE VEM DO OUTRO CONTADOR LTDA");
     expect(p1.body.onboarding.cnpj).toBe("11222333000181");
 
-    const p2 = await request(app).patch(`/firm/onboardings/${id}`).send({
+    const p2 = await patchFicha(id, {
       dados: {
         razaoSocial: "EMPRESA QUE VEM DO OUTRO CONTADOR LTDA",
         cnpj: "11.222.333/0001-81",
@@ -254,10 +261,10 @@ describe("percurso completo: criar → PATCH → finalizar → etapa → convert
     expect(p2.body.onboarding.responsavelEmail).toBe("maria@empresa.com");
     expect(p2.body.onboarding.emailJaCadastrado).toBe(false);
 
-    await request(app).patch(`/firm/onboardings/${id}`).send({ ultimoPasso: "revisao" });
+    await patchFicha(id, { ultimoPasso: "revisao" });
 
     // 3) finalizar — materializa a checklist
-    const fim = await request(app).patch(`/firm/onboardings/${id}`).send({ finalizar: true });
+    const fim = await patchFicha(id, { finalizar: true });
     expect(fim.status).toBe(200);
     expect(fim.body.onboarding.status).toBe("RECEBIDO");
     expect(fim.body.onboarding.enviadoEm).toBeTruthy();
@@ -289,7 +296,7 @@ describe("idempotência e 409", () => {
   async function fichaFinalizada(origem = "TRANSFERENCIA") {
     const { body } = await request(app).post("/firm/onboardings").send({ origem });
     const id = body.onboarding.id;
-    await request(app).patch(`/firm/onboardings/${id}`).send({ finalizar: true });
+    await patchFicha(id, { finalizar: true });
     return id;
   }
 
@@ -298,7 +305,7 @@ describe("idempotência e 409", () => {
     const primeira = await request(app).get(`/firm/onboardings/${id}`);
     const quantidade = primeira.body.onboarding.etapas.length;
 
-    const segunda = await request(app).patch(`/firm/onboardings/${id}`).send({ finalizar: true });
+    const segunda = await patchFicha(id, { finalizar: true });
 
     expect(segunda.status).toBe(200);
     expect(segunda.body.onboarding.etapas).toHaveLength(quantidade);
@@ -350,7 +357,7 @@ describe("idempotência e 409", () => {
   test("ficha convertida é somente leitura: PATCH → 409", async () => {
     const id = await fichaFinalizada();
     await request(app).post(`/firm/onboardings/${id}/convert`).send(EMPRESA_VALIDA);
-    const patch = await request(app).patch(`/firm/onboardings/${id}`).send({ dados: { razaoSocial: "X" } });
+    const patch = await patchFicha(id, { dados: { razaoSocial: "X" } });
     expect(patch.status).toBe(409);
     expect(patch.body.error).toBe("onboarding_convertido");
   });
@@ -363,9 +370,7 @@ describe("gates", () => {
 
     const criada = await request(app).post("/firm/onboardings").send({ origem: "ABERTURA" });
     expect(criada.status).toBe(201);
-    const patch = await request(app)
-      .patch(`/firm/onboardings/${criada.body.onboarding.id}`)
-      .send({ dados: { razaoSocial: "NOME PRETENDIDO" } });
+    const patch = await patchFicha(criada.body.onboarding.id, { dados: { razaoSocial: "NOME PRETENDIDO" } });
     expect(patch.status).toBe(200);
   });
 
@@ -402,7 +407,7 @@ describe("lista", () => {
   test("rascunho fica fora por padrão e volta com incluirRascunhos=1", async () => {
     await request(app).post("/firm/onboardings").send({ origem: "ABERTURA" });
     const { body } = await request(app).post("/firm/onboardings").send({ origem: "INATIVA" });
-    await request(app).patch(`/firm/onboardings/${body.onboarding.id}`).send({ finalizar: true });
+    await patchFicha(body.onboarding.id, { finalizar: true });
 
     const padrao = await request(app).get("/firm/onboardings");
     expect(padrao.body.itens).toHaveLength(1);
@@ -416,7 +421,7 @@ describe("lista", () => {
   test("descartar só vale para rascunho", async () => {
     const { body } = await request(app).post("/firm/onboardings").send({ origem: "ABERTURA" });
     const id = body.onboarding.id;
-    await request(app).patch(`/firm/onboardings/${id}`).send({ finalizar: true });
+    await patchFicha(id, { finalizar: true });
 
     const recusa = await request(app).delete(`/firm/onboardings/${id}`);
     expect(recusa.status).toBe(409);
@@ -433,9 +438,7 @@ describe("validação do envelope", () => {
 
   test("campo estranho no PATCH é recusado (schema `.strict()`)", async () => {
     const { body } = await request(app).post("/firm/onboardings").send({ origem: "ABERTURA" });
-    const res = await request(app)
-      .patch(`/firm/onboardings/${body.onboarding.id}`)
-      .send({ status: "CONVERTIDO" });
+    const res = await patchFicha(body.onboarding.id, { status: "CONVERTIDO" });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("validation_failed");
   });

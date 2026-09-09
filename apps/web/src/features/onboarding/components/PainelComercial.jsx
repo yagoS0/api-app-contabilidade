@@ -1,3 +1,4 @@
+import { FluxoComercial } from "./FluxoComercial";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 
@@ -42,12 +43,13 @@ export function PainelComercial({ api, onboardingId, convertido = false }) {
   }
   return <section style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 18, marginBottom: 24 }} aria-label="Atendimento comercial">
     <h2>Atendimento comercial</h2>
+    {api.comercial && <FluxoComercial api={api} onboardingId={onboardingId} />}
     {api.mode === "mock" && <p role="status">Demonstração: consultas simuladas e links válidos somente enquanto esta sessão estiver aberta.</p>}
     <p>O atendimento permanece nesta ficha até a conversão em empresa. As análises mostram a situação na data da consulta.</p>
     {erro && <p role="alert">{erro}</p>}{aviso && <p role="status">{aviso}</p>}
     {!estado ? <Button onClick={() => setGeracao((v) => v + 1)} disabled={!erro}>{erro ? "Recarregar atendimento" : "Carregando atendimento…"}</Button> : <>
       <fieldset disabled={ocupado || convertido} style={{ border: 0, padding: 0 }}>
-        <legend>Etapa e proposta</legend>
+        <legend>Anotações livres do atendimento</legend>
         <label>Etapa comercial<select style={campoStyle} value={fase} onChange={(e) => setFase(e.target.value)}>{Object.entries(FASES).map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
         <label>Proposta e condições<textarea style={campoStyle} value={texto} maxLength={10000} onChange={(e) => setTexto(e.target.value)} /></label>
         <label>Honorários mensais (R$)<input style={campoStyle} inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} /></label>

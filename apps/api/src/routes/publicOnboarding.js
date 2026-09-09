@@ -1,3 +1,4 @@
+import { criarPropostasComerciais } from "../application/onboarding/PropostasComerciaisService.js";
 import { Router, json } from "express";
 import rateLimit from "express-rate-limit";
 import { criarServicoComercial } from "../application/onboarding/ComercialService.js";
@@ -16,5 +17,13 @@ export function createPublicOnboardingRouter({ servico = criarServicoComercial()
   };
   router.get("/onboarding", responder(false));
   router.patch("/onboarding", responder(true));
+  const propostas = criarPropostasComerciais();
+  const proposta = aceitar => async (req, res) => {
+    const token = /^Bearer ([A-Za-z0-9_-]+)$/.exec(String(req.headers.authorization || ""))?.[1];
+    try { res.json({ ok: true, ...await propostas.publico(token, aceitar ? req.body : null) }); }
+    catch (e) { res.status(e instanceof OnboardingError ? e.status : 500).json({ ok: false, message: e instanceof OnboardingError ? e.message : "Não foi possível concluir." }); }
+  };
+  router.get("/proposta", proposta(false));
+  router.post("/proposta/aceitar", proposta(true));
   return router;
 }

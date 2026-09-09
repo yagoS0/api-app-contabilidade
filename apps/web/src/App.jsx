@@ -1,4 +1,5 @@
 import { ConfiguracoesGeraisPage, ConfiguracoesGeraisLayout } from "./features/configuracoes/Configuracoes";
+import { PropostaPublica } from "./features/onboarding/pages/PropostaPublica";
 import { FormularioPublico } from "./features/onboarding/pages/FormularioPublico";
 import { useEffect, useMemo } from "react";
 import { Navigate, useLocation, useParams } from "react-router-dom";
@@ -42,7 +43,7 @@ const TOKEN_STORAGE_KEY = "portal_firm_access_token";
 
 function App() {
   const location = useLocation();
-  return location.pathname === "/onboarding/publico" ? <FormularioPublico api={api} /> : <WorkspaceNavigationProvider><AppInterno /></WorkspaceNavigationProvider>;
+  return location.pathname === "/proposta/publica" ? <PropostaPublica api={api} /> : location.pathname === "/onboarding/publico" ? <FormularioPublico api={api} /> : <WorkspaceNavigationProvider><AppInterno /></WorkspaceNavigationProvider>;
 }
 
 function AppInterno() {

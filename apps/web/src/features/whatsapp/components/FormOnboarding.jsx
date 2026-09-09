@@ -1,3 +1,4 @@
+import { AtendimentoComercial } from "./AtendimentoComercial";
 import { useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { dadosDoInteressado, fraseDoOnboarding, onboardingDaConversa } from "../lib/onboardingDaConversa";
@@ -58,6 +59,7 @@ export function FormOnboarding({ api, conversa, mensagens = [], leitura, onCriad
     } catch (err) { setErro(err?.message || "Não foi possível criar o onboarding."); }
     finally { emCurso.current = false; setOcupado(false); }
   }
+  if (api.comercial && !conversa.portalClientId) return <AtendimentoComercial api={api} conversa={conversa} onCriado={onCriado} candidatos={leitura?.candidatos || []} />;
   if (!dados) return null;
   const frase = fraseDoOnboarding(atual);
   return <section data-testid="form-onboarding" style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12, marginBottom: 12 }}>
