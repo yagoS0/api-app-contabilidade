@@ -92,5 +92,12 @@ export async function prepararTomadorDoCliente(input, deps) {
   const rotulos = { tomadorNome: "nome do tomador", ...Object.fromEntries(CAMPOS_ENDERECO_EXIGIDOS.map(([k, v]) => [`endereco.${k}`, v])) };
   const usadas = new Set(Object.values(origens));
   const fontes = { memoria: usadas.has("memoria"), cnpj: usadas.has("cnpj"), cep: usadas.has("cep") };
-  return { ok: campos.length === 0, ...(campos.length ? { motivo: "DADOS_TOMADOR_PENDENTES", mensagem: `Falta conferir: ${campos.map(k => rotulos[k]).join(", ")}. Peça somente esses dados.` } : {}), tomador, campos, fontes, origens, avisos };
+  // Primeiro CEP e número; não transformar uma consulta indisponível num pedido de código IBGE.
+  const camposParaPerguntar = campos.includes("endereco.CEP")
+    ? campos.filter(k => ["tomadorNome", "endereco.CEP", "endereco.nro"].includes(k)) : campos.filter(k => k !== "endereco.cMun");
+  const encaminharEscritorio = campos.includes("endereco.cMun") && !campos.includes("endereco.CEP");
+  const mensagem = encaminharEscritorio
+    ? "Não consegui conferir o município pelo CEP. O escritório precisa completar essa conferência; não peça código IBGE ao cliente."
+    : `Para completar o tomador, peça somente: ${camposParaPerguntar.map(k => rotulos[k]).join(", ")}. ${campos.includes("endereco.CEP") ? "Com o CEP, o sistema tentará completar rua, bairro e município." : ""}`.trim();
+  return { ok: campos.length === 0, ...(campos.length ? { motivo: "DADOS_TOMADOR_PENDENTES", mensagem, camposParaPerguntar, encaminharEscritorio } : {}), tomador, campos, fontes, origens, avisos };
 }

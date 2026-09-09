@@ -65,6 +65,8 @@ test("CNPJ indisponível: reaproveita coleta e completa CEP/número sem pedir ba
   ctx.servicos.consultarCnpj.mockResolvedValue({ ok: false, motivo: "indisponivel" });
   const primeiro = await executarFerramenta("preparar_emissao", { ...BASICOS, tomadorNome: "Tomador informado" }, ctx);
   expect(primeiro).toMatchObject({ ok: false, motivo: "DADOS_TOMADOR_PENDENTES" });
+  expect(primeiro.camposParaPerguntar).toEqual(["endereco.CEP", "endereco.nro"]);
+  expect(primeiro.mensagem).not.toContain("código IBGE");
   expect(ctx.servicos.criarPendencia).not.toHaveBeenCalled();
   const segundo = await executarFerramenta("preparar_emissao", { ...primeiro.dadosColetados, endereco: { CEP: ENDERECO.CEP, nro: "7655", xCpl: "Sala 219" } }, ctx);
   expect(segundo.ok).toBe(true);
@@ -77,6 +79,15 @@ test("quando só falta número, pergunta apenas número e preserva demais dados"
   const ctx = contexto();
   const r = await executarFerramenta("preparar_emissao", { ...BASICOS, tomadorNome: "Tomador", endereco: { CEP: ENDERECO.CEP } }, ctx);
   expect(r).toMatchObject({ ok: false, campos: ["endereco.nro"], dadosColetados: { descricao: BASICOS.descricao, valor: BASICOS.valor, endereco: { cMun: ENDERECO.cMun } } });
+  expect(ctx.servicos.criarPendencia).not.toHaveBeenCalled();
+});
+
+test("CEP sem município verificável pede ajuda à equipe, sem exigir código técnico do cliente", async () => {
+  const ctx = contexto();
+  ctx.servicos.consultarCep.mockResolvedValue({ ok: false, motivo: "indisponivel" });
+  const r = await executarFerramenta("preparar_emissao", { ...BASICOS, tomadorNome: "Tomador", endereco: { CEP: ENDERECO.CEP, nro: "10" } }, ctx);
+  expect(r).toMatchObject({ ok: false, encaminharEscritorio: true });
+  expect(r.camposParaPerguntar).not.toContain("endereco.cMun");
   expect(ctx.servicos.criarPendencia).not.toHaveBeenCalled();
 });
 
