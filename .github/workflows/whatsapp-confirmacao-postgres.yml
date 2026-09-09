@@ -7,6 +7,7 @@ on:
       - 'apps/api/src/application/whatsapp/**'
       - 'apps/api/prisma/**'
       - 'apps/api/scripts/verify-whatsapp-confirmacao-postgres.js'
+      - 'apps/api/scripts/verify-whatsapp-coleta-postgres.js'
       - '.github/workflows/whatsapp-confirmacao-postgres.yml'
       - 'package-lock.json'
   push:
@@ -43,3 +44,6 @@ jobs:
       - name: Validate fiscal confirmation reservation and concurrent corrections
         working-directory: apps/api
         run: node scripts/verify-whatsapp-confirmacao-postgres.js --url "$DATABASE_URL"
+      - name: Validate guided collection transactions, receipts and recovery
+        working-directory: apps/api
+        run: node scripts/verify-whatsapp-coleta-postgres.js --url "$DATABASE_URL"

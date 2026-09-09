@@ -151,7 +151,7 @@ export async function marcarExpirada(acaoId, { client = prisma } = {}) {
  * CONFIRMA (reserva atômica) E EXECUTA. Devolve o que dizer ao cliente e se o fio vai à fila humana.
  * @returns {Promise<{executou:boolean, texto:string, filaHumana:boolean, resultado:object|null}>}
  */
-export async function confirmarEExecutar({ acaoId, conversaId = null, portalClientId = null, confirmacao = null, agora = new Date(), client = prisma, log = logPadrao, executores = null, deps = DEPS_PADRAO } = {}) {
+export async function confirmarEExecutar({ acaoId, conversaId = null, portalClientId = null, userId = null, confirmacao = null, agora = new Date(), client = prisma, log = logPadrao, executores = null, deps = DEPS_PADRAO, antesDeExecutar = null } = {}) {
   // O conjunto visto pelo turno é conferido no MESMO comando que reserva o ato. Uma leitura
   // anterior separada deixa uma correção entrar entre o SELECT e o UPDATE. Sem exclusão por
   // respondidaPelaIaEm: outro consumidor da caixa não pode tornar uma correção invisível.
@@ -166,6 +166,7 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
       // ⚠ A EMPRESA TAMBÉM ENTRA: o escritório pode ter RE-VINCULADO o fio a outra empresa nos 10
       // minutos da pendência, e aí o ato sairia no CNPJ em que ela nasceu, não no do fio de agora.
       ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+      ...(userId ? { userId: String(userId) } : {}),
       ...(entradasNovas ? { conversa: { is: {
         escopoVerificado: true, excluidaEm: null, atendidaPor: null, atendidaDesde: null,
         ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
@@ -183,6 +184,7 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
         id: String(acaoId), status: STATUS.PENDENTE,
         ...(conversaId ? { conversaId: String(conversaId) } : {}),
         ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+        ...(userId ? { userId: String(userId) } : {}),
         conversa: { is: { mensagens: { some: entradasNovas } } },
       }, data: { status: STATUS.CANCELADA } });
       if (cancelada.count) return { executou: false, codigo: "CONFIRMACAO_SUPERADA", texto: "Recebi uma nova mensagem depois da confirmação e não executei o pedido. Vamos conferir as alterações antes de confirmar novamente.", filaHumana: false, resultado: null };
@@ -201,7 +203,7 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
     permissaoAtual = { ok: false, codigo: "RECONFERENCIA_FALHOU" };
   }
   if (!permissaoAtual?.ok) {
-    await client.acaoPendenteWhatsapp.update({ where: { id: acao.id }, data: { status: STATUS.CANCELADA, resultado: { erro: "RECONFERENCIA_CONTATO", codigo: permissaoAtual?.codigo || null } } });
+    await client.acaoPendenteWhatsapp.update({ where: { id: acao.id }, data: { status: STATUS.CANCELADA, resultado: { erro: "RECONFERENCIA_CONTATO", codigo: permissaoAtual?.codigo || null }, respostaAoCliente: TEXTO_RECONFERENCIA, encaminharHumano: true } });
     return { executou: false, texto: TEXTO_RECONFERENCIA, filaHumana: true, resultado: { erro: "RECONFERENCIA_CONTATO", codigo: permissaoAtual?.codigo || null } };
   }
 
@@ -214,7 +216,7 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
       autorizacao = { ok: false, codigo: "RECONFERENCIA_FALHOU" };
     }
     if (!autorizacao?.ok) {
-      await client.acaoPendenteWhatsapp.update({ where: { id: acao.id }, data: { status: STATUS.CANCELADA, resultado: { erro: "RECONFERENCIA", codigo: autorizacao?.codigo || null } } });
+      await client.acaoPendenteWhatsapp.update({ where: { id: acao.id }, data: { status: STATUS.CANCELADA, resultado: { erro: "RECONFERENCIA", codigo: autorizacao?.codigo || null }, respostaAoCliente: TEXTO_RECONFERENCIA, encaminharHumano: true } });
       log?.warn?.({ acaoId: acao.id, tipo: acao.tipo, codigo: autorizacao?.codigo }, "assistente: autorização mudou entre o pedido e a confirmação");
       return { executou: false, texto: TEXTO_RECONFERENCIA, filaHumana: true, resultado: { erro: "RECONFERENCIA", codigo: autorizacao?.codigo || null } };
     }
@@ -222,6 +224,27 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
 
   const exec = executores || EXECUTORES;
   const executor = exec[acao.tipo];
+  // O lease/corte pode mudar durante as reconferências acima. Uma recusa aqui ainda prova que
+  // nenhum executor foi chamado; persiste essa diferença antes de devolver o erro ao chamador,
+  // que também precisa impedir uma resposta automática depois de um atendimento humano.
+  if (antesDeExecutar) {
+    try {
+      await antesDeExecutar();
+    } catch (err) {
+      const superada = err?.codigo === "CONFIRMACAO_SUPERADA";
+      const texto = superada
+        ? "Recebi uma nova mensagem depois da confirmação e não executei o pedido. Vamos conferir as alterações antes de confirmar novamente."
+        : "Não executei o pedido porque o atendimento ou a autorização mudou antes da execução. A equipe vai conferir antes de continuar.";
+      await client.acaoPendenteWhatsapp.update({ where: { id: acao.id }, data: {
+        status: STATUS.CANCELADA,
+        resultado: { erro: "EXECUCAO_INTERROMPIDA", codigo: err?.codigo || err?.code || "ACESSO_ALTERADO" },
+        respostaAoCliente: texto,
+        encaminharHumano: !superada,
+      } });
+      if (superada) return { executou: false, codigo: "CONFIRMACAO_SUPERADA", texto, filaHumana: false, resultado: null };
+      throw err;
+    }
+  }
   let desfecho;
   try {
     desfecho = await executor({ acao, log, client, deps, agora });
@@ -231,7 +254,7 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
   }
   await client.acaoPendenteWhatsapp.update({
     where: { id: acao.id },
-    data: { status: STATUS.EXECUTADA, executadaEm: new Date(), resultado: desfecho.resultado ?? null },
+    data: { status: STATUS.EXECUTADA, executadaEm: new Date(), resultado: desfecho.resultado ?? null, respostaAoCliente: desfecho.texto, encaminharHumano: Boolean(desfecho.filaHumana) },
   });
   return { executou: true, texto: desfecho.texto, filaHumana: Boolean(desfecho.filaHumana), resultado: desfecho.resultado ?? null };
 }

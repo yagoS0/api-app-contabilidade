@@ -1,14 +1,14 @@
 # Atendimento do cliente com uso de IA apenas quando necessário
 
-## Situação e escopo desta correção
+## Fluxo implementado
 
 O menu atual executa consultas por identificador sem chamar um modelo. O atalho de emissão apenas enviava uma instrução e deixava a coleta seguinte para a IA. A preparação também não recuperava o tomador salvo nem os dados tributários usados no portal.
 
-Esta correção entrega funções de preparação reutilizáveis: memória do tomador por empresa/documento, CNPJ com fonte pública alternativa, CEP parcial e leitura fiscal anterior à confirmação. A ferramenta `preparar_emissao` usa essas funções. A emissão continua dependendo do código de confirmação e das autorizações já existentes. Nenhuma emissão é executada na preparação.
+O menu agora conduz uma coleta persistente, sem modelo, usando as funções compartilhadas: memória do tomador por empresa/documento, CNPJ com fonte pública alternativa, CEP parcial e leitura fiscal anterior à confirmação. A ferramenta `preparar_emissao` também usa essas funções. A emissão continua dependendo do código de confirmação e das autorizações já existentes. Nenhuma emissão é executada na preparação.
 
-O roteiro determinístico abaixo é a próxima etapa proposta. **A coleta guiada persistente ainda não está implementada nesta alteração.**
+`coletaEmissaoWhatsapp` interpreta os campos e decide a próxima pergunta. `EmissaoGuiadaWhatsappService` persiste cada etapa antes da resposta. `ConfirmacaoGuiadaWhatsappService` executa o protocolo de confirmação existente sem chamar o assistente ou reservar orçamento de IA.
 
-## Conversa proposta, sem modelo
+## Conversa sem modelo
 
 1. Cliente escolhe **Emitir nota** ou escreve um pedido simples reconhecido, como “quero emitir uma nota”.
 2. Sistema pede **CPF/CNPJ ou tomador salvo**. Recupera o cadastro da própria empresa; consulta CNPJ se necessário. Nome e endereço que já existem não são perguntados novamente.
@@ -27,21 +27,21 @@ Esse percurso não consome tokens de IA. Eventuais custos do canal WhatsApp cont
 | --- | --- |
 | Clique no menu, documento digitado, valor, competência ou opção de perfil | Regras e funções do sistema |
 | Dado já salvo ou consulta pública de CNPJ/CEP | Leitura direta, sem modelo |
-| Pergunta prevista e aprovada na biblioteca | Mensagem rápida cadastrada |
-| Texto que não pôde ser entendido após esclarecimento simples | IA recebe somente o pedido e o rascunho necessário |
+| Dúvida simples sobre a coleta ou competência | Explicação fixa e última pergunta |
+| Pedido de outro assunto ou conversa livre após pausa | Roteamento existente do chat; se a IA estiver indisponível, equipe |
 | Decisão tributária, alteração fiscal, negociação ou solicitação de pessoa | Contador, com resumo da coleta |
 | Correção objetiva durante a revisão | Atualiza o rascunho e substitui resumo/código |
 
-Texto livre permanece permitido. Entrar no fluxo não obriga o cliente a repetir números de opções. A IA não é acionada por todo erro de digitação nem por indisponibilidade de uma consulta; primeiro entram validação, resposta fixa e preenchimento manual.
+Texto livre permanece permitido. Entrar no fluxo não obriga o cliente a repetir números de opções. A IA não é acionada por erro de digitação nem por indisponibilidade de uma consulta; primeiro entram validação, resposta fixa e preenchimento manual. “Pausar” guarda a coleta; “continuar emissão” retoma. Trocar de assunto cancela a autorização pendente e preserva os dados. A biblioteca comercial existente não foi alterada nesta entrega.
 
-## Encaixe no código e ordem de implementação
+## Persistência e implantação
 
-1. **Base compartilhada (esta alteração):** `application/tomador/prepararTomadorDoCliente.js`, `consultarCep.js`, `consultaCnpj.js` e `application/nfse/preparacaoFiscalDoCliente.js`. A ferramenta de IA usa a mesma preparação que o futuro coletor guiado.
-2. **Rascunho persistente:** criar armazenamento próprio para emissão com conversa, empresa, usuário, dados, origem por campo, etapa, versão e expiração. Não reutilizar pendência confirmável ou metadados comerciais para dados incompletos. Persistir antes de responder; reinício da API não perde a coleta.
-3. **Coletor sem IA:** acoplar ao `MenuWhatsappService`, sob o lease da conversa e antes do encaminhamento de texto ao assistente em `ProcessarEventoWhatsappService`. Revalidar vínculo, acesso e atendimento humano em cada passo. Mensagem repetida não avança duas etapas.
-4. **Preparação e confirmação:** coletor chama as funções compartilhadas; somente dados completos criam `AcaoPendenteWhatsapp`. Reutilizar o serviço de confirmação, seu cancelamento e a proteção contra código antigo ou confirmação junto com correção.
-5. **Continuação livre:** manter rascunho ao encaminhar à IA ou ao contador. Campos que vieram de consulta devem conservar a origem entre turnos; a mera passagem pelo modelo não os torna dados digitados pelo cliente.
-6. **Piloto e medição:** ativar a coleta guiada nos números autorizados e medir conclusão sem modelo, campos repetidos, consultas malsucedidas, encaminhamentos, tempo até resumo e consumo por atendimento. Expandir depois dos critérios abaixo.
+1. Aplicar a migração aditiva `20260909200000_whatsapp_guided_issuance` e gerar Prisma antes de iniciar a API. O comando de produção já executa as duas etapas.
+2. `RascunhoEmissaoWhatsapp` mantém dados, origem por campo, conversa/empresa/usuário, corte de automação, versão e validade de 24 horas. `EtapaEmissaoWhatsapp` tem recibo único por entrada. Rascunho, pendência validada e recibo são gravados juntos; falha reverte a transição.
+3. O coletor roda sob o lease `ia:conversa`, antes do encaminhamento ao assistente. Vínculo, contato, papel, permissões, janela e atendimento humano são reconferidos antes das leituras e da saída. Versão otimista evita sobrescrever outra etapa; cliques de versões antigas são recusados.
+4. A correção invalida o código antes das consultas. Somente uma mensagem textual `CONFIRMAR código` pode reservar o ato; mensagem anterior ao resumo ou acompanhada de correção não autoriza. A resposta final fica persistida na ação para recuperação após reinício. Reserva sem desfecho exige conferência humana e nunca é repetida automaticamente.
+5. O piloto usa `INTEGRACAO_WHATSAPP_MENU` e as listas já autorizadas de empresas/telefones. Não amplia o piloto nem altera o teto de IA. O percurso guiado funciona com a IA desligada. Recibos registram motivos das transições, permitindo medir conclusão e encaminhamento sem ler conteúdo privado.
+6. Não há mudança no frontend. O histórico mostra dados fornecidos, tomador recuperado, perguntas e resumo; encaminhamentos do coletor incluem os dados já coletados. Não foi criado painel para editar rascunhos nem alterado o fluxo comercial.
 
 ## Critérios de aceite do coletor
 
@@ -52,3 +52,5 @@ Texto livre permanece permitido. Entrar no fluxo não obriga o cliente a repetir
 - Confirmação duplicada, webhook repetido, interrupção/reinício e troca de empresa não duplicam emissão nem expõem dados.
 - Atendimento humano, vínculo revogado ou configuração incompleta interrompem o ato, preservando coleta útil para a equipe.
 - Testes de conversação usam transportes e modelos simulados, com acesso ao Claude bloqueado. Nenhum teste de desenvolvimento precisa emitir nota ou mandar mensagens reais.
+
+Validação: testes puros do parser, conversação com persistência simulada, ferramentas/validador reais com fornecedores sintéticos, regressão de WhatsApp e script `verify-whatsapp-coleta-postgres.js` no PostgreSQL descartável do CI. Esse script recusa destinos fora do banco local de teste e bloqueia HTTP. Os testes não homologam a resposta de uma prefeitura nem enviam mensagens a clientes.

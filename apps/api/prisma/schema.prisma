@@ -1277,6 +1277,8 @@ model ConversaWhatsapp {
   atendente    User?              @relation("ConversaAtendidaPor", fields: [atendidaPor], references: [id], onDelete: SetNull)
   mensagens    MensagemWhatsapp[]
   acoesPendentes AcaoPendenteWhatsapp[]
+  rascunhoEmissao RascunhoEmissaoWhatsapp?
+  etapasEmissao EtapaEmissaoWhatsapp[]
   chamadasIa   ChamadaIa[]
 
   /// A fila "não vinculados" é uma CONSULTA (`portalClientId IS NULL`), não uma tabela: guardar o
@@ -1509,6 +1511,8 @@ model AcaoPendenteWhatsapp {
   /// O desfecho da execução (o que a rota devolveria). `indeterminado: true` no TRANSPORTE.
   resultado              Json?
   mensagemConfirmacaoId  String?
+  respostaAoCliente      String?
+  encaminharHumano       Boolean   @default(false)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
@@ -1519,6 +1523,39 @@ model AcaoPendenteWhatsapp {
   @@index([conversaId, status])
   @@index([expiraEm])
   @@map("acoes_pendentes_whatsapp")
+}
+
+/// Coleta incompleta não autoriza emissão. Uma versão corrente por conversa, sob lease.
+model RascunhoEmissaoWhatsapp {
+  id                 String   @id @default(uuid())
+  conversaId         String   @unique
+  portalClientId     String
+  userId             String
+  corteAutomacao      DateTime?
+  estado             Json
+  versao             Int      @default(1)
+  ultimaMensagemEm   DateTime
+  expiraEm           DateTime
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  conversa ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  @@index([portalClientId])
+  @@index([expiraEm])
+  @@map("rascunhos_emissao_whatsapp")
+}
+
+/// Recibo da transição, salvo junto do rascunho antes da saída. Reentrega não avança a coleta.
+model EtapaEmissaoWhatsapp {
+  id             String   @id @default(uuid())
+  mensagemId     String   @unique
+  conversaId     String
+  portalClientId String
+  userId         String
+  resultado      Json
+  createdAt      DateTime @default(now())
+  conversa ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  @@index([conversaId, createdAt])
+  @@map("etapas_emissao_whatsapp")
 }
 
 /// UMA CHAMADA AO MODELO — registro e teto de custo, no molde de `serpro_chamadas`.
