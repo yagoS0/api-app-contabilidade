@@ -241,13 +241,14 @@ function Chip({ item, onAbrir, arrastavel, faixa, mostrarPeriodo = false }) {
         ...(estaVencida(item) ? { boxShadow: `inset 0 0 0 1px ${COR.vencida}` } : null),
         color: COR.texto, fontSize: "0.82rem", lineHeight: 1.45, cursor: arrastavel ? "grab" : "pointer",
         whiteSpace: mostrarPeriodo ? "normal" : "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        textDecoration: item.resolvido ? "line-through" : "none",
+        textDecoration: "none",
+        ...(item.resolvido ? { background: "var(--bg-subtle)", borderColor: COR.borda, color: COR.suave } : {}),
         marginBottom: 2,
       }}
     >
       {faixa?.continuaAntes && <span aria-label="Continua da semana anterior">←</span>}
       <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-        {simboloDoItem(item)} {rotuloDoItem(item)}
+        {item.resolvido ? "✓ " : ""}{simboloDoItem(item)} {rotuloDoItem(item)}
         {(mostrarPeriodo || faixa) && <span style={{ color: COR.suave }}> · {periodoDoEvento(item)}</span>}
       </span>
       {faixa?.continuaDepois && <span aria-label="Continua na próxima semana" style={{ marginLeft: "auto" }}>→</span>}
@@ -362,7 +363,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
   const [companyId, setCompanyId] = useState(companyIdFixo || initialContext?.empresaFiltro || "");
   const [categorias, setCategorias] = useState(() => new Set(initialContext?.categorias || CATEGORIAS.map((c) => c.chave)));
   const [sidebarAberta, setSidebarAberta] = useState(() => initialContext?.painelAberto ?? false);
-  const [mostrarConcluidas, setMostrarConcluidas] = useState(() => initialContext?.mostrarConcluidas ?? true);
+  const [mostrarConcluidas, setMostrarConcluidas] = useState(() => initialContext?.mostrarConcluidas ?? false);
   const [diaAberto, setDiaAberto] = useState(null);
   const [estreita, setEstreita] = useState(ehTelaEstreita);
 
@@ -831,8 +832,8 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
        Agenda é uma lista. A grade anual rola DENTRO do contêiner dela, como sempre rolou.
        ⚠⚠ E ISTO NÃO TEM COMO SER TRAVADO POR TESTE AQUI: o jsdom não faz layout — `scrollWidth` é
        sempre 0. Foi achado e conferido no navegador, e é o motivo de este comentário existir. */
-    <section aria-label="Calendário fiscal" style={{ width: "100%", maxWidth: "100%", margin: "0 auto" }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
+    <section className="calendar-workspace" aria-label="Calendário fiscal" style={{ width: "100%", maxWidth: "100%", margin: "0 auto" }}>
+      <div className="calendar-workspace__actions">
         {<>
           <button type="button" style={btn(false)} onClick={() => abrirCentral(false)}>Tarefas e obrigações</button>
           <button type="button" style={btn(true)} onClick={() => abrirCentral(true)}>+ Nova tarefa ou obrigação</button>
@@ -840,7 +841,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
         {visao !== "ano" && <button type="button" style={btn(false)} onClick={() => setCriando({ data: referencia })}>+ Marco / lembrete</button>}
       </div>
       {/* Cabeçalho: navegação à esquerda, granularidade à direita — como no Google Calendar. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+      <div className="calendar-workspace__navigation">
         {temSidebar && (
           <button
             type="button" onClick={() => setSidebarAberta((v) => !v)} style={btn(false)}
@@ -852,12 +853,13 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
         <button type="button" onClick={() => navegar(-1)} style={btn(false)} title="Anterior">‹</button>
         <button type="button" onClick={() => navegar(1)} style={btn(false)} title="Próximo">›</button>
         <button type="button" onClick={() => setReferencia(hojeISO())} style={btn(false)} title="Hoje (T)">Hoje</button>
-        <strong style={{ color: COR.texto, fontSize: "1rem", textTransform: "capitalize", marginLeft: 4 }}>
+        <strong className="calendar-workspace__period" style={{ color: COR.texto, fontSize: "1rem", marginLeft: 4 }}>
+          <small>{visao === "ano" ? "Ano da carteira" : "Vencimentos e tarefas"}</small>
           {periodo}
         </strong>
         {carregando && <span style={{ color: COR.suave, fontSize: "0.75rem" }}>carregando…</span>}
 
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <div className="calendar-workspace__scope">
           {/* Travado numa empresa não tem o que escolher — o seletor sairia mentindo que dá. */}
           {!companyIdFixo && (
             /* ⚠⚠ NO MODO ANO ELE FICA DESABILITADO, COM O MOTIVO — e nunca escondido.
@@ -905,7 +907,9 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
           "apurado", e a grade anual carrega a legenda própria dela. Deixar esta legenda acesa
           ensinaria a ler a tela de baixo com a chave da tela de cima. */}
       {visao !== "ano" && (
-      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 10, paddingBottom: 10, borderBottom: `1px solid ${COR.borda}` }}>
+      <details className="calendar-workspace__filters">
+        <summary>Filtros e legenda <span>· {categorias.size} tipos · {mostrarConcluidas ? "inclui concluídas" : "concluídas ocultas"}</span></summary>
+      <div className="calendar-workspace__filter-options">
         {CATEGORIAS.map((c) => (
           <label
             key={c.chave}
@@ -938,6 +942,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
           ))}
         </span>
       </div>
+      </details>
       )}
 
       {/* ⚠ O hex literal `#FF4757` saiu daqui em 01/09/2026. Ele é o vizinho de UM DÍGITO de

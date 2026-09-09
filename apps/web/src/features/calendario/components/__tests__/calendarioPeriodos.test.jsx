@@ -74,7 +74,10 @@ test("concluir qualquer faixa chama o ID uma vez e recarrega todas as faixas", a
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Detalhe" })).not.toBeInTheDocument());
   expect(api.concluirOcorrencia).toHaveBeenCalledTimes(1);
   expect(api.concluirOcorrencia).toHaveBeenCalledWith("oc-1");
-  await waitFor(() => screen.getAllByRole("button", { name: /Preparar folha/ }).forEach((faixa) => expect(faixa).toHaveStyle({ textDecoration: "line-through" })));
+  await waitFor(() => expect(screen.queryByRole("button", { name: /Preparar folha/ })).not.toBeInTheDocument());
+  screen.getByText("Filtros e legenda").closest("details").open = true;
+  fireEvent.click(screen.getByRole("checkbox", { name: "Mostrar concluídas" }));
+  expect(screen.getAllByRole("button", { name: /Preparar folha/ })).toHaveLength(2);
   fireEvent.click(screen.getByRole("checkbox", { name: "Mostrar concluídas" }));
   expect(screen.queryByRole("button", { name: /Preparar folha/ })).not.toBeInTheDocument();
 });
