@@ -12,6 +12,8 @@ import { sessaoDoContato, fraseSemSessao } from "../assistente/sessaoDoContato.j
 import { definicoes, executarFerramenta } from "../assistente/ferramentas/index.js";
 import { expedienteDoEscritorio } from "../assistente/expediente.js";
 import { adquirirLease, renovarLease, liberarLease } from "./WhatsappLeaseService.js";
+import { processarEmissaoGuiada } from "./EmissaoGuiadaWhatsappService.js";
+import { ehPedidoDeEmissao } from "../assistente/coletaEmissaoWhatsapp.js";
 
 export const IDS_MENU_WHATSAPP = Object.freeze({
   CLIENTE_GUIAS_MES: "altan.client.guides.current.v1",
@@ -67,6 +69,7 @@ export function acaoDoTextoLivre(texto, { cliente = false } = {}) {
   if (!t) return null;
   if (/^(oi|ola|bom dia|boa tarde|boa noite|menu|ajuda|comecar|inicio)$/.test(t)) return "MENU";
   if (cliente) {
+    if (ehPedidoDeEmissao(texto)) return "EMISSAO";
     if (/^(?:(?:quero|preciso|gostaria de) )?(?:falar|conversar) com (?:o |a |um |uma )?(?:contador|contadora|atendente|equipe|pessoa|humano|escritorio|alguem)(?: de verdade| real)?$/.test(t)
       || /^(atendente|contador|contadora|humano|equipe|atendimento humano)$/.test(t)
       || /^(?:chama|chame|chamar) (?:o |a |um |uma )?(?:contador|contadora|atendente|equipe)$/.test(t)) return "EQUIPE";
@@ -234,7 +237,7 @@ export async function responderMenuWhatsapp(args = {}) {
   }
 }
 
-async function atenderMenu({ registro, interacao = null, texto = null, agora = new Date(), logger = console, client = prisma, cloud = null, executar = executarFerramenta, conferirJanela = janelaDaConversa, resolverVinculo = resolverVinculoPorTelefone, conferirLease, textoLivreDisponivel = true } = {}) {
+async function atenderMenu({ registro, interacao = null, texto = null, agora = new Date(), logger = console, client = prisma, cloud = null, executar = executarFerramenta, conferirJanela = janelaDaConversa, resolverVinculo = resolverVinculoPorTelefone, conferirLease, textoLivreDisponivel = true, coleta = processarEmissaoGuiada, servicosColeta = {} } = {}) {
   const conversa = registro?.conversa;
   const mensagem = registro?.mensagem;
   if (!conversa?.id || !mensagem?.id || mensagem.direcao === "out") return { tratado: false };
@@ -261,20 +264,6 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
   const idRecebido = String(interacao?.id || "").trim();
   const menuExplicito = !idRecebido && pediuMenuExplicitamente(texto);
   let acao = idRecebido ? ACAO_POR_ID[idRecebido] || "ID_DESCONHECIDO" : acaoDoTextoLivre(texto, { cliente });
-  if (cliente && !idRecebido && !menuExplicito && acao !== "EQUIPE" && textoLivreDisponivel) {
-    const pendente = await client.acaoPendenteWhatsapp.findFirst({ where: { conversaId: conversa.id, status: "pendente" }, select: { id: true } });
-    if (pendente) return { tratado: false, motivo: "PEDIDO_AGUARDANDO_CONFIRMACAO" };
-  }
-  if (!acao && cliente && texto?.trim() && !textoLivreDisponivel) acao = "EQUIPE";
-  // A apresentação não consome o primeiro pedido substantivo. O webhook enfileira a IA
-  // depois deste retorno; em uma reentrega, o menu inicial existente não é enviado de novo.
-  if (!acao && cliente && texto?.trim()) {
-    const recente = await client.mensagemWhatsapp.findFirst({ where: { conversaId: conversa.id, direcao: "out", tipo: "interactive", registradaEm: { gte: new Date(agora.getTime() - 86400000) } }, select: { id: true } });
-    const inicioAnterior = await client.mensagemWhatsapp.findFirst({ where: { turnoIaId: `menu-inicio:${mensagem.id}`, direcao: "out" }, select: { id: true } });
-    if (!recente && !inicioAnterior) acao = "INICIO_LIVRE";
-  }
-  if (!acao) return { tratado: false };
-
   const clienteId = idRecebido.startsWith("altan.client.");
   const leadId = idRecebido.startsWith("altan.lead.");
   if ((clienteId && !cliente) || (leadId && cliente)) acao = "ESCOPO_INVALIDO";
@@ -327,6 +316,35 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     await client.mensagemWhatsapp.updateMany({ where: { id: mensagem.id, respondidaPelaIaEm: null }, data: { respondidaPelaIaEm: new Date() } });
     return { tratado: true, motivo: "SEM_SESSAO_CLIENTE", acao: "EQUIPE" };
   }
+
+  // A coleta tem prioridade sobre orçamento/flag do modelo e permanece no piloto do menu.
+  if (cliente && ferramentaLiberada(sessao, "preparar_emissao")) {
+    const pausar = ["EQUIPE", "MENU", "MAIS", "GUIAS_MES", "SITUACAO_FISCAL", "QUANTO_DEVO", "NOTAS", "DOCUMENTOS", "RECALCULO", "CANCELAMENTO"].includes(acao);
+    const guiada = await coleta({ conversa, mensagem, sessao, texto: texto || "", interacao, iniciar: acao === "EMISSAO", pausar,
+      agora, client, executar, servicos: servicosColeta, log: logger, conferirAcesso: () => antesDeEnviar("preparar_emissao", assinatura) });
+    if (guiada.tratado) {
+      if (guiada.filaHumana) await encaminhar();
+      const corpo = guiada.texto;
+      const opcoes = corpo.length <= 1024 ? (guiada.opcoes || []).slice(0, 10).map((o, i) => ({ ...o, titulo: `${i + 1}. ${o.titulo}` })) : [];
+      await enviar({ corpo, ferramenta: "preparar_emissao", tipo: opcoes.length ? "interactive" : "text", chamada: () => opcoes.length > 3
+        ? whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: corpo, tituloBotao: "Escolher", tituloSecao: "Emissão", linhas: opcoes.map(o => ({ ...o, titulo: o.titulo.slice(0, 24) })) })
+        : opcoes.length ? whatsapp.enviarBotoes({ telefone: conversa.telefoneE164, texto: corpo, botoes: opcoes.map(o => ({ ...o, titulo: o.titulo.slice(0, 20) })) })
+          : whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
+      await client.mensagemWhatsapp.updateMany({ where: { id: mensagem.id, respondidaPelaIaEm: null }, data: { respondidaPelaIaEm: new Date() } });
+      return { tratado: true, motivo: guiada.motivo, acao: "EMISSAO_GUIADA" };
+    }
+  }
+  if (cliente && !idRecebido && !menuExplicito && acao !== "EQUIPE" && textoLivreDisponivel) {
+    const pendente = await client.acaoPendenteWhatsapp.findFirst({ where: { conversaId: conversa.id, status: "pendente" }, select: { id: true } });
+    if (pendente) return { tratado: false, motivo: "PEDIDO_AGUARDANDO_CONFIRMACAO" };
+  }
+  if (!acao && cliente && texto?.trim() && !textoLivreDisponivel) acao = "EQUIPE";
+  if (!acao && cliente && texto?.trim()) {
+    const recente = await client.mensagemWhatsapp.findFirst({ where: { conversaId: conversa.id, direcao: "out", tipo: "interactive", registradaEm: { gte: new Date(agora.getTime() - 86400000) } }, select: { id: true } });
+    const inicioAnterior = await client.mensagemWhatsapp.findFirst({ where: { turnoIaId: `menu-inicio:${mensagem.id}`, direcao: "out" }, select: { id: true } });
+    if (!recente && !inicioAnterior) acao = "INICIO_LIVRE";
+  }
+  if (!acao) return { tratado: false };
 
   if (acao === "INICIO_LIVRE") {
     const corpo = `Olá${sessao.contatoNome ? `, ${sessao.contatoNome}` : ""}! Vou atender seu pedido. Estas opções também estão disponíveis:`;
