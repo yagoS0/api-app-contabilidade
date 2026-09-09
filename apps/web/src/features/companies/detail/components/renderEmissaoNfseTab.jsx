@@ -149,40 +149,6 @@ export function EmissaoNfseTab({
 
   useEffect(() => { carregarPerfis(); }, [carregarPerfis]);
 
-  const criarDoCadastro = useCallback(async (nome) => {
-    if (!portalClientId || !nome) return;
-    setSalvandoPerfil(true);
-    try {
-      // ⚠ O ponto de partida é o que a empresa JÁ usa — `derivadoDoCadastro` vem calculado pela
-      // rota, nunca montado aqui. Criar um perfil não muda nada no XML: a integração nasce
-      // desligada, e mesmo ligada este perfil produz o que o cadastro já produzia.
-      const derivado = perfis?.derivadoDoCadastro || {};
-      await api.criarPerfilEmissao(portalClientId, {
-        nome,
-        codigoServicoNacional: derivado.codigoServicoNacional,
-        codigoServicoMunicipal: derivado.codigoServicoMunicipal ?? null,
-        cLocPrestacao: derivado.cLocPrestacao ?? null,
-        regEspTrib: derivado.regEspTrib ?? null,
-        regApTribSN: derivado.regApTribSN ?? null,
-        tribISSQN: derivado.tribISSQN ?? null,
-      });
-      await carregarPerfis();
-    } finally {
-      setSalvandoPerfil(false);
-    }
-  }, [portalClientId, perfis, carregarPerfis]);
-
-  const marcarPadrao = useCallback(async (perfilId) => {
-    if (!portalClientId || !perfilId) return;
-    setSalvandoPerfil(true);
-    try {
-      await api.salvarPerfilEmissao(portalClientId, perfilId, { padrao: true });
-      await carregarPerfis();
-    } finally {
-      setSalvandoPerfil(false);
-    }
-  }, [portalClientId, carregarPerfis]);
-
   async function salvarPerfil(perfilId, corpo) {
     setSalvandoPerfil(true);
     try {
@@ -193,25 +159,15 @@ export function EmissaoNfseTab({
   }
 
   return (
-    <section className="company-form-page__panel">
+    <section className="company-form-page__panel nfse-settings">
       <div className="company-form-page__intro">
         <h1 className="company-form-page__title">Emissão de NFS-e</h1>
         <p className="company-form-page__description">
-          O que esta empresa precisa ter configurado para o sistema emitir nota de serviço em nome
-          dela. ⚠ Esta tela <strong>não emite nada</strong> — ela guarda a configuração que a
-          emissão usa.
+          Organize os perfis de serviço e os parâmetros usados na emissão de notas desta empresa.
         </p>
       </div>
 
-      <PainelProximaDps
-        dados={empresaDosPerfis === portalClientId ? perfis : null}
-        carregando={carregandoPerfis}
-        podeEditar={podeEditar}
-        salvando={salvandoPerfil}
-        onCriarDoCadastro={criarDoCadastro}
-        onMarcarPadrao={marcarPadrao}
-      />
-
+      {carregandoPerfis ? <p role="status">Carregando perfis de emissão…</p> : empresaDosPerfis !== portalClientId || !perfis ? <div role="status"><p>Não foi possível carregar os perfis de emissão.</p><Button variant="secondary" onClick={carregarPerfis}>Recarregar perfis</Button></div> : null}
       <EditorPerfilEmissao
         key={portalClientId}
         dados={empresaDosPerfis === portalClientId ? perfis : null}
@@ -220,10 +176,14 @@ export function EmissaoNfseTab({
         onSalvar={salvarPerfil}
       />
 
+      <details className="nfse-section nfse-diagnostics"><summary>Conferir os dados da próxima nota</summary>
+        <PainelProximaDps dados={empresaDosPerfis === portalClientId ? perfis : null} carregando={carregandoPerfis} mostrarPerfis={false} />
+      </details>
+
       {!podeEditar ? (
         <p className="text-muted">Apenas admin ou contador pode alterar a configuração de emissão.</p>
       ) : (
-        <form className="form-grid two-col" onSubmit={submeter}>
+        <details className="nfse-section nfse-base-settings"><summary>Serviços habilitados e configurações gerais</summary><form className="form-grid two-col" onSubmit={submeter}>
           <CamposEmissaoNfse
             codigoServicoNacional={form.codigoServicoNacional}
             codigosServicoNacional={form.codigosServicoNacional}
@@ -259,7 +219,7 @@ export function EmissaoNfseTab({
             onSetEmissaoCliente={onSetEmissaoCliente}
             emissaoClienteSaving={emissaoClienteSaving}
           />
-        </form>
+        </form></details>
       )}
     </section>
   );

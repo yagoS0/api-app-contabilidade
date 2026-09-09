@@ -1,5 +1,11 @@
 # CLAUDE.md — Empresas (apps/web/src/features/companies)
 
+## Perfis de emissão — UI/UX, 09/09/2026
+
+A aba de emissão usa uma única entrada de criação, em EditorPerfilEmissao. O editor parte dos valores existentes e organiza serviço, tributação municipal, federal e IBS/CBS em seções recolhíveis. O diagnóstico da próxima DPS e a configuração geral ficam em seções próprias; os respectivos contratos de gravação e a confirmação de liberação ao cliente permanecem separados. A criação simplificada de PainelProximaDps fica desativada nesta aba por mostrarPerfis=false.
+
+emissao-nfse.css limita controles e grades à largura disponível, inclusive dentro do shell de configurações; checkboxes não herdam width:100%. Sugestões NBS/IBS refletem os valores do formulário sem escolher CST automaticamente. Valores condicionais já preenchidos continuam editáveis.
+
 ## Ajuste de UI/UX da carteira — 09/09/2026
 
 A home integra `WorkspaceHomeLink` ao cabeçalho (logo, título/competência e conta); o provider não cria uma segunda faixa em `/` ou `/companies`. O retorno das demais páginas continua preservando a visão da carteira.

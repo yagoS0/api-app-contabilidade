@@ -124,6 +124,9 @@ describe("vincular — a fila esvazia por aqui", () => {
     fireEvent.click(screen.getByTestId("conversa-cv3"));
     const fio = await screen.findByTestId("fio");
     const form = within(fio).getByTestId("form-vincular");
+    expect(form).not.toBeVisible();
+    fireEvent.click(within(fio).getByRole("button", { name: "Atendimento e cadastro" }));
+    fireEvent.click(screen.getByText("Vincular a uma empresa existente"));
     const botao = within(form).getByRole("button", { name: /Vincular/ });
     expect(botao).toBeDisabled();
     fireEvent.change(within(form).getByLabelText("Empresa do vínculo"), { target: { value: "pc-1" } });

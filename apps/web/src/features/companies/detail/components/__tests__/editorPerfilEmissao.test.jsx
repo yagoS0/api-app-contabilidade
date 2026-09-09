@@ -17,7 +17,9 @@ it("sugestão só preenche após escolha; CST permanece decisão do contador", a
   fireEvent.click(screen.getByRole("button", { name: "Editar Contabilidade" }));
   expect(screen.getByLabelText("Item da NBS")).toHaveValue("");
   fireEvent.change(screen.getByLabelText("Sugestões de NBS para o serviço"), { target: { value: "1.1302.21.00" } });
+  expect(screen.getByLabelText("Sugestões de NBS para o serviço")).toHaveValue("1.1302.21.00");
   fireEvent.change(screen.getByLabelText("Combinações de operação e classificação"), { target: { value: "100301:000001" } });
+  expect(screen.getByLabelText("Combinações de operação e classificação")).toHaveValue("100301:000001");
   expect(screen.getByLabelText("Situação tributária do IBS/CBS (CST)")).toHaveValue("");
   fireEvent.change(screen.getByLabelText("Serviço sujeito à retenção federal (art. 30)"), { target: { value: "" } });
   fireEvent.click(screen.getByRole("button", { name: "Salvar perfil" }));
@@ -36,4 +38,14 @@ it("mostra erro de gravação e preserva edição", async () => {
 
 it("preserva zero e false, normaliza percentual e desmarca padrão inativo", () => {
   expect(corpoDoPerfil({ nome: "X", ativo: false, padrao: true, retencaoFederalArt30: false, pAliq: "2,50", regEspTrib: "0" }, CAMPOS_PERFIL_EMISSAO)).toEqual(expect.objectContaining({ padrao: false, retencaoFederalArt30: false, pAliq: "2.50", regEspTrib: "0" }));
+});
+
+it("reabre a seção de um campo obrigatório inválido para permitir a correção", () => {
+  render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={jest.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Novo perfil" }));
+  const campo = screen.getByLabelText("Código de Tributação Nacional");
+  fireEvent.click(screen.getByText("Serviço e local"));
+  expect(campo.closest("details").open).toBe(false);
+  fireEvent.invalid(campo);
+  expect(campo.closest("details").open).toBe(true);
 });
