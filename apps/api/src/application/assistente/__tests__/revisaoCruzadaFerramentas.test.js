@@ -1,6 +1,7 @@
 // Revisão independente: serviços reais de união/validação, sem rede nem ato fiscal.
 jest.mock("../../../infrastructure/db/prisma.js", () => ({ prisma: {} }));
 import { executarFerramenta } from "../ferramentas/index.js";
+import { preparacaoEmissaoFalsa } from "../__fixtures__/preparacaoEmissao.js";
 import { TODAS_PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente.js";
 import { validateNfsePayload } from "../../validators/nfsePayload.js";
 
@@ -13,7 +14,7 @@ function contexto(prisma = {}) {
 function emissao() {
   const ctx = contexto();
   const criarPendencia = jest.fn(async ({ corpo }) => ({ texto: corpo, codigo: "A7K2" }));
-  ctx.servicos = { autorizarEmissaoDoCliente: async () => ({ ok: true }), listarPerfisEmissao: async () => [], criarPendencia };
+  ctx.servicos = { ...preparacaoEmissaoFalsa, autorizarEmissaoDoCliente: async () => ({ ok: true }), listarPerfisEmissao: async () => [], criarPendencia };
   return { ctx, criarPendencia, dados: { tomadorDoc: "12345678000190", tomadorNome: "Empresa exemplo", descricao: "Consultoria", valor: 1200 } };
 }
 
@@ -74,7 +75,7 @@ it("busca exata alcança emissão ainda não capturada além das 200 recentes", 
   expect(r.notas.map(n => n.numero)).toContain("201");
 });
 
-it.each(["2026-13", "2026-00", "2026-08-01", "agosto", ""]) ("competência inválida %s não gera resumo e payload com períodos diferentes", async (competencia) => {
+it.each(["2026-13", "2026-00", "2026-02-30", "agosto", ""]) ("competência inválida %s não gera resumo e payload com períodos diferentes", async (competencia) => {
   const { ctx, criarPendencia, dados } = emissao();
   const r = await executarFerramenta("preparar_emissao", { ...dados, competencia }, ctx);
   expect(r.ok).toBe(false);

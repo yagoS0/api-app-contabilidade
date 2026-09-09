@@ -27,6 +27,10 @@ import { isGuiaDeParcelamento } from "../../guides/guideContract.js";
 import { gerarDanfseDaNota } from "../../nfse/danfse/danfseDaNotaDoPortal.js";
 import { listarTomadoresEmitidos } from "../../nfse/tomadorEmitido.js";
 import { consultarCnpj } from "../../tomador/consultaCnpj.js";
+import { consultarCep } from "../../tomador/consultarCep.js";
+import { camposDeEnderecoDaReceita } from "../../tomador/consultaTomador.js";
+import { prepararTomadorDoCliente, enderecoDaMemoria } from "../../tomador/prepararTomadorDoCliente.js";
+import { prepararDadosFiscaisDoCliente } from "../../nfse/preparacaoFiscalDoCliente.js";
 import { municipiosIbgeOuNulo } from "../../nfse/lote/municipiosIbge.js";
 import { validateNfsePayload } from "../../validators/nfsePayload.js";
 import { autorizarEmissaoDoCliente } from "../../nfse/autorizacaoEmissaoDoCliente.js";
@@ -49,7 +53,8 @@ import { lerEmitidasNaoConfirmadas } from "../../notas/notasEmitidasNaoConfirmad
 /** As funções de fora, INJETÁVEIS. Produção usa os defaults; o teste passa dublês. */
 export const SERVICOS_PADRAO = Object.freeze({
   listGuidesByCompany, toGuideResponse, getGuidePdfBuffer, gerarDanfseDaNota, listarTomadoresEmitidos,
-  consultarCnpj, municipiosIbgeOuNulo, validateNfsePayload, autorizarEmissaoDoCliente, resolveLegacyCompanyId,
+  consultarCnpj, consultarCep, prepararTomadorDoCliente, prepararDadosFiscaisDoCliente,
+  municipiosIbgeOuNulo, validateNfsePayload, autorizarEmissaoDoCliente, resolveLegacyCompanyId,
   canGuideRecalculate, isGuideOverdue, avisoDeRecalculo, motivoValido, validarJustificativa, parseSitfisRelatorio, gerarPdfSitfisTabela,
   criarPendencia, baixarDocumentoDaEmpresa, lerEmitidasNaoConfirmadas,
   listarPerfisEmissao: async ({ sessao }) => INTEGRACAO_PERFIL_EMISSAO_NFSE
@@ -78,6 +83,12 @@ function exigirPapel(ctx, minimo) {
 
 const dataBR = (d) => (d ? new Date(d).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : null);
 const mesValido = (valor) => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(valor || ""));
+const competenciaEmissaoValida = (valor) => {
+  if (mesValido(valor)) return true;
+  if (!/^\d{4}-(0[1-9]|1[0-2])-\d{2}$/.test(String(valor || ""))) return false;
+  const data = new Date(`${valor}T00:00:00Z`);
+  return !Number.isNaN(data.getTime()) && data.toISOString().slice(0, 10) === valor;
+};
 const paginaDaLista = (valor) => Math.max(1, Math.min(1000, Math.trunc(Number(valor)) || 1));
 const competenciaDaData = (valor) => {
   if (!valor) return null;
@@ -141,6 +152,7 @@ export const DEFINICOES = Object.freeze([
   { name: "situacao_fiscal", description: "Envia PDF das tabelas completas da última situação fiscal salva pelo escritório, sem nova consulta à Receita. Exige CLIENT_ADMIN e janela de envio aberta.", strict: true, input_schema: S({}) },
   { name: "tomadores_conhecidos", description: "Os tomadores para quem a empresa já emitiu nota (nome, documento) — para reaproveitar num pedido de emissão.", strict: true, input_schema: S({}) },
   { name: "consultar_cnpj", description: "Consulta um CNPJ na Receita (BrasilAPI) para completar nome e endereço do tomador. Nunca CPF.", strict: true, input_schema: S({ cnpj: str("CNPJ com 14 dígitos (pontuação opcional)") }) },
+  { name: "consultar_cep", description: "Completa rua, bairro e município pelo CEP. Não retorna número nem complemento do imóvel. Reaproveite os dados parciais retornados.", strict: true, input_schema: S({ cep: str("CEP com 8 dígitos, pontuação opcional") }) },
   { name: "preparar_emissao", description: "MONTA um pedido de emissão de NFS-e e devolve o texto de confirmação. NÃO emite: o cliente precisa responder CONFIRMAR <código>. Exige papel CLIENT_ADMIN e empresa liberada pelo escritório. Informe números como números, booleanos como booleanos; campos ausentes podem ser omitidos ou null. A entrada é validada no servidor.", strict: false, input_schema: S({
     tomadorDoc: str("CNPJ ou CPF do tomador, só dígitos ou com pontuação"),
     tomadorNome: strOuNulo("Nome/razão social do tomador"),
@@ -155,11 +167,11 @@ export const DEFINICOES = Object.freeze([
     destinatarioNome: strOuNulo("Nome do destinatário diferente do tomador; null quando igual ao tomador"),
     descricao: str("Descrição do serviço prestado"),
     valor: { type: "number", description: "Valor dos serviços em reais (ex.: 1500.5)" },
-    competencia: strOuNulo("Competência da nota AAAA-MM; null = a atual"),
-    aliquota: numOuNulo("Alíquota de ISS em %, só quando o cliente informar; null = não informada. O emissor resolve conforme a configuração aplicável; a preparação não consulta nem confere a alíquota."),
+    competencia: strOuNulo("Competência da nota AAAA-MM ou AAAA-MM-DD; null = a atual. Preserve a data completa já retornada ao corrigir o pedido."),
+    aliquota: numOuNulo("Alíquota de ISS em %, somente se explicitamente informada; normalmente omita. O sistema lê a configuração fiscal e o perfil cadastrado antes do resumo."),
     issRetido: boolOuNulo("ISS retido pelo tomador? null = não"),
-    pTotTribSN: numOuNulo("Percentual total de tributos do Simples, quando a empresa for do Simples e o cliente informar; null = não informado"),
-    endereco: { type: ["object", "null"], description: "Endereço do tomador COMPLETO (o de consultar_cnpj) ou null", properties: { cMun: str("código IBGE 7 dígitos"), CEP: str("CEP só dígitos"), xLgr: str("logradouro"), nro: str("número"), xCpl: strOuNulo("complemento"), xBairro: str("bairro") }, required: ["cMun", "CEP", "xLgr", "nro", "xCpl", "xBairro"], additionalProperties: false },
+    pTotTribSN: numOuNulo("Normalmente omita: o sistema busca no histórico fiscal salvo, como o portal. Não peça tributos ao cliente; cadastro fiscal incompleto cabe ao escritório."),
+    endereco: { type: ["object", "null"], description: "Dados de endereço já informados; pode ser parcial, como CEP e número. O sistema completa as lacunas por consulta.", properties: { cMun: strOuNulo("código IBGE 7 dígitos, somente se conhecido"), CEP: strOuNulo("CEP"), xLgr: strOuNulo("logradouro"), nro: strOuNulo("número"), xCpl: strOuNulo("complemento"), xBairro: strOuNulo("bairro") }, required: [], additionalProperties: false },
   }) },
   { name: "preparar_cancelamento", description: "MONTA um pedido de cancelamento de uma nota emitida pela empresa e devolve o texto de confirmação. NÃO cancela: o cliente precisa responder CONFIRMAR <código>. Exige papel CLIENT_ADMIN.", strict: true, input_schema: S({ notaId: str("O id da nota (de listar_notas)"), cMotivo: str("Motivo: '1' erro na emissão, '2' serviço não prestado, '9' outros"), justificativa: str("Justificativa entre 15 e 255 caracteres") }) },
   { name: "preparar_recalculo", description: "MONTA um pedido de guia atualizada (com juros e multa) para uma guia VENCIDA e devolve o texto de confirmação. NÃO gera: o cliente precisa responder CONFIRMAR <código>.", strict: true, input_schema: S({ guideId: str("O id da guia vencida") }) },
@@ -177,6 +189,7 @@ export const PERMISSAO_POR_FERRAMENTA = Object.freeze({
   situacao_fiscal: PERMISSOES_ASSISTENTE.SITUACAO_FISCAL,
   tomadores_conhecidos: PERMISSOES_ASSISTENTE.EMISSAO_NFSE,
   consultar_cnpj: PERMISSOES_ASSISTENTE.EMISSAO_NFSE,
+  consultar_cep: PERMISSOES_ASSISTENTE.EMISSAO_NFSE,
   preparar_emissao: PERMISSOES_ASSISTENTE.EMISSAO_NFSE,
   preparar_cancelamento: PERMISSOES_ASSISTENTE.CANCELAMENTO_NFSE,
   preparar_recalculo: PERMISSOES_ASSISTENTE.RECALCULO_GUIA,
@@ -193,6 +206,7 @@ const PAPEL_POR_FERRAMENTA = Object.freeze({
   situacao_fiscal: PAPEL_MINIMO_SITUACAO_FISCAL,
   tomadores_conhecidos: PAPEL_MINIMO_EMISSAO,
   consultar_cnpj: PAPEL_MINIMO_EMISSAO,
+  consultar_cep: PAPEL_MINIMO_EMISSAO,
   preparar_emissao: PAPEL_MINIMO_EMISSAO,
   preparar_cancelamento: PAPEL_MINIMO_EMISSAO,
   preparar_recalculo: PAPEL_MINIMO_LEITURA,
@@ -223,7 +237,7 @@ function validarEntradaEmissao(input) {
     for (const [chave, propriedade] of Object.entries(regra.properties || {})) visitar(valor[chave], propriedade, caminho ? `${caminho}.${chave}` : chave);
   };
   visitar(input, schema, "");
-  if (input?.competencia != null && !mesValido(input.competencia)) erros.push("competencia");
+  if (input?.competencia != null && !competenciaEmissaoValida(input.competencia)) erros.push("competencia");
   return erros.length ? recusa("DADOS_EMISSAO_INVALIDOS", "Confira os dados informados para montar a nota. Use valores numéricos para valores e percentuais; não acrescente campos que não foram solicitados.", { campos: erros.slice(0, 10) }) : null;
 }
 
@@ -463,17 +477,25 @@ const EXECUTORES = {
     const legacy = await ctx.servicos.resolveLegacyCompanyId(ctx.sessao.portalClientId);
     if (!legacy) return { ok: true, tomadores: [] };
     const lista = await ctx.servicos.listarTomadoresEmitidos({ prisma: ctx.prisma, companyId: legacy, limite: 30 });
-    return { ok: true, tomadores: (lista || []).map((t) => ({ documento: t.documento, documentoFormatado: formatarDoc(t.documento), nome: t.nome || null, email: t.email || null, temEndereco: Boolean(t.cMun) })) };
+    return { ok: true, aviso: lista?.motivo ? "A lista de tomadores salvos não pôde ser consultada agora. Isso não significa que a empresa não tenha tomadores salvos." : null, recortada: lista?.recortada === true,
+      tomadores: (Array.isArray(lista) ? lista : lista?.tomadores || []).map((t) => ({ documento: t.documento, documentoFormatado: formatarDoc(t.documento), nome: t.nome || null, email: t.email || null, endereco: enderecoDaMemoria(t), temEndereco: Boolean(t.cMun && t.cep && t.xLgr && t.nro && t.xBairro) })) };
   },
 
   async consultar_cnpj(input, ctx) {
-    const r = exigirPapel(ctx, PAPEL_MINIMO_LEITURA);
+    const r = exigirPapel(ctx, PAPEL_MINIMO_EMISSAO);
     if (r) return r;
     const municipios = await ctx.servicos.municipiosIbgeOuNulo({ log: ctx.log });
     const res = await ctx.servicos.consultarCnpj(input.cnpj, { municipios, log: ctx.log });
     if (!res.ok) return recusa(res.motivo, `${res.mensagem} A emissão segue normalmente — os dados do tomador podem ser informados à mão.`);
     const t = res.tomador;
-    return { ok: true, cnpj: formatarDoc(res.cnpj), nome: t.nome, email: t.email, endereco: t.endereco, enderecoFaltantes: t.enderecoFaltantes, motivoMunicipio: t.motivoMunicipio, aviso: t.avisoSituacao, municipioTexto: t.municipioTexto, uf: t.uf };
+    return { ok: true, cnpj: formatarDoc(res.cnpj), nome: t.nome, email: t.email, endereco: t.endereco || (res.bruto ? camposDeEnderecoDaReceita(res.bruto, { municipios }) : null), enderecoFaltantes: t.enderecoFaltantes, motivoMunicipio: t.motivoMunicipio, aviso: t.avisoSituacao, municipioTexto: t.municipioTexto, uf: t.uf };
+  },
+
+  async consultar_cep(input, ctx) {
+    const r = exigirPapel(ctx, PAPEL_MINIMO_EMISSAO);
+    if (r) return r;
+    const municipios = await ctx.servicos.municipiosIbgeOuNulo({ log: ctx.log });
+    return ctx.servicos.consultarCep(input.cep, { municipios, log: ctx.log });
   },
 
   async preparar_emissao(input, ctx) {
@@ -490,6 +512,11 @@ const EXECUTORES = {
     if ((perfis.length > 1 || input.perfilId) && !perfil) {
       return recusa("ESCOLHER_PERFIL_EMISSAO", "Apresente os perfis configurados pelo contador e aguarde a próxima mensagem do cliente com a escolha. Não prepare novamente nesta rodada nem escolha pela semelhança com a descrição do serviço. Depois da resposta, use o perfilId escolhido.", { perfis });
     }
+    const fiscal = await servicos.prepararDadosFiscaisDoCliente({ portalClientId: sessao.portalClientId, perfilId: perfil?.id || null, competencia: input.competencia,
+      servico: { descricao: input.descricao, valor: input.valor, aliquota: input.aliquota, issRetido: input.issRetido === true }, pTotTribSN: input.pTotTribSN }, { client: ctx.prisma, agora: ctx.agora });
+    if (!fiscal.ok) return fiscal;
+    const tomador = await servicos.prepararTomadorDoCliente({ ...input, portalClientId: sessao.portalClientId }, { ...servicos, prisma: ctx.prisma, log: ctx.log });
+    if (!tomador.ok) return { ...tomador, dadosColetados: { ...input, tomadorNome: tomador.tomador?.nome, tomadorEmail: tomador.tomador?.email, endereco: tomador.tomador?.endereco } };
     const retencoes = Object.fromEntries(Object.entries({ vRetIRRF: input.valorRetidoIRRF, vRetCP: input.valorRetidoPrevidencia }).filter(([, v]) => v != null));
     const obra = Object.fromEntries(Object.entries({ cObra: input.obraCnoCei, cCIB: input.obraCib, inscImobFisc: input.obraInscricaoImobiliaria }).filter(([, v]) => v != null));
     const corpo = {
@@ -498,10 +525,10 @@ const EXECUTORES = {
       ...(input.destinatarioDoc != null || input.destinatarioNome != null ? { destinatario: { cnpjCpf: input.destinatarioDoc || "", nome: input.destinatarioNome || "" } } : {}),
       companyId: sessao.portalClientId,
       ...(perfil ? { perfilId: perfil.id } : {}),
-      tomador: { cnpjCpf: input.tomadorDoc, nome: input.tomadorNome || undefined, email: input.tomadorEmail || undefined, endereco: input.endereco || undefined },
-      servico: { descricao: input.descricao, valor: input.valor, aliquota: input.aliquota ?? undefined, issRetido: input.issRetido === true },
-      competencia: input.competencia || undefined,
-      ...(input.pTotTribSN != null ? { pTotTribSN: input.pTotTribSN } : {}),
+      tomador: tomador.tomador,
+      servico: fiscal.servico,
+      competencia: fiscal.competencia,
+      ...(fiscal.pTotTribSN != null ? { pTotTribSN: fiscal.pTotTribSN } : {}),
     };
     const validacao = servicos.validateNfsePayload(corpo);
     if (!validacao.ok) return recusa(validacao.error, `A nota não pode ser montada assim: ${validacao.error}. Peça ao cliente o que falta.`);
@@ -513,20 +540,23 @@ const EXECUTORES = {
       dados.obra ? "Obra: " + (dados.obra.cObra ? "CNO/CEI " + dados.obra.cObra : "CIB " + dados.obra.cCIB) + (dados.obra.inscImobFisc ? " · Inscrição imobiliária: " + dados.obra.inscImobFisc : "") : null,
       dados.destinatario ? "Destinatário: " + dados.destinatario.nome + " · " + formatarDoc(dados.destinatario.cnpjCpf) : null,
     ].filter(Boolean).join("\n");
-    const declaracao = (extras ? extras + "\n\n" : "") + (perfil ? `Perfil de serviço: ${perfil.nome} (${perfil.codigoServicoNacional})\n\n` : "") + textoDeConfirmacao({
+    const avisoIss = fiscal.aliquotaDps?.informar === false && fiscal.servico.aliquota != null
+      ? "A alíquota de ISS exibida abaixo é a configurada; esse percentual não será informado como alíquota destacada nesta emissão." : null;
+    const avisos = [...(fiscal.avisos || []), ...(tomador.avisos || []), avisoIss].filter(Boolean).join("\n");
+    const declaracao = (avisos ? avisos + "\n\n" : "") + (extras ? extras + "\n\n" : "") + (perfil ? `Perfil de serviço: ${perfil.nome} (${perfil.codigoServicoNacional})\n\n` : "") + textoDeConfirmacao({
       tomador: { nome: dados?.tomador?.nome || input.tomadorNome, doc: dados?.tomador?.cnpjCpf || input.tomadorDoc, email: dados?.tomador?.email || input.tomadorEmail || null },
       endereco: dados?.tomador?.endereco?.cMun ? dados.tomador.endereco : null,
       servico: { descricao: dados?.servico?.descricao || input.descricao, valor: dados?.servico?.valorServicos ?? input.valor, aliquota: dados?.servico?.aliquota ?? input.aliquota ?? null, issRetido: Boolean(dados?.servico?.issRetido) },
-      competencia: input.competencia || null,
-      pTotTribSN: input.pTotTribSN ?? null,
-      regime: null,
+      competencia: fiscal.competencia,
+      pTotTribSN: fiscal.pTotTribSN,
+      regime: fiscal.regime,
     });
     const { texto, codigo } = await servicos.criarPendencia({
       conversaId: ctx.conversa.id, portalClientId: sessao.portalClientId, userId: sessao.userId,
       tipo: TIPOS.EMITIR_NFSE, payload: { ...dados, companyId: sessao.portalClientId }, corpo: declaracao, agora: ctx.agora,
     });
     ctx.registrarPendencia?.({ tipo: TIPOS.EMITIR_NFSE, codigo, texto });
-    return { ok: true, pendenciaCriada: true, codigo, textoDeConfirmacao: texto, instrucao: "O texto de confirmação será enviado ao cliente EXATAMENTE como está; diga apenas que o pedido foi montado e que ele precisa responder CONFIRMAR com o código." };
+    return { ok: true, pendenciaCriada: true, codigo, textoDeConfirmacao: texto, origens: { fiscal: fiscal.origens, tomador: tomador.origens }, instrucao: "O texto de confirmação será enviado ao cliente EXATAMENTE como está; diga apenas que o pedido foi montado e que ele precisa responder CONFIRMAR com o código." };
   },
 
   async preparar_cancelamento(input, ctx) {

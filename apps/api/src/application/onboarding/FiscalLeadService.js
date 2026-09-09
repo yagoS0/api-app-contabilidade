@@ -38,7 +38,7 @@ export async function consultarPublicaLead(onboardingId, {
   if (!out.ok) throw new OnboardingError("consulta_indisponivel", "Não consegui consultar os dados públicos agora. O contador pode conferir.", 502);
   const b = out.bruto || {};
   const resultado = {
-    fonte: "BrasilAPI",
+    fonte: out.fonte === "BRASILAPI" ? "BrasilAPI" : out.fonte === "MINHA_RECEITA" ? "Minha Receita" : "Dados públicos de CNPJ (provedor não informado)",
     consultadoEm: agora.toISOString(),
     razaoSocial: b.razao_social || out.tomador?.nome || null,
     situacaoCadastral: b.descricao_situacao_cadastral || null,

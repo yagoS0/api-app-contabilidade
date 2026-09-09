@@ -73,11 +73,12 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
     let analise;
     try { analise = await db.onboardingAnalise.create({ data: { onboardingId: id, tipo, status: "CONSULTANDO", cnpj: r.cnpj, criadoPorId: user.id } }); }
     catch (e) { if (e.code === "P2002") throw erro("consulta_em_andamento", "A consulta já está em andamento.", 409); throw e; }
-    let resultado = { fonte: tipo === "PUBLICA" ? "BrasilAPI / dados públicos CNPJ" : "Receita Federal / SERPRO SITFIS", consultadoEm: agora().toISOString() };
+    let resultado = { fonte: tipo === "PUBLICA" ? "Dados públicos de CNPJ (provedor não informado)" : "Receita Federal / SERPRO SITFIS", consultadoEm: agora().toISOString() };
     let status = "CONCLUIDA", documentoCifrado = null;
     try {
       if (tipo === "PUBLICA") {
         const out = await consultaPublica(r.cnpj);
+        resultado.fonte = out.fonte === "BRASILAPI" ? "BrasilAPI / dados públicos CNPJ" : out.fonte === "MINHA_RECEITA" ? "Minha Receita / dados públicos CNPJ" : "Dados públicos de CNPJ (provedor não informado)";
         if (!out.ok) throw erro("consulta_publica_indisponivel", out.mensagem || "Consulta pública indisponível.", 502);
         const b = out.bruto || {};
         resultado = { ...resultado, mensagem: "Dados públicos consultados. Não equivalem a regularidade fiscal.", razaoSocial: b.razao_social || out.tomador?.nome || null, situacaoCadastral: b.descricao_situacao_cadastral || null, cnaePrincipal: b.cnae_fiscal || null, municipio: b.municipio || null, uf: b.uf || null };

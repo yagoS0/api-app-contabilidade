@@ -100,6 +100,8 @@ describe("a escolha do perfil de emissão exige uma nova mensagem do cliente", (
   const dados = { tomadorDoc: "12345678000190", tomadorNome: "Tomador sintético", descricao: "Consultoria", valor: 100, competencia: "2026-09" };
   const perfis = [{ id: "consultoria", nome: "Consultoria", codigoServicoNacional: "170101" }, { id: "suporte", nome: "Suporte", codigoServicoNacional: "170102" }];
   const servicosDoTeste = () => ({
+    prepararDadosFiscaisDoCliente: async ({ servico, competencia }) => ({ ok: true, servico, competencia, regime: null }),
+    prepararTomadorDoCliente: async (input) => ({ ok: true, tomador: { cnpjCpf: input.tomadorDoc, nome: input.tomadorNome } }),
     autorizarEmissaoDoCliente: jest.fn(async () => ({ ok: true })),
     listarPerfisEmissao: jest.fn(async () => perfis),
     criarPendencia: jest.fn(async ({ corpo }) => ({ codigo: "A7K2", texto: corpo + "\nCONFIRMAR A7K2" })),
