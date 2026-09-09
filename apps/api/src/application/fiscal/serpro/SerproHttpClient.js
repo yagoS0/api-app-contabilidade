@@ -3,6 +3,7 @@ import { mapSerproError } from "./SerproErrorMapper.js";
 import { SerproAuthService } from "./SerproAuthService.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import { autorizarChamada, concluirChamada } from "./SerproCallGuard.js";
+import { lerResposta, guardarResposta } from "./SerproRespostaCache.js";
 
 export class SerproHttpClient {
   constructor(options = {}) {
@@ -19,6 +20,8 @@ export class SerproHttpClient {
   }
 
   async request({ method = "POST", path = "", data, headers = {}, params, raw = false, validateStatus }) {
+    const salva = await lerResposta(data, path);
+    if (salva !== null) return raw ? { status: 200, data: salva, headers: {} } : salva;
     // GUARDA DE CUSTO — antes de qualquer coisa, inclusive antes de autenticar. Este é o único
     // ponto central dos consumidores deste client, e a identificação (CNPJ + idServiço) sai do
     // próprio envelope `pedidoDados`: nenhuma chamada nova escapa por esquecimento do chamador.
@@ -74,6 +77,14 @@ export class SerproHttpClient {
         erroMensagem: mapeado?.message || error?.message || null,
       });
       throw mapeado;
+    }
+    // Persistir antes de liberar a reserva e antes de interpretar PDF/gerar lançamentos.
+    // Se falhar, a reserva permanece em aberto e impede uma repetição silenciosa.
+    try { await guardarResposta(data, path, response); }
+    catch {
+      const erro = new Error("A resposta SERPRO não pôde ser guardada. Confira a tentativa anterior antes de repetir.");
+      erro.code = "SERPRO_REGISTRO_INDETERMINADO";
+      throw erro;
     }
     // Finalização fora do catch de rede: falha do ledger não vira segunda finalização nem retry fiscal.
     await concluirChamada(autorizacao, { httpStatus: response.status,

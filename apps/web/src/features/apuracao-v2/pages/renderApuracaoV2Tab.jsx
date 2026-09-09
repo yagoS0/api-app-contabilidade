@@ -207,10 +207,10 @@ export function ApuracaoV2Tab({
     }
   }
 
-  async function buscarExtrato() {
+  async function buscarExtrato(atualizar = false) {
     setExtratoLoading(true);
     try {
-      const out = await api.syncPgdasCircular?.(companyId, competencia);
+      const out = await api.syncPgdasCircular?.(companyId, competencia, { atualizar });
       const r = out?.result || out;
       setExtrato(r || null);
       if (out?.ok === false) feedback?.notifyError?.(out?.message || "Falha ao buscar extrato.");
@@ -457,9 +457,10 @@ export function ApuracaoV2Tab({
           <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <strong style={{ fontSize: "0.9rem" }}>Extrato do Simples Nacional</strong>
-              <Button variant="secondary" onClick={buscarExtrato} disabled={extratoLoading}>
+              <Button variant="secondary" onClick={() => buscarExtrato()} disabled={extratoLoading}>
                 {extratoLoading ? "Buscando…" : "Buscar extrato"}
               </Button>
+              <Button variant="secondary" onClick={() => buscarExtrato(true)} disabled={extratoLoading} title="Faz nova consulta paga para atualizar a declaração salva.">Atualizar na Receita</Button>
             </div>
             {extDados && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>

@@ -1362,6 +1362,7 @@ export function createAccountingEntriesRouter({ log }) {
       const result = await comContextoSerpro(
         { origem: "lancamentos:extrato-simples", userId: req.auth?.user?.id, forcar: podeForcarSerpro(req) },
         () => syncPgdasByCompetencia({
+          atualizar: req.body?.atualizar === true,
           portalClientId,
           competencia,
           contratanteCnpj: contratanteCnpj || undefined,

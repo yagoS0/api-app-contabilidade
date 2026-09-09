@@ -3,6 +3,7 @@ import { prisma } from "../../../infrastructure/db/prisma.js";
 import { SERPRO_GUARDA_ATIVA, SERPRO_COOLDOWN_SEGUNDOS, SERPRO_TETO_DIARIO_EMPRESA,
   SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA, SERPRO_TETO_MENSAL_MINIMO, SERPRO_TETO_MENSAL_ABSOLUTO, SERPRO_ALERTA_FRACAO } from "../../../config.js";
 import { contextoSerproAtual } from "./serproCallContext.js";
+import { chaveResposta } from "./SerproRespostaCache.js";
 
 // Ledger/contrato global desta instalação: modelo atual não tem firmId. Lock só durante reserva.
 // Reserva órfã continua contando e bloqueia assinatura; ausência de resposta não prova ausência de consumo.
@@ -15,10 +16,13 @@ export class SerproGuardError extends Error {
 }
 export function identificarChamada(payload, rota) {
   const p = payload && typeof payload === "object" ? payload : {};
-  return { cnpj: String(p?.contribuinte?.numero || "").replace(/\D+/g, ""),
+  let dados = p.pedidoDados?.dados; try { if (typeof dados === "string") dados = JSON.parse(dados); } catch { dados = null; }
+  const pa = String(dados?.periodoApuracao || dados?.competencia || dados?.anoMesParcela || "");
+  const competencia = /^\d{6}$/.test(pa) ? `${pa.slice(0,4)}-${pa.slice(4)}` : /^\d{4}-\d{2}$/.test(pa) ? pa : null;
+  return { competencia, cnpj: String(p?.contribuinte?.numero || "").replace(/\D+/g, ""),
     idSistema: p?.pedidoDados?.idSistema ? String(p.pedidoDados.idSistema) : null,
     idServico: p?.pedidoDados?.idServico ? String(p.pedidoDados.idServico) : null,
-    rota: String(rota || ""), assinatura: crypto.createHash("sha256").update(`${rota}|${JSON.stringify(payload ?? null)}`).digest("hex") };
+    rota: String(rota || ""), assinatura: chaveResposta(payload ?? null, rota) };
 }
 function inicioPeriodo(agora = new Date(), mensal = false) {
   const partes = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(agora).map((p) => [p.type, p.value]));
@@ -61,7 +65,7 @@ export function segundosDeCooldown(chamada) {
 }
 export async function autorizarChamada({ payload, rota }, client = prisma) {
   const id = identificarChamada(payload, rota), ctx = contextoSerproAtual();
-  const base = { ...id, origem: ctx.origem || "nao_informada", userId: ctx.userId || null };
+  const base = { ...id, acaoId: ctx.acaoId || null, origem: ctx.origem || "nao_informada", userId: ctx.userId || null };
   let desfecho;
   try {
     desfecho = await client.$transaction(async (tx) => {
@@ -69,9 +73,10 @@ export async function autorizarChamada({ payload, rota }, client = prisma) {
       const empresa = id.cnpj ? await tx.portalClient.findFirst({ where: { cnpj: { contains: id.cnpj } }, select: { id: true } }) : null;
       base.portalClientId = empresa?.id || null;
       // Em voo/incerta não é ignorada por forcar nem pelo desligamento dos tetos.
-      const pendente = await tx.serproChamada.findFirst({ where: { assinatura: id.assinatura, status: { in: ["reservada", "incerta"] } }, orderBy: { createdAt: "desc" } });
-      const ultima = pendente || (SERPRO_GUARDA_ATIVA && SERPRO_COOLDOWN_SEGUNDOS > 0
-        ? await tx.serproChamada.findFirst({ where: { assinatura: id.assinatura, status: { in: ["ok", "erro"] }, createdAt: { gte: new Date(Date.now() - SERPRO_COOLDOWN_SEGUNDOS * 1000) } }, orderBy: { createdAt: "desc" } }) : null);
+      const assinaturaLegada = crypto.createHash("sha256").update(`${rota}|${JSON.stringify(payload ?? null)}`).digest("hex");
+      const pendente = await tx.serproChamada.findFirst({ where: { assinatura: { in: [id.assinatura, assinaturaLegada] }, status: { in: ["reservada", "incerta"] } }, orderBy: { createdAt: "desc" } });
+      const ultima = pendente || (SERPRO_GUARDA_ATIVA && SERPRO_COOLDOWN_SEGUNDOS > 0 && !(ctx.reconsultarAposTransmissao === true && id.idServico === "CONSDECLARACAO13")
+        ? await tx.serproChamada.findFirst({ where: { assinatura: { in: [id.assinatura, assinaturaLegada] }, status: { in: ["ok", "erro"] }, createdAt: { gte: new Date(Date.now() - SERPRO_COOLDOWN_SEGUNDOS * 1000) } }, orderBy: { createdAt: "desc" } }) : null);
       const janela = segundosDeCooldown(ultima);
       const restantes = ultima ? Math.ceil((new Date(ultima.createdAt).getTime() + janela * 1000 - Date.now()) / 1000) : 0;
       let recusa = null;

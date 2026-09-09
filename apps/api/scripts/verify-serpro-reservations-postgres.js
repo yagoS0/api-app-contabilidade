@@ -22,9 +22,12 @@ Object.assign(process.env, {
 });
 const { autorizarChamada, concluirChamada, consumoDoMes } = await import("../src/application/fiscal/serpro/SerproCallGuard.js");
 const { comContextoSerpro } = await import("../src/application/fiscal/serpro/serproCallContext.js");
+const { guardarResposta, lerResposta, chaveResposta } = await import("../src/application/fiscal/serpro/SerproRespostaCache.js");
 const { prisma: singleton } = await import("../src/infrastructure/db/prisma.js");
 const client = new PrismaClient({ datasources: { db: { url: url.href } } });
 const origem = `test:serpro:${randomUUID()}`;
+const documento = { ...inputDocumento(), fixture: origem };
+function inputDocumento() { return { contribuinte: { numero: "00000000000001" }, pedidoDados: { idServico: "GERARDAS12", dados: '{"periodoApuracao":"202608"}' } }; }
 let checks = 0;
 const ok = (name) => console.log(`OK ${++checks}: ${name}`);
 const input = (cnpj, operacao) => ({ rota: "/Consultar", payload: { contribuinte: { numero: cnpj }, pedidoDados: { idSistema: "TEST", idServico: operacao }, fixture: origem } });
@@ -80,8 +83,21 @@ try {
   await concluirChamada(liberada, { abortadaAuth: true }, client);
   assert.equal((await consumoDoMes(client)).usadas, 3);
   ok("override explícito do teto deixa identidade/origem; abortar antes do envio libera sua reserva");
+  const resposta = { status: 200, data: { dados: '{"pdf":"fixture"}' } };
+  await Promise.all(Array.from({ length: 5 }, () => guardarResposta(documento, "/Emitir", resposta, client)));
+  assert.equal(await client.serproRespostaCache.count({ where: { chave: chaveResposta(documento, "/Emitir") } }), 1);
+  assert.deepEqual(await lerResposta(documento, "/Emitir", client), resposta.data);
+  assert.equal(await lerResposta({ ...documento, contribuinte: { numero: "00000000000002" } }, "/Emitir", client), null);
+  ok("cache documental persistido, upserts concorrentes únicos e isolamento por contribuinte");
+  await client.serproRespostaCache.update({ where: { chave: chaveResposta(documento, "/Emitir") }, data: { expiraEm: new Date(Date.now() - 1000) } });
+  assert.equal(await lerResposta(documento, "/Emitir", client), null);
+  await guardarResposta(documento, "/Emitir", resposta, client);
+  await comContextoSerpro({ atualizar: true }, async () => assert.equal(await lerResposta(documento, "/Emitir", client), null));
+  assert.equal(await client.serproRespostaCache.count({ where: { chave: chaveResposta(documento, "/Emitir") } }), 0);
+  ok("expiração e atualização explícita impedem reaproveitar documento antigo");
   console.log(`PASS: ${checks} verificações SERPRO em PostgreSQL real, sem HTTP.`);
 } finally {
+  await client.serproRespostaCache.deleteMany({ where: { chave: chaveResposta(documento, "/Emitir") } });
   await client.serproChamada.deleteMany({ where: { origem } });
   await Promise.all([client.$disconnect(), singleton.$disconnect()]);
 }
