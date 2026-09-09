@@ -115,9 +115,9 @@ export function codigoMunicipioVerificado(bruto, municipios) {
 }
 
 /** O endereço como a resposta o traz — TUDO OU NADA. O logradouro manda: "RUA" sozinho não é rua. */
-export function enderecoDaReceita(bruto, { municipios = null } = {}) {
+export function camposDeEnderecoDaReceita(bruto, { municipios = null } = {}) {
   const municipio = codigoMunicipioVerificado(bruto, municipios);
-  const lido = {
+  return {
     cMun: municipio.codigo || "",
     CEP: soDigitosDoc(bruto?.cep),
     xLgr: String(bruto?.logradouro || "").trim()
@@ -127,6 +127,11 @@ export function enderecoDaReceita(bruto, { municipios = null } = {}) {
     xCpl: String(bruto?.complemento || "").trim(),
     xBairro: String(bruto?.bairro || "").trim(),
   };
+}
+
+export function enderecoDaReceita(bruto, { municipios = null } = {}) {
+  const municipio = codigoMunicipioVerificado(bruto, municipios);
+  const lido = camposDeEnderecoDaReceita(bruto, { municipios });
   const faltantes = CAMPOS_ENDERECO_EXIGIDOS.filter(([campo]) => !lido[campo]).map(([, rotulo]) => rotulo);
   if (faltantes.length) return { endereco: null, faltantes, motivoMunicipio: municipio.motivo };
   return { endereco: lido, faltantes: [], motivoMunicipio: null };

@@ -4,6 +4,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({ prisma: {} }));
 jest.mock("@contabilidade/shared/declaracao-nfse", () => jest.requireActual("../../../../../../packages/shared/src/nfse/declaracaoNfse.js"));
 import { linhasDoEspelho, textoDeConfirmacao } from "@contabilidade/shared/declaracao-nfse";
 import { executarFerramenta } from "../ferramentas/index.js";
+import { preparacaoEmissaoFalsa } from "../__fixtures__/preparacaoEmissao.js";
 import { TODAS_PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente.js";
 
 const AUSENTE = "não informada; depende da configuração de emissão";
@@ -12,7 +13,7 @@ function contexto(perfis = []) {
   return {
     sessao: { ok: true, portalClientId: "pc-teste", userId: "u-teste", papel: "CLIENT_ADMIN", permissoesAssistente: [...TODAS_PERMISSOES_ASSISTENTE] },
     conversa: { id: "cv-teste" }, prisma: {}, agora: new Date("2026-09-08T15:00:00Z"), janela: { aberta: true },
-    servicos: { autorizarEmissaoDoCliente: async () => ({ ok: true }), listarPerfisEmissao: async () => perfis,
+    servicos: { ...preparacaoEmissaoFalsa, autorizarEmissaoDoCliente: async () => ({ ok: true }), listarPerfisEmissao: async () => perfis,
       criarPendencia: jest.fn(async ({ corpo }) => ({ texto: corpo, codigo: "A7K2" })) },
   };
 }
@@ -41,14 +42,14 @@ it("prévia sem alíquota continua declarando ausência e preserva null no paylo
   expect(pedido.corpo).toContain(`Alíquota de ISS: ${AUSENTE}`);
 });
 
-it("perfil escolhido permanece no pedido sem apresentar taxa de ISS ainda não resolvida", async () => {
+it("a taxa resolvida do perfil aparece igual no resumo e no pedido", async () => {
   const ctx = contexto([{ id: "perfil-consultoria", nome: "Consultoria", codigoServicoNacional: "170101", pAliq: 5 }]);
+  ctx.servicos.prepararDadosFiscaisDoCliente = async ({ servico, competencia }) => ({ ok: true, servico: { ...servico, aliquota: 5 }, competencia, regime: null });
   const r = await executarFerramenta("preparar_emissao", { ...DADOS, perfilId: "perfil-consultoria" }, ctx);
   expect(r.ok).toBe(true);
   const pedido = ctx.servicos.criarPendencia.mock.calls[0][0];
   expect(pedido.payload.perfilId).toBe("perfil-consultoria");
-  expect(pedido.payload.servico.aliquota).toBeNull();
+  expect(pedido.payload.servico.aliquota).toBe(5);
   expect(pedido.corpo).toContain("Perfil de serviço: Consultoria (170101)");
-  expect(pedido.corpo).toContain(`Alíquota de ISS: ${AUSENTE}`);
-  expect(pedido.corpo).not.toContain("Alíquota de ISS: 5,00%");
+  expect(pedido.corpo).toContain("Alíquota de ISS: 5,00%");
 });

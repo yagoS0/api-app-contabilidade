@@ -4,6 +4,7 @@ import { consultarCnpj, mascararCnpj, MOTIVOS, BRASILAPI_CNPJ_BASE } from "../co
 
 const MUNICIPIOS = [["3304557", "Rio de Janeiro", "RJ"]];
 const BRUTO = {
+  cnpj: "12345678000190",
   razao_social: "ACME LTDA", descricao_situacao_cadastral: "ATIVA",
   codigo_municipio_ibge: 3304557, municipio: "Rio de Janeiro", uf: "RJ",
   cep: "20040020", descricao_tipo_de_logradouro: "AVENIDA", logradouro: "RIO BRANCO", numero: "1", bairro: "CENTRO",

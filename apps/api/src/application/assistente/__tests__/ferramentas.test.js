@@ -6,6 +6,7 @@
 import { definicoes, executarFerramenta } from "../ferramentas/index.js";
 import { validateNfsePayload } from "../../validators/nfsePayload.js";
 import { TIPOS } from "../confirmacaoPendente.js";
+import { preparacaoEmissaoFalsa } from "../__fixtures__/preparacaoEmissao.js";
 import { TODAS_PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente.js";
 
 const silencio = { warn: jest.fn(), error: jest.fn(), info: jest.fn() };
@@ -30,6 +31,7 @@ function prismaFalso(over = {}) {
 
 function servicosFalsos(over = {}) {
   return {
+    ...preparacaoEmissaoFalsa,
     listGuidesByCompany: jest.fn(async () => ({ items: [GUIA], total: 1 })),
     toGuideResponse: jest.fn((g) => ({ ...g, vencida: true })),
     getGuidePdfBuffer: jest.fn(async () => Buffer.from("%PDF-1.4")),
