@@ -159,7 +159,15 @@ export function montarCorpoTemplate(variaveis) {
   const lista = Array.isArray(variaveis) ? variaveis : [];
   if (!lista.length) return null;
   const parametros = lista.map((v) => {
-    if (v && typeof v === "object" && !Array.isArray(v)) {
+    const nomeada = v && typeof v === "object" && !Array.isArray(v);
+    const texto = String(nomeada ? v.valor ?? v.text ?? "" : v ?? "");
+    if (!texto.trim()) {
+      throw recusaLocal(
+        CODIGOS_LOCAIS.RECUSA_LOCAL,
+        "Há um campo vazio na mensagem de WhatsApp. Confira os dados da guia e do contato antes de enviar.",
+      );
+    }
+    if (nomeada) {
       const nome = String(v.nome ?? v.parameter_name ?? "").trim();
       if (!nome) {
         throw recusaLocal(
@@ -167,9 +175,9 @@ export function montarCorpoTemplate(variaveis) {
           "Uma variável nomeada do template foi enviada sem nome.",
         );
       }
-      return { type: "text", parameter_name: nome, text: String(v.valor ?? v.text ?? "") };
+      return { type: "text", parameter_name: nome, text: texto };
     }
-    return { type: "text", text: String(v ?? "") };
+    return { type: "text", text: texto };
   });
   return { type: "body", parameters: parametros };
 }
@@ -688,6 +696,8 @@ export class WhatsappCloudClient {
   }) {
     // Recusa o destino ANTES de gastar o upload: telefone torto não melhora depois de subir 200 KB.
     const para = this.destino(telefone);
+    // O template também precisa estar preenchido antes de subir o PDF.
+    montarCorpoTemplate(variaveis);
     const mediaId = await this.uploadDocumento({ conteudo: conteudoPdf, nomeArquivo });
     return this.enviarTemplateComDocumento({
       telefone: para,
@@ -710,7 +720,10 @@ export class WhatsappCloudClient {
  * formatação de moeda e data é decisão de apresentação, e este módulo não a toma.
  */
 export function variaveisDaGuia({ nomeContato, tipoGuia, competencia, valorFormatado, vencimentoFormatado }) {
-  return [nomeContato, tipoGuia, competencia, valorFormatado, vencimentoFormatado].map((v) => String(v ?? ""));
+  // Cadastros antigos podem ter o PDF sem vencimento estruturado. O quinto parâmetro não pode
+  // ficar vazio, e a competência não autoriza inventar uma data de pagamento.
+  const vencimento = String(vencimentoFormatado ?? "").trim() || "a conferir no PDF anexo";
+  return [nomeContato, tipoGuia, competencia, valorFormatado, vencimento].map((v) => String(v ?? ""));
 }
 
 /** Nome do anexo que o cliente vê no WhatsApp. Mesma intenção do `guidePdfFilename` do e-mail. */

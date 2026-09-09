@@ -32,7 +32,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
 }));
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
-import { WhatsappError } from "../WhatsappCloudClient.js";
+import { WhatsappCloudClient, WhatsappError } from "../WhatsappCloudClient.js";
 import { MOTIVOS } from "../elegibilidadeEnvioGuia.js";
 import {
   MOTIVOS_SERVICO,
@@ -143,6 +143,27 @@ describe("resultados parciais e persistência depois do aceite", () => {
 // ── Formatação que sai na mensagem do cliente ───────────────────────────────────────────────────
 
 describe("o que o cliente lê", () => {
+  it.each([null, undefined, "", new Date("invalida")])("reenvio sem vencimento (%s) monta os cinco campos sem inventar data", async (vencimento) => {
+    cenarioLimpo();
+    const fetchMeta = jest.fn(async (url, opcoes) => {
+      if (url.endsWith("/media")) return { ok: true, status: 200, json: async () => ({ id: "media-local" }) };
+      const payload = JSON.parse(opcoes.body);
+      const campos = payload.template.components.find(c => c.type === "body").parameters;
+      if (campos.some(c => !c.text.trim())) return { ok: false, status: 400, json: async () => ({ error: { code: 131008, message: "Required parameter is missing" } }) };
+      return { ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.local" }] }) };
+    });
+    const cliente = new WhatsappCloudClient({ fetchImpl: fetchMeta, config: { habilitada: true, token: "token-local", phoneNumberId: "canal-local", log: { info: jest.fn(), warn: jest.fn() } } });
+    const guia = { ...GUIA, vencimento, emailStatus: "SENT", emailSentAt: new Date("2026-08-01T12:00:00Z") };
+    const r = await enviarGuiaPorWhatsapp({ guide: guia, contato: CONTATO, canal: TEMPLATE_APROVADO, cliente, carregarPdf: pdf, reenviar: true });
+    expect(r).toMatchObject({ ok: true, enviada: true });
+    expect(fetchMeta).toHaveBeenCalledTimes(2);
+    const payload = JSON.parse(fetchMeta.mock.calls[1][1].body);
+    expect(payload.template.components.find(c => c.type === "body").parameters.map(c => c.text))
+      .toEqual(["Maria", "Simples Nacional", "Julho/2026", "1.243,80", "a conferir no PDF anexo"]);
+    expect(prisma.envioGuia.create).toHaveBeenCalledWith({ data: expect.objectContaining({ canal: "EMAIL", status: "enviado" }) });
+    expect(guia.vencimento).toBe(vencimento);
+  });
+
   it("competência por extenso e valor em pt-BR, como no esqueleto do dono", () => {
     expect(competenciaPorExtenso("2026-07")).toBe("Julho/2026");
     expect(valorFormatado(1243.8)).toBe("1.243,80");
