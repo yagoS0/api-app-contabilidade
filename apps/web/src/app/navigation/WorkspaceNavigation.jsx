@@ -5,6 +5,17 @@ import { LogoAltan } from "../../components/ui/LogoAltan";
 const WorkspaceNavigation = createContext(null);
 export const useWorkspaceNavigation = () => useContext(WorkspaceNavigation);
 
+export function WorkspaceHomeLink() {
+  const navigation = useWorkspaceNavigation();
+  return <a href="/companies" className="workspace-home" aria-label="Altan — página principal" title="Página principal"
+    onClick={(event) => {
+      if (navigation && event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        navigation.navigate("/companies");
+      }
+    }}><LogoAltan altura={28} /></a>;
+}
+
 // Track only routes visited inside this mounted workspace. A direct link never sends
 // the user back to an external site or a previous authenticated session.
 export function WorkspaceNavigationProvider({ children }) {
@@ -37,7 +48,7 @@ export function WorkspaceNavigationProvider({ children }) {
     setModoVisao("calendario");
   }, []);
   return <WorkspaceNavigation.Provider value={{ goBack, navigate, modoVisao, setModoVisao, resetSession }}>
-    {location.pathname !== "/login" && <div className="workspace-brandbar">
+    {!["/login", "/", "/companies", "/companies/"].includes(location.pathname) && <div className="workspace-brandbar">
       <Link to="/companies" className="workspace-home" aria-label="Altan — página principal" title="Página principal">
         <LogoAltan altura={30} />
       </Link>

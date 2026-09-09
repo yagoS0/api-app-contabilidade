@@ -1,5 +1,13 @@
 # CLAUDE.md — Web (apps/web)
 
+## Ajuste de UI/UX da carteira — 09/09/2026
+
+A home integra `WorkspaceHomeLink` ao cabeçalho (logo, título/competência e conta); o provider não cria uma segunda faixa em `/` ou `/companies`. O retorno das demais páginas continua preservando a visão da carteira.
+
+`carteira.css` compacta ações/filtros e reorganiza as MESMAS linhas da tabela em telas até 760 px, mantendo seleção, ordenação, chips e acesso. As regras móveis são limitadas a `screen`: a impressão continua usando a tabela completa. “Entrada de clientes” substitui “Onboardings”; “Sem envios pendentes” substitui a conclusão genérica das guias, sem alterar a regra fiscal ou os estados recebidos. Os contadores são identificados como carteira inteira, pois o regime selecionado recorta só a tabela.
+
+O calendário recolhe filtros/legenda e inicia sem concluídas, respeitando uma escolha explícita restaurada pelo contexto. Quando exibidas, concluídas usam marca de confirmação e aparência discreta. “Vencimentos e tarefas” distingue o período do calendário da “Competência” da tabela.
+
 ## Ajustes aprovados e implementados — 08/09/2026
 
 Esta decisão substitui orientações anteriores incompatíveis sobre calendário, retorno e Relatórios.

@@ -150,7 +150,7 @@ describe("⚠ TRÊS EIXOS INDEPENDENTES — o caso PHAOS", () => {
     const linha = screen.getByRole("row", { name: /PHAOS CONSULTORIA/ });
     expect(within(linha).getByText(/Falta apurar/)).toBeInTheDocument();
     expect(within(linha).getByText(/Com pendência/)).toBeInTheDocument();
-    expect(within(linha).getByText(/Guias concluídas/)).toBeInTheDocument();
+    expect(within(linha).getByText(/Sem envios pendentes/)).toBeInTheDocument();
   });
 
   test("cada coluna diz QUAL pergunta responde — é o que separa os eixos na leitura", () => {

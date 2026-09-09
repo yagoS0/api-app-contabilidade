@@ -309,11 +309,11 @@ describe("a barra de ações e a gaveta lateral (dono, 18/08/2026)", () => {
       .toHaveAttribute("aria-expanded", "false");
   });
 
-  test("na barra do topo sobram só `Nova empresa` e `Onboardings` (fora o hambúrguer)", () => {
+  test("a barra compacta mantém cadastro e entrada de clientes acessíveis", () => {
     montar(handlers);
     const barra = screen.getByRole("navigation", { name: "Atalhos" });
     expect(within(barra).getByRole("button", { name: /Nova empresa/i })).toBeInTheDocument();
-    expect(within(barra).getByRole("button", { name: "Onboardings" })).toBeInTheDocument();
+    expect(within(barra).getByRole("button", { name: "Entrada de clientes" })).toBeInTheDocument();
     expect(within(barra).queryByRole("button", { name: /Envio de e-mails em lote/i })).toBeNull();
     expect(within(barra).queryByRole("button", { name: "Apuração" })).toBeNull();
     expect(within(barra).queryByRole("button", { name: "Consultas" })).toBeNull();

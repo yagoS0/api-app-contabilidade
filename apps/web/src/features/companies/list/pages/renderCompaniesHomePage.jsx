@@ -1,4 +1,4 @@
-import { useWorkspaceNavigation } from "../../../../app/navigation/WorkspaceNavigation";
+import { WorkspaceHomeLink, useWorkspaceNavigation } from "../../../../app/navigation/WorkspaceNavigation";
 import { Engrenagem } from "../../../configuracoes/Configuracoes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -183,6 +183,7 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
             <rect x="0" y="10" width="16" height="2" rx="1" />
           </g>
         </svg>
+        <span>Ferramentas</span>
         {resumoWhatsapp?.selo ? <span id="whatsapp-aviso-menu" data-testid="whatsapp-ponto" style={{ color: "var(--state-warn)", marginLeft: 6 }} aria-label={`${resumoWhatsapp.selo} mensagens não lidas no WhatsApp`}>●</span> : null}
       </Button>
 
@@ -864,6 +865,7 @@ export function CompaniesHomePage({
         <section className="dashboard-home">
           <header className="dashboard-home__header">
             <div className="dashboard-home__brand">
+              <WorkspaceHomeLink />
               <div>
                 {/* Subtítulo removido: descrevia o óbvio ("busca, filtros e acesso rápido") numa
                     tela que JÁ é a carteira, e ainda vinha sem acentuação. Legenda que explica o
@@ -880,12 +882,12 @@ export function CompaniesHomePage({
                     mesmo `align-items`, e a decisão de 20/08 (*"a competência sobe para o título
                     porque ela é o contexto de tudo o que a tela mostra"*) continua de pé: ela
                     continua na mesma linha, ao lado do título. O que mudou é de quem ela é filha. */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div className="dashboard-home__heading" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <h1 className="dashboard-home__title" style={{ margin: 0 }}>Empresas</h1>
-                  <span aria-hidden="true" style={{ color: "var(--text-faint)", fontWeight: 400 }}>·</span>
+
                   {/* ⚠ `role="group"` com nome: sem ele os três controles ficam soltos na leitura
                       linear, e o mês que eles comandam vira um texto qualquer ao lado. */}
-                  <span hidden={modoVisao !== "tabela"} role="group" aria-label="Competência da carteira" style={{ display: modoVisao === "tabela" ? "inline-flex" : "none", alignItems: "center", gap: 4 }}>
+                  <span className="dashboard-home__competencia" hidden={modoVisao !== "tabela"} role="group" aria-label="Competência da carteira" style={{ display: modoVisao === "tabela" ? "inline-flex" : "none", alignItems: "center", gap: 4 }}>
                     <button
                       type="button"
                       onClick={() => onChangeCompetencia(shiftCompetencia(dashboardCompetencia, -1))}
@@ -893,7 +895,7 @@ export function CompaniesHomePage({
                       style={{ ...COMP_ARROW, fontSize: "0.9rem" }}
                     >‹</button>
                     <span style={{ fontSize: "1.05rem", color: "var(--text-muted)", fontWeight: 600, minWidth: 150, textAlign: "center" }}>
-                      {rotuloCompetencia(dashboardCompetencia)}
+                      <small className="dashboard-home__context-label">Competência</small>{rotuloCompetencia(dashboardCompetencia)}
                     </span>
                     <button
                       type="button"
@@ -921,6 +923,7 @@ export function CompaniesHomePage({
             </div>
 
             <div className="dashboard-home__user">
+              <Engrenagem href="/configuracoes" onClick={onOpenConfiguracoes} label="Configurações gerais do escritório" />
               <div className="dashboard-home__user-meta">
                 <span className="dashboard-home__user-label">Contador logado</span>
                 <strong className="dashboard-home__user-name">{user?.name || "Conta escritorio"}</strong>
@@ -963,31 +966,61 @@ export function CompaniesHomePage({
             </div>
           )}
 
-          {/* ─── BARRA DE AÇÕES ──────────────────────────────────────────────────────────────────
-              ⚠ ERAM OITO BOTÕES NO MESMO PESO, SEIS DELES ROXO CHEIO. Uma fileira em que tudo é
-              primário não tem primário: o olho não encontra "a ação desta tela" e passa a ler os
-              oito rótulos toda vez.
+          {/* Atalhos e visões compartilham a barra abaixo; cadastro é ação secundária. */}
 
-              A hierarquia agora tem três degraus, e nenhuma função saiu da tela:
-                1. `Nova empresa` — SÓLIDO (accent). É a única ação de CRIAR daqui.
-                2. Onboardings · Apuração · Consultas · Envio de e-mails — CONTORNO. São o fluxo
-                   frequente do mês.
-                3. Rotinas · Planejamento · Configurações — dentro de `Mais ▾`, com os mesmos
-                   rótulos e os mesmos handlers.
+          {/* C9: avisa que há processo rodando em segundo plano (downloads de notas / situações
+              fiscais) mesmo depois de sair da página que disparou. O progresso detalhado
+              continua na página do job — aqui é só o aviso. */}
+          {backgroundJobs?.total > 0 && (
+            <div
+              role="status"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 12,
+                padding: "6px 12px", borderRadius: 999,
+                background: "var(--state-neutral-surface)", border: "1px solid var(--accent-cyan)", color: "var(--accent-cyan)",
+                fontSize: "0.82rem", fontWeight: 600,
+              }}
+              title="Downloads em lote rodando no servidor. Acompanhe o progresso em Consultas."
+            >
+              ⏳ {backgroundJobs.total} processo{backgroundJobs.total > 1 ? "s" : ""} em segundo plano
+              {backgroundJobs.empresas > 0 && (
+                <span style={{ color: "var(--state-neutral)", fontWeight: 400 }}>
+                  ({backgroundJobs.processadas}/{backgroundJobs.empresas} empresas)
+                </span>
+              )}
+            </div>
+          )}
 
-              ⚠ SÓLIDO É ROXO (accent), NUNCA VERDE. Verde quer dizer CONCLUÍDO neste app — a guia
-              paga, o `D = C ✓ ok`, "Guias concluídas" nesta mesma tabela. Um botão verde de "faça
-              isto" na primeira linha da tela estraga a leitura do verde em todo o resto dela.
+          {/* Três visões da MESMA carteira: cards (uma competência), grade anual (12 meses) e
+              calendário (o que vence no dia). O calendário era uma página separada; virou visão
+              porque é a mesma pergunta — "como está a carteira" — só com outro eixo de tempo.
+              Obrigações SAIU daqui: cadastrar obrigação é configuração do escritório, não uma
+              forma de olhar a carteira; foi para o menu Configurações. O que se ENTREGA continua
+              visível aqui, dentro do calendário. */}
+          <div className="dashboard-home__toolbar">
+          <div className="dashboard-home__views">
+            {/* `mode="view"`: trocar de visão não navega, então é `aria-pressed`, não
+                `aria-current="page"`. */}
+            <Tabs
+              mode="view"
+              ariaLabel="Visão da carteira"
+              /* ⚠ O Calendário vem PRIMEIRO porque é o padrão — a barra tem de ler na ordem em
+                 que a tela abre. "Ano" saiu daqui e virou granularidade lá dentro; "Cards" saiu
+                 de vez. */
+              items={[
+                { key: "calendario", label: "Calendário" },
+                { key: "tabela", label: "Tabela" },
+              ]}
+              active={modoVisao}
+              onChange={trocarVisao}
+            />
+            {/* Imprimir mora ao lado das visões porque É uma visão — a da carteira no papel. Ele
+                troca para Tabela sozinho e expande as fechadas: imprimir a lista pela metade, em
+                silêncio, seria pior que não ter o botão.
+                ⚠ NÃO entra na barra de abas: é ação, não recorte — clicar nele não deixa a barra
+                num estado "selecionado". */}
 
-              ⚠ NENHUM BOTÃO GANHOU CONTADOR. O plano sugeria "Onboardings · 3"; esta página não
-              recebe contagem de onboarding nenhuma (só o handler `onOpenOnboardings`), e um número
-              inventado — ou um zero que na verdade quer dizer "não perguntei" — é exatamente o
-              defeito que `lib/falhaDeCarga.js` existe para matar.
-
-              ⚠ A VERSÃO "COMPLETA" DO PLANO NÃO FOI FEITA, de propósito: ela move Rotinas e
-              Planejamento para uma "navegação de módulos (sidebar ou abas)" que NÃO EXISTE aqui —
-              não há `<Routes>` no `App.jsx`, o despacho é uma cadeia de `if` (ver
-              `apps/web/CLAUDE.md`). Criar navegação nova é decisão de produto do dono. */}
+          </div>
           <nav className="dashboard-home__actions" aria-label="Atalhos">
             {/* ⚠ O HAMBÚRGUER VEM PRIMEIRO porque a gaveta abre à ESQUERDA — botão à direita
                 abrindo painel à esquerda faz o olho atravessar a tela atrás do que acabou de
@@ -1038,7 +1071,7 @@ export function CompaniesHomePage({
             ><span className="wa-inline"><WhatsappIcon size={17} />WhatsApp{resumoWhatsapp.selo ? <span className="wa-unread">{resumoWhatsapp.selo}</span> : null}</span></Button> : null}
             <Button
               variant="secondary"
-              className="dashboard-home__action dashboard-home__action--accent"
+              className="dashboard-home__action dashboard-home__action--outline"
               onClick={() => {
                 if (globalChartStatus && !globalChartStatus.isConfigured) {
                   avisoPlanoGlobal.current?.focus();
@@ -1064,10 +1097,10 @@ export function CompaniesHomePage({
             {/* Onboardings fica ao LADO de "Nova empresa", e as duas portas continuam existindo:
                 "Nova empresa" serve a quem já tem tudo em mãos; o funil serve ao que acontece
                 ANTES disso (empresa que ainda vai abrir, papelada chegando em partes). */}
-            <Engrenagem href="/configuracoes" onClick={onOpenConfiguracoes} label="Configurações gerais do escritório" />
+
             {onOpenOnboardings && (
               <Button variant="secondary" className="dashboard-home__action dashboard-home__action--outline" onClick={onOpenOnboardings}>
-                Onboardings
+                Entrada de clientes
               </Button>
             )}
             {/* ⚠ APURAÇÃO E CONSULTAS FORAM PARA A GAVETA (☰), no grupo "Ferramentas" — pedido do
@@ -1088,57 +1121,6 @@ export function CompaniesHomePage({
                 atualiza está escrito ao lado dele agora. Numa fileira de atalhos, um ícone mudo
                 entre botões nomeados era a coisa que ninguém sabia dizer o que fazia. */}
           </nav>
-
-          {/* C9: avisa que há processo rodando em segundo plano (downloads de notas / situações
-              fiscais) mesmo depois de sair da página que disparou. O progresso detalhado
-              continua na página do job — aqui é só o aviso. */}
-          {backgroundJobs?.total > 0 && (
-            <div
-              role="status"
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 12,
-                padding: "6px 12px", borderRadius: 999,
-                background: "var(--state-neutral-surface)", border: "1px solid var(--accent-cyan)", color: "var(--accent-cyan)",
-                fontSize: "0.82rem", fontWeight: 600,
-              }}
-              title="Downloads em lote rodando no servidor. Acompanhe o progresso em Consultas."
-            >
-              ⏳ {backgroundJobs.total} processo{backgroundJobs.total > 1 ? "s" : ""} em segundo plano
-              {backgroundJobs.empresas > 0 && (
-                <span style={{ color: "var(--state-neutral)", fontWeight: 400 }}>
-                  ({backgroundJobs.processadas}/{backgroundJobs.empresas} empresas)
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Três visões da MESMA carteira: cards (uma competência), grade anual (12 meses) e
-              calendário (o que vence no dia). O calendário era uma página separada; virou visão
-              porque é a mesma pergunta — "como está a carteira" — só com outro eixo de tempo.
-              Obrigações SAIU daqui: cadastrar obrigação é configuração do escritório, não uma
-              forma de olhar a carteira; foi para o menu Configurações. O que se ENTREGA continua
-              visível aqui, dentro do calendário. */}
-          <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center" }}>
-            {/* `mode="view"`: trocar de visão não navega, então é `aria-pressed`, não
-                `aria-current="page"`. */}
-            <Tabs
-              mode="view"
-              ariaLabel="Visão da carteira"
-              /* ⚠ O Calendário vem PRIMEIRO porque é o padrão — a barra tem de ler na ordem em
-                 que a tela abre. "Ano" saiu daqui e virou granularidade lá dentro; "Cards" saiu
-                 de vez. */
-              items={[
-                { key: "calendario", label: "Calendário" },
-                { key: "tabela", label: "Tabela" },
-              ]}
-              active={modoVisao}
-              onChange={trocarVisao}
-            />
-            {/* Imprimir mora ao lado das visões porque É uma visão — a da carteira no papel. Ele
-                troca para Tabela sozinho e expande as fechadas: imprimir a lista pela metade, em
-                silêncio, seria pior que não ter o botão.
-                ⚠ NÃO entra na barra de abas: é ação, não recorte — clicar nele não deixa a barra
-                num estado "selecionado". */}
             <Button
               type="button"
               size="sm"
@@ -1146,7 +1128,7 @@ export function CompaniesHomePage({
               onClick={imprimirListagem}
               disabled={imprimindo}
               title="Imprimir a listagem (ou salvar em PDF). Sai em tabela, com as fechadas incluídas."
-              style={{ marginLeft: "auto" }}
+              className="dashboard-home__print"
             >
               🖨 {imprimindo ? "Preparando…" : "Imprimir"}
             </Button>
@@ -1158,9 +1140,9 @@ export function CompaniesHomePage({
               trabalho. Some inteira quando o servidor não responde: um número errado sobre
               fechamento é pior que número nenhum. */}
           {modoVisao === "tabela" && contagemApuracao && (
-            <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <div className="dashboard-home__summary" role="group" aria-label="Pendências da carteira">
               <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", fontWeight: 700, marginRight: 2 }}>
-                APURAÇÃO DO MÊS
+                CARTEIRA INTEIRA
               </span>
               {/* ⚠ Estes chips SÃO a coluna Apuração, contada. Vêm do mesmo `estadoApuracao` que
                   desenha o chip de cada linha e que ordena a lista — antes eram um cálculo próprio
@@ -1240,7 +1222,7 @@ export function CompaniesHomePage({
           {modoVisao === "tabela" && (
           <section
             aria-label="Filtros"
-            style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 16 }}
+            className="dashboard-home__filters"
           >
             <label style={{ ...FILTER_LABEL, flex: "1 1 220px", minWidth: 180 }}>
               Buscar empresa ou CNPJ
@@ -1316,8 +1298,8 @@ export function CompaniesHomePage({
                     // ⚠ DUAS COLUNAS, e não uma tira alta. O painel de uma coluna descia por cima
                     // da tabela e o contador perdia de vista justamente as linhas que estava
                     // tentando filtrar. Em duas colunas ele cabe acima dos dados.
-                    padding: 14, display: "grid", gridTemplateColumns: "repeat(2, minmax(160px, 1fr))",
-                    gap: 12, maxWidth: "min(90vw, 380px)",
+                    padding: 14, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                    gap: 12, width: "min(86vw, 380px)", maxWidth: "86vw",
                     boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
                   }}
                 >
@@ -1423,7 +1405,7 @@ export function CompaniesHomePage({
               (`--state-danger`), e o 22 pareceria 22 problemas. O ponto colorido é a MESMA cor de
               categoria do card e da linha (ciano Simples · laranja Presumido), nunca `--state-*`. */}
           {modoVisao === "tabela" && (
-            <div style={{ marginBottom: 10 }}>
+            <div className="dashboard-home__regimes">
               <Tabs
                 mode="view"
                 align="start"
