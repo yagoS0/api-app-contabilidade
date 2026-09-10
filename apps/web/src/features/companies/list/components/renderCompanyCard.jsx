@@ -55,6 +55,7 @@ export function getComplianceTags(guideCompliance) {
         // ✓✓ lida" em vez de assumir e-mail — e é a informação que o contador usa para saber por
         // onde a guia chegou (ou não) ao cliente.
         canalEnvio: node.canalEnvio || null,
+        canaisEnviados: node.canaisEnviados,
         envioStatus: node.envioStatus || null,
         envioEm: node.envioEm || null,
         envioErro: node.envioErro || null,

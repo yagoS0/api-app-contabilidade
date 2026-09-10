@@ -51,6 +51,12 @@ export function foiEnviadaComLegado(envios, guideLegado) {
   return String(guideLegado?.emailStatus || "").toUpperCase() === "SENT";
 }
 
+/** Canais com envio registrado, usando a mesma regra de legado do estado da guia. */
+export function canaisEnviadosComLegado(envios, guideLegado) {
+  if (!envios?.length) return foiEnviadaComLegado(envios, guideLegado) ? [CANAL.EMAIL] : [];
+  return Object.values(CANAL).filter(canal => envios.some(e => e.canal === canal && STATUS_TERMINAL.includes(e.status)));
+}
+
 /** O envio mais "adiantado" — é o que o popover do chip mostra. */
 export function envioParaExibir(envios) {
   const ordem = { lido: 4, entregue: 3, enviado: 2, enviando: 1, pendente: 0, falhou: -1 };
