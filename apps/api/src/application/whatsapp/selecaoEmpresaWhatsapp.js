@@ -1,4 +1,5 @@
 import { PESO_PAPEL_CLIENTE } from '../nfse/emissaoClienteAutorizacao.js';
+import { lerContextoDoMenu } from './contextoMenuWhatsapp.js';
 
 // Regra pura. Candidatas vêm do vínculo ESTRITO do telefone; nome/CNPJ apenas escolhem
 // entre elas. A seleção não concede função nem substitui a revalidação do contato.
@@ -109,6 +110,9 @@ function mencoesExplicitas(empresas, texto) {
           || /(?:tomador|cliente|descricao|servico|valor|competencia)\s*[:=]/.test(antes)) continue;
       }
       const inicio = m.index + m[0].length;
+      // "Guias do mês" e "notas de setembro" informam período, não uma empresa desconhecida.
+      const periodo = normalizar(texto.slice(inicio)).replace(/[,;.!?]+$/, '').replace(/,?\s+por favor$/, '').trim();
+      if (tipo === 'CONSULTA' && /^(?:(?:este|esse|deste|desse|neste|nesse)\s+)?(?:mes(?:\s+(?:atual|passado|anterior|seguinte))?|hoje|ontem|(?:competencia\s+)?(?:\d{2}\/\d{4}|\d{4}-\d{2})|(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+(?:de\s+)?\d{4})?)$/.test(periodo)) continue;
       const escolha = empresaNoTrecho(empresas, texto.slice(inicio));
       const objeto = tipo === 'CONSULTA' ? /^(?:guias?|das|documentos?|notas?|saldo|d[eé]bitos)\b/iu.exec(m[0])?.[0] || '' : '';
       mencoes.push({ tipo, ...escolha, inicio: m.index + objeto.length, fim: inicio + escolha.tamanho });
@@ -121,11 +125,6 @@ function ehConsultaExplicita(texto) {
   const t = normalizar(texto);
   if (/(?:descricao|servico|tomador|cliente|documento|valor|competencia)\s*[:=]/.test(t)) return false;
   return /^(?:(?:oi|ola|bom dia|boa tarde|boa noite)[,! ]+)?(?:(?:pode |quero |preciso |gostaria |me |manda |mande |envie |enviar |consultar |ver |mostre |listar |qual |quais |quanto |tenho |duvida |essa |esta |a |as |o |os |por favor )[^;\n]*)?(?:guias?|das|documentos?|notas?|saldo|debitos)\b/.test(t);
-}
-
-function novoPedido(texto, interacaoId) {
-  return String(interacaoId || '').startsWith('altan.client.')
-    || /\b(?:guias?|das|d[eé]bitos|documentos?|emitir|emiss[aã]o|notas?|nfs-?e|recalcular|situa[cç][aã]o\s+fiscal|quanto\s+(?:devo|tenho)|quero|preciso|gostaria)\b/iu.test(texto);
 }
 
 function consultaDeTodas(texto) {
@@ -159,6 +158,19 @@ export function decidirSelecaoEmpresa({ empresas = [], contexto = {}, texto = ''
     acao: 'SELECIONAR', portalClientId: empresa.portalClientId, motivo, pedido, ...extra,
   });
   const continuar = () => ({ acao: 'CONTINUAR', portalClientId: atual.portalClientId, pedido: pedidoAtual });
+
+  const menu = lerContextoDoMenu(interacaoId);
+  if (menu) {
+    if (menu.invalido || !vigente || contexto.aguardandoSelecao || menu.atendimentoId !== contexto.id
+      || menu.versao !== contexto.versao || menu.portalClientId !== contexto.portalClientId) {
+      if (vigente && !contexto.aguardandoSelecao) return { ...continuar(), textoOperacao: 'menu', menuDesatualizado: true, descartarInteracao: true };
+      return { ...pedir('MENU_DESATUALIZADO', null), descartarInteracao: true };
+    }
+    // O ID validado tem prioridade sobre o título visual, que pode estar truncado pelo WhatsApp.
+    return { ...continuar(), interacaoId: menu.acaoId };
+  }
+  // Menus anteriores à vinculação exigem uma escolha explícita; não executam na empresa atual.
+  if (String(interacaoId || '').startsWith('altan.client.') && empresas.length > 1) return pedir('MENU_SEM_CONTEXTO');
 
   if (String(interacaoId || '').startsWith(ID_PREFIXO)) {
     const prefixo = `${ID_PREFIXO}${contexto.id}.${contexto.versao}.`;
@@ -222,5 +234,5 @@ export function decidirSelecaoEmpresa({ empresas = [], contexto = {}, texto = ''
   if (encontradas.length > 1) return pedir('EMPRESA_AMBIGUA');
   if (empresas.length === 1) return vigente ? continuar() : selecionar(empresas[0], 'EMPRESA_UNICA', pedidoAtual);
   if (!vigente) return pedir(contexto.portalClientId ? 'CONTEXTO_EXPIRADO' : 'SEM_EMPRESA_SELECIONADA');
-  return novoPedido(entrada, interacaoId) ? pedir('NOVO_PEDIDO') : continuar();
+  return continuar();
 }

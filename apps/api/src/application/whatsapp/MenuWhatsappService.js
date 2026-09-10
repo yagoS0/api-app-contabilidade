@@ -15,6 +15,7 @@ import { adquirirLease, renovarLease, liberarLease } from "./WhatsappLeaseServic
 import { processarEmissaoGuiada } from "./EmissaoGuiadaWhatsappService.js";
 import { ehPedidoDeEmissao } from "../assistente/coletaEmissaoWhatsapp.js";
 import { chaveLeaseResponsavel, conferirContextoResponsavel, encaminharResponsavelParaEquipe } from "./AtendimentoResponsavelWhatsappService.js";
+import { vincularOpcoesAoContexto } from "./contextoMenuWhatsapp.js";
 
 export const IDS_MENU_WHATSAPP = Object.freeze({
   CLIENTE_GUIAS_MES: "altan.client.guides.current.v1",
@@ -287,6 +288,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
   if ((clienteId && !cliente) || (leadId && cliente)) acao = "ESCOPO_INVALIDO";
 
   const whatsapp = cloud || new WhatsappCloudClient({ log: logger });
+  const opcoesNoContexto = opcoes => vincularOpcoesAoContexto(opcoes, registro.contexto);
   let encaminhamentoDoMenu = false;
   const antesDeEnviar = async (ferramenta = null, assinatura = null) => {
     await conferirLease();
@@ -339,7 +341,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
   }
 
   // A coleta tem prioridade sobre orçamento/flag do modelo e permanece no piloto do menu.
-  if (cliente && ferramentaLiberada(sessao, "preparar_emissao")) {
+  if (cliente && ferramentaLiberada(sessao, "preparar_emissao") && !registro.contexto?.resultado?.menuDesatualizado) {
     const pausar = ["EQUIPE", "MENU", "MAIS", "GUIAS_MES", "SITUACAO_FISCAL", "QUANTO_DEVO", "NOTAS", "DOCUMENTOS", "RECALCULO", "CANCELAMENTO"].includes(acao);
     const guiada = await coleta({ conversa, mensagem, sessao, texto: texto || "", interacao, iniciar: acao === "EMISSAO", pausar,
       retomarComTexto: registro.contexto?.resultado?.retomarColeta ? registro.contexto.resultado.textoRetomada : null,
@@ -370,7 +372,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
 
   if (acao === "INICIO_LIVRE") {
     const corpo = `Olá${sessao.contatoNome ? `, ${sessao.contatoNome}` : ""}! Vou atender seu pedido. Estas opções também estão disponíveis:`;
-    await enviar({ tipo: "interactive", corpo, idTurno: `menu-inicio:${mensagem.id}`, chamada: () => whatsapp.enviarBotoes({ telefone: conversa.telefoneE164, texto: corpo, botoes: botoesDoCliente(sessao), rodape: "Pode continuar escrevendo normalmente." }) });
+    await enviar({ tipo: "interactive", corpo, idTurno: `menu-inicio:${mensagem.id}`, chamada: () => whatsapp.enviarBotoes({ telefone: conversa.telefoneE164, texto: corpo, botoes: opcoesNoContexto(botoesDoCliente(sessao)), rodape: "Pode continuar escrevendo normalmente." }) });
     return { tratado: false, motivo: "INICIO_LIVRE", inicioExibido: true };
   } else if (acao === "MENU") {
     const recente = await client.mensagemWhatsapp.findFirst({
@@ -381,8 +383,10 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
       const corpo = cliente ? rotularEmpresa(`Olá! Como posso ajudar? Pode escrever seu pedido por aqui.${avisoRascunho}`, conversa) : "O menu continua disponível acima. Toque em uma opção ou escreva o que precisa.";
       await enviar({ corpo, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
     } else if (cliente) {
-      const botoes = botoesDoCliente(sessao);
-      const corpo = rotularEmpresa(`Olá${sessao.contatoNome ? `, ${sessao.contatoNome}` : ""}. Como posso ajudar?${avisoRascunho}`, conversa);
+      const botoes = opcoesNoContexto(botoesDoCliente(sessao));
+      const corpo = rotularEmpresa(registro.contexto?.resultado?.menuDesatualizado
+        ? `Esse menu é de uma seleção anterior. Estas são as opções da empresa atual.${avisoRascunho}`
+        : `Olá${sessao.contatoNome ? `, ${sessao.contatoNome}` : ""}. Como posso ajudar?${avisoRascunho}`, conversa);
       await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarBotoes({ telefone: conversa.telefoneE164, texto: corpo, botoes, rodape: "Você também pode escrever seu pedido." }) });
     } else {
       const botoes = [
@@ -399,7 +403,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
     if (["LEAD_CLIENTE", "LEAD_EQUIPE"].includes(final)) await encaminhar();
     await enviar({ corpo, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
   } else if (acao === "MAIS") {
-    const linhas = linhasDoCliente(sessao);
+    const linhas = opcoesNoContexto(linhasDoCliente(sessao));
     const corpo = rotularEmpresa(`Como posso ajudar? Escolha uma opção ou escreva seu pedido.${avisoRascunho}`, conversa);
     await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: corpo, tituloBotao: "Ver opções", tituloSecao: "Atendimento", linhas }) });
   } else if (acao === "EQUIPE") {

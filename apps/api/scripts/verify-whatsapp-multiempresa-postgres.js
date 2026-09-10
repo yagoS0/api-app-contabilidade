@@ -119,6 +119,7 @@ async function novoCaso(nome) {
   const executar = async (ferramenta, input, ctx) => {
     const empresa = empresaDoContexto(ctx);
     consultas.push({ ferramenta, empresaId: empresa.id });
+    if (ferramenta === 'quanto_devo' && nome === 'reacoes-menu-guias') return { ok: true, guias: [{ tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 125,50', vencimento: `20/${String(ctx.agora.getUTCMonth() + 1).padStart(2, '0')}/${ctx.agora.getUTCFullYear()}` }] };
     if (ferramenta === 'tomadores_conhecidos') return { ok: true, tomadores: [] };
     if (ferramenta === 'quanto_devo') return { ok: true, guias: [], quantidade: 0, observacao: `Guia sintética de ${empresa.razao}` };
     assert.equal(ferramenta, 'preparar_emissao', 'Ferramenta não simulada');
@@ -169,10 +170,11 @@ async function novoCaso(nome) {
   });
   const responder = async (texto, extra = {}) => { const inbound = await entrada(texto, extra); return { inbound, resultado: await processar(inbound) }; };
   let sequenciaProvedor = 0;
-  const receberWebhook = async (texto, { interacao = null, providerMessageId = `wamid.fixture.webhook.${randomUUID()}` } = {}) => {
-    const tipo = interacao ? 'interactive' : 'text';
+  const receberWebhook = async (texto, { interacao = null, tipoEvento = null, providerMessageId = `wamid.fixture.webhook.${randomUUID()}` } = {}) => {
+    const tipo = tipoEvento || (interacao ? 'interactive' : 'text');
     const mensagemMeta = { from: telefone, id: providerMessageId, timestamp: String(Math.floor(Date.now() / 1000) + sequenciaProvedor++), type: tipo,
-      ...(interacao ? { interactive: { type: 'list_reply', list_reply: { id: interacao.id, title: interacao.titulo || 'Escolher empresa' } } } : { text: { body: texto } }) };
+      ...(tipo === 'reaction' ? { reaction: { message_id: 'wamid.fixture.reacao', emoji: '👍' } }
+        : interacao ? { interactive: { type: 'list_reply', list_reply: { id: interacao.id, title: interacao.titulo || 'Escolher empresa' } } } : { text: { body: texto } }) };
     const payload = { object: 'whatsapp_business_account', entry: [{ id: 'fixture-account', changes: [{ field: 'messages', value: {
       messaging_product: 'whatsapp', metadata: { phone_number_id: 'fixture-channel' },
       contacts: [{ wa_id: telefone, profile: { name: 'Responsável sintético' } }], messages: [mensagemMeta],
@@ -188,7 +190,7 @@ async function novoCaso(nome) {
     assert.equal(resumo.mensagens.total, 1);
     assert.equal(resumo.mensagens.recusadas, 0);
     const mensagem = await prisma.mensagemWhatsapp.findUniqueOrThrow({ where: { providerMessageId } });
-    return { resumo, mensagem, contexto: await recibo(mensagem.id) };
+    return { resumo, mensagem, contexto: tipo === 'reaction' ? await prisma.resolucaoContextoWhatsapp.findUnique({ where: { mensagemId: mensagem.id } }) : await recibo(mensagem.id) };
   };
   const selecionar = async (empresa = empresas[0]) => {
     const inbound = await entrada(`empresa: ${empresa.razao}`);
@@ -257,6 +259,33 @@ if (posRetomar >= 0) {
     ids.usuarios.push(usuario.id);
     contador = await prisma.user.create({ data: { email: `${prefixo}-contador@example.invalid`, passwordHash: 'FIXTURE-SEM-LOGIN', status: 'active' } });
     ids.usuarios.push(contador.id);
+
+    const jornada = await novoCaso('reacoes-menu-guias');
+    const antesDaReacao = await checkpoint(jornada.atendimento.id);
+    for (let i = 0; i < 2; i++) {
+      const reacao = await jornada.receberWebhook('', { tipoEvento: 'reaction' });
+      assert.equal(reacao.contexto, null);
+    }
+    assert.equal(jornada.envios.length, 0, 'Reações não abrem menu');
+    assert.deepEqual(await checkpoint(jornada.atendimento.id), antesDaReacao, 'Reações não alteram seleção');
+    await jornada.receberWebhook('oi');
+    const botaoEmpresa = jornada.envios.at(-1).linhas.find(o => o.id.endsWith(`.${jornada.empresas[1].id}`));
+    await jornada.receberWebhook('', { tipoEvento: 'reaction' });
+    await jornada.receberWebhook(botaoEmpresa.titulo, { interacao: botaoEmpresa });
+    const menuDaEmpresa = jornada.envios.at(-1);
+    const botaoGuias = menuDaEmpresa.botoes.find(o => o.titulo === 'Guias do mês');
+    assert.match(botaoGuias.id, /^altan\.ctx\.v1:/);
+    const antesDasGuias = await checkpoint(jornada.atendimento.id);
+    const pedidoGuias = await jornada.receberWebhook('Guias do mês', { interacao: botaoGuias });
+    assert.equal(pedidoGuias.contexto.portalClientId, jornada.empresas[1].id);
+    assert.equal((await checkpoint(jornada.atendimento.id)).versao, antesDasGuias.versao);
+    assert.equal(jornada.envios.filter(e => e.tituloBotao === 'Escolher empresa').length, 1);
+    assert.equal(jornada.consultas.filter(c => c.ferramenta === 'quanto_devo').length, 1);
+    assert.equal(jornada.consultas.find(c => c.ferramenta === 'quanto_devo').empresaId, jornada.empresas[1].id);
+    assert.match(jornada.envios.at(-1).texto, /Guias liberadas[\s\S]*DAS/);
+    await jornada.receberWebhook('Guias do mês', { interacao: botaoGuias, providerMessageId: pedidoGuias.mensagem.providerMessageId });
+    assert.equal(jornada.consultas.filter(c => c.ferramenta === 'quanto_devo').length, 1, 'Reentrega não consulta nem responde de novo');
+    ok('webhook real: reações → empresa → menu → guias e reentrega sem modelo');
 
     const selecao = await novoCaso('selecao-recibo');
     const textoInicial = 'preciso emitir uma nota; valor: 125,50; serviço: consulta sintética';
