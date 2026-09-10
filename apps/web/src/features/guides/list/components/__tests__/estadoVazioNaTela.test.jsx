@@ -33,7 +33,8 @@ function montar(props = {}) {
       {...props}
     />,
   );
-  fireEvent.change(screen.getByRole("combobox", { name: "Exibir" }), { target: { value: "competencia" } });
+  fireEvent.click(screen.getByText("Outras consultas"));
+  fireEvent.click(screen.getByRole("button", { name: "Por competência fiscal" }));
   return result;
 }
 
