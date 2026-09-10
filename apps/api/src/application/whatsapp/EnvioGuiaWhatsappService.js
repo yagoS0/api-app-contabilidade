@@ -47,6 +47,8 @@ import {
 } from "./ContatoWhatsappService.js";
 import { registrarMensagemEnviada } from "./ConversaWhatsappService.js";
 import { avaliarCanal, avaliarLinha, CANAIS, MOTIVOS } from "./elegibilidadeEnvioGuia.js";
+import { conferirGuiasVencimento } from "../guides/GuideDueBatchService.js";
+import { assinaturaGuias, periodoVencimento, loteAlterado } from "../guides/loteVencimento.js";
 import { getGuidePdfBuffer } from "../guides/GuideService.js";
 import { guideTypeEmailLabel } from "../guides/guideEmailCopy.js";
 import { dataCivilBR } from "../../utils/dataCivil.js";
@@ -57,6 +59,7 @@ import {
   marcarEnviado,
   marcarEnviando,
   marcarFalhou,
+  marcarIndeterminado,
   materializarEnvioDeEmailLegado,
   registrarEnvio,
 } from "../guides/EnvioGuiaService.js";
@@ -104,6 +107,11 @@ export const SELECT_GUIA_PARA_ENVIO = Object.freeze({
   vencimento: true,
   status: true,
   sourcePath: true,
+  paymentStatus: true,
+  parcelamentoId: true,
+  numeroParcela: true,
+  hash: true,
+  updatedAt: true,
   // ⚠ O legado do e-mail viaja junto porque é ele que `linhaLegadoDoEmail` materializa antes de a
   // primeira linha de `envios_guia` desligar a tolerância. Sem estes três campos aqui, o serviço
   // teria de reler a guia no meio do envio.
@@ -206,21 +214,22 @@ export async function carregarCanal({ chaveTemplate = WHATSAPP_TEMPLATE_GUIA, in
  * existem, `emailStatus: SENT` como tolerância enquanto não existirem. Uma segunda definição aqui
  * faria a prévia e o chip discordarem sobre a mesma guia.
  */
-export async function preverLote({ portalClientIds, competencia, guideIds = null, chaveTemplate = WHATSAPP_TEMPLATE_GUIA }) {
+export async function preverLote({ portalClientIds, competencia, mesVencimento, guideIds = null, chaveTemplate = WHATSAPP_TEMPLATE_GUIA }) {
   const ids = [...new Set((portalClientIds || []).map((v) => String(v || "").trim()).filter(Boolean))];
-  const comp = String(competencia || "").trim();
+  const comp = String(mesVencimento || competencia || "").trim();
   if (!ids.length) throw new EnvioGuiaWhatsappError("EMPRESAS_OBRIGATORIAS", "Informe ao menos uma empresa.");
   if (!/^\d{4}-\d{2}$/.test(comp)) {
     throw new EnvioGuiaWhatsappError("COMPETENCIA_INVALIDA", "Informe a competência no formato AAAA-MM.");
   }
 
   const canal = await carregarCanal({ chaveTemplate });
+  const selecao = mesVencimento ? await conferirGuiasVencimento({ portalClientIds: ids, mesVencimento, guideIds }) : null;
 
   const guias = await prisma.guide.findMany({
     where: {
       // ⚠ O escopo vem de fora (`empresasVisiveis` / `requireFirmCompanyAccess`) e viaja no `where`.
       portalClientId: { in: ids },
-      competencia: comp,
+      ...(mesVencimento ? { vencimento: periodoVencimento(mesVencimento) } : { competencia: comp }),
       // `VAZIO` (ausência confirmada) não tem PDF e não se envia; `ERROR`/`NEEDS_REVIEW` também não.
       status: "PROCESSED",
       ...(Array.isArray(guideIds) && guideIds.length ? { id: { in: guideIds.map(String) } } : {}),
@@ -258,7 +267,7 @@ export async function preverLote({ portalClientIds, competencia, guideIds = null
       empresa: g.portalClient?.razao || null,
       cnpj: g.portalClient?.cnpj || null,
       tipo: g.tipo,
-      tipoLabel: guideTypeEmailLabel(g.tipo),
+      tipoLabel: g.parcelamentoId ? "Parcelamento" : guideTypeEmailLabel(g.tipo),
       competencia: g.competencia,
       valor: g.valor != null ? Number(g.valor) : null,
       vencimento: g.vencimento || null,
@@ -285,6 +294,9 @@ export async function preverLote({ portalClientIds, competencia, guideIds = null
 
   return {
     competencia: comp,
+    ...(mesVencimento ? { mesVencimento, assinatura: selecao.assinatura,
+      assinaturasPorGuia: Object.fromEntries(selecao.guias.map((g) => [g.id, assinaturaGuias([g])])),
+      assinaturasPorEmpresa: Object.fromEntries(ids.map((id) => [id, assinaturaGuias(selecao.guias.filter((g) => g.portalClientId === id))])) } : {}),
     canal,
     linhas,
     // ⚠ ESTES SÃO OS NÚMEROS QUE A CONFIRMAÇÃO TEM DE REPETIR. Ver `executarLote`.
@@ -341,7 +353,7 @@ export async function enviarGuiaPorWhatsapp({
 }) {
   const { materializou } = await materializarEnvioDeEmailLegado(guide);
 
-  const { envio, jaEnviado } = await registrarEnvio({
+  const { envio, jaEnviado, emAndamento } = await registrarEnvio({
     guideId: guide.id,
     canal: CANAL.WHATSAPP,
     destino: contato.telefoneE164,
@@ -349,10 +361,16 @@ export async function enviarGuiaPorWhatsapp({
     reenviar,
   });
   if (jaEnviado) {
-    return { ok: true, enviada: false, jaEnviada: true, guideId: guide.id, envioId: envio.id, legadoMaterializado: materializou };
+    return { ok: true, estado: "ja_enviada", enviada: false, jaEnviada: true, guideId: guide.id, envioId: envio.id, destino: contato.telefoneE164, legadoMaterializado: materializou };
   }
+  if (emAndamento) return {
+    ok: false, estado: envio.status === "indeterminado" ? "indeterminado" : "em_andamento",
+    guideId: guide.id, envioId: envio.id, destino: contato.telefoneE164,
+    motivo: envio.status === "indeterminado" ? "ENVIO_INDETERMINADO" : MOTIVOS_SERVICO.ENVIO_EM_ANDAMENTO,
+    mensagem: "Existe uma tentativa sem desfecho confirmado. Confira o histórico antes de qualquer novo envio.", podeTentarDeNovo: false,
+  };
 
-  const { reservado } = await marcarEnviando(envio.id);
+  const { reservado, tentativaId } = await marcarEnviando(envio.id);
   if (!reservado) {
     // Outra requisição já está mandando ESTA guia. Recusar aqui é o que impede a segunda cópia de
     // chegar ao cliente — e é recusa nomeada, não erro genérico.
@@ -362,14 +380,16 @@ export async function enviarGuiaPorWhatsapp({
       envioId: envio.id,
       motivo: MOTIVOS_SERVICO.ENVIO_EM_ANDAMENTO,
       mensagem: "Já existe um envio desta guia em andamento — aguarde o resultado antes de tentar de novo.",
-      podeTentarDeNovo: true,
+      podeTentarDeNovo: false,
+      estado: "em_andamento", destino: contato.telefoneE164,
       legadoMaterializado: materializou,
     };
   }
 
-  const tipoLabel = guideTypeEmailLabel(guide.tipo);
+  const tipoLabel = guide.parcelamentoId ? "Parcelamento" : guideTypeEmailLabel(guide.tipo);
   const competenciaLabel = competenciaPorExtenso(guide.competencia);
 
+  let aceitoWamid = null;
   try {
     // ⚠⚠ SEM VALOR, NÃO SAI. A 4ª variável do template é o valor; vazia, o cliente lê "Valor: R$ "
     // — e o zero por omissão seria pior ainda ("Valor: R$ 0,00" sobre uma guia a pagar). A recusa é
@@ -380,12 +400,13 @@ export async function enviarGuiaPorWhatsapp({
         + "que não existe. Reprocesse a guia antes de enviar.";
       await marcarFalhou({
         envioId: envio.id,
+        tentativaId,
         codigo: MOTIVOS_SERVICO.GUIA_SEM_VALOR,
         mensagemUsuario: mensagem,
         proximaTentativaEm: null,
       });
       return {
-        ok: false, guideId: guide.id, envioId: envio.id,
+        ok: false, estado: "falhou", guideId: guide.id, envioId: envio.id, tentativaId, destino: contato.telefoneE164,
         motivo: MOTIVOS_SERVICO.GUIA_SEM_VALOR, mensagem, podeTentarDeNovo: false,
         legadoMaterializado: materializou,
       };
@@ -398,12 +419,13 @@ export async function enviarGuiaPorWhatsapp({
       const mensagem = "O PDF desta guia não está disponível no armazenamento — recapture a guia antes de enviar.";
       await marcarFalhou({
         envioId: envio.id,
+        tentativaId,
         codigo: MOTIVOS_SERVICO.GUIA_SEM_PDF,
         mensagemUsuario: mensagem,
         proximaTentativaEm: null,
       });
       return {
-        ok: false, guideId: guide.id, envioId: envio.id,
+        ok: false, estado: "falhou", guideId: guide.id, envioId: envio.id, tentativaId, destino: contato.telefoneE164,
         motivo: MOTIVOS_SERVICO.GUIA_SEM_PDF, mensagem, podeTentarDeNovo: false,
         legadoMaterializado: materializou,
       };
@@ -415,6 +437,7 @@ export async function enviarGuiaPorWhatsapp({
       conteudoPdf,
       nomeArquivo: nomeArquivoDaGuia({ tipoGuia: tipoLabel, competencia: guide.competencia }),
       template: canal.nomeMeta,
+      idioma: canal.idioma,
       variaveis: variaveisDaGuia({
         // Primeiro nome, como no esqueleto do dono [E]: a mensagem cumprimenta a pessoa.
         nomeContato: String(contato.nome || "").trim().split(/\s+/)[0] || "",
@@ -427,7 +450,8 @@ export async function enviarGuiaPorWhatsapp({
       }),
     });
 
-    await marcarEnviado({ envioId: envio.id, providerMessageId: wamid });
+    aceitoWamid = wamid;
+    await marcarEnviado({ envioId: envio.id, providerMessageId: wamid, tentativaId });
 
     // ⚠⚠ O LOG DE SUCESSO — ele NÃO EXISTIA, e a falta dele custou três rodadas de investigação em
     // 05/09/2026. Uma guia que "saiu" e não chegou não deixava uma linha sequer ligando guia,
@@ -464,7 +488,7 @@ export async function enviarGuiaPorWhatsapp({
     // no webhook: sem gravá-lo, a resposta do cliente com o nono dígito diferente cai na fila de
     // "não vinculados". ⚠ BEST-EFFORT pelo mesmo motivo do balão: a mensagem já saiu.
     try {
-      await gravarWaIdDoContato({ contatoId: contato.id, waId });
+      await gravarWaIdDoContato({ contatoId: contato.id, telefoneEnviado: contato.telefoneE164, waId });
     } catch (e) {
       log?.warn?.({ err: e?.message || e, envioId: envio.id }, "guia enviada, mas o waId do contato não foi gravado");
     }
@@ -473,21 +497,33 @@ export async function enviarGuiaPorWhatsapp({
     // não pode virar "falhou" e mandar o contador reenviar.
     try {
       await registrarMensagemEnviada({
-        telefone: contato.telefoneE164,
+        telefone: waId || contato.waId || contato.telefoneE164,
         portalClientId: guide.portalClientId,
         tipo: "template",
         providerMessageId: wamid,
         envioGuiaId: envio.id,
+        envioGuiaTentativaId: tentativaId,
       });
     } catch (e) {
       log?.warn?.({ err: e?.message || e, guideId: guide.id }, "guia enviada por WhatsApp, mas o balão do fio não foi registrado");
     }
 
     return {
-      ok: true, enviada: true, jaEnviada: false, guideId: guide.id, envioId: envio.id,
+      ok: true, estado: "aceito", enviada: true, jaEnviada: false, guideId: guide.id, envioId: envio.id, tentativaId,
       providerMessageId: wamid, destino: contato.telefoneE164, legadoMaterializado: materializou,
     };
   } catch (err) {
+    const indeterminado = Boolean(aceitoWamid) || (err?.desfechoIndeterminado !== false && ["WHATSAPP_FALHA_DE_TRANSPORTE", "WHATSAPP_SEM_WAMID", "WHATSAPP_RESPOSTA_NAO_RECONHECIDA"].includes(err?.codigo));
+    if (indeterminado) {
+      const mensagem = "O desfecho desta tentativa não pôde ser confirmado. A mensagem pode ter sido aceita; confira o histórico antes de reenviar.";
+      try {
+        await marcarIndeterminado({ envioId: envio.id, tentativaId, providerMessageId: aceitoWamid, mensagemUsuario: mensagem });
+      } catch (persistencia) {
+        log?.error?.({ evento: "whatsapp.aceite.pendente_registro", envioId: envio.id, tentativaId, providerMessageId: aceitoWamid }, "Tentativa reservada exige reconciliação; não reenviar automaticamente");
+      }
+      return { ok: false, estado: "indeterminado", guideId: guide.id, envioId: envio.id, tentativaId,
+        providerMessageId: aceitoWamid, destino: contato.telefoneE164, motivo: "ENVIO_INDETERMINADO", mensagem, message: mensagem, podeTentarDeNovo: false };
+    }
     const traduzido = err instanceof WhatsappError;
     const mensagem = traduzido
       ? err.mensagemUsuario
@@ -499,6 +535,7 @@ export async function enviarGuiaPorWhatsapp({
     const podeTentarDeNovo = traduzido ? err.podeTentarDeNovo : null;
     await marcarFalhou({
       envioId: envio.id,
+      tentativaId,
       codigo: traduzido ? err.codigo : MOTIVOS_SERVICO.FALHA_INESPERADA,
       mensagemUsuario: mensagem,
       // ⚠ `proximaTentativaEm` FICA NULO, DE PROPÓSITO — inclusive quando a fonte diz que dá para
@@ -534,7 +571,7 @@ export async function enviarGuiaPorWhatsapp({
       "envio de guia por WhatsApp falhou",
     );
     return {
-      ok: false, guideId: guide.id, envioId: envio.id,
+      ok: false, estado: "falhou", guideId: guide.id, envioId: envio.id, tentativaId, destino: contato.telefoneE164,
       motivo: traduzido ? err.codigo : MOTIVOS_SERVICO.FALHA_INESPERADA,
       mensagem, podeTentarDeNovo, legadoMaterializado: materializou,
     };
@@ -605,7 +642,8 @@ export async function enviarParaTodosOsDestinatarios({
   const lista = (destinatarios || linha?.destinatarios || []).filter((c) => String(c?.telefoneE164 || "").trim());
   // ⚠ Sem lista, o comportamento é o de antes: o contato único que a prévia escolheu. É o que
   // mantém funcionando quem chama esta função sem passar destinatários.
-  const alvos = lista.length ? lista : [{ telefoneE164: linha?.destino, nome: linha?.contatoNome }];
+  const alvos = destinatarios !== null || Array.isArray(linha?.destinatarios)
+    ? lista : [{ telefoneE164: linha?.destino, nome: linha?.contatoNome }];
 
   const resultados = [];
   for (const contato of alvos) {
@@ -613,7 +651,11 @@ export async function enviarParaTodosOsDestinatarios({
     resultados.push(await enviarGuiaPorWhatsapp({ guide, contato, canal, cliente, carregarPdf, log, reenviar }));
   }
 
-  const enviadas = resultados.filter((r) => r.ok && r.enviada !== false).length;
+  return resumirDestinatarios(resultados);
+}
+
+export function resumirDestinatarios(resultados) {
+  const enviadas = resultados.filter((r) => r.ok && r.enviada === true).length;
   const falhou = resultados.find((r) => !r.ok) || null;
   const algumOk = resultados.some((r) => r.ok);
   // O corpo base é o do primeiro resultado (contrato antigo), MAS o motivo e a mensagem vêm de quem
@@ -622,12 +664,17 @@ export async function enviarParaTodosOsDestinatarios({
   return {
     ...base,
     ok: algumOk,
+    estado: falhou && algumOk ? "parcial" : algumOk ? "aceito" : resultados.some((r) => r.estado === "indeterminado") ? "indeterminado" : "falhou",
+    enviada: enviadas > 0,
+    jaEnviada: resultados.length > 0 && resultados.every((r) => r.jaEnviada),
     destinatarios: resultados.length,
     enviadas,
-    falhas: resultados.length - resultados.filter((r) => r.ok).length,
+    aceitas: enviadas,
+    indeterminadas: resultados.filter((r) => ["indeterminado", "em_andamento"].includes(r.estado)).length,
+    falhas: resultados.filter((r) => !r.ok && !["indeterminado", "em_andamento"].includes(r.estado)).length,
     parcial: Boolean(falhou) && algumOk,
     ...(falhou
-      ? { motivo: falhou.motivo, mensagem: falhou.mensagem, podeTentarDeNovo: falhou.podeTentarDeNovo }
+      ? { motivo: falhou.motivo, mensagem: falhou.mensagem, message: falhou.mensagem, podeTentarDeNovo: falhou.podeTentarDeNovo }
       : {}),
     resultados,
   };
@@ -648,6 +695,8 @@ export async function enviarParaTodosOsDestinatarios({
 export async function executarLote({
   portalClientIds,
   competencia,
+  mesVencimento,
+  assinatura,
   guideIds = null,
   conferencia = null,
   chaveTemplate = WHATSAPP_TEMPLATE_GUIA,
@@ -657,7 +706,8 @@ export async function executarLote({
   log = logPadrao,
   aoProgredir = null,
 }) {
-  const previa = await preverLote({ portalClientIds, competencia, guideIds, chaveTemplate });
+  const previa = await preverLote({ portalClientIds, competencia, mesVencimento, guideIds, chaveTemplate });
+  if (mesVencimento && (!assinatura || assinatura !== previa.assinatura)) throw loteAlterado();
   conferirLote(previa.resumo, conferencia);
 
   const paraWhatsapp = previa.linhas.filter((l) => l.canalSugerido === CANAIS.WHATSAPP);
@@ -686,12 +736,21 @@ export async function executarLote({
     const linha = paraWhatsapp[i];
     const guide = guiasPorId.get(linha.guideId);
     let resultado;
-    if (!guide) {
+    if (!guide || guide.paymentStatus === "PAID") {
       resultado = {
         ok: false, guideId: linha.guideId, motivo: MOTIVOS.GUIA_NAO_PROCESSADA,
         mensagem: "A guia não está mais disponível para envio.", podeTentarDeNovo: false,
       };
     } else {
+      if (mesVencimento) {
+        try {
+          await conferirGuiasVencimento({ portalClientIds: [guide.portalClientId], mesVencimento,
+            guideIds: [guide.id], assinatura: previa.assinaturasPorGuia[guide.id] });
+        } catch (err) {
+          resultados.push({ ...linha, ok: false, motivo: err.code, mensagem: err.message });
+          continue;
+        }
+      }
       // eslint-disable-next-line no-await-in-loop
       resultado = await enviarParaTodosOsDestinatarios({
         guide,
@@ -719,12 +778,14 @@ export async function executarLote({
       total: paraWhatsapp.length,
       enviadas: resultados.filter((r) => r.ok && r.enviada).length,
       jaEnviadas: resultados.filter((r) => r.jaEnviada).length,
-      falhas: resultados.filter((r) => !r.ok),
+      falhas: resultados.filter((r) => !r.ok || r.parcial),
+      parciais: resultados.filter((r) => r.parcial).length,
       resultados,
     },
     // ⚠ NUNCA SOMEM: as que não puderam ir por WhatsApp voltam com o motivo, para o chamador
     // mandá-las por e-mail. Elas contam no total que a confirmação repetiu.
     email: {
+      ...(mesVencimento ? { mesVencimento, assinaturasPorEmpresa: previa.assinaturasPorEmpresa } : {}),
       total: paraEmail.length,
       guideIds: paraEmail.map((l) => l.guideId),
       linhas: paraEmail,

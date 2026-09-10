@@ -13,6 +13,8 @@ export function useSitfis({ api, companyId }) {
   // C11: o PDF fica gravado e é exibido ao abrir a aba. Se o arquivo sumiu do armazenamento
   // (deploy sem volume persistente apagava a pasta), avisamos em vez de mostrar quadro em branco.
   const [pdfIndisponivel, setPdfIndisponivel] = useState(false);
+  const [revisaoPdf, setRevisaoPdf] = useState(0);
+  const recarregarPdf = () => { setPdfIndisponivel(false); setRevisaoPdf((v) => v + 1); };
 
   const reload = useCallback(async () => {
     if (!api || !companyId) return;
@@ -86,7 +88,7 @@ SERPRO: ${res.mensagemSerpro}` : base);
       cancelled = true;
       if (createdUrl) URL.revokeObjectURL(createdUrl);
     };
-  }, [api, companyId, status?.relatorioPdfFileId, status?.checkedAt]);
+  }, [api, companyId, status?.relatorioPdfFileId, status?.checkedAt, revisaoPdf]);
 
   // C11: trava de 4h — o backend manda `podeConsultar`/`proximaConsultaEm` junto do status.
   const podeConsultar = status?.podeConsultar !== false;
@@ -94,6 +96,6 @@ SERPRO: ${res.mensagemSerpro}` : base);
 
   return {
     status, loading, consulting, error, notice, pdfUrl, pdfIndisponivel,
-    podeConsultar, proximaConsultaEm, reload, consultar,
+    podeConsultar, proximaConsultaEm, reload, consultar, recarregarPdf,
   };
 }

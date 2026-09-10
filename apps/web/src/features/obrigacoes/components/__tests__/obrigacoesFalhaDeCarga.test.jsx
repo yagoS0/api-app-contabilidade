@@ -51,7 +51,7 @@ describe("ObrigacoesPage — a carga que falha não vira 'está tudo em dia'", (
     render(<ObrigacoesPage api={api} empresas={EMPRESAS} />);
 
     await screen.findByText("Não foi possível carregar as obrigações");
-    expect(screen.queryByText("Nenhuma obrigação cadastrada.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nenhuma tarefa ou obrigação cadastrada.")).not.toBeInTheDocument();
     expect(screen.getByText(/esta tela não conseguiu vê-las/)).toBeInTheDocument();
   });
 
@@ -87,7 +87,7 @@ describe("ObrigacoesPage — a carga que falha não vira 'está tudo em dia'", (
     expect(screen.queryByText("—")).not.toBeInTheDocument();
     expect(screen.queryByText("não carregou")).not.toBeInTheDocument();
     // Agora sim: lista vazia é "não há", e a tela pode dizer isso.
-    expect(screen.getByText("Nenhuma obrigação cadastrada.")).toBeInTheDocument();
+    expect(screen.getByText("Nenhuma tarefa ou obrigação cadastrada.")).toBeInTheDocument();
   });
 
   it("no caminho FELIZ nada mudou — os números aparecem, sem legenda de falha", async () => {

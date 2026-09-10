@@ -1,0 +1,48 @@
+.onboarding-workspace { min-width: 0; color: var(--text); }
+.onboarding-workspace *, .onboarding-workspace *::before, .onboarding-workspace *::after { box-sizing: border-box; }
+.onboarding-workspace h2 { font-size: 1rem; margin: 0 0 8px; }
+.onboarding-workspace h3 { font-size: .9375rem; }
+.onboarding-workspace p { line-height: 1.55; }
+.onboarding-workspace fieldset { min-width: 0; }
+.onboarding-workspace input:not([type="checkbox"]):not([type="radio"]), .onboarding-workspace select, .onboarding-workspace textarea { min-width: 0; max-width: 100%; }
+.onboarding-workspace input:not([type="checkbox"]):not([type="radio"]), .onboarding-workspace select { min-height: 40px; }
+.onboarding-workspace textarea { min-height: 100px; resize: vertical; }
+.onboarding-workspace [role="alert"] { padding: 12px; border: 1px solid var(--state-warn); border-radius: 8px; color: var(--state-warn); }
+.onboarding-workspace [role="status"], .onboarding-help { color: var(--text-muted); font-size: .8125rem; }
+.onboarding-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.onboarding-intro { padding: 18px 20px; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); }
+.onboarding-intro p { margin: 0; color: var(--text-muted); max-width: 80ch; font-size: .875rem; }
+.onboarding-new > p { margin-top: 0; color: var(--text-muted); font-size: .875rem; }
+.onboarding-new fieldset { border: 0; padding: 0; margin: 20px 0 0; display: grid; gap: 8px; }
+.onboarding-new legend { padding: 0 0 8px; font-weight: 600; font-size: .875rem; }
+.onboarding-option { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: .875rem; }
+.onboarding-option:has(input:checked) { border-color: var(--accent-purple); background: var(--bg-subtle); }
+.onboarding-option input { margin: 3px 0 0; width: auto; }
+.onboarding-option small { display: block; color: var(--text-muted); margin-top: 4px; line-height: 1.4; }
+.onboarding-commercial { margin-bottom: 24px; }
+.onboarding-commercial > p { color: var(--text-muted); font-size: .875rem; }
+.onboarding-link-panel { padding: 20px; border: 1px solid var(--border); border-left: 3px solid var(--accent-purple); border-radius: 10px; background: var(--bg-surface); margin: 16px 0; }
+.onboarding-link-panel h3 { margin-top: 0; }
+.onboarding-link-panel p { max-width: 80ch; color: var(--text-muted); font-size: .875rem; }
+.onboarding-share { margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap; }
+.onboarding-share > p, .onboarding-share > label { flex-basis: 100%; min-width: 0; }
+.onboarding-links { list-style: none; padding: 0; margin: 14px 0 0; max-height: 160px; overflow-y: auto; font-size: .8125rem; color: var(--text-muted); }
+.onboarding-links li { padding: 8px 0; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; border-top: 1px solid var(--border); }
+.onboarding-panel { margin-bottom: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+.onboarding-panel > summary { cursor: pointer; font-weight: 600; font-size: .875rem; }
+.onboarding-panel[open] > summary { margin-bottom: 16px; }
+.onboarding-panel dl { overflow-wrap: anywhere; }
+.onboarding-public { max-width: 780px; margin: 32px auto; padding: 0 24px 40px; }
+.onboarding-public__header h1 { font-size: clamp(1.4rem, 3vw, 1.9rem); line-height: 1.25; margin: 12px 0; max-width: 24ch; }
+.onboarding-eyebrow { font-size: .6875rem; font-weight: 600; letter-spacing: .1em; color: var(--text-muted); }
+.onboarding-public__header p { color: var(--text-muted); font-size: .875rem; }
+.onboarding-public__progress { margin: 24px 0 20px; font-size: .875rem; }
+.onboarding-public progress { width: 100%; height: 6px; accent-color: var(--accent-purple); }
+.onboarding-public__fields { border: 1px solid var(--border); background: var(--bg-surface); border-radius: 12px; padding: 24px; margin: 0; }
+.onboarding-public__actions { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; padding-top: 20px; border-top: 1px solid var(--border); }
+@media (max-width: 600px) {
+  .onboarding-public { margin: 24px auto; padding: 0 16px 24px; }
+  .onboarding-public__fields, .onboarding-link-panel { padding: 16px; }
+  .onboarding-public__actions > button { width: 100%; }
+  .onboarding-workspace .onboarding-field-row { grid-template-columns: minmax(0, 1fr) !important; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+}

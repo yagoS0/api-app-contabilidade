@@ -8,13 +8,14 @@
 // depois de gravar seria descobrir tarde: são 38 calendários alterados.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { BackButton } from "../../../components/ui/BackButton";
 import { lerFalhaDeCarga, SEM_RESPOSTA } from "../../../lib/falhaDeCarga";
 import { calcularPreviaVencimentos } from "../lib/previaVencimentos";
 
 const COR = {
-  fundo: "#21222C", borda: "#44475A", texto: "#F8F8F2", suave: "#A7B0C0",
+  fundo: "var(--bg-surface)", borda: "var(--border)", texto: "var(--text)", suave: "var(--text-muted)",
   destaque: "#BD93F9", alerta: "#FFB347", perigo: "#FF5757", ok: "#50FA7B",
 };
 
@@ -29,8 +30,8 @@ const ROTULO_AJUSTE = {
 const ROTULO_ESCOPO = { TODAS: "Todas as empresas", POR_FILTRO: "Por filtro", SELECAO_MANUAL: "Seleção manual" };
 
 const campo = {
-  background: "#1F2029", border: `1px solid ${COR.borda}`, borderRadius: 6,
-  color: COR.texto, padding: "7px 10px", fontSize: "0.85rem", width: "100%", boxSizing: "border-box",
+  background: "var(--bg-page)", border: `1px solid ${COR.borda}`, borderRadius: 6,
+  color: COR.texto, padding: "9px 10px", minHeight: 40, fontSize: "0.95rem", width: "100%", boxSizing: "border-box",
   colorScheme: "dark",
 };
 const rotuloTexto = { display: "block", fontSize: "0.75rem", color: COR.suave, marginBottom: 3 };
@@ -70,6 +71,7 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
   const [form, setForm] = useState(() => ({
     nome: inicial?.nome || "",
     categoria: inicial?.categoria || "",
+    diasPreparacao: inicial?.diasPreparacao ?? 0,
     periodicidade: inicial?.periodicidade || "MENSAL",
     diaVencimento: inicial?.diaVencimento || 15,
     mesReferencia: inicial?.mesReferencia || 1,
@@ -131,7 +133,7 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
     [form.periodicidade, form.mesReferencia, form.diaVencimento, form.ajusteDiaUtil],
   );
 
-  const podeAvancar = passo === 0 ? Boolean(form.nome.trim()) : true;
+  const podeAvancar = passo === 0 ? Boolean(form.nome.trim()) : Number.isInteger(Number(form.diasPreparacao)) && Number(form.diasPreparacao) >= 0 && Number(form.diasPreparacao) <= 365;
 
   // "Por filtro" sem nenhum critério vale para todas — e o backend recusa justamente por isso
   // (o escopo certo aí é "Todas"). Sem este aviso a prévia mostraria 6 empresas e o salvar
@@ -151,6 +153,7 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
       const corpo = {
         nome: form.nome,
         categoria: form.categoria || null,
+        diasPreparacao: Number(form.diasPreparacao),
         periodicidade: form.periodicidade,
         diaVencimento: Number(form.diaVencimento),
         mesReferencia: form.periodicidade === "MENSAL" ? null : Number(form.mesReferencia),
@@ -194,16 +197,8 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
               : null);
 
   return (
-    <div
-      role="dialog" aria-modal="true" aria-label={editando ? "Editar regra" : "Nova regra do escritório"}
-      onClick={(e) => { if (e.target === e.currentTarget) onFechar(); }}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 70, padding: 16, overflowY: "auto" }}
-    >
-      <div style={{ width: "100%", maxWidth: 620, background: "#282A36", border: `1px solid ${COR.borda}`, borderRadius: 12, padding: 20, color: COR.texto }}>
-        <h3 style={{ margin: "0 0 10px", fontSize: "1.05rem" }}>
-          {editando ? "Editar regra" : "Nova regra do escritório"}
-        </h3>
-
+    <Modal titulo={editando ? "Editar regra" : "Nova regra do escritório"} aoFechar={onFechar} ocupado={salvando}>
+      <div>
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           {PASSOS.map((p, i) => (
             <div
@@ -227,7 +222,7 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
         )}
 
         {passo === 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
             <Campo label="Nome da obrigação" largura="1 / -1">
               <input
                 autoFocus value={form.nome} onChange={(e) => set("nome", e.target.value)}
@@ -248,13 +243,14 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
 
         {passo === 1 && (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
               <Campo label="Periodicidade">
                 <select value={form.periodicidade} onChange={(e) => set("periodicidade", e.target.value)} style={campo}>
                   {(opcoes?.periodicidades || []).map((p) => <option key={p} value={p}>{ROTULO_PERIODICIDADE[p] || p}</option>)}
                 </select>
               </Campo>
-              <Campo label="Dia do vencimento">
+              <Campo label="Dias corridos de preparação"><input type="number" min="0" max="365" value={form.diasPreparacao} onChange={(e) => set("diasPreparacao", e.target.value)} style={campo} /></Campo>
+          <Campo label="Dia do vencimento">
                 <input type="number" min="1" max="31" value={form.diaVencimento} onChange={(e) => set("diaVencimento", e.target.value)} style={campo} />
               </Campo>
               {form.periodicidade !== "MENSAL" && (
@@ -284,7 +280,8 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
               </Campo>
             </div>
             <div style={{ marginTop: 12, padding: "8px 10px", background: COR.fundo, borderRadius: 6, border: `1px solid ${COR.borda}`, fontSize: "0.78rem", color: COR.suave }}>
-              Próximos vencimentos: <strong style={{ color: COR.texto }}>{previaDatas.proximas.map(fmtData).join(" · ") || "—"}</strong>
+              Janela de preparação: começa {form.diasPreparacao} dia(s) corrido(s) antes do vencimento de cada ocorrência, incluindo fins de semana. O vencimento fiscal é preservado.<br />
+            Próximos vencimentos: <strong style={{ color: COR.texto }}>{previaDatas.proximas.map(fmtData).join(" · ") || "—"}</strong>
               {previaDatas.jaVencida && (
                 // ⚠ A regra do escritório NÃO oferece a caixa "registrar como atraso" que o cadastro
                 // por empresa oferece: aqui um clique afirmaria atraso em todas as empresas do
@@ -459,11 +456,11 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
-export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
+export function RegrasObrigacao({ api, empresas = [], onVoltar, emModal = false }) {
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -514,7 +511,7 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
     if (!desvincular) {
       const remover = window.confirm(
         `Remover TAMBÉM as ${regra.totalEmpresas} obrigações das empresas?\n\n` +
-        `Isso apaga os vencimentos já concluídos junto. Não dá para desfazer.`,
+        `As pendentes saem da agenda. As concluídas são preservadas no histórico.`,
       );
       if (!remover) return;
       modo = "remover";
@@ -584,11 +581,11 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
   }
 
   const regras = dados?.regras || [];
-
-  return (
+  if (emModal && wizard) return <Wizard api={api} opcoes={opcoes} inicial={wizard.inicial} onFechar={() => setWizard(null)} onSalvo={async () => { setWizard(null); setAviso('Regra salva.'); await carregar(); }} />;
+  const conteudo = (
     <section aria-label="Regras do escritório">
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-        <BackButton onClick={onVoltar} label="Obrigações" />
+        <BackButton onClick={onVoltar} label="Tarefas e obrigações" />
         <h2 style={{ margin: 0, color: COR.texto, fontSize: "1.1rem" }}>Regras do escritório</h2>
         <span style={{ color: COR.suave, fontSize: "0.78rem" }}>uma obrigação, várias empresas</span>
         {carregando && <span style={{ color: COR.suave, fontSize: "0.75rem" }}>carregando…</span>}
@@ -738,4 +735,5 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
       )}
     </section>
   );
+  return emModal ? <Modal titulo="Regras e recorrências" aoFechar={onVoltar} tamanho="lg">{conteudo}</Modal> : conteudo;
 }

@@ -28,8 +28,10 @@ import {
   preverLote,
 } from "../../application/whatsapp/EnvioGuiaWhatsappService.js";
 import { avaliarLinha } from "../../application/whatsapp/elegibilidadeEnvioGuia.js";
-import { enviosPorGuia, foiEnviadaComLegado } from "../../application/guides/EnvioGuiaService.js";
+import { enviosPorGuia, foiEnviadaComLegado, STATUS_TERMINAL } from "../../application/guides/EnvioGuiaService.js";
+import { createGuideReleaseBatchService } from "../../application/guides/GuideReleaseBatchService.js";
 import { runGuideEmailWorkerSelected } from "../../workers/guideEmailWorker.js";
+import { sendCompanyGuidesEmail } from "../../application/guides/GuideCompanyEmailService.js";
 import {
   destinatarioWhatsapp,
   destinatariosDeEnvio,
@@ -37,9 +39,21 @@ import {
 
 export function createWhatsappGuiasRouter({ log } = {}) {
   const router = Router({ mergeParams: true });
+  const liberacao = createGuideReleaseBatchService();
+
+  for (const [sufixo, executar] of [["/previa", false], ["", true]]) {
+    router.post(`/guides/liberacao/lote${sufixo}`, async (req, res) => {
+      if (!somenteAdminOuContador(req, res)) return undefined;
+      try {
+        const input = { items: req.body?.items, assinatura: req.body?.assinatura,
+          permitidas: await empresasVisiveis(req), userId: req.auth?.user?.id, log };
+        return res.json(await liberacao[executar ? "executar" : "prever"](input));
+      } catch (err) { return falhar(res, err, { acao: "liberar_guias" }); }
+    });
+  }
 
   function falhar(res, err, contexto) {
-    const conhecido = err instanceof EnvioGuiaWhatsappError;
+    const conhecido = err instanceof EnvioGuiaWhatsappError || ["CONFERENCIA_DIVERGENTE", "MES_VENCIMENTO_INVALIDO"].includes(err.code);
     if (!conhecido) log?.error?.({ err: err?.message || err, ...contexto }, "Falha no envio de guia por WhatsApp");
     return res.status(conhecido ? err.status : 500).json({
       ok: false,
@@ -95,14 +109,18 @@ export function createWhatsappGuiasRouter({ log } = {}) {
 
         const canal = await carregarCanal();
         const envios = (await enviosPorGuia([guide.id])).get(guide.id) || [];
-        const jaEnviada = foiEnviadaComLegado(envios, guide);
+        // Liberar nos dois canais complementa o e-mail; não autoriza duplicar WhatsApp.
+        const jaEnviada = req.body?.complementar === true
+          ? envios.some((e) => e.canal === "WHATSAPP" && STATUS_TERMINAL.includes(e.status))
+          : foiEnviadaComLegado(envios, guide);
         // ⚠ REENVIAR É PEDIDO EXPLÍCITO (decisão do dono, 05/09/2026): a tela avisa que a guia já foi
         // enviada, e só com o `reenviar` no corpo é que a recusa `GUIA_JA_ENVIADA` deixa de valer.
         // ⚠ O LOTE NÃO TEM ESTA PORTA — lá a recusa continua sendo o primeiro corte, e é o que
         // impede a carteira inteira de sair duas vezes num clique.
         const reenviar = req.body?.reenviar === true;
+        const apenasFalhos = req.body?.apenasFalhos === true;
         const destinatario = await destinatarioWhatsapp(companyId);
-        const avaliacao = avaliarLinha({ canal, guide, destinatario, envios, jaEnviada: jaEnviada && !reenviar });
+        const avaliacao = avaliarLinha({ canal, guide, destinatario, envios, jaEnviada: jaEnviada && !reenviar && !apenasFalhos });
 
         if (!avaliacao.pode) {
           return res.status(422).json({
@@ -118,13 +136,15 @@ export function createWhatsappGuiasRouter({ log } = {}) {
         // a MESMA guia saía para gente diferente conforme o botão. Agora quem sabe "para quem esta
         // guia vai" é `enviarParaTodosOsDestinatarios`, num lugar só.
         const { telefones } = await destinatariosDeEnvio(companyId);
+        const alvos = apenasFalhos ? telefones.filter((c) => envios.some((e) => e.canal === "WHATSAPP" && e.destino === c.telefoneE164 && e.status === "falhou")) : telefones;
+        if (!alvos.length) return res.status(422).json({ ok: false, error: "SEM_DESTINATARIOS_PARA_TENTAR", message: "Nenhum destinatário com falha confirmada está disponível para esta tentativa." });
         const resultado = await enviarParaTodosOsDestinatarios({
           guide,
           linha: { destino: avaliacao.contato?.telefoneE164 || null, contatoNome: avaliacao.contato?.nome || null },
-          destinatarios: telefones,
+          destinatarios: alvos,
           canal,
           log,
-          reenviar,
+          reenviar: reenviar && !apenasFalhos,
         });
 
         // ⚠⚠ A FALHA PARCIAL PARA DE SUMIR. A resposta era o spread de `resultados[0]`: com dois
@@ -154,6 +174,7 @@ export function createWhatsappGuiasRouter({ log } = {}) {
       const escopo = await escopoDoLote(req);
       const previa = await preverLote({
         portalClientIds: escopo,
+        ...(req.body?.mesVencimento ? { mesVencimento: req.body.mesVencimento } : {}),
         competencia: req.body?.competencia,
         guideIds: Array.isArray(req.body?.guideIds) ? req.body.guideIds : null,
       });
@@ -178,6 +199,7 @@ export function createWhatsappGuiasRouter({ log } = {}) {
       const escopo = await escopoDoLote(req);
       const resultado = await executarLote({
         portalClientIds: escopo,
+        ...(req.body?.mesVencimento ? { mesVencimento: req.body.mesVencimento, assinatura: req.body.assinatura } : {}),
         competencia: req.body?.competencia,
         guideIds: Array.isArray(req.body?.guideIds) ? req.body.guideIds : null,
         conferencia: req.body?.conferencia || null,
@@ -186,7 +208,21 @@ export function createWhatsappGuiasRouter({ log } = {}) {
 
       let email = { ...resultado.email, executado: false };
       if (req.body?.enviarPorEmail !== false && resultado.email.guideIds.length) {
-        const r = await runGuideEmailWorkerSelected({ guideIds: resultado.email.guideIds });
+        let r;
+        if (req.body?.mesVencimento) {
+          const results = [];
+          for (const portalClientId of [...new Set(resultado.email.linhas.map((l) => l.portalClientId))]) {
+            const selectedGuideIds = resultado.email.linhas.filter((l) => l.portalClientId === portalClientId).map((l) => l.guideId);
+            try {
+              const sent = await sendCompanyGuidesEmail({ portalClientId, mesVencimento: req.body.mesVencimento,
+                selectedGuideIds, assinatura: resultado.email.assinaturasPorEmpresa?.[portalClientId] });
+              results.push(...selectedGuideIds.map((guideId) => ({ guideId, status: sent.status === "sent" ? "SENT" : "ERROR" })));
+            } catch (err) {
+              results.push(...selectedGuideIds.map((guideId) => ({ guideId, status: "ERROR", reason: err.message, code: err.code })));
+            }
+          }
+          r = { sent: results.filter((x) => x.status === "SENT").length, errors: results.filter((x) => x.status === "ERROR").length, results };
+        } else r = await runGuideEmailWorkerSelected({ guideIds: resultado.email.guideIds });
         email = {
           ...resultado.email,
           executado: !r?.skipped,

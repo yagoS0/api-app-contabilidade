@@ -5,7 +5,10 @@
 // dizer "enviada por WhatsApp e ainda não por e-mail".
 
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
-  prisma: { envioGuia: { findUnique: jest.fn(), upsert: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn() } },
+  prisma: {
+    envioGuia: { findUnique: jest.fn(), upsert: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn() },
+    envioGuiaTentativa: { findUnique: jest.fn() },
+  },
 }));
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
@@ -13,7 +16,11 @@ import {
   foiEnviada, envioParaExibir, registrarEnvio, aplicarStatusDoProvedor,
 } from "../EnvioGuiaService.js";
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  prisma.envioGuia.updateMany.mockResolvedValue({ count: 1 });
+  prisma.envioGuiaTentativa.findUnique.mockResolvedValue(null);
+});
 
 describe("foiEnviada — terminal em QUALQUER canal basta", () => {
   it("só e-mail entregue já conta como enviada", () => {
@@ -95,8 +102,8 @@ describe("registrarEnvio — idempotência é o que torna o lote seguro", () => 
     const comPedido = await registrarEnvio({ guideId: "g1", canal: "WHATSAPP", destino: "5521999998888", reenviar: true });
     expect(comPedido.jaEnviado).toBe(false);
     expect(comPedido.reenvio).toBe(true);
-    expect(prisma.envioGuia.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "e1" }, data: expect.objectContaining({ status: "pendente" }) }),
+    expect(prisma.envioGuia.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: "e1", status: "entregue" }), data: expect.objectContaining({ status: "pendente" }) }),
     );
   });
 
@@ -106,8 +113,8 @@ describe("registrarEnvio — idempotência é o que torna o lote seguro", () => 
     const r = await registrarEnvio({ guideId: "g1", canal: "WHATSAPP", destino: "5521999998888" });
     expect(r.jaEnviado).toBe(false);
     // ⚠ A MESMA linha volta a `pendente` — nunca uma segunda para o mesmo destino.
-    expect(prisma.envioGuia.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "e1" }, data: expect.objectContaining({ erroCodigo: null, erroMensagemUsuario: null }) }),
+    expect(prisma.envioGuia.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: "e1", status: "falhou" }), data: expect.objectContaining({ erroCodigo: null, erroMensagemUsuario: null }) }),
     );
     expect(prisma.envioGuia.create).not.toHaveBeenCalled();
   });
@@ -139,7 +146,7 @@ describe("aplicarStatusDoProvedor — NUNCA rebaixa", () => {
     prisma.envioGuia.findFirst.mockResolvedValue({ id: "e1", status: "enviado", entregueEm: null });
     prisma.envioGuia.update.mockResolvedValue({ id: "e1", status: "entregue" });
     await aplicarStatusDoProvedor({ providerMessageId: "wamid.X", status: "delivered", ocorridaEmProvedor: daMeta });
-    expect(prisma.envioGuia.update).toHaveBeenCalledWith(
+    expect(prisma.envioGuia.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ entregueEm: daMeta }) }),
     );
   });
@@ -148,7 +155,7 @@ describe("aplicarStatusDoProvedor — NUNCA rebaixa", () => {
     prisma.envioGuia.findFirst.mockResolvedValue({ id: "e1", status: "enviado", entregueEm: null });
     prisma.envioGuia.update.mockResolvedValue({ id: "e1", status: "entregue" });
     await aplicarStatusDoProvedor({ providerMessageId: "wamid.X", status: "delivered" });
-    const { data } = prisma.envioGuia.update.mock.calls.at(-1)[0];
+    const { data } = prisma.envioGuia.updateMany.mock.calls.at(-1)[0];
     expect(data.entregueEm).toBeInstanceOf(Date);
   });
 
@@ -156,7 +163,7 @@ describe("aplicarStatusDoProvedor — NUNCA rebaixa", () => {
     prisma.envioGuia.findFirst.mockResolvedValue({ id: "e1", status: "entregue", entregueEm: new Date() });
     prisma.envioGuia.update.mockResolvedValue({ id: "e1", status: "lido" });
     await aplicarStatusDoProvedor({ providerMessageId: "wamid.X", status: "read" });
-    expect(prisma.envioGuia.update).toHaveBeenCalledWith(
+    expect(prisma.envioGuia.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "lido" }) }),
     );
   });

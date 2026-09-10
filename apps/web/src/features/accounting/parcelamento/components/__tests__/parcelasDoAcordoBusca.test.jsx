@@ -123,23 +123,24 @@ describe("desabilitado NUNCA sem explicação", () => {
 });
 
 describe("o clique não é gratuito nem silencioso", () => {
-  afterEach(() => { window.confirm.mockRestore?.(); });
 
   it("confirma repetindo documento e valor ANTES de gastar a chamada", async () => {
-    jest.spyOn(window, "confirm").mockReturnValue(true);
     const { onBuscar } = montar({ onBuscar: jest.fn(async () => ({ ok: true, encontrado: false, motivo: "x" })) });
     await act(async () => { fireEvent.click(botoesBusca()[0]); });
-    const texto = window.confirm.mock.calls[0][0];
+    const texto = screen.getByRole("dialog", { name: "Confirmar consulta de pagamento" }).textContent;
     expect(texto).toContain("07202600001001");
     expect(texto).toContain("1.200,00");
     expect(texto).toMatch(/PAGA/);
+    expect(onBuscar).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Consultar pagamento" })); });
     expect(onBuscar).toHaveBeenCalledWith("g1");
   });
 
   it("recusar a confirmação NÃO chama a API", async () => {
-    jest.spyOn(window, "confirm").mockReturnValue(false);
     const { onBuscar } = montar();
     await act(async () => { fireEvent.click(botoesBusca()[0]); });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Confirmar consulta de pagamento" })).toBeNull();
     expect(onBuscar).not.toHaveBeenCalled();
   });
 });
@@ -148,10 +149,8 @@ describe("o clique não é gratuito nem silencioso", () => {
 // que também estão consultando o SERPRO — cada consulta é paga, e a tela é o único lugar onde o
 // contador vê quantas saíram.
 describe("clicar numa linha não muda o rótulo das outras", () => {
-  afterEach(() => { window.confirm.mockRestore?.(); });
 
   it("só a linha clicada diz 'Buscando…'", async () => {
-    jest.spyOn(window, "confirm").mockReturnValue(true);
     let liberar;
     const onBuscar = jest.fn(() => new Promise((resolve) => { liberar = () => resolve({ ok: true, encontrado: false }); }));
     montar({
@@ -161,6 +160,7 @@ describe("clicar numa linha não muda o rótulo das outras", () => {
 
     await act(async () => { fireEvent.click(botoesBusca()[0]); });
 
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Consultar pagamento" })); });
     expect(screen.getAllByRole("button", { name: /Buscando/ })).toHaveLength(1);
     expect(botoesBusca()).toHaveLength(2);      // as outras duas mantêm o rótulo
 
@@ -171,7 +171,6 @@ describe("clicar numa linha não muda o rótulo das outras", () => {
 
 describe("cada desfecho chega à tela", () => {
   beforeEach(() => { jest.spyOn(window, "confirm").mockReturnValue(true); });
-  afterEach(() => { window.confirm.mockRestore?.(); });
 
   async function clicar(resposta) {
     const onBuscou = jest.fn();
@@ -181,6 +180,7 @@ describe("cada desfecho chega à tela", () => {
     });
     montar({ onBuscar, onBuscou });
     await act(async () => { fireEvent.click(botoesBusca()[0]); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Consultar pagamento" })); });
     return { onBuscou, status: screen.getByRole("status") };
   }
 

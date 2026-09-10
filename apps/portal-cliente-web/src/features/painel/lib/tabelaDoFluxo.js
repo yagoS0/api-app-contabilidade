@@ -47,7 +47,8 @@ export const COLUNAS = Object.freeze([
   { chave: "saida", rotulo: "Saída" },
   { chave: "impostos", rotulo: "Impostos" },
   { chave: "folha", rotulo: "Folha" },
-  { chave: "resultado", rotulo: "Resultado" },
+  { chave: "resultado", rotulo: "Resultado mensal" },
+  { chave: "saldo", rotulo: "Acumulado projetado" },
 ]);
 
 /** ⚠ As três que viram percentual no modo `%`. Entrada e Resultado seguem em R$ (spec §3.6). */
@@ -118,7 +119,7 @@ export function linhaDoMes(mes) {
     };
   }
 
-  return { competencia: mes?.competencia || null, entrada, saida, impostos, folha, resultado };
+  return { competencia: mes?.competencia || null, entrada, saida, impostos, folha, resultado, saldo: Number.isFinite(mes?.saldo?.final) ? { valor: mes.saldo.final, status: STATUS.PREVISTO } : null };
 }
 
 /**
@@ -155,7 +156,7 @@ export function linhasDosDias(mes, quantosDias) {
   return {
     // ⚠ Vem PRIMEIRO na tela: é a maioria do dinheiro, e escondê-la faria o mês parecer menor.
     semDia: linhaSemDia,
-    dias: acumularResultado(linhaSemDia, dias),
+    dias: acumularResultado(linhaSemDia, dias).map(d => ({ ...d, saldo: Number.isFinite(mes?.saldo?.inicial) ? { valor: Math.round((mes.saldo.inicial + (d.resultado?.valor || 0)) * 100) / 100, status: STATUS.PREVISTO } : null })),
   };
 }
 

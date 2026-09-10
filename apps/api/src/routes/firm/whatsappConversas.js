@@ -16,6 +16,7 @@
 // motivo, e diz o caminho: o template `reabrir_conversa` — que hoje está `DECLARADO` (não
 // aprovado), então a resposta nomeia isso em vez de fingir que existe um botão.
 
+import { criarRecursosComerciais } from "../../application/onboarding/RecursosComerciaisService.js";
 import { Router } from "express";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
@@ -26,6 +27,9 @@ import {
   janelaDaConversa,
   atribuirConversa,
   registrarMensagemEnviada,
+  FILTRO_FILA_WHATSAPP,
+  pertenceAFilaWhatsapp,
+  alterarExclusaoConversa,
 } from "../../application/whatsapp/ConversaWhatsappService.js";
 import { salvarContato, ContatoWhatsappError } from "../../application/whatsapp/ContatoWhatsappService.js";
 import { resolverVinculoPorTelefone } from "../../application/whatsapp/ContatoWhatsappService.js";
@@ -35,6 +39,8 @@ import { baixarBuffer, CompanyDocumentError } from "../../application/companies/
 import { pendenciaAberta } from "../../application/assistente/AcoesPendentesService.js";
 import { consumoIaDoMes } from "../../application/assistente/GuardaIaService.js";
 import { resumoWhatsapp } from "../../application/whatsapp/resumoWhatsapp.js";
+import { enviarMensagemRastreada } from "../../application/whatsapp/SaidaWhatsappService.js";
+import { INCLUDE_CONVERSA, grupoNoEscopo, resumoDoGrupo, filtroMensagensDoGrupo, empresaDaMensagem } from "./whatsappAtendimento.js";
 
 export const AUTOR_HUMANO = "HUMANO";
 
@@ -49,10 +55,11 @@ function somenteAdminOuContador(req, res) {
 async function conversaNoEscopo(req, conversaId, { client = prisma } = {}) {
   const conversa = await client.conversaWhatsapp.findUnique({
     where: { id: String(conversaId) },
-    include: { portalClient: { select: { id: true, razao: true, cnpj: true } }, atendente: { select: { id: true, name: true, email: true } } },
+    include: INCLUDE_CONVERSA,
   });
   if (!conversa) return null;
-  if (!conversa.portalClientId) return conversa; // a fila: só admin|contador chega aqui (conferido pela rota)
+  // A fila de leads é pública ao escritório; recibos neutros de responsáveis conhecidos não são.
+  if (!conversa.portalClientId) return !conversa.atendimentoId && pertenceAFilaWhatsapp(conversa) ? conversa : null;
   const visiveis = await empresasVisiveis(req);
   return visiveis.includes(conversa.portalClientId) ? conversa : null;
 }
@@ -89,15 +96,18 @@ function resumoDaConversa(c, { ultima = null, janela = null, pendencia = null, n
     // nome de perfil nunca casa contato, e aqui ele também não manda.
     contato: contato ? { id: contato.id, nome: contato.nome, papel: contato.papel || null } : null,
     portalClientId: c.portalClientId || null,
-    empresa: c.portalClient ? { id: c.portalClient.id, razao: c.portalClient.razao, cnpj: c.portalClient.cnpj } : null,
+    escopoVerificado: c.escopoVerificado === true,
+    legadoNaoVerificado: Boolean(c.portalClientId && c.escopoVerificado !== true),
+    empresa: c.portalClient ? { id: c.portalClient.id, razao: c.portalClient.razao, cnpj: c.portalClient.cnpj, apelidosWhatsapp: c.portalClient.apelidosWhatsapp || [] } : null,
     atendidaPor: c.atendidaPor || null,
     atendente: c.atendente ? { id: c.atendente.id, nome: c.atendente.name || null, email: c.atendente.email || null } : null,
     atendidaDesde: c.atendidaDesde || null,
     /** `atendidaDesde` sem `atendidaPor` = o assistente chamou o escritório (a fila humana). */
     naFilaDoEscritorio: Boolean(c.atendidaDesde && !c.atendidaPor),
     lidaAteEm: c.lidaAteEm || null,
+    excluidaEm: c.excluidaEm || null,
     updatedAt: c.updatedAt,
-    ultimaMensagem: ultima ? { direcao: ultima.direcao, tipo: ultima.tipo, corpo: ultima.corpo, registradaEm: ultima.registradaEm, autor: ultima.autor || null } : null,
+    ultimaMensagem: ultima ? { direcao: ultima.direcao, tipo: ultima.tipo, corpo: ultima.corpo, registradaEm: ultima.registradaEm, autor: ultima.autor || null, empresa: ultima.empresa || null } : null,
     naoLidas,
     janela: janela ? { situacao: janela.situacao, permite: janela.permite, expiraEm: janela.expiraEm, avisos: janela.avisos } : null,
     pendencia: pendencia ? { id: pendencia.id, tipo: pendencia.tipo, codigo: pendencia.codigo, expiraEm: pendencia.expiraEm } : null,
@@ -106,6 +116,21 @@ function resumoDaConversa(c, { ultima = null, janela = null, pendencia = null, n
 
 export function createWhatsappConversasRouter({ log, client = prisma, cloud = null } = {}) {
   const router = Router({ mergeParams: true });
+
+  router.post("/whatsapp/empresas/:portalClientId/apelidos", async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return undefined;
+    try {
+      const portalClientId = String(req.params.portalClientId);
+      if (!(await empresasVisiveis(req)).includes(portalClientId)) return res.status(404).json({ ok: false, error: "empresa_nao_encontrada" });
+      const valores = req.body?.apelidos;
+      if (!Array.isArray(valores) || valores.length > 5 || valores.some(v => typeof v !== "string" || v.trim().length < 2 || v.trim().length > 60 || /[\r\n\x00-\x1f]/.test(v))) {
+        return res.status(400).json({ ok: false, error: "apelidos_invalidos", message: "Informe até cinco nomes curtos, cada um com 2 a 60 caracteres." });
+      }
+      const apelidos = [...new Map(valores.map(v => [v.trim().toLocaleLowerCase("pt-BR"), v.trim()])).values()];
+      const empresa = await client.portalClient.update({ where: { id: portalClientId }, data: { apelidosWhatsapp: apelidos }, select: { id: true, apelidosWhatsapp: true } });
+      return res.json({ ok: true, empresa });
+    } catch (err) { return falhar(res, err, { operacao: "apelidos-whatsapp" }); }
+  });
 
   router.get("/whatsapp/resumo", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;
@@ -118,6 +143,11 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   });
 
   function falhar(res, err, contexto) {
+    const codigo = err?.codigo || err?.code;
+    if (codigo === "FORA_DA_JANELA" && err.janela) return recusarForaDaJanela(res, err.janela);
+    if (["FIO_OCUPADO", "LEASE_PERDIDA", "CONTEXTO_INVALIDO", "CONTEXTO_CONCORRENTE", "EMPRESA_NAO_E_CANDIDATA", "ACESSO_REVOGADO", "AUTOMACAO_INVALIDADA", "CONTEXTO_ALTERADO"].includes(codigo)) return res.status(409).json({ ok: false, error: codigo, message: err.message });
+    if (err?.code === "CHAT_EXCLUIDO") return res.status(409).json({ ok: false, error: err.code, message: err.message });
+    if (["CONTEXTO_ALTERADO", "EMPRESA_NAO_AUTORIZADA", "VINCULO_AMBIGUO", "ATENDIMENTO_OCUPADO"].includes(err?.code)) return res.status(409).json({ ok: false, error: err.code, message: err.message });
     if (err instanceof ConversaWhatsappError || err instanceof ContatoWhatsappError) {
       return res.status(400).json({ ok: false, error: err.code, message: err.message });
     }
@@ -133,9 +163,58 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     return res.status(500).json({ ok: false, error: "erro_interno", message: "Erro interno." });
   }
 
+  async function conferirConversaAtiva(conversa) {
+    const atual = await client.conversaWhatsapp.findUnique({ where: { id: conversa.id } });
+    const instante = (valor) => valor == null ? null : new Date(valor).getTime();
+    if (!atual || atual.excluidaEm || instante(atual.automacaoInvalidadaEm) !== instante(conversa.automacaoInvalidadaEm)) {
+      throw new ConversaWhatsappError("CHAT_EXCLUIDO", "A conversa foi excluída durante esta ação. Atualize o atendimento antes de continuar.");
+    }
+    if (conversa.atendimentoId) {
+      const atendimento = await client.atendimentoResponsavelWhatsapp.findUnique({ where: { id: conversa.atendimentoId } });
+      if (!atendimento || atendimento.aguardandoSelecao || atendimento.conversaId !== conversa.id
+        || atendimento.portalClientId !== conversa.portalClientId
+        || (atendimento.expiraEm && new Date(atendimento.expiraEm).getTime() <= Date.now())
+        || atendimento.versao !== conversa.atendimento?.versao) {
+        throw new ConversaWhatsappError("CONTEXTO_ALTERADO", "A empresa deste atendimento mudou. Escolha a empresa e confira a mensagem antes de enviar.");
+      }
+      const { empresasAutorizadas } = await import("../../application/whatsapp/selecaoEmpresaWhatsapp.js");
+      const acesso = empresasAutorizadas(await resolverVinculoPorTelefone(conversa.telefoneE164, { client }));
+      if (acesso.bloqueado || acesso.userId !== atendimento.userId || !acesso.empresas.some(e => e.portalClientId === conversa.portalClientId)) {
+        throw new ConversaWhatsappError("ACESSO_REVOGADO", "O vínculo deste responsável com a empresa mudou. Confira o cadastro antes de enviar.");
+      }
+    }
+  }
+
+  async function alterarHumano(conversa, atendidaPor, atendidaDesde) {
+    if (conversa.atendimentoId) {
+      const { alterarAtendimentoHumano } = await import("../../application/whatsapp/AtendimentoResponsavelWhatsappService.js");
+      return alterarAtendimentoHumano({ conversa, atendidaPor, atendidaDesde, client });
+    }
+    const mudou = await client.conversaWhatsapp.updateMany({
+      where: { id: conversa.id, excluidaEm: null, automacaoInvalidadaEm: conversa.automacaoInvalidadaEm || null },
+      data: { atendidaPor, atendidaDesde },
+    });
+    if (!mudou.count) throw new ConversaWhatsappError("CHAT_EXCLUIDO", "A conversa mudou durante esta ação. Atualize o atendimento.");
+    return null;
+  }
+
+  async function comEnvioDoResponsavel(conversa, enviar) {
+    if (!conversa.atendimentoId) return enviar(async () => true);
+    const { comLeaseDoAtendimento } = await import("../../application/whatsapp/AtendimentoResponsavelWhatsappService.js");
+    return comLeaseDoAtendimento({ conversa, client }, enviar);
+  }
+
+  async function conferirEnvio(conversa, conferirLease) {
+    if (await conferirLease() === false) throw new ConversaWhatsappError("ATENDIMENTO_OCUPADO", "Outro envio está em andamento para este responsável. Atualize o atendimento antes de tentar novamente.");
+    await conferirConversaAtiva(conversa);
+    const janela = await janelaDaConversa(conversa.id);
+    if (janela.situacao !== SITUACOES_JANELA.ABERTA) throw Object.assign(new ConversaWhatsappError("FORA_DA_JANELA", "A janela de resposta fechou durante este envio."), { janela });
+  }
+
   /**
-   * A LISTA. `?filtro=nao-vinculadas | atendidas-por-mim | todas` (default: todas as da carteira +
-   * a fila). Cada fio vem com a última mensagem, as não lidas (derivadas de `lidaAteEm`), a janela e
+   * A LISTA. `?filtro=nao-vinculadas | atendidas-por-mim | todas | historico`.
+   * O histórico legado de empresa tem acesso separado; a lista padrão traz os fios atuais e
+   * a fila. Cada fio vem com a última mensagem, as não lidas (derivadas de `lidaAteEm`), a janela e
    * a pendência aberta — o que a tela precisa para decidir o que oferecer ANTES do clique.
    */
   router.get("/whatsapp/conversas", async (req, res) => {
@@ -159,58 +238,93 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
         });
       }
       const daEmpresa = empresa && visiveis.includes(empresa) ? [empresa] : (empresa ? [] : visiveis);
+      // Filtrar no banco, antes do cursor/take: segmentos antigos não consomem a página atual.
+      const atuaisDaEmpresa = {
+        portalClientId: { in: daEmpresa },
+        NOT: { chaveEscopo: { startsWith: "legado:" } },
+      };
 
-      const where = filtro === "nao-vinculadas"
-        ? { portalClientId: null }
-        : filtro === "atendidas-por-mim"
-          ? { portalClientId: { in: daEmpresa }, atendidaPor: String(req.auth.user.id) }
+      const filaSemResponsavel = { ...FILTRO_FILA_WHATSAPP, atendimentoId: null };
+      // O recibo neutro ordena a chegada de um pedido ainda em seleção, mas o conteúdo só sai
+      // pelo filtro do grupo. A existência de um segmento visível é exigida já nesta consulta.
+      const indiceDoResponsavel = { ...FILTRO_FILA_WHATSAPP, atendimentoId: { not: null },
+        atendimento: { is: { conversas: { some: { ...atuaisDaEmpresa, excluidaEm: null } },
+          ...(filtro === "atendidas-por-mim" ? { atendidaPor: String(req.auth.user.id) } : {}) } } };
+      const segmento = filtro === "lixeira"
+        ? empresa ? { portalClientId: { in: daEmpresa } } : { OR: [{ portalClientId: { in: daEmpresa } }, filaSemResponsavel] }
+        : filtro === "nao-vinculadas"
+        ? filaSemResponsavel
+        : filtro === "historico"
+          ? { portalClientId: { in: daEmpresa }, chaveEscopo: { startsWith: "legado:" } }
+          : filtro === "atendidas-por-mim"
+          ? { OR: [{ ...atuaisDaEmpresa, atendidaPor: String(req.auth.user.id) }, indiceDoResponsavel] }
           : empresa
             // Com empresa escolhida, a fila (sem empresa) não entra: ela não é daquela empresa.
-            ? { portalClientId: { in: daEmpresa } }
-            : { OR: [{ portalClientId: { in: daEmpresa } }, { portalClientId: null }] };
+            ? { OR: [atuaisDaEmpresa, indiceDoResponsavel] }
+            : { OR: [atuaisDaEmpresa, filaSemResponsavel, indiceDoResponsavel] };
+      const where = { ...segmento, excluidaEm: filtro === "lixeira" ? { not: null } : null };
 
       // ⚠ `take: LIMITE + 1` — ver `LIMITE_CONVERSAS`.
       const achadas = await client.conversaWhatsapp.findMany({
         where,
-        include: { portalClient: { select: { id: true, razao: true, cnpj: true } }, atendente: { select: { id: true, name: true, email: true } } },
-        orderBy: { updatedAt: "desc" },
-        take: LIMITE_CONVERSAS + 1,
+        include: INCLUDE_CONVERSA,
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        ...(req.query?.cursor ? { cursor: { id: String(req.query.cursor) }, skip: 1 } : {}),
+        take: Math.min(LIMITE_CONVERSAS, Math.max(1, Number(req.query?.limite) || LIMITE_CONVERSAS)) + 1,
       });
-      const temMais = achadas.length > LIMITE_CONVERSAS;
-      const conversas = temMais ? achadas.slice(0, LIMITE_CONVERSAS) : achadas;
+      const limite = Math.min(LIMITE_CONVERSAS, Math.max(1, Number(req.query?.limite) || LIMITE_CONVERSAS));
+      const temMais = achadas.length > limite;
+      const conversas = temMais ? achadas.slice(0, limite) : achadas;
+      const grupos = new Map();
+      const agrupadas = [];
+      for (const conversa of conversas) {
+        // Histórico e lixeira continuam a mostrar cada segmento, porque excluir não funde históricos.
+        if (!conversa.atendimentoId || ["historico", "lixeira"].includes(filtro)) { agrupadas.push(conversa); continue; }
+        if (grupos.has(conversa.atendimentoId)) continue;
+        const grupo = await grupoNoEscopo({ conversa, visiveis, client });
+        if (!grupo?.segmentos.length) continue;
+        grupos.set(conversa.atendimentoId, grupo);
+        const representante = (empresa ? grupo.segmentos.find(c => c.portalClientId === empresa) : grupo.segmentos.find(c => c.id === grupo.atendimento.conversaId)) || grupo.segmentos[0];
+        agrupadas.push(representante);
+      }
 
       // ⚠ UMA consulta de contatos para a página inteira, no molde de `enviosPorGuia` — nunca uma
       // por conversa. O casamento é `(portalClientId, telefoneE164)`, a mesma chave única do
       // cadastro; conversa sem empresa não tem contato por construção.
-      const chavesComEmpresa = conversas.filter((c) => c.portalClientId);
+      const chavesComEmpresa = agrupadas.filter((c) => c.portalClientId);
       const contatos = chavesComEmpresa.length
         ? await client.contatoWhatsapp.findMany({
           where: {
             portalClientId: { in: [...new Set(chavesComEmpresa.map((c) => c.portalClientId))] },
-            telefoneE164: { in: [...new Set(chavesComEmpresa.map((c) => c.telefoneE164))] },
+            OR: [{ telefoneE164: { in: [...new Set(chavesComEmpresa.map((c) => c.telefoneE164))] } }, { waId: { in: [...new Set(chavesComEmpresa.map((c) => c.telefoneE164))] } }],
           },
-          select: { id: true, nome: true, papel: true, portalClientId: true, telefoneE164: true },
+          select: { id: true, nome: true, papel: true, portalClientId: true, telefoneE164: true, waId: true },
         })
         : [];
-      const contatoPorChave = new Map(contatos.map((k) => [`${k.portalClientId}|${k.telefoneE164}`, k]));
-      const itens = await Promise.all(conversas.map(async (c) => {
+      const contatoPorChave = new Map(contatos.flatMap((k) => [k.telefoneE164, k.waId].filter(Boolean).map((n) => [`${k.portalClientId}|${n}`, k])));
+      const itens = await Promise.all(agrupadas.map(async (c) => {
+        const grupo = grupos.get(c.atendimentoId);
+        const whereMensagem = grupo ? filtroMensagensDoGrupo(grupo, empresa) : { conversaId: c.id };
         const [ultima, naoLidas, janela, pendencia] = await Promise.all([
-          client.mensagemWhatsapp.findFirst({ where: { conversaId: c.id }, orderBy: { registradaEm: "desc" } }),
-          client.mensagemWhatsapp.count({ where: { conversaId: c.id, direcao: "in", ...(c.lidaAteEm ? { registradaEm: { gt: c.lidaAteEm } } : {}) } }),
+          client.mensagemWhatsapp.findFirst({ where: whereMensagem, orderBy: { registradaEm: "desc" }, ...(grupo ? { include: { contexto: { select: { conversaId: true } } } } : {}) }),
+          grupo ? Promise.all([...grupo.segmentos.filter(s => !empresa || s.portalClientId === empresa).map(s => ({ s, filtro: filtroMensagensDoGrupo({ ...grupo, segmentos: [s], segmentosNeutros: [] }) })),
+            ...(!empresa ? (grupo.segmentosNeutros || []).map(s => ({ s, filtro: filtroMensagensDoGrupo({ ...grupo, segmentos: [], segmentosNeutros: [s] }) })) : [])]
+            .map(({ s, filtro: filtroMensagem }) => client.mensagemWhatsapp.count({ where: { AND: [filtroMensagem, { direcao: "in", ...(s.lidaAteEm ? { registradaEm: { gt: s.lidaAteEm } } : {}) }] } }))).then(contagens => contagens.reduce((a, b) => a + b, 0))
+            : client.mensagemWhatsapp.count({ where: { conversaId: c.id, direcao: "in", ...(c.lidaAteEm ? { registradaEm: { gt: c.lidaAteEm } } : {}) } }),
           janelaDaConversa(c.id),
           pendenciaAberta(c.id, { client }),
         ]);
-        return resumoDaConversa(c, {
-          ultima,
+        return { ...resumoDaConversa(c, {
+          ultima: grupo && ultima ? { ...ultima, empresa: empresaDaMensagem(ultima, grupo) } : ultima,
           naoLidas,
           janela,
           pendencia,
           contato: c.portalClientId ? contatoPorChave.get(`${c.portalClientId}|${c.telefoneE164}`) || null : null,
-        });
+        }), ...resumoDoGrupo(grupo, c) };
       }));
       // O motivo de cada não vinculada (DESCONHECIDO/AMBIGUO + candidatas) vem do vínculo, na leitura.
-      const fila = filtro === "atendidas-por-mim" ? [] : await conversasNaoVinculadas({ limite: 50 });
-      const motivoPorId = new Map(fila.map((f) => [f.conversa.id, { motivo: f.motivo, empresasCandidatas: f.empresasCandidatas, divergemPeloNonoDigito: f.divergemPeloNonoDigito }]));
+      const fila = ["atendidas-por-mim", "historico", "lixeira"].includes(filtro) || empresa ? [] : await conversasNaoVinculadas({ limite: 50 });
+      const motivoPorId = new Map(fila.map((f) => [f.conversa.id, { motivo: f.motivo, empresasCandidatas: (f.empresasCandidatas || []).filter(e => visiveis.includes(e.portalClientId || e.id)), divergemPeloNonoDigito: f.divergemPeloNonoDigito }]));
       return res.json({
         ok: true,
         filtro,
@@ -218,6 +332,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
         conversas: itens.map((i) => ({ ...i, vinculo: motivoPorId.get(i.id) || null })),
         // ⚠ Ver `LIMITE_CONVERSAS`: a tela precisa poder dizer que há mais do que ela mostra.
         temMais,
+        proximoCursor: temMais ? conversas[conversas.length - 1]?.id || null : null,
         consumoIa: await consumoIaDoMes(),
       });
     } catch (err) {
@@ -232,48 +347,113 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     try {
       const conversa = await conversaNoEscopo(req, conversaId, { client });
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
+      const grupo = await grupoNoEscopo({ conversa, visiveis: await empresasVisiveis(req), client });
+      const empresa = String(req.query?.empresa || "").trim() || null;
+      if (empresa && (grupo ? !grupo.segmentos.some(c => c.portalClientId === empresa) : conversa.portalClientId !== empresa)) {
+        return res.status(404).json({ ok: false, error: "empresa_nao_encontrada" });
+      }
+      const whereMensagem = grupo ? filtroMensagensDoGrupo(grupo, empresa) : { conversaId: conversa.id };
       // ⚠ Fio NÃO vinculado não passa por `listarMensagens` (que exige escopo de empresa): ele é a
       // fila do escritório, e o escritório inteiro o lê — só admin|contador chegam aqui.
       // ⚠ UM a mais do que se mostra — ver `LIMITE_MENSAGENS`. Um fio com 300 mensagens mostrava 200
       // sem avisar, e o contador lia como se fosse a conversa inteira.
       const lidaAteEm = new Date();
-      const achadas = conversa.portalClientId
-        ? await listarMensagens({ portalClientId: conversa.portalClientId, conversaId: conversa.id, limite: LIMITE_MENSAGENS + 1 })
-        : await client.mensagemWhatsapp.findMany({ where: { conversaId: conversa.id }, orderBy: { registradaEm: "desc" }, take: LIMITE_MENSAGENS + 1 });
-      const temMais = achadas.length > LIMITE_MENSAGENS;
-      const mensagens = temMais ? achadas.slice(0, LIMITE_MENSAGENS) : achadas;
+      const limite = Math.min(LIMITE_MENSAGENS, Math.max(1, Number(req.query?.limite) || LIMITE_MENSAGENS));
+      const cursor = req.query?.cursor ? String(req.query.cursor) : null;
+      if (cursor && !await client.mensagemWhatsapp.findFirst({ where: { id: cursor, ...whereMensagem }, select: { id: true } })) {
+        return res.status(400).json({ ok: false, error: "cursor_invalido" });
+      }
+      const achadas = grupo
+        ? await client.mensagemWhatsapp.findMany({ where: whereMensagem, orderBy: [{ registradaEm: "desc" }, { id: "desc" }], take: limite + 1, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}), include: { envioGuiaTentativa: true, contexto: { select: { conversaId: true, portalClientId: true } } } })
+        : conversa.portalClientId
+        ? await listarMensagens({ portalClientId: conversa.portalClientId, conversaId: conversa.id, limite: limite + 1, cursor })
+        : await client.mensagemWhatsapp.findMany({ where: { conversaId: conversa.id }, orderBy: [{ registradaEm: "desc" }, { id: "desc" }], take: limite + 1, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}), include: { envioGuiaTentativa: true } });
+      const temMais = achadas.length > limite;
+      const mensagens = temMais ? achadas.slice(0, limite) : achadas;
       const [janela, pendencia] = await Promise.all([janelaDaConversa(conversa.id), pendenciaAberta(conversa.id, { client })]);
       // Mensagens que chegarem durante a leitura continuam não lidas; erro de gravação é dito.
       // Uma leitura lenta não pode recuar a marca gravada por outra aba ou atendente.
-      await client.conversaWhatsapp.updateMany({
-        where: { id: conversa.id, OR: [{ lidaAteEm: null }, { lidaAteEm: { lt: lidaAteEm } }] },
-        data: { lidaAteEm },
-      });
+      const segmentosLidos = grupo ? [...grupo.segmentos.filter(c => !empresa || c.portalClientId === empresa), ...(!empresa ? grupo.segmentosNeutros || [] : [])] : [conversa];
+      await Promise.all(segmentosLidos.map(c => client.conversaWhatsapp.updateMany({
+        where: { id: c.id, OR: [{ lidaAteEm: null }, { lidaAteEm: { lt: lidaAteEm } }] }, data: { lidaAteEm },
+      })));
       // ⚠ O contato também aqui: abrir a conversa precisa dizer QUEM está falando, não só de qual
       // empresa. Uma consulta, e só quando há empresa (fio da fila não tem cadastro por construção).
       const contato = conversa.portalClientId
         ? await client.contatoWhatsapp.findFirst({
-          where: { portalClientId: conversa.portalClientId, telefoneE164: conversa.telefoneE164 },
+          where: { portalClientId: conversa.portalClientId, OR: [{ telefoneE164: conversa.telefoneE164 }, { waId: conversa.telefoneE164 }] },
           select: { id: true, nome: true, papel: true },
         })
         : null;
       return res.json({
         ok: true,
-        conversa: resumoDaConversa(conversa, { janela, pendencia, contato }),
+        conversa: { ...resumoDaConversa(conversa, { janela, pendencia, contato }), ...resumoDoGrupo(grupo, conversa) },
+        empresaFiltro: empresa,
         // ⚠ `temMais` diz que existe conversa ANTES da primeira mensagem mostrada.
         temMais,
+        proximoCursor: temMais ? mensagens[mensagens.length - 1]?.id || null : null,
         mensagens: [...mensagens].reverse().map((m) => ({
           id: m.id, direcao: m.direcao, tipo: m.tipo, corpo: m.corpo, autor: m.autor || null,
+          empresa: grupo ? empresaDaMensagem(m, grupo) : conversa.portalClient ? { id: conversa.portalClientId, razao: conversa.portalClient.razao, cnpj: conversa.portalClient.cnpj } : null,
           providerMessageId: m.providerMessageId || null, envioGuiaId: m.envioGuiaId || null,
           ocorridaEmProvedor: m.ocorridaEmProvedor || null, registradaEm: m.registradaEm,
           // ⚠ Só o PONTEIRO (o id na Meta), nunca uma URL: a da Meta expira, e este sistema ainda
           // não baixa arquivo. A tela usa isto para dizer "veio um áudio" em vez de "[audio]".
           temMidia: Boolean(m.midiaProvedorId),
+          statusEnvio: m.envioGuiaTentativa?.status || m.statusEnvio || null,
+          erroEnvio: m.envioGuiaTentativa?.erroCodigo
+            ? { codigo: m.envioGuiaTentativa.erroCodigo, mensagem: m.envioGuiaTentativa.erroMensagemUsuario }
+            : m.erroEnvioCodigo ? { codigo: m.erroEnvioCodigo, mensagem: m.erroEnvioMensagem } : null,
         })),
       });
     } catch (err) {
       return falhar(res, err, { conversaId });
     }
+  });
+
+  for (const acao of ["excluir", "restaurar"]) {
+    router.post(`/whatsapp/conversas/:conversaId/${acao}`, async (req, res) => {
+      if (!somenteAdminOuContador(req, res)) return undefined;
+      const { conversaId } = req.params;
+      try {
+        const conversa = await conversaNoEscopo(req, conversaId, { client });
+        if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
+        const atualizada = await alterarExclusaoConversa({ conversaId: conversa.id, excluir: acao === "excluir", client });
+        return res.json({ ok: true, conversa: resumoDaConversa({ ...conversa, ...atualizada }) });
+      } catch (err) { return falhar(res, err, { conversaId, acao }); }
+    });
+  }
+
+  // Uma aba antiga não pode agir sobre um chat que já foi para a lixeira.
+  router.post("/whatsapp/conversas/:conversaId/:acao", async (req, res, next) => {
+    if (!["assumir", "devolver", "responder", "enviar-documento", "vincular", "selecionar-empresa"].includes(req.params.acao)) return next();
+    if (!somenteAdminOuContador(req, res)) return undefined;
+    try {
+      const conversa = await conversaNoEscopo(req, req.params.conversaId, { client });
+      if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
+      if (conversa.excluidaEm) return res.status(409).json({ ok: false, error: "CHAT_EXCLUIDO", message: "Esta conversa está na lixeira. Restaure-a antes de continuar." });
+      if (req.params.acao !== "vincular" && conversa.portalClientId && String(conversa.chaveEscopo || "").startsWith("legado:")) {
+        return res.status(409).json({ ok: false, error: "HISTORICO_LEGADO", message: "Este é um segmento histórico. Abra a conversa atual para continuar o atendimento." });
+      }
+      return next();
+    } catch (err) { return falhar(res, err, { conversaId: req.params.conversaId }); }
+  });
+
+  router.post("/whatsapp/conversas/:conversaId/selecionar-empresa", async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return undefined;
+    try {
+      const conversa = await conversaNoEscopo(req, req.params.conversaId, { client });
+      if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
+      const portalClientId = String(req.body?.portalClientId || "").trim();
+      const visiveis = await empresasVisiveis(req);
+      if (!portalClientId || !visiveis.includes(portalClientId)) return res.status(404).json({ ok: false, error: "empresa_nao_encontrada" });
+      const { selecionarEmpresaDoEscritorio } = await import("../../application/whatsapp/AtendimentoResponsavelWhatsappService.js");
+      const resultado = await selecionarEmpresaDoEscritorio({ conversa, portalClientId, client });
+      const atualizada = await conversaNoEscopo(req, resultado.conversa.id, { client });
+      if (!atualizada) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
+      const grupo = await grupoNoEscopo({ conversa: atualizada, visiveis, client });
+      return res.json({ ok: true, conversa: { ...resumoDaConversa(atualizada), ...resumoDoGrupo(grupo, atualizada) } });
+    } catch (err) { return falhar(res, err, { conversaId: req.params.conversaId, operacao: "selecionar-empresa" }); }
   });
 
   /** ASSUMIR: a pessoa passa a responder; a IA cala (`atendidaPor` preenchido). */
@@ -283,11 +463,8 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     try {
       const conversa = await conversaNoEscopo(req, conversaId, { client });
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
-      const atualizada = await client.conversaWhatsapp.update({
-        where: { id: conversa.id },
-        data: { atendidaPor: String(req.auth.user.id), atendidaDesde: new Date() },
-        include: { portalClient: { select: { id: true, razao: true, cnpj: true } }, atendente: { select: { id: true, name: true, email: true } } },
-      });
+      await alterarHumano(conversa, String(req.auth.user.id), new Date());
+      const atualizada = await conversaNoEscopo(req, conversa.id, { client });
       return res.json({ ok: true, conversa: resumoDaConversa(atualizada) });
     } catch (err) {
       return falhar(res, err, { conversaId });
@@ -301,11 +478,8 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     try {
       const conversa = await conversaNoEscopo(req, conversaId, { client });
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
-      const atualizada = await client.conversaWhatsapp.update({
-        where: { id: conversa.id },
-        data: { atendidaPor: null, atendidaDesde: null },
-        include: { portalClient: { select: { id: true, razao: true, cnpj: true } }, atendente: { select: { id: true, name: true, email: true } } },
-      });
+      await alterarHumano(conversa, null, null);
+      const atualizada = await conversaNoEscopo(req, conversa.id, { client });
       return res.json({ ok: true, conversa: resumoDaConversa(atualizada) });
     } catch (err) {
       return falhar(res, err, { conversaId });
@@ -346,20 +520,34 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
   router.post("/whatsapp/conversas/:conversaId/responder", async (req, res) => {
     if (!somenteAdminOuContador(req, res)) return undefined;
     const { conversaId } = req.params || {};
-    const texto = String(req.body?.texto || "").trim();
+    let texto = String(req.body?.texto || "").trim();
+    let referenciaComercial;
+    if (req.body?.orientacaoId) {
+      try { const p = await criarRecursosComerciais({ db: client }).prepararOrientacao(req.body.orientacaoId, req.body.variaveis || {}); texto = p.texto; referenciaComercial = p.referencia; }
+      catch (e) { return res.status(e.status || 500).json({ ok: false, message: e.status ? e.message : "Orientação indisponível." }); }
+    }
     if (!texto) return res.status(400).json({ ok: false, error: "texto_obrigatorio", message: "Escreva a mensagem." });
     try {
-      const conversa = await conversaNoEscopo(req, conversaId, { client });
+      let conversa = await conversaNoEscopo(req, conversaId, { client });
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
+      await conferirConversaAtiva(conversa);
       const janela = await janelaDaConversa(conversa.id);
       if (janela.situacao !== SITUACOES_JANELA.ABERTA) return recusarForaDaJanela(res, janela);
       const cliente = cloud || new WhatsappCloudClient({ log });
-      const r = await cliente.enviarTexto({ telefone: conversa.telefoneE164, texto });
-      const { mensagem } = await registrarMensagemEnviada({
-        telefone: conversa.telefoneE164, portalClientId: conversa.portalClientId, tipo: "text", corpo: texto,
-        providerMessageId: r?.wamid || null, autor: AUTOR_HUMANO,
-      });
-      return res.json({ ok: true, mensagem: { id: mensagem?.id || null, providerMessageId: r?.wamid || null, autor: AUTOR_HUMANO, corpo: texto } });
+      if (req.body?.assumir === true) {
+        await alterarHumano(conversa, String(req.auth.user.id), new Date());
+        conversa = await conversaNoEscopo(req, conversa.id, { client });
+        if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
+      }
+      const r = await comEnvioDoResponsavel(conversa, conferirLease => enviarMensagemRastreada({ conversa, tipo: "text", corpo: texto, autor: AUTOR_HUMANO, referenciaComercial, client,
+        antesDeEnviar: () => conferirEnvio(conversa, conferirLease),
+        enviar: () => cliente.enviarTexto({ telefone: conversa.telefoneE164, texto }),
+      }));
+      if (referenciaComercial?.chave === "autorizacao") {
+        const lead = await client.atendimentoLead.findFirst({ where: { conversaId, encerradoEm: null }, include: { onboarding: true } });
+        if (lead) await client.atendimentoLead.update({ where: { id: lead.id }, data: { autorizacao: { ...(lead.autorizacao || {}), estado: "INSTRUCAO_ENVIADA", cnpj: lead.onboarding?.cnpj || null, mensagemId: r.mensagem.id, recursoId: referenciaComercial.recursoId } } });
+      }
+      return res.json({ ok: true, mensagem: { id: r.mensagem.id, providerMessageId: r.wamid, autor: AUTOR_HUMANO, corpo: texto, statusEnvio: r.mensagem.statusEnvio } });
     } catch (err) {
       return falhar(res, err, { conversaId });
     }
@@ -428,6 +616,8 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
           message: "Este número ainda não está vinculado a uma empresa: não há documento dela para enviar. Vincule o fio primeiro.",
         });
       }
+      if (conversa.escopoVerificado !== true) return res.status(409).json({ ok: false, error: "ESCOPO_NAO_VERIFICADO", message: "Abra um novo segmento vinculado à empresa antes de enviar documentos. O histórico anterior precisa de conferência." });
+      await conferirConversaAtiva(conversa);
 
       const janela = await janelaDaConversa(conversa.id);
       if (janela.situacao !== SITUACOES_JANELA.ABERTA) return recusarForaDaJanela(res, janela);
@@ -435,21 +625,19 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       const { doc, buffer } = await baixarBuffer({ portalClientId: conversa.portalClientId, documentId });
 
       const cliente = cloud || new WhatsappCloudClient({ log });
-      const r = await cliente.enviarDocumento({
+      const legenda = String(req.body?.legenda || "").trim() || doc.nome;
+      const corpo = conversa.atendimentoId ? `${conversa.portalClient.razao} · ${legenda}` : legenda;
+      const r = await comEnvioDoResponsavel(conversa, conferirLease => enviarMensagemRastreada({ conversa, tipo: "document", corpo, autor: AUTOR_HUMANO, client, antesDeEnviar: () => conferirEnvio(conversa, conferirLease), enviar: () => cliente.enviarDocumento({
         telefone: conversa.telefoneE164,
         conteudo: buffer,
         nomeArquivo: doc.nome,
         mimeType: doc.mimeType || "application/pdf",
-        legenda: String(req.body?.legenda || "").trim() || undefined,
-      });
+        legenda: conversa.atendimentoId ? corpo : String(req.body?.legenda || "").trim() || undefined,
+      }) }));
 
       // ⚠ O balão diz O QUE saiu — o nome do arquivo. Sem isso o histórico teria "um documento", e o
       // contador não saberia qual dos alvarás da empresa foi mandado.
-      const corpo = String(req.body?.legenda || "").trim() || doc.nome;
-      const { mensagem } = await registrarMensagemEnviada({
-        telefone: conversa.telefoneE164, portalClientId: conversa.portalClientId, tipo: "document", corpo,
-        providerMessageId: r?.wamid || null, autor: AUTOR_HUMANO,
-      });
+      const mensagem = r.mensagem;
       log?.info?.({ conversaId: conversa.id, documentId: doc.id, wamid: r?.wamid || null }, "whatsapp.documento.enviado");
       return res.json({
         ok: true,

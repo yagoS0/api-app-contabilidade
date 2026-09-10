@@ -4,6 +4,8 @@
 // ordenação. Fixar é exclusivo: fixar uma nova desafixa a anterior (o backend garante).
 
 import { useEffect, useRef, useState } from "react";
+import { Modal } from "../../../../components/ui/Modal";
+import { Button } from "../../../../components/ui/Button";
 
 // ⚠ HEX LITERAL SAIU DAQUI (06/09/2026), e não foi faxina: esta aba passou a dividir a linha com o
 // chat, e encostar uma coluna de tokens numa de hex põe dois cinzas diferentes lado a lado.
@@ -66,7 +68,9 @@ function Cartao({ nota, destaque, onFixar, onDesfixar, onExcluir, onMudarImporta
 }
 
 export function CompanyNotesTab({ notes, rascunho = null, aoUsarRascunho = null }) {
-  const { fixada, demais, ordenarPor, setOrdenarPor, carregando, criar, atualizar, excluir } = notes;
+  const { fixada, demais, ordenarPor, setOrdenarPor, carregando, erro, recarregar, criar, atualizar, excluir } = notes;
+  const [confirmarExclusao, setConfirmarExclusao] = useState(null);
+  const [excluindo, setExcluindo] = useState(false);
   const [texto, setTexto] = useState("");
   const [importancia, setImportancia] = useState("MEDIA");
   const [salvando, setSalvando] = useState(false);
@@ -103,7 +107,7 @@ export function CompanyNotesTab({ notes, rascunho = null, aoUsarRascunho = null 
     destaque,
     onFixar: () => atualizar(n.id, { fixada: true }),
     onDesfixar: () => atualizar(n.id, { fixada: false }),
-    onExcluir: () => { if (window.confirm("Excluir esta anotação?")) excluir(n.id); },
+    onExcluir: () => setConfirmarExclusao(n),
     onMudarImportancia: (v) => atualizar(n.id, { importancia: v }),
   });
 
@@ -173,12 +177,14 @@ export function CompanyNotesTab({ notes, rascunho = null, aoUsarRascunho = null 
 
       {demais.map((n) => <Cartao key={n.id} nota={n} {...acoes(n, false)} />)}
 
-      {!carregando && !fixada && !demais.length && (
+      {erro && <div role="alert"><p>Não foi possível ler as anotações desta empresa. {erro}</p><Button onClick={recarregar}>Tentar novamente</Button></div>}
+      {!carregando && !erro && !fixada && !demais.length && (
         <p style={{ color: PANEL.muted, fontSize: "0.85rem" }}>
           Nenhuma anotação ainda. Registre aqui o que costuma ficar só na memória de quem atende
           esta empresa.
         </p>
       )}
+      {confirmarExclusao && <Modal titulo="Excluir anotação" tamanho="sm" ocupado={excluindo} aoFechar={() => setConfirmarExclusao(null)} rodape={<><Button variant="secondary" disabled={excluindo} onClick={() => setConfirmarExclusao(null)}>Cancelar</Button><Button variant="danger" disabled={excluindo} onClick={async () => { setExcluindo(true); try { await excluir(confirmarExclusao.id); setConfirmarExclusao(null); } finally { setExcluindo(false); } }}>Excluir anotação</Button></>}><p>Esta anotação será excluída:</p><blockquote style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{confirmarExclusao.texto}</blockquote></Modal>}
     </div>
   );
 }

@@ -11,7 +11,7 @@
 //   4. a tela de resultado prometia que a nota apareceria "na lista assim que houver resposta" —
 //      impossível: a lista vem de `PortalInvoice` (captura do ADN) e a nota vai para `ServiceInvoice`.
 
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { EmitirNfseWizard } from "../EmitirNfseWizard";
 import { ONDE_CONFIGURA_EMISSAO, ONDE_CARGA_TRIBUTARIA } from "../../../../lib/nfse/cadastroEmissaoNfse";
@@ -61,6 +61,7 @@ function abrir({
   codigoMunicipioIbge = "3304557",
   cadastroEmissao = CADASTRO_COMPLETO,
   fetchCnpj = FETCH_QUE_NUNCA_RESPONDE,
+  apiPerfis = null,
 } = {}) {
   render(
     <EmitirNfseWizard
@@ -69,6 +70,7 @@ function abrir({
       codigoMunicipioIbge={codigoMunicipioIbge}
       cadastroEmissao={cadastroEmissao}
       fetchCnpj={fetchCnpj}
+      apiPerfis={apiPerfis}
       onEmitir={onEmitir}
       onClose={noop}
     />
@@ -103,13 +105,139 @@ function noFormulario(matcher, opcoes) {
 function ateOsValores() {
   digitar("CNPJ ou CPF do tomador", "12345678000199");
   digitar("Nome ou razão social", "ACME LTDA");
+  continuar();
   digitar("Descrição do serviço", "Consultoria contábil");
   digitar("Competência", "2026-08");
   digitar("Valor dos serviços", "150000");
   digitar("Alíquota de ISS", "2");
 }
 
+it("valida por etapa, preserva os dados ao voltar e só oferece emissão na conferência", () => {
+  const { onEmitir } = abrir();
+  expect(screen.getByLabelText(/CNPJ ou CPF do tomador/)).toBeVisible();
+  expect(screen.getByLabelText(/Valor dos serviços/)).not.toBeVisible();
+  expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+  digitar("CNPJ ou CPF do tomador", "12345678000199");
+  digitar("Nome ou razão social", "ACME LTDA");
+  continuar();
+  expect(screen.getByLabelText(/Valor dos serviços/)).toBeVisible();
+  expect(screen.getByLabelText(/CNPJ ou CPF do tomador/)).not.toBeVisible();
+  expect(screen.queryByRole("button", { name: /^Emitir nota$/ })).not.toBeInTheDocument();
+  digitar("Descrição do serviço", "Consultoria contábil");
+  digitar("Valor dos serviços", "82666");
+  digitar("Total de tributos do Simples Nacional", "6");
+  fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
+  expect(screen.getByLabelText(/Nome ou razão social/)).toHaveValue("ACME LTDA");
+  continuar();
+  expect(screen.getByLabelText(/Valor dos serviços/)).toHaveValue("826,66");
+  continuar();
+  expect(screen.getByRole("button", { name: /^Emitir nota$/ })).toBeEnabled();
+  expect(onEmitir).not.toHaveBeenCalled();
+});
+
+it("leva à operação excepcional inválida e preserva a nota preenchida", () => {
+  abrir(); ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84");
+  digitar("CPF/CNPJ do destinatário", "11111111111"); digitar("Nome do destinatário", "Pessoa");
+  expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+  const operacao = screen.getByRole("region", { name: "Dados específicos da operação" });
+  const problema = screen.getByText(/Destinatário: informe CPF válido/).closest("li");
+  fireEvent.click(within(problema).getByRole("button"));
+  expect(operacao).toHaveFocus();
+  expect(operacao.querySelector("details").open).toBe(true);
+  expect(screen.getByLabelText(/Descrição do serviço/)).toHaveValue("Consultoria contábil");
+  digitar("CPF/CNPJ do destinatário", "529.982.247-25");
+  expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
+});
+
+it("coloca dados excepcionais após tomador, serviço e valores", () => {
+  abrir(); ateOsValores();
+  const valor = screen.getByLabelText(/Valor dos serviços/);
+  const operacao = screen.getByRole("region", { name: "Dados específicos da operação" });
+  expect(valor.compareDocumentPosition(operacao) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("resume cadastro incompleto com requisitos e orientação visíveis, mantendo ajuda acessível", () => {
+  abrir({ cadastroEmissao: {}, codigoMunicipioIbge: "" });
+  const bloco = document.getElementById("nfse-impedimento-empresa");
+  expect(within(bloco).getByText("Falta configurar:").parentElement).toHaveTextContent(/município emissor.*Inscrição municipal/i);
+  expect(within(bloco).getByText("Onde corrigir:").parentElement).toHaveTextContent("Editar cadastro → Inscrições");
+  const ajuda = within(bloco).getByText("Por que estes dados são necessários").closest("details");
+  expect(ajuda.open).toBe(false);
+  expect(ajuda.textContent).toContain("servidor recusa");
+  expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+  const item = screen.getByText("Complete as configurações da empresa indicadas no início do formulário.").closest("li");
+  fireEvent.click(within(item).getByRole("button"));
+  expect(bloco).toHaveFocus();
+});
+
+it("normaliza destinatário e mantém retenção numérica somente após conferência", async () => {
+  const confirmar = jest.spyOn(window, "confirm").mockReturnValue(true);
+  const { onEmitir } = abrir(); ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84");
+  digitar("CPF/CNPJ do destinatário", "529.982.247-25"); digitar("Nome do destinatário", " Pessoa ");
+  digitar("IRRF retido (R$)", "15,50");
+  expect(onEmitir).not.toHaveBeenCalled(); continuar();
+  fireEvent.click(screen.getByRole("button", { name: /^Emitir nota$/ }));
+  await waitFor(() => expect(onEmitir).toHaveBeenCalledTimes(1));
+  expect(onEmitir).toHaveBeenCalledWith(expect.objectContaining({ companyId: "c-1", destinatario: { cnpjCpf: "52998224725", nome: "Pessoa" }, retencoesComplementares: { vRetIRRF: 15.5 } }));
+  confirmar.mockRestore();
+});
+
+it("mantém todas as saídas do diálogo indisponíveis durante a emissão", async () => {
+  const emitir = jest.fn(() => new Promise(() => {}));
+  const confirmar = jest.spyOn(window, "confirm").mockReturnValue(true);
+  abrir({ onEmitir: emitir });
+  ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84"); continuar();
+  fireEvent.click(screen.getByRole("button", { name: /^Emitir nota$/ }));
+  await waitFor(() => expect(emitir).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole("dialog", { name: "Emitir nota de serviço" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Fechar/ })).not.toBeInTheDocument();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.getByRole("dialog", { name: "Emitir nota de serviço" })).toBeInTheDocument();
+  const descarregar = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(descarregar);
+  expect(descarregar.defaultPrevented).toBe(true);
+  confirmar.mockRestore();
+});
+
 describe("o campo que faltava — pTotTribSN", () => {
+  it("retencoes, obra e destinatário seguem no payload e na confirmação", async () => {
+    const onEmitir = jest.fn(async () => ({ status: "issued", nfse: {} }));
+    jest.spyOn(window, "confirm").mockReturnValue(true);
+    abrir({ onEmitir });
+    ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84");
+    digitar("IRRF retido (R$)", "15,00");
+    digitar("Previdência retida (R$)", "110");
+    digitar("Identificador da obra", "123456789012");
+    digitar("CPF/CNPJ do destinatário", "12345678000199");
+    digitar("Nome do destinatário", "Cliente final");
+    continuar();
+    fireEvent.click(screen.getByRole("button", { name: /Emitir nota/ }));
+    await screen.findByText(/Nota autorizada|Nota registrada/);
+    expect(onEmitir).toHaveBeenCalledWith(expect.objectContaining({
+      retencoesComplementares: { vRetIRRF: 15, vRetCP: 110 }, obra: { cObra: "123456789012" }, destinatario: { cnpjCpf: "12345678000199", nome: "Cliente final" },
+    }));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("IRRF retido: R$ 15,00"));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("Destinatário IBS/CBS: Cliente final"));
+    window.confirm.mockRestore();
+  });
+  it("com vários perfis exige seleção e inclui o id na emissão e nome na confirmação", async () => {
+    const onEmitir = jest.fn(async () => ({ status: "issued", nfse: {} }));
+    jest.spyOn(window, "confirm").mockReturnValue(true);
+    abrir({ onEmitir, apiPerfis: { getPerfisEmissao: jest.fn(async () => ({ integracaoLigada: true, perfis: [
+      { id: "p1", nome: "Contabilidade", codigoServicoNacional: "171901", ativo: true },
+      { id: "p2", nome: "Consultoria", codigoServicoNacional: "170101", ativo: true },
+    ] })) } });
+    await screen.findByLabelText("Perfil de serviço desta nota");
+    ateOsValores(); digitar("Total de tributos do Simples Nacional", "6,84");
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Perfil de serviço desta nota"), { target: { value: "p2" } });
+    continuar();
+    fireEvent.click(screen.getByRole("button", { name: /Emitir nota/ }));
+    await screen.findByText(/Nota autorizada|Nota registrada/);
+    expect(onEmitir).toHaveBeenCalledWith(expect.objectContaining({ perfilId: "p2" }));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("Perfil de serviço: Consultoria"));
+    window.confirm.mockRestore();
+  });
   it("sem o percentual o assistente NÃO deixa avançar, e o botão diz por quê", () => {
     abrir();
     ateOsValores();
@@ -197,6 +325,7 @@ describe("as recusas do servidor aparecem ANTES do clique", () => {
     abrir();
     digitar("CNPJ ou CPF do tomador", "12345678000199");
     digitar("Nome ou razão social", "ACME LTDA");
+    continuar();
     digitar("Descrição do serviço", "Consultoria");
     digitar("Valor dos serviços", "150000");
     digitar("Total de tributos do Simples Nacional", "6");
@@ -449,8 +578,10 @@ describe("empresa não optante sem a carga tributária não chega ao botão Emit
     ateOsValores();
     // A versão curta, do mesmo jeito que os campos de `buildMissingFields` — e ela leva o lugar
     // junto, senão o contador lê o nome do campo e sai procurando.
-    expect(screen.getByText(/cadastre a parcela federal da carga tributária aproximada/)).toBeInTheDocument();
-    expect(screen.getByText(/cadastre a parcela municipal da carga tributária aproximada/)).toBeInTheDocument();
+    const resumo = screen.getByText("Falta configurar:").parentElement;
+    expect(resumo).toHaveTextContent(/federal/i);
+    expect(resumo).toHaveTextContent(/municipal/i);
+    expect(screen.getByText("Complete as configurações da empresa indicadas no início do formulário.")).toBeInTheDocument();
     // ⚠ E o ESTADUAL NÃO vira linha de pendência (02/09/2026): pedir que alguém declare um
     // tributo que a operação não tem é o defeito que esta mudança corrige.
     expect(

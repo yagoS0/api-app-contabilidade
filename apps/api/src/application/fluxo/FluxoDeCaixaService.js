@@ -1,3 +1,4 @@
+import { inicioDoHistoricoFluxo, aplicarSaldosProjetados } from "./SaldoInicialFluxoService.js";
 // O FLUXO DE CAIXA — a ligação com o banco.
 //
 // ⚠⚠ ESTE SERVIÇO É **SÓ LEITURA**. Ele não grava nada, não marca nada, não cria lançamento nenhum.
@@ -114,7 +115,7 @@ export function cicloDeHoje(agora = new Date()) {
  * | | antes | agora |
  * |---|---|---|
  * | guia paga | **não existia** (`paymentStatus` filtrava `OPEN`/`OVERDUE`) | `FATO`, no mês do PAGAMENTO |
- * | guia em aberto | `FATO`, no mês do VENCIMENTO | `COMPROMISSO`, no mês CORRENTE |
+ * | guia em aberto | `FATO`, no mês do VENCIMENTO | previsão/compromisso no vencimento futuro; atraso no mês corrente |
  *
  * ⚠⚠ **A GUIA PAGA SUMIA DO PAYLOAD INTEIRO** — nem em `linhas`, nem em `semMes`, nem em
  * `vencidas`. Era isso que fazia um mês passado aparecer sem imposto nenhum: tudo que foi pago
@@ -248,7 +249,7 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
         dia: diaDaData(g.paymentConfirmedAt),
         valor,
         rotulo,
-        base: { frase: `${rotulo} paga`, pagaEm: competencia },
+        base: { frase: `${rotulo} paga`, pagaEm: competencia, tipoDaGuia: texto(g.tipo) || "OUTRA", ehParcelamento: Boolean(g.parcelamentoId), competenciaDaGuia: texto(g.competencia) || null },
         referencia,
       }));
       continue;
@@ -274,6 +275,9 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
 
     const vence = isoDaData(dataDeVencimento);
     const atrasada = vence != null && hoje != null && vence < hoje;
+    // Só a dívida já vencida migra para o presente; vencimentos futuros mantêm seu mês.
+    const mesDeVencimento = competenciaDaData(dataDeVencimento);
+    const mesDaSaida = atrasada ? cicloAtual : mesDeVencimento;
     /**
      * ⚠⚠⚠ A GUIA SÓ VIRA COMPROMISSO DEPOIS DE LIBERADA — decisão do dono, 02/09/2026:
      * *"as únicas guias que devem aparecer no portal do cliente são as liberadas pelo contador"*,
@@ -296,12 +300,9 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
       // ⚠⚠ Nem FATO nem sempre COMPROMISSO: o dinheiro não saiu, e o compromisso só existe depois
       // que o documento chega ao cliente. Antes disso, é previsão.
       procedencia: g.liberadaCliente ? PROCEDENCIA.COMPROMISSO : PROCEDENCIA.PREVISAO,
-      // ⚠⚠ O MÊS CORRENTE, NÃO O DO VENCIMENTO — Lei 1. A guia de julho que ninguém pagou é
-      // dinheiro que sai de AGOSTO, e mostrá-la em julho diria que julho já custou aquilo.
-      competencia: cicloAtual,
-      // ⚠ O dia do vencimento continua sendo o dia da linha quando ele cai no mês corrente. Fora
-      // dele o dia não vale: ele é de outro mês, e usá-lo aqui apontaria para uma data que passou.
-      dia: competenciaDaData(dataDeVencimento) === cicloAtual ? diaDaData(dataDeVencimento) : null,
+      competencia: mesDaSaida,
+      // Vencimento futuro conserva seu dia; atraso de outro mês permanece sem data prometida.
+      dia: mesDeVencimento === mesDaSaida ? diaDaData(dataDeVencimento) : null,
       diaDesconhecido: DIA_DESCONHECIDO.COMPROMISSO_EM_ATRASO,
       valor,
       rotulo,
@@ -328,6 +329,7 @@ async function linhasDasGuias({ portalClientId, cicloAtual, hoje, client }) {
         vencimentoPresumido,
         // ⚠⚠ O TIPO E A MARCA DE PARCELAMENTO VIAJAM — e é delas que `projecaoSubstituidaPelaGuia`
         // precisa para não deixar uma PARCELA apagar a projeção do DAS do mês. Ver aquela função.
+        competenciaDaGuia: texto(g.competencia) || null,
         tipoDaGuia: texto(g.tipo) || "OUTRA",
         ehParcelamento: Boolean(g.parcelamentoId),
       },
@@ -492,7 +494,7 @@ async function competenciasApuradas({ portalClientId, client }) {
  *
  * ⚠⚠ NOTA SEM COMPETÊNCIA vai para DESCONHECIDO, jamais para um mês escolhido pelo sistema.
  */
-async function linhasDasNotas({ portalClientId, cicloAtual, janelaInicio, client }) {
+async function linhasDasNotas({ portalClientId, cicloAtual, janelaInicio, incluirHistorico = false, client }) {
   // ⚠ A prova da apuração é lida UMA vez, para a empresa inteira — não uma consulta por nota.
   const apuradas = await competenciasApuradas({ portalClientId, client });
   const notas = await client.portalInvoice.findMany({
@@ -511,7 +513,7 @@ async function linhasDasNotas({ portalClientId, cicloAtual, janelaInicio, client
     orderBy: { competencia: "asc" },
   });
 
-  const base = mesesDaCompetencia(janelaInicio || cicloAtual);
+  const base = incluirHistorico ? Number.NEGATIVE_INFINITY : mesesDaCompetencia(janelaInicio || cicloAtual);
   const agora = mesesDaCompetencia(cicloAtual);
   const linhas = [];
   const semMes = [];
@@ -658,6 +660,8 @@ async function linhasDasSeries({ portalClientId, cicloAtual, mesesAProjetar = HO
   const semMes = [];
 
   for (const s of marcadas) {
+    // Previsão recorrente exige histórico observado; uma declaração isolada não basta.
+    if (s.lado !== LADO.DESPESA || Number(s.baseDaObservacao?.consecutivos || 0) < 3) continue;
     // ⚠ O valor projetado da série marcada: o DECLARADO quando existe (é o que a pessoa afirmou), e
     // a mediana observada quando não. ⚠⚠ Quando os DOIS existem, o OBSERVADO VENCE — decisão do
     // dono. Quem calcula a mediana é o detector; aqui só se escolhe entre os dois.
@@ -948,28 +952,12 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
   const ciclo = texto(cicloAtual) || cicloDeHoje();
   const dia = texto(hoje) || dataDeHoje();
 
-  const [empresa, primeiraNota] = await Promise.all([
-    client.portalClient.findUnique({
-      where: { id: String(portalClientId) },
-      // ⚠⚠ A COLUNA PRECISA ESTAR NO `select` EXPLÍCITO. Fora dele ela volta `undefined` **sem erro**,
-      // a rota responde 200, e a tela "só não mostra" — este projeto já foi mordido TRÊS vezes por
-      // isso (`legacyCompanySelect`, carga tributária, `codigoMunicipioIbge`).
-      select: { id: true },
-    }),
-    // ⚠⚠ O LIMITE DA NAVEGAÇÃO PARA TRÁS (v3 §3.1) — a nota mais antiga da empresa.
-    // ⚠ Não é "12 meses atrás": empresa aberta em março não tem janeiro, e oferecer janeiro faria
-    // a tela afirmar que ela faturou zero num mês em que ela não existia.
-    client.portalInvoice.findFirst({
-      where: { clientId: String(portalClientId), ...whereFaturamentoEmit(), competencia: { not: null } },
-      select: { competencia: true },
-      orderBy: { competencia: "asc" },
-    }),
-  ]);
+  const empresa = await client.portalClient.findUnique({where:{id:String(portalClientId)},select:{id:true}});
 
   const janela = janelaDoFluxo({
     cicloAtual: ciclo,
     janelaInicio: texto(janelaInicio) || null,
-    companyStart: competenciaDaData(primeiraNota?.competencia),
+    companyStart: null,
   });
   const inicio = janela?.inicio || ciclo;
   // ⚠ Quantos meses da janela ainda estão à frente — é até onde a projeção recorrente vai.
@@ -980,41 +968,29 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
 
   const [guias, notas, series, snapshot, folha, saidasDoCliente, despesas] = await Promise.all([
     linhasDasGuias({ portalClientId, cicloAtual: ciclo, hoje: dia, client }),
-    linhasDasNotas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
+    linhasDasNotas({ portalClientId, cicloAtual: ciclo, incluirHistorico: true, client }),
     linhasDasSeries({ portalClientId, cicloAtual: ciclo, mesesAProjetar: mesesFuturosDaJanela, client }),
     ultimaApuracao({ portalClientId, client }),
     // ⚠⚠ A FOLHA PASSOU A SAIR DO PAGAMENTO (a saída de caixa), não da provisão bruta — ver o
     // cabeçalho de `linhasDaFolhaPelaSaidaDeCaixa`. `linhasDaFolha` (a leitura por provisão) fica
     // no arquivo, SEM CHAMADOR e com lápide: ela é a leitura que o Fator R usa, e apagá-la aqui
     // convidaria alguém a "consertar" a conferência do Fator R junto.
-    linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
-    linhasDasSaidasDoCliente({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
+    linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual: ciclo, incluirHistorico: true, client }),
+    // As saídas avulsas passam ao fluxo quando contabilizadas, pela despesa abaixo.
+    Promise.resolve({ linhas: [], indisponivel: false }),
     // ⚠⚠ A DESPESA LANÇADA — o que faz valer a regra do dono (*"ao lançar entra no fluxo"*). Até
     // 01/09/2026 ela não estava aqui, e o trabalho principal da Conferência não chegava ao cliente.
-    linhasDasDespesasLancadas({ portalClientId, cicloAtual: ciclo, janelaInicio: inicio, client }),
+    linhasDasDespesasLancadas({ portalClientId, cicloAtual: ciclo, incluirHistorico: true, client }),
   ]);
 
   const aliquota = aliquotaEfetiva(snapshot);
 
-  /**
-   * ⚠⚠ A RECEITA PROJETADA PELO HISTÓRICO (30/08/2026) — decisão do dono:
-   *
-   * > *"o último mês é base para todos os meses à frente, e depois vão se ajustando (…) se em 3
-   * > meses seguidos aparece a mesma receita, pode colocar ela para frente até o final da amostra,
-   * > e ir ajustando se aparecer faturamento diferente. **Sempre a mediana.**"*
-   *
-   * ⚠⚠ **ELA COMEÇA DEPOIS DO ÚLTIMO MÊS QUE JÁ TEM RECEITA REAL**, e é isso que faz o *"ir
-   * ajustando"* acontecer sozinho: chegando nota nova, aquele mês deixa de ser projetado na leitura
-   * seguinte, sem ninguém apagar nada. A projeção nunca sobrescreve o que existe.
-   *
-   * ⚠ A conversão de competência da NOTA para o mês do RECEBIMENTO é feita aqui, uma vez
-   * (`MESES_ATE_A_RECEITA`) — a regra pura fala de meses de FATURAMENTO, e misturar as duas
-   * unidades dentro dela faria o "+1" ser aplicado duas vezes em alguma correção futura.
+    /**
+   * A competência aberta entra no caixa no mês seguinte. Sua emissão parcial não
+   * encerra a previsão: a regra acrescenta apenas o complemento da mediana de três
+   * meses completos, sem substituir ou duplicar notas já existentes.
    */
-  const ultimoMesComReceita = notas.ultimaCompetenciaComNota
-    ? somarMeses(notas.ultimaCompetenciaComNota, MESES_ATE_A_RECEITA)
-    : null;
-  const primeiroProjetado = ultimoMesComReceita ? somarMeses(ultimoMesComReceita, 1) : null;
+  const primeiroProjetado = somarMeses(ciclo, MESES_ATE_A_RECEITA);
   const quantosProjetar = primeiroProjetado
     ? Math.max(0, (mesesDaCompetencia(inicio) ?? 0) + (janela?.horizonte ?? HORIZONTE_MESES)
       - (mesesDaCompetencia(primeiroProjetado) ?? 0))
@@ -1022,6 +998,7 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
   const receitaProjetada = primeiroProjetado
     ? receitaProjetadaPeloHistorico({
       faturamentoPorMes: notas.faturamentoPorMes,
+      cicloAtual: ciclo,
       primeiroMesAProjetar: primeiroProjetado,
       quantosMeses: quantosProjetar,
     })
@@ -1098,7 +1075,9 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
     demonstracao: false,
     cicloAtual: ciclo,
     horizonte: HORIZONTE_MESES,
-    meses,
+    meses: aplicarSaldosProjetados({ meses, linhas: semDuplicata }),
+    saldoInicial: null,
+    acumulado: { origem: "HISTORICO", calculoInicio: inicioDoHistoricoFluxo(semDuplicata) },
     // ⚠⚠ NADA SOME EM SILÊNCIO: o que não pôde ser posto em mês nenhum sai NOMEADO, com o conserto.
     semMes: [...guias.semMes, ...notas.semMes, ...series.semMes],
     /**
@@ -1229,7 +1208,7 @@ export async function montarFluxoDeCaixa({ portalClientId, cicloAtual, janelaIni
  * inverte despesa com imposto sem erro nenhum. Por isso o reduzido é traduzido pelo plano e a
  * pergunta é feita a `entraNoFluxoDeCaixa` (`accounting/lib/disponibilidades.js`), REUSADA.
  */
-async function linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual, janelaInicio, client }) {
+async function linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual, janelaInicio, incluirHistorico = false, client }) {
   const [entries, plano] = await Promise.all([
     client.accountingEntry.findMany({
       where: { portalClientId: String(portalClientId), tipo: "FOLHA" },
@@ -1258,7 +1237,7 @@ async function linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual, janel
     return c ? entraNoFluxoDeCaixa(c) : false;
   };
 
-  const base = mesesDaCompetencia(janelaInicio || cicloAtual);
+  const base = incluirHistorico ? Number.NEGATIVE_INFINITY : mesesDaCompetencia(janelaInicio || cicloAtual);
   const linhas = [];
   const pagamentos = [];
 
@@ -1328,7 +1307,7 @@ async function linhasDaFolhaPelaSaidaDeCaixa({ portalClientId, cicloAtual, janel
  * `D despesa / C caixa` — ele AFIRMA que o dinheiro saiu, e a data dele é a data em que saiu. É a
  * invariante que `application/declarados/CLAUDE.md` documenta em 155/155 lançamentos medidos.
  */
-async function linhasDasDespesasLancadas({ portalClientId, cicloAtual, janelaInicio, client }) {
+async function linhasDasDespesasLancadas({ portalClientId, cicloAtual, janelaInicio, incluirHistorico = false, client }) {
   const [entries, plano] = await Promise.all([
     client.accountingEntry.findMany({
       where: { portalClientId: String(portalClientId), tipo: "DESPESA" },
@@ -1357,7 +1336,7 @@ async function linhasDasDespesasLancadas({ portalClientId, cicloAtual, janelaIni
     return c ? entraNoFluxoDeCaixa(c) : false;
   };
 
-  const base = mesesDaCompetencia(janelaInicio || cicloAtual);
+  const base = incluirHistorico ? Number.NEGATIVE_INFINITY : mesesDaCompetencia(janelaInicio || cicloAtual);
   const linhas = [];
 
   for (const e of entries) {

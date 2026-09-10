@@ -126,7 +126,6 @@ describe("⚠⚠ e a tela ganhou esqueleto de cabeçalhos", () => {
     const h2 = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
     expect(h2).toEqual([
       "Vira lançamento contábil",
-      "Só entra no fluxo — não lança nada",
       "Regras — o que decide sozinho",
     ]);
   });

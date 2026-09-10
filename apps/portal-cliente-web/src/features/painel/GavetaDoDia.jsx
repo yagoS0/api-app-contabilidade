@@ -347,7 +347,7 @@ function Gaveta({ competencia, dia, balde, linhasDoMes, companyId, aoFechar, aoM
       setForm({ ...VAZIO, data: form.data });
       // ⚠ Quem recarrega é quem TEM as linhas — a gaveta não busca nada. Acrescentar a linha aqui
       // na mão faria a gaveta e a tabela discordarem até a próxima consulta.
-      aoMudar?.();
+      aoMudar?.({ mensagem: "Saída enviada para conferência. Ela entrará no fluxo após ser contabilizada pelo contador." });
     } catch (e) {
       setErro(e);
     } finally {
@@ -408,8 +408,7 @@ function Gaveta({ competencia, dia, balde, linhasDoMes, companyId, aoFechar, aoM
                 lida como contabilidade. Sem ela o cliente cobraria do contador um lançamento que
                 ninguém fez. É a mesma de `SuasSaidas`, pelo mesmo motivo. */}
             <p className="gaveta-nota">
-              O que você escrever aqui entra no seu fluxo como <strong>previsão</strong> e aparece
-              para o seu contador conferir. Isto não lança nada na contabilidade.
+              A saída será enviada para o contador conferir e entrará no fluxo <strong>após ser contabilizada</strong>. Salvar este formulário não confirma pagamento nem altera o saldo imediatamente.
             </p>
 
             <label>

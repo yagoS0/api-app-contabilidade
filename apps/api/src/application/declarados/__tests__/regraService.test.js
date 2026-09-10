@@ -285,6 +285,15 @@ describe("⚠ desligar à mão é DIFERENTE de suspender sozinho", () => {
 });
 
 describe("⚠ a listagem leva a TRILHA para a tela", () => {
+  it("busca nome nas notas da empresa e preserva configuração automática", async () => {
+    const client = {
+      regraContabilizacao: { findMany: jest.fn().mockResolvedValue([{ id: "r", cnpjFornecedor: "12345678000190", contaCredito: "111010001", lancaSozinha: true, diaDoLancamento: 15 }]) },
+      portalInvoice: { findMany: jest.fn().mockResolvedValue([{ emitenteDoc: "12345678000190", emitenteNome: "Fornecedor Teste" }]) },
+    };
+    const [regra] = await listarRegras({ portalClientId: "emp-1", client });
+    expect(client.portalInvoice.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ clientId: "emp-1" }) }));
+    expect(regra).toMatchObject({ nomeFornecedor: "Fornecedor Teste", contaCredito: "111010001", lancaSozinha: true, diaDoLancamento: 15 });
+  });
   it("`confirmacoesBase` viaja, e vazio é `[]` — nunca `null`", async () => {
     const client = {
       regraContabilizacao: {

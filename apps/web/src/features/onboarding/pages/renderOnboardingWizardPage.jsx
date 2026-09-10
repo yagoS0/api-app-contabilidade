@@ -3,11 +3,12 @@
 // ⚠ LARGURA: `--content-max` (leitura/formulário), não `--content-wide`. Linha longa demais em
 // formulário cansa; a largura de trabalho é para tela de dados.
 //
-// O rascunho é salvo A CADA TELA e com debounce dentro da tela — F5 no meio não perde nada.
+// O rascunho é salvo antes de navegar e com debounce; ao fechar com pendência há aviso nativo.
 
 import { useEffect, useMemo, useState } from "react";
 import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
+import { useConfirmacao } from "../../../components/ui/useConfirmacao";
 import { CampoOnboarding } from "../components/CampoOnboarding";
 import { CartaoEmpresaBrasilApi } from "../components/CartaoEmpresaBrasilApi";
 import { PassoOrigem } from "../components/PassoOrigem";
@@ -31,6 +32,7 @@ const ROTULO_SALVAMENTO = {
 };
 
 export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetalhe }) {
+  const { pedir: confirmar, dialogo: confirmacao } = useConfirmacao();
   const rascunho = useOnboardingRascunho({ api, onboardingId });
   const { onboarding, dados, estadoSalvamento } = rascunho;
   const origem = onboarding?.origem || null;
@@ -40,6 +42,7 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
   const [consultaCnpj, setConsultaCnpj] = useState(null);
   const [consultandoCnpj, setConsultandoCnpj] = useState(false);
   const [finalizando, setFinalizando] = useState(false);
+  const [navegando, setNavegando] = useState(false);
 
   // Reabre onde o preenchimento parou — é para isso que `ultimoPasso` existe.
   useEffect(() => {
@@ -64,10 +67,24 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
   const ehUltimo = indice === passos.length - 1;
 
   async function irPara(destino) {
-    // Salva ao trocar de tela — o debounce sozinho perderia a última digitação.
-    if (origem) await rascunho.salvarAgora({ ultimoPasso: destino }).catch(() => {});
-    setErrosDoPasso({});
-    setPasso(destino);
+    if (navegando) return;
+    setNavegando(true);
+    try {
+      if (origem) await rascunho.salvarAgora({ ultimoPasso: destino });
+      setErrosDoPasso({});
+      setPasso(destino);
+    } catch { /* Mantém passo e campos para nova tentativa. */ }
+    finally { setNavegando(false); }
+  }
+
+  async function salvarEVoltar() {
+    if (navegando) return;
+    setNavegando(true);
+    try {
+      await rascunho.salvarAgora({ ultimoPasso: passo });
+      onVoltar?.();
+    } catch { /* A mensagem persistente explica por que a página continua aberta. */ }
+    finally { setNavegando(false); }
   }
 
   async function avancar() {
@@ -99,11 +116,7 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
     ).length;
     const nomeNova = ONBOARDING_ORIGENS.find((o) => o.chave === nova)?.titulo || nova;
     if (preenchidos > 0) {
-      const ok = window.confirm(
-        `Trocar para "${nomeNova}" apaga o que já foi preenchido nesta ficha `
-        + `(${preenchidos} ${preenchidos === 1 ? "campo preenchido" : "campos preenchidos"}), `
-        + "porque cada origem faz perguntas diferentes.\n\nTrocar mesmo assim?"
-      );
+      const ok = await confirmar({ titulo: "Trocar origem do onboarding", texto: `Trocar para “${nomeNova}” apaga ${preenchidos} campo(s) preenchido(s) nesta ficha, porque cada origem faz perguntas diferentes.`, acao: "Trocar e limpar ficha", perigo: true });
       if (!ok) return;
     }
     await rascunho.trocarOrigem(nova);
@@ -162,7 +175,7 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
     <PageShell
       title="Novo onboarding"
       subtitle={onboarding?.razaoSocial || "Ficha de pré-cadastro"}
-      onBack={onVoltar}
+      onBack={salvarEVoltar}
       backLabel="Onboardings"
       actions={
         <span style={{ fontSize: 12, color: estadoSalvamento === "erro" ? "var(--state-warn)" : "var(--text-faint)" }}>
@@ -171,6 +184,8 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
       }
       contentStyle={{ maxWidth: "var(--content-max)", margin: "0 auto", width: "100%" }}
     >
+      {estadoSalvamento === "erro" && <p role="alert" style={{ color: "var(--state-warn)" }}>Não foi possível salvar. Seus campos continuam nesta tela. Tente novamente antes de sair. {rascunho.erro?.message}</p>}
+      <Button variant="secondary" onClick={async () => { try { await rascunho.salvarAgora(); onAbrirDetalhe?.(onboardingId); } catch { /* o rascunho mostra a falha de salvamento */ } }}>Abrir atendimento comercial</Button>
       <TrilhaPassos
         passos={passos}
         passoAtual={passo}
@@ -236,22 +251,23 @@ export function OnboardingWizardPage({ api, onboardingId, onVoltar, onAbrirDetal
         <Button
           type="button"
           variant="secondary"
-          disabled={indice <= 0}
+          disabled={indice <= 0 || navegando || finalizando}
           onClick={() => irPara(passos[Math.max(indice - 1, 0)].chave)}
         >
           Voltar
         </Button>
 
         {ehUltimo ? (
-          <Button type="button" onClick={finalizar} disabled={finalizando || !origem}>
+          <Button type="button" onClick={finalizar} disabled={finalizando || navegando || !origem}>
             {finalizando ? "finalizando…" : "Finalizar e abrir a trilha"}
           </Button>
         ) : (
-          <Button type="button" onClick={avancar} disabled={!origem}>
+          <Button type="button" onClick={avancar} disabled={!origem || navegando || finalizando}>
             Avançar
           </Button>
         )}
       </div>
+      {confirmacao}
     </PageShell>
   );
 }

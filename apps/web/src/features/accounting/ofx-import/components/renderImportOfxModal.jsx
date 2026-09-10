@@ -93,6 +93,7 @@ const ListaDeContas = memo(function ListaDeContas({ id, accounts }) {
  */
 export function ImportOFXModal({
   accounts = SEM_CONTAS,
+  initialFile = null,
   onPreview,
   onImport,
   onSearchHistoricos,
@@ -100,7 +101,7 @@ export function ImportOFXModal({
   onClose,
 }) {
   const [step, setStep] = useState("upload"); // "upload" | "review" | "done"
-  const [file, setFile] = useState(null);
+  const [file, setFile] = useState(initialFile);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -310,12 +311,12 @@ export function ImportOFXModal({
               você declarar — e a partir dali ficam memorizadas para os próximos imports.
             </p>
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-              <input
+              {initialFile ? <p>Arquivo recebido pelo WhatsApp: <strong>{initialFile.name}</strong>. Confira a prévia antes de importar.</p> : <input
                 type="file"
                 accept=".ofx,.qfx"
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
                 style={{ ...inputStyle, padding: "8px 10px", flex: "1 1 320px" }}
-              />
+              />}
               <Button variant="primary" onClick={handlePreview} disabled={!file || loading}>
                 {loading ? "Lendo..." : "Pré-visualizar"}
               </Button>

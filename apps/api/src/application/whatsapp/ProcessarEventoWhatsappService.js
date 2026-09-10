@@ -1,49 +1,18 @@
-// O QUE SE FAZ COM O EVENTO DEPOIS DE ELE SER ACEITO — a ligação, não a regra.
-//
-// A regra pura vive em `eventoWebhookMeta.js` (a leitura do payload) e em `assinaturaWebhook.js`
-// (a porta). Aqui é a costura com o que JÁ EXISTE no projeto, e a lista é curta de propósito:
-//
-//   `messages[]` → `ConversaWhatsappService.registrarMensagemRecebida`
-//                  (que por dentro pergunta a `resolverVinculoPorTelefone` de quem é a mensagem)
-//   `statuses[]` → `EnvioGuiaService.aplicarStatusDoProvedor`  (sent/delivered/read)
-//                  `EnvioGuiaService.aplicarFalhaDoProvedor`   (failed)
-//
-// ⚠ **NÃO SE MISTURAM OS DOIS CAMINHOS.** `statuses[]` é o eco do que NÓS mandamos e alimenta
-// `envios_guia`; `messages[]` é o que o CLIENTE escreveu e alimenta a conversa. A mensagem não tem
-// coluna de status — a fronteira foi decidida no commit `7234a383`, e juntá-las daria duas
-// respostas para "esta guia foi enviada?".
-//
-// ── ⚠ IDEMPOTÊNCIA: A GARANTIA É DO BANCO, E ESTE ARQUIVO NÃO ACRESCENTA UMA SEGUNDA ────────────
-// A Meta reentrega: "we will retry immediately, then try a few more times with decreasing frequency
-// over the next 36 hours" (Webhooks, Getting Started, consultado 2026-08-15) e, na página do
-// WhatsApp, "Meta retries delivery with decreasing frequency until the request succeeds, for up to
-// 7 days" + "These retries can result in duplicate webhook notifications" (Set up Webhooks,
-// consultado 2026-08-15). Quem impede a segunda entrega de virar uma segunda mensagem é
-// `UNIQUE(providerMessageId)` mais o CHECK `direcao <> 'in' OR providerMessageId IS NOT NULL` da
-// migration `20260814180000`. Do FLUXO é só LER o conflito como "já processado" — e isso
-// `registrarMensagemRecebida` já faz, devolvendo `duplicada: true`. Nenhum cache em memória aqui:
-// ele seria uma segunda garantia, mais fraca (morre no deploy, não vale entre instâncias) e capaz de
-// discordar da primeira.
-//
-// ── ⚠ NADA É ENGOLIDO ───────────────────────────────────────────────────────────────────────────
-// Cada item é processado dentro do SEU try/catch: um evento malformado no meio do lote não pode
-// levar junto a mensagem do cliente que veio depois dele. Toda falha entra em `erros[]` do resumo
-// **e** sai no log em nível `error`, com o `wamid` — que é o que permite reprocessar depois. O
-// resumo é devolvido para que a rota (ou um script de reprocesso) possa registrá-lo.
-//
-// ── ⚠ LGPD ──────────────────────────────────────────────────────────────────────────────────────
-// **O corpo da mensagem NUNCA vai para o log.** Telefone sai mascarado, pelo mesmo critério que o
-// `WhatsappCloudClient` já adota (`mascararTelefone`, `+55…8888`). O que se registra é o wamid, o
-// tipo e o desfecho — o suficiente para investigar sem transcrever a conversa do cliente no log da
-// aplicação.
-
-import { log as logPadrao, INTEGRACAO_WHATSAPP_IA, IA_EMPRESAS_PILOTO } from "../../config.js";
+import { decidirRespostaComercial } from "../assistente/politicaComercialWhatsapp.js";
+// Consome o inbox durável: grava mensagens, enfileira mídias/turnos e correlaciona recibos.
+// Falhas retornam no resumo para retry idempotente, sem registrar conteúdo ou credenciais.
+import {
+  log as logPadrao, INTEGRACAO_WHATSAPP_IA, INTEGRACAO_WHATSAPP_MENU, IA_EMPRESAS_PILOTO,
+  WHATSAPP_MENU_TELEFONES_PILOTO, WHATSAPP_MENU_LEADS,
+  WHATSAPP_PHONE_NUMBER_ID,
+} from "../../config.js";
 import { registrarMensagemRecebida } from "./ConversaWhatsappService.js";
 import { SITUACOES } from "./vinculoTelefone.js";
 import { aplicarStatusDoProvedor, aplicarFalhaDoProvedor } from "../guides/EnvioGuiaService.js";
 import { traduzirErroMeta } from "./errosMeta.js";
 import { mascararTelefone } from "./WhatsappCloudClient.js";
 import { lerEventoWebhook, STATUS_DOCUMENTADOS, STATUS_FALHA } from "./eventoWebhookMeta.js";
+import { aplicarStatusMensagem } from "./SaidaWhatsappService.js";
 
 /** Por que um item do evento não virou nada. Nomes, nunca silêncio. */
 export const DESFECHOS = Object.freeze({
@@ -104,7 +73,10 @@ async function processarStatus(item, { logger }) {
       // ⚠ O instante da META, que era descartado aqui. Ver `aplicarStatusDoProvedor`.
       ocorridaEmProvedor: item.ocorridaEmProvedor || null,
     });
-    if (!r) return { desfecho: DESFECHOS.SEM_ENVIO_DE_GUIA, motivo: null };
+    if (!r) {
+      const mensagem = await aplicarStatusMensagem({ providerMessageId, status, ocorridaEmProvedor: item.ocorridaEmProvedor });
+      return { desfecho: mensagem ? (mensagem.mudou ? DESFECHOS.APLICADO : DESFECHOS.SEM_MUDANCA) : DESFECHOS.SEM_ENVIO_DE_GUIA, motivo: null };
+    }
     // ⚠ O log de status NÃO EXISTIA. Sem ele, "a guia chegou?" só se responde lendo o banco — e a
     // linha do banco não diz quando a Meta disse, nem quanto tempo levou.
     logger?.info?.(
@@ -132,6 +104,8 @@ async function processarStatus(item, { logger }) {
       mensagemUsuario: traducao.mensagemUsuario,
     });
     if (!r) {
+      const mensagem = await aplicarStatusMensagem({ providerMessageId, status, erroCodigo: traducao.codigo, erroMensagem: traducao.mensagemUsuario });
+      if (mensagem) return { desfecho: mensagem.mudou ? DESFECHOS.APLICADO : DESFECHOS.SEM_MUDANCA, motivo: null };
       // ⚠⚠ ISTO ERA SILÊNCIO ABSOLUTO. Um `failed` cujo `wamid` não casa com envio nenhum é uma de
       // duas coisas MUITO diferentes: uma mensagem de conversa (normal, não é guia) ou um envio
       // nosso gravado SEM `wamid` — o defeito que `exigirWamid` fechou hoje. Sem log, as duas eram
@@ -175,22 +149,52 @@ async function processarStatus(item, { logger }) {
  *   4. o fio NÃO está assumido por uma pessoa (`atendidaPor`) nem na fila do escritório
  *      (`atendidaDesde`): quando o escritório fala, a IA cala.
  *
- * ⚠ Mensagem DUPLICADA (reentrega) nunca dispara: a reserva em `responderMensagem` também barra,
- * mas aqui é mais barato. ⚠ Mídia (não-texto) DISPARA — a frase fixa "só leio texto" é do turno.
+ * Duplicata já respondida não dispara; as demais podem reparar a criação idempotente do job.
+ * Mídia passa primeiro pela fila de arquivos; o turno somente explica que não lê conteúdo.
  */
 export function decidirRespostaDaIa({ r, flag = INTEGRACAO_WHATSAPP_IA, piloto = IA_EMPRESAS_PILOTO } = {}) {
   if (!flag) return { responde: false, motivo: "FLAG_OFF" };
   if (r?.duplicada) return { responde: false, motivo: "DUPLICADA" };
+  if (r?.conversa?.excluidaEm) return { responde: false, motivo: "CHAT_EXCLUIDO" };
+  if (r?.conversa?.automacaoInvalidadaEm) {
+    const recebidaEm = new Date(r?.mensagem?.registradaEm).getTime();
+    if (!Number.isFinite(recebidaEm) || recebidaEm <= new Date(r.conversa.automacaoInvalidadaEm).getTime()) return { responde: false, motivo: "AUTOMACAO_INVALIDADA" };
+  }
+  if (r?.conversa?.atendidaPor || r?.conversa?.atendidaDesde) return { responde: false, motivo: "ASSUMIDA_POR_HUMANO" };
   if (r?.vinculo?.situacao !== SITUACOES.VINCULADO || !r?.conversa?.portalClientId) return { responde: false, motivo: "NAO_VINCULADA" };
+  if (r.conversa.escopoVerificado !== true) return { responde: false, motivo: "SEM_ESCOPO_VERIFICADO" };
   if (!Array.isArray(piloto) || !piloto.includes(String(r.conversa.portalClientId))) return { responde: false, motivo: "FORA_DO_PILOTO" };
-  if (r.conversa.atendidaPor || r.conversa.atendidaDesde) return { responde: false, motivo: "ASSUMIDA_POR_HUMANO" };
+  return { responde: true, motivo: null };
+}
+
+/** Rollout independente do modelo: nasce OFF e continua limitado às empresas piloto. */
+export function decidirRespostaDoMenu({ r, flag = INTEGRACAO_WHATSAPP_MENU, piloto = IA_EMPRESAS_PILOTO, telefonesPiloto = WHATSAPP_MENU_TELEFONES_PILOTO, leads = WHATSAPP_MENU_LEADS } = {}) {
+  if (!flag) return { responde: false, motivo: "FLAG_OFF" };
+  if (r?.conversa?.excluidaEm) return { responde: false, motivo: "CHAT_EXCLUIDO" };
+  if (r?.conversa?.atendidaPor || r?.conversa?.atendidaDesde) return { responde: false, motivo: "ASSUMIDA_POR_HUMANO" };
+  if (r?.conversa?.automacaoInvalidadaEm) {
+    const recebidaEm = new Date(r?.mensagem?.registradaEm).getTime();
+    if (!Number.isFinite(recebidaEm) || recebidaEm <= new Date(r.conversa.automacaoInvalidadaEm).getTime()) return { responde: false, motivo: "AUTOMACAO_INVALIDADA" };
+  }
+  const telefone = String(r?.conversa?.telefoneE164 || "").replace(/\D+/g, "");
+  const telefoneNoPiloto = Array.isArray(telefonesPiloto) && telefonesPiloto.includes(telefone);
+  if (!r?.conversa?.portalClientId) {
+    const leadSeguro = r?.vinculo?.situacao === SITUACOES.DESCONHECIDO;
+    if (!leadSeguro) return { responde: false, motivo: "NAO_VINCULADA" };
+    return telefoneNoPiloto || leads ? { responde: true, motivo: null } : { responde: false, motivo: "FORA_DO_PILOTO" };
+  }
+  if (r?.vinculo?.situacao !== SITUACOES.VINCULADO || r.conversa.escopoVerificado !== true) return { responde: false, motivo: "NAO_VINCULADA" };
+  if (!telefoneNoPiloto && (!Array.isArray(piloto) || !piloto.includes(String(r.conversa.portalClientId)))) return { responde: false, motivo: "FORA_DO_PILOTO" };
   return { responde: true, motivo: null };
 }
 
 // ⚠ `ia` é a flag+piloto INJETÁVEIS ({flag, piloto}). Sem isso o ramo "a IA responde" seria
 // inalcançável no teste (a flag nasce OFF no ambiente de teste) — mock que esconde ramo é defeito
 // desta casa. Produção não passa nada e os defaults do `config.js` mandam.
-async function processarMensagem(item, { logger, responder, ia }) {
+async function processarMensagem(item, { logger, responder, responderMenu, atenderContexto, ia, menu, agora }) {
+  if (item.canalProvedorId && WHATSAPP_PHONE_NUMBER_ID && item.canalProvedorId !== WHATSAPP_PHONE_NUMBER_ID) {
+    throw Object.assign(new Error("Evento recebido para outro canal empresarial."), { code: "CANAL_DIVERGENTE" });
+  }
   const r = await registrarMensagemRecebida({
     telefone: item.telefone,
     providerMessageId: item.providerMessageId,
@@ -201,7 +205,12 @@ async function processarMensagem(item, { logger, responder, ia }) {
     // número cru de propósito, e a conversão (segundos, [E] esqueleto do dono) mora num lugar só.
     ocorridaEmProvedor: item.ocorridaEmProvedor,
     nomePerfilProvedor: item.nomePerfilProvedor,
+    respostaAProviderMessageId: item.respostaAProviderMessageId,
   });
+  if (r?.mensagem?.midiaProvedorId) {
+    const { enqueueArquivoWhatsapp } = await import("./ArquivoWhatsappService.js");
+    await enqueueArquivoWhatsapp({ mensagem: r.mensagem, conversa: r.conversa, nomeArquivo: item.nomeArquivo, mimeType: item.mimeType });
+  }
 
   // ⚠ **`DESCONHECIDO` E `AMBIGUO` NÃO SOMEM, E TAMBÉM NÃO ESCOLHEM EMPRESA.** Quem decide isso é
   // `registrarMensagemRecebida`, que grava no fio NÃO ATRIBUÍDO (`portalClientId` nulo = a fila de
@@ -223,23 +232,60 @@ async function processarMensagem(item, { logger, responder, ia }) {
     "WhatsApp: mensagem recebida registrada",
   );
 
+  // Cliques usam o id estável do payload bruto e são resolvidos antes do modelo. O inbox conserva
+  // esse payload para retry; nenhuma coluna nova é necessária para tornar o roteamento durável.
+  if (r?.mensagem?.respondidaPelaIaEm) {
+    // Uma reentrega já concluída não pode cair no menu e virar um novo encaminhamento.
+    return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: "JA_RESPONDIDA" } };
+  }
+  const processar = async (r, item, lease = {}) => {
+  const decisaoComercial = decidirRespostaComercial({ r });
+  const decisaoMenu = decidirRespostaDoMenu({ r, ...(menu || {}) });
+  const decisao = decisaoComercial.responde ? decisaoComercial : decidirRespostaDaIa({ r: { ...r, duplicada: Boolean(r?.duplicada && r?.mensagem?.respondidaPelaIaEm) }, ...(ia || {}) });
+  // O menu público legado encaminha texto livre à equipe. Leads do piloto comercial seguem a
+  // coleta por conversa; cliques continuam determinísticos. Clientes conservam o menu inicial.
+  if (decisaoMenu.responde && (!decisaoComercial.responde || item.interacao) && typeof responderMenu === "function") {
+    const menu = await responderMenu({
+      registro: r,
+      interacao: item.interacao || null,
+      texto: item.tipo === "text" ? item.corpo : null,
+      agora,
+      logger,
+      textoLivreDisponivel: decisao.responde,
+      ...lease,
+    });
+    if (menu?.tratado) {
+      return {
+        desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA,
+        motivo: null,
+        vinculo: situacao,
+        ia: { responde: false, motivo: menu.motivo || "MENU_DETERMINISTICO" },
+        menu,
+      };
+    }
+  }
+
   // ── O ASSISTENTE (IA) — o gancho, DEPOIS de a mensagem estar gravada ──────────────────────────
   // `responder` é injetável e o teste mede que ele NÃO é chamado nos ramos fechados
   // (`processarEventoWhatsapp.test.js`, "o gancho da IA"). ⚠ Essa cobertura só existe desde
   // 03/09/2026: até então o comentário AFIRMAVA o teste e ele não existia — mexer no gancho para
   // ignorar `decisao.responde` deixava a suíte inteira verde (achado do agente "C").
-  // Ele NUNCA lança e roda fora deste laço (`setImmediate`): a resposta ao webhook já saiu, e o
-  // turno do modelo pode levar segundos.
-  const decisao = decidirRespostaDaIa({ r, ...(ia || {}) });
+  // Enfileirar é aguardado: se falhar, o inbox tenta novamente. O modelo roda em outro worker.
+  // Reentrega também repara a janela entre mensagem persistida e criação do job (unique por id).
   if (decisao.responde && typeof responder === "function" && r?.mensagem?.id && r?.conversa?.id) {
-    const args = { conversaId: r.conversa.id, mensagemId: r.mensagem.id };
-    setImmediate(() => {
-      Promise.resolve()
-        .then(() => responder(args))
-        .catch((e) => logger?.error?.({ ...args, err: e?.message || String(e) }, "WhatsApp: o assistente lançou fora do turno"));
-    });
+    const args = { conversaId: r.conversa.id, mensagemId: r.mensagem.id, portalClientId: r.conversa.portalClientId,
+      ...(r.contexto ? { atendimentoId: r.contexto.atendimentoId, contextoVersao: r.contexto.versao } : {}), ...(decisao.perfil ? { perfil: decisao.perfil } : {}) };
+    await responder(args);
   }
   return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: decisao };
+  };
+  if ((responder === responderPadrao || typeof atenderContexto === "function") && (r?.vinculo?.empresas?.length || r?.conversa?.atendimentoId)) {
+    const atender = atenderContexto || (await import("./AtendimentoResponsavelWhatsappService.js")).atenderContextoResponsavel;
+    const resultado = await atender({ registro: r, item, processar, agora, log: logger, ...(menu || {}) });
+    if (resultado?.tratadoContexto) return { desfecho: r.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, vinculo: situacao, ia: { responde: false, motivo: resultado.motivo } };
+    return resultado;
+  }
+  return processar(r, item);
 }
 
 /**
@@ -255,7 +301,7 @@ async function processarMensagem(item, { logger, responder, ia }) {
  * @param {Date}   [opcoes.agora]   injetável (a leitura do timestamp não lê relógio escondido)
  * @param {object} [opcoes.logger]
  */
-export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao, ia = undefined } = {}) {
+export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao, responderMenu = undefined, atenderContexto = undefined, ia = undefined, menu = undefined } = {}) {
   const resumo = {
     mensagens: { total: 0, gravadas: 0, duplicadas: 0, recusadas: 0 },
     statuses: { total: 0, aplicados: 0, semMudanca: 0, semEnvio: 0, desconhecidos: 0, contradicoes: 0, recusados: 0 },
@@ -308,9 +354,14 @@ export async function processarEventoWhatsapp(payload, { agora = new Date(), log
   }
 
   resumo.mensagens.total = leitura.mensagens.length;
+  // Testes e consumidores que injetam seu próprio `responder` continuam isolados. Em produção,
+  // onde se usa o enfileirador padrão, o menu determinístico é carregado sob demanda.
+  const atenderMenu = responderMenu === undefined
+    ? (responder === responderPadrao ? responderMenuPadrao : null)
+    : responderMenu;
   for (const item of leitura.mensagens) {
     try {
-      const r = await processarMensagem(item, { logger, responder, ia });
+      const r = await processarMensagem(item, { logger, responder, responderMenu: atenderMenu, atenderContexto, ia, menu, agora });
       if (r.desfecho === DESFECHOS.DUPLICADA) resumo.mensagens.duplicadas += 1;
       else resumo.mensagens.gravadas += 1;
     } catch (e) {
@@ -346,6 +397,11 @@ export async function processarEventoWhatsapp(payload, { agora = new Date(), log
  * meia aplicação; com a flag OFF (o estado de hoje) ninguém paga esse import no arranque.
  */
 async function responderPadrao(args) {
-  const { responderMensagem } = await import("../assistente/AssistenteService.js");
-  return responderMensagem(args);
+  const { enfileirarTurnoIa } = await import("../assistente/TurnoIaWhatsappService.js");
+  return enfileirarTurnoIa(args);
+}
+
+async function responderMenuPadrao(args) {
+  const { responderMenuWhatsapp } = await import("./MenuWhatsappService.js");
+  return responderMenuWhatsapp(args);
 }

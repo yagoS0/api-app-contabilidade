@@ -99,6 +99,23 @@ describe("ausência tem três significados diferentes", () => {
 });
 
 describe("as frases por canal", () => {
+  it("também data o registro legado sem linhas por canal", () => {
+    const r = lerEnvioDaGuia({ emailSentAt: "2026-09-05T15:56:23Z", envio: { jaEnviada: true, canais: [] } });
+    expect(r.titulo).toMatch(/05\/09\/2026.*12:56:23/);
+    expect(r.titulo).toContain("destinatário não registrado no histórico");
+  });
+
+  it("separa o e-mail histórico da entrega recente do WhatsApp pelos horários reais", () => {
+    const r = lerEnvioDaGuia(comCanais([
+      { canal: "EMAIL", status: "enviado", em: "2026-09-05T15:56:23.000Z", destino: null },
+      { canal: "WHATSAPP", status: "entregue", em: "2026-09-07T14:28:12.000Z", entregueEm: "2026-09-07T14:28:22.000Z" },
+    ]));
+    expect(r.titulo).toMatch(/05\/09\/2026.*12:56:23/);
+    expect(r.titulo).toMatch(/07\/09\/2026.*11:28:22/);
+    expect(r.titulo).toContain("destinatário não registrado no histórico");
+    expect(r.situacao).toBe(SITUACAO_ENVIO.ENTREGUE);
+  });
+
   it("dizem o canal, o desfecho e PARA QUEM", () => {
     expect(frasePorCanal({ canal: "WHATSAPP", status: "entregue", destino: "5521999998888" }))
       .toBe("WhatsApp: entregue para 5521999998888");

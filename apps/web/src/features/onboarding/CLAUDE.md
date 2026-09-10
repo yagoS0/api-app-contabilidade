@@ -1,5 +1,19 @@
 # CLAUDE.md — Onboarding (funil pré-cadastro)
 
+## Entrada por formulário do cliente — 10/09/2026
+
+“Entrada de clientes” cria ficha somente após escolher origem e modo no `NovoAtendimentoModal`. Abertura com preenchimento pelo cliente é o padrão; o modo interno continua disponível. O callback de criação recebe `{ origem, modo }`, sem fixar TRANSFERENCIA. Resposta de criação perdida exige conferir a lista antes de repetir. Rascunhos ficam visíveis em “Em preenchimento”, pois incluem fichas aguardando respostas; abrir qualquer ficha leva ao detalhe, e o wizard continua em Editar ficha.
+
+`PainelComercial` destaca o link pessoal existente (7 dias), copia link ou mensagem para compartilhamento manual e pede confirmação antes de substituir um link ativo. Não dispara mensagens. Propostas/contratação, anotações/análises e histórico ficam em seções recolhíveis, preservando campos editados ao alternar. Atualizar ficha relê respostas sem desmontar o painel ou descartar proposta/token em memória. Fichas encerradas não oferecem novos links. A conversão usa a ação “Adicionar à carteira”, sem alterar regras de provisionamento.
+
+`FormularioPublico` mantém a spec/validações, salvamento versionado, consentimento final e token no fragmento. O layout mostra progresso, instruções para abertura sem CNPJ e campos de sócios empilhados no celular. Textos de ajuda públicos adaptam a linguagem; perguntas e contratos continuam compartilhados. CSS em `onboarding-workspace.css`, importado por App.css. A validação visual usa mock; links públicos reais continuam dependendo do servidor e não são substituídos por sucesso simulado.
+
+## Recuperação do rascunho — 08/09/2026
+
+Etapa 2: trocar origem com campos preenchidos usa Modal compartilhado (`useConfirmacao`), identifica a nova origem e quantos campos serão apagados. Cancelar não troca. Botões de avançar/voltar/finalizar ficam desabilitados durante navegação/gravação explícita, evitando duplo acionamento. A regra de poda/reset permanece a mesma.
+
+Voltar à lista e trocar de passo aguardam salvar; falha mantém campos e passo com aviso persistente. Debounce e salvamento explícito entram na mesma fila, evitando resposta/escrita antiga depois da saída. Fechar/recarregar com alterações pendentes usa `beforeunload`; não prometer que F5 antes do debounce salva automaticamente. Teste de regressão em `components/__tests__/telasOnboarding.test.jsx` confirma recusa e repetição do Voltar.
+
 O que acontece **antes** de a empresa existir na carteira.
 
 ## Por que existe
@@ -43,12 +57,9 @@ o que foi perguntado.
 `lib/onboardingZod.js` **deriva** o schema da spec. `obrigatorio` está escrito uma vez, no
 descritor.
 
-### ⚠ Mora em `apps/web`, não em `packages/shared`
+### Spec compartilhada — setembro/2026
 
-O `Dockerfile` da raiz **não copia `packages/`** e o `railway.toml` não observa `packages/**`. Um
-import de `@contabilidade/shared` no backend passa em dev, passa nos testes e **morre no boot em
-produção**. O arquivo é escrito sem nenhuma dependência além de `zod` (mesma versão nos dois
-workspaces): migrar na Fase 2 custa um `git mv` mais o commit do Dockerfile.
+A fonte canônica está em `packages/shared/src/onboarding/onboardingSpec.js`, exportada por `@contabilidade/shared/onboarding`. O arquivo em `lib` apenas reexporta. API e interface usam a mesma poda e os mesmos descritores. Docker e Railway já incluem o pacote compartilhado.
 
 ## Armadilhas (todas custaram um ciclo em algum lugar do projeto)
 
@@ -156,3 +167,16 @@ POST impede repetição automática. Não garante unicidade entre atendentes sim
 O mock preserva rascunhos em sessionStorage (`mock:onboardings:v1`); testes que resetam
 módulos para iniciar outra base precisam limpar essa chave. WhatsApp/onboarding não
 caem no mock quando a API real falha. Evidências: `docs/whatsapp-central-retomada.md`.
+
+
+## Atendimento comercial e formulário público — 08/09/2026
+
+A ficha existente ganhou PainelComercial no detalhe e acesso pelo wizard: fase comercial, proposta, consultas públicas/autorizadas com resultados datados, procuração verificada pelo serviço, relatório PDF autenticado, links pessoais com validade e revogação. Não cria empresa automaticamente nem envia mensagens. Conversão continua no provisionamento existente.
+
+App usa wrapper para /onboarding/publico antes de montar hooks autenticados. FormularioPublico lê token apenas do fragmento e envia Authorization próprio, sem cookie, sem sessão do escritório e sem refresh/fallback. Salva progressivamente com versao; envio final exige conferência e remove token do endereço. Não pede senha/certificado; dados declarados são revistos pelo contador. Links mock são apenas demonstrativos e ficam na memória da sessão. A rota real é autoridade de uso único, prazo, revogação, conflitos e limites.
+
+Proteção de saída do formulário público compara JSON dos campos visíveis com o último carregamento/salvamento bem-sucedido. beforeunload só existe enquanto há diferença; reverter o campo, salvar, concluir ou desmontar remove o aviso. Painel comercial preserva proposta digitada em consultas/revogação e refaz metadados de links após gerar um novo, preservando seu token em memória.
+
+## Fluxo comercial versionado — setembro/2026
+
+A ficha é preenchida também pela conversa, com origem de cada campo e controle de versão. `FluxoComercial` adiciona propostas com avulso/recorrente, aceite público, preenchimento determinístico de modelo aprovado, PDF e conferência de assinatura. A conversão de novas propostas recorrentes exige contrato assinado conferido; o avulso conclui sem criar carteira. A biblioteca inicial contém somente orientações genéricas e dados institucionais incompletos, todos como rascunho. Catálogo e minuta privados são importados separadamente e revisados na biblioteca; o código não contém esses documentos. Trechos acima sobre fora do escopo da Fase 1 são históricos; o fluxo atual está descrito em `docs/fluxo-comercial-leads.md`.

@@ -52,6 +52,7 @@ function digitar(rotulo, valor) {
 function preencherTudo() {
   digitar("CNPJ ou CPF do tomador", "12345678000199");
   digitar("Nome ou razão social", "ACME LTDA");
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/ }));
   digitar("Descrição do serviço", "Consultoria contábil");
   digitar("Valor dos serviços", "150000");
   digitar("Alíquota de ISS", "2");
@@ -96,6 +97,9 @@ describe("2) o líquido, e o que não sai dele", () => {
     abrir();
     digitar("Valor dos serviços", "150000");
     digitar("Alíquota de ISS", "2");
+    digitar("CNPJ ou CPF do tomador", "12345678000199");
+    digitar("Nome ou razão social", "ACME LTDA");
+    fireEvent.click(screen.getByRole("button", { name: /Continuar/ }));
     fireEvent.click(screen.getByRole("checkbox"));
 
     const p = within(painel());
@@ -122,6 +126,9 @@ describe("3) as pendências: cor certa, e cada uma leva ao campo", () => {
 
   it("o 'ir para o campo' põe o foco no campo que falta", () => {
     abrir();
+    digitar("CNPJ ou CPF do tomador", "12345678000199");
+    digitar("Nome ou razão social", "ACME LTDA");
+    fireEvent.click(screen.getByRole("button", { name: /Continuar/ }));
     const item = screen.getByText(/descreva o serviço prestado/).closest("li");
     fireEvent.click(within(item).getByRole("button", { name: /ir para o campo/ }));
     expect(screen.getByLabelText(/Descrição do serviço/)).toHaveFocus();
@@ -209,7 +216,7 @@ describe("5) sugestão de tomador — encontra, não escolhe", () => {
     const input = screen.getByLabelText(/Nome ou razão social/);
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "BETA" } });
-    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(within(screen.getByRole("listbox")).getAllByRole("option")).toHaveLength(1);
 
     fireEvent.keyDown(input, { key: "Enter" });
     expect(input).toHaveValue("BETA");

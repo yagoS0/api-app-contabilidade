@@ -1,3 +1,5 @@
+import { WorkspaceHomeLink, useWorkspaceNavigation } from "../../../../app/navigation/WorkspaceNavigation";
+import { Engrenagem } from "../../../configuracoes/Configuracoes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { situacaoFiscalComSimbolo } from "../../../../lib/vocabulario";
@@ -15,13 +17,15 @@ import { CompaniesTable } from "../components/renderCompaniesTable";
 import { BarraSelecaoEmpresas } from "../components/BarraSelecaoEmpresas";
 import { CalendarioGrid } from "../../../calendario/components/renderCalendarioGrid";
 import { estadoCertificado } from "../lib/certificado";
-import { APURACAO, ORDEM_APURACAO, contarApuracao, estadoApuracao } from "../lib/estadoApuracao";
+
 import {
   ABA_PADRAO, abasVisiveis, contarPorAba, empresasDaAba, normalizarAba, rotuloAba,
 } from "../lib/abaRegime";
 import { LogoAltan } from "../../../../components/ui/LogoAltan";
+import { desfechoWhatsapp, resumirWhatsapp } from "../../../guides/lib/canalDeEnvio";
 import { liberarComCanais } from "../../../guides/lib/liberarComCanais";
 import { useResumoWhatsapp } from "../../../whatsapp/hooks/useResumoWhatsapp";
+import { WhatsappIcon } from "../../../whatsapp/components/ConversaVisual";
 
 // Q17: dropdown — abre um seletor (não navega para um hub).
 //
@@ -166,8 +170,8 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
         aria-controls="dashboard-gaveta"
         /* ⚠ O rótulo acessível DIZ O QUE ABRE. "Menu" sozinho não distingue esta gaveta do menu do
            navegador nem do popover de uma linha da tabela. */
-        aria-label={aberta ? "Fechar o menu de ferramentas e configurações" : "Abrir o menu de ferramentas e configurações"}
-        title="Ferramentas e configurações"
+        aria-label={aberta ? "Fechar o menu de ferramentas" : "Abrir o menu de ferramentas"}
+        title="Ferramentas"
         aria-describedby={resumoWhatsapp?.selo ? "whatsapp-aviso-menu" : undefined}
       >
         {/* Os três traços, desenhados — o caractere ☰ some em fonte sem o glifo e não escala com
@@ -179,6 +183,7 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
             <rect x="0" y="10" width="16" height="2" rx="1" />
           </g>
         </svg>
+        <span>Ferramentas</span>
         {resumoWhatsapp?.selo ? <span id="whatsapp-aviso-menu" data-testid="whatsapp-ponto" style={{ color: "var(--state-warn)", marginLeft: 6 }} aria-label={`${resumoWhatsapp.selo} mensagens não lidas no WhatsApp`}>●</span> : null}
       </Button>
 
@@ -198,14 +203,14 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
             className="dashboard-gaveta"
             role="dialog"
             aria-modal="true"
-            aria-label="Ferramentas e configurações"
+            aria-label="Ferramentas"
           >
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
               padding: "12px 14px", borderBottom: "1px solid var(--border)",
             }}>
               <strong style={{ fontSize: "0.82rem", letterSpacing: "0.03em", textTransform: "uppercase", color: "var(--text-muted)" }}>
-                Mais
+                Ferramentas
               </strong>
               <button
                 type="button"
@@ -219,7 +224,7 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
                 ✕
               </button>
             </div>
-            <nav aria-label="Ferramentas e configurações" style={{ padding: "6px 0" }}>
+            <nav aria-label="Ferramentas" style={{ padding: "6px 0" }}>
               {usable.map((it, i) => (
                 <div key={it.label}>
                   {/* O grupo desenha uma régua com título — sem ela "Rotinas" e "Configuração
@@ -237,6 +242,8 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
                   <button
                     type="button"
                     onClick={() => { fechar(); it.onClick(); }}
+                    aria-label={it.label}
+                    aria-describedby={it.descricao ? `ferramenta-descricao-${i}` : undefined}
                     style={{
                       display: "block", width: "100%", textAlign: "left", padding: "10px 14px",
                       background: "transparent", border: "none", color: "var(--text)", cursor: "pointer", fontSize: "0.88rem",
@@ -245,9 +252,10 @@ export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
                     onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                   >
                     {it.label}
+                    {it.descricao && <span id={`ferramenta-descricao-${i}`} className="dashboard-tool-description">{it.descricao}</span>}
                     {it.label === "WhatsApp" && resumoWhatsapp ? <span style={{ display: "block", fontSize: "0.72rem", color: "var(--text-muted)" }}>
                       {resumoWhatsapp.selo ? <strong data-testid="whatsapp-selo" style={{ color: "var(--state-warn)", marginRight: 6 }}>{resumoWhatsapp.selo}</strong> : null}
-                      {resumoWhatsapp.carregando ? "Lendo mensagens…" : resumoWhatsapp.selo ? resumoWhatsapp.frase.replace(/^\d+ /, "") : resumoWhatsapp.frase}
+                      {resumoWhatsapp.carregando ? "Lendo mensagens…" : resumoWhatsapp.frase}
                     </span> : null}
                   </button>
                 </div>
@@ -323,7 +331,10 @@ export function CompaniesHomePage({
   // As conversas de WhatsApp (F5, 02/09/2026): a fila de não vinculados, os fios, assumir/responder.
   onOpenWhatsapp,
   onOpenObrigacoes,
+  calendarioContext,
+  onCalendarioContextChange,
   onOpenOnboardings,
+  onOpenConfiguracoes,
   onLogout,
   onOpenCompany,
   globalChartStatus, // { isConfigured, tiposFaltantes, ... } — pré-requisito para criar empresa
@@ -334,29 +345,12 @@ export function CompaniesHomePage({
   message,
   error,
 }) {
-  // ⚠⚠ DUAS FORMAS DE VER A MESMA CARTEIRA — eram QUATRO até 01/09/2026.
-  //
-  // > Dono: *"retirar totalmente a visualização em Cards, colocar a visualização de Ano dentro do
-  // > Calendário, e sempre que abrir abre no Calendário, sendo o modo Tabela selecionável."*
-  //
-  // **Cards** foi removido inteiro (o componente, o CSS e os três gates). **Ano** não morreu: virou
-  // a granularidade mais larga DENTRO do Calendário, ao lado de Mês/Semana/Dia/Agenda — mesmo dado,
-  // mesma rota, mesmo clique, agora com uma navegação só.
-  //
-  // ⚠⚠ E A ESCOLHA DEIXOU DE PERSISTIR. Ela morava em `localStorage: dashboard:modoVisao`, e havia
-  // DOIS defeitos ali que a remoção do Cards transformaria em tela quebrada:
-  //   1. o leitor não validava nada (`if (salvo) return salvo`) — qualquer string passava, e a
-  //      cadeia de render terminava num `else` que era o CARDS. Removida a visão, quem tivesse
-  //      `"cards"` gravado ficaria com o conteúdo de uma visão e NENHUMA aba acesa (o `Tabs`
-  //      compara `item.key === active`);
-  //   2. a heurística de largura GRAVAVA `"cards"` sozinha em qualquer tela <1024px — ou seja, há
-  //      contador com essa string salva sem nunca ter escolhido nada.
-  // A cura é a que o dono pediu: **abre SEMPRE no Calendário**, sem memória. Sem leitura, a chave
-  // órfã de quem já usou o app é ignorada por construção — não há migração a escrever. E a
-  // heurística de largura saiu junto: ela só existia para escolher entre Tabela e Cards.
-  const [modoVisao, setModoVisao] = useState("calendario");
+  // A preferência vive na sessão: voltar preserva; autenticar de novo abre Calendário.
+  const navigation = useWorkspaceNavigation();
+  const [visaoLocal, setVisaoLocal] = useState("calendario");
+  const avisoPlanoGlobal = useRef(null);
+  const trocarVisao = navigation?.setModoVisao || setVisaoLocal;
   const resumoWhatsapp = useResumoWhatsapp({ api, enabled: typeof onOpenWhatsapp === "function" });
-  const trocarVisao = setModoVisao;
 
   // ─── IMPRESSÃO ───────────────────────────────────────────────────────────────────────────────
   // Duas coisas precisam acontecer ANTES do diálogo do navegador abrir: a visão vira tabela (cards
@@ -364,6 +358,7 @@ export function CompaniesHomePage({
   // no clique — o React ainda não renderizou. O clique só liga a flag; o efeito imprime depois do
   // render, que é o único momento em que o DOM já está do jeito que vai para o papel.
   const [imprimindo, setImprimindo] = useState(false);
+  const modoVisao = imprimindo ? "tabela" : (navigation?.modoVisao || visaoLocal);
   useEffect(() => {
     if (!imprimindo) return undefined;
     document.body.classList.add("imprimindo");
@@ -379,7 +374,7 @@ export function CompaniesHomePage({
   }, [imprimindo]);
 
   function imprimirListagem() {
-    if (modoVisao !== "tabela") trocarVisao("tabela");
+
     setImprimindo(true);
   }
   const [search, setSearch] = useState("");
@@ -401,7 +396,6 @@ export function CompaniesHomePage({
   // F2: "o que trava a carteira" — resposta agregada do servidor para a competência da tela.
   // Não vem do card: o card sabe se a empresa está fechada, não POR QUE ela ainda não pode ser.
   const [travas, setTravas] = useState(null);          // Map companyId → linha do servidor
-  const [travaFiltro, setTravaFiltro] = useState("all"); // all | problema | fechar | apurar | fechada | enviar
   const [fechandoLote, setFechandoLote] = useState(false);
   const carregarTravas = useCallback(async () => {
     if (!api?.getCarteiraFechamento || !dashboardCompetencia) { setTravas(null); return; }
@@ -445,13 +439,12 @@ export function CompaniesHomePage({
       return out;
     },
     onEnviar: async (guideId, empresa) => {
-      // ⚠ DOIS CANAIS, UMA LIGAÇÃO (02/09/2026): o e-mail sai como sempre; o WhatsApp é o terceiro
-      // passo, conforme `canalPadraoEnvio` da empresa. A sequência é a MESMA do botão "Liberar ao
-      // cliente" da aba Guias (`liberarComCanais`) — duas cópias divergiriam na primeira correção.
+      // A liberação na página principal solicita os dois canais aos contatos cadastrados.
+      // Reutiliza a sequência de liberação e seus resultados independentes por canal.
       // `sent:false` com ok:true (a liberação passou, o e-mail falhou) continua sendo ERRO no chip.
-      const out = await liberarComCanais({ api, companyId: empresa?.companyId, guideId });
+      const out = await liberarComCanais({ api, companyId: empresa?.companyId, guideId, ambos: true });
       onRefreshCompanies?.();
-      return out.ok ? { ok: true, message: out.texto } : { ok: false, message: out.texto };
+      return { ok: out.ok, tom: out.tom, message: out.texto };
     },
     /**
      * Só o WhatsApp, de novo — o botão do chip quando a tentativa por WhatsApp FALHOU.
@@ -460,9 +453,10 @@ export function CompaniesHomePage({
      */
     onEnviarWhatsapp: async (guideId, empresa) => {
       try {
-        const out = await api.enviarGuiaWhatsapp(empresa?.companyId, guideId);
+        const out = await api.enviarGuiaWhatsapp(empresa?.companyId, guideId, { apenasFalhos: true });
         onRefreshCompanies?.();
-        return out?.ok === false ? { ok: false, message: out.message || out.motivo || "O WhatsApp não saiu." } : out;
+        const resumo = resumirWhatsapp(desfechoWhatsapp(out));
+        return { ok: resumo.tom !== "erro", tom: resumo.tom, message: resumo.texto };
       } catch (err) {
         onRefreshCompanies?.();
         return { ok: false, message: err?.message || "O WhatsApp não saiu." };
@@ -493,40 +487,6 @@ export function CompaniesHomePage({
   }, [travas]);
 
   /**
-   * As contagens do PIPELINE DO MÊS — a mesma leitura da coluna Apuração, não um cálculo paralelo.
-   *
-   * ⚠ Isto substituiu quatro contagens que rodavam por conta própria sobre `travas`. Elas
-   * divergiam da coluna: dava para a barra dizer uma coisa e a linha da empresa dizer outra, na
-   * mesma tela. Chip de filtro, barra de progresso e ordenação saem TODOS de `estadoApuracao`.
-   */
-  const contagemApuracao = useMemo(
-    () => (travas ? contarApuracao(companies || [], travas) : null),
-    [companies, travas],
-  );
-
-  /**
-   * Empresas com pelo menos uma guia gerada e NÃO enviada — a ação rápida do fim do mês.
-   *
-   * ⚠ `falhou` conta aqui. Ela é o caso mais agudo de "falta enviar": já se tentou, não saiu, e
-   * nada tentará de novo. Fora deste recorte, a empresa cujo e-mail falhou desaparecia justamente
-   * do filtro que existe para varrer os envios pendentes.
-   */
-  const empresasFaltaEnviar = useMemo(() => {
-    const set = new Set();
-    for (const c of companies || []) {
-      if (getComplianceTags(c.guideCompliance).some((t) => t.state === "gerada" || t.state === "falhou")) {
-        set.add(c.companyId);
-      }
-    }
-    return set;
-  }, [companies]);
-  const contagemFaltaEnviar = empresasFaltaEnviar.size;
-
-  // ⚠ `segmentosProgresso` (o cálculo da barra de progresso) foi REMOVIDO junto com a barra em
-  // 15/08/2026 — sem consumidor, era `useMemo` morto rodando a cada render. `contagemApuracao`
-  // continua: é dele que saem os chips de filtro. Ver o comentário no lugar onde a barra ficava.
-
-  /**
    * Fecha, uma a uma, as empresas que o servidor disse estarem prontas.
    *
    * O laço é sequencial de propósito: são escritas, e disparar N em paralelo contra o mesmo backend
@@ -535,11 +495,11 @@ export function CompaniesHomePage({
    * demais seguem. Por isso o relatório final conta recusas em vez de abortar no primeiro erro.
    */
   async function fecharAsProntas() {
-    // ⚠⚠ O ALVO É `prontasVisiveis`, não a carteira inteira. Ler `travas.values()` aqui fecharia
+    // ⚠⚠ O ALVO É `prontasSelecionadas`, não a carteira inteira. Ler `travas.values()` aqui fecharia
     // empresas fora do recorte que o contador está olhando — e a confirmação abaixo lista só as 12
     // primeiras, então ele nem veria os nomes das demais.
-    if (fechandoLote || !prontasVisiveis.length) return;
-    const alvos = prontasVisiveis;
+    if (fechandoLote || !prontasSelecionadas.length) return;
+    const alvos = prontasSelecionadas;
     // eslint-disable-next-line no-alert
     const ok = window.confirm(
       `Fechar o mês ${dashboardCompetencia} de ${alvos.length} empresa(s)?\n\n`
@@ -647,23 +607,6 @@ export function CompaniesHomePage({
     //    Q16: filtro "Enviados/Só não enviados" também REMOVE quem não bate.
     //    Novos filtros (apuração / certificado) também REMOVEM quem não bate.
     const searched = companies.filter((company) => {
-      // F2: REMOVE quem não bate — é uma lista de trabalho ("me mostre só as que posso fechar"),
-      // não uma ordenação. Empresa sem linha no agregado fica de fora de qualquer recorte: dizer
-      // "pronta" sem ter a resposta do servidor seria pior que omitir.
-      if (travaFiltro !== "all") {
-        // "Falta enviar guia" sai dos CHIPS, não do agregado de fechamento — é a única do conjunto
-        // que fala de guia, não de lançamento.
-        if (travaFiltro === "enviar") {
-          if (!empresasFaltaEnviar.has(company?.companyId)) return false;
-        } else {
-          const t = travas?.get(company?.companyId);
-          if (!t) return false;
-          // O recorte usa o MESMO `estadoApuracao` do chip e da coluna. Antes cada um relia
-          // `travas` do seu jeito, e clicar num chip trazia um conjunto diferente do que o chip
-          // tinha acabado de contar.
-          if (estadoApuracao(company, t).chave !== travaFiltro) return false;
-        }
-      }
       if (emailFilter === "notSent" && company?.monthEmailSent) return false;
       if (emailFilter === "sent" && !company?.monthEmailSent) return false;
       if (apuracaoFilter === "apurados" && !company?.apuracao?.apurada) return false;
@@ -711,7 +654,7 @@ export function CompaniesHomePage({
       .map((company, index) => ({ company, index, p: priority(company) }))
       .sort((a, b) => (b.p - a.p) || (a.index - b.index))
       .map((item) => item.company);
-  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, travaFiltro, travas, empresasFaltaEnviar]);
+  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter]);
 
   // ─── ABAS DE REGIME ───────────────────────────────────────────────────────────────────────────
   //
@@ -847,21 +790,13 @@ export function CompaniesHomePage({
     [empresasVisiveis, selecionados],
   );
 
-  /**
-   * ⚠⚠ AS QUE DÁ PARA FECHAR **E** ESTÃO NA TELA — as duas condições, e a segunda é a que faltava.
-   *
-   * `contagemTravas.prontas` conta `podeFechar` na CARTEIRA INTEIRA. Usá-la para um botão que age
-   * fecharia empresas que o contador não está olhando — exatamente o risco que o comentário do botão
-   * nomeia (*"fácil de clicar sem ter olhado quem vai ser fechado"*). A regra de qual população vale
-   * já está escrita neste arquivo: **`empresasVisiveis`, não `filteredCompanies` — o que está na TELA
-   * é a aba ativa**.
-   */
-  const prontasVisiveis = useMemo(() => {
+  // O lote exige seleção explícita, visibilidade na aba e aptidão informada pelo servidor.
+  const prontasSelecionadas = useMemo(() => {
     if (!travas) return [];
-    return (empresasVisiveis || [])
+    return empresasSelecionadas
       .map((c) => travas.get(c.companyId))
       .filter((l) => l?.podeFechar);
-  }, [empresasVisiveis, travas]);
+  }, [empresasSelecionadas, travas]);
 
   return (
     <div className="dashboard-home-page">
@@ -869,6 +804,7 @@ export function CompaniesHomePage({
         <section className="dashboard-home">
           <header className="dashboard-home__header">
             <div className="dashboard-home__brand">
+              <WorkspaceHomeLink />
               <div>
                 {/* Subtítulo removido: descrevia o óbvio ("busca, filtros e acesso rápido") numa
                     tela que JÁ é a carteira, e ainda vinha sem acentuação. Legenda que explica o
@@ -885,12 +821,12 @@ export function CompaniesHomePage({
                     mesmo `align-items`, e a decisão de 20/08 (*"a competência sobe para o título
                     porque ela é o contexto de tudo o que a tela mostra"*) continua de pé: ela
                     continua na mesma linha, ao lado do título. O que mudou é de quem ela é filha. */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div className="dashboard-home__heading" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <h1 className="dashboard-home__title" style={{ margin: 0 }}>Empresas</h1>
-                  <span aria-hidden="true" style={{ color: "var(--text-faint)", fontWeight: 400 }}>·</span>
+
                   {/* ⚠ `role="group"` com nome: sem ele os três controles ficam soltos na leitura
                       linear, e o mês que eles comandam vira um texto qualquer ao lado. */}
-                  <span role="group" aria-label="Competência da carteira" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <span className="dashboard-home__competencia" hidden={modoVisao !== "tabela"} role="group" aria-label="Competência da carteira" style={{ display: modoVisao === "tabela" ? "inline-flex" : "none", alignItems: "center", gap: 4 }}>
                     <button
                       type="button"
                       onClick={() => onChangeCompetencia(shiftCompetencia(dashboardCompetencia, -1))}
@@ -898,7 +834,7 @@ export function CompaniesHomePage({
                       style={{ ...COMP_ARROW, fontSize: "0.9rem" }}
                     >‹</button>
                     <span style={{ fontSize: "1.05rem", color: "var(--text-muted)", fontWeight: 600, minWidth: 150, textAlign: "center" }}>
-                      {rotuloCompetencia(dashboardCompetencia)}
+                      <small className="dashboard-home__context-label">Competência</small>{rotuloCompetencia(dashboardCompetencia)}
                     </span>
                     <button
                       type="button"
@@ -926,6 +862,7 @@ export function CompaniesHomePage({
             </div>
 
             <div className="dashboard-home__user">
+              <Engrenagem href="/configuracoes" onClick={onOpenConfiguracoes} label="Configurações gerais do escritório" />
               <div className="dashboard-home__user-meta">
                 <span className="dashboard-home__user-label">Contador logado</span>
                 <strong className="dashboard-home__user-name">{user?.name || "Conta escritorio"}</strong>
@@ -938,6 +875,8 @@ export function CompaniesHomePage({
 
           {globalChartStatus && !globalChartStatus.isConfigured && (
             <div
+              ref={avisoPlanoGlobal}
+              tabIndex={-1}
               role="alert"
               style={{
                 margin: "12px 0",
@@ -966,127 +905,7 @@ export function CompaniesHomePage({
             </div>
           )}
 
-          {/* ─── BARRA DE AÇÕES ──────────────────────────────────────────────────────────────────
-              ⚠ ERAM OITO BOTÕES NO MESMO PESO, SEIS DELES ROXO CHEIO. Uma fileira em que tudo é
-              primário não tem primário: o olho não encontra "a ação desta tela" e passa a ler os
-              oito rótulos toda vez.
-
-              A hierarquia agora tem três degraus, e nenhuma função saiu da tela:
-                1. `Nova empresa` — SÓLIDO (accent). É a única ação de CRIAR daqui.
-                2. Onboardings · Apuração · Consultas · Envio de e-mails — CONTORNO. São o fluxo
-                   frequente do mês.
-                3. Rotinas · Planejamento · Configurações — dentro de `Mais ▾`, com os mesmos
-                   rótulos e os mesmos handlers.
-
-              ⚠ SÓLIDO É ROXO (accent), NUNCA VERDE. Verde quer dizer CONCLUÍDO neste app — a guia
-              paga, o `D = C ✓ ok`, "Guias concluídas" nesta mesma tabela. Um botão verde de "faça
-              isto" na primeira linha da tela estraga a leitura do verde em todo o resto dela.
-
-              ⚠ NENHUM BOTÃO GANHOU CONTADOR. O plano sugeria "Onboardings · 3"; esta página não
-              recebe contagem de onboarding nenhuma (só o handler `onOpenOnboardings`), e um número
-              inventado — ou um zero que na verdade quer dizer "não perguntei" — é exatamente o
-              defeito que `lib/falhaDeCarga.js` existe para matar.
-
-              ⚠ A VERSÃO "COMPLETA" DO PLANO NÃO FOI FEITA, de propósito: ela move Rotinas e
-              Planejamento para uma "navegação de módulos (sidebar ou abas)" que NÃO EXISTE aqui —
-              não há `<Routes>` no `App.jsx`, o despacho é uma cadeia de `if` (ver
-              `apps/web/CLAUDE.md`). Criar navegação nova é decisão de produto do dono. */}
-          <nav className="dashboard-home__actions" aria-label="Atalhos">
-            {/* ⚠ O HAMBÚRGUER VEM PRIMEIRO porque a gaveta abre à ESQUERDA — botão à direita
-                abrindo painel à esquerda faz o olho atravessar a tela atrás do que acabou de
-                clicar. */}
-            <GavetaFerramentas
-              resumoWhatsapp={resumoWhatsapp}
-              items={[
-                // ⚠ APURAÇÃO E CONSULTAS MUDARAM DE LUGAR, NÃO SAÍRAM (dono, 18/08/2026: *"coloque
-                // o de apuração e de consulta dentro de mais, em ferramentas"*). Mesmo rótulo,
-                // mesmo handler, um clique a mais.
-                { grupo: "Ferramentas", label: "Apuração", onClick: onOpenApuracao },
-                // C10: "Pendências" já tinha virado a aba "Situação Fiscal" dentro de Consultas.
-                { label: "Consultas", onClick: onOpenSerproFuncoes },
-                { label: "WhatsApp", onClick: onOpenWhatsapp },
-                // Planejamento é cenário de reunião com PROSPECT (por isso mora no dashboard e não
-                // dentro de uma empresa); Rotinas é configuração de recorrência. Nenhuma das duas é
-                // o trabalho do dia — são episódicas, e é isso que as põe aqui dentro.
-                { label: "Rotinas", onClick: onOpenRotinas },
-                { label: "Planejamento", onClick: onOpenPlanejamento },
-                // Cadastrar obrigação é CONFIGURAÇÃO do escritório (define o que passa a ser
-                // cobrado de todo mundo), não uma forma de olhar a carteira — por isso saiu do
-                // seletor de visões e entrou aqui.
-                { grupo: "Configurações", label: "Obrigações do escritório", onClick: onOpenObrigacoes },
-                { label: "Configuração SERPRO", onClick: onOpenGuideSettings },
-                { label: "Plano de Contas Global", onClick: onOpenChartGlobal },
-                // ⚠ Chamava-se "Pendências (debug)". É a ÚNICA tela que lista guia por guia o
-                // status do e-mail, as tentativas e o `emailLastError` — e o rótulo "(debug)"
-                // dizia ao contador que aquilo não era assunto dele. Ferramenta de diagnóstico
-                // escondida atrás de um aviso de "não mexa" é o mesmo que não existir.
-                { label: "Pendências de e-mail", onClick: onOpenPendingReport },
-                // ⚠⚠ ESTA TELA EXISTIA E NÃO TINHA NENHUM LINK — de sempre até 27/08/2026.
-                // `onOpenGuideUpload` era desestruturada nas props (`:297`) e **nunca referenciada**
-                // no arquivo; `/guides/upload` só se alcançava digitando a URL.
-                // ⚠ E ela é a ÚNICA tela que mostra o PDF de guia que o parser NÃO conseguiu casar
-                // com empresa nenhuma. Sem porta, essas guias eram invisíveis: ninguém as vê no
-                // dashboard (não pertencem a empresa nenhuma) e ninguém as vê aqui.
-                // ⚠ Fica junto de "Pendências de e-mail" porque as duas respondem à mesma pergunta —
-                // *o que ficou pelo caminho?* — e nenhuma das duas é rotina diária.
-                { label: "Guias não identificadas", onClick: onOpenGuideUpload },
-              ]}
-            />
-            <Button
-              variant="secondary"
-              className="dashboard-home__action dashboard-home__action--accent"
-              onClick={() => {
-                if (globalChartStatus && !globalChartStatus.isConfigured) {
-                  const faltantes = (globalChartStatus.tiposFaltantes || []).join(", ");
-                  window.alert(
-                    "Configure o plano de contas global antes de criar empresas.\n\n"
-                    + `Faltam contas dos tipos: ${faltantes}.\n\n`
-                    + "Acesse: Configurações da Firma → Plano de Contas Global."
-                  );
-                  return;
-                }
-                onCreateCompany();
-              }}
-              title={
-                globalChartStatus && !globalChartStatus.isConfigured
-                  ? "Plano de contas global incompleto — configure antes de criar empresas"
-                  : undefined
-              }
-            >
-              Nova empresa
-              {globalChartStatus && !globalChartStatus.isConfigured && (
-                <span style={{ marginLeft: 6, fontSize: "0.7rem" }} aria-label="Plano global incompleto">⚠</span>
-              )}
-            </Button>
-            {/* Onboardings fica ao LADO de "Nova empresa", e as duas portas continuam existindo:
-                "Nova empresa" serve a quem já tem tudo em mãos; o funil serve ao que acontece
-                ANTES disso (empresa que ainda vai abrir, papelada chegando em partes). */}
-            {/* Onboardings fica ao LADO de "Nova empresa", e as duas portas continuam existindo:
-                "Nova empresa" serve a quem já tem tudo em mãos; o funil serve ao que acontece
-                ANTES disso (empresa que ainda vai abrir, papelada chegando em partes). */}
-            {onOpenOnboardings && (
-              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--outline" onClick={onOpenOnboardings}>
-                Onboardings
-              </Button>
-            )}
-            {/* ⚠ APURAÇÃO E CONSULTAS FORAM PARA A GAVETA (☰), no grupo "Ferramentas" — pedido do
-                dono, 18/08/2026. Continuam com o mesmo rótulo e o mesmo handler.
-
-                ⚠ O BOTÃO "ENVIO DE E-MAILS EM LOTE" FOI REMOVIDO da barra, e este é o único caso
-                em que uma porta se fechou: *"não é tirar o botão de enviar, é tirar o botão que
-                abre a aba de envio de email, aquela ao lado de consultas"* (dono, 18/08/2026). Ele
-                era o único link para `/guides/batch-email`; a rota e a página continuam existindo.
-                ⚠ ENVIAR GUIA EM LOTE NÃO DEPENDIA DELE e continua em dois caminhos: a seleção na
-                tabela (marcar as linhas → "Enviar guias", que roda sobre a seleção e mostra a
-                prévia) e, guia a guia, "Liberar ao cliente" dentro da empresa.
-
-                O botão "Calendário" também não está aqui: o calendário virou VISÃO, ao lado de
-                Cards e Ano. Ter duas portas para a mesma coisa só dividiria o caminho. */}
-            {/* ⚠ O "↻" SAIU DAQUI e foi para o lado do seletor de competência, no título. Ele não é
-                um atalho como os outros: é a recarga DA LISTA da competência exibida — o que ele
-                atualiza está escrito ao lado dele agora. Numa fileira de atalhos, um ícone mudo
-                entre botões nomeados era a coisa que ninguém sabia dizer o que fazia. */}
-          </nav>
+          {/* Atalhos e visões compartilham a barra abaixo; cadastro é ação secundária. */}
 
           {/* C9: avisa que há processo rodando em segundo plano (downloads de notas / situações
               fiscais) mesmo depois de sair da página que disparou. O progresso detalhado
@@ -1117,7 +936,8 @@ export function CompaniesHomePage({
               Obrigações SAIU daqui: cadastrar obrigação é configuração do escritório, não uma
               forma de olhar a carteira; foi para o menu Configurações. O que se ENTREGA continua
               visível aqui, dentro do calendário. */}
-          <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center" }}>
+          <div className="dashboard-home__toolbar">
+          <div className="dashboard-home__views">
             {/* `mode="view"`: trocar de visão não navega, então é `aria-pressed`, não
                 `aria-current="page"`. */}
             <Tabs
@@ -1138,6 +958,108 @@ export function CompaniesHomePage({
                 silêncio, seria pior que não ter o botão.
                 ⚠ NÃO entra na barra de abas: é ação, não recorte — clicar nele não deixa a barra
                 num estado "selecionado". */}
+
+          </div>
+          <nav className="dashboard-home__actions" aria-label="Atalhos">
+            {/* ⚠ O HAMBÚRGUER VEM PRIMEIRO porque a gaveta abre à ESQUERDA — botão à direita
+                abrindo painel à esquerda faz o olho atravessar a tela atrás do que acabou de
+                clicar. */}
+            <GavetaFerramentas
+              resumoWhatsapp={resumoWhatsapp}
+              items={[
+                // ⚠ APURAÇÃO E CONSULTAS MUDARAM DE LUGAR, NÃO SAÍRAM (dono, 18/08/2026: *"coloque
+                // o de apuração e de consulta dentro de mais, em ferramentas"*). Mesmo rótulo,
+                // mesmo handler, um clique a mais.
+                { grupo: "Fiscal", label: "Apuração", descricao: "Calcular tributos e acompanhar competências da carteira.", onClick: onOpenApuracao },
+                // C10: "Pendências" já tinha virado a aba "Situação Fiscal" dentro de Consultas.
+                { label: "Consultas", descricao: "Situação fiscal e consultas em lote por empresa.", onClick: onOpenSerproFuncoes },
+                { grupo: "Comunicação", label: "WhatsApp", descricao: "Conversas e atendimento aos clientes.", onClick: onOpenWhatsapp },
+                // Planejamento é cenário de reunião com PROSPECT (por isso mora no dashboard e não
+                // dentro de uma empresa); Rotinas é configuração de recorrência. Nenhuma das duas é
+                // o trabalho do dia — são episódicas, e é isso que as põe aqui dentro.
+                { grupo: "Organização e análise", label: "Rotinas", descricao: "Acompanhar execuções e configurar rotinas automáticas.", onClick: onOpenRotinas },
+                { label: "Planejamento", descricao: "Salvar cenários e comparar regimes tributários.", onClick: onOpenPlanejamento },
+                // Cadastrar obrigação é CONFIGURAÇÃO do escritório (define o que passa a ser
+                // cobrado de todo mundo), não uma forma de olhar a carteira — por isso saiu do
+                // seletor de visões e entrou aqui.
+
+
+
+                // ⚠ Chamava-se "Pendências (debug)". É a ÚNICA tela que lista guia por guia o
+                // status do e-mail, as tentativas e o `emailLastError` — e o rótulo "(debug)"
+                // dizia ao contador que aquilo não era assunto dele. Ferramenta de diagnóstico
+                // escondida atrás de um aviso de "não mexa" é o mesmo que não existir.
+                { grupo: "Conferência de envios", label: "Pendências de e-mail", descricao: "Ver guias não enviadas e corrigir falhas de entrega.", onClick: onOpenPendingReport },
+                // ⚠⚠ ESTA TELA EXISTIA E NÃO TINHA NENHUM LINK — de sempre até 27/08/2026.
+                // `onOpenGuideUpload` era desestruturada nas props (`:297`) e **nunca referenciada**
+                // no arquivo; `/guides/upload` só se alcançava digitando a URL.
+                // ⚠ E ela é a ÚNICA tela que mostra o PDF de guia que o parser NÃO conseguiu casar
+                // com empresa nenhuma. Sem porta, essas guias eram invisíveis: ninguém as vê no
+                // dashboard (não pertencem a empresa nenhuma) e ninguém as vê aqui.
+                // ⚠ Fica junto de "Pendências de e-mail" porque as duas respondem à mesma pergunta —
+                // *o que ficou pelo caminho?* — e nenhuma das duas é rotina diária.
+                { label: "Guias não identificadas", descricao: "Importar guias e associar PDFs à empresa correta.", onClick: onOpenGuideUpload },
+              ]}
+            />
+            {typeof onOpenWhatsapp === "function" ? <Button
+              variant="secondary"
+              className="dashboard-home__action dashboard-home__action--outline"
+              onClick={onOpenWhatsapp}
+              title={resumoWhatsapp.frase}
+              aria-label="Abrir central do WhatsApp"
+            ><span className="wa-inline"><WhatsappIcon size={17} />WhatsApp{resumoWhatsapp.selo ? <span className="wa-unread">{resumoWhatsapp.selo}</span> : null}</span></Button> : null}
+            <Button
+              variant="secondary"
+              className="dashboard-home__action dashboard-home__action--outline"
+              onClick={() => {
+                if (globalChartStatus && !globalChartStatus.isConfigured) {
+                  avisoPlanoGlobal.current?.focus();
+                  avisoPlanoGlobal.current?.scrollIntoView?.({ block: "center" });
+                  return;
+                }
+                onCreateCompany();
+              }}
+              title={
+                globalChartStatus && !globalChartStatus.isConfigured
+                  ? "Plano de contas global incompleto — configure antes de criar empresas"
+                  : undefined
+              }
+            >
+              Nova empresa
+              {globalChartStatus && !globalChartStatus.isConfigured && (
+                <span style={{ marginLeft: 6, fontSize: "0.7rem" }} aria-label="Plano global incompleto">⚠</span>
+              )}
+            </Button>
+            {/* Onboardings fica ao LADO de "Nova empresa", e as duas portas continuam existindo:
+                "Nova empresa" serve a quem já tem tudo em mãos; o funil serve ao que acontece
+                ANTES disso (empresa que ainda vai abrir, papelada chegando em partes). */}
+            {/* Onboardings fica ao LADO de "Nova empresa", e as duas portas continuam existindo:
+                "Nova empresa" serve a quem já tem tudo em mãos; o funil serve ao que acontece
+                ANTES disso (empresa que ainda vai abrir, papelada chegando em partes). */}
+
+            {onOpenOnboardings && (
+              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--outline" onClick={onOpenOnboardings}>
+                Entrada de clientes
+              </Button>
+            )}
+            {/* ⚠ APURAÇÃO E CONSULTAS FORAM PARA A GAVETA (☰), no grupo "Ferramentas" — pedido do
+                dono, 18/08/2026. Continuam com o mesmo rótulo e o mesmo handler.
+
+                ⚠ O BOTÃO "ENVIO DE E-MAILS EM LOTE" FOI REMOVIDO da barra, e este é o único caso
+                em que uma porta se fechou: *"não é tirar o botão de enviar, é tirar o botão que
+                abre a aba de envio de email, aquela ao lado de consultas"* (dono, 18/08/2026). Ele
+                era o único link para `/guides/batch-email`; a rota e a página continuam existindo.
+                ⚠ ENVIAR GUIA EM LOTE NÃO DEPENDIA DELE e continua em dois caminhos: a seleção na
+                tabela (marcar as linhas → "Enviar guias", que roda sobre a seleção e mostra a
+                prévia) e, guia a guia, "Liberar ao cliente" dentro da empresa.
+
+                O botão "Calendário" também não está aqui: o calendário virou VISÃO, ao lado de
+                Cards e Ano. Ter duas portas para a mesma coisa só dividiria o caminho. */}
+            {/* ⚠ O "↻" SAIU DAQUI e foi para o lado do seletor de competência, no título. Ele não é
+                um atalho como os outros: é a recarga DA LISTA da competência exibida — o que ele
+                atualiza está escrito ao lado dele agora. Numa fileira de atalhos, um ícone mudo
+                entre botões nomeados era a coisa que ninguém sabia dizer o que fazia. */}
+          </nav>
             <Button
               type="button"
               size="sm"
@@ -1145,101 +1067,17 @@ export function CompaniesHomePage({
               onClick={imprimirListagem}
               disabled={imprimindo}
               title="Imprimir a listagem (ou salvar em PDF). Sai em tabela, com as fechadas incluídas."
-              style={{ marginLeft: "auto" }}
+              className="dashboard-home__print"
             >
               🖨 {imprimindo ? "Preparando…" : "Imprimir"}
             </Button>
           </div>
 
-          {/* F2 — o que trava a carteira nesta competência.
-              A pergunta "quais eu já posso fechar?" só tinha uma resposta: abrir empresa por
-              empresa e olhar o cadeado. Aqui ela vira contagem, e cada contagem vira lista de
-              trabalho. Some inteira quando o servidor não responde: um número errado sobre
-              fechamento é pior que número nenhum. */}
-          {modoVisao === "tabela" && contagemApuracao && (
-            <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", fontWeight: 700, marginRight: 2 }}>
-                APURAÇÃO DO MÊS
-              </span>
-              {/* ⚠ Estes chips SÃO a coluna Apuração, contada. Vêm do mesmo `estadoApuracao` que
-                  desenha o chip de cada linha e que ordena a lista — antes eram um cálculo próprio
-                  sobre `travas`, e as duas leituras discordavam na mesma tela.
-                  Cada estado carrega cor E superfície: derivar o fundo com `${cor}22` quebra em
-                  silêncio assim que a cor vira `var(--…)`. */}
-              {[
-                ["all", `Todas · ${contagemApuracao.total}`, "var(--state-neutral)", "var(--state-neutral-surface)"],
-                ...ORDEM_APURACAO
-                  .filter((k) => contagemApuracao[k] > 0)
-                  .map((k) => [k, `${APURACAO[k].icone} ${APURACAO[k].rotulo} · ${contagemApuracao[k]}`, APURACAO[k].cor, APURACAO[k].fundo]),
-                // A pergunta mais frequente da SEGUNDA METADE do fluxo: as guias já existem, falta
-                // mandar. Sai da leitura dos chips de guia, não do pipeline do mês.
-                ["enviar", `✈ Falta enviar guia · ${contagemFaltaEnviar}`, "var(--state-warn)", "var(--state-warn-surface)"],
-              ].map(([chave, label, cor, superficie]) => {
-                const ativo = travaFiltro === chave;
-                return (
-                  <button
-                    key={chave}
-                    type="button"
-                    aria-pressed={ativo}
-                    onClick={() => setTravaFiltro(ativo ? "all" : chave)}
-                    style={{
-                      padding: "4px 12px", borderRadius: 999, cursor: "pointer", fontSize: "0.78rem", fontWeight: 600,
-                      border: `1px solid ${ativo ? cor : "var(--border)"}`,
-                      background: ativo ? superficie : "transparent",
-                      color: ativo ? cor : "var(--state-neutral)",
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-              {/* ⚠⚠ ESTE BOTÃO NUNCA APARECEU NA TELA — de 25/07/2026 até 27/08/2026.
-                  A condição era `travaFiltro === "prontas"`, e **`"prontas"` não é chave de chip
-                  nenhum**: as que existem são `all`, `problema`, `fechar`, `apurar`, `fechada` e
-                  `enviar` (`estadoApuracao.js` + o ramo `enviar` logo acima). A palavra só vivia em
-                  `contagemTravas.prontas` e no guard de `fecharAsProntas` — nunca em `setTravaFiltro`.
-                  ⚠ Conferido no navegador antes de mexer: clicando o chip "☑ Falta fechar · 2", o
-                  botão não aparecia. O fechamento contábil em lote existia, é sequencial, revalida no
-                  servidor e relata as recusas — **e não tinha porta**.
-                  ⚠ O `features/companies/CLAUDE.md` descrevia o botão como se ele estivesse na tela.
-
-                  A intenção original fica: ele **só aparece dentro de um recorte**, para ninguém
-                  fechar em lote sem ter olhado quem vai ser fechado. O recorte é "Falta fechar", que
-                  é literalmente *"apurada — falta concluir o fechamento do mês"*. */}
-              {travaFiltro === "fechar" && prontasVisiveis.length > 0 && (
-                <button
-                  type="button"
-                  onClick={fecharAsProntas}
-                  disabled={fechandoLote}
-                  style={{
-                    padding: "4px 12px", borderRadius: 999, fontSize: "0.78rem", fontWeight: 700,
-                    border: "1px solid var(--state-closed)", background: "var(--state-closed-surface)", color: "var(--state-closed)",
-                    cursor: fechandoLote ? "wait" : "pointer",
-                  }}
-                >
-                  {/* ⚠ O número é o das VISÍVEIS que dá para fechar — ele pode ser MENOR que o do
-                      chip, e isso é certo: "falta fechar" inclui quem ainda tem lançamento com
-                      problema, e essa o servidor recusaria. */}
-                  {fechandoLote ? "Fechando…" : `🔒 Fechar as ${prontasVisiveis.length}`}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* ⚠ A BARRA DE PROGRESSO FOI REMOVIDA — decisão do dono, 15/08/2026: *"tire também
-              aquela barra de progresso da página principal, está poluindo"*. Ela ficava aqui, em
-              cards e tabela, com um segmento por estado de `estadoApuracao` e o contador
-              "N/M fechadas" ao lado.
-              ⚠ O que ela dizia NÃO se perdeu: os chips de APURAÇÃO DO MÊS, logo acima, saem do
-              MESMO `contagemApuracao` — inclusive "🔒 Fechada · N" e "Todas · N", que eram os dois
-              números do rótulo. O que sumiu é a proporção desenhada, não o dado.
-              ⚠ Só a barra saiu: chip de filtro e ordenação continuam lendo `estadoApuracao`. */}
-
           {/* Os filtros abaixo são da visão de cards — a grade anual tem navegação própria (ano). */}
           {modoVisao === "tabela" && (
           <section
             aria-label="Filtros"
-            style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 16 }}
+            className="dashboard-home__filters"
           >
             <label style={{ ...FILTER_LABEL, flex: "1 1 220px", minWidth: 180 }}>
               Buscar empresa ou CNPJ
@@ -1315,8 +1153,8 @@ export function CompaniesHomePage({
                     // ⚠ DUAS COLUNAS, e não uma tira alta. O painel de uma coluna descia por cima
                     // da tabela e o contador perdia de vista justamente as linhas que estava
                     // tentando filtrar. Em duas colunas ele cabe acima dos dados.
-                    padding: 14, display: "grid", gridTemplateColumns: "repeat(2, minmax(160px, 1fr))",
-                    gap: 12, maxWidth: "min(90vw, 380px)",
+                    padding: 14, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                    gap: 12, width: "min(86vw, 380px)", maxWidth: "86vw",
                     boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
                   }}
                 >
@@ -1402,6 +1240,14 @@ export function CompaniesHomePage({
           </section>
           )}
 
+          {modoVisao === "tabela" && prontasSelecionadas.length > 0 && (
+            <div className="dashboard-home__selection-actions">
+              <Button variant="secondary" onClick={fecharAsProntas} disabled={fechandoLote}>
+                {fechandoLote ? "Fechando…" : `Fechar as ${prontasSelecionadas.length} selecionadas aptas`}
+              </Button>
+            </div>
+          )}
+
           {/* ─── ABAS DE REGIME ─────────────────────────────────────────────────────────────────
               *"ter duas tabelas na página principal, uma para presumido e outra simples nacional,
               deve ficar indicado em cima da tabela, como uma aba de navegador"* (dono, 18/08/2026).
@@ -1422,7 +1268,7 @@ export function CompaniesHomePage({
               (`--state-danger`), e o 22 pareceria 22 problemas. O ponto colorido é a MESMA cor de
               categoria do card e da linha (ciano Simples · laranja Presumido), nunca `--state-*`. */}
           {modoVisao === "tabela" && (
-            <div style={{ marginBottom: 10 }}>
+            <div className="dashboard-home__regimes">
               <Tabs
                 mode="view"
                 align="start"
@@ -1532,7 +1378,7 @@ export function CompaniesHomePage({
                    só o usa quando a lista está VAZIA, que é o único momento em que confundir
                    "não carregou" com "não há" custa caro. Com 33 empresas na tela ele é ignorado. */
                 erroDeCarga={error || null}
-                onLimparFiltros={() => { limparFiltros(); setTravaFiltro("all"); setSearch(""); }}
+                onLimparFiltros={() => { limparFiltros(); setSearch(""); }}
                 selecionados={selecionados}
                 onAlternarSelecao={alternarSelecao}
                 onSelecionarTodos={selecionarTodos}
@@ -1540,7 +1386,9 @@ export function CompaniesHomePage({
             </div>
             </>
           ) : (
-            <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany} />
+            <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany}
+              onOpenObligations={onOpenObrigacoes}
+              initialContext={calendarioContext} onContextChange={onCalendarioContextChange} />
           )}
 
           {/* ⚠⚠ A FRASE "Nenhuma empresa encontrada para os filtros atuais" SAIU DAQUI, e ela já

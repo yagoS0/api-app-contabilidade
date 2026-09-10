@@ -1,3 +1,4 @@
+import { PainelComercial } from "../components/PainelComercial";
 // DETALHE — duas colunas.
 //
 // Esquerda: a ficha declarada, SOMENTE LEITURA, percorrendo A MESMA SPEC do wizard. O escritório vê
@@ -30,6 +31,19 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
   const [modalAberto, setModalAberto] = useState(false);
   const [erroConversao, setErroConversao] = useState(null);
   const [aviso, setAviso] = useState(null);
+  const [revisaoComercial, setRevisaoComercial] = useState(0);
+
+  async function atualizarFicha() {
+    if (ocupada) return;
+    setOcupada(true);
+    try {
+      const r = await api.getOnboarding(onboardingId);
+      setOnboarding(r?.onboarding || r);
+      setRevisaoComercial(v => v + 1);
+      setAviso("Ficha atualizada com os dados salvos pelo cliente.");
+    } catch (e) { setAviso(e.message); }
+    finally { setOcupada(false); }
+  }
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -161,21 +175,23 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
 
   const status = statusDoOnboarding(onboarding.status);
   const convertido = onboarding.status === "CONVERTIDO";
+  const encerrado = ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"].includes(onboarding.status);
 
   return (
     <PageShell
-      title={onboarding.razaoSocial || "Onboarding sem nome"}
+      title={onboarding.razaoSocial || onboarding.responsavelNome || `Atendimento ${String(onboarding.id).slice(-6)}`}
       subtitle={`${tituloDaOrigem(onboarding.origem)}${onboarding.cnpj ? ` · ${formatarCnpj(onboarding.cnpj)}` : ""}`}
       onBack={onVoltar}
-      backLabel="Onboardings"
+      backLabel="Entrada de clientes"
       actions={
-        <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+        <div className="onboarding-actions">
+          <Button variant="secondary" size="sm" disabled={ocupada} onClick={atualizarFicha}>Atualizar ficha</Button>
           <span
             style={{ ...estiloDoStatus(onboarding.status), padding: "2px 10px", borderRadius: 999, border: "1px solid", fontSize: 12, fontWeight: 600 }}
           >
             <span aria-hidden="true">{status.icone}</span> {status.rotulo}
           </span>
-          {!convertido && (
+          {!encerrado && (
             <>
               <Button type="button" variant="secondary" size="sm" onClick={() => onEditar?.(onboarding.id)}>
                 Editar ficha
@@ -183,8 +199,8 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
               <Button type="button" variant="secondary" size="sm" onClick={marcarDesistencia}>
                 Desistiu
               </Button>
-              <Button type="button" size="sm" onClick={() => setModalAberto(true)}>
-                Criar empresa
+              <Button type="button" variant="secondary" size="sm" onClick={() => setModalAberto(true)}>
+                Adicionar à carteira
               </Button>
             </>
           )}
@@ -195,8 +211,10 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
           )}
         </div>
       }
+      contentClassName="onboarding-workspace"
       contentStyle={{ maxWidth: "var(--content-max)", margin: "0 auto", width: "100%" }}
     >
+      {typeof api.getOnboardingComercial === "function" && <PainelComercial key={onboarding.id} api={api} onboardingId={onboarding.id} convertido={encerrado} revisao={revisaoComercial} />}
       {aviso && (
         <div style={{ padding: "var(--space-2) var(--space-3)", marginBottom: "var(--space-3)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: 13, color: "var(--text-muted)" }}>
           {aviso}
@@ -220,17 +238,20 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
         className="onboarding-detalhe-grid"
       >
         <section>
-          <h2 style={{ fontSize: 14, marginTop: 0 }}>Ficha declarada</h2>
+          <details className="onboarding-panel" open={onboarding.status !== "RASCUNHO"}>
+          <summary>2. Conferir dados do cliente</summary>
           <FichaDeclarada
             origem={onboarding.origem}
             dados={onboarding.dados || {}}
             origemPreenchimento={onboarding.origemPreenchimento}
           />
+          </details>
         </section>
 
         <section>
-          <h2 style={{ fontSize: 14, marginTop: 0 }}>Trilha do escritório</h2>
-          <ChecklistEtapas
+          <h2 style={{ fontSize: 14, marginTop: 0 }}>3. Andamento no escritório</h2>
+          {!onboarding.etapas?.length && <p className="onboarding-help">As etapas serão criadas quando a ficha for enviada. Enquanto isso, prepare o link e acompanhe o preenchimento.</p>}
+          {onboarding.etapas?.length > 0 && <ChecklistEtapas
             etapas={onboarding.etapas || []}
             portalClientId={onboarding.portalClientId}
             certificado={certificado}
@@ -238,7 +259,7 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
             onAlternar={alternarEtapa}
             onObservacao={salvarObservacao}
             onAcao={executarAcao}
-          />
+          />}
         </section>
       </div>
 

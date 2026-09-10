@@ -13,6 +13,7 @@
 // emissão. Uma segunda tabela aqui divergiria na primeira correção.
 
 import { pesoDoPapelCliente, PAPEL_MINIMO_EMISSAO } from "../nfse/emissaoClienteAutorizacao.js";
+import { normalizarPermissoesAssistente } from "../whatsapp/permissoesAssistente.js";
 
 /** O piso das leituras financeiras do cliente (guias, notas, fluxo): membro ATIVO, qualquer papel. */
 export const PAPEL_MINIMO_LEITURA = "FINANCEIRO";
@@ -34,7 +35,13 @@ export const MOTIVOS_SEM_SESSAO = Object.freeze({
  * @returns {{ok:boolean, portalClientId:string|null, userId:string|null, papel:string|null, motivo:string|null, contatoNome:string|null}}
  */
 export function sessaoDoContato({ portalClientId, contato, vinculoRbac } = {}) {
-  const base = { portalClientId: portalClientId ? String(portalClientId) : null, userId: null, papel: null, contatoNome: contato?.nome || null };
+  const base = {
+    portalClientId: portalClientId ? String(portalClientId) : null,
+    userId: null,
+    papel: null,
+    contatoNome: contato?.nome || null,
+    permissoesAssistente: normalizarPermissoesAssistente(contato?.permissoesAssistente),
+  };
   if (!base.portalClientId) return { ...base, ok: false, motivo: MOTIVOS_SEM_SESSAO.SEM_EMPRESA };
   if (!contato?.userId) return { ...base, ok: false, motivo: MOTIVOS_SEM_SESSAO.SEM_PESSOA };
   if (!vinculoRbac || vinculoRbac.status !== "ACTIVE") {

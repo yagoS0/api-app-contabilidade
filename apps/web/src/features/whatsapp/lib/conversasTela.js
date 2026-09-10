@@ -10,9 +10,11 @@
 // que o servidor daria.
 
 export const FILTROS = Object.freeze([
-  { valor: "todas", rotulo: "Todas" },
+  { valor: "todas", rotulo: "Conversas atuais" },
   { valor: "nao-vinculadas", rotulo: "Não vinculadas (fila)" },
   { valor: "atendidas-por-mim", rotulo: "Assumidas por mim" },
+  { valor: "historico", rotulo: "Histórico anterior" },
+  { valor: "lixeira", rotulo: "Lixeira" },
 ]);
 
 /**
@@ -62,10 +64,14 @@ export function identidadeDaConversa(c) {
     avisoDoNome: FRASE_ORIGEM_DO_NOME[origemDoNome],
     papel: String(c?.contato?.papel || "").trim() || null,
     empresa: razao || null,
-    cnpj: c?.empresa?.cnpj || null,
+    cnpj: c?.atendimento ? c.atendimento.empresaAtual?.cnpj || null : c?.empresa?.cnpj || null,
     semEmpresa: !razao,
     // A frase da segunda linha: a empresa, ou o estado da fila dito com todas as letras.
-    linhaDaEmpresa: razao || "sem empresa — número novo",
+    linhaDaEmpresa: c?.atendimento
+      ? c.atendimento.aguardandoSelecao ? "Escolha a empresa do atendimento"
+        : c.atendimento.empresaAtual?.razao ? `Empresa atual: ${c.atendimento.empresaAtual.razao}`
+          : "Empresa atual fora da sua carteira"
+      : razao || "sem empresa — número novo",
   };
 }
 
@@ -74,9 +80,13 @@ export const SITUACAO_FIO = Object.freeze({
   FILA_DO_ESCRITORIO: "FILA_DO_ESCRITORIO",
   ASSUMIDA: "ASSUMIDA",
   COM_A_IA: "COM_A_IA",
+  HISTORICO: "HISTORICO",
+  LIXEIRA: "LIXEIRA",
 });
 
 export function situacaoDoFio(c) {
+  if (c?.excluidaEm) return SITUACAO_FIO.LIXEIRA;
+  if (c?.portalClientId && (c.escopoVerificado === false || c.legadoNaoVerificado)) return SITUACAO_FIO.HISTORICO;
   if (!c?.portalClientId) return SITUACAO_FIO.FILA_SEM_EMPRESA;
   if (c.atendidaPor) return SITUACAO_FIO.ASSUMIDA;
   if (c.atendidaDesde || c.naFilaDoEscritorio) return SITUACAO_FIO.FILA_DO_ESCRITORIO;
@@ -86,6 +96,8 @@ export function situacaoDoFio(c) {
 /** O rótulo curto da linha — e o tom (âmbar = pendência do escritório; neutro = o resto). */
 export function rotuloDaSituacao(c) {
   const s = situacaoDoFio(c);
+  if (s === SITUACAO_FIO.LIXEIRA) return { situacao: s, texto: "Na lixeira", tom: "aviso" };
+  if (s === SITUACAO_FIO.HISTORICO) return { situacao: s, texto: "Histórico anterior", tom: "neutro" };
   if (s === SITUACAO_FIO.FILA_SEM_EMPRESA) {
     const motivo = c?.vinculo?.motivo;
     return { situacao: s, texto: motivo === "AMBIGUO" ? "número em mais de uma empresa — escolha" : "número sem cadastro — vincule", tom: "aviso" };
@@ -112,18 +124,19 @@ export function rotuloDoAutor(m, { nomeDoCliente = null } = {}) {
  * @returns {{pode:boolean, motivo:string|null, situacao:string|null}}
  */
 export function estadoDaResposta(conversa) {
+  if (conversa?.atendimento && !conversa.atendimento.contextoSelecionado) return { pode: false, motivo: "Escolha a empresa deste atendimento antes de responder. O histórico continua disponível para consulta.", situacao: "ESCOLHER_EMPRESA" };
   const j = conversa?.janela;
   if (!j) return { pode: false, motivo: "Ainda não sei se a janela de 24h está aberta.", situacao: null };
   if (j.situacao === "ABERTA") return { pode: true, motivo: null, situacao: j.situacao };
   if (j.situacao === "NUNCA_ABERTA") return { pode: false, motivo: "Este cliente nunca escreveu por aqui: a Meta só aceita texto livre nas 24h seguintes a uma mensagem dele. Iniciar exige um modelo aprovado.", situacao: j.situacao };
-  if (j.situacao === "EXPIRADA") return { pode: false, motivo: "A janela de 24h desde a última mensagem do cliente fechou: só modelo aprovado agora (o modelo reabrir_conversa ainda não foi aprovado na Meta).", situacao: j.situacao };
+  if (j.situacao === "EXPIRADA") return { pode: false, motivo: "A janela de 24h desde a última mensagem do cliente fechou: só modelo aprovado agora — confira a disponibilidade do modelo de reabertura.", situacao: j.situacao };
   return { pode: false, motivo: "A janela de 24h não pôde ser calculada — confira antes de responder.", situacao: j.situacao };
 }
 
 export function fmtDataHora(iso) {
   if (!iso) return "";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 /** O consumo do assistente, como frase — ESTIMATIVA, e a frase diz. */
@@ -145,9 +158,8 @@ export function ordenarConversas(lista) {
 /**
  * ⚠ O QUE VEIO, quando não é texto.
  *
- * O webhook grava **todo** tipo de mensagem com o `tipo` cru da Meta e o ponteiro da mídia — mas
- * este sistema **ainda não baixa arquivo**, então o balão mostrava `[image]`, que não é frase nem
- * explicação. Aqui ele vira uma frase que diz o que chegou **e** que não dá para abrir ainda.
+ * Imagens e documentos recebidos são conferidos em Lançamentos > A lançar.
+ * O balão não promete que o download já terminou; a fila apresenta o estado real.
  *
  * ⚠ Lista FECHADA: tipo que a Meta inventar amanhã aparece **como veio**, nunca vira o nome do
  * vizinho mais parecido.
@@ -167,12 +179,9 @@ export function descricaoDaMidia(m) {
   if (tipo === "text" || tipo === "template") return null;
   const nome = MIDIA[tipo];
   if (!nome) return `mensagem de tipo "${tipo || "desconhecido"}" — não sei exibir`;
-  // ⚠⚠ A RESSALVA É SOBRE O QUE CHEGA, NUNCA SOBRE O QUE SAI (defeito visto no navegador em
-  // 06/09/2026). Num documento que o ESCRITÓRIO acabou de mandar, "este sistema ainda não baixa
-  // arquivos" é falso e confunde: o arquivo saiu daqui, não há nada a baixar — e o balão já traz o
-  // nome dele no corpo. A limitação é a de LER a mídia do cliente.
-  if (m?.direcao === "out") return `📎 ${nome} enviado pelo escritório`;
-  return `📎 ${nome} — este sistema ainda não baixa arquivos do WhatsApp`;
+  if (m?.direcao === "out") return `📎 ${nome} do escritório`;
+  if (["document", "image"].includes(tipo)) return `📎 ${nome} — confira o arquivo em Lançamentos > A lançar`;
+  return `📎 ${nome} — este tipo de mídia não pode ser aberto neste chat`;
 }
 
 /**
@@ -184,4 +193,16 @@ export function frasePaginacao(temMais) {
   if (temMais === true) return "Há mensagens mais antigas que não foram carregadas.";
   if (temMais === false) return null;
   return "Não dá para afirmar que esta é a conversa inteira.";
+}
+
+export function estadoDaMensagem(m) {
+  if (m?.direcao !== "out") return null;
+  const estados = {
+    pendente: "Pedido registrado, aguardando envio", enviando: "Envio em andamento",
+    enviado: "Aceita pela Meta · aguardando entrega", entregue: "Entregue", lido: "Lida",
+    falhou: "Não entregue", indeterminado: "Resultado indeterminado · confira antes de reenviar",
+  };
+  const texto = estados[m.statusEnvio] || "Entrega não confirmada";
+  return { texto: m.erroEnvio?.mensagem ? `${texto}: ${m.erroEnvio.mensagem}` : texto,
+    tom: m.statusEnvio === "falhou" ? "erro" : ["entregue", "lido"].includes(m.statusEnvio) ? "ok" : "pendente" };
 }

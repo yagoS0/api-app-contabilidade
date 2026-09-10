@@ -6,12 +6,13 @@ import {
 } from "../onboardingStatus";
 
 describe("statusDoOnboarding", () => {
-  test("resolve os cinco status, ignorando caixa e espaços", () => {
+  test("resolve os seis status, ignorando caixa e espaços", () => {
     expect(statusDoOnboarding("recebido").chave).toBe("RECEBIDO");
     expect(statusDoOnboarding(" EM_TRILHA ").chave).toBe("EM_TRILHA");
     expect(statusDoOnboarding("CONVERTIDO").chave).toBe("CONVERTIDO");
     expect(statusDoOnboarding("DESISTIU").chave).toBe("DESISTIU");
     expect(statusDoOnboarding("RASCUNHO").chave).toBe("RASCUNHO");
+    expect(statusDoOnboarding(" concluido_avulso ").chave).toBe("CONCLUIDO_AVULSO");
   });
 
   // ⚠ Status novo do backend não pode se esconder dentro de uma coluna legítima.
@@ -54,7 +55,7 @@ describe("a regra de ouro dos tokens", () => {
 describe("colunasDoQuadro", () => {
   test("rascunho fica FORA do quadro (é bandeja, não coluna)", () => {
     expect(colunasDoQuadro().map((c) => c.chave)).toEqual([
-      "RECEBIDO", "EM_TRILHA", "CONVERTIDO", "DESISTIU",
+      "RECEBIDO", "EM_TRILHA", "CONCLUIDO_AVULSO", "CONVERTIDO", "DESISTIU",
     ]);
   });
 });

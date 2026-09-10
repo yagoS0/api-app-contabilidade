@@ -111,7 +111,7 @@ describe("⚠⚠ nenhuma coluna sem leitor, nenhum leitor sem coluna", () => {
 
   it("⚠⚠ o que ficou de fora está NOMEADO, com o motivo", () => {
     // A diferença entre "não fizemos" e "esquecemos". Cada ausência é uma decisão registrada.
-    for (const k of ["BM", "exigSusp", "tpImunidade", "tpRetISSQN", "comExt", "obra"]) {
+    for (const k of ["BM", "tpRetISSQN", "comExt", "obra"]) {
       expect({ k, tem: Boolean(FORA_DESTA_FASE[k]) }).toEqual({ k, tem: true });
     }
     // ⚠⚠ `pAliq` SAIU desta lista em 02/09/2026 — ele foi CONSTRUÍDO. O motivo escrito aqui era

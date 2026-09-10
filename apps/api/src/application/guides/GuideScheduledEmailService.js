@@ -87,6 +87,23 @@ export async function resolveCompanyNotificationEmails(portalCompanyId) {
   return emails;
 }
 
+/** Confere novamente a configuração depois de carregar os anexos e antes do transporte. */
+export async function validarDestinatariosAtuais(portalClientId, to) {
+  const solicitados = [...new Set(String(to || "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean))];
+  const cadastrados = new Set(await resolveCompanyNotificationEmails(portalClientId));
+  if (!solicitados.length || !cadastrados.size) {
+    const err = new Error(SEM_DESTINATARIO_DE_GUIA.motivo);
+    err.code = "COMPANY_EMAIL_NOT_FOUND";
+    throw err;
+  }
+  if (solicitados.some((destino) => !cadastrados.has(destino))) {
+    const err = new Error("Um destinatário solicitado não está ativo na Configuração de envio desta empresa. Atualize a configuração antes de enviar.");
+    err.code = "GUIDE_EMAIL_RECIPIENT_NOT_REGISTERED";
+    throw err;
+  }
+  return solicitados.join(", ");
+}
+
 /** A frase da recusa — uma só, para as três portas que enviam guia dizerem a MESMA coisa. */
 export const SEM_DESTINATARIO_DE_GUIA = Object.freeze({
   codigo: "GUIDE_EMAIL_RECIPIENT_NOT_FOUND",
@@ -287,4 +304,3 @@ export async function runScheduledGuideEmailDispatch({
     await releaseScheduleLock();
   }
 }
-

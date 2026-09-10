@@ -24,6 +24,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
     templateWhatsapp: { findUnique: jest.fn() },
     guide: { findMany: jest.fn(), findUnique: jest.fn() },
     envioGuia: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
+    envioGuiaTentativa: { create: jest.fn(), updateMany: jest.fn() },
     contatoWhatsapp: { findMany: jest.fn(), updateMany: jest.fn() },
     conversaWhatsapp: { upsert: jest.fn() },
     mensagemWhatsapp: { create: jest.fn() },
@@ -31,7 +32,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
 }));
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
-import { WhatsappError } from "../WhatsappCloudClient.js";
+import { WhatsappCloudClient, WhatsappError } from "../WhatsappCloudClient.js";
 import { MOTIVOS } from "../elegibilidadeEnvioGuia.js";
 import {
   MOTIVOS_SERVICO,
@@ -44,6 +45,7 @@ import {
   executarLote,
   preverLote,
   valorFormatado,
+  resumirDestinatarios,
 } from "../EnvioGuiaWhatsappService.js";
 
 const TEMPLATE_APROVADO = {
@@ -59,6 +61,31 @@ const GUIA = {
   emailStatus: "PENDING", emailSentAt: null, emailAttempts: 0,
   portalClient: { id: "emp1", razao: "LENTE LTDA", cnpj: "11222333000181" },
 };
+
+describe("lote por vencimento", () => {
+  test("prévia mantém competência fiscal e execução exige sua assinatura", async () => {
+    cenarioLimpo();
+    const input = { portalClientIds: ["emp1"], mesVencimento: "2026-08", guideIds: ["g1"] };
+    const previa = await preverLote(input);
+    expect(previa.linhas[0].competencia).toBe("2026-07");
+    expect(prisma.guide.findMany.mock.calls[0][0].where).toMatchObject({ vencimento: {
+      gte: new Date("2026-08-01Z"), lt: new Date("2026-09-01Z"),
+    } });
+    const cliente = clienteFalso();
+    await expect(executarLote({ ...input, assinatura: "desatualizada", conferencia: previa.resumo, cliente, carregarPdf: pdf, delayMs: 0 }))
+      .rejects.toMatchObject({ code: "CONFERENCIA_DIVERGENTE" });
+    expect(cliente.enviarGuia).not.toHaveBeenCalled();
+    const resultado = await executarLote({ ...input, assinatura: previa.assinatura, conferencia: previa.resumo, cliente, carregarPdf: pdf, delayMs: 0 });
+    expect(resultado.whatsapp.enviadas).toBe(1);
+    expect(cliente.enviarGuia).toHaveBeenCalledTimes(1);
+  });
+  test("seleção vazia não consulta todas as guias do mês", async () => {
+    cenarioLimpo();
+    await expect(preverLote({ portalClientIds: ["emp1"], mesVencimento: "2026-08", guideIds: [] }))
+      .rejects.toMatchObject({ code: "CONFERENCIA_DIVERGENTE" });
+    expect(prisma.guide.findMany).not.toHaveBeenCalled();
+  });
+});
 
 let fetchNativo;
 const pdf = () => Buffer.from("%PDF-1.4 guia");
@@ -90,6 +117,8 @@ function cenarioLimpo({ guias = [GUIA], contatos = [CONTATO], template = TEMPLAT
   prisma.envioGuia.findFirst.mockResolvedValue(null);
   prisma.envioGuia.upsert.mockResolvedValue({ id: "e1", status: "pendente" });
   prisma.envioGuia.updateMany.mockResolvedValue({ count: 1 });
+  prisma.envioGuiaTentativa.create.mockImplementation(async ({ data }) => data);
+  prisma.envioGuiaTentativa.updateMany.mockResolvedValue({ count: 1 });
   prisma.envioGuia.update.mockResolvedValue({ id: "e1" });
   prisma.envioGuia.create.mockImplementation(async ({ data }) => ({ id: data?.destino ? "e1" : "eLegado", ...data }));
   prisma.conversaWhatsapp.upsert.mockResolvedValue({ id: "conv1" });
@@ -105,9 +134,61 @@ beforeEach(() => {
 });
 afterEach(() => { globalThis.fetch = fetchNativo; });
 
+describe("resultados parciais e persistência depois do aceite", () => {
+  it("resultado indeterminado não é contado também como falha", () => {
+    const r = resumirDestinatarios([{ ok: true, enviada: true, estado: "aceito" }, { ok: false, estado: "indeterminado" }]);
+    expect(r).toMatchObject({ destinatarios: 2, aceitas: 1, indeterminadas: 1, falhas: 0, parcial: true });
+  });
+  it.each([true, false])("falha parcial não depende da ordem dos destinatários (%s)", (falhaPrimeiro) => {
+    const aceito = { ok: true, enviada: true, estado: "aceito", destino: "a" };
+    const falhou = { ok: false, enviada: false, estado: "falhou", destino: "b", motivo: "RECUSA", mensagem: "Destinatário recusado" };
+    const r = resumirDestinatarios(falhaPrimeiro ? [falhou, aceito] : [aceito, falhou]);
+    expect(r).toMatchObject({ ok: true, estado: "parcial", parcial: true, enviada: true, enviadas: 1, aceitas: 1, falhas: 1, message: "Destinatário recusado" });
+    expect(r.resultados).toHaveLength(2);
+  });
+  it("preserva tentativa e wamid se o banco falha depois do aceite", async () => {
+    cenarioLimpo();
+    prisma.envioGuiaTentativa.updateMany.mockRejectedValueOnce(new Error("banco indisponível após aceite"));
+    const cliente = clienteFalso({ wamid: "wamid-aceito" });
+    const r = await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: TEMPLATE_APROVADO, cliente, carregarPdf: pdf });
+    expect(cliente.enviarGuia).toHaveBeenCalledTimes(1);
+    expect(r).toMatchObject({ ok: false, estado: "indeterminado", providerMessageId: "wamid-aceito", podeTentarDeNovo: false });
+    expect(prisma.envioGuiaTentativa.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "indeterminado", providerMessageId: "wamid-aceito" }),
+    }));
+  });
+  it("usa o idioma aprovado do canal no payload", async () => {
+    cenarioLimpo();
+    const cliente = clienteFalso();
+    await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: { nomeMeta: "modelo", idioma: "es" }, cliente, carregarPdf: pdf });
+    expect(cliente.enviarGuia).toHaveBeenCalledWith(expect.objectContaining({ template: "modelo", idioma: "es" }));
+  });
+});
+
 // ── Formatação que sai na mensagem do cliente ───────────────────────────────────────────────────
 
 describe("o que o cliente lê", () => {
+  it.each([null, undefined, "", new Date("invalida")])("reenvio sem vencimento (%s) monta os cinco campos sem inventar data", async (vencimento) => {
+    cenarioLimpo();
+    const fetchMeta = jest.fn(async (url, opcoes) => {
+      if (url.endsWith("/media")) return { ok: true, status: 200, json: async () => ({ id: "media-local" }) };
+      const payload = JSON.parse(opcoes.body);
+      const campos = payload.template.components.find(c => c.type === "body").parameters;
+      if (campos.some(c => !c.text.trim())) return { ok: false, status: 400, json: async () => ({ error: { code: 131008, message: "Required parameter is missing" } }) };
+      return { ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.local" }] }) };
+    });
+    const cliente = new WhatsappCloudClient({ fetchImpl: fetchMeta, config: { habilitada: true, token: "token-local", phoneNumberId: "canal-local", log: { info: jest.fn(), warn: jest.fn() } } });
+    const guia = { ...GUIA, vencimento, emailStatus: "SENT", emailSentAt: new Date("2026-08-01T12:00:00Z") };
+    const r = await enviarGuiaPorWhatsapp({ guide: guia, contato: CONTATO, canal: TEMPLATE_APROVADO, cliente, carregarPdf: pdf, reenviar: true });
+    expect(r).toMatchObject({ ok: true, enviada: true });
+    expect(fetchMeta).toHaveBeenCalledTimes(2);
+    const payload = JSON.parse(fetchMeta.mock.calls[1][1].body);
+    expect(payload.template.components.find(c => c.type === "body").parameters.map(c => c.text))
+      .toEqual(["Maria", "Simples Nacional", "Julho/2026", "1.243,80", "a conferir no PDF anexo"]);
+    expect(prisma.envioGuia.create).toHaveBeenCalledWith({ data: expect.objectContaining({ canal: "EMAIL", status: "enviado" }) });
+    expect(guia.vencimento).toBe(vencimento);
+  });
+
   it("competência por extenso e valor em pt-BR, como no esqueleto do dono", () => {
     expect(competenciaPorExtenso("2026-07")).toBe("Julho/2026");
     expect(valorFormatado(1243.8)).toBe("1.243,80");
@@ -201,7 +282,7 @@ describe("o envio de uma guia", () => {
       // Primeiro nome · tipo · competência por extenso · valor · vencimento — a ORDEM do esqueleto.
       variaveis: ["Maria", "Simples Nacional", "Julho/2026", "1.243,80", "20/08/2026"],
     }));
-    expect(prisma.envioGuia.update).toHaveBeenCalledWith(expect.objectContaining({
+    expect(prisma.envioGuia.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: "enviado", providerMessageId: "wamid.ABC" }),
     }));
   });
@@ -275,8 +356,8 @@ describe("a mesma guia não vai duas vezes ao cliente", () => {
     const r = await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: {}, cliente, carregarPdf: pdf });
     expect(r.ok).toBe(true);
     // ⚠ A MESMA LINHA volta a `pendente` — nunca uma segunda linha para o mesmo destino.
-    expect(prisma.envioGuia.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "e1" },
+    expect(prisma.envioGuia.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: "e1", status: "falhou" }),
       data: expect.objectContaining({ status: "pendente", erroCodigo: null }),
     }));
     expect(prisma.envioGuia.create).not.toHaveBeenCalledWith(expect.objectContaining({
@@ -301,7 +382,7 @@ describe("quando a Meta recusa", () => {
     const cliente = clienteFalso(erroMeta("META_131026", "SIM"));
     const r = await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: {}, cliente, carregarPdf: pdf });
     expect(r.ok).toBe(false);
-    expect(prisma.envioGuia.update).toHaveBeenCalledWith(expect.objectContaining({
+    expect(prisma.envioGuia.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: "falhou", erroMensagemUsuario: "mensagem do contador" }),
     }));
   });
@@ -310,7 +391,7 @@ describe("quando a Meta recusa", () => {
     cenarioLimpo();
     const cliente = clienteFalso(erroMeta("META_131056", "SIM"));
     await enviarGuiaPorWhatsapp({ guide: GUIA, contato: CONTATO, canal: {}, cliente, carregarPdf: pdf });
-    expect(prisma.envioGuia.update).toHaveBeenCalledWith(expect.objectContaining({
+    expect(prisma.envioGuia.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ proximaTentativaEm: null }),
     }));
   });
@@ -596,7 +677,7 @@ describe("o registro do que saiu", () => {
     });
     expect(prisma.contatoWhatsapp.updateMany).toHaveBeenCalledWith(
       // ⚠ `waId: null` no where: quem já tem apelido conhecido não é reescrito por um envio.
-      expect.objectContaining({ where: { id: "c1", waId: null }, data: { waId: "552199998888" } }),
+      expect.objectContaining({ where: { id: "c1", telefoneE164: CONTATO.telefoneE164, waId: null }, data: { waId: "552199998888" } }),
     );
   });
 

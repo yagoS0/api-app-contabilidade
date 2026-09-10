@@ -24,11 +24,23 @@ export function useOnboardingRascunho({ api, onboardingId }) {
   const timerRef = useRef(null);
   const pendenteRef = useRef(null);
   const montadoRef = useRef(true);
+  const filaRef = useRef(Promise.resolve());
+  const versaoRef = useRef(null);
 
-  useEffect(() => () => {
-    montadoRef.current = false;
-    if (timerRef.current) clearTimeout(timerRef.current);
+  useEffect(() => {
+    montadoRef.current = true;
+    return () => {
+      montadoRef.current = false;
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, []);
+
+  useEffect(() => {
+    if (estadoSalvamento === "salvo") return undefined;
+    const avisar = (event) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", avisar);
+    return () => window.removeEventListener("beforeunload", avisar);
+  }, [estadoSalvamento]);
 
   const carregar = useCallback(async () => {
     if (!onboardingId) return;
@@ -36,6 +48,7 @@ export function useOnboardingRascunho({ api, onboardingId }) {
     try {
       const r = await api.getOnboarding(onboardingId);
       const registro = r?.onboarding || r;
+      versaoRef.current = registro?.versao ?? 0;
       setOnboarding(registro);
       setDados({ ...rascunhoVazio(registro?.origem), ...(registro?.dados || {}) });
       setErro(null);
@@ -49,10 +62,12 @@ export function useOnboardingRascunho({ api, onboardingId }) {
   useEffect(() => { carregar(); }, [carregar]);
 
   const enviar = useCallback(async (patch) => {
+    const executar = async () => {
     setEstadoSalvamento("salvando");
     try {
-      const r = await api.salvarOnboarding(onboardingId, patch);
+      const r = await api.salvarOnboarding(onboardingId, { ...patch, versao: versaoRef.current });
       const registro = r?.onboarding || r;
+      versaoRef.current = registro?.versao ?? versaoRef.current + 1;
       if (!montadoRef.current) return registro;
       setOnboarding(registro);
       // ⚠ Depois de trocar a origem o servidor devolve `dados: {}`. A tela precisa ACEITAR essa
@@ -61,7 +76,8 @@ export function useOnboardingRascunho({ api, onboardingId }) {
       if (patch.origem) {
         setDados(rascunhoVazio(registro?.origem));
       }
-      setEstadoSalvamento("salvo");
+      setErro(null);
+      setEstadoSalvamento(pendenteRef.current ? "pendente" : "salvo");
       return registro;
     } catch (e) {
       if (montadoRef.current) {
@@ -70,6 +86,11 @@ export function useOnboardingRascunho({ api, onboardingId }) {
       }
       throw e;
     }
+    };
+    // Debounce e saída explícita nunca podem gravar fora de ordem.
+    const envio = filaRef.current.catch(() => {}).then(executar);
+    filaRef.current = envio;
+    return envio;
   }, [api, onboardingId]);
 
   /** Salva já, sem esperar o debounce. Usado ao trocar de tela e ao finalizar. */

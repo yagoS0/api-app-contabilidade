@@ -28,6 +28,20 @@ export const TRIBUTO_TIPO = {
 
 const CANAL_ROTULO = { EMAIL: "e-mail", WHATSAPP: "WhatsApp" };
 
+export function rotuloCanaisEnviados(tag) {
+  if (tag.state !== "enviada") return "";
+  const canais = Array.isArray(tag.canaisEnviados) ? tag.canaisEnviados
+    : tag.canalEnvio ? [tag.canalEnvio] : tag.emailStatus === "SENT" ? ["EMAIL"] : [];
+  return ["EMAIL", "WHATSAPP"].filter(c => canais.includes(c))
+    .map(c => c === "EMAIL" ? "E-mail" : "WhatsApp").join(" e ");
+}
+
+/** Canais diferentes entre guias precisam continuar visíveis por tributo. */
+export function resumoCanaisEnviados(tags) {
+  const rotulos = new Set(tags.filter(t => t.state === "enviada").map(rotuloCanaisEnviados));
+  return rotulos.size > 1 ? null : [...rotulos][0] || "";
+}
+
 const ESTADO = {
   missing:  { icone: "⚠", cor: "var(--state-danger)",  fundo: "var(--state-danger-surface)",  rotulo: "falta gerar" },
   gerada:   { icone: "✈", cor: "var(--state-warn)",    fundo: "var(--state-warn-surface)",    rotulo: "gerada, falta enviar" },
@@ -110,9 +124,12 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
   const [aberto, setAberto] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState(null);
+  const [resultado, setResultado] = useState(null);
   const [motivo, setMotivo] = useState("");
 
   const meta = ESTADO[tag.state] || ESTADO.missing;
+  const canaisEnviados = rotuloCanaisEnviados(tag);
+  const rotuloEstado = canaisEnviados ? `enviada por ${canaisEnviados}` : meta.rotulo;
   const destinatario = empresa?.guideNotificationEmail || empresa?.ownerEmail || null;
   // O envio que se exibe é o de WhatsApp e ele falhou — sem nada enviado por canal nenhum.
   const falhaWhatsapp = tag.state === "falhou" && tag.canalEnvio === "WHATSAPP" && tag.envioStatus === "falhou";
@@ -124,13 +141,15 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
 
   async function executar(fn) {
     if (ocupado) return;
-    setOcupado(true); setErro(null);
+    setOcupado(true); setErro(null); setResultado(null);
     try {
       const out = await fn();
       // A recusa vem do servidor com o motivo (ex.: faturamento na competência). Mostrar o número
       // é o que faz o contador entender que não é capricho da tela.
       if (out && out.ok === false) { setErro(out.message || out.error || "Não foi possível."); return; }
-      setAberto(false); setMotivo("");
+      if (out?.message) setResultado(out);
+      else setAberto(false);
+      setMotivo("");
     } catch (e) {
       setErro(e?.message || "Não foi possível.");
     } finally { setOcupado(false); }
@@ -144,8 +163,8 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
         type="button"
         onClick={() => setAberto((v) => !v)}
         aria-expanded={aberto}
-        aria-label={`${tag.label}: ${meta.rotulo}`}
-        title={`${tag.label} — ${meta.rotulo}`}
+        aria-label={`${tag.label}: ${rotuloEstado}`}
+        title={`${tag.label} — ${rotuloEstado}`}
         style={{
           display: "inline-flex", alignItems: "center", gap: 4,
           fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
@@ -155,6 +174,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
       >
         <span aria-hidden="true">{meta.icone}</span>
         {tag.label}
+        {tag.state === "enviada" && <span style={{ fontWeight: 500 }}>{canaisEnviados || "enviada"}</span>}
         {tag.state === "gerada" && <span style={{ fontWeight: 500 }}>enviar</span>}
         {tag.state === "falhou" && <span style={{ fontWeight: 500 }}>não saiu</span>}
       </button>
@@ -162,7 +182,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
       {aberto && (
         <Popover onFechar={() => { setAberto(false); setErro(null); }}>
           <div style={{ fontWeight: 700, marginBottom: 2 }}>{tag.label} · {competencia}</div>
-          <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>{meta.rotulo}</div>
+          <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>{rotuloEstado}</div>
 
           {/* Qual parcelamento e qual parcela — sem isto o chip diria só "Parcelamento", e numa
               empresa com mais de um acordo não dá para saber de qual se trata. */}
@@ -306,13 +326,14 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
           {(tag.state === "gerada" || tag.state === "falhou") && (
             <>
               <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>
-                Enviar ao cliente {destinatario ? <strong>{destinatario}</strong> : "(sem e-mail cadastrado)"}.
+                Liberar no portal e enviar por e-mail e WhatsApp aos contatos cadastrados.
+                {destinatario ? <> E-mail: <strong>{destinatario}</strong>.</> : " Sem e-mail cadastrado."}
               </div>
               <BotaoAcao
                 tom="ok" disabled={ocupado || !tag.guideId}
                 onClick={() => executar(() => acoes.onEnviar?.(tag.guideId, empresa))}
               >
-                {ocupado ? "Enviando…" : (tag.state === "falhou" && !falhaWhatsapp ? "✈ Tentar enviar de novo" : "✈ Enviar e-mail")}
+                {ocupado ? "Enviando…" : (tag.state === "falhou" && !falhaWhatsapp ? "✈ Tentar enviar de novo" : "✈ Liberar guia")}
               </BotaoAcao>
             </>
           )}
@@ -329,6 +350,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
             </div>
           )}
 
+          {resultado ? <p role="status" style={{ color: resultado.tom === "pendente" ? "var(--text-muted)" : "var(--state-ok)", fontSize: "0.74rem" }}>{resultado.message}</p> : null}
           {erro && (
             <div style={{ marginTop: 8, color: "var(--state-danger)", fontSize: "0.74rem" }}>{erro}</div>
           )}

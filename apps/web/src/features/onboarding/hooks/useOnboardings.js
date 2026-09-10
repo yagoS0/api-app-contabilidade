@@ -1,8 +1,7 @@
 // A lista/quadro do funil.
 //
-// ⚠ Rascunho fica FORA por padrão (o backend já filtra). O wizard cria a ficha no PRIMEIRO clique,
-// então rascunho abandonado acumula para sempre — e um quadro em que a maioria dos cartões nunca
-// foi preenchida deixa de ser lido. A bandeja fica atrás de um toggle, com o descarte ao lado.
+// Fichas em preenchimento incluem as que aguardam o cliente responder ao link.
+// Elas ficam visíveis por padrão, com opção de recolher a seção.
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -10,7 +9,7 @@ export function useOnboardings({ api }) {
   const [itens, setItens] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
-  const [filtros, setFiltros] = useState({ origem: "", status: "", q: "", incluirRascunhos: false });
+  const [filtros, setFiltros] = useState({ origem: "", status: "", q: "", incluirRascunhos: true });
 
   const carregar = useCallback(async (override = null) => {
     const alvo = override || filtros;

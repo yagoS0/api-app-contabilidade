@@ -39,6 +39,11 @@ export const LEITOR = Object.freeze({
  * `comExt`, `obra`) entra na fase que o montar — está em `FORA_DESTA_FASE`, com o motivo.
  */
 export const CAMPOS = Object.freeze([
+  ...[
+    { id: "tpImunidade", rotulo: "Tipo de imunidade do ISSQN", tag: "tpImunidade", caminhoNoXml: "infDPS/valores/trib/tribMun/tpImunidade", valores: ["0", "1", "2", "3", "4", "5"], formaDescrita: "0 não informado na origem · 1 entes públicos · 2 templos · 3 entidades do art. 150 VI c · 4 livros e periódicos · 5 fonogramas" },
+    { id: "exigSuspTipo", rotulo: "Suspensão da exigibilidade do ISSQN", tag: "tpSusp", caminhoNoXml: "infDPS/valores/trib/tribMun/exigSusp/tpSusp", valores: ["1", "2"], formaDescrita: "1 decisão judicial · 2 processo administrativo" },
+    { id: "exigSuspProcesso", rotulo: "Número do processo de suspensão", tag: "nProcesso", caminhoNoXml: "infDPS/valores/trib/tribMun/exigSusp/nProcesso", forma: /^[0-9]{30}$/, formaDescrita: "30 dígitos, sem pontuação" },
+  ].map((c) => Object.freeze({ ...c, obrigatorio: false, hojeSaiDe: "não configurado", leitores: [LEITOR.RESOLVEDOR, LEITOR.ROTA, LEITOR.TELA, LEITOR.GERADOR] })),
   Object.freeze({
     id: "codigoServicoNacional",
     rotulo: "Código de Tributação Nacional",
@@ -253,19 +258,13 @@ export const COLUNAS_TECNICAS = Object.freeze([
  */
 export const FORA_DESTA_FASE = Object.freeze({
   BM: "Benefício municipal. Já está cadastrado em 3 colunas da `Company` e NUNCA chegou ao XML.",
-  exigSusp: "Exigibilidade suspensa. Sem escritor no gerador.",
-  tpImunidade: "Tipo de imunidade — só faz sentido com `tribISSQN = 2`.",
   tpRetISSQN: "⚠ NÃO é campo de perfil: a retenção do ISS depende do TOMADOR daquela nota, e o "
     + "cliente marca a caixa (decisão do dono, 01/09/2026). Do perfil vem a ALÍQUOTA.",
   comExt: "Exportação. `TCComExterior` tem 7 filhos obrigatórios, e decidir 'é exportação?' passa "
     + "pelos 112 cenários da aba EXPORTACAO_EMISSÃO do ANEXO_I, não extraída.",
-  obra: "CNO/CIB. ⚠ O identificador é da OBRA, não da empresa — o perfil só HABILITA o campo "
-    + "(`habilitaObra`); quem informa é o cliente, por nota.",
-  vRetIRRF: "⚠ A alíquota do IRRF vive na legislação do IR e NÃO está versionada aqui. O campo "
-    + "existe no leiaute e continua sem produtor — emitir percentual de memória é o que a regra 1 "
-    + "do projeto proíbe.",
-  vRetCP: "⚠ A retenção previdenciária de 11% (Lei 8.212/1991, art. 31) e sua interação com o "
-    + "Anexo IV do Simples não foram confirmadas em fonte primária. Sem produtor, de propósito.",
+  obra: "Informada por operação: CNO/CEI ou CIB. Não é dado fixo do perfil da empresa.",
+  vRetIRRF: "Valor declarado por operação, com validação E0700. Não há alíquota presumida no perfil.",
+  vRetCP: "Valor declarado por operação, com validação E0699. Não há alíquota presumida no perfil.",
 });
 
 const POR_ID = new Map(CAMPOS.map((c) => [c.id, c]));

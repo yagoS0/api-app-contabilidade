@@ -41,7 +41,7 @@ import { COLUNAS, linhaDoMes } from "./tabelaDoFluxo";
  * sinais trocados — e aí ela seria uma sexta leitura do fluxo, não o detalhe de uma célula.
  */
 export const BALDES_DA_GAVETA = Object.freeze(
-  COLUNAS.filter((c) => c.chave !== "resultado").map((c) => c.chave),
+  COLUNAS.filter((c) => !["resultado", "saldo"].includes(c.chave)).map((c) => c.chave),
 );
 
 /**

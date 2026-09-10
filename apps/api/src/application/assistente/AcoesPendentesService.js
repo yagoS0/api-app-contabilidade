@@ -37,6 +37,9 @@ import { SERPRO_PGDASD_SERVICE_COBRANCA } from "../fiscal/serpro/SerproPgdasdSer
 import { markGuideOpenBySerpro } from "../guides/GuidePaymentStatusService.js";
 import { ESPECIE_RECALCULO, especieDoRecalculo, leituraDosAcrescimos, traduzirRecusaParaCliente, canGuideRecalculate, isGuideOverdue } from "../guides/lib/recalculoDaGuia.js";
 import { fmtBRL } from "@contabilidade/shared/declaracao-nfse";
+import { PERMISSOES_ASSISTENTE, temPermissaoAssistente } from "../whatsapp/permissoesAssistente.js";
+import { papelAlcanca, PAPEL_MINIMO_LEITURA, PAPEL_MINIMO_EMISSAO } from "./sessaoDoContato.js";
+import { conferirContextoResponsavel, filtroAtendimentoAtivo } from "../whatsapp/AtendimentoResponsavelWhatsappService.js";
 
 export const ORIGENS = Object.freeze({
   EMITIR: "whatsapp:emitir",
@@ -48,10 +51,57 @@ export const ORIGENS = Object.freeze({
 export const DEPS_PADRAO = Object.freeze({
   NfseService, NfseRepository, resolveLegacyCompanyId, autorizarEmissaoDoCliente,
   comContextoSerpro, capturePgdasGuideForCompany, reemitirDarfLp, markGuideOpenBySerpro,
-  canGuideRecalculate, isGuideOverdue,
+  canGuideRecalculate, isGuideOverdue, autorizarPermissaoDaAcao,
 });
 
 const TEXTO_RECONFERENCIA = "Desde o seu pedido a autorização para este ato mudou, então NÃO executei. O escritório vai conferir e responder por aqui.";
+
+const PERMISSAO_POR_ACAO = Object.freeze({
+  [TIPOS.EMITIR_NFSE]: PERMISSOES_ASSISTENTE.EMISSAO_NFSE,
+  [TIPOS.CANCELAR_NFSE]: PERMISSOES_ASSISTENTE.CANCELAMENTO_NFSE,
+  [TIPOS.RECALCULAR_GUIA]: PERMISSOES_ASSISTENTE.RECALCULO_GUIA,
+});
+
+const PAPEL_POR_ACAO = Object.freeze({
+  [TIPOS.EMITIR_NFSE]: PAPEL_MINIMO_EMISSAO,
+  [TIPOS.CANCELAR_NFSE]: PAPEL_MINIMO_EMISSAO,
+  [TIPOS.RECALCULAR_GUIA]: PAPEL_MINIMO_LEITURA,
+});
+
+/** Reconfere o contato e a permissão do número na hora do CONFIRMAR. */
+export async function autorizarPermissaoDaAcao({ acao, client = prisma }) {
+  const permissao = PERMISSAO_POR_ACAO[acao?.tipo];
+  if (!permissao) return { ok: false, codigo: "FUNCAO_DESCONHECIDA" };
+  const conversa = await client.conversaWhatsapp.findFirst({
+    where: { id: String(acao.conversaId), portalClientId: String(acao.portalClientId), escopoVerificado: true, excluidaEm: null },
+    select: { telefoneE164: true },
+  });
+  if (!conversa?.telefoneE164 || !acao?.userId) return { ok: false, codigo: "CONTATO_NAO_IDENTIFICADO" };
+  const contatos = await client.contatoWhatsapp.findMany({
+    where: {
+      portalClientId: String(acao.portalClientId),
+      ativo: true,
+      OR: [{ telefoneE164: conversa.telefoneE164 }, { waId: conversa.telefoneE164 }],
+    },
+    select: { userId: true, permissoesAssistente: true },
+    take: 2,
+  });
+  if (contatos.length !== 1) return { ok: false, codigo: "CONTATO_NAO_IDENTIFICADO" };
+  if (String(contatos[0].userId || "") !== String(acao.userId)) {
+    return { ok: false, codigo: "CONTATO_REATRIBUIDO" };
+  }
+  if (!temPermissaoAssistente(contatos[0], permissao)) {
+    return { ok: false, codigo: "FUNCAO_NAO_LIBERADA", permissao };
+  }
+  const vinculo = await client.companyClientUser.findUnique({
+    where: { companyId_userId: { companyId: String(acao.portalClientId), userId: String(acao.userId) } },
+    select: { role: true, status: true },
+  });
+  if (!vinculo || vinculo.status !== "ACTIVE" || !papelAlcanca(vinculo.role, PAPEL_POR_ACAO[acao.tipo])) {
+    return { ok: false, codigo: "PAPEL_INSUFICIENTE", permissao };
+  }
+  return { ok: true, permissao };
+}
 
 /** A pendência ABERTA do fio (a mais recente, `pendente`), ou null. Expiração é conferida por quem lê. */
 export async function pendenciaAberta(conversaId, { client = prisma } = {}) {
@@ -62,12 +112,21 @@ export async function pendenciaAberta(conversaId, { client = prisma } = {}) {
 }
 
 /**
- * CRIA a pendência. Uma por fio: a anterior `pendente` é CANCELADA (o texto prometeu que qualquer
- * outra resposta cancela, e um pedido novo é outra resposta).
+ * CRIA a pendência. Uma por fio: montar explicitamente um pedido novo CANCELA o anterior.
+ * Conversa livre por si só não cancela nem confirma; a decisão pertence ao fluxo de confirmação.
  * @returns {{acao, texto}} `texto` = o corpo que o cliente LÊ + o rodapé com o código
  */
-export async function criarPendencia({ conversaId, portalClientId, userId, tipo, payload, corpo, agora = new Date(), rand = Math.random, client = prisma } = {}) {
+export async function criarPendencia({ conversaId, portalClientId, userId, tipo, payload, corpo, contexto = null, atendimentoId = contexto?.atendimentoId ?? null, contextoVersao = contexto?.versao ?? null, agora = new Date(), rand = Math.random, client = prisma } = {}) {
   if (!Object.values(TIPOS).includes(tipo)) throw new Error(`tipo de pendência desconhecido: ${tipo}`);
+  // Não escolher a empresa atual aqui. A versão pertence ao pedido recebido, mesmo que a
+  // consulta fiscal tenha demorado e o responsável já tenha selecionado outra empresa.
+  const conversa = await client.conversaWhatsapp?.findUnique?.({ where: { id: String(conversaId) } });
+  if (atendimentoId || conversa?.atendimentoId) {
+    if (!conversa || atendimentoId !== conversa.atendimentoId || !Number.isInteger(contextoVersao) || conversa.portalClientId !== portalClientId) {
+      throw Object.assign(new Error("O pedido perdeu seu contexto de empresa."), { codigo: "CONTEXTO_ALTERADO" });
+    }
+    await conferirContextoResponsavel({ conversa, contexto: { ...contexto, atendimentoId, versao: contextoVersao, conversaId, portalClientId }, client });
+  }
   const codigo = gerarCodigo(rand);
   const texto = `${String(corpo || "").trim()}\n\n${rodapeDeConfirmacao(codigo)}`;
   await client.acaoPendenteWhatsapp.updateMany({
@@ -79,6 +138,7 @@ export async function criarPendencia({ conversaId, portalClientId, userId, tipo,
       conversaId: String(conversaId),
       portalClientId: String(portalClientId),
       userId: userId ? String(userId) : null,
+      ...(atendimentoId ? { atendimentoId, contextoVersao } : {}),
       tipo,
       payload,
       textoDeConfirmacao: texto,
@@ -102,7 +162,34 @@ export async function marcarExpirada(acaoId, { client = prisma } = {}) {
  * CONFIRMA (reserva atômica) E EXECUTA. Devolve o que dizer ao cliente e se o fio vai à fila humana.
  * @returns {Promise<{executou:boolean, texto:string, filaHumana:boolean, resultado:object|null}>}
  */
-export async function confirmarEExecutar({ acaoId, conversaId = null, portalClientId = null, agora = new Date(), client = prisma, log = logPadrao, executores = null, deps = DEPS_PADRAO } = {}) {
+export async function confirmarEExecutar({ acaoId, conversaId = null, portalClientId = null, userId = null, contexto = null, atendimentoId = contexto?.atendimentoId ?? null, contextoVersao = contexto?.versao ?? null, confirmacao = null, agora = new Date(), client = prisma, log = logPadrao, executores = null, deps = DEPS_PADRAO, antesDeExecutar = null } = {}) {
+  const pin = atendimentoId ? { atendimentoId, versao: contextoVersao, conversaId, portalClientId } : null;
+  if (pin && (!Number.isInteger(contextoVersao) || !conversaId || !portalClientId || !confirmacao?.mensagemId)) {
+    return { executou: false, codigo: "CONTEXTO_ALTERADO", texto: "A empresa deste pedido precisa ser selecionada novamente antes de confirmar.", filaHumana: false, resultado: null };
+  }
+  // O conjunto visto pelo turno é conferido no MESMO comando que reserva o ato. Uma leitura
+  // anterior separada deixa uma correção entrar entre o SELECT e o UPDATE. Sem exclusão por
+  // respondidaPelaIaEm: outro consumidor da caixa não pode tornar uma correção invisível.
+  const entradasNovas = confirmacao ? {
+    direcao: "in", registradaEm: { gte: new Date(confirmacao.registradaEm) },
+    id: { notIn: [...new Set([confirmacao.mensagemId, ...(confirmacao.mensagensConhecidas || [])])] },
+  } : null;
+  const escopoConversa = {
+    ...(entradasNovas ? {
+      escopoVerificado: true, excluidaEm: null, atendidaPor: null, atendidaDesde: null,
+      ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+      OR: [{ automacaoInvalidadaEm: null }, { automacaoInvalidadaEm: { lt: new Date(confirmacao.registradaEm) } }],
+      mensagens: { none: entradasNovas },
+    } : {}),
+    // Um código legado não ganha autorização multiempresa ao migrar a conversa.
+    atendimentoId: atendimentoId || null,
+  };
+  const escopoAtendimento = pin ? {
+    ...filtroAtendimentoAtivo({ conversa: { id: conversaId, portalClientId, atendimentoId }, contexto: pin, mensagem: { registradaEm: confirmacao.registradaEm }, agora }),
+    // As entradas chegam ao segmento neutro ANTES de sua resolução. Uma troca ainda na fila
+    // precisa impedir o ato antigo, mesmo que o outro worker não tenha incrementado a versão.
+    conversas: { none: { mensagens: { some: entradasNovas } } },
+  } : null;
   const reserva = await client.acaoPendenteWhatsapp.updateMany({
     where: {
       id: String(acaoId), status: STATUS.PENDENTE, expiraEm: { gt: agora },
@@ -110,16 +197,46 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
       // ⚠ A EMPRESA TAMBÉM ENTRA: o escritório pode ter RE-VINCULADO o fio a outra empresa nos 10
       // minutos da pendência, e aí o ato sairia no CNPJ em que ela nasceu, não no do fio de agora.
       ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+      ...(userId ? { userId: String(userId) } : {}),
+      atendimentoId: atendimentoId || null,
+      ...(pin ? { contextoVersao, atendimento: { is: escopoAtendimento } } : {}),
+      conversa: { is: escopoConversa },
     },
-    data: { status: STATUS.CONFIRMADA, confirmadaEm: agora },
+    data: { status: STATUS.CONFIRMADA, confirmadaEm: agora, ...(confirmacao ? { mensagemConfirmacaoId: String(confirmacao.mensagemId) } : {}) },
   });
   if (!reserva.count) {
+    if (entradasNovas) {
+      // Só afirmar que a correção impediu o ato se ainda era pendente. Se outro consumidor já
+      // reservou/executou, não inventar que nada ocorreu nem permitir uma nova execução.
+      const cancelada = await client.acaoPendenteWhatsapp.updateMany({ where: {
+        id: String(acaoId), status: STATUS.PENDENTE,
+        ...(conversaId ? { conversaId: String(conversaId) } : {}),
+        ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+        ...(userId ? { userId: String(userId) } : {}),
+        atendimentoId: atendimentoId || null,
+        ...(pin ? { contextoVersao, atendimento: { is: { id: atendimentoId, conversas: { some: { mensagens: { some: entradasNovas } } } } } }
+          : { conversa: { is: { mensagens: { some: entradasNovas } } } }),
+      }, data: { status: STATUS.CANCELADA } });
+      if (cancelada.count) return { executou: false, codigo: "CONFIRMACAO_SUPERADA", texto: "Recebi uma nova mensagem depois da confirmação e não executei o pedido. Vamos conferir as alterações antes de confirmar novamente.", filaHumana: false, resultado: null };
+    }
     // Já confirmada por outra entrega, cancelada, expirou entre a leitura e a reserva — ou é de outro fio.
     return { executou: false, texto: "Esse pedido já foi tratado ou expirou. Se ainda quiser, peça de novo.", filaHumana: false, resultado: null };
   }
   const acao = await client.acaoPendenteWhatsapp.findUnique({ where: { id: String(acaoId) } });
 
   // ⚠ A RECONFERÊNCIA DO PORTÃO, fechada: recusa E erro interno terminam sem executar.
+  let permissaoAtual;
+  try {
+    permissaoAtual = await deps.autorizarPermissaoDaAcao({ acao, client });
+  } catch (err) {
+    log?.error?.({ err: err?.message, acaoId: acao.id }, "assistente: reconferência da permissão do contato lançou — recusando");
+    permissaoAtual = { ok: false, codigo: "RECONFERENCIA_FALHOU" };
+  }
+  if (!permissaoAtual?.ok) {
+    await client.acaoPendenteWhatsapp.update({ where: { id: acao.id }, data: { status: STATUS.CANCELADA, resultado: { erro: "RECONFERENCIA_CONTATO", codigo: permissaoAtual?.codigo || null }, respostaAoCliente: TEXTO_RECONFERENCIA, encaminharHumano: true } });
+    return { executou: false, texto: TEXTO_RECONFERENCIA, filaHumana: true, resultado: { erro: "RECONFERENCIA_CONTATO", codigo: permissaoAtual?.codigo || null } };
+  }
+
   if (acao.tipo === TIPOS.EMITIR_NFSE || acao.tipo === TIPOS.CANCELAR_NFSE) {
     let autorizacao;
     try {
@@ -129,7 +246,7 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
       autorizacao = { ok: false, codigo: "RECONFERENCIA_FALHOU" };
     }
     if (!autorizacao?.ok) {
-      await client.acaoPendenteWhatsapp.update({ where: { id: acao.id }, data: { status: STATUS.CANCELADA, resultado: { erro: "RECONFERENCIA", codigo: autorizacao?.codigo || null } } });
+      await client.acaoPendenteWhatsapp.update({ where: { id: acao.id }, data: { status: STATUS.CANCELADA, resultado: { erro: "RECONFERENCIA", codigo: autorizacao?.codigo || null }, respostaAoCliente: TEXTO_RECONFERENCIA, encaminharHumano: true } });
       log?.warn?.({ acaoId: acao.id, tipo: acao.tipo, codigo: autorizacao?.codigo }, "assistente: autorização mudou entre o pedido e a confirmação");
       return { executou: false, texto: TEXTO_RECONFERENCIA, filaHumana: true, resultado: { erro: "RECONFERENCIA", codigo: autorizacao?.codigo || null } };
     }
@@ -137,6 +254,41 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
 
   const exec = executores || EXECUTORES;
   const executor = exec[acao.tipo];
+  // O lease/corte pode mudar durante as reconferências acima. Uma recusa aqui ainda prova que
+  // nenhum executor foi chamado; persiste essa diferença antes de devolver o erro ao chamador,
+  // que também precisa impedir uma resposta automática depois de um atendimento humano.
+  if (antesDeExecutar || acao.atendimentoId) {
+    try {
+      await antesDeExecutar?.();
+      if (acao.atendimentoId) {
+        const conversaAtual = await client.conversaWhatsapp.findUnique({ where: { id: acao.conversaId } });
+        if (!conversaAtual || conversaAtual.atendimentoId !== acao.atendimentoId || conversaAtual.portalClientId !== acao.portalClientId) {
+          throw Object.assign(new Error("O segmento da empresa mudou antes da execução."), { codigo: "CONTEXTO_ALTERADO" });
+        }
+        const contextoDaAcao = { atendimentoId: acao.atendimentoId, versao: acao.contextoVersao, conversaId: acao.conversaId, portalClientId: acao.portalClientId };
+        await conferirContextoResponsavel({ conversa: conversaAtual, mensagem: { id: confirmacao.mensagemId, registradaEm: confirmacao.registradaEm }, contexto: contextoDaAcao, client });
+        const permissaoFinal = await deps.autorizarPermissaoDaAcao({ acao, client });
+        if (!permissaoFinal?.ok) throw Object.assign(new Error("A permissão da função foi retirada antes da execução."), { codigo: "ACESSO_REVOGADO" });
+        const nova = await client.mensagemWhatsapp.findFirst({ where: {
+          ...entradasNovas, conversa: { is: { atendimentoId: acao.atendimentoId } },
+        }, select: { id: true } });
+        if (nova) throw Object.assign(new Error("Outra mensagem chegou antes da execução."), { codigo: "CONFIRMACAO_SUPERADA" });
+      }
+    } catch (err) {
+      const superada = err?.codigo === "CONFIRMACAO_SUPERADA";
+      const texto = superada
+        ? "Recebi uma nova mensagem depois da confirmação e não executei o pedido. Vamos conferir as alterações antes de confirmar novamente."
+        : "Não executei o pedido porque o atendimento ou a autorização mudou antes da execução. A equipe vai conferir antes de continuar.";
+      await client.acaoPendenteWhatsapp.update({ where: { id: acao.id }, data: {
+        status: STATUS.CANCELADA,
+        resultado: { erro: "EXECUCAO_INTERROMPIDA", codigo: err?.codigo || err?.code || "ACESSO_ALTERADO" },
+        respostaAoCliente: texto,
+        encaminharHumano: !superada,
+      } });
+      if (superada) return { executou: false, codigo: "CONFIRMACAO_SUPERADA", texto, filaHumana: false, resultado: null };
+      throw err;
+    }
+  }
   let desfecho;
   try {
     desfecho = await executor({ acao, log, client, deps, agora });
@@ -146,7 +298,7 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
   }
   await client.acaoPendenteWhatsapp.update({
     where: { id: acao.id },
-    data: { status: STATUS.EXECUTADA, executadaEm: new Date(), resultado: desfecho.resultado ?? null },
+    data: { status: STATUS.EXECUTADA, executadaEm: new Date(), resultado: desfecho.resultado ?? null, respostaAoCliente: desfecho.texto, encaminharHumano: Boolean(desfecho.filaHumana) },
   });
   return { executou: true, texto: desfecho.texto, filaHumana: Boolean(desfecho.filaHumana), resultado: desfecho.resultado ?? null };
 }
@@ -164,7 +316,9 @@ async function executarEmissao({ acao, log, deps = DEPS_PADRAO }) {
     if (codigo === "COMPANY_MISSING_FIELDS") {
       return { texto: `A empresa está com o cadastro de emissão incompleto (${(err.missing || []).join(", ")}). O escritório precisa completar antes de emitir.`, filaHumana: true, resultado: { erro: codigo, missing: err.missing || [] } };
     }
-    return { texto: "A emissão foi recusada antes de sair. O escritório vai conferir o motivo e responder por aqui.", filaHumana: true, resultado: { erro: codigo || String(err?.message || "erro") } };
+    // Uma exceção não classificada pode ocorrer ao persistir um resultado já aceito. Sem prova
+    // da etapa alcançada, não afirmar recusa anterior ao envio nem recomendar uma nova emissão.
+    return { texto: "Não consegui confirmar o resultado da emissão. A equipe vai conferir antes de tentar novamente; não envie outro pedido desta nota por enquanto.", filaHumana: true, resultado: { erro: codigo || "EMISSAO_DESFECHO_DESCONHECIDO", indeterminado: true } };
   }
   if (result?.status === "issued") {
     const numero = result?.nfse?.numeroNfse || result?.nfse?.numero || result?.numeroNfse || null;
@@ -211,7 +365,13 @@ async function executarCancelamento({ acao, log, deps = DEPS_PADRAO }) {
     // ⚠ O NOSSO registro da emissão acompanha — a mesma linha da rota `POST /client/.../cancelar`.
     // É `ServiceInvoice` (nossa tabela), NUNCA `PortalInvoice` (projeção do ADN, que a captura
     // atualiza). `updateByChaveAcesso` devolve null quando a nota não é nossa — não é erro.
-    await deps.NfseRepository.updateByChaveAcesso(p.chaveAcesso, { status: "cancelled" });
+    try {
+      await deps.NfseRepository.updateByChaveAcesso(p.chaveAcesso, { status: "cancelled" });
+    } catch (err) {
+      // O provedor já aceitou. Falha na nossa projeção não desfaz o ato fiscal nem autoriza retry.
+      log?.error?.({ codigo: err?.code || "SINCRONIZACAO_CANCELAMENTO", notaId: p.notaId }, "assistente: cancelamento aceito, atualização local pendente");
+      return { texto: `O sistema nacional aceitou o cancelamento da nota ${p.numero || ""}. Não consegui atualizar o registro no portal; a equipe vai conferir. Não é preciso pedir o cancelamento novamente.`, filaHumana: true, resultado: { status: "accepted", sincronizacaoPendente: true } };
+    }
     return { texto: `Pedido de cancelamento da nota ${p.numero || ""} enviado e aceito. A nota passa a constar como cancelada assim que o sistema nacional processar.`, filaHumana: false, resultado: { status: r?.status || "accepted" } };
   } catch (err) {
     const camada = err?.camada || null;
@@ -251,9 +411,11 @@ async function executarRecalculo({ acao, log, client, deps = DEPS_PADRAO, agora 
       await deps.markGuideOpenBySerpro({ guideId: result.guide.guideId });
       atualizada = await client.guide.findUnique({ where: { id: result.guide.guideId } });
     }
-    const venc = atualizada?.vencimento ? new Date(atualizada.vencimento).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "não informado";
+    if (!atualizada) return { texto: "O pedido de recálculo foi processado, mas não consegui recuperar a guia para conferir valor e vencimento. Encaminhei para a equipe verificar antes de uma nova tentativa.", filaHumana: true, resultado: { guideId: guide.id, erro: "GUIA_ATUALIZADA_NAO_ENCONTRADA", conferenciaPendente: true } };
+    const venc = atualizada.vencimento ? new Date(atualizada.vencimento).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "não informado";
+    const valor = atualizada.valor == null || !Number.isFinite(Number(atualizada.valor)) ? "valor não informado" : fmtBRL(atualizada.valor);
     return {
-      texto: `Guia atualizada: ${fmtBRL(atualizada?.valor)}, vencimento ${venc}.${acrescimos?.texto ? ` ${acrescimos.texto}` : ""} Posso mandar o PDF por aqui.`,
+      texto: `Guia atualizada: ${valor}, vencimento ${venc}.${acrescimos?.texto ? ` ${acrescimos.texto}` : ""} Posso mandar o PDF por aqui.`,
       filaHumana: false,
       resultado: { guideId: atualizada?.id || guide.id, valor: atualizada?.valor != null ? Number(atualizada.valor) : null, vencimento: atualizada?.vencimento || null },
     };

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { INTEGRACAO_PERFIL_EMISSAO_NFSE } from "../../config.js";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import multer from "multer";
@@ -1826,29 +1827,28 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
     "/companies/:companyId/nfse/perfis",
       requireClientCompanyAccess(),
       async (req, res) => {
+        if (!INTEGRACAO_PERFIL_EMISSAO_NFSE) return res.json({ habilitado: false, data: [], total: 0 });
         const idDoPath = String(req.params.companyId);
         try {
           const legacyCompanyId = await resolveLegacyCompanyId(idDoPath);
           // ⚠ Sem `Company` legada não é erro: é quem ainda não foi provisionada. Lista vazia, e a
           // tela não oferece o seletor — o mesmo desenho dos tomadores.
-          if (!legacyCompanyId) return res.json({ data: [], total: 0 });
+          if (!legacyCompanyId) return res.json({ habilitado: true, data: [], total: 0 });
 
           const portal = await prisma.portalClient
-            .findUnique({ where: { companyId: legacyCompanyId }, select: { id: true } })
-            .catch(() => null);
-          if (!portal?.id) return res.json({ data: [], total: 0 });
+            .findUnique({ where: { companyId: legacyCompanyId }, select: { id: true } });
+          if (!portal?.id) return res.json({ habilitado: true, data: [], total: 0 });
 
           const perfis = await prisma.perfilEmissaoNfse.findMany({
             where: { portalClientId: portal.id, ativo: true },
             orderBy: [{ padrao: "desc" }, { nome: "asc" }],
             select: { id: true, nome: true, padrao: true },
           });
-          return res.json({ data: perfis, total: perfis.length });
+          return res.json({ habilitado: true, data: perfis, total: perfis.length });
         } catch (err) {
-          // ⚠ Tabela ainda não criada (migration nasce NÃO APLICADA) não pode derrubar a tela de
-          // emissão. Lista vazia é a resposta honesta: "não há perfil para escolher".
+          // Indisponibilidade não confirma ausência de perfis: a tela deve bloquear a emissão.
           log.warn({ companyId: idDoPath, err: err?.message }, "client perfis de emissão indisponíveis");
-          return res.json({ data: [], total: 0 });
+          return res.status(503).json({ error: "NFSE_PERFIS_INDISPONIVEIS", message: "Não foi possível consultar os perfis de emissão. Tente novamente antes de emitir." });
         }
       }
   );

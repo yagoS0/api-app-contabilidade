@@ -138,6 +138,27 @@ export function extrairCorpo(mensagem) {
 }
 
 /**
+ * Preserva o identificador estável escolhido pelo servidor ao montar um menu interativo.
+ * O título é só apresentação e pode mudar; decisões automáticas usam exclusivamente `id`.
+ */
+export function extrairInteracao(mensagem) {
+  const botao = mensagem?.interactive?.button_reply;
+  if (botao && typeof botao.id === "string" && botao.id.trim()) {
+    return { tipo: "button_reply", id: botao.id.trim(), titulo: typeof botao.title === "string" ? botao.title : null };
+  }
+  const lista = mensagem?.interactive?.list_reply;
+  if (lista && typeof lista.id === "string" && lista.id.trim()) {
+    return { tipo: "list_reply", id: lista.id.trim(), titulo: typeof lista.title === "string" ? lista.title : null };
+  }
+  // Botões antigos de template chegam em `button.payload`, fora do objeto `interactive`.
+  const legado = mensagem?.button;
+  if (legado && typeof legado.payload === "string" && legado.payload.trim()) {
+    return { tipo: "button", id: legado.payload.trim(), titulo: typeof legado.text === "string" ? legado.text : null };
+  }
+  return null;
+}
+
+/**
  * O ID DA MÍDIA, quando a mensagem tem uma.
  *
  * ⚠ **ID, NUNCA URL** — a URL que a Meta devolve expira, e a coluna se chama `midiaProvedorId` por
@@ -225,12 +246,17 @@ export function lerEventoWebhook(payload, agora = new Date()) {
         if (!msg?.type) proprios.push(AVISOS_EVENTO.SEM_TIPO);
         mensagens.push({
           telefone: msg?.from ? String(msg.from) : null,
+          canalProvedorId: typeof value.metadata?.phone_number_id === "string" ? value.metadata.phone_number_id : null,
+          respostaAProviderMessageId: typeof msg?.context?.id === "string" ? msg.context.id : null,
           providerMessageId: msg?.id ? String(msg.id) : null,
           // ⚠ O `type` é COPIADO como veio, sem de-para para vocabulário nosso (migration
           // `20260814180000`): traduzir sem nunca ter visto um payload real seria inventar o mapa.
           tipo: typeof msg?.type === "string" ? msg.type : null,
           corpo: extrairCorpo(msg),
+          interacao: extrairInteracao(msg),
           midiaProvedorId: extrairMidiaProvedorId(msg),
+          nomeArquivo: typeof msg?.document?.filename === "string" ? msg.document.filename : null,
+          mimeType: typeof msg?.[msg?.type]?.mime_type === "string" ? msg[msg.type].mime_type : null,
           ocorridaEmProvedor: instante,
           nomePerfilProvedor: nomeDePerfil(value, msg?.from),
           avisos: proprios,

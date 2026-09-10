@@ -5,6 +5,7 @@ import { liberarComCanais } from "../liberarComCanais";
 function apiFalso({ canal = "EMAIL", sent = true, zap = { ok: true } } = {}) {
   return {
     liberarGuiaCliente: jest.fn(async () => ({ ok: true, sent, message: sent ? "Guia liberada e enviada ao cliente." : "Guia liberada ao cliente, mas o e-mail NÃO foi enviado." })),
+    resendGuideEmail: jest.fn(async () => ({ ok: true, sent })),
     listarContatosWhatsapp: jest.fn(async () => ({ ok: true, contatos: [], canalPadraoEnvio: canal })),
     enviarGuiaWhatsapp: jest.fn(async () => {
       if (zap instanceof Error) throw zap;
@@ -20,7 +21,7 @@ describe("liberarComCanais", () => {
     expect(api.liberarGuiaCliente).toHaveBeenCalledWith("g1");
     expect(api.enviarGuiaWhatsapp).not.toHaveBeenCalled();
     expect(r.ok).toBe(true);
-    expect(r.texto).toBe("Guia liberada ao cliente: e-mail enviado.");
+    expect(r.texto).toBe("Resultado do envio: e-mail enviado.");
   });
 
   it("WHATSAPP: e-mail PRIMEIRO, depois o WhatsApp — os dois nomeados no desfecho", async () => {
@@ -30,9 +31,9 @@ describe("liberarComCanais", () => {
     api.enviarGuiaWhatsapp.mockImplementation(async () => { ordem.push("zap"); return { ok: true }; });
     const r = await liberarComCanais({ api, companyId: "pc-1", guideId: "g1" });
     expect(ordem).toEqual(["email", "zap"]);
-    expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith("pc-1", "g1");
+    expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith("pc-1", "g1", { complementar: true });
     expect(r.ok).toBe(true);
-    expect(r.texto).toMatch(/e-mail enviado · WhatsApp enviado/);
+    expect(r.texto).toMatch(/e-mail enviado · WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
   });
 
   it("⚠ a recusa nomeada do WhatsApp (422) é DESFECHO, não exceção — e o e-mail que saiu continua dito", async () => {
@@ -57,14 +58,16 @@ describe("liberarComCanais", () => {
     expect(sim.enviarGuiaWhatsapp).toHaveBeenCalled();
   });
 
-  it("sem conseguir ler o canal, o comportamento é o de ANTES: só e-mail, sem perguntar", async () => {
+  it("falha ao ler canal não inicia nenhum envio e informa falha de leitura", async () => {
     const api = apiFalso({ canal: "WHATSAPP" });
     api.listarContatosWhatsapp.mockRejectedValue(new Error("500"));
     const perguntar = jest.fn(() => true);
     const r = await liberarComCanais({ api, companyId: "pc-1", guideId: "g1", perguntar });
     expect(perguntar).not.toHaveBeenCalled();
     expect(api.enviarGuiaWhatsapp).not.toHaveBeenCalled();
-    expect(r.ok).toBe(true);
+    expect(api.liberarGuiaCliente).not.toHaveBeenCalled();
+    expect(r.ok).toBe(false);
+    expect(r.texto).toMatch(/configuração de envio/);
   });
 
   it("e-mail que não saiu é ERRO mesmo com o WhatsApp ok", async () => {
@@ -72,7 +75,53 @@ describe("liberarComCanais", () => {
     const r = await liberarComCanais({ api, companyId: "pc-1", guideId: "g1" });
     expect(r.ok).toBe(false);
     expect(r.texto).toMatch(/o e-mail NÃO foi enviado/);
-    expect(r.texto).toMatch(/WhatsApp enviado/);
+    expect(r.texto).toMatch(/WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
+  });
+});
+
+describe("reenvio confirmado no modal da guia", () => {
+  const pedido = { companyId: "pc-1", guideId: "g1", reenviarConfirmado: true };
+
+  it("envia por WhatsApp mesmo sem e-mail e não pede confirmação duplicada", async () => {
+    const api = apiFalso({ canal: "WHATSAPP" });
+    api.resendGuideEmail.mockResolvedValue({ sent: false, envio: { naoSeAplica: true } });
+    const perguntar = jest.fn();
+    const r = await liberarComCanais({ api, ...pedido, perguntar });
+    expect(api.resendGuideEmail).toHaveBeenCalledWith("g1");
+    expect(api.liberarGuiaCliente).not.toHaveBeenCalled();
+    expect(api.enviarGuiaWhatsapp).toHaveBeenCalledTimes(1);
+    expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith("pc-1", "g1", { reenviar: true });
+    expect(perguntar).not.toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+    expect(r.texto).toMatch(/sem e-mail cadastrado · WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
+  });
+
+  it("EMAIL continua reenviando somente por e-mail", async () => {
+    const api = apiFalso();
+    const r = await liberarComCanais({ api, ...pedido });
+    expect(api.resendGuideEmail).toHaveBeenCalledWith("g1");
+    expect(api.enviarGuiaWhatsapp).not.toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+  });
+
+  it.each([false, true])("PERGUNTAR respeita a escolha %s no reenvio", async (escolha) => {
+    const api = apiFalso({ canal: "PERGUNTAR" });
+    const perguntar = jest.fn(() => escolha);
+    await liberarComCanais({ api, ...pedido, perguntar });
+    expect(perguntar).toHaveBeenCalledTimes(1);
+    expect(api.enviarGuiaWhatsapp).toHaveBeenCalledTimes(escolha ? 1 : 0);
+    if (escolha) expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith("pc-1", "g1", { reenviar: true });
+  });
+
+  it("recusa do WhatsApp permanece visível e não dispara outra tentativa", async () => {
+    const recusa = Object.assign(new Error("Reenvio recusado"), { code: "GUIA_JA_ENVIADA" });
+    const api = apiFalso({ canal: "WHATSAPP", zap: recusa });
+    const perguntar = jest.fn(() => true);
+    const r = await liberarComCanais({ api, ...pedido, perguntar });
+    expect(r.ok).toBe(false);
+    expect(r.texto).toMatch(/WhatsApp não saiu \(Reenvio recusado\)/);
+    expect(api.enviarGuiaWhatsapp).toHaveBeenCalledTimes(1);
+    expect(perguntar).not.toHaveBeenCalled();
   });
 });
 
@@ -97,11 +146,11 @@ describe("um canal basta — a empresa que só tem WhatsApp", () => {
     };
   }
 
-  it("sem e-mail cadastrado + WhatsApp enviado ⇒ OK (verde), e a ausência é dita", async () => {
+  it("sem e-mail cadastrado + WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega ⇒ OK (verde), e a ausência é dita", async () => {
     const api = apiSemEmail();
     const r = await liberarComCanais({ api, companyId: "pc-1", guideId: "g1" });
     expect(r.ok).toBe(true);
-    expect(r.texto).toMatch(/sem e-mail cadastrado · WhatsApp enviado/);
+    expect(r.texto).toMatch(/sem e-mail cadastrado · WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
     expect(r.texto).not.toMatch(/não saiu/);
   });
 
@@ -111,4 +160,14 @@ describe("um canal basta — a empresa que só tem WhatsApp", () => {
     expect(r.ok).toBe(false);
     expect(r.texto).toMatch(/WhatsApp não saiu \(contato sem opt-in\)/);
   });
+});
+
+
+test('liberação explícita nos dois canais complementa e-mail mesmo com preferência EMAIL', async () => {
+  const api = { listarContatosWhatsapp: jest.fn(async () => ({ canalPadraoEnvio: 'EMAIL' })), liberarGuiaCliente: jest.fn(async () => ({ sent: true })), enviarGuiaWhatsapp: jest.fn(async () => ({ ok: true, estado: 'aceito' })) };
+  const perguntar = jest.fn();
+  await liberarComCanais({ api, companyId: 'c', guideId: 'g', ambos: true, perguntar });
+  expect(api.liberarGuiaCliente).toHaveBeenCalledWith('g');
+  expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith('c', 'g', { complementar: true });
+  expect(perguntar).not.toHaveBeenCalled();
 });

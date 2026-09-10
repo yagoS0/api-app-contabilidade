@@ -7,7 +7,7 @@ test("agrega sem truncar, parametriza carteira e compara leitura por conversa", 
   const query = client.$queryRaw.mock.calls[0][0];
   expect(query.values).toEqual(["pc-permitida"]);
   expect(query.sql).toContain('c."portalClientId" IN (?)');
-  expect(query.sql).toContain('OR c."portalClientId" IS NULL');
+  expect(query.sql).toContain('OR (c."portalClientId" IS NULL');
   expect(query.sql).toContain('m."registradaEm" > c."lidaAteEm"');
   expect(query.sql).toContain("m.direcao = 'in'");
   expect(query.sql).not.toMatch(/LIMIT/i);
@@ -15,7 +15,19 @@ test("agrega sem truncar, parametriza carteira e compara leitura por conversa", 
 test("carteira vazia permite somente fila, falha é propagada", async () => {
   const client = { $queryRaw: jest.fn(async () => [{}]) };
   await resumoWhatsapp([], { client });
-  expect(client.$queryRaw.mock.calls[0][0].sql).toContain('WHERE (FALSE OR c."portalClientId" IS NULL)');
+  expect(client.$queryRaw.mock.calls[0][0].sql).toContain('WHERE (FALSE OR (c."portalClientId" IS NULL');
   client.$queryRaw.mockRejectedValueOnce(new Error("banco indisponível"));
   await expect(resumoWhatsapp([], { client })).rejects.toThrow("banco indisponível");
+});
+
+test("histórico de empresa excluída não entra na fila global",async()=>{const client={$queryRaw:jest.fn(async()=>[{}])};await resumoWhatsapp([],{client});const sql=client.$queryRaw.mock.calls[0][0].sql;expect(sql).toContain('"chaveEscopo" LIKE \'sem-empresa:%\'');expect(sql).toContain('"chaveEscopo" LIKE \'legado:sem-empresa:%\'');});
+
+test("contadores separam operacional, histórico e lixeira sem remover o escopo", async () => {
+  const client = { $queryRaw: jest.fn(async () => [{}]) };
+  await resumoWhatsapp(["pc-permitida"], { client });
+  const query = client.$queryRaw.mock.calls[0][0];
+  expect(query.values).toEqual(["pc-permitida"]);
+  expect(query.sql).toContain('c."excluidaEm" IS NULL AND NOT (c."portalClientId" IS NOT NULL AND c."chaveEscopo" LIKE \'legado:%\')');
+  for (const campo of ["historicoConversas", "historicoConversasNaoLidas", "historicoMensagensNaoLidas", "lixeiraConversas", "lixeiraConversasNaoLidas", "lixeiraMensagensNaoLidas"]) expect(query.sql).toContain(`AS "${campo}"`);
+  expect(query.sql).toContain('WHERE (c."portalClientId" IN (?) OR (c."portalClientId" IS NULL');
 });

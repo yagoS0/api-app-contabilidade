@@ -91,6 +91,7 @@ const RESPOSTA_RECEITA = {
 let fetchOriginal;
 
 beforeEach(() => {
+  jest.spyOn(api, "getPerfisDeEmissao").mockResolvedValue({ habilitado: false, data: [], total: 0 });
   window.localStorage.clear();
   fetchOriginal = global.fetch;
   global.fetch = jest.fn(() => {

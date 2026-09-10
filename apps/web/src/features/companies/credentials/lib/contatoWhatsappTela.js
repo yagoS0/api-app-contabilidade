@@ -102,6 +102,27 @@ export const CANAIS_DE_ENVIO = Object.freeze([
   { valor: "PERGUNTAR", rotulo: "Perguntar a cada envio", descricao: "a tela pergunta o canal na hora de enviar" },
 ]);
 
+/** ESPELHO de `api/application/whatsapp/permissoesAssistente.js`. O servidor continua sendo o portão. */
+export const FUNCOES_DO_ASSISTENTE = Object.freeze([
+  { valor: "GUIAS", rotulo: "Guias e valores", descricao: "consultar guias liberadas, valores em aberto e receber os PDFs" },
+  { valor: "NOTAS_DANFSE", rotulo: "Notas e DANFSe", descricao: "consultar notas e receber o DANFSe das notas emitidas" },
+  { valor: "DOCUMENTOS_EMPRESA", rotulo: "Documentos da empresa", descricao: "listar e receber contrato social, cartão CNPJ, inscrições, alvarás e procurações" },
+  { valor: "SITUACAO_FISCAL", rotulo: "Situação fiscal", descricao: "ver a última situação fiscal consultada pelo escritório" },
+  { valor: "RECALCULO_GUIA", rotulo: "Recalcular guia vencida", descricao: "montar o recálculo e executar somente após confirmação com código" },
+  { valor: "EMISSAO_NFSE", rotulo: "Emitir NFS-e", descricao: "montar a nota e emitir somente após confirmação com código" },
+  { valor: "CANCELAMENTO_NFSE", rotulo: "Cancelar NFS-e", descricao: "montar o cancelamento e executar somente após confirmação com código" },
+]);
+
+const FUNCOES_CONHECIDAS = new Set(FUNCOES_DO_ASSISTENTE.map((f) => f.valor));
+
+export function normalizarFuncoesDoAssistente(valor) {
+  if (!Array.isArray(valor)) return [];
+  const normalizadas = [...new Set(valor.map((v) => String(v || "").trim().toUpperCase()).filter((v) => FUNCOES_CONHECIDAS.has(v)))];
+  if (normalizadas.includes("RECALCULO_GUIA") && !normalizadas.includes("GUIAS")) normalizadas.push("GUIAS");
+  if (normalizadas.includes("CANCELAMENTO_NFSE") && !normalizadas.includes("NOTAS_DANFSE")) normalizadas.push("NOTAS_DANFSE");
+  return normalizadas;
+}
+
 export function rotuloDoCanal(valor) {
   const v = String(valor || "").toUpperCase();
   return CANAIS_DE_ENVIO.find((c) => c.valor === v)?.rotulo || "E-mail";
@@ -202,7 +223,7 @@ export function validarFormulario({ nome, telefone, email } = {}) {
  * ESCOLHEU "nenhuma", e como `undefined` (ausente) quando o campo não foi tocado.
  * ⚠ `undefined` = não mexer · `null` = apagar — a regra do projeto para PATCH, aplicada aqui.
  */
-export function montarPayload({ id, nome, papel, telefone, email, optIn, optInOrigem, userId, ativo } = {}) {
+export function montarPayload({ id, nome, papel, telefone, email, optIn, optInOrigem, userId, ativo, permissoesAssistente } = {}) {
   const payload = {
     nome: String(nome || "").trim(),
     papel: String(papel || "").trim(),
@@ -217,6 +238,7 @@ export function montarPayload({ id, nome, papel, telefone, email, optIn, optInOr
   if (userId === "") payload.userId = null;
   else if (userId != null) payload.userId = String(userId);
   if (ativo === false || ativo === true) payload.ativo = ativo;
+  if (Array.isArray(permissoesAssistente)) payload.permissoesAssistente = normalizarFuncoesDoAssistente(permissoesAssistente);
   return payload;
 }
 

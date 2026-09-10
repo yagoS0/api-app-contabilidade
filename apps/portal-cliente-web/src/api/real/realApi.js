@@ -398,13 +398,12 @@ export function createRealApi() {
      * servidor (400 `ciclo_invalido`) em vez de cair no mês corrente em silêncio.
      */
     async getFluxoCaixa(companyId, { competencia, janelaInicio } = {}) {
-      const ciclo = competencia || competenciaPadrao();
       // ⚠⚠ DOIS PARÂMETROS, DUAS PERGUNTAS. `cicloAtual` é *"que mês é hoje?"* — ele decide o que é
       // passado e qual linha a tela pinta de ciano. `janelaInicio` é *"onde a tabela começa?"*, que
       // é só navegação. Enquanto eram um só, andar com a seta movia o "hoje" junto.
       return pedir(
         `/client/companies/${encodeURIComponent(companyId)}/fluxo-de-caixa`
-        + qs({ cicloAtual: ciclo, janelaInicio: janelaInicio || undefined })
+        + qs({ janelaInicio: janelaInicio || competencia || undefined })
       );
     },
 

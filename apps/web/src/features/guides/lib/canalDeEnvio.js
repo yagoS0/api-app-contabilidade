@@ -48,56 +48,37 @@ export function perguntaDeReenvio(mensagemDoServidor) {
 Enviar de novo mesmo assim?`;
 }
 
-export const PERGUNTA_WHATSAPP = "Enviar esta guia também por WhatsApp?\n\nO e-mail já sai de qualquer forma. O WhatsApp só vai se a empresa tiver contato com opt-in e o canal estiver disponível.";
+export const PERGUNTA_WHATSAPP = "Enviar esta guia também por WhatsApp?\n\nO envio por e-mail também será tentado, se houver endereço cadastrado. O WhatsApp exige contato autorizado e canal disponível.";
 
-/**
- * Uma frase para os dois canais, com o TOM certo.
- *
- * ⚠⚠ UM CANAL BASTA (05/09/2026). Dono: *"o envio deve ser feito mesmo sem o e-mail, se já tiver o
- * número; se tiver apenas um tipo de contato ela pode e deve ser enviada"*. Empresa que recebe só
- * por WhatsApp **não tem e-mail para falhar** — a ausência do canal é DITA (`sem e-mail
- * cadastrado`), e não pinta a linha de vermelho.
- *
- * As duas perguntas são separadas, e é a separação que faz o tom não mentir:
- *   • **entregou?** algum canal saiu (e-mail OU WhatsApp);
- *   • **algo falhou?** um canal que EXISTIA não saiu — canal ausente não conta como falha.
- *
- * Verde só quando entregou e nada falhou. ⚠ Nenhum canal disponível ⇒ ERRO, e a frase diz onde se
- * cadastra: guia que não foi para ninguém não pode se parecer com guia entregue.
- *
- * @param {{email:{feito:boolean, naoSeAplica?:boolean, message?:string}, whatsapp?:{tentado:boolean, ok?:boolean, message?:string, motivo?:string}}} p
- * @returns {{tom: "ok"|"erro", texto: string}}
- */
+// E-mail tem confirmação de envio; WhatsApp depende do webhook de entrega.
+// ok significa algum pedido aceito, nunca entrega; preserva o resultado por destinatário.
+export function desfechoWhatsapp(r = {}) {
+  return { ...r, tentado: true, ok: r.ok === true, message: r.message || r.mensagem || null, motivo: r.error || r.motivo || null };
+}
+export function resumirWhatsapp(w = {}) {
+  const resultados = Array.isArray(w.resultados) ? w.resultados : [];
+  const falhas = w.falhas != null ? Number(w.falhas) : resultados.filter(r => r.ok === false && !["indeterminado", "em_andamento"].includes(r.estado)).length;
+  const incertas = Number(w.indeterminadas || 0) || resultados.filter(r => ["indeterminado", "em_andamento"].includes(r.estado)).length;
+  const parcial = w.parcial === true || (w.ok === true && falhas > 0);
+  const detalhe = resultados.filter(r => r.ok === false || ["indeterminado", "em_andamento"].includes(r.estado))
+    .map(r => `${r.destino || "destinatário"}: ${r.message || r.mensagem || r.motivo || "resultado não confirmado"}`).join("; ");
+  if (parcial) return { tom: "erro", texto: `WhatsApp parcialmente aceito: ${Number(w.aceitas ?? w.enviadas ?? 0)} aceito(s), ${falhas} falha(s)${incertas ? `, ${incertas} sem confirmação` : ""}. ${detalhe || w.message || w.mensagem || "Confira os destinatários na coluna Envio."}` };
+  if (incertas || ["indeterminado", "em_andamento"].includes(w.estado)) return { tom: "pendente", texto: `WhatsApp com resultado indeterminado. ${detalhe || w.message || w.mensagem || "Confira o histórico antes de repetir: o pedido pode ter sido aceito."}` };
+  if (!w.ok) return { tom: "erro", texto: `WhatsApp não saiu (${w.message || w.mensagem || w.motivo || "motivo não informado"})` };
+  if (w.estado === "ja_enviada") return { tom: "pendente", texto: "WhatsApp: envio anterior registrado; confira a confirmação de entrega na coluna Envio" };
+  return { tom: "pendente", texto: "WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega" };
+}
 export function resumirDesfechoDosCanais({ email, whatsapp } = {}) {
   const partes = [];
   const emailOk = Boolean(email?.feito);
   const emailAusente = !emailOk && email?.naoSeAplica === true;
-  if (emailOk) partes.push("e-mail enviado");
-  else if (emailAusente) partes.push("sem e-mail cadastrado");
-  else partes.push(email?.message || "o e-mail não saiu");
-
-  let zapOk = false;
-  let zapFalhou = false;
-  if (whatsapp?.tentado) {
-    zapOk = Boolean(whatsapp.ok);
-    zapFalhou = !zapOk;
-    partes.push(zapOk
-      ? "WhatsApp enviado"
-      : `WhatsApp não saiu (${whatsapp.message || whatsapp.motivo || "motivo não informado"})`);
-  }
-
-  const entregou = emailOk || zapOk;
-  const algoFalhou = (!emailOk && !emailAusente) || zapFalhou;
-  // ⚠⚠ "CADASTRE UM DESTINATÁRIO" SÓ QUANDO NÃO HAVIA O QUE TENTAR — medido na tela do dono
-  // (05/09/2026): com o WhatsApp CADASTRADO e o envio falhando, a frase mandava cadastrar um
-  // WhatsApp que já existia. Conselho errado é pior que conselho nenhum: ele manda a pessoa
-  // consertar o que não está quebrado, e esconde o que está.
-  const nadaATentar = !entregou && !algoFalhou;
-  const texto = `Guia liberada ao cliente: ${partes.join(" · ")}.`;
-  return {
-    tom: entregou && !algoFalhou ? "ok" : "erro",
-    texto: nadaATentar ? `${texto} ${SEM_NINGUEM_PARA_RECEBER}` : texto,
-  };
+  partes.push(emailOk ? "e-mail enviado" : emailAusente ? "sem e-mail cadastrado" : (email?.message || "o e-mail não saiu"));
+  const zap = whatsapp?.tentado ? resumirWhatsapp(whatsapp) : null;
+  if (zap) partes.push(zap.texto);
+  const falhou = (!emailOk && !emailAusente) || zap?.tom === "erro";
+  const nadaATentar = !emailOk && emailAusente && !zap;
+  return { tom: falhou || nadaATentar ? "erro" : zap ? "pendente" : "ok",
+    texto: `Resultado do envio: ${partes.join(" · ")}.${nadaATentar ? ` ${SEM_NINGUEM_PARA_RECEBER}` : ""}` };
 }
 
 /** ⚠ Guia que não foi para ninguém não se parece com guia entregue — e o conserto tem endereço. */

@@ -18,6 +18,18 @@
 import { render, screen, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { AccountingEntriesTab } from "../renderAccountingEntriesTab";
+import { createApiClient } from "../../../../../api/client";
+
+it("identifica na tabela somente o lançamento com achado do servidor", async () => {
+  createApiClient().getVerificacaoLancamentos.mockResolvedValueOnce({ porLancamento: [
+    { id: "e-1", achados: [{ mensagem: "Débito incompatível com a provisão", regraId: "F3.01" }] },
+  ] });
+  await montar({ entries: [
+    { id: "e-1", tipo: "DESPESA", origem: "MANUAL", historico: "Despesa teste", data: "2026-08-01", lines: [] },
+  ] });
+  expect(document.getElementById("lanc-e-1")).toHaveTextContent("Conferir lançamento");
+  expect(document.getElementById("lanc-e-1")).toHaveTextContent("Débito incompatível com a provisão");
+});
 
 jest.mock("../../../../../api/client", () => {
   const api = {
@@ -63,7 +75,7 @@ describe("⚠⚠ ela monta sem ReferenceError", () => {
     // soma das três filas. O dublê devolve `total: 4` = 2 declarados + 1 recorrência + 1 saída, e as
     // duas últimas nunca viram lançamento — ver `botaoDaConferencia.test.jsx`.
     expect(b).toHaveAttribute("data-pendencias", "2");
-    expect(b.textContent).toMatch(/no fluxo/i);
+    expect(b.textContent).not.toMatch(/no fluxo/i);
   });
 
   it("⚠ sem o handler, a barra monta igual — só sem o botão", async () => {

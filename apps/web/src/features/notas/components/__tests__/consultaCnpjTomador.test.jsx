@@ -137,6 +137,7 @@ describe("1) CNPJ encontrado — a consulta OFERECE, e diz de onde veio", () => 
     expect(screen.getByLabelText(/Código do município/)).toHaveValue("");
     // A consulta que falha em parte não acrescenta pendência nenhuma: com o resto preenchido, o
     // caminho segue exatamente como seguiria sem consulta alguma.
+    fireEvent.click(screen.getByRole("button", { name: /Continuar/ }));
     completarORestoDaNota();
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
   });
@@ -173,6 +174,8 @@ describe("2) CNPJ não encontrado — a recusa aparece e a emissão segue possí
     expect(screen.getByText(/a emissão segue normalmente/)).toBeInTheDocument();
 
     digitar("Nome ou razão social", "TOMADOR DIGITADO À MÃO");
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: /Continuar/ }));
     completarORestoDaNota();
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: /Continuar/ }));

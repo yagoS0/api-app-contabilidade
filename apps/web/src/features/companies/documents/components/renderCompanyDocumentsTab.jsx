@@ -24,6 +24,7 @@
 // cabem folgadas em `--content-max`, e o que se ganha é a sub-aba vizinha abrir na MESMA largura.
 
 import { useRef, useState } from "react";
+import { emailValido as validarEmail } from "@contabilidade/shared/email";
 import { Button } from "../../../../components/ui/Button";
 import { Modal } from "../../../../components/ui/Modal";
 import { Aviso } from "../../../../components/ui/Aviso";
@@ -72,6 +73,10 @@ export function CompanyDocumentsTab({ docs }) {
   const [nomeAtual, setNomeAtual] = useState("");
   const [confirmando, setConfirmando] = useState(null); // "excluir" | "enviar"
   const [excluindo, setExcluindo] = useState(false);
+  const [erroUpload, setErroUpload] = useState(null);
+  const [resumoExclusao, setResumoExclusao] = useState(null);
+  const [destinatario, setDestinatario] = useState("");
+  const emailValido = validarEmail(destinatario.trim());
 
   const selecionadosDocs = documentos.filter((d) => selecionados.has(d.id));
   const totalSelecionado = selecionados.size;
@@ -85,6 +90,7 @@ export function CompanyDocumentsTab({ docs }) {
     const lista = [...(arquivos || [])].filter(Boolean);
     if (!lista.length) return;
     setFila(lista);
+    setErroUpload(null);
     setNomeAtual(lista[0].name);
     setTipoAtual("CONTRATO_SOCIAL");
   }
@@ -99,7 +105,15 @@ export function CompanyDocumentsTab({ docs }) {
     if (!emFila) return;
     setSubindo(true);
     try {
-      await enviarArquivo({ arquivo: emFila, tipo: tipoAtual, nome: nomeAtual || emFila.name });
+      const enviado = await enviarArquivo({ arquivo: emFila, tipo: tipoAtual, nome: nomeAtual || emFila.name });
+      if (!enviado) {
+        setErroUpload("Não foi possível guardar este documento. O arquivo e os campos foram mantidos; tente novamente.");
+        return;
+      }
+      setErroUpload(null);
+    } catch (err) {
+      setErroUpload(err?.message || "Não foi possível guardar este documento. Tente novamente.");
+      return;
     } finally {
       setSubindo(false);
     }
@@ -121,12 +135,19 @@ export function CompanyDocumentsTab({ docs }) {
   // segundos não paga o risco.
   async function excluirSelecionados() {
     setExcluindo(true);
+    const falhas = [];
+    let concluidos = 0;
     try {
       for (const d of selecionadosDocs) {
         // eslint-disable-next-line no-await-in-loop
-        await excluir(d);
+        try {
+          if (await excluir(d)) concluidos += 1;
+          else falhas.push(d.nome);
+        } catch { falhas.push(d.nome); }
       }
-      limparSelecao();
+      // O hook poda somente ids que saíram da lista; falhas continuam selecionadas.
+      if (!falhas.length) limparSelecao();
+      setResumoExclusao(`${concluidos} documento(s) excluído(s).${falhas.length ? ` ${falhas.length} não excluído(s): ${falhas.join(", ")}. Tente novamente com os pendentes selecionados.` : ""}`);
     } finally {
       setExcluindo(false);
       setConfirmando(null);
@@ -135,7 +156,7 @@ export function CompanyDocumentsTab({ docs }) {
 
   async function confirmarEnvio() {
     setConfirmando(null);
-    await enviarPorEmail();
+    await enviarPorEmail(destinatario.trim());
   }
 
   const barraDeAdicionar = (
@@ -156,6 +177,7 @@ export function CompanyDocumentsTab({ docs }) {
 
   return (
     <div style={{ color: "var(--text)" }}>
+      {resumoExclusao && <p role="status">{resumoExclusao}</p>}
       <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
         <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700 }}>Documentos</h2>
         <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
@@ -294,6 +316,7 @@ export function CompanyDocumentsTab({ docs }) {
             {emFila.name}
             {fila.length > 1 && ` · ${fila.length - 1} arquivo(s) na fila`}
           </p>
+          {erroUpload && <p role="alert" style={{ color: "var(--state-warn)" }}>{erroUpload}</p>}
 
           <label style={rotulo} htmlFor="doc-tipo">Tipo</label>
           <select
@@ -327,13 +350,15 @@ export function CompanyDocumentsTab({ docs }) {
           rodape={
             <>
               <Button variant="secondary" onClick={() => setConfirmando(null)}>Cancelar</Button>
-              <Button onClick={confirmarEnvio}>Enviar {totalSelecionado} documento(s)</Button>
+              <Button disabled={!emailValido} onClick={confirmarEnvio}>Enviar {totalSelecionado} documento(s)</Button>
             </>
           }
         >
           <p style={{ margin: "0 0 8px", fontSize: "0.85rem" }}>
-            Vão para o cliente, como anexo:
+            Confira o destinatário e os arquivos antes de enviar:
           </p>
+          <label htmlFor="doc-destinatario" style={rotulo}>E-mail do destinatário</label>
+          <input id="doc-destinatario" type="text" inputMode="email" value={destinatario} onChange={(e) => setDestinatario(e.target.value)} style={{ ...campo, marginBottom: 12 }} />
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.85rem" }}>
             {selecionadosDocs.map((d) => <li key={d.id}>{d.nome}</li>)}
           </ul>

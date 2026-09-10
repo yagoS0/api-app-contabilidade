@@ -29,7 +29,7 @@ function StatusBadge({ nota }) {
 
   return (
     <span
-      style={{ color: c.cor, fontSize: "0.7rem", fontWeight: 600, fontStyle: c.conhecida ? "normal" : "italic" }}
+      style={{ color: c.cor, fontSize: "0.82rem", fontWeight: 600, fontStyle: c.conhecida ? "normal" : "italic" }}
       title={c.tituloAjuda}
     >
       {c.rotulo}
@@ -113,7 +113,7 @@ function FilterBar({ filters, onChange, onApply, loading, total }) {
   const [local, setLocal] = useState(filters);
   function patch(k, v) { setLocal((p) => ({ ...p, [k]: v, offset: 0 })); }
   function apply() {
-    const efetivo = { ...local, competencia: filters.competencia };
+    const efetivo = { ...local, papel: filters.papel, incluirCanceladas: filters.incluirCanceladas, competencia: filters.competencia };
     onChange(efetivo);
     onApply(efetivo);
   }
@@ -128,8 +128,19 @@ function FilterBar({ filters, onChange, onApply, loading, total }) {
       <span style={{ fontSize: "0.8rem", color: PANEL.muted, whiteSpace: "nowrap" }}>
         Competência: <strong style={{ color: PANEL.text }}>{filters.competencia || "todas"}</strong>
       </span>
-      <input type="text" value={local.search || ""} onChange={(e) => patch("search", e.target.value)}
-        placeholder="Buscar (CNPJ, nome, número, chave)" style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
+      <label style={{ display: "grid", gap: 4, flex: 1, minWidth: 180, fontSize: 13 }}>Buscar nota
+      <input type="search" aria-label="Buscar nota por número, nome, documento ou chave" value={local.search || ""} onKeyDown={e => { if (e.key === "Enter") apply(); }} onChange={(e) => patch("search", e.target.value)}
+        placeholder="Número, nome, CPF/CNPJ ou chave" style={{ ...inputStyle, width: "100%" }} /></label>
+      <label style={{ display: "grid", gap: 4, fontSize: 13 }}>Direção
+        <select aria-label="Direção das notas" value={filters.papel || ""} onChange={e => { const f = { ...filters, search: local.search, papel: e.target.value, competencia: filters.competencia, offset: 0 }; setLocal(f); onChange(f); onApply(f); }} style={inputStyle}>
+          <option value="">Emitidas e recebidas</option><option value="EMIT">Emitidas</option><option value="DEST">Recebidas</option>
+        </select>
+      </label>
+      <label style={{ display: "grid", gap: 4, fontSize: 13 }}>Situação
+        <select aria-label="Incluir notas canceladas" value={filters.incluirCanceladas || ""} onChange={e => { const f = { ...filters, search: local.search, incluirCanceladas: e.target.value, competencia: filters.competencia, offset: 0 }; setLocal(f); onChange(f); onApply(f); }} style={inputStyle}>
+          <option value="">Sem canceladas</option><option value="1">Incluir canceladas</option>
+        </select>
+      </label>
       <Button size="sm" onClick={apply} disabled={loading}>
         {loading ? "..." : "Filtrar"}
       </Button>
@@ -181,7 +192,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                 <th style={{ ...th, textAlign: "right" }}>Valor</th>
                 <th style={th}>Status</th>
                 <th style={th}>Chave</th>
-                {onMarcarStatus && <th style={th}></th>}
+                {onMarcarStatus && <th style={th}>Ajustes na base</th>}
               </tr>
             </thead>
             <tbody>
@@ -222,20 +233,20 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                   >
                     <td style={td}>{fmtDate(n.issueDate)}</td>
                     <td style={td}>
-                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: "0.7rem", fontWeight: 600,
+                      <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: "0.82rem", fontWeight: 600,
                                      background: pap.bg, color: pap.color, border: `1px solid ${pap.color}` }}>
                         {pap.label}
                       </span>
                     </td>
                     <td style={td}>{n.numero || "—"}{n.serie ? `/${n.serie}` : ""}</td>
-                    <td style={{ ...td, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    <td style={{ ...td, minWidth: 140, maxWidth: 280, whiteSpace: "normal", overflowWrap: "anywhere" }}
                         title={n.emitenteNome}>
                       {n.emitenteNome || "—"}
-                      <div style={{ fontSize: "0.7rem", color: PANEL.muted, fontFamily: "monospace" }}>
-                        {n.emitenteDoc || ""}
+                      <div style={{ fontSize: "0.82rem", color: PANEL.muted, fontFamily: "monospace" }}>
+                        {String(n.emitenteDoc || "").replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")}
                       </div>
                     </td>
-                    <td style={{ ...td, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    <td style={{ ...td, minWidth: 140, maxWidth: 280, whiteSpace: "normal", overflowWrap: "anywhere" }}
                         title={n.tomadorNome}>
                       {n.tomadorNome || "—"}
                     </td>
@@ -251,7 +262,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                         falso faria colar a chave ANTERIOR numa consulta fiscal.
                         ⚠ O `stopPropagation` do próprio botão é o que impede o clique de copiar
                         de abrir o detalhe da nota por baixo. */}
-                    <td style={{ ...td, fontSize: "0.7rem", fontFamily: "monospace", color: PANEL.muted, maxWidth: 220, whiteSpace: "nowrap" }}
+                    <td style={{ ...td, fontSize: "0.82rem", fontFamily: "monospace", color: PANEL.muted, maxWidth: 220, whiteSpace: "nowrap" }}
                         title={n.chaveAcesso}>
                       {n.chaveAcesso ? (
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -270,7 +281,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                       <td style={td} onClick={(e) => e.stopPropagation()}>
                         {String(n.statusEfetivo || "").toLowerCase() === "cancelada" ? (
                           <button onClick={() => onMarcarStatus(n.id, "autorizada")} title="Reativar (volta a contar no faturamento)"
-                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: "var(--state-ok)", borderRadius: 6, padding: "3px 8px", fontSize: "0.7rem", cursor: "pointer", whiteSpace: "nowrap" }}>
+                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: "var(--state-ok)", borderRadius: 6, padding: "8px 10px", minHeight: 36, fontSize: "0.82rem", cursor: "pointer", whiteSpace: "nowrap" }}>
                             Reativar
                           </button>
                         ) : (
@@ -299,7 +310,7 @@ Ela sai do faturamento e da apuração.
 
 ⚠ NADA é enviado à prefeitura nem ao sistema nacional — o cancelamento perante o fisco continua sendo feito por você, fora daqui. Esta marcação é reversível pelo botão Reativar.`)) onMarcarStatus(n.id, "cancelada"); }}
                             title="Marca como cancelada NA NOSSA BASE (sai do faturamento/apuração). Não envia cancelamento à prefeitura."
-                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.muted, borderRadius: 6, padding: "3px 8px", fontSize: "0.7rem", cursor: "pointer", whiteSpace: "nowrap" }}>
+                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.muted, borderRadius: 6, padding: "8px 10px", minHeight: 36, fontSize: "0.82rem", cursor: "pointer", whiteSpace: "nowrap" }}>
                             Marcar como cancelada
                           </button>
                         )}

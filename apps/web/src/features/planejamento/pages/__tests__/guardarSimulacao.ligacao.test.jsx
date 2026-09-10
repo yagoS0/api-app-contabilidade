@@ -49,6 +49,48 @@ const botao = () => screen.getByRole("button", { name: /Guardar em Documentos/i 
 const esperarCalculo = () =>
   waitFor(() => expect(screen.getAllByDisplayValue("300.000,00").length).toBeGreaterThan(0));
 
+it("retoma o cenário salvo mais recente da empresa ao abrir a aba", async () => {
+  montar({ listarSimulacoesPlanejamento: jest.fn(async () => ({ simulacoes: [
+    { geradoEm: "2026-08-01", entradas: { formularioCenario: { receita: "400.000,00", rbt12: "400.000,00", folha: "60.000,00" } } },
+    { geradoEm: "2026-09-01", entradas: { formularioCenario: { receita: "500.000,00", rbt12: "500.000,00", folha: "60.000,00" } } },
+  ] })) });
+  await waitFor(() => expect(screen.getByLabelText(/Receita anual/i)).toHaveValue("500.000,00"));
+});
+
+it("resposta tardia do cenário não apaga uma edição iniciada pelo contador", async () => {
+  let resolver;
+  montar({ listarSimulacoesPlanejamento: jest.fn(() => new Promise(r => { resolver = r; })) });
+  await esperarCalculo();
+  fireEvent.change(screen.getByLabelText(/Receita anual/i), { target: { value: "45000000" } });
+  await act(async () => resolver({ simulacoes: [{ geradoEm: "2026-09-01", entradas: { formularioCenario: { receita: "500.000,00" } } }] }));
+  expect(screen.getByLabelText(/Receita anual/i)).toHaveValue("450.000,00");
+});
+
+it("salva e reabre as premissas sem gerar PDF nem alterar cadastro", async () => {
+  let salvo;
+  const api = montar({
+    salvarSimulacaoPlanejamento: jest.fn(async (_id, p) => { salvo = { id: "c1", geradoEm: "2026-09-08T12:00:00Z", ...p }; return { ok: true, simulacao: salvo }; }),
+    listarSimulacoesPlanejamento: jest.fn(async () => ({ ok: true, simulacoes: [salvo] })),
+  });
+  await esperarCalculo();
+  fireEvent.click(screen.getByRole("button", { name: /^Salvar cenário$/ }));
+  await waitFor(() => expect(api.salvarSimulacaoPlanejamento).toHaveBeenCalledTimes(1));
+  expect(api.gerarDocumentoDaSimulacao).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText(/Receita anual/i), { target: { value: "45000000" } });
+  fireEvent.click(screen.getByRole("button", { name: /^Abrir cenário$/ }));
+  await waitFor(() => expect(screen.getByRole("button", { name: /Abrir 2026-08/ })).toBeInTheDocument());
+  fireEvent.click(screen.getByRole("button", { name: /Abrir 2026-08/ }));
+  expect(screen.getByLabelText(/Receita anual/i)).toHaveValue("300.000,00");
+  expect(screen.getByText(/^Cenário salvo$/)).toBeInTheDocument();
+});
+
+it("mostra premissas antes da comparação mesmo com empresa preenchida", async () => {
+  montar(); await esperarCalculo();
+  const entrada = screen.getByLabelText(/Receita anual/i);
+  const resultado = document.querySelector('[data-print-area]');
+  expect(entrada.compareDocumentPosition(resultado) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 describe("⚠⚠ o botão só existe onde há onde guardar", () => {
   it("com empresa escolhida, ele está habilitado", async () => {
     montar();
@@ -185,4 +227,29 @@ describe("⚠⚠ `empresaFixa` — as duas telas não são a mesma porta", () =>
     await waitFor(() =>
       expect(screen.getByText(/Não foi possível carregar os dados desta empresa/i)).toBeInTheDocument());
   });
+});
+
+it("preserva a confirmação de cenário salvo quando o transporte do PDF falha", async () => {
+  montar({ gerarDocumentoDaSimulacao: jest.fn(async () => { throw new Error("Conexão interrompida"); }) });
+  await esperarCalculo();
+  fireEvent.click(botao());
+  await waitFor(() => expect(screen.getByText(/A simulação foi salva, mas o PDF não pôde ser guardado\. Conexão interrompida/)).toBeInTheDocument());
+  expect(screen.getByText("Cenário salvo")).toBeInTheDocument();
+});
+
+it("não mostra sucesso do PDF de outra empresa após trocar o contexto", async () => {
+  let resolverPdf;
+  const api = {
+    getDadosPlanejamento: jest.fn(async () => payload()),
+    salvarSimulacaoPlanejamento: jest.fn(async () => ({ ok: true, simulacao: { id: "sim-1" } })),
+    gerarDocumentoDaSimulacao: jest.fn(() => new Promise(resolve => { resolverPdf = resolve; })),
+  };
+  const { rerender } = render(<PlanejamentoPage api={api} empresa={{ id: "e1" }} empresaFixa />);
+  await esperarCalculo();
+  fireEvent.click(botao());
+  await waitFor(() => expect(api.gerarDocumentoDaSimulacao).toHaveBeenCalledTimes(1));
+  await act(async () => { rerender(<PlanejamentoPage api={api} empresa={{ id: "e2" }} empresaFixa />); });
+  await waitFor(() => expect(api.getDadosPlanejamento).toHaveBeenCalledWith("e2"));
+  await act(async () => resolverPdf({ ok: true }));
+  expect(screen.queryByText("Guardado em Documentos da empresa.")).not.toBeInTheDocument();
 });

@@ -7,15 +7,18 @@ import { Button } from "../../../../components/ui/Button";
 // deve mesmo sair no fuso de quem lê.
 import { fmtDataCivil, fmtDate, fmtMoney } from "../../../../lib/format";
 import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureModal";
+import { ModalCorrigirValorGuia } from "./ModalCorrigirValorGuia";
 import { GuiaDeParcelamentoModal } from "./GuiaDeParcelamentoModal";
 import { ehGuiaDeParcelamento, rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
 import { estadoVazioDasGuias } from "../lib/estadoVazioGuias";
 import { BotaoCopiar } from "../../../../components/ui/BotaoCopiar";
-import { lerEnvioDaGuia, rotuloDoCanal, devePolir } from "../../lib/envioNaTela";
+import { lerEnvioDaGuia, rotuloDoCanal } from "../../lib/envioNaTela";
+import { usePollingEntrega } from "../../lib/usePollingEntrega";
 import { linhaDigitavelDaGuia } from "../../lib/linhaDigitavelTela";
 import { MOTIVOS_GUIA_VAZIA, TEM_LISTA_DE_MOTIVOS, motivoParaGravar, motivoSuficiente } from "../lib/motivoGuiaVazia";
 import { fraseDoLote, relatorioDoLote, DESFECHO } from "../lib/loteDoTrimestre";
-import { competenciaAtual } from "../../../../lib/competencia";
+import { competenciaAtual, deslocarCompetencia, formatCompetencia } from "../../../../lib/competencia";
+import { guiasDaVisao } from "../lib/visaoVencimento";
 
 // Q17: guias ESPERADAS do mês (por regime/prolabore) com botão "Vazio" (ausência confirmada).
 // Mapeia a chave do compliance → tipo de Guide pra marcar Vazio.
@@ -430,7 +433,7 @@ function normalizeValue(value) {
 function formatGuideStatus(status) {
   const n = normalizeValue(status);
   if (n === "PROCESSED") return { label: "Processada", tone: "success" };
-  if (n === "ERROR") return { label: "Aguardando envio", tone: "warning" };
+  if (n === "ERROR") return { label: "Revisar documento", tone: "warning" };
   if (n === "PENDING") return { label: "Pendente", tone: "muted" };
   return { label: status || "-", tone: "default" };
 }
@@ -484,6 +487,7 @@ function CelulaLinhaDigitavel({ guide }) {
     <span
       className="guides-grid__cell guides-grid__cell--linha"
       role="cell"
+      data-label="Linha digitável"
       onClick={(e) => e.stopPropagation()}
     >
       <span
@@ -509,6 +513,7 @@ function CelulaLinhaDigitavel({ guide }) {
 export function CompanyGuidesTable({
   companyId,
   competencia: competenciaGlobal,  // do seletor do header — uma competência para a empresa inteira
+  onConfigurarEnvio,
   companyRegime,  // regime tributário da empresa: filtra opções do dropdown "+ Subir Guia"
   guides,
   loadingGuides,
@@ -584,16 +589,27 @@ export function CompanyGuidesTable({
     () => getAvailableGuideTypes(companyRegime),
     [companyRegime],
   );
-  // Q19: filtro único de competência (mês), default = mês anterior ao atual.
-  // ⚠ A COMPETÊNCIA VEM DO HEADER. O que sobra aqui é "ver todas" — e ele virou EXPLÍCITO.
-  //
-  // Era um `input type="month"` com o mês anterior por padrão, e o único jeito de ver o histórico
-  // era APAGAR o conteúdo do campo — gesto que ninguém descobre e que, feito sem querer, deixava a
-  // tela mostrando guias de todos os meses sem dizer que estava fazendo isso. Agora o mês é o da
-  // empresa (um controle só) e o histórico é uma caixa com nome.
-  const [verTodasCompetencias, setVerTodasCompetencias] = useState(false);
-  const filterCompetencia = verTodasCompetencias ? "" : (competenciaGlobal || prevMonthCompetencia());
+  // Um único período de trabalho: a competência do cabeçalho determina o mês seguinte.
+  // A visão fiscal mantém inclusive VAZIO, que não tem vencimento nem PDF a enviar.
+  const [visao, setVisao] = useState("vencimento");
+  const competenciaFiscal = competenciaGlobal || prevMonthCompetencia();
+  const mesVencimento = deslocarCompetencia(competenciaFiscal, 1);
+  useEffect(() => { setVisao("vencimento"); }, [companyId, competenciaFiscal]);
+  const filterCompetencia = visao === "competencia" ? competenciaFiscal : "";
   const [selectedIds, setSelectedIds] = useState(new Set());
+  useEffect(() => { setSelectedIds(new Set()); }, [companyId, visao, mesVencimento, competenciaFiscal]);
+  const [conferencia, setConferencia] = useState({ loading: false, erro: null, faltantes: [] });
+  useEffect(() => {
+    if (!companyId || visao !== "vencimento" || loadingGuides || !expectedGuidesApi.getCompanyGuideDueReport) return undefined;
+    let cancel = false;
+    setConferencia({ loading: true, erro: null, faltantes: [] });
+    expectedGuidesApi.getCompanyGuideDueReport(companyId, mesVencimento).then((report) => {
+      if (cancel) return;
+      const rows = [...(report.simples || []), ...(report.presumidos || []), ...(report.outros || [])];
+      setConferencia({ loading: false, erro: null, faltantes: rows.flatMap((r) => r.faltantes || []) });
+    }).catch((erro) => { if (!cancel) setConferencia({ loading: false, erro, faltantes: [] }); });
+    return () => { cancel = true; };
+  }, [companyId, mesVencimento, visao, loadingGuides, guides, vazioRefreshKey]);
   const [deleting, setDeleting] = useState(false);
   // Guia já enviada aguardando confirmação de reenvio (modal do "Liberar ao cliente").
   const [resendConfirm, setResendConfirm] = useState(null);
@@ -609,15 +625,7 @@ export function CompanyGuidesTable({
   // tentativas (`devePolir`). Polling sem fim transforma uma aba aberta o dia inteiro numa fonte
   // constante de carga — e o precedente desta casa (a captura de notas, a apuração em lote) é
   // exatamente este: intervalo de 2,5 s enquanto o estado pode mudar.
-  const [ciclosDeEspera, setCiclosDeEspera] = useState(0);
-  useEffect(() => {
-    if (!onRefresh || !devePolir(guides, ciclosDeEspera)) return undefined;
-    const t = setTimeout(async () => {
-      setCiclosDeEspera((n) => n + 1);
-      try { await onRefresh(); } catch { /* falha de rede não encerra a espera nem quebra a tela */ }
-    }, 2500);
-    return () => clearTimeout(t);
-  }, [guides, ciclosDeEspera, onRefresh]);
+  const { esgotou: entregaPendente } = usePollingEntrega(guides, onRefresh, companyId);
 
   const [recalcConfirm, setRecalcConfirm] = useState(null); // { guideId, aviso }
 
@@ -629,16 +637,15 @@ export function CompanyGuidesTable({
   const uploadMenuRef = useRef(null);
 
   // Completar flow (modal split p/ guia já existente)
+  const [corrigindoValor, setCorrigindoValor] = useState(null);
   const [completingGuide, setCompletingGuide] = useState(null);
   const [completingSaving, setCompletingSaving] = useState(false);
 
   const filteredGuides = useMemo(() => {
-    return guides.filter((g) => {
-      // Competência vazia = mostra todas; senão filtra pelo mês escolhido.
-      if (filterCompetencia && g.competencia !== filterCompetencia) return false;
-      return true;
-    });
-  }, [filterCompetencia, guides]);
+    return guiasDaVisao(guides, { visao, mes: mesVencimento, competencia: competenciaFiscal });
+  }, [visao, mesVencimento, competenciaFiscal, guides]);
+  const anteriores = guiasDaVisao(guides, { visao: "anteriores", mes: mesVencimento }).length;
+  const semVencimento = guiasDaVisao(guides, { visao: "semVencimento", mes: mesVencimento }).length;
 
   // ── POR QUE NÃO HÁ GUIA — o contexto que transforma o vazio em resposta ──────────────────────
   //
@@ -964,6 +971,8 @@ export function CompanyGuidesTable({
 
   return (
     <section className="guides-page">
+      {corrigindoValor ? <ModalCorrigirValorGuia api={expectedGuidesApi} companyId={companyId} guia={corrigindoValor} aoFechar={() => setCorrigindoValor(null)} aoCorrigir={onRefresh} /> : null}
+      {entregaPendente ? <div className="guides-delivery-notice" role="status"><span>A entrega ainda não foi confirmada.</span><Button variant="secondary" size="sm" onClick={onRefresh}>Atualizar situação do envio</Button></div> : null}
       {/* Modal split de upload: PDF lado-a-lado do form. Abre quando tipo + arquivo estão prontos. */}
       {uploadTipo && uploadFile && (
         <GuideCaptureModal
@@ -1052,197 +1061,229 @@ export function CompanyGuidesTable({
         </div>
       )}
 
-      {/* Action toolbar — always visible above the table */}
-      <div className="guides-toolbar">
-        <div className="guides-toolbar__actions">
-          {onUploadGuide && (
-            <>
-              <input ref={fileInputRef} type="file" accept="application/pdf"
-                style={{ display: "none" }} onChange={handleFileChange} />
-              <div ref={uploadMenuRef} style={{ position: "relative" }}>
-                <Button
-                  variant="primary" size="sm" type="button"
-                  disabled={uploadingGuide}
-                  onClick={() => setUploadMenuOpen((o) => !o)}
-                >
-                  {uploadingGuide ? "Enviando..." : "+ Subir Guia ▾"}
-                </Button>
-                {uploadMenuOpen && (
-                  <div style={{
-                    position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 200,
-                    background: "#24253A", border: "1px solid #44475A", borderRadius: 8,
-                    boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: 180, overflow: "hidden",
-                  }}>
-                    <div style={{
-                      padding: "8px 12px", fontSize: "0.7rem", color: "var(--text-faint)",
-                      textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700,
-                      borderBottom: "1px solid #44475A",
-                    }}>
-                      Tipo de guia
-                    </div>
-                    {/* ⚠ PARCELAMENTO é o ÚLTIMO da lista e um item NORMAL — sem cor própria, sem
-                        separador âmbar. O item antigo ("Parcelamento…", âmbar, fora da lista de
-                        tipos) sinalizava um caminho especial que criava contrato a partir de guia. */}
-                    {availableUploadTypes.map((tipo) => (
-                      <button
-                        key={tipo}
-                        type="button"
-                        onClick={() => handleStartUpload(tipo)}
-                        disabled={tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos}
-                        title={tipo === TIPO_UPLOAD_PARCELAMENTO
-                          ? (parcelamentos
-                            ? "Anexa a guia a uma prestação de um parcelamento que já existe."
-                            : "Indisponível: os parcelamentos desta empresa não foram carregados.")
-                          : undefined}
-                        style={{
-                          display: "block", width: "100%", textAlign: "left",
-                          padding: "8px 12px", background: "transparent", border: "none",
-                          borderTop: tipo === TIPO_UPLOAD_PARCELAMENTO ? "1px solid #44475A" : "none",
-                          color: tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos ? "var(--text-faint)" : "var(--text)",
-                          fontSize: "0.875rem",
-                          cursor: tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos ? "not-allowed" : "pointer",
-                          fontWeight: 500,
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-surface)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-                      >
-                        {tipo}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-          {/* Marcar guias obrigatórias como VAZIO no mês (aparecem na tabela abaixo como vazio). */}
-          <MarcarVazioDropdown
-            companyId={companyId}
-            competencia={filterCompetencia}
-            refreshKey={vazioRefreshKey}
-            onChanged={refreshAfterVazio}
-          />
-          {/* Barra única de ações da guia selecionada (uma guia por vez). */}
-          {selectedCount === 1 && selectedGuide && (
-            <>
-              {/* Recalcular: um botão só — INSS (SERPRO DCTFweb) ou DAS (PGDAS-D), conforme o tipo. */}
-              {canShowRecalcular && (
-                <Button
-                  variant="secondary" size="sm"
-                  disabled={recalcDisabled}
-                  onClick={handleRecalcularDispatch}
-                  title={recalcTitle}
-                >
-                  {recalcBusy ? "Recalculando..." : "Recalcular"}
-                </Button>
-              )}
-              {/* ⚠ Confirmar pagamento e Liberar ao cliente (abaixo) NÃO têm o problema do
-                  Recalcular, e a diferença é a mesma nos dois: eles agem sobre ESTA guia, sem
-                  reemitir nada. `POST /guides/:id/confirm-payment` só marca `paymentStatus=PAID`
-                  (o lançamento da parcela vive na aba Parcelamento) e `.../liberar-cliente` envia
-                  o PDF desta linha — que numa parcela é o DAS da parcela. Pagar e liberar uma
-                  parcela são atos reais; recalcular é que não existe para ela. */}
-              <Button
-                variant="secondary" size="sm"
-                disabled={!selectedGuide?.canConfirmPayment || !!confirmingGuideId}
-                onClick={() => selectedGuideId && onConfirmGuidePayment(selectedGuideId)}
-              >
-                {confirmingGuideId === selectedGuideId ? "..." : "Confirmar pagamento"}
-              </Button>
-              {/* Baixar o PDF da guia (se houver). */}
-              {onFetchGuidePdf && selectedGuide.status === "PROCESSED" && (
-                <Button
-                  variant="secondary" size="sm"
-                  onClick={async () => {
-                    try {
-                      const blob = await onFetchGuidePdf(selectedGuideId);
-                      if (!blob) { window.alert("Esta guia não tem PDF para baixar."); return; }
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `guia-${selectedGuide.tipo || "guia"}-${selectedGuide.competencia || ""}.pdf`;
-                      document.body.appendChild(a); a.click(); a.remove();
-                      setTimeout(() => URL.revokeObjectURL(url), 1000);
-                    } catch (err) {
-                      window.alert(err?.message || "Falha ao baixar a guia.");
-                    }
-                  }}
-                >
-                  ⬇ Baixar
-                </Button>
-              )}
-              {/* Liberar ao cliente = envio por e-mail SÓ desta guia (substitui o Reenviar).
-                  Se já enviada, confirma reenvio no modal. */}
-              {onLiberarGuia && (
-                <Button
-                  variant="secondary" size="sm"
-                  disabled={selectedGuide?.status !== "PROCESSED" || !!liberarGuiasBusy}
-                  onClick={handleLiberarClick}
-                  title="Libera esta guia ao cliente e envia só ela — por e-mail e por WhatsApp, conforme os destinatários cadastrados em Configuração de envio."
-                >
-                  {liberarGuiasBusy ? "Liberando..." : "Liberar ao cliente"}
-                </Button>
-              )}
-              {/* Completar: aparece quando a guia selecionada está em ERROR ou faltando tipo/competência.
-                  Abre o modal split com o PDF lado-a-lado pra editar metadados. */}
-              {onIdentifyGuide && (selectedGuide.status === "ERROR" || !selectedGuide.tipo || !selectedGuide.competencia) && (
-                <Button
-                  variant="secondary" size="sm"
-                  onClick={() => setCompletingGuide(selectedGuide)}
-                >
-                  ✎ Completar
-                </Button>
-              )}
-              {onDeleteGuide && (
-                <Button
-                  variant="danger" size="sm"
-                  disabled={actionsBusy}
-                  onClick={handleDelete}
-                >
-                  {deleting ? "Excluindo..." : "Excluir"}
-                </Button>
-              )}
-            </>
-          )}
-        </div>
-
-        {selectedCount > 0 && (
-          <div className="guides-toolbar__selection">
-            <span className="guides-toolbar__count">
-              {selectedCount} selecionada{selectedCount !== 1 ? "s" : ""}
-            </span>
-            <button className="guides-toolbar__clear" onClick={clearSelection} type="button">
-              Limpar
-            </button>
-          </div>
-        )}
-      </div>
-
       <div className="guides-list-panel">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
-          <h2 className="guides-list-panel__title" style={{ margin: 0 }}>Guias</h2>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <label
-              style={{ fontSize: "0.8rem", color: "#aeb6d3", display: "flex", alignItems: "center", gap: 6, cursor: "pointer", userSelect: "none" }}
-              title="Mostra as guias de todas as competências, ignorando o mês do topo da página."
-            >
-              <input
-                type="checkbox"
-                checked={verTodasCompetencias}
-                onChange={() => setVerTodasCompetencias((v) => !v)}
-                style={{ cursor: "pointer" }}
+        <header className="guides-list-panel__header">
+          <div className="guides-list-panel__heading">
+            <h2 className="guides-list-panel__title">
+              {visao === "vencimento" ? `Vencimentos de ${formatCompetencia(mesVencimento)}`
+                : visao === "anteriores" ? "Pendências anteriores"
+                  : visao === "semVencimento" ? "Conferir vencimento"
+                    : visao === "competencia" ? "Consulta por competência fiscal" : "Histórico de guias"}
+            </h2>
+            <p className="guides-list-panel__description">
+              {visao === "vencimento" ? `Competência ${formatCompetencia(competenciaFiscal)} · Inclui parcelamentos.`
+                : visao === "competencia" ? `Competência fiscal: ${competenciaFiscal}. Esta visão não é o lote de vencimentos.`
+                  : visao === "anteriores" ? `Guias anteriores a ${mesVencimento} sem pagamento confirmado. Confira a baixa antes de reenviar.`
+                    : visao === "semVencimento" ? "Documentos sem vencimento informado precisam de conferência para entrar no mês correto."
+                      : "Histórico completo, incluindo guias pagas e competências marcadas como vazio."}
+            </p>
+          </div>
+          <div className="guides-toolbar guides-toolbar--primary">
+            <div className="guides-toolbar__actions">
+              {onUploadGuide && (
+                <>
+                  <input ref={fileInputRef} type="file" accept="application/pdf"
+                    style={{ display: "none" }} onChange={handleFileChange} />
+                  <div ref={uploadMenuRef} style={{ position: "relative" }}>
+                    <Button
+                      variant="primary" size="sm" type="button"
+                      disabled={uploadingGuide}
+                      aria-expanded={uploadMenuOpen}
+                      onClick={() => setUploadMenuOpen((o) => !o)}
+                    >
+                      {uploadingGuide ? "Enviando..." : "+ Subir Guia ▾"}
+                    </Button>
+                    {uploadMenuOpen && (
+                      <div style={{
+                        position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 200,
+                        background: "#24253A", border: "1px solid #44475A", borderRadius: 8,
+                        boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: 180, overflow: "hidden",
+                      }}>
+                        <div style={{
+                          padding: "8px 12px", fontSize: "0.7rem", color: "var(--text-faint)",
+                          textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700,
+                          borderBottom: "1px solid #44475A",
+                        }}>
+                          Tipo de guia
+                        </div>
+                        {/* ⚠ PARCELAMENTO é o ÚLTIMO da lista e um item NORMAL — sem cor própria, sem
+                            separador âmbar. O item antigo ("Parcelamento…", âmbar, fora da lista de
+                            tipos) sinalizava um caminho especial que criava contrato a partir de guia. */}
+                        {availableUploadTypes.map((tipo) => (
+                          <button
+                            key={tipo}
+                            type="button"
+                            onClick={() => handleStartUpload(tipo)}
+                            disabled={tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos}
+                            title={tipo === TIPO_UPLOAD_PARCELAMENTO
+                              ? (parcelamentos
+                                ? "Anexa a guia a uma prestação de um parcelamento que já existe."
+                                : "Indisponível: os parcelamentos desta empresa não foram carregados.")
+                              : undefined}
+                            style={{
+                              display: "block", width: "100%", textAlign: "left",
+                              padding: "8px 12px", background: "transparent", border: "none",
+                              borderTop: tipo === TIPO_UPLOAD_PARCELAMENTO ? "1px solid #44475A" : "none",
+                              color: tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos ? "var(--text-faint)" : "var(--text)",
+                              fontSize: "0.875rem",
+                              cursor: tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos ? "not-allowed" : "pointer",
+                              fontWeight: 500,
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-surface)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                          >
+                            {tipo}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              {/* Marcar guias obrigatórias como VAZIO no mês (aparecem na tabela abaixo como vazio). */}
+              <MarcarVazioDropdown
+                companyId={companyId}
+                competencia={competenciaFiscal}
+                refreshKey={vazioRefreshKey}
+                onChanged={refreshAfterVazio}
               />
-              Ver todas as competências
-            </label>
-            {/* Filtro ativo NUNCA fica sem rastro visível — mesma regra que a listagem já aplica.
-                Sem esta linha, a tabela mostrando doze meses seria indistinguível de um mês
-                cheio, e é assim que se confere uma guia achando que é de outro período. */}
-            {!verTodasCompetencias && (
-              <span style={{ fontSize: "0.8rem", color: "#aeb6d3" }}>
-                Competência: <strong style={{ color: "var(--text)" }}>{filterCompetencia}</strong>
-              </span>
-            )}
+
+              {onConfigurarEnvio && <Button variant="secondary" size="sm" onClick={onConfigurarEnvio}>Configuração de envio</Button>}
+            </div>
+          </div>
+        </header>
+        <div className="guides-list-panel__context">
+          <div className="guides-list-panel__alerts">
+            {!loadingGuides && visao === "vencimento" && <>
+            {anteriores > 0 && <Button variant="secondary" size="sm" onClick={() => setVisao("anteriores")}>Pendências anteriores ({anteriores})</Button>}
+            {semVencimento > 0 && <Button variant="secondary" size="sm" onClick={() => setVisao("semVencimento")}>Conferir vencimento ({semVencimento})</Button>}
+
+            </>}
+          </div>
+          <div className="guides-list-panel__views">
+            {visao !== "vencimento" && <Button variant="secondary" size="sm" onClick={() => setVisao("vencimento")}>Voltar às guias do mês</Button>}
+            <details className="guides-view-menu">
+              <summary>Outras consultas</summary>
+              <div className="guides-view-menu__options">
+                <Button variant="secondary" size="sm" onClick={(event) => { setVisao("todas"); event.currentTarget.closest("details").open = false; }}>Histórico completo</Button>
+                <Button variant="secondary" size="sm" onClick={(event) => { setVisao("competencia"); event.currentTarget.closest("details").open = false; }}>Por competência fiscal</Button>
+              </div>
+            </details>
           </div>
         </div>
+        {!loadingGuides && visao === "vencimento" && <>
+          {conferencia.loading && <p role="status">Conferindo parcelas previstas…</p>}
+          {conferencia.erro && <Aviso className="guides-notice" tom="erro" titulo="Não foi possível conferir as parcelas previstas">Não é possível confirmar se faltam guias de parcelamento. {conferencia.erro.message}
+            <Button variant="secondary" size="sm" onClick={() => setVazioRefreshKey((k) => k + 1)}>Tentar novamente</Button>
+          </Aviso>}
+          {conferencia.faltantes.length > 0 && <Aviso className="guides-notice" tom="neutro" titulo="Atenção: faltam guias de parcelamento neste vencimento">
+            <ul>{conferencia.faltantes.map((p) => <li key={p.parcelaId}>Acordo {p.acordo || "sem número"} · Parcela {p.numeroParcela} · Vencimento {fmtDataCivil(p.vencimento)} — {p.motivo}</li>)}</ul>
+            <p>Confira essas parcelas na aba Parcelamentos antes de concluir o envio do mês.</p>
+          </Aviso>}
+
+        </>}
+        {selectedCount > 0 ? (
+          <div className="guides-toolbar guides-toolbar--selected" role="region" aria-label="Ações das guias selecionadas">
+            <div className="guides-toolbar__selection">
+              <span className="guides-toolbar__count">
+                {selectedCount} selecionada{selectedCount !== 1 ? "s" : ""}
+              </span>
+              <button className="guides-toolbar__clear" onClick={clearSelection} type="button">
+                Limpar
+              </button>
+            </div>
+
+            <div className="guides-toolbar__actions">
+              {/* Barra única de ações da guia selecionada (uma guia por vez). */}
+              {selectedCount === 1 && selectedGuide && (
+                <>
+                  {/* Recalcular: um botão só — INSS (SERPRO DCTFweb) ou DAS (PGDAS-D), conforme o tipo. */}
+                  {canShowRecalcular && (
+                    <Button
+                      variant="secondary" size="sm"
+                      disabled={recalcDisabled}
+                      onClick={handleRecalcularDispatch}
+                      title={recalcTitle}
+                    >
+                      {recalcBusy ? "Recalculando..." : "Recalcular"}
+                    </Button>
+                  )}
+                  {/* ⚠ Confirmar pagamento e Liberar ao cliente (abaixo) NÃO têm o problema do
+                      Recalcular, e a diferença é a mesma nos dois: eles agem sobre ESTA guia, sem
+                      reemitir nada. `POST /guides/:id/confirm-payment` só marca `paymentStatus=PAID`
+                      (o lançamento da parcela vive na aba Parcelamento) e `.../liberar-cliente` envia
+                      o PDF desta linha — que numa parcela é o DAS da parcela. Pagar e liberar uma
+                      parcela são atos reais; recalcular é que não existe para ela. */}
+                  <Button
+                    variant="secondary" size="sm"
+                    disabled={!selectedGuide?.canConfirmPayment || !!confirmingGuideId}
+                    onClick={() => selectedGuideId && onConfirmGuidePayment(selectedGuideId)}
+                  >
+                    {confirmingGuideId === selectedGuideId ? "..." : "Confirmar pagamento"}
+                  </Button>
+                  {/* Baixar o PDF da guia (se houver). */}
+                  {onFetchGuidePdf && selectedGuide.status === "PROCESSED" && (
+                    <Button
+                      variant="secondary" size="sm"
+                      onClick={async () => {
+                        try {
+                          const blob = await onFetchGuidePdf(selectedGuideId);
+                          if (!blob) { window.alert("Esta guia não tem PDF para baixar."); return; }
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `guia-${selectedGuide.tipo || "guia"}-${selectedGuide.competencia || ""}.pdf`;
+                          document.body.appendChild(a); a.click(); a.remove();
+                          setTimeout(() => URL.revokeObjectURL(url), 1000);
+                        } catch (err) {
+                          window.alert(err?.message || "Falha ao baixar a guia.");
+                        }
+                      }}
+                    >
+                      ⬇ Baixar
+                    </Button>
+                  )}
+                  {/* Liberar ao cliente = envio por e-mail SÓ desta guia (substitui o Reenviar).
+                      Se já enviada, confirma reenvio no modal. */}
+                  {onLiberarGuia && (
+                    <Button
+                      variant="secondary" size="sm"
+                      disabled={selectedGuide?.status !== "PROCESSED" || !!liberarGuiasBusy}
+                      onClick={handleLiberarClick}
+                      title="Libera esta guia ao cliente e envia só ela — por e-mail e por WhatsApp, conforme os destinatários cadastrados em Configuração de envio."
+                    >
+                      {liberarGuiasBusy ? "Liberando..." : "Liberar ao cliente"}
+                    </Button>
+                  )}
+                  {/* Completar: aparece quando a guia selecionada está em ERROR ou faltando tipo/competência.
+                      Abre o modal split com o PDF lado-a-lado pra editar metadados. */}
+                  {companyId && selectedGuide.tipo === "OUTRA" && selectedGuide.status === "PROCESSED" && selectedGuide.linhaDigitavelSituacao === "DIVERGENTE" && Number(selectedGuide.linhaDigitavelValorLidoCentavos) > 0 ? <Button variant="secondary" size="sm" disabled={actionsBusy} onClick={() => setCorrigindoValor(selectedGuide)}>Conferir valor do PDF</Button> : null}
+                  {onIdentifyGuide && (selectedGuide.status === "ERROR" || !selectedGuide.tipo || !selectedGuide.competencia) && (
+                    <Button
+                      variant="secondary" size="sm"
+                      onClick={() => setCompletingGuide(selectedGuide)}
+                    >
+                      ✎ Completar
+                    </Button>
+                  )}
+                  {onDeleteGuide && (
+                    <Button
+                      variant="danger" size="sm"
+                      disabled={actionsBusy}
+                      onClick={handleDelete}
+                    >
+                      {deleting ? "Excluindo..." : "Excluir"}
+                    </Button>
+                  )}
+                </>
+              )}
+
+              {selectedCount > 1 && <span className="guides-toolbar__hint">Selecione apenas uma guia para acessar as ações.</span>}
+            </div>
+          </div>
+        ) : !loadingGuides && filteredGuides.length > 0 ? (
+          <p className="guides-list-panel__hint">{filteredGuides.length} guia{filteredGuides.length !== 1 ? "s" : ""} · Selecione uma guia para ver as ações.</p>
+        ) : null}
 
         {loadingGuides ? (
           <p className="text-muted">Carregando...</p>
@@ -1250,10 +1291,15 @@ export function CompanyGuidesTable({
           // ⚠ ERA UMA FRASE SÓ — "Nenhuma guia encontrada para os filtros atuais." — para situações
           // que exigem ações OPOSTAS, e uma delas era o servidor não ter respondido. Ver a regra e
           // o porquê em `../lib/estadoVazioGuias.js`.
-          contextoVazio.carregando ? (
+          visao !== "competencia" ? (
+            <Aviso className="guides-notice" tom="neutro" titulo="Nenhuma guia nesta visão">
+              {visao === "vencimento" ? `Nenhum documento com vencimento em ${mesVencimento}. Isso não confirma ausência de tributos ou parcelas a pagar.` : "Nenhum documento corresponde ao filtro escolhido."}
+            </Aviso>
+          ) : contextoVazio.carregando ? (
             <p className="text-muted">Nenhuma guia em {filterCompetencia}. Verificando o estado da competência…</p>
           ) : (
             <Aviso
+              className="guides-notice"
               tom={leituraDoVazio.chave === "FALHA" ? "erro" : "neutro"}
               titulo={leituraDoVazio.titulo}
               style={{ maxWidth: 640 }}
@@ -1289,16 +1335,14 @@ export function CompanyGuidesTable({
                     aria-label="Selecionar todas"
                   />
                 </span>
-                <span className="guides-grid__cell guides-grid__cell--type" role="columnheader">Tipo</span>
+                <span className="guides-grid__cell guides-grid__cell--type" role="columnheader">Guia</span>
                 <span className="guides-grid__cell guides-grid__cell--competencia" role="columnheader">Competência</span>
                 <span className="guides-grid__cell guides-grid__cell--valor" role="columnheader">Valor</span>
                 <span className="guides-grid__cell guides-grid__cell--competencia" role="columnheader">Vencimento</span>
-                <span className="guides-grid__cell guides-grid__cell--status" role="columnheader">Status</span>
-                <span className="guides-grid__cell guides-grid__cell--status" role="columnheader">Situação</span>
+                <span className="guides-grid__cell guides-grid__cell--status" role="columnheader">Pagamento</span>
                 {/* ⚠⚠ ERA "E-mail" (05/09/2026). A pergunta da coluna é "esta guia CHEGOU ao
                     cliente?", e ela tem dois canais — dizer só do e-mail fazia a tela mostrar
-                    "Pendente" sobre guia entregue por WhatsApp. Continuam NOVE colunas: esta
-                    substitui a antiga (a grade tem as faixas cravadas em `App.css`). */}
+                    "Pendente" sobre guia entregue por WhatsApp. O processamento fica junto ao nome; a grade mantém uma coluna para os dois canais. */}
                 <span className="guides-grid__cell guides-grid__cell--email" role="columnheader">Envio</span>
                 <span className="guides-grid__cell guides-grid__cell--linha" role="columnheader">Linha digitável</span>
               </div>
@@ -1312,8 +1356,8 @@ export function CompanyGuidesTable({
                 const paymentStatus = formatPaymentStatus(guide.paymentStatus);
                 // ⚠ O estado de ENVIO (os dois canais), não só o do e-mail. Ver `envioNaTela.js`.
                 const envio = lerEnvioDaGuia(guide);
-                const detalheDoEnvio = envio.canais.length || guide.emailLastError
-                  ? [envio.titulo, guide.emailLastError].filter(Boolean).join("\n")
+                const detalheDoEnvio = envio.canais.length || guide.emailLastError || guide.envio?.jaEnviada
+                  ? ["Histórico de envio por canal. Um envio anterior não confirma um novo reenvio.", envio.titulo, guide.emailLastError].filter(Boolean).join("\n")
                   : null;
 
                 return (
@@ -1335,10 +1379,11 @@ export function CompanyGuidesTable({
                       />
                     </span>
                     <span className="guides-grid__cell guides-grid__cell--type" role="cell" title={tituloTipoGuia(guide)}>
-                      {rotuloTipoGuia(guide)}
+                      <span className="guides-grid__name">{rotuloTipoGuia(guide)}</span>
+                      <span className={`guides-grid__processing guides-grid__tone--${status.tone}`} title="Processamento do documento">{status.label}</span>
                     </span>
-                    <span className="guides-grid__cell guides-grid__cell--competencia" role="cell">{guide.competencia || "-"}</span>
-                    <span className="guides-grid__cell guides-grid__cell--valor guides-grid__money" role="cell">
+                    <span className="guides-grid__cell guides-grid__cell--competencia" role="cell" data-label="Competência">{guide.competencia || "-"}</span>
+                    <span className="guides-grid__cell guides-grid__cell--valor guides-grid__money" role="cell" data-label="Valor">
                       {fmtMoney(guide.valor)}
                       {/* ⚠⚠ O "R$" NÃO SE ESCREVE AQUI — `fmtMoney` já devolve "R$ 1.437,15", e o
                           prefixo literal produzia **"R$ R$ 323,83"** na tela e no `title`. Achado
@@ -1356,11 +1401,8 @@ export function CompanyGuidesTable({
                         </span>
                       )}
                     </span>
-                    <span className="guides-grid__cell guides-grid__cell--competencia" role="cell">{fmtDataCivil(guide.vencimento)}</span>
-                    <span className={`guides-grid__cell guides-grid__cell--status guides-grid__tone guides-grid__tone--${status.tone}`} role="cell">
-                      {status.label}
-                    </span>
-                    <span className={`guides-grid__cell guides-grid__cell--status guides-grid__tone guides-grid__tone--${paymentStatus.tone}`} role="cell"
+                    <span className="guides-grid__cell guides-grid__cell--vencimento" role="cell" data-label="Vencimento">{fmtDataCivil(guide.vencimento)}</span>
+                    <span className={`guides-grid__cell guides-grid__cell--status guides-grid__tone guides-grid__tone--${paymentStatus.tone}`} role="cell" data-label="Pagamento"
                       onClick={(e) => e.stopPropagation()}>
                       {guide.status === "VAZIO" ? (
                         <button
@@ -1376,10 +1418,12 @@ export function CompanyGuidesTable({
                     <span
                       className="guides-grid__cell guides-grid__cell--email"
                       role="cell"
+                      data-label="Envio"
                       title={envio.titulo}
-                      onClick={detalheDoEnvio ? () => {
+                      onClick={detalheDoEnvio ? (event) => {
+                        event.stopPropagation();
                         // eslint-disable-next-line no-alert
-                        window.prompt("Envio desta guia (Ctrl+C para copiar):", detalheDoEnvio);
+                        window.prompt("Histórico de envio desta guia (Ctrl+C para copiar):", detalheDoEnvio);
                       } : undefined}
                       style={detalheDoEnvio ? { cursor: "pointer" } : undefined}
                     >

@@ -116,11 +116,27 @@ describe("⚠ SEM PERFIL — a tela fica exatamente como era", () => {
     expect(seletorMunicipio()).toBeInTheDocument();
   });
 
-  test("⚠ a rota fora do ar também não estraga a tela", async () => {
+  test("falha na consulta bloqueia emissão até recarregar com sucesso", async () => {
     jest.spyOn(api, "getPerfisDeEmissao").mockRejectedValue(new Error("500"));
     await renderizar();
     expect(seletorPerfil()).not.toBeInTheDocument();
+    expect(seletorMunicipio()).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {name:"Emitir nota"})).toBeDisabled();
+    await preencherOMinimo();await submeter();
+    expect(payloadsEnviados).toHaveLength(0);
+    api.getPerfisDeEmissao.mockResolvedValue({habilitado:false,data:[],total:0});
+    fireEvent.click(screen.getByRole("button",{name:"Recarregar tipos de serviço"}));
+    await act(async()=>{});
+    expect(screen.getByRole("button", {name:"Emitir nota"})).toBeEnabled();
     expect(seletorMunicipio()).toBeInTheDocument();
+    await submeter();expect(payloadsEnviados).toHaveLength(1);
+  });
+  test("carregamento pendente não permite emitir nem apresenta defaults", async () => {
+    jest.spyOn(api, "getPerfisDeEmissao").mockReturnValue(new Promise(()=>{}));
+    await renderizar();
+    expect(screen.getByRole("button", {name:"Emitir nota"})).toBeDisabled();
+    expect(seletorMunicipio()).not.toBeInTheDocument();
+    await preencherOMinimo();await submeter();expect(payloadsEnviados).toHaveLength(0);
   });
 
   test("⚠ e NADA é dito — ausência visível não precisa de legenda", async () => {

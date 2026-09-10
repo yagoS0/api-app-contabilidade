@@ -38,7 +38,7 @@ const nota = (extra = {}) => ({
 const serie = (extra = {}) => ({
   id: "s-1", lado: LADO.DESPESA, chave: "98765432000155", rotulo: "ANTHROPIC",
   periodicidade: "MENSAL", estado: ESTADO_DA_SERIE.ATIVA, origem: "DETECTADA",
-  valorDeclarado: null, baseDaObservacao: { n: 3, mediana: 130, min: 120, max: 140, cv: 0.08 },
+  valorDeclarado: null, baseDaObservacao: { n: 3, consecutivos: 3, mediana: 130, min: 120, max: 140, cv: 0.08 },
   ...extra,
 });
 
@@ -153,7 +153,9 @@ describe("⚠⚠ não existe `total`, nem saldo acumulado", () => {
 
   it("⚠⚠ e não há saldo acumulado — sem saldo inicial não há o que acumular", async () => {
     const r = await montar(clientDe({ guias: [guia()] }));
-    expect(JSON.stringify(r)).not.toMatch(/saldoAcumulado|saldoInicial/i);
+    expect(r.saldoInicial).toBeNull();
+    expect(r.meses.filter(m => m.competencia < "2026-08").every(m => m.saldo.inicial === null && m.saldo.final === null)).toBe(true);
+    expect(doMes(r,"2026-08").saldo.final).toBe(-1200);
   });
 
   it("⚠ cada mês totaliza por PROCEDÊNCIA, e só", async () => {
@@ -700,21 +702,20 @@ describe("⚠⚠ só a série MARCADA entra no fluxo", () => {
     expect(l.base.valorObservado).toBe(130);
   });
 
-  it("⚠ sem observação, o DECLARADO vale — é o caso da taxa anual", async () => {
-    const declarada = serie({ valorDeclarado: "1200.00", baseDaObservacao: null, periodicidade: "ANUAL" });
-    const r = await montar(clientDe({ series: [declarada] }));
-    expect(linhasDe(r, FONTE.SERIE_DESPESA)[0].valor).toBe(1200);
+  it("sem histórico de três meses a declaração anual não projeta", async () => {
+    const r=await montar(clientDe({series:[serie({valorDeclarado:"1200.00",baseDaObservacao:null,periodicidade:"ANUAL"})]}));
+    expect(linhasDe(r,FONTE.SERIE_DESPESA)).toHaveLength(0);
   });
 
   it("⚠⚠ série SEM valor nenhum não vira linha muda — sai NOMEADA", async () => {
-    const r = await montar(clientDe({ series: [serie({ valorDeclarado: null, baseDaObservacao: null })] }));
+    const r = await montar(clientDe({ series: [serie({ valorDeclarado: null, baseDaObservacao: { n: 3, consecutivos: 3 } })] }));
     expect(linhasDe(r, FONTE.SERIE_DESPESA)).toHaveLength(0);
     expect(r.semMes.some((s) => s.motivo === SEM_MES.SERIE_SEM_VALOR)).toBe(true);
   });
 
-  it("⚠ RECEITA é ENTRADA; DESPESA é SAÍDA", async () => {
+  it("série de receita não duplica a previsão das notas emitidas", async () => {
     const r = await montar(clientDe({ series: [serie({ lado: LADO.RECEITA })] }));
-    expect(linhasDe(r, FONTE.SERIE_RECEITA)[0].direcao).toBe(DIRECAO.ENTRADA);
+    expect(linhasDe(r, FONTE.SERIE_RECEITA)).toHaveLength(0);
   });
 
   it("⚠⚠ sem a tabela, o fluxo CONTINUA — e diz que a previsão por recorrência não existe", async () => {
@@ -942,15 +943,16 @@ describe("⚠ o horizonte e o ciclo", () => {
     expect(r.cicloAtual).toBe(CICLO);
   });
 
-  it("⚠⚠ a janela NÃO recua antes da primeira nota da empresa", async () => {
+  it("a primeira nota não esconde histórico financeiro anterior", async () => {
     // Oferecer janeiro a uma empresa aberta em março afirmaria que ela faturou zero num mês em que
     // ela não existia. O limite é dado, não invenção.
     const r = await montar(
       clientDe({ guias: [guia()], primeiraNota: { competencia: new Date("2026-03-01T00:00:00.000Z") } }),
       { janelaInicio: "2025-01" },
     );
-    expect(r.meses[0].competencia).toBe("2026-03");
-    expect(r.janela.podeVoltar).toBe(false);
+    expect(r.meses[0].competencia).toBe("2025-01");
+    expect(r.janela.podeVoltar).toBe(true);
+    expect(r.meses[0].saldo.inicial).toBeNull();
   });
 
   it("⚠ para a FRENTE a janela trava na posição padrão — não existe futuro além de corrente+7", async () => {
@@ -995,72 +997,12 @@ describe("⚠ o horizonte e o ciclo", () => {
 // não enxerga não é visualização nenhuma. A conferência nunca foi o portão da VISUALIZAÇÃO — ela é
 // como o contador fica sabendo, e como a linha vira lançamento (Fase 6).
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("⚠⚠ a saída do cliente entra no fluxo", () => {
-  const saida = (extra = {}) => ({
-    id: "sa-1", data: new Date("2026-09-10T00:00:00.000Z"), valor: "3000.00",
-    descricao: "Reforma da sala", estado: "PENDENTE", ...extra,
-  });
-
-  it("⚠⚠ PENDENTE aparece — é o conserto do defeito acima", async () => {
-    const r = await montar(clientDe({ saidasDoCliente: [saida()] }));
-    const linhas = linhasDe(r, FONTE.SAIDA_DO_CLIENTE);
-    expect(linhas).toHaveLength(1);
-    expect(linhas[0].rotulo).toBe("Reforma da sala");
-    expect(linhas[0].competencia).toBe("2026-09");
-  });
-
-  it("CONFIRMADA também", async () => {
-    const r = await montar(clientDe({ saidasDoCliente: [saida({ estado: "CONFIRMADA" })] }));
-    expect(linhasDe(r, FONTE.SAIDA_DO_CLIENTE)).toHaveLength(1);
-  });
-
-  it("⚠⚠ RECUSADA NÃO — é o que dá sentido à recusa do contador", async () => {
-    // Ele dizer "isto não é despesa desta empresa" tem de tirar a linha da tela; senão a decisão
-    // dele não faz nada, e o cliente continua planejando com um número que foi negado.
-    const r = await montar(clientDe({ saidasDoCliente: [saida({ estado: "RECUSADA" })] }));
-    expect(linhasDe(r, FONTE.SAIDA_DO_CLIENTE)).toHaveLength(0);
-  });
-
-  it("⚠⚠ ela é SEMPRE previsão — o cliente planejou, ninguém pagou", async () => {
-    const r = await montar(clientDe({ saidasDoCliente: [saida({ estado: "CONFIRMADA" })] }));
-    expect(linhasDe(r, FONTE.SAIDA_DO_CLIENTE)[0].procedencia).toBe(PROCEDENCIA.PREVISAO);
-  });
-
-  it("⚠ o DIA é o que a pessoa escreveu — não é precisão fabricada", async () => {
-    const r = await montar(clientDe({ saidasDoCliente: [saida()] }));
-    const l = linhasDe(r, FONTE.SAIDA_DO_CLIENTE)[0];
-    expect(l.dia).toBe(10);
-    expect(l.diaDesconhecido).toBeNull();
-  });
-
-  it("⚠⚠ o ESTADO viaja na base — a tela precisa distinguir 'aguardando' de 'conferida'", async () => {
-    const pendente = await montar(clientDe({ saidasDoCliente: [saida()] }));
-    expect(linhasDe(pendente, FONTE.SAIDA_DO_CLIENTE)[0].base.estadoDaSaida).toBe("PENDENTE");
-    expect(linhasDe(pendente, FONTE.SAIDA_DO_CLIENTE)[0].base.frase).toMatch(/não foi conferida/i);
-
-    const conferida = await montar(clientDe({ saidasDoCliente: [saida({ estado: "CONFIRMADA" })] }));
-    expect(linhasDe(conferida, FONTE.SAIDA_DO_CLIENTE)[0].base.estadoDaSaida).toBe("CONFIRMADA");
-    expect(linhasDe(conferida, FONTE.SAIDA_DO_CLIENTE)[0].base.frase).not.toMatch(/não foi conferida/i);
-  });
-
-  it("⚠ a base diz DE QUEM é a linha, e a referência aponta a saída", async () => {
-    const r = await montar(clientDe({ saidasDoCliente: [saida()] }));
-    const l = linhasDe(r, FONTE.SAIDA_DO_CLIENTE)[0];
-    expect(l.base.doCliente).toBe(true);
-    expect(l.referencia).toEqual({ tipo: "saidaAvulsa", id: "sa-1" });
-  });
-
-  it("⚠⚠ sem o DELEGATE (o `prisma generate` que não rodou) o fluxo NÃO cai — ele se declara", async () => {
-    // No Windows o `generate` falha com EPERM enquanto o servidor de dev segura a DLL do engine.
-    // Sem a guarda, `undefined.findMany` derrubaria o fluxo INTEIRO — cards e pop-up junto.
-    const r = await montar(clientDe({ guias: [guia()] }));
-    expect(r.saidasDoClienteIndisponiveis).toBe(true);
-    expect(r.meses.length).toBeGreaterThan(0);
-  });
-
-  it("⚠ com o delegate presente, a indisponibilidade some", async () => {
-    const r = await montar(clientDe({ saidasDoCliente: [] }));
-    expect(r.saidasDoClienteIndisponiveis).toBe(false);
+describe("saídas avulsas só aparecem após lançamento contábil", () => {
+  it.each(["PENDENTE", "CONFIRMADA", "RECUSADA", "LANCADA"])("não projeta a declaração %s isolada", async estado => {
+    const client=clientDe({saidasDoCliente:[{id:"avulsa",data:new Date("2026-09-10"),valor:3000,descricao:"Reforma",estado}]});
+    const r=await montar(client);
+    expect(linhasDe(r,FONTE.SAIDA_DO_CLIENTE)).toHaveLength(0);
+    expect(client.saidaAvulsaCliente.findMany).not.toHaveBeenCalled();
   });
 });
 
@@ -1165,9 +1107,9 @@ describe("⚠⚠⚠ e a saída LANCADA sai do fluxo — senão o mesmo dinheiro 
   });
   const doCliente = (r) => linhasDe(r, "SAIDA_DO_CLIENTE");
 
-  it("PENDENTE e CONFIRMADA continuam entrando", async () => {
+  it("PENDENTE e CONFIRMADA não entram sem lançamento", async () => {
     const r = await montar(clientDe({ saidasDoCliente: [saida("PENDENTE"), saida("CONFIRMADA")] }));
-    expect(doCliente(r)).toHaveLength(2);
+    expect(doCliente(r)).toHaveLength(0);
   });
 
   it("⚠⚠ LANCADA não entra mais — quem a representa agora é o lançamento", async () => {
@@ -1250,7 +1192,7 @@ describe("⚠⚠⚠ SÓ O QUE FOI LANÇADO É SAÍDA DE DESPESA NO FLUXO — reg
       }],
     }));
     expect(linhasDe(r, "GUIA").length + linhasDe(r, "NOTA_EMITIDA").length).toBeGreaterThan(0);
-    expect(linhasDe(r, "SAIDA_DO_CLIENTE")).toHaveLength(1);
+    expect(linhasDe(r, "SAIDA_DO_CLIENTE")).toHaveLength(0);
   });
 });
 
@@ -1352,5 +1294,105 @@ describe("⚠⚠⚠ a liberação decide a PROCEDÊNCIA da guia — nunca se ela
       ],
     }));
     expect(linhasDe(r, "GUIA")).toHaveLength(2);
+  });
+});
+
+describe("datas das guias independem da navegação", () => {
+  it("guia futura permanece no vencimento; vencida anterior fica no presente; paga usa pagamento", async () => {
+    const r = await montar(clientDe({ guias: [
+      guia({ id: "futura", vencimento: new Date("2026-10-20T00:00:00Z") }),
+      guia({ id: "atrasada", vencimento: new Date("2026-07-20T00:00:00Z") }),
+      guia({ id: "paga", paymentStatus: "PAID", paymentConfirmedAt: new Date("2026-06-15T00:00:00Z") }),
+    ] }), { janelaInicio: "2026-04" });
+    const linhas = linhasDe(r, FONTE.GUIA);
+    expect(linhas.find(l => l.referencia.id === "futura")).toMatchObject({ competencia: "2026-10", dia: 20 });
+    expect(linhas.find(l => l.referencia.id === "atrasada")).toMatchObject({ competencia: "2026-08", dia: null });
+    expect(linhas.find(l => l.referencia.id === "paga")).toMatchObject({ competencia: "2026-06", dia: 15, procedencia: PROCEDENCIA.FATO });
+  });
+
+  it("navegar a janela para trás não desloca guias para o passado", async () => {
+    const base = { guias: [guia({ vencimento: new Date("2026-10-20T00:00:00Z") })] };
+    const a = await montar(clientDe(base), { janelaInicio: "2026-04" });
+    const b = await montar(clientDe(base), { janelaInicio: "2026-02" });
+    expect(linhasDe(a, FONTE.GUIA)).toEqual(linhasDe(b, FONTE.GUIA));
+  });
+});
+
+it("DAS pago carrega identidade e substitui a projeção do mesmo mês sem apagar INSS/parcelas", async () => {
+  const r = await montar(clientDe({
+    notas: [nota({ competencia: new Date("2026-07-01T00:00:00Z") })], snapshot: apuracao(),
+    guias: [guia({ competencia: "2026-07", paymentStatus: "PAID", paymentConfirmedAt: new Date("2026-08-20T00:00:00Z") })],
+  }));
+  const mes = doMes(r, "2026-08");
+  expect(mes.linhas.some(l => l.fonte === FONTE.IMPOSTO_PROJETADO)).toBe(false);
+  expect(mes.linhas.find(l => l.fonte === FONTE.GUIA).base).toMatchObject({ tipoDaGuia: "SIMPLES", ehParcelamento: false, competenciaDaGuia: "2026-07" });
+});
+
+it("saldo inicial inclui movimentos anteriores à janela visual, sem corte de 12 meses", async () => {
+  const pagamento = (data, valor) => ({ data: new Date(`${data}T00:00:00Z`), competencia: data.slice(0,7), lines: [{ tipo: "C", conta: "5", valor }] });
+  const client = clientDe({
+    notas: [nota({ competencia: new Date("2025-01-01T00:00:00Z"), total: 100 })],
+    guias: [guia({ paymentStatus: "PAID", paymentConfirmedAt: new Date("2025-03-15T00:00:00Z"), valor: 20 })],
+    folhas: [pagamento("2025-04-05", 30)], despesas: [pagamento("2025-05-10", 40)],
+    contasDeFolha: [{ codigo: "5", codigoCompleto: "111010001", portalClientId: null }],
+    saidasDoCliente: [{ id: "s-antiga", data: new Date("2025-06-10T00:00:00Z"), estado: "PENDENTE", valor: 50 }],
+  });
+  client.saldoInicialFluxo = { findFirst: jest.fn().mockResolvedValue({ id: "saldo-1", dataReferencia: new Date("2025-01-01T00:00:00Z"), valor: 1000 }) };
+  const r = await montar(client, { janelaInicio: "2026-04" });
+  expect(r.meses[0].competencia).toBe("2026-04");
+  expect(r.meses[0].saldo.inicial).toBe(10);
+  expect(client.saldoInicialFluxo.findFirst).not.toHaveBeenCalled();
+  expect(client.saidaAvulsaCliente.findMany).not.toHaveBeenCalled();
+  expect(r.saldoInicial).toBeNull();
+  expect(r.acumulado).toEqual({origem:"HISTORICO",calculoInicio:"2025-02"});
+});
+
+it("navegação antes da primeira nota não lê âncora manual legada", async () => {
+  const client = clientDe({ primeiraNota: { competencia: new Date("2026-07-01T00:00:00Z") } });
+  client.saldoInicialFluxo = { findFirst: jest.fn().mockResolvedValue({ id: "saldo-1", dataReferencia: new Date("2026-01-01T00:00:00Z"), valor: 1000 }) };
+  const r = await montar(client, { janelaInicio: "2026-01" });
+  expect(r.meses[0].competencia).toBe("2026-01");
+  expect(r.meses[0].saldo.inicial).toBeNull();
+  expect(client.saldoInicialFluxo.findFirst).not.toHaveBeenCalled();
+});
+
+it("duas projeções de meio centavo têm linhas, totais e saldo coerentes em 0,02", async () => {
+  const client = clientDe({ series: [
+    serie({ id: "s-centavo1", lado: LADO.DESPESA, baseDaObservacao: { n: 3, consecutivos: 3, mediana: 0.005 } }),
+    serie({ id: "s-centavo2", lado: LADO.DESPESA, baseDaObservacao: { n: 3, consecutivos: 3, mediana: 0.005 } }),
+  ] });
+  client.saldoInicialFluxo = { findFirst: jest.fn().mockResolvedValue({ id: "saldo-centavos", dataReferencia: new Date("2026-08-01T00:00:00Z"), valor: 0 }) };
+  const r = await montar(client);
+  const mes = doMes(r, "2026-08");
+  expect(mes.linhas.filter(l => l.direcao === DIRECAO.SAIDA).map(l => l.valor)).toEqual([0.01,0.01]);
+  expect(mes.totais.previsao.saida).toBe(0.02);
+  expect(mes.saldo.final).toBe(-0.02);
+});
+describe("piso de recorrência futura", () => {
+  it.each([0,1,2,3,4])("%s meses consecutivos", async consecutivos => {
+    const r=await montar(clientDe({series:[serie({baseDaObservacao:{n:4,consecutivos,mediana:130}})]}));
+    expect(linhasDe(r,FONTE.SERIE_DESPESA).length > 0).toBe(consecutivos>=3);
+  });
+});
+
+describe('previsão completa mês aberto sem duplicar notas', () => {
+  const comNotas = valorSetembro => clientDe({notas:[
+    nota({id:'maio',competencia:new Date('2026-05-01T00:00:00Z'),total:1000}),
+    nota({id:'junho',competencia:new Date('2026-06-01T00:00:00Z'),total:110000}),
+    nota({id:'julho',competencia:new Date('2026-07-01T00:00:00Z'),total:120000}),
+    nota({id:'agosto',competencia:new Date('2026-08-01T00:00:00Z'),total:130000}),
+    nota({id:'setembro',competencia:new Date('2026-09-01T00:00:00Z'),total:valorSetembro}),
+  ]});
+  it.each([[26650,93350,120000],[60000,60000,120000],[120000,0,120000],[140000,0,140000]])('setembro emitido %s complementa %s para outubro total %s', async (emitido,complemento,total) => {
+    const r=await montar(comNotas(emitido),{cicloAtual:'2026-09',hoje:'2026-09-08'});
+    const outubro=doMes(r,'2026-10');
+    const entradas=outubro.linhas.filter(l=>l.direcao===DIRECAO.ENTRADA);
+    expect(entradas.reduce((s,l)=>s+l.valor,0)).toBe(total);
+    expect(entradas.filter(l=>l.fonte===FONTE.NOTA_EMITIDA)).toHaveLength(1);
+    const previstas=entradas.filter(l=>l.fonte===FONTE.RECEITA_PROJETADA);
+    expect(previstas).toHaveLength(complemento?1:0);
+    if(complemento) expect(previstas[0]).toMatchObject({valor:complemento,procedencia:PROCEDENCIA.PREVISAO,base:{emitido,complemento,mediana:120000,mesesBase:['2026-06','2026-07','2026-08']}});
+    expect(doMes(r,'2026-09').linhas.filter(l=>l.fonte===FONTE.RECEITA_PROJETADA)).toHaveLength(0);
+    expect(doMes(r,'2026-11').linhas.find(l=>l.fonte===FONTE.RECEITA_PROJETADA).valor).toBe(120000);
   });
 });

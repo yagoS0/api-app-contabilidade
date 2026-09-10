@@ -1,3 +1,4 @@
+import { comContextoSerpro, contextoSerproAtual } from "../application/fiscal/serpro/serproCallContext.js";
 import { log, INTEGRACAO_SERPRO_PARCELAMENTO } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
 import { tryAcquireGuideLock, releaseGuideLock } from "../application/guides/GuideLockService.js";
@@ -67,6 +68,10 @@ async function listEligiblePortalCompanies() {
 }
 
 export async function runSerproPgdasdWorkerOnce(options = {}) {
+  const ctx = contextoSerproAtual();
+  return comContextoSerpro({ ...ctx, origem: ctx.origem || "worker:serpro_pgdasd" }, () => executarPgdasd(options));
+}
+async function executarPgdasd(options = {}) {
   const locked = await acquireLock();
   if (!locked) return { skipped: true, reason: "lock_active" };
 

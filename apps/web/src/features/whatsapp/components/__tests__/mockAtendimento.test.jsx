@@ -1,6 +1,20 @@
 import { createMockApi } from "../../../../api/mock/mockApi";
 beforeEach(() => { sessionStorage.clear(); localStorage.clear(); window.history.replaceState({}, "", "/"); });
 afterEach(() => { jest.useRealTimers(); });
+test("mock mantém histórico excluído, recusa ações e restaura sem apagar mensagens", async () => {
+  jest.useFakeTimers(); const api = createMockApi();
+  const executar = async promessa => { await jest.runAllTimersAsync(); return promessa; };
+  const antes = await executar(api.getMensagensWhatsapp("mock-cv-1"));
+  await executar(api.excluirConversaWhatsapp("mock-cv-1"));
+  expect((await executar(api.listarConversasWhatsapp())).conversas.some(c => c.id === "mock-cv-1")).toBe(false);
+  expect((await executar(api.listarConversasWhatsapp("lixeira"))).conversas.some(c => c.id === "mock-cv-1")).toBe(true);
+  for (const chamada of [() => api.responderConversaWhatsapp("mock-cv-1", "oi"), () => api.assumirConversaWhatsapp("mock-cv-1"), () => api.devolverConversaWhatsapp("mock-cv-1"), () => api.enviarDocumentoWhatsapp("mock-cv-1", "doc"), () => api.vincularConversaWhatsapp("mock-cv-1", {})]) {
+    const recusa = expect(chamada()).rejects.toMatchObject({ status: 409, code: "CHAT_EXCLUIDO" });
+    await jest.runAllTimersAsync(); await recusa;
+  }
+  await executar(api.restaurarConversaWhatsapp("mock-cv-1"));
+  expect((await executar(api.getMensagensWhatsapp("mock-cv-1"))).mensagens).toEqual(antes.mensagens);
+});
 test("rascunho mock sobrevive ao link que recarrega a página", async () => {
   jest.useFakeTimers();
   const api = createMockApi();

@@ -659,6 +659,10 @@ não foram transcritas — sem elas, 2029+ não é calculável, e não se estima
 
 ---
 
+### Atualização de procedimento IBS/CBS — verificada em 08/09/2026
+
+O comunicado da Receita publicado em 01/09/2026, atualizado em 02/09/2026, confirma a opção em setembro de 2026 para janeiro a junho de 2027 e a possibilidade de cancelamento até 30/11/2026. Cita Resoluções CGSN 186, 190 e 191/2026. Isto supera a ressalva acima sobre ausência de prova da regulamentação. Não altera as alíquotas do motor; altera a orientação sobre disponibilidade do procedimento. Fonte: https://www.gov.br/receitafederal/pt-br/assuntos/noticias/2026/setembro/receita-federal-alerta-comeca-hoje-o-prazo-para-opcao-pelo-simples-nacional-e-para-a-escolha-do-modelo-de-recolhimento-do-ibs-e-da-cbs-em-2027/
+
 ## 7. REFORMA DO IR — LEI 15.270/2025 (sancionada 26/11/2025, efeitos desde 01/01/2026)
 
 Impacta diretamente o núcleo do planejamento (pró-labore × dividendos):

@@ -79,6 +79,9 @@ function doCadastro(company) {
     ibscbsCIndOp: { valor: null, fonte: FONTE.INDEFINIDO },
     ibscbsCst: { valor: null, fonte: FONTE.INDEFINIDO },
     ibscbsCClassTrib: { valor: null, fonte: FONTE.INDEFINIDO },
+    tpImunidade: { valor: null, fonte: FONTE.INDEFINIDO },
+    exigSuspTipo: { valor: null, fonte: FONTE.INDEFINIDO },
+    exigSuspProcesso: { valor: null, fonte: FONTE.INDEFINIDO },
   };
 }
 
@@ -98,7 +101,7 @@ function doCadastro(company) {
  *   avisos: string[]
  * }>}
  */
-export async function resolverPerfilDeEmissao({ portalClientId, perfilId = null }) {
+export async function resolverPerfilDeEmissao({ portalClientId, perfilId = null, exigirDisponibilidade = false }) {
   if (!portalClientId) throw new Error("portalClientId obrigatório");
 
   const pc = await prisma.portalClient
@@ -128,7 +131,8 @@ export async function resolverPerfilDeEmissao({ portalClientId, perfilId = null 
       where: { portalClientId: String(portalClientId), ativo: true },
       orderBy: [{ padrao: "desc" }, { nome: "asc" }],
     });
-  } catch {
+  } catch (err) {
+    if (exigirDisponibilidade) throw err;
     perfis = [];
   }
 

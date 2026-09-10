@@ -2227,11 +2227,11 @@ export function createMockApi() {
     async getFluxoCaixa(companyId, { competencia, janelaInicio } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
-      const ciclo = competencia || competenciaPadrao();
+      const ciclo = competenciaPadrao();
       // ⚠⚠ `janelaInicio` é OUTRA pergunta que `competencia`: uma diz onde a tabela começa, a outra
       // diz que mês é "hoje". Passar a mesma nos dois faria a seta ‹ mover o mês pintado de ciano.
       return fluxoDeCaixaDoMock(id, ciclo, {
-        janelaInicio,
+        janelaInicio: janelaInicio || competencia,
         cientes: estado.cienciasDeGuias.get(id) || [],
         // ⚠⚠ SEM ISTO, criar uma saída não mudaria NADA na tela offline — e um mock que aceita a
         // escrita e não a mostra treina a tela a parecer quebrada. É a quinta vez que este mock

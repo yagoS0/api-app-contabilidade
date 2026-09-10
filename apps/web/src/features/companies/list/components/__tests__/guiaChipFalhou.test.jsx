@@ -140,6 +140,6 @@ describe("chip de guia com envio por WHATSAPP falhado", () => {
   test("o e-mail continua sendo oferecido ao lado — a guia ainda pode sair por lá", () => {
     renderChip(tagZap());
     fireEvent.click(screen.getByRole("button", { name: /DAS/ }));
-    expect(screen.getByRole("button", { name: /Enviar e-mail/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Liberar guia/ })).toBeInTheDocument();
   });
 });

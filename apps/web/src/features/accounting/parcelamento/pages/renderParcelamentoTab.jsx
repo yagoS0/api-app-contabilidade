@@ -25,6 +25,7 @@ import {
 } from "../lib/baixaManualParcela";
 import { avisoForaDaFila } from "../lib/exclusaoParcelamento";
 import { Button } from "../../../../components/ui/Button";
+import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 import { createApiClient } from "../../../../api/client";
 // ⚠ O vencimento contratado da prestação é DATA CIVIL (meia-noite UTC). Lido no fuso do navegador
 // ele saía um dia antes — e nesta MESMA linha o selo "Vencida"/"Vence hoje" vem do SERVIDOR, então
@@ -83,7 +84,7 @@ function Badge({ cor, fundo, children, title }) {
       title={title}
       style={{
         display: "inline-block", padding: "1px 7px", borderRadius: 999, whiteSpace: "nowrap",
-        fontSize: "0.62rem", fontWeight: 700, color: cor, background: fundo, border: `1px solid ${cor}`,
+        fontSize: "0.8125rem", fontWeight: 700, color: cor, background: fundo, border: `1px solid ${cor}`,
       }}
     >
       {children}
@@ -144,6 +145,7 @@ function composicaoDeclaravel(motivo) {
  * vazio de verdade (dito, não escondido).
  */
 function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAtendido }) {
+  const { pedir: confirmar, dialogo: confirmacao } = useConfirmacao();
   const [parcelas, setParcelas] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
@@ -306,13 +308,7 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
       setDesfechos((d) => ({ ...d, __lote: { tom: "warn", texto: "Nenhuma parcela paga deste contrato está aguardando lançamento." } }));
       return;
     }
-    const lista = alvo.map((p) => `· ${confirmacaoDaBaixa(p)}`).join("\n");
-    // eslint-disable-next-line no-alert
-    if (!window.confirm(
-      `Dar baixa em ${alvo.length} parcela(s):\n\n${lista}\n\n`
-      + "Cada uma GRAVA lançamentos contábeis (principal, juros e multa separados) e amortiza o "
-      + "passivo do parcelamento. Confirmar?",
-    )) return;
+    if (!await confirmar({ titulo: `Dar baixa em ${alvo.length} parcela(s)`, texto: "Cada baixa grava lançamentos contábeis de principal, juros e multa e amortiza o passivo do parcelamento.", itens: alvo.map(confirmacaoDaBaixa), acao: "Confirmar baixas" })) return;
     setLancando("__lote");
     try {
       for (const p of alvo) {
@@ -330,8 +326,7 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
     const texto = `Dar baixa na ${confirmacaoDaBaixa(p)}.\n\n`
       + "Isto GRAVA lançamentos contábeis (principal, juros e multa em lançamentos separados) e "
       + "amortiza o passivo do parcelamento. Confirmar?";
-    // eslint-disable-next-line no-alert
-    if (!window.confirm(texto)) return;
+    if (!await confirmar({ titulo: "Confirmar baixa da parcela", texto, acao: "Dar baixa" })) return;
 
     setLancando(p.guideId);
     try {
@@ -572,6 +567,7 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
           onClose={() => setDeclarando(null)}
         />
       )}
+      {confirmacao}
     </section>
   );
 }
@@ -937,7 +933,7 @@ function ParcelasSemGuiaPendentes({
                 {g.texto}
               </div>
               {g.quantidade !== parcelas.length && g.listaDeNumeros && (
-                <div style={{ color: PANEL.muted, fontSize: "0.66rem", marginTop: 2 }}>
+                <div style={{ color: PANEL.muted, fontSize: "0.8125rem", marginTop: 2 }}>
                   Prestações: {g.listaDeNumeros}
                 </div>
               )}

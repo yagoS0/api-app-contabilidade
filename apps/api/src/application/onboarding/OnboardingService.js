@@ -1,15 +1,13 @@
 // ONBOARDING — regras do funil pré-cadastro.
 //
-// ⚠ ESCOPO MULTI-TENANT (Fase 1): NÃO HÁ ISOLAMENTO. Todo usuário FIRM enxerga todos os
-// onboardings. Está escrito aqui e no cabeçalho da rota para ninguém supor um isolamento que não
-// existe. As demais listagens de escritório passam por `empresasVisiveis(req)`, que se apoia em
-// `CompanyFirmAccess` — vínculo que, por definição, ainda não existe para uma empresa que não foi
-// criada. Fase 2 (link público) é o momento de decidir a chave de escopo, e ela não é `companyId`.
+// ESCOPO: admin/contador gerenciam o escritório; demais usuários FIRM veem somente fichas
+// cujo criadoPorId é o próprio usuário. A rota aplica o escopo antes de todo acesso por id.
 //
 // ⚠ `dados` é SUBSTITUÍDO, nunca mesclado. Merge raso não deixa limpar uma lista; merge profundo
 // não deixa remover um sócio. Substituição é a única semântica sem caso ambíguo — e o front já
 // manda o rascunho inteiro a cada salvamento.
 
+import { podarInvisiveis } from "@contabilidade/shared/onboarding";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { etapasDaOrigem } from "./etapasTemplate.js";
 import {
@@ -19,7 +17,7 @@ import {
 } from "../companies/CompanyProvisioningService.js";
 
 export const ORIGENS = ["ABERTURA", "TRANSFERENCIA", "INATIVA"];
-export const STATUS = ["RASCUNHO", "RECEBIDO", "EM_TRILHA", "CONVERTIDO", "DESISTIU"];
+export const STATUS = ["RASCUNHO", "RECEBIDO", "EM_TRILHA", "CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"];
 
 export class OnboardingError extends Error {
   constructor(code, message, status = 400, extra = null) {
@@ -92,7 +90,7 @@ async function carregar(id, { comEtapas = false } = {}) {
  * versão dos mesmos dados, divergente e sem dono.
  */
 function recusarSeConvertido(registro) {
-  if (registro.status === "CONVERTIDO") {
+  if (["CONVERTIDO", "CONCLUIDO_AVULSO"].includes(registro.status)) {
     throw new OnboardingError(
       "onboarding_convertido",
       "Este onboarding já virou empresa e não pode mais ser editado.",
@@ -126,8 +124,11 @@ export async function criar({ origem, criadoPorId = null } = {}) {
 export async function atualizar(id, patch = {}, { atorId = null } = {}) {
   const atual = await carregar(id);
   recusarSeConvertido(atual);
+  if (!Number.isInteger(patch.versao) || patch.versao !== atual.versao) {
+    throw new OnboardingError("formulario_alterado", "A ficha mudou. Recarregue antes de salvar para preservar o atendimento.", 409);
+  }
 
-  const data = {};
+  const data = { versao: { increment: 1 }, eventos: { create: { tipo: "FICHA_ATUALIZADA", atorId, dados: { campos: Object.keys(patch) } } } };
 
   // ⚠ TROCAR DE ORIGEM ZERA `dados` AQUI, no servidor, ignorando o que veio no body. Se só a UI
   // resetasse, um PATCH atrasado ou um retry do rascunho antigo regravaria campos da origem
@@ -150,8 +151,8 @@ export async function atualizar(id, patch = {}, { atorId = null } = {}) {
     if (patch.dados === null || typeof patch.dados !== "object" || Array.isArray(patch.dados)) {
       throw new OnboardingError("dados_invalidos", "`dados` deve ser um objeto.", 400);
     }
-    dadosEfetivos = patch.dados;
-    data.dados = patch.dados;
+    dadosEfetivos = podarInvisiveis(origemEfetiva, patch.dados);
+    data.dados = dadosEfetivos;
   }
 
   if (patch.ultimoPasso !== undefined && !trocouOrigem) {
@@ -179,7 +180,17 @@ export async function atualizar(id, patch = {}, { atorId = null } = {}) {
     }
   }
 
-  const atualizado = await prisma.onboarding.update({ where: { id: atual.id }, data });
+  if (data.dados) {
+    data.fontesDados = { ...(atual.fontesDados || {}) };
+    for (const campo of new Set([...Object.keys(atual.dados || {}), ...Object.keys(data.dados)])) {
+      if (JSON.stringify(atual.dados?.[campo]) !== JSON.stringify(data.dados[campo])) data.fontesDados[campo] = { fonte: "ESCRITORIO", atorId, conferido: true, em: new Date().toISOString() };
+    }
+  }
+  const atualizado = await prisma.$transaction(async tx => {
+    const salvo = await tx.onboarding.update({ where: { id: atual.id, versao: patch.versao }, data }).catch((e) => { if (e.code === "P2025") throw new OnboardingError("formulario_alterado", "A ficha mudou. Recarregue antes de salvar.", 409); throw e; });
+    if (data.dados && salvo.cnpj !== atual.cnpj) await tx.atendimentoLead.updateMany({ where: { onboardingId: id }, data: { autorizacao: {}, representanteVerificadoEm: null, representanteVerificadoPor: null, evidenciaRepresentante: null } });
+    return salvo;
+  });
 
   if (patch.finalizar === true) {
     await materializarEtapas(atualizado);
@@ -207,7 +218,8 @@ export async function materializarEtapas(registro) {
 }
 
 export async function finalizar(id, { atorId = null } = {}) {
-  return atualizar(id, { finalizar: true }, { atorId });
+  const r = await carregar(id);
+  return atualizar(id, { finalizar: true, versao: r.versao }, { atorId });
 }
 
 /**
@@ -259,6 +271,11 @@ export async function concluirEtapa(id, etapaId, { concluida, observacao, atorId
  * sem dizer QUAL empresa — e o contador não teria como chegar até ela nem como vincular a ficha.
  */
 export async function converter(id, payload = {}, { atorId = null, portalIds = [], log = null } = {}) {
+  const propostaNova = await prisma.propostaComercial.findFirst({ where: { onboardingId: id, revogadaEm: null } });
+  if (propostaNova) {
+    const contrato = await prisma.contratoComercial.findFirst({ where: { onboardingId: id, propostaId: propostaNova.id, status: "ASSINADO_CONFERIDO" } });
+    if (!contrato?.dados?.opcao?.recorrente) throw new OnboardingError("contrato_recorrente_necessario", "Confira a assinatura do contrato recorrente antes de criar a empresa na carteira.", 409);
+  }
   const registro = await carregar(id);
   if (registro.status === "CONVERTIDO") {
     throw new OnboardingError(
@@ -279,6 +296,9 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
   // ── Variante de recuperação ──────────────────────────────────────────────────
   const vincular = String(payload?.vincularPortalClientId || "").trim();
   if (vincular) {
+    if (!Array.isArray(portalIds) || !portalIds.includes(vincular)) {
+      throw new OnboardingError("portal_client_nao_encontrado", "Empresa não encontrada.", 404);
+    }
     const existente = await prisma.portalClient.findUnique({
       where: { id: vincular },
       select: { id: true, cnpj: true, razao: true },
@@ -305,6 +325,7 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
         status: "CONVERTIDO",
         convertidoEm: new Date(),
         convertidoPorId: atorId ? String(atorId) : null,
+        eventos: { create: { tipo: "CONVERTIDO", atorId, dados: { portalClientId: existente.id } } },
       },
     });
     return {
@@ -359,6 +380,7 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
       status: "CONVERTIDO",
       convertidoEm: new Date(),
       convertidoPorId: atorId ? String(atorId) : null,
+      eventos: { create: { tipo: "CONVERTIDO", atorId, dados: { portalClientId: criada.portalId } } },
       emailJaCadastrado: await emailTemConta(registro.responsavelEmail),
     },
   });
@@ -393,8 +415,8 @@ export async function desistir(id, { motivo = null, atorId = null } = {}) {
  * a ficha no primeiro clique), e um quadro em que a maioria dos cartões nunca foi preenchida deixa
  * de ser lido. A bandeja de rascunhos fica atrás de um toggle, com um DELETE ao lado.
  */
-export async function listar({ origem = null, status = null, q = null, incluirRascunhos = false } = {}) {
-  const where = {};
+export async function listar({ origem = null, status = null, q = null, incluirRascunhos = false, escopo = {} } = {}) {
+  const where = { ...escopo };
 
   if (origem) where.origem = normalizarOrigem(origem);
 
@@ -447,6 +469,7 @@ export async function descartar(id) {
       409
     );
   }
+  if (await prisma.atendimentoLead.findFirst({ where: { onboardingId: id } })) throw new OnboardingError("atendimento_tem_historico", "Este atendimento possui conversa vinculada. Use desistência para preservar o histórico.", 409);
   await prisma.onboarding.delete({ where: { id: registro.id } });
   return { ok: true };
 }

@@ -4,6 +4,10 @@
 // protege o número do escritório.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
+import {
+  normalizarPermissoesAssistente,
+  permissoesAssistenteInvalidas,
+} from "./permissoesAssistente.js";
 import { normalizarE164, variantesE164 } from "./telefone.js";
 import { resolverVinculoTelefone } from "./vinculoTelefone.js";
 
@@ -45,7 +49,7 @@ export async function listarContatos(portalClientId) {
  * descobre pelo painel de falhas. Validar cedo é o que transforma isso num campo vermelho na tela
  * de cadastro.
  */
-export async function salvarContato({ portalClientId, id, nome, papel, telefone, email, optIn, optInOrigem, ativo, userId }) {
+export async function salvarContato({ portalClientId, id, nome, papel, telefone, email, optIn, optInOrigem, ativo, userId, permissoesAssistente }) {
   // ⚠ UM DOS DOIS BASTA, e nenhum dos dois é obrigatório sozinho (05/09/2026). O destinatário virou
   // "por onde esta pessoa recebe": só e-mail, só WhatsApp, ou os dois. Exigir telefone deixaria de
   // fora o financeiro que só recebe por e-mail — que é a maioria da carteira hoje.
@@ -118,6 +122,33 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
   if (veio(telefone)) dados.telefoneE164 = e164;
   if (veio(email)) dados.email = emailLimpo;
   if (veio(ativo)) dados.ativo = Boolean(ativo);
+  if (veio(permissoesAssistente)) {
+    const invalidas = permissoesAssistenteInvalidas(permissoesAssistente);
+    if (invalidas.length) {
+      throw new ContatoWhatsappError(
+        "PERMISSOES_ASSISTENTE_INVALIDAS",
+        invalidas[0] === "FORMATO_INVALIDO"
+          ? "As funções do assistente devem ser enviadas como uma lista."
+          : `Função do assistente inválida: ${invalidas.join(", ")}.`,
+      );
+    }
+    dados.permissoesAssistente = normalizarPermissoesAssistente(permissoesAssistente);
+  }
+
+  let telefoneAnterior;
+  if (id && veio(telefone)) {
+    const anterior = await prisma.contatoWhatsapp.findFirst({
+      where: { id: String(id), portalClientId: String(portalClientId) },
+      select: { telefoneE164: true },
+    });
+    telefoneAnterior = anterior?.telefoneE164 || null;
+    if (anterior && anterior.telefoneE164 !== e164) {
+      // A identidade e o consentimento pertencem ao destino anterior, não ao nome do contato.
+      dados.waId = null;
+      dados.optInEm = null;
+      dados.optInOrigem = null;
+    }
+  }
 
   // O opt-in é gravado com DATA e ORIGEM porque ele é o que se apresenta se a Meta questionar o
   // envio. "Marcamos a caixinha" não é registro de consentimento; quando e de onde, é.
@@ -168,10 +199,15 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
     // um id de contato de OUTRA empresa era atualizado sem que nada conferisse a quem ele pertence.
     // O mesmo vale para a exclusão, abaixo. Multi-tenancy por `portalClientId` é inegociável, e no
     // vínculo ela é o próprio assunto.
-    return prisma.contatoWhatsapp.update({
-      where: { id: String(id), portalClientId: String(portalClientId) },
-      data: dados,
-    });
+    try {
+      return await prisma.contatoWhatsapp.update({
+        where: { id: String(id), portalClientId: String(portalClientId), ...(veio(telefone) ? { telefoneE164: telefoneAnterior } : {}) },
+        data: dados,
+      });
+    } catch (err) {
+      if (err?.code === "P2025" && veio(telefone)) throw new ContatoWhatsappError("CONTATO_ALTERADO", "Este contato foi alterado durante o salvamento. Atualize o cadastro e confira o telefone antes de salvar novamente.");
+      throw err;
+    }
   }
   // ⚠ O UPSERT SÓ EXISTE COM TELEFONE: a chave única é `(portalClientId, telefoneE164)`, e com
   // `telefoneE164` nulo não há chave para casar — o Prisma recusaria. Destinatário só de e-mail é
@@ -184,6 +220,30 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
     create: { portalClientId: String(portalClientId), ...dados },
     update: dados,
   });
+}
+
+/** Atualiza somente as funções do assistente, sem tocar em telefone, canais, opt-in ou usuário. */
+export async function salvarPermissoesAssistente({ portalClientId, contatoId, permissoesAssistente }) {
+  const invalidas = permissoesAssistenteInvalidas(permissoesAssistente);
+  if (invalidas.length) {
+    throw new ContatoWhatsappError(
+      "PERMISSOES_ASSISTENTE_INVALIDAS",
+      invalidas[0] === "FORMATO_INVALIDO"
+        ? "As funções do assistente devem ser enviadas como uma lista."
+        : `Função do assistente inválida: ${invalidas.join(", ")}.`,
+    );
+  }
+  try {
+    return await prisma.contatoWhatsapp.update({
+      where: { id: String(contatoId), portalClientId: String(portalClientId) },
+      data: { permissoesAssistente: normalizarPermissoesAssistente(permissoesAssistente) },
+    });
+  } catch (err) {
+    if (err?.code === "P2025") {
+      throw new ContatoWhatsappError("CONTATO_NAO_ENCONTRADO", "Contato não encontrado nesta empresa.");
+    }
+    throw err;
+  }
 }
 
 /**
@@ -207,7 +267,7 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
 export async function destinatariosDeEnvio(portalClientId) {
   const contatos = await prisma.contatoWhatsapp.findMany({
     where: { portalClientId: String(portalClientId), ativo: true },
-    select: { id: true, nome: true, email: true, telefoneE164: true, optInEm: true },
+    select: { id: true, nome: true, email: true, telefoneE164: true, waId: true, optInEm: true },
     orderBy: { createdAt: "asc" },
   });
 
@@ -222,7 +282,7 @@ export async function destinatariosDeEnvio(portalClientId) {
       emails.push(e);
     }
     if (c.telefoneE164) {
-      if (c.optInEm) telefones.push({ id: c.id, nome: c.nome, telefoneE164: c.telefoneE164 });
+      if (c.optInEm) telefones.push({ id: c.id, nome: c.nome, telefoneE164: c.telefoneE164, waId: c.waId || null });
       else semOptIn.push({ nome: c.nome, telefoneE164: c.telefoneE164 });
     }
   }
@@ -278,13 +338,15 @@ export async function acharContatoPorWaId(waIdOuTelefone) {
  *
  * @returns {Promise<boolean>} gravou?
  */
-export async function gravarWaIdDoContato({ contatoId, waId, client = prisma }) {
+export async function gravarWaIdDoContato({ contatoId, telefoneEnviado, waId, client = prisma }) {
   const id = String(contatoId || "").trim();
   const valor = String(waId || "").trim();
-  if (!id || !valor) return false;
+  const telefone = normalizarE164(telefoneEnviado);
+  if (!id || !valor || !telefone) return false;
   // ⚠ `waId: null` no `where` é a trava: quem já tem apelido conhecido não é reescrito por um envio.
   const r = await client.contatoWhatsapp.updateMany({
-    where: { id, waId: null },
+    // Uma resposta atrasada do número antigo não pode atribuir sua identidade ao novo cadastro.
+    where: { id, telefoneE164: telefone, waId: null },
     data: { waId: valor },
   });
   return r.count === 1;
@@ -354,7 +416,8 @@ export const SELECT_CONTATO_PARA_VINCULO = Object.freeze({
   optInEm: true,
   ativo: true,
   userId: true,
-  portalClient: { select: { id: true, razao: true, cnpj: true } },
+  permissoesAssistente: true,
+  portalClient: { select: { id: true, razao: true, cnpj: true, apelidosWhatsapp: true } },
 });
 
 /**
@@ -371,12 +434,12 @@ export const SELECT_CONTATO_PARA_VINCULO = Object.freeze({
  * estreitar, a leitura alternativa ficaria invisível e `divergemPeloNonoDigito` nunca poderia
  * acender para dizer que um cadastro está no formato antigo.
  */
-export async function resolverVinculoPorTelefone(telefone) {
+export async function resolverVinculoPorTelefone(telefone, { client = prisma } = {}) {
   const e164 = normalizarE164(telefone);
   if (!e164) return resolverVinculoTelefone(telefone, []);
 
   const variantes = variantesE164(e164);
-  const contatos = await prisma.contatoWhatsapp.findMany({
+  const contatos = await client.contatoWhatsapp.findMany({
     where: { OR: [{ telefoneE164: { in: variantes } }, { waId: { in: variantes } }] },
     select: SELECT_CONTATO_PARA_VINCULO,
   });
@@ -385,7 +448,7 @@ export async function resolverVinculoPorTelefone(telefone) {
   // O papel vem do RBAC que já existe — não é recalculado nem copiado para o contato.
   const comUsuario = contatos.filter((c) => c.userId);
   const vinculos = comUsuario.length
-    ? await prisma.companyClientUser.findMany({
+    ? await client.companyClientUser.findMany({
         where: { OR: comUsuario.map((c) => ({ companyId: c.portalClientId, userId: c.userId })) },
         select: { companyId: true, userId: true, role: true, status: true },
       })

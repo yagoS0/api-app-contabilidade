@@ -12,6 +12,7 @@ import { capturePgdasGuideForCompany } from "./CaptureSerproGuidesService.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import { SerproHttpClient } from "./SerproHttpClient.js";
 import { SerproPgdasdService, SERPRO_PGDASD_SERVICE_NORMAL } from "./SerproPgdasdService.js";
+import { comContextoSerpro, contextoSerproAtual } from "./serproCallContext.js";
 
 const SERPRO_PGDASD_SERVICE_DECLARACAO = "CONSULTIMADECREC14";
 
@@ -236,11 +237,13 @@ async function ensureDasGuideRecord({ portalClientId, competencia, contratanteCn
       competencia,
       tipo: "SIMPLES",
       source: "SERPRO",
+      parcelamentoId: null,
+      status: "PROCESSED",
     },
     orderBy: { updatedAt: "desc" },
   });
 
-  if (!guide) {
+  if (!guide?.pdfBytes?.length || contextoSerproAtual().atualizar) {
     const captured = await capturePgdasGuideForCompany({
       portalClientId,
       competencia,
@@ -531,7 +534,8 @@ async function findOrCreateCircular({ portalClientId, competencia }) {
   });
 }
 
-export async function syncPgdasByCompetencia({ portalClientId, competencia, contratanteCnpj }) {
+export async function syncPgdasByCompetencia({ portalClientId, competencia, contratanteCnpj, atualizar = false, indiceExistente = null }) {
+  if (atualizar && !contextoSerproAtual().atualizar) return comContextoSerpro({ ...contextoSerproAtual(), atualizar: true }, () => syncPgdasByCompetencia({ portalClientId, competencia, contratanteCnpj, atualizar, indiceExistente }));
   const normalizedPortalClientId = String(portalClientId || "").trim();
   const competenciaStorage = normalizeCompetencia(competencia);
   const competenciaAaaamm = validateCompetenciaAaaamm(normalizeCompetenciaAaaamm(competencia));
@@ -562,6 +566,18 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
     throw err;
   }
 
+  // Ler antes de marcar RUNNING: o upsert apagaria o estado que permite reutilização.
+  const salva = await prisma.companyMonthlyCircular.findUnique({ where: { portalClientId_competencia: { portalClientId: company.id, competencia: competenciaStorage } } });
+
+  if (!atualizar && !contextoSerproAtual().atualizar && !indiceExistente && salva?.serproSyncStatus === "NOT_FOUND" && !salva.dasNumeroDocumento && Date.now() - new Date(salva.serproLastSyncAt).getTime() < 60 * 60 * 1000) {
+    return { company, circular: salva, guide: null, reutilizado: true, accounting: { ok: true, generatedEntries: [] }, dados: salva.metadata?.dados, dasIndex: salva.metadata?.dasIndex };
+  }
+  if (!atualizar && !contextoSerproAtual().atualizar && !indiceExistente && salva?.serproSyncStatus === "SUCCESS" && salva.pgdasDeclaracaoFileId) {
+    const guide = await prisma.guide.findFirst({ where: { portalClientId: company.id, competencia: competenciaStorage, tipo: "SIMPLES", source: "SERPRO", parcelamentoId: null, status: "PROCESSED" }, orderBy: { updatedAt: "desc" } });
+    if (guide?.pdfBytes?.length || !salva.dasNumeroDocumento) return { company, circular: salva, guide, reutilizado: true,
+      accounting: { ok: true, generatedEntries: [] }, dados: salva.metadata?.dados, dasIndex: salva.metadata?.dasIndex,
+      files: { declaracaoFileId: salva.pgdasDeclaracaoFileId, reciboFileId: salva.pgdasReciboFileId } };
+  }
   const circular = await findOrCreateCircular({ portalClientId: company.id, competencia: competenciaStorage });
 
   try {
@@ -574,7 +590,7 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
     }
 
     const pgdasService = new SerproPgdasdService();
-    const declarationIndexResponse = await pgdasService.consultarDeclaracaoIndice({
+    const declarationIndexResponse = indiceExistente ?? await pgdasService.consultarDeclaracaoIndice({
       contratanteCnpj: procuradorCnpj,
       contribuinteCnpj: company.cnpj,
       periodoApuracao: competenciaStorage,

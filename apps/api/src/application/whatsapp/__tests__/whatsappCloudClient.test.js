@@ -33,6 +33,8 @@ import {
   montarHeaderDocumento,
   montarPayloadTemplate,
   montarPayloadTexto,
+  montarPayloadBotoes,
+  montarPayloadLista,
   nomeArquivoDaGuia,
   variaveisDaGuia,
 } from "../WhatsappCloudClient.js";
@@ -42,11 +44,38 @@ import { CODIGOS_LOCAIS } from "../errosMeta.js";
 const ok = (corpo) => ({ ok: true, status: 200, json: async () => corpo });
 const falha = (status, corpo) => ({ ok: false, status, json: async () => corpo });
 
+it("upload HTTP502 sem JSON não representa mensagem possivelmente aceita", async () => {
+  const cliente = clienteCom([{ ok: false, status: 502, json: async () => { throw new SyntaxError("invalid JSON"); } }]);
+  await expect(cliente.uploadDocumento({ conteudo: Buffer.from("%PDF"), nomeArquivo: "g.pdf" })).rejects.toMatchObject({ desfechoIndeterminado: false });
+});
+
 const RESPOSTA_ENVIO = {
   messaging_product: "whatsapp",
   contacts: [{ input: "5521999998888", wa_id: "5521999998888" }],
   messages: [{ id: "wamid.HBgNNTUyMTk5OTk5ODg4OA==" }],
 };
+
+describe("contrato de aceite e prazo em todo o corpo", () => {
+  it.each(["texto", "documento"])("%s recusa HTTP200 sem wamid", async (tipo) => {
+    const cliente = clienteCom(tipo === "documento" ? [ok({ id: "media-teste" }), ok({})] : [ok({})]);
+    const operacao = tipo === "texto"
+      ? cliente.enviarTexto({ telefone: "5521999998888", texto: "Teste local" })
+      : cliente.enviarDocumento({ telefone: "5521999998888", conteudo: Buffer.from("pdf-teste") });
+    await expect(operacao).rejects.toMatchObject({ codigo: CODIGOS_LOCAIS.SEM_WAMID });
+  });
+
+  it("aborta corpo que não termina mesmo depois de receber headers", async () => {
+    jest.useFakeTimers();
+    try {
+      const cliente = clienteCom([{ ok: true, status: 200, json: () => new Promise(() => {}) }], { timeoutMs: 10 });
+      const resultado = expect(cliente.enviarTexto({ telefone: "5521999998888", texto: "Teste" }))
+        .rejects.toMatchObject({ codigo: CODIGOS_LOCAIS.FALHA_DE_TRANSPORTE, desfechoIndeterminado: true });
+      await jest.advanceTimersByTimeAsync(11);
+      await resultado;
+      expect(fetchFalso.mock.calls[0][1].signal.aborted).toBe(true);
+    } finally { jest.useRealTimers(); }
+  });
+});
 
 let fetchFalso;
 let fetchNativoOriginal;
@@ -73,6 +102,28 @@ afterEach(() => {
 // ── Os payloads, que só falhariam em produção ────────────────────────────────────────────────────
 
 describe("o payload que sai para a Meta", () => {
+  it("menus interativos preservam ids e respeitam a forma da Cloud API", () => {
+    expect(montarPayloadBotoes({
+      para: "5521999998888", texto: "Como ajudar?", rodape: "Escreva se preferir.",
+      botoes: [{ id: "altan.client.guides.current.v1", titulo: "Guias do mês" }],
+    })).toEqual({
+      messaging_product: "whatsapp", recipient_type: "individual", to: "5521999998888", type: "interactive",
+      interactive: {
+        type: "button", body: { text: "Como ajudar?" }, footer: { text: "Escreva se preferir." },
+        action: { buttons: [{ type: "reply", reply: { id: "altan.client.guides.current.v1", title: "Guias do mês" } }] },
+      },
+    });
+    expect(montarPayloadLista({
+      para: "5521999998888", texto: "Mais opções", tituloBotao: "Ver opções", tituloSecao: "Atendimento",
+      linhas: [{ id: "altan.client.documents.v1", titulo: "Documentos", descricao: "Contrato e inscrições" }],
+    }).interactive.action.sections[0].rows[0]).toEqual({ id: "altan.client.documents.v1", title: "Documentos", description: "Contrato e inscrições" });
+  });
+
+  it("recusa mais de três botões e títulos acima do limite", () => {
+    expect(() => montarPayloadBotoes({ para: "55", texto: "x", botoes: [1, 2, 3, 4].map((n) => ({ id: String(n), titulo: String(n) })) })).toThrow(/1 a 3/);
+    expect(() => montarPayloadLista({ para: "55", texto: "x", tituloBotao: "Ver", linhas: [{ id: "1", titulo: "x".repeat(25) }] })).toThrow(/24/);
+  });
+
   it("template com documento: a forma exata da referência de Messages", () => {
     const corpo = montarPayloadTemplate({
       para: "5521999998888",
@@ -134,6 +185,18 @@ describe("o payload que sai para a Meta", () => {
     expect(montarCorpoTemplate([])).toBeNull();
     const corpo = montarPayloadTemplate({ para: "1", template: "t", idioma: "pt_BR", componentes: [null] });
     expect(corpo.template.components).toEqual([]);
+  });
+
+  it.each(["", "   ", null, undefined, { nome: "cliente", valor: " " }])("recusa parâmetro obrigatório vazio (%j) antes do upload da guia", async (vazio) => {
+    const cliente = clienteCom([ok({ id: "media-local" }), ok(RESPOSTA_ENVIO)]);
+    await expect(cliente.enviarGuia({ telefone: "5521999998888", conteudoPdf: Buffer.from("pdf-local"), nomeArquivo: "guia.pdf", variaveis: ["valor preenchido", vazio] }))
+      .rejects.toMatchObject({ codigo: CODIGOS_LOCAIS.RECUSA_LOCAL });
+    expect(fetchFalso).not.toHaveBeenCalled();
+  });
+
+  it("aceita zero como texto de parâmetro preenchido", () => {
+    expect(montarCorpoTemplate([0, { nome: "valor", valor: 0 }]).parameters)
+      .toEqual([{ type: "text", text: "0" }, { type: "text", parameter_name: "valor", text: "0" }]);
   });
 
   it("⚠ a ORDEM das cinco variáveis da guia vive num lugar só", () => {
@@ -294,7 +357,7 @@ describe("erros da Meta viram WhatsappError com codigo + mensagemUsuario", () =>
     const cliente = clienteCom([{
       ok: false,
       status: 502,
-      json: async () => { throw new Error("Unexpected token < in JSON"); },
+      json: async () => { throw new SyntaxError("Unexpected token < in JSON"); },
     }]);
     const erro = await cliente.enviarTexto({ telefone: "5521999998888", texto: "oi" }).catch((e) => e);
     expect(erro.codigo).toBe(CODIGOS_LOCAIS.RESPOSTA_NAO_RECONHECIDA);
@@ -395,7 +458,7 @@ describe("⚠ NENHUM TESTE TOCA A REDE", () => {
 });
 
 // ── DOCUMENTO FORA DE TEMPLATE (Entrega 2, 02/09/2026) ─────────────────────────────────────────
-import { montarPayloadDocumento } from "../WhatsappCloudClient.js";
+import { montarPayloadDocumento, montarPayloadImagem } from "../WhatsappCloudClient.js";
 
 describe("enviarDocumento — a resposta 'manda a guia' do assistente", () => {
   it("o payload é type=document com id (nunca link), filename e caption", () => {
@@ -423,6 +486,22 @@ describe("enviarDocumento — a resposta 'manda a guia' do assistente", () => {
     expect(corpo.document).toEqual({ id: "MID9", filename: "x.pdf", caption: "leg" });
     expect(chamadas[1].opts.headers.Authorization).toBe("Bearer T");
     expect(chamadas[1].url).not.toMatch(/T/);
+  });
+});
+
+describe("enviarImagem — documento digitalizado", () => {
+  it("usa type=image, preserva o MIME no upload e envia a legenda", async () => {
+    const chamadas = [];
+    const fetchImpl = jest.fn(async (url, opts) => {
+      chamadas.push({ url, opts });
+      return { ok: true, status: 200, json: async () => url.endsWith("/media") ? { id: "IMG1" } : { messages: [{ id: "wamid.img" }] } };
+    });
+    expect(montarPayloadImagem({ para: "5521999998888", mediaId: "IMG1", legenda: "Cartão CNPJ" }))
+      .toMatchObject({ type: "image", image: { id: "IMG1", caption: "Cartão CNPJ" } });
+    const c = new WhatsappCloudClient({ fetchImpl, config: { habilitada: true, token: "T", phoneNumberId: "P", versao: "v21.0", log: null } });
+    const r = await c.enviarImagem({ telefone: "5521999998888", conteudo: Buffer.from("png"), nomeArquivo: "cnpj.png", legenda: "Cartão CNPJ", mimeType: "image/png" });
+    expect(r.wamid).toBe("wamid.img");
+    expect(JSON.parse(chamadas[1].opts.body)).toMatchObject({ type: "image", image: { id: "IMG1", caption: "Cartão CNPJ" } });
   });
 });
 
@@ -460,7 +539,7 @@ describe("⚠⚠ 200 sem identificador de mensagem é FALHA, não sucesso", () =
   it("⚠ e o upload continua com a MESMA guarda que já tinha — ela é o precedente", async () => {
     const cliente = clienteCom([ok({ messaging_product: "whatsapp" })]);
     await expect(cliente.uploadDocumento({ conteudo: Buffer.from("%PDF"), nomeArquivo: "g.pdf" }))
-      .rejects.toBeTruthy();
+      .rejects.toMatchObject({ desfechoIndeterminado: false });
   });
 });
 

@@ -39,6 +39,7 @@ export const SITUACAO_ENVIO = Object.freeze({
   PARCIAL: "PARCIAL",
   /** Contrato antigo ou estado fora da lista: não se afirma nada. */
   DESCONHECIDA: "DESCONHECIDA",
+  INDETERMINADA: "INDETERMINADA",
 });
 
 const NEUTRO = "var(--state-neutral)";
@@ -64,6 +65,7 @@ export const DESENHO_ENVIO = Object.freeze({
   [SITUACAO_ENVIO.LIDA]: { icone: "✓✓", tom: "var(--accent-cyan)", rotulo: "lida" },
   [SITUACAO_ENVIO.FALHOU]: { icone: "✖", tom: "var(--state-danger)", rotulo: "não saiu" },
   [SITUACAO_ENVIO.PARCIAL]: { icone: "✖", tom: "var(--state-danger)", rotulo: "só uma parte saiu" },
+  [SITUACAO_ENVIO.INDETERMINADA]: { icone: "?", tom: NEUTRO, rotulo: "resultado indeterminado" },
   [SITUACAO_ENVIO.DESCONHECIDA]: { icone: "–", tom: NEUTRO, rotulo: "sem informação de envio" },
 });
 
@@ -88,16 +90,21 @@ const chegou = (c) => (String(c.canal).toUpperCase() === "EMAIL"
 export function frasePorCanal(c) {
   const canal = rotuloDoCanal(c?.canal);
   const para = c?.destino ? ` para ${c.destino}` : "";
-  if (c?.status === "lido") return `${canal}: lida${para}`;
-  if (c?.status === "entregue") return `${canal}: entregue${para}`;
+  const registro = c?.status === "lido" ? c.lidoEm : c?.status === "entregue" ? c.entregueEm : c?.status === "enviado" ? c.em : null;
+  const data = registro ? new Date(registro) : null;
+  const quando = data && Number.isFinite(data.getTime())
+    ? ` em ${data.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} (Brasília)` : "";
+  if (c?.status === "lido") return `${canal}: lida${para}${quando}`;
+  if (c?.status === "entregue") return `${canal}: entregue${para}${quando}`;
   if (c?.status === "falhou") return `${canal}: não saiu${para}${c.erroMensagem ? ` — ${c.erroMensagem}` : ""}`;
   if (c?.status === "enviado") {
     return String(c.canal).toUpperCase() === "EMAIL"
-      ? `${canal}: enviada${para}`
-      : `${canal}: aceita pela Meta${para} — sem confirmação de entrega`;
+      ? `${canal}: enviada${para}${quando}${!c.destino ? " — destinatário não registrado no histórico" : ""}`
+      : `${canal}: aceita pela Meta${para}${quando} — sem confirmação de entrega`;
   }
+  if (c?.status === "indeterminado") return `${canal}: resultado indeterminado${para} — confira o histórico antes de repetir`;
   if (c?.status === "enviando") return `${canal}: enviando${para}`;
-  if (c?.status === "pendente") return `${canal}: na fila deste clique${para}`;
+  if (c?.status === "pendente") return `${canal}: envio pendente${para}`;
   return `${canal}: ${c?.status || "estado desconhecido"}${para}`;
 }
 
@@ -131,7 +138,7 @@ export function lerEnvioDaGuia(guide) {
 
   const entregues = canais.filter(chegou);
   const falhados = canais.filter((c) => c.status === "falhou");
-  const aguardando = canais.filter((c) => String(c.canal).toUpperCase() !== "EMAIL" && c.status === "enviado");
+  const aguardando = canais.filter((c) => String(c.canal).toUpperCase() !== "EMAIL" && ["enviado", "enviando", "indeterminado"].includes(c.status));
   const tentados = canais.filter((c) => c.status !== "pendente");
 
   let situacao;
@@ -139,10 +146,12 @@ export function lerEnvioDaGuia(guide) {
     // ⚠ `jaEnviada` sem NENHUMA linha é a tolerância do legado (guias anteriores a `envios_guia`,
     // que valem pelo `emailStatus`). Ela é e-mail enviado — não um estado desconhecido.
     situacao = envio.jaEnviada ? SITUACAO_ENVIO.ENVIADA_EMAIL : SITUACAO_ENVIO.NAO_ENVIADA;
-  } else if (entregues.length && falhados.length) {
+  } else if ((entregues.length || aguardando.length) && falhados.length) {
     situacao = SITUACAO_ENVIO.PARCIAL;
   } else if (falhados.length && !entregues.length && !aguardando.length) {
     situacao = SITUACAO_ENVIO.FALHOU;
+  } else if (canais.some(c => c.status === "indeterminado")) {
+    situacao = SITUACAO_ENVIO.INDETERMINADA;
   } else if (entregues.some((c) => c.status === "lido")) {
     situacao = SITUACAO_ENVIO.LIDA;
   } else if (entregues.some((c) => c.status === "entregue")) {
@@ -158,7 +167,8 @@ export function lerEnvioDaGuia(guide) {
   }
 
   const d = DESENHO_ENVIO[situacao];
-  const frases = canais.map(frasePorCanal);
+  const frases = canais.length ? canais.map(frasePorCanal)
+    : envio.jaEnviada ? [frasePorCanal({ canal: "EMAIL", status: "enviado", em: guide.emailSentAt })] : [];
   return {
     situacao,
     ...d,

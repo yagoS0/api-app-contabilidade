@@ -31,6 +31,7 @@ export function PreviaNota({ empresa, valores }) {
     pTotTribSNNoFormulario,
     cargaAproximada,
     codigoServicoNacional,
+    dadosDaOperacao,
   } = valores;
 
   const linhaEndereco = [
@@ -85,6 +86,9 @@ export function PreviaNota({ empresa, valores }) {
         </div>
       </section>
 
+      {dadosDaOperacao?.payload.obra && <section><h3>Obra</h3><div>{dadosDaOperacao.payload.obra.cObra ? "CNO/CEI" : "CIB"}: {dadosDaOperacao.payload.obra.cObra || dadosDaOperacao.payload.obra.cCIB}</div>{dadosDaOperacao.payload.obra.inscImobFisc && <div>Inscrição imobiliária: {dadosDaOperacao.payload.obra.inscImobFisc}</div>}</section>}
+      {dadosDaOperacao?.payload.destinatario && <section><h3>Destinatário do serviço</h3><div>{dadosDaOperacao.payload.destinatario.nome}</div><div>{fmtDoc(dadosDaOperacao.payload.destinatario.cnpjCpf)}</div></section>}
+      {dadosDaOperacao && !dadosDaOperacao.ok && <p role="alert">Revise os dados da operação antes de emitir.</p>}
       <section>
         <h3>Valores</h3>
         <table>
@@ -153,8 +157,9 @@ export function PreviaNota({ empresa, valores }) {
                 <td>{issRetidoValor === null ? TRACO : `- ${brl(issRetidoValor)}`}</td>
               </tr>
             ) : null}
+            {Object.entries(dadosDaOperacao?.payload.retencoesComplementares || {}).map(([campo, valor]) => <tr key={campo}><td>{campo === "vRetIRRF" ? "IRRF retido" : "Contribuição previdenciária retida"}</td><td>- {brl(Number(valor))}</td></tr>)}
             <tr className="linha-total">
-              <td>{issRetido ? "A receber do tomador" : "Valor da nota"}</td>
+              <td>{issRetido || dadosDaOperacao?.totalRetido ? "A receber do tomador" : "Valor da nota"}</td>
               <td>{liquido === null ? TRACO : brl(liquido)}</td>
             </tr>
           </tbody>

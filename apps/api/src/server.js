@@ -1,5 +1,8 @@
+import { createPublicOnboardingRouter } from "./routes/publicOnboarding.js";
 // src/server.js
 import express from "express";
+import { iniciarWorkerWhatsappDuravel, pararWorkerWhatsappDuravel } from "./workers/whatsappDurableWorker.js";
+import { iniciarWorkerArquivosWhatsapp, pararWorkerArquivosWhatsapp } from "./workers/whatsappArquivosWorker.js";
 import cors from "cors";
 import { log, API_KEYS, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED, DFE_NOTAS_WORKER_ENABLED, CONFERENCIA_ADN_WORKER_ENABLED, CERT_SECRET_KEY, CERT_SECRET_KEY_MIN_LENGTH } from "./config.js";
 import { runSerproPaymentConfirmationWorkerLoop } from "./workers/serproPaymentConfirmationWorker.js";
@@ -42,11 +45,10 @@ const app = express();
 // `JSON.stringify` NOSSO — que não é o mesmo texto — e a assinatura **nunca** conferiria: 403 em
 // todo evento, com um sintoma que não parece com a causa. O router traz o próprio `express.raw`,
 // então a ordem aqui é a única coisa que precisa ser respeitada.
-// ⚠ Esta é a ÚNICA rota pública do sistema (sem `ensureAuthorized`): a assinatura é a autenticação.
+// Nesta rota pública, a assinatura é a autenticação. O formulário público usa token próprio.
 // Ver `routes/webhooks/whatsapp.js`.
 app.use(CAMINHO_WEBHOOK_WHATSAPP, createWhatsappWebhookRouter());
 
-app.use(express.json());
 
 // Q8.A.2: CORS — em produção exige whitelist via env CORS_ALLOWED_ORIGINS (CSV).
 // Em dev (NODE_ENV !== "production") aceita qualquer origem (vite + ferramentas).
@@ -78,6 +80,11 @@ app.use(
     credentials: true,
   })
 );
+
+// O formulário público precisa do limitador antes de ler o corpo e do seu próprio teto de 64kb.
+// Montar após express.json() faria prevalecer o parser global de 100kb. CORS já foi aplicado.
+app.use("/public", createPublicOnboardingRouter());
+app.use(express.json());
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -140,7 +147,7 @@ if (!CERT_SECRET_KEY || CERT_SECRET_KEY.length < CERT_SECRET_KEY_MIN_LENGTH) {
   process.exit(1);
 }
 
-app.listen(PORT, HOST, () => {
+const servidor = app.listen(PORT, HOST, () => {
   log.info({ port: PORT, host: HOST }, "Servidor iniciado");
   // Q5 backfill: cria AccountingEntry para Guides PROCESSED que ainda não têm.
   backfillProvisionsFromExistingGuides({ logger: log }).catch((err) => {
@@ -175,6 +182,23 @@ app.listen(PORT, HOST, () => {
     log.warn({ err: err?.message || err }, "Seed AtividadePgdasd falhou");
   });
 });
+
+iniciarWorkerWhatsappDuravel();
+iniciarWorkerArquivosWhatsapp();
+let encerrando = false;
+async function encerrarWhatsapp() {
+  if (encerrando) return;
+  encerrando = true;
+  // Let in-flight durable claims settle; a killed process is recovered by lease expiry.
+  const limite = setTimeout(() => process.exit(0), 35000);
+  limite.unref();
+  servidor.close();
+  await Promise.allSettled([pararWorkerWhatsappDuravel(), pararWorkerArquivosWhatsapp()]);
+  await prisma.$disconnect();
+  process.exit(0);
+}
+process.once("SIGTERM", encerrarWhatsapp);
+process.once("SIGINT", encerrarWhatsapp);
 
 // Q55: worker de e-mail em loop REMOVIDO (nada roda sozinho). O envio de guias por e-mail
 // é 100% manual (página BatchEmail / POST /firm/guides/emails/send-pending|send-selected).

@@ -1,22 +1,4 @@
-// ⚠⚠ O FECHAMENTO CONTÁBIL EM LOTE EXISTIA E NÃO TINHA PORTA — de 25/07/2026 a 27/08/2026.
-//
-// `renderCompaniesHomePage.jsx` condicionava o botão a `travaFiltro === "prontas"`. As chaves que os
-// chips atribuem são `all`, `problema`, `fechar`, `apurar`, `fechada` e `enviar` — **`"prontas"`
-// nunca é atribuída a `travaFiltro` em lugar nenhum**. A palavra só existia em
-// `contagemTravas.prontas` e no guard de `fecharAsProntas`.
-//
-// ⚠ Conferido no NAVEGADOR antes do conserto: clicando o chip "☑ Falta fechar · 2" no dashboard
-// rodando, o botão não aparecia. O código do lote está inteiro — sequencial, revalidando no servidor,
-// contando recusas em vez de abortar no primeiro erro — e ninguém conseguia acioná-lo.
-//
-// ⚠⚠ E O `features/companies/CLAUDE.md` DESCREVIA O BOTÃO COMO SE ELE ESTIVESSE NA TELA. É o modo de
-// falhar mais caro desta base: a documentação afirma um recurso, ninguém duvida dela, e o recurso não
-// existe. Por isso a guarda é de LIGAÇÃO — ela clica o chip e procura o botão.
-//
-// ⚠ O que este arquivo NÃO mede é a regra do lote (sequencial, recusa, relatório): aquilo é do
-// servidor. Aqui se mede a PORTA.
-
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { CompaniesHomePage } from "../renderCompaniesHomePage.jsx";
 
 /**
@@ -95,63 +77,48 @@ beforeEach(() => {
   try { localStorage.clear(); } catch { /* jsdom sempre tem, mas o app não conta com isso */ }
 });
 
-const chip = (texto) => screen.getByRole("button", { name: new RegExp(texto, "i") });
-const botaoDeFechar = () => screen.queryByRole("button", { name: /Fechar as \d+/ });
 
-describe("⚠⚠ o botão de fechar em lote TEM porta", () => {
-  it("⚠⚠ ele aparece ao clicar o chip 'Falta fechar' — o caso que estava morto", async () => {
-    montar();
-    await screen.findByText(/ALFA PRONTA/);
-    expect(botaoDeFechar()).toBeNull();
+const selecionar = (nome) => fireEvent.click(screen.getByRole('checkbox', {name: 'Selecionar ' + nome}));
+const botaoDeFechar = () => screen.queryByRole('button', {name: /Fechar as \d+ selecionadas aptas/});
 
-    fireEvent.click(chip("Falta fechar"));
-    expect(botaoDeFechar()).toBeInTheDocument();
-  });
-
-  it("⚠ e some fora do recorte — a intenção original fica de pé", () => {
-    // O comentário do botão diz por quê: *"um botão de fechar em lote solto na barra seria fácil de
-    // clicar sem ter olhado quem vai ser fechado"*. O recorte É o ter olhado.
-    montar();
-    expect(botaoDeFechar()).toBeNull();
-  });
-
-  it("⚠ nenhum chip atribui a chave `prontas` — a condição morta não pode voltar", () => {
-    // A varredura é sobre os chips REAIS da tela: se alguém reintroduzir `travaFiltro === "prontas"`,
-    // o caso de cima cai; se alguém criar um chip "Prontas", este aqui avisa que a história mudou.
-    montar();
-    const nomes = screen.getAllByRole("button").map((b) => b.textContent.trim());
-    expect(nomes.some((n) => /^Prontas/i.test(n))).toBe(false);
-  });
+test('a faixa Carteira inteira foi removida e nenhuma ação aparece sem seleção', async () => {
+  montar();
+  await screen.findByText(/ALFA PRONTA/);
+  expect(screen.queryByRole('group', {name:'Pendências da carteira'})).not.toBeInTheDocument();
+  expect(screen.queryByText('CARTEIRA INTEIRA')).not.toBeInTheDocument();
+  expect(botaoDeFechar()).toBeNull();
 });
-
-describe("⚠⚠ o número do botão é o das que ESTÃO NA TELA e dá para fechar", () => {
-  it("⚠ ele pode ser MENOR que o do chip, e isso é correto", async () => {
-    // "Falta fechar" é estado de APURAÇÃO; `podeFechar` é o CONTÁBIL. A empresa com lançamento em
-    // branco cai em "Problema" e não entra na conta — se entrasse, o servidor a recusaria e o
-    // contador leria "3" no botão e "2 fechadas" no relatório.
-    montar();
-    await screen.findByText(/ALFA PRONTA/);
-    fireEvent.click(chip("Falta fechar"));
-    expect(botaoDeFechar().textContent).toMatch(/Fechar as 2/);
-  });
-
-  it("⚠⚠ e ele age sobre as VISÍVEIS, não sobre a carteira inteira", async () => {
-    // Este é o defeito que o conserto NÃO podia introduzir: `contagemTravas.prontas` conta a
-    // carteira toda. Filtrando a busca para uma empresa só, o botão tem de dizer 1.
-    montar();
-    await screen.findByText(/ALFA PRONTA/);
-    fireEvent.click(chip("Falta fechar"));
-
-    const busca = screen.getByPlaceholderText(/Cl[íi]nica/i);
-    fireEvent.change(busca, { target: { value: "ALFA" } });
-    expect(botaoDeFechar().textContent).toMatch(/Fechar as 1/);
-  });
-
-  it("sem nenhuma pronta à vista, o botão não existe", async () => {
-    montar();
-    await screen.findByText(/ALFA PRONTA/);
-    fireEvent.click(chip("Falta fechar"));
-    fireEvent.change(screen.getByPlaceholderText(/Cl[íi]nica/i), { target: { value: "GAMA" } });
-    expect(botaoDeFechar()).toBeNull();
-  });
+test('fechamento continua acessível para as empresas selecionadas aptas', async () => {
+  montar();
+  selecionar(PRONTA_A.razao);
+  selecionar(PRONTA_B.razao);
+  await waitFor(() => expect(botaoDeFechar()).toHaveTextContent('Fechar as 2 selecionadas aptas'));
+  selecionar(PRONTA_B.razao);
+  expect(botaoDeFechar()).toHaveTextContent('Fechar as 1 selecionadas aptas');
+});
+test('empresa bloqueada selecionada não entra no lote', async () => {
+  montar();
+  selecionar(PRONTA_A.razao);
+  selecionar(COM_PROBLEMA.razao);
+  await waitFor(() => expect(botaoDeFechar()).toHaveTextContent('Fechar as 1 selecionadas aptas'));
+});
+test('busca retira do lote quem não está mais visível', async () => {
+  montar();
+  selecionar(PRONTA_A.razao);
+  selecionar(PRONTA_B.razao);
+  await waitFor(() => expect(botaoDeFechar()).toHaveTextContent('Fechar as 2 selecionadas aptas'));
+  fireEvent.change(screen.getByPlaceholderText(/Cl[íi]nica/i), {target:{value:'ALFA'}});
+  expect(botaoDeFechar()).toHaveTextContent('Fechar as 1 selecionadas aptas');
+});
+test('cancelar a confirmação não fecha nenhuma empresa', async () => {
+  const fecharFechamentoContabil=jest.fn();
+  const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);
+  try {
+    montar({fecharFechamentoContabil});
+    selecionar(PRONTA_A.razao);
+    await waitFor(() => expect(botaoDeFechar()).toBeInTheDocument());
+    fireEvent.click(botaoDeFechar());
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining(PRONTA_A.razao));
+    expect(fecharFechamentoContabil).not.toHaveBeenCalled();
+  } finally { confirm.mockRestore(); }
 });

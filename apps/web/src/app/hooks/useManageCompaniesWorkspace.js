@@ -232,10 +232,10 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   // Carrega a matriz "empresa × tipo de guia" para a página de envio em lote.
-  async function handleLoadBatchEmailReport(competencia) {
+  async function handleLoadBatchEmailReport(competencia, { preservarFeedback = false } = {}) {
     if (page === "login") return null;
     setLoadingBatchEmailReport(true);
-    feedback.clearFeedback();
+    if (!preservarFeedback) feedback.clearFeedback();
     try {
       const result = await api.getBatchEmailReport(competencia);
       setBatchEmailReport(result || null);
@@ -260,13 +260,17 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       setBatchEmailSendResult(result || null);
       const sent = Number(result?.sent || 0);
       if (sent > 0) {
-        feedback.setMessage(`${sent} e-mail${sent === 1 ? "" : "s"} enviado${sent === 1 ? "" : "s"} com sucesso.`);
+        const incompleto = [...(batchEmailReport?.simples || []), ...(batchEmailReport?.presumidos || []), ...(batchEmailReport?.outros || [])]
+          .some((r) => items.some((it) => it.portalClientId === r.portalClientId) && r.faltantes?.length);
+        feedback.setMessage(`${sent} e-mail${sent === 1 ? "" : "s"} enviado${sent === 1 ? "" : "s"}.${incompleto ? " Há parcelas sem guia: o lote continua incompleto." : ""}`);
       } else {
         feedback.setError("Nenhum e-mail foi enviado.");
       }
+      const falhas = (result?.results || []).filter((r) => !r.ok);
+      if (falhas.length) feedback.setError(`${falhas.length} empresa(s) sem envio: ${falhas.map((r) => r.message || r.error).join("; ")}`);
       // Recarrega o report para refletir o novo estado (linhas enviadas somem).
       if (batchEmailReport?.competencia) {
-        await handleLoadBatchEmailReport(batchEmailReport.competencia);
+        await handleLoadBatchEmailReport(batchEmailReport.mesVencimento ? { mesVencimento: batchEmailReport.mesVencimento, competencia: batchEmailReport.competenciaFiltro } : batchEmailReport.competencia, { preservarFeedback: true });
       }
       return result;
     } catch (err) {
@@ -546,7 +550,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
           return { ok: false, message: `Operação desconhecida: ${op}` };
       }
     } catch (err) {
-      return { ok: false, message: err?.message || "Falha na operação SERPRO." };
+      return { ok: false, code: err?.code || err?.payload?.error, message: err?.message || "Falha na operação SERPRO." };
     }
   }
 
@@ -681,6 +685,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   async function handleResendGuide(guideId) {
+    const companyId = companiesState.selectedCompanyId;
+    if (!companyId) { feedback.setError("Selecione uma empresa."); return; }
     if (!guideId) {
       feedback.setError("guide_id_not_found");
       return;
@@ -688,17 +694,17 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     guidesState.setResendingGuideId(guideId);
     feedback.clearFeedback();
     try {
-      const r = await api.resendGuideEmail(guideId);
+      const r = await liberarComCanais({ api, companyId, guideId, reenviarConfirmado: true });
       // ⚠ A ORDEM IMPORTA: `loadGuides` começa com `feedback.clearFeedback()`. Setar a mensagem
       // antes dele APAGA a mensagem — o clique não devolvia retorno nenhum à tela, nem de sucesso
       // nem de falha. "O sistema diz que fez" tem uma variante pior: o sistema não diz nada.
-      await loadGuides();
+      await loadGuides(companyId);
       // ⚠ Dizia "Guia colocada na fila de reenvio". Não existe fila: o laço automático saiu na Q55
       // e nada drena `emailNextRetryAt`. O reenvio é SÍNCRONO — ou saiu agora, ou não saiu.
-      if (r?.sent === false) {
-        feedback.setError(r?.message || "O e-mail NÃO foi enviado. Nada tenta de novo sozinho — clique novamente.");
+      if (!r.ok) {
+        feedback.setError(r.texto);
       } else {
-        feedback.setMessage("Guia reenviada.");
+        feedback.setMessage(r.tom === "pendente" ? { texto: r.texto, tom: r.tom } : r.texto);
       }
     } catch (err) {
       feedback.setError(err?.message || "Falha ao reenviar guia");
@@ -835,7 +841,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     setRecalcInssBusy(true);
     feedback.clearFeedback();
     try {
-      await api.syncSerproInss(companyId, { competencia });
+      await api.syncSerproInss(companyId, { competencia, atualizar: true });
       // ⚠ DEPOIS do reload — `loadGuides` limpa o feedback (mesmo defeito dos vizinhos).
       await loadGuides(companyId);
       feedback.setMessage(`INSS de ${competencia} recalculado/atualizado.`);
@@ -870,7 +876,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       // sucesso, nem a falha, nem a (falsa) promessa de fila. O contador via só o selo 📤 aparecer.
       await loadGuides(companyId);
       if (r.ok) {
-        feedback.setMessage(r.texto);
+        feedback.setMessage(r.tom === "pendente" ? { texto: r.texto, tom: r.tom } : r.texto);
       } else {
         feedback.setError(r.texto);
       }

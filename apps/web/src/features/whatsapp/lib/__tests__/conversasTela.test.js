@@ -64,8 +64,8 @@ describe("fraseDoConsumo e ordenação", () => {
     ]);
     expect(l.map((x) => x.id)).toEqual(["b", "c", "a"]);
   });
-  it("os três filtros são os do servidor", () => {
-    expect(FILTROS.map((f) => f.valor)).toEqual(["todas", "nao-vinculadas", "atendidas-por-mim"]);
+  it("os filtros separam conversas atuais, histórico e lixeira no servidor", () => {
+    expect(FILTROS.map((f) => f.valor)).toEqual(["todas", "nao-vinculadas", "atendidas-por-mim", "historico", "lixeira"]);
   });
 });
 
@@ -124,9 +124,9 @@ describe("descricaoDaMidia", () => {
     expect(descricaoDaMidia({ tipo: "text", corpo: "oi" })).toBeNull();
   });
 
-  it("diz O QUE chegou e que não dá para abrir ainda", () => {
+  it("diz o que chegou e onde conferir o arquivo", () => {
     expect(descricaoDaMidia({ tipo: "image" })).toMatch(/imagem/);
-    expect(descricaoDaMidia({ tipo: "image" })).toMatch(/ainda não baixa/);
+    expect(descricaoDaMidia({ tipo: "image" })).toMatch(/Lançamentos > A lançar/);
     expect(descricaoDaMidia({ tipo: "audio" })).toMatch(/áudio/);
   });
 
@@ -134,7 +134,7 @@ describe("descricaoDaMidia", () => {
     // Defeito visto no navegador: o documento que o escritório enviou dizia "este sistema ainda não
     // baixa arquivos do WhatsApp". A limitação é ler a mídia do CLIENTE, não a nossa.
     const saida = descricaoDaMidia({ tipo: "document", direcao: "out" });
-    expect(saida).toMatch(/enviado pelo escritório/);
+    expect(saida).toMatch(/documento do escritório/);
     expect(saida).not.toMatch(/não baixa/);
   });
 

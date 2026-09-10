@@ -3,13 +3,16 @@
 // Os `servicos` são dublês injetados; o `prisma` é um objeto com os poucos métodos que as ferramentas
 // usam. Nenhuma rede, nenhum banco.
 
-import { executarFerramenta } from "../ferramentas/index.js";
+import { definicoes, executarFerramenta } from "../ferramentas/index.js";
+import { validateNfsePayload } from "../../validators/nfsePayload.js";
 import { TIPOS } from "../confirmacaoPendente.js";
+import { preparacaoEmissaoFalsa } from "../__fixtures__/preparacaoEmissao.js";
+import { TODAS_PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente.js";
 
 const silencio = { warn: jest.fn(), error: jest.fn(), info: jest.fn() };
 
 function sessao(over = {}) {
-  return { ok: true, portalClientId: "pc-1", userId: "u1", papel: "CLIENT_ADMIN", contatoNome: "Maria", motivo: null, ...over };
+  return { ok: true, portalClientId: "pc-1", userId: "u1", papel: "CLIENT_ADMIN", contatoNome: "Maria", permissoesAssistente: [...TODAS_PERMISSOES_ASSISTENTE], motivo: null, ...over };
 }
 
 const GUIA = { id: "g1", portalClientId: "pc-1", tipo: "SIMPLES", competencia: "2026-08", valor: 500, vencimento: new Date("2026-08-20T00:00:00Z"), paymentStatus: "OVERDUE", status: "PROCESSED", liberadaCliente: true, parcelamentoId: null };
@@ -21,12 +24,14 @@ function prismaFalso(over = {}) {
     serviceInvoice: { findFirst: jest.fn(async () => null) },
     portalClient: { findUnique: jest.fn(async () => ({ cnpj: "11222333000181" })) },
     companyFiscalStatus: { findUnique: jest.fn(async () => null) },
+    companyDocument: { findMany: jest.fn(async () => []) },
     ...over,
   };
 }
 
 function servicosFalsos(over = {}) {
   return {
+    ...preparacaoEmissaoFalsa,
     listGuidesByCompany: jest.fn(async () => ({ items: [GUIA], total: 1 })),
     toGuideResponse: jest.fn((g) => ({ ...g, vencida: true })),
     getGuidePdfBuffer: jest.fn(async () => Buffer.from("%PDF-1.4")),
@@ -44,6 +49,7 @@ function servicosFalsos(over = {}) {
     validarJustificativa: jest.fn((t) => (String(t || "").length >= 15 ? { ok: true } : { ok: false, motivo: "curta" })),
     parseSitfisRelatorio: jest.fn(() => ({ diagnosticos: [] })),
     criarPendencia: jest.fn(async ({ tipo, corpo }) => ({ acao: { id: "ap1" }, codigo: "A7K2", texto: `${corpo}\n\nPara confirmar, responda CONFIRMAR A7K2.` })),
+    baixarDocumentoDaEmpresa: jest.fn(async () => ({ doc: { id: "d1", tipo: "CONTRATO_SOCIAL", nome: "contrato.png", mimeType: "image/png" }, buffer: Buffer.from("png") })),
     ...over,
   };
 }
@@ -80,6 +86,26 @@ describe("papel e sessão — a recusa vem ANTES de qualquer serviço", () => {
   });
   it("ferramenta desconhecida recusa nomeando", async () => {
     expect((await executarFerramenta("emitir_nfse", {}, ctx())).motivo).toBe("FERRAMENTA_DESCONHECIDA");
+  });
+});
+
+describe("permissões explícitas do número", () => {
+  it("lista vazia esconde ferramentas de dados e o executor também recusa chamada forjada", async () => {
+    const c = ctx({ sessao: sessao({ permissoesAssistente: [] }) });
+    expect(definicoes(c.sessao).map((d) => d.name)).toEqual(["chamar_escritorio"]);
+    const r = await executarFerramenta("listar_guias", { competencia: null, status: null }, c);
+    expect(r).toMatchObject({ ok: false, motivo: "FUNCAO_NAO_LIBERADA", permissao: "GUIAS" });
+    expect(c.servicos.listGuidesByCompany).not.toHaveBeenCalled();
+  });
+
+  it("liberação parcial só expõe o grupo correspondente e o encaminhamento", () => {
+    const nomes = definicoes(sessao({ permissoesAssistente: ["SITUACAO_FISCAL"] })).map((d) => d.name);
+    expect(nomes).toEqual(["situacao_fiscal", "chamar_escritorio"]);
+  });
+
+  it("não expõe ferramentas de emissão quando o papel do portal é somente financeiro", () => {
+    const nomes = definicoes(sessao({ papel: "FINANCEIRO", permissoesAssistente: ["EMISSAO_NFSE"] })).map((d) => d.name);
+    expect(nomes).toEqual(["chamar_escritorio"]);
   });
 });
 
@@ -146,10 +172,55 @@ describe("documentos — só dentro da janela, e sempre pelo escopo", () => {
     expect(r.mensagem).toMatch(/sem o QR Code/);
     expect(c.enviarDocumento).not.toHaveBeenCalled();
   });
+  it("documento da empresa: lista sem fileKey e envia usando a empresa da sessão", async () => {
+    const companyDocument = {
+      findMany: jest.fn(async () => [{ id: "d1", tipo: "CONTRATO_SOCIAL", nome: "contrato.pdf", mimeType: "application/pdf", bytes: 20, validade: null, createdAt: new Date("2026-09-01") }]),
+    };
+    const c = ctx({ prisma: prismaFalso({ companyDocument }) });
+    const lista = await executarFerramenta("listar_documentos", {}, c);
+    expect(lista.documentos[0]).toMatchObject({ documentId: "d1", tipoDescricao: "Contrato social" });
+    expect(lista.documentos[0]).not.toHaveProperty("fileKey");
+    expect(companyDocument.findMany.mock.calls[0][0].where).toEqual({ portalClientId: "pc-1" });
+
+    const envio = await executarFerramenta("enviar_documento_da_empresa", { documentId: "d1" }, c);
+    expect(envio).toMatchObject({ ok: true, enviado: true, documentId: "d1" });
+    expect(c.servicos.baixarDocumentoDaEmpresa).toHaveBeenCalledWith({ portalClientId: "pc-1", documentId: "d1" });
+    expect(c.enviarDocumento).toHaveBeenCalledWith(expect.objectContaining({ documentId: "d1", nomeArquivo: "contrato.png", mimeType: "image/png" }));
+  });
 });
 
 describe("as três preparar_* — só PENDÊNCIA, nunca ato", () => {
   const emissao = { tomadorDoc: "12.345.678/0001-90", tomadorNome: "ACME", tomadorEmail: null, descricao: "Consultoria", valor: 1500.5, competencia: "2026-09", aliquota: null, issRetido: null, pTotTribSN: null, endereco: null };
+  it("exige escolha entre perfis e leva o escolhido à confirmação", async () => {
+    const perfis = [{ id: "p1", nome: "Contabilidade", codigoServicoNacional: "171901" }, { id: "p2", nome: "Consultoria", codigoServicoNacional: "170101" }];
+    const c = ctx({ servicos: servicosFalsos({ listarPerfisEmissao: jest.fn(async () => perfis) }) });
+    expect((await executarFerramenta("preparar_emissao", emissao, c)).motivo).toBe("ESCOLHER_PERFIL_EMISSAO");
+    expect(c.servicos.criarPendencia).not.toHaveBeenCalled();
+    expect((await executarFerramenta("preparar_emissao", { ...emissao, perfilId: "outra-empresa" }, c)).ok).toBe(false);
+    await executarFerramenta("preparar_emissao", { ...emissao, perfilId: "p2" }, c);
+    expect(c.servicos.validateNfsePayload).toHaveBeenCalledWith(expect.objectContaining({ perfilId: "p2" }));
+    expect(c.servicos.criarPendencia).toHaveBeenCalledWith(expect.objectContaining({ corpo: expect.stringContaining("Perfil de serviço: Consultoria") }));
+  });
+
+  it("campos por operação usam validador real e aparecem na confirmação e na pendência", async () => {
+    const c = ctx({ servicos: servicosFalsos({ validateNfsePayload: jest.fn(validateNfsePayload), listarPerfisEmissao: jest.fn(async () => []) }) });
+    const r = await executarFerramenta("preparar_emissao", { ...emissao, valorRetidoIRRF: 15.25, valorRetidoPrevidencia: 10, obraCnoCei: "123456789012", destinatarioDoc: "11222333000181", destinatarioNome: "Destinatário informado" }, c);
+    expect(r.ok).toBe(true);
+    const chamada = c.servicos.criarPendencia.mock.calls[0][0];
+    expect(chamada.payload.retencoesComplementares).toEqual({ vRetIRRF: 15.25, vRetCP: 10 });
+    expect(chamada.payload.obra).toEqual({ cObra: "123456789012" });
+    expect(chamada.payload.destinatario.nome).toBe("Destinatário informado");
+    expect(chamada.corpo).toContain("15,25");
+    expect(chamada.corpo).toContain("CNO/CEI 123456789012");
+    expect(chamada.corpo).toContain("Destinatário informado");
+  });
+  it("retenção maior que serviço e obra ambígua não criam pendência", async () => {
+    const c = ctx({ servicos: servicosFalsos({ validateNfsePayload: jest.fn(validateNfsePayload), listarPerfisEmissao: jest.fn(async () => []) }) });
+    for (const extra of [{ valorRetidoIRRF: 2000 }, { obraCnoCei: "123", obraCib: "12345678" }, { destinatarioNome: "Sem documento" }]) {
+      expect((await executarFerramenta("preparar_emissao", { ...emissao, ...extra }, c)).ok).toBe(false);
+    }
+    expect(c.servicos.criarPendencia).not.toHaveBeenCalled();
+  });
 
   it("preparar_emissao: portão recusa → nenhuma pendência", async () => {
     const c = ctx({ servicos: servicosFalsos({ autorizarEmissaoDoCliente: jest.fn(async () => ({ ok: false, codigo: "EMISSAO_CLIENTE_NAO_LIBERADA", message: "não liberada", correcao: "peça ao contador" })) }) });
@@ -241,10 +312,45 @@ describe("as três preparar_* — só PENDÊNCIA, nunca ato", () => {
     expect(chamada.payload).toEqual({ guideId: "g1" });
     expect(chamada.corpo).toMatch(/juros e multa/);
   });
+  it("preparação não inventa valor atualizado nem data final de cálculo e preserva esse limite no resumo", async () => {
+    const c = ctx();
+    const r = await executarFerramenta("preparar_recalculo", { guideId: "g1" }, c);
+    expect(r.calculo).toEqual({ apurado: false, valorAtualizado: null, dataFinalDosEncargos: null });
+    expect(c.servicos.criarPendencia.mock.calls[0][0].corpo).toContain("O valor atualizado e a data final de cálculo dos encargos ainda não foram apurados.");
+    expect(r.instrucao).toContain("Não prometa");
+  });
   it("chamar_escritorio registra o pedido", async () => {
     const c = ctx();
     const r = await executarFerramenta("chamar_escritorio", { motivo: "quer saber se pode deduzir" }, c);
     expect(r.ok).toBe(true);
     expect(c.registrarChamadaAoEscritorio).toHaveBeenCalledWith({ motivo: "quer saber se pode deduzir" });
+  });
+});
+
+
+describe("tabela SITFIS salva em PDF", () => {
+  function fiscalContext(over = {}) {
+    return ctx({ prisma: prismaFalso({ companyFiscalStatus: { findUnique: jest.fn(async () => ({ texto: "relatório salvo", situacao: "EM_PARCELAMENTO", checkedAt: new Date("2026-07-24"), ultimoRelatorioEm: new Date("2026-07-24") })) } }),
+      servicos: servicosFalsos({ gerarPdfSitfisTabela: jest.fn(async () => Buffer.from("%PDF")) }), ...over });
+  }
+  it("envia anexo com parser completo e escopo da sessão", async () => {
+    const c = fiscalContext(); const r = await executarFerramenta("situacao_fiscal", {}, c);
+    expect(c.prisma.companyFiscalStatus.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { portalClientId: "pc-1" } }));
+    expect(c.servicos.gerarPdfSitfisTabela).toHaveBeenCalledWith(expect.objectContaining({ relatorio: { diagnosticos: [] } }));
+    expect(c.enviarDocumento).toHaveBeenCalledWith(expect.objectContaining({ situacaoFiscal: true, mimeType: "application/pdf", conteudo: expect.any(Buffer) }));
+    expect(r).toMatchObject({ ok: true, enviado: true }); expect(r).not.toHaveProperty("diagnosticos");
+  });
+  it("janela fechada não gera ou envia PDF", async () => {
+    const c = fiscalContext({ janela: { aberta: false } });
+    expect((await executarFerramenta("situacao_fiscal", {}, c)).motivo).toBe("FORA_DA_JANELA");
+    expect(c.servicos.gerarPdfSitfisTabela).not.toHaveBeenCalled(); expect(c.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("falha de envio nunca confirma entrega", async () => {
+    const c = fiscalContext({ enviarDocumento: jest.fn(async () => { throw new Error("offline"); }) });
+    expect(await executarFerramenta("situacao_fiscal", {}, c)).toMatchObject({ ok: false, motivo: "SITFIS_ANEXO_ERRO" });
+  });
+  it("falha de geração não envia arquivo", async () => {
+    const c = fiscalContext({ servicos: servicosFalsos({ gerarPdfSitfisTabela: jest.fn(async () => { throw new Error("PDF"); }) }) });
+    expect((await executarFerramenta("situacao_fiscal", {}, c)).ok).toBe(false); expect(c.enviarDocumento).not.toHaveBeenCalled();
   });
 });

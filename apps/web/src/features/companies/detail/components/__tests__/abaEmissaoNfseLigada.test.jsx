@@ -139,6 +139,7 @@ describe("o salvar da aba grava, e só grava o que é dela", () => {
         {...props}
       />
     );
+    fireEvent.click(screen.getByText("Serviços habilitados e configurações gerais"));
     return { onSalvar };
   }
 

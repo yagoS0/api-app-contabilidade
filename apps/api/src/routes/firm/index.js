@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { createExportacaoLoteRouter } from "./exportacaoLote.js";
+import { responderFluxoDeCaixa } from "../fluxoDeCaixaHttp.js";
 import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
@@ -36,9 +38,12 @@ import { createCompanyDocumentsRouter } from "./companyDocuments.js";
 import { createCompanyCredentialsRouter } from "./companyCredentials.js";
 import { createPortalAccessRouter } from "./portalAccess.js";
 import { createCalendarioRouter } from "./calendario.js";
+import { createAgendaRouter } from "./agenda.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
 import { createOnboardingsRouter } from "./onboardings.js";
 import { createWhatsappGuiasRouter } from "./whatsappGuias.js";
+import { createWhatsappArquivosRouter } from "./whatsappArquivos.js";
+import { createCorrigirValorGuiaRouter } from "./corrigirValorGuia.js";
 import { createWhatsappConversasRouter } from "./whatsappConversas.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
 import { mesclarAtividades } from "../../application/company/atividadesDaEmpresa.js";
@@ -71,7 +76,8 @@ import {
   listNotasCapturaJobs,
 } from "../../application/notas/captura/NotasCapturaService.js";
 import {
-  listarContatos, salvarContato, removerContato, ContatoWhatsappError, CANAL_PADRAO,
+  listarContatos, salvarContato, salvarPermissoesAssistente, removerContato,
+  ContatoWhatsappError, CANAL_PADRAO,
 } from "../../application/whatsapp/ContatoWhatsappService.js";
 import { capturaParadaPorEmpresa } from "../../application/notas/capturaParada.js";
 import {
@@ -105,6 +111,7 @@ import { normalizeCompetencia, normalizeGuideType, colunaMatrizDaGuia, envioDeEm
 // A matriz do envio em lote le o estado de envio da MESMA fonte que o chip do dashboard
 // (`envios_guia`): enviada = terminal em QUALQUER canal, e o WhatsApp que falhou aparece.
 import { enviosPorGuia, foiEnviadaComLegado, envioParaExibir } from "../../application/guides/EnvioGuiaService.js";
+import { relatorioPorVencimento } from "../../application/guides/GuideDueBatchService.js";
 import { podeTentarDeNovoPeloCodigo } from "../../application/whatsapp/errosMeta.js";
 // O consumo do assistente (IA) no mês — molde de `/serpro/consumo`, para a tela de conversas.
 import { consumoIaDoMes } from "../../application/assistente/GuardaIaService.js";
@@ -544,6 +551,9 @@ function sanitizeFirmRole(role) {
 export function createFirmPortalRouter({ ensureAuthorized, log }) {
   const router = Router();
   router.use(requireAuth(), requireAccountType("FIRM"));
+  router.use(createExportacaoLoteRouter());
+  // 08/09/2026: retorno solicitado em Relatórios, exclusivamente leitura.
+  router.get("/companies/:companyId/fluxo-de-caixa", requireFirmCompanyAccess(), (req, res) => responderFluxoDeCaixa(req, res, { log }));
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 },
@@ -2596,6 +2606,20 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     });
   });
 
+  router.get("/companies/:companyId/guides/due-report", requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      const company = await prisma.portalClient.findUnique({
+        where: { id: req.params.companyId }, select: { id: true, razao: true, cnpj: true },
+      });
+      if (!company) return res.status(404).json({ error: "company_not_found" });
+      return res.json(await relatorioPorVencimento({
+        companies: [company], mesVencimento: String(req.query.mesVencimento || ""),
+      }));
+    } catch (err) {
+      return res.status(err.status || 500).json({ error: err.code || "DUE_REPORT_FAILED", message: err.message });
+    }
+  });
+
   router.get(
     "/companies/:companyId/guides",
     requireFirmCompanyAccess(),
@@ -2915,6 +2939,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // `portalClientId` no CORPO sobrescrevia o do path — o corpo escolhendo o tenant que a
       // autorização já havia decidido.
       const contato = await salvarContato({ ...(req.body || {}), portalClientId: req.params.companyId });
+      if (Array.isArray(req.body?.permissoesAssistente)) {
+        log.info({
+          portalClientId: String(req.params.companyId),
+          contatoId: contato.id,
+          actorUserId: req.auth?.user?.id || null,
+          permissoesDepois: contato.permissoesAssistente || [],
+        }, "Acessos do assistente por WhatsApp definidos no cadastro do contato");
+      }
       return res.json({ ok: true, contato });
     } catch (err) {
       // Erro de validação é do USUÁRIO e tem conserto na tela — 400 com a mensagem pronta, não 500.
@@ -2923,6 +2955,35 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
       log.error({ err }, "Falha ao salvar contato de WhatsApp");
       return res.status(500).json({ ok: false, error: "contato_save_failed", message: err?.message });
+    }
+  });
+
+  router.patch("/companies/:companyId/contatos-whatsapp/:contatoId/permissoes-assistente", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const anterior = await prisma.contatoWhatsapp.findFirst({
+        where: { id: String(req.params.contatoId), portalClientId: String(req.params.companyId) },
+        select: { permissoesAssistente: true },
+      });
+      const contato = await salvarPermissoesAssistente({
+        portalClientId: req.params.companyId,
+        contatoId: req.params.contatoId,
+        permissoesAssistente: req.body?.permissoesAssistente,
+      });
+      log.info({
+        portalClientId: String(req.params.companyId),
+        contatoId: String(req.params.contatoId),
+        actorUserId: req.auth?.user?.id || null,
+        permissoesAntes: anterior?.permissoesAssistente || [],
+        permissoesDepois: contato.permissoesAssistente || [],
+      }, "Acessos do assistente por WhatsApp alterados");
+      return res.json({ ok: true, contato });
+    } catch (err) {
+      if (err instanceof ContatoWhatsappError) {
+        return res.status(err.code === "CONTATO_NAO_ENCONTRADO" ? 404 : 400)
+          .json({ ok: false, error: err.code, message: err.message });
+      }
+      log.error({ err }, "Falha ao salvar permissões do assistente para o contato");
+      return res.status(500).json({ ok: false, error: "permissoes_assistente_save_failed", message: "Não foi possível salvar os acessos deste número." });
     }
   });
 
@@ -3378,6 +3439,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     }));
     const portalIds = companies.map((c) => c.id);
 
+    if (req.query.mesVencimento) {
+      try {
+        return res.json(await relatorioPorVencimento({ companies, mesVencimento: String(req.query.mesVencimento), competencia: competenciaFilter }));
+      } catch (err) {
+        return res.status(err.status || 500).json({ error: err.code || "BATCH_REPORT_FAILED", message: err.message });
+      }
+    }
+
     // Q10.3: guides PROCESSED pending. Filtro de competência só quando explicitamente passado.
     // Sem filtro, vem TODAS as guides pending de QUALQUER competência (incluindo emailStatus=null
     // pra retrocompat com guides antigos que ficaram sem o campo).
@@ -3575,13 +3644,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     for (const it of items) {
       const portalClientId = String(it?.portalClientId || "").trim();
       const competencia = String(it?.competencia || "").trim();
-      if (!portalClientId || !competencia) {
+      if (!portalClientId || (!competencia && !it?.mesVencimento)) {
         results.push({ portalClientId, competencia, ok: false, error: "invalid_input" });
         continue;
       }
       try {
         // eslint-disable-next-line no-await-in-loop
-        const r = await sendCompanyGuidesEmail({ portalClientId, competencia });
+        const r = await sendCompanyGuidesEmail({ portalClientId, competencia,
+          ...(it?.mesVencimento ? { mesVencimento: it.mesVencimento, selectedGuideIds: it.guideIds, assinatura: it.assinatura } : {}) });
         results.push({ portalClientId, competencia, ok: true, ...r });
       } catch (err) {
         log.error({ err: err?.message || err, portalClientId, competencia }, "Falha no batch-send de e-mail");
@@ -4187,16 +4257,22 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         return res.status(400).json({ error: "guide_has_no_company", reason: "Guia sem empresa vinculada" });
       }
 
-      const updated = await prisma.guide.update({
-        where: { id: guide.id },
-        data: {
-          emailStatus: "PENDING",
-          emailAttempts: 0,
-          emailLastError: null,
-          emailSentAt: null,
-          emailNextRetryAt: null,
-        },
+      // Ausência de canal não inicia tentativa nem apaga o histórico do último envio.
+      let destinatarios;
+      try { destinatarios = await resolveCompanyNotificationEmails(guide.portalClientId); }
+      catch (err) {
+        log.warn({ guideId: guide.id, err: err?.message }, "Falha ao conferir destinatários antes do reenvio");
+        return res.status(503).json({ ok: false, sent: false, error: "guide_email_recipient_check_failed", message: "Não foi possível conferir a Configuração de envio. Nenhum e-mail foi enviado; tente novamente." });
+      }
+      if (!destinatarios.length) return res.json({
+        ok: true, guideId: guide.id, emailStatus: guide.emailStatus || null, sent: false,
+        envio: { feito: false, naoSeAplica: true, motivo: "sem_email_cadastrado", podeTentarNovamente: false },
+        message: mensagemSemEmailCadastrado(),
       });
+
+      // O worker selecionado aceita guias já enviadas e inicia a nova tentativa.
+      // Não zerar o histórico se houver lock ou se o contato mudar antes dessa tentativa.
+      const updated = guide;
 
       // Q10.2: reenvio é SÍNCRONO — não depende do worker rodar em background.
       // Permite ao contador clicar "Reenviar" e ter feedback imediato (SENT ou ERROR).
@@ -4409,12 +4485,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
 
       try {
-        const result = await capturePgdasGuideForCompany({
+        const result = await comContextoSerpro({ origem: "firm_captura_das", userId: req.auth?.user?.id }, () => capturePgdasGuideForCompany({
           portalClientId: portalCompanyId,
           competencia,
           contratanteCnpj: contratanteCnpj || undefined,
           serviceId,
-        });
+        }));
 
         // Auto-send REMOVIDO. Guia capturada do SERPRO fica em emailStatus=PENDING
         // aguardando envio em lote via página `Envio de e-mails em lote`.
@@ -4485,11 +4561,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           });
         }
 
-        const result = await syncSerproInssForCompany({
+        const result = await comContextoSerpro({ origem: "firm_captura_inss", userId: req.auth?.user?.id }, () => syncSerproInssForCompany({
           portalClientId: portalCompanyId,
           competencia,
+          atualizar: req.body?.atualizar === true,
           contratanteCnpj: contratanteCnpj || undefined,
-        });
+        }));
 
         // Auto-send REMOVIDO. Guia INSS fica em emailStatus=PENDING aguardando
         // envio em lote via página `Envio de e-mails em lote`.
@@ -5123,14 +5200,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         totalProcessed: 0,
         sent: 0,
         failed: 0,
+        skipped: 0,
+        skippedItems: [],
         batches: 0,
         failedItems: [],
         batchResults: [],
       };
+      const ignoradas = new Set();
 
       for (let i = 0; i < maxBatches; i += 1) {
         // eslint-disable-next-line no-await-in-loop
-        const batch = await runGuideEmailWorkerOnce({ batchSize });
+        const batch = await runGuideEmailWorkerOnce({ batchSize, ignorarGuideIds: [...ignoradas] });
         if (batch?.skipped && batch?.reason === "lock_active") {
           return res.status(409).json({
             ok: false,
@@ -5147,6 +5227,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         aggregated.totalProcessed += total;
         aggregated.sent += sent;
         aggregated.failed += errors;
+        const skippedItems = results.filter((item) => item.status === "SKIPPED");
+        for (const item of skippedItems) ignoradas.add(String(item.guideId));
+        aggregated.skipped += skippedItems.length;
+        aggregated.skippedItems.push(...skippedItems);
         aggregated.batchResults.push({
           batch: aggregated.batches,
           total,
@@ -5179,7 +5263,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
       return res.json({
         ok: true,
-        message: "Todos os e-mails pendentes elegíveis foram processados com sucesso.",
+        message: aggregated.skipped > 0
+          ? `${aggregated.sent > 0 ? `${aggregated.sent} e-mail(s) enviado(s)` : "Nenhum e-mail foi enviado"}; ${aggregated.skipped} guia(s) sem e-mail cadastrado na Configuração de envio não foram enviadas.`
+          : aggregated.sent > 0 ? `${aggregated.sent} e-mail(s) enviado(s).` : "Nenhum e-mail foi enviado: não há guias elegíveis para envio neste momento.",
         result: aggregated,
       });
     }
@@ -5421,6 +5507,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   // Calendário fiscal — do ESCRITÓRIO, não por empresa: monta no nível raiz de /firm.
   router.use("/", createCalendarioRouter({ log }));
+  router.use("/", createAgendaRouter({ log }));
 
   // Obrigações — também do ESCRITÓRIO (a pergunta é "o que EU preciso entregar, em toda a
   // carteira"), então monta na raiz de /firm com filtro de empresa opcional.
@@ -5434,6 +5521,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // envio individual, que é por empresa, traz o próprio `requireFirmCompanyAccess` no caminho.
   // ⚠ Só a SAÍDA. O webhook é público e vive fora deste roteador (é o único sem `requireAuth`).
   router.use("/", createWhatsappGuiasRouter({ log }));
+  router.use("/", createWhatsappArquivosRouter({ log }));
+  router.use("/", createCorrigirValorGuiaRouter({ log }));
   // A tela mínima de conversas (F5, 02/09/2026): lista, fio, assumir/devolver, responder, vincular.
   router.use("/", createWhatsappConversasRouter({ log }));
 

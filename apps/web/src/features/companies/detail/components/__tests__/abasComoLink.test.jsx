@@ -48,6 +48,20 @@ function clicar(elemento, init = {}) {
 }
 
 describe("a aba de navegação é um <a href> com a URL da aba", () => {
+  test("cabeçalho compacto mantém o retorno acessível e a marca sem letreiro", () => {
+    const onBack = jest.fn();
+    montarHeader("configuracoesEmpresa", { onBack });
+    const voltar = screen.getByRole("button", { name: "Voltar" });
+    expect(voltar).toHaveAttribute("title", "Voltar");
+    expect(voltar).toHaveTextContent(/^$/);
+    fireEvent.click(voltar);
+    expect(onBack).toHaveBeenCalledTimes(1);
+    const inicio = screen.getByRole("link", { name: "Altan — página principal" });
+    expect(inicio).toHaveAttribute("href", "/companies");
+    expect(inicio.querySelectorAll("svg text")).toHaveLength(0);
+    expect(inicio.querySelector("svg")).toHaveAttribute("viewBox", "30 56 140 55");
+  });
+
   test("cada sub-aba do grupo Fiscal leva a URL da sua rota", () => {
     montarHeader("notasFiscais");
     expect(screen.getByRole("link", { name: "Notas Fiscais" }))
@@ -71,14 +85,15 @@ describe("a aba de navegação é um <a href> com a URL da aba", () => {
       .toHaveAttribute("href", companyTabPath("empresa-1", "lancamentos"));
     expect(within(grupos).getByRole("link", { name: "Fiscal" }))
       .toHaveAttribute("href", companyTabPath("empresa-1", "notasFiscais"));
-    expect(within(grupos).getByRole("link", { name: "Empresa" }))
-      .toHaveAttribute("href", companyTabPath("empresa-1", "cadastro"));
+    expect(within(grupos).getByRole("link", { name: "Documentos" }))
+      .toHaveAttribute("href", companyTabPath("empresa-1", "documentos"));
+    expect(within(grupos).queryByRole("link", { name: "Empresa" })).toBeNull();
   });
 
   // ⚠ ESTE É O TESTE QUE PEGA A ABA NOVA MAL LIGADA. Aba declarada em `GROUPS` sem o par em
   // `TAB_TO_SEGMENT` renderiza sem href, vira `<button>` e — na tela do contador — a URL cai em
   // Anotações sem erro nenhum. Aqui ela cai como aba sem link.
-  test.each(["anotacoes", "lancamentos", "notasFiscais", "cadastro"])(
+  test.each(["anotacoes", "lancamentos", "notasFiscais", "documentos", "configuracoesEmpresa"])(
     "no grupo aberto por %s, TODA aba desenhada tem URL própria e conhecida",
     (aba) => {
       montarHeader(aba);
@@ -95,6 +110,29 @@ describe("a aba de navegação é um <a href> com a URL da aba", () => {
 });
 
 describe("o clique NORMAL continua sendo SPA; o com modificador é do navegador", () => {
+  test.each(["anotacoes", "lancamentos", "notasFiscais", "configuracoesEmpresa"])(
+    "Documentos é acessível a partir de %s sem passar pelo cadastro",
+    (aba) => {
+      const { onTabChange } = montarHeader(aba);
+      const documentos = screen.getByRole("link", { name: "Documentos" });
+      expect(documentos).toHaveAttribute("href", "/companies/empresa-1/documentos");
+      expect(screen.getByRole("link", { name: "Configurações da empresa" }))
+        .toHaveAttribute("href", "/companies/empresa-1/ajustes");
+      expect(clicar(documentos, { ctrlKey: true }).defaultPrevented).toBe(false);
+      expect(onTabChange).not.toHaveBeenCalled();
+      clicar(documentos);
+      expect(onTabChange).toHaveBeenCalledWith("documentos");
+    }
+  );
+
+  test("Documentos destaca a aba direta, sem subabas de configuração ou competência", () => {
+    montarHeader("documentos", { competencia: "2026-08", onCompetenciaChange: jest.fn() });
+    expect(screen.getByRole("link", { name: "Documentos" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("navigation", { name: /Seções de/ })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Competência" })).toBeNull();
+    expect(SEGMENT_TO_TAB.documentos).toBe("documentos");
+  });
+
   test("clique simples: não navega o browser (preventDefault) e troca de aba pelo app", () => {
     const { onTabChange } = montarHeader("notasFiscais");
     const evento = clicar(screen.getByRole("link", { name: "Guias" }));

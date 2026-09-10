@@ -1,5 +1,23 @@
 # CLAUDE.md — Guias (apps/web/src/features/guides)
 
+## Resultado da liberação em lote — 10/09/2026
+
+`ResultadoLiberacaoGuias` apresenta o retorno da seleção da carteira por empresa e canal, com resumo e detalhes recolhidos. `resumirLiberacao` usa a prévia da execução, nunca a seleção/competência posterior. Falta de cadastro é canal não utilizado; tentativa recusada ou indeterminada continua exigindo atenção. Aceite de WhatsApp significa aguardando entrega. Parcelas faltantes continuam identificadas por empresa. O resultado permanece ao limpar a seleção; falha na atualização da carteira não apaga o retorno nem repete o envio. A prévia mostra cada empresa uma vez, seus destinatários e documentos expansíveis, avisando quando só haverá liberação no portal.
+
+## Organização da tela de Guias — 10/09/2026
+
+Upload, marcar vazio e configuração de envio compartilham o cabeçalho da lista. A configuração continua navegando para `comunicacao` via `onConfigurarEnvio`; as ações da guia selecionada têm uma barra própria. Consultas auxiliares ficam em um menu que fecha ao escolher a visão.
+
+A grade tem oito colunas: seleção, guia, competência, valor, vencimento, pagamento, envio e linha digitável. O processamento fica abaixo do nome; `ERROR` aparece como “Revisar documento”, separado do resultado de envio. Valores têm alinhamento numérico; a linha digitável mantém máscara, conteúdo completo e cópia dos dígitos. Até 800 px, as linhas viram cartões com rótulos. CSS escopado em `guides-workspace.css`. A competência global e as regras de vencimento, seleção, pagamento e envio permanecem as mesmas.
+
+## Guias dentro da empresa por vencimento — 10/09/2026
+
+A seleção de empresas (`BarraSelecaoEmpresas`) também deriva o mês seguinte da competência do cabeçalho, sem seletor adicional. A página independente de envio em lote usa uma única competência de trabalho e deriva o vencimento; não filtra a competência original dos documentos. E-mail e WhatsApp recebem o mesmo mês derivado e os IDs conferidos. Respostas antigas da prévia não substituem uma consulta posterior.
+
+Decisão de produto corrigida pelo usuário: `CompanyGuidesTable` segue SOMENTE a competência do cabeçalho e deriva o vencimento pelo mês seguinte (`deslocarCompetencia(competencia, 1)`). Agosto mostra tudo que vence em setembro, incluindo DAS de agosto e parcela de setembro. Não adicionar seletor independente de vencimento nem exigir configuração do usuário. O título informa o mês derivado; histórico e consulta fiscal ficam em “Outras consultas”. Trocar empresa/competência retorna à visão principal e limpa seleção. Guias pagas permanecem identificadas; VAZIO só aparece no histórico/competência. Captura, upload e marcar vazio preservam competência fiscal.
+
+A conferência de parcelas usa GET `/firm/companies/:companyId/guides/due-report`, com `requireFirmCompanyAccess`, apenas dados locais e escopo de uma empresa. Falha aparece como falha, e nenhuma ausência de documento confirma regularidade. Reutiliza a regra de parcelas do lote. `getCompanyGuides` percorre as páginas para não esconder documentos depois dos primeiros 50; falha intermediária rejeita toda a carga.
+
 Feature de guias no frontend: listagem por empresa, upload/identificação, captura,
 envio em lote e o painel de guias esperadas.
 
@@ -448,7 +466,43 @@ quem recebe a guia é assunto do **envio**.
 
 ### Reenviar guia já enviada
 
+O modal da aba Guias também usa `liberarComCanais`, com `reenviarConfirmado: true`.
+Ele chama a rota própria de reenvio de e-mail e respeita o canal configurado para WhatsApp.
+A confirmação do modal autoriza `reenviar: true` na primeira tentativa de WhatsApp;
+PERGUNTAR ainda pede a escolha de canal. Antes de 07/09/2026, esse modal chamava
+somente `resendGuideEmail`, deixando empresas sem e-mail sem tentativa por WhatsApp.
+
 `GUIA_JA_ENVIADA` deixou de ser o fim do caminho (`liberarComCanais` + `perguntaDeReenvio`): a tela
 **avisa com o motivo que o servidor deu** e, só com o sim, repete o pedido com `reenviar: true`.
 ⚠ **Vale no envio POR GUIA.** O lote continua pulando as já enviadas — é o que impede a carteira
 inteira de sair duas vezes num clique.
+
+
+## Auditoria WhatsApp e IA — 07/09/2026
+
+- `liberarComCanais` lê configuração e pergunta antes de qualquer envio. Erro de configuração interrompe a ação; falha de transporte do e-mail não é repetida e não impede que o endpoint WhatsApp valide sua própria autorização. Recusa HTTP 4xx interrompe a liberação.
+- `desfechoWhatsapp` conserva resultados por contato, parcial e indeterminado. Aceite da Meta aparece neutro, aguardando entrega; nunca é prova de recebimento. Retentativa seletiva usa `apenasFalhos`; reenvio amplo exige confirmação explícita.
+- `usePollingEntrega` acompanha a tentativa, com orçamento de 24 consultas renovado por nova tentativa e ação manual após esgotar.
+- `ModalCorrigirValorGuia` oferece prévia para OUTRA processada com valor divergente no PDF. Aplicação exige revisão válida e confirmação, chama a operação contábil transacional e não envia a guia.
+- A aba A lançar recebe `PainelArquivosWhatsapp`: abertura manual, OFX com prévia e confirmação, retenção do original por 90 dias. O commit leva `arquivoWhatsappId` para idempotência e marcação atômicas no servidor. Arquivos sem empresa exigem vínculo explícito antes de abrir.
+- Em modo real não se usa resultado simulado como recuperação de erro, inclusive nas operações de IA.
+
+## Permissões da IA por número — 07/09/2026
+
+Cada destinatário com telefone mostra **Acessos da IA** na Configuração de envio. A seleção é por
+número e começa vazia: guias, notas/DANFSe, documentos da empresa, situação fiscal, recálculo,
+emissão e cancelamento são liberados separadamente. O formulário de contato também permite escolher
+essas funções na criação.
+Contatos antigos têm a ação **Vincular pessoa** na própria linha. Recálculo seleciona também guias;
+cancelamento seleciona também notas/DANFSe, porque essas consultas localizam o alvo da ação.
+
+As caixas não substituem a **Pessoa do portal** nem o papel dela. A tela diz isso antes de salvar;
+o servidor é o portão e exige os dois. A gravação usa a rota própria
+`PATCH /firm/companies/:companyId/contatos-whatsapp/:contatoId/permissoes-assistente`, para não tocar
+em telefone, e-mail, opt-in ou usuário ao alterar somente os acessos.
+
+### 10/09/2026 — Conferência de guias por vencimento
+
+A seleção de empresas (`BarraSelecaoEmpresas`) tem mês de vencimento independente da competência da carteira. O painel `/guides/batch-email` usa o mês atual do Rio de Janeiro, permite consultar qualquer mês e mantém competência como filtro opcional com aviso. `GuiasPorVencimento` mostra cada documento e parcela faltante, inclusive empresa sem nenhum PDF disponível. Pagas não são selecionadas. Pendências anteriores e sem vencimento ficam fora do lote.
+
+Os dois canais enviam IDs exatos; a assinatura devolvida pelo servidor acompanha a confirmação. A mensagem de envio não pode declarar a carteira concluída se há parcelas faltantes. O mock mantém IDs estáveis e reflete o envio sem esconder essas pendências.

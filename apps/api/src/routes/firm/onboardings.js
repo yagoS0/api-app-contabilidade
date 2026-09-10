@@ -1,11 +1,8 @@
 // ONBOARDINGS — funil pré-cadastro do escritório.
 // Mount: `/firm/onboardings` (na RAIZ de /firm, não sob `/companies/:companyId`).
 //
-// ⚠ ESCOPO MULTI-TENANT (Fase 1): NÃO HÁ ISOLAMENTO POR USUÁRIO. Todo usuário FIRM enxerga todos os
-// onboardings. Está escrito aqui para ninguém supor um isolamento que não existe ao ler o resto do
-// diretório. O motivo é estrutural: as demais rotas de escritório se escopam por
-// `empresasVisiveis(req)`, que lê `CompanyFirmAccess` — um vínculo que só passa a existir quando a
-// empresa é criada. Uma ficha pré-cadastro, por definição, ainda não tem empresa.
+// ESCOPO: admin/contador gerenciam o escritório; demais usuários FIRM veem somente fichas
+// cujo criadoPorId é o próprio usuário. A rota aplica o escopo antes de todo acesso por id.
 //
 // ⚠ NENHUMA ROTA AQUI USA `requireFirmCompanyAccess`. Ele resolve o `companyId` de
 // `params`/`body` e, não achando nenhum, responde **400 `company_id_required`** — daria 400 em toda
@@ -13,7 +10,9 @@
 // `router.use(requireAuth(), requireAccountType("FIRM"))` do router pai; o que exige mais usa o
 // helper local `somenteAdminOuContador`, no molde do `PATCH /companies`.
 
+import { createFluxoComercialRouter } from "./fluxoComercial.js";
 import { Router } from "express";
+import { criarServicoComercial, exigirEscopo, escopoComercial } from "../../application/onboarding/ComercialService.js";
 import {
   OnboardingError,
   atualizar,
@@ -39,6 +38,7 @@ import { empresasVisiveis } from "./empresasVisiveis.js";
 
 export function createOnboardingsRouter({ log } = {}) {
   const router = Router({ mergeParams: true });
+  router.use("/comercial", createFluxoComercialRouter());
 
   // Erro de domínio traz `status`/`code` próprios; o resto vira 500 sem vazar stack.
   // Molde do `falhar` de `routes/firm/obrigacoes.js`.
@@ -73,12 +73,48 @@ export function createOnboardingsRouter({ log } = {}) {
     return true;
   }
 
+  const comercial = criarServicoComercial();
+  router.use("/onboardings/:id", async (req, res, next) => {
+    if ((req.method === "DELETE" && req.path === "/") || /\/(convert|desistir|analises)(\/|$)/.test(req.path)) {
+      if (!somenteAdminOuContador(req, res)) return;
+    }
+    try { await exigirEscopo(req.params.id, req.auth?.user); next(); }
+    catch (err) { return falhar(res, err, { rota: "escopo" }); }
+  });
+  router.get("/onboardings/:id/comercial", async (req, res) => {
+    try { return res.json({ ok: true, ...await comercial.painel(req.params.id, req.auth.user) }); }
+    catch (err) { return falhar(res, err, { rota: "comercial" }); }
+  });
+  router.patch("/onboardings/:id/comercial", async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return;
+    try { return res.json({ ok: true, ...await comercial.comercial(req.params.id, req.auth.user, req.body) }); }
+    catch (err) { return falhar(res, err, { rota: "comercial" }); }
+  });
+  router.post("/onboardings/:id/analises", async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return;
+    try { return res.json({ ok: true, ...await comercial.analisar(req.params.id, req.auth.user, req.body?.tipo) }); }
+    catch (err) { return falhar(res, err, { rota: "analise" }); }
+  });
+  router.get("/onboardings/:id/analises/:analiseId/pdf", async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return;
+    try { const pdf = await comercial.documento(req.params.id, req.params.analiseId, req.auth.user); res.set({ "Cache-Control": "no-store", "Content-Type": "application/pdf", "Content-Disposition": 'inline; filename="analise-fiscal.pdf"' }); return res.send(pdf); }
+    catch (err) { return falhar(res, err, { rota: "analise_pdf" }); }
+  });
+  router.post("/onboardings/:id/links", async (req, res) => {
+    try { res.set("Cache-Control", "no-store"); return res.status(201).json({ ok: true, ...await comercial.emitirLink(req.params.id, req.auth.user, req.body?.diasValidade ?? 7) }); }
+    catch (err) { return falhar(res, err, { rota: "link" }); }
+  });
+  router.delete("/onboardings/:id/links/:linkId", async (req, res) => {
+    try { await comercial.revogar(req.params.id, req.params.linkId, req.auth.user); return res.json({ ok: true }); }
+    catch (err) { return falhar(res, err, { rota: "link_revogar" }); }
+  });
   const atorDe = (req) => String(req.auth?.user?.id || "") || null;
 
   // ── Lista ────────────────────────────────────────────────────────────────────
   router.get("/onboardings", async (req, res) => {
     try {
       const itens = await listar({
+        escopo: escopoComercial(req.auth?.user),
         origem: String(req.query?.origem || "").trim() || null,
         status: String(req.query?.status || "").trim() || null,
         q: String(req.query?.q || "").trim() || null,

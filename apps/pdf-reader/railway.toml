@@ -1,0 +1,12 @@
+# Railway service Root Directory: repository root.
+# Railway Config File: /apps/pdf-reader/railway.toml.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/pdf-reader/Dockerfile.railway"
+watchPatterns = ["apps/pdf-reader/**"]
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

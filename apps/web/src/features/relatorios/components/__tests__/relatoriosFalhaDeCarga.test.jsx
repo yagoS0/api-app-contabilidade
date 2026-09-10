@@ -10,7 +10,8 @@
 
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { RelatoriosTab } from "../RelatoriosTab";
+// O resumo legado mantém seus contratos; a nova entrada é testada em fluxoLeitura.test.jsx.
+import { RelatorioLancamentosTab as RelatoriosTab } from "../RelatoriosTab";
 
 const mockGetRelatorioResumo = jest.fn();
 jest.mock("../../../../api/client", () => ({

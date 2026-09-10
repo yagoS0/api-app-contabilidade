@@ -153,6 +153,12 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
         for (const month of monthsForOp) {
           // eslint-disable-next-line no-await-in-loop
           const res = await onRunOp(o.key, companyId, month);
+          if (["SERPRO_TETO_MENSAL_ESCRITORIO", "SERPRO_MEDICAO_INDISPONIVEL", "SERPRO_REGISTRO_INDETERMINADO"].includes(res?.code)) {
+            setRunning(false);
+            setResults(prev => Object.fromEntries(Object.entries(prev).map(([id, item]) => [id, item.status === "running" ? { status: "erro", message: id === companyId ? res.message : "Não executado: lote interrompido." } : item])));
+            setLocalNotice({ type: "error", text: `Lote interrompido após ${done} ações concluídas. ${res.message}` });
+            return;
+          }
           done += 1;
           setProgress((p) => ({ ...p, done }));
           if (res?.message) lastMessage = res.message;

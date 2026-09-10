@@ -48,7 +48,7 @@ describe("um fio só", () => {
   it("⚠ abre SOZINHO — a aba é uma conversa, não uma caixa de entrada", async () => {
     const api = apiFalso([SOCIA]);
     render(<ChatDaEmpresa api={api} companyId="pc-1" />);
-    await waitFor(() => expect(api.getMensagensWhatsapp).toHaveBeenCalledWith("cv1"));
+    await waitFor(() => expect(api.getMensagensWhatsapp).toHaveBeenCalledWith("cv1", { empresa: "pc-1" }));
     const fio = await screen.findByTestId("fio");
     expect(within(fio).getByTestId("balao-m-cv1")).toHaveTextContent("mensagem de cv1");
     expect(within(fio).getByTestId("pessoa-da-conversa")).toHaveTextContent("Maria Silva");
@@ -68,9 +68,9 @@ describe("dois fios da mesma empresa — o seletor", () => {
     const seletor = await screen.findByTestId("seletor-de-contato");
     expect(seletor).toHaveTextContent("Maria Silva · sócia");
     expect(seletor).toHaveTextContent("João Financeiro · financeiro");
-    await waitFor(() => expect(api.getMensagensWhatsapp).toHaveBeenCalledWith("cv1"));
+    await waitFor(() => expect(api.getMensagensWhatsapp).toHaveBeenCalledWith("cv1", { empresa: "pc-1" }));
     fireEvent.change(seletor, { target: { value: "cv2" } });
-    await waitFor(() => expect(api.getMensagensWhatsapp).toHaveBeenCalledWith("cv2"));
+    await waitFor(() => expect(api.getMensagensWhatsapp).toHaveBeenCalledWith("cv2", { empresa: "pc-1" }));
     await waitFor(() => expect(screen.getByTestId("balao-m-cv2")).toBeInTheDocument());
   });
 

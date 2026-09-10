@@ -400,7 +400,7 @@ function ResumoDaGuia({ entry, acrescimo, aparencia }) {
           {guia?.tipo || entry?.subtipo || "Guia"}
           {entry?.competencia ? ` · ${fmtCompetenciaLonga(entry.competencia)}` : ""}
         </strong>
-        <span style={{ fontSize: "0.65rem", fontWeight: 700, color: aparencia.cor, border: `1px solid ${aparencia.cor}`, borderRadius: 999, padding: "1px 7px", whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: aparencia.cor, border: `1px solid ${aparencia.cor}`, borderRadius: 999, padding: "1px 7px", whiteSpace: "nowrap" }}>
           {aparencia.rotulo}
         </span>
       </div>
@@ -461,7 +461,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
     return (
       <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", borderRight: "1px solid #44475A", color: "#F8F8F2" }}>
         <div style={{ fontWeight: 700, fontSize: "0.9rem", whiteSpace: "nowrap" }}>R$ {fmtValor(acrescimo.principal) || "0,00"}</div>
-        {temAcrescimo && <div title={`Juros/multa R$ ${fmtValor(acrescimo.acrescimo)}`} style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}>+R$ {fmtValor(acrescimo.acrescimo)} j/m</div>}
+        {temAcrescimo && <div title={`Juros/multa R$ ${fmtValor(acrescimo.acrescimo)}`} style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}>+R$ {fmtValor(acrescimo.acrescimo)} j/m</div>}
       </td>
     );
   }
@@ -832,11 +832,11 @@ function ExtratoDoMes({ comp, info, companyId }) {
           exatamente o assunto desta coluna. */}
       {info.semFaturamento && (
         <span title="Declaração do PGDAS-D transmitida sem valor — o mês foi marcado como sem faturamento"
-          style={{ fontSize: "0.66rem", color: "#A7B0C0", whiteSpace: "nowrap" }}>
+          style={{ fontSize: "0.8125rem", color: "#A7B0C0", whiteSpace: "nowrap" }}>
           ◌ zerado
         </span>
       )}
-      {erro && <span style={{ fontSize: "0.62rem", color: "#FF5757", lineHeight: 1.25 }}>{erro}</span>}
+      {erro && <span style={{ fontSize: "0.8125rem", color: "#FF5757", lineHeight: 1.25 }}>{erro}</span>}
     </span>
   );
 }
@@ -1143,7 +1143,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
             title="Ano anterior"
             style={{
               background: "#24253A", border: "1px solid #44475A", borderRadius: 4, color: "#F8F8F2",
-              width: 28, height: 28, cursor: "pointer", fontSize: "0.875rem",
+              width: 36, height: 36, cursor: "pointer", fontSize: "0.875rem",
             }}
           >
             ←
@@ -1155,7 +1155,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
             aria-label="Próximo ano"
             style={{
               background: "#24253A", border: "1px solid #44475A", borderRadius: 4, color: "#F8F8F2",
-              width: 28, height: 28, cursor: year >= currentYear + 1 ? "default" : "pointer",
+              width: 36, height: 36, cursor: year >= currentYear + 1 ? "default" : "pointer",
               fontSize: "0.875rem", opacity: year >= currentYear + 1 ? 0.4 : 1,
             }}
           >
@@ -1165,7 +1165,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
             onClick={() => onLoad(year)}
             style={{
               background: "#24253A", border: "1px solid #44475A", borderRadius: 4, color: "#F8F8F2",
-              height: 28, padding: "0 10px", cursor: "pointer", fontSize: "0.8125rem",
+              height: 36, padding: "0 12px", cursor: "pointer", fontSize: "0.8125rem",
             }}
           >
             Atualizar
@@ -1175,7 +1175,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
             title="Imprimir o extrato anual (ou salvar em PDF)."
             style={{
               background: "#24253A", border: "1px solid #44475A", borderRadius: 4, color: "#F8F8F2",
-              height: 28, padding: "0 10px", cursor: "pointer", fontSize: "0.8125rem",
+              height: 36, padding: "0 12px", cursor: "pointer", fontSize: "0.8125rem",
             }}
           >
             🖨 Imprimir
@@ -1293,19 +1293,19 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                         <div style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "center" }}>
                           {aberto.vencido > 0 && (
                             <span style={{ color: "var(--danger)", fontWeight: 700, whiteSpace: "nowrap" }} title="Guias que já passaram do vencimento.">
-                              R$ {fmtValor(aberto.vencido)} <span style={{ fontSize: "0.62rem", fontWeight: 600 }}>vencido</span>
+                              R$ {fmtValor(aberto.vencido)} <span style={{ fontSize: "0.8125rem", fontWeight: 600 }}>vencido</span>
                             </span>
                           )}
                           {aberto.aVencer > 0 && (
                             <span style={{ color: "#FFB347", fontWeight: 700, whiteSpace: "nowrap" }} title="Guias em aberto ainda dentro do prazo.">
-                              R$ {fmtValor(aberto.aVencer)} <span style={{ fontSize: "0.62rem", fontWeight: 600 }}>a vencer</span>
+                              R$ {fmtValor(aberto.aVencer)} <span style={{ fontSize: "0.8125rem", fontWeight: 600 }}>a vencer</span>
                             </span>
                           )}
                           {/* Rótulo próprio: chamar isto de "a vencer" seria afirmar um prazo que
                               a célula acima se recusa a afirmar. */}
                           {aberto.semData > 0 && (
                             <span style={{ color: "#FFB347", fontWeight: 700, whiteSpace: "nowrap" }} title="Em aberto — o vencimento destas guias não é conhecido, então não dá para dizer se já venceram.">
-                              R$ {fmtValor(aberto.semData)} <span style={{ fontSize: "0.62rem", fontWeight: 600 }}>em aberto</span>
+                              R$ {fmtValor(aberto.semData)} <span style={{ fontSize: "0.8125rem", fontWeight: 600 }}>em aberto</span>
                             </span>
                           )}
                         </div>

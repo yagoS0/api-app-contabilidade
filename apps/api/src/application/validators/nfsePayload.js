@@ -2,6 +2,8 @@ import { onlyDigits, toBoolean, toNullableString } from "../../utils/normalizers
 import { parseDate } from "../../utils/date.js";
 import { cpfTemDvValido } from "../../utils/cpf.js";
 import { normalizarCodigoServicoNacional } from "../nfse/codigoServicoDaNota.js";
+import { normalizarRetencoesComplementares } from "../nfse/retencoesComplementares.js";
+import { normalizarObra, normalizarDestinatario } from "../nfse/dadosEspeciaisDaNota.js";
 
 function parseNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -68,8 +70,14 @@ export function validateNfsePayload(body) {
   if (!valorServicos || valorServicos <= 0) {
     return { ok: false, error: "servico_valor_invalido" };
   }
-  const aliquota = parseNumber(servico.aliquota || servico.pAliq || servico.pIss);
+  const aliquota = parseNumber(servico.aliquota ?? servico.pAliq ?? servico.pIss);
   const issRetido = toBoolean(servico.issRetido);
+  let obra, destinatario;
+  try { obra = normalizarObra(body.obra); destinatario = normalizarDestinatario(body.destinatario); }
+  catch (err) { return { ok: false, error: "dados_especiais_invalidos", message: err.message }; }
+  let retencoesComplementares;
+  try { retencoesComplementares = normalizarRetencoesComplementares(body.retencoesComplementares, valorServicos); }
+  catch (err) { return { ok: false, error: "retencoes_complementares_invalidas", message: err.message }; }
   const competencia = parseDate(body.competencia || servico.competencia || servico.dCompet);
 
   // ── O CÓDIGO DE SERVIÇO DESTA NOTA (`cTribNac`) ────────────────────────────────────────────
@@ -175,6 +183,9 @@ export function validateNfsePayload(body) {
       // nada: `resolverPerfilDeEmissao` filtra por `portalClientId`, e o portal daquela emissão sai
       // da `Company` já autorizada — não do corpo.
       perfilId: toNullableString(body.perfilId),
+      ...(retencoesComplementares ? { retencoesComplementares } : {}),
+      ...(obra ? { obra } : {}),
+      ...(destinatario ? { destinatario } : {}),
     },
   };
 }

@@ -40,13 +40,15 @@ export const SITUACAO = Object.freeze({
  * Lê a lista de perfis que a rota devolveu.
  *
  * ⚠ Aceita a resposta inteira (`{data, total}`) ou o array. Contrato antigo ou rota fora do ar cai
- * em `NAO_RECEBIDA`, e a tela segue funcionando como antes — perfil é melhoria, não pré-requisito.
+ * em `NAO_RECEBIDA`, que bloqueia emissão até confirmar a configuração.
  */
 export function lerPerfis(resposta) {
   if (resposta === null || resposta === undefined) return { situacao: SITUACAO.NAO_RECEBIDA, perfis: [] };
+  if (resposta.habilitado === false) return { situacao: SITUACAO.SEM_PERFIL, perfis: [] };
   const bruto = Array.isArray(resposta) ? resposta : resposta?.data;
   if (!Array.isArray(bruto)) return { situacao: SITUACAO.NAO_RECEBIDA, perfis: [] };
 
+  if (bruto.some((p) => !p || typeof p.id !== "string" || !p.id.trim() || !String(p.nome ?? "").trim())) return { situacao: SITUACAO.NAO_RECEBIDA, perfis: [] };
   const perfis = bruto
     .filter((p) => p && typeof p.id === "string" && String(p.nome ?? "").trim() !== "")
     .map((p) => ({ id: p.id, nome: String(p.nome).trim(), padrao: p.padrao === true }));
@@ -64,14 +66,13 @@ export function lerPerfis(resposta) {
  * respondeu produziria emissão recusada com o campo do conserto fora da tela.
  */
 export function camposDoPerfil(leitura) {
-  const temPerfil = leitura?.situacao === SITUACAO.UNICO || leitura?.situacao === SITUACAO.VARIOS;
   return {
     // O seletor só existe com MAIS DE UM. Com um só, não há o que escolher — mesmo desenho do
     // ramo `UNICO` do código de serviço.
     mostrarSeletor: leitura?.situacao === SITUACAO.VARIOS,
     // ⚠ Estes dois SOMEM porque o perfil os responde: `cTribNac` e `cLocPrestacao`.
-    codigoServicoNoFormulario: !temPerfil,
-    municipioDaPrestacaoNoFormulario: !temPerfil,
+    codigoServicoNoFormulario: leitura?.situacao === SITUACAO.SEM_PERFIL,
+    municipioDaPrestacaoNoFormulario: leitura?.situacao === SITUACAO.SEM_PERFIL,
   };
 }
 
@@ -84,7 +85,8 @@ export function camposDoPerfil(leitura) {
  * emitiria sob o primeiro **em silêncio**.
  */
 export function conferirPerfilEscolhido(leitura, perfilId) {
-  if (leitura?.situacao !== SITUACAO.VARIOS) return { ok: true };
+  if (!leitura || leitura.situacao === SITUACAO.NAO_RECEBIDA) return { ok: false, falta: "Não foi possível verificar os tipos de serviço. Recarregue antes de emitir." };
+  if (leitura.situacao !== SITUACAO.VARIOS) return { ok: true };
   const escolhido = String(perfilId ?? "").trim();
   if (!escolhido) {
     return { ok: false, falta: "Escolha o tipo de serviço desta nota." };

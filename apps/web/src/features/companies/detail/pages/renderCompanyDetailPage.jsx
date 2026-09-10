@@ -1,3 +1,8 @@
+import { AcessoPortalCliente } from "../../credentials/components/AcessoPortalCliente";
+import { mostraApuracaoDoSimples } from "../../../apuracao-lp/lib/regimeDaAba";
+import { ConfiguracoesLayout } from "../../../configuracoes/Configuracoes";
+import { ProtecaoEdicao, useConfirmarSaida } from '../../../configuracoes/ProtecaoEdicao';
+import { CONFIG_EMPRESA, secaoEmpresa } from "../../../configuracoes/catalogo";
 import { lazy, Suspense, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
@@ -146,9 +151,12 @@ function CompanyNotesTabWrapper({ companyId, feedback }) {
   // ⚠ O rascunho é o que faz "virar anotação" existir, e é o que torna o LADO A LADO condição da
   // ação, não estética: sem o campo ao lado não há destino, e no `/whatsapp` o botão nem aparece.
   const [rascunho, setRascunho] = useState(null);
+  const [mostrarNotas, setMostrarNotas] = useState(true);
   return (
-    <div className="anotacoes-com-chat">
-      <div style={{ minWidth: 0 }}>
+    <>
+    <div className="wa-notes-toolbar"><Button variant="secondary" size="sm" aria-expanded={mostrarNotas} onClick={() => setMostrarNotas(v => !v)}>{mostrarNotas ? "Ocultar anotações e ampliar conversa" : "Mostrar anotações"}</Button></div>
+    <div className="anotacoes-com-chat" data-notas={mostrarNotas ? "visiveis" : "ocultas"}>
+      <div hidden={!mostrarNotas} style={{ minWidth: 0 }}>
         <CompanyNotesTab notes={notes} rascunho={rascunho} aoUsarRascunho={() => setRascunho(null)} />
       </div>
       <div className="anotacoes-com-chat__chat">
@@ -157,11 +165,12 @@ function CompanyNotesTabWrapper({ companyId, feedback }) {
             api={companyDocsApi}
             companyId={companyId}
             feedback={feedback}
-            onVirarAnotacao={setRascunho}
+            onVirarAnotacao={texto => { setMostrarNotas(true); setRascunho(texto); }}
           />
         </Suspense>
       </div>
     </div>
+    </>
   );
 }
 
@@ -174,11 +183,10 @@ function CompanyNotesTabWrapper({ companyId, feedback }) {
 // ⚠ `razaoSocial` viaja para a CONFIRMAÇÃO nomear a empresa junto do usuário.
 function CompanyCredentialsTabWrapper({ companyId, feedback, razaoSocial }) {
   const vault = useCompanyCredentials({ api: companyDocsApi, companyId, feedback });
-  const acesso = useAcessoPortalCliente({ api: companyDocsApi, companyId, feedback });
   // ⚠ OS DESTINATÁRIOS SAÍRAM DAQUI EM 05/09/2026 (decisão do dono: *"a tela de configuração de
   // envio deve ser dentro de guias, e não em senha e acesso"*). Esta aba guarda SEGREDO e ACESSO;
   // quem recebe a guia é assunto do envio, e mora na aba Guias.
-  return <CompanyCredentialsTab vault={vault} acesso={acesso} razaoSocial={razaoSocial} />;
+  return <CompanyCredentialsTab vault={vault} razaoSocial={razaoSocial} />;
 }
 
 /**
@@ -189,10 +197,10 @@ function CompanyCredentialsTabWrapper({ companyId, feedback, razaoSocial }) {
  * ⚠ Os usuários do portal chegam por `useAcessoPortalCliente` porque o vínculo com a PESSOA é o que
  * dá o papel RBAC — sem eles o seletor "Pessoa do portal" nasceria vazio.
  */
-function ConfiguracaoDeEnvioWrapper({ companyId, feedback }) {
+function ConfiguracaoDeEnvioWrapper({ companyId, feedback, razaoSocial }) {
   const whatsapp = useContatosWhatsapp({ api: companyDocsApi, companyId, feedback });
   const acesso = useAcessoPortalCliente({ api: companyDocsApi, companyId, feedback });
-  return <ContatosWhatsapp whatsapp={whatsapp} usuarios={acesso?.usuarios || []} />;
+  return <><AcessoPortalCliente acesso={acesso} razaoSocial={razaoSocial} /><ContatosWhatsapp whatsapp={whatsapp} usuarios={acesso?.usuarios || []} /></>;
 }
 
 // Q14.2: wrapper que instancia hook próprio da Apuração v2 (state da empresa atual)
@@ -235,7 +243,7 @@ const setaEfd = {
   padding: "2px 9px", font: "inherit", fontSize: "0.85rem", cursor: "pointer", lineHeight: 1.2,
 };
 
-function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
+function ObrigacoesDaEmpresa({ companyId, companyRegime, onOpenObligations, calendarioContext, onCalendarioContextChange }) {
   const [abrirDefis, setAbrirDefis] = useState(false);
   const [anoDefis, setAnoDefis] = useState(() => new Date().getFullYear() - 1);
   const [espelhoSalvo, setEspelhoSalvo] = useState(null);
@@ -323,7 +331,8 @@ function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
         </div>
       )}
 
-      <CalendarioGrid api={obrigacoesApi} companyIdFixo={companyId} />
+      <CalendarioGrid api={obrigacoesApi} companyIdFixo={companyId}
+        onOpenObligations={onOpenObligations} initialContext={calendarioContext} onContextChange={onCalendarioContextChange} />
 
       {abrirDefis && (
         <Suspense fallback={<TabLoadingFallback />}>
@@ -364,9 +373,9 @@ function ApuracaoV2TabWrapper({ companyId, feedback, razao, myRole, competencia,
 // abas são rotas distintas e nunca renderizam ao mesmo tempo, então cada uma instancia o seu — o
 // que NÃO se duplica é o cliente HTTP (`apuracaoV2Api`, de módulo) nem a leitura das atividades,
 // que continua sendo a do mesmo hook.
-function PerfilFiscalTabWrapper({ companyId, feedback }) {
+function PerfilFiscalTabWrapper({ companyId, feedback, podeEditar }) {
   const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
-  return <PerfilFiscalTab panel={panel} />;
+  return <PerfilFiscalTab panel={panel} companyId={companyId} podeEditar={podeEditar} />;
 }
 
 // Q41: wrapper que instancia o hook da Situação Fiscal (SITFIS) — companyId = portalClient id.
@@ -378,7 +387,7 @@ function SitfisTabWrapper({ companyId }) {
 
 import { useEmpresasDoResponsavel } from "../../form/hooks/useEmpresasDoResponsavel";
 
-export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, certPanel, feedback, dangerActions }) {
+function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, certPanel, feedback, dangerActions }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
   const companyId = selectedCompany?.companyId;
   // ⚠ O regime mora em `legacyCompany` (é do cadastro legado) e NUNCA no topo do payload — o
@@ -394,7 +403,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   // Q11.1: state do modal de exclusão (zona de risco)
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   // A gaveta da configuração de envio, dentro da aba Guias (05/09/2026).
-  const [abrirEnvio, setAbrirEnvio] = useState(false);
+
   // ⚠ QUAIS EMPRESAS O E-MAIL DIGITADO JÁ ATENDE — só leitura, e só para AVISAR embaixo do campo.
   // ⚠ Reusa `companyDocsApi` (a mesma instância do cofre e do acesso ao portal); um cliente novo
   // por tela é o começo de dois contratos para a mesma rota.
@@ -417,7 +426,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     // `useManageAccountingWorkspace`, no mesmo molde da aba Lançamentos — e ele cobre os três
     // caminhos (troca de aba, recarga da página e mudança de ano/competência). Chamar aqui também
     // faria duas requisições por clique.
-    if (tab === "planoContas") { accountingPanel.onLoadAccounts(); }
+    // Plano de contas carrega pelo hook também em acesso direto e troca de empresa.
     // Guias precisa do plano de contas: o modal de ingestão de parcelamento sugere as contas D/C.
     if (tab === "guides") { accountingPanel.onLoadAccounts(); }
     // Parcelamento: o modal de config de contas usa o plano de contas.
@@ -509,26 +518,13 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
         />
 
         <AppShell className="guides-page-shell">
-          {/* ⚠ A CONFIGURAÇÃO DE ENVIO MORA AQUI desde 05/09/2026 (decisão do dono) — é onde se
-              decide quem recebe a guia, ao lado da guia. Ela sai da aba de senha e acesso, que
-              guarda segredo. Gaveta, e não seção fixa: a tabela de guias é o assunto da aba. */}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "var(--space-2)" }}>
-            <Button variant="secondary" type="button" onClick={() => setAbrirEnvio(true)}>
-              Configuração de envio
-            </Button>
-          </div>
-          {abrirEnvio ? (
-            <Modal titulo="Configuração de envio" tamanho="lg" aoFechar={() => setAbrirEnvio(false)}>
-              <ConfiguracaoDeEnvioWrapper companyId={companyId} feedback={feedback} />
-            </Modal>
-          ) : null}
-
           {/* ⚠ `onRefresh` alimenta a espera da coluna "Envio": a confirmação de entrega do WhatsApp
               chega pelo webhook SEGUNDOS depois do envio, e sem recarregar a célula congela em
               "aceita, sem confirmação" até alguém apertar F5 — que foi o que aconteceu em
               05/09/2026. A tabela pede a recarga sozinha, e para sozinha. */}
           <Suspense fallback={<TabLoadingFallback />}>
           <CompanyGuidesTable
+            onConfigurarEnvio={() => switchTab("comunicacao")}
             companyId={companyId}
             competencia={circularPanel?.competencia}
             companyRegime={companyRegime}
@@ -590,7 +586,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onUpdateAccount={accountingPanel.onUpdateAccount}
             onDeleteAccount={accountingPanel.onDeleteAccount}
             onImportFile={accountingPanel.onImportAccountsFile}
-            onBack={() => switchTab("lancamentos")}
+            onBack={onBack}
           />
           </Suspense>
         </div>
@@ -768,7 +764,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             <div className="company-form-page__intro">
               <h1 className="company-form-page__title">Editar cadastro</h1>
               <p className="company-form-page__description">
-                Atualize os dados cadastrais da empresa no mesmo padrão visual das demais telas.
+                Revise os dados da empresa e salve as alterações ao concluir.
               </p>
             </div>
 
@@ -814,16 +810,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
               </Suspense>
             )}
 
-            {/* Q12.B+++: cert A1 da empresa, abaixo do form e acima do feedback */}
-            {canEditCompany && certPanel?.api && (
-              <Suspense fallback={<TabLoadingFallback />}>
-                <CompanyCertificatePanel
-                  api={certPanel.api}
-                  companyId={selectedCompany?.companyId}
-                  feedback={certPanel.feedback}
-                />
-              </Suspense>
-            )}
+            <a href={companyTabPath(companyId,'certificado')}>Gerenciar certificado A1 →</a>
 
             <Feedback message={feedback.message} error={feedback.error} />
           </section>
@@ -1038,7 +1025,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
         <div style={{ flex: 1, padding: 24 }}>
           <ErrorBoundary>
             <Suspense fallback={<TabLoadingFallback />}>
-              <PerfilFiscalTabWrapper companyId={companyId} feedback={feedback} />
+              <PerfilFiscalTabWrapper companyId={companyId} feedback={feedback} podeEditar={canEditCompany} />
             </Suspense>
           </ErrorBoundary>
           {/* ⚠⚠ ESTA LINHA FALTAVA ATÉ 27/08/2026, e a aba era MUDA: "Salvar perfil" gravava, o hook
@@ -1297,7 +1284,9 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             <Suspense fallback={<TabLoadingFallback />}>
               {/* Sem companyId ainda, o calendário buscaria a carteira INTEIRA dentro da página de
                   uma empresa — espera a empresa carregar antes de montar. */}
-              {companyId ? <ObrigacoesDaEmpresa companyId={companyId} companyRegime={companyRegime} /> : <TabLoadingFallback />}
+              {companyId ? <ObrigacoesDaEmpresa companyId={companyId} companyRegime={companyRegime}
+                onOpenObligations={company.onOpenObligations} calendarioContext={company.calendarioContext}
+                onCalendarioContextChange={company.onCalendarioContextChange} /> : <TabLoadingFallback />}
             </Suspense>
           </ErrorBoundary>
         </div>
@@ -1392,4 +1381,28 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
       <Feedback message={feedback.message} error={feedback.error} />
     </AppShell>
   );
+}
+
+// Todas as seções reutilizam seus formulários e APIs; links antigos continuam válidos.
+export function CompanyDetailPage(props) {
+ return <ProtecaoEdicao><CompanyDetailComConfiguracoes {...props}/></ProtecaoEdicao>;
+}
+
+function CompanyDetailComConfiguracoes(props) {
+ const confirmarSaida = useConfirmarSaida();
+ const c=props.company; const atual=c.companyDetailTab; const secao=secaoEmpresa(atual);
+ if(atual!=='configuracoesEmpresa' && !secao && atual!=='comunicacao') return <CompanyDetailContent {...props}/>;
+ const id=c.selectedCompany?.companyId;
+ if (!id) return <TabLoadingFallback/>;
+ const navegar = (tab) => {
+   c.setCompanyDetailTab(tab);
+   if (['lancamentos', 'guides', 'parcelamento'].includes(tab)) props.accountingPanel?.onLoadAccounts?.();
+   if (tab === 'lancamentos') props.accountingPanel?.onLoadEntries?.();
+   if (tab === 'notasFiscais') props.notasPanel?.reload?.();
+ };
+ const itens=CONFIG_EMPRESA.filter(i=>i.id!=='perfilFiscal' || mostraApuracaoDoSimples(c.selectedCompany)).map(i=>({...i,href:companyTabPath(id,i.tab)}));
+ return <div style={{minHeight:'100vh',background:'var(--bg-page)'}}><CompanySectionHeader company={c.selectedCompany} activeTab="configuracoesEmpresa" onBack={()=>confirmarSaida(c.onBack)} onTabChange={navegar} canEditCompany={c.canEditCompany}/>
+ <ConfiguracoesLayout titulo="Configurações da empresa" subtitulo={c.selectedCompany.razao+' · '+c.selectedCompany.cnpj} itens={itens} atual={secao?.id} onNavigate={i=>navegar(i.tab)} voltar={null}>
+ {atual==='certificado' ? <><h2>Certificado A1 da empresa</h2>{c.canEditCompany && props.certPanel?.api ? <Suspense fallback={<TabLoadingFallback/>}><CompanyCertificatePanel api={props.certPanel.api} companyId={id} feedback={props.certPanel.feedback}/></Suspense> : <p>Apenas admin ou contador pode gerenciar certificados.</p>}</> : atual==='comunicacao' ? <><h2>Contatos, acessos e envios</h2><p>Destinatários autorizados, canais de envio e permissões de cada número.</p>{c.canEditCompany ? <ConfiguracaoDeEnvioWrapper key={id} companyId={id} feedback={props.feedback} razaoSocial={c.selectedCompany.razao}/> : <p>Apenas admin ou contador pode gerenciar contatos, acessos e permissões de envio.</p>}<Feedback message={props.feedback?.message} error={props.feedback?.error}/></> : secao ? <div className="config-embedded"><CompanyDetailContent {...props}/></div> : null}
+ </ConfiguracoesLayout></div>;
 }

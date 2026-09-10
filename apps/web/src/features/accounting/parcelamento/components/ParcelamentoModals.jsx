@@ -1,3 +1,4 @@
+import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 // Modais do parcelamento (escopo acoplado, padrão usado em Q6):
 //   - ParcelamentoConfigModal:   contas de provisão/pagamento de um parcelamento
 //   - ParcelamentoRescisaoModal: rescisão (estorno reverso da provisão)
@@ -1174,6 +1175,7 @@ export function ParcelamentosList({
 // Aprovar em lote confirma os lançamentos de baixa (RASCUNHO → CONFIRMADO).
 // ─────────────────────────────────────────────────────────────────────────
 export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }) {
+  const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [items, setItems] = useState([]);
   const [sel, setSel] = useState(new Set());
   const [loading, setLoading] = useState(true);
@@ -1242,7 +1244,7 @@ export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }
     // confirmação dizia "Confirmar os lançamentos de baixa" — dois nomes para o mesmo ato fazem o
     // contador procurar, depois, um "Confirmar" que não existe em lugar nenhum.
     // eslint-disable-next-line no-alert
-    if (!window.confirm(`Aprovar a baixa de ${escolhidas.length} parcela(s)?\n\n${lista}\n\nOs lançamentos passam de RASCUNHO para CONFIRMADO.`)) return;
+    if (!await pedir({ titulo: "Aprovar baixas conferidas", acao: "Aprovar baixas", texto: `Aprovar a baixa de ${escolhidas.length} parcela(s)?\n\n${lista}\n\nOs lançamentos passam de RASCUNHO para CONFIRMADO.` })) return;
     setBusy(true);
     try { await aprovarConferencia([...sel]); setSel(new Set()); await reload(); } finally { setBusy(false); }
   }
@@ -1293,6 +1295,7 @@ export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }
           </label>
         );
       })}
+      {confirmacao}
     </div>
   );
 }

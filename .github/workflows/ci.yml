@@ -45,3 +45,97 @@ jobs:
       - name: Build workspaces
         run: npm run build
 
+  usability-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Set before Jest starts: changing process.env.TZ inside jsdom does not
+      # change the worker's native timezone. Date regressions expect UTC-3.
+      TZ: America/Sao_Paulo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate -w @contabilidade/api
+      - name: Calendar rules and exceptions
+        working-directory: apps/api
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent --testPathPatterns='obrigacoes|dre|fluxo|Fluxo'
+      - name: Accountant frontend regression
+        working-directory: apps/web
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent
+      - name: Client portal regression
+        working-directory: apps/portal-cliente-web
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --silent
+
+  whatsapp-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Generate Prisma client
+        run: npm run prisma:generate -w @contabilidade/api
+      - name: Conversation evaluation isolation and budget guards
+        run: node --test apps/api/scripts/eval-whatsapp-conversacao.test.mjs
+      - name: Invoice preparation and public registration lookups without network
+        working-directory: apps/api
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='src/application/tomador|preparacaoFiscalDoCliente'
+      - name: WhatsApp, guides and AI backend regression
+        working-directory: apps/api
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='[Ww]hatsapp|assistente|envioGuia|envioTentativas|classificacaoPorIa|corrigirValorGuia|guiaEmailDestinatarios|destinatarioDaGuia|envioSemFila|envioPendenteNull|GuideReleaseBatch|liberacaoGuiasCanais'
+      - name: WhatsApp and AI frontend regression
+        working-directory: apps/web
+        run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='[Ww]hatsapp|liberarComCanais|canalDeEnvio|envioNaTela|colunaEnvio|reenviarGuia|classificacaoIa|botaoDeIa|clientFallbackAtendimento|pollingEntrega|[Cc]orrigirValor|conferenciaNaTela|ofxImport'
+
+  whatsapp-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: whatsapp_check
+          POSTGRES_PASSWORD: ci_test_only
+          POSTGRES_DB: whatsapp_delivery_check
+        ports:
+          - 55439:5432
+        options: >-
+          --health-cmd "pg_isready -U whatsapp_check -d whatsapp_delivery_check"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://whatsapp_check:ci_test_only@127.0.0.1:55439/whatsapp_delivery_check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate -w @contabilidade/api
+      - name: Apply complete migration history to disposable PostgreSQL
+        run: npm run prisma:migrate:deploy -w @contabilidade/api
+      - name: Verify SERPRO reservations and calendar exceptions in PostgreSQL
+        working-directory: apps/api
+        run: |
+          node scripts/verify-serpro-reservations-postgres.js --url "$DATABASE_URL"
+          node scripts/verify-calendar-series-postgres.js --url "$DATABASE_URL"
+          node scripts/verify-cashflow-balance-postgres.js --url "$DATABASE_URL"
+          node scripts/verify-dre-postgres.js --url "$DATABASE_URL"
+      - name: Verify concurrent delivery and delayed callbacks
+        working-directory: apps/api
+        run: node scripts/verify-whatsapp-delivery-postgres.js --url "$DATABASE_URL"
+      - name: Verify atomic OFX imports and tenant isolation
+        working-directory: apps/api
+        run: node scripts/verify-whatsapp-ofx-postgres.js --url "$DATABASE_URL"
+      - name: Verify durable inbox, AI leases and budget recovery
+        working-directory: apps/api
+        env:
+          WHATSAPP_TEST_DATABASE_URL: postgresql://whatsapp_check:ci_test_only@127.0.0.1:55439/whatsapp_delivery_check
+        run: node scripts/verify-whatsapp-inbound-postgres.js

@@ -1,6 +1,65 @@
 # CLAUDE.md — API (apps/api)
 
+## Previsão do mês aberto e imposto pago — 08/09/2026
+
+A previsão de receita usa exatamente os três meses de calendário completos imediatamente anteriores ao relógio do servidor. O mês aberto não entra na mediana. Para o recebimento previsto (competência da nota +1), somar somente o complemento positivo entre mediana e notas já emitidas dessa competência. Nota parcial não cancela a previsão; nota acima da mediana não recebe complemento. Meses encerrados não são preenchidos retroativamente. A evidência identifica meses-base, mediana, emitido e complemento. Esta decisão substitui a mediana de toda a série e a regra de começar após a última nota.
+
+No painel, um imposto conhecido não depende de uma alíquota calculável para aparecer. Resultado permanece faturamento menos imposto, com indicação de parcialidade quando faltam tributos/classificações. Mostrar a porcentagem de imposto PAGO de forma explícita e separada da alíquota lançada ou prevista. Ausência de imposto não vira zero calculado nem previsão tributária sem origem.
+
+## Correção de entendimento: painel e acumulado automático — 08/09/2026
+
+O usuário rejeitou exigir saldo inicial manual para cada empresa. Esta instrução substitui a implementação anterior de âncora declarada: não mostrar formulário nem exigir configuração. O fluxo transporta automaticamente as movimentações desde o histórico disponível, com origem HISTORICO e identificação como Acumulado projetado, sem afirmar saldo bancário. Registros de âncora antigos e migration ficam preservados, mas não alimentam o cálculo nem aceitam novas escritas pela rota pública.
+
+O resumo principal é Faturamento menos impostos da MESMA competência selecionada. Não usa resultado do fluxo, despesas operacionais, folha salarial ou mês seguinte. Impostos vêm dos lançamentos da competência; ausência de dados não significa imposto zero. A DRE mantém seu cálculo próprio. Não confundir o resumo principal com o acumulado da tabela.
+
+## Correção do fluxo e DRE — 08/09/2026
+
+Esta decisão substitui orientações antigas que proibiam transportar saldo entre meses. O fluxo agora aceita saldo inicial informado pelo cliente, com mês de referência e histórico append-only. Meses sem movimento transportam o valor anterior. Resultado mensal permanece separado de Saldo projetado; nenhum deles certifica saldo bancário conciliado. Sem âncora não assumir zero. Aplicar migration 20260908230000_cashflow_opening_balance e gerar Prisma antes da API. Ver apps/api/src/application/fluxo/CLAUDE.md.
+
+A DRE aceita Decimal real do Prisma e sinaliza valores inválidos, contas de resultado sem mapeamento e rascunhos; não esconder esses estados zerando valores. Ela continua por competência. Ver apps/api/src/application/dre/CLAUDE.md. Painel e tabela atualizam juntos; competência escolhida não redefine hoje no servidor. Guias futuras ficam no vencimento, atrasadas em aberto no mês atual, pagas na data do pagamento. Valores monetários do fluxo são normalizados por linha em centavos antes dos totais e saldos.
+
+
+## Ajustes aprovados e implementados — 08/09/2026
+
+Esta decisão substitui orientações anteriores incompatíveis sobre calendário, retorno e Relatórios.
+- Calendário concentra tarefas/obrigações em modal; /obrigacoes antigo redireciona para o calendário. A seção da empresa chama Calendário. Janela mensal fixa 10–15 é inclusiva e independente do vencimento/competência. Exclusão por ocorrência ou seguintes mantém histórico e cancelamentos persistentes. Edição desta e seguintes versiona janela, frequência, vencimento, ajuste de dia útil e competência; meses fora da nova frequência conservam IDs e cancelamentos, sem apagar concluídas. Migration adicional 20260908210000_calendar_frequency_versions. Ver features/calendario/CLAUDE.md no web.
+- WorkspaceNavigationProvider mantém histórico interno e Tabela/Calendário durante a sessão. Novo login reseta para Calendário; voltar/logo preservam escolha; impressão não a altera. Marca à esquerda leva à carteira. Configurações navegam sem recarregar o aplicativo.
+- Relatórios do escritório voltaram a mostrar o fluxo diário do cliente, com dois meses e somente leitura. A rota GET usa responderFluxoDeCaixa. Não reintroduzir botões de lançamento/edição nas células.
+- Exportação em lote é de LANÇAMENTOS para ERP: ZIP, CSV por empresa, cinco colunas sem cabeçalho e manifesto parcial. Mesmo preflight e autorização individuais; hash da prévia invalida alertas que mudaram. Download não confirma importação no ERP.
+- WhatsApp envia PDF determinístico da tabela SITFIS salva, sem chamada paga: inclui colunas, anotações, avisos e texto não interpretado; permissão fiscal e janela são rechecadas antes do transporte. Reservas/erros de envio não podem virar entrega confirmada.
+- CertResolver exige A1 próprio para NFSE/ADN/DFE, sem priorizar procurador nessas operações. Integra/serviços delegáveis mantêm procuração autorizada.
+- SERPRO reserva tentativa em transação antes do envio; falha de medição bloqueia visivelmente. Reservas sem desfecho e incertas não expiram automaticamente. Autenticação abortada não é operação enviada. Ledger não é fatura. As 2.555 chamadas informadas não foram reconciliadas.
+- Planejamento salva e retoma cenários sem depender do PDF, separando premissas do cadastro da empresa. Emissor bloqueia fechamento durante envio; notas abrem a partir da auditoria preservando contexto; Apuração mostra carga calculada distinta de pagamento.
+- Documentos distinguem falha de ausência, preservam upload falho e resultado parcial; onboarding aguarda salvar antes de voltar/trocar etapa.
+
+Implantação: aplicar migration aditiva 20260908190000_calendar_series_exceptions e gerar Prisma antes da nova API. Schema, geração isolada e auditoria de migrations validados localmente; PostgreSQL real da etapa 1 aprovado no CI 34248812325; Railway reportou sucesso para a integração 9ab263de. Alterações da etapa 2 exigem novo CI; integrações fiscais reais não foram exercitadas. Não tratar testes com mocks como homologação de banco/serviços externos.
+
+
+## Calendário: tarefas e janelas de trabalho (07/09/2026)
+
+`Obrigacao.tipo` distingue TAREFA/OBRIGACAO; AVULSA usa datas civis `dataInicio`/`dataFim` e uma única ocorrência. Recorrências e regras usam `diasPreparacao` (dias corridos antes do vencimento ajustado). `OcorrenciaObrigacao.dataVencimento` continua sendo o prazo: janela de preparação não muda prazo fiscal. Em tarefa, o fim é seu prazo.
+
+`PATCH /firm/ocorrencias/:id` ajusta somente a janela da ocorrência e preserva o ID. A marca `janelaPersonalizada` impede o worker de apagar ajustes ou recriar o ciclo original de uma tarefa movida. Editar a série refaz janelas futuras pendentes; concluídas e ciclos concluídos não renascem. AVULSA não pode ser convertida em recorrente no mesmo cadastro. CRUD individual grava cadastro e geração em transação.
+
+O calendário consulta sobreposição, repete o mesmo ID em cada dia coberto e mantém `data` como vencimento em todos os segmentos; totais contam ocorrências únicas. Campos legados nulos equivalem a um evento no vencimento. Listagem expõe o histórico concluído. Migration nova: `20260907180000_add_calendar_task_intervals`; aplicar antes da nova API e gerar Prisma no ambiente de deploy. Testes: `obrigacoes/__tests__/intervalosCalendario.test.js` e suítes legadas; validação adicional feita em PostgreSQL temporário isolado, sem banco real.
+
+
 Backend Node.js 20 + Express.js + Prisma + PostgreSQL.
+
+## Expediente humano no WhatsApp (07/09/2026)
+
+Decisão do dono: segunda a sexta, 09:00 inclusive até 17:00 exclusive, America/Sao_Paulo;
+feriados nacionais, estaduais RJ e municipais da cidade do Rio de Janeiro. `assistente/expediente.js`
+calcula feriados fixos e móveis e a próxima abertura, inclusive na virada do ano. Pontos facultativos
+não entram automaticamente nesta regra. Este calendário é do atendimento humano, separado do
+calendário de vencimentos fiscais e de suas exceções históricas. A IA continua disponível sob
+as guardas existentes; o contexto dinâmico do prompt e `chamar_escritorio` informam o expediente
+sem garantir prazo de resposta. Não há alteração de banco nem novas variáveis.
+
+Fontes verificadas: calendário nacional 2026 do MGI; Lei RJ 5.243/2008 (terça de Carnaval);
+calendário oficial TRF2 para São Sebastião; ALERJ confirma Corpus Christi estadual em 2026:
+https://palaciotiradentes.rj.gov.br/noticias/corpus-christi-tradicao-de-fe-e-cultura-passa-a-integrar-calendario-de-feriados-do-estado
+Feriados excepcionais e futuras mudanças legais exigem atualização deste calendário.
 
 ## Estrutura
 
@@ -4674,6 +4733,33 @@ que o servidor deu, e só com o sim o pedido é repetido.
 desde agosto. O que mudou foi o **rótulo**: ele mandava digitar o `+`. O `+` continua aceito e
 continua sendo o único desambiguador de DDI para número estrangeiro.
 
+## ⚠⚠ PERMISSÕES DO ASSISTENTE POR NÚMERO (07/09/2026)
+
+`ContatoWhatsapp.permissoesAssistente` é uma lista explícita e nasce vazia. Ela complementa o RBAC
+de `CompanyClientUser`: uma ferramenta só é oferecida e executada quando a função foi liberada para
+aquele número **e** a pessoa ligada ao contato tem o papel mínimo. Sem `userId`, nenhuma função de
+dados é liberada, mesmo com caixas marcadas.
+
+As funções configuráveis são `GUIAS`, `NOTAS_DANFSE`, `DOCUMENTOS_EMPRESA`, `SITUACAO_FISCAL`,
+`RECALCULO_GUIA`, `EMISSAO_NFSE` e `CANCELAMENTO_NFSE`. `chamar_escritorio` continua sempre
+disponível. `definicoes(sessao)` esconde ferramentas não liberadas do modelo e
+`executarFerramenta` repete o bloqueio no servidor; não depender só da lista enviada à Anthropic.
+O contato, o vínculo RBAC e as permissões são relidos antes de cada ferramenta e novamente antes de
+enviar um arquivo à Meta; uma revogação durante a resposta corta o acesso. Número que passe a casar
+com dois contatos também falha fechado.
+
+`RECALCULO_GUIA` inclui `GUIAS`, pois a ação precisa localizar a guia. `CANCELAMENTO_NFSE` inclui
+`NOTAS_DANFSE`, pois precisa localizar a nota. A normalização é feita no servidor, além da tela.
+
+Emissão, cancelamento e recálculo reconferem a permissão do contato quando chega `CONFIRMAR XXXX`.
+Retirar a permissão durante os dez minutos cancela a pendência sem praticar o ato. Documentos da
+empresa usam `CompanyDocumentsService.baixarBuffer`, sempre com o `portalClientId` da sessão, exigem
+`CLIENT_ADMIN` e só saem dentro da janela de 24 horas. PDF sai como documento; cadastro digitalizado
+PNG/JPEG/WebP sai como imagem, com o MIME preservado. Situação fiscal continua sendo a última
+consulta salva; o WhatsApp nunca chama o SERPRO para atualizá-la.
+
+Migration aditiva: `20260907190000_whatsapp_contact_permissions`.
+
 ## Regras
 
 - Nunca hardcodar credenciais ou URLs — usar `config.js`
@@ -4681,3 +4767,22 @@ continua sendo o único desambiguador de DDI para número estrangeiro.
 - Isolamento multi-tenant é inegociável: sempre filtrar por `firmId`/`companyId`
 - Não adicionar `console.log` de debug em produção — usar o logger existente
 - Migrations novas devem ter nome descritivo em inglês (snake_case)
+
+
+## Comercial pré-cadastro e link público (08/09/2026)
+
+ComercialService mantém análises datadas por onboarding, sem PortalClient provisório. PUBLICA usa BrasilAPI; SITFIS revalida procuração por CNPJ pelo mesmo SerproProcurationService, exigindo ATIVA, validade futura e sistema SITFIS explícito. Ausência/ambiguidade bloqueia consulta; nenhuma declaração manual autoriza. Consultas passam pelo contexto/custo SERPRO, concluídas reutilizam 4h e retomam protocolo pendente. PDFs são cifrados e lidos apenas por gestão autenticada.
+
+Escopo: admin/contador gerenciam todas fichas (mesma política da carteira, não existe organização/firmId no modelo); demais FIRM somente criadoPorId próprio. Links persistem apenas SHA-256 de token aleatório de 256 bits; expiram em 1–30 dias, revogam antecessores e são consumidos ao finalizar. Formulário público GET/PATCH /public/onboarding usa Authorization Bearer, nunca query/path. Resposta só dados declarados; não expõe análise, proposta, eventos ou ids internos. PATCH tem versão otimista e transação com trava do link; finalização materializa checklist. Nunca envia mensagem/email. Front transporta token em fragmento /onboarding/publico#token=.
+
+Migração 20260908090000_onboarding_comercial aditiva: versão/fase/proposta e tabelas análises/eventos/links. Requer prisma generate e migrate deploy. Conversão permanece no provisionamento existente e escreve evento junto ao vínculo.
+
+## Menus determinísticos do WhatsApp (08/09/2026)
+
+`INTEGRACAO_WHATSAPP_MENU` nasce desligada. Clientes entram por `IA_EMPRESAS_PILOTO` ou pelo E.164 exato em `WHATSAPP_MENU_TELEFONES_PILOTO`; listas vazias autorizam ninguém. Leads entram apenas pelo telefone piloto, ou futuramente por `WHATSAPP_MENU_LEADS=1`. Esta última flag só libera o menu público do segmento sem `PortalClient` e nunca dá acesso financeiro. O menu não depende de Anthropic. Cliques são dirigidos pelo id estável de `button_reply`/`list_reply`, nunca pelo título e nunca pelo modelo. Antes de ler e antes de enviar, o servidor recompõe vínculo, empresa, contato, RBAC e permissões; ambiguidade, revogação, exclusão ou corte de automação fecham o fluxo.
+
+“Guias do mês” significa mês do vencimento e usa somente guias liberadas OPEN/OVERDUE; a resposta sempre mostra a competência separadamente. Situação fiscal lê apenas a última foto salva. Emissão, cancelamento e recálculo apenas coletam dados e seguem para a confirmação já existente. Texto livre claro continua no assistente. Lead recebe coleta mínima e handoff; a equipe cria o rascunho no onboarding com a origem correta, sem `PortalClient` provisório e sem consulta automática.
+
+## Fluxo comercial de leads — setembro/2026
+
+`application/onboarding/LeadService`, `FiscalLeadService`, `RecursosComerciaisService` e `PropostasComerciaisService` atendem leads sem PortalClient. Rotas `/firm/comercial` exigem admin/contador. Propostas e contratos são versionados. A IA registra declarações por função antes de responder livremente; orientações saem na versão aprovada e valores dependem do catálogo e revisão do contador. Mensagens agrupadas conservam suas origens e a correlação de saída evita repetição após timeout. Piloto e consultas privadas vêm desligados. Catálogo e minuta privados são importados como rascunhos, fora do Git. Upload não prova assinatura: há conferência humana explícita. Ver `docs/fluxo-comercial-leads.md` para migração, operação e validação. PATCH interno do onboarding exige `versao`; publicar web/API juntos.

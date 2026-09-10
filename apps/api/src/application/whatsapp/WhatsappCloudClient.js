@@ -159,7 +159,15 @@ export function montarCorpoTemplate(variaveis) {
   const lista = Array.isArray(variaveis) ? variaveis : [];
   if (!lista.length) return null;
   const parametros = lista.map((v) => {
-    if (v && typeof v === "object" && !Array.isArray(v)) {
+    const nomeada = v && typeof v === "object" && !Array.isArray(v);
+    const texto = String(nomeada ? v.valor ?? v.text ?? "" : v ?? "");
+    if (!texto.trim()) {
+      throw recusaLocal(
+        CODIGOS_LOCAIS.RECUSA_LOCAL,
+        "Há um campo vazio na mensagem de WhatsApp. Confira os dados da guia e do contato antes de enviar.",
+      );
+    }
+    if (nomeada) {
       const nome = String(v.nome ?? v.parameter_name ?? "").trim();
       if (!nome) {
         throw recusaLocal(
@@ -167,9 +175,9 @@ export function montarCorpoTemplate(variaveis) {
           "Uma variável nomeada do template foi enviada sem nome.",
         );
       }
-      return { type: "text", parameter_name: nome, text: String(v.valor ?? v.text ?? "") };
+      return { type: "text", parameter_name: nome, text: texto };
     }
-    return { type: "text", text: String(v ?? "") };
+    return { type: "text", text: texto };
   });
   return { type: "body", parameters: parametros };
 }
@@ -216,6 +224,74 @@ export function montarPayloadDocumento({ para, mediaId, nomeArquivo, legenda }) 
     type: "document",
     document: documento,
   };
+}
+
+/** Imagem fora de template; documentos digitalizados usam este tipo porque a Meta não os aceita como `document`. */
+export function montarPayloadImagem({ para, mediaId, legenda }) {
+  const imagem = { id: String(mediaId || "").trim() };
+  if (!imagem.id) {
+    throw recusaLocal(CODIGOS_LOCAIS.RECUSA_LOCAL, "A imagem não foi informada: falta o arquivo enviado à Meta.");
+  }
+  const caption = String(legenda || "").trim();
+  if (caption) imagem.caption = caption;
+  return { messaging_product: "whatsapp", recipient_type: "individual", to: para, type: "image", image: imagem };
+}
+
+function textoObrigatorio(valor, campo, maximo) {
+  const texto = String(valor || "").trim();
+  if (!texto || texto.length > maximo) {
+    throw recusaLocal(CODIGOS_LOCAIS.RECUSA_LOCAL, `${campo} deve ter entre 1 e ${maximo} caracteres.`);
+  }
+  return texto;
+}
+
+/** Menu de até três respostas rápidas, conforme o objeto `interactive` da Cloud API. */
+export function montarPayloadBotoes({ para, texto, botoes, rodape = null }) {
+  const opcoes = Array.isArray(botoes) ? botoes : [];
+  if (!opcoes.length || opcoes.length > 3) {
+    throw recusaLocal(CODIGOS_LOCAIS.RECUSA_LOCAL, "Um menu de botões precisa ter de 1 a 3 opções.");
+  }
+  const action = { buttons: opcoes.map((opcao) => ({
+    type: "reply",
+    reply: {
+      id: textoObrigatorio(opcao?.id, "O id do botão", 256),
+      title: textoObrigatorio(opcao?.titulo, "O título do botão", 20),
+    },
+  })) };
+  const payload = {
+    messaging_product: "whatsapp", recipient_type: "individual", to: para, type: "interactive",
+    interactive: { type: "button", body: { text: textoObrigatorio(texto, "O texto do menu", 1024) }, action },
+  };
+  const footer = String(rodape || "").trim();
+  if (footer) payload.interactive.footer = { text: textoObrigatorio(footer, "O rodapé do menu", 60) };
+  return payload;
+}
+
+/** Lista de até dez opções em uma seção; os ids, e não os títulos, dirigem o backend. */
+export function montarPayloadLista({ para, texto, tituloBotao, linhas, tituloSecao = "Opções", rodape = null }) {
+  const opcoes = Array.isArray(linhas) ? linhas : [];
+  if (!opcoes.length || opcoes.length > 10) {
+    throw recusaLocal(CODIGOS_LOCAIS.RECUSA_LOCAL, "Uma lista precisa ter de 1 a 10 opções.");
+  }
+  const rows = opcoes.map((opcao) => {
+    const row = {
+      id: textoObrigatorio(opcao?.id, "O id da opção", 200),
+      title: textoObrigatorio(opcao?.titulo, "O título da opção", 24),
+    };
+    const descricao = String(opcao?.descricao || "").trim();
+    if (descricao) row.description = textoObrigatorio(descricao, "A descrição da opção", 72);
+    return row;
+  });
+  const payload = {
+    messaging_product: "whatsapp", recipient_type: "individual", to: para, type: "interactive",
+    interactive: {
+      type: "list", body: { text: textoObrigatorio(texto, "O texto da lista", 1024) },
+      action: { button: textoObrigatorio(tituloBotao, "O botão da lista", 20), sections: [{ title: textoObrigatorio(tituloSecao, "O título da seção", 24), rows }] },
+    },
+  };
+  const footer = String(rodape || "").trim();
+  if (footer) payload.interactive.footer = { text: textoObrigatorio(footer, "O rodapé da lista", 60) };
+  return payload;
 }
 
 /** Corpo de um texto livre. [M1] */
@@ -308,30 +384,39 @@ export class WhatsappCloudClient {
 
     // Timeout sem dependência nova: AbortController é global no Node 20.
     const abortador = new AbortController();
-    const relogio = setTimeout(() => abortador.abort(), this.timeoutMs);
+    let relogio;
+    const prazo = new Promise((_, reject) => {
+      relogio = setTimeout(() => {
+        abortador.abort();
+        reject(new Error("whatsapp_request_timeout"));
+      }, this.timeoutMs);
+    });
 
     let resposta;
+    let json = null;
     try {
-      resposta = await this.fetchImpl(url, {
+      resposta = await Promise.race([this.fetchImpl(url, {
         method: "POST",
         headers: cabecalhos,
         body: formulario || JSON.stringify(corpo),
         signal: abortador.signal,
-      });
+      }), prazo]);
+      try {
+        json = await Promise.race([resposta.json(), prazo]);
+      } catch (causa) {
+        // JSON inválido continua sendo resposta desconhecida; corpo interrompido é transporte.
+        if (abortador.signal.aborted || !(causa instanceof SyntaxError)) throw causa;
+      }
     } catch (causa) {
       // ⚠ NÃO SE SABE SE CHEGOU. Ver `traduzirFalhaDeTransporte`.
-      throw new WhatsappError(traduzirFalhaDeTransporte(causa, { timeout: abortador.signal.aborted }));
+      const erro = new WhatsappError(traduzirFalhaDeTransporte(causa, { timeout: abortador.signal.aborted }));
+      erro.desfechoIndeterminado = recurso === "messages";
+      throw erro;
     } finally {
       clearTimeout(relogio);
     }
 
     const status = Number(resposta?.status ?? 0) || null;
-    let json = null;
-    try {
-      json = await resposta.json();
-    } catch {
-      json = null; // corpo vazio ou não-JSON: a tradução trata como "resposta não reconhecida".
-    }
 
     if (!resposta?.ok) {
       const traducao = traduzirErroMeta(json, { httpStatus: status });
@@ -340,7 +425,9 @@ export class WhatsappCloudClient {
         { codigo: traducao.codigo, httpStatus: status, fbtraceId: traducao.fbtraceId, recurso },
         "envio WhatsApp recusado pela Meta",
       );
-      throw new WhatsappError(traducao);
+      const erro = new WhatsappError(traducao);
+      if (recurso !== "messages") erro.desfechoIndeterminado = false;
+      throw erro;
     }
 
     return json;
@@ -370,9 +457,9 @@ export class WhatsappCloudClient {
     const json = await this.chamar({ recurso: "media", formulario });
     const mediaId = json?.id ? String(json.id) : null;
     if (!mediaId) {
-      throw new WhatsappError(
-        traduzirErroMeta(json, { httpStatus: 200 }),
-      );
+      const erro = new WhatsappError(traduzirErroMeta(json, { httpStatus: 200 }));
+      erro.desfechoIndeterminado = false; // Só houve upload; nenhuma mensagem foi solicitada.
+      throw erro;
     }
     return mediaId;
   }
@@ -530,7 +617,21 @@ export class WhatsappCloudClient {
       { para: mascararTelefone(para), caracteres: conteudo.length },
       "texto livre WhatsApp aceito pela Meta",
     );
-    return { wamid: WhatsappCloudClient.wamidDaResposta(json), resposta: json };
+    return { wamid: WhatsappCloudClient.exigirWamid(json, {}), resposta: json };
+  }
+
+  async enviarBotoes({ telefone, texto, botoes, rodape = null }) {
+    const para = this.destino(telefone);
+    const json = await this.chamar({ recurso: "messages", corpo: montarPayloadBotoes({ para, texto, botoes, rodape }) });
+    this.log?.info?.({ para: mascararTelefone(para), opcoes: botoes?.length || 0 }, "menu de botões WhatsApp aceito pela Meta");
+    return { wamid: WhatsappCloudClient.exigirWamid(json, {}), resposta: json };
+  }
+
+  async enviarLista({ telefone, texto, tituloBotao, linhas, tituloSecao, rodape = null }) {
+    const para = this.destino(telefone);
+    const json = await this.chamar({ recurso: "messages", corpo: montarPayloadLista({ para, texto, tituloBotao, linhas, tituloSecao, rodape }) });
+    this.log?.info?.({ para: mascararTelefone(para), opcoes: linhas?.length || 0 }, "lista interativa WhatsApp aceita pela Meta");
+    return { wamid: WhatsappCloudClient.exigirWamid(json, {}), resposta: json };
   }
 
   /**
@@ -549,7 +650,16 @@ export class WhatsappCloudClient {
       corpo: montarPayloadDocumento({ para, mediaId, nomeArquivo, legenda }),
     });
     this.log?.info?.({ para: mascararTelefone(para), documento: true }, "documento WhatsApp aceito pela Meta");
-    return { wamid: WhatsappCloudClient.wamidDaResposta(json), resposta: json };
+    return { wamid: WhatsappCloudClient.exigirWamid(json, {}), resposta: json };
+  }
+
+  /** Imagem de serviço dentro da janela de 24h (ex.: documento societário digitalizado). */
+  async enviarImagem({ telefone, conteudo, nomeArquivo, legenda, mimeType = "image/jpeg" }) {
+    const para = this.destino(telefone);
+    const mediaId = await this.uploadDocumento({ conteudo, nomeArquivo, mimeType });
+    const json = await this.chamar({ recurso: "messages", corpo: montarPayloadImagem({ para, mediaId, legenda }) });
+    this.log?.info?.({ para: mascararTelefone(para), imagem: true }, "imagem WhatsApp aceita pela Meta");
+    return { wamid: WhatsappCloudClient.exigirWamid(json, {}), resposta: json };
   }
 
   /**
@@ -586,6 +696,8 @@ export class WhatsappCloudClient {
   }) {
     // Recusa o destino ANTES de gastar o upload: telefone torto não melhora depois de subir 200 KB.
     const para = this.destino(telefone);
+    // O template também precisa estar preenchido antes de subir o PDF.
+    montarCorpoTemplate(variaveis);
     const mediaId = await this.uploadDocumento({ conteudo: conteudoPdf, nomeArquivo });
     return this.enviarTemplateComDocumento({
       telefone: para,
@@ -608,7 +720,10 @@ export class WhatsappCloudClient {
  * formatação de moeda e data é decisão de apresentação, e este módulo não a toma.
  */
 export function variaveisDaGuia({ nomeContato, tipoGuia, competencia, valorFormatado, vencimentoFormatado }) {
-  return [nomeContato, tipoGuia, competencia, valorFormatado, vencimentoFormatado].map((v) => String(v ?? ""));
+  // Cadastros antigos podem ter o PDF sem vencimento estruturado. O quinto parâmetro não pode
+  // ficar vazio, e a competência não autoriza inventar uma data de pagamento.
+  const vencimento = String(vencimentoFormatado ?? "").trim() || "a conferir no PDF anexo";
+  return [nomeContato, tipoGuia, competencia, valorFormatado, vencimento].map((v) => String(v ?? ""));
 }
 
 /** Nome do anexo que o cliente vê no WhatsApp. Mesma intenção do `guidePdfFilename` do e-mail. */

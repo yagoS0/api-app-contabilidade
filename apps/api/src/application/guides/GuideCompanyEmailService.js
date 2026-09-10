@@ -6,8 +6,10 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { EmailService } from "../../infrastructure/mail/EmailService.js";
 import { getGuidePdfBuffer } from "./GuideService.js";
 import { guideTypeEmailLabel } from "./guideEmailCopy.js";
-import { SEM_DESTINATARIO_DE_GUIA, resolveCompanyNotificationEmails } from "./GuideScheduledEmailService.js";
+import { SEM_DESTINATARIO_DE_GUIA, resolveCompanyNotificationEmails, validarDestinatariosAtuais } from "./GuideScheduledEmailService.js";
 import { whereGuiaPendenteDeEnvio } from "./guideContract.js";
+import { conferirGuiasVencimento } from "./GuideDueBatchService.js";
+import { loteAlterado, periodoVencimento, assinaturaGuias } from "./loteVencimento.js";
 
 function safeTempName(name) {
   return String(name || "guia.pdf").replace(/[\\/]+/g, "-");
@@ -17,7 +19,7 @@ function safeTempName(name) {
 // o `sourcePath` do SERPRO vinha como "SERPRO PGDAS-D 2026-05" e virava o nome do anexo.
 // `usedNames` (Set) desambigua nomes repetidos no mesmo e-mail (ex.: 2 guias do mesmo tipo).
 function guidePdfFilename(guide, usedNames) {
-  const label = guideTypeEmailLabel(guide.tipo);
+  const label = guide.parcelamentoId ? `Parcelamento${guide.numeroParcela ? ` parcela ${guide.numeroParcela}` : ""}` : guideTypeEmailLabel(guide.tipo);
   const nice = label === "pagamento" ? "Guia" : label; // OUTRA (DARF/LP) → "Guia"
   const comp = guide.competencia ? ` ${guide.competencia}` : "";
   const base = `${nice}${comp}`;
@@ -74,11 +76,7 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
     err.code = "PORTAL_COMPANY_NOT_FOUND";
     throw err;
   }
-  if (!to) {
-    const err = new Error("company_email_not_found");
-    err.code = "COMPANY_EMAIL_NOT_FOUND";
-    throw err;
-  }
+  to = await validarDestinatariosAtuais(portal.id, to);
 
   const pendingAll = await prisma.guide.findMany({
     where: {
@@ -154,6 +152,8 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
       competencia: latestCompetencia || "—",
       typeLabels,
     });
+    // Os anexos podem demorar a carregar. Um contato removido nesse intervalo não recebe.
+    to = await validarDestinatariosAtuais(portal.id, to);
     await email.send({ to, subject, html, attachments });
 
     const sentAt = new Date();
@@ -235,14 +235,14 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
  * @param {{ portalClientId: string, competencia: string }} params
  * @returns {Promise<object>} status + counts
  */
-export async function sendCompanyGuidesEmail({ portalClientId, competencia }) {
+export async function sendCompanyGuidesEmail({ portalClientId, competencia, mesVencimento, selectedGuideIds, assinatura }) {
   const startedAt = Date.now();
   if (!portalClientId) {
     const err = new Error("portal_client_id_required");
     err.code = "PORTAL_CLIENT_ID_REQUIRED";
     throw err;
   }
-  if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
+  if (!mesVencimento && !/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
     const err = new Error("competencia_invalida");
     err.code = "COMPETENCIA_INVALIDA";
     throw err;
@@ -277,10 +277,15 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia }) {
   // depois excluída dos anexos, com a rota respondendo `ok: true, sent: 0`.
   //
   // Sem `retryAntesDe`: envio manual não espera janela de retry. Quem clicou quer agora.
+  if (mesVencimento) {
+    if (!assinatura) throw loteAlterado();
+    await conferirGuiasVencimento({ portalClientIds: [portal.id], mesVencimento, guideIds: selectedGuideIds, assinatura });
+  }
   const guides = await prisma.guide.findMany({
     where: {
       portalClientId: portal.id,
-      competencia,
+      ...(mesVencimento ? { vencimento: periodoVencimento(mesVencimento), id: { in: selectedGuideIds },
+        AND: [{ OR: [{ paymentStatus: null }, { paymentStatus: { not: "PAID" } }] }] } : { competencia }),
       status: "PROCESSED",
       ...whereGuiaPendenteDeEnvio(),
     },
@@ -299,11 +304,22 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia }) {
   }
 
   // Marca como SENDING antes de tentar enviar (evita race com outros workers).
+  if (mesVencimento && assinaturaGuias(guides) !== assinatura) throw loteAlterado();
   const guideIds = guides.map((g) => g.id);
-  await prisma.guide.updateMany({
-    where: { id: { in: guideIds } },
-    data: { emailStatus: "SENDING", emailLastError: null, emailNextRetryAt: null, emailAttempts: { increment: 1 } },
+  const reservaEm = new Date();
+  const reservar = (db) => db.guide.updateMany({
+    where: { id: { in: guideIds }, ...(mesVencimento ? { AND: [whereGuiaPendenteDeEnvio(),
+      { OR: [{ paymentStatus: null }, { paymentStatus: { not: "PAID" } }] },
+      { OR: guides.map((g) => ({ id: g.id, updatedAt: g.updatedAt })) }] } : {}) },
+    data: { emailStatus: "SENDING", emailLastError: null, emailNextRetryAt: null, emailAttempts: { increment: 1 }, ...(mesVencimento ? { updatedAt: reservaEm } : {}) },
   });
+  if (mesVencimento) {
+    if (guides.length !== selectedGuideIds.length) throw loteAlterado();
+    await prisma.$transaction(async (tx) => {
+      const r = await reservar(tx);
+      if (r.count !== guideIds.length) throw loteAlterado();
+    });
+  } else await reservar(prisma);
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "guides-batch-email-"));
   const attachments = [];
@@ -328,10 +344,23 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia }) {
 
     const typeLabels = guides.map((g) => guideTypeEmailLabel(g.tipo));
     const uniqueLabels = [...new Set(typeLabels)];
-    const subject = uniqueLabels.length === 1
+    const subject = mesVencimento ? `Guias com vencimento em ${mesVencimento}` : uniqueLabels.length === 1
       ? `Sua guia de ${uniqueLabels[0]} — ${competencia}`
       : `Suas guias — ${competencia}`;
-    const html = buildEmailHtml({ razao: portal.razao, competencia, typeLabels });
+    const html = mesVencimento
+      ? `<p>Olá, ${escapeHtml(portal.razao)}.</p><p>Seguem as guias com vencimento em ${escapeHtml(mesVencimento)}:</p><ul>${guides.map((g) => `<li>${escapeHtml(g.parcelamentoId ? "Parcelamento" : guideTypeEmailLabel(g.tipo))} — competência/referência ${escapeHtml(g.competencia)} — vencimento ${escapeHtml(new Date(g.vencimento).toISOString().slice(0, 10))}</li>`).join("")}</ul><p>Os PDFs estão em anexo.</p>`
+      : buildEmailHtml({ razao: portal.razao, competencia, typeLabels });
+    await validarDestinatariosAtuais(portal.id, to);
+    if (mesVencimento) {
+      const atuais = await prisma.guide.findMany({ where: { id: { in: guideIds }, portalClientId: portal.id },
+        select: { id: true, paymentStatus: true, status: true, vencimento: true, hash: true, valor: true, competencia: true, updatedAt: true } });
+      if (atuais.length !== guides.length || atuais.some((g) => g.paymentStatus === "PAID" || g.status !== "PROCESSED"
+        || new Date(g.updatedAt).getTime() !== reservaEm.getTime()
+        || new Date(g.vencimento).toISOString().slice(0, 7) !== mesVencimento
+        || g.hash !== guides.find((x) => x.id === g.id)?.hash
+        || String(g.valor) !== String(guides.find((x) => x.id === g.id)?.valor)
+        || g.competencia !== guides.find((x) => x.id === g.id)?.competencia)) throw loteAlterado();
+    }
     await email.send({ to, subject, html, attachments });
 
     const sentAt = new Date();

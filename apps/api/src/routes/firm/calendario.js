@@ -6,7 +6,7 @@
 
 import { Router } from "express";
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { montarCalendarioDoMes } from "../../application/calendario/CalendarioFiscalService.js";
+import { limitesDoMes, montarCalendarioDoMes } from "../../application/calendario/CalendarioFiscalService.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
 
 const IMPORTANCIAS = new Set(["ALTA", "MEDIA", "BAIXA"]);
@@ -21,7 +21,7 @@ export function createCalendarioRouter({ log } = {}) {
 
   router.get("/calendario", async (req, res) => {
     const competencia = String(req.query?.mes || "").trim();
-    if (!/^\d{4}-\d{2}$/.test(competencia)) {
+    if (!limitesDoMes(competencia)) {
       return res.status(400).json({ ok: false, error: "mes_invalido", message: "Informe o mês como YYYY-MM." });
     }
     try {

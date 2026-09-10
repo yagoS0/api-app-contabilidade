@@ -191,6 +191,12 @@ describe("anexo do Simples", () => {
 });
 
 describe("alíquota de ISS", () => {
+  test("não escolhe a primeira atividade quando há alíquotas diferentes sem padrão", async () => {
+    comBase({ cadastro: { perfilAtividades: [{ ativo: true, aliquotaIss: 2 }, { ativo: true, aliquotaIss: 5 }] } });
+    const campo = (await rodar()).campos.aliquotaIss;
+    expect(campo.apurado).toBe(false);
+    expect(campo.motivoAusencia).toMatch(/diferentes/);
+  });
   test("o perfil guarda PERCENTUAL e a tela recebe FRAÇÃO", async () => {
     comBase({
       cadastro: {

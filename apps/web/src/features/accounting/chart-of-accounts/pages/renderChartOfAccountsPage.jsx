@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { BackButton } from "../../../../components/ui/BackButton";
 import { Button } from "../../../../components/ui/Button";
+import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 
 const TIPO_OPTIONS = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
 const NATUREZA_OPTIONS = ["DEVEDORA", "CREDORA"];
@@ -104,6 +105,7 @@ export function ChartOfAccountsPage({
 }) {
   const isGlobal = scope === "GLOBAL";
   const [form, setForm] = useState({ ...EMPTY_FORM });
+  const { pedir: confirmar, dialogo: confirmacao } = useConfirmacao();
   const [saving, setSaving] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [error, setError] = useState("");
@@ -221,7 +223,7 @@ export function ChartOfAccountsPage({
   }
 
   async function handleDelete(codigo) {
-    if (!window.confirm(`Excluir a conta ${codigo}? Lançamentos existentes não serão afetados.`)) return;
+    if (!await confirmar({ titulo: "Excluir conta", texto: "A conta sai do plano. Lançamentos existentes não serão afetados.", itens: [`${codigo} · ${accounts.find(a => a.codigo === codigo)?.nome || "Conta"}`], acao: "Excluir conta", perigo: true })) return;
     setSaving(true); setError("");
     try {
       await onDeleteAccount(codigo);
@@ -232,17 +234,18 @@ export function ChartOfAccountsPage({
   async function handleBulkDelete() {
     const ids = visibleIds.filter((id) => selectedIds.has(id));
     if (ids.length === 0) return;
-    if (!window.confirm(`Excluir ${ids.length} conta${ids.length !== 1 ? "s" : ""}? Lançamentos existentes não serão afetados.`)) return;
+    if (!await confirmar({ titulo: `Excluir ${ids.length} conta(s)`, texto: "Estas contas saem do plano. Lançamentos existentes não serão afetados.", itens: ids.map(id => `${id} · ${accounts.find(a => a.codigo === id)?.nome || "Conta"}`), acao: "Excluir contas", perigo: true })) return;
     setBulkBusy(true); setError(""); setMessage("");
     let ok = 0, fail = 0;
+    const falhas = [];
     for (const id of ids) {
       try { await onDeleteAccount(id); ok++; }
-      catch { fail++; }
+      catch { fail++; falhas.push(id); }
     }
     setBulkBusy(false);
-    clearSelection();
+    setSelectedIds(new Set(falhas));
     if (fail === 0) setMessage(`${ok} conta${ok !== 1 ? "s" : ""} excluída${ok !== 1 ? "s" : ""}.`);
-    else setError(`${ok} excluída${ok !== 1 ? "s" : ""}, ${fail} falharam.`);
+    else setError(`${ok} excluída${ok !== 1 ? "s" : ""}, ${fail} falharam: ${falhas.join(", ")}. As falhas continuam selecionadas para tentar novamente.`);
   }
 
   async function handleBulkConfirm() {
@@ -253,17 +256,18 @@ export function ChartOfAccountsPage({
       setError("Nenhuma das contas selecionadas está pendente de ERP.");
       return;
     }
-    if (!window.confirm(`Confirmar ${targets.length} conta${targets.length !== 1 ? "s" : ""} como criadas no ERP?`)) return;
+    if (!await confirmar({ titulo: "Confirmar contas no ERP", texto: "Confirme somente as contas que já foram criadas no seu sistema contábil.", itens: targets.map(id => `${id} · ${accountsMap.get(id)?.nome || "Conta"}`), acao: "Confirmar no ERP" })) return;
     setBulkBusy(true); setError(""); setMessage("");
     let ok = 0, fail = 0;
+    const falhas = [];
     for (const id of targets) {
       try { await onUpdateAccount(id, { status: "CONFIRMADA" }); ok++; }
-      catch { fail++; }
+      catch { fail++; falhas.push(id); }
     }
     setBulkBusy(false);
-    clearSelection();
+    setSelectedIds(new Set(falhas));
     if (fail === 0) setMessage(`${ok} conta${ok !== 1 ? "s" : ""} confirmada${ok !== 1 ? "s" : ""} no ERP.`);
-    else setError(`${ok} confirmada${ok !== 1 ? "s" : ""}, ${fail} falharam.`);
+    else setError(`${ok} confirmada${ok !== 1 ? "s" : ""}, ${fail} falharam: ${falhas.join(", ")}. As falhas continuam selecionadas para tentar novamente.`);
   }
 
   async function handleImportFile(e) {
@@ -368,7 +372,7 @@ export function ChartOfAccountsPage({
       {/* Adicionar conta */}
       <form onSubmit={handleCreate} style={sectionStyle}>
         <h3 style={{ margin: "0 0 12px", fontSize: "1rem", fontWeight: 700 }}>Adicionar conta</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "7rem 1fr 10rem 8rem 8rem auto", gap: 10, alignItems: "end" }}>
+        <div className="chart-account-create-grid" style={{ display: "grid", gap: 10, alignItems: "end" }}>
           <label style={LABEL}>
             Código
             <input type="text" value={form.codigo} onChange={(e) => handleField("codigo", e.target.value)} placeholder="ex: 464" style={FIELD} />
@@ -415,7 +419,7 @@ export function ChartOfAccountsPage({
 
       {/* Filtros */}
       <div style={sectionStyle}>
-        <div style={{ display: "grid", gridTemplateColumns: isGlobal ? "1fr 12rem 12rem" : "1fr 12rem 12rem 12rem", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 12 }}>
           <label style={LABEL}>
             Buscar (código ou nome)
             <input type="search" value={filterText} onChange={(e) => setFilterText(e.target.value)} placeholder="Digite para filtrar..." style={FIELD} />
@@ -451,7 +455,7 @@ export function ChartOfAccountsPage({
       {/* Toolbar de seleção */}
       {selectedCount > 0 && (
         <div style={{
-          display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+          display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, padding: "10px 14px",
           background: "#2D2F45", border: `1px solid ${PANEL.border}`, borderRadius: 8,
           marginBottom: 14, fontSize: "0.875rem",
         }}>
@@ -553,7 +557,7 @@ export function ChartOfAccountsPage({
                       <td style={CELL}>
                         <span style={CODE}>{account.codigo}</span>
                         {isAccountGlobal && (
-                          <span style={{ marginLeft: 6, fontSize: "0.65rem", fontWeight: 700, color: PANEL.page, background: "#8BE9FD", padding: "2px 6px", borderRadius: 999 }}>
+                          <span style={{ marginLeft: 6, fontSize: "0.8125rem", fontWeight: 700, color: PANEL.page, background: "#8BE9FD", padding: "2px 6px", borderRadius: 999 }}>
                             GLOBAL
                           </span>
                         )}
@@ -643,6 +647,7 @@ export function ChartOfAccountsPage({
           </div>
         )}
       </div>
+      {confirmacao}
     </div>
   );
 }

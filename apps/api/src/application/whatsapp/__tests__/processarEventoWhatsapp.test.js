@@ -3,6 +3,8 @@
 //
 // ⚠ Zero rede e zero banco, por construção: os dois módulos que tocariam o Prisma são mockados.
 
+jest.mock("../SaidaWhatsappService.js", () => ({ aplicarStatusMensagem: jest.fn(async () => null) }));
+jest.mock("../ArquivoWhatsappService.js", () => ({ enqueueArquivoWhatsapp: jest.fn(async () => null) }));
 jest.mock("../ConversaWhatsappService.js", () => ({ registrarMensagemRecebida: jest.fn() }));
 jest.mock("../../guides/EnvioGuiaService.js", () => ({
   aplicarStatusDoProvedor: jest.fn(),
@@ -216,13 +218,38 @@ describe("statuses", () => {
 });
 
 // ── O GANCHO DO ASSISTENTE (F4, 02/09/2026): as QUATRO chaves, medidas por NÃO-chamada ──────────
-import { decidirRespostaDaIa } from "../ProcessarEventoWhatsappService.js";
+import { decidirRespostaDaIa, decidirRespostaDoMenu } from "../ProcessarEventoWhatsappService.js";
+
+describe("decidirRespostaDoMenu — rollout separado e sem modelo", () => {
+  const r = { vinculo: { situacao: "VINCULADO" }, conversa: { portalClientId: "pc-1", telefoneE164: "5521999998888", escopoVerificado: true }, mensagem: { registradaEm: AGORA } };
+  it("nasce desligado", () => {
+    expect(decidirRespostaDoMenu({ r, flag: false, piloto: ["pc-1"] })).toEqual({ responde: false, motivo: "FLAG_OFF" });
+  });
+  it("não responde fora da empresa piloto", () => {
+    expect(decidirRespostaDoMenu({ r, flag: true, piloto: [] }).motivo).toBe("FORA_DO_PILOTO");
+    expect(decidirRespostaDoMenu({ r, flag: true, piloto: ["outra"] }).motivo).toBe("FORA_DO_PILOTO");
+  });
+  it("responde no piloto sem depender da flag da IA", () => {
+    expect(decidirRespostaDoMenu({ r, flag: true, piloto: ["pc-1"] })).toEqual({ responde: true, motivo: null });
+  });
+  it("telefone E.164 piloto libera somente aquele contato", () => {
+    expect(decidirRespostaDoMenu({ r, flag: true, piloto: [], telefonesPiloto: ["5521999998888"] })).toEqual({ responde: true, motivo: null });
+    expect(decidirRespostaDoMenu({ r, flag: true, piloto: [], telefonesPiloto: ["5511888887777"] }).motivo).toBe("FORA_DO_PILOTO");
+  });
+  it("lead não listado fica fora e WHATSAPP_MENU_LEADS só abre o menu público", () => {
+    const lead = { vinculo: { situacao: "DESCONHECIDO" }, conversa: { portalClientId: null, telefoneE164: "5511888887777" }, mensagem: { registradaEm: AGORA } };
+    expect(decidirRespostaDoMenu({ r: lead, flag: true, telefonesPiloto: [], leads: false }).motivo).toBe("FORA_DO_PILOTO");
+    expect(decidirRespostaDoMenu({ r: lead, flag: true, telefonesPiloto: ["5511888887777"], leads: false })).toEqual({ responde: true, motivo: null });
+    expect(decidirRespostaDoMenu({ r: lead, flag: true, telefonesPiloto: [], leads: true })).toEqual({ responde: true, motivo: null });
+    expect(decidirRespostaDoMenu({ r, flag: true, piloto: [], telefonesPiloto: [], leads: true }).motivo).toBe("FORA_DO_PILOTO");
+  });
+});
 
 describe("decidirRespostaDaIa — a IA só responde com as quatro chaves", () => {
   const r = (over = {}) => ({
     duplicada: false,
     vinculo: { situacao: "VINCULADO" },
-    conversa: { id: "cv1", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null },
+    conversa: { id: "cv1", escopoVerificado: true, portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null },
     mensagem: { id: "m1" },
     ...over,
   });
@@ -238,8 +265,8 @@ describe("decidirRespostaDaIa — a IA só responde com as quatro chaves", () =>
     expect(decidirRespostaDaIa({ r: r({ vinculo: { situacao: "AMBIGUO" } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("NAO_VINCULADA");
   });
   it("assumida por pessoa, ou na fila do escritório → a IA cala", () => {
-    expect(decidirRespostaDaIa({ r: r({ conversa: { id: "cv1", portalClientId: "pc-1", atendidaPor: "u9" } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("ASSUMIDA_POR_HUMANO");
-    expect(decidirRespostaDaIa({ r: r({ conversa: { id: "cv1", portalClientId: "pc-1", atendidaDesde: new Date() } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("ASSUMIDA_POR_HUMANO");
+    expect(decidirRespostaDaIa({ r: r({ conversa: { id: "cv1", escopoVerificado: true, portalClientId: "pc-1", atendidaPor: "u9" } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("ASSUMIDA_POR_HUMANO");
+    expect(decidirRespostaDaIa({ r: r({ conversa: { id: "cv1", escopoVerificado: true, portalClientId: "pc-1", atendidaDesde: new Date() } }), flag: true, piloto: ["pc-1"] }).motivo).toBe("ASSUMIDA_POR_HUMANO");
   });
   it("duplicada (reentrega) nunca dispara", () => {
     expect(decidirRespostaDaIa({ r: r({ duplicada: true }), flag: true, piloto: ["pc-1"] }).motivo).toBe("DUPLICADA");
@@ -256,7 +283,7 @@ describe("o gancho da IA — quem é chamado, e com o quê", () => {
   const REGISTRO = (over = {}) => ({
     duplicada: false,
     vinculo: { situacao: "VINCULADO", divergemPeloNonoDigito: false },
-    conversa: { id: "cv1", portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null },
+    conversa: { id: "cv1", escopoVerificado: true, portalClientId: "pc-1", atendidaPor: null, atendidaDesde: null },
     mensagem: { id: "m1" },
     ...over,
   });
@@ -272,17 +299,27 @@ describe("o gancho da IA — quem é chamado, e com o quê", () => {
   it("as quatro chaves ligadas → chama com o id do fio e o da mensagem", async () => {
     const responder = jest.fn(async () => ({ feito: true }));
     const resumo = await rodar({ registro: REGISTRO(), ia: { flag: true, piloto: ["pc-1"] }, responder });
-    expect(responder).toHaveBeenCalledWith({ conversaId: "cv1", mensagemId: "m1" });
+    expect(responder).toHaveBeenCalledWith({ conversaId: "cv1", mensagemId: "m1", portalClientId: "pc-1" });
     expect(resumo.mensagens.gravadas).toBe(1);
+  });
+
+  it("menu tratado por id é determinístico e não enfileira a IA", async () => {
+    const responder = jest.fn(async () => ({ feito: true }));
+    const responderMenu = jest.fn(async ({ interacao }) => ({ tratado: true, motivo: "MENU_INTERATIVO", acao: interacao.id }));
+    registrarMensagemRecebida.mockResolvedValue(REGISTRO());
+    const payload = evento({ messages: [{ ...MENSAGEM, type: "interactive", interactive: { button_reply: { id: "altan.client.more.v1", title: "Qualquer título" } } }] });
+    await processarEventoWhatsapp(payload, { agora: AGORA, logger: logSpy(), responder, responderMenu, menu: { flag: true, piloto: ["pc-1"] }, ia: { flag: true, piloto: ["pc-1"] } });
+    expect(responderMenu).toHaveBeenCalledWith(expect.objectContaining({ interacao: { tipo: "button_reply", id: "altan.client.more.v1", titulo: "Qualquer título" } }));
+    expect(responder).not.toHaveBeenCalled();
   });
 
   it("⚠ flag OFF, fora do piloto, duplicada, não vinculada e assumida → NÃO chama", async () => {
     const casos = [
       [REGISTRO(), { flag: false, piloto: ["pc-1"] }, "FLAG_OFF"],
       [REGISTRO(), { flag: true, piloto: [] }, "FORA_DO_PILOTO"],
-      [REGISTRO({ duplicada: true }), { flag: true, piloto: ["pc-1"] }, "DUPLICADA"],
+      [REGISTRO({ duplicada: true, mensagem: { id: "m1", respondidaPelaIaEm: new Date() } }), { flag: true, piloto: ["pc-1"] }, "DUPLICADA"],
       [REGISTRO({ vinculo: { situacao: "DESCONHECIDO" }, conversa: { id: "cv1", portalClientId: null } }), { flag: true, piloto: ["pc-1"] }, "NAO_VINCULADA"],
-      [REGISTRO({ conversa: { id: "cv1", portalClientId: "pc-1", atendidaPor: "u9" } }), { flag: true, piloto: ["pc-1"] }, "ASSUMIDA_POR_HUMANO"],
+      [REGISTRO({ conversa: { id: "cv1", escopoVerificado: true, portalClientId: "pc-1", atendidaPor: "u9" } }), { flag: true, piloto: ["pc-1"] }, "ASSUMIDA_POR_HUMANO"],
     ];
     for (const [registro, ia, motivo] of casos) {
       const responder = jest.fn(async () => ({ feito: true }));
@@ -292,15 +329,22 @@ describe("o gancho da IA — quem é chamado, e com o quê", () => {
     }
   });
 
-  it("⚠ o assistente lançando NÃO derruba o webhook — o evento já foi processado", async () => {
+  it("falha ao enfileirar é registrada no resumo para retry do inbox", async () => {
     const responder = jest.fn(async () => { throw new Error("modelo caiu"); });
     const logger = logSpy();
     registrarMensagemRecebida.mockResolvedValue(REGISTRO());
     const resumo = await processarEventoWhatsapp(evento({ messages: [MENSAGEM] }), { agora: AGORA, logger, responder, ia: { flag: true, piloto: ["pc-1"] } });
     await proximoTick();
     await proximoTick();
-    expect(resumo.mensagens.gravadas).toBe(1);
-    expect(resumo.erros).toEqual([]);
+    expect(resumo.mensagens.recusadas).toBe(1);
+    expect(resumo.erros).toHaveLength(1);
     expect(logger.error).toHaveBeenCalled();
   });
+});
+it("decisão de IA distingue chat na lixeira, entrada antiga e nova entrada após restaurar",()=>{
+ const base={vinculo:{situacao:"VINCULADO"},conversa:{id:"cv",portalClientId:"pc",escopoVerificado:true},mensagem:{registradaEm:new Date("2026-09-07T12:00:00Z")}};
+ const args={flag:true,piloto:["pc"]};
+ expect(decidirRespostaDaIa({...args,r:{...base,conversa:{...base.conversa,excluidaEm:new Date()}}}).motivo).toBe("CHAT_EXCLUIDO");
+ expect(decidirRespostaDaIa({...args,r:{...base,conversa:{...base.conversa,automacaoInvalidadaEm:new Date("2026-09-07T12:01:00Z")}}}).motivo).toBe("AUTOMACAO_INVALIDADA");
+ expect(decidirRespostaDaIa({...args,r:{...base,conversa:{...base.conversa,excluidaEm:null,automacaoInvalidadaEm:new Date("2026-09-07T11:59:00Z")}}}).responde).toBe(true);
 });

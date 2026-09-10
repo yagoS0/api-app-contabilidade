@@ -17,6 +17,9 @@
 // URL cai em Anotações sem erro nenhum.
 
 export const SEGMENT_TO_TAB = {
+  certificado: "certificado",
+  ajustes: "configuracoesEmpresa",
+  comunicacao: "comunicacao",
   guides: "guides",
   lancamentos: "lancamentos",
   // A fila de conferência (a nota vira despesa, o extrato vira o pagamento). ⚠ O PAR EM
@@ -84,6 +87,9 @@ export const SEGMENT_TO_TAB = {
 };
 
 export const TAB_TO_SEGMENT = {
+  certificado: "certificado",
+  configuracoesEmpresa: "ajustes",
+  comunicacao: "comunicacao",
   guides: "guides",
   lancamentos: "lancamentos",
   // ⚠ O par da entrada acima. Faltando esta linha, a aba Conferência vira `<button>` mudo.

@@ -18,12 +18,14 @@
 // aba: no backend é rota própria, com gate `ACCOUNTANT`+ e auditoria de quem/quando. Um campo a
 // mais faria o ato fiscal viajar junto de troca de código de serviço.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { createApiClient } from "../../../../api/client";
 import { PainelProximaDps } from "./PainelProximaDps";
+import { EditorPerfilEmissao } from "./EditorPerfilEmissao";
 import { CamposEmissaoNfse } from "../../form/components/CamposEmissaoNfse";
 import { mapCompanyToEmissaoNfseForm } from "../../form/hooks/useManageCompanyForm";
+import { useEdicaoPendente } from '../../../configuracoes/ProtecaoEdicao';
 
 // ⚠ Mesmo caminho de `renderCircularTab.jsx`: **não existe `src/api/index.js` neste app** — o
 // objeto da API sai de `createApiClient()`. O `CLAUDE.md` de `apps/web` ainda descreve um
@@ -85,6 +87,7 @@ export function EmissaoNfseTab({
   }
 
   const alterado = CAMPOS.some((c) => !mesmoValor(form[c], gravado[c]));
+  useEdicaoPendente(alterado);
 
   function onChange(campo, valor) {
     // ⚠ Só os campos desta aba entram no estado. O `CamposEmissaoNfse` chama `onChange(campo, v)`
@@ -124,80 +127,63 @@ export function EmissaoNfseTab({
   const [perfis, setPerfis] = useState(null);
   const [carregandoPerfis, setCarregandoPerfis] = useState(false);
   const [salvandoPerfil, setSalvandoPerfil] = useState(false);
+  const empresaAtual = useRef(portalClientId);
+  empresaAtual.current = portalClientId;
+  const [empresaDosPerfis, setEmpresaDosPerfis] = useState(null);
 
   const carregarPerfis = useCallback(async () => {
     if (!portalClientId) return;
     setCarregandoPerfis(true);
     try {
-      setPerfis(await api.getPerfisEmissao(portalClientId));
+      const resposta = await api.getPerfisEmissao(portalClientId);
+      if (empresaAtual.current !== portalClientId) return;
+      setPerfis(resposta);
+      setEmpresaDosPerfis(portalClientId);
     } catch {
       // ⚠ `null` é o estado "não recebida", que a lib distingue de "esta empresa não tem perfil".
-      setPerfis(null);
+      if (empresaAtual.current === portalClientId) setPerfis(null);
     } finally {
-      setCarregandoPerfis(false);
+      if (empresaAtual.current === portalClientId) setCarregandoPerfis(false);
     }
   }, [portalClientId]);
 
   useEffect(() => { carregarPerfis(); }, [carregarPerfis]);
 
-  const criarDoCadastro = useCallback(async (nome) => {
-    if (!portalClientId || !nome) return;
+  async function salvarPerfil(perfilId, corpo) {
     setSalvandoPerfil(true);
     try {
-      // ⚠ O ponto de partida é o que a empresa JÁ usa — `derivadoDoCadastro` vem calculado pela
-      // rota, nunca montado aqui. Criar um perfil não muda nada no XML: a integração nasce
-      // desligada, e mesmo ligada este perfil produz o que o cadastro já produzia.
-      const derivado = perfis?.derivadoDoCadastro || {};
-      await api.criarPerfilEmissao(portalClientId, {
-        nome,
-        codigoServicoNacional: derivado.codigoServicoNacional,
-        codigoServicoMunicipal: derivado.codigoServicoMunicipal ?? null,
-        cLocPrestacao: derivado.cLocPrestacao ?? null,
-        regEspTrib: derivado.regEspTrib ?? null,
-        regApTribSN: derivado.regApTribSN ?? null,
-        tribISSQN: derivado.tribISSQN ?? null,
-      });
+      if (perfilId) await api.salvarPerfilEmissao(portalClientId, perfilId, corpo);
+      else await api.criarPerfilEmissao(portalClientId, corpo);
       await carregarPerfis();
-    } finally {
-      setSalvandoPerfil(false);
-    }
-  }, [portalClientId, perfis, carregarPerfis]);
-
-  const marcarPadrao = useCallback(async (perfilId) => {
-    if (!portalClientId || !perfilId) return;
-    setSalvandoPerfil(true);
-    try {
-      await api.salvarPerfilEmissao(portalClientId, perfilId, { padrao: true });
-      await carregarPerfis();
-    } finally {
-      setSalvandoPerfil(false);
-    }
-  }, [portalClientId, carregarPerfis]);
+    } finally { setSalvandoPerfil(false); }
+  }
 
   return (
-    <section className="company-form-page__panel">
+    <section className="company-form-page__panel nfse-settings">
       <div className="company-form-page__intro">
         <h1 className="company-form-page__title">Emissão de NFS-e</h1>
         <p className="company-form-page__description">
-          O que esta empresa precisa ter configurado para o sistema emitir nota de serviço em nome
-          dela. ⚠ Esta tela <strong>não emite nada</strong> — ela guarda a configuração que a
-          emissão usa.
+          Organize os perfis de serviço e os parâmetros usados na emissão de notas desta empresa.
         </p>
       </div>
 
-      <PainelProximaDps
-        dados={perfis}
-        carregando={carregandoPerfis}
+      {carregandoPerfis ? <p role="status">Carregando perfis de emissão…</p> : empresaDosPerfis !== portalClientId || !perfis ? <div role="status"><p>Não foi possível carregar os perfis de emissão.</p><Button variant="secondary" onClick={carregarPerfis}>Recarregar perfis</Button></div> : null}
+      <EditorPerfilEmissao
+        key={portalClientId}
+        dados={empresaDosPerfis === portalClientId ? perfis : null}
         podeEditar={podeEditar}
         salvando={salvandoPerfil}
-        onCriarDoCadastro={criarDoCadastro}
-        onMarcarPadrao={marcarPadrao}
+        onSalvar={salvarPerfil}
       />
+
+      <details className="nfse-section nfse-diagnostics"><summary>Conferir os dados da próxima nota</summary>
+        <PainelProximaDps dados={empresaDosPerfis === portalClientId ? perfis : null} carregando={carregandoPerfis} mostrarPerfis={false} />
+      </details>
 
       {!podeEditar ? (
         <p className="text-muted">Apenas admin ou contador pode alterar a configuração de emissão.</p>
       ) : (
-        <form className="form-grid two-col" onSubmit={submeter}>
+        <details className="nfse-section nfse-base-settings"><summary>Serviços habilitados e configurações gerais</summary><form className="form-grid two-col" onSubmit={submeter}>
           <CamposEmissaoNfse
             codigoServicoNacional={form.codigoServicoNacional}
             codigosServicoNacional={form.codigosServicoNacional}
@@ -233,7 +219,7 @@ export function EmissaoNfseTab({
             onSetEmissaoCliente={onSetEmissaoCliente}
             emissaoClienteSaving={emissaoClienteSaving}
           />
-        </form>
+        </form></details>
       )}
     </section>
   );

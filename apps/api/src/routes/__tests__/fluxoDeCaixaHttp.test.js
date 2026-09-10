@@ -183,3 +183,23 @@ describe("⚠⚠ a rota ANTIGA do cliente fica como está", () => {
     expect(lerFonte("routes", "client", "index.js")).toMatch(/router\.get\(\s*"\/companies\/:companyId\/fluxo"/);
   });
 });
+
+describe("o relógio HTTP pertence ao servidor", () => {
+  it("ciclo legado escolhido navega sem mudar o hoje do serviço", async () => {
+    await request(app()).get("/client/companies/emp-1/fluxo-de-caixa?cicloAtual=2001-01");
+    const args = mockMontar.mock.calls[0][0];
+    expect(args.cicloAtual).not.toBe("2001-01");
+    expect(args.hoje.slice(0, 7)).toBe(args.cicloAtual);
+    expect(args.janelaInicio).toBe("2001-01");
+  });
+  it("janela explícita vence legado, sem mudar o relógio", async () => {
+    await request(app()).get("/client/companies/emp-1/fluxo-de-caixa?cicloAtual=2001-01&janelaInicio=2026-02");
+    expect(mockMontar.mock.calls[0][0]).toMatchObject({ janelaInicio: "2026-02" });
+    expect(mockMontar.mock.calls[0][0].cicloAtual).not.toBe("2001-01");
+  });
+  it.each(["2026-00", "2026-13"])("mês inválido %s não é aceito como janela", async (mes) => {
+    const r = await request(app()).get(`/client/companies/emp-1/fluxo-de-caixa?janelaInicio=${mes}`);
+    expect(r.status).toBe(400);
+    expect(mockMontar).not.toHaveBeenCalled();
+  });
+});

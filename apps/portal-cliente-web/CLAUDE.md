@@ -1,5 +1,31 @@
 # CLAUDE.md — Portal do Cliente na web (apps/portal-cliente-web)
 
+## Previsão do mês aberto e imposto pago — 08/09/2026
+
+A previsão de receita usa exatamente os três meses de calendário completos imediatamente anteriores ao relógio do servidor. O mês aberto não entra na mediana. Para o recebimento previsto (competência da nota +1), somar somente o complemento positivo entre mediana e notas já emitidas dessa competência. Nota parcial não cancela a previsão; nota acima da mediana não recebe complemento. Meses encerrados não são preenchidos retroativamente. A evidência identifica meses-base, mediana, emitido e complemento. Esta decisão substitui a mediana de toda a série e a regra de começar após a última nota.
+
+No painel, um imposto conhecido não depende de uma alíquota calculável para aparecer. Resultado permanece faturamento menos imposto, com indicação de parcialidade quando faltam tributos/classificações. Mostrar a porcentagem de imposto PAGO de forma explícita e separada da alíquota lançada ou prevista. Ausência de imposto não vira zero calculado nem previsão tributária sem origem.
+
+## Correção de entendimento: painel e acumulado automático — 08/09/2026
+
+O usuário rejeitou exigir saldo inicial manual para cada empresa. Esta instrução substitui a implementação anterior de âncora declarada: não mostrar formulário nem exigir configuração. O fluxo transporta automaticamente as movimentações desde o histórico disponível, com origem HISTORICO e identificação como Acumulado projetado, sem afirmar saldo bancário. Registros de âncora antigos e migration ficam preservados, mas não alimentam o cálculo nem aceitam novas escritas pela rota pública.
+
+O resumo principal é Faturamento menos impostos da MESMA competência selecionada. Não usa resultado do fluxo, despesas operacionais, folha salarial ou mês seguinte. Impostos vêm dos lançamentos da competência; ausência de dados não significa imposto zero. A DRE mantém seu cálculo próprio. Não confundir o resumo principal com o acumulado da tabela.
+
+## Fluxo e DRE — saldo informado (08/09/2026)
+
+Regra preservada após integração da main: declaração avulsa do cliente fica pendente para conferência e só entra no fluxo após contabilização, pela fonte de despesa lançada. Salvar não altera saldo imediatamente. Projeções de séries são somente DESPESA com ao menos três observações consecutivas; declarar recorrência não satisfaz esse histórico. Mock mantém cadastro/remover, mas não cria caixa fictício a partir dessas declarações. Gaveta informa a etapa de conferência antes/depois de salvar.
+
+Esta decisão substitui a proibição anterior de saldo entre meses: existe âncora explícita informada pelo cliente, no primeiro dia do mês, via PUT/DELETE `/client/companies/:id/fluxo-de-caixa/saldo-inicial`. Ausência de âncora nunca é zero; valores negativos e zero declarados são válidos. Mostrar “Saldo inicial informado” e “Saldo projetado”, sempre previsto, separado de “Resultado mensal”. Não chamar de saldo bancário conciliado. O backend transporta saldo entre meses (`mes.saldo.inicial/final`); a tabela diária soma somente o inicial daquele mês ao resultado acumulado diário. Mês sem movimento mantém saldo; mês anterior à âncora mostra traço.
+
+Competência selecionada é navegação/consulta; nunca enviar como `cicloAtual` para simular hoje. GET usa `janelaInicio`, e o relógio efetivo vem do servidor. Mudar competência/empresa reposiciona a tabela. Mutação no fluxo recarrega tabela e cards juntos; falha do fluxo aparece no resumo com retentativa. Formulário do saldo preserva rascunho durante navegação/recarregamento da mesma empresa e desabilita gravação enquanto a leitura não está disponível. Visita do escritório recebe `somenteLeitura`, sem controles de saldo; backend continua autoridade de autorização.
+
+DRE renderiza valores/classificação retornados pela API. `qualidade.provisorio`, motivos e `inconsistencias` devem aparecer junto à tabela; não esconder contas fora do DRE nem transformar ausência de lançamento em resultado zero. Mock contém fixtures e não serve para conciliar valores reais. Testes de interface e mocks não substituem reconciliação com lançamentos/extratos.
+
+## Decisão atual — 08/09/2026
+
+O escritório voltou a apresentar o fluxo diário do cliente em Relatórios, apenas leitura. Ambos usam responderFluxoDeCaixa; os componentes do escritório não recebem ações de células do cliente. A orientação antiga de proibir esse fluxo no escritório foi substituída pelo pedido atual. Nenhum fluxo operacional do cliente foi alterado nesta entrega.
+
 React 19 + Vite, **sem router e sem biblioteca de estado**. Nasceu em 18/08/2026 e recebeu nove
 commits em dois dias (`git log --oneline -- apps/portal-cliente-web`). Este documento existe porque
 quase toda decisão aqui foi tomada **com a tela na frente do dono**, e a razão dela não cabe no
@@ -2311,3 +2337,10 @@ serviço**, não ao do repositório.
 ⚠ **Variáveis `VITE_*` são de BUILD**, embutidas no bundle; precisam existir como variáveis do
 serviço no painel (o Railway as passa como build args). Dev local: `npm run dev`, porta **5210**
 (escolhida para não brigar com o portal do escritório).
+
+
+## Dados específicos da emissão — 07/09/2026
+
+O cliente pode informar por nota IRRF e contribuição previdenciária retidos (valores monetários explícitos), CNO/CEI ou CIB da obra com inscrição imobiliária opcional, e CPF/CNPJ/nome do destinatário diferente do tomador. As regras ficam em emitir/lib/dadosDaOperacao.js; o backend continua sendo a autoridade fiscal, inclusive para exigir IBS/CBS no destinatário separado. Nenhuma alíquota é inferida. Os grupos opcionais vazios não viajam. A prévia mostra os mesmos dados do payload e desconta as retenções explícitas do líquido. Troca de empresa, nova nota e uso de modelo limpam esses campos. Testes de regra e ligação em dadosDaOperacao; nenhum teste emite nota real.
+
+A leitura dos perfis agora bloqueia a emissão durante carregamento, erro HTTP ou resposta inválida. A prévia e os campos de código/local não apresentam defaults até confirmar a resposta da empresa atual. O botão Recarregar tipos de serviço refaz a consulta. Somente resposta válida vazia ou habilitado:false permite seguir sem perfil; o backend também deve devolver erro de consulta, nunca lista vazia em falha.

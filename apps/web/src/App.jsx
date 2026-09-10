@@ -1,5 +1,8 @@
+import { ConfiguracoesGeraisPage, ConfiguracoesGeraisLayout } from "./features/configuracoes/Configuracoes";
+import { PropostaPublica } from "./features/onboarding/pages/PropostaPublica";
+import { FormularioPublico } from "./features/onboarding/pages/FormularioPublico";
 import { useEffect, useMemo } from "react";
-import { useLocation, useParams } from "react-router-dom";
+import { Navigate, useLocation, useParams } from "react-router-dom";
 import { createApiClient } from "./api/client";
 import "./App.css";
 import { CompaniesHomePage } from "./features/companies/list/pages/renderCompaniesHomePage";
@@ -22,6 +25,8 @@ import { OnboardingWizardPage } from "./features/onboarding/pages/renderOnboardi
 import { OnboardingDetailPage } from "./features/onboarding/pages/renderOnboardingDetailPage";
 import { useManageAppFeedback } from "./app/hooks/useManageAppFeedback";
 import { useManageAuthSession } from "./app/hooks/useManageAuthSession";
+import { WorkspaceNavigationProvider } from "./app/navigation/WorkspaceNavigation";
+import { useCalendarioNavigation } from "./app/hooks/useCalendarioNavigation";
 import { useManageCompaniesWorkspace } from "./app/hooks/useManageCompaniesWorkspace";
 import { useManageAccountingWorkspace } from "./app/hooks/useManageAccountingWorkspace";
 import { useAccountingFunctions } from "./features/accounting/functions/hooks/useAccountingFunctions";
@@ -37,6 +42,12 @@ const api = createApiClient();
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
 
 function App() {
+  const location = useLocation();
+  return location.pathname === "/proposta/publica" ? <PropostaPublica api={api} /> : location.pathname === "/onboarding/publico" ? <FormularioPublico api={api} /> : <WorkspaceNavigationProvider><AppInterno /></WorkspaceNavigationProvider>;
+}
+
+function AppInterno() {
+  const calendarioNavigation = useCalendarioNavigation();
   const feedback = useManageAppFeedback();
   const session = useManageAuthSession({ api, tokenStorageKey: TOKEN_STORAGE_KEY, feedback });
   // O lote por WhatsApp na página de envio em lote (prévia → conferência → envio). Hook próprio,
@@ -183,14 +194,17 @@ function App() {
         onChange={companiesWorkspace.createCompanyForm.setField}
         onSubmit={companiesWorkspace.handleCreateCompany}
         submitting={companiesWorkspace.submittingCompany}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         error={feedback.error}
       />
     );
   }
 
+  if (session.page === "configuracoesGerais") return <ConfiguracoesGeraisPage />;
+
   if (session.page === "guideSettings") {
     return (
+      <ConfiguracoesGeraisLayout atual="integracoes">
       <SerproSettingsPage
         settings={companiesWorkspace.guideSettings}
         companies={companiesWorkspace.companiesState.companies}
@@ -217,19 +231,22 @@ function App() {
         onRunCron={companiesWorkspace.handleRunSerproCron}
         runningCron={companiesWorkspace.runningSerproCron}
         cronRunResult={companiesWorkspace.serproCronRunResult}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack("/configuracoes")}
         message={feedback.message}
         error={feedback.error}
       />
+      </ConfiguracoesGeraisLayout>
     );
   }
 
   if (session.page === "chartOfAccountsGlobal") {
     return (
+      <ConfiguracoesGeraisLayout atual="contabilidade">
       <GlobalChartOfAccountsPage
         api={api}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack("/configuracoes")}
       />
+      </ConfiguracoesGeraisLayout>
     );
   }
 
@@ -239,7 +256,7 @@ function App() {
         apuracaoPanel={apuracao}
         apuracaoApi={api}
         feedback={feedback}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         /* Era uma sequência de três passos que se atropelavam: `setSelectedCompanyId` (assíncrono),
            `setPage("companyDetail")` sem id (que caía no fallback e ia pra lista) e
            `setCompanyDetailTab` lendo o id VELHO do estado — o último navigate vencia e abria a
@@ -257,7 +274,7 @@ function App() {
         settings={companiesWorkspace.guideSettings}
         companies={companiesWorkspace.companiesState.companies}
         onRunOp={companiesWorkspace.runSerproOp}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         message={feedback.message}
         error={feedback.error}
         pendenciasPanel={pendenciasFiscais}
@@ -265,16 +282,15 @@ function App() {
     );
   }
 
-  // Cadastro de obrigações do escritório: página própria, alcançada por Configurações ▾. Saiu do
-  // seletor de visões do dashboard — lá se OLHA a carteira; aqui se define o que ela deve entregar.
+  // Links antigos abrem a lista integrada à agenda.
   if (session.page === "obrigacoes") {
-    return (
-      <ObrigacoesPage
-        api={api}
-        empresas={companiesWorkspace.companiesState.companies}
-        onBack={() => session.setPage("companies")}
-      />
-    );
+    const context = calendarioNavigation.contexto;
+    return <Navigate to="/companies" replace state={{ calendarContext: {
+      ...(context.calendario || {}), visao: 'lista', obrigacoesModal: {
+        companyId: context.companyId || "", ...(context.periodo || {}),
+        ...(context.criacao || {}), criar: Boolean(context.criacao), ocorrenciaId: context.ocorrenciaId,
+      },
+    } }} />;
   }
 
   // ⚠ NÃO exige empresa selecionada — de propósito. A simulação livre é o cenário de reunião com
@@ -296,7 +312,7 @@ function App() {
       <PlanejamentoPage
         api={api}
         empresas={companiesWorkspace.companiesState.companies}
-        onVoltar={() => session.setPage("companies")}
+        onVoltar={() => session.goBack()}
       />
     );
   }
@@ -308,17 +324,16 @@ function App() {
     return (
       <OnboardingsPage
         api={api}
-        onVoltar={() => session.setPage("companies")}
-        onNovo={async () => {
-          // A ficha nasce no primeiro clique — é o que permite salvar rascunho desde a 1ª tela.
-          // (E é por isso que a lista esconde rascunho por padrão: eles acumulam.)
-          const criada = await api.criarOnboarding("TRANSFERENCIA");
+        onVoltar={() => session.goBack()}
+        onNovo={async ({ origem, modo }) => {
+          const criada = await api.criarOnboarding(origem);
           const id = criada?.onboarding?.id;
-          if (id) session.setPage("onboardingWizard", { onboardingId: id });
+          if (!id) throw new Error("O servidor não confirmou a ficha criada.");
+          session.setPage(modo === "escritorio" ? "onboardingWizard" : "onboardingDetail", { onboardingId: id });
         }}
         onAbrir={(item) =>
           session.setPage(
-            item.status === "RASCUNHO" ? "onboardingWizard" : "onboardingDetail",
+            "onboardingDetail",
             { onboardingId: item.id }
           )
         }
@@ -360,7 +375,7 @@ function App() {
         runningCron={companiesWorkspace.runningSerproCron}
         onRefreshWorkerStatus={companiesWorkspace.loadSerproWorkerStatus}
         onRunPaymentConfirmation={() => api.runSerproPaymentConfirmation({})}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         message={feedback.message}
         error={feedback.error}
       />
@@ -370,7 +385,7 @@ function App() {
   if (session.page === "guideUpload") {
     return (
       <GuideUploadPage
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         onUpload={companiesWorkspace.handleGuideUpload}
         uploading={companiesWorkspace.uploadingGuides}
         uploadResults={companiesWorkspace.uploadResults}
@@ -388,10 +403,13 @@ function App() {
       <CompanyDetailPage
         company={{
           selectedCompany: companiesWorkspace.selectedCompany,
-          onBack: () => session.setPage("companies"),
+          onBack: () => session.goBack(),
           companyDetailTab: companiesWorkspace.companyDetailTab,
           setCompanyDetailTab: companiesWorkspace.setCompanyDetailTab,
           canEditCompany,
+          onOpenObligations: calendarioNavigation.abrir,
+          calendarioContext: calendarioNavigation.initialContext,
+          onCalendarioContextChange: calendarioNavigation.onContextChange,
         }}
         guidesPanel={{
           guides: companiesWorkspace.guidesState.guides,
@@ -525,7 +543,7 @@ function App() {
       <WhatsappPage
         api={api}
         companies={companiesWorkspace.companiesState.companies}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         message={feedback.message}
         error={feedback.error}
       />
@@ -543,7 +561,7 @@ function App() {
         onSendSelected={companiesWorkspace.handleSendSelectedPending}
         sending={companiesWorkspace.sendingSelectedPending}
         onRefresh={companiesWorkspace.loadPendingGuidesReport}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         message={feedback.message}
         error={feedback.error}
       />
@@ -556,7 +574,7 @@ function App() {
         report={companiesWorkspace.batchEmailReport}
         loading={companiesWorkspace.loadingBatchEmailReport}
         sending={companiesWorkspace.sendingBatchEmails}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.goBack()}
         onLoad={companiesWorkspace.handleLoadBatchEmailReport}
         onSend={companiesWorkspace.handleSendBatchEmails}
         whatsapp={loteWhatsapp}
@@ -586,7 +604,10 @@ function App() {
       onOpenPlanejamento={() => session.setPage("planejamento")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
       onOpenWhatsapp={() => session.setPage("whatsapp")}
-      onOpenObrigacoes={() => session.setPage("obrigacoes")}
+      onOpenConfiguracoes={() => session.setPage("configuracoesGerais")}
+      onOpenObrigacoes={calendarioNavigation.abrir}
+      calendarioContext={calendarioNavigation.initialContext}
+      onCalendarioContextChange={calendarioNavigation.onContextChange}
       onOpenOnboardings={() => session.setPage("onboardings")}
       backgroundJobs={backgroundJobs}
       api={api}

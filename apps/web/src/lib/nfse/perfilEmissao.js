@@ -36,6 +36,11 @@ export const TEXTO_DA_FONTE = Object.freeze({
 
 /** Espelho de `campos.js`. ⚠ A ORDEM importa: é a ordem em que a tela desenha. */
 export const CAMPOS_PERFIL_EMISSAO = Object.freeze([
+  ...[
+    { id: "tpImunidade", rotulo: "Tipo de imunidade do ISSQN", tag: "tpImunidade", caminhoNoXml: "infDPS/valores/trib/tribMun/tpImunidade", valores: ["0", "1", "2", "3", "4", "5"], formaDescrita: "0 não informado na origem · 1 entes públicos · 2 templos · 3 entidades do art. 150 VI c · 4 livros e periódicos · 5 fonogramas" },
+    { id: "exigSuspTipo", rotulo: "Suspensão da exigibilidade do ISSQN", tag: "tpSusp", caminhoNoXml: "infDPS/valores/trib/tribMun/exigSusp/tpSusp", valores: ["1", "2"], formaDescrita: "1 decisão judicial · 2 processo administrativo" },
+    { id: "exigSuspProcesso", rotulo: "Número do processo de suspensão", tag: "nProcesso", caminhoNoXml: "infDPS/valores/trib/tribMun/exigSusp/nProcesso", formaDescrita: "30 dígitos, sem pontuação" },
+  ].map((c) => Object.freeze({ ...c, obrigatorio: false, cravadoHoje: false })),
   Object.freeze({
     id: "codigoServicoNacional",
     rotulo: "Código de Tributação Nacional",
@@ -181,6 +186,8 @@ export const CAMPOS_PERFIL_EMISSAO = Object.freeze([
 
 /** As descrições dos valores — para a tela não mostrar um "3" cru sobre tributação. */
 export const DESCRICAO_DO_VALOR = Object.freeze({
+  tpImunidade: { "0": "Tipo não informado na origem", "1": "Entes públicos (CF, art. 150, VI, a)", "2": "Templos (CF, art. 150, VI, b)", "3": "Entidades do art. 150, VI, c", "4": "Livros e periódicos (CF, art. 150, VI, d)", "5": "Fonogramas (CF, art. 150, VI, e)" },
+  exigSuspTipo: { "1": "Decisão judicial", "2": "Processo administrativo" },
   // ⚠ Sim/não do contador — o painel não mostra "true" cru sobre uma decisão fiscal.
   retencaoFederalArt30: Object.freeze({
     true: "Sim — serviço da lista do art. 30",
@@ -227,7 +234,7 @@ export const DESCRICAO_DO_VALOR = Object.freeze({
   }),
   regEspTrib: Object.freeze({
     0: "Nenhum", 1: "Ato Cooperado", 2: "Estimativa", 3: "Microempresa Municipal",
-    4: "Notário ou Registrador", 5: "Profissional Autônomo", 6: "—", 9: "—",
+    4: "Notário ou Registrador", 5: "Profissional Autônomo", 6: "Sociedade de Profissionais", 9: "Outros",
   }),
   regApTribSN: Object.freeze({
     1: "Tributos federais e municipal pelo Simples Nacional",

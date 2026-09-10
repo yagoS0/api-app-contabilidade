@@ -1,6 +1,8 @@
-import { formatCompetencia, deslocarCompetencia, competenciaAtual } from "../../../../lib/competencia";
+import { Engrenagem } from "../../../configuracoes/Configuracoes";
 import { BackButton } from "../../../../components/ui/BackButton";
+import { formatCompetencia, deslocarCompetencia, competenciaAtual } from "../../../../lib/competencia";
 import { Tabs } from "../../../../components/ui/Tabs";
+import { WorkspaceHomeLink } from "../../../../app/navigation/WorkspaceNavigation";
 // ⚠ O `href` DAS ABAS SAI DAQUI, da MESMA fonte que a navegação por clique usa (`openCompanyTab`
 // chama `companyTabPath` também). Montar "/companies/" + id + "/" + segmento aqui funcionaria hoje
 // e divergiria na primeira correção — o link levaria a um lugar e o clique a outro.
@@ -37,7 +39,8 @@ import { mostraApuracaoDoSimples } from "../../../apuracao-lp/lib/regimeDaAba";
 // ele não é um mês, e pô-lo aqui faria o seletor global mudar de significado.
 const TABS_COM_COMPETENCIA = new Set(["lancamentos", "conferencia", "circular", "cadastroFiscal", "guides", "notasFiscais", "auditoria"]);
 
-// Navegação da empresa em 2 níveis: grupos grandes (Anotações, Contabilidade, Fiscal, Empresa)
+// Navegação de trabalho: Anotações, Contabilidade, Fiscal e Documentos.
+// Cadastro, acessos e parâmetros ficam na engrenagem de configurações.
 // e, abaixo, as sub-abas do grupo ativo. A aba ativa continua vindo do segmento da URL (activeTab);
 // clicar num grupo navega pro seu 1º sub-tab. Nada de roteamento novo — só reagrupa o header.
 const GROUPS = [
@@ -97,7 +100,7 @@ const GROUPS = [
       // Obrigações fica em Contabilidade e NÃO em Fiscal de propósito: obrigação é o serviço que o
       // escritório entrega até uma data, não tributo a pagar. O cabeçalho do CalendarioFiscalService
       // argumenta isso — guia é do cliente, obrigação é do contador.
-      { key: "obrigacoes", label: "Obrigações" },
+      { key: "obrigacoes", label: "Calendário" },
       // Relatórios fica em Contabilidade porque relata o que foi LANÇADO. É a única aba com
       // intervalo próprio — ver o comentário em TABS_COM_COMPETENCIA logo acima.
       { key: "relatorios", label: "Relatórios" },
@@ -149,33 +152,11 @@ const GROUPS = [
     ],
   },
   {
-    // Abre a FICHA (read-only). Editar é um botão dentro dela, que leva à aba `edit`.
-    key: "cadastro",
-    // Grupo = "Empresa" (ficha, documentos, anotações). Antes chamava "Cadastro", mesmo nome da
-    // sub-aba fiscal e da tela de ficha — a palavra apontava para três lugares diferentes.
-    label: "Empresa",
-    // Documentos (contrato social, cartão CNPJ, inscrições) mora aqui: é cadastral, não fiscal.
-    // Anotações SAIU daqui — virou grupo próprio, primeiro de todos.
-    tabs: [
-      { key: "cadastro", label: "Cadastro" },
-      // ⚠ VEIO DE DENTRO DA APURAÇÃO em 24/08/2026, a pedido do dono ("muitas abas"). Lá ela era a
-      // seção "Perfil fiscal", um TERCEIRO nível de navegação sem URL. É cadastro — atividades
-      // permitidas por CNAE, anexo e ISS —, não o trabalho do mês, e por isso mora ao lado da ficha.
-      //
-      // ⚠ Continua `soApuraSimples`, exatamente como era: o painel resolve ANEXO DO SIMPLES por
-      // CNAE, e oferecê-lo ao Lucro Presumido mostraria uma tela que não decide nada para ele — o
-      // mesmo argumento que já tirou o espelho da DEFIS do Presumido.
-      //
-      // ⚠ Fora de `TABS_COM_COMPETENCIA` de propósito: atividade permitida é cadastro da empresa,
-      // não do mês. Um seletor de competência aqui sugeriria que a lista muda por competência.
-      { key: "perfilFiscal", label: "Perfil fiscal", soApuraSimples: true },
-      { key: "documentos", label: "Documentos" },
-      // Cofre de senhas + "outras informações". Fica em Empresa, ao lado de Documentos, porque é
-      // dado CADASTRAL (onde o escritório entra em nome do cliente), não trabalho do mês — e é
-      // onde o contador já procura dado de empresa. NÃO tem competência: fora de
-      // TABS_COM_COMPETENCIA de propósito.
-      { key: "credenciais", label: "Senhas e acessos" },
-    ],
+    // A antiga entrada "Empresa" abria Cadastro dentro das configurações, onde as
+    // subabas sumiam. Documentos precisa continuar acessível em qualquer seção.
+    key: "documentos",
+    label: "Documentos",
+    tabs: [{ key: "documentos", label: "Documentos" }],
   },
 ];
 
@@ -257,23 +238,22 @@ export function CompanySectionHeader({
     || groups.find((g) => g.key === TAB_TO_GROUP[activeTab])
     || groups[0];
   const subTabs = activeGroup.tabs;
+  const emConfiguracoes = activeTab === 'configuracoesEmpresa';
 
   return (
     <header className="company-section-header">
-      {/* Voltar fica FORA da barra (pílula), à esquerda — a posição não mudou.
-          ⚠ O que mudou: era só a seta, num quadrado de 40×40 com raio 12. O resto do app usava
-          "← Voltar" numa pílula de 33px com raio 14, e a seta sozinha aqui obrigava a reaprender
-          onde é a saída ao entrar na empresa. Agora é o mesmo `BackButton` das outras 12 telas. */}
-      <BackButton onClick={onBack} title="Voltar" />
-
-      {/* Barra em pílula: nome da empresa + os 3 grupos juntos. */}
-      <div className="company-topbar">
+      <div className="company-header__identity">
+        <WorkspaceHomeLink />
+        <BackButton onClick={onBack} iconOnly />
         <div className="company-topbar__brand">
           <strong className="company-topbar__name">{company?.razao || "Empresa"}</strong>
           <span className="company-topbar__cnpj">{company?.cnpj || "CNPJ não informado"}</span>
         </div>
-        {/* Nível 1 — grupos. `pill={false}`: já está dentro da pílula do topbar; uma segunda
-            faixa arredondada aqui viraria pílula dentro de pílula. */}
+      </div>
+      <div className="config-topbar-actions">{mostraCompetencia && (
+        <CompetenciaSwitcher competencia={competencia} onChange={onCompetenciaChange} />
+      )}{companyId && <Engrenagem href={companyTabPath(companyId, 'configuracoesEmpresa')} onClick={()=>onTabChange('configuracoesEmpresa')} label="Configurações da empresa" />}</div>
+        {/* Os grupos e sub-abas usam o mesmo alinhamento do cabeçalho. */}
         <Tabs
           className="company-topbar__nav"
           items={groups.map((group) => ({
@@ -286,7 +266,7 @@ export function CompanySectionHeader({
                num grupo abriria uma aba e o clique normal outra. */
             href: companyTabPath(companyId, group.tabs[0]?.key),
           }))}
-          active={activeGroup.key}
+          active={emConfiguracoes ? undefined : activeGroup.key}
           onChange={(key) => {
             const grupo = groups.find((g) => g.key === key);
             if (grupo) onTabChange(grupo.tabs[0].key);
@@ -296,19 +276,9 @@ export function CompanySectionHeader({
           size="lg"
         />
 
-        {/* ⚠ TERCEIRA coluna do grid, não ao lado do nome (o plano dizia "ao lado do nome/CNPJ").
-            O `.company-topbar` é `1fr auto 1fr` justamente para o menu ficar centrado de verdade
-            sem ser empurrado pelo nome da empresa; um quarto filho entre marca e menu jogaria o
-            menu para a coluna da folga e descentralizaria o header em TODAS as abas. A folga da
-            direita já existia vazia, e o controle global fica no mesmo nível hierárquico do menu. */}
-        {mostraCompetencia && (
-          <CompetenciaSwitcher competencia={competencia} onChange={onCompetenciaChange} />
-        )}
-      </div>
-
       {/* Nível 2 — sub-abas do grupo ativo, em formato de aba (Chrome). Oculto quando o grupo
           tem só 1 (ex.: Cadastro → abre direto a ficha). */}
-      {subTabs.length > 1 && (
+      {!emConfiguracoes && subTabs.length > 1 && (
         <div className="company-section-header__subtabs">
           <Tabs
             /* Cada sub-aba leva a URL da SUA rota — é o que faz o Ctrl+clique abrir aquela aba
@@ -317,6 +287,8 @@ export function CompanySectionHeader({
             active={activeTab}
             onChange={onTabChange}
             ariaLabel={`Seções de ${activeGroup.label}`}
+            pill={false}
+            align="start"
           />
         </div>
       )}

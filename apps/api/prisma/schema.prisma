@@ -820,6 +820,7 @@ model AdnDocument {
 // ==========================
 
 model PortalClient {
+  apelidosWhatsapp String[] @default([])
   id                     String  @id @default(uuid())
   // Referência opcional para a Company legada (certificado, cadastros, etc.)
   companyId              String? @unique
@@ -907,6 +908,7 @@ model PortalClient {
   conversasWhatsapp       ConversaWhatsapp[]
   acoesPendentesWhatsapp  AcaoPendenteWhatsapp[]
   chamadasIa              ChamadaIa[]
+  arquivosWhatsapp        ArquivoWhatsapp[]
   // Q14 — refundação da apuração (cadastro como autoridade)
   cadastroFiscal          CadastroFiscal?
   produtosServicos        ProdutoServico[]
@@ -940,6 +942,7 @@ model PortalClient {
   relatoriosFaturamento   RelatorioFaturamento[]
   seriesRecorrentes       SerieRecorrente[]
   saidasAvulsasCliente    SaidaAvulsaCliente[]
+  saldosIniciaisFluxo     SaldoInicialFluxo[]
   /// Trocas de senha do usuário do portal feitas PELO ESCRITÓRIO nesta empresa. NENHUMA coluna
   /// nova aqui — a FK mora em `senhas_portal_trocas.portalClientId`, e ela é NULA nos caminhos do
   /// cliente (perfil e recuperação), que não passam por empresa nenhuma.
@@ -969,6 +972,20 @@ model PortalClient {
 ///   das | inss | extrato | presumido | parcelamento | pagamento
 /// PIS/COFINS/CSLL/IRPJ NÃO são rotinas: vêm juntos numa única consulta, a do `presumido`,
 /// e são separados aqui por código de receita (ver parseDctfwebDeclaracao.js).
+/// Histórico append-only da âncora gerencial. Valor nulo registra remoção, sem apagar histórico.
+model SaldoInicialFluxo {
+  id             Int       @id @default(autoincrement())
+  portalClientId String
+  dataReferencia DateTime? @db.Date
+  valor          Decimal?  @db.Decimal(18, 2)
+  criadoPor      String
+  criadoEm       DateTime  @default(now())
+  portalClient   PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, id])
+  @@map("saldos_iniciais_fluxo")
+}
+
 model CompanyRotina {
   id             String   @id @default(uuid())
   portalClientId String
@@ -1120,6 +1137,9 @@ model ContatoWhatsapp {
   /// `requireClientCompanyAccess(minRole)`. `onDelete: SetNull` porque apagar o usuário apaga a
   /// identificação da pessoa, nunca o contato da empresa.
   userId         String?
+  /// Funções que ESTE NÚMERO pode solicitar ao assistente. Complementa o RBAC do usuário ligado:
+  /// os dois portões precisam permitir. Vazio = conversa e encaminhamento, sem acessar dados.
+  permissoesAssistente String[] @default([])
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -1151,6 +1171,7 @@ model EnvioGuia {
   destino             String?
   /// `wamid` no WhatsApp. Chave de correlação dos eventos de status do webhook e de idempotência.
   providerMessageId   String?
+  tentativaAtualId    String?
   erroCodigo          String?
   /// Mensagem JÁ TRADUZIDA para o contador. Código cru da Meta não chega na tela — mesma lição do
   /// `validation_failed`, que mostrava o código e escondia o motivo.
@@ -1169,6 +1190,7 @@ model EnvioGuia {
   /// a mensagem só aponta para cá. Uma cópia do estado no fio seria a segunda resposta para
   /// "esta guia foi enviada?".
   mensagens MensagemWhatsapp[]
+  historicoTentativas EnvioGuiaTentativa[]
 
   /// ⚠ É esta constraint que torna reexecutar o lote inofensivo: a segunda passada encontra o
   /// registro e não redispara.
@@ -1211,9 +1233,16 @@ model EnvioGuia {
 /// histórico de cada empresa candidata — a mensagem do cliente aparecendo no fio do CNPJ errado é
 /// exatamente o vazamento que a multi-tenancy existe para impedir. Um número, um fio, uma linha.
 model ConversaWhatsapp {
+  atendimentoId String?
+  atendimento AtendimentoResponsavelWhatsapp? @relation(fields: [atendimentoId], references: [id], onDelete: SetNull)
+  resolucoesContexto ResolucaoContextoWhatsapp[]
+  atendimentosLead AtendimentoLead[]
   id                 String    @id @default(uuid())
   /// O número do cliente, E.164 sem `+`, como `contatos_whatsapp.telefoneE164`.
-  telefoneE164       String    @unique
+  telefoneE164       String
+  /// Segmento imutável. Legado conserva empresa observada, mas não autoriza IA/importação.
+  chaveEscopo        String    @unique
+  escopoVerificado   Boolean   @default(false)
   /// ⚠ A EMPRESA A QUE ESTE FIO FOI ATRIBUÍDO — e NULO é resposta, não falta de dado.
   ///
   /// Nulo = "não vinculado": ou o número não está em cadastro nenhum (`DESCONHECIDO`), ou fala por
@@ -1241,6 +1270,10 @@ model ConversaWhatsapp {
   /// empresa for piloto). `onDelete: SetNull` — a saída do usuário devolve o fio à IA.
   atendidaPor        String?
   atendidaDesde      DateTime?
+  /// Exclusão reversível da caixa de atendimento; mensagens e atribuição permanecem intactas.
+  excluidaEm         DateTime?
+  /// Corte persistente: restaurar não autoriza turnos de mensagens anteriores à exclusão.
+  automacaoInvalidadaEm DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -1248,17 +1281,24 @@ model ConversaWhatsapp {
   atendente    User?              @relation("ConversaAtendidaPor", fields: [atendidaPor], references: [id], onDelete: SetNull)
   mensagens    MensagemWhatsapp[]
   acoesPendentes AcaoPendenteWhatsapp[]
+  rascunhoEmissao RascunhoEmissaoWhatsapp?
+  etapasEmissao EtapaEmissaoWhatsapp[]
   chamadasIa   ChamadaIa[]
 
   /// A fila "não vinculados" é uma CONSULTA (`portalClientId IS NULL`), não uma tabela: guardar o
   /// motivo (`DESCONHECIDO`/`AMBIGUO`) numa linha o faria envelhecer — cadastrado o contato às 10h,
   /// a linha continuaria dizendo "desconhecido". O motivo se pergunta ao vínculo, na leitura.
   @@index([portalClientId])
+  @@index([telefoneE164])
+  @@index([atendimentoId])
   @@map("conversas_whatsapp")
 }
 
 /// UMA MENSAGEM DO FIO. Imutável: por isso não tem `updatedAt` — mensagem não se edita.
 model MensagemWhatsapp {
+  contexto ResolucaoContextoWhatsapp?
+  respostaAProviderMessageId String?
+  referenciaComercial Json?
   id                 String    @id @default(uuid())
   conversaId         String
   /// `in` (do cliente) | `out` (nossa). Vocabulário do plano do dono; travado por CHECK no banco.
@@ -1287,6 +1327,15 @@ model MensagemWhatsapp {
   /// Quando este balão carregou uma guia, o ESTADO daquele envio (enviado/entregue/lido/falhou,
   /// retry, erro traduzido) mora lá, com um escritor só. Aqui fica o ponteiro.
   envioGuiaId        String?
+  envioGuiaTentativaId String?
+  /// Estado da própria saída; guia consulta tentativa específica em vez de copiar estado.
+  statusEnvio        String?
+  erroEnvioCodigo    String?
+  erroEnvioMensagem  String?
+  enviadoEm          DateTime?
+  entregueEm         DateTime?
+  lidoEm             DateTime?
+  turnoIaId          String?
   /// O instante que a Meta reportou no evento (campo `timestamp`), já convertido.
   /// ⚠ Nulável: a ausência é dito, não presumido — ver `janela24h.js`.
   ocorridaEmProvedor DateTime?
@@ -1304,6 +1353,8 @@ model MensagemWhatsapp {
 
   conversa  ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Cascade)
   envioGuia EnvioGuia?       @relation(fields: [envioGuiaId], references: [id], onDelete: SetNull)
+  envioGuiaTentativa EnvioGuiaTentativa? @relation(fields: [envioGuiaTentativaId], references: [id], onDelete: SetNull)
+  arquivoWhatsapp ArquivoWhatsapp?
 
   /// ⚠ NENHUM `portalClientId` DENORMALIZADO AQUI, e a razão é a segurança, não a economia. A
   /// atribuição do fio MUDA (o ambíguo que o contador resolve; a empresa apagada que vira nulo) —
@@ -1313,6 +1364,7 @@ model MensagemWhatsapp {
   /// `ConversaWhatsappService`, que escopa por ele.
   @@index([conversaId, direcao, registradaEm])
   @@index([envioGuiaId])
+  @@index([turnoIaId])
   @@map("mensagens_whatsapp")
 }
 
@@ -1324,6 +1376,152 @@ model MensagemWhatsapp {
 /// submissão que ninguém fez: o cadastro na Meta está parado à espera do número.
 /// ⚠ Por isso `nomeMeta` NASCE NULO: o nome exato só existe depois da aprovação. Copiar a chave
 /// para lá seria transformar a nossa intenção em cadastro do provedor.
+model EnvioGuiaTentativa {
+  id String @id @default(uuid())
+  envioGuiaId String
+  status String @default("enviando")
+  providerMessageId String? @unique
+  erroCodigo String?
+  erroMensagemUsuario String?
+  criadoEm DateTime @default(now())
+  aceitoEm DateTime?
+  entregueEm DateTime?
+  lidoEm DateTime?
+  envioGuia EnvioGuia @relation(fields: [envioGuiaId], references: [id], onDelete: Cascade)
+  mensagens MensagemWhatsapp[]
+  @@index([envioGuiaId, criadoEm])
+  @@map("envios_guia_tentativas")
+}
+
+model InboxWebhookWhatsapp {
+  id String @id @default(uuid())
+  hash String @unique
+  payload Json
+  status String @default("pendente")
+  tentativas Int @default(0)
+  proximaTentativaEm DateTime @default(now())
+  reservaToken String?
+  leaseAte DateTime?
+  erroCodigo String?
+  recebidoEm DateTime @default(now())
+  concluidoEm DateTime?
+  @@index([status, proximaTentativaEm])
+  @@map("inbox_webhook_whatsapp")
+}
+
+model TurnoIaWhatsapp {
+  atendimentoId String?
+  contextoVersao Int?
+  perfil String @default("CLIENTE")
+  id String @id @default(uuid())
+  mensagemId String @unique
+  conversaId String
+  portalClientId String?
+  status String @default("pendente")
+  tentativas Int @default(0)
+  proximaTentativaEm DateTime @default(now())
+  reservaToken String?
+  leaseAte DateTime?
+  motivo String?
+  criadoEm DateTime @default(now())
+  concluidoEm DateTime?
+  @@index([status, proximaTentativaEm])
+  @@index([conversaId, criadoEm])
+  @@map("turnos_ia_whatsapp")
+}
+
+/// Identidade do interlocutor separada do escopo de cada pedido. O canal principal é o número
+/// empresarial configurado nesta instalação; trocar o remetente exige outro canal.
+model AtendimentoResponsavelWhatsapp {
+  id String @id @default(uuid())
+  canal String @default("principal")
+  telefoneE164 String
+  userId String?
+  portalClientId String?
+  conversaId String?
+  versao Int @default(1)
+  aguardandoSelecao Boolean @default(true)
+  pedidoPendente String?
+  coletaPendenteConversaId String?
+  interacaoPendente Json?
+  empresaIdsOferecidos Json?
+  expiraEm DateTime?
+  ultimaInteracaoEm DateTime?
+  ultimaMensagemId String?
+  atendidaPor String?
+  atendidaDesde DateTime?
+  automacaoInvalidadaEm DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  conversas ConversaWhatsapp[]
+  resolucoes ResolucaoContextoWhatsapp[]
+  acoesPendentes AcaoPendenteWhatsapp[]
+  @@unique([canal, telefoneE164])
+  @@index([telefoneE164])
+  @@map("atendimentos_responsaveis_whatsapp")
+}
+
+/// Recibo imutável do escopo escolhido. Uma entrada sem empresa não muda de conversa:
+/// apenas sua resolução pode ser lida no segmento autorizado. O texto efetivo conserva o pedido
+/// inicial ao consumir a resposta do seletor; não cria uma segunda mensagem do provedor.
+model ResolucaoContextoWhatsapp {
+  mensagemId String @id
+  atendimentoId String
+  conversaId String?
+  portalClientId String?
+  versao Int
+  estado String
+  tipo String?
+  texto String?
+  interacao Json?
+  resultado Json?
+  createdAt DateTime @default(now())
+  mensagem MensagemWhatsapp @relation(fields: [mensagemId], references: [id], onDelete: Restrict)
+  atendimento AtendimentoResponsavelWhatsapp @relation(fields: [atendimentoId], references: [id], onDelete: Restrict)
+  conversa ConversaWhatsapp? @relation(fields: [conversaId], references: [id], onDelete: Restrict)
+  @@index([conversaId, createdAt])
+  @@index([atendimentoId, versao])
+  @@map("resolucoes_contexto_whatsapp")
+}
+
+model WhatsappLease {
+  id String @id
+  token String
+  expiraEm DateTime
+  @@map("whatsapp_leases")
+}
+
+model ArquivoWhatsapp {
+  id String @id @default(uuid())
+  mensagemId String @unique
+  portalClientId String?
+  midiaProvedorId String
+  nomeArquivo String?
+  mimeType String?
+  tamanho Int?
+  sha256 String?
+  conteudo Bytes?
+  estado String @default("PENDENTE")
+  tentativas Int @default(0)
+  proximaTentativaEm DateTime?
+  reservadoEm DateTime?
+  reservaToken String?
+  erroCodigo String?
+  recebidoEm DateTime @default(now())
+  expiraEm DateTime
+  importadoEm DateTime?
+  vinculadoEm DateTime?
+  vinculadoPorUserId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  mensagem MensagemWhatsapp @relation(fields: [mensagemId], references: [id], onDelete: Restrict)
+  portalClient PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Restrict)
+  @@index([portalClientId, recebidoEm, id])
+  @@index([estado, proximaTentativaEm])
+  @@index([expiraEm])
+  @@map("arquivos_whatsapp")
+}
+
 model TemplateWhatsapp {
   /// Chave interna (`guia_disponivel`, …) — é por ela que o código pede o template.
   chave             String    @id
@@ -1355,6 +1553,9 @@ model TemplateWhatsapp {
 /// lendo o `count`: dupla confirmação executa UMA vez.
 /// ⚠ Expira em 10 min, conferido na LEITURA (não há worker). "Sim" solto nunca confirma.
 model AcaoPendenteWhatsapp {
+  atendimentoId String?
+  contextoVersao Int?
+  atendimento AtendimentoResponsavelWhatsapp? @relation(fields: [atendimentoId], references: [id], onDelete: Restrict)
   id                     String    @id @default(uuid())
   conversaId             String
   portalClientId         String
@@ -1376,6 +1577,8 @@ model AcaoPendenteWhatsapp {
   /// O desfecho da execução (o que a rota devolveria). `indeterminado: true` no TRANSPORTE.
   resultado              Json?
   mensagemConfirmacaoId  String?
+  respostaAoCliente      String?
+  encaminharHumano       Boolean   @default(false)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
@@ -1386,6 +1589,41 @@ model AcaoPendenteWhatsapp {
   @@index([conversaId, status])
   @@index([expiraEm])
   @@map("acoes_pendentes_whatsapp")
+}
+
+/// Coleta incompleta não autoriza emissão. Uma versão corrente por conversa, sob lease.
+model RascunhoEmissaoWhatsapp {
+  atendimentoId String?
+  contextoVersao Int?
+  id                 String   @id @default(uuid())
+  conversaId         String   @unique
+  portalClientId     String
+  userId             String
+  corteAutomacao      DateTime?
+  estado             Json
+  versao             Int      @default(1)
+  ultimaMensagemEm   DateTime
+  expiraEm           DateTime
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  conversa ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  @@index([portalClientId])
+  @@index([expiraEm])
+  @@map("rascunhos_emissao_whatsapp")
+}
+
+/// Recibo da transição, salvo junto do rascunho antes da saída. Reentrega não avança a coleta.
+model EtapaEmissaoWhatsapp {
+  id             String   @id @default(uuid())
+  mensagemId     String   @unique
+  conversaId     String
+  portalClientId String
+  userId         String
+  resultado      Json
+  createdAt      DateTime @default(now())
+  conversa ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  @@index([conversaId, createdAt])
+  @@map("etapas_emissao_whatsapp")
 }
 
 /// UMA CHAMADA AO MODELO — registro e teto de custo, no molde de `serpro_chamadas`.
@@ -1409,6 +1647,7 @@ model ChamadaIa {
   cacheReadTokens      Int      @default(0)
   cacheCreationTokens  Int      @default(0)
   custoEstimadoCentavos Int     @default(0)
+  reservaCentavos       Int     @default(0)
   duracaoMs            Int?
   iteracoes            Int      @default(0)
   /// Nomes das ferramentas chamadas no turno, na ordem.
@@ -2776,7 +3015,17 @@ model FiscalExecutionLog {
 /// pelo chamador: assim nenhuma chamada nova escapa do registro por esquecimento.
 /// `assinatura` é o hash do payload — é o que distingue "clicou de novo na mesma coisa" de "mudou
 /// algo e recalculou", e sustenta o cooldown sem atrapalhar quem corrigiu um valor.
+model SerproRespostaCache {
+  chave String @id
+  resposta Json
+  expiraEm DateTime
+  @@index([expiraEm])
+  @@map("serpro_respostas_cache")
+}
+
 model SerproChamada {
+  competencia    String?
+  acaoId         String?
   id             String   @id @default(cuid())
   cnpj           String // contribuinte, só dígitos; "" quando a chamada não tem contribuinte
   portalClientId String? // resolvido pelo CNPJ quando existe empresa cadastrada
@@ -3072,6 +3321,11 @@ model PerfilEmissaoNfse {
   /// ⚠⚠ HOJE ESTÁ CRAVADO EM "1" (`NfseService.js:887`) — é por isso que exportação de serviço é
   /// impossível de declarar, mesmo havendo empresa na carteira que presta para o exterior.
   tribISSQN String?
+  /// NFS-e 1.01: E0592; obrigatório somente quando tribISSQN = 2.
+  tpImunidade String?
+  /// E0585: suspensão só em operação tributável; processo com 30 dígitos.
+  exigSuspTipo String?
+  exigSuspProcesso String?
   /// `pAliq` — a alíquota do ISSQN, em percentual. **Quem declara é o contador** (decisão do dono,
   /// 01/09/2026: *"o contador declara a alíquota de ISS para reter, mas o cliente na tela dele deve
   /// poder selecionar se é retido ou não"*).
@@ -3743,9 +3997,21 @@ model NsuGap {
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 model Obrigacao {
+  agendaConfig Json?
   id             String  @id @default(uuid())
   portalClientId String
   nome           String
+  tipo           String @default("OBRIGACAO")
+  descricao      String?
+  /// Datas civis de um cadastro AVULSA; preparação não altera vencimento fiscal.
+  dataInicio     DateTime? @db.Date
+  dataFim        DateTime? @db.Date
+  dataVencimento DateTime? @db.Date
+  diasPreparacao Int @default(0)
+  janelaTrabalho Json?
+  /// Versões da janela por ciclo, com autor e data.
+  agendaVersoes Json @default("[]")
+  encerradaAPartirDe String?
   /// Campo LIVRE (fiscal, trabalhista, própria da empresa…). A UI sugere o que o escritório já
   /// usou; não é vocabulário fechado que precise ser mantido por nós. Só alimenta cor e filtro.
   categoria      String?
@@ -3799,6 +4065,16 @@ model OcorrenciaObrigacao {
   id             String    @id @default(uuid())
   obrigacaoId    String
   dataVencimento DateTime  @db.Date
+  /// Legado nulo é um evento de um dia no vencimento.
+  dataInicio     DateTime? @db.Date
+  dataFim        DateTime? @db.Date
+  janelaPersonalizada Boolean @default(false)
+  agendaConfig Json?
+  cicloChave String?
+  /// Retirada por mudança de frequência; reversível por nova versão, diferente de exclusão manual.
+  foraDaRecorrencia Boolean @default(false)
+  canceladaEm DateTime?
+  canceladaPorId String?
   /// "YYYY-MM" — a competência a que o SERVIÇO se refere, já com a defasagem aplicada. Guardada
   /// e não recalculada na leitura porque mudar a defasagem depois não pode reescrever o passado.
   competenciaRef String?
@@ -3821,15 +4097,21 @@ model OcorrenciaObrigacao {
   /// reexecutar não duplica, e o worker mensal pode ser chamado quantas vezes for.
   @@unique([obrigacaoId, dataVencimento])
   @@index([dataVencimento, status])
+  @@index([dataInicio, dataFim])
+  @@unique([obrigacaoId, cicloChave])
   @@map("ocorrencias_obrigacao")
 }
 
 model RegraObrigacao {
+  agendaConfig Json?
+  descricao String?
+  janelaTrabalho Json?
   id        String  @id @default(uuid())
   nome      String
   categoria String?
 
   periodicidade            String
+  diasPreparacao           Int @default(0)
   diaVencimento            Int
   mesReferencia            Int?
   defasagemMeses           Int     @default(1)
@@ -3994,6 +4276,12 @@ model EntregaObrigacaoArquivo {
 /// ⚠ `status` e `origem` são String, não enum do Prisma — é a convenção deste schema
 /// (`PortalClient.status`, `Obrigacao.periodicidade`). Enum transforma cada valor novo em migração.
 model Onboarding {
+  fontesDados Json @default("{}")
+  atendimentosLead AtendimentoLead[]
+  propostasComerciais PropostaComercial[]
+  contratosComerciais ContratoComercial[]
+  documentosLead DocumentoOnboarding[]
+  trabalhosFiscais TrabalhoFiscalLead[]
   id String @id @default(uuid())
 
   /// ABERTURA | TRANSFERENCIA | INATIVA — a única variável que muda a trilha do funil.
@@ -4047,8 +4335,15 @@ model Onboarding {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  versao Int @default(0)
+  faseComercial String @default("LEAD")
+  proposta Json?
+  analises OnboardingAnalise[]
+  eventos OnboardingEvento[]
+  links OnboardingLink[]
   etapas OnboardingEtapa[]
 
+  @@index([criadoPorId])
   @@index([status, origem])
   @@index([cnpj])
   @@index([responsavelEmail])
@@ -4783,4 +5078,177 @@ model SaidaAvulsaCliente {
   /// ⚠ A leitura do fluxo varre por empresa + janela de datas; sem este índice ela vira scan.
   @@index([portalClientId, data])
   @@map("saidas_avulsas_cliente")
+}
+
+model AtendimentoLead {
+  id String @id @default(uuid())
+  conversaId String
+  conversa ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Restrict)
+  onboardingId String?
+  onboarding Onboarding? @relation(fields: [onboardingId], references: [id], onDelete: Restrict)
+  triagem Json @default("{}")
+  representanteVerificadoEm DateTime?
+  representanteVerificadoPor String?
+  evidenciaRepresentante String?
+  autorizacao Json @default("{}")
+  encerradoEm DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([conversaId, encerradoEm])
+  @@index([onboardingId])
+  @@map("atendimentos_lead")
+}
+
+// Versões publicadas são imutáveis; correções criam uma nova versão.
+model RecursoComercial {
+  id String @id @default(uuid())
+  tipo String
+  chave String
+  versao Int
+  titulo String
+  texto String @default("")
+  dados Json @default("{}")
+  aprovadoEm DateTime?
+  aprovadoPor String?
+  createdAt DateTime @default(now())
+  @@unique([tipo, chave, versao])
+  @@map("recursos_comerciais")
+}
+
+model PropostaComercial {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Restrict)
+  versao Int
+  fichaVersao Int
+  snapshot Json
+  status String @default("RASCUNHO")
+  aprovadaEm DateTime?
+  aprovadaPor String?
+  enviadaEm DateTime?
+  aceitaEm DateTime?
+  opcaoAceita String?
+  aceiteEvidencia String?
+  tokenHash String? @unique
+  expiraEm DateTime
+  revogadaEm DateTime?
+  createdAt DateTime @default(now())
+  contratos ContratoComercial[]
+  @@unique([onboardingId, versao])
+  @@map("propostas_comerciais")
+}
+
+model ContratoComercial {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Restrict)
+  propostaId String @unique
+  proposta PropostaComercial @relation(fields: [propostaId], references: [id], onDelete: Restrict)
+  modeloId String
+  texto String
+  dados Json
+  status String @default("MINUTA")
+  aprovadoPor String?
+  aprovadoEm DateTime?
+  documentoAssinadoId String? @unique
+  assinaturaConferidaPor String?
+  assinaturaConferidaEm DateTime?
+  createdAt DateTime @default(now())
+  @@map("contratos_comerciais")
+}
+
+model DocumentoOnboarding {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Restrict)
+  nome String
+  mime String
+  conteudoCifrado String
+  sha256 String
+  criadoPor String
+  createdAt DateTime @default(now())
+  @@index([onboardingId])
+  @@map("documentos_onboarding")
+}
+
+model TrabalhoFiscalLead {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Restrict)
+  cnpj String
+  tipo String
+  status String @default("PENDENTE")
+  tentativas Int @default(0)
+  proximaTentativaEm DateTime @default(now())
+  leaseAte DateTime?
+  reservaToken String?
+  resultado Json @default("{}")
+  criadoPor String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status, proximaTentativaEm])
+  @@map("trabalhos_fiscais_lead")
+}
+
+model OnboardingAnalise {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  tipo String
+  status String
+  cnpj String
+  resultado Json @default("{}")
+  documentoCifrado String?
+  criadoPorId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([onboardingId, createdAt])
+  @@map("onboarding_analises")
+}
+model OnboardingEvento {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  tipo String
+  dados Json @default("{}")
+  atorId String?
+  createdAt DateTime @default(now())
+  @@index([onboardingId, createdAt])
+  @@map("onboarding_eventos")
+}
+model OnboardingLink {
+  id String @id @default(uuid())
+  onboardingId String
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  tokenHash String @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  submittedAt DateTime?
+  criadoPorId String
+  createdAt DateTime @default(now())
+  @@index([onboardingId])
+  @@map("onboarding_links")
+}
+
+// Tarefas gerais são privadas ao usuário do escritório que as criou.
+model TarefaAgenda {
+  id String @id @default(uuid())
+  userId String
+  titulo String
+  descricao String?
+  config Json
+  estados Json @default("{}")
+  excluidaEm DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, excluidaEm])
+  @@map("tarefas_agenda")
+}
+model AgendaOcultacao {
+  id String @id @default(uuid())
+  userId String
+  chave String
+  createdAt DateTime @default(now())
+  @@unique([userId, chave])
+  @@map("agenda_ocultacoes")
 }

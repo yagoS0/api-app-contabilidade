@@ -1,5 +1,32 @@
 # CLAUDE.md — Empresas (apps/web/src/features/companies)
 
+## Documentos e configurações na navegação — 10/09/2026
+
+O cabeçalho tem Anotações, Contabilidade, Fiscal e Documentos. A antiga aba Empresa foi removida porque seu destino (Cadastro) já pertence à engrenagem. Documentos é acesso direto a `/companies/:id/documentos`, visível inclusive dentro das configurações, sem competência ou subabas. Cadastro, perfil fiscal, credenciais, certificado, contatos, emissão e plano de contas continuam nas configurações, mantendo as rotas anteriores e permissões. A mudança recupera a entrada para os documentos existentes; não altera armazenamento ou envio de arquivos.
+
+## Alinhamento das empresas e remoção da faixa da carteira — 10/09/2026
+
+A faixa “Carteira inteira” e seu estado de filtro foram removidos a pedido do usuário. Busca, filtros existentes e abas de regime continuam. Fechamento em lote exige seleção explícita e considera somente as empresas selecionadas ainda visíveis e aptas pelo servidor; confirmação e revalidação permanecem.
+
+Nas rotas internas da empresa, a logo é renderizada por CompanySectionHeader junto do retorno e nome/CNPJ. O provider não cria outra faixa. Grupos e subabas alinham à esquerda; preservam href, Ctrl/clique, competência e histórico de retorno.
+
+company-workspace.css limita grades/controles à largura disponível. O CSS do menu de configurações atua apenas no aside: não aplicar .config-columns nav/input indiscriminadamente a formulários embutidos. O próprio EditorPerfilEmissao carrega o escopo nfse-settings em todos os usos. Auditoria quebra chaves longas e remove o mínimo global da tabela de pendências. Formulários não alteram contratos fiscais para resolver layout.
+
+
+## Perfis de emissão — UI/UX, 09/09/2026
+
+A aba de emissão usa uma única entrada de criação, em EditorPerfilEmissao. O editor parte dos valores existentes e organiza serviço, tributação municipal, federal e IBS/CBS em seções recolhíveis. O diagnóstico da próxima DPS e a configuração geral ficam em seções próprias; os respectivos contratos de gravação e a confirmação de liberação ao cliente permanecem separados. A criação simplificada de PainelProximaDps fica desativada nesta aba por mostrarPerfis=false.
+
+emissao-nfse.css limita controles e grades à largura disponível, inclusive dentro do shell de configurações; checkboxes não herdam width:100%. Sugestões NBS/IBS refletem os valores do formulário sem escolher CST automaticamente. Valores condicionais já preenchidos continuam editáveis.
+
+## Ajuste de UI/UX da carteira — 09/09/2026
+
+A home integra `WorkspaceHomeLink` ao cabeçalho (logo, título/competência e conta); o provider não cria uma segunda faixa em `/` ou `/companies`. O retorno das demais páginas continua preservando a visão da carteira.
+
+`carteira.css` compacta ações/filtros e reorganiza as MESMAS linhas da tabela em telas até 760 px, mantendo seleção, ordenação, chips e acesso. As regras móveis são limitadas a `screen`: a impressão continua usando a tabela completa. “Entrada de clientes” substitui “Onboardings”; “Sem envios pendentes” substitui a conclusão genérica das guias, sem alterar a regra fiscal ou os estados recebidos. Os contadores são identificados como carteira inteira, pois o regime selecionado recorta só a tabela.
+
+O calendário recolhe filtros/legenda e inicia sem concluídas, respeitando uma escolha explícita restaurada pelo contexto. Quando exibidas, concluídas usam marca de confirmação e aparência discreta. “Vencimentos e tarefas” distingue o período do calendário da “Competência” da tabela.
+
 Feature da carteira de empresas: dashboard (lista), detalhe (abas), formulário, certificado.
 
 ## Subpastas
@@ -330,6 +357,12 @@ buscadas em runtime; o arquivo diz no cabeçalho como atualizar).
   `undefined` e o formulário reabre vazio.
 
 ## Emissão de NFS-e — N códigos ESCOLHIDOS, e o municipal ainda digitado
+
+### Editor de perfis e sugestões (07/09/2026)
+
+Continuação: tipo de imunidade, tipo de suspensão e processo estão no perfil, com E0592/E0585. Os valores de IRRF/CP, identificador da obra e destinatário diferente são dados por operação no assistente do escritório; passam pelo validador e aparecem na confirmação. Migração `20260907193000_add_perfil_imunidade_suspensao` precisa preceder a ativação. O backend recusa indisponibilidade na leitura de perfil para emissão (a leitura do painel continua tolerante).
+
+`EditorPerfilEmissao` permite editar os campos fiscais de `GET /perfis-emissao`, usando a metadata retornada e as sugestões por serviço habilitado. NBS só é preenchido por seleção; cIndOp/cClassTrib são selecionados juntos; CST continua confirmado separadamente. Erros nomeados do backend preservam a edição. A configuração reinicia o editor ao mudar de empresa. O complemento municipal continua manual, pois não existe catálogo municipal versionado. Escopo e limitações: `docs/validacao-emissao-planejamento-2026-09-07.md`.
 
 ### ⚠⚠ VIROU ABA PRÓPRIA, COM SALVAR PRÓPRIO (dono, 19/08/2026)
 

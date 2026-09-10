@@ -304,16 +304,16 @@ describe("a barra de ações e a gaveta lateral (dono, 18/08/2026)", () => {
 
   test("⚠ a gaveta NASCE FECHADA — a cada carregamento, sem lembrar da última vez", () => {
     montar(handlers);
-    expect(screen.queryByRole("dialog", { name: /Ferramentas e configurações/i })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /Ferramentas/i })).toBeNull();
     expect(screen.getByRole("button", { name: /Abrir o menu de ferramentas/i }))
       .toHaveAttribute("aria-expanded", "false");
   });
 
-  test("na barra do topo sobram só `Nova empresa` e `Onboardings` (fora o hambúrguer)", () => {
+  test("a barra compacta mantém cadastro e entrada de clientes acessíveis", () => {
     montar(handlers);
     const barra = screen.getByRole("navigation", { name: "Atalhos" });
     expect(within(barra).getByRole("button", { name: /Nova empresa/i })).toBeInTheDocument();
-    expect(within(barra).getByRole("button", { name: "Onboardings" })).toBeInTheDocument();
+    expect(within(barra).getByRole("button", { name: "Entrada de clientes" })).toBeInTheDocument();
     expect(within(barra).queryByRole("button", { name: /Envio de e-mails em lote/i })).toBeNull();
     expect(within(barra).queryByRole("button", { name: "Apuração" })).toBeNull();
     expect(within(barra).queryByRole("button", { name: "Consultas" })).toBeNull();
@@ -322,11 +322,11 @@ describe("a barra de ações e a gaveta lateral (dono, 18/08/2026)", () => {
   test("⚠ Apuração e Consultas MUDARAM DE LUGAR, não sumiram — mesmo rótulo, mesmo handler", () => {
     montar(handlers);
     abrirGaveta();
-    const gaveta = screen.getByRole("dialog", { name: /Ferramentas e configurações/i });
+    const gaveta = screen.getByRole("dialog", { name: /Ferramentas/i });
     expect(within(gaveta).getByText("Ferramentas")).toBeInTheDocument();
-    expect(within(gaveta).getByText("Configurações")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Configurações gerais do escritório" })).toHaveAttribute("href", "/configuracoes");
     for (const rotulo of ["Apuração", "Consultas", "Rotinas", "Planejamento",
-      "Obrigações do escritório", "Configuração SERPRO", "Plano de Contas Global", "Pendências de e-mail"]) {
+      "Pendências de e-mail"]) {
       expect(within(gaveta).getByRole("button", { name: rotulo })).toBeInTheDocument();
     }
     fireEvent.click(within(gaveta).getByRole("button", { name: "Consultas" }));
@@ -338,16 +338,16 @@ describe("a barra de ações e a gaveta lateral (dono, 18/08/2026)", () => {
     const botao = screen.getByRole("button", { name: /Abrir o menu de ferramentas/i });
     expect(botao).toHaveAttribute("aria-controls", "dashboard-gaveta");
     abrirGaveta();
-    expect(screen.getByRole("dialog", { name: /Ferramentas e configurações/i })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: /Ferramentas/i })).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: /Ferramentas e configurações/i })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /Ferramentas/i })).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: /Abrir o menu de ferramentas/i }));
   });
 
   test("item sem handler não vira linha — nada de oferecer função que não existe aqui", () => {
     montar({ ...handlers, onOpenRotinas: undefined });
     abrirGaveta();
-    const gaveta = screen.getByRole("dialog", { name: /Ferramentas e configurações/i });
+    const gaveta = screen.getByRole("dialog", { name: /Ferramentas/i });
     expect(within(gaveta).queryByRole("button", { name: "Rotinas" })).toBeNull();
   });
 });

@@ -59,7 +59,7 @@ export async function montarDre({ portalClientId, competencia, client = prisma }
       where: { portalClientId: String(portalClientId), competencia: comp },
       // ⚠ Só o que a regra lê. O `historico` e o `tipo` do lançamento não entram no DRE — quem
       // decide o grupo é a CONTA, e trazer o resto seria carregar o razão para somar cinco linhas.
-      select: { lines: { select: { tipo: true, valor: true, conta: true } } },
+      select: { status: true, lines: { select: { tipo: true, valor: true, conta: true } } },
     }),
     carregarPlano(portalClientId, client),
   ]);

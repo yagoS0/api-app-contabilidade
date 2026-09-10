@@ -1,5 +1,47 @@
 # CLAUDE.md — Portal Contábil
 
+## Previsão do mês aberto e imposto pago — 08/09/2026
+
+A previsão de receita usa exatamente os três meses de calendário completos imediatamente anteriores ao relógio do servidor. O mês aberto não entra na mediana. Para o recebimento previsto (competência da nota +1), somar somente o complemento positivo entre mediana e notas já emitidas dessa competência. Nota parcial não cancela a previsão; nota acima da mediana não recebe complemento. Meses encerrados não são preenchidos retroativamente. A evidência identifica meses-base, mediana, emitido e complemento. Esta decisão substitui a mediana de toda a série e a regra de começar após a última nota.
+
+No painel, um imposto conhecido não depende de uma alíquota calculável para aparecer. Resultado permanece faturamento menos imposto, com indicação de parcialidade quando faltam tributos/classificações. Mostrar a porcentagem de imposto PAGO de forma explícita e separada da alíquota lançada ou prevista. Ausência de imposto não vira zero calculado nem previsão tributária sem origem.
+
+## Correção de entendimento: painel e acumulado automático — 08/09/2026
+
+O usuário rejeitou exigir saldo inicial manual para cada empresa. Esta instrução substitui a implementação anterior de âncora declarada: não mostrar formulário nem exigir configuração. O fluxo transporta automaticamente as movimentações desde o histórico disponível, com origem HISTORICO e identificação como Acumulado projetado, sem afirmar saldo bancário. Registros de âncora antigos e migration ficam preservados, mas não alimentam o cálculo nem aceitam novas escritas pela rota pública.
+
+O resumo principal é Faturamento menos impostos da MESMA competência selecionada. Não usa resultado do fluxo, despesas operacionais, folha salarial ou mês seguinte. Impostos vêm dos lançamentos da competência; ausência de dados não significa imposto zero. A DRE mantém seu cálculo próprio. Não confundir o resumo principal com o acumulado da tabela.
+
+## Correção do fluxo e DRE — 08/09/2026
+
+Esta decisão substitui orientações antigas que proibiam transportar saldo entre meses. O fluxo agora aceita saldo inicial informado pelo cliente, com mês de referência e histórico append-only. Meses sem movimento transportam o valor anterior. Resultado mensal permanece separado de Saldo projetado; nenhum deles certifica saldo bancário conciliado. Sem âncora não assumir zero. Aplicar migration 20260908230000_cashflow_opening_balance e gerar Prisma antes da API. Ver apps/api/src/application/fluxo/CLAUDE.md.
+
+A DRE aceita Decimal real do Prisma e sinaliza valores inválidos, contas de resultado sem mapeamento e rascunhos; não esconder esses estados zerando valores. Ela continua por competência. Ver apps/api/src/application/dre/CLAUDE.md. Painel e tabela atualizam juntos; competência escolhida não redefine hoje no servidor. Guias futuras ficam no vencimento, atrasadas em aberto no mês atual, pagas na data do pagamento. Valores monetários do fluxo são normalizados por linha em centavos antes dos totais e saldos.
+
+
+## Ajustes aprovados e implementados — 08/09/2026
+
+Esta decisão substitui orientações anteriores incompatíveis sobre calendário, retorno e Relatórios.
+- Calendário concentra tarefas/obrigações em modal; /obrigacoes antigo redireciona para o calendário. A seção da empresa chama Calendário. Janela mensal fixa 10–15 é inclusiva e independente do vencimento/competência. Exclusão por ocorrência ou seguintes mantém histórico e cancelamentos persistentes. Edição desta e seguintes versiona janela, frequência, vencimento, ajuste de dia útil e competência; meses fora da nova frequência conservam IDs e cancelamentos, sem apagar concluídas. Migration adicional 20260908210000_calendar_frequency_versions. Ver features/calendario/CLAUDE.md no web.
+- WorkspaceNavigationProvider mantém histórico interno e Tabela/Calendário durante a sessão. Novo login reseta para Calendário; voltar/logo preservam escolha; impressão não a altera. Marca à esquerda leva à carteira. Configurações navegam sem recarregar o aplicativo.
+- Relatórios do escritório voltaram a mostrar o fluxo diário do cliente, com dois meses e somente leitura. A rota GET usa responderFluxoDeCaixa. Não reintroduzir botões de lançamento/edição nas células.
+- Exportação em lote é de LANÇAMENTOS para ERP: ZIP, CSV por empresa, cinco colunas sem cabeçalho e manifesto parcial. Mesmo preflight e autorização individuais; hash da prévia invalida alertas que mudaram. Download não confirma importação no ERP.
+- WhatsApp envia PDF determinístico da tabela SITFIS salva, sem chamada paga: inclui colunas, anotações, avisos e texto não interpretado; permissão fiscal e janela são rechecadas antes do transporte. Reservas/erros de envio não podem virar entrega confirmada.
+- CertResolver exige A1 próprio para NFSE/ADN/DFE, sem priorizar procurador nessas operações. Integra/serviços delegáveis mantêm procuração autorizada.
+- SERPRO reserva tentativa em transação antes do envio; falha de medição bloqueia visivelmente. Reservas sem desfecho e incertas não expiram automaticamente. Autenticação abortada não é operação enviada. Ledger não é fatura. As 2.555 chamadas informadas não foram reconciliadas.
+- Planejamento salva e retoma cenários sem depender do PDF, separando premissas do cadastro da empresa. Emissor bloqueia fechamento durante envio; notas abrem a partir da auditoria preservando contexto; Apuração mostra carga calculada distinta de pagamento.
+- Documentos distinguem falha de ausência, preservam upload falho e resultado parcial; onboarding aguarda salvar antes de voltar/trocar etapa.
+
+Implantação: aplicar migration aditiva 20260908190000_calendar_series_exceptions e gerar Prisma antes da nova API. Schema, geração isolada e auditoria de migrations validados localmente; PostgreSQL real da etapa 1 aprovado no CI 34248812325; Railway reportou sucesso para a integração 9ab263de. Alterações da etapa 2 exigem novo CI; integrações fiscais reais não foram exercitadas. Não tratar testes com mocks como homologação de banco/serviços externos.
+
+
+## Calendário e obrigações — implementação de 07/09/2026
+
+Acesso a **Tarefas e obrigações** e criação agora ficam junto ao calendário. Tarefas/obrigações avulsas têm início e fim inclusivos e uma única ocorrência, exibida em todos os dias do período. O calendário ganhou faixas por semana, agenda sem duplicação e retorno preservando empresa, data, visão e filtros.
+
+Contratos e manutenção: `apps/api/CLAUDE.md` e `apps/web/CLAUDE.md`. A migration `20260907180000_add_calendar_task_intervals` deve ser aplicada antes da nova API, com geração do Prisma. A execução desta etapa não significa que todos os itens da auditoria de planejamento, apuração e design estejam concluídos; implantação e migração no banco real continuam pendentes.
+
+
 Instruções e contexto para o Claude Code neste projeto.
 
 ## Visão Geral

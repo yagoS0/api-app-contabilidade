@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 // O DRE GERENCIAL — a regra pura.
 //
 // > Dono: *"a nossa DRE para o cliente deve ser montada baseada no nosso plano de contas."*
@@ -252,5 +253,57 @@ describe("⚠ zero é ZERO, nunca `-0`", () => {
     // "-R$ 0,00" numa linha que simplesmente não teve movimento.
     const dre = montar([], plano([]));
     for (const l of dre.linhas) expect(Object.is(l.valor, -0)).toBe(false);
+  });
+});
+
+
+describe('valores reais do Prisma e qualidade do resultado', () => {
+  it('soma Decimal real em receita, dedução, despesa e estorno sem zerar nem perder sinais', () => {
+    const dre = montar([{ lines: [
+      { conta: 'r', tipo: 'C', valor: new Prisma.Decimal('1000.35') },
+      { conta: 'r', tipo: 'D', valor: new Prisma.Decimal('20.20') },
+      { conta: 'd', tipo: 'D', valor: new Prisma.Decimal('200.10') },
+      { conta: 't', tipo: 'D', valor: new Prisma.Decimal('60.02') },
+    ] }], plano([['r', '311020001'], ['d', '411020001'], ['t', '331030009']]));
+    expect(valorDe(dre, 'receitaBruta')).toBeCloseTo(980.15, 2);
+    expect(valorDe(dre, 'gerais')).toBeCloseTo(-200.10, 2);
+    expect(valorDe(dre, 'deducoes')).toBeCloseTo(-60.02, 2);
+    expect(valorDe(dre, 'resultadoDoPeriodo')).toBeCloseTo(720.03, 2);
+    expect(dre.qualidade).toEqual({ status: 'SEM_PENDENCIAS_IDENTIFICADAS', provisorio: false, linhasNaoClassificadas: 0, linhasInvalidas: 0, lancamentosRascunho: 0, motivos: [] });
+  });
+
+  it('avisa resultado fora do mapeamento, mantém valores válidos e ignora patrimoniais', () => {
+    const dre = montar([{ lines: [
+      { conta: 'r', tipo: 'C', valor: new Prisma.Decimal('1000') },
+      { conta: 'x', tipo: 'D', valor: new Prisma.Decimal('150.27') },
+      { conta: 'a', tipo: 'D', valor: new Prisma.Decimal('1000') },
+      { conta: 'p', tipo: 'C', valor: new Prisma.Decimal('1000') },
+    ] }], plano([['r', '311020001'], ['x', '413010001'], ['a', '111010001'], ['p', '211010001']]));
+    expect(valorDe(dre, 'resultadoDoPeriodo')).toBe(1000);
+    expect(dre.naoClassificado).toHaveLength(1);
+    expect(dre.naoClassificado[0]).toMatchObject({ causa: 'resultado_sem_mapeamento', valor: 150.27, contas: [{ codigo: 'x', valor: 150.27, linhas: 1 }] });
+    expect(dre.qualidade).toMatchObject({ status: 'PROVISORIO', provisorio: true, linhasNaoClassificadas: 1, linhasInvalidas: 0 });
+  });
+
+  it.each([null, undefined, '', {}, [], true, NaN, Infinity, new Prisma.Decimal('NaN')])('valor inválido %p não vira zero silencioso', valor => {
+    const dre = montar([{ lines: [{ conta: 'r', tipo: 'C', valor: 100 }, { conta: 'r', tipo: 'C', valor }] }], plano([['r', '311020001']]));
+    expect(valorDe(dre, 'receitaBruta')).toBe(100);
+    expect(dre.qualidade).toMatchObject({ status: 'PROVISORIO', linhasInvalidas: 1, motivos: ['valor_invalido'] });
+    expect(dre.inconsistencias[0]).toMatchObject({ causa: 'valor_invalido', linhas: 1, contas: [{ codigo: 'r', linhas: 1 }] });
+    expect(dre.inconsistencias[0]).not.toHaveProperty('valor');
+  });
+
+  it('tipo desconhecido não é crédito e zero real continua válido', () => {
+    const dre = montar([{ lines: [{ conta: 'r', tipo: 'X', valor: 100 }, { conta: 'r', tipo: 'C', valor: new Prisma.Decimal(0) }] }], plano([['r', '311020001']]));
+    expect(valorDe(dre, 'receitaBruta')).toBe(0);
+    expect(dre.qualidade).toMatchObject({ provisorio: true, linhasInvalidas: 1, motivos: ['tipo_invalido'] });
+    expect(dre.semLancamento).toBe(false);
+  });
+
+  it('não classificado Decimal mantém valor e sinaliza parcialidade', () => {
+    const dre = montar([{ lines: [{ conta: '', tipo: 'D', valor: new Prisma.Decimal('45.67') }] }], plano([]));
+    expect(dre.naoClassificado[0].valor).toBe(45.67);
+    expect(dre.qualidade.provisorio).toBe(true);
+    expect(montar([], plano([])).qualidade.status).toBe('SEM_LANCAMENTOS');
   });
 });

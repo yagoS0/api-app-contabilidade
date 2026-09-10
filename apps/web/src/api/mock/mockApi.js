@@ -1,3 +1,8 @@
+import { criarMockComercial } from './comercialMock';
+import { criarMockAgenda } from './agendaMock';
+import { expandirAgenda, normalizarAgenda, somarDiasAgenda } from '../../../../../packages/shared/src/agenda.js';
+import { mockRelatorios } from './mockRelatorios';
+import { janelaRecorrente, cicloRecorrente } from '../../features/obrigacoes/lib/janelaRecorrente';
 import { faker } from "@faker-js/faker";
 
 faker.seed(20260127);
@@ -676,18 +681,63 @@ const mockUnidentifiedGuides = [];
 // defasagem da competência). Repetir a regra aqui é chato, mas um mock que devolvesse datas
 // bonitas esconderia justamente o que precisa ser visto na tela.
 function mockCriarObrigacao(companyId, empresa, dados) {
+  if (dados.agendaConfig) {
+    const config = { ...normalizarAgenda(dados.agendaConfig), ...(dados.agendaConfig.vencimentoFiscal ? { vencimentoFiscal:dados.agendaConfig.vencimentoFiscal } : {}) };
+    const hoje = new Date();
+    const inicio = config.recorrencia === 'AVULSA' ? config.dataInicio : hoje.toISOString().slice(0,7)+'-01';
+    const fim = config.recorrencia === 'AVULSA' ? config.dataFim : new Date(Date.UTC(hoje.getUTCFullYear()+1,hoje.getUTCMonth()+1,0)).toISOString().slice(0,10);
+    const ocorrencias = expandirAgenda(config,inicio,fim).map(p => {
+      const [a,m] = p.dataInicio.split('-').map(Number);
+      const venc = dados.tipo !== 'TAREFA' && ['MENSAL','TRIMESTRAL','ANUAL'].includes(config.recorrencia) ? new Date(Date.UTC(a,m-1,Math.min(Number(dados.diaVencimento),new Date(Date.UTC(a,m,0)).getUTCDate()))) : new Date(config.vencimentoFiscal && ['DIARIA','SEMANAL'].includes(config.recorrencia) ? somarDiasAgenda(p.dataInicio,Math.round((+new Date(config.vencimentoFiscal)-+new Date(config.dataInicio))/86400000)) : config.vencimentoFiscal || p.dataFim);
+      if (dados.tipo !== 'TAREFA' && dados.ajusteDiaUtil !== 'MANTER' && ['MENSAL','TRIMESTRAL','ANUAL'].includes(config.recorrencia)) while([0,6].includes(venc.getUTCDay())) venc.setUTCDate(venc.getUTCDate()+(dados.ajusteDiaUtil === 'POSTERGAR' ? 1 : -1));
+      return { ...p, ocorrenciaId:crypto.randomUUID(), dataVencimento:venc.toISOString().slice(0,10), competenciaRef:new Date(Date.UTC(a,m-1-Number(dados.defasagemMeses || 0),1)).toISOString().slice(0,7), status:'PENDENTE', concluidaEm:null };
+    });
+    return { ...dados, agendaConfig:config, obrigacaoId:crypto.randomUUID(), companyId, empresa, ativa:true, ocorrencias, sobrescritaLocal:false };
+  }
+  if (dados.janelaTrabalho) janelaRecorrente("2026-09", dados.janelaTrabalho);
   const periodicidade = String(dados.periodicidade || "MENSAL").toUpperCase();
+  const tipo = String(dados.tipo || "OBRIGACAO").toUpperCase();
+  const diasPreparacao = Number(dados.diasPreparacao ?? 0);
+  if (!["TAREFA", "OBRIGACAO"].includes(tipo) || !["AVULSA", "MENSAL", "TRIMESTRAL", "ANUAL"].includes(periodicidade)) {
+    throw new Error("Tipo ou periodicidade inválidos.");
+  }
+  if (!Number.isInteger(diasPreparacao) || diasPreparacao < 0 || diasPreparacao > 365) throw new Error("Informe de 0 a 365 dias de preparação.");
+  if (dados.verificador && (tipo === "TAREFA" || periodicidade === "AVULSA")) throw new Error("Tarefas e itens avulsos são concluídos manualmente.");
+  const dataCivil = (valor) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(valor || ""))) throw new Error("Informe uma data válida.");
+    const d = new Date(`${valor}T00:00:00.000Z`);
+    if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== valor) throw new Error("Informe uma data válida.");
+    return valor;
+  };
+  const dataInicio = periodicidade === "AVULSA" ? dataCivil(dados.dataInicio) : null;
+  const dataFim = periodicidade === "AVULSA" ? dataCivil(dados.dataFim) : null;
+  const dataVencimento = periodicidade === "AVULSA" ? dataCivil(tipo === "TAREFA" ? dataFim : dados.dataVencimento || dataFim) : null;
+  if (dataInicio && dataFim < dataInicio) throw new Error("O fim não pode ser anterior ao início.");
   const diaPedido = Number(dados.diaVencimento) || 20;
   const ajuste = String(dados.ajusteDiaUtil || "ANTECIPAR").toUpperCase();
   const defasagem = dados.defasagemMeses == null ? 1 : Number(dados.defasagemMeses);
   const mesRef = dados.mesReferencia == null ? null : Number(dados.mesReferencia);
 
-  const hoje = new Date();
+  const hoje = dados._inicioCiclo ? new Date(dados._inicioCiclo + "-01T00:00:00Z") : new Date();
   const ocorrencias = [];
-  for (let i = 0; i < 12; i += 1) {
+  if (periodicidade === "AVULSA") {
+    ocorrencias.push({
+      ocorrenciaId: `mock-oc-${companyId}-${Math.random().toString(36).slice(2, 9)}`,
+      dataInicio, dataFim, dataVencimento, competenciaRef: dataVencimento.slice(0, 7),
+      status: "PENDENTE", concluidaEm: null, fonteConclusao: null,
+    });
+  }
+  for (let i = 0; periodicidade !== "AVULSA" && i < 24 && ocorrencias.length < 12; i += 1) {
     const bruto = hoje.getUTCMonth() + i;
     const ano = hoje.getUTCFullYear() + Math.floor(bruto / 12);
     const mes = (bruto % 12) + 1;
+    const cicloChave = String(ano) + '-' + String(mes).padStart(2, '0');
+    const versoes = (dados.agendaVersoes || []).filter(v => v.aPartirDe <= cicloChave);
+    const regras = versoes.filter(v => v.regra);
+    const efetiva = { ...dados, ...(regras.length ? regras[regras.length - 1].regra : {}) };
+    const periodicidade = efetiva.periodicidade;
+    const mesRef = Number(efetiva.mesReferencia), diaPedido = Number(efetiva.diaVencimento);
+    const ajuste = efetiva.ajusteDiaUtil, defasagem = Number(efetiva.defasagemMeses ?? 1), diasPreparacao = Number(efetiva.diasPreparacao || 0);
     if (periodicidade === "ANUAL" && mes !== mesRef) continue;
     if (periodicidade === "TRIMESTRAL" && (((mes - mesRef) % 3) + 3) % 3 !== 0) continue;
 
@@ -697,10 +747,18 @@ function mockCriarObrigacao(companyId, empresa, dados) {
       const passo = ajuste === "ANTECIPAR" ? -1 : 1;
       while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + passo);
     }
+    if (dados.encerradaAPartirDe && cicloChave >= dados.encerradaAPartirDe) continue;
+    const janela = versoes.length ? versoes[versoes.length - 1].janela : dados.janelaTrabalho;
+    const periodo = janelaRecorrente(cicloChave, janela);
     const compBruta = ano * 12 + (mes - 1) - Math.max(0, defasagem);
+    const inicio = new Date(d);
+    inicio.setUTCDate(inicio.getUTCDate() - diasPreparacao);
     ocorrencias.push({
       ocorrenciaId: `mock-oc-${companyId}-${ano}${String(mes).padStart(2, "0")}-${Math.random().toString(36).slice(2, 7)}`,
       dataVencimento: d.toISOString().slice(0, 10),
+      cicloChave,
+      dataInicio: periodo?.dataInicio || inicio.toISOString().slice(0, 10),
+      dataFim: periodo?.dataFim || d.toISOString().slice(0, 10),
       competenciaRef: `${Math.floor(compBruta / 12)}-${String((compBruta % 12) + 1).padStart(2, "0")}`,
       status: "PENDENTE",
       concluidaEm: null,
@@ -714,6 +772,9 @@ function mockCriarObrigacao(companyId, empresa, dados) {
     empresa,
     nome: String(dados.nome || "").trim() || "Obrigação sem nome",
     categoria: String(dados.categoria || "").trim() || null,
+    descricao: String(dados.descricao || "").trim() || null,
+    tipo, dataInicio, dataFim, dataVencimento, diasPreparacao,
+    janelaTrabalho: dados.janelaTrabalho || null, agendaVersoes: dados.agendaVersoes || [], encerradaAPartirDe: dados.encerradaAPartirDe || null,
     periodicidade,
     diaVencimento: diaPedido,
     mesReferencia: periodicidade === "MENSAL" ? null : mesRef,
@@ -835,7 +896,11 @@ function mockPropagarRegra(regra) {
       const concluidas = atual.ocorrencias.filter((oc) => oc.status === "CONCLUIDA");
       const jaTem = new Set(concluidas.map((oc) => oc.dataVencimento));
       nova.obrigacaoId = atual.obrigacaoId;
-      nova.ocorrencias = [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento))]
+      const mudouJanela = ["diasPreparacao", "diaVencimento", "mesReferencia", "ajusteDiaUtil", "periodicidade"].some((campo) => String(nova[campo]) !== String(atual[campo]));
+      nova.ocorrencias = [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento)).map((oc) => {
+        const anterior = atual.ocorrencias.find((item) => item.dataVencimento === oc.dataVencimento);
+        return anterior ? (mudouJanela ? { ...oc, ocorrenciaId: anterior.ocorrenciaId, janelaPersonalizada: false } : anterior) : oc;
+      })]
         .sort((a, b) => a.dataVencimento.localeCompare(b.dataVencimento));
       mockObrigacoes[mockObrigacoes.indexOf(atual)] = nova;
       atualizadas += 1;
@@ -968,6 +1033,7 @@ const mockGuiasEnviadasWhatsapp = new Set();
 
 // A última prévia do lote por WhatsApp — é contra ela que a conferência do `executar` é medida.
 let mockUltimaPreviaWhatsapp = null;
+import { relatorioVencimentoMock, enviarVencimentoMock, previaVencimentoMock, preverLiberacaoVencimentoMock, liberarVencimentoMock } from "./guiasVencimentoMock";
 
 // ── AS CONVERSAS (F5, 02/09/2026) — três fios, três ramos ─────────────────────────────────────
 const AGORA_MOCK = Date.now();
@@ -1041,6 +1107,23 @@ function contatoDoMock(c) {
   return k ? { id: k.id, nome: k.nome, papel: k.papel || null } : null;
 }
 
+function paginaWhatsappMock(lista, cursor, limite) {
+  const n = Math.min(200, Math.max(1, Number(limite) || 50));
+  const indice = cursor ? lista.findIndex(x => x.id === cursor) : -1;
+  if (cursor && indice < 0) { const e = new Error("Cursor inválido para esta consulta."); e.status = 400; e.code = "cursor_invalido"; throw e; }
+  const restantes = lista.slice(indice + 1);
+  const itens = restantes.slice(0, n);
+  const temMais = restantes.length > n;
+  return { itens, temMais, proximoCursor: temMais ? itens[itens.length - 1].id : null };
+}
+
+function recusarChatExcluidoMock(c) {
+  if (c.excluidaEm) {
+    const message = "Esta conversa está na lixeira. Restaure antes de continuar.";
+    throw Object.assign(new Error(message), { status: 409, code: "CHAT_EXCLUIDO", payload: { error: "CHAT_EXCLUIDO", message } });
+  }
+}
+
 function resumoMockDaConversa(c) {
   const ultima = c.mensagens[c.mensagens.length - 1] || null;
   const naoLidas = c.mensagens.filter((m) => m.direcao === "in" && (!c.lidaAteEm || m.registradaEm > c.lidaAteEm)).length;
@@ -1051,7 +1134,7 @@ function resumoMockDaConversa(c) {
     naFilaDoEscritorio: Boolean(c.atendidaDesde && !c.atendidaPor), lidaAteEm: c.lidaAteEm, updatedAt: c.updatedAt,
     ultimaMensagem: ultima ? { direcao: ultima.direcao, tipo: ultima.tipo, corpo: ultima.corpo, registradaEm: ultima.registradaEm, autor: ultima.autor } : null,
     naoLidas, janela: c.janela, pendencia: c.pendencia, vinculo: c.portalClientId ? null : (c.vinculo || null),
-    contato: contatoDoMock(c),
+    contato: contatoDoMock(c), escopoVerificado: c.escopoVerificado !== false, legadoNaoVerificado: Boolean(c.portalClientId && c.escopoVerificado === false), excluidaEm: c.excluidaEm || null,
   };
 }
 
@@ -1443,6 +1526,7 @@ function mockNotaDeLista(n) {
 // `Map` no topo do módulo, com a chave espelhando a PK do Prisma — assim o rascunho sobrevive à
 // navegação e ao F5 dentro da mesma sessão do app.
 const mockOnboardings = new Map();
+const mockLinksComerciais = new Map();
 const mockOnboardingEtapas = new Map(); // onboardingId -> etapa[]
 let mockOnboardingSeq = 0;
 
@@ -3507,6 +3591,8 @@ export function createMockApi() {
   let accessToken = "";
 
   return {
+    ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock }),
+    ...criarMockAgenda(mockObrigacoes, mockRegras),
     setUnauthorizedHandler() {},
     setAccessToken(token) {
       accessToken = String(token || "").trim();
@@ -3866,11 +3952,20 @@ export function createMockApi() {
     },
     async resendGuideEmail(guideId) {
       await delay();
-      for (const guides of mockGuidesByCompany.values()) {
+      for (const [companyId, guides] of mockGuidesByCompany.entries()) {
         const target = guides.find((item) => item.id === guideId);
         if (target) {
-          target.emailStatus = "PENDING";
-          return { ok: true, guideId, emailStatus: "PENDING" };
+          const temEmail = (mockContatosWhatsapp[String(companyId)] || [])
+            .some((c) => c.ativo !== false && String(c.email || "").trim());
+          if (!temEmail) {
+            return {
+              ok: true, guideId, emailStatus: target.emailStatus || null, sent: false,
+              envio: { feito: false, naoSeAplica: true, motivo: "sem_email_cadastrado", podeTentarNovamente: false },
+              message: "Sem e-mail cadastrado nesta empresa — a guia não foi enviada por e-mail.",
+            };
+          }
+          target.emailStatus = "SENT";
+          return { ok: true, guideId, emailStatus: "SENT", sent: true, envio: { feito: true } };
         }
       }
       throw new Error("not_found");
@@ -5820,8 +5915,13 @@ export function createMockApi() {
     // `POST /firm/companies/:id/entries/parcelamento` que ela espelhava. O par mock/real precisa
     // sumir junto: um mock que continua respondendo `ok:true` para uma rota que o backend removeu
     // é a forma mais eficiente de esconder um 404 até a produção.
+    async getCompanyGuideDueReport(companyId, mesVencimento) {
+      const report = relatorioVencimentoMock(mockCompanies, { mesVencimento });
+      return { ...report, simples: report.simples.filter((c) => c.portalClientId === companyId) };
+    },
     async getBatchEmailReport(competencia) {
       await delay(200);
+      if (competencia?.mesVencimento) return relatorioVencimentoMock(mockCompanies, competencia);
       const ref = competencia || "2026-04";
       // Gera dataset mock baseado nas empresas mockadas. Cada empresa simula um regime.
       const REGIMES = ["SIMPLES", "LUCRO_PRESUMIDO"];
@@ -5898,6 +5998,7 @@ export function createMockApi() {
     },
     async sendBatchEmails(items) {
       await delay(800);
+      if (items.some((it) => it.mesVencimento)) return enviarVencimentoMock(items);
       return {
         ok: true,
         total: items.length,
@@ -5907,6 +6008,12 @@ export function createMockApi() {
           ok: true, status: "sent", sentNow: 2, attachmentsCount: 2,
         })),
       };
+    },
+    async preverLiberacaoGuias(input) {
+      return preverLiberacaoVencimentoMock(mockCompanies, mockContatosWhatsapp, input);
+    },
+    async liberarGuiasLote(input) {
+      return liberarVencimentoMock(mockCompanies, mockContatosWhatsapp, input);
     },
     // ── ENVIO DE GUIAS POR WHATSAPP — o MESMO contrato de `realApi` ──────────────────────────────
     // ⚠ O mock DECIDE como o servidor decide (`elegibilidadeEnvioGuia`): a 1ª empresa tem contato
@@ -5934,12 +6041,17 @@ export function createMockApi() {
       mockGuiasEnviadasWhatsapp.add(String(guideId));
       return {
         ok: true, guideId, enviada: true, canal: "WHATSAPP",
-        destino: recebem[0].telefoneE164, destinatarios: recebem.length, enviadas: recebem.length,
+        destino: recebem[0].telefoneE164, destinatarios: recebem.length, enviadas: recebem.length, aceitas: recebem.length, falhas: 0, parcial: false, estado: "aceito",
+        resultados: recebem.map(c => ({ ok: true, estado: "aceito", destino: c.telefoneE164, providerMessageId: `wamid.mock.${c.id}.${Date.now()}` })),
         providerMessageId: `wamid.mock.${Date.now()}`,
       };
     },
-    async preverLoteWhatsapp({ competencia, portalClientIds } = {}) {
+    async preverLoteWhatsapp({ competencia, mesVencimento, portalClientIds, guideIds } = {}) {
       await delay(250);
+      if (mesVencimento) {
+        mockUltimaPreviaWhatsapp = previaVencimentoMock(mockCompanies, mockContatosWhatsapp, { mesVencimento, portalClientIds, guideIds });
+        return mockUltimaPreviaWhatsapp;
+      }
       if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
         const e = new Error("Informe a competência no formato AAAA-MM."); e.status = 400; e.code = "COMPETENCIA_INVALIDA"; throw e;
       }
@@ -5976,8 +6088,9 @@ export function createMockApi() {
       mockUltimaPreviaWhatsapp = previa;
       return { ok: true, ...previa };
     },
-    async executarLoteWhatsapp({ competencia, portalClientIds, conferencia } = {}) {
+    async executarLoteWhatsapp({ competencia, mesVencimento, assinatura, guideIds, portalClientIds, conferencia, enviarPorEmail = true } = {}) {
       await delay(600);
+      if (mesVencimento && (mockUltimaPreviaWhatsapp?.assinatura !== assinatura || assinatura !== JSON.stringify(guideIds))) throw Object.assign(new Error("Confira novamente o lote."), { code: "CONFERENCIA_DIVERGENTE" });
       // ⚠ Sem `this`: no modo `real_with_mock_fallback` a função é chamada solta, e `this` seria
       //   `undefined`. A prévia é pré-requisito aqui como no servidor (que a recalcula por dentro).
       const previa = mockUltimaPreviaWhatsapp && mockUltimaPreviaWhatsapp.competencia === competencia ? mockUltimaPreviaWhatsapp : null;
@@ -5989,6 +6102,13 @@ export function createMockApi() {
       }
       const porWhatsapp = previa.linhas.filter((l) => l.canalSugerido === "WHATSAPP");
       const porEmail = previa.linhas.filter((l) => l.canalSugerido === "EMAIL");
+      if (mesVencimento) {
+        const alvos = [...porWhatsapp, ...(enviarPorEmail ? porEmail : [])];
+        enviarVencimentoMock([...new Set(alvos.map((l) => l.portalClientId))].map((portalClientId) => {
+          const ids = alvos.filter((l) => l.portalClientId === portalClientId).map((l) => l.guideId);
+          return { portalClientId, mesVencimento, guideIds: ids, assinatura: JSON.stringify(ids) };
+        }));
+      }
       return {
         ok: true,
         competencia,
@@ -6001,7 +6121,7 @@ export function createMockApi() {
           falhas: [],
           resultados: porWhatsapp.map((l) => ({ ...l, ok: true, enviada: true, providerMessageId: `wamid.mock.${l.guideId}` })),
         },
-        email: { total: porEmail.length, guideIds: porEmail.map((l) => l.guideId), linhas: porEmail, executado: true, enviadas: porEmail.length, erros: 0 },
+        email: { total: porEmail.length, guideIds: porEmail.map((l) => l.guideId), linhas: porEmail, executado: enviarPorEmail, enviadas: enviarPorEmail ? porEmail.length : 0, erros: 0 },
       };
     },
     async getCircular(companyId, { year } = {}) {
@@ -6973,12 +7093,15 @@ export function createMockApi() {
         if (!o.ativa) continue;
         if (companyId && o.companyId !== companyId) continue;
         for (const oc of o.ocorrencias) {
-          if (!oc.dataVencimento.startsWith(mes)) continue;
-          const dia = Number(oc.dataVencimento.slice(8));
+          if (oc.canceladaEm || oc.foraDaRecorrencia) continue;
+          const inicio = oc.dataInicio || oc.dataVencimento;
+          const fim = oc.dataFim || oc.dataVencimento;
+          if (inicio > iso(diasNoMes) || fim < iso(1)) continue;
           const situacao = oc.status === "CONCLUIDA" ? "CONCLUIDA"
             : oc.dataVencimento < hojeStr ? "VENCIDA" : "PENDENTE";
-          porDia[dia] = [...(porDia[dia] || []), {
+          const item = {
             tipo: "obrigacao", id: oc.ocorrenciaId, obrigacaoId: o.obrigacaoId,
+            natureza: o.tipo || "OBRIGACAO", dataInicio: inicio, dataFim: fim, dataVencimento: oc.dataVencimento,
             // Mesma chave do backend: regra quando vem de regra, senão o nome normalizado.
             grupoChave: o.regraId || `nome:${String(o.nome || "").trim().toLowerCase()}`,
             titulo: o.nome, categoria: o.categoria,
@@ -6991,7 +7114,10 @@ export function createMockApi() {
             competencia: oc.competenciaRef, data: oc.dataVencimento, situacao,
             resolvido: oc.status === "CONCLUIDA",
             conclusaoAutomatica: Boolean(o.verificador), fonteConclusao: oc.fonteConclusao,
-          }];
+          };
+          for (let dia = 1; dia <= diasNoMes; dia += 1) {
+            if (iso(dia) >= inicio && iso(dia) <= fim) porDia[dia] = [...(porDia[dia] || []), item];
+          }
         }
       }
 
@@ -7007,7 +7133,7 @@ export function createMockApi() {
         dias: Array.from({ length: diasNoMes }, (_, i) => ({
           dia: i + 1,
           data: iso(i + 1),
-          itens: porDia[i + 1] || [],
+          itens: (porDia[i + 1] || []).map((item) => ({ ...item, data: item.data || iso(i + 1) })),
           // Feriado é propriedade do DIA, não item: não se clica nem se conclui.
           feriado: MOCK_FERIADOS[iso(i + 1)] || null,
         })),
@@ -7035,7 +7161,7 @@ export function createMockApi() {
         .filter((o) => (companyId ? o.companyId === companyId : true))
         .filter((o) => (incluirInativas ? true : o.ativa))
         .map((o) => {
-          const ocorrencias = o.ocorrencias.map((oc) => {
+          const ocorrencias = o.ocorrencias.filter(oc => !oc.canceladaEm && !oc.foraDaRecorrencia).map((oc) => {
             const situacao =
               oc.status === "CONCLUIDA" ? "CONCLUIDA" : oc.dataVencimento < hoje ? "VENCIDA" : "PENDENTE";
             return { ...oc, situacao };
@@ -7061,7 +7187,7 @@ export function createMockApi() {
         obrigacoes: lista,
         resumo: { pendentes, vencendoEm7Dias, vencidas },
         opcoes: {
-          periodicidades: ["MENSAL", "TRIMESTRAL", "ANUAL"],
+          periodicidades: ["AVULSA", "MENSAL", "TRIMESTRAL", "ANUAL"],
           ajustesDiaUtil: ["ANTECIPAR", "POSTERGAR", "MANTER"],
           verificadores: [
             { chave: "APURACAO_TRANSMITIDA", rotulo: "Quando a apuração da competência for transmitida" },
@@ -7073,6 +7199,7 @@ export function createMockApi() {
     async createObrigacao(companyId, dados) {
       await delay(90);
       const empresa = mockCompanies.find((c) => c.companyId === companyId);
+      if (!empresa) return { ok: false, error: "empresa_nao_encontrada", message: "Escolha uma empresa da carteira." };
       const obrigacao = mockCriarObrigacao(companyId, empresa?.razao || null, dados);
       mockObrigacoes.push(obrigacao);
       return { ok: true, obrigacao, ocorrenciasCriadas: obrigacao.ocorrencias.length };
@@ -7082,14 +7209,33 @@ export function createMockApi() {
       const i = mockObrigacoes.findIndex((o) => o.obrigacaoId === obrigacaoId);
       if (i < 0) return { ok: false, error: "nao_encontrada", message: "Obrigação não encontrada." };
       const antes = mockObrigacoes[i];
+      if (Object.keys(patch).length === 1 && typeof patch.ativa === 'boolean') {
+        antes.ativa = patch.ativa;
+        return { ok: true, obrigacao: antes, ocorrenciasCriadas: 0, ocorrenciasRemovidas: 0 };
+      }
+      if (antes.periodicidade === "AVULSA" && antes.ocorrencias.some((oc) => oc.status === "CONCLUIDA")
+        && ["dataInicio", "dataFim", "dataVencimento"].some((campo) => patch[campo] !== undefined && patch[campo] !== antes[campo])) {
+        return { ok: false, error: "ocorrencia_concluida", message: "Reabra a ocorrência antes de editar seu período." };
+      }
+      if (patch.periodicidade && (patch.periodicidade === "AVULSA") !== (antes.periodicidade === "AVULSA")) {
+        return { ok: false, error: "periodicidade_incompativel", message: "Crie outro item para mudar entre avulsa e recorrente." };
+      }
       // Concluída é histórico: sobrevive à regeração, igual ao backend.
-      const concluidas = antes.ocorrencias.filter((oc) => oc.status === "CONCLUIDA");
+      const concluidas = antes.ocorrencias.filter((oc) => oc.status === "CONCLUIDA" || oc.canceladaEm || oc.foraDaRecorrencia || oc.janelaPersonalizada);
       const nova = mockCriarObrigacao(antes.companyId, antes.empresa, { ...antes, ...patch });
       nova.obrigacaoId = antes.obrigacaoId;
+      nova.sobrescritaLocal = antes.sobrescritaLocal || Boolean(antes.regraId);
+      const camposJanela = ["dataInicio", "dataFim", "dataVencimento", "diasPreparacao", "diaVencimento", "mesReferencia", "ajusteDiaUtil", "periodicidade"];
+      const mudouJanela = camposJanela.some((campo) => patch[campo] !== undefined && String(nova[campo]) !== String(antes[campo]));
       const jaTem = new Set(concluidas.map((oc) => oc.dataVencimento));
-      nova.ocorrencias = [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento))]
+      const ciclosConcluidos = new Set(concluidas.map((oc) => oc.competenciaRef));
+      nova.ocorrencias = [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento) && !ciclosConcluidos.has(oc.competenciaRef)).map((oc) => {
+        const anterior = antes.periodicidade === "AVULSA" ? antes.ocorrencias[0] : antes.ocorrencias.find((x) => x.dataVencimento === oc.dataVencimento || (x.janelaPersonalizada && x.competenciaRef === oc.competenciaRef));
+        if (anterior && !mudouJanela) return anterior;
+        return anterior ? { ...oc, ocorrenciaId: anterior.ocorrenciaId, janelaPersonalizada: false } : oc;
+      })]
         .sort((a, b) => a.dataVencimento.localeCompare(b.dataVencimento));
-      if (nova.ativa === false) nova.ocorrencias = concluidas;
+      if (nova.ativa === false) nova.ocorrencias = antes.ocorrencias;
       mockObrigacoes[i] = nova;
       return { ok: true, obrigacao: nova, ocorrenciasCriadas: 0, ocorrenciasRemovidas: 0 };
     },
@@ -7097,14 +7243,16 @@ export function createMockApi() {
       await delay(60);
       const i = mockObrigacoes.findIndex((o) => o.obrigacaoId === obrigacaoId);
       if (i < 0) return { ok: false, error: "nao_encontrada" };
-      const [removida] = mockObrigacoes.splice(i, 1);
+      const removida = mockObrigacoes[i];
+      removida.encerradaAPartirDe = "0000-01"; removida.sobrescritaLocal = true;
+      for (const oc of removida.ocorrencias) if (oc.status !== "CONCLUIDA") oc.canceladaEm = new Date().toISOString();
       return { ok: true, removida: { id: removida.obrigacaoId, nome: removida.nome } };
     },
     async concluirOcorrencia(ocorrenciaId) {
       await delay(60);
       for (const o of mockObrigacoes) {
         const oc = o.ocorrencias.find((x) => x.ocorrenciaId === ocorrenciaId);
-        if (!oc) continue;
+        if (!oc || oc.canceladaEm || oc.foraDaRecorrencia) continue;
         // Mesma recusa do backend: o que se conclui sozinho não aceita clique.
         if (o.verificador) {
           return {
@@ -7120,11 +7268,75 @@ export function createMockApi() {
       }
       return { ok: false, error: "nao_encontrada" };
     },
+    async excluirOcorrencia(ocorrenciaId, { alcance = 'ESTA' } = {}) {
+      await delay(60);
+      if (!['ESTA', 'ESTA_E_PROXIMAS'].includes(alcance)) return { ok: false, message: 'Escolha um alcance válido.' };
+      for (const o of mockObrigacoes) {
+        const alvo = o.ocorrencias.find(x => x.ocorrenciaId === ocorrenciaId);
+        if (!alvo) continue;
+        const corte = cicloRecorrente(alvo, o);
+        o.sobrescritaLocal = true;
+        if (alcance === 'ESTA_E_PROXIMAS') o.encerradaAPartirDe = o.encerradaAPartirDe && o.encerradaAPartirDe < corte ? o.encerradaAPartirDe : corte;
+        let canceladas = 0, concluidasPreservadas = 0;
+        for (const oc of o.ocorrencias) {
+          if (alcance === 'ESTA' ? oc !== alvo : cicloRecorrente(oc, o) < corte) continue;
+          if (oc.status === 'CONCLUIDA') { concluidasPreservadas++; continue; }
+          if (!oc.canceladaEm) { oc.canceladaEm = new Date().toISOString(); canceladas++; }
+        }
+        return { ok: true, alcance, canceladas, concluidasPreservadas };
+      }
+      return { ok: false, message: 'Ocorrência não encontrada.' };
+    },
+    async updateOcorrencia(ocorrenciaId, patch) {
+      await delay(60);
+      for (const o of mockObrigacoes) {
+        const oc = o.ocorrencias.find((x) => x.ocorrenciaId === ocorrenciaId);
+        if (!oc || oc.canceladaEm || oc.foraDaRecorrencia) continue;
+        if (patch.alcance === 'ESTA_E_PROXIMAS') {
+          if (o.periodicidade === 'AVULSA') return { ok: false, message: 'Este item não se repete.' };
+          const ciclo = cicloRecorrente(oc, o);
+          if (patch.janelaTrabalho) janelaRecorrente(ciclo, patch.janelaTrabalho);
+          const vigentes = (o.agendaVersoes || []).filter(v => v.aPartirDe <= ciclo && v.regra);
+          const regra = { ...o, ...(vigentes.length ? vigentes[vigentes.length - 1].regra : {}), ...(patch.regra || {}) };
+          const snapshot = Object.fromEntries(['periodicidade', 'mesReferencia', 'diaVencimento', 'ajusteDiaUtil', 'defasagemMeses', 'diasPreparacao'].map(k => [k, regra[k]]));
+          if (!['MENSAL', 'TRIMESTRAL', 'ANUAL'].includes(snapshot.periodicidade) || !Number.isInteger(Number(snapshot.diaVencimento)) || !(Number(snapshot.diaVencimento) >= 1 && Number(snapshot.diaVencimento) <= 31) || (snapshot.periodicidade !== 'MENSAL' && !(Number(snapshot.mesReferencia) >= 1 && Number(snapshot.mesReferencia) <= 12)) || !['MANTER', 'ANTECIPAR', 'POSTERGAR'].includes(snapshot.ajusteDiaUtil)) return { ok: false, message: 'Frequência ou vencimento inválido.' };
+          o.agendaVersoes = [...(o.agendaVersoes || []), { aPartirDe: ciclo, janela: patch.janelaTrabalho || null, regra: snapshot, alteradaEm: new Date().toISOString() }];
+          o.sobrescritaLocal = true;
+          const previstas = mockCriarObrigacao(o.companyId, o.empresa, { ...o, _inicioCiclo: ciclo }).ocorrencias;
+          const mapa = new Map(previstas.map(p => [p.cicloChave, p]));
+          for (const futura of o.ocorrencias) {
+            const chave = cicloRecorrente(futura, o);
+            const prevista = mapa.get(chave) || mockCriarObrigacao(o.companyId, o.empresa, { ...o, _inicioCiclo: chave }).ocorrencias.find(p => p.cicloChave === chave); mapa.delete(chave);
+            if (chave < ciclo || futura.status === 'CONCLUIDA' || futura.canceladaEm || futura.janelaPersonalizada) continue;
+            if (prevista) Object.assign(futura, prevista, { ocorrenciaId: futura.ocorrenciaId, foraDaRecorrencia: false });
+            else futura.foraDaRecorrencia = true;
+          }
+          o.ocorrencias.push(...mapa.values());
+          return { ok: true, ocorrencia: { ...oc } };
+        }
+        if (oc.status === "CONCLUIDA") return { ok: false, error: "ocorrencia_concluida", message: "Reabra a ocorrência antes de editar seu período." };
+        if (patch.dataVencimento !== undefined) return { ok: false, error: "vencimento_nao_editavel", message: "Editar o período não altera o vencimento." };
+        const datas = [patch.dataInicio, patch.dataFim];
+        const validas = datas.every((v) => {
+          const d = new Date(`${v}T00:00:00.000Z`);
+          return /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) && !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+        });
+        if (!validas || patch.dataFim < patch.dataInicio) return { ok: false, error: "periodo_invalido", message: "Informe início e fim válidos, nesta ordem." };
+        if (o.tipo === "TAREFA" && o.ocorrencias.some((outra) => outra.ocorrenciaId !== ocorrenciaId && outra.dataVencimento === patch.dataFim)) return { ok: false, status: 409, error: "prazo_em_uso", message: "Já existe outro ciclo desta tarefa com esse prazo. Escolha uma data diferente." };
+        oc.dataInicio = patch.dataInicio;
+        oc.dataFim = patch.dataFim;
+        oc.janelaPersonalizada = true;
+        if (o.tipo === "TAREFA") oc.dataVencimento = patch.dataFim;
+        if (o.periodicidade === "AVULSA") { o.dataInicio = oc.dataInicio; o.dataFim = oc.dataFim; o.dataVencimento = oc.dataVencimento; }
+        return { ok: true, ocorrencia: { ...oc } };
+      }
+      return { ok: false, error: "nao_encontrada" };
+    },
     async reabrirOcorrencia(ocorrenciaId) {
       await delay(60);
       for (const o of mockObrigacoes) {
         const oc = o.ocorrencias.find((x) => x.ocorrenciaId === ocorrenciaId);
-        if (!oc) continue;
+        if (!oc || oc.canceladaEm || oc.foraDaRecorrencia) continue;
         oc.status = "PENDENTE";
         oc.concluidaEm = null;
         oc.fonteConclusao = null;
@@ -7198,8 +7410,8 @@ export function createMockApi() {
         return { ok: true, nome: regra.nome, desvinculadas: ligadas.length, removidas: 0 };
       }
       for (const o of ligadas) {
-        const idx = mockObrigacoes.indexOf(o);
-        if (idx >= 0) mockObrigacoes.splice(idx, 1);
+        o.regraId = null; o.sobrescritaLocal = true; o.encerradaAPartirDe = "0000-01";
+        for (const oc of o.ocorrencias) if (oc.status !== "CONCLUIDA") oc.canceladaEm = new Date().toISOString();
       }
       return { ok: true, nome: regra.nome, desvinculadas: 0, removidas: ligadas.length };
     },
@@ -7407,7 +7619,7 @@ export function createMockApi() {
       const id = String(companyId);
       return {
         ok: true,
-        contatos: (mockContatosWhatsapp[id] || []).map((c) => ({ ...c })),
+        contatos: (mockContatosWhatsapp[id] || []).map((c) => ({ ...c, permissoesAssistente: Array.isArray(c.permissoesAssistente) ? [...c.permissoesAssistente] : [] })),
         canalPadraoEnvio: mockCanalPadraoEnvio[id] || "EMAIL",
       };
     },
@@ -7417,6 +7629,9 @@ export function createMockApi() {
     async salvarContatoWhatsapp(companyId, input) {
       await delay(80);
       const id = String(companyId);
+      const lista = mockContatosWhatsapp[id] || [];
+      const telefoneVeio = input?.telefone !== undefined;
+      const emailVeio = input?.email !== undefined;
       // ⚠ ESPELHO de `salvarContato` (api): UM DOS DOIS CANAIS BASTA desde 05/09/2026. O mock exigia
       // telefone e, com ele, o destinatário só de e-mail — o caso mais comum da carteira — era
       // INALCANÇÁVEL offline. Mock que esconde ramo é defeito conhecido desta casa.
@@ -7439,10 +7654,6 @@ export function createMockApi() {
         const err = new Error("E-mail inválido. Confira o endereço.");
         err.status = 400; err.code = "EMAIL_INVALIDO"; throw err;
       }
-      if (!e164 && !email) {
-        const err = new Error("Informe ao menos um canal: e-mail, telefone, ou os dois.");
-        err.status = 400; err.code = "SEM_CANAL"; throw err;
-      }
       if (!String(input?.nome || "").trim()) {
         const err = new Error("Informe o nome de quem recebe as mensagens.");
         err.status = 400; err.code = "NOME_OBRIGATORIO"; throw err;
@@ -7452,20 +7663,28 @@ export function createMockApi() {
         err.status = 400; err.code = "USUARIO_SEM_VINCULO"; throw err;
       }
       const agora = new Date().toISOString();
-      const lista = mockContatosWhatsapp[id] || [];
       // ⚠ Sem telefone não há chave de upsert (é a mesma regra do servidor): destinatário só de
       // e-mail é sempre CRIADO, e editar o dele exige o `id`.
       const existente = lista.find((c) => (input?.id ? c.id === input.id : (e164 && c.telefoneE164 === e164)));
+      const telefoneFinal = telefoneVeio ? e164 : existente?.telefoneE164;
+      const emailFinal = emailVeio ? email : existente?.email;
+      if (!telefoneFinal && !emailFinal) {
+        const err = new Error("Informe ao menos um canal: e-mail, telefone, ou os dois.");
+        err.status = 400; err.code = "SEM_CANAL"; throw err;
+      }
       const dados = {
         nome: String(input.nome).trim(),
-        papel: String(input.papel || "").trim() || null,
-        telefoneE164: e164,
-        email,
-        ativo: input?.ativo === undefined ? true : Boolean(input.ativo),
+        ...(input?.papel !== undefined ? { papel: String(input.papel || "").trim() || null } : {}),
+        ...(telefoneVeio ? { telefoneE164: e164 } : {}),
+        ...(emailVeio ? { email } : {}),
+        ...(input?.ativo !== undefined ? { ativo: Boolean(input.ativo) } : (!existente ? { ativo: true } : {})),
         ...(input?.optIn === true
           ? { optInEm: agora, optInOrigem: String(input.optInOrigem || "").trim() || "nao_informado" }
           : input?.optIn === false ? { optInEm: null, optInOrigem: null } : {}),
         ...(input?.userId === null ? { userId: null } : input?.userId ? { userId: String(input.userId) } : {}),
+        ...(Array.isArray(input?.permissoesAssistente)
+          ? { permissoesAssistente: [...new Set(input.permissoesAssistente.map((v) => String(v || "").toUpperCase()))] }
+          : {}),
         updatedAt: agora,
       };
       let contato;
@@ -7476,6 +7695,25 @@ export function createMockApi() {
         contato = { id: `mock-ctt-${Date.now()}`, portalClientId: id, waId: null, optInEm: null, optInOrigem: null, userId: null, createdAt: agora, ...dados };
         mockContatosWhatsapp[id] = [...lista, contato];
       }
+      return { ok: true, contato: { ...contato } };
+    },
+    async salvarPermissoesAssistenteWhatsapp(companyId, contatoId, permissoesAssistente) {
+      await delay(60);
+      const id = String(companyId);
+      const contato = (mockContatosWhatsapp[id] || []).find((c) => c.id === String(contatoId));
+      if (!contato) {
+        const err = new Error("Contato não encontrado nesta empresa.");
+        err.status = 404; err.code = "CONTATO_NAO_ENCONTRADO"; throw err;
+      }
+      const conhecidas = new Set(["GUIAS", "NOTAS_DANFSE", "DOCUMENTOS_EMPRESA", "SITUACAO_FISCAL", "RECALCULO_GUIA", "EMISSAO_NFSE", "CANCELAMENTO_NFSE"]);
+      if (!Array.isArray(permissoesAssistente) || permissoesAssistente.some((v) => !conhecidas.has(String(v || "").trim().toUpperCase()))) {
+        const err = new Error("Função do assistente inválida.");
+        err.status = 400; err.code = "PERMISSOES_ASSISTENTE_INVALIDAS"; throw err;
+      }
+      contato.permissoesAssistente = [...new Set(permissoesAssistente.map((v) => String(v).trim().toUpperCase()))];
+      if (contato.permissoesAssistente.includes("RECALCULO_GUIA") && !contato.permissoesAssistente.includes("GUIAS")) contato.permissoesAssistente.push("GUIAS");
+      if (contato.permissoesAssistente.includes("CANCELAMENTO_NFSE") && !contato.permissoesAssistente.includes("NOTAS_DANFSE")) contato.permissoesAssistente.push("NOTAS_DANFSE");
+      contato.updatedAt = new Date().toISOString();
       return { ok: true, contato: { ...contato } };
     },
     async removerContatoWhatsapp(companyId, contatoId) {
@@ -7497,20 +7735,44 @@ export function createMockApi() {
     // ── AS CONVERSAS DE WHATSAPP (F5) — o MESMO contrato de `realApi` ─────────────────────────
     // ⚠ TRÊS fios, os três ramos: vinculado COM a IA (pendência aberta, janela aberta), vinculado
     // ASSUMIDO (janela EXPIRADA — responder é recusado ANTES de digitar), e NÃO vinculado (a fila).
+    async preverCorrecaoValorGuia() {
+      throw new Error("A conferência do PDF original para correção de valor exige o servidor real. Nenhum valor foi alterado.");
+    },
+    async corrigirValorGuia() {
+      throw new Error("A correção do valor não é simulada no ambiente de demonstração.");
+    },
+    async listarArquivosWhatsappNaoVinculados() { return { arquivos: [], temMais: false }; },
+    async vincularArquivoWhatsapp() { throw new Error("Vincular um arquivo recebido exige o serviço real de WhatsApp."); },
+    async listarArquivosWhatsapp(_companyId) {
+      await delay(80);
+      // Nenhum recebimento real é inferido no demo; os componentes têm fixtures próprias de OFX/PDF.
+      return { arquivos: [], proximoCursor: null };
+    },
+    async getConteudoArquivoWhatsapp() {
+      const e = new Error("Arquivo não encontrado no ambiente de demonstração."); e.status = 404; throw e;
+    },
+    async marcarArquivoWhatsappImportado() {
+      const e = new Error("Arquivo não encontrado no ambiente de demonstração."); e.status = 404; throw e;
+    },
     async getResumoWhatsapp() {
       await delay(100);
       if ((typeof localStorage !== "undefined" && localStorage.getItem("mock:whatsapp:falhaResumo") === "1") || (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mockWhatsappResumo") === "falha")) {
         throw new Error("Não foi possível ler o resumo do WhatsApp.");
       }
-      const itens = mockConversasWhatsapp.map((c) => resumoMockDaConversa(c));
+      const todos = mockConversasWhatsapp.map((c) => resumoMockDaConversa(c));
+      const itens = todos.filter(c => !c.excluidaEm && !c.legadoNaoVerificado);
+      const historico = todos.filter(c => !c.excluidaEm && c.legadoNaoVerificado);
+      const lixeira = todos.filter(c => c.excluidaEm);
       return { ok: true, resumo: {
         conversas: itens.length,
         naoVinculadas: itens.filter((c) => !c.portalClientId).length,
         conversasNaoLidas: itens.filter((c) => c.naoLidas > 0).length,
         mensagensNaoLidas: itens.reduce((s, c) => s + c.naoLidas, 0),
+        historicoConversas: historico.length, historicoConversasNaoLidas: historico.filter(c => c.naoLidas > 0).length, historicoMensagensNaoLidas: historico.reduce((s,c) => s+c.naoLidas,0),
+        lixeiraConversas: lixeira.length, lixeiraConversasNaoLidas: lixeira.filter(c => c.naoLidas > 0).length, lixeiraMensagensNaoLidas: lixeira.reduce((s,c) => s+c.naoLidas,0),
       } };
     },
-    async listarConversasWhatsapp(filtro = "todas", { empresa = null } = {}) {
+    async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = 50 } = {}) {
       await delay(120);
       // ⚠ `empresa` + `nao-vinculadas` e contradicao (aquele filtro E, por definicao, o sem
       // empresa): o servidor recusa NOMEADO, e o mock recusa igual — mock permissivo esconde ramo.
@@ -7518,21 +7780,24 @@ export function createMockApi() {
         const e = new Error("A fila de não vinculadas é, por definição, sem empresa — não dá para filtrá-la por empresa.");
         e.status = 400; e.code = "filtro_incompativel"; throw e;
       }
-      const todas = mockConversasWhatsapp.map((c) => resumoMockDaConversa(c));
+      const todas = mockConversasWhatsapp.map((c) => resumoMockDaConversa(c)).filter(c => filtro === "lixeira" ? Boolean(c.excluidaEm) : !c.excluidaEm && (filtro === "historico" ? c.legadoNaoVerificado : !c.legadoNaoVerificado));
       const doFiltro = filtro === "nao-vinculadas" ? todas.filter((c) => !c.portalClientId)
         : filtro === "atendidas-por-mim" ? todas.filter((c) => c.atendidaPor === "mock-user-1")
           : todas;
       // Com empresa escolhida a fila (sem empresa) nao entra: ela nao e daquela empresa.
       const lista = empresa ? doFiltro.filter((c) => c.portalClientId === String(empresa)) : doFiltro;
-      return { ok: true, filtro, empresa, conversas: lista, temMais: false, consumoIa: { desde: "2026-09-01T03:00:00.000Z", moeda: "USD", estimativa: true, escritorio: { centavos: 137, chamadas: 12, teto: 6000, restantes: 5863, fracao: 0.02, alerta: false, estourado: false }, empresa: null } };
+      const pagina = paginaWhatsappMock(lista.sort((a,b) => String(b.updatedAt).localeCompare(String(a.updatedAt)) || String(b.id).localeCompare(String(a.id))), cursor, limite);
+      return { ok: true, filtro, empresa, conversas: pagina.itens, temMais: pagina.temMais, proximoCursor: pagina.proximoCursor, consumoIa: { desde: "2026-09-01T03:00:00.000Z", moeda: "USD", estimativa: true, escritorio: { centavos: 137, chamadas: 12, teto: 6000, restantes: 5863, fracao: 0.02, alerta: false, estourado: false }, empresa: null } };
     },
-    async getMensagensWhatsapp(conversaId) {
+    async getMensagensWhatsapp(conversaId, { cursor = null, limite = 50, empresa = null } = {}) {
       await delay(100);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; e.code = "conversa_nao_encontrada"; throw e; }
+      if (empresa && c.portalClientId !== empresa) { const e = new Error("Empresa não encontrada."); e.status = 404; e.code = "empresa_nao_encontrada"; throw e; }
       c.lidaAteEm = new Date().toISOString();
       // ⚠ `temMidia` e o PONTEIRO, nunca uma URL — a da Meta expira e nao baixamos arquivo ainda.
-      return { ok: true, conversa: resumoMockDaConversa(c), temMais: false, mensagens: c.mensagens.map((m) => ({ ...m, temMidia: Boolean(m.midiaProvedorId) })) };
+      const pagina = paginaWhatsappMock([...c.mensagens].reverse(), cursor, limite);
+      return { ok: true, conversa: resumoMockDaConversa(c), temMais: pagina.temMais, proximoCursor: pagina.proximoCursor, mensagens: pagina.itens.reverse().map((m) => ({ ...m, statusEnvio: m.statusEnvio || (m.direcao === "out" && m.providerMessageId ? "enviado" : null), erroEnvio: m.erroEnvio || null, temMidia: Boolean(m.midiaProvedorId) })) };
     },
     // ⚠ O MESMO contrato do real, recusas incluídas — mock permissivo esconde ramo, e este projeto
     // já pagou por isso oito vezes. Fora da janela: 409 FORA_DA_JANELA. Fio sem empresa: 422.
@@ -7540,6 +7805,7 @@ export function createMockApi() {
       await delay(200);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      recusarChatExcluidoMock(c);
       if (!c.portalClientId) {
         const e = new Error("Este número ainda não está vinculado a uma empresa: não há documento dela para enviar. Vincule o fio primeiro.");
         e.status = 422; e.code = "FIO_SEM_EMPRESA"; e.payload = { error: "FIO_SEM_EMPRESA", message: e.message };
@@ -7563,13 +7829,47 @@ export function createMockApi() {
       await delay(80);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      recusarChatExcluidoMock(c);
       c.atendidaPor = "mock-user-1"; c.atendente = { id: "mock-user-1", nome: "Usuario Mock", email: null }; c.atendidaDesde = new Date().toISOString();
+      return { ok: true, conversa: resumoMockDaConversa(c) };
+    },
+    async selecionarEmpresaConversaWhatsapp(conversaId, portalClientId) {
+      await delay(80);
+      const c = mockConversasWhatsapp.find(x => x.id === String(conversaId));
+      if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      recusarChatExcluidoMock(c);
+      // O conjunto demonstrativo atual tem uma empresa por contato; não inventar vínculos.
+      if (c.portalClientId !== portalClientId) { const e = new Error("Empresa não autorizada para este contato."); e.status = 409; e.code = "EMPRESA_NAO_AUTORIZADA"; throw e; }
+      return { ok: true, conversa: resumoMockDaConversa(c) };
+    },
+    async salvarApelidosWhatsapp(portalClientId, apelidos) {
+      await delay(80);
+      const fios = mockConversasWhatsapp.filter(c => c.portalClientId === portalClientId);
+      if (!fios.length) { const e = new Error("Empresa não encontrada."); e.status = 404; throw e; }
+      if (!Array.isArray(apelidos) || apelidos.length > 5 || apelidos.some(v => typeof v !== "string" || v.trim().length < 2 || v.trim().length > 60 || /[\r\n\x00-\x1f]/.test(v))) { const e = new Error("Informe até cinco nomes curtos, cada um com 2 a 60 caracteres."); e.status = 400; throw e; }
+      const nomes = [...new Map(apelidos.map(v => [v.trim().toLocaleLowerCase("pt-BR"), v.trim()])).values()];
+      for (const c of fios) c.empresa = { ...c.empresa, apelidosWhatsapp: nomes };
+      return { ok: true, empresa: { id: portalClientId, apelidosWhatsapp: nomes } };
+    },
+    async excluirConversaWhatsapp(conversaId) {
+      await delay(80);
+      const c = mockConversasWhatsapp.find(x => x.id === String(conversaId));
+      if (!c) throw Object.assign(new Error("Conversa não encontrada."), { status: 404 });
+      c.excluidaEm = c.excluidaEm || new Date().toISOString();
+      return { ok: true, conversa: resumoMockDaConversa(c) };
+    },
+    async restaurarConversaWhatsapp(conversaId) {
+      await delay(80);
+      const c = mockConversasWhatsapp.find(x => x.id === String(conversaId));
+      if (!c) throw Object.assign(new Error("Conversa não encontrada."), { status: 404 });
+      c.excluidaEm = null;
       return { ok: true, conversa: resumoMockDaConversa(c) };
     },
     async devolverConversaWhatsapp(conversaId) {
       await delay(80);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      recusarChatExcluidoMock(c);
       c.atendidaPor = null; c.atendente = null; c.atendidaDesde = null;
       return { ok: true, conversa: resumoMockDaConversa(c) };
     },
@@ -7577,6 +7877,7 @@ export function createMockApi() {
       await delay(200);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      recusarChatExcluidoMock(c);
       if (!String(texto || "").trim()) { const e = new Error("Escreva a mensagem."); e.status = 400; e.code = "texto_obrigatorio"; throw e; }
       if (c.janela.situacao !== "ABERTA") {
         const e = new Error(c.janela.situacao === "NUNCA_ABERTA"
@@ -7594,6 +7895,7 @@ export function createMockApi() {
       await delay(150);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      recusarChatExcluidoMock(c);
       const empresa = mockCompanies.find((x) => x.companyId === String(body?.portalClientId || ""));
       if (!empresa) { const e = new Error("Escolha a empresa."); e.status = 404; e.code = "empresa_nao_encontrada"; throw e; }
       if (!String(body?.contato?.nome || "").trim()) { const e = new Error("Informe o nome de quem recebe as mensagens."); e.status = 400; e.code = "NOME_OBRIGATORIO"; throw e; }
@@ -9074,9 +9376,9 @@ export function createMockApi() {
       const { CAMPOS_PERFIL_EMISSAO } = await import("../../lib/nfse/perfilEmissao.js");
       const campos = {};
       for (const def of CAMPOS_PERFIL_EMISSAO) {
-        const base = doCadastro[def.id];
+        const base = doCadastro[def.id] || { valor: null, valorHoje: null, fonte: "INDEFINIDO", mudariaComPerfil: false };
         const doPerfil = escolhido ? escolhido[def.id] : null;
-        campos[def.id] = doPerfil
+        campos[def.id] = doPerfil != null
           ? { ...base, valor: doPerfil, fonte: "PERFIL", mudariaComPerfil: doPerfil !== base.valorHoje }
           : { ...base };
         campos[def.id].rotulo = def.rotulo;
@@ -9087,6 +9389,7 @@ export function createMockApi() {
       return {
         ok: true,
         integracaoLigada: false,
+        sugestoes: { fonte: "Modo de demonstração — consulte o catálogo no ambiente real", url: "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica", porServico: [{ codigo: "171901", descricao: "Contabilidade", nbs: [], combinacoes: [] }] },
         perfis,
         derivadoDoCadastro: {
           origem: "DERIVADO_DO_CADASTRO",
@@ -10316,6 +10619,27 @@ export function createMockApi() {
     async vincularEntryParcelamento() { await delay(40); return { ok: true }; },
 
     // ── Onboarding (funil pré-cadastro) ─────────────────────────────────
+    async getOnboardingComercial(id) {
+      const o = mockOnboardings.get(id); if (!o) throw new Error("Ficha não encontrada.");
+      return { ok: true, faseComercial: o.faseComercial || "LEAD", proposta: o.proposta || null, analises: o.analises || [], eventos: o.eventos || [], links: [...mockLinksComerciais.values()].filter(l=>l.onboardingId===id).map(({token,...l})=>l) };
+    },
+    async salvarOnboardingComercial(id, patch) {
+      const o=mockOnboardings.get(id);if(!o||o.status==="CONVERTIDO")throw new Error("Ficha indisponível para edição.");
+      Object.assign(o,patch);o.eventos=[...(o.eventos||[]),{id:crypto.randomUUID(),tipo:"ATENDIMENTO_ATUALIZADO",createdAt:new Date().toISOString()}];persistirOnboardingsMock();return {ok:true};
+    },
+    async criarAnaliseOnboarding(id,{tipo}) {
+      const o=mockOnboardings.get(id);if(!o)throw new Error("Ficha não encontrada.");
+      const analise={id:crypto.randomUUID(),tipo,status:tipo==="SITFIS"?"BLOQUEADA":"CONCLUIDA",cnpj:o.cnpj,createdAt:new Date().toISOString(),resultado:{fonte:"Demonstração",mensagem:tipo==="SITFIS"?"Demonstração: configure procuração no serviço real. Nenhuma consulta fiscal foi executada.":"Dados simulados; nenhuma consulta externa foi executada."}};
+      o.analises=[analise,...(o.analises||[])];persistirOnboardingsMock();return {ok:true,analise};
+    },
+    async criarLinkOnboarding(id,{diasValidade=7}={}) {
+      if(!mockOnboardings.has(id))throw new Error("Ficha não encontrada.");
+      const token=crypto.randomUUID()+crypto.randomUUID(),link={id:crypto.randomUUID(),onboardingId:id,expiresAt:new Date(Date.now()+diasValidade*86400000).toISOString(),revokedAt:null,submittedAt:null,versao:0};
+      mockLinksComerciais.set(token,{...link,token});return {ok:true,link,token};
+    },
+    async revogarLinkOnboarding(id,linkId){const l=[...mockLinksComerciais.values()].find(l=>l.id===linkId&&l.onboardingId===id);if(!l)throw new Error("Link não encontrado.");l.revokedAt=new Date().toISOString();return {ok:true};},
+    async consultarFormularioOnboarding(token){const l=mockLinksComerciais.get(token);if(!l||l.revokedAt||l.submittedAt||new Date(l.expiresAt)<new Date())throw new Error("Link expirado, revogado ou já utilizado.");const o=mockOnboardings.get(l.onboardingId);return {ok:true,onboarding:{origem:o.origem,dados:o.dados,ultimoPasso:o.ultimoPasso,status:o.status,versao:l.versao}};},
+    async salvarFormularioOnboarding(token,patch){const l=mockLinksComerciais.get(token);if(!l||l.revokedAt||l.submittedAt||new Date(l.expiresAt)<new Date())throw new Error("Link expirado, revogado ou já utilizado.");if(patch.versao!==l.versao)throw new Error("O formulário foi alterado em outra janela. Reabra o link antes de salvar.");const o=mockOnboardings.get(l.onboardingId);o.dados=patch.dados;o.ultimoPasso=patch.ultimoPasso;o.origemPreenchimento="CLIENTE";l.versao++;if(patch.finalizar){l.submittedAt=new Date().toISOString();o.status="RECEBIDO";}persistirOnboardingsMock();return {ok:true,onboarding:{origem:o.origem,dados:o.dados,ultimoPasso:o.ultimoPasso,status:o.status,versao:l.versao}};},
     async criarOnboarding(origem) {
       await delay(180);
       const registro = {
@@ -10562,5 +10886,6 @@ export function createMockApi() {
     async suspendCompany() { await delay(80); return { ok: true }; },
     async resumeCompany() { await delay(80); return { ok: true }; },
     async deleteCompany() { await delay(80); return { ok: true }; },
+    ...mockRelatorios,
   };
 }

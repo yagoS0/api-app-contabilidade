@@ -130,6 +130,8 @@ export async function listGuidesByCompany({
   portalClientId,
   competencia,
   status,
+  paymentStatus,
+  vencimento,
   page = 1,
   limit = 25,
   // Portal Cliente (#3.1): quando true, retorna SÓ guias liberadas ao cliente (usado pelo /client).
@@ -150,6 +152,9 @@ export async function listGuidesByCompany({
     portalClientId: String(portalClientId),
     ...(competencia ? { competencia: normalizeCompetencia(competencia) } : {}),
     ...(status ? { status: String(status).toUpperCase() } : {}),
+    // Processamento e pagamento são estados distintos; o WhatsApp consulta o segundo.
+    ...(paymentStatus ? { paymentStatus: String(paymentStatus).toUpperCase() } : {}),
+    ...(vencimento ? { vencimento } : {}),
     ...(apenasLiberadas ? { liberadaCliente: true } : {}),
   };
   const [rawItems, total] = await prisma.$transaction([
@@ -453,6 +458,7 @@ function envioDaGuia(item) {
   const canais = envios.map((e) => ({
     canal: e.canal,
     status: e.status,
+    tentativaId: e.tentativaAtualId || null,
     destino: e.destino || null,
     em: e.enviadoEm?.toISOString?.() || null,
     entregueEm: e.entregueEm?.toISOString?.() || null,
@@ -460,7 +466,7 @@ function envioDaGuia(item) {
     erroCodigo: e.erroCodigo || null,
     erroMensagem: e.erroMensagemUsuario || null,
     // ⚠ `null` é a TERCEIRA resposta ("a Meta não diz se reenviar resolve"), e não `false`.
-    podeTentarDeNovo: e.erroCodigo ? podeTentarDeNovoPeloCodigo(e.erroCodigo) : null,
+    podeTentarDeNovo: ["indeterminado", "enviando"].includes(e.status) ? false : e.erroCodigo ? podeTentarDeNovoPeloCodigo(e.erroCodigo) : null,
     tentativas: Number(e.tentativas || 0),
   }));
   const chegou = envios.some(

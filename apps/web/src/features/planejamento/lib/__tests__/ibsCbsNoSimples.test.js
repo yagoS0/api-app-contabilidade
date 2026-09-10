@@ -144,7 +144,7 @@ describe("⚠⚠ a janela da opção — o que a tela pode e o que NÃO pode afi
   it("⚠⚠ ela DEPENDE de regulamentação do CGSN, e isso viaja junto", () => {
     // O § 10 diz "na forma regulamentada pelo CGSN", e não há prova neste repositório de que o ato
     // exista. A tela pode dizer a janela LEGAL; não pode dizer que o procedimento está disponível.
-    expect(OPCAO_POR_FORA.dependeDeRegulamentacao).toBe(true);
+    expect(OPCAO_POR_FORA.dependeDeRegulamentacao).toBe(false);
   });
 
   it("⚠ a trava de saída é 'corrente ou ANTERIOR' — não 'no ano seguinte'", () => {

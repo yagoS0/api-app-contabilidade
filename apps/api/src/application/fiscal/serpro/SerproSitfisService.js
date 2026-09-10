@@ -411,7 +411,9 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
   let lastData = null;
   let logged = false;
   let resolicitou = 0;
-  while (Date.now() < deadline) {
+  let consultas = 0;
+  while (Date.now() < deadline && consultas < 3) {
+    consultas += 1;
     const emitirDados = JSON.stringify({ protocoloRelatorio: protocolo });
     // eslint-disable-next-line no-await-in-loop
     const relResp = await client.post("/Emitir", {

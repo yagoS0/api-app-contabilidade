@@ -53,7 +53,11 @@ export function useContatosWhatsapp({ api, companyId, feedback }) {
     try {
       await api.salvarContatoWhatsapp(companyId, payload);
       feedbackRef.current?.notifySuccess?.(
-        payload?.optIn ? "Contato salvo, com opt-in registrado." : "Contato salvo — sem opt-in, ele ainda não recebe guias.",
+        payload?.optIn === true
+          ? "Contato salvo, com opt-in registrado."
+          : payload?.optIn === false
+            ? "Contato salvo — sem opt-in, ele ainda não recebe guias."
+            : "Contato atualizado.",
       );
       await carregar();
       return true;
@@ -77,6 +81,22 @@ export function useContatosWhatsapp({ api, companyId, feedback }) {
     }
   }, [api, companyId, carregar]);
 
+  const salvarPermissoes = useCallback(async (contatoId, permissoesAssistente) => {
+    if (!api || !companyId) return false;
+    setSalvando(true);
+    try {
+      await api.salvarPermissoesAssistenteWhatsapp(companyId, contatoId, permissoesAssistente);
+      feedbackRef.current?.notifySuccess?.("Acessos deste número atualizados.");
+      await carregar();
+      return true;
+    } catch (err) {
+      feedbackRef.current?.notifyError?.(err?.message || "Falha ao salvar os acessos deste número.");
+      return false;
+    } finally {
+      setSalvando(false);
+    }
+  }, [api, companyId, carregar]);
+
   const definirCanal = useCallback(async (canal) => {
     if (!api || !companyId) return false;
     const anterior = canalPadraoEnvio;
@@ -94,5 +114,5 @@ export function useContatosWhatsapp({ api, companyId, feedback }) {
     }
   }, [api, companyId, canalPadraoEnvio]);
 
-  return { contatos, canalPadraoEnvio, carregando, salvando, erro, salvar, remover, definirCanal, recarregar: carregar };
+  return { contatos, canalPadraoEnvio, carregando, salvando, erro, salvar, salvarPermissoes, remover, definirCanal, recarregar: carregar };
 }

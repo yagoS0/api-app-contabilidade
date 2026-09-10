@@ -1,6 +1,50 @@
 # CLAUDE.md — Web (apps/web)
 
-Frontend React 19 + Vite + TailwindCSS.
+## Alinhamento das empresas e remoção da faixa da carteira — 10/09/2026
+
+A faixa “Carteira inteira” e seu estado de filtro foram removidos a pedido do usuário. Busca, filtros existentes e abas de regime continuam. Fechamento em lote exige seleção explícita e considera somente as empresas selecionadas ainda visíveis e aptas pelo servidor; confirmação e revalidação permanecem.
+
+Nas rotas internas da empresa, a logo é renderizada por CompanySectionHeader junto do retorno e nome/CNPJ. O provider não cria outra faixa. Grupos e subabas alinham à esquerda; preservam href, Ctrl/clique, competência e histórico de retorno.
+
+company-workspace.css limita grades/controles à largura disponível. O CSS do menu de configurações atua apenas no aside: não aplicar .config-columns nav/input indiscriminadamente a formulários embutidos. O próprio EditorPerfilEmissao carrega o escopo nfse-settings em todos os usos. Auditoria quebra chaves longas e remove o mínimo global da tabela de pendências. Formulários não alteram contratos fiscais para resolver layout.
+
+
+## Ajuste de UI/UX da carteira — 09/09/2026
+
+A home integra `WorkspaceHomeLink` ao cabeçalho (logo, título/competência e conta); o provider não cria uma segunda faixa em `/` ou `/companies`. O retorno das demais páginas continua preservando a visão da carteira.
+
+`carteira.css` compacta ações/filtros e reorganiza as MESMAS linhas da tabela em telas até 760 px, mantendo seleção, ordenação, chips e acesso. As regras móveis são limitadas a `screen`: a impressão continua usando a tabela completa. “Entrada de clientes” substitui “Onboardings”; “Sem envios pendentes” substitui a conclusão genérica das guias, sem alterar a regra fiscal ou os estados recebidos. Os contadores são identificados como carteira inteira, pois o regime selecionado recorta só a tabela.
+
+O calendário recolhe filtros/legenda e inicia sem concluídas, respeitando uma escolha explícita restaurada pelo contexto. Quando exibidas, concluídas usam marca de confirmação e aparência discreta. “Vencimentos e tarefas” distingue o período do calendário da “Competência” da tabela.
+
+## Ajustes aprovados e implementados — 08/09/2026
+
+Esta decisão substitui orientações anteriores incompatíveis sobre calendário, retorno e Relatórios.
+- Calendário concentra tarefas/obrigações em modal; /obrigacoes antigo redireciona para o calendário. A seção da empresa chama Calendário. Janela mensal fixa 10–15 é inclusiva e independente do vencimento/competência. Exclusão por ocorrência ou seguintes mantém histórico e cancelamentos persistentes. Edição desta e seguintes versiona janela, frequência, vencimento, ajuste de dia útil e competência; meses fora da nova frequência conservam IDs e cancelamentos, sem apagar concluídas. Migration adicional 20260908210000_calendar_frequency_versions. Ver features/calendario/CLAUDE.md no web.
+- WorkspaceNavigationProvider mantém histórico interno e Tabela/Calendário durante a sessão. Novo login reseta para Calendário; voltar/logo preservam escolha; impressão não a altera. Marca à esquerda leva à carteira. Configurações navegam sem recarregar o aplicativo.
+- Relatórios do escritório voltaram a mostrar o fluxo diário do cliente, com dois meses e somente leitura. A rota GET usa responderFluxoDeCaixa. Não reintroduzir botões de lançamento/edição nas células.
+- Exportação em lote é de LANÇAMENTOS para ERP: ZIP, CSV por empresa, cinco colunas sem cabeçalho e manifesto parcial. Mesmo preflight e autorização individuais; hash da prévia invalida alertas que mudaram. Download não confirma importação no ERP.
+- WhatsApp envia PDF determinístico da tabela SITFIS salva, sem chamada paga: inclui colunas, anotações, avisos e texto não interpretado; permissão fiscal e janela são rechecadas antes do transporte. Reservas/erros de envio não podem virar entrega confirmada.
+- CertResolver exige A1 próprio para NFSE/ADN/DFE, sem priorizar procurador nessas operações. Integra/serviços delegáveis mantêm procuração autorizada.
+- SERPRO reserva tentativa em transação antes do envio; falha de medição bloqueia visivelmente. Reservas sem desfecho e incertas não expiram automaticamente. Autenticação abortada não é operação enviada. Ledger não é fatura. As 2.555 chamadas informadas não foram reconciliadas.
+- Planejamento salva e retoma cenários sem depender do PDF, separando premissas do cadastro da empresa. Emissor bloqueia fechamento durante envio; notas abrem a partir da auditoria preservando contexto; Apuração mostra carga calculada distinta de pagamento.
+- Documentos distinguem falha de ausência, preservam upload falho e resultado parcial; onboarding aguarda salvar antes de voltar/trocar etapa.
+
+Implantação: aplicar migration aditiva 20260908190000_calendar_series_exceptions e gerar Prisma antes da nova API. Schema, geração isolada e auditoria de migrations validados localmente; PostgreSQL real da etapa 1 aprovado no CI 34248812325; Railway reportou sucesso para a integração 9ab263de. Alterações da etapa 2 exigem novo CI; integrações fiscais reais não foram exercitadas. Não tratar testes com mocks como homologação de banco/serviços externos.
+
+
+## Calendário, tarefas e obrigações — 07/09/2026
+
+- A central e a criação ficam visíveis junto ao calendário da carteira e da empresa. `ModalObrigacao` usa o `Modal` compartilhado; preservar tokens existentes e não criar CSS por componente.
+- `app/hooks/useCalendarioNavigation.js` mantém o contexto da ida e volta: empresa, referência, visão, categorias e painéis. O retorno usa a origem da navegação; acesso direto à central tem fallback para `/companies`. A intenção de criação é consumida após salvar, evitando reabrir o formulário ao voltar.
+- Intervalos são inclusivos e usam datas civis. `data` continua representando vencimento; `dataInicio` e `dataFim` representam a janela. Eventos legados sem janela continuam no vencimento. O mesmo ID pode aparecer em vários dias: agenda, contadores e ações devem deduplicar por ocorrência.
+- A grade mostra faixas contínuas quebradas por semana e abre excedentes em modal. Painel lateral começa recolhido; telas estreitas começam em Agenda e a grade tem rolagem horizontal local. Não comprimir sete colunas para caber a qualquer custo.
+- TAREFA e AVULSA têm conclusão manual. Obrigações fiscais mantêm vencimento separado do trabalho; tarefa usa o fim como prazo. Editar uma avulsa preserva ID e histórico. Converter avulsa em recorrente exige outro cadastro.
+- `realApi.updateOcorrencia` e o mock mantêm o mesmo contrato de atualização de janela. Concluída exige reabertura; colisão de prazo com outro ciclo de tarefa recebe 409. O worker deve preservar janelas personalizadas.
+- Testes de comportamento: `calendarioIntervalos.test.js`, `calendarioNavigation.test.jsx`, `tarefasPorPeriodo.test.jsx` e suítes de calendário/obrigações. A nova API depende da migration documentada em `apps/api/CLAUDE.md`.
+
+
+Frontend React 19 + Vite, tokens CSS e estilos inline. Sem Tailwind.
 
 ## Estrutura
 
@@ -643,3 +687,7 @@ Resolvido na raiz: `babel.config.js` reescreve `import.meta.env` → `process.en
 - Manter `CompanyDetailPage` como página central de detalhes da empresa cliente
 - Não introduzir dependências novas sem necessidade clara
 - Testar o caminho feliz no browser antes de marcar como concluído
+
+## Atendimento comercial de leads — setembro/2026
+
+WhatsApp usa `AtendimentoComercial` e `OrientacoesRapidas`; o detalhe do onboarding usa `FluxoComercial` e a biblioteca versionada `RecursosComerciais`. `/proposta/publica` é renderizada antes da autenticação do escritório. Rede passa pela API; `mock/comercialMock.js` tem dados fictícios e recusa integrações externas. Links comerciais mock dependem da sessão em memória. Ver `docs/fluxo-comercial-leads.md`.

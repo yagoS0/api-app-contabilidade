@@ -78,6 +78,7 @@ async function recusarPorSemComposicao() {
   mockLancarBaixa.mockResolvedValueOnce({ ok: false, skipped: true, motivo: "sem_composicao" });
   await act(async () => { montar(); });
   await act(async () => { fireEvent.click(darBaixaDaFila()); });
+  await act(async () => { fireEvent.click(screen.getByRole("dialog").querySelector(".btn-primary")); });
 }
 
 async function abrirModal() {
@@ -115,6 +116,7 @@ describe("a recusa deixou de ser um beco", () => {
     mockLancarBaixa.mockResolvedValueOnce({ ok: false, skipped: true, motivo: "provisao_inexistente" });
     await act(async () => { montar(); });
     await act(async () => { fireEvent.click(darBaixaDaFila()); });
+  await act(async () => { fireEvent.click(screen.getByRole("dialog").querySelector(".btn-primary")); });
     expect(screen.queryByRole("button", { name: "Informar a composição" })).toBeNull();
   });
 });
@@ -198,6 +200,7 @@ describe("o que sobe na chamada", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Informar a composição e dar baixa/i }));
     });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirmar baixa declarada" })); });
 
     const [companyId, guideId, body] = mockLancarBaixa.mock.calls.at(-1);
     expect(companyId).toBe("c1");
@@ -216,6 +219,7 @@ describe("o que sobe na chamada", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Informar a composição e dar baixa/i }));
     });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirmar baixa declarada" })); });
     const body = mockLancarBaixa.mock.calls.at(-1)[2];
     expect(body.composicaoDeclarada.totalConferido).toBe(100);
   });
@@ -228,7 +232,7 @@ describe("o que sobe na chamada", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Informar a composição e dar baixa/i }));
     });
-    const texto = window.confirm.mock.calls.at(-1)[0];
+    const texto = screen.getByRole("dialog", { name: "Confirmar composição e baixa" }).textContent;
     expect(texto).toMatch(/Principal \(você informou\)/);
     expect(texto).toMatch(/composição declarada/);
     expect(texto).toMatch(/GRAVA lançamentos contábeis/);
@@ -237,11 +241,14 @@ describe("o que sobe na chamada", () => {
   it("cancelar a confirmação não chama o servidor", async () => {
     await abrirModal();
     preencher();
-    window.confirm.mockReturnValue(false);
+
     const antes = mockLancarBaixa.mock.calls.length;
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Informar a composição e dar baixa/i }));
     });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Confirmar composição e baixa" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Informar a composição da parcela" })).toBeTruthy();
     expect(mockLancarBaixa.mock.calls.length).toBe(antes);
   });
 
@@ -263,6 +270,7 @@ describe("a recusa do servidor fica no modal, com o motivo", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Informar a composição e dar baixa/i }));
     });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirmar baixa declarada" })); });
     expect(screen.getByText("Nada foi lançado")).toBeTruthy();
     expect(screen.getByText(/está FECHADA/i)).toBeTruthy();
   });
@@ -276,6 +284,7 @@ describe("a recusa do servidor fica no modal, com o motivo", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Informar a composição e dar baixa/i }));
     });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirmar baixa declarada" })); });
     expect(screen.getByText(/não deduz nenhum deles por subtração/i)).toBeTruthy();
     expect(screen.getByLabelText("Principal").value).toBe("300,15");
   });
@@ -289,6 +298,7 @@ describe("a recusa do servidor fica no modal, com o motivo", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Informar a composição e dar baixa/i }));
     });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirmar baixa declarada" })); });
     expect(screen.queryByRole("button", { name: "Informar a composição" })).toBeNull();
     expect(screen.getByText(/O documento vence a declaração|documento vence/i)).toBeTruthy();
   });
@@ -306,6 +316,7 @@ describe("o desfecho SOBREVIVE ao recarregamento — a linha sai da fila", () =>
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Informar a composição e dar baixa/i }));
     });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirmar baixa declarada" })); });
     expect(screen.getByText(/Parcela 2 baixada com a composição que você informou/i)).toBeTruthy();
     // E o modal fechou — a baixa saiu.
     expect(screen.queryByRole("dialog", { name: /Informar a composição da parcela/i })).toBeNull();

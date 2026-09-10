@@ -1,3 +1,4 @@
+import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 // DECLARAR A BAIXA DE UMA PRESTAÇÃO SEM GUIA (débito automático).
 //
 // ⚠ ESTA TELA NÃO É A OUTRA. A fila "Parcelas pagas aguardando lançamento" tem um botão só: o
@@ -40,6 +41,7 @@ const inputStyle = {
 const labelStyle = { display: "block", fontSize: "0.7rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 3 };
 
 export function BaixaManualParcelaModal({ linha, onConfirmar, onCorrigirValorContratado, onClose }) {
+  const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [textoPrincipal, setTextoPrincipal] = useState(() => principalInicial(linha?.valorPrevisto));
   const [textoJuros, setTextoJuros] = useState("");
   const [textoMulta, setTextoMulta] = useState("");
@@ -100,7 +102,7 @@ export function BaixaManualParcelaModal({ linha, onConfirmar, onCorrigirValorCon
     // total e a data, mais o aviso de que isto é declaração. Quando o valor CONTRATADO muda, a
     // confirmação diz também o que ele era e o que passa a ser (ver `textoDaConfirmacao`).
     // eslint-disable-next-line no-alert
-    if (!window.confirm(textoDaConfirmacao({ linha, decomposicao, dataPagamento, consequencia }))) return;
+    if (!await pedir({ titulo: "Confirmar declaração de pagamento", acao: "Confirmar pagamento declarado", texto: textoDaConfirmacao({ linha, decomposicao, dataPagamento, consequencia }) })) return;
     setRecusa(null);
     setEnviando(true);
 
@@ -438,6 +440,7 @@ export function BaixaManualParcelaModal({ linha, onConfirmar, onCorrigirValorCon
           </button>
         </div>
       </div>
+      {confirmacao}
     </div>
   );
 }

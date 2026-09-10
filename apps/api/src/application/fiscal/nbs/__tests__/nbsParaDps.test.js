@@ -156,7 +156,7 @@ describe("⚠⚠ o cruzamento com o ANEXO VIII — duas tabelas geradas em separ
 });
 
 describe("⚠⚠ a porta para o caminho de emissão É UMA SÓ", () => {
-  it("só `ibscbsDaDps.js` importa a NBS dentro de `application/nfse/`", () => {
+  it("somente gerador IBS/CBS e catálogo de configuração importam a NBS", () => {
     // ⚠⚠ ESTE CASO EXIGIA ZERO IMPORTADORES quando foi escrito (01/09/2026) — a tabela nascia
     // inerte por decisão do dono. Ele caiu no commit que ligou o `cNBS`, que é exatamente o que
     // uma guarda assim existe para fazer: pôr a decisão à vista em vez de deixá-la acontecer.
@@ -175,6 +175,7 @@ describe("⚠⚠ a porta para o caminho de emissão É UMA SÓ", () => {
       }
     };
     varrer(raiz);
-    expect(achados).toEqual(["ibscbsDaDps.js"]);
+    // O catálogo reutiliza nbsParaDps para sugestões e validação, sem uma segunda regra de conversão.
+    expect(achados).toEqual(["ibscbsDaDps.js", "catalogoPerfil.js"]);
   });
 });

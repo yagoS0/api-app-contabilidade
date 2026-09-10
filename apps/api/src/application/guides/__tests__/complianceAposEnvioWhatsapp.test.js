@@ -72,6 +72,19 @@ beforeEach(() => jest.clearAllMocks());
 // ── (1) e (2): as duas perguntas do dono, lado a lado, na MESMA carteira ────────────────────────
 
 describe("⚠ a carteira depois do primeiro envio por WhatsApp", () => {
+  it.each([
+    [[['EMAIL', 'enviado']], ['EMAIL']],
+    [[['WHATSAPP', 'enviado']], ['WHATSAPP']],
+    [[['WHATSAPP', 'entregue']], ['WHATSAPP']],
+    [[['WHATSAPP', 'lido'], ['EMAIL', 'enviado']], ['EMAIL', 'WHATSAPP']],
+    [[['EMAIL', 'enviado'], ['WHATSAPP', 'falhou']], ['EMAIL']],
+    [[['EMAIL', 'falhou'], ['WHATSAPP', 'enviado']], ['WHATSAPP']],
+    [[['EMAIL', 'pendente'], ['WHATSAPP', 'indeterminado']], []],
+  ])("informa todos os canais enviados, sem contar tentativas: %j", async (estados, esperados) => {
+    cenario({ guias: [guia('gCanais', 'A')], envios: estados.map(([canal, status]) => ({ guideId: 'gCanais', canal, status })) });
+    const mapa = await computeGuideComplianceMap([empresa('A')], COMPETENCIA);
+    expect(mapa.get('A').das.canaisEnviados).toEqual(esperados);
+  });
   it("guia enviada por WhatsApp aparece ENVIADA — com o canal e o destino do ENVIO", async () => {
     cenario({
       guias: [guia("gWa", "A", { emailStatus: "PENDING" })],
@@ -107,6 +120,7 @@ describe("⚠ a carteira depois do primeiro envio por WhatsApp", () => {
     // A tolerância é POR GUIA: a linha da empresa A não desliga a leitura legada da empresa B.
     expect(mapa.get("B").das.canalEnvio).toBeNull();
     expect(mapa.get("B").das.emailStatus).toBe("SENT");
+    expect(mapa.get("B").das.canaisEnviados).toEqual(["EMAIL"]);
   });
 
   it("guia sem envio e sem SENT continua pendente — nada foi 'melhorado' por acidente", async () => {

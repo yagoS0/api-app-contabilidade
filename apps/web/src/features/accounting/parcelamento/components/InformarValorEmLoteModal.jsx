@@ -1,3 +1,4 @@
+import { useConfirmacao } from "../../../../components/ui/useConfirmacao";
 // INFORMAR O VALOR CONTRATADO DE VÁRIAS PRESTAÇÕES DO MESMO CONTRATO — a ação em lote do banner.
 //
 // ⚠ ESTE MODAL NÃO LANÇA BAIXA. Ele grava UM fato: "o acordo diz que estas prestações valem X".
@@ -48,6 +49,7 @@ function fmtVenc(v) {
  * @param {function} onClose
  */
 export function InformarValorEmLoteModal({ grupo, onInformar, onConcluido, onClose }) {
+  const { pedir, dialogo: confirmacao } = useConfirmacao();
   const [textoPadrao, setTextoPadrao] = useState("");
   const [overrides, setOverrides] = useState({});
   const [enviando, setEnviando] = useState(false);
@@ -82,7 +84,7 @@ export function InformarValorEmLoteModal({ grupo, onInformar, onConcluido, onClo
   async function confirmar() {
     if (!plano.ok || enviando) return;
     // eslint-disable-next-line no-alert
-    if (!window.confirm(textoDaConfirmacaoDoLote(plano, grupo?.label))) return;
+    if (!await pedir({ titulo: "Confirmar valores contratados", acao: "Gravar valores contratados", texto: textoDaConfirmacaoDoLote(plano, grupo?.label) })) return;
     setEnviando(true);
     let ok = 0;
     for (const linha of plano.validas) {
@@ -299,6 +301,7 @@ export function InformarValorEmLoteModal({ grupo, onInformar, onConcluido, onClo
           )}
         </div>
       </div>
+      {confirmacao}
     </div>
   );
 }

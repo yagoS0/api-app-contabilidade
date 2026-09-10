@@ -119,7 +119,7 @@ export function avaliarCanal({ integracaoLigada, template, chaveTemplate = "guia
         + "registrado. Sem esse nome não há como pedir o modelo certo — preencha `nomeMeta`.",
     };
   }
-  return { disponivel: true, motivo: null, mensagem: null, nomeMeta: String(template.nomeMeta).trim() };
+  return { disponivel: true, motivo: null, mensagem: null, nomeMeta: String(template.nomeMeta).trim(), idioma: String(template.idioma || "").trim() || undefined };
 }
 
 /**
@@ -134,6 +134,8 @@ export function avaliarCanal({ integracaoLigada, template, chaveTemplate = "guia
  * @param {boolean} p.jaEnviada  a resposta de `foiEnviadaComLegado` (envios + legado do e-mail)
  */
 export function avaliarLinha({ canal, guide, destinatario, envios = [], jaEnviada = false }) {
+  if (guide?.paymentStatus === "PAID") return { pode: false, motivo: "GUIA_PAGA",
+    mensagem: "Esta guia está paga e não entra no lote.", canalSugerido: null };
   const recusa = (motivo, mensagem, extra = {}) => ({
     pode: false, motivo, mensagem, canalSugerido: CANAIS.EMAIL, ...extra,
   });

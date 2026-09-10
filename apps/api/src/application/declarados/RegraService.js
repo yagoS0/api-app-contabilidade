@@ -191,9 +191,21 @@ export async function listarRegras({ portalClientId, client = prisma }) {
     where: { portalClientId, revogadaEm: null },
     orderBy: [{ ativa: "desc" }, { criadaEm: "desc" }],
   });
+  const documentos = [...new Set(regras.map(r => r.cnpjFornecedor).filter(Boolean))];
+  const notas = documentos.length ? await client.portalInvoice.findMany({
+    where: { clientId: portalClientId, emitenteDoc: { in: documentos }, emitenteNome: { not: null } },
+    select: { emitenteDoc: true, emitenteNome: true },
+    orderBy: { issueDate: "desc" },
+    distinct: ["emitenteDoc"],
+  }) : [];
+  const nomes = new Map(notas.map(n => [n.emitenteDoc, n.emitenteNome]));
   return regras.map((r) => ({
     id: r.id,
     cnpjFornecedor: r.cnpjFornecedor,
+    nomeFornecedor: nomes.get(r.cnpjFornecedor) || null,
+    contaCredito: r.contaCredito,
+    lancaSozinha: r.lancaSozinha === true,
+    diaDoLancamento: r.diaDoLancamento,
     padraoDescricao: r.padraoDescricao,
     contaDestino: r.contaDestino,
     valorMin: r.valorMin != null ? String(r.valorMin) : null,

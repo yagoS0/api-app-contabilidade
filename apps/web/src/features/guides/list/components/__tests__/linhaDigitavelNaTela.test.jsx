@@ -11,6 +11,7 @@
 
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { CompanyGuidesTable } from "../renderCompanyGuidesTable.jsx";
+import { deslocarCompetencia } from "../../../../../lib/competencia";
 
 jest.mock("../../../../../api/client", () => ({
   createApiClient: () => ({
@@ -35,6 +36,7 @@ function guia(over = {}) {
     guideId: "g1",
     tipo: "SIMPLES",
     competencia: COMP,
+    vencimento: `${deslocarCompetencia(COMP, 1)}-20T00:00:00.000Z`,
     status: "PROCESSED",
     paymentStatus: "OPEN",
     emailStatus: "PENDING",

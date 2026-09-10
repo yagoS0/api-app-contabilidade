@@ -39,14 +39,14 @@ describe("⚠⚠ o selo conta O QUE VIRA LANÇAMENTO — não as três filas som
 
   it("⚠⚠ e o que é SÓ FLUXO aparece à parte — não some, e não conta como «a lançar»", () => {
     render(<BotaoDaConferencia pendencias={cheio} onOpenConferencia={jest.fn()} />);
-    expect(botao().textContent).toMatch(/no fluxo/i);
+    expect(botao().textContent).not.toMatch(/no fluxo/i);
   });
 
   it("⚠ o `title` separa os dois trabalhos, e diz que um deles NÃO vira lançamento", () => {
     render(<BotaoDaConferencia pendencias={cheio} onOpenConferencia={jest.fn()} />);
     const t = botao().getAttribute("title");
     expect(t).toMatch(/para virar lançamento/i);
-    expect(t).toMatch(/não viram lançamento/i);
+    expect(t).not.toMatch(/fluxo/i);
   });
 
   it("⚠ backend ANTIGO (sem `aLancar`/`noFluxo`) cai nas três contagens — nada quebra", () => {
@@ -56,7 +56,7 @@ describe("⚠⚠ o selo conta O QUE VIRA LANÇAMENTO — não as três filas som
       onOpenConferencia={jest.fn()}
     />);
     expect(botao()).toHaveAttribute("data-pendencias", "3");
-    expect(botao().textContent).toMatch(/no fluxo/i);
+    expect(botao().textContent).not.toMatch(/no fluxo/i);
   });
 
   it("⚠⚠ só as saídas do cliente pendentes já acendem o selo", () => {
@@ -65,7 +65,7 @@ describe("⚠⚠ o selo conta O QUE VIRA LANÇAMENTO — não as três filas som
       pendencias={{ total: 2, declarados: 0, series: 0, saidas: 2 }}
       onOpenConferencia={jest.fn()}
     />);
-    expect(botao().textContent).toMatch(/2/);
+    expect(botao().textContent).not.toMatch(/2/);
   });
 });
 

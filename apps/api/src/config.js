@@ -664,10 +664,26 @@ export const WHATSAPP_ENVIO_DELAY_MS = Math.max(0, Number(process.env.WHATSAPP_E
 // ⚠ DUAS CHAVES, e as duas precisam estar ligadas: esta flag E a empresa constar em
 // `IA_EMPRESAS_PILOTO` (CSV de `PortalClient.id`; VAZIO = ninguém). A carteira só abre quando o
 // dono tirar a lista. Quem recusa é o SERVIDOR (o gancho no webhook não chama o modelo), não uma tela.
+export const COMERCIAL_WEB_URL = String(process.env.COMERCIAL_WEB_URL || "").replace(/\/+$/, "");
+export const INTEGRACAO_IA_COMERCIAL = process.env.INTEGRACAO_IA_COMERCIAL === "1";
+export const INTEGRACAO_FISCAL_LEADS = process.env.INTEGRACAO_FISCAL_LEADS === "1";
+export const IA_COMERCIAL_TELEFONES_PILOTO = Object.freeze(String(process.env.IA_COMERCIAL_TELEFONES_PILOTO || "").split(",").map(v => v.replace(/\D/g, "")).filter(Boolean));
+export const IA_COMERCIAL_TETO_CONVERSA_CENTAVOS = Math.max(1, Number(process.env.IA_COMERCIAL_TETO_CONVERSA_CENTAVOS) || 500);
+export const IA_COMERCIAL_MAX_CHAMADAS_DIA = Math.max(1, Number(process.env.IA_COMERCIAL_MAX_CHAMADAS_DIA) || 25);
 export const INTEGRACAO_WHATSAPP_IA = process.env.INTEGRACAO_WHATSAPP_IA === "1";
 export const IA_EMPRESAS_PILOTO = Object.freeze(
   String(process.env.IA_EMPRESAS_PILOTO || "").split(",").map((v) => v.trim()).filter(Boolean),
 );
+// Menus automáticos não chamam o modelo, mas também respondem ao cliente sozinhos. Têm uma chave
+// própria, desligada por padrão, e reutilizam a mesma lista de empresas piloto da IA. Assim o menu
+// pode ser validado sem habilitar Anthropic e sem abrir o atendimento para toda a carteira.
+export const INTEGRACAO_WHATSAPP_MENU = process.env.INTEGRACAO_WHATSAPP_MENU === "1";
+export const WHATSAPP_MENU_TELEFONES_PILOTO = Object.freeze(
+  String(process.env.WHATSAPP_MENU_TELEFONES_PILOTO || "").split(",")
+    .map((v) => v.replace(/\D+/g, "")).filter((v) => /^[1-9]\d{9,14}$/.test(v)),
+);
+// Liberação pública futura do menu comercial. No piloto, prefira a lista E.164 acima.
+export const WHATSAPP_MENU_LEADS = process.env.WHATSAPP_MENU_LEADS === "1";
 // ⚠ SEGREDO: nunca em log, mensagem de erro ou teste. O SDK lê `ANTHROPIC_API_KEY` sozinho; aqui
 // só se registra a AUSÊNCIA.
 export const ANTHROPIC_API_KEY = (process.env.ANTHROPIC_API_KEY || "").trim();
@@ -677,6 +693,7 @@ export const IA_MODELO = (process.env.IA_MODELO || "claude-opus-5").trim();
 export const IA_ESFORCO = (process.env.IA_ESFORCO || "medium").trim();
 export const IA_MAX_TOKENS = Math.max(256, Number(process.env.IA_MAX_TOKENS || 2000));
 export const IA_MAX_ITERACOES = Math.max(1, Number(process.env.IA_MAX_ITERACOES || 6));
+export const IA_RESERVA_CHAMADA_CENTAVOS = Math.max(1, Number(process.env.IA_RESERVA_CHAMADA_CENTAVOS || 100));
 
 /**
  * ⚠⚠ A CLASSIFICAÇÃO DE LANÇAMENTOS POR IA — o botão da aba "A lançar" (dono, 02/09/2026: *"a IA é
@@ -722,6 +739,18 @@ if (INTEGRACAO_WHATSAPP_IA) {
   );
   if (!IA_EMPRESAS_PILOTO.length) log.warn("IA_EMPRESAS_PILOTO vazio: o assistente não responde a NINGUÉM (é o desenho).");
   if (!ANTHROPIC_API_KEY) log.warn("ANTHROPIC_API_KEY ausente: o assistente ficará recusando com motivo");
+}
+
+if (INTEGRACAO_WHATSAPP_MENU) {
+  log.warn(
+    "INTEGRACAO_WHATSAPP_MENU=1: os menus automáticos estão LIGADOS para "
+      + IA_EMPRESAS_PILOTO.length
+      + " empresa(s), " + WHATSAPP_MENU_TELEFONES_PILOTO.length + " telefone(s) piloto"
+      + (WHATSAPP_MENU_LEADS ? " e leads não vinculados" : "") + ". O menu não chama o modelo Anthropic."
+  );
+  if (!IA_EMPRESAS_PILOTO.length && !WHATSAPP_MENU_TELEFONES_PILOTO.length && !WHATSAPP_MENU_LEADS) {
+    log.warn("Nenhum piloto de menu configurado: os menus não respondem a NINGUÉM (é o desenho).");
+  }
 }
 
 if (INTEGRACAO_WHATSAPP) {

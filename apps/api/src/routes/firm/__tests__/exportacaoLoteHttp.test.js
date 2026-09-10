@@ -1,0 +1,10 @@
+import express from 'express';
+import request from 'supertest';
+import { createExportacaoLoteRouter } from '../exportacaoLote.js';
+import { prepararLote } from '../../../application/accounting/exportacao/exportacaoLote.js';
+jest.mock('../../../infrastructure/db/prisma.js',()=>({prisma:{}}));
+jest.mock('../../../application/accounting/exportacao/exportacaoLote.js',()=>({prepararLote:jest.fn()}));
+jest.mock('../../../middlewares/requireFirmCompanyAccess.js',()=>({requireFirmCompanyAccess:()=> (req,res,next)=>req.params.companyId==='permitida'?next():res.status(403).json({error:'forbidden'})}));
+const app=()=>{const a=express();a.use(express.json());a.use(createExportacaoLoteRouter());return a;};
+test('prévia aplica o mesmo controle individual aos ids',async()=>{prepararLote.mockImplementationOnce(async({podeAcessar})=>({ok:true,empresas:[await podeAcessar('permitida'),await podeAcessar('negada')],arquivos:[]}));const r=await request(app()).post('/entries/export/batch/preflight').send({});expect(r.body.empresas).toEqual([true,false]);expect(r.body.arquivos).toBeUndefined();});
+test('download é ZIP válido com entradas CSV e manifesto, não JSON renomeado',async()=>{prepararLote.mockResolvedValueOnce({ok:true,competenciaInicio:'2026-08',competenciaFim:'2026-08',empresas:[{id:'a',estado:'EXPORTADA'},{id:'b',estado:'FALHA'}],arquivos:[{nome:'empresa.csv',conteudo:'\uFEFF01/08/2026;1;2;Teste;10,00'}]});const r=await request(app()).post('/entries/export/batch/zip').send({}).buffer(true).parse((res,cb)=>{const parts=[];res.on('data',p=>parts.push(p));res.on('end',()=>cb(null,Buffer.concat(parts)));});expect(r.status).toBe(200);expect(r.headers['content-type']).toMatch(/application\/zip/);expect(r.body.readUInt32LE(0)).toBe(0x04034b50);expect(r.body.includes(Buffer.from('empresa.csv'))).toBe(true);expect(r.body.includes(Buffer.from('manifesto.json'))).toBe(true);expect(r.body.readUInt32LE(r.body.length-22)).toBe(0x06054b50);});

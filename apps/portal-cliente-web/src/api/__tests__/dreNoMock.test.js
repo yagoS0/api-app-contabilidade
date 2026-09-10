@@ -1,3 +1,4 @@
+import { dreDoMock } from "../mock/dreDoMock";
 // ⚠⚠ O DRE DO MOCK TEM DE TER A FORMA DO SERVIDOR (30/08/2026).
 //
 // ⚠⚠ ESTE ARQUIVO NASCEU DE UM DEFEITO ACHADO NO NAVEGADOR, ao validar a `main`: a rota real do DRE
@@ -102,5 +103,25 @@ describe("⚠⚠ os DOIS outros ramos continuam alcançáveis offline", () => {
     // nunca passar por real.
     const r = await api.getDre("pc-006", { competencia: "2026-08" });
     expect(r.demonstracao).not.toBe(false);
+  });
+});
+
+
+describe('qualidade da DRE no contrato do mock', () => {
+  it('nomeia parcialidade e conta fora do mapeamento sem alterar subtotais válidos', async () => {
+    const r = await api.getDre('pc-001', { competencia: '2026-09' });
+    expect(r.qualidade).toMatchObject({ status: 'PROVISORIO', provisorio: true, linhasNaoClassificadas: 4, linhasInvalidas: 0 });
+    expect(r.naoClassificado.some(n => n.causa === 'resultado_sem_mapeamento')).toBe(true);
+    expect(r.inconsistencias).toEqual([]);
+  });
+  it('estado vazio tem qualidade explícita sem alegar parcialidade', async () => {
+    const r = await api.getDre('pc-007', { competencia: '2026-09' });
+    expect(r.qualidade).toMatchObject({ status: 'SEM_LANCAMENTOS', provisorio: false, linhasNaoClassificadas: 0, linhasInvalidas: 0 });
+  });
+  it('fixture com valor inválido oferece aviso sem valor monetário inventado', () => {
+    const r = dreDoMock('pc-003', '2026-09');
+    expect(r.qualidade.linhasInvalidas).toBe(1);
+    expect(r.inconsistencias[0]).toMatchObject({ causa: 'valor_invalido', linhas: 1 });
+    expect(r.inconsistencias[0]).not.toHaveProperty('valor');
   });
 });

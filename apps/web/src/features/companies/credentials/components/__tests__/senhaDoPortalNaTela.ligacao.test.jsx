@@ -1,3 +1,4 @@
+import { AcessoPortalCliente } from "../AcessoPortalCliente";
 // A LIGAÇÃO — componente sem chamador é o defeito favorito deste projeto, então isto prova a
 // corrente inteira, de baixo para cima:
 //
@@ -60,7 +61,7 @@ function apiFalso(over = {}) {
 function Ponte({ api, companyId = "pc-1", feedback }) {
   const acesso = useAcessoPortalCliente({ api, companyId, feedback });
   return (
-    <CompanyCredentialsTab vault={vaultFalso()} acesso={acesso} razaoSocial="EMPRESA TESTE LTDA" />
+    <AcessoPortalCliente acesso={acesso} razaoSocial="EMPRESA TESTE LTDA" />
   );
 }
 

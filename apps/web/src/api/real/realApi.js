@@ -127,7 +127,7 @@ export function mapKnownError(payload, status) {
   if (doCadastro) return doCadastro;
 
   // Fallback: prefere a mensagem humana do backend ({error, message}) antes do código cru.
-  return reason || String(payload?.message || "").trim() || payload?.error || `request_failed_${status}`;
+  return reason || String(payload?.message || payload?.mensagem || "").trim() || payload?.error || `request_failed_${status}`;
 }
 
 function normalizeError(payload, status) {
@@ -321,6 +321,16 @@ function writeStored(key, value) {
 }
 function readStoredToken() { return readStored(TOKEN_STORAGE_KEY); }
 
+async function formularioPublicoRequest(token, patch) {
+  const response = await fetch(getApiBaseUrl() + "/public/onboarding", {
+    method: patch ? "PATCH" : "GET", credentials: "omit", cache: "no-store",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    ...(patch ? { body: JSON.stringify(patch) } : {}),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(payload.message || "Não foi possível acessar o formulário. Confira a validade do link com o escritório."), { status: response.status, payload });
+  return payload;
+}
 export function createRealApi() {
   let accessToken = String(import.meta.env.VITE_API_TOKEN || "").trim();
   let unauthorizedHandler = null;
@@ -377,6 +387,7 @@ export function createRealApi() {
       ...options,
       headers,
     });
+    if (response.ok && options.responseType === "blob") return response.blob();
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       // Q27.D: 401 → tenta renovar UMA vez e repete a requisição original. Não tenta no /auth/*.
@@ -431,6 +442,16 @@ export function createRealApi() {
     async me() {
       return request("/auth/me");
     },
+    async getFluxoCaixa(companyId, { janelaInicio } = {}) {
+      const query = janelaInicio ? '?janelaInicio=' + encodeURIComponent(janelaInicio) : '';
+      return request('/firm/companies/' + encodeURIComponent(companyId) + '/fluxo-de-caixa' + query);
+    },
+    async preflightEntriesBatch(dados) {
+      return request('/firm/entries/export/batch/preflight', { method: 'POST', body: JSON.stringify(dados) });
+    },
+    async exportEntriesBatch(dados) {
+      return request('/firm/entries/export/batch/zip', { method: 'POST', body: JSON.stringify(dados), responseType: 'blob' });
+    },
     async listCompanies(competencia) {
       const suffix = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
       const payload = await request(`/firm/companies${suffix}`);
@@ -465,8 +486,19 @@ export function createRealApi() {
       return Array.isArray(payload?.empresas) ? payload.empresas : [];
     },
     async getCompanyGuides(companyId) {
-      const payload = await request(`/firm/companies/${companyId}/guides?page=1&limit=50`);
-      return Array.isArray(payload?.data) ? payload.data : [];
+      const items = [];
+      let page = 1;
+      while (true) {
+        const payload = await request(`/firm/companies/${companyId}/guides?page=${page}&limit=50`);
+        const batch = Array.isArray(payload?.data) ? payload.data : [];
+        items.push(...batch);
+        if (!batch.length || !Number.isFinite(payload?.total) || items.length >= payload.total) break;
+        page += 1;
+      }
+      return items;
+    },
+    async getCompanyGuideDueReport(companyId, mesVencimento) {
+      return request(`/firm/companies/${companyId}/guides/due-report?mesVencimento=${encodeURIComponent(mesVencimento)}`);
     },
     async uploadCompanyGuide(companyId, file, metadata) {
       const formData = new FormData();
@@ -767,6 +799,27 @@ export function createRealApi() {
       if (companyId) q.set("companyId", companyId);
       return request(`/firm/calendario?${q.toString()}`);
     },
+    async getTarefasAgenda(inicio, fim) {
+      return request(`/firm/agenda/tarefas?${new URLSearchParams({ inicio, fim })}`);
+    },
+    async salvarTarefaAgenda(dados, id) {
+      return request(`/firm/agenda/tarefas${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(dados) });
+    },
+    async acaoTarefaAgenda(id, dados) {
+      return request(`/firm/agenda/tarefas/${encodeURIComponent(id)}/acao`, { method: 'POST', body: JSON.stringify(dados) });
+    },
+    async excluirOcorrenciasAgenda(ids) {
+      return request('/firm/agenda/ocorrencias/excluir', { method: 'POST', body: JSON.stringify({ ids }) });
+    },
+    async editarOcorrenciasAgenda(ids, dados) {
+      return request('/firm/agenda/ocorrencias/editar', { method:'POST', body:JSON.stringify({ids,dados}) });
+    },
+    async excluirSerieAgenda(dados) {
+      return request('/firm/agenda/series/excluir', { method: 'POST', body: JSON.stringify(dados) });
+    },
+    async ocultarItemAgenda(dados) {
+      return request('/firm/agenda/ocultar', { method: 'POST', body: JSON.stringify(dados) });
+    },
     async listMarcosFiscais() {
       return request(`/firm/marcos-fiscais`);
     },
@@ -804,6 +857,12 @@ export function createRealApi() {
     },
     async concluirOcorrencia(ocorrenciaId) {
       return request(`/firm/ocorrencias/${ocorrenciaId}/concluir`, { method: "POST" });
+    },
+    async excluirOcorrencia(ocorrenciaId, dados) {
+      return request(`/firm/ocorrencias/${ocorrenciaId}`, { method: "DELETE", body: JSON.stringify(dados) });
+    },
+    async updateOcorrencia(ocorrenciaId, patch) {
+      return request(`/firm/ocorrencias/${ocorrenciaId}`, { method: "PATCH", body: JSON.stringify(patch) });
     },
     async reabrirOcorrencia(ocorrenciaId) {
       return request(`/firm/ocorrencias/${ocorrenciaId}/reabrir`, { method: "POST" });
@@ -951,6 +1010,12 @@ export function createRealApi() {
         body: JSON.stringify(input || {}),
       });
     },
+    async salvarPermissoesAssistenteWhatsapp(companyId, contatoId, permissoesAssistente) {
+      return request(`/firm/companies/${companyId}/contatos-whatsapp/${contatoId}/permissoes-assistente`, {
+        method: "PATCH",
+        body: JSON.stringify({ permissoesAssistente }),
+      });
+    },
     async removerContatoWhatsapp(companyId, contatoId) {
       return request(`/firm/companies/${companyId}/contatos-whatsapp/${contatoId}`, { method: "DELETE" });
     },
@@ -965,16 +1030,43 @@ export function createRealApi() {
     // ── AS CONVERSAS DE WHATSAPP (F5) — contrato LIDO de `routes/firm/whatsappConversas.js` ──────
     // ⚠ `empresa` e ORTOGONAL ao `filtro`, e o servidor o INTERSECTA com a carteira (nunca soma):
     // empresa fora do escopo devolve lista vazia pela MESMA regra que ja protege o resto.
+    async preverCorrecaoValorGuia(companyId, guideId, valor) {
+      return request(`/firm/companies/${companyId}/guides/${guideId}/corrigir-valor?valor=${encodeURIComponent(valor)}`);
+    },
+    async corrigirValorGuia(companyId, guideId, { valor, revisao }) {
+      return request(`/firm/companies/${companyId}/guides/${guideId}/corrigir-valor`, { method: "POST", body: JSON.stringify({ valor, revisao }) });
+    },
+    async listarArquivosWhatsapp(companyId, { cursor = null } = {}) {
+      return request(`/firm/companies/${companyId}/whatsapp/arquivos${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+    },
+    async listarArquivosWhatsappNaoVinculados(companyId, { cursor = null } = {}) {
+      return request(`/firm/companies/${companyId}/whatsapp/arquivos/nao-vinculados${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+    },
+    async vincularArquivoWhatsapp(companyId, arquivoId) {
+      return request(`/firm/companies/${companyId}/whatsapp/arquivos/${arquivoId}/vincular`, { method: "POST", body: JSON.stringify({ confirmarCompanyId: companyId }) });
+    },
+    async getConteudoArquivoWhatsapp(companyId, arquivoId) {
+      return request(`/firm/companies/${companyId}/whatsapp/arquivos/${arquivoId}/conteudo`);
+    },
+    async marcarArquivoWhatsappImportado(companyId, arquivoId) {
+      return request(`/firm/companies/${companyId}/whatsapp/arquivos/${arquivoId}/importado`, { method: "POST" });
+    },
     async getResumoWhatsapp() {
       return request("/firm/whatsapp/resumo");
     },
-    async listarConversasWhatsapp(filtro = "todas", { empresa = null } = {}) {
+    async listarConversasWhatsapp(filtro = "todas", { empresa = null, cursor = null, limite = null } = {}) {
       const qs = new URLSearchParams({ filtro: String(filtro) });
       if (empresa) qs.set("empresa", String(empresa));
+      if (cursor) qs.set("cursor", String(cursor));
+      if (limite) qs.set("limite", String(limite));
       return request(`/firm/whatsapp/conversas?${qs.toString()}`);
     },
-    async getMensagensWhatsapp(conversaId) {
-      return request(`/firm/whatsapp/conversas/${conversaId}/mensagens`);
+    async getMensagensWhatsapp(conversaId, { cursor = null, limite = null, empresa = null } = {}) {
+      const qs = new URLSearchParams();
+      if (empresa) qs.set("empresa", String(empresa));
+      if (cursor) qs.set("cursor", String(cursor));
+      if (limite) qs.set("limite", String(limite));
+      return request(`/firm/whatsapp/conversas/${conversaId}/mensagens${qs.size ? `?${qs}` : ""}`);
     },
     // ⚠ É MENSAGEM DE SERVIÇO: fora da janela de 24h o servidor responde 409 FORA_DA_JANELA, com o
     // MESMO corpo do `responder`. A empresa do documento vem do FIO, nunca do corpo.
@@ -987,6 +1079,12 @@ export function createRealApi() {
     async assumirConversaWhatsapp(conversaId) {
       return request(`/firm/whatsapp/conversas/${conversaId}/assumir`, { method: "POST" });
     },
+    async excluirConversaWhatsapp(conversaId) {
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/excluir`, { method: "POST" });
+    },
+    async restaurarConversaWhatsapp(conversaId) {
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/restaurar`, { method: "POST" });
+    },
     async devolverConversaWhatsapp(conversaId) {
       return request(`/firm/whatsapp/conversas/${conversaId}/devolver`, { method: "POST" });
     },
@@ -997,6 +1095,12 @@ export function createRealApi() {
     },
     async vincularConversaWhatsapp(conversaId, body) {
       return request(`/firm/whatsapp/conversas/${conversaId}/vincular`, { method: "POST", body: JSON.stringify(body || {}) });
+    },
+    async selecionarEmpresaConversaWhatsapp(conversaId, portalClientId) {
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/selecionar-empresa`, { method: "POST", body: JSON.stringify({ portalClientId }) });
+    },
+    async salvarApelidosWhatsapp(portalClientId, apelidos) {
+      return request(`/firm/whatsapp/empresas/${encodeURIComponent(portalClientId)}/apelidos`, { method: "POST", body: JSON.stringify({ apelidos }) });
     },
     async getConsumoIa() {
       return request(`/firm/ia/consumo`);
@@ -1495,7 +1599,8 @@ export function createRealApi() {
     // rota nunca foi usada. Parcelamento hoje é CONTRATO, criado por `ingestParcelamento`.
     // Matriz "empresa × tipo de guia" para a página de envio em lote.
     async getBatchEmailReport(competencia) {
-      const q = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
+      const q = competencia?.mesVencimento ? `?mesVencimento=${encodeURIComponent(competencia.mesVencimento)}${competencia.competencia ? `&competencia=${encodeURIComponent(competencia.competencia)}` : ""}`
+        : competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
       return request(`/firm/guides/batch-report${q}`);
     },
     // Envia 1 e-mail por empresa selecionada (com todas as guias da competência anexadas).
@@ -1514,15 +1619,21 @@ export function createRealApi() {
     // GUIA_JA_ENVIADA…) chega como erro com `code`; quem chama trata a recusa como desfecho.
     // ⚠ `reenviar` é PEDIDO EXPLÍCITO (05/09/2026): sem ele, guia já enviada é recusada com
     // `GUIA_JA_ENVIADA`. Quem decide é o contador, depois de a tela dizer que ela já foi.
-    async enviarGuiaWhatsapp(companyId, guideId, { reenviar = false } = {}) {
+    async enviarGuiaWhatsapp(companyId, guideId, { reenviar = false, apenasFalhos = false, complementar = false } = {}) {
       return request(`/firm/companies/${companyId}/guides/${guideId}/enviar-whatsapp`, {
         method: "POST",
-        body: JSON.stringify({ reenviar: reenviar === true }),
+        body: JSON.stringify({ reenviar: reenviar === true, ...(apenasFalhos ? { apenasFalhos: true } : {}), ...(complementar ? { complementar: true } : {}) }),
       });
     },
     // A PRÉVIA do lote — não envia nada. Body: { competencia, portalClientIds?, guideIds? }.
     async preverLoteWhatsapp(body) {
       return request(`/firm/guides/whatsapp/lote/previa`, { method: "POST", body: JSON.stringify(body || {}) });
+    },
+    async preverLiberacaoGuias(body) {
+      return request(`/firm/guides/liberacao/lote/previa`, { method: "POST", body: JSON.stringify(body) });
+    },
+    async liberarGuiasLote(body) {
+      return request(`/firm/guides/liberacao/lote`, { method: "POST", body: JSON.stringify(body) });
     },
     // O LOTE. Exige `conferencia` repetindo os números da prévia (409 CONFERENCIA_DIVERGENTE senão).
     async executarLoteWhatsapp(body) {
@@ -1560,10 +1671,10 @@ export function createRealApi() {
         body: formData,
       });
     },
-    async importOFX(companyId, { transactions }) {
+    async importOFX(companyId, { transactions, arquivoWhatsappId }) {
       return request(`/firm/companies/${companyId}/entries/import/ofx`, {
         method: "POST",
-        body: JSON.stringify({ transactions }),
+        body: JSON.stringify({ transactions, ...(arquivoWhatsappId ? { arquivoWhatsappId } : {}) }),
       });
     },
     async previewExcelImport(companyId, file) {
@@ -1629,6 +1740,41 @@ export function createRealApi() {
     // ── Onboarding (funil pré-cadastro) ───────────────────────────────────
     // ⚠ Estas rotas NÃO ficam sob `/firm/companies/:id` — a ficha existe justamente porque a
     // empresa ainda não existe.
+    async baixarAnaliseOnboarding(id, analiseId) {
+      const baseUrl = getApiBaseUrl();
+      const tok = accessToken || readStoredToken();
+      const res = await fetch(baseUrl + "/firm/onboardings/" + encodeURIComponent(id) + "/analises/" + encodeURIComponent(analiseId) + "/pdf", { headers: { Authorization: "Bearer " + tok }, cache: "no-store" });
+      if (!res.ok) throw new Error("Não foi possível abrir o relatório. Recarregue o atendimento.");
+      return res.blob();
+    },
+    async comercial(path, body = undefined, method = "POST") {
+      return request("/firm/comercial" + path, body === undefined ? {} : { method: path.endsWith("/campos") ? "PATCH" : method, body: JSON.stringify(body) });
+    },
+    async enviarOrientacaoWhatsapp(id, body) { return request(`/firm/whatsapp/conversas/${encodeURIComponent(id)}/responder`, { method: "POST", body: JSON.stringify(body) }); },
+    async documentoComercial(id, file) {
+      const form = new FormData(); form.append("arquivo", file);
+      const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/documentos`, { method: "POST", headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, body: form });
+      const out = await res.json(); if (!res.ok) throw new Error(out.message || "Falha no envio do documento."); return out;
+    },
+    async baixarContratoComercial(id, contratoId) {
+      const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/contratos/${encodeURIComponent(contratoId)}/pdf`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
+      if (!res.ok) throw new Error("Não foi possível gerar o contrato PDF."); return res.blob();
+    },
+    async baixarDocumentoComercial(id, doc) {
+      const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/documentos/${encodeURIComponent(doc)}`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
+      if (!res.ok) throw new Error("Não foi possível abrir o documento."); return res.blob();
+    },
+    async propostaPublica(token, aceite = null) {
+      const res = await fetch(getApiBaseUrl() + "/public/proposta" + (aceite ? "/aceitar" : ""), { method: aceite ? "POST" : "GET", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, credentials: "omit", cache: "no-store", ...(aceite ? { body: JSON.stringify(aceite) } : {}) });
+      const out = await res.json(); if (!res.ok) throw new Error(out.message || "Proposta indisponível."); return out;
+    },
+    async getOnboardingComercial(id) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/comercial"); },
+    async salvarOnboardingComercial(id, patch) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/comercial", { method: "PATCH", body: JSON.stringify(patch) }); },
+    async criarAnaliseOnboarding(id, payload) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/analises", { method: "POST", body: JSON.stringify(payload) }); },
+    async criarLinkOnboarding(id, payload) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/links", { method: "POST", body: JSON.stringify(payload) }); },
+    async revogarLinkOnboarding(id, linkId) { return request("/firm/onboardings/" + encodeURIComponent(id) + "/links/" + encodeURIComponent(linkId), { method: "DELETE" }); },
+    async consultarFormularioOnboarding(token) { return formularioPublicoRequest(token); },
+    async salvarFormularioOnboarding(token, patch) { return formularioPublicoRequest(token, patch); },
     async criarOnboarding(origem) {
       return request("/firm/onboardings", { method: "POST", body: JSON.stringify({ origem }) });
     },
@@ -2401,7 +2547,7 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/planejamento/simulacoes`);
     },
     async salvarSimulacaoPlanejamento(companyId, payload) {
-      return request(`/firm/companies/${companyId}/planejamento/simulacoes`, { method: "POST", body: payload });
+      return request(`/firm/companies/${companyId}/planejamento/simulacoes`, { method: "POST", body: JSON.stringify(payload) });
     },
     async gerarDocumentoDaSimulacao(companyId, simulacaoId) {
       return request(

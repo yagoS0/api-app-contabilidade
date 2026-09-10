@@ -61,7 +61,7 @@ describe("a lista", () => {
     expect(linhas[0]).toHaveTextContent(/número sem cadastro — vincule/);
     expect(screen.getByTestId("contagem-fila")).toHaveTextContent(/1 número sem cadastro/);
     expect(screen.getByTestId("consumo-ia")).toHaveTextContent(/US\$ 1\.37 de US\$ 60\.00 \(estimativa/);
-    expect(screen.getByTestId("conversa-cv1")).toHaveTextContent(/pedido K9M3 aguardando confirmação/);
+    expect(screen.getByTestId("conversa-cv1")).toHaveTextContent(/pedido K9M3 aguardando confirmação/i);
     expect(screen.getByTestId("conversa-cv2")).toHaveTextContent(/assumida por Ana/);
   });
 });
@@ -124,6 +124,9 @@ describe("vincular — a fila esvazia por aqui", () => {
     fireEvent.click(screen.getByTestId("conversa-cv3"));
     const fio = await screen.findByTestId("fio");
     const form = within(fio).getByTestId("form-vincular");
+    expect(form).not.toBeVisible();
+    fireEvent.click(within(fio).getByRole("button", { name: "Atendimento e cadastro" }));
+    fireEvent.click(screen.getByText("Vincular a uma empresa existente"));
     const botao = within(form).getByRole("button", { name: /Vincular/ });
     expect(botao).toBeDisabled();
     fireEvent.change(within(form).getByLabelText("Empresa do vínculo"), { target: { value: "pc-1" } });
@@ -201,13 +204,13 @@ describe("⚠ a mídia recebida vira frase, e o corte deixa de ser silencioso", 
     })),
   };
 
-  it("balão de imagem diz o que chegou E que não dá para abrir ainda — nunca '[image]'", async () => {
+  it("balão de imagem diz o que chegou e onde conferir o arquivo — nunca '[image]'", async () => {
     await montar(apiFalso(comMidia));
     fireEvent.click(screen.getByTestId("conversa-cv1"));
     const fio = await screen.findByTestId("fio");
     const balao = within(fio).getByTestId("balao-m9");
     expect(balao).toHaveTextContent(/imagem/);
-    expect(balao).toHaveTextContent(/ainda não baixa/);
+    expect(balao).toHaveTextContent(/Lançamentos > A lançar/);
     expect(balao).not.toHaveTextContent("[image]");
   });
 
@@ -258,7 +261,7 @@ describe("⚠ o balão e o cabeçalho não discordam sobre quem escreveu", () =>
     await montar(api);
     fireEvent.click(screen.getByTestId("conversa-cv1"));
     const fio = await screen.findByTestId("fio");
-    expect(within(fio).getByTestId("balao-m1")).toHaveTextContent(/^cliente ·/);
+    expect(within(within(fio).getByTestId("balao-m1")).getByText("cliente", { exact: true })).toBeInTheDocument();
   });
 });
 

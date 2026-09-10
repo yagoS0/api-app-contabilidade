@@ -350,6 +350,7 @@ export function NotasFiscaisTab({
 
       {emissao && (
         <EmitirNfseWizard
+          apiPerfis={nfseApi}
           companyId={companyId}
           /* O REGIME É MOSTRADO, não escolhido: o backend declara o mesmo `opSimpNac` para toda
              empresa, e o assistente confronta isso com o cadastro para o contador ver antes de

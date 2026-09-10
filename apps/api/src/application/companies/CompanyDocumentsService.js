@@ -29,6 +29,7 @@ export const TIPOS_DOCUMENTO = [
 
 export const TIPO_DOCUMENTO_LABELS = {
   CONTRATO_SOCIAL: "Contrato social",
+  PLANEJAMENTO_TRIBUTARIO: "Planejamento tributário",
   CARTAO_CNPJ: "Cartão CNPJ",
   INSCRICAO_ESTADUAL: "Inscrição estadual",
   INSCRICAO_MUNICIPAL: "Inscrição municipal",

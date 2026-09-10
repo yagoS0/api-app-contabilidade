@@ -12,6 +12,7 @@
 // continuam valendo para a parcela, porque agem sobre a própria guia.
 import { render, screen, fireEvent } from "@testing-library/react";
 import { CompanyGuidesTable } from "../renderCompanyGuidesTable.jsx";
+import { deslocarCompetencia } from "../../../../../lib/competencia";
 
 // O componente instancia o client no topo do módulo (dropdown "Marcar vazio" é auto-contido).
 jest.mock("../../../../../api/client", () => ({
@@ -41,6 +42,7 @@ function guiaDoDas(over = {}) {
     guideId: "g-das",
     tipo: "SIMPLES",
     competencia: COMP,
+    vencimento: `${deslocarCompetencia(COMP, 1)}-20T00:00:00.000Z`,
     status: "PROCESSED",
     paymentStatus: "OPEN",
     emailStatus: "PENDING",
@@ -216,13 +218,13 @@ describe("coluna Vencimento", () => {
   afterAll(() => { process.env.TZ = TZ_ORIGINAL; });
 
   it("⚠ imprime o DIA gravado — o 1º de setembro não vira 31 de agosto", () => {
-    renderTabela([guiaDoDas({ vencimento: "2026-09-01T00:00:00.000Z" })]);
+    renderTabela([guiaDoDas({ vencimento: "2026-09-01T00:00:00.000Z" })], { competencia: "2026-08" });
     expect(screen.getByText("01/09/2026")).toBeInTheDocument();
     expect(screen.queryByText("31/08/2026")).toBeNull();
   });
 
   it("o vencimento comum do DAS (dia 20) também não anda", () => {
-    renderTabela([guiaDoDas({ vencimento: "2026-03-20T00:00:00.000Z" })]);
+    renderTabela([guiaDoDas({ vencimento: "2026-03-20T00:00:00.000Z" })], { competencia: "2026-02" });
     expect(screen.getByText("20/03/2026")).toBeInTheDocument();
   });
 });

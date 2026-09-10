@@ -71,7 +71,7 @@ export function linhasDoEspelho(dados = {}) {
   // ⚠ VALOR AUSENTE NÃO É "R$ 0,00": travessão/"não informado" diz que ninguém informou.
   const valorInformado = Number.isFinite(Number(servico.valor)) && Number(servico.valor) > 0;
   linhas.push({ rotulo: "Valor dos serviços", valor: valorInformado ? fmtBRL(servico.valor) : "não informado", forte: true, separadorAntes: true });
-  linhas.push({ rotulo: "Alíquota de ISS", valor: servico.aliquota == null || servico.aliquota === "" ? "a da prefeitura" : fmtPercent(servico.aliquota) });
+  linhas.push({ rotulo: "Alíquota de ISS", valor: servico.aliquota == null || servico.aliquota === "" ? "não informada; depende da configuração de emissão" : fmtPercent(servico.aliquota) });
   linhas.push({ rotulo: "ISS retido", valor: textoIssRetido(Boolean(servico.issRetido)) });
   linhas.push({ rotulo: "Regime declarado", valor: textoRegime(regime) });
   if (!regime || regime.exigePTotTribSN) {

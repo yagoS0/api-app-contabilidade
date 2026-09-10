@@ -1,0 +1,151 @@
+/* Guias da empresa: ações junto do contexto, dados alinhados e cartões no celular. */
+.guides-page .guides-delivery-notice {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  gap: 10px; padding: 12px 16px; font-size: .875rem;
+  color: var(--text-muted); background: var(--state-neutral-surface);
+  border: 1px solid var(--border, #44475a); border-radius: 8px;
+}
+.guides-page .guides-list-panel {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  background: var(--bg-surface, #24253a);
+  border: 1px solid var(--border, #44475a);
+  border-radius: 12px;
+}
+.guides-page .guides-list-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 24px 24px 16px;
+}
+.guides-page .guides-list-panel__heading { min-width: 0; }
+.guides-page .guides-list-panel__title { font-size: 1.25rem; line-height: 1.35; margin: 0; }
+.guides-page .guides-list-panel__description {
+  max-width: 660px;
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: .875rem;
+  line-height: 1.5;
+}
+.guides-page .guides-toolbar { flex-direction: row; flex-wrap: wrap; min-height: 0; }
+.guides-page .guides-toolbar--primary { flex-shrink: 0; }
+.guides-page .guides-toolbar .btn { min-height: 38px; }
+.guides-page .guides-list-panel__context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 24px 16px;
+}
+.guides-page .guides-list-panel__alerts,
+.guides-page .guides-list-panel__views { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.guides-page .guides-list-panel__alerts .btn { border-radius: 6px; font-weight: 500; min-height: 34px; }
+.guides-page .guides-list-panel__views { margin-left: auto; justify-content: flex-end; }
+.guides-page .guides-view-menu { position: relative; }
+.guides-page .guides-view-menu summary {
+  cursor: pointer;
+  padding: 8px 0 8px 8px;
+  font-size: .8125rem;
+  color: var(--text-muted);
+}
+.guides-page .guides-view-menu__options {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  min-width: 210px;
+  background: var(--bg-surface, #24253a);
+  border: 1px solid var(--border, #44475a);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px #0004;
+}
+.guides-page .guides-view-menu__options .btn { text-align: left; justify-content: flex-start; }
+.guides-page .guides-toolbar--selected {
+  justify-content: flex-start;
+  padding: 12px 24px;
+  gap: 12px 24px;
+  background: var(--bg-page);
+  border-top: 1px solid var(--border, #44475a);
+}
+.guides-page .guides-toolbar__count { color: var(--text); }
+.guides-page .guides-toolbar__clear { min-height: 36px; color: var(--text-muted); }
+.guides-page .guides-toolbar__hint,
+.guides-page .guides-list-panel__hint { color: var(--text-muted); font-size: .8125rem; }
+.guides-page .guides-list-panel__hint { margin: 0; padding: 0 24px 12px; }
+.guides-page .guides-list-panel > p:not([class]),
+.guides-page .guides-list-panel > .text-muted,
+.guides-page .guides-list-panel > .guides-notice { margin: 0 24px 16px; }
+.guides-page .guides-notice p { margin-bottom: 0; }
+.guides-page .guides-grid { display: block; overflow-x: auto; border-radius: 0 0 12px 12px; }
+.guides-page .guides-grid__head,
+.guides-page .guides-grid__body { min-width: 1180px; }
+.guides-page .guides-grid__row {
+  grid-template-columns: 28px minmax(170px, 1.5fr) 100px 120px 110px 105px minmax(125px, 1fr) minmax(155px, 1.2fr);
+  padding: 16px 24px;
+  gap: 16px;
+  margin: 0;
+  min-height: 72px;
+  border-radius: 0;
+  border: 0;
+  border-top: 1px solid var(--border, #44475a);
+  background: transparent;
+}
+.guides-page .guides-grid__row--head { min-height: 44px; padding-block: 10px; background: var(--bg-page); }
+.guides-page .guides-grid__row--head .guides-grid__cell { color: var(--text-muted); font-size: .75rem; font-weight: 600; }
+.guides-page .guides-grid__body .guides-grid__row:hover { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.guides-page .guides-grid__body .guides-grid__row--selected { background: color-mix(in srgb, var(--accent, #2458db) 12%, transparent); outline: 0; box-shadow: inset 3px 0 var(--accent, #2458db); }
+.guides-page .guides-grid__cell { font-size: .875rem; line-height: 1.4; overflow-wrap: anywhere; }
+.guides-page .guides-grid__cell--type { display: grid; gap: 3px; }
+.guides-page .guides-grid__name { font-weight: 600; }
+.guides-page .guides-grid__processing { font-size: .75rem; font-weight: 400; }
+.guides-page .guides-grid__processing.guides-grid__tone--success { color: var(--text-muted); }
+.guides-page .guides-grid__cell--valor { text-align: right; font-variant-numeric: tabular-nums; }
+.guides-page .guides-grid__money { color: var(--text); font-weight: 600; }
+.guides-page .guides-grid__cell--vencimento,
+.guides-page .guides-grid__cell--competencia { font-variant-numeric: tabular-nums; }
+.guides-page .guides-grid__cell--check input { margin: 0; }
+.guides-page .guides-grid__cell--linha { gap: 8px; }
+.guides-page .guides-grid__linha-numero { flex: 1; }
+.guides-page .guides-grid__cell--linha button { min-width: 32px; min-height: 32px; }
+.guides-page :is(button, summary):focus-visible { outline: 2px solid var(--accent, #2458db); outline-offset: 3px; }
+@media (max-width: 1200px) {
+  .guides-page .guides-list-panel__header { flex-wrap: wrap; gap: 14px; }
+}
+@media (max-width: 800px) {
+  .guides-page .guides-list-panel__header { padding: 18px 16px 14px; }
+  .guides-page .guides-list-panel__title { font-size: 1.125rem; }
+  .guides-page .guides-toolbar--primary { flex-shrink: 1; }
+  .guides-page .guides-list-panel__context { padding: 0 16px 12px; flex-wrap: wrap; }
+  .guides-page .guides-list-panel__views { margin-left: 0; justify-content: flex-start; }
+  .guides-page .guides-view-menu summary { padding-left: 0; }
+  .guides-page .guides-view-menu__options { right: auto; left: 0; }
+  .guides-page .guides-list-panel__hint { padding: 0 16px 14px; }
+  .guides-page .guides-toolbar--selected { padding: 12px 16px; }
+  .guides-page .guides-list-panel > .guides-notice { margin-inline: 16px; }
+  .guides-page .guides-grid { overflow: visible; padding: 0 12px 12px; }
+  .guides-page .guides-grid__head { display: none; }
+  .guides-page .guides-grid__body { min-width: 0; display: grid; gap: 10px; }
+  .guides-page .guides-grid__row {
+    grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1fr);
+    gap: 14px 12px;
+    padding: 14px 12px;
+    border: 1px solid var(--border, #44475a);
+    border-radius: 8px;
+    background: var(--bg-page);
+  }
+  .guides-page .guides-grid__cell--check { align-self: start; padding-top: 2px; }
+  .guides-page .guides-grid__cell--type { grid-column: 2 / -1; }
+  .guides-page .guides-grid__cell--competencia,
+  .guides-page .guides-grid__cell--vencimento { grid-column: 2; }
+  .guides-page .guides-grid__cell--email { grid-column: 2 / -1; }
+  .guides-page .guides-grid__cell--linha { grid-column: 1 / -1; border-top: 1px solid var(--border, #44475a); padding-top: 10px; flex-wrap: wrap; }
+  .guides-page .guides-grid__cell[data-label]::before { content: attr(data-label); display: block; font-size: .6875rem; font-weight: 400; color: var(--text-muted); margin-bottom: 3px; }
+  .guides-page .guides-grid__cell--linha::before { flex-basis: 100%; }
+  .guides-page .guides-grid__cell--valor { text-align: left; }
+  .guides-page .guides-grid__linha-numero { min-width: 0; flex: 1 1 0; }
+}

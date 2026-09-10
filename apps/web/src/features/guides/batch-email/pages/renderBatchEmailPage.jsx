@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { competenciaPadrao, deslocarCompetencia, formatCompetencia } from "../../../../lib/competencia";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { Button } from "../../../../components/ui/Button";
 import { Feedback } from "../../../../components/ui/Feedback";
 // O lote por WhatsApp: quem pode abrir, como a prévia se agrupa, o que a confirmação repete.
 import { agruparPrevia, podeAbrirLoteWhatsapp } from "../../lib/canalDeEnvio";
+import { GuiasPorVencimento, PendenciasForaDoLote } from "./GuiasPorVencimento";
 
 const CANAL_ROTULO = { EMAIL: "e-mail", WHATSAPP: "WhatsApp" };
 
@@ -19,13 +21,6 @@ const PANEL = {
   warning: "#FFB347",
   danger: "#FF5757",
 };
-
-// Competência inicial = mês anterior (mesmo padrão das outras telas)
-function getPreviousMonthCompetencia() {
-  const now = new Date();
-  const ref = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, "0")}`;
-}
 
 const COLUMNS_SIMPLES = [
   { key: "DAS",      label: "DAS" },
@@ -131,6 +126,7 @@ function GuideStatusCell({ value }) {
 const rowKey = (row) => `${row.portalClientId}::${row.competencia}`;
 
 function CompanySection({ title, rows, columns, selectedKeys, onToggle, onToggleAll, onlyPending, showCompetencia }) {
+  if (rows.some((r) => Array.isArray(r.documentos))) return <GuiasPorVencimento {...{ title, rows, selectedKeys, onToggle, onToggleAll, onlyPending }} />;
   // Q16: só é "enviável" se tem guia NÃO enviada (SENT = display-only, não re-seleciona).
   const rowHasSendable = (row) => columns.some((c) => {
     const cell = row.tiposGuias?.[c.key];
@@ -269,7 +265,7 @@ function PreviaWhatsapp({ whatsapp, onEnviado }) {
       }}
     >
       <div style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap", marginBottom: 8 }}>
-        <strong>Prévia do envio por WhatsApp · {previa.competencia}</strong>
+        <strong>Prévia do envio por WhatsApp · {previa.mesVencimento ? `vencimento em ${previa.mesVencimento}` : previa.competencia}</strong>
         <span style={{ color: PANEL.muted }}>
           {r.total} guia{r.total === 1 ? "" : "s"}: <strong style={{ color: PANEL.text }}>{r.porWhatsapp}</strong> por WhatsApp ·{" "}
           <strong style={{ color: PANEL.text }}>{r.porEmail}</strong> por e-mail
@@ -322,7 +318,9 @@ function ResultadoWhatsapp({ resultado, onFechar }) {
   if (!resultado) return null;
   const z = resultado.whatsapp || {};
   const e = resultado.email || {};
-  const falhas = Array.isArray(z.falhas) ? z.falhas : [];
+  const falhas = Array.isArray(z.resultados)
+    ? z.resultados.filter(r => r.ok === false || r.parcial || r.indeterminadas)
+    : (Array.isArray(z.falhas) ? z.falhas : []);
   return (
     <div
       data-testid="resultado-whatsapp"
@@ -334,7 +332,7 @@ function ResultadoWhatsapp({ resultado, onFechar }) {
       <div style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap", marginBottom: falhas.length ? 8 : 0 }}>
         <strong>Lote por WhatsApp · {resultado.competencia}</strong>
         <span style={{ color: PANEL.muted }}>
-          WhatsApp: <strong style={{ color: PANEL.text }}>{Number(z.enviadas || 0)}</strong> de {Number(z.total || 0)} enviada{Number(z.total) === 1 ? "" : "s"}
+          WhatsApp: <strong style={{ color: PANEL.text }}>{Number(z.enviadas || 0)}</strong> de {Number(z.total || 0)} pedido(s) aceito(s) · entrega depende de confirmação
           {z.jaEnviadas ? ` (${z.jaEnviadas} já estava${z.jaEnviadas === 1 ? "" : "m"})` : ""} · e-mail:{" "}
           {e.executado === false
             ? <strong style={{ color: PANEL.danger }}>não enviado{e.motivo ? ` (${e.motivo})` : ""}</strong>
@@ -349,7 +347,8 @@ function ResultadoWhatsapp({ resultado, onFechar }) {
           </div>
           <ul style={{ margin: 0, paddingLeft: 18 }}>
             {falhas.map((f) => (
-              <li key={f.guideId}>{f.empresa} — {f.tipoLabel || f.tipo}: {f.mensagem || f.motivo || "motivo não informado"}</li>
+              <li key={f.guideId}>{f.empresa} — {f.tipoLabel || f.tipo}: {f.message || f.mensagem || f.motivo || "motivo não informado"}
+                {(f.resultados || []).filter(r => r.ok === false || r.estado === "indeterminado").map((r, i) => <div key={r.destino || i}>{r.destino || "Destinatário"}: {r.message || r.mensagem || r.motivo || "resultado não confirmado"}</div>)}</li>
             ))}
           </ul>
         </div>
@@ -372,13 +371,16 @@ export function BatchEmailPage({
 }) {
   // Q10.4: competência opcional ("" = todas). Q19: default = mês anterior (mesmo
   // padrão do dashboard/guias/notas); usuário pode trocar para "Todas" no seletor.
-  const [competencia, setCompetencia] = useState(getPreviousMonthCompetencia());
+  const [competenciaTrabalho, setCompetencia] = useState(competenciaPadrao);
+  const competencia = competenciaTrabalho ? deslocarCompetencia(competenciaTrabalho, 1) : "";
+  const filtro = { mesVencimento: competencia };
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [onlyPending, setOnlyPending] = useState(true);
 
   // Carrega ao montar e quando muda competência
   useEffect(() => {
-    onLoad?.(competencia || null);
+    if (competencia) onLoad?.(filtro);
+    whatsapp?.limpar?.();
     setSelectedKeys(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [competencia]);
@@ -404,33 +406,34 @@ export function BatchEmailPage({
   }
 
   const totalSelected = selectedKeys.size;
-  const canSend = totalSelected > 0 && !sending;
+  const canSend = totalSelected > 0 && !sending && !loading && report?.mesVencimento === competencia && !report?.competenciaFiltro;
 
   // ⚠ O lote por WhatsApp é por UMA competência (a rota exige AAAA-MM): com "Todas pendentes" o
   // botão fica DESABILITADO com o motivo — nunca some. E canal indisponível (flag, template) idem.
-  const aberturaZap = podeAbrirLoteWhatsapp({ competencia, selecionadas: totalSelected, canal: whatsapp?.canal });
-  const canZap = Boolean(whatsapp) && aberturaZap.pode && !whatsapp.prevendo && !whatsapp.executando && !sending;
+  const aberturaZap = competencia ? podeAbrirLoteWhatsapp({ competencia, selecionadas: totalSelected, canal: whatsapp?.canal })
+    : { pode: false, motivo: "Escolha o mês de vencimento." };
+  const canZap = Boolean(whatsapp) && aberturaZap.pode && !whatsapp.prevendo && !whatsapp.executando && canSend;
 
   async function handlePreverWhatsapp() {
     if (!canZap) return;
     const portalClientIds = [...new Set([...selectedKeys].map((key) => String(key).split("::")[0]))];
-    await whatsapp.prever({ competencia, portalClientIds });
+    const guideIds = [...(report?.simples || []), ...(report?.presumidos || []), ...(report?.outros || [])]
+      .filter((r) => selectedKeys.has(rowKey(r))).flatMap((r) => r.pendingGuideIds);
+    await whatsapp.prever({ mesVencimento: competencia, portalClientIds, guideIds });
   }
 
   async function handleSend() {
     if (!canSend) return;
     // Q10.4: cada selectedKey é "portalClientId::competencia" — parseia pra enviar.
-    const items = [...selectedKeys].map((key) => {
-      const [portalClientId, comp] = String(key).split("::");
-      return { portalClientId, competencia: comp };
-    });
+    const items = [...(report?.simples || []), ...(report?.presumidos || []), ...(report?.outros || [])]
+      .filter((r) => selectedKeys.has(rowKey(r)) && r.pendingGuideIds.length)
+      .map((r) => ({ portalClientId: r.portalClientId, mesVencimento: competencia, guideIds: r.pendingGuideIds, assinatura: r.assinatura }));
     await onSend?.(items);
     setSelectedKeys(new Set());
   }
 
   const simples = report?.simples || [];
   const presumidos = report?.presumidos || [];
-  const competenciasPresentes = report?.competenciasPresentes || [];
 
   /**
    * Quem FALHOU, contado uma vez por linha (empresa × competência).
@@ -443,7 +446,7 @@ export function BatchEmailPage({
   const linhasComFalha = useMemo(() => {
     const chaves = [];
     for (const row of [...simples, ...presumidos, ...(report?.outros || [])]) {
-      const celulas = Object.values(row?.tiposGuias || {});
+      const celulas = row.documentos || Object.values(row?.tiposGuias || {});
       const falhou = celulas.some((c) => c && (c.falhou || c.emailStatus === "ERROR"));
       if (falhou) chaves.push(rowKey(row));
     }
@@ -454,12 +457,12 @@ export function BatchEmailPage({
 
   return (
     <PageShell
-      title="Envio de e-mails em lote"
-      subtitle="Selecione empresas e dispare o envio das guias capturadas (1 e-mail por empresa com PDFs anexados)."
+      title="Envio de guias por vencimento"
+      subtitle="A competência de trabalho reúne as guias que vencem no mês seguinte, incluindo parcelamentos. Guias pagas ou já enviadas ficam fora da seleção."
       onBack={onBack}
       actions={
         <>
-          <Button variant="secondary" onClick={() => onLoad?.(competencia)} disabled={loading}>
+          <Button variant="secondary" onClick={() => { setSelectedKeys(new Set()); whatsapp?.limpar?.(); onLoad?.(filtro); }} disabled={loading || sending || whatsapp?.executando}>
             {loading ? "Carregando..." : "Atualizar"}
           </Button>
           <Button variant="primary" onClick={handleSend} disabled={!canSend}>
@@ -486,21 +489,17 @@ export function BatchEmailPage({
         }}>
           <label style={{ fontSize: "0.85rem", color: PANEL.muted, display: "flex", alignItems: "center", gap: 8 }}>
             Competência:
-            <select
-              value={competencia}
+            <input type="month" aria-label="Competência de trabalho" disabled={sending || whatsapp?.executando}
+              value={competenciaTrabalho}
               onChange={(e) => setCompetencia(e.target.value)}
               style={{
                 background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6,
                 color: PANEL.text, padding: "6px 10px", fontSize: "0.9rem", colorScheme: "dark",
                 minWidth: 200,
               }}
-            >
-              <option value="">Todas pendentes</option>
-              {competenciasPresentes.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+            />
           </label>
+          <span>Vencimentos de <strong>{formatCompetencia(competencia)}</strong></span>
           <label style={{ fontSize: "0.85rem", color: PANEL.muted, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
             <input
               type="checkbox"
@@ -528,10 +527,11 @@ export function BatchEmailPage({
         {whatsapp ? (
           <PreviaWhatsapp
             whatsapp={whatsapp}
-            onEnviado={() => { setSelectedKeys(new Set()); onLoad?.(competencia || null); }}
+            onEnviado={() => { setSelectedKeys(new Set()); onLoad?.(filtro); }}
           />
         ) : null}
         {whatsapp ? <ResultadoWhatsapp resultado={whatsapp.resultado} onFechar={whatsapp.limpar} /> : null}
+        {!loading && <PendenciasForaDoLote report={report} />}
         {whatsapp?.erro && !whatsapp.previa ? (
           <p style={{ margin: "0 0 12px", fontSize: "0.85rem", color: PANEL.danger }}>{whatsapp.erro.mensagem}</p>
         ) : null}
@@ -587,7 +587,9 @@ export function BatchEmailPage({
               showCompetencia={showCompetencia}
             />
             {/* Legenda */}
-            <div style={{
+            {(report?.outros || []).length > 0 && <CompanySection title="Outras empresas" rows={report.outros} columns={COLUMNS_PRESUMIDO}
+              selectedKeys={selectedKeys} onToggle={toggleOne} onToggleAll={toggleAllInSection} onlyPending={onlyPending} showCompetencia={showCompetencia} />}
+            {!report?.mesVencimento && <div style={{
               marginTop: 8, padding: "10px 12px", background: PANEL.field, border: `1px solid ${PANEL.border}`,
               borderRadius: 8, fontSize: "0.75rem", color: PANEL.muted, display: "flex", gap: 24, flexWrap: "wrap",
             }}>
@@ -596,7 +598,7 @@ export function BatchEmailPage({
               <span><strong style={{ color: PANEL.success }}>✓ enviado</strong> Já enviada — por e-mail ou por WhatsApp (o canal vai no título)</span>
               <span><strong style={{ color: PANEL.danger }}>✗</strong> Sem guia</span>
               <span><strong style={{ color: PANEL.warning }}>●</strong> Parcelamento ativo (info, sem anexo de PDF)</span>
-            </div>
+            </div>}
           </>
         )}
 

@@ -39,68 +39,27 @@ beforeEach(async () => {
   mockApi = await apiLogada();
 });
 
-describe("⚠⚠ a corrente inteira: criar → entrar no fluxo → aparecer na lista", () => {
-  it("a AVULSA entra no DIA que a pessoa escolheu, e a lista a reconhece", async () => {
-    const criada = await mockApi.criarSaidaDoFluxo(EMPRESA, {
-      tipo: "AVULSA", descricao: "Reforma da sala", valor: 3500, data: "2026-09-18",
-    });
+describe("cadastros pendentes aguardam conferência, sem fabricar caixa", () => {
+  it("salva avulsa mas não altera linhas nem totais antes da contabilização", async () => {
+    const antes = await fluxo();
+    const criada = await mockApi.criarSaidaDoFluxo(EMPRESA, { tipo: "AVULSA", descricao: "Reforma da sala", valor: 3500, data: "2026-09-18" });
     expect(criada.saida.estado).toBe("PENDENTE");
-
-    const r = await fluxo();
-    const setembro = r.meses.find((m) => m.competencia === "2026-09");
-    const linha = setembro.linhas.find((l) => l.rotulo === "Reforma da sala");
-    expect(linha).toBeDefined();
-    expect(linha.dia).toBe(18);
-    expect(linha.direcao).toBe("SAIDA");
-    // ⚠⚠ SEMPRE previsão: o cliente planejou, ninguém pagou.
-    expect(linha.procedencia).toBe("PREVISAO");
-
-    // ⚠⚠ E A LISTA A ENCONTRA — é este passo que o defeito quebrava.
-    const lista = saidasDoClienteNoFluxo(r.meses);
-    const dela = lista.find((s) => s.rotulo === "Reforma da sala");
-    expect(dela).toBeDefined();
-    expect(dela.tipo).toBe(TIPO_DA_SAIDA.AVULSA);
-    expect(dela.pendente).toBe(true);
+    expect(criada.saida.id).toBeTruthy();
+    const depois = await fluxo();
+    expect(depois.meses).toEqual(antes.meses);
+    expect(depois.meses.flatMap(m => m.linhas).some(l => l.rotulo === "Reforma da sala")).toBe(false);
+    await mockApi.removerSaidaDoFluxo(EMPRESA, criada.saida.id, { tipo: "AVULSA" });
   });
-
-  it("⚠⚠ o mock manda os MESMOS nomes de campo do servidor — `doCliente` e `referencia`", async () => {
-    // A guarda é sobre o NOME, não sobre o efeito: um mock com `origem: "CLIENTE"` e `base.saidaId`
-    // produz um fluxo que parece certo e uma lista vazia.
-    await mockApi.criarSaidaDoFluxo(EMPRESA, {
-      tipo: "AVULSA", descricao: "X", valor: 100, data: "2026-09-02",
-    });
+  it.each(["MENSAL", "ANUAL"])("recorrência %s sem observações é cadastrada e não projetada", async periodicidade => {
+    const criada = await mockApi.criarSaidaDoFluxo(EMPRESA, { tipo: "RECORRENTE", descricao: "Recorrência nova", valor: 1200, periodicidade });
+    expect(criada.serie.estado).toBe("PENDENTE");
     const r = await fluxo();
-    const linha = r.meses.flatMap((m) => m.linhas).find((l) => l.rotulo === "X");
-    expect(linha.base.doCliente).toBe(true);
-    expect(linha.referencia).toEqual({ tipo: "saidaAvulsa", id: expect.any(String) });
-    expect(linha.base).not.toHaveProperty("saidaId");
+    expect(r.meses.flatMap(m => m.linhas).some(l => l.rotulo === "Recorrência nova")).toBe(false);
   });
-
-  it("a RECORRENTE se repete no ritmo dela, e a lista a mostra UMA vez", async () => {
-    await mockApi.criarSaidaDoFluxo(EMPRESA, {
-      tipo: "RECORRENTE", descricao: "Aluguel", valor: 1200, periodicidade: "MENSAL",
-    });
-    const r = await fluxo();
-    const ocorrencias = r.meses.flatMap((m) => m.linhas).filter((l) => l.rotulo === "Aluguel");
-    expect(ocorrencias.length).toBeGreaterThan(1);
-    // ⚠ Sem dia: a periodicidade diz o ciclo, não a data.
-    expect(ocorrencias.every((l) => l.dia === null)).toBe(true);
-
-    const lista = saidasDoClienteNoFluxo(r.meses);
-    const dela = lista.filter((s) => s.rotulo === "Aluguel");
-    expect(dela).toHaveLength(1);
-    expect(dela[0].tipo).toBe(TIPO_DA_SAIDA.RECORRENTE);
-    expect(dela[0].periodicidade).toBe("MENSAL");
-    expect(dela[0].ocorrencias).toBe(ocorrencias.length);
-  });
-
-  it("⚠ ANUAL aparece MENOS vezes que MENSAL — o passo sai da periodicidade, não de uma média", async () => {
-    await mockApi.criarSaidaDoFluxo(EMPRESA, {
-      tipo: "RECORRENTE", descricao: "Conselho", valor: 800, periodicidade: "ANUAL",
-    });
-    const r = await fluxo();
-    const n = r.meses.flatMap((m) => m.linhas).filter((l) => l.rotulo === "Conselho").length;
-    expect(n).toBe(1);
+  it("fixtures projetam apenas séries de despesa com ao menos três observações", async () => {
+    const linhas = (await fluxo()).meses.flatMap(m => m.linhas);
+    expect(linhas.some(l => l.fonte === "SERIE_RECEITA")).toBe(false);
+    expect(linhas.filter(l => l.fonte === "SERIE_DESPESA").every(l => l.base.n >= 3)).toBe(true);
   });
 });
 

@@ -15,7 +15,7 @@ import { useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BotaoCopiar } from "../../../../components/ui/BotaoCopiar";
 import { getComplianceTags } from "./renderCompanyCard";
-import { GuiaChip, Popover, todasConcluidas, todasPorGerar, ehParcela } from "./renderGuiaChip";
+import { GuiaChip, Popover, todasConcluidas, todasPorGerar, ehParcela, rotuloCanaisEnviados, resumoCanaisEnviados } from "./renderGuiaChip";
 import { empresaSemObrigacoes, TITULO_ZERADA } from "../lib/estadoDominante";
 import { estadoApuracao, detalheApuracao } from "../lib/estadoApuracao";
 import { situacaoFiscalDaLinha } from "../lib/situacaoFiscal";
@@ -197,6 +197,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
   const fechada = apuracao.chave === "fechada";
   const tags = getComplianceTags(company.guideCompliance);
   const concluidas = todasConcluidas(tags);
+  const canaisEnviados = resumoCanaisEnviados(tags);
   const agregarGuias = todasPorGerar(tags);
   const zerada = empresaSemObrigacoes(company);
   const fiscal = situacaoFiscalDaLinha(company);
@@ -257,7 +258,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
           distinguem nada para quem usa leitor de tela.
           `data-coluna-acao` some no papel, junto do botão Acessar: seleção é gesto de tela. */}
       {onAlternarSelecao && (
-        <td data-coluna-acao style={{ ...CELULA, width: 34, textAlign: "center" }}>
+        <td className="company-row__selection" data-coluna-acao style={{ ...CELULA, width: 34, textAlign: "center" }}>
           <input
             type="checkbox"
             checked={Boolean(selecionada)}
@@ -267,7 +268,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
           />
         </td>
       )}
-      <td style={{ ...CELULA, position: "relative" }}>
+      <td className="company-row__name" style={{ ...CELULA, position: "relative" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span
             role="button"
@@ -338,7 +339,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
       </td>
 
       {/* APURAÇÃO — o pipeline do mês. Um chip, quatro estados possíveis, nada empilhado. */}
-      <td style={CELULA}>
+      <td data-label="Apuração" style={CELULA}>
         <span
           title={detalheApuracao(apuracao, trava)}
           style={{
@@ -352,7 +353,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
       </td>
 
       {/* SITUAÇÃO FISCAL — a relação com a Receita. Estado bom não ganha pill: não grita. */}
-      <td style={CELULA}>
+      <td data-label="Situação fiscal" style={CELULA}>
         {fiscal.precisaConsultar ? (
           <button
             type="button"
@@ -392,7 +393,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
         )}
       </td>
 
-      <td style={{ ...CELULA }}>
+      <td data-label="Envio de guias" style={{ ...CELULA }}>
         <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           {zerada ? (
             /* Empresa zerada não tem guia. Dizer isso é diferente de não mostrar nada — coluna
@@ -410,12 +411,12 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
             >
               <span aria-hidden="true">◌</span>Zerada
             </span>
-          ) : concluidas ? (
+          ) : concluidas && canaisEnviados !== null ? (
             <span
-              style={{ fontSize: "0.74rem", fontWeight: 700, color: "var(--state-ok)" }}
-              title={tags.map((t) => `${t.label}: ${t.state === "vazio" ? "sem movimento" : "enviada"}`).join(" · ")}
+              style={{ fontSize: "0.74rem", fontWeight: 500, color: "var(--text-muted)" }}
+              title={tags.map((t) => `${t.label}: ${t.state === "vazio" ? "sem movimento" : rotuloCanaisEnviados(t) ? `enviada por ${rotuloCanaisEnviados(t)}` : "enviada"}`).join(" · ")}
             >
-              ✓ Guias concluídas
+              {canaisEnviados ? <><span aria-hidden="true">✓ </span>{canaisEnviados}</> : "Sem envios pendentes"}
             </span>
           ) : agregarGuias ? (
             /* ⚠ UM chip no lugar de quatro vermelhos. No Lucro Presumido são IRPJ + CSLL +
@@ -449,17 +450,18 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
           coluna inteira, e uma coluna de números desalinhada perde a única coisa que ela faz melhor
           que o card, que é deixar comparar de relance. A largura da coluna subiu junto (ver
           `<colgroup>` lógico nos `<th>` abaixo); o `nowrap` é a garantia, a largura é o conforto. */}
-      <td style={{ ...CELULA, textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "0.78rem", color: notasTotal > 0 ? "var(--text)" : "var(--text-muted)" }}>
+      <td data-label="Notas emitidas" style={{ ...CELULA, textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "0.78rem", color: notasTotal > 0 ? "var(--text)" : "var(--text-muted)" }}>
         {fmtMoeda(notasTotal)}
       </td>
 
-      <td data-coluna-acao style={{ ...CELULA, textAlign: "right", whiteSpace: "nowrap" }}>
+      <td className="company-row__action" data-coluna-acao style={{ ...CELULA, textAlign: "right", whiteSpace: "nowrap" }}>
         {/* ⚠ Trinta linhas com trinta botões "Acessar" produzem trinta rótulos idênticos na lista
             de links/botões de um leitor de tela. O nome da empresa é o que distingue um do outro. */}
         <Button
           type="button"
           onClick={() => onOpenCompany?.(company.companyId)}
           aria-label={`Acessar ${nome}`}
+          variant="secondary"
           style={{ minHeight: 28, padding: "4px 12px", fontSize: "0.78rem" }}
         >
           Acessar
@@ -713,13 +715,13 @@ export function CompaniesTable({
         </div>
       )}
 
-      <div data-print-tabela style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "auto", maxHeight: "calc(100vh - 320px)" }}>
+      <div data-print-tabela className="companies-table-scroll">
       {/* ⚠ `minWidth` — em tela estreita a coluna Guias era ESMAGADA: os chips (que já embrulham em
           várias linhas) viravam uma pilha vertical de uma letra por linha, e a linha da empresa
           crescia até três vezes a altura. Com um mínimo, o contêiner rola na horizontal — que é
           desconforto — em vez de destruir a leitura, que é perda de informação. A tabela continua
           sendo o padrão só a partir de 1024px; abaixo disso o dashboard já abre em Cards. */}
-      <table aria-busy={carregando || undefined} style={{ width: "100%", minWidth: 880, borderCollapse: "collapse", fontSize: "0.85rem" }} onKeyDown={aoTeclar}>
+      <table className="companies-table" role="table" aria-busy={carregando || undefined} style={{ width: "100%", minWidth: 880, borderCollapse: "collapse", fontSize: "0.85rem" }} onKeyDown={aoTeclar}>
         <caption style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
           Empresas da carteira na competência {competencia}, com estado do fechamento e guias do mês.
           Ordenadas por {ROTULO_ORDEM[ordem.campo] || ordem.campo}.

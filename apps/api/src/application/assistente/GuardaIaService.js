@@ -17,11 +17,14 @@
 
 import { prisma } from "../../infrastructure/db/prisma.js";
 import {
+  IA_COMERCIAL_TETO_CONVERSA_CENTAVOS,
+  IA_COMERCIAL_MAX_CHAMADAS_DIA,
   ANTHROPIC_API_KEY,
   IA_MODELO,
   IA_TETO_MENSAL_EMPRESA_CENTAVOS,
   IA_TETO_MENSAL_ESCRITORIO_CENTAVOS,
   IA_ALERTA_FRACAO,
+  IA_RESERVA_CHAMADA_CENTAVOS,
   log as logPadrao,
 } from "../../config.js";
 import { custoEstimadoCentavos } from "./precosIa.js";
@@ -54,11 +57,11 @@ export function inicioDoMesSaoPaulo(agora = new Date()) {
 
 async function somaDoMes(where, client) {
   const r = await client.chamadaIa.aggregate({
-    _sum: { custoEstimadoCentavos: true },
+    _sum: { custoEstimadoCentavos: true, reservaCentavos: true },
     _count: { _all: true },
-    where: { ...where, status: { in: [STATUS_CHAMADA.OK, STATUS_CHAMADA.ERRO] } },
+    where: { ...where, status: { in: [STATUS_CHAMADA.OK, STATUS_CHAMADA.ERRO, "reservada"] } },
   });
-  return { centavos: Number(r?._sum?.custoEstimadoCentavos || 0), chamadas: Number(r?._count?._all || 0) };
+  return { centavos: Number(r?._sum?.custoEstimadoCentavos || 0) + Number(r?._sum?.reservaCentavos || 0), chamadas: Number(r?._count?._all || 0) };
 }
 
 /**
@@ -126,7 +129,7 @@ export const FINALIDADE_IA = Object.freeze({
   CLASSIFICACAO_LANCAMENTOS: "classificacao_lancamentos",
 });
 
-export async function autorizarChamadaIa({ portalClientId, conversaId, mensagemId, finalidade = null, agora = new Date(), client = prisma, log = logPadrao, chave = ANTHROPIC_API_KEY } = {}) {
+export async function autorizarChamadaIa({ portalClientId, conversaId, mensagemId, finalidade = null, agora = new Date(), client = prisma, log = logPadrao, chave = ANTHROPIC_API_KEY, reservaCentavos = IA_RESERVA_CHAMADA_CENTAVOS } = {}) {
   const base = {
     conversaId: conversaId ? String(conversaId) : null,
     portalClientId: portalClientId ? String(portalClientId) : null,
@@ -141,13 +144,29 @@ export async function autorizarChamadaIa({ portalClientId, conversaId, mensagemI
     return { ok: false, motivo: MOTIVOS_RECUSA.SEM_CHAVE, mensagem: FRASE_CONFIG };
   }
 
-  let consumo;
+  // Leitura e reserva no MESMO commit serializável: dois fios não gastam o mesmo saldo.
+  // Reserva órfã continua contando; não liberar automaticamente um consumo desconhecido.
   try {
     const desde = inicioDoMesSaoPaulo(agora);
-    consumo = {
-      empresa: base.portalClientId ? await somaDoMes({ portalClientId: base.portalClientId, createdAt: { gte: desde } }, client) : { centavos: 0 },
-      escritorio: await somaDoMes({ createdAt: { gte: desde } }, client),
-    };
+    for (let tentativa = 0; tentativa < 3; tentativa += 1) {
+      try {
+        return await client.$transaction(async (tx) => {
+          const empresa = base.portalClientId ? await somaDoMes({ portalClientId: base.portalClientId, createdAt: { gte: desde } }, tx) : { centavos: 0 };
+          const escritorio = await somaDoMes({ createdAt: { gte: desde } }, tx);
+          const lead = base.finalidade === "comercial_whatsapp" ? await somaDoMes({ conversaId: base.conversaId, finalidade: base.finalidade, createdAt: { gte: desde } }, tx) : null;
+          const diario = lead ? await somaDoMes({ conversaId: base.conversaId, finalidade: base.finalidade, createdAt: { gte: new Date(agora.getTime() - 86400000) } }, tx) : null;
+          const motivo = lead && (lead.centavos + reservaCentavos > IA_COMERCIAL_TETO_CONVERSA_CENTAVOS || diario.chamadas >= IA_COMERCIAL_MAX_CHAMADAS_DIA) ? "TETO_LEAD"
+            : IA_TETO_MENSAL_EMPRESA_CENTAVOS > 0 && empresa.centavos + reservaCentavos > IA_TETO_MENSAL_EMPRESA_CENTAVOS ? MOTIVOS_RECUSA.TETO_EMPRESA
+            : IA_TETO_MENSAL_ESCRITORIO_CENTAVOS > 0 && escritorio.centavos + reservaCentavos > IA_TETO_MENSAL_ESCRITORIO_CENTAVOS ? MOTIVOS_RECUSA.TETO_ESCRITORIO : null;
+          if (motivo) {
+            await tx.chamadaIa.create({ data: { ...base, status: STATUS_CHAMADA.RECUSADA_TETO, erroCodigo: motivo } });
+            return { ok: false, motivo, mensagem: FRASE_TETO };
+          }
+          const chamada = await tx.chamadaIa.create({ data: { ...base, status: "reservada", reservaCentavos } });
+          return { ok: true, contexto: { ...base, chamadaId: chamada.id, inicio: Date.now() } };
+        }, { isolationLevel: "Serializable" });
+      } catch (e) { if (e?.code !== "P2034" || tentativa === 2) throw e; }
+    }
   } catch (err) {
     // ⚠⚠ FALHA FECHADO — ver o cabeçalho.
     log?.error?.({ err: err?.message }, "assistente: não consegui contar o consumo do mês — recusado (falha fechado)");
@@ -155,21 +174,6 @@ export async function autorizarChamadaIa({ portalClientId, conversaId, mensagemI
     return { ok: false, motivo: MOTIVOS_RECUSA.CONTAGEM_FALHOU, mensagem: FRASE_CONFIG };
   }
 
-  if (IA_TETO_MENSAL_EMPRESA_CENTAVOS > 0 && consumo.empresa.centavos >= IA_TETO_MENSAL_EMPRESA_CENTAVOS) {
-    await registrar({ ...base, status: STATUS_CHAMADA.RECUSADA_TETO, erroCodigo: MOTIVOS_RECUSA.TETO_EMPRESA }, client, log);
-    log?.warn?.({ portalClientId: base.portalClientId, centavos: consumo.empresa.centavos, teto: IA_TETO_MENSAL_EMPRESA_CENTAVOS }, "assistente: teto mensal da EMPRESA atingido");
-    return { ok: false, motivo: MOTIVOS_RECUSA.TETO_EMPRESA, mensagem: FRASE_TETO };
-  }
-  if (IA_TETO_MENSAL_ESCRITORIO_CENTAVOS > 0 && consumo.escritorio.centavos >= IA_TETO_MENSAL_ESCRITORIO_CENTAVOS) {
-    await registrar({ ...base, status: STATUS_CHAMADA.RECUSADA_TETO, erroCodigo: MOTIVOS_RECUSA.TETO_ESCRITORIO }, client, log);
-    log?.warn?.({ centavos: consumo.escritorio.centavos, teto: IA_TETO_MENSAL_ESCRITORIO_CENTAVOS }, "assistente: teto mensal do ESCRITÓRIO atingido");
-    return { ok: false, motivo: MOTIVOS_RECUSA.TETO_ESCRITORIO, mensagem: FRASE_TETO };
-  }
-  const fracao = IA_TETO_MENSAL_ESCRITORIO_CENTAVOS > 0 ? consumo.escritorio.centavos / IA_TETO_MENSAL_ESCRITORIO_CENTAVOS : 0;
-  if (fracao >= IA_ALERTA_FRACAO) {
-    log?.warn?.({ fracao: Math.round(fracao * 100) / 100 }, "assistente: consumo do mês acima da fração de alerta");
-  }
-  return { ok: true, contexto: { ...base, inicio: Date.now() } };
 }
 
 /**
@@ -177,11 +181,12 @@ export async function autorizarChamadaIa({ portalClientId, conversaId, mensagemI
  * @param {object} contexto  o de `autorizarChamadaIa`
  * @param {object} desfecho  `{ usage, iteracoes, ferramentas, stopReason, erroCodigo, erroMensagem }`
  */
-export async function concluirChamadaIa(contexto, { usage = null, iteracoes = 0, ferramentas = [], stopReason = null, erroCodigo = null, erroMensagem = null } = {}, { client = prisma, log = logPadrao } = {}) {
+export async function concluirChamadaIa(contexto, { usage = null, iteracoes = 0, ferramentas = [], stopReason = null, erroCodigo = null, erroMensagem = null, usageCompleto = !erroCodigo } = {}, { client = prisma, log = logPadrao } = {}) {
   if (!contexto) return;
-  const { inicio, ...base } = contexto;
+  const { inicio, chamadaId, ...base } = contexto;
   const u = usage || {};
-  await registrar({
+  const usoConfirmado = usageCompleto === true && usage && [usage.input_tokens, usage.output_tokens].every(v => typeof v === "number" && Number.isFinite(v) && v >= 0);
+  const dados = {
     ...base,
     status: erroCodigo ? STATUS_CHAMADA.ERRO : STATUS_CHAMADA.OK,
     inputTokens: Number(u.input_tokens || 0),
@@ -195,5 +200,11 @@ export async function concluirChamadaIa(contexto, { usage = null, iteracoes = 0,
     stopReason: stopReason ? String(stopReason) : null,
     erroCodigo: erroCodigo ? String(erroCodigo) : null,
     erroMensagem: erroMensagem ? String(erroMensagem).slice(0, 300) : null,
-  }, client, log);
+    // Usage parcial não confirma a última rodada. Custo conhecido soma à reserva ainda pendente.
+    ...(usoConfirmado ? { reservaCentavos: 0 } : chamadaId ? {} : { reservaCentavos: IA_RESERVA_CHAMADA_CENTAVOS }),
+  };
+  if (chamadaId) {
+    // Falha nesta escrita mantém a reserva no saldo e sobe para quem orquestra o turno.
+    await client.chamadaIa.update({ where: { id: chamadaId }, data: dados });
+  } else await registrar(dados, client, log);
 }
