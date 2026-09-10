@@ -4,6 +4,15 @@ import { sincronizarAgendaConfigurada } from '../sincronizarAgendaConfigurada';
 import { normalizarAgenda, expandirAgenda, ocorrenciasDaTarefa } from '../../../../../../packages/shared/src/agenda';
 const config={dataInicio:'2026-09-10',dataFim:'2026-09-15',recorrencia:'MENSAL',prioridade:'ALTA'};
 test('normalização preserva agenda nas obrigações',()=>expect(normalizarEntrada({nome:'EFD',periodicidade:'MENSAL',diaVencimento:21,agendaConfig:config}).agendaConfig).toMatchObject(config));
+
+test('horário fixo repete sem inventar duração e aceita alteração para intervalo',()=>{
+  const c=normalizarAgenda({...config,dataFim:config.dataInicio,horaInicio:'09:30'});
+  expect(c).toMatchObject({horaInicio:'09:30',horaFim:null});
+  expect(expandirAgenda(c,'2026-09-01','2026-10-31')).toHaveLength(2);
+  const tarefa={id:'t',titulo:'Conferir NFS-e',config:c,estados:{'2026-09':{alteracoes:{horaInicio:'10:00',horaFim:'11:00'}}}};
+  expect(ocorrenciasDaTarefa(tarefa,'2026-09-01','2026-10-31').map(o=>[o.horaInicio,o.horaFim])).toEqual([['10:00','11:00'],['09:30',null]]);
+  expect(()=>normalizarAgenda({...c,horaInicio:null,horaFim:'10:00'})).toThrow('Informe o horário inicial.');
+});
 test.each(['DIARIA','SEMANAL','MENSAL','TRIMESTRAL','ANUAL'])('expande %s sem gerar antes da âncora',recorrencia=>{
   const out=expandirAgenda({...config,recorrencia},'2026-09-01','2027-10-01');expect(out.length).toBeGreaterThan(1);expect(out.every(o=>o.dataInicio>='2026-09-10')).toBe(true);expect(new Set(out.map(o=>o.cicloChave)).size).toBe(out.length);
 });

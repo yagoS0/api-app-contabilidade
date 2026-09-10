@@ -49,18 +49,21 @@ export function faixasDoPeriodo(itens, dias) {
     });
 }
 export const minutos = hora => hora.split(':').reduce((h, m) => Number(h) * 60 + Number(m));
+// Horário fixo reserva somente espaço visual para leitura; não cria duração persistida.
+export const fimVisual = item => item.horaFim ? minutos(item.horaFim) : Math.min(1440, minutos(item.horaInicio) + 30);
+export const horarioAtividade = item => item.horaInicio ? item.horaFim ? `${item.horaInicio}–${item.horaFim}` : item.horaInicio : '';
 /** Eventos simultâneos recebem colunas próprias, sem encobrir os anteriores. */
 export function posicionarHorarios(itens) {
   const ordenados = [...itens].sort((a,b) => minutos(a.horaInicio) - minutos(b.horaInicio) || a.id.localeCompare(b.id));
   const blocos = []; let bloco = [], ate = -1;
   for (const item of ordenados) {
     if (minutos(item.horaInicio) >= ate && bloco.length) { blocos.push(bloco); bloco = []; ate = -1; }
-    bloco.push(item); ate = Math.max(ate, minutos(item.horaFim));
+    bloco.push(item); ate = Math.max(ate, fimVisual(item));
   }
   if (bloco.length) blocos.push(bloco);
   return blocos.flatMap(b => {
     const finais = [];
-    const pos = b.map(item => { let coluna = finais.findIndex(f => f <= minutos(item.horaInicio)); if (coluna < 0) coluna = finais.length; finais[coluna] = minutos(item.horaFim); return { item, coluna }; });
+    const pos = b.map(item => { let coluna = finais.findIndex(f => f <= minutos(item.horaInicio)); if (coluna < 0) coluna = finais.length; finais[coluna] = fimVisual(item); return { item, coluna }; });
     return pos.map(p => ({ ...p, colunas: finais.length }));
   });
 }
