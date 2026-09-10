@@ -518,22 +518,13 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
         />
 
         <AppShell className="guides-page-shell">
-          {/* ⚠ A CONFIGURAÇÃO DE ENVIO MORA AQUI desde 05/09/2026 (decisão do dono) — é onde se
-              decide quem recebe a guia, ao lado da guia. Ela sai da aba de senha e acesso, que
-              guarda segredo. Gaveta, e não seção fixa: a tabela de guias é o assunto da aba. */}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "var(--space-2)" }}>
-            <Button variant="secondary" type="button" onClick={() => switchTab("comunicacao")}>
-              Configuração de envio
-            </Button>
-          </div>
-
-
           {/* ⚠ `onRefresh` alimenta a espera da coluna "Envio": a confirmação de entrega do WhatsApp
               chega pelo webhook SEGUNDOS depois do envio, e sem recarregar a célula congela em
               "aceita, sem confirmação" até alguém apertar F5 — que foi o que aconteceu em
               05/09/2026. A tabela pede a recarga sozinha, e para sozinha. */}
           <Suspense fallback={<TabLoadingFallback />}>
           <CompanyGuidesTable
+            onConfigurarEnvio={() => switchTab("comunicacao")}
             companyId={companyId}
             competencia={circularPanel?.competencia}
             companyRegime={companyRegime}
