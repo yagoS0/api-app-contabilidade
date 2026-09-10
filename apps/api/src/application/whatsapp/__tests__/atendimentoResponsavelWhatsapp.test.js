@@ -175,6 +175,39 @@ it('texto livre Guias do mês continua na empresa e esclarecimentos não abrem o
   expect(f.cloud.enviarLista).toHaveBeenCalledTimes(1);
 });
 
+it.each(['trocar', 'mudar de empresa', 'trocar de empresa', 'pode mudar a empresa?', 'outra empresa, por favor.'])(
+  '%s abre a lista e continua no menu e nas guias da nova empresa', async texto => {
+    const f = await fixtureComMenu();
+    await f.selecionar('menu', 'lente');
+    await f.rodar(await f.novo(texto));
+    expect(f.atendimento()).toMatchObject({ portalClientId: null, aguardandoSelecao: true, pedidoPendente: null });
+    expect(f.executar).not.toHaveBeenCalled();
+    const opcao = f.cloud.enviarLista.mock.calls.at(-1)[0].linhas.find(o => o.id.endsWith('.klaus'));
+    await f.clicar(opcao);
+    expect(f.atendimento()).toMatchObject({ portalClientId: 'klaus', aguardandoSelecao: false });
+    await f.clicar(f.guia());
+    expect(f.executar).toHaveBeenCalledTimes(1);
+    expect(f.executar).toHaveBeenCalledWith('quanto_devo', {}, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'klaus' }) }));
+  });
+
+it('pedido de troca por texto pausa o rascunho e cancela o código antes de escolher outra empresa', async () => {
+  const f = await fixtureComMenu();
+  await f.selecionar('menu', 'lente');
+  const conversaId = f.atendimento().conversaId;
+  await f.client.rascunhoEmissaoWhatsapp.create({ data: { id: 'draft', conversaId, versao: 3,
+    expiraEm: new Date(+AGORA + 86400000), estado: { status: 'REVISAO', dados: { valor: 150 }, codigo: 'A7K2' } } });
+  await f.client.acaoPendenteWhatsapp.create({ data: { id: 'acao', conversaId, atendimentoId: f.atendimento().id, status: 'pendente' } });
+  await f.rodar(await f.novo('gostaria de mudar de empresa, por favor'));
+  expect(f.client.rows.rascunhoEmissaoWhatsapp[0]).toMatchObject({ conversaId, estado: { status: 'PAUSADO', dados: { valor: 150 } } });
+  expect(f.client.rows.rascunhoEmissaoWhatsapp[0].estado.codigo).toBeUndefined();
+  expect(f.client.rows.acaoPendenteWhatsapp[0].status).toBe('cancelada');
+  expect(f.executar).not.toHaveBeenCalled();
+  expect(f.atendimento()).toMatchObject({ aguardandoSelecao: true, pedidoPendente: null });
+  await f.clicar(f.cloud.enviarLista.mock.calls.at(-1)[0].linhas.find(o => o.id.endsWith('.klaus')));
+  expect(f.atendimento().portalClientId).toBe('klaus');
+  expect(f.client.rows.rascunhoEmissaoWhatsapp[0].conversaId).toBe(conversaId);
+});
+
 it('menu antigo após trocar empresa mostra o menu atual e não consulta a empresa errada', async () => {
   const f = await fixtureComMenu();
   await f.selecionar('menu', 'lente');

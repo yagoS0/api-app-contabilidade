@@ -181,8 +181,26 @@ describe('emissor não é tomador', () => {
     expect(decidir({ texto: 'trocar para a Lente; emitir uma nota; valor: 1500,00' })).toMatchObject({ portalClientId: 'empresa-lente', textoOperacao: 'emitir uma nota; valor: 1500,00' });
   });
 
-  it.each(['da outra empresa', 'a outra', 'trocar de empresa', 'mudar a empresa'])('pede qual empresa sem presumir a outra: %s', (texto) => {
+  it.each([
+    'trocar', 'mudar', 'trocar de empresa', 'mudar de empresa', 'mudar a empresa',
+    'da outra empresa', 'a outra', 'trocar empresa', 'troca de empresa', 'troque de empresa',
+    'alterar empresa', 'selecionar outra empresa', 'escolher empresa',
+    'quero trocar de empresa', 'preciso mudar de empresa', 'gostaria de trocar de empresa',
+    'pode mudar a empresa?', 'poderia trocar de empresa, por favor?', 'trocar!',
+    'outra empresa, por favor.', 'mudar para outra empresa', 'trocar pra outra empresa',
+    'trocar para uma outra empresa', 'trocar a empresa por outra', 'trocar pfv',
+    'Oi, quero mudar de empresa.', 'Bom dia! Gostaria de trocar de empresa, por gentileza.',
+    'Por favor, pode trocar de empresa?', 'EU QUERO TROCAR DE EMPRESA!!!',
+    'como faço para mudar de empresa?', 'posso trocar de empresa?', 'podemos mudar de empresa?',
+  ])('pede qual empresa sem presumir a outra: %s', (texto) => {
+    expect(decidir({ texto })).toMatchObject({ acao: 'PERGUNTAR', motivo: 'TROCA_SOLICITADA', pedido: null });
     expect(decidir({ texto, coletaAtiva: true })).toMatchObject({ acao: 'PERGUNTAR', motivo: 'TROCA_SOLICITADA' });
+  });
+
+  it.each(['não quero trocar de empresa', 'não mudar de empresa', 'trocar o valor', 'mudar a descrição',
+    'quero mudar o endereço da empresa', 'descrição: trocar de empresa', 'serviço: mudar de empresa',
+    'trocar o CNPJ do tomador', 'trocar de empresa quando terminar'])('não troca o contexto por uma descrição, correção ou menção incidental: %s', texto => {
+    expect(decidir({ texto, coletaAtiva: true })).toMatchObject({ acao: 'CONTINUAR', portalClientId: 'empresa-klaus' });
   });
 
   it.each(['manda a guia da Lente', 'preciso da guia da Lente de agosto', 'guia da empresa Lente', 'guia de 11.111.111/0001-91'])('consulta identificada pausa a operação anterior: %s', (texto) => {

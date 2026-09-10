@@ -285,7 +285,16 @@ if (posRetomar >= 0) {
     assert.match(jornada.envios.at(-1).texto, /Guias liberadas[\s\S]*DAS/);
     await jornada.receberWebhook('Guias do mês', { interacao: botaoGuias, providerMessageId: pedidoGuias.mensagem.providerMessageId });
     assert.equal(jornada.consultas.filter(c => c.ferramenta === 'quanto_devo').length, 1, 'Reentrega não consulta nem responde de novo');
-    ok('webhook real: reações → empresa → menu → guias e reentrega sem modelo');
+    await jornada.receberWebhook('Pode mudar de empresa, por favor?');
+    assert.equal((await checkpoint(jornada.atendimento.id)).aguardandoSelecao, true);
+    assert.equal(jornada.consultas.length, 1, 'Pedido de troca só exibe empresas, sem consultar');
+    const outraEmpresa = jornada.envios.at(-1).linhas.find(o => o.id.endsWith(`.${jornada.empresas[0].id}`));
+    await jornada.receberWebhook(outraEmpresa.titulo, { interacao: outraEmpresa });
+    const guiasDaOutra = jornada.envios.at(-1).botoes.find(o => o.titulo === 'Guias do mês');
+    await jornada.receberWebhook(guiasDaOutra.titulo, { interacao: guiasDaOutra });
+    assert.equal(jornada.consultas.length, 2);
+    assert.equal(jornada.consultas[1].empresaId, jornada.empresas[0].id);
+    ok('webhook real: reações → empresa → menu → guias → troca por texto e reentrega sem modelo');
 
     const selecao = await novoCaso('selecao-recibo');
     const textoInicial = 'preciso emitir uma nota; valor: 125,50; serviço: consulta sintética';

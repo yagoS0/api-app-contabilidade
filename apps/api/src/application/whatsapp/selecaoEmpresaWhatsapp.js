@@ -132,6 +132,18 @@ function consultaDeTodas(texto) {
   return /^(?:(?:pode |quero |preciso (?:de |das )?|gostaria (?:de |das )?)?(?:me )?(?:mandar|manda|mandar-me|envie|enviar|consultar|ver|mostre|listar)?\s*(?:as )?)?guias (?:de|das) todas(?: as empresas)?(?:,? por favor)?$/.test(t);
 }
 
+function pedeTrocaEmpresa(texto) {
+  // Só pedidos completos: "trocar o valor" e descrições da nota não mudam a emissora.
+  const t = normalizar(texto).replace(/[.!?]+$/, '').trim()
+    .replace(/^(?:oi|ola|bom dia|boa tarde|boa noite)[,!.\s]+/, '')
+    .replace(/^(?:por favor|por gentileza)[,\s]+/, '')
+    .replace(/[,\s]+(?:por favor|por gentileza|pfv|pf)$/, '').trim()
+    .replace(/^(?:(?:eu )?(?:quero|preciso(?: de)?|gostaria de|vamos|pode|podemos|poderia|poderiamos|posso)|como (?:faco para|posso))\s+/, '');
+  return /^(?:trocar|troca|troque|mudar|muda|mude|alterar|altera|altere)(?:\s+(?:(?:a|de|para|pra)\s+)?(?:(?:uma\s+)?outra\s+)?empresa(?:\s+por outra)?)?$/.test(t)
+    || /^(?:escolher|selecionar)\s+(?:(?:a|outra)\s+)?empresa$/.test(t)
+    || /^(?:(?:a|da|pela)\s+)?outra(?:\s+empresa)?$/.test(t);
+}
+
 const codigoDeAto = (texto) => /^(?:confirmar|cancelar)\b/iu.test(limpar(texto));
 
 /**
@@ -184,8 +196,7 @@ export function decidirSelecaoEmpresa({ empresas = [], contexto = {}, texto = ''
   if (codigoDeAto(entrada)) return vigente && !contexto.aguardandoSelecao ? continuar() : pedir('CONFIRMACAO_EXIGE_CONTEXTO', null);
   if (consultaDeTodas(entrada)) return { acao: 'TODAS', motivo: 'CONSULTA_EXPLICITA', pedido: pedidoAtual };
 
-  if (/^(?:(?:quero|preciso|vamos)\s+)?(?:trocar|mudar)(?:\s+(?:a|de)\s+empresa)?$/.test(t)
-    || /^(?:(?:a|da|pela)\s+)?outra(?:\s+empresa)?$/.test(t)) return pedir('TROCA_SOLICITADA', pendente);
+  if (pedeTrocaEmpresa(entrada)) return pedir('TROCA_SOLICITADA', pendente);
 
   const mencoes = mencoesExplicitas(empresas, entrada);
   if (mencoes.length) {
