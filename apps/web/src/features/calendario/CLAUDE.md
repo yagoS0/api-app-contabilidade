@@ -1,5 +1,19 @@
 # Calendário — janelas e exclusões recorrentes (08/09/2026)
 
+## Agenda semanal (10/09/2026)
+
+As decisões abaixo substituem a interface anterior descrita neste arquivo. `renderCalendarioGrid.jsx` passa a exportar `CalendarioAgenda`: semana padrão, dia/mês e lista integrada, criação por data/horário e uma única camada de modal. A lista filtra tarefas/obrigações e concentra a exclusão da série. O calendário exclui somente a ocorrência selecionada, incluindo concluídas, conservando os registros de auditoria. Não oferecer exclusão futura pelo calendário.
+
+- `ModalAtividade` tem dados de agenda e etapa fiscal opcional. Empresa só é escolhida no escopo de uma obrigação; tarefa geral pertence ao usuário. Dentro da empresa, a tarefa usa a `Obrigacao` do tipo TAREFA e conserva o vínculo.
+- `agendaConfig` guarda período, horários, prioridade e recorrência. Cores indicam prioridade escolhida, sem mudança automática por atraso. Somente obrigações têm ícone. Horários aparecem à direita em semana/dia.
+- `packages/shared/src/agenda.js` expande datas civis; frequências diária/semanal usam data como ciclo, mensal/trimestral/anual usam mês âncora. Regras antigas continuam usando `agendaVersoes` e `janelaTrabalho`.
+- `TarefaAgenda` guarda séries sem empresa, privadas por `userId`; estados de ocorrência preservam conclusão, cancelamento e alteração individual. Edições concorrentes usam lock por série. Não recalcular a configuração integral de uma tarefa com histórico.
+- Obrigações novas são criadas por grupo em transação. `sincronizarAgendaConfigurada` mantém janelas independentes do vencimento fiscal, tombstones, concluídas e janelas personalizadas. `OcorrenciaObrigacao.agendaConfig` guarda título/horários/prioridade individuais.
+- As rotas `/firm/agenda` validam carteira/proprietário antes de gravar. Exclusão em lote é transacional, bloqueia séries em ordem estável e não apaga registros. Ocultar guia no calendário cria máscara por usuário; nunca remove o documento financeiro.
+- Migration aditiva `20260910210000_agenda_workspace`; executar migrations e gerar Prisma antes de iniciar a API. O ensaio PostgreSQL existente também cobre a nova criação por grupo e tarefas concorrentes. Preview local usa somente dados fictícios.
+
+### Histórico anterior
+
 - `CalendarioGrid` abre `CalendarioObrigacoesModal` internamente; não navega mais à central para criar/editar. `initialContext.obrigacoesModal` permite recuperar links antigos: `{ companyId, dataInicio, dataFim, criar, ocorrenciaId }`.
 - Formulário, exclusão e regras substituem o modal da lista; não empilhar traps de foco. O estado do calendário continua montado, e `onChanged` recarrega os dados.
 - Ao criar uma janela fora do período de origem, ampliar a lista após salvar; não mostrar cards vazios. A lista começa com até três ocorrências por série e permite expandir.

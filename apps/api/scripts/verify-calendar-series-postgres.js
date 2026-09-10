@@ -158,11 +158,35 @@ try {
   assert.deepEqual(await listar(frequencia.id), antesDaPausa);
   ok('inativar/reativar conserva integralmente IDs e exceções, sem vazar série inativa no calendário');
 
+  const { criarRegra } = await import('../src/application/obrigacoes/RegrasObrigacaoService.js');
+  const { salvarTarefa, alterarTarefa, listarTarefas } = await import('../src/application/calendario/TarefasAgendaService.js');
+  const mesAtual=new Date().toISOString().slice(0,7);
+  const config={dataInicio:mesAtual+'-10',dataFim:mesAtual+'-15',recorrencia:'MENSAL',horaInicio:null,horaFim:null,prioridade:'ALTA'};
+  const criado=await criarRegra({portalIds:[companyId],criadoPorId:prefix,dados:{nome:prefix+'-EFD-servicos',tipo:'OBRIGACAO',periodicidade:'MENSAL',diaVencimento:21,ajusteDiaUtil:'MANTER',agendaConfig:config,escopo:'SELECAO_MANUAL',filtros:{empresasIds:[companyId]}}});
+  const novas=await prisma.obrigacao.findMany({where:{regraId:criado.regra.id}});
+  assert.equal(novas.length,1);assert.equal(novas[0].agendaConfig.prioridade,'ALTA');
+  const novosCiclos=await listar(novas[0].id);
+  assert.equal(iso(novosCiclos[0].dataInicio).slice(-2),'10');assert.equal(iso(novosCiclos[0].dataFim).slice(-2),'15');assert.equal(iso(novosCiclos[0].dataVencimento).slice(-2),'21');
+  await concluir({portalIds:[companyId],ocorrenciaId:novosCiclos[0].id});
+  await Promise.all([excluirOcorrencia({portalIds:[companyId],ocorrenciaId:novosCiclos[0].id,incluirConcluidas:true}),sync(novas[0].id),sync(novas[0].id)]);
+  const apagada=await prisma.ocorrenciaObrigacao.findUnique({where:{id:novosCiclos[0].id}});assert.ok(apagada.canceladaEm);assert.equal(apagada.status,'CONCLUIDA');assert.ok(apagada.concluidaEm);
+  ok('nova obrigação por grupo persiste prioridade, janela e prazo; exclusão concorrente mantém conclusão auditável');
+  const tarefa=await salvarTarefa({userId:prefix,dados:{titulo:'Conferir NFS-e',config:{...config,recorrencia:'DIARIA',dataFim:config.dataInicio,horaInicio:'09:00',horaFim:'10:00'}}});
+  await Promise.all([alterarTarefa({userId:prefix,id:tarefa.id,cicloChave:config.dataInicio,acao:'CONCLUIR'}),alterarTarefa({userId:prefix,id:tarefa.id,cicloChave:mesAtual+'-11',acao:'EXCLUIR'})]);
+  const lista=await listarTarefas({userId:prefix,inicio:mesAtual+'-01',fim:mesAtual+'-28'});
+  assert.ok(lista.itens.find(i=>i.cicloChave===config.dataInicio).resolvido);assert.ok(!lista.itens.some(i=>i.cicloChave===mesAtual+'-11'));
+  await assert.rejects(alterarTarefa({userId:prefix+'-outro',id:tarefa.id,cicloChave:config.dataInicio,acao:'EXCLUIR'}),e=>e.status===404);
+  assert.equal((await listarTarefas({userId:prefix+'-outro',inicio:mesAtual+'-01',fim:mesAtual+'-28'})).tarefas.length,0);
+  ok('tarefas sem empresa isolam proprietário e conservam alterações simultâneas de ciclos diferentes');
+
   console.log(`PASS: ${checks} cenários sobre PostgreSQL real com migrations aplicadas.`);
 } finally {
   // Limpeza estritamente limitada ao UUID criado por esta execução; cascade remove só suas fixtures.
   try {
     await prisma.portalClient.deleteMany({ where: { id: companyId } });
+    await prisma.regraObrigacao.deleteMany({where:{criadoPorId:prefix}});
+    await prisma.tarefaAgenda.deleteMany({where:{userId:prefix}});
+    await prisma.agendaOcultacao.deleteMany({where:{userId:prefix}});
   } finally {
     await prisma.$disconnect();
   }

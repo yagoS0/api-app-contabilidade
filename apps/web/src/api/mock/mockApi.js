@@ -1,4 +1,6 @@
 import { criarMockComercial } from './comercialMock';
+import { criarMockAgenda } from './agendaMock';
+import { expandirAgenda, normalizarAgenda, somarDiasAgenda } from '../../../../../packages/shared/src/agenda.js';
 import { mockRelatorios } from './mockRelatorios';
 import { janelaRecorrente, cicloRecorrente } from '../../features/obrigacoes/lib/janelaRecorrente';
 import { faker } from "@faker-js/faker";
@@ -679,6 +681,19 @@ const mockUnidentifiedGuides = [];
 // defasagem da competência). Repetir a regra aqui é chato, mas um mock que devolvesse datas
 // bonitas esconderia justamente o que precisa ser visto na tela.
 function mockCriarObrigacao(companyId, empresa, dados) {
+  if (dados.agendaConfig) {
+    const config = { ...normalizarAgenda(dados.agendaConfig), ...(dados.agendaConfig.vencimentoFiscal ? { vencimentoFiscal:dados.agendaConfig.vencimentoFiscal } : {}) };
+    const hoje = new Date();
+    const inicio = config.recorrencia === 'AVULSA' ? config.dataInicio : hoje.toISOString().slice(0,7)+'-01';
+    const fim = config.recorrencia === 'AVULSA' ? config.dataFim : new Date(Date.UTC(hoje.getUTCFullYear()+1,hoje.getUTCMonth()+1,0)).toISOString().slice(0,10);
+    const ocorrencias = expandirAgenda(config,inicio,fim).map(p => {
+      const [a,m] = p.dataInicio.split('-').map(Number);
+      const venc = dados.tipo !== 'TAREFA' && ['MENSAL','TRIMESTRAL','ANUAL'].includes(config.recorrencia) ? new Date(Date.UTC(a,m-1,Math.min(Number(dados.diaVencimento),new Date(Date.UTC(a,m,0)).getUTCDate()))) : new Date(config.vencimentoFiscal && ['DIARIA','SEMANAL'].includes(config.recorrencia) ? somarDiasAgenda(p.dataInicio,Math.round((+new Date(config.vencimentoFiscal)-+new Date(config.dataInicio))/86400000)) : config.vencimentoFiscal || p.dataFim);
+      if (dados.tipo !== 'TAREFA' && dados.ajusteDiaUtil !== 'MANTER' && ['MENSAL','TRIMESTRAL','ANUAL'].includes(config.recorrencia)) while([0,6].includes(venc.getUTCDay())) venc.setUTCDate(venc.getUTCDate()+(dados.ajusteDiaUtil === 'POSTERGAR' ? 1 : -1));
+      return { ...p, ocorrenciaId:crypto.randomUUID(), dataVencimento:venc.toISOString().slice(0,10), competenciaRef:new Date(Date.UTC(a,m-1-Number(dados.defasagemMeses || 0),1)).toISOString().slice(0,7), status:'PENDENTE', concluidaEm:null };
+    });
+    return { ...dados, agendaConfig:config, obrigacaoId:crypto.randomUUID(), companyId, empresa, ativa:true, ocorrencias, sobrescritaLocal:false };
+  }
   if (dados.janelaTrabalho) janelaRecorrente("2026-09", dados.janelaTrabalho);
   const periodicidade = String(dados.periodicidade || "MENSAL").toUpperCase();
   const tipo = String(dados.tipo || "OBRIGACAO").toUpperCase();
@@ -3577,6 +3592,7 @@ export function createMockApi() {
 
   return {
     ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock }),
+    ...criarMockAgenda(mockObrigacoes, mockRegras),
     setUnauthorizedHandler() {},
     setAccessToken(token) {
       accessToken = String(token || "").trim();

@@ -799,6 +799,27 @@ export function createRealApi() {
       if (companyId) q.set("companyId", companyId);
       return request(`/firm/calendario?${q.toString()}`);
     },
+    async getTarefasAgenda(inicio, fim) {
+      return request(`/firm/agenda/tarefas?${new URLSearchParams({ inicio, fim })}`);
+    },
+    async salvarTarefaAgenda(dados, id) {
+      return request(`/firm/agenda/tarefas${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(dados) });
+    },
+    async acaoTarefaAgenda(id, dados) {
+      return request(`/firm/agenda/tarefas/${encodeURIComponent(id)}/acao`, { method: 'POST', body: JSON.stringify(dados) });
+    },
+    async excluirOcorrenciasAgenda(ids) {
+      return request('/firm/agenda/ocorrencias/excluir', { method: 'POST', body: JSON.stringify({ ids }) });
+    },
+    async editarOcorrenciasAgenda(ids, dados) {
+      return request('/firm/agenda/ocorrencias/editar', { method:'POST', body:JSON.stringify({ids,dados}) });
+    },
+    async excluirSerieAgenda(dados) {
+      return request('/firm/agenda/series/excluir', { method: 'POST', body: JSON.stringify(dados) });
+    },
+    async ocultarItemAgenda(dados) {
+      return request('/firm/agenda/ocultar', { method: 'POST', body: JSON.stringify(dados) });
+    },
     async listMarcosFiscais() {
       return request(`/firm/marcos-fiscais`);
     },

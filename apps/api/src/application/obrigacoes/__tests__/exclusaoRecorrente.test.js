@@ -33,3 +33,10 @@ test('recusa empresa fora do escopo sem tocar série', async () => {
   await expect(excluirOcorrencia({ portalIds: ['outra'], ocorrenciaId: 'o09' }, db)).rejects.toMatchObject({ status: 404 });
   expect(serie.agendaVersoes).toEqual([]);
 });
+test('agenda permite ocultar concluída conservando o registro da conclusão', async () => {
+  const {db,rows}=banco();
+  rows[2].concluidaEm=new Date('2026-11-10');
+  await excluirOcorrencia({portalIds:['e'],ocorrenciaId:'o11',incluirConcluidas:true},db);
+  expect(rows[2].canceladaEm).toBeInstanceOf(Date);expect(rows[2].status).toBe('CONCLUIDA');expect(rows[2].concluidaEm).toEqual(new Date('2026-11-10'));
+  expect(rows[0].canceladaEm).toBeUndefined();
+});

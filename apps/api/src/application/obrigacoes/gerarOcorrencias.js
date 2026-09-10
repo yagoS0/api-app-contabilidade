@@ -6,7 +6,7 @@
 
 import { ajustarParaDiaUtil, paraISO } from "./diaUtil.js";
 
-export const PERIODICIDADES = ["MENSAL", "TRIMESTRAL", "ANUAL"];
+export const PERIODICIDADES = ["MENSAL", "TRIMESTRAL", "ANUAL", "DIARIA", "SEMANAL"];
 export const PERIODICIDADES_COM_AVULSA = ["AVULSA", ...PERIODICIDADES];
 export const AJUSTES_DIA_UTIL = ["ANTECIPAR", "POSTERGAR", "MANTER"];
 
