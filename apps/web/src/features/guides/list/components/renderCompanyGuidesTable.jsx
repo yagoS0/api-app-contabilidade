@@ -17,8 +17,8 @@ import { usePollingEntrega } from "../../lib/usePollingEntrega";
 import { linhaDigitavelDaGuia } from "../../lib/linhaDigitavelTela";
 import { MOTIVOS_GUIA_VAZIA, TEM_LISTA_DE_MOTIVOS, motivoParaGravar, motivoSuficiente } from "../lib/motivoGuiaVazia";
 import { fraseDoLote, relatorioDoLote, DESFECHO } from "../lib/loteDoTrimestre";
-import { competenciaAtual } from "../../../../lib/competencia";
-import { guiasDaVisao, mesAtualVencimento } from "../lib/visaoVencimento";
+import { competenciaAtual, deslocarCompetencia, formatCompetencia } from "../../../../lib/competencia";
+import { guiasDaVisao } from "../lib/visaoVencimento";
 
 // Q17: guias ESPERADAS do mês (por regime/prolabore) com botão "Vazio" (ausência confirmada).
 // Mapeia a chave do compliance → tipo de Guide pra marcar Vazio.
@@ -587,11 +587,12 @@ export function CompanyGuidesTable({
     () => getAvailableGuideTypes(companyRegime),
     [companyRegime],
   );
-  // Vencimento organiza a cobrança; competência do cabeçalho continua fiscal.
+  // Um único período de trabalho: a competência do cabeçalho determina o mês seguinte.
   // A visão fiscal mantém inclusive VAZIO, que não tem vencimento nem PDF a enviar.
   const [visao, setVisao] = useState("vencimento");
-  const [mesVencimento, setMesVencimento] = useState(mesAtualVencimento);
   const competenciaFiscal = competenciaGlobal || prevMonthCompetencia();
+  const mesVencimento = deslocarCompetencia(competenciaFiscal, 1);
+  useEffect(() => { setVisao("vencimento"); }, [companyId, competenciaFiscal]);
   const filterCompetencia = visao === "competencia" ? competenciaFiscal : "";
   const [selectedIds, setSelectedIds] = useState(new Set());
   useEffect(() => { setSelectedIds(new Set()); }, [companyId, visao, mesVencimento, competenciaFiscal]);
@@ -1226,27 +1227,31 @@ export function CompanyGuidesTable({
 
       <div className="guides-list-panel">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
-          <h2 className="guides-list-panel__title" style={{ margin: 0 }}>Guias</h2>
+          <div>
+            <h2 className="guides-list-panel__title" style={{ margin: 0 }}>
+              {visao === "vencimento" ? `Vencimentos de ${formatCompetencia(mesVencimento)}`
+                : visao === "anteriores" ? "Pendências anteriores"
+                  : visao === "semVencimento" ? "Conferir vencimento"
+                    : visao === "competencia" ? "Consulta por competência fiscal" : "Histórico de guias"}
+            </h2>
+          </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <label>Mês de vencimento <input type="month" value={mesVencimento} onChange={(e) => {
-              if (/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value)) setMesVencimento(e.target.value);
-            }} /></label>
-            <label>Exibir <select value={visao} onChange={(e) => setVisao(e.target.value)}>
-              <option value="vencimento">Guias do vencimento</option>
-              <option value="anteriores">Pendências anteriores ({anteriores})</option>
-              <option value="semVencimento">Conferir vencimento ({semVencimento})</option>
-              <option value="competencia">Competência fiscal do cabeçalho</option>
-              <option value="todas">Todas as guias / histórico</option>
-            </select></label>
+            {visao !== "vencimento" && <Button variant="secondary" size="sm" onClick={() => setVisao("vencimento")}>Voltar às guias do mês</Button>}
+            <details>
+              <summary style={{ cursor: "pointer", color: "var(--text-muted)", fontSize: "0.85rem" }}>Outras consultas</summary>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                <Button variant="secondary" size="sm" onClick={() => setVisao("todas")}>Histórico completo</Button>
+                <Button variant="secondary" size="sm" onClick={() => setVisao("competencia")}>Por competência fiscal</Button>
+              </div>
+            </details>
           </div>
         </div>
         <p className="text-muted">
-          {visao === "vencimento" ? `Guias com vencimento em ${mesVencimento}, de qualquer competência. Guias pagas continuam identificadas na tabela.`
+          {visao === "vencimento" ? `Competência ${formatCompetencia(competenciaFiscal)} · Todas as guias que vencem no mês seguinte, incluindo parcelamentos.`
             : visao === "competencia" ? `Competência fiscal: ${competenciaFiscal}. Esta visão não é o lote de vencimentos.`
               : visao === "anteriores" ? `Guias anteriores a ${mesVencimento} sem pagamento confirmado. Confira a baixa antes de reenviar.`
                 : visao === "semVencimento" ? "Documentos sem vencimento informado precisam de conferência para entrar no mês correto."
                   : "Histórico completo, incluindo guias pagas e competências marcadas como vazio."}
-          {` Capturar e marcar vazio continuam usando a competência fiscal ${competenciaFiscal}.`}
         </p>
         {!loadingGuides && visao === "vencimento" && <>
           {(anteriores > 0 || semVencimento > 0) && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>

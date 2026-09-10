@@ -24,23 +24,37 @@ beforeEach(() => { jest.clearAllMocks(); mockReport.mockResolvedValue({ outros: 
 function montar(items = guides) {
   const props = { companyId: "c1", competencia: "2026-08", guides: items, loadingGuides: false };
   const result = render(<CompanyGuidesTable {...props} />);
-  fireEvent.change(screen.getByLabelText("Mês de vencimento"), { target: { value: "2026-09" } });
   return { ...result, props };
 }
 test("vencimento reúne DAS de agosto e parcela de setembro; antigas e sem data ficam fora", async () => {
   const { rerender, props } = montar();
   expect(screen.getByText("DAS-AGOSTO")).toBeInTheDocument();
   expect(screen.getByText("PARCELA-SETEMBRO")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Vencimentos de Setembro 2026" })).toBeInTheDocument();
+  expect(screen.queryByLabelText("Mês de vencimento")).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Exibir" })).toBeNull();
   for (const tipo of ["PARCELA-PAGA", "ANTIGA", "SEM-DATA"]) expect(screen.queryByText(tipo)).toBeNull();
   expect(screen.getByRole("button", { name: "Pendências anteriores (1)" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("checkbox", { name: /Selecionar guia DAS-AGOSTO/ }));
   rerender(<CompanyGuidesTable {...props} competencia="2026-07" />);
-  expect(screen.getByText("DAS-AGOSTO")).toBeInTheDocument();
+  expect(screen.queryByText("DAS-AGOSTO")).toBeNull();
+  expect(screen.getByRole("heading", { name: "Vencimentos de Agosto 2026" })).toBeInTheDocument();
+  expect(screen.getByText("PARCELA-PAGA")).toBeInTheDocument();
+  rerender(<CompanyGuidesTable {...props} />);
   expect(screen.getByRole("checkbox", { name: /Selecionar guia DAS-AGOSTO/ })).not.toBeChecked();
   fireEvent.click(screen.getByRole("button", { name: "Pendências anteriores (1)" }));
   expect(screen.getByText("ANTIGA")).toBeInTheDocument();
   expect(screen.queryByText("PARCELA-PAGA")).toBeNull();
   await waitFor(() => expect(mockReport).toHaveBeenCalledWith("c1", "2026-09"));
+});
+test("trocar a competência encerra a consulta auxiliar e dezembro mostra janeiro do ano seguinte", async () => {
+  const { rerender, props } = montar([guia("JANEIRO", "2026-12", "2027-01-20")]);
+  fireEvent.click(screen.getByText("Outras consultas"));
+  fireEvent.click(screen.getByRole("button", { name: "Histórico completo" }));
+  rerender(<CompanyGuidesTable {...props} competencia="2026-12" />);
+  expect(screen.getByRole("heading", { name: "Vencimentos de Janeiro 2027" })).toBeInTheDocument();
+  expect(screen.getByText("JANEIRO")).toBeInTheDocument();
+  await waitFor(() => expect(mockReport).toHaveBeenLastCalledWith("c1", "2027-01"));
 });
 test("mês sem documento mostra parcela faltante sem concluir que não há tributo", async () => {
   mockReport.mockResolvedValue({ outros: [{ faltantes: [{ parcelaId: "p1", acordo: "123", numeroParcela: 9, vencimento: "2026-09-20", motivo: "Guia ainda não disponível" }] }] });

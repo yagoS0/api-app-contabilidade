@@ -12,8 +12,3 @@ export function guiasDaVisao(guias, { visao, mes, competencia }) {
     return vencimento === mes;
   });
 }
-
-export function mesAtualVencimento() {
-  const partes = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).formatToParts(new Date());
-  return `${partes.find((p) => p.type === "year").value}-${partes.find((p) => p.type === "month").value}`;
-}
