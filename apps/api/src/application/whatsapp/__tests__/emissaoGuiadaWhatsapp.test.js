@@ -290,6 +290,15 @@ describe("conversação guiada persistente sem IA", () => {
     expect(f.emitir).not.toHaveBeenCalled();
   });
 
+  test("nova emissão descarta dados do rascunho pausado e cancela sua confirmação", async () => {
+    const f = fixture(); await revisar(f); await f.responder("pausar");
+    const r = await f.responder("nova emissão", { iniciar: true });
+    expect(r.texto).toContain("CPF/CNPJ");
+    expect(f.tabelas.rascunhoEmissaoWhatsapp[0].estado.dados.tomadorDoc).toBeFalsy();
+    expect(f.tabelas.acaoPendenteWhatsapp.every(a => a.status === "cancelada")).toBe(true);
+    expect(f.emitir).not.toHaveBeenCalled();
+  });
+
   test("cancelamento recebido antes do resumo novo não cancela esse pedido", async () => {
     const f = fixture(); await revisar(f);
     const cancelar = f.novaMensagem("CANCELAR PEDIDO");

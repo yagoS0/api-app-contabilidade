@@ -181,7 +181,7 @@ export async function resolverContextoDaMensagem({ registro, atendimento, texto 
   const coletaPendenteConversaId = pedir && coletaAtiva && ["CONTEXTO_EXPIRADO", "CONFIRMACAO_EXIGE_CONTEXTO"].includes(decisao.motivo) ? atual.conversaId
     : pedir && atual.aguardandoSelecao ? atual.coletaPendenteConversaId : null;
   const retomarColeta = Boolean(selecionada && atual.coletaPendenteConversaId === segmento?.id);
-  const resultado = selecionada ? (retomarColeta ? { retomarColeta: true, textoRetomada: atual.pedidoPendente || null } : null) : handoff
+  const resultado = selecionada ? (retomarColeta ? { retomarColeta: true, textoRetomada: atual.pedidoPendente || null } : decisao.acaoOperacao ? { acaoOperacao: decisao.acaoOperacao } : null) : handoff
     ? { texto: decisao.acao === "EQUIPE" ? "Encaminhei sua mensagem para a equipe. Um contador vai continuar este atendimento por aqui."
       : "Este número precisa de uma conferência de acesso no cadastro. Encaminhei para a equipe verificar as empresas e o responsável antes de continuar.", opcoes: [], bloqueado: true }
     : decisao.acao === "TODAS" ? { empresas: acesso.empresas.map(e => e.portalClientId) }

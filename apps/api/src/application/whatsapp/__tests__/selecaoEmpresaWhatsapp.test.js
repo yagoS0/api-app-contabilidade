@@ -144,6 +144,7 @@ describe('emissor não é tomador', () => {
   it('emitir pela Klaus para a Lente seleciona Klaus e conserva o tomador', () => {
     expect(decidir({ texto: 'preciso emitir uma nota pela Klaus para a Lente; valor: 100,00', contexto: contexto({ portalClientId: null }) })).toEqual({
       acao: 'SELECIONAR', portalClientId: 'empresa-klaus', motivo: 'EMPRESA_EXPLICITA',
+      acaoOperacao: 'EMISSAO',
       pedido: 'preciso emitir uma nota pela Klaus para a Lente; valor: 100,00',
       textoOperacao: 'preciso emitir uma nota para a Lente; valor: 100,00',
     });

@@ -133,6 +133,16 @@ it("restaura a função original quando primeiro clique precede seleção empres
   expect(f.processar.mock.calls.at(-1)[1]).toMatchObject({ tipo: "interactive", interacao: original });
 });
 
+it.each(["emitir pela Klaus para a Lente", "emitir uma nota pela Klaus para a Lente"])("fixa emissora e intenção guiada em %s", async texto => {
+  const f = await fixture();
+  await f.rodar(await f.novo(texto));
+  const [registro, item] = f.processar.mock.calls.at(-1);
+  expect(registro.conversa.portalClientId).toBe("klaus");
+  expect(registro.contexto.resultado.acaoOperacao).toBe("EMISSAO");
+  expect(item.corpo).toContain("para a Lente");
+  expect(item.corpo).not.toContain("pela Klaus");
+});
+
 it.each([false, true])("mantém o lease até processar terminar, inclusive rejeição=%s", async rejeita => {
   const f = await fixture(); await f.selecionar();
   jest.setSystemTime(new Date(Date.now() + 1000));

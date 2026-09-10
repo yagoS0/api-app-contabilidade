@@ -185,7 +185,8 @@ export function decidirSelecaoEmpresa({ empresas = [], contexto = {}, texto = ''
     let textoOperacao = entrada;
     for (const m of [...mencoes].sort((a, b) => b.inicio - a.inicio)) textoOperacao = textoOperacao.slice(0, m.inicio) + textoOperacao.slice(m.fim);
     textoOperacao = textoOperacao.replace(/ +/g, ' ').replace(/\s+([,;])/g, '$1').replace(/^[,;\s]+/, '').trim();
-    return selecionar(empresa, 'EMPRESA_EXPLICITA', somenteEscolha ? pendente : pedidoAtual, { textoOperacao: somenteEscolha ? pendente : textoOperacao });
+    const acaoOperacao = mencoes.some(m => m.tipo === 'EMISSOR') && /\b(?:emitir|emita|emissao)\b/.test(normalizar(entrada)) ? 'EMISSAO' : null;
+    return selecionar(empresa, 'EMPRESA_EXPLICITA', somenteEscolha ? pendente : pedidoAtual, { textoOperacao: somenteEscolha ? pendente : textoOperacao, ...(acaoOperacao ? { acaoOperacao } : {}) });
   }
 
   // Uma resposta citada é escopo de consulta, nunca autorização para trocar o

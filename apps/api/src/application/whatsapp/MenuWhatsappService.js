@@ -281,6 +281,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
   const idRecebido = String(interacao?.id || "").trim();
   const menuExplicito = !idRecebido && pediuMenuExplicitamente(texto);
   let acao = idRecebido ? ACAO_POR_ID[idRecebido] || "ID_DESCONHECIDO" : acaoDoTextoLivre(texto, { cliente });
+  if (!idRecebido && registro.contexto?.resultado?.acaoOperacao === "EMISSAO") acao = "EMISSAO";
   const clienteId = idRecebido.startsWith("altan.client.");
   const leadId = idRecebido.startsWith("altan.lead.");
   if ((clienteId && !cliente) || (leadId && cliente)) acao = "ESCOPO_INVALIDO";
