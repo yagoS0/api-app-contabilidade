@@ -49,6 +49,8 @@ import { PERMISSOES_ASSISTENTE, temPermissaoAssistente } from "../../whatsapp/pe
 import { expedienteDoEscritorio } from "../expediente.js";
 import { INTEGRACAO_PERFIL_EMISSAO_NFSE } from "../../../config.js";
 import { lerEmitidasNaoConfirmadas } from "../../notas/notasEmitidasNaoConfirmadas.js";
+import { whereFaturamentoEmit } from "../../notas/apuracao/v2/FechamentoService.js";
+import { rotuloMesConsulta } from "../../whatsapp/consultaClienteWhatsapp.js";
 
 /** As funções de fora, INJETÁVEIS. Produção usa os defaults; o teste passa dublês. */
 export const SERVICOS_PADRAO = Object.freeze({
@@ -117,6 +119,7 @@ function guiaCurta(g) {
   return {
     guideId: g.guideId || g.id,
     tipo: rotuloDaGuia(g),
+    tipoCodigo: g.tipo || null,
     competencia: g.competencia || null,
     valor: g.valor != null ? Number(g.valor) : null,
     valorFormatado: g.valor != null ? fmtBRL(g.valor) : "não informado",
@@ -144,6 +147,7 @@ const enumOuNulo = (valores, description) => ({ anyOf: [{ type: "string", enum: 
 export const DEFINICOES = Object.freeze([
   { name: "listar_guias", description: "Lista as guias de imposto LIBERADAS pelo escritório para a empresa (DAS, INSS, DARF, parcelas). 'Guias do mês' usa mesVencimento; competência só quando o cliente pedir a competência. Retorna ids utilizáveis para envio/recálculo. Continue por proximaPagina se necessário.", strict: true, input_schema: S({ competencia: strOuNulo("Competência AAAA-MM; null = todas"), mesVencimento: strOuNulo("Mês em que vence, AAAA-MM. Use o mês atual para 'guias do mês'; null = sem filtro de vencimento"), status: enumOuNulo(["OPEN", "OVERDUE", "PAID"], "Situação de pagamento; null = todas"), pagina: numOuNulo("Página, começa em 1; use proximaPagina para continuar") }) },
   { name: "quanto_devo", description: "Soma das guias liberadas ainda EM ABERTO (a pagar), com a lista e o que já venceu. Use para 'quanto devo', 'o que falta pagar'.", strict: true, input_schema: S({}) },
+  { name: "consultar_faturamento", description: "Soma COMPLETA do faturamento registrado no sistema: notas emitidas autorizadas do período, na mesma população da apuração. Não soma uma página de listar_notas e não consulta serviços externos. Não representa recebimento bancário. Ausência de notas registradas não comprova ausência de faturamento.", strict: true, input_schema: S({ inicio: str("Primeiro mês, AAAA-MM"), fim: str("Último mês, AAAA-MM, inclusive. Máximo de 12 meses.") }) },
   { name: "enviar_pdf_da_guia", description: "Envia por WhatsApp o PDF de UMA guia liberada (pelo guideId de listar_guias/quanto_devo). Só funciona com a janela de 24h aberta.", strict: true, input_schema: S({ guideId: str("O id da guia") }) },
   { name: "listar_notas", description: "Lista notas fiscais de serviço da empresa, incluindo as recém emitidas pelo portal. Use para achar a última nota, uma nota pelo número ou pelo tomador antes de enviar DANFSe ou preparar cancelamento. Continue por proximaPagina quando necessário.", strict: true, input_schema: S({ competencia: strOuNulo("Competência AAAA-MM; null = as mais recentes"), direcao: enumOuNulo(["emitidas", "recebidas"], "Emitidas pela empresa (padrão) ou recebidas"), busca: strOuNulo("Número exato da nota, nome ou documento da outra parte; null = sem busca"), pagina: numOuNulo("Página, começa em 1; use proximaPagina para continuar") }) },
   { name: "danfse_da_nota", description: "Envia por WhatsApp o DANFSe (PDF) de uma nota, pelo notaId de listar_notas.", strict: true, input_schema: S({ notaId: str("O id da nota") }) },
@@ -183,6 +187,7 @@ export const PERMISSAO_POR_FERRAMENTA = Object.freeze({
   quanto_devo: PERMISSOES_ASSISTENTE.GUIAS,
   enviar_pdf_da_guia: PERMISSOES_ASSISTENTE.GUIAS,
   listar_notas: PERMISSOES_ASSISTENTE.NOTAS_DANFSE,
+  consultar_faturamento: PERMISSOES_ASSISTENTE.NOTAS_DANFSE,
   danfse_da_nota: PERMISSOES_ASSISTENTE.NOTAS_DANFSE,
   listar_documentos: PERMISSOES_ASSISTENTE.DOCUMENTOS_EMPRESA,
   enviar_documento_da_empresa: PERMISSOES_ASSISTENTE.DOCUMENTOS_EMPRESA,
@@ -200,6 +205,7 @@ const PAPEL_POR_FERRAMENTA = Object.freeze({
   quanto_devo: PAPEL_MINIMO_LEITURA,
   enviar_pdf_da_guia: PAPEL_MINIMO_LEITURA,
   listar_notas: PAPEL_MINIMO_LEITURA,
+  consultar_faturamento: PAPEL_MINIMO_LEITURA,
   danfse_da_nota: PAPEL_MINIMO_LEITURA,
   listar_documentos: PAPEL_MINIMO_SITUACAO_FISCAL,
   enviar_documento_da_empresa: PAPEL_MINIMO_SITUACAO_FISCAL,
@@ -244,6 +250,25 @@ function validarEntradaEmissao(input) {
 // ── OS EXECUTORES ────────────────────────────────────────────────────────────────────────────────
 
 const EXECUTORES = {
+  async consultar_faturamento(input, ctx) {
+    const r = exigirPapel(ctx, PAPEL_MINIMO_LEITURA);
+    if (r) return r;
+    if (!mesValido(input.inicio) || !mesValido(input.fim)) return recusa("MES_INVALIDO", "Qual mês ou ano você quer consultar? Pode escrever, por exemplo, agosto de 2026.");
+    const indice = m => +m.slice(0, 4) * 12 + +m.slice(5);
+    const meses = indice(input.fim) - indice(input.inicio) + 1;
+    if (meses < 1 || meses > 12) return recusa("PERIODO_INVALIDO", "Posso consultar até 12 meses por vez. Qual período você quer ver?");
+    const resumo = await ctx.prisma.portalInvoice.aggregate({
+      where: { ...whereFaturamentoEmit(), clientId: ctx.sessao.portalClientId,
+        competencia: { gte: intervaloDoMes(input.inicio).gte, lt: intervaloDoMes(input.fim).lt } },
+      _sum: { total: true }, _count: { _all: true, total: true }, _max: { updatedAt: true },
+    });
+    const quantidade = resumo._count._all, semValor = quantidade - resumo._count.total;
+    return { ok: true, inicio: input.inicio, fim: input.fim, quantidade, semValor,
+      total: semValor ? null : Number(resumo._sum.total || 0),
+      totalFormatado: semValor ? null : fmtBRL(Number(resumo._sum.total || 0)),
+      atualizadoEm: resumo._max.updatedAt?.toISOString() || null,
+      fonte: "Notas emitidas autorizadas registradas no sistema" };
+  },
   async listar_guias(input, ctx) {
     const r = exigirPapel(ctx, PAPEL_MINIMO_LEITURA);
     if (r) return r;
@@ -295,7 +320,7 @@ const EXECUTORES = {
     const conteudo = await ctx.servicos.getGuidePdfBuffer(guide);
     if (!conteudo?.length) return recusa("GUIA_SEM_PDF", "O arquivo desta guia não está disponível no momento. O escritório pode reenviar.");
     const nomeArquivo = `${rotuloDaGuia(guide).replace(/[\\/\s()]+/g, "-")}-${guide.competencia || "guia"}.pdf`;
-    const envio = await ctx.enviarDocumento({ conteudo, nomeArquivo, legenda: `Guia ${guiaCurta(guide).tipo} · ${guide.competencia || ""} · ${fmtBRL(guide.valor)}`.trim(), guideId: guide.id });
+    const envio = await ctx.enviarDocumento({ conteudo, nomeArquivo, legenda: `Aqui está sua guia de ${guiaCurta(guide).tipo}.\nValor: ${guide.valor == null ? "não informado" : fmtBRL(guide.valor)}\nVencimento: ${dataBR(guide.vencimento) || "não informado"}${guide.competencia ? `\nReferente a ${rotuloMesConsulta(guide.competencia)}.` : ""}`, guideId: guide.id });
     return { ok: true, enviado: true, guideId: guide.id, nomeArquivo, providerMessageId: envio?.wamid || null };
   },
 

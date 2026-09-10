@@ -1297,6 +1297,9 @@ model ConversaWhatsapp {
 /// UMA MENSAGEM DO FIO. Imutável: por isso não tem `updatedAt` — mensagem não se edita.
 model MensagemWhatsapp {
   contexto ResolucaoContextoWhatsapp?
+  /// Opções efetivamente oferecidas pelo atendimento, com empresa/versão e validade.
+  /// Só a saída do sistema grava; número digitado resolve contra esta lista imutável.
+  contextoConsulta Json?
   respostaAProviderMessageId String?
   referenciaComercial Json?
   id                 String    @id @default(uuid())

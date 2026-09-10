@@ -32,13 +32,14 @@ const { garantirAtendimentoResponsavel, resolverContextoDaMensagem, atenderConte
   carregarMensagemResolvida, conferirContextoResponsavel, alterarAtendimentoHumano,
   selecionarEmpresaDoEscritorio } = await import('../src/application/whatsapp/AtendimentoResponsavelWhatsappService.js');
 const { responderMenuWhatsapp } = await import('../src/application/whatsapp/MenuWhatsappService.js');
+const { executarFerramenta } = await import('../src/application/assistente/ferramentas/index.js');
 const { processarEventoWhatsapp } = await import('../src/application/whatsapp/ProcessarEventoWhatsappService.js');
 const { iniciarColeta } = await import('../src/application/assistente/coletaEmissaoWhatsapp.js');
 const { confirmarEExecutar, autorizarPermissaoDaAcao } = await import('../src/application/assistente/AcoesPendentesService.js');
 const { grupoNoEscopo, filtroMensagensDoGrupo, resumoDoGrupo } = await import('../src/routes/firm/whatsappAtendimento.js');
 const log = { info() {}, warn() {}, error() {} };
 const prefixo = `multi-check-${randomUUID()}`;
-const ids = { empresas: [], usuarios: [], conversas: [], atendimentos: [] };
+const ids = { empresas: [], usuarios: [], conversas: [], atendimentos: [], notas: [] };
 let usuario;
 let contador;
 let checks = 0;
@@ -74,7 +75,7 @@ async function novoCaso(nome) {
     empresas.push(empresa);
     await prisma.companyClientUser.create({ data: { companyId: empresa.id, userId: usuario.id, role: 'OWNER', status: 'ACTIVE' } });
     await prisma.contatoWhatsapp.create({ data: { portalClientId: empresa.id, nome: `Responsável ${prefixo}`, telefoneE164: telefone, userId: usuario.id, ativo: true,
-      permissoesAssistente: ['EMISSAO_NFSE', 'GUIAS', 'NOTAS_DANFSE', 'DOCUMENTOS_EMPRESA'] } });
+      permissoesAssistente: ['EMISSAO_NFSE', 'GUIAS', 'NOTAS_DANFSE', 'DOCUMENTOS_EMPRESA', 'RECALCULO_GUIA'] } });
   }
   const neutra = await garantirConversa({ telefone, client: prisma });
   ids.conversas.push(neutra.id);
@@ -96,7 +97,7 @@ async function novoCaso(nome) {
   const enviar = async args => {
     assert.equal(args.telefone, telefone, 'O transporte sintético não pode receber outro telefone');
     const saida = await prisma.mensagemWhatsapp.findFirstOrThrow({ where: { conversa: { is: { atendimentoId: atendimento.id } }, direcao: 'out', statusEnvio: 'enviando' }, orderBy: { registradaEm: 'desc' } });
-    const referenciaTurno = /^(?:empresa|menu):(.+)$/.exec(saida.turnoIaId || '');
+    const referenciaTurno = /^(?:empresa|menu):([^:]+)/.exec(saida.turnoIaId || '');
     if (referenciaTurno) {
       const entradaPersistida = await prisma.mensagemWhatsapp.findUniqueOrThrow({ where: { id: referenciaTurno[1] } });
       const contextoPersistido = await recibo(entradaPersistida.id);
@@ -108,7 +109,10 @@ async function novoCaso(nome) {
     envios.push(json(args));
     return { wamid: `wamid.fixture.out.${randomUUID()}` };
   };
-  const cloud = { enviarTexto: enviar, enviarLista: enviar, enviarBotoes: enviar, enviarDocumento: redeProibida };
+  const cloud = { enviarTexto: enviar, enviarLista: enviar, enviarBotoes: enviar, enviarDocumento: async args => {
+    assert(Buffer.isBuffer(args.conteudo) && args.conteudo.toString().startsWith('%PDF fixture'), 'Somente PDF sintético');
+    return enviar(args);
+  } };
   const empresaDoContexto = ctx => {
     const empresa = empresas.find(e => e.id === ctx.sessao.portalClientId);
     assert(empresa, 'Ferramenta não pode consultar outra fixture/empresa');
@@ -119,7 +123,16 @@ async function novoCaso(nome) {
   const executar = async (ferramenta, input, ctx) => {
     const empresa = empresaDoContexto(ctx);
     consultas.push({ ferramenta, empresaId: empresa.id });
-    if (ferramenta === 'quanto_devo' && nome === 'reacoes-menu-guias') return { ok: true, guias: [{ tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 125,50', vencimento: `20/${String(ctx.agora.getUTCMonth() + 1).padStart(2, '0')}/${ctx.agora.getUTCFullYear()}` }] };
+    if (ferramenta === 'quanto_devo' && nome === 'recalculo-guiado') return { ok: true, guias: [{ guideId: `guia-${empresa.id}`, tipo: 'DAS', competencia: '2026-07', valorFormatado: 'R$ 125,50', vencimento: '20/08/2026', vencida: true }] };
+    if (ferramenta === 'preparar_recalculo' && nome === 'recalculo-guiado') {
+      assert.equal(input.guideId, `guia-${empresa.id}`);
+      const preparada = await ctx.servicos.criarPendencia({ conversaId: ctx.conversa.id, portalClientId: empresa.id, userId: usuario.id,
+        tipo: 'RECALCULAR_GUIA', payload: { fixture: true, guideId: input.guideId }, corpo: 'Atualizar a guia sintética?', agora: ctx.agora });
+      return { ok: true, textoDeConfirmacao: preparada.texto, codigo: preparada.codigo };
+    }
+    if (ferramenta === 'quanto_devo' && nome === 'reacoes-menu-guias') return { ok: true, guias: [{ guideId: `guia-${empresa.id}`, tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 125,50', vencimento: `20/${String(ctx.agora.getUTCMonth() + 1).padStart(2, '0')}/${ctx.agora.getUTCFullYear()}` }] };
+    if (ferramenta === 'enviar_pdf_da_guia') { assert.equal(input.guideId, `guia-${empresa.id}`); await ctx.enviarDocumento({ conteudo: Buffer.from('%PDF fixture'), nomeArquivo: `${input.guideId}.pdf`, legenda: 'Aqui está sua guia DAS.' }); return { ok: true, enviado: true }; }
+    if (ferramenta === 'consultar_faturamento') return executarFerramenta(ferramenta, input, ctx);
     if (ferramenta === 'tomadores_conhecidos') return { ok: true, tomadores: [] };
     if (ferramenta === 'quanto_devo') return { ok: true, guias: [], quantidade: 0, observacao: `Guia sintética de ${empresa.razao}` };
     assert.equal(ferramenta, 'preparar_emissao', 'Ferramenta não simulada');
@@ -229,6 +242,7 @@ async function semearRevisao(caso, empresa, codigo) {
 async function limparFixtures() {
   // Restrict preserva a auditoria na aplicação. Aqui removemos apenas IDs criados pelo script,
   // primeiro resoluções e ações, depois segmentos, atendimento e seus cadastros sintéticos.
+  if (ids.notas.length) await prisma.portalInvoice.deleteMany({ where: { id: { in: ids.notas } } });
   if (ids.atendimentos.length) {
     await prisma.resolucaoContextoWhatsapp.deleteMany({ where: { atendimentoId: { in: ids.atendimentos } } });
     await prisma.turnoIaWhatsapp.deleteMany({ where: { atendimentoId: { in: ids.atendimentos } } });
@@ -282,19 +296,48 @@ if (posRetomar >= 0) {
     assert.equal(jornada.envios.filter(e => e.tituloBotao === 'Escolher empresa').length, 1);
     assert.equal(jornada.consultas.filter(c => c.ferramenta === 'quanto_devo').length, 1);
     assert.equal(jornada.consultas.find(c => c.ferramenta === 'quanto_devo').empresaId, jornada.empresas[1].id);
-    assert.match(jornada.envios.at(-1).texto, /Guias liberadas[\s\S]*DAS/);
+    assert.match(jornada.envios.at(-1).legenda, /Aqui está sua guia DAS/);
+    const pdfPersistido = await prisma.mensagemWhatsapp.findFirstOrThrow({ where: { conversaId: pedidoGuias.contexto.conversaId, turnoIaId: `menu:${pedidoGuias.mensagem.id}`, tipo: 'document' } });
+    assert.equal(pdfPersistido.contextoConsulta.guias[0].guideId, `guia-${jornada.empresas[1].id}`);
     await jornada.receberWebhook('Guias do mês', { interacao: botaoGuias, providerMessageId: pedidoGuias.mensagem.providerMessageId });
     assert.equal(jornada.consultas.filter(c => c.ferramenta === 'quanto_devo').length, 1, 'Reentrega não consulta nem responde de novo');
     await jornada.receberWebhook('Pode mudar de empresa, por favor?');
     assert.equal((await checkpoint(jornada.atendimento.id)).aguardandoSelecao, true);
-    assert.equal(jornada.consultas.length, 1, 'Pedido de troca só exibe empresas, sem consultar');
+    assert.equal(jornada.consultas.length, 2, 'Pedido de troca só exibe empresas, sem consultar ou enviar de novo');
     const outraEmpresa = jornada.envios.at(-1).linhas.find(o => o.id.endsWith(`.${jornada.empresas[0].id}`));
     await jornada.receberWebhook(outraEmpresa.titulo, { interacao: outraEmpresa });
     const guiasDaOutra = jornada.envios.at(-1).botoes.find(o => o.titulo === 'Guias do mês');
     await jornada.receberWebhook(guiasDaOutra.titulo, { interacao: guiasDaOutra });
-    assert.equal(jornada.consultas.length, 2);
-    assert.equal(jornada.consultas[1].empresaId, jornada.empresas[0].id);
+    assert.equal(jornada.consultas.length, 4);
+    assert.equal(jornada.consultas[2].empresaId, jornada.empresas[0].id);
     ok('webhook real: reações → empresa → menu → guias → troca por texto e reentrega sem modelo');
+
+    const receita = await novoCaso('faturamento-completo');
+    const notas = [...Array.from({ length: 25 }, () => ({ clientId: receita.empresas[1].id, total: 100, papel: 'EMIT', statusEfetivo: 'autorizada' })),
+      { clientId: receita.empresas[1].id, total: 9000, papel: 'EMIT', statusEfetivo: 'cancelada' },
+      { clientId: receita.empresas[1].id, total: 8000, papel: 'DEST', statusEfetivo: 'autorizada' },
+      { clientId: receita.empresas[0].id, total: 7000, papel: 'EMIT', statusEfetivo: 'autorizada' }];
+    for (const n of notas) { const nota = await prisma.portalInvoice.create({ data: { ...n, type: 'NFSE', competencia: new Date('2026-08-01T00:00:00Z') } }); ids.notas.push(nota.id); }
+    await receita.selecionar(receita.empresas[1]);
+    await receita.receberWebhook('Quero saber meu faturamemto');
+    assert.match(receita.envios.at(-1).texto, /Qual mês/);
+    await receita.receberWebhook('agosto de 2026');
+    assert.match(receita.envios.at(-1).texto, /2\.500,00.*25 notas/);
+    assert(receita.consultas.every(c => c.empresaId === receita.empresas[1].id));
+    ok('faturamento sem modelo soma 25 notas e exclui canceladas, recebidas e outra empresa');
+
+    const recalculo = await novoCaso('recalculo-guiado');
+    await recalculo.selecionar(recalculo.empresas[1]);
+    await recalculo.receberWebhook('atualizar guia');
+    const pendenciaRecalculo = await prisma.acaoPendenteWhatsapp.findFirstOrThrow({ where: { conversaId: recalculo.daEmpresa(recalculo.empresas[1].id).id, status: 'pendente' } });
+    assert.equal(pendenciaRecalculo.tipo, 'RECALCULAR_GUIA');
+    assert.equal(pendenciaRecalculo.atendimentoId, recalculo.atendimento.id);
+    assert.equal(pendenciaRecalculo.contextoVersao, (await checkpoint(recalculo.atendimento.id)).versao);
+    assert.match(recalculo.envios.at(-1).texto, /CONFIRMAR/);
+    assert.equal(recalculo.execucoes.length, 0);
+    await recalculo.receberWebhook('trocar de empresa');
+    assert.equal((await prisma.acaoPendenteWhatsapp.findUniqueOrThrow({ where: { id: pendenciaRecalculo.id } })).status, 'cancelada');
+    ok('guia vencida prepara confirmação com empresa/versão fixadas; trocar cancela sem executar');
 
     const selecao = await novoCaso('selecao-recibo');
     const textoInicial = 'preciso emitir uma nota; valor: 125,50; serviço: consulta sintética';

@@ -16,6 +16,16 @@ O telefone identifica o contato; cada pedido tem empresa, conversa e versão fix
 - “Guias de todas” consulta apenas empresas autorizadas, com identificação e falhas separadas. Não prepara nem autoriza emissão em várias empresas.
 - Responder citando uma guia/documento usa o identificador da mensagem enviada no mesmo atendimento; texto encaminhado e nome de arquivo não comprovam empresa. Envios programados não alteram a seleção.
 
+## Guias e faturamento sem modelo
+
+“Me manda a guia” e o botão “Guias do mês” localizam arquivos liberados com vencimento no mês atual. Uma guia encontrada é enviada diretamente em PDF. Com várias, o cliente escolhe por botão, número ou nome como “INSS”; “todas” envia somente as guias da página apresentada. A lista mostra valor e vencimento, sem exigir tipo e competência como campos de entrada. Pedidos históricos aceitam nomes dos meses, ano e datas como `08/26`. Ausência de arquivos liberados não é apresentada como ausência de imposto a pagar.
+
+As opções são gravadas em `MensagemWhatsapp.contextoConsulta` pela migração aditiva `20260910213000_whatsapp_opcoes_consulta`. Cada lista contém os IDs oferecidos, empresa, versão, mensagem de origem e validade de 30 minutos. Números usam a página realmente apresentada. Botões antigos, troca de empresa e intervenção humana invalidam a seleção; antes de enviar o PDF, o acesso e a liberação do arquivo são reconferidos. Cada PDF do envio múltiplo tem recibo próprio, e resultados incertos não são reenviados automaticamente.
+
+“Qual meu faturamento?”, inclusive o erro “faturamemto”, oferece “Este mês”, “Mês passado” e “Outro mês ou ano”. A resposta informa período, total e quantidade de notas. A consulta usa a mesma população de notas emitidas autorizadas da apuração e agrega todas as notas do período, sem limitar a uma página. Exclui recebidas, canceladas e outras empresas; requer a permissão de leitura de notas. Valor ausente ou falta de registros gera uma explicação, nunca um total inventado. O valor é de notas registradas, não de movimentação bancária. “Faturamento da Alfa” identifica a empresa autorizada indicada; uma pergunta livre pode sair da escolha de período.
+
+“Atualizar guia” apresenta guias vencidas e prepara o pedido com código de confirmação, preservando as travas fiscais existentes. A consulta em si não recalcula nem emite tributos. Respostas do modelo compostas apenas por marcadores, como `[Mensagem alcance]`, são recusadas pelo validador e encaminhadas à equipe, sem nova chamada ao modelo.
+
 ## Atendimento do escritório
 
 A caixa agrupa os segmentos pelo responsável, exibe a empresa atual e permite filtrar o histórico. Cada mensagem conserva sua empresa de origem. Quem tem carteira parcial vê apenas os segmentos autorizados; entradas sem empresa e a lista completa do seletor só aparecem quando toda a carteira do grupo é acessível.

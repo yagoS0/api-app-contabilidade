@@ -344,7 +344,13 @@ describe('opções apresentadas', () => {
 
 
 describe('continuidade entre seleção e serviços', () => {
-  it.each(['Guias do mês', 'guias de setembro', 'notas de agosto de 2026', 'guias de 09/2026'])('período não vira nome de empresa: %s', texto => {
+  it.each(['guia do INSS', 'guia do simples nacional', 'guia do Simples Nacional de agosto', 'faturamento da minha empresa'])('referência do cliente não vira empresa desconhecida: %s', texto => {
+    expect(decidir({ texto })).toMatchObject({ acao: 'CONTINUAR', portalClientId: 'empresa-klaus' });
+  });
+  it.each(['faturamento da Lente', 'qual o faturamento da Lente de agosto', 'quanto faturei na Lente', 'faturamemto da Lente'])('faturamento com empresa explícita respeita %s', texto => {
+    expect(decidir({ texto })).toMatchObject({ acao: 'SELECIONAR', portalClientId: 'empresa-lente' });
+  });
+  it.each(['Guias do mês', 'guias de setembro', 'notas de agosto de 2026', 'guias de 09/2026', 'faturamento de janeiro a agosto de 2026', 'faturamento de 2026', 'faturamento de 08/26'])('período não vira nome de empresa: %s', texto => {
     expect(decidir({ texto })).toMatchObject({ acao: 'CONTINUAR', portalClientId: 'empresa-klaus' });
   });
   it('empresa desconhecida continua exigindo conferência', () => {
