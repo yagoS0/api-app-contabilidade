@@ -7,12 +7,13 @@ import { adquirirLease, renovarLease, liberarLease } from "./WhatsappLeaseServic
 import { enviarMensagemRastreada } from "./SaidaWhatsappService.js";
 import { WhatsappCloudClient } from "./WhatsappCloudClient.js";
 import { empresasAutorizadas, decidirSelecaoEmpresa, opcoesSelecaoEmpresa, textoSelecaoEmpresa } from "./selecaoEmpresaWhatsapp.js";
+import { lerContextoDoMenu } from "./contextoMenuWhatsapp.js";
 
 export const TTL_CONTEXTO_MS = 30 * 60 * 1000;
 const json = v => JSON.parse(JSON.stringify(v));
 const falha = (codigo, texto = "O atendimento mudou. Confira a empresa antes de continuar.") => Object.assign(new Error(texto), { codigo });
 const dataMs = v => v ? new Date(v).getTime() : 0;
-const pedeEquipe = (texto, interacao) => ["altan.client.human.v1", "altan.lead.human.v1"].includes(interacao?.id)
+const pedeEquipe = (texto, interacao) => ["altan.client.human.v1", "altan.lead.human.v1"].includes(lerContextoDoMenu(interacao?.id)?.acaoId || interacao?.id)
   || /^(?:(?:quero|preciso|gostaria de)\s+)?(?:(?:falar|conversar)\s+com\s+)?(?:(?:o|a|um|uma)\s+)?(?:contador|contadora|atendente|equipe|humano|atendimento humano|escrit[oó]rio)[.!?]?$/i.test(String(texto || "").trim());
 export const chaveLeaseResponsavel = conversa => conversa?.atendimentoId ? `responsavel:${conversa.atendimentoId}` : `ia:${conversa?.id}`;
 export const filtroEntradasDaConversa = conversaId => ({ OR: [{ conversaId }, { contexto: { is: { conversaId, estado: "RESOLVIDA" } } }] });
@@ -172,7 +173,9 @@ export async function resolverContextoDaMensagem({ registro, atendimento, texto 
     : decidirSelecaoEmpresa({ empresas: acesso.empresas, contexto: atual, texto, interacao, agora, empresaCitadaId, coletaAtiva });
   const selecionada = ["SELECIONAR", "CONTINUAR"].includes(decisao.acao) ? acesso.empresas.find(e => e.portalClientId === (decisao.portalClientId || atual.portalClientId)) : null;
   const segmento = selecionada ? await garantirConversa({ telefone: atual.telefoneE164, portalClientId: selecionada.portalClientId, client }) : null;
-  const alterou = !selecionada || selecionada.portalClientId !== atual.portalClientId || atual.aguardandoSelecao || dataMs(atual.expiraEm) <= agora.getTime();
+  const mesmaSelecao = decisao.acao === "PERGUNTAR" && atual.aguardandoSelecao && dataMs(atual.expiraEm) > agora.getTime()
+    && JSON.stringify(atual.empresaIdsOferecidos) === JSON.stringify(acesso.empresas.map(e => e.portalClientId));
+  const alterou = selecionada ? selecionada.portalClientId !== atual.portalClientId || atual.aguardandoSelecao || dataMs(atual.expiraEm) <= agora.getTime() : !mesmaSelecao;
   const versao = atual.versao + (alterou ? 1 : 0);
   const handoff = ["BLOQUEAR", "EQUIPE"].includes(decisao.acao);
   const pedir = !selecionada && !handoff && decisao.acao !== "TODAS";
@@ -181,14 +184,16 @@ export async function resolverContextoDaMensagem({ registro, atendimento, texto 
   const coletaPendenteConversaId = pedir && coletaAtiva && ["CONTEXTO_EXPIRADO", "CONFIRMACAO_EXIGE_CONTEXTO"].includes(decisao.motivo) ? atual.conversaId
     : pedir && atual.aguardandoSelecao ? atual.coletaPendenteConversaId : null;
   const retomarColeta = Boolean(selecionada && atual.coletaPendenteConversaId === segmento?.id);
-  const resultado = selecionada ? (retomarColeta ? { retomarColeta: true, textoRetomada: atual.pedidoPendente || null } : decisao.acaoOperacao ? { acaoOperacao: decisao.acaoOperacao } : null) : handoff
+  const resultado = selecionada ? (decisao.menuDesatualizado ? { menuDesatualizado: true } : retomarColeta ? { retomarColeta: true, textoRetomada: atual.pedidoPendente || null } : decisao.acaoOperacao ? { acaoOperacao: decisao.acaoOperacao } : null) : handoff
     ? { texto: decisao.acao === "EQUIPE" ? "Encaminhei sua mensagem para a equipe. Um contador vai continuar este atendimento por aqui."
       : "Este número precisa de uma conferência de acesso no cadastro. Encaminhei para a equipe verificar as empresas e o responsável antes de continuar.", opcoes: [], bloqueado: true }
     : decisao.acao === "TODAS" ? { empresas: acesso.empresas.map(e => e.portalClientId) }
-    : { texto: textoSelecaoEmpresa({ empresas: acesso.empresas, contexto }), opcoes: opcoesSelecaoEmpresa({ empresas: acesso.empresas, contexto }), motivo: decisao.motivo };
-  const efetivo = selecionada ? (retomarColeta ? "retomar emissão" : atual.coletaPendenteConversaId ? "menu" : decisao.acao === "CONTINUAR" ? texto : decisao.textoOperacao || decisao.pedido || "menu") : null;
-  const interacaoEfetiva = selecionada ? (atual.aguardandoSelecao ? atual.interacaoPendente : interacao) : null;
-  const interacaoPendente = pedir && atual.aguardandoSelecao && pedido === atual.pedidoPendente ? atual.interacaoPendente
+    : { texto: (["MENU_DESATUALIZADO", "MENU_SEM_CONTEXTO", "SELECAO_EXPIRADA"].includes(decisao.motivo) ? "Esse menu é de uma seleção anterior. Confira a empresa para continuar.\n\n" : "")
+      + textoSelecaoEmpresa({ empresas: acesso.empresas, contexto }), opcoes: opcoesSelecaoEmpresa({ empresas: acesso.empresas, contexto }), motivo: decisao.motivo };
+  const efetivo = selecionada ? (decisao.menuDesatualizado ? "menu" : retomarColeta ? "retomar emissão" : atual.coletaPendenteConversaId ? "menu" : decisao.acao === "CONTINUAR" ? texto : decisao.textoOperacao || decisao.pedido || "menu") : null;
+  const interacaoValidada = decisao.interacaoId ? { ...interacao, id: decisao.interacaoId } : interacao;
+  const interacaoEfetiva = selecionada && !decisao.descartarInteracao ? (atual.aguardandoSelecao ? atual.interacaoPendente : interacaoValidada) : null;
+  const interacaoPendente = decisao.descartarInteracao ? null : pedir && atual.aguardandoSelecao && pedido === atual.pedidoPendente ? atual.interacaoPendente
     : pedir && !interacao?.id?.startsWith("altan.company.") ? interacao : null;
   const recibo = await client.$transaction(async tx => {
     const mudou = await tx.atendimentoResponsavelWhatsapp.updateMany({ where: { id: atual.id, versao: atual.versao, ultimaMensagemId: atual.ultimaMensagemId, atendidaPor: null, atendidaDesde: null }, data: {
@@ -220,6 +225,8 @@ export async function resolverContextoDaMensagem({ registro, atendimento, texto 
 export async function atenderContextoResponsavel({ registro, item, processar, agora = new Date(), client = prisma, cloud = null,
   flag = INTEGRACAO_WHATSAPP_MENU, piloto = IA_EMPRESAS_PILOTO, telefonesPiloto = WHATSAPP_MENU_TELEFONES_PILOTO,
   resolverVinculo = resolverVinculoPorTelefone, conferirJanela = janelaDaConversa, log = console }) {
+  // O webhook já preservou a reação. Ela não é pedido e não altera versões, seleção ou coleta.
+  if (item?.tipo === "reaction") return { tratadoContexto: true, motivo: "REACAO_SEM_ATENDIMENTO" };
   if (!flag) return processar(registro, item, {});
   const conhecido = registro.conversa.atendimentoId ? await client.atendimentoResponsavelWhatsapp.findUnique({ where: { id: registro.conversa.atendimentoId } }) : null;
   if (!registro.vinculo?.empresas?.length && !conhecido?.userId) return processar(registro, item, {});
