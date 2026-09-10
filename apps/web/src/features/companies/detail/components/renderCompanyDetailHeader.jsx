@@ -1,4 +1,5 @@
 import { Engrenagem } from "../../../configuracoes/Configuracoes";
+import { BackButton } from "../../../../components/ui/BackButton";
 import { formatCompetencia, deslocarCompetencia, competenciaAtual } from "../../../../lib/competencia";
 import { Tabs } from "../../../../components/ui/Tabs";
 import { WorkspaceHomeLink } from "../../../../app/navigation/WorkspaceNavigation";
@@ -220,7 +221,7 @@ function CompetenciaSwitcher({ competencia, onChange }) {
 }
 
 export function CompanySectionHeader({
-  company, activeTab, onTabChange, canEditCompany = false,
+  company, activeTab, onBack, onTabChange, canEditCompany = false,
   competencia, onCompetenciaChange,
 }) {
   const simples = mostraApuracaoDoSimples(company);
@@ -243,6 +244,7 @@ export function CompanySectionHeader({
     <header className="company-section-header">
       <div className="company-header__identity">
         <WorkspaceHomeLink />
+        <BackButton onClick={onBack} iconOnly />
         <div className="company-topbar__brand">
           <strong className="company-topbar__name">{company?.razao || "Empresa"}</strong>
           <span className="company-topbar__cnpj">{company?.cnpj || "CNPJ não informado"}</span>

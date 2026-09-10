@@ -938,6 +938,14 @@
   white-space: nowrap;
 }
 
+.btn-back.btn-back--icon {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  padding: 0;
+  border-radius: 10px;
+}
+
 /* ─── Abas — UMA só, em todo o app ────────────────────────────────────────────
    Render em `components/ui/Tabs.jsx`. Não escreva barra de aba nova em `style={{}}`: foi assim que
    a mesma barra ganhou raio 6/8/20/999 e cinco tamanhos de fonte em telas vizinhas. */
