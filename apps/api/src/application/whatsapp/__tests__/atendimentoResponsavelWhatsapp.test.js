@@ -13,6 +13,7 @@ jest.mock("../WhatsappLeaseService.js", () => {
 });
 
 import { Prisma } from "@prisma/client";
+import { responderMenuWhatsapp } from "../MenuWhatsappService.js";
 import { atenderContextoResponsavel, resolverContextoDaMensagem, carregarMensagemResolvida, conferirContextoResponsavel } from "../AtendimentoResponsavelWhatsappService.js";
 import { adquirirLease, renovarLease, liberarLease, __limparLeases } from "../WhatsappLeaseService.js";
 
@@ -113,6 +114,111 @@ async function fixture() {
 
 beforeEach(() => { jest.useFakeTimers({ now: AGORA, doNotFake: ["nextTick", "queueMicrotask", "setImmediate"] }); jest.clearAllMocks(); __limparLeases(); });
 afterEach(() => { jest.useRealTimers(); __limparLeases(); });
+
+async function fixtureComMenu(permissoesAssistente = ['GUIAS']) {
+  const f = await fixture();
+  f.client.contatoWhatsapp = { findMany: jest.fn(async () => [{ id: 'contato', nome: 'Responsável', userId: 'liz', permissoesAssistente }]) };
+  f.client.companyClientUser = { findUnique: jest.fn(async () => ({ role: 'OWNER', status: 'ACTIVE' })) };
+  let mensagens = 0;
+  f.cloud.enviarBotoes = jest.fn(async () => ({ wamid: `botoes-${++mensagens}` }));
+  const executar = jest.fn(async () => ({ ok: true, guias: [{ tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 100,00', vencimento: '20/09/2026' }] }));
+  const coleta = jest.fn(async () => ({ tratado: false }));
+  f.processar.mockImplementation((registro, item, lease) => responderMenuWhatsapp({ registro, texto: item.corpo, interacao: item.interacao,
+    agora: new Date(), client: f.client, cloud: f.cloud, executar, coleta, resolverVinculo: f.resolverVinculo,
+    conferirJanela: async () => ({ situacao: 'ABERTA' }), logger: log, ...lease }));
+  const clicar = async (opcao) => {
+    jest.setSystemTime(new Date(Date.now() + 1000));
+    const entrada = await f.novo(opcao.titulo, { tipo: 'interactive', interacao: { id: opcao.id } });
+    return { entrada, resultado: await f.rodar(entrada) };
+  };
+  const guia = () => f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes.find(o => o.titulo === 'Guias do mês');
+  return { ...f, executar, coleta, clicar, guia };
+}
+
+it('reações não iniciam atendimento nem invalidam a lista que já foi mostrada', async () => {
+  const f = await fixtureComMenu();
+  await f.rodar(await f.novo('', { tipo: 'reaction' }));
+  expect(f.atendimento()).toBeUndefined();
+  await f.rodar(await f.novo('oi'));
+  const antes = copy(f.atendimento());
+  const opcao = f.cloud.enviarLista.mock.calls[0][0].linhas.find(o => o.id.endsWith('.lente'));
+  await f.rodar(await f.novo('', { tipo: 'reaction' }));
+  await f.rodar(await f.novo('', { tipo: 'reaction' }));
+  expect(f.atendimento()).toEqual(antes);
+  await f.clicar(opcao);
+  expect(f.atendimento().portalClientId).toBe('lente');
+  expect(f.cloud.enviarLista).toHaveBeenCalledTimes(1);
+  expect(f.guia().id).toContain('altan.ctx.v1:');
+});
+
+it('seleção → menu real → Guias do mês consulta só a empresa escolhida, sem novo seletor nem repetição', async () => {
+  const f = await fixtureComMenu();
+  await f.selecionar('menu', 'lente');
+  const versao = f.atendimento().versao;
+  const { entrada, resultado } = await f.clicar(f.guia());
+  expect(resultado).toMatchObject({ tratado: true, acao: 'GUIAS_MES' });
+  expect(f.executar).toHaveBeenCalledWith('quanto_devo', {}, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'lente' }), conversa: expect.objectContaining({ portalClientId: 'lente' }) }));
+  expect(f.cloud.enviarTexto).toHaveBeenLastCalledWith(expect.objectContaining({ texto: expect.stringMatching(/Empresa: Lente[\s\S]*Guias liberadas[\s\S]*DAS/) }));
+  expect(f.cloud.enviarLista).toHaveBeenCalledTimes(1);
+  expect(f.atendimento()).toMatchObject({ portalClientId: 'lente', versao, aguardandoSelecao: false });
+  await f.rodar(entrada);
+  expect(f.executar).toHaveBeenCalledTimes(1);
+});
+
+it('texto livre Guias do mês continua na empresa e esclarecimentos não abrem outro seletor', async () => {
+  const f = await fixtureComMenu();
+  await f.selecionar('menu', 'lente');
+  await f.rodar(await f.novo('Guias do mês'));
+  expect(f.executar).toHaveBeenCalledTimes(1);
+  await f.rodar(await f.novo('esse valor é referente a qual período?'));
+  expect(f.processar).toHaveBeenLastCalledWith(expect.objectContaining({ conversa: expect.objectContaining({ portalClientId: 'lente' }) }), expect.objectContaining({ corpo: 'esse valor é referente a qual período?' }), expect.anything());
+  expect(f.cloud.enviarLista).toHaveBeenCalledTimes(1);
+});
+
+it('menu antigo após trocar empresa mostra o menu atual e não consulta a empresa errada', async () => {
+  const f = await fixtureComMenu();
+  await f.selecionar('menu', 'lente');
+  const antigo = f.guia();
+  await f.rodar(await f.novo('trocar para a Klaus'));
+  const antes = copy(f.atendimento());
+  await f.clicar(antigo);
+  expect(f.executar).not.toHaveBeenCalled();
+  expect(f.atendimento()).toMatchObject({ portalClientId: 'klaus', versao: antes.versao });
+  expect(f.cloud.enviarBotoes.mock.calls.at(-1)[0].texto).toMatch(/seleção anterior/);
+  await f.clicar(f.guia());
+  expect(f.executar).toHaveBeenCalledWith('quanto_devo', {}, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'klaus' }) }));
+});
+
+it('menu antigo só atualiza as opções e preserva o rascunho e a ação da empresa atual', async () => {
+  const f = await fixtureComMenu(['GUIAS', 'EMISSAO_NFSE']);
+  await f.selecionar('menu', 'lente');
+  const antigo = f.guia();
+  await f.rodar(await f.novo('trocar para a Klaus'));
+  const conversaId = f.atendimento().conversaId;
+  await f.client.rascunhoEmissaoWhatsapp.create({ data: { id: 'draft', conversaId, versao: 3,
+    expiraEm: new Date(+AGORA + 86400000), estado: { status: 'REVISAO', dados: { valor: 150 }, codigo: 'A7K2' } } });
+  await f.client.acaoPendenteWhatsapp.create({ data: { id: 'acao', conversaId, atendimentoId: f.atendimento().id, status: 'pendente' } });
+  const rascunhos = copy(f.client.rows.rascunhoEmissaoWhatsapp);
+  const acoes = copy(f.client.rows.acaoPendenteWhatsapp);
+  f.coleta.mockClear();
+  await f.clicar(antigo);
+  expect(f.coleta).not.toHaveBeenCalled();
+  expect(f.executar).not.toHaveBeenCalled();
+  expect(f.client.rows.rascunhoEmissaoWhatsapp).toEqual(rascunhos);
+  expect(f.client.rows.acaoPendenteWhatsapp).toEqual(acoes);
+  expect(f.cloud.enviarBotoes.mock.calls.at(-1)[0].texto).toMatch(/seleção anterior/);
+});
+
+it('repetir a pergunta com a mesma lista não invalida o primeiro botão', async () => {
+  const f = await fixtureComMenu();
+  await f.rodar(await f.novo('oi'));
+  const opcao = f.cloud.enviarLista.mock.calls[0][0].linhas[0];
+  const versao = f.atendimento().versao;
+  await f.rodar(await f.novo('não entendi'));
+  expect(f.atendimento().versao).toBe(versao);
+  await f.clicar(opcao);
+  expect(f.atendimento().aguardandoSelecao).toBe(false);
+});
 
 it("retoma pedido com campos após botão e preserva mensagem original interativa", async () => {
   const f = await fixture(), pedido = "emitir nota\nvalor: 150,00\nserviço: Consulta";
