@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { WHATSAPP_ENVIO_DELAY_MS } from "../../config.js";
 import { conferirGuiasVencimento } from "./GuideDueBatchService.js";
 import { loteAlterado } from "./loteVencimento.js";
 import { sendCompanyGuidesEmail } from "./GuideCompanyEmailService.js";
@@ -22,6 +23,7 @@ export function createGuideReleaseBatchService(deps = {}) {
   const canalAtual = deps.canal || carregarCanal;
   const email = deps.email || sendCompanyGuidesEmail;
   const whatsapp = deps.whatsapp || enviarParaTodosOsDestinatarios;
+  const aguardar = deps.aguardar || ((ms) => new Promise((resolve) => { setTimeout(resolve, ms); }));
 
   async function preparar({ items, permitidas }) {
     if (!Array.isArray(items) || !items.length || items.length > 500) throw loteAlterado();
@@ -60,6 +62,7 @@ export function createGuideReleaseBatchService(deps = {}) {
     const previa = await preparar(input);
     if (!assinatura || assinatura !== previa.assinatura) throw loteAlterado();
     const results = [];
+    let whatsappIniciado = false;
     for (const linha of previa.linhas) {
       const r = { portalClientId: linha.portalClientId, liberadas: 0, email: null, whatsapp: [] };
       results.push(r);
@@ -89,6 +92,7 @@ export function createGuideReleaseBatchService(deps = {}) {
           }
           r.liberadas += 1;
           // Contatos e autorização podem mudar enquanto os PDFs são enviados por e-mail.
+          if (whatsappIniciado && linha.whatsapp.disponivel && WHATSAPP_ENVIO_DELAY_MS > 0) await aguardar(WHATSAPP_ENVIO_DELAY_MS);
           const canal = await canalAtual();
           const destinos = await contatos(linha.portalClientId);
           const avaliacao = avaliarLinha({ canal, guide, destinatario: await destinatario(linha.portalClientId) });
@@ -101,6 +105,7 @@ export function createGuideReleaseBatchService(deps = {}) {
             const atual = await db.guide.findFirst({ where: { id: guide.id, portalClientId: linha.portalClientId }, select: SELECT_GUIA_PARA_ENVIO });
             if (!atual || assinaturaDocumento(atual) !== assinaturaDocumento(anterior)) throw loteAlterado();
             // A reserva do transportador é por guia/canal/destinatário. Nunca força reenvio.
+            whatsappIniciado = true;
             const out = await whatsapp({ guide: atual, destinatarios: alvos, canal, log, reenviar: false });
             r.whatsapp.push({ ...out, guideId: guide.id,
               ...(!out.ok && !out.message ? { message: out.mensagem || "WhatsApp com falha ou resultado pendente. Confira o histórico." } : {}) });

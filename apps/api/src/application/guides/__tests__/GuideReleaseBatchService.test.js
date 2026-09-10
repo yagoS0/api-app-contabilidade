@@ -20,6 +20,7 @@ function montar() {
     canal: jest.fn(async () => ({ disponivel: true })),
     email: jest.fn(async () => { atual = { ...atual, emailStatus: "SENT", updatedAt: new Date() }; return { status: "sent", sentNow: 1 }; }),
     whatsapp: jest.fn(async () => ({ ok: true, estado: "aceito", aceitas: 1, parcial: false })),
+    aguardar: jest.fn(async () => {}),
   };
   const service = createGuideReleaseBatchService(deps);
   const input = { items: [{ portalClientId: "c1", mesVencimento: "2026-09", guideIds: ["g1"], assinatura: "documentos" }], permitidas: ["c1"], userId: "contador" };
@@ -87,4 +88,18 @@ test("revogação de opt-in durante e-mail impede WhatsApp", async () => {
   const out = await executar();
   expect(out.results[0]).toMatchObject({ ok: false, email: { ok: true }, whatsapp: [{ ok: false }] });
   expect(deps.whatsapp).not.toHaveBeenCalled();
+});
+
+test("duas guias da mesma empresa geram um e-mail agrupado e dois envios de WhatsApp", async () => {
+  const { deps, input, executar } = montar();
+  const primeira = (await deps.conferir()).guias[0];
+  const guias = [primeira, { ...primeira, id: "g2", tipo: "INSS" }];
+  input.items[0].guideIds = ["g1", "g2"];
+  deps.conferir.mockResolvedValue({ guias });
+  deps.db.guide.findFirst.mockImplementation(async ({ where }) => ({ ...guias.find((g) => g.id === where.id), emailStatus: "SENT" }));
+  const out = await executar();
+  expect(out.results[0]).toMatchObject({ ok: true, liberadas: 2 });
+  expect(deps.email).toHaveBeenCalledTimes(1);
+  expect(deps.email).toHaveBeenCalledWith(expect.objectContaining({ selectedGuideIds: ["g1", "g2"] }));
+  expect(deps.whatsapp.mock.calls.map(([arg]) => arg.guide.id)).toEqual(["g1", "g2"]);
 });
