@@ -48,7 +48,7 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
     }
   }
   if (!dados || !podeEditar) return null;
-  return <section className="nfse-profile-editor" aria-label="Editar perfis de emissão">
+  return <section className="nfse-profile-editor nfse-settings" aria-label="Editar perfis de emissão">
     <h2>Perfis de emissão</h2>
     <p>Cadastre a tributação recorrente de cada serviço. Valores da nota, tomador e retenção do ISS são conferidos em cada emissão. A alíquota efetiva do Simples continua vinculada à competência.</p>
     {sucesso && <p role="status">{sucesso}</p>}

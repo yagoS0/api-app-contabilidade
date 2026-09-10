@@ -1,5 +1,14 @@
 # CLAUDE.md — Web (apps/web)
 
+## Alinhamento das empresas e remoção da faixa da carteira — 10/09/2026
+
+A faixa “Carteira inteira” e seu estado de filtro foram removidos a pedido do usuário. Busca, filtros existentes e abas de regime continuam. Fechamento em lote exige seleção explícita e considera somente as empresas selecionadas ainda visíveis e aptas pelo servidor; confirmação e revalidação permanecem.
+
+Nas rotas internas da empresa, a logo é renderizada por CompanySectionHeader junto do retorno e nome/CNPJ. O provider não cria outra faixa. Grupos e subabas alinham à esquerda; preservam href, Ctrl/clique, competência e histórico de retorno.
+
+company-workspace.css limita grades/controles à largura disponível. O CSS do menu de configurações atua apenas no aside: não aplicar .config-columns nav/input indiscriminadamente a formulários embutidos. O próprio EditorPerfilEmissao carrega o escopo nfse-settings em todos os usos. Auditoria quebra chaves longas e remove o mínimo global da tabela de pendências. Formulários não alteram contratos fiscais para resolver layout.
+
+
 ## Ajuste de UI/UX da carteira — 09/09/2026
 
 A home integra `WorkspaceHomeLink` ao cabeçalho (logo, título/competência e conta); o provider não cria uma segunda faixa em `/` ou `/companies`. O retorno das demais páginas continua preservando a visão da carteira.

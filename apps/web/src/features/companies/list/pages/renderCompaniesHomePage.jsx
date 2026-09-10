@@ -17,7 +17,7 @@ import { CompaniesTable } from "../components/renderCompaniesTable";
 import { BarraSelecaoEmpresas } from "../components/BarraSelecaoEmpresas";
 import { CalendarioGrid } from "../../../calendario/components/renderCalendarioGrid";
 import { estadoCertificado } from "../lib/certificado";
-import { APURACAO, ORDEM_APURACAO, contarApuracao, estadoApuracao } from "../lib/estadoApuracao";
+
 import {
   ABA_PADRAO, abasVisiveis, contarPorAba, empresasDaAba, normalizarAba, rotuloAba,
 } from "../lib/abaRegime";
@@ -396,7 +396,6 @@ export function CompaniesHomePage({
   // F2: "o que trava a carteira" — resposta agregada do servidor para a competência da tela.
   // Não vem do card: o card sabe se a empresa está fechada, não POR QUE ela ainda não pode ser.
   const [travas, setTravas] = useState(null);          // Map companyId → linha do servidor
-  const [travaFiltro, setTravaFiltro] = useState("all"); // all | problema | fechar | apurar | fechada | enviar
   const [fechandoLote, setFechandoLote] = useState(false);
   const carregarTravas = useCallback(async () => {
     if (!api?.getCarteiraFechamento || !dashboardCompetencia) { setTravas(null); return; }
@@ -488,40 +487,6 @@ export function CompaniesHomePage({
   }, [travas]);
 
   /**
-   * As contagens do PIPELINE DO MÊS — a mesma leitura da coluna Apuração, não um cálculo paralelo.
-   *
-   * ⚠ Isto substituiu quatro contagens que rodavam por conta própria sobre `travas`. Elas
-   * divergiam da coluna: dava para a barra dizer uma coisa e a linha da empresa dizer outra, na
-   * mesma tela. Chip de filtro, barra de progresso e ordenação saem TODOS de `estadoApuracao`.
-   */
-  const contagemApuracao = useMemo(
-    () => (travas ? contarApuracao(companies || [], travas) : null),
-    [companies, travas],
-  );
-
-  /**
-   * Empresas com pelo menos uma guia gerada e NÃO enviada — a ação rápida do fim do mês.
-   *
-   * ⚠ `falhou` conta aqui. Ela é o caso mais agudo de "falta enviar": já se tentou, não saiu, e
-   * nada tentará de novo. Fora deste recorte, a empresa cujo e-mail falhou desaparecia justamente
-   * do filtro que existe para varrer os envios pendentes.
-   */
-  const empresasFaltaEnviar = useMemo(() => {
-    const set = new Set();
-    for (const c of companies || []) {
-      if (getComplianceTags(c.guideCompliance).some((t) => t.state === "gerada" || t.state === "falhou")) {
-        set.add(c.companyId);
-      }
-    }
-    return set;
-  }, [companies]);
-  const contagemFaltaEnviar = empresasFaltaEnviar.size;
-
-  // ⚠ `segmentosProgresso` (o cálculo da barra de progresso) foi REMOVIDO junto com a barra em
-  // 15/08/2026 — sem consumidor, era `useMemo` morto rodando a cada render. `contagemApuracao`
-  // continua: é dele que saem os chips de filtro. Ver o comentário no lugar onde a barra ficava.
-
-  /**
    * Fecha, uma a uma, as empresas que o servidor disse estarem prontas.
    *
    * O laço é sequencial de propósito: são escritas, e disparar N em paralelo contra o mesmo backend
@@ -530,11 +495,11 @@ export function CompaniesHomePage({
    * demais seguem. Por isso o relatório final conta recusas em vez de abortar no primeiro erro.
    */
   async function fecharAsProntas() {
-    // ⚠⚠ O ALVO É `prontasVisiveis`, não a carteira inteira. Ler `travas.values()` aqui fecharia
+    // ⚠⚠ O ALVO É `prontasSelecionadas`, não a carteira inteira. Ler `travas.values()` aqui fecharia
     // empresas fora do recorte que o contador está olhando — e a confirmação abaixo lista só as 12
     // primeiras, então ele nem veria os nomes das demais.
-    if (fechandoLote || !prontasVisiveis.length) return;
-    const alvos = prontasVisiveis;
+    if (fechandoLote || !prontasSelecionadas.length) return;
+    const alvos = prontasSelecionadas;
     // eslint-disable-next-line no-alert
     const ok = window.confirm(
       `Fechar o mês ${dashboardCompetencia} de ${alvos.length} empresa(s)?\n\n`
@@ -642,23 +607,6 @@ export function CompaniesHomePage({
     //    Q16: filtro "Enviados/Só não enviados" também REMOVE quem não bate.
     //    Novos filtros (apuração / certificado) também REMOVEM quem não bate.
     const searched = companies.filter((company) => {
-      // F2: REMOVE quem não bate — é uma lista de trabalho ("me mostre só as que posso fechar"),
-      // não uma ordenação. Empresa sem linha no agregado fica de fora de qualquer recorte: dizer
-      // "pronta" sem ter a resposta do servidor seria pior que omitir.
-      if (travaFiltro !== "all") {
-        // "Falta enviar guia" sai dos CHIPS, não do agregado de fechamento — é a única do conjunto
-        // que fala de guia, não de lançamento.
-        if (travaFiltro === "enviar") {
-          if (!empresasFaltaEnviar.has(company?.companyId)) return false;
-        } else {
-          const t = travas?.get(company?.companyId);
-          if (!t) return false;
-          // O recorte usa o MESMO `estadoApuracao` do chip e da coluna. Antes cada um relia
-          // `travas` do seu jeito, e clicar num chip trazia um conjunto diferente do que o chip
-          // tinha acabado de contar.
-          if (estadoApuracao(company, t).chave !== travaFiltro) return false;
-        }
-      }
       if (emailFilter === "notSent" && company?.monthEmailSent) return false;
       if (emailFilter === "sent" && !company?.monthEmailSent) return false;
       if (apuracaoFilter === "apurados" && !company?.apuracao?.apurada) return false;
@@ -706,7 +654,7 @@ export function CompaniesHomePage({
       .map((company, index) => ({ company, index, p: priority(company) }))
       .sort((a, b) => (b.p - a.p) || (a.index - b.index))
       .map((item) => item.company);
-  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, travaFiltro, travas, empresasFaltaEnviar]);
+  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter]);
 
   // ─── ABAS DE REGIME ───────────────────────────────────────────────────────────────────────────
   //
@@ -842,21 +790,13 @@ export function CompaniesHomePage({
     [empresasVisiveis, selecionados],
   );
 
-  /**
-   * ⚠⚠ AS QUE DÁ PARA FECHAR **E** ESTÃO NA TELA — as duas condições, e a segunda é a que faltava.
-   *
-   * `contagemTravas.prontas` conta `podeFechar` na CARTEIRA INTEIRA. Usá-la para um botão que age
-   * fecharia empresas que o contador não está olhando — exatamente o risco que o comentário do botão
-   * nomeia (*"fácil de clicar sem ter olhado quem vai ser fechado"*). A regra de qual população vale
-   * já está escrita neste arquivo: **`empresasVisiveis`, não `filteredCompanies` — o que está na TELA
-   * é a aba ativa**.
-   */
-  const prontasVisiveis = useMemo(() => {
+  // O lote exige seleção explícita, visibilidade na aba e aptidão informada pelo servidor.
+  const prontasSelecionadas = useMemo(() => {
     if (!travas) return [];
-    return (empresasVisiveis || [])
+    return empresasSelecionadas
       .map((c) => travas.get(c.companyId))
       .filter((l) => l?.podeFechar);
-  }, [empresasVisiveis, travas]);
+  }, [empresasSelecionadas, travas]);
 
   return (
     <div className="dashboard-home-page">
@@ -1133,90 +1073,6 @@ export function CompaniesHomePage({
             </Button>
           </div>
 
-          {/* F2 — o que trava a carteira nesta competência.
-              A pergunta "quais eu já posso fechar?" só tinha uma resposta: abrir empresa por
-              empresa e olhar o cadeado. Aqui ela vira contagem, e cada contagem vira lista de
-              trabalho. Some inteira quando o servidor não responde: um número errado sobre
-              fechamento é pior que número nenhum. */}
-          {modoVisao === "tabela" && contagemApuracao && (
-            <div className="dashboard-home__summary" role="group" aria-label="Pendências da carteira">
-              <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", fontWeight: 700, marginRight: 2 }}>
-                CARTEIRA INTEIRA
-              </span>
-              {/* ⚠ Estes chips SÃO a coluna Apuração, contada. Vêm do mesmo `estadoApuracao` que
-                  desenha o chip de cada linha e que ordena a lista — antes eram um cálculo próprio
-                  sobre `travas`, e as duas leituras discordavam na mesma tela.
-                  Cada estado carrega cor E superfície: derivar o fundo com `${cor}22` quebra em
-                  silêncio assim que a cor vira `var(--…)`. */}
-              {[
-                ["all", `Todas · ${contagemApuracao.total}`, "var(--state-neutral)", "var(--state-neutral-surface)"],
-                ...ORDEM_APURACAO
-                  .filter((k) => contagemApuracao[k] > 0)
-                  .map((k) => [k, `${APURACAO[k].icone} ${APURACAO[k].rotulo} · ${contagemApuracao[k]}`, APURACAO[k].cor, APURACAO[k].fundo]),
-                // A pergunta mais frequente da SEGUNDA METADE do fluxo: as guias já existem, falta
-                // mandar. Sai da leitura dos chips de guia, não do pipeline do mês.
-                ["enviar", `✈ Falta enviar guia · ${contagemFaltaEnviar}`, "var(--state-warn)", "var(--state-warn-surface)"],
-              ].map(([chave, label, cor, superficie]) => {
-                const ativo = travaFiltro === chave;
-                return (
-                  <button
-                    key={chave}
-                    type="button"
-                    aria-pressed={ativo}
-                    onClick={() => setTravaFiltro(ativo ? "all" : chave)}
-                    style={{
-                      padding: "4px 12px", borderRadius: 999, cursor: "pointer", fontSize: "0.78rem", fontWeight: 600,
-                      border: `1px solid ${ativo ? cor : "var(--border)"}`,
-                      background: ativo ? superficie : "transparent",
-                      color: ativo ? cor : "var(--state-neutral)",
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-              {/* ⚠⚠ ESTE BOTÃO NUNCA APARECEU NA TELA — de 25/07/2026 até 27/08/2026.
-                  A condição era `travaFiltro === "prontas"`, e **`"prontas"` não é chave de chip
-                  nenhum**: as que existem são `all`, `problema`, `fechar`, `apurar`, `fechada` e
-                  `enviar` (`estadoApuracao.js` + o ramo `enviar` logo acima). A palavra só vivia em
-                  `contagemTravas.prontas` e no guard de `fecharAsProntas` — nunca em `setTravaFiltro`.
-                  ⚠ Conferido no navegador antes de mexer: clicando o chip "☑ Falta fechar · 2", o
-                  botão não aparecia. O fechamento contábil em lote existia, é sequencial, revalida no
-                  servidor e relata as recusas — **e não tinha porta**.
-                  ⚠ O `features/companies/CLAUDE.md` descrevia o botão como se ele estivesse na tela.
-
-                  A intenção original fica: ele **só aparece dentro de um recorte**, para ninguém
-                  fechar em lote sem ter olhado quem vai ser fechado. O recorte é "Falta fechar", que
-                  é literalmente *"apurada — falta concluir o fechamento do mês"*. */}
-              {travaFiltro === "fechar" && prontasVisiveis.length > 0 && (
-                <button
-                  type="button"
-                  onClick={fecharAsProntas}
-                  disabled={fechandoLote}
-                  style={{
-                    padding: "4px 12px", borderRadius: 999, fontSize: "0.78rem", fontWeight: 700,
-                    border: "1px solid var(--state-closed)", background: "var(--state-closed-surface)", color: "var(--state-closed)",
-                    cursor: fechandoLote ? "wait" : "pointer",
-                  }}
-                >
-                  {/* ⚠ O número é o das VISÍVEIS que dá para fechar — ele pode ser MENOR que o do
-                      chip, e isso é certo: "falta fechar" inclui quem ainda tem lançamento com
-                      problema, e essa o servidor recusaria. */}
-                  {fechandoLote ? "Fechando…" : `🔒 Fechar as ${prontasVisiveis.length}`}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* ⚠ A BARRA DE PROGRESSO FOI REMOVIDA — decisão do dono, 15/08/2026: *"tire também
-              aquela barra de progresso da página principal, está poluindo"*. Ela ficava aqui, em
-              cards e tabela, com um segmento por estado de `estadoApuracao` e o contador
-              "N/M fechadas" ao lado.
-              ⚠ O que ela dizia NÃO se perdeu: os chips de APURAÇÃO DO MÊS, logo acima, saem do
-              MESMO `contagemApuracao` — inclusive "🔒 Fechada · N" e "Todas · N", que eram os dois
-              números do rótulo. O que sumiu é a proporção desenhada, não o dado.
-              ⚠ Só a barra saiu: chip de filtro e ordenação continuam lendo `estadoApuracao`. */}
-
           {/* Os filtros abaixo são da visão de cards — a grade anual tem navegação própria (ano). */}
           {modoVisao === "tabela" && (
           <section
@@ -1384,6 +1240,14 @@ export function CompaniesHomePage({
           </section>
           )}
 
+          {modoVisao === "tabela" && prontasSelecionadas.length > 0 && (
+            <div className="dashboard-home__selection-actions">
+              <Button variant="secondary" onClick={fecharAsProntas} disabled={fechandoLote}>
+                {fechandoLote ? "Fechando…" : `Fechar as ${prontasSelecionadas.length} selecionadas aptas`}
+              </Button>
+            </div>
+          )}
+
           {/* ─── ABAS DE REGIME ─────────────────────────────────────────────────────────────────
               *"ter duas tabelas na página principal, uma para presumido e outra simples nacional,
               deve ficar indicado em cima da tabela, como uma aba de navegador"* (dono, 18/08/2026).
@@ -1514,7 +1378,7 @@ export function CompaniesHomePage({
                    só o usa quando a lista está VAZIA, que é o único momento em que confundir
                    "não carregou" com "não há" custa caro. Com 33 empresas na tela ele é ignorado. */
                 erroDeCarga={error || null}
-                onLimparFiltros={() => { limparFiltros(); setTravaFiltro("all"); setSearch(""); }}
+                onLimparFiltros={() => { limparFiltros(); setSearch(""); }}
                 selecionados={selecionados}
                 onAlternarSelecao={alternarSelecao}
                 onSelecionarTodos={selecionarTodos}

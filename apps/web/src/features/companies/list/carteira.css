@@ -12,8 +12,8 @@
 .dashboard-home__views { flex-shrink: 0; }
 .dashboard-home .dashboard-home__actions { gap: 6px; align-items: center; margin-left: auto; }
 .dashboard-home .dashboard-home__action { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 6px 10px; border-radius: 8px; font-size: .8rem; }
-.dashboard-home__summary { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .dashboard-home__filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.dashboard-home__filters input[type=search] { min-height: 40px; box-sizing: border-box; }
 .dashboard-home__regimes { min-width: 0; }
 .dashboard-home__regimes .app-tabs { width: fit-content; max-width: 100%; }
 .companies-table-scroll { border: 1px solid var(--border); border-radius: 10px; overflow: auto; max-height: calc(100vh - 300px); }
