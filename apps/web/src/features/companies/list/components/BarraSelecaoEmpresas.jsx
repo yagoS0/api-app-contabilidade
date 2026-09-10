@@ -24,7 +24,8 @@ import { ExportarLancamentosLoteModal } from "./ExportarLancamentosLoteModal";
 //      `GET /firm/guides/batch-report`, a MESMA leitura que o envio consome. Sem ela, a tela diz
 //      que não sabe e o Confirmar fica bloqueado; não existe "0 guias" fabricado.
 
-import { useCallback, useRef, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { deslocarCompetencia } from "../../../../lib/competencia";
 import { Button } from "../../../../components/ui/Button";
 import { BatchProgressModal } from "../../../apuracao/components/BatchProgressModal";
 import {
@@ -62,7 +63,7 @@ function Faixa({ tom, children }) {
  * ⚠ O mesmo componente serve às cinco. Um modal por ação faria a prévia do download divergir da do
  * envio na primeira correção — e é justamente a prévia que não pode divergir.
  */
-function ModalAcao({ acao, competencia, mesVencimento, onMesVencimento, previaEnvio, onCancelar, onConfirmar, executando }) {
+function ModalAcao({ acao, competencia, mesVencimento, previaEnvio, onCancelar, onConfirmar, executando }) {
   const irreversivel = Boolean(acao.irreversivel);
   const alvos = acao.alvos || [];
   const fora = acao.fora || [];
@@ -136,7 +137,7 @@ function ModalAcao({ acao, competencia, mesVencimento, onMesVencimento, previaEn
       >
         <h2 style={{ margin: 0, fontSize: "1.02rem" }}>{acao.rotulo}</h2>
         <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--text-muted)" }}>{usaRelatorio ? "Envio das guias com vencimento no mês escolhido. A competência original de cada documento é preservada." : acao.descricao}</p>
-        {usaRelatorio && <label>Mês de vencimento <input type="month" value={mesVencimento} disabled={executando} onChange={(e) => onMesVencimento(e.target.value)} /></label>}
+        {usaRelatorio && <p>Vencimentos de <strong>{formatarCompetencia(mesVencimento)}</strong> · mês seguinte à competência do cabeçalho.</p>}
         {usaRelatorio && <a href="/guides/batch-email">Abrir painel de guias por vencimento, com e-mail e WhatsApp</a>}
 
         {irreversivel && (
@@ -268,7 +269,7 @@ export function BarraSelecaoEmpresas({
   const [resultado, setResultado] = useState(null);
   const [batchJobId, setBatchJobId] = useState(null);
   const [previaEnvio, setPreviaEnvio] = useState(null); // { estado, resumo, motivo }
-  const [mesVencimento, setMesVencimento] = useState(() => new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).format(new Date()));
+  const mesVencimento = competencia ? deslocarCompetencia(competencia, 1) : "";
 
   const ids = empresasSelecionadas.map((c) => c.companyId);
   const plano = planoDaSelecao({ empresas: empresasSelecionadas, competencia, jobsAtivos });
@@ -287,6 +288,7 @@ export function BarraSelecaoEmpresas({
     try {
       if (!mesVencimento) throw new Error("Escolha o mês de vencimento.");
       const report = await api.getBatchEmailReport({ mesVencimento });
+      if (versao !== previaVersao.current) return;
       const rows = [...(report?.simples || []), ...(report?.presumidos || []), ...(report?.outros || [])].filter((r) => ids.includes(r.portalClientId));
       const items = rows.filter((r) => r.pendingGuideIds?.length).map((r) => ({
         portalClientId: r.portalClientId, mesVencimento, guideIds: r.pendingGuideIds, assinatura: r.assinatura,
@@ -462,8 +464,7 @@ export function BarraSelecaoEmpresas({
           acao={acao}
           competencia={competencia}
           mesVencimento={mesVencimento}
-          onMesVencimento={(mes) => { setPreviaEnvio(null); setMesVencimento(mes); }}
-          previaEnvio={previaEnvio}
+          previaEnvio={previaEnvio?.estado === "ok" && previaEnvio.mesVencimento !== mesVencimento ? null : previaEnvio}
           executando={executando}
           onCancelar={() => { if (!executando) setAberta(null); }}
           onConfirmar={executar}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { competenciaPadrao, deslocarCompetencia, formatCompetencia } from "../../../../lib/competencia";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { Button } from "../../../../components/ui/Button";
@@ -370,9 +371,9 @@ export function BatchEmailPage({
 }) {
   // Q10.4: competência opcional ("" = todas). Q19: default = mês anterior (mesmo
   // padrão do dashboard/guias/notas); usuário pode trocar para "Todas" no seletor.
-  const [competencia, setCompetencia] = useState(() => new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).format(new Date()));
-  const [competenciaFiscal, setCompetenciaFiscal] = useState("");
-  const filtro = { mesVencimento: competencia, competencia: competenciaFiscal };
+  const [competenciaTrabalho, setCompetencia] = useState(competenciaPadrao);
+  const competencia = competenciaTrabalho ? deslocarCompetencia(competenciaTrabalho, 1) : "";
+  const filtro = { mesVencimento: competencia };
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [onlyPending, setOnlyPending] = useState(true);
 
@@ -382,7 +383,7 @@ export function BatchEmailPage({
     whatsapp?.limpar?.();
     setSelectedKeys(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [competencia, competenciaFiscal]);
+  }, [competencia]);
 
   function toggleOne(key) {
     setSelectedKeys((prev) => {
@@ -405,7 +406,7 @@ export function BatchEmailPage({
   }
 
   const totalSelected = selectedKeys.size;
-  const canSend = totalSelected > 0 && !sending && !loading && report?.mesVencimento === competencia && (report?.competenciaFiltro || "") === competenciaFiscal;
+  const canSend = totalSelected > 0 && !sending && !loading && report?.mesVencimento === competencia && !report?.competenciaFiltro;
 
   // ⚠ O lote por WhatsApp é por UMA competência (a rota exige AAAA-MM): com "Todas pendentes" o
   // botão fica DESABILITADO com o motivo — nunca some. E canal indisponível (flag, template) idem.
@@ -457,7 +458,7 @@ export function BatchEmailPage({
   return (
     <PageShell
       title="Envio de guias por vencimento"
-      subtitle="Guias para pagar no mês selecionado, preservando a competência de cada documento. Guias pagas ou já enviadas ficam fora da seleção."
+      subtitle="A competência de trabalho reúne as guias que vencem no mês seguinte, incluindo parcelamentos. Guias pagas ou já enviadas ficam fora da seleção."
       onBack={onBack}
       actions={
         <>
@@ -487,9 +488,9 @@ export function BatchEmailPage({
           background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8,
         }}>
           <label style={{ fontSize: "0.85rem", color: PANEL.muted, display: "flex", alignItems: "center", gap: 8 }}>
-            Mês de vencimento:
-            <input type="month" aria-label="Mês de vencimento" disabled={sending || whatsapp?.executando}
-              value={competencia}
+            Competência:
+            <input type="month" aria-label="Competência de trabalho" disabled={sending || whatsapp?.executando}
+              value={competenciaTrabalho}
               onChange={(e) => setCompetencia(e.target.value)}
               style={{
                 background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6,
@@ -498,10 +499,7 @@ export function BatchEmailPage({
               }}
             />
           </label>
-          <label style={{ fontSize: "0.85rem", color: PANEL.muted, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-            Competência específica (opcional): <input type="month" aria-label="Competência específica" value={competenciaFiscal} disabled={sending || whatsapp?.executando} onChange={(e) => setCompetenciaFiscal(e.target.value)} />
-          </label>
-          {competenciaFiscal && <p role="status">Atenção: este filtro limita o lote. Parcelamentos de outra referência podem ficar fora. <button type="button" onClick={() => setCompetenciaFiscal("")}>Mostrar todas as competências</button></p>}
+          <span>Vencimentos de <strong>{formatCompetencia(competencia)}</strong></span>
           <label style={{ fontSize: "0.85rem", color: PANEL.muted, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
             <input
               type="checkbox"
