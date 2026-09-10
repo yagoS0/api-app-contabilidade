@@ -325,16 +325,15 @@ function AppInterno() {
       <OnboardingsPage
         api={api}
         onVoltar={() => session.goBack()}
-        onNovo={async () => {
-          // A ficha nasce no primeiro clique — é o que permite salvar rascunho desde a 1ª tela.
-          // (E é por isso que a lista esconde rascunho por padrão: eles acumulam.)
-          const criada = await api.criarOnboarding("TRANSFERENCIA");
+        onNovo={async ({ origem, modo }) => {
+          const criada = await api.criarOnboarding(origem);
           const id = criada?.onboarding?.id;
-          if (id) session.setPage("onboardingWizard", { onboardingId: id });
+          if (!id) throw new Error("O servidor não confirmou a ficha criada.");
+          session.setPage(modo === "escritorio" ? "onboardingWizard" : "onboardingDetail", { onboardingId: id });
         }}
         onAbrir={(item) =>
           session.setPage(
-            item.status === "RASCUNHO" ? "onboardingWizard" : "onboardingDetail",
+            "onboardingDetail",
             { onboardingId: item.id }
           )
         }

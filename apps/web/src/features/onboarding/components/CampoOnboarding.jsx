@@ -61,6 +61,7 @@ function ListaDeLinhas({ descritor, valor, onChange, id }) {
       {linhas.map((linha, indice) => (
         <div
           key={indice}
+          className="onboarding-field-row"
           style={{
             display: "grid",
             gridTemplateColumns: `repeat(${colunas.length}, minmax(0, 1fr)) auto`,
