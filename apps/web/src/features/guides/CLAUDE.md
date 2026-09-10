@@ -8,6 +8,8 @@ A grade tem oito colunas: seleção, guia, competência, valor, vencimento, paga
 
 ## Guias dentro da empresa por vencimento — 10/09/2026
 
+A seleção de empresas (`BarraSelecaoEmpresas`) também deriva o mês seguinte da competência do cabeçalho, sem seletor adicional. A página independente de envio em lote usa uma única competência de trabalho e deriva o vencimento; não filtra a competência original dos documentos. E-mail e WhatsApp recebem o mesmo mês derivado e os IDs conferidos. Respostas antigas da prévia não substituem uma consulta posterior.
+
 Decisão de produto corrigida pelo usuário: `CompanyGuidesTable` segue SOMENTE a competência do cabeçalho e deriva o vencimento pelo mês seguinte (`deslocarCompetencia(competencia, 1)`). Agosto mostra tudo que vence em setembro, incluindo DAS de agosto e parcela de setembro. Não adicionar seletor independente de vencimento nem exigir configuração do usuário. O título informa o mês derivado; histórico e consulta fiscal ficam em “Outras consultas”. Trocar empresa/competência retorna à visão principal e limpa seleção. Guias pagas permanecem identificadas; VAZIO só aparece no histórico/competência. Captura, upload e marcar vazio preservam competência fiscal.
 
 A conferência de parcelas usa GET `/firm/companies/:companyId/guides/due-report`, com `requireFirmCompanyAccess`, apenas dados locais e escopo de uma empresa. Falha aparece como falha, e nenhuma ausência de documento confirma regularidade. Reutiliza a regra de parcelas do lote. `getCompanyGuides` percorre as páginas para não esconder documentos depois dos primeiros 50; falha intermediária rejeita toda a carga.

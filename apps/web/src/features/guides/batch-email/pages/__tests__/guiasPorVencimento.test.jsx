@@ -11,7 +11,7 @@ function montar(extra = {}) {
   const whatsapp = { canal: { disponivel: true }, prever: jest.fn(), limpar: jest.fn() };
   const result = render(<BatchEmailPage report={{ mesVencimento: "2026-09", simples: [row], presumidos: [], outros: [] }}
     onLoad={jest.fn()} onSend={onSend} whatsapp={whatsapp} {...extra} />);
-  fireEvent.change(screen.getByLabelText("Mês de vencimento"), { target: { value: "2026-09" } });
+  fireEvent.change(screen.getByLabelText("Competência de trabalho"), { target: { value: "2026-08" } });
   return { ...result, onSend, whatsapp };
 }
 test("mostra cada documento, referência preservada e parcela faltante", () => {
@@ -29,6 +29,16 @@ test("e-mail e WhatsApp recebem os mesmos IDs; a guia paga não vai junto", () =
   fireEvent.click(screen.getByRole("button", { name: "Enviar e-mails (1)" }));
   expect(onSend).toHaveBeenCalledWith([{ portalClientId: "c", mesVencimento: "2026-09", guideIds: ["das", "parcela"], assinatura: "conferida" }]);
 });
+test("dezembro consulta janeiro sem recortar a competência dos documentos", () => {
+  const onLoad = jest.fn();
+  montar({ onLoad });
+  expect(onLoad).toHaveBeenLastCalledWith({ mesVencimento: "2026-09" });
+  expect(screen.queryByLabelText("Competência específica")).toBeNull();
+  fireEvent.change(screen.getByLabelText("Competência de trabalho"), { target: { value: "2026-12" } });
+  expect(onLoad).toHaveBeenLastCalledWith({ mesVencimento: "2027-01" });
+  expect(screen.getByRole("button", { name: "Enviar e-mails (0)" })).toBeDisabled();
+});
+
 test("empresa só com parcela faltante continua visível e não pode ser enviada", () => {
   montar({ report: { mesVencimento: "2026-09", simples: [{ ...row, documentos: [], pendingGuideIds: [] }] } });
   expect(screen.getByLabelText("Selecionar Cliente")).toBeDisabled();
