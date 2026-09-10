@@ -47,6 +47,8 @@ import {
 } from "./ContatoWhatsappService.js";
 import { registrarMensagemEnviada } from "./ConversaWhatsappService.js";
 import { avaliarCanal, avaliarLinha, CANAIS, MOTIVOS } from "./elegibilidadeEnvioGuia.js";
+import { conferirGuiasVencimento } from "../guides/GuideDueBatchService.js";
+import { assinaturaGuias, periodoVencimento, loteAlterado } from "../guides/loteVencimento.js";
 import { getGuidePdfBuffer } from "../guides/GuideService.js";
 import { guideTypeEmailLabel } from "../guides/guideEmailCopy.js";
 import { dataCivilBR } from "../../utils/dataCivil.js";
@@ -105,6 +107,11 @@ export const SELECT_GUIA_PARA_ENVIO = Object.freeze({
   vencimento: true,
   status: true,
   sourcePath: true,
+  paymentStatus: true,
+  parcelamentoId: true,
+  numeroParcela: true,
+  hash: true,
+  updatedAt: true,
   // ⚠ O legado do e-mail viaja junto porque é ele que `linhaLegadoDoEmail` materializa antes de a
   // primeira linha de `envios_guia` desligar a tolerância. Sem estes três campos aqui, o serviço
   // teria de reler a guia no meio do envio.
@@ -207,21 +214,22 @@ export async function carregarCanal({ chaveTemplate = WHATSAPP_TEMPLATE_GUIA, in
  * existem, `emailStatus: SENT` como tolerância enquanto não existirem. Uma segunda definição aqui
  * faria a prévia e o chip discordarem sobre a mesma guia.
  */
-export async function preverLote({ portalClientIds, competencia, guideIds = null, chaveTemplate = WHATSAPP_TEMPLATE_GUIA }) {
+export async function preverLote({ portalClientIds, competencia, mesVencimento, guideIds = null, chaveTemplate = WHATSAPP_TEMPLATE_GUIA }) {
   const ids = [...new Set((portalClientIds || []).map((v) => String(v || "").trim()).filter(Boolean))];
-  const comp = String(competencia || "").trim();
+  const comp = String(mesVencimento || competencia || "").trim();
   if (!ids.length) throw new EnvioGuiaWhatsappError("EMPRESAS_OBRIGATORIAS", "Informe ao menos uma empresa.");
   if (!/^\d{4}-\d{2}$/.test(comp)) {
     throw new EnvioGuiaWhatsappError("COMPETENCIA_INVALIDA", "Informe a competência no formato AAAA-MM.");
   }
 
   const canal = await carregarCanal({ chaveTemplate });
+  const selecao = mesVencimento ? await conferirGuiasVencimento({ portalClientIds: ids, mesVencimento, guideIds }) : null;
 
   const guias = await prisma.guide.findMany({
     where: {
       // ⚠ O escopo vem de fora (`empresasVisiveis` / `requireFirmCompanyAccess`) e viaja no `where`.
       portalClientId: { in: ids },
-      competencia: comp,
+      ...(mesVencimento ? { vencimento: periodoVencimento(mesVencimento) } : { competencia: comp }),
       // `VAZIO` (ausência confirmada) não tem PDF e não se envia; `ERROR`/`NEEDS_REVIEW` também não.
       status: "PROCESSED",
       ...(Array.isArray(guideIds) && guideIds.length ? { id: { in: guideIds.map(String) } } : {}),
@@ -259,7 +267,7 @@ export async function preverLote({ portalClientIds, competencia, guideIds = null
       empresa: g.portalClient?.razao || null,
       cnpj: g.portalClient?.cnpj || null,
       tipo: g.tipo,
-      tipoLabel: guideTypeEmailLabel(g.tipo),
+      tipoLabel: g.parcelamentoId ? "Parcelamento" : guideTypeEmailLabel(g.tipo),
       competencia: g.competencia,
       valor: g.valor != null ? Number(g.valor) : null,
       vencimento: g.vencimento || null,
@@ -286,6 +294,9 @@ export async function preverLote({ portalClientIds, competencia, guideIds = null
 
   return {
     competencia: comp,
+    ...(mesVencimento ? { mesVencimento, assinatura: selecao.assinatura,
+      assinaturasPorGuia: Object.fromEntries(selecao.guias.map((g) => [g.id, assinaturaGuias([g])])),
+      assinaturasPorEmpresa: Object.fromEntries(ids.map((id) => [id, assinaturaGuias(selecao.guias.filter((g) => g.portalClientId === id))])) } : {}),
     canal,
     linhas,
     // ⚠ ESTES SÃO OS NÚMEROS QUE A CONFIRMAÇÃO TEM DE REPETIR. Ver `executarLote`.
@@ -375,7 +386,7 @@ export async function enviarGuiaPorWhatsapp({
     };
   }
 
-  const tipoLabel = guideTypeEmailLabel(guide.tipo);
+  const tipoLabel = guide.parcelamentoId ? "Parcelamento" : guideTypeEmailLabel(guide.tipo);
   const competenciaLabel = competenciaPorExtenso(guide.competencia);
 
   let aceitoWamid = null;
@@ -684,6 +695,8 @@ export function resumirDestinatarios(resultados) {
 export async function executarLote({
   portalClientIds,
   competencia,
+  mesVencimento,
+  assinatura,
   guideIds = null,
   conferencia = null,
   chaveTemplate = WHATSAPP_TEMPLATE_GUIA,
@@ -693,7 +706,8 @@ export async function executarLote({
   log = logPadrao,
   aoProgredir = null,
 }) {
-  const previa = await preverLote({ portalClientIds, competencia, guideIds, chaveTemplate });
+  const previa = await preverLote({ portalClientIds, competencia, mesVencimento, guideIds, chaveTemplate });
+  if (mesVencimento && (!assinatura || assinatura !== previa.assinatura)) throw loteAlterado();
   conferirLote(previa.resumo, conferencia);
 
   const paraWhatsapp = previa.linhas.filter((l) => l.canalSugerido === CANAIS.WHATSAPP);
@@ -722,12 +736,21 @@ export async function executarLote({
     const linha = paraWhatsapp[i];
     const guide = guiasPorId.get(linha.guideId);
     let resultado;
-    if (!guide) {
+    if (!guide || guide.paymentStatus === "PAID") {
       resultado = {
         ok: false, guideId: linha.guideId, motivo: MOTIVOS.GUIA_NAO_PROCESSADA,
         mensagem: "A guia não está mais disponível para envio.", podeTentarDeNovo: false,
       };
     } else {
+      if (mesVencimento) {
+        try {
+          await conferirGuiasVencimento({ portalClientIds: [guide.portalClientId], mesVencimento,
+            guideIds: [guide.id], assinatura: previa.assinaturasPorGuia[guide.id] });
+        } catch (err) {
+          resultados.push({ ...linha, ok: false, motivo: err.code, mensagem: err.message });
+          continue;
+        }
+      }
       // eslint-disable-next-line no-await-in-loop
       resultado = await enviarParaTodosOsDestinatarios({
         guide,
@@ -762,6 +785,7 @@ export async function executarLote({
     // ⚠ NUNCA SOMEM: as que não puderam ir por WhatsApp voltam com o motivo, para o chamador
     // mandá-las por e-mail. Elas contam no total que a confirmação repetiu.
     email: {
+      ...(mesVencimento ? { mesVencimento, assinaturasPorEmpresa: previa.assinaturasPorEmpresa } : {}),
       total: paraEmail.length,
       guideIds: paraEmail.map((l) => l.guideId),
       linhas: paraEmail,

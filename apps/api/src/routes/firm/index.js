@@ -110,6 +110,7 @@ import { normalizeCompetencia, normalizeGuideType, colunaMatrizDaGuia, envioDeEm
 // A matriz do envio em lote le o estado de envio da MESMA fonte que o chip do dashboard
 // (`envios_guia`): enviada = terminal em QUALQUER canal, e o WhatsApp que falhou aparece.
 import { enviosPorGuia, foiEnviadaComLegado, envioParaExibir } from "../../application/guides/EnvioGuiaService.js";
+import { relatorioPorVencimento } from "../../application/guides/GuideDueBatchService.js";
 import { podeTentarDeNovoPeloCodigo } from "../../application/whatsapp/errosMeta.js";
 // O consumo do assistente (IA) no mês — molde de `/serpro/consumo`, para a tela de conversas.
 import { consumoIaDoMes } from "../../application/assistente/GuardaIaService.js";
@@ -3423,6 +3424,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     }));
     const portalIds = companies.map((c) => c.id);
 
+    if (req.query.mesVencimento) {
+      try {
+        return res.json(await relatorioPorVencimento({ companies, mesVencimento: String(req.query.mesVencimento), competencia: competenciaFilter }));
+      } catch (err) {
+        return res.status(err.status || 500).json({ error: err.code || "BATCH_REPORT_FAILED", message: err.message });
+      }
+    }
+
     // Q10.3: guides PROCESSED pending. Filtro de competência só quando explicitamente passado.
     // Sem filtro, vem TODAS as guides pending de QUALQUER competência (incluindo emailStatus=null
     // pra retrocompat com guides antigos que ficaram sem o campo).
@@ -3620,13 +3629,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     for (const it of items) {
       const portalClientId = String(it?.portalClientId || "").trim();
       const competencia = String(it?.competencia || "").trim();
-      if (!portalClientId || !competencia) {
+      if (!portalClientId || (!competencia && !it?.mesVencimento)) {
         results.push({ portalClientId, competencia, ok: false, error: "invalid_input" });
         continue;
       }
       try {
         // eslint-disable-next-line no-await-in-loop
-        const r = await sendCompanyGuidesEmail({ portalClientId, competencia });
+        const r = await sendCompanyGuidesEmail({ portalClientId, competencia,
+          ...(it?.mesVencimento ? { mesVencimento: it.mesVencimento, selectedGuideIds: it.guideIds, assinatura: it.assinatura } : {}) });
         results.push({ portalClientId, competencia, ok: true, ...r });
       } catch (err) {
         log.error({ err: err?.message || err, portalClientId, competencia }, "Falha no batch-send de e-mail");

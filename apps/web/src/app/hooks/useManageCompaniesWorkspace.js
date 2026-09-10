@@ -232,10 +232,10 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   // Carrega a matriz "empresa × tipo de guia" para a página de envio em lote.
-  async function handleLoadBatchEmailReport(competencia) {
+  async function handleLoadBatchEmailReport(competencia, { preservarFeedback = false } = {}) {
     if (page === "login") return null;
     setLoadingBatchEmailReport(true);
-    feedback.clearFeedback();
+    if (!preservarFeedback) feedback.clearFeedback();
     try {
       const result = await api.getBatchEmailReport(competencia);
       setBatchEmailReport(result || null);
@@ -260,13 +260,17 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       setBatchEmailSendResult(result || null);
       const sent = Number(result?.sent || 0);
       if (sent > 0) {
-        feedback.setMessage(`${sent} e-mail${sent === 1 ? "" : "s"} enviado${sent === 1 ? "" : "s"} com sucesso.`);
+        const incompleto = [...(batchEmailReport?.simples || []), ...(batchEmailReport?.presumidos || []), ...(batchEmailReport?.outros || [])]
+          .some((r) => items.some((it) => it.portalClientId === r.portalClientId) && r.faltantes?.length);
+        feedback.setMessage(`${sent} e-mail${sent === 1 ? "" : "s"} enviado${sent === 1 ? "" : "s"}.${incompleto ? " Há parcelas sem guia: o lote continua incompleto." : ""}`);
       } else {
         feedback.setError("Nenhum e-mail foi enviado.");
       }
+      const falhas = (result?.results || []).filter((r) => !r.ok);
+      if (falhas.length) feedback.setError(`${falhas.length} empresa(s) sem envio: ${falhas.map((r) => r.message || r.error).join("; ")}`);
       // Recarrega o report para refletir o novo estado (linhas enviadas somem).
       if (batchEmailReport?.competencia) {
-        await handleLoadBatchEmailReport(batchEmailReport.competencia);
+        await handleLoadBatchEmailReport(batchEmailReport.mesVencimento ? { mesVencimento: batchEmailReport.mesVencimento, competencia: batchEmailReport.competenciaFiltro } : batchEmailReport.competencia, { preservarFeedback: true });
       }
       return result;
     } catch (err) {

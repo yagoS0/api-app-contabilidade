@@ -62,6 +62,31 @@ const GUIA = {
   portalClient: { id: "emp1", razao: "LENTE LTDA", cnpj: "11222333000181" },
 };
 
+describe("lote por vencimento", () => {
+  test("prévia mantém competência fiscal e execução exige sua assinatura", async () => {
+    cenarioLimpo();
+    const input = { portalClientIds: ["emp1"], mesVencimento: "2026-08", guideIds: ["g1"] };
+    const previa = await preverLote(input);
+    expect(previa.linhas[0].competencia).toBe("2026-07");
+    expect(prisma.guide.findMany.mock.calls[0][0].where).toMatchObject({ vencimento: {
+      gte: new Date("2026-08-01Z"), lt: new Date("2026-09-01Z"),
+    } });
+    const cliente = clienteFalso();
+    await expect(executarLote({ ...input, assinatura: "desatualizada", conferencia: previa.resumo, cliente, carregarPdf: pdf, delayMs: 0 }))
+      .rejects.toMatchObject({ code: "CONFERENCIA_DIVERGENTE" });
+    expect(cliente.enviarGuia).not.toHaveBeenCalled();
+    const resultado = await executarLote({ ...input, assinatura: previa.assinatura, conferencia: previa.resumo, cliente, carregarPdf: pdf, delayMs: 0 });
+    expect(resultado.whatsapp.enviadas).toBe(1);
+    expect(cliente.enviarGuia).toHaveBeenCalledTimes(1);
+  });
+  test("seleção vazia não consulta todas as guias do mês", async () => {
+    cenarioLimpo();
+    await expect(preverLote({ portalClientIds: ["emp1"], mesVencimento: "2026-08", guideIds: [] }))
+      .rejects.toMatchObject({ code: "CONFERENCIA_DIVERGENTE" });
+    expect(prisma.guide.findMany).not.toHaveBeenCalled();
+  });
+});
+
 let fetchNativo;
 const pdf = () => Buffer.from("%PDF-1.4 guia");
 

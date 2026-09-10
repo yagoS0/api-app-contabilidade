@@ -19,7 +19,7 @@ import { useLoteWhatsapp } from "../../hooks/useLoteWhatsapp";
 
 function linha(over = {}) {
   return {
-    portalClientId: "c1", razao: "ACME LTDA", cnpj: "11.111.111/0001-11", regimeTributario: "SIMPLES", competencia: "2026-07",
+    portalClientId: "c1", razao: "ACME LTDA", cnpj: "11.111.111/0001-11", regimeTributario: "SIMPLES", mesVencimento: "2026-07", competencia: "2026-07",
     tiposGuias: { DAS: { guideId: "g1", valor: 500 }, INSS: null, IRPJ: null, CSLL: null, PIS_COFINS: null, ISS: null, FGTS: null, PARC_DAS: null },
     pendingGuideIds: ["g1"],
     ...over,
@@ -27,15 +27,15 @@ function linha(over = {}) {
 }
 
 const REPORT = {
-  competencia: "2026-07",
+  mesVencimento: "2026-07", competencia: "2026-07",
   competenciasPresentes: ["2026-07"],
-  simples: [linha(), linha({ portalClientId: "c2", razao: "BETA LTDA", tiposGuias: { DAS: { guideId: "g2", valor: 300 } } })],
+  simples: [linha(), linha({ portalClientId: "c2", razao: "BETA LTDA", pendingGuideIds: ["g2"], tiposGuias: { DAS: { guideId: "g2", valor: 300 } } })],
   presumidos: [],
   outros: [],
 };
 
 const PREVIA = {
-  ok: true, competencia: "2026-07", canal: { disponivel: true },
+  ok: true, assinatura: "snapshot", mesVencimento: "2026-07", competencia: "2026-07", canal: { disponivel: true },
   resumo: { total: 2, porWhatsapp: 1, porEmail: 1, jaEnviadas: 0 },
   linhas: [
     { guideId: "g1", portalClientId: "c1", empresa: "ACME LTDA", tipo: "SIMPLES", tipoLabel: "DAS", canalSugerido: "WHATSAPP", motivo: null, contatoNome: "Maria" },
@@ -48,7 +48,7 @@ function apiFalso(over = {}) {
     getCanalWhatsapp: jest.fn(async () => ({ ok: true, canal: { disponivel: true } })),
     preverLoteWhatsapp: jest.fn(async () => PREVIA),
     executarLoteWhatsapp: jest.fn(async () => ({
-      ok: true, competencia: "2026-07", resumo: PREVIA.resumo,
+      ok: true, mesVencimento: "2026-07", competencia: "2026-07", resumo: PREVIA.resumo,
       whatsapp: { total: 1, enviadas: 1, jaEnviadas: 0, falhas: [], resultados: [] },
       email: { total: 1, guideIds: ["g2"], executado: true, enviadas: 1, erros: 0 },
     })),
@@ -68,7 +68,7 @@ async function montar(api = apiFalso()) {
   await waitFor(() => expect(api.getCanalWhatsapp).toHaveBeenCalled());
   // A página nasce no mês anterior ao de hoje; a matriz de teste é de 2026-07. A competência é
   // escolhida explicitamente — o teste não pode depender do relógio.
-  fireEvent.change(screen.getByRole("combobox"), { target: { value: "2026-07" } });
+  fireEvent.change(screen.getByLabelText("Mês de vencimento"), { target: { value: "2026-07" } });
   return { ...utils, api };
 }
 
@@ -90,10 +90,10 @@ describe("o botão", () => {
 
   it("⚠ 'Todas pendentes' desabilita com o motivo — o botão NÃO some", async () => {
     await montar();
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Mês de vencimento"), { target: { value: "" } });
     const botao = screen.getByRole("button", { name: /Enviar por WhatsApp/ });
     expect(botao).toBeDisabled();
-    expect(botao.getAttribute("title")).toMatch(/UMA competência/);
+    expect(botao.getAttribute("title")).toMatch(/mês de vencimento/);
   });
 
   it("canal indisponível: a frase aparece e o botão desabilita com a MESMA mensagem", async () => {
@@ -112,7 +112,7 @@ describe("a prévia vem antes, e a confirmação repete os números", () => {
     const { api } = await montar();
     selecionarTodas();
     fireEvent.click(screen.getByRole("button", { name: /Enviar por WhatsApp \(2\)/ }));
-    await waitFor(() => expect(api.preverLoteWhatsapp).toHaveBeenCalledWith({ competencia: "2026-07", portalClientIds: ["c1", "c2"] }));
+    await waitFor(() => expect(api.preverLoteWhatsapp).toHaveBeenCalledWith({ mesVencimento: "2026-07", portalClientIds: ["c1", "c2"], guideIds: ["g1", "g2"] }));
     expect(api.executarLoteWhatsapp).not.toHaveBeenCalled();
     const previa = await screen.findByTestId("previa-whatsapp");
     expect(previa).toHaveTextContent(/1.*por WhatsApp/);
@@ -130,8 +130,8 @@ describe("a prévia vem antes, e a confirmação repete os números", () => {
     fireEvent.click(within(previa).getByRole("button", { name: /Confirmar: 1 por WhatsApp · 1 por e-mail/ }));
     await waitFor(() => expect(api.executarLoteWhatsapp).toHaveBeenCalledTimes(1));
     expect(api.executarLoteWhatsapp.mock.calls[0][0]).toEqual({
-      competencia: "2026-07", portalClientIds: ["c1", "c2"],
-      conferencia: { total: 2, porWhatsapp: 1, porEmail: 1 },
+      mesVencimento: "2026-07", competencia: "2026-07", portalClientIds: ["c1", "c2"],
+      assinatura: "snapshot", guideIds: ["g1", "g2"], conferencia: { total: 2, porWhatsapp: 1, porEmail: 1 },
       enviarPorEmail: true,
     });
     const resultado = await screen.findByTestId("resultado-whatsapp");
