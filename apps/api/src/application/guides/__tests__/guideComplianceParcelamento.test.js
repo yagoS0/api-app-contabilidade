@@ -93,6 +93,7 @@ describe("parcela de parcelamento × DAS", () => {
     const { parcDas } = map(await computeGuideComplianceMap([linhaSimples], COMP));
     expect(parcDas.state).toBe("enviada");
     expect(parcDas.canalEnvio).toBe("EMAIL");
+    expect(parcDas.canaisEnviados).toEqual(["EMAIL"]);
     expect(parcDas.tipoParcelamento).toBe("PARCSN");
     expect(parcDas.numeroParcelamento).toBe("123");
     expect(parcDas.numeroParcela).toBe(3);

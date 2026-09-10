@@ -192,6 +192,39 @@ describe("⚠ TRÊS VAZIOS, TRÊS RESPOSTAS (a doutrina de `lib/falhaDeCarga.js`
   });
 });
 
+describe("canais de envio na tabela principal", () => {
+  const enviada = canaisEnviados => ({ required: true, state: "enviada", ok: true, canaisEnviados });
+  test.each([
+    [["EMAIL"], "E-mail"],
+    [["WHATSAPP"], "WhatsApp"],
+    [["EMAIL", "WHATSAPP"], "E-mail e WhatsApp"],
+  ])("guias concluídas mostram %s diretamente na coluna", (canais, rotulo) => {
+    montar({ companies: [empresa({ guideCompliance: { das: enviada(canais) } })] });
+    const linha = screen.getByRole("row", { name: /ACME LTDA/ });
+    expect(within(linha).getByText(rotulo)).toBeInTheDocument();
+    expect(within(linha).queryByText("Sem envios pendentes")).not.toBeInTheDocument();
+  });
+
+  test("canais diferentes entre tributos permanecem identificados por guia", () => {
+    montar({ companies: [empresa({ guideCompliance: { das: enviada(["EMAIL"]), inss: enviada(["WHATSAPP"]) } })] });
+    expect(screen.getByRole("button", { name: "DAS: enviada por E-mail" })).toHaveTextContent("E-mail");
+    expect(screen.getByRole("button", { name: "INSS: enviada por WhatsApp" })).toHaveTextContent("WhatsApp");
+    expect(screen.queryByText("E-mail e WhatsApp")).not.toBeInTheDocument();
+  });
+
+  test("o canal também aparece na guia enviada quando outra ainda está pendente", () => {
+    montar({ companies: [empresa({ guideCompliance: { das: enviada(["EMAIL", "WHATSAPP"]), inss: { required: true, state: "missing" } } })] });
+    expect(screen.getByRole("button", { name: "DAS: enviada por E-mail e WhatsApp" })).toHaveTextContent("E-mail e WhatsApp");
+    expect(screen.getByRole("button", { name: /INSS: falta gerar/ })).toBeInTheDocument();
+  });
+
+  test("uma tentativa falha no outro canal não aparece como envio por ambos", () => {
+    montar({ companies: [empresa({ guideCompliance: { das: { ...enviada(["EMAIL"]), canalEnvio: "WHATSAPP", envioStatus: "falhou" } } })] });
+    expect(screen.getByText("E-mail")).toBeInTheDocument();
+    expect(screen.queryByText("E-mail e WhatsApp")).not.toBeInTheDocument();
+  });
+});
+
 describe("acessibilidade da linha", () => {
   test("⚠ 'Acessar' carrega o nome da empresa — trinta botões idênticos não distinguem nada", () => {
     montar();

@@ -3,7 +3,7 @@ import { GUIDE_COMPLIANCE_COMPETENCIA } from "../../config.js";
 // Faturamento vem da MESMA função que a apuração usa. Duas definições de "o mês teve receita"
 // fariam o chip da guia e o fechamento discordarem — com o contador no meio.
 import { faturamentoEmitPorEmpresa } from "../notas/apuracao/v2/FechamentoService.js";
-import { enviosPorGuia, foiEnviadaComLegado, envioParaExibir } from "./EnvioGuiaService.js";
+import { enviosPorGuia, foiEnviadaComLegado, envioParaExibir, canaisEnviadosComLegado } from "./EnvioGuiaService.js";
 // A pergunta "posso tentar de novo?" refeita a partir do código GRAVADO no envio (três respostas).
 import { podeTentarDeNovoPeloCodigo } from "../whatsapp/errosMeta.js";
 // "Esta guia é de parcelamento?" tem UMA fonte — inclusive quando a pergunta é feita ao banco.
@@ -59,6 +59,7 @@ export function resolveNode(node, presente, vazio, { semFaturamento = false, fat
       ...node, ok: true, state,
       guideId: presente.guideId,
       canalEnvio: presente.canalEnvio,
+      canaisEnviados: presente.canaisEnviados || [],
       envioStatus: presente.envioStatus,
       envioEm: presente.envioEm,
       envioErro: presente.envioErro,
@@ -229,6 +230,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
         guideId: g.id,
         enviada: foiEnviadaComLegado(enviosParc, g),
         canalEnvio: exibirParc?.canal || null,
+        canaisEnviados: canaisEnviadosComLegado(enviosParc, g),
         envioStatus: exibirParc?.status || null,
         envioEm: exibirParc?.lidoEm || exibirParc?.entregueEm || exibirParc?.enviadoEm || null,
         envioErro: exibirParc?.erroMensagemUsuario || null,
@@ -398,6 +400,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
       // janela entre o deploy e o script mostra a carteira inteira como não enviada.
       enviada: foiEnviadaComLegado(envios, g),
       canalEnvio: exibir?.canal || null,
+      canaisEnviados: canaisEnviadosComLegado(envios, g),
       envioStatus: exibir?.status || null,
       envioEm: exibir?.lidoEm || exibir?.entregueEm || exibir?.enviadoEm || null,
       envioErro: exibir?.erroMensagemUsuario || null,
