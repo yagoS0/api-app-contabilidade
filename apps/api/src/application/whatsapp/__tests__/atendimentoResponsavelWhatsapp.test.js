@@ -71,7 +71,14 @@ function banco() {
     };
     client[name] = {
       findUnique: jest.fn(async ({ where }) => copy(expandir(name, encontrar(where)))),
-      findFirst: jest.fn(async ({ where = {} }) => copy(expandir(name, encontrar(where)))),
+      findFirst: jest.fn(async ({ where = {}, orderBy }) => {
+        const lista = rows[name].filter(row => casa(expandir(name, row), where));
+        for (const ordem of (Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : []).slice().reverse()) {
+          const [campo, direcao] = Object.entries(ordem)[0];
+          lista.sort((a, b) => (a[campo] < b[campo] ? -1 : a[campo] > b[campo] ? 1 : 0) * (direcao === 'desc' ? -1 : 1));
+        }
+        return copy(expandir(name, lista[0]));
+      }),
       findMany: jest.fn(async ({ where = {} } = {}) => rows[name].filter(row => casa(expandir(name, row), where)).map(row => copy(expandir(name, row)))),
       create: jest.fn(async ({ data }) => criar(data)),
       upsert: jest.fn(async ({ where, create, update }) => { const row = encontrar(where); return row ? copy(expandir(name, atribuir(row, update))) : criar(create); }),
@@ -115,13 +122,18 @@ async function fixture() {
 beforeEach(() => { jest.useFakeTimers({ now: AGORA, doNotFake: ["nextTick", "queueMicrotask", "setImmediate"] }); jest.clearAllMocks(); __limparLeases(); });
 afterEach(() => { jest.useRealTimers(); __limparLeases(); });
 
-async function fixtureComMenu(permissoesAssistente = ['GUIAS']) {
+async function fixtureComMenu(permissoesAssistente = ['GUIAS'], guias = [{ guideId: 'guia-sintetica', tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 100,00', vencimento: '20/09/2026' }]) {
   const f = await fixture();
   f.client.contatoWhatsapp = { findMany: jest.fn(async () => [{ id: 'contato', nome: 'Responsável', userId: 'liz', permissoesAssistente }]) };
   f.client.companyClientUser = { findUnique: jest.fn(async () => ({ role: 'OWNER', status: 'ACTIVE' })) };
   let mensagens = 0;
   f.cloud.enviarBotoes = jest.fn(async () => ({ wamid: `botoes-${++mensagens}` }));
-  const executar = jest.fn(async () => ({ ok: true, guias: [{ tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 100,00', vencimento: '20/09/2026' }] }));
+  f.cloud.enviarDocumento = jest.fn(async () => ({ wamid: `documento-${++mensagens}` }));
+  const executar = jest.fn(async (nome, input, ctx) => {
+    if (nome === 'enviar_pdf_da_guia') { await ctx.enviarDocumento({ conteudo: Buffer.from('%PDF fixture'), nomeArquivo: `${input.guideId}.pdf`, legenda: `Aqui está sua guia ${input.guideId}.` }); return { ok: true, enviado: true }; }
+    if (nome === 'consultar_faturamento') return { ok: true, ...input, quantidade: 25, semValor: 0, totalFormatado: 'R$ 12.500,00' };
+    return { ok: true, guias, proximaPagina: null };
+  });
   const coleta = jest.fn(async () => ({ tratado: false }));
   f.processar.mockImplementation((registro, item, lease) => responderMenuWhatsapp({ registro, texto: item.corpo, interacao: item.interacao,
     agora: new Date(), client: f.client, cloud: f.cloud, executar, coleta, resolverVinculo: f.resolverVinculo,
@@ -134,6 +146,158 @@ async function fixtureComMenu(permissoesAssistente = ['GUIAS']) {
   const guia = () => f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes.find(o => o.titulo === 'Guias do mês');
   return { ...f, executar, coleta, clicar, guia };
 }
+
+const GUIAS_DA_JORNADA = [
+  { guideId: 'guia-simples', tipo: 'Simples Nacional', tipoCodigo: 'SIMPLES', competencia: '2026-08', valorFormatado: 'R$ 740,00', vencimento: '21/09/2026' },
+  { guideId: 'guia-inss', tipo: 'INSS', tipoCodigo: 'INSS', competencia: '2026-08', valorFormatado: 'R$ 180,00', vencimento: '20/09/2026' },
+];
+const dizerNaJornada = async (f, texto) => { jest.setSystemTime(new Date(Date.now() + 1000)); const e = await f.novo(texto); await f.rodar(e); return e; };
+
+it.each(['2', 'a segunda', 'INSS'])('cliente escolhe a guia por %s e recebe o PDF sem IA nem campos técnicos', async escolha => {
+  const f = await fixtureComMenu(['GUIAS'], GUIAS_DA_JORNADA);
+  await f.selecionar('me manda a guia', 'lente');
+  const menu = f.cloud.enviarBotoes.mock.calls.at(-1)[0];
+  expect(menu.texto).toContain('R$ 740,00'); expect(menu.texto).toContain('21/09/2026');
+  expect(menu.texto).not.toMatch(/competência|escreva o tipo/i);
+  const entrada = await dizerNaJornada(f, escolha);
+  expect(f.executar).toHaveBeenLastCalledWith('enviar_pdf_da_guia', { guideId: 'guia-inss' }, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'lente' }) }));
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+  await f.rodar(entrada);
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+});
+
+it('toque na guia usa a opção oferecida e menu antigo não troca a escolha', async () => {
+  const f = await fixtureComMenu(['GUIAS'], GUIAS_DA_JORNADA);
+  await f.selecionar('guias do mês', 'lente');
+  const antigo = f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[1];
+  await dizerNaJornada(f, 'guias do mês');
+  const atual = f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[0];
+  await f.clicar(antigo);
+  expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toMatch(/lista.*anterior/);
+  // A resposta ao menu vencido invalida a lista; o cliente pede uma lista atual.
+  await dizerNaJornada(f, 'guias do mês');
+  await f.clicar(f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[0]);
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+  expect(f.cloud.enviarDocumento.mock.calls[0][0].nomeArquivo).toBe('guia-simples.pdf');
+  expect(atual.id).not.toBe(antigo.id);
+});
+
+it('todas envia os PDFs da lista uma vez, mesmo com reentrega do pedido', async () => {
+  const f = await fixtureComMenu(['GUIAS'], GUIAS_DA_JORNADA);
+  await f.selecionar('guias do mês', 'lente');
+  const entrada = await dizerNaJornada(f, 'todas');
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(2);
+  await f.rodar(entrada);
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(2);
+});
+
+it('faturamemto → mês passado → agosto → texto livre consulta o período sem repetir seletor', async () => {
+  const f = await fixtureComMenu(['NOTAS_DANFSE']);
+  await f.selecionar('menu', 'lente');
+  await dizerNaJornada(f, 'Quero saber meu faturamemto');
+  expect(f.cloud.enviarBotoes.mock.calls.at(-1)[0].texto).toContain('Qual mês');
+  expect(f.executar).not.toHaveBeenCalled();
+  await f.clicar(f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[1]);
+  expect(f.executar).toHaveBeenLastCalledWith('consultar_faturamento', { inicio: '2026-08', fim: '2026-08' }, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'lente' }) }));
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toMatch(/agosto de 2026.*R\$ 12.500,00/);
+  await dizerNaJornada(f, 'e julho?');
+  expect(f.executar).toHaveBeenLastCalledWith('consultar_faturamento', { inicio: '2026-07', fim: '2026-07' }, expect.anything());
+  const chamadas = f.executar.mock.calls.length;
+  await dizerNaJornada(f, 'obrigado, tenho outra dúvida');
+  expect(f.executar).toHaveBeenCalledTimes(chamadas);
+  expect(f.cloud.enviarLista).toHaveBeenCalledTimes(1);
+});
+
+it('faturamento exige permissão de leitura de notas', async () => {
+  const f = await fixtureComMenu(['GUIAS']);
+  await f.selecionar('menu', 'lente');
+  await dizerNaJornada(f, 'qual meu faturamento desse mês?');
+  expect(f.executar).not.toHaveBeenCalled();
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toMatch(/acesso ao faturamento/);
+});
+
+it('pedido explícito de faturamento da Lente deixa a Klaus e consulta a empresa indicada', async () => {
+  const f = await fixtureComMenu(['NOTAS_DANFSE']);
+  await f.selecionar('menu', 'klaus');
+  await dizerNaJornada(f, 'faturamento da Lente em agosto');
+  expect(f.executar).toHaveBeenLastCalledWith('consultar_faturamento', { inicio: '2026-08', fim: '2026-08' }, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'lente' }) }));
+});
+
+it('período inteiro soma os meses pedidos e uma pergunta livre sai da coleta de período', async () => {
+  const f = await fixtureComMenu(['NOTAS_DANFSE']);
+  await f.selecionar('faturamento de janeiro a agosto de 2026', 'lente');
+  expect(f.executar).toHaveBeenLastCalledWith('consultar_faturamento', { inicio: '2026-01', fim: '2026-08' }, expect.anything());
+  await dizerNaJornada(f, 'faturamento');
+  const chamadas = f.executar.mock.calls.length, saidas = f.cloud.enviarBotoes.mock.calls.length;
+  await dizerNaJornada(f, 'o que é faturamento?');
+  expect(f.executar).toHaveBeenCalledTimes(chamadas);
+  expect(f.cloud.enviarBotoes).toHaveBeenCalledTimes(saidas);
+});
+
+it.each([
+  [{ quantidade: 0, semValor: 0 }, /não confirma que a empresa ficou sem faturamento/],
+  [{ quantidade: 5, semValor: 1 }, /faltam valores em 1/],
+])('faturamento com registros insuficientes não inventa total: %j', async (dados, mensagem) => {
+  const f = await fixtureComMenu(['NOTAS_DANFSE']);
+  f.executar.mockImplementation(async (_nome, input) => ({ ok: true, ...input, ...dados }));
+  await f.selecionar('faturamento de agosto', 'lente');
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toMatch(mensagem);
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).not.toMatch(/R\$|undefined/);
+});
+
+it('guia não liberada pede conferência sem afirmar que não há imposto a pagar', async () => {
+  const f = await fixtureComMenu(['GUIAS'], []);
+  await f.selecionar('me manda a guia', 'lente');
+  expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toMatch(/falta liberar algum arquivo/);
+});
+
+it('guia histórica filtrada por INSS é localizada além da primeira página', async () => {
+  const f = await fixtureComMenu(['GUIAS']);
+  const original = f.executar.getMockImplementation();
+  f.executar.mockImplementation(async (nome, input, ctx) => nome === 'listar_guias'
+    ? { ok: true, guias: [GUIAS_DA_JORNADA[input.pagina === 2 ? 1 : 0]], proximaPagina: input.pagina === 2 ? null : 2 }
+    : original(nome, input, ctx));
+  await f.selecionar('guia do INSS de agosto', 'lente');
+  expect(f.executar).toHaveBeenCalledWith('listar_guias', { competencia: '2026-08', pagina: 2 }, expect.anything());
+  expect(f.cloud.enviarDocumento.mock.calls.at(-1)[0].nomeArquivo).toBe('guia-inss.pdf');
+});
+
+it('paginação mantém o número vinculado à página mostrada', async () => {
+  const guias = Array.from({ length: 12 }, (_, i) => ({ ...GUIAS_DA_JORNADA[0], guideId: `guia-${i}`, tipo: `Parcela ${i + 1}` }));
+  const f = await fixtureComMenu(['GUIAS'], guias);
+  await f.selecionar('guias do mês', 'lente');
+  const primeira = f.cloud.enviarLista.mock.calls.at(-1)[0];
+  expect(primeira.linhas).toHaveLength(10);
+  expect(primeira.texto.length).toBeLessThanOrEqual(1024);
+  await dizerNaJornada(f, 'mais');
+  await dizerNaJornada(f, '1');
+  expect(f.cloud.enviarDocumento.mock.calls.at(-1)[0].nomeArquivo).toBe('guia-8.pdf');
+});
+
+it('envio de todas informa falha parcial sem afirmar que enviou PDF indisponível', async () => {
+  const f = await fixtureComMenu(['GUIAS'], GUIAS_DA_JORNADA);
+  const original = f.executar.getMockImplementation();
+  f.executar.mockImplementation(async (nome, input, ctx) => nome === 'enviar_pdf_da_guia' && input.guideId === 'guia-inss'
+    ? { ok: false, mensagem: 'O arquivo desta guia não está disponível.' } : original(nome, input, ctx));
+  await f.selecionar('guias do mês', 'lente');
+  const entrada = await dizerNaJornada(f, 'todas');
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toMatch(/Consegui enviar 1 de 2/);
+  await f.rodar(entrada);
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+});
+
+it('botão de guia da empresa anterior não envia arquivo depois da troca', async () => {
+  const f = await fixtureComMenu(['GUIAS'], GUIAS_DA_JORNADA);
+  await f.selecionar('guias do mês', 'lente');
+  const botao = f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[0];
+  await dizerNaJornada(f, 'trocar para Klaus');
+  await f.clicar(botao);
+  expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+  expect(f.atendimento().portalClientId).toBe('klaus');
+});
 
 it('reações não iniciam atendimento nem invalidam a lista que já foi mostrada', async () => {
   const f = await fixtureComMenu();
@@ -158,18 +322,18 @@ it('seleção → menu real → Guias do mês consulta só a empresa escolhida, 
   const { entrada, resultado } = await f.clicar(f.guia());
   expect(resultado).toMatchObject({ tratado: true, acao: 'GUIAS_MES' });
   expect(f.executar).toHaveBeenCalledWith('quanto_devo', {}, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'lente' }), conversa: expect.objectContaining({ portalClientId: 'lente' }) }));
-  expect(f.cloud.enviarTexto).toHaveBeenLastCalledWith(expect.objectContaining({ texto: expect.stringMatching(/Empresa: Lente[\s\S]*Guias liberadas[\s\S]*DAS/) }));
+  expect(f.cloud.enviarDocumento).toHaveBeenLastCalledWith(expect.objectContaining({ legenda: expect.stringMatching(/Empresa: Lente[\s\S]*Aqui está sua guia/) }));
   expect(f.cloud.enviarLista).toHaveBeenCalledTimes(1);
   expect(f.atendimento()).toMatchObject({ portalClientId: 'lente', versao, aguardandoSelecao: false });
   await f.rodar(entrada);
-  expect(f.executar).toHaveBeenCalledTimes(1);
+  expect(f.executar).toHaveBeenCalledTimes(2);
 });
 
 it('texto livre Guias do mês continua na empresa e esclarecimentos não abrem outro seletor', async () => {
   const f = await fixtureComMenu();
   await f.selecionar('menu', 'lente');
   await f.rodar(await f.novo('Guias do mês'));
-  expect(f.executar).toHaveBeenCalledTimes(1);
+  expect(f.executar).toHaveBeenCalledTimes(2);
   await f.rodar(await f.novo('esse valor é referente a qual período?'));
   expect(f.processar).toHaveBeenLastCalledWith(expect.objectContaining({ conversa: expect.objectContaining({ portalClientId: 'lente' }) }), expect.objectContaining({ corpo: 'esse valor é referente a qual período?' }), expect.anything());
   expect(f.cloud.enviarLista).toHaveBeenCalledTimes(1);
@@ -186,7 +350,7 @@ it.each(['trocar', 'mudar de empresa', 'trocar de empresa', 'pode mudar a empres
     await f.clicar(opcao);
     expect(f.atendimento()).toMatchObject({ portalClientId: 'klaus', aguardandoSelecao: false });
     await f.clicar(f.guia());
-    expect(f.executar).toHaveBeenCalledTimes(1);
+    expect(f.executar).toHaveBeenCalledTimes(2);
     expect(f.executar).toHaveBeenCalledWith('quanto_devo', {}, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'klaus' }) }));
   });
 

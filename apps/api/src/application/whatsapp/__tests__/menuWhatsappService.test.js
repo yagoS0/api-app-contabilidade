@@ -85,7 +85,7 @@ describe("roteamento sem modelo", () => {
   });
   it("a apresentação inicial não consome um pedido substantivo", async () => {
     const client = banco({ cliente: true, permissoes: ["GUIAS"] }), cloud = nuvem();
-    const r = await responderMenuWhatsapp({ registro: registro({ cliente: true, texto: "preciso da guia do INSS" }), texto: "preciso da guia do INSS", agora: AGORA, client, cloud, conferirJanela: janelaAberta, resolverVinculo: resolverCliente });
+    const r = await responderMenuWhatsapp({ registro: registro({ cliente: true, texto: "quero entender o motivo desse valor" }), texto: "quero entender o motivo desse valor", agora: AGORA, client, cloud, conferirJanela: janelaAberta, resolverVinculo: resolverCliente });
     expect(r).toMatchObject({ tratado: false, inicioExibido: true });
     expect(cloud.enviarBotoes).toHaveBeenCalledTimes(1);
     expect(client.mensagemWhatsapp.updateMany).not.toHaveBeenCalled();
@@ -116,7 +116,7 @@ describe("roteamento sem modelo", () => {
   });
   it("sem IA habilitada, pedido em texto recebe atendimento humano em vez de silêncio", async () => {
     const client = banco({ cliente: true }), cloud = nuvem();
-    const r = await responderMenuWhatsapp({ registro: registro({ cliente: true }), texto: "minha guia venceu", textoLivreDisponivel: false, agora: AGORA, client, cloud, conferirJanela: janelaAberta, resolverVinculo: resolverCliente });
+    const r = await responderMenuWhatsapp({ registro: registro({ cliente: true }), texto: "preciso ajustar meu cadastro", textoLivreDisponivel: false, agora: AGORA, client, cloud, conferirJanela: janelaAberta, resolverVinculo: resolverCliente });
     expect(r).toMatchObject({ tratado: true, acao: "EQUIPE" });
     expect(client.conversaWhatsapp.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ atendidaDesde: AGORA }) }));
   });
@@ -239,13 +239,16 @@ describe("roteamento sem modelo", () => {
     expect(client.conversaWhatsapp.updateMany).toHaveBeenCalled();
   });
 
-  it("guias do mês usa vencimento, mostra competência e ensina a pedir o PDF", async () => {
+  it("guias do mês usa vencimento e envia a única guia correspondente sem exigir outra mensagem", async () => {
     const client = banco({ cliente: true, permissoes: ["GUIAS"] });
     const cloud = nuvem();
-    const executar = jest.fn(async () => ({ ok: true, guias: [
-      { tipo: "DAS", competencia: "2026-08", valorFormatado: "R$ 826,66", vencimento: "20/09/2026" },
-      { tipo: "INSS", competencia: "2026-07", valorFormatado: "R$ 100,00", vencimento: "20/08/2026" },
-    ] }));
+    const executar = jest.fn(async (nome, input, ctx) => {
+      if (nome === 'enviar_pdf_da_guia') { await ctx.enviarDocumento({ conteudo: Buffer.from('%PDF fixture'), nomeArquivo: 'guia.pdf', legenda: 'DAS · R$ 826,66 · vence 20/09/2026' }); return { ok: true, enviado: true }; }
+      return { ok: true, guias: [
+        { guideId: 'das-setembro', tipo: "DAS", competencia: "2026-08", valorFormatado: "R$ 826,66", vencimento: "20/09/2026" },
+        { guideId: 'inss-agosto', tipo: "INSS", competencia: "2026-07", valorFormatado: "R$ 100,00", vencimento: "20/08/2026" },
+      ] };
+    });
 
     await responderMenuWhatsapp({
       registro: registro({ cliente: true }), interacao: { tipo: "button_reply", id: IDS_MENU_WHATSAPP.CLIENTE_GUIAS_MES },
@@ -253,11 +256,9 @@ describe("roteamento sem modelo", () => {
     });
 
     expect(executar).toHaveBeenCalledWith("quanto_devo", {}, expect.any(Object));
-    const texto = cloud.enviarTexto.mock.calls[0][0].texto;
-    expect(texto).toMatch(/vencimento em 09\/2026/);
-    expect(texto).toMatch(/DAS · competência 2026-08/);
-    expect(texto).not.toMatch(/INSS/);
-    expect(texto).toMatch(/receber o PDF/);
+    expect(executar).toHaveBeenLastCalledWith('enviar_pdf_da_guia', { guideId: 'das-setembro' }, expect.anything());
+    expect(cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
   });
 
   it("pedido para a equipe respeita o expediente e assume o fio", async () => {

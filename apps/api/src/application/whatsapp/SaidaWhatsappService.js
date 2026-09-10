@@ -2,10 +2,11 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { log } from "../../config.js";
 
 // Uma saída é registrada antes da rede. Timeout nunca dispara reenvio automático.
-export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo = null, autor = "HUMANO", turnoIaId = null, referenciaComercial = undefined, enviar, antesDeEnviar = null, client = prisma }) {
+export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo = null, autor = "HUMANO", turnoIaId = null, referenciaComercial = undefined, contextoConsulta = undefined, enviar, antesDeEnviar = null, client = prisma }) {
   if (antesDeEnviar) await antesDeEnviar();
   const mensagem = await client.mensagemWhatsapp.create({ data: {
     conversaId: conversa.id, direcao: "out", tipo, corpo, autor, turnoIaId, referenciaComercial, statusEnvio: "enviando",
+    ...(contextoConsulta === undefined ? {} : { contextoConsulta }),
   } });
   let iniciouRede = false;
   let aceitou = false;
