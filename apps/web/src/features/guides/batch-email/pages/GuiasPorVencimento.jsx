@@ -26,7 +26,7 @@ export function GuiasPorVencimento({ title, rows, selectedKeys, onToggle, onTogg
           <td>{d.paga ? "Paga — fora do envio" : d.enviada || d.emailStatus === "SENT" ? "Já enviada" : d.emailStatus === "SENDING" ? "Envio em andamento" : d.falhou ? `Falhou: ${d.erro || "confira e tente novamente"}` : "Será enviada ao selecionar"}</td>
         </tr>)}</tbody>
       </table></div>}
-      {r.faltantes.map((p) => <p key={p.parcelaId} role="status" style={{ color: "var(--warning, #ffb347)" }}>
+      {r.faltantes.map((p) => <p key={p.parcelaId} role="status" style={{ color: "var(--state-warn)" }}>
         {p.motivo} · acordo {p.acordo || "não informado"} · parcela {p.numeroParcela ?? "não informada"} · vence {data(p.vencimento)}.
       </p>)}
       {r.faltantes.length > 0 && <p>Enviar os documentos disponíveis mantém esta empresa pendente de conferência.</p>}
