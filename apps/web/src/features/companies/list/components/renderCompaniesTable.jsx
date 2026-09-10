@@ -15,7 +15,7 @@ import { useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BotaoCopiar } from "../../../../components/ui/BotaoCopiar";
 import { getComplianceTags } from "./renderCompanyCard";
-import { GuiaChip, Popover, todasConcluidas, todasPorGerar, ehParcela } from "./renderGuiaChip";
+import { GuiaChip, Popover, todasConcluidas, todasPorGerar, ehParcela, rotuloCanaisEnviados, resumoCanaisEnviados } from "./renderGuiaChip";
 import { empresaSemObrigacoes, TITULO_ZERADA } from "../lib/estadoDominante";
 import { estadoApuracao, detalheApuracao } from "../lib/estadoApuracao";
 import { situacaoFiscalDaLinha } from "../lib/situacaoFiscal";
@@ -197,6 +197,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
   const fechada = apuracao.chave === "fechada";
   const tags = getComplianceTags(company.guideCompliance);
   const concluidas = todasConcluidas(tags);
+  const canaisEnviados = resumoCanaisEnviados(tags);
   const agregarGuias = todasPorGerar(tags);
   const zerada = empresaSemObrigacoes(company);
   const fiscal = situacaoFiscalDaLinha(company);
@@ -410,12 +411,12 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
             >
               <span aria-hidden="true">◌</span>Zerada
             </span>
-          ) : concluidas ? (
+          ) : concluidas && canaisEnviados !== null ? (
             <span
               style={{ fontSize: "0.74rem", fontWeight: 500, color: "var(--text-muted)" }}
-              title={tags.map((t) => `${t.label}: ${t.state === "vazio" ? "sem movimento" : "enviada"}`).join(" · ")}
+              title={tags.map((t) => `${t.label}: ${t.state === "vazio" ? "sem movimento" : rotuloCanaisEnviados(t) ? `enviada por ${rotuloCanaisEnviados(t)}` : "enviada"}`).join(" · ")}
             >
-              Sem envios pendentes
+              {canaisEnviados ? <><span aria-hidden="true">✓ </span>{canaisEnviados}</> : "Sem envios pendentes"}
             </span>
           ) : agregarGuias ? (
             /* ⚠ UM chip no lugar de quatro vermelhos. No Lucro Presumido são IRPJ + CSLL +

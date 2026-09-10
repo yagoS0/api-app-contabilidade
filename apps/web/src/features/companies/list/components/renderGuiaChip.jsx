@@ -28,6 +28,20 @@ export const TRIBUTO_TIPO = {
 
 const CANAL_ROTULO = { EMAIL: "e-mail", WHATSAPP: "WhatsApp" };
 
+export function rotuloCanaisEnviados(tag) {
+  if (tag.state !== "enviada") return "";
+  const canais = Array.isArray(tag.canaisEnviados) ? tag.canaisEnviados
+    : tag.canalEnvio ? [tag.canalEnvio] : tag.emailStatus === "SENT" ? ["EMAIL"] : [];
+  return ["EMAIL", "WHATSAPP"].filter(c => canais.includes(c))
+    .map(c => c === "EMAIL" ? "E-mail" : "WhatsApp").join(" e ");
+}
+
+/** Canais diferentes entre guias precisam continuar visíveis por tributo. */
+export function resumoCanaisEnviados(tags) {
+  const rotulos = new Set(tags.filter(t => t.state === "enviada").map(rotuloCanaisEnviados));
+  return rotulos.size > 1 ? null : [...rotulos][0] || "";
+}
+
 const ESTADO = {
   missing:  { icone: "⚠", cor: "var(--state-danger)",  fundo: "var(--state-danger-surface)",  rotulo: "falta gerar" },
   gerada:   { icone: "✈", cor: "var(--state-warn)",    fundo: "var(--state-warn-surface)",    rotulo: "gerada, falta enviar" },
@@ -114,6 +128,8 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
   const [motivo, setMotivo] = useState("");
 
   const meta = ESTADO[tag.state] || ESTADO.missing;
+  const canaisEnviados = rotuloCanaisEnviados(tag);
+  const rotuloEstado = canaisEnviados ? `enviada por ${canaisEnviados}` : meta.rotulo;
   const destinatario = empresa?.guideNotificationEmail || empresa?.ownerEmail || null;
   // O envio que se exibe é o de WhatsApp e ele falhou — sem nada enviado por canal nenhum.
   const falhaWhatsapp = tag.state === "falhou" && tag.canalEnvio === "WHATSAPP" && tag.envioStatus === "falhou";
@@ -147,8 +163,8 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
         type="button"
         onClick={() => setAberto((v) => !v)}
         aria-expanded={aberto}
-        aria-label={`${tag.label}: ${meta.rotulo}`}
-        title={`${tag.label} — ${meta.rotulo}`}
+        aria-label={`${tag.label}: ${rotuloEstado}`}
+        title={`${tag.label} — ${rotuloEstado}`}
         style={{
           display: "inline-flex", alignItems: "center", gap: 4,
           fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
@@ -158,6 +174,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
       >
         <span aria-hidden="true">{meta.icone}</span>
         {tag.label}
+        {tag.state === "enviada" && <span style={{ fontWeight: 500 }}>{canaisEnviados || "enviada"}</span>}
         {tag.state === "gerada" && <span style={{ fontWeight: 500 }}>enviar</span>}
         {tag.state === "falhou" && <span style={{ fontWeight: 500 }}>não saiu</span>}
       </button>
@@ -165,7 +182,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
       {aberto && (
         <Popover onFechar={() => { setAberto(false); setErro(null); }}>
           <div style={{ fontWeight: 700, marginBottom: 2 }}>{tag.label} · {competencia}</div>
-          <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>{meta.rotulo}</div>
+          <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>{rotuloEstado}</div>
 
           {/* Qual parcelamento e qual parcela — sem isto o chip diria só "Parcelamento", e numa
               empresa com mais de um acordo não dá para saber de qual se trata. */}
