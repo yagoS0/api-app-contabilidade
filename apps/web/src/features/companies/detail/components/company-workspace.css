@@ -70,6 +70,8 @@
 .company-workspace .company-auditoria > * { min-width: 0; }
 .company-workspace .company-auditoria > section table { table-layout: fixed; min-width: 0; }
 .company-workspace .config-content button { min-height: 40px; }
+.company-workspace .anotacoes-com-chat > div:not(.anotacoes-com-chat__chat) button,
+.company-workspace .anotacoes-com-chat > div:not(.anotacoes-com-chat__chat) select { min-height: 36px; }
 
 @media(max-width:1000px) {
   .company-workspace .accounting-fechamento-panel { flex: 1 1 100%; width: 100%; }
