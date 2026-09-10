@@ -7748,10 +7748,11 @@ export function createMockApi() {
       const pagina = paginaWhatsappMock(lista.sort((a,b) => String(b.updatedAt).localeCompare(String(a.updatedAt)) || String(b.id).localeCompare(String(a.id))), cursor, limite);
       return { ok: true, filtro, empresa, conversas: pagina.itens, temMais: pagina.temMais, proximoCursor: pagina.proximoCursor, consumoIa: { desde: "2026-09-01T03:00:00.000Z", moeda: "USD", estimativa: true, escritorio: { centavos: 137, chamadas: 12, teto: 6000, restantes: 5863, fracao: 0.02, alerta: false, estourado: false }, empresa: null } };
     },
-    async getMensagensWhatsapp(conversaId, { cursor = null, limite = 50 } = {}) {
+    async getMensagensWhatsapp(conversaId, { cursor = null, limite = 50, empresa = null } = {}) {
       await delay(100);
       const c = mockConversasWhatsapp.find((x) => x.id === String(conversaId));
       if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; e.code = "conversa_nao_encontrada"; throw e; }
+      if (empresa && c.portalClientId !== empresa) { const e = new Error("Empresa não encontrada."); e.status = 404; e.code = "empresa_nao_encontrada"; throw e; }
       c.lidaAteEm = new Date().toISOString();
       // ⚠ `temMidia` e o PONTEIRO, nunca uma URL — a da Meta expira e nao baixamos arquivo ainda.
       const pagina = paginaWhatsappMock([...c.mensagens].reverse(), cursor, limite);
@@ -7790,6 +7791,24 @@ export function createMockApi() {
       recusarChatExcluidoMock(c);
       c.atendidaPor = "mock-user-1"; c.atendente = { id: "mock-user-1", nome: "Usuario Mock", email: null }; c.atendidaDesde = new Date().toISOString();
       return { ok: true, conversa: resumoMockDaConversa(c) };
+    },
+    async selecionarEmpresaConversaWhatsapp(conversaId, portalClientId) {
+      await delay(80);
+      const c = mockConversasWhatsapp.find(x => x.id === String(conversaId));
+      if (!c) { const e = new Error("Conversa não encontrada."); e.status = 404; throw e; }
+      recusarChatExcluidoMock(c);
+      // O conjunto demonstrativo atual tem uma empresa por contato; não inventar vínculos.
+      if (c.portalClientId !== portalClientId) { const e = new Error("Empresa não autorizada para este contato."); e.status = 409; e.code = "EMPRESA_NAO_AUTORIZADA"; throw e; }
+      return { ok: true, conversa: resumoMockDaConversa(c) };
+    },
+    async salvarApelidosWhatsapp(portalClientId, apelidos) {
+      await delay(80);
+      const fios = mockConversasWhatsapp.filter(c => c.portalClientId === portalClientId);
+      if (!fios.length) { const e = new Error("Empresa não encontrada."); e.status = 404; throw e; }
+      if (!Array.isArray(apelidos) || apelidos.length > 5 || apelidos.some(v => typeof v !== "string" || v.trim().length < 2 || v.trim().length > 60 || /[\r\n\x00-\x1f]/.test(v))) { const e = new Error("Informe até cinco nomes curtos, cada um com 2 a 60 caracteres."); e.status = 400; throw e; }
+      const nomes = [...new Map(apelidos.map(v => [v.trim().toLocaleLowerCase("pt-BR"), v.trim()])).values()];
+      for (const c of fios) c.empresa = { ...c.empresa, apelidosWhatsapp: nomes };
+      return { ok: true, empresa: { id: portalClientId, apelidosWhatsapp: nomes } };
     },
     async excluirConversaWhatsapp(conversaId) {
       await delay(80);

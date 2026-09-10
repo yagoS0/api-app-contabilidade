@@ -246,6 +246,8 @@ export function lerEventoWebhook(payload, agora = new Date()) {
         if (!msg?.type) proprios.push(AVISOS_EVENTO.SEM_TIPO);
         mensagens.push({
           telefone: msg?.from ? String(msg.from) : null,
+          canalProvedorId: typeof value.metadata?.phone_number_id === "string" ? value.metadata.phone_number_id : null,
+          respostaAProviderMessageId: typeof msg?.context?.id === "string" ? msg.context.id : null,
           providerMessageId: msg?.id ? String(msg.id) : null,
           // ⚠ O `type` é COPIADO como veio, sem de-para para vocabulário nosso (migration
           // `20260814180000`): traduzir sem nunca ter visto um payload real seria inventar o mapa.

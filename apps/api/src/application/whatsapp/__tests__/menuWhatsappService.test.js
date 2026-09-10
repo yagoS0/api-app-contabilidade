@@ -69,6 +69,20 @@ describe("menus por perfil e permissão", () => {
 });
 
 describe("roteamento sem modelo", () => {
+  it("a intenção de emissão resolvida inicia a coleta e preserva a indicação do tomador", async () => {
+    const texto = "emitir uma nota para a Lente";
+    const entrada = registro({ cliente: true, texto });
+    entrada.contexto = { resultado: { acaoOperacao: "EMISSAO" } };
+    const client = banco({ cliente: true, permissoes: ["EMISSAO_NFSE"] }), cloud = nuvem();
+    const coleta = jest.fn(async () => ({ tratado: true, texto: "Qual o CPF/CNPJ do tomador?" }));
+    const r = await responderMenuWhatsapp({ registro: entrada, texto, coleta, agora: AGORA, client, cloud,
+      conferirJanela: janelaAberta, resolverVinculo: resolverCliente, logger: log });
+    expect(r).toMatchObject({ tratado: true, acao: "EMISSAO_GUIADA" });
+    expect(coleta).toHaveBeenCalledWith(expect.objectContaining({ iniciar: true, texto,
+      sessao: expect.objectContaining({ portalClientId: "pc1" }) }));
+    expect(cloud.enviarTexto).toHaveBeenCalledWith(expect.objectContaining({ texto: expect.stringContaining("CPF/CNPJ do tomador") }));
+    expect(cloud.enviarBotoes).not.toHaveBeenCalled();
+  });
   it("a apresentação inicial não consome um pedido substantivo", async () => {
     const client = banco({ cliente: true, permissoes: ["GUIAS"] }), cloud = nuvem();
     const r = await responderMenuWhatsapp({ registro: registro({ cliente: true, texto: "preciso da guia do INSS" }), texto: "preciso da guia do INSS", agora: AGORA, client, cloud, conferirJanela: janelaAberta, resolverVinculo: resolverCliente });

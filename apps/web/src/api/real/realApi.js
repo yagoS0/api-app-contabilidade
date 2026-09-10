@@ -1029,8 +1029,9 @@ export function createRealApi() {
       if (limite) qs.set("limite", String(limite));
       return request(`/firm/whatsapp/conversas?${qs.toString()}`);
     },
-    async getMensagensWhatsapp(conversaId, { cursor = null, limite = null } = {}) {
+    async getMensagensWhatsapp(conversaId, { cursor = null, limite = null, empresa = null } = {}) {
       const qs = new URLSearchParams();
+      if (empresa) qs.set("empresa", String(empresa));
       if (cursor) qs.set("cursor", String(cursor));
       if (limite) qs.set("limite", String(limite));
       return request(`/firm/whatsapp/conversas/${conversaId}/mensagens${qs.size ? `?${qs}` : ""}`);
@@ -1062,6 +1063,12 @@ export function createRealApi() {
     },
     async vincularConversaWhatsapp(conversaId, body) {
       return request(`/firm/whatsapp/conversas/${conversaId}/vincular`, { method: "POST", body: JSON.stringify(body || {}) });
+    },
+    async selecionarEmpresaConversaWhatsapp(conversaId, portalClientId) {
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/selecionar-empresa`, { method: "POST", body: JSON.stringify({ portalClientId }) });
+    },
+    async salvarApelidosWhatsapp(portalClientId, apelidos) {
+      return request(`/firm/whatsapp/empresas/${encodeURIComponent(portalClientId)}/apelidos`, { method: "POST", body: JSON.stringify({ apelidos }) });
     },
     async getConsumoIa() {
       return request(`/firm/ia/consumo`);

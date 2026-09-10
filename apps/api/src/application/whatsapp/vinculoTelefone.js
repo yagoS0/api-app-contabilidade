@@ -148,6 +148,7 @@ function agruparPorEmpresa(casados) {
         portalClientId: id,
         razao: contato.portalClient?.razao || null,
         cnpj: contato.portalClient?.cnpj || null,
+        aliases: contato.portalClient?.apelidosWhatsapp || [],
         contatos: [],
       });
     }

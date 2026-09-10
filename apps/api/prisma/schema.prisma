@@ -820,6 +820,7 @@ model AdnDocument {
 // ==========================
 
 model PortalClient {
+  apelidosWhatsapp String[] @default([])
   id                     String  @id @default(uuid())
   // Referência opcional para a Company legada (certificado, cadastros, etc.)
   companyId              String? @unique
@@ -1232,6 +1233,9 @@ model EnvioGuia {
 /// histórico de cada empresa candidata — a mensagem do cliente aparecendo no fio do CNPJ errado é
 /// exatamente o vazamento que a multi-tenancy existe para impedir. Um número, um fio, uma linha.
 model ConversaWhatsapp {
+  atendimentoId String?
+  atendimento AtendimentoResponsavelWhatsapp? @relation(fields: [atendimentoId], references: [id], onDelete: SetNull)
+  resolucoesContexto ResolucaoContextoWhatsapp[]
   atendimentosLead AtendimentoLead[]
   id                 String    @id @default(uuid())
   /// O número do cliente, E.164 sem `+`, como `contatos_whatsapp.telefoneE164`.
@@ -1286,11 +1290,14 @@ model ConversaWhatsapp {
   /// a linha continuaria dizendo "desconhecido". O motivo se pergunta ao vínculo, na leitura.
   @@index([portalClientId])
   @@index([telefoneE164])
+  @@index([atendimentoId])
   @@map("conversas_whatsapp")
 }
 
 /// UMA MENSAGEM DO FIO. Imutável: por isso não tem `updatedAt` — mensagem não se edita.
 model MensagemWhatsapp {
+  contexto ResolucaoContextoWhatsapp?
+  respostaAProviderMessageId String?
   referenciaComercial Json?
   id                 String    @id @default(uuid())
   conversaId         String
@@ -1403,6 +1410,8 @@ model InboxWebhookWhatsapp {
 }
 
 model TurnoIaWhatsapp {
+  atendimentoId String?
+  contextoVersao Int?
   perfil String @default("CLIENTE")
   id String @id @default(uuid())
   mensagemId String @unique
@@ -1419,6 +1428,60 @@ model TurnoIaWhatsapp {
   @@index([status, proximaTentativaEm])
   @@index([conversaId, criadoEm])
   @@map("turnos_ia_whatsapp")
+}
+
+/// Identidade do interlocutor separada do escopo de cada pedido. O canal principal é o número
+/// empresarial configurado nesta instalação; trocar o remetente exige outro canal.
+model AtendimentoResponsavelWhatsapp {
+  id String @id @default(uuid())
+  canal String @default("principal")
+  telefoneE164 String
+  userId String?
+  portalClientId String?
+  conversaId String?
+  versao Int @default(1)
+  aguardandoSelecao Boolean @default(true)
+  pedidoPendente String?
+  coletaPendenteConversaId String?
+  interacaoPendente Json?
+  empresaIdsOferecidos Json?
+  expiraEm DateTime?
+  ultimaInteracaoEm DateTime?
+  ultimaMensagemId String?
+  atendidaPor String?
+  atendidaDesde DateTime?
+  automacaoInvalidadaEm DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  conversas ConversaWhatsapp[]
+  resolucoes ResolucaoContextoWhatsapp[]
+  acoesPendentes AcaoPendenteWhatsapp[]
+  @@unique([canal, telefoneE164])
+  @@index([telefoneE164])
+  @@map("atendimentos_responsaveis_whatsapp")
+}
+
+/// Recibo imutável do escopo escolhido. Uma entrada sem empresa não muda de conversa:
+/// apenas sua resolução pode ser lida no segmento autorizado. O texto efetivo conserva o pedido
+/// inicial ao consumir a resposta do seletor; não cria uma segunda mensagem do provedor.
+model ResolucaoContextoWhatsapp {
+  mensagemId String @id
+  atendimentoId String
+  conversaId String?
+  portalClientId String?
+  versao Int
+  estado String
+  tipo String?
+  texto String?
+  interacao Json?
+  resultado Json?
+  createdAt DateTime @default(now())
+  mensagem MensagemWhatsapp @relation(fields: [mensagemId], references: [id], onDelete: Restrict)
+  atendimento AtendimentoResponsavelWhatsapp @relation(fields: [atendimentoId], references: [id], onDelete: Restrict)
+  conversa ConversaWhatsapp? @relation(fields: [conversaId], references: [id], onDelete: Restrict)
+  @@index([conversaId, createdAt])
+  @@index([atendimentoId, versao])
+  @@map("resolucoes_contexto_whatsapp")
 }
 
 model WhatsappLease {
@@ -1490,6 +1553,9 @@ model TemplateWhatsapp {
 /// lendo o `count`: dupla confirmação executa UMA vez.
 /// ⚠ Expira em 10 min, conferido na LEITURA (não há worker). "Sim" solto nunca confirma.
 model AcaoPendenteWhatsapp {
+  atendimentoId String?
+  contextoVersao Int?
+  atendimento AtendimentoResponsavelWhatsapp? @relation(fields: [atendimentoId], references: [id], onDelete: Restrict)
   id                     String    @id @default(uuid())
   conversaId             String
   portalClientId         String
@@ -1527,6 +1593,8 @@ model AcaoPendenteWhatsapp {
 
 /// Coleta incompleta não autoriza emissão. Uma versão corrente por conversa, sob lease.
 model RascunhoEmissaoWhatsapp {
+  atendimentoId String?
+  contextoVersao Int?
   id                 String   @id @default(uuid())
   conversaId         String   @unique
   portalClientId     String

@@ -4,6 +4,7 @@ import { executarFerramenta, SERVICOS_PADRAO } from "../assistente/ferramentas/i
 import { criarPendencia } from "../assistente/AcoesPendentesService.js";
 import { gerarCodigo, ALFABETO, rodapeDeConfirmacao, lerConfirmacao } from "../assistente/confirmacaoPendente.js";
 import { processarConfirmacaoGuiada } from "./ConfirmacaoGuiadaWhatsappService.js";
+import { filtroAtendimentoAtivo } from "./AtendimentoResponsavelWhatsappService.js";
 
 export const TTL_COLETA_MS = 24 * 60 * 60 * 1000;
 const limpar = (v) => JSON.parse(JSON.stringify(v));
@@ -13,7 +14,7 @@ const erroEscopo = () => Object.assign(new Error("O acesso à coleta mudou."), {
 
 /** Sob o lease ia:conversa. Coleta e recibo são atômicos; nenhuma dependência de modelo. */
 export async function processarEmissaoGuiada({ conversa, mensagem, sessao, texto = "", interacao = null, iniciar = false, pausar = false,
-  agora = new Date(), client, conferirAcesso, executar = executarFerramenta, servicos = {}, confirmar = processarConfirmacaoGuiada, log } = {}) {
+  agora = new Date(), client, conferirAcesso, executar = executarFerramenta, servicos = {}, confirmar = processarConfirmacaoGuiada, log, retomarComTexto = null } = {}) {
   await conferirAcesso();
   const escopo = { conversaId: conversa.id, portalClientId: sessao.portalClientId, userId: sessao.userId };
   const recibo = await client.etapaEmissaoWhatsapp.findUnique({ where: { mensagemId: mensagem.id } });
@@ -27,7 +28,8 @@ export async function processarEmissaoGuiada({ conversa, mensagem, sessao, texto
   const vigente = mesmoEscopo && instante(anterior.expiraEm) > agora.getTime();
   const retomar = /^(?:continuar|retomar) (?:a )?(?:emiss[aã]o|nota)[.!]?$/i.test(texto.trim())
     || (vigente && !encerrado(anterior.estado.status) && /^(?:continuar|retomar)[.!]?$/i.test(texto.trim()));
-  const pedidoInicial = iniciar || ehPedidoDeEmissao(texto) || retomar;
+  const novaEmissao = /^nova (?:emiss[aã]o|nota)[.!]?$/i.test(texto.trim());
+  const pedidoInicial = iniciar || ehPedidoDeEmissao(texto) || retomar || novaEmissao;
   const codigoRecebido = lerConfirmacao(texto).ehConfirmacao;
   if (!vigente && !pedidoInicial && !codigoRecebido) return { tratado: false };
   if (vigente && instante(mensagem.registradaEm) < instante(anterior.ultimaMensagemEm)) {
@@ -35,11 +37,11 @@ export async function processarEmissaoGuiada({ conversa, mensagem, sessao, texto
   }
   if (vigente && encerrado(anterior.estado.status) && !pedidoInicial && !codigoRecebido) return { tratado: false };
   if (vigente && anterior.estado.status === "PAUSADO" && !pedidoInicial && !codigoRecebido && !interacao?.id?.startsWith("altan.issue.")) return { tratado: false };
-  let estado = vigente && !encerrado(anterior.estado.status) ? limpar(anterior.estado) : null;
+  let estado = vigente && !encerrado(anterior.estado.status) && !novaEmissao ? limpar(anterior.estado) : null;
   let rascunhoId = anterior?.id || randomUUID();
   let versao = (anterior?.versao || 0) + 1;
   let pendenciaParaSalvar = null;
-  let cancelarAnterior = !vigente && Boolean(anterior);
+  let cancelarAnterior = novaEmissao || (!vigente && Boolean(anterior));
   let idPendenciaAnterior = null;
   let resultado;
   const invalidarObservada = async () => {
@@ -92,7 +94,8 @@ export async function processarEmissaoGuiada({ conversa, mensagem, sessao, texto
         if (estado.status === "REVISAO" && !estado.codigo && pedidoInicial) passo = atualizarColeta({ estado });
         else if (estado.status === "PAUSADO" && pedidoInicial) {
           passo = interpretarResposta({ estado, texto: "retomar emissão", agora });
-          if (/[:=]/.test(texto)) passo = interpretarResposta({ estado: passo.estado, texto, interacao, agora });
+          if (retomarComTexto && !lerConfirmacao(retomarComTexto).ehConfirmacao) passo = interpretarResposta({ estado: passo.estado, texto: retomarComTexto, agora });
+          else if (/[:=]/.test(texto)) passo = interpretarResposta({ estado: passo.estado, texto, interacao, agora });
         } else passo = interpretarResposta({ estado, texto: retomar ? "emitir nota" : texto, interacao, agora });
       }
       cancelarAnterior ||= passo.invalidarConfirmacao === true;
@@ -123,8 +126,10 @@ export async function processarEmissaoGuiada({ conversa, mensagem, sessao, texto
           const preparacao = await executar("preparar_emissao", estado.dados, { ...contexto, servicos: { ...deps,
             // Só captura o pedido validado. O banco recebe pendência + coleta + recibo juntos.
             criarPendencia: async (args) => {
-              pendenciaParaSalvar = { ...args, codigo };
-              const textoExato = `${String(args.corpo || "").trim()}\n\n${rodapeDeConfirmacao(codigo)}`;
+              const empresa = conversa.portalClient;
+              const corpo = `${empresa?.razao ? `Empresa emissora: ${empresa.razao} · CNPJ ${empresa.cnpj || "não informado"}\n\n` : ""}${String(args.corpo || "").trim()}`;
+              pendenciaParaSalvar = { ...args, corpo, contexto: conversa.contexto, codigo };
+              const textoExato = `${corpo}\n\n${rodapeDeConfirmacao(codigo)}`;
               return { codigo, texto: textoExato };
             },
           } });
@@ -168,6 +173,10 @@ export async function processarEmissaoGuiada({ conversa, mensagem, sessao, texto
   resultado.opcoes = (resultado.opcoes || []).map(o => ({ ...o, id: `altan.issue.${rascunhoId}.${versao}.${encodeURIComponent(o.id)}` }));
   await conferirAcesso();
   return client.$transaction(async tx => {
+    if (conversa.atendimentoId) {
+      const ativo = await tx.atendimentoResponsavelWhatsapp.updateMany({ where: filtroAtendimentoAtivo({ conversa, mensagem }), data: { updatedAt: agora } });
+      if (!ativo.count) throw erroEscopo();
+    }
     // Mesmo lock usado pela exclusão/handoff e criação de pendências do assistente.
     const ativa = await tx.conversaWhatsapp.updateMany({ where: {
       id: conversa.id, portalClientId: sessao.portalClientId, escopoVerificado: true,
@@ -182,6 +191,7 @@ export async function processarEmissaoGuiada({ conversa, mensagem, sessao, texto
       await criarPendencia({ ...args, client: tx, rand: () => (ALFABETO.indexOf(codigo[i++]) + 0.5) / ALFABETO.length });
     }
     const data = { ...escopo, estado: limpar(estado), corteAutomacao: conversa.automacaoInvalidadaEm || null,
+      ...(conversa.contexto ? { atendimentoId: conversa.atendimentoId, contextoVersao: conversa.contexto.versao } : {}),
       versao, ultimaMensagemEm: mensagem.registradaEm, expiraEm: new Date(agora.getTime() + TTL_COLETA_MS) };
     if (anterior) {
       const gravado = await tx.rascunhoEmissaoWhatsapp.updateMany({ where: { id: anterior.id, versao: anterior.versao }, data });

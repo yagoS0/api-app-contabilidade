@@ -15,11 +15,22 @@ import { decidirResposta, lerConfirmacao, FRASES } from "./confirmacaoPendente.j
 import { criarPendencia, pendenciaAberta, confirmarEExecutar, cancelarPendencia, marcarExpirada } from "./AcoesPendentesService.js";
 import { definicoes, executarFerramenta, PERMISSAO_POR_FERRAMENTA } from "./ferramentas/index.js";
 import { evidenciaDoAnexo } from "./evidenciaDoAnexo.js";
+import { conferirContextoResponsavel, carregarMensagemResolvida, chaveLeaseResponsavel, filtroEntradasDaConversa, filtroAtendimentoAtivo, encaminharResponsavelParaEquipe } from "../whatsapp/AtendimentoResponsavelWhatsappService.js";
 
 export const AUTOR = Object.freeze({ IA: "IA", HUMANO: "HUMANO", SISTEMA: "SISTEMA" });
 const LOCK_TTL_MS = 90_000;
 const LIMITE_ENTRADAS_CONFIRMADAS = 100;
 const compararMensagens = (a, b) => new Date(a.registradaEm) - new Date(b.registradaEm) || String(a.id || "").localeCompare(String(b.id || ""));
+
+// O recibo original continua no segmento de entrada. Só o escopo de resolução autorizado pode
+// ler o pedido efetivo; o texto da seleção ("2") não substitui o pedido preservado.
+function mensagensDoEscopo(mensagens, conversa, contexto = null) {
+  return (mensagens || []).filter(m => {
+    if (m.contexto) return m.contexto.estado === "RESOLVIDA" && m.contexto.conversaId === conversa.id
+      && (!contexto || m.contexto.versao === contexto.versao && m.contexto.atendimentoId === contexto.atendimentoId);
+    return m.conversaId === conversa.id;
+  }).map(m => m.contexto ? { ...m, conversaId: conversa.id, corpo: m.contexto.texto ?? m.corpo, tipo: m.contexto.tipo || m.tipo } : m);
+}
 
 /** A mensagem `in` → um turno da API. Mídia vira uma frase entre colchetes (o modelo não a lê). */
 function paraTurno(m) {
@@ -68,7 +79,7 @@ export async function responderMensagem({ conversaId, mensagemId, deps = {} } = 
   if (r.feito) {
     for (const id of r.mensagensRespondidas || [mensagemId]) {
       await (deps.client || prisma).mensagemWhatsapp.updateMany({
-        where: { id: String(id), conversaId: String(conversaId), direcao: DIRECAO.ENTRADA, respondidaPelaIaEm: null },
+        where: { id: String(id), ...filtroEntradasDaConversa(String(conversaId)), direcao: DIRECAO.ENTRADA, respondidaPelaIaEm: null },
         data: { respondidaPelaIaEm: new Date() },
       });
     }
@@ -80,7 +91,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
   const client = deps.client || prisma;
   const log = deps.log || logPadrao;
   const agora = deps.agora || new Date();
-  const lockId = `ia:${conversaId}`;
+  let lockId = `ia:${conversaId}`;
   const turnoIaId = deps.turnoIaId || `mensagem:${mensagemId}`;
   let lock = null;
   let timer = null;
@@ -91,6 +102,9 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
   let mensagensRespondidas = [mensagemId];
   const concluir = (r) => ({ ...r, mensagensRespondidas });
   try {
+    const conversa = await client.conversaWhatsapp.findUnique({ where: { id: String(conversaId) }, include: { portalClient: { select: { id: true, razao: true, cnpj: true } } } });
+    if (!conversa) return { feito: false, motivo: "NAO_ENCONTRADA" };
+    lockId = chaveLeaseResponsavel(conversa);
     if (!deps.leaseExterno) {
       lock = deps.tryLock ? await deps.tryLock(lockId, LOCK_TTL_MS) : await adquirirLease(lockId, { client, ttlMs: LOCK_TTL_MS });
       if (!lock) return { feito: false, motivo: "FIO_OCUPADO" };
@@ -101,8 +115,15 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     }
 
     // 3. O fio, a pessoa, a empresa.
-    const conversa = await client.conversaWhatsapp.findUnique({ where: { id: String(conversaId) }, include: { portalClient: { select: { id: true, razao: true, cnpj: true } } } });
-    const mensagem = await client.mensagemWhatsapp.findUnique({ where: { id: String(mensagemId) } });
+    const resolvida = await carregarMensagemResolvida({ conversa, mensagemId, client });
+    const mensagem = resolvida?.mensagem;
+    const pinRecebido = deps.contexto || null;
+    if (conversa.atendimentoId && deps.contextoFixadoNoJob && !pinRecebido) throw Object.assign(new Error("O job antecede a seleção da empresa."), { codigo: "CONTEXTO_ALTERADO" });
+    if (conversa.atendimentoId && pinRecebido && ["atendimentoId", "versao", "conversaId", "portalClientId"].some(k => pinRecebido[k] !== resolvida?.contexto?.[k])) {
+      throw Object.assign(new Error("A resolução recebida não corresponde ao contexto fixado no job."), { codigo: "CONTEXTO_ALTERADO" });
+    }
+    const contexto = resolvida?.contexto || pinRecebido;
+    conversa.contexto = contexto;
     if (!conversa || !mensagem || mensagem.conversaId !== conversa.id || mensagem.direcao !== DIRECAO.ENTRADA) return { feito: false, motivo: "NAO_ENCONTRADA" };
     if (mensagem.respondidaPelaIaEm) return { feito: false, motivo: "JA_RESPONDIDA" };
     const saidaAnterior = await client.mensagemWhatsapp.findFirst({ where: { turnoIaId, direcao: DIRECAO.SAIDA } });
@@ -119,16 +140,22 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
         : atual.atendidaPor || (atual.atendidaDesde && (!encaminhamentoDoTurno || new Date(atual.atendidaDesde).getTime() !== encaminhamentoDoTurno.getTime())) ? "ASSUMIDA_POR_HUMANO"
           : !(deps.flag ?? INTEGRACAO_WHATSAPP_IA) || !(deps.piloto ?? IA_EMPRESAS_PILOTO).includes(conversa.portalClientId) ? "FORA_DO_PILOTO" : null;
       if (codigo) throw Object.assign(new Error("O assistente foi suspenso nesta conversa."), { codigo });
+      if ((atual.atendimentoId || null) !== (conversa.atendimentoId || null)) throw Object.assign(new Error("O atendimento deste segmento mudou."), { codigo: "CONTEXTO_ALTERADO" });
+      await conferirContextoResponsavel({ conversa: atual, mensagem, contexto, client, permitirHandoffEm: encaminhamentoDoTurno });
     };
     await conferirPortao();
     const cloud = deps.cloud || new WhatsappCloudClient({ log });
+    const textoNoEscopo = texto => conversa.atendimentoId
+      ? `${conversa.portalClient.razao} · CNPJ ${conversa.portalClient.cnpj}\n\n${texto}`
+      : texto;
     const dizer = async (texto, { autor = AUTOR.IA, tipo = "text" } = {}) => {
-      const r = await enviarMensagemRastreada({ conversa, tipo, corpo: texto, autor, turnoIaId, client,
+      const corpo = textoNoEscopo(texto);
+      const r = await enviarMensagemRastreada({ conversa, tipo, corpo, autor, turnoIaId, client,
         antesDeEnviar: async () => {
           await conferirPortao();
           const atual = await janelaDaConversa(conversa.id, new Date());
           if (atual.situacao !== SITUACOES_JANELA.ABERTA) throw Object.assign(new Error("A janela de atendimento fechou."), { codigo: "FORA_DA_JANELA" });
-        }, enviar: () => cloud.enviarTexto({ telefone: conversa.telefoneE164, texto }),
+        }, enviar: () => cloud.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }),
       });
       houveSaida = true;
       return r;
@@ -166,6 +193,11 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     const encaminharParaEquipe = async () => {
       await conferirPortao();
       const quando = new Date();
+      if (conversa.atendimentoId) {
+        await encaminharResponsavelParaEquipe({ conversa, mensagem, contexto, client, quando });
+        encaminhamentoDoTurno = quando;
+        return;
+      }
       const r = await client.conversaWhatsapp.updateMany({ where: {
         id: conversa.id, portalClientId: conversa.portalClientId, escopoVerificado: true,
         excluidaEm: null, atendidaPor: null, atendidaDesde: null,
@@ -185,11 +217,12 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     // Bolhas já recebidas pertencem ao mesmo pedido até a primeira resposta ou interação.
     // O limite impede que uma conversa contínua adie o atendimento indefinidamente.
     const seguintes = mensagem.tipo === "text" ? await client.mensagemWhatsapp.findMany({
-      where: { conversaId: conversa.id, registradaEm: { gte: mensagem.registradaEm, lte: new Date(new Date(mensagem.registradaEm).getTime() + 8000) } },
+      where: { ...filtroEntradasDaConversa(conversa.id), registradaEm: { gte: mensagem.registradaEm, lte: new Date(new Date(mensagem.registradaEm).getTime() + 8000) } },
+      ...(conversa.atendimentoId ? { include: { contexto: true } } : {}),
       orderBy: [{ registradaEm: "asc" }, { id: "asc" }], take: 12,
     }) : [];
     const bolhas = [mensagem];
-    for (const m of seguintes.filter(m => m.id !== mensagem.id && m.conversaId === conversa.id && new Date(m.registradaEm) >= new Date(mensagem.registradaEm) && new Date(m.registradaEm).getTime() <= new Date(mensagem.registradaEm).getTime() + 8000).sort(compararMensagens)) {
+    for (const m of mensagensDoEscopo(seguintes, conversa, contexto).filter(m => m.id !== mensagem.id && new Date(m.registradaEm) >= new Date(mensagem.registradaEm) && new Date(m.registradaEm).getTime() <= new Date(mensagem.registradaEm).getTime() + 8000).sort(compararMensagens)) {
       if (m.direcao === DIRECAO.SAIDA && m.turnoIaId === `menu-inicio:${mensagem.id}`) continue;
       if (m.direcao !== DIRECAO.ENTRADA || m.tipo !== "text" || m.respondidaPelaIaEm) break;
       bolhas.push(m);
@@ -224,14 +257,14 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
         // Ler só a primeira deixava uma duplicata esconder a correção seguinte. Excesso recusa:
         // truncar a fila nunca pode transformar contexto desconhecido em autorização fiscal.
         const posteriores = (await client.mensagemWhatsapp.findMany({ where: {
-          conversaId: conversa.id, direcao: DIRECAO.ENTRADA,
+          ...(conversa.atendimentoId ? { conversa: { is: { atendimentoId: conversa.atendimentoId } } } : { conversaId: conversa.id }), direcao: DIRECAO.ENTRADA,
           registradaEm: { gte: mensagem.registradaEm }, id: { notIn: mensagensRespondidas },
         }, orderBy: [{ registradaEm: "asc" }, { id: "asc" }], take: LIMITE_ENTRADAS_CONFIRMADAS + 1,
-        select: { id: true, conversaId: true, direcao: true, tipo: true, corpo: true, registradaEm: true },
-        })).filter(m => m.conversaId === conversa.id && m.direcao === DIRECAO.ENTRADA && !mensagensRespondidas.includes(m.id) && new Date(m.registradaEm) >= new Date(mensagem.registradaEm));
+        select: { id: true, conversaId: true, direcao: true, tipo: true, corpo: true, registradaEm: true, ...(conversa.atendimentoId ? { contexto: true } : {}) },
+        })).filter(m => (conversa.atendimentoId || m.conversaId === conversa.id) && m.direcao === DIRECAO.ENTRADA && !mensagensRespondidas.includes(m.id) && new Date(m.registradaEm) >= new Date(mensagem.registradaEm));
         const houveAlteracao = posteriores.length > LIMITE_ENTRADAS_CONFIRMADAS || posteriores.some(m => {
           const leitura = lerConfirmacao(m.corpo);
-          return m.tipo !== "text" || !leitura.ehConfirmacao || leitura.codigo !== String(pendente.codigo).toUpperCase();
+          return (conversa.atendimentoId && (m.contexto?.conversaId !== conversa.id || m.contexto?.versao !== contexto?.versao)) || m.tipo !== "text" || !leitura.ehConfirmacao || leitura.codigo !== String(pendente.codigo).toUpperCase();
         });
         if (houveAlteracao) {
           await cancelarPendencia(pendente.id, { client });
@@ -243,7 +276,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
         // ⚠ `conversaId` e `portalClientId` vão na reserva: a pendência de um fio nunca é
         // confirmada por outro, nem executada depois de o fio mudar de empresa. A reserva também
         // recusa qualquer entrada que tenha chegado entre a leitura acima e o UPDATE atômico.
-        const r = await confirmarEExecutar({ acaoId: pendente.id, conversaId: conversa.id, portalClientId: conversa.portalClientId, confirmacao, agora, client, log, executores: deps.executores || null, ...(deps.acoesDeps ? { deps: deps.acoesDeps } : {}) });
+        const r = await confirmarEExecutar({ acaoId: pendente.id, conversaId: conversa.id, portalClientId: conversa.portalClientId, userId: sessao.userId, contexto, confirmacao, agora, client, log, antesDeExecutar: conferirSessaoNaoAlterada, executores: deps.executores || null, ...(deps.acoesDeps ? { deps: deps.acoesDeps } : {}) });
         if (r.filaHumana) await encaminharParaEquipe();
         await dizer(r.texto, { autor: AUTOR.SISTEMA });
         return concluir({ feito: true, motivo: r.codigo || "EXECUTADA", texto: r.texto });
@@ -280,10 +313,10 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
 
     const janela = await janelaDaConversa(conversa.id, agora);
     const inicioPedido = bolhas[0];
-    const historico = await client.mensagemWhatsapp.findMany({ where: { conversaId: conversa.id, OR: [
+    const historico = await client.mensagemWhatsapp.findMany({ where: { AND: [filtroEntradasDaConversa(conversa.id), { OR: [
       { registradaEm: { lt: inicioPedido.registradaEm } }, { registradaEm: inicioPedido.registradaEm, id: { lt: inicioPedido.id } },
-    ] }, orderBy: [{ registradaEm: "desc" }, { id: "desc" }], take: IA_HISTORICO_MENSAGENS });
-    const messages = montarHistorico(historico.filter(m => !mensagensRespondidas.includes(m.id)), pedidoAtual);
+    ] }] }, ...(conversa.atendimentoId ? { include: { contexto: true } } : {}), orderBy: [{ registradaEm: "desc" }, { id: "desc" }], take: IA_HISTORICO_MENSAGENS });
+    const messages = montarHistorico(mensagensDoEscopo(historico, conversa).filter(m => !mensagensRespondidas.includes(m.id)), pedidoAtual);
     const system = montarSystem({ empresa: conversa.portalClient, sessao, pendencia: pendente, confirmacaoComComplemento, janela: { aberta: janela.situacao === SITUACOES_JANELA.ABERTA }, hoje: agora });
 
     const pendenciasDoTurno = [];
@@ -293,8 +326,12 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
       sessao, conversa, prisma: client, servicos: {
         ...(deps.servicos || {}),
         criarPendencia: async (args) => {
-          await conferirPortao();
+          await conferirSessaoNaoAlterada();
           return client.$transaction(async (tx) => {
+            if (conversa.atendimentoId) {
+              const ativo = await tx.atendimentoResponsavelWhatsapp.updateMany({ where: filtroAtendimentoAtivo({ conversa, contexto, mensagem, agora: new Date() }), data: { updatedAt: new Date() } });
+              if (!ativo.count) throw Object.assign(new Error("A empresa do pedido mudou durante a preparação."), { codigo: "CONTEXTO_ALTERADO" });
+            }
             // Lock da conversa serializa criação da pendência com sua exclusão e cancelamento.
             const ativa = await tx.conversaWhatsapp.updateMany({ where: {
               id: conversa.id, portalClientId: conversa.portalClientId, escopoVerificado: true,
@@ -302,7 +339,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
               OR: [{ automacaoInvalidadaEm: null }, { automacaoInvalidadaEm: { lt: mensagem.registradaEm } }],
             }, data: { updatedAt: new Date() } });
             if (!ativa.count) throw Object.assign(new Error("A conversa mudou antes de preparar o pedido."), { codigo: "AUTOMACAO_INVALIDADA" });
-            return (deps.servicos?.criarPendencia || criarPendencia)({ ...args, client: tx });
+            return (deps.servicos?.criarPendencia || criarPendencia)({ ...args, contexto, client: tx });
           });
         },
       }, janela: { aberta: janela.situacao === SITUACOES_JANELA.ABERTA }, agora, log,
@@ -310,7 +347,8 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
         const chaveDocumento = `${guideId || ""}:${notaId || ""}:${documentId || ""}:${nomeArquivo || ""}`;
         if (documentosTentados.has(chaveDocumento)) return documentosTentados.get(chaveDocumento);
         const ehImagem = String(mimeType || "").toLowerCase().startsWith("image/");
-        const tentativa = enviarMensagemRastreada({ conversa, tipo: ehImagem ? "image" : "document", corpo: legenda || nomeArquivo, autor: AUTOR.IA, turnoIaId, client,
+        const legendaDoEscopo = textoNoEscopo(legenda || nomeArquivo);
+        const tentativa = enviarMensagemRastreada({ conversa, tipo: ehImagem ? "image" : "document", corpo: legendaDoEscopo, autor: AUTOR.IA, turnoIaId, client,
           antesDeEnviar: async () => {
             await conferirPortao();
             const atual = await carregarSessaoAtual();
@@ -324,8 +362,8 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
             const janelaAtual = await janelaDaConversa(conversa.id, new Date());
             if (janelaAtual.situacao !== SITUACOES_JANELA.ABERTA) throw Object.assign(new Error("Janela fechada."), { codigo: "FORA_DA_JANELA" });
           }, enviar: () => ehImagem
-            ? cloud.enviarImagem({ telefone: conversa.telefoneE164, conteudo, nomeArquivo, legenda, mimeType })
-            : cloud.enviarDocumento({ telefone: conversa.telefoneE164, conteudo, nomeArquivo, legenda, mimeType }),
+            ? cloud.enviarImagem({ telefone: conversa.telefoneE164, conteudo, nomeArquivo, legenda: conversa.atendimentoId ? legendaDoEscopo : legenda, mimeType })
+            : cloud.enviarDocumento({ telefone: conversa.telefoneE164, conteudo, nomeArquivo, legenda: conversa.atendimentoId ? legendaDoEscopo : legenda, mimeType }),
         });
         documentosTentados.set(chaveDocumento, tentativa);
         const r = await tentativa;
