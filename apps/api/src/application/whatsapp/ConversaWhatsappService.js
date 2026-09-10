@@ -69,10 +69,13 @@ export async function garantirConversa({ telefone, portalClientId = null, nomePe
   const perfil = nomePerfilProvedor ? { nomePerfilProvedor: String(nomePerfilProvedor) } : {};
   // O número pode falar por várias empresas. Um envio nunca transfere um histórico existente.
   const chaveEscopo = `${portalClientId ? `empresa:${portalClientId}` : "sem-empresa"}:${e164}`;
+  const atendimento = await client.atendimentoResponsavelWhatsapp?.findUnique?.({ where: { canal_telefoneE164: { canal: "principal", telefoneE164: e164 } } });
+  const agrupamento = atendimento ? { atendimentoId: atendimento.id } : {};
   return client.conversaWhatsapp.upsert({
     where: { chaveEscopo },
-    create: { chaveEscopo, escopoVerificado: Boolean(portalClientId), telefoneE164: e164, ...atribuicao, ...perfil },
-    update: { ...perfil },
+    create: { chaveEscopo, escopoVerificado: Boolean(portalClientId), telefoneE164: e164, ...atribuicao, ...perfil, ...agrupamento,
+      ...(atendimento ? { atendidaPor: atendimento.atendidaPor, atendidaDesde: atendimento.atendidaDesde, automacaoInvalidadaEm: atendimento.automacaoInvalidadaEm } : {}) },
+    update: { ...perfil, ...agrupamento },
   });
 }
 
@@ -100,6 +103,7 @@ export async function registrarMensagemRecebida({
   midiaProvedorId = null,
   ocorridaEmProvedor = null,
   nomePerfilProvedor = null,
+  respostaAProviderMessageId = null,
 }) {
   if (!String(providerMessageId || "").trim()) {
     // ⚠ Sem o identificador da Meta não há idempotência: a reentrega do mesmo evento viraria uma
@@ -141,6 +145,7 @@ export async function registrarMensagemRecebida({
         corpo: corpo ?? null,
         midiaProvedorId: midiaProvedorId ?? null,
         ocorridaEmProvedor: ocorridaEmProvedor ?? null,
+        respostaAProviderMessageId: respostaAProviderMessageId || null,
       },
     });
     const atualizada = await tx.conversaWhatsapp.update({ where: { id: conversa.id }, data: { updatedAt: new Date(), excluidaEm: null } });

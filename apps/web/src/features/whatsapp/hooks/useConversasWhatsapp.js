@@ -14,6 +14,8 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
   const [erroAcao, setErroAcao] = useState(null);
   const [cursorLista, setCursorLista] = useState(null);
   const [cursorFio, setCursorFio] = useState(null);
+  const [empresaHistorico, setEmpresaHistorico] = useState(null);
+  const empresaHistoricoRef = useRef(null);
   const [carregandoMais, setCarregandoMais] = useState(false);
   const [carregandoAnteriores, setCarregandoAnteriores] = useState(false);
   const paginas = useRef({ lista: false, fio: false, filtro: null });
@@ -34,6 +36,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     rascunhosRef.current.clear();
     setAberta(null); setConversas([]); setErro(null); setErroFio(null); setErroAcao(null); selecionada.current = null;
     setCursorLista(null); setCursorFio(null); setCarregandoMais(false); setCarregandoAnteriores(false);
+    empresaHistoricoRef.current = null; setEmpresaHistorico(null);
     paginas.current = { lista: false, fio: false, filtro: null };
     setCarregandoFio(false); setOcupado(false); setTemMais(null); setTemMaisNoFio(null); setConsumoIa(null);
     return () => { montado.current = false; versaoLista.current++; versaoFio.current++; selecionada.current = null; };
@@ -73,12 +76,13 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     if (!api || !conversaId || !contextoVigente()) return null;
     const versao = ++versaoFio.current;
     const mesmoFio = selecionada.current === conversaId;
-    if (!mesmoFio) { setAberta(null); setCursorFio(null); paginas.current.fio = false; setErroAcao(null); }
+    if (!mesmoFio) { setAberta(null); setCursorFio(null); paginas.current.fio = false; setErroAcao(null); empresaHistoricoRef.current = null; setEmpresaHistorico(null); }
     selecionada.current = conversaId;
     if (cursor) setCarregandoAnteriores(true);
     else if (!silencioso) setCarregandoFio(true);
     try {
-      const r = await api.getMensagensWhatsapp(conversaId, ...(cursor ? [{ cursor }] : []));
+      const opcoes = { ...(cursor ? { cursor } : {}), ...((empresa || empresaHistoricoRef.current) ? { empresa: empresa || empresaHistoricoRef.current } : {}) };
+      const r = await api.getMensagensWhatsapp(conversaId, ...(Object.keys(opcoes).length ? [opcoes] : []));
       if (versao !== versaoFio.current || selecionada.current !== conversaId) return null;
       if (r?.conversa?.id !== conversaId || !Array.isArray(r?.mensagens)) throw new Error("Resposta inválida ao ler a conversa.");
       const fio = { conversa: r.conversa, mensagens: r.mensagens };
@@ -98,7 +102,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     } finally {
       if (versao === versaoFio.current) { setCarregandoFio(false); setCarregandoAnteriores(false); }
     }
-  }, [api, contextoVigente]);
+  }, [api, empresa, contextoVigente]);
 
   // Um ciclo por vez; aba oculta não consulta. Respostas antigas não trocam o contato selecionado.
   const polling = useRef({ carregar, abrir, filtro, ocupado });
@@ -169,6 +173,26 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     else await recarregarTudo(id);
     return r;
   }, [acao, api, recarregarTudo, contextoVigente]);
+  const selecionarEmpresa = useCallback(async (id, portalClientId) => {
+    const r = await acao(() => api.selecionarEmpresaConversaWhatsapp(id, portalClientId), { sucesso: "Empresa do atendimento selecionada. Confira o contexto antes de responder." });
+    if (r?.ok === false || !r?.conversa?.id || !contextoVigente() || selecionada.current !== id) return r;
+    versaoFio.current++;
+    selecionada.current = r.conversa.id;
+    paginas.current.fio = false;
+    setAberta(null); setCursorFio(null);
+    await recarregarTudo(r.conversa.id);
+    return r;
+  }, [acao, api, recarregarTudo, contextoVigente]);
+  const filtrarHistorico = useCallback(async (valor) => {
+    empresaHistoricoRef.current = valor || null;
+    setEmpresaHistorico(valor || null);
+    paginas.current.fio = false; setCursorFio(null);
+    if (selecionada.current) await abrir(selecionada.current);
+  }, [abrir]);
+  const salvarApelidos = useCallback(async (id, portalClientId, apelidos) => {
+    const r = await acao(() => api.salvarApelidosWhatsapp(portalClientId, apelidos), { sucesso: "Nomes curtos da empresa salvos." });
+    await recarregarTudo(id); return r;
+  }, [acao, api, recarregarTudo]);
   const fechar = () => { versaoFio.current++; selecionada.current = null; setAberta(null); setErroFio(null); setErroAcao(null); setCursorFio(null); setCarregandoFio(false); };
   const trocarFiltro = (novo) => {
     if (novo === filtro) return;
@@ -187,7 +211,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     }
     return r;
   };
-  return { api, cursorLista, cursorFio, carregandoMais, carregandoAnteriores, erroAcao, rascunhosRef,
+  return { api, cursorLista, cursorFio, carregandoMais, carregandoAnteriores, erroAcao, rascunhosRef, empresaFixa: empresa, empresaHistorico, filtrarHistorico, selecionarEmpresa, salvarApelidos,
     excluir: id => moverConversa(id, "excluirConversaWhatsapp"),
     restaurar: id => moverConversa(id, "restaurarConversaWhatsapp"),
     carregarMais: () => cursorLista && !carregandoMais && carregar(filtro, false, cursorLista),
@@ -196,5 +220,5 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
 }
 
 function unirPorId(atuais = [], novas = []) {
-  return [...new Map([...atuais, ...novas].map(item => [item.id, item])).values()];
+  return [...new Map([...atuais, ...novas].map(item => [item.atendimento?.id || item.id, item])).values()];
 }

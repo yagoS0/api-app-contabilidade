@@ -10,7 +10,7 @@ export function decidirRespostaComercial({
     responde: false,
     motivo: "FORA_DO_PILOTO"
   };
-  if (c?.portalClientId || r?.vinculo?.situacao !== "DESCONHECIDO" || String(c?.chaveEscopo || "").startsWith("legado:")) return {
+  if (c?.portalClientId || c?.atendimentoId || r?.vinculo?.situacao !== "DESCONHECIDO" || String(c?.chaveEscopo || "").startsWith("legado:")) return {
     responde: false,
     motivo: "SEM_ESCOPO_COMERCIAL"
   };

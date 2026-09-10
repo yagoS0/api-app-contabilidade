@@ -39,6 +39,7 @@ import { ESPECIE_RECALCULO, especieDoRecalculo, leituraDosAcrescimos, traduzirRe
 import { fmtBRL } from "@contabilidade/shared/declaracao-nfse";
 import { PERMISSOES_ASSISTENTE, temPermissaoAssistente } from "../whatsapp/permissoesAssistente.js";
 import { papelAlcanca, PAPEL_MINIMO_LEITURA, PAPEL_MINIMO_EMISSAO } from "./sessaoDoContato.js";
+import { conferirContextoResponsavel, filtroAtendimentoAtivo } from "../whatsapp/AtendimentoResponsavelWhatsappService.js";
 
 export const ORIGENS = Object.freeze({
   EMITIR: "whatsapp:emitir",
@@ -115,8 +116,17 @@ export async function pendenciaAberta(conversaId, { client = prisma } = {}) {
  * Conversa livre por si só não cancela nem confirma; a decisão pertence ao fluxo de confirmação.
  * @returns {{acao, texto}} `texto` = o corpo que o cliente LÊ + o rodapé com o código
  */
-export async function criarPendencia({ conversaId, portalClientId, userId, tipo, payload, corpo, agora = new Date(), rand = Math.random, client = prisma } = {}) {
+export async function criarPendencia({ conversaId, portalClientId, userId, tipo, payload, corpo, contexto = null, atendimentoId = contexto?.atendimentoId ?? null, contextoVersao = contexto?.versao ?? null, agora = new Date(), rand = Math.random, client = prisma } = {}) {
   if (!Object.values(TIPOS).includes(tipo)) throw new Error(`tipo de pendência desconhecido: ${tipo}`);
+  // Não escolher a empresa atual aqui. A versão pertence ao pedido recebido, mesmo que a
+  // consulta fiscal tenha demorado e o responsável já tenha selecionado outra empresa.
+  const conversa = await client.conversaWhatsapp?.findUnique?.({ where: { id: String(conversaId) } });
+  if (atendimentoId || conversa?.atendimentoId) {
+    if (!conversa || atendimentoId !== conversa.atendimentoId || !Number.isInteger(contextoVersao) || conversa.portalClientId !== portalClientId) {
+      throw Object.assign(new Error("O pedido perdeu seu contexto de empresa."), { codigo: "CONTEXTO_ALTERADO" });
+    }
+    await conferirContextoResponsavel({ conversa, contexto: { ...contexto, atendimentoId, versao: contextoVersao, conversaId, portalClientId }, client });
+  }
   const codigo = gerarCodigo(rand);
   const texto = `${String(corpo || "").trim()}\n\n${rodapeDeConfirmacao(codigo)}`;
   await client.acaoPendenteWhatsapp.updateMany({
@@ -128,6 +138,7 @@ export async function criarPendencia({ conversaId, portalClientId, userId, tipo,
       conversaId: String(conversaId),
       portalClientId: String(portalClientId),
       userId: userId ? String(userId) : null,
+      ...(atendimentoId ? { atendimentoId, contextoVersao } : {}),
       tipo,
       payload,
       textoDeConfirmacao: texto,
@@ -151,13 +162,33 @@ export async function marcarExpirada(acaoId, { client = prisma } = {}) {
  * CONFIRMA (reserva atômica) E EXECUTA. Devolve o que dizer ao cliente e se o fio vai à fila humana.
  * @returns {Promise<{executou:boolean, texto:string, filaHumana:boolean, resultado:object|null}>}
  */
-export async function confirmarEExecutar({ acaoId, conversaId = null, portalClientId = null, userId = null, confirmacao = null, agora = new Date(), client = prisma, log = logPadrao, executores = null, deps = DEPS_PADRAO, antesDeExecutar = null } = {}) {
+export async function confirmarEExecutar({ acaoId, conversaId = null, portalClientId = null, userId = null, contexto = null, atendimentoId = contexto?.atendimentoId ?? null, contextoVersao = contexto?.versao ?? null, confirmacao = null, agora = new Date(), client = prisma, log = logPadrao, executores = null, deps = DEPS_PADRAO, antesDeExecutar = null } = {}) {
+  const pin = atendimentoId ? { atendimentoId, versao: contextoVersao, conversaId, portalClientId } : null;
+  if (pin && (!Number.isInteger(contextoVersao) || !conversaId || !portalClientId || !confirmacao?.mensagemId)) {
+    return { executou: false, codigo: "CONTEXTO_ALTERADO", texto: "A empresa deste pedido precisa ser selecionada novamente antes de confirmar.", filaHumana: false, resultado: null };
+  }
   // O conjunto visto pelo turno é conferido no MESMO comando que reserva o ato. Uma leitura
   // anterior separada deixa uma correção entrar entre o SELECT e o UPDATE. Sem exclusão por
   // respondidaPelaIaEm: outro consumidor da caixa não pode tornar uma correção invisível.
   const entradasNovas = confirmacao ? {
     direcao: "in", registradaEm: { gte: new Date(confirmacao.registradaEm) },
-    id: { notIn: [...new Set(confirmacao.mensagensConhecidas)] },
+    id: { notIn: [...new Set([confirmacao.mensagemId, ...(confirmacao.mensagensConhecidas || [])])] },
+  } : null;
+  const escopoConversa = {
+    ...(entradasNovas ? {
+      escopoVerificado: true, excluidaEm: null, atendidaPor: null, atendidaDesde: null,
+      ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+      OR: [{ automacaoInvalidadaEm: null }, { automacaoInvalidadaEm: { lt: new Date(confirmacao.registradaEm) } }],
+      mensagens: { none: entradasNovas },
+    } : {}),
+    // Um código legado não ganha autorização multiempresa ao migrar a conversa.
+    atendimentoId: atendimentoId || null,
+  };
+  const escopoAtendimento = pin ? {
+    ...filtroAtendimentoAtivo({ conversa: { id: conversaId, portalClientId, atendimentoId }, contexto: pin, mensagem: { registradaEm: confirmacao.registradaEm }, agora }),
+    // As entradas chegam ao segmento neutro ANTES de sua resolução. Uma troca ainda na fila
+    // precisa impedir o ato antigo, mesmo que o outro worker não tenha incrementado a versão.
+    conversas: { none: { mensagens: { some: entradasNovas } } },
   } : null;
   const reserva = await client.acaoPendenteWhatsapp.updateMany({
     where: {
@@ -167,12 +198,9 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
       // minutos da pendência, e aí o ato sairia no CNPJ em que ela nasceu, não no do fio de agora.
       ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
       ...(userId ? { userId: String(userId) } : {}),
-      ...(entradasNovas ? { conversa: { is: {
-        escopoVerificado: true, excluidaEm: null, atendidaPor: null, atendidaDesde: null,
-        ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
-        OR: [{ automacaoInvalidadaEm: null }, { automacaoInvalidadaEm: { lt: new Date(confirmacao.registradaEm) } }],
-        mensagens: { none: entradasNovas },
-      } } } : {}),
+      atendimentoId: atendimentoId || null,
+      ...(pin ? { contextoVersao, atendimento: { is: escopoAtendimento } } : {}),
+      conversa: { is: escopoConversa },
     },
     data: { status: STATUS.CONFIRMADA, confirmadaEm: agora, ...(confirmacao ? { mensagemConfirmacaoId: String(confirmacao.mensagemId) } : {}) },
   });
@@ -185,7 +213,9 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
         ...(conversaId ? { conversaId: String(conversaId) } : {}),
         ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
         ...(userId ? { userId: String(userId) } : {}),
-        conversa: { is: { mensagens: { some: entradasNovas } } },
+        atendimentoId: atendimentoId || null,
+        ...(pin ? { contextoVersao, atendimento: { is: { id: atendimentoId, conversas: { some: { mensagens: { some: entradasNovas } } } } } }
+          : { conversa: { is: { mensagens: { some: entradasNovas } } } }),
       }, data: { status: STATUS.CANCELADA } });
       if (cancelada.count) return { executou: false, codigo: "CONFIRMACAO_SUPERADA", texto: "Recebi uma nova mensagem depois da confirmação e não executei o pedido. Vamos conferir as alterações antes de confirmar novamente.", filaHumana: false, resultado: null };
     }
@@ -227,9 +257,23 @@ export async function confirmarEExecutar({ acaoId, conversaId = null, portalClie
   // O lease/corte pode mudar durante as reconferências acima. Uma recusa aqui ainda prova que
   // nenhum executor foi chamado; persiste essa diferença antes de devolver o erro ao chamador,
   // que também precisa impedir uma resposta automática depois de um atendimento humano.
-  if (antesDeExecutar) {
+  if (antesDeExecutar || acao.atendimentoId) {
     try {
-      await antesDeExecutar();
+      await antesDeExecutar?.();
+      if (acao.atendimentoId) {
+        const conversaAtual = await client.conversaWhatsapp.findUnique({ where: { id: acao.conversaId } });
+        if (!conversaAtual || conversaAtual.atendimentoId !== acao.atendimentoId || conversaAtual.portalClientId !== acao.portalClientId) {
+          throw Object.assign(new Error("O segmento da empresa mudou antes da execução."), { codigo: "CONTEXTO_ALTERADO" });
+        }
+        const contextoDaAcao = { atendimentoId: acao.atendimentoId, versao: acao.contextoVersao, conversaId: acao.conversaId, portalClientId: acao.portalClientId };
+        await conferirContextoResponsavel({ conversa: conversaAtual, mensagem: { id: confirmacao.mensagemId, registradaEm: confirmacao.registradaEm }, contexto: contextoDaAcao, client });
+        const permissaoFinal = await deps.autorizarPermissaoDaAcao({ acao, client });
+        if (!permissaoFinal?.ok) throw Object.assign(new Error("A permissão da função foi retirada antes da execução."), { codigo: "ACESSO_REVOGADO" });
+        const nova = await client.mensagemWhatsapp.findFirst({ where: {
+          ...entradasNovas, conversa: { is: { atendimentoId: acao.atendimentoId } },
+        }, select: { id: true } });
+        if (nova) throw Object.assign(new Error("Outra mensagem chegou antes da execução."), { codigo: "CONFIRMACAO_SUPERADA" });
+      }
     } catch (err) {
       const superada = err?.codigo === "CONFIRMACAO_SUPERADA";
       const texto = superada

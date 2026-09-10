@@ -2,10 +2,14 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { INTEGRACAO_WHATSAPP_IA, IA_EMPRESAS_PILOTO, INTEGRACAO_IA_COMERCIAL, IA_COMERCIAL_TELEFONES_PILOTO } from "../../config.js";
 import { adquirirLease, renovarLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
+import { chaveLeaseResponsavel } from "../whatsapp/AtendimentoResponsavelWhatsappService.js";
 
-export async function enfileirarTurnoIa({ conversaId, mensagemId, portalClientId = null, perfil = "CLIENTE", client = prisma }) {
+export async function enfileirarTurnoIa({ conversaId, mensagemId, portalClientId = null, perfil = "CLIENTE", contexto = null, atendimentoId = contexto?.atendimentoId ?? null, contextoVersao = contexto?.versao ?? null, client = prisma }) {
+  if (atendimentoId && (!Number.isInteger(contextoVersao) || contexto?.conversaId && contexto.conversaId !== conversaId || contexto?.portalClientId && contexto.portalClientId !== portalClientId)) {
+    throw Object.assign(new Error("O turno não possui um contexto de empresa válido."), { codigo: "CONTEXTO_ALTERADO" });
+  }
   // Uma pequena pausa permite receber as bolhas que compõem o mesmo pedido.
-  try { return await client.turnoIaWhatsapp.create({ data: { conversaId, mensagemId, portalClientId, perfil, proximaTentativaEm: new Date(Date.now() + 1500) } }); }
+  try { return await client.turnoIaWhatsapp.create({ data: { conversaId, mensagemId, portalClientId, perfil, ...(atendimentoId ? { atendimentoId, contextoVersao } : {}), proximaTentativaEm: new Date(Date.now() + 1500) } }); }
   catch (e) {
     if (e?.code !== "P2002") throw e;
     return client.turnoIaWhatsapp.findUnique({ where: { mensagemId } });
@@ -36,7 +40,11 @@ export async function processarTurnosIaUmaVez({ client = prisma, agora = new Dat
   let processados = 0;
   for (const job of jobs) {
     const instanteReserva = new Date(agora.getTime() + Date.now() - inicioCiclo);
-    const lease = await adquirirLease(`ia:${job.conversaId}`, { client, agora: instanteReserva });
+    // Um job antigo pode anteceder a associação do segmento ao responsável. Usa o lease atual
+    // para coordenar, mas nunca ganha uma versão nova: o assistente recusará o pin ausente.
+    const conversaDoJob = job.atendimentoId ? { id: job.conversaId, atendimentoId: job.atendimentoId }
+      : await client.conversaWhatsapp?.findUnique?.({ where: { id: job.conversaId }, select: { id: true, atendimentoId: true } }) || { id: job.conversaId };
+    const lease = await adquirirLease(chaveLeaseResponsavel(conversaDoJob), { client, agora: instanteReserva });
     if (!lease) continue; // permanece na fila; o próximo ciclo lê a nova mensagem.
     const token = randomUUID();
     let renovando = false;
@@ -78,9 +86,11 @@ export async function processarTurnosIaUmaVez({ client = prisma, agora = new Dat
       const responderJob = job.perfil === "LEAD" ? responderComercial || (await import("./AssistenteComercialService.js")).responderLead : executar;
       const r = await responderJob({ conversaId: job.conversaId, mensagemId: job.mensagemId, deps: {
         client, log, turnoIaId: job.id, leaseExterno: true, conferirLease,
+        contexto: job.atendimentoId ? { atendimentoId: job.atendimentoId, versao: job.contextoVersao, conversaId: job.conversaId, portalClientId: job.portalClientId } : null,
+        contextoFixadoNoJob: true,
       } });
       const status = r?.feito ? "respondido" : r?.indeterminado ? "indeterminado"
-        : ["CHAT_EXCLUIDO", "AUTOMACAO_INVALIDADA", "TURNO_CANCELADO", "SEM_ESCOPO_VERIFICADO", "SEM_ESCOPO_COMERCIAL", "ASSUMIDA_POR_HUMANO", "FORA_DO_PILOTO", "FORA_DA_JANELA", "JA_RESPONDIDA"].includes(r?.motivo) ? "ignorado" : "falhou";
+        : ["CHAT_EXCLUIDO", "AUTOMACAO_INVALIDADA", "TURNO_CANCELADO", "CONTEXTO_INVALIDO", "CONTEXTO_ALTERADO", "CONTEXTO_EXPIRADO", "ACESSO_REVOGADO", "SEM_ESCOPO_VERIFICADO", "SEM_ESCOPO_COMERCIAL", "ASSUMIDA_POR_HUMANO", "FORA_DO_PILOTO", "FORA_DA_JANELA", "JA_RESPONDIDA"].includes(r?.motivo) ? "ignorado" : "falhou";
       await client.turnoIaWhatsapp.updateMany({ where: { id: job.id, reservaToken: token }, data: {
         status, motivo: r?.motivo || "ERRO", leaseAte: null,
         concluidoEm: ["respondido", "ignorado"].includes(status) ? new Date() : null,

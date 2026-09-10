@@ -42,10 +42,11 @@ function LinhaConversa({ c, ativa, onAbrir, onboarding }) {
     <div className="wa-conversation-copy">
       <div className="wa-conversation-title"><NomeDaPessoa identidade={identidade} /><time>{fmtDataHora(c.ultimaMensagem?.registradaEm || c.updatedAt)}</time></div>
       <div className="wa-conversation-company"><LinhaDaEmpresa identidade={identidade} /></div>
+      {c.empresas?.length ? <span className="wa-company-count">{c.empresas.length} empresa{c.empresas.length === 1 ? "" : "s"} acessíve{c.empresas.length === 1 ? "l" : "is"}</span> : null}
       <SituacaoConversa conversa={c} />
       {fraseDoOnboarding(onboarding) ? <div data-testid="onboarding-da-conversa" style={{ fontSize: ".72rem", color: "var(--state-warn)" }}>{fraseDoOnboarding(onboarding)}</div> : null}
       {c.pendencia ? <div style={{ fontSize: ".7rem", color: "var(--state-warn)" }}>Pedido {c.pendencia.codigo} aguardando confirmação</div> : null}
-      <div className="wa-conversation-preview"><span>{c.ultimaMensagem?.corpo || c.telefoneMascarado || "Abrir conversa"}</span>{c.naoLidas > 0 ? <span className="wa-unread" aria-label={`${c.naoLidas} novas mensagens`}>{c.naoLidas}</span> : null}</div>
+      <div className="wa-conversation-preview"><span>{c.ultimaMensagem?.empresa?.razao ? `${c.ultimaMensagem.empresa.razao} · ` : ""}{c.ultimaMensagem?.corpo || c.telefoneMascarado || "Abrir conversa"}</span>{c.naoLidas > 0 ? <span className="wa-unread" aria-label={`${c.naoLidas} novas mensagens`}>{c.naoLidas}</span> : null}</div>
     </div>
   </button>;
 }
@@ -125,7 +126,7 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
     ? { situacao: "CARREGANDO", candidatos: [] } : onboardingDaConversa(c, onboardings);
   const normalizar = valor => String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const termo = normalizar(busca).trim();
-  const visiveis = lista.filter(c => (!soNaoLidas || c.naoLidas > 0) && (!termo || normalizar([c.contato?.nome, c.nomePerfilProvedor, c.empresa?.razao, c.empresa?.cnpj, c.telefoneMascarado, c.ultimaMensagem?.corpo].filter(Boolean).join(" ")).includes(termo)));
+  const visiveis = lista.filter(c => (!soNaoLidas || c.naoLidas > 0) && (!termo || normalizar([c.contato?.nome, c.nomePerfilProvedor, c.empresa?.razao, c.empresa?.cnpj, ...(c.empresas || []).flatMap(e => [e.razao, e.cnpj, ...(e.apelidosWhatsapp || [])]), c.telefoneMascarado, c.ultimaMensagem?.corpo].filter(Boolean).join(" ")).includes(termo)));
   const abrir = id => { setVerChat(true); hook.abrir(id); };
   const voltar = () => {
     setVerChat(false); setDetalhes(false);

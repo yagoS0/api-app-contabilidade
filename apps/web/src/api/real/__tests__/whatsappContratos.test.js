@@ -1,4 +1,17 @@
 import { createRealApi } from "../realApi";
+test("seleção de empresa é uma ação; filtro de histórico é somente leitura", async () => {
+ const api = createRealApi();
+ await api.selecionarEmpresaConversaWhatsapp("cv/1", "pc-2");
+ expect(fetch.mock.calls[0][0]).toMatch(/conversas\/cv%2F1\/selecionar-empresa$/);
+ expect(fetch.mock.calls[0][1].method).toBe("POST");
+ expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ portalClientId: "pc-2" });
+ await api.getMensagensWhatsapp("cv1", { empresa: "pc-1", cursor: "m-2" });
+ expect(Object.fromEntries(new URL(fetch.mock.calls[1][0]).searchParams)).toEqual({ empresa: "pc-1", cursor: "m-2" });
+ await api.salvarApelidosWhatsapp("pc/1", ["Clínica"]);
+ expect(fetch.mock.calls[2][0]).toMatch(/empresas\/pc%2F1\/apelidos$/);
+ expect(fetch.mock.calls[2][1].method).toBe("POST");
+ expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ apelidos: ["Clínica"] });
+});
 test("lixeira e restauração usam POST no segmento indicado; histórico mantém filtro e empresa", async () => {
  const api = createRealApi();
  await api.excluirConversaWhatsapp("cv/legado");

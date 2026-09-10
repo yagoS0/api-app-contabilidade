@@ -417,7 +417,7 @@ export const SELECT_CONTATO_PARA_VINCULO = Object.freeze({
   ativo: true,
   userId: true,
   permissoesAssistente: true,
-  portalClient: { select: { id: true, razao: true, cnpj: true } },
+  portalClient: { select: { id: true, razao: true, cnpj: true, apelidosWhatsapp: true } },
 });
 
 /**
@@ -434,12 +434,12 @@ export const SELECT_CONTATO_PARA_VINCULO = Object.freeze({
  * estreitar, a leitura alternativa ficaria invisível e `divergemPeloNonoDigito` nunca poderia
  * acender para dizer que um cadastro está no formato antigo.
  */
-export async function resolverVinculoPorTelefone(telefone) {
+export async function resolverVinculoPorTelefone(telefone, { client = prisma } = {}) {
   const e164 = normalizarE164(telefone);
   if (!e164) return resolverVinculoTelefone(telefone, []);
 
   const variantes = variantesE164(e164);
-  const contatos = await prisma.contatoWhatsapp.findMany({
+  const contatos = await client.contatoWhatsapp.findMany({
     where: { OR: [{ telefoneE164: { in: variantes } }, { waId: { in: variantes } }] },
     select: SELECT_CONTATO_PARA_VINCULO,
   });
@@ -448,7 +448,7 @@ export async function resolverVinculoPorTelefone(telefone) {
   // O papel vem do RBAC que já existe — não é recalculado nem copiado para o contato.
   const comUsuario = contatos.filter((c) => c.userId);
   const vinculos = comUsuario.length
-    ? await prisma.companyClientUser.findMany({
+    ? await client.companyClientUser.findMany({
         where: { OR: comUsuario.map((c) => ({ companyId: c.portalClientId, userId: c.userId })) },
         select: { companyId: true, userId: true, role: true, status: true },
       })

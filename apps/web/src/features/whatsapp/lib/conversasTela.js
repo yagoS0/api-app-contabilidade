@@ -64,10 +64,14 @@ export function identidadeDaConversa(c) {
     avisoDoNome: FRASE_ORIGEM_DO_NOME[origemDoNome],
     papel: String(c?.contato?.papel || "").trim() || null,
     empresa: razao || null,
-    cnpj: c?.empresa?.cnpj || null,
+    cnpj: c?.atendimento ? c.atendimento.empresaAtual?.cnpj || null : c?.empresa?.cnpj || null,
     semEmpresa: !razao,
     // A frase da segunda linha: a empresa, ou o estado da fila dito com todas as letras.
-    linhaDaEmpresa: razao || "sem empresa — número novo",
+    linhaDaEmpresa: c?.atendimento
+      ? c.atendimento.aguardandoSelecao ? "Escolha a empresa do atendimento"
+        : c.atendimento.empresaAtual?.razao ? `Empresa atual: ${c.atendimento.empresaAtual.razao}`
+          : "Empresa atual fora da sua carteira"
+      : razao || "sem empresa — número novo",
   };
 }
 
@@ -120,6 +124,7 @@ export function rotuloDoAutor(m, { nomeDoCliente = null } = {}) {
  * @returns {{pode:boolean, motivo:string|null, situacao:string|null}}
  */
 export function estadoDaResposta(conversa) {
+  if (conversa?.atendimento && !conversa.atendimento.contextoSelecionado) return { pode: false, motivo: "Escolha a empresa deste atendimento antes de responder. O histórico continua disponível para consulta.", situacao: "ESCOLHER_EMPRESA" };
   const j = conversa?.janela;
   if (!j) return { pode: false, motivo: "Ainda não sei se a janela de 24h está aberta.", situacao: null };
   if (j.situacao === "ABERTA") return { pode: true, motivo: null, situacao: j.situacao };

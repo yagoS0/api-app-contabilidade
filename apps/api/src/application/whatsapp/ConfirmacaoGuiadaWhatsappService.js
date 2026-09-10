@@ -68,7 +68,7 @@ export async function processarConfirmacaoGuiada({ conversa, mensagem, sessao, t
     return resposta("Essa confirmação foi recebida antes deste pedido. Confira o resumo mais recente e envie o código novamente se os dados estiverem certos.", "CONFIRMACAO_ANTERIOR_RESUMO", pendente.id);
   }
 
-  const ondePosteriores = { conversaId: conversa.id, direcao: "in", registradaEm: { gte: new Date(mensagem.registradaEm) }, id: { notIn: [mensagem.id] } };
+  const ondePosteriores = { ...(conversa.atendimentoId ? { conversa: { is: { atendimentoId: conversa.atendimentoId } } } : { conversaId: conversa.id }), direcao: "in", registradaEm: { gte: new Date(mensagem.registradaEm) }, id: { notIn: [mensagem.id] } };
   // Não filtrar respondidaPelaIaEm: uma correção já consumida por outro fluxo continua valendo.
   const posteriores = await client.mensagemWhatsapp.findMany({ where: ondePosteriores,
     orderBy: [{ registradaEm: "asc" }, { id: "asc" }], take: LIMITE_ENTRADAS + 1,
@@ -81,7 +81,7 @@ export async function processarConfirmacaoGuiada({ conversa, mensagem, sessao, t
   }
   const confirmacao = { mensagemId: mensagem.id, registradaEm: mensagem.registradaEm, mensagensConhecidas: [mensagem.id, ...posteriores.map(m => m.id)] };
   await conferirAcesso();
-  const r = await confirmarEExecutar({ acaoId: pendente.id, ...escopo, confirmacao, agora, client, log,
+  const r = await confirmarEExecutar({ acaoId: pendente.id, ...escopo, contexto: conversa.contexto, confirmacao, agora, client, log,
     ...(executores ? { executores } : {}), ...(acoesDeps ? { deps: acoesDeps } : {}),
     antesDeExecutar: async () => {
       await conferirAcesso();

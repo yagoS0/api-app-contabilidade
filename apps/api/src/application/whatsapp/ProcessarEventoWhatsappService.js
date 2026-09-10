@@ -4,6 +4,7 @@ import { decidirRespostaComercial } from "../assistente/politicaComercialWhatsap
 import {
   log as logPadrao, INTEGRACAO_WHATSAPP_IA, INTEGRACAO_WHATSAPP_MENU, IA_EMPRESAS_PILOTO,
   WHATSAPP_MENU_TELEFONES_PILOTO, WHATSAPP_MENU_LEADS,
+  WHATSAPP_PHONE_NUMBER_ID,
 } from "../../config.js";
 import { registrarMensagemRecebida } from "./ConversaWhatsappService.js";
 import { SITUACOES } from "./vinculoTelefone.js";
@@ -178,7 +179,7 @@ export function decidirRespostaDoMenu({ r, flag = INTEGRACAO_WHATSAPP_MENU, pilo
   const telefone = String(r?.conversa?.telefoneE164 || "").replace(/\D+/g, "");
   const telefoneNoPiloto = Array.isArray(telefonesPiloto) && telefonesPiloto.includes(telefone);
   if (!r?.conversa?.portalClientId) {
-    const leadSeguro = [SITUACOES.DESCONHECIDO, SITUACOES.AMBIGUO].includes(r?.vinculo?.situacao);
+    const leadSeguro = r?.vinculo?.situacao === SITUACOES.DESCONHECIDO;
     if (!leadSeguro) return { responde: false, motivo: "NAO_VINCULADA" };
     return telefoneNoPiloto || leads ? { responde: true, motivo: null } : { responde: false, motivo: "FORA_DO_PILOTO" };
   }
@@ -190,7 +191,10 @@ export function decidirRespostaDoMenu({ r, flag = INTEGRACAO_WHATSAPP_MENU, pilo
 // ⚠ `ia` é a flag+piloto INJETÁVEIS ({flag, piloto}). Sem isso o ramo "a IA responde" seria
 // inalcançável no teste (a flag nasce OFF no ambiente de teste) — mock que esconde ramo é defeito
 // desta casa. Produção não passa nada e os defaults do `config.js` mandam.
-async function processarMensagem(item, { logger, responder, responderMenu, ia, menu, agora }) {
+async function processarMensagem(item, { logger, responder, responderMenu, atenderContexto, ia, menu, agora }) {
+  if (item.canalProvedorId && WHATSAPP_PHONE_NUMBER_ID && item.canalProvedorId !== WHATSAPP_PHONE_NUMBER_ID) {
+    throw Object.assign(new Error("Evento recebido para outro canal empresarial."), { code: "CANAL_DIVERGENTE" });
+  }
   const r = await registrarMensagemRecebida({
     telefone: item.telefone,
     providerMessageId: item.providerMessageId,
@@ -201,6 +205,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, ia, m
     // número cru de propósito, e a conversão (segundos, [E] esqueleto do dono) mora num lugar só.
     ocorridaEmProvedor: item.ocorridaEmProvedor,
     nomePerfilProvedor: item.nomePerfilProvedor,
+    respostaAProviderMessageId: item.respostaAProviderMessageId,
   });
   if (r?.mensagem?.midiaProvedorId) {
     const { enqueueArquivoWhatsapp } = await import("./ArquivoWhatsappService.js");
@@ -233,6 +238,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, ia, m
     // Uma reentrega já concluída não pode cair no menu e virar um novo encaminhamento.
     return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: "JA_RESPONDIDA" } };
   }
+  const processar = async (r, item, lease = {}) => {
   const decisaoComercial = decidirRespostaComercial({ r });
   const decisaoMenu = decidirRespostaDoMenu({ r, ...(menu || {}) });
   const decisao = decisaoComercial.responde ? decisaoComercial : decidirRespostaDaIa({ r: { ...r, duplicada: Boolean(r?.duplicada && r?.mensagem?.respondidaPelaIaEm) }, ...(ia || {}) });
@@ -246,6 +252,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, ia, m
       agora,
       logger,
       textoLivreDisponivel: decisao.responde,
+      ...lease,
     });
     if (menu?.tratado) {
       return {
@@ -266,10 +273,19 @@ async function processarMensagem(item, { logger, responder, responderMenu, ia, m
   // Enfileirar é aguardado: se falhar, o inbox tenta novamente. O modelo roda em outro worker.
   // Reentrega também repara a janela entre mensagem persistida e criação do job (unique por id).
   if (decisao.responde && typeof responder === "function" && r?.mensagem?.id && r?.conversa?.id) {
-    const args = { conversaId: r.conversa.id, mensagemId: r.mensagem.id, portalClientId: r.conversa.portalClientId, ...(decisao.perfil ? { perfil: decisao.perfil } : {}) };
+    const args = { conversaId: r.conversa.id, mensagemId: r.mensagem.id, portalClientId: r.conversa.portalClientId,
+      ...(r.contexto ? { atendimentoId: r.contexto.atendimentoId, contextoVersao: r.contexto.versao } : {}), ...(decisao.perfil ? { perfil: decisao.perfil } : {}) };
     await responder(args);
   }
   return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: decisao };
+  };
+  if ((responder === responderPadrao || typeof atenderContexto === "function") && (r?.vinculo?.empresas?.length || r?.conversa?.atendimentoId)) {
+    const atender = atenderContexto || (await import("./AtendimentoResponsavelWhatsappService.js")).atenderContextoResponsavel;
+    const resultado = await atender({ registro: r, item, processar, agora, log: logger, ...(menu || {}) });
+    if (resultado?.tratadoContexto) return { desfecho: r.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, vinculo: situacao, ia: { responde: false, motivo: resultado.motivo } };
+    return resultado;
+  }
+  return processar(r, item);
 }
 
 /**
@@ -285,7 +301,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, ia, m
  * @param {Date}   [opcoes.agora]   injetável (a leitura do timestamp não lê relógio escondido)
  * @param {object} [opcoes.logger]
  */
-export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao, responderMenu = undefined, ia = undefined, menu = undefined } = {}) {
+export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao, responderMenu = undefined, atenderContexto = undefined, ia = undefined, menu = undefined } = {}) {
   const resumo = {
     mensagens: { total: 0, gravadas: 0, duplicadas: 0, recusadas: 0 },
     statuses: { total: 0, aplicados: 0, semMudanca: 0, semEnvio: 0, desconhecidos: 0, contradicoes: 0, recusados: 0 },
@@ -345,7 +361,7 @@ export async function processarEventoWhatsapp(payload, { agora = new Date(), log
     : responderMenu;
   for (const item of leitura.mensagens) {
     try {
-      const r = await processarMensagem(item, { logger, responder, responderMenu: atenderMenu, ia, menu, agora });
+      const r = await processarMensagem(item, { logger, responder, responderMenu: atenderMenu, atenderContexto, ia, menu, agora });
       if (r.desfecho === DESFECHOS.DUPLICADA) resumo.mensagens.duplicadas += 1;
       else resumo.mensagens.gravadas += 1;
     } catch (e) {

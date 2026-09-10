@@ -8,6 +8,7 @@ on:
       - 'apps/api/prisma/**'
       - 'apps/api/scripts/verify-whatsapp-confirmacao-postgres.js'
       - 'apps/api/scripts/verify-whatsapp-coleta-postgres.js'
+      - 'apps/api/scripts/verify-whatsapp-multiempresa-postgres.js'
       - '.github/workflows/whatsapp-confirmacao-postgres.yml'
       - 'package-lock.json'
   push:
@@ -47,3 +48,6 @@ jobs:
       - name: Validate guided collection transactions, receipts and recovery
         working-directory: apps/api
         run: node scripts/verify-whatsapp-coleta-postgres.js --url "$DATABASE_URL"
+      - name: Validate responsible person, company isolation and conversation end to end
+        working-directory: apps/api
+        run: node scripts/verify-whatsapp-multiempresa-postgres.js --url "$DATABASE_URL"

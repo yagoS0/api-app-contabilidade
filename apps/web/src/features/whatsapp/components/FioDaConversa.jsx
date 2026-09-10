@@ -172,7 +172,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
         <div className="wa-thread-actions">
           {hrefDaEmpresa && conversa.portalClientId ? <a data-testid="ir-para-a-empresa" href={hrefDaEmpresa(conversa.portalClientId)}>Abrir a empresa →</a> : null}
           {!somenteLeitura && Boolean(conversa.atendidaPor || conversa.atendidaDesde) ? (
-            <Button variant="secondary" disabled={hook.ocupado || (Boolean(conversa.portalClientId) && conversa.escopoVerificado === false)} onClick={() => hook.devolver(conversa.id)} title="O assistente volta a responder neste fio">Devolver à IA</Button>
+            <Button variant="secondary" disabled={hook.ocupado || (Boolean(conversa.portalClientId) && conversa.escopoVerificado === false)} onClick={() => hook.devolver(conversa.id)} title="O assistente volta a responder ao responsável nas empresas autorizadas">Devolver à IA</Button>
           ) : !somenteLeitura ? (
             <Button variant="primary" disabled={hook.ocupado} onClick={() => hook.assumir(conversa.id)} title="Você responde; o assistente fica em silêncio">Assumir</Button>
           ) : null}
@@ -181,6 +181,23 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
           {onDetalhes ? <Button variant="secondary" size="sm" onClick={onDetalhes} aria-label="Detalhes da conversa" aria-expanded={detalhesAbertos}><WhatsappIcon nome="painel" size={18} /></Button> : null}
         </div>
       </div>
+      {conversa.atendimento && !somenteLeitura ? <div className="wa-company-context" data-testid="contexto-empresa">
+        <label>Empresa do atendimento
+          <select aria-label="Empresa do atendimento" style={campo} value={conversa.atendimento.contextoSelecionado ? conversa.portalClientId : ""} disabled={hook.ocupado || typeof hook.selecionarEmpresa !== "function"}
+            onChange={e => e.target.value && hook.selecionarEmpresa(conversa.id, e.target.value)}>
+            <option value="" disabled>Escolha a empresa…</option>
+            {(conversa.empresas || []).filter(e => !hook.empresaFixa || e.id === hook.empresaFixa).map(e => <option key={e.id} value={e.id}>{e.razao} · {formatarCnpj(e.cnpj)}</option>)}
+          </select>
+        </label>
+        {!hook.empresaFixa && conversa.empresas?.length > 1 ? <label>Histórico
+          <select aria-label="Empresa no histórico" style={campo} value={hook.empresaHistorico || ""} disabled={hook.ocupado || hook.carregandoFio} onChange={e => hook.filtrarHistorico(e.target.value)}>
+            <option value="">Todas as empresas acessíveis</option>
+            {conversa.empresas.map(e => <option key={e.id} value={e.id}>{e.razao}</option>)}
+          </select>
+        </label> : null}
+        <p>Assumir pausa o atendimento automático deste responsável em todas as empresas.</p>
+        {conversa.atendimento.contextoSelecionado && typeof hook.salvarApelidos === "function" ? <NomesCurtosDaEmpresa key={conversa.portalClientId} conversa={conversa} hook={hook} /> : null}
+      </div> : null}
       {naLixeira ? <p role="status" className="wa-notice">Conversa na lixeira. O histórico está preservado para consulta. Restaure para voltar à lista; uma nova mensagem recebida também reabre a conversa.</p>
         : historico ? <p role="status" className="wa-notice">Histórico legado sem vínculo verificado, preservado somente para consulta. As mensagens anteriores não foram apagadas nem misturadas à conversa atual. Para atender este contato, volte a Conversas atuais.</p> : null}
       {conversa.pendencia ? <div data-testid="pendencia-aberta" className="wa-notice">Pedido aguardando confirmação do cliente: <strong>{conversa.pendencia.tipo}</strong> · código <strong>{conversa.pendencia.codigo}</strong> · expira {fmtDataHora(conversa.pendencia.expiraEm)}.</div> : null}
@@ -201,6 +218,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
             <div data-testid={`balao-${m.id}`} data-autor={m.autor || (entrada ? "cliente" : "sem-autor")} className={`wa-message-row${entrada ? "" : " wa-message-row--out"}`}>
               <div className="wa-bubble">
                 <div className="wa-bubble-author">{rotuloDoAutor(m, { nomeDoCliente })}</div>
+                {conversa.atendimento ? <div className="wa-bubble-company" data-testid={`empresa-mensagem-${m.id}`}>{m.empresa ? `${m.empresa.razao} · ${formatarCnpj(m.empresa.cnpj)}` : "Empresa ainda não definida"}</div> : null}
                 {midia ? <div data-testid="midia-do-balao" className="wa-media"><WhatsappIcon nome="documento" size={20} /><span>{midia.replace(/^📎\s*/, "")}</span></div> : null}
                 {m.corpo ? <div className="wa-bubble-text">{m.corpo}</div> : m.tipo === "template" ? <div className="wa-bubble-text">Modelo de mensagem do escritório</div> : null}
                 <div className="wa-bubble-footer">
@@ -214,7 +232,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
       </div>
       {novas ? <Button variant="secondary" size="sm" onClick={() => { historicoRef.current.scrollTop = historicoRef.current.scrollHeight; pertoDoFim.current = true; setNovas(false); }}>Ir para mensagens recentes ↓</Button> : null}
       {!somenteLeitura ? <div className="wa-composer">
-        {slotAcoes}
+        {(!conversa.atendimento || conversa.atendimento.contextoSelecionado) && slotAcoes}
         {hook.api?.comercial && <OrientacoesRapidas key={conversa.id} api={hook.api} conversa={conversa} disabled={!resposta.pode || hook.ocupado} onEnviado={() => hook.abrir(conversa.id)} />}
         {!resposta.pode ? <p data-testid="resposta-bloqueada" className="wa-list-note" style={{ color: "var(--state-warn)", padding: "0 0 8px" }}>{resposta.motivo}</p> : null}
         <div className="wa-composer-row">
@@ -223,7 +241,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
             disabled={!resposta.pode || hook.ocupado} placeholder={resposta.pode ? "Escreva uma mensagem para este contato…" : "Resposta indisponível — confira o motivo acima"} />
           <Button variant="primary" disabled={!resposta.pode || !texto.trim() || hook.ocupado} onClick={enviar}><WhatsappIcon nome="enviar" size={17} />Responder</Button>
         </div>
-        <div className="wa-composer-hint">Mensagem do escritório · Ctrl + Enter para enviar</div>
+        <div className="wa-composer-hint">{conversa.atendimento?.contextoSelecionado ? `Resposta vinculada a ${conversa.empresa?.razao} · ` : ""}Mensagem do escritório · Ctrl + Enter para enviar</div>
         {recusa && !hook.erroAcao ? <p role="alert" className="wa-list-note" style={{ color: "var(--state-danger)" }}>{recusa}</p> : null}
       </div> : null}
       {confirmarExclusao ? <Modal titulo="Mover conversa para lixeira?" tamanho="sm" ocupado={movendo || hook.ocupado} aoFechar={() => setConfirmarExclusao(false)}
@@ -240,6 +258,15 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
 function dataDaMensagem(m) {
   const data = new Date(m?.ocorridaEmProvedor || m?.registradaEm);
   return Number.isNaN(data.getTime()) ? "" : data.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "long", year: "numeric" });
+}
+
+function NomesCurtosDaEmpresa({ conversa, hook }) {
+  const [nomes, setNomes] = useState((conversa.empresa?.apelidosWhatsapp || []).join(", "));
+  return <details className="wa-company-names"><summary>Nomes curtos no WhatsApp</summary>
+    <p>Cadastre como o responsável chama {conversa.empresa?.razao}, por exemplo “Clínica Azul”. Até cinco nomes, separados por vírgula.</p>
+    <label>Nomes curtos da empresa<input aria-label="Nomes curtos da empresa" style={campo} maxLength={304} value={nomes} disabled={hook.ocupado} onChange={e => setNomes(e.target.value)} /></label>
+    <Button variant="secondary" size="sm" disabled={hook.ocupado} onClick={() => hook.salvarApelidos(conversa.id, conversa.portalClientId, nomes.trim() ? nomes.split(",").map(n => n.trim()) : [])}>Salvar nomes curtos</Button>
+  </details>;
 }
 
 export default FioDaConversa;
