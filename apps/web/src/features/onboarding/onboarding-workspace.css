@@ -16,12 +16,12 @@
 .onboarding-new fieldset { border: 0; padding: 0; margin: 20px 0 0; display: grid; gap: 8px; }
 .onboarding-new legend { padding: 0 0 8px; font-weight: 600; font-size: .875rem; }
 .onboarding-option { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: .875rem; }
-.onboarding-option:has(input:checked) { border-color: var(--accent); background: var(--bg-subtle); }
+.onboarding-option:has(input:checked) { border-color: var(--accent-purple); background: var(--bg-subtle); }
 .onboarding-option input { margin: 3px 0 0; width: auto; }
 .onboarding-option small { display: block; color: var(--text-muted); margin-top: 4px; line-height: 1.4; }
 .onboarding-commercial { margin-bottom: 24px; }
 .onboarding-commercial > p { color: var(--text-muted); font-size: .875rem; }
-.onboarding-link-panel { padding: 20px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--bg-surface); margin: 16px 0; }
+.onboarding-link-panel { padding: 20px; border: 1px solid var(--border); border-left: 3px solid var(--accent-purple); border-radius: 10px; background: var(--bg-surface); margin: 16px 0; }
 .onboarding-link-panel h3 { margin-top: 0; }
 .onboarding-link-panel p { max-width: 80ch; color: var(--text-muted); font-size: .875rem; }
 .onboarding-share { margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap; }
@@ -37,7 +37,7 @@
 .onboarding-eyebrow { font-size: .6875rem; font-weight: 600; letter-spacing: .1em; color: var(--text-muted); }
 .onboarding-public__header p { color: var(--text-muted); font-size: .875rem; }
 .onboarding-public__progress { margin: 24px 0 20px; font-size: .875rem; }
-.onboarding-public progress { width: 100%; height: 6px; accent-color: var(--accent); }
+.onboarding-public progress { width: 100%; height: 6px; accent-color: var(--accent-purple); }
 .onboarding-public__fields { border: 1px solid var(--border); background: var(--bg-surface); border-radius: 12px; padding: 24px; margin: 0; }
 .onboarding-public__actions { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; padding-top: 20px; border-top: 1px solid var(--border); }
 @media (max-width: 600px) {

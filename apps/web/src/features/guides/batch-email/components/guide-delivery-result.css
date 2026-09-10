@@ -5,7 +5,7 @@
 .guide-delivery-result__actions, .guide-delivery-result__filters { display: flex; gap: 8px; flex-wrap: wrap; }
 .guide-delivery-result .guide-delivery-result__attention { color: var(--state-warn); font-weight: 600; }
 .guide-delivery-result__filters { padding: 0 20px 12px; }
-.guide-delivery-result__filters [aria-pressed="true"] { border-color: var(--accent); background: var(--bg-page); }
+.guide-delivery-result__filters [aria-pressed="true"] { border-color: var(--accent-purple); background: var(--bg-page); }
 .guide-delivery-result__list { max-height: 390px; overflow: auto; overscroll-behavior: contain; border-top: 1px solid var(--border); }
 .guide-delivery-result__company { display: grid; grid-template-columns: minmax(180px, 1.6fr) minmax(110px, .7fr) minmax(150px, 1fr) minmax(210px, 1.3fr); align-items: start; gap: 12px 24px; padding: 16px 20px; }
 .guide-delivery-result__company + .guide-delivery-result__company { border-top: 1px solid var(--border); }
