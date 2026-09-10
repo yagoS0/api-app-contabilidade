@@ -326,13 +326,14 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
           {(tag.state === "gerada" || tag.state === "falhou") && (
             <>
               <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>
-                Enviar ao cliente {destinatario ? <strong>{destinatario}</strong> : "(sem e-mail cadastrado)"}.
+                Liberar no portal e enviar por e-mail e WhatsApp aos contatos cadastrados.
+                {destinatario ? <> E-mail: <strong>{destinatario}</strong>.</> : " Sem e-mail cadastrado."}
               </div>
               <BotaoAcao
                 tom="ok" disabled={ocupado || !tag.guideId}
                 onClick={() => executar(() => acoes.onEnviar?.(tag.guideId, empresa))}
               >
-                {ocupado ? "Enviando…" : (tag.state === "falhou" && !falhaWhatsapp ? "✈ Tentar enviar de novo" : "✈ Enviar e-mail")}
+                {ocupado ? "Enviando…" : (tag.state === "falhou" && !falhaWhatsapp ? "✈ Tentar enviar de novo" : "✈ Liberar guia")}
               </BotaoAcao>
             </>
           )}

@@ -24,7 +24,7 @@ import { ExportarLancamentosLoteModal } from "./ExportarLancamentosLoteModal";
 //      `GET /firm/guides/batch-report`, a MESMA leitura que o envio consome. Sem ela, a tela diz
 //      que não sabe e o Confirmar fica bloqueado; não existe "0 guias" fabricado.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useEffect, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BatchProgressModal } from "../../../apuracao/components/BatchProgressModal";
 import {
@@ -174,7 +174,7 @@ function ModalAcao({ acao, competencia, mesVencimento, onMesVencimento, previaEn
           </p>
         ) : (
           <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700 }}>
-            {usaRelatorio ? `Enviar ${guiasNaAcao} ${guiasNaAcao === 1 ? "guia" : "guias"} de ${empresasNaAcao} ${empresasNaAcao === 1 ? "empresa" : "empresas"}, com vencimento em ${formatarCompetencia(mesVencimento)}?` : fraseDeConfirmacao(acao.chave, {
+            {usaRelatorio ? `Liberar ${guiasNaAcao} ${guiasNaAcao === 1 ? "guia" : "guias"} de ${empresasNaAcao} ${empresasNaAcao === 1 ? "empresa" : "empresas"}, com vencimento em ${formatarCompetencia(mesVencimento)}?` : fraseDeConfirmacao(acao.chave, {
               empresas: empresasNaAcao,
               guias: guiasNaAcao,
               competencia,
@@ -183,6 +183,11 @@ function ModalAcao({ acao, competencia, mesVencimento, onMesVencimento, previaEn
         )}
 
         {/* O QUE VAI ACONTECER — linha a linha. */}
+        {usaRelatorio && previaEnvio?.canais?.linhas?.map((l) => <div key={l.portalClientId}>
+          <strong>{previaEnvio.rows.find((r) => r.portalClientId === l.portalClientId)?.razao}</strong>
+          <div>E-mail: {l.email.disponivel ? l.email.destinos.join(", ") : l.email.mensagem}</div>
+          <div>WhatsApp: {l.whatsapp.disponivel ? l.whatsapp.destinos.join(", ") : l.whatsapp.mensagem}</div>
+        </div>)}
         {usaRelatorio && previaEnvio?.rows?.filter((r) => r.documentos?.length || r.faltantes?.length).map((r) => <div key={r.portalClientId}>
           <strong>{r.razao}</strong>
           <ul>{r.documentos?.map((d) => <li key={d.guideId}>
@@ -256,6 +261,7 @@ export function BarraSelecaoEmpresas({
   /** ⚠ Mensagem de "a seleção encolheu porque o filtro mudou" — ver a decisão na página. */
   avisoDeRecorte = null,
 }) {
+  const previaVersao = useRef(0);
   const [csvAberto, setCsvAberto] = useState(false);
   const [aberta, setAberta] = useState(null);   // chave da ação com o modal aberto
   const [executando, setExecutando] = useState(false);
@@ -272,6 +278,7 @@ export function BarraSelecaoEmpresas({
   // envio abre. Buscá-la junto da listagem faria a carteira inteira pagar por uma tela que quase
   // nunca abre.
   const carregarPrevia = useCallback(async () => {
+    const versao = ++previaVersao.current;
     if (!api?.getBatchEmailReport) {
       setPreviaEnvio({ estado: "erro", motivo: "esta versão do app não sabe pedir o relatório de envio." });
       return;
@@ -281,10 +288,17 @@ export function BarraSelecaoEmpresas({
       if (!mesVencimento) throw new Error("Escolha o mês de vencimento.");
       const report = await api.getBatchEmailReport({ mesVencimento });
       const rows = [...(report?.simples || []), ...(report?.presumidos || []), ...(report?.outros || [])].filter((r) => ids.includes(r.portalClientId));
-      setPreviaEnvio({ estado: "ok", mesVencimento, rows,
+      const items = rows.filter((r) => r.pendingGuideIds?.length).map((r) => ({
+        portalClientId: r.portalClientId, mesVencimento, guideIds: r.pendingGuideIds, assinatura: r.assinatura,
+      }));
+      const canais = items.length ? await api.preverLiberacaoGuias({ items }) : { linhas: [] };
+      if (items.length && (!canais?.ok || !canais?.assinatura)) throw new Error("Não foi possível conferir os canais de envio.");
+      if (versao !== previaVersao.current) return;
+      setPreviaEnvio({ estado: "ok", mesVencimento, rows, items, canais,
         foraDoMes: [...(report?.pendenciasAnteriores || []), ...(report?.conferirVencimento || [])].filter((g) => ids.includes(g.portalClientId)).length,
         resumo: resumoEnvioDoRelatorio(report, ids, mesVencimento) });
     } catch (err) {
+      if (versao !== previaVersao.current) return;
       setPreviaEnvio({ estado: "erro", motivo: err?.message || "o servidor não respondeu." });
     }
     // `ids` muda de identidade a cada render; a dependência real é a seleção, que só muda junto
@@ -295,6 +309,7 @@ export function BarraSelecaoEmpresas({
   useEffect(() => {
     if (aberta !== "email") { setPreviaEnvio(null); return; }
     carregarPrevia();
+    return () => { previaVersao.current += 1; };
   }, [aberta, carregarPrevia]);
 
   if (!empresasSelecionadas.length) return null;
@@ -310,13 +325,17 @@ export function BarraSelecaoEmpresas({
       if (acao.chave === "email") {
         // Contrato existente: um item por (empresa, competência).
         if (previaEnvio?.mesVencimento !== mesVencimento || previaEnvio?.estado !== "ok") throw new Error("Confira novamente o mês de vencimento.");
-        const out = await api.sendBatchEmails((previaEnvio.rows || []).filter((r) => r.pendingGuideIds.length).map((r) => ({
-          portalClientId: r.portalClientId, mesVencimento, guideIds: r.pendingGuideIds, assinatura: r.assinatura,
-        })));
-        const enviados = Number(out?.sent || 0);
+        const out = await api.liberarGuiasLote({ items: previaEnvio.items, assinatura: previaEnvio.canais.assinatura });
+        if (!out?.ok || !Array.isArray(out.results)) throw new Error("Não foi possível confirmar a liberação. Confira o histórico antes de repetir.");
         setResultado({
-          tom: enviados > 0 ? "ok" : "erro",
-          texto: `${enviados} de ${alvoIds.length} e-mail(s) enviado(s).${previaEnvio.rows?.some((r) => r.faltantes?.length) ? " Há parcelas faltantes: o lote continua incompleto." : ""}${(out?.results || []).filter((r) => !r.ok).map((r) => ` ${r.message || r.error}`).join("")}`,
+          tom: out.results.every((r) => r.ok) ? "ok" : "erro",
+          texto: out.results.map((r) => {
+            const nome = previaEnvio.rows.find((row) => row.portalClientId === r.portalClientId)?.razao || "Empresa";
+            const whats = r.whatsapp || [];
+            const aceitas = whats.filter((w) => w.ok && !w.parcial).length;
+            const avisos = [...new Set(whats.filter((w) => !w.ok || w.parcial).map((w) => w.message || "Envio parcial; confira o histórico."))];
+            return `${nome}: ${r.liberadas || 0} guia(s) liberada(s) no portal · E-mail: ${r.email?.ok ? "enviado" : r.email?.message || "não enviado"} · WhatsApp: ${aceitas} guia(s) com envio aceito, aguardando confirmação de entrega.${avisos.length ? ` ${avisos.join(" ")}` : ""}${r.message ? ` ${r.message}` : ""}`;
+          }).join("\n") + (previaEnvio.rows?.some((r) => r.faltantes?.length) ? " Há parcelas faltantes: o lote continua incompleto." : ""),
         });
       } else if (acao.chave === "apurar") {
         const out = await api.criarApuracaoBatch({ portalClientIds: alvoIds, competencia });
@@ -429,7 +448,7 @@ export function BarraSelecaoEmpresas({
           <div
             role="status"
             style={{
-              flexBasis: "100%", fontSize: "0.8rem", fontWeight: 600,
+              flexBasis: "100%", fontSize: "0.8rem", fontWeight: 600, whiteSpace: "pre-line",
               color: resultado.tom === "ok" ? "var(--state-ok)" : "var(--state-danger)",
             }}
           >

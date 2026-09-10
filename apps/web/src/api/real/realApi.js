@@ -1598,15 +1598,21 @@ export function createRealApi() {
     // GUIA_JA_ENVIADA…) chega como erro com `code`; quem chama trata a recusa como desfecho.
     // ⚠ `reenviar` é PEDIDO EXPLÍCITO (05/09/2026): sem ele, guia já enviada é recusada com
     // `GUIA_JA_ENVIADA`. Quem decide é o contador, depois de a tela dizer que ela já foi.
-    async enviarGuiaWhatsapp(companyId, guideId, { reenviar = false, apenasFalhos = false } = {}) {
+    async enviarGuiaWhatsapp(companyId, guideId, { reenviar = false, apenasFalhos = false, complementar = false } = {}) {
       return request(`/firm/companies/${companyId}/guides/${guideId}/enviar-whatsapp`, {
         method: "POST",
-        body: JSON.stringify({ reenviar: reenviar === true, ...(apenasFalhos ? { apenasFalhos: true } : {}) }),
+        body: JSON.stringify({ reenviar: reenviar === true, ...(apenasFalhos ? { apenasFalhos: true } : {}), ...(complementar ? { complementar: true } : {}) }),
       });
     },
     // A PRÉVIA do lote — não envia nada. Body: { competencia, portalClientIds?, guideIds? }.
     async preverLoteWhatsapp(body) {
       return request(`/firm/guides/whatsapp/lote/previa`, { method: "POST", body: JSON.stringify(body || {}) });
+    },
+    async preverLiberacaoGuias(body) {
+      return request(`/firm/guides/liberacao/lote/previa`, { method: "POST", body: JSON.stringify(body) });
+    },
+    async liberarGuiasLote(body) {
+      return request(`/firm/guides/liberacao/lote`, { method: "POST", body: JSON.stringify(body) });
     },
     // O LOTE. Exige `conferencia` repetindo os números da prévia (409 CONFERENCIA_DIVERGENTE senão).
     async executarLoteWhatsapp(body) {
