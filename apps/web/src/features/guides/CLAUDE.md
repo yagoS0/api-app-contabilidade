@@ -1,5 +1,9 @@
 # CLAUDE.md — Guias (apps/web/src/features/guides)
 
+## Resultado da liberação em lote — 10/09/2026
+
+`ResultadoLiberacaoGuias` apresenta o retorno da seleção da carteira por empresa e canal, com resumo e detalhes recolhidos. `resumirLiberacao` usa a prévia da execução, nunca a seleção/competência posterior. Falta de cadastro é canal não utilizado; tentativa recusada ou indeterminada continua exigindo atenção. Aceite de WhatsApp significa aguardando entrega. Parcelas faltantes continuam identificadas por empresa. O resultado permanece ao limpar a seleção; falha na atualização da carteira não apaga o retorno nem repete o envio. A prévia mostra cada empresa uma vez, seus destinatários e documentos expansíveis, avisando quando só haverá liberação no portal.
+
 ## Organização da tela de Guias — 10/09/2026
 
 Upload, marcar vazio e configuração de envio compartilham o cabeçalho da lista. A configuração continua navegando para `comunicacao` via `onConfigurarEnvio`; as ações da guia selecionada têm uma barra própria. Consultas auxiliares ficam em um menu que fecha ao escolher a visão.

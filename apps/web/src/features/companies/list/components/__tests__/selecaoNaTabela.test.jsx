@@ -304,7 +304,7 @@ describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do bot�
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Liberar guias/ })); });
     const modal = await screen.findByRole("dialog", { name: /Liberar guias/ });
     await within(modal).findByText(/Liberar 1 guia de 1 empresa/);
-    expect(within(modal).getAllByText("ACME LTDA")).toHaveLength(2);
+    expect(within(modal).getAllByText("ACME LTDA")).toHaveLength(1);
     expect(within(modal).queryByText(/Ficam de fora/)).not.toBeInTheDocument();
   });
 
@@ -347,9 +347,10 @@ test("liberação mostra destinatários dos dois canais antes de confirmar e pre
   expect(screen.getByText(/WhatsApp: 5511999990000/)).toBeInTheDocument();
   expect(api.liberarGuiasLote).not.toHaveBeenCalled();
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Confirmar e executar/ })); });
-  expect(screen.getByRole('status')).toHaveTextContent('1 guia(s) liberada(s) no portal');
-  expect(screen.getByRole('status')).toHaveTextContent('E-mail: enviado');
-  expect(screen.getByRole('status')).toHaveTextContent('Sem autorização de WhatsApp.');
+  expect(screen.getByRole('status')).toHaveTextContent('1 guia no portal');
+  expect(screen.getByRole('status')).toHaveTextContent('E-mail enviado para 1 empresa');
+  fireEvent.click(screen.getByRole('button', { name: 'Ver pendências' }));
+  expect(screen.getByText('Sem autorização de WhatsApp.')).toBeInTheDocument();
   expect(api.sendBatchEmails).not.toHaveBeenCalled();
 });
 test("falha ao conferir canais bloqueia confirmação", async () => {
@@ -358,4 +359,38 @@ test("falha ao conferir canais bloqueia confirmação", async () => {
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Liberar guias' })); });
   expect(screen.getByRole('button', { name: /Confirmar e executar/ })).toBeDisabled();
   expect(api.liberarGuiasLote).not.toHaveBeenCalled();
+});
+
+test("prévia avisa quando a liberação não terá nenhum canal para avisar o cliente", async () => {
+  const api = apiFalso({ preverLiberacaoGuias: jest.fn().mockResolvedValue({ ok: true, assinatura: "teste", linhas: [{
+    portalClientId: "c1", email: { disponivel: false, mensagem: "Sem e-mail cadastrado." },
+    whatsapp: { disponivel: false, mensagem: "Sem WhatsApp autorizado." },
+  }] }) });
+  await montarBarra({ api });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Liberar guias' })); });
+  expect(screen.getByText(/1 empresa receberá as guias apenas no portal, sem aviso/)).toBeInTheDocument();
+  expect(api.liberarGuiasLote).not.toHaveBeenCalled();
+});
+
+test("resultado continua consultável após limpar seleção, sem novo envio", async () => {
+  const { api, rerender } = await montarBarra();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Liberar guias' })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Confirmar e executar/ })); });
+  rerender(<BarraSelecaoEmpresas api={api} empresasSelecionadas={[]} competencia="2026-08" jobsAtivos={0} />);
+  expect(screen.getByRole('status')).toHaveTextContent('1 guia no portal');
+  expect(screen.getByRole('status')).toHaveTextContent('Agosto 2026');
+  fireEvent.click(screen.getByRole('button', { name: 'Ver resultado por empresa' }));
+  expect(screen.getByRole('link', {name:'Conferir guias'})).toHaveAttribute('href','/companies/c1/guides');
+  expect(api.liberarGuiasLote).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', {name:'Fechar resultado'}));
+  expect(screen.queryByRole('region', {name:'Resultado da liberação de guias'})).toBeNull();
+});
+
+test("falha de atualização da lista não apaga o resultado nem repete a liberação", async () => {
+  const {api} = await montarBarra({onConcluido:jest.fn().mockRejectedValue(new Error('lista indisponível'))});
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Liberar guias' })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Confirmar e executar/ })); });
+  expect(screen.getByRole('region', {name:'Resultado da liberação de guias'})).toHaveTextContent('1 guia no portal');
+  expect(screen.getByText(/a lista de empresas não atualizou/)).toBeInTheDocument();
+  expect(api.liberarGuiasLote).toHaveBeenCalledTimes(1);
 });

@@ -1,6 +1,7 @@
 @import "./features/companies/detail/components/emissao-nfse.css";
 @import "./features/companies/detail/components/company-workspace.css";
 @import "./features/guides/list/components/guides-workspace.css";
+@import "./features/guides/batch-email/components/guide-delivery-result.css";
 @import "./features/configuracoes/configuracoes.css";
 @import "./features/whatsapp/whatsapp.css";
 @import "./features/companies/list/carteira.css";
