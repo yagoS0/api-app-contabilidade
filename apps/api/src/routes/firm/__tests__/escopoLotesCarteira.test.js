@@ -111,6 +111,30 @@ beforeEach(() => {
   bancoDeEmpresas();
 });
 
+describe("conferência de vencimentos dentro da empresa", () => {
+  test("sem vínculo ativo não consulta documentos nem parcelas", async () => {
+    prisma.companyFirmAccess.findUnique.mockResolvedValueOnce(null);
+    const res = await request(montarApp(STAFF)).get(`/firm/companies/${OUTRA}/guides/due-report?mesVencimento=2026-09`);
+    expect(res.status).toBe(403);
+    expect(prisma.guide.findMany).not.toHaveBeenCalled();
+    expect(prisma.parcela.findMany).not.toHaveBeenCalled();
+  });
+  test("consulta somente a empresa autorizada, sem restringir competência", async () => {
+    prisma.companyFirmAccess.findUnique.mockResolvedValueOnce({ status: "ACTIVE", role: "STAFF", scopes: [] });
+    prisma.portalClient.findUnique.mockResolvedValueOnce({ id: MINHA, razao: "Minha" });
+    prisma.guide.findMany.mockResolvedValueOnce([]);
+    prisma.parcela.findMany.mockResolvedValueOnce([]);
+    const res = await request(montarApp(STAFF)).get(`/firm/companies/${MINHA}/guides/due-report?mesVencimento=2026-09`);
+    expect(res.status).toBe(200);
+    expect(res.body.mesVencimento).toBe("2026-09");
+    for (const model of [prisma.guide, prisma.parcela]) {
+      const where = model.findMany.mock.calls[0][0].where;
+      expect(where.portalClientId).toEqual({ in: [MINHA] });
+      expect(where.competencia).toBeUndefined();
+    }
+  });
+});
+
 describe("A — POST /firm/apuracao/batch: transmissão em lote", () => {
   test("STAFF não dispara lote — 403, e nada entra na fila", async () => {
     const res = await request(montarApp(STAFF))

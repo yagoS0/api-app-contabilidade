@@ -1,5 +1,11 @@
 # CLAUDE.md — Guias (apps/web/src/features/guides)
 
+## Guias dentro da empresa por vencimento — 10/09/2026
+
+`CompanyGuidesTable` inicia no mês corrente de vencimento (America/Sao_Paulo), independente da competência fiscal do cabeçalho. DAS de agosto com vencimento em setembro e parcela de setembro aparecem juntos. Visões explícitas: vencimento, anteriores sem pagamento confirmado, conferir vencimento, competência fiscal e histórico. Guias pagas permanecem identificadas; VAZIO só aparece no histórico/competência. Captura, upload e marcar vazio preservam competência fiscal. Trocar empresa/período/visão limpa seleção.
+
+A conferência de parcelas usa GET `/firm/companies/:companyId/guides/due-report`, com `requireFirmCompanyAccess`, apenas dados locais e escopo de uma empresa. Falha aparece como falha, e nenhuma ausência de documento confirma regularidade. Reutiliza a regra de parcelas do lote. `getCompanyGuides` percorre as páginas para não esconder documentos depois dos primeiros 50; falha intermediária rejeita toda a carga.
+
 Feature de guias no frontend: listagem por empresa, upload/identificação, captura,
 envio em lote e o painel de guias esperadas.
 
