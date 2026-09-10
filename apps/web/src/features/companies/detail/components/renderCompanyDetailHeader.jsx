@@ -1,6 +1,5 @@
 import { Engrenagem } from "../../../configuracoes/Configuracoes";
 import { formatCompetencia, deslocarCompetencia, competenciaAtual } from "../../../../lib/competencia";
-import { BackButton } from "../../../../components/ui/BackButton";
 import { Tabs } from "../../../../components/ui/Tabs";
 import { WorkspaceHomeLink } from "../../../../app/navigation/WorkspaceNavigation";
 // ⚠ O `href` DAS ABAS SAI DAQUI, da MESMA fonte que a navegação por clique usa (`openCompanyTab`
@@ -221,7 +220,7 @@ function CompetenciaSwitcher({ competencia, onChange }) {
 }
 
 export function CompanySectionHeader({
-  company, activeTab, onBack, onTabChange, canEditCompany = false,
+  company, activeTab, onTabChange, canEditCompany = false,
   competencia, onCompetenciaChange,
 }) {
   const simples = mostraApuracaoDoSimples(company);
@@ -244,7 +243,6 @@ export function CompanySectionHeader({
     <header className="company-section-header">
       <div className="company-header__identity">
         <WorkspaceHomeLink />
-        <BackButton onClick={onBack} title="Voltar" />
         <div className="company-topbar__brand">
           <strong className="company-topbar__name">{company?.razao || "Empresa"}</strong>
           <span className="company-topbar__cnpj">{company?.cnpj || "CNPJ não informado"}</span>
