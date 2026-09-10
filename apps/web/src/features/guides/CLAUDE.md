@@ -2,7 +2,7 @@
 
 ## Guias dentro da empresa por vencimento — 10/09/2026
 
-`CompanyGuidesTable` inicia no mês corrente de vencimento (America/Sao_Paulo), independente da competência fiscal do cabeçalho. DAS de agosto com vencimento em setembro e parcela de setembro aparecem juntos. Visões explícitas: vencimento, anteriores sem pagamento confirmado, conferir vencimento, competência fiscal e histórico. Guias pagas permanecem identificadas; VAZIO só aparece no histórico/competência. Captura, upload e marcar vazio preservam competência fiscal. Trocar empresa/período/visão limpa seleção.
+Decisão de produto corrigida pelo usuário: `CompanyGuidesTable` segue SOMENTE a competência do cabeçalho e deriva o vencimento pelo mês seguinte (`deslocarCompetencia(competencia, 1)`). Agosto mostra tudo que vence em setembro, incluindo DAS de agosto e parcela de setembro. Não adicionar seletor independente de vencimento nem exigir configuração do usuário. O título informa o mês derivado; histórico e consulta fiscal ficam em “Outras consultas”. Trocar empresa/competência retorna à visão principal e limpa seleção. Guias pagas permanecem identificadas; VAZIO só aparece no histórico/competência. Captura, upload e marcar vazio preservam competência fiscal.
 
 A conferência de parcelas usa GET `/firm/companies/:companyId/guides/due-report`, com `requireFirmCompanyAccess`, apenas dados locais e escopo de uma empresa. Falha aparece como falha, e nenhuma ausência de documento confirma regularidade. Reutiliza a regra de parcelas do lote. `getCompanyGuides` percorre as páginas para não esconder documentos depois dos primeiros 50; falha intermediária rejeita toda a carga.
 
