@@ -120,7 +120,7 @@ describe('⚠ "SELECIONAR TODOS" RESPEITA O FILTRO — e o rótulo diz o número
 
 // ─── A BARRA ──────────────────────────────────────────────────────────────────────────────────
 
-const MES_ENVIO = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).format(new Date());
+const MES_ENVIO = "2026-08"; // Cabeçalho em julho: vencimentos de agosto.
 const RELATORIO = {
   competencia: MES_ENVIO,
   simples: [{
@@ -195,6 +195,26 @@ describe("a barra diz PARA QUANTAS — e por que uma ação não se aplica", () 
 });
 
 describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do botão", () => {
+  test("trocar o cabeçalho atualiza o vencimento e descarta a resposta antiga", async () => {
+    let responderAntiga;
+    const api = apiFalso({ getBatchEmailReport: jest.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { responderAntiga = resolve; }))
+      .mockResolvedValue({ ...RELATORIO, competencia: "2026-09", mesVencimento: "2026-09",
+        simples: RELATORIO.simples.map((r) => ({ ...r, competencia: "2026-09" })), presumidos: [] }) });
+    const empresas = [empresa()];
+    const { rerender } = await montarBarra({ empresas, api });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
+    expect(api.getBatchEmailReport).toHaveBeenLastCalledWith({ mesVencimento: "2026-08" });
+    rerender(<BarraSelecaoEmpresas api={api} empresasSelecionadas={empresas} competencia="2026-08" jobsAtivos={0} />);
+    await waitFor(() => expect(api.getBatchEmailReport).toHaveBeenLastCalledWith({ mesVencimento: "2026-09" }));
+    await act(async () => { responderAntiga(RELATORIO); });
+    expect(screen.queryByLabelText("Mês de vencimento")).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Confirmar e executar/ })); });
+    expect(api.sendBatchEmails).toHaveBeenCalledWith([
+      { portalClientId: "c1", mesVencimento: "2026-09", guideIds: ["g1"], assinatura: undefined },
+    ]);
+  });
+
   test("abrir o envio consulta o RELATÓRIO e não envia nada", async () => {
     const { api } = await montarBarra({ empresas: [empresa(), empresa({ companyId: "c2", razao: "BETA LTDA" })] });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });

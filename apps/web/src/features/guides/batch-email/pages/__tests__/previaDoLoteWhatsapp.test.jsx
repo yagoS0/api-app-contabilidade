@@ -68,7 +68,7 @@ async function montar(api = apiFalso()) {
   await waitFor(() => expect(api.getCanalWhatsapp).toHaveBeenCalled());
   // A página nasce no mês anterior ao de hoje; a matriz de teste é de 2026-07. A competência é
   // escolhida explicitamente — o teste não pode depender do relógio.
-  fireEvent.change(screen.getByLabelText("Mês de vencimento"), { target: { value: "2026-07" } });
+  fireEvent.change(screen.getByLabelText("Competência de trabalho"), { target: { value: "2026-06" } });
   return { ...utils, api };
 }
 
@@ -90,7 +90,7 @@ describe("o botão", () => {
 
   it("⚠ 'Todas pendentes' desabilita com o motivo — o botão NÃO some", async () => {
     await montar();
-    fireEvent.change(screen.getByLabelText("Mês de vencimento"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Competência de trabalho"), { target: { value: "" } });
     const botao = screen.getByRole("button", { name: /Enviar por WhatsApp/ });
     expect(botao).toBeDisabled();
     expect(botao.getAttribute("title")).toMatch(/mês de vencimento/);
