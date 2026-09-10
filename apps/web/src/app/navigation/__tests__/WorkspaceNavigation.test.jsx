@@ -1,12 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
-import { WorkspaceNavigationProvider, useWorkspaceNavigation } from "../WorkspaceNavigation";
+import { WorkspaceNavigationProvider, WorkspaceHomeLink, useWorkspaceNavigation } from "../WorkspaceNavigation";
 
 function Screen() {
   const nav = useWorkspaceNavigation();
   const navigate = useNavigate();
   const location = useLocation();
   return <>
+    {location.pathname.startsWith('/companies/123/') && <WorkspaceHomeLink />}
     <output aria-label="rota">{location.pathname}{location.search}</output>
     <output aria-label="visão">{nav.modoVisao}</output>
     <button onClick={() => nav.setModoVisao("tabela")}>Tabela</button>

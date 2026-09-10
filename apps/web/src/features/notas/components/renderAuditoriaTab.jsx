@@ -244,7 +244,7 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
   return (
     /* ⚠ A LARGURA SAIU DAQUI (era `maxWidth: 1100` + padding próprio, mais um número entre os
        cinco que o grupo tinha): quem decide é o `CompanyTabLayout`, com `largura="leitura"`. */
-    <div style={{ display: "grid", gap: 14 }}>
+    <div className="company-auditoria" style={{ display: "grid", gap: 14 }}>
       <div style={{ ...card, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>

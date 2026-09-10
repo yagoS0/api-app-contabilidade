@@ -22,6 +22,7 @@ export function WorkspaceNavigationProvider({ children }) {
   const location = useLocation();
   const action = useNavigationType();
   const navigate = useNavigate();
+  const companyRoute = /^\/companies\/[^/]+\/.+/.test(location.pathname);
   const history = useRef({ entries: [], index: -1 });
   const [modoVisao, setModoVisao] = useState("calendario");
   useLayoutEffect(() => {
@@ -48,11 +49,11 @@ export function WorkspaceNavigationProvider({ children }) {
     setModoVisao("calendario");
   }, []);
   return <WorkspaceNavigation.Provider value={{ goBack, navigate, modoVisao, setModoVisao, resetSession }}>
-    {!["/login", "/", "/companies", "/companies/"].includes(location.pathname) && <div className="workspace-brandbar">
+    {!companyRoute && !["/login", "/", "/companies", "/companies/"].includes(location.pathname) && <div className="workspace-brandbar">
       <Link to="/companies" className="workspace-home" aria-label="Altan — página principal" title="Página principal">
         <LogoAltan altura={30} />
       </Link>
     </div>}
-    {children}
+    {companyRoute ? <div className="company-workspace">{children}</div> : children}
   </WorkspaceNavigation.Provider>;
 }

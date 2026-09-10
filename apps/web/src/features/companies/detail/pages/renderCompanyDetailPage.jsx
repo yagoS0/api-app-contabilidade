@@ -773,7 +773,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
             <div className="company-form-page__intro">
               <h1 className="company-form-page__title">Editar cadastro</h1>
               <p className="company-form-page__description">
-                Atualize os dados cadastrais da empresa no mesmo padrão visual das demais telas.
+                Revise os dados da empresa e salve as alterações ao concluir.
               </p>
             </div>
 
