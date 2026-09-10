@@ -1,5 +1,9 @@
 # CLAUDE.md — Empresas (apps/web/src/features/companies)
 
+## Documentos e configurações na navegação — 10/09/2026
+
+O cabeçalho tem Anotações, Contabilidade, Fiscal e Documentos. A antiga aba Empresa foi removida porque seu destino (Cadastro) já pertence à engrenagem. Documentos é acesso direto a `/companies/:id/documentos`, visível inclusive dentro das configurações, sem competência ou subabas. Cadastro, perfil fiscal, credenciais, certificado, contatos, emissão e plano de contas continuam nas configurações, mantendo as rotas anteriores e permissões. A mudança recupera a entrada para os documentos existentes; não altera armazenamento ou envio de arquivos.
+
 ## Alinhamento das empresas e remoção da faixa da carteira — 10/09/2026
 
 A faixa “Carteira inteira” e seu estado de filtro foram removidos a pedido do usuário. Busca, filtros existentes e abas de regime continuam. Fechamento em lote exige seleção explícita e considera somente as empresas selecionadas ainda visíveis e aptas pelo servidor; confirmação e revalidação permanecem.
