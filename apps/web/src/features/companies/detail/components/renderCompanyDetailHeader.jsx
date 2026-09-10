@@ -39,7 +39,8 @@ import { mostraApuracaoDoSimples } from "../../../apuracao-lp/lib/regimeDaAba";
 // ele não é um mês, e pô-lo aqui faria o seletor global mudar de significado.
 const TABS_COM_COMPETENCIA = new Set(["lancamentos", "conferencia", "circular", "cadastroFiscal", "guides", "notasFiscais", "auditoria"]);
 
-// Navegação da empresa em 2 níveis: grupos grandes (Anotações, Contabilidade, Fiscal, Empresa)
+// Navegação de trabalho: Anotações, Contabilidade, Fiscal e Documentos.
+// Cadastro, acessos e parâmetros ficam na engrenagem de configurações.
 // e, abaixo, as sub-abas do grupo ativo. A aba ativa continua vindo do segmento da URL (activeTab);
 // clicar num grupo navega pro seu 1º sub-tab. Nada de roteamento novo — só reagrupa o header.
 const GROUPS = [
@@ -151,33 +152,11 @@ const GROUPS = [
     ],
   },
   {
-    // Abre a FICHA (read-only). Editar é um botão dentro dela, que leva à aba `edit`.
-    key: "cadastro",
-    // Grupo = "Empresa" (ficha, documentos, anotações). Antes chamava "Cadastro", mesmo nome da
-    // sub-aba fiscal e da tela de ficha — a palavra apontava para três lugares diferentes.
-    label: "Empresa",
-    // Documentos (contrato social, cartão CNPJ, inscrições) mora aqui: é cadastral, não fiscal.
-    // Anotações SAIU daqui — virou grupo próprio, primeiro de todos.
-    tabs: [
-      { key: "cadastro", label: "Cadastro" },
-      // ⚠ VEIO DE DENTRO DA APURAÇÃO em 24/08/2026, a pedido do dono ("muitas abas"). Lá ela era a
-      // seção "Perfil fiscal", um TERCEIRO nível de navegação sem URL. É cadastro — atividades
-      // permitidas por CNAE, anexo e ISS —, não o trabalho do mês, e por isso mora ao lado da ficha.
-      //
-      // ⚠ Continua `soApuraSimples`, exatamente como era: o painel resolve ANEXO DO SIMPLES por
-      // CNAE, e oferecê-lo ao Lucro Presumido mostraria uma tela que não decide nada para ele — o
-      // mesmo argumento que já tirou o espelho da DEFIS do Presumido.
-      //
-      // ⚠ Fora de `TABS_COM_COMPETENCIA` de propósito: atividade permitida é cadastro da empresa,
-      // não do mês. Um seletor de competência aqui sugeriria que a lista muda por competência.
-      { key: "perfilFiscal", label: "Perfil fiscal", soApuraSimples: true },
-      { key: "documentos", label: "Documentos" },
-      // Cofre de senhas + "outras informações". Fica em Empresa, ao lado de Documentos, porque é
-      // dado CADASTRAL (onde o escritório entra em nome do cliente), não trabalho do mês — e é
-      // onde o contador já procura dado de empresa. NÃO tem competência: fora de
-      // TABS_COM_COMPETENCIA de propósito.
-      { key: "credenciais", label: "Senhas e acessos" },
-    ],
+    // A antiga entrada "Empresa" abria Cadastro dentro das configurações, onde as
+    // subabas sumiam. Documentos precisa continuar acessível em qualquer seção.
+    key: "documentos",
+    label: "Documentos",
+    tabs: [{ key: "documentos", label: "Documentos" }],
   },
 ];
 

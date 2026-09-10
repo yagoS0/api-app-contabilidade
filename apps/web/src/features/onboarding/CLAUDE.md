@@ -1,5 +1,13 @@
 # CLAUDE.md — Onboarding (funil pré-cadastro)
 
+## Entrada por formulário do cliente — 10/09/2026
+
+“Entrada de clientes” cria ficha somente após escolher origem e modo no `NovoAtendimentoModal`. Abertura com preenchimento pelo cliente é o padrão; o modo interno continua disponível. O callback de criação recebe `{ origem, modo }`, sem fixar TRANSFERENCIA. Resposta de criação perdida exige conferir a lista antes de repetir. Rascunhos ficam visíveis em “Em preenchimento”, pois incluem fichas aguardando respostas; abrir qualquer ficha leva ao detalhe, e o wizard continua em Editar ficha.
+
+`PainelComercial` destaca o link pessoal existente (7 dias), copia link ou mensagem para compartilhamento manual e pede confirmação antes de substituir um link ativo. Não dispara mensagens. Propostas/contratação, anotações/análises e histórico ficam em seções recolhíveis, preservando campos editados ao alternar. Atualizar ficha relê respostas sem desmontar o painel ou descartar proposta/token em memória. Fichas encerradas não oferecem novos links. A conversão usa a ação “Adicionar à carteira”, sem alterar regras de provisionamento.
+
+`FormularioPublico` mantém a spec/validações, salvamento versionado, consentimento final e token no fragmento. O layout mostra progresso, instruções para abertura sem CNPJ e campos de sócios empilhados no celular. Textos de ajuda públicos adaptam a linguagem; perguntas e contratos continuam compartilhados. CSS em `onboarding-workspace.css`, importado por App.css. A validação visual usa mock; links públicos reais continuam dependendo do servidor e não são substituídos por sucesso simulado.
+
 ## Recuperação do rascunho — 08/09/2026
 
 Etapa 2: trocar origem com campos preenchidos usa Modal compartilhado (`useConfirmacao`), identifica a nova origem e quantos campos serão apagados. Cancelar não troca. Botões de avançar/voltar/finalizar ficam desabilitados durante navegação/gravação explícita, evitando duplo acionamento. A regra de poda/reset permanece a mesma.

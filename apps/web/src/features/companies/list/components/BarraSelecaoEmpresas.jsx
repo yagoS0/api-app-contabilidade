@@ -1,3 +1,5 @@
+import { ResultadoLiberacaoGuias } from "../../../guides/batch-email/components/ResultadoLiberacaoGuias";
+import { resumirLiberacao } from "../../../guides/lib/resultadoLiberacao";
 import { ExportarLancamentosLoteModal } from "./ExportarLancamentosLoteModal";
 // A BARRA QUE APARECE QUANDO HÁ EMPRESAS SELECIONADAS NA TABELA.
 //
@@ -74,6 +76,8 @@ function ModalAcao({ acao, competencia, mesVencimento, previaEnvio, onCancelar, 
   const carregandoPrevia = usaRelatorio && previaEnvio?.estado === "carregando";
   const previaFalhou = usaRelatorio && previaEnvio?.estado === "erro";
   const resumo = usaRelatorio ? previaEnvio?.resumo || null : null;
+  const apenasPortal = previaEnvio?.estado === "ok"
+    ? (previaEnvio.canais?.linhas || []).filter((l) => !l.email?.disponivel && !l.whatsapp?.disponivel).length : 0;
 
   const empresasNaAcao = usaRelatorio ? (resumo?.totalEmpresas ?? 0) : alvos.length;
   const guiasNaAcao = usaRelatorio ? (resumo?.totalGuias ?? null) : null;
@@ -183,23 +187,35 @@ function ModalAcao({ acao, competencia, mesVencimento, previaEnvio, onCancelar, 
           </p>
         )}
 
+        {usaRelatorio && apenasPortal > 0 && (
+          <Faixa tom="aviso">
+            {apenasPortal} empresa{apenasPortal === 1 ? " receberá" : "s receberão"} as guias apenas no portal, sem aviso por e-mail ou WhatsApp. Confira os destinatários abaixo antes de confirmar.
+          </Faixa>
+        )}
         {/* O QUE VAI ACONTECER — linha a linha. */}
-        {usaRelatorio && previaEnvio?.canais?.linhas?.map((l) => <div key={l.portalClientId}>
-          <strong>{previaEnvio.rows.find((r) => r.portalClientId === l.portalClientId)?.razao}</strong>
-          <div>E-mail: {l.email.disponivel ? l.email.destinos.join(", ") : l.email.mensagem}</div>
-          <div>WhatsApp: {l.whatsapp.disponivel ? l.whatsapp.destinos.join(", ") : l.whatsapp.mensagem}</div>
-        </div>)}
-        {usaRelatorio && previaEnvio?.rows?.filter((r) => r.documentos?.length || r.faltantes?.length).map((r) => <div key={r.portalClientId}>
-          <strong>{r.razao}</strong>
-          <ul>{r.documentos?.map((d) => <li key={d.guideId}>
-            {d.parcelamentoId ? `Parcelamento ${d.acordo || ""} · parcela ${d.numeroParcela ?? "—"}` : d.tipo === "SIMPLES" ? "DAS" : d.tipo}
-            {` · competência/referência ${d.competencia || "—"} · vence ${String(d.vencimento).slice(0, 10).split("-").reverse().join("/")} · ${Number(d.valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`}
-            {d.paga ? " · paga, fora do envio" : d.enviada ? " · já enviada" : ""}
-          </li>)}</ul>
-          {r.faltantes?.map((p) => <p key={p.parcelaId} style={{ color: "var(--state-warn)" }}>Lote incompleto: {p.motivo} · acordo {p.acordo || "—"} · parcela {p.numeroParcela ?? "—"}. A pendência permanece após este envio.</p>)}
-        </div>)}
+        {usaRelatorio && <div className="guide-delivery-preview">
+          {linhasVisiveis.map((l) => {
+            const r = previaEnvio.rows.find((row) => row.portalClientId === l.companyId);
+            const canais = previaEnvio.canais?.linhas?.find((row) => row.portalClientId === l.companyId);
+            return <div className="guide-delivery-preview__company" key={l.companyId}>
+              <div className="guide-delivery-preview__title"><strong>{l.razao}</strong><span>{l.detalhe}</span></div>
+              <div className="guide-delivery-preview__channels">
+                <div>E-mail: {canais?.email?.disponivel ? canais.email.destinos.join(", ") : canais?.email?.mensagem || "Indisponível"}</div>
+                <div>WhatsApp: {canais?.whatsapp?.disponivel ? canais.whatsapp.destinos.join(", ") : canais?.whatsapp?.mensagem || "Indisponível"}</div>
+              </div>
+              {r?.documentos?.length > 0 && <details><summary>Ver guias ({r.documentos.length})</summary>
+                <ul>{r.documentos.map((d) => <li key={d.guideId}>
+                  {d.parcelamentoId ? "Parcelamento " + (d.acordo || "") + " · parcela " + (d.numeroParcela ?? "—") : d.tipo === "SIMPLES" ? "DAS" : d.tipo}
+                  {" · referência " + (d.competencia || "—") + " · vence " + String(d.vencimento).slice(0, 10).split("-").reverse().join("/") + " · " + Number(d.valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  {d.paga ? " · paga, fora do envio" : d.enviada ? " · já enviada" : ""}
+                </li>)}</ul>
+              </details>}
+              {r?.faltantes?.map((p) => <p className="guide-delivery-preview__issue" key={p.parcelaId}>Lote incompleto: {p.motivo} · acordo {p.acordo || "—"} · parcela {p.numeroParcela ?? "—"}. A pendência permanece após este envio.</p>)}
+            </div>;
+          })}
+        </div>}
         {usaRelatorio && (previaEnvio?.foraDoMes || 0) > 0 && <p>{previaEnvio.foraDoMes} documento(s) anterior(es) ou sem vencimento ficam fora deste lote. Confira na aba Guias da empresa.</p>}
-        {linhasVisiveis.length > 0 && (
+        {!usaRelatorio && linhasVisiveis.length > 0 && (
           <div>
             <div style={{ fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-muted)" }}>
               Entram ({linhasVisiveis.length})
@@ -267,6 +283,7 @@ export function BarraSelecaoEmpresas({
   const [aberta, setAberta] = useState(null);   // chave da ação com o modal aberto
   const [executando, setExecutando] = useState(false);
   const [resultado, setResultado] = useState(null);
+  const [resultadoEnvio, setResultadoEnvio] = useState(null);
   const [batchJobId, setBatchJobId] = useState(null);
   const [previaEnvio, setPreviaEnvio] = useState(null); // { estado, resumo, motivo }
   const mesVencimento = competencia ? deslocarCompetencia(competencia, 1) : "";
@@ -314,7 +331,7 @@ export function BarraSelecaoEmpresas({
     return () => { previaVersao.current += 1; };
   }, [aberta, carregarPrevia]);
 
-  if (!empresasSelecionadas.length) return null;
+  if (!empresasSelecionadas.length && !resultadoEnvio) return null;
 
   async function executar() {
     if (!acao || executando) return;
@@ -325,20 +342,12 @@ export function BarraSelecaoEmpresas({
       : acao.alvos.map((a) => a.companyId);
     try {
       if (acao.chave === "email") {
+        setResultadoEnvio(null);
         // Contrato existente: um item por (empresa, competência).
         if (previaEnvio?.mesVencimento !== mesVencimento || previaEnvio?.estado !== "ok") throw new Error("Confira novamente o mês de vencimento.");
         const out = await api.liberarGuiasLote({ items: previaEnvio.items, assinatura: previaEnvio.canais.assinatura });
         if (!out?.ok || !Array.isArray(out.results)) throw new Error("Não foi possível confirmar a liberação. Confira o histórico antes de repetir.");
-        setResultado({
-          tom: out.results.every((r) => r.ok) ? "ok" : "erro",
-          texto: out.results.map((r) => {
-            const nome = previaEnvio.rows.find((row) => row.portalClientId === r.portalClientId)?.razao || "Empresa";
-            const whats = r.whatsapp || [];
-            const aceitas = whats.filter((w) => w.ok && !w.parcial).length;
-            const avisos = [...new Set(whats.filter((w) => !w.ok || w.parcial).map((w) => w.message || "Envio parcial; confira o histórico."))];
-            return `${nome}: ${r.liberadas || 0} guia(s) liberada(s) no portal · E-mail: ${r.email?.ok ? "enviado" : r.email?.message || "não enviado"} · WhatsApp: ${aceitas} guia(s) com envio aceito, aguardando confirmação de entrega.${avisos.length ? ` ${avisos.join(" ")}` : ""}${r.message ? ` ${r.message}` : ""}`;
-          }).join("\n") + (previaEnvio.rows?.some((r) => r.faltantes?.length) ? " Há parcelas faltantes: o lote continua incompleto." : ""),
-        });
+        setResultadoEnvio(resumirLiberacao({ results: out.results, previa: previaEnvio }));
       } else if (acao.chave === "apurar") {
         const out = await api.criarApuracaoBatch({ portalClientIds: alvoIds, competencia });
         if (!out?.ok) throw new Error(out?.message || out?.error || "o servidor recusou o lote.");
@@ -371,7 +380,9 @@ export function BarraSelecaoEmpresas({
         setResultado({ tom: "ok", texto: `ZIP em preparo para ${alvoIds.length} empresa(s). Baixe em Consultas → Situação Fiscal.` });
       }
       setAberta(null);
-      await onConcluido?.();
+      try { await onConcluido?.(); } catch {
+        setResultado({ tom: "erro", texto: "O resultado foi recebido, mas a lista de empresas não atualizou. Atualize a página; não repita o envio por este motivo." });
+      }
     } catch (err) {
       setResultado({ tom: "erro", texto: err?.message || "A operação falhou." });
       setAberta(null);
@@ -385,7 +396,7 @@ export function BarraSelecaoEmpresas({
   return (
     <>
       {csvAberto && <ExportarLancamentosLoteModal api={api} companies={empresasSelecionadas.map(c => ({ ...c, id: c.id || c.companyId }))} competencia={competencia} onClose={() => setCsvAberto(false)} />}
-      <div role="region" aria-label="Ações sobre as empresas selecionadas" style={CAIXA}>
+      {empresasSelecionadas.length > 0 && <div role="region" aria-label="Ações sobre as empresas selecionadas" style={CAIXA}>
         <strong style={{ fontSize: "0.86rem" }}>
           {plano.total} empresa{plano.total === 1 ? "" : "s"} selecionada{plano.total === 1 ? "" : "s"}
         </strong>
@@ -407,7 +418,7 @@ export function BarraSelecaoEmpresas({
                 /* ⚠ Irreversível é `danger`, nunca accent: enviar ao cliente e transmitir à Receita
                    não podem ter o mesmo peso visual de baixar um ZIP. */
                 variant={a.irreversivel ? "danger" : "secondary"}
-                disabled={!a.disponivel}
+                disabled={!a.disponivel || executando}
                 onClick={() => { setResultado(null); setAberta(chave); }}
                 title={a.disponivel ? a.descricao : `Indisponível: ${a.motivo}`}
               >
@@ -423,7 +434,7 @@ export function BarraSelecaoEmpresas({
               </Button>
             );
           })}
-          <Button type="button" size="sm" variant="secondary" onClick={onLimparSelecao}>
+          <Button type="button" size="sm" variant="secondary" disabled={executando} onClick={onLimparSelecao}>
             Limpar seleção
           </Button>
         </span>
@@ -457,7 +468,9 @@ export function BarraSelecaoEmpresas({
             {resultado.texto}
           </div>
         )}
-      </div>
+      </div>}
+
+      {resultadoEnvio && <ResultadoLiberacaoGuias resultado={resultadoEnvio} onFechar={() => setResultadoEnvio(null)} />}
 
       {acao && (
         <ModalAcao

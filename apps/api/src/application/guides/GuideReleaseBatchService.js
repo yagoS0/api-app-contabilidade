@@ -13,7 +13,7 @@ const hash = (value) => createHash("sha256").update(JSON.stringify(value)).diges
 // mantendo as travas de empresa, pagamento, conteúdo e vencimento, sem invalidar o próprio envio.
 export const assinaturaDocumento = (g) => hash([g.id, g.portalClientId, g.competencia, g.tipo,
   String(g.valor ?? ""), g.vencimento, g.status, g.paymentStatus, g.hash]);
-const falha = (err) => ({ ok: false, message: err?.message || "Não foi possível confirmar o envio. Confira o histórico antes de tentar novamente.", error: err?.code });
+const falha = (err) => ({ ok: false, tentado: true, message: err?.message || "Não foi possível confirmar o envio. Confira o histórico antes de tentar novamente.", error: err?.code });
 
 export function createGuideReleaseBatchService(deps = {}) {
   const db = deps.db || prisma;
@@ -73,12 +73,12 @@ export function createGuideReleaseBatchService(deps = {}) {
           try {
             const out = await email({ portalClientId: linha.portalClientId, mesVencimento: linha.mesVencimento,
               selectedGuideIds: linha.guideIds, assinatura: linha.assinatura });
-            r.email = { ...out, ok: out.status === "sent", message: out.status === "sent" ? "E-mail enviado." : "E-mail não enviado. Confira o histórico." };
+            r.email = { ...out, tentado: true, ok: out.status === "sent", message: out.status === "sent" ? "E-mail enviado." : "E-mail não enviado. Confira o histórico." };
           } catch (err) {
             r.email = falha(err);
             if (err.code === "CONFERENCIA_DIVERGENTE") throw err;
           }
-        } else r.email = { ok: false, message: linha.email.mensagem };
+        } else r.email = { ok: false, tentado: false, naoSeAplica: true, message: linha.email.mensagem };
 
         for (const anterior of linha.guias) {
           const guide = await db.guide.findFirst({ where: { id: anterior.id, portalClientId: linha.portalClientId },
@@ -98,7 +98,8 @@ export function createGuideReleaseBatchService(deps = {}) {
           const avaliacao = avaliarLinha({ canal, guide, destinatario: await destinatario(linha.portalClientId) });
           const alvos = destinos.telefones.filter((c) => linha.whatsapp.destinos.includes(c.telefoneE164));
           if (!linha.whatsapp.disponivel || !avaliacao.pode || !alvos.length || alvos.length !== linha.whatsapp.destinos.length) {
-            r.whatsapp.push({ guideId: guide.id, ok: false, message: avaliacao.mensagem || linha.whatsapp.mensagem || "Os contatos de WhatsApp mudaram. Confira o cadastro." });
+            r.whatsapp.push({ guideId: guide.id, ok: false, tentado: false, naoSeAplica: !linha.whatsapp.disponivel,
+              message: avaliacao.mensagem || linha.whatsapp.mensagem || "Os contatos de WhatsApp mudaram. Confira o cadastro." });
             continue;
           }
           try {
@@ -107,7 +108,7 @@ export function createGuideReleaseBatchService(deps = {}) {
             // A reserva do transportador é por guia/canal/destinatário. Nunca força reenvio.
             whatsappIniciado = true;
             const out = await whatsapp({ guide: atual, destinatarios: alvos, canal, log, reenviar: false });
-            r.whatsapp.push({ ...out, guideId: guide.id,
+            r.whatsapp.push({ ...out, guideId: guide.id, tentado: true,
               ...(!out.ok && !out.message ? { message: out.mensagem || "WhatsApp com falha ou resultado pendente. Confira o histórico." } : {}) });
           } catch (err) { r.whatsapp.push({ guideId: guide.id, ...falha(err) }); }
         }

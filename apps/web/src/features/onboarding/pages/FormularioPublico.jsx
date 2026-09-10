@@ -4,6 +4,15 @@ import { FichaDeclarada } from "../components/PassoRevisao";
 import { camposDoPasso, passosVisiveis, podarInvisiveis } from "../lib/onboardingSpec";
 import { Button } from "../../../components/ui/Button";
 
+const AJUDAS_CLIENTE = {
+  razaoSocial: "Informe o nome que você gostaria de usar na nova empresa.",
+  tipoEmpresa: "Se ainda não souber, deixe em branco. O contador ajudará na escolha.",
+  atividadePretendida: "Descreva os produtos ou serviços que sua empresa vai oferecer.",
+  capitalSocialPretendido: "Se souber, informe o valor que pretende investir para iniciar a empresa.",
+};
+const descritorDoCliente = (d, origem) => origem === "ABERTURA" && AJUDAS_CLIENTE[d.campo]
+  ? { ...d, ajuda: AJUDAS_CLIENTE[d.campo] } : d;
+
 // Token fica só na memória da página e no fragmento do link; nunca localStorage/query string.
 export function FormularioPublico({ api }) {
   const [token] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get("token") || "");
@@ -40,15 +49,17 @@ export function FormularioPublico({ api }) {
       else { setRegistro(r.onboarding); setPasso(destino); setAviso("Dados salvos. Você pode continuar depois usando o mesmo link."); }
     } catch (e) { setErro(e.message); } finally { setOcupado(false); }
   }
-  return <main style={{ maxWidth: 760, margin: "32px auto", padding: 24 }}>
-    <h1>Seu cadastro no escritório</h1>
+  return <main className="onboarding-workspace onboarding-public">
+    <header className="onboarding-public__header"><span className="onboarding-eyebrow">ALTAN · ENTRADA DE CLIENTES</span>
+    <h1>{registro?.origem === "ABERTURA" ? "Vamos preparar a abertura da sua empresa" : "Seu cadastro no escritório"}</h1>
     <p>Preencha o que souber. Os dados serão conferidos pelo contador. Não informe senhas ou certificados neste formulário.</p>
+    {registro?.origem === "ABERTURA" && <p>Você ainda não precisa ter CNPJ. Conte sobre a empresa que pretende abrir.</p>}</header>
     {erro && <p role="alert">{erro}</p>}{aviso && <p role="status">{aviso}</p>}
     {concluido ? <h2>Cadastro enviado. O escritório dará continuidade ao atendimento.</h2> : !registro ? <p>{erro ? "Seu preenchimento não foi alterado." : "Carregando formulário…"}</p> : <>
-      <p>Etapa {indice + 1} de {passos.length}: {passos[indice]?.titulo}</p>
-      <fieldset disabled={ocupado} style={{ border: 0, padding: 0 }}>
-        {atual === "revisao" ? <><FichaDeclarada origem={registro.origem} dados={dados} origemPreenchimento="CLIENTE" /><label><input type="checkbox" checked={confirmado} onChange={(e) => setConfirmado(e.target.checked)} />Conferi os dados e autorizo seu uso pelo escritório para este atendimento.</label></> : camposDoPasso(registro.origem, atual, dados).map((descritor) => <CampoOnboarding key={descritor.campo} descritor={descritor} dados={dados} valor={dados[descritor.campo]} onChange={(v) => { setDados((d) => ({ ...d, [descritor.campo]: v })); setAviso("Alterações ainda não salvas."); setConfirmado(false); }} origemPreenchimento="CLIENTE" />)}
-        <div style={{ display: "flex", gap: 12, marginTop: 20, flexWrap: "wrap" }}>
+      <div className="onboarding-public__progress"><p>Etapa {indice + 1} de {passos.length}: <strong>{passos[indice]?.titulo}</strong></p><progress aria-label="Progresso do formulário" value={indice + 1} max={passos.length} /></div>
+      <fieldset disabled={ocupado} className="onboarding-public__fields">
+        {atual === "revisao" ? <><FichaDeclarada origem={registro.origem} dados={dados} origemPreenchimento="CLIENTE" /><label><input type="checkbox" checked={confirmado} onChange={(e) => setConfirmado(e.target.checked)} />Conferi os dados e autorizo seu uso pelo escritório para este atendimento.</label></> : camposDoPasso(registro.origem, atual, dados).map((descritor) => <CampoOnboarding key={descritor.campo} descritor={descritorDoCliente(descritor, registro.origem)} dados={dados} valor={dados[descritor.campo]} onChange={(v) => { setDados((d) => ({ ...d, [descritor.campo]: v })); setAviso("Alterações ainda não salvas."); setConfirmado(false); }} origemPreenchimento="CLIENTE" />)}
+        <div className="onboarding-public__actions">
           {indice > 0 && <Button variant="secondary" onClick={() => salvar(passos[indice - 1].chave)}>Salvar e voltar</Button>}
           <Button variant="secondary" onClick={() => salvar()}>Salvar para continuar depois</Button>
           {indice < passos.length - 1 ? <Button onClick={() => salvar(passos[indice + 1].chave)}>Salvar e continuar</Button> : <Button disabled={!confirmado} onClick={() => salvar(atual, true)}>Enviar cadastro ao escritório</Button>}

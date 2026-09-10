@@ -281,3 +281,7 @@ O lote mensal usa `mesVencimento` (AAAA-MM), sem reescrever `Guide.competencia`.
 Envio por vencimento exige IDs explícitos e assinatura dos documentos conferidos. Lista vazia nunca significa todas as guias. E-mail, WhatsApp e fallback usam o mesmo conjunto; revalidam empresa, período, pagamento, alteração e envio antes de disparar. E-mail reserva os registros por versão em transação. A ausência de parcelas mantém o lote incompleto mesmo após enviar documentos disponíveis. As APIs antigas por competência permanecem compatíveis para outros consumidores.
 
 Testes: `loteVencimento.test.js`, `GuideDueBatchService.test.js`, `GuideDueEmail.test.js` e cenários por vencimento em `envioGuiaWhatsapp.test.js`.
+
+## Metadados do resultado da liberação em lote — 10/09/2026
+
+`GuideReleaseBatchService` informa `tentado` nos canais e `naoSeAplica: true` quando o canal já estava indisponível na prévia. Se o WhatsApp perde autorização/destinatários durante a execução, `naoSeAplica: false` conserva a pendência. O `ok` agregado legado é preservado por compatibilidade; a interface deve ler os resultados individuais para distinguir envio concluído, aceite aguardando entrega, canal indisponível e falha. Assinatura, revalidação de contatos/documentos, opt-in e política de não forçar reenvio permanecem inalterados.
