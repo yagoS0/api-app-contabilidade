@@ -486,8 +486,19 @@ export function createRealApi() {
       return Array.isArray(payload?.empresas) ? payload.empresas : [];
     },
     async getCompanyGuides(companyId) {
-      const payload = await request(`/firm/companies/${companyId}/guides?page=1&limit=50`);
-      return Array.isArray(payload?.data) ? payload.data : [];
+      const items = [];
+      let page = 1;
+      while (true) {
+        const payload = await request(`/firm/companies/${companyId}/guides?page=${page}&limit=50`);
+        const batch = Array.isArray(payload?.data) ? payload.data : [];
+        items.push(...batch);
+        if (!batch.length || !Number.isFinite(payload?.total) || items.length >= payload.total) break;
+        page += 1;
+      }
+      return items;
+    },
+    async getCompanyGuideDueReport(companyId, mesVencimento) {
+      return request(`/firm/companies/${companyId}/guides/due-report?mesVencimento=${encodeURIComponent(mesVencimento)}`);
     },
     async uploadCompanyGuide(companyId, file, metadata) {
       const formData = new FormData();

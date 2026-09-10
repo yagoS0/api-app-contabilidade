@@ -5899,6 +5899,10 @@ export function createMockApi() {
     // `POST /firm/companies/:id/entries/parcelamento` que ela espelhava. O par mock/real precisa
     // sumir junto: um mock que continua respondendo `ok:true` para uma rota que o backend removeu
     // é a forma mais eficiente de esconder um 404 até a produção.
+    async getCompanyGuideDueReport(companyId, mesVencimento) {
+      const report = relatorioVencimentoMock(mockCompanies, { mesVencimento });
+      return { ...report, simples: report.simples.filter((c) => c.portalClientId === companyId) };
+    },
     async getBatchEmailReport(competencia) {
       await delay(200);
       if (competencia?.mesVencimento) return relatorioVencimentoMock(mockCompanies, competencia);

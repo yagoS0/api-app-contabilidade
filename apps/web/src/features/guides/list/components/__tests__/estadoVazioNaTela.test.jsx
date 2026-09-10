@@ -4,7 +4,7 @@
 // **só quando há vazio a explicar**, e se a falha da busca chega à tela como falha — nunca como
 // "não há guia". Era esse o defeito: a competência sem guia dizia *"Nenhuma guia encontrada para os
 // filtros atuais."* tanto quando não havia nada a pagar quanto quando o servidor não respondeu.
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { CompanyGuidesTable } from "../renderCompanyGuidesTable.jsx";
 
 const mockGetFechamento = jest.fn();
@@ -25,7 +25,7 @@ jest.mock("../GuiaDeParcelamentoModal", () => ({ GuiaDeParcelamentoModal: () => 
 const COMP = "2026-08";
 
 function montar(props = {}) {
-  return render(
+  const result = render(
     <CompanyGuidesTable
       companyId="c1" competencia={COMP} companyRegime="SIMPLES"
       guides={[]} loadingGuides={false}
@@ -33,6 +33,8 @@ function montar(props = {}) {
       {...props}
     />,
   );
+  fireEvent.change(screen.getByRole("combobox", { name: "Exibir" }), { target: { value: "competencia" } });
+  return result;
 }
 
 beforeEach(() => {

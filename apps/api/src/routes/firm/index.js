@@ -2605,6 +2605,20 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     });
   });
 
+  router.get("/companies/:companyId/guides/due-report", requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      const company = await prisma.portalClient.findUnique({
+        where: { id: req.params.companyId }, select: { id: true, razao: true, cnpj: true },
+      });
+      if (!company) return res.status(404).json({ error: "company_not_found" });
+      return res.json(await relatorioPorVencimento({
+        companies: [company], mesVencimento: String(req.query.mesVencimento || ""),
+      }));
+    } catch (err) {
+      return res.status(err.status || 500).json({ error: err.code || "DUE_REPORT_FAILED", message: err.message });
+    }
+  });
+
   router.get(
     "/companies/:companyId/guides",
     requireFirmCompanyAccess(),

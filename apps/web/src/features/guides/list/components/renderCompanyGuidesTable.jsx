@@ -18,6 +18,7 @@ import { linhaDigitavelDaGuia } from "../../lib/linhaDigitavelTela";
 import { MOTIVOS_GUIA_VAZIA, TEM_LISTA_DE_MOTIVOS, motivoParaGravar, motivoSuficiente } from "../lib/motivoGuiaVazia";
 import { fraseDoLote, relatorioDoLote, DESFECHO } from "../lib/loteDoTrimestre";
 import { competenciaAtual } from "../../../../lib/competencia";
+import { guiasDaVisao, mesAtualVencimento } from "../lib/visaoVencimento";
 
 // Q17: guias ESPERADAS do mês (por regime/prolabore) com botão "Vazio" (ausência confirmada).
 // Mapeia a chave do compliance → tipo de Guide pra marcar Vazio.
@@ -586,16 +587,26 @@ export function CompanyGuidesTable({
     () => getAvailableGuideTypes(companyRegime),
     [companyRegime],
   );
-  // Q19: filtro único de competência (mês), default = mês anterior ao atual.
-  // ⚠ A COMPETÊNCIA VEM DO HEADER. O que sobra aqui é "ver todas" — e ele virou EXPLÍCITO.
-  //
-  // Era um `input type="month"` com o mês anterior por padrão, e o único jeito de ver o histórico
-  // era APAGAR o conteúdo do campo — gesto que ninguém descobre e que, feito sem querer, deixava a
-  // tela mostrando guias de todos os meses sem dizer que estava fazendo isso. Agora o mês é o da
-  // empresa (um controle só) e o histórico é uma caixa com nome.
-  const [verTodasCompetencias, setVerTodasCompetencias] = useState(false);
-  const filterCompetencia = verTodasCompetencias ? "" : (competenciaGlobal || prevMonthCompetencia());
+  // Vencimento organiza a cobrança; competência do cabeçalho continua fiscal.
+  // A visão fiscal mantém inclusive VAZIO, que não tem vencimento nem PDF a enviar.
+  const [visao, setVisao] = useState("vencimento");
+  const [mesVencimento, setMesVencimento] = useState(mesAtualVencimento);
+  const competenciaFiscal = competenciaGlobal || prevMonthCompetencia();
+  const filterCompetencia = visao === "competencia" ? competenciaFiscal : "";
   const [selectedIds, setSelectedIds] = useState(new Set());
+  useEffect(() => { setSelectedIds(new Set()); }, [companyId, visao, mesVencimento, competenciaFiscal]);
+  const [conferencia, setConferencia] = useState({ loading: false, erro: null, faltantes: [] });
+  useEffect(() => {
+    if (!companyId || visao !== "vencimento" || loadingGuides || !expectedGuidesApi.getCompanyGuideDueReport) return undefined;
+    let cancel = false;
+    setConferencia({ loading: true, erro: null, faltantes: [] });
+    expectedGuidesApi.getCompanyGuideDueReport(companyId, mesVencimento).then((report) => {
+      if (cancel) return;
+      const rows = [...(report.simples || []), ...(report.presumidos || []), ...(report.outros || [])];
+      setConferencia({ loading: false, erro: null, faltantes: rows.flatMap((r) => r.faltantes || []) });
+    }).catch((erro) => { if (!cancel) setConferencia({ loading: false, erro, faltantes: [] }); });
+    return () => { cancel = true; };
+  }, [companyId, mesVencimento, visao, loadingGuides, guides, vazioRefreshKey]);
   const [deleting, setDeleting] = useState(false);
   // Guia já enviada aguardando confirmação de reenvio (modal do "Liberar ao cliente").
   const [resendConfirm, setResendConfirm] = useState(null);
@@ -628,12 +639,10 @@ export function CompanyGuidesTable({
   const [completingSaving, setCompletingSaving] = useState(false);
 
   const filteredGuides = useMemo(() => {
-    return guides.filter((g) => {
-      // Competência vazia = mostra todas; senão filtra pelo mês escolhido.
-      if (filterCompetencia && g.competencia !== filterCompetencia) return false;
-      return true;
-    });
-  }, [filterCompetencia, guides]);
+    return guiasDaVisao(guides, { visao, mes: mesVencimento, competencia: competenciaFiscal });
+  }, [visao, mesVencimento, competenciaFiscal, guides]);
+  const anteriores = guiasDaVisao(guides, { visao: "anteriores", mes: mesVencimento }).length;
+  const semVencimento = guiasDaVisao(guides, { visao: "semVencimento", mes: mesVencimento }).length;
 
   // ── POR QUE NÃO HÁ GUIA — o contexto que transforma o vazio em resposta ──────────────────────
   //
@@ -1114,7 +1123,7 @@ export function CompanyGuidesTable({
           {/* Marcar guias obrigatórias como VAZIO no mês (aparecem na tabela abaixo como vazio). */}
           <MarcarVazioDropdown
             companyId={companyId}
-            competencia={filterCompetencia}
+            competencia={competenciaFiscal}
             refreshKey={vazioRefreshKey}
             onChanged={refreshAfterVazio}
           />
@@ -1219,28 +1228,40 @@ export function CompanyGuidesTable({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
           <h2 className="guides-list-panel__title" style={{ margin: 0 }}>Guias</h2>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <label
-              style={{ fontSize: "0.8rem", color: "#aeb6d3", display: "flex", alignItems: "center", gap: 6, cursor: "pointer", userSelect: "none" }}
-              title="Mostra as guias de todas as competências, ignorando o mês do topo da página."
-            >
-              <input
-                type="checkbox"
-                checked={verTodasCompetencias}
-                onChange={() => setVerTodasCompetencias((v) => !v)}
-                style={{ cursor: "pointer" }}
-              />
-              Ver todas as competências
-            </label>
-            {/* Filtro ativo NUNCA fica sem rastro visível — mesma regra que a listagem já aplica.
-                Sem esta linha, a tabela mostrando doze meses seria indistinguível de um mês
-                cheio, e é assim que se confere uma guia achando que é de outro período. */}
-            {!verTodasCompetencias && (
-              <span style={{ fontSize: "0.8rem", color: "#aeb6d3" }}>
-                Competência: <strong style={{ color: "var(--text)" }}>{filterCompetencia}</strong>
-              </span>
-            )}
+            <label>Mês de vencimento <input type="month" value={mesVencimento} onChange={(e) => {
+              if (/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value)) setMesVencimento(e.target.value);
+            }} /></label>
+            <label>Exibir <select value={visao} onChange={(e) => setVisao(e.target.value)}>
+              <option value="vencimento">Guias do vencimento</option>
+              <option value="anteriores">Pendências anteriores ({anteriores})</option>
+              <option value="semVencimento">Conferir vencimento ({semVencimento})</option>
+              <option value="competencia">Competência fiscal do cabeçalho</option>
+              <option value="todas">Todas as guias / histórico</option>
+            </select></label>
           </div>
         </div>
+        <p className="text-muted">
+          {visao === "vencimento" ? `Guias com vencimento em ${mesVencimento}, de qualquer competência. Guias pagas continuam identificadas na tabela.`
+            : visao === "competencia" ? `Competência fiscal: ${competenciaFiscal}. Esta visão não é o lote de vencimentos.`
+              : visao === "anteriores" ? `Guias anteriores a ${mesVencimento} sem pagamento confirmado. Confira a baixa antes de reenviar.`
+                : visao === "semVencimento" ? "Documentos sem vencimento informado precisam de conferência para entrar no mês correto."
+                  : "Histórico completo, incluindo guias pagas e competências marcadas como vazio."}
+          {` Capturar e marcar vazio continuam usando a competência fiscal ${competenciaFiscal}.`}
+        </p>
+        {!loadingGuides && visao === "vencimento" && <>
+          {(anteriores > 0 || semVencimento > 0) && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            {anteriores > 0 && <Button variant="secondary" size="sm" onClick={() => setVisao("anteriores")}>Pendências anteriores ({anteriores})</Button>}
+            {semVencimento > 0 && <Button variant="secondary" size="sm" onClick={() => setVisao("semVencimento")}>Conferir vencimento ({semVencimento})</Button>}
+          </div>}
+          {conferencia.loading && <p role="status">Conferindo parcelas previstas…</p>}
+          {conferencia.erro && <Aviso tom="erro" titulo="Não foi possível conferir as parcelas previstas">Não é possível confirmar se faltam guias de parcelamento. {conferencia.erro.message}
+            <Button variant="secondary" size="sm" onClick={() => setVazioRefreshKey((k) => k + 1)}>Tentar novamente</Button>
+          </Aviso>}
+          {conferencia.faltantes.length > 0 && <Aviso tom="neutro" titulo="Atenção: faltam guias de parcelamento neste vencimento">
+            <ul>{conferencia.faltantes.map((p) => <li key={p.parcelaId}>Acordo {p.acordo || "sem número"} · Parcela {p.numeroParcela} · Vencimento {fmtDataCivil(p.vencimento)} — {p.motivo}</li>)}</ul>
+            <p>Confira essas parcelas na aba Parcelamentos antes de concluir o envio do mês.</p>
+          </Aviso>}
+        </>}
 
         {loadingGuides ? (
           <p className="text-muted">Carregando...</p>
@@ -1248,7 +1269,11 @@ export function CompanyGuidesTable({
           // ⚠ ERA UMA FRASE SÓ — "Nenhuma guia encontrada para os filtros atuais." — para situações
           // que exigem ações OPOSTAS, e uma delas era o servidor não ter respondido. Ver a regra e
           // o porquê em `../lib/estadoVazioGuias.js`.
-          contextoVazio.carregando ? (
+          visao !== "competencia" ? (
+            <Aviso tom="neutro" titulo="Nenhuma guia nesta visão">
+              {visao === "vencimento" ? `Nenhum documento com vencimento em ${mesVencimento}. Isso não confirma ausência de tributos ou parcelas a pagar.` : "Nenhum documento corresponde ao filtro escolhido."}
+            </Aviso>
+          ) : contextoVazio.carregando ? (
             <p className="text-muted">Nenhuma guia em {filterCompetencia}. Verificando o estado da competência…</p>
           ) : (
             <Aviso

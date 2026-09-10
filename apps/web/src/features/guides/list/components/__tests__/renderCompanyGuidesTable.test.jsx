@@ -12,6 +12,7 @@
 // continuam valendo para a parcela, porque agem sobre a própria guia.
 import { render, screen, fireEvent } from "@testing-library/react";
 import { CompanyGuidesTable } from "../renderCompanyGuidesTable.jsx";
+import { mesAtualVencimento } from "../../lib/visaoVencimento";
 
 // O componente instancia o client no topo do módulo (dropdown "Marcar vazio" é auto-contido).
 jest.mock("../../../../../api/client", () => ({
@@ -41,6 +42,7 @@ function guiaDoDas(over = {}) {
     guideId: "g-das",
     tipo: "SIMPLES",
     competencia: COMP,
+    vencimento: `${mesAtualVencimento()}-20T00:00:00.000Z`,
     status: "PROCESSED",
     paymentStatus: "OPEN",
     emailStatus: "PENDING",
@@ -223,6 +225,7 @@ describe("coluna Vencimento", () => {
 
   it("o vencimento comum do DAS (dia 20) também não anda", () => {
     renderTabela([guiaDoDas({ vencimento: "2026-03-20T00:00:00.000Z" })]);
+    fireEvent.change(screen.getByLabelText("Mês de vencimento"), { target: { value: "2026-03" } });
     expect(screen.getByText("20/03/2026")).toBeInTheDocument();
   });
 });
