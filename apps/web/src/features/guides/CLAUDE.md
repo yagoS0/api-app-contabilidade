@@ -1,5 +1,11 @@
 # CLAUDE.md — Guias (apps/web/src/features/guides)
 
+## Organização da tela de Guias — 10/09/2026
+
+Upload, marcar vazio e configuração de envio compartilham o cabeçalho da lista. A configuração continua navegando para `comunicacao` via `onConfigurarEnvio`; as ações da guia selecionada têm uma barra própria. Consultas auxiliares ficam em um menu que fecha ao escolher a visão.
+
+A grade tem oito colunas: seleção, guia, competência, valor, vencimento, pagamento, envio e linha digitável. O processamento fica abaixo do nome; `ERROR` aparece como “Revisar documento”, separado do resultado de envio. Valores têm alinhamento numérico; a linha digitável mantém máscara, conteúdo completo e cópia dos dígitos. Até 800 px, as linhas viram cartões com rótulos. CSS escopado em `guides-workspace.css`. A competência global e as regras de vencimento, seleção, pagamento e envio permanecem as mesmas.
+
 ## Guias dentro da empresa por vencimento — 10/09/2026
 
 Decisão de produto corrigida pelo usuário: `CompanyGuidesTable` segue SOMENTE a competência do cabeçalho e deriva o vencimento pelo mês seguinte (`deslocarCompetencia(competencia, 1)`). Agosto mostra tudo que vence em setembro, incluindo DAS de agosto e parcela de setembro. Não adicionar seletor independente de vencimento nem exigir configuração do usuário. O título informa o mês derivado; histórico e consulta fiscal ficam em “Outras consultas”. Trocar empresa/competência retorna à visão principal e limpa seleção. Guias pagas permanecem identificadas; VAZIO só aparece no histórico/competência. Captura, upload e marcar vazio preservam competência fiscal.

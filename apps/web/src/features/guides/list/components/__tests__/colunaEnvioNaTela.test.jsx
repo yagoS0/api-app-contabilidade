@@ -77,10 +77,11 @@ describe("a coluna existe e substitui a de e-mail", () => {
     expect(screen.queryByRole("columnheader", { name: "E-mail" })).toBeNull();
   });
 
-  it("⚠ continuam NOVE colunas — a grade do CSS tem as faixas cravadas", () => {
-    // Uma décima coluna aqui quebraria o alinhamento em silêncio (`App.css`, `.guides-grid`).
+  it("mantém envio e pagamento separados, com processamento junto à guia", () => {
     montar([guia(zap("entregue"))]);
-    expect(screen.getAllByRole("columnheader")).toHaveLength(9);
+    expect(screen.getAllByRole("columnheader")).toHaveLength(8);
+    expect(screen.getByRole("columnheader", { name: "Pagamento" })).toBeInTheDocument();
+    expect(screen.getByText("Processada").closest('[role="cell"]')).toHaveClass("guides-grid__cell--type");
   });
 });
 
