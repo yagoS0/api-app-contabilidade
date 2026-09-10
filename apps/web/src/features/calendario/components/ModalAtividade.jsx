@@ -18,6 +18,10 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo }) {
   const curta = ['DIARIA','SEMANAL'].includes(dados.recorrencia);
   useEffect(() => {
     if (passo !== 2) return;
+    const f=JSON.parse(filtroChave);
+    if((fiscal.escopo==='POR_FILTRO' && !f.regimes.length && !f.temFolha) || (fiscal.escopo==='SELECAO_MANUAL' && !f.empresasIds.length)) {
+      setPrevia({ok:false,total:0,message:'Selecione o grupo de empresas.'});return;
+    }
     let ativo = true; setPrevia(null);
     api.previewEscopoRegra({ escopo: fiscal.escopo, filtros: JSON.parse(filtroChave) }).then(out => { if (ativo) setPrevia(out); }).catch(e => { if (ativo) setPrevia({ ok: false, message: e.message }); });
     return () => { ativo = false; };

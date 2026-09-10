@@ -39,6 +39,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
   const [criacao, setCriacao] = useState(null), [detalhe, setDetalhe] = useState(null), [confirmacao, setConfirmacao] = useState(null), [edicaoLegada, setEdicaoLegada] = useState(null);
   const [ocupado, setOcupado] = useState(false), [filtroLista, setFiltroLista] = useState('TODAS'), [busca, setBusca] = useState('');
   const horasRef = useRef(null);
+  const contextoAplicado = useRef(false);
   const [scrollbar, setScrollbar] = useState(0);
   const dias = useMemo(() => diasDoPeriodo(referencia, visao), [referencia, visao]);
   const inicio = dias[0], fim = dias.at(-1);
@@ -68,6 +69,18 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     ...itensDasObrigacoes(dados.obrigacoes), ...dados.itens,
     ...dados.fiscais.filter(i => !dados.ocultos.includes(`${i.tipo}|${i.id}`)),
   ].filter(i => i.dataFim >= inicio && i.dataInicio <= fim)), [dados, inicio, fim]);
+  useEffect(() => {
+    const contexto=initialContext?.obrigacoesModal;
+    if(!contexto || contextoAplicado.current || carregando)return;
+    contextoAplicado.current=true;
+    if(contexto.criar) {
+      const data=contexto.dataInicio || dataLocal();
+      setCriacao({dataInicio:data,dataFim:contexto.dataFim || data,companyId:contexto.companyId || null});
+    } else if(contexto.ocorrenciaId) {
+      const item=itensDasObrigacoes(dados.obrigacoes).find(i=>i.ocorrenciaId===contexto.ocorrenciaId);
+      if(item){setReferencia(item.dataInicio);setDetalhe({...item,itens:[item]});}
+    }
+  },[carregando,dados.obrigacoes,initialContext]);
   const series = useMemo(() => {
     const mapa = new Map();
     for (const o of dados.obrigacoes) {

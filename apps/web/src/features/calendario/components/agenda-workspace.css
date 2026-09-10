@@ -82,7 +82,7 @@
 .agenda-text-action { border:0; background:transparent; color:var(--text-muted); cursor:pointer; font-size:12px!important; padding:6px; }
 @media(max-width:700px) {
   .agenda-toolbar { align-items:flex-start; gap:10px; flex-wrap:wrap; }
-  .agenda-period-nav { flex:1; flex-wrap:wrap; gap:5px; }
+  .agenda-period-nav { flex:1 0 100%; flex-wrap:nowrap; gap:5px; }
   .agenda-period-nav h2 { font-size:14px; margin-inline:4px; }
   .agenda-view-nav { margin-left:auto; }
   .agenda-day-headings strong { font-size:18px; }
