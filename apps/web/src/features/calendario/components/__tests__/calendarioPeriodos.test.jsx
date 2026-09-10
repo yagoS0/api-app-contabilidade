@@ -58,6 +58,29 @@ test('segundo passo aplica regime e separa janela e vencimento fiscal',async()=>
   fireEvent.change(screen.getByLabelText('Dia do vencimento fiscal'),{target:{value:'21'}});fireEvent.change(screen.getByLabelText('Aplicar a'),{target:{value:'POR_FILTRO'}});fireEvent.click(screen.getByLabelText('Lucro Presumido'));
   await screen.findByText('2 empresas');fireEvent.click(screen.getByRole('button',{name:'Salvar'}));await waitFor(()=>expect(api.createRegraObrigacao).toHaveBeenCalledWith(expect.objectContaining({diaVencimento:21,agendaConfig:expect.objectContaining({dataInicio:'2026-09-10',dataFim:'2026-09-15'}),filtros:{regimes:['LUCRO_PRESUMIDO'],temFolha:null}})));
 });
+
+test('editar a tarefa de 10 a 15 mostra blocos diários das 9 às 11 em duas semanas',async()=>{
+  montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026 às 09:00'));
+  fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Conferência de notas'}});
+  fireEvent.change(screen.getByLabelText('Horário final'),{target:{value:'11:00'}});
+  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  fireEvent.click(await screen.findByRole('button',{name:'Conferência de notas'}));
+  fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
+  fireEvent.change(screen.getByLabelText('Até'),{target:{value:'2026-09-15'}});
+  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  await waitFor(()=>expect(screen.getAllByRole('button',{name:'Conferência de notas'})).toHaveLength(4));
+  for(const evento of screen.getAllByRole('button',{name:'Conferência de notas'})) {
+    expect(evento.closest('.agenda-time-columns')).not.toBeNull();
+    expect(evento).toHaveStyle({top:'504px',height:'110px'});
+  }
+  fireEvent.click(screen.getAllByRole('button',{name:'Conferência de notas'})[2]);
+  fireEvent.click(screen.getByRole('button',{name:'Excluir ocorrência',exact:true}));
+  fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));
+  await waitFor(()=>expect(screen.getAllByRole('button',{name:'Conferência de notas'})).toHaveLength(3));
+  fireEvent.click(screen.getByRole('button',{name:'Próximo período'}));
+  await waitFor(()=>expect(screen.getAllByRole('button',{name:'Conferência de notas'})).toHaveLength(2));
+});
 test('faixa agrupa empresas e mostra conclusão parcial e prazo fiscal',async()=>{
   const obs=obrigacoes();obs[0].ocorrencias[0].situacao='CONCLUIDA';const {container}=montar({obs});const eventos=await screen.findAllByRole('button',{name:/EFD-Contribuições/});expect(eventos).toHaveLength(1);expect(container.querySelector('.agenda-event')).not.toHaveClass('is-complete');
   fireEvent.click(eventos[0]);expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument();expect(screen.getAllByText('Vencimento fiscal · 21/09/2026')).toHaveLength(2);

@@ -1,4 +1,4 @@
-import { normalizarAgenda, ocorrenciasDaTarefa } from '../../../../../packages/shared/src/agenda.js';
+import { normalizarAgenda, ocorrenciasDaTarefa, encontrarOcorrenciaDaTarefa } from '../../../../../packages/shared/src/agenda.js';
 export function criarMockAgenda(obrigacoes, regras) {
   const tarefas = [], ocultos = [];
   return {
@@ -18,8 +18,9 @@ export function criarMockAgenda(obrigacoes, regras) {
       if (acao === 'EXCLUIR_SERIE') t.excluidaEm = new Date().toISOString();
       else {
         const anterior = t.estados[cicloChave] || {}; if (anterior.canceladaEm) throw new Error('Esta ocorrência foi excluída.');
+        const oc = encontrarOcorrenciaDaTarefa(t, cicloChave); if (!oc) throw new Error('Ocorrência não encontrada.');
         if (!['CONCLUIR','REABRIR','EXCLUIR','EDITAR'].includes(acao)) throw new Error('Ação inválida.');
-        t.estados[cicloChave] = { ...anterior, ...(acao === 'EDITAR' ? {alteracoes:{...alteracoes,...normalizarAgenda({...alteracoes,repetirAte:null})}} : acao === 'EXCLUIR' ? {canceladaEm:new Date().toISOString()} : {concluidaEm:acao === 'CONCLUIR' ? new Date().toISOString() : null}) };
+        t.estados[cicloChave] = { ...anterior, ...(acao === 'EDITAR' ? {alteracoes:{titulo:oc.titulo,descricao:oc.descricao,...alteracoes,...normalizarAgenda({...oc,...alteracoes,repetirAte:null})}} : acao === 'EXCLUIR' ? {canceladaEm:new Date().toISOString()} : {concluidaEm:acao === 'CONCLUIR' ? new Date().toISOString() : null}) };
       }
       return {ok:true,tarefa:t};
     },

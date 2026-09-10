@@ -1,8 +1,40 @@
 jest.mock('../../../infrastructure/db/prisma.js',()=>({prisma:{}}));
 import { normalizarEntrada } from '../ObrigacoesService';
 import { sincronizarAgendaConfigurada } from '../sincronizarAgendaConfigurada';
-import { normalizarAgenda, expandirAgenda, ocorrenciasDaTarefa } from '../../../../../../packages/shared/src/agenda';
+import { normalizarAgenda, expandirAgenda, ocorrenciasDaTarefa, encontrarOcorrenciaDaTarefa } from '../../../../../../packages/shared/src/agenda';
 const config={dataInicio:'2026-09-10',dataFim:'2026-09-15',recorrencia:'MENSAL',prioridade:'ALTA'};
+
+test('tarefa mensal de 10 a 15 gera seis dias independentes em cada mês',()=>{
+  const tarefa={id:'t',titulo:'Conferir NFS-e',config:{...config,horaInicio:'09:00',horaFim:'11:00'},estados:{}};
+  const itens=ocorrenciasDaTarefa(tarefa,'2026-09-01','2026-10-31');
+  expect(itens).toHaveLength(12);expect(new Set(itens.map(i=>i.id)).size).toBe(12);
+  expect(itens.every(i=>i.dataInicio===i.dataFim && i.horaInicio==='09:00' && i.horaFim==='11:00')).toBe(true);
+  expect(itens.slice(0,6).map(i=>i.dataInicio)).toEqual(['2026-09-10','2026-09-11','2026-09-12','2026-09-13','2026-09-14','2026-09-15']);
+  tarefa.estados[itens[2].cicloChave]={canceladaEm:'agora'};
+  tarefa.estados[itens[1].cicloChave]={concluidaEm:'agora'};
+  tarefa.estados[itens[3].cicloChave]={alteracoes:{horaInicio:'14:00',horaFim:'15:00'}};
+  const restante=ocorrenciasDaTarefa(tarefa,'2026-09-01','2026-10-31');
+  expect(restante).toHaveLength(11);expect(restante.filter(i=>i.resolvido)).toHaveLength(1);
+  expect(restante.filter(i=>i.horaInicio==='14:00')).toHaveLength(1);
+  expect(encontrarOcorrenciaDaTarefa(tarefa,itens[3].cicloChave).horaInicio).toBe('14:00');
+  expect(encontrarOcorrenciaDaTarefa(tarefa,'2026-09@2026-09-30')).toBeUndefined();
+});
+
+test('editar tarefa avulsa para janela cria dias e preserva exceções movidas fora do mês',()=>{
+  const tarefa={id:'t',titulo:'NFS-e',config:{dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:00',horaFim:'11:00'},estados:{'2026-09-10':{alteracoes:{dataFim:'2026-09-15'}}}};
+  const dias=ocorrenciasDaTarefa(tarefa,'2026-09-01','2026-09-30');expect(dias).toHaveLength(6);
+  tarefa.estados[dias[2].cicloChave]={alteracoes:{dataInicio:'2026-11-01',dataFim:'2026-11-02'}};
+  const movidas=ocorrenciasDaTarefa(tarefa,'2026-11-01','2026-11-30');expect(movidas).toHaveLength(2);
+  tarefa.estados[movidas[0].cicloChave]={canceladaEm:'agora'};
+  expect(ocorrenciasDaTarefa(tarefa,'2026-11-01','2026-11-30').map(i=>i.dataInicio)).toEqual(['2026-11-02']);
+  expect(ocorrenciasDaTarefa(tarefa,'2026-09-01','2026-09-30')).toHaveLength(5);
+  expect(encontrarOcorrenciaDaTarefa(tarefa,movidas[1].cicloChave).dataInicio).toBe('2026-11-02');
+});
+
+test('janelas sem horário e cancelamentos antigos conservam seu comportamento',()=>{
+  expect(ocorrenciasDaTarefa({id:'t',config,estados:{}},'2026-09-01','2026-09-30')).toHaveLength(1);
+  expect(ocorrenciasDaTarefa({id:'t',config:{...config,horaInicio:'09:00',horaFim:'11:00'},estados:{'2026-09':{canceladaEm:'agora'}}},'2026-09-01','2026-09-30')).toHaveLength(0);
+});
 test('normalização preserva agenda nas obrigações',()=>expect(normalizarEntrada({nome:'EFD',periodicidade:'MENSAL',diaVencimento:21,agendaConfig:config}).agendaConfig).toMatchObject(config));
 
 test('horário fixo repete sem inventar duração e aceita alteração para intervalo',()=>{

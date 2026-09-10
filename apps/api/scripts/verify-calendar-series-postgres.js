@@ -179,6 +179,20 @@ try {
   assert.equal((await listarTarefas({userId:prefix+'-outro',inicio:mesAtual+'-01',fim:mesAtual+'-28'})).tarefas.length,0);
   ok('tarefas sem empresa isolam proprietário e conservam alterações simultâneas de ciclos diferentes');
 
+  const conferencia=await salvarTarefa({userId:prefix,dados:{titulo:'Conferência diária de notas',config:{...config,recorrencia:'AVULSA',dataFim:config.dataInicio,horaInicio:'09:00',horaFim:'11:00'}}});
+  await alterarTarefa({userId:prefix,id:conferencia.id,cicloChave:config.dataInicio,acao:'EDITAR',alteracoes:{dataFim:config.dataFim}});
+  const diasConferencia=async()=> (await listarTarefas({userId:prefix,inicio:mesAtual+'-01',fim:mesAtual+'-28'})).itens.filter(i=>i.tarefaId===conferencia.id);
+  const seis=await diasConferencia();assert.equal(seis.length,6);assert.equal(new Set(seis.map(i=>i.cicloChave)).size,6);
+  assert.ok(seis.every(i=>i.dataInicio===i.dataFim && i.horaInicio==='09:00' && i.horaFim==='11:00'));
+  await Promise.all([
+    alterarTarefa({userId:prefix,id:conferencia.id,cicloChave:seis[1].cicloChave,acao:'CONCLUIR'}),
+    alterarTarefa({userId:prefix,id:conferencia.id,cicloChave:seis[2].cicloChave,acao:'EXCLUIR'}),
+    alterarTarefa({userId:prefix,id:conferencia.id,cicloChave:seis[3].cicloChave,acao:'EDITAR',alteracoes:{horaInicio:'14:00',horaFim:'15:00'}}),
+  ]);
+  const cinco=await diasConferencia();assert.equal(cinco.length,5);assert.equal(cinco.filter(i=>i.resolvido).length,1);assert.equal(cinco.filter(i=>i.horaInicio==='14:00').length,1);
+  await assert.rejects(alterarTarefa({userId:prefix+'-outro',id:conferencia.id,cicloChave:seis[0].cicloChave,acao:'EXCLUIR'}),e=>e.status===404);
+  ok('editar período cria seis tarefas diárias com horários e estados independentes, persistidos sob concorrência');
+
   console.log(`PASS: ${checks} cenários sobre PostgreSQL real com migrations aplicadas.`);
 } finally {
   // Limpeza estritamente limitada ao UUID criado por esta execução; cascade remove só suas fixtures.

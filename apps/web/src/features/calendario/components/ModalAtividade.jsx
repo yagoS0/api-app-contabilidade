@@ -33,6 +33,7 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo }) {
       if (horario !== 'SEM' && !dados.horaInicio) throw new Error('Informe o horário.');
       if (horario === 'INTERVALO' && !dados.horaFim) throw new Error('Informe o horário final.');
       const config = normalizarAgenda({ ...dados, horaInicio: horario === 'SEM' ? null : dados.horaInicio, horaFim: horario === 'INTERVALO' ? dados.horaFim : null });
+      if (!obrigacao && inicial.tipo !== 'obrigacao' && config.horaFim && config.horaFim <= config.horaInicio) throw new Error('O horário final deve ser posterior ao inicial.');
       if (!dados.titulo.trim()) throw new Error('Informe o título.');
       if (obrigacao && passo === 1) { setPasso(2); return; }
       setOcupado(true);
