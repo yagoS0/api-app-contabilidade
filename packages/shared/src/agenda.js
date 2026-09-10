@@ -62,18 +62,48 @@ export function expandirAgenda(config, inicio, fim) {
   return resultado;
 }
 
+// Uma tarefa com horário ocupa o mesmo horário em cada dia inclusivo da janela.
+// A chave de cada dia permanece ligada ao ciclo original, mesmo após mover a tarefa.
+export function diasDaTarefa(item) {
+  if (!item.horaInicio || item.dataInicio === item.dataFim) return [item];
+  // Compatibilidade com intervalos antigos que atravessavam a noite.
+  if (item.horaFim && item.horaFim <= item.horaInicio) return [item];
+  const dias = [];
+  for (let dia = item.dataInicio; dia <= item.dataFim; dia = somarDiasAgenda(dia, 1)) {
+    dias.push({ ...item, dataInicio: dia, dataFim: dia, cicloChave: `${item.cicloChave}@${dia}` });
+  }
+  return dias;
+}
+
+function itensDoCiclo(tarefa, oc) {
+  const pendentes = [{ ...oc, titulo: tarefa.titulo, descricao: tarefa.descricao, concluidaEm: null }], itens = [];
+  while (pendentes.length) {
+    const original = pendentes.pop(), estado = tarefa.estados?.[original.cicloChave] || {};
+    if (estado.canceladaEm) continue;
+    const item = { ...original, ...estado.alteracoes, concluidaEm: Object.hasOwn(estado, 'concluidaEm') ? estado.concluidaEm : original.concluidaEm };
+    const dias = diasDaTarefa(item);
+    if (dias.length > 1) { pendentes.push(...dias.reverse()); continue; }
+    itens.push({ ...item, id: `${tarefa.id}:${item.cicloChave}`, tarefaId: tarefa.id, fonte: 'TAREFA', tipo: 'tarefa', resolvido: Boolean(item.concluidaEm) });
+  }
+  return itens;
+}
+
+export function encontrarOcorrenciaDaTarefa(tarefa, chave) {
+  const raiz = String(chave || '').split('@')[0];
+  const referencia = dataAgenda(raiz.length === 7 ? `${raiz}-01` : raiz);
+  const oc = expandirAgenda(tarefa.config, referencia, somarDiasAgenda(referencia, 31)).find(o => o.cicloChave === raiz);
+  return oc ? itensDoCiclo(tarefa, oc).find(o => o.cicloChave === chave) : null;
+}
+
 /** Exceções movidas continuam visíveis no destino, mesmo fora do período original. */
 export function ocorrenciasDaTarefa(tarefa, inicio, fim) {
   const mapa = new Map(expandirAgenda(tarefa.config, inicio, fim).map(o => [o.cicloChave, o]));
   for (const [chave, estado] of Object.entries(tarefa.estados || {})) {
-    if (!estado.alteracoes || estado.canceladaEm || mapa.has(chave)) continue;
-    const referencia = chave.length === 7 ? `${chave}-01` : chave;
-    const oc = expandirAgenda(tarefa.config, referencia, somarDiasAgenda(referencia, 31)).find(o => o.cicloChave === chave);
-    if (oc) mapa.set(chave, oc);
+    const raiz = chave.split('@')[0];
+    if (!estado.alteracoes || estado.canceladaEm || mapa.has(raiz)) continue;
+    const referencia = raiz.length === 7 ? `${raiz}-01` : raiz;
+    const oc = expandirAgenda(tarefa.config, referencia, somarDiasAgenda(referencia, 31)).find(o => o.cicloChave === raiz);
+    if (oc) mapa.set(raiz, oc);
   }
-  return [...mapa.values()].flatMap(oc => {
-    const estado = tarefa.estados?.[oc.cicloChave] || {};
-    const item = { ...oc, ...estado.alteracoes, id: `${tarefa.id}:${oc.cicloChave}`, tarefaId: tarefa.id, fonte: 'TAREFA', tipo: 'tarefa', titulo: estado.alteracoes?.titulo || tarefa.titulo, descricao: estado.alteracoes?.descricao ?? tarefa.descricao, resolvido: Boolean(estado.concluidaEm), concluidaEm: estado.concluidaEm || null };
-    return estado.canceladaEm || item.dataFim < inicio || item.dataInicio > fim ? [] : [item];
-  });
+  return [...mapa.values()].flatMap(oc => itensDoCiclo(tarefa, oc)).filter(item => item.dataFim >= inicio && item.dataInicio <= fim);
 }
