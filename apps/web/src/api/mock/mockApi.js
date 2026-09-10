@@ -1018,7 +1018,7 @@ const mockGuiasEnviadasWhatsapp = new Set();
 
 // A última prévia do lote por WhatsApp — é contra ela que a conferência do `executar` é medida.
 let mockUltimaPreviaWhatsapp = null;
-import { relatorioVencimentoMock, enviarVencimentoMock, previaVencimentoMock } from "./guiasVencimentoMock";
+import { relatorioVencimentoMock, enviarVencimentoMock, previaVencimentoMock, preverLiberacaoVencimentoMock, liberarVencimentoMock } from "./guiasVencimentoMock";
 
 // ── AS CONVERSAS (F5, 02/09/2026) — três fios, três ramos ─────────────────────────────────────
 const AGORA_MOCK = Date.now();
@@ -5992,6 +5992,12 @@ export function createMockApi() {
           ok: true, status: "sent", sentNow: 2, attachmentsCount: 2,
         })),
       };
+    },
+    async preverLiberacaoGuias(input) {
+      return preverLiberacaoVencimentoMock(mockCompanies, mockContatosWhatsapp, input);
+    },
+    async liberarGuiasLote(input) {
+      return liberarVencimentoMock(mockCompanies, mockContatosWhatsapp, input);
     },
     // ── ENVIO DE GUIAS POR WHATSAPP — o MESMO contrato de `realApi` ──────────────────────────────
     // ⚠ O mock DECIDE como o servidor decide (`elegibilidadeEnvioGuia`): a 1ª empresa tem contato

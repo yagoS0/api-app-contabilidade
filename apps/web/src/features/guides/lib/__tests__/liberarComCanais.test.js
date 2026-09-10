@@ -31,7 +31,7 @@ describe("liberarComCanais", () => {
     api.enviarGuiaWhatsapp.mockImplementation(async () => { ordem.push("zap"); return { ok: true }; });
     const r = await liberarComCanais({ api, companyId: "pc-1", guideId: "g1" });
     expect(ordem).toEqual(["email", "zap"]);
-    expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith("pc-1", "g1");
+    expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith("pc-1", "g1", { complementar: true });
     expect(r.ok).toBe(true);
     expect(r.texto).toMatch(/e-mail enviado · WhatsApp: pedido aceito pela Meta, aguardando confirmação de entrega/);
   });
@@ -160,4 +160,14 @@ describe("um canal basta — a empresa que só tem WhatsApp", () => {
     expect(r.ok).toBe(false);
     expect(r.texto).toMatch(/WhatsApp não saiu \(contato sem opt-in\)/);
   });
+});
+
+
+test('liberação explícita nos dois canais complementa e-mail mesmo com preferência EMAIL', async () => {
+  const api = { listarContatosWhatsapp: jest.fn(async () => ({ canalPadraoEnvio: 'EMAIL' })), liberarGuiaCliente: jest.fn(async () => ({ sent: true })), enviarGuiaWhatsapp: jest.fn(async () => ({ ok: true, estado: 'aceito' })) };
+  const perguntar = jest.fn();
+  await liberarComCanais({ api, companyId: 'c', guideId: 'g', ambos: true, perguntar });
+  expect(api.liberarGuiaCliente).toHaveBeenCalledWith('g');
+  expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith('c', 'g', { complementar: true });
+  expect(perguntar).not.toHaveBeenCalled();
 });

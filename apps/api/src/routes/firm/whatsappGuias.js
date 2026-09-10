@@ -28,7 +28,8 @@ import {
   preverLote,
 } from "../../application/whatsapp/EnvioGuiaWhatsappService.js";
 import { avaliarLinha } from "../../application/whatsapp/elegibilidadeEnvioGuia.js";
-import { enviosPorGuia, foiEnviadaComLegado } from "../../application/guides/EnvioGuiaService.js";
+import { enviosPorGuia, foiEnviadaComLegado, STATUS_TERMINAL } from "../../application/guides/EnvioGuiaService.js";
+import { createGuideReleaseBatchService } from "../../application/guides/GuideReleaseBatchService.js";
 import { runGuideEmailWorkerSelected } from "../../workers/guideEmailWorker.js";
 import { sendCompanyGuidesEmail } from "../../application/guides/GuideCompanyEmailService.js";
 import {
@@ -38,6 +39,18 @@ import {
 
 export function createWhatsappGuiasRouter({ log } = {}) {
   const router = Router({ mergeParams: true });
+  const liberacao = createGuideReleaseBatchService();
+
+  for (const [sufixo, executar] of [["/previa", false], ["", true]]) {
+    router.post(`/guides/liberacao/lote${sufixo}`, async (req, res) => {
+      if (!somenteAdminOuContador(req, res)) return undefined;
+      try {
+        const input = { items: req.body?.items, assinatura: req.body?.assinatura,
+          permitidas: await empresasVisiveis(req), userId: req.auth?.user?.id, log };
+        return res.json(await liberacao[executar ? "executar" : "prever"](input));
+      } catch (err) { return falhar(res, err, { acao: "liberar_guias" }); }
+    });
+  }
 
   function falhar(res, err, contexto) {
     const conhecido = err instanceof EnvioGuiaWhatsappError || ["CONFERENCIA_DIVERGENTE", "MES_VENCIMENTO_INVALIDO"].includes(err.code);
@@ -96,7 +109,10 @@ export function createWhatsappGuiasRouter({ log } = {}) {
 
         const canal = await carregarCanal();
         const envios = (await enviosPorGuia([guide.id])).get(guide.id) || [];
-        const jaEnviada = foiEnviadaComLegado(envios, guide);
+        // Liberar nos dois canais complementa o e-mail; não autoriza duplicar WhatsApp.
+        const jaEnviada = req.body?.complementar === true
+          ? envios.some((e) => e.canal === "WHATSAPP" && STATUS_TERMINAL.includes(e.status))
+          : foiEnviadaComLegado(envios, guide);
         // ⚠ REENVIAR É PEDIDO EXPLÍCITO (decisão do dono, 05/09/2026): a tela avisa que a guia já foi
         // enviada, e só com o `reenviar` no corpo é que a recusa `GUIA_JA_ENVIADA` deixa de valer.
         // ⚠ O LOTE NÃO TEM ESTA PORTA — lá a recusa continua sendo o primeiro corte, e é o que

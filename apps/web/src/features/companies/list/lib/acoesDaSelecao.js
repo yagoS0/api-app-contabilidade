@@ -41,13 +41,13 @@ const ESTADOS_ENVIAVEIS = new Set(["gerada", "falhou"]);
 export const ACOES = {
   email: {
     chave: "email",
-    rotulo: "Enviar guias por e-mail",
+    rotulo: "Liberar guias",
     irreversivel: true,
     criaJob: false,
     // A prévia desta ação NÃO é calculada aqui: ela vem de `GET /firm/guides/batch-report`, que é a
     // mesma fonte que o envio consome. Ver `resumoEnvioDoRelatorio`.
-    descricao: "Um e-mail por empresa, com as guias da competência anexadas.",
-    aviso: "O e-mail chega ao cliente. Não há desfazer.",
+    descricao: "Libera as guias no portal e envia por e-mail e WhatsApp aos contatos cadastrados.",
+    aviso: "O envio chega ao cliente por e-mail e WhatsApp, conforme a disponibilidade de cada canal. Não há desfazer.",
   },
   apurar: {
     chave: "apurar",

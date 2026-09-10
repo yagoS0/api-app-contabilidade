@@ -1,6 +1,6 @@
 // Cada resposta descreve só o que aquele canal confirmou.
 import { decidirCanaisAoLiberar, resumirDesfechoDosCanais, PERGUNTA_WHATSAPP, perguntaDeReenvio, desfechoWhatsapp } from "./canalDeEnvio";
-export async function liberarComCanais({ api, companyId, guideId, perguntar, reenviarConfirmado = false }) {
+export async function liberarComCanais({ api, companyId, guideId, perguntar, reenviarConfirmado = false, ambos = false }) {
   let cadastro;
   try {
     cadastro = await api.listarContatosWhatsapp(companyId);
@@ -10,7 +10,7 @@ export async function liberarComCanais({ api, companyId, guideId, perguntar, ree
   }
   const confirmar = perguntar || ((p) => window.confirm(p));
   const decisao = decidirCanaisAoLiberar(cadastro);
-  const querWhatsapp = decisao.whatsapp || (decisao.perguntar && confirmar(PERGUNTA_WHATSAPP));
+  const querWhatsapp = ambos || decisao.whatsapp || (decisao.perguntar && confirmar(PERGUNTA_WHATSAPP));
   let email;
   let bloqueado = false;
   try {
@@ -26,7 +26,7 @@ export async function liberarComCanais({ api, companyId, guideId, perguntar, ree
   let whatsapp = null;
   if (querWhatsapp && !bloqueado) {
     try {
-      const r = reenviarConfirmado ? await api.enviarGuiaWhatsapp(companyId, guideId, { reenviar: true }) : await api.enviarGuiaWhatsapp(companyId, guideId);
+      const r = reenviarConfirmado ? await api.enviarGuiaWhatsapp(companyId, guideId, { reenviar: true }) : await api.enviarGuiaWhatsapp(companyId, guideId, { complementar: true });
       whatsapp = desfechoWhatsapp(r);
     } catch (err) {
       whatsapp = desfechoWhatsapp(err?.payload || { ok: false, message: err?.message, motivo: err?.code });
