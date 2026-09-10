@@ -8,6 +8,7 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo }) {
   const edicao = Boolean(inicial.tarefaId || inicial.ocorrenciaIds);
   const [passo, setPasso] = useState(1), [obrigacao, setObrigacao] = useState(false);
   const [dados, setDados] = useState({ titulo: '', descricao: '', recorrencia: 'AVULSA', prioridade: '', horaInicio: '', horaFim: '', ...inicial });
+  const [horario, setHorario] = useState(inicial.horaInicio ? inicial.horaFim ? 'INTERVALO' : 'FIXO' : 'SEM');
   const [fiscal, setFiscal] = useState({ categoria: 'fiscal', diaVencimento: '', mesReferencia: Number(inicial.dataInicio.slice(5,7)), defasagemMeses: 1, ajusteDiaUtil: 'ANTECIPAR', antecedenciaLembreteDias: 5, verificador: '', escopo: inicial.companyId ? 'SELECAO_MANUAL' : 'TODAS', regimes: [], empresasIds: inicial.companyId ? [inicial.companyId] : [], temFolha: false, aplicarANovas: true, vencimentoFiscal: '' });
   const [previa, setPrevia] = useState(null), [erro, setErro] = useState(''), [ocupado, setOcupado] = useState(false);
   const set = (chave, valor) => setDados(d => ({ ...d, [chave]: valor }));
@@ -29,7 +30,9 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo }) {
   async function salvar(e) {
     e.preventDefault(); setErro('');
     try {
-      const config = normalizarAgenda(dados);
+      if (horario !== 'SEM' && !dados.horaInicio) throw new Error('Informe o horário.');
+      if (horario === 'INTERVALO' && !dados.horaFim) throw new Error('Informe o horário final.');
+      const config = normalizarAgenda({ ...dados, horaInicio: horario === 'SEM' ? null : dados.horaInicio, horaFim: horario === 'INTERVALO' ? dados.horaFim : null });
       if (!dados.titulo.trim()) throw new Error('Informe o título.');
       if (obrigacao && passo === 1) { setPasso(2); return; }
       setOcupado(true);
@@ -63,7 +66,8 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo }) {
         {campo('Título', 'titulo', 'text', { required: true, maxLength: 200, placeholder: 'Ex.: Conferir NFS-e do mês', autoFocus: true })}
         <label className="agenda-field">Descrição<textarea rows={3} maxLength={10000} value={dados.descricao || ''} onChange={e => set('descricao', e.target.value)} /></label>
         <div className="agenda-form-row">{campo('De', 'dataInicio', 'date', { required: true })}{campo('Até', 'dataFim', 'date', { required: true, min: dados.dataInicio })}</div>
-        <div className="agenda-form-row">{campo('Horário inicial', 'horaInicio', 'time')}{campo('Horário final', 'horaFim', 'time')}</div>
+        <label className="agenda-field">Horário<select value={horario} onChange={e => setHorario(e.target.value)}><option value="SEM">Sem horário</option><option value="FIXO">Horário fixo</option><option value="INTERVALO">De uma hora até outra</option></select></label>
+        {horario !== 'SEM' && <div className="agenda-form-row">{campo(horario === 'FIXO' ? 'Às' : 'Horário inicial', 'horaInicio', 'time', { required: true })}{horario === 'INTERVALO' && campo('Horário final', 'horaFim', 'time', { required: true })}</div>}
         {!edicao && <div className="agenda-form-row"><label className="agenda-field">Recorrência<select value={dados.recorrencia} onChange={e => set('recorrencia', e.target.value)}>{Object.entries(RECORRENCIAS).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>{dados.recorrencia !== 'AVULSA' && campo('Repetir até', 'repetirAte', 'date', { min: dados.dataInicio })}</div>}
         <div className="agenda-form-row agenda-form-bottom"><fieldset className="agenda-priorities"><legend>Prioridade</legend>{Object.entries(CORES_PRIORIDADE).map(([v,c], index) => <button key={v} type="button" aria-label={['Sem prioridade','Baixa','Média','Alta','Urgente'][index]} aria-pressed={(dados.prioridade || '') === v} title={['Sem prioridade','Baixa','Média','Alta','Urgente'][index]} style={{ '--priority': c }} onClick={() => set('prioridade', v)} />)}</fieldset>
         {!edicao && <label className="agenda-toggle"><input type="checkbox" checked={obrigacao} onChange={e => setObrigacao(e.target.checked)}/>Obrigação</label>}</div>

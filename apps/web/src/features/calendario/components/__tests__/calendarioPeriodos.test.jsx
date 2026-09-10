@@ -24,6 +24,34 @@ test('clique no horário cria tarefa sem empresa com recorrência e cor',async()
   await waitFor(()=>expect(api.salvarTarefaAgenda).toHaveBeenCalledWith(expect.objectContaining({titulo:'Conferir NFS-e',config:expect.objectContaining({recorrencia:'SEMANAL',prioridade:'ALTA',horaInicio:'09:00'})})));
   expect(await screen.findByRole('button',{name:'Conferir NFS-e'})).toBeInTheDocument();
 });
+
+test('tarefa permite horário fixo, editar para intervalo e remover horário',async()=>{
+  const {api}=montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026 às 09:00'));
+  fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Revisar notas'}});
+  fireEvent.change(screen.getByLabelText('Horário',{exact:true}),{target:{value:'FIXO'}});
+  fireEvent.change(screen.getByLabelText('Às'),{target:{value:'09:30'}});
+  expect(screen.queryByLabelText('Horário final')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  await waitFor(()=>expect(api.salvarTarefaAgenda).toHaveBeenCalledWith(expect.objectContaining({config:expect.objectContaining({horaInicio:'09:30',horaFim:null})})));
+  fireEvent.click(await screen.findByRole('button',{name:'Revisar notas'}));
+  expect(screen.getByText('10/09/2026 · 09:30')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
+  expect(screen.getByLabelText('Horário',{exact:true})).toHaveValue('FIXO');
+  fireEvent.change(screen.getByLabelText('Horário',{exact:true}),{target:{value:'INTERVALO'}});
+  fireEvent.change(screen.getByLabelText('Horário final'),{target:{value:'10:45'}});
+  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  fireEvent.click(await screen.findByRole('button',{name:'Revisar notas'}));
+  expect(screen.getByText('10/09/2026 · 09:30–10:45')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
+  fireEvent.change(screen.getByLabelText('Horário',{exact:true}),{target:{value:'SEM'}});
+  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Revisar notas'}).closest('.agenda-bands')).not.toBeNull());
+  fireEvent.click(await screen.findByRole('button',{name:'Revisar notas'}));
+  expect(screen.getByText('10/09/2026')).toBeInTheDocument();
+});
 test('segundo passo aplica regime e separa janela e vencimento fiscal',async()=>{
   const {api}=montar();fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026'));fireEvent.change(screen.getByLabelText('Título'),{target:{value:'EFD-Contribuições'}});fireEvent.change(screen.getByLabelText('Até'),{target:{value:'2026-09-15'}});
   fireEvent.change(screen.getByLabelText('Recorrência'),{target:{value:'MENSAL'}});fireEvent.click(screen.getByLabelText('Obrigação'));fireEvent.click(screen.getByRole('button',{name:'Continuar'}));

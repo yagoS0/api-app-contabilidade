@@ -19,8 +19,8 @@ export function normalizarAgenda(dados = {}) {
   if (!PRIORIDADES_AGENDA.includes(prioridade)) throw new Error('Selecione uma prioridade válida.');
   const hora = v => { if (v == null || v === '') return null; if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) throw new Error('Informe um horário válido.'); return v; };
   const horaInicio = hora(dados.horaInicio), horaFim = hora(dados.horaFim);
-  if (Boolean(horaInicio) !== Boolean(horaFim)) throw new Error('Preencha os dois horários.');
-  if (horaInicio && dataInicio === dataFim && horaFim <= horaInicio) throw new Error('O horário final deve ser posterior ao inicial.');
+  if (horaFim && !horaInicio) throw new Error('Informe o horário inicial.');
+  if (horaInicio && horaFim && dataInicio === dataFim && horaFim <= horaInicio) throw new Error('O horário final deve ser posterior ao inicial.');
   const repetirAte = dados.repetirAte ? dataAgenda(dados.repetirAte) : null;
   if (repetirAte && repetirAte < dataInicio) throw new Error('A repetição deve terminar após o início.');
   const fuso = dados.fuso || 'America/Sao_Paulo';
