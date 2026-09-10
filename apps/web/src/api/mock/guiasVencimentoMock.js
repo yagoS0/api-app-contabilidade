@@ -1,4 +1,35 @@
 const carteiras = new Map();
+export function preverLiberacaoVencimentoMock(empresas, contatos, { items } = {}) {
+  const erro = () => Object.assign(new Error("Confira novamente o lote."), { code: "CONFERENCIA_DIVERGENTE", status: 409 });
+  if (!items?.length || new Set(items.map((i) => i.portalClientId)).size !== items.length) throw erro();
+  const linhas = items.map((item) => {
+    const r = relatorioVencimentoMock(empresas, item).simples.find((c) => c.portalClientId === item.portalClientId);
+    if (!r || !item.guideIds?.length || item.assinatura !== r.assinatura
+      || JSON.stringify(item.guideIds) !== JSON.stringify(r.pendingGuideIds)) throw erro();
+    const ativos = (contatos[item.portalClientId] || []).filter((c) => c.ativo !== false);
+    const emails = [...new Set(ativos.map((c) => c.email).filter(Boolean))];
+    const telefones = [...new Set(ativos.filter((c) => c.optInEm).map((c) => c.telefoneE164).filter(Boolean))];
+    return { ...item, email: { disponivel: emails.length > 0, destinos: emails, mensagem: emails.length ? null : "Nenhum e-mail cadastrado para receber guias." },
+      whatsapp: { disponivel: telefones.length > 0, destinos: telefones, mensagem: telefones.length ? null : "Nenhum WhatsApp com autorização cadastrado." } };
+  });
+  return { ok: true, linhas, assinatura: JSON.stringify(linhas) };
+}
+export function liberarVencimentoMock(empresas, contatos, input) {
+  const previa = preverLiberacaoVencimentoMock(empresas, contatos, input);
+  if (!input.assinatura || input.assinatura !== previa.assinatura) throw Object.assign(new Error("Confira novamente o lote."), { code: "CONFERENCIA_DIVERGENTE", status: 409 });
+  return { ok: true, results: previa.linhas.map((linha) => {
+    const row = carteiras.get(linha.mesVencimento).find((r) => r.portalClientId === linha.portalClientId);
+    row.documentos.filter((d) => linha.guideIds.includes(d.guideId)).forEach((d) => {
+      d.liberadaCliente = true;
+      d.enviada = linha.email.disponivel || linha.whatsapp.disponivel;
+    });
+    return { portalClientId: linha.portalClientId, liberadas: linha.guideIds.length,
+      ok: linha.email.disponivel && linha.whatsapp.disponivel,
+      email: { ok: linha.email.disponivel, message: linha.email.mensagem },
+      whatsapp: linha.guideIds.map((guideId) => ({ guideId, ok: linha.whatsapp.disponivel,
+        estado: linha.whatsapp.disponivel ? "aceito" : "falhou", message: linha.whatsapp.mensagem })) };
+  }) };
+}
 export function relatorioVencimentoMock(empresas, { mesVencimento, competencia = "" }) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mesVencimento)) throw new Error("Mês de vencimento inválido");
   if (!carteiras.has(mesVencimento)) {

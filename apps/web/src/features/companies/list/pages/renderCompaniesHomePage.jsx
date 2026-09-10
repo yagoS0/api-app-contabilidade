@@ -439,11 +439,10 @@ export function CompaniesHomePage({
       return out;
     },
     onEnviar: async (guideId, empresa) => {
-      // ⚠ DOIS CANAIS, UMA LIGAÇÃO (02/09/2026): o e-mail sai como sempre; o WhatsApp é o terceiro
-      // passo, conforme `canalPadraoEnvio` da empresa. A sequência é a MESMA do botão "Liberar ao
-      // cliente" da aba Guias (`liberarComCanais`) — duas cópias divergiriam na primeira correção.
+      // A liberação na página principal solicita os dois canais aos contatos cadastrados.
+      // Reutiliza a sequência de liberação e seus resultados independentes por canal.
       // `sent:false` com ok:true (a liberação passou, o e-mail falhou) continua sendo ERRO no chip.
-      const out = await liberarComCanais({ api, companyId: empresa?.companyId, guideId });
+      const out = await liberarComCanais({ api, companyId: empresa?.companyId, guideId, ambos: true });
       onRefreshCompanies?.();
       return { ok: out.ok, tom: out.tom, message: out.texto };
     },

@@ -137,7 +137,9 @@ const RELATORIO = {
 function apiFalso(over = {}) {
   return {
     getBatchEmailReport: jest.fn().mockResolvedValue(RELATORIO),
-    sendBatchEmails: jest.fn().mockResolvedValue({ ok: true, sent: 2 }),
+    sendBatchEmails: jest.fn(),
+    preverLiberacaoGuias: jest.fn(async ({ items }) => ({ ok: true, assinatura: 'canais-conferidos', linhas: items.map(i => ({ ...i, email: { disponivel: true, destinos: ['financeiro@example.test'] }, whatsapp: { disponivel: true, destinos: ['5511999990000'] } })) })),
+    liberarGuiasLote: jest.fn().mockResolvedValue({ ok: true, results: [{ portalClientId: 'c1', ok: true, liberadas: 1, email: { ok: true }, whatsapp: [{ ok: true }] }] }),
     criarApuracaoBatch: jest.fn(),
     createNotasCaptura: jest.fn(),
     createNotasDownload: jest.fn().mockResolvedValue({ ok: true, jobId: "j1" }),
@@ -197,16 +199,16 @@ describe("a barra diz PARA QUANTAS — e por que uma ação não se aplica", () 
 describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do botão", () => {
   test("abrir o envio consulta o RELATÓRIO e não envia nada", async () => {
     const { api } = await montarBarra({ empresas: [empresa(), empresa({ companyId: "c2", razao: "BETA LTDA" })] });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Liberar guias/ })); });
     await waitFor(() => expect(api.getBatchEmailReport).toHaveBeenCalledWith({ mesVencimento: MES_ENVIO }));
-    expect(api.sendBatchEmails).not.toHaveBeenCalled();
+    expect(api.liberarGuiasLote).not.toHaveBeenCalled();
   });
 
   test("a confirmação REPETE os números que saem do relatório (3 guias, 2 empresas, 07/2026)", async () => {
     await montarBarra({ empresas: [empresa(), empresa({ companyId: "c2", razao: "BETA LTDA" })] });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
-    const modal = await screen.findByRole("dialog", { name: /Enviar guias por e-mail/ });
-    await within(modal).findByText(`Enviar 3 guias de 2 empresas, com vencimento em ${MES_ENVIO.split("-").reverse().join("/")}?`);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Liberar guias/ })); });
+    const modal = await screen.findByRole("dialog", { name: /Liberar guias/ });
+    await within(modal).findByText(`Liberar 3 guias de 2 empresas, com vencimento em ${MES_ENVIO.split("-").reverse().join("/")}?`);
     // Linha a linha, com os tributos de cada uma.
     expect(within(modal).getByText(/2 guia\(s\) · IRPJ, CSLL/)).toBeInTheDocument();
     // E o aviso de que o e-mail chega ao cliente.
@@ -215,33 +217,33 @@ describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do bot�
 
   test("só o CONFIRMAR envia — e envia exatamente os ids da prévia", async () => {
     const { api } = await montarBarra({ empresas: [empresa(), empresa({ companyId: "c2", razao: "BETA LTDA" })] });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
-    const modal = await screen.findByRole("dialog", { name: /Enviar guias por e-mail/ });
-    await within(modal).findByText(/Enviar 3 guia/);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Liberar guias/ })); });
+    const modal = await screen.findByRole("dialog", { name: /Liberar guias/ });
+    await within(modal).findByText(/Liberar 3 guia/);
     await act(async () => { fireEvent.click(within(modal).getByRole("button", { name: /Confirmar e executar/ })); });
-    expect(api.sendBatchEmails).toHaveBeenCalledWith([
+    expect(api.liberarGuiasLote).toHaveBeenCalledWith({ assinatura: "canais-conferidos", items: [
       { portalClientId: "c1", mesVencimento: MES_ENVIO, guideIds: ["g1"], assinatura: undefined },
       { portalClientId: "c2", mesVencimento: MES_ENVIO, guideIds: ["g2", "g3"], assinatura: undefined },
-    ]);
+    ] });
   });
 
   test("⚠ prévia que NÃO carrega BLOQUEIA o envio — e não inventa um número no lugar dela", async () => {
     const api = apiFalso({ getBatchEmailReport: jest.fn().mockRejectedValue(new Error("o servidor demorou demais")) });
     await montarBarra({ api });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
-    const modal = await screen.findByRole("dialog", { name: /Enviar guias por e-mail/ });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Liberar guias/ })); });
+    const modal = await screen.findByRole("dialog", { name: /Liberar guias/ });
     expect(await within(modal).findByText(/Não foi possível carregar a prévia/)).toBeInTheDocument();
     expect(within(modal).getByRole("button", { name: /Confirmar e executar/ })).toBeDisabled();
     // Nenhum número de guia aparece — nem o da listagem.
     expect(within(modal).queryByText(/Enviar \d+ guia/)).not.toBeInTheDocument();
-    expect(api.sendBatchEmails).not.toHaveBeenCalled();
+    expect(api.liberarGuiasLote).not.toHaveBeenCalled();
   });
 
   test("quem fica de fora aparece NA PRÉVIA com o motivo", async () => {
     const semGuia = empresa({ companyId: "c3", razao: "GAMA LTDA", guideCompliance: { das: { required: true, state: "enviada", ok: true } } });
     await montarBarra({ empresas: [empresa(), semGuia] });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
-    const modal = await screen.findByRole("dialog", { name: /Enviar guias por e-mail/ });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Liberar guias/ })); });
+    const modal = await screen.findByRole("dialog", { name: /Liberar guias/ });
     await within(modal).findByText(/Ficam de fora \(1\)/);
     expect(within(modal).getByText("GAMA LTDA")).toBeInTheDocument();
   });
@@ -252,8 +254,8 @@ describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do bot�
       getBatchEmailReport: jest.fn().mockResolvedValue({ competencia: MES_ENVIO, simples: [], presumidos: [], outros: [] }),
     });
     await montarBarra({ api });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
-    const modal = await screen.findByRole("dialog", { name: /Enviar guias por e-mail/ });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Liberar guias/ })); });
+    const modal = await screen.findByRole("dialog", { name: /Liberar guias/ });
     expect(await within(modal).findByText(/Nada a fazer com esta seleção/)).toBeInTheDocument();
     expect(within(modal).queryByText(/Enviar 0 guias/)).not.toBeInTheDocument();
     expect(within(modal).getByRole("button", { name: /Confirmar e executar/ })).toBeDisabled();
@@ -263,7 +265,7 @@ describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do bot�
     // As outras quatro contam sobre o dado da própria listagem; o envio depende de `batch-report`,
     // que só é consultado ao abrir o modal. Dois números para a mesma pergunta é o defeito.
     await montarBarra({ empresas: [empresa(), empresa({ companyId: "c2", razao: "BETA", empresaZerada: true })] });
-    expect(screen.getByRole("button", { name: "Enviar guias por e-mail" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Liberar guias" })).toBeInTheDocument();
     // A de capturar, essa sim, mostra que só 2 de 2 entram (aqui as duas têm A1) — e quando o
     // recorte é menor que a seleção, o número aparece.
     expect(screen.getByRole("button", { name: /Baixar situação fiscal \(ZIP\)/ })).toBeInTheDocument();
@@ -278,10 +280,10 @@ describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do bot�
       guideCompliance: { das: { required: true, state: "enviada", ok: true } },
     });
     await montarBarra({ empresas: [jaEnviadaNaListagem] });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
-    const modal = await screen.findByRole("dialog", { name: /Enviar guias por e-mail/ });
-    await within(modal).findByText(/Enviar 1 guia de 1 empresa/);
-    expect(within(modal).getAllByText("ACME LTDA")).toHaveLength(1);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Liberar guias/ })); });
+    const modal = await screen.findByRole("dialog", { name: /Liberar guias/ });
+    await within(modal).findByText(/Liberar 1 guia de 1 empresa/);
+    expect(within(modal).getAllByText("ACME LTDA")).toHaveLength(2);
     expect(within(modal).queryByText(/Ficam de fora/)).not.toBeInTheDocument();
   });
 
@@ -289,8 +291,8 @@ describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do bot�
     // "empresa zerada — não há guia a entregar" informa mais que "nenhuma guia pendente".
     const zerada = empresa({ companyId: "c9", razao: "ZERADA LTDA", empresaZerada: true });
     await montarBarra({ empresas: [empresa(), zerada] });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
-    const modal = await screen.findByRole("dialog", { name: /Enviar guias por e-mail/ });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Liberar guias/ })); });
+    const modal = await screen.findByRole("dialog", { name: /Liberar guias/ });
     await within(modal).findByText(/Ficam de fora \(1\)/);
     expect(within(modal).getByText(/não aparece no relatório desta competência/)).toBeInTheDocument();
   });
@@ -313,4 +315,26 @@ describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do bot�
       companyIds: ["c1"], competenciaDe: "2026-07", competenciaAte: "2026-07",
     });
   });
+});
+
+
+test("liberação mostra destinatários dos dois canais antes de confirmar e preserva falha parcial no resultado", async () => {
+  const api = apiFalso({ liberarGuiasLote: jest.fn().mockResolvedValue({ ok: true, results: [{ portalClientId: 'c1', ok: false, liberadas: 1, email: { ok: true }, whatsapp: [{ ok: false, message: 'Sem autorização de WhatsApp.' }] }] }) });
+  await montarBarra({ api });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Liberar guias' })); });
+  expect(screen.getByText(/E-mail: financeiro@example.test/)).toBeInTheDocument();
+  expect(screen.getByText(/WhatsApp: 5511999990000/)).toBeInTheDocument();
+  expect(api.liberarGuiasLote).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Confirmar e executar/ })); });
+  expect(screen.getByRole('status')).toHaveTextContent('1 guia(s) liberada(s) no portal');
+  expect(screen.getByRole('status')).toHaveTextContent('E-mail: enviado');
+  expect(screen.getByRole('status')).toHaveTextContent('Sem autorização de WhatsApp.');
+  expect(api.sendBatchEmails).not.toHaveBeenCalled();
+});
+test("falha ao conferir canais bloqueia confirmação", async () => {
+  const api = apiFalso({ preverLiberacaoGuias: jest.fn().mockRejectedValue(new Error('Cadastro indisponível')) });
+  await montarBarra({ api });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Liberar guias' })); });
+  expect(screen.getByRole('button', { name: /Confirmar e executar/ })).toBeDisabled();
+  expect(api.liberarGuiasLote).not.toHaveBeenCalled();
 });
