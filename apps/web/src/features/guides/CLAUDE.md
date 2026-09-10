@@ -482,3 +482,9 @@ As caixas não substituem a **Pessoa do portal** nem o papel dela. A tela diz is
 o servidor é o portão e exige os dois. A gravação usa a rota própria
 `PATCH /firm/companies/:companyId/contatos-whatsapp/:contatoId/permissoes-assistente`, para não tocar
 em telefone, e-mail, opt-in ou usuário ao alterar somente os acessos.
+
+### 10/09/2026 — Conferência de guias por vencimento
+
+A seleção de empresas (`BarraSelecaoEmpresas`) tem mês de vencimento independente da competência da carteira. O painel `/guides/batch-email` usa o mês atual do Rio de Janeiro, permite consultar qualquer mês e mantém competência como filtro opcional com aviso. `GuiasPorVencimento` mostra cada documento e parcela faltante, inclusive empresa sem nenhum PDF disponível. Pagas não são selecionadas. Pendências anteriores e sem vencimento ficam fora do lote.
+
+Os dois canais enviam IDs exatos; a assinatura devolvida pelo servidor acompanha a confirmação. A mensagem de envio não pode declarar a carteira concluída se há parcelas faltantes. O mock mantém IDs estáveis e reflete o envio sem esconder essas pendências.

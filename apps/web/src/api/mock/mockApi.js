@@ -1018,6 +1018,7 @@ const mockGuiasEnviadasWhatsapp = new Set();
 
 // A última prévia do lote por WhatsApp — é contra ela que a conferência do `executar` é medida.
 let mockUltimaPreviaWhatsapp = null;
+import { relatorioVencimentoMock, enviarVencimentoMock, previaVencimentoMock } from "./guiasVencimentoMock";
 
 // ── AS CONVERSAS (F5, 02/09/2026) — três fios, três ramos ─────────────────────────────────────
 const AGORA_MOCK = Date.now();
@@ -5900,6 +5901,7 @@ export function createMockApi() {
     // é a forma mais eficiente de esconder um 404 até a produção.
     async getBatchEmailReport(competencia) {
       await delay(200);
+      if (competencia?.mesVencimento) return relatorioVencimentoMock(mockCompanies, competencia);
       const ref = competencia || "2026-04";
       // Gera dataset mock baseado nas empresas mockadas. Cada empresa simula um regime.
       const REGIMES = ["SIMPLES", "LUCRO_PRESUMIDO"];
@@ -5976,6 +5978,7 @@ export function createMockApi() {
     },
     async sendBatchEmails(items) {
       await delay(800);
+      if (items.some((it) => it.mesVencimento)) return enviarVencimentoMock(items);
       return {
         ok: true,
         total: items.length,
@@ -6017,8 +6020,12 @@ export function createMockApi() {
         providerMessageId: `wamid.mock.${Date.now()}`,
       };
     },
-    async preverLoteWhatsapp({ competencia, portalClientIds } = {}) {
+    async preverLoteWhatsapp({ competencia, mesVencimento, portalClientIds, guideIds } = {}) {
       await delay(250);
+      if (mesVencimento) {
+        mockUltimaPreviaWhatsapp = previaVencimentoMock(mockCompanies, mockContatosWhatsapp, { mesVencimento, portalClientIds, guideIds });
+        return mockUltimaPreviaWhatsapp;
+      }
       if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
         const e = new Error("Informe a competência no formato AAAA-MM."); e.status = 400; e.code = "COMPETENCIA_INVALIDA"; throw e;
       }
@@ -6055,8 +6062,9 @@ export function createMockApi() {
       mockUltimaPreviaWhatsapp = previa;
       return { ok: true, ...previa };
     },
-    async executarLoteWhatsapp({ competencia, portalClientIds, conferencia } = {}) {
+    async executarLoteWhatsapp({ competencia, mesVencimento, assinatura, guideIds, portalClientIds, conferencia, enviarPorEmail = true } = {}) {
       await delay(600);
+      if (mesVencimento && (mockUltimaPreviaWhatsapp?.assinatura !== assinatura || assinatura !== JSON.stringify(guideIds))) throw Object.assign(new Error("Confira novamente o lote."), { code: "CONFERENCIA_DIVERGENTE" });
       // ⚠ Sem `this`: no modo `real_with_mock_fallback` a função é chamada solta, e `this` seria
       //   `undefined`. A prévia é pré-requisito aqui como no servidor (que a recalcula por dentro).
       const previa = mockUltimaPreviaWhatsapp && mockUltimaPreviaWhatsapp.competencia === competencia ? mockUltimaPreviaWhatsapp : null;
@@ -6068,6 +6076,13 @@ export function createMockApi() {
       }
       const porWhatsapp = previa.linhas.filter((l) => l.canalSugerido === "WHATSAPP");
       const porEmail = previa.linhas.filter((l) => l.canalSugerido === "EMAIL");
+      if (mesVencimento) {
+        const alvos = [...porWhatsapp, ...(enviarPorEmail ? porEmail : [])];
+        enviarVencimentoMock([...new Set(alvos.map((l) => l.portalClientId))].map((portalClientId) => {
+          const ids = alvos.filter((l) => l.portalClientId === portalClientId).map((l) => l.guideId);
+          return { portalClientId, mesVencimento, guideIds: ids, assinatura: JSON.stringify(ids) };
+        }));
+      }
       return {
         ok: true,
         competencia,
@@ -6080,7 +6095,7 @@ export function createMockApi() {
           falhas: [],
           resultados: porWhatsapp.map((l) => ({ ...l, ok: true, enviada: true, providerMessageId: `wamid.mock.${l.guideId}` })),
         },
-        email: { total: porEmail.length, guideIds: porEmail.map((l) => l.guideId), linhas: porEmail, executado: true, enviadas: porEmail.length, erros: 0 },
+        email: { total: porEmail.length, guideIds: porEmail.map((l) => l.guideId), linhas: porEmail, executado: enviarPorEmail, enviadas: enviarPorEmail ? porEmail.length : 0, erros: 0 },
       };
     },
     async getCircular(companyId, { year } = {}) {

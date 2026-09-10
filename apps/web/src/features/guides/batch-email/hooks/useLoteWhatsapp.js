@@ -38,14 +38,14 @@ export function useLoteWhatsapp({ api, feedback } = {}) {
 
   useEffect(() => { carregarCanal(); }, [carregarCanal]);
 
-  const prever = useCallback(async ({ competencia, portalClientIds, guideIds } = {}) => {
+  const prever = useCallback(async ({ competencia, mesVencimento, portalClientIds, guideIds } = {}) => {
     if (!api) return null;
     setPrevendo(true);
     setErro(null);
     setResultado(null);
     try {
-      const r = await api.preverLoteWhatsapp({ competencia, portalClientIds, ...(guideIds ? { guideIds } : {}) });
-      const p = r ? { competencia: r.competencia, canal: r.canal, linhas: r.linhas || [], resumo: r.resumo, portalClientIds, guideIds } : null;
+      const r = await api.preverLoteWhatsapp({ ...(mesVencimento ? { mesVencimento } : { competencia }), portalClientIds, ...(guideIds ? { guideIds } : {}) });
+      const p = r ? { competencia: r.competencia, mesVencimento: r.mesVencimento, assinatura: r.assinatura, canal: r.canal, linhas: r.linhas || [], resumo: r.resumo, portalClientIds, guideIds } : null;
       setPrevia(p);
       if (r?.canal) setCanal(r.canal);
       return p;
@@ -66,6 +66,7 @@ export function useLoteWhatsapp({ api, feedback } = {}) {
     try {
       const r = await api.executarLoteWhatsapp({
         competencia: previa.competencia,
+        ...(previa.mesVencimento ? { mesVencimento: previa.mesVencimento, assinatura: previa.assinatura } : {}),
         portalClientIds: previa.portalClientIds,
         ...(previa.guideIds ? { guideIds: previa.guideIds } : {}),
         conferencia: conferenciaDaPrevia(previa),

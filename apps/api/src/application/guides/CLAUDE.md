@@ -271,3 +271,13 @@ função do funil — reescrever a leitura ali faria backfill e captura discorda
 Medido no banco local (16 guias): **6 com linha, 1 divergente, 2 sem linha legível, 7 sem PDF**.
 O divergente é real: `PGDASD-DAS-44742042202605001.pdf` traz **R$ 790,79** impressos e a guia está
 gravada com **R$ 100,00**.
+
+### 10/09/2026 — Lotes por vencimento
+
+O lote mensal usa `mesVencimento` (AAAA-MM), sem reescrever `Guide.competencia`. A seleção da tabela principal e `/guides/batch-email` usam esse contrato. O filtro de competência é secundário e precisa avisar que restringe a cobertura.
+
+`GuideDueBatchService` consulta somente o banco: não captura guias nem chama SERPRO. `loteVencimento` mantém todos os documentos por empresa, pagas/enviadas fora da seleção, pendências anteriores e guias sem data separadas. Parcela sem documento é apontada a partir do calendário `Parcela` de contrato ativo; débito automático e baixa sem guia não são pendências de PDF. Forma não declarada exige conferência, sem afirmar inadimplência.
+
+Envio por vencimento exige IDs explícitos e assinatura dos documentos conferidos. Lista vazia nunca significa todas as guias. E-mail, WhatsApp e fallback usam o mesmo conjunto; revalidam empresa, período, pagamento, alteração e envio antes de disparar. E-mail reserva os registros por versão em transação. A ausência de parcelas mantém o lote incompleto mesmo após enviar documentos disponíveis. As APIs antigas por competência permanecem compatíveis para outros consumidores.
+
+Testes: `loteVencimento.test.js`, `GuideDueBatchService.test.js`, `GuideDueEmail.test.js` e cenários por vencimento em `envioGuiaWhatsapp.test.js`.

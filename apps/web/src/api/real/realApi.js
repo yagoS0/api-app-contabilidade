@@ -1560,7 +1560,8 @@ export function createRealApi() {
     // rota nunca foi usada. Parcelamento hoje é CONTRATO, criado por `ingestParcelamento`.
     // Matriz "empresa × tipo de guia" para a página de envio em lote.
     async getBatchEmailReport(competencia) {
-      const q = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
+      const q = competencia?.mesVencimento ? `?mesVencimento=${encodeURIComponent(competencia.mesVencimento)}${competencia.competencia ? `&competencia=${encodeURIComponent(competencia.competencia)}` : ""}`
+        : competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
       return request(`/firm/guides/batch-report${q}`);
     },
     // Envia 1 e-mail por empresa selecionada (com todas as guias da competência anexadas).

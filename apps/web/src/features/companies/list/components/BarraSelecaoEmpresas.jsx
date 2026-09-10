@@ -62,7 +62,7 @@ function Faixa({ tom, children }) {
  * ⚠ O mesmo componente serve às cinco. Um modal por ação faria a prévia do download divergir da do
  * envio na primeira correção — e é justamente a prévia que não pode divergir.
  */
-function ModalAcao({ acao, competencia, previaEnvio, onCancelar, onConfirmar, executando }) {
+function ModalAcao({ acao, competencia, mesVencimento, onMesVencimento, previaEnvio, onCancelar, onConfirmar, executando }) {
   const irreversivel = Boolean(acao.irreversivel);
   const alvos = acao.alvos || [];
   const fora = acao.fora || [];
@@ -110,7 +110,7 @@ function ModalAcao({ acao, competencia, previaEnvio, onCancelar, onConfirmar, ex
       return {
         companyId: f.companyId,
         razao: f.razao || local?.razao || alvoLocal?.razao || "—",
-        motivo: local?.motivo || f.motivo,
+        motivo: previaEnvio?.mesVencimento ? f.motivo : local?.motivo || f.motivo,
       };
     })
     : fora;
@@ -135,7 +135,9 @@ function ModalAcao({ acao, competencia, previaEnvio, onCancelar, onConfirmar, ex
         }}
       >
         <h2 style={{ margin: 0, fontSize: "1.02rem" }}>{acao.rotulo}</h2>
-        <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--text-muted)" }}>{acao.descricao}</p>
+        <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--text-muted)" }}>{usaRelatorio ? "Envio das guias com vencimento no mês escolhido. A competência original de cada documento é preservada." : acao.descricao}</p>
+        {usaRelatorio && <label>Mês de vencimento <input type="month" value={mesVencimento} disabled={executando} onChange={(e) => onMesVencimento(e.target.value)} /></label>}
+        {usaRelatorio && <a href="/guides/batch-email">Abrir painel de guias por vencimento, com e-mail e WhatsApp</a>}
 
         {irreversivel && (
           <Faixa tom="perigo">
@@ -172,7 +174,7 @@ function ModalAcao({ acao, competencia, previaEnvio, onCancelar, onConfirmar, ex
           </p>
         ) : (
           <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700 }}>
-            {fraseDeConfirmacao(acao.chave, {
+            {usaRelatorio ? `Enviar ${guiasNaAcao} ${guiasNaAcao === 1 ? "guia" : "guias"} de ${empresasNaAcao} ${empresasNaAcao === 1 ? "empresa" : "empresas"}, com vencimento em ${formatarCompetencia(mesVencimento)}?` : fraseDeConfirmacao(acao.chave, {
               empresas: empresasNaAcao,
               guias: guiasNaAcao,
               competencia,
@@ -181,6 +183,16 @@ function ModalAcao({ acao, competencia, previaEnvio, onCancelar, onConfirmar, ex
         )}
 
         {/* O QUE VAI ACONTECER — linha a linha. */}
+        {usaRelatorio && previaEnvio?.rows?.filter((r) => r.documentos?.length || r.faltantes?.length).map((r) => <div key={r.portalClientId}>
+          <strong>{r.razao}</strong>
+          <ul>{r.documentos?.map((d) => <li key={d.guideId}>
+            {d.parcelamentoId ? `Parcelamento ${d.acordo || ""} · parcela ${d.numeroParcela ?? "—"}` : d.tipo === "SIMPLES" ? "DAS" : d.tipo}
+            {` · competência/referência ${d.competencia || "—"} · vence ${String(d.vencimento).slice(0, 10).split("-").reverse().join("/")} · ${Number(d.valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`}
+            {d.paga ? " · paga, fora do envio" : d.enviada ? " · já enviada" : ""}
+          </li>)}</ul>
+          {r.faltantes?.map((p) => <p key={p.parcelaId} style={{ color: "var(--state-warn)" }}>Lote incompleto: {p.motivo} · acordo {p.acordo || "—"} · parcela {p.numeroParcela ?? "—"}. A pendência permanece após este envio.</p>)}
+        </div>)}
+        {usaRelatorio && (previaEnvio?.foraDoMes || 0) > 0 && <p>{previaEnvio.foraDoMes} documento(s) anterior(es) ou sem vencimento ficam fora deste lote. Confira na aba Guias da empresa.</p>}
         {linhasVisiveis.length > 0 && (
           <div>
             <div style={{ fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-muted)" }}>
@@ -250,6 +262,7 @@ export function BarraSelecaoEmpresas({
   const [resultado, setResultado] = useState(null);
   const [batchJobId, setBatchJobId] = useState(null);
   const [previaEnvio, setPreviaEnvio] = useState(null); // { estado, resumo, motivo }
+  const [mesVencimento, setMesVencimento] = useState(() => new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).format(new Date()));
 
   const ids = empresasSelecionadas.map((c) => c.companyId);
   const plano = planoDaSelecao({ empresas: empresasSelecionadas, competencia, jobsAtivos });
@@ -265,15 +278,19 @@ export function BarraSelecaoEmpresas({
     }
     setPreviaEnvio({ estado: "carregando" });
     try {
-      const report = await api.getBatchEmailReport(competencia);
-      setPreviaEnvio({ estado: "ok", resumo: resumoEnvioDoRelatorio(report, ids, competencia) });
+      if (!mesVencimento) throw new Error("Escolha o mês de vencimento.");
+      const report = await api.getBatchEmailReport({ mesVencimento });
+      const rows = [...(report?.simples || []), ...(report?.presumidos || []), ...(report?.outros || [])].filter((r) => ids.includes(r.portalClientId));
+      setPreviaEnvio({ estado: "ok", mesVencimento, rows,
+        foraDoMes: [...(report?.pendenciasAnteriores || []), ...(report?.conferirVencimento || [])].filter((g) => ids.includes(g.portalClientId)).length,
+        resumo: resumoEnvioDoRelatorio(report, ids, mesVencimento) });
     } catch (err) {
       setPreviaEnvio({ estado: "erro", motivo: err?.message || "o servidor não respondeu." });
     }
     // `ids` muda de identidade a cada render; a dependência real é a seleção, que só muda junto
     // com `empresasSelecionadas`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, competencia, empresasSelecionadas]);
+  }, [api, mesVencimento, empresasSelecionadas]);
 
   useEffect(() => {
     if (aberta !== "email") { setPreviaEnvio(null); return; }
@@ -292,11 +309,14 @@ export function BarraSelecaoEmpresas({
     try {
       if (acao.chave === "email") {
         // Contrato existente: um item por (empresa, competência).
-        const out = await api.sendBatchEmails(alvoIds.map((portalClientId) => ({ portalClientId, competencia })));
+        if (previaEnvio?.mesVencimento !== mesVencimento || previaEnvio?.estado !== "ok") throw new Error("Confira novamente o mês de vencimento.");
+        const out = await api.sendBatchEmails((previaEnvio.rows || []).filter((r) => r.pendingGuideIds.length).map((r) => ({
+          portalClientId: r.portalClientId, mesVencimento, guideIds: r.pendingGuideIds, assinatura: r.assinatura,
+        })));
         const enviados = Number(out?.sent || 0);
         setResultado({
           tom: enviados > 0 ? "ok" : "erro",
-          texto: `${enviados} de ${alvoIds.length} e-mail(s) enviado(s).`,
+          texto: `${enviados} de ${alvoIds.length} e-mail(s) enviado(s).${previaEnvio.rows?.some((r) => r.faltantes?.length) ? " Há parcelas faltantes: o lote continua incompleto." : ""}${(out?.results || []).filter((r) => !r.ok).map((r) => ` ${r.message || r.error}`).join("")}`,
         });
       } else if (acao.chave === "apurar") {
         const out = await api.criarApuracaoBatch({ portalClientIds: alvoIds, competencia });
@@ -422,6 +442,8 @@ export function BarraSelecaoEmpresas({
         <ModalAcao
           acao={acao}
           competencia={competencia}
+          mesVencimento={mesVencimento}
+          onMesVencimento={(mes) => { setPreviaEnvio(null); setMesVencimento(mes); }}
           previaEnvio={previaEnvio}
           executando={executando}
           onCancelar={() => { if (!executando) setAberta(null); }}

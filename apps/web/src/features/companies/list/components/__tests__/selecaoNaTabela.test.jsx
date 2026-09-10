@@ -120,14 +120,15 @@ describe('⚠ "SELECIONAR TODOS" RESPEITA O FILTRO — e o rótulo diz o número
 
 // ─── A BARRA ──────────────────────────────────────────────────────────────────────────────────
 
+const MES_ENVIO = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).format(new Date());
 const RELATORIO = {
-  competencia: "2026-07",
+  competencia: MES_ENVIO,
   simples: [{
-    portalClientId: "c1", razao: "ACME LTDA", cnpj: "1", competencia: "2026-07",
+    portalClientId: "c1", razao: "ACME LTDA", cnpj: "1", competencia: MES_ENVIO,
     tiposGuias: { DAS: { guideId: "g1" } }, pendingGuideIds: ["g1"],
   }],
   presumidos: [{
-    portalClientId: "c2", razao: "BETA LTDA", cnpj: "2", competencia: "2026-07",
+    portalClientId: "c2", razao: "BETA LTDA", cnpj: "2", competencia: MES_ENVIO,
     tiposGuias: { IRPJ: { guideId: "g2" }, CSLL: { guideId: "g3" } }, pendingGuideIds: ["g2", "g3"],
   }],
   outros: [],
@@ -197,7 +198,7 @@ describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do bot�
   test("abrir o envio consulta o RELATÓRIO e não envia nada", async () => {
     const { api } = await montarBarra({ empresas: [empresa(), empresa({ companyId: "c2", razao: "BETA LTDA" })] });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
-    await waitFor(() => expect(api.getBatchEmailReport).toHaveBeenCalledWith("2026-07"));
+    await waitFor(() => expect(api.getBatchEmailReport).toHaveBeenCalledWith({ mesVencimento: MES_ENVIO }));
     expect(api.sendBatchEmails).not.toHaveBeenCalled();
   });
 
@@ -205,7 +206,7 @@ describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do bot�
     await montarBarra({ empresas: [empresa(), empresa({ companyId: "c2", razao: "BETA LTDA" })] });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
     const modal = await screen.findByRole("dialog", { name: /Enviar guias por e-mail/ });
-    await within(modal).findByText("Enviar 3 guias de 2 empresas, competência 07/2026?");
+    await within(modal).findByText(`Enviar 3 guias de 2 empresas, com vencimento em ${MES_ENVIO.split("-").reverse().join("/")}?`);
     // Linha a linha, com os tributos de cada uma.
     expect(within(modal).getByText(/2 guia\(s\) · IRPJ, CSLL/)).toBeInTheDocument();
     // E o aviso de que o e-mail chega ao cliente.
@@ -216,11 +217,11 @@ describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do bot�
     const { api } = await montarBarra({ empresas: [empresa(), empresa({ companyId: "c2", razao: "BETA LTDA" })] });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
     const modal = await screen.findByRole("dialog", { name: /Enviar guias por e-mail/ });
-    await within(modal).findByText(/Enviar 3 guias/);
+    await within(modal).findByText(/Enviar 3 guia/);
     await act(async () => { fireEvent.click(within(modal).getByRole("button", { name: /Confirmar e executar/ })); });
     expect(api.sendBatchEmails).toHaveBeenCalledWith([
-      { portalClientId: "c1", competencia: "2026-07" },
-      { portalClientId: "c2", competencia: "2026-07" },
+      { portalClientId: "c1", mesVencimento: MES_ENVIO, guideIds: ["g1"], assinatura: undefined },
+      { portalClientId: "c2", mesVencimento: MES_ENVIO, guideIds: ["g2", "g3"], assinatura: undefined },
     ]);
   });
 
@@ -248,7 +249,7 @@ describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do bot�
   test("⚠ prévia que resolve para ZERO não pergunta 'enviar 0 guias de 0 empresas?'", async () => {
     // Pergunta sobre nada — e que ainda parece defeito de contagem. O certo é afirmar o desfecho.
     const api = apiFalso({
-      getBatchEmailReport: jest.fn().mockResolvedValue({ competencia: "2026-07", simples: [], presumidos: [], outros: [] }),
+      getBatchEmailReport: jest.fn().mockResolvedValue({ competencia: MES_ENVIO, simples: [], presumidos: [], outros: [] }),
     });
     await montarBarra({ api });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
@@ -291,7 +292,7 @@ describe("⚠ PRÉVIA ANTES, CONFIRMAÇÃO DEPOIS — nada sai no clique do bot�
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Enviar guias por e-mail/ })); });
     const modal = await screen.findByRole("dialog", { name: /Enviar guias por e-mail/ });
     await within(modal).findByText(/Ficam de fora \(1\)/);
-    expect(within(modal).getByText(/empresa zerada — não há guia a entregar/)).toBeInTheDocument();
+    expect(within(modal).getByText(/não aparece no relatório desta competência/)).toBeInTheDocument();
   });
 
   test("cancelar não chama nada", async () => {

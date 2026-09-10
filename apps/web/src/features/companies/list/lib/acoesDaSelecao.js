@@ -298,9 +298,9 @@ export function resumoEnvioDoRelatorio(report, companyIds = [], competencia = nu
     const row = porEmpresa.get(id);
     const pendentes = Array.isArray(row?.pendingGuideIds) ? row.pendingGuideIds.length : 0;
     if (!row) {
-      fora.push({ companyId: id, razao: null, motivo: "não aparece no relatório desta competência" });
+      fora.push({ companyId: id, razao: null, motivo: report.mesVencimento ? "nenhuma guia com vencimento neste mês" : "não aparece no relatório desta competência" });
     } else if (pendentes === 0) {
-      fora.push({ companyId: id, razao: row.razao || null, motivo: "nenhuma guia pendente de envio nesta competência" });
+      fora.push({ companyId: id, razao: row.razao || null, motivo: row.faltantes?.length ? "há parcelas para conferir, ainda sem guia disponível" : report.mesVencimento ? "nenhuma guia pendente de envio com vencimento neste mês" : "nenhuma guia pendente de envio nesta competência" });
     } else {
       linhas.push({
         companyId: id,
@@ -308,7 +308,7 @@ export function resumoEnvioDoRelatorio(report, companyIds = [], competencia = nu
         cnpj: row.cnpj || null,
         guias: pendentes,
         // Os tributos que de fato têm guia pendente — é o "linha a linha" da prévia.
-        tributos: Object.entries(row.tiposGuias || {})
+        tributos: row.documentos ? row.documentos.filter((d) => row.pendingGuideIds.includes(d.guideId)).map((d) => d.parcelamentoId ? "Parcelamento" : d.tipo === "SIMPLES" ? "DAS" : d.tipo) : Object.entries(row.tiposGuias || {})
           .filter(([, cell]) => cell && !cell.vazio && !cell.isParcelamento && cell.emailStatus !== "SENT")
           .map(([tipo]) => tipo),
       });
