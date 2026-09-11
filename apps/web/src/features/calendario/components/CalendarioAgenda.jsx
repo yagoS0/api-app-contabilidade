@@ -6,14 +6,14 @@ import { formatarCnpj, soDigitosCnpj } from '../../onboarding/lib/brasilApi';
 import { ModalAtividade } from './ModalAtividade';
 import { ModalObrigacao } from '../../obrigacoes/components/ModalObrigacao';
 import { somarDiasAgenda, ocorrenciasDaTarefa } from '../../../../../../packages/shared/src/agenda.js';
-import { agruparAtividades, CORES_PRIORIDADE, dataBR, dataExtenso, dataLocal, diasDoPeriodo, faixasDoPeriodo, itensDasObrigacoes, fimVisual, horarioAtividade, minutos, posicionarHorarios, RECORRENCIAS } from '../lib/agendaWorkspace';
+import { agruparAtividades, blocosDiarios, corAtividade, dataBR, dataExtenso, dataLocal, diasDoPeriodo, faixasDoPeriodo, itensDasObrigacoes, fimVisual, horarioAtividade, minutos, posicionarHorarios, RECORRENCIAS } from '../lib/agendaWorkspace';
 
 const conferir = out => { if (out?.ok === false) throw new Error(out.message || 'Não foi possível atualizar a agenda.'); return out; };
 const obrigacao = i => i.tipo === 'obrigacao';
 const faixa = i => !i.horaInicio || i.dataInicio !== i.dataFim;
 const ICONE = <svg aria-hidden="true" width="13" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="2" width="10" height="12" rx="2" stroke="currentColor"/><path d="M6 6h4M6 9h4" stroke="currentColor"/></svg>;
 function Atividade({ item, abrir, style }) {
-  return <button type="button" className={`agenda-event${item.resolvido ? ' is-complete' : ''}`} style={{ '--event-color': CORES_PRIORIDADE[item.prioridade || ''], ...style }} onClick={e => { e.stopPropagation(); abrir(item); }} title={`${item.titulo} · ${dataBR(item.dataInicio)}${item.dataFim !== item.dataInicio ? ` a ${dataBR(item.dataFim)}` : ''}`}>
+  return <button type="button" className={`agenda-event${item.resolvido ? ' is-complete' : ''}`} style={{ '--event-color': corAtividade(item), ...style }} onClick={e => { e.stopPropagation(); abrir(item); }} title={`${item.titulo} · ${dataBR(item.dataInicio)}${item.dataFim !== item.dataInicio ? ` a ${dataBR(item.dataFim)}` : ''}`}>
     {obrigacao(item) && ICONE}<span>{item.titulo}</span>{item.itens?.length > 1 && <small aria-label={`${item.itens.filter(i => i.resolvido).length} de ${item.itens.length} concluídas`}>{item.itens.filter(i => i.resolvido).length}/{item.itens.length}</small>}
   </button>;
 }
@@ -22,13 +22,13 @@ function Faixas({ itens, dias, abrir, criar, mes = false }) {
   const segmentos = faixasDoPeriodo(itens, dias);
   const limite = mes ? 3 : 4;
   const quantidade = Math.max(0,...segmentos.map(s => s.linha + 1));
-  const linhas = expandido ? quantidade : Math.min(limite, quantidade);
+  const linhas = mes || expandido ? quantidade : Math.min(limite, quantidade);
   return <div className={`agenda-bands${mes ? ' is-month' : ''}`}>
     <div className="agenda-band-grid" style={{ '--days': dias.length, gridTemplateRows: `repeat(${Math.max(1,linhas)}, 29px)` }}>
       {dias.map((d, i) => <button type="button" key={d} className={`agenda-band-empty${d === dataLocal() ? ' is-today' : ''}`} style={{ gridColumn: i + 1, gridRow: `1 / ${Math.max(1,linhas)+1}` }} aria-label={`Criar atividade em ${dataBR(d)}`} onClick={() => criar(d)} />)}
       {segmentos.filter(s => s.linha < linhas).map(s => <Atividade key={s.item.id} item={s.item} abrir={abrir} style={{ gridColumn: `${s.inicio+1} / ${s.fim+2}`, gridRow: s.linha+1 }} />)}
     </div>
-    {quantidade > limite && <button type="button" className="agenda-more" onClick={() => setExpandido(v => !v)}>{expandido ? 'Recolher' : `Mais ${segmentos.filter(s => s.linha >= limite).length} atividades`}</button>}
+    {!mes && quantidade > limite && <button type="button" className="agenda-more" onClick={() => setExpandido(v => !v)}>{expandido ? 'Recolher' : `Mais ${segmentos.filter(s => s.linha >= limite).length} atividades`}</button>}
   </div>;
 }
 
@@ -55,7 +55,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
         resultados.forEach(conferir);
         if (!ativo) return;
         const [obs, tasks, rules, ...calendarios] = resultados;
-        const fiscais = [...new Map(calendarios.flatMap(c => (c.dias || []).flatMap(d => d.itens.filter(i => ['guia','marco'].includes(i.tipo)).map(i => ({ ...i, dataInicio: i.dataInicio || d.data, dataFim: i.dataFim || d.data, data: d.data })))).map(i => [`${i.tipo}|${i.id}`,i])).values()];
+        const fiscais = [...new Map(calendarios.flatMap(c => (c.dias || []).flatMap(d => d.itens.filter(i => i.tipo === 'marco').map(i => ({ ...i, dataInicio: i.dataInicio || d.data, dataFim: i.dataFim || d.data, data: d.data })))).map(i => [`${i.tipo}|${i.id}`,i])).values()];
         setDados({ obrigacoes: obs.obrigacoes || [], regras: (rules.regras || []).filter(r => r.ativa !== false), tarefas: tasks.tarefas || [], itens: companyIdFixo ? [] : tasks.itens || [], ocultos: tasks.ocultos || [], fiscais, opcoes: obs.opcoes });
       }).catch(e => { if (ativo) setErro(e.message); }).finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
@@ -71,6 +71,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     ...itensDasObrigacoes(dados.obrigacoes), ...dados.itens,
     ...dados.fiscais.filter(i => !dados.ocultos.includes(`${i.tipo}|${i.id}`)),
   ].filter(i => i.dataFim >= inicio && i.dataInicio <= fim)), [dados, inicio, fim]);
+  const blocos = useMemo(() => blocosDiarios(atividades, inicio, fim), [atividades, inicio, fim]);
   useEffect(() => {
     const contexto=initialContext?.obrigacoesModal;
     if(!contexto || contextoAplicado.current || carregando)return;
@@ -100,6 +101,7 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
   }, [dados, filtroLista, busca, companyIdFixo]);
   const criar = useCallback((data, hora) => { setErro(''); setCriacao({ dataInicio: data, dataFim: data, ...(hora != null ? { horaInicio: `${String(hora).padStart(2,'0')}:00`, horaFim: `${String(Math.min(23,hora+1)).padStart(2,'0')}:${hora === 23 ? '59' : '00'}` } : {}), companyId: companyIdFixo }); }, [companyIdFixo]);
   function abrirAtividade(item) {
+    item = item.atividadeOriginal || item;
     setErro('');
     if (item.tipo === 'tarefa' && (item.itens?.length || 1) === 1) {
       const tarefa = item.itens?.[0] || item;
@@ -135,6 +137,14 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     }
     return { ok: true };
   }
+  function configurarObrigacao(regraId) {
+    const regra = dados.regras.find(r => (r.regraId || r.id) === regraId);
+    if (!regra) return;
+    const ocorrencia = itensDasObrigacoes(dados.obrigacoes).find(i => i.regraId === regraId);
+    const config = regra.agendaConfig || { dataInicio: ocorrencia?.dataInicio || referencia, dataFim: ocorrencia?.dataFim || referencia };
+    setCriacao({ ...config, titulo: regra.nome, descricao: regra.descricao, tipo: 'obrigacao', recorrencia: regra.periodicidade, regraEdicao: regra });
+    setDetalhe(null);
+  }
   function abrirSerie(s) {
     const noPeriodo = dados.itens.filter(i => i.tarefaId === s.tarefaId);
     const itens = s.tarefaId
@@ -154,15 +164,15 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     {erro && !detalhe && !confirmacao && !edicaoLegada && <div className="agenda-error" role="alert">{erro} <button onClick={recarregar}>Tentar novamente</button></div>}
     {carregando && <div className="agenda-loading" role="status">Atualizando agenda…</div>}
     {visao === 'lista' ? <div className="agenda-list"><div className="agenda-list-filters"><input aria-label="Buscar atividades" placeholder="Buscar atividade" value={busca} onChange={e => setBusca(e.target.value)}/><select aria-label="Filtrar atividades" value={filtroLista} onChange={e => setFiltroLista(e.target.value)}><option value="TODAS">Todas</option><option value="tarefa">Tarefas</option><option value="obrigacao">Obrigações</option></select></div>
-      {series.map(s => <div className="agenda-list-row" key={s.id}><button className="agenda-list-name" onClick={() => abrirSerie(s)} style={{ '--event-color': CORES_PRIORIDADE[s.prioridade] }}>{obrigacao(s) && ICONE}<span><strong>{s.titulo}</strong><small>{RECORRENCIAS[s.recorrencia]}{s.empresas.length ? ` · ${s.empresas.length} ${s.empresas.length === 1 ? 'empresa' : 'empresas'}` : ''}</small></span></button><div className="agenda-list-actions">{s.original?.obrigacaoId && !s.original.agendaConfig && <Button variant="secondary" size="sm" onClick={() => setEdicaoLegada(s.original)}>Editar</Button>}<Button variant="secondary" size="sm" onClick={() => setConfirmacao({ alvo: s, serie: true })}>Excluir série</Button></div></div>)}
+      {series.map(s => <div className="agenda-list-row" key={s.id}><button className="agenda-list-name" onClick={() => abrirSerie(s)} style={{ '--event-color': corAtividade(s) }}>{obrigacao(s) && ICONE}<span><strong>{s.titulo}</strong><small>{RECORRENCIAS[s.recorrencia]}{s.empresas.length ? ` · ${s.empresas.length} ${s.empresas.length === 1 ? 'empresa' : 'empresas'}` : ''}</small></span></button><div className="agenda-list-actions">{s.regraId && dados.regras.some(r => (r.regraId || r.id) === s.regraId) && <Button variant="secondary" size="sm" onClick={() => configurarObrigacao(s.regraId)}>Configurar obrigação</Button>}{s.original?.obrigacaoId && !s.original.agendaConfig && <Button variant="secondary" size="sm" onClick={() => setEdicaoLegada(s.original)}>Editar</Button>}<Button variant="secondary" size="sm" onClick={() => setConfirmacao({ alvo: s, serie: true })}>Excluir série</Button></div></div>)}
       {!series.length && !carregando && <p className="agenda-empty">Nenhuma atividade encontrada.</p>}
-    </div> : visao === 'mes' ? <div className="agenda-month"><div className="agenda-weekdays">{['seg.','ter.','qua.','qui.','sex.','sáb.','dom.'].map(d => <span key={d}>{d}</span>)}</div>{Array.from({length:6},(_,n) => { const semana = dias.slice(n*7,n*7+7); return <div className="agenda-month-week" key={semana[0]}><div className="agenda-month-dates">{semana.map(d => <button key={d} className={`${d === dataLocal() ? 'is-today' : ''} ${d.slice(0,7) !== referencia.slice(0,7) ? 'is-outside' : ''}`} aria-label={`Criar atividade em ${dataBR(d)}`} onClick={() => criar(d)}>{Number(d.slice(8))}</button>)}</div><Faixas itens={atividades} dias={semana} abrir={abrirAtividade} criar={criar} mes /></div>; })}</div>
-    : <div className="agenda-time-view"><div className="agenda-time-header">{cabecalhos(dias)}<span className="agenda-time-gutter" /></div><div className="agenda-all-day"><Faixas key={`${inicio}:${visao}`} itens={atividades.filter(faixa)} dias={dias} abrir={abrirAtividade} criar={criar}/><span className="agenda-time-gutter" /></div><div className="agenda-time-scroll" ref={horasRef}><div className="agenda-time-columns" style={{ '--days': dias.length }}>{dias.map(d => <div key={d} className={`agenda-time-day${d === dataLocal() ? ' is-today' : ''}`}>
+    </div> : visao === 'mes' ? <div className="agenda-month"><div className="agenda-weekdays">{['seg.','ter.','qua.','qui.','sex.','sáb.','dom.'].map(d => <span key={d}>{d}</span>)}</div>{Array.from({length:6},(_,n) => { const semana = dias.slice(n*7,n*7+7); return <div className="agenda-month-week" key={semana[0]}><div className="agenda-month-dates">{semana.map(d => <button key={d} className={`${d === dataLocal() ? 'is-today' : ''} ${d.slice(0,7) !== referencia.slice(0,7) ? 'is-outside' : ''}`} aria-label={`Criar atividade em ${dataBR(d)}`} onClick={() => criar(d)}>{Number(d.slice(8))}</button>)}</div><Faixas itens={blocos} dias={semana} abrir={abrirAtividade} criar={criar} mes /></div>; })}</div>
+    : <div className="agenda-time-view"><div className="agenda-time-header">{cabecalhos(dias)}<span className="agenda-time-gutter" /></div><div className="agenda-all-day"><Faixas key={`${inicio}:${visao}`} itens={blocos.filter(faixa)} dias={dias} abrir={abrirAtividade} criar={criar}/><span className="agenda-time-gutter" /></div><div className="agenda-time-scroll" ref={horasRef}><div className="agenda-time-columns" style={{ '--days': dias.length }}>{dias.map(d => <div key={d} className={`agenda-time-day${d === dataLocal() ? ' is-today' : ''}`}>
       {Array.from({length:24},(_,hora) => <button key={hora} type="button" className="agenda-time-slot" aria-label={`Criar atividade em ${dataBR(d)} às ${String(hora).padStart(2,'0')}:00`} onClick={() => criar(d,hora)}/>)}
-      {posicionarHorarios(atividades.filter(i => !faixa(i) && i.dataInicio === d)).map(({item,coluna,colunas}) => <Atividade key={item.id} item={item} abrir={abrirAtividade} style={{ position:'absolute', top: minutos(item.horaInicio)/60*56, height: Math.max(22,(fimVisual(item)-minutos(item.horaInicio))/60*56-2), width:`calc(${100/colunas}% - 5px)`, left:`calc(${coluna*100/colunas}% + 2px)` }}/>)}</div>)}<div className="agenda-hours" aria-hidden="true">{Array.from({length:24},(_,h) => <span key={h}>{String(h).padStart(2,'0')}:00</span>)}</div></div></div></div>}
-    {criacao && <ModalAtividade inicial={criacao} empresas={empresas} api={api} onAlterarConclusao={criacao.tipo === 'tarefa' && !criacao.conclusaoAutomatica ? alterarConclusaoTarefa : undefined} onExcluir={criacao.tarefaId || criacao.ocorrenciaIds ? () => { setConfirmacao({ alvo:criacao }); setCriacao(null); } : undefined} onFechar={() => setCriacao(null)} onSalvo={({dataInicio}) => { setCriacao(null); setReferencia(dataInicio); recarregar(); }}/ >}
+      {posicionarHorarios(blocos.filter(i => !faixa(i) && i.dataInicio === d)).map(({item,coluna,colunas}) => <Atividade key={item.id} item={item} abrir={abrirAtividade} style={{ position:'absolute', top: minutos(item.horaInicio)/60*56, height: Math.max(22,(fimVisual(item)-minutos(item.horaInicio))/60*56-2), width:`calc(${100/colunas}% - 5px)`, left:`calc(${coluna*100/colunas}% + 2px)` }}/>)}</div>)}<div className="agenda-hours" aria-hidden="true">{Array.from({length:24},(_,h) => <span key={h}>{String(h).padStart(2,'0')}:00</span>)}</div></div></div></div>}
+    {criacao && <ModalAtividade key={criacao.regraEdicao?.regraId || criacao.regraEdicao?.id || 'atividade'} inicial={criacao} empresas={empresas} api={api} onAlterarConclusao={criacao.tipo === 'tarefa' && !criacao.conclusaoAutomatica ? alterarConclusaoTarefa : undefined} onExcluir={criacao.tarefaId || criacao.ocorrenciaIds ? () => { setConfirmacao({ alvo:criacao }); setCriacao(null); } : undefined} onConfigurarObrigacao={criacao.regraId && dados.regras.some(r => (r.regraId || r.id) === criacao.regraId) ? () => configurarObrigacao(criacao.regraId) : undefined} onFechar={() => setCriacao(null)} onSalvo={({dataInicio}) => { setCriacao(null); setReferencia(dataInicio); recarregar(); }}/ >}
     {detalhe && !confirmacao && <Modal titulo={detalhe.titulo} aoFechar={() => { setDetalhe(null); setErro(''); }} ocupado={ocupado} lateral rodape={!detalhe.somenteSerie && <div className="agenda-form-actions">{(detalhe.itens?.[0]?.tarefaId || detalhe.fonte === 'OBRIGACAO') && <Button variant="secondary" disabled={ocupado} onClick={() => { setCriacao(detalhe.fonte === 'OBRIGACAO' ? { ...detalhe, ocorrenciaIds:detalhe.itens.map(i=>i.ocorrenciaId) } : detalhe.itens[0]); setDetalhe(null); }}>Editar</Button>}<Button variant="danger" disabled={ocupado} onClick={() => setConfirmacao({ alvo: detalhe })}>Excluir ocorrência</Button></div>}>
-      <div className="agenda-detail"><p className="agenda-detail-period">{dataBR(detalhe.dataInicio)}{detalhe.dataFim !== detalhe.dataInicio ? ` – ${dataBR(detalhe.dataFim)}` : ''}{detalhe.horaInicio ? ` · ${horarioAtividade(detalhe)}` : ''}</p>{vencimentoComum && <p className="agenda-detail-deadline">Vencimento fiscal · {dataBR(vencimentoComum)}</p>}{detalhe.descricao && <p className="agenda-description">{detalhe.descricao}</p>}
+      <div className="agenda-detail">{detalhe.regraId && dados.regras.some(r => (r.regraId || r.id) === detalhe.regraId) && <button className="agenda-text-action" onClick={() => configurarObrigacao(detalhe.regraId)}>Configurar obrigação</button>}<p className="agenda-detail-period">{dataBR(detalhe.dataInicio)}{detalhe.dataFim !== detalhe.dataInicio ? ` – ${dataBR(detalhe.dataFim)}` : ''}{detalhe.horaInicio ? ` · ${horarioAtividade(detalhe)}` : ''}</p>{vencimentoComum && <p className="agenda-detail-deadline">Vencimento fiscal · {dataBR(vencimentoComum)}</p>}{detalhe.descricao && <p className="agenda-description">{detalhe.descricao}</p>}
       {detalhe.itens?.length > 1 && <div className="agenda-progress"><span>{detalhe.itens.filter(i => i.resolvido).length} de {detalhe.itens.length} concluídas</span><progress max={detalhe.itens.length} value={detalhe.itens.filter(i => i.resolvido).length}/></div>}
       {(detalhe.itens || []).map(i => <div className={`agenda-company-row${i.resolvido ? ' is-complete' : ''}`} key={i.id}><div className="agenda-company-identity"><strong className="agenda-company-name">{i.empresa || i.titulo}</strong>{i.companyId && <small>{soDigitosCnpj(i.cnpj) ? <BotaoCopiar valor={soDigitosCnpj(i.cnpj)} rotulo={`Copiar o CNPJ de ${i.empresa || i.titulo} sem máscara`} titulo="Copiar CNPJ">{formatarCnpj(i.cnpj)}</BotaoCopiar> : 'CNPJ não informado'}</small>}{!vencimentoComum && i.dataVencimento && obrigacao(i) && <small>Vencimento fiscal · {dataBR(i.dataVencimento)}</small>}<small className="agenda-company-status" aria-live="polite">{i.resolvido && <span aria-hidden="true">✓ </span>}{i.resolvido ? 'Concluída' : 'Pendente'}</small></div><div className="agenda-company-actions">{i.fonte === 'OBRIGACAO' && !i.conclusaoAutomatica && <Button size="sm" variant="secondary" disabled={ocupado} onClick={() => agir(async () => { const out = conferir(await (i.resolvido ? api.reabrirOcorrencia(i.ocorrenciaId) : api.concluirOcorrencia(i.ocorrenciaId))); setDetalhe(d => ({ ...d, itens: d.itens.map(x => x.id === i.id ? { ...x, resolvido: !x.resolvido } : x) })); return out; },false)}>{i.resolvido ? 'Reabrir' : 'Concluir'}</Button>}{i.tarefaId && <Button size="sm" variant="secondary" disabled={ocupado} onClick={() => agir(() => api.acaoTarefaAgenda(i.tarefaId, { cicloChave: i.cicloChave, acao: i.resolvido ? 'REABRIR' : 'CONCLUIR' }))}>{i.resolvido ? 'Reabrir' : 'Concluir'}</Button>}{i.companyId && onOpenCompany && <Button size="sm" variant="secondary" onClick={() => onOpenCompany(i.companyId)}>Abrir empresa</Button>}{detalhe.itens.length > 1 && <button className="agenda-text-action" disabled={ocupado} onClick={() => setConfirmacao({ alvo:i })}>Excluir ocorrência</button>}</div></div>)}
       {detalhe.empresasVazias && <p>Nenhuma ocorrência ativa para esta obrigação.</p>}
