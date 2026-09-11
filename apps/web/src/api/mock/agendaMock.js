@@ -39,7 +39,7 @@ export function criarMockAgenda(obrigacoes, regras) {
     async editarOcorrenciasAgenda(ids, dados) {
       const config=normalizarAgenda({...dados,repetirAte:null});
       const alvos=ids.map(id=>{const serie=obrigacoes.find(o=>o.ocorrencias.some(oc=>oc.ocorrenciaId===id));return {serie,oc:serie?.ocorrencias.find(oc=>oc.ocorrenciaId===id)};});
-      if(alvos.some(a=>!a.oc || a.oc.canceladaEm || a.oc.status==='CONCLUIDA')) throw new Error('Reabra as ocorrências concluídas antes de editar.');
+      if(alvos.some(a=>!a.oc || a.oc.canceladaEm || a.oc.foraDaRecorrencia)) throw new Error('Esta ocorrência não está mais disponível no calendário.');
       for(const {serie,oc} of alvos) Object.assign(oc,{dataInicio:config.dataInicio,dataFim:config.dataFim,...(serie.tipo==='TAREFA'?{dataVencimento:config.dataFim}:{}),janelaPersonalizada:true,agendaConfig:{horaInicio:config.horaInicio,horaFim:config.horaFim,prioridade:config.prioridade,titulo:dados.titulo,descricao:dados.descricao}});
       return {ok:true};
     },

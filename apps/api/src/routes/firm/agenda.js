@@ -70,7 +70,7 @@ export function createAgendaRouter({ log } = {}) {
       if (alvos.length !== ids.length) throw new ObrigacaoError('nao_encontrada', 'Ocorrência não encontrada.', 404);
       for (const id of [...new Set(alvos.map(o => o.obrigacaoId))].sort()) await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${id}))`;
       const atuais = await tx.ocorrenciaObrigacao.findMany({ where: { id: { in: ids } } });
-      if (atuais.some(o => o.canceladaEm || o.foraDaRecorrencia || o.status === 'CONCLUIDA')) throw new ObrigacaoError('ocorrencia_indisponivel', 'Reabra as ocorrências concluídas antes de editar.', 409);
+      if (atuais.some(o => o.canceladaEm || o.foraDaRecorrencia)) throw new ObrigacaoError('ocorrencia_indisponivel', 'Esta ocorrência não está mais disponível no calendário.', 409);
       const agendaConfig = { horaInicio:config.horaInicio, horaFim:config.horaFim, prioridade:config.prioridade, titulo, descricao:String(req.body?.dados?.descricao || '').slice(0,10000) };
       for (const alvo of alvos) await tx.ocorrenciaObrigacao.update({ where:{id:alvo.id}, data:{ dataInicio:new Date(config.dataInicio), dataFim:new Date(config.dataFim), ...(alvo.obrigacao.tipo === 'TAREFA' ? {dataVencimento:new Date(config.dataFim)} : {}), janelaPersonalizada:true, agendaConfig } });
       return { atualizadas:ids.length };

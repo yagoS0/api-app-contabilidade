@@ -414,7 +414,7 @@ export async function listar({ portalIds, companyId = null, incluirInativas = fa
   const obrigacoes = await prisma.obrigacao.findMany({
     where: { portalClientId: { in: alvos }, ...(incluirInativas ? {} : { ativa: true }) },
     include: {
-      portalClient: { select: { id: true, razao: true } },
+      portalClient: { select: { id: true, razao: true, cnpj: true } },
       // A central oferece histórico/concluídas, inclusive depois do prazo final.
       ocorrencias: {
         where: { canceladaEm: null, foraDaRecorrencia: false },
@@ -458,6 +458,7 @@ export async function listar({ portalIds, companyId = null, incluirInativas = fa
       obrigacaoId: o.id,
       companyId: o.portalClientId,
       empresa: o.portalClient?.razao || null,
+      cnpj: o.portalClient?.cnpj || null,
       nome: o.nome,
       ...(o.agendaConfig ? { agendaConfig: o.agendaConfig } : {}),
       tipo: o.tipo || "OBRIGACAO",
