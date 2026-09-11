@@ -3,7 +3,7 @@ import { CalendarioGrid } from '../renderCalendarioGrid';
 import { criarMockAgenda } from '../../../../api/mock/agendaMock';
 jest.setTimeout(20000);
 configure({asyncUtilTimeout:5000});
-const empresas = [{companyId:'a',razao:'Clínica Alfa',cnpj:'11222333000181'},{companyId:'b',razao:'Consultoria Beta',cnpj:'22333444000181'}];
+const empresas = [{companyId:'a',razao:'Clínica Alfa',cnpj:'11.222.333/0001-81'},{companyId:'b',razao:'Consultoria Beta',cnpj:'22333444000181'}];
 const config = {dataInicio:'2026-09-10',dataFim:'2026-09-15',recorrencia:'MENSAL',prioridade:'ALTA'};
 const obrigacoes = () => empresas.map(e=>({obrigacaoId:`ob-${e.companyId}`,companyId:e.companyId,empresa:e.razao,cnpj:e.cnpj,nome:'EFD-Contribuições',tipo:'OBRIGACAO',regraId:'regra-efd',periodicidade:'MENSAL',ativa:true,agendaConfig:config,ocorrencias:[{ocorrenciaId:`oc-${e.companyId}`,cicloChave:'2026-09',dataInicio:config.dataInicio,dataFim:config.dataFim,dataVencimento:'2026-09-21',situacao:'PENDENTE',status:'PENDENTE'}]}));
 function montar({visao='semana',referencia='2026-09-10',obs=[],extras={}}={}) {
@@ -151,8 +151,15 @@ test('EFD mantém conclusões por empresa e permite editar grupo parcialmente co
   fireEvent.click(await screen.findByRole('button',{name:/EFD-Contribuições/}));
   expect(screen.getByRole('dialog')).toHaveClass('modal-fundo--lateral');
   const linhas=screen.getByRole('dialog').querySelectorAll('.agenda-company-row');
-  expect(within(linhas[0]).getByText('CNPJ 11.222.333/0001-81')).toBeInTheDocument();
-  expect(within(linhas[1]).getByText('CNPJ 22.333.444/0001-81')).toBeInTheDocument();
+  expect(within(linhas[0]).getByText('11.222.333/0001-81')).toBeInTheDocument();
+  expect(within(linhas[1]).getByText('22.333.444/0001-81')).toBeInTheDocument();
+  const writeText=jest.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator,'clipboard',{value:{writeText},configurable:true});
+  fireEvent.click(within(linhas[0]).getByText('11.222.333/0001-81'));
+  await waitFor(()=>expect(writeText).toHaveBeenCalledWith('11222333000181'));
+  fireEvent.click(within(linhas[1]).getByText('22.333.444/0001-81'));
+  await waitFor(()=>expect(writeText).toHaveBeenLastCalledWith('22333444000181'));
+  expect(screen.getByRole('dialog')).toHaveClass('modal-fundo--lateral');
   expect(linhas[0]).toHaveClass('is-complete');
   expect(linhas[1]).not.toHaveClass('is-complete');
   expect(within(linhas[0]).getByText('Concluída')).toBeInTheDocument();
