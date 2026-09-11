@@ -100,3 +100,6 @@
 }
 
 .agenda-scope label { margin:0; padding:0; min-height:24px; }
+
+.agenda-task-status { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--text-muted); }
+.agenda-task-delete { margin-right:auto; }

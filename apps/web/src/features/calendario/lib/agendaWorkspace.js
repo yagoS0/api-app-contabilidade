@@ -20,7 +20,7 @@ export function itensDasObrigacoes(obrigacoes) {
     ...o.agendaConfig, ...oc, id: oc.ocorrenciaId, ocorrenciaId: oc.ocorrenciaId,
     fonte: 'OBRIGACAO', tipo: o.tipo === 'TAREFA' ? 'tarefa' : 'obrigacao',
     obrigacaoId: o.obrigacaoId, regraId: o.regraId, titulo: o.nome, descricao: o.descricao,
-    companyId: o.companyId, empresa: o.empresa, resolvido: oc.situacao === 'CONCLUIDA',
+    companyId: o.companyId, empresa: o.empresa, cnpj: o.cnpj, resolvido: oc.situacao === 'CONCLUIDA',
     conclusaoAutomatica: o.conclusaoAutomatica, prioridade: o.agendaConfig?.prioridade || '', ...oc.agendaConfig,
   })));
 }

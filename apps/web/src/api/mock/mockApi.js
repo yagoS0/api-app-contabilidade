@@ -7176,6 +7176,7 @@ export function createMockApi() {
           const proxima = ocorrencias.find((oc) => oc.situacao === "PENDENTE");
           return {
             ...o,
+            cnpj: mockCompanies.find(e => e.companyId === o.companyId)?.cnpj || null,
             conclusaoAutomatica: Boolean(o.verificador),
             proximoVencimento: proxima?.dataVencimento || null,
             ocorrencias,

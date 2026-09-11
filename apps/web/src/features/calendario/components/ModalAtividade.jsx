@@ -4,7 +4,7 @@ import { Button } from '../../../components/ui/Button';
 import { normalizarAgenda } from '../../../../../../packages/shared/src/agenda.js';
 import { CORES_PRIORIDADE, RECORRENCIAS } from '../lib/agendaWorkspace';
 
-export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo }) {
+export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAlterarConclusao, onExcluir }) {
   const edicao = Boolean(inicial.tarefaId || inicial.ocorrenciaIds);
   const [passo, setPasso] = useState(1), [obrigacao, setObrigacao] = useState(false);
   const [dados, setDados] = useState({ titulo: '', descricao: '', recorrencia: 'AVULSA', prioridade: '', horaInicio: '', horaFim: '', ...inicial });
@@ -59,12 +59,22 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo }) {
       onSalvo({ dataInicio:config.dataInicio });
     } catch (e) { setErro(e.message); } finally { setOcupado(false); }
   }
+  async function alterarConclusao() {
+    setErro(''); setOcupado(true);
+    try { await onAlterarConclusao(); }
+    catch (e) { setErro(e.message); }
+    finally { setOcupado(false); }
+  }
   const campo = (rotulo, chave, tipo = 'text', extra = {}) => <label className="agenda-field">{rotulo}<input type={tipo} value={dados[chave] || ''} onChange={e => set(chave, e.target.value)} {...extra} /></label>;
   const fiscalInput = (rotulo, chave, extra = {}) => <label className="agenda-field">{rotulo}<input type="number" value={fiscal[chave]} onChange={e => setF(chave, e.target.value)} {...extra}/></label>;
   return <Modal titulo={edicao ? 'Editar atividade' : passo === 1 ? 'Nova atividade' : 'Obrigação'} aoFechar={onFechar} ocupado={ocupado} tamanho="md">
     <form className="agenda-form" onSubmit={salvar}>
       {passo === 1 ? <>
         {campo('Título', 'titulo', 'text', { required: true, maxLength: 200, placeholder: 'Ex.: Conferir NFS-e do mês', autoFocus: true })}
+        {onAlterarConclusao && <div className="agenda-task-status">
+          <span aria-live="polite">{inicial.resolvido ? 'Concluída' : 'Pendente'}</span>
+          <Button type="button" variant="secondary" disabled={ocupado} onClick={alterarConclusao}>{inicial.resolvido ? 'Reabrir tarefa' : 'Concluir tarefa'}</Button>
+        </div>}
         <label className="agenda-field">Descrição<textarea rows={3} maxLength={10000} value={dados.descricao || ''} onChange={e => set('descricao', e.target.value)} /></label>
         <div className="agenda-form-row">{campo('De', 'dataInicio', 'date', { required: true })}{campo('Até', 'dataFim', 'date', { required: true, min: dados.dataInicio })}</div>
         <label className="agenda-field">Horário<select value={horario} onChange={e => setHorario(e.target.value)}><option value="SEM">Sem horário</option><option value="FIXO">Horário fixo</option><option value="INTERVALO">De uma hora até outra</option></select></label>
@@ -84,7 +94,7 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo }) {
         <div className="agenda-scope-preview" aria-live="polite">{previa ? previa.ok ? `${previa.total} ${previa.total === 1 ? 'empresa' : 'empresas'}` : previa.message : 'Consultando empresas…'}</div>
       </>}
       {erro && <p role="alert" className="agenda-error">{erro}</p>}
-      <div className="agenda-form-actions"><Button variant="secondary" type="button" disabled={ocupado} onClick={passo === 2 ? () => setPasso(1) : onFechar}>{passo === 2 ? 'Anterior' : 'Cancelar'}</Button><Button type="submit" disabled={ocupado || (passo === 2 && !previa?.total)}>{ocupado ? 'Salvando…' : passo === 1 && obrigacao ? 'Continuar' : 'Salvar'}</Button></div>
+      <div className="agenda-form-actions">{onExcluir && <button className="agenda-text-action agenda-task-delete" type="button" disabled={ocupado} onClick={onExcluir}>Excluir ocorrência</button>}<Button variant="secondary" type="button" disabled={ocupado} onClick={passo === 2 ? () => setPasso(1) : onFechar}>{passo === 2 ? 'Anterior' : 'Cancelar'}</Button><Button type="submit" disabled={ocupado || (passo === 2 && !previa?.total)}>{ocupado ? 'Salvando…' : passo === 1 && obrigacao ? 'Continuar' : 'Salvar'}</Button></div>
     </form>
   </Modal>;
 }
