@@ -82,7 +82,7 @@ test('editar a tarefa de 10 a 15 mostra blocos diários das 9 às 11 em duas sem
 });
 test('faixa agrupa empresas e mostra conclusão parcial e prazo fiscal',async()=>{
   const obs=obrigacoes();obs[0].ocorrencias[0].situacao='CONCLUIDA';const {container}=montar({obs});const eventos=await screen.findAllByRole('button',{name:/EFD-Contribuições/});expect(eventos).toHaveLength(1);expect(container.querySelector('.agenda-event')).not.toHaveClass('is-complete');
-  fireEvent.click(eventos[0]);expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument();expect(screen.getAllByText('Vencimento fiscal · 21/09/2026')).toHaveLength(2);
+  fireEvent.click(eventos[0]);expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument();expect(screen.getAllByText('Vencimento fiscal · 21/09/2026')).toHaveLength(1);
 });
 test('excluir faixa cancela só este ciclo inclusive concluída, preservando histórico',async()=>{
   const obs=obrigacoes();obs[0].ocorrencias[0].status='CONCLUIDA';const {api}=montar({obs});fireEvent.click(await screen.findByRole('button',{name:/EFD-Contribuições/}));fireEvent.click(screen.getAllByRole('button',{name:'Excluir ocorrência'}).at(-1));fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));
@@ -145,12 +145,18 @@ test('EFD mantém conclusões por empresa e permite editar grupo parcialmente co
   Object.assign(obs[0].ocorrencias[0],{status:'CONCLUIDA',situacao:'CONCLUIDA',concluidaEm:'2026-09-11T12:00:00Z',concluidaPorId:'contador'});
   montar({obs,extras:{concluirOcorrencia:jest.fn(async id=>{
     const oc=obs.flatMap(o=>o.ocorrencias).find(o=>o.ocorrenciaId===id);oc.status='CONCLUIDA';oc.situacao='CONCLUIDA';return {ok:true};
+  }),reabrirOcorrencia:jest.fn(async id=>{
+    const oc=obs.flatMap(o=>o.ocorrencias).find(o=>o.ocorrenciaId===id);oc.status='PENDENTE';oc.situacao='PENDENTE';return {ok:true};
   })}});
   fireEvent.click(await screen.findByRole('button',{name:/EFD-Contribuições/}));
   expect(screen.getByRole('dialog')).toHaveClass('modal-fundo--lateral');
   const linhas=screen.getByRole('dialog').querySelectorAll('.agenda-company-row');
   expect(within(linhas[0]).getByText('CNPJ 11.222.333/0001-81')).toBeInTheDocument();
   expect(within(linhas[1]).getByText('CNPJ 22.333.444/0001-81')).toBeInTheDocument();
+  expect(linhas[0]).toHaveClass('is-complete');
+  expect(linhas[1]).not.toHaveClass('is-complete');
+  expect(within(linhas[0]).getByText('Concluída')).toBeInTheDocument();
+  expect(screen.getByLabelText('1 de 2 concluídas')).toHaveTextContent('1/2');
   expect(screen.queryByRole('button',{name:'Concluir tarefa'})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
   fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Revisão EFD'}});
@@ -164,6 +170,17 @@ test('EFD mantém conclusões por empresa e permite editar grupo parcialmente co
   fireEvent.click(screen.getByRole('button',{name:'Concluir',exact:true}));
   await screen.findByText('2 de 2 concluídas');
   await waitFor(()=>expect(screen.getByRole('button',{name:/Revisão EFD/})).toHaveClass('is-complete'));
+  expect(screen.getByLabelText('2 de 2 concluídas')).toHaveTextContent('2/2');
+  expect(screen.getByRole('dialog').querySelectorAll('.agenda-company-row.is-complete')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button',{name:'Fechar',exact:true}));
+  fireEvent.click(screen.getByRole('button',{name:/Revisão EFD/}));
+  const reabertas=screen.getByRole('dialog').querySelectorAll('.agenda-company-row');
+  expect(reabertas[0]).toHaveClass('is-complete');
+  expect(reabertas[1]).toHaveClass('is-complete');
+  fireEvent.click(within(reabertas[1]).getByRole('button',{name:'Reabrir',exact:true}));
+  await waitFor(()=>expect(reabertas[1]).not.toHaveClass('is-complete'));
+  expect(reabertas[0]).toHaveClass('is-complete');
+  await waitFor(()=>expect(screen.getByLabelText('1 de 2 concluídas')).toHaveTextContent('1/2'));
 });
 
 
