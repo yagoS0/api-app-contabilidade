@@ -6,7 +6,7 @@
 
 ## Organização da tela de Guias — 10/09/2026
 
-Upload, marcar vazio e configuração de envio compartilham o cabeçalho da lista. A configuração continua navegando para `comunicacao` via `onConfigurarEnvio`; as ações da guia selecionada têm uma barra própria. Consultas auxiliares ficam em um menu que fecha ao escolher a visão.
+Upload e marcar vazio compartilham o cabeçalho da lista. A configuração de envio fica em Configurações. A barra de seleção permite enviar várias guias pelos canais cadastrados, confirma reenvios e conserva o resultado individual de cada guia. Guias vazias, em revisão, em processamento ou com envio em andamento ficam fora do lote com motivo explícito, sem bloquear as selecionadas disponíveis. Consultas auxiliares ficam em um menu que fecha ao escolher a visão.
 
 A grade tem oito colunas: seleção, guia, competência, valor, vencimento, pagamento, envio e linha digitável. O processamento fica abaixo do nome; `ERROR` aparece como “Revisar documento”, separado do resultado de envio. Valores têm alinhamento numérico; a linha digitável mantém máscara, conteúdo completo e cópia dos dígitos. Até 800 px, as linhas viram cartões com rótulos. CSS escopado em `guides-workspace.css`. A competência global e as regras de vencimento, seleção, pagamento e envio permanecem as mesmas.
 

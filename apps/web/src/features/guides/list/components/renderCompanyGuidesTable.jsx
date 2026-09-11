@@ -39,6 +39,14 @@ function prevMonthCompetencia() {
 
 const expectedGuidesApi = createApiClient();
 
+function motivoForaDoEnvio(guia) {
+  if (guia.status === "VAZIO") return "marcada como vazia, sem documento para enviar";
+  if (guia.status === "ERROR") return "revise o documento antes de enviar";
+  if (guia.status !== "PROCESSED") return "aguardando processamento do documento";
+  if (guia.emailStatus === "SENDING") return "envio já em andamento";
+  return null;
+}
+
 // Dropdown "Marcar vazio" — lista as guias OBRIGATÓRIAS que ainda faltam no mês e permite marcá-las
 // como VAZIO (ausência confirmada). Ao marcar, a guia aparece na própria tabela de Guias como VAZIO.
 function MarcarVazioDropdown({ companyId, competencia, refreshKey, onChanged }) {
@@ -513,7 +521,6 @@ function CelulaLinhaDigitavel({ guide }) {
 export function CompanyGuidesTable({
   companyId,
   competencia: competenciaGlobal,  // do seletor do header — uma competência para a empresa inteira
-  onConfigurarEnvio,
   companyRegime,  // regime tributário da empresa: filtra opções do dropdown "+ Subir Guia"
   guides,
   loadingGuides,
@@ -524,6 +531,7 @@ export function CompanyGuidesTable({
   recalcInssBusy,
   onLiberarGuia,      // Portal Cliente: libera SÓ a guia selecionada ao cliente (envia só ela por e-mail)
   liberarGuiasBusy,
+  onLiberarGuias,
   onDeleteGuide,
   resendingGuideId,
   confirmingGuideId,
@@ -613,6 +621,9 @@ export function CompanyGuidesTable({
   const [deleting, setDeleting] = useState(false);
   // Guia já enviada aguardando confirmação de reenvio (modal do "Liberar ao cliente").
   const [resendConfirm, setResendConfirm] = useState(null);
+  const [enviandoSelecao, setEnviandoSelecao] = useState(false);
+  const envioEmCurso = enviandoSelecao || !!liberarGuiasBusy || !!resendingGuideId;
+  const envioSelecaoRef = useRef(false);
 
   // ⚠⚠ A TELA REOLHA ENQUANTO A RESPOSTA PODE MUDAR (05/09/2026).
   //
@@ -625,7 +636,7 @@ export function CompanyGuidesTable({
   // tentativas (`devePolir`). Polling sem fim transforma uma aba aberta o dia inteiro numa fonte
   // constante de carga — e o precedente desta casa (a captura de notas, a apuração em lote) é
   // exatamente este: intervalo de 2,5 s enquanto o estado pode mudar.
-  const { esgotou: entregaPendente } = usePollingEntrega(guides, onRefresh, companyId);
+  usePollingEntrega(guides, onRefresh, companyId);
 
   const [recalcConfirm, setRecalcConfirm] = useState(null); // { guideId, aviso }
 
@@ -702,6 +713,9 @@ export function CompanyGuidesTable({
   const allSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
   const someSelected = filteredIds.some((id) => selectedIds.has(id));
   const selectedCount = filteredIds.filter((id) => selectedIds.has(id)).length;
+  const guiasSelecionadas = filteredGuides.filter((g) => selectedIds.has(g.guideId || g.id));
+  const guiasDisponiveis = guiasSelecionadas.filter((g) => !motivoForaDoEnvio(g));
+  const guiasForaDoEnvio = guiasSelecionadas.filter((g) => motivoForaDoEnvio(g));
 
   // When exactly one guide is selected, expose it for single-guide actions
   const selectedGuide = useMemo(() => {
@@ -805,7 +819,32 @@ export function CompanyGuidesTable({
     else onLiberarGuia?.(selectedGuideId);                      // não enviada → libera + envia SÓ esta guia
   }
 
+  async function handleEnviarSelecionadas() {
+    if (!onLiberarGuias || envioSelecaoRef.current || envioEmCurso || loadingGuides) return;
+    if (!guiasDisponiveis.length) return;
+    const items = guiasDisponiveis.map((g) => ({
+      guideId: g.guideId || g.id,
+      rotulo: [rotuloTipoGuia(g), g.competencia].filter(Boolean).join(" · "),
+      reenviarConfirmado: g.envio ? Boolean(g.envio.jaEnviada) : g.emailStatus === "SENT",
+    }));
+    const reenviadas = items.filter((g) => g.reenviarConfirmado);
+    if (reenviadas.length && !window.confirm(
+      `Das ${items.length} guias selecionadas, ${reenviadas.length} já foram enviadas: ${reenviadas.map((g) => g.rotulo).join(", ")}. Deseja reenviar essas guias e enviar as demais?`
+    )) return;
+    envioSelecaoRef.current = true;
+    setEnviandoSelecao(true);
+    try {
+      const resultados = await onLiberarGuias(items);
+      const concluidas = new Set((resultados || []).filter((r) => r.ok).map((r) => r.guideId));
+      setSelectedIds((prev) => new Set([...prev].filter((id) => !concluidas.has(id))));
+    } finally {
+      envioSelecaoRef.current = false;
+      setEnviandoSelecao(false);
+    }
+  }
+
   function toggleAll() {
+    if (envioEmCurso) return;
     if (allSelected) {
       setSelectedIds((prev) => {
         const next = new Set(prev);
@@ -822,6 +861,7 @@ export function CompanyGuidesTable({
   }
 
   function toggleOne(id) {
+    if (envioEmCurso) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -831,6 +871,7 @@ export function CompanyGuidesTable({
   }
 
   function clearSelection() {
+    if (envioEmCurso) return;
     setSelectedIds(new Set());
   }
 
@@ -967,12 +1008,11 @@ export function CompanyGuidesTable({
     clearSelection();
   }
 
-  const actionsBusy = deleting || !!confirmingGuideId || !!recalculatingGuideId;
+  const actionsBusy = deleting || envioEmCurso || !!confirmingGuideId || !!recalculatingGuideId;
 
   return (
     <section className="guides-page">
       {corrigindoValor ? <ModalCorrigirValorGuia api={expectedGuidesApi} companyId={companyId} guia={corrigindoValor} aoFechar={() => setCorrigindoValor(null)} aoCorrigir={onRefresh} /> : null}
-      {entregaPendente ? <div className="guides-delivery-notice" role="status"><span>A entrega ainda não foi confirmada.</span><Button variant="secondary" size="sm" onClick={onRefresh}>Atualizar situação do envio</Button></div> : null}
       {/* Modal split de upload: PDF lado-a-lado do form. Abre quando tipo + arquivo estão prontos. */}
       {uploadTipo && uploadFile && (
         <GuideCaptureModal
@@ -1148,7 +1188,6 @@ export function CompanyGuidesTable({
                 onChanged={refreshAfterVazio}
               />
 
-              {onConfigurarEnvio && <Button variant="secondary" size="sm" onClick={onConfigurarEnvio}>Configuração de envio</Button>}
             </div>
           </div>
         </header>
@@ -1248,7 +1287,7 @@ export function CompanyGuidesTable({
                   {onLiberarGuia && (
                     <Button
                       variant="secondary" size="sm"
-                      disabled={selectedGuide?.status !== "PROCESSED" || !!liberarGuiasBusy}
+                      disabled={selectedGuide?.status !== "PROCESSED" || envioEmCurso}
                       onClick={handleLiberarClick}
                       title="Libera esta guia ao cliente e envia só ela — por e-mail e por WhatsApp, conforme os destinatários cadastrados em Configuração de envio."
                     >
@@ -1278,11 +1317,26 @@ export function CompanyGuidesTable({
                 </>
               )}
 
-              {selectedCount > 1 && <span className="guides-toolbar__hint">Selecione apenas uma guia para acessar as ações.</span>}
+              {selectedCount > 1 && onLiberarGuias && (
+                <Button variant="primary" size="sm" onClick={handleEnviarSelecionadas}
+                  disabled={actionsBusy || loadingGuides || guiasDisponiveis.length === 0}
+                  title={guiasDisponiveis.length ? "Envia as guias disponíveis da seleção pelos canais cadastrados em Configurações." : "Nenhuma das guias selecionadas está pronta para envio. Confira os motivos abaixo."}
+                >
+                  {envioEmCurso ? "Enviando selecionadas..." : guiasDisponiveis.length === 0 ? "Enviar selecionadas" : guiasForaDoEnvio.length ? `Enviar disponíveis (${guiasDisponiveis.length})` : `Enviar selecionadas (${guiasDisponiveis.length})`}
+                </Button>
+              )}
+              {selectedCount > 1 && guiasForaDoEnvio.length > 0 && (
+                <div role="status" style={{ flexBasis: "100%" }}>
+                  <span>{guiasDisponiveis.length ? "As guias abaixo ficam fora deste envio e continuam selecionadas:" : "As guias selecionadas ainda não estão prontas para envio:"}</span>
+                  <ul style={{ margin: "4px 0 0", paddingLeft: 20 }}>
+                    {guiasForaDoEnvio.map((g) => <li key={g.guideId || g.id}>{rotuloTipoGuia(g)} · {g.competencia}: {motivoForaDoEnvio(g)}.</li>)}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
         ) : !loadingGuides && filteredGuides.length > 0 ? (
-          <p className="guides-list-panel__hint">{filteredGuides.length} guia{filteredGuides.length !== 1 ? "s" : ""} · Selecione uma guia para ver as ações.</p>
+          <p className="guides-list-panel__hint">{filteredGuides.length} guia{filteredGuides.length !== 1 ? "s" : ""} · Selecione uma ou mais guias para ver as ações.</p>
         ) : null}
 
         {loadingGuides ? (

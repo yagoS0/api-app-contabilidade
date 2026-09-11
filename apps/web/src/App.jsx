@@ -421,6 +421,7 @@ function AppInterno() {
           onRecalcularInss: companiesWorkspace.handleRecalcularInss,
           recalcInssBusy: companiesWorkspace.recalcInssBusy,
           onLiberarGuia: companiesWorkspace.handleLiberarGuia,
+          onLiberarGuias: companiesWorkspace.handleLiberarGuias,
           liberarGuiasBusy: companiesWorkspace.liberarGuiasBusy,
           resendingGuideId: companiesWorkspace.guidesState.resendingGuideId,
           confirmingGuideId: companiesWorkspace.guidesState.confirmingGuideId,
