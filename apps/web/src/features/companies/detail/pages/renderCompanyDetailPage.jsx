@@ -524,7 +524,6 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
               05/09/2026. A tabela pede a recarga sozinha, e para sozinha. */}
           <Suspense fallback={<TabLoadingFallback />}>
           <CompanyGuidesTable
-            onConfigurarEnvio={() => switchTab("comunicacao")}
             companyId={companyId}
             competencia={circularPanel?.competencia}
             companyRegime={companyRegime}
@@ -536,7 +535,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
             onRecalculateGuide={guidesPanel.onRecalculateGuide}
             onRecalcularInss={guidesPanel.onRecalcularInss}
             recalcInssBusy={guidesPanel.recalcInssBusy}
-            onLiberarGuia={guidesPanel.onLiberarGuia}
+            onLiberarGuia={guidesPanel.onLiberarGuia} onLiberarGuias={guidesPanel.onLiberarGuias}
             liberarGuiasBusy={guidesPanel.liberarGuiasBusy}
             resendingGuideId={guidesPanel.resendingGuideId}
             confirmingGuideId={guidesPanel.confirmingGuideId}
@@ -1374,7 +1373,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
 
       {companyDetailTab === "guides" && (
           <Suspense fallback={<TabLoadingFallback />}>
-          <CompanyGuidesTable guides={guidesPanel.guides} loadingGuides={guidesPanel.loading} onRefresh={guidesPanel.onRefresh} onResendGuide={guidesPanel.onResendGuide} onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment} onRecalculateGuide={guidesPanel.onRecalculateGuide} onRecalcularInss={guidesPanel.onRecalcularInss} recalcInssBusy={guidesPanel.recalcInssBusy} onLiberarGuia={guidesPanel.onLiberarGuia} liberarGuiasBusy={guidesPanel.liberarGuiasBusy} resendingGuideId={guidesPanel.resendingGuideId} confirmingGuideId={guidesPanel.confirmingGuideId} recalculatingGuideId={guidesPanel.recalculatingGuideId} />
+          <CompanyGuidesTable guides={guidesPanel.guides} loadingGuides={guidesPanel.loading} onRefresh={guidesPanel.onRefresh} onResendGuide={guidesPanel.onResendGuide} onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment} onRecalculateGuide={guidesPanel.onRecalculateGuide} onRecalcularInss={guidesPanel.onRecalcularInss} recalcInssBusy={guidesPanel.recalcInssBusy} onLiberarGuia={guidesPanel.onLiberarGuia} onLiberarGuias={guidesPanel.onLiberarGuias} liberarGuiasBusy={guidesPanel.liberarGuiasBusy} resendingGuideId={guidesPanel.resendingGuideId} confirmingGuideId={guidesPanel.confirmingGuideId} recalculatingGuideId={guidesPanel.recalculatingGuideId} />
           </Suspense>
         )}
 

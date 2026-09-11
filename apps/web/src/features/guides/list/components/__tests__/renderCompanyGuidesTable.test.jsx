@@ -10,7 +10,7 @@
 // Aqui se testa a LIGAÇÃO: que o botão certo aparece, desabilitado, com o motivo à vista, e que
 // clicar nele não chama endpoint nenhum — e que Confirmar pagamento / Liberar ao cliente
 // continuam valendo para a parcela, porque agem sobre a própria guia.
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { CompanyGuidesTable } from "../renderCompanyGuidesTable.jsx";
 import { deslocarCompetencia } from "../../../../../lib/competencia";
 
@@ -89,6 +89,79 @@ function selecionar(guide) {
   fireEvent.click(screen.getByRole("checkbox", { name: /^Selecionar guia/ }));
   return guide;
 }
+
+describe("envio das guias selecionadas", () => {
+  it("envia somente os IDs escolhidos e mantém selecionada a guia que falhou", async () => {
+    const enviar = jest.fn().mockResolvedValue([{ guideId: "g-das", ok: true }, { guideId: "g-parc", ok: false }]);
+    renderTabela([guiaDoDas(), guiaDaParcela(), guiaDoDas({ guideId: "fora", tipo: "INSS" })], { onLiberarGuias: enviar, onConfigurarEnvio: jest.fn() });
+    expect(screen.queryByRole("button", { name: /Configuração de envio/ })).not.toBeInTheDocument();
+    const caixas = screen.getAllByRole("checkbox", { name: /^Selecionar guia/ });
+    fireEvent.click(caixas[0]); fireEvent.click(caixas[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Enviar selecionadas (2)" }));
+    await waitFor(() => expect(enviar).toHaveBeenCalledTimes(1));
+    expect(enviar.mock.calls[0][0].map((g) => g.guideId)).toEqual(["g-das", "g-parc"]);
+    await waitFor(() => expect(caixas[0]).not.toBeChecked());
+    expect(caixas[1]).toBeChecked(); expect(caixas[2]).not.toBeChecked();
+  });
+
+  it("confirma uma única vez as guias já enviadas por qualquer canal", async () => {
+    const confirmar = jest.spyOn(window, "confirm").mockReturnValue(false);
+    const enviar = jest.fn().mockResolvedValue([]);
+    renderTabela([guiaDoDas(), guiaDaParcela({ envio: { jaEnviada: true, canais: [] } })], { onLiberarGuias: enviar });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Selecionar todas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enviar selecionadas (2)" }));
+    expect(confirmar).toHaveBeenCalledTimes(1); expect(enviar).not.toHaveBeenCalled();
+    confirmar.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Enviar selecionadas (2)" }));
+    await waitFor(() => expect(enviar).toHaveBeenCalledTimes(1));
+    expect(enviar.mock.calls[0][0].map((g) => g.reenviarConfirmado)).toEqual([false, true]);
+    confirmar.mockRestore();
+  });
+
+  it.each([
+    [{ status: "VAZIO" }, "marcada como vazia"],
+    [{ status: "ERROR" }, "revise o documento"],
+    [{ status: "PROCESSING" }, "aguardando processamento"],
+    [{ emailStatus: "SENDING" }, "envio já em andamento"],
+  ])("envia as disponíveis sem bloquear o lote por %j", async (indisponivel, motivo) => {
+    const enviar = jest.fn().mockResolvedValue([{ guideId: "g-das", ok: true }]);
+    renderTabela([guiaDoDas(), guiaDaParcela(indisponivel)], { onLiberarGuias: enviar });
+    fireEvent.click(screen.getByRole("button", { name: "Histórico completo" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Selecionar todas" }));
+    expect(screen.getByText(new RegExp(motivo))).toBeInTheDocument();
+    const botao = screen.getByRole("button", { name: "Enviar disponíveis (1)" });
+    expect(botao).toBeEnabled();
+    fireEvent.click(botao);
+    await waitFor(() => expect(enviar).toHaveBeenCalledTimes(1));
+    expect(enviar.mock.calls[0][0].map((g) => g.guideId)).toEqual(["g-das"]);
+    await waitFor(() => expect(screen.getAllByRole("checkbox", { name: /^Selecionar guia/ })[0]).not.toBeChecked());
+    expect(screen.getAllByRole("checkbox", { name: /^Selecionar guia/ })[1]).toBeChecked();
+  });
+
+  it("explica o bloqueio quando as duas guias precisam de revisão", () => {
+    const enviar = jest.fn();
+    renderTabela([guiaDoDas({ status: "ERROR" }), guiaDaParcela({ status: "ERROR" })], { onLiberarGuias: enviar });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Selecionar todas" }));
+    expect(screen.getByRole("button", { name: "Enviar selecionadas" })).toBeDisabled();
+    expect(screen.getAllByText(/revise o documento antes de enviar/)).toHaveLength(2);
+    expect(screen.queryByText(/demais ações|Selecione apenas uma/)).not.toBeInTheDocument();
+    expect(enviar).not.toHaveBeenCalled();
+  });
+
+  it("impede novo lote e mudança na seleção enquanto envia", async () => {
+    let concluir;
+    const enviar = jest.fn(() => new Promise((resolve) => { concluir = resolve; }));
+    renderTabela([guiaDoDas(), guiaDaParcela()], { onLiberarGuias: enviar });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Selecionar todas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enviar selecionadas (2)" }));
+    const botao = screen.getByRole("button", { name: "Enviando selecionadas..." });
+    expect(botao).toBeDisabled(); fireEvent.click(botao);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Selecionar todas" }));
+    expect(screen.getByRole("checkbox", { name: "Selecionar todas" })).toBeChecked();
+    expect(enviar).toHaveBeenCalledTimes(1);
+    await act(async () => concluir([]));
+  });
+});
 
 describe("Recalcular × parcela de parcelamento", () => {
   it("⚠ na PARCELA o botão aparece DESABILITADO — o mesmo tipo do DAS não o habilita", () => {

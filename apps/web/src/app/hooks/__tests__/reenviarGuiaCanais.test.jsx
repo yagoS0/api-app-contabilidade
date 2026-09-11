@@ -41,6 +41,24 @@ function montar({ whatsappErro } = {}) {
 }
 
 describe("reenvio confirmado pela aba Guias", () => {
+  it("o lote mantém resultados individuais depois de uma única recarga", async () => {
+    const { result, api, visivel, guias } = montar();
+    await waitFor(() => expect(result.current.guidesState.guides).toEqual(guias));
+    api.listarContatosWhatsapp.mockResolvedValue({ canalPadraoEnvio: "EMAIL" });
+    api.liberarGuiaCliente.mockResolvedValueOnce({ sent: true }).mockRejectedValueOnce(Object.assign(new Error("PDF indisponível"), { status: 422 }));
+    api.getCompanyGuides.mockClear();
+    let resultados;
+    await act(async () => { resultados = await result.current.handleLiberarGuias([
+      { guideId: "g1", rotulo: "DAS" }, { guideId: "g2", rotulo: "INSS" },
+    ]); });
+    expect(resultados.map((r) => r.ok)).toEqual([true, false]);
+    expect(api.getCompanyGuides).toHaveBeenCalledTimes(1);
+    expect(visivel.erro).toMatch(/1 de 2 guias com falha/);
+    expect(visivel.erro).toMatch(/INSS/);
+    expect(visivel.mensagem).toBe("");
+    expect(result.current.liberarGuiasBusy).toBe(false);
+  });
+
   it("sem e-mail, reenvia por WhatsApp da empresa e mantém sucesso depois de recarregar as guias", async () => {
     const { result, api, feedback, visivel, guias } = montar();
     await waitFor(() => expect(result.current.guidesState.guides).toEqual(guias));
