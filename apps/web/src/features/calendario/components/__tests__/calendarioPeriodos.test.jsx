@@ -53,7 +53,7 @@ test('tarefa permite horário fixo, editar para intervalo e remover horário',as
 });
 test('segundo passo aplica regime e separa janela e vencimento fiscal',async()=>{
   const {api}=montar();fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026'));fireEvent.change(screen.getByLabelText('Título'),{target:{value:'EFD-Contribuições'}});fireEvent.change(screen.getByLabelText('Até'),{target:{value:'2026-09-15'}});
-  fireEvent.change(screen.getByLabelText('Recorrência'),{target:{value:'MENSAL'}});fireEvent.click(screen.getByLabelText('Obrigação'));fireEvent.click(screen.getByRole('button',{name:'Continuar'}));
+  fireEvent.change(screen.getByLabelText('Recorrência'),{target:{value:'MENSAL'}});fireEvent.change(screen.getByLabelText('Tipo'),{target:{value:'OBRIGACAO'}});fireEvent.click(screen.getByRole('button',{name:'Continuar'}));
   fireEvent.change(screen.getByLabelText('Dia do vencimento fiscal'),{target:{value:'21'}});fireEvent.change(screen.getByLabelText('Aplicar a'),{target:{value:'POR_FILTRO'}});fireEvent.click(screen.getByLabelText('Lucro Presumido'));
   await screen.findByText('2 empresas');fireEvent.click(screen.getByRole('button',{name:'Salvar'}));await waitFor(()=>expect(api.createRegraObrigacao).toHaveBeenCalledWith(expect.objectContaining({diaVencimento:21,agendaConfig:expect.objectContaining({dataInicio:'2026-09-10',dataFim:'2026-09-15'}),filtros:{regimes:['LUCRO_PRESUMIDO'],temFolha:null}})));
 });
@@ -200,4 +200,58 @@ test('tarefa da lista abre o mesmo editor central com conclusão',async()=>{
   expect(screen.getByRole('dialog',{name:'Editar atividade'})).not.toHaveClass('modal-fundo--lateral');
   expect(screen.getByLabelText('Título')).toHaveFocus();
   expect(screen.getByRole('button',{name:'Concluir tarefa'})).toBeInTheDocument();
+});
+
+
+test('vencimentos automáticos de guias ficam fora do calendário', async () => {
+  montar({visao:'mes',extras:{getCalendario:jest.fn(async()=>({ok:true,dias:[{data:'2026-09-10',itens:[{id:'das',tipo:'guia',titulo:'SIMPLES'},{id:'inss',tipo:'guia',titulo:'INSS'},{id:'nota',tipo:'marco',titulo:'Reunião de serviços'}]}]}))}});
+  expect(await screen.findByRole('button',{name:'Reunião de serviços'})).toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'SIMPLES'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'INSS'})).not.toBeInTheDocument();
+});
+
+test('obrigação de 10 a 15 tem seis blocos azuis com horário, preserva empresas e janela ao editar', async () => {
+  const obs=obrigacoes();obs.forEach(o=>o.agendaConfig={...o.agendaConfig,horaInicio:'09:00',horaFim:'10:00'});
+  montar({obs,extras:{concluirOcorrencia:jest.fn(async id=>{const oc=obs.flatMap(o=>o.ocorrencias).find(o=>o.ocorrenciaId===id);oc.situacao='CONCLUIDA';return {ok:true};})}});
+  const eventos=await screen.findAllByRole('button',{name:/EFD-Contribuições/});
+  expect(eventos).toHaveLength(4);
+  eventos.forEach(e=>{expect(e.closest('.agenda-time-day')).not.toBeNull();expect(e).toHaveStyle({top:'504px',height:'54px'});expect(e.style.getPropertyValue('--event-color')).toBe('#1351b4');});
+  fireEvent.click(eventos[1]);expect(screen.getByText('0 de 2 concluídas')).toBeInTheDocument();
+  fireEvent.click(screen.getAllByRole('button',{name:'Concluir',exact:true})[0]);
+  await screen.findByText('1 de 2 concluídas');
+  fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
+  expect(screen.getByLabelText('De')).toHaveValue('2026-09-10');expect(screen.getByLabelText('Até')).toHaveValue('2026-09-15');
+  expect(screen.queryByRole('button',{name:'Alta'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Cancelar'}));
+  fireEvent.change(screen.getByLabelText('Visualização do calendário'),{target:{value:'mes'}});
+  await waitFor(()=>expect(screen.getAllByRole('button',{name:/EFD-Contribuições/})).toHaveLength(6));
+  expect(screen.getAllByRole('button',{name:/EFD-Contribuições/}).every(e=>e.closest('.agenda-month'))).toBe(true);
+});
+
+test('nota com horário continua visível no mês mesmo após três outras atividades', async () => {
+  const tasks=Array.from({length:5},(_,n)=>({id:'t'+n,tarefaId:'t'+n,fonte:'TAREFA',tipo:'tarefa',titulo:n===4?'Conferir notas de serviços':'Atividade '+n,dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:00',horaFim:'10:00'}));
+  montar({extras:{getTarefasAgenda:jest.fn(async()=>({ok:true,tarefas:[],itens:tasks}))}});
+  await screen.findByRole('button',{name:'Conferir notas de serviços'});
+  fireEvent.change(screen.getByLabelText('Visualização do calendário'),{target:{value:'mes'}});
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Conferir notas de serviços'}).closest('.agenda-month')).not.toBeNull());
+  expect(screen.getByRole('button',{name:'Conferir notas de serviços'})).not.toHaveTextContent('09:00');
+  expect(screen.getAllByRole('button',{name:/Atividade [0-3]/})).toHaveLength(4);
+});
+
+test('configuração da obrigação existente carrega filtros e permite todas as empresas com folha', async () => {
+  const regra={regraId:'regra-efd',nome:'EFD-Contribuições',agendaConfig:config,periodicidade:'MENSAL',diaVencimento:21,categoria:'fiscal',escopo:'POR_FILTRO',filtros:{regimes:['LUCRO_PRESUMIDO'],temFolha:null},aplicarANovas:true};
+  const updateRegraObrigacao=jest.fn(async()=>({ok:true}));
+  const {api}=montar({obs:obrigacoes(),extras:{listRegrasObrigacao:jest.fn(async()=>({ok:true,regras:[regra]})),updateRegraObrigacao}});
+  fireEvent.click(await screen.findByRole('button',{name:/EFD-Contribuições/}));
+  fireEvent.click(screen.getByRole('button',{name:'Configurar obrigação',exact:true}));
+  expect(screen.getByLabelText('Título')).toHaveValue('EFD-Contribuições');
+  expect(screen.getByLabelText('Recorrência')).toHaveValue('MENSAL');
+  fireEvent.click(screen.getByRole('button',{name:'Continuar'}));
+  expect(screen.getByLabelText('Lucro Presumido')).toBeChecked();
+  expect(screen.getByLabelText('Dia do vencimento fiscal')).toHaveValue(21);
+  fireEvent.click(screen.getByLabelText('Lucro Presumido'));fireEvent.click(screen.getByLabelText('Somente com folha'));
+  await waitFor(()=>expect(api.previewEscopoRegra).toHaveBeenLastCalledWith({escopo:'POR_FILTRO',filtros:{regimes:[],temFolha:true}}));
+  await screen.findByText('2 empresas');fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  await waitFor(()=>expect(updateRegraObrigacao).toHaveBeenCalledWith('regra-efd',expect.objectContaining({escopo:'POR_FILTRO',filtros:{regimes:[],temFolha:true},agendaConfig:expect.objectContaining({dataInicio:'2026-09-10',dataFim:'2026-09-15'})})));
+  expect(api.createRegraObrigacao).not.toHaveBeenCalled();
 });

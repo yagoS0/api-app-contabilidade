@@ -1,5 +1,7 @@
 import { somarDiasAgenda } from '../../../../../../packages/shared/src/agenda.js';
 export const CORES_PRIORIDADE = { '': 'var(--text-muted)', BAIXA: '#e9bb42', MEDIA: '#ef934c', ALTA: '#b58aef', URGENTE: '#ee737f' };
+export const COR_OBRIGACAO = '#1351b4';
+export const corAtividade = item => item.tipo === 'obrigacao' ? COR_OBRIGACAO : CORES_PRIORIDADE[item.prioridade || ''];
 export const RECORRENCIAS = { AVULSA: 'Não repetir', DIARIA: 'Todos os dias', SEMANAL: 'Toda semana', MENSAL: 'Todo mês', TRIMESTRAL: 'A cada 3 meses', ANUAL: 'Todo ano' };
 export const dataLocal = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 export const dataBR = d => d ? d.slice(0, 10).split('-').reverse().join('/') : '';
@@ -34,6 +36,17 @@ export function agruparAtividades(itens) {
     grupos.get(chave).itens.push(i);
   }
   return [...grupos.values()].map(g => ({ ...g, resolvido: g.itens.every(i => i.resolvido) }));
+}
+/** Blocos diários representam a mesma ocorrência por empresa e preservam sua janela de edição. */
+export function blocosDiarios(atividades, inicio, fim) {
+  return atividades.flatMap(item => {
+    if (!item.horaInicio || item.dataInicio === item.dataFim) return [item];
+    const blocos = [];
+    for (let dia = item.dataInicio < inicio ? inicio : item.dataInicio; dia <= item.dataFim && dia <= fim; dia = somarDiasAgenda(dia, 1)) {
+      blocos.push({ ...item, id: `${item.id}@${dia}`, dataInicio: dia, dataFim: dia, atividadeOriginal: item });
+    }
+    return blocos;
+  });
 }
 export function faixasDoPeriodo(itens, dias) {
   const ocupacao = [];
