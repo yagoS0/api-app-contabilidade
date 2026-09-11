@@ -1,123 +1,101 @@
-jest.mock('../../../obrigacoes/components/CalendarioObrigacoesModal', () => ({ CalendarioObrigacoesModal: jest.fn(() => null) }));
-import { CalendarioObrigacoesModal } from '../../../obrigacoes/components/CalendarioObrigacoesModal';
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { CalendarioGrid } from "../renderCalendarioGrid";
-
-const tarefa = { id: "oc-1", tipo: "obrigacao", natureza: "TAREFA", titulo: "Preparar folha", dataInicio: "2026-09-10", dataFim: "2026-09-15", data: "2026-09-15", companyId: "c1", empresa: "Alfa", situacao: "PENDENTE", resolvido: false };
-const diasDaTarefa = (item = tarefa) => Array.from({ length: 6 }, (_, i) => ({ data: `2026-09-${10 + i}`, itens: [item] }));
-function montar({ dias = diasDaTarefa(), contexto = {}, ...props } = {}) {
-  const api = { getCalendario: jest.fn(async (mes) => ({ dias: dias.filter((d) => d.data.startsWith(mes)), pendenciasDoMes: [] })), concluirOcorrencia: jest.fn(async () => ({ ok: true })) };
-  const result = render(<CalendarioGrid api={api} empresas={[{ companyId: "c1", razao: "Alfa" }]} initialContext={{ referencia: "2026-09-10", visao: "mes", ...contexto }} {...props} />);
-  return { api, ...result };
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { CalendarioGrid } from '../renderCalendarioGrid';
+import { criarMockAgenda } from '../../../../api/mock/agendaMock';
+const empresas = [{companyId:'a',razao:'Clínica Alfa'},{companyId:'b',razao:'Consultoria Beta'}];
+const config = {dataInicio:'2026-09-10',dataFim:'2026-09-15',recorrencia:'MENSAL',prioridade:'ALTA'};
+const obrigacoes = () => empresas.map(e=>({obrigacaoId:`ob-${e.companyId}`,companyId:e.companyId,empresa:e.razao,nome:'EFD-Contribuições',tipo:'OBRIGACAO',regraId:'regra-efd',periodicidade:'MENSAL',ativa:true,agendaConfig:config,ocorrencias:[{ocorrenciaId:`oc-${e.companyId}`,cicloChave:'2026-09',dataInicio:config.dataInicio,dataFim:config.dataFim,dataVencimento:'2026-09-21',situacao:'PENDENTE',status:'PENDENTE'}]}));
+function montar({visao='semana',referencia='2026-09-10',obs=[],extras={}}={}) {
+  const api={...criarMockAgenda(obs,[]),getCalendario:jest.fn(async()=>({ok:true,dias:[]})),listObrigacoes:jest.fn(async()=>({ok:true,obrigacoes:obs.map(o=>({...o,ocorrencias:o.ocorrencias.filter(oc=>!oc.canceladaEm)})).filter(o=>o.ativa!==false),opcoes:{}})),listRegrasObrigacao:jest.fn(async()=>({ok:true,regras:[]})),previewEscopoRegra:jest.fn(async()=>({ok:true,total:2,empresas})),createRegraObrigacao:jest.fn(async()=>({ok:true})),...extras};
+  jest.spyOn(api,'excluirOcorrenciasAgenda');jest.spyOn(api,'excluirSerieAgenda');jest.spyOn(api,'salvarTarefaAgenda');
+  return {api,...render(<CalendarioGrid api={api} empresas={empresas} initialContext={{visao,referencia}}/>)};
 }
-const visao = (nome) => fireEvent.click(within(screen.getByRole("group", { name: "Granularidade do calendário" })).getByRole("button", { name: nome }));
-
-test.each([
-  ["2026-01-31", "fevereiro de 2026"], ["2024-01-30", "fevereiro de 2024"],
-  ["2024-02-29", "março de 2024"], ["2026-12-31", "janeiro de 2027"],
-])("avança exatamente um mês a partir de %s", async (referencia, destino) => {
-  montar({ dias: [], contexto: { referencia } });
-  fireEvent.click(screen.getByTitle("Próximo"));
-  expect(await screen.findByText(destino)).toBeInTheDocument();
+test.each([['2026-01-31','fevereiro de 2026'],['2024-02-29','março de 2024'],['2026-12-31','janeiro de 2027']])('navega um mês civil de %s',async(referencia,destino)=>{
+  montar({visao:'mes',referencia});fireEvent.click(screen.getByRole('button',{name:'Próximo período'}));expect(await screen.findByText(destino)).toBeInTheDocument();
+});
+test('semana limpa: horários à direita, sem botão de adicionar nem seletor de empresa',async()=>{
+  const {container}=montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  expect(screen.getByLabelText('Visualização do calendário')).toHaveValue('semana');expect(container.querySelector('.agenda-time-columns').lastElementChild).toHaveClass('agenda-hours');
+  expect(screen.queryByText('Tarefas e obrigações')).not.toBeInTheDocument();expect(screen.queryByLabelText('Empresa')).not.toBeInTheDocument();expect(screen.queryByText(/Filtros e legenda/)).not.toBeInTheDocument();
+});
+test('clique no horário cria tarefa sem empresa com recorrência e cor',async()=>{
+  const {api}=montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026 às 09:00'));
+  fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Conferir NFS-e'}});expect(screen.getByLabelText('Horário inicial')).toHaveValue('09:00');
+  fireEvent.change(screen.getByLabelText('Recorrência'),{target:{value:'SEMANAL'}});fireEvent.click(screen.getByRole('button',{name:'Alta'}));fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  await waitFor(()=>expect(api.salvarTarefaAgenda).toHaveBeenCalledWith(expect.objectContaining({titulo:'Conferir NFS-e',config:expect.objectContaining({recorrencia:'SEMANAL',prioridade:'ALTA',horaInicio:'09:00'})})));
+  expect(await screen.findByRole('button',{name:'Conferir NFS-e'})).toBeInTheDocument();
 });
 
-test("um intervalo desenha faixas conectadas por semana com o mesmo detalhe e prazo", async () => {
-  const { container } = montar();
-  const faixas = await screen.findAllByRole("button", { name: /Preparar folha/ });
-  expect(faixas).toHaveLength(2);
-  expect(container.querySelectorAll('[data-intervalo="true"][data-event-id="oc-1"]')).toHaveLength(2);
-  expect(screen.getByLabelText("Continua na próxima semana")).toBeInTheDocument();
-  expect(screen.getByLabelText("Continua da semana anterior")).toBeInTheDocument();
-  fireEvent.click(faixas[1]);
-  const detalhe = screen.getByRole("dialog", { name: "Detalhe" });
-  expect(within(detalhe).getByText(/Tarefa · 10\/09\/2026 – 15\/09\/2026/)).toBeInTheDocument();
-  expect(within(detalhe).queryByText(/Vencimento fiscal/)).not.toBeInTheDocument();
+test('tarefa permite horário fixo, editar para intervalo e remover horário',async()=>{
+  const {api}=montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026 às 09:00'));
+  fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Revisar notas'}});
+  fireEvent.change(screen.getByLabelText('Horário',{exact:true}),{target:{value:'FIXO'}});
+  fireEvent.change(screen.getByLabelText('Às'),{target:{value:'09:30'}});
+  expect(screen.queryByLabelText('Horário final')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  await waitFor(()=>expect(api.salvarTarefaAgenda).toHaveBeenCalledWith(expect.objectContaining({config:expect.objectContaining({horaInicio:'09:30',horaFim:null})})));
+  fireEvent.click(await screen.findByRole('button',{name:'Revisar notas'}));
+  expect(screen.getByText('10/09/2026 · 09:30')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
+  expect(screen.getByLabelText('Horário',{exact:true})).toHaveValue('FIXO');
+  fireEvent.change(screen.getByLabelText('Horário',{exact:true}),{target:{value:'INTERVALO'}});
+  fireEvent.change(screen.getByLabelText('Horário final'),{target:{value:'10:45'}});
+  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  fireEvent.click(await screen.findByRole('button',{name:'Revisar notas'}));
+  expect(screen.getByText('10/09/2026 · 09:30–10:45')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
+  fireEvent.change(screen.getByLabelText('Horário',{exact:true}),{target:{value:'SEM'}});
+  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Revisar notas'}).closest('.agenda-bands')).not.toBeNull());
+  fireEvent.click(await screen.findByRole('button',{name:'Revisar notas'}));
+  expect(screen.getByText('10/09/2026')).toBeInTheDocument();
+});
+test('segundo passo aplica regime e separa janela e vencimento fiscal',async()=>{
+  const {api}=montar();fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026'));fireEvent.change(screen.getByLabelText('Título'),{target:{value:'EFD-Contribuições'}});fireEvent.change(screen.getByLabelText('Até'),{target:{value:'2026-09-15'}});
+  fireEvent.change(screen.getByLabelText('Recorrência'),{target:{value:'MENSAL'}});fireEvent.click(screen.getByLabelText('Obrigação'));fireEvent.click(screen.getByRole('button',{name:'Continuar'}));
+  fireEvent.change(screen.getByLabelText('Dia do vencimento fiscal'),{target:{value:'21'}});fireEvent.change(screen.getByLabelText('Aplicar a'),{target:{value:'POR_FILTRO'}});fireEvent.click(screen.getByLabelText('Lucro Presumido'));
+  await screen.findByText('2 empresas');fireEvent.click(screen.getByRole('button',{name:'Salvar'}));await waitFor(()=>expect(api.createRegraObrigacao).toHaveBeenCalledWith(expect.objectContaining({diaVencimento:21,agendaConfig:expect.objectContaining({dataInicio:'2026-09-10',dataFim:'2026-09-15'}),filtros:{regimes:['LUCRO_PRESUMIDO'],temFolha:null}})));
 });
 
-test("Agenda e contador da empresa contam uma ocorrência, mesmo repetida em seis dias", async () => {
-  montar({ contexto: { visao: "agenda", painelAberto: true } });
-  expect(await screen.findAllByRole("button", { name: /Preparar folha/ })).toHaveLength(1);
-  expect(screen.getByTitle("1 obrigação(ões) em aberto no mês")).toHaveTextContent("1");
+test('editar a tarefa de 10 a 15 mostra blocos diários das 9 às 11 em duas semanas',async()=>{
+  montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  fireEvent.click(screen.getByLabelText('Criar atividade em 10/09/2026 às 09:00'));
+  fireEvent.change(screen.getByLabelText('Título'),{target:{value:'Conferência de notas'}});
+  fireEvent.change(screen.getByLabelText('Horário final'),{target:{value:'11:00'}});
+  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  fireEvent.click(await screen.findByRole('button',{name:'Conferência de notas'}));
+  fireEvent.click(screen.getByRole('button',{name:'Editar',exact:true}));
+  fireEvent.change(screen.getByLabelText('Até'),{target:{value:'2026-09-15'}});
+  fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
+  await waitFor(()=>expect(screen.getAllByRole('button',{name:'Conferência de notas'})).toHaveLength(4));
+  for(const evento of screen.getAllByRole('button',{name:'Conferência de notas'})) {
+    expect(evento.closest('.agenda-time-columns')).not.toBeNull();
+    expect(evento).toHaveStyle({top:'504px',height:'110px'});
+  }
+  fireEvent.click(screen.getAllByRole('button',{name:'Conferência de notas'})[2]);
+  fireEvent.click(screen.getByRole('button',{name:'Excluir ocorrência',exact:true}));
+  fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));
+  await waitFor(()=>expect(screen.getAllByRole('button',{name:'Conferência de notas'})).toHaveLength(3));
+  fireEvent.click(screen.getByRole('button',{name:'Próximo período'}));
+  await waitFor(()=>expect(screen.getAllByRole('button',{name:'Conferência de notas'})).toHaveLength(2));
 });
-
-test("Ver mais abre os vinte eventos sem criar e permite abrir o último", async () => {
-  const onOpenObligations = jest.fn();
-  montar({ dias: [{ data: "2026-09-10", itens: Array.from({ length: 20 }, (_, i) => ({ tipo: "guia", id: `g${i}`, titulo: `Guia ${i + 1}`, data: "2026-09-10" })) }], onOpenObligations });
-  fireEvent.click(await screen.findByRole("button", { name: "Ver mais 17 eventos" }));
-  const dialog = screen.getByRole("dialog", { name: "Eventos de 10/09/2026" });
-  expect(within(dialog).getAllByRole("button", { name: /Guia \d/ })).toHaveLength(20);
-  expect(onOpenObligations).not.toHaveBeenCalled();
-  fireEvent.click(within(dialog).getByRole("button", { name: /Guia 20/ }));
-  expect(within(screen.getByRole("dialog", { name: "Detalhe" })).getByText("Guia 20")).toBeInTheDocument();
+test('faixa agrupa empresas e mostra conclusão parcial e prazo fiscal',async()=>{
+  const obs=obrigacoes();obs[0].ocorrencias[0].situacao='CONCLUIDA';const {container}=montar({obs});const eventos=await screen.findAllByRole('button',{name:/EFD-Contribuições/});expect(eventos).toHaveLength(1);expect(container.querySelector('.agenda-event')).not.toHaveClass('is-complete');
+  fireEvent.click(eventos[0]);expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument();expect(screen.getAllByText('Vencimento fiscal · 21/09/2026')).toHaveLength(2);
 });
-
-test("atalhos de lista, criação e dia vazio carregam empresa e datas", async () => {
-  const onOpenObligations = jest.fn();
-  const onContextChange = jest.fn();
-  montar({ dias: [], contexto: { empresaFiltro: "c1" }, onOpenObligations, onContextChange });
-  fireEvent.click(screen.getByRole("button", { name: "Tarefas e obrigações" }));
-  expect(CalendarioObrigacoesModal.mock.calls.at(-1)[0].contexto).toEqual({ companyId: "c1", dataInicio: "2026-09-01", dataFim: "2026-09-30", criar: false });
-  fireEvent.click(screen.getByRole("button", { name: "+ Nova tarefa ou obrigação" }));
-  expect(CalendarioObrigacoesModal.mock.calls.at(-1)[0].contexto).toEqual({ companyId: "c1", dataInicio: "2026-09-10", dataFim: "2026-09-10", criar: true });
-  fireEvent.click(screen.getByRole("button", { name: "Criar tarefa ou obrigação em 2026-09-22" }));
-  expect(CalendarioObrigacoesModal.mock.calls.at(-1)[0].contexto).toEqual({ companyId: "c1", dataInicio: "2026-09-22", dataFim: "2026-09-22", criar: true });
-  visao("Agenda");
-  await waitFor(() => expect(onContextChange).toHaveBeenLastCalledWith(expect.objectContaining({ referencia: "2026-09-10", empresaFiltro: "c1", visao: "agenda" })));
+test('excluir faixa cancela só este ciclo inclusive concluída, preservando histórico',async()=>{
+  const obs=obrigacoes();obs[0].ocorrencias[0].status='CONCLUIDA';const {api}=montar({obs});fireEvent.click(await screen.findByRole('button',{name:/EFD-Contribuições/}));fireEvent.click(screen.getAllByRole('button',{name:'Excluir ocorrência'}).at(-1));fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));
+  await waitFor(()=>expect(api.excluirOcorrenciasAgenda).toHaveBeenCalledWith(['oc-a','oc-b']));expect(api.excluirSerieAgenda).not.toHaveBeenCalled();expect(obs[0].ocorrencias[0].status).toBe('CONCLUIDA');expect(obs[0].ocorrencias[0].canceladaEm).toBeTruthy();
 });
-
-test("concluir qualquer faixa chama o ID uma vez e recarrega todas as faixas", async () => {
-  let concluida = false;
-  const api = { getCalendario: jest.fn(async (mes) => ({ dias: mes === "2026-09" ? diasDaTarefa({ ...tarefa, resolvido: concluida, situacao: concluida ? "CONCLUIDA" : "PENDENTE" }) : [] })), concluirOcorrencia: jest.fn(async () => { concluida = true; return { ok: true }; }) };
-  montar({ api });
-  fireEvent.click((await screen.findAllByRole("button", { name: /Preparar folha/ }))[1]);
-  fireEvent.click(screen.getByRole("button", { name: /Marcar como concluída/ }));
-  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Detalhe" })).not.toBeInTheDocument());
-  expect(api.concluirOcorrencia).toHaveBeenCalledTimes(1);
-  expect(api.concluirOcorrencia).toHaveBeenCalledWith("oc-1");
-  await waitFor(() => expect(screen.queryByRole("button", { name: /Preparar folha/ })).not.toBeInTheDocument());
-  screen.getByText("Filtros e legenda").closest("details").open = true;
-  fireEvent.click(screen.getByRole("checkbox", { name: "Mostrar concluídas" }));
-  expect(screen.getAllByRole("button", { name: /Preparar folha/ })).toHaveLength(2);
-  fireEvent.click(screen.getByRole("checkbox", { name: "Mostrar concluídas" }));
-  expect(screen.queryByRole("button", { name: /Preparar folha/ })).not.toBeInTheDocument();
+test('lista filtra obrigações e permite excluir a série completa',async()=>{
+  const {api}=montar({obs:obrigacoes()});await screen.findByRole('button',{name:/EFD-Contribuições/});fireEvent.click(screen.getByRole('button',{name:'Lista'}));fireEvent.change(screen.getByLabelText('Filtrar atividades'),{target:{value:'obrigacao'}});fireEvent.click(await screen.findByRole('button',{name:'Excluir série'}));fireEvent.click(screen.getByRole('button',{name:'Excluir',exact:true}));
+  await waitFor(()=>expect(api.excluirSerieAgenda).toHaveBeenCalledWith({regraId:'regra-efd'}));expect(api.excluirOcorrenciasAgenda).not.toHaveBeenCalled();
 });
-
-test("período da obrigação não substitui o vencimento fiscal no detalhe", async () => {
-  const onOpenObligations = jest.fn();
-  const obrigacao = { ...tarefa, natureza: "OBRIGACAO", data: "2026-09-20", dataVencimento: "2026-09-20" };
-  montar({ dias: diasDaTarefa(obrigacao), onOpenObligations });
-  fireEvent.click((await screen.findAllByRole("button", { name: /Preparar folha/ }))[0]);
-  expect(screen.getByText(/Vencimento fiscal: 20\/09\/2026/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Editar tarefa ou obrigação" }));
-  expect(CalendarioObrigacoesModal.mock.calls.at(-1)[0].contexto).toEqual(expect.objectContaining({ ocorrenciaId: "oc-1", dataInicio: "2026-09-10", dataFim: "2026-09-15", criar: false }));
+test('mês divide intervalo entre semanas e lista conta uma série',async()=>{
+  montar({visao:'mes',obs:obrigacoes()});expect(await screen.findAllByRole('button',{name:/EFD-Contribuições/})).toHaveLength(2);fireEvent.click(screen.getByRole('button',{name:'Lista'}));expect(await screen.findAllByRole('button',{name:/EFD-Contribuições/})).toHaveLength(1);
 });
-
-test("resposta atrasada de setembro não substitui os eventos de outubro", async () => {
-  let responderSetembro;
-  const api = { getCalendario: jest.fn((mes) => mes === "2026-09"
-    ? new Promise((resolve) => { responderSetembro = resolve; })
-    : Promise.resolve({ dias: [{ data: "2026-10-05", itens: [{ id: "out", tipo: "guia", titulo: "Guia de outubro", data: "2026-10-05" }] }] })) };
-  montar({ api, contexto: { visao: "agenda" } });
-  fireEvent.click(screen.getByTitle("Próximo"));
-  expect(await screen.findByRole("button", { name: /Guia de outubro/ })).toBeInTheDocument();
-  await act(async () => responderSetembro({ dias: diasDaTarefa() }));
-  expect(screen.queryByRole("button", { name: /Preparar folha/ })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /Guia de outubro/ })).toBeInTheDocument();
-});
-
-test("tarefa intermediária permanece em aberto até seu fim e Dia mostra o intervalo", async () => {
-  jest.useFakeTimers();
-  jest.setSystemTime(new Date("2026-09-12T12:00:00Z"));
-  try {
-    montar({ contexto: { visao: "dia", referencia: "2026-09-12" } });
-    fireEvent.click(await screen.findByRole("button", { name: /Preparar folha/ }));
-    expect(within(screen.getByRole("dialog", { name: "Detalhe" })).getByText("Em aberto")).toBeInTheDocument();
-    expect(screen.queryByText("Atrasada")).not.toBeInTheDocument();
-  } finally { jest.useRealTimers(); }
-});
-
-test("um evento de um dia abre seu detalhe sem desaparecer num grupo lateral", async () => {
-  montar({ dias: [{ data: "2026-09-10", itens: [{ ...tarefa, natureza: "OBRIGACAO", dataInicio: "2026-09-10", dataFim: "2026-09-10", data: "2026-09-10" }] }] });
-  fireEvent.click(await screen.findByRole("button", { name: /Preparar folha/ }));
-  expect(screen.getByRole("dialog", { name: "Detalhe" })).toBeInTheDocument();
+test('falha permite tentar novamente',async()=>{
+  const getCalendario=jest.fn().mockRejectedValueOnce(new Error('Sem conexão')).mockResolvedValue({ok:true,dias:[]});montar({extras:{getCalendario}});expect(await screen.findByRole('alert')).toHaveTextContent('Sem conexão');fireEvent.click(screen.getByRole('button',{name:'Tentar novamente'}));await waitFor(()=>expect(screen.queryByRole('alert')).not.toBeInTheDocument());
 });

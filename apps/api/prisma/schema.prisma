@@ -4000,6 +4000,7 @@ model NsuGap {
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 model Obrigacao {
+  agendaConfig Json?
   id             String  @id @default(uuid())
   portalClientId String
   nome           String
@@ -4071,6 +4072,7 @@ model OcorrenciaObrigacao {
   dataInicio     DateTime? @db.Date
   dataFim        DateTime? @db.Date
   janelaPersonalizada Boolean @default(false)
+  agendaConfig Json?
   cicloChave String?
   /// Retirada por mudança de frequência; reversível por nova versão, diferente de exclusão manual.
   foraDaRecorrencia Boolean @default(false)
@@ -4104,6 +4106,9 @@ model OcorrenciaObrigacao {
 }
 
 model RegraObrigacao {
+  agendaConfig Json?
+  descricao String?
+  janelaTrabalho Json?
   id        String  @id @default(uuid())
   nome      String
   categoria String?
@@ -5226,4 +5231,27 @@ model OnboardingLink {
   createdAt DateTime @default(now())
   @@index([onboardingId])
   @@map("onboarding_links")
+}
+
+// Tarefas gerais são privadas ao usuário do escritório que as criou.
+model TarefaAgenda {
+  id String @id @default(uuid())
+  userId String
+  titulo String
+  descricao String?
+  config Json
+  estados Json @default("{}")
+  excluidaEm DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, excluidaEm])
+  @@map("tarefas_agenda")
+}
+model AgendaOcultacao {
+  id String @id @default(uuid())
+  userId String
+  chave String
+  createdAt DateTime @default(now())
+  @@unique([userId, chave])
+  @@map("agenda_ocultacoes")
 }

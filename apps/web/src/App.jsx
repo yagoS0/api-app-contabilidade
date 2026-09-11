@@ -282,11 +282,11 @@ function AppInterno() {
     );
   }
 
-  // Links antigos abrem o calendário e seu modal, nunca uma segunda central.
+  // Links antigos abrem a lista integrada à agenda.
   if (session.page === "obrigacoes") {
     const context = calendarioNavigation.contexto;
     return <Navigate to="/companies" replace state={{ calendarContext: {
-      ...(context.calendario || {}), obrigacoesModal: {
+      ...(context.calendario || {}), visao: 'lista', obrigacoesModal: {
         companyId: context.companyId || "", ...(context.periodo || {}),
         ...(context.criacao || {}), criar: Boolean(context.criacao), ocorrenciaId: context.ocorrenciaId,
       },

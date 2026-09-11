@@ -6,6 +6,7 @@
 @import "./features/onboarding/onboarding-workspace.css";
 @import "./features/whatsapp/whatsapp.css";
 @import "./features/companies/list/carteira.css";
+@import "./features/calendario/components/agenda-workspace.css";
 
 /* Layout */
 .layout {

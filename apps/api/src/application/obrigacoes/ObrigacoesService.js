@@ -9,6 +9,8 @@
 // as empresas de uma vez. Repetição entre empresas se resolve pela regra do escritório.
 
 import { normalizarJanela, cicloDaOcorrencia, aplicarJanela, regraDoCiclo, normalizarRegraRecorrente, janelaDoCiclo } from './agendaSerie.js';
+import { normalizarAgenda } from '../../../../../packages/shared/src/agenda.js';
+import { sincronizarAgendaConfigurada } from './sincronizarAgendaConfigurada.js';
 import { sincronizarAgenda } from './sincronizarAgenda.js';
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { criarConsultorDeFeriados, paraISO } from "./diaUtil.js";
@@ -26,7 +28,7 @@ async function bloquearSerie(db, id) {
   if (db.$queryRaw) await db.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${id}))`;
 }
 
-export async function excluirOcorrencia({ portalIds, ocorrenciaId, alcance = "ESTA", userId = null }, db = prisma) {
+export async function excluirOcorrencia({ portalIds, ocorrenciaId, alcance = "ESTA", userId = null, incluirConcluidas = false }, db = prisma) {
   if (!["ESTA", "ESTA_E_PROXIMAS"].includes(alcance)) throw new ObrigacaoError("alcance_invalido", "Escolha somente esta ocorrência ou esta e as próximas.");
   return db.$transaction(async tx => {
     let alvo = await tx.ocorrenciaObrigacao.findFirst({ where: { id: ocorrenciaId, obrigacao: { portalClientId: { in: portalIds } } }, include: { obrigacao: true } });
@@ -46,7 +48,7 @@ export async function excluirOcorrencia({ portalIds, ocorrenciaId, alcance = "ES
     let canceladas = 0, concluidasPreservadas = 0;
     for (const oc of ocorrencias) {
       if (futuras && cicloDaOcorrencia(oc, serie) < ciclo) continue;
-      if (oc.status === "CONCLUIDA") { concluidasPreservadas++; continue; }
+      if (oc.status === "CONCLUIDA" && !incluirConcluidas) { concluidasPreservadas++; continue; }
       if (oc.canceladaEm) continue;
       await tx.ocorrenciaObrigacao.update({ where: { id: oc.id }, data: { canceladaEm: new Date(), canceladaPorId: userId } });
       canceladas++;
@@ -101,6 +103,12 @@ function intervaloCivil(inicio, fim) {
 }
 
 export function normalizarEntrada(dados = {}) {
+  let agendaConfig;
+  if (dados.agendaConfig) {
+    try { agendaConfig = { ...normalizarAgenda(dados.agendaConfig), ...(dados.agendaConfig.vencimentoFiscal ? { vencimentoFiscal: dataCivil(dados.agendaConfig.vencimentoFiscal).toISOString().slice(0,10) } : {}) }; }
+    catch(e) { throw new ObrigacaoError("agenda_invalida", e.message); }
+    if (agendaConfig.recorrencia !== dados.periodicidade) throw new ObrigacaoError("agenda_invalida", "A recorrência deve corresponder à agenda.");
+  }
   let janelaTrabalho;
   try { janelaTrabalho = normalizarJanela(dados.janelaTrabalho); } catch (e) { throw new ObrigacaoError('janela_invalida', e.message); }
   const nome = asTexto(dados.nome);
@@ -111,6 +119,7 @@ export function normalizarEntrada(dados = {}) {
     throw new ObrigacaoError("periodicidade_invalida", "Escolha sem repetição, mensal, trimestral ou anual.");
   }
 
+  if (["DIARIA", "SEMANAL"].includes(periodicidade) && !agendaConfig) throw new ObrigacaoError("agenda_invalida", "Informe as datas da recorrência.");
   const avulsa = periodicidade === "AVULSA";
   const tipo = asTexto(dados.tipo).toUpperCase() || "OBRIGACAO";
   if (!["TAREFA", "OBRIGACAO"].includes(tipo)) throw new ObrigacaoError("tipo_invalido", "Escolha tarefa ou obrigação.");
@@ -129,7 +138,7 @@ export function normalizarEntrada(dados = {}) {
   }
 
   const mesReferencia = dados.mesReferencia == null ? null : Number(dados.mesReferencia);
-  if (!avulsa && periodicidade !== "MENSAL" && !(mesReferencia >= 1 && mesReferencia <= 12)) {
+  if (["TRIMESTRAL", "ANUAL"].includes(periodicidade) && !(mesReferencia >= 1 && mesReferencia <= 12)) {
     throw new ObrigacaoError(
       "mes_referencia_obrigatorio",
       periodicidade === "ANUAL"
@@ -147,7 +156,7 @@ export function normalizarEntrada(dados = {}) {
   if (verificador && !VERIFICADORES[verificador]) {
     throw new ObrigacaoError("verificador_invalido", "Essa conclusão automática não existe.");
   }
-  if (verificador && (avulsa || tipo === "TAREFA")) {
+  if (verificador && (avulsa || tipo === "TAREFA" || ["DIARIA", "SEMANAL"].includes(periodicidade))) {
     throw new ObrigacaoError("verificador_incompativel", "Tarefas e itens sem repetição têm conclusão manual.");
   }
 
@@ -164,6 +173,7 @@ export function normalizarEntrada(dados = {}) {
 
   return {
     nome,
+    ...(agendaConfig ? { agendaConfig } : {}),
     tipo,
     descricao: asTexto(dados.descricao) || null,
     ...intervalo,
@@ -226,6 +236,8 @@ export async function sincronizarOcorrencias(obrigacaoId, db = prisma, { incluir
     // Pausa reversível: a leitura filtra ativa, sem destruir IDs, janelas ou exceções.
     return { criadas: 0, removidas: 0 };
   }
+
+  if (obrigacao.agendaConfig) return sincronizarAgendaConfigurada(db, obrigacao, { hoje, incluirVencidoDoMes });
 
   if (obrigacao.periodicidade === "AVULSA") {
     // Uma tarefa é uma ocorrência, mesmo que dure meses. Reexecução conserva seu ID e conclusão.
@@ -377,7 +389,7 @@ export async function remover({ portalIds, obrigacaoId }) {
   // explicitamente; quem só quer parar de gerar usa `ativa: false`.
   await prisma.$transaction(async tx => {
     await bloquearSerie(tx, obrigacaoId);
-    await tx.obrigacao.update({ where: { id: obrigacaoId }, data: { encerradaAPartirDe: '0000-01', sobrescritaLocal: true } });
+    await tx.obrigacao.update({ where: { id: obrigacaoId }, data: { encerradaAPartirDe: '0000-01', sobrescritaLocal: true, ativa: false } });
     await tx.ocorrenciaObrigacao.updateMany({ where: { obrigacaoId, status: 'PENDENTE', canceladaEm: null }, data: { canceladaEm: new Date() } });
   });
   return { id: obrigacaoId, nome: atual.nome };
@@ -422,6 +434,7 @@ export async function listar({ portalIds, companyId = null, incluirInativas = fa
   const saida = obrigacoes.map((o) => {
     const ocorrencias = o.ocorrencias.map((oc) => ({
       ocorrenciaId: oc.id,
+      ...(oc.agendaConfig ? { agendaConfig: oc.agendaConfig } : {}),
       cicloChave: cicloDaOcorrencia(oc, o),
       dataVencimento: paraISO(oc.dataVencimento),
       dataInicio: paraISO(oc.dataInicio || oc.dataVencimento),
@@ -446,6 +459,7 @@ export async function listar({ portalIds, companyId = null, incluirInativas = fa
       companyId: o.portalClientId,
       empresa: o.portalClient?.razao || null,
       nome: o.nome,
+      ...(o.agendaConfig ? { agendaConfig: o.agendaConfig } : {}),
       tipo: o.tipo || "OBRIGACAO",
       descricao: o.descricao || null,
       dataInicio: o.dataInicio ? paraISO(o.dataInicio) : null,
