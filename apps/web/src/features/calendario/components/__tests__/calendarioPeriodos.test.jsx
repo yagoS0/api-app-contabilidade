@@ -151,13 +151,13 @@ test('EFD mantém conclusões por empresa e permite editar grupo parcialmente co
   fireEvent.click(await screen.findByRole('button',{name:/EFD-Contribuições/}));
   expect(screen.getByRole('dialog')).toHaveClass('modal-fundo--lateral');
   const linhas=screen.getByRole('dialog').querySelectorAll('.agenda-company-row');
-  expect(within(linhas[0]).getByText('11222333000181')).toBeInTheDocument();
-  expect(within(linhas[1]).getByText('22333444000181')).toBeInTheDocument();
+  expect(within(linhas[0]).getByText('11.222.333/0001-81')).toBeInTheDocument();
+  expect(within(linhas[1]).getByText('22.333.444/0001-81')).toBeInTheDocument();
   const writeText=jest.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator,'clipboard',{value:{writeText},configurable:true});
-  fireEvent.click(within(linhas[0]).getByText('11222333000181'));
+  fireEvent.click(within(linhas[0]).getByText('11.222.333/0001-81'));
   await waitFor(()=>expect(writeText).toHaveBeenCalledWith('11222333000181'));
-  fireEvent.click(within(linhas[1]).getByText('22333444000181'));
+  fireEvent.click(within(linhas[1]).getByText('22.333.444/0001-81'));
   await waitFor(()=>expect(writeText).toHaveBeenLastCalledWith('22333444000181'));
   expect(screen.getByRole('dialog')).toHaveClass('modal-fundo--lateral');
   expect(linhas[0]).toHaveClass('is-complete');
