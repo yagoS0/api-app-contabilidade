@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Jornada guiada implementada — 14/09/2026
+
+Atendimento comercial agora tem passos derivados de evidências salvas: coleta/consulta pública, autorização e SITFIS quando aplicáveis, diagnóstico do contador, devolutiva, proposta aceita, assinatura conferida e pagamento manual do contrato. Consultas e envios exigem ação explícita; polling só lê resultados. Não concluir etapa ao abrir painel nem inventar conferências de casos antigos. Ver `docs/jornada-lead-passo-a-passo.md`. DocuSign e criação de cobrança Asaas continuam fora do escopo. Sem migration nova, testes externos ou uso de Anthropic.
+
 ## Comunicação e lead — decisão de 14/09/2026
 
 Conversa por pessoa, com histórico das empresas autorizadas; não mostrar seletor para filtrar a conversa por empresa. Abrir empresa oferece escolha somente se houver mais de uma. Mostrar a empresa selecionada pelo cliente/automação. Resposta manual e anexo local não exigem seleção fiscal; atos e documentos internos conservam suas guardas. Atendimento comercial segue análise pública → autorização/procuração → SITFIS salvo em PDF/tabela → valores separados → proposta/contrato → assinatura → pagamento. Abertura dispensa CNPJ; pode ser avulsa. Uma solicitação por vez; recomeçar preserva a ficha anterior. Biblioteca compartilhada e formulários ficam em Mensagens rápidas à esquerda. Detalhes, fontes e limites: `docs/comunicacao-atendimento-20260914.md`. Não usar tokens Anthropic nem serviços fiscais reais nos testes. Asaas/DocuSign por API são integração futura, não funcionalidade já homologada.
