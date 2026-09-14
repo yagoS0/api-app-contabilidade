@@ -96,7 +96,8 @@ export function createFluxoComercialRouter({
     });
     return {
       atendimento,
-      proximaPergunta: proximaPergunta(atendimento?.onboarding)
+      proximaPergunta: proximaPergunta(atendimento?.onboarding),
+      anteriores: await db.atendimentoLead.findMany({ where: { conversaId: c.id, encerradoEm: { not: null } }, include: { onboarding: { select: { id: true, origem: true, status: true } } }, orderBy: { encerradoEm: "desc" }, take: 20 })
     };
   }));
   router.post("/conversas/:conversaId/iniciar", wrap(async req => ({
@@ -104,6 +105,8 @@ export function createFluxoComercialRouter({
       conversaId: req.params.conversaId,
       origem: req.body?.origem,
       onboardingId: req.body?.onboardingId,
+      reiniciarAtendimentoId: req.body?.reiniciarAtendimentoId,
+      motivoReinicio: req.body?.motivoReinicio,
       atorId: req.auth.user.id,
       client: db
     })

@@ -10,6 +10,8 @@ export async function iniciarAtendimento({
   conversaId,
   origem = null,
   onboardingId = null,
+  reiniciarAtendimentoId = null,
+  motivoReinicio = null,
   atorId = null,
   client = prisma
 }) {
@@ -48,6 +50,16 @@ export async function iniciarAtendimento({
         onboarding: true
       }
     });
+    if (reiniciarAtendimentoId) {
+      if (!atorId || !origem || !["CORRIGIR_MOTIVO", "NOVA_SOLICITACAO"].includes(motivoReinicio)) throw erro("reinicio_invalido", "Informe o motivo e o tipo da nova solicitação.", 400);
+      if (lead?.id !== reiniciarAtendimentoId) throw erro("atendimento_alterado", "O atendimento mudou. Recarregue antes de iniciar outra solicitação.");
+      // Encerrar o vínculo preserva a ficha, propostas, documentos e mensagens anteriores.
+      await tx.atendimentoLead.update({ where: { id: lead.id }, data: { encerradoEm: new Date() } });
+      if (lead.onboardingId) await tx.onboardingEvento.create({ data: { onboardingId: lead.onboardingId, tipo: "ATENDIMENTO_REINICIADO", atorId, dados: { motivo: motivoReinicio, novaOrigem: origem, conversaId } } });
+      await tx.conversaWhatsapp.update({ where: { id: conversaId }, data: { atendidaPor: atorId, atendidaDesde: new Date(), automacaoInvalidadaEm: new Date() } });
+      await tx.turnoIaWhatsapp.updateMany({ where: { conversaId, status: { in: ["pendente", "falhou", "processando"] } }, data: { status: "ignorado", motivo: "ATENDIMENTO_REINICIADO", reservaToken: null, leaseAte: null, concluidoEm: new Date() } });
+      lead = null;
+    }
     if (lead?.onboarding && encerrado(lead.onboarding)) {
       await tx.atendimentoLead.update({
         where: {
@@ -67,6 +79,7 @@ export async function iniciarAtendimento({
         onboarding: true
       }
     });
+    if (origem && lead.onboarding?.origem && origem !== lead.onboarding.origem) throw erro("origem_divergente", "Este atendimento tem outro motivo. Inicie uma nova solicitação para preservar a anterior.");
     if (onboardingId) {
       if (!atorId) throw erro("vinculo_manual", "O contador precisa conferir o vínculo.", 403);
       if (lead.onboardingId && lead.onboardingId !== onboardingId) throw erro("atendimento_ja_vinculado", "Esta conversa já tem uma ficha ativa.");

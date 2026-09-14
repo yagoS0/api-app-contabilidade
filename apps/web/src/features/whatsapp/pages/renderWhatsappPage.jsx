@@ -121,7 +121,7 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
     }).catch(() => { if (vivo) setOnboardings(null); })
       .finally(() => { if (vivo) setCarregandoOnboarding(false); });
     return () => { vivo = false; };
-  }, [api, hook.conversas, revisaoOnboarding]);
+  }, [api, hook.conversas.some(c => !c.portalClientId), revisaoOnboarding]);
   const leituraOnboarding = c => !c.portalClientId && carregandoOnboarding && onboardings === null
     ? { situacao: "CARREGANDO", candidatos: [] } : onboardingDaConversa(c, onboardings);
   const normalizar = valor => String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -146,7 +146,7 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
                 <select aria-label="Filtro das conversas" style={{ ...campo, fontSize: ".75rem" }} value={hook.filtro} disabled={hook.ocupado} onChange={e => { setVerChat(false); setDetalhes(false); hook.setFiltro(e.target.value); }}>{FILTROS.map(f => <option key={f.valor} value={f.valor}>{f.rotulo}</option>)}</select>
                 <Button variant="secondary" size="sm" className="wa-filter-unread" aria-pressed={soNaoLidas} onClick={() => setSoNaoLidas(v => !v)}>Não lidas</Button>
               </div>
-              {fila > 0 ? <p data-testid="contagem-fila" className="wa-list-note" style={{ color: "var(--state-warn)", padding: "8px 0 0" }}>{fila} número{fila === 1 ? "" : "s"} sem cadastro aguardando vínculo</p> : null}
+              {fila > 0 ? <p data-testid="contagem-fila" className="wa-list-note" style={{ color: "var(--state-warn)", padding: "8px 0 0" }}>{fila} número{fila === 1 ? "" : "s"} aguardando atendimento</p> : null}
               {resumo.avisoHistorico ? <p role="status" className="wa-list-note">{resumo.avisoHistorico}. Consulte o filtro Histórico anterior.</p> : null}
               {hook.filtro === "historico" ? <p className="wa-list-note">Mensagens anteriores preservadas para consulta, separadas das conversas atuais.</p> : hook.filtro === "lixeira" ? <p className="wa-list-note">Conversas excluídas da lista. O histórico está preservado e pode ser restaurado.</p> : null}
             </div>
@@ -165,7 +165,7 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
             {hook.erroFio ? <p role="alert" className="wa-notice">Não foi possível atualizar a conversa: {hook.erroFio}</p> : null}
             {hook.aberta ? <FioDaConversa key={hook.aberta.conversa.id} fio={hook.aberta} hook={hook} temMais={hook.temMaisNoFio}
               hrefDaEmpresa={id => companyTabPath(id, "anotacoes")} onVoltar={voltar} onDetalhes={() => setDetalhes(v => !v)} detalhesAbertos={detalhes}
-              slotVincular={<><section className="wa-commercial-section"><FormOnboarding key={hook.aberta.conversa.id} api={api} conversa={hook.aberta.conversa} mensagens={hook.aberta.mensagens} leitura={leituraOnboarding(hook.aberta.conversa)} onCriado={() => setRevisaoOnboarding(v => v + 1)} /></section><details className="wa-link-company"><summary>Vincular a uma empresa existente</summary><p>Use quando este contato já representa uma empresa da carteira.</p><FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa.id} legado={hook.aberta.conversa.escopoVerificado === false} empresaInicial={hook.aberta.conversa.portalClientId || ""} onVincular={hook.vincular} ocupado={hook.ocupado} /></details></>}
+              slotVincular={<><section className="wa-commercial-section"><FormOnboarding key={hook.aberta.conversa.id} api={api} conversa={hook.aberta.conversa} slotEmpresa={<details className="wa-link-company"><summary>Vincular a uma empresa existente</summary><p>Use quando este contato já representa uma empresa da carteira.</p><FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa.id} legado={hook.aberta.conversa.escopoVerificado === false} empresaInicial={hook.aberta.conversa.portalClientId || ""} onVincular={hook.vincular} ocupado={hook.ocupado} /></details>} mensagens={hook.aberta.mensagens} leitura={leituraOnboarding(hook.aberta.conversa)} onCriado={() => setRevisaoOnboarding(v => v + 1)} /></section></>}
             /> : <div className="wa-empty"><div className="wa-empty-symbol"><WhatsappIcon size={34} /></div><h2>{hook.carregandoFio ? "Abrindo conversa…" : "Seu atendimento, em um só lugar"}</h2><p>{hook.carregandoFio ? "Carregando o histórico deste contato." : "Escolha uma conversa à esquerda. Consulte o histórico, acompanhe a entrega e responda aos seus clientes."}</p>{verChat ? <Button variant="secondary" className="wa-mobile-back" onClick={voltar}>Voltar para conversas</Button> : null}</div>}
           </section>
           {detalhes && hook.aberta ? <DetalhesConversa conversa={hook.aberta.conversa} onFechar={() => setDetalhes(false)} /> : null}

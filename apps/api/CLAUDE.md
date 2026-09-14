@@ -88,6 +88,10 @@ prisma/
   seed.js
 ```
 
+## Comunicação por pessoa e lead — 14/09/2026
+
+Texto e anexo manual do escritório podem sair sem seleção de empresa na automação, mantendo número cadastrado, carteira, janela, lease e revalidação. Não estender essa dispensa às funções fiscais ou documentos internos. `/whatsapp/conversas/:id/enviar-anexo` aceita PDF/JPEG/PNG até 5 MB, assinatura binária e MIME coerentes; saída registrada antes da rede e sem repetição automática. `iniciarAtendimento` aceita reinício explícito com ID esperado da solicitação ativa e motivo; serializa pela conversa, preserva histórico e invalida automação pendente. Vínculo com PortalClient é recusado enquanto existir solicitação comercial classificada. Os textos novos de autorização/gov.br são rascunhos da biblioteca, dependem de aprovação e dados institucionais reais. Nada cria acesso fiscal, cobrança Asaas ou envelope DocuSign por inferência. Ver `docs/comunicacao-atendimento-20260914.md`.
+
 ## Padrões
 
 ### Rotas

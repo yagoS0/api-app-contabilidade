@@ -81,7 +81,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     if (cursor) setCarregandoAnteriores(true);
     else if (!silencioso) setCarregandoFio(true);
     try {
-      const opcoes = { ...(cursor ? { cursor } : {}), ...((empresa || empresaHistoricoRef.current) ? { empresa: empresa || empresaHistoricoRef.current } : {}) };
+      const opcoes = { ...(cursor ? { cursor } : {}) };
       const r = await api.getMensagensWhatsapp(conversaId, ...(Object.keys(opcoes).length ? [opcoes] : []));
       if (versao !== versaoFio.current || selecionada.current !== conversaId) return null;
       if (r?.conversa?.id !== conversaId || !Array.isArray(r?.mensagens)) throw new Error("Resposta inválida ao ler a conversa.");
@@ -109,31 +109,28 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
   polling.current = { carregar, abrir, filtro, ocupado: ocupado || carregandoMais || carregandoAnteriores };
   useEffect(() => {
     let cancelado = false;
-    let timer;
-    let pendente = false;
-    const agendar = () => {
-      clearTimeout(timer);
-      if (!cancelado && document.visibilityState !== "hidden") timer = setTimeout(ciclo, selecionada.current ? 8000 : 30000);
+    // Relógios independentes: uma lista lenta não atrasa o fio aberto. Um pedido por recurso.
+    const loops = [ { tipo: "fio", ms: 2500 }, { tipo: "lista", ms: 10000 } ];
+    const agendar = l => {
+      clearTimeout(l.timer);
+      if (!cancelado && document.visibilityState !== "hidden") l.timer = setTimeout(() => ciclo(l), l.ms);
     };
-    async function ciclo() {
-      if (cancelado || pendente || document.visibilityState === "hidden") return;
-      pendente = true;
+    async function ciclo(l) {
+      if (cancelado || l.pendente || document.visibilityState === "hidden") return;
+      l.pendente = true;
       try {
         const p = polling.current;
         if (!p.ocupado) {
-          const id = selecionada.current;
-          if (id) await p.abrir(id, true);
-          // O usuário pode trocar o filtro ou ocultar a aba durante a leitura do fio.
-          const atual = polling.current;
-          if (!cancelado && !atual.ocupado && document.visibilityState !== "hidden") await atual.carregar(atual.filtro, true);
+          if (l.tipo === "fio") { if (selecionada.current) await p.abrir(selecionada.current, true); }
+          else await p.carregar(p.filtro, true);
         }
-      } finally { pendente = false; agendar(); }
+      } finally { l.pendente = false; agendar(l); }
     }
-    const visibilidade = () => { clearTimeout(timer); if (document.visibilityState !== "hidden") ciclo(); };
+    const visibilidade = () => loops.forEach(l => { clearTimeout(l.timer); if (document.visibilityState !== "hidden") ciclo(l); });
     document.addEventListener("visibilitychange", visibilidade);
-    agendar();
-    return () => { cancelado = true; clearTimeout(timer); document.removeEventListener("visibilitychange", visibilidade); };
-  }, [api, empresa, aberta?.conversa?.id]);
+    loops.forEach(agendar);
+    return () => { cancelado = true; loops.forEach(l => clearTimeout(l.timer)); document.removeEventListener("visibilitychange", visibilidade); };
+  }, [api, empresa]);
 
   const acao = useCallback(async (fn, { sucesso = null } = {}) => {
     if (!api || !contextoVigente()) return null;
@@ -151,8 +148,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
   const recarregarTudo = useCallback(async (conversaId) => {
     if (!contextoVigente()) return;
     const atual = polling.current;
-    await atual.carregar(atual.filtro);
-    if (conversaId && selecionada.current === conversaId) await abrir(conversaId);
+    await Promise.allSettled([atual.carregar(atual.filtro, true), conversaId && selecionada.current === conversaId ? abrir(conversaId, true) : Promise.resolve()]);
   }, [abrir, contextoVigente]);
   const assumir = useCallback(async (id) => {
     const r = await acao(() => api.assumirConversaWhatsapp(id), { sucesso: "Conversa assumida — o assistente fica em silêncio até você devolver." });
