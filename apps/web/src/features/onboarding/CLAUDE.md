@@ -1,5 +1,9 @@
 # CLAUDE.md — Onboarding (funil pré-cadastro)
 
+## Gestão da biblioteca fora do chat — 14/09/2026
+
+`AbrirBiblioteca` abre `/biblioteca` em nova aba com `noopener noreferrer`; `FluxoComercial` e a gaveta de mensagens usam o mesmo link. O editor `RecursosComerciais` fica na página própria `BibliotecaComercialPage`, com atualização e erro de leitura visíveis. Mensagens rápidas mostram só orientações aprovadas (última por chave), com título/descrição e prévia. Ao voltar à aba, reler a biblioteca e invalidar prévia anterior; dados do lead já coletados preenchem o CNPJ. Modelos iniciais continuam em rascunho para instalações novas, enquanto a configuração explícita pedida pelo dono já disponibilizou dez mensagens em produção. Não substituir preços/contratos privados pelos textos genéricos. Ver `docs/biblioteca-mensagens-rapidas.md` na raiz.
+
 ## Entrada por formulário do cliente — 10/09/2026
 
 “Entrada de clientes” cria ficha somente após escolher origem e modo no `NovoAtendimentoModal`. Abertura com preenchimento pelo cliente é o padrão; o modo interno continua disponível. O callback de criação recebe `{ origem, modo }`, sem fixar TRANSFERENCIA. Resposta de criação perdida exige conferir a lista antes de repetir. Rascunhos ficam visíveis em “Em preenchimento”, pois incluem fichas aguardando respostas; abrir qualquer ficha leva ao detalhe, e o wizard continua em Editar ficha.

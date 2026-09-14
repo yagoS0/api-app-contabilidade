@@ -13,7 +13,7 @@ Decisões solicitadas pelo dono, substituindo orientações antigas incompatíve
 
 ## Biblioteca e arquivos
 
-Mensagens rápidas abrem à esquerda do chat. Cards mostram título e descrição, busca, prévia e envio explícito. A mesma gaveta dá acesso a Gerenciar biblioteca compartilhada, modelos iniciais, criação, revisão e aprovação. Rascunhos não são mensagens aprovadas. Preços e contratos privados ficam no banco, fora do repositório público.
+Mensagens rápidas abrem à esquerda do chat. Cards mostram título e descrição, busca, prévia e envio explícito. Gerenciar biblioteca compartilhada abre `/biblioteca` em nova aba; modelos iniciais, criação, revisão e aprovação ficam nessa página. Voltar à aba da conversa atualiza a lista. Rascunhos não são mensagens aprovadas. Dez mensagens padrão foram revisadas e configuradas por pedido do dono; ver `biblioteca-mensagens-rapidas.md`. Preços e contratos privados ficam no banco, fora do repositório público.
 
 Formulários de abertura, transferência e empresa parada criam/usam a ficha deste atendimento e geram link pessoal para o formulário público existente. Salvar/finalizar alimenta o onboarding diretamente. Gerar outro link revoga o anterior; preparar o formulário não envia mensagem. Caso já exista solicitação de outra origem, orientar Nova solicitação, sem juntar fichas.
 

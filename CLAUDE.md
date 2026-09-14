@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Biblioteca em nova aba e contatos compactos — 14/09/2026
+
+O dono esclareceu que a área grande era a lista de contatos à esquerda. Ela usa 280 px no desktop e 260 px entre 761 e 1250 px; celular mantém lista/conversa alternadas. Gestão da biblioteca sai do painel do chat e abre `/biblioteca` em nova aba. Mensagens rápidas continuam na gaveta esquerda, exibindo a última versão aprovada por chave e atualizando ao voltar à aba. Dez orientações padrão foram revisadas e configuradas por solicitação do dono, com dados institucionais verificados; preços e contratos não foram aprovados nesse ajuste. Fonte e manutenção: `docs/biblioteca-mensagens-rapidas.md`. Não recolocar edição da biblioteca dentro da conversa.
+
 ## Jornada guiada implementada — 14/09/2026
 
 Atendimento comercial agora tem passos derivados de evidências salvas: coleta/consulta pública, autorização e SITFIS quando aplicáveis, diagnóstico do contador, devolutiva, proposta aceita, assinatura conferida e pagamento manual do contrato. Consultas e envios exigem ação explícita; polling só lê resultados. Não concluir etapa ao abrir painel nem inventar conferências de casos antigos. Ver `docs/jornada-lead-passo-a-passo.md`. DocuSign e criação de cobrança Asaas continuam fora do escopo. Sem migration nova, testes externos ou uso de Anthropic.

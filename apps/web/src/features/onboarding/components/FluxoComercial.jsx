@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { CampoOnboarding } from "./CampoOnboarding";
 import { camposDaOrigem } from "../lib/onboardingSpec";
-import { RecursosComerciais } from "./RecursosComerciais";
+import { AbrirBiblioteca } from "./AbrirBiblioteca";
 import { AnaliseDoLead } from "./AnaliseDoLead";
 export const campoComercial = {
   width: "100%",
@@ -212,7 +212,7 @@ export function FluxoComercial({ api, onboardingId, conversaId = null }) {
         <p><a href={`/onboardings/${encodeURIComponent(onboardingId)}/editar`}>Abrir formulário interno completo</a></p>
       </details>
 
-      <RecursosComerciais api={api} recursos={recursos} onAtualizar={carregar} inicialmenteAberto />
+      <AbrirBiblioteca />
     </details>
   </section>;
 }

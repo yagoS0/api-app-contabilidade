@@ -1,4 +1,5 @@
 import { ConfiguracoesGeraisPage, ConfiguracoesGeraisLayout } from "./features/configuracoes/Configuracoes";
+import { BibliotecaComercialPage } from "./features/onboarding/pages/BibliotecaComercialPage";
 import { PropostaPublica } from "./features/onboarding/pages/PropostaPublica";
 import { FormularioPublico } from "./features/onboarding/pages/FormularioPublico";
 import { useEffect, useMemo } from "react";
@@ -201,6 +202,7 @@ function AppInterno() {
   }
 
   if (session.page === "configuracoesGerais") return <ConfiguracoesGeraisPage />;
+  if (session.page === "bibliotecaComercial") return <BibliotecaComercialPage api={api} onBack={() => session.goBack("/whatsapp")} />;
 
   if (session.page === "guideSettings") {
     return (

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { FluxoComercial } from "../../onboarding/components/FluxoComercial";
-import { RecursosComerciais } from "../../onboarding/components/RecursosComerciais";
+import { AbrirBiblioteca } from "../../onboarding/components/AbrirBiblioteca";
 
 export const AtualizacaoAtendimento = createContext({ revisao: 0, atualizar: () => {} });
 
@@ -53,16 +53,26 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled }) {
   const { atualizar } = useContext(AtualizacaoAtendimento);
   const [aberto, setAberto] = useState(false), [recursos, setRecursos] = useState([]), [id, setId] = useState(""), [previa, setPrevia] = useState(null), [erro, setErro] = useState(""), [ocupado, setOcupado] = useState(false), [preparando, setPreparando] = useState(false), [carregando, setCarregando] = useState(false);
   const [vars, setVars] = useState({ nome: conversa.contato?.nome || conversa.nomePerfilProvedor || "", cnpj: conversa.empresa?.cnpj || "", servico: "" });
-  const [gerenciar, setGerenciar] = useState(false), [busca, setBusca] = useState("");
+  const [busca, setBusca] = useState("");
   const abrirRef = useRef(null), fecharRef = useRef(null);
   const vivo = useRef(true), versaoPrevia = useRef(0), trava = useRef(false);
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; versaoPrevia.current += 1; }; }, []);
   useEffect(() => {
     if (!aberto || !api.comercial) return;
-    let atual = true;
-    setCarregando(true); setErro("");
-    api.comercial("/recursos").then(r => { if (atual) setRecursos(r.recursos); }).catch(e => { if (atual) setErro(e.message); }).finally(() => { if (atual) setCarregando(false); });
-    return () => { atual = false; };
+    let atual = true, pedido = 0;
+    async function carregar() {
+      const n = ++pedido; setCarregando(true); setErro(""); invalidarPrevia(); setId("");
+      try { const r = await api.comercial("/recursos"); if (atual && n === pedido) setRecursos(r.recursos || []); }
+      catch(e) { if (atual && n === pedido) setErro(e.message); }
+      finally { if (atual && n === pedido) setCarregando(false); }
+    }
+    const aoVoltar = () => { if (document.visibilityState !== "hidden" && !trava.current) carregar(); };
+    carregar(); window.addEventListener("focus", aoVoltar); document.addEventListener("visibilitychange", aoVoltar);
+    if (!conversa.portalClientId && !conversa.empresa?.cnpj) api.comercial(`/conversas/${encodeURIComponent(conversa.id)}`).then(r => {
+      const o = r.atendimento?.onboarding;
+      if (atual && o) setVars(v => ({ ...v, cnpj: v.cnpj || o.cnpj || "", nome: v.nome || o.responsavelNome || "" }));
+    }).catch(() => {});
+    return () => { atual = false; window.removeEventListener("focus", aoVoltar); document.removeEventListener("visibilitychange", aoVoltar); };
   }, [aberto, api]);
   function invalidarPrevia() { versaoPrevia.current += 1; setPrevia(null); setPreparando(false); }
   async function selecionar(value) {
@@ -90,7 +100,6 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled }) {
   }
 
   useEffect(() => { if (aberto) fecharRef.current?.focus(); }, [aberto]);
-  async function carregarBiblioteca() { const r = await api.comercial("/recursos"); if (vivo.current) setRecursos(r.recursos); }
   async function formulario(origem) {
     if (trava.current || preparando) return;
     trava.current = true; setPreparando(true); setErro(""); setPrevia(null); setId("");
@@ -114,8 +123,8 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled }) {
   return <div className="wa-quick-library"><Button ref={abrirRef} type="button" variant="secondary" size="sm" disabled={ocupado} aria-expanded={aberto} onClick={() => { invalidarPrevia(); setAberto(v => !v); }}>Mensagens rápidas</Button>
     {aberto && <aside className="wa-quick-drawer" aria-label="Mensagens rápidas" onKeyDown={e => { if (e.key === "Escape" && !ocupado) { e.stopPropagation(); fechar(); } }}>
       <div className="wa-section-heading"><h2>Mensagens rápidas</h2><Button ref={fecharRef} variant="secondary" size="sm" disabled={ocupado} onClick={fechar}>Fechar</Button></div>
-      <Button variant="secondary" onClick={() => setGerenciar(v => !v)}>{gerenciar ? "Voltar às mensagens" : "Gerenciar biblioteca compartilhada"}</Button>
-      {gerenciar ? <RecursosComerciais api={api} recursos={recursos} onAtualizar={carregarBiblioteca} inicialmenteAberto /> : <fieldset disabled={ocupado} style={{ border: 0, padding: 0 }}>
+      <AbrirBiblioteca />
+      <fieldset disabled={ocupado} style={{ border: 0, padding: 0 }}>
       <label>Buscar mensagem rápida<input value={busca} onChange={e => setBusca(e.target.value)} /></label>
       {!conversa.portalClientId && api.criarLinkOnboarding && [["ABERTURA", "Formulário de abertura", "Enviar formulário ao lead que deseja abrir uma nova empresa."], ["TRANSFERENCIA", "Formulário de transferência", "Coletar os dados para trocar de contador."], ["INATIVA", "Formulário de empresa parada", "Coletar os dados iniciais para analisar e regularizar a empresa."]].filter(([,t,d]) => (t+" "+d).toLowerCase().includes(busca.toLowerCase())).map(([origem,titulo,descricao]) => <article className="wa-quick-card" key={origem}><strong>{titulo}</strong><p>{descricao}</p><small>Cria ou usa o onboarding deste atendimento. Gerar novamente substitui o link anterior.</small><Button size="sm" variant="secondary" onClick={() => formulario(origem)}>Preparar formulário</Button></article>)}
       {orientacoes.filter(r => (r.titulo+" "+(r.dados?.descricao || "")).toLowerCase().includes(busca.toLowerCase())).map(r => <article className="wa-quick-card" key={r.id}><strong>{r.titulo}</strong><p>{r.dados?.descricao || (r.texto || "").slice(0,150)}</p><Button variant="secondary" size="sm" onClick={() => selecionar(r.id)}>Preparar mensagem</Button></article>)}
@@ -123,7 +132,7 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled }) {
       {id && [["nome", "Nome do destinatário"], ["cnpj", "CNPJ"], ["servico", "Serviço"]].filter(([k]) => recursos.find(r => r.id === id)?.texto?.includes("{{"+k+"}}")).map(([k,rotulo]) => <label key={k}>{rotulo}<input value={vars[k]} onChange={e => { invalidarPrevia(); setVars({ ...vars, [k]: e.target.value }); }} /></label>)}
       {id && <Button type="button" size="sm" variant="secondary" disabled={preparando || carregando} onClick={() => selecionar(id)}>Conferir mensagem</Button>}
       {previa && <><h3>Prévia para este contato</h3><p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{previa.texto}</p><Button type="button" disabled={disabled || ocupado || preparando} onClick={enviar}>Assumir e enviar orientação</Button></>}
-      </fieldset>}
+      </fieldset>
       {(carregando || preparando) && <p role="status">{carregando ? "Carregando orientações…" : "Preparando prévia…"}</p>}
       {erro && <p role="alert">{erro}</p>}
     </aside>}
