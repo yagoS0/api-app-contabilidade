@@ -12,6 +12,7 @@ export async function sincronizarComunicacaoDoContato({ telefone, conversa = nul
   const acesso = empresasParaComunicacao(vinculo);
   if (acesso.bloqueado || !acesso.empresas.length
     || (conversa?.portalClientId && !acesso.empresas.some(e => e.portalClientId === conversa.portalClientId))) return conversa;
+  if (acesso.empresas.length === 1 && !conversa?.atendimentoId) return conversa;
   const segmentos = await client.conversaWhatsapp.findMany({
     where: { telefoneE164: vinculo.e164, NOT: { chaveEscopo: { startsWith: 'legado:' } } },
     select: { id: true, portalClientId: true, atendimentoId: true },

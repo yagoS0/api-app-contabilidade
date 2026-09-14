@@ -25,6 +25,14 @@ test('polling de grupo completo não regrava segmentos ou muda sua ordem', async
   expect(c.garantirAtendimento).not.toHaveBeenCalled();
 });
 
+test('uma só empresa mantém o chat simples, sem exigir selecionar a única opção', async () => {
+  const c = cenario();
+  const vinculo = await c.resolverVinculo(); vinculo.empresas = vinculo.empresas.slice(0, 1);
+  c.resolverVinculo.mockResolvedValue(vinculo);
+  expect(await sincronizarComunicacaoDoContato(c)).toBe(c.conversa);
+  expect(c.garantirAtendimento).not.toHaveBeenCalled();
+});
+
 test.each([{ excluidaEm: new Date() }, { chaveEscopo: 'legado:a:5521999990000' }])('não reabre histórico ou lixeira ao consultar %j', async extra => {
   const c = cenario(); Object.assign(c.conversa, extra);
   await sincronizarComunicacaoDoContato(c);
