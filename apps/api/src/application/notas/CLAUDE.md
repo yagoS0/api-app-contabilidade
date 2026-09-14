@@ -1,5 +1,13 @@
 # Certificados por operação
 
+## Revisão fiscal — 14/09/2026
+
+`download/NotasSelecionadasService` baixa somente os IDs selecionados e pertencentes à empresa autorizada (PortalInvoice ou ServiceInvoice). Limites: 100 notas, 50 MB de arquivos. XML completo existente é obrigatório; PDF NF-e exige modelo 55 e protocolo autorizado, gera DANFE com `nfe-danfe-pdf` 1.0.3 (MIT). NFS-e reutiliza `gerarDanfseDaNota`, inclusive QR e ciclo fiscal. Não captura XML, não chama provedor, não grava documentos/estado fiscal. Falhas parciais são relatadas dentro do ZIP; nenhum arquivo válido retorna 422, ID desconhecido/de outro tenant retorna 404 indistinguível. Autorização é `requireFirmCompanyAccess` no POST `/notas/download-selecionadas`.
+
+`getDadosFechamento` retorna `entregaPgdas.extratoSalvo` com dados/IDs dos PDFs já registrados na circular. Abertura da tela e downloads dos PDFs usam esse registro; consulta na Receita é atualização explícita. Não substituir esse GET por sync pago.
+
+Pré-checagem do motor usa `coletarCnaesEConfig` como fallback quando não há CadastroFiscal, reconhecendo o mesmo regime/CNAE que o Perfil fiscal deriva da ficha. Não cria cadastro nem presume regime desconhecido. Relatório continua uma foto: números salvos não são reescritos na leitura, e diagnóstico de cadastro antigo é reconferido. Orientação de classificar só se aplica à falta de classificação, não a toda recusa do motor.
+
 Atualizado em 2026-09-08.
 
 - `CertResolver.js` exige A1 próprio da empresa para os serviços `NFSE` (inclui captura ADN) e `DFE`. Procuração ativa não substitui esse certificado e não deve ganhar precedência quando existe um A1 próprio.

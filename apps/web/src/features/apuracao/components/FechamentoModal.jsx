@@ -247,7 +247,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
 
     // ⚠ FORA do try/finally do cálculo: o resultado já está na tela e os botões já foram
     // liberados antes desta chamada começar. Ver o comentário de `gerarRelatorio`.
-    if (calculou) await gerarRelatorio();
+    if (calculou) { await gerarRelatorio(); onChanged?.({ relatorioGerado: true }); }
   }
 
   async function handleSalvar() {
@@ -627,6 +627,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 cabe melhor na aba; aqui o que importa é o detalhe por tipo de operação. */}
             {(resultado || relatorio || relatorioGerando || relatorioErro) && (
               <RelatorioFaturamentoPanel
+                apuracaoAtual={{ dasSimuladoSerpro: resultado?.dasValor }}
+                extratoSalvo={dados?.entregaPgdas?.extratoSalvo}
                 relatorio={relatorio}
                 gerando={relatorioGerando}
                 erro={relatorioErro}

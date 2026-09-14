@@ -74,8 +74,14 @@ describe("a aba de navegação é um <a href> com a URL da aba", () => {
 
   test("o href sai de `companyTabPath` — a MESMA fonte que a navegação por clique usa", () => {
     montarHeader("notasFiscais");
-    expect(screen.getByRole("link", { name: "Auditoria" }))
-      .toHaveAttribute("href", companyTabPath("empresa-1", "auditoria"));
+    expect(screen.getByRole("link", { name: "Apuração" }))
+      .toHaveAttribute("href", companyTabPath("empresa-1", "cadastroFiscal"));
+  });
+
+  test("auditoria pertence a Notas e mantém a competência sem uma aba própria", () => {
+    montarHeader("auditoria", { competencia: "2026-08" });
+    expect(screen.queryByRole("link", { name: "Auditoria" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Notas Fiscais" })).toHaveAttribute("aria-current", "page");
   });
 
   test("o grupo leva à URL da sua PRIMEIRA sub-aba — o mesmo destino do clique", () => {

@@ -8174,6 +8174,22 @@ export function createMockApi() {
     //   • o resto devolve o PDF mínimo, como as demais rotas de PDF deste mock.
     // Um mock que sempre devolvesse o arquivo deixaria a única tela que explica a recusa
     // inalcançável sem backend — que é como a recusa passa despercebida até aparecer em produção.
+    async baixarNotasSelecionadas(_companyId, notaIds, formato) {
+      await delay(120);
+      const { zipDeExemplo } = await import("./zipDeExemplo");
+      const arquivos = [], falhas = [];
+      for (const id of [...new Set(notaIds)]) {
+        const n = mockNotas.find(n => n.id === id);
+        if (!n?.__temXml || (formato === "PDF" && !n.chaveAcesso)) { falhas.push(`Nota ${n?.numero || id}: XML completo indisponível.`); continue; }
+        const xml = mockXmlDaNota(n);
+        const pdf = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF";
+        arquivos.push([`EXEMPLO-${id}.${formato.toLowerCase()}`, formato === "XML" ? xml : pdf]);
+      }
+      if (!arquivos.length) throw new Error("Nenhum arquivo disponível. " + falhas.join(" "));
+      const geradas = arquivos.length;
+      arquivos.push(["RELATORIO.txt", `PREVIEW: arquivos de exemplo, sem validade fiscal.\n${geradas} arquivos; ${falhas.length} indisponíveis.\n${falhas.join("\n")}`]);
+      return { blob: zipDeExemplo(arquivos), geradas, falhas: falhas.length };
+    },
     async fetchDanfseBlob(_companyId, notaId) {
       await delay(120);
       const n = mockNotas.find((x) => x.id === notaId);
@@ -9460,7 +9476,8 @@ export function createMockApi() {
               + "atividade sujeita ao Fator R. Vale o perfil — confirme o cadastro.",
           },
         },
-        candidatos,
+        // A primeira empresa exercita serviços sem IE; as demais preservam o CNAE pendente.
+        candidatos: idx === 0 ? candidatos.filter(c => !c.impeditivo) : candidatos,
       };
     },
     async savePerfilFiscal() { await delay(60); return { ok: true, candidatos: [] }; },
@@ -10124,6 +10141,11 @@ export function createMockApi() {
           semFaturamentoConferencia: circular.semFaturamentoConferencia || null,
           // Fatos crus, como no backend: quem os combina é `features/apuracao/lib/entregaPgdas.js`.
           entregaPgdas: {
+            extratoSalvo: circular.pgdasNumeroDeclaracao || circular.pgdasDeclaracaoFileId ? {
+              dados: { receitaBruta: circular.receitaBruta, dasTotal: circular.dasTotal, numeroDeclaracao: circular.pgdasNumeroDeclaracao },
+              files: { declaracaoFileId: circular.pgdasDeclaracaoFileId, reciboFileId: circular.pgdasReciboFileId },
+              consultadoEm: circular.serproLastSyncAt,
+            } : null,
             numeroDeclaracaoRfb: circular.pgdasNumeroDeclaracao || null,
             temPdfDaDeclaracao: Boolean(circular.pgdasDeclaracaoFileId),
             extratoStatus: circular.serproSyncStatus || null,

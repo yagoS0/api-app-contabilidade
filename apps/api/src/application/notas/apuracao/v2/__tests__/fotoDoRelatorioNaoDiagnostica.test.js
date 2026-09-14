@@ -22,7 +22,7 @@ jest.mock("../../../../../infrastructure/db/prisma.js", () => {
     findUnique: jest.fn(async () => null),
     count: jest.fn(async () => 0),
   });
-  return { prisma: { relatorioFaturamento: model(), cadastroFiscal: model(), filaPendencia: model() } };
+  return { prisma: { portalClient: model(), company: model(), relatorioFaturamento: model(), cadastroFiscal: model(), filaPendencia: model() } };
 });
 
 import { prisma } from "../../../../../infrastructure/db/prisma.js";
@@ -47,10 +47,18 @@ const CADASTRO_OK = { portalClientId: PORTAL, regime: "SIMPLES_NACIONAL", cnaePr
 beforeEach(() => {
   jest.clearAllMocks();
   prisma.cadastroFiscal.findUnique.mockResolvedValue(null);
+  prisma.portalClient.findUnique.mockResolvedValue(null);
+  prisma.company.findUnique.mockResolvedValue(null);
   prisma.filaPendencia.count.mockResolvedValue(0);
 });
 
 describe("⚠⚠ O BLOQUEIO DA FOTO É RECONFERIDO NA LEITURA", () => {
+  it("reconhece regime e CNAE já preenchidos na ficha, sem exigir outro cadastro", async () => {
+    prisma.portalClient.findUnique.mockResolvedValue({ companyId: "empresa-1" });
+    prisma.company.findUnique.mockResolvedValue({ cnaePrincipal: "73.19-0-03", cnaesSecundarios: [], regimeTributario: "Simples Nacional", optanteSimples: true });
+    const d = await conferirBloqueiosDaFoto({ portalClientId: PORTAL, relatorio: foto([{ tipo: "CADASTRO_FALTANDO", mensagem: "Cadastro fiscal não preenchido." }]) });
+    expect(d.bloqueios[0].aindaVale).toBe(false);
+  });
   it("cadastro criado DEPOIS da foto ⇒ o bloqueio dela deixou de valer", async () => {
     // É literalmente o caso da LENTE.
     prisma.cadastroFiscal.findUnique.mockResolvedValue(CADASTRO_OK);

@@ -54,6 +54,8 @@ import { Button } from "../../../components/ui/Button";
 // A MESMA regra de clique das abas — ver `cliqueDeLink.js`. A engrenagem é um link de verdade.
 import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
 import { modeloDeEmissaoDaNota } from "../lib/reaproveitarNota";
+import { BotaoAuditoria } from "./BotaoAuditoria";
+import { somenteServicosSemIE } from "../lib/janelasDeNotas";
 
 // Cliente próprio, mesmo padrão auto-contido do SITFIS e do Apuração v2 — a aba já recebe tudo
 // por props e não tem `api` em escopo.
@@ -66,6 +68,7 @@ export function NotasFiscaisTab({
   codigoMunicipioIbge = null,
   // O cadastro que `buildMissingFields` confere, vindo inteiro de `legacyCompany`.
   cadastroEmissao = null,
+  inscricaoEstadual,
   // ── A ENGRENAGEM DE CONFIGURAÇÃO (dono, 19/08/2026) ────────────────────────────────────────
   //
   // > *"a aba nova que criei no fiscal de emissão de NFS-e deve ser uma engrenagem de configuração
@@ -81,6 +84,8 @@ export function NotasFiscaisTab({
   // Prop ausente = "esta tela não recebeu a URL" e a engrenagem não aparece — nada de link morto.
   hrefConfiguracaoEmissao = null,
   onAbrirConfiguracaoEmissao = null,
+  hrefAuditoria = null,
+  onAbrirAuditoria = null,
 }) {
   const {
     loading, error, reload,
@@ -97,6 +102,17 @@ export function NotasFiscaisTab({
   // deste arquivo: condicioná-la à inscrição estadual escondia as notas de compra justamente de
   // quem as tem.
   const [janela, setJanela] = useState("NFSE");
+  const [perfilFiscal, setPerfilFiscal] = useState(null);
+  useEffect(() => {
+    let cancelado = false; setPerfilFiscal(null);
+    if (!nfseApi.getPerfilFiscal) return;
+    nfseApi.getPerfilFiscal(companyId).then(r => { if (!cancelado && r?.ok !== false) setPerfilFiscal(r); }).catch(() => {});
+    return () => { cancelado = true; };
+  }, [companyId]);
+  const somenteRecebidas = janela === "NFE" && somenteServicosSemIE(inscricaoEstadual, perfilFiscal);
+  useEffect(() => {
+    if (somenteRecebidas && notasFilters.papel !== "DEST") setNotasFilters({ ...notasFilters, papel: "DEST", offset: 0 });
+  }, [somenteRecebidas, notasFilters, setNotasFilters]);
   // ⚠ `null` = assistente fechado. `{ modelo: null }` = nota do zero. `{ modelo: {...} }` = nota
   // NOVA a partir de uma já emitida. Um booleano não conseguiria carregar o modelo, e uma segunda
   // variável ao lado dele poderia ficar preenchida com o assistente fechado — e a próxima emissão
@@ -196,7 +212,8 @@ export function NotasFiscaisTab({
           A aba nasceu só para CAPTURAR nota que já existe, e emitir — que é o que a empresa faz
           para faturar — não tinha porta nenhuma na tela, embora o backend (`POST /nfse/issue`)
           esteja de pé há tempos. Só na janela de NFS-e: NF-e de venda não se emite por aqui. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+      <div aria-label="Ações das notas" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        {hrefAuditoria && <BotaoAuditoria api={nfseApi} companyId={companyId} competencia={notasFilters.competencia} revisao={notas} href={hrefAuditoria} onAbrir={onAbrirAuditoria} />}
         {janelaAtiva === "NFSE" ? (
           <>
             {/* ⚠ Era ciano (`--accent-cyan`). Ciano é a cor de CATEGORIA do Simples Nacional
@@ -208,7 +225,7 @@ export function NotasFiscaisTab({
             >
               + Emitir nota
             </Button>
-            <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onSync={syncAdn} onClearError={clearAdnError} />
+            <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onSync={syncAdn} mostrarStatus={false} />
             {/* ⚠ ERA O QUARTO ESTILO DE BOTÃO DESTA MESMA BARRA. A linha tinha, lado a lado: o
                 `Button` primário (Emitir), o botão do `AdnCapturePanel`, um `<select>` nativo,
                 texto solto e ESTE `<label>` — com `#2E86DE` cravado, um azul que não é token
@@ -257,11 +274,15 @@ export function NotasFiscaisTab({
           <DfeCapturePanel dfeState={dfeState} dfeSyncing={dfeSyncing} onSync={syncDfe} onClearError={clearDfeError} />
         )}
       </div>
+      {janelaAtiva === "NFSE" && <div style={{ marginTop: -8, marginBottom: 16 }}>
+        <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onClearError={clearAdnError} somenteStatus />
+      </div>}
 
       {/* ⚠ FAIXA ÚNICA desde 23/08/2026 — ela absorveu o bloco "Notas recebidas" que ficava acima
           do toggle. Ver o cabeçalho de `NotasResumo` para o porquê de `resumoRecebidas` e `summary`
           serem DUAS chamadas diferentes que não podem ser trocadas uma pela outra. */}
       <NotasResumo
+        mostrarEmitidas={!somenteRecebidas}
         summary={notasSummary}
         resumoRecebidas={notasRecebidas}
         onVerRecebidas={(tipo) => irParaJanela(tipo, "DEST")}
@@ -285,6 +306,9 @@ export function NotasFiscaisTab({
       />
 
       <NotasList
+        key={companyId}
+        somenteRecebidas={somenteRecebidas}
+        onBaixarSelecionadas={(ids, formato) => nfseApi.baixarNotasSelecionadas(companyId, ids, formato)}
         notas={notasDaJanela}
         /* ⚠ O TOTAL É O DO SERVIDOR, não `notasDaJanela.length`.
            `notasDaJanela` é uma PÁGINA (100 por vez) já filtrada de novo no cliente — usá-la como

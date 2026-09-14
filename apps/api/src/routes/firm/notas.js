@@ -34,6 +34,7 @@ import { conferirApuracao } from "../../application/notas/apuracao/ApuracaoConfe
 import { gerarDanfseDaNota } from "../../application/nfse/danfse/danfseDaNotaDoPortal.js";
 import { responderDanfse, responderErroDanfse } from "../danfseHttp.js";
 import { auditarCompetencia } from "../../application/notas/auditoria/AuditoriaNotasService.js";
+import { baixarNotasSelecionadas } from "../../application/notas/download/NotasSelecionadasService.js";
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
@@ -93,6 +94,18 @@ function serializePendencia(p) {
 
 export function createNotasRouter({ log }) {
   const router = Router({ mergeParams: true });
+  router.post("/notas/download-selecionadas", requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      const out = await baixarNotasSelecionadas({ portalClientId: String(req.params.companyId), notaIds: req.body?.notaIds, formato: req.body?.formato });
+      res.set({ "Content-Type": "application/zip", "Content-Disposition": 'attachment; filename="notas.zip"',
+        "Cache-Control": "no-store", "X-Notas-Geradas": String(out.geradas), "X-Notas-Falhas": String(out.falhas),
+        "Access-Control-Expose-Headers": "X-Notas-Geradas, X-Notas-Falhas" });
+      return res.send(out.zip);
+    } catch (err) {
+      log?.warn({ err: err.message }, "Falha no download de notas selecionadas");
+      return bad(res, err.status || 500, "notas_download_failed", err.status ? err.message : "Não foi possível preparar o download.");
+    }
+  });
 
   // ─── Procurações ──────────────────────────────────────────────────────────
 

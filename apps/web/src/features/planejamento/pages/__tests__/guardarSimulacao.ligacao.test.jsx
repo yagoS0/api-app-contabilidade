@@ -49,6 +49,33 @@ const botao = () => screen.getByRole("button", { name: /Guardar em Documentos/i 
 const esperarCalculo = () =>
   waitFor(() => expect(screen.getAllByDisplayValue("300.000,00").length).toBeGreaterThan(0));
 
+it("usa ISS 5 sem valor cadastrado e reabre anexo manual e ISS editado", async () => {
+  let salvo;
+  const dados = payload();
+  dados.campos.sujeitoFatorR = ok(true);
+  dados.campos.aliquotaIss = { valor: null, apurado: false, motivoAusencia: "Não informado" };
+  const api = montar({
+    getDadosPlanejamento: jest.fn(async () => dados),
+    salvarSimulacaoPlanejamento: jest.fn(async (_id, p) => { salvo = { id: "c1", geradoEm: "2026-09-14T12:00:00Z", ...p }; return { ok: true, simulacao: salvo }; }),
+    listarSimulacoesPlanejamento: jest.fn(async () => ({ simulacoes: salvo ? [salvo] : [] })),
+  });
+  await esperarCalculo();
+  expect(screen.getByLabelText(/^ISS/)).toHaveValue("5");
+  expect(screen.getByLabelText(/Anexo do Simples/)).toBeEnabled();
+  fireEvent.change(screen.getByLabelText(/Anexo do Simples/), { target: { value: "IV" } });
+  fireEvent.change(screen.getByLabelText(/^ISS/), { target: { value: "4" } });
+  fireEvent.click(screen.getByRole("button", { name: /^Salvar cenário$/ }));
+  await waitFor(() => expect(api.salvarSimulacaoPlanejamento).toHaveBeenCalledTimes(1));
+  expect(salvo.entradas).toMatchObject({ sujeitoAoFatorR: false, aliquotaIss: 0.04, anexoSimples: "IV", formularioCenario: { sujeitoFatorR: true, anexoManual: true, iss: "4" } });
+  fireEvent.change(screen.getByLabelText(/Anexo do Simples/), { target: { value: "automatico" } });
+  fireEvent.change(screen.getByLabelText(/^ISS/), { target: { value: "2" } });
+  fireEvent.click(screen.getByRole("button", { name: /^Abrir cenário$/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /Abrir 2026-08/ }));
+  expect(screen.getByLabelText(/Anexo do Simples/)).toHaveValue("IV");
+  expect(screen.getByLabelText(/^ISS/)).toHaveValue("4");
+  expect(screen.getByText(/^Cenário salvo$/)).toBeInTheDocument();
+});
+
 it("retoma o cenário salvo mais recente da empresa ao abrir a aba", async () => {
   montar({ listarSimulacoesPlanejamento: jest.fn(async () => ({ simulacoes: [
     { geradoEm: "2026-08-01", entradas: { formularioCenario: { receita: "400.000,00", rbt12: "400.000,00", folha: "60.000,00" } } },

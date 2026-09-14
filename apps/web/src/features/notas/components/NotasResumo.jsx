@@ -62,6 +62,7 @@ function Tile({ label, valor, sub, color = PANEL.text, title, onClick, ativo }) 
 }
 
 export function NotasResumo({
+  mostrarEmitidas = true,
   summary,
   // ⚠ O resumo das DUAS espécies (`papel: DEST`, sem `type`). Ver o cabeçalho: ele NÃO é o
   // `summary`, e trocar um pelo outro faz a caixa mostrar metade sem avisar.
@@ -108,7 +109,7 @@ export function NotasResumo({
         sub={periodo}
         title={`Quantidade de notas ${rotuloJanela} autorizadas no filtro atual (canceladas não contam).`}
       />
-      <Tile
+      {mostrarEmitidas && <Tile
         label="Emitidas"
         valor={loading ? "…" : fmtMoney(emitidas)}
         sub={papel === "EMIT" ? "▸ na tabela" : "faturamento do período"}
@@ -116,7 +117,7 @@ export function NotasResumo({
         ativo={papel === "EMIT"}
         onClick={onSelectPapel ? () => onSelectPapel("EMIT") : undefined}
         title="Soma das notas EMITIDAS (papel EMIT) autorizadas — é a base do faturamento na apuração. Clique para ver só elas na tabela."
-      />
+      />}
       {/* ⚠ NÃO É CLICÁVEL, e a ausência é o que a mantém honesta: este valor é das DUAS espécies,
           e a tabela mostra UMA. Um clique só poderia filtrar metade do que a caixa afirma — e
           "total que não fecha com a lista é pior que total nenhum" é regra escrita nesta casa.

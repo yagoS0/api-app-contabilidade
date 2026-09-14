@@ -1,6 +1,6 @@
 // Q12.C.1: tabela de notas da janela ativa (NF-e OU NFS-e) — enxuta, sem resumo/stats.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PANEL, fmtMoney, fmtDate } from "./notasStyles";
 import { BotaoCopiar } from "../../../components/ui/BotaoCopiar";
 import { Button } from "../../../components/ui/Button";
@@ -101,7 +101,7 @@ function Paginacao({ total, offset, limit, carregados, loading, onOffset }) {
   );
 }
 
-function FilterBar({ filters, onChange, onApply, loading, total }) {
+function FilterBar({ filters, onChange, onApply, loading, total, somenteRecebidas = false }) {
   // `local` é o RASCUNHO dos campos que só valem depois de "Filtrar" (hoje, a busca textual).
   // ⚠ Ele é uma cópia feita no MOUNT e nunca ressincroniza. Isso é de propósito para o rascunho —
   // digitar não pode ser desfeito por um render —, mas é veneno para campo que muda de FORA: a
@@ -119,7 +119,7 @@ function FilterBar({ filters, onChange, onApply, loading, total }) {
   }
 
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 12 }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end", marginBottom: 12 }}>
       {/* ⚠ Sem `input type="month"`: a competência é da EMPRESA e vem do seletor do header.
           Aqui ela ainda por cima ficava atrás de um botão "Filtrar" — o campo mostrava um mês e a
           tabela mostrava outro até alguém clicar, então os dois controles chegavam a discordar
@@ -133,7 +133,7 @@ function FilterBar({ filters, onChange, onApply, loading, total }) {
         placeholder="Número, nome, CPF/CNPJ ou chave" style={{ ...inputStyle, width: "100%" }} /></label>
       <label style={{ display: "grid", gap: 4, fontSize: 13 }}>Direção
         <select aria-label="Direção das notas" value={filters.papel || ""} onChange={e => { const f = { ...filters, search: local.search, papel: e.target.value, competencia: filters.competencia, offset: 0 }; setLocal(f); onChange(f); onApply(f); }} style={inputStyle}>
-          <option value="">Emitidas e recebidas</option><option value="EMIT">Emitidas</option><option value="DEST">Recebidas</option>
+          {!somenteRecebidas && <><option value="">Emitidas e recebidas</option><option value="EMIT">Emitidas</option></>}<option value="DEST">Recebidas</option>
         </select>
       </label>
       <label style={{ display: "grid", gap: 4, fontSize: 13 }}>Situação
@@ -158,7 +158,31 @@ const inputStyle = {
   borderRadius: 6, color: PANEL.text, padding: "8px 10px", fontSize: "0.85rem",
 };
 
-export function NotasList({ notas, total, filters, onFiltersChange, onApply, loading, onMarcarStatus, onAbrirNota }) {
+export function NotasList({ notas, total, filters, onFiltersChange, onApply, loading, onMarcarStatus, onAbrirNota, onBaixarSelecionadas, somenteRecebidas = false }) {
+  const [selecionadas, setSelecionadas] = useState([]);
+  const [baixando, setBaixando] = useState(false);
+  const [resultadoDownload, setResultadoDownload] = useState(null);
+  const pagina = JSON.stringify([filters, notas.map(n => n.id)]);
+  const paginaAtual = useRef(pagina);
+  const downloadAtivo = useRef(false);
+  paginaAtual.current = pagina;
+  useEffect(() => { setSelecionadas([]); setResultadoDownload(null); }, [pagina]);
+  async function baixar(formato) {
+    if (downloadAtivo.current || !selecionadas.length) return;
+    downloadAtivo.current = true;
+    setBaixando(true); setResultadoDownload(null);
+    try {
+      const out = await onBaixarSelecionadas(selecionadas, formato);
+      const url = URL.createObjectURL(out.blob);
+      const link = document.createElement("a"); link.href = url;
+      link.download = `notas-${filters.competencia || "selecionadas"}-${formato.toLowerCase()}.zip`;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      if (paginaAtual.current !== pagina) return;
+      setResultadoDownload({ texto: out.falhas > 0 ? `${out.geradas} arquivo(s) baixado(s); ${out.falhas} indisponível(is). Consulte RELATORIO.txt no ZIP.` : `${out.geradas} arquivo(s) baixado(s).`, erro: out.falhas > 0 });
+    } catch (e) { if (paginaAtual.current === pagina) setResultadoDownload({ erro: true, texto: e.message || "Não foi possível baixar as notas." }); }
+    finally { downloadAtivo.current = false; setBaixando(false); }
+  }
   const limit = Number(filters?.limit) || 100;
   const offset = Number(filters?.offset) || 0;
 
@@ -171,7 +195,14 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
 
   return (
     <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
-      <FilterBar filters={filters} onChange={onFiltersChange} onApply={onApply} loading={loading} total={total ?? notas.length} />
+      <FilterBar filters={filters} onChange={onFiltersChange} onApply={onApply} loading={loading} total={total ?? notas.length} somenteRecebidas={somenteRecebidas} />
+      {onBaixarSelecionadas && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "12px 0" }}>
+        <span style={{ color: PANEL.muted, fontSize: "0.8rem" }}>{selecionadas.length} selecionada(s) nesta página</span>
+        <Button variant="secondary" size="sm" disabled={!selecionadas.length || baixando || loading} onClick={() => baixar("XML")}>Baixar XML</Button>
+        <Button variant="secondary" size="sm" disabled={!selecionadas.length || baixando || loading} onClick={() => baixar("PDF")}>Baixar DANFE / DANFSe</Button>
+        {baixando && <span role="status">Preparando arquivos…</span>}
+        {resultadoDownload && <span role={resultadoDownload.erro ? "alert" : "status"} style={{ color: resultadoDownload.erro ? "var(--state-warn)" : "var(--state-ok)" }}>{resultadoDownload.texto}</span>}
+      </div>}
 
       {notas.length === 0 && !loading && (
         <div style={{ padding: 24, textAlign: "center", color: PANEL.muted, fontSize: "0.85rem" }}>
@@ -184,6 +215,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
             <thead>
               <tr style={{ background: PANEL.field, color: PANEL.muted, textAlign: "left" }}>
+                {onBaixarSelecionadas && <th style={th}><input type="checkbox" aria-label="Selecionar todas as notas desta página" disabled={loading || baixando} checked={notas.length > 0 && selecionadas.length === notas.length} ref={el => { if (el) el.indeterminate = selecionadas.length > 0 && selecionadas.length < notas.length; }} onChange={e => setSelecionadas(e.target.checked ? notas.map(n => n.id) : [])} /></th>}
                 <th style={th}>Data</th>
                 <th style={th}>Papel</th>
                 <th style={th}>Nº/Série</th>
@@ -231,6 +263,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                       cursor: onAbrirNota ? "pointer" : "default", outlineOffset: -2,
                     }}
                   >
+                    {onBaixarSelecionadas && <td style={td} onClick={e => e.stopPropagation()}><input type="checkbox" aria-label={`Selecionar nota ${n.numero || n.id}`} disabled={loading || baixando} checked={selecionadas.includes(n.id)} onChange={e => setSelecionadas(ids => e.target.checked ? [...ids, n.id] : ids.filter(id => id !== n.id))} /></td>}
                     <td style={td}>{fmtDate(n.issueDate)}</td>
                     <td style={td}>
                       <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: "0.82rem", fontWeight: 600,

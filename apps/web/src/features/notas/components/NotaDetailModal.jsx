@@ -16,6 +16,7 @@
 
 import { useState } from "react";
 import { PANEL, fmtMoney, fmtDate } from "./notasStyles";
+import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { lerCicloDaNota, temHistoria } from "../lib/cicloNotaTela";
 import { podeReaproveitar } from "../lib/reaproveitarNota";
@@ -167,17 +168,6 @@ function BlocoXml({ xml, nota }) {
     );
   }
 
-  function baixar() {
-    const blob = new Blob([xml.conteudo], { type: "application/xml" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${nota?.type || "nota"}-${nota?.numero || nota?.chaveAcesso || nota?.id}.xml`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  }
 
   return (
     <Secao titulo="XML do documento">
@@ -186,7 +176,7 @@ function BlocoXml({ xml, nota }) {
         <Button variant="secondary" size="sm" onClick={() => setAberto((v) => !v)}>
           {aberto ? "Ocultar XML" : "Ver XML"}
         </Button>
-        <Button variant="secondary" size="sm" onClick={baixar}>Baixar XML</Button>
+
         <span style={{ fontSize: "0.74rem", color: PANEL.muted }}>{fmtBytes(xml.bytes)}</span>
       </div>
       {aberto && (
@@ -219,7 +209,9 @@ function BlocoAcoes({ nota, onReaproveitar, onBaixarDanfse }) {
   const [danfse, setDanfse] = useState({ estado: "ocioso", recusa: null });
 
   const reuso = podeReaproveitar(nota);
-  const danfsePode = podeGerarDanfse(nota);
+  const danfsePode = nota.type === "NFE"
+    ? { pode: false, texto: "Para baixar o DANFE desta NF-e, selecione a nota na lista e use Baixar DANFE / DANFSe. É necessário ter o XML completo guardado." }
+    : podeGerarDanfse(nota);
   const gerando = danfse.estado === "gerando";
 
   async function baixarDanfse() {
@@ -247,94 +239,40 @@ function BlocoAcoes({ nota, onReaproveitar, onBaixarDanfse }) {
     }
   }
 
-  const linhaMotivo = { fontSize: "0.76rem", color: "var(--text-faint)", lineHeight: 1.45 };
-
+  function baixarXml() {
+    const url = URL.createObjectURL(new Blob([nota.xml.conteudo], { type: "application/xml" }));
+    const a = document.createElement("a"); a.href = url;
+    a.download = `${nota.type}-${nota.numero || nota.id}.xml`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
   return (
-    <Secao titulo="O que fazer com esta nota">
-      <div style={{ display: "grid", gap: 14 }}>
-        {/* ── Emitir outra a partir desta ─────────────────────────────────── */}
-        <div style={{ display: "grid", gap: 6 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            {/* Ação primária = accent (verde é CONCLUÍDO neste app, nunca "faça isto"). */}
-            <Button
-              type="button"
-              disabled={!reuso.pode || !onReaproveitar}
-              onClick={reuso.pode && onReaproveitar ? () => onReaproveitar(nota) : undefined}
-              title={
-                !reuso.pode ? reuso.texto
-                  : !onReaproveitar ? "Esta tela não permite emitir a partir da nota."
-                    : "Abre o assistente de emissão com os dados desta nota"
-              }
-            >
-              Emitir outra a partir desta
-            </Button>
-          </div>
-          {/* ⚠ A FRASE QUE IMPEDE A TELA DE PARECER UMA REEMISSÃO. Ela é o texto do botão por
-              extenso: o que sai daqui é um documento NOVO, e a original não é tocada. */}
-          <span style={linhaMotivo}>
-            Abre o assistente de emissão <strong>pré-preenchido</strong> com o tomador e o serviço
-            desta nota. É uma <strong>nota nova</strong>, com número novo reservado na emissão —
-            esta nota aqui continua exatamente como está, e não é cancelada nem substituída por
-            este caminho.
-          </span>
-          {!reuso.pode && <span style={linhaMotivo}>⚠ {reuso.texto}</span>}
-          {reuso.pode && !onReaproveitar && (
-            <span style={linhaMotivo}>⚠ Esta tela não permite emitir a partir da nota.</span>
-          )}
-        </div>
-
-        {/* ── DANFSe ─────────────────────────────────────────────────────── */}
-        <div style={{ display: "grid", gap: 6 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={!danfsePode.pode || !onBaixarDanfse || gerando}
-              onClick={danfsePode.pode && onBaixarDanfse && !gerando ? baixarDanfse : undefined}
-              title={
-                !danfsePode.pode ? danfsePode.texto
-                  : !onBaixarDanfse ? "Esta tela não permite baixar o DANFSe."
-                    : "Gera e baixa o PDF da NFS-e"
-              }
-            >
-              {gerando ? "Gerando o DANFSe…" : "Baixar DANFSe (PDF)"}
-            </Button>
-          </div>
-          {/* ⚠ GERADO SOB DEMANDA E NUNCA SALVO — por isso não há "regerar" nem cache a limpar. */}
-          <span style={linhaMotivo}>
-            O documento auxiliar da NFS-e, no leiaute do Padrão Nacional (NT 008), com QR Code. Ele
-            é <strong>gerado na hora a partir do XML</strong> da nota e não fica guardado.
-          </span>
-          {!danfsePode.pode && <span style={linhaMotivo}>⚠ {danfsePode.texto}</span>}
-          {danfsePode.pode && !onBaixarDanfse && (
-            <span style={linhaMotivo}>⚠ Esta tela não permite baixar o DANFSe.</span>
-          )}
-
-          {danfse.estado === "recusado" && danfse.recusa && (
-            <div
-              role="alert"
-              style={{
-                padding: 10, borderRadius: 6, fontSize: "0.8rem", display: "grid", gap: 6,
-                background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
-                color: PANEL.text,
-              }}
-            >
-              <strong style={{ color: "var(--state-danger)" }}>{danfse.recusa.titulo}</strong>
-              <span>{danfse.recusa.texto}</span>
-              {danfse.recusa.motivo && (
-                <span style={{ color: PANEL.muted }}>Motivo: {danfse.recusa.motivo}</span>
-              )}
-              {danfse.recusa.porQue && <span style={{ color: PANEL.muted }}>{danfse.recusa.porQue}</span>}
-            </div>
-          )}
-          {danfse.estado === "pronto" && (
-            <span style={{ fontSize: "0.76rem", color: "var(--state-ok)" }}>
-              ✓ DANFSe gerado e baixado.
-            </span>
-          )}
-        </div>
+    <section aria-label="Ações da nota" style={{ padding: "14px 0", borderTop: `1px solid ${PANEL.border}`, borderBottom: `1px solid ${PANEL.border}`, marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <Button disabled={!reuso.pode || !onReaproveitar}
+          title={!reuso.pode ? reuso.texto : "Abre uma nova emissão com os dados desta nota"}
+          onClick={() => onReaproveitar?.(nota)}>Emitir outra a partir desta</Button>
+        <Button variant="secondary" disabled={!danfsePode.pode || !onBaixarDanfse || gerando}
+          title={!danfsePode.pode ? danfsePode.texto : "Baixar o documento auxiliar em PDF"}
+          onClick={baixarDanfse}>{gerando ? "Gerando o DANFSe…" : "Baixar DANFSe (PDF)"}</Button>
+        <Button variant="secondary" disabled={!nota.xml?.conteudo || nota.xml?.truncadoPorTamanho}
+          title={!nota.xml?.conteudo ? "XML completo indisponível nesta visualização; use o download em lote" : "Baixar XML"}
+          onClick={baixarXml}>Baixar XML</Button>
       </div>
-    </Secao>
+      <details style={{ marginTop: 8, color: PANEL.muted, fontSize: "0.76rem" }}>
+        <summary style={{ cursor: "pointer" }}>Sobre as ações</summary>
+        <p>Emitir outra abre uma nota nova; a original continua exatamente como está.</p>
+        {!reuso.pode && <p>{reuso.texto}</p>}
+        <p>O PDF é gerado na hora a partir do XML e não fica guardado.</p>
+        {!danfsePode.pode && <p>{danfsePode.texto}</p>}
+      </details>
+      {danfse.estado === "recusado" && danfse.recusa && <div role="alert" style={{ marginTop: 10, color: "var(--state-danger)" }}>
+        <strong>{danfse.recusa.titulo}</strong> — {danfse.recusa.texto}
+        {danfse.recusa.motivo && <p>{danfse.recusa.motivo}</p>}
+        {danfse.recusa.porQue && <p>{danfse.recusa.porQue}</p>}
+      </div>}
+      {danfse.estado === "pronto" && <small role="status" style={{ color: "var(--state-ok)" }}>DANFSe gerado e baixado.</small>}
+    </section>
   );
 }
 
@@ -615,21 +553,7 @@ export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, on
   const ciclo = lerCicloDaNota(nota);
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Detalhe da nota fiscal"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 1700,
-        display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "4vh 16px",
-        overflowY: "auto",
-      }}
-    >
-      <div style={{
-        background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10,
-        padding: 24, width: "100%", maxWidth: 900,
-      }}>
+    <Modal titulo="Detalhe da nota fiscal" aoFechar={onClose} tamanho="lg" rodape={<Button variant="secondary" onClick={onClose}>Fechar</Button>}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 18 }}>
           <div style={{ minWidth: 0 }}>
             <h3 style={{ margin: 0, color: PANEL.text, fontSize: "1rem" }}>{titulo}</h3>
@@ -642,13 +566,7 @@ export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, on
               </div>
             )}
           </div>
-          <button
-            onClick={onClose}
-            aria-label="Fechar"
-            style={{ background: "none", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.4rem", lineHeight: 1 }}
-          >
-            ×
-          </button>
+
         </div>
 
         {loading && (
@@ -670,7 +588,7 @@ export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, on
         {!loading && nota && (
           <>
             {/* Primeiro o que se pode FAZER, depois a ficha para conferir. */}
-            <BlocoAcoes nota={nota} onReaproveitar={onReaproveitar} onBaixarDanfse={onBaixarDanfse} />
+            <BlocoAcoes key={nota.id} nota={nota} onReaproveitar={onReaproveitar} onBaixarDanfse={onBaixarDanfse} />
 
             <Secao titulo="Identificação">
               <div style={GRADE}>
@@ -738,10 +656,6 @@ export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota, on
           </>
         )}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-          <Button variant="secondary" onClick={onClose}>Fechar</Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
