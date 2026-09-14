@@ -180,8 +180,8 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-company-names label { margin: 8px 0; }
 
 /* Comunicação por pessoa: lista legível e painéis sob demanda, sem filtrar a conversa por empresa. */
-.wa-workspace { grid-template-columns: minmax(340px, 30%) minmax(0,1fr); }
-.wa-workspace--details { grid-template-columns: minmax(310px, 28%) minmax(0,1fr) 260px; }
+.wa-workspace { grid-template-columns: 280px minmax(0,1fr); }
+.wa-workspace--details { grid-template-columns: 280px minmax(0,1fr) 260px; }
 .wa-conversation { padding: 10px; gap: 9px; }
 .wa-conversation-copy { line-height: 1.25; }
 .wa-conversation-company { margin: 3px 0; }
@@ -213,5 +213,5 @@ body:has(.wa-page) { overflow: hidden; min-width: 0; }
 .wa-quick-drawer .btn { white-space: normal; }
 .wa-composer { padding: 10px 16px; }
 .wa-bubble { max-width: min(85%,560px); padding: 9px 12px; }
-@media(max-width:1000px) and (min-width:761px) { .wa-workspace, .wa-workspace--details { grid-template-columns: 310px minmax(0,1fr); } }
+@media(max-width:1250px) and (min-width:761px) { .wa-workspace, .wa-workspace--details { grid-template-columns: 260px minmax(0,1fr); } }
 @media(max-width:760px) { .wa-workspace, .wa-workspace--details { grid-template-columns: minmax(0,1fr); } .wa-quick-drawer { width:100%; } }

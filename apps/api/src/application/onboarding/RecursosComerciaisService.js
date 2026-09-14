@@ -1,6 +1,7 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { OnboardingError } from "./OnboardingService.js";
 import { preencherTexto, catalogoValido } from "./CatalogoComercial.js";
+import { RECURSOS_INICIAIS } from "./MensagensPadrao.js";
 export const variaveisPermitidas = ["nome", "cnpj", "escritorio", "procuradorCnpj", "linkAutorizacao", "linkProposta", "servico", "honorarios", "condicoes", "contratante", "endereco", "email", "cpf"];
 export function exigirGestor(user) {
   if (!user?.id || !["admin", "contador"].includes(String(user.role).toLowerCase())) throw new OnboardingError("forbidden", "Ação reservada ao contador.", 403);
@@ -190,54 +191,7 @@ export function criarRecursosComerciais({
     exigirGestor(user);
     // Catálogo de preços e modelos contratuais são configurações privadas. A biblioteca
     // pública inicia apenas orientações genéricas; importar recursos nunca os aprova.
-    const iniciais = [{
-      tipo: "ORIENTACAO", chave: "assinatura-govbr", titulo: "Assinar contrato com gov.br",
-      dados: { descricao: "Ensinar a assinar o PDF e devolver o arquivo digital para conferência." },
-      texto: "Para assinar o contrato: 1. Acesse https://assinador.iti.br e entre com sua conta gov.br prata ou ouro. 2. Carregue o PDF que enviamos e confira o documento. 3. Escolha onde inserir a assinatura e confirme no próprio gov.br. 4. Baixe o arquivo assinado e envie o PDF aqui na conversa. Não imprima nem digitalize o resultado, para preservar a assinatura. Não envie sua senha ou código de acesso. Vamos conferir o arquivo recebido. Orientação oficial: https://www.gov.br/pt-br/servicos/assinatura-eletronica"
-    }, {
-      tipo: "ORIENTACAO", chave: "autorizacao-acesso", titulo: "Autorização de acesso — passo a passo",
-      dados: { descricao: "Orientar a autorização do escritório antes da consulta fiscal privada." },
-      texto: "Para analisarmos a situação fiscal do CNPJ {{cnpj}}, autorize o escritório {{escritorio}}, CNPJ {{procuradorCnpj}}: 1. Acesse o Portal de Serviços da Receita Federal com sua conta gov.br prata ou ouro e selecione a empresa que representa. 2. Abra Autorizações de Acesso e cadastre o CNPJ do escritório como pessoa autorizada. 3. Defina o prazo e os serviços combinados, incluindo Situação Fiscal do Contribuinte para esta análise. 4. Conclua e avise nesta conversa. A autorização precisa também da confirmação da pessoa autorizada; vamos conferir antes da consulta. Não compartilhe senha ou códigos. Manual do escritório: {{linkAutorizacao}}. Serviço oficial: https://www.gov.br/pt-br/servicos/cadastrar-ou-cancelar-procuracao-para-acesso-ao-e-cac"
-    }, {
-      tipo: "INSTITUCIONAL",
-      chave: "escritorio",
-      titulo: "Dados institucionais para orientações",
-      dados: {
-        escritorio: "ALTAN",
-        procuradorCnpj: "",
-        linkAutorizacao: ""
-      }
-    }, {
-      tipo: "ORIENTACAO",
-      chave: "cnpj",
-      titulo: "Pedir CNPJ",
-      texto: "Pode me informar o CNPJ? Vou consultar os dados públicos para entender a situação inicial. Essa consulta não confirma a regularidade fiscal."
-    }, {
-      tipo: "ORIENTACAO",
-      chave: "abertura",
-      titulo: "Opções de abertura",
-      texto: "Podemos cuidar somente da abertura ou da abertura junto com a contabilidade mensal. Em qual município será a empresa e qual atividade você pretende exercer?"
-    }, {
-      tipo: "ORIENTACAO",
-      chave: "autorizacao",
-      titulo: "Procuração — instrução inicial",
-      texto: "Para a análise fiscal, precisamos de autorização para o escritório {{escritorio}}, CNPJ {{procuradorCnpj}}. Acesse as instruções: {{linkAutorizacao}}. Faça o acesso na sua própria conta e não envie sua senha. Avise por aqui quando concluir; vamos conferir a autorização."
-    }, {
-      tipo: "ORIENTACAO",
-      chave: "ajuda-autorizacao",
-      titulo: "Ajuda com autorização",
-      texto: "Em qual etapa você encontrou dificuldade? Descreva o que aparece sem compartilhar senha ou código de acesso. Se precisar, o contador continua o atendimento por aqui."
-    }, {
-      tipo: "ORIENTACAO",
-      chave: "documentos",
-      titulo: "Documentos",
-      texto: "Vamos conferir quais documentos são necessários para o seu serviço e orientar o envio. Não envie senhas por aqui."
-    }, {
-      tipo: "ORIENTACAO",
-      chave: "proposta",
-      titulo: "Proposta em conferência",
-      texto: "Já registrei os dados iniciais. O contador vai conferir o escopo e os valores antes de enviarmos a proposta com as opções do serviço."
-    }];
+    const iniciais = RECURSOS_INICIAIS;
     for (const item of iniciais) {
       await db.recursoComercial.upsert({
         where: {
