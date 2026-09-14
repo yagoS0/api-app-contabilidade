@@ -60,6 +60,10 @@ jest.mock("../../../application/accounting/fechamentoContabil.js", () => {
 });
 
 import request from "supertest";
+jest.mock("../../../application/notas/apuracao/v2/FechamentoService.js", () => ({
+  ...jest.requireActual("../../../application/notas/apuracao/v2/FechamentoService.js"),
+  faturamentoEmitDaCompetencia: jest.fn(async () => 17640),
+}));
 import express from "express";
 import { createFirmPortalRouter } from "../index.js";
 import { prisma } from "../../../infrastructure/db/prisma.js";
@@ -142,5 +146,48 @@ describe("DELETE /firm/guides/vazio — a literal não é engolida pelo curinga 
       expect.objectContaining({ where: { id: "guide-123" } }),
     );
     expect(prisma.guide.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /firm/guides/vazio com faturamento", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    isMonthClosed.mockResolvedValue(false);
+    prisma.guide.findFirst.mockResolvedValue(null);
+    prisma.guide.create.mockImplementation(async ({ data }) => ({ id: "marcador-1", ...data }));
+  });
+
+  test.each(["SIMPLES", "INSS", "IRPJ", "CSLL", "PIS", "ISS"])("contador marca %s sem motivo obrigatório nem confirmação extra", async (tipo) => {
+    const res = await request(montarApp()).post("/firm/guides/vazio")
+      .send({ portalClientId: "portal-1", tipo, competencia: "2026-08" });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, status: "VAZIO", vazioPor: CONTADOR.id, vazioMotivo: null });
+    expect(prisma.guide.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      portalClientId: "portal-1", competencia: "2026-08", status: "VAZIO", source: "MANUAL",
+      vazioPor: CONTADOR.id, vazioEm: expect.any(Date),
+    }) });
+  });
+
+  test("mantém motivo opcional e não sobrescreve uma guia processada", async () => {
+    const app = montarApp();
+    const res = await request(app).post("/firm/guides/vazio")
+      .send({ portalClientId: "portal-1", tipo: "IRPJ", competencia: "2026-08", motivo: "Retenção integral" });
+    expect(res.body.vazioMotivo).toBe("Retenção integral");
+    prisma.guide.findFirst.mockResolvedValue({ id: "real", status: "PROCESSED" });
+    const bloqueado = await request(app).post("/firm/guides/vazio")
+      .send({ portalClientId: "portal-1", tipo: "IRPJ", competencia: "2026-08" });
+    expect(bloqueado.status).toBe(409);
+    expect(bloqueado.body.error).toBe("guide_already_present");
+    expect(prisma.guide.update).not.toHaveBeenCalled();
+    expect(prisma.guide.create).toHaveBeenCalledTimes(1);
+  });
+
+  test("mantém o bloqueio de competência fechada", async () => {
+    isMonthClosed.mockResolvedValue(true);
+    const res = await request(montarApp()).post("/firm/guides/vazio")
+      .send({ portalClientId: "portal-1", tipo: "SIMPLES", competencia: "2026-08" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("mes_fechado");
+    expect(prisma.guide.create).not.toHaveBeenCalled();
   });
 });

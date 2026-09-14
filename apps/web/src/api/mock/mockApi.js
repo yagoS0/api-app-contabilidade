@@ -11,14 +11,14 @@ function delay(ms = 250) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Marcações de "sem movimento" feitas na sessão, chave `companyId|tipo`. Estado de VERDADE, não
+// Marcações de "sem movimento" feitas na sessão, chave `companyId|tipo|competencia`. Estado de VERDADE, não
 // retorno fixo: o ciclo da guia só dá para conferir offline se marcar vazio realmente mudar o chip
 // e o desfazer realmente voltar. Mock imutável passaria por esses caminhos sem testar nenhum.
 const mockVazios = new Map(); // chave → { vazioEm, vazioPor, vazioMotivo }
 // Guias cuja liberação já foi TENTADA nesta sessão do mock. A 1ª tentativa simula o lock global
 // preso (`guides_email_lock`, TTL 5 min) e a 2ª envia — ver `liberarGuiaCliente`.
 const mockLiberacoesTentadas = new Set();
-const chaveVazio = (companyId, tipo) => `${companyId}|${String(tipo || "").toUpperCase()}`;
+const chaveVazio = (companyId, tipo, competencia) => `${companyId}|${String(tipo || "").toUpperCase()}|${competencia || ""}`;
 
 // Chave do compliance → tipo de Guide (mesmo de-para do backend; PIS representa o grupo PIS/COFINS).
 const MOCK_TRIBUTO_TIPO = {
@@ -59,6 +59,9 @@ function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTri
     const required = requeridos[chave];
     if (!required) return { required: false, ok: true, state: "na" };
 
+    const marcado = mockVazios.get(chaveVazio(companyId, MOCK_TRIBUTO_TIPO[chave], competencia));
+    if (marcado) return { required, ok: true, state: "vazio", origem: "guia_vazia", ...marcado };
+
     if (misturada) {
       // PIS/COFINS já foi (por WhatsApp, lida); IRPJ ainda espera envio; o resto falta gerar.
       if (chave === "pisCofins") {
@@ -86,14 +89,6 @@ function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTri
       return { required, ok: false, state: "missing" };
     }
 
-    const marcado = mockVazios.get(chaveVazio(companyId, MOCK_TRIBUTO_TIPO[chave]));
-    if (marcado) {
-      // Marcação feita AGORA na tela. Com faturamento na competência vira conflito, igual ao real.
-      return faturamento > 0
-        ? { required, ok: false, state: "conflito", faturamento, origem: "guia_vazia", ...marcado }
-        : { required, ok: true, state: "vazio", origem: "guia_vazia", ...marcado };
-    }
-
     if (cenario === 1) return { required, ok: true, state: "gerada", guideId: `mock-guia-${companyId}-${chave}`, emailStatus: "PENDING" };
     // ⚠ Metade das enviadas sai por WhatsApp no mock, de propósito: o popover mostra canal e as
     // confirmações ✓✓ que só o WhatsApp dá, e um mock 100% e-mail nunca exercitaria esse caminho.
@@ -109,7 +104,7 @@ function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTri
       };
     }
     if (cenario === 3) return { required, ok: true, state: "vazio", origem: "guia_vazia", vazioEm: new Date().toISOString(), vazioPor: "Usuario Mock", vazioMotivo: null };
-    if (cenario === 4) return { required, ok: false, state: "conflito", faturamento: 17640, origem: "guia_vazia", vazioEm: new Date().toISOString(), vazioPor: "Usuario Mock" };
+    if (cenario === 4) return { required, ok: false, state: "conflito", faturamento: 17640, origem: "sem_faturamento", vazioEm: new Date().toISOString(), vazioPor: "Usuario Mock" };
     return { required, ok: false, state: "missing" };
   };
 
@@ -4091,44 +4086,20 @@ export function createMockApi() {
         },
       };
     },
-    // Marcar/desfazer "sem movimento" MEXE no estado do mock, e a recusa é aplicada de verdade:
-    // é o único jeito de conferir offline a bifurcação do ciclo e a trava contra faturamento.
-    async markGuideVazio(portalClientId, tipo, competencia, motivo, { confirmado = false } = {}) {
+    // Mesmo contrato da API: ausência da guia independe do faturamento.
+    async markGuideVazio(portalClientId, tipo, competencia, motivo) {
       await delay();
-      const fat = mockFaturamentoDaCompetencia(portalClientId, competencia);
       const motivoInformado = String(motivo || "").trim();
-      // ⚠ A BIFURCAÇÃO INTEIRA VIVE AQUI TAMBÉM. Só a recusa no mock deixaria a confirmação (o
-      // caminho novo) inalcançável offline — que é justamente o que se quer conferir.
-      if (fat > 0) {
-        const valorFmt = fat.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-        if (!confirmado) {
-          return {
-            ok: false,
-            error: "GUIA_VAZIA_COM_FATURAMENTO",
-            precisaConfirmar: true,
-            faturamento: fat,
-            message: `A competência tem R$ ${valorFmt} em notas emitidas autorizadas. Marcar esta guia como sem movimento afirma que, mesmo assim, não há guia a pagar — confirme e diga o motivo.`,
-          };
-        }
-        if (!motivoInformado) {
-          return {
-            ok: false,
-            error: "GUIA_VAZIA_MOTIVO_OBRIGATORIO",
-            faturamento: fat,
-            message: `Com R$ ${valorFmt} em notas na competência, o motivo é obrigatório.`,
-          };
-        }
-      }
-      mockVazios.set(chaveVazio(portalClientId, tipo), {
+      mockVazios.set(chaveVazio(portalClientId, tipo, competencia), {
         vazioEm: new Date().toISOString(),
         vazioPor: "Usuario Mock",
         vazioMotivo: motivoInformado || null,
       });
       return { ok: true, status: "VAZIO", guideId: `mock-vazio-${portalClientId}-${tipo}` };
     },
-    async undoGuideVazio(portalClientId, tipo) {
+    async undoGuideVazio(portalClientId, tipo, competencia) {
       await delay();
-      const existia = mockVazios.delete(chaveVazio(portalClientId, tipo));
+      const existia = mockVazios.delete(chaveVazio(portalClientId, tipo, competencia));
       return { ok: true, removed: existia ? 1 : 0 };
     },
     // A PRE-VERIFICACAO dos lancamentos.

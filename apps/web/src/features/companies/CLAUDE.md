@@ -155,13 +155,13 @@ tentado**. Como nada drena `emailNextRetryAt` (o laço saiu na Q55), a guia fica
 clicar por acaso. Hoje: vermelho com ícone próprio, `emailLastError` e nº de tentativas no popover,
 e o botão vira **"✈ Tentar enviar de novo"** — o MESMO envio (não há mecanismo de retentativa para
 sugerir). Ele conta como urgência 0 na tabela e entra no recorte "falta enviar" do topo.
-Mais `conflito` (marcada sem movimento **mas** há nota emitida) e `na` (não exigido → o chip **não
+Mais `conflito` (MÊS declarado sem faturamento **mas** há nota emitida) e `na` (não exigido → o chip **não
 renderiza**). Três tipos de ausência, três visuais — é o que a regra antiga ("a tag some quando a
 guia é gerada") não conseguia dizer.
 
 Do chip saem as ações, sem entrar na empresa: **enviar** (confirmação com destinatário à vista —
 ação externa nunca dispara no clique) e **marcar sem movimento** (declaração fiscal: grava
-quem/quando, mostra no popover, permite desfazer, e é **recusada** se houver faturamento).
+quem/quando, mostra no popover e permite desfazer, inclusive quando houver faturamento. A marcação manual afirma ausência daquela guia, não ausência de receita; o motivo é opcional).
 `✓ Guias concluídas` condensa só quando **todas** estão em estado terminal — enviada **ou** vazio.
 
 ⚠ No Lucro Presumido, IRPJ/CSLL/PIS-COFINS compartilham o **mesmo `guideId`** (uma DARF só).
