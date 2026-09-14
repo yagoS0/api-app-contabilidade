@@ -22,6 +22,7 @@ import { createGuideReleaseBatchService } from "../../../application/guides/Guid
 import { enviarParaTodosOsDestinatarios } from "../../../application/whatsapp/EnvioGuiaWhatsappService.js";
 import { enviosPorGuia } from "../../../application/guides/EnvioGuiaService.js";
 import { prisma } from "../../../infrastructure/db/prisma.js";
+import { destinatariosDeEnvio } from "../../../application/whatsapp/ContatoWhatsappService.js";
 const release = { prever: jest.fn(async () => ({ ok: true, assinatura: "preview" })), executar: jest.fn(async () => ({ ok: true, results: [] })) };
 function app(role = "contador") {
   const a = express(); a.use(express.json());
@@ -32,6 +33,7 @@ beforeEach(() => {
   jest.clearAllMocks(); createGuideReleaseBatchService.mockReturnValue(release);
   prisma.guide.findFirst.mockResolvedValue({ id: "g1", portalClientId: "c1", status: "PROCESSED", emailStatus: "SENT" });
   enviosPorGuia.mockResolvedValue(new Map([["g1", [{ canal: "EMAIL", status: "enviado" }]]]));
+  destinatariosDeEnvio.mockResolvedValue({ telefones: [{ telefoneE164: "5511999990000" }] });
 });
 test.each(["/previa", ""])("liberação exige contador/admin: %s", async (path) => {
   expect((await request(app("assistente")).post(`/guides/liberacao/lote${path}`).send({})).status).toBe(403);
@@ -47,8 +49,16 @@ test("complementar e-mail enviado permite WhatsApp sem reenviar=true", async () 
   expect(prisma.guide.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "g1", portalClientId: "c1" } }));
 });
 test("complementar não repete WhatsApp já enviado", async () => {
-  enviosPorGuia.mockResolvedValue(new Map([["g1", [{ canal: "WHATSAPP", status: "entregue" }]]]));
+  enviosPorGuia.mockResolvedValue(new Map([["g1", [{ canal: "WHATSAPP", destino: "5511999990000", status: "entregue" }]]]));
   const r = await request(app()).post("/companies/c1/guides/g1/enviar-whatsapp").send({ complementar: true });
   expect(r.status).toBe(422); expect(r.body.error).toBe("GUIA_JA_ENVIADA");
   expect(enviarParaTodosOsDestinatarios).not.toHaveBeenCalled();
+});
+
+test("novo número recebe a guia sem duplicar o WhatsApp entregue ao destinatário antigo", async () => {
+  const novo = { telefoneE164: "5511999990001" };
+  destinatariosDeEnvio.mockResolvedValue({ telefones: [{ telefoneE164: "5511999990000" }, novo] });
+  enviosPorGuia.mockResolvedValue(new Map([["g1", [{ canal: "WHATSAPP", destino: "5511999990000", status: "entregue" }]]]));
+  await request(app()).post("/companies/c1/guides/g1/enviar-whatsapp").send({ complementar: true }).expect(200);
+  expect(enviarParaTodosOsDestinatarios).toHaveBeenCalledWith(expect.objectContaining({ destinatarios: [novo], reenviar: false }));
 });

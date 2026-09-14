@@ -177,9 +177,9 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
         || atendimento.versao !== conversa.atendimento?.versao) {
         throw new ConversaWhatsappError("CONTEXTO_ALTERADO", "A empresa deste atendimento mudou. Escolha a empresa e confira a mensagem antes de enviar.");
       }
-      const { empresasAutorizadas } = await import("../../application/whatsapp/selecaoEmpresaWhatsapp.js");
-      const acesso = empresasAutorizadas(await resolverVinculoPorTelefone(conversa.telefoneE164, { client }));
-      if (acesso.bloqueado || acesso.userId !== atendimento.userId || !acesso.empresas.some(e => e.portalClientId === conversa.portalClientId)) {
+      const { empresasParaComunicacao } = await import("../../application/whatsapp/comunicacaoDoContato.js");
+      const acesso = empresasParaComunicacao(await resolverVinculoPorTelefone(conversa.telefoneE164, { client }));
+      if (acesso.bloqueado || !acesso.empresas.some(e => e.portalClientId === conversa.portalClientId)) {
         throw new ConversaWhatsappError("ACESSO_REVOGADO", "O vínculo deste responsável com a empresa mudou. Confira o cadastro antes de enviar.");
       }
     }
@@ -345,8 +345,10 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
     if (!somenteAdminOuContador(req, res)) return undefined;
     const { conversaId } = req.params || {};
     try {
-      const conversa = await conversaNoEscopo(req, conversaId, { client });
+      let conversa = await conversaNoEscopo(req, conversaId, { client });
       if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
+      const { sincronizarComunicacaoDoContato } = await import("../../application/whatsapp/sincronizarComunicacaoDoContato.js");
+      conversa = await sincronizarComunicacaoDoContato({ telefone: conversa.telefoneE164, conversa, client });
       const grupo = await grupoNoEscopo({ conversa, visiveis: await empresasVisiveis(req), client });
       const empresa = String(req.query?.empresa || "").trim() || null;
       if (empresa && (grupo ? !grupo.segmentos.some(c => c.portalClientId === empresa) : conversa.portalClientId !== empresa)) {

@@ -110,9 +110,10 @@ describe("a seção existe e diz quem recebe", () => {
     await waitFor(() => expect(screen.getByTestId("situacao-empresa-whatsapp")).toHaveTextContent(/nenhum com opt-in/));
   });
 
-  it("o canal padrão vem do servidor e aparece selecionado", async () => {
+  it("informa o uso dos canais cadastrados sem uma preferência excluir o outro canal", async () => {
     await montar();
-    expect(screen.getByLabelText("Canal padrão de envio das guias")).toHaveValue("WHATSAPP");
+    expect(screen.getByTestId("canais-dos-destinatarios")).toHaveTextContent(/e-mails e WhatsApps dos destinatários ativos/);
+    expect(screen.queryByLabelText("Canal padrão de envio das guias")).not.toBeInTheDocument();
   });
 });
 
@@ -215,20 +216,12 @@ describe("acessos da IA por número", () => {
   });
 });
 
-describe("o canal padrão", () => {
-  it("trocar chama o PATCH com o valor novo", async () => {
-    const { api } = await montar();
-    fireEvent.change(screen.getByLabelText("Canal padrão de envio das guias"), { target: { value: "PERGUNTAR" } });
-    await waitFor(() => expect(api.definirCanalEnvio).toHaveBeenCalledWith("pc-1", "PERGUNTAR"));
-    expect(screen.getByLabelText("Canal padrão de envio das guias")).toHaveValue("PERGUNTAR");
-  });
-
-  it("⚠ recusado pelo servidor, o select VOLTA ao valor anterior — a tela não afirma uma troca que não houve", async () => {
-    const api = apiFalso({ definirCanalEnvio: jest.fn(async () => { const e = new Error("Canal deve ser um de…"); e.status = 400; throw e; }) });
-    const { feedback } = await montar({ api });
-    fireEvent.change(screen.getByLabelText("Canal padrão de envio das guias"), { target: { value: "EMAIL" } });
-    await waitFor(() => expect(feedback.notifyError).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getByLabelText("Canal padrão de envio das guias")).toHaveValue("WHATSAPP"));
+describe("preferência legada", () => {
+  it.each(["EMAIL", "WHATSAPP", "PERGUNTAR"])("%s mantém a informação de todos os destinatários", async (canalPadraoEnvio) => {
+    const api = apiFalso({ listarContatosWhatsapp: jest.fn(async () => ({ ok: true, contatos: [COM_OPT_IN, SEM_OPT_IN], canalPadraoEnvio })) });
+    await montar({ api });
+    expect(screen.getByTestId("canais-dos-destinatarios")).toHaveTextContent(/Não é necessário vincular uma conta do portal para receber/);
+    expect(api.definirCanalEnvio).not.toHaveBeenCalled();
   });
 });
 

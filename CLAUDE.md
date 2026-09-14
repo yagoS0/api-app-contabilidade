@@ -1,5 +1,11 @@
 # CLAUDE.md — Portal Contábil
 
+## Comunicação pelos destinatários cadastrados — 14/09/2026
+
+O telefone/e-mail ativo em Contatos, acessos e envios é a origem do destinatário da comunicação. Receber guias e o escritório agrupar/selecionar empresas no chat não exige associação a uma conta do portal. O mesmo número pode comunicar-se por várias empresas mesmo sem `userId` ou com contas diferentes. A identidade continua comparada estritamente; nenhuma conta, vínculo RBAC ou permissão fiscal é criada para obter esse agrupamento. Consultas e atos do assistente mantêm suas autorizações próprias.
+
+Na liberação e reenvio da guia pela aba Fiscal, um WhatsApp cadastrado também é considerado quando `canalPadraoEnvio` legado vale EMAIL. O consentimento e a elegibilidade são revalidados no servidor. Complementar WhatsApp verifica recibos por guia e destinatário: entrega ao contato antigo não bloqueia o primeiro envio ao novo, e o contato já atendido não recebe duplicata nessa operação. Não retirar a reserva atômica do transportador nem transformar aceite em entrega.
+
 ## Previsão do mês aberto e imposto pago — 08/09/2026
 
 A previsão de receita usa exatamente os três meses de calendário completos imediatamente anteriores ao relógio do servidor. O mês aberto não entra na mediana. Para o recebimento previsto (competência da nota +1), somar somente o complemento positivo entre mediana e notas já emitidas dessa competência. Nota parcial não cancela a previsão; nota acima da mediana não recebe complemento. Meses encerrados não são preenchidos retroativamente. A evidência identifica meses-base, mediana, emitido e complemento. Esta decisão substitui a mediana de toda a série e a regra de começar após a última nota.

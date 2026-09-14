@@ -7,6 +7,7 @@ import { adquirirLease, renovarLease, liberarLease } from "./WhatsappLeaseServic
 import { enviarMensagemRastreada } from "./SaidaWhatsappService.js";
 import { WhatsappCloudClient } from "./WhatsappCloudClient.js";
 import { empresasAutorizadas, decidirSelecaoEmpresa, opcoesSelecaoEmpresa, textoSelecaoEmpresa } from "./selecaoEmpresaWhatsapp.js";
+import { empresasParaComunicacao } from "./comunicacaoDoContato.js";
 import { lerContextoDoMenu } from "./contextoMenuWhatsapp.js";
 
 export const TTL_CONTEXTO_MS = 30 * 60 * 1000;
@@ -120,7 +121,7 @@ export async function encaminharResponsavelParaEquipe({ conversa, mensagem, cont
 }
 
 export async function selecionarEmpresaDoEscritorio({ conversa, portalClientId, client = prisma, resolverVinculo = resolverVinculoPorTelefone }) {
-  const acesso = empresasAutorizadas(await resolverVinculo(conversa.telefoneE164, { client }));
+  const acesso = empresasParaComunicacao(await resolverVinculo(conversa.telefoneE164, { client }));
   if (acesso.bloqueado || !acesso.empresas.some(e => e.portalClientId === portalClientId)) throw falha("EMPRESA_NAO_E_CANDIDATA");
   const atendimento = await garantirAtendimentoResponsavel({ conversa, empresas: acesso.empresas, userId: acesso.userId, client });
   const destino = await garantirConversa({ telefone: conversa.telefoneE164, portalClientId, client });

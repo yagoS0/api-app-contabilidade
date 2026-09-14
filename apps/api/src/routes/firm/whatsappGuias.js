@@ -109,9 +109,12 @@ export function createWhatsappGuiasRouter({ log } = {}) {
 
         const canal = await carregarCanal();
         const envios = (await enviosPorGuia([guide.id])).get(guide.id) || [];
-        // Liberar nos dois canais complementa o e-mail; não autoriza duplicar WhatsApp.
-        const jaEnviada = req.body?.complementar === true
-          ? envios.some((e) => e.canal === "WHATSAPP" && STATUS_TERMINAL.includes(e.status))
+        const { telefones } = await destinatariosDeEnvio(companyId);
+        const complementar = req.body?.complementar === true;
+        const jaRecebeu = c => envios.some(e => e.canal === "WHATSAPP" && e.destino === c.telefoneE164 && STATUS_TERMINAL.includes(e.status));
+        // O recibo pertence ao destino: um contato antigo não impede o primeiro envio ao novo.
+        const jaEnviada = complementar
+          ? telefones.length > 0 && telefones.every(jaRecebeu)
           : foiEnviadaComLegado(envios, guide);
         // ⚠ REENVIAR É PEDIDO EXPLÍCITO (decisão do dono, 05/09/2026): a tela avisa que a guia já foi
         // enviada, e só com o `reenviar` no corpo é que a recusa `GUIA_JA_ENVIADA` deixa de valer.
@@ -135,8 +138,8 @@ export function createWhatsappGuiasRouter({ log } = {}) {
         // ⚠⚠ O MESMO CAMINHO DO LOTE (05/09/2026). Este laço vivia aqui, e o lote tinha o dele —
         // a MESMA guia saía para gente diferente conforme o botão. Agora quem sabe "para quem esta
         // guia vai" é `enviarParaTodosOsDestinatarios`, num lugar só.
-        const { telefones } = await destinatariosDeEnvio(companyId);
-        const alvos = apenasFalhos ? telefones.filter((c) => envios.some((e) => e.canal === "WHATSAPP" && e.destino === c.telefoneE164 && e.status === "falhou")) : telefones;
+        const alvos = apenasFalhos ? telefones.filter((c) => envios.some((e) => e.canal === "WHATSAPP" && e.destino === c.telefoneE164 && e.status === "falhou"))
+          : complementar && !reenviar ? telefones.filter(c => !jaRecebeu(c)) : telefones;
         if (!alvos.length) return res.status(422).json({ ok: false, error: "SEM_DESTINATARIOS_PARA_TENTAR", message: "Nenhum destinatário com falha confirmada está disponível para esta tentativa." });
         const resultado = await enviarParaTodosOsDestinatarios({
           guide,
