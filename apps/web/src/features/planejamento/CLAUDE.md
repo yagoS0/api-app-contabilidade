@@ -1,5 +1,13 @@
 # Planejamento — continuidade do cenário (08/09/2026)
 
+## Revisão fiscal — 14/09/2026
+
+Premissas usam rótulos acima dos campos; origem detalhada, confiança e exceções do CNAE ficam em “Origem dos dados e premissas”. Na grade aparece apenas “CNAE sugerido”. Descrições acessíveis continuam ligadas aos campos e erros de entrada continuam visíveis.
+
+Por pedido explícito do usuário, ISS começa em 5% quando não há alíquota cadastrada. Valor cadastrado e cenário salvo têm precedência; apagar o campo mantém ausência, sem inventar zero. É premissa de simulação, não alteração na apuração ou alíquota geral de município.
+
+Anexo é sempre editável para comparar cenários. Em atividade de Fator R, “Automático pelo Fator R” mantém a regra; escolher anexo explicitamente ativa `anexoManual` e passa `sujeitoAoFatorR: false` apenas às entradas daquela simulação. A característica da empresa no formulário permanece intacta. `formularioCenario.anexoManual` deve ser salvo/restaurado com ISS e demais premissas. Teste `guardarSimulacao.ligacao` cobre default 5, escolha IV, ISS 4 e reabertura sem gravação de cadastro.
+
 Complemento: a abertura na empresa recupera o cenário salvo mais recente após o prefill. Não sobrescrever edições iniciadas durante a busca, nem aplicar resposta de outra empresa. O histórico só expande ao clicar Abrir cenário. Salvar cenário continua sendo explícito; não anunciar salvamento automático de campos. IBS/CBS mostra explicações dos modelos e diferencia imposto próprio de crédito transferido. Comunicado RFB atualizado em 02/09/2026 confirma o procedimento para 2027 e cancelamento até 30/11/2026; substitui a antiga ausência de prova da regulamentação. Consulta documentada em docs/fontes-fiscais.md.
 
 Premissas ficam antes da comparação. Dentro da empresa, o conteúdo usa a moldura do pai; modo livre mantém sua própria largura. Editar cenário não altera cadastro fiscal.

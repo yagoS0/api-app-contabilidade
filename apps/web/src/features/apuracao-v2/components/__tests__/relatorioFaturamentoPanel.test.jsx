@@ -85,6 +85,15 @@ function relatorioFixture(over = {}) {
 }
 
 describe("RelatorioFaturamentoPanel — sem relatório salvo", () => {
+  it("extrato existente recolhe diagnóstico local sem alterar números da foto salva", () => {
+    const relatorio = relatorioFixture({ preApurado: { ok: false, das: null, motivo: { code: "CADASTRO_FALTANDO", message: "Cadastro não preenchido." }, oficial: {} } });
+    render(<RelatorioFaturamentoPanel relatorio={relatorio} extratoSalvo={{ dados: { numeroDeclaracao: "d1", dasTotal: 900 } }} />);
+    expect(screen.getByText(/A apuração já tem retorno da Receita/)).toBeInTheDocument();
+    expect(screen.getByText("Conferência pelo cálculo local").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("Classificação das notas para conferência local").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText(/Nenhum valor oficial gravado neste relatório/)).toBeInTheDocument();
+    expect(screen.queryByText("R$ 900,00")).toBeNull();
+  });
   it("⚠ não gera sozinho: mostra o vazio e o botão, e diz que gerar não chama ninguém de fora", () => {
     const onGerar = jest.fn();
     render(<RelatorioFaturamentoPanel relatorio={null} onGerar={onGerar} />);
@@ -185,7 +194,7 @@ describe("RelatorioFaturamentoPanel — procedência do DAS", () => {
       oficial: { dasRetornadoSerpro: null, dasCalculadoLocalNoSnapshot: null },
     };
     render(<RelatorioFaturamentoPanel relatorio={rel} onGerar={() => {}} />);
-    expect(screen.getByText("O portal não calculou o DAS desta competência")).toBeInTheDocument();
+    expect(screen.getByText("Cálculo local de conferência indisponível")).toBeInTheDocument();
     expect(screen.getByText(/A receita da competência não está classificada/)).toBeInTheDocument();
     expect(screen.getByText(/2 itens/)).toBeInTheDocument();
     expect(screen.getByText(/100% do total da competência/)).toBeInTheDocument();

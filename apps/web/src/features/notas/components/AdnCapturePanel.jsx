@@ -28,7 +28,7 @@ function idade(quando) {
 // Se um dia for preciso, o lugar é a engrenagem de configuração, não a barra de ações.
 const AMBIENTE = "prod";
 
-export function AdnCapturePanel({ adnState, adnSyncing, onSync, onClearError }) {
+export function AdnCapturePanel({ adnState, adnSyncing, onSync, onClearError, mostrarStatus = true, somenteStatus = false }) {
   const inBackoff = adnState?.adnBackoffUntil && new Date(adnState.adnBackoffUntil) > new Date();
   const hasError = Boolean(adnState?.adnLastError);
 
@@ -44,10 +44,10 @@ export function AdnCapturePanel({ adnState, adnSyncing, onSync, onClearError }) 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <Button onClick={() => onSync({ env: AMBIENTE })} disabled={adnSyncing || inBackoff}>
+        {!somenteStatus && <Button variant="secondary" onClick={() => onSync({ env: AMBIENTE })} disabled={adnSyncing || inBackoff}>
           {adnSyncing ? "Capturando…" : "🔄 Buscar NFS-e"}
-        </Button>
-        {(hasError || inBackoff) && onClearError && (
+        </Button>}
+        {mostrarStatus && (hasError || inBackoff) && onClearError && (
           // ⚠ O `title` diz mais que o rótulo ("e backoff"), e `title` NÃO é tooltip de verdade:
           // ele não aparece no foco de teclado nem no toque. Quem lê por leitor de tela ouvia só
           // "Limpar erro" e não sabia que o botão também destrava a próxima tentativa. O
@@ -58,7 +58,7 @@ export function AdnCapturePanel({ adnState, adnSyncing, onSync, onClearError }) 
             Limpar erro
           </button>
         )}
-        {hasError && (
+        {mostrarStatus && hasError && (
           <span style={{ color: "var(--danger)", fontSize: "0.78rem", maxWidth: 520 }} title={adnState.adnLastError}>
             {/* ⚠ O texto do erro é TRUNCADO na tela e vai inteiro no `title`. Ele vem do servidor e já
                 chegou a ser HTML cru do gov.br (`<html><body><h1>429 Too Many Requests…`) despejado
@@ -87,7 +87,7 @@ export function AdnCapturePanel({ adnState, adnSyncing, onSync, onClearError }) 
           ⚠ `--text-faint` e não `PANEL.muted`: é o token que este app mede em 5,79:1 sobre o fundo,
           ou seja, apagado E ainda legível. O `#6b7280` que pareceria "mais discreto" está proibido
           por escrito aqui (3,10:1). */}
-      {!hasError && (
+      {mostrarStatus && !hasError && (
         <span style={{ color: "var(--text-faint)", fontSize: "0.72rem" }}>
           {tentativaEm
             ? `Última busca ${tentativaEm}${capturaEm ? ` · última nota nova ${capturaEm}` : " · nenhuma nota nova até agora"}`

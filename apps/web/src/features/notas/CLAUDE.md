@@ -1,5 +1,15 @@
 # Notas — revisão de uso (08/09/2026)
 
+## Revisão fiscal — 14/09/2026
+
+Auditoria é uma ação em Notas, com total de achados, notas fora de conferência e pendências pós-fechamento. A rota `/auditoria` permanece, com retorno às notas; o cabeçalho mantém Notas selecionada. Falha de leitura não pode anunciar ausência de pendências. Status da captura ADN fica em linha própria, separado da barra de ações, para não deslocar Buscar NFS-e.
+
+NotasList seleciona a página atual (até 100 notas), tanto recebidas como emitidas. Troca de filtro/página/competência limpa a seleção. XML e DANFE/DANFSe são baixados em ZIP pelo endpoint autenticado `notas/download-selecionadas`. Lote parcial identifica indisponíveis em RELATORIO.txt; falta de XML não gera documento fictício. O mock também entrega ZIP válido. NF-e usa gerador DANFE modelo 55; NFS-e reutiliza o DANFSe existente. Selecionar checkbox não abre a nota.
+
+NF-e emitidas ficam ocultas somente quando IE está explicitamente vazia/isenta e todas as atividades conhecidas são de serviços. Perfil desconhecido, ambíguo ou misto não autoriza esconder emitidas. Recebidas continuam acessíveis. O primeiro cadastro do mock exercita serviços sem IE.
+
+NotaDetailModal usa Modal compartilhado e uma região de ações separada da identificação/valores/itens/XML/ciclo. Reutilização e geração de DANFSe preservam as validações anteriores. O DANFE de NF-e está no download por seleção; a ajuda do detalhe aponta para essa ação.
+
 ## Revisão aprovada de navegação
 
 Emissão no contador tem três etapas: Tomador → Serviço e valores → Conferência. O primeiro avanço valida tomador/endereço e impedimentos cadastrais; o segundo exige a nota completa. Voltar preserva os dados. Erros direcionam à etapa correspondente. Emitir permanece exclusivo da conferência, com validação integral, confirmação e trava de desfecho desconhecido.

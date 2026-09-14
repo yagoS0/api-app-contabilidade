@@ -2337,6 +2337,15 @@ export function createRealApi() {
     // QR Code não é um DANFSe. Um `Error` genérico aqui viraria "falha ao baixar" na tela, que é
     // exatamente a informação errada. Por isso o corpo JSON é lido e `code`/`motivo`/`status` sobem
     // junto, como o `request()` já faz para as demais rotas.
+    async baixarNotasSelecionadas(companyId, notaIds, formato) {
+      const tok = accessToken || readStoredToken();
+      const res = await fetch(`${getApiBaseUrl()}/firm/companies/${companyId}/notas/download-selecionadas`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ notaIds, formato }),
+      });
+      if (!res.ok) { const erro = await res.json().catch(() => ({})); throw new Error(erro.message || "Não foi possível baixar as notas."); }
+      return { blob: await res.blob(), geradas: Number(res.headers.get("X-Notas-Geradas")), falhas: Number(res.headers.get("X-Notas-Falhas")) };
+    },
     async fetchDanfseBlob(companyId, notaId) {
       const baseUrl = getApiBaseUrl();
       const headers = {};
