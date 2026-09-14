@@ -78,12 +78,11 @@ export function resolveNode(node, presente, vazio, { semFaturamento = false, fat
 
   // Ausência CONFIRMADA — pelo marcador da guia ou pela afirmação de mês sem faturamento.
   if (vazio || semFaturamento) {
-    // Conflito: alguém afirmou "sem movimento" e depois entrou nota emitida na competência.
-    // A afirmação envelheceu e volta a exigir ação — é o oposto de deixá-la calada.
-    if (faturamento > 0) {
+    // Receita contradiz um MÊS sem faturamento, mas não a ausência de uma guia específica.
+    if (!vazio && faturamento > 0) {
       return {
         ...node, ok: false, state: "conflito", faturamento,
-        origem: vazio ? "guia_vazia" : "sem_faturamento",
+        origem: "sem_faturamento",
         guideId: vazio?.guideId || null,
         vazioEm: vazio?.vazioEm || null,
         vazioPor: vazio?.vazioPor || null,

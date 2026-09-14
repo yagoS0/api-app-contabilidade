@@ -99,6 +99,16 @@ export const CODIGOS_RECEITA_NAO_PREVIDENCIARIOS = Object.freeze({
   "2372": "CSLL",
 });
 
+// Códigos previdenciários presentes nos PDFs já verificados pelo projeto (incluindo
+// ALBATROZ). Só classificamos o documento inteiro quando todas as linhas são conhecidas.
+const CODIGOS_RECEITA_PREVIDENCIARIOS = new Set(["1082", "1099", "1138", "1646", "2985"]);
+
+export function composicaoSomentePrevidenciaria(itens) {
+  return Array.isArray(itens) && itens.length > 0 && itens.every((item) =>
+    CODIGOS_RECEITA_PREVIDENCIARIOS.has(String(item?.codigo || "").replace(/\D+/g, "").slice(0, 4))
+  );
+}
+
 /**
  * O documento prova que NÃO é uma guia previdenciária?
  *

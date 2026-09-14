@@ -4,7 +4,7 @@
 //   missing ────────────┤     └────→ FALHOU          (tentou e não saiu; NÃO é terminal)
 //                       └─→ vazio                    (terminal: ausência confirmada)
 //
-// `conflito` = marcado sem movimento MAS há nota emitida na competência — a afirmação envelheceu.
+// `conflito` = MÊS declarado sem faturamento, mas há receita. Marcação manual de guia continua válida.
 // `na` = não exigido pelo regime → o chip nem renderiza.
 //
 // ⚠ ESTE ARQUIVO MANTINHA UMA RÉPLICA DE `resolveNode`, com o aviso "se as duas divergirem, este
@@ -60,11 +60,13 @@ describe("ciclo de vida do nó de guia", () => {
     expect(r.origem).toBe("sem_faturamento");
   });
 
-  test("CONFLITO: marcado vazio mas entrou nota emitida → volta a exigir ação", () => {
-    const r = resolveNode(exigido, undefined, { guideId: "v1" }, { faturamento: 17640 });
-    expect(r.state).toBe("conflito");
-    expect(r.ok).toBe(false);          // conta como pendência no filtro do dashboard
-    expect(r.faturamento).toBe(17640); // o valor aparece na mensagem
+  test("marcação manual da guia permanece sem movimento mesmo com faturamento", () => {
+    const r = resolveNode(exigido, undefined, { guideId: "v1", vazioPor: "contador", vazioMotivo: "Retenção integral" }, { faturamento: 17640 });
+    expect(r.state).toBe("vazio");
+    expect(r.ok).toBe(true);
+    expect(r.origem).toBe("guia_vazia");
+    expect(r.vazioPor).toBe("contador");
+    expect(r.vazioMotivo).toBe("Retenção integral");
   });
 
   test("conflito vale também para o mês sem faturamento", () => {

@@ -73,6 +73,13 @@ seria mais curto e **apagaria guia real**: medido em produção, ALBATROZ (LUCRO
 empresas com `hasProlabore=false` — o cadastro está desatualizado e não serve de autoridade aqui.
 Travado em `serpro/__tests__/darfDctfwebNaoEhSempreInss.test.js`, com os casos reais dos dois lados.
 
+A captura LP também verifica o sentido inverso: `composicaoSomentePrevidenciaria` reconhece
+declarações cujos débitos positivos são todos previdenciários (1082/1099/1138/1646/2985, códigos
+já verificados nos PDFs do projeto). Nesses casos retorna `skipped: "somente_previdenciario"`
+antes de criar guia ou provisão, e não emite outro DARF. Isso impede a duplicação do INSS como
+"CP-Segurados" na Albatroz. Documentos mistos, IRRF e códigos desconhecidos continuam no fluxo
+existente, preservando a composição inteira. A guarda não exclui registros históricos.
+
 ⚠ **Recusar não é declarar ausência**: não grava marcador VAZIO e **não escreve a circular**
 (`inssTotal`/`inssStatus`/`acrescimos.INSS`) — era ela que passava a afirmar INSS de PIS/COFINS.
 

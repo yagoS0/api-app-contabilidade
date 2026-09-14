@@ -15,7 +15,16 @@
 // Todos os textos abaixo reproduzem o layout medido nos PDFs guardados em produção (21/08/2026,
 // 70 guias `tipo:"INSS"` reparseadas com `scripts/diag-inss-composicao-pdf.mjs`).
 
-import { parseArrecadacaoComposicao, tributosSeNaoForPrevidenciario } from "../parseArrecadacao.js";
+import { parseArrecadacaoComposicao, tributosSeNaoForPrevidenciario, composicaoSomentePrevidenciaria } from "../parseArrecadacao.js";
+
+describe("declaração exclusivamente previdenciária não vira outra guia na captura LP", () => {
+  it.each(["1082", "1099-01", "1138", "1646", "2985"])("reconhece código confirmado %s", (codigo) => {
+    expect(composicaoSomentePrevidenciaria([{ codigo }])).toBe(true);
+  });
+  it.each([undefined, [], [null], [{ codigo: "9999" }], [{ codigo: "1099" }, { codigo: "8109" }], [{ codigo: "1099" }, {}]])("não descarta documento incompleto, desconhecido ou misto: %j", (itens) => {
+    expect(composicaoSomentePrevidenciaria(itens)).toBe(false);
+  });
+});
 
 const composicaoDe = (texto) => parseArrecadacaoComposicao(texto).itens;
 
