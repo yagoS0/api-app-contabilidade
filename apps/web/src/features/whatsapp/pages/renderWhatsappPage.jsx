@@ -41,7 +41,7 @@ function LinhaConversa({ c, ativa, onAbrir, onboarding }) {
     <AvatarConversa nome={identidade.pessoa} pequeno />
     <div className="wa-conversation-copy">
       <div className="wa-conversation-title"><NomeDaPessoa identidade={identidade} /><time>{fmtDataHora(c.ultimaMensagem?.registradaEm || c.updatedAt)}</time></div>
-      <div className="wa-conversation-company"><LinhaDaEmpresa identidade={identidade} /></div>
+      <div className="wa-conversation-company"><LinhaDaEmpresa identidade={identidade} copiarCnpj={false} /></div>
       {c.empresas?.length ? <span className="wa-company-count">{c.empresas.length} empresa{c.empresas.length === 1 ? "" : "s"} acessíve{c.empresas.length === 1 ? "l" : "is"}</span> : null}
       <SituacaoConversa conversa={c} />
       {fraseDoOnboarding(onboarding) ? <div data-testid="onboarding-da-conversa" style={{ fontSize: ".72rem", color: "var(--state-warn)" }}>{fraseDoOnboarding(onboarding)}</div> : null}

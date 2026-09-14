@@ -13,10 +13,10 @@
 import { PainelAtendimento } from "./PainelAtendimento";
 import { OrientacoesRapidas } from "./AtendimentoComercial";
 import { useState, useRef, useLayoutEffect, useEffect } from "react";
-import { AvatarConversa, SituacaoConversa, WhatsappIcon } from "./ConversaVisual";
+import { AvatarConversa, SituacaoConversa, WhatsappIcon, CnpjDaConversa } from "./ConversaVisual";
 import { Button } from "../../../components/ui/Button";
 import { Modal } from "../../../components/ui/Modal";
-import { formatarCnpj } from "../../onboarding/lib/brasilApi";
+import { soDigitosCnpj } from "../../onboarding/lib/brasilApi";
 import {
   SITUACAO_FIO,
   situacaoDoFio,
@@ -41,7 +41,7 @@ export const COR_TOM = { aviso: "var(--state-warn)", neutro: "var(--text-muted)"
  * ⚠ Sem empresa a frase é a do estado da fila (*"sem empresa — número novo"*), em âmbar, porque é
  * pendência do escritório. Ela nunca some: linha em branco se lê como "não tem nada a dizer".
  */
-export function LinhaDaEmpresa({ identidade, tamanho = "0.74rem" }) {
+export function LinhaDaEmpresa({ identidade, tamanho = "0.74rem", copiarCnpj = true }) {
   return (
     <span
       data-testid="empresa-da-conversa"
@@ -49,7 +49,7 @@ export function LinhaDaEmpresa({ identidade, tamanho = "0.74rem" }) {
       style={{ fontSize: tamanho, color: identidade.semEmpresa ? "var(--state-warn)" : "var(--text-muted)" }}
     >
       {identidade.linhaDaEmpresa}
-      {identidade.cnpj ? ` · ${formatarCnpj(identidade.cnpj)}` : ""}
+      {identidade.cnpj ? <> · <CnpjDaConversa cnpj={identidade.cnpj} empresa={identidade.linhaDaEmpresa} copiavel={copiarCnpj} /></> : null}
     </span>
   );
 }
@@ -186,7 +186,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
           <select aria-label="Empresa do atendimento" style={campo} value={conversa.atendimento.contextoSelecionado ? conversa.portalClientId : ""} disabled={hook.ocupado || typeof hook.selecionarEmpresa !== "function"}
             onChange={e => e.target.value && hook.selecionarEmpresa(conversa.id, e.target.value)}>
             <option value="" disabled>Escolha a empresa…</option>
-            {(conversa.empresas || []).filter(e => !hook.empresaFixa || e.id === hook.empresaFixa).map(e => <option key={e.id} value={e.id}>{e.razao} · {formatarCnpj(e.cnpj)}</option>)}
+            {(conversa.empresas || []).filter(e => !hook.empresaFixa || e.id === hook.empresaFixa).map(e => <option key={e.id} value={e.id}>{e.razao} · {soDigitosCnpj(e.cnpj)}</option>)}
           </select>
         </label>
         {!hook.empresaFixa && conversa.empresas?.length > 1 ? <label>Histórico
@@ -218,7 +218,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
             <div data-testid={`balao-${m.id}`} data-autor={m.autor || (entrada ? "cliente" : "sem-autor")} className={`wa-message-row${entrada ? "" : " wa-message-row--out"}`}>
               <div className="wa-bubble">
                 <div className="wa-bubble-author">{rotuloDoAutor(m, { nomeDoCliente })}</div>
-                {conversa.atendimento ? <div className="wa-bubble-company" data-testid={`empresa-mensagem-${m.id}`}>{m.empresa ? `${m.empresa.razao} · ${formatarCnpj(m.empresa.cnpj)}` : "Empresa ainda não definida"}</div> : null}
+                {conversa.atendimento ? <div className="wa-bubble-company" data-testid={`empresa-mensagem-${m.id}`}>{m.empresa ? <>{m.empresa.razao} · <CnpjDaConversa cnpj={m.empresa.cnpj} empresa={m.empresa.razao} /></> : "Empresa ainda não definida"}</div> : null}
                 {midia ? <div data-testid="midia-do-balao" className="wa-media"><WhatsappIcon nome="documento" size={20} /><span>{midia.replace(/^📎\s*/, "")}</span></div> : null}
                 {m.corpo ? <div className="wa-bubble-text">{m.corpo}</div> : m.tipo === "template" ? <div className="wa-bubble-text">Modelo de mensagem do escritório</div> : null}
                 <div className="wa-bubble-footer">
