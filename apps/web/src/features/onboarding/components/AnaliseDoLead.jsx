@@ -3,7 +3,7 @@ import { Button } from "../../../components/ui/Button";
 import { CnpjDaConversa } from "../../whatsapp/components/ConversaVisual";
 import { SitfisRelatorioTabela } from "../../fiscal/sitfis/components/SitfisRelatorioTabela";
 
-export function AnaliseDoLead({ api, onboarding, onAtualizar, conversaId }) {
+export function AnaliseDoLead({ api, onboarding, onAtualizar, conversaId, tipo = null }) {
   const [cnpj, setCnpj] = useState(onboarding.cnpj || ""), [analises, setAnalises] = useState([]), [erro, setErro] = useState(""), [ocupado, setOcupado] = useState(false);
   const trava = useRef(false), vivo = useRef(true), versaoConsulta = useRef(0);
   const id = onboarding.id;
@@ -21,11 +21,11 @@ export function AnaliseDoLead({ api, onboarding, onAtualizar, conversaId }) {
     try { await fn(); } catch (e) { if (vivo.current) setErro(e.message); }
     finally { trava.current = false; if (vivo.current) setOcupado(false); }
   }
-  const atuais = analises.filter(a => a.cnpj === onboarding.cnpj);
+  const atuais = analises.filter(a => a.cnpj === onboarding.cnpj && (!tipo || a.tipo === tipo));
   return <section aria-label="Análise do lead">
-    <h4>1. Entender a empresa</h4>
-    {onboarding.origem === "ABERTURA" ? <p>Na abertura, colete atividade, município, endereço e previsão de movimento. O novo CNPJ ainda não existe; não é necessário para iniciar a proposta.</p> : <>
-      <label>CNPJ para consulta pública<input inputMode="numeric" maxLength={14} value={cnpj} onChange={e => { setCnpj(e.target.value.replace(/\D/g, "")); setErro(""); }} /></label>{" "}
+    <h4>{tipo === "SITFIS" ? "Relatório fiscal salvo" : "Entender a empresa"}</h4>
+    {tipo !== "SITFIS" && (onboarding.origem === "ABERTURA" ? <p>Na abertura, colete atividade, município, endereço e previsão de movimento. O novo CNPJ ainda não existe; não é necessário para iniciar a proposta.</p> : <>
+      <label>CNPJ para consulta pública<input inputMode="numeric" maxLength={18} value={cnpj} onChange={e => { setCnpj(e.target.value.replace(/\D/g, "").slice(0, 14)); setErro(""); }} /></label>{" "}
       <Button disabled={ocupado || cnpj.length !== 14} onClick={() => executar(async () => {
         const consultado = cnpj;
         versaoConsulta.current += 1;
@@ -34,7 +34,7 @@ export function AnaliseDoLead({ api, onboarding, onAtualizar, conversaId }) {
         if (vivo.current) { setAnalises(a => [r.analise, ...a.filter(x => x.id !== r.analise.id)]); await onAtualizar?.(); if (r.analise.status !== "CONCLUIDA") setErro(r.analise.resultado?.mensagem || "Consulta não concluída."); }
       })}>{ocupado ? "Consultando…" : "Consultar CNPJ publicamente"}</Button>
       <p>Razão social, atividade, endereço e situação cadastral. Dados públicos não comprovam regularidade fiscal.</p>
-    </>}
+    </>)}
     {erro && <p role="alert">{erro}</p>}
     {atuais.map(a => <article key={a.id} className="wa-analysis-result"><strong>{a.tipo === "PUBLICA" ? "Consulta pública" : "Situação fiscal"} · {a.status}</strong><p><CnpjDaConversa cnpj={a.cnpj} /> · {new Date(a.createdAt).toLocaleString("pt-BR")}</p>
       <p>{a.resultado?.mensagem}</p>
@@ -53,6 +53,6 @@ export function AnaliseDoLead({ api, onboarding, onAtualizar, conversaId }) {
         await onAtualizar?.();
       })}>Enviar relatório conferido no WhatsApp</Button>}</>}
     </article>)}
-    <p>Próxima etapa: enviar a orientação de autorização em Mensagens rápidas, conferir a representação e verificar a procuração antes da consulta fiscal.</p>
+    {!tipo && <p>Próxima etapa: enviar a orientação de autorização em Mensagens rápidas, conferir a representação e verificar a procuração antes da consulta fiscal.</p>}
   </section>;
 }

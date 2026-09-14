@@ -116,8 +116,9 @@ export function CampoOnboarding({
   origemPreenchimento,
   mostrarSelo = false,
   acaoExtra = null,
+  idPrefix = "onb",
 }) {
-  const id = `onb-${descritor.campo}`;
+  const id = `${idPrefix}-${descritor.campo}`;
   const comum = { id, style: INPUT_STYLE, "aria-invalid": erro ? "true" : undefined };
 
   let controle;

@@ -193,5 +193,7 @@ try {
   assert.deepEqual(await db.onboarding.findUnique({ where: { id: manual.id } }), fichaPreservada);
   assert.equal(await db.onboardingEvento.count({ where: { onboardingId: manual.id, tipo: "ATENDIMENTO_REINICIADO" } }), 1);
   ok("Reinícios concorrentes criam uma única nova solicitação, preservam a ficha anterior e rejeitam a aba desatualizada");
+  const { verificarJornada } = await import("./checks-jornada-lead.js");
+  await verificarJornada({ db, user, ok });
   process.stdout.write(JSON.stringify({ passed: checks.length, checks }, null, 2));
 } finally { await db.$disconnect(); }

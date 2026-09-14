@@ -1,5 +1,9 @@
 # CLAUDE.md — Web (apps/web)
 
+## Passo a passo do lead — 14/09/2026
+
+`FluxoComercial` usa `lib/jornadaComercial` e `PassosDoLead`: seis etapas para abertura e oito para transferência/empresa parada, retomadas pelos registros do servidor. Consulta pública/SITFIS precisam de conferência explícita; etapas futuras ficam indisponíveis. Atualização a cada 10 s só lê resultados; preservar rascunhos e versão durante polling. Mudança da ficha/relatório exige nova revisão do diagnóstico. Assinatura e pagamento continuam manuais. CSS importado no entrypoint `main.jsx`; mock recusa envios/consultas externos. Ver `docs/jornada-lead-passo-a-passo.md` na raiz.
+
 ## Alinhamento das empresas e remoção da faixa da carteira — 10/09/2026
 
 A faixa “Carteira inteira” e seu estado de filtro foram removidos a pedido do usuário. Busca, filtros existentes e abas de regime continuam. Fechamento em lote exige seleção explícita e considera somente as empresas selecionadas ainda visíveis e aptas pelo servidor; confirmação e revalidação permanecem.
