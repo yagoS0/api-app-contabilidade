@@ -58,8 +58,8 @@ describe("a lista", () => {
     const linhas = screen.getAllByTestId(/^conversa-/);
     expect(linhas[0]).toHaveAttribute("data-testid", "conversa-cv3");
     expect(linhas[0]).toHaveAttribute("data-situacao", "FILA_SEM_EMPRESA");
-    expect(linhas[0]).toHaveTextContent(/número sem cadastro — vincule/);
-    expect(screen.getByTestId("contagem-fila")).toHaveTextContent(/1 número sem cadastro/);
+    expect(linhas[0]).toHaveTextContent(/novo contato — atender/);
+    expect(screen.getByTestId("contagem-fila")).toHaveTextContent(/1 número aguardando atendimento/);
     expect(screen.getByTestId("consumo-ia")).toHaveTextContent(/US\$ 1\.37 de US\$ 60\.00 \(estimativa/);
     expect(screen.getByTestId("conversa-cv1")).toHaveTextContent(/pedido K9M3 aguardando confirmação/i);
     expect(screen.getByTestId("conversa-cv2")).toHaveTextContent(/assumida por Ana/);
@@ -125,7 +125,7 @@ describe("vincular — a fila esvazia por aqui", () => {
     const fio = await screen.findByTestId("fio");
     const form = within(fio).getByTestId("form-vincular");
     expect(form).not.toBeVisible();
-    fireEvent.click(within(fio).getByRole("button", { name: "Atendimento e cadastro" }));
+    fireEvent.click(within(fio).getByRole("button", { name: "Abrir atendimento" }));
     fireEvent.click(screen.getByText("Vincular a uma empresa existente"));
     const botao = within(form).getByRole("button", { name: /Vincular/ });
     expect(botao).toBeDisabled();

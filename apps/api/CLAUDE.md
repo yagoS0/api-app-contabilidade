@@ -1,5 +1,9 @@
 # CLAUDE.md — API (apps/api)
 
+## Jornada do lead — 14/09/2026
+
+`JornadaLeadService` alimenta o GET comercial e os POSTs `/jornada/conferencia`, `/diagnostico`, `/devolutiva`, `/pagamento`. Conferência exige análise/CNPJ atuais e CAS da ficha; diagnóstico materialmente desatualizado não pode ser enviado. PDF e texto usam lease, registro anterior à rede, correlação por diagnóstico/parte e revalidação entre partes. Timeout nunca provoca repetição automática. Pagamento manual exige contrato `ASSINADO_CONFERIDO` da proposta aceita, liga o evento ao contrato e é idempotente. O verificador PostgreSQL comercial chama `scripts/checks-jornada-lead.js` com rede bloqueada; não utilizar provedores reais/Anthropic. Ver `docs/jornada-lead-passo-a-passo.md` na raiz.
+
 ## Previsão do mês aberto e imposto pago — 08/09/2026
 
 A previsão de receita usa exatamente os três meses de calendário completos imediatamente anteriores ao relógio do servidor. O mês aberto não entra na mediana. Para o recebimento previsto (competência da nota +1), somar somente o complemento positivo entre mediana e notas já emitidas dessa competência. Nota parcial não cancela a previsão; nota acima da mediana não recebe complemento. Meses encerrados não são preenchidos retroativamente. A evidência identifica meses-base, mediana, emitido e complemento. Esta decisão substitui a mediana de toda a série e a regra de começar após a última nota.
@@ -87,6 +91,10 @@ prisma/
   migrations/        - Migrations geradas pelo Prisma
   seed.js
 ```
+
+## Comunicação por pessoa e lead — 14/09/2026
+
+Texto e anexo manual do escritório podem sair sem seleção de empresa na automação, mantendo número cadastrado, carteira, janela, lease e revalidação. Não estender essa dispensa às funções fiscais ou documentos internos. `/whatsapp/conversas/:id/enviar-anexo` aceita PDF/JPEG/PNG até 5 MB, assinatura binária e MIME coerentes; saída registrada antes da rede e sem repetição automática. `iniciarAtendimento` aceita reinício explícito com ID esperado da solicitação ativa e motivo; serializa pela conversa, preserva histórico e invalida automação pendente. Vínculo com PortalClient é recusado enquanto existir solicitação comercial classificada. Os textos novos de autorização/gov.br são rascunhos da biblioteca, dependem de aprovação e dados institucionais reais. Nada cria acesso fiscal, cobrança Asaas ou envelope DocuSign por inferência. Ver `docs/comunicacao-atendimento-20260914.md`.
 
 ## Padrões
 

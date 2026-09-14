@@ -82,7 +82,7 @@ function Campo({ rotulo, valor, onChange, numero = false, ajuda }) {
   return <div><label htmlFor={id} style={{ display: "block" }}>{rotulo}</label><input id={id} style={style} inputMode={numero ? "decimal" : undefined} aria-describedby={ajuda ? `${id}-ajuda` : undefined} value={valor ?? ""} onChange={e => onChange(e.target.value)} />{ajuda && <small id={`${id}-ajuda`} style={{ display: "block" }}>{ajuda}</small>}</div>;
 }
 
-export function RecursosComerciais({ api, recursos = [], onAtualizar }) {
+export function RecursosComerciais({ api, recursos = [], onAtualizar, inicialmenteAberto = false }) {
   const [editando, setEditando] = useState(null), [erros, setErros] = useState([]), [ocupado, setOcupado] = useState(false), [aviso, setAviso] = useState("");
   const trava = useRef(false), errosRef = useRef(null);
   useEffect(() => { if (erros.length) errosRef.current?.focus(); }, [erros]);
@@ -107,7 +107,7 @@ export function RecursosComerciais({ api, recursos = [], onAtualizar }) {
     if (invalidos.length) { setEditando(abrirEditor(r)); setErros(invalidos); return; }
     executar(async () => { await api.comercial(`/recursos/${encodeURIComponent(r.id)}/aprovar`, {}); setAviso("Versão aprovada para uso no atendimento."); });
   }
-  return <details style={{ marginBlock: 14 }}>
+  return <details open={inicialmenteAberto || undefined} style={{ marginBlock: 14 }}>
     <summary>Biblioteca de mensagens, preços e modelos</summary>
     <p>Biblioteca compartilhada pelo atendimento. Salvar cria um rascunho; só as versões aprovadas ficam disponíveis para a IA e o contador. As versões anteriores são preservadas.</p>
     {erros.length > 0 && <div role="alert" tabIndex={-1} ref={errosRef}><strong>Confira antes de continuar:</strong><ul>{erros.map((e, i) => <li key={i}>{e}</li>)}</ul></div>}
@@ -125,7 +125,7 @@ export function RecursosComerciais({ api, recursos = [], onAtualizar }) {
       <label>Tipo<select style={style} value={editando.tipo} disabled={!!editando.id} onChange={e => editar({ tipo: e.target.value, chave: chavesFixas[e.target.value] || "", titulo: "", texto: "", dados: {} })}>{Object.entries(tipos).map(([k, nome]) => <option key={k} value={k}>{nome}</option>)}</select></label>
       <label>Atalho / chave<input style={style} value={editando.chave} readOnly={!!editando.id || !!chavesFixas[editando.tipo]} onChange={e => setEditando({ ...editando, chave: e.target.value })} /></label>
       {chavesFixas[editando.tipo] && <p>{editando.tipo === "CATALOGO" ? "O cálculo das propostas usa a versão aprovada mais recente de /honorarios." : "As mensagens de autorização usam os dados aprovados de /escritorio."}</p>}
-      <Campo rotulo="Título" valor={editando.titulo} onChange={v => setEditando({ ...editando, titulo: v })} />
+      <Campo rotulo="Título" valor={editando.titulo} onChange={v => setEditando({ ...editando, titulo: v })} />{editando.tipo === "ORIENTACAO" && <Campo rotulo="Descrição da mensagem rápida" valor={editando.dados.descricao || ""} onChange={v => mudarDado("descricao", v)} />}
       {editando.tipo === "CATALOGO" ? <>
         <p>Valores em reais, sem separador de milhar (ex.: 1250,50). Zero é um valor definido. Somente abertura e baixa podem ficar vazias para indicar “a confirmar”.</p>
         <label>Moeda<select style={style} value={editando.dados.moeda} onChange={e => mudarDado("moeda", e.target.value)}><option value="BRL">Real brasileiro (BRL)</option>{editando.dados.moeda !== "BRL" && <option value={editando.dados.moeda}>Moeda não aceita: {editando.dados.moeda}</option>}</select></label>

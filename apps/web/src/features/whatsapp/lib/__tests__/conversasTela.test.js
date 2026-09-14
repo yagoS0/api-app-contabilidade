@@ -21,8 +21,8 @@ describe("situacaoDoFio — o que a linha É", () => {
     expect(situacaoDoFio({ portalClientId: "pc" })).toBe(SITUACAO_FIO.COM_A_IA);
   });
   it("o rótulo distingue DESCONHECIDO de AMBIGUO, e nomeia quem assumiu", () => {
-    expect(rotuloDaSituacao({ portalClientId: null, vinculo: { motivo: "AMBIGUO" } }).texto).toMatch(/mais de uma empresa/);
-    expect(rotuloDaSituacao({ portalClientId: null, vinculo: { motivo: "DESCONHECIDO" } }).texto).toMatch(/sem cadastro/);
+    expect(rotuloDaSituacao({ portalClientId: null, vinculo: { motivo: "AMBIGUO" } }).texto).toMatch(/várias empresas/);
+    expect(rotuloDaSituacao({ portalClientId: null, vinculo: { motivo: "DESCONHECIDO" } }).texto).toMatch(/novo contato/);
     expect(rotuloDaSituacao({ portalClientId: "pc", atendidaPor: "u1", atendente: { nome: "Ana" } }).texto).toBe("assumida por Ana");
     expect(rotuloDaSituacao({ portalClientId: null }).tom).toBe("aviso");
   });

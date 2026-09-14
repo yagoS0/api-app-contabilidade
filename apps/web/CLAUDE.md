@@ -1,5 +1,9 @@
 # CLAUDE.md — Web (apps/web)
 
+## Passo a passo do lead — 14/09/2026
+
+`FluxoComercial` usa `lib/jornadaComercial` e `PassosDoLead`: seis etapas para abertura e oito para transferência/empresa parada, retomadas pelos registros do servidor. Consulta pública/SITFIS precisam de conferência explícita; etapas futuras ficam indisponíveis. Atualização a cada 10 s só lê resultados; preservar rascunhos e versão durante polling. Mudança da ficha/relatório exige nova revisão do diagnóstico. Assinatura e pagamento continuam manuais. CSS importado no entrypoint `main.jsx`; mock recusa envios/consultas externos. Ver `docs/jornada-lead-passo-a-passo.md` na raiz.
+
 ## Alinhamento das empresas e remoção da faixa da carteira — 10/09/2026
 
 A faixa “Carteira inteira” e seu estado de filtro foram removidos a pedido do usuário. Busca, filtros existentes e abas de regime continuam. Fechamento em lote exige seleção explícita e considera somente as empresas selecionadas ainda visíveis e aptas pelo servidor; confirmação e revalidação permanecem.
@@ -88,6 +92,10 @@ O frontend suporta três modos controlados por variável de ambiente:
 
 - Toda feature nova deve ter implementação em **ambos** `mockApi.js` e `realApi.js`
 - Manter contratos de resposta idênticos entre mock e real
+
+## Comunicação por pessoa e atendimento comercial — 14/09/2026
+
+`FioDaConversa` apresenta o histórico de todas as empresas da pessoa, inclusive quando aberto dentro de uma empresa; o servidor mantém o limite da carteira. Empresa da automação é contexto visível, não seletor obrigatório. Escolha de navegação fica em Abrir empresa. `OrientacoesRapidas` abre gaveta à esquerda com cards/descrição e gestão da biblioteca. Formulários geram o link público existente para a ficha da origem selecionada. `FluxoComercial` organiza análise, proposta, contrato/pagamento e biblioteca. `AnaliseDoLead` mostra retorno público e reutiliza `SitfisRelatorioTabela`. `AnexoDaConversa` permite PDF/JPEG/PNG com prévia e envio rastreado, sem retentativa automática de resultado incerto. Polling visível 2,5s/10s, paralelo e sem sobreposição. Ver `docs/comunicacao-atendimento-20260914.md` na raiz para decisões e limites.
 
 ## Padrões
 

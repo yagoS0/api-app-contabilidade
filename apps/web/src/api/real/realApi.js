@@ -1093,6 +1093,12 @@ export function createRealApi() {
     async responderConversaWhatsapp(conversaId, texto) {
       return request(`/firm/whatsapp/conversas/${conversaId}/responder`, { method: "POST", body: JSON.stringify({ texto }) });
     },
+    async enviarAnexoWhatsapp(conversaId, arquivo, legenda = "") {
+      const body = new FormData();
+      body.append("arquivo", arquivo);
+      body.append("legenda", legenda);
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/enviar-anexo`, { method: "POST", body });
+    },
     async vincularConversaWhatsapp(conversaId, body) {
       return request(`/firm/whatsapp/conversas/${conversaId}/vincular`, { method: "POST", body: JSON.stringify(body || {}) });
     },

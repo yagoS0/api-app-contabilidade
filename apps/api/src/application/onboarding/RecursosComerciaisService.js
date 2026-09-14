@@ -191,6 +191,14 @@ export function criarRecursosComerciais({
     // Catálogo de preços e modelos contratuais são configurações privadas. A biblioteca
     // pública inicia apenas orientações genéricas; importar recursos nunca os aprova.
     const iniciais = [{
+      tipo: "ORIENTACAO", chave: "assinatura-govbr", titulo: "Assinar contrato com gov.br",
+      dados: { descricao: "Ensinar a assinar o PDF e devolver o arquivo digital para conferência." },
+      texto: "Para assinar o contrato: 1. Acesse https://assinador.iti.br e entre com sua conta gov.br prata ou ouro. 2. Carregue o PDF que enviamos e confira o documento. 3. Escolha onde inserir a assinatura e confirme no próprio gov.br. 4. Baixe o arquivo assinado e envie o PDF aqui na conversa. Não imprima nem digitalize o resultado, para preservar a assinatura. Não envie sua senha ou código de acesso. Vamos conferir o arquivo recebido. Orientação oficial: https://www.gov.br/pt-br/servicos/assinatura-eletronica"
+    }, {
+      tipo: "ORIENTACAO", chave: "autorizacao-acesso", titulo: "Autorização de acesso — passo a passo",
+      dados: { descricao: "Orientar a autorização do escritório antes da consulta fiscal privada." },
+      texto: "Para analisarmos a situação fiscal do CNPJ {{cnpj}}, autorize o escritório {{escritorio}}, CNPJ {{procuradorCnpj}}: 1. Acesse o Portal de Serviços da Receita Federal com sua conta gov.br prata ou ouro e selecione a empresa que representa. 2. Abra Autorizações de Acesso e cadastre o CNPJ do escritório como pessoa autorizada. 3. Defina o prazo e os serviços combinados, incluindo Situação Fiscal do Contribuinte para esta análise. 4. Conclua e avise nesta conversa. A autorização precisa também da confirmação da pessoa autorizada; vamos conferir antes da consulta. Não compartilhe senha ou códigos. Manual do escritório: {{linkAutorizacao}}. Serviço oficial: https://www.gov.br/pt-br/servicos/cadastrar-ou-cancelar-procuracao-para-acesso-ao-e-cac"
+    }, {
       tipo: "INSTITUCIONAL",
       chave: "escritorio",
       titulo: "Dados institucionais para orientações",

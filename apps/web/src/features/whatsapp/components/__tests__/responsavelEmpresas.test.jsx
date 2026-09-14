@@ -8,33 +8,26 @@ const conversa = (id = "ca", selecionado = true) => ({ id, portalClientId: id ==
 const mensagem = (id, empresa) => ({ id, empresa, direcao: "in", tipo: "text", corpo: `Pedido ${id}`, registradaEm: "2026-09-10T12:00:00Z" });
 const apiBase = () => ({ listarConversasWhatsapp: jest.fn(async () => ({ conversas: [conversa()], temMais: false })), getMensagensWhatsapp: jest.fn(async id => ({ conversa: conversa(id), mensagens: [], temMais: false })) });
 
-test("seletor de empresa, origem dos balões e contexto de resposta são separados do filtro do histórico", () => {
-  const selecionarEmpresa = jest.fn(), filtrarHistorico = jest.fn(), assumir = jest.fn();
-  render(<FioDaConversa fio={{ conversa: conversa(), mensagens: [mensagem("m1", empresas[1]), mensagem("m2", null)] }} hook={{ selecionarEmpresa, filtrarHistorico, assumir }} />);
+test("histórico por pessoa mostra origem dos balões e empresa selecionada sem seletores", () => {
+  const assumir = jest.fn();
+  render(<FioDaConversa fio={{ conversa: conversa(), mensagens: [mensagem("m1", empresas[1]), mensagem("m2", null)] }} hook={{ assumir }} />);
   expect(screen.getByTestId("empresa-mensagem-m1")).toHaveTextContent("Empresa B");
-  expect(screen.getByTestId("empresa-mensagem-m2")).toHaveTextContent("Empresa ainda não definida");
-  expect(screen.getByText(/Resposta vinculada a Empresa A/)).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText("Empresa no histórico"), { target: { value: "b" } });
-  expect(filtrarHistorico).toHaveBeenCalledWith("b"); expect(selecionarEmpresa).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByLabelText("Empresa do atendimento"), { target: { value: "b" } });
-  expect(selecionarEmpresa).toHaveBeenCalledWith("ca", "b");
+  expect(screen.getByTestId("contexto-empresa")).toHaveTextContent("Empresa selecionada no atendimento automático: Empresa A");
+  expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Assumir" })); expect(assumir).toHaveBeenCalledWith("ca");
 });
-
-test("empresa ainda não escolhida bloqueia compositor e ações financeiras", () => {
-  render(<FioDaConversa fio={{ conversa: conversa("ca", false), mensagens: [] }} hook={{ selecionarEmpresa: jest.fn() }} slotAcoes={<button>Enviar guia</button>} />);
-  expect(screen.getByRole("textbox", { name: "Responder ao cliente" })).toBeDisabled();
+test("sem empresa escolhida o escritório responde, mas ações financeiras continuam indisponíveis", () => {
+  render(<FioDaConversa fio={{ conversa: conversa("ca", false), mensagens: [] }} hook={{}} slotAcoes={<button>Enviar guia</button>} />);
+  expect(screen.getByRole("textbox", { name: "Responder ao cliente" })).toBeEnabled();
   expect(screen.queryByRole("button", { name: "Enviar guia" })).not.toBeInTheDocument();
-  expect(screen.getByTestId("resposta-bloqueada")).toHaveTextContent("Escolha a empresa");
 });
-
-test("edição de nomes curtos envia apenas o cadastro da empresa ativa", () => {
-  const salvarApelidos = jest.fn();
-  render(<FioDaConversa fio={{ conversa: conversa(), mensagens: [] }} hook={{ salvarApelidos, selecionarEmpresa: jest.fn() }} />);
-  fireEvent.click(screen.getByText("Nomes curtos no WhatsApp"));
-  fireEvent.change(screen.getByLabelText("Nomes curtos da empresa"), { target: { value: "Azul, Clínica Azul" } });
-  fireEvent.click(screen.getByRole("button", { name: "Salvar nomes curtos" }));
-  expect(salvarApelidos).toHaveBeenCalledWith("ca", "a", ["Azul", "Clínica Azul"]);
+test("abrir empresa oferece as empresas sem trocar o contexto da automação", () => {
+  const selecionarEmpresa=jest.fn();
+  render(<FioDaConversa fio={{ conversa: conversa(), mensagens: [] }} hook={{ selecionarEmpresa }} hrefDaEmpresa={id => "/empresa/"+id} />);
+  fireEvent.click(screen.getByRole("button", { name: "Abrir a empresa →" }));
+  expect(screen.getByRole("link", { name: "Empresa A" })).toHaveAttribute("href", "/empresa/a");
+  expect(screen.getByRole("link", { name: "Empresa B" })).toHaveAttribute("href", "/empresa/b");
+  expect(selecionarEmpresa).not.toHaveBeenCalled();
 });
 
 test("selecionar empresa abre o segmento retornado pelo servidor e preserva o rascunho da empresa anterior", async () => {
@@ -49,27 +42,26 @@ test("selecionar empresa abre o segmento retornado pelo servidor e preserva o ra
   expect(result.current.rascunhosRef.current.get("ca")).toBe("Texto somente da empresa A");
 });
 
-test("filtro de histórico vai ao servidor e sair do responsável não mantém filtro de outra carteira", async () => {
+test("histórico não é filtrado por empresa mesmo com chamador legado", async () => {
   const api = apiBase();
   const { result } = renderHook(() => useConversasWhatsapp({ api }));
   await waitFor(() => expect(result.current.conversas).toHaveLength(1));
   await act(async () => { await result.current.abrir("ca"); });
   await act(async () => { await result.current.filtrarHistorico("b"); });
-  expect(api.getMensagensWhatsapp).toHaveBeenLastCalledWith("ca", { empresa: "b" });
+  expect(api.getMensagensWhatsapp).toHaveBeenLastCalledWith("ca");
   await act(async () => { await result.current.abrir("outro"); });
   expect(api.getMensagensWhatsapp).toHaveBeenLastCalledWith("outro");
   expect(result.current.empresaHistorico).toBeNull();
 });
 
-test("chat dentro da empresa fixa filtro de leitura e não oferece trocar para outra empresa", async () => {
+test("chat dentro da empresa também mostra o histórico da pessoa", async () => {
   const api = apiBase();
   const { result } = renderHook(() => useConversasWhatsapp({ api, empresa: "a" }));
   await waitFor(() => expect(result.current.conversas).toHaveLength(1));
   await act(async () => { await result.current.abrir("ca"); });
-  expect(api.getMensagensWhatsapp).toHaveBeenLastCalledWith("ca", { empresa: "a" });
+  expect(api.getMensagensWhatsapp).toHaveBeenLastCalledWith("ca");
   render(<FioDaConversa fio={{ conversa: conversa(), mensagens: [] }} hook={result.current} />);
-  expect(screen.getByLabelText("Empresa do atendimento")).toHaveTextContent("Empresa A");
-  expect(screen.getByLabelText("Empresa do atendimento")).not.toHaveTextContent("Empresa B");
+  expect(screen.queryByLabelText("Empresa do atendimento")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Empresa no histórico")).not.toBeInTheDocument();
 });
 

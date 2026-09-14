@@ -1,5 +1,7 @@
 # Atendimento comercial pelo WhatsApp
 
+Atualização de 14/09/2026: a operação e a interface seguem também [Comunicação e atendimento comercial](comunicacao-atendimento-20260914.md), com anexos manuais, mensagens rápidas à esquerda, histórico por pessoa, consulta pública visível e reinício de solicitação preservando a anterior. Asaas e DocuSign por API permanecem como integração futura.
+
 Implementação de setembro/2026. Abertura pode ser avulsa ou acompanhada de contabilidade. O interessado responde pela conversa; o formulário interno continua como cadastro estruturado e local de revisão.
 
 ## Operação

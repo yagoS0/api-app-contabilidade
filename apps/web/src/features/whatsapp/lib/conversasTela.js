@@ -100,7 +100,7 @@ export function rotuloDaSituacao(c) {
   if (s === SITUACAO_FIO.HISTORICO) return { situacao: s, texto: "Histórico anterior", tom: "neutro" };
   if (s === SITUACAO_FIO.FILA_SEM_EMPRESA) {
     const motivo = c?.vinculo?.motivo;
-    return { situacao: s, texto: motivo === "AMBIGUO" ? "número em mais de uma empresa — escolha" : "número sem cadastro — vincule", tom: "aviso" };
+    return { situacao: s, texto: motivo === "AMBIGUO" ? "contato de várias empresas" : "novo contato — atender", tom: "aviso" };
   }
   if (s === SITUACAO_FIO.ASSUMIDA) return { situacao: s, texto: `assumida por ${c.atendente?.nome || c.atendente?.email || "alguém do escritório"}`, tom: "neutro" };
   if (s === SITUACAO_FIO.FILA_DO_ESCRITORIO) return { situacao: s, texto: "o assistente chamou o escritório", tom: "aviso" };
@@ -124,7 +124,6 @@ export function rotuloDoAutor(m, { nomeDoCliente = null } = {}) {
  * @returns {{pode:boolean, motivo:string|null, situacao:string|null}}
  */
 export function estadoDaResposta(conversa) {
-  if (conversa?.atendimento && !conversa.atendimento.contextoSelecionado) return { pode: false, motivo: "Escolha a empresa deste atendimento antes de responder. O histórico continua disponível para consulta.", situacao: "ESCOLHER_EMPRESA" };
   const j = conversa?.janela;
   if (!j) return { pode: false, motivo: "Ainda não sei se a janela de 24h está aberta.", situacao: null };
   if (j.situacao === "ABERTA") return { pode: true, motivo: null, situacao: j.situacao };
