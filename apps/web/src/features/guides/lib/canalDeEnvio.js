@@ -7,8 +7,8 @@
 //
 // ── ⚠ O E-MAIL NÃO MUDA ─────────────────────────────────────────────────────────────────────────
 // "Liberar ao cliente" sempre fez duas coisas (libera ao app + e-mail) e continua fazendo. O
-// WhatsApp é um TERCEIRO passo, decidido por `PortalClient.canalPadraoEnvio`; ele nunca substitui o
-// e-mail nesta tela e nunca é tentado em silêncio: `PERGUNTAR` pergunta, `EMAIL` não tenta.
+// O cadastro de destinatários decide os canais (14/09/2026). Um número ativo participa também
+// quando a empresa ainda tem a preferência legada EMAIL. A API revalida destino e consentimento.
 //
 // ── ⚠ TRÊS RESPOSTAS PARA "POSSO TENTAR DE NOVO?" ───────────────────────────────────────────────
 // `envioPodeTentarDeNovo` vem do servidor como `true` / `false` / **`null`** (`errosMeta`): `null` é
@@ -22,12 +22,13 @@ export const CANAL = Object.freeze({ EMAIL: "EMAIL", WHATSAPP: "WHATSAPP", PERGU
  * @param {{canalPadraoEnvio?: string}} p
  * @returns {{email: true, whatsapp: boolean, perguntar: boolean}}
  */
-export function decidirCanaisAoLiberar({ canalPadraoEnvio } = {}) {
+export function decidirCanaisAoLiberar({ canalPadraoEnvio, contatos = [] } = {}) {
   const canal = String(canalPadraoEnvio || "EMAIL").toUpperCase();
+  const temNumero = contatos.some(c => c.ativo === true && Boolean(c.telefoneE164));
   return {
     email: true,
-    whatsapp: canal === CANAL.WHATSAPP,
-    perguntar: canal === CANAL.PERGUNTAR,
+    whatsapp: temNumero || canal === CANAL.WHATSAPP,
+    perguntar: !temNumero && canal === CANAL.PERGUNTAR,
   };
 }
 

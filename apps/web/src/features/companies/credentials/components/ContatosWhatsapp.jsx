@@ -18,7 +18,6 @@
 
 import { useEffect, useState } from "react";
 import {
-  CANAIS_DE_ENVIO,
   CARGA,
   FRASE_EMPRESA,
   FRASE_SITUACAO,
@@ -172,7 +171,7 @@ function LinhaContato({ contato, usuarios, salvando, onRemover, onSalvarContato,
             {pessoa.papel ? ` (${nomeDoPapel(pessoa.papel)})` : ""}
           </span>
         ) : (
-          <span>não ligado a uma pessoa do portal — o número identifica a empresa, não quem fala</span>
+          <span>não ligado a uma pessoa do portal — recebe a comunicação pelos canais cadastrados</span>
         )}
         {contato.optInOrigem && situacao === SITUACAO_CONTATO.RECEBE ? <span>origem do opt-in: {contato.optInOrigem}</span> : null}
         {antigo ? (
@@ -372,7 +371,7 @@ function FormContato({ usuarios, salvando, onSalvar, onFechar }) {
  * @param {Array}  p.usuarios  os usuários do portal desta empresa (`useAcessoPortalCliente().usuarios`)
  */
 export function ContatosWhatsapp({ whatsapp, usuarios }) {
-  const { contatos, canalPadraoEnvio, carregando, salvando, erro, salvar, salvarPermissoes, remover, definirCanal, recarregar } = whatsapp;
+  const { contatos, carregando, salvando, erro, salvar, salvarPermissoes, remover, recarregar } = whatsapp;
   const [adicionando, setAdicionando] = useState(false);
   const carga = estadoDaLista({ carregando, erro, quantidade: contatos.length });
   const situacao = situacaoDaEmpresa(contatos);
@@ -392,20 +391,8 @@ export function ContatosWhatsapp({ whatsapp, usuarios }) {
             ? "carregando…"
             : (erro && !contatos.length ? "não foi possível contar" : `${contatos.length} contato(s)`)}
         </span>
-        <label style={{ ...rotulo, marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          canal padrão das guias
-          <select
-            aria-label="Canal padrão de envio das guias"
-            style={{ ...campo, width: "auto" }}
-            value={canalPadraoEnvio}
-            onChange={(e) => definirCanal(e.target.value)}
-          >
-            {CANAIS_DE_ENVIO.map((c) => (
-              <option key={c.valor} value={c.valor} title={c.descricao}>{c.rotulo}</option>
-            ))}
-          </select>
-        </label>
       </div>
+      <p data-testid="canais-dos-destinatarios" style={{ fontSize: "0.76rem", color: "var(--text-muted)" }}>Ao liberar ou reenviar guias, usamos os e-mails e WhatsApps dos destinatários ativos. Não é necessário vincular uma conta do portal para receber.</p>
 
       {/* ⚠ A situação da EMPRESA vem antes da lista: é ela que diz por que a guia vai cair para
           e-mail no lote. Sem contato e sem opt-in são consertos diferentes. */}

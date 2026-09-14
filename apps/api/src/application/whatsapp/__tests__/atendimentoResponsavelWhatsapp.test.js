@@ -14,7 +14,7 @@ jest.mock("../WhatsappLeaseService.js", () => {
 
 import { Prisma } from "@prisma/client";
 import { responderMenuWhatsapp } from "../MenuWhatsappService.js";
-import { atenderContextoResponsavel, resolverContextoDaMensagem, carregarMensagemResolvida, conferirContextoResponsavel } from "../AtendimentoResponsavelWhatsappService.js";
+import { atenderContextoResponsavel, resolverContextoDaMensagem, carregarMensagemResolvida, conferirContextoResponsavel, selecionarEmpresaDoEscritorio } from "../AtendimentoResponsavelWhatsappService.js";
 import { adquirirLease, renovarLease, liberarLease, __limparLeases } from "../WhatsappLeaseService.js";
 
 const AGORA = new Date("2026-09-10T12:00:00.000Z");
@@ -120,6 +120,24 @@ async function fixture() {
 }
 
 beforeEach(() => { jest.useFakeTimers({ now: AGORA, doNotFake: ["nextTick", "queueMicrotask", "setImmediate"] }); jest.clearAllMocks(); __limparLeases(); });
+
+test('contador troca a empresa pelos contatos sem conceder conta do portal ou enviar mensagem', async () => {
+  const f = await fixture();
+  f.setEmpresas(EMPRESAS.slice(0, 2).map(e => ({ ...e, contatos: e.contatos.map(c => ({ ...c, userId: null, papelRbac: null, statusRbac: null })) })));
+  const { registro } = await f.novo('oi');
+  const resultado = await selecionarEmpresaDoEscritorio({ conversa: registro.conversa, portalClientId: 'lente', client: f.client, resolverVinculo: f.resolverVinculo });
+  expect(resultado.conversa.portalClientId).toBe('lente');
+  expect(resultado.atendimento.userId).toBeNull();
+  expect(f.client.rows.conversaWhatsapp.filter(c => c.portalClientId).map(c => c.portalClientId).sort()).toEqual(['klaus', 'lente']);
+  expect(f.cloud.enviarTexto).not.toHaveBeenCalled();
+  expect(f.processar).not.toHaveBeenCalled();
+});
+
+test('troca do escritório continua recusando empresa que não cadastrou o número', async () => {
+  const f = await fixture(); const { registro } = await f.novo('oi');
+  await expect(selecionarEmpresaDoEscritorio({ conversa: registro.conversa, portalClientId: 'fora', client: f.client, resolverVinculo: f.resolverVinculo })).rejects.toMatchObject({ codigo: 'EMPRESA_NAO_E_CANDIDATA' });
+  expect(f.client.rows.atendimentoResponsavelWhatsapp).toHaveLength(0);
+});
 afterEach(() => { jest.useRealTimers(); __limparLeases(); });
 
 async function fixtureComMenu(permissoesAssistente = ['GUIAS'], guias = [{ guideId: 'guia-sintetica', tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 100,00', vencimento: '20/09/2026' }]) {

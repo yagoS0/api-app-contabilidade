@@ -15,6 +15,26 @@ function apiFalso({ canal = "EMAIL", sent = true, zap = { ok: true } } = {}) {
 }
 
 describe("liberarComCanais", () => {
+  it("inclui WhatsApp cadastrado depois do e-mail mesmo com canal legado EMAIL e sem pessoa do portal", async () => {
+    const api = apiFalso();
+    api.listarContatosWhatsapp.mockResolvedValue({ canalPadraoEnvio: "EMAIL", contatos: [
+      { ativo: true, telefoneE164: "5521999990000", optInEm: "2026-09-14", userId: null },
+    ] });
+    const r = await liberarComCanais({ api, companyId: "pc-1", guideId: "g1", reenviarConfirmado: true });
+    expect(api.resendGuideEmail).toHaveBeenCalledWith("g1");
+    expect(api.enviarGuiaWhatsapp).toHaveBeenCalledWith("pc-1", "g1", { reenviar: true });
+    expect(r.whatsapp.ok).toBe(true);
+  });
+
+  it("número removido do recebimento não inicia WhatsApp pela preferência EMAIL", async () => {
+    const api = apiFalso();
+    api.listarContatosWhatsapp.mockResolvedValue({ canalPadraoEnvio: "EMAIL", contatos: [
+      { ativo: false, telefoneE164: "5521999990000" }, { ativo: true, email: "teste@example.com" },
+    ] });
+    await liberarComCanais({ api, companyId: "pc-1", guideId: "g1" });
+    expect(api.enviarGuiaWhatsapp).not.toHaveBeenCalled();
+  });
+
   it("EMAIL: libera + e-mail, e o WhatsApp NÃO é tentado", async () => {
     const api = apiFalso({ canal: "EMAIL" });
     const r = await liberarComCanais({ api, companyId: "pc-1", guideId: "g1" });
