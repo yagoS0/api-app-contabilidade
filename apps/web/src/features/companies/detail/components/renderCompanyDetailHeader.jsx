@@ -114,13 +114,7 @@ const GROUPS = [
     // ao clicar no grupo "Fiscal").
     tabs: [
       { key: "notasFiscais", label: "Notas Fiscais" },
-      // ⚠ AUDITORIA VEM ANTES DE APURAÇÃO, e a ordem é o argumento: o dono pediu uma auditoria
-      // *pré-apuração* ("entender se a nota está correta ou não, baseado na atividade e baseado na
-      // data de emissão"). Ela lê as notas que a apuração vai somar; posta depois, seria conferência
-      // do que já foi fechado. ⚠ E ela NÃO é `soApuraSimples`: as cinco perguntas são sobre a NOTA
-      // (código de serviço, data, ISS, numeração da DPS), não sobre o regime — esconder a aba do
-      // Lucro Presumido tiraria a conferência de quem também emite NFS-e.
-      { key: "auditoria", label: "Auditoria" },
+      // Auditoria é uma ação dentro de Notas, com pendências; a rota antiga continua disponível.
       // ⚠⚠ ELA DEIXOU DE SER `soApuraSimples` EM 27/08/2026, e não é afrouxamento: a aba agora
       // DESPACHA por regime (`telaDeApuracao`, em `features/apuracao-lp/lib/regimeDaAba.js`).
       // Empresa do Simples continua vendo o PGDAS-D; a do Presumido/Real vê a apuração dela; e
@@ -168,7 +162,7 @@ const GROUPS = [
 // ficha e `planoContas` por Lançamentos → Configurações. Sem esta linha o header cairia no primeiro
 // grupo (Anotações) enquanto a tela de configuração estivesse aberta — o menu apontando para um
 // lugar e a tela mostrando outro.
-const TAB_TO_GROUP = { edit: "cadastro", planoContas: "contabilidade", emissaoNfse: "fiscal" };
+const TAB_TO_GROUP = { edit: "cadastro", planoContas: "contabilidade", emissaoNfse: "fiscal", auditoria: "fiscal" };
 
 // ⚠⚠ `isSimplesCompany` SAIU DAQUI EM 27/08/2026 e virou `mostraApuracaoDoSimples`, em
 // `features/apuracao-lp/lib/regimeDaAba.js` — regra pura, com teste próprio e AMARRADA ao backend.
@@ -284,7 +278,7 @@ export function CompanySectionHeader({
             /* Cada sub-aba leva a URL da SUA rota — é o que faz o Ctrl+clique abrir aquela aba
                numa guia nova em vez de reabrir a empresa na aba de entrada. */
             items={subTabs.map((tab) => ({ ...tab, href: companyTabPath(companyId, tab.key) }))}
-            active={activeTab}
+            active={activeTab === "auditoria" ? "notasFiscais" : activeTab}
             onChange={onTabChange}
             ariaLabel={`Seções de ${activeGroup.label}`}
             pill={false}

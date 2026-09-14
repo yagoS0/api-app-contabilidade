@@ -94,7 +94,7 @@ describe("⚠⚠ colar na tela: o que tem uma leitura entra, o que tem duas é R
 });
 
 describe("⚠⚠ percentual NÃO ganhou a máscara de moeda — e o ponto virou decimal", () => {
-  const iss = () => screen.getByLabelText(/Alíquota de ISS/i);
+  const iss = () => screen.getByLabelText(/^ISS \(%\)$/i);
   const margem = () => screen.getByLabelText(/Margem/i);
 
   it("⚠ `5` continua `5`, e não vira `0,05`", () => {

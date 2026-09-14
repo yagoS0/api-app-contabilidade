@@ -17,7 +17,7 @@
 // O fluxo de calcular/fechar/transmitir/retificar reaproveita o FechamentoModal (o MESMO da tela de
 // lote), aberto por um botão — então a lógica validada não muda. A tela de lote (renderApuracaoPage)
 // virou só "selecionar as fechadas e apurar em lote".
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { rotuloEstadoApuracao, RBT12_NOME } from "../../../lib/vocabulario";
 import { PANEL, fmtDate, fmtMoney } from "../../notas/components/notasStyles";
 import { ResolverPendenciaModal } from "../components/ResolverPendenciaModal";
@@ -92,6 +92,9 @@ export function ApuracaoV2Tab({
   // O fallback local cobre a aba montada fora da página de detalhe (não há chamador assim hoje).
   const competencia = competenciaGlobal || competenciaAnterior();
   const setCompetencia = onCompetenciaChange || (() => {});
+  const contexto = `${companyId}:${competencia}`;
+  const contextoAtual = useRef(contexto);
+  contextoAtual.current = contexto;
 
   // ── Apuração (fechamento) ─────────────────────────────────────────────
   const [fechDados, setFechDados] = useState(null);
@@ -116,10 +119,13 @@ export function ApuracaoV2Tab({
         api.getFechamento?.(companyId, competencia),
         api.getApuracaoSnapshot?.(companyId, competencia).catch(() => null),
       ]);
+      if (contextoAtual.current !== contexto) return;
       setFechDados(fech?.dados || fech || null);
+      setExtrato((fech?.dados || fech)?.entregaPgdas?.extratoSalvo || null);
       setSnap(snapshot?.snapshot || snapshot || null);
       setFechErro(null);
     } catch (err) {
+      if (contextoAtual.current !== contexto) return;
       // ⚠ FALHA DE BACKEND NÃO PODE SE PARECER COM "EMPRESA SEM FATURAMENTO".
       //
       // Era `catch { setFechDados(null); }`: sem `notifyError`, sem log, sem estado de erro. Os
@@ -134,9 +140,9 @@ export function ApuracaoV2Tab({
       // eslint-disable-next-line no-console
       console.error("[apuracao-v2] falha ao carregar a apuração", { companyId, competencia, err });
     } finally {
-      setFechLoading(false);
+      if (contextoAtual.current === contexto) setFechLoading(false);
     }
-  }, [api, companyId, competencia, feedback]);
+  }, [api, companyId, competencia, contexto, feedback]);
 
   // ⚠ LER NÃO GERA. Abrir a aba mostra a FOTO SALVA (ou o vazio, com o botão) — um GET que gerasse
   // recalcularia a competência inteira a cada visita, e o relatório tem data de geração impressa.
@@ -145,31 +151,35 @@ export function ApuracaoV2Tab({
     setRelatorioLoading(true);
     try {
       const out = await api.getRelatorioFaturamento(companyId, competencia);
+      if (contextoAtual.current !== contexto) return;
       if (out?.ok === false) throw new Error(out?.message || out?.error || "Falha ao ler o relatório");
       setRelatorio(out?.relatorio || null);
       setRelatorioErro(null);
     } catch (err) {
+      if (contextoAtual.current !== contexto) return;
       setRelatorio(null);
       setRelatorioErro(err?.message || "Falha ao ler o relatório de faturamento salvo.");
     } finally {
-      setRelatorioLoading(false);
+      if (contextoAtual.current === contexto) setRelatorioLoading(false);
     }
-  }, [api, companyId, competencia]);
+  }, [api, companyId, competencia, contexto]);
 
   async function gerarRelatorio() {
     if (!api?.gerarRelatorioFaturamento) return;
     setRelatorioGerando(true);
     try {
       const out = await api.gerarRelatorioFaturamento(companyId, competencia);
+      if (contextoAtual.current !== contexto) return;
       if (out?.ok === false) throw new Error(out?.message || out?.error || "Falha ao gerar o relatório");
       setRelatorio(out?.relatorio || null);
       setRelatorioErro(null);
       feedback?.notifySuccess?.(`Relatório de faturamento de ${competencia} gerado e salvo.`);
     } catch (err) {
+      if (contextoAtual.current !== contexto) return;
       setRelatorioErro(err?.message || "Falha ao gerar o relatório de faturamento.");
       feedback?.notifyError?.(err?.message || "Falha ao gerar o relatório de faturamento.");
     } finally {
-      setRelatorioGerando(false);
+      if (contextoAtual.current === contexto) setRelatorioGerando(false);
     }
   }
 
@@ -185,12 +195,15 @@ export function ApuracaoV2Tab({
   // exatamente a lacuna que o `apps/web/CLAUDE.md` já nomeia para o JSX — só que aqui nem o build
   // salva. Quem pegaria é o ESLint com `no-undef`, ou um teste que monte o componente.
   useEffect(() => {
+    setExtrato(null); setFechDados(null); setSnap(null);
+    setExtratoLoading(false);
     carregarApuracao();
   }, [carregarApuracao]);
 
   // O relatório também alimenta a leitura de "0 pendências" (o botão de classificação e o modal) — por isso ele é
   // carregado sempre, e não só onde é desenhado.
   useEffect(() => {
+    setRelatorio(null); setRelatorioErro(null); setRelatorioGerando(false);
     carregarRelatorio();
   }, [carregarRelatorio]);
 
@@ -211,13 +224,15 @@ export function ApuracaoV2Tab({
     setExtratoLoading(true);
     try {
       const out = await api.syncPgdasCircular?.(companyId, competencia, { atualizar });
+      if (contextoAtual.current !== contexto) return;
+      if (out?.ok === false) throw new Error(out?.message || "Falha ao buscar extrato.");
       const r = out?.result || out;
       setExtrato(r || null);
-      if (out?.ok === false) feedback?.notifyError?.(out?.message || "Falha ao buscar extrato.");
     } catch (err) {
+      if (contextoAtual.current !== contexto) return;
       feedback?.notifyError?.(err?.message || "Falha ao buscar extrato do Simples.");
     } finally {
-      setExtratoLoading(false);
+      if (contextoAtual.current === contexto) setExtratoLoading(false);
     }
   }
 
@@ -445,6 +460,8 @@ export function ApuracaoV2Tab({
               `imprimivel={!fechando}`: só pode existir UM `data-print-area` por página, e com o
               modal aberto quem imprime é o de dentro dele. */}
           <RelatorioFaturamentoPanel
+            apuracaoAtual={snap}
+            extratoSalvo={extrato}
             relatorio={relatorio}
             loading={relatorioLoading}
             gerando={relatorioGerando}
@@ -457,9 +474,10 @@ export function ApuracaoV2Tab({
           <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <strong style={{ fontSize: "0.9rem" }}>Extrato do Simples Nacional</strong>
-              <Button variant="secondary" onClick={() => buscarExtrato()} disabled={extratoLoading}>
+              {!extDados && <Button variant="secondary" onClick={() => buscarExtrato()} disabled={extratoLoading || fechLoading}>
                 {extratoLoading ? "Buscando…" : "Buscar extrato"}
-              </Button>
+              </Button>}
+              {extDados && <span style={{ color: PANEL.muted, fontSize: "0.78rem" }}>Extrato salvo{extrato?.consultadoEm ? ` · ${fmtDate(extrato.consultadoEm)}` : ""}</span>}
               <Button variant="secondary" onClick={() => buscarExtrato(true)} disabled={extratoLoading} title="Faz nova consulta paga para atualizar a declaração salva.">Atualizar na Receita</Button>
             </div>
             {extDados && (
@@ -519,7 +537,7 @@ export function ApuracaoV2Tab({
           competencia={competencia}
           retificar={fechando.retificar === true}
           onClose={() => setFechando(null)}
-          onChanged={() => carregarApuracao()}
+           onChanged={async (mudanca) => { await carregarApuracao(); if (mudanca?.relatorioGerado) await carregarRelatorio(); else await gerarRelatorio(); }}
         />
       )}
 

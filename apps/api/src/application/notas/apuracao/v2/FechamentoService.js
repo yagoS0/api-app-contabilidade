@@ -399,7 +399,8 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
     where: { portalClientId_competencia: { portalClientId, competencia } },
     select: {
       semFaturamento: true, semFaturamentoEm: true, semFaturamentoConferencia: true,
-      pgdasNumeroDeclaracao: true, pgdasDeclaracaoFileId: true,
+      pgdasNumeroDeclaracao: true, pgdasDeclaracaoFileId: true, pgdasReciboFileId: true,
+      receitaBruta: true, dasTotal: true,
       serproSyncStatus: true, serproLastSyncAt: true,
     },
   }).catch(() => null);
@@ -491,6 +492,13 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
     // da tela, numa cópia só. Combinar aqui TAMBÉM daria duas leituras da mesma pergunta — o
     // defeito que mais reapareceu neste projeto.
     entregaPgdas: {
+      extratoSalvo: circularDoMes?.pgdasNumeroDeclaracao || circularDoMes?.pgdasDeclaracaoFileId
+        ? {
+          dados: { receitaBruta: circularDoMes.receitaBruta, dasTotal: circularDoMes.dasTotal,
+            numeroDeclaracao: circularDoMes.pgdasNumeroDeclaracao },
+          files: { declaracaoFileId: circularDoMes.pgdasDeclaracaoFileId, reciboFileId: circularDoMes.pgdasReciboFileId },
+          consultadoEm: circularDoMes.serproLastSyncAt,
+        } : null,
       // A RFB confirmando que a declaração existe (extrato do PGDAS-D). É PROVA, e não é nossa.
       //
       // ⚠ A ÂNCORA É A COLUNA, NUNCA O PDF. O `metadata` guarda declaração/recibo/autenticação em

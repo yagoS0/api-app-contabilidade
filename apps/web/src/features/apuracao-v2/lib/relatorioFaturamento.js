@@ -147,7 +147,7 @@ export function procedenciaDoDas(preApurado) {
     nosso,
     oficial: {
       valor: null,
-      rotulo: "Nenhum valor oficial gravado para esta competência",
+      rotulo: "Nenhum valor oficial gravado neste relatório",
       disponivel: false,
       ambiguo: false,
       aviso: null,
@@ -237,7 +237,7 @@ export function recusaDoPreApurado(preApurado) {
     tom: erroDeCalculo ? TOM.danger : (semAcao ? TOM.neutral : TOM.warn),
     titulo: erroDeCalculo
       ? "O cálculo do portal não chegou a rodar"
-      : "O portal não calculou o DAS desta competência",
+      : "Cálculo local de conferência indisponível",
     detalhe,
     buraco,
     comoResolver: p.comoResolver || null,

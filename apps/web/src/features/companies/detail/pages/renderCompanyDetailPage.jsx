@@ -868,6 +868,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
                    (aqui, `legacyCompany`) — nunca o `inscricaoMunicipal` do topo do payload, que é
                    do `PortalClient` e pode estar preenchido enquanto a coluna da `Company` não
                    está. Ler do lugar errado faria a tela liberar uma emissão que o servidor recusa. */
+                inscricaoEstadual={selectedCompany?.legacyCompany?.inscricaoEstadual}
                 cadastroEmissao={{
                   cnpj: selectedCompany?.legacyCompany?.cnpj || selectedCompany?.cnpj || null,
                   inscricaoMunicipal: selectedCompany?.legacyCompany?.inscricaoMunicipal || null,
@@ -918,6 +919,8 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
                    nova guia, de graça, porque é um `<a href>` de verdade. */
                 hrefConfiguracaoEmissao={companyId ? companyTabPath(companyId, "emissaoNfse") : null}
                 onAbrirConfiguracaoEmissao={() => switchTab("emissaoNfse")}
+                hrefAuditoria={companyId ? companyTabPath(companyId, "auditoria") : null}
+                onAbrirAuditoria={() => switchTab("auditoria")}
               />
             </Suspense>
           </ErrorBoundary>
@@ -1143,6 +1146,10 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
         largura="leitura"
         suspense
       >
+        <a className="btn btn-secondary btn-sm" href={companyTabPath(companyId, "notasFiscais")} onClick={(e) => {
+          if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button !== 0) return;
+          e.preventDefault(); switchTab("notasFiscais");
+        }} style={{ marginBottom: 16 }}>← Voltar às notas</a>
         <AuditoriaTab companyId={companyId} competencia={circularPanel?.competencia} />
       </CompanyTabLayout>
     );
