@@ -44,6 +44,11 @@ const mensagens = [
   { id: "outro-responsavel", conversaId: "outra", contexto: { atendimentoId: "outro", conversaId: "c-a", portalClientId: "a" } },
 ];
 
+test("texto livre para a pessoa não recebe a empresa do segmento de armazenamento", () => {
+  expect(empresaDaMensagem({ conversaId: "c-a", referenciaComercial: { escopo: "PESSOA" } }, { segmentos })).toBeNull();
+  expect(empresaDaMensagem({ conversaId: "c-a" }, { segmentos })).toEqual(segmentos[0].portalClient);
+});
+
 test("carteira parcial não revela nome, ID ou contagem das empresas de fora", async () => {
   const grupo = await grupoNoEscopo({ conversa: segmentos[0], visiveis: ["a"], client: client() });
   const resumo = resumoDoGrupo(grupo, segmentos[0]);

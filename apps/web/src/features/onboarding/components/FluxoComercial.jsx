@@ -3,6 +3,7 @@ import { Button } from "../../../components/ui/Button";
 import { CampoOnboarding } from "./CampoOnboarding";
 import { camposDaOrigem } from "../lib/onboardingSpec";
 import { RecursosComerciais } from "./RecursosComerciais";
+import { AnaliseDoLead } from "./AnaliseDoLead";
 export const campoComercial = {
   width: "100%",
   padding: 8,
@@ -34,7 +35,7 @@ export function OpcoesProposta({
 }
 export function FluxoComercial({
   api,
-  onboardingId
+  onboardingId, conversaId = null
 }) {
   const [estado, setEstado] = useState(null),
     [recursos, setRecursos] = useState([]),
@@ -52,6 +53,7 @@ export function FluxoComercial({
     [documentoId, setDocumentoId] = useState("");
   const [campoEdicao, setCampoEdicao] = useState(""),
     [valorCampo, setValorCampo] = useState("");
+  const [aba, setAba] = useState("analise"), [linkPagamento, setLinkPagamento] = useState("");
   const trava = useRef(false);
   const base = `/onboardings/${encodeURIComponent(onboardingId)}`;
   async function carregar() {
@@ -82,6 +84,8 @@ export function FluxoComercial({
   const modelos = recursos.filter(r => r.tipo === "CONTRATO" && r.aprovadoEm);
   const modelo = modelos.find(r => r.id === modeloId);
   const marcadores = [...new Set([...(modelo?.texto || "").matchAll(/\{\{(\w+)\}\}/g)].map(m => m[1]))].filter(k => !["servico", "honorarios", "condicoes"].includes(k));
+  const dadosFicha = estado?.onboarding?.dados || {};
+  const varsCadastro = { nome: estado?.onboarding?.responsavelNome || dadosFicha.responsavelNome || "", cnpj: estado?.onboarding?.cnpj || "", contratante: estado?.onboarding?.razaoSocial || dadosFicha.razaoSocial || "", email: estado?.onboarding?.responsavelEmail || dadosFicha.responsavelEmail || "", cpf: dadosFicha.responsavelCpf || "", endereco: dadosFicha.endereco || dadosFicha.enderecoPretendido || "" };
   const campos = estado ? camposDaOrigem(estado.onboarding.origem) : [];
   const descritor = campos.find(d => d.campo === campoEdicao);
   return <section aria-label="Propostas e contratação" style={{
@@ -90,15 +94,18 @@ export function FluxoComercial({
     borderRadius: 8,
     marginBlock: 16
   }}>
-    <h3>Propostas e contratação</h3><p>Revise os dados coletados na conversa, confira o escopo e aprove a proposta. O aceite prepara o contrato; a assinatura é conferida separadamente.</p>
+    <h3>Atendimento do lead</h3><p>Análise → proposta comercial → contrato e assinatura → pagamento.</p>
+    <div className="wa-commercial-tabs" role="group" aria-label="Etapas do atendimento">{[["analise", "Análise e cadastro"], ["proposta", "Proposta comercial"], ["contrato", "Contrato e pagamento"], ["biblioteca", "Biblioteca compartilhada"]].map(([key, title]) => <Button key={key} type="button" variant={aba === key ? "primary" : "secondary"} aria-pressed={aba === key} onClick={() => setAba(key)}>{title}</Button>)}</div>
     {erro && <p role="alert">{erro}</p>}
     <Button variant="secondary" disabled={ocupado} onClick={() => executar(async () => {})}>Atualizar atendimento</Button>
-    <RecursosComerciais api={api} recursos={recursos} onAtualizar={carregar} />
+    {aba === "biblioteca" && <RecursosComerciais api={api} recursos={recursos} onAtualizar={carregar} inicialmenteAberto />}
     {estado && <fieldset disabled={ocupado} style={{
       border: 0,
       padding: 0
     }}>
       <p><strong>{estado.onboarding.responsavelNome || "Nome a confirmar"}</strong> · {estado.onboarding.origem} · {estado.onboarding.status}</p>
+      <div hidden={aba !== "analise"}>
+      <AnaliseDoLead key={onboardingId} api={api} onboarding={estado.onboarding} onAtualizar={carregar} conversaId={conversaId} />
       <details><summary>Conferir dados coletados na conversa</summary><dl>{Object.entries(estado.onboarding.dados || {}).map(([k, v]) => <div key={k}><dt>{campos.find(c => c.campo === k)?.rotulo || k}</dt><dd>{typeof v === "boolean" ? v ? "Sim" : "Não" : typeof v === "object" ? JSON.stringify(v) : String(v)} · {estado.onboarding.fontesDados?.[k]?.conferido ? "Conferido pelo escritório" : "A conferir"}</dd></div>)}</dl>
         <label>Corrigir campo<select style={campoComercial} value={campoEdicao} onChange={e => {
             setCampoEdicao(e.target.value);
@@ -125,7 +132,8 @@ export function FluxoComercial({
           })}>Verificar procuração</Button><Button variant="secondary" onClick={() => acao("/consultas", {
             tipo: "SITFIS"
           })}>Solicitar SITFIS</Button></div>{estado.trabalhos.map(t => <p key={t.id}>{t.tipo} · {t.status} · {t.resultado?.mensagem}</p>)}</details>}
-      <details><summary>Preparar uma nova proposta</summary><p>A mensalidade é calculada pelo catálogo aprovado. Preencha abaixo somente valores conferidos ou ajustes necessários.</p>{[["aberturaCentavos", "Abertura"], ["servicoCentavos", "Outro serviço avulso"], ["mensalCentavos", "Mensalidade personalizada"], ["regularizacaoCentavos", "Regularização"], ["taxasCentavos", "Taxas públicas"]].map(([k, nome]) => <label key={k}>{nome} (R$)<input style={campoComercial} inputMode="decimal" value={ajustes[k] || ""} onChange={e => setAjustes({
+      </div><div hidden={aba !== "proposta"}>
+      <details open><summary>Preparar uma nova proposta</summary><p>A mensalidade é calculada pelo catálogo aprovado. Preencha abaixo somente valores conferidos ou ajustes necessários.</p>{[["aberturaCentavos", "Abertura"], ["servicoCentavos", "Outro serviço avulso"], ["mensalCentavos", "Mensalidade personalizada"], ["regularizacaoCentavos", "Regularização"], ["taxasCentavos", "Taxas públicas"]].map(([k, nome]) => <label key={k}>{nome} (R$)<input style={campoComercial} inputMode="decimal" value={ajustes[k] || ""} onChange={e => setAjustes({
             ...ajustes,
             [k]: e.target.value
           })} /></label>)}<label>Fonte, escopo e justificativa dos ajustes<textarea style={campoComercial} value={justificativa} onChange={e => setJustificativa(e.target.value)} /></label><Button onClick={() => executar(async () => {
@@ -154,18 +162,17 @@ export function FluxoComercial({
         }}>{p.status === "APROVADA" && estado.atendimento && <Button onClick={() => acao(`/propostas/${p.id}/enviar`)}>Assumir e enviar proposta no WhatsApp</Button>}{p.status === "RASCUNHO" && <Button onClick={() => acao(`/propostas/${p.id}/aprovar`)}>Aprovar esta versão</Button>}{["APROVADA", "ENVIADA"].includes(p.status) && <Button onClick={() => executar(async () => {
             const r = await api.comercial(base + `/propostas/${p.id}/link`, {});
             setLink(`${window.location.origin}/proposta/publica#token=${encodeURIComponent(r.token)}`);
-          })}>Gerar link da proposta</Button>}{p.status === "ACEITA" && <Button disabled={!modeloId} onClick={() => acao(`/propostas/${p.id}/contrato`, {
-            modeloId,
-            variaveis: vars
-          })}>Gerar contrato da opção aceita</Button>}</div>}</article>)}
+          })}>Gerar link da proposta</Button>}{p.status === "ACEITA" && <Button onClick={() => setAba("contrato")}>Preparar contrato da opção aceita</Button>}</div>}</article>)}
       {link && <label>Link pessoal da proposta — envie pela conversa<input style={campoComercial} value={link} readOnly onFocus={e => e.target.select()} /></label>}
-      <details><summary>Contrato e assinatura</summary><label>Modelo aprovado<select style={campoComercial} value={modeloId} onChange={e => {
+      </div><div hidden={aba !== "contrato"}>
+      <details open><summary>Contrato e assinatura</summary><label>Modelo aprovado<select style={campoComercial} value={modeloId} onChange={e => {
             setModeloId(e.target.value);
             setVars({});
-          }}><option value="">Selecione o modelo</option>{modelos.map(m => <option key={m.id} value={m.id}>{m.titulo} · v{m.versao}</option>)}</select></label>{marcadores.map(k => <label key={k}>{k}<input style={campoComercial} value={vars[k] ?? ""} onChange={e => setVars({
+          }}><option value="">Selecione o modelo</option>{modelos.map(m => <option key={m.id} value={m.id}>{m.titulo} · v{m.versao}</option>)}</select></label>{marcadores.map(k => <label key={k}>{k}<input style={campoComercial} value={vars[k] ?? varsCadastro[k] ?? ""} onChange={e => setVars({
             ...vars,
             [k]: e.target.value
           })} /></label>)}
+        {estado.propostas.filter(p => p.status === "ACEITA" && !p.revogadaEm && !estado.contratos.some(c => c.propostaId === p.id)).map(p => <p key={p.id}><Button disabled={!modeloId} onClick={() => acao(`/propostas/${p.id}/contrato`, { modeloId, variaveis: { ...varsCadastro, ...vars } })}>Gerar contrato da opção aceita</Button></p>)}
         {estado.contratos.map(c => <article key={c.id}><strong>Contrato · {c.status}</strong><pre style={{
             whiteSpace: "pre-wrap",
             font: "inherit",
@@ -178,7 +185,7 @@ export function FluxoComercial({
             a.download = "contrato-altan.pdf";
             a.click();
             setTimeout(() => URL.revokeObjectURL(url), 10000);
-          })}>Baixar contrato em PDF</Button>{c.status === "MINUTA" && <Button onClick={() => acao(`/contratos/${c.id}/aprovar`)}>Conferi a minuta: liberar para assinatura</Button>}{c.status === "AGUARDANDO_ASSINATURA" && <Button disabled={!documentoId} onClick={() => acao(`/contratos/${c.id}/assinatura`, {
+          })}>Baixar contrato em PDF</Button>{conversaId && c.status !== "MINUTA" && api.enviarAnexoWhatsapp && <Button onClick={() => executar(async () => { const pdf = await api.baixarContratoComercial(onboardingId, c.id); await api.enviarAnexoWhatsapp(conversaId, new File([pdf], "contrato-altan.pdf", { type: "application/pdf" }), "Contrato de prestação de serviços para assinatura"); })}>Enviar contrato no WhatsApp</Button>}{c.status === "MINUTA" && <Button onClick={() => acao(`/contratos/${c.id}/aprovar`)}>Conferi a minuta: liberar para assinatura</Button>}{c.status === "AGUARDANDO_ASSINATURA" && <Button disabled={!documentoId} onClick={() => acao(`/contratos/${c.id}/assinatura`, {
             documentoId
           })}>Conferi as assinaturas no PDF selecionado</Button>}</article>)}
         <label>Anexar contrato assinado ou documento (PDF, até 5 MB)<input style={campoComercial} type="file" accept="application/pdf" onChange={e => {
@@ -198,7 +205,7 @@ export function FluxoComercial({
       <details><summary>Conferências do serviço</summary><label>Conferência<select style={campoComercial} value={marco} onChange={e => setMarco(e.target.value)}><option value="DOCUMENTACAO_CONFERIDA">Documentação conferida</option><option value="PAGAMENTO_HONORARIOS_CONFERIDO">Pagamento de honorários conferido</option><option value="ANALISE_REVISADA">Análise revisada pelo contador</option></select></label><label>Evidência da conferência<textarea style={campoComercial} value={evidenciaMarco} onChange={e => setEvidenciaMarco(e.target.value)} /></label><Button onClick={() => acao("/marcos", {
           tipo: marco,
           evidencia: evidenciaMarco
-        })}>Registrar conferência</Button><p>O registro do pagamento depende da conferência do comprovante pelo escritório.</p>{estado.marcos?.map(m => <p key={m.id}>{{
+        })}>Registrar conferência</Button><p>Crie a cobrança no Asaas e use o link da fatura nesta conversa. A criação e conciliação por API serão integradas em uma próxima etapa.</p><a href="https://www.asaas.com" target="_blank" rel="noreferrer">Abrir Asaas</a><label>Link da cobrança Asaas<input type="url" style={campoComercial} value={linkPagamento} onChange={e => setLinkPagamento(e.target.value)} /></label>{conversaId && <Button disabled={!linkPagamento} onClick={() => executar(async () => { const u = new URL(linkPagamento); if (u.protocol !== "https:" || !(u.hostname === "asaas.com" || u.hostname.endsWith(".asaas.com"))) throw new Error("Informe o link HTTPS da cobrança emitida no Asaas."); await api.enviarOrientacaoWhatsapp(conversaId, { texto: `Segue o link para pagamento dos serviços contratados: ${u.href}`, assumir: true }); })}>Enviar link de pagamento no WhatsApp</Button>}<p>O registro do pagamento depende da conferência do comprovante pelo escritório.</p>{estado.marcos?.map(m => <p key={m.id}>{{
             DOCUMENTACACAO_CONFERIDA: "Documentação",
             DOCUMENTACAO_CONFERIDA: "Documentação",
             PAGAMENTO_HONORARIOS_CONFERIDO: "Pagamento de honorários",
@@ -207,6 +214,7 @@ export function FluxoComercial({
       <details><summary>Concluir serviço avulso</summary><label>Entrega realizada<textarea style={campoComercial} value={entrega} onChange={e => setEntrega(e.target.value)} /></label><Button onClick={() => acao("/concluir-avulso", {
           evidencia: entrega
         })}>Registrar conclusão do serviço avulso</Button></details>
+      </div>
     </fieldset>}
   </section>;
 }

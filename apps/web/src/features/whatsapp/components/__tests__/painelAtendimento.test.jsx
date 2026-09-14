@@ -3,7 +3,7 @@ import { PainelAtendimento } from "../PainelAtendimento";
 
 test("fechar por Escape preserva o preenchimento e devolve o foco", () => {
   render(<PainelAtendimento><label>Contato<input /></label></PainelAtendimento>);
-  const abrir = screen.getByRole("button", { name: "Atendimento e cadastro" });
+  const abrir = screen.getByRole("button", { name: "Abrir atendimento" });
   expect(screen.getByLabelText("Contato")).not.toBeVisible();
   fireEvent.click(abrir);
   expect(screen.getByRole("button", { name: "Fechar atendimento e cadastro" })).toHaveFocus();

@@ -4,7 +4,7 @@ import { Button } from "../../../components/ui/Button";
 import { dadosDoInteressado, fraseDoOnboarding, onboardingDaConversa } from "../lib/onboardingDaConversa";
 
 const ORIGENS = [{ id: "ABERTURA", nome: "Abertura" }, { id: "TRANSFERENCIA", nome: "Transferência" }, { id: "INATIVA", nome: "Empresa inativa" }];
-export function FormOnboarding({ api, conversa, mensagens = [], leitura, onCriado }) {
+export function FormOnboarding({ api, conversa, mensagens = [], leitura, onCriado, slotEmpresa = null }) {
   const [origem, setOrigem] = useState(null);
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState(null);
@@ -59,7 +59,7 @@ export function FormOnboarding({ api, conversa, mensagens = [], leitura, onCriad
     } catch (err) { setErro(err?.message || "Não foi possível criar o onboarding."); }
     finally { emCurso.current = false; setOcupado(false); }
   }
-  if (api.comercial && !conversa.portalClientId) return <AtendimentoComercial api={api} conversa={conversa} onCriado={onCriado} candidatos={leitura?.candidatos || []} />;
+  if (api.comercial && !conversa.portalClientId) return <AtendimentoComercial api={api} conversa={conversa} onCriado={onCriado} candidatos={leitura?.candidatos || []} slotEmpresa={slotEmpresa} />;
   if (!dados) return null;
   const frase = fraseDoOnboarding(atual);
   return <section data-testid="form-onboarding" style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12, marginBottom: 12 }}>
@@ -79,5 +79,6 @@ export function FormOnboarding({ api, conversa, mensagens = [], leitura, onCriad
       {motivo ? <p role="status">{motivo}</p> : null}
       {erro ? <p role="alert">{erro}{registro.current ? <> <a href={`/onboardings/${encodeURIComponent(registro.current.id)}/editar`}>Abrir o rascunho criado</a></> : null}</p> : null}
     </>}
+    {!criado && slotEmpresa}
   </section>;
 }

@@ -184,5 +184,14 @@ try {
   assert.equal((await propostas.painel(manual.id, user)).atendimento.id, ligado.id); ok("Vínculo manual reaproveita ficha existente sem substituir outro atendimento");
   await propostas.registrarMarco(manual.id, user, "DOCUMENTACAO_CONFERIDA", "Documentação sintética conferida no teste");
   assert.equal((await propostas.painel(manual.id, user)).marcos[0].tipo, "DOCUMENTACAO_CONFERIDA"); ok("Conferências independentes aparecem no painel e no histórico");
+  const fichaPreservada = await db.onboarding.findUnique({ where: { id: manual.id } });
+  const reinicios = await Promise.allSettled([1, 2].map(() => iniciarAtendimento({ conversaId: c3.id, origem: "TRANSFERENCIA", reiniciarAtendimentoId: ligado.id, motivoReinicio: "CORRIGIR_MOTIVO", atorId: user.id, client: db })));
+  assert.equal(reinicios.filter(x => x.status === "fulfilled").length, 1);
+  assert.equal(reinicios.find(x => x.status === "rejected").reason.code, "atendimento_alterado");
+  assert.equal(await db.atendimentoLead.count({ where: { conversaId: c3.id, encerradoEm: null } }), 1);
+  assert.ok((await db.atendimentoLead.findUnique({ where: { id: ligado.id } })).encerradoEm);
+  assert.deepEqual(await db.onboarding.findUnique({ where: { id: manual.id } }), fichaPreservada);
+  assert.equal(await db.onboardingEvento.count({ where: { onboardingId: manual.id, tipo: "ATENDIMENTO_REINICIADO" } }), 1);
+  ok("Reinícios concorrentes criam uma única nova solicitação, preservam a ficha anterior e rejeitam a aba desatualizada");
   process.stdout.write(JSON.stringify({ passed: checks.length, checks }, null, 2));
 } finally { await db.$disconnect(); }

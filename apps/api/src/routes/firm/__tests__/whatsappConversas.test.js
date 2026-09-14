@@ -72,6 +72,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
       }),
     },
     mensagemWhatsapp: { create: jest.fn(async ({data}) => { const m={id:`out${mockSaidas.length+1}`,...data}; mockSaidas.push(m); return m; }), update: jest.fn(async ({where,data}) => Object.assign(mockSaidas.find(m=>m.id===where.id),data)), updateMany: jest.fn(async()=>({count:1})), findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
+    atendimentoLead: { findFirst: jest.fn(async () => null) },
     atendimentoResponsavelWhatsapp: { findUnique: jest.fn(async () => mockAtendimento ? { ...mockAtendimento } : null) },
     // ⚠ O nome do CADASTRO passou a viajar no payload (06/09/2026): a linha da lista precisa dizer
     // QUEM está falando, não só de qual empresa. Ver `resumoDaConversa`.
@@ -149,6 +150,7 @@ import { alterarAtendimentoHumano, selecionarEmpresaDoEscritorio } from "../../.
 const cloud = {
   enviarTexto: jest.fn(async () => ({ wamid: "wamid.h" })),
   enviarDocumento: jest.fn(async () => ({ wamid: "wamid.doc" })),
+  enviarImagem: jest.fn(async () => ({ wamid: "wamid.img" })),
 };
 
 function montarApp(user = { id: "u-contador", role: "contador", accountType: "FIRM" }) {
@@ -160,6 +162,8 @@ function montarApp(user = { id: "u-contador", role: "contador", accountType: "FI
 }
 
 beforeEach(() => {
+  cloud.enviarDocumento.mockClear(); cloud.enviarImagem.mockClear();
+  prisma.atendimentoLead.findFirst.mockReset().mockResolvedValue(null);
   cloud.enviarTexto.mockClear();
   mockSaidas.length=0;
   prisma.mensagemWhatsapp.create.mockClear();
@@ -168,6 +172,32 @@ beforeEach(() => {
   salvarContato.mockClear();
   mockCenario.janela = { situacao: "ABERTA", permite: "TEXTO_LIVRE", expiraEm: null, avisos: [] };
   Object.assign(mockConversas.get("cv1"), { atendidaPor: null, atendidaDesde: null, lidaAteEm: null });
+});
+
+describe("anexo manual para pessoa ou lead", () => {
+  const pdf = Buffer.from("%PDF-1.7\nTeste offline\n%%EOF");
+  it("envia PDF ao telefone do lead e registra a saída antes do transporte", async () => {
+    cloud.enviarDocumento.mockImplementationOnce(async () => { expect(mockSaidas.at(-1).statusEnvio).toBe("enviando"); return { wamid: "pdf.offline" }; });
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv3/enviar-anexo").field("legenda", "Contrato para assinatura").attach("arquivo", pdf, { filename: "contrato.pdf", contentType: "application/pdf" });
+    expect(r.status).toBe(200); expect(r.body.mensagem.statusEnvio).toBe("enviado");
+    expect(cloud.enviarDocumento).toHaveBeenCalledWith(expect.objectContaining({ telefone: FIO_NA_FILA.telefoneE164, nomeArquivo: "contrato.pdf", conteudo: pdf }));
+  });
+  it("envia PNG como imagem e não como documento", async () => {
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv3/enviar-anexo").attach("arquivo", Buffer.from([137,80,78,71,13,10,26,10]), { filename: "teste.png", contentType: "image/png" });
+    expect(r.status).toBe(200); expect(cloud.enviarImagem).toHaveBeenCalledTimes(1); expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("recusa janela expirada, carteira alheia e arquivo falso sem transporte", async () => {
+    mockCenario.janela = { situacao: "EXPIRADA" };
+    expect((await request(montarApp()).post("/firm/whatsapp/conversas/cv3/enviar-anexo").attach("arquivo", pdf, "teste.pdf")).status).toBe(409);
+    expect((await request(montarApp()).post("/firm/whatsapp/conversas/cv2/enviar-anexo").attach("arquivo", pdf, "teste.pdf")).status).toBe(404);
+    expect((await request(montarApp()).post("/firm/whatsapp/conversas/cv3/enviar-anexo").attach("arquivo", Buffer.from("falso"), "teste.pdf")).status).toBe(400);
+    expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+  it("lead classificado não é vinculado a empresa existente", async () => {
+    prisma.atendimentoLead.findFirst.mockResolvedValueOnce({ id: "lead", onboardingId: "ficha" });
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv3/vincular").send({ portalClientId: "pc-1", contato: { nome: "Contato" } });
+    expect(r.status).toBe(409); expect(r.body.error).toBe("LEAD_EM_ATENDIMENTO"); expect(salvarContato).not.toHaveBeenCalled();
+  });
 });
 
 describe("responsável com várias empresas", () => {
@@ -221,7 +251,7 @@ describe("responsável com várias empresas", () => {
     expect((await request(app).post("/firm/whatsapp/conversas/cv1/devolver")).status).toBe(200);
     expect(mockConversas.get("cv2").atendidaPor).toBeNull();
   });
-  it.each(["responder", "enviar-documento"])("aba de empresa anterior recusa %s antes de consultar/enviar", async (acao) => {
+  it.each(["enviar-documento"])("aba de empresa anterior recusa %s antes de consultar/enviar", async (acao) => {
     Object.assign(mockAtendimento, { conversaId: "cv2", portalClientId: "pc-9", versao: 3 });
     const r = await request(montarApp()).post(`/firm/whatsapp/conversas/cv1/${acao}`).send({ texto: "oi", documentId: "doc-1" });
     expect(r.status).toBe(409); expect(r.body.error).toBe("CONTEXTO_ALTERADO");
@@ -258,10 +288,10 @@ describe("responsável com várias empresas", () => {
     const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "Olá" });
     expect(r.status).toBe(409); expect(r.body.error).toBe("FIO_OCUPADO"); expect(cloud.enviarTexto).not.toHaveBeenCalled();
   });
-  it("expiração exige seleção novamente também no envio manual", async () => {
+  it("expiração da seleção não impede responder à pessoa", async () => {
     mockAtendimento.expiraEm = new Date(0);
     const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "Olá" });
-    expect(r.status).toBe(409); expect(r.body.error).toBe("CONTEXTO_ALTERADO"); expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    expect(r.status).toBe(200); expect(cloud.enviarTexto).toHaveBeenCalledWith({ telefone: FIO_DA_CARTEIRA.telefoneE164, texto: "Olá" });
   });
   it("filtrar histórico não oferece empresa fora da carteira", async () => {
     const r = await request(montarApp()).get("/firm/whatsapp/conversas/cv1/mensagens?empresa=pc-9");

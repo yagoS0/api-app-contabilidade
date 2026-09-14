@@ -5,6 +5,7 @@ export function criarMockComercial({
 }) {
   const recursos = [],
     atendimentos = new Map(),
+    historicoAtendimentos = [],
     propostas = new Map(),
     contratos = new Map(),
     links = new Map(),
@@ -109,6 +110,11 @@ export function criarMockComercial({
       m = /^\/conversas\/([^/]+)(\/iniciar)?$/.exec(path);
       if (m) {
         let a = atendimentos.get(m[1]);
+        if (body?.reiniciarAtendimentoId) {
+          if (a?.id !== body.reiniciarAtendimentoId) throw Error("O atendimento mudou. Recarregue.");
+          historicoAtendimentos.push({ ...a, encerradoEm: agora(), onboarding: a.onboardingId ? ficha(a.onboardingId) : null });
+          a = null;
+        }
         if (body && !a) {
           a = {
             id: uid(),
@@ -142,6 +148,7 @@ export function criarMockComercial({
         }
         return {
           ok: true,
+          anteriores: historicoAtendimentos.filter(x => x.conversaId === m[1]),
           atendimento: a ? {
             ...a,
             onboarding: a.onboardingId ? ficha(a.onboardingId) : null

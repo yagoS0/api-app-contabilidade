@@ -41,16 +41,16 @@ test("resumo falho apaga selo antigo, pausa oculta e retoma ao voltar", async ()
   expect(api.getResumoWhatsapp).toHaveBeenCalledTimes(3); expect(result.current.selo).toBe(3);
   unmount(); await act(async () => { jest.advanceTimersByTime(90000); });
 });
-test("fio atualiza em 8s, lista ociosa em 30s, e não consulta escondida", async () => {
+test("fio atualiza em 2,5s, lista em 10s, e não consulta escondida", async () => {
   const api = { listarConversasWhatsapp: jest.fn().mockResolvedValue({ conversas: [] }), getMensagensWhatsapp: jest.fn(async id => ({ conversa: { id }, mensagens: [] })) };
   const { result, unmount } = renderHook(() => useConversasWhatsapp({ api }));
   await flush();
-  await act(async () => { jest.advanceTimersByTime(8000); });
+  await act(async () => { jest.advanceTimersByTime(2500); });
   expect(api.listarConversasWhatsapp).toHaveBeenCalledTimes(1);
-  await act(async () => { jest.advanceTimersByTime(22000); });
+  await act(async () => { jest.advanceTimersByTime(7500); });
   expect(api.listarConversasWhatsapp).toHaveBeenCalledTimes(2);
   await act(async () => { await result.current.abrir("a"); });
-  await act(async () => { jest.advanceTimersByTime(8000); });
+  await act(async () => { jest.advanceTimersByTime(2500); });
   expect(api.getMensagensWhatsapp).toHaveBeenCalledTimes(2);
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
   fireEvent(document, new Event("visibilitychange"));
