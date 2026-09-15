@@ -8,6 +8,7 @@ import { enviarMensagemRastreada } from "../whatsapp/SaidaWhatsappService.js";
 import { janelaDaConversa } from "../whatsapp/ConversaWhatsappService.js";
 import { WhatsappCloudClient } from "../whatsapp/WhatsappCloudClient.js";
 import { adquirirLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
+import { gerarPropostaPdf, propostaParaCliente } from "./PropostaComercialPdf.js";
 export async function enviarProposta(id, propostaId, user, {
   db = prisma,
   webUrl = COMERCIAL_WEB_URL,
@@ -87,7 +88,8 @@ export async function enviarProposta(id, propostaId, user, {
     } = await criarPropostasComerciais({
       db
     }).emitirLink(id, propostaId, user);
-    const texto = `Preparamos sua proposta de serviços, versão ${p.versao}. Confira as opções, o escopo e os valores: ${webUrl}/proposta/publica#token=${token}\n\nVocê pode escolher a opção pelo link. Depois vamos conferir o contrato para assinatura.`;
+    const texto = `Segue sua proposta de serviços em PDF, versão ${p.versao}, com as entregas e os valores. Para escolher a opção: ${webUrl}/proposta/publica#token=${token}\n\nDepois do aceite, prepararemos o contrato para assinatura.`;
+    const pdf = await gerarPropostaPdf(propostaParaCliente(p));
     await db.conversaWhatsapp.update({
       where: {
         id: c.id
@@ -100,6 +102,7 @@ export async function enviarProposta(id, propostaId, user, {
     const out = await enviarMensagemRastreada({
       conversa: c,
       corpo: texto,
+      tipo: "document",
       autor: "HUMANO",
       referenciaComercial: {
         tipo: "PROPOSTA",
@@ -108,9 +111,11 @@ export async function enviarProposta(id, propostaId, user, {
       },
       client: db,
       antesDeEnviar: conferir,
-      enviar: () => cloud.enviarTexto({
+      enviar: () => cloud.enviarDocumento({
         telefone: c.telefoneE164,
-        texto
+        conteudo: pdf,
+        nomeArquivo: `proposta-altan-v${p.versao}.pdf`,
+        legenda: texto
       })
     });
     await db.propostaComercial.updateMany({

@@ -34,7 +34,7 @@ export function calcularOpcoes({
       mensal = faixa[regime];
       if (!Number.isInteger(recebidas) || recebidas < 0) pendencias.push("Conferir volume de notas recebidas/despesas.");else mensal += Math.ceil(Math.max(0, recebidas - faixa.recebidas) / catalogo.blocoRecebidas.quantidade) * catalogo.blocoRecebidas.centavos;
       if (d.consultoriaMensal === true && funcionarios < catalogo.consultoriaIncluidaAPartir) mensal += catalogo.consultoriaCentavos;
-    } else if (funcionarios > limiteFuncionarios) pendencias.push(`Equipe com ${limiteFuncionarios + 1} ou mais funcionários exige orçamento personalizado.`);
+    } else if (funcionarios > limiteFuncionarios && !(centavosValidos(ajustes.mensalCentavos) && ajustes.justificativa?.trim())) pendencias.push(`Equipe com ${limiteFuncionarios + 1} ou mais funcionários exige orçamento personalizado.`);
     if (centavosValidos(ajustes.mensalCentavos) && ajustes.justificativa?.trim()) {
       mensal = ajustes.mensalCentavos;
       const piso = funcionarios > limiteFuncionarios ? catalogo.pisoPersonalizado?.[regime] : null;

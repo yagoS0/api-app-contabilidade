@@ -550,7 +550,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       }));
       if (["autorizacao", "autorizacao-acesso"].includes(referenciaComercial?.chave)) {
         const lead = await client.atendimentoLead.findFirst({ where: { conversaId, encerradoEm: null }, include: { onboarding: true } });
-        if (lead) await client.atendimentoLead.update({ where: { id: lead.id }, data: { autorizacao: { ...(lead.autorizacao || {}), estado: "INSTRUCAO_ENVIADA", cnpj: lead.onboarding?.cnpj || null, mensagemId: r.mensagem.id, recursoId: referenciaComercial.recursoId } } });
+        if (lead) await client.atendimentoLead.updateMany({ where: { id: lead.id, encerradoEm: null, autorizacao: { equals: lead.autorizacao || {} }, onboarding: { cnpj: lead.onboarding?.cnpj || null } }, data: { autorizacao: { ...(lead.autorizacao || {}), estado: lead.autorizacao?.cnpj === lead.onboarding?.cnpj && lead.autorizacao?.estado === "ATIVA" ? "ATIVA" : "INSTRUCAO_ENVIADA", cnpj: lead.onboarding?.cnpj || null, mensagemId: r.mensagem.id, recursoId: referenciaComercial.recursoId } } });
       }
       return res.json({ ok: true, mensagem: { id: r.mensagem.id, providerMessageId: r.wamid, autor: AUTOR_HUMANO, corpo: texto, statusEnvio: r.mensagem.statusEnvio } });
     } catch (err) {
