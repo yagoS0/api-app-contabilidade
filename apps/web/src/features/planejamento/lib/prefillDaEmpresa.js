@@ -84,6 +84,7 @@ export function prefillDaEmpresa(dados) {
   return {
     empresa: dados.empresa || (dados.razao ? { razao: dados.razao } : null),
     referencia: dados.referencia || null,
+    historicoMensal: dados.historicoMensal || [],
     valores,
     campos: normalizados,
     // ⚠ A DIVERGÊNCIA ENTRE O PERFIL DE ATIVIDADES E O CADASTRO viaja inteira. Ela não é campo:

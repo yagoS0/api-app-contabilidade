@@ -9995,6 +9995,11 @@ export function createMockApi() {
         ok: true,
         empresa: { id: empresa.companyId, razao: empresa.razao, cnpj: empresa.cnpj },
         referencia: { competencia: ref, janela: [], janelaRotulo },
+        historicoMensal: Array.from({ length: hoje.getUTCMonth() }, (_, i) => ({
+          competencia: `${hoje.getUTCFullYear()}-${String(i + 1).padStart(2, "0")}`,
+          receita: 100000 + i * 1500, folha: 28000, tributoApurado: 13030 + i * 195.45,
+          origem: "apuração de demonstração", origemTributo: "calculado localmente",
+        })),
         campos: cenarios[idx % cenarios.length],
         // ⚠⚠ A DIVERGÊNCIA ENTRE PERFIL E CADASTRO — só no cenário 0, que é o da LENTE: o perfil
         // afirma Fator R e o cadastro está com a caixa desmarcada. O aviso na tela depende deste

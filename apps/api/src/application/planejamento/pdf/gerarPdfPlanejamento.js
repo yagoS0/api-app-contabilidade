@@ -23,6 +23,7 @@ import PDFDocument from "pdfkit";
 const MARGEM = 48;
 const CINZA = "#555555";
 const PRETO = "#111111";
+const TRIBUTOS = { irpj: "IRPJ", adicionalIrpj: "Adicional de IRPJ", csll: "CSLL", pis: "PIS", cofins: "Cofins", pisCofins: "PIS/Cofins", cpp: "CPP", iss: "ISS", icms: "ICMS", ipi: "IPI", encargos: "RAT/FAP e terceiros" };
 
 /** `1234.56` → `R$ 1.234,56`. ⚠ Ausência vira travessão, NUNCA `R$ 0,00` — zero é uma afirmação. */
 function brl(v) {
@@ -84,6 +85,7 @@ export function gerarPdfPlanejamento({ foto, empresa }) {
         doc.moveDown(0.6);
       };
       const titulo = (t) => {
+        if (doc.y > doc.page.height - MARGEM - 110) doc.addPage();
         doc.moveDown(0.6);
         doc.fillColor(PRETO).font("Helvetica-Bold").fontSize(11).text(t);
         doc.moveDown(0.2);
@@ -105,6 +107,8 @@ export function gerarPdfPlanejamento({ foto, empresa }) {
       const r = foto.resultado || {};
       const vencedor = r.vencedor || null;
       titulo("Resultado");
+      if (r.motivoComparacao) doc.font("Helvetica").fontSize(9).text(r.motivoComparacao);
+      if (r.economiaVsAtual != null) doc.font("Helvetica").fontSize(9).text(`Economia estimada versus regime atual (${r.regimeAtual}): ${brl(r.economiaVsAtual)} no ano.`);
       if (vencedor) {
         doc.fillColor(PRETO).font("Helvetica-Bold").fontSize(13)
           .text(`${vencedor.regime} — ${brl(vencedor.total)} por ano`);
@@ -130,12 +134,39 @@ export function gerarPdfPlanejamento({ foto, empresa }) {
           // ⚠ O MOTIVO DA INDISPONIBILIDADE É OBRIGATÓRIO. "Indisponível" sozinho não diz se falta
           // dado ou se o regime não se aplica — e são consertos diferentes.
           if (reg.indisponivel && reg.motivo) par(`   ${reg.motivo}`, { tamanho: 8 });
+          for (const p of reg.cobertura?.pendencias || []) par(`   · conferir: ${p}`, { tamanho: 8 });
+          for (const [tributo, valor] of Object.entries(reg.porTributo || {})) {
+            const m = reg.memoriaPorTributo?.[tributo];
+            par(`   ${TRIBUTOS[tributo] || tributo}: ${brl(valor)}${m ? `; alíquota ${pct(m.aliquota * 100, 4)} sobre ${brl(m.baseCalculo)} (${m.baseRotulo})` : ""}`, { tamanho: 8 });
+          }
           // ⚠ O que ficou FORA da conta sai nomeado: um total que esconde o que não entrou é o
           // "total que não fecha com a lista", e ele é pior que total nenhum.
           for (const n of reg.naoConsiderado || []) par(`   · fora desta conta: ${n}`, { tamanho: 8 });
         }
       }
 
+      if (r.acompanhamentoMensal) {
+        const m = r.acompanhamentoMensal;
+        titulo(`Acompanhamento mensal — ${m.ano}`);
+        par(`Realizado: ${brl(m.realizado)} (${m.mesesRealizados}/12 meses). Projeção anual: ${m.totalProjetado == null ? "incompleta" : brl(m.totalProjetado)}. Desvio do plano: ${m.desvio == null ? "não comparável" : brl(m.desvio)} (${m.mesesComparados} meses).`);
+        for (const l of m.linhas || []) par(`${l.competencia}: plano ${l.plano == null ? "—" : brl(l.plano)}; realizado ${l.realizado == null ? "—" : brl(l.realizado)}; DAS estimado ${l.dasEstimado == null ? "—" : brl(l.dasEstimado)}; DAS apurado ${l.tributoApurado == null ? "—" : brl(l.tributoApurado)}. ${l.pendencia || l.alertaLimite || ""}`);
+        par(m.premissa || "");
+      }
+      if (r.proLabore?.porSocio) {
+        titulo("Pró-labore por sócio");
+        for (const s of r.proLabore.porSocio) par(`${s.nome}: pró-labore de ${brl(s.hoje.proLabore)} para ${brl(s.depois.proLabore)}; INSS de ${brl(s.hoje.inss)} para ${brl(s.depois.inss)}; IRRF de ${brl(s.hoje.irrf)} para ${brl(s.depois.irrf)} por mês.`);
+        for (const p of r.proLabore.premissas || []) par(p);
+      }
+      if (r.transicaoReforma) {
+        titulo("Transição IBS/CBS e ISS — serviços no regime regular");
+        par("Subtotal de consumo; não é DAS nem carga total. Alíquotas futuras digitadas e créditos são premissas do cenário. Não inclui regimes especiais, ICMS, Imposto Seletivo ou outros tributos.");
+        for (const t of r.transicaoReforma) par(t.incompleta ? `${t.ano}: premissas incompletas.` : `${t.ano}: receita/base ${brl(t.receita)}; CBS ${pct(t.cbsPct)} menos créditos ${brl(t.creditosCbs)} = ${brl(t.cbs)}; IBS ${pct(t.ibsPct)} menos créditos ${brl(t.creditosIbs)} = ${brl(t.ibs)}; ISS remanescente ${brl(t.iss)}; subtotal ${brl(t.total)}.`);
+      }
+      if (r.conclusao?.texto || r.conclusao?.revisarEm) {
+        titulo("Conclusão do contador");
+        if (r.conclusao.texto) par(String(r.conclusao.texto));
+        if (r.conclusao.revisarEm) par(`Próxima revisão prevista: ${String(r.conclusao.revisarEm)}.`);
+      }
       // ─── IBS/CBS ──────────────────────────────────────────────────────────────────────────
       // ⚠⚠ SÓ SAI SE A FOTO O GUARDOU. Um bloco fixo aqui afirmaria IBS/CBS para uma simulação
       // feita antes de o módulo existir.

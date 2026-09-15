@@ -1,0 +1,33 @@
+.planejamento-avancado select,
+.planejamento-avancado textarea,
+.planejamento-avancado input[type="date"] {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #44475a;
+  border-radius: 6px;
+  color: inherit;
+  background: #1a1b26;
+  font: inherit;
+}
+.planejamento-avancado label:has(select) {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  font-size: .8rem;
+}
+.planejamento-avancado .btn {
+  min-height: 34px;
+  margin-top: 6px;
+  padding: 7px 12px;
+  border: 1px solid #44475a;
+  border-radius: 6px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: .8rem;
+  cursor: pointer;
+}
+.planejamento-avancado .btn:disabled { opacity: .5; cursor: default; }
+.planejamento-avancado .btn:hover:enabled { background: #34354a; }
+.planejamento-avancado td { vertical-align: top; }

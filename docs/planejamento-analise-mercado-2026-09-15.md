@@ -88,4 +88,4 @@ A ordem recomendada é: confiabilidade da comparação e do pró-labore → acom
 - `apps/api/src/application/planejamento/DadosPlanejamentoService.js`: prefill e procedência.
 - `apps/api/src/application/planejamento/SimulacaoPlanejamentoService.js`: persistência e documentos.
 
-Somente documentação foi alterada nesta pesquisa. As propostas acima ainda não foram implementadas nem publicadas.
+Na etapa de pesquisa, somente documentação foi alterada. Após a autorização do usuário, iniciou-se a execução descrita em [planejamento-evolucao-2026-09-15.md](planejamento-evolucao-2026-09-15.md), que separa entregas e limites ainda existentes. Não houve publicação deste lote.

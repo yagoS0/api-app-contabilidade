@@ -43,17 +43,15 @@ export function inssDoProLabore(proLaboreMensal) {
 }
 
 /**
- * IRRF mensal sobre uma base já líquida de INSS.
- *
- * ⚠ Usa o DESCONTO SIMPLIFICADO, que substitui as demais deduções legais. É a escolha mais
- * conservadora para um simulador: ele não conhece dependentes nem despesas dedutíveis do sócio, e
- * supor qualquer uma delas produziria um imposto MENOR do que o real.
+ * IRRF sobre o rendimento bruto: usa a maior entre deduções legais e desconto simplificado.
+ * O simplificado substitui as deduções, e o redutor considera o rendimento bruto.
  */
-export function irrfMensal(rendimentoTributavel) {
+export function irrfMensal(rendimentoTributavel, deducoesLegais = 0) {
   const bruto = Number(rendimentoTributavel);
   if (!Number.isFinite(bruto) || bruto <= 0) return 0;
 
-  const base = Math.max(0, bruto - Math.min(DESCONTO_SIMPLIFICADO_MENSAL, bruto));
+  // RFB: simplificado substitui deduções legais; nunca somar os dois.
+  const base = Math.max(0, bruto - Math.max(DESCONTO_SIMPLIFICADO_MENSAL, Number(deducoesLegais) || 0));
   const faixa = IRPF_MENSAL.find((f) => f.ate == null || base <= f.ate) || IRPF_MENSAL[IRPF_MENSAL.length - 1];
   const imposto = Math.max(0, base * faixa.aliquota - faixa.deduzir);
 
@@ -76,8 +74,8 @@ export function irrfMensal(rendimentoTributavel) {
 export function custoMensalDoSocio(proLaboreMensal) {
   const v = Number(proLaboreMensal) || 0;
   const inss = inssDoProLabore(v);
-  // ⚠ O INSS retido REDUZ a base do IRRF — é dedução legal, e esquecê-la superestima o imposto.
-  const irrf = irrfMensal(Math.max(0, v - inss));
+  // Compara o INSS dedutível ao simplificado; não desconta ambos.
+  const irrf = irrfMensal(v, inss);
   return {
     proLabore: v,
     inss,
@@ -92,6 +90,7 @@ export const RECUSA = Object.freeze({
   SEM_FOLHA: "sem_folha",
   JA_ATINGE: "ja_atinge",
   ANEXO_IV: "anexo_iv",
+  SEM_PROLABORE: "sem_prolabore",
 });
 
 /**
@@ -104,7 +103,7 @@ export const RECUSA = Object.freeze({
  * @param {string} [args.anexoDestino="III"]
  * @returns {{recusa: string, motivo: string} | {…a simulação}}
  */
-export function simularProLaboreParaFatorR({ rbt12, folha12mAtual, economiaNoDas = null, anexoDestino = "III" } = {}) {
+export function simularProLaboreParaFatorR({ rbt12, folha12mAtual, economiaNoDas = null, anexoDestino = "III", socios = [], proLaboreMensal = null } = {}) {
   const r = Number(rbt12);
   if (!Number.isFinite(r) || r <= 0) {
     return { recusa: RECUSA.SEM_RBT12, motivo: "Sem RBT12 não há Fator R a alcançar." };
@@ -150,9 +149,15 @@ export function simularProLaboreParaFatorR({ rbt12, folha12mAtual, economiaNoDas
   // ⚠⚠ O CUSTO É O INCREMENTAL, não o total. O sócio já paga INSS e IRRF sobre o pró-labore de
   // hoje; o que a decisão custa é a DIFERENÇA. Comparar o custo do pró-labore novo com a economia
   // do DAS somaria imposto que já era pago de qualquer jeito.
-  const proLaboreHoje = atual / 12;
-  const hoje = custoMensalDoSocio(proLaboreHoje);
-  const depois = custoMensalDoSocio(proLaboreHoje + aumentoMensal);
+  const lista = socios.length ? socios : proLaboreMensal == null ? [] : [{ nome: "Sócio", proLaboreMensal }];
+  if (!lista.length || lista.some(s => s.proLaboreMensal == null || !Number.isFinite(s.proLaboreMensal) || s.proLaboreMensal < 0)) {
+    return { recusa: RECUSA.SEM_PROLABORE, motivo: "Informe o pró-labore atual de cada sócio. A folha total não é a remuneração de um sócio.", folhaNecessaria: necessaria, faltaNoAno, aumentoMensal };
+  }
+  const porSocio = lista.map(s => ({ nome: s.nome, hoje: custoMensalDoSocio(s.proLaboreMensal), depois: custoMensalDoSocio(s.proLaboreMensal + aumentoMensal / lista.length) }));
+  const somar = etapa => porSocio.reduce((a, s) => Object.fromEntries(["proLabore", "inss", "irrf", "liquido"].map(k => [k, (a[k] || 0) + s[etapa][k]])), {});
+  const hoje = somar("hoje");
+  const depois = somar("depois");
+  const proLaboreHoje = hoje.proLabore;
   const custoMensalIncremental = (depois.inss + depois.irrf) - (hoje.inss + hoje.irrf);
   const custoAnualIncremental = custoMensalIncremental * 12;
 
@@ -167,6 +172,7 @@ export function simularProLaboreParaFatorR({ rbt12, folha12mAtual, economiaNoDas
 
   return {
     recusa: null,
+    porSocio,
     fatorRAtual: atual / r,
     folhaNecessaria: necessaria,
     faltaNoAno,
@@ -187,7 +193,8 @@ export function simularProLaboreParaFatorR({ rbt12, folha12mAtual, economiaNoDas
       `Tabelas do IRPF e teto do INSS com vigência ${VIGENCIA_PESSOA_FISICA} (fonte oficial versionada)`,
       `INSS do sócio: ${(ENCARGOS_FOLHA.inssContribuinteIndividual * 100).toFixed(0)}% do pró-labore, limitado ao teto de `
         + `${INSS_SALARIO_CONTRIBUICAO.teto.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
-      "IRRF pelo desconto simplificado, com o redutor da Lei 15.270/2025",
+      "IRRF com a dedução mais favorável entre INSS e desconto simplificado, sem acumular as deduções; redutor sobre o rendimento bruto (Lei 15.270/2025)",
+      "Aumento distribuído igualmente entre os sócios informados. Receita e demais componentes da folha constantes; efeito integral após 12 meses, não imediatamente.",
       // ⚠⚠ A PREMISSA QUE DECIDE O RESULTADO. Ela vai IMPRESSA, e não é rodapé: se ela não valer, a
       // conta inteira muda de sinal.
       `Anexo ${anexoDestino}: a contribuição patronal está DENTRO do DAS (LC 123/2006, art. 13, VI), `

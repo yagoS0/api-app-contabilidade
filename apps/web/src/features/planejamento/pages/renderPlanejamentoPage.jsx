@@ -44,6 +44,15 @@ import {
   textoDoPercentualForaDaFaixa,
 } from "../lib/campoNumerico";
 import { CardRegime } from "../components/CardRegime";
+import { AjustesPlanejamento, numeroInformado } from "../components/AjustesPlanejamento";
+import { AcompanhamentoMensal } from "../components/AcompanhamentoMensal";
+import { RealDetalhado } from "../components/RealDetalhado";
+import { ReceitasPorAtividade } from "../components/ReceitasPorAtividade";
+import { ConclusaoPlanejamento } from "../components/ConclusaoPlanejamento";
+import { TransicaoReforma } from "../components/TransicaoReforma";
+import { projetarTransicao } from "../lib/transicaoReforma";
+import { ResumoPlanejamentoImpresso } from "../components/ResumoPlanejamentoImpresso";
+import { planejarMeses } from "../lib/planejamentoMensal";
 import { GaugeFatorR } from "../components/GaugeFatorR";
 import { TabelaComparativa } from "../components/TabelaComparativa";
 import { BlocoIbsCbs } from "../components/BlocoIbsCbs";
@@ -114,6 +123,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   const [detalharMeses, setDetalharMeses] = useState(false);
   const [serieMensal, setSerieMensal] = useState([]);
   const [folha, setFolha] = useState("");
+  const [ajustes, setAjustes] = useState({});
   const [anexo, setAnexo] = useState("III");
   const [sujeitoFatorR, setSujeitoFatorR] = useState(false);
   const [anexoManual, setAnexoManual] = useState(false);
@@ -248,6 +258,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     setMesesAtividade("");
     setSerieMensal([]);
     setFolha("");
+    setAjustes({});
     setAnexo("III");
     setSujeitoFatorR(false);
     setAnexoManual(false);
@@ -393,6 +404,11 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     // em vez de cair no Anexo V (a alíquota maior) por causa de um zero que ninguém digitou. Folha
     // realmente zero continua sendo possível — digite 0.
     folhaAnual: lerDinheiro(folha),
+    folhaRemuneracoesAnual: numeroInformado(ajustes.folhaRemuneracoesAnual),
+    encargosAdicionaisAnuais: numeroInformado(ajustes.encargosAdicionaisAnuais),
+    regimeAtual: ajustes.regimeAtual || prefill.valores?.regimeAtual || null,
+    lucroRealDetalhado: ajustes.real || null,
+    receitasPorAtividade: ajustes.atividades?.ativo ? ajustes.atividades.linhas || [] : null,
     anexoSimples: anexo,
     sujeitoAoFatorR: sujeitoFatorR && !anexoManual,
     atividadePresumido: atividade,
@@ -404,10 +420,10 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     mesesDeAtividade: mesesInicioAtividade,
     receitasMensais,
     servicosAte120kConfirmado: servicos16,
-  }), [receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, atividade, issLido.valor, margemLida.valor, creditos, mesesInicioAtividade, receitasMensais, servicos16]);
+  }), [receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, atividade, issLido.valor, margemLida.valor, creditos, mesesInicioAtividade, receitasMensais, servicos16, ajustes, prefill.valores?.regimeAtual]);
 
   const formularioCenario = { receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, atividade, iss, margem, creditos,
-    mesesAtividade, serieMensal, servicos16, categoriaConfirmada, cenarioIbsCbs, cbsEstimada, detalharMeses };
+    mesesAtividade, serieMensal, servicos16, categoriaConfirmada, cenarioIbsCbs, cbsEstimada, detalharMeses, ajustes };
   const assinaturaCenario = JSON.stringify(formularioCenario);
   // Retoma somente após o prefill, sem sobrescrever quem começou a digitar durante a busca.
   useEffect(() => {
@@ -450,6 +466,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
       categoriaConfirmada: false, cenarioIbsCbs: CENARIO.EM_2026, cbsEstimada: "", detalharMeses: Boolean(e.receitasMensais),
     };
     setReceita(f.receita ?? ""); setRbt12(f.rbt12 ?? ""); setFolha(f.folha ?? "");
+    setAjustes(f.ajustes || {});
     setAnexo(f.anexo || "III"); setSujeitoFatorR(Boolean(f.sujeitoFatorR)); setAtividade(f.atividade || "servicos");
     setAnexoManual(Boolean(f.anexoManual));
     setIss(f.iss ?? ""); setMargem(f.margem ?? ""); setCreditos(f.creditos ?? "");
@@ -457,12 +474,14 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     setDetalharMeses(Boolean(f.detalharMeses));
     setServicos16(f.servicos16 ?? null); setCategoriaConfirmada(Boolean(f.categoriaConfirmada));
     setCenarioIbsCbs(f.cenarioIbsCbs || CENARIO.EM_2026); setCbsEstimada(f.cbsEstimada ?? "");
-    setCenarioSalvo(JSON.stringify(f));
+    setCenarioSalvo(JSON.stringify({ ...f, ajustes: f.ajustes || {} }));
     setProcedenciasSalvas(cenario.procedencias || null);
     setDesfechoDoGuardar({ tom: "ok", texto: `Cenário reaberto. A comparação é recalculada com as tabelas atuais; o documento original preserva o resultado salvo.${e.formularioCenario ? "" : " Cenário legado: confira IBS/CBS e a confirmação da atividade, que não eram guardados como campos de edição."}` });
   }
 
   const temReceita = entradas.receitaAnual > 0;
+  const mensal = useMemo(() => planejarMeses({ ...(ajustes.mensal || {}), entradas, ano: entradas.anoBase || 2026 }), [ajustes.mensal, entradas]);
+  const transicao = useMemo(() => projetarTransicao(ajustes.transicao), [ajustes.transicao]);
   const resultado = useMemo(() => (temReceita ? compararRegimes(entradas) : null), [entradas, temReceita]);
   // ⚠ DERIVADO do resultado do motor, nunca recalculado aqui — a tabela REARRANJA o que já foi
   // calculado. Uma segunda conta na camada de apresentação divergiria do motor na primeira
@@ -477,13 +496,13 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   const ofertaDo16 = resultado?.regimes?.find((r) => r.regime === "Lucro Presumido")?.servicosAte120k || null;
 
   const equilibrio = useMemo(
-    () => (temReceita ? pontoDeEquilibrio({ ...entradas, passo: 50_000 }) : null),
+    () => (temReceita && !entradas.receitasPorAtividade ? pontoDeEquilibrio({ ...entradas, passo: 50_000 }) : null),
     [entradas, temReceita],
   );
 
   // A economia de migrar de anexo pelo Fator R: a diferença entre o V e o III, com os mesmos dados.
   const economiaAnexo = useMemo(() => {
-    if (!temReceita || !sujeitoFatorR) return null;
+    if (!temReceita || !sujeitoFatorR || entradas.receitasPorAtividade) return null;
     const comum = {
       rbt12: entradas.rbt12,
       receitaAnual: entradas.receitaAnual,
@@ -501,7 +520,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   // ⚠⚠ `economiaAnexo` é a OUTRA METADE: sem ela o painel mostraria só o custo, e a decisão
   // pareceria sempre ruim. Ela vale `null` quando não deu para calcular, e o painel DIZ isso.
   const proLabore = useMemo(() => {
-    if (!temReceita || !sujeitoFatorR) return null;
+    if (!temReceita || !sujeitoFatorR || entradas.receitasPorAtividade) return null;
     return simularProLaboreParaFatorR({
       // ⚠⚠ O RBT12 QUE O MOTOR APLICOU, nunca o do campo. Em início de atividade eles são coisas
       // diferentes (o do motor é o proporcionalizado), e ler o do campo aqui punha dois Fator R
@@ -509,10 +528,11 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
       // fonte que alimenta o `GaugeFatorR`.
       rbt12: resultado?.inicioAtividade?.proporcionalizado ? resultado.inicioAtividade.rbt12 : entradas.rbt12,
       folha12mAtual: entradas.folhaAnual,
+      socios: (ajustes.socios || []).map(s => ({ ...s, proLaboreMensal: numeroInformado(s.proLaboreMensal) })),
       economiaNoDas: economiaAnexo,
       anexoDestino: resultado?.anexoResolvido === "V" ? "III" : (resultado?.anexoResolvido || "III"),
     });
-  }, [temReceita, sujeitoFatorR, entradas, economiaAnexo, resultado]);
+  }, [temReceita, sujeitoFatorR, entradas, economiaAnexo, resultado, ajustes]);
 
   const avisoTrava = temReceita && atividade === "servicos" ? avisoTravaServicos16(entradas.receitaAnual) : null;
 
@@ -588,7 +608,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
       const salvo = await api.salvarSimulacaoPlanejamento(empresaId, {
         competencia: prefill.referencia?.competencia || null,
         entradas: { ...entradas, formularioCenario },
-        resultado,
+        resultado: { ...resultado, acompanhamentoMensal: ajustes.mensal ? mensal : null, proLabore, conclusao: ajustes.conclusao || null, transicaoReforma: ajustes.transicao ? transicao : null },
         // ⚠ A procedência viaja junto: é ela que distingue DOIS PDFs da mesma empresa com números
         // diferentes. Sem ela, a diferença parece erro de cálculo no papel.
         procedencias,
@@ -999,6 +1019,9 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
             </Campo>
           </div>
 
+          <AjustesPlanejamento value={ajustes} onChange={setAjustes} fatorR={sujeitoFatorR} />
+          <RealDetalhado value={ajustes.real} onChange={v => setAjustes(a => ({ ...a, real: v }))} />
+          <ReceitasPorAtividade value={ajustes.atividades} onChange={v => setAjustes(a => ({ ...a, atividades: v }))} />
           {mesesInicioAtividade && (
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: "0.78rem", color: C.alerta }}>
@@ -1148,6 +1171,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
               </div>
             )}
 
+            <p role="status">{resultado.motivoComparacao}</p>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {resultado.regimes.map((r) => (
                 <CardRegime
@@ -1168,6 +1192,8 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
                 que a segunda opção.
               </div>
             )}
+            {resultado.economiaVsAtual != null && <p>Economia estimada em relação ao regime atual ({resultado.regimeAtual}): <strong>{brl(resultado.economiaVsAtual)} no ano</strong>.</p>}
+            <AcompanhamentoMensal value={ajustes.mensal} onChange={v => setAjustes(a => ({ ...a, mensal: v }))} resultado={mensal} receitaAnual={entradas.receitaAnual} dados={prefill.historicoMensal} onAplicar={v => setReceita(dinheiroParaCampo(v))} />
 
             {/* ⚠⚠ A TABELA VEM ANTES DO GAUGE E DO PONTO DE EQUILÍBRIO, e a ordem é o argumento:
                 ela é a resposta à pergunta "por que este total?". Os cards dão o número; ela dá a
@@ -1216,6 +1242,9 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
 
             {/* ⚠ Logo DEPOIS do gauge: ele mostra ONDE o Fator R está, este responde O QUE FAZER. */}
             <PainelProLabore simulacao={proLabore} />
+            <TransicaoReforma value={ajustes.transicao} onChange={v => setAjustes(a => ({ ...a, transicao: v }))} resultado={transicao} />
+            <ConclusaoPlanejamento value={ajustes.conclusao} onChange={v => setAjustes(a => ({ ...a, conclusao: v }))} />
+            <ResumoPlanejamentoImpresso ajustes={ajustes} mensal={mensal} transicao={transicao} />
 
             {equilibrio && (
               <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, fontSize: "0.88rem" }}>

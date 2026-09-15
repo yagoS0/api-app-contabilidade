@@ -27,6 +27,7 @@ import {
 import { resolverPerfilFiscal } from "../notas/apuracao/v2/PerfilFiscalService.js";
 import { sujeitoAoFatorR, RESPOSTA as RESPOSTA_FATOR_R } from "./lib/sujeitoAoFatorR.js";
 import { sugerirCategoriaDaEmpresa } from "./lib/categoriaPresumido.js";
+import { historicoMensalDosSnapshots } from "./lib/historicoMensal.js";
 
 const REGIMES = new Set(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI"]);
 const ANEXOS_VALIDOS = new Set(["I", "II", "III", "IV", "V"]);
@@ -276,8 +277,15 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
         + `${sugestaoPresumido.motivo}`,
   );
 
+  const historico = await prisma.apuracaoSnapshot.findMany({
+    where: { portalClientId: portal.id, competencia: { gte: `${Number(referencia.slice(0, 4)) - 1}-01`, lt: referencia }, estado: { in: ["calculada", "fechada", "transmitida", "confirmada"] } },
+    orderBy: { competencia: "asc" },
+    select: { competencia: true, estado: true, receitaInterna: true, receitaExterna: true, receitaPorTipo: true, folhaMensal12: true,
+      dasRetornadoSerpro: true, dasCalculadoLocal: true, dasCalculadoLocalProcedencia: true },
+  }).catch(() => []);
   return {
     empresa: { id: portal.id, razao: portal.razao, cnpj: portal.cnpj },
+    historicoMensal: historicoMensalDosSnapshots(historico),
     referencia: { competencia: referencia, janela, janelaRotulo },
     campos: {
       receitaAnual,

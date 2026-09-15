@@ -25,6 +25,7 @@ const ROTULO_TRIBUTO = {
   irpj: "IRPJ", adicionalIrpj: "Adicional de IRPJ", csll: "CSLL", cofins: "COFINS",
   pis: "PIS/Pasep", pisCofins: "PIS/COFINS", cpp: "CPP (INSS patronal)", icms: "ICMS",
   iss: "ISS", ipi: "IPI",
+  encargos: "RAT/FAP e terceiros",
 };
 
 /**
@@ -134,6 +135,7 @@ export function CardRegime({ resultado, vencedor, aberto, onToggle, receitaAnual
       ) : (
         <>
           <div style={{ fontSize: "0.76rem", color: C.muted, marginBottom: 4 }}>Total estimado no ano</div>
+          {resultado.cobertura?.estado === "parcial" && <strong style={{ color: C.alerta }}>Estimativa parcial</strong>}
           <div style={{ fontSize: "1.5rem", fontWeight: 800, lineHeight: 1.15 }}>{brl(resultado.total)}</div>
           <div style={{ fontSize: "0.8rem", color: C.muted, marginTop: 2 }}>
             Carga total estimada: <strong style={{ color: C.texto }}>{pct(resultado.cargaEfetiva)}</strong> da receita
@@ -200,6 +202,10 @@ export function CardRegime({ resultado, vencedor, aberto, onToggle, receitaAnual
           {aberto && (
             <div id={detalheId} role="group" aria-label={`Detalhamento de impostos — ${resultado.regime}`} style={{ marginTop: 10, display: "grid", gap: 3, fontSize: "0.78rem" }}>
               <strong>Composição do total anual</strong>
+              {resultado.atividades?.map((a, i) => <details key={i}><summary>Atividade {i + 1} · Anexo {a.anexoResolvido} · {brl(a.receita)} de receita</summary>
+                {Object.entries(a.porTributo || {}).map(([t, v]) => <p key={t}>{ROTULO_TRIBUTO[t] || t}: {brl(v)} · {a.memoriaPorTributo?.[t] ? `${pctDetalhe(a.memoriaPorTributo[t].aliquota)} sobre ${brl(a.memoriaPorTributo[t].baseCalculo)}` : "conferir memória"}</p>)}
+              </details>)}
+              {(resultado.cobertura?.pendencias || []).map(p => <p key={p} style={{ color: C.alerta }}>{p}</p>)}
               {resultado.regime === "Simples Nacional" && <span style={{ color: C.muted }}>Parcelas dentro do DAS não são cobranças adicionais. Valores por fora são identificados acima.</span>}
               {Object.entries(resultado.porTributo || {}).map(([t, v]) => {
                 const memoria = resultado.memoriaPorTributo?.[t];

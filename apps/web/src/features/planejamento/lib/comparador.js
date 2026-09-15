@@ -8,6 +8,9 @@
 import { custoAnualSimples, anexoPorFatorR, folhaParaFatorR, rbt12InicioAtividade } from "./simplesNacional";
 import { custoAnualPresumido, atividadeExclusivaDeMercadorias } from "./lucroPresumido";
 import { PIS_COFINS_NAO_CUMULATIVO, IRPJ, CSLL_ALIQUOTA, ENCARGOS_FOLHA, FONTES_VERIFICADAS_EM } from "./tabelasFiscais";
+import { avaliarComparacao } from "./coberturaComparacao";
+import { basesLucroReal } from "./lucroRealDetalhado";
+import { compararReceitasMistas } from "./receitasMistas";
 
 /**
  * LUCRO REAL — FONTES_FISCAIS §3.
@@ -17,13 +20,14 @@ import { PIS_COFINS_NAO_CUMULATIVO, IRPJ, CSLL_ALIQUOTA, ENCARGOS_FOLHA, FONTES_
  * vez de um número que pareceria comparável e não seria. Foi para isso que o documento de fontes
  * abriu um alerta de escopo.
  */
-export function custoAnualReal({ receitaAnual, margemLucro = null, creditosPisCofins = null, folhaAnual = 0, aliquotaIss = null, atividade = "servicos" }) {
-  if (margemLucro == null || creditosPisCofins == null) {
+export function custoAnualReal({ receitaAnual, margemLucro = null, creditosPisCofins = null, folhaAnual = 0, aliquotaIss = null, atividade = "servicos", lucroRealDetalhado = null }) {
+  const bases = basesLucroReal(Number(receitaAnual), lucroRealDetalhado);
+  if (bases?.indisponivel || (!bases && margemLucro == null) || creditosPisCofins == null) {
     return {
       regime: "Lucro Real",
       indisponivel: true,
       faltam: [
-        margemLucro == null ? "a margem de lucro real (lucro ÷ receita)" : null,
+        bases?.indisponivel ? "os custos, despesas e ajustes da base detalhada, inclusive zeros" : !bases && margemLucro == null ? "a margem de lucro real (lucro ÷ receita)" : null,
         creditosPisCofins == null ? "o valor anual de créditos de PIS/COFINS sobre insumos" : null,
       ].filter(Boolean),
       motivo: "O Lucro Real não se estima: sem a margem e os créditos, qualquer número aqui seria chute.",
@@ -31,10 +35,11 @@ export function custoAnualReal({ receitaAnual, margemLucro = null, creditosPisCo
   }
 
   const receita = Number(receitaAnual) || 0;
-  const lucro = receita * Number(margemLucro);
+  const lucro = bases?.baseIrpj ?? Math.max(0, receita * Number(margemLucro));
   const irpj = lucro * IRPJ.aliquota;
   const adicional = Math.max(0, lucro / 4 - IRPJ.limiteAdicionalTrimestral) * IRPJ.adicional * 4;
-  const csll = lucro * CSLL_ALIQUOTA;
+  const baseCsll = bases?.baseCsll ?? lucro;
+  const csll = baseCsll * CSLL_ALIQUOTA;
   const pisCofinsBruto = receita * PIS_COFINS_NAO_CUMULATIVO.total;
   // Crédito não gera saldo negativo de imposto na simulação: o que passa vira crédito acumulado,
   // que é outro assunto (e outro fluxo de caixa).
@@ -49,12 +54,13 @@ export function custoAnualReal({ receitaAnual, margemLucro = null, creditosPisCo
 
   return {
     regime: "Lucro Real",
+    basesDetalhadas: bases,
     porTributo: { irpj, adicionalIrpj: adicional, csll, pisCofins, ...(folhaInformada ? { cpp } : {}), ...(!issAplicavel || aliquotaIss == null ? {} : { iss }) },
     total,
     memoriaPorTributo: {
       irpj: { aliquota: IRPJ.aliquota, baseCalculo: lucro, baseRotulo: "Lucro estimado" },
       adicionalIrpj: { aliquota: IRPJ.adicional, baseCalculo: adicional / IRPJ.adicional, baseRotulo: "Excesso trimestral somado no ano" },
-      csll: { aliquota: CSLL_ALIQUOTA, baseCalculo: lucro, baseRotulo: "Lucro estimado" },
+      csll: { aliquota: CSLL_ALIQUOTA, baseCalculo: baseCsll, baseRotulo: "Lucro ajustado para CSLL" },
       pisCofins: { aliquota: PIS_COFINS_NAO_CUMULATIVO.total, baseCalculo: receita, baseRotulo: "Receita anual", creditos: Number(creditosPisCofins) },
       ...(folhaInformada ? { cpp: { aliquota: ENCARGOS_FOLHA.cppPatronal, baseCalculo: Number(folhaAnual), baseRotulo: "Folha anual" } } : {}),
       ...(issAplicavel && aliquotaIss != null ? { iss: { aliquota: Number(aliquotaIss), baseCalculo: receita, baseRotulo: "Receita de serviços" } } : {}),
@@ -62,7 +68,8 @@ export function custoAnualReal({ receitaAnual, margemLucro = null, creditosPisCo
     cargaEfetiva: receita > 0 ? total / receita : null,
     premissas: [
       ...(!issAplicavel ? ["ISS não se aplica à receita de mercadorias desta categoria; ICMS não estimado nesta simulação."] : []),
-      `Margem de lucro informada: ${(Number(margemLucro) * 100).toFixed(1).replace(".", ",")}%`,
+      bases ? `Lucro contábil estimado ${brl(bases.lucroContabil)}; bases ajustadas de IRPJ ${brl(lucro)} e CSLL ${brl(baseCsll)}.` : `Margem de lucro informada: ${(Number(margemLucro) * 100).toFixed(1).replace(".", ",")}%`,
+      "Lucro anual distribuído uniformemente em quatro trimestres para o adicional de IRPJ.",
       `PIS/COFINS não cumulativo (9,25%) menos ${brl(creditosPisCofins)} de créditos informados`,
       "Compensação de prejuízos fiscais NÃO considerada (trava de 30% — Lei 9.065/1995, art. 15)",
     ],
@@ -96,10 +103,14 @@ export function compararRegimes({
   margemLucro = null, creditosPisCofins = null,
   mesesDeAtividade = null, receitasMensais = null,
   anoBase = 2026,
+  regimeAtual = null, folhaRemuneracoesAnual = null, encargosAdicionaisAnuais = null,
+  lucroRealDetalhado = null,
+  receitasPorAtividade = null,
   // ⚠ A confirmação do art. 15, § 4º (IRPJ de 16% até R$ 120 mil) é do CONTADOR, e viaja como os
   // demais parâmetros do cenário. `null` = não perguntado, e aí a conta é a de sempre (32%).
   servicosAte120kConfirmado = null,
 }) {
+  if (receitasPorAtividade) return compararReceitasMistas({ receitaAnual, rbt12, folhaAnual, anexoSimples, sujeitoAoFatorR, atividadePresumido, aliquotaIss, margemLucro, creditosPisCofins, mesesDeAtividade, receitasMensais, anoBase, regimeAtual, folhaRemuneracoesAnual, encargosAdicionaisAnuais, lucroRealDetalhado, receitasPorAtividade, servicosAte120kConfirmado }, compararRegimes);
   const inicio = mesesDeAtividade == null
     ? null
     : rbt12InicioAtividade({
@@ -141,23 +152,31 @@ export function compararRegimes({
     ? custoAnualSimples({ anexoChave: anexoResolvido, rbt12: rbt, receitaAnual, folhaAnual, aliquotaIss, mesesDeAtividade, receitasMensais })
     : null);
   const presumido = custoAnualPresumido({ receitaAnual, atividade: atividadePresumido, folhaAnual, aliquotaIss, anoBase, servicosAte120kConfirmado });
-  const real = custoAnualReal({ receitaAnual, margemLucro, creditosPisCofins, folhaAnual, aliquotaIss, atividade: atividadePresumido });
+  const real = custoAnualReal({ receitaAnual, margemLucro, creditosPisCofins, folhaAnual, aliquotaIss, atividade: atividadePresumido, lucroRealDetalhado });
 
-  const candidatos = [simples, presumido, real].filter(Boolean);
-  const comparaveis = candidatos.filter((c) => !c.indisponivel && c.elegivel !== false);
-  comparaveis.sort((a, b) => a.total - b.total);
-
-  const vencedor = comparaveis[0] || null;
-  const segundo = comparaveis[1] || null;
+  const candidatos = [simples, presumido, real].filter(Boolean).map(r => {
+    const cppFora = r.regime !== "Simples Nacional" || anexoResolvido === "IV";
+    if (!cppFora || r.indisponivel || r.elegivel === false) return r;
+    const cpp = folhaRemuneracoesAnual == null ? r.porTributo.cpp : folhaRemuneracoesAnual * ENCARGOS_FOLHA.cppPatronal;
+    const encargos = encargosAdicionaisAnuais ?? 0;
+    const total = r.total - (r.porTributo.cpp || 0) + (cpp || 0) + encargos;
+    return { ...r, total, cargaEfetiva: receitaAnual > 0 ? total / receitaAnual : null,
+      naoConsiderado: (r.naoConsiderado || []).filter(texto => !(encargosAdicionaisAnuais != null && texto.startsWith("RAT/FAP")) && !(folhaRemuneracoesAnual != null && texto.startsWith("CPP"))),
+      premissas: [...(r.premissas || []).filter(texto => !(folhaRemuneracoesAnual != null && texto.startsWith("CPP"))),
+        ...(folhaRemuneracoesAnual == null ? [] : [`CPP de 20% sobre remunerações anuais sem encargos: ${brl(folhaRemuneracoesAnual)}.`]),
+        ...(encargosAdicionaisAnuais == null ? [] : [`RAT/FAP e terceiros informados separadamente: ${brl(encargosAdicionaisAnuais)} no ano.`])],
+      ...(r.regime === "Simples Nacional" ? { cppPorFora: cpp || 0 } : {}),
+      porTributo: { ...r.porTributo, ...(cpp == null ? {} : { cpp }), ...(encargosAdicionaisAnuais == null ? {} : { encargos }) },
+      memoriaPorTributo: { ...r.memoriaPorTributo, ...(folhaRemuneracoesAnual == null ? {} : { cpp: { aliquota: ENCARGOS_FOLHA.cppPatronal, baseCalculo: folhaRemuneracoesAnual, baseRotulo: "Remunerações anuais sem encargos" } }) },
+    };
+  });
+  const comparacao = avaliarComparacao(candidatos, { folhaAnual, folhaRemuneracoesAnual, encargosAdicionaisAnuais, atividadePresumido, aliquotaIss, anexoSimples: anexoResolvido, regimeAtual });
 
   return {
     // A tela MOSTRA esta data: simulação sem vigência envelhece calada, e 2026 mudou três vezes.
     fontesVerificadasEm: FONTES_VERIFICADAS_EM,
     anoBase,
-    regimes: candidatos,
-    vencedor,
-    // A economia só existe se houver com quem comparar — com um regime só, não há "economia".
-    economiaAnual: vencedor && segundo ? segundo.total - vencedor.total : null,
+    ...comparacao,
     fatorR: sujeitoAoFatorR ? folhaParaFatorR(folhaAnual, rbt) : null,
     anexoResolvido,
     // A tela precisa DIZER que o RBT12 virou premissa — ver requisito 4 do módulo.
@@ -198,8 +217,8 @@ export function pontoDeEquilibrio({ de = 100_000, ate = 4_800_000, passo = 10_00
         receita,
         // A frase-resposta, não só o número: é ela que o contador leva para a reunião.
         frase: sinal > 0
-          ? `Acima de aproximadamente ${brl(receita)} de receita anual, o Lucro Presumido passa a compensar.`
-          : `Acima de aproximadamente ${brl(receita)} de receita anual, o Simples Nacional passa a compensar.`,
+          ? `Cruzamento das parcelas estimadas perto de ${brl(receita)} de receita anual: o Presumido fica menor. Confira os tributos não estimados antes de decidir.`
+          : `Cruzamento das parcelas estimadas perto de ${brl(receita)} de receita anual: o Simples fica menor. Confira os tributos não estimados antes de decidir.`,
       };
     }
     if (sinal !== 0) anterior = sinal;
