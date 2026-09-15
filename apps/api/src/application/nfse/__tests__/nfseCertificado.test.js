@@ -146,4 +146,9 @@ describe("certificado da emissão de NFS-e", () => {
     resolveCertForCompany.mockResolvedValue({ source: "none" });
     await expect(resolverCertificadosDaEmpresa("company-1")).rejects.toBeInstanceOf(NfseCertError);
   });
+
+  it.each(["CERT_STORAGE_UNAVAILABLE", "ECONNRESET"])("falha %s não vira certificado ausente", async (code) => {
+    resolveCertForCompany.mockRejectedValue(Object.assign(new Error("Falha de leitura"), { code }));
+    await expect(resolverCertificadosDaEmpresa("company-1")).rejects.toMatchObject({ code: "CERT_STORAGE_UNAVAILABLE" });
+  });
 });

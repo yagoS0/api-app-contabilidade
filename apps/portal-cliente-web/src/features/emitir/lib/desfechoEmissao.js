@@ -136,6 +136,14 @@ const FRASE_DO_CLIENTE = Object.freeze({
     message: "Esta empresa não tem certificado digital cadastrado para assinar a nota.",
     correcao: "Quem cadastra o certificado é o seu contador. Fale com ele.",
   },
+  CERT_STORAGE_UNAVAILABLE: {
+    message: "O sistema não conseguiu acessar o certificado digital para assinar a nota.",
+    correcao: "Avise seu contador para acionar o suporte e restabelecer o acesso ao cofre de certificados. Tente novamente após a correção.",
+  },
+  CERT_PASSWORD_DECRYPT_FAILED: {
+    message: "O sistema não conseguiu ler a senha protegida do certificado digital.",
+    correcao: "Avise seu contador para acionar o suporte e verificar o acesso ao cofre de certificados.",
+  },
 });
 
 /**

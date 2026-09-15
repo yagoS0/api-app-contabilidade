@@ -1,5 +1,7 @@
 # Planejamento — continuidade do cenário (08/09/2026)
 
+Investigação — 15/09/2026: relato de R$ 6 mil/ano ocorreu no dashboard em simulação livre. Receita R$ 1,2 milhão com padrões da tela reproduziu Simples R$ 156.360 e Presumido R$ 210.360, sem CPP não informada. Aguardando demais premissas; nenhuma fórmula alterada sem reproduzir o cenário. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
+
 ## Revisão fiscal — 14/09/2026
 
 Premissas usam rótulos acima dos campos; origem detalhada, confiança e exceções do CNAE ficam em “Origem dos dados e premissas”. Na grade aparece apenas “CNAE sugerido”. Descrições acessíveis continuam ligadas aos campos e erros de entrada continuam visíveis.

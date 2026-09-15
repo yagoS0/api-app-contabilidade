@@ -1,5 +1,7 @@
 # CLAUDE.md — Empresas (apps/web/src/features/companies)
 
+Perfis de emissão — 15/09/2026: cLocPrestacao agora usa MunicípioDoPerfil/municipioIbge, busca nome+UF e envia apenas o código IBGE. Busca não resolvida bloqueia salvar; campo vazio continua opcional. Não inferir local da prestação do endereço do emissor. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
+
 ## Documentos e configurações na navegação — 10/09/2026
 
 O cabeçalho tem Anotações, Contabilidade, Fiscal e Documentos. A antiga aba Empresa foi removida porque seu destino (Cadastro) já pertence à engrenagem. Documentos é acesso direto a `/companies/:id/documentos`, visível inclusive dentro das configurações, sem competência ou subabas. Cadastro, perfil fiscal, credenciais, certificado, contatos, emissão e plano de contas continuam nas configurações, mantendo as rotas anteriores e permissões. A mudança recupera a entrada para os documentos existentes; não altera armazenamento ou envio de arquivos.

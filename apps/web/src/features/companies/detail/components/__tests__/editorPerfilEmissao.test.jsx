@@ -11,6 +11,32 @@ const dados = {
   ] },
 };
 
+it("busca município por nome e UF e salva o código IBGE da escolha", async () => {
+  const onSalvar = jest.fn(async () => {});
+  render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={onSalvar} />);
+  fireEvent.click(screen.getByRole("button", { name: "Editar Contabilidade" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Município da prestação" }), { target: { value: "sao paulo sp" } });
+  fireEvent.click(await screen.findByRole("option", { name: /São Paulo \/ SP.*3550308/ }));
+  expect(screen.getByRole("combobox", { name: "Município da prestação" })).toHaveValue("São Paulo / SP");
+  fireEvent.click(screen.getByRole("button", { name: "Salvar perfil" }));
+  await waitFor(() => expect(onSalvar).toHaveBeenCalledWith("p1", expect.objectContaining({ cLocPrestacao: "3550308" })));
+  expect(onSalvar.mock.calls[0][1]).not.toHaveProperty("_buscaMunicipio");
+});
+
+it("mostra a cidade do código salvo e exige seleção ao trocar o nome", async () => {
+  const onSalvar = jest.fn(async () => {});
+  render(<EditorPerfilEmissao dados={{ ...dados, perfis: [{ ...dados.perfis[0], cLocPrestacao: "3304557" }] }} podeEditar onSalvar={onSalvar} />);
+  fireEvent.click(screen.getByRole("button", { name: "Editar Contabilidade" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Município da prestação" })).toHaveValue("Rio de Janeiro / RJ"));
+  fireEvent.change(screen.getByRole("combobox", { name: "Município da prestação" }), { target: { value: "Bom Jesus" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar perfil" }));
+  expect(onSalvar).not.toHaveBeenCalled();
+  expect(screen.getByRole("alert")).toHaveTextContent("Selecione o município");
+  fireEvent.change(screen.getByRole("combobox", { name: "Município da prestação" }), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar perfil" }));
+  await waitFor(() => expect(onSalvar).toHaveBeenCalledWith("p1", expect.objectContaining({ cLocPrestacao: null })));
+});
+
 it("sugestão só preenche após escolha; CST permanece decisão do contador", async () => {
   const onSalvar = jest.fn(async () => {});
   render(<EditorPerfilEmissao dados={dados} podeEditar onSalvar={onSalvar} />);

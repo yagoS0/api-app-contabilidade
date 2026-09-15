@@ -41,6 +41,13 @@ const DO_SERVIDOR = {
 };
 
 describe("⚠⚠ a recusa NOSSA é reescrita para quem lê esta tela", () => {
+  it.each(["CERT_STORAGE_UNAVAILABLE", "CERT_PASSWORD_DECRYPT_FAILED"])("%s orienta suporte sem pedir novo certificado", (codigo) => {
+    const lido = lerErroEmissao(recusa({ camada: "NOSSA", status: 422, codigo, message: "Falha técnica" }));
+    expect(lido.tipo).toBe(TIPO.NOSSA);
+    expect(lido.correcao).toMatch(/suporte/);
+    expect(lido.message).not.toMatch(/não tem certificado/);
+    expect(lido.podeReenviar).toBe(true);
+  });
   it("o `pTotTribSN` vira frase de cliente — sem `pTotTribSN`, sem `opSimpNac`", () => {
     const lido = lerErroEmissao(recusa({ camada: "NOSSA", status: 400, ...DO_SERVIDOR.pTotTribSN }));
     expect(lido.tipo).toBe(TIPO.NOSSA);

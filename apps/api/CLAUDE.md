@@ -1,5 +1,7 @@
 # CLAUDE.md — API (apps/api)
 
+Incidente Lente — 15/09/2026: PFX e senha existem, mas AWS KMS recusa a credencial (UnrecognizedClientException). Não confundir falha do cofre com certificado ausente. CertResolver usa CERT_STORAGE_UNAVAILABLE e trata decryptSecret null como falha de senha. Usuário confirmou suspensão da AWS por falta de pagamento e já pagou; teste posterior ainda falhou. Reativação segue pendente; mudança de mensagem não desbloqueia emissão. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
+
 ## Jornada do lead — 14/09/2026
 
 `JornadaLeadService` alimenta o GET comercial e os POSTs `/jornada/conferencia`, `/diagnostico`, `/devolutiva`, `/pagamento`. Conferência exige análise/CNPJ atuais e CAS da ficha; diagnóstico materialmente desatualizado não pode ser enviado. PDF e texto usam lease, registro anterior à rede, correlação por diagnóstico/parte e revalidação entre partes. Timeout nunca provoca repetição automática. Pagamento manual exige contrato `ASSINADO_CONFERIDO` da proposta aceita, liga o evento ao contrato e é idempotente. O verificador PostgreSQL comercial chama `scripts/checks-jornada-lead.js` com rede bloqueada; não utilizar provedores reais/Anthropic. Ver `docs/jornada-lead-passo-a-passo.md` na raiz.

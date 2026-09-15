@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { CAMPOS_PERFIL_EMISSAO, textoDoValor } from "../../../../lib/nfse/perfilEmissao";
 import { useEdicaoPendente } from '../../../configuracoes/ProtecaoEdicao';
+import { MunicipioDoPerfil } from "./MunicipioDoPerfil";
 
 const GRUPOS = [
   ["Serviço e local", ["codigoServicoNacional", "codigoServicoMunicipal", "cLocPrestacao", "codigoNbs"]],
@@ -33,12 +34,16 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
   const [sucesso, setSucesso] = useState("");
   const campos = dados?.campos || CAMPOS_PERFIL_EMISSAO;
   const original = form?.id ? dados?.perfis?.find((p) => p.id === form.id) : { ...dados?.derivadoDoCadastro, nome: '', ativo: true, padrao: false };
-  useEdicaoPendente(Boolean(form && JSON.stringify(corpoDoPerfil(form, campos)) !== JSON.stringify(corpoDoPerfil(original || {}, campos))));
+  useEdicaoPendente(Boolean(form && (form._buscaMunicipio?.trim() || JSON.stringify(corpoDoPerfil(form, campos)) !== JSON.stringify(corpoDoPerfil(original || {}, campos)))));
   const servico = dados?.sugestoes?.porServico?.find((s) => s.codigo === form?.codigoServicoNacional);
   const mudar = (id, valor) => setForm((anterior) => ({ ...anterior, [id]: valor }));
   async function salvar(e) {
     e.preventDefault();
     setErro(""); setSucesso("");
+    if (form._buscaMunicipio?.trim() && !form.cLocPrestacao) {
+      setErro("Selecione o município da prestação na lista ou limpe a busca para deixar sem configuração.");
+      return;
+    }
     try {
       await onSalvar(form.id || null, corpoDoPerfil(form, campos));
       setForm(null); setSucesso("Perfil de emissão salvo.");
@@ -69,6 +74,11 @@ export function EditorPerfilEmissao({ dados, onSalvar, podeEditar, salvando }) {
           {ids.map((id) => {
             const c = campos.find((v) => v.id === id);
             if (!c) return null;
+            if (id === "cLocPrestacao") return <MunicipioDoPerfil key={id}
+              codigo={form.cLocPrestacao} busca={form._buscaMunicipio}
+              onBuscar={texto => setForm(anterior => ({ ...anterior, cLocPrestacao: null, _buscaMunicipio: texto }))}
+              onEscolher={codigo => setForm(anterior => ({ ...anterior, cLocPrestacao: codigo, _buscaMunicipio: null }))}
+            />;
             if (id === "tpImunidade" && String(form.tribISSQN) !== "2" && !form.tpImunidade) return null;
             if (id === "exigSuspProcesso" && !form.exigSuspTipo && !form.exigSuspProcesso) return null;
             return <div key={id} className={id === "codigoServicoNacional" || id === "codigoNbs" ? "full" : undefined}>

@@ -1,5 +1,7 @@
 # CLAUDE.md — Portal do Cliente na web (apps/portal-cliente-web)
 
+Emissão — 15/09/2026: CERT_STORAGE_UNAVAILABLE e CERT_PASSWORD_DECRYPT_FAILED orientam contador/suporte para restaurar o acesso ao cofre. Não pedir novo certificado quando a leitura falhou. Usuário confirmou suspensão da AWS por falta de pagamento e pagamento realizado; teste posterior ainda falhou, aguardando reativação. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
+
 ## Previsão do mês aberto e imposto pago — 08/09/2026
 
 A previsão de receita usa exatamente os três meses de calendário completos imediatamente anteriores ao relógio do servidor. O mês aberto não entra na mediana. Para o recebimento previsto (competência da nota +1), somar somente o complemento positivo entre mediana e notas já emitidas dessa competência. Nota parcial não cancela a previsão; nota acima da mediana não recebe complemento. Meses encerrados não são preenchidos retroativamente. A evidência identifica meses-base, mediana, emitido e complemento. Esta decisão substitui a mediana de toda a série e a regra de começar após a última nota.
