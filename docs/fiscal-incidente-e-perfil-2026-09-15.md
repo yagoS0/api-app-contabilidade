@@ -18,6 +18,8 @@ Correção de código preparada: `CertResolver` distingue certificado cadastrado
 
 Referência: [AWS — diagnóstico de UnrecognizedClientException no KMS](https://repost.aws/knowledge-center/lambda-kmsaccessdeniedexception-errors).
 
+Nova verificação solicitada pelo usuário após o pagamento: em 15/09, por volta de 17h32 (São Paulo), o erro mudou para `AccessDeniedException`. A AWS informou expressamente que a conta proprietária da chave ainda não está ativa (`resource owners account is not active`); PFX e senha permanecem inacessíveis. Isso confirma reativação pendente, sem evidência para alterar permissões ou trocar credenciais.
+
 ## Planejamento: investigação pendente de premissas
 
 O usuário esclareceu que usou Planejamento pelo dashboard, em simulação livre, sem empresa selecionada. Na reprodução pelo navegador, digitando receita anual de R$ 1.200.000,00 e mantendo os padrões (serviços, Anexo III, ISS 5%, RBT12 igual à receita, sem folha), a tela mostrou Simples R$ 156.360/ano (13,03%) e Presumido R$ 210.360/ano (17,53%). O Presumido sinaliza CPP ausente por falta de folha. A linha IRPJ do Simples, separadamente, mostra R$ 6.254,40; isso não prova que tenha sido o valor observado pelo usuário.
