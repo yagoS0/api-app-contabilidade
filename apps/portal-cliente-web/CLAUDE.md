@@ -1,6 +1,6 @@
 # CLAUDE.md — Portal do Cliente na web (apps/portal-cliente-web)
 
-Emissão — 15/09/2026: CERT_STORAGE_UNAVAILABLE e CERT_PASSWORD_DECRYPT_FAILED orientam contador/suporte para restaurar o acesso ao cofre. Não pedir novo certificado quando a leitura falhou. Usuário confirmou suspensão da AWS por falta de pagamento e pagamento realizado; teste posterior ainda falhou, aguardando reativação. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
+Emissão — 15/09/2026: CERT_STORAGE_UNAVAILABLE e CERT_PASSWORD_DECRYPT_FAILED orientam contador/suporte para restaurar o acesso ao cofre. Não pedir novo certificado quando a leitura falhou. Após pagamento da AWS, leitura de 15/09 às 17h43 abriu PFX e senha com CNPJ e validade corretos: acesso ao cofre restabelecido, sem emitir nota no diagnóstico. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
 
 ## Previsão do mês aberto e imposto pago — 08/09/2026
 

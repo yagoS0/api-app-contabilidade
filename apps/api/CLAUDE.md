@@ -1,6 +1,6 @@
 # CLAUDE.md — API (apps/api)
 
-Incidente Lente — 15/09/2026: PFX e senha existem, mas AWS KMS recusa a credencial (UnrecognizedClientException). Não confundir falha do cofre com certificado ausente. CertResolver usa CERT_STORAGE_UNAVAILABLE e trata decryptSecret null como falha de senha. Usuário confirmou suspensão da AWS por falta de pagamento e já pagou; teste posterior ainda falhou. Reativação segue pendente; mudança de mensagem não desbloqueia emissão. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
+Incidente Lente — 15/09/2026: PFX e senha existem, mas AWS KMS recusa a credencial (UnrecognizedClientException). Não confundir falha do cofre com certificado ausente. CertResolver usa CERT_STORAGE_UNAVAILABLE e trata decryptSecret null como falha de senha. Usuário confirmou suspensão da AWS por falta de pagamento e já pagou. Em 15/09 às 17h43, nova leitura abriu PFX e senha com CNPJ e validade corretos: acesso ao cofre restabelecido. Nenhuma emissão real feita no diagnóstico. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
 
 ## Jornada do lead — 14/09/2026
 

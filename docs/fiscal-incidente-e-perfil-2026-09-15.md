@@ -8,6 +8,8 @@ Códigos já salvos mostram nome e UF quando encontrados. Código legado desconh
 
 ## Incidente em produção: Lente
 
+**Acesso ao certificado restabelecido:** no novo teste solicitado pelo usuário em 15/09, às 17h43 (São Paulo), o mesmo caminho de leitura com as configurações da API conseguiu descriptografar arquivo e senha, abrir o PFX e confirmar CNPJ correspondente e validade até 30/10/2026. O cliente pode tentar emitir novamente. Nenhuma nota foi enviada no diagnóstico; a autorização fiscal efetiva ainda depende da emissão pelo cliente. Os registros abaixo descrevem a evolução anterior do incidente.
+
 O cliente recebeu `NO_COMPANY_CERT` em tentativas de emissão em 15/09. Diagnóstico somente de leitura confirmou vínculo Company/PortalClient e CNPJ coincidentes, certificado no banco (`db:company-pfx`, 9.319 bytes), senha protegida presente e validade cadastrada até 30/10/2026. Os logs registraram recusa antes de reservar numeração.
 
 Com as variáveis atuais da API, o cofre AWS KMS recusou a descriptografia com `UnrecognizedClientException`, HTTP 400. Arquivo e senha não puderam ser abertos. Existe credencial dedicada do KMS, de formato compatível com credencial permanente; não existe credencial AWS compartilhada alternativa. Não foram expostos segredos nem emitidas notas no diagnóstico.
