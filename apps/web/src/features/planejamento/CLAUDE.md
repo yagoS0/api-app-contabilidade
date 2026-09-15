@@ -1,5 +1,7 @@
 # Planejamento — continuidade do cenário (08/09/2026)
 
+Pesquisa de mercado — 15/09/2026: ver `docs/planejamento-analise-mercado-2026-09-15.md` na raiz. Comparação com páginas oficiais da Econet, IOB e Sittax. Backlog proposto, ainda não implementado: impedir recomendação definitiva com cobertura parcial; separar folha agregada de pró-labore por sócio; realizado versus plano com projeção mensal; receitas mistas; aprofundar Real e reforma. Não confundir série de início de atividade com projeção mensal completa nem diferença para a segunda opção com economia versus regime atual. O usuário solicitou pesquisa, não execução dessas mudanças.
+
 Revisão — 15/09/2026: os cards expandem a composição por imposto com alíquota, base e valor anual (`memoriaPorTributo` dos motores). IRPJ/CSLL mostram alíquota sobre base presumida/lucro, separada do percentual sobre receita; Simples mostra repartição efetiva do DAS. CPP do Anexo IV e ISS fora do DAS entram no detalhamento e fecham o total. Receita anual, total anual e média mensal têm rótulos explícitos.
 
 ISS não incide sobre receita exclusivamente de mercadorias nas categorias `comercio` e `combustiveis`, tanto no Presumido quanto no Real. O campo é preservado para voltar a serviços; ausência de ISS em serviços continua “não estimado”. ICMS/ST e demais exclusões permanecem indicados. Não ampliar esta regra a transporte ou receitas mistas sem dados suficientes. Fonte: LC 116, art. 1º, documentada em docs/fontes-fiscais.md.
