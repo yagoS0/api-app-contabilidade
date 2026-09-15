@@ -20,6 +20,7 @@ import { resolverConsultaCliente, atenderConsultaCliente } from "./ConsultasClie
 import { pedidoDeConsulta } from "./consultaClienteWhatsapp.js";
 
 export const IDS_MENU_WHATSAPP = Object.freeze({
+  CLIENTE_GUIAS_ABERTO: "altan.client.guides.open.v1",
   CLIENTE_GUIAS_MES: "altan.client.guides.current.v1",
   CLIENTE_SITUACAO_FISCAL: "altan.client.fiscal.status.v1",
   CLIENTE_MAIS: "altan.client.more.v1",
@@ -37,6 +38,7 @@ export const IDS_MENU_WHATSAPP = Object.freeze({
 });
 
 const ACAO_POR_ID = Object.freeze({
+  [IDS_MENU_WHATSAPP.CLIENTE_GUIAS_ABERTO]: "GUIAS_ABERTO",
   [IDS_MENU_WHATSAPP.CLIENTE_GUIAS_MES]: "GUIAS_MES",
   [IDS_MENU_WHATSAPP.CLIENTE_SITUACAO_FISCAL]: "SITUACAO_FISCAL",
   [IDS_MENU_WHATSAPP.CLIENTE_MAIS]: "MAIS",
@@ -86,11 +88,13 @@ export function acaoDoTextoLivre(texto, { cliente = false } = {}) {
     if (/^nova (?:emissao|nota)$/.test(t)) return "EMISSAO";
     if (pedidoDeConsulta(texto)?.acao === "FATURAMENTO") return "FATURAMENTO";
     if (/^(?:(?:manda|mande|envia|envie|quero|preciso|consultar|ver)(?: me)? (?:as? |minhas? )?)?guias?(?: do mes| desse mes)?$/.test(t)) return "GUIAS_MES";
-    if (/^(quanto devo|guias em aberto|dividas|debitos)$/.test(t)) return "QUANTO_DEVO";
+    if (t === "guias em aberto") return "GUIAS_ABERTO";
+    if (/^(quanto devo|dividas|debitos)$/.test(t)) return "QUANTO_DEVO";
+    if (t === "documentos") return "DOCUMENTOS";
     if (/^(?:(?:quero|preciso|gostaria de) )?(?:falar|conversar) com (?:o |a |um |uma )?(?:contador|contadora|atendente|equipe|pessoa|humano|escritorio|alguem)(?: de verdade| real)?$/.test(t)
       || /^(atendente|contador|contadora|humano|equipe|atendimento humano)$/.test(t)
       || /^(?:chama|chame|chamar) (?:o |a |um |uma )?(?:contador|contadora|atendente|equipe)$/.test(t)) return "EQUIPE";
-    if (/^(mais opcoes|outras opcoes)$/.test(t)) return "MAIS";
+    if (/^(mais opcoes|outras opcoes|outras|outros)$/.test(t)) return "MAIS";
     return null;
   }
   if (/\b(analisar|analise)\b.*\b(empresa|cnpj|negocio)\b/.test(t)) return "LEAD_ANALISAR";
@@ -130,22 +134,25 @@ async function carregarSessao(conversa, client) {
 
 const ferramentaLiberada = (sessao, nome) => definicoes(sessao).some((f) => f.name === nome);
 
-export function botoesDoCliente(sessao) {
-  const botoes = [];
-  if (ferramentaLiberada(sessao, "listar_guias")) botoes.push({ id: IDS_MENU_WHATSAPP.CLIENTE_GUIAS_MES, titulo: "Guias do mês" });
-  if (ferramentaLiberada(sessao, "situacao_fiscal")) botoes.push({ id: IDS_MENU_WHATSAPP.CLIENTE_SITUACAO_FISCAL, titulo: "Situação fiscal" });
-  botoes.push({ id: IDS_MENU_WHATSAPP.CLIENTE_MAIS, titulo: "Mais opções" });
-  return botoes.slice(0, 3);
+export function opcoesIniciaisDoCliente(sessao) {
+  // Quatro atalhos exigem lista; botões de resposta da Meta aceitam no máximo três.
+  const opcoes = [
+    ["quanto_devo", IDS_MENU_WHATSAPP.CLIENTE_GUIAS_ABERTO, "Guias em aberto"],
+    ["preparar_emissao", IDS_MENU_WHATSAPP.CLIENTE_EMISSAO, "Emitir nota"],
+    ["listar_documentos", IDS_MENU_WHATSAPP.CLIENTE_DOCUMENTOS, "Documentos"],
+  ].filter(([nome]) => ferramentaLiberada(sessao, nome))
+    .map(([, id, titulo]) => ({ id, titulo }));
+  opcoes.push({ id: IDS_MENU_WHATSAPP.CLIENTE_MAIS, titulo: "Outras" });
+  return opcoes;
 }
 
 export function linhasDoCliente(sessao) {
   const candidatas = [
+    ["situacao_fiscal", IDS_MENU_WHATSAPP.CLIENTE_SITUACAO_FISCAL, "Situação fiscal", "Consultar o relatório fiscal salvo"],
     ["quanto_devo", IDS_MENU_WHATSAPP.CLIENTE_QUANTO_DEVO, "Quanto devo", "Guias liberadas ainda em aberto"],
     ["listar_notas", IDS_MENU_WHATSAPP.CLIENTE_NOTAS, "Notas do mês", "Consultar NFS-e emitidas"],
     ["consultar_faturamento", IDS_MENU_WHATSAPP.CLIENTE_FATURAMENTO, "Faturamento", "Ver quanto a empresa faturou no período"],
-    ["listar_documentos", IDS_MENU_WHATSAPP.CLIENTE_DOCUMENTOS, "Documentos", "Contrato, CNPJ, inscrições e alvarás"],
     ["preparar_recalculo", IDS_MENU_WHATSAPP.CLIENTE_RECALCULO, "Recalcular guia", "Pedido com confirmação por código"],
-    ["preparar_emissao", IDS_MENU_WHATSAPP.CLIENTE_EMISSAO, "Emitir NFS-e", "Pedido com confirmação por código"],
     ["preparar_cancelamento", IDS_MENU_WHATSAPP.CLIENTE_CANCELAMENTO, "Cancelar NFS-e", "Pedido com confirmação por código"],
   ];
   const linhas = candidatas.filter(([nome]) => ferramentaLiberada(sessao, nome))
@@ -336,7 +343,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
 
   // A coleta tem prioridade sobre orçamento/flag do modelo e permanece no piloto do menu.
   if (cliente && ferramentaLiberada(sessao, "preparar_emissao") && !registro.contexto?.resultado?.menuDesatualizado) {
-    const pausar = ["EQUIPE", "MENU", "MAIS", "GUIAS_MES", "SITUACAO_FISCAL", "QUANTO_DEVO", "NOTAS", "DOCUMENTOS", "RECALCULO", "CANCELAMENTO", "CONSULTA_CLIENTE"].includes(acao);
+    const pausar = ["EQUIPE", "MENU", "MAIS", "GUIAS_MES", "GUIAS_ABERTO", "SITUACAO_FISCAL", "QUANTO_DEVO", "NOTAS", "DOCUMENTOS", "RECALCULO", "CANCELAMENTO", "CONSULTA_CLIENTE"].includes(acao);
     const guiada = await coleta({ conversa, mensagem, sessao, texto: texto || "", interacao, iniciar: acao === "EMISSAO", pausar,
       retomarComTexto: registro.contexto?.resultado?.retomarColeta ? registro.contexto.resultado.textoRetomada : null,
       agora, client, executar, servicos: servicosColeta, log: logger, conferirAcesso: () => antesDeEnviar("preparar_emissao", assinatura) });
@@ -373,7 +380,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
 
   if (acao === "INICIO_LIVRE") {
     const corpo = `Olá${sessao.contatoNome ? `, ${sessao.contatoNome}` : ""}! Vou atender seu pedido. Estas opções também estão disponíveis:`;
-    await enviar({ tipo: "interactive", corpo, idTurno: `menu-inicio:${mensagem.id}`, chamada: () => whatsapp.enviarBotoes({ telefone: conversa.telefoneE164, texto: corpo, botoes: opcoesNoContexto(botoesDoCliente(sessao)), rodape: "Pode continuar escrevendo normalmente." }) });
+    await enviar({ tipo: "interactive", corpo, idTurno: `menu-inicio:${mensagem.id}`, chamada: () => whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: corpo, linhas: opcoesNoContexto(opcoesIniciaisDoCliente(sessao)), tituloBotao: "Ver opções", tituloSecao: "Atendimento", rodape: "Pode continuar escrevendo normalmente." }) });
     return { tratado: false, motivo: "INICIO_LIVRE", inicioExibido: true };
   } else if (acao === "MENU") {
     const recente = await client.mensagemWhatsapp.findFirst({
@@ -384,11 +391,11 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
       const corpo = cliente ? rotularEmpresa(`Olá! Como posso ajudar? Pode escrever seu pedido por aqui.${avisoRascunho}`, conversa) : "O menu continua disponível acima. Toque em uma opção ou escreva o que precisa.";
       await enviar({ corpo, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
     } else if (cliente) {
-      const botoes = opcoesNoContexto(botoesDoCliente(sessao));
+      const linhas = opcoesNoContexto(opcoesIniciaisDoCliente(sessao));
       const corpo = rotularEmpresa(registro.contexto?.resultado?.menuDesatualizado
         ? `Esse menu é de uma seleção anterior. Estas são as opções da empresa atual.${avisoRascunho}`
         : `Olá${sessao.contatoNome ? `, ${sessao.contatoNome}` : ""}. Como posso ajudar?${avisoRascunho}`, conversa);
-      await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarBotoes({ telefone: conversa.telefoneE164, texto: corpo, botoes, rodape: "Você também pode escrever seu pedido." }) });
+      await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: corpo, linhas, tituloBotao: "Ver opções", tituloSecao: "Atendimento", rodape: "Você também pode escrever seu pedido." }) });
     } else {
       const botoes = [
         { id: IDS_MENU_WHATSAPP.LEAD_ANALISAR, titulo: "Analisar empresa" },

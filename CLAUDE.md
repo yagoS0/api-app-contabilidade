@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Menu do WhatsApp e emissão direta — 15/09/2026
+
+Lista inicial do cliente: Guias em aberto, Emitir nota, Documentos, Outras, nessa ordem e conforme permissões. Emissão/documentos não ficam em Outras; situação fiscal passa para lá. Lista nativa comporta quatro opções, botões não. Primeiro pedido de emissão solicita CNPJ/CPF, descrição, valor e data juntos; respostas parciais preservam os dados e pedem só lacunas. Data é a competência/data do serviço do lote, “hoje” conserva o dia em São Paulo. Manter preenchimento de cadastro/tributos, escopo da empresa, confirmação por código e testes sem Anthropic nem emissões/envios reais. Detalhes: `docs/whatsapp-emissao-sem-ia.md`.
+
 ## Biblioteca em nova aba e contatos compactos — 14/09/2026
 
 O dono esclareceu que a área grande era a lista de contatos à esquerda. Ela usa 280 px no desktop e 260 px entre 761 e 1250 px; celular mantém lista/conversa alternadas. Gestão da biblioteca sai do painel do chat e abre `/biblioteca` em nova aba. Mensagens rápidas continuam na gaveta esquerda, exibindo a última versão aprovada por chave e atualizando ao voltar à aba. Dez orientações padrão foram revisadas e configuradas por solicitação do dono, com dados institucionais verificados; preços e contratos não foram aprovados nesse ajuste. Fonte e manutenção: `docs/biblioteca-mensagens-rapidas.md`. Não recolocar edição da biblioteca dentro da conversa.

@@ -83,6 +83,19 @@ async function revisar(f) {
 }
 
 describe("conversação guiada persistente sem IA", () => {
+  test('clique em Emitir nota → quatro dados juntos → resumo → confirmação, sem perguntas intermediárias', async () => {
+    const f = fixture();
+    const inicio = await f.responder('', { iniciar: true, interacao: { id: 'altan.client.nfse.issue.v1' } });
+    for (const campo of ['CNPJ:', 'Descrição:', 'Valor:', 'Data:']) expect(inicio.texto).toContain(campo);
+    const revisao = await f.responder(`CNPJ: ${DOC}\nDescrição: Consultoria\nValor: 950,00\nData: 08/09/2026`);
+    expect(revisao.motivo).toBe('EMISSAO_REVISAR');
+    expect(f.tabelas.rascunhoEmissaoWhatsapp[0].estado.dados).toMatchObject({ competencia: '2026-09-08', valor: 950, descricao: 'Consultoria' });
+    expect(f.servicos.consultarCnpj).toHaveBeenCalledTimes(1);
+    expect(f.servicos.prepararDadosFiscaisDoCliente).toHaveBeenCalledTimes(1);
+    expect(f.emitir).not.toHaveBeenCalled();
+    await f.responder(`CONFIRMAR ${f.tabelas.acaoPendenteWhatsapp[0].codigo}`);
+    expect(f.emitir).toHaveBeenCalledTimes(1);
+  });
   let fetchOriginal;
   beforeEach(() => { fetchOriginal = global.fetch; global.fetch = jest.fn(() => { throw new Error("REDE_REAL_PROIBIDA"); }); });
   afterEach(() => { expect(global.fetch).not.toHaveBeenCalled(); global.fetch = fetchOriginal; });
@@ -274,7 +287,7 @@ describe("conversação guiada persistente sem IA", () => {
   test("código solto sem coleta não cria estado quebrado para a próxima mensagem", async () => {
     const f = fixture();
     expect((await f.responder("CONFIRMAR A7K2")).codigo).toBe("SEM_PENDENCIA");
-    expect((await f.responder("não sei")).texto).toContain("CPF/CNPJ");
+    expect((await f.responder("não sei")).texto).toContain("CNPJ:");
     await f.responder(DOC);
     expect((await f.responder("Descrição: Consultoria; valor: 900,00; competência: atual")).motivo).toBe("EMISSAO_REVISAR");
   });

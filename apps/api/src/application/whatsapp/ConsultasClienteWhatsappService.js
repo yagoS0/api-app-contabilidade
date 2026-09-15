@@ -20,6 +20,8 @@ export async function resolverConsultaCliente({ texto, interacao, acaoMenu, regi
     const [token, ...resto] = id.slice(PREFIXO.length).split('.');
     return valida && token === anterior.token ? { acao: 'OPCAO', opcao: resto.join('.'), anterior } : { acao: 'EXPIRADA' };
   }
+  // Atalho inicial lista todas as guias liberadas em aberto, sem limitar o vencimento ao mês.
+  if (acaoMenu === 'GUIAS_ABERTO') return { acao: 'GUIAS', todas: true };
   if (acaoMenu && !['GUIAS_MES', 'RECALCULO', 'FATURAMENTO', 'ID_DESCONHECIDO'].includes(acaoMenu)) return null;
   if (id && !['GUIAS_MES', 'RECALCULO', 'FATURAMENTO'].includes(acaoMenu)) return null;
   const pedido = pedidoDeConsulta(texto, agora);
@@ -179,7 +181,7 @@ export async function atenderConsultaCliente({ pedido, registro, sessao, agora, 
     else if (!historico && !pedido.todas) { const mes = pedido.periodo?.inicio || mesAtualConsulta(agora); guias = guias.filter(g => mesDoVencimento(g) === mes); }
     const dados = await completarPagina({ guias, filtro, tipoFiltro: pedido.tipo, proximaPagina: historico ? r.proximaPagina : null }, PAGINA + 1);
     if (dados.erro) { await texto(dados.erro); return; }
-    if (!dados.guias.length && !dados.proximaPagina) { await texto(`Ainda não encontrei uma guia liberada${pedido.recalculo || pedido.vencidas ? ' vencida' : pedido.periodo ? ` para ${rotuloMesConsulta(pedido.periodo.inicio)}` : ' para pagar neste mês'}. A equipe pode conferir se falta liberar algum arquivo.`, contexto({ tipo: 'PERIODO', alvo: 'GUIAS' })); return; }
+    if (!dados.guias.length && !dados.proximaPagina) { await texto(`Ainda não encontrei uma guia liberada${pedido.recalculo || pedido.vencidas ? ' vencida' : pedido.periodo ? ` para ${rotuloMesConsulta(pedido.periodo.inicio)}` : pedido.todas ? ' em aberto' : ' para pagar neste mês'}. A equipe pode conferir se falta liberar algum arquivo.`, contexto({ tipo: 'PERIODO', alvo: 'GUIAS' })); return; }
     const meta = contexto({ ...dados, tipo: 'GUIAS', offset: 0, recalculo: Boolean(pedido.recalculo) });
     if (meta.guias.length === 1 && !meta.proximaPagina) { await enviarGuia(meta.guias[0], meta); return; }
     await mostrarGuias(meta); return;

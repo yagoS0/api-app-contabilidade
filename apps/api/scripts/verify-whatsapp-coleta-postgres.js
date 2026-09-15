@@ -94,6 +94,21 @@ if (posRetomar >= 0) {
     assert.match(server.versao, /^16\./);
     usuario = await prisma.user.create({ data: { email: `${prefixo}@example.invalid`, passwordHash: "FIXTURE-SEM-LOGIN", status: "active" } });
 
+    const direta = await caso('quatro-dados-juntos');
+    const primeiro = await direta.responder('emitir nota');
+    for (const campo of ['CNPJ:', 'Descrição:', 'Valor:', 'Data:']) assert(primeiro.resultado.texto.includes(campo));
+    const completa = await direta.responder('CNPJ: 11222333000181\nDescrição: Serviço sintético\nValor: 125,50\nData: 08/09/2026');
+    assert.equal(completa.resultado.motivo, 'EMISSAO_REVISAR');
+    const salvo = await checkpoint(direta.conversa.id);
+    assert.equal(salvo.estado.dados.competencia, '2026-09-08');
+    assert.equal(salvo.estado.dados.valor, 125.5);
+    assert.equal(direta.preparacoes(), 1);
+    assert.equal(direta.execucoes(), 0, 'Resumo não emite nota');
+    assert.deepEqual(await direta.processar(completa.mensagem), completa.resultado);
+    assert.equal(direta.preparacoes(), 1, 'Reentrega não prepara duas vezes');
+    assert.equal((await checkpoint(direta.conversa.id)).versao, salvo.versao);
+    ok('quatro dados juntos persistem a data completa e chegam à revisão uma única vez');
+
     const unica = await caso("recibo-restart");
     const inicio = await unica.responder("emitir nota");
     assert.equal((await checkpoint(unica.conversa.id)).versao, 1);

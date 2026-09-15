@@ -10,10 +10,10 @@ O menu agora conduz uma coleta persistente, sem modelo, usando as funções comp
 
 ## Conversa sem modelo
 
-1. Cliente escolhe **Emitir nota** ou escreve um pedido simples reconhecido, como “quero emitir uma nota”.
-2. Sistema pede **CPF/CNPJ ou tomador salvo**. Recupera o cadastro da própria empresa; consulta CNPJ se necessário. Nome e endereço que já existem não são perguntados novamente.
-3. Sistema pede **descrição do serviço** e **valor**, aceitando respostas separadas ou campos identificados na mesma mensagem. Valores ambíguos são esclarecidos, sem conversão por adivinhação.
-4. Sistema oferece **competência atual ou outra competência**. Com dois ou mais perfis fiscais, oferece os nomes configurados pelo contador; um perfil único é automático.
+1. A lista inicial apresenta **Guias em aberto → Emitir nota → Documentos → Outras**, respeitando as permissões. Quatro opções usam lista nativa, pois botões aceitam no máximo três. Situação fiscal, notas, faturamento, recálculo, cancelamento e equipe ficam em Outras. IDs antigos continuam válidos sob as guardas de empresa/versão; o novo atalho de guias inclui todos os vencimentos em aberto liberados, mantendo a seleção/envio de PDFs sem IA.
+2. Cliente escolhe **Emitir nota** ou escreve um pedido simples reconhecido, como “quero emitir uma nota”. A primeira mensagem pede **CNPJ/CPF, descrição, valor e data do serviço juntos**. Tomadores salvos continuam disponíveis. Nome e endereço conhecidos não são perguntados novamente.
+3. Aceita campos rotulados por linhas, ponto e vírgula ou vírgula antes do próximo rótulo; também aceita quatro linhas na ordem documento, descrição, valor e data. Respostas separadas continuam funcionando. A mensagem seguinte reúne somente as lacunas; dado inválido é corrigido sem descartar os demais. Valores ambíguos não são adivinhados.
+4. **Data** e **data do serviço** correspondem à competência do emissor em lote. DD/MM/AAAA preserva o dia; “hoje” usa o dia em São Paulo. MM/AAAA e “mês atual” continuam aceitos, sem inventar o dia. Com dois ou mais perfis fiscais, oferece os nomes configurados pelo contador; um perfil único é automático.
 5. Funções completam os dados. CEP resolve município, rua e bairro; número/complemento do imóvel vêm da memória ou do cliente. Pergunta-se somente o que continua faltando. Não se consulta CPF em base externa.
 6. Cadastro e histórico local fornecem regime, serviço e tributos, seguindo a resolução do emissor e a regra do portal. Configuração fiscal ausente gera encaminhamento com os dados já coletados, sem pedir percentuais ao cliente.
 7. Sistema mostra o resumo, inclusive a competência usada na fonte tributária, e oferece **confirmar, corrigir ou desistir**. Só o mecanismo existente de `CONFIRMAR <código>` autoriza o ato fiscal.

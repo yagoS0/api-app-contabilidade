@@ -1,5 +1,6 @@
-import { responderMenuWhatsapp, botoesDoCliente, linhasDoCliente, IDS_MENU_WHATSAPP, acaoDoTextoLivre } from "../MenuWhatsappService.js";
+import { responderMenuWhatsapp, opcoesIniciaisDoCliente, linhasDoCliente, IDS_MENU_WHATSAPP, acaoDoTextoLivre } from "../MenuWhatsappService.js";
 import { executarFerramenta } from "../../assistente/ferramentas/index.js";
+import { montarPayloadLista } from "../WhatsappCloudClient.js";
 jest.mock("../WhatsappLeaseService.js", () => ({ adquirirLease: jest.fn(async () => ({ id: "lease", token: "owner" })), renovarLease: jest.fn(async () => true), liberarLease: jest.fn(async () => {}) }));
 
 const AGORA = new Date("2026-09-08T15:00:00.000Z");
@@ -49,6 +50,24 @@ function nuvem() {
 }
 
 describe("menus por perfil e permissão", () => {
+  it("menu inicial tem as quatro opções na ordem solicitada e gera uma lista válida", async () => {
+    const permissoes = ["GUIAS", "EMISSAO_NFSE", "DOCUMENTOS_EMPRESA", "SITUACAO_FISCAL"];
+    const client = banco({ cliente: true, permissoes }), cloud = nuvem();
+    await responderMenuWhatsapp({ registro: registro({ cliente: true }), texto: 'menu', agora: AGORA, client, cloud,
+      coleta: async () => ({ tratado: false }), conferirJanela: janelaAberta, resolverVinculo: resolverCliente });
+    const menu = cloud.enviarLista.mock.calls[0][0];
+    expect(menu.linhas.map(o => o.titulo)).toEqual(['Guias em aberto', 'Emitir nota', 'Documentos', 'Outras']);
+    const payload = montarPayloadLista({ ...menu, para: menu.telefone });
+    expect(payload.interactive.action.sections[0].rows).toHaveLength(4);
+    expect(cloud.enviarBotoes).not.toHaveBeenCalled();
+    const outras = linhasDoCliente({ ok: true, papel: 'CLIENT_ADMIN', permissoesAssistente: permissoes });
+    expect(outras.some(o => o.id === IDS_MENU_WHATSAPP.CLIENTE_SITUACAO_FISCAL)).toBe(true);
+    expect(outras.map(o => o.id)).not.toContain(IDS_MENU_WHATSAPP.CLIENTE_EMISSAO);
+    expect(outras.map(o => o.id)).not.toContain(IDS_MENU_WHATSAPP.CLIENTE_DOCUMENTOS);
+  });
+  it.each([['Guias em aberto', 'GUIAS_ABERTO'], ['Emitir nota', 'EMISSAO'], ['Documentos', 'DOCUMENTOS'], ['Outras', 'MAIS']])('aceita o título digitado: %s', (texto, acao) => {
+    expect(acaoDoTextoLivre(texto, { cliente: true })).toBe(acao);
+  });
   it("pedido direto de pessoa usa handoff determinístico, mas uma dúvida livre vai ao modelo", () => {
     expect(acaoDoTextoLivre("quero falar com o contador", { cliente: true })).toBe("EQUIPE");
     expect(acaoDoTextoLivre("qual a situação fiscal da minha empresa?", { cliente: true })).toBeNull();
@@ -56,7 +75,7 @@ describe("menus por perfil e permissão", () => {
   });
   it("cliente vê somente atalhos cobertos por permissão e papel", () => {
     const sessao = { ok: true, papel: "CLIENT_ADMIN", permissoesAssistente: ["GUIAS", "RECALCULO_GUIA"] };
-    expect(botoesDoCliente(sessao).map((b) => b.id)).toEqual([IDS_MENU_WHATSAPP.CLIENTE_GUIAS_MES, IDS_MENU_WHATSAPP.CLIENTE_MAIS]);
+    expect(opcoesIniciaisDoCliente(sessao).map((b) => b.id)).toEqual([IDS_MENU_WHATSAPP.CLIENTE_GUIAS_ABERTO, IDS_MENU_WHATSAPP.CLIENTE_MAIS]);
     expect(linhasDoCliente(sessao).map((l) => l.id)).toEqual([
       IDS_MENU_WHATSAPP.CLIENTE_QUANTO_DEVO, IDS_MENU_WHATSAPP.CLIENTE_RECALCULO, IDS_MENU_WHATSAPP.CLIENTE_EQUIPE,
     ]);
@@ -87,7 +106,7 @@ describe("roteamento sem modelo", () => {
     const client = banco({ cliente: true, permissoes: ["GUIAS"] }), cloud = nuvem();
     const r = await responderMenuWhatsapp({ registro: registro({ cliente: true, texto: "quero entender o motivo desse valor" }), texto: "quero entender o motivo desse valor", agora: AGORA, client, cloud, conferirJanela: janelaAberta, resolverVinculo: resolverCliente });
     expect(r).toMatchObject({ tratado: false, inicioExibido: true });
-    expect(cloud.enviarBotoes).toHaveBeenCalledTimes(1);
+    expect(cloud.enviarLista).toHaveBeenCalledTimes(1);
     expect(client.mensagemWhatsapp.updateMany).not.toHaveBeenCalled();
     expect(client.mensagemWhatsapp.create).toHaveBeenCalledWith({ data: expect.objectContaining({ turnoIaId: "menu-inicio:m1" }) });
   });
@@ -295,7 +314,7 @@ describe("roteamento sem modelo", () => {
       registro: registro({ cliente: true, texto: "menu" }), texto: "menu", agora: AGORA,
       client, cloud, conferirJanela: janelaAberta, resolverVinculo: resolverCliente, logger: log,
     });
-    expect(cloud.enviarBotoes).toHaveBeenCalledTimes(1);
+    expect(cloud.enviarLista).toHaveBeenCalledTimes(1);
   });
 });
 
