@@ -23,4 +23,6 @@
 .lead-step-message { margin-block: 12px; }
 .lead-support { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 12px; }
 .lead-support > summary { cursor: pointer; font-size: .85rem; font-weight: 600; }
+.lead-all-steps { margin: 12px 0; }
+.lead-all-steps > summary, .lead-actions summary { cursor: pointer; font-size: .85rem; padding-block: 8px; }
 @media(max-width: 600px) { .lead-steps ol { grid-template-columns: repeat(2, minmax(0, 1fr)); } .lead-journey-heading { flex-direction: column; } }

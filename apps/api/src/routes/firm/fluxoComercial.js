@@ -10,6 +10,8 @@ import { OnboardingError } from "../../application/onboarding/OnboardingService.
 import { enviarProposta } from "../../application/onboarding/EnvioPropostaService.js";
 import { gerarContratoPdf } from "../../application/onboarding/ContratoComercialPdf.js";
 import { criarJornadaLead } from "../../application/onboarding/JornadaLeadService.js";
+import { INTEGRACAO_FISCAL_LEADS } from "../../config.js";
+import { gerarPropostaPdf } from "../../application/onboarding/PropostaComercialPdf.js";
 export function createFluxoComercialRouter({
   db = prisma
 } = {}) {
@@ -114,6 +116,7 @@ export function createFluxoComercialRouter({
     })
   })));
   router.get("/onboardings/:id", wrap(async req => ({
+    configuracao: { consultasFiscais: INTEGRACAO_FISCAL_LEADS },
     ...(await propostas.painel(req.params.id, req.auth.user)),
     jornada: await jornada.carregar(req.params.id, req.auth.user),
     onboarding: await exigirEscopo(req.params.id, req.auth.user, db)
@@ -145,6 +148,11 @@ export function createFluxoComercialRouter({
   router.post("/onboardings/:id/propostas/:propostaId/aprovar", wrap(async req => ({
     proposta: await propostas.aprovar(req.params.id, req.params.propostaId, req.auth.user)
   })));
+  router.get("/onboardings/:id/propostas/:propostaId/pdf", wrap(async (req, res) => {
+    const proposta = await propostas.documentoProposta(req.params.id, req.params.propostaId, req.auth.user);
+    res.set({ "Content-Type": "application/pdf", "Content-Disposition": 'attachment; filename="proposta-altan.pdf"', "X-Content-Type-Options": "nosniff" });
+    res.send(await gerarPropostaPdf(proposta));
+  }));
   router.post("/onboardings/:id/propostas/:propostaId/link", wrap(async req => propostas.emitirLink(req.params.id, req.params.propostaId, req.auth.user)));
   router.post("/onboardings/:id/propostas/:propostaId/enviar", wrap(async req => enviarProposta(req.params.id, req.params.propostaId, req.auth.user, {
     db

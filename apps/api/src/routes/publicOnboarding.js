@@ -3,8 +3,9 @@ import { Router, json } from "express";
 import rateLimit from "express-rate-limit";
 import { criarServicoComercial } from "../application/onboarding/ComercialService.js";
 import { OnboardingError } from "../application/onboarding/OnboardingService.js";
+import { gerarPropostaPdf } from "../application/onboarding/PropostaComercialPdf.js";
 
-export function createPublicOnboardingRouter({ servico = criarServicoComercial() } = {}) {
+export function createPublicOnboardingRouter({ servico = criarServicoComercial(), propostas = criarPropostasComerciais() } = {}) {
   const router = Router();
   router.use(rateLimit({ windowMs: 60000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: "muitas_tentativas", message: "Aguarde um minuto e tente novamente." } }));
   router.use(json({ limit: "64kb" }));
@@ -17,13 +18,20 @@ export function createPublicOnboardingRouter({ servico = criarServicoComercial()
   };
   router.get("/onboarding", responder(false));
   router.patch("/onboarding", responder(true));
-  const propostas = criarPropostasComerciais();
   const proposta = aceitar => async (req, res) => {
     const token = /^Bearer ([A-Za-z0-9_-]+)$/.exec(String(req.headers.authorization || ""))?.[1];
     try { res.json({ ok: true, ...await propostas.publico(token, aceitar ? req.body : null) }); }
     catch (e) { res.status(e instanceof OnboardingError ? e.status : 500).json({ ok: false, message: e instanceof OnboardingError ? e.message : "Não foi possível concluir." }); }
   };
   router.get("/proposta", proposta(false));
+  router.get("/proposta/pdf", async (req, res) => {
+    const token = /^Bearer ([A-Za-z0-9_-]+)$/.exec(String(req.headers.authorization || ""))?.[1];
+    try {
+      const { proposta } = await propostas.publico(token);
+      res.set({ "Content-Type": "application/pdf", "Content-Disposition": 'attachment; filename="proposta-altan.pdf"' });
+      res.send(await gerarPropostaPdf(proposta));
+    } catch (e) { res.status(e instanceof OnboardingError ? e.status : 500).json({ ok: false, message: e instanceof OnboardingError ? e.message : "Não foi possível abrir a proposta." }); }
+  });
   router.post("/proposta/aceitar", proposta(true));
   return router;
 }

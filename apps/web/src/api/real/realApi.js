@@ -1766,6 +1766,14 @@ export function createRealApi() {
       const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/contratos/${encodeURIComponent(contratoId)}/pdf`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
       if (!res.ok) throw new Error("Não foi possível gerar o contrato PDF."); return res.blob();
     },
+    async baixarPropostaComercial(id, propostaId) {
+      const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/propostas/${encodeURIComponent(propostaId)}/pdf`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
+      if (!res.ok) { const out = await res.json().catch(() => ({})); throw new Error(out.message || "Não foi possível gerar a proposta PDF."); } return res.blob();
+    },
+    async baixarPropostaPublica(token) {
+      const res = await fetch(getApiBaseUrl() + "/public/proposta/pdf", { headers: { Authorization: "Bearer " + token }, credentials: "omit", cache: "no-store" });
+      if (!res.ok) { const out = await res.json().catch(() => ({})); throw new Error(out.message || "Proposta indisponível."); } return res.blob();
+    },
     async baixarDocumentoComercial(id, doc) {
       const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/documentos/${encodeURIComponent(doc)}`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
       if (!res.ok) throw new Error("Não foi possível abrir o documento."); return res.blob();

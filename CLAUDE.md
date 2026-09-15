@@ -893,3 +893,10 @@ mediu: aquela medição olhou a tabela `User`, e este usuário não está nela.
 - Não remover validações de CNPJ, certificado A1, ou regras fiscais
 - Preferir editar arquivos existentes a criar novos
 - Não adicionar abstrações desnecessárias — três linhas duplicadas são melhores que uma abstração prematura
+# Onboarding: procuração, proposta PDF e ações recolhidas (15/09/2026)
+
+Procuração SERPRO ATIVA, com validade futura e sistema `TODOS`, também habilita SITFIS, além de `00002`/nome oficial. Conferir representante ou reenviar orientação não pode apagar prova vigente; alterações concorrentes de CNPJ/representante/atendimento invalidam o resultado. A fila depende de `INTEGRACAO_FISCAL_LEADS=1`; o painel expõe apenas o booleano e explica o bloqueio. Não disparar consulta fiscal ao carregar/pollar a tela.
+
+Proposta PDF é determinística e usa somente a projeção do snapshot daquela versão: identificação, perfil, serviços, opções, taxas e condições. Download interno exige gestor/escopo/versão; download público usa o mesmo Bearer pessoal e validade do aceite, sem token na URL nem cache. Envio é um único documento com link de aceite na legenda, preservando reserva e bloqueio de duplicidade/incerteza. Preços reais continuam exclusivamente no catálogo privado aprovado. Avulsos sem preço não são inventados; rascunho fica identificado no PDF.
+
+Na jornada, mostrar a etapa atual e recolher as demais. Abrir campos/prévia por ação explícita; recolher após sucesso e preservar rascunhos nos erros. Onboarding aberto diretamente reutiliza `atendimento.conversaId` para enviar pela conversa vinculada. Mensagens rápidas aprovadas na biblioteca NÃO são templates aprovados pela Meta: fora das 24h só modelos Meta aprovados. Referências e operação em `docs/jornada-lead-passo-a-passo.md`. Testes com provedores simulados e PostgreSQL local; nenhum token Anthropic, destinatário real, assinatura ou cobrança.

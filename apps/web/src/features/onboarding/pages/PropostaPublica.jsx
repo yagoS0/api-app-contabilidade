@@ -29,7 +29,11 @@ export function PropostaPublica({
     maxWidth: 850,
     margin: "40px auto",
     padding: 24
-  }}><h1>Proposta de serviços — ALTAN</h1>{api.mode === "mock" && <p>Demonstração local. Nenhum serviço será contratado.</p>}{erro && <p role="alert">{erro}</p>}{proposta ? <><p>Para {proposta.destinatario} · versão {proposta.versao} · válida até {new Date(proposta.expiraEm).toLocaleDateString("pt-BR")}</p><OpcoesProposta proposta={proposta} />{proposta.status === "ACEITA" ? <p role="status">Opção aceita: {proposta.opcaoAceita}. O escritório vai preparar e conferir o contrato para assinatura.</p> : <fieldset disabled={ocupado}><legend>Escolha a opção que deseja contratar</legend>{proposta.opcoes.map(o => <label key={o.chave} style={{
+  }}><h1>Proposta de serviços — ALTAN</h1>{api.mode === "mock" && <p>Demonstração local. Nenhum serviço será contratado.</p>}{erro && <p role="alert">{erro}</p>}{proposta ? <><p>Para {proposta.destinatario} · versão {proposta.versao} · válida até {new Date(proposta.expiraEm).toLocaleDateString("pt-BR")}</p><OpcoesProposta proposta={proposta} />{api.baixarPropostaPublica && <Button variant="secondary" disabled={ocupado} onClick={async () => {
+      setOcupado(true); setErro("");
+      try { const url = URL.createObjectURL(await api.baixarPropostaPublica(token)); const a = document.createElement("a"); a.href = url; a.download = "proposta-altan.pdf"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000); }
+      catch (e) { setErro(e.message); } finally { setOcupado(false); }
+    }}>Baixar proposta em PDF</Button>}{proposta.status === "ACEITA" ? <p role="status">Opção aceita: {proposta.opcaoAceita}. O escritório vai preparar e conferir o contrato para assinatura.</p> : <fieldset disabled={ocupado}><legend>Escolha a opção que deseja contratar</legend>{proposta.opcoes.map(o => <label key={o.chave} style={{
           display: "block",
           padding: 8
         }}><input type="radio" name="opcao" checked={opcao === o.chave} onChange={() => setOpcao(o.chave)} />{o.titulo}</label>)}<label><input type="checkbox" checked={confirmado} onChange={e => setConfirmado(e.target.checked)} /> Li o escopo, os valores e as condições desta versão.</label><p>O aceite registra a opção escolhida. A assinatura do contrato é uma etapa separada.</p><Button disabled={!opcao || !confirmado} onClick={async () => {

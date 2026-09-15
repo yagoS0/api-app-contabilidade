@@ -24,7 +24,7 @@ export async function exigirEscopo(id, user, db = prisma) {
 const evento = (db, id, tipo, atorId, dados = {}) => db.onboardingEvento.create({ data: { onboardingId: id, tipo, atorId, dados } });
 export function procuracaoHabilitaSitfis(p, agora = new Date()) {
   // Tabela oficial Serviços x Procurações: SITFIS usa 00002 / Situação Fiscal do Contribuinte.
-  const nomes = new Set(["sitfis", "00002", "situacao fiscal do contribuinte"]);
+  const nomes = new Set(["sitfis", "00002", "situacao fiscal do contribuinte", "todos"]);
   return p?.status === "ATIVA" && Boolean(p.validUntil && new Date(p.validUntil).getTime() > agora.getTime())
     && Array.isArray(p.systems) && p.systems.some((s) => nomes.has(String(typeof s === "string" ? s : s?.idSistema || s?.nome || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase()));
 }

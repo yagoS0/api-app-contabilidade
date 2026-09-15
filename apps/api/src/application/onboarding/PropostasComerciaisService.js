@@ -7,6 +7,7 @@ import { calcularOpcoes, preencherTexto } from "./CatalogoComercial.js";
 import { encerrado } from "./LeadService.js";
 import { encryptSecret, decryptSecret } from "../../utils/crypto.js";
 import { etapasDaOrigem } from "./etapasTemplate.js";
+import { propostaParaCliente } from "./PropostaComercialPdf.js";
 const hash = v => crypto.createHash("sha256").update(v).digest("hex");
 const erro = (c, m, s = 409) => new OnboardingError(c, m, s);
 const evento = (tx, onboardingId, tipo, atorId, dados = {}) => tx.onboardingEvento.create({
@@ -124,6 +125,7 @@ export function criarPropostasComerciais({
         catalogo: catalogo.dados,
         ajustes: body.ajustes || {}
       });
+      const publica = r.cnpj ? await tx.onboardingAnalise.findFirst({ where: { onboardingId: id, cnpj: r.cnpj, tipo: "PUBLICA", status: "CONCLUIDA" }, orderBy: { createdAt: "desc" } }) : null;
       const anterior = await tx.propostaComercial.findFirst({
         where: {
           onboardingId: id
@@ -145,6 +147,15 @@ export function criarPropostasComerciais({
             origem: r.origem,
             destinatario: r.responsavelNome || r.razaoSocial || "Interessado",
             cnpj: r.cnpj,
+            razaoSocial: r.razaoSocial || r.dados?.razaoSocial || publica?.resultado?.razaoSocial || null,
+            perfil: {
+              atividade: r.dados?.atividadePretendida || r.dados?.atividadePrincipal || publica?.resultado?.atividadePrincipal || null,
+              regime: r.dados?.regimeAtual || r.dados?.regimePretendido || null,
+              funcionarios: r.dados?.qtdFuncionarios ?? null,
+              notasRecebidasMes: r.dados?.notasRecebidasMes ?? null,
+              consultoriaMensal: proposta.opcoes.some(o => o.recorrente) && (r.dados?.consultoriaMensal === true || Number(r.dados?.qtdFuncionarios) >= catalogo.dados.consultoriaIncluidaAPartir)
+            },
+            servicosConferidos: String(body.ajustes?.escopoAvulso || "").slice(0, 1200),
             criadoPor: user.id
           }
         }
@@ -293,21 +304,20 @@ export function criarPropostasComerciais({
         });
       });
     }
-    const s = p.snapshot;
     return {
       proposta: {
-        versao: p.versao,
+        ...propostaParaCliente(p),
         status: aceite ? "ACEITA" : p.status,
-        opcaoAceita: aceite?.opcao || p.opcaoAceita,
-        expiraEm: p.expiraEm,
-        destinatario: s.destinatario,
-        opcoes: s.opcoes,
-        regularizacaoCentavos: s.regularizacaoCentavos,
-        taxasCentavos: s.taxasCentavos,
-        taxasConfirmadas: s.taxasConfirmadas,
-        condicoes: s.condicoes
+        opcaoAceita: aceite?.opcao || p.opcaoAceita
       }
     };
+  }
+  async function documentoProposta(id, propostaId, user) {
+    exigirGestor(user);
+    const r = await exigirEscopo(id, user, db);
+    const p = await db.propostaComercial.findFirst({ where: { id: propostaId, onboardingId: id, revogadaEm: null } });
+    if (!p || p.fichaVersao !== r.versao || (p.status !== "ACEITA" && (encerrado(r) || new Date(p.expiraEm) <= agora()))) throw erro("proposta_indisponivel", "A proposta mudou ou expirou. Gere uma versão com os dados atuais.");
+    return propostaParaCliente(p);
   }
   async function contrato(id, propostaId, user, body) {
     exigirGestor(user);
@@ -563,6 +573,7 @@ export function criarPropostasComerciais({
     aprovar,
     emitirLink,
     publico,
+    documentoProposta,
     contrato,
     aprovarContrato,
     salvarDocumento,
