@@ -1,5 +1,7 @@
 # CLAUDE.md — Empresas (apps/web/src/features/companies)
 
+Relatório de faturamento — 15/09/2026: em Apuração, a ação tem nome fixo “Revisar classificação”, no alto e no aviso do relatório. Abre SugestaoModal → “Classificar competência”; concluir classificação ou resolução de pendência regenera o relatório local e recarrega dados sem consulta paga. A lib de apresentação normaliza instruções antigas dos JSONs salvos sem alterar valores históricos. Perfil fiscal é acessado por Configurações da empresa (engrenagem). Ver docs/fiscal-incidente-e-perfil-2026-09-15.md.
+
 Perfis de emissão — 15/09/2026: cLocPrestacao agora usa MunicípioDoPerfil/municipioIbge, busca nome+UF e envia apenas o código IBGE. Busca não resolvida bloqueia salvar; campo vazio continua opcional. Não inferir local da prestação do endereço do emissor. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
 
 ## Documentos e configurações na navegação — 10/09/2026

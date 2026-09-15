@@ -22,10 +22,24 @@ Referência: [AWS — diagnóstico de UnrecognizedClientException no KMS](https:
 
 Nova verificação solicitada pelo usuário após o pagamento: em 15/09, por volta de 17h32 (São Paulo), o erro mudou para `AccessDeniedException`. A AWS informou expressamente que a conta proprietária da chave ainda não está ativa (`resource owners account is not active`); PFX e senha permanecem inacessíveis. Isso confirma reativação pendente, sem evidência para alterar permissões ou trocar credenciais.
 
-## Planejamento: investigação pendente de premissas
+## Planejamento: composição dos tributos e incidência de ISS
 
 O usuário esclareceu que usou Planejamento pelo dashboard, em simulação livre, sem empresa selecionada. Na reprodução pelo navegador, digitando receita anual de R$ 1.200.000,00 e mantendo os padrões (serviços, Anexo III, ISS 5%, RBT12 igual à receita, sem folha), a tela mostrou Simples R$ 156.360/ano (13,03%) e Presumido R$ 210.360/ano (17,53%). O Presumido sinaliza CPP ausente por falta de folha. A linha IRPJ do Simples, separadamente, mostra R$ 6.254,40; isso não prova que tenha sido o valor observado pelo usuário.
 
 Não foi reproduzido total anual de R$ 6 mil. Foram solicitados os demais campos usados no cenário. Não alterar fórmulas tributárias para forçar um resultado sem reproduzir o problema. A máscara monetária existente trabalha em centavos; a reprodução confirmou valor visível de 1.200.000,00 antes de conferir os cartões. Não confundir RBT12, receita anual, tributo isolado e total anual.
+
+Foi reproduzido outro defeito: as categorias de mercadorias recebiam ISS no Presumido e Real. Corrigido conforme LC 116, art. 1º; com receita R$ 1,2 milhão e ISS 5%, a cobrança indevida acrescentava R$ 60 mil/ano. Serviços preservam a alíquota informada e mercadorias continuam com ICMS/ST não estimados. A alíquota fica guardada no formulário ao alternar categorias.
+
+Consulta somente de leitura do prefill da Lente reproduziu a carga de 17,88%: receita anual R$ 1.017.686,09, folha R$ 36 mil, serviços gerais e ISS 5%. IRPJ R$ 48.848,93; adicional R$ 8.565,95; CSLL R$ 29.309,36; PIS R$ 6.614,96; COFINS R$ 30.530,58; CPP R$ 7.200; ISS R$ 50.884,30. Total antes do arredondamento das parcelas: R$ 181.954,09. O percentual é a carga total da simulação, não alíquota legal única. Nenhum cenário salvo foi encontrado; o diagnóstico não alterou cadastro ou apuração.
+
+A pedido do usuário, os cards abrem impostos separados com alíquota, base, valor anual e participação na receita. Total anual e média mensal são explícitos. A CPP por fora no Anexo IV passou a integrar `porTributo` (já integrava `total`); testes conferem soma e memória, inclusive na sexta faixa com ISS por fora. Valores persistidos de cenários anteriores não são reescritos.
+
+## Relatório de faturamento: ação de classificação
+
+O botão no alto de Apuração agora tem nome fixo “Revisar classificação”, acompanhado do estado das pendências. O aviso do relatório oferece o mesmo botão e abre o modal que contém “Classificar competência”. Após classificação ou resolução manual de pendência, recarrega a apuração e regenera o relatório local. Respostas de competência anterior são descartadas. Não chama SERPRO, ADN ou SEFAZ.
+
+Backend e mock emitirão o caminho novo. A apresentação também normaliza instruções de relatórios já salvos: não depende de regravar JSON antigo. O diagnóstico de receita não classificada explica a limitação da conferência local, sem invalidar declaração transmitida; cadastro ausente orienta Configurações da empresa → Perfil fiscal. Os valores da foto histórica e o tratamento de extrato salvo são preservados. O aviso de itens sem competência aponta para Notas Fiscais → Auditoria.
+
+Validação desta rodada: 629 testes web de planejamento/apuração e 53 testes API de relatório/diagnóstico aprovados; 87 testes focados reexecutados após a revisão das mensagens. Build web aprovado, com os avisos preexistentes de tamanho de chunks/imports mistos; lint JSX/no-undef e diff sem erros. Conferência visual dos impostos da Lente e da abertura do modal pelo relatório no mock. O mock mantém seus cenários sintéticos fixos de classificação; a transição de relatório pendente para classificado é coberta pelo teste de integração da tela com respostas de API. Estas mudanças ainda não foram publicadas.
 
 Validação: 100 testes de certificado/desfecho/emissão, 7 do texto ao cliente, 6 do perfil e 400 de planejamento aprovados. Builds dos dois frontends aprovados, com aviso existente de chunks acima de 500 kB. Estas alterações ainda não foram publicadas em produção.

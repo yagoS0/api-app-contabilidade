@@ -1088,6 +1088,9 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
         {resultado && (
           <div id="comparacao-cenario" tabIndex={-1} data-print-area style={{ display: "grid", gap: 14 }}>
             <h2 data-print-hide style={{ margin: 0, fontSize: "1.1rem" }}>Comparação dos regimes</h2>
+            <p aria-label="Receita usada no cálculo" style={{ margin: 0, color: C.muted, fontSize: "0.85rem" }}>
+              Receita anual: <strong>{brl(entradas.receitaAnual)}</strong> · média mensal: <strong>{brl(entradas.receitaAnual / 12)}</strong>
+            </p>
             {/* ⚠ CABEÇALHO SÓ-NO-PAPEL. O PDF vai para o cliente do contador sem esta tela por
                 perto: sem isto, ele circula como um número sem data, sem escopo e sem ressalva. */}
             <div data-print-only style={{ display: "none" }}>
@@ -1150,6 +1153,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
                 <CardRegime
                   key={r.regime}
                   resultado={r}
+                  receitaAnual={entradas.receitaAnual}
                   vencedor={resultado.vencedor?.regime === r.regime}
                   aberto={Boolean(abertos[r.regime])}
                   onToggle={() => setAbertos((a) => ({ ...a, [r.regime]: !a[r.regime] }))}

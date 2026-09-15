@@ -1,6 +1,10 @@
 # Planejamento — continuidade do cenário (08/09/2026)
 
-Investigação — 15/09/2026: relato de R$ 6 mil/ano ocorreu no dashboard em simulação livre. Receita R$ 1,2 milhão com padrões da tela reproduziu Simples R$ 156.360 e Presumido R$ 210.360, sem CPP não informada. Aguardando demais premissas; nenhuma fórmula alterada sem reproduzir o cenário. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
+Revisão — 15/09/2026: os cards expandem a composição por imposto com alíquota, base e valor anual (`memoriaPorTributo` dos motores). IRPJ/CSLL mostram alíquota sobre base presumida/lucro, separada do percentual sobre receita; Simples mostra repartição efetiva do DAS. CPP do Anexo IV e ISS fora do DAS entram no detalhamento e fecham o total. Receita anual, total anual e média mensal têm rótulos explícitos.
+
+ISS não incide sobre receita exclusivamente de mercadorias nas categorias `comercio` e `combustiveis`, tanto no Presumido quanto no Real. O campo é preservado para voltar a serviços; ausência de ISS em serviços continua “não estimado”. ICMS/ST e demais exclusões permanecem indicados. Não ampliar esta regra a transporte ou receitas mistas sem dados suficientes. Fonte: LC 116, art. 1º, documentada em docs/fontes-fiscais.md.
+
+Lente: reprodução dos 17,88% com receita anual R$ 1.017.686,09, folha R$ 36.000 e ISS 5%; o total R$ 181.954,09 inclui adicional de IRPJ e CPP. É carga total, não uma alíquota única. Relato livre de R$ 6 mil/ano não foi reproduzido: R$ 1,2 milhão com padrões produz Simples R$ 156.360 e Presumido R$ 210.360 (folha ausente). Não forçar fórmulas para reproduzir um relato sem premissas. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
 
 ## Revisão fiscal — 14/09/2026
 

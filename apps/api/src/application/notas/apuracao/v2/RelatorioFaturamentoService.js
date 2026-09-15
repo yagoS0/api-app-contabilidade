@@ -651,9 +651,8 @@ export async function montarRelatorioFaturamento({ portalClientId, competencia }
     // `ONDE_CONFIGURA_EMISSAO` já registra: o caminho muda na tela e a `correcao` do backend
     // continua mandando o contador para um lugar onde o botão não está mais.
     // ⚠ O espelho no mock (`apps/web/src/api/mock/mockApi.js`) tem de mudar JUNTO.
-    comoResolver: "Aba Apuração → botão de classificação (no alto, ao lado de Calcular) → \"Classificar competência\". "
-      + "Enquanto a receita não estiver classificada, o relatório não consegue dizer de que tipo "
-      + "de operação ela é — e o motor de apuração não calcula o DAS.",
+    comoResolver: "Na aba Apuração, abra Revisar classificação e clique em Classificar competência. "
+      + "A classificação organiza as notas por tipo de operação para a conferência local; não altera a declaração já transmitida.",
   };
 
   const semDetalheCapturado = {

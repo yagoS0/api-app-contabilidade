@@ -6,7 +6,7 @@
 // decisão", nunca de parecer.
 
 import { custoAnualSimples, anexoPorFatorR, folhaParaFatorR, rbt12InicioAtividade } from "./simplesNacional";
-import { custoAnualPresumido } from "./lucroPresumido";
+import { custoAnualPresumido, atividadeExclusivaDeMercadorias } from "./lucroPresumido";
 import { PIS_COFINS_NAO_CUMULATIVO, IRPJ, CSLL_ALIQUOTA, ENCARGOS_FOLHA, FONTES_VERIFICADAS_EM } from "./tabelasFiscais";
 
 /**
@@ -17,7 +17,7 @@ import { PIS_COFINS_NAO_CUMULATIVO, IRPJ, CSLL_ALIQUOTA, ENCARGOS_FOLHA, FONTES_
  * vez de um número que pareceria comparável e não seria. Foi para isso que o documento de fontes
  * abriu um alerta de escopo.
  */
-export function custoAnualReal({ receitaAnual, margemLucro = null, creditosPisCofins = null, folhaAnual = 0, aliquotaIss = null }) {
+export function custoAnualReal({ receitaAnual, margemLucro = null, creditosPisCofins = null, folhaAnual = 0, aliquotaIss = null, atividade = "servicos" }) {
   if (margemLucro == null || creditosPisCofins == null) {
     return {
       regime: "Lucro Real",
@@ -43,20 +43,31 @@ export function custoAnualReal({ receitaAnual, margemLucro = null, creditosPisCo
   // `naoConsiderado`, porque zerá-la barateia o regime em 20% da folha por ausência de dado.
   const folhaInformada = folhaAnual != null && Number.isFinite(Number(folhaAnual));
   const cpp = folhaInformada ? Number(folhaAnual) * ENCARGOS_FOLHA.cppPatronal : 0;
-  const iss = aliquotaIss == null ? 0 : receita * Number(aliquotaIss);
+  const issAplicavel = !atividadeExclusivaDeMercadorias(atividade);
+  const iss = !issAplicavel || aliquotaIss == null ? 0 : receita * Number(aliquotaIss);
   const total = irpj + adicional + csll + pisCofins + cpp + iss;
 
   return {
     regime: "Lucro Real",
-    porTributo: { irpj, adicionalIrpj: adicional, csll, pisCofins, ...(folhaInformada ? { cpp } : {}), ...(aliquotaIss == null ? {} : { iss }) },
+    porTributo: { irpj, adicionalIrpj: adicional, csll, pisCofins, ...(folhaInformada ? { cpp } : {}), ...(!issAplicavel || aliquotaIss == null ? {} : { iss }) },
     total,
+    memoriaPorTributo: {
+      irpj: { aliquota: IRPJ.aliquota, baseCalculo: lucro, baseRotulo: "Lucro estimado" },
+      adicionalIrpj: { aliquota: IRPJ.adicional, baseCalculo: adicional / IRPJ.adicional, baseRotulo: "Excesso trimestral somado no ano" },
+      csll: { aliquota: CSLL_ALIQUOTA, baseCalculo: lucro, baseRotulo: "Lucro estimado" },
+      pisCofins: { aliquota: PIS_COFINS_NAO_CUMULATIVO.total, baseCalculo: receita, baseRotulo: "Receita anual", creditos: Number(creditosPisCofins) },
+      ...(folhaInformada ? { cpp: { aliquota: ENCARGOS_FOLHA.cppPatronal, baseCalculo: Number(folhaAnual), baseRotulo: "Folha anual" } } : {}),
+      ...(issAplicavel && aliquotaIss != null ? { iss: { aliquota: Number(aliquotaIss), baseCalculo: receita, baseRotulo: "Receita de serviços" } } : {}),
+    },
     cargaEfetiva: receita > 0 ? total / receita : null,
     premissas: [
+      ...(!issAplicavel ? ["ISS não se aplica à receita de mercadorias desta categoria; ICMS não estimado nesta simulação."] : []),
       `Margem de lucro informada: ${(Number(margemLucro) * 100).toFixed(1).replace(".", ",")}%`,
       `PIS/COFINS não cumulativo (9,25%) menos ${brl(creditosPisCofins)} de créditos informados`,
       "Compensação de prejuízos fiscais NÃO considerada (trava de 30% — Lei 9.065/1995, art. 15)",
     ],
     naoConsiderado: [
+      issAplicavel && aliquotaIss == null ? "ISS (informe a alíquota do município no cenário)" : null,
       folhaInformada
         ? null
         : "CPP (INSS patronal de 20% sobre a folha): a folha de 12 meses não foi informada — não estimada aqui, então este total está subestimado",
@@ -130,7 +141,7 @@ export function compararRegimes({
     ? custoAnualSimples({ anexoChave: anexoResolvido, rbt12: rbt, receitaAnual, folhaAnual, aliquotaIss, mesesDeAtividade, receitasMensais })
     : null);
   const presumido = custoAnualPresumido({ receitaAnual, atividade: atividadePresumido, folhaAnual, aliquotaIss, anoBase, servicosAte120kConfirmado });
-  const real = custoAnualReal({ receitaAnual, margemLucro, creditosPisCofins, folhaAnual, aliquotaIss });
+  const real = custoAnualReal({ receitaAnual, margemLucro, creditosPisCofins, folhaAnual, aliquotaIss, atividade: atividadePresumido });
 
   const candidatos = [simples, presumido, real].filter(Boolean);
   const comparaveis = candidatos.filter((c) => !c.indisponivel && c.elegivel !== false);

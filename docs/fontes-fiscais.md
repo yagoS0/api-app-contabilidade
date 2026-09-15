@@ -516,6 +516,10 @@ lucro (trava do art. 15 da Lei 9.065/1995) — se implementada, citar a fonte no
 
 ## 4. ISS E ICMS
 
+Revisão de incidência em 15/09/2026: [LC 116/2003, art. 1º](https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp116.htm) define como fato gerador do ISS a prestação dos serviços da lista anexa. Na simulação, categorias exclusivamente de mercadorias (`comercio` e `combustiveis`) não recebem ISS sobre essa receita nos motores do Presumido e Real. ICMS/ST continuam fora da estimativa, com aviso; isso não calcula a carga completa de mercadorias. Não estender a receitas mistas nem às modalidades de transporte sem determinar a incidência específica.
+
+Os cards discriminam a alíquota sobre sua base de cálculo e o peso do valor sobre a receita. IRPJ de 15% sobre a base presumida de 32%, por exemplo, representa 4,8% da receita, antes do adicional (§2). CPP de 20% incide na folha, não na receita (§5). A memória usa as mesmas constantes e bases do motor, sem novas alíquotas.
+
 - **ISS:** alíquota municipal entre **2% (piso, EC 37/2002 / LC 157/2016) e 5% (teto, LC 116/2003,
   art. 8º)**. O valor concreto por município/serviço é PARÂMETRO DE ENTRADA.
 - **ICMS:** alíquotas internas e interestaduais variam por estado, NCM e operação (ST, DIFAL,
