@@ -161,7 +161,7 @@ async function fixtureComMenu(permissoesAssistente = ['GUIAS'], guias = [{ guide
     const entrada = await f.novo(opcao.titulo, { tipo: 'interactive', interacao: { id: opcao.id } });
     return { entrada, resultado: await f.rodar(entrada) };
   };
-  const guia = () => f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes.find(o => o.titulo === 'Guias do mês');
+  const guia = () => f.cloud.enviarLista.mock.calls.at(-1)[0].linhas.find(o => o.titulo === 'Guias em aberto');
   return { ...f, executar, coleta, clicar, guia };
 }
 
@@ -224,7 +224,7 @@ it('faturamemto → mês passado → agosto → texto livre consulta o período 
   const chamadas = f.executar.mock.calls.length;
   await dizerNaJornada(f, 'obrigado, tenho outra dúvida');
   expect(f.executar).toHaveBeenCalledTimes(chamadas);
-  expect(f.cloud.enviarLista).toHaveBeenCalledTimes(1);
+  expect(f.cloud.enviarLista.mock.calls.filter(([menu]) => menu.tituloSecao === 'Empresas')).toHaveLength(1);
 });
 
 it('faturamento exige permissão de leitura de notas', async () => {
@@ -329,19 +329,19 @@ it('reações não iniciam atendimento nem invalidam a lista que já foi mostrad
   expect(f.atendimento()).toEqual(antes);
   await f.clicar(opcao);
   expect(f.atendimento().portalClientId).toBe('lente');
-  expect(f.cloud.enviarLista).toHaveBeenCalledTimes(1);
+  expect(f.cloud.enviarLista.mock.calls.filter(([menu]) => menu.tituloSecao === 'Empresas')).toHaveLength(1);
   expect(f.guia().id).toContain('altan.ctx.v1:');
 });
 
-it('seleção → menu real → Guias do mês consulta só a empresa escolhida, sem novo seletor nem repetição', async () => {
-  const f = await fixtureComMenu();
+it.each(['20/09/2026', '20/08/2026', '20/10/2026'])('menu → Guias em aberto inclui vencimento %s só da empresa escolhida, sem novo seletor nem repetição', async vencimento => {
+  const f = await fixtureComMenu(['GUIAS'], [{ guideId: 'guia-sintetica', tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 100,00', vencimento }]);
   await f.selecionar('menu', 'lente');
   const versao = f.atendimento().versao;
   const { entrada, resultado } = await f.clicar(f.guia());
   expect(resultado).toMatchObject({ tratado: true, acao: 'GUIAS_MES' });
   expect(f.executar).toHaveBeenCalledWith('quanto_devo', {}, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'lente' }), conversa: expect.objectContaining({ portalClientId: 'lente' }) }));
   expect(f.cloud.enviarDocumento).toHaveBeenLastCalledWith(expect.objectContaining({ legenda: expect.stringMatching(/Empresa: Lente[\s\S]*Aqui está sua guia/) }));
-  expect(f.cloud.enviarLista).toHaveBeenCalledTimes(1);
+  expect(f.cloud.enviarLista.mock.calls.filter(([menu]) => menu.tituloSecao === 'Empresas')).toHaveLength(1);
   expect(f.atendimento()).toMatchObject({ portalClientId: 'lente', versao, aguardandoSelecao: false });
   await f.rodar(entrada);
   expect(f.executar).toHaveBeenCalledTimes(2);
@@ -354,7 +354,7 @@ it('texto livre Guias do mês continua na empresa e esclarecimentos não abrem o
   expect(f.executar).toHaveBeenCalledTimes(2);
   await f.rodar(await f.novo('esse valor é referente a qual período?'));
   expect(f.processar).toHaveBeenLastCalledWith(expect.objectContaining({ conversa: expect.objectContaining({ portalClientId: 'lente' }) }), expect.objectContaining({ corpo: 'esse valor é referente a qual período?' }), expect.anything());
-  expect(f.cloud.enviarLista).toHaveBeenCalledTimes(1);
+  expect(f.cloud.enviarLista.mock.calls.filter(([menu]) => menu.tituloSecao === 'Empresas')).toHaveLength(1);
 });
 
 it.each(['trocar', 'mudar de empresa', 'trocar de empresa', 'pode mudar a empresa?', 'outra empresa, por favor.'])(
@@ -399,7 +399,7 @@ it('menu antigo após trocar empresa mostra o menu atual e não consulta a empre
   await f.clicar(antigo);
   expect(f.executar).not.toHaveBeenCalled();
   expect(f.atendimento()).toMatchObject({ portalClientId: 'klaus', versao: antes.versao });
-  expect(f.cloud.enviarBotoes.mock.calls.at(-1)[0].texto).toMatch(/seleção anterior/);
+  expect(f.cloud.enviarLista.mock.calls.at(-1)[0].texto).toMatch(/seleção anterior/);
   await f.clicar(f.guia());
   expect(f.executar).toHaveBeenCalledWith('quanto_devo', {}, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'klaus' }) }));
 });
@@ -421,7 +421,7 @@ it('menu antigo só atualiza as opções e preserva o rascunho e a ação da emp
   expect(f.executar).not.toHaveBeenCalled();
   expect(f.client.rows.rascunhoEmissaoWhatsapp).toEqual(rascunhos);
   expect(f.client.rows.acaoPendenteWhatsapp).toEqual(acoes);
-  expect(f.cloud.enviarBotoes.mock.calls.at(-1)[0].texto).toMatch(/seleção anterior/);
+  expect(f.cloud.enviarLista.mock.calls.at(-1)[0].texto).toMatch(/seleção anterior/);
 });
 
 it('repetir a pergunta com a mesma lista não invalida o primeiro botão', async () => {
@@ -577,7 +577,7 @@ it("recibo sobrevive a nova execução do wrapper sem criar segunda saída de se
   const f = await fixture(), entrada = await f.novo("emitir nota");
   await f.rodar(entrada); const quantidade = f.client.rows.resolucaoContextoWhatsapp.length;
   await f.rodar({ ...entrada, registro: { ...entrada.registro, duplicada: true } });
-  expect(f.client.rows.resolucaoContextoWhatsapp).toHaveLength(quantidade); expect(f.cloud.enviarLista).toHaveBeenCalledTimes(1);
+  expect(f.client.rows.resolucaoContextoWhatsapp).toHaveLength(quantidade); expect(f.cloud.enviarLista.mock.calls.filter(([menu]) => menu.tituloSecao === 'Empresas')).toHaveLength(1);
 });
 
 it("mesmo instante e processamento invertido recusam mensagem antiga antes de trocar empresa", async () => {

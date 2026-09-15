@@ -19,6 +19,42 @@ function revisao() {
 }
 
 describe('coleta guiada sem modelo nem efeitos externos', () => {
+  test('primeira mensagem pede os quatro dados e a parcial pede somente os que faltam', () => {
+    const inicio = iniciarColeta({ agora });
+    for (const rotulo of ['CNPJ:', 'Descrição:', 'Valor:', 'Data:']) expect(inicio.mensagem).toContain(rotulo);
+    expect(inicio.mensagem).toContain('uma única mensagem');
+    const parcial = responder(inicio.estado, 'Descrição: Consultoria; Valor: 950,00');
+    expect(parcial.mensagem).toContain('CNPJ:');
+    expect(parcial.mensagem).toContain('Data:');
+    expect(parcial.mensagem).not.toMatch(/Descrição:|Valor:/);
+  });
+  test.each([
+    `CNPJ: ${DOC}\nDescrição: Consultoria\nValor: 950,00\nData: 08/09/2026`,
+    `CNPJ: ${DOC}, descrição: Consultoria, valor: 950,00, data: 08/09/2026`,
+    `Data do serviço: 08/09/2026; valor: 950,00; descrição: Consultoria; CNPJ: ${DOC}`,
+    `${DOC}\nConsultoria\n950,00\n08/09/2026`,
+  ])('quatro dados juntos chegam à preparação sem novas perguntas: %s', texto => {
+    const r = responder(iniciarColeta({ agora }).estado, texto);
+    expect(r.estado.dados).toMatchObject({ tomadorDoc: DOC, descricao: 'Consultoria', valor: 950, competencia: '2026-09-08' });
+    expect(atualizarColeta({ estado: r.estado, tomadorPreparado: helper() }).acao).toBe('PREPARAR_EMISSAO');
+  });
+  test('data inválida conserva os outros dados e pede apenas a correção', () => {
+    let r = responder(iniciarColeta({ agora }).estado, `CNPJ: ${DOC}; descrição: Consultoria; valor: 950,00; data: 31/02/2026`);
+    expect(r.acao).toBe('COLETAR');
+    expect(r.mensagem).toMatch(/data do serviço/i);
+    expect(r.mensagem).not.toMatch(/CNPJ:|Descrição:|Valor:/);
+    expect(r.estado.dados).toMatchObject({ tomadorDoc: DOC, descricao: 'Consultoria', valor: 950 });
+    r = responder(r.estado, '08/09/2026');
+    expect(atualizarColeta({ estado: r.estado, tomadorPreparado: helper() }).acao).toBe('PREPARAR_EMISSAO');
+  });
+  test('hoje conserva o dia de São Paulo inclusive em rascunho anterior sem dataAtual', () => {
+    const estado = revisao();
+    delete estado.dataAtual;
+    const r = interpretarResposta({ estado, texto: 'corrigir data para hoje', agora: new Date('2026-10-01T01:00:00Z') });
+    expect(r.estado.dados.competencia).toBe('2026-09-30');
+    expect(r.invalidarConfirmacao).toBe(true);
+    expect(ehPedidoDeEmissao('emitir nota, data: hoje')).toBe(true);
+  });
   test.each(['emitir nota', 'Quero emitir uma nota fiscal', 'Preciso emitir uma NFS-e, por favor'])('inicia por pedido claro: %s', (t) => expect(ehPedidoDeEmissao(t)).toBe(true));
   test.each(['não quero emitir nota', 'como emitir nota?', 'me manda a nota', 'cancelar nota', 'emitir nota amanhã talvez'])('não sequestra outra intenção: %s', (t) => expect(ehPedidoDeEmissao(t)).toBe(false));
 
