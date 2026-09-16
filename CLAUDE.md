@@ -33,6 +33,9 @@ Conversa por pessoa, com histórico das empresas autorizadas; não mostrar selet
 O telefone/e-mail ativo em Contatos, acessos e envios é a origem do destinatário da comunicação. Receber guias e o escritório agrupar/selecionar empresas no chat não exige associação a uma conta do portal. O mesmo número pode comunicar-se por várias empresas mesmo sem `userId` ou com contas diferentes. A identidade continua comparada estritamente; nenhuma conta, vínculo RBAC ou permissão fiscal é criada para obter esse agrupamento. Consultas e atos do assistente mantêm suas autorizações próprias.
 
 Na liberação e reenvio da guia pela aba Fiscal, um WhatsApp cadastrado também é considerado quando `canalPadraoEnvio` legado vale EMAIL. O consentimento e a elegibilidade são revalidados no servidor. Complementar WhatsApp verifica recibos por guia e destinatário: entrega ao contato antigo não bloqueia o primeiro envio ao novo, e o contato já atendido não recebe duplicata nessa operação. Não retirar a reserva atômica do transportador nem transformar aceite em entrega.
+## Portal do cliente no celular — 16/09/2026
+
+Pedido atual: usar no portal do cliente a mesma paleta e identidade do contador. Esta decisão substitui a antiga paleta clara própria do cliente. Tokens locais preservam os nomes consumidos pelos componentes; não importar CSS entre apps, pois possuem builds/deploys independentes. Navegação com rótulos visíveis, barra inferior até 960px, safe areas, controles de toque e tabelas com rolagem local. Cálculos, autorizações e serviços fiscais não mudam. Validado na `dev`; o usuário autorizou integrar na `main` e publicar em produção em 16/09/2026.
 
 ## Previsão do mês aberto e imposto pago — 08/09/2026
 

@@ -1,6 +1,11 @@
 # CLAUDE.md — Portal do Cliente na web (apps/portal-cliente-web)
 
 Emissão — 15/09/2026: CERT_STORAGE_UNAVAILABLE e CERT_PASSWORD_DECRYPT_FAILED orientam contador/suporte para restaurar o acesso ao cofre. Não pedir novo certificado quando a leitura falhou. Após pagamento da AWS, leitura de 15/09 às 17h43 abriu PFX e senha com CNPJ e validade corretos: acesso ao cofre restabelecido, sem emitir nota no diagnóstico. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
+## Identidade do contador e uso no celular — 16/09/2026
+
+O usuário solicitou a mesma paleta e design do app do contador. Esta decisão substitui as orientações históricas de paleta clara, logo para fundo claro e navegação somente com ícones. `tokens.css` mantém os nomes usados pelo portal com fundo #1A1B26, superfície #24253A e acentos do contador. Os apps continuam com CSS independente para seus builds. Navegação: ícones e rótulos sempre visíveis; barra inferior até 960px com safe area; lateral acima desse limite. Logo continua levando ao Início.
+
+Controles principais têm alvo de 44px; campos no celular usam fonte de 16px. Cards e formulários empilham; tabelas conservam dados e rolam dentro de sua região, com cabeçalhos/coluna de dia fixos no Fluxo. Seletor de empresa busca nome/CNPJ, identifica a empresa atual e preserva aviso de descarte do lote. CSS de painel/fiscal é importado por `main.jsx`. Sem mudanças em cálculos, permissões ou chamadas fiscais. Após validação na `dev`, integração na `main` e publicação em produção autorizadas pelo usuário em 16/09/2026.
 
 ## Previsão do mês aberto e imposto pago — 08/09/2026
 
@@ -930,12 +935,11 @@ regime), e `pc-006`/`pc-007` com **nenhum** — que é o caso em que o seletor n
 `emitirNfse` escreve nela, **depois do sucesso**, como no par real: as recusas de RECEITA e de
 TRANSPORTE não gravam.
 
-## Estilo — paleta CLARA, própria
+## Estilo — identidade do contador (atualizado em 16/09/2026)
 
-`src/styles/tokens.css`. **Não é a paleta de `apps/web`**: aquela é escura e é do portal do
-ESCRITÓRIO. Esta foi copiada verbatim de `prototipos/emissor-notas/styles.css`, decisão do dono com
-a tela na frente, para que os dois lados do cliente (esta web e o app `portal-cliente-mobile`)
-contem a mesma história visual.
+`src/styles/tokens.css` segue a paleta escura de `apps/web`, por solicitação atual do usuário.
+A paleta clara do protótipo é uma decisão histórica substituída. Manter os tokens localmente,
+pois o deploy deste portal não inclui os arquivos do app do contador.
 
 Cor nova entra em `tokens.css`, nunca em hex dentro de componente. ⚠ Todo estado tem par
 `-surface` (`--danger-surface`, `--warning-surface-border`, …) pelo mesmo motivo já registrado em

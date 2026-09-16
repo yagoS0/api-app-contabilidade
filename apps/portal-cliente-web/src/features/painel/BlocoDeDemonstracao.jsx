@@ -379,7 +379,7 @@ function TabelaDeDias({ bloco, unidade, comFolha, cabecalho, aoAbrir, diaDeHoje 
   return (
     <div className="fluxo-v4-bloco" data-mes={bloco.competencia}>
       {cabecalho}
-      <div className="table-wrap table-wrap--dias" ref={caixaDeRolagem}>
+      <div className="table-wrap table-wrap--dias" ref={caixaDeRolagem} tabIndex={0} role="region" aria-label={`Fluxo diário de ${rotuloDoMes(bloco.competencia)} — tabela com rolagem`}>
         <table className="table table--fluxo-v3">
           <thead>
             <tr>
@@ -500,7 +500,7 @@ function Horizonte({ meses, unidade, comFolha, cicloAtual, aoAbrirMes }) {
   const g = gradeTransposta(meses, { comFolha });
 
   return (
-    <div className="table-wrap">
+    <div className="table-wrap" tabIndex={0} role="region" aria-label="Horizonte do fluxo — tabela com rolagem">
       <table className="table table--fluxo-v4-horizonte">
         {/*
           ⚠⚠ **NÃO HÁ `<thead>`, E ISSO É DELIBERADO.** A primeira versão tinha um, com "Categoria"
@@ -593,8 +593,9 @@ function Dre({ dados }) {
     <>
       {dados.qualidade?.provisorio && <div className="alerta alerta-aviso" role="status"><strong>DRE provisória</strong><p>Há lançamentos ou contas que precisam de revisão pelo contador.</p>{[...new Set((dados.qualidade.motivos || []).map(m => m === "lancamento_rascunho" ? "Existem lançamentos em rascunho; os valores podem mudar após a revisão." : typeof m === "string" && !/^[a-z0-9_]+$/i.test(m) ? m : null).filter(Boolean))].map(m => <p key={m}>{m}</p>)}</div>}
       {(dados.inconsistencias || []).length > 0 && <div className="alerta alerta-aviso" role="alert"><strong>Inconsistências nos lançamentos</strong>{dados.inconsistencias.map((i,n) => <p key={i.causa || n}>{i.frase}</p>)}</div>}
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0} role="region" aria-label="DRE gerencial — tabela com rolagem">
         <table className="table table--dre">
+          <thead><tr><th scope="col">Descrição</th><th scope="col" className="num">Valor (R$)</th></tr></thead>
           <tbody>
             {dados.linhas.map((l) => {
               const forte = l.tipo === "subtotal" || l.tipo === "resultado";
@@ -793,7 +794,7 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
     <section
       /* ⚠ A moldura tracejada de `.demonstracao` é do que É demonstração. Com o fluxo real ela sai,
          senão a tela continuaria dizendo "isto é maquete" por desenho depois de o selo sumir. */
-      className={demonstracao ? "card demonstracao" : "card"}
+      className={demonstracao ? "card demonstracao painel-financeiro" : "card painel-financeiro"}
       aria-label="Fluxo de caixa e DRE"
       /* ⚠ Auditável no DOM, como `data-status` e `data-estado-nota`. */
       data-demonstracao={demonstracao ? "sim" : "nao"}

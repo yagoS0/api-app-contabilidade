@@ -1329,7 +1329,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
             </div>
           ) : null}
 
-          <div className="page-split">
+          <div className="page-split emissor-mobile">
             <form className="pane pane-form" onSubmit={emitir}>
               <fieldset>
                 <legend>Para quem</legend>

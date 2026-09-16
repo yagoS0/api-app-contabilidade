@@ -397,7 +397,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
         </Vazio>
       ) : (
         <>
-          <div className="table-wrap">
+          <div className="table-wrap fiscal-table-scroll" role="region" aria-label="Guias para pagamento — tabela com rolagem horizontal" tabIndex={0}>
             {/* ⚠ `tabela-guias` existe só para o piso de largura da coluna da linha digitável
                 (`app.css`) — sem ele, em 375px a frase da ausência inflava a linha para 228px. */}
             <table className="table tabela-guias">
