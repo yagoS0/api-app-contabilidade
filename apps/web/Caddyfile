@@ -16,6 +16,7 @@
 # quem abre pela primeira vez. Dois usuários vendo versões diferentes do mesmo portal, sem nada na
 # tela dizendo isso — foi exatamente o que aconteceu.
 :8080 {
+	header X-Robots-Tag "noindex, nofollow, noarchive"
 	root * /usr/share/caddy
 	encode gzip
 
