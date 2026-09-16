@@ -400,25 +400,29 @@ export function criarPropostasComerciais({
     if (!arquivo?.buffer?.length || arquivo.buffer.length > 5 * 1024 * 1024 || arquivo.mimetype !== "application/pdf" || arquivo.buffer.subarray(0, 5).toString() !== "%PDF-") throw erro("arquivo_invalido", "Envie um PDF de até 5 MB.", 400);
     const conteudoCifrado = await cifrar(arquivo.buffer.toString("base64"));
     if (!conteudoCifrado) throw erro("cifra_indisponivel", "Não foi possível proteger o documento.", 503);
-    const d = await db.documentoOnboarding.create({
-      data: {
-        onboardingId: id,
-        nome: String(arquivo.originalname || "documento.pdf").replace(/[\r\n\\/]/g, "_").slice(0, 180),
-        mime: "application/pdf",
-        conteudoCifrado,
-        sha256: hash(arquivo.buffer),
-        criadoPor: user.id
-      }
+    return db.$transaction(async tx => {
+      const reserva = await tx.onboarding.updateMany({ where: { id, status: { notIn: ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"] } }, data: { updatedAt: agora() } });
+      if (!reserva.count) throw erro("atendimento_encerrado", "A ficha já foi encerrada. Anexe novos arquivos nos documentos da empresa.");
+      const d = await tx.documentoOnboarding.create({
+        data: {
+          onboardingId: id,
+          nome: String(arquivo.originalname || "documento.pdf").replace(/[\r\n\\/]/g, "_").slice(0, 180),
+          mime: "application/pdf",
+          conteudoCifrado,
+          sha256: hash(arquivo.buffer),
+          criadoPor: user.id
+        }
+      });
+      await evento(tx, id, "DOCUMENTO_RECEBIDO", user.id, {
+        documentoId: d.id,
+        sha256: d.sha256
+      });
+      return {
+        id: d.id,
+        nome: d.nome,
+        sha256: d.sha256
+      };
     });
-    await evento(db, id, "DOCUMENTO_RECEBIDO", user.id, {
-      documentoId: d.id,
-      sha256: d.sha256
-    });
-    return {
-      id: d.id,
-      nome: d.nome,
-      sha256: d.sha256
-    };
   }
   async function documento(id, documentoId, user) {
     exigirGestor(user);

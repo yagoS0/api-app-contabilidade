@@ -144,6 +144,10 @@ export function mapearParaFormularioEmpresa(data) {
     telefone: [data?.ddd_telefone_1, data?.ddd_telefone_2].filter(Boolean).join(" / "),
     cnaePrincipal: data?.cnae_fiscal ? String(data.cnae_fiscal) : "",
     cnaesSecundarios: secundarios,
+    capitalSocial: data?.capital_social ?? null,
+    naturezaJuridica: String(data?.codigo_natureza_juridica || data?.natureza_juridica || "").trim(),
+    porte: porteDaBrasilApi(data),
+    dataAbertura: String(data?.data_inicio_atividade || "").trim(),
     endereco: {
       rua: [data?.descricao_tipo_de_logradouro, data?.logradouro].filter(Boolean).join(" ").trim(),
       numero: String(data?.numero || "").trim(),

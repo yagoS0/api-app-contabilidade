@@ -367,7 +367,7 @@ function AppInterno() {
         onboardingId={onboardingId}
         onVoltar={() => session.setPage("onboardings")}
         onEditar={(id) => session.setPage("onboardingWizard", { onboardingId: id })}
-        onAbrirEmpresa={(portalClientId) => session.setPage("companyDetail", { companyId: portalClientId })}
+        onAbrirEmpresa={(portalClientId, aba = "cadastro") => companiesWorkspace.openCompanyTab(portalClientId, aba)}
       />
     );
   }
