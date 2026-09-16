@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { normalizarAgenda } from '../../../../../../packages/shared/src/agenda.js';
+import { editarJanela } from '../lib/editarJanela';
 import { CORES_PRIORIDADE, RECORRENCIAS } from '../lib/agendaWorkspace';
 
 export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAlterarConclusao, onExcluir, onConfigurarObrigacao }) {
@@ -12,7 +13,7 @@ export function ModalAtividade({ inicial, empresas, api, onFechar, onSalvo, onAl
   const [horario, setHorario] = useState(inicial.horaInicio ? inicial.horaFim ? 'INTERVALO' : 'FIXO' : 'SEM');
   const [fiscal, setFiscal] = useState({ categoria: 'fiscal', diaVencimento: '', mesReferencia: Number(inicial.dataInicio.slice(5,7)), defasagemMeses: 1, ajusteDiaUtil: 'ANTECIPAR', antecedenciaLembreteDias: 5, verificador: '', escopo: inicial.companyId ? 'SELECAO_MANUAL' : 'TODAS', aplicarANovas: true, vencimentoFiscal: inicial.dataVencimento || inicial.vencimentoFiscal || inicial.dataFim, ...regra, regimes: regra?.filtros?.regimes || [], empresasIds: regra?.filtros?.empresasIds || (inicial.companyId ? [inicial.companyId] : []), temFolha: regra?.filtros?.temFolha === true });
   const [previa, setPrevia] = useState(null), [erro, setErro] = useState(''), [ocupado, setOcupado] = useState(false);
-  const set = (chave, valor) => setDados(d => ({ ...d, [chave]: valor }));
+  const set = (chave, valor) => setDados(d => editarJanela(d, chave, valor));
   const setF = (chave, valor) => setFiscal(f => ({ ...f, [chave]: valor }));
   const filtros = fiscal.escopo === 'POR_FILTRO' ? { regimes: fiscal.regimes, temFolha: fiscal.temFolha || null } : fiscal.escopo === 'SELECAO_MANUAL' ? { empresasIds: fiscal.empresasIds } : null;
   const filtroChave = JSON.stringify(filtros);
