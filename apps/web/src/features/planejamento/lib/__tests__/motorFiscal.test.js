@@ -617,9 +617,10 @@ describe("trava dos 16% em serviços (§2.2)", () => {
 describe("comparador de regimes", () => {
   const base = { receitaAnual: 1_000_000, folhaAnual: 200_000, anexoSimples: "III", atividadePresumido: "servicos" };
 
-  it("ordena do mais barato ao mais caro e nomeia o vencedor", () => {
+  it("identifica a menor parcela estimada, sem recomendar quando faltam tributos", () => {
     const r = compararRegimes(base);
-    expect(r.vencedor).toBeTruthy();
+    expect(r.menorEstimativa).toBeTruthy();
+    expect(r.vencedor).toBeNull();
     expect(r.regimes.filter((x) => !x.indisponivel).length).toBeGreaterThanOrEqual(2);
   });
 
@@ -648,7 +649,7 @@ describe("comparador de regimes", () => {
   });
 
   it("a economia só existe havendo com quem comparar", () => {
-    const r = compararRegimes(base);
+    const r = compararRegimes({ ...base, folhaRemuneracoesAnual: 180_000, encargosAdicionaisAnuais: 0, aliquotaIss: 0.05, margemLucro: 0.2, creditosPisCofins: 0 });
     expect(r.economiaAnual).toBeGreaterThan(0);
   });
 
@@ -671,7 +672,8 @@ describe("comparador de regimes", () => {
     perto(simples.issPorFora, 200_000);
     perto(simples.total, 872_000);
     perto(presumido.total, 757_920);
-    expect(r.vencedor.regime).toBe("Lucro Presumido");
+    expect(r.menorEstimativa.regime).toBe("Lucro Presumido");
+    expect(r.vencedor).toBeNull(); // Real não informado: comparar parcelas não recomenda migração.
 
     // A PROVA DE QUE A INVERSÃO É DO ISS, reconstruindo a comparação ASSIMÉTRICA de antes: o
     // Simples sem o ISS (era o que o comparador fazia — não passava a alíquota) contra o mesmo
@@ -700,7 +702,7 @@ describe("ponto de equilíbrio", () => {
   it("devolve a FRASE-resposta, não só o número", () => {
     // É a frase que o contador leva para a reunião com o cliente.
     const p = pontoDeEquilibrio({ anexoSimples: "V", atividadePresumido: "servicos", folhaAnual: 50_000, passo: 50_000 });
-    if (p) expect(p.frase).toMatch(/passa a compensar/);
+    if (p) expect(p.frase).toMatch(/Cruzamento das parcelas estimadas/);
   });
 
   it("⚠ sem cruzamento devolve null — não inventa um empate", () => {

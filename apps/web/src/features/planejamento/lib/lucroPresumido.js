@@ -25,6 +25,12 @@ export const ATIVIDADES_PRESUMIDO = Object.freeze({
   combustiveis: { rotulo: "Revenda de combustíveis", irpj: PRESUNCAO_IRPJ.combustiveis, csll: PRESUNCAO_CSLL.demaisReceitas },
 });
 
+// Categorias de receita de mercadorias: o ISS informado para serviços não incide
+// sobre elas (LC 116/2003, art. 1º; docs/fontes-fiscais.md). Não resolve atividade mista.
+export function atividadeExclusivaDeMercadorias(atividade) {
+  return atividade === "comercio" || atividade === "combustiveis";
+}
+
 /**
  * MAJORAÇÃO DA LC 224/2025 — FONTES_FISCAIS §2.4.
  *
@@ -117,7 +123,8 @@ export function custoAnualPresumido({
   // `naoConsiderado`, ao lado do número — a mesma regra do ISS.
   const folhaInformada = folhaAnual != null && Number.isFinite(Number(folhaAnual));
   const cpp = folhaInformada ? Number(folhaAnual) * ENCARGOS_FOLHA.cppPatronal : 0;
-  const iss = aliquotaIss == null ? 0 : receita * Number(aliquotaIss);
+  const issAplicavel = !atividadeExclusivaDeMercadorias(atividade);
+  const iss = !issAplicavel || aliquotaIss == null ? 0 : receita * Number(aliquotaIss);
 
   const total = irpj + adicional + csll + pis + cofins + cpp + iss;
 
@@ -127,12 +134,21 @@ export function custoAnualPresumido({
     // A oferta viaja para a tela poder PERGUNTAR, e o que foi usado viaja para o PDF poder DIZER.
     servicosAte120k: oferta ? { ...oferta, aplicado: usa16, confirmado: servicosAte120kConfirmado } : null,
     elegivel: receita <= LIMITE_LUCRO_PRESUMIDO,
-    porTributo: { irpj, adicionalIrpj: adicional, csll, pis, cofins, ...(folhaInformada ? { cpp } : {}), ...(aliquotaIss == null ? {} : { iss }) },
+    porTributo: { irpj, adicionalIrpj: adicional, csll, pis, cofins, ...(folhaInformada ? { cpp } : {}), ...(!issAplicavel || aliquotaIss == null ? {} : { iss }) },
     total,
+    memoriaPorTributo: {
+      irpj: { aliquota: IRPJ.aliquota, baseCalculo: bIrpj.base, baseRotulo: "Base presumida" },
+      adicionalIrpj: { aliquota: IRPJ.adicional, baseCalculo: adicional / IRPJ.adicional, baseRotulo: "Excesso trimestral somado no ano" },
+      csll: { aliquota: CSLL_ALIQUOTA, baseCalculo: bCsll.base, baseRotulo: "Base presumida" },
+      pis: { aliquota: PIS_COFINS_CUMULATIVO.pis, baseCalculo: receita, baseRotulo: "Receita anual" },
+      cofins: { aliquota: PIS_COFINS_CUMULATIVO.cofins, baseCalculo: receita, baseRotulo: "Receita anual" },
+      ...(folhaInformada ? { cpp: { aliquota: ENCARGOS_FOLHA.cppPatronal, baseCalculo: Number(folhaAnual), baseRotulo: "Folha anual" } } : {}),
+      ...(issAplicavel && aliquotaIss != null ? { iss: { aliquota: Number(aliquotaIss), baseCalculo: receita, baseRotulo: "Receita de serviços" } } : {}),
+    },
     cargaEfetiva: receita > 0 ? total / receita : null,
     // ⚠ A tela PRECISA dizer o que ficou de fora, senão o número parece completo e não é.
     naoConsiderado: [
-      aliquotaIss == null ? "ISS (informe a alíquota do município no cadastro)" : null,
+      issAplicavel && aliquotaIss == null ? "ISS (informe a alíquota do município no cenário)" : null,
       // ⚠⚠ OFERTA NÃO RESPONDIDA APARECE, senão o total fica MAIOR do que precisa e ninguém sabe
       // por quê. Ausência de resposta não é resposta — mesma disciplina da folha.
       oferta?.cabe && servicosAte120kConfirmado == null
@@ -146,6 +162,7 @@ export function custoAnualPresumido({
       "RAT/FAP e contribuições a terceiros sobre a folha",
     ].filter(Boolean),
     premissas: [
+      !issAplicavel ? "ISS não se aplica à receita de mercadorias desta categoria; ICMS não estimado nesta simulação." : null,
       `Presunção de IRPJ ${(presuncaoIrpj * 100).toFixed(1).replace(".", ",")}% e de CSLL ${(at.csll * 100).toFixed(1).replace(".", ",")}% (FONTES_FISCAIS §2.2 e §2.3)`,
       // ⚠ O QUE FOI CONFIRMADO SAI IMPRESSO. O PDF circula sozinho, e dois PDFs da mesma empresa
       // com IRPJ diferente precisam se distinguir NO PAPEL — é a mesma regra da procedência dos

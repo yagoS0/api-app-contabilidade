@@ -1,5 +1,8 @@
 # CLAUDE.md — API (apps/api)
 
+Relatório de faturamento — 15/09/2026: `comoResolver` agora aponta para Apuração → Revisar classificação → Classificar competência, com espelho no mock. A classificação local não invalida declaração transmitida. O frontend normaliza instruções de snapshots históricos sem sobrescrever os números e regenera o relatório após ação de classificação. Detalhes em docs/fiscal-incidente-e-perfil-2026-09-15.md.
+
+Incidente Lente — 15/09/2026: PFX e senha existem, mas AWS KMS recusa a credencial (UnrecognizedClientException). Não confundir falha do cofre com certificado ausente. CertResolver usa CERT_STORAGE_UNAVAILABLE e trata decryptSecret null como falha de senha. Usuário confirmou suspensão da AWS por falta de pagamento e já pagou. Em 15/09 às 17h43, nova leitura abriu PFX e senha com CNPJ e validade corretos: acesso ao cofre restabelecido. Nenhuma emissão real feita no diagnóstico. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
 ## Comunicados — 16/09/2026
 
 `ComunicadosWhatsappService` e `/firm/whatsapp/comunicados` separam audiência, rascunho, submissão Meta, conferência, confirmação e processamento. Só admin/contador; o worker revalida o operador que confirmou, o texto/categoria aprovados e os contatos antes da rede. Números são agrupados exatamente, sem inferir nono dígito ou exigir vínculo no portal. Reservas CAS por destinatário, lease da conversa/responsável e `SaidaWhatsappService` previnem repetição; reservas interrompidas viram INDETERMINADO, sem retry. Polling é leitura; aprovação jamais inicia envio. Aplicar `20260916110000_whatsapp_comunicados` e gerar Prisma. Ver `docs/whatsapp-comunicados.md`; teste PostgreSQL usa Meta/transporte sintéticos e rede externa bloqueada.

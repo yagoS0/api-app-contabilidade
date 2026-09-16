@@ -57,14 +57,14 @@ export function TabelaComparativa({ comparativo }) {
         {/* ⚠⚠ A FRASE QUE EXPLICA A TABELA INTEIRA, e ela é a observação do dono: no Simples a
             contribuição patronal está DENTRO do DAS; no Presumido ela é 20% da folha por fora. É
             isso que faz "o Presumido compensa acima de X" não valer para quem tem folha. */}
-        A contribuição patronal (CPP) está <strong>dentro do DAS</strong> no Simples e vem{" "}
-        <strong>por fora, sobre a folha</strong>, no Presumido e no Real — é a linha que mais muda a
-        comparação de uma prestadora de serviços.
+        Parcelas <strong>dentro do DAS</strong> não são cobranças adicionais. A CPP do Anexo IV,
+        do Presumido e do Real é calculada <strong>por fora, sobre a folha</strong>.
       </div>
 
       {/* ⚠ Rola dentro do próprio contêiner: a página nunca rola na horizontal. */}
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 520 }}>
+          <caption style={{ textAlign: "left", color: C.muted, fontSize: "0.75rem", paddingBottom: 8 }}>Composição do total anual por tributo</caption>
           <thead>
             <tr>
               <th style={{ ...th, textAlign: "left" }}>&nbsp;</th>

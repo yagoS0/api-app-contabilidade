@@ -394,8 +394,14 @@ export function custoAnualSimples({
     cargaEfetiva: receita > 0 ? (das + cppPorFora + issForaDoDas) / receita : null,
     porTributo: {
       ...Object.fromEntries(Object.entries(rep.porTributo).map(([t, pct]) => [t, pct * receita])),
+      ...(anexo.cppForaDoDas && folhaInformada ? { cpp: cppPorFora } : {}),
       // Na 6ª faixa o ISS não vem da partilha (ele saiu dela) — vem da alíquota do município.
-      ...(issForaDoDas > 0 ? { iss: issForaDoDas } : {}),
+      ...(foraDoDas.includes("iss") && aliquotaIss != null ? { iss: issForaDoDas } : {}),
+    },
+    memoriaPorTributo: {
+      ...Object.fromEntries(Object.entries(rep.porTributo).map(([t, aliquota]) => [t, { aliquota, aliquotaRotulo: "Alíquota efetiva na receita", baseCalculo: receita, baseRotulo: "Receita anual" }])),
+      ...(anexo.cppForaDoDas && folhaInformada ? { cpp: { aliquota: ENCARGOS_FOLHA.cppPatronal, baseCalculo: Number(folhaAnual), baseRotulo: "Folha anual · por fora do DAS" } } : {}),
+      ...(foraDoDas.includes("iss") && aliquotaIss != null ? { iss: { aliquota: Number(aliquotaIss), baseCalculo: receita, baseRotulo: "Receita de serviços · por fora do DAS" } } : {}),
     },
     // ⚠⚠ A RESSALVA TEM O MESMO PESO DO NÚMERO QUE ELA QUALIFICA — é a regra do `CardRegime`, que
     // renderiza `naoConsiderado` no CORPO do card, em bloco de alerta. Sem esta lista, o Simples

@@ -7,7 +7,7 @@ export default {
   moduleFileExtensions: ["js", "jsx", "ts", "tsx", "json"],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
-    "\\.(css|less|scss|sass)$": "<identity-obj-proxy>",
+    "\\.(css|less|scss|sass)$": "<rootDir>/test/styleMock.cjs",
   },
   setupFilesAfterEnv: ["@testing-library/jest-dom"],
 };

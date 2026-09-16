@@ -62,6 +62,8 @@ const RECUSAS_LOCAIS = Object.freeze({
   // Sem o A1 da empresa não há pedido de registro válido a montar: o evento também é assinado
   // pelo certificado do autor (E0718).
   NO_COMPANY_CERT: { status: 422, error: "nfse_sem_certificado" },
+  CERT_STORAGE_UNAVAILABLE: { status: 503, error: "nfse_certificado_indisponivel" },
+  CERT_PASSWORD_DECRYPT_FAILED: { status: 503, error: "nfse_certificado_indisponivel" },
   CERT_SENHA_INVALIDA: { status: 422, error: "nfse_sem_certificado" },
   CERT_CNPJ_DIVERGENTE: { status: 422, error: "nfse_sem_certificado" },
 });

@@ -59,12 +59,19 @@ async function loadCompanyCert(portalClientId) {
   if (!company) return null;
 
   const pfxBuffer = await readStoredCompanyPfx(company);
-  if (!pfxBuffer) return null;
+  if (!pfxBuffer) {
+    if (company.certPfxBytes || company.certStorageKey) {
+      throw new CertResolutionError("CERT_STORAGE_UNAVAILABLE",
+        "O certificado está cadastrado, mas o sistema não conseguiu acessar o arquivo no cofre. Acione o suporte para verificar o acesso ao armazenamento de certificados.");
+    }
+    return null;
+  }
 
   let password = null;
   if (company.certPasswordEnc) {
     try {
       password = await decryptSecret(company.certPasswordEnc);
+      if (password == null) throw new Error("stored_password_unreadable");
     } catch (err) {
       throw new CertResolutionError("CERT_PASSWORD_DECRYPT_FAILED", "Falha ao descriptografar a senha do certificado", { cause: err });
     }

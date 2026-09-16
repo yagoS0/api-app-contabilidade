@@ -67,11 +67,11 @@ describe("⚠⚠ O REDUTOR DA LEI 15.270/2025 — sem ele, R$ 5.000 pagaria impo
 });
 
 describe("⚠ o INSS retido REDUZ a base do IRRF", () => {
-  it("o custo usa a base já líquida de INSS — esquecer isso superestima o imposto", () => {
+  it("escolhe o INSS quando maior que o simplificado, sem acumular deduções", () => {
     const v = 12_000;
     const c = custoMensalDoSocio(v);
     expect(c.inss).toBeCloseTo(inssDoProLabore(v), 6);
-    expect(c.irrf).toBeCloseTo(irrfMensal(v - c.inss), 6);
+    expect(c.irrf).toBeCloseTo((v - c.inss) * 0.275 - 908.73, 6);
     expect(c.liquido).toBeCloseTo(v - c.inss - c.irrf, 6);
   });
 });
@@ -107,7 +107,7 @@ describe("⚠⚠ AS QUATRO RECUSAS", () => {
 describe("⚠⚠ O CUSTO É O INCREMENTAL — não o do pró-labore inteiro", () => {
   // O sócio JÁ paga INSS e IRRF sobre o pró-labore de hoje. Comparar o custo total com a economia
   // do DAS somaria imposto que já era pago de qualquer jeito, e a decisão pareceria sempre ruim.
-  const caso = { rbt12: 718_036.09, folha12mAtual: 31_500, economiaNoDas: 47_000 };
+  const caso = { rbt12: 718_036.09, folha12mAtual: 31_500, proLaboreMensal: 2_000, economiaNoDas: 47_000 };
 
   it("a folha necessária é 28% do RBT12", () => {
     const r = simularProLaboreParaFatorR(caso);
@@ -146,19 +146,19 @@ describe("⚠⚠ O CUSTO É O INCREMENTAL — não o do pró-labore inteiro", ()
 describe("⚠ A PREMISSA QUE DECIDE O RESULTADO VAI IMPRESSA", () => {
   it("a CPP dentro do DAS é dita, com a lei", () => {
     // Se ela não valer, a conta inteira muda de sinal. Não pode ser rodapé.
-    const r = simularProLaboreParaFatorR({ rbt12: 718_036.09, folha12mAtual: 31_500 });
+    const r = simularProLaboreParaFatorR({ rbt12: 718_036.09, folha12mAtual: 31_500, proLaboreMensal: 2_000 });
     expect(r.premissas.join(" | ")).toMatch(/DENTRO do DAS/);
     expect(r.premissas.join(" | ")).toMatch(/art\. 13, VI/);
     expect(r.premissas.join(" | ")).toMatch(/NÃO custa 20% de CPP/);
   });
 
   it("⚠ a VIGÊNCIA das tabelas vai junto — tabela de pessoa física sem data envelhece calada", () => {
-    const r = simularProLaboreParaFatorR({ rbt12: 718_036.09, folha12mAtual: 31_500 });
+    const r = simularProLaboreParaFatorR({ rbt12: 718_036.09, folha12mAtual: 31_500, proLaboreMensal: 2_000 });
     expect(r.premissas.join(" | ")).toMatch(/vig[êe]ncia 2026/i);
   });
 
   it("⚠ e o que ficou de fora é nomeado — RAT/FAP, 13º, efeito previdenciário", () => {
-    const r = simularProLaboreParaFatorR({ rbt12: 718_036.09, folha12mAtual: 31_500 });
+    const r = simularProLaboreParaFatorR({ rbt12: 718_036.09, folha12mAtual: 31_500, proLaboreMensal: 2_000 });
     const texto = r.naoConsiderado.join(" | ");
     expect(texto).toMatch(/RAT\/FAP/);
     expect(texto).toMatch(/13º/);

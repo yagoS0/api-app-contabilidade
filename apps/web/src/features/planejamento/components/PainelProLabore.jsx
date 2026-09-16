@@ -50,7 +50,7 @@ export function PainelProLabore({ simulacao }) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>
-        <Bloco rotulo="Pró-labore mensal hoje" valor={brl(simulacao.proLaboreHoje)} />
+        <Bloco rotulo="Pró-labore mensal dos sócios hoje" valor={brl(simulacao.proLaboreHoje)} />
         <Bloco
           rotulo="Precisaria ser"
           valor={brl(simulacao.proLaboreDepois)}
@@ -72,6 +72,10 @@ export function PainelProLabore({ simulacao }) {
           nota={simulacao.economiaNoDas == null ? "informe a folha e o anexo" : `por ficar no ${simulacao.anexoDestino} em vez do V`}
         />
       </div>
+
+      {simulacao.porSocio?.map((s, i) => <p key={i} style={{ fontSize: ".8rem" }}>
+        {s.nome || `Sócio ${i + 1}`}: pró-labore {brl(s.hoje.proLabore)} → {brl(s.depois.proLabore)}; INSS {brl(s.hoje.inss)} → {brl(s.depois.inss)}; IRRF {brl(s.hoje.irrf)} → {brl(s.depois.irrf)}.
+      </p>)}
 
       {/* ⚠ O VEREDITO SÓ EXISTE COM OS DOIS LADOS DA CONTA. */}
       {saldoAnual != null ? (

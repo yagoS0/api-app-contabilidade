@@ -60,7 +60,7 @@ describe("⚠ as colunas saem do MOTOR — nada é recalculado aqui", () => {
   });
 
   it("⚠ o VENCEDOR vem do motor, não de uma segunda ordenação", () => {
-    const { comp } = montar();
+    const { comp } = montar({ folhaRemuneracoesAnual: 250_000, encargosAdicionaisAnuais: 0, margemLucro: 0.2, creditosPisCofins: 0 });
     const vencedoras = comp.colunas.filter((c) => c.vencedora);
     expect(vencedoras).toHaveLength(1);
     expect(vencedoras[0].total).toBe(Math.min(...comp.colunas.filter((c) => !c.indisponivel).map((c) => c.total)));

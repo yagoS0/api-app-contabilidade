@@ -2641,9 +2641,8 @@ function mockRelatorioFaturamentoDados(companyId, competencia) {
     // `ONDE_CONFIGURA_EMISSAO` já registra: o caminho muda na tela e a `correcao` do backend
     // continua mandando o contador para um lugar onde o botão não está mais.
     // ⚠ O espelho no mock (`apps/web/src/api/mock/mockApi.js`) tem de mudar JUNTO.
-    comoResolver: "Aba Apuração → botão de classificação (no alto, ao lado de Calcular) → \"Classificar competência\". "
-      + "Enquanto a receita não estiver classificada, o relatório não consegue dizer de que tipo "
-      + "de operação ela é — e o motor de apuração não calcula o DAS.",
+    comoResolver: "Na aba Apuração, abra Revisar classificação e clique em Classificar competência. "
+      + "A classificação organiza as notas por tipo de operação para a conferência local; não altera a declaração já transmitida.",
   };
 
   const semDetalheCapturado = {
@@ -9996,6 +9995,16 @@ export function createMockApi() {
         ok: true,
         empresa: { id: empresa.companyId, razao: empresa.razao, cnpj: empresa.cnpj },
         referencia: { competencia: ref, janela: [], janelaRotulo },
+        historicoMensal: [...Array.from({ length: 12 }, (_, i) => ({
+          competencia: `${hoje.getUTCFullYear() - 1}-${String(i + 1).padStart(2, "0")}`,
+          receita: 100000, folha: 28000, origem: "notas autorizadas · demonstração", origemFolha: "folha informada na apuração · demonstração",
+        })), ...Array.from({ length: hoje.getUTCMonth() }, (_, i) => ({
+          competencia: `${hoje.getUTCFullYear()}-${String(i + 1).padStart(2, "0")}`,
+          receita: 100000 + i * 1500, folha: i === 1 ? null : 28000, folhaContabil: i === 1 ? 28000 : null,
+          tributoApurado: i % 3 === 0 ? 13030 + i * 195.45 : null,
+          origem: ["apuração salva · demonstração", "lançamentos contábeis confirmados · demonstração", "notas autorizadas · demonstração"][i % 3],
+          origemFolha: "folha informada na apuração · demonstração", origemFolhaContabil: "despesa de folha/pró-labore · demonstração; conferir pagamento e encargos", origemTributo: "calculado localmente",
+        }))],
         campos: cenarios[idx % cenarios.length],
         // ⚠⚠ A DIVERGÊNCIA ENTRE PERFIL E CADASTRO — só no cenário 0, que é o da LENTE: o perfil
         // afirma Fator R e o cadastro está com a caixa desmarcada. O aviso na tela depende deste

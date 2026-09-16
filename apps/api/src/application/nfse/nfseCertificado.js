@@ -110,10 +110,12 @@ export async function resolverCertificadosDaEmpresa(companyId) {
   // que não abre. Cada causa tem conserto diferente (trocar o arquivo × redigitar a senha ×
   // cadastrar o primeiro), e a mensagem genérica mandava o contador girar.
   const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.NFSE }).catch((err) => {
-    if (err?.code === "CERT_CNPJ_MISMATCH" || err?.code === "CERT_PASSWORD_DECRYPT_FAILED") {
+    if (["CERT_CNPJ_MISMATCH", "CERT_PASSWORD_DECRYPT_FAILED", "CERT_STORAGE_UNAVAILABLE"].includes(err?.code)) {
       throw new NfseCertError(err.code, err.message);
     }
-    return { source: "none" };
+    if (err?.code === "NO_CERT_AVAILABLE") return { source: "none" };
+    throw new NfseCertError("CERT_STORAGE_UNAVAILABLE",
+      "Não foi possível acessar o cadastro ou o cofre de certificados. Acione o suporte para verificar o serviço.");
   });
 
   // ⚠ `procuracao_escritorio` NÃO é aceito, pelo mesmo motivo que a captura não aceita: a
