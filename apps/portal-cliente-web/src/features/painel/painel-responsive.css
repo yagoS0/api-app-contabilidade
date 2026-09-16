@@ -2,6 +2,8 @@
 .painel-page,
 .painel-financeiro { min-width: 0; }
 .painel-page { display: grid; gap: var(--gap); }
+.dre-competencia { display: grid; gap: 4px; min-width: 0; font-size: .8125rem; color: var(--muted); }
+.dre-competencia select { color: var(--text); }
 .painel-financeiro .table-wrap {
   max-width: 100%;
   overflow-x: auto;

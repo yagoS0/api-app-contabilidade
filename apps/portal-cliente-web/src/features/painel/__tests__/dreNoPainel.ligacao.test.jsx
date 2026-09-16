@@ -7,7 +7,7 @@
 // continua tendo NOME, e a linha "não classificado" nunca some — ela carrega R$ 687 mil na base
 // real, e sem ela os números acima descrevem meia empresa com cara de completos.
 
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { api } from "../../../api";
 import { BlocoDeDemonstracao } from "../BlocoDeDemonstracao";
 import { dreDeDemonstracao } from "../lib/dadosDeDemonstracao";
@@ -34,6 +34,37 @@ const real = (over = {}) => ({
 });
 
 afterEach(() => { jest.restoreAllMocks(); });
+
+test("DRE abre no último fechamento e seleciona meses fechados sem usar o mês aberto do painel", async () => {
+  jest.spyOn(api, "getFluxoCaixa").mockResolvedValue({ demonstracao: false, meses: [], janela: {} });
+  const consulta = jest.spyOn(api, "getDre").mockImplementation(async (_id, { competencia }) => real({
+    competencia: competencia || "2026-08", competenciasDisponiveis: ["2026-08", "2026-07"],
+  }));
+  const tela = render(<BlocoDeDemonstracao companyId="pc-001" competencia="2026-09" />);
+  await act(async () => { screen.getByRole("button", { name: "DRE" }).click(); });
+  expect(consulta).toHaveBeenLastCalledWith("pc-001", { competencia: undefined });
+  const seletor = screen.getByRole("combobox", { name: "Competência fechada da DRE" });
+  expect([...seletor.options].map(o => o.value)).toEqual(["2026-08", "2026-07"]);
+  expect(seletor.value).toBe("2026-08");
+  await act(async () => { fireEvent.change(seletor, { target: { value: "2026-07" } }); });
+  expect(consulta).toHaveBeenLastCalledWith("pc-001", { competencia: "2026-07" });
+  await act(async () => { tela.rerender(<BlocoDeDemonstracao companyId="pc-002" competencia="2026-10" />); });
+  expect(consulta).toHaveBeenLastCalledWith("pc-002", { competencia: undefined });
+});
+
+test("nenhum fechamento mostra estado próprio sem DRE zerada ou seletor aberto", async () => {
+  await abrirDre(real({ semCompetenciaFechada: true, semLancamento: true, competenciasDisponiveis: [], linhas: [] }));
+  expect(screen.getByText("Ainda não há competência fechada para exibir a DRE.")).toBeInTheDocument();
+  expect(document.querySelector(".table--dre")).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Competência fechada da DRE" })).toBeNull();
+});
+
+test("atualizar DRE abandona seleção antiga e pede novamente o último fechamento", async () => {
+  await abrirDre(real({ competenciasDisponiveis: ["2026-08", "2026-07"] }));
+  await act(async () => { fireEvent.change(screen.getByRole("combobox", { name: "Competência fechada da DRE" }), { target: { value: "2026-07" } }); });
+  await act(async () => { screen.getByRole("button", { name: "Atualizar DRE" }).click(); });
+  expect(api.getDre).toHaveBeenLastCalledWith("pc-001", { competencia: undefined });
+});
 
 test("DRE provisória expõe motivos e inconsistências sem ocultar linhas", async () => {
   await abrirDre(real({ qualidade: { provisorio: true, motivos: ["Contas sem classificação"] }, inconsistencias: [{ causa: "VALOR_INVALIDO", frase: "Existe lançamento com valor inválido." }] }));

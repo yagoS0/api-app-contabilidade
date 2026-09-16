@@ -110,10 +110,8 @@ describe("o selo de demonstração", () => {
     });
 
     const rotulos = screen.getAllByRole("button").map((b) => b.textContent);
-    // ⚠ O rótulo virou "Fluxo" em 30/08/2026 — decisão do dono (*"escreva apenas Fluxo no
-    // seletor"*). O que este teste protege NÃO é a palavra: é a LISTA — dois botões, e só dois.
-    // Um terceiro aqui seria uma saída de exportação que esta visão não pode ter.
-    expect(rotulos).toEqual(["Fluxo", "DRE"]);
+    // Alternância e atualização dos fechamentos são permitidas; exportar/imprimir não são.
+    expect(rotulos).toEqual(["Fluxo", "DRE", "Atualizar DRE"]);
     expect(document.body.textContent).not.toMatch(/exportar|imprimir|baixar/i);
   });
 
