@@ -68,7 +68,7 @@ export function ConfirmarCancelamento({ nota, aoFechar, aoConfirmar }) {
       }}
     >
       <div
-        className="modal"
+        className="modal cancelar-nota-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="titulo-cancelar-nota"

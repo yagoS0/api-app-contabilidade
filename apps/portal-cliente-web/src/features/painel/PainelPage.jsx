@@ -108,7 +108,7 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
   const erro = notasQuery.erro || aliquotaQuery.erro;
 
   return (
-    <>
+    <div className="painel-page">
       <div className="page-header">
         <h1>Início</h1>
         <div className="page-actions">
@@ -177,6 +177,6 @@ export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarC
       )}
 
       <BlocoDeDemonstracao companyId={companyId} competencia={competencia} aoVerGuias={verTodasAsGuias} aoAtualizarFluxo={atualizarResumo} somenteLeitura={somenteLeitura} />
-    </>
+    </div>
   );
 }
