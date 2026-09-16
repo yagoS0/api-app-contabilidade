@@ -45,6 +45,7 @@ import { createWhatsappGuiasRouter } from "./whatsappGuias.js";
 import { createWhatsappArquivosRouter } from "./whatsappArquivos.js";
 import { createCorrigirValorGuiaRouter } from "./corrigirValorGuia.js";
 import { createWhatsappConversasRouter } from "./whatsappConversas.js";
+import { createWhatsappComunicadosRouter } from "./whatsappComunicados.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
 import { mesclarAtividades } from "../../application/company/atividadesDaEmpresa.js";
 import {
@@ -5482,6 +5483,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.use("/", createCorrigirValorGuiaRouter({ log }));
   // A tela mínima de conversas (F5, 02/09/2026): lista, fio, assumir/devolver, responder, vincular.
   router.use("/", createWhatsappConversasRouter({ log }));
+  router.use("/", createWhatsappComunicadosRouter({ log }));
 
   // Q12.C.2: Apuração global — todas as empresas em uma página
   // GET /firm/apuracao?competencia=YYYY-MM&search=...

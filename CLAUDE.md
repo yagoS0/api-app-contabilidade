@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Comunicados pelo WhatsApp — 16/09/2026
+
+`WhatsApp → Comunicados` cria avisos para toda a carteira ou contatos selecionados, sem IA. Usar contatos ativos cadastrados com opt-in, sem exigir associação ao portal; um número exato recebe uma vez mesmo em várias empresas. Cada aviso guarda texto e destinatários, submete modelo próprio à Meta e só entra na fila após aprovação conferida e confirmação explícita do escritório. Aviso geral usa MARKETING; UTILITY exige atualização específica de serviço contratado, sujeita à categoria final da Meta. Não usar o modelo de retomada nem uma variável genérica para contornar aprovação. Worker durável registra enviado/entregue/lido/falha; resultado incerto nunca é repetido automaticamente. Migration `20260916110000_whatsapp_comunicados` e Prisma gerado precedem API/worker. Operação, limites e testes: `docs/whatsapp-comunicados.md`. Implementar a função não autoriza disparar avisos reais nos testes.
+
 ## Menu do WhatsApp e emissão direta — 15/09/2026
 
 Lista inicial do cliente: Guias em aberto, Emitir nota, Documentos, Outras, nessa ordem e conforme permissões. Emissão/documentos não ficam em Outras; situação fiscal passa para lá. Lista nativa comporta quatro opções, botões não. Primeiro pedido de emissão solicita CNPJ/CPF, descrição, valor e data juntos; respostas parciais preservam os dados e pedem só lacunas. Data é a competência/data do serviço do lote, “hoje” conserva o dia em São Paulo. Manter preenchimento de cadastro/tributos, escopo da empresa, confirmação por código e testes sem Anthropic nem emissões/envios reais. Detalhes: `docs/whatsapp-emissao-sem-ia.md`.

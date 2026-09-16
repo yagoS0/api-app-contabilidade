@@ -98,7 +98,7 @@ function FormVincular({ companies, api, conversaId, onVincular, ocupado, legado 
   );
 }
 
-export function WhatsappPage({ api, companies = [], onBack, message, error }) {
+export function WhatsappPage({ api, companies = [], onBack, onComunicados, message, error }) {
   const hook = useConversasWhatsapp({ api, feedback: null });
   const resumo = useResumoWhatsapp({ api });
   const [busca, setBusca] = useState("");
@@ -135,7 +135,7 @@ export function WhatsappPage({ api, companies = [], onBack, message, error }) {
 
   return <div className="wa-page">
     <PageShell title="WhatsApp" subtitle="Central de atendimento · Altan Contabilidade" onBack={onBack}
-      actions={<Button variant="secondary" onClick={() => hook.carregar(hook.filtro)} disabled={hook.carregando}><span className="wa-inline"><WhatsappIcon nome="atualizar" size={16} />{hook.carregando ? "Carregando…" : "Atualizar"}</span></Button>}>
+      actions={<>{onComunicados && <Button variant="secondary" onClick={onComunicados}>Comunicados</Button>}<Button variant="secondary" onClick={() => hook.carregar(hook.filtro)} disabled={hook.carregando}><span className="wa-inline"><WhatsappIcon nome="atualizar" size={16} />{hook.carregando ? "Carregando…" : "Atualizar"}</span></Button></>}>
       <AppShell className="wa-shell">
         <div className={`wa-workspace${verChat ? " wa-workspace--open" : ""}${detalhes && hook.aberta ? " wa-workspace--details" : ""}`}>
           <aside className="wa-sidebar" aria-label="Caixa de entrada" ref={listaRef}>

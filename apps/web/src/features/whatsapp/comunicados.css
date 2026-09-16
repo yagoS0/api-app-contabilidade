@@ -1,0 +1,20 @@
+.wa-comunicados { max-width: 1040px; margin: 0 auto; }
+.wa-comunicados h2 { font-size: 1.15rem; margin-top: 24px; }
+.wa-comunicados label:not(.wa-aviso-check) { display: grid; gap: 7px; margin: 14px 0; font-size: .9rem; }
+.wa-comunicados input:not([type=checkbox]), .wa-comunicados textarea, .wa-comunicados select { width: 100%; padding: 10px 12px; background: var(--bg-surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; box-sizing: border-box; }
+.wa-comunicados textarea { resize: vertical; }
+.wa-comunicados small { display: block; color: var(--text-muted); margin-top: 4px; }
+.wa-aviso-ajuda { color: var(--text-muted); font-size: .83rem; }
+.wa-aviso-check { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; }
+.wa-aviso-check input { margin-top: 4px; }
+.wa-aviso-destinatarios, .wa-aviso-empresas { max-height: 330px; overflow: auto; margin: 12px 0; }
+.wa-aviso-previa { background: var(--bg-surface); border: 1px solid var(--border); padding: 18px; border-radius: var(--radius); max-width: 680px; overflow-wrap: anywhere; }
+.wa-aviso-previa p { white-space: pre-wrap; margin-top: 0; }
+.wa-aviso-linha { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(180px, .8fr) 110px; width: 100%; text-align: left; gap: 12px; padding: 16px; margin: 8px 0; color: var(--text); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
+.wa-aviso-acoes { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.wa-aviso-confirmacao { border: 1px solid var(--border-focus); padding: 16px; margin: 16px 0; border-radius: var(--radius-sm); }
+.wa-aviso-tabela { overflow-x: auto; }
+.wa-aviso-tabela table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+.wa-aviso-tabela th, .wa-aviso-tabela td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border); }
+.wa-aviso-erro { color: var(--state-danger); }
+@media (max-width: 640px) { .wa-aviso-linha { grid-template-columns: 1fr; gap: 5px; } .wa-comunicados { min-width: 0; } }

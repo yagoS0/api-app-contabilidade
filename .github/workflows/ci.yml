@@ -131,6 +131,9 @@ jobs:
       - name: Verify concurrent delivery and delayed callbacks
         working-directory: apps/api
         run: node scripts/verify-whatsapp-delivery-postgres.js --url "$DATABASE_URL"
+      - name: Verify broadcast approval, deduplication and durable sending without external calls
+        working-directory: apps/api
+        run: node scripts/verify-whatsapp-comunicados-postgres.js --url "$DATABASE_URL"
       - name: Verify atomic OFX imports and tenant isolation
         working-directory: apps/api
         run: node scripts/verify-whatsapp-ofx-postgres.js --url "$DATABASE_URL"
