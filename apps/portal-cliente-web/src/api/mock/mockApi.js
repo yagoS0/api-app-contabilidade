@@ -23,7 +23,7 @@ import { isAdminOrAbove } from "../../lib/roles";
 // ⚠ Só o DRE ainda é ficção. O fluxo de caixa virou REAL em 27/08/2026, e o mock dele reproduz o
 // CONTRATO do servidor — por isso mora em `api/mock/`, não em `dadosDeDemonstracao`.
 import { dreDeDemonstracao } from "../../features/painel/lib/dadosDeDemonstracao";
-import { dreDoMock, dreVazioDoMock } from "./dreDoMock";
+import { dreDoMock } from "./dreDoMock";
 import { fluxoDeCaixaDoMock } from "./fluxoDeCaixaDoMock";
 import { LOTE_MAXIMO } from "../../features/notas/lib/loteDanfse";
 
@@ -2446,10 +2446,27 @@ export function createMockApi() {
     async getDre(companyId, { competencia } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
-      const ciclo = competencia || competenciaPadrao();
-      if (id === "pc-006") return dreDeDemonstracao(id, ciclo);
-      if (id === "pc-007") return dreVazioDoMock(id, ciclo);
-      return dreDoMock(id, ciclo);
+      const competenciasDisponiveis = id === "pc-007" ? [] : ["2026-08", "2026-07"];
+      const ciclo = competencia || competenciasDisponiveis[0] || null;
+      if (competencia && !competenciasDisponiveis.includes(competencia)) {
+        throw new ApiError(400, "competencia_nao_fechada", "Esta competência ainda não foi fechada pelo contador.");
+      }
+      if (!ciclo) return {
+        competencia: null, competenciasDisponiveis, demonstracao: false, semLancamento: true,
+        naoClassificado: [], inconsistencias: [],
+        fechadoEm: null, semCompetenciaFechada: true, linhas: [],
+      };
+      const dre = id === "pc-006" ? dreDeDemonstracao(id, ciclo) : dreDoMock(id, ciclo);
+      // O fechamento valida o período; a contagem e demais pendências continuam visíveis.
+      const qualidade = dre.qualidade ? {
+        ...dre.qualidade,
+        motivos: dre.qualidade.motivos.filter(m => m !== "lancamento_rascunho"),
+      } : undefined;
+      return {
+        ...dre, ...(qualidade ? { qualidade } : {}), competenciasDisponiveis,
+        fechadoEm: ciclo === "2026-08" ? "2026-09-05T12:00:00.000Z" : "2026-08-05T12:00:00.000Z",
+        semCompetenciaFechada: false,
+      };
     },
 
     /**

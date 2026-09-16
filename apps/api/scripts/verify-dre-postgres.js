@@ -33,6 +33,11 @@ const criar = (nome, lines, extra = {}) => prisma.accountingEntry.create({ data:
 
 try {
   await prisma.portalClient.createMany({ data: [companyId, outraId].map(id => ({ id, cnpj: id, razao: "Empresa descartável DRE" })) });
+  const semFechamento = await montarDre({ portalClientId: companyId, client: prisma });
+  assert.equal(semFechamento.semCompetenciaFechada, true);
+  await assert.rejects(ler, e => e.codigo === "competencia_nao_fechada");
+  await prisma.companyMonthlyCircular.create({ data: { portalClientId: companyId, competencia, fechadoContabilEm: new Date() } });
+  ok("sem fechamento não há DRE e competência aberta é recusada");
   await prisma.chartOfAccount.createMany({ data: [
     ["receita", "311020001", "RECEITA"], ["despesa", "411020001", "DESPESA"],
     ["deducao", "331030009", "RECEITA"], ["caixa", "111010001", "ATIVO"],
@@ -79,10 +84,14 @@ try {
   const final = JSON.parse(JSON.stringify(await ler()));
   perto(valorDe(final, "resultadoDoPeriodo"), 730.10);
   assert.equal(final.qualidade.lancamentosRascunho, 1);
-  assert.ok(final.qualidade.motivos.includes("lancamento_rascunho"));
+  assert.ok(!final.qualidade.motivos.includes("lancamento_rascunho"));
   assert.equal(final.qualidade.linhasInvalidas, 0);
   assert.equal(final.demonstracao, false);
-  ok("rascunho válido integra soma e sinaliza resultado provisório no JSON público");
+  ok("fechamento revisa rascunho sem ocultar conta sem mapeamento no JSON público");
+  await prisma.companyMonthlyCircular.update({ where: { portalClientId_competencia: { portalClientId: companyId, competencia } }, data: { fechadoContabilEm: null } });
+  await assert.rejects(ler, e => e.codigo === "competencia_nao_fechada");
+  assert.equal((await montarDre({ portalClientId: companyId, client: prisma })).semCompetenciaFechada, true);
+  ok("reabertura retira a competência da DRE");
   console.log(`PASS: ${checks} cenários DRE em PostgreSQL real.`);
 } finally {
   // Só as duas empresas UUID desta execução; relações removem apenas suas fixtures.

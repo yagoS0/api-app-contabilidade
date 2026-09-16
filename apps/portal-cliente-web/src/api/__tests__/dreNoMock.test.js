@@ -37,6 +37,22 @@ beforeEach(async () => {
 });
 
 describe("⚠⚠ o DRE do mock reproduz o CONTRATO da rota real", () => {
+  it("seleciona a última competência fechada quando o filtro é omitido", async () => {
+    const r = await api.getDre("pc-001");
+    expect(r).toMatchObject({ competencia: "2026-08", competenciasDisponiveis: ["2026-08", "2026-07"], semCompetenciaFechada: false });
+    expect(r.fechadoEm).toBe("2026-09-05T12:00:00.000Z");
+    expect(r.qualidade.motivos).not.toContain("lancamento_rascunho");
+    expect(r.qualidade.lancamentosRascunho).toBe(1);
+    expect(r.qualidade.motivos).toContain("resultado_sem_mapeamento");
+    const julho = await api.getDre("pc-001", { competencia: "2026-07" });
+    expect(julho.competencia).toBe("2026-07");
+    expect(julho.fechadoEm).toBe("2026-08-05T12:00:00.000Z");
+  });
+
+  it.each(["pc-001", "pc-006", "pc-007"])("recusa competência aberta em %s", async id => {
+    await expect(api.getDre(id, { competencia: "2026-09" })).rejects.toMatchObject({ status: 400, code: "competencia_nao_fechada" });
+  });
+
   it("responde `demonstracao: false` — é ele que apaga o selo", async () => {
     const r = await api.getDre("pc-001", { competencia: "2026-08" });
     expect(r.demonstracao).toBe(false);
@@ -90,12 +106,10 @@ describe("⚠⚠ o DRE do mock reproduz o CONTRATO da rota real", () => {
 
 describe("⚠⚠ os DOIS outros ramos continuam alcançáveis offline", () => {
   it("⚠⚠ a empresa SEM lançamento devolve vazio NOMEADO — nunca `R$ 0,00` afirmando nada", async () => {
-    const r = await api.getDre("pc-007", { competencia: "2026-08" });
+    const r = await api.getDre("pc-007");
     expect(r.semLancamento).toBe(true);
     expect(r.demonstracao).toBe(false);
-    // ⚠ As linhas continuam existindo, zeradas — quem diz "não há o que mostrar" é a bandeira,
-    // não a ausência das linhas.
-    expect(r.linhas.map((l) => l.chave)).toEqual(CHAVES_ESPERADAS);
+    expect(r).toMatchObject({ semCompetenciaFechada: true, competencia: null, fechadoEm: null, competenciasDisponiveis: [], linhas: [], naoClassificado: [], inconsistencias: [] });
   });
 
   it("⚠ a demonstração continua existindo em UMA empresa — o selo precisa de caminho", async () => {
@@ -109,14 +123,15 @@ describe("⚠⚠ os DOIS outros ramos continuam alcançáveis offline", () => {
 
 describe('qualidade da DRE no contrato do mock', () => {
   it('nomeia parcialidade e conta fora do mapeamento sem alterar subtotais válidos', async () => {
-    const r = await api.getDre('pc-001', { competencia: '2026-09' });
+    const r = await api.getDre('pc-001', { competencia: '2026-08' });
     expect(r.qualidade).toMatchObject({ status: 'PROVISORIO', provisorio: true, linhasNaoClassificadas: 4, linhasInvalidas: 0 });
     expect(r.naoClassificado.some(n => n.causa === 'resultado_sem_mapeamento')).toBe(true);
     expect(r.inconsistencias).toEqual([]);
   });
-  it('estado vazio tem qualidade explícita sem alegar parcialidade', async () => {
-    const r = await api.getDre('pc-007', { competencia: '2026-09' });
-    expect(r.qualidade).toMatchObject({ status: 'SEM_LANCAMENTOS', provisorio: false, linhasNaoClassificadas: 0, linhasInvalidas: 0 });
+  it('sem fechamento não oferece avaliação de qualidade de um período aberto', async () => {
+    const r = await api.getDre('pc-007');
+    expect(r.semCompetenciaFechada).toBe(true);
+    expect(r).not.toHaveProperty('qualidade');
   });
   it('fixture com valor inválido oferece aviso sem valor monetário inventado', () => {
     const r = dreDoMock('pc-003', '2026-09');

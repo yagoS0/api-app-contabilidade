@@ -5,6 +5,9 @@
 # Aqui ela seria estrago: `/pagina-que-nao-existe` responderia **200 com a landing**, e o Google
 # indexaria a mesma pagina sob N enderecos. Caminho que nao existe tem de devolver **404**.
 :8080 {
+	@www host www.altan.company
+	redir @www https://altan.company{uri} permanent
+
 	root * /usr/share/caddy
 	encode gzip
 

@@ -77,7 +77,7 @@ function Bloco({ bloco }) {
       {colunas.length > 0 && registros.length > 0 ? (
         /* ⚠ A ROLAGEM É QUEM CEDE. Tabela larga rola dentro do contêiner; coluna de relatório
            fiscal não some para caber na tela. */
-        <div className="table-wrap">
+        <div className="table-wrap fiscal-table-scroll" role="region" aria-label="Pendências fiscais — tabela com rolagem horizontal" tabIndex={0}>
           <table className="table table--sitfis">
             <thead>
               <tr>

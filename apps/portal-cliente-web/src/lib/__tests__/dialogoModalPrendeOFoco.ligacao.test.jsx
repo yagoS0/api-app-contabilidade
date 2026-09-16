@@ -87,7 +87,7 @@ describe("⚠⚠ o foco não sai do diálogo pelo Tab", () => {
       </ComIsca>,
     );
     const caixa = document.querySelector(".modal");
-    const focaveis = [...caixa.querySelectorAll("button, a[href]")].filter((el) => !el.disabled);
+    const focaveis = [...caixa.querySelectorAll("input, button, a[href]")].filter((el) => !el.disabled);
     expect(focaveis.length).toBeGreaterThan(1);
 
     act(() => focaveis[focaveis.length - 1].focus());

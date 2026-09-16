@@ -1,0 +1,97 @@
+/* Escopo local: preserva todas as colunas e os dois meses em qualquer largura. */
+.painel-page,
+.painel-financeiro { min-width: 0; }
+.painel-page { display: grid; gap: var(--gap); }
+.dre-competencia { display: grid; gap: 4px; min-width: 0; font-size: .8125rem; color: var(--muted); }
+.dre-competencia select { color: var(--text); }
+.painel-financeiro .table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.painel-financeiro .table-wrap:focus-visible {
+  outline: 2px solid var(--ciano);
+  outline-offset: 2px;
+}
+.painel-financeiro .card-header .page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+.painel-financeiro .seg > button,
+.painel-financeiro .btn,
+.painel-financeiro .fluxo-v3-periodo {
+  min-height: 44px;
+  min-width: 44px;
+}
+.painel-financeiro .fluxo-v3-navegacao > button {
+  width: 44px;
+  height: 44px;
+  font-size: 1.25rem;
+}
+.painel-financeiro .table--fluxo-v3 {
+  min-width: 850px;
+  table-layout: auto;
+}
+.painel-financeiro .table--fluxo-v3 thead th {
+  font-size: .8125rem;
+  font-weight: 600;
+  white-space: normal;
+}
+.painel-financeiro .table--fluxo-v3 .col-periodo { width: 88px; }
+.painel-financeiro .table--fluxo-v3 [data-coluna] { width: auto; }
+.painel-financeiro .fluxo-v4-celula,
+.painel-financeiro .fluxo-v4-dia {
+  min-height: 44px;
+  min-width: 44px;
+}
+.painel-financeiro .table--fluxo-v3 tbody th:first-child,
+.painel-financeiro .table--fluxo-v3 thead th:first-child,
+.painel-financeiro .table--fluxo-v3 tfoot th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--surface);
+}
+.painel-financeiro .table--fluxo-v3 thead th:first-child {
+  z-index: 4;
+  background: var(--cabecalho-tabela);
+}
+.painel-financeiro .table--fluxo-v3 tr[data-hoje="sim"] > th:first-child {
+  background: var(--ciano-surface);
+}
+.painel-financeiro .table--dre { min-width: 0; width: 100%; }
+.painel-financeiro .table--dre th { text-align: left; }
+.painel-financeiro .table--dre th.num { text-align: right; }
+.painel-financeiro .table--dre td:first-child { white-space: normal; }
+.painel-financeiro .table--dre .num { white-space: nowrap; }
+
+@media (max-width: 700px) {
+  .painel-page > .page-header { align-items: stretch; gap: 12px; }
+  .painel-page > .page-header > .page-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .painel-page > .page-header select,
+  .painel-page > .page-header .btn {
+    flex: 1 1 140px;
+    min-height: 44px;
+    min-width: 0;
+    font-size: 1rem;
+  }
+  .painel-page > .grid-3 { grid-template-columns: minmax(0, 1fr); }
+  .painel-page > .grid-3 > .card { min-width: 0; }
+  .painel-page > .grid-3 .numero { overflow-wrap: anywhere; }
+  .painel-financeiro { padding: 16px; }
+  .painel-financeiro .card-header { align-items: stretch; }
+  .painel-financeiro .card-header .page-actions { width: 100%; }
+  .painel-financeiro .seg > button { font-size: .875rem; }
+  .painel-financeiro .fluxo-v4-par { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .painel-financeiro .fluxo-v4-mes { font-size: 1rem; }
+  .painel-financeiro .table-wrap--dias { max-height: min(65vh, 480px); }
+  .painel-financeiro .hint,
+  .painel-financeiro .dre-rodape { font-size: .875rem; line-height: 1.5; }
+}

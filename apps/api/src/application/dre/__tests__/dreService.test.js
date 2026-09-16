@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 // A LIGAÇÃO do DRE com o banco.
 //
 // ⚠⚠ A REGRA tem teste em `lib/__tests__/dreGerencial.test.js`. O que se prende AQUI é o que a regra
-// não pode provar sozinha: que a leitura traz o dado CERTO, que a competência não é defaultada, e
+// não pode provar sozinha: que a leitura traz o dado CERTO, somente de competências fechadas, e
 // que **nada aqui escreve**.
 
 import { DreRecusado, RECUSA_DO_DRE, montarDre } from "../DreService.js";
@@ -14,9 +14,13 @@ import { DreRecusado, RECUSA_DO_DRE, montarDre } from "../DreService.js";
  * obscuro, vira uma exceção com o nome do método. E o teste final varre o objeto inteiro, para o
  * método NOVO que alguém acrescentar já nascer coberto.
  */
-function clientDe({ lancamentos = [], contas = [] } = {}) {
+function clientDe({ lancamentos = [], contas = [], fechamentos = [
+  { competencia: "2026-09", fechadoContabilEm: new Date("2026-10-01T12:00:00Z") },
+  { competencia: "2026-08", fechadoContabilEm: new Date("2026-09-01T12:00:00Z") },
+] } = {}) {
   const proibido = (nome) => () => { throw new Error(`escrita proibida no DRE: ${nome}`); };
   return {
+    companyMonthlyCircular: { findMany: jest.fn(async () => fechamentos) },
     accountingEntry: {
       findMany: jest.fn(async () => lancamentos),
       create: proibido("accountingEntry.create"),
@@ -43,12 +47,11 @@ const C = (c, v) => ({ tipo: "C", conta: c, valor: String(v) });
 
 const valorDe = (dre, chave) => dre.linhas.find((l) => l.chave === chave)?.valor;
 
-describe("⚠⚠ a competência é OBRIGATÓRIA e conferida", () => {
-  it.each([undefined, "", "2026", "13/2026", "2026-13", "sem-competencia"])(
+describe("a competência explícita tem formato conferido", () => {
+  it.each(["2026", "13/2026", "2026-13", "sem-competencia"])(
     "%s é recusada, nomeando o formato",
     async (competencia) => {
-      // ⚠ Um DRE que escolhesse o mês por conta própria mostraria um resultado que ninguém pediu,
-      // com o rótulo do mês certo — o defeito mais caro desta família, porque parece correto.
+      // Seleção explícita inválida não pode virar silenciosamente o fechamento mais recente.
       await expect(montarDre({ portalClientId: "emp-1", competencia, client: clientDe() }))
         .rejects.toMatchObject({ codigo: RECUSA_DO_DRE.COMPETENCIA_INVALIDA });
     },
@@ -167,12 +170,63 @@ test('contrato do serviço recebe Decimal do Prisma e serializa resultado real e
 });
 
 
-test('rascunho válido não é excluído da DRE e torna o resultado provisório', async () => {
+test('fechamento revisa rascunhos válidos sem excluir valores nem modificar lançamentos', async () => {
   const client = clientDe({ contas: [conta('r', '311020001')], lancamentos: [
     { status: 'CONFIRMADO', lines: [{ conta: 'r', tipo: 'C', valor: new Prisma.Decimal('80') }] },
     { status: 'RASCUNHO', lines: [{ conta: 'r', tipo: 'C', valor: new Prisma.Decimal('20') }] },
   ] });
   const dre = await montarDre({ portalClientId: 'emp-1', competencia: '2026-09', client });
   expect(valorDe(dre, 'receitaBruta')).toBe(100);
-  expect(dre.qualidade).toMatchObject({ provisorio: true, lancamentosRascunho: 1, motivos: ['lancamento_rascunho'] });
+  expect(dre.qualidade).toMatchObject({ status: 'SEM_PENDENCIAS_IDENTIFICADAS', provisorio: false, lancamentosRascunho: 1, motivos: [] });
+});
+
+describe('somente competências fechadas', () => {
+  it.each([undefined, '', null])('omissão %s escolhe a mais recente fechada da empresa', async competencia => {
+    const client = clientDe();
+    const dre = await montarDre({ portalClientId: 'emp-1', competencia, client });
+    expect(client.companyMonthlyCircular.findMany).toHaveBeenCalledWith({
+      where: { portalClientId: 'emp-1', fechadoContabilEm: { not: null } },
+      select: { competencia: true, fechadoContabilEm: true }, orderBy: { competencia: 'desc' },
+    });
+    expect(dre).toMatchObject({ competencia: '2026-09', competenciasDisponiveis: ['2026-09', '2026-08'], semCompetenciaFechada: false });
+    expect(dre.fechadoEm.toISOString()).toBe('2026-10-01T12:00:00.000Z');
+    expect(client.accountingEntry.findMany.mock.calls[0][0].where).toEqual({ portalClientId: 'emp-1', competencia: '2026-09' });
+  });
+
+  it('permite selecionar fechamento anterior', async () => {
+    const client = clientDe();
+    const dre = await montarDre({ portalClientId: 'emp-1', competencia: '2026-08', client });
+    expect(dre.fechadoEm.toISOString()).toBe('2026-09-01T12:00:00.000Z');
+    expect(dre.competenciasDisponiveis).toEqual(['2026-09', '2026-08']);
+  });
+
+  it('recusa mês aberto sem ler seus lançamentos ou plano', async () => {
+    const client = clientDe();
+    await expect(montarDre({ portalClientId: 'emp-1', competencia: '2026-10', client }))
+      .rejects.toMatchObject({ codigo: 'competencia_nao_fechada' });
+    expect(client.accountingEntry.findMany).not.toHaveBeenCalled();
+    expect(client.chartOfAccount.findMany).not.toHaveBeenCalled();
+  });
+
+  it('sem fechamento não fabrica DRE nem consulta lançamentos abertos', async () => {
+    const client = clientDe({ fechamentos: [] });
+    await expect(montarDre({ portalClientId: 'emp-2', client })).resolves.toEqual({
+      semCompetenciaFechada: true, competencia: null, competenciasDisponiveis: [], fechadoEm: null,
+      linhas: [], naoClassificado: [], inconsistencias: [], demonstracao: false, semLancamento: true,
+    });
+    expect(client.accountingEntry.findMany).not.toHaveBeenCalled();
+    expect(client.chartOfAccount.findMany).not.toHaveBeenCalled();
+    expect(client.companyMonthlyCircular.findMany.mock.calls[0][0].where.portalClientId).toBe('emp-2');
+  });
+
+  it('mesmo fechado conserva classificação pendente e valor inválido', async () => {
+    const lancamentos = [{ status: 'RASCUNHO', lines: [D('desconhecida', 10), D('x', 'invalido')] }];
+    const client = clientDe({ lancamentos });
+    const dre = await montarDre({ portalClientId: 'emp-1', client });
+    expect(dre.qualidade).toMatchObject({ provisorio: true, status: 'PROVISORIO', linhasNaoClassificadas: 1, linhasInvalidas: 1, lancamentosRascunho: 1 });
+    expect(dre.qualidade.motivos).toEqual(['fora_do_plano', 'valor_invalido']);
+    expect(dre.naoClassificado).toHaveLength(1);
+    expect(dre.inconsistencias).toHaveLength(1);
+    expect(lancamentos[0].status).toBe('RASCUNHO');
+  });
 });
