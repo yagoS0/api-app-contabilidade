@@ -10,6 +10,9 @@
 import { podarInvisiveis } from "@contabilidade/shared/onboarding";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { etapasDaOrigem } from "./etapasTemplate.js";
+import { prepararArquivoConversao, conferirFontesDoArquivo } from "./ArquivoConversaoService.js";
+import { normalizarE164 } from "../whatsapp/telefone.js";
+import { normalizarEmail } from "../whatsapp/ContatoWhatsappService.js";
 import {
   CompanyProvisioningError,
   aplicarPosCriacao,
@@ -261,21 +264,16 @@ export async function concluirEtapa(id, etapaId, { concluida, observacao, atorId
  *
  * Duas formas, e a segunda existe por um motivo concreto:
  *  1. `{ company: <mesmo body de POST /firm/companies> }` → provisiona e vincula.
- *  2. `{ vincularPortalClientId }` → só grava o vínculo, sem criar nada. É a RECUPERAÇÃO do caso
- *     "a empresa foi criada mas o update do onboarding falhou depois": sem esta porta, a ficha
- *     ficaria eternamente aberta ao lado de uma empresa que já existe, e a única saída seria mexer
- *     no banco à mão.
+ *  2. `{ vincularPortalClientId, cnpjDefinitivo }` → recupera vínculos antigos com a empresa
+ *     existente, conferindo o CNPJ e arquivando os documentos sem recriar ou alterar seu cadastro.
+ * Criação, documentos, contato e vínculo são confirmados na mesma transação. Os arquivos são
+ * preparados antes dela; o onboarding original e seus PDFs cifrados permanecem como histórico.
  *
  * ⚠ PRÉ-CHECK DE CNPJ: `PortalClient.cnpj` é `@unique` NOT NULL. Sem o pré-check, converter um
  * cliente que já está na carteira devolveria o 409 genérico do Prisma (`empresa_ja_cadastrada`)
  * sem dizer QUAL empresa — e o contador não teria como chegar até ela nem como vincular a ficha.
  */
 export async function converter(id, payload = {}, { atorId = null, portalIds = [], log = null } = {}) {
-  const propostaNova = await prisma.propostaComercial.findFirst({ where: { onboardingId: id, revogadaEm: null } });
-  if (propostaNova) {
-    const contrato = await prisma.contratoComercial.findFirst({ where: { onboardingId: id, propostaId: propostaNova.id, status: "ASSINADO_CONFERIDO" } });
-    if (!contrato?.dados?.opcao?.recorrente) throw new OnboardingError("contrato_recorrente_necessario", "Confira a assinatura do contrato recorrente antes de criar a empresa na carteira.", 409);
-  }
   const registro = await carregar(id);
   if (registro.status === "CONVERTIDO") {
     throw new OnboardingError(
@@ -285,13 +283,32 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
       { portalClientId: registro.portalClientId }
     );
   }
-  if (registro.status === "DESISTIU") {
+  if (["DESISTIU", "CONCLUIDO_AVULSO"].includes(registro.status)) {
     throw new OnboardingError(
       "onboarding_desistiu",
-      "Este onboarding foi encerrado como desistência. Reabra-o antes de converter.",
+      "Este onboarding foi encerrado. Inicie um novo atendimento antes de converter.",
       409
     );
   }
+
+  const comercial = await conferirContratoDeConversao(prisma, id);
+  let arquivo;
+  const concluir = async (tx, criada, { recuperacao = false } = {}) => {
+    const reserva = await tx.onboarding.updateMany({ where: { id, versao: registro.versao, status: registro.status, portalClientId: null }, data: { updatedAt: new Date() } });
+    if (reserva.count !== 1) throw new OnboardingError("formulario_alterado", "A ficha mudou durante a conversão. Recarregue antes de continuar.", 409);
+    const atual = await conferirContratoDeConversao(tx, id);
+    if (atual.contrato?.id !== comercial.contrato?.id || atual.proposta?.id !== comercial.proposta?.id) throw new OnboardingError("contrato_alterado", "A contratação mudou. Recarregue antes de converter.", 409);
+    await conferirFontesDoArquivo(tx, id, arquivo);
+    if (arquivo.documentos.length) await tx.companyDocument.createMany({ data: arquivo.documentos.map(d => ({ ...d, portalClientId: criada.portalId })) });
+    if (!recuperacao) await salvarContatoDaConversao(tx, registro, payload, criada);
+    await tx.onboarding.update({ where: { id }, data: {
+      portalClientId: criada.portalId, status: "CONVERTIDO", convertidoEm: new Date(), convertidoPorId: atorId,
+      emailJaCadastrado: true,
+      eventos: { create: { tipo: "CONVERTIDO", atorId, dados: { portalClientId: criada.portalId, documentos: arquivo.documentos.map(d => d.id) } } },
+    } });
+    await tx.atendimentoLead.updateMany({ where: { onboardingId: id, encerradoEm: null }, data: { encerradoEm: new Date() } });
+    await tx.onboardingEtapa.updateMany({ where: { onboardingId: id, acao: "CONVERSAO" }, data: { concluidaEm: new Date(), concluidaPorId: atorId } });
+  };
 
   // ── Variante de recuperação ──────────────────────────────────────────────────
   const vincular = String(payload?.vincularPortalClientId || "").trim();
@@ -306,6 +323,8 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
     if (!existente) {
       throw new OnboardingError("portal_client_nao_encontrado", "Empresa não encontrada.", 404);
     }
+    const cnpjConferido = String(registro.cnpj || payload.cnpjDefinitivo || "").replace(/\D/g, "");
+    if (cnpjConferido !== existente.cnpj) throw new OnboardingError("cnpj_divergente", "Confira o CNPJ definitivo: ele deve ser o mesmo da empresa que receberá a ficha e os documentos.", 409);
     const jaVinculado = await prisma.onboarding.findUnique({
       where: { portalClientId: existente.id },
       select: { id: true },
@@ -318,16 +337,8 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
         { onboardingId: jaVinculado.id }
       );
     }
-    await prisma.onboarding.update({
-      where: { id: registro.id },
-      data: {
-        portalClientId: existente.id,
-        status: "CONVERTIDO",
-        convertidoEm: new Date(),
-        convertidoPorId: atorId ? String(atorId) : null,
-        eventos: { create: { tipo: "CONVERTIDO", atorId, dados: { portalClientId: existente.id } } },
-      },
-    });
+    arquivo = await prepararArquivoConversao({ db: prisma, onboardingId: id, ...comercial });
+    await prisma.$transaction(tx => concluir(tx, { portalId: existente.id }, { recuperacao: true }));
     return {
       vinculado: true,
       portalClientId: existente.id,
@@ -361,28 +372,20 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
     }
   }
 
-  const criada = await provisionarEmpresa({ body, actorUserId: atorId, log });
+  arquivo = await prepararArquivoConversao({ db: prisma, onboardingId: id, ...comercial });
+  let criada;
+  try {
+    criada = await provisionarEmpresa({ body, actorUserId: atorId, log, concluirNaTransacao: concluir });
+  } catch (erro) {
+    if (erro.cause instanceof OnboardingError) throw erro.cause;
+    throw erro;
+  }
 
   const { regrasAplicadas } = await aplicarPosCriacao({
     portalClientId: criada.portalId,
     portalIds,
     regime: criada.regime,
     log,
-  });
-
-  // ⚠ O update do onboarding vem DEPOIS da criação e não está na mesma transação — não pode
-  // estar: a transação é do provisionamento e já foi encerrada. Se ESTA escrita falhar, a empresa
-  // existe e a ficha continua aberta; é exatamente o buraco que `vincularPortalClientId` fecha.
-  await prisma.onboarding.update({
-    where: { id: registro.id },
-    data: {
-      portalClientId: criada.portalId,
-      status: "CONVERTIDO",
-      convertidoEm: new Date(),
-      convertidoPorId: atorId ? String(atorId) : null,
-      eventos: { create: { tipo: "CONVERTIDO", atorId, dados: { portalClientId: criada.portalId } } },
-      emailJaCadastrado: await emailTemConta(registro.responsavelEmail),
-    },
   });
 
   return {
@@ -392,6 +395,30 @@ export async function converter(id, payload = {}, { atorId = null, portalIds = [
     regrasAplicadas,
     onboarding: await carregar(registro.id, { comEtapas: true }),
   };
+}
+
+async function conferirContratoDeConversao(db, onboardingId) {
+  const proposta = await db.propostaComercial.findFirst({ where: { onboardingId }, orderBy: { versao: "desc" } });
+  if (!proposta) return {}; // Fichas anteriores ao fluxo comercial continuam válidas.
+  const contrato = await db.contratoComercial.findFirst({ where: { onboardingId, propostaId: proposta.id, status: "ASSINADO_CONFERIDO" } });
+  if (proposta.revogadaEm || proposta.status !== "ACEITA" || !contrato?.dados?.opcao?.recorrente) throw new OnboardingError("contrato_recorrente_necessario", "Confira a assinatura do contrato recorrente da proposta aceita antes de criar a empresa.", 409);
+  const pagamento = await db.onboardingEvento.findFirst({ where: { onboardingId, tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", dados: { path: ["contratoId"], equals: contrato.id } } });
+  if (!pagamento) throw new OnboardingError("pagamento_pendente", "Confira o pagamento deste contrato na jornada antes de criar a empresa.", 409);
+  return { proposta, contrato };
+}
+
+async function salvarContatoDaConversao(tx, registro, payload, criada) {
+  const fonte = payload.contato || { nome: registro.responsavelNome, email: registro.responsavelEmail, telefone: registro.responsavelTelefone };
+  const email = normalizarEmail(fonte.email), telefoneE164 = normalizarE164(fonte.telefone);
+  if ((fonte.email && !email) || (fonte.telefone && !telefoneE164)) throw new OnboardingError("contato_invalido", "Confira o e-mail e o WhatsApp do responsável antes de converter.", 400);
+  if (!email && !telefoneE164) return;
+  await tx.contatoWhatsapp.create({ data: {
+    portalClientId: criada.portalId, nome: String(fonte.nome || registro.responsavelNome || "Responsável").trim(), email, telefoneE164,
+    userId: email && email === String(payload.ownerEmail || "").trim().toLowerCase() ? criada.ownerUserId : null,
+    optInEm: telefoneE164 && fonte.whatsappAutorizado === true ? new Date() : null,
+    optInOrigem: telefoneE164 && fonte.whatsappAutorizado === true ? "conferencia_onboarding" : null,
+    permissoesAssistente: [],
+  } });
 }
 
 export async function desistir(id, { motivo = null, atorId = null } = {}) {

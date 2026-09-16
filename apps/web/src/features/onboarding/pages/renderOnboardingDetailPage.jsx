@@ -134,18 +134,20 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
       setModalAberto(false);
       setOnboarding(r?.onboarding || onboarding);
       await carregar();
+      if (r?.portalClientId) onAbrirEmpresa?.(r.portalClientId, "cadastro");
     } catch (e) {
       setErroConversao(e);
     }
   }
 
-  async function vincular(portalClientId) {
+  async function vincular(portalClientId, cnpjDefinitivo) {
     if (!portalClientId) return;
     setErroConversao(null);
     try {
-      await api.converterOnboarding(onboarding.id, { vincularPortalClientId: portalClientId });
+      await api.converterOnboarding(onboarding.id, { vincularPortalClientId: portalClientId, cnpjDefinitivo });
       setModalAberto(false);
       await carregar();
+      onAbrirEmpresa?.(portalClientId, "cadastro");
     } catch (e) {
       setErroConversao(e);
     }

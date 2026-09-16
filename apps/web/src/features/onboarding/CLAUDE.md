@@ -1,5 +1,9 @@
 # CLAUDE.md — Onboarding (funil pré-cadastro)
 
+## Conversão até a ficha final — 16/09/2026
+
+`conversaoEmpresa.js` prepara e envia sócios, capital, CNAEs secundários, natureza, porte, data e contato sem perder a coleta. A consulta pública atualiza os dados cadastrais; regime pretendido nunca vira regime efetivo automaticamente. `ConversaoModal` exige revisão explícita dos dados definitivos e invalida a revisão ao editar. E-mail/telefone chegam ao contato da empresa; opt-in WhatsApp é separado e começa desmarcado. A conversão abre Cadastro; PDFs recebidos, proposta aceita e minuta ficam em Documentos, mantendo o original cifrado no onboarding. A recuperação envia também `cnpjDefinitivo`. Ver o roteiro/teste em `docs/abertura-empresa-simulacao-completa.md` na raiz.
+
 ## Gestão da biblioteca fora do chat — 14/09/2026
 
 `AbrirBiblioteca` abre `/biblioteca` em nova aba com `noopener noreferrer`; `FluxoComercial` e a gaveta de mensagens usam o mesmo link. O editor `RecursosComerciais` fica na página própria `BibliotecaComercialPage`, com atualização e erro de leitura visíveis. Mensagens rápidas mostram só orientações aprovadas (última por chave), com título/descrição e prévia. Ao voltar à aba, reler a biblioteca e invalidar prévia anterior; dados do lead já coletados preenchem o CNPJ. Modelos iniciais continuam em rascunho para instalações novas, enquanto a configuração explícita pedida pelo dono já disponibilizou dez mensagens em produção. Não substituir preços/contratos privados pelos textos genéricos. Ver `docs/biblioteca-mensagens-rapidas.md` na raiz.
