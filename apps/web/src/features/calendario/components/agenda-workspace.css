@@ -39,9 +39,9 @@
 .agenda-resize-end { bottom:0; }
 .agenda-resize::after { content:''; position:absolute; width:20px; height:2px; left:calc(50% - 10px); top:3px; border-radius:2px; background:currentColor; opacity:0; }
 .agenda-event:hover .agenda-resize::after,.agenda-event:focus-visible .agenda-resize::after { opacity:.6; }
-.agenda-drag-preview { position:absolute; pointer-events:none; z-index:5; box-sizing:border-box; border:1px solid var(--event-color); border-left-width:3px; border-radius:4px; background:var(--bg-surface); box-shadow:0 3px 12px #0004; padding:3px 6px; color:var(--text); font-size:12px; overflow:hidden; }
+.agenda-drag-preview { position:absolute; pointer-events:none; z-index:5; box-sizing:border-box; border:1px solid var(--event-color,var(--text-muted)); border-left-width:3px; border-radius:4px; background:var(--bg-surface); box-shadow:0 3px 12px #0004; padding:3px 6px; color:var(--text); font-size:12px; overflow:hidden; }
 .agenda-drag-preview strong,.agenda-drag-preview span { display:block; }
-.agenda-drag-preview { left:calc((100% - 56px) / var(--days) * var(--preview-day) + 2px); width:calc((100% - 56px) / var(--days) - 5px); }
+.agenda-drag-preview { left:calc((100% - 56px) / var(--days,7) * var(--preview-day,0) + 2px); width:calc((100% - 56px) / var(--days,7) - 5px); }
 .agenda-drag-preview strong { font-size:11px; font-variant-numeric:tabular-nums; }
 .agenda-saving { position:absolute; z-index:6; top:60px; right:8px; background:var(--bg-surface); border:1px solid var(--border); border-radius:6px; padding:5px 9px; color:var(--text-muted); font-size:12px; }
 .agenda-time-day { position:relative; border-right:1px solid var(--border); min-width:0; }
