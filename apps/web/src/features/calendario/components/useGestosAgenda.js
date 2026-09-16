@@ -4,7 +4,7 @@ import { janelaDoGesto } from '../lib/editarJanela';
 export function useGestosAgenda({ dias, horasRef, salvar, bloqueado }) {
   const [previa, setPrevia] = useState(null);
   const atual = useRef(null), ignorarClique = useRef(false);
-  const habilitada = item => !bloqueado && item.tipo === 'tarefa' && Boolean(item.tarefaId || item.ocorrenciaId);
+  const habilitada = item => !bloqueado && ['tarefa', 'obrigacao'].includes(item.tipo) && Boolean(item.tarefaId || item.ocorrenciaId);
   const cancelar = () => { atual.current = null; setPrevia(null); };
   useEffect(() => {
     const tecla = e => { if (e.key === 'Escape' && atual.current) { e.preventDefault(); cancelar(); } };

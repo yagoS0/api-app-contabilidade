@@ -288,6 +288,58 @@ function arrastar(evento,x,y,alvo=evento) {
   fireEvent.click(evento);
 }
 
+test('arrastar obrigação move todas as empresas sem duplicar nem alterar conclusões ou vencimentos',async()=>{
+  const obs=obrigacoes();
+  obs.forEach(o=>{o.agendaConfig={...o.agendaConfig,horaInicio:'09:00',horaFim:'10:00'};o.ocorrencias[0].dataFim='2026-09-10';});
+  Object.assign(obs[0].ocorrencias[0],{status:'CONCLUIDA',situacao:'CONCLUIDA',concluidaEm:'2026-09-10T12:00:00Z'});
+  const {api,container}=montar({obs});const salvar=jest.spyOn(api,'editarOcorrenciasAgenda');
+  const evento=await screen.findByRole('button',{name:/EFD-Contribuições/});const restaurar=prepararPonteiro(container);
+  try {
+    expect(evento).toHaveClass('is-draggable');
+    arrastar(evento,450,196);
+    await waitFor(()=>expect(screen.getByRole('button',{name:/EFD-Contribuições/})).toHaveStyle({top:'560px'}));
+    expect(salvar).toHaveBeenCalledWith(['oc-a','oc-b'],expect.objectContaining({dataInicio:'2026-09-11',dataFim:'2026-09-11',horaInicio:'10:00',horaFim:'11:00'}));
+    expect(screen.getAllByRole('button',{name:/EFD-Contribuições/})).toHaveLength(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    obs.forEach(o=>{expect(o.ocorrencias).toHaveLength(1);expect(o.ocorrencias[0]).toMatchObject({cicloChave:'2026-09',dataVencimento:'2026-09-21'});});
+    expect(obs[0].ocorrencias[0]).toMatchObject({status:'CONCLUIDA',situacao:'CONCLUIDA',concluidaEm:'2026-09-10T12:00:00Z'});
+    fireEvent.pointerDown(screen.getByRole('button',{name:/EFD-Contribuições/}),{pointerId:2,button:0});
+    fireEvent.click(screen.getByRole('button',{name:/EFD-Contribuições/}));
+    expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument();
+  } finally {restaurar();}
+});
+
+test.each(['inicio','fim'])('redimensionar %s da obrigação ajusta o período com os mesmos controles das tarefas',async(borda)=>{
+  const obs=obrigacoes();obs.forEach(o=>o.agendaConfig={...o.agendaConfig,horaInicio:'09:00',horaFim:'11:00'});
+  const {container}=montar({obs});const eventos=await screen.findAllByRole('button',{name:/EFD-Contribuições/});const restaurar=prepararPonteiro(container);
+  try {
+    arrastar(eventos[0],350,196,eventos[0].querySelector(`[data-agenda-resize="${borda}"]`));
+    const esperado=borda==='inicio'?{horaInicio:'10:00',horaFim:'11:00'}:{horaInicio:'09:00',horaFim:'12:00'};
+    await waitFor(()=>expect(obs[0].ocorrencias[0].agendaConfig).toMatchObject(esperado));
+    await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    obs.forEach(o=>expect(o.ocorrencias[0]).toMatchObject({dataInicio:'2026-09-10',dataFim:'2026-09-15',agendaConfig:esperado}));
+    expect(screen.getAllByRole('button',{name:/EFD-Contribuições/})).toHaveLength(4);
+    screen.getAllByRole('button',{name:/EFD-Contribuições/}).forEach(e=>expect(e).toHaveStyle({height:borda==='inicio'?'54px':'166px'}));
+  } finally {restaurar();}
+});
+
+test.each(['IRRF','Simples Nacional'])('%s sem configuração de agenda recebe dia e horário ao soltar na grade',async(nome)=>{
+  const obs=obrigacoes();obs.forEach(o=>{o.nome=nome;delete o.agendaConfig;o.ocorrencias[0].dataFim='2026-09-10';});
+  const {api,container}=montar({obs});const evento=await screen.findByRole('button',{name:new RegExp(nome)});const restaurar=prepararPonteiro(container);
+  try {
+    expect(evento.closest('.agenda-all-day')).not.toBeNull();
+    arrastar(evento,450,168);
+    await waitFor(()=>expect(screen.getByRole('button',{name:new RegExp(nome)})).toHaveStyle({top:'560px'}));
+    expect(screen.getByRole('button',{name:new RegExp(nome)}).closest('.agenda-time-day')).not.toBeNull();
+    expect(screen.getAllByRole('button',{name:new RegExp(nome)})).toHaveLength(1);
+    jest.spyOn(api,'editarOcorrenciasAgenda').mockRejectedValueOnce(new Error('Sem conexão'));
+    fireEvent.keyDown(screen.getByRole('button',{name:new RegExp(nome)}),{key:'ArrowDown',altKey:true});
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sem conexão');
+    expect(screen.getByRole('button',{name:new RegExp(nome)})).toHaveStyle({top:'560px'});
+    obs.forEach(o=>expect(o.ocorrencias[0]).toMatchObject({dataInicio:'2026-09-11',dataFim:'2026-09-11',dataVencimento:'2026-09-21',agendaConfig:{horaInicio:'10:00',horaFim:null}}));
+  } finally {restaurar();}
+});
+
 test('arrastar substitui a ocorrência diária, preserva duração e não abre o modal',async()=>{
   const {api,container}=montar();await api.salvarTarefaAgenda({titulo:'Notas diárias',config:{...config,horaInicio:'09:00',horaFim:'10:00'}});
   const eventos=await screen.findAllByRole('button',{name:'Notas diárias'});const restaurar=prepararPonteiro(container);
