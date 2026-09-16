@@ -63,6 +63,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   prisma.user.findUnique.mockResolvedValue(null);
   prisma.onboardingEtapa.createMany.mockResolvedValue({ count: 0 });
+  prisma.documentoOnboarding.findMany.mockResolvedValue([]);
+  prisma.onboarding.updateMany.mockResolvedValue({ count: 1 });
 });
 
 test("recuperação da conversão não consulta nem vincula empresa fora do escopo", async () => {
@@ -314,10 +316,10 @@ describe("converter — pré-check de CNPJ e recuperação por vínculo", () => 
       .mockResolvedValueOnce(fichaSalva({ status: "EM_TRILHA" })) // carregar
       .mockResolvedValueOnce(null) // nenhum outro onboarding usa esse portal
       .mockResolvedValue(fichaSalva({ status: "CONVERTIDO", portalClientId: "portal-7" }));
-    prisma.portalClient.findUnique.mockResolvedValue({ id: "portal-7", cnpj: "1", razao: "R" });
+    prisma.portalClient.findUnique.mockResolvedValue({ id: "portal-7", cnpj: "11222333000181", razao: "R" });
     prisma.onboarding.update.mockResolvedValue({});
 
-    const out = await converter("onb-1", { vincularPortalClientId: "portal-7" }, { atorId: "u1", portalIds: ["portal-7"] });
+    const out = await converter("onb-1", { vincularPortalClientId: "portal-7", cnpjDefinitivo: "11222333000181" }, { atorId: "u1", portalIds: ["portal-7"] });
 
     expect(out.vinculado).toBe(true);
     expect(out.portalClientId).toBe("portal-7");
@@ -331,10 +333,10 @@ describe("converter — pré-check de CNPJ e recuperação por vínculo", () => 
     prisma.onboarding.findUnique
       .mockResolvedValueOnce(fichaSalva({ status: "EM_TRILHA" }))
       .mockResolvedValueOnce({ id: "onb-outra" });
-    prisma.portalClient.findUnique.mockResolvedValue({ id: "portal-7", cnpj: "1", razao: "R" });
+    prisma.portalClient.findUnique.mockResolvedValue({ id: "portal-7", cnpj: "11222333000181", razao: "R" });
 
     await expect(
-      converter("onb-1", { vincularPortalClientId: "portal-7" }, { atorId: "u1", portalIds: ["portal-7"] })
+      converter("onb-1", { vincularPortalClientId: "portal-7", cnpjDefinitivo: "11222333000181" }, { atorId: "u1", portalIds: ["portal-7"] })
     ).rejects.toMatchObject({ code: "portal_client_ja_vinculado", status: 409 });
     expect(prisma.onboarding.update).not.toHaveBeenCalled();
   });

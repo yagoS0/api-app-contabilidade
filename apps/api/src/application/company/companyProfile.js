@@ -98,6 +98,7 @@ function snakeCasePercentual(campo) {
 }
 
 function asNumberOrNull(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (value === undefined || value === null || value === "") return null;
   const n = Number(String(value).replace(/\./g, "").replace(",", "."));
   return Number.isFinite(n) ? n : null;

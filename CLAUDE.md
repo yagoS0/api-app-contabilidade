@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+# Abertura completa — 16/09/2026
+
+A conversão do onboarding preserva os PDFs recebidos, a proposta aceita e a minuta nos documentos da empresa. Cadastro, contato e vínculo são atômicos; sócios/capital e dados públicos passam pela revisão do contador. O destino é Cadastro da empresa. Ver `docs/abertura-empresa-simulacao-completa.md` e o teste PostgreSQL `verify-opening-company-postgres.js`; não usar provedores ou tokens de IA para essa simulação.
+
 ## Comunicados pelo WhatsApp — 16/09/2026
 
 `WhatsApp → Comunicados` cria avisos para toda a carteira ou contatos selecionados, sem IA. Usar contatos ativos cadastrados com opt-in, sem exigir associação ao portal; um número exato recebe uma vez mesmo em várias empresas. Cada aviso guarda texto e destinatários, submete modelo próprio à Meta e só entra na fila após aprovação conferida e confirmação explícita do escritório. Aviso geral usa MARKETING; UTILITY exige atualização específica de serviço contratado, sujeita à categoria final da Meta. Não usar o modelo de retomada nem uma variável genérica para contornar aprovação. Worker durável registra enviado/entregue/lido/falha; resultado incerto nunca é repetido automaticamente. Migration `20260916110000_whatsapp_comunicados` e Prisma gerado precedem API/worker. Operação, limites e testes: `docs/whatsapp-comunicados.md`. Implementar a função não autoriza disparar avisos reais nos testes.
