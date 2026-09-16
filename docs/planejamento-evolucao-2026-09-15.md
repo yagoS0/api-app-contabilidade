@@ -31,7 +31,7 @@ Este lote não transforma o simulador em um motor universal de apuração. Não 
 - Simples misto com Anexo IV e segregação própria da CPP; início de atividade misto; majoração/sublimites mistos acima de R$ 3,75 milhões. São recusas explícitas.
 - Projeção mensal completa de todos os tributos/regimes. A grade estima DAS e mostra IRPJ trimestral do Presumido separadamente; não altera os totais anuais silenciosamente. Real anual ainda pressupõe lucro uniforme nos trimestres, sem compensar prejuízos anteriores.
 - Reforma por operação, importação de créditos por fornecedor e regime especial. O bloco novo calcula subtotal de consumo para serviços no regime regular, não DAS/carga total.
-- Comparação entre vários cenários salvos e painel consolidado de oportunidades por carteira. O planejamento permanece por empresa ou em modo livre.
+- Consolidação em escala por endpoint agregado, exportação de vários cenários em um único relatório e operações especiais continuam como aprofundamentos. A primeira comparação de cenários e visão da carteira foi entregue na continuação abaixo.
 
 ## Conferência
 
@@ -44,3 +44,14 @@ Este lote não transforma o simulador em um motor universal de apuração. Não 
 - Nenhuma nova dependência ou migração de banco.
 
 Fontes e regras conferidas em `docs/fontes-fiscais.md`, complemento de 15/09/2026. Artefatos fictícios de conferência ficam fora do repositório, em `../planejamento-conferencia.pdf` e imagens de suas páginas.
+
+## Continuação — cenários salvos e carteira
+
+- Nome opcional persistido em `entradas.formularioCenario.ajustes.nomeCenario`, sem migração. Salvar atualiza a lista local também quando a geração de documento é solicitada.
+- Abrir cenário apresenta seleção de dois a três registros para comparação. A tabela lê resultados imutáveis, com data, competência, ano-base, premissas, totais, cobertura, memória por tributo, conclusão e revisão. Não recalcula os registros nem chama o motor atual; o botão Abrir mantém o comportamento explícito de retomar premissas e recalcular.
+- Planejamento geral conserva a simulação livre e ganha seção recolhida Visão da carteira. Só consulta ao abrir; usa as empresas disponíveis na sessão e as rotas existentes protegidas por `requireFirmCompanyAccess`. No máximo três consultas simultâneas, com progresso e falhas por empresa. Não consulta APIs fiscais.
+- Carteira usa apenas a foto mais recente de cada empresa. Comparação sem cobertura registrada, parcial ou sem regime atual não produz oportunidade. Ano-base diferente do atual e revisão prevista para hoje/passada pedem revisão. Diferença positiva é potencial no cenário salvo, nunca economia realizada. A diferença é conferida pelos totais salvos; não usa cegamente `economiaVsAtual`.
+- Filtros distinguem potencial, cobertura, revisão, ausência de regime/cenário e erro. Botão abre o planejamento da empresa correta. Respostas antigas são descartadas ao mudar carteira ou fechar a seção.
+- Limite desta versão: as rotas existentes retornam até 50 cenários por empresa; a carteira seleciona o mais recente. A carteira é a lista autorizada carregada pela aplicação, não uma varredura de empresas fora da sessão. Não soma oportunidades de anos ou bases diferentes e não agenda notificações.
+- Conferência: 448 testes web de planejamento aprovados (29 suítes), incluindo 13 novos casos; build aprovado; parser JSX/no-undef aprovado em oito arquivos JS/JSX alterados. Navegador mock: dois cenários com receitas distintas, seleção sem alterar formulário, carteira com seis empresas, cobertura parcial, ausência de cenário e atalho para a empresa correta. Números fictícios, sem ação em produção.
+- Nenhuma fórmula fiscal, dependência, migração, permissão ou rota de escrita foi alterada nesta continuação. Publicação permanece pendente.

@@ -89,3 +89,5 @@ A ordem recomendada é: confiabilidade da comparação e do pró-labore → acom
 - `apps/api/src/application/planejamento/SimulacaoPlanejamentoService.js`: persistência e documentos.
 
 Na etapa de pesquisa, somente documentação foi alterada. Após a autorização do usuário, iniciou-se a execução descrita em [planejamento-evolucao-2026-09-15.md](planejamento-evolucao-2026-09-15.md), que separa entregas e limites ainda existentes. Não houve publicação deste lote.
+
+Continuação de 15/09: comparação de até três cenários salvos e visão consolidada da carteira implementadas e conferidas. A carteira apresenta potencial apenas com cobertura explícita e regime atual registrado; mantém revisão e lacunas visíveis. Não amplia o motor para operações especiais nem representa economia realizada.

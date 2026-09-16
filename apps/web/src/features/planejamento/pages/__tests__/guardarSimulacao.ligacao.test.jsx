@@ -56,6 +56,7 @@ it("preserva novos ajustes, acompanhamento e conclusão ao salvar e reabrir", as
     listarSimulacoesPlanejamento: jest.fn(async () => ({ simulacoes: salvo ? [salvo] : [] })),
   });
   await esperarCalculo();
+  fireEvent.change(screen.getByLabelText("Nome do cenário (opcional)"), { target: { value: "Projeção revisada" } });
   fireEvent.click(screen.getByText("Folha, sócios e comparação com o regime atual"));
   fireEvent.click(screen.getByText("Acompanhamento mensal · 2026"));
   fireEvent.click(screen.getByText("Conclusão do contador e próxima revisão"));
@@ -68,11 +69,13 @@ it("preserva novos ajustes, acompanhamento e conclusão ao salvar e reabrir", as
   await waitFor(() => expect(api.salvarSimulacaoPlanejamento).toHaveBeenCalledTimes(1));
   expect(salvo.resultado.acompanhamentoMensal.desvio).toBe(2000);
   expect(salvo.resultado.conclusao.texto).toMatch(/Conferir receita/);
+  expect(salvo.entradas.formularioCenario.ajustes.nomeCenario).toBe("Projeção revisada");
   fireEvent.change(screen.getByLabelText("Realizado Jan"), { target: { value: "1" } });
   fireEvent.click(screen.getByRole("button", { name: /^Abrir cenário$/ }));
   fireEvent.click(await screen.findByRole("button", { name: /Abrir 2026-08/ }));
   expect(screen.getByLabelText("Realizado Jan")).toHaveValue(12000);
   expect(screen.getByLabelText(/Base anual da CPP/)).toHaveValue(50000);
+  expect(screen.getByLabelText("Nome do cenário (opcional)")).toHaveValue("Projeção revisada");
   expect(screen.getByText(/^Cenário salvo$/)).toBeInTheDocument();
 }, 15000);
 

@@ -31,3 +31,15 @@
 .planejamento-avancado .btn:disabled { opacity: .5; cursor: default; }
 .planejamento-avancado .btn:hover:enabled { background: #34354a; }
 .planejamento-avancado td { vertical-align: top; }
+.planejamento-cenarios { width: 100%; min-width: 0; font-size: .82rem; }
+.planejamento-lista-cenarios { display: grid; gap: 8px; max-height: 280px; overflow: auto; }
+.planejamento-lista-cenarios > div { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px; border-bottom: 1px solid #44475a; }
+.planejamento-lista-cenarios label { display: flex; align-items: center; gap: 8px; }
+.planejamento-cenarios input[type="checkbox"] { width: 16px; height: 16px; flex-shrink: 0; accent-color: #bd93f9; }
+.planejamento-tabela-scroll { overflow-x: auto; max-width: 100%; margin-top: 12px; }
+.planejamento-tabela-scroll table { border-collapse: collapse; width: 100%; min-width: 640px; }
+.planejamento-tabela-scroll th, .planejamento-tabela-scroll td { padding: 10px; text-align: left; border-bottom: 1px solid #44475a; vertical-align: top; max-width: 300px; overflow-wrap: anywhere; }
+.planejamento-tabela-scroll caption { text-align: left; padding: 8px 0; color: #a7b0c0; }
+.planejamento-tabela-scroll small { display: block; margin-top: 5px; font-weight: normal; color: #a7b0c0; }
+.planejamento-carteira-controles { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.planejamento-carteira-controles label { min-width: 200px; }

@@ -44,6 +44,9 @@ import {
   textoDoPercentualForaDaFaixa,
 } from "../lib/campoNumerico";
 import { CardRegime } from "../components/CardRegime";
+import { ComparacaoCenarios } from "../components/ComparacaoCenarios";
+import { CarteiraPlanejamento } from "../components/CarteiraPlanejamento";
+import { ordenarCenarios } from "../lib/cenariosSalvos";
 import { AjustesPlanejamento, numeroInformado } from "../components/AjustesPlanejamento";
 import { AcompanhamentoMensal } from "../components/AcompanhamentoMensal";
 import { RealDetalhado } from "../components/RealDetalhado";
@@ -116,7 +119,7 @@ function Campo({ id, rotuloTexto, children, abaixo = null, estilo = null }) {
   );
 }
 
-export function PlanejamentoPage({ api = null, empresas = [], empresa = null, onVoltar, empresaFixa = false }) {
+export function PlanejamentoPage({ api = null, empresas = [], empresa = null, onVoltar, empresaFixa = false, onAbrirEmpresa }) {
   const [receita, setReceita] = useState("");
   const [rbt12, setRbt12] = useState("");
   const [mesesAtividade, setMesesAtividade] = useState("");
@@ -451,7 +454,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
       const r = await api.listarSimulacoesPlanejamento(empresaDaBusca);
       if (empresaAtualCenario.current !== empresaDaBusca) return;
       if (r?.ok === false) throw new Error(r.message || "Não foi possível ler os cenários.");
-      setCenariosSalvos(r?.simulacoes || []);
+      setCenariosSalvos(ordenarCenarios(r?.simulacoes));
     } catch (e) { if (empresaAtualCenario.current === empresaDaBusca) setDesfechoDoGuardar({ tom: "erro", texto: e.message || "Não foi possível ler os cenários salvos." }); }
     finally { if (empresaAtualCenario.current === empresaDaBusca) setCarregandoCenarios(false); }
   }
@@ -620,10 +623,10 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
         return;
       }
       setCenarioSalvo(assinaturaCenario);
+      if (salvo.simulacao?.id) setCenariosSalvos(lista => [salvo.simulacao, ...(lista || []).filter(c => c.id !== salvo.simulacao.id)]);
       cenarioFoiSalvo = true;
       if (somenteCenario === true) {
         setDesfechoDoGuardar({ tom: "ok", texto: "Cenário salvo. Use Abrir cenário para continuar depois." });
-        setCenariosSalvos(null);
         return;
       }
       const doc = await api.gerarDocumentoDaSimulacao(empresaId, salvo.simulacao.id);
@@ -705,15 +708,15 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
           {resultado && <a href="#comparacao-cenario">2. Comparação</a>}
           {resultado && <a href="#detalhes-cenario">3. Detalhes</a>}
         </nav>
-        <section aria-label="Cenários salvos" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        {!empresaFixa && <CarteiraPlanejamento api={api} empresas={empresas} onAbrirEmpresa={onAbrirEmpresa} />}
+        <section aria-label="Cenários salvos" className="planejamento-avancado" data-print-hide style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
+          {empresaId && <label style={rotulo}>Nome do cenário (opcional)<input style={campo} maxLength={80} value={ajustes.nomeCenario || ""} onChange={e => setAjustes(a => ({ ...a, nomeCenario: e.target.value }))} /></label>}
           <span role="status">{cenarioSalvo === assinaturaCenario ? "Cenário salvo" : "Premissas não salvas"}</span>
           <button type="button" className="btn" disabled={!empresaId || !resultado || guardando || carregando} onClick={() => guardarSimulacao(true)}>Salvar cenário</button>
           <button type="button" className="btn btn-secondary" disabled={!empresaId || carregando || carregandoCenarios} onClick={listarCenarios}>{carregandoCenarios ? "Lendo cenários…" : "Abrir cenário"}</button>
           {!empresaId && <span>Vincule uma empresa para guardar e retomar cenários.</span>}
           {mostrarCenarios && cenariosSalvos && <div style={{ flexBasis: "100%" }}>
-            {cenariosSalvos.length ? cenariosSalvos.map((c) => <button key={c.id} type="button" className="btn btn-secondary" disabled={carregando} onClick={() => abrirCenario(c)}>
-              Abrir {c.competencia || "simulação"} · {new Date(c.geradoEm).toLocaleString("pt-BR")}
-            </button>) : <p>Nenhum cenário salvo para esta empresa.</p>}
+            <ComparacaoCenarios key={empresaId} cenarios={cenariosSalvos} disabled={carregando || carregandoCenarios} onAbrir={abrirCenario} />
           </div>}
         </section>
         {desfechoDoGuardar && <p role="status" style={{ margin: 0, fontSize: "0.875rem", color: desfechoDoGuardar.tom === "erro" ? "var(--state-warn)" : C.muted }}>{desfechoDoGuardar.texto}</p>}
