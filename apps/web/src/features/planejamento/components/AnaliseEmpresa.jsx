@@ -1,3 +1,4 @@
+import { PendenciasRelatorio } from './PendenciasRelatorio';
 import { FiltroPeriodo } from './FiltroPeriodo';
 import { GraficoEvolucao } from './GraficoEvolucao';
 import { BaseSocios } from './BaseSocios';
@@ -60,6 +61,7 @@ export function AnaliseEmpresa({ api, empresaId, empresaNome, empresaCnpj }) {
     {erro ? <div role="alert">{erro} <button onClick={()=>{setResposta(null);setTentativa(n=>n+1);}}>Tentar novamente</button></div> : !dados ? <p role="status">Carregando análise…</p> : <>
       {dados.demonstracao && <p className="bi-aviso">Ambiente de demonstração · Dados fictícios para testes.</p>}
       <p className="bi-contexto">{mes(de)} a {mes(ate)} comparado com {mes(anterior.de)} a {mes(anterior.ate)} · Consulta em {dados.hoje}</p>
+      <PendenciasRelatorio dados={dados} empresaId={empresaId}/>
       {secao==='clientes' && <ClientesRelatorio key={empresaId} api={api} empresaId={empresaId} empresaNome={empresaNome} de={de} ate={ate} comparar={comparar}/>}
       {(atual.parcial||anterior.parcial) && <p className="bi-aviso">Dados parciais · Confira a cobertura antes de interpretar o crescimento.</p>}
       {secao==='geral' && <>
