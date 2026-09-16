@@ -122,6 +122,12 @@ try {
   const documentos = await listar({ portalClientId: portal.id });
   await fs.writeFile(path.join(pasta, "resultado.json"), JSON.stringify({ empresa: portal, documentos, checks, conversa, simulado: ["WhatsApp", "assinatura", "pagamento", "registro/CNPJ"], provedoresExternos: 0 }, null, 2));
   assert.equal(documentos.length, anexos.length + 2, "Anexos, proposta aceita e minuta emitida devem estar arquivados");
+  for (const doc of documentos) {
+    const lido = await baixarBuffer({ portalClientId: portal.id, documentId: doc.id });
+    assert.equal(lido.buffer.length, doc.bytes);
+    assert.equal(lido.buffer.subarray(0, 5).toString(), "%PDF-");
+    await assert.rejects(baixarBuffer({ portalClientId: "outra-empresa", documentId: doc.id }), e => e.code === "documento_nao_encontrado");
+  }
   for (const anexo of anexos) { const doc = documentos.find(d => d.nome === anexo.nome); assert.ok(doc, anexo.nome); const lido = await baixarBuffer({ portalClientId: portal.id, documentId: doc.id }); assert.equal(hash(lido.buffer), anexo.sha256); }
   ok("Ficha final contém sócios, capital, endereço, CNAEs, contato e documentos baixáveis idênticos aos originais");
   const contato = await db.contatoWhatsapp.findFirst({ where: { portalClientId: portal.id } });
