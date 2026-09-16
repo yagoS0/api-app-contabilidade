@@ -1,5 +1,9 @@
 # CLAUDE.md — Web (apps/web)
 
+## Comunicados — 16/09/2026
+
+Nova página `/whatsapp/comunicados`, acessada pelo cabeçalho da central. Formulário salva texto imutável e seleção de telefones da prévia; submissão à Meta, consulta da aprovação e confirmação da transmissão são ações distintas. Exibir categoria final antes de confirmar; enviar `previaHash` do detalhe. O acompanhamento automático só faz GET, não submete modelos nem reenvia mensagens. Falha de POST consulta o resultado e preserva a intenção, sem retry escondido. Mock sem API conectada não oferece envio. CSS em `main.jsx`, componentes compartilhados `PageShell`/`Button`. Ver `docs/whatsapp-comunicados.md`.
+
 ## Passo a passo do lead — 14/09/2026
 
 `FluxoComercial` usa `lib/jornadaComercial` e `PassosDoLead`: seis etapas para abertura e oito para transferência/empresa parada, retomadas pelos registros do servidor. Consulta pública/SITFIS precisam de conferência explícita; etapas futuras ficam indisponíveis. Atualização a cada 10 s só lê resultados; preservar rascunhos e versão durante polling. Mudança da ficha/relatório exige nova revisão do diagnóstico. Assinatura e pagamento continuam manuais. CSS importado no entrypoint `main.jsx`; mock recusa envios/consultas externos. Ver `docs/jornada-lead-passo-a-passo.md` na raiz.
