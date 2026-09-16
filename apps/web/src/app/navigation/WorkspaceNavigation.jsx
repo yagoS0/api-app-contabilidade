@@ -13,7 +13,7 @@ export function WorkspaceHomeLink() {
         event.preventDefault();
         navigation.navigate("/companies");
       }
-    }}><LogoAltan altura={28} /></a>;
+    }}><LogoAltan altura={28} variante="marca" /></a>;
 }
 
 // Track only routes visited inside this mounted workspace. A direct link never sends
@@ -51,7 +51,7 @@ export function WorkspaceNavigationProvider({ children }) {
   return <WorkspaceNavigation.Provider value={{ goBack, navigate, modoVisao, setModoVisao, resetSession }}>
     {!companyRoute && !["/login", "/", "/companies", "/companies/"].includes(location.pathname) && <div className="workspace-brandbar">
       <Link to="/companies" className="workspace-home" aria-label="Altan — página principal" title="Página principal">
-        <LogoAltan altura={30} />
+        <LogoAltan altura={30} variante="marca" />
       </Link>
     </div>}
     {companyRoute ? <div className="company-workspace">{children}</div> : children}

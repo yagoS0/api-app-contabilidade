@@ -116,6 +116,9 @@ function TabelaDeUmAnexo({ chave, rbt12 }) {
         ) : null}
       </div>
 
+      <div style={{ marginTop: 8, color: PANEL.muted }}>{marcada ? `Faixa ${marcada} · RBT12 ${fmtMoney(rbt12)}` : "Faixa ainda não definida"}</div>
+      <details style={{ marginTop: 10 }}>
+      <summary style={{ cursor: "pointer", color: PANEL.muted }}>Ver faixas e composição dos tributos</summary>
       <div style={{ overflowX: "auto", marginTop: 10 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
           <thead>
@@ -193,6 +196,7 @@ function TabelaDeUmAnexo({ chave, rbt12 }) {
         </div>
       ) : null}
 
+      </details>
       {t.situacao === SITUACAO_FAIXA.RBT12_DESCONHECIDO ? (
         <Legenda>
           A receita dos últimos 12 meses ainda não é conhecida nesta competência, então nenhuma faixa
@@ -236,7 +240,7 @@ export function TabelaAnexoReferencia({ atividades, rbt12, folha12m }) {
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <h3 style={{ margin: 0, fontSize: "0.95rem", color: PANEL.text }}>Tabela do anexo — referência</h3>
+        <h3 style={{ margin: 0, fontSize: "0.95rem", color: PANEL.text }}>Anexo e faixa da empresa</h3>
         {/* ⚠ A VIGÊNCIA VAI IMPRESSA, como o Planejamento Tributário já faz. Tabela fiscal sem data
             de vigência não é conferível: quem lê não sabe se está olhando a regra do ano dele. */}
         <span style={{ fontSize: "0.72rem", color: PANEL.muted, fontFamily: "monospace" }}>

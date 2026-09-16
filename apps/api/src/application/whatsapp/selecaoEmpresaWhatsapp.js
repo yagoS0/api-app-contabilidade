@@ -1,4 +1,6 @@
 import { PESO_PAPEL_CLIENTE } from '../nfse/emissaoClienteAutorizacao.js';
+import { lerContextoDoMenu } from './contextoMenuWhatsapp.js';
+import { periodoDaConsulta } from './consultaClienteWhatsapp.js';
 
 // Regra pura. Candidatas vêm do vínculo ESTRITO do telefone; nome/CNPJ apenas escolhem
 // entre elas. A seleção não concede função nem substitui a revalidação do contato.
@@ -81,7 +83,7 @@ function iguaisAoTexto(empresas, texto) {
 // tentado primeiro para não cortar uma razão social que contenha "para" ou vírgula.
 function empresaNoTrecho(empresas, trecho) {
   const pontos = [trecho.length];
-  const limites = /[,;\n]|\s+(?:para|pra|pro)\s+|\s+(?:valor|servi[cç]o|descri[cç][aã]o|compet[eê]ncia)\s*[:=]|\s+(?:de|do|da)\s+(?:janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|m[eê]s|\d{2}\/\d{4})\b/giu;
+  const limites = /[,;\n]|\s+(?:para|pra|pro)\s+|\s+(?:valor|servi[cç]o|descri[cç][aã]o|compet[eê]ncia)\s*[:=]|\s+(?:de|do|da|em|no|na)\s+(?:janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|m[eê]s|ano|\d{1,2}\/(?:\d{4}|\d{2})|\d{4}(?:-\d{2})?)\b/giu;
   for (const m of trecho.matchAll(limites)) pontos.push(m.index);
   for (const fim of [...new Set(pontos)].sort((a, b) => b - a)) {
     const encontradas = iguaisAoTexto(empresas, trecho.slice(0, fim));
@@ -97,7 +99,7 @@ function mencoesExplicitas(empresas, texto) {
     { tipo: 'TROCA', re: /^(?:(?:quero|preciso|vamos)\s+)?(?:trocar|mudar)(?:\s+(?:a|de)\s+empresa)?\s+para\s+(?:(?:a\s+)?empresa\s+|a\s+)?/iu },
     { tipo: 'ESCOLHA', re: /^(?:escolho|seleciono|selecionar|continuar\s+(?:com|na)|(?:empresa(?:\s+emissora)?|emissora?)\s*[:=])\s*(?:(?:a\s+)?empresa\s+|a\s+)?/iu },
     { tipo: 'EMISSOR', re: /\b(?:pela|pelo|em\s+nome\s+(?:da|de))\s+(?:(?:a\s+)?empresa\s+)?/giu },
-    { tipo: 'CONSULTA', re: /\b(?:guias?|das|documentos?|notas?|saldo|d[eé]bitos)\s+(?:da|do|de)\s+(?:(?:a\s+)?empresa\s+)?/giu },
+    { tipo: 'CONSULTA', re: /\b(?:guias?|das|documentos?|notas?|saldo|d[eé]bitos|faturamento|faturamemto|faturei|faturou|receita\s+bruta)\s+(?:da|do|de|na|no)\s+(?:(?:a\s+)?empresa\s+)?/giu },
   ];
   for (const { tipo, re } of padroes) {
     const encontrados = re.global ? [...texto.matchAll(re)] : [re.exec(texto)].filter(Boolean);
@@ -109,8 +111,15 @@ function mencoesExplicitas(empresas, texto) {
           || /(?:tomador|cliente|descricao|servico|valor|competencia)\s*[:=]/.test(antes)) continue;
       }
       const inicio = m.index + m[0].length;
+      // "Guias do mês" e "notas de setembro" informam período, não uma empresa desconhecida.
+      const periodo = normalizar(texto.slice(inicio)).replace(/[,;.!?]+$/, '').replace(/,?\s+por favor$/, '').trim();
+      const soPeriodo = periodo.replace(/\b(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|competencia|mes|meses|ano|anos|este|esse|deste|desse|neste|nesse|passado|anterior|atual|de|a|ate)\b/g, '').replace(/[\d\s/-]/g, '') === '';
+      if (tipo === 'CONSULTA' && soPeriodo && periodoDaConsulta(periodo)) continue;
+      if (tipo === 'CONSULTA' && /^(?:(?:este|esse|deste|desse|neste|nesse)\s+)?(?:mes(?:\s+(?:atual|passado|anterior|seguinte))?|hoje|ontem|(?:competencia\s+)?(?:\d{2}\/\d{4}|\d{4}-\d{2})|(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+(?:de\s+)?\d{4})?)$/.test(periodo)) continue;
       const escolha = empresaNoTrecho(empresas, texto.slice(inicio));
-      const objeto = tipo === 'CONSULTA' ? /^(?:guias?|das|documentos?|notas?|saldo|d[eé]bitos)\b/iu.exec(m[0])?.[0] || '' : '';
+      if (tipo === 'CONSULTA' && !escolha.empresas.length && (/^(?:minha empresa|nossa empresa|empresa atual|empresa selecionada)$/.test(periodo)
+        || /^(?:das|simples(?: nacional)?|inss|fgts|darf)(?:\s+(?:de|do|da|referente a)\s+(?:mes(?: atual|passado|anterior)?|janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|\d{2}\/\d{4}|\d{4}-\d{2})(?:\s+(?:de\s+)?\d{4})?)?$/.test(periodo))) continue;
+      const objeto = tipo === 'CONSULTA' ? /^(?:guias?|das|documentos?|notas?|saldo|d[eé]bitos|faturamento|faturamemto|faturei|faturou|receita\s+bruta)\b/iu.exec(m[0])?.[0] || '' : '';
       mencoes.push({ tipo, ...escolha, inicio: m.index + objeto.length, fim: inicio + escolha.tamanho });
     }
   }
@@ -120,17 +129,24 @@ function mencoesExplicitas(empresas, texto) {
 function ehConsultaExplicita(texto) {
   const t = normalizar(texto);
   if (/(?:descricao|servico|tomador|cliente|documento|valor|competencia)\s*[:=]/.test(t)) return false;
-  return /^(?:(?:oi|ola|bom dia|boa tarde|boa noite)[,! ]+)?(?:(?:pode |quero |preciso |gostaria |me |manda |mande |envie |enviar |consultar |ver |mostre |listar |qual |quais |quanto |tenho |duvida |essa |esta |a |as |o |os |por favor )[^;\n]*)?(?:guias?|das|documentos?|notas?|saldo|debitos)\b/.test(t);
-}
-
-function novoPedido(texto, interacaoId) {
-  return String(interacaoId || '').startsWith('altan.client.')
-    || /\b(?:guias?|das|d[eé]bitos|documentos?|emitir|emiss[aã]o|notas?|nfs-?e|recalcular|situa[cç][aã]o\s+fiscal|quanto\s+(?:devo|tenho)|quero|preciso|gostaria)\b/iu.test(texto);
+  return /^(?:(?:oi|ola|bom dia|boa tarde|boa noite)[,! ]+)?(?:(?:pode |quero |preciso |gostaria |me |manda |mande |envie |enviar |consultar |ver |mostre |listar |qual |quais |quanto |tenho |duvida |essa |esta |a |as |o |os |por favor )[^;\n]*)?(?:guias?|das|documentos?|notas?|saldo|debitos|faturamento|faturamemto|faturei|faturou|receita bruta)\b/.test(t);
 }
 
 function consultaDeTodas(texto) {
   const t = normalizar(texto).replace(/[.!?]+$/, '').trim();
   return /^(?:(?:pode |quero |preciso (?:de |das )?|gostaria (?:de |das )?)?(?:me )?(?:mandar|manda|mandar-me|envie|enviar|consultar|ver|mostre|listar)?\s*(?:as )?)?guias (?:de|das) todas(?: as empresas)?(?:,? por favor)?$/.test(t);
+}
+
+function pedeTrocaEmpresa(texto) {
+  // Só pedidos completos: "trocar o valor" e descrições da nota não mudam a emissora.
+  const t = normalizar(texto).replace(/[.!?]+$/, '').trim()
+    .replace(/^(?:oi|ola|bom dia|boa tarde|boa noite)[,!.\s]+/, '')
+    .replace(/^(?:por favor|por gentileza)[,\s]+/, '')
+    .replace(/[,\s]+(?:por favor|por gentileza|pfv|pf)$/, '').trim()
+    .replace(/^(?:(?:eu )?(?:quero|preciso(?: de)?|gostaria de|vamos|pode|podemos|poderia|poderiamos|posso)|como (?:faco para|posso))\s+/, '');
+  return /^(?:trocar|troca|troque|mudar|muda|mude|alterar|altera|altere)(?:\s+(?:(?:a|de|para|pra)\s+)?(?:(?:uma\s+)?outra\s+)?empresa(?:\s+por outra)?)?$/.test(t)
+    || /^(?:escolher|selecionar)\s+(?:(?:a|outra)\s+)?empresa$/.test(t)
+    || /^(?:(?:a|da|pela)\s+)?outra(?:\s+empresa)?$/.test(t);
 }
 
 const codigoDeAto = (texto) => /^(?:confirmar|cancelar)\b/iu.test(limpar(texto));
@@ -160,6 +176,19 @@ export function decidirSelecaoEmpresa({ empresas = [], contexto = {}, texto = ''
   });
   const continuar = () => ({ acao: 'CONTINUAR', portalClientId: atual.portalClientId, pedido: pedidoAtual });
 
+  const menu = lerContextoDoMenu(interacaoId);
+  if (menu) {
+    if (menu.invalido || !vigente || contexto.aguardandoSelecao || menu.atendimentoId !== contexto.id
+      || menu.versao !== contexto.versao || menu.portalClientId !== contexto.portalClientId) {
+      if (vigente && !contexto.aguardandoSelecao) return { ...continuar(), textoOperacao: 'menu', menuDesatualizado: true, descartarInteracao: true };
+      return { ...pedir('MENU_DESATUALIZADO', null), descartarInteracao: true };
+    }
+    // O ID validado tem prioridade sobre o título visual, que pode estar truncado pelo WhatsApp.
+    return { ...continuar(), interacaoId: menu.acaoId };
+  }
+  // Menus anteriores à vinculação exigem uma escolha explícita; não executam na empresa atual.
+  if (String(interacaoId || '').startsWith('altan.client.') && empresas.length > 1) return pedir('MENU_SEM_CONTEXTO');
+
   if (String(interacaoId || '').startsWith(ID_PREFIXO)) {
     const prefixo = `${ID_PREFIXO}${contexto.id}.${contexto.versao}.`;
     if (!contexto.id || !Number.isSafeInteger(contexto.versao) || !contexto.aguardandoSelecao
@@ -172,8 +201,7 @@ export function decidirSelecaoEmpresa({ empresas = [], contexto = {}, texto = ''
   if (codigoDeAto(entrada)) return vigente && !contexto.aguardandoSelecao ? continuar() : pedir('CONFIRMACAO_EXIGE_CONTEXTO', null);
   if (consultaDeTodas(entrada)) return { acao: 'TODAS', motivo: 'CONSULTA_EXPLICITA', pedido: pedidoAtual };
 
-  if (/^(?:(?:quero|preciso|vamos)\s+)?(?:trocar|mudar)(?:\s+(?:a|de)\s+empresa)?$/.test(t)
-    || /^(?:(?:a|da|pela)\s+)?outra(?:\s+empresa)?$/.test(t)) return pedir('TROCA_SOLICITADA', pendente);
+  if (pedeTrocaEmpresa(entrada)) return pedir('TROCA_SOLICITADA', pendente);
 
   const mencoes = mencoesExplicitas(empresas, entrada);
   if (mencoes.length) {
@@ -222,5 +250,5 @@ export function decidirSelecaoEmpresa({ empresas = [], contexto = {}, texto = ''
   if (encontradas.length > 1) return pedir('EMPRESA_AMBIGUA');
   if (empresas.length === 1) return vigente ? continuar() : selecionar(empresas[0], 'EMPRESA_UNICA', pedidoAtual);
   if (!vigente) return pedir(contexto.portalClientId ? 'CONTEXTO_EXPIRADO' : 'SEM_EMPRESA_SELECIONADA');
-  return novoPedido(entrada, interacaoId) ? pedir('NOVO_PEDIDO') : continuar();
+  return continuar();
 }

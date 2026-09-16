@@ -1,10 +1,10 @@
 // LISTA / QUADRO do funil.
 //
 // ⚠ LARGURA: `--content-wide` — é tela de DADOS (quatro colunas de cartões), não de leitura.
-// ⚠ RASCUNHO NÃO É COLUNA. Fica numa bandeja separada, atrás de um toggle, porque o wizard cria a
-// ficha no primeiro clique e rascunho abandonado acumula para sempre.
+// Rascunhos aparecem na seção Em preenchimento, inclusive enquanto o cliente responde ao link.
 
 import { useMemo, useState } from "react";
+import { NovoAtendimentoModal } from "../components/NovoAtendimentoModal";
 import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
 import { useOnboardings } from "../hooks/useOnboardings";
@@ -57,7 +57,7 @@ function CartaoOnboarding({ item, onAbrir, onDescartar }) {
           color: "var(--text)", fontSize: 14, fontWeight: 700,
         }}
       >
-        {item.razaoSocial || <span style={{ color: "var(--text-faint)" }}>— sem nome ainda —</span>}
+        {item.razaoSocial || item.responsavelNome || `Atendimento ${String(item.id).slice(-6)}`}
       </button>
 
       {item.cnpj && (
@@ -98,8 +98,9 @@ function CartaoOnboarding({ item, onAbrir, onDescartar }) {
 }
 
 export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
-  const { itens, carregando, erro, filtros, alterarFiltro, descartar } = useOnboardings({ api });
-  const [mostrarRascunhos, setMostrarRascunhos] = useState(false);
+  const { itens, carregando, erro, filtros, alterarFiltro, descartar, recarregar } = useOnboardings({ api });
+  const [mostrarRascunhos, setMostrarRascunhos] = useState(true);
+  const [novoAberto, setNovoAberto] = useState(false);
 
   const colunas = useMemo(() => colunasDoQuadro(), []);
   const porStatus = useMemo(() => {
@@ -126,14 +127,18 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
 
   return (
     <PageShell
-      title="Onboardings"
-      subtitle="Funil de entrada de cliente novo — antes de a empresa existir na carteira"
+      title="Entrada de clientes"
+      subtitle="Formulários, conferência de dados e acompanhamento da entrada na carteira"
       onBack={onVoltar}
-      actions={<Button type="button" onClick={onNovo}>Novo onboarding</Button>}
+      actions={<Button type="button" onClick={() => setNovoAberto(true)}>Novo atendimento</Button>}
+      contentClassName="onboarding-workspace"
       contentStyle={{ maxWidth: "var(--content-wide)", margin: "0 auto", width: "100%" }}
     >
+      <div className="onboarding-intro"><h2>Abertura de empresa começa com o cliente</h2><p>Crie uma ficha, gere o link pessoal e compartilhe o formulário. As respostas chegam para conferência antes da contratação e do cadastro da empresa.</p></div>
+      {novoAberto && <NovoAtendimentoModal onCriar={onNovo} onFechar={() => { setNovoAberto(false); recarregar(); }} />}
       <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
         <input
+          aria-label="Buscar atendimento"
           placeholder="Buscar por nome, CNPJ ou responsável"
           value={filtros.q}
           onChange={(e) => alterarFiltro("q", e.target.value)}
@@ -143,6 +148,7 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
           }}
         />
         <select
+          aria-label="Filtrar por serviço"
           value={filtros.origem}
           onChange={(e) => alterarFiltro("origem", e.target.value)}
           style={{
@@ -156,20 +162,21 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
           ))}
         </select>
         <Button type="button" variant="secondary" onClick={alternarBandeja}>
-          {mostrarRascunhos ? "ocultar rascunhos" : `rascunhos${rascunhos.length ? ` (${rascunhos.length})` : ""}`}
+          {mostrarRascunhos ? "Ocultar fichas em preenchimento" : "Mostrar fichas em preenchimento"}
         </Button>
       </div>
 
       {erro && <p style={{ color: "var(--state-warn)" }}>{erro.message}</p>}
       {carregando && <p style={{ color: "var(--text-muted)" }}>Carregando…</p>}
 
+      {!carregando && !erro && <>
       {mostrarRascunhos && (
         <section style={{ marginBottom: "var(--space-5)" }}>
           <h2 style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--text-faint)" }}>
-            Rascunhos ({rascunhos.length})
+            Em preenchimento ({rascunhos.length})
           </h2>
           {rascunhos.length === 0 ? (
-            <p style={{ fontSize: 13, color: "var(--text-faint)" }}>Nenhum rascunho pendente.</p>
+            <p style={{ fontSize: 13, color: "var(--text-faint)" }}>Nenhuma ficha em preenchimento.</p>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "var(--space-2)" }}>
               {rascunhos.map((item) => (
@@ -205,7 +212,7 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
               </h2>
               <div style={{ display: "grid", gap: "var(--space-2)" }}>
                 {lista.length === 0 && (
-                  <span style={{ fontSize: 12, color: "var(--text-faint)" }}>vazio</span>
+                  <span style={{ fontSize: 12, color: "var(--text-faint)" }}>Nenhum atendimento nesta etapa.</span>
                 )}
                 {lista.map((item) => (
                   <CartaoOnboarding key={item.id} item={item} onAbrir={onAbrir} />
@@ -215,6 +222,7 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
           );
         })}
       </div>
+      </>}
     </PageShell>
   );
 }

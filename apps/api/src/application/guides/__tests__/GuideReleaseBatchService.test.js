@@ -67,7 +67,7 @@ test("sem opt-in não dispara WhatsApp e preserva e-mail enviado", async () => {
   deps.destinatario.mockResolvedValue({ contato: null, motivo: "sem opt-in" });
   deps.contatos.mockResolvedValue({ emails: ["financeiro@example.test"], telefones: [] });
   const out = await executar();
-  expect(out.results[0]).toMatchObject({ ok: false, liberadas: 1, email: { ok: true }, whatsapp: [{ ok: false, message: expect.stringMatching(/opt-in/) }] });
+  expect(out.results[0]).toMatchObject({ ok: false, liberadas: 1, email: { ok: true, tentado: true }, whatsapp: [{ ok: false, tentado: false, naoSeAplica: true, message: expect.stringMatching(/opt-in/) }] });
   expect(deps.whatsapp).not.toHaveBeenCalled();
 });
 test("falha parcial de WhatsApp não vira sucesso total", async () => {
@@ -86,7 +86,7 @@ test("revogação de opt-in durante e-mail impede WhatsApp", async () => {
   const { deps, executar } = montar();
   deps.email.mockImplementation(async () => { deps.contatos.mockResolvedValue({ emails: [], telefones: [] }); return { status: "sent" }; });
   const out = await executar();
-  expect(out.results[0]).toMatchObject({ ok: false, email: { ok: true }, whatsapp: [{ ok: false }] });
+  expect(out.results[0]).toMatchObject({ ok: false, email: { ok: true }, whatsapp: [{ ok: false, tentado: false, naoSeAplica: false }] });
   expect(deps.whatsapp).not.toHaveBeenCalled();
 });
 

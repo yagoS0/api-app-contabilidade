@@ -1,5 +1,6 @@
 import { empresasAutorizadas, decidirSelecaoEmpresa, opcoesSelecaoEmpresa, textoSelecaoEmpresa } from '../selecaoEmpresaWhatsapp.js';
 import { resolverVinculoTelefone } from '../vinculoTelefone.js';
+import { vincularOpcoesAoContexto } from '../contextoMenuWhatsapp.js';
 
 const agora = new Date('2026-09-10T15:00:00Z');
 const dados = [
@@ -180,8 +181,26 @@ describe('emissor não é tomador', () => {
     expect(decidir({ texto: 'trocar para a Lente; emitir uma nota; valor: 1500,00' })).toMatchObject({ portalClientId: 'empresa-lente', textoOperacao: 'emitir uma nota; valor: 1500,00' });
   });
 
-  it.each(['da outra empresa', 'a outra', 'trocar de empresa', 'mudar a empresa'])('pede qual empresa sem presumir a outra: %s', (texto) => {
+  it.each([
+    'trocar', 'mudar', 'trocar de empresa', 'mudar de empresa', 'mudar a empresa',
+    'da outra empresa', 'a outra', 'trocar empresa', 'troca de empresa', 'troque de empresa',
+    'alterar empresa', 'selecionar outra empresa', 'escolher empresa',
+    'quero trocar de empresa', 'preciso mudar de empresa', 'gostaria de trocar de empresa',
+    'pode mudar a empresa?', 'poderia trocar de empresa, por favor?', 'trocar!',
+    'outra empresa, por favor.', 'mudar para outra empresa', 'trocar pra outra empresa',
+    'trocar para uma outra empresa', 'trocar a empresa por outra', 'trocar pfv',
+    'Oi, quero mudar de empresa.', 'Bom dia! Gostaria de trocar de empresa, por gentileza.',
+    'Por favor, pode trocar de empresa?', 'EU QUERO TROCAR DE EMPRESA!!!',
+    'como faço para mudar de empresa?', 'posso trocar de empresa?', 'podemos mudar de empresa?',
+  ])('pede qual empresa sem presumir a outra: %s', (texto) => {
+    expect(decidir({ texto })).toMatchObject({ acao: 'PERGUNTAR', motivo: 'TROCA_SOLICITADA', pedido: null });
     expect(decidir({ texto, coletaAtiva: true })).toMatchObject({ acao: 'PERGUNTAR', motivo: 'TROCA_SOLICITADA' });
+  });
+
+  it.each(['não quero trocar de empresa', 'não mudar de empresa', 'trocar o valor', 'mudar a descrição',
+    'quero mudar o endereço da empresa', 'descrição: trocar de empresa', 'serviço: mudar de empresa',
+    'trocar o CNPJ do tomador', 'trocar de empresa quando terminar'])('não troca o contexto por uma descrição, correção ou menção incidental: %s', texto => {
+    expect(decidir({ texto, coletaAtiva: true })).toMatchObject({ acao: 'CONTINUAR', portalClientId: 'empresa-klaus' });
   });
 
   it.each(['manda a guia da Lente', 'preciso da guia da Lente de agosto', 'guia da empresa Lente', 'guia de 11.111.111/0001-91'])('consulta identificada pausa a operação anterior: %s', (texto) => {
@@ -216,12 +235,12 @@ describe('emissor não é tomador', () => {
 });
 
 describe('contexto, expiração e referências verificadas', () => {
-  it.each(['manda a guia', 'preciso emitir uma nota', 'quanto devo?', 'quais documentos existem?'])('novo pedido genérico após conclusão pede escolha: %s', (texto) => {
-    expect(decidir({ texto })).toMatchObject({ acao: 'PERGUNTAR', motivo: 'NOVO_PEDIDO', pedido: texto });
+  it.each(['manda a guia', 'preciso emitir uma nota', 'quanto devo?', 'quais documentos existem?'])('mantém a empresa durante o atendimento vigente: %s', (texto) => {
+    expect(decidir({ texto })).toMatchObject({ acao: 'CONTINUAR', portalClientId: 'empresa-klaus', pedido: texto });
   });
 
-  it('novo botão de serviço também confirma o contexto após conclusão', () => {
-    expect(decidir({ interacao: { id: 'altan.client.nfse.issue.v1' } })).toMatchObject({ acao: 'PERGUNTAR', motivo: 'NOVO_PEDIDO' });
+  it('botão legado sem vínculo de contexto exige escolha explícita', () => {
+    expect(decidir({ interacao: { id: 'altan.client.nfse.issue.v1' } })).toMatchObject({ acao: 'PERGUNTAR', motivo: 'MENU_SEM_CONTEXTO' });
   });
 
   it.each(['obrigada', 'e agosto?', 'sim', '1'])('continua conversa livre sem tratar resposta como nova seleção: %s', (texto) => {
@@ -320,5 +339,31 @@ describe('opções apresentadas', () => {
 
   it('exibe empresa anterior para tornar explícita a reescolha', () => {
     expect(textoSelecaoEmpresa({ empresas, contexto: contexto() })).toContain('A seleção anterior era Klaus Nigro Ltda');
+  });
+});
+
+
+describe('continuidade entre seleção e serviços', () => {
+  it.each(['guia do INSS', 'guia do simples nacional', 'guia do Simples Nacional de agosto', 'faturamento da minha empresa'])('referência do cliente não vira empresa desconhecida: %s', texto => {
+    expect(decidir({ texto })).toMatchObject({ acao: 'CONTINUAR', portalClientId: 'empresa-klaus' });
+  });
+  it.each(['faturamento da Lente', 'qual o faturamento da Lente de agosto', 'quanto faturei na Lente', 'faturamemto da Lente'])('faturamento com empresa explícita respeita %s', texto => {
+    expect(decidir({ texto })).toMatchObject({ acao: 'SELECIONAR', portalClientId: 'empresa-lente' });
+  });
+  it.each(['Guias do mês', 'guias de setembro', 'notas de agosto de 2026', 'guias de 09/2026', 'faturamento de janeiro a agosto de 2026', 'faturamento de 2026', 'faturamento de 08/26'])('período não vira nome de empresa: %s', texto => {
+    expect(decidir({ texto })).toMatchObject({ acao: 'CONTINUAR', portalClientId: 'empresa-klaus' });
+  });
+  it('empresa desconhecida continua exigindo conferência', () => {
+    expect(decidir({ texto: 'guias da Desconhecida Ltda' })).toMatchObject({ acao: 'PERGUNTAR', motivo: 'EMPRESA_NAO_IDENTIFICADA' });
+  });
+  const menu = (extra = {}) => vincularOpcoesAoContexto([{ id: 'altan.client.guides.current.v1' }], { atendimentoId: 'atendimento-1', portalClientId: 'empresa-klaus', versao: 7, ...extra })[0];
+  it('ID do menu vigente executa mesmo se título parecer nome de empresa', () => {
+    expect(decidir({ texto: 'Guias do mês', interacao: menu() })).toMatchObject({ acao: 'CONTINUAR', portalClientId: 'empresa-klaus', interacaoId: 'altan.client.guides.current.v1' });
+  });
+  it.each([{ versao: 6 }, { portalClientId: 'empresa-lente' }, { atendimentoId: 'outro-responsavel' }])('menu antigo não troca empresa nem reaproveita ação: %j', extra => {
+    expect(decidir({ texto: 'Guias do mês', interacao: menu(extra) })).toMatchObject({ acao: 'CONTINUAR', portalClientId: 'empresa-klaus', menuDesatualizado: true, descartarInteracao: true });
+  });
+  it('menu com contexto expirado exige empresa e descarta o pedido antigo', () => {
+    expect(decidir({ texto: 'Emitir NFS-e', interacao: menu(), contexto: contexto({ expiraEm: new Date('2026-09-10T14:00:00Z') }) })).toMatchObject({ acao: 'PERGUNTAR', motivo: 'MENU_DESATUALIZADO', pedido: null, descartarInteracao: true });
   });
 });

@@ -5,6 +5,7 @@ export function criarMockComercial({
 }) {
   const recursos = [],
     atendimentos = new Map(),
+    historicoAtendimentos = [],
     propostas = new Map(),
     contratos = new Map(),
     links = new Map(),
@@ -109,6 +110,11 @@ export function criarMockComercial({
       m = /^\/conversas\/([^/]+)(\/iniciar)?$/.exec(path);
       if (m) {
         let a = atendimentos.get(m[1]);
+        if (body?.reiniciarAtendimentoId) {
+          if (a?.id !== body.reiniciarAtendimentoId) throw Error("O atendimento mudou. Recarregue.");
+          historicoAtendimentos.push({ ...a, encerradoEm: agora(), onboarding: a.onboardingId ? ficha(a.onboardingId) : null });
+          a = null;
+        }
         if (body && !a) {
           a = {
             id: uid(),
@@ -142,6 +148,7 @@ export function criarMockComercial({
         }
         return {
           ok: true,
+          anteriores: historicoAtendimentos.filter(x => x.conversaId === m[1]),
           atendimento: a ? {
             ...a,
             onboarding: a.onboardingId ? ficha(a.onboardingId) : null
@@ -159,7 +166,9 @@ export function criarMockComercial({
           ...o
         },
         atendimento: a || null,
-        propostas: [...propostas.values()].filter(p => p.onboardingId === o.id),
+        jornada: { analises: [], diagnostico: o.diagnosticoDemonstracao || null, publicaConferida: false, fiscalConferido: false,
+          devolutiva: { partes: [], concluida: false, incerta: false } },
+        propostas: [...propostas.values()].filter(p => p.onboardingId === o.id).reverse(),
         contratos: [...contratos.values()].filter(c => c.onboardingId === o.id),
         documentos: [...docs.values()].filter(d => d.onboardingId === o.id).map(({
           file,
@@ -168,6 +177,21 @@ export function criarMockComercial({
         trabalhos: [],
         marcos: o.marcosComerciais || []
       };
+      if (suffix === "/jornada/diagnostico") {
+        if (body.versao !== o.versao) throw Error("Ficha alterada. Atualize antes de salvar.");
+        if (o.origem !== "ABERTURA") throw Error("Demonstração: nenhum relatório fiscal real foi consultado.");
+        if (![body.achados, body.servicos].every(t => typeof t === "string" && t.trim().length >= 10)) throw Error("Preencha o diagnóstico e o escopo.");
+        o.diagnosticoDemonstracao = { id: uid(), dados: { achados: body.achados, servicos: body.servicos, texto: `DEMONSTRAÇÃO — ${body.achados}\n\nServiços propostos:\n${body.servicos}` } };
+        persistir(); return { diagnostico: o.diagnosticoDemonstracao };
+      }
+      if (suffix === "/jornada/devolutiva") throw Error("Demonstração: nenhuma mensagem ou PDF será enviado a clientes.");
+      if (suffix === "/jornada/conferencia") throw Error("Demonstração: não há consulta pública ou fiscal real para conferir.");
+      if (suffix === "/jornada/pagamento") {
+        const c = contratos.get(body.contratoId);
+        if (!c || c.onboardingId !== o.id || c.status !== "ASSINADO_CONFERIDO" || body.evidencia?.trim().length < 10) throw Error("Confira o contrato e a evidência demonstrativa.");
+        o.marcosComerciais = [...(o.marcosComerciais || []), { id: uid(), tipo: "PAGAMENTO_HONORARIOS_CONFERIDO", createdAt: agora(), dados: { contratoId: c.id, evidencia: body.evidencia, origem: "DEMONSTRACAO" } }];
+        persistir(); return { ok: true };
+      }
       if (suffix === "/marcos") {
         o.marcosComerciais = [...(o.marcosComerciais || []), {
           id: uid(),
@@ -188,6 +212,7 @@ export function criarMockComercial({
           if (op.acao === "unset") delete o.dados[op.campo];else o.dados[op.campo] = op.valor;
         }
         o.versao = (o.versao || 0) + 1;
+        o.diagnosticoDemonstracao = null;
         Object.assign(o, {
           responsavelNome: o.dados.responsavelNome,
           cnpj: o.dados.cnpj
@@ -199,6 +224,7 @@ export function criarMockComercial({
         };
       }
       if (suffix === "/propostas") {
+        for (const anterior of propostas.values()) if (anterior.onboardingId === o.id) anterior.revogadaEm = agora();
         const p = {
           id: uid(),
           onboardingId: o.id,

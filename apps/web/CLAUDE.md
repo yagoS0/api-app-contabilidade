@@ -1,5 +1,13 @@
 # CLAUDE.md — Web (apps/web)
 
+## Comunicados — 16/09/2026
+
+Nova página `/whatsapp/comunicados`, acessada pelo cabeçalho da central. Formulário salva texto imutável e seleção de telefones da prévia; submissão à Meta, consulta da aprovação e confirmação da transmissão são ações distintas. Exibir categoria final antes de confirmar; enviar `previaHash` do detalhe. O acompanhamento automático só faz GET, não submete modelos nem reenvia mensagens. Falha de POST consulta o resultado e preserva a intenção, sem retry escondido. Mock sem API conectada não oferece envio. CSS em `main.jsx`, componentes compartilhados `PageShell`/`Button`. Ver `docs/whatsapp-comunicados.md`.
+
+## Passo a passo do lead — 14/09/2026
+
+`FluxoComercial` usa `lib/jornadaComercial` e `PassosDoLead`: seis etapas para abertura e oito para transferência/empresa parada, retomadas pelos registros do servidor. Consulta pública/SITFIS precisam de conferência explícita; etapas futuras ficam indisponíveis. Atualização a cada 10 s só lê resultados; preservar rascunhos e versão durante polling. Mudança da ficha/relatório exige nova revisão do diagnóstico. Assinatura e pagamento continuam manuais. CSS importado no entrypoint `main.jsx`; mock recusa envios/consultas externos. Ver `docs/jornada-lead-passo-a-passo.md` na raiz.
+
 ## Alinhamento das empresas e remoção da faixa da carteira — 10/09/2026
 
 A faixa “Carteira inteira” e seu estado de filtro foram removidos a pedido do usuário. Busca, filtros existentes e abas de regime continuam. Fechamento em lote exige seleção explícita e considera somente as empresas selecionadas ainda visíveis e aptas pelo servidor; confirmação e revalidação permanecem.
@@ -88,6 +96,12 @@ O frontend suporta três modos controlados por variável de ambiente:
 
 - Toda feature nova deve ter implementação em **ambos** `mockApi.js` e `realApi.js`
 - Manter contratos de resposta idênticos entre mock e real
+
+## Comunicação por pessoa e atendimento comercial — 14/09/2026
+
+`FioDaConversa` apresenta o histórico de todas as empresas da pessoa, inclusive quando aberto dentro de uma empresa; o servidor mantém o limite da carteira. Empresa da automação é contexto visível, não seletor obrigatório. Escolha de navegação fica em Abrir empresa. `OrientacoesRapidas` abre gaveta à esquerda com cards/descrição; `AbrirBiblioteca` leva à gestão em nova aba (`/biblioteca`), nunca embutida no chat. Formulários geram o link público existente para a ficha da origem selecionada. `FluxoComercial` organiza análise, proposta, contrato/pagamento e acesso à biblioteca. `AnaliseDoLead` mostra retorno público e reutiliza `SitfisRelatorioTabela`. `AnexoDaConversa` permite PDF/JPEG/PNG com prévia e envio rastreado, sem retentativa automática de resultado incerto. Polling visível 2,5s/10s, paralelo e sem sobreposição. Ver `docs/comunicacao-atendimento-20260914.md` na raiz para decisões e limites.
+
+`BibliotecaComercialPage` reutiliza o editor versionado e é reconhecida no mapa de sessão, no parser de URL e no App, com entrada também em Configurações. Retorno à aba visível/foco relê mensagens e invalida prévia antiga. A última orientação aprovada por chave aparece no menu; rascunho mais novo não esconde versão aprovada. CNPJ já coletado no onboarding preenche a procuração do lead. Testes em `bibliotecaMensagens.test.jsx`. Lista de contatos fixa em 280 px no desktop e 260 px entre 761–1250 px; esse último breakpoint acompanha o painel de detalhes sobreposto, evitando coluna vazia. Celular mantém uma coluna.
 
 ## Padrões
 

@@ -1,5 +1,15 @@
 # CLAUDE.md — Guias (apps/web/src/features/guides)
 
+## Resultado da liberação em lote — 10/09/2026
+
+`ResultadoLiberacaoGuias` apresenta o retorno da seleção da carteira por empresa e canal, com resumo e detalhes recolhidos. `resumirLiberacao` usa a prévia da execução, nunca a seleção/competência posterior. Falta de cadastro é canal não utilizado; tentativa recusada ou indeterminada continua exigindo atenção. Aceite de WhatsApp significa aguardando entrega. Parcelas faltantes continuam identificadas por empresa. O resultado permanece ao limpar a seleção; falha na atualização da carteira não apaga o retorno nem repete o envio. A prévia mostra cada empresa uma vez, seus destinatários e documentos expansíveis, avisando quando só haverá liberação no portal.
+
+## Organização da tela de Guias — 10/09/2026
+
+Upload e marcar vazio compartilham o cabeçalho da lista. A configuração de envio fica em Configurações. A barra de seleção permite enviar várias guias pelos canais cadastrados, confirma reenvios e conserva o resultado individual de cada guia. Guias vazias, em revisão, em processamento ou com envio em andamento ficam fora do lote com motivo explícito, sem bloquear as selecionadas disponíveis. Consultas auxiliares ficam em um menu que fecha ao escolher a visão.
+
+A grade tem oito colunas: seleção, guia, competência, valor, vencimento, pagamento, envio e linha digitável. O processamento fica abaixo do nome; `ERROR` aparece como “Revisar documento”, separado do resultado de envio. Valores têm alinhamento numérico; a linha digitável mantém máscara, conteúdo completo e cópia dos dígitos. Até 800 px, as linhas viram cartões com rótulos. CSS escopado em `guides-workspace.css`. A competência global e as regras de vencimento, seleção, pagamento e envio permanecem as mesmas.
+
 ## Guias dentro da empresa por vencimento — 10/09/2026
 
 A seleção de empresas (`BarraSelecaoEmpresas`) também deriva o mês seguinte da competência do cabeçalho, sem seletor adicional. A página independente de envio em lote usa uma única competência de trabalho e deriva o vencimento; não filtra a competência original dos documentos. E-mail e WhatsApp recebem o mesmo mês derivado e os IDs conferidos. Respostas antigas da prévia não substituem uma consulta posterior.

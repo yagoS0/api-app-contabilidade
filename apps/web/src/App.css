@@ -1,8 +1,12 @@
 @import "./features/companies/detail/components/emissao-nfse.css";
 @import "./features/companies/detail/components/company-workspace.css";
+@import "./features/guides/list/components/guides-workspace.css";
+@import "./features/guides/batch-email/components/guide-delivery-result.css";
 @import "./features/configuracoes/configuracoes.css";
+@import "./features/onboarding/onboarding-workspace.css";
 @import "./features/whatsapp/whatsapp.css";
 @import "./features/companies/list/carteira.css";
+@import "./features/calendario/components/agenda-workspace.css";
 
 /* Layout */
 .layout {
@@ -933,6 +937,14 @@
   border-radius: 14px;
   font-size: 0.875rem;
   white-space: nowrap;
+}
+
+.btn-back.btn-back--icon {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  padding: 0;
+  border-radius: 10px;
 }
 
 /* ─── Abas — UMA só, em todo o app ────────────────────────────────────────────

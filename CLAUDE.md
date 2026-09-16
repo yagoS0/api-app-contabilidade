@@ -1,5 +1,31 @@
 # CLAUDE.md — Portal Contábil
 
+## Comunicados pelo WhatsApp — 16/09/2026
+
+`WhatsApp → Comunicados` cria avisos para toda a carteira ou contatos selecionados, sem IA. Usar contatos ativos cadastrados com opt-in, sem exigir associação ao portal; um número exato recebe uma vez mesmo em várias empresas. Cada aviso guarda texto e destinatários, submete modelo próprio à Meta e só entra na fila após aprovação conferida e confirmação explícita do escritório. Aviso geral usa MARKETING; UTILITY exige atualização específica de serviço contratado, sujeita à categoria final da Meta. Não usar o modelo de retomada nem uma variável genérica para contornar aprovação. Worker durável registra enviado/entregue/lido/falha; resultado incerto nunca é repetido automaticamente. Migration `20260916110000_whatsapp_comunicados` e Prisma gerado precedem API/worker. Operação, limites e testes: `docs/whatsapp-comunicados.md`. Implementar a função não autoriza disparar avisos reais nos testes.
+
+## Menu do WhatsApp e emissão direta — 15/09/2026
+
+Lista inicial do cliente: Guias em aberto, Emitir nota, Documentos, Outras, nessa ordem e conforme permissões. Emissão/documentos não ficam em Outras; situação fiscal passa para lá. Lista nativa comporta quatro opções, botões não. Primeiro pedido de emissão solicita CNPJ/CPF, descrição, valor e data juntos; respostas parciais preservam os dados e pedem só lacunas. Data é a competência/data do serviço do lote, “hoje” conserva o dia em São Paulo. Manter preenchimento de cadastro/tributos, escopo da empresa, confirmação por código e testes sem Anthropic nem emissões/envios reais. Detalhes: `docs/whatsapp-emissao-sem-ia.md`.
+
+## Biblioteca em nova aba e contatos compactos — 14/09/2026
+
+O dono esclareceu que a área grande era a lista de contatos à esquerda. Ela usa 280 px no desktop e 260 px entre 761 e 1250 px; celular mantém lista/conversa alternadas. Gestão da biblioteca sai do painel do chat e abre `/biblioteca` em nova aba. Mensagens rápidas continuam na gaveta esquerda, exibindo a última versão aprovada por chave e atualizando ao voltar à aba. Dez orientações padrão foram revisadas e configuradas por solicitação do dono, com dados institucionais verificados; preços e contratos não foram aprovados nesse ajuste. Fonte e manutenção: `docs/biblioteca-mensagens-rapidas.md`. Não recolocar edição da biblioteca dentro da conversa.
+
+## Jornada guiada implementada — 14/09/2026
+
+Atendimento comercial agora tem passos derivados de evidências salvas: coleta/consulta pública, autorização e SITFIS quando aplicáveis, diagnóstico do contador, devolutiva, proposta aceita, assinatura conferida e pagamento manual do contrato. Consultas e envios exigem ação explícita; polling só lê resultados. Não concluir etapa ao abrir painel nem inventar conferências de casos antigos. Ver `docs/jornada-lead-passo-a-passo.md`. DocuSign e criação de cobrança Asaas continuam fora do escopo. Sem migration nova, testes externos ou uso de Anthropic.
+
+## Comunicação e lead — decisão de 14/09/2026
+
+Conversa por pessoa, com histórico das empresas autorizadas; não mostrar seletor para filtrar a conversa por empresa. Abrir empresa oferece escolha somente se houver mais de uma. Mostrar a empresa selecionada pelo cliente/automação. Resposta manual e anexo local não exigem seleção fiscal; atos e documentos internos conservam suas guardas. Atendimento comercial segue análise pública → autorização/procuração → SITFIS salvo em PDF/tabela → valores separados → proposta/contrato → assinatura → pagamento. Abertura dispensa CNPJ; pode ser avulsa. Uma solicitação por vez; recomeçar preserva a ficha anterior. Biblioteca compartilhada e formulários ficam em Mensagens rápidas à esquerda. Detalhes, fontes e limites: `docs/comunicacao-atendimento-20260914.md`. Não usar tokens Anthropic nem serviços fiscais reais nos testes. Asaas/DocuSign por API são integração futura, não funcionalidade já homologada.
+
+## Comunicação pelos destinatários cadastrados — 14/09/2026
+
+O telefone/e-mail ativo em Contatos, acessos e envios é a origem do destinatário da comunicação. Receber guias e o escritório agrupar/selecionar empresas no chat não exige associação a uma conta do portal. O mesmo número pode comunicar-se por várias empresas mesmo sem `userId` ou com contas diferentes. A identidade continua comparada estritamente; nenhuma conta, vínculo RBAC ou permissão fiscal é criada para obter esse agrupamento. Consultas e atos do assistente mantêm suas autorizações próprias.
+
+Na liberação e reenvio da guia pela aba Fiscal, um WhatsApp cadastrado também é considerado quando `canalPadraoEnvio` legado vale EMAIL. O consentimento e a elegibilidade são revalidados no servidor. Complementar WhatsApp verifica recibos por guia e destinatário: entrega ao contato antigo não bloqueia o primeiro envio ao novo, e o contato já atendido não recebe duplicata nessa operação. Não retirar a reserva atômica do transportador nem transformar aceite em entrega.
+
 ## Previsão do mês aberto e imposto pago — 08/09/2026
 
 A previsão de receita usa exatamente os três meses de calendário completos imediatamente anteriores ao relógio do servidor. O mês aberto não entra na mediana. Para o recebimento previsto (competência da nota +1), somar somente o complemento positivo entre mediana e notas já emitidas dessa competência. Nota parcial não cancela a previsão; nota acima da mediana não recebe complemento. Meses encerrados não são preenchidos retroativamente. A evidência identifica meses-base, mediana, emitido e complemento. Esta decisão substitui a mediana de toda a série e a regra de começar após a última nota.
@@ -875,3 +901,10 @@ mediu: aquela medição olhou a tabela `User`, e este usuário não está nela.
 - Não remover validações de CNPJ, certificado A1, ou regras fiscais
 - Preferir editar arquivos existentes a criar novos
 - Não adicionar abstrações desnecessárias — três linhas duplicadas são melhores que uma abstração prematura
+# Onboarding: procuração, proposta PDF e ações recolhidas (15/09/2026)
+
+Procuração SERPRO ATIVA, com validade futura e sistema `TODOS`, também habilita SITFIS, além de `00002`/nome oficial. Conferir representante ou reenviar orientação não pode apagar prova vigente; alterações concorrentes de CNPJ/representante/atendimento invalidam o resultado. A fila depende de `INTEGRACAO_FISCAL_LEADS=1`; o painel expõe apenas o booleano e explica o bloqueio. Não disparar consulta fiscal ao carregar/pollar a tela.
+
+Proposta PDF é determinística e usa somente a projeção do snapshot daquela versão: identificação, perfil, serviços, opções, taxas e condições. Download interno exige gestor/escopo/versão; download público usa o mesmo Bearer pessoal e validade do aceite, sem token na URL nem cache. Envio é um único documento com link de aceite na legenda, preservando reserva e bloqueio de duplicidade/incerteza. Preços reais continuam exclusivamente no catálogo privado aprovado. Avulsos sem preço não são inventados; rascunho fica identificado no PDF.
+
+Na jornada, mostrar a etapa atual e recolher as demais. Abrir campos/prévia por ação explícita; recolher após sucesso e preservar rascunhos nos erros. Onboarding aberto diretamente reutiliza `atendimento.conversaId` para enviar pela conversa vinculada. Mensagens rápidas aprovadas na biblioteca NÃO são templates aprovados pela Meta: fora das 24h só modelos Meta aprovados. Referências e operação em `docs/jornada-lead-passo-a-passo.md`. Testes com provedores simulados e PostgreSQL local; nenhum token Anthropic, destinatário real, assinatura ou cobrança.

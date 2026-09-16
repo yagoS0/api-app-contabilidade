@@ -7,6 +7,7 @@ import { WhatsappCloudClient } from "../whatsapp/WhatsappCloudClient.js";
 import { registrarMensagemEnviada, janelaDaConversa, DIRECAO } from "../whatsapp/ConversaWhatsappService.js";
 import { SITUACOES_JANELA } from "../whatsapp/janela24h.js";
 import { AssistenteClient } from "./AssistenteClient.js";
+import { respostaComMarcador } from "./validacaoResposta.js";
 import { autorizarChamadaIa, concluirChamadaIa } from "./GuardaIaService.js";
 import { montarSystem, MENSAGENS_FIXAS } from "./promptDoAssistente.js";
 import { sessaoDoContato, fraseSemSessao, papelAlcanca, PAPEL_MINIMO_LEITURA, PAPEL_MINIMO_SITUACAO_FISCAL } from "./sessaoDoContato.js";
@@ -406,7 +407,7 @@ async function executarMensagem({ conversaId, mensagemId, deps = {} } = {}) {
     }
     await concluirChamadaIa(guarda.contexto, { usage: resposta.usage, iteracoes: resposta.iteracoes, ferramentas: resposta.ferramentasChamadas, stopReason: resposta.stopReason }, { client, log });
 
-    if (resposta.recusou || ["max_tokens", "max_iteracoes"].includes(resposta.stopReason) || (!resposta.texto?.trim() && !houveSaida && !pendenciasDoTurno.length)) {
+    if (resposta.recusou || respostaComMarcador(resposta.texto) || ["max_tokens", "max_iteracoes"].includes(resposta.stopReason) || (!resposta.texto?.trim() && !houveSaida && !pendenciasDoTurno.length)) {
       await encaminharFalha();
       return concluir({ feito: true, motivo: "RESPOSTA_INCOMPLETA" });
     }

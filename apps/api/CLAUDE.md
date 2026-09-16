@@ -1,5 +1,13 @@
 # CLAUDE.md — API (apps/api)
 
+## Comunicados — 16/09/2026
+
+`ComunicadosWhatsappService` e `/firm/whatsapp/comunicados` separam audiência, rascunho, submissão Meta, conferência, confirmação e processamento. Só admin/contador; o worker revalida o operador que confirmou, o texto/categoria aprovados e os contatos antes da rede. Números são agrupados exatamente, sem inferir nono dígito ou exigir vínculo no portal. Reservas CAS por destinatário, lease da conversa/responsável e `SaidaWhatsappService` previnem repetição; reservas interrompidas viram INDETERMINADO, sem retry. Polling é leitura; aprovação jamais inicia envio. Aplicar `20260916110000_whatsapp_comunicados` e gerar Prisma. Ver `docs/whatsapp-comunicados.md`; teste PostgreSQL usa Meta/transporte sintéticos e rede externa bloqueada.
+
+## Jornada do lead — 14/09/2026
+
+`JornadaLeadService` alimenta o GET comercial e os POSTs `/jornada/conferencia`, `/diagnostico`, `/devolutiva`, `/pagamento`. Conferência exige análise/CNPJ atuais e CAS da ficha; diagnóstico materialmente desatualizado não pode ser enviado. PDF e texto usam lease, registro anterior à rede, correlação por diagnóstico/parte e revalidação entre partes. Timeout nunca provoca repetição automática. Pagamento manual exige contrato `ASSINADO_CONFERIDO` da proposta aceita, liga o evento ao contrato e é idempotente. O verificador PostgreSQL comercial chama `scripts/checks-jornada-lead.js` com rede bloqueada; não utilizar provedores reais/Anthropic. Ver `docs/jornada-lead-passo-a-passo.md` na raiz.
+
 ## Previsão do mês aberto e imposto pago — 08/09/2026
 
 A previsão de receita usa exatamente os três meses de calendário completos imediatamente anteriores ao relógio do servidor. O mês aberto não entra na mediana. Para o recebimento previsto (competência da nota +1), somar somente o complemento positivo entre mediana e notas já emitidas dessa competência. Nota parcial não cancela a previsão; nota acima da mediana não recebe complemento. Meses encerrados não são preenchidos retroativamente. A evidência identifica meses-base, mediana, emitido e complemento. Esta decisão substitui a mediana de toda a série e a regra de começar após a última nota.
@@ -87,6 +95,10 @@ prisma/
   migrations/        - Migrations geradas pelo Prisma
   seed.js
 ```
+
+## Comunicação por pessoa e lead — 14/09/2026
+
+Texto e anexo manual do escritório podem sair sem seleção de empresa na automação, mantendo número cadastrado, carteira, janela, lease e revalidação. Não estender essa dispensa às funções fiscais ou documentos internos. `/whatsapp/conversas/:id/enviar-anexo` aceita PDF/JPEG/PNG até 5 MB, assinatura binária e MIME coerentes; saída registrada antes da rede e sem repetição automática. `iniciarAtendimento` aceita reinício explícito com ID esperado da solicitação ativa e motivo; serializa pela conversa, preserva histórico e invalida automação pendente. Vínculo com PortalClient é recusado enquanto existir solicitação comercial classificada. `MensagensPadrao.js` centraliza dez textos revisados, incluindo autorização/gov.br e fontes oficiais. Inicialização continua criando rascunhos sem sobrescrever versões. Por pedido explícito do dono em 14/09, os dez textos foram configurados e aprovados na biblioteca de produção, usando o CNPJ institucional já configurado no SERPRO e o manual oficial da Receita; não houve aprovação de catálogo/contrato nem envio a clientes. Nada cria acesso fiscal, cobrança Asaas ou envelope DocuSign por inferência. Ver `docs/comunicacao-atendimento-20260914.md` e `docs/biblioteca-mensagens-rapidas.md`.
 
 ## Padrões
 

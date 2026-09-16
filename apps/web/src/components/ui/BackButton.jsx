@@ -17,17 +17,21 @@ import { Button } from "./Button";
  *  - `label` existe para o voltar que diz PARA ONDE vai ("← Obrigações"). Isso é decisão de
  *    produto, não decoração — o componente preserva o texto de quem o passa.
  */
-export function BackButton({ label = "Voltar", className = "", ...props }) {
+export function BackButton({ label = "Voltar", iconOnly = false, className = "", ...props }) {
   return (
     <Button
       type="button"
       variant="secondary"
-      className={`btn-back${className ? ` ${className}` : ""}`}
+      className={`btn-back${iconOnly ? " btn-back--icon" : ""}${className ? ` ${className}` : ""}`}
       aria-label={label}
+      title={iconOnly ? label : undefined}
       {...props}
     >
-      <span aria-hidden="true">←</span>
-      {label}
+      {iconOnly ? (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+          <path d="m12 5-7 7 7 7M5 12h14" />
+        </svg>
+      ) : <><span aria-hidden="true">←</span>{label}</>}
     </Button>
   );
 }

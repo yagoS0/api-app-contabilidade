@@ -11,6 +11,13 @@ Recorrência de clientes agora é 3 dos últimos 4 meses (`3-de-4-v1`), separada
 ## Análise em desenvolvimento — 10/09/2026
 
 Dentro da empresa, PlanejamentoPage reúne Análise da empresa e Simulação tributária. O formulário de simulação permanece montado ao alternar a área, preservando edições. A análise tem seu próprio período; não altera competência fiscal nem premissas. O modo livre continua no simulador. Consultas por empresa descartam respostas antigas. Dados fictícios são marcados e usados somente no mock; a API real nunca recorre ao mock para disfarçar erro. Ver `docs/ajustes/2026-09-10-planejamento-analise-dev.md` para escopo e limites antes da publicação.
+## Revisão fiscal — 14/09/2026
+
+Premissas usam rótulos acima dos campos; origem detalhada, confiança e exceções do CNAE ficam em “Origem dos dados e premissas”. Na grade aparece apenas “CNAE sugerido”. Descrições acessíveis continuam ligadas aos campos e erros de entrada continuam visíveis.
+
+Por pedido explícito do usuário, ISS começa em 5% quando não há alíquota cadastrada. Valor cadastrado e cenário salvo têm precedência; apagar o campo mantém ausência, sem inventar zero. É premissa de simulação, não alteração na apuração ou alíquota geral de município.
+
+Anexo é sempre editável para comparar cenários. Em atividade de Fator R, “Automático pelo Fator R” mantém a regra; escolher anexo explicitamente ativa `anexoManual` e passa `sujeitoAoFatorR: false` apenas às entradas daquela simulação. A característica da empresa no formulário permanece intacta. `formularioCenario.anexoManual` deve ser salvo/restaurado com ISS e demais premissas. Teste `guardarSimulacao.ligacao` cobre default 5, escolha IV, ISS 4 e reabertura sem gravação de cadastro.
 
 Complemento: a abertura na empresa recupera o cenário salvo mais recente após o prefill. Não sobrescrever edições iniciadas durante a busca, nem aplicar resposta de outra empresa. O histórico só expande ao clicar Abrir cenário. Salvar cenário continua sendo explícito; não anunciar salvamento automático de campos. IBS/CBS mostra explicações dos modelos e diferencia imposto próprio de crédito transferido. Comunicado RFB atualizado em 02/09/2026 confirma o procedimento para 2027 e cancelamento até 30/11/2026; substitui a antiga ausência de prova da regulamentação. Consulta documentada em docs/fontes-fiscais.md.
 

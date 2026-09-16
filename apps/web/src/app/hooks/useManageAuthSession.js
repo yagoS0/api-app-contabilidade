@@ -6,6 +6,8 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 // Quando consumimos `page` lemos da URL; quando consumimos `setPage(name)` traduzimos pra URL e chamamos navigate.
 // Isso permite navegação real (deep link, browser back) sem reescrever todos os callsites de setPage de uma vez.
 const PAGE_TO_PATH = {
+  comunicadosWhatsapp: "/whatsapp/comunicados",
+  bibliotecaComercial: "/biblioteca",
   configuracoesGerais: "/configuracoes",
   login: "/login",
   companies: "/companies",
@@ -41,6 +43,7 @@ const PAGE_TO_PATH = {
 // log, sem 404 — foi o destino de `/calendario` e `/pendencias` por um tempo. Um teste é a única
 // forma de essa falha aparecer antes do usuário.
 export function pathToPageName(pathname) {
+  if (pathname === "/biblioteca" || pathname === "/biblioteca/") return "bibliotecaComercial";
   if (pathname === "/" || pathname === "") return "companies";
   if (pathname === "/configuracoes" || pathname === "/configuracoes/atendimento") return "configuracoesGerais";
   if (pathname === "/login") return "login";
@@ -63,6 +66,7 @@ export function pathToPageName(pathname) {
   if (pathname === "/planejamento") return "planejamento";
   if (pathname === "/obrigacoes") return "obrigacoes";
   if (pathname === "/whatsapp") return "whatsapp";
+  if (pathname === "/whatsapp/comunicados") return "comunicadosWhatsapp";
   // ⚠ Estes três ramos precisam existir ANTES do fallback da última linha. O `return "companies"`
   // lá embaixo é SILENCIOSO: faltando um ramo, a URL abre o dashboard sem nenhum erro — foi o
   // destino de `/calendario` e `/pendencias` por um tempo, e ninguém percebeu.

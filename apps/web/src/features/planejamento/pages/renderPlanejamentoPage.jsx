@@ -83,12 +83,9 @@ const ROTULO_REGIME = {
 // Quatro dos campos estavam assim. O nome de um campo tem de ser o que ele PEDE; a procedência é
 // descrição — e ela MUDA com o dado, então o nome do campo mudava de empresa para empresa.
 // Hoje ela é ligada por `aria-describedby`, que é exatamente o canal para isso.
-function OrigemDoCampo({ campo, id }) {
+function OrigemDoCampo({ campo }) {
   if (!campo) return null;
-  if (campo.apurado) {
-    return <span id={id} style={{ fontSize: "0.8rem", color: C.muted, lineHeight: 1.45 }}>da empresa · {campo.origem}</span>;
-  }
-  return <span id={id} style={{ fontSize: "0.8rem", color: C.alerta, lineHeight: 1.45 }}>⚠ {campo.motivoAusencia}</span>;
+  return <span style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clipPath: "inset(50%)", whiteSpace: "nowrap" }}>{campo.apurado ? `da empresa · ${campo.origem}` : campo.motivoAusencia}</span>;
 }
 
 /**
@@ -133,6 +130,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
   const [folha, setFolha] = useState("");
   const [anexo, setAnexo] = useState("III");
   const [sujeitoFatorR, setSujeitoFatorR] = useState(false);
+  const [anexoManual, setAnexoManual] = useState(false);
   const [atividade, setAtividade] = useState("servicos");
   // ⚠⚠ TRÊS ESTADOS, e o `null` é o que preserva a conta de hoje. Lei 9.249/1995, art. 15, § 4º:
   // serviços com receita até R$ 120.000 podem presumir IRPJ de 16% em vez de 32% — a CSLL continua
@@ -143,7 +141,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
   // ⚠ A categoria do Presumido pode chegar SUGERIDA pelo CNAE. Enquanto o contador não encostar no
   // seletor, ela continua sendo SUGESTÃO — e a tela diz isso. Tocar no seletor É a confirmação.
   const [categoriaConfirmada, setCategoriaConfirmada] = useState(false);
-  const [iss, setIss] = useState("");
+  const [iss, setIss] = useState("5");
   const [margem, setMargem] = useState("");
   const [creditos, setCreditos] = useState("");
   const [abertos, setAbertos] = useState({});
@@ -266,10 +264,11 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     setFolha("");
     setAnexo("III");
     setSujeitoFatorR(false);
+    setAnexoManual(false);
     setAtividade("servicos");
     setServicos16(null);
     setCategoriaConfirmada(false);
-    setIss("");
+    setIss("5");
     setMargem("");
     setCreditos("");
     setAbertos({});
@@ -302,7 +301,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     setFolha(dinheiroParaCampo(v.folhaAnual));
     // ⚠ O ISS viaja em FRAÇÃO no payload e é PERCENTUAL no campo. A conversão é esta; o que não
     // pode voltar é o `String()` em volta dela (3,5% viraria 35%).
-    setIss(v.aliquotaIss == null ? "" : paraCampo(Math.round(v.aliquotaIss * 1e6) / 1e4));
+    setIss(v.aliquotaIss == null ? "5" : paraCampo(Math.round(v.aliquotaIss * 1e6) / 1e4));
     if (v.sujeitoFatorR != null) setSujeitoFatorR(Boolean(v.sujeitoFatorR));
     if (v.anexo != null) setAnexo(v.anexo);
     // ⚠⚠ PRÉ-SELECIONA A SUGESTÃO, E A MARCA COMO NÃO CONFIRMADA. Sem a sugestão, o seletor caía
@@ -409,7 +408,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     // realmente zero continua sendo possível — digite 0.
     folhaAnual: lerDinheiro(folha),
     anexoSimples: anexo,
-    sujeitoAoFatorR: sujeitoFatorR,
+    sujeitoAoFatorR: sujeitoFatorR && !anexoManual,
     atividadePresumido: atividade,
     // ⚠ Fora da faixa NÃO entra na conta — e a tela DIZ isso, logo abaixo do campo. Silenciar aqui
     // faria a margem de "-5" produzir imposto negativo, e o `sort` coroaria o Lucro Real vencedor.
@@ -419,9 +418,9 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     mesesDeAtividade: mesesInicioAtividade,
     receitasMensais,
     servicosAte120kConfirmado: servicos16,
-  }), [receita, rbt12, folha, anexo, sujeitoFatorR, atividade, issLido.valor, margemLida.valor, creditos, mesesInicioAtividade, receitasMensais, servicos16]);
+  }), [receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, atividade, issLido.valor, margemLida.valor, creditos, mesesInicioAtividade, receitasMensais, servicos16]);
 
-  const formularioCenario = { receita, rbt12, folha, anexo, sujeitoFatorR, atividade, iss, margem, creditos,
+  const formularioCenario = { receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, atividade, iss, margem, creditos,
     mesesAtividade, serieMensal, servicos16, categoriaConfirmada, cenarioIbsCbs, cbsEstimada, detalharMeses };
   const assinaturaCenario = JSON.stringify(formularioCenario);
   // Retoma somente após o prefill, sem sobrescrever quem começou a digitar durante a busca.
@@ -466,6 +465,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     };
     setReceita(f.receita ?? ""); setRbt12(f.rbt12 ?? ""); setFolha(f.folha ?? "");
     setAnexo(f.anexo || "III"); setSujeitoFatorR(Boolean(f.sujeitoFatorR)); setAtividade(f.atividade || "servicos");
+    setAnexoManual(Boolean(f.anexoManual));
     setIss(f.iss ?? ""); setMargem(f.margem ?? ""); setCreditos(f.creditos ?? "");
     setMesesAtividade(f.mesesAtividade ?? ""); setSerieMensal(f.serieMensal || []);
     setDetalharMeses(Boolean(f.detalharMeses));
@@ -543,11 +543,11 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     // ⚠ Sujeito ao Fator R: o anexo do seletor não vale nada (o campo fica desabilitado e quem
     // decide é a folha). Imprimir "Anexo III · informado nesta simulação" nesse caso afirmaria uma
     // escolha que não existiu — a linha tem de dizer que o anexo sai da folha.
-    anexo: sujeitoFatorR ? null : anexo,
-    sujeitoFatorR,
+    anexo: sujeitoFatorR && !anexoManual ? null : anexo,
+    sujeitoFatorR: sujeitoFatorR && !anexoManual,
     aliquotaIss: issLido.valor == null ? null : issLido.valor / 100,
     atividadePresumido: atividade,
-  }), [prefill, receita, rbt12, folha, anexo, sujeitoFatorR, issLido.valor, atividade]);
+  }), [prefill, receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, issLido.valor, atividade]);
   const procedencias = cenarioSalvo === assinaturaCenario && procedenciasSalvas ? procedenciasSalvas : procedenciasAtuais;
 
   const valorImpresso = (linha) => {
@@ -700,12 +700,10 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
           {resultado && <a href="#detalhes-cenario">3. Detalhes</a>}
         </nav>
         <section aria-label="Cenários salvos" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <p style={{ flexBasis: "100%", margin: 0, lineHeight: 1.5 }}>1. Confira os dados da empresa. 2. Ajuste as premissas. 3. Compare os regimes e salve o cenário para continuar depois.</p>
           <span role="status">{cenarioSalvo === assinaturaCenario ? "Cenário salvo" : "Premissas não salvas"}</span>
           <button type="button" className="btn" disabled={!empresaId || !resultado || guardando || carregando} onClick={() => guardarSimulacao(true)}>Salvar cenário</button>
           <button type="button" className="btn btn-secondary" disabled={!empresaId || carregando || carregandoCenarios} onClick={listarCenarios}>{carregandoCenarios ? "Lendo cenários…" : "Abrir cenário"}</button>
           {!empresaId && <span>Vincule uma empresa para guardar e retomar cenários.</span>}
-          {empresaId && <small style={{ flexBasis: "100%", fontSize: 13 }}>O último cenário salvo desta empresa será retomado na próxima visita. Clique em Salvar cenário para guardar suas alterações; isso não altera o cadastro fiscal.</small>}
           {mostrarCenarios && cenariosSalvos && <div style={{ flexBasis: "100%" }}>
             {cenariosSalvos.length ? cenariosSalvos.map((c) => <button key={c.id} type="button" className="btn btn-secondary" disabled={carregando} onClick={() => abrirCenario(c)}>
               Abrir {c.competencia || "simulação"} · {new Date(c.geradoEm).toLocaleString("pt-BR")}
@@ -812,7 +810,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
             </Campo>
             {/* ⚠ Entrada, não inferência: a receita não diz em que mês a empresa está. Duas empresas
                 com o mesmo acumulado podem estar no 2º ou no 9º mês, e a alíquota sai diferente. */}
-            <Campo id="pl-meses" rotuloTexto="Meses de atividade — só se a empresa está começando">
+            <Campo id="pl-meses" rotuloTexto="Meses de atividade">
               {(a) => (
                 <input
                   {...a}
@@ -850,7 +848,10 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
             <Campo
               id="pl-atividade"
               rotuloTexto="Atividade no Lucro Presumido"
-              abaixo={prefill.temEmpresa ? <OrigemDoCampo campo={prefill.campos.atividadePresumido} /> : null}
+              abaixo={<>
+                {prefill.presumido?.sugestao && !categoriaConfirmada && <small style={{ color: C.muted }}>CNAE sugerido</small>}
+                {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.atividadePresumido} />}
+              </>}
             >
               {(a) => (
                 <select
@@ -867,23 +868,6 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                 DERIVAR. O catálogo de CNAE do portal mapeia ANEXO DO SIMPLES; a presunção é a Lei
                 9.249, outra lei. Errar entre 8% e 32% de IRPJ inverte a comparação de regimes.
                 ⚠ As EXCEÇÕES aparecem: sem elas o contador confirmaria sem saber o quê. */}
-            {prefill.presumido?.sugestao && !categoriaConfirmada ? (
-              <div style={{
-                gridColumn: "1 / -1", padding: "8px 10px", border: `1px solid ${C.alerta}44`,
-                borderRadius: 6, background: "#1A1B26", display: "grid", gap: 6,
-              }}>
-                <div style={{ fontSize: "0.74rem", color: C.alerta, lineHeight: 1.45 }}>
-                  ⚠ <strong>{prefill.presumido.rotulo}</strong> foi <strong>sugerido</strong> pelo CNAE
-                  {prefill.presumido.confianca === "media" ? " (confiança média)" : ""} — confirme no seletor acima.
-                </div>
-                <div style={{ fontSize: "0.7rem", color: C.muted, lineHeight: 1.45 }}>{prefill.presumido.motivo}</div>
-                {prefill.presumido.excecoes?.length ? (
-                  <ul style={{ margin: 0, paddingLeft: 16, fontSize: "0.68rem", color: C.muted, lineHeight: 1.45 }}>
-                    {prefill.presumido.excecoes.map((e) => <li key={e}>{e}</li>)}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
             {/* ⚠⚠ A PERGUNTA DOS R$ 120.000 (Lei 9.249/1995, art. 15, § 4º) — ela APARECE, e não se
                 responde sozinha. `PRESUNCAO_IRPJ.servicosAte120k = 0.16` existia como constante e
                 nunca entrava em conta nenhuma; medido em produção, 10 das 18 empresas com dado
@@ -930,14 +914,18 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
               abaixo={prefill.temEmpresa && !sujeitoFatorR ? <OrigemDoCampo campo={prefill.campos.anexo} /> : null}
             >
               {(a) => (
-                <select {...a} value={anexo} onChange={(e) => setAnexo(e.target.value)} disabled={sujeitoFatorR} style={{ ...campo, opacity: sujeitoFatorR ? 0.5 : 1 }}>
+                <select {...a} value={sujeitoFatorR && !anexoManual ? "automatico" : anexo} onChange={(e) => {
+                  setAnexoManual(e.target.value !== "automatico");
+                  if (e.target.value !== "automatico") setAnexo(e.target.value);
+                }} style={campo}>
+                  {sujeitoFatorR && <option value="automatico">Automático pelo Fator R</option>}
                   {Object.entries(ANEXOS).map(([k, an]) => <option key={k} value={k}>{an.nome}</option>)}
                 </select>
               )}
             </Campo>
             <Campo
               id="pl-iss"
-              rotuloTexto="Alíquota de ISS do município (%)"
+              rotuloTexto="ISS (%)"
               abaixo={<>
                 {issLido.fora && (
                   <span style={{ fontSize: "0.72rem", color: "var(--state-warn)" }}>
@@ -951,11 +939,20 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                   100 não há separador de milhar, logo não há ambiguidade, e a máscara de centavos
                   aqui transformaria `5` em `0,05`. O que mudou é QUEM LÊ (`lerPercentual`). */}
               {(a) => (
-                <input {...a} value={iss} onChange={(e) => setIss(e.target.value)} inputMode="decimal" placeholder="deixe vazio se não souber" style={campo} />
+                <input {...a} value={iss} onChange={(e) => setIss(e.target.value)} inputMode="decimal" placeholder="5" style={campo} />
               )}
             </Campo>
           </div>
 
+          {prefill.temEmpresa && <details style={{ color: C.muted, fontSize: "0.78rem" }}>
+            <summary style={{ cursor: "pointer" }}>Origem dos dados e premissas</summary>
+            <dl style={{ display: "grid", gap: 10 }}>
+              {procedencias.map(l => <div key={l.chave}><dt style={{ fontWeight: 600 }}>{l.rotulo}: {valorImpresso(l)}</dt><dd style={{ margin: 0 }}>{l.texto}</dd></div>)}
+            </dl>
+            {prefill.presumido?.sugestao && <p>{prefill.presumido.motivo}</p>}
+            {prefill.presumido?.excecoes?.length > 0 && <ul>{prefill.presumido.excecoes.map(e => <li key={e}>{e}</li>)}</ul>}
+            {prefill.fatorR?.divergencia && <p>{prefill.fatorR.divergencia.frase}</p>}
+          </details>}
           {/* O regime ATUAL não é entrada do cálculo — é o ponto de partida da conversa ("hoje você
               está no X"). Aparece como leitura, com origem, e some quando não se sabe qual é. */}
           {prefill.temEmpresa && (
@@ -968,25 +965,22 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
 
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.82rem", cursor: "pointer" }}>
             <input type="checkbox" checked={sujeitoFatorR} onChange={(e) => setSujeitoFatorR(e.target.checked)} />
-            Atividade sujeita ao Fator R (o anexo passa a sair da folha, não da escolha)
+            Atividade sujeita ao Fator R
           </label>
+          {anexoManual && <small style={{ color: C.muted }}>Anexo {anexo} escolhido para esta simulação.</small>}
           {/* ⚠⚠ A DIVERGÊNCIA ENTRE O PERFIL DE ATIVIDADES E O CADASTRO APARECE, E NÃO É CORRIGIDA
               EM SILÊNCIO. Ela é o defeito que o dono relatou em 25/08/2026: o Perfil fiscal
               mostrava os dois CNAEs como "III ou V (Fator R) — sim" e esta tela exibia o checkbox
               desmarcado. Hoje a resposta é DERIVADA do perfil; o que sobra é o cadastro estar
               desatualizado, e quem o conserta é o contador. */}
-          {prefill.fatorR?.divergencia ? (
-            <div style={{ fontSize: "0.72rem", color: C.alerta, lineHeight: 1.4, marginTop: 2 }}>
-              ⚠ {prefill.fatorR.divergencia.frase}
-            </div>
-          ) : null}
+
           {prefill.temEmpresa && <div style={{ marginTop: -4 }}><OrigemDoCampo campo={prefill.campos.sujeitoFatorR} /></div>}
 
           {/* O Lucro Real só entra com estes dois — e o card diz isso enquanto faltarem. */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: 16, paddingTop: 8, borderTop: `1px solid ${C.borda}` }}>
             <Campo
               id="pl-margem"
-              rotuloTexto="Margem de lucro real (%) — só para comparar com o Lucro Real"
+              rotuloTexto="Margem de lucro real (%)"
               abaixo={margemLida.fora ? (
                 <span style={{ fontSize: "0.72rem", color: "var(--state-warn)" }}>
                   {/* ⚠⚠ Aqui a guarda é a que impede IMPOSTO NEGATIVO: margem negativa entrava em

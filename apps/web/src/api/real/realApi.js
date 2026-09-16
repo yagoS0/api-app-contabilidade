@@ -799,6 +799,27 @@ export function createRealApi() {
       if (companyId) q.set("companyId", companyId);
       return request(`/firm/calendario?${q.toString()}`);
     },
+    async getTarefasAgenda(inicio, fim) {
+      return request(`/firm/agenda/tarefas?${new URLSearchParams({ inicio, fim })}`);
+    },
+    async salvarTarefaAgenda(dados, id) {
+      return request(`/firm/agenda/tarefas${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(dados) });
+    },
+    async acaoTarefaAgenda(id, dados) {
+      return request(`/firm/agenda/tarefas/${encodeURIComponent(id)}/acao`, { method: 'POST', body: JSON.stringify(dados) });
+    },
+    async excluirOcorrenciasAgenda(ids) {
+      return request('/firm/agenda/ocorrencias/excluir', { method: 'POST', body: JSON.stringify({ ids }) });
+    },
+    async editarOcorrenciasAgenda(ids, dados) {
+      return request('/firm/agenda/ocorrencias/editar', { method:'POST', body:JSON.stringify({ids,dados}) });
+    },
+    async excluirSerieAgenda(dados) {
+      return request('/firm/agenda/series/excluir', { method: 'POST', body: JSON.stringify(dados) });
+    },
+    async ocultarItemAgenda(dados) {
+      return request('/firm/agenda/ocultar', { method: 'POST', body: JSON.stringify(dados) });
+    },
     async listMarcosFiscais() {
       return request(`/firm/marcos-fiscais`);
     },
@@ -1071,6 +1092,12 @@ export function createRealApi() {
     // e `payload.message`; a tela mostra o motivo, nunca "falhou".
     async responderConversaWhatsapp(conversaId, texto) {
       return request(`/firm/whatsapp/conversas/${conversaId}/responder`, { method: "POST", body: JSON.stringify({ texto }) });
+    },
+    async enviarAnexoWhatsapp(conversaId, arquivo, legenda = "") {
+      const body = new FormData();
+      body.append("arquivo", arquivo);
+      body.append("legenda", legenda);
+      return request(`/firm/whatsapp/conversas/${encodeURIComponent(conversaId)}/enviar-anexo`, { method: "POST", body });
     },
     async vincularConversaWhatsapp(conversaId, body) {
       return request(`/firm/whatsapp/conversas/${conversaId}/vincular`, { method: "POST", body: JSON.stringify(body || {}) });
@@ -1739,6 +1766,17 @@ export function createRealApi() {
       const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/contratos/${encodeURIComponent(contratoId)}/pdf`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
       if (!res.ok) throw new Error("Não foi possível gerar o contrato PDF."); return res.blob();
     },
+    async comunicadosWhatsapp(caminho = '', dados) {
+      return request(`/firm/whatsapp/comunicados${caminho}`, dados === undefined ? {} : { method: 'POST', body: JSON.stringify(dados) });
+    },
+    async baixarPropostaComercial(id, propostaId) {
+      const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/propostas/${encodeURIComponent(propostaId)}/pdf`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
+      if (!res.ok) { const out = await res.json().catch(() => ({})); throw new Error(out.message || "Não foi possível gerar a proposta PDF."); } return res.blob();
+    },
+    async baixarPropostaPublica(token) {
+      const res = await fetch(getApiBaseUrl() + "/public/proposta/pdf", { headers: { Authorization: "Bearer " + token }, credentials: "omit", cache: "no-store" });
+      if (!res.ok) { const out = await res.json().catch(() => ({})); throw new Error(out.message || "Proposta indisponível."); } return res.blob();
+    },
     async baixarDocumentoComercial(id, doc) {
       const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/documentos/${encodeURIComponent(doc)}`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
       if (!res.ok) throw new Error("Não foi possível abrir o documento."); return res.blob();
@@ -2316,6 +2354,15 @@ export function createRealApi() {
     // QR Code não é um DANFSe. Um `Error` genérico aqui viraria "falha ao baixar" na tela, que é
     // exatamente a informação errada. Por isso o corpo JSON é lido e `code`/`motivo`/`status` sobem
     // junto, como o `request()` já faz para as demais rotas.
+    async baixarNotasSelecionadas(companyId, notaIds, formato) {
+      const tok = accessToken || readStoredToken();
+      const res = await fetch(`${getApiBaseUrl()}/firm/companies/${companyId}/notas/download-selecionadas`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ notaIds, formato }),
+      });
+      if (!res.ok) { const erro = await res.json().catch(() => ({})); throw new Error(erro.message || "Não foi possível baixar as notas."); }
+      return { blob: await res.blob(), geradas: Number(res.headers.get("X-Notas-Geradas")), falhas: Number(res.headers.get("X-Notas-Falhas")) };
+    },
     async fetchDanfseBlob(companyId, notaId) {
       const baseUrl = getApiBaseUrl();
       const headers = {};

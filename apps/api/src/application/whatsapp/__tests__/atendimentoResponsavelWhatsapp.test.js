@@ -13,7 +13,8 @@ jest.mock("../WhatsappLeaseService.js", () => {
 });
 
 import { Prisma } from "@prisma/client";
-import { atenderContextoResponsavel, resolverContextoDaMensagem, carregarMensagemResolvida, conferirContextoResponsavel } from "../AtendimentoResponsavelWhatsappService.js";
+import { responderMenuWhatsapp } from "../MenuWhatsappService.js";
+import { atenderContextoResponsavel, resolverContextoDaMensagem, carregarMensagemResolvida, conferirContextoResponsavel, selecionarEmpresaDoEscritorio } from "../AtendimentoResponsavelWhatsappService.js";
 import { adquirirLease, renovarLease, liberarLease, __limparLeases } from "../WhatsappLeaseService.js";
 
 const AGORA = new Date("2026-09-10T12:00:00.000Z");
@@ -70,7 +71,14 @@ function banco() {
     };
     client[name] = {
       findUnique: jest.fn(async ({ where }) => copy(expandir(name, encontrar(where)))),
-      findFirst: jest.fn(async ({ where = {} }) => copy(expandir(name, encontrar(where)))),
+      findFirst: jest.fn(async ({ where = {}, orderBy }) => {
+        const lista = rows[name].filter(row => casa(expandir(name, row), where));
+        for (const ordem of (Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : []).slice().reverse()) {
+          const [campo, direcao] = Object.entries(ordem)[0];
+          lista.sort((a, b) => (a[campo] < b[campo] ? -1 : a[campo] > b[campo] ? 1 : 0) * (direcao === 'desc' ? -1 : 1));
+        }
+        return copy(expandir(name, lista[0]));
+      }),
       findMany: jest.fn(async ({ where = {} } = {}) => rows[name].filter(row => casa(expandir(name, row), where)).map(row => copy(expandir(name, row)))),
       create: jest.fn(async ({ data }) => criar(data)),
       upsert: jest.fn(async ({ where, create, update }) => { const row = encontrar(where); return row ? copy(expandir(name, atribuir(row, update))) : criar(create); }),
@@ -112,7 +120,320 @@ async function fixture() {
 }
 
 beforeEach(() => { jest.useFakeTimers({ now: AGORA, doNotFake: ["nextTick", "queueMicrotask", "setImmediate"] }); jest.clearAllMocks(); __limparLeases(); });
+
+test('contador troca a empresa pelos contatos sem conceder conta do portal ou enviar mensagem', async () => {
+  const f = await fixture();
+  f.setEmpresas(EMPRESAS.slice(0, 2).map(e => ({ ...e, contatos: e.contatos.map(c => ({ ...c, userId: null, papelRbac: null, statusRbac: null })) })));
+  const { registro } = await f.novo('oi');
+  const resultado = await selecionarEmpresaDoEscritorio({ conversa: registro.conversa, portalClientId: 'lente', client: f.client, resolverVinculo: f.resolverVinculo });
+  expect(resultado.conversa.portalClientId).toBe('lente');
+  expect(resultado.atendimento.userId).toBeNull();
+  expect(f.client.rows.conversaWhatsapp.filter(c => c.portalClientId).map(c => c.portalClientId).sort()).toEqual(['klaus', 'lente']);
+  expect(f.cloud.enviarTexto).not.toHaveBeenCalled();
+  expect(f.processar).not.toHaveBeenCalled();
+});
+
+test('troca do escritório continua recusando empresa que não cadastrou o número', async () => {
+  const f = await fixture(); const { registro } = await f.novo('oi');
+  await expect(selecionarEmpresaDoEscritorio({ conversa: registro.conversa, portalClientId: 'fora', client: f.client, resolverVinculo: f.resolverVinculo })).rejects.toMatchObject({ codigo: 'EMPRESA_NAO_E_CANDIDATA' });
+  expect(f.client.rows.atendimentoResponsavelWhatsapp).toHaveLength(0);
+});
 afterEach(() => { jest.useRealTimers(); __limparLeases(); });
+
+async function fixtureComMenu(permissoesAssistente = ['GUIAS'], guias = [{ guideId: 'guia-sintetica', tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 100,00', vencimento: '20/09/2026' }]) {
+  const f = await fixture();
+  f.client.contatoWhatsapp = { findMany: jest.fn(async () => [{ id: 'contato', nome: 'Responsável', userId: 'liz', permissoesAssistente }]) };
+  f.client.companyClientUser = { findUnique: jest.fn(async () => ({ role: 'OWNER', status: 'ACTIVE' })) };
+  let mensagens = 0;
+  f.cloud.enviarBotoes = jest.fn(async () => ({ wamid: `botoes-${++mensagens}` }));
+  f.cloud.enviarDocumento = jest.fn(async () => ({ wamid: `documento-${++mensagens}` }));
+  const executar = jest.fn(async (nome, input, ctx) => {
+    if (nome === 'enviar_pdf_da_guia') { await ctx.enviarDocumento({ conteudo: Buffer.from('%PDF fixture'), nomeArquivo: `${input.guideId}.pdf`, legenda: `Aqui está sua guia ${input.guideId}.` }); return { ok: true, enviado: true }; }
+    if (nome === 'consultar_faturamento') return { ok: true, ...input, quantidade: 25, semValor: 0, totalFormatado: 'R$ 12.500,00' };
+    return { ok: true, guias, proximaPagina: null };
+  });
+  const coleta = jest.fn(async () => ({ tratado: false }));
+  f.processar.mockImplementation((registro, item, lease) => responderMenuWhatsapp({ registro, texto: item.corpo, interacao: item.interacao,
+    agora: new Date(), client: f.client, cloud: f.cloud, executar, coleta, resolverVinculo: f.resolverVinculo,
+    conferirJanela: async () => ({ situacao: 'ABERTA' }), logger: log, ...lease }));
+  const clicar = async (opcao) => {
+    jest.setSystemTime(new Date(Date.now() + 1000));
+    const entrada = await f.novo(opcao.titulo, { tipo: 'interactive', interacao: { id: opcao.id } });
+    return { entrada, resultado: await f.rodar(entrada) };
+  };
+  const guia = () => f.cloud.enviarLista.mock.calls.at(-1)[0].linhas.find(o => o.titulo === 'Guias em aberto');
+  return { ...f, executar, coleta, clicar, guia };
+}
+
+const GUIAS_DA_JORNADA = [
+  { guideId: 'guia-simples', tipo: 'Simples Nacional', tipoCodigo: 'SIMPLES', competencia: '2026-08', valorFormatado: 'R$ 740,00', vencimento: '21/09/2026' },
+  { guideId: 'guia-inss', tipo: 'INSS', tipoCodigo: 'INSS', competencia: '2026-08', valorFormatado: 'R$ 180,00', vencimento: '20/09/2026' },
+];
+const dizerNaJornada = async (f, texto) => { jest.setSystemTime(new Date(Date.now() + 1000)); const e = await f.novo(texto); await f.rodar(e); return e; };
+
+it.each(['2', 'a segunda', 'INSS'])('cliente escolhe a guia por %s e recebe o PDF sem IA nem campos técnicos', async escolha => {
+  const f = await fixtureComMenu(['GUIAS'], GUIAS_DA_JORNADA);
+  await f.selecionar('me manda a guia', 'lente');
+  const menu = f.cloud.enviarBotoes.mock.calls.at(-1)[0];
+  expect(menu.texto).toContain('R$ 740,00'); expect(menu.texto).toContain('21/09/2026');
+  expect(menu.texto).not.toMatch(/competência|escreva o tipo/i);
+  const entrada = await dizerNaJornada(f, escolha);
+  expect(f.executar).toHaveBeenLastCalledWith('enviar_pdf_da_guia', { guideId: 'guia-inss' }, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'lente' }) }));
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+  await f.rodar(entrada);
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+});
+
+it('toque na guia usa a opção oferecida e menu antigo não troca a escolha', async () => {
+  const f = await fixtureComMenu(['GUIAS'], GUIAS_DA_JORNADA);
+  await f.selecionar('guias do mês', 'lente');
+  const antigo = f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[1];
+  await dizerNaJornada(f, 'guias do mês');
+  const atual = f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[0];
+  await f.clicar(antigo);
+  expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toMatch(/lista.*anterior/);
+  // A resposta ao menu vencido invalida a lista; o cliente pede uma lista atual.
+  await dizerNaJornada(f, 'guias do mês');
+  await f.clicar(f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[0]);
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+  expect(f.cloud.enviarDocumento.mock.calls[0][0].nomeArquivo).toBe('guia-simples.pdf');
+  expect(atual.id).not.toBe(antigo.id);
+});
+
+it('todas envia os PDFs da lista uma vez, mesmo com reentrega do pedido', async () => {
+  const f = await fixtureComMenu(['GUIAS'], GUIAS_DA_JORNADA);
+  await f.selecionar('guias do mês', 'lente');
+  const entrada = await dizerNaJornada(f, 'todas');
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(2);
+  await f.rodar(entrada);
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(2);
+});
+
+it('faturamemto → mês passado → agosto → texto livre consulta o período sem repetir seletor', async () => {
+  const f = await fixtureComMenu(['NOTAS_DANFSE']);
+  await f.selecionar('menu', 'lente');
+  await dizerNaJornada(f, 'Quero saber meu faturamemto');
+  expect(f.cloud.enviarBotoes.mock.calls.at(-1)[0].texto).toContain('Qual mês');
+  expect(f.executar).not.toHaveBeenCalled();
+  await f.clicar(f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[1]);
+  expect(f.executar).toHaveBeenLastCalledWith('consultar_faturamento', { inicio: '2026-08', fim: '2026-08' }, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'lente' }) }));
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toMatch(/agosto de 2026.*R\$ 12.500,00/);
+  await dizerNaJornada(f, 'e julho?');
+  expect(f.executar).toHaveBeenLastCalledWith('consultar_faturamento', { inicio: '2026-07', fim: '2026-07' }, expect.anything());
+  const chamadas = f.executar.mock.calls.length;
+  await dizerNaJornada(f, 'obrigado, tenho outra dúvida');
+  expect(f.executar).toHaveBeenCalledTimes(chamadas);
+  expect(f.cloud.enviarLista.mock.calls.filter(([menu]) => menu.tituloSecao === 'Empresas')).toHaveLength(1);
+});
+
+it('faturamento exige permissão de leitura de notas', async () => {
+  const f = await fixtureComMenu(['GUIAS']);
+  await f.selecionar('menu', 'lente');
+  await dizerNaJornada(f, 'qual meu faturamento desse mês?');
+  expect(f.executar).not.toHaveBeenCalled();
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toMatch(/acesso ao faturamento/);
+});
+
+it('pedido explícito de faturamento da Lente deixa a Klaus e consulta a empresa indicada', async () => {
+  const f = await fixtureComMenu(['NOTAS_DANFSE']);
+  await f.selecionar('menu', 'klaus');
+  await dizerNaJornada(f, 'faturamento da Lente em agosto');
+  expect(f.executar).toHaveBeenLastCalledWith('consultar_faturamento', { inicio: '2026-08', fim: '2026-08' }, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'lente' }) }));
+});
+
+it('período inteiro soma os meses pedidos e uma pergunta livre sai da coleta de período', async () => {
+  const f = await fixtureComMenu(['NOTAS_DANFSE']);
+  await f.selecionar('faturamento de janeiro a agosto de 2026', 'lente');
+  expect(f.executar).toHaveBeenLastCalledWith('consultar_faturamento', { inicio: '2026-01', fim: '2026-08' }, expect.anything());
+  await dizerNaJornada(f, 'faturamento');
+  const chamadas = f.executar.mock.calls.length, saidas = f.cloud.enviarBotoes.mock.calls.length;
+  await dizerNaJornada(f, 'o que é faturamento?');
+  expect(f.executar).toHaveBeenCalledTimes(chamadas);
+  expect(f.cloud.enviarBotoes).toHaveBeenCalledTimes(saidas);
+});
+
+it.each([
+  [{ quantidade: 0, semValor: 0 }, /não confirma que a empresa ficou sem faturamento/],
+  [{ quantidade: 5, semValor: 1 }, /faltam valores em 1/],
+])('faturamento com registros insuficientes não inventa total: %j', async (dados, mensagem) => {
+  const f = await fixtureComMenu(['NOTAS_DANFSE']);
+  f.executar.mockImplementation(async (_nome, input) => ({ ok: true, ...input, ...dados }));
+  await f.selecionar('faturamento de agosto', 'lente');
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toMatch(mensagem);
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).not.toMatch(/R\$|undefined/);
+});
+
+it('guia não liberada pede conferência sem afirmar que não há imposto a pagar', async () => {
+  const f = await fixtureComMenu(['GUIAS'], []);
+  await f.selecionar('me manda a guia', 'lente');
+  expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toMatch(/falta liberar algum arquivo/);
+});
+
+it('guia histórica filtrada por INSS é localizada além da primeira página', async () => {
+  const f = await fixtureComMenu(['GUIAS']);
+  const original = f.executar.getMockImplementation();
+  f.executar.mockImplementation(async (nome, input, ctx) => nome === 'listar_guias'
+    ? { ok: true, guias: [GUIAS_DA_JORNADA[input.pagina === 2 ? 1 : 0]], proximaPagina: input.pagina === 2 ? null : 2 }
+    : original(nome, input, ctx));
+  await f.selecionar('guia do INSS de agosto', 'lente');
+  expect(f.executar).toHaveBeenCalledWith('listar_guias', { competencia: '2026-08', pagina: 2 }, expect.anything());
+  expect(f.cloud.enviarDocumento.mock.calls.at(-1)[0].nomeArquivo).toBe('guia-inss.pdf');
+});
+
+it('paginação mantém o número vinculado à página mostrada', async () => {
+  const guias = Array.from({ length: 12 }, (_, i) => ({ ...GUIAS_DA_JORNADA[0], guideId: `guia-${i}`, tipo: `Parcela ${i + 1}` }));
+  const f = await fixtureComMenu(['GUIAS'], guias);
+  await f.selecionar('guias do mês', 'lente');
+  const primeira = f.cloud.enviarLista.mock.calls.at(-1)[0];
+  expect(primeira.linhas).toHaveLength(10);
+  expect(primeira.texto.length).toBeLessThanOrEqual(1024);
+  await dizerNaJornada(f, 'mais');
+  await dizerNaJornada(f, '1');
+  expect(f.cloud.enviarDocumento.mock.calls.at(-1)[0].nomeArquivo).toBe('guia-8.pdf');
+});
+
+it('envio de todas informa falha parcial sem afirmar que enviou PDF indisponível', async () => {
+  const f = await fixtureComMenu(['GUIAS'], GUIAS_DA_JORNADA);
+  const original = f.executar.getMockImplementation();
+  f.executar.mockImplementation(async (nome, input, ctx) => nome === 'enviar_pdf_da_guia' && input.guideId === 'guia-inss'
+    ? { ok: false, mensagem: 'O arquivo desta guia não está disponível.' } : original(nome, input, ctx));
+  await f.selecionar('guias do mês', 'lente');
+  const entrada = await dizerNaJornada(f, 'todas');
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+  expect(f.cloud.enviarTexto.mock.calls.at(-1)[0].texto).toMatch(/Consegui enviar 1 de 2/);
+  await f.rodar(entrada);
+  expect(f.cloud.enviarDocumento).toHaveBeenCalledTimes(1);
+});
+
+it('botão de guia da empresa anterior não envia arquivo depois da troca', async () => {
+  const f = await fixtureComMenu(['GUIAS'], GUIAS_DA_JORNADA);
+  await f.selecionar('guias do mês', 'lente');
+  const botao = f.cloud.enviarBotoes.mock.calls.at(-1)[0].botoes[0];
+  await dizerNaJornada(f, 'trocar para Klaus');
+  await f.clicar(botao);
+  expect(f.cloud.enviarDocumento).not.toHaveBeenCalled();
+  expect(f.atendimento().portalClientId).toBe('klaus');
+});
+
+it('reações não iniciam atendimento nem invalidam a lista que já foi mostrada', async () => {
+  const f = await fixtureComMenu();
+  await f.rodar(await f.novo('', { tipo: 'reaction' }));
+  expect(f.atendimento()).toBeUndefined();
+  await f.rodar(await f.novo('oi'));
+  const antes = copy(f.atendimento());
+  const opcao = f.cloud.enviarLista.mock.calls[0][0].linhas.find(o => o.id.endsWith('.lente'));
+  await f.rodar(await f.novo('', { tipo: 'reaction' }));
+  await f.rodar(await f.novo('', { tipo: 'reaction' }));
+  expect(f.atendimento()).toEqual(antes);
+  await f.clicar(opcao);
+  expect(f.atendimento().portalClientId).toBe('lente');
+  expect(f.cloud.enviarLista.mock.calls.filter(([menu]) => menu.tituloSecao === 'Empresas')).toHaveLength(1);
+  expect(f.guia().id).toContain('altan.ctx.v1:');
+});
+
+it.each(['20/09/2026', '20/08/2026', '20/10/2026'])('menu → Guias em aberto inclui vencimento %s só da empresa escolhida, sem novo seletor nem repetição', async vencimento => {
+  const f = await fixtureComMenu(['GUIAS'], [{ guideId: 'guia-sintetica', tipo: 'DAS', competencia: '2026-08', valorFormatado: 'R$ 100,00', vencimento }]);
+  await f.selecionar('menu', 'lente');
+  const versao = f.atendimento().versao;
+  const { entrada, resultado } = await f.clicar(f.guia());
+  expect(resultado).toMatchObject({ tratado: true, acao: 'GUIAS_MES' });
+  expect(f.executar).toHaveBeenCalledWith('quanto_devo', {}, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'lente' }), conversa: expect.objectContaining({ portalClientId: 'lente' }) }));
+  expect(f.cloud.enviarDocumento).toHaveBeenLastCalledWith(expect.objectContaining({ legenda: expect.stringMatching(/Empresa: Lente[\s\S]*Aqui está sua guia/) }));
+  expect(f.cloud.enviarLista.mock.calls.filter(([menu]) => menu.tituloSecao === 'Empresas')).toHaveLength(1);
+  expect(f.atendimento()).toMatchObject({ portalClientId: 'lente', versao, aguardandoSelecao: false });
+  await f.rodar(entrada);
+  expect(f.executar).toHaveBeenCalledTimes(2);
+});
+
+it('texto livre Guias do mês continua na empresa e esclarecimentos não abrem outro seletor', async () => {
+  const f = await fixtureComMenu();
+  await f.selecionar('menu', 'lente');
+  await f.rodar(await f.novo('Guias do mês'));
+  expect(f.executar).toHaveBeenCalledTimes(2);
+  await f.rodar(await f.novo('esse valor é referente a qual período?'));
+  expect(f.processar).toHaveBeenLastCalledWith(expect.objectContaining({ conversa: expect.objectContaining({ portalClientId: 'lente' }) }), expect.objectContaining({ corpo: 'esse valor é referente a qual período?' }), expect.anything());
+  expect(f.cloud.enviarLista.mock.calls.filter(([menu]) => menu.tituloSecao === 'Empresas')).toHaveLength(1);
+});
+
+it.each(['trocar', 'mudar de empresa', 'trocar de empresa', 'pode mudar a empresa?', 'outra empresa, por favor.'])(
+  '%s abre a lista e continua no menu e nas guias da nova empresa', async texto => {
+    const f = await fixtureComMenu();
+    await f.selecionar('menu', 'lente');
+    await f.rodar(await f.novo(texto));
+    expect(f.atendimento()).toMatchObject({ portalClientId: null, aguardandoSelecao: true, pedidoPendente: null });
+    expect(f.executar).not.toHaveBeenCalled();
+    const opcao = f.cloud.enviarLista.mock.calls.at(-1)[0].linhas.find(o => o.id.endsWith('.klaus'));
+    await f.clicar(opcao);
+    expect(f.atendimento()).toMatchObject({ portalClientId: 'klaus', aguardandoSelecao: false });
+    await f.clicar(f.guia());
+    expect(f.executar).toHaveBeenCalledTimes(2);
+    expect(f.executar).toHaveBeenCalledWith('quanto_devo', {}, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'klaus' }) }));
+  });
+
+it('pedido de troca por texto pausa o rascunho e cancela o código antes de escolher outra empresa', async () => {
+  const f = await fixtureComMenu();
+  await f.selecionar('menu', 'lente');
+  const conversaId = f.atendimento().conversaId;
+  await f.client.rascunhoEmissaoWhatsapp.create({ data: { id: 'draft', conversaId, versao: 3,
+    expiraEm: new Date(+AGORA + 86400000), estado: { status: 'REVISAO', dados: { valor: 150 }, codigo: 'A7K2' } } });
+  await f.client.acaoPendenteWhatsapp.create({ data: { id: 'acao', conversaId, atendimentoId: f.atendimento().id, status: 'pendente' } });
+  await f.rodar(await f.novo('gostaria de mudar de empresa, por favor'));
+  expect(f.client.rows.rascunhoEmissaoWhatsapp[0]).toMatchObject({ conversaId, estado: { status: 'PAUSADO', dados: { valor: 150 } } });
+  expect(f.client.rows.rascunhoEmissaoWhatsapp[0].estado.codigo).toBeUndefined();
+  expect(f.client.rows.acaoPendenteWhatsapp[0].status).toBe('cancelada');
+  expect(f.executar).not.toHaveBeenCalled();
+  expect(f.atendimento()).toMatchObject({ aguardandoSelecao: true, pedidoPendente: null });
+  await f.clicar(f.cloud.enviarLista.mock.calls.at(-1)[0].linhas.find(o => o.id.endsWith('.klaus')));
+  expect(f.atendimento().portalClientId).toBe('klaus');
+  expect(f.client.rows.rascunhoEmissaoWhatsapp[0].conversaId).toBe(conversaId);
+});
+
+it('menu antigo após trocar empresa mostra o menu atual e não consulta a empresa errada', async () => {
+  const f = await fixtureComMenu();
+  await f.selecionar('menu', 'lente');
+  const antigo = f.guia();
+  await f.rodar(await f.novo('trocar para a Klaus'));
+  const antes = copy(f.atendimento());
+  await f.clicar(antigo);
+  expect(f.executar).not.toHaveBeenCalled();
+  expect(f.atendimento()).toMatchObject({ portalClientId: 'klaus', versao: antes.versao });
+  expect(f.cloud.enviarLista.mock.calls.at(-1)[0].texto).toMatch(/seleção anterior/);
+  await f.clicar(f.guia());
+  expect(f.executar).toHaveBeenCalledWith('quanto_devo', {}, expect.objectContaining({ sessao: expect.objectContaining({ portalClientId: 'klaus' }) }));
+});
+
+it('menu antigo só atualiza as opções e preserva o rascunho e a ação da empresa atual', async () => {
+  const f = await fixtureComMenu(['GUIAS', 'EMISSAO_NFSE']);
+  await f.selecionar('menu', 'lente');
+  const antigo = f.guia();
+  await f.rodar(await f.novo('trocar para a Klaus'));
+  const conversaId = f.atendimento().conversaId;
+  await f.client.rascunhoEmissaoWhatsapp.create({ data: { id: 'draft', conversaId, versao: 3,
+    expiraEm: new Date(+AGORA + 86400000), estado: { status: 'REVISAO', dados: { valor: 150 }, codigo: 'A7K2' } } });
+  await f.client.acaoPendenteWhatsapp.create({ data: { id: 'acao', conversaId, atendimentoId: f.atendimento().id, status: 'pendente' } });
+  const rascunhos = copy(f.client.rows.rascunhoEmissaoWhatsapp);
+  const acoes = copy(f.client.rows.acaoPendenteWhatsapp);
+  f.coleta.mockClear();
+  await f.clicar(antigo);
+  expect(f.coleta).not.toHaveBeenCalled();
+  expect(f.executar).not.toHaveBeenCalled();
+  expect(f.client.rows.rascunhoEmissaoWhatsapp).toEqual(rascunhos);
+  expect(f.client.rows.acaoPendenteWhatsapp).toEqual(acoes);
+  expect(f.cloud.enviarLista.mock.calls.at(-1)[0].texto).toMatch(/seleção anterior/);
+});
+
+it('repetir a pergunta com a mesma lista não invalida o primeiro botão', async () => {
+  const f = await fixtureComMenu();
+  await f.rodar(await f.novo('oi'));
+  const opcao = f.cloud.enviarLista.mock.calls[0][0].linhas[0];
+  const versao = f.atendimento().versao;
+  await f.rodar(await f.novo('não entendi'));
+  expect(f.atendimento().versao).toBe(versao);
+  await f.clicar(opcao);
+  expect(f.atendimento().aguardandoSelecao).toBe(false);
+});
 
 it("retoma pedido com campos após botão e preserva mensagem original interativa", async () => {
   const f = await fixture(), pedido = "emitir nota\nvalor: 150,00\nserviço: Consulta";
@@ -256,7 +577,7 @@ it("recibo sobrevive a nova execução do wrapper sem criar segunda saída de se
   const f = await fixture(), entrada = await f.novo("emitir nota");
   await f.rodar(entrada); const quantidade = f.client.rows.resolucaoContextoWhatsapp.length;
   await f.rodar({ ...entrada, registro: { ...entrada.registro, duplicada: true } });
-  expect(f.client.rows.resolucaoContextoWhatsapp).toHaveLength(quantidade); expect(f.cloud.enviarLista).toHaveBeenCalledTimes(1);
+  expect(f.client.rows.resolucaoContextoWhatsapp).toHaveLength(quantidade); expect(f.cloud.enviarLista.mock.calls.filter(([menu]) => menu.tituloSecao === 'Empresas')).toHaveLength(1);
 });
 
 it("mesmo instante e processamento invertido recusam mensagem antiga antes de trocar empresa", async () => {

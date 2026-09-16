@@ -11,6 +11,31 @@ import { TODAS_PERMISSOES_ASSISTENTE } from "../../whatsapp/permissoesAssistente
 
 const silencio = { warn: jest.fn(), error: jest.fn(), info: jest.fn() };
 
+describe('faturamento completo do período', () => {
+  it('agrega todas as notas autorizadas da empresa, sem limite de página', async () => {
+    const aggregate = jest.fn(async () => ({ _count: { _all: 25, total: 25 }, _sum: { total: 12500 }, _max: { updatedAt: new Date('2026-09-10T12:00:00Z') } }));
+    const c = ctx({ prisma: { portalInvoice: { aggregate } } });
+    const r = await executarFerramenta('consultar_faturamento', { inicio: '2026-01', fim: '2026-08' }, c);
+    expect(r).toMatchObject({ ok: true, quantidade: 25, total: 12500, inicio: '2026-01', fim: '2026-08' });
+    expect(aggregate).toHaveBeenCalledWith({ where: { clientId: 'pc-1', papel: 'EMIT', statusEfetivo: 'autorizada', competencia: { gte: new Date('2026-01-01T00:00:00Z'), lt: new Date('2026-09-01T00:00:00Z') } }, _sum: { total: true }, _count: { _all: true, total: true }, _max: { updatedAt: true } });
+  });
+  it.each([{ inicio: '2026-13', fim: '2026-13' }, { inicio: '2026-09', fim: '2026-08' }, { inicio: '2025-01', fim: '2026-09' }])('não consulta período inválido %j', async input => {
+    const aggregate = jest.fn(), c = ctx({ prisma: { portalInvoice: { aggregate } } });
+    expect((await executarFerramenta('consultar_faturamento', input, c)).ok).toBe(false);
+    expect(aggregate).not.toHaveBeenCalled();
+  });
+  it('permissão de guias não autoriza faturamento', async () => {
+    const aggregate = jest.fn(), c = ctx({ sessao: sessao({ permissoesAssistente: ['GUIAS'] }), prisma: { portalInvoice: { aggregate } } });
+    expect((await executarFerramenta('consultar_faturamento', { inicio: '2026-08', fim: '2026-08' }, c)).motivo).toBe('FUNCAO_NAO_LIBERADA');
+    expect(aggregate).not.toHaveBeenCalled();
+  });
+  it('valor ausente não é convertido em faturamento zero', async () => {
+    const aggregate = jest.fn(async () => ({ _count: { _all: 2, total: 1 }, _sum: { total: 100 }, _max: { updatedAt: null } }));
+    const r = await executarFerramenta('consultar_faturamento', { inicio: '2026-08', fim: '2026-08' }, ctx({ prisma: { portalInvoice: { aggregate } } }));
+    expect(r).toMatchObject({ ok: true, quantidade: 2, semValor: 1, total: null, totalFormatado: null });
+  });
+});
+
 function sessao(over = {}) {
   return { ok: true, portalClientId: "pc-1", userId: "u1", papel: "CLIENT_ADMIN", contatoNome: "Maria", permissoesAssistente: [...TODAS_PERMISSOES_ASSISTENTE], motivo: null, ...over };
 }

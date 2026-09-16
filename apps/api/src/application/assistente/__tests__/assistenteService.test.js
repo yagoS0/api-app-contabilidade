@@ -613,6 +613,16 @@ it("não anuncia encaminhamento se a gravação da fila falhar", async () => {
   expect(cloud.enviarTexto).not.toHaveBeenCalled();
 });
 
+it('marcador de modelo é recusado sem nova chamada e não chega ao cliente', async () => {
+  const client = bancoEmMemoria(), cloud = cloudFalso(), assistente = modeloFalso();
+  assistente.responder.mockResolvedValue({ texto: '[Mensagem alcance]', usage: { input_tokens: 10, output_tokens: 12 }, stopReason: 'end_turn' });
+  const r = await responderMensagem({ conversaId: 'cv1', mensagemId: 'm1', deps: deps({ client, cloud, assistente }) });
+  expect(r.motivo).toBe('RESPOSTA_INCOMPLETA');
+  expect(assistente.responder).toHaveBeenCalledTimes(1);
+  expect(cloud.enviarTexto.mock.calls[0][0].texto).not.toContain('[Mensagem alcance]');
+  expect(client._conversa.atendidaDesde).toBeInstanceOf(Date);
+});
+
 it.each(["max_tokens", "max_iteracoes"])("resposta %s vai para equipe sem enviar frase pela metade", async (stopReason) => {
   const client = bancoEmMemoria(), cloud = cloudFalso(), assistente = modeloFalso();
   assistente.responder.mockResolvedValue({ texto: "Sua empresa está", usage: { input_tokens: 10, output_tokens: 2000 }, stopReason });

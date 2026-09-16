@@ -240,8 +240,8 @@ describe("⚠⚠ A CATEGORIA DO PRESUMIDO CHEGA SUGERIDA, E A TELA DIZ QUE É SU
   it("pré-seleciona a sugestão E a marca como sugestão", async () => {
     montar({}, SUGERE_SERVICO);
     await waitFor(() => expect(screen.getByDisplayValue("889.286,09")).toBeInTheDocument());
-    expect(screen.getByText(/foi/i).textContent).toMatch(/sugerido/i);
-    expect(screen.getByText(/confirme no seletor acima/i)).toBeInTheDocument();
+    expect(screen.getByText("CNAE sugerido")).toBeInTheDocument();
+    expect(screen.queryByText(/confiança média/i)).not.toBeInTheDocument();
   });
 
   it("⚠⚠ e as EXCEÇÕES aparecem — sem elas o contador confirma sem saber o quê", async () => {

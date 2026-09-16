@@ -1,4 +1,6 @@
 import { criarMockComercial } from './comercialMock';
+import { criarMockAgenda } from './agendaMock';
+import { expandirAgenda, normalizarAgenda, somarDiasAgenda } from '../../../../../packages/shared/src/agenda.js';
 import { mockRelatorios } from './mockRelatorios';
 import { janelaRecorrente, cicloRecorrente } from '../../features/obrigacoes/lib/janelaRecorrente';
 import { faker } from "@faker-js/faker";
@@ -9,14 +11,14 @@ function delay(ms = 250) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Marcações de "sem movimento" feitas na sessão, chave `companyId|tipo`. Estado de VERDADE, não
+// Marcações de "sem movimento" feitas na sessão, chave `companyId|tipo|competencia`. Estado de VERDADE, não
 // retorno fixo: o ciclo da guia só dá para conferir offline se marcar vazio realmente mudar o chip
 // e o desfazer realmente voltar. Mock imutável passaria por esses caminhos sem testar nenhum.
 const mockVazios = new Map(); // chave → { vazioEm, vazioPor, vazioMotivo }
 // Guias cuja liberação já foi TENTADA nesta sessão do mock. A 1ª tentativa simula o lock global
 // preso (`guides_email_lock`, TTL 5 min) e a 2ª envia — ver `liberarGuiaCliente`.
 const mockLiberacoesTentadas = new Set();
-const chaveVazio = (companyId, tipo) => `${companyId}|${String(tipo || "").toUpperCase()}`;
+const chaveVazio = (companyId, tipo, competencia) => `${companyId}|${String(tipo || "").toUpperCase()}|${competencia || ""}`;
 
 // Chave do compliance → tipo de Guide (mesmo de-para do backend; PIS representa o grupo PIS/COFINS).
 const MOCK_TRIBUTO_TIPO = {
@@ -57,6 +59,9 @@ function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTri
     const required = requeridos[chave];
     if (!required) return { required: false, ok: true, state: "na" };
 
+    const marcado = mockVazios.get(chaveVazio(companyId, MOCK_TRIBUTO_TIPO[chave], competencia));
+    if (marcado) return { required, ok: true, state: "vazio", origem: "guia_vazia", ...marcado };
+
     if (misturada) {
       // PIS/COFINS já foi (por WhatsApp, lida); IRPJ ainda espera envio; o resto falta gerar.
       if (chave === "pisCofins") {
@@ -84,14 +89,6 @@ function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTri
       return { required, ok: false, state: "missing" };
     }
 
-    const marcado = mockVazios.get(chaveVazio(companyId, MOCK_TRIBUTO_TIPO[chave]));
-    if (marcado) {
-      // Marcação feita AGORA na tela. Com faturamento na competência vira conflito, igual ao real.
-      return faturamento > 0
-        ? { required, ok: false, state: "conflito", faturamento, origem: "guia_vazia", ...marcado }
-        : { required, ok: true, state: "vazio", origem: "guia_vazia", ...marcado };
-    }
-
     if (cenario === 1) return { required, ok: true, state: "gerada", guideId: `mock-guia-${companyId}-${chave}`, emailStatus: "PENDING" };
     // ⚠ Metade das enviadas sai por WhatsApp no mock, de propósito: o popover mostra canal e as
     // confirmações ✓✓ que só o WhatsApp dá, e um mock 100% e-mail nunca exercitaria esse caminho.
@@ -107,7 +104,7 @@ function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTri
       };
     }
     if (cenario === 3) return { required, ok: true, state: "vazio", origem: "guia_vazia", vazioEm: new Date().toISOString(), vazioPor: "Usuario Mock", vazioMotivo: null };
-    if (cenario === 4) return { required, ok: false, state: "conflito", faturamento: 17640, origem: "guia_vazia", vazioEm: new Date().toISOString(), vazioPor: "Usuario Mock" };
+    if (cenario === 4) return { required, ok: false, state: "conflito", faturamento: 17640, origem: "sem_faturamento", vazioEm: new Date().toISOString(), vazioPor: "Usuario Mock" };
     return { required, ok: false, state: "missing" };
   };
 
@@ -679,6 +676,19 @@ const mockUnidentifiedGuides = [];
 // defasagem da competência). Repetir a regra aqui é chato, mas um mock que devolvesse datas
 // bonitas esconderia justamente o que precisa ser visto na tela.
 function mockCriarObrigacao(companyId, empresa, dados) {
+  if (dados.agendaConfig) {
+    const config = { ...normalizarAgenda(dados.agendaConfig), ...(dados.agendaConfig.vencimentoFiscal ? { vencimentoFiscal:dados.agendaConfig.vencimentoFiscal } : {}) };
+    const hoje = new Date();
+    const inicio = config.recorrencia === 'AVULSA' ? config.dataInicio : hoje.toISOString().slice(0,7)+'-01';
+    const fim = config.recorrencia === 'AVULSA' ? config.dataFim : new Date(Date.UTC(hoje.getUTCFullYear()+1,hoje.getUTCMonth()+1,0)).toISOString().slice(0,10);
+    const ocorrencias = expandirAgenda(config,inicio,fim).map(p => {
+      const [a,m] = p.dataInicio.split('-').map(Number);
+      const venc = dados.tipo !== 'TAREFA' && ['MENSAL','TRIMESTRAL','ANUAL'].includes(config.recorrencia) ? new Date(Date.UTC(a,m-1,Math.min(Number(dados.diaVencimento),new Date(Date.UTC(a,m,0)).getUTCDate()))) : new Date(config.vencimentoFiscal && ['DIARIA','SEMANAL'].includes(config.recorrencia) ? somarDiasAgenda(p.dataInicio,Math.round((+new Date(config.vencimentoFiscal)-+new Date(config.dataInicio))/86400000)) : config.vencimentoFiscal || p.dataFim);
+      if (dados.tipo !== 'TAREFA' && dados.ajusteDiaUtil !== 'MANTER' && ['MENSAL','TRIMESTRAL','ANUAL'].includes(config.recorrencia)) while([0,6].includes(venc.getUTCDay())) venc.setUTCDate(venc.getUTCDate()+(dados.ajusteDiaUtil === 'POSTERGAR' ? 1 : -1));
+      return { ...p, ocorrenciaId:crypto.randomUUID(), dataVencimento:venc.toISOString().slice(0,10), competenciaRef:new Date(Date.UTC(a,m-1-Number(dados.defasagemMeses || 0),1)).toISOString().slice(0,7), status:'PENDENTE', concluidaEm:null };
+    });
+    return { ...dados, agendaConfig:config, obrigacaoId:crypto.randomUUID(), companyId, empresa, ativa:true, ocorrencias, sobrescritaLocal:false };
+  }
   if (dados.janelaTrabalho) janelaRecorrente("2026-09", dados.janelaTrabalho);
   const periodicidade = String(dados.periodicidade || "MENSAL").toUpperCase();
   const tipo = String(dados.tipo || "OBRIGACAO").toUpperCase();
@@ -3577,6 +3587,7 @@ export function createMockApi() {
 
   return {
     ...criarMockComercial({ onboardings: mockOnboardings, persistir: persistirOnboardingsMock }),
+    ...criarMockAgenda(mockObrigacoes, mockRegras),
     setUnauthorizedHandler() {},
     setAccessToken(token) {
       accessToken = String(token || "").trim();
@@ -4075,44 +4086,20 @@ export function createMockApi() {
         },
       };
     },
-    // Marcar/desfazer "sem movimento" MEXE no estado do mock, e a recusa é aplicada de verdade:
-    // é o único jeito de conferir offline a bifurcação do ciclo e a trava contra faturamento.
-    async markGuideVazio(portalClientId, tipo, competencia, motivo, { confirmado = false } = {}) {
+    // Mesmo contrato da API: ausência da guia independe do faturamento.
+    async markGuideVazio(portalClientId, tipo, competencia, motivo) {
       await delay();
-      const fat = mockFaturamentoDaCompetencia(portalClientId, competencia);
       const motivoInformado = String(motivo || "").trim();
-      // ⚠ A BIFURCAÇÃO INTEIRA VIVE AQUI TAMBÉM. Só a recusa no mock deixaria a confirmação (o
-      // caminho novo) inalcançável offline — que é justamente o que se quer conferir.
-      if (fat > 0) {
-        const valorFmt = fat.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-        if (!confirmado) {
-          return {
-            ok: false,
-            error: "GUIA_VAZIA_COM_FATURAMENTO",
-            precisaConfirmar: true,
-            faturamento: fat,
-            message: `A competência tem R$ ${valorFmt} em notas emitidas autorizadas. Marcar esta guia como sem movimento afirma que, mesmo assim, não há guia a pagar — confirme e diga o motivo.`,
-          };
-        }
-        if (!motivoInformado) {
-          return {
-            ok: false,
-            error: "GUIA_VAZIA_MOTIVO_OBRIGATORIO",
-            faturamento: fat,
-            message: `Com R$ ${valorFmt} em notas na competência, o motivo é obrigatório.`,
-          };
-        }
-      }
-      mockVazios.set(chaveVazio(portalClientId, tipo), {
+      mockVazios.set(chaveVazio(portalClientId, tipo, competencia), {
         vazioEm: new Date().toISOString(),
         vazioPor: "Usuario Mock",
         vazioMotivo: motivoInformado || null,
       });
       return { ok: true, status: "VAZIO", guideId: `mock-vazio-${portalClientId}-${tipo}` };
     },
-    async undoGuideVazio(portalClientId, tipo) {
+    async undoGuideVazio(portalClientId, tipo, competencia) {
       await delay();
-      const existia = mockVazios.delete(chaveVazio(portalClientId, tipo));
+      const existia = mockVazios.delete(chaveVazio(portalClientId, tipo, competencia));
       return { ok: true, removed: existia ? 1 : 0 };
     },
     // A PRE-VERIFICACAO dos lancamentos.
@@ -7160,6 +7147,7 @@ export function createMockApi() {
           const proxima = ocorrencias.find((oc) => oc.situacao === "PENDENTE");
           return {
             ...o,
+            cnpj: mockCompanies.find(e => e.companyId === o.companyId)?.cnpj || null,
             conclusaoAutomatica: Boolean(o.verificador),
             proximoVencimento: proxima?.dataVencimento || null,
             ocorrencias,
@@ -8186,6 +8174,22 @@ export function createMockApi() {
     //   • o resto devolve o PDF mínimo, como as demais rotas de PDF deste mock.
     // Um mock que sempre devolvesse o arquivo deixaria a única tela que explica a recusa
     // inalcançável sem backend — que é como a recusa passa despercebida até aparecer em produção.
+    async baixarNotasSelecionadas(_companyId, notaIds, formato) {
+      await delay(120);
+      const { zipDeExemplo } = await import("./zipDeExemplo");
+      const arquivos = [], falhas = [];
+      for (const id of [...new Set(notaIds)]) {
+        const n = mockNotas.find(n => n.id === id);
+        if (!n?.__temXml || (formato === "PDF" && !n.chaveAcesso)) { falhas.push(`Nota ${n?.numero || id}: XML completo indisponível.`); continue; }
+        const xml = mockXmlDaNota(n);
+        const pdf = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF";
+        arquivos.push([`EXEMPLO-${id}.${formato.toLowerCase()}`, formato === "XML" ? xml : pdf]);
+      }
+      if (!arquivos.length) throw new Error("Nenhum arquivo disponível. " + falhas.join(" "));
+      const geradas = arquivos.length;
+      arquivos.push(["RELATORIO.txt", `PREVIEW: arquivos de exemplo, sem validade fiscal.\n${geradas} arquivos; ${falhas.length} indisponíveis.\n${falhas.join("\n")}`]);
+      return { blob: zipDeExemplo(arquivos), geradas, falhas: falhas.length };
+    },
     async fetchDanfseBlob(_companyId, notaId) {
       await delay(120);
       const n = mockNotas.find((x) => x.id === notaId);
@@ -9472,7 +9476,8 @@ export function createMockApi() {
               + "atividade sujeita ao Fator R. Vale o perfil — confirme o cadastro.",
           },
         },
-        candidatos,
+        // A primeira empresa exercita serviços sem IE; as demais preservam o CNAE pendente.
+        candidatos: idx === 0 ? candidatos.filter(c => !c.impeditivo) : candidatos,
       };
     },
     async savePerfilFiscal() { await delay(60); return { ok: true, candidatos: [] }; },
@@ -10136,6 +10141,11 @@ export function createMockApi() {
           semFaturamentoConferencia: circular.semFaturamentoConferencia || null,
           // Fatos crus, como no backend: quem os combina é `features/apuracao/lib/entregaPgdas.js`.
           entregaPgdas: {
+            extratoSalvo: circular.pgdasNumeroDeclaracao || circular.pgdasDeclaracaoFileId ? {
+              dados: { receitaBruta: circular.receitaBruta, dasTotal: circular.dasTotal, numeroDeclaracao: circular.pgdasNumeroDeclaracao },
+              files: { declaracaoFileId: circular.pgdasDeclaracaoFileId, reciboFileId: circular.pgdasReciboFileId },
+              consultadoEm: circular.serproLastSyncAt,
+            } : null,
             numeroDeclaracaoRfb: circular.pgdasNumeroDeclaracao || null,
             temPdfDaDeclaracao: Boolean(circular.pgdasDeclaracaoFileId),
             extratoStatus: circular.serproSyncStatus || null,

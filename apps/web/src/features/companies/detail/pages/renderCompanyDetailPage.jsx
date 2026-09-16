@@ -518,16 +518,6 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
         />
 
         <AppShell className="guides-page-shell">
-          {/* ⚠ A CONFIGURAÇÃO DE ENVIO MORA AQUI desde 05/09/2026 (decisão do dono) — é onde se
-              decide quem recebe a guia, ao lado da guia. Ela sai da aba de senha e acesso, que
-              guarda segredo. Gaveta, e não seção fixa: a tabela de guias é o assunto da aba. */}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "var(--space-2)" }}>
-            <Button variant="secondary" type="button" onClick={() => switchTab("comunicacao")}>
-              Configuração de envio
-            </Button>
-          </div>
-
-
           {/* ⚠ `onRefresh` alimenta a espera da coluna "Envio": a confirmação de entrega do WhatsApp
               chega pelo webhook SEGUNDOS depois do envio, e sem recarregar a célula congela em
               "aceita, sem confirmação" até alguém apertar F5 — que foi o que aconteceu em
@@ -545,7 +535,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
             onRecalculateGuide={guidesPanel.onRecalculateGuide}
             onRecalcularInss={guidesPanel.onRecalcularInss}
             recalcInssBusy={guidesPanel.recalcInssBusy}
-            onLiberarGuia={guidesPanel.onLiberarGuia}
+            onLiberarGuia={guidesPanel.onLiberarGuia} onLiberarGuias={guidesPanel.onLiberarGuias}
             liberarGuiasBusy={guidesPanel.liberarGuiasBusy}
             resendingGuideId={guidesPanel.resendingGuideId}
             confirmingGuideId={guidesPanel.confirmingGuideId}
@@ -878,6 +868,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
                    (aqui, `legacyCompany`) — nunca o `inscricaoMunicipal` do topo do payload, que é
                    do `PortalClient` e pode estar preenchido enquanto a coluna da `Company` não
                    está. Ler do lugar errado faria a tela liberar uma emissão que o servidor recusa. */
+                inscricaoEstadual={selectedCompany?.legacyCompany?.inscricaoEstadual}
                 cadastroEmissao={{
                   cnpj: selectedCompany?.legacyCompany?.cnpj || selectedCompany?.cnpj || null,
                   inscricaoMunicipal: selectedCompany?.legacyCompany?.inscricaoMunicipal || null,
@@ -928,6 +919,8 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
                    nova guia, de graça, porque é um `<a href>` de verdade. */
                 hrefConfiguracaoEmissao={companyId ? companyTabPath(companyId, "emissaoNfse") : null}
                 onAbrirConfiguracaoEmissao={() => switchTab("emissaoNfse")}
+                hrefAuditoria={companyId ? companyTabPath(companyId, "auditoria") : null}
+                onAbrirAuditoria={() => switchTab("auditoria")}
               />
             </Suspense>
           </ErrorBoundary>
@@ -1153,6 +1146,10 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
         largura="leitura"
         suspense
       >
+        <a className="btn btn-secondary btn-sm" href={companyTabPath(companyId, "notasFiscais")} onClick={(e) => {
+          if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button !== 0) return;
+          e.preventDefault(); switchTab("notasFiscais");
+        }} style={{ marginBottom: 16 }}>← Voltar às notas</a>
         <AuditoriaTab companyId={companyId} competencia={circularPanel?.competencia} />
       </CompanyTabLayout>
     );
@@ -1384,7 +1381,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
 
       {companyDetailTab === "guides" && (
           <Suspense fallback={<TabLoadingFallback />}>
-          <CompanyGuidesTable guides={guidesPanel.guides} loadingGuides={guidesPanel.loading} onRefresh={guidesPanel.onRefresh} onResendGuide={guidesPanel.onResendGuide} onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment} onRecalculateGuide={guidesPanel.onRecalculateGuide} onRecalcularInss={guidesPanel.onRecalcularInss} recalcInssBusy={guidesPanel.recalcInssBusy} onLiberarGuia={guidesPanel.onLiberarGuia} liberarGuiasBusy={guidesPanel.liberarGuiasBusy} resendingGuideId={guidesPanel.resendingGuideId} confirmingGuideId={guidesPanel.confirmingGuideId} recalculatingGuideId={guidesPanel.recalculatingGuideId} />
+          <CompanyGuidesTable guides={guidesPanel.guides} loadingGuides={guidesPanel.loading} onRefresh={guidesPanel.onRefresh} onResendGuide={guidesPanel.onResendGuide} onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment} onRecalculateGuide={guidesPanel.onRecalculateGuide} onRecalcularInss={guidesPanel.onRecalcularInss} recalcInssBusy={guidesPanel.recalcInssBusy} onLiberarGuia={guidesPanel.onLiberarGuia} onLiberarGuias={guidesPanel.onLiberarGuias} liberarGuiasBusy={guidesPanel.liberarGuiasBusy} resendingGuideId={guidesPanel.resendingGuideId} confirmingGuideId={guidesPanel.confirmingGuideId} recalculatingGuideId={guidesPanel.recalculatingGuideId} />
           </Suspense>
         )}
 
@@ -1412,7 +1409,7 @@ function CompanyDetailComConfiguracoes(props) {
  };
  const itens=CONFIG_EMPRESA.filter(i=>i.id!=='perfilFiscal' || mostraApuracaoDoSimples(c.selectedCompany)).map(i=>({...i,href:companyTabPath(id,i.tab)}));
  return <div style={{minHeight:'100vh',background:'var(--bg-page)'}}><CompanySectionHeader company={c.selectedCompany} activeTab="configuracoesEmpresa" onBack={()=>confirmarSaida(c.onBack)} onTabChange={navegar} canEditCompany={c.canEditCompany}/>
- <ConfiguracoesLayout titulo="Configurações da empresa" subtitulo={c.selectedCompany.razao+' · '+c.selectedCompany.cnpj} itens={itens} atual={secao?.id} onNavigate={i=>navegar(i.tab)} voltar={companyTabPath(id,'anotacoes')}>
+ <ConfiguracoesLayout titulo="Configurações da empresa" subtitulo={c.selectedCompany.razao+' · '+c.selectedCompany.cnpj} itens={itens} atual={secao?.id} onNavigate={i=>navegar(i.tab)} voltar={null}>
  {atual==='certificado' ? <><h2>Certificado A1 da empresa</h2>{c.canEditCompany && props.certPanel?.api ? <Suspense fallback={<TabLoadingFallback/>}><CompanyCertificatePanel api={props.certPanel.api} companyId={id} feedback={props.certPanel.feedback}/></Suspense> : <p>Apenas admin ou contador pode gerenciar certificados.</p>}</> : atual==='comunicacao' ? <><h2>Contatos, acessos e envios</h2><p>Destinatários autorizados, canais de envio e permissões de cada número.</p>{c.canEditCompany ? <ConfiguracaoDeEnvioWrapper key={id} companyId={id} feedback={props.feedback} razaoSocial={c.selectedCompany.razao}/> : <p>Apenas admin ou contador pode gerenciar contatos, acessos e permissões de envio.</p>}<Feedback message={props.feedback?.message} error={props.feedback?.error}/></> : secao ? <div className="config-embedded"><CompanyDetailContent {...props}/></div> : null}
  </ConfiguracoesLayout></div>;
 }

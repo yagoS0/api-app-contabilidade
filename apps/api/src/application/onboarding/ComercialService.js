@@ -24,7 +24,7 @@ export async function exigirEscopo(id, user, db = prisma) {
 const evento = (db, id, tipo, atorId, dados = {}) => db.onboardingEvento.create({ data: { onboardingId: id, tipo, atorId, dados } });
 export function procuracaoHabilitaSitfis(p, agora = new Date()) {
   // Tabela oficial Serviços x Procurações: SITFIS usa 00002 / Situação Fiscal do Contribuinte.
-  const nomes = new Set(["sitfis", "00002", "situacao fiscal do contribuinte"]);
+  const nomes = new Set(["sitfis", "00002", "situacao fiscal do contribuinte", "todos"]);
   return p?.status === "ATIVA" && Boolean(p.validUntil && new Date(p.validUntil).getTime() > agora.getTime())
     && Array.isArray(p.systems) && p.systems.some((s) => nomes.has(String(typeof s === "string" ? s : s?.idSistema || s?.nome || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase()));
 }
@@ -82,6 +82,7 @@ export function criarServicoComercial({ db = prisma, consultaPublica = consultar
         if (!out.ok) throw erro("consulta_publica_indisponivel", out.mensagem || "Consulta pública indisponível.", 502);
         const b = out.bruto || {};
         resultado = { ...resultado, mensagem: "Dados públicos consultados. Não equivalem a regularidade fiscal.", razaoSocial: b.razao_social || out.tomador?.nome || null, situacaoCadastral: b.descricao_situacao_cadastral || null, cnaePrincipal: b.cnae_fiscal || null, municipio: b.municipio || null, uf: b.uf || null };
+        Object.assign(resultado, { nomeFantasia: b.nome_fantasia || null, atividadePrincipal: b.cnae_fiscal_descricao || null, endereco: [b.logradouro, b.numero, b.complemento, b.bairro, b.cep].filter(Boolean).join(", ") || null });
       } else {
         await comContextoSerpro({ origem: "onboarding_analise", userId: user.id }, async () => {
           const p = await procura(r.cnpj);

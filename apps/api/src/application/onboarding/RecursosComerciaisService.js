@@ -1,6 +1,7 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { OnboardingError } from "./OnboardingService.js";
 import { preencherTexto, catalogoValido } from "./CatalogoComercial.js";
+import { RECURSOS_INICIAIS } from "./MensagensPadrao.js";
 export const variaveisPermitidas = ["nome", "cnpj", "escritorio", "procuradorCnpj", "linkAutorizacao", "linkProposta", "servico", "honorarios", "condicoes", "contratante", "endereco", "email", "cpf"];
 export function exigirGestor(user) {
   if (!user?.id || !["admin", "contador"].includes(String(user.role).toLowerCase())) throw new OnboardingError("forbidden", "Ação reservada ao contador.", 403);
@@ -190,46 +191,7 @@ export function criarRecursosComerciais({
     exigirGestor(user);
     // Catálogo de preços e modelos contratuais são configurações privadas. A biblioteca
     // pública inicia apenas orientações genéricas; importar recursos nunca os aprova.
-    const iniciais = [{
-      tipo: "INSTITUCIONAL",
-      chave: "escritorio",
-      titulo: "Dados institucionais para orientações",
-      dados: {
-        escritorio: "ALTAN",
-        procuradorCnpj: "",
-        linkAutorizacao: ""
-      }
-    }, {
-      tipo: "ORIENTACAO",
-      chave: "cnpj",
-      titulo: "Pedir CNPJ",
-      texto: "Pode me informar o CNPJ? Vou consultar os dados públicos para entender a situação inicial. Essa consulta não confirma a regularidade fiscal."
-    }, {
-      tipo: "ORIENTACAO",
-      chave: "abertura",
-      titulo: "Opções de abertura",
-      texto: "Podemos cuidar somente da abertura ou da abertura junto com a contabilidade mensal. Em qual município será a empresa e qual atividade você pretende exercer?"
-    }, {
-      tipo: "ORIENTACAO",
-      chave: "autorizacao",
-      titulo: "Procuração — instrução inicial",
-      texto: "Para a análise fiscal, precisamos de autorização para o escritório {{escritorio}}, CNPJ {{procuradorCnpj}}. Acesse as instruções: {{linkAutorizacao}}. Faça o acesso na sua própria conta e não envie sua senha. Avise por aqui quando concluir; vamos conferir a autorização."
-    }, {
-      tipo: "ORIENTACAO",
-      chave: "ajuda-autorizacao",
-      titulo: "Ajuda com autorização",
-      texto: "Em qual etapa você encontrou dificuldade? Descreva o que aparece sem compartilhar senha ou código de acesso. Se precisar, o contador continua o atendimento por aqui."
-    }, {
-      tipo: "ORIENTACAO",
-      chave: "documentos",
-      titulo: "Documentos",
-      texto: "Vamos conferir quais documentos são necessários para o seu serviço e orientar o envio. Não envie senhas por aqui."
-    }, {
-      tipo: "ORIENTACAO",
-      chave: "proposta",
-      titulo: "Proposta em conferência",
-      texto: "Já registrei os dados iniciais. O contador vai conferir o escopo e os valores antes de enviarmos a proposta com as opções do serviço."
-    }];
+    const iniciais = RECURSOS_INICIAIS;
     for (const item of iniciais) {
       await db.recursoComercial.upsert({
         where: {

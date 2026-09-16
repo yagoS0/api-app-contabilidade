@@ -14,6 +14,7 @@ import { generateProvisionsFromGuide } from "../../accounting/GuideToProvisionSe
 import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
 import { consultarDeclaracaoCompletaLp, emitirDarfDctfweb } from "../serpro/SerproDctfwebService.js";
 import { reconciliarLp } from "./LucroPresumidoCalculoService.js";
+import { composicaoSomentePrevidenciaria } from "../serpro/parseArrecadacao.js";
 
 // Código de receita → chave do tributo na circular.acrescimos.
 const CODIGO_TRIBUTO = { "8109": "PIS", "2172": "COFINS", "2089": "IRPJ", "2372": "CSLL" };
@@ -56,6 +57,14 @@ export async function provisionarLpDaDeclaracao({
     }));
 
   if (!composicao.length) return { ok: true, skipped: "sem_debitos", provisao: null };
+
+  // A declaração completa também contém INSS, mesmo em empresa de Lucro Presumido.
+  // Nesse caso a captura previdenciária é responsável pela guia: gravar OUTRA aqui
+  // duplicaria o documento como "CP-Segurados" e ainda geraria uma provisão indevida.
+  // Documentos mistos/tributos desconhecidos continuam inteiros, sem descartar linhas.
+  if (composicaoSomentePrevidenciaria(composicao)) {
+    return { ok: true, skipped: "somente_previdenciario", provisao: null };
+  }
 
   const principalTotal = round2(composicao.reduce((s, c) => s + c.total, 0));
   const sourceFileId = `serpro:dctfweb:lp:${onlyDigits(cnpj)}:${competencia}`;
@@ -227,9 +236,11 @@ export async function capturarLpDaCompetencia({ portalClientId, competencia }) {
   // e os juros/multa REAIS (a declaração traz só o principal). Best-effort: se não emitir
   // (ex.: nada a pagar / já pago), a provisão já foi feita e o fluxo segue.
   let darf = null;
-  try {
-    darf = await emitirDarfDctfweb({ contribuinteCnpj: pc.cnpj, competencia });
-  } catch { /* ignore */ }
+  if (provisao?.guideId) {
+    try {
+      darf = await emitirDarfDctfweb({ contribuinteCnpj: pc.cnpj, competencia });
+    } catch { /* ignore */ }
+  }
   if (darf && provisao?.guideId) {
     await aplicarDarfNaGuia({ portalClientId, competencia, guideId: provisao.guideId, darf });
   }

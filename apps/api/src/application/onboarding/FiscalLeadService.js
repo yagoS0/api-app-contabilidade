@@ -79,8 +79,13 @@ export function criarFiscalLead({
     exigirGestor(user);
     const r = await exigirEscopo(id, user, db);
     if (!r.cnpj || typeof evidencia !== "string" || evidencia.trim().length < 10 || evidencia.length > 2000) throw new OnboardingError("representante_incompleto", "Confirme CNPJ e registre como verificou o representante.");
+    const atendimento = await db.atendimentoLead.findFirst({ where: { onboardingId: id, encerradoEm: null } });
+    if (!atendimento) throw new OnboardingError("atendimento_ausente", "Vincule a conversa ao atendimento.", 409);
     const out = await db.atendimentoLead.updateMany({
       where: {
+        id: atendimento.id,
+        representanteVerificadoEm: atendimento.representanteVerificadoEm,
+        autorizacao: { equals: atendimento.autorizacao || {} },
         onboardingId: id,
         encerradoEm: null,
         onboarding: {
@@ -92,13 +97,10 @@ export function criarFiscalLead({
         representanteVerificadoEm: new Date(),
         representanteVerificadoPor: user.id,
         evidenciaRepresentante: evidencia,
-        autorizacao: {
-          estado: "AGUARDANDO_OUTORGA",
-          cnpj: r.cnpj
-        }
+        autorizacao: atendimento.autorizacao?.cnpj === r.cnpj ? atendimento.autorizacao : { estado: "AGUARDANDO_OUTORGA", cnpj: r.cnpj }
       }
     });
-    if (!out.count) throw new OnboardingError("atendimento_ausente", "Vincule a conversa ao atendimento.", 409);
+    if (!out.count) throw new OnboardingError("atendimento_alterado", "O atendimento mudou durante a conferência. Recarregue antes de registrar novamente.", 409);
   }
   async function enfileirar(id, user, tipo) {
     exigirGestor(user);
@@ -238,19 +240,24 @@ export function criarFiscalLead({
             }
           });
           if (atual.cnpj !== j.cnpj) throw new OnboardingError("cnpj_alterado", "O CNPJ mudou.", 409);
-          await db.atendimentoLead.updateMany({
+          const gravada = await db.atendimentoLead.updateMany({
             where: {
               id: a.id,
+              encerradoEm: null,
+              autorizacao: { equals: a.autorizacao || {} },
+              onboarding: { cnpj: j.cnpj, status: r.status },
               representanteVerificadoEm: a.representanteVerificadoEm
             },
             data: {
               autorizacao: {
+                ...a.autorizacao,
                 estado,
                 cnpj: j.cnpj,
                 prova
               }
             }
           });
+          if (!gravada.count) throw new OnboardingError("escopo_alterado", "O atendimento mudou durante a verificação. Confira antes de consultar.", 409);
           resultado = {
             estado,
             mensagem: estado === "ATIVA" ? "Procuração verificada. A consulta SITFIS pode ser solicitada." : "Autorização insuficiente ou não vigente."

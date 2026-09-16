@@ -64,6 +64,7 @@ export function filtroMensagensDoGrupo(grupo, empresa = null) {
 }
 
 export function empresaDaMensagem(mensagem, grupo) {
+  if (mensagem.referenciaComercial?.escopo === "PESSOA") return null;
   const id = mensagem.contexto?.conversaId || mensagem.conversaId;
   const segmento = grupo?.segmentos.find(c => c.id === id);
   return segmento?.portalClient ? { id: segmento.portalClientId, razao: segmento.portalClient.razao, cnpj: segmento.portalClient.cnpj } : null;

@@ -93,11 +93,18 @@ export async function avaliarPreChecagens({ portalClientId }) {
   const blockers = [];
 
   // 1. Cadastro fiscal completo?
-  const cadastro = await prisma.cadastroFiscal.findUnique({ where: { portalClientId } });
+  let cadastro = await prisma.cadastroFiscal.findUnique({ where: { portalClientId } });
+  // O Perfil fiscal também aceita regime e CNAEs da ficha da empresa. Uma leitura
+  // do relatório deve reconhecer essa mesma configuração, sem criar outro cadastro.
+  if (!cadastro) {
+    const { coletarCnaesEConfig } = await import("./PerfilFiscalService.js");
+    const perfil = await coletarCnaesEConfig(portalClientId);
+    if (perfil.regime && perfil.cnaePrincipal) cadastro = perfil;
+  }
   if (!cadastro) {
     blockers.push({
       tipo: "CADASTRO_FALTANDO",
-      mensagem: "Cadastro fiscal não preenchido. Vá em aba Apuração V2 → Cadastro Fiscal.",
+      mensagem: "Informe regime e CNAE em Configurações da empresa → Perfil fiscal.",
     });
   } else if (cadastro.regime !== "SIMPLES_NACIONAL") {
     blockers.push({

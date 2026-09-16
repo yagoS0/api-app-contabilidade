@@ -135,13 +135,28 @@ try {
   r = await registrarCampos({ onboardingId: r.id, versao: r.versao, atorId: user.id, operacoes: [
     { campo: "modalidadeServico", acao: "set", valor: "RECORRENTE" }, { campo: "regimeAtual", acao: "set", valor: "LUCRO_PRESUMIDO" }, { campo: "qtdFuncionarios", acao: "set", valor: 7 }, { campo: "notasRecebidasMes", acao: "set", valor: 100 },
   ], client: db });
+  const { criarFiscalLead } = await import("../src/application/onboarding/FiscalLeadService.js");
+  let consultasFiscais = 0;
+  const fiscalLead = criarFiscalLead({ db, flag: true,
+    procura: async cnpj => { assert.equal(cnpj, r.cnpj); return { status: "ATIVA", validUntil: "2099-01-01", systems: ["TODOS"], checkedAt: new Date().toISOString(), procuradorCnpj: "12345678000199" }; },
+    comercial: { analisar: async () => { consultasFiscais++; return { analise: { id: "fiscal-sintetica", status: "CONCLUIDA", resultado: {} } }; } },
+  });
+  await fiscalLead.verificarRepresentante(r.id, user, "Representação conferida com documentos sintéticos.");
+  const trabalhoProc = await fiscalLead.enfileirar(r.id, user, "PROCURACAO");
+  await fiscalLead.processarUmaVez();
+  assert.equal((await db.trabalhoFiscalLead.findUnique({ where: { id: trabalhoProc.id } })).status, "CONCLUIDO");
+  assert.equal((await db.atendimentoLead.findUnique({ where: { id: nova.id } })).autorizacao.estado, "ATIVA");
+  await fiscalLead.verificarRepresentante(r.id, user, "Representação novamente conferida sem apagar procuração.");
+  await fiscalLead.enfileirar(r.id, user, "SITFIS"); await fiscalLead.processarUmaVez();
+  assert.equal(consultasFiscais, 1);
+  ok("Procuração TODOS percorre a fila real, preserva autorização ao reconferir e libera SITFIS simulado");
   const p2 = await propostas.gerar(r.id, user, { versao: r.versao }); await propostas.aprovar(r.id, p2.id, user);
   assert.equal(p2.snapshot.opcoes[0].mensalCentavos, 69057);
   const { enviarProposta } = await import("../src/application/onboarding/EnvioPropostaService.js");
   let propostaEnviada = "";
-  const transporte = { db, webUrl: "https://example.invalid", janela: async () => ({ situacao: "ABERTA" }), cloud: { enviarTexto: async ({ texto }) => { propostaEnviada = texto; return { wamid: "wamid.LOCAL_PROPOSTA" }; } } };
+  const transporte = { db, webUrl: "https://example.invalid", janela: async () => ({ situacao: "ABERTA" }), cloud: { enviarDocumento: async ({ conteudo, legenda }) => { assert.equal(conteudo.subarray(0, 4).toString(), "%PDF"); propostaEnviada = legenda; return { wamid: "wamid.LOCAL_PROPOSTA" }; } } };
   const envio = await enviarProposta(r.id, p2.id, user, transporte); assert.equal(envio.statusEnvio, "enviado");
-  const saida = await db.mensagemWhatsapp.findUnique({ where: { id: envio.mensagemId } }); assert.equal(saida.referenciaComercial.propostaId, p2.id);
+  const saida = await db.mensagemWhatsapp.findUnique({ where: { id: envio.mensagemId } }); assert.equal(saida.referenciaComercial.propostaId, p2.id); assert.equal(saida.tipo, "document");
   await assert.rejects(enviarProposta(r.id, p2.id, user, transporte)); ok("Proposta enviada pelo chat mantém versão e saída rastreada; repetição é bloqueada");
   const token2 = /token=([A-Za-z0-9_-]{43})/.exec(propostaEnviada)[1]; await propostas.publico(token2, { versao: p2.versao, opcao: "RECORRENTE", confirmado: true });
   ok("Opção recorrente calculada e aceita pelo link enviado, sem provisão automática");
@@ -184,5 +199,16 @@ try {
   assert.equal((await propostas.painel(manual.id, user)).atendimento.id, ligado.id); ok("Vínculo manual reaproveita ficha existente sem substituir outro atendimento");
   await propostas.registrarMarco(manual.id, user, "DOCUMENTACAO_CONFERIDA", "Documentação sintética conferida no teste");
   assert.equal((await propostas.painel(manual.id, user)).marcos[0].tipo, "DOCUMENTACAO_CONFERIDA"); ok("Conferências independentes aparecem no painel e no histórico");
+  const fichaPreservada = await db.onboarding.findUnique({ where: { id: manual.id } });
+  const reinicios = await Promise.allSettled([1, 2].map(() => iniciarAtendimento({ conversaId: c3.id, origem: "TRANSFERENCIA", reiniciarAtendimentoId: ligado.id, motivoReinicio: "CORRIGIR_MOTIVO", atorId: user.id, client: db })));
+  assert.equal(reinicios.filter(x => x.status === "fulfilled").length, 1);
+  assert.equal(reinicios.find(x => x.status === "rejected").reason.code, "atendimento_alterado");
+  assert.equal(await db.atendimentoLead.count({ where: { conversaId: c3.id, encerradoEm: null } }), 1);
+  assert.ok((await db.atendimentoLead.findUnique({ where: { id: ligado.id } })).encerradoEm);
+  assert.deepEqual(await db.onboarding.findUnique({ where: { id: manual.id } }), fichaPreservada);
+  assert.equal(await db.onboardingEvento.count({ where: { onboardingId: manual.id, tipo: "ATENDIMENTO_REINICIADO" } }), 1);
+  ok("Reinícios concorrentes criam uma única nova solicitação, preservam a ficha anterior e rejeitam a aba desatualizada");
+  const { verificarJornada } = await import("./checks-jornada-lead.js");
+  await verificarJornada({ db, user, ok });
   process.stdout.write(JSON.stringify({ passed: checks.length, checks }, null, 2));
 } finally { await db.$disconnect(); }

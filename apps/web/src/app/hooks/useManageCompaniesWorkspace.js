@@ -11,6 +11,7 @@ import { useCompanyGuides } from "../../features/guides/list/hooks/useManageComp
 import { SEGMENT_TO_TAB, TAB_TO_SEGMENT, companyTabPath } from "../../features/companies/detail/lib/rotasDaEmpresa";
 // "Liberar ao cliente" com os dois canais (e-mail sempre; WhatsApp conforme o canal padrão da empresa).
 import { liberarComCanais } from "../../features/guides/lib/liberarComCanais";
+import { liberarSelecao } from "../../features/guides/lib/liberarSelecao";
 import {
   getInitialCompanyFormState,
   mapCompanyToEditForm,
@@ -887,6 +888,28 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     }
   }
 
+  async function handleLiberarGuias(items) {
+    const companyId = companiesState.selectedCompanyId;
+    if (!companyId || !items?.length || liberarGuiasBusy) return [];
+    setLiberarGuiasBusy(true);
+    feedback.clearFeedback();
+    let resultados = [];
+    try {
+      resultados = await liberarSelecao({ api, companyId, items });
+      await loadGuides(companyId);
+      const falhas = resultados.filter((r) => !r.ok);
+      const texto = resultados.map((r) => `${r.rotulo}: ${r.texto}`).join("\n");
+      if (falhas.length) feedback.setError(`${falhas.length} de ${resultados.length} guias com falha.\n${texto}`);
+      else feedback.setMessage(resultados.some((r) => r.tom === "pendente") ? { texto, tom: "pendente" } : texto);
+      return resultados;
+    } catch (erro) {
+      feedback.setError(erro?.message || "Não foi possível atualizar o resultado do envio. Confira o histórico antes de repetir.");
+      return resultados;
+    } finally {
+      setLiberarGuiasBusy(false);
+    }
+  }
+
   async function handleGuideUpload(files) {
     if (!Array.isArray(files) || !files.length) {
       feedback.setError("Selecione pelo menos um PDF para enviar.");
@@ -1326,6 +1349,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     handleRecalcularInss,
     recalcInssBusy,
     handleLiberarGuia,
+    handleLiberarGuias,
     liberarGuiasBusy,
     handleDeleteGuide,
     handleGuideUpload,

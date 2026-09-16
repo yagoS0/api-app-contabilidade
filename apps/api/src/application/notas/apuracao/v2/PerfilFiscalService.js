@@ -42,7 +42,7 @@ const onlyDigits = (v) => String(v || "").replace(/\D+/g, "");
 /**
  * Coleta os CNAEs efetivos da empresa (CadastroFiscal → senão Company/CNPJ) e a config salva.
  */
-async function coletarCnaesEConfig(portalClientId) {
+export async function coletarCnaesEConfig(portalClientId) {
   const cadastro = await prisma.cadastroFiscal.findUnique({
     where: { portalClientId },
     select: { cnaePrincipal: true, cnaesSecundarios: true, regime: true, usaFatorR: true, perfilAtividades: true },

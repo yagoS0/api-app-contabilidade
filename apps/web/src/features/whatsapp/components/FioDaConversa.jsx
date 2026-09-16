@@ -10,13 +10,13 @@
 // ⚠⚠ A IDENTIDADE SÃO DUAS PERGUNTAS — *quem* está falando e *de qual empresa* —, e uma não
 // substitui a outra. Ver `identidadeDaConversa` em `../lib/conversasTela.js`.
 
+import { AnexoDaConversa } from "./AnexoDaConversa";
 import { PainelAtendimento } from "./PainelAtendimento";
-import { OrientacoesRapidas } from "./AtendimentoComercial";
-import { useState, useRef, useLayoutEffect, useEffect } from "react";
-import { AvatarConversa, SituacaoConversa, WhatsappIcon } from "./ConversaVisual";
+import { OrientacoesRapidas, AtualizacaoAtendimento } from "./AtendimentoComercial";
+import { useState, useRef, useLayoutEffect, useEffect, useMemo } from "react";
+import { AvatarConversa, SituacaoConversa, WhatsappIcon, CnpjDaConversa } from "./ConversaVisual";
 import { Button } from "../../../components/ui/Button";
 import { Modal } from "../../../components/ui/Modal";
-import { formatarCnpj } from "../../onboarding/lib/brasilApi";
 import {
   SITUACAO_FIO,
   situacaoDoFio,
@@ -41,7 +41,7 @@ export const COR_TOM = { aviso: "var(--state-warn)", neutro: "var(--text-muted)"
  * ⚠ Sem empresa a frase é a do estado da fila (*"sem empresa — número novo"*), em âmbar, porque é
  * pendência do escritório. Ela nunca some: linha em branco se lê como "não tem nada a dizer".
  */
-export function LinhaDaEmpresa({ identidade, tamanho = "0.74rem" }) {
+export function LinhaDaEmpresa({ identidade, tamanho = "0.74rem", copiarCnpj = true }) {
   return (
     <span
       data-testid="empresa-da-conversa"
@@ -49,7 +49,7 @@ export function LinhaDaEmpresa({ identidade, tamanho = "0.74rem" }) {
       style={{ fontSize: tamanho, color: identidade.semEmpresa ? "var(--state-warn)" : "var(--text-muted)" }}
     >
       {identidade.linhaDaEmpresa}
-      {identidade.cnpj ? ` · ${formatarCnpj(identidade.cnpj)}` : ""}
+      {identidade.cnpj ? <> · <CnpjDaConversa cnpj={identidade.cnpj} empresa={identidade.linhaDaEmpresa} copiavel={copiarCnpj} /></> : null}
     </span>
   );
 }
@@ -80,6 +80,9 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
   const [movendo, setMovendo] = useState(false);
   const movendoRef = useRef(false);
   const [recusa, setRecusa] = useState(null);
+  const [escolherEmpresa, setEscolherEmpresa] = useState(false);
+  const [revisaoComercial, setRevisaoComercial] = useState(0);
+  const atualizacaoComercial = useMemo(() => ({ revisao: revisaoComercial, atualizar: () => setRevisaoComercial(v => v + 1) }), [revisaoComercial]);
   const [novas, setNovas] = useState(false);
   const historicoRef = useRef(null);
   const fioRef = useRef(null);
@@ -160,7 +163,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
   }
 
   return (
-    <div data-testid="fio" className="wa-thread" ref={fioRef} tabIndex={-1} aria-label={`Conversa com ${identidade.pessoa}`}>
+    <AtualizacaoAtendimento.Provider value={atualizacaoComercial}><div data-testid="fio" className="wa-thread" ref={fioRef} tabIndex={-1} aria-label={`Conversa com ${identidade.pessoa}`}>
       <div className="wa-thread-header">
         {onVoltar ? <Button variant="secondary" size="sm" className="wa-mobile-back" onClick={onVoltar} aria-label="Voltar para conversas"><WhatsappIcon nome="seta" /></Button> : null}
         <AvatarConversa nome={identidade.pessoa} />
@@ -170,7 +173,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
           <div className="wa-inline"><span style={{ fontSize: ".7rem", color: "var(--text-muted)" }}>{conversa.telefoneMascarado}</span><SituacaoConversa conversa={conversa} /></div>
         </div>
         <div className="wa-thread-actions">
-          {hrefDaEmpresa && conversa.portalClientId ? <a data-testid="ir-para-a-empresa" href={hrefDaEmpresa(conversa.portalClientId)}>Abrir a empresa →</a> : null}
+          {hrefDaEmpresa && conversa.portalClientId ? conversa.empresas?.length > 1 ? <Button variant="secondary" size="sm" onClick={() => setEscolherEmpresa(true)}>Abrir a empresa →</Button> : <a data-testid="ir-para-a-empresa" href={hrefDaEmpresa(conversa.portalClientId)}>Abrir a empresa →</a> : null}
           {!somenteLeitura && Boolean(conversa.atendidaPor || conversa.atendidaDesde) ? (
             <Button variant="secondary" disabled={hook.ocupado || (Boolean(conversa.portalClientId) && conversa.escopoVerificado === false)} onClick={() => hook.devolver(conversa.id)} title="O assistente volta a responder ao responsável nas empresas autorizadas">Devolver à IA</Button>
           ) : !somenteLeitura ? (
@@ -182,21 +185,9 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
         </div>
       </div>
       {conversa.atendimento && !somenteLeitura ? <div className="wa-company-context" data-testid="contexto-empresa">
-        <label>Empresa do atendimento
-          <select aria-label="Empresa do atendimento" style={campo} value={conversa.atendimento.contextoSelecionado ? conversa.portalClientId : ""} disabled={hook.ocupado || typeof hook.selecionarEmpresa !== "function"}
-            onChange={e => e.target.value && hook.selecionarEmpresa(conversa.id, e.target.value)}>
-            <option value="" disabled>Escolha a empresa…</option>
-            {(conversa.empresas || []).filter(e => !hook.empresaFixa || e.id === hook.empresaFixa).map(e => <option key={e.id} value={e.id}>{e.razao} · {formatarCnpj(e.cnpj)}</option>)}
-          </select>
-        </label>
-        {!hook.empresaFixa && conversa.empresas?.length > 1 ? <label>Histórico
-          <select aria-label="Empresa no histórico" style={campo} value={hook.empresaHistorico || ""} disabled={hook.ocupado || hook.carregandoFio} onChange={e => hook.filtrarHistorico(e.target.value)}>
-            <option value="">Todas as empresas acessíveis</option>
-            {conversa.empresas.map(e => <option key={e.id} value={e.id}>{e.razao}</option>)}
-          </select>
-        </label> : null}
-        <p>Assumir pausa o atendimento automático deste responsável em todas as empresas.</p>
-        {conversa.atendimento.contextoSelecionado && typeof hook.salvarApelidos === "function" ? <NomesCurtosDaEmpresa key={conversa.portalClientId} conversa={conversa} hook={hook} /> : null}
+        <span>Conversa com esta pessoa · histórico de todas as empresas</span>
+        <p>{conversa.atendimento.empresaAtual && !conversa.atendimento.aguardandoSelecao ? <>Empresa selecionada no atendimento automático: <strong>{conversa.atendimento.empresaAtual.razao}</strong> · <CnpjDaConversa cnpj={conversa.atendimento.empresaAtual.cnpj} /></> : "O cliente ainda não selecionou uma empresa no atendimento automático."}</p>
+        {hook.salvarApelidos && conversa.empresa && <NomesCurtosDaEmpresa key={conversa.portalClientId} conversa={conversa} hook={hook} />}
       </div> : null}
       {naLixeira ? <p role="status" className="wa-notice">Conversa na lixeira. O histórico está preservado para consulta. Restaure para voltar à lista; uma nova mensagem recebida também reabre a conversa.</p>
         : historico ? <p role="status" className="wa-notice">Histórico legado sem vínculo verificado, preservado somente para consulta. As mensagens anteriores não foram apagadas nem misturadas à conversa atual. Para atender este contato, volte a Conversas atuais.</p> : null}
@@ -218,7 +209,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
             <div data-testid={`balao-${m.id}`} data-autor={m.autor || (entrada ? "cliente" : "sem-autor")} className={`wa-message-row${entrada ? "" : " wa-message-row--out"}`}>
               <div className="wa-bubble">
                 <div className="wa-bubble-author">{rotuloDoAutor(m, { nomeDoCliente })}</div>
-                {conversa.atendimento ? <div className="wa-bubble-company" data-testid={`empresa-mensagem-${m.id}`}>{m.empresa ? `${m.empresa.razao} · ${formatarCnpj(m.empresa.cnpj)}` : "Empresa ainda não definida"}</div> : null}
+                {conversa.atendimento ? <div className="wa-bubble-company" data-testid={`empresa-mensagem-${m.id}`}>{m.escopoPessoa ? "Mensagem para este contato" : m.empresa ? <>{m.empresa.razao} · <CnpjDaConversa cnpj={m.empresa.cnpj} empresa={m.empresa.razao} /></> : "Empresa ainda não definida"}</div> : null}
                 {midia ? <div data-testid="midia-do-balao" className="wa-media"><WhatsappIcon nome="documento" size={20} /><span>{midia.replace(/^📎\s*/, "")}</span></div> : null}
                 {m.corpo ? <div className="wa-bubble-text">{m.corpo}</div> : m.tipo === "template" ? <div className="wa-bubble-text">Modelo de mensagem do escritório</div> : null}
                 <div className="wa-bubble-footer">
@@ -233,6 +224,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
       {novas ? <Button variant="secondary" size="sm" onClick={() => { historicoRef.current.scrollTop = historicoRef.current.scrollHeight; pertoDoFim.current = true; setNovas(false); }}>Ir para mensagens recentes ↓</Button> : null}
       {!somenteLeitura ? <div className="wa-composer">
         {(!conversa.atendimento || conversa.atendimento.contextoSelecionado) && slotAcoes}
+        <AnexoDaConversa key={`anexo-${conversa.id}`} api={hook.api} conversa={conversa} disabled={!resposta.pode || hook.ocupado} onEnviado={() => hook.abrir(conversa.id, true)} />
         {hook.api?.comercial && <OrientacoesRapidas key={conversa.id} api={hook.api} conversa={conversa} disabled={!resposta.pode || hook.ocupado} onEnviado={() => hook.abrir(conversa.id)} />}
         {!resposta.pode ? <p data-testid="resposta-bloqueada" className="wa-list-note" style={{ color: "var(--state-warn)", padding: "0 0 8px" }}>{resposta.motivo}</p> : null}
         <div className="wa-composer-row">
@@ -241,9 +233,10 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
             disabled={!resposta.pode || hook.ocupado} placeholder={resposta.pode ? "Escreva uma mensagem para este contato…" : "Resposta indisponível — confira o motivo acima"} />
           <Button variant="primary" disabled={!resposta.pode || !texto.trim() || hook.ocupado} onClick={enviar}><WhatsappIcon nome="enviar" size={17} />Responder</Button>
         </div>
-        <div className="wa-composer-hint">{conversa.atendimento?.contextoSelecionado ? `Resposta vinculada a ${conversa.empresa?.razao} · ` : ""}Mensagem do escritório · Ctrl + Enter para enviar</div>
+        <div className="wa-composer-hint">Mensagem para este contato · Escritório · Ctrl + Enter para enviar</div>
         {recusa && !hook.erroAcao ? <p role="alert" className="wa-list-note" style={{ color: "var(--state-danger)" }}>{recusa}</p> : null}
       </div> : null}
+      {escolherEmpresa && <Modal titulo="Abrir empresa deste contato" tamanho="sm" aoFechar={() => setEscolherEmpresa(false)}><p>O histórico continua sendo único para esta pessoa.</p>{conversa.empresas.map(e => <p key={e.id}><a href={hrefDaEmpresa(e.id)}>{e.razao}</a> · <CnpjDaConversa cnpj={e.cnpj} empresa={e.razao} /></p>)}</Modal>}
       {confirmarExclusao ? <Modal titulo="Mover conversa para lixeira?" tamanho="sm" ocupado={movendo || hook.ocupado} aoFechar={() => setConfirmarExclusao(false)}
         rodape={<><Button variant="secondary" disabled={movendo || hook.ocupado} onClick={() => setConfirmarExclusao(false)}>Cancelar</Button><Button variant="danger" disabled={movendo || hook.ocupado} onClick={() => mover(false)}>Mover para lixeira</Button></>}>
         <p><strong>{identidade.pessoa}</strong> · {conversa.telefoneMascarado}</p>
@@ -251,7 +244,7 @@ export function FioDaConversa({ fio, hook, slotVincular = null, temMais = null, 
         <p>O histórico será preservado e poderá ser restaurado. Uma nova mensagem recebida reabre a conversa.</p>
         {hook.erroAcao ? <p role="alert">{hook.erroAcao}</p> : null}
       </Modal> : null}
-    </div>
+    </div></AtualizacaoAtendimento.Provider>
   );
 }
 

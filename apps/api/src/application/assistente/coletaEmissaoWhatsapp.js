@@ -12,7 +12,7 @@ const ETAPAS = { tomadorDoc: 'TOMADOR', descricao: 'DESCRICAO', valor: 'VALOR', 
 const ROTULOS = {
   cpf: 'tomadorDoc', cnpj: 'tomadorDoc', 'cpf/cnpj': 'tomadorDoc', documento: 'tomadorDoc', cliente: 'tomadorDoc', tomador: 'tomadorDoc',
   nome: 'tomadorNome', 'razao social': 'tomadorNome', email: 'tomadorEmail', 'e-mail': 'tomadorEmail',
-  descricao: 'descricao', servico: 'descricao', valor: 'valor', competencia: 'competencia', perfil: 'perfilId',
+  descricao: 'descricao', servico: 'descricao', valor: 'valor', competencia: 'competencia', data: 'competencia', 'data do servico': 'competencia', perfil: 'perfilId',
   cep: 'endereco.CEP', rua: 'endereco.xLgr', logradouro: 'endereco.xLgr', numero: 'endereco.nro', nro: 'endereco.nro',
   complemento: 'endereco.xCpl', bairro: 'endereco.xBairro', endereco: 'endereco.CEP',
 };
@@ -25,16 +25,16 @@ const valorEm = (dados, campo) => campo.startsWith('endereco.') ? dados.endereco
 const etapaDoCampo = (campo) => ETAPAS[campo] || campo;
 const campoDaEtapa = (etapa) => Object.keys(ETAPAS).find((k) => ETAPAS[k] === etapa) || etapa;
 
-function mesAtual(agora) {
+function dataAtual(agora) {
   const d = new Date(agora);
   if (!Number.isFinite(d.getTime())) throw new TypeError('agora deve ser uma data válida');
-  const partes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).formatToParts(d);
-  return `${partes.find((p) => p.type === 'year').value}-${partes.find((p) => p.type === 'month').value}`;
+  const partes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+  return ['year', 'month', 'day'].map(tipo => partes.find(p => p.type === tipo).value).join('-');
 }
 
 export function ehPedidoDeEmissao(texto) {
   const t = NORM(texto).replace(/[.!]+$/, '').trim();
-  return /^(?:(?:oi|ola|bom dia|boa tarde|boa noite)[,! ]+)?(?:(?:eu )?(?:quero|preciso|gostaria de|pode) )?emitir (?:uma |a |nova )?(?:nota(?: fiscal)?|nfs-?e)(?:[, ]+por favor)?(?:$|[.;\n, ]+\s*(?:cpf(?:\/cnpj)?|cnpj|tomador|cliente|documento|valor|servico|descricao|competencia)\s*[:=])/.test(t);
+  return /^(?:(?:oi|ola|bom dia|boa tarde|boa noite)[,! ]+)?(?:(?:eu )?(?:quero|preciso|gostaria de|pode) )?emitir (?:uma |a |nova )?(?:nota(?: fiscal)?|nfs-?e)(?:[, ]+por favor)?(?:$|[.;\n, ]+\s*(?:cpf(?:\/cnpj)?|cnpj|tomador|cliente|documento|valor|servico|descricao|competencia|data(?: do servico)?)\s*[:=])/.test(t);
 }
 
 function retorno(estado, acao, mensagem = null, extras = {}) {
@@ -45,18 +45,30 @@ function opcoesDaEtapa(estado) {
   const titulo = (v) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 64);
   if (estado.etapa === 'TOMADOR') return estado.tomadores.map((t) => ({ id: `emis:tomador:${t.id || t.documento}`, titulo: titulo(t.nome ? `${titulo(t.nome).slice(0, 42)} · ${t.documento}` : t.documento) }));
   if (estado.etapa === 'PERFIL') return estado.perfis.map((p) => ({ id: `emis:perfil:${p.id}`, titulo: titulo(p.nome || p.descricao || p.id) }));
-  if (estado.etapa === 'COMPETENCIA') return [{ id: 'emis:competencia:atual', titulo: 'Mês atual' }, { id: 'emis:competencia:outra', titulo: 'Outra competência' }];
+  if (estado.etapa === 'COMPETENCIA') return [{ id: 'emis:competencia:atual', titulo: 'Mês atual' }, { id: 'emis:competencia:outra', titulo: 'Outra data' }];
   return [];
 }
 
 function pergunta(estado) {
   const opcoes = opcoesDaEtapa(estado);
   const lista = opcoes.map((o, i) => `${i + 1}. ${o.titulo}`).join('\n');
+  const basicos = [
+    ['tomadorDoc', 'CNPJ: número do cliente (ou CPF, se for pessoa física)'],
+    ['descricao', 'Descrição: serviço prestado'],
+    ['valor', 'Valor: em reais, por exemplo 1500,00'],
+    ['competencia', 'Data: dia do serviço, em DD/MM/AAAA (ou hoje)'],
+  ].filter(([campo]) => !valorEm(estado.dados, campo));
+  if (!estado.campoEmCorrecao && !estado.camposPendentes.length && ['TOMADOR', 'DESCRICAO', 'VALOR', 'COMPETENCIA'].includes(estado.etapa)) {
+    const abertura = basicos.length === 4 ? 'Envie os dados da nota em uma única mensagem:'
+      : basicos.length > 1 ? 'Já guardei os dados recebidos. Envie o que falta em uma única mensagem:' : 'Só falta este dado da nota:';
+    const conhecidos = estado.etapa === 'TOMADOR' && lista ? `\n\nNo lugar do CNPJ/CPF, você também pode escolher um cliente pelo número:\n${lista}` : '';
+    return retorno(estado, 'COLETAR', `${abertura}\n\n${basicos.map(([, texto]) => texto).join('\n')}${conhecidos}`, { opcoes: opcoes.slice(0, 10) });
+  }
   const textos = {
     TOMADOR: `Para quem é a nota? Envie o CPF/CNPJ do cliente${lista ? ` ou escolha o número:\n${lista}` : '.'}`,
     DESCRICAO: 'Qual serviço foi prestado? Escreva a descrição que deve aparecer na nota.',
     VALOR: 'Qual é o valor do serviço, em reais? Exemplo: 1500,00.',
-    COMPETENCIA: `A competência é o mês atual (${estado.competenciaAtual}) ou outra? Pode responder “atual” ou informar MM/AAAA. Se precisar informar o dia, use DD/MM/AAAA.`,
+    COMPETENCIA: 'Qual é a data do serviço? Informe DD/MM/AAAA ou “hoje”. Se souber apenas o mês, pode informar MM/AAAA.',
     PERFIL: `Qual perfil de serviço deseja usar? Escolha pelo nome ou número:\n${lista}`,
     tomadorNome: 'Qual é o nome completo ou a razão social do cliente?',
     tomadorEmail: 'Qual é o e-mail do cliente? Se não houver, responda “sem e-mail”.',
@@ -108,7 +120,8 @@ function aplicarPerfis(estado, perfis) {
 }
 
 export function iniciarColeta({ agora = new Date(), tomadores = [], perfis = [] } = {}) {
-  const estado = { versao: 1, status: 'COLETANDO', etapa: 'TOMADOR', dados: { endereco: {} }, origens: {}, competenciaAtual: mesAtual(agora), tomadorPreparado: false, camposPendentes: [], tomadores: clonar(tomadores.slice(0, 30)), perfis: [] };
+  const hoje = dataAtual(agora);
+  const estado = { versao: 1, status: 'COLETANDO', etapa: 'TOMADOR', dados: { endereco: {} }, origens: {}, dataAtual: hoje, competenciaAtual: hoje.slice(0, 7), tomadorPreparado: false, camposPendentes: [], tomadores: clonar(tomadores.slice(0, 30)), perfis: [] };
   aplicarPerfis(estado, perfis);
   return planejar(estado);
 }
@@ -172,9 +185,10 @@ function lerValor(texto) {
   return leitura.ok ? leitura.valor : null;
 }
 
-function lerCompetencia(texto, atual) {
+function lerCompetencia(texto, atual, hoje) {
   const t = NORM(texto).replace(/[.!]$/, '').trim();
-  if (/^(?:atual|mes atual|este mes|esse mes|deste mes|desse mes|neste mes|nesse mes|hoje)$/.test(t)) return atual;
+  if (t === 'hoje') return hoje;
+  if (/^(?:atual|mes atual|este mes|esse mes|deste mes|desse mes|neste mes|nesse mes)$/.test(t)) return atual;
   let ano; let mes; let dia;
   let m = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(t);
   if (m) [, ano, mes, dia] = m;
@@ -198,7 +212,7 @@ function validarCampo(campo, texto, estado) {
   const normal = NORM(valor).replace(/[.!]$/, '');
   if (campo === 'tomadorDoc') valor = lerDocumento(valor) || lerDocumento(escolher(valor, estado.tomadores)?.documento) || null;
   else if (campo === 'valor') valor = lerValor(valor);
-  else if (campo === 'competencia') valor = lerCompetencia(valor, estado.competenciaAtual);
+  else if (campo === 'competencia') valor = lerCompetencia(valor, estado.competenciaAtual, estado.dataAtual);
   else if (campo === 'perfilId') valor = escolher(valor, estado.perfis)?.id || null;
   else if (campo === 'endereco.CEP') valor = /^\d{5}-?\d{3}$/.test(valor) ? valor.replace('-', '') : null;
   else if (campo === 'endereco.nro') valor = /^(?:sem numero|s\/?n)$/.test(normal) ? 'S/N' : /^\d{1,12}(?:[-/]?[a-z0-9]{1,5})?$/i.test(valor) ? valor : null;
@@ -227,19 +241,19 @@ function aplicarCampo(estado, campo, valor) {
 }
 
 function camposRotulados(texto) {
-  const re = /(?:^|[\n;]|\s)(cpf\/cnpj|cpf|cnpj|documento|cliente|tomador|nome|raz[aã]o social|e-?mail|descri[cç][aã]o|servi[cç]o|valor|compet[eê]ncia|perfil|cep|rua|logradouro|n[uú]mero|nro|complemento|bairro|endere[cç]o)\s*[:=]\s*/gi;
+  const re = /(?:^|[\n;]|\s)(cpf\/cnpj|cpf|cnpj|documento|cliente|tomador|nome|raz[aã]o social|e-?mail|descri[cç][aã]o|servi[cç]o|valor|compet[eê]ncia|data(?: do servi[cç]o)?|perfil|cep|rua|logradouro|n[uú]mero|nro|complemento|bairro|endere[cç]o)\s*[:=]\s*/gi;
   const encontrados = [...texto.matchAll(re)];
-  return encontrados.map((m, i) => ({ campo: ROTULOS[NORM(m[1])], texto: texto.slice(m.index + m[0].length, encontrados[i + 1]?.index ?? texto.length).trim().replace(/[;\n]+$/, '').trim() }));
+  return encontrados.map((m, i) => ({ campo: ROTULOS[NORM(m[1])], texto: texto.slice(m.index + m[0].length, encontrados[i + 1]?.index ?? texto.length).trim().replace(encontrados[i + 1] ? /[;,\n]+$/ : /[;\n]+$/, '').trim() }));
 }
 
 function corrigir(texto) {
-  const m = /^(?:corrigir|corrija|corrige|alterar|altere|mudar|mude|muda|trocar|troque|corrigindo)\s+(?:(?:o|a)\s+)?(cpf\/cnpj|cpf|cnpj|cliente|tomador|nome|raz[aã]o social|e-?mail|descri[cç][aã]o|servi[cç]o|valor|compet[eê]ncia|perfil|cep|rua|logradouro|n[uú]mero|complemento|bairro|endere[cç]o)(?:\s*(?::|=)|\s+(?:para|por|[ée]))?\s*(.*)$/i.exec(texto);
+  const m = /^(?:corrigir|corrija|corrige|alterar|altere|mudar|mude|muda|trocar|troque|corrigindo)\s+(?:(?:o|a)\s+)?(cpf\/cnpj|cpf|cnpj|cliente|tomador|nome|raz[aã]o social|e-?mail|descri[cç][aã]o|servi[cç]o|valor|compet[eê]ncia|data(?: do servi[cç]o)?|perfil|cep|rua|logradouro|n[uú]mero|complemento|bairro|endere[cç]o)(?:\s*(?::|=)|\s+(?:para|por|[ée]))?\s*(.*)$/i.exec(texto);
   return m ? { campo: ROTULOS[NORM(m[1])], texto: m[2] } : null;
 }
 
 function campoNatural(texto) {
   const t = texto.replace(/^na verdade[, ]+\s*/i, '');
-  const m = /^(?:(?:o|a)\s+)?(cpf\/cnpj|cpf|cnpj|cliente|tomador|nome|raz[aã]o social|e-?mail|descri[cç][aã]o|servi[cç]o|valor|compet[eê]ncia|perfil|cep|rua|logradouro|n[uú]mero|complemento|bairro)\s+(?:[ée]|fica em|vai ser)\s+(.+)$/i.exec(t);
+  const m = /^(?:(?:o|a)\s+)?(cpf\/cnpj|cpf|cnpj|cliente|tomador|nome|raz[aã]o social|e-?mail|descri[cç][aã]o|servi[cç]o|valor|compet[eê]ncia|data(?: do servi[cç]o)?|perfil|cep|rua|logradouro|n[uú]mero|complemento|bairro)\s+(?:[ée]|fica em|vai ser)\s+(.+)$/i.exec(t);
   return m ? { campo: ROTULOS[NORM(m[1])], texto: m[2] } : null;
 }
 
@@ -271,17 +285,23 @@ export function interpretarResposta({ estado: anterior, texto = '', interacao, a
     return retorno(estado, 'PAUSAR', null, { consumiu: false });
   }
   if (['CANCELADO', 'EQUIPE'].includes(estado.status)) return retorno(estado, estado.status === 'EQUIPE' ? 'EQUIPE' : 'CANCELAR', null, { consumiu: false });
-  estado.competenciaAtual = mesAtual(agora);
+  estado.dataAtual = dataAtual(agora);
+  estado.competenciaAtual = estado.dataAtual.slice(0, 7);
 
   let campos = camposRotulados(t);
   const correcao = corrigir(t);
   if (correcao && !campos.length) campos = [correcao];
   const natural = campoNatural(t);
   if (natural && !campos.length) campos = [natural];
+  // Também aceita quatro linhas na ordem pedida, sem inferir documento ou valores no texto livre.
+  const linhas = t.split(/\r?\n/).map(LIMPO).filter(Boolean);
+  if (!campos.length && linhas.length === 4 && lerDocumento(linhas[0])) {
+    campos = ['tomadorDoc', 'descricao', 'valor', 'competencia'].map((campo, i) => ({ campo, texto: linhas[i] }));
+  }
   if (id) {
     const opcao = opcoesDaEtapa(estado).find((o) => o.id === id);
     if (!opcao) return pergunta(estado);
-    if (id === 'emis:competencia:outra') return retorno(estado, 'COLETAR', 'Qual é a competência? Informe MM/AAAA ou DD/MM/AAAA.');
+    if (id === 'emis:competencia:outra') return retorno(estado, 'COLETAR', 'Qual é a data do serviço? Informe DD/MM/AAAA. Se souber apenas o mês, use MM/AAAA.');
     if (id === 'emis:competencia:atual') campos = [{ campo: 'competencia', texto: 'atual' }];
     else if (estado.etapa === 'TOMADOR') {
       const tomador = estado.tomadores.find((o) => `emis:tomador:${o.id || o.documento}` === id);

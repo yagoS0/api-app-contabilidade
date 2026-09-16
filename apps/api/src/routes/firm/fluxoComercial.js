@@ -9,6 +9,9 @@ import { exigirEscopo } from "../../application/onboarding/ComercialService.js";
 import { OnboardingError } from "../../application/onboarding/OnboardingService.js";
 import { enviarProposta } from "../../application/onboarding/EnvioPropostaService.js";
 import { gerarContratoPdf } from "../../application/onboarding/ContratoComercialPdf.js";
+import { criarJornadaLead } from "../../application/onboarding/JornadaLeadService.js";
+import { INTEGRACAO_FISCAL_LEADS } from "../../config.js";
+import { gerarPropostaPdf } from "../../application/onboarding/PropostaComercialPdf.js";
 export function createFluxoComercialRouter({
   db = prisma
 } = {}) {
@@ -22,6 +25,7 @@ export function createFluxoComercialRouter({
     fiscal = criarFiscalLead({
       db
     });
+  const jornada = criarJornadaLead({ db });
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
@@ -96,7 +100,8 @@ export function createFluxoComercialRouter({
     });
     return {
       atendimento,
-      proximaPergunta: proximaPergunta(atendimento?.onboarding)
+      proximaPergunta: proximaPergunta(atendimento?.onboarding),
+      anteriores: await db.atendimentoLead.findMany({ where: { conversaId: c.id, encerradoEm: { not: null } }, include: { onboarding: { select: { id: true, origem: true, status: true } } }, orderBy: { encerradoEm: "desc" }, take: 20 })
     };
   }));
   router.post("/conversas/:conversaId/iniciar", wrap(async req => ({
@@ -104,14 +109,22 @@ export function createFluxoComercialRouter({
       conversaId: req.params.conversaId,
       origem: req.body?.origem,
       onboardingId: req.body?.onboardingId,
+      reiniciarAtendimentoId: req.body?.reiniciarAtendimentoId,
+      motivoReinicio: req.body?.motivoReinicio,
       atorId: req.auth.user.id,
       client: db
     })
   })));
   router.get("/onboardings/:id", wrap(async req => ({
+    configuracao: { consultasFiscais: INTEGRACAO_FISCAL_LEADS },
     ...(await propostas.painel(req.params.id, req.auth.user)),
+    jornada: await jornada.carregar(req.params.id, req.auth.user),
     onboarding: await exigirEscopo(req.params.id, req.auth.user, db)
   })));
+  router.post("/onboardings/:id/jornada/diagnostico", wrap(async req => ({ diagnostico: await jornada.diagnosticar(req.params.id, req.auth.user, req.body) })));
+  router.post("/onboardings/:id/jornada/devolutiva", wrap(async req => jornada.enviarDevolutiva(req.params.id, req.auth.user, req.body)));
+  router.post("/onboardings/:id/jornada/pagamento", wrap(async req => ({ marco: await jornada.confirmarPagamento(req.params.id, req.auth.user, req.body) })));
+  router.post("/onboardings/:id/jornada/conferencia", wrap(async req => ({ conferencia: await jornada.conferirAnalise(req.params.id, req.auth.user, req.body) })));
   router.patch("/onboardings/:id/campos", wrap(async req => {
     await exigirEscopo(req.params.id, req.auth.user, db);
     return {
@@ -135,6 +148,11 @@ export function createFluxoComercialRouter({
   router.post("/onboardings/:id/propostas/:propostaId/aprovar", wrap(async req => ({
     proposta: await propostas.aprovar(req.params.id, req.params.propostaId, req.auth.user)
   })));
+  router.get("/onboardings/:id/propostas/:propostaId/pdf", wrap(async (req, res) => {
+    const proposta = await propostas.documentoProposta(req.params.id, req.params.propostaId, req.auth.user);
+    res.set({ "Content-Type": "application/pdf", "Content-Disposition": 'attachment; filename="proposta-altan.pdf"', "X-Content-Type-Options": "nosniff" });
+    res.send(await gerarPropostaPdf(proposta));
+  }));
   router.post("/onboardings/:id/propostas/:propostaId/link", wrap(async req => propostas.emitirLink(req.params.id, req.params.propostaId, req.auth.user)));
   router.post("/onboardings/:id/propostas/:propostaId/enviar", wrap(async req => enviarProposta(req.params.id, req.params.propostaId, req.auth.user, {
     db

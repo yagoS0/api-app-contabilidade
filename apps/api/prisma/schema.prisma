@@ -1302,6 +1302,9 @@ model ConversaWhatsapp {
 /// UMA MENSAGEM DO FIO. Imutável: por isso não tem `updatedAt` — mensagem não se edita.
 model MensagemWhatsapp {
   contexto ResolucaoContextoWhatsapp?
+  /// Opções efetivamente oferecidas pelo atendimento, com empresa/versão e validade.
+  /// Só a saída do sistema grava; número digitado resolve contra esta lista imutável.
+  contextoConsulta Json?
   respostaAProviderMessageId String?
   referenciaComercial Json?
   id                 String    @id @default(uuid())
@@ -1525,6 +1528,47 @@ model ArquivoWhatsapp {
   @@index([estado, proximaTentativaEm])
   @@index([expiraEm])
   @@map("arquivos_whatsapp")
+}
+
+model ComunicadoWhatsapp {
+  id String @id @default(uuid())
+  idempotencia String @unique
+  titulo String
+  corpo String
+  categoria String
+  empresasIds String[]
+  criadoPor String
+  status String @default("RASCUNHO")
+  nomeMeta String @unique
+  metaId String?
+  statusMeta String?
+  motivo String?
+  conferidoNaMetaEm DateTime?
+  confirmadoEm DateTime?
+  confirmadoPor String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  destinatarios DestinatarioComunicadoWhatsapp[]
+  @@index([status, createdAt])
+  @@map("comunicados_whatsapp")
+}
+
+model DestinatarioComunicadoWhatsapp {
+  id String @id @default(uuid())
+  comunicadoId String
+  telefone String
+  nome String
+  contatosIds String[]
+  empresasIds String[]
+  status String @default("PENDENTE")
+  motivo String?
+  mensagemId String?
+  iniciadoEm DateTime?
+  concluidoEm DateTime?
+  comunicado ComunicadoWhatsapp @relation(fields: [comunicadoId], references: [id], onDelete: Restrict)
+  @@unique([comunicadoId, telefone])
+  @@index([comunicadoId, status])
+  @@map("destinatarios_comunicado_whatsapp")
 }
 
 model TemplateWhatsapp {
@@ -4002,6 +4046,7 @@ model NsuGap {
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 model Obrigacao {
+  agendaConfig Json?
   id             String  @id @default(uuid())
   portalClientId String
   nome           String
@@ -4073,6 +4118,7 @@ model OcorrenciaObrigacao {
   dataInicio     DateTime? @db.Date
   dataFim        DateTime? @db.Date
   janelaPersonalizada Boolean @default(false)
+  agendaConfig Json?
   cicloChave String?
   /// Retirada por mudança de frequência; reversível por nova versão, diferente de exclusão manual.
   foraDaRecorrencia Boolean @default(false)
@@ -4106,6 +4152,9 @@ model OcorrenciaObrigacao {
 }
 
 model RegraObrigacao {
+  agendaConfig Json?
+  descricao String?
+  janelaTrabalho Json?
   id        String  @id @default(uuid())
   nome      String
   categoria String?
@@ -5270,4 +5319,27 @@ model BaseSociosGerencial {
   empresa PortalClient @relation(fields:[companyId], references:[id], onDelete:Cascade)
   autor User @relation(fields:[autorId], references:[id], onDelete:Cascade)
   @@index([companyId, competencia, id])
+}
+
+// Tarefas gerais são privadas ao usuário do escritório que as criou.
+model TarefaAgenda {
+  id String @id @default(uuid())
+  userId String
+  titulo String
+  descricao String?
+  config Json
+  estados Json @default("{}")
+  excluidaEm DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, excluidaEm])
+  @@map("tarefas_agenda")
+}
+model AgendaOcultacao {
+  id String @id @default(uuid())
+  userId String
+  chave String
+  createdAt DateTime @default(now())
+  @@unique([userId, chave])
+  @@map("agenda_ocultacoes")
 }

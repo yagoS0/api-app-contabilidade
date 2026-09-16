@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Button } from "../../../components/ui/Button";
+import { BotaoCopiar } from "../../../components/ui/BotaoCopiar";
+import { soDigitosCnpj } from "../../onboarding/lib/brasilApi";
 import { identidadeDaConversa, rotuloDaSituacao, estadoDaResposta } from "../lib/conversasTela";
 import { companyTabPath } from "../../companies/detail/lib/rotasDaEmpresa";
 
@@ -30,6 +32,12 @@ export function SituacaoConversa({ conversa }) {
   return <span className="wa-status" data-tom={r.tom}><span aria-hidden="true" />{r.texto}</span>;
 }
 
+export function CnpjDaConversa({ cnpj, empresa = "empresa", copiavel = true }) {
+  const numero = soDigitosCnpj(cnpj);
+  if (!numero) return null;
+  return copiavel ? <BotaoCopiar valor={numero} rotulo={`Copiar o CNPJ de ${empresa} sem máscara`} titulo="Copiar CNPJ">{numero}</BotaoCopiar> : numero;
+}
+
 export function DetalhesConversa({ conversa, onFechar }) {
   const fecharRef = useRef(null);
   useEffect(() => {
@@ -42,7 +50,7 @@ export function DetalhesConversa({ conversa, onFechar }) {
   return <aside className="wa-details" aria-label="Detalhes da conversa" onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); onFechar(); } }}>
     <div className="wa-section-heading"><h2>Detalhes do contato</h2><Button ref={fecharRef} variant="secondary" size="sm" onClick={onFechar} aria-label="Fechar detalhes"><WhatsappIcon nome="fechar" size={16} /></Button></div>
     <div className="wa-contact-profile"><AvatarConversa nome={i.pessoa} /><strong>{i.pessoa}</strong><span>{i.papel || "Contato"}</span><span>{conversa.telefoneMascarado}</span></div>
-    <section className="wa-detail-section"><h3><WhatsappIcon nome="empresa" size={16} /> Empresa</h3><p>{i.linhaDaEmpresa}</p>{i.cnpj ? <small>{i.cnpj}</small> : null}{conversa.portalClientId ? <a href={companyTabPath(conversa.portalClientId, "anotacoes")}>Abrir a empresa →</a> : null}</section>
+    <section className="wa-detail-section"><h3><WhatsappIcon nome="empresa" size={16} /> Empresas do contato</h3>{conversa.empresas?.length > 1 ? <><p>Escolha a empresa que deseja abrir:</p>{conversa.empresas.map(e => <p key={e.id}><a href={companyTabPath(e.id, "anotacoes")}>{e.razao}</a><br /><CnpjDaConversa cnpj={e.cnpj} empresa={e.razao} /></p>)}</> : <><p>{i.linhaDaEmpresa}</p>{i.cnpj ? <small><CnpjDaConversa cnpj={i.cnpj} empresa={i.linhaDaEmpresa} /></small> : null}{conversa.portalClientId ? <a href={companyTabPath(conversa.portalClientId, "anotacoes")}>Abrir a empresa →</a> : null}</>}</section>
     <section className="wa-detail-section"><h3><WhatsappIcon nome="pessoa" size={16} /> Atendimento</h3><SituacaoConversa conversa={conversa} /><p>{conversa.excluidaEm || (conversa.portalClientId && (conversa.escopoVerificado === false || conversa.legadoNaoVerificado)) ? "Histórico preservado para consulta. O atendimento acontece em Conversas atuais." : conversa.atendidaPor || conversa.atendidaDesde ? "O assistente permanece em pausa durante o atendimento da equipe." : "Você pode assumir a conversa para responder pela equipe."}</p></section>
     <section className="wa-detail-section"><h3><WhatsappIcon nome="relogio" size={16} /> Respostas pelo WhatsApp</h3><p>{resposta.pode ? "Janela de resposta aberta." : resposta.motivo}</p></section>
     <section className="wa-detail-section"><h3><WhatsappIcon nome="documento" size={16} /> Arquivos recebidos</h3><p>Confira extratos e OFX em Lançamentos → A lançar. A importação é manual.</p></section>

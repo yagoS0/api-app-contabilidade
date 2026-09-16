@@ -1,4 +1,5 @@
 import { ConfiguracoesGeraisPage, ConfiguracoesGeraisLayout } from "./features/configuracoes/Configuracoes";
+import { BibliotecaComercialPage } from "./features/onboarding/pages/BibliotecaComercialPage";
 import { PropostaPublica } from "./features/onboarding/pages/PropostaPublica";
 import { FormularioPublico } from "./features/onboarding/pages/FormularioPublico";
 import { useEffect, useMemo } from "react";
@@ -17,6 +18,7 @@ import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploa
 import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
 import { WhatsappPage } from "./features/whatsapp/pages/renderWhatsappPage";
+import { ComunicadosWhatsappPage } from "./features/whatsapp/pages/ComunicadosWhatsappPage";
 import { BatchEmailPage } from "./features/guides/batch-email/pages/renderBatchEmailPage";
 import { useLoteWhatsapp } from "./features/guides/batch-email/hooks/useLoteWhatsapp";
 import { GlobalChartOfAccountsPage } from "./features/accounting/chart-of-accounts/pages/renderGlobalChartOfAccountsPage";
@@ -202,6 +204,7 @@ function AppInterno() {
   }
 
   if (session.page === "configuracoesGerais") return <ConfiguracoesGeraisPage />;
+  if (session.page === "bibliotecaComercial") return <BibliotecaComercialPage api={api} onBack={() => session.goBack("/whatsapp")} />;
 
   if (session.page === "guideSettings") {
     return (
@@ -283,11 +286,11 @@ function AppInterno() {
     );
   }
 
-  // Links antigos abrem o calendário e seu modal, nunca uma segunda central.
+  // Links antigos abrem a lista integrada à agenda.
   if (session.page === "obrigacoes") {
     const context = calendarioNavigation.contexto;
     return <Navigate to="/companies" replace state={{ calendarContext: {
-      ...(context.calendario || {}), obrigacoesModal: {
+      ...(context.calendario || {}), visao: 'lista', obrigacoesModal: {
         companyId: context.companyId || "", ...(context.periodo || {}),
         ...(context.criacao || {}), criar: Boolean(context.criacao), ocorrenciaId: context.ocorrenciaId,
       },
@@ -327,16 +330,15 @@ function AppInterno() {
       <OnboardingsPage
         api={api}
         onVoltar={() => session.goBack()}
-        onNovo={async () => {
-          // A ficha nasce no primeiro clique — é o que permite salvar rascunho desde a 1ª tela.
-          // (E é por isso que a lista esconde rascunho por padrão: eles acumulam.)
-          const criada = await api.criarOnboarding("TRANSFERENCIA");
+        onNovo={async ({ origem, modo }) => {
+          const criada = await api.criarOnboarding(origem);
           const id = criada?.onboarding?.id;
-          if (id) session.setPage("onboardingWizard", { onboardingId: id });
+          if (!id) throw new Error("O servidor não confirmou a ficha criada.");
+          session.setPage(modo === "escritorio" ? "onboardingWizard" : "onboardingDetail", { onboardingId: id });
         }}
         onAbrir={(item) =>
           session.setPage(
-            item.status === "RASCUNHO" ? "onboardingWizard" : "onboardingDetail",
+            "onboardingDetail",
             { onboardingId: item.id }
           )
         }
@@ -424,6 +426,7 @@ function AppInterno() {
           onRecalcularInss: companiesWorkspace.handleRecalcularInss,
           recalcInssBusy: companiesWorkspace.recalcInssBusy,
           onLiberarGuia: companiesWorkspace.handleLiberarGuia,
+          onLiberarGuias: companiesWorkspace.handleLiberarGuias,
           liberarGuiasBusy: companiesWorkspace.liberarGuiasBusy,
           resendingGuideId: companiesWorkspace.guidesState.resendingGuideId,
           confirmingGuideId: companiesWorkspace.guidesState.confirmingGuideId,
@@ -541,10 +544,12 @@ function AppInterno() {
     );
   }
 
+  if (session.page === "comunicadosWhatsapp") return <ComunicadosWhatsappPage api={api} companies={companiesWorkspace.companiesState.companies} onBack={() => session.setPage('whatsapp')} />;
   if (session.page === "whatsapp") {
     return (
       <WhatsappPage
         api={api}
+        onComunicados={() => session.setPage('comunicadosWhatsapp')}
         companies={companiesWorkspace.companiesState.companies}
         onBack={() => session.goBack()}
         message={feedback.message}

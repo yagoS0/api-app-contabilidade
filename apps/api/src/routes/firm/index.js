@@ -39,12 +39,14 @@ import { createCompanyDocumentsRouter } from "./companyDocuments.js";
 import { createCompanyCredentialsRouter } from "./companyCredentials.js";
 import { createPortalAccessRouter } from "./portalAccess.js";
 import { createCalendarioRouter } from "./calendario.js";
+import { createAgendaRouter } from "./agenda.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
 import { createOnboardingsRouter } from "./onboardings.js";
 import { createWhatsappGuiasRouter } from "./whatsappGuias.js";
 import { createWhatsappArquivosRouter } from "./whatsappArquivos.js";
 import { createCorrigirValorGuiaRouter } from "./corrigirValorGuia.js";
 import { createWhatsappConversasRouter } from "./whatsappConversas.js";
+import { createWhatsappComunicadosRouter } from "./whatsappComunicados.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
 import { mesclarAtividades } from "../../application/company/atividadesDaEmpresa.js";
 import {
@@ -56,9 +58,6 @@ import {
 import { normalizarEmail } from "@contabilidade/shared/email";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import { consumoDoMes } from "../../application/fiscal/serpro/SerproCallGuard.js";
-// Mesma definição de faturamento da apuração — a recusa de "marcar guia vazia" precisa concordar
-// com a de "mês sem faturamento", senão as duas telas divergem sobre se o mês teve receita.
-import { faturamentoEmitDaCompetencia } from "../../application/notas/apuracao/v2/FechamentoService.js";
 import {
   computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS, CHECKLIST_SELECT, checklistPendentes,
 } from "../../application/accounting/fechamentoBlockers.js";
@@ -2740,49 +2739,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         return res.status(409).json({ ok: false, error: "guide_already_present" });
       }
 
-      // ⚠ AVISA CONTRA A EVIDÊNCIA — NÃO RECUSA MAIS. Decisão do dono, 18/08/2026:
-      //
-      //   "nas empresas presumidas ele não permite marcar as guias faltantes como vazia, por conta
-      //    do faturamento, mas às vezes não teremos guias mesmo com faturamento, o contador deve
-      //    poder marcar vazio"
-      //
-      // A recusa dura confundia DUAS coisas: "houve receita" e "logo existe guia". No Simples elas
-      // andam juntas; no LUCRO PRESUMIDO, não — IRPJ e CSLL são trimestrais (nos dois primeiros
-      // meses do trimestre há faturamento e não há DARF), o valor pode ficar abaixo do mínimo de
-      // recolhimento, e a retenção na fonte pode cobrir o tributo. A guarda bloqueava trabalho
-      // legítimo, e não havia saída pela tela.
-      //
-      // O que ela protegia continua protegido, por EVIDÊNCIA em vez de parede — é o padrão que
-      // este módulo já usa em `avisosDeDuplicidade` ("DUPLICIDADE AVISA, NUNCA RECUSA"):
-      //   1. a evidência volta para a tela e a confirmação a repete;
-      //   2. o `confirmado` tem de vir explícito — não é o clique normal que passa;
-      //   3. o MOTIVO passa a ser OBRIGATÓRIO neste caminho (fora dele segue opcional).
-      // Sem o motivo, "por que o contador afirmou ausência havendo nota?" não teria resposta numa
-      // fiscalização — e essa pergunta é a razão de a guarda ter existido.
-      const faturamento = await faturamentoEmitDaCompetencia(portalClientId, competencia).catch(() => 0);
+      // A marcação afirma ausência desta guia, mesmo que a empresa tenha receita.
+      // A decisão é do contador; mantém autoria, data e motivo opcional.
       const motivoInformado = String(req.body?.motivo || "").trim();
-      if (faturamento > 0) {
-        const valorFmt = faturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-        if (req.body?.confirmado !== true) {
-          return res.status(409).json({
-            ok: false,
-            error: "GUIA_VAZIA_COM_FATURAMENTO",
-            // ⚠ O CÓDIGO É O MESMO, mas o significado mudou de "não dá" para "confirme".
-            // `precisaConfirmar` é o que distingue os dois para quem lê a resposta.
-            precisaConfirmar: true,
-            faturamento,
-            message: `A competência tem R$ ${valorFmt} em notas emitidas autorizadas. Marcar esta guia como sem movimento afirma que, mesmo assim, não há guia a pagar — confirme e diga o motivo.`,
-          });
-        }
-        if (!motivoInformado) {
-          return res.status(400).json({
-            ok: false,
-            error: "GUIA_VAZIA_MOTIVO_OBRIGATORIO",
-            faturamento,
-            message: `Com R$ ${valorFmt} em notas na competência, o motivo é obrigatório.`,
-          });
-        }
-      }
 
       // Auditoria em campos PRÓPRIOS. `reviewedAt`/`reviewedByUserId` seguem sendo escritos por
       // compatibilidade, mas o registro manual de guia também os usa — não davam para distinguir
@@ -5508,6 +5467,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   // Calendário fiscal — do ESCRITÓRIO, não por empresa: monta no nível raiz de /firm.
   router.use("/", createCalendarioRouter({ log }));
+  router.use("/", createAgendaRouter({ log }));
 
   // Obrigações — também do ESCRITÓRIO (a pergunta é "o que EU preciso entregar, em toda a
   // carteira"), então monta na raiz de /firm com filtro de empresa opcional.
@@ -5525,6 +5485,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.use("/", createCorrigirValorGuiaRouter({ log }));
   // A tela mínima de conversas (F5, 02/09/2026): lista, fio, assumir/devolver, responder, vincular.
   router.use("/", createWhatsappConversasRouter({ log }));
+  router.use("/", createWhatsappComunicadosRouter({ log }));
 
   // Q12.C.2: Apuração global — todas as empresas em uma página
   // GET /firm/apuracao?competencia=YYYY-MM&search=...

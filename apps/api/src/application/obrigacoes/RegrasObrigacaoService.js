@@ -21,11 +21,11 @@ function normalizarRegra(dados = {}) {
   // Reusa a validação da obrigação: os campos de configuração são os MESMOS, e ter duas validações
   // é ter duas que divergem — a regra aceitaria o que a obrigação recusa.
   const normalizada = normalizarEntrada(dados);
-  if (normalizada.periodicidade === "AVULSA" || normalizada.tipo === "TAREFA") {
+  if ((normalizada.periodicidade === "AVULSA" && !normalizada.agendaConfig) || normalizada.tipo === "TAREFA") {
     throw new ObrigacaoError("regra_incompativel", "Cadastre tarefas e itens sem repetição diretamente na empresa.");
   }
   // O cadastro da regra tem somente os campos recorrentes existentes.
-  const { tipo, descricao, dataInicio, dataFim, dataVencimento, janelaTrabalho, ...base } = normalizada;
+  const { tipo, dataInicio, dataFim, dataVencimento, ...base } = normalizada;
 
   const escopo = asTexto(dados.escopo).toUpperCase();
   if (!ESCOPOS.includes(escopo)) {
@@ -69,19 +69,19 @@ function normalizarRegra(dados = {}) {
  * O regime mora em `Company.regimeTributario` (cadastro legado) e `temFolha` em `PortalClient`:
  * por isso a resolução junta os dois em vez de filtrar só de um lado.
  */
-export async function empresasDoEscopo({ portalIds, escopo, filtros, excecoesIds = [] }) {
+export async function empresasDoEscopo({ portalIds, escopo, filtros, excecoesIds = [] }, db = prisma) {
   const excluidas = new Set(excecoesIds);
 
   if (escopo === "SELECAO_MANUAL") {
     const ids = (filtros?.empresasIds || []).filter((id) => portalIds.includes(id) && !excluidas.has(id));
-    return prisma.portalClient.findMany({
+    return db.portalClient.findMany({
       where: { id: { in: ids } },
       select: { id: true, razao: true, cnpj: true, temFolha: true, companyId: true },
       orderBy: { razao: "asc" },
     });
   }
 
-  const candidatas = await prisma.portalClient.findMany({
+  const candidatas = await db.portalClient.findMany({
     where: {
       id: { in: portalIds },
       status: "ATIVA",
@@ -96,7 +96,7 @@ export async function empresasDoEscopo({ portalIds, escopo, filtros, excecoesIds
 
   const legacyIds = candidatas.map((c) => c.companyId).filter(Boolean);
   const legadas = legacyIds.length
-    ? await prisma.company.findMany({
+    ? await db.company.findMany({
         where: { id: { in: legacyIds } },
         select: { id: true, regimeTributario: true },
       })
@@ -128,8 +128,8 @@ export async function preverEscopo({ portalIds, escopo, filtros }) {
  * sobrescrever apagaria essa escolha sem avisar. É o mesmo princípio da exceção, só que declarado
  * pelo ato de editar em vez de por um botão.
  */
-export async function propagar({ regraId, portalIds, atualizarJanelas = false }) {
-  const regra = await prisma.regraObrigacao.findUnique({
+export async function propagar({ regraId, portalIds, atualizarJanelas = false }, db = prisma) {
+  const regra = await db.regraObrigacao.findUnique({
     where: { id: regraId },
     include: { excecoes: { select: { portalClientId: true } } },
   });
@@ -137,17 +137,19 @@ export async function propagar({ regraId, portalIds, atualizarJanelas = false })
 
   const excecoesIds = regra.excecoes.map((e) => e.portalClientId);
   const alvo = regra.ativa
-    ? await empresasDoEscopo({ portalIds, escopo: regra.escopo, filtros: regra.filtros, excecoesIds })
+    ? await empresasDoEscopo({ portalIds, escopo: regra.escopo, filtros: regra.filtros, excecoesIds }, db)
     : [];
   const alvoIds = new Set(alvo.map((e) => e.id));
 
-  const existentes = await prisma.obrigacao.findMany({
+  const existentes = await db.obrigacao.findMany({
     where: { regraId },
     select: { id: true, portalClientId: true, sobrescritaLocal: true },
   });
   const existentesPorEmpresa = new Map(existentes.map((o) => [o.portalClientId, o]));
 
   const config = {
+    ...(regra.agendaConfig ? { agendaConfig: regra.agendaConfig, descricao: regra.descricao, janelaTrabalho: regra.janelaTrabalho,
+      ...(regra.periodicidade === 'AVULSA' ? { dataInicio: new Date(regra.agendaConfig.dataInicio), dataFim: new Date(regra.agendaConfig.dataFim), dataVencimento: new Date(regra.agendaConfig.vencimentoFiscal || regra.agendaConfig.dataFim) } : {}) } : {}),
     nome: regra.nome,
     categoria: regra.categoria,
     periodicidade: regra.periodicidade,
@@ -171,11 +173,11 @@ export async function propagar({ regraId, portalIds, atualizarJanelas = false })
     const atual = existentesPorEmpresa.get(empresa.id);
     if (atual?.sobrescritaLocal) { puladas += 1; continue; }
     if (atual) {
-      await prisma.obrigacao.update({ where: { id: atual.id }, data: config });
+      await db.obrigacao.update({ where: { id: atual.id }, data: config });
       atualizadas += 1;
       tocadas.push(atual.id);
     } else {
-      const nova = await prisma.obrigacao.create({
+      const nova = await db.obrigacao.create({
         data: { ...config, portalClientId: empresa.id, regraId },
       });
       criadas += 1;
@@ -203,7 +205,7 @@ export async function propagar({ regraId, portalIds, atualizarJanelas = false })
   if (aSair.length) {
     const idsQueSaem = aSair.map((o) => o.id);
     const comHistorico = new Set(
-      (await prisma.ocorrenciaObrigacao.findMany({
+      (await db.ocorrenciaObrigacao.findMany({
         where: { obrigacaoId: { in: idsQueSaem }, status: "CONCLUIDA" },
         select: { obrigacaoId: true },
       })).map((oc) => oc.obrigacaoId),
@@ -211,30 +213,31 @@ export async function propagar({ regraId, portalIds, atualizarJanelas = false })
     const aDesvincular = idsQueSaem.filter((id) => comHistorico.has(id));
     const aApagar = idsQueSaem.filter((id) => !comHistorico.has(id));
     if (aDesvincular.length) {
-      const r = await prisma.obrigacao.updateMany({
+      const r = await db.obrigacao.updateMany({
         where: { id: { in: aDesvincular } },
         data: { regraId: null, sobrescritaLocal: false },
       });
       desvinculadas = r.count ?? aDesvincular.length;
     }
     if (aApagar.length) {
-      const r = await prisma.obrigacao.deleteMany({ where: { id: { in: aApagar } } });
+      const r = await db.obrigacao.deleteMany({ where: { id: { in: aApagar } } });
       removidas = r.count ?? aApagar.length;
     }
   }
 
   // Ocorrências só depois que todas as obrigações existem: cada uma consulta feriado e empresa.
-  for (const id of tocadas) await sincronizarOcorrencias(id, prisma, { atualizarJanelas });
+  for (const id of tocadas) await sincronizarOcorrencias(id, db, { atualizarJanelas });
 
   return { criadas, atualizadas, puladas, removidas, desvinculadas, empresasNoEscopo: alvo.length };
 }
 
 // ── CRUD ─────────────────────────────────────────────────────────────────────────────────────
 
-export async function criarRegra({ portalIds, dados, criadoPorId = null }) {
+export async function criarRegra({ portalIds, dados, criadoPorId = null }, db = prisma) {
+  if (dados.agendaConfig && db === prisma) return prisma.$transaction(tx => criarRegra({ portalIds, dados, criadoPorId }, tx), { timeout: 30000 });
   const limpo = normalizarRegra(dados);
-  const regra = await prisma.regraObrigacao.create({ data: { ...limpo, criadoPorId } });
-  const efeito = await propagar({ regraId: regra.id, portalIds });
+  const regra = await db.regraObrigacao.create({ data: { ...limpo, criadoPorId } });
+  const efeito = await propagar({ regraId: regra.id, portalIds }, db);
   return { regra, ...efeito };
 }
 
@@ -367,6 +370,7 @@ export async function listarRegras({ portalIds }) {
     const sobrescritas = aplicadas.filter((o) => o.sobrescritaLocal);
     return {
       regraId: r.id,
+      ...(r.agendaConfig ? { agendaConfig: r.agendaConfig, descricao: r.descricao, janelaTrabalho: r.janelaTrabalho } : {}),
       nome: r.nome,
       categoria: r.categoria,
       periodicidade: r.periodicidade,

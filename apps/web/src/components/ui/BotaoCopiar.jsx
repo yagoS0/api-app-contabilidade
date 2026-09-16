@@ -36,12 +36,12 @@
 import { useState } from "react";
 
 /**
- * @param {{valor: string, rotulo: string, titulo?: string}} props
+ * @param {{valor: string, rotulo: string, titulo?: string, children?: import("react").ReactNode}} props
  *   `valor` — o texto CRU que vai para a área de transferência
  *   `rotulo` — `aria-label` (é como o teste e o leitor de tela acham o botão)
  *   `titulo` — `title` no estado parado; no estado "falhou" ele é substituído pelo aviso
  */
-export function BotaoCopiar({ valor, rotulo, titulo }) {
+export function BotaoCopiar({ valor, rotulo, titulo, children }) {
   const [estado, setEstado] = useState("parado"); // parado | copiado | falhou
 
   async function copiar(e) {
@@ -67,11 +67,12 @@ export function BotaoCopiar({ valor, rotulo, titulo }) {
       aria-label={rotulo}
       style={{
         display: "inline-flex", alignItems: "center", justifyContent: "center",
-        width: 20, height: 18, padding: 0, flex: "0 0 auto",
+        width: children ? "auto" : 20, height: children ? "auto" : 18, minHeight: children ? 24 : undefined, gap: children ? 5 : undefined, padding: 0, flex: "0 0 auto",
         background: "transparent", border: "none", borderRadius: 4,
         color: cor, cursor: "pointer", font: "inherit", fontSize: "0.7rem", lineHeight: 1,
       }}
     >
+      {children}
       <span aria-hidden="true">{estado === "copiado" ? "✓" : estado === "falhou" ? "✖" : "⧉"}</span>
     </button>
   );

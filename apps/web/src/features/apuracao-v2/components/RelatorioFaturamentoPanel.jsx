@@ -133,11 +133,12 @@ function BlocoGrupo({ grupo }) {
   const corTitulo = PANEL.text;
 
   return (
-    <div style={{ ...caixa, padding: 12, display: "flex", flexDirection: "column", gap: 8, borderColor: alerta ? "var(--state-warn)" : PANEL.border }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}>
+    <details style={{ ...caixa, padding: 12, borderColor: alerta ? "var(--state-warn)" : PANEL.border }}>
+      <summary style={{ cursor: "pointer" }}>
         <strong style={{ fontSize: "0.88rem", color: corTitulo }}>{grupo.rotulo}</strong>
-        <span style={{ fontFamily: "monospace", fontWeight: 700 }}>{fmtMoney(grupo.total?.valorContabil)}</span>
-      </div>
+        <span style={{ marginLeft: 12, fontFamily: "monospace", fontWeight: 700 }}>{fmtMoney(grupo.total?.valorContabil)}</span>
+        <span style={{ marginLeft: 12, color: PANEL.muted }}>{grupo.total?.itens} item(ns) · Ver notas</span>
+      </summary>
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: "0.74rem", color: PANEL.muted }}>
         <span>Segregação (item 6.5): <CelulaDimensao leitura={seg} /></span>
@@ -156,12 +157,12 @@ function BlocoGrupo({ grupo }) {
       </div>
 
       <TabelaLinhas linhas={grupo.linhas || []} />
-    </div>
+    </details>
   );
 }
 
 /** O pré-apurado: o nosso número, o oficial, e a diferença — nunca um número sem dono. */
-function BlocoPreApurado({ preApurado, avisos = [], diagnostico = null }) {
+function BlocoPreApurado({ preApurado, avisos = [], diagnostico = null, temOficialAtual = false }) {
   const proc = procedenciaDoDas(preApurado);
   const recusa = recusaDoPreApurado(preApurado);
   // ⚠ Ver `recusaEcoaOTopo` na lib: quando a caixa do topo já disse o mesmo, com o mesmo número e
@@ -170,7 +171,7 @@ function BlocoPreApurado({ preApurado, avisos = [], diagnostico = null }) {
 
   return (
     <div style={{ ...caixa, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-      <strong style={{ fontSize: "0.88rem" }}>Simples Nacional — pré-apurado</strong>
+      <strong style={{ fontSize: "0.88rem" }}>Resultado da apuração</strong>
 
       {/* ⚠⚠ A CAIXA CONTINUA INTEIRA — ELA SÓ DEIXA DE SER A SEGUNDA ÂMBAR DA TELA.
           A primeira versão desta mudança recolhia o conteúdo quando o topo já avisava, e o teste
@@ -188,7 +189,9 @@ function BlocoPreApurado({ preApurado, avisos = [], diagnostico = null }) {
         </Aviso>
       ) : null}
 
-      {recusa.bloqueado ? (
+      {recusa.bloqueado && !diagnostico ? (
+        <details open={!proc.oficial.disponivel && !temOficialAtual}>
+        <summary style={{ cursor: "pointer", color: PANEL.muted }}>Conferência pelo cálculo local</summary>
         <Aviso tom={ecoa ? "neutro" : TOM_DO_AVISO[recusa.tom]} titulo={recusa.titulo}>
           {recusa.detalhe}
           {recusa.buraco ? (
@@ -200,6 +203,7 @@ function BlocoPreApurado({ preApurado, avisos = [], diagnostico = null }) {
           ) : null}
           {recusa.comoResolver ? <div style={{ marginTop: 4 }}>{recusa.comoResolver}</div> : null}
         </Aviso>
+        </details>
       ) : null}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
@@ -249,6 +253,8 @@ function BlocoPreApurado({ preApurado, avisos = [], diagnostico = null }) {
 }
 
 export function RelatorioFaturamentoPanel({
+  apuracaoAtual = null,
+  extratoSalvo = null,
   relatorio = null,
   loading = false,
   gerando = false,
@@ -300,6 +306,9 @@ export function RelatorioFaturamentoPanel({
 
   const dados = relatorio?.dados || null;
   const avisos = dados ? avisosDoRelatorio(dados) : [];
+  const temOficialAtual = apuracaoAtual?.dasRetornadoSerpro != null || apuracaoAtual?.dasSimuladoSerpro != null
+    || Boolean(extratoSalvo?.dados?.numeroDeclaracao || extratoSalvo?.files?.declaracaoFileId || extratoSalvo?.circular?.pgdasNumeroDeclaracao);
+  const temOficial = temOficialAtual || procedenciaDoDas(dados?.preApurado).oficial.disponivel;
 
   const barra = (
     <div data-print-hide style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -412,8 +421,8 @@ export function RelatorioFaturamentoPanel({
           depois do total é avisar tarde. */}
       {avisos.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {avisos.map((a) => (
-            <Aviso key={a.codigo} tom={TOM_DO_AVISO[a.tom]} titulo={a.titulo}>
+          {avisos.map((a) => {
+            const aviso = <Aviso tom={TOM_DO_AVISO[a.tom]} titulo={a.titulo}>
               {a.numeros?.valor != null ? (
                 <div>
                   <strong>{fmtMoney(a.numeros.valor)}</strong>
@@ -430,12 +439,19 @@ export function RelatorioFaturamentoPanel({
                 </div>
               ) : null}
               {a.detalhe ? <div style={{ marginTop: 2 }}>{a.detalhe}</div> : null}
-            </Aviso>
-          ))}
+            </Aviso>;
+            return temOficial && a.codigo === "NAO_CLASSIFICADO"
+              ? <details key={a.codigo}><summary style={{ cursor: "pointer", color: PANEL.muted }}>Classificação das notas para conferência local</summary>{aviso}</details>
+              : <div key={a.codigo}>{aviso}</div>;
+          })}
         </div>
       )}
 
-      <BlocoPreApurado preApurado={dados.preApurado} avisos={avisos} diagnostico={diagnosticoDaFoto(relatorio)} />
+      {temOficialAtual && !procedenciaDoDas(dados.preApurado).oficial.disponivel && <small style={{ color: PANEL.muted }}>
+        A apuração já tem retorno da Receita. Este relatório mantém os valores da data em que foi gerado; os dados atuais estão na apuração e no extrato salvo.
+      </small>}
+      <BlocoPreApurado preApurado={dados.preApurado} avisos={avisos} diagnostico={diagnosticoDaFoto(relatorio)} temOficialAtual={temOficialAtual} />
+      <h3 style={{ margin: 0, fontSize: "0.9rem" }}>Notas consideradas no faturamento</h3>
 
       {/* Um bloco por tipo de operação, cada um com o seu total. */}
       {(dados.gruposPorTipoOperacao || []).length === 0 ? (
