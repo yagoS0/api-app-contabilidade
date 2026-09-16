@@ -1,3 +1,4 @@
+import { createLaboratorioRouter } from "./laboratorio.js";
 import { Router } from "express";
 import { createExportacaoLoteRouter } from "./exportacaoLote.js";
 import { responderFluxoDeCaixa } from "../fluxoDeCaixaHttp.js";
@@ -551,6 +552,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   const router = Router();
   router.use(requireAuth(), requireAccountType("FIRM"));
   router.use(createExportacaoLoteRouter());
+  router.use(createLaboratorioRouter());
   // 08/09/2026: retorno solicitado em Relatórios, exclusivamente leitura.
   router.get("/companies/:companyId/fluxo-de-caixa", requireFirmCompanyAccess(), (req, res) => responderFluxoDeCaixa(req, res, { log }));
   const upload = multer({

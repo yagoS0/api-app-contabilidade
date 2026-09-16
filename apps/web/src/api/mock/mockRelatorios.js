@@ -1,6 +1,28 @@
+import { validarBaseSocios, resumirSocios } from "../../../../../packages/shared/src/analise/socios.js";
+import { calcularCenario, validarPremissas, VERSAO_GESTAO } from '../../../../../packages/shared/src/analise/gestao.js';
+const memoria = new Map();
+const ler = key => {try{return JSON.parse(localStorage.getItem('dev-gerencial:'+key)||'null')??memoria.get(key);}catch{return memoria.get(key);}};
+const gravar = (key,value) => {memoria.set(key,structuredClone(value));try{localStorage.setItem('dev-gerencial:'+key,JSON.stringify(value));}catch{}};
 import { fluxoDeCaixaDoMock } from './fluxoRelatoriosFixture';
+import { analisePlanejamentoMock } from './analisePlanejamentoMock';
+import { clientesAnaliseMock } from './clientesAnaliseMock';
 // Spread dentro do objeto da API mock. Usa o preflight existente via this, sem outro ledger.
 export const mockRelatorios = {
+  async getBaseSociosGerencial(id,{de,ate}) {const todos=ler('socios:'+id)||[],vistos=new Set();return {ok:true,registros:todos.filter(r=>{if(r.competencia<de||r.competencia>ate||vistos.has(r.competencia))return false;vistos.add(r.competencia);return true;})};},
+  async salvarBaseSociosGerencial(id,dados) {const registro={...validarBaseSocios(dados),id:crypto.randomUUID(),createdAt:new Date().toISOString()};gravar('socios:'+id,[registro,...(ler('socios:'+id)||[])]);return {ok:true,registro};},
+  async getRelatorioGerencialSnapshot(id,filtros) {const dados=analisePlanejamentoMock(id,filtros),basesSocios=(await this.getBaseSociosGerencial(id,filtros)).registros;const meses=[];for(let m=filtros.de;m<=filtros.ate&&meses.length<24;){meses.push(m);const [a,b]=m.split('-').map(Number);m=new Date(Date.UTC(a,b,1)).toISOString().slice(0,7);}return {ok:true,dados,clientes:clientesAnaliseMock(id,filtros),classificacao:(await this.getClassificacaoGerencial(id)).contas,basesSocios,socios:resumirSocios(basesSocios,meses,dados.atual.indicadores.resultado)};},
+  async getBaseTributariaGerencial(id,referencia) {return {ok:true,demonstracao:true,referencia:{competencia:referencia},campos:{rbt12:{apurado:!id.endsWith('007'),valor:1200000,origem:'Exemplo fictício'},folhaAnual:{apurado:!id.endsWith('007'),valor:360000,origem:'Exemplo fictício'}}};},
+  async getClassificacaoGerencial(id) {return structuredClone(ler('contas:'+id)||{ok:true,contas:{},revisao:0});},
+  async salvarClassificacaoGerencial(id,{contas,revisao}) {const anterior=await this.getClassificacaoGerencial(id);if(anterior.revisao!==revisao)throw Error('Classificação alterada. Recarregue.');const r={ok:true,contas:structuredClone(contas),revisao:revisao+1};gravar('contas:'+id,r);return r;},
+  async listarCenariosLaboratorio() {return {ok:true,cenarios:structuredClone(ler('cenarios')||[])};},
+  async salvarCenarioLaboratorio(d) {const a=validarPremissas(d.a),b=validarPremissas(d.b);const cenario={id:crypto.randomUUID(),companyId:d.companyId||null,nome:d.nome,periodo:d.periodo,entradasJson:{a,b},resultadoJson:{a:calcularCenario(a),b:calcularCenario(b)},origemJson:{declaracaoAutor:d.procedencia},versao:VERSAO_GESTAO,createdAt:new Date().toISOString()};gravar('cenarios',[cenario,...(ler('cenarios')||[])]);return {ok:true,cenario};},
+  async getAnaliseClientes(companyId,filtros) {return clientesAnaliseMock(companyId,filtros);},
+  async getAnalisePlanejamento(companyId,filtros) { return analisePlanejamentoMock(companyId,filtros); },
+  async getAnaliseLancamentos(companyId,{conta,de,ate,pagina=1}) {
+    const dados=analisePlanejamentoMock(companyId,{de,ate});
+    const c=dados.atual.dre.linhas.flatMap(l=>l.contas).find(c=>c.reduzido===conta);
+    return {ok:true,temMais:false,linhas:pagina!==1||!c?[]:[{id:'demo-entry',competencia:de,historico:'Lançamento fictício para conferir o detalhamento',status:'CONFIRMADO',lines:[{tipo:c.valor<0?'D':'C',conta,valor:Math.abs(c.valor)}]}]};
+  },
   async getFluxoCaixa(companyId,{janelaInicio}={}) {
     const hoje=new Date();
     const ciclo=`${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`;

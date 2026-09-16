@@ -1076,7 +1076,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
             <Suspense fallback={<TabLoadingFallback />}>
               {/* ⚠ `empresas` NÃO é passada: sem ela o seletor não renderiza, e a tela não oferece
                   trocar de empresa de dentro da empresa. */}
-              <PlanejamentoPage api={planejamentoApi} empresa={{ id: companyId }} empresaFixa />
+              <PlanejamentoPage api={planejamentoApi} empresa={{ id: companyId, razaoSocial: selectedCompany?.razaoSocial || selectedCompany?.razao || selectedCompany?.nome }} empresaFixa />
             </Suspense>
           </ErrorBoundary>
           {/* ⚠ O `Feedback` é declarado à mão porque esta aba monta a moldura à mão — a mesma
@@ -1328,6 +1328,7 @@ function CompanyDetailContent({ company, guidesPanel, editPanel, accountingPanel
                      aqui, e quem manda no período são os chips da própria tela. */
                   competenciaReferencia={circularPanel?.competencia}
                   razaoSocial={selectedCompany?.razao}
+                  cnpj={selectedCompany?.cnpj}
                 />
               ) : <TabLoadingFallback />}
             </Suspense>

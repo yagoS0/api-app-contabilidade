@@ -30,6 +30,7 @@ const PAGE_TO_PATH = {
   onboardingWizard: null,
   // Simulacao livre nao exige empresa: e a tela de reuniao com prospect.
   planejamento: "/planejamento",
+  laboratorio: "/laboratorio",
   serproFuncoes: "/funcoes-serpro",
   // As conversas de WhatsApp do escritório (F5, 02/09/2026). As DUAS metades: aqui e em `pathToPageName`.
   whatsapp: "/whatsapp",
@@ -58,6 +59,7 @@ export function pathToPageName(pathname) {
   if (pathname === "/firm-settings/chart") return "chartOfAccountsGlobal";
   if (pathname === "/apuracao") return "apuracao";
   if (pathname === "/rotinas") return "rotinas";
+  if (pathname === "/laboratorio") return "laboratorio";
   if (pathname === "/planejamento") return "planejamento";
   if (pathname === "/obrigacoes") return "obrigacoes";
   if (pathname === "/whatsapp") return "whatsapp";

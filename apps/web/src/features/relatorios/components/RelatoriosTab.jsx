@@ -18,7 +18,7 @@ import {
   intervalosDisponiveis, periodoAnterior, variacao, somaPorTipo, somaTotal,
 } from "../lib/periodoRelatorio";
 import { LogoAltan } from "../../../components/ui/LogoAltan";
-import { FluxoLeitura } from "./FluxoLeitura";
+import { AnaliseEmpresa } from "../../planejamento/components/AnaliseEmpresa";
 
 const relatoriosApi = createApiClient();
 
@@ -35,7 +35,7 @@ const DESTAQUES = [
 ];
 
 export function RelatoriosTab({ api = relatoriosApi, ...props }) {
-  return <FluxoLeitura api={api} {...props} />;
+  return <AnaliseEmpresa key={props.companyId} api={api} empresaId={props.companyId} empresaNome={props.razaoSocial} empresaCnpj={props.cnpj} />;
 }
 
 // Resumo legado preservado para consumidores explícitos; Relatórios agora abre fluxo de leitura.

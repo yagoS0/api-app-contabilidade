@@ -1,0 +1,8 @@
+import { useEffect,useState } from 'react';
+const brl=v=>v==null?'Sem base':v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+export function BaseTributaria({api,empresaId,referencia}) {
+ const [dados,setDados]=useState(null),[erro,setErro]=useState('');
+ useEffect(()=>{let vivo=true;setDados(null);setErro('');Promise.resolve().then(()=>api.getBaseTributariaGerencial(empresaId,referencia)).then(r=>{if(r.ok===false)throw Error(r.message||'Falha na consulta');if(vivo)setDados(r);}).catch(e=>{if(vivo)setErro(e.message);});return()=>{vivo=false;};},[api,empresaId,referencia]);
+ const folha=dados?.campos?.folhaAnual,receita=dados?.campos?.rbt12,valor=folha?.apurado&&receita?.apurado&&receita.valor>0?folha.valor/receita.valor*100:null;
+ return <section className="bi-card"><h2>Fator R · conferência da base</h2><p>Referência {referencia}; janela de 12 meses anteriores. Apenas dados já existentes, sem nova consulta paga.</p>{erro?<p role="alert">Não foi possível consultar a base: {erro}</p>:!dados?<p>Carregando bases…</p>:<><div className="bi-cards">{[['Folha e encargos disponíveis',folha],['Receita acumulada (RBT12)',receita]].map(([n,c])=><div key={n}><h3>{n}</h3><strong>{brl(c?.apurado?c.valor:null)}</strong><p>{c?.origem||c?.motivoAusencia||'Fonte não informada'}</p></div>)}<div><h3>Razão entre as bases</h3><strong>{valor==null?'Sem base comparável':`${valor.toFixed(2)}%`}</strong></div></div><p>Conferir composição e regime de reconhecimento da folha antes de usar como Fator R fiscal. Lançamentos por competência não comprovam pagamento. Este relatório não altera anexo, cadastro ou apuração.</p></>}</section>;
+}

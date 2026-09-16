@@ -11,6 +11,7 @@ import { CompanyDetailPage } from "./features/companies/detail/pages/renderCompa
 import { SerproSettingsPage } from "./features/fiscal/serpro/pages/renderSerproSettingsPage";
 import { SerproFuncoesPage } from "./features/fiscal/serpro/pages/renderSerproFuncoesPage";
 import { RotinasPage } from "./features/fiscal/rotinas/pages/renderRotinasPage";
+import { LaboratorioEmpresa } from "./features/planejamento/components/LaboratorioEmpresa";
 import { PlanejamentoPage } from "./features/planejamento/pages/renderPlanejamentoPage";
 import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploadPage";
 import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
@@ -307,6 +308,7 @@ function AppInterno() {
   // que ele mostra é a MESMA de `companiesState.companies` (`GET /firm/companies`), já escopada
   // pela carteira de quem está logado — não há uma segunda leitura de escopo, e o backend confere o
   // id de novo (`requireFirmCompanyAccess`).
+  if (session.page === "laboratorio") return <LaboratorioEmpresa api={api} empresas={companiesWorkspace.companiesState.companies} onVoltar={()=>session.goBack()} onTributario={()=>session.setPage('planejamento')}/>;
   if (session.page === "planejamento") {
     return (
       <PlanejamentoPage
@@ -603,6 +605,7 @@ function AppInterno() {
       onOpenApuracao={() => session.setPage("apuracao")}
       onOpenRotinas={() => session.setPage("rotinas")}
       onOpenPlanejamento={() => session.setPage("planejamento")}
+      onOpenLaboratorio={() => session.setPage("laboratorio")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
       onOpenWhatsapp={() => session.setPage("whatsapp")}
       onOpenConfiguracoes={() => session.setPage("configuracoesGerais")}

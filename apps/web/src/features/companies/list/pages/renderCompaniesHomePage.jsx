@@ -327,6 +327,7 @@ export function CompaniesHomePage({
   onOpenApuracao,
   onOpenRotinas,
   onOpenPlanejamento,
+  onOpenLaboratorio,
   onOpenSerproFuncoes,
   // As conversas de WhatsApp (F5, 02/09/2026): a fila de não vinculados, os fios, assumir/responder.
   onOpenWhatsapp,
@@ -978,6 +979,7 @@ export function CompaniesHomePage({
                 // dentro de uma empresa); Rotinas é configuração de recorrência. Nenhuma das duas é
                 // o trabalho do dia — são episódicas, e é isso que as põe aqui dentro.
                 { grupo: "Organização e análise", label: "Rotinas", descricao: "Acompanhar execuções e configurar rotinas automáticas.", onClick: onOpenRotinas },
+                { label: "Laboratório da Empresa", descricao: "Comparar decisões com premissas explícitas.", onClick: onOpenLaboratorio },
                 { label: "Planejamento", descricao: "Salvar cenários e comparar regimes tributários.", onClick: onOpenPlanejamento },
                 // Cadastrar obrigação é CONFIGURAÇÃO do escritório (define o que passa a ser
                 // cobrado de todo mundo), não uma forma de olhar a carteira — por isso saiu do
