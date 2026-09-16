@@ -1,5 +1,10 @@
 # Planejamento — continuidade do cenário (08/09/2026)
 
+## Classificação automática autorizada — 16/09/2026
+
+O usuário aprovou maximizar automação gerencial. Esta regra substitui a proibição anterior de sugestões pelo nome: shared/analise/classificacao.js combina código completo, categoria da DRE e identificação exata normalizada. Tributos específicos sobre faturamento em deduções têm classificação automática revisável; aluguel, comissões e pró-labore recebem sugestão para confirmação. Não inferir por recorrência, conta genérica, parcela ou multa. Classificações confirmadas da empresa prevalecem. Não gravar ao consultar. Relatório, impressão e Laboratório compartilham a regra e indicam a origem automática. Alterar receita escala custos variáveis proporcionalmente à referência, inclusive custos com tributos embutidos, mantendo alíquota adicional zero. Nenhuma chamada de IA ou serviço fiscal nesta etapa.
+
+
 ## Relatórios e Laboratório em dev — 16/09/2026
 
 RelatoriosTab reutiliza AnaliseEmpresa. O simulador tributário foi preservado. LaboratorioEmpresa fica em `/laboratorio`, exclusivo do escritório. A prévia usa dados fictícios e grava apenas no navegador; API real usa cenários próprios, nunca cria uma empresa para ficção. Detalhes e limites em `docs/ajustes/2026-09-16-relatorios-laboratorio-dev.md`.

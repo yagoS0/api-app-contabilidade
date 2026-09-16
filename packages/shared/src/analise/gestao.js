@@ -1,3 +1,4 @@
+import { sugerirClassificacoes } from './classificacao.js';
 // Valores gerenciais: regras puras compartilhadas por relatórios, API e laboratório.
 export const VERSAO_GESTAO = 'gestao-1';
 const moeda = n => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -52,16 +53,18 @@ export function receitaParaMargem(entrada, margem) {
 
 export const CHAVES_CUSTOS = ['deducoes','custos','pessoal','gerais','tributarias','depreciacao','despesasFinanceiras','irpjCsll'];
 export function contasGerenciais(dre) {
-  return dre.linhas.filter(l=>CHAVES_CUSTOS.includes(l.chave)).flatMap(l=>(l.contas||[]).map(c=>({...c,categoria:l.rotulo,custo:moeda(-c.valor)})));
+  return dre.linhas.filter(l=>CHAVES_CUSTOS.includes(l.chave)).flatMap(l=>(l.contas||[]).map(c=>({...c,categoria:l.rotulo,chaveCategoria:l.chave,custo:moeda(-c.valor)})));
 }
 
 export function calcularGestao(dre, classificacoes={}) {
-  const contas=contasGerenciais(dre), pendentes=contas.filter(c=>!['FIXO','VARIAVEL'].includes(classificacoes[c.codigo]?.comportamento));
+  const contas=contasGerenciais(dre);
+  const sugestao=sugerirClassificacoes(contas,classificacoes); classificacoes=sugestao.efetivas;
+  const pendentes=contas.filter(c=>!['FIXO','VARIAVEL'].includes(classificacoes[c.codigo]?.comportamento));
   const receita=dre.linhas.find(l=>l.chave==='receitaBruta')?.valor;
   const bloqueado=dre.semLancamento||dre.qualidade?.linhasInvalidas>0||dre.qualidade?.linhasNaoClassificadas>0||dre.naoClassificado?.length>0||pendentes.length>0||!Number.isFinite(receita)||contas.some(c=>c.custo<0);
   const fixos=moeda(contas.filter(c=>classificacoes[c.codigo]?.comportamento==='FIXO').reduce((s,c)=>s+c.custo,0));
   const variaveis=moeda(contas.filter(c=>classificacoes[c.codigo]?.comportamento==='VARIAVEL').reduce((s,c)=>s+c.custo,0));
   const prolabore=moeda(contas.filter(c=>classificacoes[c.codigo]?.prolabore===true).reduce((s,c)=>s+c.custo,0));
   const contribuicao=bloqueado?null:moeda(receita-variaveis), taxa=receita>0&&contribuicao!=null?contribuicao/receita:null;
-  return { versao:VERSAO_GESTAO, pendentes:pendentes.map(c=>c.codigo), bloqueado:!!bloqueado, fixos, variaveis, prolabore:bloqueado?null:prolabore, contribuicao, margemContribuicao:taxa==null?null:taxa*100, equilibrio:taxa>0?moeda(fixos/taxa):null, cobertura:!bloqueado&&fixos>0?contribuicao/fixos:null, prolaborePercentual:!bloqueado&&receita>0?prolabore/receita*100:null };
+  return { classificacoes, sugestoes:sugestao.sugestoes, automaticas:sugestao.automaticas, versao:VERSAO_GESTAO, pendentes:pendentes.map(c=>c.codigo), bloqueado:!!bloqueado, fixos, variaveis, prolabore:bloqueado?null:prolabore, contribuicao, margemContribuicao:taxa==null?null:taxa*100, equilibrio:taxa>0?moeda(fixos/taxa):null, cobertura:!bloqueado&&fixos>0?contribuicao/fixos:null, prolaborePercentual:!bloqueado&&receita>0?prolabore/receita*100:null };
 }

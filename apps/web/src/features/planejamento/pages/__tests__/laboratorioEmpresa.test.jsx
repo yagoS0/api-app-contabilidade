@@ -46,3 +46,26 @@ test.each([{companyId:'empresa-real',id:'legado',razao:'Empresa da carteira'},{i
  expect(api.getRelatorioGerencialSnapshot).toHaveBeenCalledWith('empresa-real',filtros);
  expect(screen.getByText('Salvar nova versão')).toBeDisabled();
 });
+
+test('regras automáticas habilitam DAS sem gravar; sugestões médias exigem confirmação',async()=>{
+ const api={getClassificacaoGerencial:jest.fn(async()=>({contas:{},revisao:0})),salvarClassificacaoGerencial:jest.fn(async(_,r)=>({...r,revisao:1}))};
+ const dre={linhas:[{chave:'receitaBruta',valor:12000},{chave:'deducoes',contas:[{codigo:'311020001',nome:'DAS SIMPLES NACIONAL',valor:-720}]},{chave:'gerais',contas:[{codigo:'411020010',nome:'Aluguel de imóveis',valor:-1000}]}]};
+ render(<BaseGerencial api={api} empresaId="real" dre={dre}/>);
+ await screen.findByText(/1 conta\(s\) classificada\(s\) automaticamente/);
+ expect(api.salvarClassificacaoGerencial).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByText('Revisar sugestões em lote'));
+ expect(screen.getByLabelText('Comportamento 311020001')).toHaveValue('VARIAVEL');
+ expect(screen.getByLabelText('Comportamento 411020010')).toHaveValue('FIXO');
+ expect(screen.getByText(/Sugestão para conferir/)).toBeInTheDocument();
+ fireEvent.click(screen.getByText('Salvar classificação'));
+ await waitFor(()=>expect(api.salvarClassificacaoGerencial).toHaveBeenCalledWith('real',{revisao:0,contas:{'311020001':{comportamento:'VARIAVEL',prolabore:false},'411020010':{comportamento:'FIXO',prolabore:false}}}));
+});
+
+test('editar receita mantém proporção dos variáveis sem arredondamento por tecla',async()=>{
+ const api={listarCenariosLaboratorio:jest.fn(async()=>({cenarios:[]}))};
+ render(<LaboratorioEmpresa api={api}/>);await waitFor(()=>expect(api.listarCenariosLaboratorio).toHaveBeenCalled());
+ campos.forEach((c,i)=>fireEvent.change(screen.getAllByLabelText(c)[0],{target:{value:String([12612,0,756.73,0,1,0][i])}}));
+ const campo=screen.getAllByLabelText('Faturamento mensal')[0];fireEvent.focus(campo);
+ for(const value of ['1','13','132','1320','13200'])fireEvent.change(campo,{target:{value}});
+ expect(screen.getAllByLabelText('Custos variáveis')[0]).toHaveValue(792.01);
+});
