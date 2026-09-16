@@ -34,3 +34,15 @@ test('trocar a empresa enquanto prepara relatório não imprime fotografia antig
  const old=window.print;window.print=jest.fn();
  try{const v=render(<ImprimirRelatorio api={api} empresaId="a" de="2026-08" ate="2026-08" comparar="anterior"/>);fireEvent.click(screen.getByText('Imprimir relatório completo'));await waitFor(()=>expect(resolver).toBeDefined());v.unmount();resolver({dados:{},clientes:{},classificacao:{}});await Promise.resolve();expect(window.print).not.toHaveBeenCalled();}finally{window.print=old;}
 });
+
+test.each([{companyId:'empresa-real',id:'legado',razao:'Empresa da carteira'},{id:'empresa-real',razao:'Empresa da carteira'}])('importa receita pela identidade da carteira: %j',async empresa=>{
+ const filtros={de:'2026-08',ate:'2026-08',comparar:'anterior'},dados=analisePlanejamentoMock('demo',filtros),clientes=clientesAnaliseMock('demo',filtros);
+ const api={listarCenariosLaboratorio:jest.fn(async()=>({cenarios:[]})),getRelatorioGerencialSnapshot:jest.fn(async()=>({dados,clientes,classificacao:{}}))};
+ render(<LaboratorioEmpresa api={api} empresas={[empresa]}/>);
+ fireEvent.change(screen.getByLabelText('Base do cenário'),{target:{value:'empresa-real'}});
+ fireEvent.change(screen.getByLabelText('Mês de referência'),{target:{value:'2026-08'}});
+ fireEvent.click(screen.getByText('Trazer base do mês'));
+ await waitFor(()=>expect(screen.getAllByLabelText('Faturamento mensal')[0]).toHaveValue(dados.atual.dre.linhas.find(l=>l.chave==='receitaBruta').valor));
+ expect(api.getRelatorioGerencialSnapshot).toHaveBeenCalledWith('empresa-real',filtros);
+ expect(screen.getByText('Salvar nova versão')).toBeDisabled();
+});
