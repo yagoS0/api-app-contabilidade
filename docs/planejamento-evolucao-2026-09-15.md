@@ -1,5 +1,7 @@
 # Evolução do planejamento — 15/09/2026
 
+Atualização de 16/09: a importação manual do acompanhamento foi substituída por preenchimento automático a partir de apurações, notas e lançamentos. Ver [planejamento-automatico-2026-09-16.md](planejamento-automatico-2026-09-16.md) para prioridade das fontes, preservação de edições e conferência da folha contábil.
+
 Autorização: “vamos corrigir esses pontos, sempre conferencido o que fez”, após a análise de mercado. Implementação local na branch `codex/perfil-nota-municipio`. Não houve publicação, envio fiscal ou alteração de cadastro de empresa neste lote.
 
 ## Plano executado

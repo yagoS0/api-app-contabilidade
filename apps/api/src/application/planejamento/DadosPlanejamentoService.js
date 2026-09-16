@@ -27,7 +27,7 @@ import {
 import { resolverPerfilFiscal } from "../notas/apuracao/v2/PerfilFiscalService.js";
 import { sujeitoAoFatorR, RESPOSTA as RESPOSTA_FATOR_R } from "./lib/sujeitoAoFatorR.js";
 import { sugerirCategoriaDaEmpresa } from "./lib/categoriaPresumido.js";
-import { historicoMensalDosSnapshots } from "./lib/historicoMensal.js";
+import { carregarHistoricoPlanejamento } from "./HistoricoPlanejamentoService.js";
 
 const REGIMES = new Set(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI"]);
 const ANEXOS_VALIDOS = new Set(["I", "II", "III", "IV", "V"]);
@@ -133,7 +133,7 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
     _count: { _all: true },
   }).catch(() => null);
   const notasNoPeriodo = Number(agg?._count?._all || 0);
-  const receitaAnual = notasNoPeriodo > 0
+  let receitaAnual = notasNoPeriodo > 0
     ? valorMonetario(
       agg?._sum?.total,
       `notas fiscais emitidas e autorizadas de ${janelaRotulo} (${notasNoPeriodo} nota${notasNoPeriodo === 1 ? "" : "s"})`,
@@ -143,7 +143,7 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
 
   // ── RBT12 ─────────────────────────────────────────────────────────────────────────────────────
   // Ordem de autoridade: o que já foi usado num fechamento > o cache de extrato > a circular.
-  const rbt12 = primeiraFonteQueResponde([
+  let rbt12 = primeiraFonteQueResponde([
     valorMonetario(
       snapshot?.rbt12,
       snapshot ? `apuração de ${competenciaBr(snapshot.competencia)}${snapshot.estado ? ` (${snapshot.estado})` : ""}` : null,
@@ -166,7 +166,7 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
   // fabricado do caminho legado, então `0` NUNCA vira resposta. E `folhaDerivada` só conta quando
   // ela mesma se declara disponível (`disponivel` = houve lançamento de folha no período); o
   // `total: 0` que ela devolve no vazio é ausência de dado, não folha zero.
-  const folhaAnual = primeiraFonteQueResponde([
+  let folhaAnual = primeiraFonteQueResponde([
     valorMonetario(
       snapshot?.folha12m,
       snapshot ? `folha de 12 meses informada no fechamento de ${competenciaBr(snapshot.competencia)}` : null,
@@ -278,14 +278,28 @@ export async function montarDadosPlanejamento({ portalClientId, agora = new Date
   );
 
   const historico = await prisma.apuracaoSnapshot.findMany({
-    where: { portalClientId: portal.id, competencia: { gte: `${Number(referencia.slice(0, 4)) - 1}-01`, lt: referencia }, estado: { in: ["calculada", "fechada", "transmitida", "confirmada"] } },
+    where: { portalClientId: portal.id, competencia: { gte: `${Number(referencia.slice(0, 4)) - 1}-01`, lte: referencia }, estado: { in: ["calculada", "fechada", "transmitida", "confirmada"] } },
     orderBy: { competencia: "asc" },
     select: { competencia: true, estado: true, receitaInterna: true, receitaExterna: true, receitaPorTipo: true, folhaMensal12: true,
       dasRetornadoSerpro: true, dasCalculadoLocal: true, dasCalculadoLocalProcedencia: true },
-  }).catch(() => []);
+  }).catch(() => null);
+  const mensal = await carregarHistoricoPlanejamento({ portalClientId: portal.id, referencia, snapshots: historico || [] });
+  if (!historico) mensal.avisos.push("Não foi possível ler as apurações salvas; confira as fontes do acompanhamento.");
+  // Uma janela completa também atende empresas que registram receita por lançamentos.
+  // Sem os doze meses, não anualizar uma soma parcial nem preencher meses vazios com zero.
+  const serieAnual = janela.map(c => mensal.historico.find(m => m.competencia === c)?.receita);
+  if (serieAnual.length === 12 && serieAnual.every(v => v != null)) {
+    receitaAnual = apurado(Math.round(serieAnual.reduce((a, b) => a + b, 0) * 100) / 100, `histórico mensal de ${janelaRotulo}: apurações, notas ou lançamentos, sem duplicar fontes`);
+    if (!rbt12.apurado) rbt12 = apurado(receitaAnual.valor, receitaAnual.origem);
+  }
+  const serieFolha = janela.map(c => mensal.historico.find(m => m.competencia === c)?.folha);
+  if (!folhaAnual.apurado && serieFolha.length === 12 && serieFolha.every(v => v != null)) {
+    folhaAnual = apurado(Math.round(serieFolha.reduce((a, b) => a + b, 0) * 100) / 100, `folhas mensais informadas nas apurações de ${janelaRotulo}`);
+  }
   return {
     empresa: { id: portal.id, razao: portal.razao, cnpj: portal.cnpj },
-    historicoMensal: historicoMensalDosSnapshots(historico),
+    historicoMensal: mensal.historico,
+    avisosHistorico: mensal.avisos,
     referencia: { competencia: referencia, janela, janelaRotulo },
     campos: {
       receitaAnual,

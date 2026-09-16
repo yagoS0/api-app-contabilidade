@@ -19,7 +19,7 @@ export function historicoMensalDosSnapshots(snapshots = []) {
       const competencia = /^\d{6}$/.test(pa) ? `${pa.slice(0, 4)}-${pa.slice(4)}` : pa;
       const folha = numero(bruto);
       if (!/^\d{4}-\d{2}$/.test(competencia) || folha == null) continue;
-      mapa.set(competencia, { ...(mapa.get(competencia) || { competencia, receita: null, tributoApurado: null }), folha });
+      mapa.set(competencia, { ...(mapa.get(competencia) || { competencia, receita: null, tributoApurado: null }), folha, origemFolha: `folha mensal informada na apuração de ${s.competencia}` });
     }
   }
   return [...mapa.values()].sort((a, b) => a.competencia.localeCompare(b.competencia));

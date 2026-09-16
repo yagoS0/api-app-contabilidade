@@ -56,6 +56,7 @@ import { TransicaoReforma } from "../components/TransicaoReforma";
 import { projetarTransicao } from "../lib/transicaoReforma";
 import { ResumoPlanejamentoImpresso } from "../components/ResumoPlanejamentoImpresso";
 import { planejarMeses } from "../lib/planejamentoMensal";
+import { preencherMensal } from "../lib/preencherMensal";
 import { GaugeFatorR } from "../components/GaugeFatorR";
 import { TabelaComparativa } from "../components/TabelaComparativa";
 import { BlocoIbsCbs } from "../components/BlocoIbsCbs";
@@ -220,7 +221,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     return () => { cancelado = true; };
   }, [api, empresaId]);
 
-  const prefill = useMemo(() => prefillDaEmpresa(dadosEmpresa), [dadosEmpresa]);
+  const prefill = useMemo(() => prefillDaEmpresa(dadosEmpresa?.empresa?.id && dadosEmpresa.empresa.id !== empresaId ? null : dadosEmpresa), [dadosEmpresa, empresaId]);
 
   // ⚠⚠⚠ TROCAR DE EMPRESA LIMPA O FORMULÁRIO INTEIRO — e a ausência disto era o pior defeito
   // desta tela (01/09/2026).
@@ -425,8 +426,10 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
     servicosAte120kConfirmado: servicos16,
   }), [receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, atividade, issLido.valor, margemLida.valor, creditos, mesesInicioAtividade, receitasMensais, servicos16, ajustes, prefill.valores?.regimeAtual]);
 
+  const mensalPreenchido = useMemo(() => preencherMensal(ajustes.mensal, prefill.historicoMensal || [], entradas.anoBase || 2026, entradas.receitaAnual), [ajustes.mensal, prefill.historicoMensal, entradas.anoBase, entradas.receitaAnual]);
+  const ajustesDoCenario = prefill.historicoMensal?.length ? { ...ajustes, mensal: mensalPreenchido } : ajustes;
   const formularioCenario = { receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, atividade, iss, margem, creditos,
-    mesesAtividade, serieMensal, servicos16, categoriaConfirmada, cenarioIbsCbs, cbsEstimada, detalharMeses, ajustes };
+    mesesAtividade, serieMensal, servicos16, categoriaConfirmada, cenarioIbsCbs, cbsEstimada, detalharMeses, ajustes: ajustesDoCenario };
   const assinaturaCenario = JSON.stringify(formularioCenario);
   // Retoma somente após o prefill, sem sobrescrever quem começou a digitar durante a busca.
   useEffect(() => {
@@ -483,7 +486,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
   }
 
   const temReceita = entradas.receitaAnual > 0;
-  const mensal = useMemo(() => planejarMeses({ ...(ajustes.mensal || {}), entradas, ano: entradas.anoBase || 2026 }), [ajustes.mensal, entradas]);
+  const mensal = useMemo(() => planejarMeses({ ...mensalPreenchido, entradas, ano: entradas.anoBase || 2026 }), [mensalPreenchido, entradas]);
   const transicao = useMemo(() => projetarTransicao(ajustes.transicao), [ajustes.transicao]);
   const resultado = useMemo(() => (temReceita ? compararRegimes(entradas) : null), [entradas, temReceita]);
   // ⚠ DERIVADO do resultado do motor, nunca recalculado aqui — a tabela REARRANJA o que já foi
@@ -611,7 +614,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
       const salvo = await api.salvarSimulacaoPlanejamento(empresaId, {
         competencia: prefill.referencia?.competencia || null,
         entradas: { ...entradas, formularioCenario },
-        resultado: { ...resultado, acompanhamentoMensal: ajustes.mensal ? mensal : null, proLabore, conclusao: ajustes.conclusao || null, transicaoReforma: ajustes.transicao ? transicao : null },
+        resultado: { ...resultado, acompanhamentoMensal: ajustesDoCenario.mensal ? mensal : null, proLabore, conclusao: ajustes.conclusao || null, transicaoReforma: ajustes.transicao ? transicao : null },
         // ⚠ A procedência viaja junto: é ela que distingue DOIS PDFs da mesma empresa com números
         // diferentes. Sem ela, a diferença parece erro de cálculo no papel.
         procedencias,
@@ -1196,7 +1199,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
               </div>
             )}
             {resultado.economiaVsAtual != null && <p>Economia estimada em relação ao regime atual ({resultado.regimeAtual}): <strong>{brl(resultado.economiaVsAtual)} no ano</strong>.</p>}
-            <AcompanhamentoMensal value={ajustes.mensal} onChange={v => setAjustes(a => ({ ...a, mensal: v }))} resultado={mensal} receitaAnual={entradas.receitaAnual} dados={prefill.historicoMensal} onAplicar={v => setReceita(dinheiroParaCampo(v))} />
+            <AcompanhamentoMensal value={mensalPreenchido} onChange={v => setAjustes(a => ({ ...a, mensal: v }))} resultado={mensal} receitaAnual={entradas.receitaAnual} dados={prefill.historicoMensal} avisos={prefill.avisosHistorico} onAplicar={v => setReceita(dinheiroParaCampo(v))} />
 
             {/* ⚠⚠ A TABELA VEM ANTES DO GAUGE E DO PONTO DE EQUILÍBRIO, e a ordem é o argumento:
                 ela é a resposta à pergunta "por que este total?". Os cards dão o número; ela dá a
@@ -1247,7 +1250,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
             <PainelProLabore simulacao={proLabore} />
             <TransicaoReforma value={ajustes.transicao} onChange={v => setAjustes(a => ({ ...a, transicao: v }))} resultado={transicao} />
             <ConclusaoPlanejamento value={ajustes.conclusao} onChange={v => setAjustes(a => ({ ...a, conclusao: v }))} />
-            <ResumoPlanejamentoImpresso ajustes={ajustes} mensal={mensal} transicao={transicao} />
+            <ResumoPlanejamentoImpresso ajustes={ajustesDoCenario} mensal={mensal} transicao={transicao} />
 
             {equilibrio && (
               <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, fontSize: "0.88rem" }}>
@@ -1312,6 +1315,8 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
             Informe a receita anual para comparar os regimes.
           </div>
         )}
+        {!temReceita && prefill.historicoMensal?.length > 0 && <AcompanhamentoMensal value={mensalPreenchido} onChange={v => setAjustes(a => ({ ...a, mensal: v }))} resultado={mensal} receitaAnual={entradas.receitaAnual} dados={prefill.historicoMensal} avisos={prefill.avisosHistorico} onAplicar={v => setReceita(dinheiroParaCampo(v))} />}
+        {!temReceita && !prefill.historicoMensal?.length && prefill.avisosHistorico?.map(aviso => <p key={aviso} role="status">{aviso}</p>)}
 
       </div>
     </div>

@@ -14,6 +14,7 @@ const prismaModel = () => ({
   findFirst: jest.fn(async () => null),
   findMany: jest.fn(async () => []),
   aggregate: jest.fn(async () => ({ _sum: { total: null }, _count: { _all: 0 } })),
+  groupBy: jest.fn(async () => []),
   count: jest.fn(async () => 0),
   create: jest.fn(async () => { throw new Error("ESCRITA PROIBIDA no planejamento"); }),
   update: jest.fn(async () => { throw new Error("ESCRITA PROIBIDA no planejamento"); }),
@@ -31,6 +32,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
     rbtExtratoCache: prismaModel(),
     portalInvoice: prismaModel(),
     accountingEntry: prismaModel(),
+    chartOfAccount: prismaModel(),
   },
 }));
 
@@ -70,6 +72,17 @@ function comBase({ company = null, cadastro = null, snapshot = null, circular = 
 }
 
 const rodar = () => montarDadosPlanejamento({ portalClientId: "emp-1", agora: AGORA });
+
+test("histórico completo preenche receita anual, RBT12 e folha sem exigir notas capturadas", async () => {
+  comBase();
+  const competencias = Array.from({ length: 12 }, (_, i) => { const d = new Date(Date.UTC(2025, 6 + i, 1)); return d.toISOString().slice(0, 7); });
+  prisma.apuracaoSnapshot.findMany.mockResolvedValueOnce(competencias.map(competencia => ({ competencia, estado: "fechada", receitaInterna: 1000, receitaExterna: 0,
+    folhaMensal12: { [competencia.replace("-", "")]: 200 } })));
+  const r = await rodar();
+  expect(r.campos.receitaAnual).toMatchObject({ apurado: true, valor: 12000 });
+  expect(r.campos.rbt12).toMatchObject({ apurado: true, valor: 12000 });
+  expect(r.campos.folhaAnual).toMatchObject({ apurado: true, valor: 2400 });
+});
 
 beforeEach(() => {
   jest.clearAllMocks();

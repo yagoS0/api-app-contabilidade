@@ -149,7 +149,7 @@ export function gerarPdfPlanejamento({ foto, empresa }) {
         const m = r.acompanhamentoMensal;
         titulo(`Acompanhamento mensal — ${m.ano}`);
         par(`Realizado: ${brl(m.realizado)} (${m.mesesRealizados}/12 meses). Projeção anual: ${m.totalProjetado == null ? "incompleta" : brl(m.totalProjetado)}. Desvio do plano: ${m.desvio == null ? "não comparável" : brl(m.desvio)} (${m.mesesComparados} meses).`);
-        for (const l of m.linhas || []) par(`${l.competencia}: plano ${l.plano == null ? "—" : brl(l.plano)}; realizado ${l.realizado == null ? "—" : brl(l.realizado)}; DAS estimado ${l.dasEstimado == null ? "—" : brl(l.dasEstimado)}; DAS apurado ${l.tributoApurado == null ? "—" : brl(l.tributoApurado)}. ${l.pendencia || l.alertaLimite || ""}`);
+        for (const l of m.linhas || []) par(`${l.competencia}${l.mesParcial ? " (mês em andamento; realizado parcial)" : ""}: plano ${l.plano == null ? "—" : brl(l.plano)}; realizado ${l.realizado == null ? "—" : brl(l.realizado)}; DAS estimado ${l.dasEstimado == null ? "—" : brl(l.dasEstimado)}; DAS apurado ${l.tributoApurado == null ? "—" : brl(l.tributoApurado)}. Origem: ${l.origem || "não informada"}. ${l.pendencia || l.alertaLimite || ""}`);
         par(m.premissa || "");
       }
       if (r.proLabore?.porSocio) {

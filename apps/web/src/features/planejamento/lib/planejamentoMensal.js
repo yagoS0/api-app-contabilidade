@@ -14,10 +14,11 @@ export function planejarMeses({ meses = [], historico = [], entradas = {}, ano =
     const realizado = numeroMensal(m.realizado);
     const plano = numeroMensal(m.plano);
     return { ...m, competencia: `${ano}-${String(i + 1).padStart(2, "0")}`, realizado, plano,
-      receita: realizado ?? plano, folha: numeroMensal(m.folha), origem: realizado == null ? "projeção" : (m.origem || "realizado informado"),
+      receita: m.mesParcial ? (plano == null ? null : Math.max(realizado ?? 0, plano)) : realizado ?? plano,
+      folha: m.folhaPendenteConferencia || m.mesParcial ? null : numeroMensal(m.folha), origem: realizado == null ? "projeção" : (m.origem || "realizado informado"),
       tributoApurado: numeroMensal(m.tributoApurado) };
   });
-  const anterior = Array.from({ length: 12 }, (_, i) => ({ receita: numeroMensal(historico[i]?.receita), folha: numeroMensal(historico[i]?.folha) }));
+  const anterior = Array.from({ length: 12 }, (_, i) => ({ receita: numeroMensal(historico[i]?.receita), folha: historico[i]?.folhaPendenteConferencia ? null : numeroMensal(historico[i]?.folha) }));
   const linhas = serie.map((m, i) => {
     // Apenas os 12 meses ANTERIORES: uma alteração de folha no mês não muda o próprio Fator R.
     const janela = [...anterior, ...serie].slice(i, i + 12);
@@ -41,10 +42,10 @@ export function planejarMeses({ meses = [], historico = [], entradas = {}, ano =
       : receitaAcumulada >= 4_800_000 * 0.7 ? "Receita acumulada se aproxima do sublimite de R$ 3,6 milhões." : null;
     return { ...m, rbt12, fs12, fatorR, anexo, faixa: simples?.faixa ?? null,
       dasEstimado: simples?.das ?? null, aliquotaEfetiva: simples?.aliquotaEfetiva ?? null,
-      desvio: m.realizado != null && m.plano != null ? m.realizado - m.plano : null,
+      desvio: !m.mesParcial && m.realizado != null && m.plano != null ? m.realizado - m.plano : null,
       pendencia: falta || simples?.motivo || null, alertaLimite };
   });
-  const pares = linhas.filter(x => x.realizado != null && x.plano != null);
+  const pares = linhas.filter(x => !x.mesParcial && x.realizado != null && x.plano != null);
   const totalProjetado = somaCompleta(linhas.map(x => x.receita));
   const presuncao = ATIVIDADES_PRESUMIDO[entradas.atividadePresumido]?.irpj;
   const trimestral = !entradas.receitasPorAtividade && totalProjetado != null && totalProjetado <= 5_000_000 && presuncao != null
