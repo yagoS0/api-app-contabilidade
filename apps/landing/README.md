@@ -1,5 +1,31 @@
 # apps/landing — a landing page da Altan
 
+## Migração do domínio — 16/09/2026
+
+Destino definido pelo proprietário: `https://altan.company` para a landing,
+`https://www.altan.company` redirecionando para o endereço principal,
+`https://app.altan.company` para o contador e `https://cliente.altan.company`
+para o cliente. `page.altan.company` é o endereço da landing anterior à migração.
+O endereço Railway citado no histórico abaixo já não existe.
+
+O cabeçalho inclui **Portal do cliente** no canto superior direito, inclusive
+em telas pequenas. O botão comercial permanece no corpo da página no celular.
+O CRC foi retirado do rodapé a pedido do proprietário. WhatsApp, telefone,
+e-mail e preço da análise inicial ainda aguardam os dados definitivos.
+
+O serviço `landing` continua com implantação manual e Root Directory
+`apps/landing`. Publicar da raiz deste repositório com:
+
+```powershell
+railway up --project e54d42b0-309c-4f3e-8e21-f306bac5930d --environment production --service landing --detach
+```
+
+A API precisa manter `https://app.altan.company` em `CORS_ALLOWED_ORIGINS`.
+Os registros de e-mail e o subdomínio `cliente` não fazem parte desta migração.
+
+As seções abaixo registram a implantação original; referências ao ápice como
+portal do contador e ao CRC como pendência foram superadas pela decisão acima.
+
 Página **única, estática, escrita à mão** (`index.html`, sem build). Servida pelo Caddy, no mesmo
 molde de deploy dos outros dois fronts.
 

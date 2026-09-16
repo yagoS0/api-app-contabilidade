@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="canonical" href="https://altan.company/">
 <title>Altan Contabilidade — Contabilidade com app próprio para empresas de serviços</title>
 <meta name="description" content="Contabilidade tech-enabled para clínicas, engenharia, tecnologia e consultorias. Simples Nacional e Lucro Presumido. App exclusivo com guias, DRE, fluxo de caixa futuro e emissão de notas.">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/altan-icone-32.png">
@@ -49,11 +50,20 @@
   :focus-visible{outline:2px solid var(--gold);outline-offset:3px}
 
   nav{position:sticky;top:0;z-index:10;background:rgba(26,27,38,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
-  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:72px}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:72px}
+  .brand{flex-shrink:0}
   .brand svg{height:46px;width:auto;display:block}
   nav ul{display:flex;gap:28px;list-style:none;font-size:.9rem;color:var(--muted)}
   nav ul a:hover{color:var(--paper)}
-  @media(max-width:760px){nav ul{display:none}}
+  .nav-actions{display:flex;align-items:center;gap:12px}
+  .nav-actions .btn{padding:10px 18px;min-height:44px;white-space:nowrap}
+  @media(max-width:1000px){nav ul{display:none}}
+  @media(max-width:600px){
+    nav .wrap{padding:0 16px;gap:8px}
+    nav .brand svg{height:38px}
+    .nav-actions .nav-contact{display:none}
+    .nav-actions .btn{padding:10px 12px;font-size:.82rem}
+  }
 
   .hero{padding:110px 0 90px;position:relative;overflow:hidden}
   .hero::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 39px,rgba(174,182,211,.06) 39px 40px);mask-image:linear-gradient(180deg,rgba(0,0,0,.9),transparent 80%);pointer-events:none}
@@ -166,7 +176,7 @@
 </head>
 <body>
 
-<nav>
+<nav aria-label="Navegação principal">
   <div class="wrap">
     <a href="#" class="brand" aria-label="Altan Contabilidade">
       <svg viewBox="0 0 620 170" xmlns="http://www.w3.org/2000/svg"><path d="M62 102 A38 38 0 0 1 138 102 Z" fill="#E8B33A"/><line x1="40" y1="102" x2="160" y2="102" stroke="#AEB6D3" stroke-width="2.5" stroke-linecap="round"/><text x="196" y="92" font-family="Inter,'Segoe UI',Arial,sans-serif" font-weight="500" font-size="38" letter-spacing="9" fill="#F8F8F2">ALTAN</text><text x="198" y="122" font-family="Inter,'Segoe UI',Arial,sans-serif" font-weight="400" font-size="12.5" letter-spacing="5.2" fill="#6272A4">CONTABILIDADE</text></svg>
@@ -177,7 +187,10 @@
       <li><a href="#planos">Planos</a></li>
       <li><a href="#faq">Dúvidas</a></li>
     </ul>
-    <a href="#contato" class="btn btn-gold" style="padding:10px 18px">Pedir análise fiscal</a>
+    <div class="nav-actions">
+      <a href="#contato" class="btn btn-gold nav-contact">Pedir análise fiscal</a>
+      <a href="https://cliente.altan.company" class="btn btn-ghost">Portal do cliente</a>
+    </div>
   </div>
 </nav>
 
@@ -415,7 +428,7 @@
   <div class="wrap">
     <svg viewBox="0 0 680 340" xmlns="http://www.w3.org/2000/svg" aria-label="Altan Contabilidade"><path d="M294 152 A46 46 0 0 1 386 152 Z" fill="#E8B33A"/><line x1="266" y1="152" x2="414" y2="152" stroke="#AEB6D3" stroke-width="2.5" stroke-linecap="round"/><text x="340" y="238" text-anchor="middle" font-family="Inter,'Segoe UI',Arial,sans-serif" font-weight="500" font-size="40" letter-spacing="10" fill="#F8F8F2">ALTAN</text><text x="340" y="272" text-anchor="middle" font-family="Inter,'Segoe UI',Arial,sans-serif" font-weight="400" font-size="13" letter-spacing="6" fill="#6272A4">CONTABILIDADE</text></svg>
     <div style="text-align:right">
-      <div>© 2026 Altan Contabilidade · CRC-XX 000000/O</div>
+      <div>© 2026 Altan Contabilidade</div>
       <div>contato@altan.com.br · (XX) XXXXX-XXXX</div>
     </div>
   </div>
