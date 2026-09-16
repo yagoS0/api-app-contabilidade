@@ -32,17 +32,33 @@
 .agenda-time-scroll { max-height:590px; overflow:auto; scrollbar-gutter:stable; }
 .agenda-time-columns { display:grid; grid-template-columns:repeat(var(--days,7),minmax(0,1fr)) 56px; min-height:1344px; }
 .agenda-time-columns { position:relative; }
-.agenda-event.is-draggable { cursor:grab; touch-action:none; user-select:none; }
-.agenda-event.is-dragging { opacity:.3; }
-.agenda-event .agenda-resize { position:absolute; left:0; right:0; height:8px; cursor:ns-resize; flex:none; z-index:2; }
+.agenda-event.is-draggable { position:relative; cursor:grab; touch-action:pan-y; user-select:none; }
+.agenda-event.is-dragging { opacity:.3; cursor:grabbing; }
+.agenda-event.is-saving { box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--event-color,var(--text-muted)) 45%,transparent); }
+.agenda-event .agenda-resize { position:absolute; left:50%; right:auto; transform:translateX(-50%); width:min(40px,60%); height:8px; cursor:ns-resize; flex:none; z-index:2; touch-action:none; }
 .agenda-resize-start { top:0; }
 .agenda-resize-end { bottom:0; }
-.agenda-resize::after { content:''; position:absolute; width:20px; height:2px; left:calc(50% - 10px); top:3px; border-radius:2px; background:currentColor; opacity:0; }
+.agenda-resize::after { content:''; position:absolute; width:20px; max-width:100%; height:2px; left:50%; top:50%; transform:translate(-50%,-50%); border-radius:2px; background:currentColor; opacity:0; }
 .agenda-event:hover .agenda-resize::after,.agenda-event:focus-visible .agenda-resize::after { opacity:.6; }
-.agenda-drag-preview { position:absolute; pointer-events:none; z-index:5; box-sizing:border-box; border:1px solid var(--event-color,var(--text-muted)); border-left-width:3px; border-radius:4px; background:var(--bg-surface); box-shadow:0 3px 12px #0004; padding:3px 6px; color:var(--text); font-size:12px; overflow:hidden; }
+.agenda-event.is-short .agenda-resize { width:22px; max-width:45%; height:5px; }
+.agenda-event .agenda-move-handle { display:none; }
+.agenda-drag-preview { position:absolute; left:0; width:0; pointer-events:none; z-index:5; box-sizing:border-box; border:1px solid var(--event-color,var(--text-muted)); border-left-width:3px; border-radius:4px; background:var(--bg-surface); box-shadow:0 3px 12px #0004; padding:3px 6px; color:var(--text); font-size:12px; line-height:1.35; overflow:hidden; }
 .agenda-drag-preview strong,.agenda-drag-preview span { display:block; }
-.agenda-drag-preview { left:calc((100% - 56px) / var(--days,7) * var(--preview-day,0) + 2px); width:calc((100% - 56px) / var(--days,7) - 5px); }
-.agenda-drag-preview strong { font-size:11px; font-variant-numeric:tabular-nums; }
+.agenda-drag-preview strong { font-size:11px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.agenda-drag-preview span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.agenda-drag-preview small { font-size:inherit; font-weight:400; margin-left:6px; color:var(--text-muted); }
+.agenda-drag-preview.is-creating { border-style:dashed; border-left-style:solid; }
+.agenda-event,.agenda-resize::after { transition:background-color 100ms ease,box-shadow 100ms ease,opacity 100ms ease; }
+.agenda-event.is-dragging { transition:none; }
+@media(pointer:coarse) {
+  .agenda-event.is-draggable { padding-right:26px; }
+  .agenda-event .agenda-move-handle { display:block; position:absolute; right:0; top:0; bottom:0; width:24px; flex:none; touch-action:none; cursor:grab; }
+  .agenda-move-handle::after { content:''; position:absolute; right:8px; top:50%; width:3px; height:12px; transform:translateY(-50%); border-radius:2px; background:currentColor; opacity:.45; }
+  .agenda-resize::after { opacity:.45; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .agenda-event,.agenda-resize::after { transition:none; }
+}
 .agenda-saving { position:absolute; z-index:6; top:60px; right:8px; background:var(--bg-surface); border:1px solid var(--border); border-radius:6px; padding:5px 9px; color:var(--text-muted); font-size:12px; }
 .agenda-time-day { position:relative; border-right:1px solid var(--border); min-width:0; }
 .agenda-time-day.is-today,.agenda-day-headings .is-today,.agenda-band-empty.is-today { background:color-mix(in srgb,var(--text) 3.5%,transparent); }
