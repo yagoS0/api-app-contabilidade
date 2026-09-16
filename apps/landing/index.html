@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="canonical" href="https://altan.company/">
 <title>Altan Contabilidade — Contabilidade com app próprio para empresas de serviços</title>
-<meta name="description" content="Contabilidade tech-enabled para clínicas, engenharia, tecnologia e consultorias. Simples Nacional e Lucro Presumido. App exclusivo com guias, DRE, fluxo de caixa futuro e emissão de notas.">
+<meta name="description" content="Contabilidade para empresas de serviços no Simples Nacional e Lucro Presumido. Consulte guias, notas, faturamento e DRE no portal da Altan. Análise inicial gratuita.">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/altan-icone-32.png">
 <link rel="apple-touch-icon" href="assets/altan-icone-180.png">
 <!-- A Inter e SERVIDA POR NOS (assets/fonts/) porque o letreiro da logo e <text> num SVG inline.
@@ -83,7 +83,7 @@
   .phone .lbl{color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.1em}
   .phone .row{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px dashed var(--line)}
   .phone .row span:last-child{color:var(--paper);text-align:right}
-  .phone .ok{color:var(--gold)}
+  .phone .demo-note{margin-top:14px;color:var(--muted);font-size:.7rem}
   .bars{display:flex;gap:6px;align-items:flex-end;height:54px;margin:16px 0 6px}
   .bars i{flex:1;background:var(--line);border-radius:2px 2px 0 0}
   .bars i.b{background:var(--gold)}
@@ -93,8 +93,9 @@
   .sec-head h2{margin:14px 0 18px}
 
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
-  @media(max-width:900px){.grid2,.grid4{grid-template-columns:1fr}}
+  .features{display:grid;grid-template-columns:repeat(3,1fr);gap:32px 20px}
+  @media(max-width:900px){.features{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}}
+  @media(max-width:600px){.features{grid-template-columns:1fr}}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:32px}
   .card h3{margin:10px 0 14px}
   .card ul{list-style:none;margin-top:18px}
@@ -167,22 +168,21 @@
   <div class="wrap">
     <div>
       <span class="eyebrow">Contabilidade para empresas de serviços</span>
-      <h1 style="margin-top:18px">Sua contabilidade,<br>com o caixa do mês que vem<br><em>já na tela do celular.</em></h1>
-      <p class="lead">A Altan cuida da rotina fiscal, folha e impostos de empresas de serviços no Simples Nacional e no Lucro Presumido — e entrega tudo num app próprio, onde você vê as guias, o DRE e o fluxo de caixa futuro sem precisar pedir.</p>
+      <h1 style="margin-top:18px">Sua contabilidade,<br><em>mais perto de você.</em></h1>
+      <p class="lead">Contabilidade para empresas de serviços no Simples Nacional e no Lucro Presumido, com um portal próprio para consultar guias, notas, faturamento e DRE.</p>
       <div class="hero-actions">
         <a href="#app" class="btn btn-gold">Conhecer o app</a>
         <a href="https://wa.me/5521999417196?text=Ol%C3%A1%2C%20quero%20solicitar%20a%20an%C3%A1lise%20fiscal%20gratuita%20da%20Altan" class="btn btn-ghost">Pedir análise gratuita</a>
       </div>
     </div>
-    <div class="phone" aria-label="Prévia do app do cliente">
+    <div class="phone" aria-label="Ilustração do painel com dados fictícios">
       <div class="top"><svg viewBox="0 0 256 256"><path d="M74 150 A54 54 0 0 1 182 150 Z" fill="#E8B33A"/><line x1="46" y1="150" x2="210" y2="150" stroke="#AEB6D3" stroke-width="7" stroke-linecap="round"/></svg><span>AGOSTO / 2026</span></div>
       <div class="lbl">Faturamento do mês</div>
       <div class="big">R$ 84.300</div>
       <div class="bars"><i style="height:40%"></i><i style="height:55%"></i><i style="height:48%"></i><i style="height:70%"></i><i style="height:62%"></i><i class="b" style="height:100%"></i></div>
-      <div class="row"><span class="lbl">Impostos de setembro (projetado)</span><span>R$ 5.058</span></div>
-      <div class="row"><span class="lbl">Apuração revisada</span><span class="ok">auditoria ok ✓</span></div>
-      <div class="row"><span class="lbl">Caixa em 30 dias</span><span>R$ 41.900</span></div>
-      <div class="row"><span class="lbl">Documentos pendentes</span><span>2</span></div>
+      <div class="row"><span class="lbl">Guias disponibilizadas</span><span>2</span></div>
+      <div class="row"><span class="lbl">Notas emitidas no mês</span><span>18</span></div>
+      <p class="demo-note">Ilustração com dados fictícios.</p>
     </div>
   </div>
 </header>
@@ -191,20 +191,16 @@
   <div class="wrap">
     <div class="sec-head reveal">
       <span class="eyebrow">O que a Altan oferece</span>
-      <h2>Contabilidade que você não precisa cobrar. Ela aparece.</h2>
-      <p class="muted">O app da Altan é alimentado pelos dados que o escritório já tem: notas capturadas, guias geradas, extrato importado. Você complementa; a gente confere.</p>
+      <h2>As informações da sua empresa, em um só lugar.</h2>
+      <p class="muted">Acompanhe os dados registrados no portal e as guias disponibilizadas pelo escritório. Envie seu extrato em OFX para a conferência das despesas.</p>
     </div>
-    <div class="grid4">
-      <div class="feat reveal"><h3>Guias e vencimentos</h3><p>DAS, DARFs, INSS, ISS, FGTS — tudo no app, com o valor projetado do mês seguinte antes de fechar.</p></div>
-      <div class="feat reveal"><h3>DRE e faturamento</h3><p>DRE simplificada e faturamento mensal em linguagem de dono de empresa, atualizados conforme as notas entram.</p></div>
-      <div class="feat reveal"><h3>Fluxo de caixa futuro</h3><p>Impostos, folha e despesas já comprometidas projetados nos próximos 30, 60 e 90 dias.</p></div>
-      <div class="feat reveal"><h3>Notas e documentos</h3><p>Emissor de NFS-e dentro do app, captura automática das notas recebidas e pedido de documentos no lugar do WhatsApp.</p></div>
-    </div>
-    <div class="grid4" style="margin-top:20px">
-      <div class="feat reveal"><h3>Extrato bancário (OFX)</h3><p>Você exporta o extrato do banco em OFX, o app lê e classifica. Nenhum lançamento entra na contabilidade sem um contador verificar.</p></div>
-      <div class="feat reveal"><h3>Auditoria mensal</h3><p>Todo fechamento passa por revisão de apuração, enquadramento e comparação de alíquotas antes da guia ser gerada.</p></div>
-      <div class="feat reveal"><h3>Folha e pró-labore</h3><p>Admissões, holerites, eSocial e pró-labore dos sócios, com a folha gerenciada pelo app.</p></div>
-      <div class="feat reveal"><h3>Contador com nome</h3><p>Um responsável fixo pela sua empresa, com resposta em horário comercial. Sem fila de tickets.</p></div>
+    <div class="features">
+      <div class="feat reveal"><h3>Guias e vencimentos</h3><p>Consulte e baixe as guias disponibilizadas pelo escritório, com seus valores e vencimentos.</p></div>
+      <div class="feat reveal"><h3>Faturamento mensal</h3><p>Acompanhe o faturamento com base nas notas emitidas e autorizadas registradas no portal.</p></div>
+      <div class="feat reveal"><h3>DRE simplificada</h3><p>Veja receitas, despesas e resultado com base nos lançamentos contábeis. O painel sinaliza quando o resultado é provisório.</p></div>
+      <div class="feat reveal"><h3>Fluxo de caixa</h3><p>Consulte entradas, saídas e projeções mensais conforme os dados e o histórico disponíveis da sua empresa.</p></div>
+      <div class="feat reveal"><h3>Notas fiscais de serviço</h3><p>Consulte as notas registradas e emita NFS-e pelo portal quando a emissão estiver habilitada para sua empresa e disponível na integração utilizada.</p></div>
+      <div class="feat reveal"><h3>Extrato bancário (OFX)</h3><p>Envie o OFX exportado do banco. As saídas do extrato seguem para uma fila de despesas, onde o contador confere e define a classificação.</p></div>
     </div>
   </div>
 </section>
@@ -213,8 +209,8 @@
   <div class="wrap">
     <div class="sec-head reveal">
       <span class="eyebrow">Para quem</span>
-      <h2>Feito para quem vende serviço, não produto.</h2>
-      <p class="muted">Cada regime tem suas próprias armadilhas — e as empresas de serviços costumam pagar caro por elas.</p>
+      <h2>Contabilidade para quem presta serviços.</h2>
+      <p class="muted">Informações fiscais e contábeis para acompanhar a rotina da sua empresa.</p>
       <div class="nichos">
         <span>Clínicas e profissionais de saúde</span><span>Engenharia e arquitetura</span><span>Tecnologia e software</span><span>Agências e consultorias</span><span>Escritórios e prestadores PJ</span>
       </div>
@@ -222,24 +218,24 @@
     <div class="grid2">
       <div class="card reveal">
         <span class="eyebrow">Simples Nacional</span>
-        <h3>Anexo certo, Fator R sob controle</h3>
-        <p class="muted">Muita empresa de serviços paga Anexo V (a partir de 15,5%) quando poderia estar no Anexo III (a partir de 6%). A regra é o Fator R: folha mais pró-labore de pelo menos 28% da receita. Monitoramos isso todo mês.</p>
+        <h3>Dados para acompanhar a apuração</h3>
+        <p class="muted">O escritório reúne faturamento, informações do enquadramento e dados da apuração para consultar a situação da empresa.</p>
         <ul>
-          <li>Cálculo e acompanhamento mensal do Fator R</li>
-          <li>Pró-labore planejado para sustentar o enquadramento</li>
-          <li>Alerta antes de estourar faixas e sublimite de ISS</li>
-          <li>Apuração automática do DAS com revisão humana</li>
+          <li>Consulta de faturamento por competência</li>
+          <li>Cálculo do Fator R com os dados informados</li>
+          <li>Consulta às apurações registradas</li>
+          <li>DAS disponível no portal após liberação pelo escritório</li>
         </ul>
       </div>
       <div class="card reveal">
         <span class="eyebrow">Lucro Presumido</span>
-        <h3>Presunção correta, distribuição segura</h3>
-        <p class="muted">Serviços presumem 32% de lucro para IRPJ e CSLL, mas algumas atividades têm base menor. O ganho está no enquadramento correto das receitas e na distribuição de lucros com lastro contábil.</p>
+        <h3>Informações para a conferência fiscal</h3>
+        <p class="muted">O escritório consulta os tributos registrados nas declarações e compara valores com os dados de faturamento disponíveis.</p>
         <ul>
-          <li>IRPJ e CSLL trimestrais, PIS/COFINS e ISS mensais</li>
-          <li>Escrituração completa para distribuir lucros isentos</li>
-          <li>Gestão de retenções na fonte (INSS, IRRF, CSRF)</li>
-          <li>Comparativo anual: vale a pena migrar de regime?</li>
+          <li>Consulta aos tributos capturados da DCTFWeb</li>
+          <li>Comparação entre valores calculados e declarados</li>
+          <li>DARFs disponíveis no portal após liberação pelo escritório</li>
+          <li>DRE baseada nos lançamentos contábeis</li>
         </ul>
       </div>
     </div>
@@ -250,13 +246,13 @@
   <div class="wrap">
     <div class="sec-head reveal">
       <span class="eyebrow">Como começa</span>
-      <h2>Trocar de contador não precisa ser um trauma.</h2>
+      <h2>Comece pela sua empresa.</h2>
     </div>
     <div class="steps">
-      <div class="step reveal"><h3>Análise fiscal</h3><p>Revisamos a situação fiscal da empresa: regime, enquadramento, pró-labore, pendências e imposto pago a mais. A análise inicial é gratuita e ajuda a entender o que sua empresa precisa.</p></div>
-      <div class="step reveal"><h3>Proposta</h3><p>Depois da análise, apresentamos uma proposta personalizada, com o escopo por escrito e assinatura digital. Você sabe exatamente o que está contratando.</p></div>
-      <div class="step reveal"><h3>Transição</h3><p>Cuidamos da comunicação com o contador anterior e da migração dos arquivos. Você só assina a carta de transferência.</p></div>
-      <div class="step reveal"><h3>App no ar</h3><p>Em até 15 dias o app está conectado às suas notas e aos seus extratos, e o contador responsável se apresenta.</p></div>
+      <div class="step reveal"><h3>Análise inicial</h3><p>Fale com a Altan pelo WhatsApp e conte sobre sua empresa. A análise inicial é gratuita.</p></div>
+      <div class="step reveal"><h3>Proposta</h3><p>Alinhamos suas necessidades e apresentamos o escopo do atendimento para você avaliar.</p></div>
+      <div class="step reveal"><h3>Cadastro</h3><p>Reunimos os dados e acessos necessários para configurar a empresa no portal.</p></div>
+      <div class="step reveal"><h3>Acesso ao portal</h3><p>Com o acesso liberado, você consulta os dados e as guias disponíveis da sua empresa.</p></div>
     </div>
   </div>
 </section>
@@ -267,13 +263,11 @@
       <span class="eyebrow">Dúvidas frequentes</span>
       <h2>Antes de você perguntar.</h2>
     </div>
-    <details><summary>A análise fiscal inicial é gratuita?</summary><p>Sim. Um contador revisa apurações, enquadramento e pendências da sua empresa e entrega um relatório com o que está certo e o que pode ser corrigido. A análise inicial é gratuita, mesmo que você não contrate a Altan.</p></details>
-    <details><summary>Como acesso o app da Altan?</summary><p>Use o botão Portal do cliente no canto superior da página. O app é o principal canal entre sua empresa e a Altan, com documentos, guias e informações contábeis em um só lugar.</p></details>
-    <details><summary>O app se conecta ao meu banco?</summary><p>Hoje a conciliação é feita a partir do extrato em OFX, que você exporta do internet banking e envia pelo app. Cada lançamento é classificado e conferido por um contador antes de entrar na contabilidade.</p></details>
-    <details><summary>Tem fidelidade?</summary><p>O contrato é de 12 meses, cobrado mensalmente. Em caso de rescisão antecipada, a multa é proporcional aos meses restantes, conforme previsto em contrato. Entregamos toda a documentação organizada para o próximo contador.</p></details>
-    <details><summary>Minha empresa está com pendências. Vocês pegam?</summary><p>Sim. As pendências aparecem na análise fiscal e apresentamos um orçamento separado para a regularização antes de começar.</p></details>
-    <details><summary>Vocês atendem empresas de outras cidades?</summary><p>Sim. O atendimento é digital, com reuniões por vídeo e assinatura eletrônica. Atendemos empresas em todo o Brasil.</p></details>
-    <details><summary>O atendimento acompanha o crescimento da empresa?</summary><p>Sim. Conforme sua empresa cresce, revisamos suas necessidades e ajustamos o escopo do atendimento em conjunto com você.</p></details>
+    <details><summary>A análise inicial é gratuita?</summary><p>Sim. Entre em contato pelo WhatsApp para solicitar a análise inicial gratuita e conversar sobre as necessidades da sua empresa.</p></details>
+    <details><summary>Como acesso o portal da Altan?</summary><p>Use o botão Portal do cliente no canto superior da página. Com seu acesso liberado, você consulta guias, notas e informações contábeis da sua empresa.</p></details>
+    <details><summary>Como envio meu extrato bancário?</summary><p>Exporte o arquivo OFX no seu banco e envie pelo portal. As saídas identificadas entram na fila de despesas para conferência e classificação pelo contador. Esse envio trata as saídas; entradas e transferências precisam de avaliação separada.</p></details>
+    <details><summary>Posso emitir notas pelo portal?</summary><p>A emissão de NFS-e depende da liberação pelo escritório e da integração disponível para sua empresa. Fale com a Altan para verificar os requisitos de acesso.</p></details>
+    <details><summary>Como funciona a contratação?</summary><p>O escopo do atendimento e as condições da contratação são apresentados na proposta para sua avaliação.</p></details>
   </div>
 </section>
 
@@ -281,10 +275,10 @@
   <div class="wrap">
     <div class="sun"></div><div class="horizon"></div>
     <span class="eyebrow">Análise fiscal</span>
-    <h2>Descubra se sua empresa está pagando imposto a mais.</h2>
-    <p>Um contador da Altan revisa regime, enquadramento, pró-labore e pendências da sua empresa e entrega um relatório com o que pode ser corrigido. A análise inicial é gratuita. Fale com a gente pelo WhatsApp para começar.</p>
+    <h2>Vamos conhecer sua empresa?</h2>
+    <p>Conte sobre sua atividade e suas necessidades contábeis. A análise inicial é gratuita. Fale com a Altan pelo WhatsApp para começar.</p>
     <a href="https://wa.me/5521999417196?text=Ol%C3%A1%2C%20quero%20solicitar%20a%20an%C3%A1lise%20fiscal%20gratuita%20da%20Altan" class="btn btn-gold">Pedir análise gratuita pelo WhatsApp</a>
-    <div class="contact-note">Análise inicial gratuita · relatório em até 5 dias úteis</div>
+    <div class="contact-note">Análise inicial gratuita</div>
   </div>
 </section>
 
