@@ -55,6 +55,10 @@ import { ConclusaoPlanejamento } from "../components/ConclusaoPlanejamento";
 import { TransicaoReforma } from "../components/TransicaoReforma";
 import { projetarTransicao } from "../lib/transicaoReforma";
 import { ResumoPlanejamentoImpresso } from "../components/ResumoPlanejamentoImpresso";
+import { EstudosAvancados } from "../components/EstudosAvancados";
+import { calcularOperacoes, calcularReformaOperacoes } from "../lib/operacoesPlanejamento";
+import { projetarTributos } from "../lib/tributosMensais";
+import { baixarPdfEstudos } from "../lib/pdfEstudos";
 import { planejarMeses } from "../lib/planejamentoMensal";
 import { preencherMensal } from "../lib/preencherMensal";
 import { GaugeFatorR } from "../components/GaugeFatorR";
@@ -487,6 +491,21 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
 
   const temReceita = entradas.receitaAnual > 0;
   const mensal = useMemo(() => planejarMeses({ ...mensalPreenchido, entradas, ano: entradas.anoBase || 2026 }), [mensalPreenchido, entradas]);
+  const estudosAvancados = useMemo(() => api?.mode === "mock" ? {
+    operacoes: calcularOperacoes(ajustes.estudos?.operacoes),
+    mensal: projetarTributos({ value: ajustes.estudos?.tributos, mensal, entradas, operacoes: ajustes.estudos?.operacoes }),
+    reforma: calcularReformaOperacoes(ajustes.estudos?.reforma),
+  } : null, [api?.mode, ajustes.estudos, mensal, entradas]);
+  const [exportandoEstudo, setExportandoEstudo] = useState(false);
+  const [erroEstudo, setErroEstudo] = useState(null);
+  useEffect(() => { setErroEstudo(null); }, [empresaId]);
+  async function exportarEstudos(cenarios = []) {
+    if (exportandoEstudo || api?.mode !== "mock") return;
+    setExportandoEstudo(true); setErroEstudo(null);
+    try { await baixarPdfEstudos({ cenarios, estudos: estudosAvancados, entradas, procedencias, empresa: dadosEmpresa?.empresa?.razao || dadosEmpresa?.empresa?.razaoSocial || empresa?.razao || empresa?.razaoSocial || "Simulação livre" }); }
+    catch { setErroEstudo("Não foi possível gerar o PDF. Tente novamente; as premissas continuam na tela."); }
+    finally { setExportandoEstudo(false); }
+  }
   const transicao = useMemo(() => projetarTransicao(ajustes.transicao), [ajustes.transicao]);
   const resultado = useMemo(() => (temReceita ? compararRegimes(entradas) : null), [entradas, temReceita]);
   // ⚠ DERIVADO do resultado do motor, nunca recalculado aqui — a tabela REARRANJA o que já foi
@@ -614,7 +633,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
       const salvo = await api.salvarSimulacaoPlanejamento(empresaId, {
         competencia: prefill.referencia?.competencia || null,
         entradas: { ...entradas, formularioCenario },
-        resultado: { ...resultado, acompanhamentoMensal: ajustesDoCenario.mensal ? mensal : null, proLabore, conclusao: ajustes.conclusao || null, transicaoReforma: ajustes.transicao ? transicao : null },
+        resultado: { ...resultado, acompanhamentoMensal: ajustesDoCenario.mensal ? mensal : null, proLabore, conclusao: ajustes.conclusao || null, transicaoReforma: ajustes.transicao ? transicao : null, ...(estudosAvancados ? { estudosAvancados } : {}) },
         // ⚠ A procedência viaja junto: é ela que distingue DOIS PDFs da mesma empresa com números
         // diferentes. Sem ela, a diferença parece erro de cálculo no papel.
         procedencias,
@@ -719,7 +738,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
           <button type="button" className="btn btn-secondary" disabled={!empresaId || carregando || carregandoCenarios} onClick={listarCenarios}>{carregandoCenarios ? "Lendo cenários…" : "Abrir cenário"}</button>
           {!empresaId && <span>Vincule uma empresa para guardar e retomar cenários.</span>}
           {mostrarCenarios && cenariosSalvos && <div style={{ flexBasis: "100%" }}>
-            <ComparacaoCenarios key={empresaId} cenarios={cenariosSalvos} disabled={carregando || carregandoCenarios} onAbrir={abrirCenario} />
+            <ComparacaoCenarios key={empresaId} cenarios={cenariosSalvos} disabled={carregando || carregandoCenarios || exportandoEstudo} onAbrir={abrirCenario} onExportar={api?.mode === "mock" ? exportarEstudos : null} />
           </div>}
         </section>
         {desfechoDoGuardar && <p role="status" style={{ margin: 0, fontSize: "0.875rem", color: desfechoDoGuardar.tom === "erro" ? "var(--state-warn)" : C.muted }}>{desfechoDoGuardar.texto}</p>}
@@ -1249,6 +1268,9 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
             {/* ⚠ Logo DEPOIS do gauge: ele mostra ONDE o Fator R está, este responde O QUE FAZER. */}
             <PainelProLabore simulacao={proLabore} />
             <TransicaoReforma value={ajustes.transicao} onChange={v => setAjustes(a => ({ ...a, transicao: v }))} resultado={transicao} />
+            {estudosAvancados && <EstudosAvancados value={ajustes.estudos} onChange={v => setAjustes(a => ({ ...a, estudos: v }))} resultado={estudosAvancados} mensal={mensal} entradas={entradas} onExportar={() => exportarEstudos()} />}
+            {exportandoEstudo && <p role="status">Gerando relatório dos estudos…</p>}
+            {erroEstudo && <p role="alert">{erroEstudo}</p>}
             <ConclusaoPlanejamento value={ajustes.conclusao} onChange={v => setAjustes(a => ({ ...a, conclusao: v }))} />
             <ResumoPlanejamentoImpresso ajustes={ajustesDoCenario} mensal={mensal} transicao={transicao} />
 

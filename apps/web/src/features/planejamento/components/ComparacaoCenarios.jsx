@@ -3,7 +3,7 @@ import { nomeCenario, dataCenario, moedaCenario, percentualCenario, totalDoRegim
 import { ROTULO_DO_TRIBUTO } from "../lib/comparativoDeRegimes";
 import "./planejamentoAvancado.css";
 
-export function ComparacaoCenarios({ cenarios, onAbrir, disabled = false }) {
+export function ComparacaoCenarios({ cenarios, onAbrir, disabled = false, onExportar = null }) {
   const [ids, setIds] = useState([]);
   const selecionados = cenarios.filter(c => ids.includes(c.id));
   const regimes = [...new Set(selecionados.flatMap(c => (c.resultado?.regimes || []).map(r => r.regime)))];
@@ -16,6 +16,7 @@ export function ComparacaoCenarios({ cenarios, onAbrir, disabled = false }) {
         onChange={e => setIds(e.target.checked ? [...ids, c.id] : ids.filter(id => id !== c.id))} /> {nomeCenario(c)} · {dataCenario(c)}</label>
       <button type="button" className="btn btn-secondary" disabled={disabled} onClick={() => onAbrir(c)}>Abrir {c.competencia || "simulação"} · {dataCenario(c)}</button>
     </div>)}</div>
+    {selecionados.length >= 2 && onExportar && <button type="button" className="btn btn-secondary" disabled={disabled} onClick={() => onExportar(selecionados)}>Baixar comparação em PDF</button>}
     {selecionados.length >= 2 && <div className="planejamento-tabela-scroll"><table>
       <caption>Comparação dos resultados salvos — diferenças de premissas não representam economia realizada.</caption>
       <thead><tr><th scope="col">Informação</th>{selecionados.map(c => <th scope="col" key={c.id}>{nomeCenario(c)}<small>{dataCenario(c)}</small></th>)}</tr></thead>

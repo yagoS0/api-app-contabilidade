@@ -43,3 +43,15 @@
 .planejamento-tabela-scroll small { display: block; margin-top: 5px; font-weight: normal; color: #a7b0c0; }
 .planejamento-carteira-controles { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
 .planejamento-carteira-controles label { min-width: 200px; }
+.estudos-planejamento { display: grid; gap: 12px; min-width: 0; }
+.estudo-cabecalho { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.estudo-cabecalho h3 { margin: 0 0 4px; }
+.estudo-cabecalho small { color: #a7b0c0; }
+.estudo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; margin: 12px 0; }
+.estudo-campo { display: grid; gap: 4px; font-size: .8rem; align-content: start; }
+.estudo-campo input { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px; border: 1px solid #44475a; border-radius: 6px; color: inherit; background: #1a1b26; font: inherit; }
+.estudo-linha { min-width: 0; border: 1px solid #44475a; border-radius: 8px; padding: 12px; margin: 14px 0; }
+.estudo-linha > label { display: block; margin-top: 12px; }
+.estudo-linha > .btn { margin-top: 10px; }
+.estudo-confirmacao { display: block; margin-top: 16px; }
+.estudos-planejamento .btn { padding: 8px 12px; border: 1px solid #44475a; border-radius: 6px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
