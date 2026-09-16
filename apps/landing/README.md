@@ -14,6 +14,12 @@ Página estática em `index.html`, com CSS e JavaScript embutidos, servida pelo 
 
 A análise fiscal inicial é gratuita. A pedido do proprietário, a landing não exibe planos, tabela de preços ou CRC. Os botões comerciais abrem o WhatsApp; o acesso ao cliente permanece no canto superior direito também no celular. Valores na ilustração do painel representam dados demonstrativos, não preços de serviços.
 
+## Escopo do conteúdo
+
+Revisão de 16/09/2026: a página descreve as funcionalidades existentes, com as condições de uso pertinentes. Guias dependem de liberação do escritório; faturamento usa notas registradas; DRE usa lançamentos e pode ser provisória; fluxo traz projeções mensais conforme os dados disponíveis; emissão de NFS-e depende de habilitação e integração; OFX do cliente encaminha saídas para conferência.
+
+Foram retiradas as promessas de contador fixo, folha/eSocial completos no app, pedidos de documentos, auditoria obrigatória universal, projeção individual de todos os impostos, caixa em 30/60/90 dias e prazos de ativação/relatório. A ilustração usa dados fictícios identificados e não apresenta recursos ainda ausentes. Não reintroduzir essas promessas sem comprovar a entrega correspondente.
+
 ## Publicação
 
 Serviço Railway `landing`, projeto `perfect-upliftment`, ambiente `production`. Root Directory **apps/landing**; Dockerfile relativo a essa pasta. A implantação é manual. Execute da raiz do repositório:
