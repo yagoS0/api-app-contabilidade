@@ -279,6 +279,8 @@ function prepararPonteiro(container) {
   const grade=container.querySelector('.agenda-time-columns'),rolagem=container.querySelector('.agenda-time-scroll');
   grade.getBoundingClientRect=()=>({left:0,top:-392,width:756,height:1344,right:756,bottom:952});
   rolagem.getBoundingClientRect=()=>({left:0,top:0,width:756,height:800,right:756,bottom:800});
+  grade.querySelectorAll('.agenda-time-day').forEach((el,i)=>{el.getBoundingClientRect=()=>({left:i*100,right:(i+1)*100,width:100});});
+  grade.querySelector('.agenda-time-slot').getBoundingClientRect=()=>({height:56});
   return ()=>{window.PointerEvent=anterior;};
 }
 function arrastar(evento,x,y,alvo=evento) {
@@ -303,6 +305,7 @@ test('arrastar obrigação move todas as empresas sem duplicar nem alterar concl
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     obs.forEach(o=>{expect(o.ocorrencias).toHaveLength(1);expect(o.ocorrencias[0]).toMatchObject({cicloChave:'2026-09',dataVencimento:'2026-09-21'});});
     expect(obs[0].ocorrencias[0]).toMatchObject({status:'CONCLUIDA',situacao:'CONCLUIDA',concluidaEm:'2026-09-10T12:00:00Z'});
+    await waitFor(()=>expect(screen.getByRole('button',{name:/EFD-Contribuições/})).not.toHaveAttribute('aria-busy'));
     fireEvent.pointerDown(screen.getByRole('button',{name:/EFD-Contribuições/}),{pointerId:2,button:0});
     fireEvent.click(screen.getByRole('button',{name:/EFD-Contribuições/}));
     expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument();
@@ -374,7 +377,7 @@ test('Escape cancela arraste sem gravar, e clique simples continua abrindo ediç
   const evento=await screen.findByRole('button',{name:'Cancelar movimento'});const salvar=jest.spyOn(api,'acaoTarefaAgenda');const restaurar=prepararPonteiro(container);
   try {
     fireEvent.pointerDown(evento,{pointerId:1,button:0,clientX:350,clientY:140});fireEvent.pointerMove(evento,{pointerId:1,clientX:450,clientY:196});
-    expect(container.querySelector('.agenda-drag-preview')).not.toBeNull();fireEvent.keyDown(window,{key:'Escape'});
+    await waitFor(()=>expect(container.querySelector('.agenda-drag-preview')).not.toBeNull());fireEvent.keyDown(window,{key:'Escape'});
     fireEvent.pointerUp(evento,{pointerId:1,clientX:450,clientY:196});fireEvent.click(evento);
     expect(salvar).not.toHaveBeenCalled();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     fireEvent.pointerDown(evento,{pointerId:2,button:0,clientX:350,clientY:140});fireEvent.pointerUp(evento,{pointerId:2,clientX:350,clientY:140});fireEvent.click(evento);
@@ -394,4 +397,50 @@ test('tarefa sem horário pode ser levada para a grade e ajustada pelo teclado',
     await waitFor(()=>expect(screen.getByRole('button',{name:'Organizar documentos'})).toHaveStyle({height:'40px'}));
     expect((await api.getTarefasAgenda('2026-09-07','2026-09-13')).itens[0]).toMatchObject({horaInicio:'10:00',horaFim:'10:45'});
   } finally {restaurar();}
+});
+
+test('desenhar intervalo abre um único modal central com título focado e horário selecionado',async()=>{
+  const {container}=montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  const restaurar=prepararPonteiro(container),slot=screen.getByLabelText('Criar atividade em 10/09/2026 às 09:00');
+  try {
+    fireEvent.pointerDown(slot,{pointerId:1,button:0,clientX:350,clientY:126});
+    fireEvent.pointerMove(slot,{pointerId:1,clientX:350,clientY:210});
+    await waitFor(()=>expect(container.querySelector('.agenda-drag-preview')).toHaveTextContent('09:15–10:45'));
+    expect(container.querySelector('.agenda-drag-preview')).toHaveTextContent('90 min');
+    fireEvent.pointerUp(slot,{pointerId:1,clientX:350,clientY:210});fireEvent.click(slot);
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getByRole('dialog')).not.toHaveClass('modal-fundo--lateral');
+    expect(screen.getByLabelText('Título')).toHaveFocus();
+    expect(screen.getByLabelText('Horário inicial')).toHaveValue('09:15');
+    expect(screen.getByLabelText('Horário final')).toHaveValue('10:45');
+  } finally {restaurar();}
+});
+
+test('gesto com resposta lenta mantém destino e permite mover outra atividade; atualização final é silenciosa',async()=>{
+  const store=criarMockAgenda([],[]),cfg={dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:00',horaFim:'10:00'};
+  const a=await store.salvarTarefaAgenda({titulo:'Revisar A',config:cfg});await store.salvarTarefaAgenda({titulo:'Revisar B',config:cfg});
+  let liberar;const atraso=new Promise(resolve=>{liberar=resolve;});
+  const original=store.acaoTarefaAgenda;const acaoTarefaAgenda=jest.fn(async(id,dados)=>{if(id===a.tarefa.id)await atraso;return original(id,dados);});
+  const getTarefasAgenda=jest.fn(store.getTarefasAgenda);
+  const {api,container}=montar({extras:{...store,acaoTarefaAgenda,getTarefasAgenda}});
+  const evento=await screen.findByRole('button',{name:'Revisar A'}),restaurar=prepararPonteiro(container);
+  try {
+    arrastar(evento,450,196);
+    expect(screen.getByRole('button',{name:'Revisar A'})).toHaveStyle({top:'560px'});
+    expect(screen.getByRole('button',{name:'Revisar A'})).toHaveAttribute('aria-busy','true');
+    // Edição pelo modal aguarda somente esta ocorrência; outros gestos seguem disponíveis.
+    fireEvent.pointerDown(screen.getByRole('button',{name:'Revisar A'}),{pointerId:2,button:0});
+    fireEvent.pointerUp(screen.getByRole('button',{name:'Revisar A'}),{pointerId:2,clientX:0,clientY:0});
+    fireEvent.click(screen.getByRole('button',{name:'Revisar A'}));expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    arrastar(screen.getByRole('button',{name:'Revisar B'}),550,252);
+    await waitFor(()=>expect(acaoTarefaAgenda).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('button',{name:'Revisar B'})).toHaveStyle({top:'616px'});
+    expect(getTarefasAgenda).toHaveBeenCalledTimes(1);
+    liberar();
+    await waitFor(()=>expect(screen.queryByText('Salvando horário…')).not.toBeInTheDocument());
+    await waitFor(()=>expect(getTarefasAgenda).toHaveBeenCalledTimes(2));
+    expect(api.getCalendario).toHaveBeenCalledTimes(1);expect(api.listRegrasObrigacao).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByRole('button',{name:'Revisar A'})).toHaveLength(1);
+    expect(screen.getByRole('button',{name:'Revisar A'})).toHaveStyle({top:'560px'});
+  } finally {liberar();restaurar();}
 });

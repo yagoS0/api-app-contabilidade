@@ -37,10 +37,18 @@ export function criarMockAgenda(obrigacoes, regras) {
       return {ok:true};
     },
     async editarOcorrenciasAgenda(ids, dados) {
-      const config=normalizarAgenda({...dados,repetirAte:null});
-      const alvos=ids.map(id=>{const serie=obrigacoes.find(o=>o.ocorrencias.some(oc=>oc.ocorrenciaId===id));return {serie,oc:serie?.ocorrencias.find(oc=>oc.ocorrenciaId===id)};});
+      if(!dados || typeof dados!=='object' || Array.isArray(dados)) throw new Error('Informe as alterações da agenda.');
+      const alvos=[...new Set(ids)].map(id=>{const serie=obrigacoes.find(o=>o.ocorrencias.some(oc=>oc.ocorrenciaId===id));return {serie,oc:serie?.ocorrencias.find(oc=>oc.ocorrenciaId===id)};});
       if(alvos.some(a=>!a.oc || a.oc.canceladaEm || a.oc.foraDaRecorrencia)) throw new Error('Esta ocorrência não está mais disponível no calendário.');
-      for(const {serie,oc} of alvos) Object.assign(oc,{dataInicio:config.dataInicio,dataFim:config.dataFim,...(serie.tipo==='TAREFA'?{dataVencimento:config.dataFim}:{}),janelaPersonalizada:true,agendaConfig:{horaInicio:config.horaInicio,horaFim:config.horaFim,prioridade:config.prioridade,titulo:dados.titulo,descricao:dados.descricao}});
+      const alteracoes=alvos.map(({serie,oc})=>{
+        const anterior={...serie.agendaConfig,...oc.agendaConfig};
+        const config=normalizarAgenda({...anterior,dataInicio:oc.dataInicio || oc.dataVencimento,dataFim:oc.dataFim || oc.dataVencimento,...dados,repetirAte:null});
+        const titulo=String(Object.hasOwn(dados,'titulo')?dados.titulo??'':anterior.titulo??serie.nome??'').trim();
+        if(!titulo || titulo.length>200) throw new Error('Informe um título de até 200 caracteres.');
+        const descricao=String((Object.hasOwn(dados,'descricao')?dados.descricao:anterior.descricao??serie.descricao)??'').slice(0,10000);
+        return {oc,patch:{dataInicio:config.dataInicio,dataFim:config.dataFim,...(serie.tipo==='TAREFA'?{dataVencimento:config.dataFim}:{}),janelaPersonalizada:true,agendaConfig:{...oc.agendaConfig,horaInicio:config.horaInicio,horaFim:config.horaFim,prioridade:config.prioridade,titulo,descricao}}};
+      });
+      for(const {oc,patch} of alteracoes) Object.assign(oc,patch);
       return {ok:true};
     },
     async ocultarItemAgenda({tipo,id}) {const chave=`${tipo}|${id}`;if(!ocultos.includes(chave))ocultos.push(chave);return {ok:true};},

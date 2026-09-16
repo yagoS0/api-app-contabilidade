@@ -59,3 +59,58 @@ test('listagem identifica cada empresa pelo CNPJ dentro da carteira autorizada',
   expect(out.obrigacoes[0]).toMatchObject({companyId:'permitida',empresa:'Consultoria Alfa',cnpj:'11222333000181'});
   expect(prisma.obrigacao.findMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({portalClientId:{in:['permitida']}}),include:expect.objectContaining({portalClient:{select:{id:true,razao:true,cnpj:true}}})}));
 });
+
+const ocorrenciaEditavel = (id='oc', extra={}) => ({id,obrigacaoId:'serie-'+id,dataInicio:new Date('2026-09-10'),dataFim:new Date('2026-09-10'),status:'CONCLUIDA',dataVencimento:new Date('2026-09-21'),obrigacao:{tipo:'OBRIGACAO',nome:'EFD',descricao:'Da série',agendaConfig:{horaInicio:'09:00',horaFim:'10:00',prioridade:'BAIXA'}},agendaConfig:{titulo:'EFD '+id,descricao:'Da empresa '+id,prioridade:'ALTA'},...extra});
+
+test('gesto parcial preserva campos individuais e usa a leitura após adquirir os locks',async()=>{
+  const antes=['a','b'].map(id=>ocorrenciaEditavel(id));
+  const atuais=antes.map(oc=>({...oc,agendaConfig:{...oc.agendaConfig,descricao:'Atualizada '+oc.id,prioridade:'URGENTE',vencimentoFiscal:'2026-09-21'}}));
+  let bloqueios=0;prisma.$queryRaw.mockImplementation(async()=>{bloqueios++;});
+  prisma.ocorrenciaObrigacao.findMany.mockResolvedValueOnce(antes).mockImplementationOnce(async()=>{expect(bloqueios).toBe(2);return atuais;});
+  const r=await request(app()).post('/agenda/ocorrencias/editar').send({ids:['a','b'],dados:{dataInicio:'2026-09-11',dataFim:'2026-09-11',horaInicio:'11:00',horaFim:'12:00'}});
+  expect(r.status).toBe(200);
+  for(const [chamada] of prisma.ocorrenciaObrigacao.update.mock.calls) {
+    expect(chamada.data.agendaConfig).toEqual({titulo:'EFD '+chamada.where.id,descricao:'Atualizada '+chamada.where.id,prioridade:'URGENTE',horaInicio:'11:00',horaFim:'12:00',vencimentoFiscal:'2026-09-21'});
+    for(const campo of ['status','concluidaEm','concluidaPorId','dataVencimento']) expect(chamada.data).not.toHaveProperty(campo);
+  }
+});
+
+test('patch pode limpar horários e descrição explicitamente sem limpar prioridade',async()=>{
+  prisma.ocorrenciaObrigacao.findMany.mockResolvedValue([ocorrenciaEditavel()]);
+  const r=await request(app()).post('/agenda/ocorrencias/editar').send({ids:['oc'],dados:{horaInicio:null,horaFim:null,descricao:null}});
+  expect(r.status).toBe(200);
+  expect(prisma.ocorrenciaObrigacao.update).toHaveBeenCalledWith({where:{id:'oc'},data:{dataInicio:new Date('2026-09-10'),dataFim:new Date('2026-09-10'),janelaPersonalizada:true,agendaConfig:{titulo:'EFD oc',descricao:'',prioridade:'ALTA',horaInicio:null,horaFim:null}}});
+});
+
+test('valida todas as janelas do grupo antes de gravar a primeira',async()=>{
+  prisma.ocorrenciaObrigacao.findMany.mockResolvedValue([ocorrenciaEditavel('a'),ocorrenciaEditavel('b',{dataInicio:new Date('2026-09-15'),dataFim:new Date('2026-09-15')})]);
+  const r=await request(app()).post('/agenda/ocorrencias/editar').send({ids:['a','b'],dados:{dataFim:'2026-09-12'}});
+  expect(r.status).toBe(400);expect(prisma.ocorrenciaObrigacao.update).not.toHaveBeenCalled();
+});
+
+test('patch parcial não altera ocorrência fora da carteira',async()=>{
+  prisma.ocorrenciaObrigacao.findMany.mockResolvedValue([ocorrenciaEditavel('visivel')]);
+  const r=await request(app()).post('/agenda/ocorrencias/editar').send({ids:['visivel','invisivel'],dados:{horaInicio:'10:00',horaFim:'11:00'}});
+  expect(r.status).toBe(404);expect(prisma.ocorrenciaObrigacao.update).not.toHaveBeenCalled();expect(prisma.$queryRaw).not.toHaveBeenCalled();
+});
+
+test('ocorrência cancelada durante a espera pelo lock não é editada',async()=>{
+  prisma.ocorrenciaObrigacao.findMany.mockResolvedValueOnce([ocorrenciaEditavel()]).mockResolvedValueOnce([ocorrenciaEditavel('oc',{canceladaEm:new Date()})]);
+  const r=await request(app()).post('/agenda/ocorrencias/editar').send({ids:['oc'],dados:{horaInicio:'10:00',horaFim:'11:00'}});
+  expect(r.status).toBe(409);expect(prisma.ocorrenciaObrigacao.update).not.toHaveBeenCalled();
+});
+
+test('tarefa vinculada à empresa conserva compatibilidade de vencimento e edição completa',async()=>{
+  const oc=ocorrenciaEditavel();oc.obrigacao.tipo='TAREFA';prisma.ocorrenciaObrigacao.findMany.mockResolvedValue([oc]);
+  const r=await request(app()).post('/agenda/ocorrencias/editar').send({ids:['oc'],dados:{titulo:'Novo título',descricao:'',dataInicio:'2026-09-12',dataFim:'2026-09-13',horaInicio:'14:00',horaFim:'15:00',prioridade:''}});
+  expect(r.status).toBe(200);expect(prisma.ocorrenciaObrigacao.update.mock.calls[0][0].data).toMatchObject({dataVencimento:new Date('2026-09-13'),agendaConfig:{titulo:'Novo título',descricao:'',prioridade:'',horaInicio:'14:00',horaFim:'15:00'}});
+});
+
+test('obrigação legada sem janela aceita só horários usando a data do vencimento',async()=>{
+  prisma.ocorrenciaObrigacao.findMany.mockResolvedValue([ocorrenciaEditavel('oc',{dataInicio:null,dataFim:null,agendaConfig:null})]);
+  const r=await request(app()).post('/agenda/ocorrencias/editar').send({ids:['oc'],dados:{horaInicio:'09:00',horaFim:'10:00'}});
+  expect(r.status).toBe(200);
+  const {data}=prisma.ocorrenciaObrigacao.update.mock.calls[0][0];
+  expect(data).toMatchObject({dataInicio:new Date('2026-09-21'),dataFim:new Date('2026-09-21'),agendaConfig:{titulo:'EFD',descricao:'Da série',horaInicio:'09:00',horaFim:'10:00'}});
+  expect(data).not.toHaveProperty('dataVencimento');
+});
