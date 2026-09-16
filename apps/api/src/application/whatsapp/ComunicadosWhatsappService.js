@@ -10,7 +10,8 @@ import { adquirirLease, renovarLease, liberarLease } from './WhatsappLeaseServic
 
 const selectContato = { id: true, nome: true, telefoneE164: true, portalClientId: true, ativo: true, optInEm: true,
   portalClient: { select: { razao: true, cnpj: true } } };
-const permitido = u => ['admin', 'contador'].includes(String(u?.role).toLowerCase()) && String(u?.status).toLowerCase() === 'active';
+const permitido = u => ['admin', 'contador'].includes(String(u?.role).toLowerCase()) && String(u?.status).toLowerCase() === 'active'
+  && (String(u?.role).toLowerCase() === 'admin' || String(u?.accountType).trim().toUpperCase() === 'FIRM');
 const final = c => ['CANCELADO', 'CONCLUIDO'].includes(c.status);
 
 export function criarComunicadosWhatsapp({ client = prisma, meta = criarModelosMeta(), cloud = null,
@@ -143,7 +144,7 @@ export function criarComunicadosWhatsapp({ client = prisma, meta = criarModelosM
     const c = await client.comunicadoWhatsapp.findFirst({ where: { status: 'ENVIANDO' }, orderBy: { createdAt: 'asc' }, include: { destinatarios: true } });
     if (!c) return;
     const pausar = async motivo => client.comunicadoWhatsapp.updateMany({ where: { id: c.id, status: 'ENVIANDO', confirmadoEm: c.confirmadoEm }, data: { status: 'PAUSADO', motivo } });
-    const ator = await client.user.findUnique({ where: { id: c.confirmadoPor || '' }, select: { role: true, status: true } });
+    const ator = await client.user.findUnique({ where: { id: c.confirmadoPor || '' }, select: { role: true, status: true, accountType: true } });
     if (!permitido(ator)) { await pausar('O responsável pelo envio não tem mais acesso. A equipe precisa revisar.'); return; }
     const d = c.destinatarios.find(d => d.status === 'PENDENTE');
     if (!d) {
@@ -161,7 +162,7 @@ export function criarComunicadosWhatsapp({ client = prisma, meta = criarModelosM
     const turnoIaId = `comunicado:${d.id}`;
     try {
       const contatos = async () => {
-        const a = await client.user.findUnique({ where: { id: c.confirmadoPor || '' }, select: { role: true, status: true } });
+        const a = await client.user.findUnique({ where: { id: c.confirmadoPor || '' }, select: { role: true, status: true, accountType: true } });
         const vigente = await client.comunicadoWhatsapp.findUnique({ where: { id: c.id } });
         if (!permitido(a) || vigente?.status !== 'ENVIANDO' || vigente.categoria !== c.categoria
           || vigente.confirmadoEm?.getTime() !== c.confirmadoEm?.getTime() || vigente.confirmadoPor !== c.confirmadoPor) throw erroComunicado('O envio foi interrompido pelo escritório.', 409);

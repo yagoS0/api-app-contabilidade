@@ -125,6 +125,9 @@ try {
   a = await preparar(); await client.user.update({ where: { id: usuario.id }, data: { status: 'blocked' } });
   await servico.processarUmaVez(); assert.equal((await detalhe(a.id)).status, 'PAUSADO'); assert.equal(chamadas.length, chamadasAntes);
   await servico.cancelar(a.id, empresas); await client.user.update({ where: { id: usuario.id }, data: { status: 'active' } });
+  a = await preparar(); await client.user.update({ where: { id: usuario.id }, data: { accountType: 'CLIENT' } });
+  await servico.processarUmaVez(); assert.equal((await detalhe(a.id)).status, 'PAUSADO'); assert.equal(chamadas.length, chamadasAntes);
+  await servico.cancelar(a.id, empresas); await client.user.update({ where: { id: usuario.id }, data: { accountType: 'FIRM' } });
   ok('cancelamento em corrida e operador desabilitado interrompem a transmissão');
 
   for (const [tipo, esperado] of [['timeout', 'INDETERMINADO'], ['recusado', 'FALHOU']]) {
