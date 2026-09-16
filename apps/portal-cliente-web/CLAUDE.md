@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal do Cliente na web (apps/portal-cliente-web)
 
+## DRE somente dos meses fechados — 16/09/2026
+
+A DRE usa seleção independente da competência do painel/Fluxo. Primeira consulta omite competência para abrir o último fechamento contábil; seletor apresenta apenas `competenciasDisponiveis` do servidor. Trocar empresa descarta a seleção anterior. Atualizar DRE busca novamente o último fechamento. Sem fechamento, mostrar estado próprio, sem tabela zerada. Não presumir fechamento por mês passado ou por status dos lançamentos. API recusa mês aberto inclusive em acesso direto; fechamento é `fechadoContabilEm`. Mock mantém agosto/julho fechados e uma empresa sem fechamento. Esta decisão substitui a exibição da DRE de qualquer mês selecionado no painel.
+
 Emissão — 15/09/2026: CERT_STORAGE_UNAVAILABLE e CERT_PASSWORD_DECRYPT_FAILED orientam contador/suporte para restaurar o acesso ao cofre. Não pedir novo certificado quando a leitura falhou. Após pagamento da AWS, leitura de 15/09 às 17h43 abriu PFX e senha com CNPJ e validade corretos: acesso ao cofre restabelecido, sem emitir nota no diagnóstico. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.
 ## Identidade do contador e uso no celular — 16/09/2026
 

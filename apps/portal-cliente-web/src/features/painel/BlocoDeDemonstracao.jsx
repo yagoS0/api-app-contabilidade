@@ -571,6 +571,12 @@ function Horizonte({ meses, unidade, comFolha, cicloAtual, aoAbrirMes }) {
  * fisco.
  */
 function Dre({ dados }) {
+  if (dados?.semCompetenciaFechada) {
+    return <div className="dre-vazio" role="status">
+      <strong>Ainda não há competência fechada para exibir a DRE.</strong>
+      <span>Ela ficará disponível após o fechamento contábil pelo escritório.</span>
+    </div>;
+  }
   /**
    * ⚠⚠ **VAZIO É RESPOSTA, E ELE TEM NOME.** Medido: 12 das 34 empresas não têm lançamento nenhum.
    * Um DRE de `R$ 0,00` em toda linha AFIRMA que a empresa não faturou nem gastou nada no mês —
@@ -653,6 +659,10 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
   const [mensagemDoFluxo, setMensagemDoFluxo] = useState("");
   const notificarMudanca = () => { fluxoQuery.recarregar(); aoAtualizarFluxo?.(); };
   const [visao, setVisao] = useState("fluxo");
+  const [selecaoDre, setSelecaoDre] = useState(null);
+  // A competência do painel/Fluxo pode estar aberta. A DRE tem seleção própria,
+  // restrita aos fechamentos devolvidos pelo servidor e isolada por empresa.
+  const competenciaDre = selecaoDre?.companyId === companyId ? selecaoDre.competencia : undefined;
   /** ⚠ `rs` × `pct` — v3 §3.6. Ele combina livremente com Fluxo/DRE e sobrevive à troca de modo. */
   const [unidade, setUnidade] = useState("rs");
   /**
@@ -715,8 +725,8 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
     { habilitado: visao === "fluxo" },
   );
   const dreQuery = useCarregamento(
-    () => api.getDre(companyId, { competencia }),
-    [companyId, competencia],
+    () => api.getDre(companyId, { competencia: competenciaDre }),
+    [companyId, competenciaDre],
     { habilitado: visao === "dre" },
   );
 
@@ -840,6 +850,19 @@ export function BlocoDeDemonstracao({ companyId, competencia, aoVerGuias, aoAtua
               ))}
             </div>
           ) : null}
+
+          {visao === "dre" && !dreQuery.carregando && !dreQuery.erro && dados?.competenciasDisponiveis?.length > 0 ? (
+            <label className="dre-competencia">
+              Competência fechada da DRE
+              <select value={dados.competencia} onChange={(event) => setSelecaoDre({ companyId, competencia: event.target.value })}>
+                {dados.competenciasDisponiveis.map((mes) => <option key={mes} value={mes}>{rotuloDoMes(mes)}</option>)}
+              </select>
+            </label>
+          ) : null}
+          {visao === "dre" ? <button type="button" className="btn" disabled={dreQuery.carregando} onClick={() => {
+            setSelecaoDre(null);
+            dreQuery.recarregar();
+          }}>Atualizar DRE</button> : null}
 
           {/* ⚠⚠ O BOTÃO DO HORIZONTE É UM ALTERNADOR, e ele DIZ o estado (`aria-pressed`) em vez de
               trocar de rótulo. Um botão que vira "Dias" quando está em dias faz a pessoa ler o

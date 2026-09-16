@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## DRE somente de competências fechadas — 16/09/2026
+
+Decisão do usuário: a DRE do cliente mostra apenas meses com `CompanyMonthlyCircular.fechadoContabilEm` preenchido. Servidor lista fechamentos da própria empresa, abre o mais recente quando a competência é omitida e recusa mês aberto. DRE tem seletor próprio, sem alterar competência de cards/Fluxo. Reabertura retira o mês nas novas consultas. Fechamento constitui revisão do período, portanto rascunho legado isolado não torna essa DRE provisória; pendências reais de classificação/valores continuam visíveis. Nenhum status ou lançamento é alterado para satisfazer essa regra.
+
 ## Retenção na emissão pelo WhatsApp — 16/09/2026
 
 Menção de retenção em linguagem livre, inclusive correção negativa, interrompe a emissão e cancela o código anterior antes da persistência do encaminhamento. Guardar texto original em `observacaoRetencao`, preservar dados válidos e usar o handoff existente; pedir orientação do tomador quando o imposto não estiver claro. Não transformar a frase em alíquota ou incidência fiscal. Retomar não apaga a conferência pendente; uma nova emissão explícita começa vazia. Ver `docs/whatsapp-emissao-sem-ia.md`. Testes sem Anthropic, WhatsApp real ou emissão fiscal.
