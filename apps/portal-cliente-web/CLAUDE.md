@@ -1,5 +1,11 @@
 # CLAUDE.md — Portal do Cliente na web (apps/portal-cliente-web)
 
+## Identidade do contador e uso no celular — 16/09/2026
+
+O usuário solicitou a mesma paleta e design do app do contador. Esta decisão substitui as orientações históricas de paleta clara, logo para fundo claro e navegação somente com ícones. `tokens.css` mantém os nomes usados pelo portal com fundo #1A1B26, superfície #24253A e acentos do contador. Os apps continuam com CSS independente para seus builds. Navegação: ícones e rótulos sempre visíveis; barra inferior até 960px com safe area; lateral acima desse limite. Logo continua levando ao Início.
+
+Controles principais têm alvo de 44px; campos no celular usam fonte de 16px. Cards e formulários empilham; tabelas conservam dados e rolam dentro de sua região, com cabeçalhos/coluna de dia fixos no Fluxo. Seletor de empresa busca nome/CNPJ, identifica a empresa atual e preserva aviso de descarte do lote. CSS de painel/fiscal é importado por `main.jsx`. Sem mudanças em cálculos, permissões ou chamadas fiscais. Entrega apenas na `dev`, aguardando validação do usuário antes da `main`/produção.
+
 ## Previsão do mês aberto e imposto pago — 08/09/2026
 
 A previsão de receita usa exatamente os três meses de calendário completos imediatamente anteriores ao relógio do servidor. O mês aberto não entra na mediana. Para o recebimento previsto (competência da nota +1), somar somente o complemento positivo entre mediana e notas já emitidas dessa competência. Nota parcial não cancela a previsão; nota acima da mediana não recebe complemento. Meses encerrados não são preenchidos retroativamente. A evidência identifica meses-base, mediana, emitido e complemento. Esta decisão substitui a mediana de toda a série e a regra de começar após a última nota.
@@ -928,12 +934,11 @@ regime), e `pc-006`/`pc-007` com **nenhum** — que é o caso em que o seletor n
 `emitirNfse` escreve nela, **depois do sucesso**, como no par real: as recusas de RECEITA e de
 TRANSPORTE não gravam.
 
-## Estilo — paleta CLARA, própria
+## Estilo — identidade do contador (atualizado em 16/09/2026)
 
-`src/styles/tokens.css`. **Não é a paleta de `apps/web`**: aquela é escura e é do portal do
-ESCRITÓRIO. Esta foi copiada verbatim de `prototipos/emissor-notas/styles.css`, decisão do dono com
-a tela na frente, para que os dois lados do cliente (esta web e o app `portal-cliente-mobile`)
-contem a mesma história visual.
+`src/styles/tokens.css` segue a paleta escura de `apps/web`, por solicitação atual do usuário.
+A paleta clara do protótipo é uma decisão histórica substituída. Manter os tokens localmente,
+pois o deploy deste portal não inclui os arquivos do app do contador.
 
 Cor nova entra em `tokens.css`, nunca em hex dentro de componente. ⚠ Todo estado tem par
 `-surface` (`--danger-surface`, `--warning-surface-border`, …) pelo mesmo motivo já registrado em

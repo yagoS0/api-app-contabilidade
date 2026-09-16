@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { filtrarEmpresas } from "./lib/filtrarEmpresas";
 import { useDialogoModal } from "../../lib/hooks";
 import { fmtCnpj, texto } from "../../lib/format";
 import { roleLabel } from "../../lib/roles";
@@ -29,6 +31,8 @@ export function SeletorEmpresa({ empresas, ativaId, aoEscolher, aoFechar, avisoA
   // ⚠ Esc, foco que entra, foco PRESO no diálogo (o Tab não sai) e foco que volta ao fechar — a
   // metade que `aria-modal="true"` promete e que os três diálogos deste app não cumpriam.
   const { caixaRef } = useDialogoModal({ aoFechar });
+  const [busca, setBusca] = useState("");
+  const empresasVisiveis = filtrarEmpresas(empresas, busca);
 
   return (
     <div
@@ -38,7 +42,7 @@ export function SeletorEmpresa({ empresas, ativaId, aoEscolher, aoFechar, avisoA
       }}
     >
       <div
-        className="modal"
+        className="modal modal-empresas"
         role="dialog"
         aria-modal="true"
         aria-labelledby="titulo-troca-empresa"
@@ -53,8 +57,14 @@ export function SeletorEmpresa({ empresas, ativaId, aoEscolher, aoFechar, avisoA
             {avisoAoTrocar}
           </p>
         ) : null}
+        <label htmlFor="buscar-empresa">
+          Buscar empresa
+          <input id="buscar-empresa" type="search" placeholder="Nome ou CNPJ"
+            autoComplete="off" value={busca} onChange={(event) => setBusca(event.target.value)} />
+        </label>
+        {!empresasVisiveis.length ? <p role="status">Nenhuma empresa encontrada. Altere a busca.</p> : null}
         <ul className="lista-empresas">
-          {empresas.map((empresa) => {
+          {empresasVisiveis.map((empresa) => {
             const ativa = empresa.companyId === ativaId;
             return (
               <li key={empresa.companyId}>
@@ -64,6 +74,7 @@ export function SeletorEmpresa({ empresas, ativaId, aoEscolher, aoFechar, avisoA
                   onClick={() => aoEscolher(empresa.companyId)}
                 >
                   <span className="razao">{texto(empresa.razao)}</span>
+                  {ativa ? <span className="empresa-atual">Empresa atual</span> : null}
                   <span className="meta">
                     {fmtCnpj(empresa.cnpj)}
                     {empresa.municipio || empresa.uf

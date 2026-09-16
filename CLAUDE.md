@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Portal do cliente no celular — 16/09/2026
+
+Pedido atual: usar no portal do cliente a mesma paleta e identidade do contador. Esta decisão substitui a antiga paleta clara própria do cliente. Tokens locais preservam os nomes consumidos pelos componentes; não importar CSS entre apps, pois possuem builds/deploys independentes. Navegação com rótulos visíveis, barra inferior até 960px, safe areas, controles de toque e tabelas com rolagem local. Cálculos, autorizações e serviços fiscais não mudam. Entregar somente na branch `dev`: o usuário pediu validação antes de qualquer integração na `main` ou produção.
+
 ## Previsão do mês aberto e imposto pago — 08/09/2026
 
 A previsão de receita usa exatamente os três meses de calendário completos imediatamente anteriores ao relógio do servidor. O mês aberto não entra na mediana. Para o recebimento previsto (competência da nota +1), somar somente o complemento positivo entre mediana e notas já emitidas dessa competência. Nota parcial não cancela a previsão; nota acima da mediana não recebe complemento. Meses encerrados não são preenchidos retroativamente. A evidência identifica meses-base, mediana, emitido e complemento. Esta decisão substitui a mediana de toda a série e a regra de começar após a última nota.

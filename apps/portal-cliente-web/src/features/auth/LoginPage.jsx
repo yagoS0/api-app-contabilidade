@@ -73,6 +73,9 @@ export function LoginPage({ expirou, aoEsquecerSenha }) {
             id="campo-email"
             type="email"
             autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            inputMode="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}

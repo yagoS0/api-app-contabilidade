@@ -1,0 +1,33 @@
+/* Campos e documentos fiscais: preservar conteúdo e rolar somente a tabela. */
+.fiscal-table-scroll { max-width: 100%; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; }
+.fiscal-table-scroll:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.sitfis-orgao, .sitfis-bloco { min-width: 0; }
+.sitfis-bloco-titulo, .sitfis-orgao-cabecalho { overflow-wrap: anywhere; }
+
+@media (max-width: 600px) {
+  .emissor-mobile { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .emissor-mobile .pane-preview { position: static; }
+  .emissor-mobile fieldset { padding: 12px; }
+  .emissor-mobile legend { max-width: 100%; overflow-wrap: anywhere; }
+  .emissor-mobile .sugestoes .btn,
+  .emissor-mobile .seletor-tomador-lista button,
+  .emissor-mobile .municipio-lista button {
+    flex-wrap: wrap; align-items: flex-start; min-height: 44px; gap: 4px 8px;
+    white-space: normal; overflow-wrap: anywhere;
+  }
+  .emissor-mobile .sugestoes .truncar,
+  .emissor-mobile .seletor-tomador-lista .truncar,
+  .emissor-mobile .municipio-lista .truncar {
+    white-space: normal; overflow: visible; text-overflow: clip; min-width: 0;
+  }
+  .emissor-mobile .sugestoes .btn .muted { white-space: normal; }
+  .emissor-mobile .linha-checkbox { min-height: 44px; }
+  .emissor-mobile .total { flex-wrap: wrap; }
+  .emissor-mobile .form-actions .btn { width: 100%; min-height: 44px; }
+  .emissor-mobile .nfse-preview { padding: 12px; }
+  .emissor-mobile .nfse-preview > header { flex-wrap: wrap; overflow-wrap: anywhere; }
+  .emissor-mobile .nfse-preview table td:first-child { padding-right: 10px; }
+  .cancelar-nota-modal { max-height: calc(100dvh - 24px); overflow-wrap: anywhere; }
+  .cancelar-nota-modal footer { flex-wrap: wrap; }
+  .cancelar-nota-modal footer .btn { flex: 1 1 100%; min-height: 44px; }
+}

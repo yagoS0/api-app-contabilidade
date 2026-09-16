@@ -7,7 +7,7 @@ import { useCarregamento, useRota } from "../../lib/hooks";
 import { competenciaPadrao, fmtCnpj, texto } from "../../lib/format";
 import { roleLabel } from "../../lib/roles";
 import { oNavegadorAssumeOClique } from "../../lib/cliqueDeLink";
-import { iconeDaRota, temIconePropio } from "../../components/icones";
+import { iconeDaRota } from "../../components/icones";
 import { SeletorEmpresa } from "./SeletorEmpresa";
 import { PainelPage } from "../painel/PainelPage";
 import { NotasPage } from "../notas/NotasPage";
@@ -300,21 +300,12 @@ export function AppShell({ user }) {
 
           ⚠ O botão "Emitir nota" da lista continua `<button>`: ele abre um MODO, não uma rota —
           não tem URL, e inventar uma abriria guia quebrada. */}
-      {/* ⚠ A BARRA É SÓ ÍCONE (decisão do dono), e o rótulo vive em `.sr-only` + `title`.
-          O `.sr-only` faz três coisas de uma vez: dá o NOME ACESSÍVEL do link (é ele que
-          `getByRole("link", { name })` acha), mantém o `textContent` do `<a>` — que é como as
-          suítes de casca enumeram as abas — e garante que quem usa leitor de tela ouça o destino,
-          não "link, imagem".
-          ⚠ `title` NÃO é tooltip de verdade: não aparece no teclado nem no toque. É o que existe
-          sem trazer dependência (`CLAUDE.md`: nada entra sem discutir), e o limite fica registrado
-          aqui, não escondido.
-          ⚠ `aria-label="Seções"` NÃO pode ser renomeado: as suítes de casca selecionam por ele. */}
+      {/* Rótulos visíveis também no toque; links nativos preservam abrir em nova aba. */}
       <nav className="nav" aria-label="Seções">
         {ABAS.map((aba) => {
           const Icone = iconeDaRota(aba.chave);
           // ⚠ Rota sem desenho não vira link vazio (destino invisível numa barra de ícones): ela
           // cai na reserva E mostra o rótulo em tela. A ausência aparece em vez de se esconder.
-          const semDesenhoProprio = !temIconePropio(aba.chave);
           return (
             <a
               key={aba.chave}
@@ -328,7 +319,7 @@ export function AppShell({ user }) {
               }}
             >
               <Icone />
-              <span className={semDesenhoProprio ? "nav-rotulo" : "sr-only"}>{aba.rotulo}</span>
+              <span className="nav-rotulo">{aba.rotulo}</span>
             </a>
           );
         })}
