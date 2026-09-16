@@ -55,3 +55,6 @@ Ao trocar empresa, limpar lista/estado salvo; descartar respostas de listagem an
 Regressões: `pages/__tests__/guardarSimulacao.ligacao.test.jsx`, `hierarquiaEAcessibilidade.test.jsx` e testes existentes de troca de empresa, moeda e prefill.
 
 Etapa 2: atalhos Premissas → Comparação → Detalhes movem foco/rolagem sem criar entrada no histórico. Respeitam altura dos cabeçalhos fixos. Grades permitem encolher, tabelas rolam localmente; no celular o cabeçalho da empresa não fica sobre o formulário. Ajuda de origem é legível e bloqueios permanecem visíveis. Falha de transporte do PDF após salvar informa sucesso parcial; resposta do PDF de empresa anterior não aparece na empresa atual.
+
+## Revisão de custos e pendências — 16/09/2026
+Revisão em lote permite selecionar contas visíveis, filtrar o rascunho sem classificação e aplicar fixo/variável, sem salvar automaticamente. Preserva contas fora do período e revisão otimista; resposta de salvamento de outra empresa é descartada. PendenciasRelatorio identifica fontes ausentes por mês e período comparado, rascunhos, inconsistências e mês aberto usando apenas evidências retornadas. Links abrem a origem e pedem conferir a competência; não alteram o período fiscal. Ausência de avisos não certifica completude. Publicação na main e produção autorizada pelo usuário em 16/09/2026.
