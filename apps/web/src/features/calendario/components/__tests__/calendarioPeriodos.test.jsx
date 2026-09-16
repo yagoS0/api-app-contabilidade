@@ -255,3 +255,91 @@ test('configuração da obrigação existente carrega filtros e permite todas as
   await waitFor(()=>expect(updateRegraObrigacao).toHaveBeenCalledWith('regra-efd',expect.objectContaining({escopo:'POR_FILTRO',filtros:{regimes:[],temFolha:true},agendaConfig:expect.objectContaining({dataInicio:'2026-09-10',dataFim:'2026-09-15'})})));
   expect(api.createRegraObrigacao).not.toHaveBeenCalled();
 });
+
+
+test('mover pelo modal preserva duração e substitui o dia original, inclusive fora do mês', async () => {
+  const {api}=montar();
+  await api.salvarTarefaAgenda({titulo:'Revisar NFS-e',config:{dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:00',horaFim:'10:00',recorrencia:'MENSAL'}});
+  fireEvent.click(await screen.findByRole('button',{name:'Revisar NFS-e',exact:true}));
+  fireEvent.change(screen.getByLabelText('De'),{target:{value:'2026-08-25'}});
+  expect(screen.getByLabelText('Até')).toHaveValue('2026-08-25');
+  fireEvent.change(screen.getByLabelText('Horário inicial'),{target:{value:'11:00'}});
+  expect(screen.getByLabelText('Horário final')).toHaveValue('12:00');
+  fireEvent.click(screen.getByRole('button',{name:'Salvar',exact:true}));
+  await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  const agosto=await api.getTarefasAgenda('2026-08-01','2026-08-31');
+  expect(agosto.itens).toHaveLength(1);expect(agosto.itens[0]).toMatchObject({dataInicio:'2026-08-25',dataFim:'2026-08-25',horaInicio:'11:00',horaFim:'12:00'});
+  expect((await api.getTarefasAgenda('2026-09-01','2026-09-30')).itens).toHaveLength(0);
+  expect((await api.getTarefasAgenda('2026-10-01','2026-10-31')).itens).toHaveLength(1);
+});
+
+function prepararPonteiro(container) {
+  const anterior=window.PointerEvent;
+  window.PointerEvent=class extends MouseEvent {constructor(tipo,props){super(tipo,props);this.pointerId=props.pointerId;}};
+  const grade=container.querySelector('.agenda-time-columns'),rolagem=container.querySelector('.agenda-time-scroll');
+  grade.getBoundingClientRect=()=>({left:0,top:-392,width:756,height:1344,right:756,bottom:952});
+  rolagem.getBoundingClientRect=()=>({left:0,top:0,width:756,height:800,right:756,bottom:800});
+  return ()=>{window.PointerEvent=anterior;};
+}
+function arrastar(evento,x,y,alvo=evento) {
+  fireEvent.pointerDown(alvo,{pointerId:1,button:0,clientX:350,clientY:140});
+  fireEvent.pointerMove(evento,{pointerId:1,clientX:x,clientY:y});
+  fireEvent.pointerUp(evento,{pointerId:1,clientX:x,clientY:y});
+  fireEvent.click(evento);
+}
+
+test('arrastar substitui a ocorrência diária, preserva duração e não abre o modal',async()=>{
+  const {api,container}=montar();await api.salvarTarefaAgenda({titulo:'Notas diárias',config:{...config,horaInicio:'09:00',horaFim:'10:00'}});
+  const eventos=await screen.findAllByRole('button',{name:'Notas diárias'});const restaurar=prepararPonteiro(container);
+  try {
+    arrastar(eventos[0],450,196);
+    await waitFor(()=>expect(container.querySelectorAll('.agenda-event.is-draggable')).toHaveLength(4));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const itens=(await api.getTarefasAgenda('2026-09-07','2026-09-13')).itens;
+    expect(itens).toHaveLength(4);expect(itens.filter(i=>i.dataInicio==='2026-09-10')).toHaveLength(0);
+    expect(itens.find(i=>i.cicloChave==='2026-09@2026-09-10')).toMatchObject({dataInicio:'2026-09-11',dataFim:'2026-09-11',horaInicio:'10:00',horaFim:'11:00'});
+    expect(itens.find(i=>i.cicloChave==='2026-09@2026-09-11')).toMatchObject({horaInicio:'09:00'});
+  } finally {restaurar();}
+});
+
+test('esticar a borda muda somente o fim e falha de gravação mantém o horário salvo',async()=>{
+  const {api,container}=montar();await api.salvarTarefaAgenda({titulo:'Reunião',config:{dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:00',horaFim:'10:00'}});
+  let evento=await screen.findByRole('button',{name:'Reunião'});const restaurar=prepararPonteiro(container);
+  try {
+    arrastar(evento,350,196,evento.querySelector('[data-agenda-resize="fim"]'));
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Reunião'})).toHaveStyle({height:'110px'}));
+    expect((await api.getTarefasAgenda('2026-09-10','2026-09-10')).itens[0]).toMatchObject({horaInicio:'09:00',horaFim:'11:00'});
+    jest.spyOn(api,'acaoTarefaAgenda').mockRejectedValueOnce(new Error('Sem conexão'));
+    evento=screen.getByRole('button',{name:'Reunião'});arrastar(evento,350,252);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sem conexão');
+    expect(screen.getByRole('button',{name:'Reunião'})).toHaveStyle({top:'504px',height:'110px'});
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  } finally {restaurar();}
+});
+
+test('Escape cancela arraste sem gravar, e clique simples continua abrindo edição',async()=>{
+  const {api,container}=montar();await api.salvarTarefaAgenda({titulo:'Cancelar movimento',config:{dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:00'}});
+  const evento=await screen.findByRole('button',{name:'Cancelar movimento'});const salvar=jest.spyOn(api,'acaoTarefaAgenda');const restaurar=prepararPonteiro(container);
+  try {
+    fireEvent.pointerDown(evento,{pointerId:1,button:0,clientX:350,clientY:140});fireEvent.pointerMove(evento,{pointerId:1,clientX:450,clientY:196});
+    expect(container.querySelector('.agenda-drag-preview')).not.toBeNull();fireEvent.keyDown(window,{key:'Escape'});
+    fireEvent.pointerUp(evento,{pointerId:1,clientX:450,clientY:196});fireEvent.click(evento);
+    expect(salvar).not.toHaveBeenCalled();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.pointerDown(evento,{pointerId:2,button:0,clientX:350,clientY:140});fireEvent.pointerUp(evento,{pointerId:2,clientX:350,clientY:140});fireEvent.click(evento);
+    expect(screen.getByRole('dialog',{name:'Editar atividade'})).toBeInTheDocument();
+  } finally {restaurar();}
+});
+
+
+test('tarefa sem horário pode ser levada para a grade e ajustada pelo teclado',async()=>{
+  const {api,container}=montar();await api.salvarTarefaAgenda({titulo:'Organizar documentos',config:{dataInicio:'2026-09-10',dataFim:'2026-09-10'}});
+  const evento=await screen.findByRole('button',{name:'Organizar documentos'});const restaurar=prepararPonteiro(container);
+  try {
+    arrastar(evento,450,168);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Organizar documentos'}).closest('.agenda-time-day')).not.toBeNull());
+    expect((await api.getTarefasAgenda('2026-09-07','2026-09-13')).itens).toEqual([expect.objectContaining({dataInicio:'2026-09-11',horaInicio:'10:00',horaFim:null})]);
+    fireEvent.keyDown(screen.getByRole('button',{name:'Organizar documentos'}),{key:'ArrowDown',altKey:true,shiftKey:true});
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Organizar documentos'})).toHaveStyle({height:'40px'}));
+    expect((await api.getTarefasAgenda('2026-09-07','2026-09-13')).itens[0]).toMatchObject({horaInicio:'10:00',horaFim:'10:45'});
+  } finally {restaurar();}
+});
