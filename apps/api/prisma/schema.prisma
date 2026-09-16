@@ -1525,6 +1525,47 @@ model ArquivoWhatsapp {
   @@map("arquivos_whatsapp")
 }
 
+model ComunicadoWhatsapp {
+  id String @id @default(uuid())
+  idempotencia String @unique
+  titulo String
+  corpo String
+  categoria String
+  empresasIds String[]
+  criadoPor String
+  status String @default("RASCUNHO")
+  nomeMeta String @unique
+  metaId String?
+  statusMeta String?
+  motivo String?
+  conferidoNaMetaEm DateTime?
+  confirmadoEm DateTime?
+  confirmadoPor String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  destinatarios DestinatarioComunicadoWhatsapp[]
+  @@index([status, createdAt])
+  @@map("comunicados_whatsapp")
+}
+
+model DestinatarioComunicadoWhatsapp {
+  id String @id @default(uuid())
+  comunicadoId String
+  telefone String
+  nome String
+  contatosIds String[]
+  empresasIds String[]
+  status String @default("PENDENTE")
+  motivo String?
+  mensagemId String?
+  iniciadoEm DateTime?
+  concluidoEm DateTime?
+  comunicado ComunicadoWhatsapp @relation(fields: [comunicadoId], references: [id], onDelete: Restrict)
+  @@unique([comunicadoId, telefone])
+  @@index([comunicadoId, status])
+  @@map("destinatarios_comunicado_whatsapp")
+}
+
 model TemplateWhatsapp {
   /// Chave interna (`guia_disponivel`, …) — é por ela que o código pede o template.
   chave             String    @id

@@ -1766,6 +1766,9 @@ export function createRealApi() {
       const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/contratos/${encodeURIComponent(contratoId)}/pdf`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
       if (!res.ok) throw new Error("Não foi possível gerar o contrato PDF."); return res.blob();
     },
+    async comunicadosWhatsapp(caminho = '', dados) {
+      return request(`/firm/whatsapp/comunicados${caminho}`, dados === undefined ? {} : { method: 'POST', body: JSON.stringify(dados) });
+    },
     async baixarPropostaComercial(id, propostaId) {
       const res = await fetch(getApiBaseUrl() + `/firm/comercial/onboardings/${encodeURIComponent(id)}/propostas/${encodeURIComponent(propostaId)}/pdf`, { headers: { Authorization: "Bearer " + (accessToken || readStoredToken()) }, cache: "no-store" });
       if (!res.ok) { const out = await res.json().catch(() => ({})); throw new Error(out.message || "Não foi possível gerar a proposta PDF."); } return res.blob();

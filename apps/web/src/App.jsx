@@ -17,6 +17,7 @@ import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploa
 import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
 import { WhatsappPage } from "./features/whatsapp/pages/renderWhatsappPage";
+import { ComunicadosWhatsappPage } from "./features/whatsapp/pages/ComunicadosWhatsappPage";
 import { BatchEmailPage } from "./features/guides/batch-email/pages/renderBatchEmailPage";
 import { useLoteWhatsapp } from "./features/guides/batch-email/hooks/useLoteWhatsapp";
 import { GlobalChartOfAccountsPage } from "./features/accounting/chart-of-accounts/pages/renderGlobalChartOfAccountsPage";
@@ -541,10 +542,12 @@ function AppInterno() {
     );
   }
 
+  if (session.page === "comunicadosWhatsapp") return <ComunicadosWhatsappPage api={api} companies={companiesWorkspace.companiesState.companies} onBack={() => session.setPage('whatsapp')} />;
   if (session.page === "whatsapp") {
     return (
       <WhatsappPage
         api={api}
+        onComunicados={() => session.setPage('comunicadosWhatsapp')}
         companies={companiesWorkspace.companiesState.companies}
         onBack={() => session.goBack()}
         message={feedback.message}

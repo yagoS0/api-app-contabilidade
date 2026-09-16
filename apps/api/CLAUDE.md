@@ -1,5 +1,9 @@
 # CLAUDE.md — API (apps/api)
 
+## Comunicados — 16/09/2026
+
+`ComunicadosWhatsappService` e `/firm/whatsapp/comunicados` separam audiência, rascunho, submissão Meta, conferência, confirmação e processamento. Só admin/contador; o worker revalida o operador que confirmou, o texto/categoria aprovados e os contatos antes da rede. Números são agrupados exatamente, sem inferir nono dígito ou exigir vínculo no portal. Reservas CAS por destinatário, lease da conversa/responsável e `SaidaWhatsappService` previnem repetição; reservas interrompidas viram INDETERMINADO, sem retry. Polling é leitura; aprovação jamais inicia envio. Aplicar `20260916110000_whatsapp_comunicados` e gerar Prisma. Ver `docs/whatsapp-comunicados.md`; teste PostgreSQL usa Meta/transporte sintéticos e rede externa bloqueada.
+
 ## Jornada do lead — 14/09/2026
 
 `JornadaLeadService` alimenta o GET comercial e os POSTs `/jornada/conferencia`, `/diagnostico`, `/devolutiva`, `/pagamento`. Conferência exige análise/CNPJ atuais e CAS da ficha; diagnóstico materialmente desatualizado não pode ser enviado. PDF e texto usam lease, registro anterior à rede, correlação por diagnóstico/parte e revalidação entre partes. Timeout nunca provoca repetição automática. Pagamento manual exige contrato `ASSINADO_CONFERIDO` da proposta aceita, liga o evento ao contrato e é idempotente. O verificador PostgreSQL comercial chama `scripts/checks-jornada-lead.js` com rede bloqueada; não utilizar provedores reais/Anthropic. Ver `docs/jornada-lead-passo-a-passo.md` na raiz.
