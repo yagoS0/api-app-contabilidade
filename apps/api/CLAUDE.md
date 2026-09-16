@@ -1,5 +1,9 @@
 # CLAUDE.md — API (apps/api)
 
+## Retenção informada no WhatsApp — 16/09/2026
+
+`retencaoNaConversa` apenas detecta observações fiscais, inclusive negativas: nunca aplica retenção ou calcula tributos. O coletor preserva dados e texto original em `observacaoRetencao`, remove o código e exige `invalidarConfirmacao` antes de persistir o handoff. Falha de recibo não pode reativar o resumo anterior. `EmissaoGuiadaWhatsappService` também trata coleta pausada, resumo expirado e impede que retomar apague a conferência pendente. Fluxo e limites em `docs/whatsapp-emissao-sem-ia.md`; testes sem Anthropic e verificador PostgreSQL sem rede externa.
+
 ## Conversão completa da abertura — 16/09/2026
 
 `ArquivoConversaoService` prepara anexos cifrados com SHA-256 e PDFs comerciais no storage padrão. `provisionarEmpresa` aceita callback transacional do onboarding: CompanyDocument, contato, encerramento do atendimento e vínculo são confirmados com a empresa. A preparação fica fora da transação; falha impede criação. Upload concorrente é detectado e upload posterior ao encerramento é recusado. Proposta comercial exige última versão aceita/não revogada, assinatura recorrente e pagamento daquele contrato; fichas sem proposta mantêm compatibilidade. Recuperação exige CNPJ coincidente. Ver `docs/abertura-empresa-simulacao-completa.md` na raiz.

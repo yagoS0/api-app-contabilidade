@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Retenção na emissão pelo WhatsApp — 16/09/2026
+
+Menção de retenção em linguagem livre, inclusive correção negativa, interrompe a emissão e cancela o código anterior antes da persistência do encaminhamento. Guardar texto original em `observacaoRetencao`, preservar dados válidos e usar o handoff existente; pedir orientação do tomador quando o imposto não estiver claro. Não transformar a frase em alíquota ou incidência fiscal. Retomar não apaga a conferência pendente; uma nova emissão explícita começa vazia. Ver `docs/whatsapp-emissao-sem-ia.md`. Testes sem Anthropic, WhatsApp real ou emissão fiscal.
+
 # Abertura completa — 16/09/2026
 
 A conversão do onboarding preserva os PDFs recebidos, a proposta aceita e a minuta nos documentos da empresa. Cadastro, contato e vínculo são atômicos; sócios/capital e dados públicos passam pela revisão do contador. O destino é Cadastro da empresa. Ver `docs/abertura-empresa-simulacao-completa.md` e o teste PostgreSQL `verify-opening-company-postgres.js`; não usar provedores ou tokens de IA para essa simulação.

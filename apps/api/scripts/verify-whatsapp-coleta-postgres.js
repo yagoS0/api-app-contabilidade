@@ -91,7 +91,9 @@ if (posRetomar >= 0) {
     const [server] = await prisma.$queryRaw`SELECT current_database() AS db, current_user AS usuario, current_setting('server_version') AS versao`;
     assert.equal(server.db, "altan_whatsapp_test");
     assert.equal(server.usuario, "altan_test");
-    assert.match(server.versao, /^16\./);
+    // PostgreSQL 15 local e 16 no CI; endereço, banco e usuário de teste acima
+    // continuam obrigatórios antes de qualquer escrita.
+    assert.match(server.versao, /^(?:15|16)\./);
     usuario = await prisma.user.create({ data: { email: `${prefixo}@example.invalid`, passwordHash: "FIXTURE-SEM-LOGIN", status: "active" } });
 
     const direta = await caso('quatro-dados-juntos');
@@ -142,6 +144,38 @@ if (posRetomar >= 0) {
     assert.equal(await prisma.acaoPendenteWhatsapp.count({ where: { conversaId: atomica.conversa.id, status: "pendente" } }), 1);
     assert.equal(await prisma.etapaEmissaoWhatsapp.count({ where: { mensagemId: msgPreparar.id } }), 1);
     ok("retry da preparação conclui rascunho, resumo e recibo juntos");
+
+    const retencao = await caso("retencao-livre");
+    await retencao.ateCompetencia();
+    await retencao.responder("atual");
+    const resumoRetencao = await prisma.acaoPendenteWhatsapp.findFirstOrThrow({ where: { conversaId: retencao.conversa.id, status: "pendente" } });
+    const avisoRetencao = await retencao.responder("essa nota tem retenção");
+    assert.equal(avisoRetencao.resultado.filaHumana, true);
+    const rascunhoRetencao = await checkpoint(retencao.conversa.id);
+    assert.equal(rascunhoRetencao.estado.dados.valor, 125.5);
+    assert.equal(rascunhoRetencao.estado.status, "EQUIPE");
+    assert.equal(rascunhoRetencao.estado.observacaoRetencao.texto, "essa nota tem retenção");
+    assert.equal(rascunhoRetencao.estado.codigo, undefined);
+    assert.equal((await prisma.acaoPendenteWhatsapp.findUniqueOrThrow({ where: { id: resumoRetencao.id } })).status, "cancelada");
+    assert.deepEqual(await retencao.processar(avisoRetencao.mensagem), avisoRetencao.resultado);
+    assert.equal((await checkpoint(retencao.conversa.id)).versao, rascunhoRetencao.versao);
+    await retencao.responder(`CONFIRMAR ${resumoRetencao.codigo}`);
+    assert.equal(retencao.execucoes(), 0);
+    assert.equal(retencao.preparacoes(), 1);
+    ok("retenção persiste aviso e dados, invalida código e reentrega não repete a transição");
+
+    const retencaoFalha = await caso("retencao-falha-recibo");
+    await retencaoFalha.ateCompetencia();
+    await retencaoFalha.responder("atual");
+    const resumoComFalha = await prisma.acaoPendenteWhatsapp.findFirstOrThrow({ where: { conversaId: retencaoFalha.conversa.id, status: "pendente" } });
+    const avisoComFalha = await retencaoFalha.entrada("tem ISS retido");
+    await assert.rejects(retencaoFalha.processar(avisoComFalha, falhaRecibo), /FALHA_RECIBO_CONTROLADA/);
+    assert.equal((await prisma.acaoPendenteWhatsapp.findUniqueOrThrow({ where: { id: resumoComFalha.id } })).status, "cancelada");
+    assert.equal(await prisma.etapaEmissaoWhatsapp.count({ where: { mensagemId: avisoComFalha.id } }), 0);
+    assert.equal((await retencaoFalha.processar(avisoComFalha)).filaHumana, true);
+    await retencaoFalha.responder(`CONFIRMAR ${resumoComFalha.codigo}`);
+    assert.equal(retencaoFalha.execucoes(), 0);
+    ok("falha ao salvar aviso nunca reativa autorização; retry preserva observação fiscal");
 
     // Ignora deliberadamente o lease no teste para comprovar a defesa CAS do banco.
     const corrida = await caso("cas-versao");

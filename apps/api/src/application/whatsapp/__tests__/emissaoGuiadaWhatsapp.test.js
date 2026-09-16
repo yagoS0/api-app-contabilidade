@@ -156,6 +156,98 @@ describe("conversação guiada persistente sem IA", () => {
     expect(f.tabelas.acaoPendenteWhatsapp[0].status).toBe("cancelada");
   });
 
+  test.each(['essa nota tem retenção', 'tem ISS retido', 'o cliente vai reter 5%', 'não tem retenção', 'IRRF: 15,00'])('aviso %s cancela o código e impede emissão do resumo anterior', async texto => {
+    const f = fixture(); await revisar(f);
+    const antiga = f.tabelas.acaoPendenteWhatsapp[0];
+    const r = await f.responder(texto);
+    expect(r).toMatchObject({ filaHumana: true, motivo: 'EMISSAO_EQUIPE' });
+    expect(r.texto).toContain('Dados coletados:');
+    expect(antiga.status).toBe('cancelada');
+    expect(f.tabelas.rascunhoEmissaoWhatsapp[0].estado).toMatchObject({
+      status: 'EQUIPE', dados: { tomadorDoc: DOC, descricao: 'Consultoria mensal', valor: 1500.5 },
+      observacaoRetencao: { texto, conferida: false },
+    });
+    await f.responder(`CONFIRMAR ${antiga.codigo}`);
+    expect(f.emitir).not.toHaveBeenCalled();
+    expect(f.servicos.prepararDadosFiscaisDoCliente).toHaveBeenCalledTimes(1);
+  });
+
+  test('falha de persistência depois do aviso não reativa autorização antiga', async () => {
+    const f = fixture(); await revisar(f);
+    f.client.etapaEmissaoWhatsapp.create.mockRejectedValueOnce(new Error('falha controlada'));
+    await expect(f.responder('essa nota tem retenção')).rejects.toThrow('falha controlada');
+    expect(f.tabelas.acaoPendenteWhatsapp[0].status).toBe('cancelada');
+    await f.responder(`CONFIRMAR ${f.tabelas.acaoPendenteWhatsapp[0].codigo}`);
+    expect(f.emitir).not.toHaveBeenCalled();
+  });
+
+  test('aviso com resumo expirado também encaminha e preserva o pedido', async () => {
+    const f = fixture(); await revisar(f);
+    f.tabelas.acaoPendenteWhatsapp[0].expiraEm = new Date(0);
+    const r = await f.responder('tem ISS retido');
+    expect(r.filaHumana).toBe(true);
+    expect(f.tabelas.rascunhoEmissaoWhatsapp[0].estado.observacaoRetencao.texto).toBe('tem ISS retido');
+    expect(f.emitir).not.toHaveBeenCalled();
+  });
+
+  test('retomar não apaga a observação; nova emissão explícita começa outro pedido vazio', async () => {
+    const f = fixture(); await revisar(f);
+    await f.responder('tem retenção');
+    for (const texto of ['continuar emissão', 'emitir nota']) {
+      expect(await f.responder(texto)).toMatchObject({ filaHumana: true, motivo: 'RETENCAO_AGUARDA_CONFERENCIA' });
+      expect(f.tabelas.rascunhoEmissaoWhatsapp[0].estado.observacaoRetencao.texto).toBe('tem retenção');
+    }
+    await f.responder('nova emissão');
+    expect(f.tabelas.rascunhoEmissaoWhatsapp[0].estado.dados).toEqual({ endereco: {} });
+    expect(f.tabelas.acaoPendenteWhatsapp.filter(a => a.status === 'pendente')).toHaveLength(0);
+  });
+
+  test('emissão pausada também entrega a observação ao contador', async () => {
+    const f = fixture(); await revisar(f);
+    await f.responder('pausar');
+    expect(await f.responder('tem ISS retido')).toMatchObject({ filaHumana: true, motivo: 'EMISSAO_EQUIPE' });
+    expect(f.tabelas.rascunhoEmissaoWhatsapp[0].estado.dados.valor).toBe(1500.5);
+    expect(f.emitir).not.toHaveBeenCalled();
+  });
+
+  test('retenção já recebida depois do CONFIRMAR impede a execução antes mesmo de ser processada', async () => {
+    const f = fixture(); await revisar(f);
+    const antiga = f.tabelas.acaoPendenteWhatsapp[0];
+    const confirmar = f.novaMensagem(`CONFIRMAR ${antiga.codigo}`);
+    const aviso = f.novaMensagem('tem retenção de ISS');
+    const r = await processarEmissaoGuiada({ ...f.args, mensagem: confirmar, texto: confirmar.corpo });
+    expect(r.motivo).toBe('CONFIRMACAO_SUPERADA');
+    expect(f.emitir).not.toHaveBeenCalled();
+    expect(await processarEmissaoGuiada({ ...f.args, mensagem: aviso, texto: aviso.corpo })).toMatchObject({ filaHumana: true });
+    expect(antiga.status).toBe('cancelada');
+  });
+
+  test('menu encaminha retenção para atendimento humano com IA desligada e não envia novo resumo', async () => {
+    const f = fixture(); await revisar(f);
+    const cloud = { enviarTexto: jest.fn(async () => ({ wamid: 'wamid-retencao' })) };
+    const mensagem = f.novaMensagem('essa nota tem retenção');
+    const r = await responderMenuWhatsapp({ registro: { conversa: f.conversa, mensagem, vinculo }, texto: mensagem.corpo,
+      agora: AGORA, client: f.client, cloud, textoLivreDisponivel: false, servicosColeta: f.servicos,
+      conferirJanela: async () => ({ situacao: 'ABERTA' }), resolverVinculo: async () => vinculo });
+    expect(r).toMatchObject({ tratado: true, motivo: 'EMISSAO_EQUIPE' });
+    expect(f.conversa.atendidaDesde).not.toBeNull();
+    expect(cloud.enviarTexto).toHaveBeenCalledTimes(1);
+    expect(cloud.enviarTexto.mock.calls[0][0].texto).toMatch(/contador/);
+    expect(f.tabelas.acaoPendenteWhatsapp.filter(a => a.status === 'pendente')).toHaveLength(0);
+    expect(f.emitir).not.toHaveBeenCalled();
+  });
+
+  test('aviso no primeiro pedido guarda os campos sem consultar fornecedores nem montar autorização', async () => {
+    const f = fixture();
+    const r = await f.responder(`Quero emitir uma nota com retenção\nCNPJ: ${DOC}\nDescrição: Consultoria\nValor: 950,00\nData: hoje`);
+    expect(r.filaHumana).toBe(true);
+    expect(f.tabelas.rascunhoEmissaoWhatsapp[0].estado.dados).toMatchObject({ tomadorDoc: DOC, descricao: 'Consultoria', valor: 950 });
+    expect(f.servicos.consultarCnpj).not.toHaveBeenCalled();
+    expect(f.servicos.prepararDadosFiscaisDoCliente).not.toHaveBeenCalled();
+    expect(f.tabelas.acaoPendenteWhatsapp).toHaveLength(0);
+    expect(f.emitir).not.toHaveBeenCalled();
+  });
+
   test("novo CPF não consulta CNPJ; pergunta nome/CEP e completa o endereço", async () => {
     const f = fixture(); await f.responder("emitir nota", { iniciar: true });
     await f.responder("52998224725");

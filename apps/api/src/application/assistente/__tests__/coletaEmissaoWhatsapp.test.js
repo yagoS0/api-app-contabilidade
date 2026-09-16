@@ -282,6 +282,73 @@ describe('coleta guiada sem modelo nem efeitos externos', () => {
   test.each(['qual alíquota devo usar?', 'regime: lucro presumido', 'pTotTribSN: 5'])('assunto fiscal %s exige equipe', (texto) => {
     expect(responder(conhecido().estado, texto).acao).toBe('EQUIPE');
   });
+  describe('retenção informada em linguagem livre', () => {
+    const frases = [
+      'essa nota tem retenção', 'tem ISS retido', 'o cliente vai reter 5%',
+      'IRRF retido de R$ 15,00', 'retenção: sim', 'essa nota tem retenção?',
+      'corrigir retenção', 'não tem retenção', 'na verdade é sem retenção',
+      'INSS: 110,00', 'PIS/COFINS/CSLL retidos', 'reter os impostos na fonte',
+      'o tomador retém 5%', 'o cliente desconta o imposto do pagamento',
+      'CONFIRMAR ABCD, mas tem retenção', 'essa nota tem RETENCOES',
+      'essa nota tem retensao', 'ISS retido: não', 'o cliente vai deduzir os tributos',
+    ];
+    test.each(frases)('%s interrompe qualquer etapa e conserva os dados', texto => {
+      const etapas = ['VALOR', 'COMPETENCIA', 'PERFIL', 'endereco.CEP'].map(etapa => ({ ...conhecido().estado, etapa }));
+      for (const estado of [iniciarColeta({ agora }).estado, conhecido().estado, ...etapas, revisao(), { ...revisao(), status: 'PAUSADO' }]) {
+        const original = JSON.parse(JSON.stringify(estado));
+        const r = responder({ ...estado, codigo: 'ABCD' }, texto);
+        expect(r).toMatchObject({ acao: 'EQUIPE', invalidarConfirmacao: true });
+        expect(r.estado.status).toBe('EQUIPE');
+        expect(r.estado.dados).toEqual(original.dados);
+        expect(r.estado.codigo).toBeUndefined();
+        expect(r.estado.observacaoRetencao).toMatchObject({ texto, conferida: false });
+        expect(r.mensagem).toMatch(/contador/);
+        expect(estado).toEqual(original);
+      }
+    });
+    test('aviso genérico permite enviar orientação sem exigir alíquota ou cálculo', () => {
+      const r = responder(revisao(), 'essa nota tem retenção');
+      expect(r.mensagem).toMatch(/qual imposto/);
+      expect(r.mensagem).toMatch(/orientação/);
+      expect(r.estado.dados.issRetido).toBeUndefined();
+    });
+    test('imposto já mencionado não é perguntado novamente nem convertido em configuração', () => {
+      const r = responder(revisao(), 'ISS retido de 5% e IRRF de 15 reais');
+      expect(r.estado.observacaoRetencao.impostosMencionados).toEqual(['ISS', 'IRRF']);
+      expect(r.mensagem).not.toMatch(/qual imposto/);
+      expect(r.estado.dados.issRetido).toBeUndefined();
+      expect(r.estado.dados.aliquota).toBeUndefined();
+    });
+    test.each(['Consultoria para retenção de clientes', 'Treinamento de retenção de talentos', 'Tratamento de retenção de líquidos', 'Consultoria com desconto comercial de 5%', 'Apuração de PIS e COFINS', 'Consultoria de imposto de renda'])('descrição legítima: %s', texto => {
+      const r = responder(conhecido().estado, texto);
+      expect(r.acao).toBe('COLETAR');
+      expect(r.estado.dados.descricao).toBe(texto);
+    });
+    test('aviso fiscal continua reconhecido depois de uma descrição com retenção de clientes', () => {
+      expect(responder(conhecido().estado, 'Retenção de clientes, com ISS retido').acao).toBe('EQUIPE');
+    });
+    test('primeiro pedido com retenção já entra no fluxo sem IA', () => {
+      expect(ehPedidoDeEmissao('Quero emitir uma nota com retenção')).toBe(true);
+      expect(ehPedidoDeEmissao('Não quero emitir uma nota com retenção')).toBe(false);
+    });
+    test('preserva os quatro campos válidos recebidos junto do aviso', () => {
+      const texto = `CNPJ: ${DOC}\nDescrição: Consultoria\nValor: 950,00\nData: hoje\nEssa nota tem retenção`;
+      const r = responder(iniciarColeta({ agora }).estado, texto);
+      expect(r.acao).toBe('EQUIPE');
+      expect(r.estado.dados).toMatchObject({ tomadorDoc: DOC, descricao: 'Consultoria', valor: 950, competencia: '2026-09-09' });
+      expect(r.estado.observacaoRetencao.texto).toBe(texto);
+    });
+    test('quatro linhas sem rótulos também são preservadas com aviso separado', () => {
+      const r = responder(iniciarColeta({ agora }).estado, `${DOC}\nConsultoria\n950,00\nhoje\nTem retenção`);
+      expect(r.estado.dados).toMatchObject({ tomadorDoc: DOC, descricao: 'Consultoria', valor: 950, competencia: '2026-09-09' });
+    });
+    test('valor ambíguo no aviso fica no texto original, sem substituir dado válido', () => {
+      const texto = 'valor: 950 ou 1000; tem retenção de 5%';
+      const r = responder(revisao(), texto);
+      expect(r.estado.dados.valor).toBe(1500.5);
+      expect(r.estado.observacaoRetencao.texto).toBe(texto);
+    });
+  });
   test.each(['obrigado pela ajuda', 'me ajuda', 'pode continuar'])('fala social %s não vira serviço', (texto) => {
     expect(responder(conhecido().estado, texto).estado.dados.descricao).toBeUndefined();
   });
