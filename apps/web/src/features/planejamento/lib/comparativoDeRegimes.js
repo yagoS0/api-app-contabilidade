@@ -30,7 +30,7 @@ import { custoAnualSimples } from "./simplesNacional";
 
 /** A ordem em que os tributos aparecem — a do DARF/DAS, não a alfabética. */
 const ORDEM_DOS_TRIBUTOS = Object.freeze([
-  "irpj", "adicionalIrpj", "csll", "pis", "cofins", "pisCofins", "cpp", "iss", "icms", "ipi",
+  "irpj", "adicionalIrpj", "csll", "pis", "cofins", "pisCofins", "cpp", "encargos", "iss", "icms", "ipi",
 ]);
 
 export const ROTULO_DO_TRIBUTO = Object.freeze({
@@ -41,6 +41,7 @@ export const ROTULO_DO_TRIBUTO = Object.freeze({
   cofins: "COFINS",
   pisCofins: "PIS + COFINS",
   cpp: "CPP (INSS patronal)",
+  encargos: "RAT/FAP e terceiros",
   iss: "ISS",
   icms: "ICMS",
   ipi: "IPI",
@@ -117,7 +118,7 @@ export function montarComparativo(resultado, entradas = {}) {
   const colunas = [];
 
   // ── SIMPLES ─────────────────────────────────────────────────────────────────────────────────
-  if (entradas.sujeitoAoFatorR) {
+  if (entradas.sujeitoAoFatorR && !resultado.receitasPorAtividade) {
     const comum = {
       rbt12: entradas.rbt12,
       receitaAnual: entradas.receitaAnual,

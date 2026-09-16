@@ -22,6 +22,10 @@ export const TOM = Object.freeze({
   neutral: "neutral",    // não sabemos — nunca verde, nunca vermelho
 });
 
+// Navegação pertence à tela, inclusive ao exibir relatórios históricos com instruções antigas.
+export const ORIENTACAO_CLASSIFICACAO = "Na aba Apuração, abra Revisar classificação e clique em Classificar competência. "
+  + "A classificação organiza as notas por tipo de operação para a conferência local; não altera a declaração já transmitida.";
+
 export const CORES_TOM_RELATORIO = Object.freeze({
   [TOM.ok]: { cor: "var(--state-ok)", fundo: "var(--state-ok-surface)" },
   [TOM.warn]: { cor: "var(--state-warn)", fundo: "var(--state-warn-surface)" },
@@ -226,7 +230,9 @@ export function recusaDoPreApurado(preApurado) {
     : null;
 
   const erroDeCalculo = p.estado === "erro_calculo";
-  const detalhe = p.motivo?.mensagem || p.motivo?.detalhe || null;
+  const detalhe = p.motivo?.code === "RECEITA_NAO_CLASSIFICADA"
+    ? "A receita da competência não está classificada por tipo de operação no portal. Isso limita o cálculo local de conferência, sem invalidar a apuração já feita na Receita."
+    : p.motivo?.mensagem || p.motivo?.detalhe || null;
   // Sem motivo nomeado e sem buraco não há o que fazer — pintar de âmbar uma competência em que
   // nada foi pedido do contador é o mesmo defeito do âmbar permanente que treina o olho a ignorar.
   const semAcao = !erroDeCalculo && !detalhe && !buraco;
@@ -240,7 +246,9 @@ export function recusaDoPreApurado(preApurado) {
       : "Cálculo local de conferência indisponível",
     detalhe,
     buraco,
-    comoResolver: p.comoResolver || null,
+    comoResolver: p.motivo?.code === "RECEITA_NAO_CLASSIFICADA" ? ORIENTACAO_CLASSIFICACAO
+      : p.motivo?.code === "CADASTRO_FALTANDO" ? "Abra Configurações da empresa → Perfil fiscal e confira o regime e o CNAE. Depois, regenere o relatório."
+      : p.comoResolver || null,
     // ⚠ A CAUSA VIAJA. Sem ela, quem lê esta recusa só sabe "está bloqueado", e o `tom` é `warn`
     // para QUALQUER bloqueio que não seja erro de cálculo — `CADASTRO_FALTANDO`, `REGIME_INVALIDO`
     // e `FOLHA_12M_FALTANDO` inclusive. Ver `recusaEcoaOTopo`, que precisa distinguir.
@@ -324,7 +332,7 @@ export function avisosDoRelatorio(dados) {
       codigo: "NAO_CLASSIFICADO",
       tom: TOM.warn,
       titulo: "Há receita sem classificação nesta competência",
-      detalhe: nc.comoResolver || null,
+      detalhe: ORIENTACAO_CLASSIFICACAO,
       numeros: {
         valor: num(nc.valorContabil),
         itens: num(nc.itens),

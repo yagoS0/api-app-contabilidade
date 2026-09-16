@@ -516,6 +516,10 @@ lucro (trava do art. 15 da Lei 9.065/1995) — se implementada, citar a fonte no
 
 ## 4. ISS E ICMS
 
+Revisão de incidência em 15/09/2026: [LC 116/2003, art. 1º](https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp116.htm) define como fato gerador do ISS a prestação dos serviços da lista anexa. Na simulação, categorias exclusivamente de mercadorias (`comercio` e `combustiveis`) não recebem ISS sobre essa receita nos motores do Presumido e Real. ICMS/ST continuam fora da estimativa, com aviso; isso não calcula a carga completa de mercadorias. Não estender a receitas mistas nem às modalidades de transporte sem determinar a incidência específica.
+
+Os cards discriminam a alíquota sobre sua base de cálculo e o peso do valor sobre a receita. IRPJ de 15% sobre a base presumida de 32%, por exemplo, representa 4,8% da receita, antes do adicional (§2). CPP de 20% incide na folha, não na receita (§5). A memória usa as mesmas constantes e bases do motor, sem novas alíquotas.
+
 - **ISS:** alíquota municipal entre **2% (piso, EC 37/2002 / LC 157/2016) e 5% (teto, LC 116/2003,
   art. 8º)**. O valor concreto por município/serviço é PARÂMETRO DE ENTRADA.
 - **ICMS:** alíquotas internas e interestaduais variam por estado, NCM e operação (ST, DIFAL,
@@ -736,3 +740,11 @@ parcial na faixa seguinte). Muda o ponto ótimo do pró-labore em muitas simula�
 | Tabela progressiva IRPF e teto RGPS do ano | dado versionado por vigência |
 | Data de aprovação societária de lucros até 2025 (grandfathering §7.1) | input do usuário |
 | Sublimite de ICMS/ISS da UF (R$ 3,6 mi ou R$ 1,8 mi) e seu proporcional no ano de início (§1.13) | cadastro da empresa / opção da UF para o ano |
+
+## Complemento de conferência do planejamento — 15/09/2026
+
+- **IRRF:** [exemplos oficiais da Lei 15.270/2025](https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda/tabelas/exemplos-de-aplicacao-da-lei-15-270-2025) e [tabelas de 2026](https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda/tabelas/2026). Desconto simplificado substitui deduções legais; não acumular com INSS. Teste oficial: bruto 6.000, deduções 649,60, imposto 382,88. Redutor usa bruto. Não foram alteradas as constantes geradas; foi corrigida a composição da base.
+- **Fator R:** [Resolução CGSN 140, art. 26](https://normas.receita.fazenda.gov.br/sijut2consulta/link.action?idAto=92278). FS12 e RBT12 dos 12 meses anteriores; folha inclui salários/pró-labore e CPP/FGTS efetivamente recolhidos. Não usar essa soma como pró-labore de uma pessoa nem como base própria da CPP.
+- **Segregação:** [IN RFB 1700, art. 215](https://normas.receita.fazenda.gov.br/sijut2consulta/link.action?idAto=81268&vis=) determina presunções por receita/atividade. O limite do adicional é da empresa, não de cada atividade. Implementação mista restrita para não supor rateios da majoração ou regras especiais desconhecidas.
+- **Real e adicional:** [IRPJ](https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/tributos/IRPJ) e [CSLL](https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/tributos/CSLL). Bases ajustadas separadamente; sem compensação automática de prejuízos. Lucro anual uniforme continua premissa explícita do Real; não confundir com escrituração/apuração definitiva.
+- **Transição do consumo:** [cronograma da RFB, atualizado em 03/07/2026](https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/acoes-e-programas/programas-e-atividades/reforma-tributaria-do-consumo/entenda). ISS/ICMS remanescentes de 90%, 80%, 70%, 60% em 2029–2032 e extinção em 2033; IBS geral 0,1% em 2027–2028 conforme LC 214, art. 344. As taxas futuras digitadas no simulador não são apresentadas como fixadas. O novo bloco limita-se a IBS/CBS e ISS para serviços no regime regular, com créditos separados; não calcula carga total ou DAS.

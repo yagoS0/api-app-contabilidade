@@ -38,6 +38,8 @@ describe("camada NOSSA — nada saiu da máquina", () => {
     "NFSE_MUNICIPIO_NAO_CONFIGURADO",
     "NFSE_REGIME_INDEFINIDO",
     "NO_COMPANY_CERT",
+    "CERT_STORAGE_UNAVAILABLE",
+    "CERT_PASSWORD_DECRYPT_FAILED",
     "SERIE_FORA_DA_FAIXA",
   ])("%s é NOSSA, vira falha_envio e LIBERA o número", (code) => {
     const d = classificarFalha(erroNosso(code));

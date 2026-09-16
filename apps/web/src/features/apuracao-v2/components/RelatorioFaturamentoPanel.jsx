@@ -260,6 +260,7 @@ export function RelatorioFaturamentoPanel({
   gerando = false,
   erro = null,
   onGerar = null,
+  onAbrirClassificacao = null,
   /** ⚠ Só UM `data-print-area` por página. Com o modal aberto, quem imprime é o de dentro dele. */
   imprimivel = true,
   compacto = false,
@@ -439,6 +440,9 @@ export function RelatorioFaturamentoPanel({
                 </div>
               ) : null}
               {a.detalhe ? <div style={{ marginTop: 2 }}>{a.detalhe}</div> : null}
+              {a.codigo === "NAO_CLASSIFICADO" && onAbrirClassificacao && <div data-print-hide style={{ marginTop: 8 }}>
+                <Button variant="secondary" onClick={onAbrirClassificacao}>Revisar classificação</Button>
+              </div>}
             </Aviso>;
             return temOficial && a.codigo === "NAO_CLASSIFICADO"
               ? <details key={a.codigo}><summary style={{ cursor: "pointer", color: PANEL.muted }}>Classificação das notas para conferência local</summary>{aviso}</details>

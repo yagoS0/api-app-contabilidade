@@ -45,6 +45,23 @@ import {
   textoDoPercentualForaDaFaixa,
 } from "../lib/campoNumerico";
 import { CardRegime } from "../components/CardRegime";
+import { ComparacaoCenarios } from "../components/ComparacaoCenarios";
+import { CarteiraPlanejamento } from "../components/CarteiraPlanejamento";
+import { ordenarCenarios } from "../lib/cenariosSalvos";
+import { AjustesPlanejamento, numeroInformado } from "../components/AjustesPlanejamento";
+import { AcompanhamentoMensal } from "../components/AcompanhamentoMensal";
+import { RealDetalhado } from "../components/RealDetalhado";
+import { ReceitasPorAtividade } from "../components/ReceitasPorAtividade";
+import { ConclusaoPlanejamento } from "../components/ConclusaoPlanejamento";
+import { TransicaoReforma } from "../components/TransicaoReforma";
+import { projetarTransicao } from "../lib/transicaoReforma";
+import { ResumoPlanejamentoImpresso } from "../components/ResumoPlanejamentoImpresso";
+import { EstudosAvancados } from "../components/EstudosAvancados";
+import { calcularOperacoes, calcularReformaOperacoes } from "../lib/operacoesPlanejamento";
+import { projetarTributos } from "../lib/tributosMensais";
+import { baixarPdfEstudos } from "../lib/pdfEstudos";
+import { planejarMeses } from "../lib/planejamentoMensal";
+import { preencherMensal } from "../lib/preencherMensal";
 import { GaugeFatorR } from "../components/GaugeFatorR";
 import { TabelaComparativa } from "../components/TabelaComparativa";
 import { BlocoIbsCbs } from "../components/BlocoIbsCbs";
@@ -121,13 +138,14 @@ export function PlanejamentoPage(props) {
   </div>;
 }
 
-function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, onVoltar, empresaFixa = false }) {
+function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, onVoltar, empresaFixa = false, onAbrirEmpresa }) {
   const [receita, setReceita] = useState("");
   const [rbt12, setRbt12] = useState("");
   const [mesesAtividade, setMesesAtividade] = useState("");
   const [detalharMeses, setDetalharMeses] = useState(false);
   const [serieMensal, setSerieMensal] = useState([]);
   const [folha, setFolha] = useState("");
+  const [ajustes, setAjustes] = useState({});
   const [anexo, setAnexo] = useState("III");
   const [sujeitoFatorR, setSujeitoFatorR] = useState(false);
   const [anexoManual, setAnexoManual] = useState(false);
@@ -221,7 +239,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     return () => { cancelado = true; };
   }, [api, empresaId]);
 
-  const prefill = useMemo(() => prefillDaEmpresa(dadosEmpresa), [dadosEmpresa]);
+  const prefill = useMemo(() => prefillDaEmpresa(dadosEmpresa?.empresa?.id && dadosEmpresa.empresa.id !== empresaId ? null : dadosEmpresa), [dadosEmpresa, empresaId]);
 
   // ⚠⚠⚠ TROCAR DE EMPRESA LIMPA O FORMULÁRIO INTEIRO — e a ausência disto era o pior defeito
   // desta tela (01/09/2026).
@@ -262,6 +280,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     setMesesAtividade("");
     setSerieMensal([]);
     setFolha("");
+    setAjustes({});
     setAnexo("III");
     setSujeitoFatorR(false);
     setAnexoManual(false);
@@ -407,6 +426,11 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     // em vez de cair no Anexo V (a alíquota maior) por causa de um zero que ninguém digitou. Folha
     // realmente zero continua sendo possível — digite 0.
     folhaAnual: lerDinheiro(folha),
+    folhaRemuneracoesAnual: numeroInformado(ajustes.folhaRemuneracoesAnual),
+    encargosAdicionaisAnuais: numeroInformado(ajustes.encargosAdicionaisAnuais),
+    regimeAtual: ajustes.regimeAtual || prefill.valores?.regimeAtual || null,
+    lucroRealDetalhado: ajustes.real || null,
+    receitasPorAtividade: ajustes.atividades?.ativo ? ajustes.atividades.linhas || [] : null,
     anexoSimples: anexo,
     sujeitoAoFatorR: sujeitoFatorR && !anexoManual,
     atividadePresumido: atividade,
@@ -418,10 +442,12 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     mesesDeAtividade: mesesInicioAtividade,
     receitasMensais,
     servicosAte120kConfirmado: servicos16,
-  }), [receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, atividade, issLido.valor, margemLida.valor, creditos, mesesInicioAtividade, receitasMensais, servicos16]);
+  }), [receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, atividade, issLido.valor, margemLida.valor, creditos, mesesInicioAtividade, receitasMensais, servicos16, ajustes, prefill.valores?.regimeAtual]);
 
+  const mensalPreenchido = useMemo(() => preencherMensal(ajustes.mensal, prefill.historicoMensal || [], entradas.anoBase || 2026, entradas.receitaAnual), [ajustes.mensal, prefill.historicoMensal, entradas.anoBase, entradas.receitaAnual]);
+  const ajustesDoCenario = prefill.historicoMensal?.length ? { ...ajustes, mensal: mensalPreenchido } : ajustes;
   const formularioCenario = { receita, rbt12, folha, anexo, sujeitoFatorR, anexoManual, atividade, iss, margem, creditos,
-    mesesAtividade, serieMensal, servicos16, categoriaConfirmada, cenarioIbsCbs, cbsEstimada, detalharMeses };
+    mesesAtividade, serieMensal, servicos16, categoriaConfirmada, cenarioIbsCbs, cbsEstimada, detalharMeses, ajustes: ajustesDoCenario };
   const assinaturaCenario = JSON.stringify(formularioCenario);
   // Retoma somente após o prefill, sem sobrescrever quem começou a digitar durante a busca.
   useEffect(() => {
@@ -449,7 +475,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
       const r = await api.listarSimulacoesPlanejamento(empresaDaBusca);
       if (empresaAtualCenario.current !== empresaDaBusca) return;
       if (r?.ok === false) throw new Error(r.message || "Não foi possível ler os cenários.");
-      setCenariosSalvos(r?.simulacoes || []);
+      setCenariosSalvos(ordenarCenarios(r?.simulacoes));
     } catch (e) { if (empresaAtualCenario.current === empresaDaBusca) setDesfechoDoGuardar({ tom: "erro", texto: e.message || "Não foi possível ler os cenários salvos." }); }
     finally { if (empresaAtualCenario.current === empresaDaBusca) setCarregandoCenarios(false); }
   }
@@ -464,6 +490,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
       categoriaConfirmada: false, cenarioIbsCbs: CENARIO.EM_2026, cbsEstimada: "", detalharMeses: Boolean(e.receitasMensais),
     };
     setReceita(f.receita ?? ""); setRbt12(f.rbt12 ?? ""); setFolha(f.folha ?? "");
+    setAjustes(f.ajustes || {});
     setAnexo(f.anexo || "III"); setSujeitoFatorR(Boolean(f.sujeitoFatorR)); setAtividade(f.atividade || "servicos");
     setAnexoManual(Boolean(f.anexoManual));
     setIss(f.iss ?? ""); setMargem(f.margem ?? ""); setCreditos(f.creditos ?? "");
@@ -471,12 +498,29 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
     setDetalharMeses(Boolean(f.detalharMeses));
     setServicos16(f.servicos16 ?? null); setCategoriaConfirmada(Boolean(f.categoriaConfirmada));
     setCenarioIbsCbs(f.cenarioIbsCbs || CENARIO.EM_2026); setCbsEstimada(f.cbsEstimada ?? "");
-    setCenarioSalvo(JSON.stringify(f));
+    setCenarioSalvo(JSON.stringify({ ...f, ajustes: f.ajustes || {} }));
     setProcedenciasSalvas(cenario.procedencias || null);
     setDesfechoDoGuardar({ tom: "ok", texto: `Cenário reaberto. A comparação é recalculada com as tabelas atuais; o documento original preserva o resultado salvo.${e.formularioCenario ? "" : " Cenário legado: confira IBS/CBS e a confirmação da atividade, que não eram guardados como campos de edição."}` });
   }
 
   const temReceita = entradas.receitaAnual > 0;
+  const mensal = useMemo(() => planejarMeses({ ...mensalPreenchido, entradas, ano: entradas.anoBase || 2026 }), [mensalPreenchido, entradas]);
+  const estudosAvancados = useMemo(() => ({
+    operacoes: calcularOperacoes(ajustes.estudos?.operacoes),
+    mensal: projetarTributos({ value: ajustes.estudos?.tributos, mensal, entradas, operacoes: ajustes.estudos?.operacoes }),
+    reforma: calcularReformaOperacoes(ajustes.estudos?.reforma),
+  }), [ajustes.estudos, mensal, entradas]);
+  const [exportandoEstudo, setExportandoEstudo] = useState(false);
+  const [erroEstudo, setErroEstudo] = useState(null);
+  useEffect(() => { setErroEstudo(null); }, [empresaId]);
+  async function exportarEstudos(cenarios = []) {
+    if (exportandoEstudo) return;
+    setExportandoEstudo(true); setErroEstudo(null);
+    try { await baixarPdfEstudos({ cenarios, estudos: estudosAvancados, entradas, procedencias, empresa: dadosEmpresa?.empresa?.razao || dadosEmpresa?.empresa?.razaoSocial || empresa?.razao || empresa?.razaoSocial || "Simulação livre" }); }
+    catch { setErroEstudo("Não foi possível gerar o PDF. Tente novamente; as premissas continuam na tela."); }
+    finally { setExportandoEstudo(false); }
+  }
+  const transicao = useMemo(() => projetarTransicao(ajustes.transicao), [ajustes.transicao]);
   const resultado = useMemo(() => (temReceita ? compararRegimes(entradas) : null), [entradas, temReceita]);
   // ⚠ DERIVADO do resultado do motor, nunca recalculado aqui — a tabela REARRANJA o que já foi
   // calculado. Uma segunda conta na camada de apresentação divergiria do motor na primeira
@@ -491,13 +535,13 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
   const ofertaDo16 = resultado?.regimes?.find((r) => r.regime === "Lucro Presumido")?.servicosAte120k || null;
 
   const equilibrio = useMemo(
-    () => (temReceita ? pontoDeEquilibrio({ ...entradas, passo: 50_000 }) : null),
+    () => (temReceita && !entradas.receitasPorAtividade ? pontoDeEquilibrio({ ...entradas, passo: 50_000 }) : null),
     [entradas, temReceita],
   );
 
   // A economia de migrar de anexo pelo Fator R: a diferença entre o V e o III, com os mesmos dados.
   const economiaAnexo = useMemo(() => {
-    if (!temReceita || !sujeitoFatorR) return null;
+    if (!temReceita || !sujeitoFatorR || entradas.receitasPorAtividade) return null;
     const comum = {
       rbt12: entradas.rbt12,
       receitaAnual: entradas.receitaAnual,
@@ -515,7 +559,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
   // ⚠⚠ `economiaAnexo` é a OUTRA METADE: sem ela o painel mostraria só o custo, e a decisão
   // pareceria sempre ruim. Ela vale `null` quando não deu para calcular, e o painel DIZ isso.
   const proLabore = useMemo(() => {
-    if (!temReceita || !sujeitoFatorR) return null;
+    if (!temReceita || !sujeitoFatorR || entradas.receitasPorAtividade) return null;
     return simularProLaboreParaFatorR({
       // ⚠⚠ O RBT12 QUE O MOTOR APLICOU, nunca o do campo. Em início de atividade eles são coisas
       // diferentes (o do motor é o proporcionalizado), e ler o do campo aqui punha dois Fator R
@@ -523,10 +567,11 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
       // fonte que alimenta o `GaugeFatorR`.
       rbt12: resultado?.inicioAtividade?.proporcionalizado ? resultado.inicioAtividade.rbt12 : entradas.rbt12,
       folha12mAtual: entradas.folhaAnual,
+      socios: (ajustes.socios || []).map(s => ({ ...s, proLaboreMensal: numeroInformado(s.proLaboreMensal) })),
       economiaNoDas: economiaAnexo,
       anexoDestino: resultado?.anexoResolvido === "V" ? "III" : (resultado?.anexoResolvido || "III"),
     });
-  }, [temReceita, sujeitoFatorR, entradas, economiaAnexo, resultado]);
+  }, [temReceita, sujeitoFatorR, entradas, economiaAnexo, resultado, ajustes]);
 
   const avisoTrava = temReceita && atividade === "servicos" ? avisoTravaServicos16(entradas.receitaAnual) : null;
 
@@ -602,7 +647,7 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
       const salvo = await api.salvarSimulacaoPlanejamento(empresaId, {
         competencia: prefill.referencia?.competencia || null,
         entradas: { ...entradas, formularioCenario },
-        resultado,
+        resultado: { ...resultado, acompanhamentoMensal: ajustesDoCenario.mensal ? mensal : null, proLabore, conclusao: ajustes.conclusao || null, transicaoReforma: ajustes.transicao ? transicao : null, ...(estudosAvancados ? { estudosAvancados } : {}) },
         // ⚠ A procedência viaja junto: é ela que distingue DOIS PDFs da mesma empresa com números
         // diferentes. Sem ela, a diferença parece erro de cálculo no papel.
         procedencias,
@@ -614,10 +659,10 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
         return;
       }
       setCenarioSalvo(assinaturaCenario);
+      if (salvo.simulacao?.id) setCenariosSalvos(lista => [salvo.simulacao, ...(lista || []).filter(c => c.id !== salvo.simulacao.id)]);
       cenarioFoiSalvo = true;
       if (somenteCenario === true) {
         setDesfechoDoGuardar({ tom: "ok", texto: "Cenário salvo. Use Abrir cenário para continuar depois." });
-        setCenariosSalvos(null);
         return;
       }
       const doc = await api.gerarDocumentoDaSimulacao(empresaId, salvo.simulacao.id);
@@ -699,15 +744,15 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
           {resultado && <a href="#comparacao-cenario">2. Comparação</a>}
           {resultado && <a href="#detalhes-cenario">3. Detalhes</a>}
         </nav>
-        <section aria-label="Cenários salvos" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        {!empresaFixa && <CarteiraPlanejamento api={api} empresas={empresas} onAbrirEmpresa={onAbrirEmpresa} />}
+        <section aria-label="Cenários salvos" className="planejamento-avancado" data-print-hide style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
+          {empresaId && <label style={rotulo}>Nome do cenário (opcional)<input style={campo} maxLength={80} value={ajustes.nomeCenario || ""} onChange={e => setAjustes(a => ({ ...a, nomeCenario: e.target.value }))} /></label>}
           <span role="status">{cenarioSalvo === assinaturaCenario ? "Cenário salvo" : "Premissas não salvas"}</span>
           <button type="button" className="btn" disabled={!empresaId || !resultado || guardando || carregando} onClick={() => guardarSimulacao(true)}>Salvar cenário</button>
           <button type="button" className="btn btn-secondary" disabled={!empresaId || carregando || carregandoCenarios} onClick={listarCenarios}>{carregandoCenarios ? "Lendo cenários…" : "Abrir cenário"}</button>
           {!empresaId && <span>Vincule uma empresa para guardar e retomar cenários.</span>}
           {mostrarCenarios && cenariosSalvos && <div style={{ flexBasis: "100%" }}>
-            {cenariosSalvos.length ? cenariosSalvos.map((c) => <button key={c.id} type="button" className="btn btn-secondary" disabled={carregando} onClick={() => abrirCenario(c)}>
-              Abrir {c.competencia || "simulação"} · {new Date(c.geradoEm).toLocaleString("pt-BR")}
-            </button>) : <p>Nenhum cenário salvo para esta empresa.</p>}
+            <ComparacaoCenarios key={empresaId} cenarios={cenariosSalvos} disabled={carregando || carregandoCenarios || exportandoEstudo} onAbrir={abrirCenario} onExportar={exportarEstudos} />
           </div>}
         </section>
         {desfechoDoGuardar && <p role="status" style={{ margin: 0, fontSize: "0.875rem", color: desfechoDoGuardar.tom === "erro" ? "var(--state-warn)" : C.muted }}>{desfechoDoGuardar.texto}</p>}
@@ -1013,6 +1058,9 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
             </Campo>
           </div>
 
+          <AjustesPlanejamento value={ajustes} onChange={setAjustes} fatorR={sujeitoFatorR} />
+          <RealDetalhado value={ajustes.real} onChange={v => setAjustes(a => ({ ...a, real: v }))} />
+          <ReceitasPorAtividade value={ajustes.atividades} onChange={v => setAjustes(a => ({ ...a, atividades: v }))} />
           {mesesInicioAtividade && (
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: "0.78rem", color: C.alerta }}>
@@ -1102,6 +1150,9 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
         {resultado && (
           <div id="comparacao-cenario" tabIndex={-1} data-print-area style={{ display: "grid", gap: 14 }}>
             <h2 data-print-hide style={{ margin: 0, fontSize: "1.1rem" }}>Comparação dos regimes</h2>
+            <p aria-label="Receita usada no cálculo" style={{ margin: 0, color: C.muted, fontSize: "0.85rem" }}>
+              Receita anual: <strong>{brl(entradas.receitaAnual)}</strong> · média mensal: <strong>{brl(entradas.receitaAnual / 12)}</strong>
+            </p>
             {/* ⚠ CABEÇALHO SÓ-NO-PAPEL. O PDF vai para o cliente do contador sem esta tela por
                 perto: sem isto, ele circula como um número sem data, sem escopo e sem ressalva. */}
             <div data-print-only style={{ display: "none" }}>
@@ -1159,11 +1210,13 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
               </div>
             )}
 
+            <p role="status">{resultado.motivoComparacao}</p>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {resultado.regimes.map((r) => (
                 <CardRegime
                   key={r.regime}
                   resultado={r}
+                  receitaAnual={entradas.receitaAnual}
                   vencedor={resultado.vencedor?.regime === r.regime}
                   aberto={Boolean(abertos[r.regime])}
                   onToggle={() => setAbertos((a) => ({ ...a, [r.regime]: !a[r.regime] }))}
@@ -1178,6 +1231,8 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
                 que a segunda opção.
               </div>
             )}
+            {resultado.economiaVsAtual != null && <p>Economia estimada em relação ao regime atual ({resultado.regimeAtual}): <strong>{brl(resultado.economiaVsAtual)} no ano</strong>.</p>}
+            <AcompanhamentoMensal value={mensalPreenchido} onChange={v => setAjustes(a => ({ ...a, mensal: v }))} resultado={mensal} receitaAnual={entradas.receitaAnual} dados={prefill.historicoMensal} avisos={prefill.avisosHistorico} onAplicar={v => setReceita(dinheiroParaCampo(v))} />
 
             {/* ⚠⚠ A TABELA VEM ANTES DO GAUGE E DO PONTO DE EQUILÍBRIO, e a ordem é o argumento:
                 ela é a resposta à pergunta "por que este total?". Os cards dão o número; ela dá a
@@ -1226,6 +1281,12 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
 
             {/* ⚠ Logo DEPOIS do gauge: ele mostra ONDE o Fator R está, este responde O QUE FAZER. */}
             <PainelProLabore simulacao={proLabore} />
+            <TransicaoReforma value={ajustes.transicao} onChange={v => setAjustes(a => ({ ...a, transicao: v }))} resultado={transicao} />
+            {estudosAvancados && <EstudosAvancados value={ajustes.estudos} onChange={v => setAjustes(a => ({ ...a, estudos: v }))} resultado={estudosAvancados} mensal={mensal} entradas={entradas} onExportar={() => exportarEstudos()} />}
+            {exportandoEstudo && <p role="status">Gerando relatório dos estudos…</p>}
+            {erroEstudo && <p role="alert">{erroEstudo}</p>}
+            <ConclusaoPlanejamento value={ajustes.conclusao} onChange={v => setAjustes(a => ({ ...a, conclusao: v }))} />
+            <ResumoPlanejamentoImpresso ajustes={ajustesDoCenario} mensal={mensal} transicao={transicao} />
 
             {equilibrio && (
               <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, fontSize: "0.88rem" }}>
@@ -1290,6 +1351,8 @@ function SimulacaoTributariaPage({ api = null, empresas = [], empresa = null, on
             Informe a receita anual para comparar os regimes.
           </div>
         )}
+        {!temReceita && prefill.historicoMensal?.length > 0 && <AcompanhamentoMensal value={mensalPreenchido} onChange={v => setAjustes(a => ({ ...a, mensal: v }))} resultado={mensal} receitaAnual={entradas.receitaAnual} dados={prefill.historicoMensal} avisos={prefill.avisosHistorico} onAplicar={v => setReceita(dinheiroParaCampo(v))} />}
+        {!temReceita && !prefill.historicoMensal?.length && prefill.avisosHistorico?.map(aviso => <p key={aviso} role="status">{aviso}</p>)}
 
       </div>
     </div>

@@ -52,7 +52,7 @@ export function fraseDaClassificacao(r) {
   const semComp = Number(r?.foraDoEscopo?.semCompetencia) || 0;
   const alerta = semComp > 0
     ? `⚠ ${plural(semComp, "item ficou", "itens ficaram")} de fora: a nota deles está sem competência gravada, `
-      + "e por isso não entra em nenhum mês. Confira na aba Auditoria."
+      + "e por isso não entra em nenhum mês. Abra Notas Fiscais → Auditoria para conferir."
     : null;
 
   return { texto, houveTrabalho: processed > 0, alerta };

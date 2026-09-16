@@ -10,6 +10,8 @@
 // Por isso o card indisponível tem a mesma altura, a mesma borda e o mesmo destaque; o que muda é
 // que no lugar do valor há a PERGUNTA que falta responder, e ela é um campo, não um aviso.
 
+import { useId } from "react";
+
 const C = {
   surface: "#24253A", borda: "#44475A", texto: "#F8F8F2", muted: "#A7B0C0",
   vencedor: "#50FA7B", alerta: "#FFB347", falta: "#8BE9FD",
@@ -17,11 +19,13 @@ const C = {
 
 const brl = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const pct = (v) => `${(Number(v || 0) * 100).toFixed(2).replace(".", ",")}%`;
+const pctDetalhe = (v) => `${(Number(v) * 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`;
 
 const ROTULO_TRIBUTO = {
   irpj: "IRPJ", adicionalIrpj: "Adicional de IRPJ", csll: "CSLL", cofins: "COFINS",
   pis: "PIS/Pasep", pisCofins: "PIS/COFINS", cpp: "CPP (INSS patronal)", icms: "ICMS",
   iss: "ISS", ipi: "IPI",
+  encargos: "RAT/FAP e terceiros",
 };
 
 /**
@@ -67,13 +71,14 @@ function AvisoLimiteProporcional({ guarda }) {
   );
 }
 
-export function CardRegime({ resultado, vencedor, aberto, onToggle }) {
+export function CardRegime({ resultado, vencedor, aberto, onToggle, receitaAnual }) {
+  const detalheId = useId();
   if (!resultado) return null;
 
   // ── RECUSA DE CALCULAR — mesmo peso do resultado ──────────────────────────
   if (resultado.indisponivel) {
     return (
-      <div style={{
+      <div role="region" aria-label={resultado.regime} style={{
         flex: "1 1 280px", minWidth: 260, padding: 16, borderRadius: 12,
         // Borda e fundo com o MESMO destaque dos outros; a cor muda para dizer "falta dado",
         // não para diminuir.
@@ -100,7 +105,7 @@ export function CardRegime({ resultado, vencedor, aberto, onToggle }) {
   const inelegivel = resultado.elegivel === false;
 
   return (
-    <div style={{
+    <div role="region" aria-label={resultado.regime} style={{
       flex: "1 1 280px", minWidth: 260, padding: 16, borderRadius: 12,
       border: `2px solid ${vencedor ? C.vencedor : C.borda}`,
       background: C.surface, color: C.texto, boxSizing: "border-box",
@@ -129,10 +134,13 @@ export function CardRegime({ resultado, vencedor, aberto, onToggle }) {
         </div>
       ) : (
         <>
+          <div style={{ fontSize: "0.76rem", color: C.muted, marginBottom: 4 }}>Total estimado no ano</div>
+          {resultado.cobertura?.estado === "parcial" && <strong style={{ color: C.alerta }}>Estimativa parcial</strong>}
           <div style={{ fontSize: "1.5rem", fontWeight: 800, lineHeight: 1.15 }}>{brl(resultado.total)}</div>
           <div style={{ fontSize: "0.8rem", color: C.muted, marginTop: 2 }}>
-            por ano · carga efetiva de <strong style={{ color: C.texto }}>{pct(resultado.cargaEfetiva)}</strong> sobre a receita
+            Carga total estimada: <strong style={{ color: C.texto }}>{pct(resultado.cargaEfetiva)}</strong> da receita
           </div>
+          <div style={{ fontSize: "0.8rem", color: C.muted, marginTop: 4 }}>Média mensal estimada: {brl(resultado.total / 12)}</div>
           {resultado.anexo && <div style={{ fontSize: "0.78rem", color: C.muted, marginTop: 4 }}>{resultado.anexo} · {resultado.faixa}ª faixa</div>}
           {resultado.atividade && <div style={{ fontSize: "0.78rem", color: C.muted, marginTop: 4 }}>{resultado.atividade}</div>}
 
@@ -184,19 +192,35 @@ export function CardRegime({ resultado, vencedor, aberto, onToggle }) {
           <button
             type="button"
             onClick={onToggle}
+            aria-expanded={Boolean(aberto)}
+            aria-controls={detalheId}
             style={{ marginTop: 10, background: "transparent", border: `1px solid ${C.borda}`, color: C.texto, borderRadius: 6, padding: "4px 10px", font: "inherit", fontSize: "0.75rem", cursor: "pointer" }}
           >
             {aberto ? "▴ Ocultar detalhamento" : "▾ Ver por tributo e premissas"}
           </button>
 
           {aberto && (
-            <div style={{ marginTop: 10, display: "grid", gap: 3, fontSize: "0.78rem" }}>
-              {Object.entries(resultado.porTributo || {}).map(([t, v]) => (
-                <div key={t} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                  <span style={{ color: C.muted }}>{ROTULO_TRIBUTO[t] || t}</span>
-                  <span style={{ fontVariantNumeric: "tabular-nums" }}>{brl(v)}</span>
-                </div>
-              ))}
+            <div id={detalheId} role="group" aria-label={`Detalhamento de impostos — ${resultado.regime}`} style={{ marginTop: 10, display: "grid", gap: 3, fontSize: "0.78rem" }}>
+              <strong>Composição do total anual</strong>
+              {resultado.atividades?.map((a, i) => <details key={i}><summary>Atividade {i + 1} · Anexo {a.anexoResolvido} · {brl(a.receita)} de receita</summary>
+                {Object.entries(a.porTributo || {}).map(([t, v]) => <p key={t}>{ROTULO_TRIBUTO[t] || t}: {brl(v)} · {a.memoriaPorTributo?.[t] ? `${pctDetalhe(a.memoriaPorTributo[t].aliquota)} sobre ${brl(a.memoriaPorTributo[t].baseCalculo)}` : "conferir memória"}</p>)}
+              </details>)}
+              {(resultado.cobertura?.pendencias || []).map(p => <p key={p} style={{ color: C.alerta }}>{p}</p>)}
+              {resultado.regime === "Simples Nacional" && <span style={{ color: C.muted }}>Parcelas dentro do DAS não são cobranças adicionais. Valores por fora são identificados acima.</span>}
+              {Object.entries(resultado.porTributo || {}).map(([t, v]) => {
+                const memoria = resultado.memoriaPorTributo?.[t];
+                return <div key={t} role="group" aria-label={ROTULO_TRIBUTO[t] || t} style={{ display: "grid", gap: 3, padding: "8px 0", borderBottom: `1px solid ${C.borda}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                    <strong>{ROTULO_TRIBUTO[t] || t}</strong><span style={{ fontVariantNumeric: "tabular-nums" }}>{brl(v)}</span>
+                  </div>
+                  {memoria && <>
+                    <span>{memoria.aliquotaRotulo || "Alíquota"}: {pctDetalhe(memoria.aliquota)}</span>
+                    <span style={{ color: C.muted }}>{memoria.baseRotulo}: {brl(memoria.baseCalculo)}</span>
+                    {memoria.creditos != null && <span style={{ color: C.muted }}>Créditos descontados, limitados ao débito: {brl(Math.min(memoria.creditos, memoria.aliquota * memoria.baseCalculo))}</span>}
+                  </>}
+                  {receitaAnual > 0 && <span style={{ color: C.muted }}>Representa {pct(v / receitaAnual)} da receita</span>}
+                </div>;
+              })}
               {/* "Ver premissas" não é enfeite: é o que permite contestar o número. */}
               {(resultado.premissas || []).length > 0 && (
                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.borda}` }}>

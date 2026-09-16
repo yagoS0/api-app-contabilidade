@@ -318,6 +318,7 @@ function AppInterno() {
         api={api}
         empresas={companiesWorkspace.companiesState.companies}
         onVoltar={() => session.goBack()}
+        onAbrirEmpresa={(companyId) => companiesWorkspace.openCompanyTab(companyId, "planejamento")}
       />
     );
   }

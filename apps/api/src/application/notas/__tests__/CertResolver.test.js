@@ -132,6 +132,24 @@ describe("resolveCertForCompany — cert empresa", () => {
   });
 });
 
+describe("falha de leitura do cofre", () => {
+  it("distingue PFX cadastrado e ilegível de ausência de certificado", async () => {
+    prisma.portalClient.findUnique.mockResolvedValue({ companyId: "co-1" });
+    prisma.company.findUnique.mockResolvedValue({ certPfxBytes: Buffer.from("encrypted"), certStorageKey: "db:company-pfx" });
+    readStoredCompanyPfx.mockResolvedValueOnce(null);
+    await expect(resolveCertForCompany({ portalClientId: "pc-1", servico: SERVICOS.NFSE }))
+      .rejects.toMatchObject({ code: "CERT_STORAGE_UNAVAILABLE" });
+  });
+  it("não usa senha vazia quando a descriptografia devolve null", async () => {
+    prisma.portalClient.findUnique.mockResolvedValue({ companyId: "co-1" });
+    prisma.company.findUnique.mockResolvedValue({ certPfxBytes: Buffer.from("encrypted"), certPasswordEnc: "kms-v1:encrypted" });
+    readStoredCompanyPfx.mockResolvedValueOnce(Buffer.from("pfx"));
+    decryptSecret.mockResolvedValueOnce(null);
+    await expect(resolveCertForCompany({ portalClientId: "pc-1", servico: SERVICOS.NFSE }))
+      .rejects.toMatchObject({ code: "CERT_PASSWORD_DECRYPT_FAILED" });
+  });
+});
+
 describe("checkCertAvailability (soft)", () => {
   it("retorna { ok: true } quando resolve sucesso", async () => {
     prisma.procuracao.findUnique.mockResolvedValue({ id: "p", status: "ATIVA", validade: null });

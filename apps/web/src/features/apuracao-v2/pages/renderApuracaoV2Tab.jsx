@@ -204,6 +204,7 @@ export function ApuracaoV2Tab({
   // carregado sempre, e não só onde é desenhado.
   useEffect(() => {
     setRelatorio(null); setRelatorioErro(null); setRelatorioGerando(false);
+    setSugestaoAberta(false); setResolvendo(null); setClassificando(false);
     carregarRelatorio();
   }, [carregarRelatorio]);
 
@@ -271,9 +272,11 @@ export function ApuracaoV2Tab({
     setClassificando(true);
     try {
       await panel.classificarV2({ competencia });
-      if (sugData) await sugerir();
+      if (contextoAtual.current !== contexto) return;
+      await Promise.all([carregarApuracao(), gerarRelatorio()]);
+      if (contextoAtual.current === contexto && sugData) await sugerir();
     } catch { /* o hook já exibe o erro via feedback */ }
-    finally { setClassificando(false); }
+    finally { if (contextoAtual.current === contexto) setClassificando(false); }
   }
 
   const pendencias = panel.pendencias || [];
@@ -332,13 +335,15 @@ export function ApuracaoV2Tab({
               const { cor, fundo } = CORES_TOM_RELATORIO[classificacao.tom];
               return (
                 <button type="button" onClick={() => setSugestaoAberta(true)}
+                  aria-label="Revisar classificação"
+                  aria-description={classificacao.rotulo}
                   title={classificacao.detalhe}
                   style={{
                     background: fundo, border: `1px solid ${cor}`, color: cor,
                     borderRadius: "var(--radius-sm)", cursor: "pointer",
                     padding: "6px 10px", fontSize: "0.78rem", fontWeight: 600, marginBottom: 2,
                   }}>
-                  {classificacao.tom === "ok" ? "✓ " : "⚠ "}{classificacao.rotulo}
+                  Revisar classificação · {classificacao.tom === "ok" ? "✓ " : "⚠ "}{classificacao.rotulo}
                 </button>
               );
             })()}
@@ -417,7 +422,7 @@ export function ApuracaoV2Tab({
               trocar a chave quebraria em silêncio. */}
           {fechDados?.cadastroCompleto === false && (
             <Aviso compacto tom="atencao" titulo="Cadastro fiscal incompleto">
-              A empresa está sem CNAE. Ajuste em <strong>Empresa → Perfil fiscal</strong> antes de fechar.
+              A empresa está sem CNAE. Ajuste em <strong>Configurações da empresa → Perfil fiscal</strong> antes de fechar.
               <div style={{ marginTop: "var(--space-2)" }}>
                 {/* ⚠ Era `onClick={() => setSecao("cadastro")}` — trocava a seção interna, que não
                     existe mais. Virou LINK DE VERDADE, no mesmo padrão da engrenagem da aba Notas
@@ -467,6 +472,7 @@ export function ApuracaoV2Tab({
             gerando={relatorioGerando}
             erro={relatorioErro}
             onGerar={gerarRelatorio}
+            onAbrirClassificacao={() => setSugestaoAberta(true)}
             imprimivel={!fechando}
           />
 
@@ -549,7 +555,9 @@ export function ApuracaoV2Tab({
           onClose={() => setResolvendo(null)}
           onResolver={async (payload) => {
             await panel.resolverPendencia(resolvendo.id, payload);
+            if (contextoAtual.current !== contexto) return;
             setResolvendo(null);
+            await Promise.all([carregarApuracao(), gerarRelatorio()]);
           }}
         />
       )}
