@@ -2568,6 +2568,7 @@ export function createRealApi() {
     },
     async getBaseSociosGerencial(companyId,filtros) {return request('/firm/companies/'+encodeURIComponent(companyId)+'/planejamento/base-socios?'+new URLSearchParams(filtros));},
     async salvarBaseSociosGerencial(companyId,dados) {return request('/firm/companies/'+encodeURIComponent(companyId)+'/planejamento/base-socios',{method:'POST',body:JSON.stringify(dados)});},
+    async getFechamentosRelatorio(companyId) {return request('/firm/companies/'+encodeURIComponent(companyId)+'/planejamento/analise/fechamentos');},
     async getRelatorioGerencialSnapshot(companyId,filtros) {return request('/firm/companies/'+encodeURIComponent(companyId)+'/planejamento/analise/relatorio?'+new URLSearchParams(filtros));},
     async getBaseTributariaGerencial(companyId, referencia) { return request('/firm/companies/'+encodeURIComponent(companyId)+'/planejamento/analise/base-tributaria?'+new URLSearchParams({referencia})); },
     async getClassificacaoGerencial(companyId) { return request('/firm/companies/'+encodeURIComponent(companyId)+'/planejamento/classificacao'); },

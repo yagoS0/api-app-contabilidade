@@ -1,3 +1,4 @@
+import { fechamentosRelatorioMock } from './fechamentosRelatorioMock';
 import { validarBaseSocios, resumirSocios } from "../../../../../packages/shared/src/analise/socios.js";
 import { calcularCenario, validarPremissas, VERSAO_GESTAO } from '../../../../../packages/shared/src/analise/gestao.js';
 const memoria = new Map();
@@ -8,6 +9,7 @@ import { analisePlanejamentoMock } from './analisePlanejamentoMock';
 import { clientesAnaliseMock } from './clientesAnaliseMock';
 // Spread dentro do objeto da API mock. Usa o preflight existente via this, sem outro ledger.
 export const mockRelatorios = {
+  async getFechamentosRelatorio(id) {return {ok:true,competenciasFechadas:fechamentosRelatorioMock(id)};},
   async getBaseSociosGerencial(id,{de,ate}) {const todos=ler('socios:'+id)||[],vistos=new Set();return {ok:true,registros:todos.filter(r=>{if(r.competencia<de||r.competencia>ate||vistos.has(r.competencia))return false;vistos.add(r.competencia);return true;})};},
   async salvarBaseSociosGerencial(id,dados) {const registro={...validarBaseSocios(dados),id:crypto.randomUUID(),createdAt:new Date().toISOString()};gravar('socios:'+id,[registro,...(ler('socios:'+id)||[])]);return {ok:true,registro};},
   async getRelatorioGerencialSnapshot(id,filtros) {const dados=analisePlanejamentoMock(id,filtros),basesSocios=(await this.getBaseSociosGerencial(id,filtros)).registros;const meses=[];for(let m=filtros.de;m<=filtros.ate&&meses.length<24;){meses.push(m);const [a,b]=m.split('-').map(Number);m=new Date(Date.UTC(a,b,1)).toISOString().slice(0,7);}return {ok:true,dados,clientes:clientesAnaliseMock(id,filtros),classificacao:(await this.getClassificacaoGerencial(id)).contas,basesSocios,socios:resumirSocios(basesSocios,meses,dados.atual.indicadores.resultado)};},

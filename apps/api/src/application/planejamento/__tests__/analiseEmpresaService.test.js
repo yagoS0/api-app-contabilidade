@@ -3,6 +3,7 @@ jest.mock('../../notas/apuracao/v2/FechamentoService.js',()=>({whereFaturamentoE
 import { obterAnaliseEmpresa } from '../AnaliseEmpresaService.js';
 test('cinco leituras em lote, todas escopadas; sem mutações',async()=>{
  const client=Object.fromEntries(['accountingEntry','portalInvoice','guide','chartOfAccount','companyMonthlyCircular'].map(k=>[k,{findMany:jest.fn(async()=>[])}]));
+ client.companyMonthlyCircular.findMany.mockResolvedValue(Array.from({length:8},(_,i)=>({competencia:`2026-${String(i+1).padStart(2,'0')}`,fechadoContabilEm:'2026-09-01'})));
  const r=await obterAnaliseEmpresa({portalClientId:'empresa-a',de:'2026-01',ate:'2026-08',comparar:'ano',client,agora:new Date('2026-09-10T12:00:00Z')});
  expect(r.ok).toBe(true);expect(r.demonstracao).toBe(false);expect(r.atual.indicadores.resultado).toBeNull();
  for(const x of Object.values(client))expect(x.findMany).toHaveBeenCalledTimes(1);

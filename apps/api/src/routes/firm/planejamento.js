@@ -27,13 +27,17 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { obterAnaliseEmpresa } from '../../application/planejamento/AnaliseEmpresaService.js';
 import { obterClientesAnalise } from '../../application/planejamento/ClientesAnaliseService.js';
 import { resumirSocios } from '../../../../../packages/shared/src/analise/socios.js';
-import { definirPeriodos, listaMeses } from '../../application/planejamento/analiseEmpresa.js';
+import { definirPeriodos, listaMeses, exigirFechamento } from '../../application/planejamento/analiseEmpresa.js';
 
 export function createPlanejamentoRouter({ log } = {}) {
   const router = Router({ mergeParams: true });
   router.use(createClassificacaoGerencialRouter());
   router.use(createBaseSociosRouter());
 
+  router.get('/planejamento/analise/fechamentos',requireFirmCompanyAccess(),async(req,res)=>{
+    try {const rows=await prisma.companyMonthlyCircular.findMany({where:{portalClientId:String(req.params.companyId),fechadoContabilEm:{not:null}},select:{competencia:true},orderBy:{competencia:'desc'}});return res.json({ok:true,competenciasFechadas:rows.map(r=>r.competencia)});}
+    catch {return res.status(500).json({ok:false,message:'Não foi possível conferir os fechamentos contábeis.'});}
+  });
   router.get('/planejamento/analise/relatorio',requireFirmCompanyAccess(),async(req,res)=>{
     try {
       const filtros={portalClientId:String(req.params.companyId),de:req.query.de,ate:req.query.ate,comparar:req.query.comparar};
@@ -43,7 +47,7 @@ export function createPlanejamentoRouter({ log } = {}) {
         return {dados,clientes,empresa,socios:resumirSocios(basesSocios,listaMeses(filtros.de,filtros.ate),dados.atual.indicadores.resultado),basesSocios,classificacao:classificacao?.contasJson||{},revisao:classificacao?.revisao||0};
       },{isolationLevel:'RepeatableRead',timeout:20000});
       return res.json({ok:true,...foto});
-    }catch(e){return res.status(e.message==='PERIODO_INVALIDO'?400:e.message==='HISTORICO_EXTENSO'?422:500).json({ok:false,message:e.message==='HISTORICO_EXTENSO'?'Histórico excede 20 mil notas. Relatório não foi gerado parcialmente.':'Não foi possível preparar a fotografia do relatório.'});}
+    }catch(e){if(e.code==='CONTABILIDADE_ABERTA')return res.status(409).json({ok:false,error:e.code,message:e.message,mesesSemFechamento:e.mesesSemFechamento});return res.status(e.message==='PERIODO_INVALIDO'?400:e.message==='HISTORICO_EXTENSO'?422:500).json({ok:false,message:e.message==='HISTORICO_EXTENSO'?'Histórico excede 20 mil notas. Relatório não foi gerado parcialmente.':'Não foi possível preparar a fotografia do relatório.'});}
   });
   router.get('/planejamento/analise/base-tributaria', requireFirmCompanyAccess(), async(req,res)=>{
     const referencia=String(req.query.referencia||'');
@@ -54,6 +58,7 @@ export function createPlanejamentoRouter({ log } = {}) {
   router.get('/planejamento/analise/clientes', requireFirmCompanyAccess(), async (req,res)=>{
     try { return res.json(await obterClientesAnalise({portalClientId:String(req.params.companyId),de:req.query.de,ate:req.query.ate,comparar:req.query.comparar})); }
     catch(err){
+      if(err.code==='CONTABILIDADE_ABERTA')return res.status(409).json({ok:false,error:err.code,message:err.message,mesesSemFechamento:err.mesesSemFechamento});
       if(err.message==='PERIODO_INVALIDO')return res.status(400).json({ok:false,message:'Escolha um período válido de até 24 meses.'});
       if(err.message==='HISTORICO_EXTENSO')return res.status(422).json({ok:false,message:'Histórico acima de 20 mil notas. A análise precisa de processamento ampliado; nenhum total parcial foi apresentado.'});
       log?.error?.({err},'analise_clientes_falhou');return res.status(500).json({ok:false,message:'Não foi possível carregar a análise dos clientes.'});
@@ -64,6 +69,7 @@ export function createPlanejamentoRouter({ log } = {}) {
     try {
       return res.json(await obterAnaliseEmpresa({ portalClientId: String(req.params.companyId), de: req.query.de, ate: req.query.ate, comparar: req.query.comparar }));
     } catch (err) {
+      if(err.code==='CONTABILIDADE_ABERTA')return res.status(409).json({ok:false,error:err.code,message:err.message,mesesSemFechamento:err.mesesSemFechamento});
       if (err.message === 'PERIODO_INVALIDO') return res.status(400).json({ ok: false, message: 'Escolha um período válido de até 24 meses.' });
       log?.error?.({ err }, 'analise_planejamento_falhou');
       return res.status(500).json({ ok: false, message: 'Não foi possível carregar a análise da empresa.' });
@@ -74,9 +80,15 @@ export function createPlanejamentoRouter({ log } = {}) {
       definirPeriodos({ de: req.query.de, ate: req.query.ate });
       const pagina = Math.max(1, Number.parseInt(req.query.pagina, 10) || 1);
       if (!req.query.conta || String(req.query.conta).length > 40 || pagina > 10000) return res.status(400).json({ ok: false, message: 'Conta ou página inválida.' });
-      const rows = await prisma.accountingEntry.findMany({ where: { portalClientId: String(req.params.companyId), competencia: { gte: req.query.de, lte: req.query.ate }, lines: { some: { conta: String(req.query.conta) } } }, select: { id: true, competencia: true, historico: true, sourceGuideId: true, status: true, lines: { where: { conta: String(req.query.conta) }, select: { tipo: true, valor: true, conta: true } } }, orderBy: [{ data: 'desc' }, { id: 'asc' }], take: 51, skip: (pagina - 1) * 50 });
-      return res.json({ ok: true, linhas: rows.slice(0,50), temMais: rows.length > 50 });
+      const linhas=await prisma.$transaction(async client=>{
+      const circulares=await client.companyMonthlyCircular.findMany({where:{portalClientId:String(req.params.companyId),competencia:{gte:req.query.de,lte:req.query.ate}},select:{competencia:true,fechadoContabilEm:true}});
+      exigirFechamento(req.query.de,req.query.ate,circulares);
+      const rows = await client.accountingEntry.findMany({ where: { portalClientId: String(req.params.companyId), competencia: { gte: req.query.de, lte: req.query.ate }, lines: { some: { conta: String(req.query.conta) } } }, select: { id: true, competencia: true, historico: true, sourceGuideId: true, status: true, lines: { where: { conta: String(req.query.conta) }, select: { tipo: true, valor: true, conta: true } } }, orderBy: [{ data: 'desc' }, { id: 'asc' }], take: 51, skip: (pagina - 1) * 50 });
+      return { ok: true, linhas: rows.slice(0,50), temMais: rows.length > 50 };
+      },{isolationLevel:'RepeatableRead',timeout:20000});
+      return res.json(linhas);
     } catch (err) {
+      if(err.code==='CONTABILIDADE_ABERTA')return res.status(409).json({ok:false,error:err.code,message:err.message,mesesSemFechamento:err.mesesSemFechamento});
       return res.status(err.message === 'PERIODO_INVALIDO' ? 400 : 500).json({ ok: false, message: 'Não foi possível ler os lançamentos deste período.' });
     }
   });

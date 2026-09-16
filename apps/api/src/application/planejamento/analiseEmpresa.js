@@ -21,6 +21,16 @@ export function definirPeriodos({ de, ate, comparar = 'anterior' }) {
   const anterior = { de: moverMes(de, -recuo), ate: moverMes(ate, -recuo) };
   return { atual: { de, ate }, anterior, inicio: [anterior.de, moverMes(ate, -11)].sort()[0], fim: ate };
 }
+export function exigirFechamento(de, ate, circulares) {
+  const fechados = new Set(circulares.filter(c => c.fechadoContabilEm).map(c => c.competencia));
+  const pendentes = listaMeses(de, ate).filter(m => !fechados.has(m));
+  if (pendentes.length) {
+    const erro = new Error(`Feche a contabilidade em Lançamentos para consultar: ${pendentes.join(', ')}.`);
+    erro.code = 'CONTABILIDADE_ABERTA'; erro.mesesSemFechamento = pendentes;
+    throw erro;
+  }
+  return fechados;
+}
 export function numero(v) {
   if (v == null || String(v).trim() === '') return null;
   const n = Number(v);
@@ -39,9 +49,13 @@ const despesasChaves = ['pessoal', 'gerais', 'tributarias', 'depreciacao', 'desp
 
 // Uma guia composta participa pelo total, nunca também por seus componentes.
 export function montarAnalise({ periodos, lancamentos, notas, guias, plano, hoje, circulares=[] }) {
+  exigirFechamento(periodos.atual.de, periodos.atual.ate, circulares);
   const meses = listaMeses(periodos.inicio, periodos.fim);
-  const guiasValidas = guias.filter(g => g.status === 'PROCESSED' && g.parcelaEstado !== 'CANCELADA');
+  const fechados = new Set(circulares.filter(c=>c.fechadoContabilEm).map(c=>c.competencia));
+  const guiasValidas = guias.filter(g => fechados.has(g.competencia) && g.status === 'PROCESSED' && g.parcelaEstado !== 'CANCELADA');
   function calcular(de, ate) {
+    const mesesSemFechamento = listaMeses(de, ate).filter(m => !circulares.some(c => c.competencia === m && c.fechadoContabilEm));
+    const indisponivel = mesesSemFechamento.length > 0;
     const entradas = lancamentos.filter(e => e.competencia >= de && e.competencia <= ate);
     const dre = montarDreGerencial({ lancamentos: entradas, planoPorCodigo: plano, competencia: `${de} a ${ate}` });
     const docs = notas.filter(n => compData(n.competencia) >= de && compData(n.competencia) <= ate);
@@ -56,14 +70,19 @@ export function montarAnalise({ periodos, lancamentos, notas, guias, plano, hoje
       faturamento: completos.filter(m => !docs.some(n => compData(n.competencia) === m)&&!zeroConfirmado(m)),
       guias: completos.filter(m => !impostos.some(g => g.competencia === m)),
     };
-    const parcial = ate >= hoje.slice(0, 7) || dre.qualidade.provisorio || Object.values(faltas).some(a => a.length) || docs.some(n => numero(n.total) == null) || impostos.some(g => numero(g.valor) == null);
+    const parcial = dre.qualidade.provisorio || Object.values(faltas).some(a => a.length) || docs.some(n => numero(n.total) == null) || impostos.some(g => numero(g.valor) == null);
     const margem = (chave) => valores.receitaLiquida > 0 && valores[chave] != null ? valores[chave] / valores.receitaLiquida * 100 : null;
-    return { de, ate, dre, faltas, parcial, indicadores: {
+    if (indisponivel) {
+      dre.semLancamento = true; dre.linhas = dre.linhas.map(l => ({...l, valor:null, contas:[]}));
+      dre.naoClassificado = []; dre.inconsistencias = [];
+    }
+    const indicadores = {
       faturamento, resultado: valores.resultadoDoPeriodo,
       despesas: dre.semLancamento ? null : -soma(despesasChaves.map(k => valores[k])),
       tributos, margemBruta: margem('lucroBruto'), margemOperacional: margem('resultadoOperacional'), margemLiquida: margem('resultadoDoPeriodo'),
       carga: faturamento > 0 && tributos != null ? tributos / faturamento * 100 : null,
-    } };
+    };
+    return {de, ate, dre, faltas, parcial:parcial || indisponivel, indisponivel, mesesSemFechamento, indicadores:indisponivel ? Object.fromEntries(Object.keys(indicadores).map(k => [k,null])) : indicadores};
   }
   const atual = calcular(periodos.atual.de, periodos.atual.ate);
   const anterior = calcular(periodos.anterior.de, periodos.anterior.ate);
@@ -76,11 +95,8 @@ export function montarAnalise({ periodos, lancamentos, notas, guias, plano, hoje
     if (variacoes.margemLiquida.absoluta < 0) insights.push({ secao: 'resultado', texto: `Margem líquida recuou ${Math.abs(variacoes.margemLiquida.absoluta).toFixed(1)} p.p.` });
     if (variacoes.carga.absoluta > 1) insights.push({ secao: 'impostos', texto: `A carga das guias disponíveis sobre faturamento aumentou ${variacoes.carga.absoluta.toFixed(1)} p.p. Confira a composição e a cobertura dos dois períodos.` });
   }
-  const compromissos = guiasValidas.filter(g => g.paymentStatus !== 'PAID' && g.vencimento).sort((a,b) => new Date(a.vencimento) - new Date(b.vencimento));
-  const vencidas = compromissos.filter(g => new Date(g.vencimento).toISOString().slice(0,10) < hoje);
-  if (vencidas.length) insights.push({ secao: 'impostos', texto: `${vencidas.length} guia(s) processada(s) vencida(s) em aberto na data de consulta.` });
   return { atual, anterior, serie, variacoes, insights: insights.slice(0,5), hoje, guias: guiasValidas.map(g => ({ ...g, valor: numero(g.valor) })),
     cobertura: serie.map(m => ({ competencia: m.competencia, contabilidade: !m.faltas.contabilidade.length, faturamento: !m.faltas.faturamento.length, guias: !m.faltas.guias.length, semFaturamentoConfirmado:circulares.some(c=>c.competencia===m.competencia&&c.semFaturamento===true), fechadoContabilEm:circulares.find(c=>c.competencia===m.competencia)?.fechadoContabilEm||null })),
-    avisos: ['Histórico observado não comprova completude ou fechamento contábil.', 'Carga das guias sobre faturamento: documentos disponíveis, sem parcelamentos; não representa apuração tributária completa.', ...(guias.length > guiasValidas.length ? ['Guias ainda não processadas ou canceladas ficaram fora dos totais.'] : [])],
+    avisos: ['Relatório restrito às competências com fechamento contábil registrado. O fechamento não substitui a conferência da cobertura documental.', 'Carga das guias sobre faturamento: documentos disponíveis, sem parcelamentos; não representa apuração tributária completa.', ...(guias.length > guiasValidas.length ? ['Guias sem fechamento contábil, ainda não processadas ou canceladas ficaram fora dos totais.'] : [])],
   };
 }

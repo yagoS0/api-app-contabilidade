@@ -5,6 +5,7 @@ import { definirPeriodos, montarAnalise, moverMes } from './analiseEmpresa.js';
 
 // Leitura em lote, escopada pela empresa. Sem provedores, gravações ou uma query por mês.
 export async function obterAnaliseEmpresa({ portalClientId, de, ate, comparar, client = prisma, agora = new Date() }) {
+  if (client === prisma && client.$transaction) return client.$transaction(tx => obterAnaliseEmpresa({portalClientId,de,ate,comparar,client:tx,agora}), {isolationLevel:'RepeatableRead',timeout:20000});
   const periodos = definirPeriodos({ de, ate, comparar });
   const [lancamentos, notas, guias, plano, circulares] = await Promise.all([
     client.accountingEntry.findMany({ where: { portalClientId, competencia: { gte: periodos.inicio, lte: periodos.fim } }, select: { competencia: true, status: true, lines: { select: { tipo: true, valor: true, conta: true } } } }),

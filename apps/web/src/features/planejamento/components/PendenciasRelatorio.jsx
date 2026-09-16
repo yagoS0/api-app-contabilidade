@@ -18,7 +18,7 @@ export function PendenciasRelatorio({ dados, empresaId }) {
     const qualidade = periodo.dre?.qualidade || {};
     if (qualidade.lancamentosRascunho) adicionar(`${qualidade.lancamentosRascunho} lançamento(s) em rascunho`, 'DRE provisória e comparação de resultados', 'lancamentos', 'Conferir lançamentos');
     if (qualidade.linhasInvalidas || qualidade.linhasNaoClassificadas || periodo.dre?.naoClassificado?.length) adicionar('Lançamentos inconsistentes ou sem classificação na DRE', 'Resultado e indicadores gerenciais', 'lancamentos', 'Conferir lançamentos');
-    if (periodo.ate >= dados.hoje?.slice(0, 7)) adicionar('O período inclui mês ainda não encerrado', 'Crescimento e comparação parciais');
+    if (periodo.mesesSemFechamento?.length) adicionar(`Contabilidade sem fechamento: ${periodo.mesesSemFechamento.map(mes).join(', ')}`, 'Comparação e indicadores de crescimento indisponíveis', 'lancamentos', 'Conferir lançamentos');
     if (periodo.parcial && !itens.some(i => i.titulo === titulo)) adicionar('Base sinalizada como parcial pela consulta', 'Confira os valores e a cobertura das fontes');
   }
   if (!itens.length) return null;
