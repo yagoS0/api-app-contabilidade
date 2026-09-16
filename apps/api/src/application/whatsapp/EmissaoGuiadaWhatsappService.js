@@ -5,6 +5,7 @@ import { criarPendencia } from "../assistente/AcoesPendentesService.js";
 import { gerarCodigo, ALFABETO, rodapeDeConfirmacao, lerConfirmacao } from "../assistente/confirmacaoPendente.js";
 import { processarConfirmacaoGuiada } from "./ConfirmacaoGuiadaWhatsappService.js";
 import { filtroAtendimentoAtivo } from "./AtendimentoResponsavelWhatsappService.js";
+import { observacaoDeRetencao } from "../assistente/retencaoNaConversa.js";
 
 export const TTL_COLETA_MS = 24 * 60 * 60 * 1000;
 const limpar = (v) => JSON.parse(JSON.stringify(v));
@@ -35,8 +36,12 @@ export async function processarEmissaoGuiada({ conversa, mensagem, sessao, texto
   if (vigente && instante(mensagem.registradaEm) < instante(anterior.ultimaMensagemEm)) {
     return { tratado: true, texto: "Essa mensagem chegou fora de ordem. Confira a última pergunta acima e responda novamente.", motivo: "COLETA_FORA_DE_ORDEM" };
   }
+  if (vigente && anterior.estado.status === "EQUIPE" && anterior.estado.observacaoRetencao?.conferida === false && pedidoInicial && !novaEmissao) {
+    return { tratado: true, filaHumana: true, motivo: "RETENCAO_AGUARDA_CONFERENCIA",
+      texto: "Este pedido aguarda a conferência da retenção pelo contador. Os dados continuam guardados. Para uma nota diferente, escreva “nova emissão”." };
+  }
   if (vigente && encerrado(anterior.estado.status) && !pedidoInicial && !codigoRecebido) return { tratado: false };
-  if (vigente && anterior.estado.status === "PAUSADO" && !pedidoInicial && !codigoRecebido && !interacao?.id?.startsWith("altan.issue.")) return { tratado: false };
+  if (vigente && anterior.estado.status === "PAUSADO" && !pedidoInicial && !codigoRecebido && !interacao?.id?.startsWith("altan.issue.") && !observacaoDeRetencao(texto)) return { tratado: false };
   let estado = vigente && !encerrado(anterior.estado.status) && !novaEmissao ? limpar(anterior.estado) : null;
   let rascunhoId = anterior?.id || randomUUID();
   let versao = (anterior?.versao || 0) + 1;
