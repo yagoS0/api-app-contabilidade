@@ -72,7 +72,7 @@ export async function gerarPdfEstudos({ cenarios = [], estudos = null, empresa =
       }
     };
     doc.font("Helvetica-Bold").fontSize(20).fillColor("#463177").text("Planejamento tributário").moveDown(0.4);
-    texto(`${empresa} | Prévia em desenvolvimento | Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
+    texto(`${empresa} | Simulação tributária | Gerado em ${new Date().toLocaleDateString("pt-BR")}`);
     texto("Simulação de apoio à decisão. Valores salvos são preservados, sem recálculo. Diferenças de premissas ou cobertura não representam economia realizada. Tabelas do estudo mensal: 2026.");
     if (cenarios.length) {
       titulo("Comparação dos cenários selecionados");
@@ -99,7 +99,7 @@ export async function gerarPdfEstudos({ cenarios = [], estudos = null, empresa =
     const range = doc.bufferedPageRange();
     for (let i = range.start; i < range.start + range.count; i++) {
       doc.switchToPage(i); doc.page.margins.bottom = 0;
-      doc.font("Helvetica").fontSize(8).fillColor("#64748b").text(`Altan | Planejamento em desenvolvimento | ${i + 1}/${range.count}`, 44, doc.page.height - 28, { lineBreak: false });
+      doc.font("Helvetica").fontSize(8).fillColor("#64748b").text(`Altan | Planejamento tributário | ${i + 1}/${range.count}`, 44, doc.page.height - 28, { lineBreak: false });
     }
     doc.end();
   });

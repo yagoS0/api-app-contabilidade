@@ -491,16 +491,16 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
 
   const temReceita = entradas.receitaAnual > 0;
   const mensal = useMemo(() => planejarMeses({ ...mensalPreenchido, entradas, ano: entradas.anoBase || 2026 }), [mensalPreenchido, entradas]);
-  const estudosAvancados = useMemo(() => api?.mode === "mock" ? {
+  const estudosAvancados = useMemo(() => ({
     operacoes: calcularOperacoes(ajustes.estudos?.operacoes),
     mensal: projetarTributos({ value: ajustes.estudos?.tributos, mensal, entradas, operacoes: ajustes.estudos?.operacoes }),
     reforma: calcularReformaOperacoes(ajustes.estudos?.reforma),
-  } : null, [api?.mode, ajustes.estudos, mensal, entradas]);
+  }), [ajustes.estudos, mensal, entradas]);
   const [exportandoEstudo, setExportandoEstudo] = useState(false);
   const [erroEstudo, setErroEstudo] = useState(null);
   useEffect(() => { setErroEstudo(null); }, [empresaId]);
   async function exportarEstudos(cenarios = []) {
-    if (exportandoEstudo || api?.mode !== "mock") return;
+    if (exportandoEstudo) return;
     setExportandoEstudo(true); setErroEstudo(null);
     try { await baixarPdfEstudos({ cenarios, estudos: estudosAvancados, entradas, procedencias, empresa: dadosEmpresa?.empresa?.razao || dadosEmpresa?.empresa?.razaoSocial || empresa?.razao || empresa?.razaoSocial || "Simulação livre" }); }
     catch { setErroEstudo("Não foi possível gerar o PDF. Tente novamente; as premissas continuam na tela."); }
@@ -738,7 +738,7 @@ export function PlanejamentoPage({ api = null, empresas = [], empresa = null, on
           <button type="button" className="btn btn-secondary" disabled={!empresaId || carregando || carregandoCenarios} onClick={listarCenarios}>{carregandoCenarios ? "Lendo cenários…" : "Abrir cenário"}</button>
           {!empresaId && <span>Vincule uma empresa para guardar e retomar cenários.</span>}
           {mostrarCenarios && cenariosSalvos && <div style={{ flexBasis: "100%" }}>
-            <ComparacaoCenarios key={empresaId} cenarios={cenariosSalvos} disabled={carregando || carregandoCenarios || exportandoEstudo} onAbrir={abrirCenario} onExportar={api?.mode === "mock" ? exportarEstudos : null} />
+            <ComparacaoCenarios key={empresaId} cenarios={cenariosSalvos} disabled={carregando || carregandoCenarios || exportandoEstudo} onAbrir={abrirCenario} onExportar={exportarEstudos} />
           </div>}
         </section>
         {desfechoDoGuardar && <p role="status" style={{ margin: 0, fontSize: "0.875rem", color: desfechoDoGuardar.tom === "erro" ? "var(--state-warn)" : C.muted }}>{desfechoDoGuardar.texto}</p>}

@@ -14,13 +14,13 @@ function montar(mode = "mock") {
   render(<PlanejamentoPage api={api} empresa={{ id: "e1" }} empresaFixa />);
   return api;
 }
-test.each(["real", "real_with_mock_fallback"])("prévia não aparece nem grava estudos com API %s", async mode => {
+test.each(["real", "real_with_mock_fallback"])("produção exibe e salva estudos com API %s", async mode => {
   const api = montar(mode);
   await waitFor(() => expect(screen.getByLabelText("Receita anual (R$)")).toHaveValue("1.200.000,00"));
-  expect(screen.queryByText("Estudos adicionais")).not.toBeInTheDocument();
+  expect(screen.getByText("Estudos adicionais")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Salvar cenário", exact: true }));
   await waitFor(() => expect(api.salvarSimulacaoPlanejamento).toHaveBeenCalled());
-  expect(api.salvarSimulacaoPlanejamento.mock.calls[0][1].resultado.estudosAvancados).toBeUndefined();
+  expect(api.salvarSimulacaoPlanejamento.mock.calls[0][1].resultado.estudosAvancados.mensal.resultados).toHaveLength(3);
 });
 test("mock preenche receita mensal, salva parâmetros/resultados e reabre sem perder o estudo", async () => {
   const api = montar();

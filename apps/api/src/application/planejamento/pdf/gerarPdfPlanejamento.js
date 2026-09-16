@@ -19,6 +19,7 @@
 // seria uma segunda implementação do motor, e ela divergiria na primeira correção.
 
 import PDFDocument from "pdfkit";
+import { secoesDosEstudos } from "./estudosNoRelatorio.js";
 
 const MARGEM = 48;
 const CINZA = "#555555";
@@ -161,6 +162,10 @@ export function gerarPdfPlanejamento({ foto, empresa }) {
         titulo("Transição IBS/CBS e ISS — serviços no regime regular");
         par("Subtotal de consumo; não é DAS nem carga total. Alíquotas futuras digitadas e créditos são premissas do cenário. Não inclui regimes especiais, ICMS, Imposto Seletivo ou outros tributos.");
         for (const t of r.transicaoReforma) par(t.incompleta ? `${t.ano}: premissas incompletas.` : `${t.ano}: receita/base ${brl(t.receita)}; CBS ${pct(t.cbsPct)} menos créditos ${brl(t.creditosCbs)} = ${brl(t.cbs)}; IBS ${pct(t.ibsPct)} menos créditos ${brl(t.creditosIbs)} = ${brl(t.ibs)}; ISS remanescente ${brl(t.iss)}; subtotal ${brl(t.total)}.`);
+      }
+      for (const secao of secoesDosEstudos(r.estudosAvancados)) {
+        titulo(secao.titulo);
+        for (const texto of secao.linhas) par(texto);
       }
       if (r.conclusao?.texto || r.conclusao?.revisarEm) {
         titulo("Conclusão do contador");

@@ -30,7 +30,7 @@ export function EstudosAvancados({ value = {}, onChange, resultado, mensal, entr
   const setRef = (k, v) => set("reforma", { ...reforma, [k]: v });
   const refLinha = (tipo, i, l) => setRef(tipo, (reforma[tipo] || []).map((x, j) => i === j ? l : x));
   return <div className="estudos-planejamento" data-print-hide>
-    <div className="estudo-cabecalho"><div><h3>Estudos adicionais</h3><small>Prévia em desenvolvimento · simulações para sua revisão</small></div>
+    <div className="estudo-cabecalho"><div><h3>Estudos adicionais</h3><small>Simulações por operação e competência</small></div>
       <button type="button" className="btn btn-secondary" onClick={onExportar}>Baixar relatório dos estudos (PDF)</button></div>
     <SecaoPlanejamento titulo="Operações especiais e benefícios">
       <p>Informe a base final por operação e regime. ICMS, ST, DIFAL e IPI conferidos entram na projeção mensal da mesma competência. PIS/Cofins abaixo têm memória própria.</p>
