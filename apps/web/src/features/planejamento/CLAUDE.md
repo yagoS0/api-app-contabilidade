@@ -1,5 +1,16 @@
 # Planejamento — continuidade do cenário (08/09/2026)
 
+## Relatórios e Laboratório em dev — 16/09/2026
+
+RelatoriosTab reutiliza AnaliseEmpresa. O simulador tributário foi preservado. LaboratorioEmpresa fica em `/laboratorio`, exclusivo do escritório. A prévia usa dados fictícios e grava apenas no navegador; API real usa cenários próprios, nunca cria uma empresa para ficção. Detalhes e limites em `docs/ajustes/2026-09-16-relatorios-laboratorio-dev.md`.
+
+As regras gerenciais e de declaração de sócios estão em `packages/shared/src/analise`, usadas por API e UI. Não inferir fixo/variável, pró-labore ou distribuição pelo nome da conta. Classificação usa código completo, com revisão concorrente. Pagamentos aos sócios exigem declaração confirmada, fonte e competência; cada salvamento preserva versões. Não somar versões da mesma competência. Pró-labore já descontado da DRE não é descontado novamente ao apresentar resultado menos distribuição.
+
+Recorrência de clientes agora é 3 dos últimos 4 meses (`3-de-4-v1`), separada da regra contábil de despesas recorrentes. Relatório completo usa fotografia transacional, descarta resposta após trocar empresa e imprime todos os clientes dos períodos comparados. Não substituir falha real por mock. Os itens vermelhos e o portal do cliente seguem fora desta entrega; não publicar sem autorização.
+
+## Análise em desenvolvimento — 10/09/2026
+
+Dentro da empresa, PlanejamentoPage reúne Análise da empresa e Simulação tributária. O formulário de simulação permanece montado ao alternar a área, preservando edições. A análise tem seu próprio período; não altera competência fiscal nem premissas. O modo livre continua no simulador. Consultas por empresa descartam respostas antigas. Dados fictícios são marcados e usados somente no mock; a API real nunca recorre ao mock para disfarçar erro. Ver `docs/ajustes/2026-09-10-planejamento-analise-dev.md` para escopo e limites antes da publicação.
 16/09/2026 — usuário aprovou a publicação da prévia na main e em produção. Estudos adicionais e exportação conjunta passam a funcionar em real/fallback, mantendo os mesmos motores, parâmetros e snapshots conferidos no mock. PDFKit agora é dependência direta de `apps/web` para o build isolado do Docker. O PDF de Documentos do servidor inclui `resultado.estudosAvancados` sem recalcular; fotos antigas permanecem compatíveis. Esta autorização substitui a restrição ao mock registrada abaixo. Ver `docs/planejamento-publicacao-2026-09-16.md`.
 
 16/09/2026 — prévia adicional somente no mock, conforme pedido explícito de revisar antes de produção: `docs/planejamento-estudos-dev-2026-09-16.md`. `EstudosAvancados` e seus motores só são executados/exibidos quando `api.mode === "mock"`; não habilitar real/fallback sem nova aprovação. `ajustes.estudos` persiste parâmetros; `resultado.estudosAvancados` guarda a foto dos resultados. Há operações parametrizadas, projeção mensal com CPP IV/início, reforma por operação/créditos e PDF conjunto de snapshots. Esses estudos são independentes dos cards anuais e não removem as recusas do motor anual abaixo. PDFKit do browser carrega sob demanda, sem nova dependência. Guardar em Documentos do servidor não foi ampliado neste lote; usar os novos downloads do mock. Manter ausência/zero, créditos por tributo, conferência e limites registrados no documento.

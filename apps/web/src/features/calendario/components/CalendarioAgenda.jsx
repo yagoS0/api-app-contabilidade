@@ -4,6 +4,8 @@ import { Button } from '../../../components/ui/Button';
 import { BotaoCopiar } from '../../../components/ui/BotaoCopiar';
 import { formatarCnpj, soDigitosCnpj } from '../../onboarding/lib/brasilApi';
 import { ModalAtividade } from './ModalAtividade';
+import { useGestosAgenda } from './useGestosAgenda';
+import { diferencaDias } from '../lib/editarJanela';
 import { ModalObrigacao } from '../../obrigacoes/components/ModalObrigacao';
 import { somarDiasAgenda, ocorrenciasDaTarefa } from '../../../../../../packages/shared/src/agenda.js';
 import { agruparAtividades, blocosDiarios, corAtividade, dataBR, dataExtenso, dataLocal, diasDoPeriodo, faixasDoPeriodo, itensDasObrigacoes, fimVisual, horarioAtividade, minutos, posicionarHorarios, RECORRENCIAS } from '../lib/agendaWorkspace';
@@ -12,12 +14,14 @@ const conferir = out => { if (out?.ok === false) throw new Error(out.message || 
 const obrigacao = i => i.tipo === 'obrigacao';
 const faixa = i => !i.horaInicio || i.dataInicio !== i.dataFim;
 const ICONE = <svg aria-hidden="true" width="13" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="2" width="10" height="12" rx="2" stroke="currentColor"/><path d="M6 6h4M6 9h4" stroke="currentColor"/></svg>;
-function Atividade({ item, abrir, style }) {
-  return <button type="button" className={`agenda-event${item.resolvido ? ' is-complete' : ''}`} style={{ '--event-color': corAtividade(item), ...style }} onClick={e => { e.stopPropagation(); abrir(item); }} title={`${item.titulo} · ${dataBR(item.dataInicio)}${item.dataFim !== item.dataInicio ? ` a ${dataBR(item.dataFim)}` : ''}`}>
-    {obrigacao(item) && ICONE}<span>{item.titulo}</span>{item.itens?.length > 1 && <small aria-label={`${item.itens.filter(i => i.resolvido).length} de ${item.itens.length} concluídas`}>{item.itens.filter(i => i.resolvido).length}/{item.itens.length}</small>}
+function Atividade({ item, abrir, style, gestos }) {
+  const editavel = gestos?.habilitada(item);
+  return <button type="button" className={`agenda-event${item.resolvido ? ' is-complete' : ''}${editavel ? ' is-draggable' : ''}${gestos?.previa?.item.id === item.id ? ' is-dragging' : ''}`} onPointerDown={editavel ? e => gestos.iniciar(e,item) : undefined} onPointerMove={gestos?.mover} onPointerUp={gestos?.terminar} onPointerCancel={gestos?.cancelar} onLostPointerCapture={gestos?.cancelar} onKeyDown={editavel ? e => gestos.teclado(e,item) : undefined} aria-keyshortcuts={editavel ? 'Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight Alt+Shift+ArrowUp Alt+Shift+ArrowDown' : undefined} style={{ '--event-color': corAtividade(item), ...style }} onClick={e => { e.stopPropagation(); abrir(item); }} title={`${item.titulo} · ${dataBR(item.dataInicio)}${item.dataFim !== item.dataInicio ? ` a ${dataBR(item.dataFim)}` : ''}`}>
+    {editavel && item.horaInicio && <span className="agenda-resize agenda-resize-start" data-agenda-resize="inicio" aria-hidden="true"/>}{obrigacao(item) && ICONE}<span>{item.titulo}</span>{item.itens?.length > 1 && <small aria-label={`${item.itens.filter(i => i.resolvido).length} de ${item.itens.length} concluídas`}>{item.itens.filter(i => i.resolvido).length}/{item.itens.length}</small>}
+    {editavel && item.horaInicio && <span className="agenda-resize agenda-resize-end" data-agenda-resize="fim" aria-hidden="true"/>}
   </button>;
 }
-function Faixas({ itens, dias, abrir, criar, mes = false }) {
+function Faixas({ itens, dias, abrir, criar, mes = false, gestos }) {
   const [expandido, setExpandido] = useState(false);
   const segmentos = faixasDoPeriodo(itens, dias);
   const limite = mes ? 3 : 4;
@@ -26,7 +30,7 @@ function Faixas({ itens, dias, abrir, criar, mes = false }) {
   return <div className={`agenda-bands${mes ? ' is-month' : ''}`}>
     <div className="agenda-band-grid" style={{ '--days': dias.length, gridTemplateRows: `repeat(${Math.max(1,linhas)}, 29px)` }}>
       {dias.map((d, i) => <button type="button" key={d} className={`agenda-band-empty${d === dataLocal() ? ' is-today' : ''}`} style={{ gridColumn: i + 1, gridRow: `1 / ${Math.max(1,linhas)+1}` }} aria-label={`Criar atividade em ${dataBR(d)}`} onClick={() => criar(d)} />)}
-      {segmentos.filter(s => s.linha < linhas).map(s => <Atividade key={s.item.id} item={s.item} abrir={abrir} style={{ gridColumn: `${s.inicio+1} / ${s.fim+2}`, gridRow: s.linha+1 }} />)}
+      {segmentos.filter(s => s.linha < linhas).map(s => <Atividade gestos={gestos} key={s.item.id} item={s.item} abrir={abrir} style={{ gridColumn: `${s.inicio+1} / ${s.fim+2}`, gridRow: s.linha+1 }} />)}
     </div>
     {!mes && quantidade > limite && <button type="button" className="agenda-more" onClick={() => setExpandido(v => !v)}>{expandido ? 'Recolher' : `Mais ${segmentos.filter(s => s.linha >= limite).length} atividades`}</button>}
   </div>;
@@ -41,6 +45,8 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
   const [criacao, setCriacao] = useState(null), [detalhe, setDetalhe] = useState(null), [confirmacao, setConfirmacao] = useState(null), [edicaoLegada, setEdicaoLegada] = useState(null);
   const [ocupado, setOcupado] = useState(false), [filtroLista, setFiltroLista] = useState('TODAS'), [busca, setBusca] = useState('');
   const horasRef = useRef(null);
+  const salvandoGestoRef = useRef(false);
+  const [salvandoGesto, setSalvandoGesto] = useState(false);
   const contextoAplicado = useRef(false);
   const [scrollbar, setScrollbar] = useState(0);
   const dias = useMemo(() => diasDoPeriodo(referencia, visao), [referencia, visao]);
@@ -155,21 +161,42 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     if (proxima) abrirAtividade(agruparAtividades(itens.filter(i => i.cicloChave === proxima.cicloChave))[0]);
     else setDetalhe({ titulo: s.titulo, tipo: s.tipo, somenteSerie: true, empresasVazias: true });
   }
+  async function salvarGesto(item, patch) {
+    if (salvandoGestoRef.current) return;
+    salvandoGestoRef.current = true; setSalvandoGesto(true); setErro('');
+    const original = item.atividadeOriginal || item;
+    const delta = diferencaDias(patch.dataInicio, item.dataInicio);
+    const alteracoes = { dataInicio: somarDiasAgenda(original.dataInicio,delta), dataFim: somarDiasAgenda(original.dataFim,delta), horaInicio:patch.horaInicio, horaFim:patch.horaFim, recorrencia:original.recorrencia || 'AVULSA', prioridade:original.prioridade || '', titulo:original.titulo, descricao:original.descricao, repetirAte:null };
+    try {
+      if (original.tarefaId) {
+        conferir(await api.acaoTarefaAgenda(original.tarefaId, { acao:'EDITAR', cicloChave:original.cicloChave, alteracoes }));
+        setDados(d => ({...d, itens:d.itens.map(i => i.tarefaId === original.tarefaId && i.cicloChave === original.cicloChave ? {...i,...alteracoes} : i)}));
+      } else {
+        const ids = (original.itens || [original]).map(i => i.ocorrenciaId);
+        conferir(await api.editarOcorrenciasAgenda(ids,alteracoes));
+        setDados(d => ({...d, obrigacoes:d.obrigacoes.map(o => ({...o, ocorrencias:o.ocorrencias.map(oc => ids.includes(oc.ocorrenciaId) ? {...oc,dataInicio:alteracoes.dataInicio,dataFim:alteracoes.dataFim,agendaConfig:{...oc.agendaConfig,horaInicio:alteracoes.horaInicio,horaFim:alteracoes.horaFim}} : oc)}))}));
+      }
+      recarregar();
+    } catch(e) { setErro(e.message || 'Não foi possível mover a tarefa.'); }
+    finally { salvandoGestoRef.current = false; setSalvandoGesto(false); }
+  }
+  const gestos = useGestosAgenda({ dias, horasRef, salvar:salvarGesto, bloqueado:salvandoGesto || carregando || ocupado });
   const vencimentoComum = detalhe?.itens?.length && detalhe.itens.every(i => obrigacao(i) && i.dataVencimento === detalhe.itens[0].dataVencimento) ? detalhe.itens[0].dataVencimento : null;
   const periodo = visao === 'dia' ? dataExtenso(referencia) : visao === 'semana' ? `${Number(inicio.slice(8))}–${Number(fim.slice(8))} ${new Date(`${fim}T12:00:00`).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}` : new Date(`${referencia}T12:00:00`).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
   const cabecalhos = ds => <div className="agenda-day-headings" style={{ '--days': ds.length }}>{ds.map(d => <button key={d} className={d === dataLocal() ? 'is-today' : ''} aria-current={d === dataLocal() ? 'date' : undefined} onClick={() => { setReferencia(d); setVisao('dia'); }}><span>{new Date(`${d}T12:00:00Z`).toLocaleDateString('pt-BR',{weekday:'short',timeZone:'UTC'}).replace('.','')}</span><strong>{Number(d.slice(8))}</strong></button>)}</div>;
-  return <section className="agenda-workspace" aria-label="Calendário de atividades" style={{'--agenda-scrollbar':`${scrollbar}px`}}>
+  return <section onPointerDownCapture={gestos.resetarClique} onClickCapture={gestos.clicar} className="agenda-workspace" aria-label="Calendário de atividades" style={{'--agenda-scrollbar':`${scrollbar}px`}}>
     <header className="agenda-toolbar"><div className="agenda-period-nav">{visao !== 'lista' && <><Button variant="secondary" size="sm" aria-label="Período anterior" onClick={() => navegar(-1)}>‹</Button><Button variant="secondary" size="sm" aria-label="Próximo período" onClick={() => navegar(1)}>›</Button></>}<h2>{visao === 'lista' ? 'Atividades' : periodo}</h2>{visao !== 'lista' && <Button variant="secondary" size="sm" onClick={() => setReferencia(dataLocal())}>Hoje</Button>}</div>
       <div className="agenda-view-nav">{visao !== 'lista' && <select aria-label="Visualização do calendário" value={visao} onChange={e => { if (visao === 'mes' && e.target.value === 'semana') setReferencia(dataLocal()); setVisao(e.target.value); }}><option value="semana">Semana</option><option value="dia">Dia</option><option value="mes">Mês</option></select>}<Button variant="secondary" size="sm" aria-pressed={visao === 'lista'} onClick={() => { if (visao === 'lista') setVisao(visaoCalendario); else { setVisaoCalendario(visao); setVisao('lista'); } }}>{visao === 'lista' ? 'Calendário' : 'Lista'}</Button></div></header>
     {erro && !detalhe && !confirmacao && !edicaoLegada && <div className="agenda-error" role="alert">{erro} <button onClick={recarregar}>Tentar novamente</button></div>}
+    {salvandoGesto && <div className="agenda-saving" role="status">Salvando horário…</div>}
     {carregando && <div className="agenda-loading" role="status">Atualizando agenda…</div>}
     {visao === 'lista' ? <div className="agenda-list"><div className="agenda-list-filters"><input aria-label="Buscar atividades" placeholder="Buscar atividade" value={busca} onChange={e => setBusca(e.target.value)}/><select aria-label="Filtrar atividades" value={filtroLista} onChange={e => setFiltroLista(e.target.value)}><option value="TODAS">Todas</option><option value="tarefa">Tarefas</option><option value="obrigacao">Obrigações</option></select></div>
       {series.map(s => <div className="agenda-list-row" key={s.id}><button className="agenda-list-name" onClick={() => abrirSerie(s)} style={{ '--event-color': corAtividade(s) }}>{obrigacao(s) && ICONE}<span><strong>{s.titulo}</strong><small>{RECORRENCIAS[s.recorrencia]}{s.empresas.length ? ` · ${s.empresas.length} ${s.empresas.length === 1 ? 'empresa' : 'empresas'}` : ''}</small></span></button><div className="agenda-list-actions">{s.regraId && dados.regras.some(r => (r.regraId || r.id) === s.regraId) && <Button variant="secondary" size="sm" onClick={() => configurarObrigacao(s.regraId)}>Configurar obrigação</Button>}{s.original?.obrigacaoId && !s.original.agendaConfig && <Button variant="secondary" size="sm" onClick={() => setEdicaoLegada(s.original)}>Editar</Button>}<Button variant="secondary" size="sm" onClick={() => setConfirmacao({ alvo: s, serie: true })}>Excluir série</Button></div></div>)}
       {!series.length && !carregando && <p className="agenda-empty">Nenhuma atividade encontrada.</p>}
     </div> : visao === 'mes' ? <div className="agenda-month"><div className="agenda-weekdays">{['seg.','ter.','qua.','qui.','sex.','sáb.','dom.'].map(d => <span key={d}>{d}</span>)}</div>{Array.from({length:6},(_,n) => { const semana = dias.slice(n*7,n*7+7); return <div className="agenda-month-week" key={semana[0]}><div className="agenda-month-dates">{semana.map(d => <button key={d} className={`${d === dataLocal() ? 'is-today' : ''} ${d.slice(0,7) !== referencia.slice(0,7) ? 'is-outside' : ''}`} aria-label={`Criar atividade em ${dataBR(d)}`} onClick={() => criar(d)}>{Number(d.slice(8))}</button>)}</div><Faixas itens={blocos} dias={semana} abrir={abrirAtividade} criar={criar} mes /></div>; })}</div>
-    : <div className="agenda-time-view"><div className="agenda-time-header">{cabecalhos(dias)}<span className="agenda-time-gutter" /></div><div className="agenda-all-day"><Faixas key={`${inicio}:${visao}`} itens={blocos.filter(faixa)} dias={dias} abrir={abrirAtividade} criar={criar}/><span className="agenda-time-gutter" /></div><div className="agenda-time-scroll" ref={horasRef}><div className="agenda-time-columns" style={{ '--days': dias.length }}>{dias.map(d => <div key={d} className={`agenda-time-day${d === dataLocal() ? ' is-today' : ''}`}>
+    : <div className="agenda-time-view"><div className="agenda-time-header">{cabecalhos(dias)}<span className="agenda-time-gutter" /></div><div className="agenda-all-day"><Faixas key={`${inicio}:${visao}`} gestos={gestos} itens={blocos.filter(faixa)} dias={dias} abrir={abrirAtividade} criar={criar}/><span className="agenda-time-gutter" /></div><div className="agenda-time-scroll" ref={horasRef}><div className="agenda-time-columns" style={{ '--days': dias.length }}>{dias.map(d => <div key={d} className={`agenda-time-day${d === dataLocal() ? ' is-today' : ''}`}>
       {Array.from({length:24},(_,hora) => <button key={hora} type="button" className="agenda-time-slot" aria-label={`Criar atividade em ${dataBR(d)} às ${String(hora).padStart(2,'0')}:00`} onClick={() => criar(d,hora)}/>)}
-      {posicionarHorarios(blocos.filter(i => !faixa(i) && i.dataInicio === d)).map(({item,coluna,colunas}) => <Atividade key={item.id} item={item} abrir={abrirAtividade} style={{ position:'absolute', top: minutos(item.horaInicio)/60*56, height: Math.max(22,(fimVisual(item)-minutos(item.horaInicio))/60*56-2), width:`calc(${100/colunas}% - 5px)`, left:`calc(${coluna*100/colunas}% + 2px)` }}/>)}</div>)}<div className="agenda-hours" aria-hidden="true">{Array.from({length:24},(_,h) => <span key={h}>{String(h).padStart(2,'0')}:00</span>)}</div></div></div></div>}
+      {posicionarHorarios(blocos.filter(i => !faixa(i) && i.dataInicio === d)).map(({item,coluna,colunas}) => <Atividade gestos={gestos} key={item.id} item={item} abrir={abrirAtividade} style={{ position:'absolute', top: minutos(item.horaInicio)/60*56, height: Math.max(22,(fimVisual(item)-minutos(item.horaInicio))/60*56-2), width:`calc(${100/colunas}% - 5px)`, left:`calc(${coluna*100/colunas}% + 2px)` }}/>)}</div>)}{gestos.previa && <div className="agenda-drag-preview" aria-live="polite" style={{'--event-color':corAtividade(gestos.previa.item),'--preview-day':dias.indexOf(gestos.previa.dataInicio),top:minutos(gestos.previa.horaInicio)/60*56,height:Math.max(22,(fimVisual(gestos.previa)-minutos(gestos.previa.horaInicio))/60*56-2)}}><strong>{horarioAtividade(gestos.previa)}</strong><span>{gestos.previa.item.titulo}</span></div>}<div className="agenda-hours" aria-hidden="true">{Array.from({length:24},(_,h) => <span key={h}>{String(h).padStart(2,'0')}:00</span>)}</div></div></div></div>}
     {criacao && <ModalAtividade key={criacao.regraEdicao?.regraId || criacao.regraEdicao?.id || 'atividade'} inicial={criacao} empresas={empresas} api={api} onAlterarConclusao={criacao.tipo === 'tarefa' && !criacao.conclusaoAutomatica ? alterarConclusaoTarefa : undefined} onExcluir={criacao.tarefaId || criacao.ocorrenciaIds ? () => { setConfirmacao({ alvo:criacao }); setCriacao(null); } : undefined} onConfigurarObrigacao={criacao.regraId && dados.regras.some(r => (r.regraId || r.id) === criacao.regraId) ? () => configurarObrigacao(criacao.regraId) : undefined} onFechar={() => setCriacao(null)} onSalvo={({dataInicio}) => { setCriacao(null); setReferencia(dataInicio); recarregar(); }}/ >}
     {detalhe && !confirmacao && <Modal titulo={detalhe.titulo} aoFechar={() => { setDetalhe(null); setErro(''); }} ocupado={ocupado} lateral rodape={!detalhe.somenteSerie && <div className="agenda-form-actions">{(detalhe.itens?.[0]?.tarefaId || detalhe.fonte === 'OBRIGACAO') && <Button variant="secondary" disabled={ocupado} onClick={() => { setCriacao(detalhe.fonte === 'OBRIGACAO' ? { ...detalhe, ocorrenciaIds:detalhe.itens.map(i=>i.ocorrenciaId) } : detalhe.itens[0]); setDetalhe(null); }}>Editar</Button>}<Button variant="danger" disabled={ocupado} onClick={() => setConfirmacao({ alvo: detalhe })}>Excluir ocorrência</Button></div>}>
       <div className="agenda-detail">{detalhe.regraId && dados.regras.some(r => (r.regraId || r.id) === detalhe.regraId) && <button className="agenda-text-action" onClick={() => configurarObrigacao(detalhe.regraId)}>Configurar obrigação</button>}<p className="agenda-detail-period">{dataBR(detalhe.dataInicio)}{detalhe.dataFim !== detalhe.dataInicio ? ` – ${dataBR(detalhe.dataFim)}` : ''}{detalhe.horaInicio ? ` · ${horarioAtividade(detalhe)}` : ''}</p>{vencimentoComum && <p className="agenda-detail-deadline">Vencimento fiscal · {dataBR(vencimentoComum)}</p>}{detalhe.descricao && <p className="agenda-description">{detalhe.descricao}</p>}

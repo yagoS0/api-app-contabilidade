@@ -42,7 +42,11 @@ function montar(api = {}) {
   return cliente;
 }
 
-const botao = () => screen.getByRole("button", { name: /Guardar em Documentos/i });
+const botao = () => {
+  const area = screen.queryByRole('button', { name: 'Simulação tributária' });
+  if (area && area.getAttribute('aria-pressed') !== 'true') fireEvent.click(area);
+  return screen.getByRole("button", { name: /Guardar em Documentos/i });
+};
 // ⚠ `getAllByDisplayValue`: receita e RBT12 têm o mesmo valor neste fixture, logo DOIS inputs o
 // exibem. Uma consulta singular estoura com "multiple found" e faz parecer defeito o que é o
 // prefill funcionando.

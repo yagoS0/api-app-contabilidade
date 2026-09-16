@@ -259,6 +259,8 @@ model RegimeHistorico {
 }
 
 model User {
+  basesSociosGerenciais BaseSociosGerencial[]
+  laboratorioCenarios LaboratorioCenario[]
   id           String   @id @default(uuid())
   name         String?
   email        String   @unique
@@ -820,6 +822,9 @@ model AdnDocument {
 // ==========================
 
 model PortalClient {
+  basesSociosGerenciais BaseSociosGerencial[]
+  laboratorioCenarios LaboratorioCenario[]
+  classificacaoGerencial ClassificacaoGerencial?
   apelidosWhatsapp String[] @default([])
   id                     String  @id @default(uuid())
   // Referência opcional para a Company legada (certificado, cadastros, etc.)
@@ -5272,6 +5277,48 @@ model OnboardingLink {
   createdAt DateTime @default(now())
   @@index([onboardingId])
   @@map("onboarding_links")
+}
+
+// Fotos pessoais de consultoria; empresa fictícia nunca cria PortalClient.
+model LaboratorioCenario {
+  id String @id @default(uuid())
+  autorId String
+  companyId String?
+  nome String
+  periodo String
+  versao String
+  entradasJson Json
+  resultadoJson Json
+  origemJson Json
+  createdAt DateTime @default(now())
+  autor User @relation(fields: [autorId], references: [id], onDelete: Cascade)
+  empresa PortalClient? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  @@index([autorId, createdAt])
+}
+
+model ClassificacaoGerencial {
+  companyId String @id
+  contasJson Json
+  revisao Int @default(1)
+  atualizadoPor String
+  updatedAt DateTime @updatedAt
+  empresa PortalClient @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+// Declarações versionadas de pagamentos conferidos; não alteram o razão contábil.
+model BaseSociosGerencial {
+  id Int @id @default(autoincrement())
+  companyId String
+  autorId String
+  competencia String
+  fonte String
+  prolaborePago Decimal @db.Decimal(18,2)
+  distribuicaoPaga Decimal @db.Decimal(18,2)
+  outrasRetiradas Decimal @db.Decimal(18,2)
+  createdAt DateTime @default(now())
+  empresa PortalClient @relation(fields:[companyId], references:[id], onDelete:Cascade)
+  autor User @relation(fields:[autorId], references:[id], onDelete:Cascade)
+  @@index([companyId, competencia, id])
 }
 
 // Tarefas gerais são privadas ao usuário do escritório que as criou.

@@ -12,6 +12,8 @@
 // A lista que alimenta o seletor da tela é a de `GET /firm/companies`, que já é escopada pelo mesmo
 // critério de `empresasVisiveis` — não há uma quarta leitura de escopo neste módulo.
 
+import { createBaseSociosRouter } from "./baseSocios.js";
+import { createClassificacaoGerencialRouter } from "./classificacaoGerencial.js";
 import { Router } from "express";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
 import { montarDadosPlanejamento } from "../../application/planejamento/DadosPlanejamentoService.js";
@@ -22,9 +24,62 @@ import {
   SimulacaoPlanejamentoError,
 } from "../../application/planejamento/SimulacaoPlanejamentoService.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { obterAnaliseEmpresa } from '../../application/planejamento/AnaliseEmpresaService.js';
+import { obterClientesAnalise } from '../../application/planejamento/ClientesAnaliseService.js';
+import { resumirSocios } from '../../../../../packages/shared/src/analise/socios.js';
+import { definirPeriodos, listaMeses } from '../../application/planejamento/analiseEmpresa.js';
 
 export function createPlanejamentoRouter({ log } = {}) {
   const router = Router({ mergeParams: true });
+  router.use(createClassificacaoGerencialRouter());
+  router.use(createBaseSociosRouter());
+
+  router.get('/planejamento/analise/relatorio',requireFirmCompanyAccess(),async(req,res)=>{
+    try {
+      const filtros={portalClientId:String(req.params.companyId),de:req.query.de,ate:req.query.ate,comparar:req.query.comparar};
+      definirPeriodos(filtros);
+      const foto=await prisma.$transaction(async client=>{
+        const [dados,clientes,classificacao,empresa,basesSocios]=await Promise.all([obterAnaliseEmpresa({...filtros,client}),obterClientesAnalise({...filtros,client}),client.classificacaoGerencial.findUnique({where:{companyId:filtros.portalClientId}}),client.portalClient.findUnique({where:{id:filtros.portalClientId},select:{id:true,razao:true,cnpj:true}}),client.baseSociosGerencial.findMany({where:{companyId:filtros.portalClientId,competencia:{gte:filtros.de,lte:filtros.ate}},orderBy:[{competencia:'desc'},{id:'desc'}],distinct:['competencia']})]);
+        return {dados,clientes,empresa,socios:resumirSocios(basesSocios,listaMeses(filtros.de,filtros.ate),dados.atual.indicadores.resultado),basesSocios,classificacao:classificacao?.contasJson||{},revisao:classificacao?.revisao||0};
+      },{isolationLevel:'RepeatableRead',timeout:20000});
+      return res.json({ok:true,...foto});
+    }catch(e){return res.status(e.message==='PERIODO_INVALIDO'?400:e.message==='HISTORICO_EXTENSO'?422:500).json({ok:false,message:e.message==='HISTORICO_EXTENSO'?'Histórico excede 20 mil notas. Relatório não foi gerado parcialmente.':'Não foi possível preparar a fotografia do relatório.'});}
+  });
+  router.get('/planejamento/analise/base-tributaria', requireFirmCompanyAccess(), async(req,res)=>{
+    const referencia=String(req.query.referencia||'');
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(referencia))return res.status(400).json({ok:false,message:'Referência inválida.'});
+    try { const dados=await montarDadosPlanejamento({portalClientId:String(req.params.companyId),agora:new Date(referencia+'-15T12:00:00Z')});if(!dados)return res.status(404).json({ok:false,message:'Empresa não encontrada.'});return res.json({ok:true,...dados}); }
+    catch { return res.status(500).json({ok:false,message:'Não foi possível consultar a base tributária existente.'}); }
+  });
+  router.get('/planejamento/analise/clientes', requireFirmCompanyAccess(), async (req,res)=>{
+    try { return res.json(await obterClientesAnalise({portalClientId:String(req.params.companyId),de:req.query.de,ate:req.query.ate,comparar:req.query.comparar})); }
+    catch(err){
+      if(err.message==='PERIODO_INVALIDO')return res.status(400).json({ok:false,message:'Escolha um período válido de até 24 meses.'});
+      if(err.message==='HISTORICO_EXTENSO')return res.status(422).json({ok:false,message:'Histórico acima de 20 mil notas. A análise precisa de processamento ampliado; nenhum total parcial foi apresentado.'});
+      log?.error?.({err},'analise_clientes_falhou');return res.status(500).json({ok:false,message:'Não foi possível carregar a análise dos clientes.'});
+    }
+  });
+
+  router.get('/planejamento/analise', requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      return res.json(await obterAnaliseEmpresa({ portalClientId: String(req.params.companyId), de: req.query.de, ate: req.query.ate, comparar: req.query.comparar }));
+    } catch (err) {
+      if (err.message === 'PERIODO_INVALIDO') return res.status(400).json({ ok: false, message: 'Escolha um período válido de até 24 meses.' });
+      log?.error?.({ err }, 'analise_planejamento_falhou');
+      return res.status(500).json({ ok: false, message: 'Não foi possível carregar a análise da empresa.' });
+    }
+  });
+  router.get('/planejamento/analise/lancamentos', requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      definirPeriodos({ de: req.query.de, ate: req.query.ate });
+      const pagina = Math.max(1, Number.parseInt(req.query.pagina, 10) || 1);
+      if (!req.query.conta || String(req.query.conta).length > 40 || pagina > 10000) return res.status(400).json({ ok: false, message: 'Conta ou página inválida.' });
+      const rows = await prisma.accountingEntry.findMany({ where: { portalClientId: String(req.params.companyId), competencia: { gte: req.query.de, lte: req.query.ate }, lines: { some: { conta: String(req.query.conta) } } }, select: { id: true, competencia: true, historico: true, sourceGuideId: true, status: true, lines: { where: { conta: String(req.query.conta) }, select: { tipo: true, valor: true, conta: true } } }, orderBy: [{ data: 'desc' }, { id: 'asc' }], take: 51, skip: (pagina - 1) * 50 });
+      return res.json({ ok: true, linhas: rows.slice(0,50), temMais: rows.length > 50 });
+    } catch (err) {
+      return res.status(err.message === 'PERIODO_INVALIDO' ? 400 : 500).json({ ok: false, message: 'Não foi possível ler os lançamentos deste período.' });
+    }
+  });
 
   router.get("/planejamento", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
