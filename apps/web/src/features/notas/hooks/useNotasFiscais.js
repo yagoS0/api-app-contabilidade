@@ -2,6 +2,7 @@
 // Único hook, instanciado pelo CompanyDetailPage via lazy load.
 
 import { useCallback, useEffect, useState } from "react";
+import { resultadoImportacao } from "../lib/resultadoImportacao";
 
 // Competência (YYYY-MM) do mês anterior ao atual.
 function prevMonthCompetencia() {
@@ -273,7 +274,7 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   }
 
   // Q56: import MANUAL de notas via upload de XML (pra empresas onde a captura automática falhou)
-  async function importNotas(files) {
+  async function importNotas(files, { type = "NFSE" } = {}) {
     const list = Array.isArray(files) ? files : (files ? [files] : []);
     if (!list.length) return;
     if (!api?.importInvoicesXml) {
@@ -283,23 +284,14 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     setImporting(true);
     setImportResult(null);
     try {
-      const out = await api.importInvoicesXml(companyId, list);
-      setImportResult(out || null);
-      const created = out?.created ?? 0;
-      const updated = out?.updated ?? 0;
-      const dup = out?.duplicates ?? 0;
-      const errs = Array.isArray(out?.errors) ? out.errors.length : 0;
-      if (errs && !created && !updated) {
-        feedback?.notifyError?.(`Nenhuma nota importada — ${errs} arquivo(s) com erro.`);
-      } else {
-        feedback?.notifySuccess?.(
-          `Importação concluída — ${created} nova(s), ${updated} atualizada(s)` +
-          (dup ? `, ${dup} duplicada(s)` : "") +
-          (errs ? `, ${errs} com erro` : "") + "."
-        );
-      }
+      const out = await api.importInvoicesXml(companyId, list, { type });
+      const resultado = resultadoImportacao(out, type);
+      setImportResult(resultado);
+      if (resultado.falhou || resultado.quantidadeProblemas > 0) feedback?.notifyError?.(resultado.mensagem);
+      else feedback?.notifySuccess?.(resultado.mensagem);
       await loadNotas();
     } catch (err) {
+      setImportResult({ type, falhou: true, problemas: [], mensagem: err?.message || "Falha ao importar notas." });
       feedback?.notifyError?.(err?.message || "Falha ao importar notas.");
     } finally {
       setImporting(false);

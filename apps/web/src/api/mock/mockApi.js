@@ -7025,7 +7025,20 @@ export function createMockApi() {
     async syncAdn() { await delay(80); return { ok: true, result: { totalDocs: 0, byStatus: {}, newCursor: "0" } }; },
     async getAdnState() { await delay(60); return null; },
     async clearAdnError() { await delay(40); return { ok: true }; },
-    async importInvoicesXml() { await delay(120); return { created: 0, updated: 0, duplicates: 0, errors: [] }; },
+    async importInvoicesXml(_companyId, files, { type = "NFSE" } = {}) {
+      await delay(120);
+      if (type === "NFE") return { ok: false, mensagem: "A importação de XML/ZIP de NF-e está disponível no ambiente conectado. Nenhum arquivo foi gravado neste mock." };
+      const errors = [];
+      for (const file of files || []) {
+        const xml = await file.text();
+        const doc = new DOMParser().parseFromString(xml, "application/xml");
+        const raiz = doc.documentElement?.localName?.toLowerCase();
+        const reason = doc.querySelector("parsererror") ? "invalid_xml"
+          : ["nfeproc", "procnfe", "nfe", "resnfe"].includes(raiz) ? "nfe_na_area_nfse" : "mock_sem_gravacao";
+        errors.push({ file: file.name, reason });
+      }
+      return { created: 0, updated: 0, duplicates: 0, errors };
+    },
     // Q48: download de notas em lote — job fake que "conclui" no primeiro poll.
     async createNotasDownload(payload = {}) {
       await delay(80);
