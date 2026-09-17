@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Identificação do atendente — 17/09/2026
+
+O dono pediu mostrar ao cliente quem está falando no WhatsApp. Mensagens manuais, orientações rápidas, anexos, propostas e devolutivas recebem o nome do usuário autenticado em negrito na primeira linha do texto/legenda; não é alteração do remetente nativo da Meta. Não atribuir automações a um humano nem usar nome enviado pelo navegador ou o responsável anterior da conversa. Histórico conserva a assinatura enviada, sem reescrever mensagens antigas. Novo número comercial foi informado como cadastrado na Meta; cadastro externo não comprova configuração/ativação no sistema. Publicação do conjunto de comunicação segue pendente de autorização; dados de provisionamento ficam fora do Git. Ver `docs/comunicacao-identidade-implantacao.md`.
+
 ## Comunicação: evolução autorizada em execução — 16/09/2026
 
 Ativação de leads solicitada em 17/09: iniciar no canal atual, usando o piloto comercial já autorizado, sem esperar compra do segundo número. Menu e coleta determinística compartilham a audiência; coleta prevalece sobre IA comercial. A primeira etapa pode operar nos segmentos legados com identidade/chat V2 e multicanal OFF, após a migration aditiva. Não realizar backfill global nem liberar atendimento humano para fazer um teste responder. Ver procedimento e simulação completa em `docs/comunicacao-identidade-implantacao.md`.

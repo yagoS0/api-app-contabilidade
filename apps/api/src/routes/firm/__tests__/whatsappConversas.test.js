@@ -154,7 +154,7 @@ const cloud = {
   enviarImagem: jest.fn(async () => ({ wamid: "wamid.img" })),
 };
 
-function montarApp(user = { id: "u-contador", role: "contador", accountType: "FIRM" }) {
+function montarApp(user = { id: "u-contador", name: "Contador Teste", role: "contador", accountType: "FIRM" }) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => { req.auth = { user }; next(); });
@@ -175,17 +175,47 @@ beforeEach(() => {
   Object.assign(mockConversas.get("cv1"), { atendidaPor: null, atendidaDesde: null, lidaAteEm: null });
 });
 
+describe("identificação de quem envia", () => {
+  it("usa o usuário autenticado e ignora o nome recebido no corpo", async () => {
+    mockConversas.get("cv1").atendente = { name: "Outra pessoa" };
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder")
+      .send({ texto: "Olá", autorNome: "Nome forjado", atendente: { name: "Nome forjado" } });
+    expect(r.status).toBe(200);
+    expect(r.body.mensagem.corpo).toBe("*Contador Teste*\n\nOlá");
+    expect(mockSaidas.at(-1).corpo).toBe(r.body.mensagem.corpo);
+    expect(cloud.enviarTexto).toHaveBeenCalledWith(expect.objectContaining({ texto: r.body.mensagem.corpo }));
+    mockConversas.get("cv1").atendente = null;
+  });
+  it("mensagem rápida recebe o nome sem alterar a versão da biblioteca", async () => {
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder")
+      .send({ orientacaoId: "orientacao-teste", orientacaoVersao: 2 });
+    expect(r.status).toBe(200); expect(r.body.mensagem.corpo).toBe("*Contador Teste*\n\nOrientação atualizada");
+    expect(mockSaidas.at(-1).referenciaComercial.versao).toBe(2);
+  });
+  it("recusa texto que ultrapassa o limite com a assinatura antes de registrar ou enviar", async () => {
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "a".repeat(4096) });
+    expect(r.status).toBe(400); expect(r.body.error).toBe("MENSAGEM_ASSINADA_LONGA");
+    expect(mockSaidas).toHaveLength(0); expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+  it("legenda longa não produz envio parcial", async () => {
+    const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv3/enviar-anexo")
+      .field("legenda", "a".repeat(1024)).attach("arquivo", Buffer.from("%PDF-1.7\nteste"), { filename: "teste.pdf", contentType: "application/pdf" });
+    expect(r.status).toBe(400); expect(mockSaidas).toHaveLength(0); expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+  });
+});
+
 describe("anexo manual para pessoa ou lead", () => {
   const pdf = Buffer.from("%PDF-1.7\nTeste offline\n%%EOF");
   it("envia PDF ao telefone do lead e registra a saída antes do transporte", async () => {
     cloud.enviarDocumento.mockImplementationOnce(async () => { expect(mockSaidas.at(-1).statusEnvio).toBe("enviando"); return { wamid: "pdf.offline" }; });
     const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv3/enviar-anexo").field("legenda", "Contrato para assinatura").attach("arquivo", pdf, { filename: "contrato.pdf", contentType: "application/pdf" });
     expect(r.status).toBe(200); expect(r.body.mensagem.statusEnvio).toBe("enviado");
-    expect(cloud.enviarDocumento).toHaveBeenCalledWith(expect.objectContaining({ telefone: FIO_NA_FILA.telefoneE164, nomeArquivo: "contrato.pdf", conteudo: pdf }));
+    expect(cloud.enviarDocumento).toHaveBeenCalledWith(expect.objectContaining({ telefone: FIO_NA_FILA.telefoneE164, nomeArquivo: "contrato.pdf", conteudo: pdf, legenda: "*Contador Teste*\n\nContrato para assinatura" }));
   });
   it("envia PNG como imagem e não como documento", async () => {
     const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv3/enviar-anexo").attach("arquivo", Buffer.from([137,80,78,71,13,10,26,10]), { filename: "teste.png", contentType: "image/png" });
     expect(r.status).toBe(200); expect(cloud.enviarImagem).toHaveBeenCalledTimes(1); expect(cloud.enviarDocumento).not.toHaveBeenCalled();
+    expect(cloud.enviarImagem).toHaveBeenCalledWith(expect.objectContaining({ legenda: "*Contador Teste*" }));
   });
   it("recusa janela expirada, carteira alheia e arquivo falso sem transporte", async () => {
     mockCenario.janela = { situacao: "EXPIRADA" };
@@ -292,7 +322,7 @@ describe("responsável com várias empresas", () => {
   it("expiração da seleção não impede responder à pessoa", async () => {
     mockAtendimento.expiraEm = new Date(0);
     const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "Olá" });
-    expect(r.status).toBe(200); expect(cloud.enviarTexto).toHaveBeenCalledWith({ telefone: FIO_DA_CARTEIRA.telefoneE164, texto: "Olá" });
+    expect(r.status).toBe(200); expect(cloud.enviarTexto).toHaveBeenCalledWith({ telefone: FIO_DA_CARTEIRA.telefoneE164, texto: "*Contador Teste*\n\nOlá" });
   });
   it("filtrar histórico não oferece empresa fora da carteira", async () => {
     const r = await request(montarApp()).get("/firm/whatsapp/conversas/cv1/mensagens?empresa=pc-9");
@@ -447,8 +477,8 @@ describe("responder — só dentro da janela", () => {
   it("dentro da janela: envia pela Meta e registra o balão como HUMANO — sem assumir o fio", async () => {
     const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "Bom dia, já vi aqui." });
     expect(r.status).toBe(200);
-    expect(cloud.enviarTexto).toHaveBeenCalledWith({ telefone: "5521999998888", texto: "Bom dia, já vi aqui." });
-    expect(prisma.mensagemWhatsapp.create).toHaveBeenCalledWith({data: expect.objectContaining({ autor: "HUMANO", corpo: "Bom dia, já vi aqui.", })});
+    expect(cloud.enviarTexto).toHaveBeenCalledWith({ telefone: "5521999998888", texto: "*Contador Teste*\n\nBom dia, já vi aqui." });
+    expect(prisma.mensagemWhatsapp.create).toHaveBeenCalledWith({data: expect.objectContaining({ autor: "HUMANO", corpo: "*Contador Teste*\n\nBom dia, já vi aqui.", })});
     expect(mockConversas.get("cv1").atendidaPor).toBeNull();
   });
   it("texto vazio: 400, sem chamada", async () => {
@@ -582,14 +612,14 @@ describe("⚠⚠ enviar documento pelo fio", () => {
     }));
     // ⚠ O histórico diz O QUE saiu: sem o nome, o contador não sabe qual documento foi mandado.
     expect(prisma.mensagemWhatsapp.create).toHaveBeenCalledWith({data: expect.objectContaining({
-      tipo: "document", corpo: "Contrato social.pdf", autor: "HUMANO", })});
+      tipo: "document", corpo: "*Contador Teste*\n\nContrato social.pdf", autor: "HUMANO", })});
   });
 
   it("a legenda, quando escrita, vira o corpo do balão", async () => {
     await request(montarApp())
       .post("/firm/whatsapp/conversas/cv1/enviar-documento")
       .send({ documentId: "doc-1", legenda: "segue o contrato atualizado" });
-    expect(prisma.mensagemWhatsapp.create).toHaveBeenCalledWith({data: expect.objectContaining({ corpo: "segue o contrato atualizado" })});
+    expect(prisma.mensagemWhatsapp.create).toHaveBeenCalledWith({data: expect.objectContaining({ corpo: "*Contador Teste*\n\nsegue o contrato atualizado" })});
   });
 
   it("⚠⚠ documento de OUTRA empresa não sai por este fio — e a Meta nem é chamada", async () => {

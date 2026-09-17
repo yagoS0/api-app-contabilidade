@@ -5,6 +5,7 @@ import { exigirEscopo } from "./ComercialService.js";
 import { criarPropostasComerciais } from "./PropostasComerciaisService.js";
 import { OnboardingError } from "./OnboardingService.js";
 import { enviarMensagemRastreada } from "../whatsapp/SaidaWhatsappService.js";
+import { assinarMensagemHumana } from "../whatsapp/assinaturaAtendente.js";
 import { janelaDaConversa } from "../whatsapp/ConversaWhatsappService.js";
 import { whatsappPorCanal } from "../whatsapp/CanalWhatsappService.js";
 import { adquirirLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
@@ -99,7 +100,7 @@ export async function enviarProposta(id, propostaId, user, {
     } = await criarPropostasComerciais({
       db
     }).emitirLink(id, propostaId, user);
-    const texto = `Segue sua proposta de serviços em PDF, versão ${p.versao}, com as entregas e os valores. Para escolher a opção: ${webUrl}/proposta/publica#token=${token}\n\nDepois do aceite, prepararemos o contrato para assinatura.`;
+    const texto = assinarMensagemHumana(`Segue sua proposta de serviços em PDF, versão ${p.versao}, com as entregas e os valores. Para escolher a opção: ${webUrl}/proposta/publica#token=${token}\n\nDepois do aceite, prepararemos o contrato para assinatura.`, user, { limite: 1024 });
     const pdf = await gerarPropostaPdf(propostaParaCliente(p));
     await conferir();
     await assumirEnvioComercial(c, user, identidade, db);

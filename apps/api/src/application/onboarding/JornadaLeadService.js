@@ -5,6 +5,7 @@ import { exigirGestor } from "./RecursosComerciaisService.js";
 import { OnboardingError } from "./OnboardingService.js";
 import { encerrado } from "./LeadService.js";
 import { enviarMensagemRastreada } from "../whatsapp/SaidaWhatsappService.js";
+import { assinarMensagemHumana } from "../whatsapp/assinaturaAtendente.js";
 import { janelaDaConversa } from "../whatsapp/ConversaWhatsappService.js";
 import { whatsappPorCanal } from "../whatsapp/CanalWhatsappService.js";
 import { adquirirLease, renovarLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
@@ -120,12 +121,12 @@ export function criarJornadaLead({ db = prisma, cloud = null, janela = janelaDaC
       for (const parte of jornada.devolutiva.partes) {
         if (confirmados.has(parte.status)) continue;
         const pdf = parte.parte === "RELATORIO" ? await comercial.documento(id, jornada.diagnostico.dados.analiseId, user) : null;
-        const texto = jornada.diagnostico.dados.texto;
+        const texto = assinarMensagemHumana(pdf ? `Situação fiscal · CNPJ ${ficha.cnpj}` : jornada.diagnostico.dados.texto, user, { limite: pdf ? 1024 : 4096 });
         await enviarMensagemRastreada({ conversa: c, autor: "HUMANO", client: db,
-          tipo: pdf ? "document" : "text", corpo: pdf ? `Relatório fiscal · CNPJ ${ficha.cnpj}` : texto,
+          tipo: pdf ? "document" : "text", corpo: texto,
           referenciaComercial: { tipo: "JORNADA_DEVOLUTIVA", diagnosticoId: jornada.diagnostico.id, parte: parte.parte },
           antesDeEnviar: conferir,
-          enviar: () => pdf ? transporte.enviarDocumento({ telefone: c.telefoneE164, conteudo: pdf, mimeType: "application/pdf", nomeArquivo: "situacao-fiscal.pdf", legenda: `Situação fiscal · CNPJ ${ficha.cnpj}` }) : transporte.enviarTexto({ telefone: c.telefoneE164, texto }),
+          enviar: () => pdf ? transporte.enviarDocumento({ telefone: c.telefoneE164, conteudo: pdf, mimeType: "application/pdf", nomeArquivo: "situacao-fiscal.pdf", legenda: texto }) : transporte.enviarTexto({ telefone: c.telefoneE164, texto }),
         });
       }
       return { enviada: true };

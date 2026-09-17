@@ -1,5 +1,9 @@
 # CLAUDE.md — API (apps/api)
 
+## Nome do atendente no WhatsApp — 17/09/2026
+
+`assinaturaAtendente.assinarMensagemHumana` acrescenta o nome do usuário autenticado ao texto/legenda dos envios humanos. Chamadores: responder/orientação, documento da empresa, anexo manual, proposta e devolutiva. Automação, modelos Meta e notas internas não recebem assinatura humana. Nome ausente, e-mail ou ID como nome usam Equipe Altan; normalizar controles/formatação do cabeçalho e contar assinatura no limite de texto/legenda antes do transporte. Corpo salvo conserva o nome do envio, sem depender de quem assumiu o atendimento depois.
+
 ## Identidade, canais e jornada comercial — 16/09/2026
 
 Entrada de leads em 17/09: `politicaColetaComercial` centraliza a audiência de menu/coleta; não exigir duplicação no piloto operacional. Quando a coleta está ativa, `decidirRespostaComercial` não enfileira modelo, mesmo para “Olá”. O coletor só entende “não sei” como ausência de um campo se a pergunta já foi feita; a intenção inicial não é resposta implícita ao CNPJ. Simulação integral sem rede: `scripts/verify-lead-entry-postgres.js`. Coleta no canal principal suporta segmentos legados; identidade V2/backfill/multicanal têm ativação independente e posterior.

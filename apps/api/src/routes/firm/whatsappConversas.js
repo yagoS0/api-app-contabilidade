@@ -42,6 +42,7 @@ import { pendenciaAberta } from "../../application/assistente/AcoesPendentesServ
 import { consumoIaDoMes } from "../../application/assistente/GuardaIaService.js";
 import { resumoWhatsapp } from "../../application/whatsapp/resumoWhatsapp.js";
 import { enviarMensagemRastreada } from "../../application/whatsapp/SaidaWhatsappService.js";
+import { assinarMensagemHumana } from "../../application/whatsapp/assinaturaAtendente.js";
 import { INCLUDE_CONVERSA, grupoNoEscopo, resumoDoGrupo, filtroMensagensDoGrupo, empresaDaMensagem } from "./whatsappAtendimento.js";
 import { WHATSAPP_CHAT_V2 } from '../../config.js';
 import { listarInboxWhatsapp, lerHistoricoIdentidade, registrarLeituraIdentidade, salvarNotaInterna, carregarGrupoIdentidade } from '../../application/whatsapp/InboxWhatsappService.js';
@@ -618,6 +619,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       const janela = await janelaDaConversa(conversa.id);
       if (janela.situacao !== SITUACOES_JANELA.ABERTA) return recusarForaDaJanela(res, janela, conversa);
       const cliente = await whatsappPorCanal(conversa, { cloud, client });
+      texto = assinarMensagemHumana(texto, req.auth.user);
       if (req.body?.assumir === true) {
         await alterarHumano(conversa, String(req.auth.user.id), new Date());
         conversa = await conversaNoEscopo(req, conversa.id, { client });
@@ -715,13 +717,13 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
 
       const cliente = await whatsappPorCanal(conversa, { cloud, client });
       const legenda = String(req.body?.legenda || "").trim() || doc.nome;
-      const corpo = conversa.atendimentoId ? `${conversa.portalClient.razao} · ${legenda}` : legenda;
+      const corpo = assinarMensagemHumana(conversa.atendimentoId ? `${conversa.portalClient.razao} · ${legenda}` : legenda, req.auth.user, { limite: 1024 });
       const r = await comEnvioDoResponsavel(conversa, conferirLease => enviarMensagemRastreada({ conversa, tipo: "document", corpo, autor: AUTOR_HUMANO, client, antesDeEnviar: () => conferirEnvio(conversa, conferirLease), enviar: () => cliente.enviarDocumento({
         telefone: conversa.telefoneE164,
         conteudo: buffer,
         nomeArquivo: doc.nome,
         mimeType: doc.mimeType || "application/pdf",
-        legenda: conversa.atendimentoId ? corpo : String(req.body?.legenda || "").trim() || undefined,
+        legenda: corpo,
       }) }));
 
       // ⚠ O balão diz O QUE saiu — o nome do arquivo. Sem isso o histórico teria "um documento", e o
@@ -745,6 +747,8 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
       if (erroUpload) return res.status(400).json({ ok: false, error: "ANEXO_INVALIDO", message: "Envie um PDF ou imagem JPEG/PNG de até 5 MB." });
       try {
         const anexo = validarAnexoManual(req.file, req.body?.legenda || "");
+        const corpo = assinarMensagemHumana([anexo.nomeArquivo, anexo.legenda].filter(Boolean).join("\n"), req.auth.user);
+        anexo.legenda = assinarMensagemHumana(anexo.legenda, req.auth.user, { limite: 1024 });
         let conversa = await conversaNoEscopo(req, req.params.conversaId, { client });
         if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
         await conferirConversaAtiva(conversa, { porPessoa: true });
@@ -755,7 +759,7 @@ export function createWhatsappConversasRouter({ log, client = prisma, cloud = nu
         if (!conversa) return res.status(404).json({ ok: false, error: "conversa_nao_encontrada" });
         const cliente = await whatsappPorCanal(conversa, { cloud, client });
         const r = await comEnvioDoResponsavel(conversa, conferirLease => enviarMensagemRastreada({
-          conversa, tipo: anexo.tipo, corpo: [anexo.nomeArquivo, anexo.legenda].filter(Boolean).join("\n"), autor: AUTOR_HUMANO, client,
+          conversa, tipo: anexo.tipo, corpo, autor: AUTOR_HUMANO, client,
           referenciaComercial: { tipo: "ANEXO_MANUAL", escopo: "PESSOA", nome: anexo.nomeArquivo, mime: anexo.mimeType, sha256: anexo.sha256 },
           antesDeEnviar: () => conferirEnvio(conversa, conferirLease, { porPessoa: true }),
           enviar: () => cliente[anexo.tipo === "image" ? "enviarImagem" : "enviarDocumento"]({ ...anexo, telefone: conversa.telefoneE164 }),

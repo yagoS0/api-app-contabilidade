@@ -4,6 +4,16 @@ Implementação iniciada em 16/09/2026, branch `feat/comunicacao-identidade-chat
 
 Estado em 17/09: implementação validada localmente; publicação e ativação ainda pendentes. Nenhuma flag, conversa ou dado de produção foi alterado nesta rodada.
 
+## Nome de quem responde e novo número comercial — 17/09/2026
+
+O cliente vê o nome do atendente em negrito na primeira linha da própria mensagem ou legenda. A Cloud API transporta esse texto; isso não troca o nome do contato empresarial nem cria um cabeçalho nativo de usuário. Fonte: [coleção oficial da Meta — mensagens](https://www.postman.com/meta/whatsapp-business-platform/request/0arw2jw/send-text-message-with-preview-url) e [referência Meta de texto e formatação](https://whatsapp.github.io/WhatsApp-Nodejs-SDK/api-reference/types/TextObject/).
+
+A assinatura usa o usuário autenticado que executa o envio, inclui mensagens rápidas/anexos/proposta/devolutiva e fica preservada no histórico. Automação e notas internas não passam por esse helper. Texto existente não é truncado para abrir espaço: limite excedido retorna erro antes da reserva/transporte e mantém o rascunho para correção.
+
+Validação da assinatura: 19 suítes/292 testes de API, onboarding e roteamento sem IA aprovados; após a proteção adicional contra nome preenchido com e-mail/ID, 91 testes de assinatura e rotas aprovados novamente. Sem envio à Meta, chamada Anthropic ou migração adicional.
+
+O dono informou o cadastro do novo número comercial na Meta e forneceu os identificadores por imagem. Os dados foram registrados apenas no arquivo privado de preparação do workspace, fora do Git. Continuam pendentes a publicação autorizada, conferência da credencial, cadastro do canal e sequência de identidade/backfill para ativar multicanal. Não substituir o telefone principal por esse número nem presumir recepção/saída validada a partir da imagem.
+
 ## Entrada de leads antes do segundo número — 17/09/2026
 
 O dono pediu ativar o comportamento de leads no número atual enquanto providencia o comercial. O primeiro lote usa `WHATSAPP_COLETA_COMERCIAL=1` e `INTEGRACAO_WHATSAPP_MENU=1`, limitado à lista explícita `IA_COMERCIAL_TELEFONES_PILOTO`. Apesar do nome histórico dessa lista, a coleta não usa IA. Identidade V2, leitura V2 e multicanal permanecem desligados neste lote; a migração aditiva continua obrigatória, mas a coleta também suporta os segmentos legados existentes, sem backfill global.
