@@ -18,6 +18,7 @@ const { prisma } = await import('../src/infrastructure/db/prisma.js');
 const { sincronizarOcorrencias, excluirOcorrencia, atualizarOcorrencia, concluir, ocorrenciasDoPeriodo } = await import('../src/application/obrigacoes/ObrigacoesService.js');
 const prefix = `calendar-check-${randomUUID()}`;
 const companyId = `${prefix}-empresa`;
+const companyForaId = `${prefix}-empresa-fora`;
 const janela = { modo: 'DIAS_DO_CICLO', diaInicio: 10, diaFim: 15, deslocamentoFim: 0 };
 const iso = data => data.toISOString().slice(0, 10);
 const listar = id => prisma.ocorrenciaObrigacao.findMany({ where: { obrigacaoId: id }, orderBy: { cicloChave: 'asc' } });
@@ -159,7 +160,7 @@ try {
   ok('inativar/reativar conserva integralmente IDs e exceções, sem vazar série inativa no calendário');
 
   const { criarRegra } = await import('../src/application/obrigacoes/RegrasObrigacaoService.js');
-  const { salvarTarefa, alterarTarefa, listarTarefas } = await import('../src/application/calendario/TarefasAgendaService.js');
+  const { salvarTarefa, alterarTarefa, listarTarefas, converterTarefaEmObrigacao } = await import('../src/application/calendario/TarefasAgendaService.js');
   const mesAtual=new Date().toISOString().slice(0,7);
   const config={dataInicio:mesAtual+'-10',dataFim:mesAtual+'-15',recorrencia:'MENSAL',horaInicio:null,horaFim:null,prioridade:'ALTA'};
   const criado=await criarRegra({portalIds:[companyId],criadoPorId:prefix,dados:{nome:prefix+'-EFD-servicos',tipo:'OBRIGACAO',periodicidade:'MENSAL',diaVencimento:21,ajusteDiaUtil:'MANTER',agendaConfig:config,escopo:'SELECAO_MANUAL',filtros:{empresasIds:[companyId]}}});
@@ -193,11 +194,123 @@ try {
   await assert.rejects(alterarTarefa({userId:prefix+'-outro',id:conferencia.id,cicloChave:seis[0].cicloChave,acao:'EXCLUIR'}),e=>e.status===404);
   ok('editar período cria seis tarefas diárias com horários e estados independentes, persistidos sob concorrência');
 
+  // Contratos novos exercitados no PostgreSQL real, inclusive o JSON das versões/snapshots.
+  const pessoal = await salvarTarefa({ userId: prefix, dados: {
+    titulo: 'Revisão recorrente de notas',
+    config: { ...config, dataFim: config.dataInicio, recorrencia: 'DIARIA', horaInicio: '09:00', horaFim: '10:00' },
+  } });
+  await alterarTarefa({ userId: prefix, id: pessoal.id, cicloChave: mesAtual + '-11', acao: 'CONCLUIR' });
+  await alterarTarefa({ userId: prefix, id: pessoal.id, cicloChave: mesAtual + '-12', acao: 'EXCLUIR' });
+  const antesDaEdicao = await prisma.tarefaAgenda.findUnique({ where: { id: pessoal.id } });
+  await alterarTarefa({ userId: prefix, id: pessoal.id, cicloChave: config.dataInicio,
+    acao: 'EDITAR_SERIE', alteracoes: { recorrencia: 'SEMANAL', titulo: 'Revisão semanal de notas' } });
+  const persistida = await prisma.tarefaAgenda.findUnique({ where: { id: pessoal.id } });
+  assert.equal(persistida.config.versoes.length, 1);
+  assert.equal(persistida.config.versoes[0].config.recorrencia, 'SEMANAL');
+  assert.equal(persistida.estados[mesAtual + '-11'].concluidaEm, antesDaEdicao.estados[mesAtual + '-11'].concluidaEm);
+  assert.equal(persistida.estados[mesAtual + '-12'].canceladaEm, antesDaEdicao.estados[mesAtual + '-12'].canceladaEm);
+  const itensPessoais = (await listarTarefas({ userId: prefix, inicio: mesAtual + '-01', fim: mesAtual + '-28' }))
+    .itens.filter(i => i.tarefaId === pessoal.id);
+  assert.equal(itensPessoais.length, 4); // 10, 17, 24 e o dia 11 concluído preservado.
+  assert.equal(new Set(itensPessoais.map(i => i.dataInicio)).size, 4);
+  assert.ok(itensPessoais.find(i => i.dataInicio === mesAtual + '-11').resolvido);
+  assert.ok(!itensPessoais.some(i => i.dataInicio === mesAtual + '-12'));
+  assert.ok(itensPessoais.find(i => i.dataInicio === mesAtual + '-17').cicloChave.startsWith('v1|'));
+  ok('EDITAR_SERIE persiste frequência e snapshots, preserva concluída/cancelada e não duplica ocorrências');
+
+  await assert.rejects(alterarTarefa({ userId: prefix + '-outro', id: pessoal.id,
+    cicloChave: 'v1|' + config.dataInicio, acao: 'EDITAR_SERIE', alteracoes: { recorrencia: 'MENSAL' } }), e => e.status === 404);
+  assert.deepEqual(await prisma.tarefaAgenda.findUnique({ where: { id: pessoal.id } }), persistida);
+  ok('nova edição de recorrência recusa outro proprietário sem modificar a série');
+
+  await prisma.portalClient.create({ data: { id: companyForaId, razao: 'Empresa fora da carteira de ensaio', cnpj: prefix + '-fora' } });
+  const converter = await salvarTarefa({ userId: prefix, dados: { titulo: 'Converter conferência',
+    config: { ...config, dataFim: config.dataInicio, recorrencia: 'AVULSA', horaInicio: '09:00', horaFim: '10:00' } } });
+  await alterarTarefa({ userId: prefix, id: converter.id, cicloChave: config.dataInicio,
+    acao: 'EDITAR', alteracoes: { dataInicio: mesAtual + '-20', dataFim: mesAtual + '-20' } });
+  const antesDeConverter = await prisma.tarefaAgenda.findUnique({ where: { id: converter.id } });
+  const dadosConversao = { nome: prefix + '-convertida', tipo: 'OBRIGACAO', periodicidade: 'MENSAL',
+    diaVencimento: 21, ajusteDiaUtil: 'MANTER', agendaConfig: { ...config,
+      dataInicio: mesAtual + '-20', dataFim: mesAtual + '-20', horaInicio: '09:00', horaFim: '10:00' },
+    escopo: 'SELECAO_MANUAL', filtros: { empresasIds: [companyId] } };
+  const entradaConversao = { userId: prefix, id: converter.id, cicloChave: config.dataInicio,
+    regra: dadosConversao, portalIds: [companyId] };
+  const contarRegras = () => prisma.regraObrigacao.count({ where: { criadoPorId: prefix } });
+  const contarObrigacoes = () => prisma.obrigacao.count({ where: { portalClientId: { in: [companyId, companyForaId] } } });
+  const regrasAntes = await contarRegras(), obrigacoesAntes = await contarObrigacoes();
+  await assert.rejects(converterTarefaEmObrigacao({ ...entradaConversao, userId: prefix + '-outro' }), e => e.status === 404);
+  await assert.rejects(converterTarefaEmObrigacao({ ...entradaConversao,
+    regra: { ...dadosConversao, filtros: { empresasIds: [companyForaId] } } }), e => e.code === 'escopo_vazio');
+  assert.equal(await contarRegras(), regrasAntes);
+  assert.equal(await contarObrigacoes(), obrigacoesAntes);
+  assert.deepEqual(await prisma.tarefaAgenda.findUnique({ where: { id: converter.id } }), antesDeConverter);
+  ok('conversão recusa outro usuário e empresa fora da carteira sem criar regra nem cortar a tarefa');
+
+  // Falha proposital APÓS a criação real da regra/ocorrências e ANTES do corte da tarefa.
+  // O wrapper só injeta a falha; todas as demais operações usam a transação PostgreSQL real.
+  const falha = new Error('Falha de ensaio antes de encerrar a origem');
+  const dbComFalha = { $transaction: (executar, opcoes) => prisma.$transaction(async tx => {
+    const tarefaComFalha = new Proxy(tx.tarefaAgenda, { get(alvo, propriedade) {
+      if (propriedade === 'update') return async () => {
+        assert.equal(await tx.regraObrigacao.count({ where: { criadoPorId: prefix } }), regrasAntes + 1);
+        assert.equal(await tx.obrigacao.count({ where: { portalClientId: { in: [companyId, companyForaId] } } }), obrigacoesAntes + 1);
+        throw falha;
+      };
+      const valor = Reflect.get(alvo, propriedade, alvo);
+      return typeof valor === 'function' ? valor.bind(alvo) : valor;
+    } });
+    const cliente = new Proxy(tx, { get(alvo, propriedade) {
+      if (propriedade === 'tarefaAgenda') return tarefaComFalha;
+      const valor = Reflect.get(alvo, propriedade, alvo);
+      return typeof valor === 'function' ? valor.bind(alvo) : valor;
+    } });
+    return executar(cliente);
+  }, opcoes) };
+  await assert.rejects(converterTarefaEmObrigacao(entradaConversao, dbComFalha), e => e.message === falha.message);
+  assert.equal(await contarRegras(), regrasAntes);
+  assert.equal(await contarObrigacoes(), obrigacoesAntes);
+  assert.deepEqual(await prisma.tarefaAgenda.findUnique({ where: { id: converter.id } }), antesDeConverter);
+  ok('falha após gravar obrigação reverte regra, ocorrências e corte da origem na mesma transação');
+
+  const convertida = await converterTarefaEmObrigacao(entradaConversao);
+  const destinos = await prisma.obrigacao.findMany({ where: { regraId: convertida.regra.id } });
+  assert.equal(destinos.length, 1);
+  assert.equal(destinos[0].portalClientId, companyId);
+  assert.equal(destinos[0].agendaConfig.dataInicio, mesAtual + '-20');
+  assert.ok((await listar(destinos[0].id)).length > 0);
+  const origemCortada = await prisma.tarefaAgenda.findUnique({ where: { id: converter.id } });
+  assert.equal(origemCortada.config.encerradaAPartirDe, config.dataInicio);
+  assert.ok(!(await listarTarefas({ userId: prefix, inicio: mesAtual + '-01', fim: mesAtual + '-28' }))
+    .itens.some(i => i.tarefaId === converter.id));
+  await assert.rejects(converterTarefaEmObrigacao(entradaConversao), e => e.status === 404);
+  assert.equal(await contarRegras(), regrasAntes + 1);
+  assert.equal(await contarObrigacoes(), obrigacoesAntes + 1);
+  ok('conversão movida cria somente na carteira, não restaura origem nem duplica regra ao repetir');
+
+  const historicoAntesDeConverter = await prisma.tarefaAgenda.findUnique({ where: { id: pessoal.id } });
+  await assert.rejects(converterTarefaEmObrigacao({ ...entradaConversao, id: pessoal.id,
+    cicloChave: 'v1|' + config.dataInicio, regra: { ...dadosConversao,
+      agendaConfig: { ...dadosConversao.agendaConfig, dataInicio: config.dataInicio, dataFim: config.dataInicio } } }), e => e.status === 409);
+  assert.equal(await contarRegras(), regrasAntes + 1);
+  assert.deepEqual(await prisma.tarefaAgenda.findUnique({ where: { id: pessoal.id } }), historicoAntesDeConverter);
+  ok('conversão com histórico futuro retorna conflito e conserva snapshots e série integralmente');
+
+  await alterarTarefa({ userId: prefix, id: pessoal.id, cicloChave: 'v1|' + config.dataInicio,
+    acao: 'EDITAR_SERIE', alteracoes: { recorrencia: 'DIARIA' } });
+  const diariasRestauradas = (await listarTarefas({ userId: prefix, inicio: mesAtual + '-01', fim: mesAtual + '-28' }))
+    .itens.filter(i => i.tarefaId === pessoal.id);
+  assert.equal(diariasRestauradas.length, 18); // Dias 10–28 inclusivos, exceto o dia 12 cancelado.
+  assert.equal(new Set(diariasRestauradas.map(i => i.dataInicio)).size, 18);
+  assert.ok(!diariasRestauradas.some(i => i.dataInicio === mesAtual + '-12'));
+  assert.ok(diariasRestauradas.find(i => i.dataInicio === mesAtual + '-11').resolvido);
+  assert.equal((await prisma.tarefaAgenda.findUnique({ where: { id: pessoal.id } })).config.versoes.length, 2);
+  ok('voltar à frequência diária não ressuscita tombstone nem duplica o dia já concluído');
+
   console.log(`PASS: ${checks} cenários sobre PostgreSQL real com migrations aplicadas.`);
 } finally {
   // Limpeza estritamente limitada ao UUID criado por esta execução; cascade remove só suas fixtures.
   try {
-    await prisma.portalClient.deleteMany({ where: { id: companyId } });
+    await prisma.portalClient.deleteMany({ where: { id: { in: [companyId, companyForaId] } } });
     await prisma.regraObrigacao.deleteMany({where:{criadoPorId:prefix}});
     await prisma.tarefaAgenda.deleteMany({where:{userId:prefix}});
     await prisma.agendaOcultacao.deleteMany({where:{userId:prefix}});

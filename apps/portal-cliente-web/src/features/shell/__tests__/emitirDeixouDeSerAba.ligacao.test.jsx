@@ -125,21 +125,17 @@ describe("⚠ 1. a aba sumiu do menu — inteira", () => {
     expect(abas()).toEqual(["Início", "Notas", "Guias", "Situação fiscal"]);
   });
 
-  test("⚠ a barra é SÓ ÍCONE: o rótulo existe para o leitor de tela, não em tela", async () => {
-    // Decisão do dono (21/08/2026). Sem esta guarda, "só ícones" some no primeiro que achar que a
-    // barra ficou pobre — e o `.sr-only` é o que impede o oposto: um link sem nome acessível, que
-    // o leitor de tela anunciaria como "link" e que derrubaria `getByRole("link", { name })` em
-    // seis suítes.
+  test("a barra mantém ícones e rótulos legíveis no toque", async () => {
     await abrirApp();
     const links = [...document.querySelectorAll('nav[aria-label="Seções"] a')];
     expect(links).toHaveLength(4);
     for (const a of links) {
-      // Todo rótulo está dentro de `.sr-only` — nenhum texto solto no link.
-      expect(a.querySelector(".sr-only")?.textContent).toBeTruthy();
+      // Todo rótulo visível está dentro de `.nav-rotulo` — nenhum texto solto no link.
+      expect(a.querySelector(".nav-rotulo")?.textContent).toBeTruthy();
       expect(a.querySelector("svg")).toBeTruthy();
       expect(a.querySelector("svg").getAttribute("aria-hidden")).toBe("true");
-      // ⚠ E o ícone NÃO é a única marca: o nome acessível vem do rótulo escondido.
-      expect(a.getAttribute("title")).toBe(a.querySelector(".sr-only").textContent);
+      // ⚠ E o ícone NÃO é a única marca: o nome acessível vem do rótulo visível.
+      expect(a.getAttribute("title")).toBe(a.querySelector(".nav-rotulo").textContent);
     }
   });
 

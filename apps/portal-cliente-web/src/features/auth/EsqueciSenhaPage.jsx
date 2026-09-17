@@ -106,6 +106,9 @@ export function EsqueciSenhaPage({ aoVoltar }) {
             id="campo-email-recuperacao"
             type="email"
             autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            inputMode="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}

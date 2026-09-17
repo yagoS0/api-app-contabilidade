@@ -17,7 +17,8 @@
 import { useMemo, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { passwordChecklist } from "../../../lib/schemas/passwordPolicy";
-import { consultarCnpj, formatarCnpj, mapearParaFormularioEmpresa, soDigitosCnpj } from "../lib/brasilApi";
+import { consultarCnpj, mapearParaFormularioEmpresa, soDigitosCnpj } from "../lib/brasilApi";
+import { prepararConversao, aplicarConsultaNaConversao, payloadConversao } from "../lib/conversaoEmpresa";
 
 // ⚠ OS TRÊS, e só eles. Ver o comentário do cabeçalho.
 const REGIMES_ACEITOS = [
@@ -46,34 +47,15 @@ function Campo({ rotulo, obrigatorio, children, ajuda }) {
   );
 }
 
-function estadoInicial(onboarding) {
-  const dados = onboarding?.dados || {};
-  return {
-    cnpj: onboarding?.cnpj ? formatarCnpj(onboarding.cnpj) : "",
-    razaoSocial: onboarding?.razaoSocial || "",
-    nomeFantasia: dados.nomeFantasia || "",
-    // ⚠ NÃO herda `regimeAtual`/`regimePretendido` da ficha: eles admitem "MEI", "NAO_SEI" e
-    // "A_DEFINIR", que a criação de empresa recusa. O contador ESCOLHE aqui, conscientemente.
-    regimeTributario: "",
-    cnaePrincipal: "",
-    telefone: dados.responsavelTelefone || "",
-    ownerEmail: onboarding?.responsavelEmail || "",
-    ownerName: onboarding?.responsavelNome || "",
-    ownerPassword: "",
-    hasProlabore: dados.temProLabore === true,
-    endereco: { rua: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", cep: "" },
-  };
-}
-
 export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, erro }) {
-  const [form, setForm] = useState(() => estadoInicial(onboarding));
+  const [form, setForm] = useState(() => prepararConversao(onboarding));
   const [consultando, setConsultando] = useState(false);
   const [avisoConsulta, setAvisoConsulta] = useState(null);
   const [enviando, setEnviando] = useState(false);
 
   const checklistSenha = useMemo(() => passwordChecklist(form.ownerPassword), [form.ownerPassword]);
   const senhaOk = checklistSenha.every((r) => r.ok);
-  const emailJaExiste = onboarding?.emailJaCadastrado === true;
+  const emailJaExiste = onboarding?.emailJaCadastrado === true && form.ownerEmail.trim().toLowerCase() === String(onboarding?.responsavelEmail || "").toLowerCase();
 
   // ⚠ A senha só é EXIGIDA quando o dono ainda não tem conta. Uma pessoa com duas empresas é caso
   // normal, e o provisionamento reusa o `User` existente — pedir senha ali travaria a conversão.
@@ -88,13 +70,13 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
     String(form.cnaePrincipal).trim() &&
     enderecoCompleto &&
     String(form.ownerEmail).trim() &&
-    (!senhaExigida || senhaOk);
+    (!senhaExigida || senhaOk) && form.cadastroConferido;
 
   function set(campo, valor) {
-    setForm((atual) => ({ ...atual, [campo]: valor }));
+    setForm((atual) => ({ ...atual, cadastroConferido: false, [campo]: valor }));
   }
   function setEndereco(campo, valor) {
-    setForm((atual) => ({ ...atual, endereco: { ...atual.endereco, [campo]: valor } }));
+    setForm((atual) => ({ ...atual, cadastroConferido: false, endereco: { ...atual.endereco, [campo]: valor } }));
   }
 
   async function consultarReceita() {
@@ -107,14 +89,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
       return;
     }
     const mapeado = mapearParaFormularioEmpresa(r.bruto);
-    setForm((atual) => ({
-      ...atual,
-      razaoSocial: mapeado.razaoSocial || atual.razaoSocial,
-      nomeFantasia: mapeado.nomeFantasia || atual.nomeFantasia,
-      telefone: mapeado.telefone || atual.telefone,
-      cnaePrincipal: mapeado.cnaePrincipal || atual.cnaePrincipal,
-      endereco: { ...atual.endereco, ...mapeado.endereco },
-    }));
+    setForm((atual) => aplicarConsultaNaConversao(atual, mapeado));
     if (r.situacao?.texto && !r.situacao.ativa) {
       setAvisoConsulta(`Situação cadastral na Receita: ${r.situacao.texto}.`);
     }
@@ -124,27 +99,13 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
     // ⚠ Confirmação final repetindo razão social + CNPJ + e-mail do dono. A criação de empresa é
     // irreversível na prática (o CNPJ é imutável depois, e desfazer exige excluir a empresa).
     const resumo =
-      `Criar a empresa?\n\n${form.razaoSocial}\nCNPJ ${formatarCnpj(form.cnpj)}\n` +
+      `Criar a empresa e arquivar os documentos?\n\n${form.razaoSocial}\nCNPJ ${soDigitosCnpj(form.cnpj)}\n` +
       `Acesso do cliente: ${form.ownerEmail}`;
     if (!window.confirm(resumo)) return;
 
     setEnviando(true);
     try {
-      await onConverter({
-        ownerEmail: form.ownerEmail.trim().toLowerCase(),
-        ownerName: form.ownerName || null,
-        ...(senhaExigida ? { ownerPassword: form.ownerPassword } : {}),
-        hasProlabore: Boolean(form.hasProlabore),
-        company: {
-          razaoSocial: form.razaoSocial.trim(),
-          nomeFantasia: form.nomeFantasia || null,
-          cnpj: soDigitosCnpj(form.cnpj),
-          regimeTributario: form.regimeTributario,
-          cnaePrincipal: form.cnaePrincipal.trim(),
-          telefone: form.telefone || null,
-          endereco: form.endereco,
-        },
-      });
+      await onConverter(payloadConversao(form, { senhaExigida }));
     } finally {
       setEnviando(false);
     }
@@ -174,8 +135,9 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
       >
         <h2 style={{ margin: "0 0 var(--space-2)", fontSize: 18 }}>Criar a empresa</h2>
         <p style={{ margin: "0 0 var(--space-4)", fontSize: 13, color: "var(--text-muted)", lineHeight: 1.5 }}>
-          O cadastro exige CNPJ, endereço completo e CNAE principal — a ficha de onboarding não
-          coleta os três. Consultar a Receita traz todos de uma vez.
+          Confira os dados definitivos do registro. Sócios e capital vêm da ficha para sua revisão;
+          a consulta pública completa os dados cadastrais. Os PDFs recebidos, a proposta aceita e
+          a minuta do contrato serão arquivados nos documentos da empresa.
         </p>
 
         {conflito && (
@@ -188,7 +150,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
             <Button
               size="sm"
               type="button"
-              onClick={() => onVincular(conflito.payload?.portalClientId)}
+              onClick={() => onVincular(conflito.payload?.portalClientId, soDigitosCnpj(form.cnpj))}
               disabled={!conflito.payload?.portalClientId}
             >
               Vincular ao existente
@@ -206,7 +168,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
         {/* ── 1) CNPJ definitivo ───────────────────────────────────────── */}
         <Campo rotulo="CNPJ definitivo" obrigatorio>
           <div style={{ display: "flex", gap: "var(--space-2)" }}>
-            <input style={INPUT} value={form.cnpj} onChange={(e) => set("cnpj", e.target.value)} />
+            <input aria-label="CNPJ definitivo" style={INPUT} value={form.cnpj} onChange={(e) => set("cnpj", soDigitosCnpj(e.target.value))} />
             <Button
               type="button"
               variant="secondary"
@@ -238,7 +200,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
           obrigatorio
           ajuda="O cadastro opera só nestes três. 'MEI' é tipo societário e não vale como regime aqui."
         >
-          <select style={INPUT} value={form.regimeTributario} onChange={(e) => set("regimeTributario", e.target.value)}>
+          <select aria-label="Regime tributário" style={INPUT} value={form.regimeTributario} onChange={(e) => set("regimeTributario", e.target.value)}>
             <option value="">— selecione —</option>
             {REGIMES_ACEITOS.map((r) => (
               <option key={r.valor} value={r.valor}>{r.rotulo}</option>
@@ -247,8 +209,25 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
         </Campo>
 
         <Campo rotulo="CNAE principal" obrigatorio>
-          <input style={INPUT} value={form.cnaePrincipal} onChange={(e) => set("cnaePrincipal", e.target.value)} />
+          <input aria-label="CNAE principal" style={INPUT} value={form.cnaePrincipal} onChange={(e) => set("cnaePrincipal", e.target.value)} />
         </Campo>
+        <Campo rotulo="CNAEs secundários" ajuda="Separe os códigos por vírgula.">
+          <input aria-label="CNAEs secundários" style={INPUT} value={form.cnaesSecundarios} onChange={e => set("cnaesSecundarios", e.target.value)} />
+        </Campo>
+        <fieldset style={{ border: "1px solid var(--border)", padding: "var(--space-3)", marginBottom: "var(--space-3)" }}>
+          <legend>Dados do registro</legend>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "var(--space-2)" }}>
+            {[["capitalSocial", "Capital social (R$)"], ["naturezaJuridica", "Natureza jurídica"], ["porte", "Porte"], ["dataAbertura", "Data de abertura"], ["inscricaoMunicipal", "Inscrição municipal"], ["inscricaoEstadual", "Inscrição estadual"]].map(([campo, rotulo]) => (
+              <label key={campo} style={{ fontSize: 13 }}>{rotulo}<input style={INPUT} type={campo === "dataAbertura" ? "date" : "text"} value={form[campo]} onChange={e => set(campo, e.target.value)} /></label>
+            ))}
+          </div>
+          <p style={{ fontSize: 12 }}>Sócios: confira a composição registrada e as participações.</p>
+          {form.socios.map((socio, i) => <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+            {[["nome", "Nome"], ["cpf", "CPF"], ["participacao", "Participação (%)"]].map(([campo, rotulo]) => <label key={campo} style={{ flex: "1 1 120px", fontSize: 12 }}>{rotulo}<input aria-label={`${rotulo} do sócio ${i + 1}`} style={INPUT} value={socio[campo]} onChange={e => set("socios", form.socios.map((s, j) => j === i ? { ...s, [campo]: e.target.value } : s))} /></label>)}
+            <Button type="button" size="sm" variant="secondary" onClick={() => set("socios", form.socios.filter((_, j) => j !== i))}>Remover sócio {i + 1}</Button>
+          </div>)}
+          <Button type="button" size="sm" variant="secondary" onClick={() => set("socios", [...form.socios, { nome: "", cpf: "", participacao: "" }])}>Adicionar sócio</Button>
+        </fieldset>
 
         <fieldset style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "var(--space-3)", marginBottom: "var(--space-3)" }}>
           <legend style={{ fontSize: 12, color: "var(--text-muted)", padding: "0 6px" }}>
@@ -279,6 +258,13 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
         <Campo rotulo="Nome do dono">
           <input style={INPUT} value={form.ownerName} onChange={(e) => set("ownerName", e.target.value)} />
         </Campo>
+        <Campo rotulo="WhatsApp do responsável" ajuda="Será cadastrado nos contatos da empresa.">
+          <input aria-label="WhatsApp do responsável" style={INPUT} value={form.telefoneResponsavel} onChange={e => set("telefoneResponsavel", e.target.value)} />
+        </Campo>
+        <Campo rotulo="E-mail para guias">
+          <input aria-label="E-mail para guias" type="email" style={INPUT} value={form.guideNotificationEmail} onChange={e => set("guideNotificationEmail", e.target.value)} />
+        </Campo>
+        <label style={{ display: "flex", gap: 8, marginBottom: 16, fontSize: 13 }}><input type="checkbox" checked={form.whatsappAutorizado} onChange={e => set("whatsappAutorizado", e.target.checked)} />Responsável autorizou receber comunicações pelo WhatsApp (conferido pelo escritório).</label>
 
         {emailJaExiste ? (
           <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: "var(--space-3)" }}>
@@ -312,6 +298,7 @@ export function ConversaoModal({ onboarding, onFechar, onConverter, onVincular, 
           Há pró-labore (exige guia de INSS na competência)
         </label>
 
+        <label style={{ display: "flex", gap: 8, marginBottom: 16, fontSize: 13 }}><input type="checkbox" checked={form.cadastroConferido} onChange={e => set("cadastroConferido", e.target.checked)} />Conferi os dados definitivos, sócios e capital com os documentos do registro.</label>
         <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
           <Button variant="secondary" type="button" onClick={onFechar} disabled={enviando}>
             Cancelar

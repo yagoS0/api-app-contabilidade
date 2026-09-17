@@ -43,3 +43,5 @@ jobs:
         run: node ../../node_modules/jest/bin/jest.js --runInBand --testPathPatterns='onboarding|[Cc]omercial|[Cc]ommercial|origemDasBolhas'
       - name: Verify lead, proposal and contract transactions without external services
         run: node apps/api/scripts/verify-commercial-lead-postgres.js "$DATABASE_URL"
+      - name: Opening journey to company file and stored documents
+        run: node apps/api/scripts/verify-opening-company-postgres.js "$DATABASE_URL"

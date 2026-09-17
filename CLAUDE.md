@@ -1,5 +1,17 @@
 # CLAUDE.md — Portal Contábil
 
+## DRE somente de competências fechadas — 16/09/2026
+
+Decisão do usuário: a DRE do cliente mostra apenas meses com `CompanyMonthlyCircular.fechadoContabilEm` preenchido. Servidor lista fechamentos da própria empresa, abre o mais recente quando a competência é omitida e recusa mês aberto. DRE tem seletor próprio, sem alterar competência de cards/Fluxo. Reabertura retira o mês nas novas consultas. Fechamento constitui revisão do período, portanto rascunho legado isolado não torna essa DRE provisória; pendências reais de classificação/valores continuam visíveis. Nenhum status ou lançamento é alterado para satisfazer essa regra.
+
+## Retenção na emissão pelo WhatsApp — 16/09/2026
+
+Menção de retenção em linguagem livre, inclusive correção negativa, interrompe a emissão e cancela o código anterior antes da persistência do encaminhamento. Guardar texto original em `observacaoRetencao`, preservar dados válidos e usar o handoff existente; pedir orientação do tomador quando o imposto não estiver claro. Não transformar a frase em alíquota ou incidência fiscal. Retomar não apaga a conferência pendente; uma nova emissão explícita começa vazia. Ver `docs/whatsapp-emissao-sem-ia.md`. Testes sem Anthropic, WhatsApp real ou emissão fiscal.
+
+# Abertura completa — 16/09/2026
+
+A conversão do onboarding preserva os PDFs recebidos, a proposta aceita e a minuta nos documentos da empresa. Cadastro, contato e vínculo são atômicos; sócios/capital e dados públicos passam pela revisão do contador. O destino é Cadastro da empresa. Ver `docs/abertura-empresa-simulacao-completa.md` e o teste PostgreSQL `verify-opening-company-postgres.js`; não usar provedores ou tokens de IA para essa simulação.
+
 ## Comunicados pelo WhatsApp — 16/09/2026
 
 `WhatsApp → Comunicados` cria avisos para toda a carteira ou contatos selecionados, sem IA. Usar contatos ativos cadastrados com opt-in, sem exigir associação ao portal; um número exato recebe uma vez mesmo em várias empresas. Cada aviso guarda texto e destinatários, submete modelo próprio à Meta e só entra na fila após aprovação conferida e confirmação explícita do escritório. Aviso geral usa MARKETING; UTILITY exige atualização específica de serviço contratado, sujeita à categoria final da Meta. Não usar o modelo de retomada nem uma variável genérica para contornar aprovação. Worker durável registra enviado/entregue/lido/falha; resultado incerto nunca é repetido automaticamente. Migration `20260916110000_whatsapp_comunicados` e Prisma gerado precedem API/worker. Operação, limites e testes: `docs/whatsapp-comunicados.md`. Implementar a função não autoriza disparar avisos reais nos testes.
@@ -25,6 +37,9 @@ Conversa por pessoa, com histórico das empresas autorizadas; não mostrar selet
 O telefone/e-mail ativo em Contatos, acessos e envios é a origem do destinatário da comunicação. Receber guias e o escritório agrupar/selecionar empresas no chat não exige associação a uma conta do portal. O mesmo número pode comunicar-se por várias empresas mesmo sem `userId` ou com contas diferentes. A identidade continua comparada estritamente; nenhuma conta, vínculo RBAC ou permissão fiscal é criada para obter esse agrupamento. Consultas e atos do assistente mantêm suas autorizações próprias.
 
 Na liberação e reenvio da guia pela aba Fiscal, um WhatsApp cadastrado também é considerado quando `canalPadraoEnvio` legado vale EMAIL. O consentimento e a elegibilidade são revalidados no servidor. Complementar WhatsApp verifica recibos por guia e destinatário: entrega ao contato antigo não bloqueia o primeiro envio ao novo, e o contato já atendido não recebe duplicata nessa operação. Não retirar a reserva atômica do transportador nem transformar aceite em entrega.
+## Portal do cliente no celular — 16/09/2026
+
+Pedido atual: usar no portal do cliente a mesma paleta e identidade do contador. Esta decisão substitui a antiga paleta clara própria do cliente. Tokens locais preservam os nomes consumidos pelos componentes; não importar CSS entre apps, pois possuem builds/deploys independentes. Navegação com rótulos visíveis, barra inferior até 960px, safe areas, controles de toque e tabelas com rolagem local. Cálculos, autorizações e serviços fiscais não mudam. Validado na `dev`; o usuário autorizou integrar na `main` e publicar em produção em 16/09/2026.
 
 ## Previsão do mês aberto e imposto pago — 08/09/2026
 

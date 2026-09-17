@@ -12,6 +12,7 @@ function montar(mode = "mock") {
   const api = { mode, getDadosPlanejamento: jest.fn(async () => dados), listarSimulacoesPlanejamento: jest.fn(async () => ({ simulacoes: foto ? [foto] : [] })),
     salvarSimulacaoPlanejamento: jest.fn(async (_id, payload) => { foto = { id: "c1", geradoEm: "2026-09-16", ...payload }; return { ok: true, simulacao: foto }; }) };
   render(<PlanejamentoPage api={api} empresa={{ id: "e1" }} empresaFixa />);
+  fireEvent.click(screen.getByRole("button", { name: "Simulação tributária", exact: true }));
   return api;
 }
 test.each(["real", "real_with_mock_fallback"])("produção exibe e salva estudos com API %s", async mode => {

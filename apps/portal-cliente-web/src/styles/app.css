@@ -297,7 +297,7 @@ label > input, label > select { margin-top: 4px; color: var(--text); }
 .table { width: 100%; border-collapse: collapse; font-size: .9rem; min-width: 720px; }
 .table th, .table td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .table thead th { font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); background: var(--bg); }
-.table tbody tr:hover { background: #fafbfc; }
+.table tbody tr:hover { background: var(--bg-subtle); }
 .table tbody tr:last-child td { border-bottom: 0; }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 /* ⚠ O `min-width: 720px` acima é a medida da tabela de SETE colunas das notas, e ela não serve às
@@ -505,7 +505,7 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
    `rgba(28,33,40,.45)` não é o `--veu` da `.sobreposicao`, e essa divergência é ANTERIOR a esta
    entrega — trocá-la muda a aparência do modal de trocar empresa e do `.painel-dia`, o que é decisão
    do dono, não limpeza de passagem. Está nomeada em `tokens.css`, junto do token. */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(28,33,40,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: var(--z-sobreposicao); }
+.modal-backdrop { position: fixed; inset: 0; background: var(--veu); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: var(--z-sobreposicao); }
 .modal { background: var(--surface); border-radius: var(--radius); padding: 20px; width: min(520px, 100%); max-height: 90vh; overflow-y: auto; box-shadow: 0 18px 48px rgba(28,33,40,.25); }
 .modal footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: var(--gap); }
 
@@ -1712,3 +1712,89 @@ tr[data-atrasada="sim"] .guias-atraso-quando { color: var(--danger); }
    uma vez (a coluna de 56px e a topbar esticada na linha `1fr` — `.app` só declara duas linhas), e
    quem reintroduzir uma filha nova em `.app` cai nos dois de novo. A condição de visita continua
    nomeada na linha do CNPJ da topbar. */
+
+/* Portal no celular — mesma identidade do contador, sem reduzir dados para caber. */
+html { scroll-padding-bottom: 92px; }
+body { overflow-wrap: break-word; }
+a { color: var(--link); }
+:focus-visible { outline-color: var(--border-focus); }
+.app { min-height: 100dvh; }
+.topbar { padding-top: max(12px, env(safe-area-inset-top)); }
+.topbar .empresa { flex: 1 1 160px; }
+.nav a[aria-current="page"] { color: var(--accent-purple); border-inline-start-color: var(--accent-purple); }
+.nav .nav-rotulo { line-height: 1.25; }
+.card .numero.destaque, .btn-link, .chip[data-status="processando"] { color: var(--link); }
+.btn, .btn-link { min-height: 44px; touch-action: manipulation; }
+.btn-link { display: inline-flex; align-items: center; justify-content: center; }
+.btn-primary { color: #fff; }
+.btn-perigo { color: var(--bg-page); }
+input:not([type="checkbox"]):not([type="radio"]), select, textarea { min-height: 44px; min-width: 0; }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+input[type="file"] { white-space: normal; overflow: hidden; }
+input::file-selector-button { min-height: 36px; margin-right: 8px; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent-purple); }
+.grid-2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.grid-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+.card, .page-split, .page-split > *, .filters > *, .form-actions > *, .actions > * { min-width: 0; }
+.card .apoio, .alerta, .hint, .meta { overflow-wrap: anywhere; }
+.table-wrap { max-width: 100%; min-width: 0; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.table tbody tr:hover { background: var(--bg-subtle); }
+.modal { border: 1px solid var(--border); max-height: calc(100dvh - 32px); overscroll-behavior-y: contain; box-shadow: var(--shadow); }
+.modal footer { flex-wrap: wrap; }
+.login-wrap { min-height: 100dvh; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+.lista-empresas button { min-height: 64px; }
+.modal-empresas > label { display: grid; gap: 6px; margin-bottom: 16px; }
+.empresa-atual { display: block; margin-block: 4px; color: var(--accent-purple); font-size: .8rem; font-weight: 600; }
+@media (min-width: 961px) {
+  .app { grid-template-columns: 104px minmax(0, 1fr); }
+  .nav { gap: 8px; padding: 12px 4px; }
+  .nav a { flex-direction: column; padding: 10px 4px; gap: 6px; min-height: 68px; }
+  .nav .nav-rotulo { font-size: .75rem; }
+}
+@media (max-width: 960px) {
+  .app { grid-template-rows: auto minmax(0, 1fr); }
+  .nav {
+    position: fixed; inset: auto 0 0; z-index: 20;
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0;
+    background: var(--surface); border-top: 1px solid var(--border); border-bottom: 0;
+    padding: 4px max(4px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left));
+    overflow: visible;
+  }
+  .nav a { flex-direction: column; gap: 4px; padding: 7px 2px; min-height: 58px; border-bottom: 0; border-top: 3px solid transparent; }
+  .nav a[aria-current="page"] { border-top-color: var(--accent-purple); }
+  .nav .nav-rotulo { font-size: .72rem; text-align: center; }
+  main.page { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 600px) {
+  main.page { padding-inline: 12px; gap: 16px; }
+  .topbar { padding-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right)); gap: 10px; }
+  .topbar .brand { min-height: 44px; display: inline-flex; align-items: center; }
+  .topbar .empresa { flex: 1 1 0; }
+  .topbar .empresa-nome { white-space: normal; overflow-wrap: anywhere; font-size: .9rem; }
+  .topbar .empresa-cnpj { font-size: .75rem; }
+  .topbar-actions { margin-left: 0; width: 100%; }
+  .topbar-actions .btn { flex: 1; }
+  .page-header { align-items: flex-start; }
+  .page-actions { margin-left: 0; width: 100%; gap: 8px; }
+  .page-actions > * { flex: 1 1 140px; min-width: 0; }
+  .select-auto { max-width: 100%; }
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px; }
+  .filters { grid-template-columns: minmax(0, 1fr); }
+  .card { padding: 14px; }
+  .card .numero { font-size: clamp(1.4rem, 6vw, 1.8rem); overflow-wrap: anywhere; }
+  .card .apoio { line-height: 1.55; }
+  .modal-backdrop { padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); }
+  .modal { padding: 16px; max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); width: 100%; }
+  .modal footer > * { flex: 1 1 120px; }
+  .login-card { padding: 20px; }
+  .dados-da-nota > div { flex-wrap: wrap; }
+  .dados-da-nota dd { min-width: 0; overflow-wrap: anywhere; }
+  .table .actions { flex-wrap: wrap; }
+}
+@media (print) {
+  :root { color-scheme: light; --bg: #fff; --surface: #fff; --text: #111; --muted: #444; --border: #aaa; --cabecalho-tabela: #eee; --grade-tabela: #ddd; --previsto: #754000; --ciano-surface: #eee; --link: #111; }
+  .topbar, .nav, .page-actions { display: none !important; }
+  .app { display: block; }
+  main.page { padding: 0; }
+  .table-wrap { overflow: visible; max-height: none; }
+}

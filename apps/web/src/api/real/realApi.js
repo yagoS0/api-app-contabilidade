@@ -808,6 +808,9 @@ export function createRealApi() {
     async acaoTarefaAgenda(id, dados) {
       return request(`/firm/agenda/tarefas/${encodeURIComponent(id)}/acao`, { method: 'POST', body: JSON.stringify(dados) });
     },
+    async converterTarefaEmObrigacao(id, dados) {
+      return request(`/firm/agenda/tarefas/${encodeURIComponent(id)}/converter-obrigacao`, { method: 'POST', body: JSON.stringify(dados) });
+    },
     async excluirOcorrenciasAgenda(ids) {
       return request('/firm/agenda/ocorrencias/excluir', { method: 'POST', body: JSON.stringify({ ids }) });
     },
@@ -2565,6 +2568,24 @@ export function createRealApi() {
     // derruba o Fator R e troca o anexo (III → V) num PDF que vai ao cliente.
     async getDadosPlanejamento(companyId) {
       return request(`/firm/companies/${companyId}/planejamento`);
+    },
+    async getBaseSociosGerencial(companyId,filtros) {return request('/firm/companies/'+encodeURIComponent(companyId)+'/planejamento/base-socios?'+new URLSearchParams(filtros));},
+    async salvarBaseSociosGerencial(companyId,dados) {return request('/firm/companies/'+encodeURIComponent(companyId)+'/planejamento/base-socios',{method:'POST',body:JSON.stringify(dados)});},
+    async getFechamentosRelatorio(companyId) {return request('/firm/companies/'+encodeURIComponent(companyId)+'/planejamento/analise/fechamentos');},
+    async getRelatorioGerencialSnapshot(companyId,filtros) {return request('/firm/companies/'+encodeURIComponent(companyId)+'/planejamento/analise/relatorio?'+new URLSearchParams(filtros));},
+    async getBaseTributariaGerencial(companyId, referencia) { return request('/firm/companies/'+encodeURIComponent(companyId)+'/planejamento/analise/base-tributaria?'+new URLSearchParams({referencia})); },
+    async getClassificacaoGerencial(companyId) { return request('/firm/companies/'+encodeURIComponent(companyId)+'/planejamento/classificacao'); },
+    async salvarClassificacaoGerencial(companyId, dados) { return request('/firm/companies/'+encodeURIComponent(companyId)+'/planejamento/classificacao', {method:'PUT',body:JSON.stringify(dados)}); },
+    async listarCenariosLaboratorio() { return request('/firm/laboratorio/cenarios'); },
+    async salvarCenarioLaboratorio(dados) { return request('/firm/laboratorio/cenarios',{method:'POST',body:JSON.stringify(dados)}); },
+    async getAnalisePlanejamento(companyId, filtros) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/planejamento/analise?${new URLSearchParams(filtros)}`);
+    },
+    async getAnaliseClientes(companyId, filtros) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/planejamento/analise/clientes?${new URLSearchParams(filtros)}`);
+    },
+    async getAnaliseLancamentos(companyId, filtros) {
+      return request(`/firm/companies/${encodeURIComponent(companyId)}/planejamento/analise/lancamentos?${new URLSearchParams(filtros)}`);
     },
     // ⚠ A FOTO da simulação. Salvar e gerar o PDF são DOIS atos, e a separação é deliberada: o
     // segundo pode falhar (sem Volume no Railway, o storage recusa) sem desfazer o primeiro — e a

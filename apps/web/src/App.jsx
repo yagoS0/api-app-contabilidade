@@ -12,9 +12,10 @@ import { CompanyDetailPage } from "./features/companies/detail/pages/renderCompa
 import { SerproSettingsPage } from "./features/fiscal/serpro/pages/renderSerproSettingsPage";
 import { SerproFuncoesPage } from "./features/fiscal/serpro/pages/renderSerproFuncoesPage";
 import { RotinasPage } from "./features/fiscal/rotinas/pages/renderRotinasPage";
+import { LaboratorioEmpresa } from "./features/planejamento/components/LaboratorioEmpresa";
 import { PlanejamentoPage } from "./features/planejamento/pages/renderPlanejamentoPage";
 import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploadPage";
-import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
+import { SessionBoundary } from "./features/auth/login/SessionBoundary";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
 import { WhatsappPage } from "./features/whatsapp/pages/renderWhatsappPage";
 import { ComunicadosWhatsappPage } from "./features/whatsapp/pages/ComunicadosWhatsappPage";
@@ -25,8 +26,6 @@ import { ObrigacoesPage } from "./features/obrigacoes/components/renderObrigacoe
 import { OnboardingsPage } from "./features/onboarding/pages/renderOnboardingsPage";
 import { OnboardingWizardPage } from "./features/onboarding/pages/renderOnboardingWizardPage";
 import { OnboardingDetailPage } from "./features/onboarding/pages/renderOnboardingDetailPage";
-import { useManageAppFeedback } from "./app/hooks/useManageAppFeedback";
-import { useManageAuthSession } from "./app/hooks/useManageAuthSession";
 import { WorkspaceNavigationProvider } from "./app/navigation/WorkspaceNavigation";
 import { useCalendarioNavigation } from "./app/hooks/useCalendarioNavigation";
 import { useManageCompaniesWorkspace } from "./app/hooks/useManageCompaniesWorkspace";
@@ -45,13 +44,11 @@ const TOKEN_STORAGE_KEY = "portal_firm_access_token";
 
 function App() {
   const location = useLocation();
-  return location.pathname === "/proposta/publica" ? <PropostaPublica api={api} /> : location.pathname === "/onboarding/publico" ? <FormularioPublico api={api} /> : <WorkspaceNavigationProvider><AppInterno /></WorkspaceNavigationProvider>;
+  return location.pathname === "/proposta/publica" ? <PropostaPublica api={api} /> : location.pathname === "/onboarding/publico" ? <FormularioPublico api={api} /> : <WorkspaceNavigationProvider><SessionBoundary api={api} tokenStorageKey={TOKEN_STORAGE_KEY}>{(session, feedback) => <AppInterno session={session} feedback={feedback} />}</SessionBoundary></WorkspaceNavigationProvider>;
 }
 
-function AppInterno() {
+function AppInterno({ session, feedback }) {
   const calendarioNavigation = useCalendarioNavigation();
-  const feedback = useManageAppFeedback();
-  const session = useManageAuthSession({ api, tokenStorageKey: TOKEN_STORAGE_KEY, feedback });
   // O lote por WhatsApp na página de envio em lote (prévia → conferência → envio). Hook próprio,
   // fora do `companiesWorkspace`: ele já carrega 40 estados, e este é de uma página só.
   const loteWhatsapp = useLoteWhatsapp({ api, feedback });
@@ -174,21 +171,6 @@ function AppInterno() {
     };
   }, [accountingWorkspace, companiesWorkspace, feedback, session]);
 
-  if (session.page === "login") {
-    return (
-      <LoginPage
-        apiMode={api.mode}
-        identifier={session.loginIdentifier}
-        password={session.loginPassword}
-        onIdentifierChange={session.setLoginIdentifier}
-        onPasswordChange={session.setLoginPassword}
-        onSubmit={session.handleLogin}
-        authLoading={session.authLoading}
-        error={feedback.error}
-      />
-    );
-  }
-
   if (session.page === "createCompany") {
     return (
       <CompanyFormPage
@@ -310,6 +292,7 @@ function AppInterno() {
   // que ele mostra é a MESMA de `companiesState.companies` (`GET /firm/companies`), já escopada
   // pela carteira de quem está logado — não há uma segunda leitura de escopo, e o backend confere o
   // id de novo (`requireFirmCompanyAccess`).
+  if (session.page === "laboratorio") return <LaboratorioEmpresa api={api} empresas={companiesWorkspace.companiesState.companies} onVoltar={()=>session.goBack()} onTributario={()=>session.setPage('planejamento')}/>;
   if (session.page === "planejamento") {
     return (
       <PlanejamentoPage
@@ -365,7 +348,7 @@ function AppInterno() {
         onboardingId={onboardingId}
         onVoltar={() => session.setPage("onboardings")}
         onEditar={(id) => session.setPage("onboardingWizard", { onboardingId: id })}
-        onAbrirEmpresa={(portalClientId) => session.setPage("companyDetail", { companyId: portalClientId })}
+        onAbrirEmpresa={(portalClientId, aba = "cadastro") => companiesWorkspace.openCompanyTab(portalClientId, aba)}
       />
     );
   }
@@ -609,6 +592,7 @@ function AppInterno() {
       onOpenApuracao={() => session.setPage("apuracao")}
       onOpenRotinas={() => session.setPage("rotinas")}
       onOpenPlanejamento={() => session.setPage("planejamento")}
+      onOpenLaboratorio={() => session.setPage("laboratorio")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
       onOpenWhatsapp={() => session.setPage("whatsapp")}
       onOpenConfiguracoes={() => session.setPage("configuracoesGerais")}

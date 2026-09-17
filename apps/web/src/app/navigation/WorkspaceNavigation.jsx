@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useNavigationType } from "react-router-dom";
+import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { LogoAltan } from "../../components/ui/LogoAltan";
 
 const WorkspaceNavigation = createContext(null);
@@ -49,11 +49,6 @@ export function WorkspaceNavigationProvider({ children }) {
     setModoVisao("calendario");
   }, []);
   return <WorkspaceNavigation.Provider value={{ goBack, navigate, modoVisao, setModoVisao, resetSession }}>
-    {!companyRoute && !["/login", "/", "/companies", "/companies/"].includes(location.pathname) && <div className="workspace-brandbar">
-      <Link to="/companies" className="workspace-home" aria-label="Altan — página principal" title="Página principal">
-        <LogoAltan altura={30} variante="marca" />
-      </Link>
-    </div>}
     {companyRoute ? <div className="company-workspace">{children}</div> : children}
   </WorkspaceNavigation.Provider>;
 }

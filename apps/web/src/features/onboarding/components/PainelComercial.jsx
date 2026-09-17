@@ -7,12 +7,15 @@ const FASES = { LEAD: "Primeiro contato", ANALISE: "Em análise", PROPOSTA: "Pro
 const data = (v) => v ? new Date(v).toLocaleString("pt-BR") : "—";
 const campoStyle = { display: "block", width: "100%", padding: 8, marginBottom: 12, background: "var(--bg-page)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6 };
 
-export function PainelComercial({ api, onboardingId, convertido = false, revisao = 0 }) {
+export function PainelComercial({ api, onboardingId, convertido = false, revisao = 0, coletaInicial = false }) {
   const { pedir: confirmar, dialogo } = useConfirmacao();
   const [estado, setEstado] = useState(null), [erro, setErro] = useState(""), [ocupado, setOcupado] = useState(false);
   const [fase, setFase] = useState("LEAD"), [texto, setTexto] = useState(""), [valor, setValor] = useState("");
   const [link, setLink] = useState(""), [aviso, setAviso] = useState("");
   const [geracao, setGeracao] = useState(0);
+  // Somente a primeira montagem escolhe a seção: atualizar a ficha não desfaz a escolha do usuário.
+  const [formularioAberto, setFormularioAberto] = useState(() => coletaInicial || !api.comercial);
+  const [jornadaAberta, setJornadaAberta] = useState(() => !coletaInicial);
   const carregadaRef = useRef(null);
   useEffect(() => {
     let vivo = true;
@@ -50,17 +53,16 @@ export function PainelComercial({ api, onboardingId, convertido = false, revisao
   }
   return <section className="onboarding-workspace onboarding-commercial" aria-label="Atendimento comercial">
     {dialogo}
-    <h2>Coleta de dados e atendimento</h2>
+    <h2>Atendimento comercial</h2>
     {api.mode === "mock" && <p role="status">Demonstração: consultas simuladas e links válidos somente enquanto esta sessão estiver aberta.</p>}
-    <p>Cliente preenche → escritório confere → contratação e abertura.</p>
     {erro && <p role="alert">{erro}</p>}{aviso && <p role="status">{aviso}</p>}
     {!estado ? <Button onClick={() => setGeracao((v) => v + 1)} disabled={!erro}>{erro ? "Recarregar atendimento" : "Carregando atendimento…"}</Button> : <>
-<div className="onboarding-link-panel">        <h3>1. Formulário do cliente</h3><p>Compartilhe o link pessoal por WhatsApp ou e-mail. O cliente preenche sem criar conta, salva por etapas e envia os dados para conferência. Validade de 7 dias.</p>
+<details className="onboarding-panel onboarding-form-link" open={formularioAberto} onToggle={e => setFormularioAberto(e.currentTarget.open)}><summary>Formulário do cliente</summary><p>Compartilhe o link pessoal para coletar os dados. O cliente preenche sem criar conta. Validade de 7 dias.</p>
         <Button disabled={ocupado || convertido} onClick={gerarLink}>Gerar link de preenchimento</Button>
       {link && <div className="onboarding-share"><p>Link pronto. Copie e envie ao cliente. Gerar o link não envia uma mensagem.</p><label>Link pessoal<input style={campoStyle} value={link} readOnly /></label><Button onClick={async () => { try { await navigator.clipboard.writeText(link); setAviso("Link copiado."); } catch { setErro("Não foi possível copiar. Selecione e copie o link acima."); } }}>Copiar link</Button><Button variant="secondary" onClick={async () => { try { await navigator.clipboard.writeText(`Olá! Preencha o formulário para iniciarmos seu atendimento: ${link}\nVocê pode salvar por etapas. Ao concluir, envie os dados ao escritório pelo próprio formulário.`); setAviso("Mensagem com link copiada. Cole na conversa com o cliente."); } catch { setErro("Não foi possível copiar. Selecione e copie o link acima."); } }}>Copiar mensagem com link</Button></div>}
       <ul className="onboarding-links">{(estado.links || []).map((l) => <li key={l.id}>Validade: {data(l.expiresAt)} · {l.revokedAt ? "Revogado" : l.submittedAt ? "Enviado pelo cliente" : new Date(l.expiresAt).getTime() <= Date.now() ? "Expirado" : "Ativo"} {!l.revokedAt && !l.submittedAt && new Date(l.expiresAt).getTime() > Date.now() && !convertido && <Button variant="secondary" disabled={ocupado} onClick={() => executar(async () => { await api.revogarLinkOnboarding(onboardingId, l.id); setLink(""); }, "Link revogado.")}>Revogar link</Button>}</li>)}</ul>
-</div>
-      {api.comercial && <details className="onboarding-panel"><summary>Propostas e contratação</summary><FluxoComercial api={api} onboardingId={onboardingId} /></details>}
+</details>
+      {api.comercial && <details className="onboarding-panel" open={jornadaAberta} onToggle={e => setJornadaAberta(e.currentTarget.open)}><summary>Jornada comercial e contratação</summary><FluxoComercial api={api} onboardingId={onboardingId} /></details>}
       <details className="onboarding-panel"><summary>Anotações comerciais e análises</summary>
       <fieldset disabled={ocupado || convertido} style={{ border: 0, padding: 0 }}>
         <legend>Anotações livres do atendimento</legend>

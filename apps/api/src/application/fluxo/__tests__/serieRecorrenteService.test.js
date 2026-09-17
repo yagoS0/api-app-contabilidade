@@ -466,7 +466,7 @@ describe("marcarSerie", () => {
 
   it.each([
     ["lado", { lado: "AMBOS" }, RECUSA_DA_SERIE.LADO_INVALIDO],
-    ["periodicidade", { periodicidade: "SEMESTRAL" }, RECUSA_DA_SERIE.PERIODICIDADE_INVALIDA],
+    ["periodicidade", { periodicidade: "BIENAL" }, RECUSA_DA_SERIE.PERIODICIDADE_INVALIDA],
     ["estado", { estado: "TALVEZ" }, RECUSA_DA_SERIE.ESTADO_INVALIDO],
     ["chave", { chave: "   " }, RECUSA_DA_SERIE.SEM_CHAVE],
   ])("⚠ %s fora do vocabulário RECUSA nomeando", async (_n, extra, codigo) => {

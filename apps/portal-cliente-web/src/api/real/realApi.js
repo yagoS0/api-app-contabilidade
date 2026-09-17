@@ -504,7 +504,7 @@ export function createRealApi() {
     async getDre(companyId, { competencia } = {}) {
       return pedir(
         `/client/companies/${encodeURIComponent(companyId)}/dre`
-        + qs({ competencia: competencia || competenciaPadrao() }),
+        + qs({ competencia }),
       );
     },
 

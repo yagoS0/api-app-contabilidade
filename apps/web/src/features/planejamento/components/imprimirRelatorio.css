@@ -1,0 +1,14 @@
+#relatorio-gerencial-impressao { display:none; }
+@media print {
+  @page { size:A4; margin:16mm; @bottom-right { content:"Página " counter(page) " de " counter(pages); } }
+  body.imprimindo-gerencial > * { display:none!important; }
+  body.imprimindo-gerencial > #relatorio-gerencial-impressao { display:block!important; font:10pt/1.4 Arial,sans-serif; background:white; color:#171724; }
+  #relatorio-gerencial-impressao svg { display:block; width:100%; max-height:150px; }
+  body.imprimindo-gerencial { background:white!important; margin:0; }
+  #relatorio-gerencial-impressao section { margin:8mm 0; }
+  #relatorio-gerencial-impressao h2 { break-after:avoid; }
+  #relatorio-gerencial-impressao table { width:100%; border-collapse:collapse; table-layout:fixed; }
+  #relatorio-gerencial-impressao td,#relatorio-gerencial-impressao th { padding:6px; border-bottom:1px solid #ccc; text-align:left; overflow-wrap:anywhere; }
+  #relatorio-gerencial-impressao tr { break-inside:avoid; }
+  #relatorio-gerencial-impressao thead { display:table-header-group; }
+}

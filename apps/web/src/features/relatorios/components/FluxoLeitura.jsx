@@ -28,11 +28,11 @@ function Mes({mes,competencia,comFolha}) {
     {dias.semDia&&<p style={{fontSize:13,color:'var(--text-muted)'}}>O total e o resultado diário incluem valores previstos sem dia específico: {colunas.filter(c=>!['resultado','saldo'].includes(c.chave)&&dias.semDia[c.chave]).map(c=>`${c.rotulo}: ${brl(dias.semDia[c.chave].valor)}`).join(' · ')}.</p>}
   </section>;
 }
-export function FluxoLeitura({api,companyId,competenciaReferencia,razaoSocial}) {
+export function FluxoLeitura({api,companyId,competenciaReferencia,razaoSocial,titulo="Relatórios · Fluxo de caixa"}) {
   const [dados,setDados]=useState(null),[erro,setErro]=useState(null);
   useEffect(()=>{let vivo=true;setDados(null);setErro(null);Promise.resolve().then(()=>api.getFluxoCaixa(companyId,{janelaInicio:competenciaReferencia})).then(r=>{if(!vivo)return;if(r?.ok===false||r?.demonstracao!==false||!Array.isArray(r?.meses))throw new Error(r?.message||'A resposta não contém o fluxo real desta empresa.');setDados(r);}).catch(e=>{if(vivo)setErro(e.message||'Não foi possível carregar o fluxo.');});return()=>{vivo=false;};},[api,companyId,competenciaReferencia]);
   const inicio=competenciaReferencia||dados?.cicloAtual;
-  return <div style={{ padding: "16px clamp(12px, 2vw, 28px)", minWidth: 0 }}><h2>Relatórios · Fluxo de caixa</h2><p>{razaoSocial||'Empresa'} · {inicio?`${mesLabel(inicio)} e ${mesLabel(somarCompetencia(inicio,1))}`:''}</p><p style={{fontSize:14,color:'var(--text-muted)'}}>Visualização do fluxo do cliente. Resultado mensal e acumulado projetado são separados. O acumulado transporta automaticamente as movimentações desde o histórico disponível; não representa saldo bancário conciliado.</p>
+  return <div style={{ padding: "16px clamp(12px, 2vw, 28px)", minWidth: 0 }}><h2>{titulo}</h2><p>{razaoSocial||'Empresa'} · {inicio?`${mesLabel(inicio)} e ${mesLabel(somarCompetencia(inicio,1))}`:''}</p><p style={{fontSize:14,color:'var(--text-muted)'}}>Visualização do fluxo do cliente. Resultado mensal e acumulado projetado são separados. O acumulado transporta automaticamente as movimentações desde o histórico disponível; não representa saldo bancário conciliado.</p>
     {erro?<p role="alert">Não foi possível ler o fluxo. {erro}</p>:!dados?<p role="status">Carregando fluxo…</p>:<>
       {!dados.acumulado?.calculoInicio&&<p>Ainda não há histórico de movimentações para calcular o acumulado.</p>}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(min(100%, 570px), 1fr))',gap:16}}>{[inicio,somarCompetencia(inicio,1)].map(comp=><Mes key={comp} competencia={comp} mes={dados.meses.find(m=>m.competencia===comp)} comFolha={dados.folha?.disponivel}/>)}</div>

@@ -1,40 +1,6 @@
-/* =============================================================================
-   Tokens do PORTAL DO CLIENTE (web).
-
-   ⚠ Paleta CLARA, copiada verbatim de `prototipos/emissor-notas/styles.css` —
-   decisão do dono com a tela na frente. NÃO usar a paleta escura de `apps/web`:
-   aquela é do portal do ESCRITÓRIO. Os dois lados do cliente (esta web e o app
-   mobile) precisam contar a mesma história visual.
-
-   Cor nova entra AQUI, nunca em hex literal dentro de componente.
-   ============================================================================= */
-/* =============================================================================
-   A FONTE DA MARCA — Inter, auto-hospedada.
-
-   ⚠⚠ ELA EXISTE PARA UMA COISA SÓ: O LETREIRO DA LOGO. Os SVGs oficiais da Altan trazem
-   "ALTAN"/"CONTABILIDADE" como `<text font-family="Inter, 'Segoe UI', Arial, sans-serif">`, e a
-   Inter não está instalada por padrão em Windows, macOS, Android nem iOS. Sem ela o letreiro cai
-   em Segoe UI no Windows, Arial no Mac e Roboto no Android — três desenhos diferentes para a mesma
-   marca, e o que se vê na máquina de quem desenvolve é justamente o que dá certo.
-
-   ⚠⚠ `--font` / `--font-sans` NÃO MUDARAM. O corpo dos dois portais continua em fonte de sistema.
-   Trocar a tipografia do app inteiro é outra decisão, muito maior, que ninguém pediu.
-
-   ⚠ AUTO-HOSPEDADA, e não `<link>` para fonts.googleapis.com — decisão de 23/08/2026, reversível
-   numa linha, com três motivos: (a) os dois apps fazem ZERO requisição externa hoje, e o modo
-   demonstração é declaradamente offline: com host externo a logo cairia para Segoe UI exatamente
-   ali; (b) `CLAUDE.md` do portal do cliente proíbe dependência nova sem discutir, e host de
-   terceiro é dependência; (c) entregar o IP de quem abre uma ferramenta fiscal a um terceiro não é
-   de graça.
-
-   ⚠ É UM ARQUIVO SÓ PORQUE A INTER É VARIÁVEL — conferido com fontTools: eixo `wght` de 100 a 900
-   num único woff2 de 48 KB (subconjunto latino). Por isso `font-weight: 100 900`: declarar `400`
-   aqui faria o navegador ENGORDAR sinteticamente o peso 500 do letreiro em vez de usar o desenho
-   real do eixo.
-
-   ⚠ A licença (SIL OFL 1.1) está versionada ao lado do arquivo, em `public/fonts/OFL.txt`. É
-   exigência dela, não zelo.
-   ============================================================================= */
+/* Identidade compartilhada com apps/web/src/styles/tokens.css (16/09/2026).
+   Pedido atual substitui a antiga paleta clara do cliente. Fontes locais;
+   estados fiscais mantêm texto/ícone além da cor. Impressão usa papel branco. */
 @font-face {
   font-family: "Inter";
   font-style: normal;
@@ -42,139 +8,58 @@
   font-display: swap;
   src: url("/fonts/Inter-latin.woff2") format("woff2");
 }
-
 :root {
-  --bg: #f6f7f9;
-  --surface: #fff;
-  --border: #e3e6ea;
-  --text: #1c2128;
-  /* ⚠ 4,32:1 no chip e 4,51:1 sobre `--bg` — o mínimo raspando. Agora 5,10:1 e 5,33:1.
-     ⚠ E é o mesmo hex que o portal do ESCRITÓRIO proíbe por escrito como tinta de texto (lá ele
-     mede 3,10:1 no fundo escuro). Aqui o fundo é claro, então ele passava por pouco — mas passar
-     por pouco num rótulo de estado é o que esta mudança tira da mesa. */
-  --muted: #5f6773;
-  --primary: #1f5eff;
-  --primary-hover: #1a4fd8;
-  /* ⚠⚠ AS TRÊS TINTAS FORAM ESCURECIDAS EM 23/08/2026, E SÓ AS TINTAS — as superfícies
-     (`--danger-surface`, `--success-surface`, `--neutral-surface`) estão intactas, então o desenho
-     não muda: muda o quanto dá para ler.
-
-     Medido com os tokens deste arquivo, tratando o chip (`.78rem`/600) como texto NORMAL — que é o
-     que a WCAG faz, porque "texto grande" começa em 18,66px/700:
-
-       chip                    antes            depois
-       emitida · paga          4,12:1  REPROVA  5,41:1
-       rejeitada · vencida     4,22:1  REPROVA  5,75:1
-       cancelada · sem status  4,32:1  REPROVA  5,10:1
-
-     ⚠ E não era só o chip: os mesmos tokens são TEXTO em fundo claro, e ali `--success` media
-     **4,29:1 sobre `--bg`** — reprovado também fora do chip. Depois: 5,64:1.
-
-     ⚠ A paleta veio verbatim do protótipo por decisão do dono, com a tela na frente. Escurecer a
-     tinta foi decisão dele também ("ajuste tudo", 23/08) — não é refactor. Os chips afetados são
-     justamente os que decidem se o cliente vai pagar algo: Paga, Emitida, Vencida, Rejeitada,
-     Cancelada. */
-  --danger: #b42318;
-  --success: #0e7234;
-  --warning: #b45309;
-  --radius: 8px;
-  --gap: 12px;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  /* A pilha do LETREIRO da logo — a MESMA que os SVGs oficiais declaram, para que a queda, se a
-     Inter não carregar, seja a queda que o arquivo original previa. */
+  color-scheme: dark;
+  --bg-page: #1A1B26;
+  --bg-surface: #24253A;
+  --bg-subtle: #282A36;
+  --bg: var(--bg-page);
+  --surface: var(--bg-surface);
+  --text: #F8F8F2;
+  --text-muted: #aeb6d3;
+  --text-faint: #8794C9;
+  --muted: var(--text-muted);
+  --border: #44475A;
+  --border-focus: #BD93F9;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --accent-purple: #BD93F9;
+  --accent-cyan: #8BE9FD;
+  --accent-orange: #FFB86C;
+  --accent-pink: #FF79C6;
+  --link: var(--accent-purple);
+  --primary-surface: rgba(189, 147, 249, 0.16);
+  --primary-surface-border: rgba(189, 147, 249, 0.28);
+  --danger: #FF5757;
+  --danger-surface: rgba(255, 87, 87, 0.14);
+  --danger-surface-border: rgba(255, 87, 87, 0.45);
+  --success: #69FF47;
+  --success-surface: rgba(105, 255, 71, 0.12);
+  --warning: #FFB347;
+  --warning-surface: rgba(255, 179, 71, 0.14);
+  --warning-surface-border: rgba(255, 179, 71, 0.4);
+  --neutral-surface: rgba(255, 255, 255, 0.06);
+  --radius: 10px;
+  --radius-sm: 8px;
+  --gap: 16px;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-marca: Inter, "Segoe UI", Arial, sans-serif;
-
-  /* ⚠⚠ AS CORES DA LOGO SÃO TOKENS PORQUE O ARQUIVO CERTO DEPENDE DO FUNDO, NÃO DO ARQUIVO.
-     "claro"/"escuro" no nome dos SVGs da Altan é o FUNDO em que a logo se apoia. Este portal é
-     claro, então usa o par de fundo claro. Medido: a linha do horizonte da variante ESCURA
-     (`#AEB6D3`) sobre o branco desta superfície dá 1,97:1 — ela simplesmente some. */
-  --logo-sol: #D9A32B;
-  --logo-horizonte: #6272A4;
-  --logo-tinta: #1A1B26;
-  /* ⚠ "CONTABILIDADE" é `#6272A4` nos DOIS arquivos oficiais — claro e escuro. Não é engano
-     meu nem descuido deles: é a cor da submarca. Sobre o fundo escuro do escritório ela mede
-     3,63:1, abaixo do mínimo de texto da WCAG — e fica assim de propósito, porque logotipo é
-     explicitamente excluído do critério 1.4.3. Não "conserte" para --text-muted: isso mudaria
-     a marca. */
+  --logo-sol: #E8B33A;
+  --logo-horizonte: #AEB6D3;
+  --logo-tinta: #F8F8F2;
   --logo-subtitulo: #6272A4;
-
-  /* Superfícies dos estados. ⚠ Existem como token porque derivar fundo por
-     concatenação de hex (`${cor}22`) quebra em silêncio assim que a cor vira
-     `var(--…)` — mesma armadilha já documentada em apps/web/CLAUDE.md. */
-  --primary-surface: #eef2ff;
-  --primary-surface-border: #d5deff;
-  --success-surface: #e7f6ec;
-  --danger-surface: #fdecea;
-  --danger-surface-border: #f3c4c0;
-  /* ⚠⚠ A COR DA PLANILHA DO FLUXO — quatro tintas, decisão do dono em 27/08/2026: *"verde é o que
-     sabemos, amarelo é previsto, no caso da saída é vermelho e laranja"*. As três primeiras reusam
-     tokens que já existiam (`--success`, `--danger`, `--warning`); só o amarelo é novo, porque
-     `--warning` já é o LARANJA da saída prevista e usar o mesmo nas duas apagaria a distinção.
-     ⚠ Ele é um amarelo ESCURO, e não dava para ser outra coisa: amarelo vivo não passa no mínimo de
-     4,5:1 sobre o branco desta superfície. Medido: **5,94:1**. */
-  /* ⚠⚠ AS QUATRO CORES DE COLUNA DA PLANILHA DO FLUXO — decisão do dono, 27/08/2026: *"a cor da
-     coluna de entrada verde, a de saída vermelha, recorrência ciano e diário azul"*. Verde e vermelho
-     reusam `--success`/`--danger`; o ciano e o azul entram aqui.
-     ⚠ Os dois são ESCUROS porque a tinta precisa passar sobre a própria superfície clara. Medido:
-     ciano **5,45:1** e azul **5,95:1** sobre os fundos abaixo — acima do mínimo de 4,5:1 da WCAG.
-     ⚠ O azul NÃO é o `--primary` (#1f5eff): ele mede 4,58:1 sobre `--primary-surface`, passa raspando,
-     e é a cor de AÇÃO deste app — usá-la numa coluna de leitura faria a coluna parecer clicável. */
-  --coluna-recorrencia: #0b6b75;
-  --coluna-recorrencia-surface: #e3f3f5;
-  --coluna-diario: #1a4fd8;
-  --coluna-diario-surface: #eef2ff;
-
-  /* ⚠⚠ A TABELA DO FLUXO v3 (28/08/2026) — e a Constituição fecha o significado de cada uma:
-     *"Ciano é exclusivo de 'onde estamos no tempo'. Âmbar é exclusivo de 'previsão'. Vermelho é
-     exclusivo de 'vencido/negativo'. Não reutilizar."* (§5 da `CONSTITUICAO-do-produto.md`.)
-
-     ⚠⚠ SÃO DOIS CIANOS, E A SEPARAÇÃO É MEDIÇÃO, NÃO GOSTO. O spec pedia `#0891B2` também como
-     TINTA DE TEXTO — medido, ele dá **3,68:1** sobre o branco e **3,54:1** sobre o próprio
-     `--ciano-surface`, abaixo do mínimo de 4,5:1 da WCAG. O `#0E7490` mede **5,36:1** e **5,15:1**
-     nos mesmos fundos. A errata §7.4 da Constituição adotou exatamente esta separação: texto no
-     escuro, borda e marca de posição no claro — borda não é texto, e ali o `#0891B2` fica. */
-  --ciano: #0e7490;
-  --ciano-borda: #0891b2;
-  --ciano-surface: #ecfeff;
-
-  /* ⚠⚠ O PREVISTO. Medido: **5,02:1** sobre o branco e **4,83:1** sobre `--ciano-surface` — passa
-     nos dois, e o segundo importa porque o mês corrente é ciano e pode ter célula prevista.
-     ⚠⚠ ELE NUNCA APARECE SOZINHO: a Constituição §1 manda *"âmbar vem sempre com itálico,
-     `data-status` no DOM e `aria-label` na célula"*. Cor sozinha não sobrevive a impressão em preto
-     e branco nem a daltonismo — e aqui ela separa "o dinheiro saiu" de "o dinheiro vai sair". */
-  --previsto: #b45309;
-
-  /* ⚠⚠ O TRAÇO DA CÉLULA VAZIA — e ele é INVISÍVEL DE PROPÓSITO (**1,47:1**), porque o v3 §3.2 pede
-     *"`–` em cinza claro, sem peso visual"*.
-     ⚠ Por isso a célula vazia leva TEXTO OCULTO ("sem lançamento"): sem ele, "vazio" e "não
-     carregou" ficam iguais para quem usa leitor de tela, e o traço não é lido por ninguém. */
-  --traco: #d1d5db;
-
-  /* A grade da planilha: linhas finas e cabeçalho levemente afundado. Medidos no mockup do dono. */
-  --grade-tabela: #eef0f3;
-  --cabecalho-tabela: #f8f9fb;
-  --warning-surface: #fff7e6;
-  --warning-surface-border: #f2dfb8;
-  --neutral-surface: #f1f2f4;
-
-  /* ═══════════════════════════════════════════════════════════════════════════════════════════
-     O VÉU E A ALTURA DAS SOBREPOSIÇÕES (30/08/2026) — nasceram com a GAVETA do fluxo de caixa.
-
-     ⚠⚠ EXISTEM PORQUE DUAS CAMADAS DO MESMO APP NÃO PODEM DISCORDAR. A gaveta do dia e o pop-up
-     de guias (`.sobreposicao`) escurecem a MESMA página; com o véu escrito duas vezes, a primeira
-     correção em uma delas faz o app ter dois "quanto escurece" — e ninguém percebe, porque as duas
-     nunca aparecem juntas na mesma captura de tela. O mesmo vale para o `z-index`: camada que sobe
-     sozinha cobre o modal de trocar empresa, e isso só aparece no navegador.
-
-     ⚠ O valor do véu é EXATAMENTE o que `.sobreposicao` já tinha (`rgb(17 24 39 / 45%)`) — este
-     token não mudou pixel nenhum, ele só deu um nome ao que já existia. Desfazer custa reencontrar
-     as duas cópias.
-
-     ⚠⚠ FICA NOMEADA UMA DIVERGÊNCIA ANTERIOR, e ela NÃO foi consertada aqui: `.modal-backdrop`
-     (troca de empresa e o `.painel-dia`) usa um véu PRÓPRIO, `rgba(28,33,40,.45)`. São dois cinzas
-     diferentes para o mesmo gesto. Unificá-los muda a aparência de uma tela que ninguém pediu para
-     mexer — é decisão do dono, não limpeza de passagem. O `z-index` dele, esse sim, passou a sair
-     daqui: o valor é o mesmo 50 de antes, então não há mudança de comportamento a revisar. */
-  --veu: rgb(17 24 39 / 45%);
+  --coluna-recorrencia: var(--accent-cyan);
+  --coluna-recorrencia-surface: rgba(139, 233, 253, 0.1);
+  --coluna-diario: var(--accent-purple);
+  --coluna-diario-surface: var(--primary-surface);
+  --ciano: var(--accent-cyan);
+  --ciano-borda: var(--accent-cyan);
+  --ciano-surface: #233541;
+  --previsto: var(--warning);
+  --traco: var(--text-faint);
+  --grade-tabela: var(--border);
+  --cabecalho-tabela: var(--bg-subtle);
+  --veu: rgb(0 0 0 / 65%);
   --z-sobreposicao: 50;
+  --shadow: 0 12px 36px rgb(0 0 0 / 20%);
 }

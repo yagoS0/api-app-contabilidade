@@ -439,7 +439,7 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
         </Vazio>
       ) : (
         <>
-          <div className="table-wrap">
+          <div className="table-wrap fiscal-table-scroll" role="region" aria-label="Notas emitidas — tabela com rolagem horizontal" tabIndex={0}>
             {/* ⚠⚠ A BARRA SÓ EXISTE COM ALGO MARCADO, e fica ACIMA da tabela — quem marcou está
                 olhando as linhas, e a ação tem de aparecer onde o olho está. */}
             {selecionadas.size > 0 || todaACompetencia ? (

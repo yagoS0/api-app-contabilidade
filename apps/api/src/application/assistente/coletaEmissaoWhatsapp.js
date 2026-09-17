@@ -1,6 +1,7 @@
 import { cpfTemDvValido } from '../../utils/cpf.js';
 import { lerValorDaPlanilha } from '../nfse/lote/celulasLote.js';
 import { RE_CONFIRMACAO } from './confirmacaoPendente.js';
+import { observacaoDeRetencao } from './retencaoNaConversa.js';
 
 // Máquina pura: não consulta, persiste, envia, calcula tributos nem executa confirmação.
 // O integrador fornece apenas tomadores/perfis autorizados e roda os helpers externos.
@@ -34,6 +35,7 @@ function dataAtual(agora) {
 
 export function ehPedidoDeEmissao(texto) {
   const t = NORM(texto).replace(/[.!]+$/, '').trim();
+  if (observacaoDeRetencao(t) && /^(?:(?:oi|ola|bom dia|boa tarde|boa noite)[,! ]+)?(?:(?:eu )?(?:quero|preciso|gostaria de|pode) )?emitir (?:uma |a |nova )?(?:nota(?: fiscal)?|nfs-?e)\b/.test(t)) return true;
   return /^(?:(?:oi|ola|bom dia|boa tarde|boa noite)[,! ]+)?(?:(?:eu )?(?:quero|preciso|gostaria de|pode) )?emitir (?:uma |a |nova )?(?:nota(?: fiscal)?|nfs-?e)(?:[, ]+por favor)?(?:$|[.;\n, ]+\s*(?:cpf(?:\/cnpj)?|cnpj|tomador|cliente|documento|valor|servico|descricao|competencia|data(?: do servico)?)\s*[:=])/.test(t);
 }
 
@@ -257,6 +259,37 @@ function campoNatural(texto) {
   return m ? { campo: ROTULOS[NORM(m[1])], texto: m[2] } : null;
 }
 
+function encaminharRetencao(estado, texto, observacao, agora) {
+  estado.dataAtual = dataAtual(agora);
+  estado.competenciaAtual = estado.dataAtual.slice(0, 7);
+  // Aproveita somente campos explícitos válidos. O texto completo fica guardado
+  // para a equipe, inclusive trechos ambíguos; nada aqui vira configuração fiscal.
+  let campos = camposRotulados(texto).map(campo => ({ ...campo,
+    texto: campo.texto.split(/[\r\n;]+/).filter(linha => !observacaoDeRetencao(linha)).join('\n').trim(),
+  }));
+  if (!campos.length) {
+    const linhas = texto.split(/\r?\n/).map(LIMPO).filter(linha => linha && !observacaoDeRetencao(linha));
+    if (linhas.length === 4 && lerDocumento(linhas[0])) campos = ['tomadorDoc', 'descricao', 'valor', 'competencia'].map((campo, i) => ({ campo, texto: linhas[i] }));
+  }
+  campos.sort((a, b) => (a.campo === 'tomadorDoc' ? -2 : a.campo === 'endereco.CEP' ? -1 : 0) - (b.campo === 'tomadorDoc' ? -2 : b.campo === 'endereco.CEP' ? -1 : 0));
+  for (const campo of campos) {
+    if (!campo.texto || campos.filter(c => c.campo === campo.campo).length !== 1) continue;
+    const leitura = validarCampo(campo.campo, campo.texto, estado);
+    if (leitura.ok) aplicarCampo(estado, campo.campo, leitura.valor);
+  }
+  const tinhaConfirmacao = Boolean(estado.codigo) || ['REVISAO', 'PRONTO'].includes(estado.status);
+  delete estado.codigo;
+  estado.status = 'EQUIPE';
+  estado.observacaoRetencao = { texto, ...observacao, conferida: false };
+  const mensagem = [
+    'Recebi sua observação sobre retenção. A emissão foi pausada para o contador conferir. Guardei os dados da nota; você não precisa repeti-los.',
+    tinhaConfirmacao ? 'O código de confirmação anterior não vale mais. Depois da conferência, será necessário um novo resumo para confirmar.' : null,
+    observacao.impostosMencionados.length ? 'Se tiver uma orientação do seu cliente sobre a retenção, pode enviá-la por aqui.'
+      : 'Você sabe qual imposto está envolvido? Se não souber, pode enviar a orientação recebida do seu cliente por aqui.',
+  ].filter(Boolean).join('\n\n');
+  return retorno(estado, 'EQUIPE', mensagem, { invalidarConfirmacao: true });
+}
+
 export function interpretarResposta({ estado: anterior, texto = '', interacao, agora = new Date() } = {}) {
   const estado = clonar(anterior);
   const t = LIMPO(texto);
@@ -267,12 +300,15 @@ export function interpretarResposta({ estado: anterior, texto = '', interacao, a
     estado.status = 'CANCELADO';
     return retorno(estado, 'CANCELAR', 'A coleta foi encerrada.', { invalidarConfirmacao: true });
   }
+  const retencao = observacaoDeRetencao(t);
+  if (retencao) return encaminharRetencao(estado, t, retencao, agora);
   const assuntoFiscal = /\b(?:aliquota|iss retido|retencao|tributos?|impostos?|regime|ptottribsn|codigo (?:de )?servico)\s*[:=]/.test(normal)
     || /^(?:mudar|alterar|corrigir) (?:o |a )?(?:iss|aliquota|regime|retencao)\b/.test(normal)
     || (ehDuvida(t) && /\b(?:aliquota|iss|imposto|impostos|retencao|regime|tributos?)\b/.test(normal));
   if (/^(?:(?:quero|preciso|gostaria de) )?(?:falar (?:com (?:um |o |a )?)?|chamar )?(?:atendente|contador|equipe|escritorio|humano)$/.test(normal) || assuntoFiscal) {
     estado.status = 'EQUIPE';
-    return retorno(estado, 'EQUIPE', 'A equipe pode ajudar com isso e conferir os dados antes da emissão.');
+    delete estado.codigo;
+    return retorno(estado, 'EQUIPE', 'A equipe pode ajudar com isso e conferir os dados antes da emissão.', { invalidarConfirmacao: true });
   }
   const outroPedido = /^(?:(?:por favor[, ]+)?(?:me (?:manda|envia|mande|envie)|manda|envia|quero|preciso(?: de)?))\b.*\b(?:contrato|cartao|guia|das|boleto|certidao|documentos)\b/.test(normal)
     || /^(?:(?:quero|preciso) )?(?:cancelar|recalcular)\b.*\b(?:nota|guia)\b/.test(normal);

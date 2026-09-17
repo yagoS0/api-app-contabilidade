@@ -2,7 +2,8 @@ import { act, renderHook, render, screen, fireEvent } from "@testing-library/rea
 import { useResumoWhatsapp } from "../../hooks/useResumoWhatsapp";
 import { useConversasWhatsapp } from "../../hooks/useConversasWhatsapp";
 import { leituraDoResumo } from "../../lib/resumoTela";
-import { GavetaFerramentas } from "../../../companies/list/pages/renderCompaniesHomePage";
+import { MemoryRouter } from "react-router-dom";
+import { OfficeNavigation } from "../../../../app/navigation/OfficeNavigation";
 
 const resumo = { conversas: 5, naoVinculadas: 1, conversasNaoLidas: 2, mensagensNaoLidas: 3 };
 const flush = async () => { await act(async () => { await Promise.resolve(); }); };
@@ -14,17 +15,15 @@ test("ausência e resposta inválida nunca viram zero; zero medido não tem selo
   expect(leituraDoResumo({ ...resumo, mensagensNaoLidas: 0 }).selo).toBeNull();
   expect(leituraDoResumo(resumo).selo).toBe(3);
 });
-test("selo chega ao hambúrguer fechado e à gaveta; falha remove os dois", () => {
-  const items = [{ label: "WhatsApp", onClick: jest.fn() }];
-  const { rerender } = render(<GavetaFerramentas items={items} resumoWhatsapp={leituraDoResumo(resumo)} />);
-  expect(screen.getByTestId("whatsapp-ponto")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /Abrir o menu/ }));
-  expect(screen.getByTestId("whatsapp-selo")).toHaveTextContent("3");
-  rerender(<GavetaFerramentas items={items} resumoWhatsapp={leituraDoResumo(null)} />);
-  expect(screen.queryByTestId("whatsapp-ponto")).toBeNull();
-  expect(screen.queryByTestId("whatsapp-selo")).toBeNull();
-  expect(screen.getByText("não foi possível ler")).toBeInTheDocument();
+test("selo chega à navegação global e uma falha remove a contagem antiga", () => {
+  const view = value => <MemoryRouter initialEntries={["/companies"]}><OfficeNavigation resumoWhatsapp={leituraDoResumo(value)} /></MemoryRouter>;
+  const { rerender } = render(view(resumo));
+  expect(screen.getByLabelText("3 mensagens não lidas no WhatsApp")).toBeInTheDocument();
+  rerender(view(null));
+  expect(screen.queryByLabelText("3 mensagens não lidas no WhatsApp")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Relacionamento" })).toHaveAttribute("title", "não foi possível ler");
 });
+
 test("resumo falho apaga selo antigo, pausa oculta e retoma ao voltar", async () => {
   const api = { getResumoWhatsapp: jest.fn().mockResolvedValue({ ok: true, resumo }) };
   const { result, unmount } = renderHook(() => useResumoWhatsapp({ api }));

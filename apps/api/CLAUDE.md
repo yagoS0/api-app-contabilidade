@@ -1,5 +1,13 @@
 # CLAUDE.md — API (apps/api)
 
+## Retenção informada no WhatsApp — 16/09/2026
+
+`retencaoNaConversa` apenas detecta observações fiscais, inclusive negativas: nunca aplica retenção ou calcula tributos. O coletor preserva dados e texto original em `observacaoRetencao`, remove o código e exige `invalidarConfirmacao` antes de persistir o handoff. Falha de recibo não pode reativar o resumo anterior. `EmissaoGuiadaWhatsappService` também trata coleta pausada, resumo expirado e impede que retomar apague a conferência pendente. Fluxo e limites em `docs/whatsapp-emissao-sem-ia.md`; testes sem Anthropic e verificador PostgreSQL sem rede externa.
+
+## Conversão completa da abertura — 16/09/2026
+
+`ArquivoConversaoService` prepara anexos cifrados com SHA-256 e PDFs comerciais no storage padrão. `provisionarEmpresa` aceita callback transacional do onboarding: CompanyDocument, contato, encerramento do atendimento e vínculo são confirmados com a empresa. A preparação fica fora da transação; falha impede criação. Upload concorrente é detectado e upload posterior ao encerramento é recusado. Proposta comercial exige última versão aceita/não revogada, assinatura recorrente e pagamento daquele contrato; fichas sem proposta mantêm compatibilidade. Recuperação exige CNPJ coincidente. Ver `docs/abertura-empresa-simulacao-completa.md` na raiz.
+
 Relatório de faturamento — 15/09/2026: `comoResolver` agora aponta para Apuração → Revisar classificação → Classificar competência, com espelho no mock. A classificação local não invalida declaração transmitida. O frontend normaliza instruções de snapshots históricos sem sobrescrever os números e regenera o relatório após ação de classificação. Detalhes em docs/fiscal-incidente-e-perfil-2026-09-15.md.
 
 Incidente Lente — 15/09/2026: PFX e senha existem, mas AWS KMS recusa a credencial (UnrecognizedClientException). Não confundir falha do cofre com certificado ausente. CertResolver usa CERT_STORAGE_UNAVAILABLE e trata decryptSecret null como falha de senha. Usuário confirmou suspensão da AWS por falta de pagamento e já pagou. Em 15/09 às 17h43, nova leitura abriu PFX e senha com CNPJ e validade corretos: acesso ao cofre restabelecido. Nenhuma emissão real feita no diagnóstico. Ver docs/fiscal-incidente-e-perfil-2026-09-15.md na raiz.

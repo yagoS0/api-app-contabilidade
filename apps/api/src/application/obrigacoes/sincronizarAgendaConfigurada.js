@@ -24,7 +24,7 @@ export async function sincronizarAgendaConfigurada(db, serie, { hoje, incluirVen
   for (const p of previstas) {
     if (serie.encerradaAPartirDe && p.cicloChave >= serie.encerradaAPartirDe) continue;
     const [ano, mes] = p.dataInicio.split('-').map(Number);
-    const fiscal = serie.tipo !== 'TAREFA' && ['MENSAL', 'TRIMESTRAL', 'ANUAL'].includes(serie.periodicidade)
+    const fiscal = serie.tipo !== 'TAREFA' && ['MENSAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'].includes(serie.periodicidade)
       ? calcularVencimentos({ ...serie, periodicidade: 'MENSAL' }, { inicio: { ano, mes }, quantidadeMeses: 1 }, ehFeriado)[0] : null;
     const diariaOuSemanal = ['DIARIA','SEMANAL'].includes(serie.periodicidade);
     const deslocamento = serie.agendaConfig.vencimentoFiscal ? Math.round((+new Date(serie.agendaConfig.vencimentoFiscal)-+new Date(serie.agendaConfig.dataInicio))/86400000) : null;

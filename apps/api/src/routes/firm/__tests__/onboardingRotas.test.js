@@ -82,6 +82,11 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
       Object.assign(atual, data, { versao, updatedAt: new Date() });
       return clone(atual);
     }),
+    updateMany: jest.fn(async ({ where, data }) => {
+      const encontrados = [...onboardings.values()].filter(o => casa(o, where));
+      for (const atual of encontrados) Object.assign(atual, data);
+      return { count: encontrados.length };
+    }),
     delete: jest.fn(async ({ where }) => {
       const atual = onboardings.get(where.id);
       onboardings.delete(where.id);
@@ -112,6 +117,11 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
       return { count };
     }),
     findUnique: jest.fn(async ({ where }) => clone(etapas.get(where.id) || null)),
+    updateMany: jest.fn(async ({ where, data }) => {
+      const encontradas = [...etapas.values()].filter(e => casa(e, where));
+      for (const atual of encontradas) Object.assign(atual, data);
+      return { count: encontradas.length };
+    }),
     update: jest.fn(async ({ where, data }) => {
       const atual = etapas.get(where.id);
       Object.assign(atual, data, { updatedAt: new Date() });
@@ -349,7 +359,7 @@ describe("idempotência e 409", () => {
     // a ficha A ainda ocupa o vínculo → recusa, e é o que impede duas fichas para a mesma empresa
     const recusa = await request(app)
       .post(`/firm/onboardings/${idB}/convert`)
-      .send({ vincularPortalClientId: portalId });
+      .send({ vincularPortalClientId: portalId, cnpjDefinitivo: "11222333000181" });
     expect(recusa.status).toBe(409);
     expect(recusa.body.error).toBe("portal_client_ja_vinculado");
   });

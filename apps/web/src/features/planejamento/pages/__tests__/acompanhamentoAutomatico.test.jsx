@@ -8,6 +8,7 @@ function montar(empresaDados = dados) {
   const api = { getDadosPlanejamento: jest.fn(async () => empresaDados), listarSimulacoesPlanejamento: jest.fn(async () => ({ simulacoes: [] })),
     salvarSimulacaoPlanejamento: jest.fn(async (_id, payload) => ({ ok: true, simulacao: { id: "c1", ...payload } })) };
   render(<PlanejamentoPage api={api} empresa={{ id: "e1" }} empresaFixa />);
+  fireEvent.click(screen.getByRole("button", { name: "Simulação tributária", exact: true }));
   return api;
 }
 test("salva acompanhamento automático mesmo sem abrir a seção e preserva edição/apagamento", async () => {

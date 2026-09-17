@@ -57,7 +57,7 @@ export class CompanyProvisioningError extends Error {
  *   existem para o PÓS-criação e para o registro do onboarding, e a rota os escolhe explicitamente
  *   (espalhar o retorno inteiro no `res.json` mudaria o contrato do endpoint sem ninguém notar).
  */
-export async function provisionarEmpresa({ body, actorUserId, log = null } = {}) {
+export async function provisionarEmpresa({ body, actorUserId, log = null, concluirNaTransacao = null } = {}) {
   const payload = body || {};
 
   // ⚠ Sem o id de quem chamou o `companyFirmAccess.upsert` gravaria um vínculo órfão
@@ -319,7 +319,7 @@ export async function provisionarEmpresa({ body, actorUserId, log = null } = {})
 
       // ⚠ `companyId` aqui é o id do PORTAL CLIENT, não o da Company legada — os dois existem e são
       // diferentes. Quem guardar este valor achando que é a legada vai errar o certificado A1.
-      return {
+      const criada = {
         portalId: portal.id,
         companyId: portal.id,
         ownerUserId: ownerUser.id,
@@ -327,6 +327,10 @@ export async function provisionarEmpresa({ body, actorUserId, log = null } = {})
         cnpj,
         razaoSocial: razao,
       };
+      // O onboarding arquiva os documentos e vincula a ficha nesta mesma transação.
+      // A criação normal de empresas não fornece callback e mantém o contrato anterior.
+      if (concluirNaTransacao) await concluirNaTransacao(tx, criada);
+      return criada;
     });
   } catch (err) {
     throw traduzirErroDeProvisionamento(err);

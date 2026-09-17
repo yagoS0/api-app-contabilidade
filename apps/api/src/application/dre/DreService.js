@@ -28,31 +28,53 @@ export class DreRecusado extends Error {
 
 export const RECUSA_DO_DRE = Object.freeze({
   COMPETENCIA_INVALIDA: "competencia_invalida",
+  COMPETENCIA_NAO_FECHADA: "competencia_nao_fechada",
 });
 
 export const FRASE_DA_RECUSA_DO_DRE = Object.freeze({
   [RECUSA_DO_DRE.COMPETENCIA_INVALIDA]: "Use a competência no formato AAAA-MM.",
+  [RECUSA_DO_DRE.COMPETENCIA_NAO_FECHADA]: "A DRE está disponível somente para competências com fechamento contábil concluído.",
 });
 
 /**
  * ⚠⚠ O DRE DE UMA COMPETÊNCIA.
  *
- * ⚠ **A competência é OBRIGATÓRIA e conferida aqui**, não defaultada para o mês corrente: um DRE que
- * escolhesse o mês por conta própria mostraria um resultado que ninguém pediu, com o rótulo do mês
- * certo — o defeito mais caro desta família, porque parece correto.
+ * A competência omitida seleciona o fechamento mais recente desta empresa. Competência explícita
+ * precisa estar fechada: nunca consultar os lançamentos de um mês aberto para montar esta DRE.
  *
  * ⚠ **`carregarPlano` é REUSADA**, não reescrita: ela já sabe que empresa vence global e já traz o
  * `codigoCompleto`. Uma segunda leitura do plano faria o DRE e a tela de lançamento discordarem
  * sobre qual conta é qual.
  */
 export async function montarDre({ portalClientId, competencia, client = prisma }) {
-  const comp = String(competencia || "").trim();
-  if (!COMPETENCIA_RE.test(comp)) {
+  const pedida = String(competencia ?? "").trim();
+  if (pedida && !COMPETENCIA_RE.test(pedida)) {
     throw new DreRecusado(
       RECUSA_DO_DRE.COMPETENCIA_INVALIDA,
       FRASE_DA_RECUSA_DO_DRE[RECUSA_DO_DRE.COMPETENCIA_INVALIDA],
     );
   }
+
+  const fechamentos = await client.companyMonthlyCircular.findMany({
+    where: { portalClientId: String(portalClientId), fechadoContabilEm: { not: null } },
+    select: { competencia: true, fechadoContabilEm: true },
+    orderBy: { competencia: "desc" },
+  });
+  const competenciasDisponiveis = fechamentos.map(f => f.competencia);
+  const fechamento = pedida ? fechamentos.find(f => f.competencia === pedida) : fechamentos[0];
+  if (pedida && !fechamento) {
+    throw new DreRecusado(
+      RECUSA_DO_DRE.COMPETENCIA_NAO_FECHADA,
+      FRASE_DA_RECUSA_DO_DRE[RECUSA_DO_DRE.COMPETENCIA_NAO_FECHADA],
+    );
+  }
+  if (!fechamento) {
+    return {
+      semCompetenciaFechada: true, competencia: null, competenciasDisponiveis: [], fechadoEm: null,
+      linhas: [], naoClassificado: [], inconsistencias: [], demonstracao: false, semLancamento: true,
+    };
+  }
+  const comp = fechamento.competencia;
 
   const [lancamentos, plano] = await Promise.all([
     client.accountingEntry.findMany({
@@ -64,7 +86,7 @@ export async function montarDre({ portalClientId, competencia, client = prisma }
     carregarPlano(portalClientId, client),
   ]);
 
-  return montarDreGerencial({
+  const dre = montarDreGerencial({
     lancamentos,
     /**
      * ⚠⚠ O MAPA DE `carregarPlano` JÁ É O RESOLVIDO — não se resolve de novo.
@@ -81,4 +103,15 @@ export async function montarDre({ portalClientId, competencia, client = prisma }
     planoPorCodigo: plano,
     competencia: comp,
   });
+  // O fechamento é a revisão explícita do mês. Não altera o status persistido dos lançamentos
+  // nem esconde problemas de classificação/valores. A regra pura continua reconhecendo rascunhos.
+  const motivos = dre.qualidade.motivos.filter(m => m !== "lancamento_rascunho");
+  const provisorio = dre.qualidade.linhasNaoClassificadas > 0 || dre.qualidade.linhasInvalidas > 0;
+  return {
+    ...dre, semCompetenciaFechada: false, competenciasDisponiveis, fechadoEm: fechamento.fechadoContabilEm,
+    qualidade: {
+      ...dre.qualidade, motivos, provisorio,
+      status: dre.semLancamento ? "SEM_LANCAMENTOS" : provisorio ? "PROVISORIO" : "SEM_PENDENCIAS_IDENTIFICADAS",
+    },
+  };
 }

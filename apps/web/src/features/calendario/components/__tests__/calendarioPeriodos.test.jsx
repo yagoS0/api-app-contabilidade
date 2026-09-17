@@ -71,7 +71,7 @@ test('editar a tarefa de 10 a 15 mostra blocos diários das 9 às 11 em duas sem
   await waitFor(()=>expect(screen.getAllByRole('button',{name:'Conferência de notas'})).toHaveLength(4));
   for(const evento of screen.getAllByRole('button',{name:'Conferência de notas'})) {
     expect(evento.closest('.agenda-time-columns')).not.toBeNull();
-    expect(evento).toHaveStyle({top:'504px',height:'110px'});
+    expect(evento.closest('.agenda-event')).toHaveStyle({top:'504px',height:'110px'});
   }
   fireEvent.click(screen.getAllByRole('button',{name:'Conferência de notas'})[2]);
   fireEvent.click(screen.getByRole('button',{name:'Excluir ocorrência',exact:true}));
@@ -112,19 +112,19 @@ test('tarefa abre edição central, mantém rascunho ao concluir e permanece ris
   await screen.findByRole('button',{name:'Reabrir tarefa'});
   expect(screen.getByLabelText('Título')).toHaveValue('Conferir NFS-e');
   expect(screen.getByLabelText('Descrição')).toHaveValue('Revisar notas de serviços');
-  await waitFor(()=>expect(screen.getAllByRole('button',{name:'Conferir notas'}).filter(e=>e.classList.contains('is-complete'))).toHaveLength(1));
+  await waitFor(()=>expect(screen.getAllByRole('button',{name:'Conferir notas'}).filter(e=>e.closest('.agenda-event').classList.contains('is-complete'))).toHaveLength(1));
   fireEvent.change(screen.getByLabelText('Horário inicial'),{target:{value:'10:00'}});
   fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
   await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   const concluida=await screen.findByRole('button',{name:'Conferir NFS-e'});
-  expect(concluida).toHaveClass('is-complete');
-  expect(concluida).toHaveStyle({top:'560px'});
+  expect(concluida.closest('.agenda-event')).toHaveClass('is-complete');
+  expect(concluida.closest('.agenda-event')).toHaveStyle({top:'560px'});
   expect(screen.getAllByRole('button',{name:'Conferir notas'})).toHaveLength(3);
   fireEvent.click(concluida);
   fireEvent.click(screen.getByRole('button',{name:'Reabrir tarefa'}));
   await screen.findByRole('button',{name:'Concluir tarefa'});
   fireEvent.click(screen.getByRole('button',{name:'Fechar',exact:true}));
-  await waitFor(()=>expect(screen.getByRole('button',{name:'Conferir NFS-e'})).not.toHaveClass('is-complete'));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Conferir NFS-e'}).closest('.agenda-event')).not.toHaveClass('is-complete'));
 });
 
 test('falha ao concluir mantém tarefa pendente e permite repetir no mesmo modal',async()=>{
@@ -134,7 +134,7 @@ test('falha ao concluir mantém tarefa pendente e permite repetir no mesmo modal
   fireEvent.click(await screen.findByRole('button',{name:'Revisar serviços'}));
   fireEvent.click(screen.getByRole('button',{name:'Concluir tarefa'}));
   expect(await screen.findByRole('alert')).toHaveTextContent('Sem conexão');
-  expect(screen.getByRole('button',{name:'Revisar serviços'})).not.toHaveClass('is-complete');
+  expect(screen.getByRole('button',{name:'Revisar serviços'}).closest('.agenda-event')).not.toHaveClass('is-complete');
   fireEvent.click(screen.getByRole('button',{name:'Concluir tarefa'}));
   await screen.findByRole('button',{name:'Reabrir tarefa'});
   expect(acao).toHaveBeenCalledTimes(2);
@@ -172,11 +172,11 @@ test('EFD mantém conclusões por empresa e permite editar grupo parcialmente co
   await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   expect(obs[0].ocorrencias[0]).toMatchObject({status:'CONCLUIDA',situacao:'CONCLUIDA',concluidaEm:'2026-09-11T12:00:00Z',concluidaPorId:'contador',dataFim:'2026-09-16',dataVencimento:'2026-09-21'});
   const evento=await screen.findByRole('button',{name:/Revisão EFD/});
-  expect(evento).not.toHaveClass('is-complete');fireEvent.click(evento);
+  expect(evento.closest('.agenda-event')).not.toHaveClass('is-complete');fireEvent.click(evento);
   expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button',{name:'Concluir',exact:true}));
   await screen.findByText('2 de 2 concluídas');
-  await waitFor(()=>expect(screen.getByRole('button',{name:/Revisão EFD/})).toHaveClass('is-complete'));
+  await waitFor(()=>expect(screen.getByRole('button',{name:/Revisão EFD/}).closest('.agenda-event')).toHaveClass('is-complete'));
   expect(screen.getByLabelText('2 de 2 concluídas')).toHaveTextContent('2/2');
   expect(screen.getByRole('dialog').querySelectorAll('.agenda-company-row.is-complete')).toHaveLength(2);
   fireEvent.click(screen.getByRole('button',{name:'Fechar',exact:true}));
@@ -215,7 +215,7 @@ test('obrigação de 10 a 15 tem seis blocos azuis com horário, preserva empres
   montar({obs,extras:{concluirOcorrencia:jest.fn(async id=>{const oc=obs.flatMap(o=>o.ocorrencias).find(o=>o.ocorrenciaId===id);oc.situacao='CONCLUIDA';return {ok:true};})}});
   const eventos=await screen.findAllByRole('button',{name:/EFD-Contribuições/});
   expect(eventos).toHaveLength(4);
-  eventos.forEach(e=>{expect(e.closest('.agenda-time-day')).not.toBeNull();expect(e).toHaveStyle({top:'504px',height:'54px'});expect(e.style.getPropertyValue('--event-color')).toBe('#1351b4');});
+  eventos.forEach(e=>{expect(e.closest('.agenda-time-day')).not.toBeNull();expect(e.closest('.agenda-event')).toHaveStyle({top:'504px',height:'54px'});expect(e.closest('.agenda-event').style.getPropertyValue('--event-color')).toBe('#1351b4');});
   fireEvent.click(eventos[1]);expect(screen.getByText('0 de 2 concluídas')).toBeInTheDocument();
   fireEvent.click(screen.getAllByRole('button',{name:'Concluir',exact:true})[0]);
   await screen.findByText('1 de 2 concluídas');
@@ -254,4 +254,193 @@ test('configuração da obrigação existente carrega filtros e permite todas as
   await screen.findByText('2 empresas');fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
   await waitFor(()=>expect(updateRegraObrigacao).toHaveBeenCalledWith('regra-efd',expect.objectContaining({escopo:'POR_FILTRO',filtros:{regimes:[],temFolha:true},agendaConfig:expect.objectContaining({dataInicio:'2026-09-10',dataFim:'2026-09-15'})})));
   expect(api.createRegraObrigacao).not.toHaveBeenCalled();
+});
+
+
+test('mover pelo modal preserva duração e substitui o dia original, inclusive fora do mês', async () => {
+  const {api}=montar();
+  await api.salvarTarefaAgenda({titulo:'Revisar NFS-e',config:{dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:00',horaFim:'10:00',recorrencia:'MENSAL'}});
+  fireEvent.click(await screen.findByRole('button',{name:'Revisar NFS-e',exact:true}));
+  fireEvent.change(screen.getByLabelText('De'),{target:{value:'2026-08-25'}});
+  expect(screen.getByLabelText('Até')).toHaveValue('2026-08-25');
+  fireEvent.change(screen.getByLabelText('Horário inicial'),{target:{value:'11:00'}});
+  expect(screen.getByLabelText('Horário final')).toHaveValue('12:00');
+  fireEvent.click(screen.getByRole('button',{name:'Salvar',exact:true}));
+  await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  const agosto=await api.getTarefasAgenda('2026-08-01','2026-08-31');
+  expect(agosto.itens).toHaveLength(1);expect(agosto.itens[0]).toMatchObject({dataInicio:'2026-08-25',dataFim:'2026-08-25',horaInicio:'11:00',horaFim:'12:00'});
+  expect((await api.getTarefasAgenda('2026-09-01','2026-09-30')).itens).toHaveLength(0);
+  expect((await api.getTarefasAgenda('2026-10-01','2026-10-31')).itens).toHaveLength(1);
+});
+
+function prepararPonteiro(container) {
+  const anterior=window.PointerEvent;
+  window.PointerEvent=class extends MouseEvent {constructor(tipo,props){super(tipo,props);this.pointerId=props.pointerId;}};
+  const grade=container.querySelector('.agenda-time-columns'),rolagem=container.querySelector('.agenda-time-scroll');
+  grade.getBoundingClientRect=()=>({left:0,top:-392,width:756,height:1344,right:756,bottom:952});
+  rolagem.getBoundingClientRect=()=>({left:0,top:0,width:756,height:800,right:756,bottom:800});
+  grade.querySelectorAll('.agenda-time-day').forEach((el,i)=>{el.getBoundingClientRect=()=>({left:i*100,right:(i+1)*100,width:100});});
+  grade.querySelector('.agenda-time-slot').getBoundingClientRect=()=>({height:56});
+  return ()=>{window.PointerEvent=anterior;};
+}
+function arrastar(evento,x,y,alvo=evento) {
+  fireEvent.pointerDown(alvo,{pointerId:1,button:0,clientX:350,clientY:140});
+  fireEvent.pointerMove(evento,{pointerId:1,clientX:x,clientY:y});
+  fireEvent.pointerUp(evento,{pointerId:1,clientX:x,clientY:y});
+  fireEvent.click(evento);
+}
+
+test('arrastar obrigação move todas as empresas sem duplicar nem alterar conclusões ou vencimentos',async()=>{
+  const obs=obrigacoes();
+  obs.forEach(o=>{o.agendaConfig={...o.agendaConfig,horaInicio:'09:00',horaFim:'10:00'};o.ocorrencias[0].dataFim='2026-09-10';});
+  Object.assign(obs[0].ocorrencias[0],{status:'CONCLUIDA',situacao:'CONCLUIDA',concluidaEm:'2026-09-10T12:00:00Z'});
+  const {api,container}=montar({obs});const salvar=jest.spyOn(api,'editarOcorrenciasAgenda');
+  const evento=await screen.findByRole('button',{name:/EFD-Contribuições/});const restaurar=prepararPonteiro(container);
+  try {
+    expect(evento.closest('.agenda-event')).toHaveClass('is-draggable');
+    arrastar(evento,450,196);
+    await waitFor(()=>expect(screen.getByRole('button',{name:/EFD-Contribuições/}).closest('.agenda-event')).toHaveStyle({top:'560px'}));
+    expect(salvar).toHaveBeenCalledWith(['oc-a','oc-b'],expect.objectContaining({dataInicio:'2026-09-11',dataFim:'2026-09-11',horaInicio:'10:00',horaFim:'11:00'}));
+    expect(screen.getAllByRole('button',{name:/EFD-Contribuições/})).toHaveLength(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    obs.forEach(o=>{expect(o.ocorrencias).toHaveLength(1);expect(o.ocorrencias[0]).toMatchObject({cicloChave:'2026-09',dataVencimento:'2026-09-21'});});
+    expect(obs[0].ocorrencias[0]).toMatchObject({status:'CONCLUIDA',situacao:'CONCLUIDA',concluidaEm:'2026-09-10T12:00:00Z'});
+    await waitFor(()=>expect(screen.getByRole('button',{name:/EFD-Contribuições/}).closest('.agenda-event')).not.toHaveAttribute('aria-busy'));
+    fireEvent.pointerDown(screen.getByRole('button',{name:/EFD-Contribuições/}),{pointerId:2,button:0});
+    fireEvent.click(screen.getByRole('button',{name:/EFD-Contribuições/}));
+    expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument();
+  } finally {restaurar();}
+});
+
+test.each(['inicio','fim'])('redimensionar %s da obrigação ajusta o período com os mesmos controles das tarefas',async(borda)=>{
+  const obs=obrigacoes();obs.forEach(o=>o.agendaConfig={...o.agendaConfig,horaInicio:'09:00',horaFim:'11:00'});
+  const {container}=montar({obs});const eventos=await screen.findAllByRole('button',{name:/EFD-Contribuições/});const restaurar=prepararPonteiro(container);
+  try {
+    arrastar(eventos[0],350,196,eventos[0].closest('.agenda-event').querySelector(`[data-agenda-resize="${borda}"]`));
+    const esperado=borda==='inicio'?{horaInicio:'10:00',horaFim:'11:00'}:{horaInicio:'09:00',horaFim:'12:00'};
+    await waitFor(()=>expect(obs[0].ocorrencias[0].agendaConfig).toMatchObject(esperado));
+    await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    obs.forEach(o=>expect(o.ocorrencias[0]).toMatchObject({dataInicio:'2026-09-10',dataFim:'2026-09-15',agendaConfig:esperado}));
+    expect(screen.getAllByRole('button',{name:/EFD-Contribuições/})).toHaveLength(4);
+    screen.getAllByRole('button',{name:/EFD-Contribuições/}).forEach(e=>expect(e.closest('.agenda-event')).toHaveStyle({height:borda==='inicio'?'54px':'166px'}));
+  } finally {restaurar();}
+});
+
+test.each(['IRRF','Simples Nacional'])('%s sem configuração de agenda recebe dia e horário ao soltar na grade',async(nome)=>{
+  const obs=obrigacoes();obs.forEach(o=>{o.nome=nome;delete o.agendaConfig;o.ocorrencias[0].dataFim='2026-09-10';});
+  const {api,container}=montar({obs});const evento=await screen.findByRole('button',{name:new RegExp(nome)});const restaurar=prepararPonteiro(container);
+  try {
+    expect(evento.closest('.agenda-all-day')).not.toBeNull();
+    arrastar(evento,450,168);
+    await waitFor(()=>expect(screen.getByRole('button',{name:new RegExp(nome)}).closest('.agenda-event')).toHaveStyle({top:'560px'}));
+    expect(screen.getByRole('button',{name:new RegExp(nome)}).closest('.agenda-time-day')).not.toBeNull();
+    expect(screen.getAllByRole('button',{name:new RegExp(nome)})).toHaveLength(1);
+    jest.spyOn(api,'editarOcorrenciasAgenda').mockRejectedValueOnce(new Error('Sem conexão'));
+    fireEvent.keyDown(screen.getByRole('button',{name:new RegExp(nome)}),{key:'ArrowDown',altKey:true});
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sem conexão');
+    expect(screen.getByRole('button',{name:new RegExp(nome)}).closest('.agenda-event')).toHaveStyle({top:'560px'});
+    obs.forEach(o=>expect(o.ocorrencias[0]).toMatchObject({dataInicio:'2026-09-11',dataFim:'2026-09-11',dataVencimento:'2026-09-21',agendaConfig:{horaInicio:'10:00',horaFim:null}}));
+  } finally {restaurar();}
+});
+
+test('arrastar substitui a ocorrência diária, preserva duração e não abre o modal',async()=>{
+  const {api,container}=montar();await api.salvarTarefaAgenda({titulo:'Notas diárias',config:{...config,horaInicio:'09:00',horaFim:'10:00'}});
+  const eventos=await screen.findAllByRole('button',{name:'Notas diárias'});const restaurar=prepararPonteiro(container);
+  try {
+    arrastar(eventos[0],450,196);
+    await waitFor(()=>expect(container.querySelectorAll('.agenda-event.is-draggable')).toHaveLength(4));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const itens=(await api.getTarefasAgenda('2026-09-07','2026-09-13')).itens;
+    expect(itens).toHaveLength(4);expect(itens.filter(i=>i.dataInicio==='2026-09-10')).toHaveLength(0);
+    expect(itens.find(i=>i.cicloChave==='2026-09@2026-09-10')).toMatchObject({dataInicio:'2026-09-11',dataFim:'2026-09-11',horaInicio:'10:00',horaFim:'11:00'});
+    expect(itens.find(i=>i.cicloChave==='2026-09@2026-09-11')).toMatchObject({horaInicio:'09:00'});
+  } finally {restaurar();}
+});
+
+test('esticar a borda muda somente o fim e falha de gravação mantém o horário salvo',async()=>{
+  const {api,container}=montar();await api.salvarTarefaAgenda({titulo:'Reunião',config:{dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:00',horaFim:'10:00'}});
+  let evento=await screen.findByRole('button',{name:'Reunião'});const restaurar=prepararPonteiro(container);
+  try {
+    arrastar(evento,350,196,evento.closest('.agenda-event').querySelector('[data-agenda-resize="fim"]'));
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Reunião'}).closest('.agenda-event')).toHaveStyle({height:'110px'}));
+    expect((await api.getTarefasAgenda('2026-09-10','2026-09-10')).itens[0]).toMatchObject({horaInicio:'09:00',horaFim:'11:00'});
+    jest.spyOn(api,'acaoTarefaAgenda').mockRejectedValueOnce(new Error('Sem conexão'));
+    evento=screen.getByRole('button',{name:'Reunião'});arrastar(evento,350,252);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sem conexão');
+    expect(screen.getByRole('button',{name:'Reunião'}).closest('.agenda-event')).toHaveStyle({top:'504px',height:'110px'});
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  } finally {restaurar();}
+});
+
+test('Escape cancela arraste sem gravar, e clique simples continua abrindo edição',async()=>{
+  const {api,container}=montar();await api.salvarTarefaAgenda({titulo:'Cancelar movimento',config:{dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:00'}});
+  const evento=await screen.findByRole('button',{name:'Cancelar movimento'});const salvar=jest.spyOn(api,'acaoTarefaAgenda');const restaurar=prepararPonteiro(container);
+  try {
+    fireEvent.pointerDown(evento,{pointerId:1,button:0,clientX:350,clientY:140});fireEvent.pointerMove(evento,{pointerId:1,clientX:450,clientY:196});
+    await waitFor(()=>expect(container.querySelector('.agenda-drag-preview')).not.toBeNull());fireEvent.keyDown(window,{key:'Escape'});
+    fireEvent.pointerUp(evento,{pointerId:1,clientX:450,clientY:196});fireEvent.click(evento);
+    expect(salvar).not.toHaveBeenCalled();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.pointerDown(evento,{pointerId:2,button:0,clientX:350,clientY:140});fireEvent.pointerUp(evento,{pointerId:2,clientX:350,clientY:140});fireEvent.click(evento);
+    expect(screen.getByRole('dialog',{name:'Editar atividade'})).toBeInTheDocument();
+  } finally {restaurar();}
+});
+
+
+test('tarefa sem horário pode ser levada para a grade e ajustada pelo teclado',async()=>{
+  const {api,container}=montar();await api.salvarTarefaAgenda({titulo:'Organizar documentos',config:{dataInicio:'2026-09-10',dataFim:'2026-09-10'}});
+  const evento=await screen.findByRole('button',{name:'Organizar documentos'});const restaurar=prepararPonteiro(container);
+  try {
+    arrastar(evento,450,168);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Organizar documentos'}).closest('.agenda-time-day')).not.toBeNull());
+    expect((await api.getTarefasAgenda('2026-09-07','2026-09-13')).itens).toEqual([expect.objectContaining({dataInicio:'2026-09-11',horaInicio:'10:00',horaFim:null})]);
+    fireEvent.keyDown(screen.getByRole('button',{name:'Organizar documentos'}),{key:'ArrowDown',altKey:true,shiftKey:true});
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Organizar documentos'}).closest('.agenda-event')).toHaveStyle({height:'40px'}));
+    expect((await api.getTarefasAgenda('2026-09-07','2026-09-13')).itens[0]).toMatchObject({horaInicio:'10:00',horaFim:'10:45'});
+  } finally {restaurar();}
+});
+
+test('desenhar intervalo abre um único modal central com título focado e horário selecionado',async()=>{
+  const {container}=montar();await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  const restaurar=prepararPonteiro(container),slot=screen.getByLabelText('Criar atividade em 10/09/2026 às 09:00');
+  try {
+    fireEvent.pointerDown(slot,{pointerId:1,button:0,clientX:350,clientY:126});
+    fireEvent.pointerMove(slot,{pointerId:1,clientX:350,clientY:210});
+    await waitFor(()=>expect(container.querySelector('.agenda-drag-preview')).toHaveTextContent('09:15–10:45'));
+    expect(container.querySelector('.agenda-drag-preview')).toHaveTextContent('90 min');
+    fireEvent.pointerUp(slot,{pointerId:1,clientX:350,clientY:210});fireEvent.click(slot);
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getByRole('dialog')).not.toHaveClass('modal-fundo--lateral');
+    expect(screen.getByLabelText('Título')).toHaveFocus();
+    expect(screen.getByLabelText('Horário inicial')).toHaveValue('09:15');
+    expect(screen.getByLabelText('Horário final')).toHaveValue('10:45');
+  } finally {restaurar();}
+});
+
+test('gesto com resposta lenta mantém destino e permite mover outra atividade; atualização final é silenciosa',async()=>{
+  const store=criarMockAgenda([],[]),cfg={dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:00',horaFim:'10:00'};
+  const a=await store.salvarTarefaAgenda({titulo:'Revisar A',config:cfg});await store.salvarTarefaAgenda({titulo:'Revisar B',config:cfg});
+  let liberar;const atraso=new Promise(resolve=>{liberar=resolve;});
+  const original=store.acaoTarefaAgenda;const acaoTarefaAgenda=jest.fn(async(id,dados)=>{if(id===a.tarefa.id)await atraso;return original(id,dados);});
+  const getTarefasAgenda=jest.fn(store.getTarefasAgenda);
+  const {api,container}=montar({extras:{...store,acaoTarefaAgenda,getTarefasAgenda}});
+  const evento=await screen.findByRole('button',{name:'Revisar A'}),restaurar=prepararPonteiro(container);
+  try {
+    arrastar(evento,450,196);
+    expect(screen.getByRole('button',{name:'Revisar A'}).closest('.agenda-event')).toHaveStyle({top:'560px'});
+    expect(screen.getByRole('button',{name:'Revisar A'}).closest('.agenda-event')).toHaveAttribute('aria-busy','true');
+    // Edição pelo modal aguarda somente esta ocorrência; outros gestos seguem disponíveis.
+    fireEvent.pointerDown(screen.getByRole('button',{name:'Revisar A'}),{pointerId:2,button:0});
+    fireEvent.pointerUp(screen.getByRole('button',{name:'Revisar A'}),{pointerId:2,clientX:0,clientY:0});
+    fireEvent.click(screen.getByRole('button',{name:'Revisar A'}));expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    arrastar(screen.getByRole('button',{name:'Revisar B'}),550,252);
+    await waitFor(()=>expect(acaoTarefaAgenda).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('button',{name:'Revisar B'}).closest('.agenda-event')).toHaveStyle({top:'616px'});
+    expect(getTarefasAgenda).toHaveBeenCalledTimes(1);
+    liberar();
+    await waitFor(()=>expect(screen.queryByText('Salvando horário…')).not.toBeInTheDocument());
+    await waitFor(()=>expect(getTarefasAgenda).toHaveBeenCalledTimes(2));
+    expect(api.getCalendario).toHaveBeenCalledTimes(1);expect(api.listRegrasObrigacao).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByRole('button',{name:'Revisar A'})).toHaveLength(1);
+    expect(screen.getByRole('button',{name:'Revisar A'}).closest('.agenda-event')).toHaveStyle({top:'560px'});
+  } finally {liberar();restaurar();}
 });

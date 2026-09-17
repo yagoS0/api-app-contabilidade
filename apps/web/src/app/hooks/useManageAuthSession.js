@@ -1,5 +1,5 @@
 import { useWorkspaceNavigation } from "../navigation/WorkspaceNavigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 // Q8.C: mapeamento bidirecional URL ↔ "page name" (compat com código antigo que usava session.page).
@@ -32,6 +32,7 @@ const PAGE_TO_PATH = {
   onboardingWizard: null,
   // Simulacao livre nao exige empresa: e a tela de reuniao com prospect.
   planejamento: "/planejamento",
+  laboratorio: "/laboratorio",
   serproFuncoes: "/funcoes-serpro",
   // As conversas de WhatsApp do escritório (F5, 02/09/2026). As DUAS metades: aqui e em `pathToPageName`.
   whatsapp: "/whatsapp",
@@ -61,6 +62,7 @@ export function pathToPageName(pathname) {
   if (pathname === "/firm-settings/chart") return "chartOfAccountsGlobal";
   if (pathname === "/apuracao") return "apuracao";
   if (pathname === "/rotinas") return "rotinas";
+  if (pathname === "/laboratorio") return "laboratorio";
   if (pathname === "/planejamento") return "planejamento";
   if (pathname === "/obrigacoes") return "obrigacoes";
   if (pathname === "/whatsapp") return "whatsapp";
@@ -92,6 +94,8 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [sessionChecking, setSessionChecking] = useState(true);
+  const sessionVersion = useRef(0);
 
   const page = pathToPageName(location.pathname);
 
@@ -127,25 +131,34 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
   }
 
   async function ensureSession() {
+    const version = ++sessionVersion.current;
     const tokenFromStorage = localStorage.getItem(tokenStorageKey) || "";
     if (!tokenFromStorage) {
-      if (location.pathname !== "/login") navigate("/login");
+      api.clearSession();
+      setUser(null);
+      setSessionChecking(false);
+      if (location.pathname !== "/login") navigate("/login", { replace: true });
       return false;
     }
     api.setAccessToken(tokenFromStorage);
     try {
       const me = await api.me();
+      if (version !== sessionVersion.current) return false;
+      if (!me) throw new Error("Sessão inválida");
       setUser(me);
       if (location.pathname === "/login" || location.pathname === "/") {
-        navigate("/companies");
+        navigate("/companies", { replace: true });
       }
       return true;
     } catch {
+      if (version !== sessionVersion.current) return false;
       localStorage.removeItem(tokenStorageKey);
       api.clearSession();
       setUser(null);
-      navigate("/login");
+      navigate("/login", { replace: true });
       return false;
+    } finally {
+      if (version === sessionVersion.current) setSessionChecking(false);
     }
   }
 
@@ -176,15 +189,18 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
   }
 
   function clearSession() {
+    sessionVersion.current += 1;
+    setSessionChecking(false);
     workspaceNavigation?.resetSession();
     api.clearSession();
     localStorage.removeItem(tokenStorageKey);
     setUser(null);
-    navigate("/login");
+    navigate("/login", { replace: true });
   }
 
   useEffect(() => {
     ensureSession();
+    return () => { sessionVersion.current += 1; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -199,6 +215,7 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
     loginPassword,
     setLoginPassword,
     authLoading,
+    sessionChecking,
     handleLogin,
     clearSession,
   };

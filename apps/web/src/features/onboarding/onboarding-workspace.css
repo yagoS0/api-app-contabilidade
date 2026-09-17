@@ -10,6 +10,16 @@
 .onboarding-workspace [role="alert"] { padding: 12px; border: 1px solid var(--state-warn); border-radius: 8px; color: var(--state-warn); }
 .onboarding-workspace [role="status"], .onboarding-help { color: var(--text-muted); font-size: .8125rem; }
 .onboarding-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.onboarding-sections { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+.onboarding-sections button { min-height: 42px; padding: 10px 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); font: inherit; font-size: .875rem; cursor: pointer; }
+.onboarding-sections button[aria-pressed="true"] { border-bottom-color: var(--accent-purple); color: var(--text); font-weight: 600; }
+.onboarding-sections button:hover { background: var(--bg-subtle); }
+.onboarding-sections button:focus-visible { outline: 2px solid var(--accent-purple); outline-offset: -2px; }
+.onboarding-sections button span { margin-left: 6px; font-size: .75rem; color: var(--text-muted); }
+.onboarding-area[hidden] { display: none !important; }
+.onboarding-next-step { display: grid; gap: 5px; padding: 14px 16px; margin-bottom: 18px; border-left: 3px solid var(--accent-purple); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+.onboarding-next-step small, .onboarding-next-step span { font-size: .8125rem; color: var(--text-muted); }
+.onboarding-area > .onboarding-actions { margin-top: 18px; }
 .onboarding-intro { padding: 18px 20px; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); }
 .onboarding-intro p { margin: 0; color: var(--text-muted); max-width: 80ch; font-size: .875rem; }
 .onboarding-new > p { margin-top: 0; color: var(--text-muted); font-size: .875rem; }

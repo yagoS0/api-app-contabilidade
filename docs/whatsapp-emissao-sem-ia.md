@@ -21,6 +21,16 @@ O menu agora conduz uma coleta persistente, sem modelo, usando as funções comp
 
 Esse percurso não consome tokens de IA. Eventuais custos do canal WhatsApp continuam separados.
 
+## Retenção mencionada pelo cliente — 16/09/2026
+
+Avisos como “essa nota tem retenção”, “tem ISS retido”, “o cliente vai reter 5%”, “IRRF: 15,00” e correções negativas como “na verdade é sem retenção” interrompem a coleta e encaminham para o contador. Funcionam no primeiro pedido, nas perguntas, na revisão e em uma coleta pausada. Não dependem de dois-pontos, interrogação ou IA. A retenção não é decidida pela detecção de palavras: ela apenas identifica uma informação fiscal que precisa de conferência.
+
+O código antigo é invalidado antes de gravar o encaminhamento; falha no recibo não o reativa. O rascunho guarda `observacaoRetencao` com a mensagem original, os impostos apenas **mencionados** e `conferida: false`. Preserva os campos anteriores e aproveita campos explícitos válidos recebidos junto do aviso. Trechos ambíguos permanecem no texto original para o contador, sem virar alíquota, valor retido ou descrição do serviço.
+
+O cliente recebe a confirmação de que os dados foram guardados. Se não mencionou o imposto, pode informar qual é ou enviar a orientação recebida do tomador; não precisa calcular tributos. A conversa fica em atendimento humano pelo mecanismo existente do menu. Retomar o mesmo pedido não apaga a observação; “nova emissão” começa outro rascunho vazio, preservando o histórico. O contador confere a operação e prepara uma nova revisão antes da emissão. Este ajuste não automatiza incidência fiscal nem cria uma tela de aprovação da retenção.
+
+Descrições como “retenção de clientes”, “retenção de talentos” e “retenção de líquidos” continuam sendo serviços; um aviso de ISS/IRRF na mesma mensagem continua encaminhando. Tributos mencionados nunca são inferidos do CNAE nem aplicados automaticamente. Testes de conversação bloqueiam Anthropic; o verificador PostgreSQL cobre o aviso persistido, reentrega e falha no recibo com código cancelado.
+
 ## Quando cada caminho atende
 
 | Situação | Caminho |
