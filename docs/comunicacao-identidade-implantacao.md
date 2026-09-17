@@ -2,6 +2,8 @@
 
 Implementação iniciada em 16/09/2026, branch `feat/comunicacao-identidade-chat-v2`, reconciliada com a main em 17/09/2026. Decisões e backlog: [plano](plano-comunicacao-identidade-leads-20260916.md).
 
+Estado em 17/09: implementação validada localmente; publicação e ativação ainda pendentes. Nenhuma flag, conversa ou dado de produção foi alterado nesta rodada.
+
 ## Entrada de leads antes do segundo número — 17/09/2026
 
 O dono pediu ativar o comportamento de leads no número atual enquanto providencia o comercial. O primeiro lote usa `WHATSAPP_COLETA_COMERCIAL=1` e `INTEGRACAO_WHATSAPP_MENU=1`, limitado à lista explícita `IA_COMERCIAL_TELEFONES_PILOTO`. Apesar do nome histórico dessa lista, a coleta não usa IA. Identidade V2, leitura V2 e multicanal permanecem desligados neste lote; a migração aditiva continua obrigatória, mas a coleta também suporta os segmentos legados existentes, sem backfill global.
@@ -9,6 +11,8 @@ O dono pediu ativar o comportamento de leads no número atual enquanto providenc
 Menu e coleta compartilham o piloto comercial: não é necessário duplicar o telefone no piloto operacional do menu. Fora dessa audiência, as regras existentes permanecem. A coleta tem precedência sobre a IA comercial, inclusive para saudações que serão respondidas pelo menu. Não habilitar o modelo para testar. Primeiro pedido como “empresa parada e não sei o que fazer” pede CNPJ; não interpreta o desconhecimento genérico como resposta a uma pergunta ainda não feita.
 
 O novo verificador `verify-lead-entry-postgres.js` passa pelo webhook, registro real, lista nativa, coleta, transporte rastreado e persistência do onboarding, com Meta/consulta pública injetadas e rede externa bloqueada. Sete cenários cobrem saudação, pedido direto, replay, dúvida de preço, abertura avulsa, transferência, empresa parada, equipe e exclusão de telefone fora do piloto. O PostgreSQL é somente local/CI; não executar o verificador em produção.
+
+Validação após integrar a main: 81 suítes/1.690 testes da API, mais 35 verificações direcionadas após o ajuste que evita reservar atendimento fora do piloto; sete cenários reais no PostgreSQL com zero rede/IA. Das 51 suítes da interface afetada, 49 passaram na primeira rodada e duas foram corrigidas e aprovadas (28 testes): paridade de canais agora isola infraestrutura Node no jsdom, e a mensagem rápida exige a versão da orientação preparada. Build web aprovado. A tentativa de regressão de toda a aplicação web foi interrompida sem resultado; a validação concluída cobre comunicação, onboarding, contatos e navegação afetada. CI remoto ainda não executado.
 
 Antes de ativar, conferir revisão publicada, migração, audiência e fila pendente. Não reprocessar testes antigos nem liberar conversas assumidas por uma pessoa. Depois da ativação, conferir flags e saúde em leitura; recebimento real depende de uma nova mensagem do telefone autorizado. O registro de produção deve distinguir essa conferência de uma conversa efetivamente entregue pela Meta.
 

@@ -19,7 +19,7 @@ test("mensagem rápida mostra a prévia e envia a versão com assumir explícito
   fireEvent.click(screen.getByText("Mensagens rápidas")); await screen.findByText("Pedir CNPJ");
   fireEvent.click(screen.getByRole("button", { name: "Preparar mensagem" }));
   expect(await screen.findByText("Qual é o CNPJ?")).toBeInTheDocument(); fireEvent.click(screen.getByText("Assumir e enviar orientação"));
-  await waitFor(() => expect(api.enviarOrientacaoWhatsapp).toHaveBeenCalledWith("c1", { orientacaoId: "r1", variaveis: { nome: "", cnpj: "", servico: "" }, assumir: true }));
+  await waitFor(() => expect(api.enviarOrientacaoWhatsapp).toHaveBeenCalledWith("c1", { orientacaoId: "r1", orientacaoVersao: 2, variaveis: { nome: "", cnpj: "", servico: "" }, assumir: true }));
 });
 test("correção do contador envia campo com a versão carregada", async () => {
   const estado = { onboarding: { id: "o1", origem: "ABERTURA", status: "RASCUNHO", dados: { responsavelNome: "Ana" }, versao: 7 }, propostas: [], contratos: [], documentos: [], trabalhos: [] };
