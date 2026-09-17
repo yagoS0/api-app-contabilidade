@@ -1,6 +1,16 @@
 # Comunicação por interlocutor: implantação e validação
 
-Implementação local de 16/09/2026, branch `feat/comunicacao-identidade-chat-v2`, base `ce72e3b8`. Não foi publicada nem ativada em produção nesta rodada. Decisões e backlog: [plano](plano-comunicacao-identidade-leads-20260916.md).
+Implementação iniciada em 16/09/2026, branch `feat/comunicacao-identidade-chat-v2`, reconciliada com a main em 17/09/2026. Decisões e backlog: [plano](plano-comunicacao-identidade-leads-20260916.md).
+
+## Entrada de leads antes do segundo número — 17/09/2026
+
+O dono pediu ativar o comportamento de leads no número atual enquanto providencia o comercial. O primeiro lote usa `WHATSAPP_COLETA_COMERCIAL=1` e `INTEGRACAO_WHATSAPP_MENU=1`, limitado à lista explícita `IA_COMERCIAL_TELEFONES_PILOTO`. Apesar do nome histórico dessa lista, a coleta não usa IA. Identidade V2, leitura V2 e multicanal permanecem desligados neste lote; a migração aditiva continua obrigatória, mas a coleta também suporta os segmentos legados existentes, sem backfill global.
+
+Menu e coleta compartilham o piloto comercial: não é necessário duplicar o telefone no piloto operacional do menu. Fora dessa audiência, as regras existentes permanecem. A coleta tem precedência sobre a IA comercial, inclusive para saudações que serão respondidas pelo menu. Não habilitar o modelo para testar. Primeiro pedido como “empresa parada e não sei o que fazer” pede CNPJ; não interpreta o desconhecimento genérico como resposta a uma pergunta ainda não feita.
+
+O novo verificador `verify-lead-entry-postgres.js` passa pelo webhook, registro real, lista nativa, coleta, transporte rastreado e persistência do onboarding, com Meta/consulta pública injetadas e rede externa bloqueada. Sete cenários cobrem saudação, pedido direto, replay, dúvida de preço, abertura avulsa, transferência, empresa parada, equipe e exclusão de telefone fora do piloto. O PostgreSQL é somente local/CI; não executar o verificador em produção.
+
+Antes de ativar, conferir revisão publicada, migração, audiência e fila pendente. Não reprocessar testes antigos nem liberar conversas assumidas por uma pessoa. Depois da ativação, conferir flags e saúde em leitura; recebimento real depende de uma nova mensagem do telefone autorizado. O registro de produção deve distinguir essa conferência de uma conversa efetivamente entregue pela Meta.
 
 ## Comportamento implementado
 

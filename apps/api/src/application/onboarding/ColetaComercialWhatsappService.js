@@ -4,6 +4,7 @@ import { iniciarAtendimento, registrarCampos, proximaPergunta, encerrado } from 
 import { identidadeDoCaso, filtroCasoDaConversa, exigirConversaDoCaso } from "./ContextoComercialService.js";
 import { consultarPublicaLead } from "./FiscalLeadService.js";
 import { OnboardingError } from "./OnboardingService.js";
+import { coletaComercialHabilitada } from "./politicaColetaComercial.js";
 
 const normalizar = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 export function pedidoOperacionalComercial(texto) {
@@ -70,7 +71,8 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
   if (!(deps.flag ?? WHATSAPP_COLETA_COMERCIAL)) return { tratado: false, motivo: "COLETA_DESLIGADA" };
   const conversa = registro?.conversa, mensagem = registro?.mensagem;
   const piloto = deps.piloto || IA_COMERCIAL_TELEFONES_PILOTO;
-  if (!conversa || !mensagem || !piloto.includes(conversa.telefoneE164)) return { tratado: false, motivo: "FORA_DO_PILOTO" };
+  if (!conversa || !mensagem || !coletaComercialHabilitada(conversa.telefoneE164, { flag: true, piloto })) return { tratado: false, motivo: "FORA_DO_PILOTO" };
+  if (registro.vinculo?.situacao === "AMBIGUO") return { tratado: false, motivo: "IDENTIDADE_EM_REVISAO" };
   if (pedidoOperacionalComercial(item.corpo || mensagem.corpo)) return { tratado: false, motivo: "PEDIDO_OPERACIONAL" };
   const inicial = await db.conversaWhatsapp.findUnique({ where: { id: conversa.id } });
   const anterior = await db.coletaComercialWhatsapp.findUnique({ where: { mensagemId: mensagem.id } });
@@ -99,7 +101,9 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
     if (triagem.ultimaMensagemEm && new Date(mensagem.registradaEm) < new Date(triagem.ultimaMensagemEm)) return { resultado: { texto: null }, atendimentoLeadId: caso.id, identidadeVersao };
     const desconhecidos = [...(triagem.desconhecidos || [])];
     const esperada = proximaPergunta(caso.onboarding, { desconhecidos });
-    const leitura = interpretarColetaComercial({ texto: item.corpo || mensagem.corpo, origem: caso.onboarding.origem, campoEsperado: triagem.campoEsperado || esperada.campo });
+    // No primeiro pedido ainda não fizemos uma pergunta. "Minha empresa está
+    // parada e não sei o que fazer" não significa que a pessoa desconhece o CNPJ.
+    const leitura = interpretarColetaComercial({ texto: item.corpo || mensagem.corpo, origem: caso.onboarding.origem, campoEsperado: triagem.campoEsperado || (!origem ? esperada.campo : null) });
     const mudouOrigem = origem && origem !== caso.onboarding.origem;
     let encaminhar = leitura.humano || Boolean(mudouOrigem);
     if (!mudouOrigem && leitura.operacoes.length) caso.onboarding = await registrarCampos({ onboardingId: caso.onboardingId, versao: caso.onboarding.versao, operacoes: leitura.operacoes, mensagemId: mensagem.id, client: tx });

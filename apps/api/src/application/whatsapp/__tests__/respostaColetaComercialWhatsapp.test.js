@@ -1,5 +1,6 @@
 import { responderColetaComercial } from "../RespostaColetaComercialWhatsappService.js";
 import { enviarMensagemRastreada } from "../SaidaWhatsappService.js";
+import { comLeaseDoAtendimento } from "../AtendimentoResponsavelWhatsappService.js";
 jest.mock("../AtendimentoResponsavelWhatsappService.js", () => ({
   comLeaseDoAtendimento: jest.fn(async (_, executar) => executar(async () => {})),
 }));
@@ -21,9 +22,14 @@ function cenario() {
       referenciaComercial: { tipo: "COLETA_COMERCIAL", atendimentoId: "caso1" } });
     return { tratado: true };
   };
-  return { registro, client, cloud, guarda, coletar, flag: true, conferirJanela: jest.fn(async () => ({ situacao: "ABERTA" })) };
+  return { registro, client, cloud, guarda, coletar, flag: true, piloto: [registro.conversa.telefoneE164], conferirJanela: jest.fn(async () => ({ situacao: "ABERTA" })) };
 }
 beforeEach(() => jest.clearAllMocks());
+it("fora do piloto não disputa o atendimento nem consulta o banco", async () => {
+  const c = cenario(); c.coletar = jest.fn();
+  expect(await responderColetaComercial({ ...c, piloto: [] })).toMatchObject({ tratado: false, motivo: "FORA_DO_PILOTO" });
+  expect(comLeaseDoAtendimento).not.toHaveBeenCalled(); expect(c.coletar).not.toHaveBeenCalled();
+});
 it("responde no canal comercial com saída rastreada e marca a entrada concluída", async () => {
   const c = cenario();
   expect(await responderColetaComercial(c)).toEqual({ tratado: true });

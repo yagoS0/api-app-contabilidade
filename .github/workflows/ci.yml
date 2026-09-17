@@ -143,6 +143,7 @@ jobs:
           node scripts/verify-whatsapp-identidade-postgres.js
           node scripts/verify-whatsapp-canais-postgres.js --url "$DATABASE_URL"
           node scripts/verify-commercial-identity-postgres.js "$DATABASE_URL"
+          node scripts/verify-lead-entry-postgres.js "$DATABASE_URL"
       - name: Verify atomic OFX imports and tenant isolation
         working-directory: apps/api
         run: node scripts/verify-whatsapp-ofx-postgres.js --url "$DATABASE_URL"

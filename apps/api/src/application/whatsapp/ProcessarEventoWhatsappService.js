@@ -1,4 +1,5 @@
 import { decidirRespostaComercial } from "../assistente/politicaComercialWhatsapp.js";
+import { coletaComercialHabilitada } from "../onboarding/politicaColetaComercial.js";
 // Consome o inbox durável: grava mensagens, enfileira mídias/turnos e correlaciona recibos.
 // Falhas retornam no resumo para retry idempotente, sem registrar conteúdo ou credenciais.
 import {
@@ -183,7 +184,7 @@ export function decidirRespostaDoMenu({ r, flag = INTEGRACAO_WHATSAPP_MENU, pilo
   if (!r?.conversa?.portalClientId) {
     const leadSeguro = r?.vinculo?.situacao === SITUACOES.DESCONHECIDO;
     if (!leadSeguro) return { responde: false, motivo: "NAO_VINCULADA" };
-    return telefoneNoPiloto || leads ? { responde: true, motivo: null } : { responde: false, motivo: "FORA_DO_PILOTO" };
+    return telefoneNoPiloto || leads || coletaComercialHabilitada(telefone) ? { responde: true, motivo: null } : { responde: false, motivo: "FORA_DO_PILOTO" };
   }
   if (r?.vinculo?.situacao !== SITUACOES.VINCULADO || r.conversa.escopoVerificado !== true) return { responde: false, motivo: "NAO_VINCULADA" };
   if (!telefoneNoPiloto && (!Array.isArray(piloto) || !piloto.includes(String(r.conversa.portalClientId)))) return { responde: false, motivo: "FORA_DO_PILOTO" };
@@ -193,7 +194,7 @@ export function decidirRespostaDoMenu({ r, flag = INTEGRACAO_WHATSAPP_MENU, pilo
 // ⚠ `ia` é a flag+piloto INJETÁVEIS ({flag, piloto}). Sem isso o ramo "a IA responde" seria
 // inalcançável no teste (a flag nasce OFF no ambiente de teste) — mock que esconde ramo é defeito
 // desta casa. Produção não passa nada e os defaults do `config.js` mandam.
-async function processarMensagem(item, { logger, responder, responderMenu, atenderContexto, ia, menu, agora }) {
+async function processarMensagem(item, { logger, responder, responderMenu, responderColeta, atenderContexto, ia, menu, agora }) {
   const canal = await resolverCanalEntrada(item.canalProvedorId, { wabaProvedorId: item.wabaProvedorId });
   const r = await registrarMensagemRecebida({
     telefone: item.telefone,
@@ -240,8 +241,8 @@ async function processarMensagem(item, { logger, responder, responderMenu, atend
     return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: "JA_RESPONDIDA" } };
   }
   if (WHATSAPP_COLETA_COMERCIAL && r?.mensagem?.id && r?.conversa?.id) {
-    const { responderColetaComercial } = await import("./RespostaColetaComercialWhatsappService.js");
-    const coleta = await responderColetaComercial({ registro: r, item, agora });
+    const coletar = responderColeta || (await import("./RespostaColetaComercialWhatsappService.js")).responderColetaComercial;
+    const coleta = await coletar({ registro: r, item, agora });
     if (coleta.tratado) return { desfecho: r.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: coleta.motivo }, coleta };
   }
   if (r?.conversa?.vinculoNumeroId) {
@@ -317,7 +318,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, atend
  * @param {Date}   [opcoes.agora]   injetável (a leitura do timestamp não lê relógio escondido)
  * @param {object} [opcoes.logger]
  */
-export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao, responderMenu = undefined, atenderContexto = undefined, ia = undefined, menu = undefined } = {}) {
+export async function processarEventoWhatsapp(payload, { agora = new Date(), logger = logPadrao, responder = responderPadrao, responderMenu = undefined, responderColeta = undefined, atenderContexto = undefined, ia = undefined, menu = undefined } = {}) {
   const resumo = {
     mensagens: { total: 0, gravadas: 0, duplicadas: 0, recusadas: 0 },
     statuses: { total: 0, aplicados: 0, semMudanca: 0, semEnvio: 0, desconhecidos: 0, contradicoes: 0, recusados: 0 },
@@ -377,7 +378,7 @@ export async function processarEventoWhatsapp(payload, { agora = new Date(), log
     : responderMenu;
   for (const item of leitura.mensagens) {
     try {
-      const r = await processarMensagem(item, { logger, responder, responderMenu: atenderMenu, atenderContexto, ia, menu, agora });
+      const r = await processarMensagem(item, { logger, responder, responderMenu: atenderMenu, responderColeta, atenderContexto, ia, menu, agora });
       if (r.desfecho === DESFECHOS.DUPLICADA) resumo.mensagens.duplicadas += 1;
       else resumo.mensagens.gravadas += 1;
     } catch (e) {

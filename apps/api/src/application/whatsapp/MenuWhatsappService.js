@@ -2,7 +2,7 @@
 // e toda leitura refaz empresa, contato, pessoa, papel e permissão antes de responder.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { WHATSAPP_COLETA_COMERCIAL, IA_COMERCIAL_TELEFONES_PILOTO } from "../../config.js";
+import { coletaComercialHabilitada } from "../onboarding/politicaColetaComercial.js";
 import { whatsappPorCanal } from "./CanalWhatsappService.js";
 import { enviarMensagemRastreada } from "./SaidaWhatsappService.js";
 import { janelaDaConversa } from "./ConversaWhatsappService.js";
@@ -398,7 +398,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
         : `Olá${sessao.contatoNome ? `, ${sessao.contatoNome}` : ""}. Como posso ajudar?${avisoRascunho}`, conversa);
       await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: corpo, linhas, tituloBotao: "Ver opções", tituloSecao: "Atendimento", rodape: "Você também pode escrever seu pedido." }) });
     } else {
-      const coletaAtiva = WHATSAPP_COLETA_COMERCIAL && IA_COMERCIAL_TELEFONES_PILOTO.includes(conversa.telefoneE164);
+      const coletaAtiva = coletaComercialHabilitada(conversa.telefoneE164);
       const botoes = [
         { id: IDS_MENU_WHATSAPP.LEAD_ANALISAR, titulo: "Analisar empresa" },
         { id: IDS_MENU_WHATSAPP.LEAD_CLIENTE, titulo: "Já sou cliente" },

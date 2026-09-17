@@ -2,6 +2,8 @@
 
 ## Identidade, canais e jornada comercial — 16/09/2026
 
+Entrada de leads em 17/09: `politicaColetaComercial` centraliza a audiência de menu/coleta; não exigir duplicação no piloto operacional. Quando a coleta está ativa, `decidirRespostaComercial` não enfileira modelo, mesmo para “Olá”. O coletor só entende “não sei” como ausência de um campo se a pergunta já foi feita; a intenção inicial não é resposta implícita ao CNPJ. Simulação integral sem rede: `scripts/verify-lead-entry-postgres.js`. Coleta no canal principal suporta segmentos legados; identidade V2/backfill/multicanal têm ativação independente e posterior.
+
 O contrato V2 separa interlocutor, vigência do telefone, canal do escritório, caso comercial e empresa operacional. Identidade e RBAC não são intercambiáveis. Todo efeito externo deve reconferir contexto atual e usar `whatsappPorCanal`; janela e recibo não atravessam canal/vigência. Alias retornado pela Meta pode compartilhar vigência comprovada; similaridade de dígitos não basta. Correção de titular encerra vínculo e invalida ações antigas. Histórico, notas internas e leitura são comandos/projeções próprios em `InboxWhatsappService`.
 
 Coleta comercial é determinística e limitada ao piloto; um cliente pode abrir nova solicitação sem alterar empresa operacional. A política da jornada fica no servidor. Conclusão avulsa usa `FichaEmpresaAvulsaService`, nunca provisionamento recorrente completo. Migration, backfill, auditoria, flags OFF e testes locais: `docs/comunicacao-identidade-implantacao.md`. Templates comerciais novos e APIs DocuSign/Asaas continuam adiados; testes não usam Anthropic nem provedores reais.
