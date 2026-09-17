@@ -2,7 +2,16 @@
 
 Implementação iniciada em 16/09/2026, branch `feat/comunicacao-identidade-chat-v2`, reconciliada com a main em 17/09/2026. Decisões e backlog: [plano](plano-comunicacao-identidade-leads-20260916.md).
 
-Estado conferido em 17/09: conjunto integrado pela [PR 67](https://github.com/yagoS0/api-app-contabilidade/pull/67), código `4bb238f2cd6509dee0261664894967edf4a98789` implantado com sucesso na API e no portal do escritório. Identidade V2, chat V2 e coleta comercial estão ativos. Multicanal permanece desligado; o novo canal comercial foi preparado como inativo porque a credencial atual não acessa sua WABA.
+Estado atual em 17/09 após as 19h37 UTC: canal comercial e multicanal ativados, token validado com acesso ao número, WABA e aplicativo já inscrito. API saudável na main `f6fe6a2a`, que contém as PRs [67](https://github.com/yagoS0/api-app-contabilidade/pull/67) e [68](https://github.com/yagoS0/api-app-contabilidade/pull/68). Identidade V2, chat V2, menu e coleta comercial ativos; principal preservado. Entrada real do usuário recebida; a pausa humana antiga do contato impediu resposta automática, conforme a política. Os registros de bloqueio por falta de credencial abaixo documentam as etapas anteriores.
+
+## Ativação e teste do novo número — 17/09/2026
+
+- O usuário cadastrou a credencial no servidor. Leitura da Meta confirmou validade, permissões de mensagens/gestão, telefone VERIFIED associado à WABA comercial e o mesmo aplicativo do webhook. Nenhum token foi impresso ou enviado ao Git.
+- Cadastro comercial ativado e `WHATSAPP_MULTICANAL=1` aplicado; identidade/menu/coleta já estavam ON. Não houve alteração do número principal nem ampliação de seu piloto. Sem migração adicional.
+- Antes da ativação não havia fila pendente. Durante a configuração o usuário enviou um “Olá” de teste; essa entrada específica foi preservada para o retry normal. Nenhum histórico antigo foi reaberto.
+- Deploy da API concluído; saúde/prontidão 200, histórico sem autenticação 401 e verificação inválida do webhook 403. A mensagem real chegou pela Meta, foi persistida no canal comercial e concluída pelo worker sem enfileirar modelo.
+- O contato do teste já estava assumido por um atendente desde 15/09. A pausa do interlocutor foi corretamente mantida também no comercial; foi solicitada autorização específica para devolvê-lo ao automático. Não confundir esse bloqueio intencional com erro de credencial. A devolução deve usar o serviço do projeto, invalidar ações antigas e exigir nova mensagem, sem apagar o histórico.
+- Repetidos os verificadores PostgreSQL: entrada comercial 9, isolamento de canais 7, identidade/jornada comercial 9; todos passaram com rede externa e IA bloqueadas. A PR 68 também teve CI, jornada comercial e confirmação fiscal aprovadas. Isso comprova a simulação; entrega real de uma resposta ainda depende da continuidade do teste do usuário.
 
 ## Publicação e auditoria de produção — 17/09/2026
 
