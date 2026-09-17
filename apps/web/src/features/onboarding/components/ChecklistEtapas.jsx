@@ -130,6 +130,7 @@ export function CardEtapa({
             <div style={{ marginTop: "var(--space-2)", display: "grid", gap: "var(--space-2)" }}>
               <textarea
                 rows={2}
+                disabled={ocupada}
                 value={rascunhoObs}
                 onChange={(e) => setRascunhoObs(e.target.value)}
                 aria-label={`Observação de ${etapa.titulo}`}
@@ -143,6 +144,7 @@ export function CardEtapa({
                 <Button
                   size="sm"
                   type="button"
+                  disabled={ocupada}
                   onClick={async () => { await onObservacao(etapa, rascunhoObs); setEditandoObs(false); }}
                 >
                   Salvar observação
@@ -160,6 +162,7 @@ export function CardEtapa({
           ) : (
             <button
               type="button"
+              disabled={ocupada}
               onClick={() => setEditandoObs(true)}
               style={{
                 marginTop: 6, background: "none", border: "none", padding: 0, cursor: "pointer",

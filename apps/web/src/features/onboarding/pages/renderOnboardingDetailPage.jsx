@@ -1,12 +1,5 @@
 import { PainelComercial } from "../components/PainelComercial";
-// DETALHE — duas colunas.
-//
-// Esquerda: a ficha declarada, SOMENTE LEITURA, percorrendo A MESMA SPEC do wizard. O escritório vê
-// exatamente o que foi perguntado, na ordem em que foi perguntado — é isso que torna a divergência
-// entre declarado e conferido visível.
-// Direita: a checklist ordenada, com o efeito colateral em cada card.
-//
-// ⚠ `--content-max`: é ficha de leitura, não tabela.
+// As áreas compartilham a ficha, mas preservam seus rascunhos ao alternar a navegação.
 
 import { useCallback, useEffect, useState } from "react";
 import { PageShell } from "../../../components/layout/PageShell";
@@ -32,6 +25,7 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
   const [erroConversao, setErroConversao] = useState(null);
   const [aviso, setAviso] = useState(null);
   const [revisaoComercial, setRevisaoComercial] = useState(0);
+  const [areaEscolhida, setAreaEscolhida] = useState(null);
 
   async function atualizarFicha() {
     if (ocupada) return;
@@ -165,12 +159,12 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
   }
 
   if (carregando) {
-    return <PageShell title="Onboarding" onBack={onVoltar}><p style={{ color: "var(--text-muted)" }}>Carregando…</p></PageShell>;
+    return <PageShell title="Entrada de clientes" onBack={onVoltar}><p style={{ color: "var(--text-muted)" }}>Carregando…</p></PageShell>;
   }
   if (erro || !onboarding) {
     return (
-      <PageShell title="Onboarding" onBack={onVoltar}>
-        <p style={{ color: "var(--state-warn)" }}>{erro?.message || "Onboarding não encontrado."}</p>
+      <PageShell title="Entrada de clientes" onBack={onVoltar}>
+        <p style={{ color: "var(--state-warn)" }}>{erro?.message || "Atendimento não encontrado."}</p>
       </PageShell>
     );
   }
@@ -178,6 +172,12 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
   const status = statusDoOnboarding(onboarding.status);
   const convertido = onboarding.status === "CONVERTIDO";
   const encerrado = ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"].includes(onboarding.status);
+  const temComercial = typeof api.getOnboardingComercial === "function";
+  const area = areaEscolhida?.id === onboarding.id ? areaEscolhida.area :
+    convertido ? "implantacao" : temComercial ? "comercial" : "dados";
+  const areas = [...(temComercial ? [["comercial", "Atendimento comercial"]] : []), ["dados", "Dados do cliente"], ["implantacao", "Implantação"]];
+  const pendentes = (onboarding.etapas || []).filter(etapa => !etapa.concluidaEm);
+  const proximaEtapa = pendentes.find(etapa => etapa.obrigatoria) || pendentes[0];
 
   return (
     <PageShell
@@ -216,7 +216,11 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
       contentClassName="onboarding-workspace"
       contentStyle={{ maxWidth: "var(--content-max)", margin: "0 auto", width: "100%" }}
     >
-      {typeof api.getOnboardingComercial === "function" && <PainelComercial key={onboarding.id} api={api} onboardingId={onboarding.id} convertido={encerrado} revisao={revisaoComercial} />}
+      <nav className="onboarding-sections" aria-label="Áreas do atendimento">
+        {areas.map(([chave, rotulo]) => <button type="button" key={chave}
+          aria-pressed={area === chave} aria-controls={`onboarding-area-${chave}`}
+          onClick={() => setAreaEscolhida({ id: onboarding.id, area: chave })}>{rotulo}</button>)}
+      </nav>
       {aviso && (
         <div style={{ padding: "var(--space-2) var(--space-3)", marginBottom: "var(--space-3)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: 13, color: "var(--text-muted)" }}>
           {aviso}
@@ -225,52 +229,42 @@ export function OnboardingDetailPage({ api, onboardingId, onVoltar, onAbrirEmpre
 
       {convertido && (
         <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 0 }}>
-          Esta ficha virou empresa e agora é histórico — somente leitura. A verdade sobre a empresa
-          passa a morar no cadastro dela.
+          Empresa adicionada à carteira. Esta ficha preserva o histórico; atualizações e documentos ficam no cadastro da empresa.
         </p>
       )}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 380px)",
-          gap: "var(--space-5)",
-          alignItems: "start",
-        }}
-        className="onboarding-detalhe-grid"
-      >
-        <section>
-          <details className="onboarding-panel" open={onboarding.status !== "RASCUNHO"}>
-          <summary>2. Conferir dados do cliente</summary>
+      <div id="onboarding-area-comercial" className="onboarding-area" hidden={area !== "comercial"}>
+        {temComercial && <PainelComercial key={onboarding.id} api={api} onboardingId={onboarding.id} convertido={encerrado} revisao={revisaoComercial} coletaInicial={onboarding.status === "RASCUNHO"} />}
+      </div>
+      <section id="onboarding-area-dados" className="onboarding-area" hidden={area !== "dados"} aria-label="Dados do cliente">
+          <h2>Dados declarados</h2>
           <FichaDeclarada
             origem={onboarding.origem}
             dados={onboarding.dados || {}}
             origemPreenchimento={onboarding.origemPreenchimento}
           />
-          </details>
-        </section>
+          {onboarding.portalClientId && <Button variant="secondary" onClick={() => onAbrirEmpresa?.(onboarding.portalClientId, "documentos")}>Documentos da empresa</Button>}
+      </section>
 
-        <section>
-          <h2 style={{ fontSize: 14, marginTop: 0 }}>3. Andamento no escritório</h2>
+      <section id="onboarding-area-implantacao" className="onboarding-area" hidden={area !== "implantacao"} aria-label="Implantação">
+          <h2>Preparação e implantação</h2>
+          <p className="onboarding-help">Checklist do escritório para este serviço. Contratação, assinatura e pagamento são conferidos no atendimento comercial.</p>
+          {proximaEtapa && !encerrado && <div className="onboarding-next-step"><small>Próxima pendência da checklist</small><strong>{proximaEtapa.titulo}</strong><span>{pendentes.length} {pendentes.length === 1 ? "etapa pendente" : "etapas pendentes"}</span></div>}
           {!onboarding.etapas?.length && <p className="onboarding-help">As etapas serão criadas quando a ficha for enviada. Enquanto isso, prepare o link e acompanhe o preenchimento.</p>}
           {onboarding.etapas?.length > 0 && <ChecklistEtapas
             etapas={onboarding.etapas || []}
             portalClientId={onboarding.portalClientId}
             certificado={certificado}
-            ocupada={ocupada || convertido}
+            ocupada={ocupada || encerrado}
             onAlternar={alternarEtapa}
             onObservacao={salvarObservacao}
             onAcao={executarAcao}
           />}
-        </section>
-      </div>
-
-      {/* Abaixo de ~900px as duas colunas viram uma. */}
-      <style>{`
-        @media (max-width: 900px) {
-          .onboarding-detalhe-grid { grid-template-columns: minmax(0, 1fr) !important; }
-        }
-      `}</style>
+          {onboarding.portalClientId && <div className="onboarding-actions">
+            <Button variant="secondary" onClick={() => onAbrirEmpresa?.(onboarding.portalClientId, "cadastro")}>Cadastro da empresa</Button>
+            <Button variant="secondary" onClick={() => onAbrirEmpresa?.(onboarding.portalClientId, "documentos")}>Documentos da empresa</Button>
+          </div>}
+      </section>
 
       {modalAberto && (
         <ConversaoModal

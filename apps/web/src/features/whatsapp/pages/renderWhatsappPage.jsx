@@ -134,8 +134,8 @@ export function WhatsappPage({ api, companies = [], onBack, onComunicados, messa
   };
 
   return <div className="wa-page">
-    <PageShell title="WhatsApp" subtitle="Central de atendimento · Altan Contabilidade" onBack={onBack}
-      actions={<>{onComunicados && <Button variant="secondary" onClick={onComunicados}>Comunicados</Button>}<Button variant="secondary" onClick={() => hook.carregar(hook.filtro)} disabled={hook.carregando}><span className="wa-inline"><WhatsappIcon nome="atualizar" size={16} />{hook.carregando ? "Carregando…" : "Atualizar"}</span></Button></>}>
+    <PageShell title="Atendimento" subtitle="Conversas pelo WhatsApp" onBack={onBack}
+      actions={<><Button variant="secondary" onClick={() => hook.carregar(hook.filtro)} disabled={hook.carregando}><span className="wa-inline"><WhatsappIcon nome="atualizar" size={16} />{hook.carregando ? "Carregando…" : "Atualizar"}</span></Button></>}>
       <AppShell className="wa-shell">
         <div className={`wa-workspace${verChat ? " wa-workspace--open" : ""}${detalhes && hook.aberta ? " wa-workspace--details" : ""}`}>
           <aside className="wa-sidebar" aria-label="Caixa de entrada" ref={listaRef}>
