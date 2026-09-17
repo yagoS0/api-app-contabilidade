@@ -37,6 +37,36 @@ test("chegada em outro canal não muda remetente; rascunhos dos canais ficam sep
   expect(texto).toHaveValue("Mensagem pelo atendimento");
 });
 
+test("troca de telefone no mesmo canal bloqueia envio até conferir e preserva o rascunho ao reabrir", async () => {
+  const h = hook();
+  const anterior = { ...c, canais: c.canais.map(canal => ({ ...canal, vinculoNumeroId: "numero-antigo", telefoneMascarado: "(21) *****-1111" })) };
+  const atual = { ...anterior, canais: anterior.canais.map(canal => canal.id === "principal" ? { ...canal, conversaId: "conversa-nova", vinculoNumeroId: "numero-novo", telefoneMascarado: "(21) *****-2222" } : canal) };
+  const ui = render(<CompositorConversa conversa={anterior} hook={h} />);
+  fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Texto preparado antes da associação" } });
+  ui.rerender(<CompositorConversa conversa={atual} hook={h} />);
+  expect(screen.getByRole("button", { name: "Responder" })).toBeDisabled();
+  fireEvent.keyDown(screen.getByLabelText("Responder ao cliente"), { key: "Enter", ctrlKey: true });
+  expect(h.responder).not.toHaveBeenCalled();
+  expect(screen.getByRole("alert")).toHaveTextContent("(21) *****-2222");
+  ui.unmount(); render(<CompositorConversa conversa={atual} hook={h} />);
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Texto preparado antes da associação");
+  expect(screen.getByRole("button", { name: "Responder" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Conferi o destinatário: manter este rascunho" }));
+  expect(h.responder).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Responder" }));
+  await waitFor(() => expect(h.responder).toHaveBeenCalledWith("conversa-nova", "Texto preparado antes da associação"));
+});
+
+test("mudança de vigência também exige conferência quando conversa e canal permanecem iguais", () => {
+  const h = hook(); const anterior = { ...c, canais: c.canais.map(canal => ({ ...canal, vinculoNumeroId: "v1" })) };
+  const ui = render(<CompositorConversa conversa={anterior} hook={h} />);
+  fireEvent.change(screen.getByLabelText("Responder ao cliente"), { target: { value: "Mensagem na vigência anterior" } });
+  ui.rerender(<CompositorConversa conversa={{ ...anterior, canais: anterior.canais.map(canal => ({ ...canal, vinculoNumeroId: "v2" })) }} hook={h} />);
+  expect(screen.getByRole("button", { name: "Responder" })).toBeDisabled();
+  expect(screen.getByLabelText("Responder ao cliente")).toHaveValue("Mensagem na vigência anterior");
+  expect(h.responder).not.toHaveBeenCalled();
+});
+
 test("nota privada não usa transporte e trocar empresa conserva rascunhos separados", async () => {
   const h = hook(); render(<CompositorConversa conversa={{ ...c, janela: { situacao: "EXPIRADA" }, canais: c.canais.map(canal => ({ ...canal, janela: { situacao: "EXPIRADA" } })) }} hook={h} />);
   fireEvent.click(screen.getByRole("button", { name: /Nota interna/ }));

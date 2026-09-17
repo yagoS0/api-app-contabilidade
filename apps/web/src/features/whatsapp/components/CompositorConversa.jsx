@@ -15,8 +15,8 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
   // Nunca seguir silenciosamente o canal de uma nova mensagem recebida.
   const canal = canais.find(c => c.id === canalId);
   const destino = canal?.conversaId || (canais.length === 1 ? conversa.id : null);
-  useEffect(() => { if (canal && destino) onCanalSelecionado?.({ interlocutorId: conversa.interlocutorId || conversa.id, canalId, conversaId: destino, nome: canal.nome || canal.chave || canal.finalidade || "Principal" }); }, [canalId, destino, conversa.interlocutorId, onCanalSelecionado]);
-  const conversaCanal = { ...conversa, id: destino, canalId, janela: canal?.janela || (canais.length === 1 ? conversa.janela : null) };
+  const destinoAtual = { conversaId: destino, vinculoNumeroId: canal?.vinculoNumeroId || null };
+  const conversaCanal = { ...conversa, id: destino, canalId, telefoneMascarado: canal?.telefoneMascarado || conversa.telefoneMascarado, janela: canal?.janela || (canais.length === 1 ? conversa.janela : null) };
   const resposta = canal?.podeResponder === false ? { pode: false, motivo: canal?.janela?.situacao === "ABERTA" ? "Este canal está indisponível para responder. Selecione um canal ativo e confira a mensagem." : estadoDaResposta(conversaCanal).motivo } : canal ? estadoDaResposta(conversaCanal) : { pode: false, motivo: "O canal preparado não está mais disponível. Selecione um canal e confira a mensagem." };
   const chave = chaveDoRascunho(conversa, { canalId, modo, escopo });
   const chaveRef = useRef(chave);
@@ -29,18 +29,28 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
   const texto = typeof rascunho === "string" ? rascunho : rascunho.texto || "";
   const orientacao = typeof rascunho === "object" ? rascunho.orientacao : null;
   const editada = Boolean(orientacao?.orientacaoId && texto !== orientacao.texto);
+  const destinoPreparado = typeof rascunho === "object" ? rascunho.destinoPreparado : null;
+  const destinoMudou = modo === "MENSAGEM" && Boolean(texto.trim() && destinoPreparado && JSON.stringify(destinoPreparado) !== JSON.stringify(destinoAtual));
+  useEffect(() => { if (canal && destino && !destinoMudou) onCanalSelecionado?.({ interlocutorId: conversa.interlocutorId || conversa.id, canalId, conversaId: destino, nome: canal.nome || canal.chave || canal.finalidade || "Principal" }); }, [canalId, destino, destinoMudou, conversa.interlocutorId, onCanalSelecionado]);
   useEffect(() => {
     chaveRef.current = chave;
-    setRascunho(hook.rascunhosRef?.current.get(chave) || "");
+    const salvo = hook.rascunhosRef?.current.get(chave) || "";
+    // Migração do rascunho legado em memória. O destino fica salvo junto do texto,
+    // inclusive ao sair deste contato e retornar depois de outro polling.
+    const preparado = modo === "MENSAGEM" && salvo && !salvo.destinoPreparado
+      ? { ...(typeof salvo === "string" ? { texto: salvo } : salvo), destinoPreparado: destinoAtual } : salvo;
+    if (preparado !== salvo) hook.rascunhosRef?.current.set(chave, preparado);
+    setRascunho(preparado);
     setErro(""); setPrevia(false);
   }, [chave, hook.rascunhosRef]);
   function salvarDraft(valor) {
-    hook.rascunhosRef?.current.set(chave, valor);
-    setRascunho(valor); setPrevia(false);
+    const preparado = modo === "MENSAGEM" ? { ...(typeof valor === "string" ? { texto: valor } : valor), destinoPreparado: valor?.destinoPreparado || destinoPreparado || destinoAtual } : valor;
+    hook.rascunhosRef?.current.set(chave, preparado);
+    setRascunho(preparado); setPrevia(false);
   }
   function mudarTexto(valor) { salvarDraft(orientacao ? { texto: valor, orientacao } : valor); }
   async function enviar() {
-    if (trava.current || hook.ocupado || !texto.trim() || !destino || (modo === "MENSAGEM" && !resposta.pode) || (modo === "NOTA" && !escopo)) return;
+    if (trava.current || hook.ocupado || !texto.trim() || !destino || destinoMudou || (modo === "MENSAGEM" && !resposta.pode) || (modo === "NOTA" && !escopo)) return;
     if (editada && !previa) { setPrevia(true); return; }
     trava.current = true; setOcupado(true); setErro("");
     const chaveEnviada = chave, conteudo = texto.trim();
@@ -71,12 +81,13 @@ export function CompositorConversa({ conversa, hook, slotAcoes, onCanalSeleciona
     } catch (e) { if (chaveRef.current === chaveEnviada) setErro(e?.payload?.message || e.message || "Não foi possível enviar."); }
     finally { trava.current = false; setOcupado(false); }
   }
-  const bloqueado = ocupado || hook.ocupado || (modo === "NOTA" ? !escopo || !hook.salvarNota : !resposta.pode);
+  const bloqueado = ocupado || hook.ocupado || destinoMudou || (modo === "NOTA" ? !escopo || !hook.salvarNota : !resposta.pode);
   return <div className="wa-composer" data-modo={modo}>
     <div className="wa-compose-tabs"><button type="button" aria-pressed={modo === "MENSAGEM"} onClick={() => setModo("MENSAGEM")} disabled={ocupado}>Mensagem</button>
       {escopos.length > 0 && typeof hook.api?.criarNotaInternaWhatsapp === "function" && <button type="button" aria-pressed={modo === "NOTA"} onClick={() => setModo("NOTA")} disabled={ocupado}>Nota interna · só a equipe</button>}
       {canais.length > 1 ? <label>Enviar por <select aria-label="Canal da resposta" value={canalId || ""} disabled={ocupado} onChange={e => setCanalId(e.target.value)}>{!canal && <option value="">Selecione</option>}{canais.map(c => <option key={c.id} value={c.id}>{c.nome || c.chave || c.finalidade}</option>)}</select></label> : <span className="wa-channel-label">WhatsApp · {canal?.nome || canal?.chave || "Principal"}</span>}
     </div>
+    {destinoMudou && <div role="alert" className="wa-draft-preview"><strong>Confira o destinatário antes de continuar</strong><p>O número ou vínculo de destino deste canal mudou enquanto a mensagem estava preparada. Seu texto foi preservado. Destinatário atual: <strong>{conversaCanal.telefoneMascarado || "número a conferir no contato"}</strong>.</p><p>{texto}</p><Button variant="secondary" disabled={ocupado || hook.ocupado || !destino} onClick={() => salvarDraft({ texto, destinoPreparado: destinoAtual, ...(orientacao ? { orientacao: { ...orientacao, conversaId: destino, canalId } } : {}) })}>Conferi o destinatário: manter este rascunho</Button></div>}
     {modo === "NOTA" ? <div className="wa-note-scope"><label>Salvar nota para <select aria-label="Escopo da nota interna" value={escopo?.id || ""} onChange={e => setEscopoId(e.target.value)} disabled={ocupado}><option value="">Selecione o caso ou a empresa</option>{escopos.map(e => <option key={e.id} value={e.id}>{e.rotulo}</option>)}</select></label><p>Esta nota fica visível apenas à equipe autorizada. Não será enviada ao WhatsApp.</p></div> : <>
       {(!conversa.atendimento || conversa.atendimento.contextoSelecionado) && slotAcoes}
       <div className="wa-composer-tools"><AnexoDaConversa key={`anexo-${destino}`} api={hook.api} conversa={conversaCanal} disabled={bloqueado} onEnviado={() => hook.abrir(conversa.id, true)} />

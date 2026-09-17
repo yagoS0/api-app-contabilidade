@@ -105,6 +105,24 @@ try {
     const casoDuplicado=await tx.conversaWhatsapp.create({data:{telefoneE164:telefoneLead,chaveEscopo:`sem-empresa:${prefixo}-caso-duplicado`,canalId:'principal',vinculoNumeroId:novoLead.vinculoNumero.id}});
     await tx.atendimentoLead.create({data:{conversaId:casoDuplicado.id}});
     const inventario=await backfillIdentidadeComunicacao({client:tx});assert.ok(inventario.conflitos.some(c=>c.tipo==='ALIAS_AMBIGUO'));assert.ok(inventario.conflitos.some(c=>c.tipo==='CASOS_ATIVOS_DUPLICADOS'));checks++;
+    // Uma pessoa associada a dois números não recebe o destino antigo só porque
+    // o segmento antigo tem empresa. Janela e destino usam a mesma vigência.
+    const telefoneAntigo=`552155${String(Date.now()).slice(-7)}`,telefoneNovo=`552144${String(Date.now()).slice(-7)}`;
+    const pessoaDoisNumeros=await garantirIdentidadeWhatsapp({telefone:telefoneAntigo,client:tx});
+    await tx.contatoWhatsapp.create({data:{nome:`${prefixo} Dois números`,portalClientId:empresas[0].id,telefoneE164:telefoneAntigo,vinculoNumeroId:pessoaDoisNumeros.vinculoNumero.id}});
+    const segmentoAntigo=await tx.conversaWhatsapp.create({data:{telefoneE164:telefoneAntigo,chaveEscopo:`empresa:${prefixo}-telefone-antigo`,portalClientId:empresas[0].id,canalId:'principal',vinculoNumeroId:pessoaDoisNumeros.vinculoNumero.id,updatedAt:new Date(Date.now()-60000)}});
+    const vinculoNovo=await tx.vinculoNumeroInterlocutor.create({data:{telefoneE164:telefoneNovo,interlocutorId:pessoaDoisNumeros.interlocutor.id,origem:'ASSOCIACAO_VERIFICADA',verificadoEm:new Date(),verificadoPor:'test',evidencia:'Exemplo sintético conferido'}});
+    const segmentoNovo=await tx.conversaWhatsapp.create({data:{telefoneE164:telefoneNovo,nomePerfilProvedor:`${prefixo} Novo número`,chaveEscopo:`sem-empresa:${prefixo}-telefone-novo`,canalId:'principal',vinculoNumeroId:vinculoNovo.id}});
+    await tx.mensagemWhatsapp.create({data:{conversaId:segmentoNovo.id,direcao:'in',providerMessageId:`${prefixo}-telefone-novo`,tipo:'text',corpo:'Agora uso este número'}});
+    const listaDois=await listarInboxWhatsapp({visiveis,operadorId:'test',q:prefixo,client:tx});
+    const resumoDois=listaDois.conversas.find(c=>c.interlocutorId===pessoaDoisNumeros.interlocutor.id);
+    assert.equal(resumoDois.id,segmentoNovo.id);assert.equal(resumoDois.telefoneE164,telefoneNovo);assert.equal(resumoDois.canais[0].conversaId,segmentoNovo.id);assert.equal(resumoDois.canais[0].vinculoNumeroId,vinculoNovo.id);assert.equal(resumoDois.janela.situacao,'ABERTA');checks++;
+    const escolhaAntiga=await lerHistoricoIdentidade({conversaId:segmentoAntigo.id,visiveis,client:tx});
+    assert.equal(escolhaAntiga.conversa.id,segmentoAntigo.id);assert.equal(escolhaAntiga.conversa.canais[0].conversaId,segmentoAntigo.id);assert.equal(escolhaAntiga.conversa.janela.situacao,'NUNCA_ABERTA');checks++;
+    await tx.vinculoNumeroInterlocutor.update({where:{id:pessoaDoisNumeros.vinculoNumero.id},data:{encerrouEm:new Date()}});
+    await tx.conversaWhatsapp.update({where:{id:segmentoAntigo.id},data:{updatedAt:new Date(Date.now()+5000)}});
+    const escolhaEncerrada=await lerHistoricoIdentidade({conversaId:segmentoAntigo.id,visiveis,client:tx});
+    assert.equal(escolhaEncerrada.conversa.id,segmentoNovo.id);assert.equal(escolhaEncerrada.conversa.canais[0].conversaId,segmentoNovo.id);assert.equal(escolhaEncerrada.conversa.canais[0].vinculoNumeroId,vinculoNovo.id);checks++;
     throw rollback;
   },{timeout:60000});
 } catch(err) {if(err!==rollback) throw err;}

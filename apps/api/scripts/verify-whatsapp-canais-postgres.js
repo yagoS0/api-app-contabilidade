@@ -91,4 +91,18 @@ try {
   await rejeita(whatsappPorCanal(canalId), 'CANAL_DESABILITADO');
   ok('Desativar canal bloqueia novas saídas.');
   console.log(JSON.stringify({ ok: true, checks, banco: alvo.db, rede: 'bloqueada', prefixo }));
-} finally { await prisma.$disconnect(); }
+} finally {
+  // Limpa exclusivamente os IDs desta execução, inclusive as duas gerações da fixture.
+  const vinculos = await prisma.vinculoNumeroInterlocutor.findMany({ where: { telefoneE164: telefone }, select: { id: true, interlocutorId: true } });
+  const ids = vinculos.map(v => v.id);
+  const conversas = await prisma.conversaWhatsapp.findMany({ where: { vinculoNumeroId: { in: ids } }, select: { id: true } });
+  await prisma.mensagemWhatsapp.deleteMany({ where: { conversaId: { in: conversas.map(c => c.id) } } });
+  await prisma.conversaWhatsapp.updateMany({ where: { id: { in: conversas.map(c => c.id) } }, data: { atendimentoId: null } });
+  await prisma.atendimentoResponsavelWhatsapp.deleteMany({ where: { vinculoNumeroId: { in: ids } } });
+  await prisma.conversaWhatsapp.deleteMany({ where: { id: { in: conversas.map(c => c.id) } } });
+  await prisma.eventoIdentidadeComunicacao.deleteMany({ where: { vinculoNumeroId: { in: ids } } });
+  await prisma.vinculoNumeroInterlocutor.deleteMany({ where: { id: { in: ids } } });
+  await prisma.interlocutorComunicacao.deleteMany({ where: { id: { in: vinculos.map(v => v.interlocutorId) } } });
+  await prisma.canalWhatsapp.deleteMany({ where: { id: canalId } });
+  await prisma.$disconnect();
+}

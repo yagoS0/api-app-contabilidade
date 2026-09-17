@@ -128,12 +128,17 @@ async function resumirGrupos(grupos, { visiveis, client }) {
     FROM mensagens_whatsapp m JOIN conversas_whatsapp c ON c.id=m."conversaId" WHERE c.id IN (${Prisma.join(ids)}) AND m.direcao='in'
     ORDER BY c."canalId",c."vinculoNumeroId",m."registradaEm" DESC,m.id DESC`);
   return grupos.map(g => {
-    const segmento = g.origem || g.segmentos.find(s => s.portalClientId) || g.segmentos[0];
+    const vigente = s => !s.vinculoNumero?.encerrouEm;
+    const maisRecente = lista => [...lista].sort((a,b) => new Date(b.updatedAt)-new Date(a.updatedAt) || b.id.localeCompare(a.id))[0];
+    // O detalhe conserva a escolha explícita enquanto o destinatário continuar vigente.
+    // Na inbox, ter empresa não dá preferência ao telefone antigo de uma pessoa.
+    const segmento = g.origem && vigente(g.origem) ? g.origem : maisRecente(g.segmentos.filter(vigente)) || g.origem || maisRecente(g.segmentos);
     const vinculo = segmento.vinculoNumero, interlocutor = vinculo?.interlocutor;
     const doGrupo = contatos.filter(c => g.segmentos.some(s => s.vinculoNumeroId === c.vinculoNumeroId));
     const caso = casos.find(a => a.interlocutorId === interlocutor?.id);
     const atual = segmento.atendimento;
-    const propria = doGrupo.find(c => c.ativo && c.nome);
+    const propria = doGrupo.find(c => c.ativo && c.nome && c.vinculoNumeroId === segmento.vinculoNumeroId)
+      || doGrupo.find(c => c.ativo && c.nome && g.segmentos.some(s => s.vinculoNumeroId === c.vinculoNumeroId && vigente(s)));
     const ultimas = mensagens.filter(m => g.segmentos.some(s => s.id === m.segmentoEfetivo)).sort((a,b) => new Date(b.registradaEm)-new Date(a.registradaEm) || b.id.localeCompare(a.id));
     const ultima = ultimas[0];
     const empresas = [...new Map(g.segmentos.filter(s => s.portalClientId).map(s => [s.portalClientId, empresa(s)])).values()];
@@ -141,10 +146,12 @@ async function resumirGrupos(grupos, { visiveis, client }) {
     const escoposNotas = interlocutor ? [ ...(completo ? [{ id: 'PESSOA', rotulo: 'Pessoa', escopo: 'PESSOA' }] : []),
       ...empresas.map(e => ({ id: `EMPRESA:${e.id}`, rotulo: e.razao, escopo: 'EMPRESA', portalClientId: e.id })),
       ...(completo && caso ? [{ id: `CASO:${caso.id}`, rotulo: 'Atendimento comercial', escopo: 'CASO', atendimentoLeadId: caso.id }] : []) ] : [];
-    const canais = [...new Map(g.segmentos.map(s => [s.canalId || 'principal', s])).values()].map(s => {
+    const canais = [...new Set(g.segmentos.filter(vigente).map(s => s.canalId || 'principal'))].map(canalId => {
+      const candidatos = g.segmentos.filter(s => vigente(s) && (s.canalId || 'principal') === canalId);
+      const s = candidatos.find(s => s.id === segmento.id) || maisRecente(candidatos);
       const entrada = recebidas.find(m => m.canalId === s.canalId && m.vinculoNumeroId === s.vinculoNumeroId);
       const janela = avaliarJanela24h(entrada || null);
-      return { id: s.canalId || 'principal', chave: s.canalWhatsapp?.chave || 'principal', finalidade: s.canalWhatsapp?.finalidade || 'PRINCIPAL', conversaId: s.id, janela,
+      return { id: s.canalId || 'principal', chave: s.canalWhatsapp?.chave || 'principal', finalidade: s.canalWhatsapp?.finalidade || 'PRINCIPAL', conversaId: s.id, vinculoNumeroId:s.vinculoNumeroId || null, telefoneE164:s.telefoneE164, telefoneMascarado:mascararTelefone(s.telefoneE164), janela,
         podeResponder: Boolean(s.canalWhatsapp?.ativo !== false && !s.vinculoNumero?.encerrouEm && janela.situacao === 'ABERTA') };
     });
     const canal = canais.find(c => c.id === (segmento.canalId || 'principal'));

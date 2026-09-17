@@ -46,7 +46,7 @@ O ensaio detectou e levou à remoção da contagem de não lidas repetida por pe
 
 Decisão após medição: manter polling da página completa, com paginação por cursor e proteção contra resposta obsoleta. Isso conserva atualizações de entrega e notas mesmo quando nenhuma mensagem nova chega. Delta incremental de transporte e SSE permanecem otimizações posteriores; não foram implementados nesta entrega.
 
-Ensaios reais complementares: 22 verificações de identidade/migração, 7 de canais, 9 do novo fluxo comercial, 37 do fluxo comercial anterior e 11 da abertura até cadastro/documentos. Os testes adicionais executados depois de cada correção estão nos respectivos verificadores e suites.
+Ensaios reais complementares: 25 verificações de identidade/migração, 7 de canais, 9 do novo fluxo comercial, 37 do fluxo comercial anterior e 11 da abertura até cadastro/documentos. A revisão final inclui destino vigente para pessoa com dois telefones, preservação da escolha explícita no detalhe e bloqueio de rascunho quando seu destino muda. Os testes adicionais executados depois de cada correção estão nos respectivos verificadores e suites.
 
 A validação visual pelo navegador ficou indisponível nesta sessão: a ferramenta de UI não encontrou navegador disponível. A aplicação de desenvolvimento e o build foram verificados, mas isso não substitui inspeção visual interativa nem homologação externa da Meta.
 
