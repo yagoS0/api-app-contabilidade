@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Comunicação publicada — 17/09/2026
+
+PR 67 integrada; código `4bb238f2` confirmado na API e no portal do escritório em produção. Identidade/chat V2 e coleta determinística ativos; piloto preservado, multicanal OFF. Backup e backfill concluídos, 17 segmentos e duas pausas humanas preservados. Dois históricos sem contato (legado/lixeira) foram conferidos e mantidos sem criar vínculo. O novo número comercial está preparado, inativo: a credencial lê o telefone, mas a WABA fornecida recusa acesso `100/33`; falta habilitar/configurar sua credencial e confirmar remetente do piloto. Não tratar a captura de tela como canal operacional. CI completa aprovada; nenhum teste usou Anthropic ou envio real. Estado/evidências em `docs/comunicacao-identidade-implantacao.md`.
+
 ## Identificação do atendente — 17/09/2026
 
 O dono pediu mostrar ao cliente quem está falando no WhatsApp. Mensagens manuais, orientações rápidas, anexos, propostas e devolutivas recebem o nome do usuário autenticado em negrito na primeira linha do texto/legenda; não é alteração do remetente nativo da Meta. Não atribuir automações a um humano nem usar nome enviado pelo navegador ou o responsável anterior da conversa. Histórico conserva a assinatura enviada, sem reescrever mensagens antigas. Novo número comercial foi informado como cadastrado na Meta; cadastro externo não comprova configuração/ativação no sistema. Em 17/09 o dono autorizou revisar todo o conjunto e publicar na main/produção; dados de provisionamento ficam fora do Git. Ver `docs/comunicacao-identidade-implantacao.md` para o estado efetivamente conferido.

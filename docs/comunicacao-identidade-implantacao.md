@@ -2,9 +2,21 @@
 
 Implementação iniciada em 16/09/2026, branch `feat/comunicacao-identidade-chat-v2`, reconciliada com a main em 17/09/2026. Decisões e backlog: [plano](plano-comunicacao-identidade-leads-20260916.md).
 
-Estado em 17/09: dono autorizou revisar o conjunto e publicar na main/produção. Revisão e preparação da implantação em andamento; registrar revisão efetivamente implantada, auditoria e flags somente após verificação.
+Estado conferido em 17/09: conjunto integrado pela [PR 67](https://github.com/yagoS0/api-app-contabilidade/pull/67), código `4bb238f2cd6509dee0261664894967edf4a98789` implantado com sucesso na API e no portal do escritório. Identidade V2, chat V2 e coleta comercial estão ativos. Multicanal permanece desligado; o novo canal comercial foi preparado como inativo porque a credencial atual não acessa sua WABA.
 
-A revisão final acrescentou a preservação da pausa humana legada no interlocutor: abrir outro canal não libera a automação. Repetir o backfill não restaura uma atribuição que a equipe já liberou. Verificador PostgreSQL aprovado com 27 verificações, transação revertida e rede bloqueada. A consulta de preparação encontrou as filas de entrada e IA sem itens pendentes; essa condição deve ser reconferida na ativação.
+## Publicação e auditoria de produção — 17/09/2026
+
+- Snapshot do volume PostgreSQL criado e conferido antes da migração. A migration aditiva foi aplicada pelo deploy. O WhatsApp foi temporariamente pausado durante a associação e reativado após auditoria.
+- Backfill concluído: 10 interlocutores, 17 segmentos e dois casos comerciais associados; nenhuma ambiguidade. As duas pausas humanas foram preservadas.
+- A conferência inicial reverteu a transação ao detectar duas diferenças de classificação. A inspeção identificou um histórico legado e uma conversa excluída, ambos sem contato cadastrado: foram preservados como histórico, sem inventar vínculo de cliente. A auditoria final confirmou zero segmento sem migração e zero divergência ativa. O CLI genérico ainda sinaliza esses dois históricos para conferência; eles não representam contatos ativos pendentes.
+- Flags conferidas: `INTEGRACAO_WHATSAPP=1`, `WHATSAPP_IDENTIDADE_V2=1`, `WHATSAPP_CHAT_V2=1`, `WHATSAPP_COLETA_COMERCIAL=1`, `WHATSAPP_MULTICANAL=0`. Menu permanece ativo. A audiência da coleta continua sendo a lista explícita existente; nenhuma ampliação foi presumida.
+- API `/healthz` e `/readyz`, aplicação em `https://app.altan.company` e arquivos publicados responderam 200. Bundle/CSS contêm chat V2, identificação, notas internas e lista de 238 px. Histórico exige autenticação e o webhook exige verificação. Isso é conferência técnica de publicação, não homologação visual ou envio real pela Meta.
+- [CI completa](https://github.com/yagoS0/api-app-contabilidade/actions/runs/35238347343), [jornada comercial](https://github.com/yagoS0/api-app-contabilidade/actions/runs/35238347283) e [confirmação WhatsApp/PostgreSQL](https://github.com/yagoS0/api-app-contabilidade/actions/runs/35238347420) aprovadas. A CI testou a integração com a alteração de tipografia da main (`259d97e8`). Interface completa: 317 suítes/4.289 testes; portal do cliente: 85/1.552; regressão de comunicação da API: 75/1.649, além das verificações comerciais, fiscais simuladas e de banco.
+- Nenhum ensaio consumiu tokens Anthropic, enviou mensagens reais, emitiu notas ou consultou serviços fiscais pagos.
+
+Pendências externas: a Meta permite ler o novo telefone e retorna `VERIFIED`, mas a consulta à WABA fornecida e aos aplicativos inscritos retorna erro `100/33` com a credencial atual. Não trocar a credencial principal por suposição. Liberar o acesso correto e configurar `WHATSAPP_COMERCIAL_TOKEN`, depois conferir conta/aplicativo e só então ativar o canal e multicanal. O telefone originalmente indicado para piloto é o próprio número principal do escritório; foi solicitada confirmação do celular remetente de teste. Identificadores e evidências privadas ficam fora do Git.
+
+A revisão final acrescentou a preservação da pausa humana legada no interlocutor: abrir outro canal não libera a automação. Repetir o backfill não restaura uma atribuição que a equipe já liberou. Verificador PostgreSQL aprovado com 27 verificações, transação revertida e rede bloqueada. As filas de entrada e IA estavam sem itens pendentes na preparação e foram reconferidas na transação de ativação.
 
 ## Nome de quem responde e novo número comercial — 17/09/2026
 
@@ -24,7 +36,7 @@ Menu e coleta compartilham o piloto comercial: não é necessário duplicar o te
 
 O novo verificador `verify-lead-entry-postgres.js` passa pelo webhook, registro real, lista nativa, coleta, transporte rastreado e persistência do onboarding, com Meta/consulta pública injetadas e rede externa bloqueada. Sete cenários cobrem saudação, pedido direto, replay, dúvida de preço, abertura avulsa, transferência, empresa parada, equipe e exclusão de telefone fora do piloto. O PostgreSQL é somente local/CI; não executar o verificador em produção.
 
-Validação após integrar a main: 81 suítes/1.690 testes da API, mais 35 verificações direcionadas após o ajuste que evita reservar atendimento fora do piloto; sete cenários reais no PostgreSQL com zero rede/IA. Das 51 suítes da interface afetada, 49 passaram na primeira rodada e duas foram corrigidas e aprovadas (28 testes): paridade de canais agora isola infraestrutura Node no jsdom, e a mensagem rápida exige a versão da orientação preparada. Build web aprovado. A tentativa de regressão de toda a aplicação web foi interrompida sem resultado; a validação concluída cobre comunicação, onboarding, contatos e navegação afetada. CI remoto ainda não executado.
+Validação local após integrar a main: 81 suítes/1.690 testes da API, mais 35 verificações direcionadas após o ajuste que evita reservar atendimento fora do piloto; sete cenários reais no PostgreSQL com zero rede/IA. Das 51 suítes da interface afetada, 49 passaram na primeira rodada e duas foram corrigidas e aprovadas (28 testes): paridade de canais agora isola infraestrutura Node no jsdom, e a mensagem rápida exige a versão da orientação preparada. Build web aprovado. A tentativa local de toda a aplicação web foi interrompida sem resultado; posteriormente a CI remota completou a regressão integral, conforme o registro de publicação acima. A CI também identificou e validou o mesmo isolamento no teste de paridade dos canais de guias.
 
 Antes de ativar, conferir revisão publicada, migração, audiência e fila pendente. Não reprocessar testes antigos nem liberar conversas assumidas por uma pessoa. Depois da ativação, conferir flags e saúde em leitura; recebimento real depende de uma nova mensagem do telefone autorizado. O registro de produção deve distinguir essa conferência de uma conversa efetivamente entregue pela Meta.
 
@@ -59,7 +71,7 @@ Todos os ensaios usam dados fictícios e provedores injetados. Os verificadores 
 - `verify-commercial-identity-postgres.js <banco-local-ou-CI>`: cliente com nova solicitação, coleta, regras da jornada, proposta e ficha avulsa.
 - Regressões Jest da comunicação, onboarding e interface; validação Prisma, auditoria de migrations e build web.
 
-Resultados locais: regressão ampla da API com 87 suítes/1.785 testes; regressão web com 52 suítes/376 testes, além das rodadas específicas posteriores às correções (incluindo 223 testes de transporte/identidade/rotas e 207 comerciais). Migration completa aplicada em PostgreSQL 15 e schema validado; nenhuma operação real em provedor externo. Execução local com Node 24; os workflows mantêm Node 20 e não foram executados remotamente nesta rodada.
+Resultados locais: regressão ampla da API com 87 suítes/1.785 testes; regressão web com 52 suítes/376 testes, além das rodadas específicas posteriores às correções (incluindo 223 testes de transporte/identidade/rotas e 207 comerciais). Migration completa aplicada em PostgreSQL 15 e schema validado; nenhuma operação real em provedor externo nos ensaios. Execução local com Node 24; a CI de publicação, registrada acima, executou com Node 20.
 
 Medição reproduzível com `benchmark-inbox-postgres.js`: 200 interlocutores, 2.000 mensagens, 8 amostras após aquecimento, tabelas analisadas antes de comparar os dois leitores reais. A quantidade de comandos de leitura V2 ficou constante entre páginas de 10 e 100 pessoas.
 

@@ -1,5 +1,7 @@
 # CLAUDE.md — API (apps/api)
 
+Publicação de comunicação em 17/09/2026: `4bb238f2` em produção, migration/backfill e auditoria concluídos. Identidade V2/chat V2/coleta comercial ON; multicanal OFF e canal comercial novo inativo aguardando credencial da WABA. Pausas humanas migradas para o interlocutor. Procedimento, classificação dos dois históricos sem contato e CI aprovada em `../../docs/comunicacao-identidade-implantacao.md`. Não ampliar o piloto nem reprocessar mensagens antigas na ativação.
+
 ## Nome do atendente no WhatsApp — 17/09/2026
 
 `assinaturaAtendente.assinarMensagemHumana` acrescenta o nome do usuário autenticado ao texto/legenda dos envios humanos. Chamadores: responder/orientação, documento da empresa, anexo manual, proposta e devolutiva. Automação, modelos Meta e notas internas não recebem assinatura humana. Nome ausente, e-mail ou ID como nome usam Equipe Altan; normalizar controles/formatação do cabeçalho e contar assinatura no limite de texto/legenda antes do transporte. Corpo salvo conserva o nome do envio, sem depender de quem assumiu o atendimento depois.
