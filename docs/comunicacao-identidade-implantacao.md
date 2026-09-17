@@ -6,6 +6,10 @@ Estado atual em 17/09 após as 19h37 UTC: canal comercial e multicanal ativados,
 
 ## Ativação e teste do novo número — 17/09/2026
 
+Atualização após teste real às 20h26 UTC: a Meta confirmou entrega, mas “Olá” caiu na coleta de uma transferência anterior, do principal, e recebeu “Não consegui identificar essa informação. Como você se chama?”. A simulação anterior cobria ficha nova e não esse estado. Correção: navegação precede interpretação cadastral; saudações/menu preservam a ficha e mostram as cinco opções. Interações não comerciais vão ao menu pelo ID, sem salvar seu título como nome. “Já sou cliente” não concede acesso e “Falar com a equipe” conserva handoff e expediente. Saudação com pedido concreto continua aproveitando os dados. Nenhuma alteração de produção em fichas, permissões ou atribuições é necessária.
+
+`verify-lead-entry-postgres.js --commercial` agora reproduz uma ficha iniciada no principal com CNPJ salvo e nome pendente: saudações simples/compostas, menu repetido, replay sem duplicação, retomada do mesmo caso e saídas de identificação/humano. São dados sintéticos com transporte simulado e rede/IA bloqueadas. O recibo real da resposta incorreta não comprova entrega da versão corrigida; esta requer nova mensagem após o deploy.
+
 Atualização às 20h12 UTC, após o dono relatar ausência de foto e reiterar falta de resposta: o perfil comercial recebeu exatamente a foto usada no principal. Foi utilizado upload retomável e `profile_picture_handle` da API oficial; GET posterior retornou a foto, baixada e conferida visualmente. Somente a imagem foi alterada. Credenciais/handles e os arquivos de evidência ficam fora do Git.
 
 O contato específico do teste voltou ao automático por `alterarAtendimentoHumano` com lease, preservação integral do histórico e invalidação de ações antigas. Os demais interlocutores mantêm seus responsáveis. Uma nova mensagem precisa chegar após essa devolução; a conferência real da entrega continua pendente desse novo envio. Não repetir os “Olá” anteriores nem retirar a proteção humana global para testar.
