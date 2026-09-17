@@ -1,0 +1,10 @@
+.agenda-now-line { position:absolute; left:0; right:56px; height:1px; background:color-mix(in srgb,#f4767e 28%,transparent); z-index:5; pointer-events:none; }
+.agenda-now-today { position:absolute; top:0; height:1px; background:#f4767e; }
+.agenda-now-today::before { content:''; position:absolute; left:0; top:-4px; width:9px; height:9px; border-radius:50%; background:#f4767e; }
+.agenda-now-label { position:absolute; left:100%; top:0; transform:translateY(-50%); width:56px; box-sizing:border-box; padding:3px 4px; border-radius:4px; background:var(--bg-surface); color:#f4767e; text-align:center; font-size:12px; font-variant-numeric:tabular-nums; line-height:1.25; }
+.agenda-now-label.is-day-start { transform:none; }
+.agenda-now-label.is-day-end { transform:translateY(-100%); }
+@media(max-width:700px) {
+  .agenda-now-line { right:40px; }
+  .agenda-now-label { width:40px; padding-inline:1px; font-size:10px; }
+}

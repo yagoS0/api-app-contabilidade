@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AtividadeAgenda } from '../AtividadeAgenda';
 import { posicionarHorarios } from '../../lib/agendaWorkspace';
+import { ALTURA_HORA } from '../../lib/escalaAgenda';
 
 const tarefa = { id:'a', tarefaId:'a', tipo:'tarefa', titulo:'Conferir notas', dataInicio:'2026-09-17', dataFim:'2026-09-17', horaInicio:'09:00', horaFim:'10:00', resolvido:false };
 
@@ -60,6 +61,30 @@ test('botão mantém título completo, edição e movimentação por teclado', (
 test('eventos muito curtos não se cobrem por causa da altura visual mínima', () => {
   const positions=posicionarHorarios([{...tarefa,horaFim:'09:05'},{...tarefa,id:'b',horaInicio:'09:10',horaFim:'09:15'},{...tarefa,id:'c',horaInicio:'10:00',horaFim:'10:05'}]);
   expect(positions.map(p=>[p.coluna,p.colunas])).toEqual([[0,2],[1,2],[0,1]]);
+});
+
+test('hora secundária aparece na grade ampliada, mantendo mês e blocos curtos compactos', () => {
+  const props={item:tarefa,abrir:jest.fn(),onConcluir:jest.fn()};
+  const {rerender}=render(<AtividadeAgenda {...props} mostrarHorario style={{height:ALTURA_HORA - 2}}/>);
+  expect(screen.getByText('09:00–10:00')).toHaveClass('agenda-event-time');
+  rerender(<AtividadeAgenda {...props}/>);
+  expect(screen.queryByText('09:00–10:00')).not.toBeInTheDocument();
+  rerender(<AtividadeAgenda {...props} mostrarHorario style={{height:22}}/>);
+  expect(screen.queryByText('09:00–10:00')).not.toBeInTheDocument();
+  expect(screen.getByRole('button',{name:tarefa.titulo}).title).toContain('09:00–10:00');
+});
+
+test.each([30,45])('obrigação de %s minutos compartilha rodapé de horário e progresso, sem ocupar espaço do título', duracao => {
+  const item={...tarefa,tipo:'obrigacao',itens:[{...tarefa,resolvido:true},{...tarefa,id:'b'}]};
+  const {container,rerender}=render(<AtividadeAgenda item={item} abrir={jest.fn()} mostrarHorario style={{height:duracao/60*ALTURA_HORA-2}}/>);
+  const meta=container.querySelector('.agenda-event-meta');
+  expect(meta).toContainElement(screen.getByText('09:00–10:00'));
+  expect(meta).toContainElement(screen.getByText('1/2'));
+  expect(container.querySelector('.agenda-event-title').parentElement).toContainElement(meta);
+  expect(screen.getByRole('checkbox')).toHaveAttribute('aria-checked','mixed');
+  rerender(<AtividadeAgenda item={item} abrir={jest.fn()} mostrarHorario style={{height:22}}/>);
+  expect(container.querySelector('.agenda-event-meta')).toBeNull();
+  expect(screen.getByText('1/2')).toBeInTheDocument();
 });
 
 test('evento aproveita colunas livres quando os vizinhos terminam', () => {

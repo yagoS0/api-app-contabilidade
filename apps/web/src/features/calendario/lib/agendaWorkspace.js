@@ -1,4 +1,5 @@
 import { somarDiasAgenda } from '../../../../../../packages/shared/src/agenda.js';
+import { ALTURA_HORA } from './escalaAgenda';
 export const CORES_PRIORIDADE = { '': 'var(--text-muted)', BAIXA: '#e9bb42', MEDIA: '#ef934c', ALTA: '#b58aef', URGENTE: '#ee737f' };
 export const COR_OBRIGACAO = '#1351b4';
 export const corAtividade = item => item.tipo === 'obrigacao' ? COR_OBRIGACAO : CORES_PRIORIDADE[item.prioridade || ''];
@@ -69,7 +70,7 @@ export const horarioAtividade = item => item.horaInicio ? item.horaFim ? `${item
 export function posicionarHorarios(itens) {
   const ordenados = [...itens].sort((a,b) => minutos(a.horaInicio) - minutos(b.horaInicio) || a.id.localeCompare(b.id));
   // Reserve the minimum visual height as well as the persisted duration.
-  const fimOcupado = item => Math.max(fimVisual(item), minutos(item.horaInicio) + 24 / 56 * 60);
+  const fimOcupado = item => Math.max(fimVisual(item), minutos(item.horaInicio) + 24 / ALTURA_HORA * 60);
   const blocos = []; let bloco = [], ate = -1;
   for (const item of ordenados) {
     if (minutos(item.horaInicio) >= ate && bloco.length) { blocos.push(bloco); bloco = []; ate = -1; }
