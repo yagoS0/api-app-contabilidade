@@ -19,6 +19,7 @@ import { chaveLeaseResponsavel, conferirContextoResponsavel, encaminharResponsav
 import { vincularOpcoesAoContexto } from "./contextoMenuWhatsapp.js";
 import { resolverConsultaCliente, atenderConsultaCliente } from "./ConsultasClienteWhatsappService.js";
 import { pedidoDeConsulta } from "./consultaClienteWhatsapp.js";
+import { pediuMenuWhatsapp, pediuMenuExplicitamente, pediuEquipeWhatsapp } from "./navegacaoWhatsapp.js";
 
 export const IDS_MENU_WHATSAPP = Object.freeze({
   CLIENTE_GUIAS_ABERTO: "altan.client.guides.open.v1",
@@ -83,7 +84,7 @@ export function rotularEmpresa(texto, conversa, rotulo = "Empresa") {
 export function acaoDoTextoLivre(texto, { cliente = false } = {}) {
   const t = semAcento(texto).replace(/[!?.,]+/g, " ").replace(/\s+/g, " ").trim();
   if (!t) return null;
-  if (/^(oi|ola|bom dia|boa tarde|boa noite|menu|ajuda|comecar|inicio)$/.test(t)) return "MENU";
+  if (pediuMenuWhatsapp(texto)) return "MENU";
   if (cliente) {
     if (ehPedidoDeEmissao(texto)) return "EMISSAO";
     if (/^nova (?:emissao|nota)$/.test(t)) return "EMISSAO";
@@ -92,9 +93,7 @@ export function acaoDoTextoLivre(texto, { cliente = false } = {}) {
     if (t === "guias em aberto") return "GUIAS_ABERTO";
     if (/^(quanto devo|dividas|debitos)$/.test(t)) return "QUANTO_DEVO";
     if (t === "documentos") return "DOCUMENTOS";
-    if (/^(?:(?:quero|preciso|gostaria de) )?(?:falar|conversar) com (?:o |a |um |uma )?(?:contador|contadora|atendente|equipe|pessoa|humano|escritorio|alguem)(?: de verdade| real)?$/.test(t)
-      || /^(atendente|contador|contadora|humano|equipe|atendimento humano)$/.test(t)
-      || /^(?:chama|chame|chamar) (?:o |a |um |uma )?(?:contador|contadora|atendente|equipe)$/.test(t)) return "EQUIPE";
+    if (pediuEquipeWhatsapp(texto)) return "EQUIPE";
     if (/^(mais opcoes|outras opcoes|outras|outros)$/.test(t)) return "MAIS";
     return null;
   }
@@ -102,11 +101,6 @@ export function acaoDoTextoLivre(texto, { cliente = false } = {}) {
   if (/\b(ja sou cliente|sou cliente|cliente altan)\b/.test(t)) return "LEAD_CLIENTE";
   if (/\b(falar|atendente|equipe|pessoa|humano|especialista)\b/.test(t)) return "LEAD_EQUIPE";
   return "LEAD_EQUIPE";
-}
-
-function pediuMenuExplicitamente(texto) {
-  const t = semAcento(texto).replace(/[!?.,]+/g, " ").replace(/\s+/g, " ").trim();
-  return /^(menu|ajuda|comecar|inicio)$/.test(t);
 }
 
 function competenciaAtual(agora) {
@@ -388,8 +382,8 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
       where: { conversaId: conversa.id, direcao: "out", tipo: "interactive", registradaEm: { gte: new Date(agora.getTime() - 24 * 60 * 60 * 1000) } },
       select: { id: true },
     });
-    if (recente && !menuExplicito) {
-      const corpo = cliente ? rotularEmpresa(`Olá! Como posso ajudar? Pode escrever seu pedido por aqui.${avisoRascunho}`, conversa) : "O menu continua disponível acima. Toque em uma opção ou escreva o que precisa.";
+    if (recente && !menuExplicito && cliente) {
+      const corpo = rotularEmpresa(`Olá! Como posso ajudar? Pode escrever seu pedido por aqui.${avisoRascunho}`, conversa);
       await enviar({ corpo, chamada: () => whatsapp.enviarTexto({ telefone: conversa.telefoneE164, texto: corpo }) });
     } else if (cliente) {
       const linhas = opcoesNoContexto(opcoesIniciaisDoCliente(sessao));

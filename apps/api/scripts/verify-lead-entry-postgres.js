@@ -12,7 +12,7 @@ const run = `entrada-lead-${crypto.randomUUID()}`;
 const comercial = process.argv.includes("--commercial");
 const canalId = `${run}-canal`;
 const base = Number(String(Date.now()).slice(-7));
-const telefones = Array.from({ length: 5 }, (_, i) => `55119${String(base + i).padStart(8, "0")}`);
+const telefones = Array.from({ length: 9 }, (_, i) => `55119${String(base + i).padStart(8, "0")}`);
 Object.assign(process.env, { DATABASE_URL: url.href, NODE_ENV: "test", WHATSAPP_IDENTIDADE_V2: comercial ? "1" : "0", WHATSAPP_CHAT_V2: "0",
   WHATSAPP_MULTICANAL: comercial ? "1" : "0", WHATSAPP_COLETA_COMERCIAL: "1", IA_COMERCIAL_TELEFONES_PILOTO: comercial ? "" : telefones.slice(0, 4).join(","),
   WHATSAPP_TESTE_TOKEN: "fake-offline-commercial-token", WHATSAPP_PHONE_NUMBER_ID: "fixture-channel", WHATSAPP_WABA_ID: "fixture-waba",
@@ -26,6 +26,7 @@ const { processarEventoWhatsapp } = await import("../src/application/whatsapp/Pr
 const { responderMenuWhatsapp } = await import("../src/application/whatsapp/MenuWhatsappService.js");
 const { responderColetaComercial } = await import("../src/application/whatsapp/RespostaColetaComercialWhatsappService.js");
 const { coletarComercialWhatsapp } = await import("../src/application/onboarding/ColetaComercialWhatsappService.js");
+const { iniciarAtendimento, registrarCampos } = await import("../src/application/onboarding/LeadService.js");
 const { montarPayloadLista } = await import("../src/application/whatsapp/WhatsappCloudClient.js");
 const saidas = [], checks = [];
 const ok = texto => { checks.push(texto); console.log("OK " + texto); };
@@ -59,6 +60,55 @@ try {
     const principal = await db.canalWhatsapp.findUnique({ where: { id: "principal" } });
     assert(!principal.phoneNumberId || principal.phoneNumberId === "fixture-channel");
     assert(!principal.wabaId || principal.wabaId === "fixture-waba");
+    // Mesmo cenário da falha: solicitação iniciada no principal, com CNPJ salvo,
+    // volta ao comercial dizendo Olá enquanto a ficha aguarda o nome.
+    for (const [indice, telefone] of telefones.slice(5).entries()) {
+      await entrada(telefone, "Pedido anterior de transferência", { principal: true });
+      const anterior = await db.conversaWhatsapp.findFirstOrThrow({ where: { telefoneE164: telefone, canalId: "principal" } });
+      const caso = await iniciarAtendimento({ conversaId: anterior.id, origem: "TRANSFERENCIA", client: db });
+      const ficha = await registrarCampos({ onboardingId: caso.onboardingId, versao: caso.onboarding.versao,
+        operacoes: [{ campo: "cnpj", acao: "set", valor: "11222333000181" }], client: db });
+      const triagem = { campoEsperado: "responsavelNome", esclarecimentos: 1 };
+      await db.atendimentoLead.update({ where: { id: caso.id }, data: { triagem } });
+      for (const texto of ["Olá", "Oi, bom dia! Tudo bem?", "menu"]) {
+        const antes = saidas.length;
+        const mensagemId = await entrada(telefone, texto);
+        assert.equal(saidas.length, antes + 1);
+        assert.equal(saidas.at(-1).tipo, "enviarLista");
+        assert.equal(saidas.at(-1).texto, "Olá! Como a Altan pode ajudar?");
+        assert.deepEqual(saidas.at(-1).linhas.map(o => o.titulo), ["Abrir uma empresa", "Trocar de contador", "Empresa parada", "Já sou cliente", "Falar com a equipe"]);
+        assert.deepEqual((await db.atendimentoLead.findUnique({ where: { id: caso.id } })).triagem, triagem);
+        assert.deepEqual((await db.onboarding.findUnique({ where: { id: ficha.id } })).dados, ficha.dados);
+        assert.equal((await casos(telefone)).length, 1);
+        await entrada(telefone, texto, { id: mensagemId });
+        assert.equal(saidas.length, antes + 1, "Replay não duplica o menu");
+      }
+      if (indice === 0) {
+        await entrada(telefone, "Trocar de contador", { interacao: "altan.comercial.transferencia.v1" });
+        assert.equal(saidas.at(-1).texto, "Como você se chama?");
+        await entrada(telefone, "Me chamo Caio");
+        const retomada = (await casos(telefone))[0];
+        assert.equal(retomada.id, caso.id); assert.equal(retomada.onboardingId, ficha.id);
+        assert.equal(retomada.onboarding.dados.responsavelNome, "Caio");
+        assert.equal(retomada.onboarding.cnpj, "11222333000181");
+        assert.match(saidas.at(-1).texto, /troca/i);
+        ok("Histórico de outro canal: saudações/menu não alteram ficha nem acumulam erro; retomada conserva CNPJ e não duplica caso");
+      } else {
+        const escolhas = [null,
+          { texto: "Já sou cliente", interacao: "altan.lead.existing-client.v1" },
+          { texto: "Falar com a equipe", interacao: "altan.lead.human.v1" },
+          { texto: "quero falar com uma pessoa" }];
+        const escolha = escolhas[indice];
+        await entrada(telefone, escolha.texto, { interacao: escolha.interacao });
+        assert.match(saidas.at(-1).texto, /equipe|atendimento/i);
+        assert.deepEqual((await db.onboarding.findUnique({ where: { id: ficha.id } })).dados, ficha.dados);
+        const pessoa = await db.interlocutorComunicacao.findUnique({ where: { id: caso.interlocutorId } });
+        assert(pessoa.atendidaDesde);
+        const antes = saidas.length; await entrada(telefone, "Olá");
+        assert.equal(saidas.length, antes, "Navegação não libera pausa humana");
+        ok(`Ficha existente respeita escolha ${escolha.texto}, sem gravá-la no cadastro ou conceder acesso`);
+      }
+    }
   }
   const [medico, transferencia, inativa, desconhecido, fora] = telefones;
   await entrada(medico, "Olá");

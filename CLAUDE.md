@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Saudação de lead com histórico — 17/09/2026
+
+Uma entrada real de “Olá” recebeu uma cobrança de informação porque a coleta reutilizou uma ficha comercial iniciada em outro canal. A entrega foi confirmada pela Meta, mas a resposta estava errada. Saudação e navegação devem abrir o menu mesmo com ficha ativa; nunca gravá-las como nome, incrementar ambiguidades ou acionar handoff por incompreensão. Cliques “Já sou cliente”/“Falar com a equipe” seguem o menu pelo ID e conservam as guardas de acesso/humano. Não apagar ficha/histórico para corrigir a retomada. `navegacaoWhatsapp.js` centraliza o reconhecimento; pedido acompanhado de saudação segue a coleta. Ver cenário com PostgreSQL real em `verify-lead-entry-postgres.js --commercial`; simulação bloqueia rede e IA.
+
 ## Novo canal comercial para leads — 17/09/2026
 
 Atualização após novo pedido de correção: foto do comercial copiada da imagem já usada no principal, publicada pela API oficial e conferida no retorno da Meta em 17/09 às 20h12 UTC. O contato do teste do dono foi devolvido ao automático pelo serviço `alterarAtendimentoHumano`, com lease, histórico preservado e invalidação normal das ações anteriores. Nenhum outro contato foi liberado. Nova mensagem é necessária após a devolução; não afirmar resposta entregue antes do recibo real. Isso atualiza a pendência de teste registrada abaixo. Evidências com dados de perfil/contato ficam somente no workspace privado.

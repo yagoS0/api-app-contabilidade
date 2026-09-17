@@ -50,6 +50,13 @@ function nuvem() {
 }
 
 describe("menus por perfil e permissão", () => {
+  it.each(["Olá", "Oi, bom dia! Tudo bem?", "Boa noite 👋", "Oii", "voltar ao menu"])("reconhece saudação/navegação em ambos os perfis: %s", texto => {
+    expect(acaoDoTextoLivre(texto)).toBe("MENU");
+    expect(acaoDoTextoLivre(texto, { cliente: true })).toBe("MENU");
+  });
+  it.each(["Olá, quero a guia do INSS", "Olá, preciso entender meu faturamento", "Bom dia, tenho uma dúvida"])("saudação com pedido não descarta o conteúdo: %s", texto => {
+    expect(acaoDoTextoLivre(texto, { cliente: true })).not.toBe("MENU");
+  });
   it("menu inicial tem as quatro opções na ordem solicitada e gera uma lista válida", async () => {
     const permissoes = ["GUIAS", "EMISSAO_NFSE", "DOCUMENTOS_EMPRESA", "SITUACAO_FISCAL"];
     const client = banco({ cliente: true, permissoes }), cloud = nuvem();
@@ -291,12 +298,12 @@ describe("roteamento sem modelo", () => {
     expect(client.conversaWhatsapp.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { atendidaDesde: expect.any(Date) } }));
   });
 
-  it("não repete menu interativo dentro de 24 horas", async () => {
+  it("nova saudação de lead oferece opções mesmo com menu recente", async () => {
     const client = banco({ menuRecente: true });
     const cloud = nuvem();
     await responderMenuWhatsapp({ registro: registro(), texto: "oi", agora: AGORA, client, cloud, conferirJanela: janelaAberta, logger: log });
-    expect(cloud.enviarBotoes).not.toHaveBeenCalled();
-    expect(cloud.enviarTexto).toHaveBeenCalledWith(expect.objectContaining({ texto: expect.stringMatching(/menu continua/) }));
+    expect(cloud.enviarBotoes).toHaveBeenCalledWith(expect.objectContaining({ texto: "Olá! Como a Altan pode ajudar?" }));
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
   });
 
   it("saudação de cliente com menu recente recebe resposta breve sem seguir ao modelo", async () => {

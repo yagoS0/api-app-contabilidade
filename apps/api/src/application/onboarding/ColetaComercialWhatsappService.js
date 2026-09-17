@@ -5,6 +5,7 @@ import { identidadeDoCaso, filtroCasoDaConversa, exigirConversaDoCaso } from "./
 import { consultarPublicaLead } from "./FiscalLeadService.js";
 import { OnboardingError } from "./OnboardingService.js";
 import { coletaComercialHabilitada } from "./politicaColetaComercial.js";
+import { pediuMenuWhatsapp, declarouSerCliente, pediuEquipeWhatsapp } from "../whatsapp/navegacaoWhatsapp.js";
 
 const normalizar = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 export function pedidoOperacionalComercial(texto) {
@@ -73,6 +74,13 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
   const piloto = deps.piloto || IA_COMERCIAL_TELEFONES_PILOTO;
   if (!conversa || !mensagem || !coletaComercialHabilitada(conversa.telefoneE164, { flag: true, piloto, canal: registro.canal, canalId: conversa.canalId })) return { tratado: false, motivo: "FORA_DO_PILOTO" };
   if (registro.vinculo?.situacao === "AMBIGUO") return { tratado: false, motivo: "IDENTIDADE_EM_REVISAO" };
+  const textoEntrada = item.corpo || mensagem.corpo;
+  const idInteracao = typeof item.interacao === "string" ? item.interacao : item.interacao?.id || item.interacao?.button_reply?.id || item.interacao?.list_reply?.id;
+  // Um caso anterior, inclusive de outro canal, não transforma saudação/menu em
+  // resposta cadastral. Cliques são decididos pelo ID, nunca pelo título recebido.
+  const navegacao = idInteracao ? !identificarOrigemComercial("", item.interacao)
+    : pediuMenuWhatsapp(textoEntrada) || declarouSerCliente(textoEntrada) || pediuEquipeWhatsapp(textoEntrada);
+  if (navegacao) return { tratado: false, motivo: "NAVEGACAO_DO_ATENDIMENTO" };
   if (pedidoOperacionalComercial(item.corpo || mensagem.corpo)) return { tratado: false, motivo: "PEDIDO_OPERACIONAL" };
   const inicial = await db.conversaWhatsapp.findUnique({ where: { id: conversa.id } });
   const anterior = await db.coletaComercialWhatsapp.findUnique({ where: { mensagemId: mensagem.id } });

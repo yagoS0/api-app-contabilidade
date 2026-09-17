@@ -47,13 +47,35 @@ function banco({ dados = {}, portalClientId = "empresa-atual" } = {}) {
   db.$transaction = fn => fn(db);
   iniciarAtendimento.mockImplementation(async () => caso);
   let n = 0;
-  const chamar = async (texto, { id, enviar = jest.fn(), flag = true } = {}) => {
+  const chamar = async (texto, { id, enviar = jest.fn(), flag = true, interacao } = {}) => {
     const mensagem = { id: id || `m${++n}`, conversaId: "c", direcao: "in", corpo: texto, tipo: "text", registradaEm: new Date(1760000000000 + n * 1000), conversa };
     mensagens.set(mensagem.id, mensagem);
-    return coletarComercialWhatsapp({ registro: { conversa, mensagem }, item: { corpo: texto }, deps: { client: db, flag, piloto: [conversa.telefoneE164], enviar, agora: new Date(1760000010000 + n * 1000) } });
+    return coletarComercialWhatsapp({ registro: { conversa, mensagem }, item: { corpo: texto, interacao }, deps: { client: db, flag, piloto: [conversa.telefoneE164], enviar, agora: new Date(1760000010000 + n * 1000) } });
   };
   return { db, conversa, ficha, caso, recibos, chamar };
 }
+test.each(["Olá", "Ola!", "Oi, bom dia! Tudo bem?", "Boa tarde", "Boa noite 👋", "Oii", "menu", "voltar ao menu", "Já sou cliente", "Falar com a equipe", "quero falar com uma pessoa"])("navegação não preenche nem penaliza a ficha existente: %s", async texto => {
+  const t = banco();
+  t.caso.triagem = { campoEsperado: "responsavelNome", esclarecimentos: 1 };
+  const antes = structuredClone({ ficha: t.ficha, triagem: t.caso.triagem });
+  const enviar = jest.fn();
+  expect((await t.chamar(texto, { enviar })).tratado).toBe(false);
+  expect({ ficha: t.ficha, triagem: t.caso.triagem }).toEqual(antes);
+  expect(t.db.atendimentoLead.update).not.toHaveBeenCalled();
+  expect(t.db.coletaComercialWhatsapp.create).not.toHaveBeenCalled();
+  expect(t.conversa.atendidaDesde).toBeUndefined();
+  expect(enviar).not.toHaveBeenCalled();
+});
+test.each(["altan.lead.existing-client.v1", "altan.lead.human.v1", "altan.client.human.v1", "id-desconhecido"])("clique fora da coleta usa o menu pelo ID, sem gravar o título: %s", async id => {
+  const t = banco();
+  expect((await t.chamar("Texto que parece um nome", { interacao: { id } })).tratado).toBe(false);
+  expect(t.db.onboarding.updateMany).not.toHaveBeenCalled();
+});
+test("saudação acompanhada de pedido e dados continua na coleta", async () => {
+  const t = banco();
+  expect((await t.chamar("Olá, sou médico e quero abrir uma empresa; me chamo Caio")).tratado).toBe(true);
+  expect(t.ficha.dados).toMatchObject({ responsavelNome: "Caio", atividadePretendida: "médico" });
+});
 test("cliente atual pode preencher outra abertura sem copiar empresa, com replay idempotente", async () => {
   const t = banco();
   const r = await t.chamar("Me chamo Ana", { id: "m" });
