@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../infrastructure/db/prisma.js';
 import { empresasVisiveis } from './empresasVisiveis.js';
 import { ObrigacaoError, excluirOcorrencia } from '../../application/obrigacoes/ObrigacoesService.js';
-import { listarTarefas, salvarTarefa, alterarTarefa } from '../../application/calendario/TarefasAgendaService.js';
+import { listarTarefas, salvarTarefa, alterarTarefa, converterTarefaEmObrigacao } from '../../application/calendario/TarefasAgendaService.js';
 import { montarCalendarioDoMes, limitesDoMes } from '../../application/calendario/CalendarioFiscalService.js';
 import { normalizarAgenda } from '../../../../../packages/shared/src/agenda.js';
 
@@ -22,6 +22,7 @@ export function createAgendaRouter({ log } = {}) {
   router.post('/agenda/tarefas', rota(async (req, userId) => ({ tarefa: await salvarTarefa({ userId, dados: req.body || {} }) })));
   router.patch('/agenda/tarefas/:id', rota(async (req, userId) => ({ tarefa: await salvarTarefa({ userId, id: req.params.id, dados: req.body || {} }) })));
   router.post('/agenda/tarefas/:id/acao', rota(async (req, userId) => ({ tarefa: await alterarTarefa({ userId, id: req.params.id, cicloChave: req.body?.cicloChave, acao: req.body?.acao, alteracoes: req.body?.alteracoes }) })));
+  router.post('/agenda/tarefas/:id/converter-obrigacao', rota(async (req, userId) => converterTarefaEmObrigacao({ userId, id: req.params.id, cicloChave: req.body?.cicloChave, regra: req.body?.regra, portalIds: await empresasVisiveis(req) })));
   router.post('/agenda/ocorrencias/excluir', rota(async (req, userId) => {
     const ids = [...new Set(Array.isArray(req.body?.ids) ? req.body.ids : [])];
     if (!ids.length || ids.length > 500 || ids.some(id => typeof id !== 'string')) throw new ObrigacaoError('ids_invalidos', 'Selecione até 500 ocorrências.');

@@ -1,5 +1,11 @@
 # Calendário — janelas e exclusões recorrentes (08/09/2026)
 
+## Edição de recorrência da tarefa pessoal (17/09/2026)
+
+- `acaoTarefaAgenda` aceita `EDITAR_SERIE` com `cicloChave` e `alteracoes` (dados do formulário). O alcance é esta e próximas; `EDITAR` continua individual. Versões ficam no JSON `TarefaAgenda.config.versoes`, com chave própria `vN|ciclo`. A configuração-base e o título-base ficam históricos; listas usam a última versão e o editor usa a configuração da ocorrência.
+- O corte considera a data original e a data movida para não restaurar uma origem já arrastada. Conclusões, cancelamentos e exceções existentes recebem snapshots, incluindo cada dia de uma janela horária. Um snapshot substitui a geração nova na mesma data. Escritas seguem o lock transacional por tarefa e o proprietário autenticado.
+- `converterTarefaEmObrigacao(id, { cicloChave, regra })` cria a regra para empresas autorizadas e corta as próximas ocorrências pessoais em uma única transação. Carteira vazia não converte. Se houver conclusão, cancelamento ou edição individual futura que não possa ser transportada para várias empresas, responde 409 e conserva tudo; escolher uma ocorrência após esse histórico permite converter. O mock segue o mesmo contrato. Não exige migration nova.
+
 ## Agenda semanal (10/09/2026)
 
 As decisões abaixo substituem a interface anterior descrita neste arquivo. `renderCalendarioGrid.jsx` passa a exportar `CalendarioAgenda`: semana padrão, dia/mês e lista integrada, criação por data/horário e uma única camada de modal. A lista filtra tarefas/obrigações e concentra a exclusão da série. O calendário exclui somente a ocorrência selecionada, incluindo concluídas, conservando os registros de auditoria. Não oferecer exclusão futura pelo calendário.
@@ -39,3 +45,10 @@ Validação desta frente: 72 testes API em seis suites; 143 testes de obrigaçõ
 - Verificação local: 79 testes de obrigações API e 153 testes web de obrigações/mock passaram. Ensaio PostgreSQL `apps/api/scripts/verify-calendar-series-postgres.js` ampliado com troca mensal/trimestral/mensal concorrente, prazo e preservação de IDs/exceções; execução de banco fica para o gate CI. Nenhum banco ou provedor real foi acessado nesta etapa.
 
 - Inativar é pausa reversível: sincronização retorna sem apagar ocorrências. Reativação conserva IDs, cancelamentos, retiradas por frequência e janelas individuais. Calendário, listagem padrão e verificador filtram série ativa. Regressão local API: 80 testes passaram; ensaio PostgreSQL também cobre pausa/reativação e ausência no calendário.
+
+## Controles e cartões do calendário — 17/09/2026
+Tipo e Recorrência ficam visíveis também na edição. Alteração individual de data/horário segue EDITAR; mudança da frequência pessoal usa EDITAR_SERIE (esta e próximas), sem reescrever configuração histórica. SEMESTRAL percorre seis meses com datas civis e limite de repetição, inclusive em obrigações. Tarefa vinculada a uma empresa conserva esse escopo ao virar obrigação; o formulário não promete expandir para outras empresas.
+
+AtividadeAgenda separa abertura/gestos e checkbox. Tarefa individual conclui ou reabre sem abrir modal; obrigação mostra vazio/parcial/concluído e abre o acompanhamento por empresa. Não concluir todas em lote pelo checkbox. Bloqueio local evita cliques duplicados. Cartões simultâneos consideram altura visual mínima e aproveitam colunas livres; título e progresso não reservam coluna vazia. Foco não desloca o cartão de horário.
+
+Validação desta etapa: 212 testes API/obrigações e 113 web/mock; build aprovado; navegador em demonstração confirmou checkbox, edição e repetição semanal. Sem publicação nesta etapa; transações reais continuam sujeitas ao gate PostgreSQL antes de produção.

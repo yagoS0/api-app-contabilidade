@@ -71,7 +71,7 @@ test('editar a tarefa de 10 a 15 mostra blocos diários das 9 às 11 em duas sem
   await waitFor(()=>expect(screen.getAllByRole('button',{name:'Conferência de notas'})).toHaveLength(4));
   for(const evento of screen.getAllByRole('button',{name:'Conferência de notas'})) {
     expect(evento.closest('.agenda-time-columns')).not.toBeNull();
-    expect(evento).toHaveStyle({top:'504px',height:'110px'});
+    expect(evento.closest('.agenda-event')).toHaveStyle({top:'504px',height:'110px'});
   }
   fireEvent.click(screen.getAllByRole('button',{name:'Conferência de notas'})[2]);
   fireEvent.click(screen.getByRole('button',{name:'Excluir ocorrência',exact:true}));
@@ -112,19 +112,19 @@ test('tarefa abre edição central, mantém rascunho ao concluir e permanece ris
   await screen.findByRole('button',{name:'Reabrir tarefa'});
   expect(screen.getByLabelText('Título')).toHaveValue('Conferir NFS-e');
   expect(screen.getByLabelText('Descrição')).toHaveValue('Revisar notas de serviços');
-  await waitFor(()=>expect(screen.getAllByRole('button',{name:'Conferir notas'}).filter(e=>e.classList.contains('is-complete'))).toHaveLength(1));
+  await waitFor(()=>expect(screen.getAllByRole('button',{name:'Conferir notas'}).filter(e=>e.closest('.agenda-event').classList.contains('is-complete'))).toHaveLength(1));
   fireEvent.change(screen.getByLabelText('Horário inicial'),{target:{value:'10:00'}});
   fireEvent.click(screen.getByRole('button',{name:'Salvar'}));
   await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   const concluida=await screen.findByRole('button',{name:'Conferir NFS-e'});
-  expect(concluida).toHaveClass('is-complete');
-  expect(concluida).toHaveStyle({top:'560px'});
+  expect(concluida.closest('.agenda-event')).toHaveClass('is-complete');
+  expect(concluida.closest('.agenda-event')).toHaveStyle({top:'560px'});
   expect(screen.getAllByRole('button',{name:'Conferir notas'})).toHaveLength(3);
   fireEvent.click(concluida);
   fireEvent.click(screen.getByRole('button',{name:'Reabrir tarefa'}));
   await screen.findByRole('button',{name:'Concluir tarefa'});
   fireEvent.click(screen.getByRole('button',{name:'Fechar',exact:true}));
-  await waitFor(()=>expect(screen.getByRole('button',{name:'Conferir NFS-e'})).not.toHaveClass('is-complete'));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Conferir NFS-e'}).closest('.agenda-event')).not.toHaveClass('is-complete'));
 });
 
 test('falha ao concluir mantém tarefa pendente e permite repetir no mesmo modal',async()=>{
@@ -134,7 +134,7 @@ test('falha ao concluir mantém tarefa pendente e permite repetir no mesmo modal
   fireEvent.click(await screen.findByRole('button',{name:'Revisar serviços'}));
   fireEvent.click(screen.getByRole('button',{name:'Concluir tarefa'}));
   expect(await screen.findByRole('alert')).toHaveTextContent('Sem conexão');
-  expect(screen.getByRole('button',{name:'Revisar serviços'})).not.toHaveClass('is-complete');
+  expect(screen.getByRole('button',{name:'Revisar serviços'}).closest('.agenda-event')).not.toHaveClass('is-complete');
   fireEvent.click(screen.getByRole('button',{name:'Concluir tarefa'}));
   await screen.findByRole('button',{name:'Reabrir tarefa'});
   expect(acao).toHaveBeenCalledTimes(2);
@@ -172,11 +172,11 @@ test('EFD mantém conclusões por empresa e permite editar grupo parcialmente co
   await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   expect(obs[0].ocorrencias[0]).toMatchObject({status:'CONCLUIDA',situacao:'CONCLUIDA',concluidaEm:'2026-09-11T12:00:00Z',concluidaPorId:'contador',dataFim:'2026-09-16',dataVencimento:'2026-09-21'});
   const evento=await screen.findByRole('button',{name:/Revisão EFD/});
-  expect(evento).not.toHaveClass('is-complete');fireEvent.click(evento);
+  expect(evento.closest('.agenda-event')).not.toHaveClass('is-complete');fireEvent.click(evento);
   expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button',{name:'Concluir',exact:true}));
   await screen.findByText('2 de 2 concluídas');
-  await waitFor(()=>expect(screen.getByRole('button',{name:/Revisão EFD/})).toHaveClass('is-complete'));
+  await waitFor(()=>expect(screen.getByRole('button',{name:/Revisão EFD/}).closest('.agenda-event')).toHaveClass('is-complete'));
   expect(screen.getByLabelText('2 de 2 concluídas')).toHaveTextContent('2/2');
   expect(screen.getByRole('dialog').querySelectorAll('.agenda-company-row.is-complete')).toHaveLength(2);
   fireEvent.click(screen.getByRole('button',{name:'Fechar',exact:true}));
@@ -215,7 +215,7 @@ test('obrigação de 10 a 15 tem seis blocos azuis com horário, preserva empres
   montar({obs,extras:{concluirOcorrencia:jest.fn(async id=>{const oc=obs.flatMap(o=>o.ocorrencias).find(o=>o.ocorrenciaId===id);oc.situacao='CONCLUIDA';return {ok:true};})}});
   const eventos=await screen.findAllByRole('button',{name:/EFD-Contribuições/});
   expect(eventos).toHaveLength(4);
-  eventos.forEach(e=>{expect(e.closest('.agenda-time-day')).not.toBeNull();expect(e).toHaveStyle({top:'504px',height:'54px'});expect(e.style.getPropertyValue('--event-color')).toBe('#1351b4');});
+  eventos.forEach(e=>{expect(e.closest('.agenda-time-day')).not.toBeNull();expect(e.closest('.agenda-event')).toHaveStyle({top:'504px',height:'54px'});expect(e.closest('.agenda-event').style.getPropertyValue('--event-color')).toBe('#1351b4');});
   fireEvent.click(eventos[1]);expect(screen.getByText('0 de 2 concluídas')).toBeInTheDocument();
   fireEvent.click(screen.getAllByRole('button',{name:'Concluir',exact:true})[0]);
   await screen.findByText('1 de 2 concluídas');
@@ -297,15 +297,15 @@ test('arrastar obrigação move todas as empresas sem duplicar nem alterar concl
   const {api,container}=montar({obs});const salvar=jest.spyOn(api,'editarOcorrenciasAgenda');
   const evento=await screen.findByRole('button',{name:/EFD-Contribuições/});const restaurar=prepararPonteiro(container);
   try {
-    expect(evento).toHaveClass('is-draggable');
+    expect(evento.closest('.agenda-event')).toHaveClass('is-draggable');
     arrastar(evento,450,196);
-    await waitFor(()=>expect(screen.getByRole('button',{name:/EFD-Contribuições/})).toHaveStyle({top:'560px'}));
+    await waitFor(()=>expect(screen.getByRole('button',{name:/EFD-Contribuições/}).closest('.agenda-event')).toHaveStyle({top:'560px'}));
     expect(salvar).toHaveBeenCalledWith(['oc-a','oc-b'],expect.objectContaining({dataInicio:'2026-09-11',dataFim:'2026-09-11',horaInicio:'10:00',horaFim:'11:00'}));
     expect(screen.getAllByRole('button',{name:/EFD-Contribuições/})).toHaveLength(1);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     obs.forEach(o=>{expect(o.ocorrencias).toHaveLength(1);expect(o.ocorrencias[0]).toMatchObject({cicloChave:'2026-09',dataVencimento:'2026-09-21'});});
     expect(obs[0].ocorrencias[0]).toMatchObject({status:'CONCLUIDA',situacao:'CONCLUIDA',concluidaEm:'2026-09-10T12:00:00Z'});
-    await waitFor(()=>expect(screen.getByRole('button',{name:/EFD-Contribuições/})).not.toHaveAttribute('aria-busy'));
+    await waitFor(()=>expect(screen.getByRole('button',{name:/EFD-Contribuições/}).closest('.agenda-event')).not.toHaveAttribute('aria-busy'));
     fireEvent.pointerDown(screen.getByRole('button',{name:/EFD-Contribuições/}),{pointerId:2,button:0});
     fireEvent.click(screen.getByRole('button',{name:/EFD-Contribuições/}));
     expect(screen.getByText('1 de 2 concluídas')).toBeInTheDocument();
@@ -316,13 +316,13 @@ test.each(['inicio','fim'])('redimensionar %s da obrigação ajusta o período c
   const obs=obrigacoes();obs.forEach(o=>o.agendaConfig={...o.agendaConfig,horaInicio:'09:00',horaFim:'11:00'});
   const {container}=montar({obs});const eventos=await screen.findAllByRole('button',{name:/EFD-Contribuições/});const restaurar=prepararPonteiro(container);
   try {
-    arrastar(eventos[0],350,196,eventos[0].querySelector(`[data-agenda-resize="${borda}"]`));
+    arrastar(eventos[0],350,196,eventos[0].closest('.agenda-event').querySelector(`[data-agenda-resize="${borda}"]`));
     const esperado=borda==='inicio'?{horaInicio:'10:00',horaFim:'11:00'}:{horaInicio:'09:00',horaFim:'12:00'};
     await waitFor(()=>expect(obs[0].ocorrencias[0].agendaConfig).toMatchObject(esperado));
     await waitFor(()=>expect(screen.queryByRole('status')).not.toBeInTheDocument());
     obs.forEach(o=>expect(o.ocorrencias[0]).toMatchObject({dataInicio:'2026-09-10',dataFim:'2026-09-15',agendaConfig:esperado}));
     expect(screen.getAllByRole('button',{name:/EFD-Contribuições/})).toHaveLength(4);
-    screen.getAllByRole('button',{name:/EFD-Contribuições/}).forEach(e=>expect(e).toHaveStyle({height:borda==='inicio'?'54px':'166px'}));
+    screen.getAllByRole('button',{name:/EFD-Contribuições/}).forEach(e=>expect(e.closest('.agenda-event')).toHaveStyle({height:borda==='inicio'?'54px':'166px'}));
   } finally {restaurar();}
 });
 
@@ -332,13 +332,13 @@ test.each(['IRRF','Simples Nacional'])('%s sem configuração de agenda recebe d
   try {
     expect(evento.closest('.agenda-all-day')).not.toBeNull();
     arrastar(evento,450,168);
-    await waitFor(()=>expect(screen.getByRole('button',{name:new RegExp(nome)})).toHaveStyle({top:'560px'}));
+    await waitFor(()=>expect(screen.getByRole('button',{name:new RegExp(nome)}).closest('.agenda-event')).toHaveStyle({top:'560px'}));
     expect(screen.getByRole('button',{name:new RegExp(nome)}).closest('.agenda-time-day')).not.toBeNull();
     expect(screen.getAllByRole('button',{name:new RegExp(nome)})).toHaveLength(1);
     jest.spyOn(api,'editarOcorrenciasAgenda').mockRejectedValueOnce(new Error('Sem conexão'));
     fireEvent.keyDown(screen.getByRole('button',{name:new RegExp(nome)}),{key:'ArrowDown',altKey:true});
     expect(await screen.findByRole('alert')).toHaveTextContent('Sem conexão');
-    expect(screen.getByRole('button',{name:new RegExp(nome)})).toHaveStyle({top:'560px'});
+    expect(screen.getByRole('button',{name:new RegExp(nome)}).closest('.agenda-event')).toHaveStyle({top:'560px'});
     obs.forEach(o=>expect(o.ocorrencias[0]).toMatchObject({dataInicio:'2026-09-11',dataFim:'2026-09-11',dataVencimento:'2026-09-21',agendaConfig:{horaInicio:'10:00',horaFim:null}}));
   } finally {restaurar();}
 });
@@ -361,13 +361,13 @@ test('esticar a borda muda somente o fim e falha de gravação mantém o horári
   const {api,container}=montar();await api.salvarTarefaAgenda({titulo:'Reunião',config:{dataInicio:'2026-09-10',dataFim:'2026-09-10',horaInicio:'09:00',horaFim:'10:00'}});
   let evento=await screen.findByRole('button',{name:'Reunião'});const restaurar=prepararPonteiro(container);
   try {
-    arrastar(evento,350,196,evento.querySelector('[data-agenda-resize="fim"]'));
-    await waitFor(()=>expect(screen.getByRole('button',{name:'Reunião'})).toHaveStyle({height:'110px'}));
+    arrastar(evento,350,196,evento.closest('.agenda-event').querySelector('[data-agenda-resize="fim"]'));
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Reunião'}).closest('.agenda-event')).toHaveStyle({height:'110px'}));
     expect((await api.getTarefasAgenda('2026-09-10','2026-09-10')).itens[0]).toMatchObject({horaInicio:'09:00',horaFim:'11:00'});
     jest.spyOn(api,'acaoTarefaAgenda').mockRejectedValueOnce(new Error('Sem conexão'));
     evento=screen.getByRole('button',{name:'Reunião'});arrastar(evento,350,252);
     expect(await screen.findByRole('alert')).toHaveTextContent('Sem conexão');
-    expect(screen.getByRole('button',{name:'Reunião'})).toHaveStyle({top:'504px',height:'110px'});
+    expect(screen.getByRole('button',{name:'Reunião'}).closest('.agenda-event')).toHaveStyle({top:'504px',height:'110px'});
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   } finally {restaurar();}
 });
@@ -394,7 +394,7 @@ test('tarefa sem horário pode ser levada para a grade e ajustada pelo teclado',
     await waitFor(()=>expect(screen.getByRole('button',{name:'Organizar documentos'}).closest('.agenda-time-day')).not.toBeNull());
     expect((await api.getTarefasAgenda('2026-09-07','2026-09-13')).itens).toEqual([expect.objectContaining({dataInicio:'2026-09-11',horaInicio:'10:00',horaFim:null})]);
     fireEvent.keyDown(screen.getByRole('button',{name:'Organizar documentos'}),{key:'ArrowDown',altKey:true,shiftKey:true});
-    await waitFor(()=>expect(screen.getByRole('button',{name:'Organizar documentos'})).toHaveStyle({height:'40px'}));
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Organizar documentos'}).closest('.agenda-event')).toHaveStyle({height:'40px'}));
     expect((await api.getTarefasAgenda('2026-09-07','2026-09-13')).itens[0]).toMatchObject({horaInicio:'10:00',horaFim:'10:45'});
   } finally {restaurar();}
 });
@@ -426,21 +426,21 @@ test('gesto com resposta lenta mantém destino e permite mover outra atividade; 
   const evento=await screen.findByRole('button',{name:'Revisar A'}),restaurar=prepararPonteiro(container);
   try {
     arrastar(evento,450,196);
-    expect(screen.getByRole('button',{name:'Revisar A'})).toHaveStyle({top:'560px'});
-    expect(screen.getByRole('button',{name:'Revisar A'})).toHaveAttribute('aria-busy','true');
+    expect(screen.getByRole('button',{name:'Revisar A'}).closest('.agenda-event')).toHaveStyle({top:'560px'});
+    expect(screen.getByRole('button',{name:'Revisar A'}).closest('.agenda-event')).toHaveAttribute('aria-busy','true');
     // Edição pelo modal aguarda somente esta ocorrência; outros gestos seguem disponíveis.
     fireEvent.pointerDown(screen.getByRole('button',{name:'Revisar A'}),{pointerId:2,button:0});
     fireEvent.pointerUp(screen.getByRole('button',{name:'Revisar A'}),{pointerId:2,clientX:0,clientY:0});
     fireEvent.click(screen.getByRole('button',{name:'Revisar A'}));expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     arrastar(screen.getByRole('button',{name:'Revisar B'}),550,252);
     await waitFor(()=>expect(acaoTarefaAgenda).toHaveBeenCalledTimes(2));
-    expect(screen.getByRole('button',{name:'Revisar B'})).toHaveStyle({top:'616px'});
+    expect(screen.getByRole('button',{name:'Revisar B'}).closest('.agenda-event')).toHaveStyle({top:'616px'});
     expect(getTarefasAgenda).toHaveBeenCalledTimes(1);
     liberar();
     await waitFor(()=>expect(screen.queryByText('Salvando horário…')).not.toBeInTheDocument());
     await waitFor(()=>expect(getTarefasAgenda).toHaveBeenCalledTimes(2));
     expect(api.getCalendario).toHaveBeenCalledTimes(1);expect(api.listRegrasObrigacao).toHaveBeenCalledTimes(1);
     expect(screen.getAllByRole('button',{name:'Revisar A'})).toHaveLength(1);
-    expect(screen.getByRole('button',{name:'Revisar A'})).toHaveStyle({top:'560px'});
+    expect(screen.getByRole('button',{name:'Revisar A'}).closest('.agenda-event')).toHaveStyle({top:'560px'});
   } finally {liberar();restaurar();}
 });

@@ -1,5 +1,5 @@
 // Datas civis e períodos da agenda, compartilhados pelo servidor e pela demonstração.
-export const FREQUENCIAS_AGENDA = ['AVULSA', 'DIARIA', 'SEMANAL', 'MENSAL', 'TRIMESTRAL', 'ANUAL'];
+export const FREQUENCIAS_AGENDA = ['AVULSA', 'DIARIA', 'SEMANAL', 'MENSAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'];
 export const PRIORIDADES_AGENDA = ['', 'BAIXA', 'MEDIA', 'ALTA', 'URGENTE'];
 const DIA = 86400000;
 export function dataAgenda(valor) {
@@ -49,7 +49,7 @@ export function expandirAgenda(config, inicio, fim) {
     const [ano, mes, dia] = c.dataInicio.split('-').map(Number);
     const [anoFim, mesFim, diaFim] = c.dataFim.split('-').map(Number);
     const diferencaMeses = (anoFim - ano) * 12 + mesFim - mes;
-    const passo = c.recorrencia === 'ANUAL' ? 12 : c.recorrencia === 'TRIMESTRAL' ? 3 : 1;
+    const passo = c.recorrencia === 'ANUAL' ? 12 : c.recorrencia === 'SEMESTRAL' ? 6 : c.recorrencia === 'TRIMESTRAL' ? 3 : 1;
     const min = new Date(`${inicio}T00:00:00Z`), max = new Date(`${fim}T00:00:00Z`);
     const primeiro = Math.max(0, Math.floor(((min.getUTCFullYear() - ano) * 12 + min.getUTCMonth() - mes + 1 - diferencaMeses) / passo));
     for (let n = primeiro; ; n++) {
@@ -76,34 +76,84 @@ export function diasDaTarefa(item) {
 }
 
 function itensDoCiclo(tarefa, oc) {
-  const pendentes = [{ ...oc, titulo: tarefa.titulo, descricao: tarefa.descricao, concluidaEm: null }], itens = [];
+  const pendentes = [{ ...oc, titulo: oc.titulo ?? tarefa.titulo, descricao: oc.descricao ?? tarefa.descricao, concluidaEm: null }], itens = [];
   while (pendentes.length) {
     const original = pendentes.pop(), estado = tarefa.estados?.[original.cicloChave] || {};
     if (estado.canceladaEm) continue;
     const item = { ...original, ...estado.alteracoes, concluidaEm: Object.hasOwn(estado, 'concluidaEm') ? estado.concluidaEm : original.concluidaEm };
     const dias = diasDaTarefa(item);
     if (dias.length > 1) { pendentes.push(...dias.reverse()); continue; }
+    if (original._versaoAgenda !== undefined) {
+      let vigente = 0;
+      (tarefa.config.versoes || []).forEach((v, i) => { if (original.dataInicio >= v.aPartirDe) vigente = i + 1; });
+      if (vigente !== original._versaoAgenda || (tarefa.config.encerradaAPartirDe && original.dataInicio >= tarefa.config.encerradaAPartirDe)) continue;
+    }
+    delete item._versaoAgenda;
     itens.push({ ...item, id: `${tarefa.id}:${item.cicloChave}`, tarefaId: tarefa.id, fonte: 'TAREFA', tipo: 'tarefa', resolvido: Boolean(item.concluidaEm) });
   }
   return itens;
 }
 
 export function encontrarOcorrenciaDaTarefa(tarefa, chave) {
-  const raiz = String(chave || '').split('@')[0];
+  const congelada = tarefa.estados?.[chave]?.ocorrencia;
+  if (congelada) return tarefa.estados[chave].canceladaEm ? null : { ...congelada, ...tarefa.estados[chave].alteracoes, concluidaEm: tarefa.estados[chave].concluidaEm || null, resolvido: Boolean(tarefa.estados[chave].concluidaEm) };
+  const raiz = String(chave || '').split('|').pop().split('@')[0];
   const referencia = dataAgenda(raiz.length === 7 ? `${raiz}-01` : raiz);
-  const oc = expandirAgenda(tarefa.config, referencia, somarDiasAgenda(referencia, 31)).find(o => o.cicloChave === raiz);
-  return oc ? itensDoCiclo(tarefa, oc).find(o => o.cicloChave === chave) : null;
+  return ciclosVersionados(tarefa, referencia, somarDiasAgenda(referencia, 31)).flatMap(oc => itensDoCiclo(tarefa, oc)).find(o => o.cicloChave === chave);
+}
+
+function ciclosVersionados(tarefa, inicio, fim) {
+  const versoes = tarefa.config.versoes || [];
+  const fontes = [{ config: tarefa.config, titulo: tarefa.titulo, descricao: tarefa.descricao }, ...versoes];
+  return fontes.flatMap((fonte, indice) => expandirAgenda(fonte.config, inicio, fim).map(oc => ({ ...oc, _versaoAgenda: indice, titulo: fonte.titulo, descricao: fonte.descricao, cicloChave: indice ? `v${indice}|${oc.cicloChave}` : oc.cicloChave })));
+}
+
+export function ocorrenciasDoEstadoDaTarefa(tarefa, chave) {
+  const estado = tarefa.estados?.[chave] || {};
+  if (estado.ocorrencia) return [{ ...estado.ocorrencia, ...estado.alteracoes, concluidaEm: Object.hasOwn(estado, 'concluidaEm') ? estado.concluidaEm : estado.ocorrencia.concluidaEm }];
+  const copia = { ...tarefa, estados: { ...tarefa.estados, [chave]: { ...estado, canceladaEm: null } } };
+  const raiz = chave.split('@')[0], data = raiz.split('|').pop();
+  const referencia = dataAgenda(data.length === 7 ? `${data}-01` : data);
+  return ciclosVersionados(copia, referencia, somarDiasAgenda(referencia, 31)).filter(oc => oc.cicloChave === raiz)
+    .flatMap(oc => itensDoCiclo(copia, oc)).filter(oc => oc.cicloChave === chave || oc.cicloChave.startsWith(`${chave}@`));
+}
+
+/** Snapshot das exceções antes de trocar a frequência: nenhuma conclusão/exclusão é perdida. */
+export function prepararEdicaoSerieTarefa(tarefa, cicloChave, alteracoes) {
+  const selecionada = encontrarOcorrenciaDaTarefa(tarefa, cicloChave);
+  if (!selecionada) throw new Error('Ocorrência não encontrada.');
+  const config = normalizarAgenda({ ...selecionada, ...alteracoes });
+  const semExcecao = { ...tarefa, estados: { ...tarefa.estados } };
+  delete semExcecao.estados[cicloChave];
+  const original = encontrarOcorrenciaDaTarefa(semExcecao, cicloChave) || selecionada;
+  const aPartirDe = [original.dataInicio, selecionada.dataInicio, config.dataInicio].sort()[0];
+  const titulo = String(alteracoes.titulo ?? selecionada.titulo ?? '').trim();
+  if (!titulo || titulo.length > 200) throw new Error('Informe um título de até 200 caracteres.');
+  const estados = { ...tarefa.estados };
+  for (const [chave, estado] of Object.entries(estados)) {
+    if (chave === cicloChave && !estado.concluidaEm && !estado.canceladaEm) { delete estados[chave]; continue; }
+    for (const ocorrencia of ocorrenciasDoEstadoDaTarefa(tarefa, chave)) {
+      const filho = estados[ocorrencia.cicloChave] || {};
+      estados[ocorrencia.cicloChave] = { ...estado, ...filho, alteracoes: null, concluidaEm: ocorrencia.concluidaEm || null, ocorrencia };
+    }
+  }
+  return { config: { ...tarefa.config, versoes: [...(tarefa.config.versoes || []), { aPartirDe, config, titulo, descricao: String(alteracoes.descricao ?? selecionada.descricao ?? '').slice(0, 10000) }] }, estados };
 }
 
 /** Exceções movidas continuam visíveis no destino, mesmo fora do período original. */
 export function ocorrenciasDaTarefa(tarefa, inicio, fim) {
-  const mapa = new Map(expandirAgenda(tarefa.config, inicio, fim).map(o => [o.cicloChave, o]));
+  const mapa = new Map(ciclosVersionados(tarefa, inicio, fim).map(o => [o.cicloChave, o]));
   for (const [chave, estado] of Object.entries(tarefa.estados || {})) {
     const raiz = chave.split('@')[0];
-    if (!estado.alteracoes || estado.canceladaEm || mapa.has(raiz)) continue;
-    const referencia = raiz.length === 7 ? `${raiz}-01` : raiz;
-    const oc = expandirAgenda(tarefa.config, referencia, somarDiasAgenda(referencia, 31)).find(o => o.cicloChave === raiz);
+    if (!estado.alteracoes || estado.canceladaEm || estado.ocorrencia || mapa.has(raiz)) continue;
+    const data = raiz.split('|').pop();
+    const referencia = data.length === 7 ? `${data}-01` : data;
+    const oc = ciclosVersionados(tarefa, referencia, somarDiasAgenda(referencia, 31)).find(o => o.cicloChave === raiz);
     if (oc) mapa.set(raiz, oc);
   }
-  return [...mapa.values()].flatMap(oc => itensDoCiclo(tarefa, oc)).filter(item => item.dataFim >= inicio && item.dataInicio <= fim);
+  const congeladas = Object.entries(tarefa.estados || {}).filter(([, e]) => e.ocorrencia);
+  const datasPreservadas = new Set(congeladas.flatMap(([, e]) => [e.ocorrencia.dataInicio, e.alteracoes?.dataInicio || e.ocorrencia.dataInicio]));
+  const atuais = [...mapa.values()].flatMap(oc => itensDoCiclo(tarefa, oc)).filter(item => !datasPreservadas.has(item.dataInicio));
+  const historico = congeladas.filter(([, e]) => !e.canceladaEm).map(([chave]) => encontrarOcorrenciaDaTarefa(tarefa, chave));
+  return [...atuais, ...historico].filter(item => item.dataFim >= inicio && item.dataInicio <= fim);
 }

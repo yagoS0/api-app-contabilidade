@@ -808,6 +808,9 @@ export function createRealApi() {
     async acaoTarefaAgenda(id, dados) {
       return request(`/firm/agenda/tarefas/${encodeURIComponent(id)}/acao`, { method: 'POST', body: JSON.stringify(dados) });
     },
+    async converterTarefaEmObrigacao(id, dados) {
+      return request(`/firm/agenda/tarefas/${encodeURIComponent(id)}/converter-obrigacao`, { method: 'POST', body: JSON.stringify(dados) });
+    },
     async excluirOcorrenciasAgenda(ids) {
       return request('/firm/agenda/ocorrencias/excluir', { method: 'POST', body: JSON.stringify({ ids }) });
     },

@@ -683,8 +683,8 @@ function mockCriarObrigacao(companyId, empresa, dados) {
     const fim = config.recorrencia === 'AVULSA' ? config.dataFim : new Date(Date.UTC(hoje.getUTCFullYear()+1,hoje.getUTCMonth()+1,0)).toISOString().slice(0,10);
     const ocorrencias = expandirAgenda(config,inicio,fim).map(p => {
       const [a,m] = p.dataInicio.split('-').map(Number);
-      const venc = dados.tipo !== 'TAREFA' && ['MENSAL','TRIMESTRAL','ANUAL'].includes(config.recorrencia) ? new Date(Date.UTC(a,m-1,Math.min(Number(dados.diaVencimento),new Date(Date.UTC(a,m,0)).getUTCDate()))) : new Date(config.vencimentoFiscal && ['DIARIA','SEMANAL'].includes(config.recorrencia) ? somarDiasAgenda(p.dataInicio,Math.round((+new Date(config.vencimentoFiscal)-+new Date(config.dataInicio))/86400000)) : config.vencimentoFiscal || p.dataFim);
-      if (dados.tipo !== 'TAREFA' && dados.ajusteDiaUtil !== 'MANTER' && ['MENSAL','TRIMESTRAL','ANUAL'].includes(config.recorrencia)) while([0,6].includes(venc.getUTCDay())) venc.setUTCDate(venc.getUTCDate()+(dados.ajusteDiaUtil === 'POSTERGAR' ? 1 : -1));
+      const venc = dados.tipo !== 'TAREFA' && ['MENSAL','TRIMESTRAL','SEMESTRAL','ANUAL'].includes(config.recorrencia) ? new Date(Date.UTC(a,m-1,Math.min(Number(dados.diaVencimento),new Date(Date.UTC(a,m,0)).getUTCDate()))) : new Date(config.vencimentoFiscal && ['DIARIA','SEMANAL'].includes(config.recorrencia) ? somarDiasAgenda(p.dataInicio,Math.round((+new Date(config.vencimentoFiscal)-+new Date(config.dataInicio))/86400000)) : config.vencimentoFiscal || p.dataFim);
+      if (dados.tipo !== 'TAREFA' && dados.ajusteDiaUtil !== 'MANTER' && ['MENSAL','TRIMESTRAL','SEMESTRAL','ANUAL'].includes(config.recorrencia)) while([0,6].includes(venc.getUTCDay())) venc.setUTCDate(venc.getUTCDate()+(dados.ajusteDiaUtil === 'POSTERGAR' ? 1 : -1));
       return { ...p, ocorrenciaId:crypto.randomUUID(), dataVencimento:venc.toISOString().slice(0,10), competenciaRef:new Date(Date.UTC(a,m-1-Number(dados.defasagemMeses || 0),1)).toISOString().slice(0,7), status:'PENDENTE', concluidaEm:null };
     });
     return { ...dados, agendaConfig:config, obrigacaoId:crypto.randomUUID(), companyId, empresa, ativa:true, ocorrencias, sobrescritaLocal:false };
@@ -693,7 +693,7 @@ function mockCriarObrigacao(companyId, empresa, dados) {
   const periodicidade = String(dados.periodicidade || "MENSAL").toUpperCase();
   const tipo = String(dados.tipo || "OBRIGACAO").toUpperCase();
   const diasPreparacao = Number(dados.diasPreparacao ?? 0);
-  if (!["TAREFA", "OBRIGACAO"].includes(tipo) || !["AVULSA", "MENSAL", "TRIMESTRAL", "ANUAL"].includes(periodicidade)) {
+  if (!["TAREFA", "OBRIGACAO"].includes(tipo) || !["AVULSA", "MENSAL", "TRIMESTRAL", "SEMESTRAL", "ANUAL"].includes(periodicidade)) {
     throw new Error("Tipo ou periodicidade inválidos.");
   }
   if (!Number.isInteger(diasPreparacao) || diasPreparacao < 0 || diasPreparacao > 365) throw new Error("Informe de 0 a 365 dias de preparação.");
@@ -735,6 +735,7 @@ function mockCriarObrigacao(companyId, empresa, dados) {
     const ajuste = efetiva.ajusteDiaUtil, defasagem = Number(efetiva.defasagemMeses ?? 1), diasPreparacao = Number(efetiva.diasPreparacao || 0);
     if (periodicidade === "ANUAL" && mes !== mesRef) continue;
     if (periodicidade === "TRIMESTRAL" && (((mes - mesRef) % 3) + 3) % 3 !== 0) continue;
+    if (periodicidade === "SEMESTRAL" && (((mes - mesRef) % 6) + 6) % 6 !== 0) continue;
 
     const ultimoDia = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
     const d = new Date(Date.UTC(ano, mes - 1, Math.min(diaPedido, ultimoDia)));
@@ -7158,7 +7159,7 @@ export function createMockApi() {
         obrigacoes: lista,
         resumo: { pendentes, vencendoEm7Dias, vencidas },
         opcoes: {
-          periodicidades: ["AVULSA", "MENSAL", "TRIMESTRAL", "ANUAL"],
+          periodicidades: ["AVULSA", "MENSAL", "TRIMESTRAL", "SEMESTRAL", "ANUAL"],
           ajustesDiaUtil: ["ANTECIPAR", "POSTERGAR", "MANTER"],
           verificadores: [
             { chave: "APURACAO_TRANSMITIDA", rotulo: "Quando a apuração da competência for transmitida" },
@@ -7270,7 +7271,7 @@ export function createMockApi() {
           const vigentes = (o.agendaVersoes || []).filter(v => v.aPartirDe <= ciclo && v.regra);
           const regra = { ...o, ...(vigentes.length ? vigentes[vigentes.length - 1].regra : {}), ...(patch.regra || {}) };
           const snapshot = Object.fromEntries(['periodicidade', 'mesReferencia', 'diaVencimento', 'ajusteDiaUtil', 'defasagemMeses', 'diasPreparacao'].map(k => [k, regra[k]]));
-          if (!['MENSAL', 'TRIMESTRAL', 'ANUAL'].includes(snapshot.periodicidade) || !Number.isInteger(Number(snapshot.diaVencimento)) || !(Number(snapshot.diaVencimento) >= 1 && Number(snapshot.diaVencimento) <= 31) || (snapshot.periodicidade !== 'MENSAL' && !(Number(snapshot.mesReferencia) >= 1 && Number(snapshot.mesReferencia) <= 12)) || !['MANTER', 'ANTECIPAR', 'POSTERGAR'].includes(snapshot.ajusteDiaUtil)) return { ok: false, message: 'Frequência ou vencimento inválido.' };
+          if (!['MENSAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'].includes(snapshot.periodicidade) || !Number.isInteger(Number(snapshot.diaVencimento)) || !(Number(snapshot.diaVencimento) >= 1 && Number(snapshot.diaVencimento) <= 31) || (snapshot.periodicidade !== 'MENSAL' && !(Number(snapshot.mesReferencia) >= 1 && Number(snapshot.mesReferencia) <= 12)) || !['MANTER', 'ANTECIPAR', 'POSTERGAR'].includes(snapshot.ajusteDiaUtil)) return { ok: false, message: 'Frequência ou vencimento inválido.' };
           o.agendaVersoes = [...(o.agendaVersoes || []), { aPartirDe: ciclo, janela: patch.janelaTrabalho || null, regra: snapshot, alteradaEm: new Date().toISOString() }];
           o.sobrescritaLocal = true;
           const previstas = mockCriarObrigacao(o.companyId, o.empresa, { ...o, _inicioCiclo: ciclo }).ocorrencias;
@@ -7340,7 +7341,7 @@ export function createMockApi() {
         opcoes: {
           escopos: ["TODAS", "POR_FILTRO", "SELECAO_MANUAL"],
           regimes: ["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL"],
-          periodicidades: ["MENSAL", "TRIMESTRAL", "ANUAL"],
+          periodicidades: ["MENSAL", "TRIMESTRAL", "SEMESTRAL", "ANUAL"],
           ajustesDiaUtil: ["ANTECIPAR", "POSTERGAR", "MANTER"],
           verificadores: [
             { chave: "APURACAO_TRANSMITIDA", rotulo: "Quando a apuração da competência for transmitida" },

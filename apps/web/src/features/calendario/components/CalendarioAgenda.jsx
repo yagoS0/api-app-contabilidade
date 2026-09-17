@@ -4,6 +4,7 @@ import { Button } from '../../../components/ui/Button';
 import { BotaoCopiar } from '../../../components/ui/BotaoCopiar';
 import { formatarCnpj, soDigitosCnpj } from '../../onboarding/lib/brasilApi';
 import { ModalAtividade } from './ModalAtividade';
+import { AtividadeAgenda as Atividade } from './AtividadeAgenda';
 import { useGestosAgenda } from './useGestosAgenda';
 import { useEdicoesAgenda } from './useEdicoesAgenda';
 import { ModalObrigacao } from '../../obrigacoes/components/ModalObrigacao';
@@ -14,15 +15,7 @@ const conferir = out => { if (out?.ok === false) throw new Error(out.message || 
 const obrigacao = i => i.tipo === 'obrigacao';
 const faixa = i => !i.horaInicio || i.dataInicio !== i.dataFim;
 const ICONE = <svg aria-hidden="true" width="13" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="2" width="10" height="12" rx="2" stroke="currentColor"/><path d="M6 6h4M6 9h4" stroke="currentColor"/></svg>;
-function Atividade({ item, abrir, style, gestos }) {
-  const editavel = gestos?.habilitada(item);
-  return <button type="button" className={`agenda-event${item.resolvido ? ' is-complete' : ''}${editavel ? ' is-draggable' : ''}${item.salvando ? ' is-saving' : ''}${style?.height < 36 ? ' is-short' : ''}${gestos?.previa?.item.id === item.id ? ' is-dragging' : ''}`} onPointerDown={editavel ? e => gestos.iniciar(e,item) : undefined} onPointerMove={gestos?.mover} onPointerUp={gestos?.terminar} onPointerCancel={gestos?.cancelar} onLostPointerCapture={gestos?.cancelar} onKeyDown={editavel ? e => gestos.teclado(e,item) : undefined} aria-busy={item.salvando || undefined} aria-keyshortcuts={editavel ? 'Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight Alt+Shift+ArrowUp Alt+Shift+ArrowDown' : undefined} style={{ '--event-color': corAtividade(item), ...style }} onClick={e => { e.stopPropagation(); abrir(item); }} title={`${item.titulo} · ${dataBR(item.dataInicio)}${item.dataFim !== item.dataInicio ? ` a ${dataBR(item.dataFim)}` : ''}`}>
-    {editavel && item.horaInicio && <span className="agenda-resize agenda-resize-start" data-agenda-resize="inicio" aria-hidden="true"/>}{obrigacao(item) && ICONE}<span>{item.titulo}</span>{item.itens?.length > 1 && <small aria-label={`${item.itens.filter(i => i.resolvido).length} de ${item.itens.length} concluídas`}>{item.itens.filter(i => i.resolvido).length}/{item.itens.length}</small>}
-    {editavel && item.horaInicio && <span className="agenda-resize agenda-resize-end" data-agenda-resize="fim" aria-hidden="true"/>}
-    {editavel && <span className="agenda-move-handle" data-agenda-move-handle="" aria-hidden="true"/>}
-  </button>;
-}
-function Faixas({ itens, dias, abrir, criar, mes = false, gestos }) {
+function Faixas({ itens, dias, abrir, criar, mes = false, gestos, onConcluir }) {
   const [expandido, setExpandido] = useState(false);
   const segmentos = faixasDoPeriodo(itens, dias);
   const limite = mes ? 3 : 4;
@@ -31,7 +24,7 @@ function Faixas({ itens, dias, abrir, criar, mes = false, gestos }) {
   return <div className={`agenda-bands${mes ? ' is-month' : ''}`}>
     <div className="agenda-band-grid" style={{ '--days': dias.length, gridTemplateRows: `repeat(${Math.max(1,linhas)}, 29px)` }}>
       {dias.map((d, i) => <button type="button" key={d} className={`agenda-band-empty${d === dataLocal() ? ' is-today' : ''}`} style={{ gridColumn: i + 1, gridRow: `1 / ${Math.max(1,linhas)+1}` }} aria-label={`Criar atividade em ${dataBR(d)}`} onClick={() => criar(d)} />)}
-      {segmentos.filter(s => s.linha < linhas).map(s => <Atividade gestos={gestos} key={s.item.id} item={s.item} abrir={abrir} style={{ gridColumn: `${s.inicio+1} / ${s.fim+2}`, gridRow: s.linha+1 }} />)}
+      {segmentos.filter(s => s.linha < linhas).map(s => <Atividade gestos={gestos} onConcluir={onConcluir} key={s.item.id} item={s.item} abrir={abrir} style={{ gridColumn: `${s.inicio+1} / ${s.fim+2}`, gridRow: s.linha+1 }} />)}
     </div>
     {!mes && quantidade > limite && <button type="button" className="agenda-more" onClick={() => setExpandido(v => !v)}>{expandido ? 'Recolher' : `Mais ${segmentos.filter(s => s.linha >= limite).length} atividades`}</button>}
   </div>;
@@ -122,7 +115,10 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
       const key = r.regraId || r.id;
       if (!mapa.has(key)) mapa.set(key, { id: key, titulo: r.nome, tipo: 'obrigacao', regraId: key, recorrencia: r.periodicidade, prioridade: r.agendaConfig?.prioridade || '', empresas: [] });
     }
-    return [...mapa.values(), ...(!companyIdFixo ? dados.tarefas.map(t => ({ id: t.id, tarefaId: t.id, titulo: t.titulo, tipo: 'tarefa', recorrencia: t.config.recorrencia, prioridade: t.config.prioridade, original: t, empresas: [] })) : [])]
+    return [...mapa.values(), ...(!companyIdFixo ? dados.tarefas.map(t => {
+      const versao = t.config.versoes?.at(-1), config = versao?.config || t.config;
+      return { id:t.id, tarefaId:t.id, titulo:versao?.titulo || t.titulo, tipo:'tarefa', recorrencia:config.recorrencia, prioridade:config.prioridade, original:t, configAtual:config, empresas:[] };
+    }) : [])]
       .filter(s => (filtroLista === 'TODAS' || s.tipo === filtroLista) && s.titulo.toLocaleLowerCase('pt-BR').includes(busca.toLocaleLowerCase('pt-BR')))
       .sort((a,b) => a.titulo.localeCompare(b.titulo, 'pt-BR'));
   }, [dados, filtroLista, busca, companyIdFixo]);
@@ -154,6 +150,13 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     try { conferir(await fn()); if (fechar) { setDetalhe(null); setConfirmacao(null); setEdicaoLegada(null); } recarregar(); }
     catch(e) { setErro(e.message); } finally { setOcupado(false); }
   }
+  async function concluirNaGrade(item) {
+    if (ocupado || item.salvando || item.tipo !== 'tarefa' || item.itens?.length > 1 || item.conclusaoAutomatica) return;
+    const tarefa = item.itens?.[0] || item;
+    await agir(() => tarefa.tarefaId
+      ? api.acaoTarefaAgenda(tarefa.tarefaId, { cicloChave:tarefa.cicloChave, acao:tarefa.resolvido ? 'REABRIR' : 'CONCLUIR' })
+      : tarefa.resolvido ? api.reabrirOcorrencia(tarefa.ocorrenciaId) : api.concluirOcorrencia(tarefa.ocorrenciaId), false);
+  }
   async function excluir(alvo, serie) {
     if (serie) {
       if (alvo.tarefaId) return api.acaoTarefaAgenda(alvo.tarefaId, { acao: 'EXCLUIR_SERIE' });
@@ -178,13 +181,20 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
   function abrirSerie(s) {
     const noPeriodo = dados.itens.filter(i => i.tarefaId === s.tarefaId);
     const itens = s.tarefaId
-      ? noPeriodo.length ? noPeriodo : ocorrenciasDaTarefa(s.original, s.original.config.dataInicio, s.original.config.dataFim)
+      ? noPeriodo.length ? noPeriodo : ocorrenciasDaTarefa(s.original, s.configAtual.dataInicio, s.configAtual.dataFim)
       : s.empresas.flatMap(o => itensDasObrigacoes([o]));
     const ordenados = itens.sort((a,b) => a.dataInicio.localeCompare(b.dataInicio));
     const proxima = ordenados.find(i => i.dataFim >= dataLocal() && !i.resolvido) || ordenados.at(-1);
     if (proxima) abrirAtividade(agruparAtividades(itens.filter(i => i.cicloChave === proxima.cicloChave))[0]);
     else setDetalhe({ titulo: s.titulo, tipo: s.tipo, somenteSerie: true, empresasVazias: true });
   }
+  const obrigacaoEmEdicao = criacao && dados.obrigacoes.find(o => o.obrigacaoId === criacao.obrigacaoId);
+  const inicialEdicao = criacao && {
+    ...criacao,
+    recorrencia: criacao.recorrencia || obrigacaoEmEdicao?.periodicidade || 'AVULSA',
+    obrigacaoOriginal: obrigacaoEmEdicao,
+    regraOriginal: dados.regras.find(r => (r.regraId || r.id) === criacao.regraId),
+  };
   const gestos = useGestosAgenda({ dias, horasRef, salvar:edicoes.salvar, criar:criarPeriodo, bloqueado:carregando || ocupado });
   const vencimentoComum = detalhe?.itens?.length && detalhe.itens.every(i => obrigacao(i) && i.dataVencimento === detalhe.itens[0].dataVencimento) ? detalhe.itens[0].dataVencimento : null;
   const periodo = visao === 'dia' ? dataExtenso(referencia) : visao === 'semana' ? `${Number(inicio.slice(8))}–${Number(fim.slice(8))} ${new Date(`${fim}T12:00:00`).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}` : new Date(`${referencia}T12:00:00`).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
@@ -198,11 +208,11 @@ export function CalendarioAgenda({ api, empresas = [], onOpenCompany, companyIdF
     {visao === 'lista' ? <div className="agenda-list"><div className="agenda-list-filters"><input aria-label="Buscar atividades" placeholder="Buscar atividade" value={busca} onChange={e => setBusca(e.target.value)}/><select aria-label="Filtrar atividades" value={filtroLista} onChange={e => setFiltroLista(e.target.value)}><option value="TODAS">Todas</option><option value="tarefa">Tarefas</option><option value="obrigacao">Obrigações</option></select></div>
       {series.map(s => <div className="agenda-list-row" key={s.id}><button className="agenda-list-name" onClick={() => abrirSerie(s)} style={{ '--event-color': corAtividade(s) }}>{obrigacao(s) && ICONE}<span><strong>{s.titulo}</strong><small>{RECORRENCIAS[s.recorrencia]}{s.empresas.length ? ` · ${s.empresas.length} ${s.empresas.length === 1 ? 'empresa' : 'empresas'}` : ''}</small></span></button><div className="agenda-list-actions">{s.regraId && dados.regras.some(r => (r.regraId || r.id) === s.regraId) && <Button variant="secondary" size="sm" disabled={edicoes.pendenteSerie(s)} onClick={() => configurarObrigacao(s.regraId)}>Configurar obrigação</Button>}{s.original?.obrigacaoId && !s.original.agendaConfig && <Button variant="secondary" size="sm" disabled={edicoes.pendenteSerie(s)} onClick={() => setEdicaoLegada(s.original)}>Editar</Button>}<Button variant="secondary" size="sm" disabled={edicoes.pendenteSerie(s)} onClick={() => setConfirmacao({ alvo: s, serie: true })}>Excluir série</Button></div></div>)}
       {!series.length && !carregando && <p className="agenda-empty">Nenhuma atividade encontrada.</p>}
-    </div> : visao === 'mes' ? <div className="agenda-month"><div className="agenda-weekdays">{['seg.','ter.','qua.','qui.','sex.','sáb.','dom.'].map(d => <span key={d}>{d}</span>)}</div>{Array.from({length:6},(_,n) => { const semana = dias.slice(n*7,n*7+7); return <div className="agenda-month-week" key={semana[0]}><div className="agenda-month-dates">{semana.map(d => <button key={d} className={`${d === dataLocal() ? 'is-today' : ''} ${d.slice(0,7) !== referencia.slice(0,7) ? 'is-outside' : ''}`} aria-label={`Criar atividade em ${dataBR(d)}`} onClick={() => criar(d)}>{Number(d.slice(8))}</button>)}</div><Faixas itens={blocos} dias={semana} abrir={abrirAtividade} criar={criar} mes /></div>; })}</div>
-    : <div className="agenda-time-view"><div className="agenda-time-header">{cabecalhos(dias)}<span className="agenda-time-gutter" /></div><div className="agenda-all-day"><Faixas key={`${inicio}:${visao}`} gestos={gestos} itens={blocos.filter(faixa)} dias={dias} abrir={abrirAtividade} criar={criar}/><span className="agenda-time-gutter" /></div><div className="agenda-time-scroll" ref={horasRef}><div className="agenda-time-columns" style={{ '--days': dias.length }}>{dias.map(d => <div key={d} className={`agenda-time-day${d === dataLocal() ? ' is-today' : ''}`}>
+    </div> : visao === 'mes' ? <div className="agenda-month"><div className="agenda-weekdays">{['seg.','ter.','qua.','qui.','sex.','sáb.','dom.'].map(d => <span key={d}>{d}</span>)}</div>{Array.from({length:6},(_,n) => { const semana = dias.slice(n*7,n*7+7); return <div className="agenda-month-week" key={semana[0]}><div className="agenda-month-dates">{semana.map(d => <button key={d} className={`${d === dataLocal() ? 'is-today' : ''} ${d.slice(0,7) !== referencia.slice(0,7) ? 'is-outside' : ''}`} aria-label={`Criar atividade em ${dataBR(d)}`} onClick={() => criar(d)}>{Number(d.slice(8))}</button>)}</div><Faixas onConcluir={concluirNaGrade} itens={blocos} dias={semana} abrir={abrirAtividade} criar={criar} mes /></div>; })}</div>
+    : <div className="agenda-time-view"><div className="agenda-time-header">{cabecalhos(dias)}<span className="agenda-time-gutter" /></div><div className="agenda-all-day"><Faixas onConcluir={concluirNaGrade} key={`${inicio}:${visao}`} gestos={gestos} itens={blocos.filter(faixa)} dias={dias} abrir={abrirAtividade} criar={criar}/><span className="agenda-time-gutter" /></div><div className="agenda-time-scroll" ref={horasRef}><div className="agenda-time-columns" style={{ '--days': dias.length }}>{dias.map(d => <div key={d} className={`agenda-time-day${d === dataLocal() ? ' is-today' : ''}`}>
       {Array.from({length:24},(_,hora) => <button key={hora} type="button" className="agenda-time-slot" aria-label={`Criar atividade em ${dataBR(d)} às ${String(hora).padStart(2,'0')}:00`} onPointerDown={e=>gestos.iniciarCriacao(e,d)} onPointerMove={gestos.mover} onPointerUp={gestos.terminar} onPointerCancel={gestos.cancelar} onLostPointerCapture={gestos.cancelar} onClick={e=>gestos.clicarHorario(e,d,hora)}/>)}
-      {horarios[d].map(({item,coluna,colunas}) => <Atividade gestos={gestos} key={item.id} item={item} abrir={abrirAtividade} style={{ position:'absolute', top: minutos(item.horaInicio)/60*56, height: Math.max(22,(fimVisual(item)-minutos(item.horaInicio))/60*56-2), width:`calc(${100/colunas}% - 5px)`, left:`calc(${coluna*100/colunas}% + 2px)` }}/>)}</div>)}{gestos.previa && <div className={`agenda-drag-preview${gestos.previa.tipoGesto === 'criar' ? ' is-creating' : ''}`} aria-live="polite" style={{'--event-color':corAtividade(gestos.previa.item),left:gestos.previa.left,width:gestos.previa.width,top:minutos(gestos.previa.horaInicio)/60*56,height:Math.max(22,(fimVisual(gestos.previa)-minutos(gestos.previa.horaInicio))/60*56-2)}}><strong>{horarioAtividade(gestos.previa)}{gestos.previa.horaFim && <small>{minutos(gestos.previa.horaFim)-minutos(gestos.previa.horaInicio)} min</small>}</strong><span>{gestos.previa.item.titulo}</span></div>}<div className="agenda-hours" aria-hidden="true">{Array.from({length:24},(_,h) => <span key={h}>{String(h).padStart(2,'0')}:00</span>)}</div></div></div></div>}
-    {criacao && <ModalAtividade key={criacao.regraEdicao?.regraId || criacao.regraEdicao?.id || 'atividade'} inicial={criacao} empresas={empresas} api={api} onAlterarConclusao={criacao.tipo === 'tarefa' && !criacao.conclusaoAutomatica ? alterarConclusaoTarefa : undefined} onExcluir={criacao.tarefaId || criacao.ocorrenciaIds ? () => { setConfirmacao({ alvo:criacao }); setCriacao(null); } : undefined} onConfigurarObrigacao={criacao.regraId && dados.regras.some(r => (r.regraId || r.id) === criacao.regraId) ? () => configurarObrigacao(criacao.regraId) : undefined} onFechar={() => setCriacao(null)} onSalvo={({dataInicio}) => { setCriacao(null); setReferencia(dataInicio); recarregar(); }}/ >}
+      {horarios[d].map(({item,coluna,colunas,extensao = 1}) => <Atividade onConcluir={concluirNaGrade} gestos={gestos} key={item.id} item={item} abrir={abrirAtividade} style={{ '--event-left':`${coluna*100/colunas}%`, position:'absolute', top: minutos(item.horaInicio)/60*56, height: Math.max(22,(fimVisual(item)-minutos(item.horaInicio))/60*56-2), width:`calc(${100*extensao/colunas}% - 5px)`, left:`calc(${coluna*100/colunas}% + 2px)` }}/>)}</div>)}{gestos.previa && <div className={`agenda-drag-preview${gestos.previa.tipoGesto === 'criar' ? ' is-creating' : ''}`} aria-live="polite" style={{'--event-color':corAtividade(gestos.previa.item),left:gestos.previa.left,width:gestos.previa.width,top:minutos(gestos.previa.horaInicio)/60*56,height:Math.max(22,(fimVisual(gestos.previa)-minutos(gestos.previa.horaInicio))/60*56-2)}}><strong>{horarioAtividade(gestos.previa)}{gestos.previa.horaFim && <small>{minutos(gestos.previa.horaFim)-minutos(gestos.previa.horaInicio)} min</small>}</strong><span>{gestos.previa.item.titulo}</span></div>}<div className="agenda-hours" aria-hidden="true">{Array.from({length:24},(_,h) => <span key={h}>{String(h).padStart(2,'0')}:00</span>)}</div></div></div></div>}
+    {criacao && <ModalAtividade key={criacao.regraEdicao?.regraId || criacao.regraEdicao?.id || 'atividade'} inicial={inicialEdicao} empresas={empresas} api={api} onAlterarConclusao={criacao.tipo === 'tarefa' && !criacao.conclusaoAutomatica ? alterarConclusaoTarefa : undefined} onExcluir={criacao.tarefaId || criacao.ocorrenciaIds ? () => { setConfirmacao({ alvo:criacao }); setCriacao(null); } : undefined} onConfigurarObrigacao={criacao.regraId && dados.regras.some(r => (r.regraId || r.id) === criacao.regraId) ? () => configurarObrigacao(criacao.regraId) : undefined} onFechar={() => setCriacao(null)} onSalvo={({dataInicio}) => { setCriacao(null); setReferencia(dataInicio); recarregar(); }}/ >}
     {detalhe && !confirmacao && <Modal titulo={detalhe.titulo} aoFechar={() => { setDetalhe(null); setErro(''); }} ocupado={ocupado} lateral rodape={!detalhe.somenteSerie && <div className="agenda-form-actions">{(detalhe.itens?.[0]?.tarefaId || detalhe.fonte === 'OBRIGACAO') && <Button variant="secondary" disabled={ocupado} onClick={() => { setCriacao(detalhe.fonte === 'OBRIGACAO' ? { ...detalhe, ocorrenciaIds:detalhe.itens.map(i=>i.ocorrenciaId) } : detalhe.itens[0]); setDetalhe(null); }}>Editar</Button>}<Button variant="danger" disabled={ocupado} onClick={() => setConfirmacao({ alvo: detalhe })}>Excluir ocorrência</Button></div>}>
       <div className="agenda-detail">{detalhe.regraId && dados.regras.some(r => (r.regraId || r.id) === detalhe.regraId) && <button className="agenda-text-action" onClick={() => configurarObrigacao(detalhe.regraId)}>Configurar obrigação</button>}<p className="agenda-detail-period">{dataBR(detalhe.dataInicio)}{detalhe.dataFim !== detalhe.dataInicio ? ` – ${dataBR(detalhe.dataFim)}` : ''}{detalhe.horaInicio ? ` · ${horarioAtividade(detalhe)}` : ''}</p>{vencimentoComum && <p className="agenda-detail-deadline">Vencimento fiscal · {dataBR(vencimentoComum)}</p>}{detalhe.descricao && <p className="agenda-description">{detalhe.descricao}</p>}
       {detalhe.itens?.length > 1 && <div className="agenda-progress"><span>{detalhe.itens.filter(i => i.resolvido).length} de {detalhe.itens.length} concluídas</span><progress max={detalhe.itens.length} value={detalhe.itens.filter(i => i.resolvido).length}/></div>}
