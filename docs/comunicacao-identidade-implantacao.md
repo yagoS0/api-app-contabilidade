@@ -2,7 +2,9 @@
 
 Implementação iniciada em 16/09/2026, branch `feat/comunicacao-identidade-chat-v2`, reconciliada com a main em 17/09/2026. Decisões e backlog: [plano](plano-comunicacao-identidade-leads-20260916.md).
 
-Estado em 17/09: implementação validada localmente; publicação e ativação ainda pendentes. Nenhuma flag, conversa ou dado de produção foi alterado nesta rodada.
+Estado em 17/09: dono autorizou revisar o conjunto e publicar na main/produção. Revisão e preparação da implantação em andamento; registrar revisão efetivamente implantada, auditoria e flags somente após verificação.
+
+A revisão final acrescentou a preservação da pausa humana legada no interlocutor: abrir outro canal não libera a automação. Repetir o backfill não restaura uma atribuição que a equipe já liberou. Verificador PostgreSQL aprovado com 27 verificações, transação revertida e rede bloqueada. A consulta de preparação encontrou as filas de entrada e IA sem itens pendentes; essa condição deve ser reconferida na ativação.
 
 ## Nome de quem responde e novo número comercial — 17/09/2026
 
@@ -12,7 +14,7 @@ A assinatura usa o usuário autenticado que executa o envio, inclui mensagens r�
 
 Validação da assinatura: 19 suítes/292 testes de API, onboarding e roteamento sem IA aprovados; após a proteção adicional contra nome preenchido com e-mail/ID, 91 testes de assinatura e rotas aprovados novamente. Sem envio à Meta, chamada Anthropic ou migração adicional.
 
-O dono informou o cadastro do novo número comercial na Meta e forneceu os identificadores por imagem. Os dados foram registrados apenas no arquivo privado de preparação do workspace, fora do Git. Continuam pendentes a publicação autorizada, conferência da credencial, cadastro do canal e sequência de identidade/backfill para ativar multicanal. Não substituir o telefone principal por esse número nem presumir recepção/saída validada a partir da imagem.
+O dono informou o cadastro do novo número comercial na Meta e forneceu os identificadores por imagem. Os dados foram registrados apenas no arquivo privado de preparação do workspace, fora do Git. A consulta somente leitura confirmou acesso ao telefone e seu estado VERIFIED. A conta e a assinatura do aplicativo ainda precisam ser reconciliadas com os dados da Meta antes do cadastro/ativação multicanal. Não substituir o telefone principal nem presumir recepção/saída validada a partir da imagem.
 
 ## Entrada de leads antes do segundo número — 17/09/2026
 

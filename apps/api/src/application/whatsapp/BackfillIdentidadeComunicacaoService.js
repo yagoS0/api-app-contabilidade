@@ -8,8 +8,8 @@ export async function backfillIdentidadeComunicacao({ aplicar = false, client = 
   if(aplicar && typeof client.$transaction==='function') return client.$transaction(tx=>backfillIdentidadeComunicacao({aplicar:true,client:tx}),{timeout:60000});
   const [contatos, conversas, atendimentos, vigencias, casosPrevios] = await Promise.all([
     client.contatoWhatsapp.findMany({ where: { telefoneE164: { not: null } }, select: { id:true,telefoneE164:true,waId:true,vinculoNumeroId:true,ativo:true } }),
-    client.conversaWhatsapp.findMany({ select: { id:true,telefoneE164:true,vinculoNumeroId:true,canalId:true } }),
-    client.atendimentoResponsavelWhatsapp.findMany({ select: { id:true,telefoneE164:true,vinculoNumeroId:true,canalId:true,canal:true } }),
+    client.conversaWhatsapp.findMany({ select: { id:true,telefoneE164:true,vinculoNumeroId:true,canalId:true,atendidaPor:true,atendidaDesde:true } }),
+    client.atendimentoResponsavelWhatsapp.findMany({ select: { id:true,telefoneE164:true,vinculoNumeroId:true,canalId:true,canal:true,atendidaPor:true,atendidaDesde:true } }),
     client.vinculoNumeroInterlocutor.findMany({select:{id:true,telefoneE164:true,geracao:true,encerrouEm:true,interlocutorId:true}}),
     client.atendimentoLead.findMany({where:{encerradoEm:null},select:{id:true,interlocutorId:true,conversa:{select:{telefoneE164:true,vinculoNumero:{select:{interlocutorId:true}}}}}}),
   ]);
@@ -17,6 +17,7 @@ export async function backfillIdentidadeComunicacao({ aplicar = false, client = 
   const numeros = [...new Set([...contatos,...conversas,...atendimentos].map(c=>c.telefoneE164).filter(Boolean))];
   const relatorio = { aplicar, numeros:numeros.length, vinculosCriados:0, conversasAssociadas:0, contatosAssociados:0, casosAssociados:0, conflitos:[] };
   const conversasMigradas=new Set(), sessoesMigradas=new Set(), corteMigracao=new Date();
+  const pausasPorPessoa=new Map();
   const aliases=new Map();
   const candidatosAtuais=contatos.filter(c=>c.ativo && (!c.vinculoNumeroId || !vigencias.find(v=>v.id===c.vinculoNumeroId)?.encerrouEm));
   for(const contato of candidatosAtuais.filter(c=>c.waId)) {if(!aliases.has(contato.waId)) aliases.set(contato.waId,[]);aliases.get(contato.waId).push(contato);}
@@ -44,6 +45,10 @@ export async function backfillIdentidadeComunicacao({ aplicar = false, client = 
     const existente = await client.vinculoNumeroInterlocutor.findFirst({where:{telefoneE164:numero,encerrouEm:null}});
     const identidade = await garantirIdentidadeWhatsapp({telefone:numero,canalId:'principal',client});
     const vinculo = identidade.vinculoNumero;
+    // A pausa legada acompanha a pessoa no segundo canal. Reexecução não
+    // ressuscita uma atribuição antiga depois de a equipe liberar o atendimento.
+    const pausas=[...conversas,...atendimentos].filter(c=>c.telefoneE164===numero && !c.vinculoNumeroId && (c.atendidaPor || c.atendidaDesde));
+    if(pausas.length) pausasPorPessoa.set(vinculo.interlocutorId,[...(pausasPorPessoa.get(vinculo.interlocutorId)||[]),...pausas]);
     if (!existente && vinculo.telefoneE164 === numero) {
       relatorio.vinculosCriados++;
       await client.vinculoNumeroInterlocutor.updateMany({where:{id:vinculo.id,verificadoEm:null},data:{origem:'CADASTRO_LEGADO'}});
@@ -71,6 +76,12 @@ export async function backfillIdentidadeComunicacao({ aplicar = false, client = 
     }
   }
   if (!aplicar) return relatorio;
+  for(const [interlocutorId,pausas] of pausasPorPessoa) {
+    const pausa=pausas.sort((a,b)=>new Date(b.atendidaDesde||0)-new Date(a.atendidaDesde||0))[0];
+    await client.interlocutorComunicacao.updateMany({where:{id:interlocutorId,atendidaPor:null,atendidaDesde:null},data:{
+      atendidaPor:pausa.atendidaPor || null,atendidaDesde:pausa.atendidaDesde || corteMigracao,
+    }});
+  }
   if(conversasMigradas.size || sessoesMigradas.size) {
     const contexto={OR:[{conversaId:{in:[...conversasMigradas]}},{atendimentoId:{in:[...sessoesMigradas]}}]};
     await client.acaoPendenteWhatsapp.updateMany({where:{...contexto,status:'pendente'},data:{status:'cancelada'}});

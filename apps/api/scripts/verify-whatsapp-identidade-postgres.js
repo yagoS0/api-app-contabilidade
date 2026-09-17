@@ -78,7 +78,9 @@ try {
     const sessaoReuso=await tx.atendimentoResponsavelWhatsapp.create({data:{telefoneE164:telefone}});
     // Uma migração nova corta os comandos preparados com o contexto legado.
     const telefoneLegado=`552177${String(Date.now()).slice(-7)}`;
-    const legado=await tx.conversaWhatsapp.create({data:{telefoneE164:telefoneLegado,chaveEscopo:`sem-empresa:${prefixo}-legado`,portalClientId:empresas[0].id}});
+    const pausaLegada=new Date(Date.now()-60000);
+    const operador=await tx.user.create({data:{email:`${prefixo}@example.invalid`,passwordHash:'sem-login-sintetico',name:'Operador sintético'}});
+    const legado=await tx.conversaWhatsapp.create({data:{telefoneE164:telefoneLegado,chaveEscopo:`sem-empresa:${prefixo}-legado`,portalClientId:empresas[0].id,atendidaPor:operador.id,atendidaDesde:pausaLegada}});
     const sessaoLegado=await tx.atendimentoResponsavelWhatsapp.create({data:{telefoneE164:telefoneLegado,portalClientId:empresas[0].id,conversaId:legado.id,aguardandoSelecao:false,pedidoPendente:'emitir nota',interacaoPendente:{id:'menu-antigo'},empresaIdsOferecidos:[empresas[0].id],expiraEm:new Date(Date.now()+60000)}});
     const acao=await tx.acaoPendenteWhatsapp.create({data:{conversaId:legado.id,portalClientId:empresas[0].id,tipo:'EMITIR_NFSE',payload:{},textoDeConfirmacao:'Exemplo',codigo:'ABCD',expiraEm:new Date(Date.now()+60000)}});
     const turno=await tx.turnoIaWhatsapp.create({data:{conversaId:legado.id,mensagemId:randomUUID()}});
@@ -88,9 +90,14 @@ try {
     assert.equal(await tx.contatoWhatsapp.count({where:{vinculoNumeroId:titular.vinculoNumero.id}}),0);checks++;
     assert.ok(migracao.conflitos.some(c=>c.tipo==='HISTORICO_APOS_REUSO'));assert.equal((await tx.conversaWhatsapp.findUnique({where:{id:legadoReuso.id}})).vinculoNumeroId,null);assert.equal((await tx.atendimentoResponsavelWhatsapp.findUnique({where:{id:sessaoReuso.id}})).vinculoNumeroId,null);checks++;
     const migrada=await tx.conversaWhatsapp.findUnique({where:{id:legado.id}}),sessaoMigrada=await tx.atendimentoResponsavelWhatsapp.findUnique({where:{id:sessaoLegado.id}});
+    const identidadeMigrada=await conferirIdentidadeVigente({vinculoNumeroId:migrada.vinculoNumeroId,client:tx});
+    assert.equal(identidadeMigrada.interlocutor.atendidaPor,operador.id);assert.equal(identidadeMigrada.interlocutor.atendidaDesde.getTime(),pausaLegada.getTime());checks++;
     assert.ok(migrada.automacaoInvalidadaEm);assert.equal(migrada.lidaAteEm,null);assert.equal(sessaoMigrada.versao,2);assert.equal(sessaoMigrada.aguardandoSelecao,true);assert.equal(sessaoMigrada.pedidoPendente,null);assert.equal(sessaoMigrada.interacaoPendente,null);assert.equal(sessaoMigrada.expiraEm,null);
     assert.equal((await tx.acaoPendenteWhatsapp.findUnique({where:{id:acao.id}})).status,'cancelada');assert.equal((await tx.turnoIaWhatsapp.findUnique({where:{id:turno.id}})).motivo,'MIGRACAO_IDENTIDADE');assert.deepEqual((await tx.rascunhoEmissaoWhatsapp.findUnique({where:{id:rascunho.id}})).estado,{status:'PAUSADO'});checks++;
+    // Uma liberação humana posterior não pode ser desfeita ao repetir o backfill.
+    await tx.interlocutorComunicacao.update({where:{id:identidadeMigrada.interlocutor.id},data:{atendidaPor:null,atendidaDesde:null}});
     await backfillIdentidadeComunicacao({aplicar:true,client:tx});
+    assert.equal((await conferirIdentidadeVigente({vinculoNumeroId:migrada.vinculoNumeroId,client:tx})).interlocutor.atendidaDesde,null);checks++;
     assert.equal((await tx.conversaWhatsapp.findUnique({where:{id:legado.id}})).automacaoInvalidadaEm.getTime(),migrada.automacaoInvalidadaEm.getTime());assert.equal((await tx.atendimentoResponsavelWhatsapp.findUnique({where:{id:sessaoLegado.id}})).versao,2);assert.equal((await tx.rascunhoEmissaoWhatsapp.findUnique({where:{id:rascunho.id}})).versao,2);checks++;
     const anotacaoArgs={conversaId:conversaTitular.id,visiveis,autor:{id:'test',name:'Equipe'},texto:'Conferência do novo número',escopo:'PESSOA',chaveIdempotencia:'nota-associacao-idempotente',client:tx};
     const anotacao=await salvarNotaInterna(anotacaoArgs);
