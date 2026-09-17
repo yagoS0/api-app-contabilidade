@@ -1,5 +1,9 @@
 # Notas — revisão de uso (08/09/2026)
 
+## Importação acima do limite — 17/09/2026
+
+O 500 em produção era `MulterError: Too many files`. `importarNotasEmLotes` divide a seleção em grupos sequenciais de 20 arquivos NF-e ou 50 NFS-e, soma os resultados e preserva motivos por arquivo. Falha interrompe os próximos lotes, mantém totais confirmados e orienta conferir o lote de resultado desconhecido; nunca repetir automaticamente. Os limites do servidor continuam em vigor e retornam JSON legível. Conferência local: 38 testes de upload/ingestão, contrato e resultado aprovados; sem importar documentos reais.
+
 ## Vendas e retorno da importação — 17/09/2026
 
 NF-e se chama “Notas de venda e compra” quando a empresa tem IE ou perfil incerto; apenas serviços confirmados sem IE mantêm somente compras/recebidas. Importação XML/ZIP está disponível na janela NF-e e usa `/clients/:id/invoices/import/nfe`, que já valida titularidade e deriva EMIT/DEST. NFS-e conserva `/import/xml`. Não enviar XML de mercadoria ao importador de serviço. O resultado fica na tela com totais e motivos por arquivo, inclusive sucesso parcial e detalhes truncados; erro de formato, outro estabelecimento e documento incompatível não podem virar silêncio. Mock não grava importações e informa esse limite.
