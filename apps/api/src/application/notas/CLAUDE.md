@@ -1,5 +1,9 @@
 # Certificados por operação
 
+## Importação informativa — 17/09/2026
+
+`portalInvoices /import/xml` valida XML e rejeita raízes de NF-e com `nfe_na_area_nfse`; documento sem identificador reconhecido é `formato_nao_suportado`. Motivos permanecem por arquivo em `errors`, e documentos válidos no mesmo lote continuam sendo importados. O contador agora acessa também `/import/nfe` por XML/ZIP na área NF-e. Manter ingestão, autorização, titularidade por estabelecimento e deduplicação existentes. Testes de ingestão NFS-e, campos fiscais e lote NF-e: 62 aprovados. Nenhuma importação fiscal real foi feita na conferência.
+
 ## Revisão fiscal — 14/09/2026
 
 `download/NotasSelecionadasService` baixa somente os IDs selecionados e pertencentes à empresa autorizada (PortalInvoice ou ServiceInvoice). Limites: 100 notas, 50 MB de arquivos. XML completo existente é obrigatório; PDF NF-e exige modelo 55 e protocolo autorizado, gera DANFE com `nfe-danfe-pdf` 1.0.3 (MIT). NFS-e reutiliza `gerarDanfseDaNota`, inclusive QR e ciclo fiscal. Não captura XML, não chama provedor, não grava documentos/estado fiscal. Falhas parciais são relatadas dentro do ZIP; nenhum arquivo válido retorna 422, ID desconhecido/de outro tenant retorna 404 indistinguível. Autorização é `requireFirmCompanyAccess` no POST `/notas/download-selecionadas`.

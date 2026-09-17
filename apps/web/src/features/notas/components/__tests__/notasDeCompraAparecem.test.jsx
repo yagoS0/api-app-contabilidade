@@ -13,9 +13,10 @@
 // ⚠ Se algum destes testes ficar vermelho, a pergunta não é "como faço passar": é se as notas de
 // compra voltaram a ficar invisíveis para o contador.
 
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { NotasFiscaisTab } from "../renderNotasFiscaisTab";
+jest.mock("../../../../api/client", () => ({ createApiClient: () => ({ getPerfilFiscal: async () => ({ candidatos: [{ tipoReceita: "SERVICO_FATOR_R" }] }) }) }));
 
 // Uma NF-e de COMPRA como as da produção: sem XML, sem itens, com emitente/valor/data/chave.
 const NFE_COMPRA = {
@@ -41,7 +42,7 @@ const NFSE_RECEBIDA = {
   emitenteNome: "PRESTADOR DE SERVICO LTDA",
 };
 
-function montar(overrides = {}) {
+function montar(overrides = {}, props = {}) {
   const setNotasFilters = jest.fn();
   const notasPanel = {
     loading: false,
@@ -65,16 +66,42 @@ function montar(overrides = {}) {
     abrirNota: jest.fn(), fecharNota: jest.fn(),
     ...overrides,
   };
-  render(<NotasFiscaisTab notasPanel={notasPanel} competencia="2026-08" />);
+  render(<NotasFiscaisTab notasPanel={notasPanel} competencia="2026-08" {...props} />);
   return { setNotasFilters, notasPanel };
 }
+
+it("empresa com IE mantém vendas e encaminha XML/ZIP ao importador NF-e", async () => {
+  const { notasPanel } = montar({}, { inscricaoEstadual: "123.456.789" });
+  fireEvent.click(screen.getByRole("button", { name: "Notas de venda e compra (NF-e)" }));
+  await waitFor(() => expect(screen.getByRole("option", { name: "Emitidas", exact: true })).toBeInTheDocument());
+  const arquivos = [new File(["<NFe/>"], "vendas.xml", { type: "application/xml" }), new File(["zip"], "vendas.zip")];
+  fireEvent.change(screen.getByLabelText("Importar XML ou ZIP de NF-e"), { target: { files: arquivos } });
+  expect(notasPanel.importNotas).toHaveBeenCalledWith(arquivos, { type: "NFE" });
+  expect(screen.queryByRole("button", { name: /Emitir nota/ })).not.toBeInTheDocument();
+});
+
+it("empresa apenas de serviços sem IE mantém compras e importação, sem vendas", async () => {
+  montar({}, { inscricaoEstadual: "" });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Notas de compra (NF-e)" })).toBeInTheDocument());
+  fireEvent.click(screen.getByRole("button", { name: "Notas de compra (NF-e)" }));
+  expect(screen.queryByRole("option", { name: "Emitidas", exact: true })).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Importar XML ou ZIP de NF-e")).toBeEnabled();
+});
+
+it("exibe o arquivo incompatível e o destino correto no resultado da importação", () => {
+  montar({ importResult: { type: "NFSE", falhou: true, mensagem: "1 não importada.", problemas: [{ arquivo: "venda.xml", mensagem: "Este XML é de NF-e. Importe na área de NF-e." }] } });
+  const resultado = screen.getByRole("region", { name: "Resultado da importação" });
+  expect(within(resultado).getByRole("alert")).toHaveTextContent("1 não importada");
+  expect(resultado).toHaveTextContent("venda.xml");
+  expect(resultado).toHaveTextContent("Importe na área de NF-e");
+});
 
 describe("as notas de compra (NF-e) aparecem para quem as tem", () => {
   // ── DEFEITO 1: a janela sumia sem inscrição estadual ─────────────────────────────────────────
   it("a janela de NF-e existe SEM inscrição estadual — a aba nem recebe mais essa informação", () => {
     montar();
     // Nenhuma prop de IE é passada, e a janela tem de estar lá assim mesmo.
-    expect(screen.getByRole("button", { name: /Notas de compra \(NF-e\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Notas de venda e compra \(NF-e\)/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Notas de serviço \(NFS-e\)/i })).toBeInTheDocument();
   });
 
@@ -82,7 +109,7 @@ describe("as notas de compra (NF-e) aparecem para quem as tem", () => {
   it("entrar na janela de NF-e leva o papel para DEST — senão ela lista zero linhas", () => {
     const { setNotasFilters } = montar();
 
-    fireEvent.click(screen.getByRole("button", { name: /Notas de compra \(NF-e\)/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Notas de venda e compra \(NF-e\)/i }));
 
     // ⚠ Os DOIS campos no MESMO patch: em duas chamadas haveria uma carga intermediária
     // (NF-e + EMIT), que é justamente a consulta vazia que o conserto evita.
@@ -200,7 +227,7 @@ describe("a linha de NF-e sem XML não some — e não promete o que não tem", 
     // ⚠ QUEM DECIDE O QUE A TABELA MOSTRA É A JANELA (estado local), não `notasFilters.type` — o
     // effect sincroniza o filtro A PARTIR da janela. Por isso é preciso ENTRAR na janela de NF-e;
     // montar com `type: "NFE"` e a janela em NFS-e é um estado que a tela nunca produz sozinha.
-    fireEvent.click(screen.getByRole("button", { name: /Notas de compra \(NF-e\)/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Notas de venda e compra \(NF-e\)/i }));
 
     // ⚠ 47 de 47 NF-e da base são resumo (`resNFe`), sem XML e sem itens. Sumir com a linha por
     // isso esconderia a compra inteira; o que falta é dito no detalhe da nota

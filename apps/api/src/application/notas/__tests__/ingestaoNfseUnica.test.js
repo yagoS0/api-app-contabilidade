@@ -140,6 +140,27 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
+test.each([
+  ["<nfeProc><NFe><infNFe/></NFe></nfeProc>", "nfe_na_area_nfse"],
+  ['<?xml version="1.0"?><n:NFe xmlns:n="urn:nfe"><n:infNFe/></n:NFe>', "nfe_na_area_nfse"],
+  ["<NFSe><quebrado></NFSe>", "invalid_xml"],
+  ["<outroDocumento/>", "formato_nao_suportado"],
+])("importação NFS-e recusa documento incompatível sem gravar (%s)", async (xml, reason) => {
+  const res = await importar(xml, "incompativel.xml");
+  expect(res.status).toBe(200);
+  expect(res.body.errors).toEqual([{ file: "incompativel.xml", reason }]);
+  expect(__store.notas).toHaveLength(0);
+});
+
+test("lote misto importa serviço válido e informa a NF-e rejeitada", async () => {
+  const res = await request(makeApp()).post("/clients/p1/invoices/import/xml")
+    .attach("files", Buffer.from(xmlNfse()), "servico.xml")
+    .attach("files", Buffer.from("<NFe><infNFe/></NFe>"), "venda.xml");
+  expect(res.body.created).toBe(1);
+  expect(res.body.errors).toEqual([{ file: "venda.xml", reason: "nfe_na_area_nfse" }]);
+  expect(__store.notas).toHaveLength(1);
+});
+
 describe("defeito 1 — o import de XML não cria mais uma segunda linha", () => {
   it("importar o XML de uma nota que a captura já trouxe NÃO cria segunda linha", async () => {
     const xml = xmlNfse();

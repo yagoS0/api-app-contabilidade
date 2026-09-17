@@ -1948,11 +1948,11 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/adn/clear-error`, { method: "POST" });
     },
     // Q56: import MANUAL de notas (XML) — pra quando a captura automática não trouxe as notas.
-    async importInvoicesXml(companyId, files) {
+    async importInvoicesXml(companyId, files, { type = "NFSE" } = {}) {
       const formData = new FormData();
       const list = Array.isArray(files) ? files : (files ? [files] : []);
       for (const f of list) { if (f) formData.append("files", f); }
-      return request(`/clients/${companyId}/invoices/import/xml`, { method: "POST", body: formData });
+      return request(`/clients/${companyId}/invoices/import/${type === "NFE" ? "nfe" : "xml"}`, { method: "POST", body: formData });
     },
     // Q48: download de notas em lote (job em segundo plano + zip)
     async createNotasDownload(payload) {

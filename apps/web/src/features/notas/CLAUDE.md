@@ -1,5 +1,13 @@
 # Notas — revisão de uso (08/09/2026)
 
+## Vendas e retorno da importação — 17/09/2026
+
+NF-e se chama “Notas de venda e compra” quando a empresa tem IE ou perfil incerto; apenas serviços confirmados sem IE mantêm somente compras/recebidas. Importação XML/ZIP está disponível na janela NF-e e usa `/clients/:id/invoices/import/nfe`, que já valida titularidade e deriva EMIT/DEST. NFS-e conserva `/import/xml`. Não enviar XML de mercadoria ao importador de serviço. O resultado fica na tela com totais e motivos por arquivo, inclusive sucesso parcial e detalhes truncados; erro de formato, outro estabelecimento e documento incompatível não podem virar silêncio. Mock não grava importações e informa esse limite.
+
+No servidor, `/import/xml` valida a integridade do XML e rejeita NF-e com `nfe_na_area_nfse` antes de qualquer gravação; XML sem identificador reconhecido retorna `formato_nao_suportado`. Não alterar titularidade, deduplicação ou ingestão compartilhada.
+
+Conferência: testes de contrato das duas rotas, seleção/importação NF-e com IE, serviços sem IE, lote parcial e mensagens por arquivo. Build Vite e parser JSX/no-undef aprovados. Navegador local conferido com XML fictício de venda e XML quebrado na área NFS-e: os dois motivos ficam visíveis, sem gravar notas. Alterações deste lote ainda locais, sem publicação.
+
 ## Revisão fiscal — 14/09/2026
 
 Auditoria é uma ação em Notas, com total de achados, notas fora de conferência e pendências pós-fechamento. A rota `/auditoria` permanece, com retorno às notas; o cabeçalho mantém Notas selecionada. Falha de leitura não pode anunciar ausência de pendências. Status da captura ADN fica em linha própria, separado da barra de ações, para não deslocar Buscar NFS-e.

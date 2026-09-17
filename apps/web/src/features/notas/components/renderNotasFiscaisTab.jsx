@@ -94,7 +94,7 @@ export function NotasFiscaisTab({
     companyId,
     notas, notasTotal, notasFilters, setNotasFilters, notasSummary, notasRecebidas,
     loadingNotas, loadNotas,
-    importing, importNotas, marcarNotaStatus,
+    importing, importResult, importNotas, marcarNotaStatus,
     notaAbertaId, notaAberta, notaLoading, notaError, abrirNota, fecharNota,
   } = notasPanel;
 
@@ -109,7 +109,8 @@ export function NotasFiscaisTab({
     nfseApi.getPerfilFiscal(companyId).then(r => { if (!cancelado && r?.ok !== false) setPerfilFiscal(r); }).catch(() => {});
     return () => { cancelado = true; };
   }, [companyId]);
-  const somenteRecebidas = janela === "NFE" && somenteServicosSemIE(inscricaoEstadual, perfilFiscal);
+  const servicosSemIE = somenteServicosSemIE(inscricaoEstadual, perfilFiscal);
+  const somenteRecebidas = janela === "NFE" && servicosSemIE;
   useEffect(() => {
     if (somenteRecebidas && notasFilters.papel !== "DEST") setNotasFilters({ ...notasFilters, papel: "DEST", offset: 0 });
   }, [somenteRecebidas, notasFilters, setNotasFilters]);
@@ -169,7 +170,7 @@ export function NotasFiscaisTab({
   function onPickFiles(e) {
     const files = Array.from(e.target.files || []);
     e.target.value = ""; // permite reimportar o mesmo arquivo
-    if (files.length && importNotas) importNotas(files);
+    if (files.length && importNotas) importNotas(files, { type: janelaAtiva });
   }
 
   return (
@@ -193,8 +194,7 @@ export function NotasFiscaisTab({
 
       {/* ⚠ AS DUAS JANELAS APARECEM SEMPRE. O `hasInscricaoEstadual` que envolvia este bloco era o
           defeito 1 do cabeçalho: ele escondia a NF-e de 3 de 3 empresas que TÊM nota de compra.
-          ⚠ O rótulo diz "compra" porque é o que a base tem — 47 de 47 NF-e são `DEST`, e a janela
-          filtra `papel` livremente para o dia em que alguma empresa emitir NF-e. */}
+          Empresas com IE ou perfil incerto também precisam encontrar suas vendas aqui. */}
       <Tabs
         mode="view"
         ariaLabel="Janela de notas"
@@ -202,7 +202,7 @@ export function NotasFiscaisTab({
         style={{ marginBottom: 16 }}
         items={[
           { key: "NFSE", label: "Notas de serviço (NFS-e)" },
-          { key: "NFE", label: "Notas de compra (NF-e)" },
+          { key: "NFE", label: servicosSemIE ? "Notas de compra (NF-e)" : "Notas de venda e compra (NF-e)" },
         ]}
         active={janelaAtiva}
         onChange={trocarJanela}
@@ -226,19 +226,6 @@ export function NotasFiscaisTab({
               + Emitir nota
             </Button>
             <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onSync={syncAdn} mostrarStatus={false} />
-            {/* ⚠ ERA O QUARTO ESTILO DE BOTÃO DESTA MESMA BARRA. A linha tinha, lado a lado: o
-                `Button` primário (Emitir), o botão do `AdnCapturePanel`, um `<select>` nativo,
-                texto solto e ESTE `<label>` — com `#2E86DE` cravado, um azul que não é token
-                nenhum e que competia com o azul da ação primária ao lado. Continua sendo um
-                `<label>` (é ele que abre o seletor de arquivo sem `ref`), mas veste as classes do
-                botão único: `.btn .btn-secondary .btn-md`. Nenhum estilo novo entra. */}
-            <label
-              className="btn btn-secondary btn-md"
-              style={{ cursor: importing ? "default" : "pointer", opacity: importing ? 0.7 : 1 }}
-            >
-              {importing ? "Importando…" : "⬆️ Importar XML"}
-              <input type="file" accept=".xml,text/xml,application/xml" multiple disabled={importing} onChange={onPickFiles} style={{ display: "none" }} />
-            </label>
             {hrefConfiguracaoEmissao && (
               /* ⚠ ÍCONE SOZINHO NÃO SE EXPLICA, e o rótulo acessível é o canal certo (o dono está
                  cortando texto de tela): `aria-label` diz o que é para quem usa leitor de tela e o
@@ -273,7 +260,16 @@ export function NotasFiscaisTab({
         ) : (
           <DfeCapturePanel dfeState={dfeState} dfeSyncing={dfeSyncing} onSync={syncDfe} onClearError={clearDfeError} />
         )}
+        <label className="btn btn-secondary btn-md" style={{ cursor: importing ? "default" : "pointer", opacity: importing ? 0.7 : 1 }}>
+          {importing ? "Importando…" : janelaAtiva === "NFE" ? "⬆️ Importar XML / ZIP" : "⬆️ Importar XML"}
+          <input aria-label={janelaAtiva === "NFE" ? "Importar XML ou ZIP de NF-e" : "Importar XML de NFS-e"} type="file" accept={janelaAtiva === "NFE" ? ".xml,.zip,text/xml,application/xml,application/zip" : ".xml,text/xml,application/xml"} multiple disabled={importing} onChange={onPickFiles} style={{ display: "none" }} />
+        </label>
       </div>
+      {importResult?.type === janelaAtiva && <section aria-label="Resultado da importação" style={{ marginBottom: 16 }}>
+        <p role={importResult.falhou || importResult.quantidadeProblemas > 0 ? "alert" : "status"}>{importResult.mensagem}</p>
+        {importResult.problemas?.length > 0 && <ul>{importResult.problemas.map((p, i) => <li key={i}><strong>{p.arquivo || "Arquivo"}:</strong> {p.mensagem}</li>)}</ul>}
+        {importResult.detalhesTruncados && <p>O total inclui todo o lote; a lista exibe apenas os primeiros arquivos com detalhes disponíveis.</p>}
+      </section>}
       {janelaAtiva === "NFSE" && <div style={{ marginTop: -8, marginBottom: 16 }}>
         <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onClearError={clearAdnError} somenteStatus />
       </div>}

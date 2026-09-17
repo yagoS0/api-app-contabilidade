@@ -7,6 +7,8 @@ import { prisma } from "../infrastructure/db/prisma.js";
 import { decimalToNumber, dateToIso } from "../utils/serializers.js";
 import { parseDate } from "../utils/date.js";
 import { parseXmlMetadata } from "../application/nfse/AdnXmlMetadata.js";
+import { XMLValidator } from "fast-xml-parser";
+import { raizDoXml } from "../application/notas/importXml/loteNfe.js";
 // ⚠ O import de XML usa A MESMA ingestão da captura automática. Ver o cabeçalho de `ingestaoNfse.js`:
 // a segunda implementação que morava aqui criava linha duplicada para nota que a captura já tinha.
 import { upsertNfseFromItem } from "../application/notas/ingestaoNfse.js";
@@ -1130,11 +1132,19 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
     for (const file of files) {
       try {
         const xml = file.buffer?.toString("utf-8") || "";
-        if (!xml.trim().startsWith("<")) {
+        if (!xml.trim().startsWith("<") || XMLValidator.validate(xml) !== true) {
           errors.push({ file: file.originalname, reason: "invalid_xml" });
           continue;
         }
+        if (["nfeproc", "procnfe", "nfe", "resnfe"].includes(String(raizDoXml(xml)).toLowerCase())) {
+          errors.push({ file: file.originalname, reason: "nfe_na_area_nfse" });
+          continue;
+        }
         const meta = parseXmlMetadata(xml);
+        if (!meta?.numeroNfse && !meta?.chaveAcesso) {
+          errors.push({ file: file.originalname, reason: "formato_nao_suportado" });
+          continue;
+        }
         const prestadorDoc = normalizeDoc(meta?.cnpjPrestador);
         const tomadorDoc = normalizeDoc(meta?.cnpjTomador);
 

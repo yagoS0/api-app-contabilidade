@@ -121,7 +121,7 @@ describe("ela pertence à janela de NFS-e", () => {
     // (nenhuma tem IE). O rótulo mudou junto: "venda" → "compra", porque 47 de 47 NF-e da base
     // são `papel: "DEST"`. Ver o cabeçalho de `renderNotasFiscaisTab.jsx`.
     abrirAba();
-    fireEvent.click(screen.getByRole("button", { name: /Notas de compra/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Notas de venda e compra/ }));
     expect(screen.queryByTestId("engrenagem-emissao-nfse")).not.toBeInTheDocument();
   });
 });
