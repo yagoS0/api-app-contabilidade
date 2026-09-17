@@ -1,61 +1,109 @@
 import { useEffect, useRef, useState } from 'react';
 import { janelaDoGesto } from '../lib/editarJanela';
+import { arredondarMinutosAgenda, janelaCriacaoAgenda, medirGradeAgenda, pontoNaGrade, velocidadeRolagemAgenda } from '../lib/geometriaAgenda';
 
-export function useGestosAgenda({ dias, horasRef, salvar, bloqueado }) {
+const campos = ['dataInicio', 'dataFim', 'horaInicio', 'horaFim'];
+const rascunho = { id: 'nova-atividade', tipo: 'tarefa', titulo: 'Nova atividade' };
+
+export function useGestosAgenda({ dias, horasRef, salvar, criar, bloqueado }) {
   const [previa, setPrevia] = useState(null);
-  const atual = useRef(null), ignorarClique = useRef(false);
+  const atual = useRef(null), ignorarClique = useRef(false), quadro = useRef(null), previaRef = useRef(null);
+  const opcoes = useRef(); opcoes.current = { dias, salvar, criar, bloqueado };
   const habilitada = item => !bloqueado && ['tarefa', 'obrigacao'].includes(item.tipo) && Boolean(item.tarefaId || item.ocorrenciaId);
-  const cancelar = () => { atual.current = null; setPrevia(null); };
-  useEffect(() => {
-    const tecla = e => { if (e.key === 'Escape' && atual.current) { e.preventDefault(); cancelar(); } };
-    window.addEventListener('keydown', tecla);
-    return () => window.removeEventListener('keydown', tecla);
-  }, []);
 
-  function atualizar(x, y) {
-    const gesto = atual.current, scroll = horasRef.current;
-    if (!gesto || !scroll) return;
-    gesto.x = x; gesto.y = y;
-    if (!gesto.ativo && Math.hypot(x - gesto.xInicial, y - gesto.yInicial) < 5) return;
-    gesto.ativo = true; ignorarClique.current = true;
-    const grade = scroll.querySelector('.agenda-time-columns').getBoundingClientRect();
-    const janela = scroll.getBoundingClientRect();
-    const coluna = Math.floor((x - grade.left) / ((grade.width - 56) / dias.length));
-    const dentro = coluna >= 0 && coluna < dias.length && y >= janela.top && y <= janela.bottom;
-    let delta = Math.round(((y - gesto.yInicial + scroll.scrollTop - gesto.scrollInicial) / 56 * 60) / 15) * 15;
-    if (!gesto.item.horaInicio) delta = Math.round(((y - grade.top) / 56 * 60) / 15) * 15 - 9 * 60;
-    gesto.patch = dentro ? janelaDoGesto(gesto.item, gesto.modo, dias[coluna], delta) : null;
-    setPrevia(gesto.patch ? { item: gesto.item, ...gesto.patch } : null);
+  function mostrar(valor) {
+    const antes = previaRef.current;
+    if (antes === valor || (antes && valor && antes.item.id === valor.item.id && campos.every(k => antes[k] === valor[k]) && antes.left === valor.left && antes.width === valor.width)) return;
+    previaRef.current = valor; setPrevia(valor);
   }
-  // Rolar perto das bordas permite alcançar horários fora da área visível.
+  function cancelar() {
+    if (quadro.current != null) cancelAnimationFrame(quadro.current);
+    quadro.current = null; atual.current = null; mostrar(null);
+  }
   useEffect(() => {
-    if (!previa) return;
-    let frame;
-    const rolar = () => {
-      const g = atual.current, scroll = horasRef.current;
-      if (!g || !scroll) return;
-      const r = scroll.getBoundingClientRect();
-      const passo = g.y < r.top + 28 ? -8 : g.y > r.bottom - 28 ? 8 : 0;
-      if (passo) { const antes = scroll.scrollTop; scroll.scrollTop += passo; if (antes !== scroll.scrollTop) atualizar(g.x, g.y); }
-      frame = requestAnimationFrame(rolar);
-    };
-    frame = requestAnimationFrame(rolar);
-    return () => cancelAnimationFrame(frame);
-  }, [Boolean(previa)]);
+    const tecla = e => { if (e.key === 'Escape' && atual.current) { e.preventDefault(); ignorarClique.current = true; cancelar(); } };
+    window.addEventListener('keydown', tecla);
+    return () => { window.removeEventListener('keydown', tecla); if (quadro.current != null) cancelAnimationFrame(quadro.current); };
+  }, []);
+  useEffect(() => { cancelar(); }, [dias.join('|')]);
 
+  function atualizar(grade) {
+    const g = atual.current, scroll = horasRef.current;
+    if (!g || !scroll || !grade) return;
+    if (!g.ativo && Math.hypot(g.x - g.xInicial, g.y - g.yInicial) < 5) return;
+    g.ativo = true; ignorarClique.current = true;
+    const ponto = pontoNaGrade(grade, g.x, g.y);
+    let patch = null;
+    if (ponto) {
+      if (g.modo === 'criar') patch = janelaCriacaoAgenda(g.data, g.minutoInicial, ponto.minuto);
+      else {
+        const delta = g.item.horaInicio
+          ? arredondarMinutosAgenda((g.y - g.yInicial + scroll.scrollTop - g.scrollInicial) / grade.alturaHora * 60)
+          : ponto.minuto - 9 * 60;
+        patch = janelaDoGesto(g.item, g.modo, ponto.data, delta);
+      }
+    }
+    g.patch = patch;
+    const coluna = patch && grade.colunas.find(c => c.data === patch.dataInicio);
+    mostrar(patch && coluna ? { item: g.item, ...patch, tipoGesto: g.modo, left: coluna.left - grade.rect.left + 2, width: Math.max(1, coluna.width - 5) } : null);
+  }
+
+  function agendar() { if (quadro.current == null) quadro.current = requestAnimationFrame(processarQuadro); }
+  function processarQuadro(tempo) {
+    quadro.current = null;
+    const g = atual.current, scroll = horasRef.current;
+    if (!g || !scroll) return;
+    let grade = medirGradeAgenda(scroll, opcoes.current.dias);
+    if (!grade) return;
+    const passo = g.ativo && previaRef.current ? velocidadeRolagemAgenda(g.y, grade.janela) : 0;
+    if (passo && g.tempo != null) {
+      const antes = scroll.scrollTop;
+      scroll.scrollTop += passo * Math.min(50, tempo - g.tempo) / 1000;
+      if (scroll.scrollTop !== antes) grade = medirGradeAgenda(scroll, opcoes.current.dias);
+    }
+    g.tempo = tempo; atualizar(grade);
+    if (g.ativo && previaRef.current && velocidadeRolagemAgenda(g.y, grade.janela)) agendar();
+  }
+
+  function comecar(e, valores) {
+    if (atual.current || opcoes.current.bloqueado || (e.button != null && e.button !== 0) || e.isPrimary === false) return;
+    const scroll = horasRef.current;
+    if (!scroll) return;
+    atual.current = { ...valores, xInicial: e.clientX, yInicial: e.clientY, x: e.clientX, y: e.clientY, scrollInicial: scroll.scrollTop, ativo: false, pointerId: e.pointerId };
+    // Capturar no contêiner redireciona o click para fora do botão que abre a atividade.
+    // O botão de origem mantém sua ativação nativa e continua propagando os gestos.
+    const botao = e.target.closest?.('button');
+    const captura = botao && e.currentTarget.contains(botao) ? botao : e.currentTarget;
+    captura.setPointerCapture?.(e.pointerId);
+  }
   function iniciar(e, item) {
-    if (!habilitada(item) || (e.button != null && e.button !== 0)) return;
-    const modo = e.target.closest('[data-agenda-resize]')?.dataset.agendaResize || 'mover';
-    atual.current = { item, modo, xInicial: e.clientX, yInicial: e.clientY, x: e.clientX, y: e.clientY, scrollInicial: horasRef.current.scrollTop, ativo: false, pointerId: e.pointerId };
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    if (!habilitada(item)) return;
+    // Touch scrolling remains native on the card body; explicit handles own editing gestures.
+    if (e.pointerType === 'touch' && !e.target.closest('[data-agenda-resize], [data-agenda-move-handle]')) return;
+    comecar(e, { item, modo: e.target.closest('[data-agenda-resize]')?.dataset.agendaResize || 'mover' });
+  }
+  function iniciarCriacao(e, data) {
+    if (e.pointerType === 'touch' || !opcoes.current.criar) return;
+    const grade = medirGradeAgenda(horasRef.current, opcoes.current.dias);
+    const ponto = grade && pontoNaGrade(grade, e.clientX, e.clientY);
+    if (ponto) comecar(e, { modo: 'criar', item: rascunho, data, minutoInicial: ponto.minuto });
   }
   function terminar(e) {
     const g = atual.current;
     if (!g || g.pointerId !== e.pointerId) return;
-    if (g.ativo) atualizar(e.clientX, e.clientY);
+    g.x = e.clientX; g.y = e.clientY;
+    atualizar(medirGradeAgenda(horasRef.current, opcoes.current.dias));
     const patch = g.patch;
     cancelar();
-    if (patch && ['dataInicio','dataFim','horaInicio','horaFim'].some(k => (g.item[k] || null) !== patch[k])) salvar(g.item, patch);
+    if (!patch) return;
+    if (g.modo === 'criar') opcoes.current.criar?.(patch);
+    else if (campos.some(k => (g.item[k] || null) !== patch[k])) opcoes.current.salvar(g.item, patch);
+  }
+  function clicarHorario(e, data, horaFallback) {
+    if (opcoes.current.bloqueado || ignorarClique.current) return;
+    const grade = medirGradeAgenda(horasRef.current, opcoes.current.dias);
+    const ponto = e.detail > 0 && grade ? pontoNaGrade(grade, e.clientX, e.clientY) : null;
+    opcoes.current.criar?.(janelaCriacaoAgenda(data, ponto?.minuto ?? horaFallback * 60));
   }
   function teclado(e, item) {
     if (!habilitada(item) || !e.altKey || !['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) return;
@@ -65,10 +113,10 @@ export function useGestosAgenda({ dias, horasRef, salvar, bloqueado }) {
     if (!dias[coluna]) return;
     salvar(item, janelaDoGesto(item, e.shiftKey ? 'fim' : 'mover', dias[coluna], e.key === 'ArrowUp' || e.key === 'ArrowDown' ? direcao * 15 : 0));
   }
-  return { previa, habilitada, iniciar, teclado,
+  return { previa, habilitada, iniciar, iniciarCriacao, clicarHorario, teclado,
     resetarClique: () => { ignorarClique.current = false; },
     clicar: e => { if (ignorarClique.current) { e.preventDefault(); e.stopPropagation(); ignorarClique.current = false; } },
-    mover: e => { if (atual.current?.pointerId === e.pointerId) atualizar(e.clientX, e.clientY); },
+    mover: e => { const g = atual.current; if (g?.pointerId === e.pointerId) { g.x = e.clientX; g.y = e.clientY; agendar(); } },
     terminar, cancelar,
   };
 }

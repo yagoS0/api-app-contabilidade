@@ -4,7 +4,8 @@
 /* =============================================================================
    A FONTE DA MARCA — Inter, auto-hospedada.
 
-   ⚠⚠ ELA EXISTE PARA UMA COISA SÓ: O LETREIRO DA LOGO. Os SVGs oficiais da Altan trazem
+   A Inter atende o letreiro da logo e, desde 17/09/2026, os nomes de empresa e abas.
+   Os SVGs oficiais da Altan trazem
    "ALTAN"/"CONTABILIDADE" como `<text font-family="Inter, 'Segoe UI', Arial, sans-serif">`, e a
    Inter não está instalada por padrão em Windows, macOS, Android nem iOS. Sem ela o letreiro cai
    em Segoe UI no Windows, Arial no Mac e Roboto no Android — três desenhos diferentes para a mesma
@@ -39,6 +40,7 @@
 :root {
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     sans-serif;
+  --font-navigation: "Inter", var(--font-sans);
 
   /* A pilha do LETREIRO da logo — a MESMA que os SVGs oficiais declaram, para que a queda, se a
      Inter não carregar, seja a queda que o arquivo original previa. */

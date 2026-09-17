@@ -530,6 +530,7 @@ function AppInterno({ session, feedback }) {
   if (session.page === "whatsapp") {
     return (
       <WhatsappPage
+        usuarioId={session.user?.id}
         api={api}
         onComunicados={() => session.setPage('comunicadosWhatsapp')}
         companies={companiesWorkspace.companiesState.companies}

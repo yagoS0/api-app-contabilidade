@@ -40,8 +40,9 @@ export function AnaliseEmpresa({ api, empresaId, empresaNome, empresaCnpj }) {
   const [resposta,setResposta] = useState(null), [erro,setErro] = useState(''), [tentativa,setTentativa] = useState(0), [conta,setConta] = useState(null);
   const [de,setDe] = useState(''), [ate,setAte] = useState('');
   const [fechamentos,setFechamentos] = useState(null), [erroFechamentos,setErroFechamentos] = useState('');
-  const competenciasFechadas = fechamentos?.empresaId === empresaId ? fechamentos.competenciasFechadas : null;
+  const competenciasFechadas = fechamentos && fechamentos.empresaId === empresaId ? fechamentos.competenciasFechadas : null;
   useEffect(() => { let vivo=true; setFechamentos(null); setErroFechamentos(''); setResposta(null); setDe(''); setAte('');
+    if (!empresaId) return;
     Promise.resolve().then(()=>api.getFechamentosRelatorio(empresaId)).then(r=>{
       if(!r || r.ok===false || !Array.isArray(r.competenciasFechadas)) throw new Error(r?.message || 'Não foi possível consultar os fechamentos contábeis.');
       if(!vivo)return; const meses=[...new Set(r.competenciasFechadas)].sort(); const ultimo=meses.at(-1)||'';

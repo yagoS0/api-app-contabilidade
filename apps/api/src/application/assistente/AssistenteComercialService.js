@@ -8,12 +8,13 @@ import { consultarPublicaLead } from "../onboarding/FiscalLeadService.js";
 import { criarRecursosComerciais } from "../onboarding/RecursosComerciaisService.js";
 import { resolverVinculoPorTelefone } from "../whatsapp/ContatoWhatsappService.js";
 import { janelaDaConversa } from "../whatsapp/ConversaWhatsappService.js";
-import { WhatsappCloudClient } from "../whatsapp/WhatsappCloudClient.js";
+import { whatsappPorCanal } from "../whatsapp/CanalWhatsappService.js";
 import { enviarMensagemRastreada } from "../whatsapp/SaidaWhatsappService.js";
 import { adquirirLease, renovarLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
 import { montarHistorico } from "./AssistenteService.js";
 import { camposDaOrigem } from "@contabilidade/shared/onboarding";
 import { montarPromptComercial, respostaComercialUtilizavel } from "./promptComercial.js";
+import { identidadeDoCaso, filtroCasoDaConversa, exigirConversaDoCaso } from "../onboarding/ContextoComercialService.js";
 
 const falha = codigo => Object.assign(new Error(codigo), { codigo });
 const ordenar = (a, b) => new Date(a.registradaEm) - new Date(b.registradaEm) || a.id.localeCompare(b.id);
@@ -25,6 +26,7 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
   let lease, timer, leaseValido = true, renovando = false, guarda, resposta, lead;
   let handoff = false, handoffEm = null, houveSaida = false, ferramentaValida = false;
   let bolhas = [], orientacao = null, consulta = null;
+  let contextoInicial;
   const renovar = async () => {
     if (!leaseValido) throw falha("LEASE_PERDIDA");
     if (lease && !await renovarLease(lease, { client: db })) { leaseValido = false; throw falha("LEASE_PERDIDA"); }
@@ -32,18 +34,28 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
   };
   const conferir = async () => {
     await renovar();
-    const c = await db.conversaWhatsapp.findUnique({ where: { id: conversaId } });
+    const c = await db.conversaWhatsapp.findUnique({ where: { id: conversaId }, include: { canalWhatsapp: true } });
     const m = await db.mensagemWhatsapp.findFirst({ where: { id: mensagemId, conversaId, direcao: "in" } });
+    const interlocutorId = c ? await identidadeDoCaso(c, db) : null;
+    const pessoa = interlocutorId ? await db.interlocutorComunicacao.findUnique({ where: { id: interlocutorId } }) : null;
+    const contextoAtual = { vinculoNumeroId: c?.vinculoNumeroId || null, canalId: c?.canalId || null, interlocutorId, versao: pessoa?.versao || 0 };
+    if (!contextoInicial) contextoInicial = contextoAtual;
+    else if (Object.keys(contextoAtual).some(k => contextoAtual[k] !== contextoInicial[k])) throw falha("IDENTIDADE_ALTERADA");
+    const pessoaHandoff = handoffEm && !pessoa?.atendidaPor && new Date(pessoa?.atendidaDesde).getTime() === handoffEm.getTime();
+    if (pessoa && (pessoa.estado !== "ATIVO" || pessoa.atendidaPor || pessoa.atendidaDesde && !pessoaHandoff)) throw falha("ASSUMIDA_POR_HUMANO");
+    const casoComercial = c && interlocutorId ? await db.atendimentoLead.findFirst({ where: { ...filtroCasoDaConversa(c, interlocutorId), encerradoEm: null } }) : null;
     // Só a reserva humana feita por este turno permite confirmar o encaminhamento.
     const proprioHandoff = handoffEm && !c?.atendidaPor && new Date(c?.atendidaDesde).getTime() === handoffEm.getTime();
     const decisao = decidirRespostaComercial({ r: {
       conversa: proprioHandoff ? { ...c, atendidaDesde: null } : c, mensagem: m,
+      interlocutorId, casoComercial, canal: c?.canalWhatsapp,
       vinculo: c ? await (deps.resolver || resolverVinculoPorTelefone)(c.telefoneE164) : null,
     }, ...(deps.piloto ? { piloto: deps.piloto } : {}), ...(deps.flag !== undefined ? { flag: deps.flag } : {}) });
     if (!m || !decisao.responde) throw falha(decisao.motivo || "SEM_MENSAGEM");
     if ((await (deps.janela || janelaDaConversa)(conversaId)).situacao !== "ABERTA") throw falha("FORA_DA_JANELA");
     if (lead) {
-      const atual = await db.atendimentoLead.findFirst({ where: { id: lead.id, conversaId, encerradoEm: null }, include: { onboarding: true } });
+      const atual = await db.atendimentoLead.findFirst({ where: { id: lead.id, encerradoEm: null }, include: { onboarding: true } });
+      await exigirConversaDoCaso(atual, c, db);
       if (!atual || atual.onboardingId !== lead.onboardingId || atual.onboarding?.versao !== lead.onboarding?.versao) throw falha("FICHA_ALTERADA");
     }
     return { c, m };
@@ -52,11 +64,18 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
     if (handoffEm) return;
     const { m } = await conferir();
     const em = new Date();
-    const r = await db.conversaWhatsapp.updateMany({ where: {
-      id: conversaId, portalClientId: null, excluidaEm: null, atendidaPor: null, atendidaDesde: null,
+    const reservar = async tx => {
+      if (contextoInicial.interlocutorId) {
+        const pessoa = await tx.interlocutorComunicacao.updateMany({ where: { id: contextoInicial.interlocutorId, versao: contextoInicial.versao, estado: "ATIVO", atendidaPor: null, atendidaDesde: null }, data: { atendidaDesde: em } });
+        if (!pessoa.count) throw falha("ASSUMIDA_POR_HUMANO");
+      }
+      const r = await tx.conversaWhatsapp.updateMany({ where: {
+      id: conversaId, excluidaEm: null, atendidaPor: null, atendidaDesde: null,
       OR: [{ automacaoInvalidadaEm: null }, { automacaoInvalidadaEm: { lt: m.registradaEm } }],
     }, data: { atendidaDesde: em } });
     if (!r.count) throw falha("ASSUMIDA_POR_HUMANO");
+    };
+    if (contextoInicial.interlocutorId) await db.$transaction(reservar); else await reservar(db);
     handoffEm = em;
   };
   try {
@@ -149,7 +168,7 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
           });
           await (deps.concluir || concluirChamadaIa)(guarda.contexto, { usage: resposta.usage, iteracoes: resposta.iteracoes, ferramentas: resposta.ferramentasChamadas, stopReason: resposta.stopReason }, { client: db });
         } catch (e) {
-          await (deps.concluir || concluirChamadaIa)(guarda.contexto, { erroCodigo: e.codigo || "ERRO", usage: e.usage }, { client: db });
+          await (deps.concluir || concluirChamadaIa)(guarda.contexto, { erroCodigo: e.codigo || e.code || "ERRO", usage: e.usage }, { client: db });
           handoff = true;
         }
         guarda = null;
@@ -161,14 +180,15 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
     if (handoff) await encaminhar();
     const livre = respostaComercialUtilizavel(resposta?.texto) ? resposta.texto.trim() : null;
     const texto = handoff ? FRASE_EQUIPE : orientacao?.texto || livre || [consulta?.razaoSocial ? `Consultei os dados públicos de ${consulta.razaoSocial}. Situação cadastral: ${consulta.situacaoCadastral || "não informada"}. Isso não confirma a regularidade fiscal.` : "", pergunta.pergunta, pergunta.opcoes?.map(o => o.rotulo).join(" · ")].filter(Boolean).join("\n\n");
-    const saida = await enviarMensagemRastreada({ conversa: c, corpo: texto, autor: "IA", turnoIaId, referenciaComercial: { ...(orientacao?.referencia || {}), mensagensIds: ids }, client: db, antesDeEnviar: conferir, enviar: () => (deps.cloud || new WhatsappCloudClient()).enviarTexto({ telefone: c.telefoneE164, texto }) });
+    const transporte = await whatsappPorCanal(c, { cloud: deps.cloud, client: db });
+    const saida = await enviarMensagemRastreada({ conversa: c, corpo: texto, autor: "IA", turnoIaId, referenciaComercial: { ...(orientacao?.referencia || {}), mensagensIds: ids }, client: db, antesDeEnviar: conferir, enviar: () => transporte.enviarTexto({ telefone: c.telefoneE164, texto }) });
     houveSaida = true;
     if (orientacao?.referencia.chave === "autorizacao" && !handoff) await db.atendimentoLead.update({ where: { id: lead.id }, data: { autorizacao: { ...(lead.autorizacao || {}), estado: "INSTRUCAO_ENVIADA", cnpj: lead.onboarding?.cnpj || null, mensagemId: saida.mensagem.id, recursoId: orientacao.referencia.recursoId } } });
     await db.mensagemWhatsapp.updateMany({ where: { conversaId, id: { in: ids }, direcao: "in", respondidaPelaIaEm: null }, data: { respondidaPelaIaEm: new Date() } });
     return { feito: true, mensagemId: saida.mensagem.id, mensagensRespondidas: ids, motivo: handoff ? "ENCAMINHADA" : "RESPONDIDA" };
   } catch (e) {
-    if (guarda?.ok) await (deps.concluir || concluirChamadaIa)(guarda.contexto, { erroCodigo: e.codigo || "ERRO", usage: e.usage }, { client: db });
-    return { feito: false, indeterminado: houveSaida || e.indeterminado === true, motivo: e.codigo || "ERRO" };
+    if (guarda?.ok) await (deps.concluir || concluirChamadaIa)(guarda.contexto, { erroCodigo: e.codigo || e.code || "ERRO", usage: e.usage }, { client: db });
+    return { feito: false, indeterminado: houveSaida || e.indeterminado === true, motivo: e.codigo || e.code || "ERRO" };
   } finally {
     clearInterval(timer);
     if (lease) await liberarLease(lease, { client: db });

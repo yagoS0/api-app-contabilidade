@@ -310,6 +310,8 @@
 }
 
 .company-section-header {
+  font-family: var(--font-navigation);
+  font-synthesis: none;
   position: sticky;
   top: 0;
   z-index: 50;
@@ -399,7 +401,7 @@
   overflow: hidden;
   color: #f8f8f2;
   font-size: 1.05rem;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -981,9 +983,11 @@
   background: transparent;
   color: var(--tab-ink);
   font: inherit;
-  font-size: 0.9rem;
-  font-weight: 600;
-  line-height: 1;
+  font-family: var(--font-navigation);
+  font-synthesis: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 20px;
   cursor: pointer;
   /* ⚠ A aba de navegação é um `<a href>` de verdade desde 19/08/2026 (Ctrl+clique abre em nova
      guia). O sublinhado do link brigaria com o sublinhado que marca a aba ATIVA — são dois traços
@@ -992,8 +996,8 @@
   transition: background 0.12s ease, color 0.12s ease;
 }
 
-.app-tabs--lg .app-tab { padding: 8px 16px; font-size: 0.95rem; }
-.app-tabs--sm .app-tab { padding: 5px 11px; font-size: 0.78rem; }
+.app-tabs--lg .app-tab { padding: 8px 16px; font-size: 0.9375rem; }
+.app-tabs--sm .app-tab { padding: 5px 11px; font-size: 0.8125rem; }
 .app-tabs--sm.app-tabs--pill { padding: 4px 8px; }
 
 .app-tab:hover:not(:disabled):not(.is-active) {
@@ -1003,7 +1007,7 @@
 
 .app-tab.is-active {
   color: var(--text);
-  font-weight: 700;
+  font-weight: 600;
   cursor: default;
 }
 
@@ -2022,10 +2026,8 @@ th.tabela__num {
 }
 
 /* Navegação comum — mantém a marca e a identidade da empresa em telas estreitas. */
-.workspace-brandbar { position: sticky; top: 0; z-index: 40; padding: 6px clamp(12px, 2vw, 28px); background: var(--bg, #1A1B26); border-bottom: 1px solid var(--border, #44475A); }
 .workspace-home { display: inline-flex; align-items: center; min-height: 44px; border-radius: 8px; }
 .workspace-home:focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 4px; }
-.workspace-brandbar ~ * .company-section-header, .workspace-brandbar ~ * .page-shell__header { top: 57px; }
 .dashboard-tool-description { display: block; margin-top: 4px; color: var(--text-muted); font-size: .8rem; line-height: 1.45; }
 .accounting-fechamento-panel { flex: 0 0 152px; }
 @media (max-width: 1100px) {
@@ -2042,7 +2044,6 @@ th.tabela__num {
   .page-shell__header, .page-shell__brand, .page-shell__actions { flex-wrap: wrap; min-width: 0; }
   .page-shell__title-block { min-width: 0; overflow-wrap: anywhere; }
 }
-@media print { .workspace-brandbar { display: none; } }
 
 .chart-account-create-grid { grid-template-columns: 7rem 1fr 10rem 8rem 8rem auto; }
 @media (max-width:1100px) { .chart-account-create-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }

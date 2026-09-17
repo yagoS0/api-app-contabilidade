@@ -1,5 +1,25 @@
 # CLAUDE.md — Portal Contábil
 
+## Novo canal comercial para leads — 17/09/2026
+
+O dono pediu configurar o segundo número como entrada de leads. Isso substitui a restrição ao remetente piloto somente no canal cadastrado como COMERCIAL, ativo, com identidade V2 e multicanal habilitados. O principal conserva o piloto anterior. A finalidade vem do servidor, não do texto nem de parâmetro do navegador; nunca muda a identificação CLIENTE ou concede acesso fiscal. Menu e coleta determinística têm precedência sobre o modelo. Testes com PostgreSQL cobrem os dois canais, zero rede/IA. Credencial comercial ainda ausente na conferência de 17/09 às 15h44 UTC; canal permanece inativo até validar WABA, aplicativo/webhook e token. Procedimento em `docs/comunicacao-identidade-implantacao.md`.
+
+## Comunicação publicada — 17/09/2026
+
+PR 67 integrada; código `4bb238f2` confirmado na API e no portal do escritório em produção. Identidade/chat V2 e coleta determinística ativos; piloto preservado, multicanal OFF. Backup e backfill concluídos, 17 segmentos e duas pausas humanas preservados. Dois históricos sem contato (legado/lixeira) foram conferidos e mantidos sem criar vínculo. O novo número comercial está preparado, inativo: a credencial lê o telefone, mas a WABA fornecida recusa acesso `100/33`; falta habilitar/configurar sua credencial e confirmar remetente do piloto. Não tratar a captura de tela como canal operacional. CI completa aprovada; nenhum teste usou Anthropic ou envio real. Estado/evidências em `docs/comunicacao-identidade-implantacao.md`.
+
+## Identificação do atendente — 17/09/2026
+
+O dono pediu mostrar ao cliente quem está falando no WhatsApp. Mensagens manuais, orientações rápidas, anexos, propostas e devolutivas recebem o nome do usuário autenticado em negrito na primeira linha do texto/legenda; não é alteração do remetente nativo da Meta. Não atribuir automações a um humano nem usar nome enviado pelo navegador ou o responsável anterior da conversa. Histórico conserva a assinatura enviada, sem reescrever mensagens antigas. Novo número comercial foi informado como cadastrado na Meta; cadastro externo não comprova configuração/ativação no sistema. Em 17/09 o dono autorizou revisar todo o conjunto e publicar na main/produção; dados de provisionamento ficam fora do Git. Ver `docs/comunicacao-identidade-implantacao.md` para o estado efetivamente conferido.
+
+## Comunicação: evolução autorizada em execução — 16/09/2026
+
+Ativação de leads solicitada em 17/09: iniciar no canal atual, usando o piloto comercial já autorizado, sem esperar compra do segundo número. Menu e coleta determinística compartilham a audiência; coleta prevalece sobre IA comercial. A primeira etapa pode operar nos segmentos legados com identidade/chat V2 e multicanal OFF, após a migration aditiva. A publicação completa autorizada posteriormente exige inventário e backup antes do backfill global. Conservar a pausa humana também na identidade migrada; nunca liberar um atendimento para fazer um teste responder. Ver procedimento e simulação completa em `docs/comunicacao-identidade-implantacao.md`.
+
+O dono aprovou o design inspirado no Slack e autorizou executar `docs/plano-comunicacao-identidade-leads-20260916.md`. Implementação em worktree isolado `comunicacao-identidade-chat-v2`; o documento separa relacionamento, solicitação, canal e contexto fiscal. Cadastro de contato não concede RBAC; cliente pode abrir outro caso comercial. A seção 6.1/lote 7 (criação de templates Meta e contato ativo) foi adicionada ao plano e permanece expressamente adiada, assim como APIs Asaas/DocuSign. Não submeter modelos, enviar mensagens ou executar operações reais nos testes; não usar tokens Anthropic. Só registrar como concluído o que tiver evidência de implementação e validação.
+
+Implementação e implantação: `docs/comunicacao-identidade-implantacao.md`. Novas flags nascem OFF; migration e backfill precedem ativação. Histórico por interlocutor, notas internas separadas, leitura explícita, canal e vigência são guardas do servidor. Não usar o telefone atual para migrar históricos de titular anterior; não reexecutar jobs acumulados ao ligar flags. Coleta comercial determinística reutiliza onboarding e permite nova solicitação de cliente; conclusão avulsa cria ficha própria sem provisionamento recorrente. O layout atual tem lista compacta de 238 px no desktop, detalhes sob demanda e rascunho por pessoa/canal/modo. As medidas de layout em notas antigas abaixo são históricas.
+
 ## DRE somente de competências fechadas — 16/09/2026
 
 Decisão do usuário: a DRE do cliente mostra apenas meses com `CompanyMonthlyCircular.fechadoContabilEm` preenchido. Servidor lista fechamentos da própria empresa, abre o mais recente quando a competência é omitida e recusa mês aberto. DRE tem seletor próprio, sem alterar competência de cards/Fluxo. Reabertura retira o mês nas novas consultas. Fechamento constitui revisão do período, portanto rascunho legado isolado não torna essa DRE provisória; pendências reais de classificação/valores continuam visíveis. Nenhum status ou lançamento é alterado para satisfazer essa regra.

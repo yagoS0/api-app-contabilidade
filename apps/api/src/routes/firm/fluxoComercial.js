@@ -12,8 +12,13 @@ import { gerarContratoPdf } from "../../application/onboarding/ContratoComercial
 import { criarJornadaLead } from "../../application/onboarding/JornadaLeadService.js";
 import { INTEGRACAO_FISCAL_LEADS } from "../../config.js";
 import { gerarPropostaPdf } from "../../application/onboarding/PropostaComercialPdf.js";
+import { identidadeDoCaso, filtroCasoDaConversa } from "../../application/onboarding/ContextoComercialService.js";
+import { montarJornadaComercial } from "../../application/onboarding/PoliticaJornadaComercial.js";
+import { criarFichaEmpresaAvulsa } from "../../application/onboarding/FichaEmpresaAvulsaService.js";
+import { empresasVisiveis } from "./empresasVisiveis.js";
+import { carregarGrupoIdentidade } from "../../application/whatsapp/InboxWhatsappService.js";
 export function createFluxoComercialRouter({
-  db = prisma
+  db = prisma, escopo = empresasVisiveis
 } = {}) {
   const router = Router(),
     recursos = criarRecursosComerciais({
@@ -26,6 +31,7 @@ export function createFluxoComercialRouter({
       db
     });
   const jornada = criarJornadaLead({ db });
+  const fichasAvulsas = criarFichaEmpresaAvulsa({ db });
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
@@ -35,6 +41,22 @@ export function createFluxoComercialRouter({
   });
   const wrap = fn => async (req, res) => {
     try {
+      let conversaId = req.params.conversaId;
+      if (!conversaId && req.params.id) conversaId = (await db.atendimentoLead.findFirst({ where: { onboardingId: req.params.id }, orderBy: { createdAt: "desc" } }))?.conversaId;
+      if (conversaId) {
+        const conversa = await db.conversaWhatsapp.findUnique({ where: { id: conversaId } });
+        if (!conversa) throw new OnboardingError("lead_ausente", "Atendimento não encontrado.", 404);
+        if (conversa.vinculoNumeroId) {
+          let grupo;
+          try { grupo = await carregarGrupoIdentidade({ conversaId, visiveis: await escopo(req), client: db }); }
+          catch (e) { if ([403, 404].includes(e.status)) throw new OnboardingError("lead_ausente", "Atendimento não encontrado.", 404); throw e; }
+          if (!grupo.completo) throw new OnboardingError("lead_ausente", "Atendimento não encontrado.", 404);
+        } else if (conversa.portalClientId) {
+          const visiveis = await escopo(req);
+          const contatos = await db.contatoWhatsapp.findMany({ where: { telefoneE164: conversa.telefoneE164, ativo: true }, select: { portalClientId: true } });
+          if (!visiveis.includes(conversa.portalClientId) || contatos.some(c => !visiveis.includes(c.portalClientId))) throw new OnboardingError("lead_ausente", "Atendimento não encontrado.", 404);
+        }
+      }
       const out = await fn(req, res);
       if (!res.headersSent) res.json({
         ok: true,
@@ -80,7 +102,7 @@ export function createFluxoComercialRouter({
     const c = await db.conversaWhatsapp.findFirst({
       where: {
         id: req.params.conversaId,
-        portalClientId: null,
+        excluidaEm: null,
         NOT: {
           chaveEscopo: {
             startsWith: "legado:"
@@ -88,10 +110,11 @@ export function createFluxoComercialRouter({
         }
       }
     });
-    if (!c) throw new OnboardingError("lead_ausente", "Conversa de lead não encontrada.", 404);
+    if (!c) throw new OnboardingError("lead_ausente", "Conversa não encontrada.", 404);
+    const escopoCaso = filtroCasoDaConversa(c, await identidadeDoCaso(c, db));
     const atendimento = await db.atendimentoLead.findFirst({
       where: {
-        conversaId: c.id,
+        ...escopoCaso,
         encerradoEm: null
       },
       include: {
@@ -101,7 +124,7 @@ export function createFluxoComercialRouter({
     return {
       atendimento,
       proximaPergunta: proximaPergunta(atendimento?.onboarding),
-      anteriores: await db.atendimentoLead.findMany({ where: { conversaId: c.id, encerradoEm: { not: null } }, include: { onboarding: { select: { id: true, origem: true, status: true } } }, orderBy: { encerradoEm: "desc" }, take: 20 })
+      anteriores: await db.atendimentoLead.findMany({ where: { ...escopoCaso, encerradoEm: { not: null } }, include: { onboarding: { select: { id: true, origem: true, status: true } } }, orderBy: { encerradoEm: "desc" }, take: 20 })
     };
   }));
   router.post("/conversas/:conversaId/iniciar", wrap(async req => ({
@@ -115,16 +138,19 @@ export function createFluxoComercialRouter({
       client: db
     })
   })));
-  router.get("/onboardings/:id", wrap(async req => ({
-    configuracao: { consultasFiscais: INTEGRACAO_FISCAL_LEADS },
-    ...(await propostas.painel(req.params.id, req.auth.user)),
-    jornada: await jornada.carregar(req.params.id, req.auth.user),
-    onboarding: await exigirEscopo(req.params.id, req.auth.user, db)
-  })));
+  router.get("/onboardings/:id", wrap(async req => {
+    const painel = await propostas.painel(req.params.id, req.auth.user);
+    const onboarding = await exigirEscopo(req.params.id, req.auth.user, db);
+    const estadoJornada = await jornada.carregar(req.params.id, req.auth.user);
+    return { configuracao: { consultasFiscais: INTEGRACAO_FISCAL_LEADS }, ...painel, onboarding,
+      fichaAvulsa: await fichasAvulsas.obter(req.params.id, req.auth.user),
+      jornada: { ...estadoJornada, projecao: montarJornadaComercial({ ...painel, onboarding, jornada: estadoJornada }) } };
+  }));
   router.post("/onboardings/:id/jornada/diagnostico", wrap(async req => ({ diagnostico: await jornada.diagnosticar(req.params.id, req.auth.user, req.body) })));
   router.post("/onboardings/:id/jornada/devolutiva", wrap(async req => jornada.enviarDevolutiva(req.params.id, req.auth.user, req.body)));
   router.post("/onboardings/:id/jornada/pagamento", wrap(async req => ({ marco: await jornada.confirmarPagamento(req.params.id, req.auth.user, req.body) })));
   router.post("/onboardings/:id/jornada/conferencia", wrap(async req => ({ conferencia: await jornada.conferirAnalise(req.params.id, req.auth.user, req.body) })));
+  router.post("/onboardings/:id/jornada/apresentacao", wrap(async req => ({ apresentacao: await jornada.registrarApresentacao(req.params.id, req.auth.user, req.body) })));
   router.patch("/onboardings/:id/campos", wrap(async req => {
     await exigirEscopo(req.params.id, req.auth.user, db);
     return {
@@ -155,7 +181,7 @@ export function createFluxoComercialRouter({
   }));
   router.post("/onboardings/:id/propostas/:propostaId/link", wrap(async req => propostas.emitirLink(req.params.id, req.params.propostaId, req.auth.user)));
   router.post("/onboardings/:id/propostas/:propostaId/enviar", wrap(async req => enviarProposta(req.params.id, req.params.propostaId, req.auth.user, {
-    db
+    db, conversaId: req.body?.conversaId
   })));
   router.post("/onboardings/:id/propostas/:propostaId/contrato", wrap(async req => ({
     contrato: await propostas.contrato(req.params.id, req.params.propostaId, req.auth.user, req.body)
@@ -192,6 +218,13 @@ export function createFluxoComercialRouter({
     res.send(pdf);
   }));
   router.post("/onboardings/:id/concluir-avulso", wrap(async req => propostas.concluirAvulso(req.params.id, req.auth.user, req.body?.evidencia)));
+  router.get("/onboardings/:id/ficha-avulsa", wrap(async req => ({ fichaAvulsa: await fichasAvulsas.obter(req.params.id, req.auth.user) })));
+  router.put("/onboardings/:id/ficha-avulsa", wrap(async req => ({ fichaAvulsa: await fichasAvulsas.salvar(req.params.id, req.auth.user, req.body) })));
+  router.get("/onboardings/:id/ficha-avulsa/documentos/:documentoId", wrap(async (req, res) => {
+    const documento = await fichasAvulsas.documento(req.params.id, req.params.documentoId, req.auth.user);
+    res.set({ "Content-Type": documento.mimeType, "Content-Disposition": 'attachment; filename="documento.pdf"', "X-Content-Type-Options": "nosniff" });
+    res.send(documento.buffer);
+  }));
   router.post("/onboardings/:id/marcos", wrap(async req => propostas.registrarMarco(req.params.id, req.auth.user, req.body?.tipo, req.body?.evidencia)));
   router.use((e, _req, res, _next) => res.status(400).json({
     ok: false,

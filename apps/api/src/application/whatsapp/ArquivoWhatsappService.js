@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { WHATSAPP_TOKEN, WHATSAPP_GRAPH_BASE_URL, WHATSAPP_GRAPH_VERSION } from "../../config.js";
+import { configuracaoDoCanal, identidadeWhatsappV2Ativa, multicanalWhatsappAtivo } from "./CanalWhatsappService.js";
 
 export const RETENCAO_ARQUIVO_DIAS = 90;
 export const LIMITE_ARQUIVO_BYTES = 15 * 1024 * 1024;
@@ -138,7 +139,14 @@ export async function processarArquivosWhatsapp({ db = prisma, baixar = baixarMi
     } });
     if (!reserva.count) continue;
     try {
-      const { buffer } = await baixar(a.midiaProvedorId);
+      let opcoesDownload;
+      if (baixar === baixarMidiaMeta && (identidadeWhatsappV2Ativa() || multicanalWhatsappAtivo())) {
+        const origem = await db.mensagemWhatsapp.findUnique({ where: { id: a.mensagemId }, include: { conversa: true } });
+        if (!origem?.conversa) throw erro("MIDIA_SEM_ORIGEM", "Não foi possível identificar a origem deste arquivo.");
+        const canal = await configuracaoDoCanal(origem.conversa, { client: db });
+        opcoesDownload = { token: canal.token };
+      }
+      const { buffer } = await baixar(a.midiaProvedorId, opcoesDownload);
       const tipo = identificarArquivo(buffer, a.nomeArquivo);
       const baseNome = nomeSeguro(a.nomeArquivo).replace(/\.[a-z0-9]{1,8}$/i, "");
       await db.arquivoWhatsapp.updateMany({ where: { id: a.id, reservaToken, expiraEm: { gt: relogio() } }, data: {

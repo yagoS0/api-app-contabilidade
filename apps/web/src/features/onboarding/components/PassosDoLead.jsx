@@ -30,9 +30,10 @@ export function CamposDaEtapa({ onboarding, campos, onSalvar, ocupado }) {
   </fieldset>;
 }
 
-export function DiagnosticoDoLead({ jornada, onboarding, onSalvar, ocupado }) {
+export function DiagnosticoDoLead({ jornada, onboarding, onSalvar, ocupado, limitado = false }) {
   const [aberto, setAberto] = useState(false);
   const anterior = jornada?.diagnostico?.dados;
+  const [dispensaConsultaPrivada, setDispensaConsultaPrivada] = useState("");
   const [achados, setAchados] = useState(anterior?.achados || ""), [servicos, setServicos] = useState(anterior?.servicos || "");
   const fiscal = jornada?.analises?.find(a => a.tipo === "SITFIS" && a.status === "CONCLUIDA" && a.resultado?.relatorioDisponivel);
   const contexto = JSON.stringify([onboarding.id, onboarding.versao, onboarding.cnpj, fiscal?.id]);
@@ -42,9 +43,10 @@ export function DiagnosticoDoLead({ jornada, onboarding, onSalvar, ocupado }) {
   return <fieldset disabled={ocupado} className="lead-step-fields"><legend>Conferência do contador</legend>
     <label>{onboarding.origem === "ABERTURA" ? "Análise da atividade, endereço e condições de viabilidade" : "Pendências e situação encontradas"}<textarea maxLength={1200} rows={4} value={achados} onChange={e => setAchados(e.target.value)} /></label>
     <label>Serviços necessários e escopo<textarea maxLength={1200} rows={4} value={servicos} onChange={e => setServicos(e.target.value)} placeholder="Descreva os serviços avulsos e o acompanhamento mensal, quando houver." /></label>
+    {limitado && <label>Limitação do serviço e motivo para dispensar a consulta privada<textarea rows={3} maxLength={1200} value={dispensaConsultaPrivada} onChange={e => setDispensaConsultaPrivada(e.target.value)} /><small>A limitação aparecerá na proposta. Esta opção não registra procuração nem consulta fiscal realizada.</small></label>}
     <p>Esses textos serão apresentados ao lead na próxima etapa. Registre apenas o que foi conferido e deixe claras as condições pendentes.</p>
     {mudou && <><p role="alert">A ficha ou o relatório mudou. O texto foi preservado; confira os dados atuais antes de confirmar.</p><Button variant="secondary" onClick={() => setBase(contexto)}>Conferi os dados atualizados: manter meu texto</Button></>}
-    <Button disabled={mudou || achados.trim().length < 10 || servicos.trim().length < 10} onClick={() => onSalvar({ versao: onboarding.versao, analiseId: fiscal?.id || null, achados, servicos })}>Confirmar diagnóstico e continuar</Button>
+    <Button disabled={mudou || achados.trim().length < 10 || servicos.trim().length < 10 || (limitado && dispensaConsultaPrivada.trim().length < 20)} onClick={() => onSalvar({ versao: onboarding.versao, analiseId: limitado ? null : fiscal?.id || null, achados, servicos, ...(limitado ? { dispensaConsultaPrivada } : {}) })}>Confirmar diagnóstico e continuar</Button>
     <Button variant="secondary" onClick={() => setAberto(false)}>Recolher diagnóstico</Button>
   </fieldset>;
 }

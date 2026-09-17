@@ -233,6 +233,18 @@ describe("⚠ id XOR link — 'Either id or link is required'", () => {
 // ── As chamadas ──────────────────────────────────────────────────────────────────────────────────
 
 describe("upload do PDF e envio da guia", () => {
+  it("confere novamente o destinatário depois do upload e bloqueia o template se o vínculo mudou", async () => {
+    const cliente = clienteCom([ok({ id: "MEDIA-42" })]);
+    const antesDoTemplate = jest.fn(async () => { throw Object.assign(new Error("Contato alterado durante o upload"), { code: "DESTINATARIO_ALTERADO" }); });
+    await expect(cliente.enviarGuia({
+      telefone: "5521999998888", conteudoPdf: Buffer.from("%PDF-1.4 exemplo"), nomeArquivo: "guia.pdf",
+      variaveis: ["Maria", "DAS", "09/2026", "100,00", "20/09/2026"], antesDoTemplate,
+    })).rejects.toMatchObject({ code: "DESTINATARIO_ALTERADO" });
+    expect(antesDoTemplate).toHaveBeenCalledTimes(1);
+    expect(fetchFalso).toHaveBeenCalledTimes(1);
+    expect(fetchFalso.mock.calls[0][0]).toMatch(/\/media$/);
+  });
+
   it("⚠ a guia sobe como MÍDIA e vai por id — nunca por URL pública", async () => {
     const cliente = clienteCom([ok({ id: "MEDIA-42" }), ok(RESPOSTA_ENVIO)]);
 

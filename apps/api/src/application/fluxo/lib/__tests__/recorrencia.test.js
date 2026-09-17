@@ -286,11 +286,17 @@ describe("⚠ o que NÃO vira observação", () => {
   });
 
   it("⚠⚠ periodicidade fora da lista fechada RECUSA — nunca cai em MENSAL em silêncio", () => {
-    // Era `MESES_DO_CICLO[p] || 1`: "SEMESTRAL" rodava com passo 1 e a evidência ecoava
-    // `periodicidade: "SEMESTRAL"` — a base afirmando uma periodicidade que não foi a usada.
-    expect(() => porCiclo([{ competencia: "2026-01", valor: 1 }], "SEMESTRAL")).toThrow(/SEMESTRAL/);
-    expect(() => lerSerie({ observacoes: [], cicloAtual: "2026-01", periodicidade: "SEMESTRAL" }))
-      .toThrow(/SEMESTRAL/);
+    // Uma frequência desconhecida não pode usar passo mensal e alegar outro período.
+    expect(() => porCiclo([{ competencia: "2026-01", valor: 1 }], "BIMESTRAL")).toThrow(/BIMESTRAL/);
+    expect(() => lerSerie({ observacoes: [], cicloAtual: "2026-01", periodicidade: "BIMESTRAL" }))
+      .toThrow(/BIMESTRAL/);
+  });
+
+  it("semestral usa seis meses por ciclo, mantendo janeiro e junho no mesmo semestre", () => {
+    const ciclos = porCiclo([{ competencia: "2026-01", valor: 10 }, { competencia: "2026-06", valor: 20 }, { competencia: "2026-07", valor: 30 }], "SEMESTRAL");
+    expect(ciclos).toHaveLength(2);
+    expect(ciclos.map(c => c.valor)).toEqual([30, 30]);
+    expect(ciclos[1].ciclo - ciclos[0].ciclo).toBe(1);
   });
 
   it("⚠ a aritmética é de STRING — `Date` às 22h de Brasília daria o mês seguinte", () => {

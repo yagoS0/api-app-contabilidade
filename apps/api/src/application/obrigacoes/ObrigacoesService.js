@@ -116,7 +116,7 @@ export function normalizarEntrada(dados = {}) {
 
   const periodicidade = asTexto(dados.periodicidade).toUpperCase();
   if (!PERIODICIDADES_COM_AVULSA.includes(periodicidade)) {
-    throw new ObrigacaoError("periodicidade_invalida", "Escolha sem repetição, mensal, trimestral ou anual.");
+    throw new ObrigacaoError("periodicidade_invalida", "Escolha sem repetição, diária, semanal, mensal, trimestral, semestral ou anual.");
   }
 
   if (["DIARIA", "SEMANAL"].includes(periodicidade) && !agendaConfig) throw new ObrigacaoError("agenda_invalida", "Informe as datas da recorrência.");
@@ -138,12 +138,12 @@ export function normalizarEntrada(dados = {}) {
   }
 
   const mesReferencia = dados.mesReferencia == null ? null : Number(dados.mesReferencia);
-  if (["TRIMESTRAL", "ANUAL"].includes(periodicidade) && !(mesReferencia >= 1 && mesReferencia <= 12)) {
+  if (["TRIMESTRAL", "SEMESTRAL", "ANUAL"].includes(periodicidade) && !(mesReferencia >= 1 && mesReferencia <= 12)) {
     throw new ObrigacaoError(
       "mes_referencia_obrigatorio",
       periodicidade === "ANUAL"
         ? "Informe em que mês do ano ela vence."
-        : "Informe o primeiro mês do ciclo trimestral.",
+        : `Informe o primeiro mês do ciclo ${periodicidade === "SEMESTRAL" ? "semestral" : "trimestral"}.`,
     );
   }
 

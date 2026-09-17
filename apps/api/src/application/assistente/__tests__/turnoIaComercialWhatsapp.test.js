@@ -40,7 +40,8 @@ function banco(jobs = [job()]) {
   const conversas = jobs.map(j => ({ id: j.conversaId, telefoneE164: "5511999999999", portalClientId: j.portalClientId }));
   return {
     jobs, conversas,
-    conversaWhatsapp: { findMany: jest.fn(async ({ where }) => conversas.filter(c => corresponde(c, where)).map(c => ({ id: c.id }))) },
+    conversaWhatsapp: { findMany: jest.fn(async ({ where }) => conversas.filter(c => corresponde(c, where)).map(c => ({ ...c }))) },
+    atendimentoLead: { findMany: jest.fn(async () => []) },
     turnoIaWhatsapp: {
       findMany: jest.fn(async ({ where, take }) => {
         validarWhereTurno(where);

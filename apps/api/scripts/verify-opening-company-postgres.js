@@ -9,7 +9,9 @@ import https from "node:https";
 import { CATALOGO_SINTETICO } from "../src/application/onboarding/__tests__/fixtures/catalogoSintetico.js";
 
 const url = new URL(process.argv[2]);
-if (!["127.0.0.1", "localhost"].includes(url.hostname) || url.port !== "55440" || url.username !== "lead_test" || url.pathname !== "/lead_flow_check") throw Error("Use somente o PostgreSQL local descartável lead_test:55440/lead_flow_check.");
+const local = ["127.0.0.1", "localhost"].includes(url.hostname) && url.username === "lead_test" && (url.port === "55440" && url.pathname === "/lead_flow_check" || url.port === "55443" && url.pathname === "/lead_flow_check_v2");
+const ci = url.hostname === "127.0.0.1" && url.port === "55439" && url.pathname === "/whatsapp_delivery_check" && url.username === "whatsapp_check" && url.password === "ci_test_only";
+if (url.protocol !== "postgresql:" || !(local || ci)) throw Error("Use somente o PostgreSQL descartável nos alvos explícitos de teste.");
 const pasta = process.env.OPENING_TEST_OUTPUT || await fs.mkdtemp(path.join(os.tmpdir(), "abertura-completa-"));
 await fs.mkdir(pasta, { recursive: true });
 Object.assign(process.env, { DATABASE_URL: url.href, NODE_ENV: "test", INTEGRACAO_IA_COMERCIAL: "0", INTEGRACAO_WHATSAPP: "0", INTEGRACAO_FISCAL_LEADS: "0", GUIDE_STORAGE_PROVIDER: "LOCAL", GUIDE_LOCAL_STORAGE_DIR: path.join(pasta, "storage"), CERT_SECRET_KEY: "SOMENTE-TESTE-LOCAL-ABERTURA-SEM-DADOS-REAIS", AWS_KMS_CERT_KEY_ID: "", LOG_LEVEL: "fatal" });

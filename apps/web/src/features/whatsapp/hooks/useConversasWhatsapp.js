@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { chaveDoInterlocutor } from "../lib/identidadeAtendimento";
 
 export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
   const feedbackRef = useRef(feedback);
   feedbackRef.current = feedback;
   const [filtro, setFiltro] = useState("todas");
+  const [consulta, setConsulta] = useState({ q: "", relacionamento: "", naoLidas: false });
+  const [buscaServidor, setBuscaServidor] = useState(Boolean(api?.whatsappContratoV2));
+  const consultaChave = JSON.stringify(consulta);
+  const lidas = useRef(new Map());
   const [conversas, setConversas] = useState([]);
   const [temMais, setTemMais] = useState(null);
   const [temMaisNoFio, setTemMaisNoFio] = useState(null);
@@ -34,6 +39,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
   useEffect(() => {
     montado.current = true;
     rascunhosRef.current.clear();
+    lidas.current.clear();
     setAberta(null); setConversas([]); setErro(null); setErroFio(null); setErroAcao(null); selecionada.current = null;
     setCursorLista(null); setCursorFio(null); setCarregandoMais(false); setCarregandoAnteriores(false);
     empresaHistoricoRef.current = null; setEmpresaHistorico(null);
@@ -45,17 +51,26 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
   const carregar = useCallback(async (f = filtro, silencioso = false, cursor = null) => {
     if (!api || !contextoVigente()) return;
     const versao = ++versaoLista.current;
-    const mesmaLista = paginas.current.filtro === f;
-    if (!mesmaLista) { paginas.current.lista = false; paginas.current.filtro = f; setConversas([]); setCursorLista(null); }
+    const chaveLista = `${f}:${consultaChave}`;
+    const mesmaLista = paginas.current.filtro === chaveLista;
+    if (!mesmaLista) { paginas.current.lista = false; paginas.current.filtro = chaveLista; setConversas([]); setCursorLista(null); }
     if (cursor) setCarregandoMais(true);
     else if (!silencioso) setCarregando(true);
     try {
-      const r = await api.listarConversasWhatsapp(f, { empresa, ...(cursor ? { cursor } : {}) });
+      const r = await api.listarConversasWhatsapp(f, { empresa, ...(api.whatsappContratoV2 ? consulta : {}), ...(cursor ? { cursor } : {}) });
       if (versao !== versaoLista.current) return;
       if (!Array.isArray(r?.conversas)) throw new Error("Resposta inválida ao ler conversas.");
+      setBuscaServidor(r.buscaConfigurada === true || r.versaoContrato === 2);
       if (cursor) paginas.current.lista = true;
       const manter = cursor || (silencioso && mesmaLista && paginas.current.lista);
-      setConversas(antigas => manter ? unirPorId(antigas, r.conversas).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)) || String(b.id).localeCompare(String(a.id))) : r.conversas);
+      setConversas(antigas => {
+        if (!manter) return r.conversas;
+        if (r.versaoContrato === 2) {
+          const novas = new Map(r.conversas.map(c => [chaveDoInterlocutor(c), c]));
+          return cursor ? unirPorId(antigas, r.conversas, chaveDoInterlocutor) : [...r.conversas, ...antigas.filter(c => !novas.has(chaveDoInterlocutor(c)))];
+        }
+        return unirPorId(antigas, r.conversas, chaveDoInterlocutor).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)) || String(b.id).localeCompare(String(a.id)));
+      });
       if (!manter || cursor) {
         setTemMais(r?.temMais === undefined ? null : r.temMais);
         setCursorLista(r?.proximoCursor || null);
@@ -69,7 +84,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     } finally {
       if (versao === versaoLista.current) { setCarregando(false); setCarregandoMais(false); }
     }
-  }, [api, filtro, empresa, contextoVigente]);
+  }, [api, filtro, empresa, contextoVigente, consultaChave]);
   useEffect(() => { carregar(filtro); }, [carregar, filtro]);
 
   const abrir = useCallback(async (conversaId, silencioso = false, cursor = null) => {
@@ -85,7 +100,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
       const r = await api.getMensagensWhatsapp(conversaId, ...(Object.keys(opcoes).length ? [opcoes] : []));
       if (versao !== versaoFio.current || selecionada.current !== conversaId) return null;
       if (r?.conversa?.id !== conversaId || !Array.isArray(r?.mensagens)) throw new Error("Resposta inválida ao ler a conversa.");
-      const fio = { conversa: r.conversa, mensagens: r.mensagens };
+      const fio = { conversa: r.conversa, mensagens: r.mensagens, notasInternas: r.notasInternas || [] };
       if (cursor) paginas.current.fio = true;
       const manter = mesmoFio && (cursor || paginas.current.fio);
       if (!manter || cursor) { setTemMaisNoFio(r?.temMais === undefined ? null : r.temMais); setCursorFio(r?.proximoCursor || null); }
@@ -159,8 +174,9 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     await recarregarTudo(id); return r;
   }, [acao, api, recarregarTudo]);
   const responder = useCallback(async (id, texto) => {
+    const abertaInicio = selecionada.current;
     const r = await acao(() => api.responderConversaWhatsapp(id, texto));
-    await recarregarTudo(id); return r;
+    await recarregarTudo(abertaInicio || id); return r;
   }, [acao, api, recarregarTudo]);
   const vincular = useCallback(async (id, body) => {
     const r = await acao(() => api.vincularConversaWhatsapp(id, body), { sucesso: "Número vinculado à empresa e contato cadastrado." });
@@ -189,6 +205,18 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     const r = await acao(() => api.salvarApelidosWhatsapp(portalClientId, apelidos), { sucesso: "Nomes curtos da empresa salvos." });
     await recarregarTudo(id); return r;
   }, [acao, api, recarregarTudo]);
+  const marcarLida = useCallback(async (id, mensagemId) => {
+    if (!mensagemId || typeof api?.marcarConversaWhatsappLida !== "function" || selecionada.current !== id || document.visibilityState === "hidden") return;
+    if (lidas.current.get(id) === mensagemId) return;
+    lidas.current.set(id, mensagemId);
+    try { await api.marcarConversaWhatsappLida(id, mensagemId); }
+    catch (err) { lidas.current.delete(id); if (contextoVigente()) setErroFio(err?.message || "Não foi possível registrar a leitura."); }
+  }, [api, contextoVigente]);
+  const salvarNota = useCallback(async (id, body) => {
+    const abertaInicio = selecionada.current;
+    const r = await acao(() => api.criarNotaInternaWhatsapp(id, body));
+    await recarregarTudo(abertaInicio || id); return r;
+  }, [api, acao, recarregarTudo]);
   const fechar = () => { versaoFio.current++; selecionada.current = null; setAberta(null); setErroFio(null); setErroAcao(null); setCursorFio(null); setCarregandoFio(false); };
   const trocarFiltro = (novo) => {
     if (novo === filtro) return;
@@ -207,7 +235,7 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     }
     return r;
   };
-  return { api, cursorLista, cursorFio, carregandoMais, carregandoAnteriores, erroAcao, rascunhosRef, empresaFixa: empresa, empresaHistorico, filtrarHistorico, selecionarEmpresa, salvarApelidos,
+  return { api, consulta, setConsulta, buscaServidor, marcarLida, salvarNota, cursorLista, cursorFio, carregandoMais, carregandoAnteriores, erroAcao, rascunhosRef, empresaFixa: empresa, empresaHistorico, filtrarHistorico, selecionarEmpresa, salvarApelidos,
     excluir: id => moverConversa(id, "excluirConversaWhatsapp"),
     restaurar: id => moverConversa(id, "restaurarConversaWhatsapp"),
     carregarMais: () => cursorLista && !carregandoMais && carregar(filtro, false, cursorLista),
@@ -215,6 +243,6 @@ export function useConversasWhatsapp({ api, feedback, empresa = null } = {}) {
     filtro, setFiltro: trocarFiltro, conversas, temMais, temMaisNoFio, consumoIa, carregando, erro, erroFio, aberta, carregandoFio, ocupado, carregar, abrir, assumir, devolver, responder, vincular, fechar };
 }
 
-function unirPorId(atuais = [], novas = []) {
-  return [...new Map([...atuais, ...novas].map(item => [item.atendimento?.id || item.id, item])).values()];
+function unirPorId(atuais = [], novas = [], chave = item => item.id) {
+  return [...new Map([...atuais, ...novas].map(item => [chave(item), item])).values()];
 }

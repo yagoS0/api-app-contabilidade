@@ -10,6 +10,8 @@ import {
 } from "./permissoesAssistente.js";
 import { normalizarE164, variantesE164 } from "./telefone.js";
 import { resolverVinculoTelefone } from "./vinculoTelefone.js";
+import { WHATSAPP_IDENTIDADE_V2 } from '../../config.js';
+import { garantirIdentidadeWhatsapp } from './IdentidadeComunicacaoService.js';
 
 export const CANAIS = Object.freeze(["EMAIL", "WHATSAPP"]);
 export const CANAL_PADRAO = Object.freeze(["EMAIL", "WHATSAPP", "PERGUNTAR"]);
@@ -147,6 +149,11 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
       dados.waId = null;
       dados.optInEm = null;
       dados.optInOrigem = null;
+      if (WHATSAPP_IDENTIDADE_V2) {
+        // Trocar o destino não transporta direitos. O escritório pode concedê-los explicitamente.
+        if (userId === undefined) dados.userId = null;
+        if (permissoesAssistente === undefined) dados.permissoesAssistente = [];
+      }
     }
   }
 
@@ -192,6 +199,11 @@ export async function salvarContato({ portalClientId, id, nome, papel, telefone,
     }
     dados.userId = String(userId).trim();
   }
+
+  if (WHATSAPP_IDENTIDADE_V2 && e164 && veio(telefone)) {
+    const identidade = await garantirIdentidadeWhatsapp({ telefone: e164, client: prisma });
+    dados.vinculoNumeroId = identidade.vinculoNumero.id;
+  } else if (WHATSAPP_IDENTIDADE_V2 && veio(telefone) && !e164) dados.vinculoNumeroId = null;
 
   if (id) {
     // ⚠ `portalClientId` VIAJA NO `where`, e não é redundância. A rota autoriza o chamador sobre a
@@ -267,7 +279,8 @@ export async function salvarPermissoesAssistente({ portalClientId, contatoId, pe
 export async function destinatariosDeEnvio(portalClientId) {
   const contatos = await prisma.contatoWhatsapp.findMany({
     where: { portalClientId: String(portalClientId), ativo: true },
-    select: { id: true, nome: true, email: true, telefoneE164: true, waId: true, optInEm: true },
+    select: { id: true, nome: true, email: true, telefoneE164: true, waId: true, optInEm: true,
+      ...(WHATSAPP_IDENTIDADE_V2 ? { vinculoNumero: { select: { encerrouEm: true, interlocutor: { select: { estado: true } } } } } : {}) },
     orderBy: { createdAt: "asc" },
   });
 
@@ -282,6 +295,10 @@ export async function destinatariosDeEnvio(portalClientId) {
       emails.push(e);
     }
     if (c.telefoneE164) {
+      if (WHATSAPP_IDENTIDADE_V2 && (!c.vinculoNumero || c.vinculoNumero.encerrouEm || c.vinculoNumero.interlocutor.estado !== 'ATIVO')) {
+        semOptIn.push({ nome: c.nome, telefoneE164: c.telefoneE164, motivo: 'identificação do destinatário precisa de conferência' });
+        continue;
+      }
       if (c.optInEm) telefones.push({ id: c.id, nome: c.nome, telefoneE164: c.telefoneE164, waId: c.waId || null });
       else semOptIn.push({ nome: c.nome, telefoneE164: c.telefoneE164 });
     }
@@ -338,7 +355,7 @@ export async function acharContatoPorWaId(waIdOuTelefone) {
  *
  * @returns {Promise<boolean>} gravou?
  */
-export async function gravarWaIdDoContato({ contatoId, telefoneEnviado, waId, client = prisma }) {
+export async function gravarWaIdDoContato({ contatoId, telefoneEnviado, waId, vinculoNumeroId = null, client = prisma }) {
   const id = String(contatoId || "").trim();
   const valor = String(waId || "").trim();
   const telefone = normalizarE164(telefoneEnviado);
@@ -346,7 +363,7 @@ export async function gravarWaIdDoContato({ contatoId, telefoneEnviado, waId, cl
   // ⚠ `waId: null` no `where` é a trava: quem já tem apelido conhecido não é reescrito por um envio.
   const r = await client.contatoWhatsapp.updateMany({
     // Uma resposta atrasada do número antigo não pode atribuir sua identidade ao novo cadastro.
-    where: { id, telefoneE164: telefone, waId: null },
+    where: { id, telefoneE164: telefone, waId: null, ...(vinculoNumeroId ? { vinculoNumeroId, vinculoNumero: { is: { encerrouEm: null } } } : {}) },
     data: { waId: valor },
   });
   return r.count === 1;
@@ -361,7 +378,8 @@ export async function gravarWaIdDoContato({ contatoId, telefoneEnviado, waId, cl
  */
 export async function destinatarioWhatsapp(portalClientId) {
   const contatos = await prisma.contatoWhatsapp.findMany({
-    where: { portalClientId: String(portalClientId), ativo: true },
+    where: { portalClientId: String(portalClientId), ativo: true,
+      ...(WHATSAPP_IDENTIDADE_V2 ? { vinculoNumero: { is: { encerrouEm: null, interlocutor: { estado: 'ATIVO' } } } } : {}) },
     orderBy: { createdAt: "asc" },
   });
 
@@ -417,6 +435,7 @@ export const SELECT_CONTATO_PARA_VINCULO = Object.freeze({
   ativo: true,
   userId: true,
   permissoesAssistente: true,
+  ...(WHATSAPP_IDENTIDADE_V2 ? { vinculoNumeroId: true, vinculoNumero: { select: { encerrouEm: true, interlocutor: { select: { estado: true } } } } } : {}),
   portalClient: { select: { id: true, razao: true, cnpj: true, apelidosWhatsapp: true } },
 });
 
@@ -457,6 +476,8 @@ export async function resolverVinculoPorTelefone(telefone, { client = prisma } =
 
   return resolverVinculoTelefone(
     e164,
-    contatos.map((c) => ({ ...c, vinculoRbac: c.userId ? porChave.get(`${c.portalClientId}|${c.userId}`) || null : null })),
+    contatos.map((c) => ({ ...c,
+      ...(WHATSAPP_IDENTIDADE_V2 && (!c.vinculoNumeroId || c.vinculoNumero?.encerrouEm || c.vinculoNumero?.interlocutor?.estado !== 'ATIVO') ? { ativo: false } : {}),
+      vinculoRbac: c.userId ? porChave.get(`${c.portalClientId}|${c.userId}`) || null : null })),
   );
 }

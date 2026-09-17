@@ -14,7 +14,7 @@
 export const ONBOARDING_STATUS = Object.freeze({
   RASCUNHO: Object.freeze({
     chave: "RASCUNHO",
-    rotulo: "Rascunho",
+    rotulo: "Em preenchimento",
     token: "--text-faint",
     // ⚠ sem `surface`: rascunho não deve ganhar peso visual de cartão de trabalho.
     surface: null,
@@ -33,7 +33,7 @@ export const ONBOARDING_STATUS = Object.freeze({
   }),
   EM_TRILHA: Object.freeze({
     chave: "EM_TRILHA",
-    rotulo: "Em trilha",
+    rotulo: "Em acompanhamento",
     token: "--state-neutral",
     surface: "--state-neutral-surface",
     icone: "◐",
@@ -43,7 +43,7 @@ export const ONBOARDING_STATUS = Object.freeze({
   CONCLUIDO_AVULSO: Object.freeze({ chave: "CONCLUIDO_AVULSO", rotulo: "Serviço avulso concluído", token: "--state-ok", surface: "--state-ok-surface", icone: "✓", ordem: 3, noQuadro: true }),
   CONVERTIDO: Object.freeze({
     chave: "CONVERTIDO",
-    rotulo: "Convertido",
+    rotulo: "Na carteira",
     token: "--state-ok",
     surface: "--state-ok-surface",
     icone: "✓",

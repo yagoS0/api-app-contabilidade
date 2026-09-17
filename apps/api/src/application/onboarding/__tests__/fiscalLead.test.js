@@ -35,3 +35,13 @@ test("troca do representante durante a rede não conclui autorização antiga", 
   await t.service.processarUmaVez();
   expect(t.db.trabalhoFiscalLead.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "FALHOU", resultado: expect.objectContaining({ codigo: "escopo_alterado" }) }) }));
 });
+
+test("número reassociado depois do agendamento bloqueia consulta privada sem reutilizar procuração", async () => {
+  const t = setup(); t.a.interlocutorId = "titular-anterior"; t.a.conversaId = "c";
+  t.db.conversaWhatsapp = { findUnique: async () => ({ id: "c", telefoneE164: "5511999999999", vinculoNumeroId: "v" }) };
+  t.db.vinculoNumeroInterlocutor = { findUnique: async () => ({ id: "v", encerrouEm: new Date(), interlocutorId: "titular-anterior" }) };
+  await expect(t.service.enfileirar("o", user, "SITFIS")).rejects.toMatchObject({ code: "identidade_alterada" });
+  await t.service.processarUmaVez();
+  expect(t.procura).not.toHaveBeenCalled();
+  expect(t.db.trabalhoFiscalLead.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "FALHOU", resultado: expect.objectContaining({ codigo: "identidade_alterada" }) }) }));
+});

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../../infrastructure/db/prisma.js';
-import { WhatsappCloudClient } from './WhatsappCloudClient.js';
+import { whatsappPorCanal, identidadeWhatsappV2Ativa } from './CanalWhatsappService.js';
 import { criarModelosMeta } from './ModelosMetaService.js';
 import { agruparDestinatarios, validarAviso, erroComunicado, modeloDoComunicado, conferirModelo, hashPrevia } from './comunicados.js';
 import { garantirConversa } from './ConversaWhatsappService.js';
@@ -16,7 +16,8 @@ const final = c => ['CANCELADO', 'CONCLUIDO'].includes(c.status);
 
 export function criarComunicadosWhatsapp({ client = prisma, meta = criarModelosMeta(), cloud = null,
   enviar = enviarMensagemRastreada, conversa = garantirConversa, lease = { adquirirLease, renovarLease, liberarLease } } = {}) {
-  const transporte = cloud || new WhatsappCloudClient();
+  const filtroIdentidade = () => identidadeWhatsappV2Ativa()
+    ? { vinculoNumero: { is: { encerrouEm: null, interlocutor: { is: { estado: 'ATIVO' } } } } } : {};
   async function carregar(id, visiveis) {
     const c = await client.comunicadoWhatsapp.findUnique({ where: { id }, include: { destinatarios: { orderBy: { telefone: 'asc' } } } });
     if (!c || !c.empresasIds.every(e => visiveis.includes(e))) throw erroComunicado('Comunicado não encontrado.', 404);
@@ -26,7 +27,7 @@ export function criarComunicadosWhatsapp({ client = prisma, meta = criarModelosM
     if (input.empresasIds !== undefined && !Array.isArray(input.empresasIds)) throw erroComunicado('Selecione uma lista de empresas.');
     const empresasIds = [...new Set(input.empresasIds || visiveis)].sort();
     if (!empresasIds.length || !empresasIds.every(e => typeof e === 'string' && visiveis.includes(e))) throw erroComunicado('Selecione empresas da sua carteira.');
-    const contatos = await client.contatoWhatsapp.findMany({ where: { portalClientId: { in: empresasIds }, ativo: true }, select: selectContato });
+    const contatos = await client.contatoWhatsapp.findMany({ where: { portalClientId: { in: empresasIds }, ativo: true, ...filtroIdentidade() }, select: selectContato });
     const grupos = agruparDestinatarios(contatos);
     if (input.telefones) {
       if (!Array.isArray(input.telefones) || !input.telefones.every(t => grupos.destinatarios.some(d => d.telefone === t))) throw erroComunicado('A lista de destinatários mudou. Atualize a prévia.', 409);
@@ -35,7 +36,7 @@ export function criarComunicadosWhatsapp({ client = prisma, meta = criarModelosM
     return { ...grupos, empresasIds, empresasSemContato: empresasIds.filter(e => !contatos.some(c => c.portalClientId === e)).length };
   }
   async function atuais(c) {
-    const contatos = await client.contatoWhatsapp.findMany({ where: { id: { in: c.destinatarios.flatMap(d => d.contatosIds) }, portalClientId: { in: c.empresasIds }, ativo: true }, select: selectContato });
+    const contatos = await client.contatoWhatsapp.findMany({ where: { id: { in: c.destinatarios.flatMap(d => d.contatosIds) }, portalClientId: { in: c.empresasIds }, ativo: true, ...filtroIdentidade() }, select: selectContato });
     const grupos = agruparDestinatarios(contatos).destinatarios;
     return c.destinatarios.map(d => ({ ...d, elegivel: grupos.some(g => g.telefone === d.telefone && g.contatosIds.some(id => d.contatosIds.includes(id))) }));
   }
@@ -166,12 +167,13 @@ export function criarComunicadosWhatsapp({ client = prisma, meta = criarModelosM
         const vigente = await client.comunicadoWhatsapp.findUnique({ where: { id: c.id } });
         if (!permitido(a) || vigente?.status !== 'ENVIANDO' || vigente.categoria !== c.categoria
           || vigente.confirmadoEm?.getTime() !== c.confirmadoEm?.getTime() || vigente.confirmadoPor !== c.confirmadoPor) throw erroComunicado('O envio foi interrompido pelo escritório.', 409);
-        const encontrados = await client.contatoWhatsapp.findMany({ where: { id: { in: d.contatosIds }, portalClientId: { in: d.empresasIds }, ativo: true, optInEm: { not: null }, telefoneE164: d.telefone }, select: selectContato });
+        const encontrados = await client.contatoWhatsapp.findMany({ where: { id: { in: d.contatosIds }, portalClientId: { in: d.empresasIds }, ativo: true, optInEm: { not: null }, telefoneE164: d.telefone, ...filtroIdentidade() }, select: selectContato });
         if (!encontrados.length) throw erroComunicado('O contato ou a autorização de WhatsApp mudou.', 409);
         return encontrados;
       };
       const validos = await contatos();
       const fio = await conversa({ telefone: d.telefone, portalClientId: validos[0].portalClientId, client });
+      const transporte = await whatsappPorCanal(fio, { cloud, client });
       trava = await lease.adquirirLease(chaveLeaseResponsavel(fio), { client });
       if (!trava) {
         await client.destinatarioComunicadoWhatsapp.updateMany({ where: { id: d.id, status: 'ENVIANDO' }, data: { status: 'PENDENTE', iniciadoEm: null } });

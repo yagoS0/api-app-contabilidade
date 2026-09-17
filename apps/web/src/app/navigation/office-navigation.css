@@ -1,0 +1,94 @@
+.office-navigation {
+  font-family: var(--font-navigation);
+  font-synthesis: none;
+  min-width: 0;
+  padding: var(--space-2) clamp(16px, 3vw, 40px) 0;
+  background: var(--bg-page);
+  border-bottom: 1px solid var(--border);
+}
+
+.office-navigation__top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.office-navigation__top > .workspace-home { flex: 0 0 auto; }
+
+.office-navigation__areas,
+.office-navigation__destinations {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.office-navigation__areas { padding-bottom: var(--space-1); }
+.office-navigation__destinations { gap: var(--space-4); }
+
+.office-navigation a {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.25;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.office-navigation__area {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+
+.office-navigation__area[aria-current] {
+  color: var(--text);
+  background: var(--bg-surface);
+}
+
+.office-navigation__destination {
+  padding: var(--space-2) 0;
+  border-bottom: 2px solid transparent;
+}
+
+.office-navigation__destination[aria-current] {
+  color: var(--text);
+  border-bottom-color: var(--border-focus);
+  font-weight: 600;
+}
+
+.office-navigation a:hover { color: var(--text); }
+.office-navigation__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 19px;
+  margin-left: var(--space-2);
+  padding: 0 var(--space-1);
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.office-navigation a:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+@media (pointer: coarse) {
+  .office-navigation a { min-height: 44px; }
+}
+
+@media print {
+  .office-navigation { display: none; }
+}

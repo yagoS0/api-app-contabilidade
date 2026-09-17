@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../infrastructure/db/prisma.js';
 import { empresasVisiveis } from './empresasVisiveis.js';
 import { ObrigacaoError, excluirOcorrencia } from '../../application/obrigacoes/ObrigacoesService.js';
-import { listarTarefas, salvarTarefa, alterarTarefa } from '../../application/calendario/TarefasAgendaService.js';
+import { listarTarefas, salvarTarefa, alterarTarefa, converterTarefaEmObrigacao } from '../../application/calendario/TarefasAgendaService.js';
 import { montarCalendarioDoMes, limitesDoMes } from '../../application/calendario/CalendarioFiscalService.js';
 import { normalizarAgenda } from '../../../../../packages/shared/src/agenda.js';
 
@@ -22,6 +22,7 @@ export function createAgendaRouter({ log } = {}) {
   router.post('/agenda/tarefas', rota(async (req, userId) => ({ tarefa: await salvarTarefa({ userId, dados: req.body || {} }) })));
   router.patch('/agenda/tarefas/:id', rota(async (req, userId) => ({ tarefa: await salvarTarefa({ userId, id: req.params.id, dados: req.body || {} }) })));
   router.post('/agenda/tarefas/:id/acao', rota(async (req, userId) => ({ tarefa: await alterarTarefa({ userId, id: req.params.id, cicloChave: req.body?.cicloChave, acao: req.body?.acao, alteracoes: req.body?.alteracoes }) })));
+  router.post('/agenda/tarefas/:id/converter-obrigacao', rota(async (req, userId) => converterTarefaEmObrigacao({ userId, id: req.params.id, cicloChave: req.body?.cicloChave, regra: req.body?.regra, portalIds: await empresasVisiveis(req) })));
   router.post('/agenda/ocorrencias/excluir', rota(async (req, userId) => {
     const ids = [...new Set(Array.isArray(req.body?.ids) ? req.body.ids : [])];
     if (!ids.length || ids.length > 500 || ids.some(id => typeof id !== 'string')) throw new ObrigacaoError('ids_invalidos', 'Selecione até 500 ocorrências.');
@@ -59,20 +60,30 @@ export function createAgendaRouter({ log } = {}) {
   router.post('/agenda/ocorrencias/editar', rota(async req => {
     const ids = [...new Set(Array.isArray(req.body?.ids) ? req.body.ids : [])];
     if (!ids.length || ids.length > 500 || ids.some(id => typeof id !== 'string')) throw new ObrigacaoError('ids_invalidos', 'Selecione até 500 ocorrências.');
-    let config;
-    try { config = normalizarAgenda({ ...req.body?.dados, repetirAte: null }); }
-    catch(e) { throw new ObrigacaoError('agenda_invalida', e.message); }
-    const titulo = String(req.body?.dados?.titulo || '').trim();
-    if (!titulo || titulo.length > 200) throw new ObrigacaoError('titulo_invalido', 'Informe um título de até 200 caracteres.');
+    const dados = req.body?.dados;
+    if (!dados || typeof dados !== 'object' || Array.isArray(dados)) throw new ObrigacaoError('agenda_invalida', 'Informe as alterações da agenda.');
     const portalIds = await empresasVisiveis(req);
     return prisma.$transaction(async tx => {
       const alvos = await tx.ocorrenciaObrigacao.findMany({ where: { id: { in: ids }, obrigacao: { portalClientId: { in: portalIds } } }, include: { obrigacao:true } });
       if (alvos.length !== ids.length) throw new ObrigacaoError('nao_encontrada', 'Ocorrência não encontrada.', 404);
       for (const id of [...new Set(alvos.map(o => o.obrigacaoId))].sort()) await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${id}))`;
-      const atuais = await tx.ocorrenciaObrigacao.findMany({ where: { id: { in: ids } } });
+      const atuais = await tx.ocorrenciaObrigacao.findMany({ where: { id: { in: ids }, obrigacao: { portalClientId: { in: portalIds } } }, include: { obrigacao:true } });
+      if (atuais.length !== ids.length) throw new ObrigacaoError('nao_encontrada', 'Ocorrência não encontrada.', 404);
       if (atuais.some(o => o.canceladaEm || o.foraDaRecorrencia)) throw new ObrigacaoError('ocorrencia_indisponivel', 'Esta ocorrência não está mais disponível no calendário.', 409);
-      const agendaConfig = { horaInicio:config.horaInicio, horaFim:config.horaFim, prioridade:config.prioridade, titulo, descricao:String(req.body?.dados?.descricao || '').slice(0,10000) };
-      for (const alvo of alvos) await tx.ocorrenciaObrigacao.update({ where:{id:alvo.id}, data:{ dataInicio:new Date(config.dataInicio), dataFim:new Date(config.dataFim), ...(alvo.obrigacao.tipo === 'TAREFA' ? {dataVencimento:new Date(config.dataFim)} : {}), janelaPersonalizada:true, agendaConfig } });
+      // O gesto altera somente a janela; os demais campos vêm da leitura protegida pelo lock.
+      // Validar todo o grupo antes da primeira gravação também evita atualizações parciais.
+      const alteracoes = atuais.map(alvo => {
+        const anterior = { ...alvo.obrigacao.agendaConfig, ...alvo.agendaConfig };
+        let config;
+        try { config = normalizarAgenda({ ...anterior, dataInicio:(alvo.dataInicio || alvo.dataVencimento)?.toISOString().slice(0,10), dataFim:(alvo.dataFim || alvo.dataVencimento)?.toISOString().slice(0,10), ...dados, repetirAte:null }); }
+        catch(e) { throw new ObrigacaoError('agenda_invalida', e.message); }
+        const titulo = String(Object.hasOwn(dados,'titulo') ? dados.titulo ?? '' : anterior.titulo ?? alvo.obrigacao.nome ?? '').trim();
+        if (!titulo || titulo.length > 200) throw new ObrigacaoError('titulo_invalido', 'Informe um título de até 200 caracteres.');
+        const descricao = String((Object.hasOwn(dados,'descricao') ? dados.descricao : anterior.descricao ?? alvo.obrigacao.descricao) ?? '').slice(0,10000);
+        const agendaConfig = { ...alvo.agendaConfig, horaInicio:config.horaInicio, horaFim:config.horaFim, prioridade:config.prioridade, titulo, descricao };
+        return { where:{id:alvo.id}, data:{ dataInicio:new Date(config.dataInicio), dataFim:new Date(config.dataFim), ...(alvo.obrigacao.tipo === 'TAREFA' ? {dataVencimento:new Date(config.dataFim)} : {}), janelaPersonalizada:true, agendaConfig } };
+      });
+      for (const alteracao of alteracoes) await tx.ocorrenciaObrigacao.update(alteracao);
       return { atualizadas:ids.length };
     }, { timeout:30000 });
   }));

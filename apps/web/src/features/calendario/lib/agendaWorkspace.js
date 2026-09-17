@@ -1,8 +1,9 @@
 import { somarDiasAgenda } from '../../../../../../packages/shared/src/agenda.js';
+import { ALTURA_HORA } from './escalaAgenda';
 export const CORES_PRIORIDADE = { '': 'var(--text-muted)', BAIXA: '#e9bb42', MEDIA: '#ef934c', ALTA: '#b58aef', URGENTE: '#ee737f' };
 export const COR_OBRIGACAO = '#1351b4';
 export const corAtividade = item => item.tipo === 'obrigacao' ? COR_OBRIGACAO : CORES_PRIORIDADE[item.prioridade || ''];
-export const RECORRENCIAS = { AVULSA: 'Não repetir', DIARIA: 'Todos os dias', SEMANAL: 'Toda semana', MENSAL: 'Todo mês', TRIMESTRAL: 'A cada 3 meses', ANUAL: 'Todo ano' };
+export const RECORRENCIAS = { AVULSA: 'Não repetir', DIARIA: 'Todos os dias', SEMANAL: 'Toda semana', MENSAL: 'Todo mês', TRIMESTRAL: 'A cada 3 meses', SEMESTRAL: 'A cada 6 meses', ANUAL: 'Todo ano' };
 export const dataLocal = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 export const dataBR = d => d ? d.slice(0, 10).split('-').reverse().join('/') : '';
 export const dataExtenso = d => new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -68,15 +69,24 @@ export const horarioAtividade = item => item.horaInicio ? item.horaFim ? `${item
 /** Eventos simultâneos recebem colunas próprias, sem encobrir os anteriores. */
 export function posicionarHorarios(itens) {
   const ordenados = [...itens].sort((a,b) => minutos(a.horaInicio) - minutos(b.horaInicio) || a.id.localeCompare(b.id));
+  // Reserve the minimum visual height as well as the persisted duration.
+  const fimOcupado = item => Math.max(fimVisual(item), minutos(item.horaInicio) + 24 / ALTURA_HORA * 60);
   const blocos = []; let bloco = [], ate = -1;
   for (const item of ordenados) {
     if (minutos(item.horaInicio) >= ate && bloco.length) { blocos.push(bloco); bloco = []; ate = -1; }
-    bloco.push(item); ate = Math.max(ate, fimVisual(item));
+    bloco.push(item); ate = Math.max(ate, fimOcupado(item));
   }
   if (bloco.length) blocos.push(bloco);
   return blocos.flatMap(b => {
     const finais = [];
-    const pos = b.map(item => { let coluna = finais.findIndex(f => f <= minutos(item.horaInicio)); if (coluna < 0) coluna = finais.length; finais[coluna] = fimVisual(item); return { item, coluna }; });
-    return pos.map(p => ({ ...p, colunas: finais.length }));
+    const pos = b.map(item => { let coluna = finais.findIndex(f => f <= minutos(item.horaInicio)); if (coluna < 0) coluna = finais.length; finais[coluna] = fimOcupado(item); return { item, coluna }; });
+    return pos.map(p => {
+      let extensao = 1;
+      for (let coluna = p.coluna + 1; coluna < finais.length; coluna++) {
+        if (pos.some(outro => outro.coluna === coluna && minutos(outro.item.horaInicio) < fimOcupado(p.item) && fimOcupado(outro.item) > minutos(p.item.horaInicio))) break;
+        extensao++;
+      }
+      return { ...p, colunas: finais.length, extensao };
+    });
   });
 }
