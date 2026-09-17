@@ -52,3 +52,11 @@ Tipo e Recorrência ficam visíveis também na edição. Alteração individual 
 AtividadeAgenda separa abertura/gestos e checkbox. Tarefa individual conclui ou reabre sem abrir modal; obrigação mostra vazio/parcial/concluído e abre o acompanhamento por empresa. Não concluir todas em lote pelo checkbox. Bloqueio local evita cliques duplicados. Cartões simultâneos consideram altura visual mínima e aproveitam colunas livres; título e progresso não reservam coluna vazia. Foco não desloca o cartão de horário.
 
 Validação desta etapa: 212 testes API/obrigações e 113 web/mock; build aprovado; navegador em demonstração confirmou checkbox, edição e repetição semanal. Sem publicação nesta etapa; transações reais continuam sujeitas ao gate PostgreSQL antes de produção.
+
+## Escala e horário atual — 17/09/2026 (dev)
+
+`lib/escalaAgenda.js` centraliza 96 pixels por hora, seis horas visíveis e rolagem inicial às 8h. Posições, colisões, prévia e CSS usam essa escala; os gestos medem a célula real. As 24 horas continuam disponíveis por rolagem. A largura da régua (56/40px) é independente da escala vertical.
+
+`LinhaHorarioAtual` usa o fuso America/Sao_Paulo e atualiza no próximo minuto e ao retornar à janela, sem reposicionar a rolagem. Só aparece na grade de horários quando o período contém hoje; o destaque percorre a coluna de hoje. Não intercepta eventos de ponteiro nem anuncia cada minuto em aria-live. Títulos e horário secundário dos cartões com hora ficam maiores; o mês mantém apresentação compacta sem horário secundário.
+
+O ponteiro do arraste deve ser capturado no botão de origem quando o evento parte do título/ícone. Capturar no contêiner externo retargeta o clique e impede abrir as empresas da obrigação no navegador, mesmo com fireEvent.click passando em JSDOM. A regressão `useGestosAgendaClique` cobre esse destino e a supressão de clique após arraste.

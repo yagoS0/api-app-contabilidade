@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { useGestosAgenda } from '../useGestosAgenda';
 import { janelaCriacaoAgenda, medirGradeAgenda, pontoNaGrade, velocidadeRolagemAgenda } from '../../lib/geometriaAgenda';
+import { ALTURA_HORA, HORA_INICIAL } from '../../lib/escalaAgenda';
 
 const dias = ['2026-09-10', '2026-09-11'];
 const item = { id: 'tarefa', tarefaId: 'tarefa', tipo: 'tarefa', titulo: 'Notas', dataInicio: dias[0], dataFim: dias[0], horaInicio: '09:00', horaFim: '10:00' };
@@ -37,6 +38,15 @@ test('mobile: usa os limites reais do último dia e exclui a coluna de horas', (
   expect(pontoNaGrade(geometria, 359, 120)).toEqual({ data: dias[1], minuto: 540 });
   expect(pontoNaGrade(geometria, 360, 120)).toBeNull();
   expect(pontoNaGrade(geometria, 180, 120).data).toBe(dias[1]);
+});
+
+test('escala ampliada mede 96px por hora e posiciona o ponteiro em intervalos de 15 minutos', () => {
+  const {scroll,grade}=preparar();
+  scroll.scrollTop=HORA_INICIAL * ALTURA_HORA;
+  grade.querySelector('.agenda-time-slot').getBoundingClientRect=()=>({height:ALTURA_HORA});
+  const geometria=medirGradeAgenda(scroll,dias);
+  expect(geometria.alturaHora).toBe(96);
+  expect(pontoNaGrade(geometria,90,ALTURA_HORA * 1.25)).toEqual({data:dias[0],minuto:9*60+15});
 });
 
 test('coalesces pointer bursts, skips equal snaps and flushes latest position on release', () => {
