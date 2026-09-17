@@ -398,7 +398,7 @@ async function atenderMenu({ registro, interacao = null, texto = null, agora = n
         : `Olá${sessao.contatoNome ? `, ${sessao.contatoNome}` : ""}. Como posso ajudar?${avisoRascunho}`, conversa);
       await enviar({ tipo: "interactive", corpo, chamada: () => whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: corpo, linhas, tituloBotao: "Ver opções", tituloSecao: "Atendimento", rodape: "Você também pode escrever seu pedido." }) });
     } else {
-      const coletaAtiva = coletaComercialHabilitada(conversa.telefoneE164);
+      const coletaAtiva = coletaComercialHabilitada(conversa.telefoneE164, { canal: registro.canal, canalId: conversa.canalId });
       const botoes = [
         { id: IDS_MENU_WHATSAPP.LEAD_ANALISAR, titulo: "Analisar empresa" },
         { id: IDS_MENU_WHATSAPP.LEAD_CLIENTE, titulo: "Já sou cliente" },

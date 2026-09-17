@@ -6,6 +6,23 @@ Estado conferido em 17/09: conjunto integrado pela [PR 67](https://github.com/ya
 
 ## Publicação e auditoria de produção — 17/09/2026
 
+### Segundo número dedicado aos leads (pedido posterior à publicação)
+
+O usuário autorizou configurar o novo número como entrada comercial. Essa audiência passa a ser todo remetente do canal COMERCIAL ativo, sem cadastrar cada lead no piloto. O canal principal mantém as regras anteriores. A decisão exige identidade V2, multicanal, coleta comercial e correspondência exata entre o canal da conversa e os metadados obtidos no servidor. Não muda o relacionamento de cliente existente, não libera funções fiscais e não sobrepõe pausa humana. O modelo comercial cede ao fluxo determinístico, inclusive em jobs previamente enfileirados cuja configuração é recarregada.
+
+Preparação validada localmente: 108 testes de unidade; 9 verificações do webhook até o onboarding no canal comercial e 7 no principal. Meta, IA e consultas externas bloqueadas nos ensaios. O comando `verify-lead-entry-postgres.js <banco-descartavel> --commercial` também está na CI. Cobre novos remetentes sem piloto, saudação, pedido livre, duplicata, transferência, consulta pública sintética, falta de CNPJ, equipe, isolamento do canal principal e canal desativado.
+
+Na conferência de 17/09 às 15h44 UTC, `WHATSAPP_COMERCIAL_TOKEN` não estava configurado. O token principal acessa o telefone, mas a conta nova/assinatura recusam acesso (`100/33`). Não habilitar o canal apenas porque o telefone está VERIFIED. IDs reais e evidências de acesso ficam no workspace privado, nunca neste repositório público.
+
+Para concluir a configuração:
+
+1. Disponibilizar no ambiente da API um token com acesso à WABA comercial e permissões `whatsapp_business_management` e `whatsapp_business_messaging`, por meio de `WHATSAPP_COMERCIAL_TOKEN`. Preservar a credencial principal.
+2. Validar via leitura a validade, o aplicativo do token, a associação exata entre telefone e WABA e a inscrição do aplicativo no webhook já utilizado pela API. Se o aplicativo for outro, a assinatura do webhook exige configuração compatível; não liberar sem conferência.
+3. Confirmar o registro preparado em `CanalWhatsapp` com finalidade COMERCIAL e referência à credencial. Ativar esse registro e `WHATSAPP_MULTICANAL=1` somente após a publicação aprovada e as verificações externas. Identidade V2, menu e coleta devem estar ON; não alterar o piloto do principal nem reprocessar entradas antigas.
+4. Conferir saúde e roteamento em leitura; uma nova mensagem real enviada pelo usuário ao comercial permite validar recebimento e resposta. Não afirmar entrega real com base apenas na simulação offline.
+
+Referência: [coleção oficial da Meta — tokens, permissões e inscrição da WABA](https://www.postman.com/meta/whatsapp-business-platform/documentation/wlk6lh4/whatsapp-cloud-api).
+
 - Snapshot do volume PostgreSQL criado e conferido antes da migração. A migration aditiva foi aplicada pelo deploy. O WhatsApp foi temporariamente pausado durante a associação e reativado após auditoria.
 - Backfill concluído: 10 interlocutores, 17 segmentos e dois casos comerciais associados; nenhuma ambiguidade. As duas pausas humanas foram preservadas.
 - A conferência inicial reverteu a transação ao detectar duas diferenças de classificação. A inspeção identificou um histórico legado e uma conversa excluída, ambos sem contato cadastrado: foram preservados como histórico, sem inventar vínculo de cliente. A auditoria final confirmou zero segmento sem migração e zero divergência ativa. O CLI genérico ainda sinaliza esses dois históricos para conferência; eles não representam contatos ativos pendentes.

@@ -9,10 +9,13 @@ const local = url.hostname === "127.0.0.1" && url.port === "55443" && url.pathna
 const ci = url.hostname === "127.0.0.1" && url.port === "55439" && url.pathname === "/whatsapp_delivery_check" && url.username === "whatsapp_check" && url.password === "ci_test_only";
 assert(url.protocol === "postgresql:" && (local || ci), "Use apenas o banco descartável local/CI autorizado.");
 const run = `entrada-lead-${crypto.randomUUID()}`;
+const comercial = process.argv.includes("--commercial");
+const canalId = `${run}-canal`;
 const base = Number(String(Date.now()).slice(-7));
 const telefones = Array.from({ length: 5 }, (_, i) => `55119${String(base + i).padStart(8, "0")}`);
-Object.assign(process.env, { DATABASE_URL: url.href, NODE_ENV: "test", WHATSAPP_IDENTIDADE_V2: "0", WHATSAPP_CHAT_V2: "0",
-  WHATSAPP_MULTICANAL: "0", WHATSAPP_COLETA_COMERCIAL: "1", IA_COMERCIAL_TELEFONES_PILOTO: telefones.slice(0, 4).join(","),
+Object.assign(process.env, { DATABASE_URL: url.href, NODE_ENV: "test", WHATSAPP_IDENTIDADE_V2: comercial ? "1" : "0", WHATSAPP_CHAT_V2: "0",
+  WHATSAPP_MULTICANAL: comercial ? "1" : "0", WHATSAPP_COLETA_COMERCIAL: "1", IA_COMERCIAL_TELEFONES_PILOTO: comercial ? "" : telefones.slice(0, 4).join(","),
+  WHATSAPP_TESTE_TOKEN: "fake-offline-commercial-token", WHATSAPP_PHONE_NUMBER_ID: "fixture-channel", WHATSAPP_WABA_ID: "fixture-waba",
   INTEGRACAO_WHATSAPP_MENU: "1", WHATSAPP_MENU_LEADS: "0", WHATSAPP_MENU_TELEFONES_PILOTO: "", IA_EMPRESAS_PILOTO: "",
   INTEGRACAO_WHATSAPP: "0", INTEGRACAO_IA_COMERCIAL: "0", INTEGRACAO_WHATSAPP_IA: "0", INTEGRACAO_FISCAL_LEADS: "0", LOG_LEVEL: "fatal" });
 let rede = 0, ia = 0, sequencia = 0;
@@ -31,11 +34,13 @@ const cloud = Object.fromEntries(["enviarTexto", "enviarLista", "enviarBotoes"].
   saidas.push({ tipo, ...args }); return { wamid: `${run}-out-${saidas.length}` };
 }]));
 const casos = async telefone => db.atendimentoLead.findMany({ where: { conversa: { telefoneE164: telefone } }, include: { onboarding: true } });
-const entrada = async (telefone, texto, { id = `${run}-in-${++sequencia}`, interacao } = {}) => {
+const entrada = async (telefone, texto, { id = `${run}-in-${++sequencia}`, interacao, principal = false, erroEsperado = false } = {}) => {
   const agora = new Date();
   const m = { id, from: telefone, timestamp: String(Math.floor(agora.getTime() / 1000)),
     ...(interacao ? { type: "interactive", interactive: { list_reply: { id: interacao, title: texto } } } : { type: "text", text: { body: texto } }) };
-  const resposta = await processarEventoWhatsapp({ entry: [{ changes: [{ field: "messages", value: { messages: [m] } }] }] }, {
+  const resposta = await processarEventoWhatsapp({ entry: [{ id: "fixture-waba", changes: [{ field: "messages", value: {
+    ...(comercial ? { metadata: { phone_number_id: principal ? "fixture-channel" : canalId } } : {}), messages: [m],
+  } }] }] }, {
     agora, responder: async () => { ia++; throw Error("IA proibida."); },
     responderMenu: args => responderMenuWhatsapp({ ...args, client: db, cloud }),
     responderColeta: args => responderColetaComercial({ ...args, client: db, cloud,
@@ -43,11 +48,18 @@ const entrada = async (telefone, texto, { id = `${run}-in-${++sequencia}`, inter
         razaoSocial: "EMPRESA SINTÉTICA", situacaoCadastral: "ATIVA", municipio: "Rio de Janeiro", uf: "RJ",
       }) } }) }),
   });
-  assert.deepEqual(resposta.erros, [], JSON.stringify(resposta.erros)); return id;
+  if (erroEsperado) assert(resposta.erros.length > 0); else assert.deepEqual(resposta.erros, [], JSON.stringify(resposta.erros));
+  return id;
 };
 try {
   // Recusa colisão com qualquer fixture de outra execução, antes de escrever.
   assert.equal(await db.conversaWhatsapp.count({ where: { telefoneE164: { in: telefones } } }), 0);
+  if (comercial) {
+    await db.canalWhatsapp.create({ data: { id: canalId, chave: canalId, phoneNumberId: canalId, wabaId: "fixture-waba", referenciaCredencial: "WHATSAPP_TESTE_TOKEN", finalidade: "COMERCIAL" } });
+    const principal = await db.canalWhatsapp.findUnique({ where: { id: "principal" } });
+    assert(!principal.phoneNumberId || principal.phoneNumberId === "fixture-channel");
+    assert(!principal.wabaId || principal.wabaId === "fixture-waba");
+  }
   const [medico, transferencia, inativa, desconhecido, fora] = telefones;
   await entrada(medico, "Olá");
   assert.deepEqual(saidas.at(-1).linhas.map(o => o.titulo), ["Abrir uma empresa", "Trocar de contador", "Empresa parada", "Já sou cliente", "Falar com a equipe"]);
@@ -103,11 +115,26 @@ try {
   assert.match(saidas.at(-1).texto, /equipe|atendimento/i);
   assert.equal((await casos(desconhecido)).length, 0);
   ok("Pedido de pessoa aciona equipe sem abrir solicitação comercial fictícia");
-  const antesFora = saidas.length; await entrada(fora, "Quero abrir uma empresa");
+  const antesFora = saidas.length; await entrada(fora, "Quero abrir uma empresa", { principal: true });
   assert.equal(saidas.length, antesFora); assert.equal((await casos(fora)).length, 0);
+  if (comercial) {
+    const segmentos = await db.conversaWhatsapp.findMany({ where: { telefoneE164: { in: telefones.slice(0, 4) } } });
+    assert(segmentos.every(c => c.canalId === canalId && c.vinculoNumeroId && !c.portalClientId));
+    assert.equal(await db.turnoIaWhatsapp.count({ where: { conversaId: { in: segmentos.map(c => c.id) } } }), 0);
+    await entrada(transferencia, "Olá", { principal: true });
+    assert.equal(saidas.length, antesFora);
+    const pausada = await db.conversaWhatsapp.findFirst({ where: { telefoneE164: medico, canalId } });
+    const identidade = await db.vinculoNumeroInterlocutor.findUnique({ where: { id: pausada.vinculoNumeroId }, include: { interlocutor: true } });
+    assert(identidade.interlocutor.atendidaDesde);
+    ok("Comercial atende remetentes fora do piloto e conserva canal, identidade e pausa humana; principal não amplia audiência");
+    await db.canalWhatsapp.update({ where: { id: canalId }, data: { ativo: false } });
+    await entrada(fora, "Quero abrir uma empresa", { erroEsperado: true });
+    assert.equal(saidas.length, antesFora); assert.equal((await casos(fora)).length, 0);
+    ok("Canal comercial desativado recusa entrada sem criar solicitação ou resposta");
+  }
   assert.equal(rede, 0); assert.equal(ia, 0);
-  ok("Fora do piloto não ativa automação; nenhum cenário usa rede externa ou IA");
-  console.log(JSON.stringify({ passed: checks.length, rede, ia }));
+  ok("Principal fora do piloto não ativa automação; nenhum cenário usa rede externa ou IA");
+  console.log(JSON.stringify({ passed: checks.length, comercial, rede, ia }));
 } catch (err) {
   console.error(err.message); process.exitCode = 1;
 } finally {
@@ -118,6 +145,17 @@ try {
   await db.atendimentoLead.deleteMany({ where: { conversaId: { in: ids } } });
   await db.onboarding.deleteMany({ where: { id: { in: fichas.map(f => f.onboardingId).filter(Boolean) } } });
   await db.mensagemWhatsapp.deleteMany({ where: { conversaId: { in: ids } } });
+  const vinculos = comercial ? await db.vinculoNumeroInterlocutor.findMany({ where: { telefoneE164: { in: telefones } }, select: { id: true, interlocutorId: true } }) : [];
+  if (comercial) {
+    await db.conversaWhatsapp.updateMany({ where: { id: { in: ids } }, data: { atendimentoId: null } });
+    await db.atendimentoResponsavelWhatsapp.deleteMany({ where: { vinculoNumeroId: { in: vinculos.map(v => v.id) } } });
+  }
   await db.conversaWhatsapp.deleteMany({ where: { id: { in: ids } } });
+  if (comercial) {
+    await db.eventoIdentidadeComunicacao.deleteMany({ where: { vinculoNumeroId: { in: vinculos.map(v => v.id) } } });
+    await db.vinculoNumeroInterlocutor.deleteMany({ where: { id: { in: vinculos.map(v => v.id) } } });
+    await db.interlocutorComunicacao.deleteMany({ where: { id: { in: vinculos.map(v => v.interlocutorId) } } });
+    await db.canalWhatsapp.deleteMany({ where: { id: canalId } });
+  }
   await db.$disconnect();
 }

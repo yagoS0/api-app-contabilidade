@@ -184,7 +184,7 @@ export function decidirRespostaDoMenu({ r, flag = INTEGRACAO_WHATSAPP_MENU, pilo
   if (!r?.conversa?.portalClientId) {
     const leadSeguro = r?.vinculo?.situacao === SITUACOES.DESCONHECIDO;
     if (!leadSeguro) return { responde: false, motivo: "NAO_VINCULADA" };
-    return telefoneNoPiloto || leads || coletaComercialHabilitada(telefone) ? { responde: true, motivo: null } : { responde: false, motivo: "FORA_DO_PILOTO" };
+    return telefoneNoPiloto || leads || coletaComercialHabilitada(telefone, { canal: r.canal, canalId: r.conversa.canalId }) ? { responde: true, motivo: null } : { responde: false, motivo: "FORA_DO_PILOTO" };
   }
   if (r?.vinculo?.situacao !== SITUACOES.VINCULADO || r.conversa.escopoVerificado !== true) return { responde: false, motivo: "NAO_VINCULADA" };
   if (!telefoneNoPiloto && (!Array.isArray(piloto) || !piloto.includes(String(r.conversa.portalClientId)))) return { responde: false, motivo: "FORA_DO_PILOTO" };
@@ -209,6 +209,8 @@ async function processarMensagem(item, { logger, responder, responderMenu, respo
     respostaAProviderMessageId: item.respostaAProviderMessageId,
     canalId: canal.id,
   });
+  // Apenas metadados validados do canal, sem token. Não confiar em finalidade enviada pelo lead.
+  if (r) r.canal = canal;
   if (r?.mensagem?.midiaProvedorId) {
     const { enqueueArquivoWhatsapp } = await import("./ArquivoWhatsappService.js");
     await enqueueArquivoWhatsapp({ mensagem: r.mensagem, conversa: r.conversa, nomeArquivo: item.nomeArquivo, mimeType: item.mimeType });

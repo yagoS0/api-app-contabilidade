@@ -34,7 +34,7 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
   };
   const conferir = async () => {
     await renovar();
-    const c = await db.conversaWhatsapp.findUnique({ where: { id: conversaId } });
+    const c = await db.conversaWhatsapp.findUnique({ where: { id: conversaId }, include: { canalWhatsapp: true } });
     const m = await db.mensagemWhatsapp.findFirst({ where: { id: mensagemId, conversaId, direcao: "in" } });
     const interlocutorId = c ? await identidadeDoCaso(c, db) : null;
     const pessoa = interlocutorId ? await db.interlocutorComunicacao.findUnique({ where: { id: interlocutorId } }) : null;
@@ -48,7 +48,7 @@ export async function responderLead({ conversaId, mensagemId, deps = {} }) {
     const proprioHandoff = handoffEm && !c?.atendidaPor && new Date(c?.atendidaDesde).getTime() === handoffEm.getTime();
     const decisao = decidirRespostaComercial({ r: {
       conversa: proprioHandoff ? { ...c, atendidaDesde: null } : c, mensagem: m,
-      interlocutorId, casoComercial,
+      interlocutorId, casoComercial, canal: c?.canalWhatsapp,
       vinculo: c ? await (deps.resolver || resolverVinculoPorTelefone)(c.telefoneE164) : null,
     }, ...(deps.piloto ? { piloto: deps.piloto } : {}), ...(deps.flag !== undefined ? { flag: deps.flag } : {}) });
     if (!m || !decisao.responde) throw falha(decisao.motivo || "SEM_MENSAGEM");
