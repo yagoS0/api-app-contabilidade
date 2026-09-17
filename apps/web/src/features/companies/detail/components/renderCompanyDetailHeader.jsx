@@ -2,6 +2,8 @@ import { Engrenagem } from "../../../configuracoes/Configuracoes";
 import { BackButton } from "../../../../components/ui/BackButton";
 import { formatCompetencia, deslocarCompetencia, competenciaAtual } from "../../../../lib/competencia";
 import { Tabs } from "../../../../components/ui/Tabs";
+import { BotaoCopiar } from "../../../../components/ui/BotaoCopiar";
+import { formatarCnpj, soDigitosCnpj } from "../../../onboarding/lib/brasilApi";
 // ⚠ O `href` DAS ABAS SAI DAQUI, da MESMA fonte que a navegação por clique usa (`openCompanyTab`
 // chama `companyTabPath` também). Montar "/companies/" + id + "/" + segmento aqui funcionaria hoje
 // e divergiria na primeira correção — o link levaria a um lugar e o clique a outro.
@@ -239,13 +241,14 @@ export function CompanySectionHeader({
         <BackButton onClick={onBack} iconOnly />
         <div className="company-topbar__brand">
           <strong className="company-topbar__name">{company?.razao || "Empresa"}</strong>
-          <span className="company-topbar__cnpj">{company?.cnpj || "CNPJ não informado"}</span>
+          <span className="company-topbar__cnpj">{soDigitosCnpj(company?.cnpj) ?
+            <BotaoCopiar key={companyId} valor={soDigitosCnpj(company.cnpj)}
+              rotulo={`Copiar CNPJ de ${company.razao || "empresa"} sem máscara`} titulo="Copiar CNPJ — apenas números">
+              {formatarCnpj(company.cnpj)}
+            </BotaoCopiar> : "CNPJ não informado"}</span>
         </div>
       </div>
-      <div className="config-topbar-actions">{mostraCompetencia && (
-        <CompetenciaSwitcher competencia={competencia} onChange={onCompetenciaChange} />
-      )}{companyId && <Engrenagem href={companyTabPath(companyId, 'configuracoesEmpresa')} onClick={()=>onTabChange('configuracoesEmpresa')} label="Configurações da empresa" />}</div>
-        {/* Os grupos e sub-abas usam o mesmo alinhamento do cabeçalho. */}
+        {/* Grupos ao lado da identificação; sub-abas na linha seguinte. */}
         <Tabs
           className="company-topbar__nav"
           items={groups.map((group) => ({
@@ -267,6 +270,10 @@ export function CompanySectionHeader({
           pill={false}
           size="lg"
         />
+
+      <div className="config-topbar-actions">{mostraCompetencia && (
+        <CompetenciaSwitcher competencia={competencia} onChange={onCompetenciaChange} />
+      )}{companyId && <Engrenagem href={companyTabPath(companyId, 'configuracoesEmpresa')} onClick={()=>onTabChange('configuracoesEmpresa')} label="Configurações da empresa" />}</div>
 
       {/* Nível 2 — sub-abas do grupo ativo, em formato de aba (Chrome). Oculto quando o grupo
           tem só 1 (ex.: Cadastro → abre direto a ficha). */}
