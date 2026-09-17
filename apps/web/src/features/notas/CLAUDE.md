@@ -6,7 +6,7 @@ NF-e se chama “Notas de venda e compra” quando a empresa tem IE ou perfil in
 
 No servidor, `/import/xml` valida a integridade do XML e rejeita NF-e com `nfe_na_area_nfse` antes de qualquer gravação; XML sem identificador reconhecido retorna `formato_nao_suportado`. Não alterar titularidade, deduplicação ou ingestão compartilhada.
 
-Conferência: testes de contrato das duas rotas, seleção/importação NF-e com IE, serviços sem IE, lote parcial e mensagens por arquivo. Build Vite e parser JSX/no-undef aprovados. Navegador local conferido com XML fictício de venda e XML quebrado na área NFS-e: os dois motivos ficam visíveis, sem gravar notas. Alterações deste lote ainda locais, sem publicação.
+Conferência: testes de contrato das duas rotas, seleção/importação NF-e com IE, serviços sem IE, lote parcial e mensagens por arquivo. Build Vite e parser JSX/no-undef aprovados. Navegador local conferido com XML fictício de venda e XML quebrado na área NFS-e: os dois motivos ficam visíveis, sem gravar notas. Publicação na main e em produção autorizada pelo usuário em 17/09/2026; integrar com a main atual e acompanhar CI e Railway. Sem migração nova neste lote.
 
 ## Revisão fiscal — 14/09/2026
 
