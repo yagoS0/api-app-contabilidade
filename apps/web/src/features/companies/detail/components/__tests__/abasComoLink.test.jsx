@@ -48,7 +48,7 @@ function clicar(elemento, init = {}) {
 }
 
 describe("a aba de navegação é um <a href> com a URL da aba", () => {
-  test("cabeçalho compacto mantém o retorno acessível e a marca sem letreiro", () => {
+  test("cabeçalho mantém o retorno e não repete a marca do escritório", () => {
     const onBack = jest.fn();
     montarHeader("configuracoesEmpresa", { onBack });
     const voltar = screen.getByRole("button", { name: "Voltar" });
@@ -56,10 +56,7 @@ describe("a aba de navegação é um <a href> com a URL da aba", () => {
     expect(voltar).toHaveTextContent(/^$/);
     fireEvent.click(voltar);
     expect(onBack).toHaveBeenCalledTimes(1);
-    const inicio = screen.getByRole("link", { name: "Altan — página principal" });
-    expect(inicio).toHaveAttribute("href", "/companies");
-    expect(inicio.querySelectorAll("svg text")).toHaveLength(0);
-    expect(inicio.querySelector("svg")).toHaveAttribute("viewBox", "30 56 140 55");
+    expect(screen.queryByRole("link", { name: "Altan — página principal" })).not.toBeInTheDocument();
   });
 
   test("cada sub-aba do grupo Fiscal leva a URL da sua rota", () => {

@@ -20,7 +20,7 @@ function Navigation() {
 }
 function setup({ path = "/", stored = "", me = jest.fn(), strict = false } = {}) {
   if (stored) localStorage.setItem(key, stored);
-  const api = { mode: "real", me, setAccessToken: jest.fn(), clearSession: jest.fn(), login: jest.fn(), getAccessToken: jest.fn() };
+  const api = { mode: "real", me, setAccessToken: jest.fn(), clearSession: jest.fn(), login: jest.fn(), getAccessToken: jest.fn(), getResumoWhatsapp: jest.fn().mockResolvedValue({ ok: false }) };
   const load = jest.fn();
   const children = jest.fn(session => <PrivateWorkspace session={session} load={load} />);
   const app = <MemoryRouter initialEntries={[path]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Navigation /><SessionBoundary api={api} tokenStorageKey={key}>{children}</SessionBoundary></MemoryRouter>;
@@ -35,24 +35,31 @@ test.each(["/", "/login", "/companies", "/companies/empresa/anotacoes"])("sem se
   expect(children).not.toHaveBeenCalled();
   expect(load).not.toHaveBeenCalled();
   expect(api.me).not.toHaveBeenCalled();
+  expect(api.getResumoWhatsapp).not.toHaveBeenCalled();
+  expect(screen.queryByRole("navigation", { name: "Áreas do escritório" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Link privado" }));
   expect(children).not.toHaveBeenCalled();
 });
 
 test("token salvo só libera a área após validação; logout desmonta e bloqueia retorno", async () => {
   const request = deferred();
-  const { children, load } = setup({ stored: "token", me: jest.fn(() => request.promise) });
+  const { children, load, api } = setup({ stored: "token", me: jest.fn(() => request.promise) });
   expect(screen.getByRole("status")).toHaveTextContent("Verificando sessão");
   expect(children).not.toHaveBeenCalled();
   expect(load).not.toHaveBeenCalled();
+  expect(api.getResumoWhatsapp).not.toHaveBeenCalled();
+  expect(screen.queryByRole("navigation", { name: "Áreas do escritório" })).not.toBeInTheDocument();
   await act(async () => request.resolve({ id: "contador", accountType: "FIRM" }));
   expect(screen.getByText("Calendário privado")).toBeVisible();
   expect(load).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("navigation", { name: "Áreas do escritório" })).toBeVisible();
+  expect(api.getResumoWhatsapp).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "Sair" }));
   fireEvent.click(screen.getByRole("button", { name: "Link privado" }));
   expect(screen.queryByText("Calendário privado")).not.toBeInTheDocument();
   expect(load).toHaveBeenCalledTimes(1);
   expect(localStorage.getItem(key)).toBeNull();
+  expect(screen.queryByRole("navigation", { name: "Áreas do escritório" })).not.toBeInTheDocument();
 });
 
 test("sessão expirada vai ao login sem montar nem consultar o calendário", async () => {

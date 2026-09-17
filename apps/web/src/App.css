@@ -2022,10 +2022,8 @@ th.tabela__num {
 }
 
 /* Navegação comum — mantém a marca e a identidade da empresa em telas estreitas. */
-.workspace-brandbar { position: sticky; top: 0; z-index: 40; padding: 6px clamp(12px, 2vw, 28px); background: var(--bg, #1A1B26); border-bottom: 1px solid var(--border, #44475A); }
 .workspace-home { display: inline-flex; align-items: center; min-height: 44px; border-radius: 8px; }
 .workspace-home:focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 4px; }
-.workspace-brandbar ~ * .company-section-header, .workspace-brandbar ~ * .page-shell__header { top: 57px; }
 .dashboard-tool-description { display: block; margin-top: 4px; color: var(--text-muted); font-size: .8rem; line-height: 1.45; }
 .accounting-fechamento-panel { flex: 0 0 152px; }
 @media (max-width: 1100px) {
@@ -2042,7 +2040,6 @@ th.tabela__num {
   .page-shell__header, .page-shell__brand, .page-shell__actions { flex-wrap: wrap; min-width: 0; }
   .page-shell__title-block { min-width: 0; overflow-wrap: anywhere; }
 }
-@media print { .workspace-brandbar { display: none; } }
 
 .chart-account-create-grid { grid-template-columns: 7rem 1fr 10rem 8rem 8rem auto; }
 @media (max-width:1100px) { .chart-account-create-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }

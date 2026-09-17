@@ -2,7 +2,6 @@ import { Engrenagem } from "../../../configuracoes/Configuracoes";
 import { BackButton } from "../../../../components/ui/BackButton";
 import { formatCompetencia, deslocarCompetencia, competenciaAtual } from "../../../../lib/competencia";
 import { Tabs } from "../../../../components/ui/Tabs";
-import { WorkspaceHomeLink } from "../../../../app/navigation/WorkspaceNavigation";
 // ⚠ O `href` DAS ABAS SAI DAQUI, da MESMA fonte que a navegação por clique usa (`openCompanyTab`
 // chama `companyTabPath` também). Montar "/companies/" + id + "/" + segmento aqui funcionaria hoje
 // e divergiria na primeira correção — o link levaria a um lugar e o clique a outro.
@@ -237,7 +236,6 @@ export function CompanySectionHeader({
   return (
     <header className="company-section-header">
       <div className="company-header__identity">
-        <WorkspaceHomeLink />
         <BackButton onClick={onBack} iconOnly />
         <div className="company-topbar__brand">
           <strong className="company-topbar__name">{company?.razao || "Empresa"}</strong>
