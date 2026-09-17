@@ -31,10 +31,10 @@ export function ModalLancarSelecionados({ linhas, aoEnviar, aoFechar }) {
       <Button variant="secondary" disabled={ocupado} onClick={() => aoFechar(iniciou.current)}>{iniciou.current ? "Fechar e atualizar" : "Voltar à conferência"}</Button>
       {!iniciou.current && <Button onClick={enviar} disabled={ocupado}>Confirmar {linhas.length} lançamento(s)</Button>}
     </>}>
-    <p>{linhas.length} lançamento(s) · <strong>{dinheiro(total)}</strong>. Confira as contas e datas antes de confirmar.</p>
-    {linhas.some(l => l.corpo.dataPagamento) && <p>As datas informadas pelo contador são declarações de pagamento, não comprovantes.</p>}
-    <div style={{ overflowX: "auto" }}><table className="tabela--densa"><thead><tr><th>Despesa</th><th>Pagamento</th><th>Débito</th><th>Crédito</th><th>Valor</th><th>Resultado</th></tr></thead>
-      <tbody>{linhas.map(l => <tr key={l.id}><td>{l.descricao}</td><td>{dataCivil(l.data)}</td><td>{l.debito}</td><td>{l.credito || "Caixa padrão"}</td><td>{dinheiro(l.valor)}</td><td role="status">{resultados[l.id] || (ocupado ? "Aguardando" : "Pronto")}</td></tr>)}</tbody>
-    </table></div>
+    <div className="cq-modal-content"><p style={{ margin: 0 }}>{linhas.length} lançamento(s) · <strong>{dinheiro(total)}</strong>. Confira as contas e datas antes de confirmar.</p>
+    {linhas.some(l => l.corpo.dataPagamento) && <p className="cq-notice">As datas informadas pelo contador são declarações de pagamento, não comprovantes.</p>}
+    <div className="cq-table-scroll"><table className="tabela--densa cq-modal-table"><thead><tr><th>Despesa</th><th>Pagamento</th><th>Débito</th><th>Crédito</th><th className="tabela__num">Valor</th><th>Resultado</th></tr></thead>
+      <tbody>{linhas.map(l => <tr key={l.id}><td>{l.descricao}</td><td>{dataCivil(l.data)}</td><td>{l.debito}</td><td>{l.credito || "Caixa padrão"}</td><td className="tabela__num">{dinheiro(l.valor)}</td><td role="status">{resultados[l.id] || (ocupado ? "Aguardando" : "Pronto")}</td></tr>)}</tbody>
+    </table></div></div>
   </Modal>;
 }

@@ -111,6 +111,7 @@ function SecaoDaConferencia({ natureza, children }) {
     // ⚠ `<section>` com `aria-label`, não um `<div>`: quem navega por leitor de tela pula de região
     // em região, e a separação que o dono pediu tem de existir também para quem não a vê.
     <section
+      className="cq-section"
       aria-label={titulo}
       style={{ display: "grid", gap: 12 }}
     >
@@ -136,6 +137,8 @@ function Selo({ token, children, title, onClick, ativo }) {
   const Tag = onClick ? "button" : "span";
   return (
     <Tag
+      className="cq-badge"
+      aria-pressed={onClick ? Boolean(ativo) : undefined}
       title={title}
       type={onClick ? "button" : undefined}
       onClick={onClick}
@@ -385,7 +388,7 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
         </div>
       }
     >
-      <div style={{ display: "grid", gap: 14 }}>
+      <div className="cq-modal-content">
         {/* ⚠⚠ A RECUSA DO SERVIDOR APARECE AQUI DENTRO — achado por auditoria em 25/08/2026.
             Ela era desenhada no corpo da aba, ou seja **atrás do overlay do modal** (`.modal-fundo`
             é `position: fixed` com `z-index: 1000` e um scrim escuro), e o modal continua aberto
@@ -591,11 +594,12 @@ function ModalDaAcao({ acao, item, contas, estadoDoPlano, ocupado, aviso, onFech
  * assim antes"* pedem conferências diferentes. E `FORA_DA_FAIXA` é **sinal, não silêncio** — é o
  * caso que a faixa existe para pegar (fornecedor conhecido, valor 10× fora do normal).
  */
-function ContaSugerida({ item }) {
+function ContaSugerida({ item, contas = [] }) {
   // ⚠ Com a IA: regra/histórico vencem; a proposta do modelo só aparece onde os dois calaram.
   const conta = contaQueSeraUsadaComIa(item);
   const s = item?.sugestao;
   const fonte = fonteDaConta(item);
+  const contaDoPlano = contas.find((c) => c.codigoCompleto === conta);
 
   if (!conta) {
     return (
@@ -614,7 +618,7 @@ function ContaSugerida({ item }) {
   }
   return (
     <span style={{ display: "inline-flex", flexDirection: "column", gap: 2 }} title={s?.frase || undefined}>
-      <span>{conta}</span>
+      <span className="cq-suggested-account" title={conta}>{reduzidoDoCompleto(conta, contas).valor || conta}{contaDoPlano?.nome ? ` · ${contaDoPlano.nome}` : ""}</span>
       {/*
         ⚠⚠ QUEM ESCOLHEU ESTA CONTA — e a IA tem cor própria (02/09/2026).
         *"proposta da IA"* em âmbar, distinta de regra/histórico em cinza: o contador precisa ver a
@@ -811,9 +815,9 @@ function LinhaDoDeclarado({
   const origem = origemDaLinha(item);
 
   return (
-    <tr style={selecionada ? { background: "var(--surface-raised, rgba(189,147,249,0.12))" } : undefined}>
+    <tr className={`cq-row${selecionada ? " cq-row--selected" : ""}`}>
       <td><input type="checkbox" aria-label={`Selecionar ${item.descricaoOriginal}`} checked={Boolean(selecionada)} disabled={!podeLancarDaLinha || Boolean(bloqueioDoLancar) || ocupado} title={bloqueioDoLancar || undefined} onChange={e => onSelecionar?.(item.id, e.target.checked)} /></td>
-      <td>
+      <td className="cq-description">
         <div style={{ display: "grid", gap: 2 }}>
           <span>{item.descricaoOriginal}</span>
           {origem ? (
@@ -848,15 +852,17 @@ function LinhaDoDeclarado({
           // ⚠ Não some: diz por quê. Sumir faria parecer que nunca houve documento.
           <span style={{ color: "var(--text-faint)" }} title={doc.motivo}>—</span>
         )}
+        <span className="cq-document-meta">Emissão<br />{dataCivil(item.dataDocumento)}<br />Competência<br />{item.competencia || "sem competência"}</span>
       </td>
-      <td>{dataCivil(item.dataDocumento)}</td>
-      <td>
+      <td className="cq-date">{dataCivil(item.dataDocumento)}</td>
+      <td className="cq-payment">
         {/* ⚠⚠ DATA EDITÁVEL SÓ QUANDO NÃO É PROVA — ver `dataEhProva` acima. Numa linha que não
             lança (já contabilizada, recusada), a célula continua só leitura: um campo ali prometeria
             uma edição que não existe. */}
         {podeLancarDaLinha && !dataEhProva ? (
           <span style={{ display: "inline-flex", flexDirection: "column", gap: 2 }}>
             <input
+              className="cq-control"
               type="date"
               value={data}
               onChange={(e) => setData(e.target.value)}
@@ -874,11 +880,11 @@ function LinhaDoDeclarado({
           <DataComProcedencia item={item} />
         )}
       </td>
-      <td>
+      <td className="cq-account">
         {/* ⚠⚠ A SUGESTÃO DE CONTA (Fase C) — ela era calculada a cada leitura e NUNCA chegava à
             tela: o serializador da rota a descartava, e a tela não a lia. Duas camadas de trabalho
             invisível, achadas por auditoria em 25/08/2026. */}
-        <ContaSugerida item={item} />
+        {!podeLancarDaLinha ? <ContaSugerida item={item} contas={contas} /> : null}
         {/*
           ⚠⚠ O CAMPO NA LINHA — *"nessa linha podemos adicionar a conta e lançar"* (dono, 01/09/2026).
           Ele só aparece onde há o que lançar: numa linha já contabilizada ou recusada, um campo de
@@ -887,18 +893,21 @@ function LinhaDoDeclarado({
           aceita num caminho e recusada no outro.
         */}
         {podeLancarDaLinha ? (
+          <label className="cq-field cq-debit">
+          <span>Débito · conta da despesa</span>
           <input
+            className="cq-control"
             list="contas-da-conferencia"
             value={conta}
             onChange={(e) => { jaMexeu.current = true; setConta(e.target.value); }}
             placeholder="conta — ex.: 401"
             aria-label={`Conta contábil de ${item.descricaoOriginal || "esta despesa"}`}
             style={{
-              marginTop: 4, width: "100%", maxWidth: 140, fontSize: "0.78rem",
               // ⚠ Valor recusado fica vermelho NA HORA, não só no clique.
               ...(conta && traducao.motivo ? { borderColor: "var(--state-danger)" } : {}),
             }}
           />
+          </label>
         ) : null}
         {/* ⚠⚠ O MOTIVO DA RECUSA E O NOME DA CONTA SAEM VISÍVEIS (02/09/2026) — eram só do modal.
             Com a linha virando o caminho principal, deixá-los só no `title` do «Lançar» seria a
@@ -922,17 +931,20 @@ function LinhaDoDeclarado({
         ) : null}
         {podeLancarDaLinha ? (
           <span style={{ display: "grid", gap: 2, marginTop: 4 }}>
+            <label className="cq-field">
+            <span>Crédito · caixa ou banco</span>
             <input
+              className="cq-control"
               list="creditos-da-conferencia"
               value={credito}
               onChange={(e) => { creditoTocado.current = true; setCredito(e.target.value); }}
-              placeholder="crédito — vazio = caixa"
+              placeholder="Vazio = caixa padrão"
               aria-label={`Conta de crédito de ${item.descricaoOriginal || "esta despesa"}`}
               style={{
-                width: "100%", maxWidth: 140, fontSize: "0.78rem",
                 ...(creditoInvalido ? { borderColor: "var(--state-danger)" } : {}),
               }}
             />
+            </label>
             {/* ⚠ Diz QUAL crédito vale, pelo nome — código sozinho não se confere. E quando veio de
                 regra/memória/IA, a fonte já está no bloco de cima. */}
             {traducaoDoCredito.conta ? (
@@ -947,6 +959,7 @@ function LinhaDoDeclarado({
             ) : null}
           </span>
         ) : null}
+        {podeLancarDaLinha ? <div className={`cq-account-source${jaMexeu.current ? " cq-account-source--edited" : ""}`}>{jaMexeu.current ? <span className="cq-edited-source">Conta editada · sugestão original abaixo</span> : null}<ContaSugerida item={item} contas={contas} /></div> : null}
       </td>
       <td className="tabela__num">
         {dinheiro(item.valorAjustado ?? item.valor)}
@@ -964,8 +977,8 @@ function LinhaDoDeclarado({
         )}
       </td>
       <td><Selo token={estado.token} title={estado.frase}>{estado.rotulo}</Selo></td>
-      <td>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+      <td className="cq-actions-cell">
+        <div className="cq-row-actions">
           {/*
             ⚠⚠ LANÇAR DA PRÓPRIA LINHA — o pedido do dono. Ele usa a conta digitada ao lado e NÃO
             abre modal. Some quando a ação pede DATA: ali a invariante do caixa manda perguntar, e
@@ -1047,7 +1060,7 @@ function LinhaDoDeclarado({
               <Button
                 key={acao}
                 size="sm"
-                variant={variantDoTom(ACAO[acao].tom)}
+                variant={podeLancarDaLinha && variantDoTom(ACAO[acao].tom) === "primary" ? "secondary" : variantDoTom(ACAO[acao].tom)}
                 disabled={Boolean(bloqueio)}
                 // ⚠⚠ O botão fica VISÍVEL e desabilitado, com o motivo — botão que some esconde que
                 // a ação existe, e botão mudo não diz se é permissão, mês fechado ou defeito.
@@ -1441,7 +1454,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
   }, [companyId, idsSelecionados, preparadas, contextoDoLote]);
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
+    <div className="conferencia-workspace">
       {/*
         ⚠⚠ A MIGALHA É OBRIGATÓRIA DESDE 29/08/2026, e ela não é enfeite.
 
@@ -1470,13 +1483,13 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
           ‹ Voltar aos lançamentos
         </button>
       ) : null}
-      <div><h1 style={{ margin: 0, fontSize: "1.3rem" }}>A lançar</h1>
+      <div className="cq-heading"><h1 style={{ margin: 0, fontSize: "1.3rem" }}>A lançar</h1>
         <p style={{ margin: "6px 0 0", color: "var(--text-muted)" }}>Confira as contas e o pagamento. Selecione as despesas prontas para lançar juntas.</p></div>
-      <details style={card}><summary style={{ cursor: "pointer", fontWeight: 600 }}>Arquivos recebidos pelo WhatsApp</summary>
+      <details className="cq-disclosure"><summary>Arquivos recebidos pelo WhatsApp</summary>
         <PainelArquivosWhatsapp key={companyId} api={conferenciaApi} companyId={companyId} contas={contas} podeEscrever={podeEscrever} aoImportar={carregar} />
       </details>
-      <div style={{ ...card, display: "grid", gap: 12 }}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+      <div className="cq-toolbar">
+        <div className="cq-status-filters" aria-label="Filtrar por estado">
           {contagem.map((c) => (
             <Selo
               key={c.estado}
@@ -1491,7 +1504,8 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
               {c.rotulo}: {c.quantidade}
             </Selo>
           ))}
-          <span style={{ flex: 1 }} />
+        </div>
+        <div className="cq-toolbar-actions">
           {/* ⚠ A varredura é ESCRITA (cria declarados), então respeita o mesmo piso de papel dos
               botões da linha. Ela NÃO cria lançamento — tudo nasce esperando pagamento. */}
           <Button
@@ -1533,7 +1547,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
               contador não saber por quê. */}
           <Button
             size="sm"
-            variant="secondary"
+            variant="primary"
             onClick={abrirLote}
             disabled={!podeEscrever || abrindoLote || enviando || !idsSelecionados.length}
             title={
@@ -1549,7 +1563,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
           </Button>
         </div>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.85rem" }}>
+        <div className="cq-period-filter">
           <span style={{ color: "var(--text-muted)" }}>Mostrar:</span>
           <Button
             size="sm"
@@ -1762,10 +1776,10 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
           próprio) — ver o argumento lá.
         */}
         {grupos.length > 0 ? (
-          <div style={{ ...card, display: "grid", gap: 10 }}>
+          <div className="cq-table-panel">
             {/* ⚠ `.tabela--densa` do `App.css` — a tela não manda `th`/`td` inline. */}
-            <div style={{ overflowX: "auto" }}>
-              <table className="tabela--densa">
+            <div className="cq-table-scroll" tabIndex={0} role="region" aria-label="Despesas para conferir">
+              <table className="tabela--densa cq-table">
                 <thead>
                   <tr>
                     <th><input type="checkbox" aria-label="Selecionar todas as linhas prontas desta página" checked={visiveisProntas.length > 0 && idsSelecionados.length === visiveisProntas.length} disabled={!visiveisProntas.length || enviando} onChange={e => setSelecionados(e.target.checked ? visiveisProntas : [])} /></th>
@@ -1777,7 +1791,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
                     <th className="tabela__num">Valor</th>
                     <th>Competência</th>
                     <th>Estado</th>
-                    <th />
+                    <th className="cq-actions-heading">Ações</th>
                   </tr>
                 </thead>
                 {grupos.map((g) => {
@@ -1856,7 +1870,7 @@ export function ConferenciaTab({ companyId, competencia, podeEscrever = true, ao
         ) : null}
       </SecaoDaConferencia>
 
-      <details style={card}><summary style={{ cursor: "pointer", fontWeight: 600 }}>Regras e lançamentos automáticos</summary>
+      <details className="cq-disclosure"><summary>Regras e lançamentos automáticos</summary>
       <SecaoDaConferencia natureza={NATUREZA.REGRA}>
         {/*
           ⚠⚠ AS REGRAS FICAM POR ÚLTIMO, e é a tela mais perigosa desta aba: marcar uma regra aqui faz

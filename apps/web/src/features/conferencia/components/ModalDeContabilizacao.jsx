@@ -52,8 +52,8 @@ const card = {
 function CelulaDaConta({ id, valor, contas, onChange, desabilitado, deQuem }) {
   const traducao = useMemo(() => completoDoReduzido(valor, contas), [valor, contas]);
   return (
-    <div style={{ display: "grid", gap: 2, minWidth: 150 }}>
-      <input
+    <div className="cq-field" style={{ minWidth: 220 }}>
+      <input className="cq-control"
         list={LISTA_DE_CONTAS}
         value={valor}
         disabled={desabilitado}
@@ -257,7 +257,7 @@ export function ModalDeContabilizacao({
       ocupado={enviando}
       aoFechar={aoFechar}
       rodape={
-        <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%" }}>
+        <div className="cq-form-actions" style={{ width: "100%" }}>
           <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
             {jaEnviou
               ? `${concluidas} contabilizada(s)${recusadas ? ` · ${recusadas} recusada(s)` : ""}`
@@ -287,7 +287,7 @@ export function ModalDeContabilizacao({
         </div>
       }
     >
-      <div style={{ display: "grid", gap: 14 }}>
+      <div className="cq-modal-content">
         {/* ⚠⚠ A CONTRAPARTIDA É O CAIXA, E A TELA DIZ ISSO. Sem esta frase, a ausência de uma coluna
             de crédito parece esquecimento — e o contador procuraria onde escolhê-la. */}
         <div style={{ ...card, fontSize: "0.85rem", color: "var(--text-muted)" }}>
@@ -340,9 +340,9 @@ export function ModalDeContabilizacao({
             {/* ⚠⚠ A APLICAÇÃO EM MASSA SÓ TOCA AS PENDENTES, e o rótulo do botão diz isso. Sobrescrever
                 a conta que o contador digitou à mão é o estrago silencioso deste modal. */}
             <div style={{ ...card, display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-              <label style={{ display: "grid", gap: 4 }}>
+              <label className="cq-field" style={{ flex: "1 1 240px" }}>
                 <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>Aplicar nas linhas sem conta</span>
-                <input
+                <input className="cq-control"
                   list={LISTA_DE_CONTAS}
                   value={emMassa}
                   disabled={enviando}
@@ -374,8 +374,8 @@ export function ModalDeContabilizacao({
               ))}
             </datalist>
 
-            <div style={{ overflowX: "auto" }}>
-              <table className="tabela--densa">
+            <div className="cq-table-scroll">
+              <table className="tabela--densa cq-modal-table">
                 <thead>
                   <tr>
                     <th scope="col">Descrição</th>

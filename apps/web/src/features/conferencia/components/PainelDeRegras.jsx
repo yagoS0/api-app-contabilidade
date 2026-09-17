@@ -134,7 +134,7 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
   }
 
   return (
-    <div style={card}>
+    <div className="cq-modal-content" style={card}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <h3 style={{ margin: 0, flex: 1, fontSize: "1rem" }}>Regras do fornecedor</h3>
         {podeEscrever ? (
@@ -154,7 +154,7 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
       ) : null}
 
       {abrindo ? (
-        <div style={{ marginTop: 16 }}>
+        <div className="cq-notice" style={{ marginTop: 4 }}>
           <FormularioDeRegra
             companyId={companyId}
             contas={contas}
@@ -167,7 +167,7 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
       ) : null}
 
       {estado.regras.length ? (
-        <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "grid", gap: 10 }}>
+        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 10 }}>
           {estado.regras.map((r) => {
             const comportamento = comportamentoDaRegra(r);
             const podeAlternar = podeEscrever && comportamento !== COMPORTAMENTO.NAO_PODE_LANCAR
@@ -185,7 +185,7 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
                   alignItems: "center",
                 }}
               >
-                <div style={{ flex: 1, minWidth: 240 }}>
+                <div className="cq-rule-summary" style={{ flex: "1 1 240px", minWidth: 0 }}>
                   <div>
                     <strong>{r.nomeFornecedor || r.padraoDescricao || "Fornecedor sem nome nas notas da empresa"}</strong>
                     {r.cnpjFornecedor && <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{cnpjBr(r.cnpjFornecedor)}</div>}
@@ -204,7 +204,7 @@ export function PainelDeRegras({ companyId, contas = [], podeEscrever = true }) 
                 </div>
                 <Button
                   size="sm"
-                  variant={r.lancaSozinha ? "secondary" : "primary"}
+                  variant="secondary"
                   disabled={!podeAlternar || enviando}
                   title={podeAlternar ? undefined : fraseDaRegra(r)}
                   onClick={() => alternarAutomatico(r)}
