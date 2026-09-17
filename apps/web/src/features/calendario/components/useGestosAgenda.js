@@ -70,7 +70,11 @@ export function useGestosAgenda({ dias, horasRef, salvar, criar, bloqueado }) {
     const scroll = horasRef.current;
     if (!scroll) return;
     atual.current = { ...valores, xInicial: e.clientX, yInicial: e.clientY, x: e.clientX, y: e.clientY, scrollInicial: scroll.scrollTop, ativo: false, pointerId: e.pointerId };
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    // Capturar no contêiner redireciona o click para fora do botão que abre a atividade.
+    // O botão de origem mantém sua ativação nativa e continua propagando os gestos.
+    const botao = e.target.closest?.('button');
+    const captura = botao && e.currentTarget.contains(botao) ? botao : e.currentTarget;
+    captura.setPointerCapture?.(e.pointerId);
   }
   function iniciar(e, item) {
     if (!habilitada(item)) return;
