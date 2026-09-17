@@ -101,8 +101,11 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
   const { itens, carregando, erro, filtros, alterarFiltro, descartar, recarregar } = useOnboardings({ api });
   const [mostrarRascunhos, setMostrarRascunhos] = useState(true);
   const [novoAberto, setNovoAberto] = useState(false);
+  const [visao, setVisao] = useState("ativos");
 
-  const colunas = useMemo(() => colunasDoQuadro(), []);
+  const encerrados = ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"];
+  const colunas = useMemo(() => colunasDoQuadro().filter(c => visao === "todos" ||
+    (["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"].includes(c.chave) === (visao === "encerrados"))), [visao]);
   const porStatus = useMemo(() => {
     const mapa = new Map(colunas.map((c) => [c.chave, []]));
     for (const item of itens) {
@@ -128,14 +131,19 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
   return (
     <PageShell
       title="Entrada de clientes"
-      subtitle="Formulários, conferência de dados e acompanhamento da entrada na carteira"
+      subtitle="Atendimento comercial e implantação de clientes"
       onBack={onVoltar}
       actions={<Button type="button" onClick={() => setNovoAberto(true)}>Novo atendimento</Button>}
       contentClassName="onboarding-workspace"
       contentStyle={{ maxWidth: "var(--content-wide)", margin: "0 auto", width: "100%" }}
     >
-      <div className="onboarding-intro"><h2>Abertura de empresa começa com o cliente</h2><p>Crie uma ficha, gere o link pessoal e compartilhe o formulário. As respostas chegam para conferência antes da contratação e do cadastro da empresa.</p></div>
       {novoAberto && <NovoAtendimentoModal onCriar={onNovo} onFechar={() => { setNovoAberto(false); recarregar(); }} />}
+      <nav className="onboarding-sections" aria-label="Situação dos atendimentos">
+        {[["ativos", "Em andamento"], ["encerrados", "Encerrados"], ["todos", "Todos"]].map(([valor, rotulo]) =>
+          <button key={valor} type="button" aria-pressed={visao === valor} onClick={() => setVisao(valor)}>
+            {rotulo} <span>{itens.filter(i => valor === "todos" || encerrados.includes(i.status) === (valor === "encerrados")).length}</span>
+          </button>)}
+      </nav>
       <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
         <input
           aria-label="Buscar atendimento"
@@ -156,21 +164,21 @@ export function OnboardingsPage({ api, onVoltar, onAbrir, onNovo }) {
             background: "var(--bg-page)", color: "var(--text)", fontSize: 14,
           }}
         >
-          <option value="">todas as origens</option>
+          <option value="">Todos os serviços</option>
           {ONBOARDING_ORIGENS.map((o) => (
             <option key={o.chave} value={o.chave}>{o.titulo}</option>
           ))}
         </select>
-        <Button type="button" variant="secondary" onClick={alternarBandeja}>
+        {visao !== "encerrados" && <Button type="button" variant="secondary" onClick={alternarBandeja}>
           {mostrarRascunhos ? "Ocultar fichas em preenchimento" : "Mostrar fichas em preenchimento"}
-        </Button>
+        </Button>}
       </div>
 
       {erro && <p style={{ color: "var(--state-warn)" }}>{erro.message}</p>}
       {carregando && <p style={{ color: "var(--text-muted)" }}>Carregando…</p>}
 
       {!carregando && !erro && <>
-      {mostrarRascunhos && (
+      {mostrarRascunhos && visao !== "encerrados" && (
         <section style={{ marginBottom: "var(--space-5)" }}>
           <h2 style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--text-faint)" }}>
             Em preenchimento ({rascunhos.length})

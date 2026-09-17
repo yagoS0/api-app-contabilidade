@@ -41,11 +41,12 @@
  *
  * Não é import porque aquele módulo é do domínio de OBRIGAÇÕES e carrega a geração de ocorrências
  * junto; importar dele traria uma dependência que não tem nada a ver com fluxo de caixa. A lista é
- * de três itens e está amarrada por teste — muda lá, muda aqui.
+ * está amarrada por teste — muda lá, muda aqui.
  */
 export const PERIODICIDADE = Object.freeze({
   MENSAL: "MENSAL",
   TRIMESTRAL: "TRIMESTRAL",
+  SEMESTRAL: "SEMESTRAL",
   ANUAL: "ANUAL",
 });
 
@@ -53,6 +54,7 @@ export const PERIODICIDADE = Object.freeze({
 export const MESES_DO_CICLO = Object.freeze({
   [PERIODICIDADE.MENSAL]: 1,
   [PERIODICIDADE.TRIMESTRAL]: 3,
+  [PERIODICIDADE.SEMESTRAL]: 6,
   [PERIODICIDADE.ANUAL]: 12,
 });
 

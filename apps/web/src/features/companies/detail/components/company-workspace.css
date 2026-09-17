@@ -1,16 +1,19 @@
 /* Uma moldura para todas as abas: marca, empresa e ações compartilham o eixo. */
 .company-section-header:has(.company-header__identity) {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: fit-content(320px) minmax(0, 1fr) auto;
+  grid-template-areas: "identity navigation actions" "sections sections sections";
+  align-items: center;
   gap: 12px 20px;
   padding: 16px max(16px, 5%);
   top: 0;
   border-bottom: 1px solid var(--border);
 }
 .company-header__identity {
+  grid-area: identity;
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 12px;
   min-width: 0;
 }
 .company-header__identity .workspace-home { flex: 0 0 auto; }
@@ -20,7 +23,7 @@
 .company-header__identity .company-topbar__name { font-size: 1rem; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
 .company-header__identity .company-topbar__cnpj { font-size: .8rem; color: var(--text-muted); }
 .company-section-header > .company-topbar__nav {
-  grid-column: 1 / -1;
+  grid-area: navigation;
   justify-content: flex-start;
   flex-wrap: nowrap;
   overflow-x: auto;
@@ -28,12 +31,12 @@
   gap: 8px;
 }
 .company-section-header > .company-topbar__nav .app-tab { flex: 0 0 auto; min-height: 40px; }
-.company-section-header > .config-topbar-actions { flex-wrap: nowrap; gap: 12px; }
+.company-section-header > .config-topbar-actions { grid-area: actions; flex-wrap: nowrap; gap: 12px; }
 .company-section-header .company-topbar__competencia { border-radius: 10px; padding: 0; height: 40px; }
 .company-section-header .company-topbar__competencia-nav { width: 36px; height: 38px; border-radius: 8px; }
 .company-section-header .config-gear { width: 40px; height: 40px; box-sizing: border-box; }
 .company-section-header > .company-section-header__subtabs {
-  grid-column: 1 / -1;
+  grid-area: sections;
   margin: -4px 0 0;
   min-width: 0;
   justify-content: flex-start;
@@ -77,14 +80,9 @@
   .company-workspace .accounting-fechamento-panel { flex: 1 1 100%; width: 100%; }
 }
 @media(max-width:800px) {
-  .company-section-header:has(.company-header__identity) { position: relative; grid-template-columns: minmax(0, 1fr); padding: 12px 16px; gap: 10px; }
-  .company-header__identity { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
-  .company-header__identity .workspace-home { justify-self: start; }
-  .company-header__identity .company-topbar__brand { grid-column: 1 / -1; }
+  .company-section-header:has(.company-header__identity) { position: relative; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "identity actions" "navigation navigation" "sections sections"; padding: 12px 16px; gap: 10px; }
+  .company-section-header:has(.company-topbar__competencia) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "identity" "actions" "navigation" "sections"; }
   .company-section-header > .config-topbar-actions { justify-content: flex-start; }
-  .company-section-header > .company-topbar__nav { grid-row: auto; }
-  .company-section-header > .config-topbar-actions:not(:has(.company-topbar__competencia)) { position: absolute; top: 12px; right: 16px; }
-  .company-section-header:not(:has(.company-topbar__competencia)) .company-header__identity .btn-back { margin-right: 52px; }
   .company-section-header > .company-topbar__nav { gap: 0; }
   .company-section-header > .company-topbar__nav .app-tab { padding-inline: 6px; font-size: .84rem; }
   .company-workspace .form-grid.two-col, .company-workspace .company-form-page__panel .form-grid.two-col { grid-template-columns: minmax(0, 1fr); }

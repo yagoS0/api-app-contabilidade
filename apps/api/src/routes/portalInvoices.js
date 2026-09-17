@@ -2,11 +2,14 @@ import { Router } from "express";
 import os from "node:os";
 import { unlink } from "node:fs/promises";
 import multer from "multer";
+import { uploadNotas } from "./middlewares/uploadNotas.js";
 import archiver from "archiver";
 import { prisma } from "../infrastructure/db/prisma.js";
 import { decimalToNumber, dateToIso } from "../utils/serializers.js";
 import { parseDate } from "../utils/date.js";
 import { parseXmlMetadata } from "../application/nfse/AdnXmlMetadata.js";
+import { XMLValidator } from "fast-xml-parser";
+import { raizDoXml } from "../application/notas/importXml/loteNfe.js";
 // ⚠ O import de XML usa A MESMA ingestão da captura automática. Ver o cabeçalho de `ingestaoNfse.js`:
 // a segunda implementação que morava aqui criava linha duplicada para nota que a captura já tinha.
 import { upsertNfseFromItem } from "../application/notas/ingestaoNfse.js";
@@ -1103,7 +1106,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
   });
 
   // POST /clients/:clientId/invoices/import/xml (upload)
-  router.post("/import/xml", upload.array("files", 50), async (req, res) => {
+  router.post("/import/xml", uploadNotas(upload.array("files", 50), { maxFiles: 50, maxBytes: 15 * 1024 * 1024 }), async (req, res) => {
     if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
     const { clientId } = req.params || {};
     const access = await ensurePortalClientAccess(req, res, clientId);
@@ -1130,11 +1133,19 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
     for (const file of files) {
       try {
         const xml = file.buffer?.toString("utf-8") || "";
-        if (!xml.trim().startsWith("<")) {
+        if (!xml.trim().startsWith("<") || XMLValidator.validate(xml) !== true) {
           errors.push({ file: file.originalname, reason: "invalid_xml" });
           continue;
         }
+        if (["nfeproc", "procnfe", "nfe", "resnfe"].includes(String(raizDoXml(xml)).toLowerCase())) {
+          errors.push({ file: file.originalname, reason: "nfe_na_area_nfse" });
+          continue;
+        }
         const meta = parseXmlMetadata(xml);
+        if (!meta?.numeroNfse && !meta?.chaveAcesso) {
+          errors.push({ file: file.originalname, reason: "formato_nao_suportado" });
+          continue;
+        }
         const prestadorDoc = normalizeDoc(meta?.cnpjPrestador);
         const tomadorDoc = normalizeDoc(meta?.cnpjTomador);
 
@@ -1238,7 +1249,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
   // `@unique`; não há coluna de filial no schema). O `:clientId` da rota é que casa o lote com a
   // inscrição certa; lote da filial subido na matriz sai `recusadas` com motivo
   // `outro_estabelecimento` — não `nota_nao_pertence`, que mandaria procurar defeito onde não há.
-  router.post("/import/nfe", uploadLote.array("files", MAX_ARQUIVOS_LOTE), async (req, res) => {
+  router.post("/import/nfe", uploadNotas(uploadLote.array("files", MAX_ARQUIVOS_LOTE), { maxFiles: MAX_ARQUIVOS_LOTE, maxBytes: MAX_BYTES_ARQUIVO_LOTE }), async (req, res) => {
     if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
     const { clientId } = req.params || {};
     const access = await ensurePortalClientAccess(req, res, clientId);

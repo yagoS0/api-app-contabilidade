@@ -143,7 +143,7 @@ export function WhatsappPage({ api, companies = [], onBack, onComunicados, messa
   const painelComercial = hook.aberta ? <><section className="wa-commercial-section">{canalComercial && <p className="wa-list-note">Envios deste atendimento pelo canal: <strong>{canalComercial.nome}</strong>.</p>}<FormOnboarding key={chaveDoInterlocutor(hook.aberta.conversa)} api={api} conversa={conversaComercial} slotEmpresa={!hook.aberta.conversa.portalClientId ? <details className="wa-link-company"><summary>Vincular a uma empresa existente</summary><p>Use quando este contato já representa uma empresa da carteira.</p><FormVincular companies={companies} api={api} conversaId={hook.aberta.conversa.id} legado={hook.aberta.conversa.escopoVerificado === false} empresaInicial={hook.aberta.conversa.portalClientId || ""} onVincular={hook.vincular} ocupado={hook.ocupado} /></details> : null} mensagens={hook.aberta.mensagens} leitura={leituraOnboarding(hook.aberta.conversa)} onCriado={() => hook.carregar(hook.filtro, true)} /></section></> : null;
 
   return <div className="wa-page">
-    <PageShell title="Comunicação" subtitle="Conversas · Altan Contabilidade" onBack={onBack}
+    <PageShell title="Atendimento" subtitle="Conversas pelo WhatsApp" onBack={onBack}
       actions={<><Button variant="secondary" onClick={() => hook.carregar(hook.filtro)} disabled={hook.carregando}><span className="wa-inline"><WhatsappIcon nome="atualizar" size={16} />{hook.carregando ? "Carregando…" : "Atualizar"}</span></Button></>}>
       <AppShell className="wa-shell">
         <div style={{ "--wa-list-width": `${larguraLista}px` }} className={`wa-workspace wa-workspace-v2${verChat ? " wa-workspace--open" : ""}${detalhes && hook.aberta ? " wa-workspace--details" : ""}`}>

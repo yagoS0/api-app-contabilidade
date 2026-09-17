@@ -12,7 +12,7 @@
 // Prova também a ligação: as abas do header renderizam COM href (uma aba nova que esqueça o par em
 // `TAB_TO_SEGMENT` cai aqui, em vez de cair em Anotações em silêncio na tela do contador).
 
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { CompanySectionHeader } from "../renderCompanyDetailHeader";
 import { Tabs } from "../../../../../components/ui/Tabs";
@@ -48,7 +48,24 @@ function clicar(elemento, init = {}) {
 }
 
 describe("a aba de navegação é um <a href> com a URL da aba", () => {
-  test("cabeçalho compacto mantém o retorno acessível e a marca sem letreiro", () => {
+  test.each(["12345678000190", "12.345.678/0001-90"])("CNPJ %s aparece formatado e copia somente números", async (cnpj) => {
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    try {
+      const { onTabChange } = montarHeader("lancamentos", { company: { ...EMPRESA, cnpj } });
+      const botao = screen.getByRole("button", { name: "Copiar CNPJ de ACME SERVICOS LTDA sem máscara" });
+      expect(botao).toHaveTextContent("12.345.678/0001-90");
+      fireEvent.click(screen.getByText("12.345.678/0001-90"));
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith("12345678000190"));
+      expect(onTabChange).not.toHaveBeenCalled();
+    } finally {
+      if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard);
+      else delete navigator.clipboard;
+    }
+  });
+
+  test("cabeçalho mantém o retorno e não repete a marca do escritório", () => {
     const onBack = jest.fn();
     montarHeader("configuracoesEmpresa", { onBack });
     const voltar = screen.getByRole("button", { name: "Voltar" });
@@ -56,10 +73,7 @@ describe("a aba de navegação é um <a href> com a URL da aba", () => {
     expect(voltar).toHaveTextContent(/^$/);
     fireEvent.click(voltar);
     expect(onBack).toHaveBeenCalledTimes(1);
-    const inicio = screen.getByRole("link", { name: "Altan — página principal" });
-    expect(inicio).toHaveAttribute("href", "/companies");
-    expect(inicio.querySelectorAll("svg text")).toHaveLength(0);
-    expect(inicio.querySelector("svg")).toHaveAttribute("viewBox", "30 56 140 55");
+    expect(screen.queryByRole("link", { name: "Altan — página principal" })).not.toBeInTheDocument();
   });
 
   test("cada sub-aba do grupo Fiscal leva a URL da sua rota", () => {

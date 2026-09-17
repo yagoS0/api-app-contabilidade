@@ -1,6 +1,7 @@
 import { prisma } from '../../infrastructure/db/prisma.js';
-import { expandirAgenda, normalizarAgenda, dataAgenda, encontrarOcorrenciaDaTarefa, ocorrenciasDaTarefa } from '../../../../../packages/shared/src/agenda.js';
+import { expandirAgenda, normalizarAgenda, dataAgenda, encontrarOcorrenciaDaTarefa, ocorrenciasDaTarefa, prepararEdicaoSerieTarefa, ocorrenciasDoEstadoDaTarefa } from '../../../../../packages/shared/src/agenda.js';
 import { ObrigacaoError } from '../obrigacoes/ObrigacoesService.js';
+import { criarRegra, empresasDoEscopo } from '../obrigacoes/RegrasObrigacaoService.js';
 
 function validarConfigTarefa(dados) {
   const config = normalizarAgenda(dados);
@@ -31,12 +32,13 @@ export async function salvarTarefa({ userId, id, dados }, db = prisma) {
     await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${id}))`;
     const t = await tx.tarefaAgenda.findFirst({ where: { id, userId, excluidaEm: null } });
     if (!t) throw new ObrigacaoError('tarefa_nao_encontrada', 'Tarefa não encontrada.', 404);
-    if (Object.keys(t.estados || {}).length && JSON.stringify(entrada.config) !== JSON.stringify(normalizarAgenda(t.config))) throw new ObrigacaoError('historico_existente', 'Edite a ocorrência no calendário para preservar o histórico desta série.', 409);
+    if ((Object.keys(t.estados || {}).length || t.config.versoes?.length || t.config.encerradaAPartirDe) && JSON.stringify(entrada.config) !== JSON.stringify(normalizarAgenda(t.config))) throw new ObrigacaoError('historico_existente', 'Edite a ocorrência no calendário para preservar o histórico desta série.', 409);
+    entrada.config = { ...t.config, ...entrada.config };
     return tx.tarefaAgenda.update({ where: { id }, data: entrada });
   });
 }
 export async function alterarTarefa({ userId, id, cicloChave, acao, alteracoes }, db = prisma) {
-  if (!['CONCLUIR', 'REABRIR', 'EXCLUIR', 'EXCLUIR_SERIE', 'EDITAR'].includes(acao)) throw new ObrigacaoError('acao_invalida', 'Ação inválida.');
+  if (!['CONCLUIR', 'REABRIR', 'EXCLUIR', 'EXCLUIR_SERIE', 'EDITAR', 'EDITAR_SERIE'].includes(acao)) throw new ObrigacaoError('acao_invalida', 'Ação inválida.');
   return db.$transaction(async tx => {
     await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${id}))`;
     const t = await tx.tarefaAgenda.findFirst({ where: { id, userId, excluidaEm: null } });
@@ -48,6 +50,12 @@ export async function alterarTarefa({ userId, id, cicloChave, acao, alteracoes }
     try { oc = encontrarOcorrenciaDaTarefa(t, cicloChave); }
     catch { throw new ObrigacaoError('ocorrencia_invalida', 'Ocorrência inválida.'); }
     if (!oc) throw new ObrigacaoError('ocorrencia_invalida', 'Ocorrência não encontrada.', 404);
+    if (acao === 'EDITAR_SERIE') {
+      let dados;
+      try { validarConfigTarefa({ ...oc, ...alteracoes }); dados = prepararEdicaoSerieTarefa(t, cicloChave, alteracoes || {}); }
+      catch (e) { throw new ObrigacaoError('agenda_invalida', e.message); }
+      return tx.tarefaAgenda.update({ where: { id }, data: dados });
+    }
     let patch;
     if (acao === 'EDITAR') {
       try { const c = validarConfigTarefa({ ...oc, ...anterior.alteracoes, ...alteracoes, repetirAte: null });
@@ -58,4 +66,28 @@ export async function alterarTarefa({ userId, id, cicloChave, acao, alteracoes }
     } else patch = acao === 'EXCLUIR' ? { canceladaEm: new Date().toISOString() } : { concluidaEm: acao === 'CONCLUIR' ? new Date().toISOString() : null };
     return tx.tarefaAgenda.update({ where: { id }, data: { estados: { ...t.estados, [cicloChave]: { ...anterior, ...patch } } } });
   });
+}
+
+export async function converterTarefaEmObrigacao({ userId, id, cicloChave, regra, portalIds }, db = prisma) {
+  return db.$transaction(async tx => {
+    await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${id}))`;
+    const tarefa = await tx.tarefaAgenda.findFirst({ where: { id, userId, excluidaEm: null } });
+    if (!tarefa) throw new ObrigacaoError('tarefa_nao_encontrada', 'Tarefa não encontrada.', 404);
+    let selecionada;
+    try { selecionada = encontrarOcorrenciaDaTarefa(tarefa, cicloChave); }
+    catch { throw new ObrigacaoError('ocorrencia_invalida', 'Ocorrência inválida.'); }
+    if (!selecionada) throw new ObrigacaoError('ocorrencia_invalida', 'Ocorrência não encontrada.', 404);
+    if (!regra?.agendaConfig) throw new ObrigacaoError('agenda_invalida', 'Informe a configuração da obrigação.');
+    let inicio;
+    try { inicio = prepararEdicaoSerieTarefa(tarefa, cicloChave, regra.agendaConfig).config.versoes.at(-1).aPartirDe; }
+    catch (e) { throw new ObrigacaoError('agenda_invalida', e.message); }
+    for (const [chave, estado] of Object.entries(tarefa.estados || {})) {
+      if (ocorrenciasDoEstadoDaTarefa(tarefa, chave).some(oc => oc.dataFim >= inicio) && (estado.concluidaEm || estado.canceladaEm || (estado.alteracoes && chave !== cicloChave))) throw new ObrigacaoError('historico_futuro', 'Há ocorrências concluídas, excluídas ou editadas neste período. Escolha uma ocorrência posterior a esse histórico para convertê-la em obrigação.', 409);
+    }
+    const empresas = await empresasDoEscopo({ portalIds, escopo: regra.escopo, filtros: regra.filtros }, tx);
+    if (!empresas.length) throw new ObrigacaoError('escopo_vazio', 'Nenhuma empresa da sua carteira corresponde à seleção.');
+    const resultado = await criarRegra({ portalIds, dados: { ...regra, tipo: 'OBRIGACAO' }, criadoPorId: userId }, tx);
+    await tx.tarefaAgenda.update({ where: { id }, data: { config: { ...tarefa.config, encerradaAPartirDe: inicio } } });
+    return resultado;
+  }, { timeout: 30000 });
 }

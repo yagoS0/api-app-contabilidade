@@ -1,5 +1,11 @@
 # CLAUDE.md — Web (apps/web)
 
+## Áreas do escritório — 17/09/2026
+
+`OfficeNavigation` reúne Operação, Relacionamento e Gestão usando os caminhos existentes. Monta somente no `SessionBoundary` autenticado, com sol único e resumo de mensagens; home e cabeçalho da empresa não repetem a marca. O provider conserva histórico, competência e modo da carteira, mas não desenha conteúdo antes da confirmação de sessão. A antiga gaveta Ferramentas e atalhos repetidos da home foram substituídos pela navegação global; cadastro de empresa continua na carteira. Formulários públicos e portal do cliente permanecem separados.
+
+Entrada de clientes separa atendimento comercial, dados e implantação, sem deduzir contratação do enum `EM_TRILHA`. A conversa permite abrir a ficha em nova aba, preservando o rascunho, e mantém o processo completo recolhido sob demanda. O chat usa o espaço restante de um shell flexível: não subtrair uma altura fixa de cabeçalho. Ver `docs/organizacao-escritorio.md`.
+
 ## Chat por interlocutor — 16/09/2026
 
 A lista compacta usa o relacionamento retornado pelo servidor: Cliente, Lead ou A identificar. Não deduzir lead de ausência de empresa nem de chegada pelo canal comercial. Cliente pode ter nova solicitação comercial. Empresa selecionada contextualiza operações; não filtra o histórico pessoal por padrão. Busca/paginação são do servidor, leitura é confirmada explicitamente e notas internas usam endpoint próprio sem transporte WhatsApp.

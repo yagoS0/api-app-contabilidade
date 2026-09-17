@@ -1,7 +1,6 @@
-import { WorkspaceHomeLink, useWorkspaceNavigation } from "../../../../app/navigation/WorkspaceNavigation";
+import { useWorkspaceNavigation } from "../../../../app/navigation/WorkspaceNavigation";
 import { Engrenagem } from "../../../configuracoes/Configuracoes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { situacaoFiscalComSimbolo } from "../../../../lib/vocabulario";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { Feedback } from "../../../../components/ui/Feedback";
@@ -24,250 +23,8 @@ import {
 import { LogoAltan } from "../../../../components/ui/LogoAltan";
 import { desfechoWhatsapp, resumirWhatsapp } from "../../../guides/lib/canalDeEnvio";
 import { liberarComCanais } from "../../../guides/lib/liberarComCanais";
-import { useResumoWhatsapp } from "../../../whatsapp/hooks/useResumoWhatsapp";
-import { WhatsappIcon } from "../../../whatsapp/components/ConversaVisual";
 
-// Q17: dropdown — abre um seletor (não navega para um hub).
-//
-// ⚠ ELE PASSOU A SER O MENU "Mais ▾", e a diferença entre isso e remover função é o assunto todo:
-// tudo o que estava na barra continua alcançável, com o MESMO rótulo e o MESMO handler. Mover para
-// dentro de um menu é LAYOUT; tirar da tela seria decisão de produto, que não é desta passada.
-//
-// `grupo` desenha uma régua com título — sem ela "Rotinas" e "Configuração SERPRO" viram uma lista
-// de sete itens sem hierarquia, que é o mesmo problema da barra, um nível abaixo.
-// ⚠⚠ ESTE COMPONENTE FICOU SEM CONSUMIDOR EM 18/08/2026 e NÃO FOI APAGADO.
-// O menu "Mais ▾" virou a GAVETA LATERAL (`GavetaFerramentas`, logo abaixo) a pedido do dono. Ele
-// não tem outro chamador — nem neste arquivo nem em nenhum outro. Apagar componente é decisão à
-// parte (o precedente registrado do projeto é o `DefisNaoDevida.jsx`), então ele fica aqui,
-// marcado, até alguém decidir. Não o religue sem pedido: seriam duas portas para o mesmo menu.
-function SettingsMenu({ items, label = "Configurações ▾" }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!open) return undefined;
-    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    function onEsc(e) { if (e.key === "Escape") setOpen(false); }
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onEsc);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onEsc); };
-  }, [open]);
-  // ⚠ Item sem handler NÃO VIRA LINHA — a página monta o menu com os `onOpen*` que recebeu, e
-  // renderizar um item morto ofereceria uma função que não existe naquele contexto.
-  const usable = items.filter((it) => typeof it.onClick === "function");
-  return (
-    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
-      <Button
-        variant="secondary"
-        className="dashboard-home__action dashboard-home__action--outline"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-haspopup="menu"
-      >
-        {label}
-      </Button>
-      {open && (
-        <div
-          role="menu"
-          style={{
-            position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 200,
-            background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: 240, overflow: "hidden",
-          }}
-        >
-          {usable.map((it, i) => (
-            <div key={it.label}>
-              {it.grupo && (
-                <div style={{
-                  padding: "8px 14px 4px", fontSize: "0.66rem", fontWeight: 700, letterSpacing: "0.04em",
-                  textTransform: "uppercase", color: "var(--text-muted)",
-                  borderTop: i > 0 ? "1px solid var(--border)" : "none",
-                  marginTop: i > 0 ? 4 : 0,
-                }}>
-                  {it.grupo}
-                </div>
-              )}
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => { setOpen(false); it.onClick(); }}
-                style={{
-                  display: "block", width: "100%", textAlign: "left", padding: "9px 14px",
-                  background: "transparent", border: "none", color: "var(--text)", cursor: "pointer", fontSize: "0.85rem",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-              >
-                {it.label}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * A GAVETA LATERAL ESQUERDA — o que era o menu "Mais ▾".
- *
- * Pedido do dono (18/08/2026): *"retire o botão de envio de e-mails em lote, e coloque o de
- * apuração e de consulta dentro de mais, em ferramentas. Pegue a aba de mais e coloque na lateral
- * esquerda, com 3 traços para abrir ela e fechar; padrão dela deve ser fechado"*.
- *
- * ⚠ É MUDANÇA DE LUGAR, NÃO REMOÇÃO. Cada função continua com o MESMO rótulo e o MESMO handler;
- * o que muda é onde se clica. Apuração e Consultas entraram no grupo "Ferramentas", ao lado de
- * Rotinas e Planejamento.
- *
- * ⚠ NASCE FECHADA E NÃO LEMBRA. "Padrão fechado" quer dizer fechada a cada carregamento — por isso
- * o estado inicial é `false` cravado, e não uma leitura de `localStorage` como a do modo de visão.
- * Aquilo é preferência de leitura da carteira; isto é um menu.
- *
- * ⚠ O FOCO VAI E VOLTA. Ao abrir, ele entra na gaveta; ao fechar, volta para o hambúrguer. Sem o
- * retorno, quem usa teclado é largado no fim do documento e precisa tabular a página inteira de
- * volta. Fecha por Esc, por clique no fundo e pelo próprio botão.
- */
-export function GavetaFerramentas({ items, resumoWhatsapp = null }) {
-  const [aberta, setAberta] = useState(false);
-  const botaoRef = useRef(null);
-  const gavetaRef = useRef(null);
-  // ⚠ Item sem handler NÃO VIRA LINHA — a página monta o menu com os `onOpen*` que recebeu, e
-  // renderizar um item morto ofereceria uma função que não existe naquele contexto.
-  const usable = items.filter((it) => typeof it.onClick === "function");
-
-  function fechar() {
-    setAberta(false);
-    // `requestAnimationFrame`: o foco só pode voltar depois que a gaveta saiu do DOM. Se a ação
-    // navegou para outra tela, a ref já é nula e o `?.` resolve.
-    if (typeof window !== "undefined" && window.requestAnimationFrame) {
-      window.requestAnimationFrame(() => botaoRef.current?.focus());
-    } else {
-      botaoRef.current?.focus();
-    }
-  }
-
-  useEffect(() => {
-    if (!aberta) return undefined;
-    function onEsc(e) {
-      if (e.key === "Escape") {
-        setAberta(false);
-        botaoRef.current?.focus();
-      }
-    }
-    document.addEventListener("keydown", onEsc);
-    // O foco entra na gaveta assim que ela abre.
-    gavetaRef.current?.querySelector("button")?.focus();
-    return () => document.removeEventListener("keydown", onEsc);
-  }, [aberta]);
-
-  return (
-    <>
-      <Button
-        ref={botaoRef}
-        variant="secondary"
-        className="dashboard-home__action dashboard-home__action--outline"
-        onClick={() => (aberta ? fechar() : setAberta(true))}
-        aria-expanded={aberta}
-        aria-controls="dashboard-gaveta"
-        /* ⚠ O rótulo acessível DIZ O QUE ABRE. "Menu" sozinho não distingue esta gaveta do menu do
-           navegador nem do popover de uma linha da tabela. */
-        aria-label={aberta ? "Fechar o menu de ferramentas" : "Abrir o menu de ferramentas"}
-        title="Ferramentas"
-        aria-describedby={resumoWhatsapp?.selo ? "whatsapp-aviso-menu" : undefined}
-      >
-        {/* Os três traços, desenhados — o caractere ☰ some em fonte sem o glifo e não escala com
-            a cor do botão. `aria-hidden`: quem anuncia é o `aria-label` acima. */}
-        <svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true" focusable="false">
-          <g fill="currentColor">
-            <rect x="0" y="0" width="16" height="2" rx="1" />
-            <rect x="0" y="5" width="16" height="2" rx="1" />
-            <rect x="0" y="10" width="16" height="2" rx="1" />
-          </g>
-        </svg>
-        <span>Ferramentas</span>
-        {resumoWhatsapp?.selo ? <span id="whatsapp-aviso-menu" data-testid="whatsapp-ponto" style={{ color: "var(--state-warn)", marginLeft: 6 }} aria-label={`${resumoWhatsapp.selo} mensagens não lidas no WhatsApp`}>●</span> : null}
-      </Button>
-
-      {/* ⚠ A GAVETA SAI PARA O `body` (portal). O hambúrguer mora dentro do `<nav aria-label=
-          "Atalhos">`, e renderizar ali um `role="dialog"` com um `<nav>` dentro aninharia uma
-          navegação na outra e poria a caixa de diálogo dentro da barra de atalhos. Fora, ela
-          também fica imune a qualquer `transform`/`overflow` de ancestral, que é o que costuma
-          quebrar `position: fixed` sem avisar. */}
-      {aberta && createPortal(
-        <>
-          {/* O fundo fecha ao clique. Ele é `aria-hidden` porque o botão de fechar dentro da gaveta
-              é o caminho anunciado; o clique no fundo é atalho de mouse. */}
-          <div className="dashboard-gaveta__fundo" aria-hidden="true" onClick={fechar} />
-          <aside
-            id="dashboard-gaveta"
-            ref={gavetaRef}
-            className="dashboard-gaveta"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Ferramentas"
-          >
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "12px 14px", borderBottom: "1px solid var(--border)",
-            }}>
-              <strong style={{ fontSize: "0.82rem", letterSpacing: "0.03em", textTransform: "uppercase", color: "var(--text-muted)" }}>
-                Ferramentas
-              </strong>
-              <button
-                type="button"
-                onClick={fechar}
-                aria-label="Fechar o menu"
-                style={{
-                  background: "transparent", border: "none", color: "var(--text-muted)",
-                  cursor: "pointer", fontSize: "1.1rem", lineHeight: 1, padding: 4,
-                }}
-              >
-                ✕
-              </button>
-            </div>
-            <nav aria-label="Ferramentas" style={{ padding: "6px 0" }}>
-              {usable.map((it, i) => (
-                <div key={it.label}>
-                  {/* O grupo desenha uma régua com título — sem ela "Rotinas" e "Configuração
-                      SERPRO" viram uma lista de sete itens sem hierarquia. */}
-                  {it.grupo && (
-                    <div style={{
-                      padding: "10px 14px 4px", fontSize: "0.66rem", fontWeight: 700, letterSpacing: "0.04em",
-                      textTransform: "uppercase", color: "var(--text-muted)",
-                      borderTop: i > 0 ? "1px solid var(--border)" : "none",
-                      marginTop: i > 0 ? 4 : 0,
-                    }}>
-                      {it.grupo}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => { fechar(); it.onClick(); }}
-                    aria-label={it.label}
-                    aria-describedby={it.descricao ? `ferramenta-descricao-${i}` : undefined}
-                    style={{
-                      display: "block", width: "100%", textAlign: "left", padding: "10px 14px",
-                      background: "transparent", border: "none", color: "var(--text)", cursor: "pointer", fontSize: "0.88rem",
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-                  >
-                    {it.label}
-                    {it.descricao && <span id={`ferramenta-descricao-${i}`} className="dashboard-tool-description">{it.descricao}</span>}
-                    {it.label === "WhatsApp" && resumoWhatsapp ? <span style={{ display: "block", fontSize: "0.72rem", color: "var(--text-muted)" }}>
-                      {resumoWhatsapp.selo ? <strong data-testid="whatsapp-selo" style={{ color: "var(--state-warn)", marginRight: 6 }}>{resumoWhatsapp.selo}</strong> : null}
-                      {resumoWhatsapp.carregando ? "Lendo mensagens…" : resumoWhatsapp.frase}
-                    </span> : null}
-                  </button>
-                </div>
-              ))}
-            </nav>
-          </aside>
-        </>,
-        document.body,
-      )}
-    </>
-  );
-}
+// A navegação entre áreas vive no shell autenticado do escritório.
 
 function normalizeSearch(value) {
   return String(value || "")
@@ -351,7 +108,6 @@ export function CompaniesHomePage({
   const [visaoLocal, setVisaoLocal] = useState("calendario");
   const avisoPlanoGlobal = useRef(null);
   const trocarVisao = navigation?.setModoVisao || setVisaoLocal;
-  const resumoWhatsapp = useResumoWhatsapp({ api, enabled: typeof onOpenWhatsapp === "function" });
 
   // ─── IMPRESSÃO ───────────────────────────────────────────────────────────────────────────────
   // Duas coisas precisam acontecer ANTES do diálogo do navegador abrir: a visão vira tabela (cards
@@ -805,7 +561,6 @@ export function CompaniesHomePage({
         <section className="dashboard-home">
           <header className="dashboard-home__header">
             <div className="dashboard-home__brand">
-              <WorkspaceHomeLink />
               <div>
                 {/* Subtítulo removido: descrevia o óbvio ("busca, filtros e acesso rápido") numa
                     tela que JÁ é a carteira, e ainda vinha sem acentuação. Legenda que explica o
@@ -962,54 +717,6 @@ export function CompaniesHomePage({
 
           </div>
           <nav className="dashboard-home__actions" aria-label="Atalhos">
-            {/* ⚠ O HAMBÚRGUER VEM PRIMEIRO porque a gaveta abre à ESQUERDA — botão à direita
-                abrindo painel à esquerda faz o olho atravessar a tela atrás do que acabou de
-                clicar. */}
-            <GavetaFerramentas
-              resumoWhatsapp={resumoWhatsapp}
-              items={[
-                // ⚠ APURAÇÃO E CONSULTAS MUDARAM DE LUGAR, NÃO SAÍRAM (dono, 18/08/2026: *"coloque
-                // o de apuração e de consulta dentro de mais, em ferramentas"*). Mesmo rótulo,
-                // mesmo handler, um clique a mais.
-                { grupo: "Fiscal", label: "Apuração", descricao: "Calcular tributos e acompanhar competências da carteira.", onClick: onOpenApuracao },
-                // C10: "Pendências" já tinha virado a aba "Situação Fiscal" dentro de Consultas.
-                { label: "Consultas", descricao: "Situação fiscal e consultas em lote por empresa.", onClick: onOpenSerproFuncoes },
-                { grupo: "Comunicação", label: "WhatsApp", descricao: "Conversas e atendimento aos clientes.", onClick: onOpenWhatsapp },
-                // Planejamento é cenário de reunião com PROSPECT (por isso mora no dashboard e não
-                // dentro de uma empresa); Rotinas é configuração de recorrência. Nenhuma das duas é
-                // o trabalho do dia — são episódicas, e é isso que as põe aqui dentro.
-                { grupo: "Organização e análise", label: "Rotinas", descricao: "Acompanhar execuções e configurar rotinas automáticas.", onClick: onOpenRotinas },
-                { label: "Laboratório da Empresa", descricao: "Comparar decisões com premissas explícitas.", onClick: onOpenLaboratorio },
-                { label: "Planejamento", descricao: "Salvar cenários e comparar regimes tributários.", onClick: onOpenPlanejamento },
-                // Cadastrar obrigação é CONFIGURAÇÃO do escritório (define o que passa a ser
-                // cobrado de todo mundo), não uma forma de olhar a carteira — por isso saiu do
-                // seletor de visões e entrou aqui.
-
-
-
-                // ⚠ Chamava-se "Pendências (debug)". É a ÚNICA tela que lista guia por guia o
-                // status do e-mail, as tentativas e o `emailLastError` — e o rótulo "(debug)"
-                // dizia ao contador que aquilo não era assunto dele. Ferramenta de diagnóstico
-                // escondida atrás de um aviso de "não mexa" é o mesmo que não existir.
-                { grupo: "Conferência de envios", label: "Pendências de e-mail", descricao: "Ver guias não enviadas e corrigir falhas de entrega.", onClick: onOpenPendingReport },
-                // ⚠⚠ ESTA TELA EXISTIA E NÃO TINHA NENHUM LINK — de sempre até 27/08/2026.
-                // `onOpenGuideUpload` era desestruturada nas props (`:297`) e **nunca referenciada**
-                // no arquivo; `/guides/upload` só se alcançava digitando a URL.
-                // ⚠ E ela é a ÚNICA tela que mostra o PDF de guia que o parser NÃO conseguiu casar
-                // com empresa nenhuma. Sem porta, essas guias eram invisíveis: ninguém as vê no
-                // dashboard (não pertencem a empresa nenhuma) e ninguém as vê aqui.
-                // ⚠ Fica junto de "Pendências de e-mail" porque as duas respondem à mesma pergunta —
-                // *o que ficou pelo caminho?* — e nenhuma das duas é rotina diária.
-                { label: "Guias não identificadas", descricao: "Importar guias e associar PDFs à empresa correta.", onClick: onOpenGuideUpload },
-              ]}
-            />
-            {typeof onOpenWhatsapp === "function" ? <Button
-              variant="secondary"
-              className="dashboard-home__action dashboard-home__action--outline"
-              onClick={onOpenWhatsapp}
-              title={resumoWhatsapp.frase}
-              aria-label="Abrir central do WhatsApp"
-            ><span className="wa-inline"><WhatsappIcon size={17} />WhatsApp{resumoWhatsapp.selo ? <span className="wa-unread">{resumoWhatsapp.selo}</span> : null}</span></Button> : null}
             <Button
               variant="secondary"
               className="dashboard-home__action dashboard-home__action--outline"
@@ -1032,35 +739,6 @@ export function CompaniesHomePage({
                 <span style={{ marginLeft: 6, fontSize: "0.7rem" }} aria-label="Plano global incompleto">⚠</span>
               )}
             </Button>
-            {/* Onboardings fica ao LADO de "Nova empresa", e as duas portas continuam existindo:
-                "Nova empresa" serve a quem já tem tudo em mãos; o funil serve ao que acontece
-                ANTES disso (empresa que ainda vai abrir, papelada chegando em partes). */}
-            {/* Onboardings fica ao LADO de "Nova empresa", e as duas portas continuam existindo:
-                "Nova empresa" serve a quem já tem tudo em mãos; o funil serve ao que acontece
-                ANTES disso (empresa que ainda vai abrir, papelada chegando em partes). */}
-
-            {onOpenOnboardings && (
-              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--outline" onClick={onOpenOnboardings}>
-                Entrada de clientes
-              </Button>
-            )}
-            {/* ⚠ APURAÇÃO E CONSULTAS FORAM PARA A GAVETA (☰), no grupo "Ferramentas" — pedido do
-                dono, 18/08/2026. Continuam com o mesmo rótulo e o mesmo handler.
-
-                ⚠ O BOTÃO "ENVIO DE E-MAILS EM LOTE" FOI REMOVIDO da barra, e este é o único caso
-                em que uma porta se fechou: *"não é tirar o botão de enviar, é tirar o botão que
-                abre a aba de envio de email, aquela ao lado de consultas"* (dono, 18/08/2026). Ele
-                era o único link para `/guides/batch-email`; a rota e a página continuam existindo.
-                ⚠ ENVIAR GUIA EM LOTE NÃO DEPENDIA DELE e continua em dois caminhos: a seleção na
-                tabela (marcar as linhas → "Enviar guias", que roda sobre a seleção e mostra a
-                prévia) e, guia a guia, "Liberar ao cliente" dentro da empresa.
-
-                O botão "Calendário" também não está aqui: o calendário virou VISÃO, ao lado de
-                Cards e Ano. Ter duas portas para a mesma coisa só dividiria o caminho. */}
-            {/* ⚠ O "↻" SAIU DAQUI e foi para o lado do seletor de competência, no título. Ele não é
-                um atalho como os outros: é a recarga DA LISTA da competência exibida — o que ele
-                atualiza está escrito ao lado dele agora. Numa fileira de atalhos, um ícone mudo
-                entre botões nomeados era a coisa que ninguém sabia dizer o que fazia. */}
           </nav>
             <Button
               type="button"

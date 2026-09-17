@@ -46,7 +46,7 @@ export function normalizarRegraRecorrente(dados, base) {
   const periodicidade = String(r.periodicidade || '').toUpperCase();
   const diaVencimento = Number(r.diaVencimento), mesReferencia = Number(r.mesReferencia);
   const defasagemMeses = Number(r.defasagemMeses ?? 1), diasPreparacao = Number(r.diasPreparacao || 0);
-  if (!['MENSAL', 'TRIMESTRAL', 'ANUAL'].includes(periodicidade)) throw new Error('Escolha uma frequência recorrente.');
+  if (!['MENSAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'].includes(periodicidade)) throw new Error('Escolha uma frequência recorrente.');
   if (!Number.isInteger(diaVencimento) || diaVencimento < 1 || diaVencimento > 31) throw new Error('Informe dia de vencimento entre 1 e 31.');
   if (periodicidade !== 'MENSAL' && (!Number.isInteger(mesReferencia) || mesReferencia < 1 || mesReferencia > 12)) throw new Error('Informe o mês de referência da recorrência.');
   if (!Number.isInteger(defasagemMeses) || defasagemMeses < 0 || defasagemMeses > 12) throw new Error('Defasagem deve ser de 0 a 12 meses.');

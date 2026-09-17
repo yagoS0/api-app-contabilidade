@@ -238,6 +238,7 @@ describe("⚠⚠⚠ A EMPRESA QUE CHEGA DEPOIS — defeito achado no navegador e
 
   function montarComEmpresaTardia() {
     const cliente = {
+      getFechamentosRelatorio: jest.fn(async () => ({ competenciasFechadas: [] })),
       getDadosPlanejamento: jest.fn(async () => payload()),
       salvarSimulacaoPlanejamento: jest.fn(async () => ({ ok: true, simulacao: { id: "sim-1" } })),
       gerarDocumentoDaSimulacao: jest.fn(async () => ({ ok: true, documento: { id: "doc-1" } })),
@@ -254,9 +255,12 @@ describe("⚠⚠⚠ A EMPRESA QUE CHEGA DEPOIS — defeito achado no navegador e
   it("⚠⚠ a empresa chegando DEPOIS, os dados carregam mesmo assim", async () => {
     const { cliente, chegar } = montarComEmpresaTardia();
     expect(cliente.getDadosPlanejamento).not.toHaveBeenCalled();
+    expect(cliente.getFechamentosRelatorio).not.toHaveBeenCalled();
 
     await act(async () => { chegar(); });
     await waitFor(() => expect(cliente.getDadosPlanejamento).toHaveBeenCalledWith("e1"));
+    await waitFor(() => expect(cliente.getFechamentosRelatorio).toHaveBeenCalledWith("e1"));
+    expect(cliente.getFechamentosRelatorio.mock.calls.every(([id]) => id === "e1")).toBe(true);
     await waitFor(() => expect(screen.getAllByDisplayValue("300.000,00").length).toBeGreaterThan(0));
   });
 

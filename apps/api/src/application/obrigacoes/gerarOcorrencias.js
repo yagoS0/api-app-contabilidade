@@ -8,7 +8,7 @@ import { ajustarParaDiaUtil, paraISO } from "./diaUtil.js";
 
 // O gerador fiscal e o detector financeiro operam em ciclos mensais.
 // Dias/semanas pertencem ao expansor de agendaConfig.
-export const PERIODICIDADES = ["MENSAL", "TRIMESTRAL", "ANUAL"];
+export const PERIODICIDADES = ["MENSAL", "TRIMESTRAL", "SEMESTRAL", "ANUAL"];
 export const PERIODICIDADES_COM_AVULSA = ["AVULSA", "DIARIA", "SEMANAL", ...PERIODICIDADES];
 export const AJUSTES_DIA_UTIL = ["ANTECIPAR", "POSTERGAR", "MANTER"];
 
@@ -20,8 +20,8 @@ export function ultimoDiaDoMes(ano, mes) {
 /**
  * Os meses que a obrigação ocupa, dentro da janela pedida.
  *
- * @param {"MENSAL"|"TRIMESTRAL"|"ANUAL"} periodicidade
- * @param {number|null} mesReferencia  1–12. Obrigatório em TRIMESTRAL (1º mês do ciclo) e ANUAL.
+ * @param {"MENSAL"|"TRIMESTRAL"|"SEMESTRAL"|"ANUAL"} periodicidade
+ * @param {number|null} mesReferencia  1–12. Obrigatório nos ciclos trimestral, semestral e anual.
  * @param {{ano: number, mes: number}} inicio  primeiro mês da janela
  * @param {number} quantidadeMeses  tamanho da janela
  */
@@ -30,7 +30,7 @@ export function mesesDaJanela(periodicidade, mesReferencia, inicio, quantidadeMe
   if (!PERIODICIDADES.includes(p)) {
     throw new Error(`periodicidade_invalida: ${periodicidade}`);
   }
-  // TRIMESTRAL e ANUAL sem mês de referência não têm resposta certa. Assumir janeiro produziria
+  // Ciclos maiores que um mês sem referência não têm resposta certa. Assumir janeiro produziria
   // uma agenda plausível e errada — o tipo de defeito que ninguém nota. Falha alto, aqui mesmo.
   if (p !== "MENSAL" && !(mesReferencia >= 1 && mesReferencia <= 12)) {
     throw new Error(`mes_referencia_obrigatorio_para_${p.toLowerCase()}`);
@@ -44,6 +44,7 @@ export function mesesDaJanela(periodicidade, mesReferencia, inicio, quantidadeMe
     if (p === "MENSAL") meses.push({ ano, mes });
     else if (p === "ANUAL" && mes === mesReferencia) meses.push({ ano, mes });
     else if (p === "TRIMESTRAL" && ((mes - mesReferencia) % 3 + 3) % 3 === 0) meses.push({ ano, mes });
+    else if (p === "SEMESTRAL" && ((mes - mesReferencia) % 6 + 6) % 6 === 0) meses.push({ ano, mes });
   }
   return meses;
 }
