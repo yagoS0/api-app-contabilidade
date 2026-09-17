@@ -229,6 +229,8 @@ export function lerEventoWebhook(payload, agora = new Date()) {
         if (!st?.id) proprios.push(AVISOS_EVENTO.SEM_IDENTIFICADOR);
         statuses.push({
           providerMessageId: st?.id ? String(st.id) : null,
+          canalProvedorId: typeof value.metadata?.phone_number_id === "string" ? value.metadata.phone_number_id : null,
+          wabaProvedorId: typeof entrada.id === "string" ? entrada.id : null,
           status: typeof st?.status === "string" ? st.status : null,
           destinatario: st?.recipient_id ? String(st.recipient_id) : null,
           ocorridaEmProvedor: instante,
@@ -247,6 +249,7 @@ export function lerEventoWebhook(payload, agora = new Date()) {
         mensagens.push({
           telefone: msg?.from ? String(msg.from) : null,
           canalProvedorId: typeof value.metadata?.phone_number_id === "string" ? value.metadata.phone_number_id : null,
+          wabaProvedorId: typeof entrada.id === "string" ? entrada.id : null,
           respostaAProviderMessageId: typeof msg?.context?.id === "string" ? msg.context.id : null,
           providerMessageId: msg?.id ? String(msg.id) : null,
           // ⚠ O `type` é COPIADO como veio, sem de-para para vocabulário nosso (migration

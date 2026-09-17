@@ -53,7 +53,7 @@ test("tela avança diagnóstico, devolutiva e proposta com dados salvos e retoma
   fireEvent.click(await screen.findByText("Conferi: enviar devolutiva"));
   fireEvent.click(await screen.findByText("Preparar uma nova proposta em PDF"));
   await screen.findByText("Gerar proposta para revisão");
-  expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/jornada/devolutiva", { diagnosticoId: "d" });
+  expect(api.comercial).toHaveBeenCalledWith("/onboardings/o/jornada/devolutiva", { diagnosticoId: "d", conversaId: "c" });
   unmount(); render(<FluxoComercial api={api} onboardingId="o" conversaId="c" />);
   fireEvent.click(await screen.findByText("Preparar uma nova proposta em PDF"));
   expect(await screen.findByText("Gerar proposta para revisão")).toBeInTheDocument();

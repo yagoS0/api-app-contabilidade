@@ -26,10 +26,12 @@ test("rascunho mock sobrevive ao link que recarrega a página", async () => {
   const leitura = aposReload.getOnboarding(onboarding.id); await jest.runAllTimersAsync();
   expect((await leitura).onboarding.dados.responsavelNome).toBe("Carlos");
 });
-test("falha do resumo mock é erro, e leitura de fio diminui o contador", async () => {
+test("falha do resumo mock é erro; GET não marca leitura e reconhecimento explícito diminui o contador", async () => {
   jest.useFakeTimers(); const api = createMockApi();
   const antesPromise = api.getResumoWhatsapp(); await jest.runAllTimersAsync(); const antes = await antesPromise;
-  const fio = api.getMensagensWhatsapp("mock-cv-3"); await jest.runAllTimersAsync(); await fio;
+  const fio = api.getMensagensWhatsapp("mock-cv-3"); await jest.runAllTimersAsync(); const aberto = await fio;
+  const somenteGet = api.getResumoWhatsapp(); await jest.runAllTimersAsync(); expect((await somenteGet).resumo.mensagensNaoLidas).toBe(antes.resumo.mensagensNaoLidas);
+  await api.marcarConversaWhatsappLida("mock-cv-3", aberto.mensagens.filter(m => m.direcao === "in").at(-1).id);
   const depoisPromise = api.getResumoWhatsapp(); await jest.runAllTimersAsync(); const depois = await depoisPromise;
   expect(depois.resumo.mensagensNaoLidas).toBeLessThan(antes.resumo.mensagensNaoLidas);
   localStorage.setItem("mock:whatsapp:falhaResumo", "1");

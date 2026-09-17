@@ -257,7 +257,7 @@ describe("garantirConversa", () => {
 it("janela após novo vínculo usa apenas horários do destinatário, sem copiar histórico",async()=>{
  prisma.mensagemWhatsapp.findFirst.mockResolvedValue({registradaEm:new Date(),ocorridaEmProvedor:new Date()});
  expect((await janelaDaConversa("conv1")).situacao).toBe(SITUACOES_JANELA.ABERTA);
- expect(prisma.mensagemWhatsapp.findFirst).toHaveBeenCalledWith({where:{conversa:{telefoneE164:"5521999998888"},direcao:"in"},orderBy:{registradaEm:"desc"},select:{registradaEm:true,ocorridaEmProvedor:true}});
+ expect(prisma.mensagemWhatsapp.findFirst).toHaveBeenCalledWith({where:{conversa:{telefoneE164:"5521999998888",canalId:null,vinculoNumeroId:null},direcao:"in"},orderBy:{registradaEm:"desc"},select:{registradaEm:true,ocorridaEmProvedor:true}});
 });
 it("conflito de wamid após troca de vínculo preserva conversa vencedora e tenant da mídia",async()=>{
  prisma.contatoWhatsapp.findMany.mockResolvedValue([contato({portalClientId:"p2",portalClient:{id:"p2",razao:"BETA",cnpj:"22222222000122"}})]);

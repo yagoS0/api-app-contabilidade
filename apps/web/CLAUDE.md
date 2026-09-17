@@ -6,6 +6,16 @@
 
 Entrada de clientes separa atendimento comercial, dados e implantação, sem deduzir contratação do enum `EM_TRILHA`. A conversa permite abrir a ficha em nova aba, preservando o rascunho, e mantém o processo completo recolhido sob demanda. O chat usa o espaço restante de um shell flexível: não subtrair uma altura fixa de cabeçalho. Ver `docs/organizacao-escritorio.md`.
 
+## Chat por interlocutor — 16/09/2026
+
+A lista compacta usa o relacionamento retornado pelo servidor: Cliente, Lead ou A identificar. Não deduzir lead de ausência de empresa nem de chegada pelo canal comercial. Cliente pode ter nova solicitação comercial. Empresa selecionada contextualiza operações; não filtra o histórico pessoal por padrão. Busca/paginação são do servidor, leitura é confirmada explicitamente e notas internas usam endpoint próprio sem transporte WhatsApp.
+
+Compositor conserva rascunhos por pessoa, canal e modo; trocas não transportam texto para outro destinatário. Biblioteca abre em nova aba, mensagens rápidas ficam na gaveta esquerda e dados detalhados abrem sob demanda. Manual de implantação e limitações da validação: `docs/comunicacao-identidade-implantacao.md`. Não habilitar funcionalidades que enviem mensagens em testes.
+
+Leitura usa `IntersectionObserver` no histórico ativo e POST `/lida` com a última mensagem recebida realmente visível; GET não altera leitura. Notas só oferecem `capacidades.escoposNotas` do servidor, com idempotência separada do transporte. Identificação auditada tem prévia, evidência e versões; associar telefone requer selecionar o interlocutor já conhecido e não concede RBAC nem opt-in. Canal preparado permanece fixo mesmo quando chegam mensagens por outro remetente. Texto adaptado da biblioteca carrega versão/referência; referência não certifica o texto como aprovado. Largura da lista é preferência local por usuário; rascunhos de conteúdo ficam somente em memória.
+
+`FluxoComercial` prefere `jornada.projecao` do servidor e preserva fallback de contrato anterior. Diagnóstico limitado exige comando autorizado e justificativa; apresentação manual exige evidência sem simular envio. `FichaAvulsa` usa o perfil normalizado e dossiê próprios somente em abertura avulsa; não ativa contabilidade nem portal. Recolher detalhes mantém formulários montados; trocar pessoa isola os dados. Templates novos permanecem fora deste lote.
+
 ## Comunicados — 16/09/2026
 
 Nova página `/whatsapp/comunicados`, acessada pelo cabeçalho da central. Formulário salva texto imutável e seleção de telefones da prévia; submissão à Meta, consulta da aprovação e confirmação da transmissão são ações distintas. Exibir categoria final antes de confirmar; enviar `previaHash` do detalhe. O acompanhamento automático só faz GET, não submete modelos nem reenvia mensagens. Falha de POST consulta o resultado e preserva a intenção, sem retry escondido. Mock sem API conectada não oferece envio. CSS em `main.jsx`, componentes compartilhados `PageShell`/`Button`. Ver `docs/whatsapp-comunicados.md`.

@@ -609,6 +609,11 @@ if (INTEGRACAO_LANCAMENTO_POR_REGRA) {
 export const WHATSAPP_TOKEN = (process.env.WHATSAPP_TOKEN || "").trim();
 export const WHATSAPP_PHONE_NUMBER_ID = (process.env.WHATSAPP_PHONE_NUMBER_ID || "").trim();
 export const WHATSAPP_WABA_ID = (process.env.WHATSAPP_WABA_ID || "").trim();
+// Migração aditiva e validação precedem a habilitação. Templates novos são outro lote.
+export const WHATSAPP_IDENTIDADE_V2 = process.env.WHATSAPP_IDENTIDADE_V2 === "1";
+export const WHATSAPP_CHAT_V2 = process.env.WHATSAPP_CHAT_V2 === "1";
+export const WHATSAPP_COLETA_COMERCIAL = process.env.WHATSAPP_COLETA_COMERCIAL === "1";
+export const WHATSAPP_MULTICANAL = process.env.WHATSAPP_MULTICANAL === "1";
 export const WHATSAPP_APP_SECRET = (process.env.WHATSAPP_APP_SECRET || "").trim();
 export const WHATSAPP_VERIFY_TOKEN = (process.env.WHATSAPP_VERIFY_TOKEN || "").trim();
 
