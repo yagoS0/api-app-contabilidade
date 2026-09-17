@@ -6,6 +6,10 @@ Estado atual em 17/09 após as 19h37 UTC: canal comercial e multicanal ativados,
 
 ## Ativação e teste do novo número — 17/09/2026
 
+Atualização às 20h12 UTC, após o dono relatar ausência de foto e reiterar falta de resposta: o perfil comercial recebeu exatamente a foto usada no principal. Foi utilizado upload retomável e `profile_picture_handle` da API oficial; GET posterior retornou a foto, baixada e conferida visualmente. Somente a imagem foi alterada. Credenciais/handles e os arquivos de evidência ficam fora do Git.
+
+O contato específico do teste voltou ao automático por `alterarAtendimentoHumano` com lease, preservação integral do histórico e invalidação de ações antigas. Os demais interlocutores mantêm seus responsáveis. Uma nova mensagem precisa chegar após essa devolução; a conferência real da entrega continua pendente desse novo envio. Não repetir os “Olá” anteriores nem retirar a proteção humana global para testar.
+
 - O usuário cadastrou a credencial no servidor. Leitura da Meta confirmou validade, permissões de mensagens/gestão, telefone VERIFIED associado à WABA comercial e o mesmo aplicativo do webhook. Nenhum token foi impresso ou enviado ao Git.
 - Cadastro comercial ativado e `WHATSAPP_MULTICANAL=1` aplicado; identidade/menu/coleta já estavam ON. Não houve alteração do número principal nem ampliação de seu piloto. Sem migração adicional.
 - Antes da ativação não havia fila pendente. Durante a configuração o usuário enviou um “Olá” de teste; essa entrada específica foi preservada para o retry normal. Nenhum histórico antigo foi reaberto.

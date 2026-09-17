@@ -2,6 +2,8 @@
 
 ## Novo canal comercial para leads — 17/09/2026
 
+Atualização após novo pedido de correção: foto do comercial copiada da imagem já usada no principal, publicada pela API oficial e conferida no retorno da Meta em 17/09 às 20h12 UTC. O contato do teste do dono foi devolvido ao automático pelo serviço `alterarAtendimentoHumano`, com lease, histórico preservado e invalidação normal das ações anteriores. Nenhum outro contato foi liberado. Nova mensagem é necessária após a devolução; não afirmar resposta entregue antes do recibo real. Isso atualiza a pendência de teste registrada abaixo. Evidências com dados de perfil/contato ficam somente no workspace privado.
+
 O dono pediu configurar o segundo número como entrada de leads. Isso substitui a restrição ao remetente piloto somente no canal cadastrado como COMERCIAL, ativo, com identidade V2 e multicanal habilitados. O principal conserva o piloto anterior. A finalidade vem do servidor, não do texto nem de parâmetro do navegador; nunca muda a identificação CLIENTE ou concede acesso fiscal. Menu e coleta determinística têm precedência sobre o modelo. Em 17/09 às 19h37 UTC a credencial comercial foi validada com acesso ao telefone/WABA e ao mesmo aplicativo inscrito no webhook. Canal comercial e multicanal foram ativados; API saudável sobre a main `f6fe6a2a`, que inclui a PR 68. Entrada real do usuário confirmada; o contato de teste tinha pausa humana anterior, corretamente respeitada nos dois canais. A resposta automática depende da devolução explícita desse contato. Foram repetidas 25 verificações locais com zero rede/IA. Procedimento em `docs/comunicacao-identidade-implantacao.md`; os estados inativos abaixo são históricos.
 
 ## Comunicação publicada — 17/09/2026
