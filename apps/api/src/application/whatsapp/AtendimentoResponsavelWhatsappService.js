@@ -5,7 +5,8 @@ import { resolverVinculoPorTelefone } from "./ContatoWhatsappService.js";
 import { garantirConversa, janelaDaConversa } from "./ConversaWhatsappService.js";
 import { adquirirLease, renovarLease, liberarLease } from "./WhatsappLeaseService.js";
 import { enviarMensagemRastreada } from "./SaidaWhatsappService.js";
-import { WhatsappCloudClient } from "./WhatsappCloudClient.js";
+import { whatsappPorCanal, filtroSegmentosDoCanal } from "./CanalWhatsappService.js";
+import { conferirIdentidadeVigente } from "./IdentidadeComunicacaoService.js";
 import { empresasAutorizadas, decidirSelecaoEmpresa, opcoesSelecaoEmpresa, textoSelecaoEmpresa } from "./selecaoEmpresaWhatsapp.js";
 import { empresasParaComunicacao } from "./comunicacaoDoContato.js";
 import { lerContextoDoMenu } from "./contextoMenuWhatsapp.js";
@@ -16,7 +17,7 @@ const falha = (codigo, texto = "O atendimento mudou. Confira a empresa antes de 
 const dataMs = v => v ? new Date(v).getTime() : 0;
 const pedeEquipe = (texto, interacao) => ["altan.client.human.v1", "altan.lead.human.v1"].includes(lerContextoDoMenu(interacao?.id)?.acaoId || interacao?.id)
   || /^(?:(?:quero|preciso|gostaria de)\s+)?(?:(?:falar|conversar)\s+com\s+)?(?:(?:o|a|um|uma)\s+)?(?:contador|contadora|atendente|equipe|humano|atendimento humano|escrit[oó]rio)[.!?]?$/i.test(String(texto || "").trim());
-export const chaveLeaseResponsavel = conversa => conversa?.atendimentoId ? `responsavel:${conversa.atendimentoId}` : `ia:${conversa?.id}`;
+export const chaveLeaseResponsavel = conversa => conversa?.vinculoNumeroId ? `interlocutor-numero:${conversa.vinculoNumeroId}` : conversa?.atendimentoId ? `responsavel:${conversa.atendimentoId}` : `ia:${conversa?.id}`;
 export const filtroEntradasDaConversa = conversaId => ({ OR: [{ conversaId }, { contexto: { is: { conversaId, estado: "RESOLVIDA" } } }] });
 
 export async function comLeaseDoAtendimento({ conversa, client = prisma }, trabalho) {
@@ -51,6 +52,10 @@ export async function carregarMensagemResolvida({ conversa, mensagemId, client =
 }
 
 export async function conferirContextoResponsavel({ conversa, mensagem, contexto = conversa?.contexto, client = prisma, permitirHandoffEm = null, agora = new Date(), resolverVinculo = resolverVinculoPorTelefone }) {
+  if (conversa?.vinculoNumeroId) {
+    const { interlocutor } = await conferirIdentidadeVigente({ vinculoNumeroId: conversa.vinculoNumeroId, telefone: conversa.telefoneE164, client });
+    if (interlocutor.atendidaPor || interlocutor.atendidaDesde && dataMs(interlocutor.atendidaDesde) !== dataMs(permitirHandoffEm)) throw falha("ASSUMIDA_POR_HUMANO");
+  }
   if (!conversa?.atendimentoId) return;
   contexto ||= await client.resolucaoContextoWhatsapp.findUnique({ where: { mensagemId: mensagem?.id || "" } });
   if (!mensagem && contexto?.mensagemId) mensagem = await client.mensagemWhatsapp.findUnique({ where: { id: contexto.mensagemId } });
@@ -77,13 +82,17 @@ async function pausarRascunho(tx, conversaId) {
 
 /** Chamado também antes do seletor: o escritório pode ver o atendimento na carteira correta. */
 export async function garantirAtendimentoResponsavel({ conversa, empresas = [], userId = null, client = prisma }) {
-  const humanos = await client.conversaWhatsapp.findFirst({ where: { telefoneE164: conversa.telefoneE164, OR: [{ atendidaPor: { not: null } }, { atendidaDesde: { not: null } }] }, orderBy: { atendidaDesde: "desc" } });
+  const v2 = Boolean(conversa.vinculoNumeroId);
+  const canalId = conversa.canalId || "principal";
+  const vinculoNumero = v2 ? await client.vinculoNumeroInterlocutor.findUnique({ where: { id: conversa.vinculoNumeroId } }) : null;
+  const escopoPessoa = vinculoNumero ? { vinculoNumero: { interlocutorId: vinculoNumero.interlocutorId } } : { telefoneE164: conversa.telefoneE164 };
+  const humanos = await client.conversaWhatsapp.findFirst({ where: { ...escopoPessoa, OR: [{ atendidaPor: { not: null } }, { atendidaDesde: { not: null } }] }, orderBy: { atendidaDesde: "desc" } });
   const atendimento = await client.atendimentoResponsavelWhatsapp.upsert({
-    where: { canal_telefoneE164: { canal: "principal", telefoneE164: conversa.telefoneE164 } },
-    create: { telefoneE164: conversa.telefoneE164, userId, atendidaPor: humanos?.atendidaPor || null, atendidaDesde: humanos?.atendidaDesde || null }, update: {},
+    where: v2 ? { canalId_vinculoNumeroId: { canalId, vinculoNumeroId: conversa.vinculoNumeroId } } : { canal_telefoneE164: { canal: "principal", telefoneE164: conversa.telefoneE164 } },
+    create: { telefoneE164: conversa.telefoneE164, userId, ...(v2 ? { canal: `${canalId}:${conversa.vinculoNumeroId}`, canalId, vinculoNumeroId: conversa.vinculoNumeroId } : {}), atendidaPor: humanos?.atendidaPor || null, atendidaDesde: humanos?.atendidaDesde || null }, update: {},
   });
-  for (const empresa of empresas) await garantirConversa({ telefone: conversa.telefoneE164, portalClientId: empresa.portalClientId, client });
-  await client.conversaWhatsapp.updateMany({ where: { telefoneE164: conversa.telefoneE164, atendimentoId: null }, data: { atendimentoId: atendimento.id } });
+  for (const empresa of empresas) await garantirConversa({ telefone: conversa.telefoneE164, portalClientId: empresa.portalClientId, canalId, vinculoNumeroId: conversa.vinculoNumeroId, client });
+  await client.conversaWhatsapp.updateMany({ where: { ...(v2 ? filtroSegmentosDoCanal(conversa) : { telefoneE164: conversa.telefoneE164 }), atendimentoId: null }, data: { atendimentoId: atendimento.id } });
   return atendimento;
 }
 
@@ -94,6 +103,22 @@ export async function alterarAtendimentoHumano({ conversa, atendidaPor = null, a
     : await garantirAtendimentoResponsavel({ conversa, client });
   return client.$transaction(async tx => {
     const quando = new Date();
+    if (conversa.vinculoNumeroId) {
+      const vinculo = await tx.vinculoNumeroInterlocutor.findUnique({ where: { id: conversa.vinculoNumeroId } });
+      if (!vinculo || vinculo.encerrouEm) throw falha("IDENTIDADE_ALTERADA");
+      const escopoPessoa = { vinculoNumero: { interlocutorId: vinculo.interlocutorId, encerrouEm: null } };
+      await tx.interlocutorComunicacao.update({ where: { id: vinculo.interlocutorId }, data: { atendidaPor, atendidaDesde, versao: { increment: 1 } } });
+      await tx.atendimentoResponsavelWhatsapp.updateMany({ where: escopoPessoa, data: {
+        atendidaPor, atendidaDesde, automacaoInvalidadaEm: quando, versao: { increment: 1 },
+        aguardandoSelecao: true, expiraEm: null, pedidoPendente: null, coletaPendenteConversaId: null, interacaoPendente: Prisma.DbNull,
+      } });
+      await tx.conversaWhatsapp.updateMany({ where: escopoPessoa, data: { atendidaPor, atendidaDesde, automacaoInvalidadaEm: quando } });
+      await tx.acaoPendenteWhatsapp.updateMany({ where: { conversa: { is: escopoPessoa }, status: "pendente" }, data: { status: "cancelada" } });
+      const segmentos = await tx.conversaWhatsapp.findMany({ where: escopoPessoa, select: { id: true } });
+      await tx.turnoIaWhatsapp.updateMany({ where: { conversaId: { in: segmentos.map(s => s.id) }, status: { in: ["pendente", "falhou", "processando"] } }, data: { status: "ignorado", motivo: "ASSUMIDA_POR_HUMANO", reservaToken: null, leaseAte: null, concluidoEm: quando } });
+      for (const segmento of segmentos) await pausarRascunho(tx, segmento.id);
+      return { atendimento: await tx.atendimentoResponsavelWhatsapp.findUnique({ where: { id: atendimento.id } }), conversa: await tx.conversaWhatsapp.findUnique({ where: { id: conversa.id } }) };
+    }
     const atual = await tx.atendimentoResponsavelWhatsapp.update({ where: { id: atendimento.id }, data: {
       atendidaPor, atendidaDesde, automacaoInvalidadaEm: quando, versao: { increment: 1 },
       ...(!atendidaPor && !atendidaDesde ? { aguardandoSelecao: true, expiraEm: null } : {}),
@@ -110,6 +135,19 @@ export async function alterarAtendimentoHumano({ conversa, atendidaPor = null, a
 
 /** Handoff do próprio turno permite somente a sua mensagem final, sem reautorizar outros jobs. */
 export async function encaminharResponsavelParaEquipe({ conversa, mensagem, contexto = conversa?.contexto, client = prisma, quando = new Date() }) {
+  if (conversa.vinculoNumeroId) return client.$transaction(async tx => {
+    const { interlocutor } = await conferirIdentidadeVigente({ vinculoNumeroId: conversa.vinculoNumeroId, telefone: conversa.telefoneE164, client: tx });
+    if (conversa.atendimentoId && !await tx.atendimentoResponsavelWhatsapp.findFirst({ where: filtroAtendimentoAtivo({ conversa, contexto, mensagem }) })) throw falha("CONTEXTO_ALTERADO");
+    const mudou = await tx.interlocutorComunicacao.updateMany({ where: { id: interlocutor.id, versao: interlocutor.versao, atendidaPor: null, atendidaDesde: null }, data: { atendidaDesde: quando } });
+    if (!mudou.count) throw falha("CONTEXTO_ALTERADO");
+    const vinculos = await tx.vinculoNumeroInterlocutor.findMany({ where: { interlocutorId: interlocutor.id, encerrouEm: null }, select: { id: true } });
+    const ids = vinculos.map(v => v.id);
+    await tx.atendimentoResponsavelWhatsapp.updateMany({ where: { vinculoNumeroId: { in: ids }, atendidaPor: null }, data: { atendidaDesde: quando } });
+    const segmentos = await tx.conversaWhatsapp.findMany({ where: { vinculoNumeroId: { in: ids } }, select: { id: true } });
+    await tx.conversaWhatsapp.updateMany({ where: { id: { in: segmentos.map(c => c.id) }, atendidaPor: null }, data: { atendidaDesde: quando } });
+    await tx.acaoPendenteWhatsapp.updateMany({ where: { conversaId: { in: segmentos.map(c => c.id) }, status: "pendente" }, data: { status: "cancelada" } });
+    return mudou;
+  });
   if (!conversa.atendimentoId) return client.conversaWhatsapp.updateMany({ where: { id: conversa.id, atendidaPor: null, atendidaDesde: null, excluidaEm: null }, data: { atendidaDesde: quando } });
   return client.$transaction(async tx => {
     const mudou = await tx.atendimentoResponsavelWhatsapp.updateMany({ where: filtroAtendimentoAtivo({ conversa, contexto, mensagem }), data: { atendidaDesde: quando } });
@@ -124,7 +162,7 @@ export async function selecionarEmpresaDoEscritorio({ conversa, portalClientId, 
   const acesso = empresasParaComunicacao(await resolverVinculo(conversa.telefoneE164, { client }));
   if (acesso.bloqueado || !acesso.empresas.some(e => e.portalClientId === portalClientId)) throw falha("EMPRESA_NAO_E_CANDIDATA");
   const atendimento = await garantirAtendimentoResponsavel({ conversa, empresas: acesso.empresas, userId: acesso.userId, client });
-  const destino = await garantirConversa({ telefone: conversa.telefoneE164, portalClientId, client });
+  const destino = await garantirConversa({ telefone: conversa.telefoneE164, portalClientId, canalId: conversa.canalId || "principal", vinculoNumeroId: conversa.vinculoNumeroId, client });
   return client.$transaction(async tx => {
     const atual = await tx.atendimentoResponsavelWhatsapp.update({ where: { id: atendimento.id }, data: { portalClientId, conversaId: destino.id, versao: { increment: 1 }, userId: acesso.userId,
       aguardandoSelecao: false, pedidoPendente: null, coletaPendenteConversaId: null, interacaoPendente: Prisma.DbNull, expiraEm: new Date(Date.now() + TTL_CONTEXTO_MS) } });
@@ -173,7 +211,7 @@ export async function resolverContextoDaMensagem({ registro, atendimento, texto 
     ? { acao: "BLOQUEAR", motivo: "CADASTRO_RESPONSAVEL_AMBIGUO" }
     : decidirSelecaoEmpresa({ empresas: acesso.empresas, contexto: atual, texto, interacao, agora, empresaCitadaId, coletaAtiva });
   const selecionada = ["SELECIONAR", "CONTINUAR"].includes(decisao.acao) ? acesso.empresas.find(e => e.portalClientId === (decisao.portalClientId || atual.portalClientId)) : null;
-  const segmento = selecionada ? await garantirConversa({ telefone: atual.telefoneE164, portalClientId: selecionada.portalClientId, client }) : null;
+  const segmento = selecionada ? await garantirConversa({ telefone: atual.telefoneE164, portalClientId: selecionada.portalClientId, canalId: atual.canalId || "principal", vinculoNumeroId: atual.vinculoNumeroId, client }) : null;
   const mesmaSelecao = decisao.acao === "PERGUNTAR" && atual.aguardandoSelecao && dataMs(atual.expiraEm) > agora.getTime()
     && JSON.stringify(atual.empresaIdsOferecidos) === JSON.stringify(acesso.empresas.map(e => e.portalClientId));
   const alterou = selecionada ? selecionada.portalClientId !== atual.portalClientId || atual.aguardandoSelecao || dataMs(atual.expiraEm) <= agora.getTime() : !mesmaSelecao;
@@ -265,7 +303,7 @@ export async function atenderContextoResponsavel({ registro, item, processar, ag
       const turnoIaId = `empresa:${registro.mensagem.id}`;
       const anterior = await client.mensagemWhatsapp.findFirst({ where: { turnoIaId, direcao: "out" } });
       if (!anterior) {
-        const whatsapp = cloud || new WhatsappCloudClient({ log });
+        const whatsapp = await whatsappPorCanal(registro.conversa, { cloud, client, log });
         const opcoes = (r.opcoes || []).slice(0, 10);
         await enviarMensagemRastreada({ conversa, corpo: r.texto, autor: "SISTEMA", tipo: opcoes.length ? "interactive" : "text", turnoIaId, client, antesDeEnviar,
           enviar: () => opcoes.length ? whatsapp.enviarLista({ telefone: conversa.telefoneE164, texto: r.texto.slice(0, 1024), tituloBotao: "Escolher empresa", tituloSecao: "Empresas", linhas: opcoes.map(o => ({ id: o.id, titulo: o.titulo.slice(0, 24), descricao: o.descricao })) })
@@ -279,7 +317,7 @@ export async function atenderContextoResponsavel({ registro, item, processar, ag
       const destino = resolvida.registro.conversa;
       const texto = `Empresa: ${destino.portalClient?.razao || "selecionada"}. A equipe vai continuar este atendimento por aqui; o atendimento automático ainda não está habilitado para esta empresa.`;
       await encaminharResponsavelParaEquipe({ conversa: destino, mensagem: resolvida.registro.mensagem, contexto: recibo, client, quando: agora });
-      const whatsapp = cloud || new WhatsappCloudClient({ log });
+      const whatsapp = await whatsappPorCanal(registro.conversa, { cloud, client, log });
       await enviarMensagemRastreada({ conversa: destino, corpo: texto, autor: "SISTEMA", turnoIaId: `empresa:${registro.mensagem.id}`, client,
         antesDeEnviar: async () => { await conferirLease(); await conferirContextoResponsavel({ conversa: destino, mensagem: resolvida.registro.mensagem, contexto: recibo, client, resolverVinculo, permitirHandoffEm: agora }); },
         enviar: () => whatsapp.enviarTexto({ telefone: destino.telefoneE164, texto }) });

@@ -8,6 +8,7 @@ import { exigirGestor } from "./RecursosComerciaisService.js";
 import { OnboardingError } from "./OnboardingService.js";
 import { encerrado } from "./LeadService.js";
 import { INTEGRACAO_FISCAL_LEADS } from "../../config.js";
+import { exigirConversaDoCaso } from "./ContextoComercialService.js";
 export async function consultarPublicaLead(onboardingId, {
   db = prisma,
   consultar = consultarCnpj,
@@ -43,6 +44,8 @@ export async function consultarPublicaLead(onboardingId, {
     razaoSocial: b.razao_social || out.tomador?.nome || null,
     situacaoCadastral: b.descricao_situacao_cadastral || null,
     cnaePrincipal: b.cnae_fiscal || null,
+    atividadePrincipal: b.cnae_fiscal_descricao || null,
+    endereco: [b.logradouro, b.numero, b.complemento, b.bairro, b.cep].filter(Boolean).join(", ") || null,
     municipio: b.municipio || null,
     uf: b.uf || null,
     mensagem: "Dados públicos não comprovam regularidade fiscal."
@@ -75,12 +78,18 @@ export function criarFiscalLead({
   }),
   flag = INTEGRACAO_FISCAL_LEADS
 } = {}) {
+  const conferirIdentidade = async atendimento => {
+    if (!atendimento?.interlocutorId) return; // atendimento anterior à migração
+    const conversa = await db.conversaWhatsapp.findUnique({ where: { id: atendimento.conversaId } });
+    await exigirConversaDoCaso(atendimento, conversa, db);
+  };
   async function verificarRepresentante(id, user, evidencia) {
     exigirGestor(user);
     const r = await exigirEscopo(id, user, db);
     if (!r.cnpj || typeof evidencia !== "string" || evidencia.trim().length < 10 || evidencia.length > 2000) throw new OnboardingError("representante_incompleto", "Confirme CNPJ e registre como verificou o representante.");
     const atendimento = await db.atendimentoLead.findFirst({ where: { onboardingId: id, encerradoEm: null } });
     if (!atendimento) throw new OnboardingError("atendimento_ausente", "Vincule a conversa ao atendimento.", 409);
+    await conferirIdentidade(atendimento);
     const out = await db.atendimentoLead.updateMany({
       where: {
         id: atendimento.id,
@@ -114,6 +123,7 @@ export function criarFiscalLead({
       }
     });
     if (!a?.representanteVerificadoEm || a.autorizacao?.cnpj !== r.cnpj) throw new OnboardingError("representante_nao_verificado", "Confira a identidade e a representação antes da consulta privada.", 409);
+    await conferirIdentidade(a);
     if (tipo === "SITFIS" && (a.autorizacao?.estado !== "ATIVA" || !procuracaoHabilitaSitfis(a.autorizacao?.prova))) throw new OnboardingError("procuracao_nao_verificada", "Verifique primeiro uma procuração vigente para SITFIS.", 409);
     return db.$transaction(async tx => {
       await tx.onboarding.update({
@@ -221,6 +231,7 @@ export function criarFiscalLead({
         });
         exigirGestor(user);
         if (!r || r.cnpj !== j.cnpj || encerrado(r) || !a?.representanteVerificadoEm || a.autorizacao?.cnpj !== j.cnpj) throw new OnboardingError("escopo_alterado", "CNPJ, representante ou atendimento mudou.", 409);
+        await conferirIdentidade(a);
         if (j.tipo === "PROCURACAO") {
           const p = await comContextoSerpro({
             origem: "lead_procuracao",
@@ -240,6 +251,7 @@ export function criarFiscalLead({
             }
           });
           if (atual.cnpj !== j.cnpj) throw new OnboardingError("cnpj_alterado", "O CNPJ mudou.", 409);
+          await conferirIdentidade(a);
           const gravada = await db.atendimentoLead.updateMany({
             where: {
               id: a.id,

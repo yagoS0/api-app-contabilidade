@@ -78,6 +78,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     // QUEM está falando, não só de qual empresa. Ver `resumoDaConversa`.
     contatoWhatsapp: { findMany: jest.fn(async () => []), findFirst: jest.fn(async () => null) },
     templateWhatsapp: { findUnique: jest.fn(async () => ({ chave: "reabrir_conversa", statusAprovacao: "DECLARADO", nomeMeta: null })) },
+    recursoComercial: { findUnique: jest.fn(async () => ({ id:'orientacao-teste', chave:'exemplo',tipo:'ORIENTACAO',versao:2,aprovadoEm:new Date(),texto:'Orientação atualizada' })),findFirst:jest.fn(async()=>null) },
     acaoPendenteWhatsapp: { findFirst: jest.fn(async () => null), updateMany: jest.fn(async () => ({count: 1})) },
     turnoIaWhatsapp: { updateMany: jest.fn(async () => ({count: 1})) },
     chamadaIa: { aggregate: jest.fn(async () => ({ _sum: { custoEstimadoCentavos: 0 }, _count: { _all: 0 } })) },
@@ -408,6 +409,27 @@ describe("assumir e devolver — o que pausa a IA", () => {
 });
 
 describe("responder — só dentro da janela", () => {
+  it('exige nova prévia quando a orientação original mudou de versão', async () => {
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/responder').send({ orientacaoId:'orientacao-teste',orientacaoVersao:1 });
+    expect(r.status).toBe(409); expect(r.body.error).toBe('orientacao_alterada');
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+  it('não envia orientação vinculada a um caso que já não pertence à conversa', async () => {
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/responder').send({ orientacaoId:'orientacao-teste',orientacaoVersao:2,atendimentoLeadId:'caso-inacessivel' });
+    expect(r.status).toBe(404); expect(r.body.error).toBe('caso_nao_encontrado');
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+  });
+  it("não oferece o template do canal principal para retomar conversa de outro canal", async () => {
+    mockConversas.get('cv1').canalId = 'comercial';
+    mockCenario.janela = { situacao: 'EXPIRADA', permite: 'SOMENTE_TEMPLATE', avisos: [] };
+    prisma.templateWhatsapp.findUnique.mockClear();
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv1/responder').send({ texto: 'Olá' });
+    expect(r.status).toBe(409);
+    expect(r.body.reabrirConversa).toMatchObject({ disponivel: false, motivo: 'MODELO_NAO_CONFIGURADO_PARA_CANAL' });
+    expect(prisma.templateWhatsapp.findUnique).not.toHaveBeenCalled();
+    expect(cloud.enviarTexto).not.toHaveBeenCalled();
+    delete mockConversas.get('cv1').canalId;
+  });
   it("⚠ janela EXPIRADA: 409 com o motivo, o estado do template reabrir_conversa, e a Meta NÃO é chamada", async () => {
     mockCenario.janela = { situacao: "EXPIRADA", permite: "SOMENTE_TEMPLATE", expiraEm: new Date(0), avisos: ["x"] };
     const r = await request(montarApp()).post("/firm/whatsapp/conversas/cv1/responder").send({ texto: "olá" });
@@ -437,6 +459,11 @@ describe("responder — só dentro da janela", () => {
 });
 
 describe("vincular — a fila esvazia por aqui", () => {
+  it("não usa conversa de fora da carteira para cadastrar contato em empresa visível", async () => {
+    const r = await request(montarApp()).post('/firm/whatsapp/conversas/cv2/vincular').send({ portalClientId: 'pc-1', contato: { nome: 'Contato' } });
+    expect(r.status).toBe(404);
+    expect(salvarContato).not.toHaveBeenCalled();
+  });
   it("⚠ o telefone do contato é o do FIO (o corpo não escolhe o número) e a empresa tem de ser da carteira", async () => {
     const fora = await request(montarApp()).post("/firm/whatsapp/conversas/cv3/vincular").send({ portalClientId: "pc-9", contato: { nome: "X" } });
     expect(fora.status).toBe(404);

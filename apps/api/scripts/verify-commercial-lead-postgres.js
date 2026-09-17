@@ -3,7 +3,9 @@ import http from "node:http";
 import https from "node:https";
 import { CATALOGO_SINTETICO } from "../src/application/onboarding/__tests__/fixtures/catalogoSintetico.js";
 const url = new URL(process.argv[2]);
-if (!["127.0.0.1", "localhost"].includes(url.hostname) || url.username !== "lead_test") throw Error("Somente cluster local descartável lead_test.");
+const local = ["127.0.0.1", "localhost"].includes(url.hostname) && url.username === "lead_test" && (url.port === "55440" && url.pathname === "/lead_flow_check" || url.port === "55443" && url.pathname === "/lead_flow_check_v2");
+const ci = url.hostname === "127.0.0.1" && url.port === "55439" && url.pathname === "/whatsapp_delivery_check" && url.username === "whatsapp_check" && url.password === "ci_test_only";
+if (url.protocol !== "postgresql:" || !(local || ci)) throw Error("Somente cluster descartável 55440/lead_flow_check ou CI 55439/whatsapp_delivery_check.");
 process.env.DATABASE_URL = url.href;
 const semRede = () => { throw Error("Provedores externos proibidos nesta validação."); };
 globalThis.fetch = http.get = http.request = https.get = https.request = semRede;
@@ -13,6 +15,10 @@ const { criarPropostasComerciais } = await import("../src/application/onboarding
 const { criarRecursosComerciais } = await import("../src/application/onboarding/RecursosComerciaisService.js");
 const { criarServicoComercial } = await import("../src/application/onboarding/ComercialService.js");
 const { atualizar, converter } = await import("../src/application/onboarding/OnboardingService.js");
+const { criarJornadaLead } = await import("../src/application/onboarding/JornadaLeadService.js");
+const { criarFichaEmpresaAvulsa } = await import("../src/application/onboarding/FichaEmpresaAvulsaService.js");
+const { prepararArquivoConversao } = await import("../src/application/onboarding/ArquivoConversaoService.js");
+const jornada = criarJornadaLead({ db });
 const checks = [];
 const ok = title => checks.push(title);
 try {
@@ -83,7 +89,7 @@ try {
   const concurrent = await Promise.allSettled([escrever("Ana"), escrever("Bia")]); assert.equal(concurrent.filter(x => x.status === "fulfilled").length, 1); ok("CAS conserva somente uma escrita de campo por versão");
   let r = await db.onboarding.findUnique({ where: { id } });
   await assert.rejects(atualizar(id, { dados: {} }, { atorId: user.id }), e => e.code === "formulario_alterado"); ok("Escrita humana sem versão é recusada");
-  r = await atualizar(id, { versao: r.versao, dados: { ...r.dados, modalidadeServico: "AVULSO", atividadePretendida: "Consultório" } }, { atorId: user.id });
+  r = await atualizar(id, { versao: r.versao, dados: { ...r.dados, modalidadeServico: "AVULSO", atividadePretendida: "Consultório", municipioAtendimento: "Rio de Janeiro/RJ", enderecoPretendido: "Endereço sintético para conferência" } }, { atorId: user.id });
   assert.equal(r.fontesDados.modalidadeServico.conferido, true); ok("Escrita humana registra origem e conferência");
   const recursos = criarRecursosComerciais({ db }); await recursos.iniciarBiblioteca(user);
   const pacote = { formatVersion: 1, resources: [{ tipo: "CATALOGO", chave: "honorarios", versao: 1, titulo: "Catálogo sintético", dados: CATALOGO_SINTETICO }] };
@@ -106,6 +112,8 @@ try {
   const propostas = criarPropostasComerciais({ db, cifrar: async s => "TEST:" + s, decifrar: async s => s.slice(5) });
   const p = await propostas.gerar(id, user, { versao: r.versao, ajustes: { aberturaCentavos: 123456, justificativa: "Preço e escopo conferidos para este teste" } });
   assert.equal(p.snapshot.opcoes.length, 1); assert.equal(p.snapshot.opcoes[0].recorrente, false);
+  const diagnosticoAbertura = await jornada.diagnosticar(id, user, { versao: r.versao, achados: "SIMULAÇÃO: atividade e endereço conferidos.", servicos: "Abertura avulsa da empresa; registro externo." });
+  await jornada.registrarApresentacao(id, user, { versao: r.versao, diagnosticoId: diagnosticoAbertura.id, meio: "Reunião simulada", evidencia: "Escopo e entregas apresentados ao interessado." });
   await propostas.aprovar(id, p.id, user);
   const { token } = await propostas.emitirLink(id, p.id, user);
   assert.equal(await db.propostaComercial.count({ where: { tokenHash: token } }), 0); ok("Proposta guarda snapshot aprovado e somente hash do token");
@@ -122,6 +130,8 @@ try {
   const antes = await db.contratoComercial.findUnique({ where: { id: contrato.id } }); assert.equal(antes.status, "AGUARDANDO_ASSINATURA");
   await propostas.conferirAssinatura(id, contrato.id, user, doc.id); ok("Upload não assina; conferência humana registra hash e responsável");
   await assert.rejects(converter(id, {}, { atorId: user.id }), e => e.code === "contrato_recorrente_necessario");
+  await jornada.confirmarPagamento(id, user, { contratoId: contrato.id, evidencia: "Pagamento sintético conferido sem cobrança real." });
+  await criarFichaEmpresaAvulsa({ db, storage: { upload: async () => {} }, preparar: args => prepararArquivoConversao({ ...args, decifrar: async s => s.slice(5) }) }).salvar(id, user, { versao: r.versao, dados: { cnpj: "11222333000181", razaoSocial: "EMPRESA SINTÉTICA AVULSA", regimeTributario: "SIMPLES", cnaePrincipal: "7020400", endereco: { rua: "Rua Teste", numero: "1", bairro: "Centro", cidade: "Rio de Janeiro", uf: "RJ", cep: "20000000" } } });
   await propostas.concluirAvulso(id, user, "Serviço concluído e entrega conferida no teste");
   r = await db.onboarding.findUnique({ where: { id } }); assert.equal(r.status, "CONCLUIDO_AVULSO"); assert.equal(await db.portalClient.count(), 0); ok("Avulso conclui sem criar empresa ou mensalidade");
   const nova = await iniciarAtendimento({ conversaId: c.id, origem: "INATIVA", atorId: user.id, client: db }); assert.notEqual(nova.id, a.id); ok("Novo caso preserva histórico do atendimento encerrado");
@@ -150,6 +160,13 @@ try {
   await fiscalLead.enfileirar(r.id, user, "SITFIS"); await fiscalLead.processarUmaVez();
   assert.equal(consultasFiscais, 1);
   ok("Procuração TODOS percorre a fila real, preserva autorização ao reconferir e libera SITFIS simulado");
+  for (const tipo of ["PUBLICA", "SITFIS"]) {
+    const analise = await db.onboardingAnalise.create({ data: { onboardingId: r.id, cnpj: r.cnpj, tipo, status: "CONCLUIDA", resultado: tipo === "SITFIS" ? { relatorioDisponivel: true } : { razaoSocial: "EMPRESA SINTÉTICA" }, criadoPorId: user.id } });
+    await jornada.conferirAnalise(r.id, user, { versao: r.versao, analiseId: analise.id, tipo });
+  }
+  const analiseFiscal = await db.onboardingAnalise.findFirst({ where: { onboardingId: r.id, tipo: "SITFIS" }, orderBy: { createdAt: "desc" } });
+  const diagnosticoFiscal = await jornada.diagnosticar(r.id, user, { versao: r.versao, analiseId: analiseFiscal.id, achados: "SIMULAÇÃO: pendências conferidas no relatório.", servicos: "Regularização e contabilidade conforme proposta." });
+  await jornada.registrarApresentacao(r.id, user, { versao: r.versao, diagnosticoId: diagnosticoFiscal.id, meio: "Reunião simulada", evidencia: "Relatório e escopo apresentados ao interessado." });
   const p2 = await propostas.gerar(r.id, user, { versao: r.versao }); await propostas.aprovar(r.id, p2.id, user);
   assert.equal(p2.snapshot.opcoes[0].mensalCentavos, 69057);
   const { enviarProposta } = await import("../src/application/onboarding/EnvioPropostaService.js");

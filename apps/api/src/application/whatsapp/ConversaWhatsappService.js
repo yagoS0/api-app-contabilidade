@@ -5,6 +5,8 @@ import { normalizarE164 } from "./telefone.js";
 import { resolverVinculoPorTelefone } from "./ContatoWhatsappService.js";
 import { SITUACOES } from "./vinculoTelefone.js";
 import { avaliarJanela24h } from "./janela24h.js";
+import { identidadeWhatsappV2Ativa, filtroSegmentosDoCanal, CANAL_PRINCIPAL } from "./CanalWhatsappService.js";
+import { garantirIdentidadeWhatsapp, conferirIdentidadeVigente } from "./IdentidadeComunicacaoService.js";
 
 /** Vocabulário do plano do dono, travado por CHECK no banco. */
 export const DIRECAO = Object.freeze({ ENTRADA: "in", SAIDA: "out" });
@@ -60,7 +62,7 @@ export async function alterarExclusaoConversa({ conversaId, excluir, client = pr
  *
  * A chave contém o escopo: receber outro vínculo abre outro fio sem alterar a origem anterior.
  */
-export async function garantirConversa({ telefone, portalClientId = null, nomePerfilProvedor = null, client = prisma }) {
+export async function garantirConversa({ telefone, portalClientId = null, nomePerfilProvedor = null, canalId = CANAL_PRINCIPAL, vinculoNumeroId = null, client = prisma }) {
   const e164 = normalizarE164(telefone);
   if (!e164) {
     throw new ConversaWhatsappError("TELEFONE_INVALIDO", "Não é possível abrir uma conversa sem um telefone válido.");
@@ -68,12 +70,23 @@ export async function garantirConversa({ telefone, portalClientId = null, nomePe
   const atribuicao = portalClientId ? { portalClientId: String(portalClientId) } : {};
   const perfil = nomePerfilProvedor ? { nomePerfilProvedor: String(nomePerfilProvedor) } : {};
   // O número pode falar por várias empresas. Um envio nunca transfere um histórico existente.
-  const chaveEscopo = `${portalClientId ? `empresa:${portalClientId}` : "sem-empresa"}:${e164}`;
-  const atendimento = await client.atendimentoResponsavelWhatsapp?.findUnique?.({ where: { canal_telefoneE164: { canal: "principal", telefoneE164: e164 } } });
+  const v2 = identidadeWhatsappV2Ativa() || Boolean(vinculoNumeroId);
+  if (v2) {
+    if (vinculoNumeroId) await conferirIdentidadeVigente({ vinculoNumeroId, telefone: e164, permitirRevisao: true, client });
+    else vinculoNumeroId = (await garantirIdentidadeWhatsapp({ telefone: e164, canalId, client })).vinculoNumero.id;
+  }
+  const contextoCanal = v2 ? { canalId, vinculoNumeroId } : {};
+  const chaveEscopo = `${portalClientId ? `empresa:${portalClientId}` : "sem-empresa"}:${v2 ? `v2:${canalId}:${vinculoNumeroId}:` : ""}${e164}`;
+  const atendimento = await client.atendimentoResponsavelWhatsapp?.findUnique?.({ where: v2
+    ? { canalId_vinculoNumeroId: { canalId, vinculoNumeroId } }
+    : { canal_telefoneE164: { canal: CANAL_PRINCIPAL, telefoneE164: e164 } } });
   const agrupamento = atendimento ? { atendimentoId: atendimento.id } : {};
+  // Backfill preserva IDs/chaves históricos. Não recriar o segmento já migrado.
+  const existente = v2 ? await client.conversaWhatsapp.findFirst({ where: { ...contextoCanal, telefoneE164: e164, portalClientId: portalClientId || null }, orderBy: { createdAt: "asc" } }) : null;
+  if (existente) return client.conversaWhatsapp.update({ where: { id: existente.id }, data: { ...perfil, ...agrupamento } });
   return client.conversaWhatsapp.upsert({
     where: { chaveEscopo },
-    create: { chaveEscopo, escopoVerificado: Boolean(portalClientId), telefoneE164: e164, ...atribuicao, ...perfil, ...agrupamento,
+    create: { chaveEscopo, escopoVerificado: Boolean(portalClientId), telefoneE164: e164, ...contextoCanal, ...atribuicao, ...perfil, ...agrupamento,
       ...(atendimento ? { atendidaPor: atendimento.atendidaPor, atendidaDesde: atendimento.atendidaDesde, automacaoInvalidadaEm: atendimento.automacaoInvalidadaEm } : {}) },
     update: { ...perfil, ...agrupamento },
   });
@@ -104,6 +117,7 @@ export async function registrarMensagemRecebida({
   ocorridaEmProvedor = null,
   nomePerfilProvedor = null,
   respostaAProviderMessageId = null,
+  canalId = CANAL_PRINCIPAL,
 }) {
   if (!String(providerMessageId || "").trim()) {
     // ⚠ Sem o identificador da Meta não há idempotência: a reentrega do mesmo evento viraria uma
@@ -117,7 +131,7 @@ export async function registrarMensagemRecebida({
     throw new ConversaWhatsappError("SEM_TIPO", "Mensagem recebida sem o tipo informado pelo provedor.");
   }
 
-  const vinculo = await resolverVinculoPorTelefone(telefone);
+  let vinculo = await resolverVinculoPorTelefone(telefone);
   if (vinculo.situacao === SITUACOES.TELEFONE_INVALIDO) {
     throw new ConversaWhatsappError("TELEFONE_INVALIDO", "O remetente não é um telefone reconhecível.");
   }
@@ -126,13 +140,20 @@ export async function registrarMensagemRecebida({
   const existente = await prisma.mensagemWhatsapp.findUnique({ where: { providerMessageId: String(providerMessageId) } });
   if (existente) {
     const conversa = await prisma.conversaWhatsapp.findUnique({ where: { id: existente.conversaId } });
+    if (conversa && (conversa.canalId || CANAL_PRINCIPAL) !== canalId) throw new ConversaWhatsappError("MENSAGEM_CANAL_DIVERGENTE", "A mensagem já pertence a outro canal.");
     return { mensagem: existente, conversa, duplicada: true, vinculo };
   }
 
-  const portalClientId =
-    vinculo.situacao === SITUACOES.VINCULADO && vinculo.empresas.length === 1 ? vinculo.empresas[0].portalClientId : null;
-
-  const conversa = await garantirConversa({ telefone: vinculo.e164, portalClientId, nomePerfilProvedor });
+  const identidade = identidadeWhatsappV2Ativa() ? await garantirIdentidadeWhatsapp({ telefone: vinculo.e164, canalId }) : null;
+  // A criação/quarentena da identidade pode invalidar aliases reconhecidos antes dela.
+  if (identidade) vinculo = await resolverVinculoPorTelefone(telefone);
+  const portalClientId = (!identidade || identidade.interlocutor?.estado === "ATIVO")
+    && vinculo.situacao === SITUACOES.VINCULADO && vinculo.empresas.length === 1 ? vinculo.empresas[0].portalClientId : null;
+  const vigencia = identidade?.vinculoNumero;
+  if (vigencia && vigencia.geracao > 1 && (!ocorridaEmProvedor || new Date(ocorridaEmProvedor) < new Date(vigencia.iniciouEm))) {
+    throw new ConversaWhatsappError("IDENTIDADE_EVENTO_ANTERIOR", "Mensagem anterior à identificação atual; conferir a titularidade antes de responder.");
+  }
+  const conversa = await garantirConversa({ telefone: vinculo.e164, portalClientId, nomePerfilProvedor, canalId, vinculoNumeroId: vigencia?.id || null });
 
   try {
     const resultado = await prisma.$transaction(async (tx) => {
@@ -149,7 +170,7 @@ export async function registrarMensagemRecebida({
       },
     });
     const atualizada = await tx.conversaWhatsapp.update({ where: { id: conversa.id }, data: { updatedAt: new Date(), excluidaEm: null } });
-    return { mensagem, conversa: atualizada, duplicada: false, vinculo };
+    return { mensagem, conversa: atualizada, duplicada: false, vinculo, identidade };
     });
     return resultado;
   } catch (e) {
@@ -158,6 +179,7 @@ export async function registrarMensagemRecebida({
     if (!mensagem) throw e;
     const conversaOriginal = await prisma.conversaWhatsapp.findUnique({ where: { id: mensagem.conversaId } });
     if (!conversaOriginal) throw e;
+    if ((conversaOriginal.canalId || CANAL_PRINCIPAL) !== canalId) throw new ConversaWhatsappError("MENSAGEM_CANAL_DIVERGENTE", "A mensagem já pertence a outro canal.");
     return { mensagem, conversa: conversaOriginal, duplicada: true, vinculo };
   }
 }
@@ -186,6 +208,8 @@ export async function registrarMensagemEnviada({
   envioGuiaId = null,
   envioGuiaTentativaId = null,
   conversaId = null,
+  canalId = CANAL_PRINCIPAL,
+  vinculoNumeroId = null,
   client = prisma,
   // QUEM escreveu (02/09/2026): `IA` | `HUMANO` | `SISTEMA`. Nulo = o envio de guia por template,
   // como sempre foi. Vocabulário travado por CHECK no banco.
@@ -193,7 +217,7 @@ export async function registrarMensagemEnviada({
 }) {
   const conversa = conversaId
     ? await client.conversaWhatsapp.findFirst({ where: { id: String(conversaId), portalClientId: portalClientId || null } })
-    : await garantirConversa({ telefone, portalClientId, client });
+    : await garantirConversa({ telefone, portalClientId, canalId, vinculoNumeroId, client });
   if (!conversa) throw new ConversaWhatsappError("CONVERSA_NAO_ENCONTRADA", "Conversa não encontrada neste escopo.");
   try {
     const mensagem = await client.mensagemWhatsapp.create({
@@ -233,11 +257,11 @@ export async function registrarMensagemEnviada({
  * poderia — a janela fecha antes, que é o lado seguro do erro (ver `janela24h.js`).
  */
 async function ultimaRecebida(conversaId) {
-  const conversa = await prisma.conversaWhatsapp.findUnique({ where: { id: String(conversaId) }, select: { telefoneE164: true } });
+  const conversa = await prisma.conversaWhatsapp.findUnique({ where: { id: String(conversaId) }, select: { telefoneE164: true, canalId: true, vinculoNumeroId: true } });
   if (!conversa) return null;
   // A janela é do destinatário na Meta; somente timestamps atravessam segmentos, nunca conteúdo.
   return prisma.mensagemWhatsapp.findFirst({
-    where: { conversa: { telefoneE164: conversa.telefoneE164 }, direcao: DIRECAO.ENTRADA },
+    where: { conversa: filtroSegmentosDoCanal(conversa), direcao: DIRECAO.ENTRADA },
     orderBy: { registradaEm: "desc" },
     select: { ocorridaEmProvedor: true, registradaEm: true },
   });

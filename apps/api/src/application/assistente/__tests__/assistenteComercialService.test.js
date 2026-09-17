@@ -100,6 +100,15 @@ function ambiente(mensagens) {
   };
   return { db, deps, rodar: (mensagemId = "m1") => responderLead({ conversaId: "cv", mensagemId, deps }) };
 }
+function pessoaAtiva(a) {
+  const pessoa = { id: "pessoa", estado: "ATIVO", versao: 1, atendidaPor: null, atendidaDesde: null };
+  a.db.conversa.vinculoNumeroId = "numero"; a.db.conversa.canalId = "canal";
+  a.db.lead.interlocutorId = pessoa.id;
+  a.db.interlocutorComunicacao = { findUnique: jest.fn(async () => clone(pessoa)), updateMany: jest.fn(async ({ data }) => { Object.assign(pessoa, data); return { count: 1 }; }) };
+  a.db.vinculoNumeroInterlocutor = { findUnique: jest.fn(async () => ({ id: "numero", telefoneE164: a.db.conversa.telefoneE164, interlocutorId: pessoa.id, interlocutor: clone(pessoa) })) };
+  a.db.$transaction = fn => fn(a.db);
+  return pessoa;
+}
 beforeEach(() => {
   jest.clearAllMocks();
   adquirirLease.mockImplementation(async id => ({ id, token: "posse" }));
@@ -115,6 +124,21 @@ beforeEach(() => {
   });
   proximaPergunta.mockImplementation(() => ({ campo: "atividadePretendida", pergunta: "Qual atividade você pretende exercer?" }));
   criarRecursosComerciais.mockReturnValue({ listar: jest.fn(async () => []), prepararOrientacao: jest.fn() });
+});
+
+test("contador assumindo a pessoa em outro canal bloqueia a resposta da IA pendente", async () => {
+  const a = ambiente(), pessoa = pessoaAtiva(a);
+  a.db.conversa.portalClientId = "empresa-existente";
+  a.deps.assistente.responder.mockImplementation(async ({ executar }) => { await executar("registrar_atendimento", {}); pessoa.atendidaPor = "contador-outro-canal"; pessoa.atendidaDesde = new Date(); return fim(); });
+  expect((await a.rodar()).motivo).toBe("ASSUMIDA_POR_HUMANO");
+  expect(a.deps.cloud.enviarTexto).not.toHaveBeenCalled();
+});
+
+test("versão da identidade alterada durante a interpretação impede envio", async () => {
+  const a = ambiente(), pessoa = pessoaAtiva(a);
+  a.deps.assistente.responder.mockImplementation(async ({ executar }) => { await executar("registrar_atendimento", {}); pessoa.versao++; return fim(); });
+  expect((await a.rodar()).motivo).toBe("IDENTIDADE_ALTERADA");
+  expect(a.deps.cloud.enviarTexto).not.toHaveBeenCalled();
 });
 
 test("registra pela função antes de enviar a resposta livre fundamentada no resultado", async () => {

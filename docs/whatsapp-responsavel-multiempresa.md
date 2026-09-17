@@ -1,11 +1,13 @@
 # Um responsável, várias empresas no WhatsApp
 
+Contexto reconciliado em 16/09 com as decisões de comunicação de 14/09. A próxima evolução está no [plano de identificação, leads e chat](plano-comunicacao-identidade-leads-20260916.md); identidade temporal e múltiplos canais são propostas, não recursos já publicados.
+
 O telefone identifica o contato; cada pedido tem empresa, conversa e versão fixadas em um recibo. O cliente pode escolher por botão, número da lista atual, razão social, apelido cadastrado ou CNPJ. O pedido inicial é retomado depois da escolha.
 
 ## Cadastro e operação
 
-- Cadastrar o mesmo telefone exato e o mesmo usuário do portal em cada empresa que a pessoa atende. O usuário precisa de vínculo ACTIVE e papel válido em cada uma. Permissões de funções continuam no contato de cada empresa; emissão continua dependendo também da liberação fiscal do cadastro.
-- Contatos duplicados ou usuários diferentes associados ao mesmo telefone exigem revisão humana. O sistema não identifica a pessoa pela semelhança do nome nem acrescenta dígitos ao número.
+- Cadastrar o telefone exato nos contatos de cada empresa é suficiente para agrupamento e comunicação autorizada, sem exigir conta do portal. Consultas e atos automáticos têm guardas próprias: vínculo ACTIVE, papel e permissões do contato quando exigidos; emissão também depende da liberação fiscal do cadastro.
+- Usuários diferentes no mesmo telefone não impedem o agrupamento para comunicação, mas a ambiguidade de pessoa bloqueia funções financeiras/fiscais que dependem dessa identidade até conferência. O sistema não identifica a pessoa pela semelhança do nome nem acrescenta dígitos ao número.
 - O escritório pode cadastrar até cinco nomes curtos em “Empresa do atendimento”, no chat. Razões sociais e apelidos ambíguos exigem escolha explícita; apelido não concede acesso.
 - A empresa escolhida permanece durante a sessão, inclusive em novos pedidos pelo menu ou por texto livre. Sem seleção vigente, com ambiguidade ou ao pedir outra empresa, o sistema confirma o contexto. “Guias do mês” informa o período e não muda a empresa. Durante a coleta, CPF/CNPJ, valor e dados do tomador permanecem no rascunho da emissora. “Emitir pela Alfa para a Beta” escolhe Alfa como emissora.
 - Reações ficam no histórico, mas não iniciam atendimento nem invalidam menus. Repetir a mesma lista de empresas durante sua validade preserva os botões já exibidos.
@@ -28,9 +30,9 @@ As opções são gravadas em `MensagemWhatsapp.contextoConsulta` pela migração
 
 ## Atendimento do escritório
 
-A caixa agrupa os segmentos pelo responsável, exibe a empresa atual e permite filtrar o histórico. Cada mensagem conserva sua empresa de origem. Quem tem carteira parcial vê apenas os segmentos autorizados; entradas sem empresa e a lista completa do seletor só aparecem quando toda a carteira do grupo é acessível.
+A caixa agrupa os segmentos pelo responsável e exibe a empresa atual da operação. A conversa apresenta o histórico da pessoa, sem exigir um seletor de empresa para lê-la. Abrir a ficha da empresa oferece escolha quando há mais de uma e não altera o contexto fiscal. Cada mensagem conserva sua empresa de origem. Quem tem carteira parcial vê apenas os segmentos autorizados; entradas sem empresa e a lista completa do seletor só aparecem quando toda a carteira do grupo é acessível.
 
-“Assumir” pausa a automação do responsável em todos os segmentos. A resposta humana exige seleção atual e reconfere vínculo, versão, janela e reserva antes de enviar. “Devolver” invalida o contexto anterior; uma mensagem nova inicia a seleção. Histórico não é transferido entre empresas.
+“Assumir” pausa a automação do responsável em todos os segmentos. Texto humano e anexo local não exigem seleção de empresa; janela, destinatário, acesso e reserva são conferidos antes do envio. Documentos internos e atos fiscais mantêm empresa e permissões próprias. “Devolver” invalida o contexto anterior; uma mensagem nova inicia atendimento válido. Histórico não é transferido entre empresas.
 
 ## Persistência e concorrência
 

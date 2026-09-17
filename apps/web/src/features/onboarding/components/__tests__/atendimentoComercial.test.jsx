@@ -40,18 +40,18 @@ test("conclusão de criação da conversa anterior não muda a nova nem chama ca
 
 test("prévia antiga não sobrescreve a orientação escolhida mais recentemente", async () => {
   const antiga = pendente(), nova = pendente();
-  const api = { comercial: jest.fn(path => path === "/recursos" ? Promise.resolve({ recursos }) : path.includes("r1") ? antiga.promise : nova.promise), enviarOrientacaoWhatsapp: jest.fn().mockResolvedValue({ ok: true }) };
+  const api = { comercial: jest.fn(path => path === "/recursos" ? Promise.resolve({ recursos }) : path.startsWith("/conversas/") ? Promise.resolve({ atendimento: null }) : path.includes("r1") ? antiga.promise : nova.promise), enviarOrientacaoWhatsapp: jest.fn().mockResolvedValue({ ok: true }) };
   render(<OrientacoesRapidas api={api} conversa={a} />); await abrir(); selecionar("r1"); selecionar("r2");
   await act(async () => nova.resolve({ previa: { texto: "Mensagem mais recente" } }));
   await act(async () => antiga.resolve({ previa: { texto: "Mensagem antiga" } }));
   expect(screen.queryByText("Mensagem antiga")).not.toBeInTheDocument(); expect(screen.getByText("Mensagem mais recente")).toBeInTheDocument();
   fireEvent.click(screen.getByText("Assumir e enviar orientação"));
-  await waitFor(() => expect(api.enviarOrientacaoWhatsapp).toHaveBeenCalledWith("a", { orientacaoId: "r2", variaveis: { nome: "Contato A", cnpj: "12345678000195", servico: "" }, assumir: true }));
+  await waitFor(() => expect(api.enviarOrientacaoWhatsapp).toHaveBeenCalledWith("a", { orientacaoId: "r2", orientacaoVersao: 2, variaveis: { nome: "Contato A", cnpj: "12345678000195", servico: "" }, assumir: true }));
 });
 
 test("alterar variáveis invalida prévia pendente e envia somente o conteúdo reconferido", async () => {
   const antiga = pendente(); let consultas = 0;
-  const api = { comercial: jest.fn((path, body) => path === "/recursos" ? Promise.resolve({ recursos }) : ++consultas === 1 ? antiga.promise : Promise.resolve({ previa: { texto: `Para ${body.variaveis.nome}: ${body.variaveis.servico}` } })), enviarOrientacaoWhatsapp: jest.fn().mockResolvedValue({ ok: true }) };
+  const api = { comercial: jest.fn((path, body) => path === "/recursos" ? Promise.resolve({ recursos }) : path.startsWith("/conversas/") ? Promise.resolve({ atendimento: null }) : ++consultas === 1 ? antiga.promise : Promise.resolve({ previa: { texto: `Para ${body.variaveis.nome}: ${body.variaveis.servico}` } })), enviarOrientacaoWhatsapp: jest.fn().mockResolvedValue({ ok: true }) };
   render(<OrientacoesRapidas api={api} conversa={a} />); await abrir(); selecionar("r1");
   fireEvent.change(screen.getByLabelText("Nome do destinatário"), { target: { value: "Nome corrigido" } });
   fireEvent.change(screen.getByLabelText("Serviço"), { target: { value: "Abertura avulsa" } });
@@ -59,12 +59,12 @@ test("alterar variáveis invalida prévia pendente e envia somente o conteúdo r
   expect(screen.queryByText("Assumir e enviar orientação")).not.toBeInTheDocument();
   fireEvent.click(screen.getByText("Conferir mensagem")); await screen.findByText("Para Nome corrigido: Abertura avulsa");
   fireEvent.click(screen.getByText("Assumir e enviar orientação"));
-  await waitFor(() => expect(api.enviarOrientacaoWhatsapp).toHaveBeenCalledWith("a", { orientacaoId: "r1", variaveis: { nome: "Nome corrigido", cnpj: "12345678000195", servico: "Abertura avulsa" }, assumir: true }));
+  await waitFor(() => expect(api.enviarOrientacaoWhatsapp).toHaveBeenCalledWith("a", { orientacaoId: "r1", orientacaoVersao: 1, variaveis: { nome: "Nome corrigido", cnpj: "12345678000195", servico: "Abertura avulsa" }, assumir: true }));
 });
 
 test("trocar contato descarta prévia e inicializa nome/CNPJ da nova conversa", async () => {
   const antiga = pendente();
-  const api = { comercial: jest.fn(path => path === "/recursos" ? Promise.resolve({ recursos }) : antiga.promise), enviarOrientacaoWhatsapp: jest.fn() };
+  const api = { comercial: jest.fn(path => path === "/recursos" ? Promise.resolve({ recursos }) : path.startsWith("/conversas/") ? Promise.resolve({ atendimento: null }) : antiga.promise), enviarOrientacaoWhatsapp: jest.fn() };
   const r = render(<OrientacoesRapidas api={api} conversa={a} />); await abrir(); selecionar("r1");
   r.rerender(<OrientacoesRapidas api={api} conversa={b} />); expect(screen.queryByLabelText("Orientação")).not.toBeInTheDocument();
   await abrir(); await act(async () => antiga.resolve({ previa: { texto: "Dados do contato A" } }));
@@ -74,7 +74,7 @@ test("trocar contato descarta prévia e inicializa nome/CNPJ da nova conversa", 
 });
 
 test("fechar o painel impede reaparecimento de prévia atrasada ao reabrir", async () => {
-  const antiga = pendente(); const api = { comercial: jest.fn(path => path === "/recursos" ? Promise.resolve({ recursos }) : antiga.promise) };
+  const antiga = pendente(); const api = { comercial: jest.fn(path => path === "/recursos" ? Promise.resolve({ recursos }) : path.startsWith("/conversas/") ? Promise.resolve({ atendimento: null }) : antiga.promise) };
   render(<OrientacoesRapidas api={api} conversa={a} />); await abrir(); selecionar("r1");
   fireEvent.click(screen.getByRole("button", { name: "Mensagens rápidas" })); await act(async () => antiga.resolve({ previa: { texto: "Prévia descartada" } })); await abrir();
   expect(screen.queryByText("Prévia descartada")).not.toBeInTheDocument(); expect(screen.queryByText("Assumir e enviar orientação")).not.toBeInTheDocument();

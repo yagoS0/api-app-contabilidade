@@ -9,7 +9,7 @@ export function criarMockComercial({
     propostas = new Map(),
     contratos = new Map(),
     links = new Map(),
-    docs = new Map();
+    docs = new Map(), fichasAvulsas = new Map();
   const uid = () => crypto.randomUUID(),
     agora = () => new Date().toISOString();
   const ficha = id => {
@@ -167,7 +167,7 @@ export function criarMockComercial({
         },
         atendimento: a || null,
         jornada: { analises: [], diagnostico: o.diagnosticoDemonstracao || null, publicaConferida: false, fiscalConferido: false,
-          devolutiva: { partes: [], concluida: false, incerta: false } },
+          devolutiva: { partes: [], concluida: Boolean(o.apresentacaoDemonstracao), incerta: false } },
         propostas: [...propostas.values()].filter(p => p.onboardingId === o.id).reverse(),
         contratos: [...contratos.values()].filter(c => c.onboardingId === o.id),
         documentos: [...docs.values()].filter(d => d.onboardingId === o.id).map(({
@@ -177,6 +177,11 @@ export function criarMockComercial({
         trabalhos: [],
         marcos: o.marcosComerciais || []
       };
+      if (suffix === "/ficha-avulsa") return { ok: true, fichaAvulsa: fichasAvulsas.get(o.id) || null };
+      if (suffix === "/jornada/apresentacao") {
+        if (body.versao !== o.versao || body.diagnosticoId !== o.diagnosticoDemonstracao?.id || body.meio?.trim().length < 3 || body.evidencia?.trim().length < 3) throw Error("Confira a versão, o diagnóstico e a evidência da apresentação.");
+        o.apresentacaoDemonstracao = { ...body, id: uid(), createdAt: agora() }; persistir(); return { ok: true, apresentacao: o.apresentacaoDemonstracao };
+      }
       if (suffix === "/jornada/diagnostico") {
         if (body.versao !== o.versao) throw Error("Ficha alterada. Atualize antes de salvar.");
         if (o.origem !== "ABERTURA") throw Error("Demonstração: nenhum relatório fiscal real foi consultado.");
@@ -288,6 +293,7 @@ export function criarMockComercial({
       }
       if (suffix === "/concluir-avulso") {
         if (![...contratos.values()].some(c => c.onboardingId === o.id && c.status === "ASSINADO_CONFERIDO" && !c.dados.opcao?.recorrente)) throw Error("Confira o contrato avulso primeiro.");
+        if (o.origem === "ABERTURA" && !fichasAvulsas.has(o.id)) throw Error("Salve a ficha e o dossiê do serviço avulso antes de concluir.");
         o.status = "CONCLUIDO_AVULSO";
         persistir();
         return {
@@ -342,6 +348,22 @@ export function criarMockComercial({
           nome: d.nome
         }
       };
+    },
+    async salvarFichaAvulsa(id, body) {
+      const o = ficha(id);
+      const c = [...contratos.values()].find(c => c.onboardingId === id && c.status === "ASSINADO_CONFERIDO" && !c.dados.opcao?.recorrente);
+      if (!c || !o.marcosComerciais?.some(m => m.tipo === "PAGAMENTO_HONORARIOS_CONFERIDO" && m.dados.contratoId === c.id)) throw Error("Confira assinatura e pagamento do contrato avulso.");
+      if (o.origem !== "ABERTURA" || body.versao !== o.versao || ["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"].includes(o.status)) throw Error("Use uma abertura avulsa atualizada ainda em execução.");
+      const d = body.dados;
+      if (!/^\d{14}$/.test(d?.cnpj || "") || !d.razaoSocial || !d.cnaePrincipal || !["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL"].includes(d.regimeTributario) || ["rua", "numero", "bairro", "cidade", "uf", "cep"].some(k => !d.endereco?.[k])) throw Error("Preencha CNPJ, razão social, CNAE, regime e endereço conferidos.");
+      const anterior = fichasAvulsas.get(id);
+      const f = { id: anterior?.id || uid(), onboardingId: id, cnpj: d.cnpj, dados: d, versao: (anterior?.versao || 0) + 1, documentos: [...docs.values()].filter(x => x.onboardingId === id).map(({ file, ...doc }) => doc), modalidade: "AVULSO", contabilidadeAtiva: false, portalHabilitado: false };
+      fichasAvulsas.set(id, f); o.versao++; persistir(); return { ok: true, fichaAvulsa: f };
+    },
+    async baixarDocumentoFichaAvulsa(id, documentoId) {
+      const f = fichasAvulsas.get(id), d = docs.get(documentoId);
+      if (!f?.documentos.some(x => x.id === documentoId) || !d?.file) throw Error("Documento não encontrado nesta ficha.");
+      return d.file;
     },
     async baixarDocumentoComercial(_id, doc) {
       const d = docs.get(doc);

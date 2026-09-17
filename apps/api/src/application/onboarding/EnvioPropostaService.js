@@ -6,13 +6,16 @@ import { criarPropostasComerciais } from "./PropostasComerciaisService.js";
 import { OnboardingError } from "./OnboardingService.js";
 import { enviarMensagemRastreada } from "../whatsapp/SaidaWhatsappService.js";
 import { janelaDaConversa } from "../whatsapp/ConversaWhatsappService.js";
-import { WhatsappCloudClient } from "../whatsapp/WhatsappCloudClient.js";
+import { whatsappPorCanal } from "../whatsapp/CanalWhatsappService.js";
 import { adquirirLease, liberarLease } from "../whatsapp/WhatsappLeaseService.js";
 import { gerarPropostaPdf, propostaParaCliente } from "./PropostaComercialPdf.js";
+import { exigirConversaDoCaso, capturarIdentidadeComercial, conferirIdentidadeComercial, assumirEnvioComercial } from "./ContextoComercialService.js";
+import { exigirPropostaDefinitiva } from "./PoliticaJornadaComercial.js";
 export async function enviarProposta(id, propostaId, user, {
   db = prisma,
   webUrl = COMERCIAL_WEB_URL,
-  cloud = new WhatsappCloudClient(),
+  cloud = null,
+  conversaId = null,
   janela = janelaDaConversa
 } = {}) {
   exigirGestor(user);
@@ -39,8 +42,11 @@ export async function enviarProposta(id, propostaId, user, {
       conversa: true
     }
   });
-  const c = lead?.conversa;
-  if (!c || c.portalClientId || c.excluidaEm) throw new OnboardingError("conversa_indisponivel", "A conversa de lead não está disponível.", 409);
+  const c = conversaId ? await db.conversaWhatsapp.findUnique({ where: { id: conversaId } }) : lead?.conversa;
+  if (!c || c.excluidaEm) throw new OnboardingError("conversa_indisponivel", "A conversa não está disponível.", 409);
+  await exigirConversaDoCaso(lead, c, db);
+  const identidade = await capturarIdentidadeComercial(c, db);
+  const transporte = await whatsappPorCanal(c, { cloud, client: db });
   const lease = await adquirirLease(`proposta:${propostaId}`, {
     client: db
   });
@@ -79,7 +85,12 @@ export async function enviarProposta(id, propostaId, user, {
           }
         }
       });
-      if (!proposta || !atual || atual.excluidaEm || atual.portalClientId || String(atual.automacaoInvalidadaEm) !== String(c.automacaoInvalidadaEm)) throw new OnboardingError("atendimento_alterado", "Conversa ou proposta mudou durante o envio.", 409);
+      if (!proposta || !atual || atual.excluidaEm || atual.canalId !== c.canalId || atual.vinculoNumeroId !== c.vinculoNumeroId || String(atual.automacaoInvalidadaEm) !== String(c.automacaoInvalidadaEm)) throw new OnboardingError("atendimento_alterado", "Conversa ou proposta mudou durante o envio.", 409);
+      const casoAtual = await db.atendimentoLead.findUnique({ where: { id: lead.id } });
+      await exigirConversaDoCaso(casoAtual, atual, db);
+      await conferirIdentidadeComercial(atual, identidade, db);
+      const jornada = await exigirPropostaDefinitiva({ db, ficha: r, user });
+      if (p.snapshot.diagnosticoId && jornada.diagnostico.id !== p.snapshot.diagnosticoId) throw new OnboardingError("diagnostico_alterado", "O diagnóstico mudou depois da aprovação da proposta.", 409);
       if ((await janela(c.id)).situacao !== "ABERTA") throw new OnboardingError("FORA_DA_JANELA", "A janela de resposta fechou. Aguarde uma mensagem do interessado ou use um modelo aprovado pela Meta.", 409);
     };
     await conferir();
@@ -90,15 +101,8 @@ export async function enviarProposta(id, propostaId, user, {
     }).emitirLink(id, propostaId, user);
     const texto = `Segue sua proposta de serviços em PDF, versão ${p.versao}, com as entregas e os valores. Para escolher a opção: ${webUrl}/proposta/publica#token=${token}\n\nDepois do aceite, prepararemos o contrato para assinatura.`;
     const pdf = await gerarPropostaPdf(propostaParaCliente(p));
-    await db.conversaWhatsapp.update({
-      where: {
-        id: c.id
-      },
-      data: {
-        atendidaPor: user.id,
-        atendidaDesde: new Date()
-      }
-    });
+    await conferir();
+    await assumirEnvioComercial(c, user, identidade, db);
     const out = await enviarMensagemRastreada({
       conversa: c,
       corpo: texto,
@@ -111,7 +115,7 @@ export async function enviarProposta(id, propostaId, user, {
       },
       client: db,
       antesDeEnviar: conferir,
-      enviar: () => cloud.enviarDocumento({
+      enviar: () => transporte.enviarDocumento({
         telefone: c.telefoneE164,
         conteudo: pdf,
         nomeArquivo: `proposta-altan-v${p.versao}.pdf`,

@@ -1,8 +1,17 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { log } from "../../config.js";
+import { conferirIdentidadeVigente } from "./IdentidadeComunicacaoService.js";
 
 // Uma saída é registrada antes da rede. Timeout nunca dispara reenvio automático.
 export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo = null, autor = "HUMANO", turnoIaId = null, referenciaComercial = undefined, contextoConsulta = undefined, enviar, antesDeEnviar = null, client = prisma }) {
+  const conferirOrigem = async () => {
+    if (conversa.vinculoNumeroId) await conferirIdentidadeVigente({ vinculoNumeroId: conversa.vinculoNumeroId, telefone: conversa.telefoneE164, permitirRevisao: autor === "HUMANO", client });
+    if (conversa.canalId) {
+      const canal = await client.canalWhatsapp.findUnique({ where: { id: conversa.canalId } });
+      if (!canal?.ativo) throw Object.assign(new Error("O canal desta mensagem foi desativado."), { codigo: "CANAL_DESABILITADO" });
+    }
+  };
+  await conferirOrigem();
   if (antesDeEnviar) await antesDeEnviar();
   const mensagem = await client.mensagemWhatsapp.create({ data: {
     conversaId: conversa.id, direcao: "out", tipo, corpo, autor, turnoIaId, referenciaComercial, statusEnvio: "enviando",
@@ -12,6 +21,7 @@ export async function enviarMensagemRastreada({ conversa, tipo = "text", corpo =
   let aceitou = false;
   let wamid = null;
   try {
+    await conferirOrigem();
     if (antesDeEnviar) await antesDeEnviar();
     iniciouRede = true;
     const r = await enviar();

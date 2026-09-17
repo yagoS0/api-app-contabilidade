@@ -7,7 +7,7 @@ export const AtualizacaoAtendimento = createContext({ revisao: 0, atualizar: () 
 
 // Remontar por conversa impede exibir dados ou uma prévia do destinatário anterior.
 export function AtendimentoComercial(props) {
-  return <AtendimentoDaConversa key={props.conversa.id} {...props} />;
+  return <AtendimentoDaConversa key={props.conversa.interlocutorId || props.conversa.id} {...props} />;
 }
 function AtendimentoDaConversa({ api, conversa, onCriado, candidatos = [], onEstado, slotEmpresa = null }) {
   const { revisao } = useContext(AtualizacaoAtendimento);
@@ -18,7 +18,7 @@ function AtendimentoDaConversa({ api, conversa, onCriado, candidatos = [], onEst
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; }; }, []);
   useEffect(() => {
     let atual = true;
-    setLead(null); setErro(""); setCarregando(true);
+    setErro(""); setCarregando(true);
     if (!api.comercial) { setCarregando(false); return; }
     api.comercial(path).then(r => { if (atual) { setLead(r.atendimento); setAnteriores(r.anteriores || []); onEstado?.(Boolean(r.atendimento?.onboardingId)); } }).catch(e => { if (atual) setErro(e.message); }).finally(() => { if (atual) setCarregando(false); });
     return () => { atual = false; };
@@ -36,7 +36,7 @@ function AtendimentoDaConversa({ api, conversa, onCriado, candidatos = [], onEst
   return <section aria-label="Atendimento do interessado">
     <strong>Atendimento comercial</strong><p>Identifique a necessidade, analise a empresa e prepare uma proposta para este caso.</p>
     {erro && <div role="alert">{erro} <Button type="button" variant="secondary" disabled={ocupado} onClick={() => setRecarga(v => v + 1)}>Recarregar atendimento comercial</Button></div>}
-    {carregando ? <p role="status">Carregando atendimento…</p> : lead?.onboardingId ? <><div className="wa-commercial-tabs"><Button variant="secondary" onClick={() => setReinicio("CORRIGIR_MOTIVO")}>Corrigir motivo / recomeçar</Button><Button variant="secondary" onClick={() => setReinicio("NOVA_SOLICITACAO")}>Nova solicitação deste contato</Button></div>{reinicio && <fieldset disabled={ocupado}><legend>{reinicio === "CORRIGIR_MOTIVO" ? "Recomeçar atendimento" : "Iniciar outra solicitação"}</legend><p>A ficha e o histórico anteriores serão preservados. A nova solicitação será atendida separadamente, uma por vez.</p><label>Tipo da nova solicitação<select value={origem} onChange={e => setOrigem(e.target.value)}><option value="">Selecione</option><option value="ABERTURA">Abertura</option><option value="TRANSFERENCIA">Transferência</option><option value="INATIVA">Empresa parada</option></select></label><Button disabled={!origem} onClick={() => iniciar({ origem, reiniciarAtendimentoId: lead.id, motivoReinicio: reinicio })}>Preservar anterior e iniciar</Button><Button variant="secondary" onClick={() => setReinicio("")}>Cancelar</Button></fieldset>}<FluxoComercial key={lead.onboardingId} api={api} onboardingId={lead.onboardingId} conversaId={conversa.id} /></> : <fieldset disabled={ocupado || !!erro} style={{ border: 0, padding: 0 }}>
+    {carregando && !lead ? <p role="status">Carregando atendimento…</p> : lead?.onboardingId ? <><div className="wa-commercial-tabs"><Button variant="secondary" onClick={() => setReinicio("CORRIGIR_MOTIVO")}>Corrigir motivo / recomeçar</Button><Button variant="secondary" onClick={() => setReinicio("NOVA_SOLICITACAO")}>Nova solicitação deste contato</Button></div>{reinicio && <fieldset disabled={ocupado}><legend>{reinicio === "CORRIGIR_MOTIVO" ? "Recomeçar atendimento" : "Iniciar outra solicitação"}</legend><p>A ficha e o histórico anteriores serão preservados. A nova solicitação será atendida separadamente, uma por vez.</p><label>Tipo da nova solicitação<select value={origem} onChange={e => setOrigem(e.target.value)}><option value="">Selecione</option><option value="ABERTURA">Abertura</option><option value="TRANSFERENCIA">Transferência</option><option value="INATIVA">Empresa parada</option></select></label><Button disabled={!origem} onClick={() => iniciar({ origem, reiniciarAtendimentoId: lead.id, motivoReinicio: reinicio })}>Preservar anterior e iniciar</Button><Button variant="secondary" onClick={() => setReinicio("")}>Cancelar</Button></fieldset>}<FluxoComercial key={lead.onboardingId} api={api} onboardingId={lead.onboardingId} conversaId={conversa.id} /></> : <fieldset disabled={ocupado || !!erro} style={{ border: 0, padding: 0 }}>
       {candidatos.filter(c => !["CONVERTIDO", "DESISTIU", "CONCLUIDO_AVULSO"].includes(c.status)).map(c => <p key={c.id}><a href={`/onboardings/${encodeURIComponent(c.id)}`}>Conferir ficha {c.origem} · {c.status}</a>{" "}<Button type="button" onClick={() => iniciar({ onboardingId: c.id })}>Conferi: vincular esta ficha</Button></p>)}
       <label>Motivo do atendimento<select value={origem} onChange={e => setOrigem(e.target.value)}><option value="">Identificar durante a conversa</option><option value="ABERTURA">Abertura</option><option value="TRANSFERENCIA">Transferência</option><option value="INATIVA">Empresa parada</option></select></label>{" "}
       <Button type="button" onClick={() => iniciar({ origem: origem || null })}>{ocupado ? "Salvando…" : lead ? "Definir motivo do atendimento" : "Iniciar atendimento"}</Button>
@@ -49,11 +49,12 @@ function AtendimentoDaConversa({ api, conversa, onCriado, candidatos = [], onEst
 export function OrientacoesRapidas(props) {
   return <OrientacoesDaConversa key={props.conversa.id} {...props} />;
 }
-function OrientacoesDaConversa({ api, conversa, onEnviado, disabled }) {
+function OrientacoesDaConversa({ api, conversa, onEnviado, disabled, onPreparado }) {
   const { atualizar } = useContext(AtualizacaoAtendimento);
   const [aberto, setAberto] = useState(false), [recursos, setRecursos] = useState([]), [id, setId] = useState(""), [previa, setPrevia] = useState(null), [erro, setErro] = useState(""), [ocupado, setOcupado] = useState(false), [preparando, setPreparando] = useState(false), [carregando, setCarregando] = useState(false);
-  const [vars, setVars] = useState({ nome: conversa.contato?.nome || conversa.nomePerfilProvedor || "", cnpj: conversa.empresa?.cnpj || "", servico: "" });
+  const [vars, setVars] = useState({ nome: conversa.contato?.nome || conversa.nomePerfilProvedor || "", cnpj: "", servico: "" });
   const [busca, setBusca] = useState("");
+  const [casoId, setCasoId] = useState(conversa.solicitacaoComercial?.id || null);
   const abrirRef = useRef(null), fecharRef = useRef(null);
   const vivo = useRef(true), versaoPrevia = useRef(0), trava = useRef(false);
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; versaoPrevia.current += 1; }; }, []);
@@ -68,9 +69,10 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled }) {
     }
     const aoVoltar = () => { if (document.visibilityState !== "hidden" && !trava.current) carregar(); };
     carregar(); window.addEventListener("focus", aoVoltar); document.addEventListener("visibilitychange", aoVoltar);
-    if (!conversa.portalClientId && !conversa.empresa?.cnpj) api.comercial(`/conversas/${encodeURIComponent(conversa.id)}`).then(r => {
+    if (api.comercial) api.comercial(`/conversas/${encodeURIComponent(conversa.id)}`).then(r => {
       const o = r.atendimento?.onboarding;
-      if (atual && o) setVars(v => ({ ...v, cnpj: v.cnpj || o.cnpj || "", nome: v.nome || o.responsavelNome || "" }));
+      if (atual) setCasoId(r.atendimento?.id || null);
+      if (atual) setVars(v => ({ ...v, cnpj: v.cnpj || (o ? o.cnpj || "" : conversa.empresa?.cnpj || ""), nome: v.nome || o?.responsavelNome || "" }));
     }).catch(() => {});
     return () => { atual = false; window.removeEventListener("focus", aoVoltar); document.removeEventListener("visibilitychange", aoVoltar); };
   }, [aberto, api]);
@@ -84,7 +86,7 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled }) {
     const variaveis = { ...vars };
     try {
       const r = await api.comercial(`/recursos/${encodeURIComponent(value)}/previa`, { variaveis });
-      if (vivo.current && versao === versaoPrevia.current) setPrevia({ texto: r.previa.texto, orientacaoId: value, variaveis });
+      if (vivo.current && versao === versaoPrevia.current) setPrevia({ texto: r.previa.texto, orientacaoId: value, variaveis, versao: recursos.find(r => r.id === value)?.versao || null, atendimentoLeadId: casoId });
     } catch (e) { if (vivo.current && versao === versaoPrevia.current) setErro(e.message); }
     finally { if (vivo.current && versao === versaoPrevia.current) setPreparando(false); }
   }
@@ -93,7 +95,7 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled }) {
     trava.current = true; setOcupado(true); setErro("");
     const conferida = previa;
     try {
-      await api.enviarOrientacaoWhatsapp(conversa.id, conferida.orientacaoId ? { orientacaoId: conferida.orientacaoId, variaveis: conferida.variaveis, assumir: true } : { texto: conferida.texto, assumir: true });
+      await api.enviarOrientacaoWhatsapp(conversa.id, conferida.orientacaoId ? { orientacaoId: conferida.orientacaoId, variaveis: conferida.variaveis, assumir: true, ...(Number.isInteger(conferida.versao) ? { orientacaoVersao: conferida.versao } : {}), ...(conferida.atendimentoLeadId ? { atendimentoLeadId: conferida.atendimentoLeadId } : {}) } : { texto: conferida.texto, assumir: true });
       if (vivo.current) { invalidarPrevia(); setId(""); setAberto(false); await onEnviado?.(); }
     } catch (e) { if (vivo.current) setErro(e.message); }
     finally { trava.current = false; if (vivo.current) setOcupado(false); }
@@ -126,12 +128,12 @@ function OrientacoesDaConversa({ api, conversa, onEnviado, disabled }) {
       <AbrirBiblioteca />
       <fieldset disabled={ocupado} style={{ border: 0, padding: 0 }}>
       <label>Buscar mensagem rápida<input value={busca} onChange={e => setBusca(e.target.value)} /></label>
-      {!conversa.portalClientId && api.criarLinkOnboarding && [["ABERTURA", "Formulário de abertura", "Enviar formulário ao lead que deseja abrir uma nova empresa."], ["TRANSFERENCIA", "Formulário de transferência", "Coletar os dados para trocar de contador."], ["INATIVA", "Formulário de empresa parada", "Coletar os dados iniciais para analisar e regularizar a empresa."]].filter(([,t,d]) => (t+" "+d).toLowerCase().includes(busca.toLowerCase())).map(([origem,titulo,descricao]) => <article className="wa-quick-card" key={origem}><strong>{titulo}</strong><p>{descricao}</p><small>Cria ou usa o onboarding deste atendimento. Gerar novamente substitui o link anterior.</small><Button size="sm" variant="secondary" onClick={() => formulario(origem)}>Preparar formulário</Button></article>)}
+      {conversa.capacidades?.podeCriarCasoComercial !== false && api.criarLinkOnboarding && [["ABERTURA", "Formulário de abertura", "Enviar formulário ao lead que deseja abrir uma nova empresa."], ["TRANSFERENCIA", "Formulário de transferência", "Coletar os dados para trocar de contador."], ["INATIVA", "Formulário de empresa parada", "Coletar os dados iniciais para analisar e regularizar a empresa."]].filter(([,t,d]) => (t+" "+d).toLowerCase().includes(busca.toLowerCase())).map(([origem,titulo,descricao]) => <article className="wa-quick-card" key={origem}><strong>{titulo}</strong><p>{descricao}</p><small>Cria ou usa o onboarding deste atendimento. Gerar novamente substitui o link anterior.</small><Button size="sm" variant="secondary" onClick={() => formulario(origem)}>Preparar formulário</Button></article>)}
       {orientacoes.filter(r => (r.titulo+" "+(r.dados?.descricao || "")).toLowerCase().includes(busca.toLowerCase())).map(r => <article className="wa-quick-card" key={r.id}><strong>{r.titulo}</strong><p>{r.dados?.descricao || (r.texto || "").slice(0,150)}</p><Button variant="secondary" size="sm" onClick={() => selecionar(r.id)}>Preparar mensagem</Button></article>)}
       {!carregando && !erro && !orientacoes.length && <p>Não há textos aprovados. Em Gerenciar biblioteca compartilhada, carregue os modelos iniciais, revise e aprove para disponibilizá-los aqui.</p>}
       {id && [["nome", "Nome do destinatário"], ["cnpj", "CNPJ"], ["servico", "Serviço"]].filter(([k]) => recursos.find(r => r.id === id)?.texto?.includes("{{"+k+"}}")).map(([k,rotulo]) => <label key={k}>{rotulo}<input value={vars[k]} onChange={e => { invalidarPrevia(); setVars({ ...vars, [k]: e.target.value }); }} /></label>)}
       {id && <Button type="button" size="sm" variant="secondary" disabled={preparando || carregando} onClick={() => selecionar(id)}>Conferir mensagem</Button>}
-      {previa && <><h3>Prévia para este contato</h3><p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{previa.texto}</p><Button type="button" disabled={disabled || ocupado || preparando} onClick={enviar}>Assumir e enviar orientação</Button></>}
+      {previa && <><h3>Prévia para este contato</h3><p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{previa.texto}</p>{onPreparado && <Button type="button" variant="secondary" disabled={disabled || ocupado || preparando} onClick={() => { onPreparado(previa); fechar(); }}>Inserir no rascunho</Button>}<Button type="button" disabled={disabled || ocupado || preparando} onClick={enviar}>Assumir e enviar orientação</Button></>}
       </fieldset>
       {(carregando || preparando) && <p role="status">{carregando ? "Carregando orientações…" : "Preparando prévia…"}</p>}
       {erro && <p role="alert">{erro}</p>}

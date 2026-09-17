@@ -4,9 +4,10 @@ import { decidirRespostaComercial } from "../assistente/politicaComercialWhatsap
 import {
   log as logPadrao, INTEGRACAO_WHATSAPP_IA, INTEGRACAO_WHATSAPP_MENU, IA_EMPRESAS_PILOTO,
   WHATSAPP_MENU_TELEFONES_PILOTO, WHATSAPP_MENU_LEADS,
-  WHATSAPP_PHONE_NUMBER_ID,
+  WHATSAPP_COLETA_COMERCIAL,
 } from "../../config.js";
 import { registrarMensagemRecebida } from "./ConversaWhatsappService.js";
+import { resolverCanalEntrada, conferirCanalDoRecibo } from "./CanalWhatsappService.js";
 import { SITUACOES } from "./vinculoTelefone.js";
 import { aplicarStatusDoProvedor, aplicarFalhaDoProvedor } from "../guides/EnvioGuiaService.js";
 import { traduzirErroMeta } from "./errosMeta.js";
@@ -65,6 +66,7 @@ async function processarStatus(item, { logger }) {
   if (!providerMessageId || !status) {
     return { desfecho: DESFECHOS.RECUSADA, motivo: "status sem `id` ou sem `status`" };
   }
+  await conferirCanalDoRecibo(item);
 
   if (STATUS_DOCUMENTADOS.includes(status)) {
     const r = await aplicarStatusDoProvedor({
@@ -192,9 +194,7 @@ export function decidirRespostaDoMenu({ r, flag = INTEGRACAO_WHATSAPP_MENU, pilo
 // inalcançável no teste (a flag nasce OFF no ambiente de teste) — mock que esconde ramo é defeito
 // desta casa. Produção não passa nada e os defaults do `config.js` mandam.
 async function processarMensagem(item, { logger, responder, responderMenu, atenderContexto, ia, menu, agora }) {
-  if (item.canalProvedorId && WHATSAPP_PHONE_NUMBER_ID && item.canalProvedorId !== WHATSAPP_PHONE_NUMBER_ID) {
-    throw Object.assign(new Error("Evento recebido para outro canal empresarial."), { code: "CANAL_DIVERGENTE" });
-  }
+  const canal = await resolverCanalEntrada(item.canalProvedorId, { wabaProvedorId: item.wabaProvedorId });
   const r = await registrarMensagemRecebida({
     telefone: item.telefone,
     providerMessageId: item.providerMessageId,
@@ -206,6 +206,7 @@ async function processarMensagem(item, { logger, responder, responderMenu, atend
     ocorridaEmProvedor: item.ocorridaEmProvedor,
     nomePerfilProvedor: item.nomePerfilProvedor,
     respostaAProviderMessageId: item.respostaAProviderMessageId,
+    canalId: canal.id,
   });
   if (r?.mensagem?.midiaProvedorId) {
     const { enqueueArquivoWhatsapp } = await import("./ArquivoWhatsappService.js");
@@ -237,6 +238,21 @@ async function processarMensagem(item, { logger, responder, responderMenu, atend
   if (r?.mensagem?.respondidaPelaIaEm) {
     // Uma reentrega já concluída não pode cair no menu e virar um novo encaminhamento.
     return { desfecho: r?.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: "JA_RESPONDIDA" } };
+  }
+  if (WHATSAPP_COLETA_COMERCIAL && r?.mensagem?.id && r?.conversa?.id) {
+    const { responderColetaComercial } = await import("./RespostaColetaComercialWhatsappService.js");
+    const coleta = await responderColetaComercial({ registro: r, item, agora });
+    if (coleta.tratado) return { desfecho: r.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, motivo: null, vinculo: situacao, ia: { responde: false, motivo: coleta.motivo }, coleta };
+  }
+  if (r?.conversa?.vinculoNumeroId) {
+    const { conferirIdentidadeVigente } = await import("./IdentidadeComunicacaoService.js");
+    try {
+      const { interlocutor } = await conferirIdentidadeVigente({ vinculoNumeroId: r.conversa.vinculoNumeroId, telefone: r.conversa.telefoneE164 });
+      if (interlocutor.atendidaPor || interlocutor.atendidaDesde) return { desfecho: r.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, vinculo: situacao, ia: { responde: false, motivo: "ASSUMIDA_POR_HUMANO" } };
+    } catch (err) {
+      if (!String(err.code || "").startsWith("IDENTIDADE_")) throw err;
+      return { desfecho: r.duplicada ? DESFECHOS.DUPLICADA : DESFECHOS.GRAVADA, vinculo: situacao, ia: { responde: false, motivo: err.code } };
+    }
   }
   const processar = async (r, item, lease = {}) => {
   const decisaoComercial = decidirRespostaComercial({ r });

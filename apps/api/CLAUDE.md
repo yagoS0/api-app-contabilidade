@@ -1,5 +1,11 @@
 # CLAUDE.md — API (apps/api)
 
+## Identidade, canais e jornada comercial — 16/09/2026
+
+O contrato V2 separa interlocutor, vigência do telefone, canal do escritório, caso comercial e empresa operacional. Identidade e RBAC não são intercambiáveis. Todo efeito externo deve reconferir contexto atual e usar `whatsappPorCanal`; janela e recibo não atravessam canal/vigência. Alias retornado pela Meta pode compartilhar vigência comprovada; similaridade de dígitos não basta. Correção de titular encerra vínculo e invalida ações antigas. Histórico, notas internas e leitura são comandos/projeções próprios em `InboxWhatsappService`.
+
+Coleta comercial é determinística e limitada ao piloto; um cliente pode abrir nova solicitação sem alterar empresa operacional. A política da jornada fica no servidor. Conclusão avulsa usa `FichaEmpresaAvulsaService`, nunca provisionamento recorrente completo. Migration, backfill, auditoria, flags OFF e testes locais: `docs/comunicacao-identidade-implantacao.md`. Templates comerciais novos e APIs DocuSign/Asaas continuam adiados; testes não usam Anthropic nem provedores reais.
+
 ## Retenção informada no WhatsApp — 16/09/2026
 
 `retencaoNaConversa` apenas detecta observações fiscais, inclusive negativas: nunca aplica retenção ou calcula tributos. O coletor preserva dados e texto original em `observacaoRetencao`, remove o código e exige `invalidarConfirmacao` antes de persistir o handoff. Falha de recibo não pode reativar o resumo anterior. `EmissaoGuiadaWhatsappService` também trata coleta pausada, resumo expirado e impede que retomar apague a conferência pendente. Fluxo e limites em `docs/whatsapp-emissao-sem-ia.md`; testes sem Anthropic e verificador PostgreSQL sem rede externa.

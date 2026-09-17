@@ -693,12 +693,14 @@ export class WhatsappCloudClient {
     variaveis,
     template = this.templateGuia,
     idioma = this.idioma,
+    antesDoTemplate = null,
   }) {
     // Recusa o destino ANTES de gastar o upload: telefone torto não melhora depois de subir 200 KB.
     const para = this.destino(telefone);
     // O template também precisa estar preenchido antes de subir o PDF.
     montarCorpoTemplate(variaveis);
     const mediaId = await this.uploadDocumento({ conteudo: conteudoPdf, nomeArquivo });
+    if (antesDoTemplate) await antesDoTemplate();
     return this.enviarTemplateComDocumento({
       telefone: para,
       template,

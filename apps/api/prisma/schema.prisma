@@ -1103,7 +1103,134 @@ model CompanyFiscalStatus {
 // Contato de WhatsApp da empresa. É o equivalente do `PortalClient.guideNotificationEmail`, mas
 // como TABELA porque uma empresa pode ter mais de um destinatário (sócio, financeiro) e porque o
 // opt-in precisa de data e origem próprios.
+/// Identidade de comunicação; nunca concede acesso a empresa ou papel no portal.
+model InterlocutorComunicacao {
+  id String @id @default(uuid())
+  tipo String @default("NAO_VERIFICADO")
+  nome String?
+  estado String @default("ATIVO")
+  versao Int @default(1)
+  atendidaPor String?
+  atendidaDesde DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  numeros VinculoNumeroInterlocutor[]
+  atendimentosLead AtendimentoLead[]
+  notasInternas NotaInternaAtendimento[]
+  @@map("interlocutores_comunicacao")
+}
+
+/// Uma vigência por telefone exato. Número reciclado cria outro interlocutor e outra vigência.
+model EventoIdentidadeComunicacao {
+  id String @id @default(uuid())
+  interlocutorId String
+  vinculoNumeroId String
+  versaoAnterior Int
+  acao String
+  atorId String
+  evidencia String
+  dados Json
+  criadaEm DateTime @default(now())
+  @@index([interlocutorId, criadaEm])
+  @@map("eventos_identidade_comunicacao")
+}
+
+model VinculoNumeroInterlocutor {
+  id String @id @default(uuid())
+  interlocutorId String
+  interlocutor InterlocutorComunicacao @relation(fields: [interlocutorId], references: [id], onDelete: Restrict)
+  telefoneE164 String
+  iniciouEm DateTime @default(now())
+  encerrouEm DateTime?
+  geracao Int @default(1)
+  origem String @default("MENSAGEM_RECEBIDA")
+  verificadoEm DateTime?
+  verificadoPor String?
+  evidencia String?
+  contatos ContatoWhatsapp[]
+  conversas ConversaWhatsapp[]
+  atendimentos AtendimentoResponsavelWhatsapp[]
+  @@unique([telefoneE164, geracao])
+  @@index([interlocutorId])
+  @@map("vinculos_numero_interlocutor")
+}
+
+model CanalWhatsapp {
+  id String @id @default(uuid())
+  chave String @unique
+  finalidade String @default("PRINCIPAL")
+  phoneNumberId String? @unique
+  wabaId String?
+  referenciaCredencial String?
+  ativo Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  conversas ConversaWhatsapp[]
+  atendimentos AtendimentoResponsavelWhatsapp[]
+  tentativasGuia EnvioGuiaTentativa[]
+  @@map("canais_whatsapp")
+}
+
+model NotaInternaAtendimento {
+  id String @id @default(uuid())
+  interlocutorId String
+  interlocutor InterlocutorComunicacao @relation(fields: [interlocutorId], references: [id], onDelete: Restrict)
+  autorId String
+  autorNome String
+  texto String
+  escopo String
+  portalClientId String?
+  atendimentoLeadId String?
+  atendimentoLead AtendimentoLead? @relation(fields: [atendimentoLeadId], references: [id], onDelete: Restrict)
+  chaveIdempotencia String
+  criadaEm DateTime @default(now())
+  @@unique([interlocutorId, chaveIdempotencia])
+  @@index([interlocutorId, criadaEm])
+  @@map("notas_internas_atendimento")
+}
+
+model ColetaComercialWhatsapp {
+  mensagemId String @id
+  atendimentoLeadId String
+  atendimentoLead AtendimentoLead @relation(fields: [atendimentoLeadId], references: [id], onDelete: Restrict)
+  resultado Json
+  identidadeVersao Int
+  criadaEm DateTime @default(now())
+  @@map("coletas_comerciais_whatsapp")
+}
+
+model FichaEmpresaAvulsa {
+  id String @id @default(uuid())
+  onboardingId String @unique
+  onboarding Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Restrict)
+  cnpj String?
+  dados Json
+  versao Int @default(1)
+  criadoPor String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  documentos DocumentoFichaAvulsa[]
+  @@index([cnpj])
+  @@map("fichas_empresa_avulsa")
+}
+
+model DocumentoFichaAvulsa {
+  id String @id @default(uuid())
+  fichaId String
+  ficha FichaEmpresaAvulsa @relation(fields: [fichaId], references: [id], onDelete: Restrict)
+  nome String
+  mimeType String
+  fileKey String
+  bytes Int
+  sha256 String?
+  createdAt DateTime @default(now())
+  @@index([fichaId])
+  @@map("documentos_ficha_avulsa")
+}
+
 model ContatoWhatsapp {
+  vinculoNumeroId String?
+  vinculoNumero VinculoNumeroInterlocutor? @relation(fields: [vinculoNumeroId], references: [id], onDelete: Restrict)
   id             String    @id @default(uuid())
   portalClientId String
   nome           String
@@ -1238,6 +1365,10 @@ model EnvioGuia {
 /// histórico de cada empresa candidata — a mensagem do cliente aparecendo no fio do CNPJ errado é
 /// exatamente o vazamento que a multi-tenancy existe para impedir. Um número, um fio, uma linha.
 model ConversaWhatsapp {
+  canalId String?
+  canalWhatsapp CanalWhatsapp? @relation(fields: [canalId], references: [id], onDelete: Restrict)
+  vinculoNumeroId String?
+  vinculoNumero VinculoNumeroInterlocutor? @relation(fields: [vinculoNumeroId], references: [id], onDelete: Restrict)
   atendimentoId String?
   atendimento AtendimentoResponsavelWhatsapp? @relation(fields: [atendimentoId], references: [id], onDelete: SetNull)
   resolucoesContexto ResolucaoContextoWhatsapp[]
@@ -1385,6 +1516,8 @@ model MensagemWhatsapp {
 /// ⚠ Por isso `nomeMeta` NASCE NULO: o nome exato só existe depois da aprovação. Copiar a chave
 /// para lá seria transformar a nossa intenção em cadastro do provedor.
 model EnvioGuiaTentativa {
+  canalId String?
+  canalWhatsapp CanalWhatsapp? @relation(fields: [canalId], references: [id], onDelete: Restrict)
   id String @id @default(uuid())
   envioGuiaId String
   status String @default("enviando")
@@ -1441,6 +1574,10 @@ model TurnoIaWhatsapp {
 /// Identidade do interlocutor separada do escopo de cada pedido. O canal principal é o número
 /// empresarial configurado nesta instalação; trocar o remetente exige outro canal.
 model AtendimentoResponsavelWhatsapp {
+  canalId String?
+  canalWhatsapp CanalWhatsapp? @relation(fields: [canalId], references: [id], onDelete: Restrict)
+  vinculoNumeroId String?
+  vinculoNumero VinculoNumeroInterlocutor? @relation(fields: [vinculoNumeroId], references: [id], onDelete: Restrict)
   id String @id @default(uuid())
   canal String @default("principal")
   telefoneE164 String
@@ -1465,6 +1602,7 @@ model AtendimentoResponsavelWhatsapp {
   resolucoes ResolucaoContextoWhatsapp[]
   acoesPendentes AcaoPendenteWhatsapp[]
   @@unique([canal, telefoneE164])
+  @@unique([canalId, vinculoNumeroId])
   @@index([telefoneE164])
   @@map("atendimentos_responsaveis_whatsapp")
 }
@@ -4325,6 +4463,7 @@ model EntregaObrigacaoArquivo {
 /// ⚠ `status` e `origem` são String, não enum do Prisma — é a convenção deste schema
 /// (`PortalClient.status`, `Obrigacao.periodicidade`). Enum transforma cada valor novo em migração.
 model Onboarding {
+  fichaAvulsa FichaEmpresaAvulsa?
   fontesDados Json @default("{}")
   atendimentosLead AtendimentoLead[]
   propostasComerciais PropostaComercial[]
@@ -5130,6 +5269,11 @@ model SaidaAvulsaCliente {
 }
 
 model AtendimentoLead {
+  interlocutorId String?
+  interlocutor InterlocutorComunicacao? @relation(fields: [interlocutorId], references: [id], onDelete: Restrict)
+  versao Int @default(1)
+  coletasWhatsapp ColetaComercialWhatsapp[]
+  notasInternas NotaInternaAtendimento[]
   id String @id @default(uuid())
   conversaId String
   conversa ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Restrict)

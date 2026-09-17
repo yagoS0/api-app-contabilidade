@@ -1,5 +1,11 @@
 # CLAUDE.md — Portal Contábil
 
+## Comunicação: evolução autorizada em execução — 16/09/2026
+
+O dono aprovou o design inspirado no Slack e autorizou executar `docs/plano-comunicacao-identidade-leads-20260916.md`. Implementação em worktree isolado `comunicacao-identidade-chat-v2`; o documento separa relacionamento, solicitação, canal e contexto fiscal. Cadastro de contato não concede RBAC; cliente pode abrir outro caso comercial. A seção 6.1/lote 7 (criação de templates Meta e contato ativo) foi adicionada ao plano e permanece expressamente adiada, assim como APIs Asaas/DocuSign. Não submeter modelos, enviar mensagens ou executar operações reais nos testes; não usar tokens Anthropic. Só registrar como concluído o que tiver evidência de implementação e validação.
+
+Implementação e implantação: `docs/comunicacao-identidade-implantacao.md`. Novas flags nascem OFF; migration e backfill precedem ativação. Histórico por interlocutor, notas internas separadas, leitura explícita, canal e vigência são guardas do servidor. Não usar o telefone atual para migrar históricos de titular anterior; não reexecutar jobs acumulados ao ligar flags. Coleta comercial determinística reutiliza onboarding e permite nova solicitação de cliente; conclusão avulsa cria ficha própria sem provisionamento recorrente. O layout atual tem lista compacta de 238 px no desktop, detalhes sob demanda e rascunho por pessoa/canal/modo. As medidas de layout em notas antigas abaixo são históricas.
+
 ## DRE somente de competências fechadas — 16/09/2026
 
 Decisão do usuário: a DRE do cliente mostra apenas meses com `CompanyMonthlyCircular.fechadoContabilEm` preenchido. Servidor lista fechamentos da própria empresa, abre o mais recente quando a competência é omitida e recusa mês aberto. DRE tem seletor próprio, sem alterar competência de cards/Fluxo. Reabertura retira o mês nas novas consultas. Fechamento constitui revisão do período, portanto rascunho legado isolado não torna essa DRE provisória; pendências reais de classificação/valores continuam visíveis. Nenhum status ou lançamento é alterado para satisfazer essa regra.

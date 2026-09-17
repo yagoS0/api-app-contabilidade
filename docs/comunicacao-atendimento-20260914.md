@@ -1,5 +1,7 @@
 # Comunicação e atendimento comercial — 14/09/2026
 
+Planejamento posterior, de 16/09: o dono aprovou o conceito visual inspirado no Slack. O [plano de identificação, leads e chat](plano-comunicacao-identidade-leads-20260916.md) descreve a evolução proposta e distingue lacunas atuais de funções já existentes. Cliente com solicitação comercial, identidade temporal, coleta comercial sem IA e múltiplos canais ainda não estão implementados por esse planejamento. As regras operacionais abaixo continuam sendo a referência do que foi entregue anteriormente.
+
 Decisões solicitadas pelo dono, substituindo orientações antigas incompatíveis. A conversa pertence à pessoa identificada pelo número estrito. O histórico apresenta todas as empresas dentro da carteira autorizada. A empresa escolhida no atendimento automático aparece como informação; texto e anexo manual não exigem seleção de empresa. Guias, documentos internos e atos fiscais continuam com escopo, confirmação e permissões próprios. CNPJ é exibido só com números e copia ao clicar.
 
 ## Caminho do atendimento

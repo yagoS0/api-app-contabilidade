@@ -1,4 +1,5 @@
 import { INTEGRACAO_IA_COMERCIAL, IA_COMERCIAL_TELEFONES_PILOTO } from "../../config.js";
+import { pedidoOperacionalComercial } from "../onboarding/ColetaComercialWhatsappService.js";
 export function decidirRespostaComercial({
   r,
   flag = INTEGRACAO_IA_COMERCIAL,
@@ -10,7 +11,9 @@ export function decidirRespostaComercial({
     responde: false,
     motivo: "FORA_DO_PILOTO"
   };
-  if (c?.portalClientId || c?.atendimentoId || r?.vinculo?.situacao !== "DESCONHECIDO" || String(c?.chaveEscopo || "").startsWith("legado:")) return {
+  const caso = r?.casoComercial;
+  const comercialConfirmado = Boolean(caso?.onboardingId && !caso.encerradoEm && caso.interlocutorId && r?.interlocutorId === caso.interlocutorId);
+  if (pedidoOperacionalComercial(m?.corpo) || (!comercialConfirmado && (c?.portalClientId || c?.atendimentoId || r?.vinculo?.situacao !== "DESCONHECIDO")) || String(c?.chaveEscopo || "").startsWith("legado:")) return {
     responde: false,
     motivo: "SEM_ESCOPO_COMERCIAL"
   };

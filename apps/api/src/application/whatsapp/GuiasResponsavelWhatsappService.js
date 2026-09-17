@@ -3,7 +3,8 @@ import { resolverVinculoPorTelefone } from "./ContatoWhatsappService.js";
 import { empresasAutorizadas } from "./selecaoEmpresaWhatsapp.js";
 import { garantirConversa, janelaDaConversa } from "./ConversaWhatsappService.js";
 import { enviarMensagemRastreada } from "./SaidaWhatsappService.js";
-import { WhatsappCloudClient } from "./WhatsappCloudClient.js";
+import { whatsappPorCanal } from "./CanalWhatsappService.js";
+import { conferirIdentidadeVigente } from "./IdentidadeComunicacaoService.js";
 import { sessaoDoContato } from "../assistente/sessaoDoContato.js";
 import { executarFerramenta, definicoes } from "../assistente/ferramentas/index.js";
 
@@ -16,6 +17,7 @@ export async function consultarGuiasDoResponsavel({ registro, recibo, conferirLe
   const telefone = registro.conversa.telefoneE164;
   const conferir = async (portalClientId) => {
     await conferirLease();
+    if (registro.conversa.vinculoNumeroId) await conferirIdentidadeVigente({ vinculoNumeroId: registro.conversa.vinculoNumeroId, telefone, client });
     const atendimento = await client.atendimentoResponsavelWhatsapp.findUnique({ where: { id: recibo.atendimentoId } });
     const origem = await client.conversaWhatsapp.findUnique({ where: { id: registro.conversa.id } });
     if (!atendimento || atendimento.versao !== recibo.versao || atendimento.atendidaPor || atendimento.atendidaDesde
@@ -26,7 +28,7 @@ export async function consultarGuiasDoResponsavel({ registro, recibo, conferirLe
     const empresa = acesso.empresas.find(e => e.portalClientId === portalClientId);
     if (acesso.bloqueado || acesso.userId !== atendimento.userId || !empresa || !recibo.resultado?.empresas?.includes(portalClientId)) throw recusa();
     if ((await conferirJanela(origem.id, new Date())).situacao !== "ABERTA") throw recusa();
-    const contatos = await client.contatoWhatsapp.findMany({ where: { portalClientId, ativo: true, OR: [{ telefoneE164: telefone }, { waId: telefone }] }, take: 2,
+    const contatos = await client.contatoWhatsapp.findMany({ where: { portalClientId, ativo: true, ...(registro.conversa.vinculoNumeroId ? { vinculoNumeroId: registro.conversa.vinculoNumeroId } : {}), OR: [{ telefoneE164: telefone }, { waId: telefone }] }, take: 2,
       select: { id: true, nome: true, userId: true, permissoesAssistente: true } });
     const contato = contatos.length === 1 ? contatos[0] : null;
     const vinculoRbac = contato?.userId ? await client.companyClientUser.findUnique({ where: { companyId_userId: { companyId: portalClientId, userId: contato.userId } } }) : null;
@@ -34,10 +36,10 @@ export async function consultarGuiasDoResponsavel({ registro, recibo, conferirLe
     if (!sessao.ok || sessao.userId !== atendimento.userId) throw recusa();
     return { empresa, sessao, liberado: definicoes(sessao).some(f => f.name === "quanto_devo") };
   };
-  const whatsapp = cloud || new WhatsappCloudClient({ log });
+  const whatsapp = await whatsappPorCanal(registro.conversa, { cloud, client, log });
   for (const portalClientId of recibo.resultado?.empresas || []) {
     const { empresa, sessao, liberado } = await conferir(portalClientId);
-    const conversa = await garantirConversa({ telefone, portalClientId, client });
+    const conversa = await garantirConversa({ telefone, portalClientId, canalId: registro.conversa.canalId || "principal", vinculoNumeroId: registro.conversa.vinculoNumeroId, client });
     const turnoIaId = `guias-todas:${registro.mensagem.id}:${portalClientId}`;
     const anterior = await client.mensagemWhatsapp.findFirst({ where: { turnoIaId, direcao: "out" } });
     if (anterior) continue; // Saída incerta fica registrada; nunca reenvia automaticamente.
