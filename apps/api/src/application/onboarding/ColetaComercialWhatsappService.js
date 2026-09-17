@@ -71,7 +71,7 @@ export async function coletarComercialWhatsapp({ registro, item = {}, contexto =
   if (!(deps.flag ?? WHATSAPP_COLETA_COMERCIAL)) return { tratado: false, motivo: "COLETA_DESLIGADA" };
   const conversa = registro?.conversa, mensagem = registro?.mensagem;
   const piloto = deps.piloto || IA_COMERCIAL_TELEFONES_PILOTO;
-  if (!conversa || !mensagem || !coletaComercialHabilitada(conversa.telefoneE164, { flag: true, piloto })) return { tratado: false, motivo: "FORA_DO_PILOTO" };
+  if (!conversa || !mensagem || !coletaComercialHabilitada(conversa.telefoneE164, { flag: true, piloto, canal: registro.canal, canalId: conversa.canalId })) return { tratado: false, motivo: "FORA_DO_PILOTO" };
   if (registro.vinculo?.situacao === "AMBIGUO") return { tratado: false, motivo: "IDENTIDADE_EM_REVISAO" };
   if (pedidoOperacionalComercial(item.corpo || mensagem.corpo)) return { tratado: false, motivo: "PEDIDO_OPERACIONAL" };
   const inicial = await db.conversaWhatsapp.findUnique({ where: { id: conversa.id } });

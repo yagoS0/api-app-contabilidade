@@ -56,7 +56,7 @@ export async function resolverCanalEntrada(canalProvedorId, { wabaProvedorId = n
     canal = await configuracaoDoCanal(registro.id, { client });
   }
   if (wabaProvedorId && canal.wabaId && canal.wabaId !== wabaProvedorId) throw erro("CONTA_WHATSAPP_DIVERGENTE", "A conta do evento não corresponde ao canal cadastrado.");
-  return { id: canal.id, phoneNumberId: canal.phoneNumberId, wabaId: canal.wabaId, legado: false };
+  return { id: canal.id, phoneNumberId: canal.phoneNumberId, wabaId: canal.wabaId, finalidade: canal.finalidade, ativo: true, legado: false };
 }
 
 /** Callback de outro remetente não altera prova de uma saída. Legado é sempre principal. */

@@ -1,5 +1,9 @@
 # CLAUDE.md — Portal Contábil
 
+## Novo canal comercial para leads — 17/09/2026
+
+O dono pediu configurar o segundo número como entrada de leads. Isso substitui a restrição ao remetente piloto somente no canal cadastrado como COMERCIAL, ativo, com identidade V2 e multicanal habilitados. O principal conserva o piloto anterior. A finalidade vem do servidor, não do texto nem de parâmetro do navegador; nunca muda a identificação CLIENTE ou concede acesso fiscal. Menu e coleta determinística têm precedência sobre o modelo. Testes com PostgreSQL cobrem os dois canais, zero rede/IA. Credencial comercial ainda ausente na conferência de 17/09 às 15h44 UTC; canal permanece inativo até validar WABA, aplicativo/webhook e token. Procedimento em `docs/comunicacao-identidade-implantacao.md`.
+
 ## Comunicação publicada — 17/09/2026
 
 PR 67 integrada; código `4bb238f2` confirmado na API e no portal do escritório em produção. Identidade/chat V2 e coleta determinística ativos; piloto preservado, multicanal OFF. Backup e backfill concluídos, 17 segmentos e duas pausas humanas preservados. Dois históricos sem contato (legado/lixeira) foram conferidos e mantidos sem criar vínculo. O novo número comercial está preparado, inativo: a credencial lê o telefone, mas a WABA fornecida recusa acesso `100/33`; falta habilitar/configurar sua credencial e confirmar remetente do piloto. Não tratar a captura de tela como canal operacional. CI completa aprovada; nenhum teste usou Anthropic ou envio real. Estado/evidências em `docs/comunicacao-identidade-implantacao.md`.

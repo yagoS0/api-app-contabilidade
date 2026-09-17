@@ -10,7 +10,7 @@ export function decidirRespostaComercial({
     m = r?.mensagem;
   // O início determinístico também cobre saudações e dúvidas. Não cair no
   // modelo comercial quando o coletor deixa uma saudação para o menu.
-  if (coletaComercialHabilitada(c?.telefoneE164)) return {
+  if (coletaComercialHabilitada(c?.telefoneE164, { canal: r?.canal, canalId: c?.canalId })) return {
     responde: false,
     motivo: "COLETA_SEM_IA"
   };

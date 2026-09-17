@@ -10,7 +10,7 @@ import { whatsappPorCanal } from "./CanalWhatsappService.js";
 /** Adaptador determinístico. O coletor persiste campos/recibo; só esta camada conhece transporte. */
 export async function responderColetaComercial({ registro, item, agora = new Date(), client = prisma, cloud = null, flag = WHATSAPP_COLETA_COMERCIAL, piloto, coletar = coletarComercialWhatsapp, conferirJanela = janelaDaConversa } = {}) {
   if (!flag) return { tratado: false, motivo: "COLETA_DESLIGADA" };
-  if (!coletaComercialHabilitada(registro?.conversa?.telefoneE164, { flag, ...(piloto ? { piloto } : {}) })) return { tratado: false, motivo: "FORA_DO_PILOTO" };
+  if (!coletaComercialHabilitada(registro?.conversa?.telefoneE164, { flag, canal: registro?.canal, canalId: registro?.conversa?.canalId, ...(piloto ? { piloto } : {}) })) return { tratado: false, motivo: "FORA_DO_PILOTO" };
   return comLeaseDoAtendimento({ conversa: registro.conversa, client }, async conferirLease => coletar({ registro, item, deps: {
     client, flag, agora, ...(piloto ? { piloto } : {}),
     enviar: async ({ conversa, texto, referenciaComercial, antesDeEnviar }) => {
