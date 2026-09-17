@@ -1,4 +1,5 @@
 import { mensagemDoErroDeCadastro } from "@contabilidade/shared/erros-cadastro-empresa";
+import { importarNotasEmLotes } from "./importarNotasEmLotes";
 function getApiBaseUrl() {
   return String(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 }
@@ -1952,10 +1953,7 @@ export function createRealApi() {
     },
     // Q56: import MANUAL de notas (XML) — pra quando a captura automática não trouxe as notas.
     async importInvoicesXml(companyId, files, { type = "NFSE" } = {}) {
-      const formData = new FormData();
-      const list = Array.isArray(files) ? files : (files ? [files] : []);
-      for (const f of list) { if (f) formData.append("files", f); }
-      return request(`/clients/${companyId}/invoices/import/${type === "NFE" ? "nfe" : "xml"}`, { method: "POST", body: formData });
+      return importarNotasEmLotes(request, companyId, files, type);
     },
     // Q48: download de notas em lote (job em segundo plano + zip)
     async createNotasDownload(payload) {
